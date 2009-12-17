@@ -60,3 +60,22 @@ fn:
 "fn (x y) { }" OK
 
 "fn x y to z q { }" OK
+
+"fn { } requires { }" OK
+
+//------------------- idlist
+idlist:
+
+"a" OK
+
+"a b" OK
+
+"(a)" OK
+
+"( a )" OK
+
+"(a b)" OK
+
+"(a , b)" OK
+
+"a, b" FAIL

@@ -18,8 +18,7 @@ fn			:	'fn' (idlist ('to' idlist)?)? seq requires? ensures?;
 requires		:	'requires' seq;
 ensures			:	'ensures' seq;
 num			:	int_num | rat_num;
-idlist			:	ids | '(' ids ')';
-ids			:	IDENT+;
+idlist			:	IDENT+ | '(' IDENT (','? IDENT)* ')';
 
 exp			:	(NIL | FALSE | TRUE | num | STRING | fn | prefixexp | seq | prefix_unop exp) (binop exp | postfix_unop)*;
 //exp			:	(NIL | FALSE | TRUE | num | STRING | fn | prefixexp | seq | exp binop exp | prefix_unop exp | exp postfix_unop;
@@ -34,8 +33,7 @@ prefixexp		:	prefixexp '.' IDENT | prefixexp '[' exp ']' // var
 			|	'(' exp ')';
 */
 
-prefixexp		:	'prefixexp';
-//prefixexp		:	'(' exp ')'    ;//  ('.' IDENT | '[' exp ']' | args | ':' IDENT args)*;
+prefixexp		:	'(' exp ')'    ;//  ('.' IDENT | '[' exp ']' | args | ':' IDENT args)*;
 
 //args			:	'(' explist? ')' | seq | STRING;
 
