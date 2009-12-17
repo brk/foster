@@ -1,0 +1,21 @@
+FOSTER=C:/Users/Ben/Code/foster
+ANTLRJAR=C:/Users/Ben/Code/antlrworks-1.3.1.jar
+GUNIT_LIB=C:/Users/Ben/Code/gUnitEditor/lib
+
+CP="$(ANTLRJAR);$(FOSTER)/grammar/output"
+
+javac:
+	javac -cp $(CP) fosterLexer.java
+	javac -cp $(CP) fosterParser.java
+
+antlr:
+	java -jar $(ANTLRJAR) &
+
+refresh: javac
+	cp $(FOSTER)/grammar/output/foster*.class $(FOSTER)/grammar/
+
+test: refresh
+	java -cp $(CP) org.antlr.gunit.Interp $(FOSTER)/grammar/foster.gunit
+
+gui: refresh
+	java -cp $(CP) org.antlr.gunit.swingui.Tool $(FOSTER)/grammar/foster.gunit &
