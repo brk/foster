@@ -1,5 +1,10 @@
 grammar foster;
 
+options {
+  //language = C;
+  output = AST;
+}
+
 tokens {
 	AS='as'; AT='at'; DO='do'; ID='id'; IF='if'; IN='in'; IS='is'; IT='it'; TO='to';
 	FOR='for'; NIL='nil'; TRUE='true'; FALSE='false'; AND='and'; OR='or';
