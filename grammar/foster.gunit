@@ -79,3 +79,44 @@ idlist:
 "(a , b)" OK
 
 "a, b" FAIL
+
+//------------------- prefixexp
+prefixexp:
+
+"x" OK
+
+"x.y" OK
+
+"(x)" OK
+
+"(x.y)" OK
+
+"x.y[z]" OK
+
+"(x.y)[z]" OK
+
+"x(y)" OK
+
+//------------------- seq
+seq:
+
+"{ }" OK
+
+"{ nil }" OK
+
+"{ x = y }" OK
+
+"{ x = y ; z = w; }" OK
+
+<<{
+x = y
+z = w
+}>> OK
+
+"{ [x] = y }" OK
+
+"{ x = 'y' size }" OK
+
+"{ x = 'y' 3 }" OK
+
+"{ x = y z = w }" OK

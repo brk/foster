@@ -1,28 +1,50 @@
 grammar foster;
 
+
+options {
+//	language = Python;
+	backtrack = true;
+}
+
+
 tokens {
 	AS='as'; AT='at'; DO='do'; ID='id'; IF='if'; IN='in'; IS='is'; IT='it'; TO='to';
 	FOR='for'; NIL='nil'; TRUE='true'; FALSE='false'; AND='and'; OR='or';
 	// __compiles
 }
 
-program			:	exp+ EOF;
+program			:	exp EOF;
 
 fn			:	'fn' (idlist ('to' idlist)?)? seq requires? ensures?;
-requires		:	'given' seq;
-ensures			:	'gives' seq;
+requires		:	'requires' seq;
+ensures			:	'ensures' seq;
 num			:	int_num | rat_num;
 idlist			:	IDENT+ | '(' IDENT (','? IDENT)* ')';
 
 
-literal			:	TRUE | FALSE | num;
+literal			:	NIL | FALSE | TRUE | num | STRING;
 
 
-exp			:	(literal | fn | prefixexp | seq | prefix_unop exp) (binop exp)*;
+exp			:	(literal | fn | prefixexp | seq | prefix_unop exp) (binop exp | postfix_unop)*;
 
 
-prefixexp		:	IDENT;
+prefixexp		:	(IDENT | '(' exp ')') ('.' IDENT | '[' exp ']' | args /* | ':' IDENT args*/)*;
 
+/*
+prefixexp		:	prefixexp '.' IDENT | prefixexp '[' exp ']' // var
+			|	prefixexp args | prefixexp ':' IDENT args // funcall
+			|	'(' exp ')';
+*/
+
+
+args			:	'(' explist? ')' | seq | STRING;
+
+explist			:	exp (',' exp)*;
+
+/*
+paramlist		:	namelist? '...'?;
+namelist		:	IDENT (','? IDENT)*;
+*/
 seq			:	'{' fieldlist? '}';
 fieldlist		:	field (fieldsep field)* fieldsep;
 field			:	'[' exp ']' '=' exp | IDENT '=' exp | exp;
@@ -32,7 +54,8 @@ binop			:	'+' | '-' | '*' | '/' | '..'
 			|	'<' | '<=' | '>=' | '>' | '==' | '!='
 			|	AND | OR | '+=' | '-=' | '*=' | '/=';
 			
-prefix_unop		:	'-' | 'not';
+prefix_unop		:	'-' | 'not' | '#';
+postfix_unop		:	'^';
 
 
 // TODO: sema should warn  if int_num starts with zero and doesn't include a base
