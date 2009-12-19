@@ -6,6 +6,7 @@ GLOG_DIR ?= $(HOME)/glog/$(GLOG_VERSION)
 OUTPUT ?= output
 
 PROJ = foster
+ANTLR_JAR = $(ANTLR_DIR)/antlr-$(ANTLR_VERSION).jar
 
 CXXFLAGS += -g -I $(OUTPUT) -I $(ANTLR_DIR)/include -L $(ANTLR_DIR)/lib -l antlr3c
 LLVM_CONFIG := $(shell $(LLVM_DIR)/bin/llvm-config --cppflags --ldflags --libs core jit native)
@@ -22,8 +23,15 @@ $(OUTPUT)/$(PROJ)Parser.o: $(OUTPUT)/$(PROJ)Parser.c
 $(OUTPUT)/$(PROJ)Lexer.o: $(OUTPUT)/$(PROJ)Lexer.c
 	$(CXX) $(CXXFLAGS) $? -c -o $@
 
-$(OUTPUT)/$(PROJ)Parser.c:
-	python run_antlr.py $(ANTLR_DIR)/antlr-$(ANTLR_VERSION).jar $(OUTPUT) grammar/foster.g 
+# and Lexer.c, implicitly
+$(OUTPUT)/$(PROJ)Parser.c: grammar/foster.g
+	python run_antlr.py $(ANTLR_JAR) $(OUTPUT) grammar/foster.g
 
-$(OUTPUT)/$(PROJ)Lexer.c: grammar/foster.g
-	python run_antlr.py $(ANTLR_DIR)/antlr-$(ANTLR_VERSION).jar $(OUTPUT) grammar/foster.g 
+
+jrefresh:
+	javac -cp $(ANTLR_JAR) grammar/output/$(PROJ)Lexer.java
+	javac -cp $(ANTLR_JAR) grammar/output/$(PROJ)Parser.java
+
+testg:
+	java -cp "$(ANTLR_JAR):grammar/output" org.antlr.gunit.Interp grammar/foster.gunit
+
