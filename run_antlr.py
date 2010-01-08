@@ -29,8 +29,8 @@ def invoke_antlr(antlr, output, input):
   print output_file
 
   cmd = "java -cp %s org.antlr.Tool %s" % (antlr, output_file)
-  print cmd
-  arglist = " ".split()
+  arglist = cmd.split(" ")
+  print arglist
   import subprocess
   subprocess.call(arglist)
 

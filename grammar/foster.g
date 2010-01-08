@@ -9,28 +9,35 @@ tokens {
 	AS='as'; AT='at'; DO='do'; ID='id'; IF='if'; IN='in'; IS='is'; IT='it'; TO='to';
 	FOR='for'; NIL='nil'; TRUE='true'; FALSE='false'; AND='and'; OR='or';
 	// __compiles
+	
+	FN; OUT; BODY; GIVEN; GIVES; IDS; SEQ; FIELD_LIST; INT; RAT; EXPRS; NAME;
 }
 
-program			:	exp+ EOF;
+program			:	expr+ EOF -> ^(EXPRS expr+);
 
-fn			:	'fn' (idlist ('to' idlist)?)? seq requires? ensures?;
+fn			:	'fn' name=STRING? in=idlist? ('to' out=idlist)? seq requires? ensures?
+					-> ^(FN ^(NAME $name) ^(IN $in) ^(OUT $out) ^(BODY seq) ^(GIVEN requires?) ^(GIVES ensures?));
 requires		:	'given' seq;
 ensures			:	'gives' seq;
-num			:	int_num | rat_num;
-idlist			:	IDENT+ | '(' IDENT (','? IDENT)* ')';
+num			:	( int_num -> ^(INT int_num)
+				| rat_num -> ^(RAT rat_num));
+idlist			:	(IDENT+ | '(' IDENT (','? IDENT)* ')') -> IDENT*;
 
 
 literal			:	TRUE | FALSE | num;
 
 
-exp			:	(literal | fn | prefixexp | seq | prefix_unop exp) (binop exp)*;
+term			:	(literal | fn | prefixexp | seq | prefix_unop expr);
+expr			:	term (	  binop expr	-> ^(binop term expr)
+					|		-> ^(term)
+				);
 
 
 prefixexp		:	IDENT;
 
-seq			:	'{' fieldlist? '}';
-fieldlist		:	field (fieldsep field)* fieldsep;
-field			:	'[' exp ']' '=' exp | IDENT '=' exp | exp;
+seq			:	'{' fieldlist? '}' -> ^(SEQ fieldlist*);
+fieldlist		:	field (fieldsep field)* fieldsep -> ^(FIELD_LIST field*);
+field			:	'[' expr ']' '=' expr | IDENT '=' expr | expr;
 fieldsep		:	(',' | ';')?;
 
 binop			:	'+' | '-' | '*' | '/' | '..'
