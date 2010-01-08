@@ -23,7 +23,7 @@ struct BinaryOpExprAST;
 struct BuiltinCompilesExprAST;
 
 struct FosterASTVisitor {
-  void visitChildren(ExprAST* ast);
+  virtual void visitChildren(ExprAST* ast);
 
   #define FOSTER_AST_VISITOR_DEFAULT_IMPL = 0
   #include "FosterASTVisitor.decls.inc.h"

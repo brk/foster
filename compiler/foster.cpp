@@ -22,6 +22,7 @@
 #include "ANTLRtoFosterAST.h"
 #include "TypecheckPass.h"
 #include "CodegenPass.h"
+#include "PrettyPrintPass.h"
 
 #include <cassert>
 #include <iostream>
@@ -155,11 +156,20 @@ int main(int argc, char** argv) {
   
   std::cout << "=========================" << std::endl;
   
+  
   TypecheckPass tyPass; exprAST->accept(&tyPass);
   bool sema = exprAST->type != NULL;
   std::cout << "Semantic checking: " << sema << endl; 
   
   if (!sema) return 1;
+  
+  std::cout << "=========================" << std::endl;
+  std::cout << "Pretty printing: " << std::endl;
+  
+  PrettyPrintPass ppPass(std::cout); exprAST->accept(&ppPass);
+  
+  std::cout << std::endl;
+  
   
   std::cout << "=========================" << std::endl;
   
