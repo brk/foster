@@ -106,7 +106,18 @@ struct IntAST : public ExprAST {
   explicit IntAST(string val, int base): Text(val), Clean(val), Base(base) {}
   virtual const llvm::Type* GetType();
   virtual std::ostream& operator<<(std::ostream& out) { return out << Clean; }
-  virtual bool Sema() { std::cout << "IntAST::Sema() -> true" << std::endl; return true; }
+  virtual bool Sema() { return true; }
+  virtual Value* Codegen();
+};
+
+struct BoolAST : public ExprAST {
+  bool value;
+  explicit BoolAST(string val) : value(val == "true") {}
+  virtual const llvm::Type* GetType() { return LLVMTypeFor("i1"); }
+  virtual std::ostream& operator<<(std::ostream& out) {
+    return out << string(value ? "true" : "false");
+  }
+  virtual bool Sema() { return true; }
   virtual Value* Codegen();
 };
 
@@ -441,9 +452,38 @@ struct SubscriptAST : public ExprAST {
   virtual bool Sema() { std::cout << "SubscriptAST::Sema() -> true" << std::endl; return true; } // TODO
   explicit SubscriptAST(ExprAST* base, ExprAST* index)
     : base(base), index(index) { }
+    
   virtual const llvm::Type* GetType() {
-    std::cout << "SubscriptAST::GetType() -> NULL..." << std::endl;
-    return NULL;
+    IntAST* idx = dynamic_cast<IntAST*>(index);
+    if (!idx) {
+      std::cerr << "SubscriptAST::GetType() had non-constant index, returning NULL..." << std::endl;
+      return NULL;
+    } else {
+      const Type* baseType = base->GetType();
+      if (!baseType) {
+        std::cerr << "Error: Cannot index into object of null type " << std::endl;
+        return NULL;
+      }
+      if (!baseType->isAggregateType()) {
+        std::cerr << "Error: Cannot index into non-aggregate type " << *baseType << std::endl;
+        return NULL;
+      }
+      
+      Value* vidx = idx->Codegen(); // Implicitly a Constant*
+      
+      const llvm::StructType* structTy = llvm::dyn_cast<llvm::StructType>(baseType);
+      if (structTy) {
+        if (!structTy->indexValid(vidx)) {
+          std::cerr << "Error: attempt to index struct with invalid index '" << *vidx << "'" << std::endl;
+          return NULL;
+        }
+        
+        return structTy->getTypeAtIndex(vidx);
+      } else {
+        std::cerr << "Error: attempt to index into a non-struct type " << *baseType << std::endl;
+        return NULL;
+      }
+    }
   }
   virtual std::ostream& operator<<(std::ostream& out) {
     return out << *base << "[" << *index << "]";
@@ -500,8 +540,7 @@ struct FnAST : public ExprAST {
     return NULL;
   }
   explicit FnAST(PrototypeAST* proto, ExprAST* body) :
-      Proto(proto), Body(body) {
-    }
+      Proto(proto), Body(body) {}
 
   virtual std::ostream& operator<<(std::ostream& out) {
     return out << (*Proto) << " " << (*Body) << endl;
@@ -514,11 +553,37 @@ struct IfExprAST : public ExprAST {
   IfExprAST(ExprAST* ifExpr, ExprAST* thenExpr, ExprAST* elseExpr)
     : ifExpr(ifExpr), thenExpr(thenExpr), elseExpr(elseExpr) {}
   public:
-  virtual bool Sema() { std::cout << "IfExprAST::Sema() -> true" << std::endl;  return true; } // TODO
+  virtual bool Sema() {
+    const Type* ifType = ifExpr->GetType();
+    if (!ifType) {
+      std::cerr << "if condition '" << *ifExpr << "' had null type!" << std::endl;
+      return false;  
+    }
+    
+    if (ifType != LLVMTypeFor("i1")) {
+      std::cerr << "if condition '" << *ifExpr << "' had non-bool type " << *ifType << std::endl;
+      return false;
+    }
+    
+    std::cout << "IfExprAST::Sema() -> true" << std::endl;
+    return true;
+  }
+  
   virtual const llvm::Type* GetType() {
-    std::cout << "IfExprAST::GetType() -> NULL..." << std::endl;
-    // Return unification of thenExpr and elseExpr types
-    return NULL;
+    const Type* thenType = thenExpr->GetType();
+    const Type* elseType = elseExpr->GetType();
+    if (thenType == NULL) {
+      std::cerr << "IfExprAST had null type for 'then' expression" << std::endl;
+      return NULL;
+    } else if (elseType == NULL) {
+      std::cerr << "IfExprAST had null type for 'else' expression" << std::endl;
+      return NULL;
+    } else if (thenType != elseType) {
+      std::cerr << "IfExprAST had different (incompatible?) types for then/else exprs" << std::endl;
+      return NULL;
+    } else if (thenType == elseType) {
+      return thenType;
+    } else { std::cerr << __FILE__ << ":" << __LINE__ << std::endl; }
   }
   
   virtual std::ostream& operator<<(std::ostream& out) {

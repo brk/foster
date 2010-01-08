@@ -94,6 +94,8 @@ const Type* LLVMTypeFor(const string& name) { return module->getTypeByName(name)
 
 void initModuleTypeNames() {
   module->addTypeName("i32", llvm::IntegerType::get(getGlobalContext(), 32));
+  module->addTypeName("i1", llvm::IntegerType::get(getGlobalContext(), 1));
+  
   /*
   std::vector<const Type*> StringParts;
   StringParts.push_back(Type::Int32Ty);
@@ -118,6 +120,14 @@ Value* IntAST::Codegen() {
 
 //////////////////////////////////////////////////////////
 
+Value* BoolAST::Codegen() {
+  return (value)
+    ? ConstantInt::getTrue(getGlobalContext())
+    : ConstantInt::getFalse(getGlobalContext());
+}
+
+//////////////////////////////////////////////////////////
+
 bool BinaryExprAST::Sema() {
   return this->GetType()->isInteger();
 }
@@ -132,7 +142,11 @@ const llvm::Type* BinaryExprAST::GetType() {
     std::cerr << "Error: binary expr " << op << " failed to typecheck subexprs!" << std::endl;
     return NULL;
   } else {
-    return TL;
+    if (op == "<" || op == "==" || op == "!=") {
+      return LLVMTypeFor("i1");
+    } else {
+      return TL;
+    }
   }
 }
 

@@ -12,14 +12,17 @@ int fprint_i32b(FILE* f, int x) {
 }
 
 extern "C" {
-int print_i32(int x) { return fprint_i32(stdout, x); }
+int  print_i32(int x) { return fprint_i32(stdout, x); }
 int expect_i32(int x) { return fprint_i32(stderr, x); }
 
-int print_i32x(int x) { return fprint_i32x(stdout, x); }
+int  print_i32x(int x) { return fprint_i32x(stdout, x); }
 int expect_i32x(int x) { return fprint_i32x(stderr, x); }
 
-int print_i32b(int x) { return fprint_i32b(stdout, x); }
+int  print_i32b(int x) { return fprint_i32b(stdout, x); }
 int expect_i32b(int x) { return fprint_i32b(stderr, x); }
+
+int  print_i1(bool x) { return fprintf(stdout, (x ? "true\n" : "false\n")); }
+int expect_i1(bool x) { return fprintf(stderr, (x ? "true\n" : "false\n")); }
 } // extern "C"
 
 

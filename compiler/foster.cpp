@@ -81,7 +81,7 @@ void createParser(ANTLRContext& ctx, string filename) {
   }
 }
 
-void addExternSingleParamFn_i32(const char* name, VariableAST* param) {
+void addExternSingleParamFn(const char* name, VariableAST* param) {
   PrototypeAST* p = new PrototypeAST(name, param);
   scope.insert(name, p->Codegen());
   varScope.insert(name, new VariableAST(name, p->GetType()));
@@ -91,13 +91,17 @@ void addLibFosterRuntimeExterns() {
   scope.pushScope("externs");
   varScope.pushScope("externs");
   
-  VariableAST* x_i32 = new VariableAST("x", llvm::IntegerType::get(getGlobalContext(), 32));
-  addExternSingleParamFn_i32("print_i32",   x_i32);
-  addExternSingleParamFn_i32("print_i32x",  x_i32);
-  addExternSingleParamFn_i32("print_i32b",  x_i32);
-  addExternSingleParamFn_i32("expect_i32",  x_i32);
-  addExternSingleParamFn_i32("expect_i32x", x_i32);
-  addExternSingleParamFn_i32("expect_i32b", x_i32);
+  VariableAST* x_i32 = new VariableAST("xi32", LLVMTypeFor("i32"));
+  addExternSingleParamFn("print_i32",   x_i32);
+  addExternSingleParamFn("print_i32x",  x_i32);
+  addExternSingleParamFn("print_i32b",  x_i32);
+  addExternSingleParamFn("expect_i32",  x_i32);
+  addExternSingleParamFn("expect_i32x", x_i32);
+  addExternSingleParamFn("expect_i32b", x_i32);
+  
+  VariableAST* x_i1 = new VariableAST("xi1", LLVMTypeFor("i1"));
+  addExternSingleParamFn("print_i1",   x_i1);
+  addExternSingleParamFn("expect_i1",   x_i1);
 }
 
 int main(int argc, char** argv) {
@@ -137,7 +141,10 @@ int main(int argc, char** argv) {
   std::cout << "unparsing" << endl;
   std::cout << *exprAST << endl;
   
-  std::cout << "Semantic checking: " << exprAST->Sema() << endl; 
+  bool sema = exprAST->Sema();
+  std::cout << "Semantic checking: " << sema << endl; 
+  
+  if (!sema) return 1;
   
   std::cout << "=========================" << std::endl;
   

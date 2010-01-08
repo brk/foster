@@ -10,7 +10,7 @@ options {
 tokens {
 	AS='as'; AT='at'; DO='do'; ID='id'; IF='if'; IN='in'; IS='is'; IT='it'; TO='to';
 	FOR='for'; NIL='nil'; TRUE='true'; FALSE='false'; AND='and'; OR='or';
-	// __compiles
+	COMPILES='__COMPILES__';
 
 	FN; OUT; BODY; GIVEN; GIVES; IDS; SEQ; FIELD_LIST; INT; RAT; EXPRS; NAME;
 	TRAILERS; CALL; TUPLE; SUBSCRIPT; LOOKUP; FORMAL;
@@ -70,7 +70,7 @@ binop			:	'+' | '-' | '*' | '/' | '..' | '='
 			|	'bitand' | 'bitor' | 'shl' | 'shr'
 			|	AND | OR | '+=' | '-=' | '*=' | '/=';
 
-prefix_unop		:	'-' | 'not';
+prefix_unop		:	'-' | 'not' | COMPILES;
 
 
 // TODO: sema should warn  if int_num starts with zero and doesn't include a base

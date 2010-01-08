@@ -287,8 +287,12 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
     return parseFn("<anon_fn_%d>", tree, depth, infn);
   }
 
+  if (text == "false" || text == "true") {
+    return new BoolAST(text);
+  }
+  
   /*
-  if (text == "false" || text == "true" || text == "nil") {
+  if (text == "nil") {
     return new VariableAST(text);
   }
   */
