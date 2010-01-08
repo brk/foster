@@ -166,11 +166,7 @@ int main(int argc, char** argv) {
   std::cout << "=========================" << std::endl;
   std::cout << "Pretty printing: " << std::endl;
   
-  { PrettyPrintPass ppPass(std::cout); 
-    std::cout << "ppPass starting" << std::endl;
-    exprAST->accept(&ppPass);
-    std::cout << "ppPass ending" << std::endl;
-  }
+  { PrettyPrintPass ppPass(std::cout); exprAST->accept(&ppPass); ppPass.flush(); }
   std::cout << std::endl;
   
   

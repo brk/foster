@@ -13,273 +13,172 @@
 #include <sstream>
 #include <cassert>
 
-// TODO: one difficulty with the current design is that
-// classes unilaterally choose whether to manually or automatically
-// apply a visitor to their child nodes, but pretty printing should basically
-// never be done bottom-up, I think? 
-
-// Straightforward implementation of Oppen's prettyprinting algorithm from
-// ftp://db.stanford.edu/pub/cstr/reports/cs/tr/79/770/CS-TR-79-770.pdf
+// Straightforward implementation of Pugh & Sinofsky's prettyprinting algorithm
+// from    http://ecommons.library.cornell.edu/bitstream/1813/6648/1/87-808.pdf
 
 struct PrettyPrintPass : public FosterASTVisitor {
   #include "FosterASTVisitor.decls.inc.h"
   
-  virtual void visitChildren(ExprAST* ast) {} // Only visit children manually!
+  virtual void visitChildren(ExprAST* ast) {
+   // Only visit children manually!
+  }
   
   struct PPToken {
-    PPToken() : kind(kBlank), str(""), len(0), offset(2), isConsistent(true) {}
-    explicit PPToken(const std::string& str, bool isConsistent = false, int offset = 2, int blankSpace = 1)
-      : kind(kString), str(str), len(str.size()), offset(offset), blankSpace(blankSpace), isConsistent(isConsistent) {
-      if (str == " " || str == "\n") {
-        kind = kBlank;
-        len = blankSpace;
-      }
-      if (str == "\n") len = 9999;
-    }
-    enum TokenKind { kString, kBlockOpen, kBlockClose, kBlank } kind;
+    enum Kind { kString,
+                kOpen, kClose,
+                kIndent, kDedent,
+                kNewline, kOptLinebreak, kConnLinebreak
+    } kind;
     std::string str;
-    int len, offset, blankSpace;
-    bool isConsistent;
+    
+             PPToken()                       : kind(kOptLinebreak), str("") {}
+    explicit PPToken(const std::string& str) : kind(kString),       str(str) {}
   };
   
-  PPToken tBlockOpen;
-  PPToken tBlockClose;
+  PPToken tBlockOpen, tBlockClose;
+  PPToken tIndent, tDedent;
+  PPToken tNewline, tOptNewline, tConnNewline;
   
   // I believe this is correctly implemented for correctly-structured streams,
   // but the code seems to be fragile in its handling of malformed streams.
-  PrettyPrintPass(std::ostream& out, int margin = 80) : out(out), margin(margin),
-      spaceLeft(margin) {
-    stream.resize(3 * margin);
+  PrettyPrintPass(std::ostream& out, int width = 80, int indent_width = 2)
+    : out(out), INDENT_WIDTH(indent_width) {
+    tBlockOpen.kind = PPToken::kOpen;
+    tBlockClose.kind = PPToken::kClose;
+    tIndent.kind = PPToken::kIndent;
+    tDedent.kind = PPToken::kDedent;
+    tNewline.kind = PPToken::kNewline;
+    tOptNewline.kind = PPToken::kOptLinebreak;
+    tConnNewline.kind = PPToken::kConnLinebreak;
     
-    left = 0; right = 0;
-    leftotal = 0; rightotal = 0;
+    total_chars_enqueued = total_pchars_enqueued = 0;
+    total_chars_flushed  = total_pchars_flushed = 0;
+    current_level = break_level = 0;
+    device_left_margin = 0; device_output_width = width;
     
-    tBlockOpen.kind = PPToken::kBlockOpen;
-    tBlockClose.kind = PPToken::kBlockClose;
+    break_level = -1; // No groupings have yet been broken
   }
   
-  // not virtual since I haven't put much thought into making this a good base
   ~PrettyPrintPass() {
-    std::cerr << "~PrettyPrintPass" << std::endl;
-    if (!S.empty()) {
-      checkStack(0);
-      advanceleft(stream[left]);
-    }
-    //indent(0);
+    flush(); // whatever's left in the buffer
   }
+  void flush() { print_buffer(buffer.size()); }
   
   std::stringstream ss;
   std::ostream& out;
-  int margin;
-  int spaceLeft;
-  int left, right, leftotal, rightotal;
+  const static short kInfinity = (1<<15) - 1;
+  const int INDENT_WIDTH;
+  int total_chars_enqueued, total_pchars_enqueued;
+  int total_chars_flushed, total_pchars_flushed;
+  int current_level, break_level; 
+  int device_left_margin, device_output_width;
+                                                
+  struct BufEntry {
+    BufEntry(char c, PPToken::Kind k, short l) : character(c), kind(k), level(l) {}
+    char  character;
+    PPToken::Kind kind;
+    short level;
+  };
   
-  int pop(std::deque<int>& S) { int rv = S.back(); S.pop_back(); return rv; }
-  int popbottom(std::deque<int>& S) { int rv = S.front(); S.pop_front(); return rv; }
+  struct BreakInfo {
+    BreakInfo(int l, int e, bool c) : level(l), chars_enqueued(e), connected(c) {}
+    int level;
+    int chars_enqueued;
+    bool  connected;
+  };
   
-  void incrwrap(int& n) { n = (++n) % stream.size(); }
+  std::deque<BreakInfo> break_dq;
+  std::deque<BufEntry>  buffer;
   
-  enum { kFits, kConsistent, kInconsistent };
-  std::deque<std::pair<int, int> > indentStack;
-  
-  std::string str(const std::deque<std::pair<int, int> >& x) {
-    std::stringstream ss;
-    for (int i = 0; i < x.size(); ++i) {
-      if (i > 0) ss << ", ";
-      ss << x[i].first;
-    }
-    return ss.str();
-  }
-  
-  void emit(const PPToken& t) {
-    //std::cerr << "Emit " << str(t.kind) << ": " << t.str << std::endl;
-    if (t.kind == PPToken::kString) {
-      if (t.len > spaceLeft) {
-        //std::cerr << "Pretty printing error: line too long! String was '" << t.str << "'" << std::endl;
-      }
-      
-      spaceLeft = std::max(0, spaceLeft - t.len);
-      out << t.str;
-    }
-    if (t.kind == PPToken::kBlockOpen) {
-      if (t.len > spaceLeft) {
-        if (0) {
-          std::cerr << "\t\tBlock open, Indent stack pushing " << spaceLeft << " - " << t.offset << std::endl;
-          std::cerr << "\t\tindent stack is " << str(indentStack) << std::endl;
-        }
-        indentStack.push_back(std::make_pair(spaceLeft - t.offset, int(t.isConsistent ? kConsistent : kInconsistent)));
-        
-      } else {
-        //std::cerr << "\t\t\tBlock open, Indent stack pushing (fits) " << 0 << std::endl;
-        indentStack.push_back(std::make_pair(0, int(kFits)));
-      }
-    }
-    if (t.kind == PPToken::kBlockClose) {
-      std::pair<int, int> top = indentStack.back(); indentStack.pop_back();
-      //std::cerr << "\t\tReplacing spaceLeft = " << spaceLeft << " with " << top.first << std::endl;
-      spaceLeft = top.first;
-    }
-    if (t.kind == PPToken::kBlank) {
-      std::pair<int, int> top = indentStack.back();
-      if (top.second != kFits) {
-        if (0) {
-          std::cerr << "Emitting non-fitting blank, top.second: " << top.second << "; t.len = " << t.len << " >? " << spaceLeft 
-                    << "; spaceLeft.. " << "(" << top.first << " - " << t.offset << ")" << " = " << (top.first - t.offset)
-                    << "; indent = " << (margin - (top.first - t.offset)) << std::endl;
-          out << "!" << std::endl << "!!";
-        }
-      }
-      
-      switch (top.second) {
-      case kFits:
-        spaceLeft -= t.blankSpace;
-        indent(t.blankSpace);
-        break;
-        
-      case kConsistent:
-        spaceLeft = top.first - t.offset;
-        printNewLine(margin - spaceLeft);
-        out << "^";
-        break;
-        
-      case kInconsistent:
-        if (t.len > spaceLeft) {
-          spaceLeft = top.first - t.offset;
-          printNewLine(margin - spaceLeft);
-          out << "$";
-        } else {
-          spaceLeft -= t.blankSpace;
-          indent(t.blankSpace);
-        }
-        break;
+  void print_buffer(int k) {
+    for (int i = 0; i < k; ++i) {
+      BufEntry temp = buffer.front(); buffer.pop_front();
+      total_chars_flushed += 1;
+      switch (temp.kind) {
+        case PPToken::kConnLinebreak:
+          if (temp.level <= break_level) { out << std::endl << string(device_left_margin, ' '); } break;
+        case PPToken::kNewline:            out << std::endl << string(device_left_margin, ' '); break;
+        case PPToken::kIndent: device_left_margin += INDENT_WIDTH; break;
+        case PPToken::kDedent: device_left_margin -= INDENT_WIDTH; break;
+        default:
+          total_pchars_flushed += 1;
+          out << temp.character;
+          break;
       }
     }
   }
-  
-  void printNewLine(int n) { out << std::endl; indent(n); }
-  void indent(int n) { out << string(n, '_'); }
-  
-  std::vector<PPToken> stream;
-  std::deque<int> S;
-  
-  void advanceleft(const PPToken& t) {
-    //std::cerr << "AdvanceLeft saw " << str(t.kind) << " token '" << t.str << "'" << " of len " << t.len << std::endl;
-    if (t.len >= 0) {
-      //std::cerr << "AdvanceLeft Emitting " << str(t.kind) << " = " << t.str << " ; " << t.len << std::endl;
-      emit(t);
-      if (t.kind == PPToken::kBlank) {
-        leftotal += t.blankSpace;
-      } else if (t.kind == PPToken::kString) {
-        leftotal += t.len;
-      }
-      //std::cerr << "advanceleft " << left << " =? " << right << std::endl;
-      if (left != right) {
-        incrwrap(left);
-        advanceleft(stream[left]);
-      }
-    }
-  }
-  
-  std::string str(PPToken::TokenKind k) {
-    if (k == PPToken::kBlockOpen) return "[";
-    if (k == PPToken::kBlockClose) return "]";
-    if (k == PPToken::kBlank) return "_";
-    return "*";
-  }
-  
+    
+  // left = front, right = back
   void scan(PPToken t) {
-    if (0) {
-      ss << str(t.kind);
-      std::cerr << "scan() saw total stream " << ss.str() << " : " << t.str << std::endl;
-    }
-    //std::cerr << "Saw token type " << str(t.kind) << " : " << t.str << " ; " << t.len << std::endl;
-    
-    int x = 0;
-    if (t.kind == PPToken::kBlockOpen) {
-      if (S.empty()) {
-        leftotal = rightotal = 1;
-        left = right = 0;
-      } else {
-        incrwrap(right);
-      }
-      t.len = -rightotal;
-      stream[right] = t;
-      //std::cerr << "Block open, len " << t.len << "; right = " << right << std::endl;
-      S.push_back(right);
-    } else
-    if (t.kind == PPToken::kBlockClose) {
-      if (S.empty()) {
-        assert(t.len == 0);
-        emit(t);
-      } else {
-        incrwrap(right);
-        t.len = -1;
-        stream[right] = t;
-        S.push_back(right);  
-      }
-    } else
-    if (t.kind == PPToken::kBlank) {
-      if (S.empty()) {
-        leftotal = rightotal = 1;
-        left = right = 0;
-      } else {
-        incrwrap(right);
-        checkStack(0);
-        S.push_back(right);
-        t.len = -rightotal;
-        stream[right] = t;
-        rightotal += t.blankSpace;
-      }
-    } else if (t.kind == PPToken::kString) {
-      if (S.empty()) {
-        emit(t);
-      } else {
-        incrwrap(right);
-        t.len = t.str.size();
-        stream[right] = t;
-        rightotal += t.len;
-        
-        checkStream();
-      }
-    }
-  }
-  
-  void checkStream() {
-    if (rightotal - leftotal > spaceLeft) {
-      if (!S.empty()) {
-        if (left == S.front()) {
-          stream[popbottom(S)].len = 9999;
+    switch (t.kind) {
+    case PPToken::kString:
+      for (int i = 0; i < t.str.size(); ++i) {
+        char c = t.str[i];
+        if (c == '\n') { // Handle explicit newline embedded in string
+          break_dq.clear();
+          break_level = current_level;
+          buffer.push_back(BufEntry(c, PPToken::kNewline, kInfinity)); total_chars_enqueued += 1;
+          print_buffer(buffer.size());
+          continue;
         }
+        
+        if ((total_pchars_enqueued - total_pchars_flushed) + device_left_margin
+          >= device_output_width) { // must split line
+          if (!break_dq.empty()) { // split line at a break
+            BreakInfo temp = break_dq.back(); break_dq.pop_back();
+            break_level = temp.level;
+            print_buffer(temp.chars_enqueued - total_chars_flushed);
+            if (!temp.connected) {
+              out << std::endl;
+            }
+            break_level = std::min(break_level, current_level);
+          } else {
+            std::cerr << "No breaks to take!" << std::endl;
+          }
+        }
+        
+        buffer.push_back(BufEntry(t.str[i], t.kind, kInfinity));
+        total_chars_enqueued += 1;
+        total_pchars_enqueued += 1;
       }
-      advanceleft(stream[left]);
-      if (left != right) {
-        checkStream();
+      break;
+    case PPToken::kOpen:  current_level++; break;
+    case PPToken::kClose: current_level--; break;
+    case PPToken::kIndent: buffer.push_back(BufEntry('>', t.kind, kInfinity)); total_chars_enqueued += 1; break;
+    case PPToken::kDedent: buffer.push_back(BufEntry('<', t.kind, kInfinity)); total_chars_enqueued += 1; break;
+    case PPToken::kNewline:
+      break_dq.clear();
+      break_level = current_level;
+      buffer.push_back(BufEntry('\n', t.kind, kInfinity)); total_chars_enqueued += 1;
+      print_buffer(buffer.size());
+      break;
+    case PPToken::kOptLinebreak:
+      while (!break_dq.empty() && ( break_dq.front().level >  current_level
+                                || (break_dq.front().level == current_level
+                                 && !break_dq.back().connected))) {
+        // discard breaks we are no longer interested in
+        break_dq.pop_front();
       }
-    }
-  }
-  
-  void checkStack(int k) {
-    if (S.empty()) return;
-    
-    const PPToken& t = stream[S.back()];
-    if (t.kind == PPToken::kBlockOpen) {
-      if (k > 0) {
-        int x = pop(S);
-        //std::cerr << "\t\t\tSetting stream["<<x<<"].len to " << "(" << t.len << "+"<<rightotal<<") = " << (t.len + rightotal) << std::endl;
-        stream[x].len = t.len + rightotal;
-        checkStack(k - 1);
+      
+      break_dq.push_front(BreakInfo(total_chars_enqueued, current_level, false));
+      break;
+    case PPToken::kConnLinebreak:
+      if (break_level < current_level) {
+        while (!break_dq.empty() && break_dq.front().level >= current_level) {
+          // discard breaks we're not interested in
+          break_dq.pop_front();
+        }
+        buffer.push_back(BufEntry('\n', t.kind, current_level));
+        total_chars_enqueued += 1;
+        break_dq.push_front(BreakInfo(total_chars_enqueued, current_level, true));
+      } else {
+        break_dq.clear();
+        buffer.push_back(BufEntry('\n', PPToken::kNewline, kInfinity));
+        total_chars_enqueued += 1;
+        print_buffer(buffer.size());
       }
-    } else if (t.kind == PPToken::kBlockClose) {
-      stream[pop(S)].len = 1;
-      checkStack(k + 1);
-    } else {
-      int x = pop(S);
-      //std::cerr << "\t\t\tSetting stream["<<x<<"].len = " << (t.len + rightotal) << std::endl;
-      stream[x].len = t.len + rightotal;
-      if (k > 0) {
-        checkStack(k);
-      }
-    }
+      break;
+    } // end switch
   }
 };
 

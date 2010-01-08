@@ -67,6 +67,7 @@ void PrettyPrintPass::visit(PrototypeAST* ast) {
 // fnProto fnBody
 void PrettyPrintPass::visit(FnAST* ast) {
   ast->Proto->accept(this);
+  scan(tOptNewline);
   scan(PPToken(" "));
   ast->Body->accept(this);
 }
@@ -74,8 +75,7 @@ void PrettyPrintPass::visit(FnAST* ast) {
 // if $0 { $1 } else { $2 }
 void PrettyPrintPass::visit(IfExprAST* ast) {
   //scan(tBlockOpen);
-  scan(PPToken("if"));
-  scan(PPToken(" "));
+  scan(PPToken("if "));
   //ast->parts[0]->accept(this);
   ast->ifExpr->accept(this);
   //scan(tBlockClose);
@@ -85,9 +85,7 @@ void PrettyPrintPass::visit(IfExprAST* ast) {
   //ast->parts[1]->accept(this);
   ast->thenExpr->accept(this);
   
-  scan(PPToken(" "));
-  scan(PPToken("else"));
-  scan(PPToken(" "));
+  scan(PPToken(" else "));
   
   ast->elseExpr->accept(this);
   //ast->parts[2]->accept(this);
@@ -98,12 +96,8 @@ void PrettyPrintPass::visit(SubscriptAST* ast) {
   //scan(tBlockOpen);
   ast->parts[0]->accept(this);
   
-  scan(PPToken(" "));
   scan(PPToken("["));
-  scan(PPToken(" "));
   ast->parts[1]->accept(this);
-  
-  scan(PPToken(" "));
   scan(PPToken("]"));
   //scan(tBlockClose);
 }
@@ -112,24 +106,21 @@ void PrettyPrintPass::visit(SubscriptAST* ast) {
 void PrettyPrintPass::visit(SeqAST* ast) {
   scan(tBlockOpen);
   scan(PPToken("{"));
-  scan(PPToken(" "));
-  bool first = true;
+  scan(tIndent);
+  
   for (int i = 0; i < ast->parts.size(); ++i) {
-    if (!first) {
+    ast->parts[i]->accept(this);
+    
+    if (i != ast->parts.size() - 1) {
       scan(PPToken(";"));
-      scan(PPToken(" ", true));
-      /*
-      if (CallAST* wasCall = dynamic_cast<CallAST*>(ast->parts[i-1])) {
-        scan(PPToken("\n"));
+      if (CallAST* wasCall = dynamic_cast<CallAST*>(ast->parts[i])) {
+        scan(tNewline);
       } else {
         scan(PPToken(" "));
       }
-      */
     }
-    first = false;
-    ast->parts[i]->accept(this);
-    scan(PPToken(" "));
   }
+  scan(tDedent);
   scan(PPToken("}"));
   scan(tBlockClose);
 }
@@ -139,9 +130,7 @@ void PrettyPrintPass::visit(CallAST* ast) {
   scan(tBlockOpen);
   ast->parts[0]->accept(this);
   
-  scan(PPToken(" "));
   scan(PPToken("("));
-  scan(PPToken(" "));
   bool first = true;
   for (int i = 1; i < ast->parts.size(); ++i) {
     if (!first) {
@@ -151,7 +140,6 @@ void PrettyPrintPass::visit(CallAST* ast) {
     first = false;
     ast->parts[i]->accept(this);
   }
-  scan(PPToken(" "));
   scan(PPToken(")"));
   scan(tBlockClose);
 }
