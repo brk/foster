@@ -100,6 +100,16 @@ void initModuleTypeNames() {
   //  llvm::PointerType::get(Type::getInt8Ty(gcon), DEFAULT_ADDRESS_SPACE));
 }
 
+void FosterASTVisitor::visitChildren(ExprAST* ast) {
+  for (int i = 0; i < ast->parts.size(); ++i) {
+    if (ast->parts[i]) {
+      ast->parts[i]->accept(this);
+    } else {
+      std::cerr << "visitChildren saw null part " << i << " for ast node " << ast << std::endl;
+    }
+  }
+}
+
 llvm::Constant* IntAST::getConstantValue() {
   return ConstantInt::get(this->type, APInt(32u, Clean, Base));
 }

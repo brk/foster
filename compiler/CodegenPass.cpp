@@ -57,9 +57,9 @@ void CodegenPass::visit(VariableAST* ast) {
   }
 }
 
-void CodegenPass::visit(BinaryExprAST* ast) {
-  ast->LHS->accept(this); Value* VL = ast->LHS->value;
-  ast->RHS->accept(this); Value* VR = ast->RHS->value;
+void CodegenPass::visit(BinaryOpExprAST* ast) {
+  Value* VL = ast->parts[ast->kLHS]->value;
+  Value* VR = ast->parts[ast->kRHS]->value;
   
   const std::string& op = ast->op;
   
@@ -115,22 +115,11 @@ void CodegenPass::visit(PrototypeAST* ast) {
               << ", associated with " << AI << std::endl;
   }
 
+  std::cout << "\tdone codegen proto " << ast->Name << std::endl;
   ast->value = F;
 }
 
-void CodegenPass::visit(SeqAST* ast) {
-  Value* V = NULL;
-  for (int i = 0; i < ast->exprs.size(); ++i) {
-    if (ast->exprs[i]) {
-      (ast->exprs[i])->accept(this);
-      V = ast->exprs[i]->value;
-    } else {
-      std::cerr << "SeqAST::Codegen() saw null seq expression " << i << std::endl;
-      break;
-    }
-  }
-  ast->value = V;
-}
+void CodegenPass::visit(SeqAST* ast) { ast->value = ast->parts.back()->value; }
 
 void CodegenPass::visit(FnAST* ast) {
   std::cout << "Pushing scope ... " << ast->Proto->Name  << std::endl;
@@ -237,25 +226,14 @@ Value* getElementFromStruct(Value* structValue, Value* idxValue) {
 }
 
 void CodegenPass::visit(SubscriptAST* ast) {
-  std::cerr << "codegen subscript ast " << (ast->base) << "  [ " << (ast->index) << " ] " << std::endl;
-  std::cerr <<                "\t\t\t" << *(ast->base) <<   "[" << *(ast->index) << "]" << std::endl;
-  
-  (ast->index)->accept(this);
-  std::cerr << "codegen subscript value is " << ast->index->value << std::endl;
-  
-  (ast->base)->accept(this);
-  std::cerr << "codgen base value is " << ast->base->value << " = " << *(ast->base->value) << " : " << *(ast->base->value->getType()) << std::endl;
-  
-  ast->value = getElementFromStruct(ast->base->value, ast->index->value);
-  
-  std::cerr << "done codegen subscript " << std::endl;
+  ast->value = getElementFromStruct(ast->parts[0]->value, ast->parts[1]->value);
 }
 
 ////////////////////////////////////////////////////////////////////
 
 void appendArg(std::vector<Value*>& valArgs, Value* V, const FunctionType* FT) {
-  std::cout << "actual arg " << valArgs.size() << " = " << *V << " has type " << *(V->getType()) << std::endl;
-  std::cout << "formal arg " << valArgs.size() << " has type " << *(FT->getParamType(valArgs.size())) << std::endl;
+  //std::cout << "actual arg " << valArgs.size() << " = " << *V << " has type " << *(V->getType()) << std::endl;
+  //std::cout << "formal arg " << valArgs.size() << " has type " << *(FT->getParamType(valArgs.size())) << std::endl;
   
   const Type* formalType = FT->getParamType(valArgs.size());
   if (llvm::isa<llvm::StructType>(formalType)) {
@@ -289,15 +267,16 @@ void unpackArgs(std::vector<Value*>& valArgs, Value* V, const FunctionType* FT) 
 }
 
 void CodegenPass::visit(CallAST* ast) {
-  std::cout << "\t" << "Codegen CallAST "  << (ast->base) << std::endl;
-  std::cout << "\t\t\t"  << *(ast->base) << std::endl;
+  //std::cout << "\t" << "Codegen CallAST "  << (ast->base) << std::endl;
+  //std::cout << "\t\t\t"  << *(ast->base) << std::endl;
   
-  (ast->base)->accept(this);
-  Value* FV = ast->base->value;
+  ExprAST* base = ast->parts[0];
+  base->accept(this);
+  Value* FV = base->value;
   
   Function* F = llvm::dyn_cast_or_null<Function>(FV);
   if (!F) {
-    std::cerr << "base: " << *(ast->base) << "; FV: " << FV << std::endl;
+    std::cerr << "base: " << *base << "; FV: " << FV << std::endl;
     std::cerr << "Unknown function referenced";
     return;
   }
@@ -305,17 +284,19 @@ void CodegenPass::visit(CallAST* ast) {
   const FunctionType* FT = F->getFunctionType();
   
   std::vector<Value*> valArgs;
-  for (int i = 0, argNum = 0; i < ast->args.size(); ++i) {
+  for (int i = 1, argNum = 0; i < ast->parts.size(); ++i) {
     // Args checked for nulls during typechecking
-    UnpackExprAST* u = dynamic_cast<UnpackExprAST*>(ast->args[i]);
+    ExprAST* arg = ast->parts[i];
     
-    ExprAST* base = (u != NULL) ? u->body : ast->args[i];
-    std::cout << "CallAST arg " << i << " u? " << u << std::endl;
+    UnpackExprAST* u = dynamic_cast<UnpackExprAST*>(arg);
+    if (u != NULL) {
+      arg = u->parts[0]; // Replace unpack expr with tuple expr
+    }
     
-    base->accept(this);
-    Value* V = base->value;
+    arg->accept(this);
+    Value* V = arg->value;
     if (!V) {
-      std::cerr << "Error: null value for argument " << i << " found in CallAST codegen!" << std::endl;
+      std::cerr << "Error: null value for argument " << argNum << " found in CallAST codegen!" << std::endl;
       return;
     }
     
@@ -327,7 +308,7 @@ void CodegenPass::visit(CallAST* ast) {
   }
   
   if (F->arg_size() != valArgs.size()) {
-    std::cerr << "Function " << (*(ast->base)) <<  " got " << valArgs.size() << " args, expected "<< F->arg_size();
+    std::cerr << "Function " << *base <<  " got " << valArgs.size() << " args, expected "<< F->arg_size();
     return;
   }
   
@@ -351,9 +332,9 @@ void CodegenPass::visit(ArrayExprAST* ast) {
 
   // Constant Definitions
   std::vector<llvm::Constant*> arrayElements;
-  SeqAST* body = dynamic_cast<SeqAST*>(ast->body);
-  for (int i = 0; i < body->exprs.size(); ++i) {
-    IntAST* v = dynamic_cast<IntAST*>(body->exprs[i]);
+  SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
+  for (int i = 0; i < body->parts.size(); ++i) {
+    IntAST* v = dynamic_cast<IntAST*>(body->parts[i]);
     if (!v) {
       std::cerr << "Array initializer was not IntAST but instead " << *v << std::endl;
       return;
@@ -383,13 +364,13 @@ void CodegenPass::visit(TupleExprAST* ast) {
   // Allocate tuple space
   llvm::AllocaInst* pt = builder.CreateAlloca(tupleType, 0, "s");
   
-  SeqAST* body = dynamic_cast<SeqAST*>(ast->body);
-  for (int i = 0; i < body->exprs.size(); ++i) {
-    std::cout << "Tuple GEP init i = " << i << "/" << body->exprs.size() << std::endl;
+  SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
+  for (int i = 0; i < body->parts.size(); ++i) {
+    //std::cout << "Tuple GEP init i = " << i << "/" << body->exprs.size() << std::endl;
     
     Value* dst = builder.CreateConstGEP2_32(pt, 0, i, "gep");
-    body->exprs[i]->accept(this);
-    builder.CreateStore(body->exprs[i]->value, dst, /*isVolatile=*/ false);
+    body->parts[i]->accept(this);
+    builder.CreateStore(body->parts[i]->value, dst, /*isVolatile=*/ false);
   }
   
   ast->value = pt;

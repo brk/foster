@@ -65,9 +65,9 @@ void TypecheckPass::visit(VariableAST* ast) {
   if (ast->type) std::cerr << "\t\t" << *(ast->type) << std::endl;
 }
 
-void TypecheckPass::visit(BinaryExprAST* ast) {
-  ast->LHS->accept(this); const llvm::Type* TL = ast->LHS->type;
-  ast->RHS->accept(this); const llvm::Type* TR = ast->RHS->type;
+void TypecheckPass::visit(BinaryOpExprAST* ast) {
+  const llvm::Type* TL = ast->parts[ast->kLHS]->type;
+  const llvm::Type* TR = ast->parts[ast->kRHS]->type;
 
   const std::string& op = ast->op;
   
@@ -144,26 +144,24 @@ void TypecheckPass::visit(IfExprAST* ast) {
 }
 
 void TypecheckPass::visit(SubscriptAST* ast) {
-  if (!ast->index) {
+  if (!ast->parts[1]) {
     std::cerr << "Error: SubscriptAST had null index" << std::endl;
     return;
   }
   
-  ast->index->accept(this);
-  IntAST* idx = dynamic_cast<IntAST*>(ast->index);
+  ExprAST* index = ast->parts[1];
+  IntAST* idx = dynamic_cast<IntAST*>(index);
   if (!idx) {
     std::cerr << "Error: SubscriptAST needs constant int (IntAST) index; got '"
-              << *(ast->index) << "'";
-    if (ast->index->type) {
-      std::cerr << " of type " << *(ast->index->type);
+              << *(index) << "'";
+    if (index->type) {
+      std::cerr << " of type " << *(index->type);
     }
     std::cerr << std::endl;
     return;
   }
   
-  ast->base->accept(this);
-  
-  const Type* baseType = ast->base->type;
+  const Type* baseType = ast->parts[0]->type;
   if (!baseType) {
     std::cerr << "Error: Cannot index into object of null type " << std::endl;
     return;
@@ -177,7 +175,6 @@ void TypecheckPass::visit(SubscriptAST* ast) {
   const llvm::CompositeType* compositeTy = llvm::dyn_cast<llvm::CompositeType>(baseType);
   if (compositeTy != NULL) {
     // Check to see that the given index is valid for this type
-    idx->accept(this);
     ConstantInt* cidx = llvm::dyn_cast<ConstantInt>(idx->getConstantValue());
     const APInt& vidx = cidx->getValue();
     
@@ -211,31 +208,31 @@ void TypecheckPass::visit(SubscriptAST* ast) {
 
 void TypecheckPass::visit(SeqAST* ast) {
   bool success = true;
-  for (int i = 0; i < ast->exprs.size(); ++i) {
-    if (ast->exprs[i]) {
-      ast->exprs[i]->accept(this);
-      if (!ast->exprs[i]->type) { success = false; }
+  for (int i = 0; i < ast->parts.size(); ++i) {
+    if (ast->parts[i]) {
+      if (!ast->parts[i]->type) { success = false; }
     } else {
       std::cerr << "Null expr in SeqAST" << std::endl;
       return;
     }
   }
 
-  if (!success || ast->exprs.empty()) { return; }
+  if (!success || ast->parts.empty()) { return; }
 
-  ast->type = ast->exprs[ast->exprs.size() - 1]->type;
+  ast->type = ast->parts.back()->type;
 }
 
 void TypecheckPass::visit(CallAST* ast) {
-  if (!ast->base) {
+  ExprAST* base = ast->parts[0];
+  if (!base) {
     std::cerr << "Error: CallAST has null base!" << std::endl;
     return;
   }
-  
-  ast->base->accept(this);
-  const Type* baseType = ast->base->type;
+ 
+  base->accept(this);
+  const Type* baseType = base->type;
   if (baseType == NULL) {
-    std::cerr << "Error: CallAST base expr had null type:\n\t" << *(ast->base) << std::endl;
+    std::cerr << "Error: CallAST base expr had null type:\n\t" << *(base) << std::endl;
     return;
   }
   
@@ -246,20 +243,21 @@ void TypecheckPass::visit(CallAST* ast) {
   }
   
   vector<const Type*> actualTypes;
-  for (int i = 0; i < ast->args.size(); ++i) {
-    if (!ast->args[i]) {
+  for (int i = 1; i < ast->parts.size(); ++i) {
+    ExprAST* arg = ast->parts[i];
+    if (!arg) {
       std::cerr << "Null arg " << i << " for CallAST" << std::endl;
       return;
     }
     
-    ast->args[i]->accept(this);
-    const Type* argTy = ast->args[i]->type;
+    arg->accept(this);
+    const Type* argTy = arg->type;
     if (!argTy) {
-      std::cerr << "Error: CallAST typecheck: arg " << i << " (" << *(ast->args[i]) << ") had null type" << std::endl;
+      std::cerr << "Error: CallAST typecheck: arg " << i << " (" << *(arg) << ") had null type" << std::endl;
       return;
     }
     
-    if (UnpackExprAST* u = dynamic_cast<UnpackExprAST*>(ast->args[i])) {
+    if (UnpackExprAST* u = dynamic_cast<UnpackExprAST*>(arg)) {
       if (const llvm::StructType* st = llvm::dyn_cast<llvm::StructType>(argTy)) {
         for (int j = 0; j < st->getNumElements(); ++j) {
           actualTypes.push_back(st->getElementType(j));
@@ -292,13 +290,13 @@ void TypecheckPass::visit(CallAST* ast) {
   
   if (!success) {
     std::cerr << "Error in typechecking call of"
-              << "\n\t" << *(ast->base) << "\tof type\t" << *(baseFT) << "\t with args ";
-    for (int i = 0; i < numParams; ++i) {
+              << "\n\t" << *(ast->parts[0]) << "\tof type\t" << *(baseFT) << "\t with args ";
+    for (int i = 1; i < ast->parts.size(); ++i) {
       std::cerr << "\n\t" << i << ":\t";
-      if (const ExprAST* arg = ast->args[i]) {
-        std::cerr << *(ast->args[i]) << " : ";
-        if (const Type* argType = ast->args[i]->type) {
-          std::cerr << *(argType) << std::endl;
+      if (ExprAST* arg = ast->parts[i]) {
+        std::cerr << *arg << " : ";
+        if (arg->type) {
+          std::cerr << *(arg->type) << std::endl;
         } else {
           std::cerr << "<NULL>" << std::endl;
         }
@@ -314,21 +312,19 @@ void TypecheckPass::visit(CallAST* ast) {
 }
 
 void TypecheckPass::visit(ArrayExprAST* ast) {
-  if (!ast->body) {
-    std::cerr << "Array expr has null body!" << std::endl;
-    return;
-  }
-  
-  ast->body->accept(this);
-  
   bool success = true;
   std::map<const Type*, bool> fieldTypes;
   
-  SeqAST* body = dynamic_cast<SeqAST*>(ast->body);
-  int numElements = body->exprs.size();
+  SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
+  if (!body) {
+    std::cerr << "Typecheck of array expr failed because ast.parts[0] = " << ast->parts[0] << " was not a Seq!" << std::endl;
+    return;
+  }
+  
+  int numElements = body->parts.size();
   const Type* elementType = NULL;
   for (int i = 0; i < numElements; ++i) {
-    const Type* ty =  body->exprs[i]->type;
+    const Type* ty =  body->parts[i]->type;
     if (!ty) {
       std::cerr << "Array expr had null constituent type for subexpr " << i << std::endl;
       success = false;
@@ -356,19 +352,16 @@ void TypecheckPass::visit(ArrayExprAST* ast) {
 }
 
 void TypecheckPass::visit(TupleExprAST* ast) {
-  if (!ast->body) {
-    std::cerr << "Tuple expr has null body!" << std::endl;
+  SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
+  if (!body) {
+    std::cerr << "Error: typechecking tuple failed; body is not a Seq!" << std::endl;
     return;
   }
   
-  ast->body->accept(this);
-  
   bool success = true;
   std::vector<const Type*> tupleFieldTypes;
-  
-  SeqAST* body = dynamic_cast<SeqAST*>(ast->body);
-  for (int i = 0; i < body->exprs.size(); ++i) {
-    const Type* ty =  body->exprs[i]->type;
+  for (int i = 0; i < body->parts.size(); ++i) {
+    const Type* ty =  body->parts[i]->type;
     if (!ty) {
       std::cerr << "Tuple expr had null constituent type for subexpr " << i << std::endl;
       success = false;
@@ -384,26 +377,21 @@ void TypecheckPass::visit(TupleExprAST* ast) {
 
 
 void TypecheckPass::visit(UnpackExprAST* ast) {
-  if (!ast->body) {
-    std::cerr << "Error: UnpackExprAST has null body!" << std::endl;
-  }
-  
-  ast->body->accept(this);
-  if (!llvm::isa<llvm::StructType>(ast->body->type)) {
-    std::cerr << "Cannot unpack non-struct expression:\n\t" << *(ast->body)
-              << "of type\n\t" << *(ast->body->type) << std::endl;
+  if (!llvm::isa<llvm::StructType>(ast->parts[0]->type)) {
+    std::cerr << "Cannot unpack non-struct expression:\n\t" << *(ast->parts[0])
+              << "of type\n\t" << *(ast->parts[0]->type) << std::endl;
   } else {
     // This is really just a valid non-null pointer; since an unpack
     // "expression" is syntactic sugar for a complex expression that
     // generates multiple values, it doesn't have a single well-defined type...
     // But this is the closest thing, and is useful for type checking calls.
-    ast->type = ast->body->type;
+    ast->type = ast->parts[0]->type;
   }
 }
 
 void TypecheckPass::visit(BuiltinCompilesExprAST* ast) {
-  ast->body->accept(this);
-  ast->status = (ast->body->type != NULL) ? ast->kWouldCompile : ast->kWouldNotCompile;
+  ast->parts[0]->accept(this);
+  ast->status = (ast->parts[0]->type != NULL) ? ast->kWouldCompile : ast->kWouldNotCompile;
   ast->type = LLVMTypeFor("i1");
 }
 

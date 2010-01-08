@@ -5,38 +5,34 @@
 #ifndef H_4b3f256206be38_88233154
 #define H_4b3f256206be38_88233154
 
+struct ExprAST;
+
 struct FnAST;
+struct IntAST;
 struct SeqAST;
 struct BoolAST;
 struct CallAST;
-struct IntAST ;
 struct IfExprAST;
 struct VariableAST;
 struct ArrayExprAST;
 struct PrototypeAST;
 struct TupleExprAST;
 struct SubscriptAST;
-struct BinaryExprAST;
 struct UnpackExprAST;
+struct BinaryOpExprAST;
 struct BuiltinCompilesExprAST;
 
 struct FosterASTVisitor {
-  virtual void visit(FnAST* ast) = 0;
-  virtual void visit(SeqAST* ast) = 0;
-  virtual void visit(BoolAST* ast) = 0;
-  virtual void visit(CallAST* ast) = 0;
-  virtual void visit(IntAST*  ast) = 0;
-  virtual void visit(IfExprAST* ast) = 0;
-  virtual void visit(VariableAST* ast) = 0;
-  virtual void visit(ArrayExprAST* ast) = 0;
-  virtual void visit(PrototypeAST* ast) = 0;
-  virtual void visit(TupleExprAST* ast) = 0;
-  virtual void visit(SubscriptAST* ast) = 0;
-  virtual void visit(BinaryExprAST* ast) = 0;
-  virtual void visit(UnpackExprAST* ast) = 0;
-  virtual void visit(BuiltinCompilesExprAST* ast) = 0;
+  void visitChildren(ExprAST* ast);
+
+  #define FOSTER_AST_VISITOR_DEFAULT_IMPL = 0
+  #include "FosterASTVisitor.decls.inc.h"
+  #undef  FOSTER_AST_VISITOR_DEFAULT_IMPL
 };
 
+// This has to be included after the declaration for FosterASTVisitor
+// because the classes in FosterAST depend on these declarations for
+// the double-dispatch portion of the Visitor pattern.
 #include "FosterAST.h"
 
 #endif // header guard

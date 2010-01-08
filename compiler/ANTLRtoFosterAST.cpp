@@ -287,8 +287,8 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
   if (token == UNPACK) { return new UnpackExprAST(ExprAST_from(child(tree, 0), depth + 1, infn)); }
   
   if (binaryOps[text]) {
-    return new BinaryExprAST(text, ExprAST_from(child(tree, 0), depth + 1, infn),
-                                   ExprAST_from(child(tree, 1), depth + 1, infn));
+    return new BinaryOpExprAST(text, ExprAST_from(child(tree, 0), depth + 1, infn),
+                                     ExprAST_from(child(tree, 1), depth + 1, infn));
   }
   if (token == IF) {
     return new IfExprAST(ExprAST_from(child(tree, 0), depth+1, infn),
