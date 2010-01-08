@@ -274,13 +274,9 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
     }
   }
   
-  if (token == COMPILES) {
-    return new BuiltinCompilesExprAST(ExprAST_from(child(tree, 0), depth, infn));
-  }
-  
-  if (token == TUPLE) {
-    return new TupleExprAST(ExprAST_from(child(tree, 0), depth + 1, infn));
-  }
+  if (token == COMPILES) { return new BuiltinCompilesExprAST(ExprAST_from(child(tree, 0), depth, infn)); }
+  if (token == ARRAY) { return new ArrayExprAST(ExprAST_from(child(tree, 0), depth + 1, infn)); }
+  if (token == TUPLE) { return new TupleExprAST(ExprAST_from(child(tree, 0), depth + 1, infn)); }
   
   if (binaryOps[text]) {
     return new BinaryExprAST(text, ExprAST_from(child(tree, 0), depth + 1, infn),
@@ -291,13 +287,8 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
                          ExprAST_from(child(tree, 1), depth+1, infn),
                          ExprAST_from(child(tree, 2), depth+1, infn));
   }
-  if (token == FN) {
-    return parseFn("<anon_fn_%d>", tree, depth, infn);
-  }
-
-  if (text == "false" || text == "true") {
-    return new BoolAST(text);
-  }
+  if (token == FN) { return parseFn("<anon_fn_%d>", tree, depth, infn); }
+  if (text == "false" || text == "true") { return new BoolAST(text); }
   
   /*
   if (text == "nil") {

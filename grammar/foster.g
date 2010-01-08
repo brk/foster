@@ -13,7 +13,7 @@ tokens {
 	COMPILES='__COMPILES__';
 
 	FN; OUT; BODY; GIVEN; GIVES; IDS; SEQ; FIELD_LIST; INT; RAT; EXPRS; NAME;
-	TRAILERS; CALL; TUPLE; SUBSCRIPT; LOOKUP; FORMAL;
+	TRAILERS; CALL; TUPLE; SUBSCRIPT; LOOKUP; FORMAL; ARRAY;
 }
 
 program			:	expr+ EOF -> ^(EXPRS expr+);
@@ -24,15 +24,16 @@ requires		:	'given' seq;
 ensures			:	'gives' seq;
 num			:	( int_num -> ^(INT int_num)
 				| rat_num -> ^(RAT rat_num));
-formal                  :        i=IDENT (':' t=IDENT) -> ^(FORMAL $i $t); 	
+formal                  :        i=IDENT (':' t=expr) -> ^(FORMAL $i $t); 	
 formals			:	(      formal+
 				 | '(' formal (','? formal)* ')'
 				) -> formal*;
 
-literal			:	TRUE | FALSE | num | tuple;
+literal			:	TRUE | FALSE | num | tuple | array;
 name			:	n=IDENT -> ^(NAME $n);
 str	                :       STR;
 tuple	                :       'tuple' seq -> ^(TUPLE seq);
+array                   :       'array' seq -> ^(ARRAY seq);	
 
 ifexpr                  :       'if' cond=expr thenseq=seq 'else' elseseq=seq
 					-> ^(IF $cond $thenseq $elseseq);

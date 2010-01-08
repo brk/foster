@@ -12,6 +12,7 @@ struct CallAST;
 struct IntAST ;
 struct IfExprAST;
 struct VariableAST;
+struct ArrayExprAST;
 struct PrototypeAST;
 struct TupleExprAST;
 struct SubscriptAST;
@@ -26,6 +27,7 @@ struct FosterASTVisitor {
   virtual void visit(IntAST*  ast) = 0;
   virtual void visit(IfExprAST* ast) = 0;
   virtual void visit(VariableAST* ast) = 0;
+  virtual void visit(ArrayExprAST* ast) = 0;
   virtual void visit(PrototypeAST* ast) = 0;
   virtual void visit(TupleExprAST* ast) = 0;
   virtual void visit(SubscriptAST* ast) = 0;

@@ -324,8 +324,7 @@ struct SeqAST : public ExprAST {
 
 struct TupleExprAST : public ExprAST {
   SeqAST* body;
-  Value* cachedValue;
-  explicit TupleExprAST(ExprAST* expr) : cachedValue(NULL) {
+  explicit TupleExprAST(ExprAST* expr) {
     body = dynamic_cast<SeqAST*>(expr);
   }
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
@@ -334,6 +333,20 @@ struct TupleExprAST : public ExprAST {
       return out << "(tuple)";
     }
     return out << "(tuple " << *body << ")";
+  }
+};
+
+struct ArrayExprAST : public ExprAST {
+  SeqAST* body;
+  explicit ArrayExprAST(ExprAST* expr) {
+    body = dynamic_cast<SeqAST*>(expr);
+  }
+  virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
+  virtual std::ostream& operator<<(std::ostream& out) {
+    if (!body) {
+      return out << "(array)";
+    }
+    return out << "(array " << *body << ")";
   }
 };
 

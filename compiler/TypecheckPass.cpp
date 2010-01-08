@@ -16,6 +16,7 @@ using llvm::Value;
 using llvm::ConstantInt;
 
 #include <vector>
+#include <map>
 
 using std::vector;
 
@@ -110,9 +111,20 @@ void TypecheckPass::visit(IfExprAST* ast) {
 }
 
 void TypecheckPass::visit(SubscriptAST* ast) {
+  if (!ast->index) {
+    std::cerr << "Error: SubscriptAST had null index" << std::endl;
+    return;
+  }
+  
+  ast->index->accept(this);
   IntAST* idx = dynamic_cast<IntAST*>(ast->index);
   if (!idx) {
-    std::cerr << "Error: SubscriptAST had non-constant index." << std::endl;
+    std::cerr << "Error: SubscriptAST needs constant int (IntAST) index; got '"
+              << *(ast->index) << "'";
+    if (ast->index->type) {
+      std::cerr << " of type " << *(ast->index->type);
+    }
+    std::cerr << std::endl;
     return;
   }
   
@@ -128,24 +140,40 @@ void TypecheckPass::visit(SubscriptAST* ast) {
     std::cerr << "Error: Cannot index into non-aggregate type " << *baseType << std::endl;
     return;
   }
-  const llvm::StructType* structTy = llvm::dyn_cast<llvm::StructType>(baseType);
-  if (!structTy) {
-    std::cerr << "Error: attempt to index into a non-struct type " << *baseType << std::endl;
-    return;
+  
+  const llvm::CompositeType* compositeTy = llvm::dyn_cast<llvm::CompositeType>(baseType);
+  if (compositeTy != NULL) {
+    // Check to see that the given index is valid for this type
+    idx->accept(this);
+    ConstantInt* cidx = llvm::dyn_cast<ConstantInt>(idx->getConstantValue());
+    const APInt& vidx = cidx->getValue();
+    
+    if (!vidx.isSignedIntN(64)) { // an exabyte of memory should be enough for anyone!
+      std::cerr << "Error: Indices must fit in 64 bits; tried to index with '" << *cidx << "'" << std::endl;
+      return;
+    }
+    
+    if (!compositeTy->indexValid(cidx) || vidx.isNegative()) {
+      std::cerr << "Error: attempt to index composite with invalid index '" << *cidx << "'" << std::endl;
+      return;
+    }
+    
+    // LLVM doesn't do bounds checking for arrays, but we do!
+    if (const llvm::ArrayType* aTy = llvm::dyn_cast<llvm::ArrayType>(baseType)) {
+      uint64_t numElements = aTy->getNumElements();
+      uint64_t idx_u64 = vidx.getZExtValue();
+      if (idx_u64 >= numElements) {
+        std::cerr << "Error: attempt to index array[" << numElements << "]"
+                  << " with invalid index '" << idx_u64 << "'" << std::endl;
+        return;
+      }
+    }
+    
+    std::cout << "Indexing composite with index " << *cidx << "; neg? " << vidx.isNegative() << std::endl;
+    ast->type = compositeTy->getTypeAtIndex(cidx);
+  } else {
+    std::cerr << "Error: attempt to index into a non-composite type " << *baseType << std::endl;
   }
-  
-  idx->accept(this);
-  ConstantInt* cidx = llvm::dyn_cast<ConstantInt>(idx->getConstantValue());
-  const APInt& vidx = cidx->getValue();
-  
-  if (!structTy->indexValid(cidx) || vidx.isNegative()) {
-    std::cerr << "Error: attempt to index struct with invalid index '" << *cidx << "'" << std::endl;
-    return;
-  }
-  
-  std::cout << "Indexing struct with index " << *cidx << "; neg? " << vidx.isNegative() << std::endl;
-  
-  ast->type = structTy->getTypeAtIndex(cidx);
 }
 
 void TypecheckPass::visit(SeqAST* ast) {
@@ -217,6 +245,47 @@ void TypecheckPass::visit(CallAST* ast) {
   }
 }
 
+void TypecheckPass::visit(ArrayExprAST* ast) {
+  if (!ast->body) {
+    std::cerr << "Array expr has null body!" << std::endl;
+    return;
+  }
+  
+  ast->body->accept(this);
+  
+  bool success = true;
+  std::map<const Type*, bool> fieldTypes;
+  
+  int numElements = ast->body->exprs.size();
+  const Type* elementType = NULL;
+  for (int i = 0; i < numElements; ++i) {
+    const Type* ty =  ast->body->exprs[i]->type;
+    if (!ty) {
+      std::cerr << "Array expr had null constituent type for subexpr " << i << std::endl;
+      success = false;
+      break;
+    }
+    fieldTypes[ty] = true;
+    elementType = ty;
+  }
+  
+  // TODO This should probably be relaxed eventually; for example,
+  // an array of "small" and "large" int literals should silently be accepted
+  // as an array of "large" ints.
+  if (success && fieldTypes.size() != 1) {
+    std::cerr << "Array expression had multiple types! Found:" << std::endl;
+    std::map<const Type*, bool>::const_iterator it;;
+    for (it = fieldTypes.begin(); it != fieldTypes.end(); ++it) {
+      std::cerr << "\t" << *((*it).first) << std::endl;
+    }
+    success = false;
+  }
+  
+  if (success) {
+    ast->type = llvm::ArrayType::get(elementType, numElements);
+  }
+}
+
 void TypecheckPass::visit(TupleExprAST* ast) {
   if (!ast->body) {
     std::cerr << "Tuple expr has null body!" << std::endl;
@@ -238,8 +307,7 @@ void TypecheckPass::visit(TupleExprAST* ast) {
   }
   
   if (success) {
-    const Type* structTy = llvm::StructType::get(getGlobalContext(), tupleFieldTypes, /*isPacked=*/false);
-    ast->type = structTy;
+    ast->type = llvm::StructType::get(getGlobalContext(), tupleFieldTypes, /*isPacked=*/false);
   }
 }
 

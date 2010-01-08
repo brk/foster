@@ -234,6 +234,78 @@ void CodegenPass::visit(CallAST* ast) {
   ast->value = builder.CreateCall(F, valArgs.begin(), valArgs.end(), "calltmp");
 }
 
+void CodegenPass::visit(ArrayExprAST* ast) {
+  if (ast->value != NULL) return;
+  
+  // Create array type
+  const llvm::ArrayType* arrayType = llvm::dyn_cast<llvm::ArrayType>(ast->type);
+  
+  module->addTypeName(freshName("arrayTy"), arrayType);
+#if 0
+  // Allocate tuple space
+  llvm::AllocaInst* pt = builder.CreateAlloca(arrayType, 0, "s");
+  
+  for (int i = 0; i < ast->body->exprs.size(); ++i) {
+    std::cout << "Tuple GEP init i = " << i << "/" << ast->body->exprs.size() << std::endl;
+    
+    Value* dst = builder.CreateConstGEP2_32(pt, 0, i, "gep");
+    (ast->body->exprs[i])->accept(this);
+    builder.CreateStore(ast->body->exprs[i]->value, dst, /*isVolatile=*/ false);
+  }
+#endif
+
+  using llvm::GlobalVariable;
+  GlobalVariable* gvar = new GlobalVariable(*module,
+    /*Type=*/         arrayType,
+    /*isConstant=*/   true,
+    /*Linkage=*/      llvm::GlobalValue::PrivateLinkage,
+    /*Initializer=*/  0, // has initializer, specified below
+    /*Name=*/         freshName("arrayGv"));
+
+  // Constant Definitions
+  std::vector<llvm::Constant*> arrayElements;
+  for (int i = 0; i < ast->body->exprs.size(); ++i) {
+    IntAST* v = dynamic_cast<IntAST*>(ast->body->exprs[i]);
+    if (!v) {
+      std::cerr << "Array initializer was not IntAST but instead " << *v << std::endl;
+      return;
+    }
+    
+    ConstantInt* ci = llvm::dyn_cast<ConstantInt>(v->getConstantValue());
+    if (!ci) {
+      std::cerr << "Failed to cast array initializer value to ConstantInt" << std::endl;
+      return;
+    }
+    arrayElements.push_back(ci);
+  }
+  
+  llvm::Constant* constArray = llvm::ConstantArray::get(arrayType, arrayElements);
+  gvar->setInitializer(constArray);
+  /*
+    ConstantInt* i32_1 = ConstantInt::get(APInt(32,  "1", 1, 10));
+    ConstantInt* i32_0 = ConstantInt::get(APInt(32,  "0", 1, 10));
+    ConstantInt* i32_2 = ConstantInt::get(APInt(32,  "2", 1, 10));
+    
+    std::vector<Constant*> const_ptr_13_indices;
+    const_ptr_13_indices.push_back(i32_0);
+    const_ptr_13_indices.push_back(i32_0);
+    Constant* const_ptr_13 = ConstantExpr::getGetElementPtr(gvar, &const_ptr_13_indices[0], const_ptr_13_indices.size() );
+  
+    std::vector<Constant*> const_ptr_14_indices;
+    const_ptr_14_indices.push_back(i32_0);
+    const_ptr_14_indices.push_back(i32_1);
+    Constant* const_ptr_14 = ConstantExpr::getGetElementPtr(gvar, &const_ptr_14_indices[0], const_ptr_14_indices.size() );
+    
+  
+    std::vector<Constant*> const_ptr_16_indices;
+    const_ptr_16_indices.push_back(i32_0);
+    const_ptr_16_indices.push_back(i32_2);
+    Constant* const_ptr_16 = ConstantExpr::getGetElementPtr(gvar, &const_ptr_16_indices[0], const_ptr_16_indices.size() );
+  */
+  
+  ast->value = gvar;
+}
+
 void CodegenPass::visit(TupleExprAST* ast) {
   if (ast->value != NULL) return;
   

@@ -93,12 +93,6 @@ void addExternSingleParamFn(const char* name, VariableAST* param) {
   
   VariableAST* fnRef = new VariableAST(name, p->type);
   
-  std::cout << "\t\t\tInserting into symbol table " << name << " : " << fnRef << "\tof type '";
-  if (p->type) {
-    std::cout << *(p->type);
-  } else std::cout << "<null type>";
-  std::cout << "'" << std::endl;
-  
   varScope.insert(name, fnRef);
   scope.insert(name, p->value);
 }
