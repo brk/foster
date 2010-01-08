@@ -42,7 +42,7 @@ term			:	( literal
                                 | fn
                                 | seq
                                 | ifexpr
-                                | prefix_unop expr);
+                                | unop_prefixed_expr);
 
 compound                :       term ( trailer -> ^(TRAILERS term trailer)
                                       |        -> ^(term)
@@ -70,6 +70,7 @@ binop			:	'+' | '-' | '*' | '/' | '..' | '='
 			|	'bitand' | 'bitor' | 'shl' | 'shr'
 			|	AND | OR | '+=' | '-=' | '*=' | '/=';
 
+unop_prefixed_expr      :       prefix_unop expr -> ^(prefix_unop expr);	
 prefix_unop		:	'-' | 'not' | COMPILES;
 
 

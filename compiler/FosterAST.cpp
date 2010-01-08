@@ -361,3 +361,20 @@ Value* SubscriptAST::Codegen() {
     std::cerr << "Don't know how to index a <ty(base)> with a <ty(index)>" << std::endl;
   }
 }
+
+////////////////////////////////////////////////////////////////////
+
+Value* BuiltinCompilesExprAST::Codegen() {
+  if (this->status == kWouldCompile) {
+    return ConstantInt::getTrue(getGlobalContext());
+  } else if (this->status == kWouldNotCompile) {
+    return ConstantInt::getFalse(getGlobalContext());
+  } else {
+    std::cerr << "Error: __COMPILES__ expr not checked!" << std::endl; 
+    return NULL;
+    //ConstantInt::getFalse(getGlobalContext());
+  }
+}
+
+////////////////////////////////////////////////////////////////////
+

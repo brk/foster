@@ -141,8 +141,8 @@ struct VariableAST : public ExprAST {
   }
   virtual bool Sema() {
     if (Name == "nil") return true;
-    // TODO
-    std::cout << "VariableAST::Sema() -> true" << std::endl;
+    // TODO: check that variable is in scope
+    //std::cout << "VariableAST::Sema() -> true" << std::endl;
     return true;
   }
   virtual Value* Codegen() {
@@ -334,6 +334,21 @@ struct CallAST : public ExprAST {
     }
     
     bool success = true;
+    
+    if (!base->Sema()) {
+      std::cerr << "Error: base of call expression failed Sema()" << std::endl;
+      return false;
+    }
+    
+    for (int i = 0; i < numParams; ++i) {
+      if (!args[i]->Sema()) {
+        std::cerr << "Error: arg " << i << " (" << *args[i] << ") failed Sema()" << std::endl;
+        success = false;
+      }
+    }
+    
+    if (!success) return false;
+    
     for (int i = 0; i < numParams; ++i) {
       const Type* formalType = baseFT->getParamType(i);
       const Type* actualType = args[i]->GetType();
@@ -343,7 +358,7 @@ struct CallAST : public ExprAST {
         std::cerr << "\tformal: " << *formalType << "; actual: " << *actualType << std::endl;
       }
     }
-    
+   
     return success;
   }
   
@@ -393,7 +408,7 @@ struct SeqAST : public ExprAST {
     bool success = true;
     for (int i = 0; i < exprs.size(); ++i) {
       if (exprs[i]) {
-        success = exprs[i]->Sema() && success;
+        if (!exprs[i]->Sema()) { success = false; }
       } else {
         std::cerr << "Null expr in SeqAST" << std::endl;
         return false;
@@ -434,7 +449,7 @@ struct SeqAST : public ExprAST {
 struct TupleExprAST : public ExprAST {
   SeqAST* body;
   Value* cachedValue;
-  virtual bool Sema() { std::cout << "TupleExprAST::Sema() -> true" << std::endl; return true; } // TODO
+  virtual bool Sema() { return body->Sema(); }
   explicit TupleExprAST(ExprAST* expr) : cachedValue(NULL) {
     body = dynamic_cast<SeqAST*>(expr);
   }
@@ -449,7 +464,7 @@ struct TupleExprAST : public ExprAST {
 struct SubscriptAST : public ExprAST {
   ExprAST* base;
   ExprAST* index;
-  virtual bool Sema() { std::cout << "SubscriptAST::Sema() -> true" << std::endl; return true; } // TODO
+  virtual bool Sema() { return this->GetType() != NULL; }
   explicit SubscriptAST(ExprAST* base, ExprAST* index)
     : base(base), index(index) { }
     
@@ -458,32 +473,36 @@ struct SubscriptAST : public ExprAST {
     if (!idx) {
       std::cerr << "SubscriptAST::GetType() had non-constant index, returning NULL..." << std::endl;
       return NULL;
-    } else {
-      const Type* baseType = base->GetType();
-      if (!baseType) {
-        std::cerr << "Error: Cannot index into object of null type " << std::endl;
-        return NULL;
-      }
-      if (!baseType->isAggregateType()) {
-        std::cerr << "Error: Cannot index into non-aggregate type " << *baseType << std::endl;
-        return NULL;
-      }
-      
-      Value* vidx = idx->Codegen(); // Implicitly a Constant*
-      
-      const llvm::StructType* structTy = llvm::dyn_cast<llvm::StructType>(baseType);
-      if (structTy) {
-        if (!structTy->indexValid(vidx)) {
-          std::cerr << "Error: attempt to index struct with invalid index '" << *vidx << "'" << std::endl;
-          return NULL;
-        }
-        
-        return structTy->getTypeAtIndex(vidx);
-      } else {
-        std::cerr << "Error: attempt to index into a non-struct type " << *baseType << std::endl;
-        return NULL;
-      }
     }
+    
+    const Type* baseType = base->GetType();
+    if (!baseType) {
+      std::cerr << "Error: Cannot index into object of null type " << std::endl;
+      return NULL;
+    }
+    
+    if (!baseType->isAggregateType()) {
+      std::cerr << "Error: Cannot index into non-aggregate type " << *baseType << std::endl;
+      return NULL;
+    }
+    
+    const llvm::StructType* structTy = llvm::dyn_cast<llvm::StructType>(baseType);
+    if (!structTy) {
+      std::cerr << "Error: attempt to index into a non-struct type " << *baseType << std::endl;
+      return NULL;
+    }
+    
+    // This doesn't do any "real" codegen, because
+    // idx is a constant int, so Codegen() simply returns a Constant*
+    Value* vidx = idx->Codegen();
+    
+    if (!structTy->indexValid(vidx)) {
+      std::cerr << "Error: attempt to index struct with invalid index '" << *vidx << "'" << std::endl;
+      return NULL;
+    }
+    
+    return structTy->getTypeAtIndex(vidx);
+
   }
   virtual std::ostream& operator<<(std::ostream& out) {
     return out << *base << "[" << *index << "]";
@@ -598,4 +617,22 @@ struct IfExprAST : public ExprAST {
   virtual Value* Codegen();
 };
 
+struct BuiltinCompilesExprAST : public ExprAST {
+  ExprAST* expr;
+  enum Status { kWouldCompile, kWouldNotCompile, kNotChecked } status;
+  explicit BuiltinCompilesExprAST(ExprAST* expr) : expr(expr), status(kNotChecked) {}
+  // "Evaluation" of __COMPILES__ results in a boolean regardless of expr's type
+  virtual const llvm::Type* GetType() { return LLVMTypeFor("i1"); }
+  virtual std::ostream& operator<<(std::ostream& out) {
+    return out << "__COMPILES__ " << *expr;
+  }
+  virtual bool Sema() {
+    status = (expr->Sema()) ? kWouldCompile : kWouldNotCompile;
+    return true;
+  }
+  virtual Value* Codegen();
+};
+
+
 #endif // header guard
+

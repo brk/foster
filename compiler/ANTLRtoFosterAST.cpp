@@ -255,7 +255,7 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
     return var;
   }
   
-  if (text == "=") {
+  if (text == "=") { // must come before binaryOps since it's handled specially
     assert(getChildCount(tree) == 2);
     // x = fn { blah }   ===   x = fn "x" { blah }
     pTree lval = (child(tree, 0));
@@ -268,6 +268,10 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
       std::cerr << "Not assigning function to a name?" << std::endl;
       return NULL;
     }
+  }
+  
+  if (token == COMPILES) {
+    return new BuiltinCompilesExprAST(ExprAST_from(child(tree, 0), depth, infn));
   }
   
   if (token == TUPLE) {

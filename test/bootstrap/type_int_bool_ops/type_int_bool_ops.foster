@@ -18,7 +18,13 @@ fn "main" {
   print_i1(true + true);
   
   
-  expect_i1(false);
+  expect_i1(false); // 2 is not of type i1
   print_i1(__COMPILES__ if 2 { 222 } else { 111 });
+
+  //expect_i1(false); // nested fn not yet supported -- for now, fails while parsing
+  //print_i1(__COMPILES__ fn {} );
+  
+  expect_i1(false); // tuple should typecheck elements
+  print_i1(__COMPILES__ tuple { if 2 { 222 } else { 111 } } );
 }
 
