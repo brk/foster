@@ -1,4 +1,7 @@
 // vim: set foldmethod=marker :
+// Copyright (c) 2009 Ben Karel. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
 #include "llvm/DerivedTypes.h"
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
@@ -78,14 +81,16 @@ void createParser(ANTLRContext& ctx, string filename) {
   }
 }
 
-Value* genMain() {
-  //DefAST CMainFunc = DefAST(false, "", "main", emptyFormals, "Int", CMainExprs);
-  //return CMainFunc.Codegen();
-  return NULL;
-}
+void addLibFosterRuntimeExterns() {
+  scope.pushScope("externs");
+  PrototypeAST* p;
 
-void evalExpr(llvm::ExecutionEngine* ee, ExprAST* expr) {
-
+  p = new PrototypeAST("print_i32", "x"); scope.insert("print_i32", p->Codegen());
+  p = new PrototypeAST("print_i32x", "x"); scope.insert("print_i32x", p->Codegen());
+  p = new PrototypeAST("print_i32b", "x"); scope.insert("print_i32b", p->Codegen());
+  p = new PrototypeAST("expect_i32", "x"); scope.insert("expect_i32", p->Codegen());
+  p = new PrototypeAST("expect_i32x", "x"); scope.insert("expect_i32x", p->Codegen());
+  p = new PrototypeAST("expect_i32b", "x"); scope.insert("expect_i32b", p->Codegen());
 }
 
 int main(int argc, char** argv) {
@@ -93,18 +98,22 @@ int main(int argc, char** argv) {
   if (argc < 2 || argv[1] == NULL) {
     std::cout << "Error: need an input filename!" << std::endl;
     exit(1);
+  } else {
+    std::cout << "Input file: " << std::string(argv[1]) << std::endl;
+    std::cout <<  "================" << std::endl;
+    system(("cat " + std::string(argv[1])).c_str());
+    std::cout <<  "================" << std::endl;
   }
 
   ANTLRContext ctx;
   createParser(ctx, argv[1]);
 
   fosterLLVMInitializeNativeTarget();
-  LLVMContext& Context = getGlobalContext();
-  TheModule = new Module("foster", Context);
-  llvm::ExistingModuleProvider* moduleProvider = new llvm::ExistingModuleProvider(TheModule);
+  module = new Module("foster", getGlobalContext());
+  ExistingModuleProvider* moduleProvider = new ExistingModuleProvider(module);
 
-  ee = llvm::EngineBuilder(moduleProvider).create();
-
+  ee = EngineBuilder(moduleProvider).create();
+  
   initMaps();
 
   std::cout << "parsing" << endl;
@@ -114,16 +123,18 @@ int main(int argc, char** argv) {
   std::cout << str(langAST.tree->toStringTree(langAST.tree)) << endl << endl;
 
   std::cout << "converting" << endl;
-  ExprAST* exprAST = ExprAST_from(langAST.tree);
+  ExprAST* exprAST = ExprAST_from(langAST.tree, 0, false);
 
   std::cout << "unparsing" << endl;
   std::cout << *exprAST << endl;
-
+  
+  addLibFosterRuntimeExterns();
+  
   Value* v = exprAST->Codegen();
 
   std::ofstream LLASM("foster.ll");
 
-  LLASM << *TheModule;
+  LLASM << *module;
   //LLASM << v;
   /*
   Value* Main = genMainDotMain();

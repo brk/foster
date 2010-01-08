@@ -1,0 +1,10 @@
+fn "main" {
+  expect_i32b(11100_2);
+  print_i32b(111_2 shl 2);
+
+  expect_i32b(1111_2);
+  print_i32b(101_2 bitor 1010_2);
+
+  expect_i32b(1010_2);
+  print_i32b(1111_2 bitand 1010_2);
+}

@@ -1,6 +1,8 @@
 grammar foster;
 
 options {
+  // Commenting out this line lets us play with the grammar in ANTLRworks,
+  // and still automatically generate a C-language parser via CMake and Python.
   //language = C;
   output = AST;
 }
@@ -9,41 +11,60 @@ tokens {
 	AS='as'; AT='at'; DO='do'; ID='id'; IF='if'; IN='in'; IS='is'; IT='it'; TO='to';
 	FOR='for'; NIL='nil'; TRUE='true'; FALSE='false'; AND='and'; OR='or';
 	// __compiles
-	
+
 	FN; OUT; BODY; GIVEN; GIVES; IDS; SEQ; FIELD_LIST; INT; RAT; EXPRS; NAME;
+	TRAILERS; CALL; TUPLE; SUBSCRIPT; LOOKUP;
 }
 
 program			:	expr+ EOF -> ^(EXPRS expr+);
 
-fn			:	'fn' name=STRING? in=idlist? ('to' out=idlist)? seq requires? ensures?
-					-> ^(FN ^(NAME $name) ^(IN $in) ^(OUT $out) ^(BODY seq) ^(GIVEN requires?) ^(GIVES ensures?));
+fn			:	'fn' n=str? in=idlist? ('to' out=idlist)? seq requires? ensures?
+					-> ^(FN ^(NAME $n) ^(IN $in) ^(OUT $out) ^(BODY seq) ^(GIVEN requires?) ^(GIVES ensures?));
 requires		:	'given' seq;
 ensures			:	'gives' seq;
 num			:	( int_num -> ^(INT int_num)
 				| rat_num -> ^(RAT rat_num));
 idlist			:	(IDENT+ | '(' IDENT (','? IDENT)* ')') -> IDENT*;
 
+literal			:	TRUE | FALSE | num | tuple;
+name			:	n=IDENT -> ^(NAME $n);
+str	                :       STR;
+tuple	                :       'tuple' seq -> ^(TUPLE seq);
 
-literal			:	TRUE | FALSE | num;
+ifexpr                  :       'if' cond=expr thenseq=seq 'else' elseseq=seq
+					-> ^(IF $cond $thenseq $elseseq);
 
+term			:	( literal
+				| name
+                                | fn
+                                | seq
+                                | ifexpr
+                                | prefix_unop expr);
 
-term			:	(literal | fn | prefixexp | seq | prefix_unop expr);
+//opt_paren_expr          :      ('(' expr ')' | expr)	-> expr;
+
+// Defining expr : '(' expr ')' | ... ; creates abiguity with call expressions
 expr			:	term (	  binop expr	-> ^(binop term expr)
+                                        | trailer       -> ^(TRAILERS term trailer)
 					|		-> ^(term)
 				);
 
+trailer                 :       '(' arglist? ')' -> ^(CALL arglist)
+                        |       '.' name         -> ^(LOOKUP name)
+	                |	'[' literal ']'  -> ^(SUBSCRIPT literal);
 
-prefixexp		:	IDENT;
+arglist                 :       expr (',' expr)*;
 
-seq			:	'{' fieldlist? '}' -> ^(SEQ fieldlist*);
-fieldlist		:	field (fieldsep field)* fieldsep -> ^(FIELD_LIST field*);
-field			:	'[' expr ']' '=' expr | IDENT '=' expr | expr;
-fieldsep		:	(',' | ';')?;
+seq			:	'{' fieldlist? '}' -> ^(SEQ fieldlist);
+fieldlist		:	field (fieldsep field)* fieldsep? -> ^(FIELD_LIST field*);
+field			:	'[' expr ']' ':' expr | name ':' expr | expr;
+fieldsep		:	';' | ',';
 
-binop			:	'+' | '-' | '*' | '/' | '..'
+binop			:	'+' | '-' | '*' | '/' | '..' | '='
 			|	'<' | '<=' | '>=' | '>' | '==' | '!='
+			|	'bitand' | 'bitor' | 'shl' | 'shr'
 			|	AND | OR | '+=' | '-=' | '*=' | '/=';
-			
+
 prefix_unop		:	'-' | 'not';
 
 
@@ -64,16 +85,19 @@ fragment IDENT_CONTINUE		:('a'..'z' | 'A'..'Z' | '0'..'9'
 				| '?' | '+' | '*'
 				| '/' | '~' );
 
-STRING
-    :  '\'' ( ESC_SEQ | ~('\\'|'\'') )* '\''
-    |  '"'  ( ESC_SEQ | ~('\\'|'"' ) )* '"'
+// Very weird: for some reason, the default ANTLR string RE
+// fails on strings that contain but do not start with an escape sequence,
+// requiring the non-escape-sequence character class to be explicitly duplicated.
+STR
+    :  '\'' ~('\\'|'\'')* ( ESC_SEQ | ~('\\'|'\'') )* '\''
+    |  '"'  ~('\\'|'"' )* ( ESC_SEQ | ~('\\'|'"' ) )* '"'
     ;
-    
+
 COMMENT			:	'//' ~('\n'|'\r')* '\r'? '\n' {$channel=HIDDEN;} ;
 
-fragment ESC_SEQ	:	'\\' ('t'|'n'|'r'|'\"'|'\''|'\\') | UNICODE_ESC;
+fragment ESC_SEQ	:	'\\' ('t'|'n'|'r'|'"'|'\''|'\\') | UNICODE_ESC;
 fragment UNICODE_ESC    :	'\\' ('u' | 'U') HEX_DIGIT HEX_DIGIT HEX_DIGIT HEX_DIGIT;
-fragment HEX_DIGIT 	: 	'0'..'9'|'a'..'f'|'A'..'F';
+fragment HEX_DIGIT 	: 	('0'..'9'|'a'..'f'|'A'..'F');
 
 WS  :   ( ' '
         | '\t'

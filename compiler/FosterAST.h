@@ -1,4 +1,7 @@
-
+// vim: set foldmethod=marker :
+// Copyright (c) 2009 Ben Karel. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
 #ifndef H_4b2d1e42da6428_98043102
 #define H_4b2d1e42da6428_98043102
@@ -13,6 +16,7 @@
 #include <string>
 #include <map>
 #include <cstdio>
+#include <sstream>
 
 using std::string;
 using std::endl;
@@ -22,6 +26,7 @@ using llvm::Module;
 using llvm::Value;
 using llvm::getGlobalContext;
 using llvm::APInt;
+using llvm::Function;
 
 class ExprAST; // fwd decl
 
@@ -30,13 +35,18 @@ std::ostream& operator<<(std::ostream& out, ExprAST& expr);
 
 void fosterLLVMInitializeNativeTarget();
 
+string freshName(string like);
+
 extern llvm::ExecutionEngine* ee;
-extern llvm::IRBuilder<> Builder;
-extern Module* TheModule;
+extern llvm::IRBuilder<> builder;
+extern Module* module;
+
 extern std::map<string, const Type*> NamedTypes;
 
 Value* ErrorV(const char* Str);
 const Type* LLVMType_from(string s);
+
+string join(string glue, Exprs args);
 
 ///////////////////////////////////////////////////////////
 
@@ -52,30 +62,36 @@ struct ExprAST {
 class FosterSymbolTable {
   struct LexicalScope {
     string Name;
-    typedef std::map<string, ExprAST*> Map;
-    Map AST_of;
+    typedef std::map<string, Value*> Map;
+    Map Value_of;
     LexicalScope(string name) : Name(name) {}
   };
   typedef std::vector<LexicalScope> Environment;
   Environment env;
 public:
-  const ExprAST* lookup(string ident, string wantedName) {
+  Value* lookup(string ident, string wantedName) {
     for (Environment::reverse_iterator it = env.rbegin(); it != env.rend(); ++it) {
       string scopeName = (*it).Name;
       if (scopeName == "*" || wantedName == "" || scopeName == wantedName) {
-        const ExprAST* ast = (*it).AST_of[ident];
-        if (ast != NULL) return ast;
+        Value* V = (*it).Value_of[ident];
+        if (V != NULL) return V;
       }
     }
     return NULL;
   }
 
-  ExprAST* insert(string ident, ExprAST* ast) { env.back().AST_of[ident] = ast; }
+  Value* insert(string ident, Value* V) {
+    if (env.empty()) {
+      std::cerr << "Inserted into empty symbol table!" << std::endl;
+      pushScope("*");
+    }
+    env.back().Value_of[ident] = V;
+  }
   void pushScope(string scopeName) { env.push_back(LexicalScope(scopeName)); }
   void popScope() { env.pop_back(); }
 };
 
-//FosterSymbolTable Env;
+extern FosterSymbolTable scope;
 // }}}
 
 struct IntAST : public ExprAST {
@@ -90,195 +106,120 @@ struct IntAST : public ExprAST {
   virtual Value* Codegen();
 };
 
-#if 0
-struct StringAST : public ExprAST {
-  string Val;
-  explicit StringAST(string val): Val(val) {}
-  virtual std::ostream& operator<<(std::ostream& out) { return out << Val; }
-  virtual string GetTypeName() { return "String"; }
-  virtual bool Sema() { return true; }
-  virtual Value* Codegen() {
-    //ArrayType* AType = ArrayType::get(Type::Int32Ty, Val.size() + 1);
-    //return ConstantArray::get(AType, Val.c_str(), Val.size() + 1);
-    //return ConstantArray::get(Val);
-    Value* V = Builder.CreateGlobalStringPtr(Val.c_str(), "String_ptr");
-    return V;
-  }
-};
-
 struct VariableAST : public ExprAST {
-  std::string Name;
+  string Name;
   // TODO need to figure out how/where/when to assign type info to null
   virtual string GetTypeName() { return "<not implemented>"; }
   explicit VariableAST(const string& name): Name(name) {}
   virtual std::ostream& operator<<(std::ostream& out) { return out << Name; }
   virtual bool Sema() {
-    if (Name == "null") return true;
+    if (Name == "nil") return true;
     // TODO
     return true;
   }
-#if LLVM
   virtual Value* Codegen() {
-    //Value* V = NamedValues[Name];
-    // if Name is null, we need to decide what type it ought to take before doing codegen...
-    //return V ? V : ErrorV(("Unknown variable name " + Name).c_str());
-    return NULL;
+    std::cout << "\t" << "Codegen variable "  << Name << std::endl;
+    Value* V = scope.lookup(Name, "");
+    return V ? V : ErrorV(("Unknown variable name " + Name).c_str());
   }
-#endif
 };
 
-struct VarDeclAST : public ExprAST {
-  string Name;
-  string Type;
-  ExprAST* Init;
-  virtual bool Sema() {
-    return true;
-  } // TODO
-  explicit VarDeclAST(string name, string type, ExprAST* init)
-    : Name(name), Type(type), Init(init) {}
-  // TODO: associate name with type in symbol table
-  virtual string GetTypeName() { return Type; }
-  virtual std::ostream& operator<<(std::ostream& out) {
-    out << "\tvar " << Name << " : " << Type;
-    if (Init) out << " = " << *Init;
-    return out << " ;" << endl;
-  }
-#if LLVM
-  virtual Value* Codegen() {
-    Value* V = Init->Codegen();
-    //NamedValues[Name] = V;
-  }
-#endif // LLVM
-};
-
-struct UnaryOpAST : public ExprAST {
-  string Op;
-  ExprAST* AST;
-  explicit UnaryOpAST(string op, ExprAST* ast) : Op(op), AST(ast) {}
-  virtual string GetTypeName() { return AST->GetTypeName(); }
-  virtual bool Sema() {
-    if (Op == "!") { return GetTypeName() == "Boolean"; }
-    if (Op == "-") { return GetTypeName() == "Int"; }
-    return false;
-  }
-  virtual std::ostream& operator<<(std::ostream& out) {
-    out << Op << "(";
-    if (AST) out << *AST; else out << "<nil>";
-    return out << ")";
-  }
-#if LLVM
-  virtual Value* Codegen() {
-    Value* V = AST->Codegen();
-    if (Op == "!") {
-      return Builder.CreateNot(V, "nottmp");
+#if 0
+  struct StringAST : public ExprAST {
+    string Val;
+    explicit StringAST(string val): Val(val) {}
+    virtual std::ostream& operator<<(std::ostream& out) { return out << Val; }
+    virtual string GetTypeName() { return "String"; }
+    virtual bool Sema() { return true; }
+    virtual Value* Codegen() {
+      //ArrayType* AType = ArrayType::get(Type::Int32Ty, Val.size() + 1);
+      //return ConstantArray::get(AType, Val.c_str(), Val.size() + 1);
+      //return ConstantArray::get(Val);
+      Value* V = Builder.CreateGlobalStringPtr(Val.c_str(), "String_ptr");
+      return V;
     }
-
-    if (Op == "-") {
-      return Builder.CreateNeg(V, "negtmp");
+  };
+  
+  struct VarDeclAST : public ExprAST {
+    string Name;
+    string Type;
+    ExprAST* Init;
+    virtual bool Sema() {
+      return true;
+    } // TODO
+    explicit VarDeclAST(string name, string type, ExprAST* init)
+      : Name(name), Type(type), Init(init) {}
+    // TODO: associate name with type in symbol table
+    virtual string GetTypeName() { return Type; }
+    virtual std::ostream& operator<<(std::ostream& out) {
+      out << "\tvar " << Name << " : " << Type;
+      if (Init) out << " = " << *Init;
+      return out << " ;" << endl;
     }
-
-    fprintf(stderr, "Unknown unary operator '%s'!\n", Op.c_str());
-    return NULL;
-  }
-#endif // LLVM
-};
-
-struct IfExprAST : public ExprAST {
-  ExprAST* A, *B, *C;
-  IfExprAST(ExprAST* a, ExprAST* b, ExprAST* c) : A(a), B(b), C(c) {}
-  private:
-    string GetCondTypeName() { return A->GetTypeName(); }
-    string GetResultTypeName() { return B->GetTypeName(); }
-    // TODO return typeJoin(B->GetTypeName(), C->GetTypeName);
-  public:
-  virtual bool Sema() { return true; } // TODO
-  virtual string GetTypeName() {
-    string CondTypeName = GetCondTypeName();
-    if (CondTypeName != "Boolean") {
-      fprintf(stderr, "if expression condition has non-Boolean type %s\n", CondTypeName.c_str());
-      return "Unit";
+  #if LLVM
+    virtual Value* Codegen() {
+      Value* V = Init->Codegen();
+      //NamedValues[Name] = V;
     }
-    return GetResultTypeName();
-  }
-  virtual std::ostream& operator<<(std::ostream& out) {
-    out << "if (";
-    if (A) out << *A; else out << "<nil>";
-    out << ") ";
-    if (B) out << *B; else out << "<nil>";
-    out << " else ";
-    if (C) out << *C; else out << "<nil>";
-    return out;
-  }
-#if LLVM
-  virtual Value* Codegen() {
-    Value* Cond = A->Codegen();
-    if (!Cond) return NULL;
-
-    Cond = Builder.CreateICmpEQ(Cond, ConstantInt::get(APInt(32, 0)), "ifcond");
-    Function *TheFunction = Builder.GetInsertBlock()->getParent();
-
-    BasicBlock* ThenBB = BasicBlock::Create("then", TheFunction);
-    BasicBlock* ElseBB = BasicBlock::Create("else");
-    BasicBlock* MergeBB = BasicBlock::Create("ifcont");
-
-    Builder.CreateCondBr(Cond, ThenBB, ElseBB);
-    Builder.SetInsertPoint(ThenBB);
-
-    Value* Then = B->Codegen();
-    if (!Then) {
-      return ErrorV("Codegen for if condition failed due to missing Value for 'then' part");
+  #endif // LLVM
+  };
+  
+  struct UnaryOpAST : public ExprAST {
+    string Op;
+    ExprAST* AST;
+    explicit UnaryOpAST(string op, ExprAST* ast) : Op(op), AST(ast) {}
+    virtual string GetTypeName() { return AST->GetTypeName(); }
+    virtual bool Sema() {
+      if (Op == "!") { return GetTypeName() == "Boolean"; }
+      if (Op == "-") { return GetTypeName() == "Int"; }
+      return false;
     }
-
-    Builder.CreateBr(MergeBB);
-    ThenBB = Builder.GetInsertBlock();
-
-    TheFunction->getBasicBlockList().push_back(ElseBB);
-    Builder.SetInsertPoint(ElseBB);
-
-    Value* Else = C->Codegen();
-    if (!Else) {
-      return ErrorV("Codegen for if condition failed due to missing Value for 'else' part");
+    virtual std::ostream& operator<<(std::ostream& out) {
+      out << Op << "(";
+      if (AST) out << *AST; else out << "<nil>";
+      return out << ")";
     }
-
-    Builder.CreateBr(MergeBB);
-    ElseBB = Builder.GetInsertBlock();
-
-    TheFunction->getBasicBlockList().push_back(MergeBB);
-    Builder.SetInsertPoint(MergeBB);
-    const Type* resultType = LLVMType_from(GetResultTypeName());
-    PHINode *PN = Builder.CreatePHI(resultType, "iftmp");
-
-    PN->addIncoming(Then, ThenBB);
-    PN->addIncoming(Else, ElseBB);
-    return PN;
-  }
-#endif // LLVM
-};
-
-struct WhileAST : public ExprAST {
-  ExprAST* Cond, *Body;
-  WhileAST(ExprAST* cond, ExprAST* body) : Cond(cond), Body(body) {}
-  virtual string GetTypeName() { return "Unit"; }
-  virtual bool Sema() { return true; } // TODO
-  virtual std::ostream& operator<<(std::ostream& out) {
-    out << "while (";
-    if (Cond) out << *Cond; else out << "<nil>";
-    out << ") { ";
-    if (Body) out << *Body; else out << "<nil>";
-    return out << " }";
-  }
-#if LLVM
-  virtual Value* Codegen() {
-    return ErrorV("WhileAST.Codegen() not implemented");
-  }
-#endif // LLVM
+  #if LLVM
+    virtual Value* Codegen() {
+      Value* V = AST->Codegen();
+      if (Op == "!") {
+        return Builder.CreateNot(V, "nottmp");
+      }
+  
+      if (Op == "-") {
+        return Builder.CreateNeg(V, "negtmp");
+      }
+  
+      fprintf(stderr, "Unknown unary operator '%s'!\n", Op.c_str());
+      return NULL;
+    }
+  #endif // LLVM
+  };
+  
+  struct WhileAST : public ExprAST {
+    ExprAST* Cond, *Body;
+    WhileAST(ExprAST* cond, ExprAST* body) : Cond(cond), Body(body) {}
+    virtual string GetTypeName() { return "Unit"; }
+    virtual bool Sema() { return true; } // TODO
+    virtual std::ostream& operator<<(std::ostream& out) {
+      out << "while (";
+      if (Cond) out << *Cond; else out << "<nil>";
+      out << ") { ";
+      if (Body) out << *Body; else out << "<nil>";
+      return out << " }";
+    }
+  #if LLVM
+    virtual Value* Codegen() {
+      return ErrorV("WhileAST.Codegen() not implemented");
+    }
+  #endif // LLVM
 };
 #endif
 
 struct BinaryExprAST : public ExprAST {
-  string Op;
+  string op;
   ExprAST* LHS, *RHS;
-  BinaryExprAST(string op, ExprAST* lhs, ExprAST* rhs) : Op(op), LHS(lhs), RHS(rhs) {}
+  BinaryExprAST(string op, ExprAST* lhs, ExprAST* rhs) : op(op), LHS(lhs), RHS(rhs) {}
   virtual bool Sema() {
     return LHS->GetTypeName() == "Int" &&
            RHS->GetTypeName() == "Int";
@@ -286,17 +227,17 @@ struct BinaryExprAST : public ExprAST {
   virtual string GetTypeName() {
     // type checking of consitituent parts done in semantic analysis phase
 
-    if (Op == "<" || Op == "<=") {
+    if (op == "<" || op == "<=") {
       return "Boolean";
     }
 
-    if (Op == "+" || Op == "-" || Op =="*" || Op == "/") {
+    if (op == "+" || op == "-" || op =="*" || op == "/") {
       return "Int";
     }
   }
   virtual std::ostream& operator<<(std::ostream& out) {
     if (LHS) out << *LHS; else out << "<nil>";
-    out << ' ' << Op << ' ';
+    out << ' ' << op << ' ';
     if (RHS) out << *RHS; else out << "<nil>";
   }
   virtual Value* Codegen();
@@ -304,97 +245,196 @@ struct BinaryExprAST : public ExprAST {
 
 
 #if 0
-struct DispatchAST : public ExprAST {
-  string Label;
-  ExprAST* Expr; // Expr . label (args)
-  Exprs Args;
-  DispatchAST(ExprAST* expr, string label, Exprs args) : Label(label), Expr(expr), Args(args) {}
+  struct DispatchAST : public ExprAST {
+    string Label;
+    ExprAST* Expr; // Expr . label (args)
+    Exprs Args;
+    DispatchAST(ExprAST* expr, string label, Exprs args) : Label(label), Expr(expr), Args(args) {}
+    virtual bool Sema() { return true; } // TODO
+    virtual string GetTypeName() { return "<not implemented>"; }
+    virtual std::ostream& operator<<(std::ostream& out) {
+      if (Expr) out << *Expr; else out << "<nil>";
+      return out << "." << Label << "(" << join(", ", Args) << ")";
+    }
+    virtual Value* Codegen() {
+      Value* Obj = Expr->Codegen();
+      const Type* ObjTy = Obj->getType();
+      string ClassType = Expr->GetTypeName();
+      if (true) { // TODO differentiate static vs virtual methods
+        Value* Method = staticMethods[std::make_pair(ClassType, Label)];
+        assert(Method);
+        std::stringstream ss; ss << "called_" << ClassType << "." << Label;
+        return Builder.CreateCall(Method, Obj, ss.str().c_str());
+      }
+      return ErrorV("DispatchAST.Codegen() not implemented");
+    }
+  };
+  
+  struct NewExprAST : public ExprAST {
+    string Type;
+    Exprs Actuals;
+    virtual bool Sema() {
+      // TODO: "The class must have the same number of formals as expressions as given here
+      // and the types must match (as in a  dispatch).
+      return true;
+    }
+    NewExprAST(string type, Exprs actuals) : Type(type), Actuals(actuals) {}
+    virtual string GetTypeName() { return Type; }
+    virtual std::ostream& operator<<(std::ostream& out) {
+      return out << "new " << Type << "(" << Actuals << ")";
+    }
+    virtual Value* Codegen() {
+      std::stringstream ss; ss << "new_" << Type;
+      const llvm::Type* Ty = LLVMType_from(Type);
+      assert(Ty);
+      return Builder.CreateMalloc(Ty, (Value*)0, ss.str().c_str());
+    }
+  };
+#endif
+
+// base(args)
+struct CallAST : public ExprAST {
+  ExprAST* base;
+  Exprs args;
+  CallAST(ExprAST* base, Exprs args) : base(base), args(args) {}
   virtual bool Sema() { return true; } // TODO
   virtual string GetTypeName() { return "<not implemented>"; }
   virtual std::ostream& operator<<(std::ostream& out) {
-    if (Expr) out << *Expr; else out << "<nil>";
-    return out << "." << Label << "(" << join(", ", Args) << ")";
+    out << "(";
+    if (base) out << *base; else out << "<nil>";
+    return out << " " << join(" ", args) << ")";
   }
   virtual Value* Codegen() {
-    Value* Obj = Expr->Codegen();
-    const Type* ObjTy = Obj->getType();
-    string ClassType = Expr->GetTypeName();
-    if (true) { // TODO differentiate static vs virtual methods
-      Value* Method = staticMethods[std::make_pair(ClassType, Label)];
-      assert(Method);
-      std::stringstream ss; ss << "called_" << ClassType << "." << Label;
-      return Builder.CreateCall(Method, Obj, ss.str().c_str());
+    std::cout << "\t" << "Codegen callast "  << *base << std::endl;
+    
+    Value* FV = base->Codegen();
+    Function* F = llvm::dyn_cast_or_null<Function>(FV);
+    if (!F) {
+      std::cerr << "base: " << *base << "; FV: " << FV << std::endl;
+      return ErrorV("Unknown function referenced");
     }
-    return ErrorV("DispatchAST.Codegen() not implemented");
+    
+    if (F->arg_size() != args.size()) {
+      std::stringstream ss;
+      ss << "Function " << (*base) <<  " got " << args.size() << " args, expected "<< F->arg_size();
+      return ErrorV(ss.str().c_str());
+    }
+    
+    std::vector<Value*> valArgs;
+    for (int i = 0; i < args.size(); ++i) {
+      Value* V = args[i]->Codegen();
+      if (!V) return NULL;
+      valArgs.push_back(V);
+    }
+    
+    return builder.CreateCall(F, valArgs.begin(), valArgs.end(), "calltmp");
   }
 };
 
-struct NewExprAST : public ExprAST {
-  string Type;
-  Exprs Actuals;
-  virtual bool Sema() {
-    // TODO: "The class must have the same number of formals as expressions as given here
-    // and the types must match (as in a  dispatch).
-    return true;
-  }
-  NewExprAST(string type, Exprs actuals) : Type(type), Actuals(actuals) {}
-  virtual string GetTypeName() { return Type; }
-  virtual std::ostream& operator<<(std::ostream& out) {
-    return out << "new " << Type << "(" << Actuals << ")";
-  }
-  virtual Value* Codegen() {
-    std::stringstream ss; ss << "new_" << Type;
-    const llvm::Type* Ty = LLVMType_from(Type);
-    assert(Ty);
-    return Builder.CreateMalloc(Ty, (Value*)0, ss.str().c_str());
-  }
-};
-
-struct BlockAST : public ExprAST {
-  Exprs Expressions;
+struct SeqAST : public ExprAST {
+  Exprs exprs;
   virtual bool Sema() { return true; } // TODO
-  explicit BlockAST(Exprs exprs) : Expressions(exprs) {}
+  explicit SeqAST(Exprs exprs) : exprs(exprs) {}
   virtual string GetTypeName() {
-    if (Expressions.size() == 0) return "Unit";
-    if (Expressions.size() == 1) return Expressions[0]->GetTypeName();
-    // TODO: is this correct? p19
-    return Expressions[Expressions.size()-1]->GetTypeName();
+    //if (Expressions.size() == 0) return "Unit";
+    //if (Expressions.size() == 1) return Expressions[0]->GetTypeName();
+    //return Expressions[Expressions.size()-1]->GetTypeName();
+    return "TODO";
   }
+  
   virtual std::ostream& operator<<(std::ostream& out) {
     out << "{ ";
-    for (int i = 0; i < Expressions.size(); ++i) {
-      if (Expressions[i]) {
-        if (i > 0) out << " ; ";
-        out << *Expressions[i];
+    for (int i = 0; i < exprs.size(); ++i) {
+      if (exprs[i]) {
+        if (i > 0) out << " ;\n";
+        out << *exprs[i];
       }
     }
     return out << " }";
   }
+  
   virtual Value* Codegen() {
     //BB = Builder.GetInsertBlock();
     Value* V;
-    for (int i = 0; i < Expressions.size(); ++i) {
-      if (Expressions[i]) V = Expressions[i]->Codegen();
-      else break;
+    for (int i = 0; i < exprs.size(); ++i) {
+      if (exprs[i]) V = exprs[i]->Codegen();
+      else {
+        std::cerr << "SeqAST::Codegen() saw null seq expression " << i << std::endl;
+        break;
+      }
     }
     return V;
   }
 };
-#endif
 
+struct TupleExprAST : public ExprAST {
+  SeqAST* body;
+  Value* cachedValue;
+  virtual bool Sema() { return true; } // TODO
+  explicit TupleExprAST(ExprAST* expr) : cachedValue(NULL) {
+    body = dynamic_cast<SeqAST*>(expr);
+  }
+  virtual string GetTypeName() {
+    //if (Expressions.size() == 0) return "Unit";
+    //if (Expressions.size() == 1) return Expressions[0]->GetTypeName();
+    //return Expressions[Expressions.size()-1]->GetTypeName();
+    return "TODO";
+  }
+  
+  virtual std::ostream& operator<<(std::ostream& out) {
+    return out << "(tuple " << *body << ")";
+  }
+  
+  virtual Value* Codegen();
+};
 
-struct PrototypeAST {
+struct SubscriptAST : public ExprAST {
+  ExprAST* base;
+  ExprAST* index;
+  virtual bool Sema() { return true; } // TODO
+  explicit SubscriptAST(ExprAST* base, ExprAST* index)
+    : base(base), index(index) { }
+  virtual string GetTypeName() { return "TODO"; }
+  virtual std::ostream& operator<<(std::ostream& out) {
+    return out << *base << "[" << *index << "]";
+  }
+  
+  virtual Value* Codegen();
+};
+
+struct PrototypeAST : public ExprAST {
   string Name;
-  std::vector<string> Args;
+  std::vector<string> inArgs;
+  std::vector<string> outArgs;
+  virtual bool Sema() { return true; } // TODO
+  virtual string GetTypeName() { return "TODO"; }
+  
   PrototypeAST(const string& name) : Name(name) {}
   PrototypeAST(const string& name, const string& arg1)
-    : Name(name) { Args.push_back(arg1); }
+    : Name(name) { inArgs.push_back(arg1); }
   PrototypeAST(const string& name, const string& arg1, const string& arg2)
-    : Name(name) { Args.push_back(arg1); Args.push_back(arg2); }
-  PrototypeAST(const string& name, const std::vector<string>& args)
-    : Name(name), Args(args) {}
-
+    : Name(name) { inArgs.push_back(arg1); inArgs.push_back(arg2); }
+  PrototypeAST(const string& name, const std::vector<string>& inArgs)
+    : Name(name), inArgs(inArgs) {}
+  PrototypeAST(const string& name, const std::vector<string>& inArgs,
+                                   const std::vector<string>& outArgs)
+    : Name(name), inArgs(inArgs), outArgs(outArgs) {}
+    
   llvm::Function* Codegen();
+  virtual std::ostream& operator<<(std::ostream& out) {
+    out << "fn" << " " << Name << "(";
+    for (int i = 0; i < inArgs.size(); ++i) {
+      out << inArgs[i] << " ";
+    }
+    if (!outArgs.empty()) {
+      out << " to";
+      for (int i = 0; i < outArgs.size(); ++i) {
+        out << " " << outArgs[i];
+      }
+    }
+    out << ")";
+    return out;
+  }
 };
 
 struct FnAST : public ExprAST {
@@ -408,9 +448,37 @@ struct FnAST : public ExprAST {
     }
 
   virtual std::ostream& operator<<(std::ostream& out) {
-    out << "fn TODO" << endl;
+    return out << (*Proto) << " " << (*Body) << endl;
   }
   llvm::Function* Codegen();
+};
+
+struct IfExprAST : public ExprAST {
+  ExprAST* ifExpr, *thenExpr, *elseExpr;
+  IfExprAST(ExprAST* ifExpr, ExprAST* thenExpr, ExprAST* elseExpr)
+    : ifExpr(ifExpr), thenExpr(thenExpr), elseExpr(elseExpr) {}
+  public:
+  virtual bool Sema() { return true; } // TODO
+  virtual string GetTypeName() {
+    /*
+    string CondTypeName = GetCondTypeName();
+    if (CondTypeName != "Boolean") {
+      fprintf(stderr, "if expression condition has non-Boolean type %s\n", CondTypeName.c_str());
+      return "Unit";
+    }
+    return GetResultTypeName();
+    */
+  }
+  virtual std::ostream& operator<<(std::ostream& out) {
+    out << "if (";
+    if (ifExpr) out << *ifExpr; else out << "<nil>";
+    out << ") ";
+    if (thenExpr) out << *thenExpr; else out << "<nil>";
+    out << " else ";
+    if (elseExpr) out << *elseExpr; else out << "<nil>";
+    return out;
+  }
+  virtual Value* Codegen();
 };
 
 #endif // header guard

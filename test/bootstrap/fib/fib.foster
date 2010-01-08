@@ -1,0 +1,13 @@
+fib = fn x { if x < 3 { 1 } else { fib(x-1) + fib(x-2) } }
+
+// http://www.research.att.com/~njas/sequences/table?a=45&fmt=4
+fn "main" {
+  expect_i32(55);
+  print_i32(fib(10));
+
+  expect_i32(6765);
+  print_i32(fib(20));
+
+  expect_i32(832040);
+  print_i32(fib(30));
+}
