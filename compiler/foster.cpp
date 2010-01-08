@@ -166,14 +166,17 @@ int main(int argc, char** argv) {
   std::cout << "=========================" << std::endl;
   std::cout << "Pretty printing: " << std::endl;
   
-  PrettyPrintPass ppPass(std::cout); exprAST->accept(&ppPass);
-  
+  { PrettyPrintPass ppPass(std::cout); 
+    std::cout << "ppPass starting" << std::endl;
+    exprAST->accept(&ppPass);
+    std::cout << "ppPass ending" << std::endl;
+  }
   std::cout << std::endl;
   
   
   std::cout << "=========================" << std::endl;
   
-  CodegenPass cgPass; exprAST->accept(&cgPass);
+  { CodegenPass cgPass; exprAST->accept(&cgPass); }
 
   std::ofstream LLASM("foster.ll");
 
