@@ -41,12 +41,14 @@ term			:	( literal
                                 | ifexpr
                                 | prefix_unop expr);
 
+compound                :       term ( trailer -> ^(TRAILERS term trailer)
+                                      |        -> ^(term)
+                                );	
 //opt_paren_expr          :      ('(' expr ')' | expr)	-> expr;
 
 // Defining expr : '(' expr ')' | ... ; creates abiguity with call expressions
-expr			:	term (	  binop expr	-> ^(binop term expr)
-                                        | trailer       -> ^(TRAILERS term trailer)
-					|		-> ^(term)
+expr			:	compound (  binop expr	-> ^(binop compound expr)
+					  |		-> ^(compound)
 				);
 
 trailer                 :       '(' arglist? ')' -> ^(CALL arglist)

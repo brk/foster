@@ -1,0 +1,14 @@
+fn "main" {
+  expect_i32(42);
+  print_i32( tuple { 42, 43 }[0] );
+
+  expect_i32(43);
+  print_i32( tuple { 42, 43 }[1] );
+
+  expect_i32(44);
+  print_i32( tuple { 42, 43, 44 }[2] );
+
+  expect_i32(42);
+  print_i32( tuple { 42, 43, 44 }[0] );
+}
+

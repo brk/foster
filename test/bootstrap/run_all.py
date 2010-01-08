@@ -63,6 +63,9 @@ def main(bootstrap_dir, paths, tmpdir):
   run_all_tests(bootstrap_dir, paths, tmpdir)
 
   print len(tests_passed), " tests passed"
+  for test in tests_passed:
+    print test
+
   print len(tests_failed), " tests failed"
   if len(tests_failed) > 0:
     for test in tests_failed:
