@@ -210,18 +210,9 @@ void CodegenPass::visit(IfExprAST* ast) {
   ast->value = PN;
 }
 
-void CodegenPass::visit(SubscriptAST* ast) {
-  std::cerr << "codegen subscript ast " << (ast->base) << "  [ " << (ast->index) << " ] " << std::endl;
-  std::cerr <<                "\t\t\t" << *(ast->base) <<   "[" << *(ast->index) << "]" << std::endl;
-  
-  (ast->index)->accept(this);
-  std::cerr << "codegen subscript value is " << ast->index->value << std::endl;
-  
-  (ast->base)->accept(this);
-  const llvm::Type* baseType = ast->base->value->getType();
-  std::cerr << "codgen base value is " << ast->base->value << " = " << *(ast->base->value) << " : " << *(baseType) << std::endl;
-  
-  if (llvm::isa<llvm::PointerType>(baseType)) {
+Value* getElementFromStruct(Value* structValue, Value* idxValue) {
+  const Type* structType = structValue->getType();
+  if (llvm::isa<llvm::PointerType>(structType)) {
     // Pointers to composites are indexed via getelementptr
     // TODO: "When indexing into a (optionally packed) structure,
     //        only i32 integer constants are allowed. When indexing
@@ -230,24 +221,76 @@ void CodegenPass::visit(SubscriptAST* ast) {
     //   -- http://llvm.org/docs/LangRef.html#i_getelementptr
     std::vector<Value*> idx;
     idx.push_back(ConstantInt::get(Type::getInt32Ty(getGlobalContext()), 0));
-    idx.push_back(ast->index->value);
+    idx.push_back(idxValue);
   
-    Value* gep = builder.CreateGEP(ast->base->value, idx.begin(), idx.end(), "subgep");
-    ast->value = builder.CreateLoad(gep, "subgep_ld");
-  } else if (llvm::isa<llvm::StructType>(baseType)
-          && llvm::isa<llvm::Constant>(ast->index->value)) {
+    Value* gep = builder.CreateGEP(structValue, idx.begin(), idx.end(), "subgep");
+    return builder.CreateLoad(gep, "subgep_ld");
+  } else if (llvm::isa<llvm::StructType>(structType)
+          && llvm::isa<llvm::Constant>(idxValue)) {
     // Struct values may be indexed by constant expressions
-    unsigned uidx = getSaturating<unsigned>(ast->index->value);
-    ast->value = builder.CreateExtractValue(ast->base->value, uidx, "subexv");
+    unsigned uidx = getSaturating<unsigned>(idxValue);
+    return builder.CreateExtractValue(structValue, uidx, "subexv");
   } else {
-    std::cerr << "Cannot index into value type " << *(ast->base->value->getType()) << " with non-constant index " << *(ast->index) << std::endl;
+    std::cerr << "Cannot index into value type " << *structType << " with non-constant index " << *idxValue << std::endl;
+    return NULL;
   }
+}
+
+void CodegenPass::visit(SubscriptAST* ast) {
+  std::cerr << "codegen subscript ast " << (ast->base) << "  [ " << (ast->index) << " ] " << std::endl;
+  std::cerr <<                "\t\t\t" << *(ast->base) <<   "[" << *(ast->index) << "]" << std::endl;
+  
+  (ast->index)->accept(this);
+  std::cerr << "codegen subscript value is " << ast->index->value << std::endl;
+  
+  (ast->base)->accept(this);
+  std::cerr << "codgen base value is " << ast->base->value << " = " << *(ast->base->value) << " : " << *(ast->base->value->getType()) << std::endl;
+  
+  ast->value = getElementFromStruct(ast->base->value, ast->index->value);
   
   std::cerr << "done codegen subscript " << std::endl;
 }
 
+////////////////////////////////////////////////////////////////////
+
+void appendArg(std::vector<Value*>& valArgs, Value* V, const FunctionType* FT) {
+  std::cout << "actual arg " << valArgs.size() << " = " << *V << " has type " << *(V->getType()) << std::endl;
+  std::cout << "formal arg " << valArgs.size() << " has type " << *(FT->getParamType(valArgs.size())) << std::endl;
+  
+  const Type* formalType = FT->getParamType(valArgs.size());
+  if (llvm::isa<llvm::StructType>(formalType)) {
+    // Is the formal parameter a pass-by-value struct and the provided argument
+    // a pointer to the same kind of struct? If so, load the struct into a virtual
+    // register in order to pass it to the function...
+    if (llvm::PointerType::get(formalType, 0) == V->getType()) {
+      V = builder.CreateLoad(V, "loadStructParam");
+    }
+  }
+  
+  valArgs.push_back(V);
+}
+
+void unpackArgs(std::vector<Value*>& valArgs, Value* V, const FunctionType* FT) {
+  const llvm::StructType* st = llvm::dyn_cast<llvm::StructType>(V->getType());
+  if (!st) {
+    const llvm::PointerType* pt = llvm::dyn_cast<llvm::PointerType>(V->getType());
+    if (pt) {
+      st = llvm::dyn_cast<llvm::StructType>(pt->getTypeAtIndex(0U));
+    }
+  }
+  
+  if (!st) {
+    // Recursively called; base case for non-structs is direct insertion
+    appendArg(valArgs, V, FT);
+  } else for (int j = 0; j < st->getNumElements(); ++j) {
+    // appendArg(...) for non-recursive unpack
+    unpackArgs(valArgs, getElementFromStruct(V, ConstantInt::get(Type::getInt32Ty(getGlobalContext()), j)), FT);
+  }
+}
+
 void CodegenPass::visit(CallAST* ast) {
   std::cout << "\t" << "Codegen CallAST "  << (ast->base) << std::endl;
+  std::cout << "\t\t\t"  << *(ast->base) << std::endl;
   
   (ast->base)->accept(this);
   Value* FV = ast->base->value;
@@ -259,41 +302,33 @@ void CodegenPass::visit(CallAST* ast) {
     return;
   }
   
-  if (F->arg_size() != ast->args.size()) {
-    std::cerr << "Function " << (*(ast->base)) <<  " got " << ast->args.size() << " args, expected "<< F->arg_size();
-    return;
-  }
-  
   const FunctionType* FT = F->getFunctionType();
   
   std::vector<Value*> valArgs;
-  for (int i = 0; i < ast->args.size(); ++i) {
-    if (ast->args[i] == NULL) {
-      std::cerr << "Error: CallAST had null arg["<<i<<"]!" << std::endl;
-    }
+  for (int i = 0, argNum = 0; i < ast->args.size(); ++i) {
+    // Args checked for nulls during typechecking
+    UnpackExprAST* u = dynamic_cast<UnpackExprAST*>(ast->args[i]);
     
-    (ast->args[i])->accept(this);
+    ExprAST* base = (u != NULL) ? u->body : ast->args[i];
+    std::cout << "CallAST arg " << i << " u? " << u << std::endl;
     
-    Value* V = ast->args[i]->value;
+    base->accept(this);
+    Value* V = base->value;
     if (!V) {
       std::cerr << "Error: null value for argument " << i << " found in CallAST codegen!" << std::endl;
       return;
     }
     
-    std::cout << "actual arg " << i << " = " << *V << " has type " << *(V->getType()) << std::endl;
-    std::cout << "formal arg " << i << " has type " << *(FT->getParamType(i)) << std::endl;
-    
-    const Type* formalType = FT->getParamType(i);
-    if (llvm::isa<llvm::StructType>(formalType)) {
-      // Is the formal parameter a pass-by-value struct and the provided argument
-      // a pointer to the same kind of struct? If so, load the struct into a virtual
-      // register in order to pass it to the function...
-      if (llvm::PointerType::get(formalType, 0) == V->getType()) {
-        V = builder.CreateLoad(V, "loadStructParam");
-      }
+    if (u != NULL) {
+      unpackArgs(valArgs, V, FT); // Unpack (recursively) nested structs
+    } else {
+      appendArg(valArgs, V, FT); // Don't unpack even if it's a struct
     }
-    
-    valArgs.push_back(V);
+  }
+  
+  if (F->arg_size() != valArgs.size()) {
+    std::cerr << "Function " << (*(ast->base)) <<  " got " << valArgs.size() << " args, expected "<< F->arg_size();
+    return;
   }
   
   ast->value = builder.CreateCall(F, valArgs.begin(), valArgs.end(), "calltmp");
@@ -306,19 +341,6 @@ void CodegenPass::visit(ArrayExprAST* ast) {
   const llvm::ArrayType* arrayType = llvm::dyn_cast<llvm::ArrayType>(ast->type);
   
   module->addTypeName(freshName("arrayTy"), arrayType);
-#if 0
-  // Allocate tuple space
-  llvm::AllocaInst* pt = builder.CreateAlloca(arrayType, 0, "s");
-  
-  for (int i = 0; i < ast->body->exprs.size(); ++i) {
-    std::cout << "Tuple GEP init i = " << i << "/" << ast->body->exprs.size() << std::endl;
-    
-    Value* dst = builder.CreateConstGEP2_32(pt, 0, i, "gep");
-    (ast->body->exprs[i])->accept(this);
-    builder.CreateStore(ast->body->exprs[i]->value, dst, /*isVolatile=*/ false);
-  }
-#endif
-
   using llvm::GlobalVariable;
   GlobalVariable* gvar = new GlobalVariable(*module,
     /*Type=*/         arrayType,
@@ -329,8 +351,9 @@ void CodegenPass::visit(ArrayExprAST* ast) {
 
   // Constant Definitions
   std::vector<llvm::Constant*> arrayElements;
-  for (int i = 0; i < ast->body->exprs.size(); ++i) {
-    IntAST* v = dynamic_cast<IntAST*>(ast->body->exprs[i]);
+  SeqAST* body = dynamic_cast<SeqAST*>(ast->body);
+  for (int i = 0; i < body->exprs.size(); ++i) {
+    IntAST* v = dynamic_cast<IntAST*>(body->exprs[i]);
     if (!v) {
       std::cerr << "Array initializer was not IntAST but instead " << *v << std::endl;
       return;
@@ -346,27 +369,6 @@ void CodegenPass::visit(ArrayExprAST* ast) {
   
   llvm::Constant* constArray = llvm::ConstantArray::get(arrayType, arrayElements);
   gvar->setInitializer(constArray);
-  /*
-    ConstantInt* i32_1 = ConstantInt::get(APInt(32,  "1", 1, 10));
-    ConstantInt* i32_0 = ConstantInt::get(APInt(32,  "0", 1, 10));
-    ConstantInt* i32_2 = ConstantInt::get(APInt(32,  "2", 1, 10));
-    
-    std::vector<Constant*> const_ptr_13_indices;
-    const_ptr_13_indices.push_back(i32_0);
-    const_ptr_13_indices.push_back(i32_0);
-    Constant* const_ptr_13 = ConstantExpr::getGetElementPtr(gvar, &const_ptr_13_indices[0], const_ptr_13_indices.size() );
-  
-    std::vector<Constant*> const_ptr_14_indices;
-    const_ptr_14_indices.push_back(i32_0);
-    const_ptr_14_indices.push_back(i32_1);
-    Constant* const_ptr_14 = ConstantExpr::getGetElementPtr(gvar, &const_ptr_14_indices[0], const_ptr_14_indices.size() );
-    
-  
-    std::vector<Constant*> const_ptr_16_indices;
-    const_ptr_16_indices.push_back(i32_0);
-    const_ptr_16_indices.push_back(i32_2);
-    Constant* const_ptr_16 = ConstantExpr::getGetElementPtr(gvar, &const_ptr_16_indices[0], const_ptr_16_indices.size() );
-  */
   
   ast->value = gvar;
 }
@@ -381,15 +383,21 @@ void CodegenPass::visit(TupleExprAST* ast) {
   // Allocate tuple space
   llvm::AllocaInst* pt = builder.CreateAlloca(tupleType, 0, "s");
   
-  for (int i = 0; i < ast->body->exprs.size(); ++i) {
-    std::cout << "Tuple GEP init i = " << i << "/" << ast->body->exprs.size() << std::endl;
+  SeqAST* body = dynamic_cast<SeqAST*>(ast->body);
+  for (int i = 0; i < body->exprs.size(); ++i) {
+    std::cout << "Tuple GEP init i = " << i << "/" << body->exprs.size() << std::endl;
     
     Value* dst = builder.CreateConstGEP2_32(pt, 0, i, "gep");
-    (ast->body->exprs[i])->accept(this);
-    builder.CreateStore(ast->body->exprs[i]->value, dst, /*isVolatile=*/ false);
+    body->exprs[i]->accept(this);
+    builder.CreateStore(body->exprs[i]->value, dst, /*isVolatile=*/ false);
   }
   
   ast->value = pt;
+}
+
+// TODO: need tests for unpack outside of call
+void CodegenPass::visit(UnpackExprAST* ast) {
+  std::cerr << "Error: Cannot codegen an UnpackExprAST outside of a function call!" << std::endl;
 }
 
 void CodegenPass::visit(BuiltinCompilesExprAST* ast) {
@@ -399,6 +407,6 @@ void CodegenPass::visit(BuiltinCompilesExprAST* ast) {
     ast->value = ConstantInt::getFalse(getGlobalContext());
   } else {
     std::cerr << "Error: __COMPILES__ expr not checked!" << std::endl; 
-    //ast->value = ConstantInt::getFalse(getGlobalContext());
+    ast->value = ConstantInt::getFalse(getGlobalContext());
   }
 }

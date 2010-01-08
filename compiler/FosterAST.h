@@ -50,13 +50,19 @@ void initModuleTypeNames();
 ///////////////////////////////////////////////////////////
 
 struct ExprAST {
+  // TODO: ExprAST* parent;
   llvm::Value* value;
   const llvm::Type* type;
   
-  ExprAST() : value(NULL), type(NULL) {}
+  explicit ExprAST() : value(NULL), type(NULL) {}
   virtual ~ExprAST() {}
   virtual std::ostream& operator<<(std::ostream& out) const = 0;
   virtual void accept(FosterASTVisitor* visitor) = 0;
+};
+
+struct UnaryExprAST : public ExprAST {
+  ExprAST* body;
+  UnaryExprAST(ExprAST* body = NULL) : body(body) {}
 };
 
 // {{{ |scope| maps names (var/fn) to llvm::Value*/llvm::Function*
@@ -326,8 +332,7 @@ struct SeqAST : public ExprAST {
   }
 };
 
-struct TupleExprAST : public ExprAST {
-  SeqAST* body;
+struct TupleExprAST : public UnaryExprAST {
   explicit TupleExprAST(ExprAST* expr) {
     body = dynamic_cast<SeqAST*>(expr);
   }
@@ -340,8 +345,7 @@ struct TupleExprAST : public ExprAST {
   }
 };
 
-struct ArrayExprAST : public ExprAST {
-  SeqAST* body;
+struct ArrayExprAST : public UnaryExprAST {
   explicit ArrayExprAST(ExprAST* expr) {
     body = dynamic_cast<SeqAST*>(expr);
   }
@@ -425,13 +429,20 @@ struct IfExprAST : public ExprAST {
   }
 };
 
-struct BuiltinCompilesExprAST : public ExprAST {
-  ExprAST* expr;
-  enum Status { kWouldCompile, kWouldNotCompile, kNotChecked } status;
-  explicit BuiltinCompilesExprAST(ExprAST* expr) : expr(expr), status(kNotChecked) {}
+struct UnpackExprAST : public UnaryExprAST {
+  explicit UnpackExprAST(ExprAST* expr) : UnaryExprAST(expr) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "(__COMPILES__ " << *expr << ")";
+    return out << "(unpack " << *body << ")";
+  }
+};
+
+struct BuiltinCompilesExprAST : public UnaryExprAST {
+  enum Status { kWouldCompile, kWouldNotCompile, kNotChecked } status;
+  explicit BuiltinCompilesExprAST(ExprAST* expr) : UnaryExprAST(expr), status(kNotChecked) {}
+  virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
+  virtual std::ostream& operator<<(std::ostream& out) const {
+    return out << "(__COMPILES__ " << *body << ")";
   }
 };
 

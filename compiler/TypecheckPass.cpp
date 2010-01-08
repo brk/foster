@@ -42,10 +42,12 @@ void TypecheckPass::visit(VariableAST* ast) {
   }
   
   if (ast->tyExpr && ast->type) {
-    std::cerr << "Warning: typechecking variable " << ast->Name << " with both type expr ";
-    std::cerr << std::endl << "\t" << *(ast->tyExpr);
-    std::cerr << " and type constant "
-              << std::endl << "\t" << *(ast->type) << std::endl;
+    if (ast->tyExpr->type != ast->type) {
+      std::cerr << "Error: typechecking variable " << ast->Name << " with both type expr ";
+      std::cerr << std::endl << "\t" << *(ast->tyExpr);
+      std::cerr << " and type constant "
+                << std::endl << "\t" << *(ast->type) << std::endl;
+    }
     return;
   }
   
@@ -55,6 +57,8 @@ void TypecheckPass::visit(VariableAST* ast) {
   std::cerr << "Parsing type for expr " << *(ast->tyExpr) << std::endl;
   TypecheckPass typeParsePass; typeParsePass.typeParsingMode = true;
   ast->tyExpr->accept(&typeParsePass);
+  
+  
   ast->type = ast->tyExpr->type;
   
   std::cerr << "Parsed type as " << (ast->type) << std::endl;
@@ -241,32 +245,44 @@ void TypecheckPass::visit(CallAST* ast) {
     return;
   }
   
+  vector<const Type*> actualTypes;
+  for (int i = 0; i < ast->args.size(); ++i) {
+    if (!ast->args[i]) {
+      std::cerr << "Null arg " << i << " for CallAST" << std::endl;
+      return;
+    }
+    
+    ast->args[i]->accept(this);
+    const Type* argTy = ast->args[i]->type;
+    if (!argTy) {
+      std::cerr << "Error: CallAST typecheck: arg " << i << " (" << *(ast->args[i]) << ") had null type" << std::endl;
+      return;
+    }
+    
+    if (UnpackExprAST* u = dynamic_cast<UnpackExprAST*>(ast->args[i])) {
+      if (const llvm::StructType* st = llvm::dyn_cast<llvm::StructType>(argTy)) {
+        for (int j = 0; j < st->getNumElements(); ++j) {
+          actualTypes.push_back(st->getElementType(j));
+        }
+      } else {
+        std::cerr << "Error: call expression found UnpackExpr with non-struct type " << *argTy << std::endl;
+      }
+    } else {
+      actualTypes.push_back(argTy);
+    }
+  }
+  
   int numParams = baseFT->getNumParams();
-  if (numParams != ast->args.size()) {
-    std::cerr << "Error: arity mismatch; " << ast->args.size() << " args provided"
+  if (numParams != actualTypes.size()) {
+    std::cerr << "Error: arity mismatch; " << actualTypes.size() << " args provided"
       << " for function taking " << numParams << " args." << std::endl;
     return;
   }
   
   bool success = true;
   for (int i = 0; i < numParams; ++i) {
-    if (!ast->args[i]) {
-      std::cerr << "Null arg " << i << " for CallAST" << std::endl;
-      success = false;
-    } else {
-      ast->args[i]->accept(this);
-      if (!ast->args[i]->type) {
-        std::cerr << "Error: arg " << i << " (" << *(ast->args[i]) << ") had null type" << std::endl;
-        success = false;
-      }
-    }
-  }
-  
-  if (!success) { return; }
-  
-  for (int i = 0; i < numParams; ++i) {
     const Type* formalType = baseFT->getParamType(i);
-    const Type* actualType = ast->args[i]->type;
+    const Type* actualType = actualTypes[i];
     if (formalType != actualType) {
       success = false;
       std::cerr << "Type mismatch between actual and formal arg " << i << std::endl;
@@ -278,7 +294,17 @@ void TypecheckPass::visit(CallAST* ast) {
     std::cerr << "Error in typechecking call of"
               << "\n\t" << *(ast->base) << "\tof type\t" << *(baseFT) << "\t with args ";
     for (int i = 0; i < numParams; ++i) {
-      std::cerr << "\n\t" << i << ":\t" << *(ast->args[i]) << " : " << *(ast->args[i]->type) << std::endl;
+      std::cerr << "\n\t" << i << ":\t";
+      if (const ExprAST* arg = ast->args[i]) {
+        std::cerr << *(ast->args[i]) << " : ";
+        if (const Type* argType = ast->args[i]->type) {
+          std::cerr << *(argType) << std::endl;
+        } else {
+          std::cerr << "<NULL>" << std::endl;
+        }
+      } else {
+        std::cerr << "<NULL arg>" << std::endl;
+      }
     }
   }
  
@@ -298,10 +324,11 @@ void TypecheckPass::visit(ArrayExprAST* ast) {
   bool success = true;
   std::map<const Type*, bool> fieldTypes;
   
-  int numElements = ast->body->exprs.size();
+  SeqAST* body = dynamic_cast<SeqAST*>(ast->body);
+  int numElements = body->exprs.size();
   const Type* elementType = NULL;
   for (int i = 0; i < numElements; ++i) {
-    const Type* ty =  ast->body->exprs[i]->type;
+    const Type* ty =  body->exprs[i]->type;
     if (!ty) {
       std::cerr << "Array expr had null constituent type for subexpr " << i << std::endl;
       success = false;
@@ -338,8 +365,10 @@ void TypecheckPass::visit(TupleExprAST* ast) {
   
   bool success = true;
   std::vector<const Type*> tupleFieldTypes;
-  for (int i = 0; i < ast->body->exprs.size(); ++i) {
-    const Type* ty =  ast->body->exprs[i]->type;
+  
+  SeqAST* body = dynamic_cast<SeqAST*>(ast->body);
+  for (int i = 0; i < body->exprs.size(); ++i) {
+    const Type* ty =  body->exprs[i]->type;
     if (!ty) {
       std::cerr << "Tuple expr had null constituent type for subexpr " << i << std::endl;
       success = false;
@@ -353,9 +382,28 @@ void TypecheckPass::visit(TupleExprAST* ast) {
   }
 }
 
+
+void TypecheckPass::visit(UnpackExprAST* ast) {
+  if (!ast->body) {
+    std::cerr << "Error: UnpackExprAST has null body!" << std::endl;
+  }
+  
+  ast->body->accept(this);
+  if (!llvm::isa<llvm::StructType>(ast->body->type)) {
+    std::cerr << "Cannot unpack non-struct expression:\n\t" << *(ast->body)
+              << "of type\n\t" << *(ast->body->type) << std::endl;
+  } else {
+    // This is really just a valid non-null pointer; since an unpack
+    // "expression" is syntactic sugar for a complex expression that
+    // generates multiple values, it doesn't have a single well-defined type...
+    // But this is the closest thing, and is useful for type checking calls.
+    ast->type = ast->body->type;
+  }
+}
+
 void TypecheckPass::visit(BuiltinCompilesExprAST* ast) {
-  ast->expr->accept(this);
-  ast->status = (ast->expr->type != NULL) ? ast->kWouldCompile : ast->kWouldNotCompile;
+  ast->body->accept(this);
+  ast->status = (ast->body->type != NULL) ? ast->kWouldCompile : ast->kWouldNotCompile;
   ast->type = LLVMTypeFor("i1");
 }
 

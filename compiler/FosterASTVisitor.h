@@ -17,6 +17,7 @@ struct PrototypeAST;
 struct TupleExprAST;
 struct SubscriptAST;
 struct BinaryExprAST;
+struct UnpackExprAST;
 struct BuiltinCompilesExprAST;
 
 struct FosterASTVisitor {
@@ -32,6 +33,7 @@ struct FosterASTVisitor {
   virtual void visit(TupleExprAST* ast) = 0;
   virtual void visit(SubscriptAST* ast) = 0;
   virtual void visit(BinaryExprAST* ast) = 0;
+  virtual void visit(UnpackExprAST* ast) = 0;
   virtual void visit(BuiltinCompilesExprAST* ast) = 0;
 };
 

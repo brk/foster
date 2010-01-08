@@ -24,6 +24,7 @@ struct TypecheckPass : public FosterASTVisitor {
   virtual void visit(TupleExprAST* ast);
   virtual void visit(SubscriptAST* ast);
   virtual void visit(BinaryExprAST* ast);
+  virtual void visit(UnpackExprAST* ast);
   virtual void visit(BuiltinCompilesExprAST* ast);
 };
 
