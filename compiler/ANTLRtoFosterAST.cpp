@@ -80,40 +80,25 @@ void initMaps() {
     reserved_keywords[c_reserved_keywords[i]] = true;
   }
 
-  llvm::LLVMContext& gcon = getGlobalContext();
-  NamedTypes["Int"] =     Type::getInt32Ty(gcon);
-  NamedTypes["Boolean"] = Type::getInt1Ty(gcon);
-  /*
-  std::vector<const Type*> StringParts;
-  StringParts.push_back(Type::Int32Ty);
-  StringParts.push_back(PointerType::get(Type::Int8Ty, DEFAULT_ADDRESS_SPACE));
-  NamedTypes["String"] = StructType::get(StringParts);
-  TheModule->addTypeName("String", NamedTypes["String"]);
-  */
-
-  const unsigned DEFAULT_ADDRESS_SPACE = 0u;
-  NamedTypes["String"] = llvm::PointerType::get(Type::getInt8Ty(gcon), DEFAULT_ADDRESS_SPACE);
-  //NamedTypes["Any"] = Type::Int32Ty; // TODO
+  initModuleTypeNames();
 }
 
-void indent(int n) { for (int i = 0; i < n; ++i) { std::cout << " "; } }
+string spaces(int n) { return string(n, ' '); }
 
 void display_pTree(pTree t, int nspaces) {
   int token = t->getType(t);
   string text = textOf(t);
   int nchildren = getChildCount(t);
-  indent(nspaces);
-  std::cout << "<" << text << "; " << token << std::endl;
+  std::cout << spaces(nspaces) << "<" << text << "; " << token << std::endl;
   for (int i = 0; i < nchildren; ++i) {
     display_pTree(child(t, i), nspaces+2);
   }
-  indent(nspaces);
-  std::cout << "/" << text << ">" << std::endl;
+  std::cout << spaces(nspaces) << "/" << text << ">" << std::endl;
 }
 
 IntAST* parseIntFrom(pTree t) {
   if (textOf(t) != "INT") {
-    std::cout << "parseIntFrom() called on a " << textOf(t) << "!";
+    std::cerr << "Error: parseIntFrom() called on a " << textOf(t) << "!";
     return NULL;
   }
 
@@ -127,7 +112,7 @@ IntAST* parseIntFrom(pTree t) {
 
     if (text == "_") {
       if (i != nchildren - 2) {
-        std::cout << "Error: number can have only one underscore, in 2nd-to-last position!";
+        std::cerr << "Error: number can have only one underscore, in 2nd-to-last position!";
         return NULL;
       } else {
         std::stringstream ss_base(textOf(child(t, i+1)));
@@ -145,10 +130,30 @@ IntAST* parseIntFrom(pTree t) {
 
 int typeOf(pTree tree) { return tree->getType(tree); }
 
-std::vector<string> getArgs(pTree tree) {
-  std::vector<string> args;
+VariableAST* parseFormal(pTree tree) {
+  string varName = textOf(child(tree, 0));
+  const Type* ty = NULL;
+  if (getChildCount(tree) == 2) {
+    string typeName = textOf(child(tree, 1));
+   
+    // TODO: this needs to be delayed...
+    ty = LLVMTypeFor(typeName);
+    std::cout << "\tParsed formal " << varName << " with type " << *ty << std::endl;
+    if (!ty) {
+      std::cerr << "Error: LLVM module had no type for name '" << typeName << "'" << std::endl;
+    }
+  } else {
+    // TODO
+  }
+  VariableAST* var = new VariableAST(varName, ty);
+  varScope.insert(varName, var);
+  return var;
+}
+
+std::vector<VariableAST*> getFormals(pTree tree) {
+  std::vector<VariableAST*> args;
   for (int i = 0; i < getChildCount(tree); ++i) {
-     args.push_back(textOf(child(tree, i)));
+     args.push_back(parseFormal(child(tree, i)));
   }
   return args;
 }
@@ -171,12 +176,22 @@ FnAST* parseFn(string defaultSymbolTemplate, pTree tree, int depth, bool infn) {
   } else {
     name = freshName(defaultSymbolTemplate);
   }
-  PrototypeAST* proto = new PrototypeAST(name, getArgs(child(tree, 1)));
-  ExprAST* body = ExprAST_from(child(tree, 3), depth + 1, true);
-  return new FnAST(proto, body);
+  
+  varScope.pushScope("fn proto " + name);
+    PrototypeAST* proto = new PrototypeAST(name, getFormals(child(tree, 1)));
+    VariableAST* fnRef = new VariableAST(name, proto->GetType());
+    varScope.insert(name, fnRef);
+    
+    std::cout << "Parsing body of fn " << name << std::endl;
+    ExprAST* body = ExprAST_from(child(tree, 3), depth + 1, true);
+    std::cout << "Parsed  body of fn " << name << std::endl;
+  varScope.popScope();
+  
+  FnAST* fn = new FnAST(proto, body);
+  varScope.insert(name, fnRef);
+  
+  return fn;
 }
-
-string spaces(int n) { return string(n, ' '); }
 
 ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
   if (!tree) return NULL;
@@ -184,7 +199,7 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
   int token = typeOf(tree);
   string text = textOf(tree);
   int nchildren = getChildCount(tree);
-  printf("%sToken number %d, text %s, nchildren: %d\n", spaces(depth).c_str(), token, text.c_str(), nchildren);
+  //printf("%sToken number %d, text %s, nchildren: %d\n", spaces(depth).c_str(), token, text.c_str(), nchildren);
   //display_pTree(tree, 2);
   
   if (token == TRAILERS) {
@@ -204,10 +219,15 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
     return prefix;
   }
   
-  if (token == SEQ) {
+  if (token == SEQ) { // contains FIELD_LIST
     return ExprAST_from(child(tree, 0), depth + 1, infn);
   }
-  if (token == EXPRS || token == FIELD_LIST || token == BODY) {
+  
+  if (token == BODY) { // usually contains SEQ
+    return ExprAST_from(child(tree, 0), depth, infn);
+  }
+  
+  if (token == EXPRS || token == FIELD_LIST) {
     Exprs exprs;
     for (int i = 0; i < getChildCount(tree); ++i) {
       ExprAST* ast = ExprAST_from(child(tree, i), depth + 1, infn);
@@ -225,7 +245,16 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
       return NULL;
     }
   }
-  if (token == NAME) { return new VariableAST(textOf(child(tree, 0))); }
+  
+  if (token == NAME) {
+    string varName = textOf(child(tree, 0));
+    ExprAST* var = varScope.lookup(varName, "");
+    if (!var) {
+      std::cerr << "Could not find expr for var name\t" << varName << std::endl;
+    }
+    return var;
+  }
+  
   if (text == "=") {
     assert(getChildCount(tree) == 2);
     // x = fn { blah }   ===   x = fn "x" { blah }

@@ -13,18 +13,21 @@ tokens {
 	// __compiles
 
 	FN; OUT; BODY; GIVEN; GIVES; IDS; SEQ; FIELD_LIST; INT; RAT; EXPRS; NAME;
-	TRAILERS; CALL; TUPLE; SUBSCRIPT; LOOKUP;
+	TRAILERS; CALL; TUPLE; SUBSCRIPT; LOOKUP; FORMAL;
 }
 
 program			:	expr+ EOF -> ^(EXPRS expr+);
 
-fn			:	'fn' n=str? in=idlist? ('to' out=idlist)? seq requires? ensures?
+fn			:	'fn' n=str? in=formals? ('to' out=formals)? seq requires? ensures?
 					-> ^(FN ^(NAME $n) ^(IN $in) ^(OUT $out) ^(BODY seq) ^(GIVEN requires?) ^(GIVES ensures?));
 requires		:	'given' seq;
 ensures			:	'gives' seq;
 num			:	( int_num -> ^(INT int_num)
 				| rat_num -> ^(RAT rat_num));
-idlist			:	(IDENT+ | '(' IDENT (','? IDENT)* ')') -> IDENT*;
+formal                  :        i=IDENT (':' t=IDENT) -> ^(FORMAL $i $t); 	
+formals			:	(      formal+
+				 | '(' formal (','? formal)* ')'
+				) -> formal*;
 
 literal			:	TRUE | FALSE | num | tuple;
 name			:	n=IDENT -> ^(NAME $n);

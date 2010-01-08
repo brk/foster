@@ -29,8 +29,9 @@ llvm::ExecutionEngine* ee;
 llvm::IRBuilder<> builder(getGlobalContext());
 llvm::Module* module;
 
-FosterSymbolTable scope;
-std::map<string, const Type*> NamedTypes;
+FosterSymbolTable<Value> scope;
+FosterSymbolTable<const Type> typeScope;
+FosterSymbolTable<ExprAST> varScope;
 
 std::ostream& operator<<(std::ostream& out, ExprAST& expr) {
   return expr.operator<<(out);
@@ -69,13 +70,6 @@ Value* ErrorV(const char* Str) {
   return NULL;
 }
 
-const Type* LLVMType_from(string s) {
-  std::clog << "Getting LLVM type for " << s << std::endl;
-  if (NamedTypes[s]) return NamedTypes[s];
-  fprintf(stderr, "Unknown type in LLVMType_from(%s)\n", s.c_str());
-  return NULL;
-}
-
 string join(string glue, Exprs args) {
   std::stringstream ss;
   if (args.size() > 0) {
@@ -96,17 +90,60 @@ string join(string glue, Exprs args) {
   return ss.str();
 }
 
+const Type* LLVMTypeFor(const string& name) { return module->getTypeByName(name); }
+
+void initModuleTypeNames() {
+  module->addTypeName("i32", llvm::IntegerType::get(getGlobalContext(), 32));
+  /*
+  std::vector<const Type*> StringParts;
+  StringParts.push_back(Type::Int32Ty);
+  StringParts.push_back(PointerType::get(Type::Int8Ty, DEFAULT_ADDRESS_SPACE));
+  module->addTypeName("String", StructType::get(StringParts));
+  */
+
+  //const unsigned DEFAULT_ADDRESS_SPACE = 0u;
+  //module->addTypeName("String",
+  //  llvm::PointerType::get(Type::getInt8Ty(gcon), DEFAULT_ADDRESS_SPACE));
+}
+
 ///////////////////////////////////////////////////////////
 
+const llvm::Type* IntAST::GetType() {
+  return llvm::IntegerType::get(getGlobalContext(), 32);
+}
+
 Value* IntAST::Codegen() {
-  return ConstantInt::get(Type::getInt32Ty(getGlobalContext()),
-                          APInt(32u, Clean, Base));
+  return ConstantInt::get(this->GetType(), APInt(32u, Clean, Base));
+}
+
+//////////////////////////////////////////////////////////
+
+bool BinaryExprAST::Sema() {
+  return this->GetType()->isInteger();
+}
+
+const llvm::Type* BinaryExprAST::GetType() {
+  const llvm::Type* TL = LHS->GetType();
+  const llvm::Type* TR = RHS->GetType();
+  if (TL != TR) {
+    std::cerr << "Error: binary expr " << op << " had differently typed sides!" << std::endl;
+    return NULL;
+  } else if (!TL) {
+    std::cerr << "Error: binary expr " << op << " failed to typecheck subexprs!" << std::endl;
+    return NULL;
+  } else {
+    return TL;
+  }
 }
 
 Value* BinaryExprAST::Codegen() {
   Value* VL = LHS->Codegen();
   Value* VR = RHS->Codegen();
-  if (!VL || !VR) return NULL;
+  
+  if (!VL || !VR) {
+    std::cerr << "Error: binary expr " << op << " had null subexpr" << std::endl;
+    return NULL;
+  }
 
   if (op == "+") { return builder.CreateAdd(VL, VR, "addtmp"); }
   if (op == "-") { return builder.CreateSub(VL, VR, "subtmp"); }
@@ -130,14 +167,32 @@ Value* BinaryExprAST::Codegen() {
   return NULL;
 }
 
+//////////////////////////////////////////////////////////
+
+bool PrototypeAST::Sema() {
+  std::cout << "PrototypeAST::Sema() -> true" << std::endl;
+  return true;
+} // TODO
+
+const llvm::FunctionType* PrototypeAST::GetType() {
+  // Make the function type
+  const IntegerType* returnType = Type::getInt32Ty(getGlobalContext());
+  vector<const Type*> argTypes;
+  for (int i = 0; i < inArgs.size(); ++i) {
+    const Type* ty = inArgs[i]->GetType();
+    if (ty == NULL) {
+      std::cerr << "Error: fn proto's Type creation failed due to "
+        << "null type for arg '" << inArgs[i]->Name << "'" << std::endl;
+    }
+    argTypes.push_back(ty);
+  }
+  
+  return FunctionType::get(returnType, argTypes, false);
+}
+
 Function* PrototypeAST::Codegen() {
   std::cout << "\t" << "Codegen proto "  << Name << std::endl;
-  
-  // Make the function type: int(int, ..., int) for now
-  const IntegerType* i32_t = Type::getInt32Ty(getGlobalContext());
-  vector<const Type*> Ints(inArgs.size(), i32_t);
-  FunctionType* FT = FunctionType::get(i32_t, Ints, false);
-
+  const llvm::FunctionType* FT = this->GetType();
   Function* F = Function::Create(FT, Function::ExternalLinkage, Name, module);
 
   if (!F) {
@@ -154,10 +209,10 @@ Function* PrototypeAST::Codegen() {
   // Set names for all arguments
   Function::arg_iterator AI = F->arg_begin();
   for (int i = 0; i != inArgs.size(); ++i, ++AI) {
-    AI->setName(inArgs[i]);
+    AI->setName(inArgs[i]->Name);
     //NamedValues[inArgs[i]] = AI;
-    std::cout << "Inserting " << inArgs[i] << " in scope" << std::endl;
-    scope.insert(inArgs[i], AI);
+    //std::cout << "Inserting " << inArgs[i] << " in scope" << std::endl;
+    scope.insert(inArgs[i]->Name, AI);
   }
 
   return F;
@@ -244,17 +299,25 @@ Value* IfExprAST::Codegen() {
   return PN;
 }
 
+////////////////////////////////////////////////////////////////////
+
+const llvm::Type* TupleExprAST::GetType() {
+  std::vector<const Type*> tupleFieldTypes;
+  for (int i = 0; i < body->exprs.size(); ++i) {
+    const Type* ty = body->exprs[i]->GetType();
+    if (!ty) {
+      std::cerr << "Tuple expr had null constituent type for subexpr " << i << std::endl;
+    }
+    tupleFieldTypes.push_back(ty);
+  }
+  return llvm::StructType::get(getGlobalContext(), tupleFieldTypes, /*isPacked=*/false);
+}
+
 Value* TupleExprAST::Codegen() {
   if (cachedValue != NULL) return cachedValue;
   
   // Create struct type underlying tuple
-  std::vector<const Type*> tupleFieldTypes;
-  for (int i = 0; i < body->exprs.size(); ++i) {
-    tupleFieldTypes.push_back(Type::getInt32Ty(getGlobalContext()));
-  }
-  llvm::StructType* tupleType = llvm::StructType::get(getGlobalContext(),
-                                                      tupleFieldTypes,
-                                                      /*isPacked=*/false);
+  const Type* tupleType = this->GetType();
   module->addTypeName(freshName("tuple"), tupleType);
   
   // Allocate tuple space
@@ -269,9 +332,9 @@ Value* TupleExprAST::Codegen() {
   
   cachedValue = pt;
   return pt;
-  //return ConstantInt::get(Type::getInt32Ty(getGlobalContext()), APInt(32u, "123", 10));
 }
 
+////////////////////////////////////////////////////////////////////
 
 Value* SubscriptAST::Codegen() {
   if (true) { // ty(base) == struct && ty(index) == int

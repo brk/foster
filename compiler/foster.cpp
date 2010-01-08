@@ -81,16 +81,23 @@ void createParser(ANTLRContext& ctx, string filename) {
   }
 }
 
+void addExternSingleParamFn_i32(const char* name, VariableAST* param) {
+  PrototypeAST* p = new PrototypeAST(name, param);
+  scope.insert(name, p->Codegen());
+  varScope.insert(name, new VariableAST(name, p->GetType()));
+}
+
 void addLibFosterRuntimeExterns() {
   scope.pushScope("externs");
-  PrototypeAST* p;
-
-  p = new PrototypeAST("print_i32", "x"); scope.insert("print_i32", p->Codegen());
-  p = new PrototypeAST("print_i32x", "x"); scope.insert("print_i32x", p->Codegen());
-  p = new PrototypeAST("print_i32b", "x"); scope.insert("print_i32b", p->Codegen());
-  p = new PrototypeAST("expect_i32", "x"); scope.insert("expect_i32", p->Codegen());
-  p = new PrototypeAST("expect_i32x", "x"); scope.insert("expect_i32x", p->Codegen());
-  p = new PrototypeAST("expect_i32b", "x"); scope.insert("expect_i32b", p->Codegen());
+  varScope.pushScope("externs");
+  
+  VariableAST* x_i32 = new VariableAST("x", llvm::IntegerType::get(getGlobalContext(), 32));
+  addExternSingleParamFn_i32("print_i32",   x_i32);
+  addExternSingleParamFn_i32("print_i32x",  x_i32);
+  addExternSingleParamFn_i32("print_i32b",  x_i32);
+  addExternSingleParamFn_i32("expect_i32",  x_i32);
+  addExternSingleParamFn_i32("expect_i32x", x_i32);
+  addExternSingleParamFn_i32("expect_i32b", x_i32);
 }
 
 int main(int argc, char** argv) {
@@ -121,14 +128,18 @@ int main(int argc, char** argv) {
 
   std::cout << "printing" << endl;
   std::cout << str(langAST.tree->toStringTree(langAST.tree)) << endl << endl;
-
+  
+  addLibFosterRuntimeExterns();
+  
   std::cout << "converting" << endl;
   ExprAST* exprAST = ExprAST_from(langAST.tree, 0, false);
 
   std::cout << "unparsing" << endl;
   std::cout << *exprAST << endl;
   
-  addLibFosterRuntimeExterns();
+  std::cout << "Semantic checking: " << exprAST->Sema() << endl; 
+  
+  std::cout << "=========================" << std::endl;
   
   Value* v = exprAST->Codegen();
 

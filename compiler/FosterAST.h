@@ -41,57 +41,61 @@ extern llvm::ExecutionEngine* ee;
 extern llvm::IRBuilder<> builder;
 extern Module* module;
 
-extern std::map<string, const Type*> NamedTypes;
-
 Value* ErrorV(const char* Str);
-const Type* LLVMType_from(string s);
 
 string join(string glue, Exprs args);
+
+const Type* LLVMTypeFor(const string& name);
+void initModuleTypeNames();
 
 ///////////////////////////////////////////////////////////
 
 struct ExprAST {
   virtual ~ExprAST() {}
   virtual std::ostream& operator<<(std::ostream& out) = 0;
-  virtual string GetTypeName() = 0;
+  virtual const llvm::Type* GetType() = 0;
   virtual bool Sema() = 0;
   virtual Value* Codegen() = 0;
 };
 
-// {{{ Foster symbol table Env
+// {{{ |scope| maps names (var/fn) to llvm::Value*/llvm::Function*
+template <typename T>
 class FosterSymbolTable {
   struct LexicalScope {
     string Name;
-    typedef std::map<string, Value*> Map;
-    Map Value_of;
+    typedef std::map<string, T*> Map;
+    Map val_of;
     LexicalScope(string name) : Name(name) {}
   };
   typedef std::vector<LexicalScope> Environment;
   Environment env;
-public:
-  Value* lookup(string ident, string wantedName) {
-    for (Environment::reverse_iterator it = env.rbegin(); it != env.rend(); ++it) {
+ public:
+  T* lookup(string ident, string wantedName) {
+    for (typename Environment::reverse_iterator it = env.rbegin();
+                                                it != env.rend(); ++it) {
       string scopeName = (*it).Name;
       if (scopeName == "*" || wantedName == "" || scopeName == wantedName) {
-        Value* V = (*it).Value_of[ident];
+        T* V = (*it).val_of[ident];
         if (V != NULL) return V;
       }
     }
     return NULL;
   }
 
-  Value* insert(string ident, Value* V) {
+  T* insert(string ident, T* V) {
     if (env.empty()) {
       std::cerr << "Inserted into empty symbol table!" << std::endl;
       pushScope("*");
     }
-    env.back().Value_of[ident] = V;
+    env.back().val_of[ident] = V;
   }
   void pushScope(string scopeName) { env.push_back(LexicalScope(scopeName)); }
   void popScope() { env.pop_back(); }
 };
 
-extern FosterSymbolTable scope;
+extern FosterSymbolTable<Value> scope;
+extern FosterSymbolTable<const Type> typeScope;
+extern FosterSymbolTable<ExprAST> varScope;
 // }}}
 
 struct IntAST : public ExprAST {
@@ -100,21 +104,34 @@ struct IntAST : public ExprAST {
   int Base;
   explicit IntAST(string val): Text(val), Clean(val), Base(10) {}
   explicit IntAST(string val, int base): Text(val), Clean(val), Base(base) {}
-  virtual string GetTypeName() { return "Int"; }
+  virtual const llvm::Type* GetType();
   virtual std::ostream& operator<<(std::ostream& out) { return out << Clean; }
-  virtual bool Sema() { return true; }
+  virtual bool Sema() { std::cout << "IntAST::Sema() -> true" << std::endl; return true; }
   virtual Value* Codegen();
 };
 
 struct VariableAST : public ExprAST {
   string Name;
-  // TODO need to figure out how/where/when to assign type info to null
-  virtual string GetTypeName() { return "<not implemented>"; }
-  explicit VariableAST(const string& name): Name(name) {}
-  virtual std::ostream& operator<<(std::ostream& out) { return out << Name; }
+  // TODO need to figure out how/where/when to assign type info to nil
+  const llvm::Type* type;
+  virtual const llvm::Type* GetType() {
+    std::cout << "Returning " << type << " for variable\t" << Name << std::endl;
+    return type;
+  }
+  explicit VariableAST(const string& name, const llvm::Type* type): Name(name), type(type) {
+    std::cout << "new VariableAST("<<name<< ", " << type << ")" << std::endl;
+  }
+  virtual std::ostream& operator<<(std::ostream& out) {
+    //if (type) {
+    //  return out << Name << " : " << *type;
+    //} else {
+      return out << Name;
+   // }
+  }
   virtual bool Sema() {
     if (Name == "nil") return true;
     // TODO
+    std::cout << "VariableAST::Sema() -> true" << std::endl;
     return true;
   }
   virtual Value* Codegen() {
@@ -219,22 +236,10 @@ struct VariableAST : public ExprAST {
 struct BinaryExprAST : public ExprAST {
   string op;
   ExprAST* LHS, *RHS;
-  BinaryExprAST(string op, ExprAST* lhs, ExprAST* rhs) : op(op), LHS(lhs), RHS(rhs) {}
-  virtual bool Sema() {
-    return LHS->GetTypeName() == "Int" &&
-           RHS->GetTypeName() == "Int";
-  }
-  virtual string GetTypeName() {
-    // type checking of consitituent parts done in semantic analysis phase
-
-    if (op == "<" || op == "<=") {
-      return "Boolean";
-    }
-
-    if (op == "+" || op == "-" || op =="*" || op == "/") {
-      return "Int";
-    }
-  }
+  BinaryExprAST(string op, ExprAST* lhs, ExprAST* rhs)
+    : op(op), LHS(lhs), RHS(rhs) {}
+  virtual bool Sema();
+  virtual const llvm::Type* GetType();
   virtual std::ostream& operator<<(std::ostream& out) {
     if (LHS) out << *LHS; else out << "<nil>";
     out << ' ' << op << ' ';
@@ -297,8 +302,48 @@ struct CallAST : public ExprAST {
   ExprAST* base;
   Exprs args;
   CallAST(ExprAST* base, Exprs args) : base(base), args(args) {}
-  virtual bool Sema() { return true; } // TODO
-  virtual string GetTypeName() { return "<not implemented>"; }
+  virtual bool Sema() {
+    const Type* baseType = base->GetType();
+    if (baseType == NULL) {
+      std::cerr << "Error: CallAST base expr returned null type" << std::endl;
+      return false;
+    }
+    
+    const llvm::FunctionType* baseFT = llvm::dyn_cast<const llvm::FunctionType>(baseType);
+    if (baseFT == NULL) {
+      std::cerr << "Error: CallAST base expr had non-function type " << *baseType << std::endl;
+      return false;
+    }
+    
+    int numParams = baseFT->getNumParams();
+    if (numParams != args.size()) {
+      std::cerr << "Error: arity mismatch; " << args.size() << " args provided"
+        << " for function taking " << numParams << " args." << std::endl;
+      return false;
+    }
+    
+    bool success = true;
+    for (int i = 0; i < numParams; ++i) {
+      const Type* formalType = baseFT->getParamType(i);
+      const Type* actualType = args[i]->GetType();
+      if (formalType != actualType) {
+        success = false;
+        std::cerr << "Type mismatch between actual and formal arg " << i << std::endl;
+        std::cerr << "\tformal: " << *formalType << "; actual: " << *actualType << std::endl;
+      }
+    }
+    
+    return success;
+  }
+  
+  virtual const llvm::Type* GetType() {
+    if (this->Sema()) {
+      return llvm::dyn_cast<const llvm::FunctionType>(base->GetType())->getReturnType();
+    } else {
+      return NULL;
+    }
+  }
+  
   virtual std::ostream& operator<<(std::ostream& out) {
     out << "(";
     if (base) out << *base; else out << "<nil>";
@@ -333,13 +378,22 @@ struct CallAST : public ExprAST {
 
 struct SeqAST : public ExprAST {
   Exprs exprs;
-  virtual bool Sema() { return true; } // TODO
+  virtual bool Sema() {
+    bool success = true;
+    for (int i = 0; i < exprs.size(); ++i) {
+      if (exprs[i]) {
+        success = exprs[i]->Sema() && success;
+      } else {
+        std::cerr << "Null expr in SeqAST" << std::endl;
+        return false;
+      }
+    }
+    return success;
+  }
   explicit SeqAST(Exprs exprs) : exprs(exprs) {}
-  virtual string GetTypeName() {
-    //if (Expressions.size() == 0) return "Unit";
-    //if (Expressions.size() == 1) return Expressions[0]->GetTypeName();
-    //return Expressions[Expressions.size()-1]->GetTypeName();
-    return "TODO";
+  virtual const llvm::Type* GetType() {
+    if (exprs.empty()) { return NULL; }
+    else { return exprs[exprs.size() - 1]->GetType(); }
   }
   
   virtual std::ostream& operator<<(std::ostream& out) {
@@ -354,7 +408,6 @@ struct SeqAST : public ExprAST {
   }
   
   virtual Value* Codegen() {
-    //BB = Builder.GetInsertBlock();
     Value* V;
     for (int i = 0; i < exprs.size(); ++i) {
       if (exprs[i]) V = exprs[i]->Codegen();
@@ -370,17 +423,11 @@ struct SeqAST : public ExprAST {
 struct TupleExprAST : public ExprAST {
   SeqAST* body;
   Value* cachedValue;
-  virtual bool Sema() { return true; } // TODO
+  virtual bool Sema() { std::cout << "TupleExprAST::Sema() -> true" << std::endl; return true; } // TODO
   explicit TupleExprAST(ExprAST* expr) : cachedValue(NULL) {
     body = dynamic_cast<SeqAST*>(expr);
   }
-  virtual string GetTypeName() {
-    //if (Expressions.size() == 0) return "Unit";
-    //if (Expressions.size() == 1) return Expressions[0]->GetTypeName();
-    //return Expressions[Expressions.size()-1]->GetTypeName();
-    return "TODO";
-  }
-  
+  virtual const llvm::Type* GetType();
   virtual std::ostream& operator<<(std::ostream& out) {
     return out << "(tuple " << *body << ")";
   }
@@ -391,10 +438,13 @@ struct TupleExprAST : public ExprAST {
 struct SubscriptAST : public ExprAST {
   ExprAST* base;
   ExprAST* index;
-  virtual bool Sema() { return true; } // TODO
+  virtual bool Sema() { std::cout << "SubscriptAST::Sema() -> true" << std::endl; return true; } // TODO
   explicit SubscriptAST(ExprAST* base, ExprAST* index)
     : base(base), index(index) { }
-  virtual string GetTypeName() { return "TODO"; }
+  virtual const llvm::Type* GetType() {
+    std::cout << "SubscriptAST::GetType() -> NULL..." << std::endl;
+    return NULL;
+  }
   virtual std::ostream& operator<<(std::ostream& out) {
     return out << *base << "[" << *index << "]";
   }
@@ -404,32 +454,32 @@ struct SubscriptAST : public ExprAST {
 
 struct PrototypeAST : public ExprAST {
   string Name;
-  std::vector<string> inArgs;
-  std::vector<string> outArgs;
-  virtual bool Sema() { return true; } // TODO
-  virtual string GetTypeName() { return "TODO"; }
+  std::vector<VariableAST*> inArgs;
+  std::vector<VariableAST*> outArgs;
+  virtual bool Sema();
+  const llvm::FunctionType* GetType();
   
   PrototypeAST(const string& name) : Name(name) {}
-  PrototypeAST(const string& name, const string& arg1)
+  PrototypeAST(const string& name, VariableAST* arg1)
     : Name(name) { inArgs.push_back(arg1); }
-  PrototypeAST(const string& name, const string& arg1, const string& arg2)
+  PrototypeAST(const string& name, VariableAST* arg1, VariableAST* arg2)
     : Name(name) { inArgs.push_back(arg1); inArgs.push_back(arg2); }
-  PrototypeAST(const string& name, const std::vector<string>& inArgs)
-    : Name(name), inArgs(inArgs) {}
-  PrototypeAST(const string& name, const std::vector<string>& inArgs,
-                                   const std::vector<string>& outArgs)
-    : Name(name), inArgs(inArgs), outArgs(outArgs) {}
+  PrototypeAST(const string& name, const std::vector<VariableAST*>& inArgs)
+    : Name(name), inArgs(inArgs) { }
+  PrototypeAST(const string& name, const std::vector<VariableAST*>& inArgs,
+                                   const std::vector<VariableAST*>& outArgs)
+    : Name(name), inArgs(inArgs), outArgs(outArgs) { }
     
   llvm::Function* Codegen();
   virtual std::ostream& operator<<(std::ostream& out) {
     out << "fn" << " " << Name << "(";
     for (int i = 0; i < inArgs.size(); ++i) {
-      out << inArgs[i] << " ";
+      out << inArgs[i]->Name << " ";
     }
     if (!outArgs.empty()) {
       out << " to";
       for (int i = 0; i < outArgs.size(); ++i) {
-        out << " " << outArgs[i];
+        out << " " << outArgs[i]->Name;
       }
     }
     out << ")";
@@ -441,8 +491,14 @@ struct FnAST : public ExprAST {
   PrototypeAST* Proto;
   ExprAST* Body;
 
-  virtual bool Sema() { return true; } // TODO
-  virtual string GetTypeName() { return "TODO"; }
+  virtual bool Sema() {
+    bool p = Proto->Sema(); bool b = Body->Sema();
+    return p && b; // Check both parts even if there's an error in one...(?)
+  }
+  virtual const llvm::Type* GetType() {
+    std::cout << "FnAST::GetType() -> NULL..." << std::endl;
+    return NULL;
+  }
   explicit FnAST(PrototypeAST* proto, ExprAST* body) :
       Proto(proto), Body(body) {
     }
@@ -458,17 +514,13 @@ struct IfExprAST : public ExprAST {
   IfExprAST(ExprAST* ifExpr, ExprAST* thenExpr, ExprAST* elseExpr)
     : ifExpr(ifExpr), thenExpr(thenExpr), elseExpr(elseExpr) {}
   public:
-  virtual bool Sema() { return true; } // TODO
-  virtual string GetTypeName() {
-    /*
-    string CondTypeName = GetCondTypeName();
-    if (CondTypeName != "Boolean") {
-      fprintf(stderr, "if expression condition has non-Boolean type %s\n", CondTypeName.c_str());
-      return "Unit";
-    }
-    return GetResultTypeName();
-    */
+  virtual bool Sema() { std::cout << "IfExprAST::Sema() -> true" << std::endl;  return true; } // TODO
+  virtual const llvm::Type* GetType() {
+    std::cout << "IfExprAST::GetType() -> NULL..." << std::endl;
+    // Return unification of thenExpr and elseExpr types
+    return NULL;
   }
+  
   virtual std::ostream& operator<<(std::ostream& out) {
     out << "if (";
     if (ifExpr) out << *ifExpr; else out << "<nil>";
