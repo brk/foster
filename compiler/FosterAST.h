@@ -328,10 +328,11 @@ struct TupleExprAST : public ExprAST {
   explicit TupleExprAST(ExprAST* expr) : cachedValue(NULL) {
     body = dynamic_cast<SeqAST*>(expr);
   }
-  virtual void accept(FosterASTVisitor* visitor) {
-    std::cout << "TupleExpr " << this << " accepting visitor." << std::endl;
-    visitor->visit(this); }
+  virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) {
+    if (!body) {
+      return out << "(tuple)";
+    }
     return out << "(tuple " << *body << ")";
   }
 };

@@ -135,13 +135,17 @@ void TypecheckPass::visit(SubscriptAST* ast) {
   }
   
   idx->accept(this);
-  Value* vidx = idx->getConstantValue();
-  if (!structTy->indexValid(vidx)) {
-    std::cerr << "Error: attempt to index struct with invalid index '" << *vidx << "'" << std::endl;
+  ConstantInt* cidx = llvm::dyn_cast<ConstantInt>(idx->getConstantValue());
+  const APInt& vidx = cidx->getValue();
+  
+  if (!structTy->indexValid(cidx) || vidx.isNegative()) {
+    std::cerr << "Error: attempt to index struct with invalid index '" << *cidx << "'" << std::endl;
     return;
   }
-  std::cout << "\t\t\t\t150* " << std::endl;
-  ast->type = structTy->getTypeAtIndex(vidx);
+  
+  std::cout << "Indexing struct with index " << *cidx << "; neg? " << vidx.isNegative() << std::endl;
+  
+  ast->type = structTy->getTypeAtIndex(cidx);
 }
 
 void TypecheckPass::visit(SeqAST* ast) {
@@ -232,6 +236,7 @@ void TypecheckPass::visit(TupleExprAST* ast) {
     }
     tupleFieldTypes.push_back(ty);
   }
+  
   if (success) {
     const Type* structTy = llvm::StructType::get(getGlobalContext(), tupleFieldTypes, /*isPacked=*/false);
     ast->type = structTy;
