@@ -1,4 +1,3 @@
-// vim: set foldmethod=marker :
 // Copyright (c) 2009 Ben Karel. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
@@ -21,6 +20,8 @@
 
 #include "FosterAST.h"
 #include "ANTLRtoFosterAST.h"
+#include "TypecheckPass.h"
+#include "CodegenPass.h"
 
 #include <cassert>
 #include <iostream>
@@ -81,10 +82,25 @@ void createParser(ANTLRContext& ctx, string filename) {
   }
 }
 
+// |param| is used to construct the prototype for the function,
+// and a different VariableAST is inserted into the symbol tables
 void addExternSingleParamFn(const char* name, VariableAST* param) {
   PrototypeAST* p = new PrototypeAST(name, param);
-  scope.insert(name, p->Codegen());
-  varScope.insert(name, new VariableAST(name, p->GetType()));
+  
+  // These "passes" are intentionally run in the "wrong" order...
+  TypecheckPass typ; p->accept(&typ);
+  CodegenPass   cp;  p->accept(&cp);
+  
+  VariableAST* fnRef = new VariableAST(name, p->type);
+  
+  std::cout << "\t\t\tInserting into symbol table " << name << " : " << fnRef << "\tof type '";
+  if (p->type) {
+    std::cout << *(p->type);
+  } else std::cout << "<null type>";
+  std::cout << "'" << std::endl;
+  
+  varScope.insert(name, fnRef);
+  scope.insert(name, p->value);
 }
 
 void addLibFosterRuntimeExterns() {
@@ -100,8 +116,10 @@ void addLibFosterRuntimeExterns() {
   addExternSingleParamFn("expect_i32b", x_i32);
   
   VariableAST* x_i1 = new VariableAST("xi1", LLVMTypeFor("i1"));
-  addExternSingleParamFn("print_i1",   x_i1);
-  addExternSingleParamFn("expect_i1",   x_i1);
+  addExternSingleParamFn("print_i1",  x_i1);
+  addExternSingleParamFn("expect_i1", x_i1);
+  
+  // Don't pop scopes, so they will be available for the "real" program
 }
 
 int main(int argc, char** argv) {
@@ -138,28 +156,25 @@ int main(int argc, char** argv) {
   std::cout << "converting" << endl;
   ExprAST* exprAST = ExprAST_from(langAST.tree, 0, false);
 
+  std::cout << "=========================" << std::endl;
   std::cout << "unparsing" << endl;
   std::cout << *exprAST << endl;
   
-  bool sema = exprAST->Sema();
+  std::cout << "=========================" << std::endl;
+  
+  TypecheckPass tyPass; exprAST->accept(&tyPass);
+  bool sema = exprAST->type != NULL;
   std::cout << "Semantic checking: " << sema << endl; 
   
   if (!sema) return 1;
   
   std::cout << "=========================" << std::endl;
   
-  Value* v = exprAST->Codegen();
+  CodegenPass cgPass; exprAST->accept(&cgPass);
 
   std::ofstream LLASM("foster.ll");
 
   LLASM << *module;
-  //LLASM << v;
-  /*
-  Value* Main = genMainDotMain();
-  if (Main) {
-     LLASM << *Main;
-  }
-  */
 
   return 0;
 }

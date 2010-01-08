@@ -1,4 +1,3 @@
-// vim: set foldmethod=marker :
 // Copyright (c) 2009 Ben Karel. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
@@ -10,6 +9,8 @@
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
 #include "llvm/Constants.h"
 #include "llvm/Support/IRBuilder.h"
+
+#include "FosterASTVisitor.h"
 
 #include <iostream>
 #include <vector>
@@ -51,11 +52,13 @@ void initModuleTypeNames();
 ///////////////////////////////////////////////////////////
 
 struct ExprAST {
+  llvm::Value* value;
+  const llvm::Type* type;
+  
+  ExprAST() : value(NULL), type(NULL) {}
   virtual ~ExprAST() {}
   virtual std::ostream& operator<<(std::ostream& out) = 0;
-  virtual const llvm::Type* GetType() = 0;
-  virtual bool Sema() = 0;
-  virtual Value* Codegen() = 0;
+  virtual void accept(FosterASTVisitor* visitor) = 0;
 };
 
 // {{{ |scope| maps names (var/fn) to llvm::Value*/llvm::Function*
@@ -104,51 +107,35 @@ struct IntAST : public ExprAST {
   int Base;
   explicit IntAST(string val): Text(val), Clean(val), Base(10) {}
   explicit IntAST(string val, int base): Text(val), Clean(val), Base(base) {}
-  virtual const llvm::Type* GetType();
+  virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
+  llvm::Constant* getConstantValue();
+  
   virtual std::ostream& operator<<(std::ostream& out) { return out << Clean; }
-  virtual bool Sema() { return true; }
-  virtual Value* Codegen();
 };
 
 struct BoolAST : public ExprAST {
-  bool value;
-  explicit BoolAST(string val) : value(val == "true") {}
-  virtual const llvm::Type* GetType() { return LLVMTypeFor("i1"); }
+  bool boolValue;
+  explicit BoolAST(string val) : boolValue(val == "true") {}
+  virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) {
-    return out << string(value ? "true" : "false");
+    return out << string(boolValue ? "true" : "false");
   }
-  virtual bool Sema() { return true; }
-  virtual Value* Codegen();
 };
 
 struct VariableAST : public ExprAST {
   string Name;
   // TODO need to figure out how/where/when to assign type info to nil
-  const llvm::Type* type;
-  virtual const llvm::Type* GetType() {
-    std::cout << "Returning " << type << " for variable\t" << Name << std::endl;
-    return type;
-  }
-  explicit VariableAST(const string& name, const llvm::Type* type): Name(name), type(type) {
+  explicit VariableAST(const string& name, const llvm::Type* aType): Name(name) {
+    this->type = aType;
     std::cout << "new VariableAST("<<name<< ", " << type << ")" << std::endl;
   }
+  virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) {
     //if (type) {
     //  return out << Name << " : " << *type;
     //} else {
       return out << Name;
    // }
-  }
-  virtual bool Sema() {
-    if (Name == "nil") return true;
-    // TODO: check that variable is in scope
-    //std::cout << "VariableAST::Sema() -> true" << std::endl;
-    return true;
-  }
-  virtual Value* Codegen() {
-    std::cout << "\t" << "Codegen variable "  << Name << std::endl;
-    Value* V = scope.lookup(Name, "");
-    return V ? V : ErrorV(("Unknown variable name " + Name).c_str());
   }
 };
 
@@ -249,14 +236,12 @@ struct BinaryExprAST : public ExprAST {
   ExprAST* LHS, *RHS;
   BinaryExprAST(string op, ExprAST* lhs, ExprAST* rhs)
     : op(op), LHS(lhs), RHS(rhs) {}
-  virtual bool Sema();
-  virtual const llvm::Type* GetType();
+  virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) {
     if (LHS) out << *LHS; else out << "<nil>";
     out << ' ' << op << ' ';
     if (RHS) out << *RHS; else out << "<nil>";
   }
-  virtual Value* Codegen();
 };
 
 
@@ -313,115 +298,18 @@ struct CallAST : public ExprAST {
   ExprAST* base;
   Exprs args;
   CallAST(ExprAST* base, Exprs args) : base(base), args(args) {}
-  virtual bool Sema() {
-    const Type* baseType = base->GetType();
-    if (baseType == NULL) {
-      std::cerr << "Error: CallAST base expr returned null type" << std::endl;
-      return false;
-    }
-    
-    const llvm::FunctionType* baseFT = llvm::dyn_cast<const llvm::FunctionType>(baseType);
-    if (baseFT == NULL) {
-      std::cerr << "Error: CallAST base expr had non-function type " << *baseType << std::endl;
-      return false;
-    }
-    
-    int numParams = baseFT->getNumParams();
-    if (numParams != args.size()) {
-      std::cerr << "Error: arity mismatch; " << args.size() << " args provided"
-        << " for function taking " << numParams << " args." << std::endl;
-      return false;
-    }
-    
-    bool success = true;
-    
-    if (!base->Sema()) {
-      std::cerr << "Error: base of call expression failed Sema()" << std::endl;
-      return false;
-    }
-    
-    for (int i = 0; i < numParams; ++i) {
-      if (!args[i]->Sema()) {
-        std::cerr << "Error: arg " << i << " (" << *args[i] << ") failed Sema()" << std::endl;
-        success = false;
-      }
-    }
-    
-    if (!success) return false;
-    
-    for (int i = 0; i < numParams; ++i) {
-      const Type* formalType = baseFT->getParamType(i);
-      const Type* actualType = args[i]->GetType();
-      if (formalType != actualType) {
-        success = false;
-        std::cerr << "Type mismatch between actual and formal arg " << i << std::endl;
-        std::cerr << "\tformal: " << *formalType << "; actual: " << *actualType << std::endl;
-      }
-    }
-   
-    return success;
-  }
-  
-  virtual const llvm::Type* GetType() {
-    if (this->Sema()) {
-      return llvm::dyn_cast<const llvm::FunctionType>(base->GetType())->getReturnType();
-    } else {
-      return NULL;
-    }
-  }
-  
+  virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) {
     out << "(";
     if (base) out << *base; else out << "<nil>";
     return out << " " << join(" ", args) << ")";
   }
-  virtual Value* Codegen() {
-    std::cout << "\t" << "Codegen callast "  << *base << std::endl;
-    
-    Value* FV = base->Codegen();
-    Function* F = llvm::dyn_cast_or_null<Function>(FV);
-    if (!F) {
-      std::cerr << "base: " << *base << "; FV: " << FV << std::endl;
-      return ErrorV("Unknown function referenced");
-    }
-    
-    if (F->arg_size() != args.size()) {
-      std::stringstream ss;
-      ss << "Function " << (*base) <<  " got " << args.size() << " args, expected "<< F->arg_size();
-      return ErrorV(ss.str().c_str());
-    }
-    
-    std::vector<Value*> valArgs;
-    for (int i = 0; i < args.size(); ++i) {
-      Value* V = args[i]->Codegen();
-      if (!V) return NULL;
-      valArgs.push_back(V);
-    }
-    
-    return builder.CreateCall(F, valArgs.begin(), valArgs.end(), "calltmp");
-  }
 };
 
 struct SeqAST : public ExprAST {
   Exprs exprs;
-  virtual bool Sema() {
-    bool success = true;
-    for (int i = 0; i < exprs.size(); ++i) {
-      if (exprs[i]) {
-        if (!exprs[i]->Sema()) { success = false; }
-      } else {
-        std::cerr << "Null expr in SeqAST" << std::endl;
-        return false;
-      }
-    }
-    return success;
-  }
   explicit SeqAST(Exprs exprs) : exprs(exprs) {}
-  virtual const llvm::Type* GetType() {
-    if (exprs.empty()) { return NULL; }
-    else { return exprs[exprs.size() - 1]->GetType(); }
-  }
-  
+  virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) {
     out << "{ ";
     for (int i = 0; i < exprs.size(); ++i) {
@@ -432,91 +320,37 @@ struct SeqAST : public ExprAST {
     }
     return out << " }";
   }
-  
-  virtual Value* Codegen() {
-    Value* V;
-    for (int i = 0; i < exprs.size(); ++i) {
-      if (exprs[i]) V = exprs[i]->Codegen();
-      else {
-        std::cerr << "SeqAST::Codegen() saw null seq expression " << i << std::endl;
-        break;
-      }
-    }
-    return V;
-  }
 };
 
 struct TupleExprAST : public ExprAST {
   SeqAST* body;
   Value* cachedValue;
-  virtual bool Sema() { return body->Sema(); }
   explicit TupleExprAST(ExprAST* expr) : cachedValue(NULL) {
     body = dynamic_cast<SeqAST*>(expr);
   }
-  virtual const llvm::Type* GetType();
+  virtual void accept(FosterASTVisitor* visitor) {
+    std::cout << "TupleExpr " << this << " accepting visitor." << std::endl;
+    visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) {
     return out << "(tuple " << *body << ")";
   }
-  
-  virtual Value* Codegen();
 };
 
 struct SubscriptAST : public ExprAST {
   ExprAST* base;
   ExprAST* index;
-  virtual bool Sema() { return this->GetType() != NULL; }
   explicit SubscriptAST(ExprAST* base, ExprAST* index)
     : base(base), index(index) { }
-    
-  virtual const llvm::Type* GetType() {
-    IntAST* idx = dynamic_cast<IntAST*>(index);
-    if (!idx) {
-      std::cerr << "SubscriptAST::GetType() had non-constant index, returning NULL..." << std::endl;
-      return NULL;
-    }
-    
-    const Type* baseType = base->GetType();
-    if (!baseType) {
-      std::cerr << "Error: Cannot index into object of null type " << std::endl;
-      return NULL;
-    }
-    
-    if (!baseType->isAggregateType()) {
-      std::cerr << "Error: Cannot index into non-aggregate type " << *baseType << std::endl;
-      return NULL;
-    }
-    
-    const llvm::StructType* structTy = llvm::dyn_cast<llvm::StructType>(baseType);
-    if (!structTy) {
-      std::cerr << "Error: attempt to index into a non-struct type " << *baseType << std::endl;
-      return NULL;
-    }
-    
-    // This doesn't do any "real" codegen, because
-    // idx is a constant int, so Codegen() simply returns a Constant*
-    Value* vidx = idx->Codegen();
-    
-    if (!structTy->indexValid(vidx)) {
-      std::cerr << "Error: attempt to index struct with invalid index '" << *vidx << "'" << std::endl;
-      return NULL;
-    }
-    
-    return structTy->getTypeAtIndex(vidx);
-
-  }
+  virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) {
     return out << *base << "[" << *index << "]";
   }
-  
-  virtual Value* Codegen();
 };
 
 struct PrototypeAST : public ExprAST {
   string Name;
   std::vector<VariableAST*> inArgs;
   std::vector<VariableAST*> outArgs;
-  virtual bool Sema();
-  const llvm::FunctionType* GetType();
   
   PrototypeAST(const string& name) : Name(name) {}
   PrototypeAST(const string& name, VariableAST* arg1)
@@ -528,8 +362,7 @@ struct PrototypeAST : public ExprAST {
   PrototypeAST(const string& name, const std::vector<VariableAST*>& inArgs,
                                    const std::vector<VariableAST*>& outArgs)
     : Name(name), inArgs(inArgs), outArgs(outArgs) { }
-    
-  llvm::Function* Codegen();
+  virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) {
     out << "fn" << " " << Name << "(";
     for (int i = 0; i < inArgs.size(); ++i) {
@@ -550,61 +383,19 @@ struct FnAST : public ExprAST {
   PrototypeAST* Proto;
   ExprAST* Body;
 
-  virtual bool Sema() {
-    bool p = Proto->Sema(); bool b = Body->Sema();
-    return p && b; // Check both parts even if there's an error in one...(?)
-  }
-  virtual const llvm::Type* GetType() {
-    std::cout << "FnAST::GetType() -> NULL..." << std::endl;
-    return NULL;
-  }
   explicit FnAST(PrototypeAST* proto, ExprAST* body) :
       Proto(proto), Body(body) {}
-
+  virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) {
     return out << (*Proto) << " " << (*Body) << endl;
   }
-  llvm::Function* Codegen();
 };
 
 struct IfExprAST : public ExprAST {
   ExprAST* ifExpr, *thenExpr, *elseExpr;
   IfExprAST(ExprAST* ifExpr, ExprAST* thenExpr, ExprAST* elseExpr)
     : ifExpr(ifExpr), thenExpr(thenExpr), elseExpr(elseExpr) {}
-  public:
-  virtual bool Sema() {
-    const Type* ifType = ifExpr->GetType();
-    if (!ifType) {
-      std::cerr << "if condition '" << *ifExpr << "' had null type!" << std::endl;
-      return false;  
-    }
-    
-    if (ifType != LLVMTypeFor("i1")) {
-      std::cerr << "if condition '" << *ifExpr << "' had non-bool type " << *ifType << std::endl;
-      return false;
-    }
-    
-    std::cout << "IfExprAST::Sema() -> true" << std::endl;
-    return true;
-  }
-  
-  virtual const llvm::Type* GetType() {
-    const Type* thenType = thenExpr->GetType();
-    const Type* elseType = elseExpr->GetType();
-    if (thenType == NULL) {
-      std::cerr << "IfExprAST had null type for 'then' expression" << std::endl;
-      return NULL;
-    } else if (elseType == NULL) {
-      std::cerr << "IfExprAST had null type for 'else' expression" << std::endl;
-      return NULL;
-    } else if (thenType != elseType) {
-      std::cerr << "IfExprAST had different (incompatible?) types for then/else exprs" << std::endl;
-      return NULL;
-    } else if (thenType == elseType) {
-      return thenType;
-    } else { std::cerr << __FILE__ << ":" << __LINE__ << std::endl; }
-  }
-  
+  virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) {
     out << "if (";
     if (ifExpr) out << *ifExpr; else out << "<nil>";
@@ -614,23 +405,16 @@ struct IfExprAST : public ExprAST {
     if (elseExpr) out << *elseExpr; else out << "<nil>";
     return out;
   }
-  virtual Value* Codegen();
 };
 
 struct BuiltinCompilesExprAST : public ExprAST {
   ExprAST* expr;
   enum Status { kWouldCompile, kWouldNotCompile, kNotChecked } status;
   explicit BuiltinCompilesExprAST(ExprAST* expr) : expr(expr), status(kNotChecked) {}
-  // "Evaluation" of __COMPILES__ results in a boolean regardless of expr's type
-  virtual const llvm::Type* GetType() { return LLVMTypeFor("i1"); }
+  virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) {
     return out << "(__COMPILES__ " << *expr << ")";
   }
-  virtual bool Sema() {
-    status = (expr->Sema()) ? kWouldCompile : kWouldNotCompile;
-    return true;
-  }
-  virtual Value* Codegen();
 };
 
 

@@ -1,10 +1,10 @@
-// vim: set foldmethod=marker :
 // Copyright (c) 2009 Ben Karel. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
 #include "ANTLRtoFosterAST.h"
 #include "FosterAST.h"
+#include "TypecheckPass.h"
 
 #include "fosterLexer.h"
 #include "fosterParser.h"
@@ -179,7 +179,10 @@ FnAST* parseFn(string defaultSymbolTemplate, pTree tree, int depth, bool infn) {
   
   varScope.pushScope("fn proto " + name);
     PrototypeAST* proto = new PrototypeAST(name, getFormals(child(tree, 1)));
-    VariableAST* fnRef = new VariableAST(name, proto->GetType());
+    
+    { TypecheckPass tyPass; proto->accept(&tyPass); }
+    VariableAST* fnRef = new VariableAST(name, proto->type);
+    
     varScope.insert(name, fnRef);
     
     std::cout << "Parsing body of fn " << name << std::endl;
@@ -248,6 +251,7 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
   
   if (token == NAME) {
     string varName = textOf(child(tree, 0));
+    
     ExprAST* var = varScope.lookup(varName, "");
     if (!var) {
       std::cerr << "Could not find expr for var name\t" << varName << std::endl;

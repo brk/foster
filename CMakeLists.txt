@@ -84,13 +84,15 @@ string(REGEX MATCH "-L[^ ]+" LLVM_LD_PATH ${LLVM_LDFLAGS})
 
 link_directories(${LLVM_LD_PATH} ${ANTLR_LIBDIR})
 
-set(DEBUG_FLAG -g)
-add_definitions(${LLVM_CFLAGS} ${DEBUG_FLAG})
+set(DEBUG_FLAGS -g -DDEBUG)
+add_definitions(${LLVM_CFLAGS} ${DEBUG_FLAGS})
 
 add_executable(foster
   compiler/ANTLRtoFosterAST.cpp
   compiler/FosterAST.cpp
   compiler/foster.cpp
+  compiler/CodegenPass.cpp
+  compiler/TypecheckPass.cpp
   ${PROJECT_BINARY_DIR}/fosterParser.c
   ${PROJECT_BINARY_DIR}/fosterLexer.c
 )
