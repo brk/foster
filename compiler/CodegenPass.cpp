@@ -20,6 +20,24 @@ using llvm::ConstantInt;
 using llvm::APInt;
 using llvm::PHINode;
 
+template <typename T>
+T getSaturating(llvm::Value* v) {
+  // If the value requires more bits than T can represent, we want
+  // to return ~0, not 0. Otherwise, we should leave the value alone.
+  T allOnes = ~T(0);
+  if (!v) {
+    std::cerr << "numericOf() got a null value, returning " << allOnes << std::endl;
+    return allOnes;
+  }
+  
+  if (ConstantInt* ci = llvm::dyn_cast<ConstantInt>(v)) {
+    return static_cast<T>(ci->getLimitedValue(allOnes));
+  } else {
+    std::cerr << "numericOf() got a non-constant-int value " << *v << ", returning " << allOnes << std::endl;
+    return allOnes;
+  }
+}
+
 void CodegenPass::visit(IntAST* ast) {
   ast->value = ast->getConstantValue();
 }
@@ -92,6 +110,9 @@ void CodegenPass::visit(PrototypeAST* ast) {
   for (int i = 0; i != ast->inArgs.size(); ++i, ++AI) {
     AI->setName(ast->inArgs[i]->Name);
     scope.insert(ast->inArgs[i]->Name, AI);
+    std::cout << "Fn param " << ast->inArgs[i]->Name << " ; " 
+              << ast->inArgs[i] << " has val " << ast->inArgs[i]->value 
+              << ", associated with " << AI << std::endl;
   }
 
   ast->value = F;
@@ -136,7 +157,7 @@ void CodegenPass::visit(FnAST* ast) {
   
   if (RetVal) {
     builder.CreateRet(RetVal);
-    llvm::verifyFunction(*F);
+    //llvm::verifyFunction(*F);
     ast->value = F;
   } else {
     F->eraseFromParent();
@@ -190,22 +211,43 @@ void CodegenPass::visit(IfExprAST* ast) {
 }
 
 void CodegenPass::visit(SubscriptAST* ast) {
-  if (true) { // ty(base) == struct && ty(index) == int
-    (ast->index)->accept(this);
-    
+  std::cerr << "codegen subscript ast " << (ast->base) << "  [ " << (ast->index) << " ] " << std::endl;
+  std::cerr <<                "\t\t\t" << *(ast->base) <<   "[" << *(ast->index) << "]" << std::endl;
+  
+  (ast->index)->accept(this);
+  std::cerr << "codegen subscript value is " << ast->index->value << std::endl;
+  
+  (ast->base)->accept(this);
+  const llvm::Type* baseType = ast->base->value->getType();
+  std::cerr << "codgen base value is " << ast->base->value << " = " << *(ast->base->value) << " : " << *(baseType) << std::endl;
+  
+  if (llvm::isa<llvm::PointerType>(baseType)) {
+    // Pointers to composites are indexed via getelementptr
+    // TODO: "When indexing into a (optionally packed) structure,
+    //        only i32 integer constants are allowed. When indexing
+    //        into an array, pointer or vector, integers of any width
+    //        are allowed, and they are not required to be constant."
+    //   -- http://llvm.org/docs/LangRef.html#i_getelementptr
     std::vector<Value*> idx;
     idx.push_back(ConstantInt::get(Type::getInt32Ty(getGlobalContext()), 0));
     idx.push_back(ast->index->value);
-    (ast->base)->accept(this);
+  
     Value* gep = builder.CreateGEP(ast->base->value, idx.begin(), idx.end(), "subgep");
     ast->value = builder.CreateLoad(gep, "subgep_ld");
+  } else if (llvm::isa<llvm::StructType>(baseType)
+          && llvm::isa<llvm::Constant>(ast->index->value)) {
+    // Struct values may be indexed by constant expressions
+    unsigned uidx = getSaturating<unsigned>(ast->index->value);
+    ast->value = builder.CreateExtractValue(ast->base->value, uidx, "subexv");
   } else {
-    std::cerr << "Don't know how to index a <ty(base)> with a <ty(index)>" << std::endl;
+    std::cerr << "Cannot index into value type " << *(ast->base->value->getType()) << " with non-constant index " << *(ast->index) << std::endl;
   }
+  
+  std::cerr << "done codegen subscript " << std::endl;
 }
 
 void CodegenPass::visit(CallAST* ast) {
-  std::cout << "\t" << "Codegen CallAST "  << *(ast->base) << std::endl;
+  std::cout << "\t" << "Codegen CallAST "  << (ast->base) << std::endl;
   
   (ast->base)->accept(this);
   Value* FV = ast->base->value;
@@ -222,12 +264,35 @@ void CodegenPass::visit(CallAST* ast) {
     return;
   }
   
+  const FunctionType* FT = F->getFunctionType();
+  
   std::vector<Value*> valArgs;
   for (int i = 0; i < ast->args.size(); ++i) {
+    if (ast->args[i] == NULL) {
+      std::cerr << "Error: CallAST had null arg["<<i<<"]!" << std::endl;
+    }
+    
     (ast->args[i])->accept(this);
     
     Value* V = ast->args[i]->value;
-    if (!V) return;
+    if (!V) {
+      std::cerr << "Error: null value for argument " << i << " found in CallAST codegen!" << std::endl;
+      return;
+    }
+    
+    std::cout << "actual arg " << i << " = " << *V << " has type " << *(V->getType()) << std::endl;
+    std::cout << "formal arg " << i << " has type " << *(FT->getParamType(i)) << std::endl;
+    
+    const Type* formalType = FT->getParamType(i);
+    if (llvm::isa<llvm::StructType>(formalType)) {
+      // Is the formal parameter a pass-by-value struct and the provided argument
+      // a pointer to the same kind of struct? If so, load the struct into a virtual
+      // register in order to pass it to the function...
+      if (llvm::PointerType::get(formalType, 0) == V->getType()) {
+        V = builder.CreateLoad(V, "loadStructParam");
+      }
+    }
+    
     valArgs.push_back(V);
   }
   

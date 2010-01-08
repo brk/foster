@@ -87,7 +87,6 @@ void createParser(ANTLRContext& ctx, string filename) {
 void addExternSingleParamFn(const char* name, VariableAST* param) {
   PrototypeAST* p = new PrototypeAST(name, param);
   
-  // These "passes" are intentionally run in the "wrong" order...
   TypecheckPass typ; p->accept(&typ);
   CodegenPass   cp;  p->accept(&cp);
   

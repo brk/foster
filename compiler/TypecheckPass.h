@@ -4,6 +4,14 @@
 #include "FosterASTVisitor.h"
 
 struct TypecheckPass : public FosterASTVisitor {
+  bool typeParsingMode;
+  TypecheckPass() : typeParsingMode(false) {}
+  
+  // Parse an AST as a type specification; the primary difference from the main
+  // TypecheckPass is that the "type" of a variable is determined from its name;
+  // e.g. VariableAST("i32", ...) yields LLVMTypeFor("i32") instead of inspecting
+  // the "provided" type.
+  
   virtual void visit(FnAST* ast);
   virtual void visit(SeqAST* ast);
   virtual void visit(BoolAST* ast);

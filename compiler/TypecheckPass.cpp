@@ -20,6 +20,8 @@ using llvm::ConstantInt;
 
 using std::vector;
 
+////////////////////////////////////////////////////////////////////
+
 void TypecheckPass::visit(BoolAST* ast) {
   ast->type = LLVMTypeFor("i1");
 }
@@ -29,7 +31,34 @@ void TypecheckPass::visit(IntAST* ast) {
 }
 
 void TypecheckPass::visit(VariableAST* ast) {
-  // TODO
+  if (this->typeParsingMode) { ast->type = LLVMTypeFor(ast->Name); }
+  
+  if (!ast->tyExpr) {
+    if (!ast->type) {
+      // Eventually we should do local type inference...
+      std::cerr << "Error: typechecking variable " << ast->Name << " <"<< ast <<"> with no type provided! " << ast->type << std::endl;
+    }
+    return;
+  }
+  
+  if (ast->tyExpr && ast->type) {
+    std::cerr << "Warning: typechecking variable " << ast->Name << " with both type expr ";
+    std::cerr << std::endl << "\t" << *(ast->tyExpr);
+    std::cerr << " and type constant "
+              << std::endl << "\t" << *(ast->type) << std::endl;
+    return;
+  }
+  
+  // Extract an llvm::Type from the type expression; typeParsingMode
+  // causes names to be interpreted directly as type names, rather than
+  // variable names.
+  std::cerr << "Parsing type for expr " << *(ast->tyExpr) << std::endl;
+  TypecheckPass typeParsePass; typeParsePass.typeParsingMode = true;
+  ast->tyExpr->accept(&typeParsePass);
+  ast->type = ast->tyExpr->type;
+  
+  std::cerr << "Parsed type as " << (ast->type) << std::endl;
+  if (ast->type) std::cerr << "\t\t" << *(ast->type) << std::endl;
 }
 
 void TypecheckPass::visit(BinaryExprAST* ast) {
@@ -194,6 +223,11 @@ void TypecheckPass::visit(SeqAST* ast) {
 }
 
 void TypecheckPass::visit(CallAST* ast) {
+  if (!ast->base) {
+    std::cerr << "Error: CallAST has null base!" << std::endl;
+    return;
+  }
+  
   ast->base->accept(this);
   const Type* baseType = ast->base->type;
   if (baseType == NULL) {
@@ -237,6 +271,14 @@ void TypecheckPass::visit(CallAST* ast) {
       success = false;
       std::cerr << "Type mismatch between actual and formal arg " << i << std::endl;
       std::cerr << "\tformal: " << *formalType << "; actual: " << *actualType << std::endl;
+    }
+  }
+  
+  if (!success) {
+    std::cerr << "Error in typechecking call of"
+              << "\n\t" << *(ast->base) << "\tof type\t" << *(baseFT) << "\t with args ";
+    for (int i = 0; i < numParams; ++i) {
+      std::cerr << "\n\t" << i << ":\t" << *(ast->args[i]) << " : " << *(ast->args[i]->type) << std::endl;
     }
   }
  

@@ -130,30 +130,24 @@ IntAST* parseIntFrom(pTree t) {
 
 int typeOf(pTree tree) { return tree->getType(tree); }
 
-VariableAST* parseFormal(pTree tree) {
+VariableAST* parseFormal(pTree tree, int depth, bool infn) {
   string varName = textOf(child(tree, 0));
-  const Type* ty = NULL;
   if (getChildCount(tree) == 2) {
-    string typeName = textOf(child(tree, 1));
-   
-    // TODO: this needs to be delayed...
-    ty = LLVMTypeFor(typeName);
-    std::cout << "\tParsed formal " << varName << " with type " << *ty << std::endl;
-    if (!ty) {
-      std::cerr << "Error: LLVM module had no type for name '" << typeName << "'" << std::endl;
-    }
+    ExprAST* tyExpr = ExprAST_from(child(tree, 1), depth + 1, infn);
+    std::cout << "\tParsed formal " << varName << " with type expr " << *tyExpr << std::endl;
+    VariableAST* var = new VariableAST(varName, tyExpr);
+    varScope.insert(varName, var);
+    return var;
   } else {
     // TODO
+    return NULL;
   }
-  VariableAST* var = new VariableAST(varName, ty);
-  varScope.insert(varName, var);
-  return var;
 }
 
-std::vector<VariableAST*> getFormals(pTree tree) {
+std::vector<VariableAST*> getFormals(pTree tree, int depth, bool infn) {
   std::vector<VariableAST*> args;
   for (int i = 0; i < getChildCount(tree); ++i) {
-     args.push_back(parseFormal(child(tree, i)));
+     args.push_back(parseFormal(child(tree, i), depth, infn));
   }
   return args;
 }
@@ -178,7 +172,7 @@ FnAST* parseFn(string defaultSymbolTemplate, pTree tree, int depth, bool infn) {
   }
   
   varScope.pushScope("fn proto " + name);
-    PrototypeAST* proto = new PrototypeAST(name, getFormals(child(tree, 1)));
+    PrototypeAST* proto = new PrototypeAST(name, getFormals(child(tree, 1), depth, infn));
     
     { TypecheckPass tyPass; proto->accept(&tyPass); }
     VariableAST* fnRef = new VariableAST(name, proto->type);
@@ -254,7 +248,20 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
     
     ExprAST* var = varScope.lookup(varName, "");
     if (!var) {
-      std::cerr << "Could not find expr for var name\t" << varName << std::endl;
+      
+      const llvm::Type* ty = typeScope.lookup(varName, "");
+      if (!ty) {
+        ty = LLVMTypeFor(varName);
+        if (ty) {
+          std::cout << "Could not find ExprAST for var name\t" << varName << ", but it's a valid builtin type name..." << std::endl;
+          var = new VariableAST(varName, ty);
+        } else {            
+          std::cerr << "Could not find ExprAST for var name\t" << varName << ", and it's not a valid type name..." << std::endl;
+        }
+      } else {
+        std::cout << "Could not find ExprAST for var name\t" << varName << ", but it's a valid user type name..." << std::endl;
+        var = new VariableAST(varName, ty);
+      }
     }
     return var;
   }

@@ -59,7 +59,7 @@ trailer                 :       '(' arglist? ')' -> ^(CALL arglist)
                         |       '.' name         -> ^(LOOKUP name)
 	                |	'[' literal ']'  -> ^(SUBSCRIPT literal);
 
-arglist                 :       expr (',' expr)*;
+arglist                 :       expr (',' expr)* -> expr+;
 
 seq			:	'{' fieldlist? '}' -> ^(SEQ fieldlist);
 fieldlist		:	field (fieldsep field)* fieldsep? -> ^(FIELD_LIST field*);

@@ -42,8 +42,6 @@ extern llvm::ExecutionEngine* ee;
 extern llvm::IRBuilder<> builder;
 extern Module* module;
 
-Value* ErrorV(const char* Str);
-
 string join(string glue, Exprs args);
 
 const Type* LLVMTypeFor(const string& name);
@@ -57,7 +55,7 @@ struct ExprAST {
   
   ExprAST() : value(NULL), type(NULL) {}
   virtual ~ExprAST() {}
-  virtual std::ostream& operator<<(std::ostream& out) = 0;
+  virtual std::ostream& operator<<(std::ostream& out) const = 0;
   virtual void accept(FosterASTVisitor* visitor) = 0;
 };
 
@@ -110,27 +108,33 @@ struct IntAST : public ExprAST {
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   llvm::Constant* getConstantValue();
   
-  virtual std::ostream& operator<<(std::ostream& out) { return out << Clean; }
+  virtual std::ostream& operator<<(std::ostream& out) const { return out << Clean; }
 };
 
 struct BoolAST : public ExprAST {
   bool boolValue;
   explicit BoolAST(string val) : boolValue(val == "true") {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) {
+  virtual std::ostream& operator<<(std::ostream& out) const {
     return out << string(boolValue ? "true" : "false");
   }
 };
 
 struct VariableAST : public ExprAST {
   string Name;
+  ExprAST* tyExpr;
   // TODO need to figure out how/where/when to assign type info to nil
-  explicit VariableAST(const string& name, const llvm::Type* aType): Name(name) {
+  explicit VariableAST(const string& name, const llvm::Type* aType): Name(name), tyExpr(NULL) {
     this->type = aType;
-    std::cout << "new VariableAST("<<name<< ", " << type << ")" << std::endl;
+    std::cout << this << " = new VariableAST("<<name<< ", type ptr " << this->type << ")" << std::endl;
+  }
+  explicit VariableAST(const string& name, ExprAST* tyExpr): Name(name), tyExpr(tyExpr) {
+    if (!tyExpr) {
+      std::cerr << "Error: " << this << " = VariableAST("<<name<<", type expr NULL)!" << std::endl;
+    }
   }
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) {
+  virtual std::ostream& operator<<(std::ostream& out) const {
     //if (type) {
     //  return out << Name << " : " << *type;
     //} else {
@@ -143,7 +147,7 @@ struct VariableAST : public ExprAST {
   struct StringAST : public ExprAST {
     string Val;
     explicit StringAST(string val): Val(val) {}
-    virtual std::ostream& operator<<(std::ostream& out) { return out << Val; }
+    virtual std::ostream& operator<<(std::ostream& out) const { return out << Val; }
     virtual string GetTypeName() { return "String"; }
     virtual bool Sema() { return true; }
     virtual Value* Codegen() {
@@ -166,7 +170,7 @@ struct VariableAST : public ExprAST {
       : Name(name), Type(type), Init(init) {}
     // TODO: associate name with type in symbol table
     virtual string GetTypeName() { return Type; }
-    virtual std::ostream& operator<<(std::ostream& out) {
+    virtual std::ostream& operator<<(std::ostream& out) const {
       out << "\tvar " << Name << " : " << Type;
       if (Init) out << " = " << *Init;
       return out << " ;" << endl;
@@ -189,7 +193,7 @@ struct VariableAST : public ExprAST {
       if (Op == "-") { return GetTypeName() == "Int"; }
       return false;
     }
-    virtual std::ostream& operator<<(std::ostream& out) {
+    virtual std::ostream& operator<<(std::ostream& out) const {
       out << Op << "(";
       if (AST) out << *AST; else out << "<nil>";
       return out << ")";
@@ -216,7 +220,7 @@ struct VariableAST : public ExprAST {
     WhileAST(ExprAST* cond, ExprAST* body) : Cond(cond), Body(body) {}
     virtual string GetTypeName() { return "Unit"; }
     virtual bool Sema() { return true; } // TODO
-    virtual std::ostream& operator<<(std::ostream& out) {
+    virtual std::ostream& operator<<(std::ostream& out) const {
       out << "while (";
       if (Cond) out << *Cond; else out << "<nil>";
       out << ") { ";
@@ -237,7 +241,7 @@ struct BinaryExprAST : public ExprAST {
   BinaryExprAST(string op, ExprAST* lhs, ExprAST* rhs)
     : op(op), LHS(lhs), RHS(rhs) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) {
+  virtual std::ostream& operator<<(std::ostream& out) const {
     if (LHS) out << *LHS; else out << "<nil>";
     out << ' ' << op << ' ';
     if (RHS) out << *RHS; else out << "<nil>";
@@ -253,7 +257,7 @@ struct BinaryExprAST : public ExprAST {
     DispatchAST(ExprAST* expr, string label, Exprs args) : Label(label), Expr(expr), Args(args) {}
     virtual bool Sema() { return true; } // TODO
     virtual string GetTypeName() { return "<not implemented>"; }
-    virtual std::ostream& operator<<(std::ostream& out) {
+    virtual std::ostream& operator<<(std::ostream& out) const {
       if (Expr) out << *Expr; else out << "<nil>";
       return out << "." << Label << "(" << join(", ", Args) << ")";
     }
@@ -281,7 +285,7 @@ struct BinaryExprAST : public ExprAST {
     }
     NewExprAST(string type, Exprs actuals) : Type(type), Actuals(actuals) {}
     virtual string GetTypeName() { return Type; }
-    virtual std::ostream& operator<<(std::ostream& out) {
+    virtual std::ostream& operator<<(std::ostream& out) const {
       return out << "new " << Type << "(" << Actuals << ")";
     }
     virtual Value* Codegen() {
@@ -299,7 +303,7 @@ struct CallAST : public ExprAST {
   Exprs args;
   CallAST(ExprAST* base, Exprs args) : base(base), args(args) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) {
+  virtual std::ostream& operator<<(std::ostream& out) const {
     out << "(";
     if (base) out << *base; else out << "<nil>";
     return out << " " << join(" ", args) << ")";
@@ -310,7 +314,7 @@ struct SeqAST : public ExprAST {
   Exprs exprs;
   explicit SeqAST(Exprs exprs) : exprs(exprs) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) {
+  virtual std::ostream& operator<<(std::ostream& out) const {
     out << "{ ";
     for (int i = 0; i < exprs.size(); ++i) {
       if (exprs[i]) {
@@ -328,7 +332,7 @@ struct TupleExprAST : public ExprAST {
     body = dynamic_cast<SeqAST*>(expr);
   }
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) {
+  virtual std::ostream& operator<<(std::ostream& out) const {
     if (!body) {
       return out << "(tuple)";
     }
@@ -342,7 +346,7 @@ struct ArrayExprAST : public ExprAST {
     body = dynamic_cast<SeqAST*>(expr);
   }
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) {
+  virtual std::ostream& operator<<(std::ostream& out) const {
     if (!body) {
       return out << "(array)";
     }
@@ -356,7 +360,7 @@ struct SubscriptAST : public ExprAST {
   explicit SubscriptAST(ExprAST* base, ExprAST* index)
     : base(base), index(index) { }
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) {
+  virtual std::ostream& operator<<(std::ostream& out) const {
     return out << *base << "[" << *index << "]";
   }
 };
@@ -377,7 +381,7 @@ struct PrototypeAST : public ExprAST {
                                    const std::vector<VariableAST*>& outArgs)
     : Name(name), inArgs(inArgs), outArgs(outArgs) { }
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) {
+  virtual std::ostream& operator<<(std::ostream& out) const {
     out << "fn" << " " << Name << "(";
     for (int i = 0; i < inArgs.size(); ++i) {
       out << inArgs[i]->Name << " ";
@@ -400,7 +404,7 @@ struct FnAST : public ExprAST {
   explicit FnAST(PrototypeAST* proto, ExprAST* body) :
       Proto(proto), Body(body) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) {
+  virtual std::ostream& operator<<(std::ostream& out) const {
     return out << (*Proto) << " " << (*Body) << endl;
   }
 };
@@ -410,7 +414,7 @@ struct IfExprAST : public ExprAST {
   IfExprAST(ExprAST* ifExpr, ExprAST* thenExpr, ExprAST* elseExpr)
     : ifExpr(ifExpr), thenExpr(thenExpr), elseExpr(elseExpr) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) {
+  virtual std::ostream& operator<<(std::ostream& out) const {
     out << "if (";
     if (ifExpr) out << *ifExpr; else out << "<nil>";
     out << ") ";
@@ -426,7 +430,7 @@ struct BuiltinCompilesExprAST : public ExprAST {
   enum Status { kWouldCompile, kWouldNotCompile, kNotChecked } status;
   explicit BuiltinCompilesExprAST(ExprAST* expr) : expr(expr), status(kNotChecked) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) {
+  virtual std::ostream& operator<<(std::ostream& out) const {
     return out << "(__COMPILES__ " << *expr << ")";
   }
 };
