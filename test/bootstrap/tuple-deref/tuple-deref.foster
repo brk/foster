@@ -11,6 +11,13 @@ fn "main" {
   expect_i32(42);
   print_i32( tuple { 42, 43, 44 }[0] );
 
-  //print_i32( tuple { 42, 43, 44 }[333] );
+  expect_i1(false);
+  print_i1(__COMPILES__ tuple { 42, 43, 44 }[333] );
+  
+  expect_i1(false);
+  print_i1(__COMPILES__ tuple { 42, 43, 44 }[true] );
+  
+  expect_i1(false);
+  print_i1(__COMPILES__ true[0] );
 }
 

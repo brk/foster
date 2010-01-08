@@ -624,7 +624,7 @@ struct BuiltinCompilesExprAST : public ExprAST {
   // "Evaluation" of __COMPILES__ results in a boolean regardless of expr's type
   virtual const llvm::Type* GetType() { return LLVMTypeFor("i1"); }
   virtual std::ostream& operator<<(std::ostream& out) {
-    return out << "__COMPILES__ " << *expr;
+    return out << "(__COMPILES__ " << *expr << ")";
   }
   virtual bool Sema() {
     status = (expr->Sema()) ? kWouldCompile : kWouldNotCompile;
