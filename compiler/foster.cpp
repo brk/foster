@@ -272,11 +272,6 @@ int main(int argc, char** argv) {
     LLpreASM << *module;
   
     std::string errMsg;
-    // TODO why does declare i32 @expect_i1(i1) work against
-    //               define  i32 @expect_i1(i8 zeroext %x)
-    // when linked with llvm-ld, but not when linked with Linker?
-    // Ok, so it's basically because the linker optimized out the function call
-    // entirely, but then why would it do so if the types didn't match?
     if (Linker::LinkModules(module, mp->getModule(), &errMsg)) {
       std::cerr << "Error when linking modules together: " << errMsg << std::endl;
     }

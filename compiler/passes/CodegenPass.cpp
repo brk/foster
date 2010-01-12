@@ -156,10 +156,7 @@ void CodegenPass::visit(FnAST* ast) {
   }
 }
 
-void CodegenPass::visit(IfExprAST* ast) {
-  (ast->ifExpr)->accept(this); Value* cond = ast->ifExpr->value;
-  if (!cond) return;
-  
+PHINode* codegenIfExpr(Value* cond, Value* then, Value* else_, const Type* valTy) {
   Function *F = builder.GetInsertBlock()->getParent();
 
   BasicBlock* thenBB = BasicBlock::Create(getGlobalContext(), "then", F);
@@ -169,25 +166,11 @@ void CodegenPass::visit(IfExprAST* ast) {
   builder.CreateCondBr(cond, thenBB, elseBB);
   builder.SetInsertPoint(thenBB);
 
-  (ast->thenExpr)->accept(this);
-  Value* then = ast->thenExpr->value;
-  if (!then) {
-    std::cerr << "Codegen for if condition failed due to missing Value for 'then' part";
-    return;
-  }
-
   builder.CreateBr(mergeBB);
   thenBB = builder.GetInsertBlock();
 
   F->getBasicBlockList().push_back(elseBB);
   builder.SetInsertPoint(elseBB);
-
-  (ast->elseExpr)->accept(this);
-  Value* _else = ast->elseExpr->value;
-  if (!_else) {
-    std::cerr << "Codegen for if condition failed due to missing Value for 'else' part";
-    return;
-  }
 
   builder.CreateBr(mergeBB);
   elseBB = builder.GetInsertBlock();
@@ -195,10 +178,31 @@ void CodegenPass::visit(IfExprAST* ast) {
   F->getBasicBlockList().push_back(mergeBB);
   builder.SetInsertPoint(mergeBB);
   
-  PHINode *PN = builder.CreatePHI(ast->type, "iftmp");
+  PHINode *PN = builder.CreatePHI(valTy, "iftmp");
   PN->addIncoming(then, thenBB);
-  PN->addIncoming(_else, elseBB);
-  ast->value = PN;
+  PN->addIncoming(else_, elseBB);
+  return PN;
+}
+
+void CodegenPass::visit(IfExprAST* ast) {
+  (ast->ifExpr)->accept(this); Value* cond = ast->ifExpr->value;
+  if (!cond) return;
+  
+  (ast->thenExpr)->accept(this);
+  Value* then = ast->thenExpr->value;
+  if (!then) {
+    std::cerr << "Codegen for if condition failed due to missing Value for 'then' part";
+    return;
+  }
+  
+  (ast->elseExpr)->accept(this);
+  Value* _else = ast->elseExpr->value;
+  if (!_else) {
+    std::cerr << "Codegen for if condition failed due to missing Value for 'else' part";
+    return;
+  }
+  
+  ast->value = codegenIfExpr(cond, then, _else, ast->type);
 }
 
 Value* getElementFromStruct(Value* structValue, Value* idxValue) {
@@ -268,6 +272,25 @@ void unpackArgs(std::vector<Value*>& valArgs, Value* V, const FunctionType* FT) 
   }
 }
 
+void tempHackConverti1toExpectedi8(const FunctionType* FT, std::vector<Value*>& valArgs) {
+  const Type* i1ty = LLVMTypeFor("i1");
+  const Type* i8ty = LLVMTypeFor("i8");
+  for (int i = 0; i < valArgs.size(); ++i) {
+    Value* arg = valArgs[i];
+    if (arg->getType() == i1ty && FT->getParamType(i) == i8ty) {
+      // TODO wrap this in a function call to make generated LLVM asm cleaner?
+      Value* i8one  = ConstantInt::getSigned(i8ty, 1);
+      Value* i8zero = ConstantInt::getSigned(i8ty, 0);
+      Value* argi8 = codegenIfExpr(arg, i8one, i8zero, i8ty);
+      valArgs[i] = argi8;
+    }
+  }
+  
+  // TODO better long-term solution is probably make the libfoster
+  // function expect_i8 instead of expect_i1, and add a Foster-impl
+  // expect_i1 wrapper. And, eventually, implement libfoster in foster ;-)
+}
+
 void CodegenPass::visit(CallAST* ast) {
   //std::cout << "\t" << "Codegen CallAST "  << (ast->base) << std::endl;
   //std::cout << "\t\t\t"  << *(ast->base) << std::endl;
@@ -291,8 +314,8 @@ void CodegenPass::visit(CallAST* ast) {
     ExprAST* arg = ast->parts[i];
     
     UnpackExprAST* u = dynamic_cast<UnpackExprAST*>(arg);
-    if (u != NULL) {
-      arg = u->parts[0]; // Replace unpack expr with tuple expr
+    if (u != NULL) { // arg i is an unpack expr
+      arg = u->parts[0]; // Replace unpack expr with underlying tuple expr
     }
     
     arg->accept(this);
@@ -305,7 +328,7 @@ void CodegenPass::visit(CallAST* ast) {
     if (u != NULL) {
       unpackArgs(valArgs, V, FT); // Unpack (recursively) nested structs
     } else {
-      appendArg(valArgs, V, FT); // Don't unpack even if it's a struct
+      appendArg(valArgs, V, FT); // Don't unpack non 'unpack'-marked structs
     }
   }
   
@@ -313,6 +336,9 @@ void CodegenPass::visit(CallAST* ast) {
     std::cerr << "Function " << *base <<  " got " << valArgs.size() << " args, expected "<< F->arg_size();
     return;
   }
+  
+  // Temporary hack: if a function expects i8 and we have i1, manually convert
+  tempHackConverti1toExpectedi8(FT, valArgs);
   
   ast->value = builder.CreateCall(F, valArgs.begin(), valArgs.end(), "calltmp");
 }

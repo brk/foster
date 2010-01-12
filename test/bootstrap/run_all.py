@@ -42,9 +42,11 @@ def run_one_test(dir_prefix, basename, paths, tmpdir):
             tests_failed.add(testpath)
             return
 
-          rn_rv = subprocess.call([ paths['ll-foster'] ], stdout=actual, stderr=expected)
+          rn_rv = subprocess.call([ paths['ll-foster'] ],
+          	                  stdout=actual, stderr=expected)
         else:
-          rn_rv = subprocess.call([ paths['lli'], paths['foster.bc'] ])
+          rn_rv = subprocess.call([ paths['lli'], paths['foster.bc'] ],
+          	                  stdout=actual, stderr=expected)
 
         df_rv = subprocess.call(['diff', '-u', exp_filename, act_filename])
         if df_rv == 0:

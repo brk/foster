@@ -243,6 +243,7 @@ void TypecheckPass::visit(CallAST* ast) {
   }
   
   vector<const Type*> actualTypes;
+  //vector<ExprAST*> actualArgs;
   for (int i = 1; i < ast->parts.size(); ++i) {
     ExprAST* arg = ast->parts[i];
     if (!arg) {
@@ -285,15 +286,13 @@ void TypecheckPass::visit(CallAST* ast) {
     if (formalType != actualType) {
       if (formalType == LLVMTypeFor("i8")
         && actualType == LLVMTypeFor("i1")) {
-        // TODO make the conversion from i1 to i8 explicit
-        
-        
-        
-        //
-        // TODO better long-term solution is probably make the libfoster
-        // function expect_i8 instead of expect_i1, and add a Foster-impl
-        // expect_i1 wrapper. And, eventually, implement libfoster in foster ;-)
-        continue; // OK to implicitly convert here...
+        // TODO Eventually, require the conversion from i1 to i8 to be explicit.
+        // For now, codegen will automatically convert from i1 to i8 in fn call
+        // param lists, because llvm-gcc implements bool as i8 instead of i1.
+        // Thus, we must either convert from i1 to i8, or re-implement print_i1
+        // (and associated FILE* machinery) in Foster, which does support i1
+        // params.
+        continue;
       }
       success = false;
       std::cerr << "Type mismatch between actual and formal arg " << i << std::endl;
