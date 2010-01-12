@@ -7,27 +7,18 @@
 
 struct ExprAST;
 
-struct FnAST;
-struct IntAST;
-struct SeqAST;
-struct BoolAST;
-struct CallAST;
-struct IfExprAST;
-struct VariableAST;
-struct ArrayExprAST;
-struct PrototypeAST;
-struct TupleExprAST;
-struct SubscriptAST;
-struct UnpackExprAST;
-struct BinaryOpExprAST;
-struct BuiltinCompilesExprAST;
+// Forward-declare all the AST node types
+#define FOSTER_AST_VISITOR_GEN(type) struct type;
+#include "FosterASTVisitor.decls.inc.h"
+#undef  FOSTER_AST_VISITOR_GEN
 
 struct FosterASTVisitor {
   virtual void visitChildren(ExprAST* ast);
 
-  #define FOSTER_AST_VISITOR_DEFAULT_IMPL = 0
+  // Declare the individual (pure virtual) visit function for the AST node types
+  #define FOSTER_AST_VISITOR_PURE_VIRTUAL
   #include "FosterASTVisitor.decls.inc.h"
-  #undef  FOSTER_AST_VISITOR_DEFAULT_IMPL
+  #undef  FOSTER_AST_VISITOR_PURE_VIRTUAL
 };
 
 // This has to be included after the declaration for FosterASTVisitor

@@ -286,6 +286,9 @@ void TypecheckPass::visit(CallAST* ast) {
       if (formalType == LLVMTypeFor("i8")
         && actualType == LLVMTypeFor("i1")) {
         // TODO make the conversion from i1 to i8 explicit
+        
+        
+        
         //
         // TODO better long-term solution is probably make the libfoster
         // function expect_i8 instead of expect_i1, and add a Foster-impl

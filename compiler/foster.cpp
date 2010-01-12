@@ -201,7 +201,7 @@ int main(int argc, char** argv) {
   }
   
   // TODO support a -c option for separate compilation and linking
-  bool compileSeparately = true;
+  bool compileSeparately = false;
   
   sys::PrintStackTraceOnErrorSignal();
   PrettyStackTraceProgram X(argc, argv);
@@ -237,7 +237,7 @@ int main(int argc, char** argv) {
   if (compileSeparately) {
     addLibFosterRuntimeExterns();
   } else {
-    readModuleFromPath("libfoster.bc");
+    mp = readModuleFromPath("libfoster.bc");
     putModuleMembersInScope(mp);
   }
   
