@@ -16,6 +16,7 @@
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Support/IRBuilder.h"
 
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -45,6 +46,12 @@ using namespace llvm;
 
 using std::string;
 using std::endl;
+
+#define FOSTER_VERSION_STR "0.0.1"
+
+// TODO: this isn't scalable...
+#include "antlr3defs.h"
+const char* ANTLR_VERSION_STR = PACKAGE_VERSION;
 
 struct ANTLRContext {
   string filename;
@@ -189,26 +196,47 @@ void putModuleMembersInScope(ModuleProvider* mp) {
   }
 }
 
-int main(int argc, char** argv) {
-  if (argc < 2 || argv[1] == NULL) {
-    std::cout << "Error: need an input filename!" << std::endl;
-    exit(1);
-  } else {
-    std::cout << "Input file: " << std::string(argv[1]) << std::endl;
-    std::cout <<  "================" << std::endl;
-    system(("cat " + std::string(argv[1])).c_str());
-    std::cout <<  "================" << std::endl;
-  }
+static cl::opt<std::string>
+optInputPath(cl::Positional, cl::desc("<input file>"));
+
+static cl::opt<bool>
+optCompileSeparately("c",
+  cl::desc("Compile separately, don't automatically link imported modules"));
+
+void printVersionInfo() {
+  std::cout << "Foster version: " << FOSTER_VERSION_STR;
+  std::cout << ", compiled: " << __DATE__ << " at " << __TIME__ << std::endl;
   
-  // TODO support a -c option for separate compilation and linking
-  bool compileSeparately = false;
+  // TODO: could extract more detailed ANTLR version information
+  // from the generated lexer/parser files...
+  std::cout << "ANTLR version " << ANTLR_VERSION_STR << std::endl;
   
+  cl::PrintVersionMessage(); 
+}
+
+int main(int argc, char** argv) {  
   sys::PrintStackTraceOnErrorSignal();
   PrettyStackTraceProgram X(argc, argv);
   llvm_shutdown_obj Y;
 
+  cl::SetVersionPrinter(&printVersionInfo);
+  cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster compiler\n");
+  
+  if (optInputPath.empty()) {
+    std::cerr << "Error: need an input filename!" << std::endl;
+    exit(1);
+  }
+  
+  {
+    std::cout << "Compiling separately? " << optCompileSeparately << std::endl;
+    std::cout << "Input file: " << optInputPath << std::endl;
+    std::cout <<  "================" << std::endl;
+    system(("cat " + optInputPath).c_str());
+    std::cout <<  "================" << std::endl;
+  }
+  
   ANTLRContext ctx;
-  createParser(ctx, argv[1]);
+  createParser(ctx, optInputPath.c_str());
 
   fosterLLVMInitializeNativeTarget();
   module = new Module("foster", getGlobalContext());
@@ -234,7 +262,7 @@ int main(int argc, char** argv) {
   // for accessing elements of the module.
   
   ModuleProvider* mp = NULL;
-  if (compileSeparately) {
+  if (optCompileSeparately) {
     addLibFosterRuntimeExterns();
   } else {
     mp = readModuleFromPath("libfoster.bc");
@@ -267,7 +295,7 @@ int main(int argc, char** argv) {
   
   { CodegenPass cgPass; exprAST->accept(&cgPass); }
   
-  if (!compileSeparately) {
+  if (!optCompileSeparately) {
     std::ofstream LLpreASM("foster.prelink.ll");
     LLpreASM << *module;
   

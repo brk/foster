@@ -156,7 +156,16 @@ void CodegenPass::visit(FnAST* ast) {
   }
 }
 
-PHINode* codegenIfExpr(Value* cond, Value* then, Value* else_, const Type* valTy) {
+struct LazyValue { virtual Value* get() const = 0; };
+struct LazyVisitedValue : public LazyValue {
+  FosterASTVisitor* visitor; ExprAST* expr;
+  LazyVisitedValue(FosterASTVisitor* v, ExprAST* e) : visitor(v), expr(e) {}
+  Value* get() const { expr->accept(visitor); return expr->value; }
+};
+struct MemoValue : public LazyValue {
+  Value* v; MemoValue(Value* v) : v(v) {}; Value* get() const { return v; }; };
+
+PHINode* codegenIfExpr(Value* cond, const LazyValue& lazyThen, const LazyValue& lazyElse, const Type* valTy) {
   Function *F = builder.GetInsertBlock()->getParent();
 
   BasicBlock* thenBB = BasicBlock::Create(getGlobalContext(), "then", F);
@@ -165,13 +174,19 @@ PHINode* codegenIfExpr(Value* cond, Value* then, Value* else_, const Type* valTy
 
   builder.CreateCondBr(cond, thenBB, elseBB);
   builder.SetInsertPoint(thenBB);
-
+  Value* then = lazyThen.get();
+  if (!then) {
+    std::cerr << "Codegen for if condition failed due to missing Value for 'then' part";
+  }
   builder.CreateBr(mergeBB);
   thenBB = builder.GetInsertBlock();
 
   F->getBasicBlockList().push_back(elseBB);
   builder.SetInsertPoint(elseBB);
-
+  Value* else_ = lazyElse.get();
+  if (!else_) {
+    std::cerr << "Codegen for if condition failed due to missing Value for 'else' part";
+  }
   builder.CreateBr(mergeBB);
   elseBB = builder.GetInsertBlock();
 
@@ -188,21 +203,8 @@ void CodegenPass::visit(IfExprAST* ast) {
   (ast->ifExpr)->accept(this); Value* cond = ast->ifExpr->value;
   if (!cond) return;
   
-  (ast->thenExpr)->accept(this);
-  Value* then = ast->thenExpr->value;
-  if (!then) {
-    std::cerr << "Codegen for if condition failed due to missing Value for 'then' part";
-    return;
-  }
-  
-  (ast->elseExpr)->accept(this);
-  Value* _else = ast->elseExpr->value;
-  if (!_else) {
-    std::cerr << "Codegen for if condition failed due to missing Value for 'else' part";
-    return;
-  }
-  
-  ast->value = codegenIfExpr(cond, then, _else, ast->type);
+  ast->value = codegenIfExpr(cond, LazyVisitedValue(this, ast->thenExpr),
+                                   LazyVisitedValue(this, ast->elseExpr), ast->type);
 }
 
 Value* getElementFromStruct(Value* structValue, Value* idxValue) {
@@ -281,7 +283,7 @@ void tempHackConverti1toExpectedi8(const FunctionType* FT, std::vector<Value*>& 
       // TODO wrap this in a function call to make generated LLVM asm cleaner?
       Value* i8one  = ConstantInt::getSigned(i8ty, 1);
       Value* i8zero = ConstantInt::getSigned(i8ty, 0);
-      Value* argi8 = codegenIfExpr(arg, i8one, i8zero, i8ty);
+      Value* argi8 = codegenIfExpr(arg, MemoValue(i8one), MemoValue(i8zero), i8ty);
       valArgs[i] = argi8;
     }
   }

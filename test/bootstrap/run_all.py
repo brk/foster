@@ -20,21 +20,25 @@ def run_one_test(dir_prefix, basename, paths, tmpdir):
     with open(act_filename, 'w') as actual:
       with open(os.path.join(tmpdir, "compile.log.txt"), 'w') as compilelog:
         testpath = os.path.join(dir_prefix, basename)
-       
-        fc_rv = subprocess.call([ paths['fosterc'], paths['code'] ], stdout=compilelog, stderr=compilelog)
+        
+        # Hack for now, since this option is baked in to the compiler.
+        compile_separately = False
+        fosterc_cmdline = [ paths['fosterc'], paths['code'] ]
+        if compile_separately:
+          fosterc_cmdline.insert(1, "-c")
+
+        print ' '.join(fosterc_cmdline)
+        fc_rv = subprocess.call(fosterc_cmdline, stdout=compilelog, stderr=compilelog)
         if fc_rv != 0:
           tests_failed.add(testpath)
           return
 
         llvm_asm_path = os.path.join(tmpdir, basename + ".ll")
         shutil.copyfile(paths['foster.ll'], llvm_asm_path)
-        as_rv = subprocess.call([ paths['llvm-as'], llvm_asm_path, '-f' ])
+        as_rv = subprocess.call([ paths['llvm-as'], paths['foster.ll'], '-f' ])
         if as_rv != 0:
           tests_failed.add(testpath)
           return
-
-        # Hack for now, since this option is baked in to the compiler.
-        compile_separately = False
         
         if compile_separately:
           ld_rv = subprocess.call([ paths['llvm-ld'], paths['foster.bc'], paths['libfoster.bc'], '-o', paths['ll-foster'] ])
