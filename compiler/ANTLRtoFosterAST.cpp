@@ -248,7 +248,8 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
     
     ExprAST* var = varScope.lookup(varName, "");
     if (!var) {
-      
+      // Maybe parsing a type expr, in which case names refer directly to
+      // types, either user-defined or built-in (to Foster or LLVM)
       const llvm::Type* ty = typeScope.lookup(varName, "");
       if (!ty) {
         ty = LLVMTypeFor(varName);

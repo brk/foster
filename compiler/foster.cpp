@@ -9,11 +9,19 @@
 #include "llvm/LLVMContext.h"
 #include "llvm/Module.h"
 #include "llvm/ModuleProvider.h"
+#include "llvm/Linker.h"
 #include "llvm/PassManager.h"
 #include "llvm/Analysis/Verifier.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Support/IRBuilder.h"
+
+#include "llvm/Bitcode/ReaderWriter.h"
+#include "llvm/Support/ManagedStatic.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/PrettyStackTrace.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/System/Signals.h"
 
 #include "fosterLexer.h"
 #include "fosterParser.h"
@@ -25,6 +33,7 @@
 #include "PrettyPrintPass.h"
 
 #include <cassert>
+#include <memory>
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -94,13 +103,12 @@ void addExternSingleParamFn(const char* name, VariableAST* param) {
   VariableAST* fnRef = new VariableAST(name, p->type);
   
   varScope.insert(name, fnRef);
+  
+  
   scope.insert(name, p->value);
 }
 
 void addLibFosterRuntimeExterns() {
-  scope.pushScope("externs");
-  varScope.pushScope("externs");
-  
   VariableAST* x_i32 = new VariableAST("xi32", LLVMTypeFor("i32"));
   addExternSingleParamFn("print_i32",   x_i32);
   addExternSingleParamFn("print_i32x",  x_i32);
@@ -116,8 +124,72 @@ void addLibFosterRuntimeExterns() {
   // Don't pop scopes, so they will be available for the "real" program
 }
 
-int main(int argc, char** argv) {
+ModuleProvider* readModuleFromPath(std::string path) {
+  ModuleProvider* mp = NULL;
+  std::string errMsg;
+  
+  // TODO test behavior with incorrect paths
+  if (MemoryBuffer *memBuf = MemoryBuffer::getFile(path.c_str(), &errMsg)) {
+    //if (mp = getBitcodeModuleProvider(memBuf, getGlobalContext(), &errMsg)) {
+    
+    // Currently, materalizing functions lazily fails with LLVM 2.6,
+    // so this must be an ExistingModuleProvider
+    if (Module* m = ParseBitcodeFile(memBuf, getGlobalContext(), &errMsg)) {
+      mp = new ExistingModuleProvider(m);
+    } else {
+      std::cerr << "Error: could not parse module '" << path << "'" << std::endl;
+      std::cerr << "\t" << errMsg << std::endl;
+    }
+    delete memBuf;
+  }
 
+  return mp;
+}
+
+void putModuleMembersInScope(ModuleProvider* mp) {
+  Module* m = mp->getModule();
+  if (!m) return;
+  
+  // Lazily-materialized modules (claim to) have no definition of
+  // unmaterialized functions (fair enough, but still...)
+  // TODO: bring up issues found with lazy materialization in #llvm
+  
+  // Materializing functions individually fails with LLVM 2.6 in
+  // BitcodeReader.cpp:219
+  
+  // Materializing the whole module at once fails with LLVM 2.6 in
+  // BitstreamReader.h:474
+  for (Module::iterator it = m->begin(); it != m->end(); ++it) {
+    const Function& f = *it;
+    
+    const std::string& name = f.getNameStr();
+    bool isCxxLinkage = name[0] == '_' && name[1] == 'Z';
+    if (!isCxxLinkage) {
+      std::string errMsg;
+      if (mp->materializeFunction(it, &errMsg)) {
+        std::cout << "Error materializing fn " << name << ": " << errMsg << std::endl;
+      }
+    }
+    bool hasDef = !f.isDeclaration();
+    std::cout << "\tfn " << name << "; def? " << hasDef << std::endl;
+   
+    
+    if (hasDef && !isCxxLinkage) {
+      std::cout << "Inserting ref to fn " << name << " in scopes" << std::endl;
+      // Ensure that, when parsing, function calls to this name will find it
+      const Type* ty = f.getType();
+      if (const PointerType* pty = llvm::dyn_cast<PointerType>(ty)) {
+        ty = pty->getElementType();
+      }
+      varScope.insert(name, new VariableAST(name, ty));
+      
+      // Ensure that codegen for the given function finds it
+      scope.insert(name, it);
+    }
+  }
+}
+
+int main(int argc, char** argv) {
   if (argc < 2 || argv[1] == NULL) {
     std::cout << "Error: need an input filename!" << std::endl;
     exit(1);
@@ -127,6 +199,13 @@ int main(int argc, char** argv) {
     system(("cat " + std::string(argv[1])).c_str());
     std::cout <<  "================" << std::endl;
   }
+  
+  // TODO support a -c option for separate compilation and linking
+  bool compileSeparately = true;
+  
+  sys::PrintStackTraceOnErrorSignal();
+  PrettyStackTraceProgram X(argc, argv);
+  llvm_shutdown_obj Y;
 
   ANTLRContext ctx;
   createParser(ctx, argv[1]);
@@ -145,7 +224,22 @@ int main(int argc, char** argv) {
   std::cout << "printing" << endl;
   std::cout << str(langAST.tree->toStringTree(langAST.tree)) << endl << endl;
   
-  addLibFosterRuntimeExterns();
+  
+  scope.pushScope("root");
+  varScope.pushScope("root");
+  
+  // TODO: I think the LLVM Type* of a module should be
+  // a struct containing the elements of the underlying module?
+  // This would be consistent with the dot (selection) operator
+  // for accessing elements of the module.
+  
+  ModuleProvider* mp = NULL;
+  if (compileSeparately) {
+    addLibFosterRuntimeExterns();
+  } else {
+    readModuleFromPath("libfoster.bc");
+    putModuleMembersInScope(mp);
+  }
   
   std::cout << "converting" << endl;
   ExprAST* exprAST = ExprAST_from(langAST.tree, 0, false);
@@ -169,15 +263,28 @@ int main(int argc, char** argv) {
   { PrettyPrintPass ppPass(std::cout); exprAST->accept(&ppPass); ppPass.flush(); }
   std::cout << std::endl;
   
-  
   std::cout << "=========================" << std::endl;
   
   { CodegenPass cgPass; exprAST->accept(&cgPass); }
-
+  
+  if (!compileSeparately) {
+    std::ofstream LLpreASM("foster.prelink.ll");
+    LLpreASM << *module;
+  
+    std::string errMsg;
+    // TODO why does declare i32 @expect_i1(i1) work against
+    //               define  i32 @expect_i1(i8 zeroext %x)
+    // when linked with llvm-ld, but not when linked with Linker?
+    // Ok, so it's basically because the linker optimized out the function call
+    // entirely, but then why would it do so if the types didn't match?
+    if (Linker::LinkModules(module, mp->getModule(), &errMsg)) {
+      std::cerr << "Error when linking modules together: " << errMsg << std::endl;
+    }
+  }
+  
   std::ofstream LLASM("foster.ll");
-
   LLASM << *module;
-
+  
   return 0;
 }
 

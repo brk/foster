@@ -257,6 +257,7 @@ void TypecheckPass::visit(CallAST* ast) {
       return;
     }
     
+    // TODO: add separate prepass to explicitly unpack UnpackExprASTs
     if (UnpackExprAST* u = dynamic_cast<UnpackExprAST*>(arg)) {
       if (const llvm::StructType* st = llvm::dyn_cast<llvm::StructType>(argTy)) {
         for (int j = 0; j < st->getNumElements(); ++j) {
@@ -282,6 +283,15 @@ void TypecheckPass::visit(CallAST* ast) {
     const Type* formalType = baseFT->getParamType(i);
     const Type* actualType = actualTypes[i];
     if (formalType != actualType) {
+      if (formalType == LLVMTypeFor("i8")
+        && actualType == LLVMTypeFor("i1")) {
+        // TODO make the conversion from i1 to i8 explicit
+        //
+        // TODO better long-term solution is probably make the libfoster
+        // function expect_i8 instead of expect_i1, and add a Foster-impl
+        // expect_i1 wrapper. And, eventually, implement libfoster in foster ;-)
+        continue; // OK to implicitly convert here...
+      }
       success = false;
       std::cerr << "Type mismatch between actual and formal arg " << i << std::endl;
       std::cerr << "\tformal: " << *formalType << "; actual: " << *actualType << std::endl;

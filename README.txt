@@ -19,7 +19,7 @@ $ ctest -V    # Run tests in verbose mode; output from tests will be printed.
 
 ============================= Installation =================================
 Ubuntu (9.10):
-	Dependencies: CMake, ANTLR3 C runtime, Java, Google glog, LLVM
+	Dependencies: CMake, ANTLR3 C runtime, Java, Google glog, LLVM (including llvm-gcc)
 	Assuming you already have LLVM installed, in $PATH and $PKG_CONFIG_PATH...
 	
 	Interesting packages:

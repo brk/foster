@@ -42,11 +42,12 @@ execute_process(COMMAND ${LLVM_CONFIG} --cppflags
 find_program(LLVM_G++ NAMES llvm-g++
   PATHS /opt/local/bin
         $ENV{HOME}/Code/LLVM/llvm-2.5/llvm-gcc4.2-2.5-x86-darwin9/bin
+        /usr/lib/llvm/llvm/gcc-4.2/bin
   DOC "llvm-g++")
 
 
 # Collect the linker flags for us to link against LLVM
-execute_process(COMMAND ${LLVM_CONFIG} --ldflags --libs core jit interpreter native
+execute_process(COMMAND ${LLVM_CONFIG} --ldflags --libs core jit interpreter native linker
   OUTPUT_VARIABLE LLVM_LDFLAGS
 )
 

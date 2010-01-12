@@ -82,10 +82,13 @@ string join(string glue, Exprs args) {
   return ss.str();
 }
 
+// TODO this should maintain a separate map of name to type, so that
+// the generated Modules don't get cluttered up with redundant type decls.
 const Type* LLVMTypeFor(const string& name) { return module->getTypeByName(name); }
 
 void initModuleTypeNames() {
   module->addTypeName("i32", llvm::IntegerType::get(getGlobalContext(), 32));
+  module->addTypeName("i8", llvm::IntegerType::get(getGlobalContext(), 8));
   module->addTypeName("i1", llvm::IntegerType::get(getGlobalContext(), 1));
   
   /*

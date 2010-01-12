@@ -80,17 +80,21 @@ class FosterSymbolTable {
     string Name;
     typedef std::map<string, T*> Map;
     Map val_of;
+    T* lookup(const string& ident) {
+      T* rv = val_of[ident];
+      return rv;
+    }
     LexicalScope(string name) : Name(name) {}
   };
   typedef std::vector<LexicalScope> Environment;
   Environment env;
  public:
-  T* lookup(string ident, string wantedName) {
+  T* lookup(const string& ident, const string& wantedName) {
     for (typename Environment::reverse_iterator it = env.rbegin();
                                                 it != env.rend(); ++it) {
       string scopeName = (*it).Name;
       if (scopeName == "*" || wantedName == "" || scopeName == wantedName) {
-        T* V = (*it).val_of[ident];
+        T* V = (*it).lookup(ident);
         if (V != NULL) return V;
       }
     }
@@ -271,10 +275,12 @@ struct CallAST : public ExprAST {
   // For now, call exprs must manually visit children in case of UnpackExprs
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "CallAST TODO" << std::endl;
-    //out << "(";
-    //if (base) out << *this->parts[0]; else out << "<nil>";
-    //return out << " " << join(" ", args) << ")";
+    out << "(";
+    if (this->parts[0]) out << *this->parts[0]; else out << "<nil>";
+    for (int i = 1; i < this->parts.size(); ++i) {
+      out << " " << *this->parts[i];
+    }
+    return out << ")";
   }
 };
 
@@ -326,6 +332,7 @@ struct SubscriptAST : public BinaryExprAST {
   }
 };
 
+// The ->value for a PrototypeAST node is a llvm::Function*
 struct PrototypeAST : public ExprAST {
   string Name;
   std::vector<VariableAST*> inArgs;

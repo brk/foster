@@ -33,12 +33,18 @@ def run_one_test(dir_prefix, basename, paths, tmpdir):
           tests_failed.add(testpath)
           return
 
-        ld_rv = subprocess.call([ paths['llvm-ld'], paths['foster.bc'], paths['libfoster.bc'], '-o', paths['ll-foster'] ])
-        if ld_rv != 0:
-          tests_failed.add(testpath)
-          return
+        # Hack for now, since this option is baked in to the compiler.
+        compile_separately = False
+        
+        if compile_separately:
+          ld_rv = subprocess.call([ paths['llvm-ld'], paths['foster.bc'], paths['libfoster.bc'], '-o', paths['ll-foster'] ])
+          if ld_rv != 0:
+            tests_failed.add(testpath)
+            return
 
-        rn_rv = subprocess.call([ paths['ll-foster'] ], stdout=actual, stderr=expected)
+          rn_rv = subprocess.call([ paths['ll-foster'] ], stdout=actual, stderr=expected)
+        else:
+          rn_rv = subprocess.call([ paths['lli'], paths['foster.bc'] ])
 
         df_rv = subprocess.call(['diff', '-u', exp_filename, act_filename])
         if df_rv == 0:
@@ -84,6 +90,7 @@ if __name__ == "__main__":
       'fosterc': join(bindir, 'foster'),
       'llvm-as': join(llvmdir, 'llvm-as'),
       'llvm-ld': join(llvmdir, 'llvm-ld'),
+      'lli'    : join(llvmdir, 'lli'),
       'foster.bc': join(bindir, 'foster.bc'),
       'libfoster.bc': join(bindir, 'libfoster.bc'),
       'll-foster': join(bindir, 'll-foster'),
