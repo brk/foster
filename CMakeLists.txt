@@ -80,6 +80,10 @@ add_custom_target(libfoster_bc DEPENDS ${PROJECT_BINARY_DIR}/libfoster.bc)
 # Look for ANTLR-generated lexer and parser, and ANTLR library files
 include_directories(${ANTLR_DIR}/include ${PROJECT_BINARY_DIR})
 
+include_directories(
+  ${PROJECT_SOURCE_DIR}/compiler
+  ${PROJECT_SOURCE_DIR}/compiler/passes)
+
 # Assumes path to LLVM lib dir has no spaces in it!
 string(REGEX MATCH "-L[^ ]+" LLVM_LD_PATH ${LLVM_LDFLAGS})
 
@@ -92,9 +96,9 @@ add_executable(foster
   compiler/ANTLRtoFosterAST.cpp
   compiler/FosterAST.cpp
   compiler/foster.cpp
-  compiler/CodegenPass.cpp
-  compiler/TypecheckPass.cpp
-  compiler/PrettyPrintPass.cpp
+  compiler/passes/CodegenPass.cpp
+  compiler/passes/TypecheckPass.cpp
+  compiler/passes/PrettyPrintPass.cpp
   ${PROJECT_BINARY_DIR}/fosterParser.c
   ${PROJECT_BINARY_DIR}/fosterLexer.c
 )
