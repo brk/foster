@@ -13,8 +13,14 @@ struct ExprAST;
 #undef  FOSTER_AST_VISITOR_GEN
 
 struct FosterASTVisitor {
+  // This is given a default depth-first implementation in FosterAST.cpp ;
+  // The AST node classes determine if/when to call visitChildren() themselves,
+  // and generally visit children before the parent node.
   virtual void visitChildren(ExprAST* ast);
 
+  // By default, merely recursively accepts the visitor at the child node.
+  virtual void onVisitChild(ExprAST* ast, ExprAST* child);
+  
   // Declare the individual (pure virtual) visit function for the AST node types
   #define FOSTER_AST_VISITOR_PURE_VIRTUAL
   #include "FosterASTVisitor.decls.inc.h"

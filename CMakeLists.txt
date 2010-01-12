@@ -99,6 +99,7 @@ add_executable(foster
   compiler/passes/CodegenPass.cpp
   compiler/passes/TypecheckPass.cpp
   compiler/passes/PrettyPrintPass.cpp
+  compiler/passes/AddParentLinksPass.cpp
   ${PROJECT_BINARY_DIR}/fosterParser.c
   ${PROJECT_BINARY_DIR}/fosterLexer.c
 )

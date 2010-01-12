@@ -31,6 +31,7 @@
 #include "ANTLRtoFosterAST.h"
 #include "TypecheckPass.h"
 #include "CodegenPass.h"
+#include "AddParentLinksPass.h"
 #include "PrettyPrintPass.h"
 
 #include <cassert>
@@ -278,8 +279,9 @@ int main(int argc, char** argv) {
   
   std::cout << "=========================" << std::endl;
   
+  { AddParentLinksPass aplPass; exprAST->accept(&aplPass); }
   
-  TypecheckPass tyPass; exprAST->accept(&tyPass);
+  { TypecheckPass tyPass; exprAST->accept(&tyPass); }
   bool sema = exprAST->type != NULL;
   std::cout << "Semantic checking: " << sema << endl; 
   

@@ -106,11 +106,15 @@ void initModuleTypeNames() {
 void FosterASTVisitor::visitChildren(ExprAST* ast) {
   for (int i = 0; i < ast->parts.size(); ++i) {
     if (ast->parts[i]) {
-      ast->parts[i]->accept(this);
+      this->onVisitChild(ast, ast->parts[i]);
     } else {
-      std::cerr << "visitChildren saw null part " << i << " for ast node " << ast << std::endl;
+      std::cerr << "visitChildren saw null part " << i << " for ast node " << (*ast) << std::endl;
     }
   }
+}
+
+void FosterASTVisitor::onVisitChild(ExprAST* ast, ExprAST* child) {
+  child->accept(this);
 }
 
 llvm::Constant* IntAST::getConstantValue() {
