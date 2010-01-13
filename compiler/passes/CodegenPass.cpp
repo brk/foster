@@ -280,11 +280,7 @@ void tempHackConverti1toExpectedi8(const FunctionType* FT, std::vector<Value*>& 
   for (int i = 0; i < valArgs.size(); ++i) {
     Value* arg = valArgs[i];
     if (arg->getType() == i1ty && FT->getParamType(i) == i8ty) {
-      // TODO wrap this in a function call to make generated LLVM asm cleaner?
-      Value* i8one  = ConstantInt::getSigned(i8ty, 1);
-      Value* i8zero = ConstantInt::getSigned(i8ty, 0);
-      Value* argi8 = codegenIfExpr(arg, MemoValue(i8one), MemoValue(i8zero), i8ty);
-      valArgs[i] = argi8;
+      valArgs[i] = builder.CreateZExt(arg, i8ty, "i1toi8");
     }
   }
   
