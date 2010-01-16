@@ -121,11 +121,14 @@ struct IntAST : public ExprAST {
   string Text;
   string Clean;
   int Base;
-  explicit IntAST(string val, int base = 10): Text(val), Clean(val), Base(base) {}
+  explicit IntAST(string originalText, string valText, int base = 10)
+    : Text(originalText), Clean(valText), Base(base) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   llvm::Constant* getConstantValue();
   
-  virtual std::ostream& operator<<(std::ostream& out) const { return out << Clean; }
+  virtual std::ostream& operator<<(std::ostream& out) const {
+    return out << Text;
+  }
 };
 
 struct BoolAST : public ExprAST {
@@ -407,7 +410,11 @@ struct BuiltinCompilesExprAST : public UnaryExprAST {
   // Must manually visit children (for typechecking) because we don't want to codegen our children!
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "(__COMPILES__ " << *(this->parts[0]) << ")";
+    if (this->parts[0]) {
+      return out << "(__COMPILES__ " << *(this->parts[0]) << ")";
+    } else {
+      return out << "(__COMPILES__ <nil>)";
+    }
   }
 };
 

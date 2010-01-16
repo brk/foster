@@ -103,7 +103,7 @@ IntAST* parseIntFrom(pTree t) {
   }
 
   int base = 10;
-  std::stringstream clean;
+  std::stringstream clean, alltext;
 
   // Each child is either a hex clump, a backtick, or an underscore
   int nchildren = getChildCount(t);
@@ -115,17 +115,23 @@ IntAST* parseIntFrom(pTree t) {
         std::cerr << "Error: number can have only one underscore, in 2nd-to-last position!";
         return NULL;
       } else {
-        std::stringstream ss_base(textOf(child(t, i+1)));
+        string baseText = textOf(child(t, i+1));
+        alltext << "_" << baseText;
+        
+        std::stringstream ss_base(baseText);
         ss_base >> base;
         break;
       }
     } else if (text != "`") {
       clean << text;
+      alltext << text;
+    } else {
+      alltext << text;
     }
   }
 
   // LLVM will decide what does or does not constitute a valid int string for a given radix.
-  return new IntAST(clean.str(), base);
+  return new IntAST(alltext.str(), clean.str(), base);
 }
 
 int typeOf(pTree tree) { return tree->getType(tree); }

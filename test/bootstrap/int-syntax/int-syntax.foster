@@ -1,0 +1,69 @@
+fn "main" {
+  expect_i1(true);
+  print_i1( __COMPILES__ 1_2);
+  
+  expect_i1(false);
+  print_i1( __COMPILES__ 0_1);
+  
+  expect_i1(true);
+  print_i1( __COMPILES__ 0_2);
+
+  expect_i1(false);
+  print_i1( __COMPILES__ 2_2);
+  
+  expect_i1(true);
+  print_i1( __COMPILES__ 7_8);
+  
+  expect_i1(false);
+  print_i1( __COMPILES__ 08_8);
+
+  expect_i1(false);
+  print_i1( __COMPILES__ 0a_8);
+     
+  expect_i1(true);
+  print_i1( __COMPILES__ 0f_16);
+  
+  expect_i1(true);
+  print_i1( __COMPILES__ 1f_16);
+  
+  expect_i1(false); // parses as variable, not number
+  print_i1( __COMPILES__ f_16);
+  
+  // ==== numeric representation limit tests ====
+  // === base 10 ===
+  
+  expect_i1(true);
+  print_i1( __COMPILES__ 1234);
+  
+  expect_i1(true); // 2^31
+  print_i1( __COMPILES__ 2147483648);
+
+  expect_i1(true); // 2^31 + 1
+  print_i1( __COMPILES__ 2147483649);
+
+  expect_i1(true); // 2^32 - 1
+  print_i1( __COMPILES__ 4294967295);
+  
+  expect_i1(false); // 2^32
+  print_i1( __COMPILES__ 4294967296);
+  
+  expect_i1(false); // 2^32 + 1
+  print_i1( __COMPILES__ 4294967297);
+  
+  // === base 2 ===
+  expect_i1(true); // 8 bits
+  print_i1( __COMPILES__ 1111`1111_2);
+  
+  expect_i1(true); // 16 bits
+  print_i1( __COMPILES__ 1111`1111`1111`1111_2);
+  
+  expect_i1(true); // 32 bits
+  print_i1( __COMPILES__ 1111`1111`1111`1111`1111`1111`1111`1111_2);
+  
+  expect_i1(true); // zero + 32 bits
+  print_i1( __COMPILES__ 0`1111`1111`1111`1111`1111`1111`1111`1111_2);
+  
+  expect_i1(false); // one + 32 bits
+  print_i1( __COMPILES__ 1`1111`1111`1111`1111`1111`1111`1111`1111_2);
+  
+}

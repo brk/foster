@@ -7,6 +7,7 @@
 
 #include "llvm/DerivedTypes.h"
 #include "llvm/LLVMContext.h"
+#include "llvm/ADT/APInt.h"
 
 using llvm::Type;
 using llvm::Function;
@@ -27,6 +28,36 @@ void TypecheckPass::visit(BoolAST* ast) {
 }
 
 void TypecheckPass::visit(IntAST* ast) {
+  // Make sure the base is a reasonable one
+  if (!(ast->Base == 2  || ast->Base == 8
+     || ast->Base == 10 || ast->Base == 16)) {
+    return;
+  }
+  
+  // Make sure the literal only contains
+  // valid digits for the chosen base.
+  const char* digits = "0123456789abcdef";
+  for (int i = 0; i < ast->Clean.size(); ++i) {
+    char c = tolower(ast->Clean[i]);
+    ptrdiff_t pos = std::find(digits, digits + 16, c) - digits;
+    if (pos >= ast->Base) {
+      return;
+    }
+  }
+  
+  // Start with a very conservative estimate of how
+  // many bits we need to represent this integer
+  int numDigits = ast->Clean.size();
+  int bitsPerDigit = int(ceil(log(ast->Base)/log(2)));
+  int conservativeBitsNeeded = bitsPerDigit * numDigits;
+  APInt n(conservativeBitsNeeded, ast->Clean, ast->Base);
+  unsigned activeBits = n.getActiveBits();
+  if (activeBits > 32) {
+    std::cerr << "Integer literal '" << ast->Text << "' requires "
+              << activeBits << " bits to represent." << std::endl;
+    return;
+  }
+  
   ast->type = LLVMTypeFor("i32");
 }
 
@@ -402,8 +433,12 @@ void TypecheckPass::visit(UnpackExprAST* ast) {
 }
 
 void TypecheckPass::visit(BuiltinCompilesExprAST* ast) {
-  ast->parts[0]->accept(this);
-  ast->status = (ast->parts[0]->type != NULL) ? ast->kWouldCompile : ast->kWouldNotCompile;
+  if (ast->parts[0]) {
+    ast->parts[0]->accept(this);
+    ast->status = (ast->parts[0]->type != NULL) ? ast->kWouldCompile : ast->kWouldNotCompile;
+  } else {
+    ast->status = ast->kWouldNotCompile;
+  }
   ast->type = LLVMTypeFor("i1");
 }
 
