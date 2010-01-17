@@ -207,9 +207,9 @@ void CodegenPass::visit(IfExprAST* ast) {
                                    LazyVisitedValue(this, ast->elseExpr), ast->type);
 }
 
-Value* getElementFromStruct(Value* structValue, Value* idxValue) {
-  const Type* structType = structValue->getType();
-  if (llvm::isa<llvm::PointerType>(structType)) {
+Value* getElementFromComposite(Value* compositeValue, Value* idxValue) {
+  const Type* compositeType = compositeValue->getType();
+  if (llvm::isa<llvm::PointerType>(compositeType)) {
     // Pointers to composites are indexed via getelementptr
     // TODO: "When indexing into a (optionally packed) structure,
     //        only i32 integer constants are allowed. When indexing
@@ -220,21 +220,21 @@ Value* getElementFromStruct(Value* structValue, Value* idxValue) {
     idx.push_back(ConstantInt::get(Type::getInt32Ty(getGlobalContext()), 0));
     idx.push_back(idxValue);
   
-    Value* gep = builder.CreateGEP(structValue, idx.begin(), idx.end(), "subgep");
+    Value* gep = builder.CreateGEP(compositeValue, idx.begin(), idx.end(), "subgep");
     return builder.CreateLoad(gep, "subgep_ld");
-  } else if (llvm::isa<llvm::StructType>(structType)
+  } else if (llvm::isa<llvm::StructType>(compositeType)
           && llvm::isa<llvm::Constant>(idxValue)) {
     // Struct values may be indexed by constant expressions
     unsigned uidx = getSaturating<unsigned>(idxValue);
-    return builder.CreateExtractValue(structValue, uidx, "subexv");
+    return builder.CreateExtractValue(compositeValue, uidx, "subexv");
   } else {
-    std::cerr << "Cannot index into value type " << *structType << " with non-constant index " << *idxValue << std::endl;
+    std::cerr << "Cannot index into value type " << *compositeType << " with non-constant index " << *idxValue << std::endl;
     return NULL;
   }
 }
 
 void CodegenPass::visit(SubscriptAST* ast) {
-  ast->value = getElementFromStruct(ast->parts[0]->value, ast->parts[1]->value);
+  ast->value = getElementFromComposite(ast->parts[0]->value, ast->parts[1]->value);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -270,7 +270,7 @@ void unpackArgs(std::vector<Value*>& valArgs, Value* V, const FunctionType* FT) 
     appendArg(valArgs, V, FT);
   } else for (int j = 0; j < st->getNumElements(); ++j) {
     // appendArg(...) for non-recursive unpack
-    unpackArgs(valArgs, getElementFromStruct(V, ConstantInt::get(Type::getInt32Ty(getGlobalContext()), j)), FT);
+    unpackArgs(valArgs, getElementFromComposite(V, ConstantInt::get(Type::getInt32Ty(getGlobalContext()), j)), FT);
   }
 }
 
@@ -379,6 +379,54 @@ void CodegenPass::visit(ArrayExprAST* ast) {
   
   ast->value = gvar;
 }
+
+bool isComposedOfIntLiterals(ExprAST* ast) {
+  for (int i = 0; i < ast->parts.size(); ++i) {
+    IntAST* v = dynamic_cast<IntAST*>(ast->parts[i]);
+    if (!v) { return false; }
+  }
+  return true;
+}
+
+void CodegenPass::visit(SimdVectorAST* ast) {
+  if (ast->value != NULL) return;
+  
+  const llvm::VectorType* simdType = llvm::dyn_cast<const llvm::VectorType>(ast->type);
+  
+  
+  SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
+  bool isConstant = isComposedOfIntLiterals(body);
+  
+  using llvm::GlobalVariable;
+  GlobalVariable* gvar = new GlobalVariable(*module,
+    /*Type=*/         simdType,
+    /*isConstant=*/   isConstant,
+    /*Linkage=*/      llvm::GlobalValue::PrivateLinkage,
+    /*Initializer=*/  0, // has initializer, specified below
+    /*Name=*/         freshName("simdGv"));
+  
+  if (isConstant) {
+    std::vector<llvm::Constant*> elements;
+    for (int i = 0; i < body->parts.size(); ++i) {
+      IntAST* intlit = dynamic_cast<IntAST*>(body->parts[i]);
+      llvm::Constant* ci = intlit->getConstantValue();
+      elements.push_back(llvm::dyn_cast<llvm::Constant>(ci));
+    }
+    
+    llvm::Constant* constVector = llvm::ConstantVector::get(simdType, elements);
+    gvar->setInitializer(constVector);
+    ast->value = gvar;
+  } else {
+    llvm::AllocaInst* pt = builder.CreateAlloca(simdType, 0, "s");
+    for (int i = 0; i < body->parts.size(); ++i) {
+      Value* dst = builder.CreateConstGEP2_32(pt, 0, i, "simd-gep");
+      body->parts[i]->accept(this);
+      builder.CreateStore(body->parts[i]->value, dst, /*isVolatile=*/ false);
+    }
+    ast->value = pt;
+  }
+}
+
 
 void CodegenPass::visit(TupleExprAST* ast) {
   if (ast->value != NULL) return;

@@ -289,9 +289,10 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
   }
   
   if (token == COMPILES) { return new BuiltinCompilesExprAST(ExprAST_from(child(tree, 0), depth, infn)); }
-  if (token == ARRAY) { return new ArrayExprAST(ExprAST_from(child(tree, 0), depth + 1, infn)); }
-  if (token == TUPLE) { return new TupleExprAST(ExprAST_from(child(tree, 0), depth + 1, infn)); }
-  if (token == UNPACK) { return new UnpackExprAST(ExprAST_from(child(tree, 0), depth + 1, infn)); }
+  if (token == ARRAY)    { return new  ArrayExprAST(ExprAST_from(child(tree, 0), depth + 1, infn)); }
+  if (token == TUPLE)    { return new  TupleExprAST(ExprAST_from(child(tree, 0), depth + 1, infn)); }
+  if (token == SIMD)     { return new SimdVectorAST(ExprAST_from(child(tree, 0), depth + 1, infn)); }
+  if (token == UNPACK)   { return new UnpackExprAST(ExprAST_from(child(tree, 0), depth + 1, infn)); }
   
   if (binaryOps[text]) {
     return new BinaryOpExprAST(text, ExprAST_from(child(tree, 0), depth + 1, infn),

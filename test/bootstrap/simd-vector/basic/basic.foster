@@ -1,0 +1,22 @@
+fn "main" {
+  expect_i32(11);
+  print_i32( simd-vector { 11, 12, 13, 14 }[0] );
+
+  expect_i1(false); // Like arrays, simd-vectors must contain only 1 type
+  print_i1(__COMPILES__ simd-vector { 42, true, 42, false }[1] );
+ 
+  expect_i32(44);
+  print_i32( simd-vector { 42, 43, 44, 45 }[2] );
+ 
+  expect_i1(false); // we restrict vectors to power-of-two sizes, even though LLVM 2.7+ doesn't
+  print_i1( __COMPILES__ simd-vector { 45, 46, 47 } );
+ 
+  expect_i1(false);
+  print_i1(__COMPILES__ simd-vector { 42, 43, 44, 45 }[333] );
+ 
+  expect_i1(false);
+  print_i1(__COMPILES__ simd-vector { 42, 43, 44, 45 }[true] );
+ 
+  expect_i1(false);
+  print_i1(__COMPILES__ simd-vector {} [0] );
+}

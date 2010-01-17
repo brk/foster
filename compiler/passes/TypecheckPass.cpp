@@ -47,9 +47,8 @@ void TypecheckPass::visit(IntAST* ast) {
   
   // Start with a very conservative estimate of how
   // many bits we need to represent this integer
-  int numDigits = ast->Clean.size();
   int bitsPerDigit = int(ceil(log(ast->Base)/log(2)));
-  int conservativeBitsNeeded = bitsPerDigit * numDigits;
+  int conservativeBitsNeeded = bitsPerDigit * ast->Clean.size();
   APInt n(conservativeBitsNeeded, ast->Clean, ast->Base);
   unsigned activeBits = n.getActiveBits();
   if (activeBits > 32) {
@@ -198,7 +197,7 @@ void TypecheckPass::visit(SubscriptAST* ast) {
     return;
   }
   
-  if (!baseType->isAggregateType()) {
+  if (!(baseType->isAggregateType() || llvm::isa<llvm::VectorType>(baseType))) {
     std::cerr << "Error: Cannot index into non-aggregate type " << *baseType << std::endl;
     return;
   }
@@ -219,9 +218,17 @@ void TypecheckPass::visit(SubscriptAST* ast) {
       return;
     }
     
-    // LLVM doesn't do bounds checking for arrays, but we do!
-    if (const llvm::ArrayType* aTy = llvm::dyn_cast<llvm::ArrayType>(baseType)) {
-      uint64_t numElements = aTy->getNumElements();
+    // LLVM doesn't do bounds checking for arrays or vectors, but we do!
+    uint64_t numElements = -1;
+    if (const llvm::ArrayType* ty = llvm::dyn_cast<llvm::ArrayType>(baseType)) {
+      numElements = ty->getNumElements();
+    }
+    
+    if (const llvm::VectorType* ty = llvm::dyn_cast<llvm::VectorType>(baseType)) {
+      numElements = ty->getNumElements();
+    }   
+    
+    if (numElements >= 0) {
       uint64_t idx_u64 = vidx.getZExtValue();
       if (idx_u64 >= numElements) {
         std::cerr << "Error: attempt to index array[" << numElements << "]"
@@ -391,6 +398,53 @@ void TypecheckPass::visit(ArrayExprAST* ast) {
   
   if (success) {
     ast->type = llvm::ArrayType::get(elementType, numElements);
+  }
+}
+
+// TODO this is a near-exact duplicate of ArrayExprAST* case...
+void TypecheckPass::visit(SimdVectorAST* ast) {
+  bool success = true;
+  std::map<const Type*, bool> fieldTypes;
+  
+  SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
+  if (!body) {
+    std::cerr << "Typecheck of simd-vector expr failed because ast.parts[0] = " << ast->parts[0] << " was not a Seq!" << std::endl;
+    return;
+  }
+  
+  int numElements = body->parts.size();
+  const Type* elementType = NULL;
+  for (int i = 0; i < numElements; ++i) {
+    const Type* ty =  body->parts[i]->type;
+    if (!ty) {
+      std::cerr << "simd-vector expr had null constituent type for subexpr " << i << std::endl;
+      success = false;
+      break;
+    }
+    fieldTypes[ty] = true;
+    elementType = ty;
+  }
+  
+  // TODO This should probably be relaxed eventually; for example,
+  // a simd-vector of "small" and "large" int literals should silently be accepted
+  // as a simd-vector of "large" ints.
+  if (success && fieldTypes.size() != 1) {
+    std::cerr << "simd-vector expression had multiple types! Found:" << std::endl;
+    std::map<const Type*, bool>::const_iterator it;;
+    for (it = fieldTypes.begin(); it != fieldTypes.end(); ++it) {
+      std::cerr << "\t" << *((*it).first) << std::endl;
+    }
+    success = false;
+  }
+  
+  if (!isSmallPowerOfTwo(numElements)) {
+    std::cerr << "simd-vector constructor needs a small"
+              << " power of two of elements; got " << numElements << std::endl;
+    success = false;
+  }
+  
+  if (success) {
+    ast->type = llvm::VectorType::get(elementType, numElements);
   }
 }
 

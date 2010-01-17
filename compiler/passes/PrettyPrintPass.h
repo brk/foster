@@ -16,6 +16,7 @@
 // Straightforward implementation of Pugh & Sinofsky's prettyprinting algorithm
 // from    http://ecommons.library.cornell.edu/bitstream/1813/6648/1/87-808.pdf
 
+// TODO opt linebreaks don't seem to be working as expected...
 struct PrettyPrintPass : public FosterASTVisitor {
   #include "FosterASTVisitor.decls.inc.h"
   
@@ -39,8 +40,6 @@ struct PrettyPrintPass : public FosterASTVisitor {
   PPToken tIndent, tDedent;
   PPToken tNewline, tOptNewline, tConnNewline;
   
-  // I believe this is correctly implemented for correctly-structured streams,
-  // but the code seems to be fragile in its handling of malformed streams.
   PrettyPrintPass(std::ostream& out, int width = 80, int indent_width = 2)
     : out(out), INDENT_WIDTH(indent_width) {
     tBlockOpen.kind = PPToken::kOpen;

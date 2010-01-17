@@ -47,6 +47,10 @@ string join(string glue, Exprs args);
 const Type* LLVMTypeFor(const string& name);
 void initModuleTypeNames();
 
+inline bool isSmallPowerOfTwo(int x) {
+  return (x == 2) || (x == 4) || (x == 8) || (x == 16);
+}
+
 ///////////////////////////////////////////////////////////
 
 struct ExprAST {
@@ -323,6 +327,17 @@ struct ArrayExprAST : public UnaryExprAST {
       return out << "(array)";
     }
     return out << "(array " << *(this->parts[0]) << ")";
+  }
+};
+
+struct SimdVectorAST : public UnaryExprAST {
+  explicit SimdVectorAST(ExprAST* expr) : UnaryExprAST(expr) {}
+  virtual void accept(FosterASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
+  virtual std::ostream& operator<<(std::ostream& out) const {
+    if (!this->parts[0]) {
+      return out << "(simd-vector)";
+    }
+    return out << "(simd-vector " << *(this->parts[0]) << ")";
   }
 };
 

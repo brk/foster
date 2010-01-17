@@ -26,13 +26,13 @@ void PrettyPrintPass::visit(VariableAST* ast) {
 
 // $0 op $1
 void PrettyPrintPass::visit(BinaryOpExprAST* ast) {
-  ////scan(tBlockOpen);
+  scan(tBlockOpen);
   ast->parts[0]->accept(this);
   scan(PPToken(" "));
   scan(PPToken(ast->op));
   scan(PPToken(" "));
   ast->parts[1]->accept(this);
-  ////scan(tBlockClose);
+  scan(tBlockClose);
 }
 
 // fn Name (inArgs to outArgs)
@@ -68,8 +68,10 @@ void PrettyPrintPass::visit(PrototypeAST* ast) {
 void PrettyPrintPass::visit(FnAST* ast) {
   ast->Proto->accept(this);
   scan(tOptNewline);
-  scan(PPToken(" "));
+//  scan(tIndent);
   ast->Body->accept(this);
+//  scan(tDedent);
+  scan(tNewline);
 }
 
 // if $0 { $1 } else { $2 }
@@ -81,11 +83,13 @@ void PrettyPrintPass::visit(IfExprAST* ast) {
   //scan(tBlockClose);
   
   scan(PPToken(" "));
+  scan(tOptNewline);
   
   //ast->parts[1]->accept(this);
   ast->thenExpr->accept(this);
   
   scan(PPToken(" else "));
+  scan(tOptNewline);
   
   ast->elseExpr->accept(this);
   //ast->parts[2]->accept(this);
@@ -105,7 +109,7 @@ void PrettyPrintPass::visit(SubscriptAST* ast) {
 // { $0 ; $1 ; ... ; $n }
 void PrettyPrintPass::visit(SeqAST* ast) {
   scan(tBlockOpen);
-  scan(PPToken("{"));
+  scan(PPToken("{ "));
   scan(tIndent);
   
   for (int i = 0; i < ast->parts.size(); ++i) {
@@ -121,7 +125,7 @@ void PrettyPrintPass::visit(SeqAST* ast) {
     }
   }
   scan(tDedent);
-  scan(PPToken("}"));
+  scan(PPToken(" }"));
   scan(tBlockClose);
 }
 
@@ -142,6 +146,7 @@ void PrettyPrintPass::visit(CallAST* ast) {
   }
   scan(PPToken(")"));
   scan(tBlockClose);
+  scan(tOptNewline);
 }
 // array $0
 void PrettyPrintPass::visit(ArrayExprAST* ast) {
@@ -165,6 +170,18 @@ void PrettyPrintPass::visit(TupleExprAST* ast) {
   }
 }
 
+
+// simd-vector $0
+void PrettyPrintPass::visit(SimdVectorAST* ast) {
+  scan(PPToken("simd-vector"));
+  scan(PPToken(" "));
+  if (ast->parts[0]) {
+    ast->parts[0]->accept(this);
+  } else {
+    scan(PPToken("<nil>"));
+  }
+}
+
 // unpack $0
 void PrettyPrintPass::visit(UnpackExprAST* ast) {
   scan(PPToken("unpack"));
@@ -177,7 +194,11 @@ void PrettyPrintPass::visit(BuiltinCompilesExprAST* ast) {
   //scan(tBlockClose);
   scan(PPToken("__COMPILES__"));
   scan(PPToken(" "));
-  ast->parts[0]->accept(this);
+  if (ast->parts[0]) {
+      ast->parts[0]->accept(this);
+  } else {
+      scan(PPToken("<nil>")); 
+  }
   //scan(tBlockClose);
 }
 

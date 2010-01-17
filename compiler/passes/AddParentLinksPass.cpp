@@ -27,6 +27,7 @@ void AddParentLinksPass::visit(IfExprAST* ast)              {
   onVisitChild(ast, ast->elseExpr);
 }
 void AddParentLinksPass::visit(SubscriptAST* ast)           { return; }
+void AddParentLinksPass::visit(SimdVectorAST* ast)          { return; }
 void AddParentLinksPass::visit(SeqAST* ast)                 { return; }
 void AddParentLinksPass::visit(CallAST* ast)                { return; }
 void AddParentLinksPass::visit(ArrayExprAST* ast)           { return; }

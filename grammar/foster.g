@@ -1,7 +1,7 @@
 grammar foster;
 
 options {
-  // Commenting out this line lets us play with the grammar in ANTLRworks,
+  // Leaving this line commented out lets us play with the grammar in ANTLRworks
   // and still automatically generate a C-language parser via CMake and Python.
   //language = C;
   output = AST;
@@ -10,10 +10,10 @@ options {
 tokens {
 	AS='as'; AT='at'; DO='do'; ID='id'; IF='if'; IN='in'; IS='is'; IT='it'; TO='to';
 	FOR='for'; NIL='nil'; TRUE='true'; FALSE='false'; AND='and'; OR='or';
-	COMPILES='__COMPILES__'; UNPACK='unpack';
+	COMPILES='__COMPILES__'; UNPACK='unpack'; STRUCTURE='struct';
 
 	FN; OUT; BODY; GIVEN; GIVES; IDS; SEQ; FIELD_LIST; INT; RAT; EXPRS; NAME;
-	TRAILERS; CALL; TUPLE; SUBSCRIPT; LOOKUP; FORMAL; ARRAY;
+	TRAILERS; CALL; TUPLE; SUBSCRIPT; LOOKUP; FORMAL; ARRAY; SIMD;
 }
 
 program			:	expr+ EOF -> ^(EXPRS expr+);
@@ -29,11 +29,12 @@ formals			:	(      formal+
 				 | '(' formal (','? formal)* ')'
 				) -> formal*;
 
-literal			:	TRUE | FALSE | num | tuple | array;
+literal			:	TRUE | FALSE | num | tuple | array | simdvector;
 name			:	n=IDENT -> ^(NAME $n);
 str	                :       STR;
 tuple	                :       'tuple' seq -> ^(TUPLE seq);
-array                   :       'array' seq -> ^(ARRAY seq);	
+array                   :       'array' seq -> ^(ARRAY seq);
+simdvector              :       'simd-vector' seq -> ^(SIMD seq);
 
 ifexpr                  :       'if' cond=expr thenseq=seq 'else' elseseq=seq
 					-> ^(IF $cond $thenseq $elseseq);
@@ -50,7 +51,7 @@ compound                :       term ( trailer -> ^(TRAILERS term trailer)
                                 );	
 //opt_paren_expr          :      ('(' expr ')' | expr)	-> expr;
 
-// Defining expr : '(' expr ')' | ... ; creates abiguity with call expressions
+// Defining expr : '(' expr ')' | ... ; creates ambiguity with call expressions
 expr			:	compound (  binop expr	-> ^(binop compound expr)
 					  |		-> ^(compound)
 				);
