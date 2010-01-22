@@ -69,6 +69,7 @@ void CodegenPass::visit(BinaryOpExprAST* ast) {
     std::cerr << "Error: binary expr " << op << " had null subexpr" << std::endl;
     return;
   }
+
        if (op == "+") { ast->value = builder.CreateAdd(VL, VR, "addtmp"); }
   else if (op == "-") { ast->value = builder.CreateSub(VL, VR, "subtmp"); }
   else if (op == "/") { ast->value = builder.CreateSDiv(VL, VR, "divtmp"); }
@@ -224,9 +225,16 @@ Value* getElementFromComposite(Value* compositeValue, Value* idxValue) {
     return builder.CreateLoad(gep, "subgep_ld");
   } else if (llvm::isa<llvm::StructType>(compositeType)
           && llvm::isa<llvm::Constant>(idxValue)) {
-    // Struct values may be indexed by constant expressions
+    // Struct values may be indexed only by constant expressions
     unsigned uidx = getSaturating<unsigned>(idxValue);
     return builder.CreateExtractValue(compositeValue, uidx, "subexv");
+  } else if (llvm::isa<llvm::VectorType>(compositeType)) {
+    if (llvm::isa<llvm::Constant>(idxValue)) {
+      return builder.CreateExtractElement(compositeValue, idxValue, "simdexv");
+    } else {
+      std::cerr << "TODO: codegen for indexing vectors by non-constants " << __FILE__ << ":" << __LINE__ << std::endl;
+      // TODO
+    }
   } else {
     std::cerr << "Cannot index into value type " << *compositeType << " with non-constant index " << *idxValue << std::endl;
     return NULL;
@@ -404,7 +412,7 @@ void CodegenPass::visit(SimdVectorAST* ast) {
     /*Linkage=*/      llvm::GlobalValue::PrivateLinkage,
     /*Initializer=*/  0, // has initializer, specified below
     /*Name=*/         freshName("simdGv"));
-  
+
   if (isConstant) {
     std::vector<llvm::Constant*> elements;
     for (int i = 0; i < body->parts.size(); ++i) {
@@ -415,7 +423,7 @@ void CodegenPass::visit(SimdVectorAST* ast) {
     
     llvm::Constant* constVector = llvm::ConstantVector::get(simdType, elements);
     gvar->setInitializer(constVector);
-    ast->value = gvar;
+    ast->value = builder.CreateLoad(gvar, /*isVolatile*/ false, "simdLoad");
   } else {
     llvm::AllocaInst* pt = builder.CreateAlloca(simdType, 0, "s");
     for (int i = 0; i < body->parts.size(); ++i) {

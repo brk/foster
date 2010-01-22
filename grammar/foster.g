@@ -39,22 +39,25 @@ simdvector              :       'simd-vector' seq -> ^(SIMD seq);
 ifexpr                  :       'if' cond=expr thenseq=seq 'else' elseseq=seq
 					-> ^(IF $cond $thenseq $elseseq);
 
-term			:	( literal
-				| name
-                                | fn
-                                | seq
-                                | ifexpr
-                                | unop_prefixed_expr);
+term			:	( literal -> literal
+				| name -> name
+                                | fn -> fn
+                                | seq -> seq
+                                | ifexpr -> ifexpr
+                                | '(' expr ')' -> expr
+                                | unop_prefixed_expr -> unop_prefixed_expr);
 
-compound                :       term ( trailer -> ^(TRAILERS term trailer)
+compound                :       (term) ( trailer -> ^(TRAILERS term trailer)
                                       |        -> ^(term)
                                 );	
-//opt_paren_expr          :      ('(' expr ')' | expr)	-> expr;
+
 
 // Defining expr : '(' expr ')' | ... ; creates ambiguity with call expressions
-expr			:	compound (  binop expr	-> ^(binop compound expr)
+subexpr			:	compound (  binop subexpr	-> ^(binop compound subexpr)
 					  |		-> ^(compound)
 				);
+
+expr	:	subexpr;
 
 trailer                 :       '(' arglist? ')' -> ^(CALL arglist)
                         |       '.' name         -> ^(LOOKUP name)

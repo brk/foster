@@ -1,0 +1,39 @@
+fn "main" {
+  expect_i32(311);
+  print_i32( (simd-vector { 11, 12, 13, 14 } + simd-vector { 300, 300, 300, 300 })[0] );
+ 
+  expect_i32(4200);
+  print_i32( (simd-vector { 11, 12, 13, 14 } * simd-vector { 300, 300, 300, 300 })[3] );
+ 
+  expect_i32(7);
+  print_i32( (simd-vector { 11, 12, 13, 14 } - simd-vector { 2, 4, 6, 8 })[2] );
+  
+  // TODO: srem/urem
+  // TODO: insertelement
+  
+  expect_i32(4);
+  print_i32( (simd-vector { 1, 1, 1, 1 } shl simd-vector { 1, 2, 3, 4 })[1] );
+  
+  expect_i32(8);
+  print_i32( (simd-vector { 1, 1, 1, 1 } shl simd-vector { 1, 2, 3, 4 })[2] );
+ 
+  expect_i32(1111_2);
+  print_i32( (simd-vector { 1111_2, 1111_2, 0110_2, 0110_2 }
+       bitand simd-vector { 1111_2, 0011_2, 1111_2, 0011_2 })[0] ); 
+       
+  expect_i32(0011_2);
+  print_i32( (simd-vector { 1111_2, 1111_2, 0110_2, 0110_2 }
+       bitand simd-vector { 1111_2, 0011_2, 1111_2, 0011_2 })[1] );
+       
+  expect_i32(0110_2);
+  print_i32( (simd-vector { 1111_2, 1111_2, 0110_2, 0110_2 }
+       bitand simd-vector { 1111_2, 0011_2, 1111_2, 0011_2 })[2] );
+
+  expect_i32(0010_2);
+  print_i32( (simd-vector { 1111_2, 1111_2, 0110_2, 0110_2 }
+       bitand simd-vector { 1111_2, 0011_2, 1111_2, 0011_2 })[3] );
+       
+  // TODO expect_4xi32
+  
+  
+}
