@@ -12,11 +12,11 @@ tokens {
 	FOR='for'; NIL='nil'; TRUE='true'; FALSE='false'; AND='and'; OR='or';
 	COMPILES='__COMPILES__'; UNPACK='unpack'; STRUCTURE='struct';
 
-	FN; OUT; BODY; GIVEN; GIVES; IDS; SEQ; FIELD_LIST; INT; RAT; EXPRS; NAME;
+	FN; OUT; BODY; GIVEN; GIVES; SEQ; INT; RAT; EXPRS; NAME;
 	TRAILERS; CALL; TUPLE; SUBSCRIPT; LOOKUP; FORMAL; ARRAY; SIMD;
 }
 
-program			:	expr+ EOF -> ^(EXPRS expr+);
+program			:	nl* expr (nl+ expr)* nl* EOF -> ^(EXPRS expr+);
 
 fn			:	'fn' n=str? in=formals? ('to' out=formals)? seq requires? ensures?
 					-> ^(FN ^(NAME $n) ^(IN $in) ^(OUT $out) ^(BODY seq) ^(GIVEN requires?) ^(GIVES ensures?));
@@ -53,7 +53,7 @@ compound                :       (term) ( trailer -> ^(TRAILERS term trailer)
 
 
 // Defining expr : '(' expr ')' | ... ; creates ambiguity with call expressions
-subexpr			:	compound (  binop subexpr	-> ^(binop compound subexpr)
+subexpr			:	compound (  binop nl? subexpr	-> ^(binop compound subexpr)
 					  |		-> ^(compound)
 				);
 
@@ -65,21 +65,21 @@ trailer                 :       '(' arglist? ')' -> ^(CALL arglist)
 
 arglist                 :       expr (',' expr)* -> expr+;
 
-seq			:	'{' fieldlist? '}' -> ^(SEQ fieldlist);
-fieldlist		:	field (fieldsep field)* fieldsep? -> ^(FIELD_LIST field*);
-field			:	'[' expr ']' ':' expr | name ':' expr | expr;
-fieldsep		:	';' | ',';
+seq			:	'{' nl* exprlist? nl* '}' -> ^(SEQ exprlist);
+exprlist        :       expr ((sep | nl) nl* expr)* sep? -> expr+;
+sep		:	';' | ',';
 
 binop			:	'+' | '-' | '*' | '/' | '..' | '='
 			|	'<' | '<=' | '>=' | '>' | '==' | '!='
 			|	'bitand' | 'bitor' | 'shl' | 'shr'
 			|	AND | OR | '+=' | '-=' | '*=' | '/=';
 
-unop_prefixed_expr      :       prefix_unop expr -> ^(prefix_unop expr);	
+unop_prefixed_expr      :       prefix_unop nl? expr -> ^(prefix_unop expr);	
 prefix_unop		:	'-' | 'not' | COMPILES | UNPACK;
 
+nl : NEWLINE;
 
-// TODO: sema should warn  if int_num starts with zero and doesn't include a base
+// TODO: sema should warn if int_num starts with zero and doesn't include a base
 // TODO: sema should error if int_num contains hex digits without specifying a hex base
 // TODO: sema should error if hex_clump contains non_hex chars
 int_num			:	num_start                                ('_' hex_clump)?;
@@ -104,15 +104,15 @@ STR
     |  '"'  ~('\\'|'"' )* ( ESC_SEQ | ~('\\'|'"' ) )* '"'
     ;
 
-COMMENT			:	'//' ~('\n'|'\r')* '\r'? '\n' {$channel=HIDDEN;} ;
+COMMENT			:	'//' ~('\n'|'\r')* '\r'?  /*'\n'*/ {$channel=HIDDEN;} ;
 
 fragment ESC_SEQ	:	'\\' ('t'|'n'|'r'|'"'|'\''|'\\') | UNICODE_ESC;
 fragment UNICODE_ESC    :	'\\' ('u' | 'U') HEX_DIGIT HEX_DIGIT HEX_DIGIT HEX_DIGIT;
 fragment HEX_DIGIT 	: 	('0'..'9'|'a'..'f'|'A'..'F');
 
+NEWLINE : '\n';
 WS  :   ( ' '
         | '\t'
         | '\r'
-        | '\n'
         ) {$channel=HIDDEN;}
     ;

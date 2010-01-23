@@ -221,16 +221,12 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
     }
     return prefix;
   }
-  
-  if (token == SEQ) { // contains FIELD_LIST
-    return ExprAST_from(child(tree, 0), depth + 1, infn);
-  }
-  
+
   if (token == BODY) { // usually contains SEQ
     return ExprAST_from(child(tree, 0), depth, infn);
   }
   
-  if (token == EXPRS || token == FIELD_LIST) {
+  if (token == EXPRS || token == SEQ) {
     Exprs exprs;
     for (int i = 0; i < getChildCount(tree); ++i) {
       ExprAST* ast = ExprAST_from(child(tree, i), depth + 1, infn);
