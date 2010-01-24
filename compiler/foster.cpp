@@ -34,6 +34,8 @@
 #include "AddParentLinksPass.h"
 #include "PrettyPrintPass.h"
 
+#include "pystring/pystring.h"
+
 #include <cassert>
 #include <memory>
 #include <iostream>
@@ -100,24 +102,6 @@ void createParser(ANTLRContext& ctx, string filename) {
   }
 }
 
-#if 0
-// |param| is used to construct the prototype for the function,
-// and a different VariableAST is inserted into the symbol tables
-void addExternSingleParamFn(const char* name, VariableAST* param) {
-  PrototypeAST* p = new PrototypeAST(name, param);
-  
-  TypecheckPass typ; p->accept(&typ);
-  CodegenPass   cp;  p->accept(&cp);
-  
-  VariableAST* fnRef = new VariableAST(name, p->type);
-  
-  varScope.insert(name, fnRef);
-  
-  
-  scope.insert(name, p->value);
-}
-#endif
-
 VariableAST* proto(const Type* retTy, const std::string& fqName, const Type* ty1) {
   // TODO: typecheck/codegen these prototypes on-demand.
   PrototypeAST* p = new PrototypeAST(retTy, fqName, new VariableAST("p1", ty1));
@@ -130,44 +114,63 @@ VariableAST* proto(const Type* retTy, const std::string& fqName, const Type* ty1
   return fnRef;
 }
 
+ExprAST* lookupOrCreateNamespace(ExprAST* ns, const string& part) {
+  ExprAST* nsPart = ns->lookup(part, "");
+  if (!nsPart) {
+    NameResolverAST* nr = dynamic_cast<NameResolverAST*>(ns);
+    if (nr) {
+      return nr->newNamespace(part);
+    } else {
+      std::cerr << "Error: lookupOrCreateNamespace failed because ns did not contain"
+          " an entry for '" << part << "' and ns was not a NameResolverAST* !" << std::endl;
+    }
+  }
+
+  return nsPart;
+}
+
+void addToProperNamespace(VariableAST* var) {
+  const string& fqName = var->Name;
+  std::vector<string> parts;
+  pystring::split(fqName, parts, ".");
+
+  ExprAST* ns = varScope.lookup(parts[0], "");
+  if (!ns) {
+    std::cerr << "Error: could not find root namespace for fqName " << fqName << std::endl;
+    return;
+  }
+
+  // Note, we ignore the last component when creating namespaces.
+  int nIntermediates = parts.size() - 1;
+  for (int i = 1; i < nIntermediates; ++i) {
+    ns = lookupOrCreateNamespace(ns, parts[i]);
+  }
+
+  // For the leaf name, insert variable ref rather than new namespace
+  NameResolverAST* parentNS = dynamic_cast<NameResolverAST*>(ns);
+  if (parentNS) {
+    parentNS->insert(parts.back(), var);
+  } else {
+    std::cerr << "Error: final parent namespace for fqName '"
+              << fqName << "' was not a NameResolverAST" << std::endl;
+  }
+}
+
 void createLLVMBitIntrinsics() {
-  // The name here is mostly a convenience for examining the NameResolverASTs
-  NameResolverAST* llvm_ = new NameResolverAST("llvm intrinsics");
-  NameResolverAST* ctpop = llvm_->newNamespace("ctpop"); {
-    ctpop->insert("i8",  proto(LLVMTypeFor("i8"),  "llvm.ctpop.i8",  LLVMTypeFor("i8")));
-    ctpop->insert("i16", proto(LLVMTypeFor("i16"), "llvm.ctpop.i16", LLVMTypeFor("i16")));
-    ctpop->insert("i32", proto(LLVMTypeFor("i32"), "llvm.ctpop.i32", LLVMTypeFor("i32")));
-    ctpop->insert("i16", proto(LLVMTypeFor("i64"), "llvm.ctpop.i64", LLVMTypeFor("i64")));
-  }
+  // Make the module heirarchy available to code referencing llvm.blah.blah.
+  // (The NameResolverAST name is mostly a convenience for examining the AST).
+  varScope.insert("llvm", new NameResolverAST("llvm intrinsics"));
 
-  NameResolverAST* cttz = llvm_->newNamespace("cttz"); {
-    cttz->insert("i8",  proto(LLVMTypeFor("i8"),  "llvm.cttz.i8",  LLVMTypeFor("i8")));
-    cttz->insert("i16", proto(LLVMTypeFor("i16"), "llvm.cttz.i16", LLVMTypeFor("i16")));
-    cttz->insert("i32", proto(LLVMTypeFor("i32"), "llvm.cttz.i32", LLVMTypeFor("i32")));
-    cttz->insert("i16", proto(LLVMTypeFor("i64"), "llvm.cttz.i64", LLVMTypeFor("i64")));
-  }
+  addToProperNamespace( proto(LLVMTypeFor("i8"),  "llvm.ctpop.i8",  LLVMTypeFor("i8")));
+  addToProperNamespace( proto(LLVMTypeFor("i16"), "llvm.ctpop.i16", LLVMTypeFor("i16")));
+  addToProperNamespace( proto(LLVMTypeFor("i32"), "llvm.ctpop.i32", LLVMTypeFor("i32")));
+  addToProperNamespace( proto(LLVMTypeFor("i64"), "llvm.ctpop.i64", LLVMTypeFor("i64")));
 
-  // Make the module heirarchy available to code referencing llvm.blah.blah
-  varScope.insert("llvm", llvm_);
+  addToProperNamespace( proto(LLVMTypeFor("i8"),  "llvm.cttz.i8",  LLVMTypeFor("i8")));
+  addToProperNamespace( proto(LLVMTypeFor("i16"), "llvm.cttz.i16", LLVMTypeFor("i16")));
+  addToProperNamespace( proto(LLVMTypeFor("i32"), "llvm.cttz.i32", LLVMTypeFor("i32")));
+  addToProperNamespace( proto(LLVMTypeFor("i64"), "llvm.cttz.i64", LLVMTypeFor("i64")));
 }
-
-#if 0
-void addLibFosterRuntimeExterns() {
-  VariableAST* x_i32 = new VariableAST("xi32", LLVMTypeFor("i32"));
-  addExternSingleParamFn("print_i32",   x_i32);
-  addExternSingleParamFn("print_i32x",  x_i32);
-  addExternSingleParamFn("print_i32b",  x_i32);
-  addExternSingleParamFn("expect_i32",  x_i32);
-  addExternSingleParamFn("expect_i32x", x_i32);
-  addExternSingleParamFn("expect_i32b", x_i32);
-  
-  VariableAST* x_i1 = new VariableAST("xi1", LLVMTypeFor("i1"));
-  addExternSingleParamFn("print_i1",  x_i1);
-  addExternSingleParamFn("expect_i1", x_i1);
-  
-  // Don't pop scopes, so they will be available for the "real" program
-}
-#endif
 
 ModuleProvider* readModuleFromPath(std::string path) {
   ModuleProvider* mp = NULL;

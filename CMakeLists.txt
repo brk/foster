@@ -82,7 +82,8 @@ include_directories(${ANTLR_DIR}/include ${PROJECT_BINARY_DIR})
 
 include_directories(
   ${PROJECT_SOURCE_DIR}/compiler
-  ${PROJECT_SOURCE_DIR}/compiler/passes)
+  ${PROJECT_SOURCE_DIR}/compiler/passes
+  ${PROJECT_SOURCE_DIR}/third_party)
 
 # Assumes path to LLVM lib dir has no spaces in it!
 string(REGEX MATCH "-L[^ ]+" LLVM_LD_PATH ${LLVM_LDFLAGS})
@@ -100,6 +101,7 @@ add_executable(foster
   compiler/passes/TypecheckPass.cpp
   compiler/passes/PrettyPrintPass.cpp
   compiler/passes/AddParentLinksPass.cpp
+  third_party/pystring/pystring.cpp
   ${PROJECT_BINARY_DIR}/fosterParser.c
   ${PROJECT_BINARY_DIR}/fosterLexer.c
 )
