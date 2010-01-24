@@ -161,10 +161,19 @@ void createLLVMBitIntrinsics() {
   // (The NameResolverAST name is mostly a convenience for examining the AST).
   varScope.insert("llvm", new NameResolverAST("llvm intrinsics"));
 
+  addToProperNamespace( proto(LLVMTypeFor("i16"), "llvm.bswap.i16", LLVMTypeFor("i16")));
+  addToProperNamespace( proto(LLVMTypeFor("i32"), "llvm.bswap.i32", LLVMTypeFor("i32")));
+  addToProperNamespace( proto(LLVMTypeFor("i64"), "llvm.bswap.i64", LLVMTypeFor("i64")));
+
   addToProperNamespace( proto(LLVMTypeFor("i8"),  "llvm.ctpop.i8",  LLVMTypeFor("i8")));
   addToProperNamespace( proto(LLVMTypeFor("i16"), "llvm.ctpop.i16", LLVMTypeFor("i16")));
   addToProperNamespace( proto(LLVMTypeFor("i32"), "llvm.ctpop.i32", LLVMTypeFor("i32")));
   addToProperNamespace( proto(LLVMTypeFor("i64"), "llvm.ctpop.i64", LLVMTypeFor("i64")));
+
+  addToProperNamespace( proto(LLVMTypeFor("i8"),  "llvm.ctlz.i8",  LLVMTypeFor("i8")));
+  addToProperNamespace( proto(LLVMTypeFor("i16"), "llvm.ctlz.i16", LLVMTypeFor("i16")));
+  addToProperNamespace( proto(LLVMTypeFor("i32"), "llvm.ctlz.i32", LLVMTypeFor("i32")));
+  addToProperNamespace( proto(LLVMTypeFor("i64"), "llvm.ctlz.i64", LLVMTypeFor("i64")));
 
   addToProperNamespace( proto(LLVMTypeFor("i8"),  "llvm.cttz.i8",  LLVMTypeFor("i8")));
   addToProperNamespace( proto(LLVMTypeFor("i16"), "llvm.cttz.i16", LLVMTypeFor("i16")));
