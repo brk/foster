@@ -346,7 +346,10 @@ struct SubscriptAST : public BinaryExprAST {
   explicit SubscriptAST(ExprAST* base, ExprAST* index) : BinaryExprAST(base, index) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << *(this->parts[0]) << "[" << *(this->parts[1]) << "]";
+    if (this->parts[0]) { out << *(this->parts[0]); } else { out << "<nil>"; }
+    out << "[";
+    if (this->parts[1]) { out << *(this->parts[1]); } else { out << "<nil>"; }
+    return out << "]";
   }
 };
 

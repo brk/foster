@@ -137,7 +137,8 @@ IntAST* parseIntFrom(pTree t) {
 int typeOf(pTree tree) { return tree->getType(tree); }
 
 VariableAST* parseFormal(pTree tree, int depth, bool infn) {
-  string varName = textOf(child(tree, 0));
+  string varName = textOf(child(child(tree, 0), 0));
+  std::cout << "parseFormal varName = " << varName << std::endl;
   if (getChildCount(tree) == 2) {
     ExprAST* tyExpr = ExprAST_from(child(tree, 1), depth + 1, infn);
     std::cout << "\tParsed formal " << varName << " with type expr " << *tyExpr << std::endl;
@@ -245,6 +246,25 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
     }
   }
   
+  if (token == CTOR) { // ^(CTOR name seq)
+    pTree nameNode = child(tree, 0);
+    pTree seqArgs = child(tree, 1);
+
+    string name = textOf(child(nameNode, 0));
+    if (name == "simd-vector") {
+      return new SimdVectorAST(ExprAST_from(seqArgs, depth + 1, infn));
+    }
+    if (name == "array") {
+      return new ArrayExprAST(ExprAST_from(seqArgs, depth + 1, infn));
+    }
+    if (name == "tuple") {
+      return new TupleExprAST(ExprAST_from(seqArgs, depth + 1, infn));
+    }
+
+    std::cerr << "Error: CTOR token parsing found unknown type name '" << name << "'" << std::endl;
+    return NULL;
+  }
+
   if (token == NAME) {
     string varName = textOf(child(tree, 0));
     
@@ -285,9 +305,6 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
   }
   
   if (token == COMPILES) { return new BuiltinCompilesExprAST(ExprAST_from(child(tree, 0), depth, infn)); }
-  if (token == ARRAY)    { return new  ArrayExprAST(ExprAST_from(child(tree, 0), depth + 1, infn)); }
-  if (token == TUPLE)    { return new  TupleExprAST(ExprAST_from(child(tree, 0), depth + 1, infn)); }
-  if (token == SIMD)     { return new SimdVectorAST(ExprAST_from(child(tree, 0), depth + 1, infn)); }
   if (token == UNPACK)   { return new UnpackExprAST(ExprAST_from(child(tree, 0), depth + 1, infn)); }
   
   if (binaryOps[text]) {

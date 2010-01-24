@@ -12,7 +12,7 @@ tokens {
 	FOR='for'; NIL='nil'; TRUE='true'; FALSE='false'; AND='and'; OR='or';
 	COMPILES='__COMPILES__'; UNPACK='unpack'; STRUCTURE='struct';
 
-	FN; OUT; BODY; GIVEN; GIVES; SEQ; INT; RAT; EXPRS; NAME;
+	FN; OUT; BODY; GIVEN; GIVES; SEQ; INT; RAT; EXPRS; NAME; CTOR;
 	TRAILERS; CALL; TUPLE; SUBSCRIPT; LOOKUP; FORMAL; ARRAY; SIMD;
 }
 
@@ -22,42 +22,54 @@ fn			:	'fn' n=str? in=formals? ('to' out=formals)? seq requires? ensures?
 					-> ^(FN ^(NAME $n) ^(IN $in) ^(OUT $out) ^(BODY seq) ^(GIVEN requires?) ^(GIVES ensures?));
 requires		:	'given' seq;
 ensures			:	'gives' seq;
+
+formals			:	names | comma_sep_formals;
+
+names			:	'(' comma_sep_names ')' | comma_sep_names;
+comma_sep_names		:	name (',' name)* -> name+;
+comma_sep_formals	:	'(' formal (',' formal)* ')' -> formal+;
+formal                  :        i=name (':' t=typeexpr) -> ^(FORMAL $i $t); 	
+
+
 num			:	( int_num -> ^(INT int_num)
 				| rat_num -> ^(RAT rat_num));
-formal                  :        i=IDENT (':' t=expr) -> ^(FORMAL $i $t); 	
-formals			:	(      formal+
-				 | '(' formal (','? formal)* ')'
-				) -> formal*;
-
-literal			:	TRUE | FALSE | num | tuple | array | simdvector;
+				
+literal			:	TRUE | FALSE | num;
 name			:	n=IDENT -> ^(NAME $n);
 str	                :       STR;
-tuple	                :       'tuple' seq -> ^(TUPLE seq);
-array                   :       'array' seq -> ^(ARRAY seq);
-simdvector              :       'simd-vector' seq -> ^(SIMD seq);
 
-ifexpr                  :       'if' cond=expr thenseq=seq 'else' elseseq=seq
-					-> ^(IF $cond $thenseq $elseseq);
+name_or_ctor		:	name (seq -> ^(CTOR name seq)
+				        |   -> name);
 
-term			:	( literal -> literal
-				| name -> name
-                                | fn -> fn
-                                | seq -> seq
-                                | ifexpr -> ifexpr
-                                | '(' expr ')' -> expr
-                                | unop_prefixed_expr -> unop_prefixed_expr);
+ifexpr                  :       'if' cond=expr 'then' thenpart=expr 'else' elsepart=expr
+					-> ^(IF $cond $thenpart $elsepart);
+					
+custom_terms		:	'(' expr ')' -> expr
+                                | prefix_unop nl? expr -> ^(prefix_unop expr);
+                                
+term			:	( literal
+				| fn
+				| seq
+				| ifexpr
+				| name_or_ctor
+				| custom_terms
+                                );
 
 compound                :       (term) ( trailer -> ^(TRAILERS term trailer)
                                       |        -> ^(term)
                                 );	
 
-
-// Defining expr : '(' expr ')' | ... ; creates ambiguity with call expressions
 subexpr			:	compound (  binop nl? subexpr	-> ^(binop compound subexpr)
 					  |		-> ^(compound)
 				);
 
 expr	:	subexpr;
+
+type_of_type	:	name 'of' typeexpr (typeexpr
+                                           | 'to' typeexpr
+                                           | )  -> ^(name ^(SEQ typeexpr+));
+                                           
+typeexpr	:	literal | name_or_ctor | custom_terms | type_of_type;
 
 trailer                 :       '(' arglist? ')' -> ^(CALL arglist)
                         |       '.' name         -> ^(LOOKUP name)
@@ -74,7 +86,6 @@ binop			:	'+' | '-' | '*' | '/' | '..' | '='
 			|	'bitand' | 'bitor' | 'shl' | 'shr'
 			|	AND | OR | '+=' | '-=' | '*=' | '/=';
 
-unop_prefixed_expr      :       prefix_unop nl? expr -> ^(prefix_unop expr);	
 prefix_unop		:	'-' | 'not' | COMPILES | UNPACK;
 
 nl : NEWLINE;
@@ -94,7 +105,7 @@ fragment IDENT_CONTINUE		:('a'..'z' | 'A'..'Z' | '0'..'9'
 				| '_' | '!' | '$'
 				| '>' | '<' | '='
 				| '?' | '+' | '*'
-				| '/' | '~' );
+				| '/' | '~' | '-');
 
 // Very weird: for some reason, the default ANTLR string RE
 // fails on strings that contain but do not start with an escape sequence,
