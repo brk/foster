@@ -116,7 +116,14 @@ void TypecheckPass::visit(BinaryOpExprAST* ast) {
 
 void TypecheckPass::visit(PrototypeAST* ast) {
   // Make the function type
-  const IntegerType* returnType = Type::getInt32Ty(getGlobalContext()); // TODO
+  const Type* returnType = NULL;
+  if (ast->outArgs.size() != 1) {
+    std::cerr << "Typecheck error for prototype ast " << ast->Name
+              << ": outArgs.size = " << ast->outArgs.size() << std::endl;
+    return;
+  } else {
+    returnType = ast->outArgs[0]->type;
+  }
   
   vector<const Type*> argTypes;
   for (int i = 0; i < ast->inArgs.size(); ++i) {
@@ -131,7 +138,6 @@ void TypecheckPass::visit(PrototypeAST* ast) {
   
   ast->type = FunctionType::get(returnType, argTypes, false);
 }
-
 
 void TypecheckPass::visit(FnAST* ast) {
   ast->Proto->accept(this); bool p = ast->Proto->type != NULL;
@@ -417,7 +423,7 @@ void TypecheckPass::visit(SimdVectorAST* ast) {
 
   // For now, as a special case, simd-vector will interpret { 4 ; i32 }
   // as meaning the same thing as { i32 ; i32 ; i32 ; i32 }
-  if (numElements == 2) {=
+  if (numElements == 2) {
     IntAST* first = dynamic_cast<IntAST*>(body->parts[0]);
     if (first) {
       APInt v = first->getAPInt();

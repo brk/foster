@@ -55,7 +55,7 @@ term			:	( literal
 				| custom_terms
                                 );
 
-compound                :       (term) ( trailer -> ^(TRAILERS term trailer)
+compound                :       (term) ( trailer+ -> ^(TRAILERS term trailer+)
                                       |        -> ^(term)
                                 );	
 

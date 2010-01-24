@@ -181,8 +181,8 @@ FnAST* parseFn(string defaultSymbolTemplate, pTree tree, int depth, bool infn) {
     name = freshName(defaultSymbolTemplate);
   }
   
-  varScope.pushScope("fn proto " + name);
-    PrototypeAST* proto = new PrototypeAST(name, getFormals(child(tree, 1), depth, infn));
+  varScope.pushScope("fn proto " + name); // TODO
+    PrototypeAST* proto = new PrototypeAST(LLVMTypeFor("i32"), name, getFormals(child(tree, 1), depth, infn));
     
     { TypecheckPass tyPass; proto->accept(&tyPass); }
     VariableAST* fnRef = new VariableAST(name, proto->type);
@@ -217,6 +217,11 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
       int trailerType = typeOf(child(tree, i));
       if (trailerType == CALL) {
         prefix = new CallAST(prefix, getExprs(child(tree, i), depth, infn));
+      } else if (trailerType == LOOKUP) {
+        pTree nameNode = child(child(tree, i), 0);
+        const string& name = textOf(child(nameNode, 0));
+        prefix = prefix->lookup(name, "");
+        if (!prefix) { std::cerr << "Lookup of name '" << name << "' failed." << std::endl; }
       } else if (trailerType == SUBSCRIPT) {
         prefix = new SubscriptAST(prefix, ExprAST_from(child(child(tree, i), 0), depth, infn));
       } else {

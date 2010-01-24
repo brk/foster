@@ -100,6 +100,7 @@ void createParser(ANTLRContext& ctx, string filename) {
   }
 }
 
+#if 0
 // |param| is used to construct the prototype for the function,
 // and a different VariableAST is inserted into the symbol tables
 void addExternSingleParamFn(const char* name, VariableAST* param) {
@@ -115,7 +116,42 @@ void addExternSingleParamFn(const char* name, VariableAST* param) {
   
   scope.insert(name, p->value);
 }
+#endif
 
+VariableAST* proto(const Type* retTy, const std::string& fqName, const Type* ty1) {
+  // TODO: typecheck/codegen these prototypes on-demand.
+  PrototypeAST* p = new PrototypeAST(retTy, fqName, new VariableAST("p1", ty1));
+  TypecheckPass typ; p->accept(&typ);
+  CodegenPass   cp;  p->accept(&cp);
+
+  VariableAST* fnRef = new VariableAST(fqName, p->type);
+
+  scope.insert(fqName, p->value);
+  return fnRef;
+}
+
+void createLLVMBitIntrinsics() {
+  // The name here is mostly a convenience for examining the NameResolverASTs
+  NameResolverAST* llvm_ = new NameResolverAST("llvm intrinsics");
+  NameResolverAST* ctpop = llvm_->newNamespace("ctpop"); {
+    ctpop->insert("i8",  proto(LLVMTypeFor("i8"),  "llvm.ctpop.i8",  LLVMTypeFor("i8")));
+    ctpop->insert("i16", proto(LLVMTypeFor("i16"), "llvm.ctpop.i16", LLVMTypeFor("i16")));
+    ctpop->insert("i32", proto(LLVMTypeFor("i32"), "llvm.ctpop.i32", LLVMTypeFor("i32")));
+    ctpop->insert("i16", proto(LLVMTypeFor("i64"), "llvm.ctpop.i64", LLVMTypeFor("i64")));
+  }
+
+  NameResolverAST* cttz = llvm_->newNamespace("cttz"); {
+    cttz->insert("i8",  proto(LLVMTypeFor("i8"),  "llvm.cttz.i8",  LLVMTypeFor("i8")));
+    cttz->insert("i16", proto(LLVMTypeFor("i16"), "llvm.cttz.i16", LLVMTypeFor("i16")));
+    cttz->insert("i32", proto(LLVMTypeFor("i32"), "llvm.cttz.i32", LLVMTypeFor("i32")));
+    cttz->insert("i16", proto(LLVMTypeFor("i64"), "llvm.cttz.i64", LLVMTypeFor("i64")));
+  }
+
+  // Make the module heirarchy available to code referencing llvm.blah.blah
+  varScope.insert("llvm", llvm_);
+}
+
+#if 0
 void addLibFosterRuntimeExterns() {
   VariableAST* x_i32 = new VariableAST("xi32", LLVMTypeFor("i32"));
   addExternSingleParamFn("print_i32",   x_i32);
@@ -131,6 +167,7 @@ void addLibFosterRuntimeExterns() {
   
   // Don't pop scopes, so they will be available for the "real" program
 }
+#endif
 
 ModuleProvider* readModuleFromPath(std::string path) {
   ModuleProvider* mp = NULL;
@@ -263,13 +300,11 @@ int main(int argc, char** argv) {
   // for accessing elements of the module.
   
   ModuleProvider* mp = NULL;
-  if (optCompileSeparately) {
-    addLibFosterRuntimeExterns();
-  } else {
-    mp = readModuleFromPath("libfoster.bc");
-    putModuleMembersInScope(mp);
-  }
+  mp = readModuleFromPath("libfoster.bc");
+  putModuleMembersInScope(mp);
   
+  createLLVMBitIntrinsics();
+
   std::cout << "converting" << endl;
   ExprAST* exprAST = ExprAST_from(langAST.tree, 0, false);
 

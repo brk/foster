@@ -82,14 +82,22 @@ string join(string glue, Exprs args) {
   return ss.str();
 }
 
-// TODO this should maintain a separate map of name to type, so that
-// the generated Modules don't get cluttered up with redundant type decls.
-const Type* LLVMTypeFor(const string& name) { return module->getTypeByName(name); }
+std::map<string, const Type*> builtinTypes;
+
+const Type* LLVMTypeFor(const string& name) {
+  if (builtinTypes.count(name) == 1) {
+    return builtinTypes[name];
+  } else {
+    return module->getTypeByName(name);
+  }
+}
 
 void initModuleTypeNames() {
-  module->addTypeName("i32", llvm::IntegerType::get(getGlobalContext(), 32));
-  module->addTypeName("i8", llvm::IntegerType::get(getGlobalContext(), 8));
-  module->addTypeName("i1", llvm::IntegerType::get(getGlobalContext(), 1));
+  builtinTypes["i1"] = llvm::IntegerType::get(getGlobalContext(), 1);
+  builtinTypes["i8"] = llvm::IntegerType::get(getGlobalContext(), 8);
+  builtinTypes["i16"] = llvm::IntegerType::get(getGlobalContext(), 16);
+  builtinTypes["i32"] = llvm::IntegerType::get(getGlobalContext(), 32);
+  builtinTypes["i64"] = llvm::IntegerType::get(getGlobalContext(), 64);
   
   /*
   std::vector<const Type*> StringParts;

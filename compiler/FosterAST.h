@@ -53,7 +53,12 @@ inline bool isSmallPowerOfTwo(int x) {
 
 ///////////////////////////////////////////////////////////
 
-struct ExprAST {
+template <typename T>
+struct NameResolver {
+  virtual T* lookup(const string& name, const string& meta) = 0;
+};
+
+struct ExprAST : public NameResolver<ExprAST> {
   ExprAST* parent;
   std::vector<ExprAST*> parts;
   
@@ -64,6 +69,10 @@ struct ExprAST {
   virtual ~ExprAST() {}
   virtual std::ostream& operator<<(std::ostream& out) const = 0;
   virtual void accept(FosterASTVisitor* visitor) = 0;
+  virtual ExprAST* lookup(const string& name, const string& meta) {
+    std::cerr << "ExprAST.lookup() called!" << std::endl;
+    return NULL;
+  }
 };
 
 struct UnaryExprAST : public ExprAST {
@@ -79,7 +88,7 @@ struct BinaryExprAST : public ExprAST {
 
 // {{{ |scope| maps names (var/fn) to llvm::Value*/llvm::Function*
 template <typename T>
-class FosterSymbolTable {
+class FosterSymbolTable : public NameResolver<T> {
   struct LexicalScope {
     string Name;
     typedef std::map<string, T*> Map;
@@ -93,7 +102,7 @@ class FosterSymbolTable {
   typedef std::vector<LexicalScope> Environment;
   Environment env;
  public:
-  T* lookup(const string& ident, const string& wantedName) {
+  virtual T* lookup(const string& ident, const string& wantedName) {
     for (typename Environment::reverse_iterator it = env.rbegin();
                                                 it != env.rend(); ++it) {
       string scopeName = (*it).Name;
@@ -111,6 +120,7 @@ class FosterSymbolTable {
       pushScope("*");
     }
     env.back().val_of[ident] = V;
+    return V;
   }
   void pushScope(string scopeName) { env.push_back(LexicalScope(scopeName)); }
   void popScope() { env.pop_back(); }
@@ -120,6 +130,34 @@ extern FosterSymbolTable<Value> scope;
 extern FosterSymbolTable<const Type> typeScope;
 extern FosterSymbolTable<ExprAST> varScope;
 // }}}
+
+// "Fake" AST node for doing iterative lookup; AST stand-in for namespaces.
+struct NameResolverAST : public ExprAST {
+  FosterSymbolTable<ExprAST> localScope;
+  const std::string& scopeName;
+
+  explicit NameResolverAST(const std::string& name) : scopeName(name) {
+    localScope.pushScope(scopeName);
+  }
+  virtual ~NameResolverAST() { localScope.popScope(); }
+  virtual std::ostream& operator<<(std::ostream& out) const {
+    return out << "(NameResolver " << scopeName << ")";
+  }
+  virtual void accept(FosterASTVisitor* visitor) {
+    std::cerr << "Visitor called on NameResolverAST! This is probably not desired..." << std::endl;
+  }
+  NameResolverAST* newNamespace(const std::string& name) {
+    NameResolverAST* nu = new NameResolverAST(name);
+    localScope.insert(name, nu);
+    return nu;
+  }
+  virtual ExprAST* lookup(const string& name, const string& meta) {
+    return localScope.lookup(name, meta);
+  }
+  virtual ExprAST* insert(const string& fullyQualifiedName, VariableAST* var) {
+    return localScope.insert(fullyQualifiedName, (ExprAST*)(var));
+  }
+};
 
 struct IntAST : public ExprAST {
   string Text;
@@ -360,14 +398,15 @@ struct PrototypeAST : public ExprAST {
   string Name;
   std::vector<VariableAST*> inArgs;
   std::vector<VariableAST*> outArgs;
-  
-  PrototypeAST(const string& name) : Name(name) {}
-  PrototypeAST(const string& name, VariableAST* arg1)
-    : Name(name) { inArgs.push_back(arg1); }
-  PrototypeAST(const string& name, VariableAST* arg1, VariableAST* arg2)
-    : Name(name) { inArgs.push_back(arg1); inArgs.push_back(arg2); }
-  PrototypeAST(const string& name, const std::vector<VariableAST*>& inArgs)
-    : Name(name), inArgs(inArgs) { }
+
+  PrototypeAST(VariableAST* retTy, const string& name)
+    : Name(name) { outArgs.push_back(new VariableAST("retval", retTy)); }
+  PrototypeAST(const Type* retTy, const string& name, VariableAST* arg1)
+    : Name(name) { outArgs.push_back(new VariableAST("retval", retTy)); inArgs.push_back(arg1); }
+  PrototypeAST(const Type* retTy, const string& name, VariableAST* arg1, VariableAST* arg2)
+    : Name(name) { outArgs.push_back(new VariableAST("retval", retTy)); inArgs.push_back(arg1); inArgs.push_back(arg2); }
+  PrototypeAST(const Type* retTy, const string& name, const std::vector<VariableAST*>& inArgs)
+    : Name(name), inArgs(inArgs) { outArgs.push_back(new VariableAST("retval", retTy)); }
   PrototypeAST(const string& name, const std::vector<VariableAST*>& inArgs,
                                    const std::vector<VariableAST*>& outArgs)
     : Name(name), inArgs(inArgs), outArgs(outArgs) { }
