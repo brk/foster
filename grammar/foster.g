@@ -23,7 +23,7 @@ fn			:	'fn' n=str? in=formals? ('to' out=formals)? seq requires? ensures?
 requires		:	'given' seq;
 ensures			:	'gives' seq;
 
-formals			:	names | comma_sep_formals;
+formals			:	/* names */ comma_sep_formals;
 
 names			:	'(' comma_sep_names ')' | comma_sep_names;
 comma_sep_names		:	name (',' name)* -> name+;
@@ -65,17 +65,14 @@ subexpr			:	compound (  binop nl? subexpr	-> ^(binop compound subexpr)
 
 expr	:	subexpr;
 
-type_of_type	:	name 'of' typeexpr (typeexpr
-                                           | 'to' typeexpr
-                                           | )  -> ^(name ^(SEQ typeexpr+));
-                                           
+type_of_type	:	name 'of' typeexpr 'to'? typeexpr  -> ^(CTOR name ^(SEQ typeexpr+));
 typeexpr	:	literal | name_or_ctor | custom_terms | type_of_type;
 
 trailer                 :       '(' arglist? ')' -> ^(CALL arglist)
                         |       '.' name         -> ^(LOOKUP name)
 	                |	'[' literal ']'  -> ^(SUBSCRIPT literal);
 
-arglist                 :       expr (',' expr)* -> expr+;
+arglist                 :       expr (',' nl? expr)* -> expr+;
 
 seq			:	'{' nl* exprlist? nl* '}' -> ^(SEQ exprlist);
 exprlist        :       expr ((sep | nl) nl* expr)* sep? -> expr+;

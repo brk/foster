@@ -117,7 +117,9 @@ void FosterASTVisitor::onVisitChild(ExprAST* ast, ExprAST* child) {
   child->accept(this);
 }
 
+llvm::APInt IntAST::getAPInt() { return APInt(32u, Clean, Base); }
+
 llvm::Constant* IntAST::getConstantValue() {
-  return ConstantInt::get(this->type, APInt(32u, Clean, Base));
+  return ConstantInt::get(this->type, this->getAPInt());
 }
 

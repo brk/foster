@@ -129,6 +129,7 @@ struct IntAST : public ExprAST {
     : Text(originalText), Clean(valText), Base(base) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   llvm::Constant* getConstantValue();
+  llvm::APInt getAPInt();
   
   virtual std::ostream& operator<<(std::ostream& out) const {
     return out << Text;
@@ -331,6 +332,7 @@ struct ArrayExprAST : public UnaryExprAST {
 };
 
 struct SimdVectorAST : public UnaryExprAST {
+  // Implicitly, a SeqAST
   explicit SimdVectorAST(ExprAST* expr) : UnaryExprAST(expr) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {

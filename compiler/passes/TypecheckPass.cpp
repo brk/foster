@@ -414,27 +414,46 @@ void TypecheckPass::visit(SimdVectorAST* ast) {
   
   int numElements = body->parts.size();
   const Type* elementType = NULL;
-  for (int i = 0; i < numElements; ++i) {
-    const Type* ty =  body->parts[i]->type;
-    if (!ty) {
-      std::cerr << "simd-vector expr had null constituent type for subexpr " << i << std::endl;
-      success = false;
-      break;
+
+  // For now, as a special case, simd-vector will interpret { 4 ; i32 }
+  // as meaning the same thing as { i32 ; i32 ; i32 ; i32 }
+  if (numElements == 2) {=
+    IntAST* first = dynamic_cast<IntAST*>(body->parts[0]);
+    if (first) {
+      APInt v = first->getAPInt();
+      unsigned int n = v.getZExtValue();
+      // Sanity check on # elements; nobody? wants a single billion-element vector...
+      if (n <= 256) {
+        numElements = n;
+        elementType = body->parts[1]->type;
+      }
     }
-    fieldTypes[ty] = true;
-    elementType = ty;
   }
-  
-  // TODO This should probably be relaxed eventually; for example,
-  // a simd-vector of "small" and "large" int literals should silently be accepted
-  // as a simd-vector of "large" ints.
-  if (success && fieldTypes.size() != 1) {
-    std::cerr << "simd-vector expression had multiple types! Found:" << std::endl;
-    std::map<const Type*, bool>::const_iterator it;;
-    for (it = fieldTypes.begin(); it != fieldTypes.end(); ++it) {
-      std::cerr << "\t" << *((*it).first) << std::endl;
+
+  // No special case; iterate through and collect all the types
+  if (!elementType) {
+    for (int i = 0; i < numElements; ++i) {
+      const Type* ty =  body->parts[i]->type;
+      if (!ty) {
+        std::cerr << "simd-vector expr had null constituent type for subexpr " << i << std::endl;
+        success = false;
+        break;
+      }
+      fieldTypes[ty] = true;
+      elementType = ty;
     }
-    success = false;
+
+    // TODO This should probably be relaxed eventually; for example,
+    // a simd-vector of "small" and "large" int literals should silently be accepted
+    // as a simd-vector of "large" ints.
+    if (success && fieldTypes.size() != 1) {
+      std::cerr << "simd-vector expression had multiple types! Found:" << std::endl;
+      std::map<const Type*, bool>::const_iterator it;;
+      for (it = fieldTypes.begin(); it != fieldTypes.end(); ++it) {
+        std::cerr << "\t" << *((*it).first) << std::endl;
+      }
+      success = false;
+    }
   }
   
   if (!isSmallPowerOfTwo(numElements)) {

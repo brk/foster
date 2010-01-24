@@ -137,7 +137,9 @@ IntAST* parseIntFrom(pTree t) {
 int typeOf(pTree tree) { return tree->getType(tree); }
 
 VariableAST* parseFormal(pTree tree, int depth, bool infn) {
-  string varName = textOf(child(child(tree, 0), 0));
+  // ^(FORMAL ^(TEXT varName) ^(... type ... ))
+  pTree varNameTree = child(tree, 0);
+  string varName = textOf(child(varNameTree, 0));
   std::cout << "parseFormal varName = " << varName << std::endl;
   if (getChildCount(tree) == 2) {
     ExprAST* tyExpr = ExprAST_from(child(tree, 1), depth + 1, infn);
@@ -146,7 +148,8 @@ VariableAST* parseFormal(pTree tree, int depth, bool infn) {
     varScope.insert(varName, var);
     return var;
   } else {
-    // TODO
+    std::cerr << "Error: parseFormal() can't yet handle formals"
+              << " without direct type annotations." << std::endl;
     return NULL;
   }
 }
@@ -246,7 +249,7 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
     }
   }
   
-  if (token == CTOR) { // ^(CTOR name seq)
+  if (token == CTOR) { // ^(CTOR ^(NAME blah) ^(SEQ ...))
     pTree nameNode = child(tree, 0);
     pTree seqArgs = child(tree, 1);
 
