@@ -181,8 +181,11 @@ FnAST* parseFn(string defaultSymbolTemplate, pTree tree, int depth, bool infn) {
     name = freshName(defaultSymbolTemplate);
   }
   
-  varScope.pushScope("fn proto " + name); // TODO
-    PrototypeAST* proto = new PrototypeAST(LLVMTypeFor("i32"), name, getFormals(child(tree, 1), depth, infn));
+  varScope.pushScope("fn proto " + name);
+
+    PrototypeAST* proto = new PrototypeAST(name,
+                                           getFormals(child(tree, 1), depth, infn),
+                                           getFormals(child(tree, 2), depth, infn));
     
     { TypecheckPass tyPass; proto->accept(&tyPass); }
     VariableAST* fnRef = new VariableAST(name, proto->type);

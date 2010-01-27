@@ -122,6 +122,8 @@ void TypecheckPass::visit(PrototypeAST* ast) {
               << ": outArgs.size = " << ast->outArgs.size() << std::endl;
     return;
   } else {
+    ast->outArgs[0]->accept(this);
+    std::cout << ast->Name << "->outARgs[0]->type = " << ast->outArgs[0]->type << std::endl;
     returnType = ast->outArgs[0]->type;
   }
   
@@ -135,8 +137,15 @@ void TypecheckPass::visit(PrototypeAST* ast) {
     }
     argTypes.push_back(ty);
   }
-  
-  ast->type = FunctionType::get(returnType, argTypes, false);
+
+  if (!returnType) {
+   std::cerr << "Error in typechecking PrototypeAST " << ast->Name << ": null return type!" << std::endl;
+   std::cerr << "#outARgs: " << ast->outArgs.size() << ";";
+   for (int i = 0; i < ast->outArgs.size(); ++i) { std::cerr << "\n\t" << *(ast->outArgs[i]); }
+     std::cerr << std::endl;
+  } else {
+    ast->type = FunctionType::get(returnType, argTypes, false);
+  }
 }
 
 void TypecheckPass::visit(FnAST* ast) {

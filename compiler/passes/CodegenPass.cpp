@@ -140,6 +140,12 @@ void CodegenPass::visit(FnAST* ast) {
   (ast->Body)->accept(this);
   Value* RetVal = ast->Body->value;
   
+  // If we try to return a tuple* when the fn specifies a tuple, manually insert a load
+  if (RetVal->getType()->isDerivedType()
+      && RetVal->getType() == llvm::PointerType::get(ast->Proto->outArgs[0]->type, 0)) {
+    RetVal = builder.CreateLoad(RetVal, false, "structPtrToStruct");
+  }
+
   std::cout << "Popping scope ... " << ast->Proto->Name  << std::endl;
   scope.popScope();
   
