@@ -102,16 +102,22 @@ void createParser(ANTLRContext& ctx, string filename) {
   }
 }
 
-VariableAST* proto(const Type* retTy, const std::string& fqName, const Type* ty1) {
-  // TODO: typecheck/codegen these prototypes on-demand.
-  PrototypeAST* p = new PrototypeAST(retTy, fqName, new VariableAST("p1", ty1));
-  TypecheckPass typ; p->accept(&typ);
-  CodegenPass   cp;  p->accept(&cp);
+VariableAST* checkAndGetLazyRefTo(PrototypeAST* p) {
+  { TypecheckPass typ; p->accept(&typ); }
+  VariableAST* fnRef = new VariableAST(p->Name, p->type);
+  fnRef->lazilyInsertedPrototype = p;
 
-  VariableAST* fnRef = new VariableAST(fqName, p->type);
-
-  scope.insert(fqName, p->value);
   return fnRef;
+}
+
+VariableAST* proto(const Type* retTy, const std::string& fqName, const Type* ty1, const Type* ty2) {
+  return checkAndGetLazyRefTo(new PrototypeAST(retTy, fqName,
+       new VariableAST("p1", ty1), new VariableAST("p2", ty2)));
+}
+
+VariableAST* proto(const Type* retTy, const std::string& fqName, const Type* ty1) {
+  return checkAndGetLazyRefTo(new PrototypeAST(retTy, fqName,
+       new VariableAST("p1", ty1)));
 }
 
 ExprAST* lookupOrCreateNamespace(ExprAST* ns, const string& part) {
@@ -161,24 +167,58 @@ void createLLVMBitIntrinsics() {
   // (The NameResolverAST name is mostly a convenience for examining the AST).
   varScope.insert("llvm", new NameResolverAST("llvm intrinsics"));
 
-  addToProperNamespace( proto(LLVMTypeFor("i16"), "llvm.bswap.i16", LLVMTypeFor("i16")));
-  addToProperNamespace( proto(LLVMTypeFor("i32"), "llvm.bswap.i32", LLVMTypeFor("i32")));
-  addToProperNamespace( proto(LLVMTypeFor("i64"), "llvm.bswap.i64", LLVMTypeFor("i64")));
+  const unsigned i16_to_i64 = ((1<<4)|(1<<5)|(1<<6));
+  const unsigned i8_to_i64 = ((1<<3)|i16_to_i64);
+  enum intrinsic_kind { kTransform, kOverflow };
+  struct bit_intrinsic_spec {
+    const char* intrinsicName; // e.g. "bswap" becomes "llvm.bswap.i16", "llvm.bswap.i32" etc
+    const intrinsic_kind kind;
+    const unsigned sizeFlags;
+  };
 
-  addToProperNamespace( proto(LLVMTypeFor("i8"),  "llvm.ctpop.i8",  LLVMTypeFor("i8")));
-  addToProperNamespace( proto(LLVMTypeFor("i16"), "llvm.ctpop.i16", LLVMTypeFor("i16")));
-  addToProperNamespace( proto(LLVMTypeFor("i32"), "llvm.ctpop.i32", LLVMTypeFor("i32")));
-  addToProperNamespace( proto(LLVMTypeFor("i64"), "llvm.ctpop.i64", LLVMTypeFor("i64")));
+  bit_intrinsic_spec spec_table[]  = {
+      { "bswap", kTransform, i16_to_i64 },
+      { "ctpop", kTransform, i8_to_i64 },
+      { "ctlz",  kTransform, i8_to_i64 },
+      { "cttz",  kTransform, i8_to_i64 },
+      /*
+      { "uadd.with.overflow", kOverflow, i16_to_i64 },
+      { "sadd.with.overflow", kOverflow, i16_to_i64 },
+      { "usub.with.overflow", kOverflow, i16_to_i64 },
+      { "ssub.with.overflow", kOverflow, i16_to_i64 },
+      { "umul.with.overflow", kOverflow, i16_to_i64 },
+      { "smul.with.overflow", kOverflow, i16_to_i64 },
+      */
+      { NULL, kTransform, 0}
+  };
 
-  addToProperNamespace( proto(LLVMTypeFor("i8"),  "llvm.ctlz.i8",  LLVMTypeFor("i8")));
-  addToProperNamespace( proto(LLVMTypeFor("i16"), "llvm.ctlz.i16", LLVMTypeFor("i16")));
-  addToProperNamespace( proto(LLVMTypeFor("i32"), "llvm.ctlz.i32", LLVMTypeFor("i32")));
-  addToProperNamespace( proto(LLVMTypeFor("i64"), "llvm.ctlz.i64", LLVMTypeFor("i64")));
+  bit_intrinsic_spec* spec = spec_table;
+  while (spec->intrinsicName) {
+    unsigned size = 8;
+    char ssize[16] = {0};
+    while (size <= 64) {
+      if (size & spec->sizeFlags) {
+        sprintf(ssize, "i%d", size);
+        const Type* ty = LLVMTypeFor(ssize);
 
-  addToProperNamespace( proto(LLVMTypeFor("i8"),  "llvm.cttz.i8",  LLVMTypeFor("i8")));
-  addToProperNamespace( proto(LLVMTypeFor("i16"), "llvm.cttz.i16", LLVMTypeFor("i16")));
-  addToProperNamespace( proto(LLVMTypeFor("i32"), "llvm.cttz.i32", LLVMTypeFor("i32")));
-  addToProperNamespace( proto(LLVMTypeFor("i64"), "llvm.cttz.i64", LLVMTypeFor("i64")));
+        std::stringstream ss;
+        ss << "llvm." << spec->intrinsicName << "." << ssize;
+
+        if (spec->kind == kTransform) {
+          addToProperNamespace( proto(ty, ss.str(), ty) );
+        } else if (spec->kind == kOverflow) {
+          std::vector<const Type*> params;
+          params.push_back(ty);
+          params.push_back(LLVMTypeFor("i1"));
+          const Type* retTy = llvm::StructType::get(getGlobalContext(), params, false);
+
+          addToProperNamespace( proto(retTy, ss.str(), ty, ty) );
+        }
+      }
+      size *= 2;
+    }
+    ++spec;
+  }
 }
 
 ModuleProvider* readModuleFromPath(std::string path) {

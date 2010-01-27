@@ -140,7 +140,7 @@ VariableAST* parseFormal(pTree tree, int depth, bool infn) {
   // ^(FORMAL ^(TEXT varName) ^(... type ... ))
   pTree varNameTree = child(tree, 0);
   string varName = textOf(child(varNameTree, 0));
-  std::cout << "parseFormal varName = " << varName << std::endl;
+  //std::cout << "parseFormal varName = " << varName << std::endl;
   if (getChildCount(tree) == 2) {
     ExprAST* tyExpr = ExprAST_from(child(tree, 1), depth + 1, infn);
     std::cout << "\tParsed formal " << varName << " with type expr " << *tyExpr << std::endl;
@@ -148,7 +148,7 @@ VariableAST* parseFormal(pTree tree, int depth, bool infn) {
     varScope.insert(varName, var);
     return var;
   } else {
-    std::cerr << "Error: parseFormal() can't yet handle formals"
+    std::cerr << "Error: parseFormal() [" << varName << "] can't yet handle formals"
               << " without direct type annotations." << std::endl;
     return NULL;
   }
@@ -287,13 +287,13 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
       if (!ty) {
         ty = LLVMTypeFor(varName);
         if (ty) {
-          std::cout << "Could not find ExprAST for var name\t" << varName << ", but it's a valid builtin type name..." << std::endl;
+          //std::cout << "Could not find ExprAST for var name\t" << varName << ", but it's a valid builtin type name..." << std::endl;
           var = new VariableAST(varName, ty);
         } else {            
           std::cerr << "Could not find ExprAST for var name\t" << varName << ", and it's not a valid type name..." << std::endl;
         }
       } else {
-        std::cout << "Could not find ExprAST for var name\t" << varName << ", but it's a valid user type name..." << std::endl;
+        //std::cout << "Could not find ExprAST for var name\t" << varName << ", but it's a valid user type name..." << std::endl;
         var = new VariableAST(varName, ty);
       }
     }

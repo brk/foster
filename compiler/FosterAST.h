@@ -186,12 +186,16 @@ struct BoolAST : public ExprAST {
 struct VariableAST : public ExprAST {
   string Name;
   ExprAST* tyExpr;
+  PrototypeAST* lazilyInsertedPrototype;
+
   // TODO need to figure out how/where/when to assign type info to nil
-  explicit VariableAST(const string& name, const llvm::Type* aType): Name(name), tyExpr(NULL) {
+  explicit VariableAST(const string& name, const llvm::Type* aType)
+      : Name(name), tyExpr(NULL), lazilyInsertedPrototype(NULL) {
     this->type = aType;
     //std::cout << this << " = new VariableAST("<<name<< ", type ptr " << this->type << ")" << std::endl;
   }
-  explicit VariableAST(const string& name, ExprAST* tyExpr): Name(name), tyExpr(tyExpr) {
+  explicit VariableAST(const string& name, ExprAST* tyExpr)
+      : Name(name), tyExpr(tyExpr), lazilyInsertedPrototype(NULL) {
     if (!tyExpr) {
       std::cerr << "Error: " << this << " = VariableAST("<<name<<", type expr NULL)!" << std::endl;
     }

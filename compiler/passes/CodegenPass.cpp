@@ -52,7 +52,13 @@ void CodegenPass::visit(VariableAST* ast) {
   if (!ast->value) {
     // This looks up the lexically closest definition for the given variable
     // name, as provided by a function parameter or some such binding construct.
-    ast->value = scope.lookup(ast->Name, "");
+    if (ast->lazilyInsertedPrototype) {
+      ast->lazilyInsertedPrototype->accept(this);
+      ast->value = ast->lazilyInsertedPrototype->value;
+    } else {
+      ast->value = scope.lookup(ast->Name, "");
+    }
+
     if (!ast->value) {
       std::cerr << "Error: Unknown variable name " << ast->Name << std::endl;
     }

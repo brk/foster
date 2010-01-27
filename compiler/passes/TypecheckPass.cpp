@@ -120,10 +120,10 @@ void TypecheckPass::visit(PrototypeAST* ast) {
   if (ast->outArgs.size() != 1) {
     std::cerr << "Typecheck error for prototype ast " << ast->Name
               << ": outArgs.size = " << ast->outArgs.size() << std::endl;
+    std::cerr << "(For now, use an explicit tuple instead of multiple return values)" << std::endl;
     return;
   } else {
     ast->outArgs[0]->accept(this);
-    std::cout << ast->Name << "->outARgs[0]->type = " << ast->outArgs[0]->type << std::endl;
     returnType = ast->outArgs[0]->type;
   }
   
