@@ -307,8 +307,10 @@ struct UnaryOpExprAST : public UnaryExprAST {
   explicit UnaryOpExprAST(string op, ExprAST* body) : UnaryExprAST(body), op(op) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    out << op << ' ';
+    out << '(' << op << ' ';
     if (this->parts[0]) out << *this->parts[0]; else out << "<nil>";
+    out << ')';
+    return out;
   }
 };
 
@@ -323,6 +325,7 @@ struct BinaryOpExprAST : public BinaryExprAST {
     if (LHS) out << *LHS; else out << "<nil>";
     out << ' ' << op << ' ';
     if (RHS) out << *RHS; else out << "<nil>";
+    return out;
   }
 };
 

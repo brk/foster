@@ -100,9 +100,20 @@ void TypecheckPass::visit(UnaryOpExprAST* ast) {
   const std::string& op = ast->op;
 
   if (op == "-") {
-    // TODO: make sure operand is int
+    if (opTy == LLVMTypeFor("i1")) {
+      std::cerr << "Typecheck error: unary '-' used on a boolean; use 'not' instead." << std::endl;
+      return;
+    }
+
+    if (!(opTy->isIntOrIntVector())) {
+      std::cerr << "Typecheck error: operand to unary '-' had non-inty type " << *opTy << std::endl;
+      return;
+    }
   } else if (op == "not") {
-    // TODO; make sure operand is i1
+    if (opTy != LLVMTypeFor("i1")) {
+      std::cerr << "Typecheck error: operand to unary 'not' had non-bool type " << *opTy << std::endl;
+      return;
+    }
   }
 
   ast->type = opTy;
@@ -119,6 +130,13 @@ void TypecheckPass::visit(BinaryOpExprAST* ast) {
   } else if (!TL) {
     std::cerr << "Error: binary expr " << op << " failed to typecheck subexprs!" << std::endl;
   } else {
+    if (op == "+" || op == "-" || op == "*" || op == "/") {
+      if (!TL->isIntOrIntVector()) {
+        std::cerr << "Error: arith op '" << op << "' used with non-inty type " << *TL << std::endl;
+        return;
+      }
+    }
+
     if (op == "<" || op == "==" || op == "!=") {
       ast->type = LLVMTypeFor("i1");
     } else {
