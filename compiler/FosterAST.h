@@ -302,6 +302,16 @@ struct VariableAST : public ExprAST {
 };
 #endif
 
+struct UnaryOpExprAST : public UnaryExprAST {
+  string op;
+  explicit UnaryOpExprAST(string op, ExprAST* body) : UnaryExprAST(body), op(op) {}
+  virtual void accept(FosterASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
+  virtual std::ostream& operator<<(std::ostream& out) const {
+    out << op << ' ';
+    if (this->parts[0]) out << *this->parts[0]; else out << "<nil>";
+  }
+};
+
 struct BinaryOpExprAST : public BinaryExprAST {
   string op;
   enum { kLHS, kRHS };

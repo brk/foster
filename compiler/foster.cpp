@@ -181,14 +181,14 @@ void createLLVMBitIntrinsics() {
       { "ctpop", kTransform, i8_to_i64 },
       { "ctlz",  kTransform, i8_to_i64 },
       { "cttz",  kTransform, i8_to_i64 },
-      /*
+
       { "uadd.with.overflow", kOverflow, i16_to_i64 },
       { "sadd.with.overflow", kOverflow, i16_to_i64 },
       { "usub.with.overflow", kOverflow, i16_to_i64 },
       { "ssub.with.overflow", kOverflow, i16_to_i64 },
       { "umul.with.overflow", kOverflow, i16_to_i64 },
       { "smul.with.overflow", kOverflow, i16_to_i64 },
-      */
+
       { NULL, kTransform, 0}
   };
 

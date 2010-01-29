@@ -95,6 +95,19 @@ void TypecheckPass::visit(VariableAST* ast) {
   if (ast->type) std::cerr << "\t\t" << *(ast->type) << std::endl;
 }
 
+void TypecheckPass::visit(UnaryOpExprAST* ast) {
+  const llvm::Type* opTy = ast->parts[0]->type;
+  const std::string& op = ast->op;
+
+  if (op == "-") {
+    // TODO: make sure operand is int
+  } else if (op == "not") {
+    // TODO; make sure operand is i1
+  }
+
+  ast->type = opTy;
+}
+
 void TypecheckPass::visit(BinaryOpExprAST* ast) {
   const llvm::Type* TL = ast->parts[ast->kLHS]->type;
   const llvm::Type* TR = ast->parts[ast->kRHS]->type;

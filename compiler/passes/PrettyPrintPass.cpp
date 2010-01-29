@@ -24,6 +24,12 @@ void PrettyPrintPass::visit(VariableAST* ast) {
   }
 }
 
+void PrettyPrintPass::visit(UnaryOpExprAST* ast) {
+  scan(PPToken(ast->op));
+  scan(PPToken(" "));
+  ast->parts[0]->accept(this);
+}
+
 // $0 op $1
 void PrettyPrintPass::visit(BinaryOpExprAST* ast) {
   scan(tBlockOpen);

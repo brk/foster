@@ -315,6 +315,11 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
     }
   }
   
+  // Handle unary negation explicitly, before the binary op handler
+  if (text == "-" && getChildCount(tree) == 1) {
+    return new UnaryOpExprAST(text, ExprAST_from(child(tree, 0), depth + 1, infn));
+  }
+
   if (token == COMPILES) { return new BuiltinCompilesExprAST(ExprAST_from(child(tree, 0), depth, infn)); }
   if (token == UNPACK)   { return new UnpackExprAST(ExprAST_from(child(tree, 0), depth + 1, infn)); }
   

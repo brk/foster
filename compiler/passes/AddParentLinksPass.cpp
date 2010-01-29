@@ -8,6 +8,7 @@
 void AddParentLinksPass::visit(BoolAST* ast)                { return; }
 void AddParentLinksPass::visit(IntAST* ast)                 { return; }
 void AddParentLinksPass::visit(VariableAST* ast)            { return; }
+void AddParentLinksPass::visit(UnaryOpExprAST* ast)         { return; }
 void AddParentLinksPass::visit(BinaryOpExprAST* ast)        { return; }
 void AddParentLinksPass::visit(PrototypeAST* ast)           {
   for (int i = 0; i < ast->inArgs.size(); ++i) {

@@ -65,10 +65,26 @@ void CodegenPass::visit(VariableAST* ast) {
   }
 }
 
+void CodegenPass::visit(UnaryOpExprAST* ast) {
+  Value* V = ast->parts[0]->value;
+  const std::string& op = ast->op;
+
+  if (!V) {
+    std::cerr << "Error: unary expr " << op << " had null operand" << std::endl;
+    return;
+  }
+
+       if (op == "-")   { ast->value = builder.CreateNeg(V, "negtmp"); }
+  else if (op == "not") { ast->value = builder.CreateNot(V, "nottmp"); }
+  else {
+    std::cerr << "Error: unknown unary op '" << op << "' encountered during codegen" << std::endl;
+  }
+}
+
 void CodegenPass::visit(BinaryOpExprAST* ast) {
   Value* VL = ast->parts[ast->kLHS]->value;
   Value* VR = ast->parts[ast->kRHS]->value;
-  
+
   const std::string& op = ast->op;
   
   if (!VL || !VR) {
