@@ -316,7 +316,7 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
   }
   
   // Handle unary negation explicitly, before the binary op handler
-  if (text == "-" && getChildCount(tree) == 1) {
+  if ((text == "-" && getChildCount(tree) == 1) || text == "not") {
     return new UnaryOpExprAST(text, ExprAST_from(child(tree, 0), depth + 1, infn));
   }
 
