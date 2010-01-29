@@ -7,4 +7,7 @@ fn "main" {
 
   expect_i32b(1010_2)
   print_i32b(1111_2 bitand 1010_2)
+  
+  expect_i32b(11011_2)
+  expect_i32b(10010_2 bitxor 01001_2)
 }

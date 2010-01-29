@@ -104,8 +104,6 @@ void CodegenPass::visit(BinaryOpExprAST* ast) {
   else if (op == "bitand") { ast->value = builder.CreateAnd(VL, VR, "bitandtmp"); }
   else if (op == "bitor") {  ast->value = builder.CreateOr( VL, VR, "bitortmp"); }
   else if (op == "bitxor") { ast->value = builder.CreateXor(VL, VR, "bitxortmp"); }
-  //else if (op == "bitneg") { ast->value = builder.CreateNeg(VL, VR, "bitneg"); }
-  //else if (op == "not") { ast->value = builder.CreateNot(VL, VR, "bitneg"); }
 
   else if (op == "shl") { ast->value = builder.CreateShl(VL, VR, "shltmp"); }
   else if (op == "shr") { ast->value = builder.CreateLShr(VL, VR, "shrtmp"); }

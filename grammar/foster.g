@@ -80,7 +80,7 @@ sep		:	';' | ',';
 
 binop			:	'+' | '-' | '*' | '/' | '..' | '='
 			|	'<' | '<=' | '>=' | '>' | '==' | '!='
-			|	'bitand' | 'bitor' | 'shl' | 'shr'
+			|	'bitand' | 'bitor' | 'bitxor' | 'shl' | 'shr'
 			|	AND | OR | '+=' | '-=' | '*=' | '/=';
 
 prefix_unop		:	'-' | 'not' | COMPILES | UNPACK;
