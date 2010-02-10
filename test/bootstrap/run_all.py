@@ -1,5 +1,6 @@
 from __future__ import with_statement
 import os
+import re
 import os.path
 import subprocess
 import sys
@@ -13,6 +14,30 @@ def ensure_dir_exists(dirname):
     return os.mkdir(dirname)
   return True
 
+def extract_expected_input(path):
+  """Reads lines from the start of the file at the given path,
+     until it sees a line that is not a commented key/value pair."""
+  inlines = []
+  with open(path, 'r') as f:
+     for line in f:
+       print "testing line ", line
+       m = re.match(r"//\s*(.+?):\s*(.+)", line)
+       if m == None:
+         break
+       
+       label = m.group(1)
+       value = m.group(2)
+       if label == "IN":
+         inlines.append(value) 
+
+  #if len(inlines) == 0:
+  #  return None
+
+  tmpname = 'tmp.input.txt'
+  with open(tmpname, 'w') as f:
+    f.writelines(inlines)
+  return open(tmpname, 'r')
+
 def run_one_test(dir_prefix, basename, paths, tmpdir):
   exp_filename = os.path.join(tmpdir, "expected.txt")
   act_filename = os.path.join(tmpdir, "actual.txt")
@@ -20,7 +45,8 @@ def run_one_test(dir_prefix, basename, paths, tmpdir):
     with open(act_filename, 'w') as actual:
       with open(os.path.join(tmpdir, "compile.log.txt"), 'w') as compilelog:
         testpath = os.path.join(dir_prefix, basename)
-        
+        infile = extract_expected_input(paths['code'])
+
         # Hack for now, since this option is baked in to the compiler.
         compile_separately = False
         fosterc_cmdline = [ paths['fosterc'], paths['code'] ]
@@ -47,16 +73,17 @@ def run_one_test(dir_prefix, basename, paths, tmpdir):
             return
 
           rn_rv = subprocess.call([ paths['ll-foster'] ],
-          	                  stdout=actual, stderr=expected)
+          	                  stdout=actual, stderr=expected, stdin=infile)
         else:
           rn_rv = subprocess.call([ paths['lli'], paths['foster.bc'] ],
-          	                  stdout=actual, stderr=expected)
+          	                  stdout=actual, stderr=expected, stdin=infile)
 
         df_rv = subprocess.call(['diff', '-u', exp_filename, act_filename])
         if df_rv == 0:
           tests_passed.add(testpath)
         else:
           tests_failed.add(testpath)
+        infile.close()
 
 def run_all_tests(bootstrap_dir, paths, tmpdir):
   for root, dirs, files in os.walk(bootstrap_dir, topdown=False):

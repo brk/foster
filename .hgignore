@@ -1,3 +1,4 @@
 glob:*.class
 glob:*.java
+glob:*~
 glob:output

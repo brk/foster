@@ -1,0 +1,17 @@
+// IN: 2 3 5 8 13
+// The testing infrastructure looks for lines like the one above and
+// feeds the data to stdin
+
+fn "main" {
+  expect_i32(2)
+  print_i32(read_i32())
+
+  expect_i32(3)
+  print_i32(read_i32())
+
+  expect_i32(5)
+  print_i32(read_i32())
+  
+  expect_i32(8)
+  print_i32(read_i32())
+}

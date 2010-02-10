@@ -75,6 +75,8 @@ int expect_i32x(int x) { return fprint_i32x(stderr, x); }
 int  print_i32b(int x) { return fprint_i32b(stdout, x); }
 int expect_i32b(int x) { return fprint_i32b(stderr, x); }
 
+int read_i32() { int n; scanf(" %d", &n); return n; }
+
 //int  print_i8(char x) { return fprint_i8(stdout, x); }
 //int expect_i8(char x) { return fprint_i8(stderr, x); }
 
