@@ -137,7 +137,7 @@ void TypecheckPass::visit(BinaryOpExprAST* ast) {
       }
     }
 
-    if (op == "bitand" || op == "bitor" || op == "bitxor") {
+    if (op == "bitand" || op == "bitor" || op == "bitxor" || op == "shl" || op == "lshr" || op == "ashr") {
       if (!TL->isIntOrIntVector()) {
         std::cerr << "Error: bitwise op '" << op << "' used with non-inty type " << *TL << std::endl;
         return;

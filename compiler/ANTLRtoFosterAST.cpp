@@ -56,7 +56,7 @@ std::map<string, bool> reserved_keywords;
 const char* c_binaryOps[] = {
   "<=", "<", "==",
   "*", "+", "/", "-",
-  "bitand", "bitor", "bitxor", "shl", "shr",
+  "bitand", "bitor", "bitxor", "shl", "lshr", "ashr",
   "=" }; // ".."
 const char* c_keywords[] = { "as" , "at" , "def" , "id", "in", "is", "it", "to",
   "given" , "false" , "if" , "match" , "do" , "new" , "nil",
