@@ -6,9 +6,12 @@
 #define H_4b3f24ef542273_50678977
 
 #include "FosterASTVisitor.h"
+#include <stack>
 
 struct CodegenPass : public FosterASTVisitor {
   #include "FosterASTVisitor.decls.inc.h"
+
+  std::stack<llvm::BasicBlock*> insertPointStack;
 };
 
 #endif // header guard

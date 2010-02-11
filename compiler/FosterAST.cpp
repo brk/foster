@@ -52,9 +52,9 @@ string freshName(string like) {
     } else {
       ss << like << curr;
     }
-  } else { // If it's a template, make the subtitution, even the first time
+  } else { // If it's a template, make the substitution, even the first time
     ss << curr; // int>string
-    like.replace(pos, pos+2, ss.str());
+    like.replace(pos, 2, ss.str());
     ss.str("");
     ss.clear(); // reset
     ss << like;

@@ -1,9 +1,16 @@
 mrmr_step2 = fn (km:i32, r:i32) { km bitxor (km ashr r) }
 mrmr_step5 = fn (h:i32, kx:i32, m:i32) { (h * m) bitxor (kx * m)  }
-
 murmurhash2_step = fn (k:i32, h:i32, r:i32, m:i32) to (hn:i32) {
   mrmr_step5(h, mrmr_step2(k * m, r), m)
 }
+
+//murmurhash2_step = fn (k:i32, h:i32, r:i32, m:i32) to (hn:i32) {
+//  fn "mrmrstep2"   (km) {
+//    fn "mrmrstep5" (kx) {
+//      (h * m) bitxor (kx * m)
+//    } (km bitxor (km ashr r))
+//  }   (k * m) 
+//}
 
 // C:
 // k *= m;
@@ -20,11 +27,6 @@ murmurhash2_step = fn (k:i32, h:i32, r:i32, m:i32) to (hn:i32) {
 
 // let v = a in e -> fn (v) { e }(a)
 
-// fn "mrmrstep2"   (km) {
-//   fn "mrmrstep5" (kx) {
-//     (h * m) bitxor (kx * m)
-//   } (km bitxor (km ashr r))
-// }   (k * m) 
 
 fn "main" {
   expect_i32(1040811149)

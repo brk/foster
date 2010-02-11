@@ -166,11 +166,6 @@ std::vector<VariableAST*> getFormals(pTree tree, int depth, bool infn) {
 // a unique int will be appended to the template.
 // (FN 0:NAME 1:IN 2:OUT 3:BODY)
 FnAST* parseFn(string defaultSymbolTemplate, pTree tree, int depth, bool infn) {
-  if (infn) {
-    std::cerr << "Error: saw function inside another function"
-              << "; nested functions not yet supported..." << std::endl;
-    return NULL;
-  }
 
   string name;
   if (getChildCount(child(tree, 0)) == 1) {

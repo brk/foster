@@ -155,6 +155,8 @@ void CodegenPass::visit(FnAST* ast) {
   // Insert in function-local scope for recursive calls to work
   scope.insert(ast->Proto->Name, F);
 
+  this->insertPointStack.push(builder.GetInsertBlock());
+
   BasicBlock* BB = BasicBlock::Create(getGlobalContext(), "entry", F);
   builder.SetInsertPoint(BB);
 
@@ -181,6 +183,12 @@ void CodegenPass::visit(FnAST* ast) {
   } else {
     F->eraseFromParent();
     std::cout << "Function '" << ast->Proto->Name << "' retval creation failed" << std::endl;
+  }
+
+  // Restore the insertion point from the previous function, if there was one.
+  BasicBlock* prevBlock = this->insertPointStack.top(); this->insertPointStack.pop();
+  if (prevBlock) {
+    builder.SetInsertPoint(prevBlock);
   }
 }
 
