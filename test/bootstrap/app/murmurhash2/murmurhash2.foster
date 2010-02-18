@@ -1,16 +1,16 @@
-mrmr_step2 = fn (km:i32, r:i32) { km bitxor (km ashr r) }
-mrmr_step5 = fn (h:i32, kx:i32, m:i32) { (h * m) bitxor (kx * m)  }
-murmurhash2_step = fn (k:i32, h:i32, r:i32, m:i32) to (hn:i32) {
-  mrmr_step5(h, mrmr_step2(k * m, r), m)
+mrmr-step2 = fn (km:i32, r:i32) { km bitxor (km ashr r) }
+mrmr-step5 = fn (h:i32, kx:i32, m:i32) { (h * m) bitxor (kx * m)  }
+murmurhash2-step-manually-lifted = fn (k:i32, h:i32, r:i32, m:i32) to (hn:i32) {
+  mrmr-step5(h, mrmr-step2(k * m, r), m)
 }
 
-//murmurhash2_step = fn (k:i32, h:i32, r:i32, m:i32) to (hn:i32) {
-//  fn "mrmrstep2"   (km) {
-//    fn "mrmrstep5" (kx) {
-//      (h * m) bitxor (kx * m)
-//    } (km bitxor (km ashr r))
-//  }   (k * m) 
-//}
+murmurhash2-step-let-transformed = fn (k:i32, h:i32, r:i32, m:i32) to (hn:i32) {
+  fn    (km:i32) { // step 2
+    fn  (kx:i32) { // step 5
+      (h * m) bitxor (kx * m)
+    } (km bitxor (km ashr r))
+  }   (k * m) 
+}
 
 // C:
 // k *= m;
@@ -27,17 +27,35 @@ murmurhash2_step = fn (k:i32, h:i32, r:i32, m:i32) to (hn:i32) {
 
 // let v = a in e -> fn (v) { e }(a)
 
-
-fn "main" {
+test-manually-lifted = fn {
   expect_i32(1040811149)
-  print_i32( murmurhash2_step(1, -1, 24, 5bd1e995_16) )
+  print_i32( murmurhash2-step-manually-lifted(1, -1, 24, 5bd1e995_16) )
   
   expect_i32(640067440)
-  print_i32( murmurhash2_step(2, 1040811149, 24, 5bd1e995_16) )
+  print_i32( murmurhash2-step-manually-lifted(2, 1040811149, 24, 5bd1e995_16) )
   
   expect_i32(1308571692)
-  print_i32( murmurhash2_step(3, 640067440, 24, 5bd1e995_16) )
+  print_i32( murmurhash2-step-manually-lifted(3, 640067440, 24, 5bd1e995_16) )
   
   expect_i32(-2051158325)
-  print_i32( murmurhash2_step(4, 1308571692, 24, 5bd1e995_16) )
+  print_i32( murmurhash2-step-manually-lifted(4, 1308571692, 24, 5bd1e995_16) )
+}
+
+//test-let-transformed = fn () {
+//  expect_i32(1040811149)
+//  print_i32( murmurhash2-step-let-transformed(1, -1, 24, 5bd1e995_16) )
+  
+//  expect_i32(640067440)
+//  print_i32( murmurhash2-step-let-transformed(2, 1040811149, 24, 5bd1e995_16) )
+  
+//  expect_i32(1308571692)
+//  print_i32( murmurhash2-step-let-transformed(3, 640067440, 24, 5bd1e995_16) )
+  
+//  expect_i32(-2051158325)
+//  print_i32( murmurhash2-step-let-transformed(4, 1308571692, 24, 5bd1e995_16) )
+//}
+
+fn "main" {
+  test-manually-lifted()
+//  test-let-transformed()
 }

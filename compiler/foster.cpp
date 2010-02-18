@@ -33,6 +33,7 @@
 #include "CodegenPass.h"
 #include "AddParentLinksPass.h"
 #include "PrettyPrintPass.h"
+#include "ClosureConversionPass.h"
 
 #include "pystring/pystring.h"
 
@@ -367,21 +368,37 @@ int main(int argc, char** argv) {
   std::cout << "=========================" << std::endl;
   
   { AddParentLinksPass aplPass; exprAST->accept(&aplPass); }
-  
+
   { TypecheckPass tyPass; exprAST->accept(&tyPass); }
   bool sema = exprAST->type != NULL;
-  std::cout << "Semantic checking: " << sema << endl; 
-  
+  std::cout << "Semantic checking: " << sema << endl;
   if (!sema) return 1;
   
-  std::cout << "=========================" << std::endl;
-  std::cout << "Pretty printing: " << std::endl;
+  {
+    std::cout << "=========================" << std::endl;
+    std::cout << "Pretty printing: " << std::endl;
   
-  { PrettyPrintPass ppPass(std::cout); exprAST->accept(&ppPass); ppPass.flush(); }
+    PrettyPrintPass ppPass(std::cout); exprAST->accept(&ppPass); ppPass.flush();
+  }
   std::cout << std::endl;
-  
+
+  {
+    std::cout << "=========================" << std::endl;
+    std::cout << "Performing closure conversion..." << std::endl;
+
+    ClosureConversionPass p; exprAST->accept(&p);
+  }
+
+  {
+    std::cout << "=========================" << std::endl;
+    std::cout << "Pretty printing: " << std::endl;
+
+    PrettyPrintPass ppPass(std::cout); exprAST->accept(&ppPass); ppPass.flush();
+  }
+
+  std::cout << std::endl;
   std::cout << "=========================" << std::endl;
-  
+
   { CodegenPass cgPass; exprAST->accept(&cgPass); }
   
   if (!optCompileSeparately) {

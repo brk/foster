@@ -458,8 +458,9 @@ struct PrototypeAST : public ExprAST {
 struct FnAST : public ExprAST {
   PrototypeAST* Proto;
   ExprAST* Body;
+  bool wasNested;
 
-  explicit FnAST(PrototypeAST* proto, ExprAST* body) : Proto(proto), Body(body) {}
+  explicit FnAST(PrototypeAST* proto, ExprAST* body) : Proto(proto), Body(body), wasNested(false) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
     return out << (*Proto) << " " << (*Body) << endl;

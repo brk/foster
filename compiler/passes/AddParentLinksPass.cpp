@@ -68,5 +68,5 @@ void includeParentNameInAnonFunctions(FnAST* ast) {
     return;
   }
 
-  name.replace(0, 1, "<" + parentFn->Proto->Name + "__");
+  ast->parent = parent;
 }

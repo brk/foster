@@ -139,11 +139,21 @@ int typeOf(pTree tree) { return tree->getType(tree); }
 VariableAST* parseFormal(pTree tree, int depth, bool infn) {
   // ^(FORMAL ^(TEXT varName) ^(... type ... ))
   pTree varNameTree = child(tree, 0);
+  if (!varNameTree) {
+    std::cerr << "Error! Null var name in parseFormal..." << std::endl;
+    display_pTree(tree, 4);
+    return NULL;
+  }
+
   string varName = textOf(child(varNameTree, 0));
-  //std::cout << "parseFormal varName = " << varName << std::endl;
+  std::cout << "parseFormal varName = " << varName << std::endl;
   if (getChildCount(tree) == 2) {
     ExprAST* tyExpr = ExprAST_from(child(tree, 1), depth + 1, infn);
-    std::cout << "\tParsed formal " << varName << " with type expr " << *tyExpr << std::endl;
+    if (tyExpr) {
+      std::cout << "\tParsed formal " << varName << " with type expr " << *tyExpr << std::endl;
+    } else {
+      std::cout << "\tParsed formal " << varName << " with null type expr " << std::endl;
+    }
     VariableAST* var = new VariableAST(varName, tyExpr);
     varScope.insert(varName, var);
     return var;

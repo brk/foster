@@ -101,6 +101,7 @@ add_executable(foster
   compiler/passes/TypecheckPass.cpp
   compiler/passes/PrettyPrintPass.cpp
   compiler/passes/AddParentLinksPass.cpp
+  compiler/passes/ClosureConversionPass.cpp
   third_party/pystring/pystring.cpp
   ${PROJECT_BINARY_DIR}/fosterParser.c
   ${PROJECT_BINARY_DIR}/fosterLexer.c
