@@ -135,5 +135,5 @@ void closureConvertAnonymousFunctions(FnAST* ast) {
   }
 
   FnAST* parentFn = dynamic_cast<FnAST*>(ast->parent);
-  name.replace(0, 1, "<" + parentFn->Proto->Name + "__");
+  name.replace(0, 1, "<" + parentFn->Proto->Name + ".");
 }

@@ -14,6 +14,7 @@ tokens {
 
 	FN; OUT; BODY; GIVEN; GIVES; SEQ; INT; RAT; EXPRS; NAME; CTOR;
 	TRAILERS; CALL; TUPLE; SUBSCRIPT; LOOKUP; FORMAL; ARRAY; SIMD;
+	LETEXPR;
 }
 
 program			:	nl* expr (nl+ expr)* nl* EOF -> ^(EXPRS expr+);
@@ -27,8 +28,8 @@ formals			:	/* names */ comma_sep_formals;
 
 names			:	'(' comma_sep_names ')' | comma_sep_names;
 comma_sep_names		:	name (',' name)* -> name+;
-comma_sep_formals	:	'(' formal (',' formal)* ')' -> formal+;
-formal                  :        i=name (':' t=typeexpr) -> ^(FORMAL $i $t); 	
+comma_sep_formals		:	'(' formal (',' formal)* ')' -> formal+;
+formal                		:	i=name (':' t=typeexpr) -> ^(FORMAL $i $t); 	
 
 
 num			:	( int_num -> ^(INT int_num)
@@ -41,16 +42,20 @@ str	                :       STR;
 name_or_ctor		:	name (seq -> ^(CTOR name seq)
 				        |   -> name);
 
+letexpr	:	'let' formal '=' a=expr (nl | ';') e=expr -> ^(LETEXPR formal $a $e);
 ifexpr                  :       'if' cond=expr 'then' thenpart=expr 'else' elsepart=expr
 					-> ^(IF $cond $thenpart $elsepart);
 					
 custom_terms		:	'(' expr ')' -> expr
                                 | prefix_unop nl? expr -> ^(prefix_unop expr);
                                 
+sugarterm	:	letexpr;
+
 term			:	( literal
 				| fn
 				| seq
 				| ifexpr
+				| sugarterm
 				| name_or_ctor
 				| custom_terms
                                 );
@@ -76,7 +81,7 @@ arglist                 :       expr (',' nl? expr)* -> expr+;
 
 seq			:	'{' nl* exprlist? nl* '}' -> ^(SEQ exprlist);
 exprlist        :       expr ((sep | nl) nl* expr)* sep? -> expr+;
-sep		:	';' | ',';
+sep		:	';' | ','; // semicolon or comma
 
 binop			:	'+' | '-' | '*' | '/' | '..' | '='
 			|	'<' | '<=' | '>=' | '>' | '==' | '!='

@@ -172,6 +172,28 @@ std::vector<VariableAST*> getFormals(pTree tree, int depth, bool infn) {
   return args;
 }
 
+FnAST* buildFn(string name, pTree bodyTree, int depth,
+               std::vector<VariableAST*> in,
+               std::vector<VariableAST*> out) {
+  varScope.pushScope("fn proto " + name);
+    PrototypeAST* proto = new PrototypeAST(name, in, out);
+    
+    { TypecheckPass tyPass; proto->accept(&tyPass); }
+    VariableAST* fnRef = new VariableAST(name, proto->type);
+    
+    varScope.insert(name, fnRef);
+    
+    std::cout << "Parsing body of fn " << name << std::endl;
+    ExprAST* body = ExprAST_from(bodyTree, depth + 1, true);
+    std::cout << "Parsed  body of fn " << name << std::endl;
+  varScope.popScope();
+  
+  FnAST* fn = new FnAST(proto, body);
+  varScope.insert(name, fnRef);
+  
+  return fn;
+}
+
 // defaultSymbolTemplate can include "%d" to embed a unique number; otherwise,
 // a unique int will be appended to the template.
 // (FN 0:NAME 1:IN 2:OUT 3:BODY)
@@ -185,27 +207,10 @@ FnAST* parseFn(string defaultSymbolTemplate, pTree tree, int depth, bool infn) {
   } else {
     name = freshName(defaultSymbolTemplate);
   }
-  
-  varScope.pushScope("fn proto " + name);
 
-    PrototypeAST* proto = new PrototypeAST(name,
-                                           getFormals(child(tree, 1), depth, infn),
-                                           getFormals(child(tree, 2), depth, infn));
-    
-    { TypecheckPass tyPass; proto->accept(&tyPass); }
-    VariableAST* fnRef = new VariableAST(name, proto->type);
-    
-    varScope.insert(name, fnRef);
-    
-    std::cout << "Parsing body of fn " << name << std::endl;
-    ExprAST* body = ExprAST_from(child(tree, 3), depth + 1, true);
-    std::cout << "Parsed  body of fn " << name << std::endl;
-  varScope.popScope();
-  
-  FnAST* fn = new FnAST(proto, body);
-  varScope.insert(name, fnRef);
-  
-  return fn;
+  return buildFn(name, child(tree, 3), depth,
+                 getFormals(child(tree, 1), depth, infn),
+                 getFormals(child(tree, 2), depth, infn));
 }
 
 ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
@@ -243,6 +248,19 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
     return ExprAST_from(child(tree, 0), depth, infn);
   }
   
+  if (token == LETEXPR) {
+    VariableAST* formal = parseFormal(child(tree, 0), depth, infn);
+    if (!formal) return NULL;
+
+    std::vector<VariableAST*> in; in.push_back(formal);
+    std::vector<VariableAST*> out;
+    FnAST* fn = buildFn(freshName("<anon_fnlet_%d>"), child(tree, 2), depth, in, out);
+
+    ExprAST* a = ExprAST_from(child(tree, 1), depth, infn);
+    Exprs args; args.push_back(a);
+    return new CallAST(fn, args);
+  }
+
   if (token == EXPRS || token == SEQ) {
     Exprs exprs;
     for (int i = 0; i < getChildCount(tree); ++i) {
@@ -337,7 +355,10 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
                          ExprAST_from(child(tree, 1), depth+1, infn),
                          ExprAST_from(child(tree, 2), depth+1, infn));
   }
-  if (token == FN) { return parseFn("<anon_fn_%d>", tree, depth, infn); }
+  if (token == FN) {
+    // for now, this "<anon_fn" prefix is used for closure conversion later on
+    return parseFn("<anon_fn_%d>", tree, depth, infn);
+  }
   if (text == "false" || text == "true") { return new BoolAST(text); }
   
   /*

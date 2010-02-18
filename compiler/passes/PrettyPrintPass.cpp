@@ -72,12 +72,11 @@ void PrettyPrintPass::visit(PrototypeAST* ast) {
 
 // fnProto fnBody
 void PrettyPrintPass::visit(FnAST* ast) {
+  bool isTopLevelFn = ast->parent->parent == NULL;
+  if (isTopLevelFn) { scan(tNewline); }
   ast->Proto->accept(this);
-  scan(tOptNewline);
-//  scan(tIndent);
   ast->Body->accept(this);
-//  scan(tDedent);
-  scan(tNewline);
+  if (isTopLevelFn) { scan(tNewline); }
 }
 
 // if $0 { $1 } else { $2 }
@@ -115,23 +114,36 @@ void PrettyPrintPass::visit(SubscriptAST* ast) {
 // { $0 ; $1 ; ... ; $n }
 void PrettyPrintPass::visit(SeqAST* ast) {
   scan(tBlockOpen);
-  scan(PPToken("{ "));
   scan(tIndent);
-  
+  FnAST* followingFn = dynamic_cast<FnAST*>(ast->parent);
+  if (followingFn) {
+    scan(PPToken(" {"));
+    scan(tNewline);
+  } else {
+    scan(PPToken("{ "));
+  }
+
   for (int i = 0; i < ast->parts.size(); ++i) {
     ast->parts[i]->accept(this);
     
     if (i != ast->parts.size() - 1) {
-      scan(PPToken(";"));
       if (CallAST* wasCall = dynamic_cast<CallAST*>(ast->parts[i])) {
         scan(tNewline);
       } else {
-        scan(PPToken(" "));
+        scan(PPToken("; "));
       }
     }
   }
+
   scan(tDedent);
-  scan(PPToken(" }"));
+
+  if (followingFn) {
+    scan(tNewline);
+    scan(PPToken("}"));
+  } else {
+    scan(PPToken(" }"));
+  }
+
   scan(tBlockClose);
 }
 
@@ -141,6 +153,11 @@ void PrettyPrintPass::visit(CallAST* ast) {
   ast->parts[0]->accept(this);
   
   scan(PPToken("("));
+
+  if (ast->parts.size() > 1) {
+    scan(tIndent);
+  }
+
   bool first = true;
   for (int i = 1; i < ast->parts.size(); ++i) {
     if (!first) {
@@ -148,11 +165,19 @@ void PrettyPrintPass::visit(CallAST* ast) {
       scan(PPToken(" "));
     }
     first = false;
+
+    if (i == ast->parts.size() -1) {
+      // dedent "early" because a dedent followed directly
+      // by a close-paren doesn't do much for us...
+      scan(tDedent);
+    }
+
     ast->parts[i]->accept(this);
   }
+
   scan(PPToken(")"));
+
   scan(tBlockClose);
-  scan(tOptNewline);
 }
 // array $0
 void PrettyPrintPass::visit(ArrayExprAST* ast) {

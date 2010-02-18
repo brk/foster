@@ -12,6 +12,18 @@ murmurhash2-step-let-transformed = fn (k:i32, h:i32, r:i32, m:i32) to (hn:i32) {
   }   (k * m) 
 }
 
+murmurhash2-step-let = fn (k:i32, h:i32, r:i32, m:i32) to (hn:i32) {
+  let km:i32 = k * m
+  let kx:i32 = km bitxor (km ashr r)
+  (h * m) bitxor (kx * m)
+}
+
+//murmurhash2-step = fn (k:i32, h:i32, r:i32, m:i32) to (hn:i32) {
+//  (h * m) bitxor (kx * m) where
+//  kx = km bitxor (km ashr r) where
+//  km = k * m
+//}
+
 // C:
 // k *= m;
 // k ^= k >> r;
@@ -41,21 +53,36 @@ test-manually-lifted = fn {
   print_i32( murmurhash2-step-manually-lifted(4, 1308571692, 24, 5bd1e995_16) )
 }
 
-//test-let-transformed = fn () {
-//  expect_i32(1040811149)
-//  print_i32( murmurhash2-step-let-transformed(1, -1, 24, 5bd1e995_16) )
+test-let-transformed = fn {
+  expect_i32(1040811149)
+  print_i32( murmurhash2-step-let-transformed(1, -1, 24, 5bd1e995_16) )
   
-//  expect_i32(640067440)
-//  print_i32( murmurhash2-step-let-transformed(2, 1040811149, 24, 5bd1e995_16) )
+  expect_i32(640067440)
+  print_i32( murmurhash2-step-let-transformed(2, 1040811149, 24, 5bd1e995_16) )
   
-//  expect_i32(1308571692)
-//  print_i32( murmurhash2-step-let-transformed(3, 640067440, 24, 5bd1e995_16) )
+  expect_i32(1308571692)
+  print_i32( murmurhash2-step-let-transformed(3, 640067440, 24, 5bd1e995_16) )
   
-//  expect_i32(-2051158325)
-//  print_i32( murmurhash2-step-let-transformed(4, 1308571692, 24, 5bd1e995_16) )
-//}
+  expect_i32(-2051158325)
+  print_i32( murmurhash2-step-let-transformed(4, 1308571692, 24, 5bd1e995_16) )
+}
+
+test-let = fn {
+  expect_i32(1040811149)
+  print_i32( murmurhash2-step-let(1, -1, 24, 5bd1e995_16) )
+  
+  expect_i32(640067440)
+  print_i32( murmurhash2-step-let(2, 1040811149, 24, 5bd1e995_16) )
+  
+  expect_i32(1308571692)
+  print_i32( murmurhash2-step-let(3, 640067440, 24, 5bd1e995_16) )
+  
+  expect_i32(-2051158325)
+  print_i32( murmurhash2-step-let(4, 1308571692, 24, 5bd1e995_16) )
+}
 
 fn "main" {
   test-manually-lifted()
-//  test-let-transformed()
+  test-let-transformed()
+  test-let()
 }
