@@ -187,26 +187,37 @@ struct VariableAST : public ExprAST {
   string Name;
   ExprAST* tyExpr;
   PrototypeAST* lazilyInsertedPrototype;
+  bool noInitialType;
+  bool noFixedType() { return noInitialType && !tyExpr && !type; }
+
+  explicit VariableAST(const string& name)
+      : Name(name), tyExpr(NULL), lazilyInsertedPrototype(NULL) { // of as-yet-undetermined type
+    this->type = NULL;
+    noInitialType = true;
+    std::cout << "new variable named " << name << " of no fixed type..." << std::endl;
+  }
 
   // TODO need to figure out how/where/when to assign type info to nil
   explicit VariableAST(const string& name, const llvm::Type* aType)
       : Name(name), tyExpr(NULL), lazilyInsertedPrototype(NULL) {
     this->type = aType;
+    noInitialType = false;
     //std::cout << this << " = new VariableAST("<<name<< ", type ptr " << this->type << ")" << std::endl;
   }
   explicit VariableAST(const string& name, ExprAST* tyExpr)
       : Name(name), tyExpr(tyExpr), lazilyInsertedPrototype(NULL) {
+    noInitialType = false;
     if (!tyExpr) {
       std::cerr << "Error: " << this << " = VariableAST("<<name<<", type expr NULL)!" << std::endl;
     }
   }
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    //if (type) {
-    //  return out << Name << " : " << *type;
-    //} else {
+    if (type) {
+      return out << Name << " : " << *type;
+    } else {
       return out << Name;
-   // }
+    }
   }
 };
 
@@ -338,8 +349,8 @@ struct CallAST : public ExprAST {
   // For now, call exprs must manually visit children in case of UnpackExprs
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    out << "(";
     if (this->parts[0]) out << *this->parts[0]; else out << "<nil>";
+    out << "(";
     for (int i = 1; i < this->parts.size(); ++i) {
       out << " " << *this->parts[i];
     }

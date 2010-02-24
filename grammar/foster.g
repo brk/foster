@@ -29,7 +29,7 @@ formals			:	/* names */ comma_sep_formals;
 names			:	'(' comma_sep_names ')' | comma_sep_names;
 comma_sep_names		:	name (',' name)* -> name+;
 comma_sep_formals		:	'(' formal (',' formal)* ')' -> formal+;
-formal                		:	i=name (':' t=typeexpr) -> ^(FORMAL $i $t); 	
+formal                		:	i=name (':' t=typeexpr)? -> ^(FORMAL $i $t); 	
 
 
 num			:	( int_num -> ^(INT int_num)

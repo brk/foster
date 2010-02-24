@@ -29,6 +29,7 @@
 
 #include "FosterAST.h"
 #include "ANTLRtoFosterAST.h"
+
 #include "TypecheckPass.h"
 #include "CodegenPass.h"
 #include "AddParentLinksPass.h"

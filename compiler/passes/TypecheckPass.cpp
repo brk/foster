@@ -167,6 +167,9 @@ void TypecheckPass::visit(PrototypeAST* ast) {
   
   vector<const Type*> argTypes;
   for (int i = 0; i < ast->inArgs.size(); ++i) {
+    if (ast->inArgs[i]->noFixedType()) {
+      return;
+    }
     ast->inArgs[i]->accept(this);
     const Type* ty =  ast->inArgs[i]->type;
     if (ty == NULL) {
