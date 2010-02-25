@@ -23,8 +23,41 @@ using std::vector;
 
 ////////////////////////////////////////////////////////////////////
 
+bool isAutoConvertible(const Type* fromTy, const Type* toTy) {
+  // no case for i1 needed because equality is taken care of
+  bool to8  = toTy == LLVMTypeFor("i8");
+  bool to16 = toTy == LLVMTypeFor("i16");
+  bool to32 = toTy == LLVMTypeFor("i32");
+  bool to64 = toTy == LLVMTypeFor("i64");
+
+  if (fromTy == LLVMTypeFor("i1")) {
+    return /**/ to8 /*|| to16 || to32 || to64*/;
+  } else if (fromTy == LLVMTypeFor("i8")) {
+    return /*to8 ||*/ to16 || to32 || to64;
+  } else if (fromTy == LLVMTypeFor("i16")) {
+    return /*to8 || to16 ||*/ to32 || to64;
+  } else if (fromTy == LLVMTypeFor("i32")) {
+    return /*to8 || to16 || to32 ||*/ to64;
+  }
+  // 64 bits:
+  return false;
+}
+
+bool isCompatible(const Type* src, const Type* dst) {
+  return src == dst || isAutoConvertible(src, dst);
+}
+
 void TypecheckPass::visit(BoolAST* ast) {
   ast->type = LLVMTypeFor("i1");
+}
+
+const Type* LLVMintTypeForNBits(unsigned n) {
+  // Disabled until we get better inferred literal types
+  //if (n <= 1) return LLVMTypeFor("i1");
+  //if (n <= 8) return LLVMTypeFor("i8");
+  //if (n <= 16) return LLVMTypeFor("i16");
+  if (n <= 32) return LLVMTypeFor("i32");
+  if (n <= 64) return LLVMTypeFor("i64");
 }
 
 void TypecheckPass::visit(IntAST* ast) {
@@ -55,9 +88,12 @@ void TypecheckPass::visit(IntAST* ast) {
     std::cerr << "Integer literal '" << ast->Text << "' requires "
               << activeBits << " bits to represent." << std::endl;
     return;
+  } else {
+    std::cerr << "Integer literal '" << ast->Text << "' requires "
+                  << activeBits << " bits to represent." << std::endl;
   }
   
-  ast->type = LLVMTypeFor("i32");
+  ast->type = LLVMintTypeForNBits(activeBits);
 }
 
 void TypecheckPass::visit(VariableAST* ast) {
@@ -125,7 +161,7 @@ void TypecheckPass::visit(BinaryOpExprAST* ast) {
 
   const std::string& op = ast->op;
   
-  if (TL != TR) {
+  if (!isCompatible(TL, TR)) {
     std::cerr << "Error: binary expr " << op << " had differently typed sides!" << std::endl;
   } else if (!TL) {
     std::cerr << "Error: binary expr " << op << " failed to typecheck subexprs!" << std::endl;
@@ -173,8 +209,9 @@ void TypecheckPass::visit(PrototypeAST* ast) {
     ast->inArgs[i]->accept(this);
     const Type* ty =  ast->inArgs[i]->type;
     if (ty == NULL) {
-      std::cerr << "Error: fn proto's Type creation failed due to "
+      std::cerr << "Error: proto " << ast->Name << " had "
         << "null type for arg '" << ast->inArgs[i]->Name << "'" << std::endl;
+      return;
     }
     argTypes.push_back(ty);
   }
@@ -377,17 +414,9 @@ void TypecheckPass::visit(CallAST* ast) {
   for (int i = 0; i < numParams; ++i) {
     const Type* formalType = baseFT->getParamType(i);
     const Type* actualType = actualTypes[i];
-    if (formalType != actualType) {
-      if (formalType == LLVMTypeFor("i8")
-        && actualType == LLVMTypeFor("i1")) {
-        // TODO Eventually, require the conversion from i1 to i8 to be explicit.
-        // For now, codegen will automatically convert from i1 to i8 in fn call
-        // param lists, because llvm-gcc implements bool as i8 instead of i1.
-        // Thus, we must either convert from i1 to i8, or re-implement print_i1
-        // (and associated FILE* machinery) in Foster, which does support i1
-        // params.
-        continue;
-      }
+    // Note: order here is important! We check conversion from
+    // actual to formal, not the other way 'round...
+    if (!isCompatible(actualType, formalType)) {
       success = false;
       std::cerr << "Type mismatch between actual and formal arg " << i << std::endl;
       std::cerr << "\tformal: " << *formalType << "; actual: " << *actualType << std::endl;

@@ -7,8 +7,13 @@
 
 #include "FosterASTVisitor.h"
 
+#include <set>
+#include <string>
+
 struct ClosureConversionPass : public FosterASTVisitor {
   #include "FosterASTVisitor.decls.inc.h"
+  const std::set<std::string>& globalNames;
+  ClosureConversionPass(const std::set<std::string>& globalNames) : globalNames(globalNames) {}
 };
 
 

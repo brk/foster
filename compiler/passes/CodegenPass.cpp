@@ -38,6 +38,16 @@ T getSaturating(llvm::Value* v) {
   }
 }
 
+Value* tempHackExtendInt(Value* val, const Type* toTy) {
+  const Type* valTy = val->getType();
+  // The type checker should ensure that size(expTy) is >= size(argTy)
+  if (valTy != toTy && valTy->isInteger() && toTy->isInteger()) {
+    return builder.CreateZExt(val, toTy, "zextimplicit");
+  } else {
+    return val;
+  }
+}
+
 void CodegenPass::visit(IntAST* ast) {
   ast->value = ast->getConstantValue();
 }
@@ -81,6 +91,12 @@ void CodegenPass::visit(UnaryOpExprAST* ast) {
   }
 }
 
+bool isArithOp(string op) { return op == "+" || op == "-" || op == "/" || op == "*"; }
+bool isCmpOp(string op) { return op == "<" || op == "==" || op == "!="; }
+bool leftTypeBiggerInt(const Type* left, const Type* right) {
+  return left->getScalarSizeInBits() > right->getScalarSizeInBits();
+}
+
 void CodegenPass::visit(BinaryOpExprAST* ast) {
   Value* VL = ast->parts[ast->kLHS]->value;
   Value* VR = ast->parts[ast->kRHS]->value;
@@ -90,6 +106,14 @@ void CodegenPass::visit(BinaryOpExprAST* ast) {
   if (!VL || !VR) {
     std::cerr << "Error: binary expr " << op << " had null subexpr" << std::endl;
     return;
+  }
+
+  if (VL->getType() != VR->getType() && (isArithOp(op) || isCmpOp(op))) {
+    if (leftTypeBiggerInt(VL->getType(), VR->getType())) {
+      VR = tempHackExtendInt(VR, VL->getType());
+    } else {
+      VL = tempHackExtendInt(VL, VR->getType());
+    }
   }
 
        if (op == "+") { ast->value = builder.CreateAdd(VL, VR, "addtmp"); }
@@ -317,14 +341,9 @@ void unpackArgs(std::vector<Value*>& valArgs, Value* V, const FunctionType* FT) 
   }
 }
 
-void tempHackConverti1toExpectedi8(const FunctionType* FT, std::vector<Value*>& valArgs) {
-  const Type* i1ty = LLVMTypeFor("i1");
-  const Type* i8ty = LLVMTypeFor("i8");
+void tempHackExtendIntTypes(const FunctionType* FT, std::vector<Value*>& valArgs) {
   for (int i = 0; i < valArgs.size(); ++i) {
-    Value* arg = valArgs[i];
-    if (arg->getType() == i1ty && FT->getParamType(i) == i8ty) {
-      valArgs[i] = builder.CreateZExt(arg, i8ty, "i1toi8");
-    }
+    valArgs[i] = tempHackExtendInt(valArgs[i], FT->getParamType(i));
   }
   
   // TODO better long-term solution is probably make the libfoster
@@ -379,7 +398,7 @@ void CodegenPass::visit(CallAST* ast) {
   }
   
   // Temporary hack: if a function expects i8 and we have i1, manually convert
-  tempHackConverti1toExpectedi8(FT, valArgs);
+  tempHackExtendIntTypes(FT, valArgs);
   
   ast->value = builder.CreateCall(F, valArgs.begin(), valArgs.end(), "calltmp");
 }

@@ -122,6 +122,10 @@ VariableAST* proto(const Type* retTy, const std::string& fqName, const Type* ty1
        new VariableAST("p1", ty1)));
 }
 
+VariableAST* proto(const Type* retTy, const std::string& fqName) {
+  return checkAndGetLazyRefTo(new PrototypeAST(retTy, fqName));
+}
+
 ExprAST* lookupOrCreateNamespace(ExprAST* ns, const string& part) {
   ExprAST* nsPart = ns->lookup(part, "");
   if (!nsPart) {
@@ -137,8 +141,12 @@ ExprAST* lookupOrCreateNamespace(ExprAST* ns, const string& part) {
   return nsPart;
 }
 
+std::set<std::string> globalNames;
+
 void addToProperNamespace(VariableAST* var) {
   const string& fqName = var->Name;
+  globalNames.insert(fqName);
+
   std::vector<string> parts;
   pystring::split(fqName, parts, ".");
 
@@ -193,6 +201,8 @@ void createLLVMBitIntrinsics() {
 
       { NULL, kTransform, 0}
   };
+
+  addToProperNamespace( proto(LLVMTypeFor("i64"), "llvm.readcyclecounter") );
 
   bit_intrinsic_spec* spec = spec_table;
   while (spec->intrinsicName) {
@@ -274,6 +284,7 @@ void putModuleMembersInScope(ModuleProvider* mp) {
    
     
     if (hasDef && !isCxxLinkage) {
+      globalNames.insert(name);
       std::cout << "Inserting ref to fn " << name << " in scopes" << std::endl;
       // Ensure that, when parsing, function calls to this name will find it
       const Type* ty = f.getType();
@@ -387,7 +398,7 @@ int main(int argc, char** argv) {
     std::cout << "=========================" << std::endl;
     std::cout << "Performing closure conversion..." << std::endl;
 
-    ClosureConversionPass p; exprAST->accept(&p);
+    ClosureConversionPass p(globalNames); exprAST->accept(&p);
   }
 
   {

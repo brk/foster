@@ -42,7 +42,9 @@ str	                :       STR;
 name_or_ctor		:	name (seq -> ^(CTOR name seq)
 				        |   -> name);
 
-letexpr	:	'let' formal '=' a=expr (nl | ';') e=expr -> ^(LETEXPR formal $a $e);
+letexpr	:	'let' formal '=' arg=expr 
+			( ((nl | ';') next=letexpr) 
+			| ('in') body=seq) -> ^(LETEXPR formal $arg $body $next);
 ifexpr                  :       'if' cond=expr 'then' thenpart=expr 'else' elsepart=expr
 					-> ^(IF $cond $thenpart $elsepart);
 					

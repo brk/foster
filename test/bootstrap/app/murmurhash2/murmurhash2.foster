@@ -14,8 +14,9 @@ murmurhash2-step-let-transformed = fn (k:i32, h:i32, r:i32, m:i32) to (hn:i32) {
 
 murmurhash2-step-let = fn (k:i32, h:i32, r:i32, m:i32) to (hn:i32) {
   let km:i32 = k * m
-  let kx:i32 = km bitxor (km ashr r)
-  (h * m) bitxor (kx * m)
+  let kx:i32 = km bitxor (km ashr r) in {
+    (h * m) bitxor (kx * m)
+  }
 }
 
 //murmurhash2-step = fn (k:i32, h:i32, r:i32, m:i32) to (hn:i32) {

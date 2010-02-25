@@ -161,9 +161,6 @@ VariableAST* parseFormal(pTree tree, int depth, bool infn) {
     VariableAST* var = new VariableAST(varName); // no fixed type, infer later
     varScope.insert(varName, var);
     return var;
-    //std::cerr << "Error: parseFormal() [" << varName << "] can't yet handle formals"
-    //          << " without direct type annotations." << std::endl;
-    //return NULL;
   }
 }
 
@@ -182,10 +179,16 @@ FnAST* buildFn(string name, pTree bodyTree, int depth,
     PrototypeAST* proto = new PrototypeAST(name, in, out);
     
     { TypecheckPass tyPass; proto->accept(&tyPass); }
+
     VariableAST* fnRef;
     if (proto->type) {
       fnRef = new VariableAST(name, proto->type);
     } else {
+      std::cout << "Type checking proto " << name << " produced no type; in was: " << endl;
+      for (int i = 0; i < in.size(); ++i) {
+        if (in[i]) { std::cout << *in[i] << std::endl; }
+        else { std::cout << "<nil>" << std::endl; }
+      }
       fnRef = new VariableAST(name);
     }
     
@@ -256,6 +259,7 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
     return ExprAST_from(child(tree, 0), depth, infn);
   }
   
+  // <formal arg (body | next)>
   if (token == LETEXPR) {
     VariableAST* formal = parseFormal(child(tree, 0), depth, infn);
     if (!formal) return NULL;

@@ -23,7 +23,8 @@ void closureConvertAnonymousFunctions(FnAST* ast);
 void ClosureConversionPass::visit(BoolAST* ast)                { return; }
 void ClosureConversionPass::visit(IntAST* ast)                 { return; }
 void ClosureConversionPass::visit(VariableAST* ast)            {
-  if (boundVariables[callStack.back()].count(ast) == 0) {
+  if (boundVariables[callStack.back()].count(ast) == 0
+    && this->globalNames.count(ast->Name) == 0) {
     //std::cout << "Marking variable " <<ast->Name << " as free in fn " << callStack.back()->Proto->Name << std::endl;
     freeVariables[callStack.back()].insert(ast);
   }

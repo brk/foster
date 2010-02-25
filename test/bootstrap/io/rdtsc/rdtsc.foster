@@ -1,0 +1,14 @@
+// IN: 2
+// The testing infrastructure looks for lines like the one above and
+// feeds the data to stdin
+
+fn "main" {
+  let s:i64 = llvm.readcyclecounter() in {
+      expect_i32(2)
+      print_i32(read_i32())
+      let e:i64 = llvm.readcyclecounter() in {
+          expect_i1(true)
+          print_i1(255 < (e - s))
+      }
+  }
+}

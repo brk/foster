@@ -430,6 +430,9 @@ struct PrototypeAST : public ExprAST {
   PrototypeAST(VariableAST* retVar, const string& name)
     : Name(name) { outArgs.push_back(retVar); }
 
+  PrototypeAST(const Type* retTy, const string& name)
+    : Name(name) { outArgs.push_back(new VariableAST("retval", retTy)); }
+
   PrototypeAST(const Type* retTy, const string& name, VariableAST* arg1)
     : Name(name) { outArgs.push_back(new VariableAST("retval", retTy)); inArgs.push_back(arg1); }
 
