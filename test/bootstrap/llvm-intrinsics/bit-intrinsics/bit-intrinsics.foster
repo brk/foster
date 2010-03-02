@@ -1,4 +1,4 @@
-fn "main" {
+fn "main" () {
   expect_i32(10)
   print_i32( llvm.ctpop.i32(1010`0110`1011`1110_2) )
   

@@ -12,7 +12,7 @@ compare_4xi32 = fn (x : simd-vector of 4 i32, a : simd-vector of 4 i32) {
   print_i32(a[3])
 }
 
-fn "main" {
+fn "main" () {
   compare_4xi32( simd-vector { 311, 412, 513, 614 },
                  simd-vector {  11,  12,  13,  14 } +
                  simd-vector { 300, 400, 500, 600 } )

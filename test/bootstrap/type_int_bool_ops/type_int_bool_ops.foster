@@ -1,4 +1,4 @@
-fn "main" {
+fn "main" () {
   expect_i32(222)
   print_i32(if true then { 222 } else { 111 })
 

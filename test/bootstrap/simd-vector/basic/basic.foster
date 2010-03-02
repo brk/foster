@@ -1,4 +1,4 @@
-fn "main" {
+fn "main" () {
   expect_i32(11)
   print_i32( simd-vector { 11, 12, 13, 14 }[0] )
 

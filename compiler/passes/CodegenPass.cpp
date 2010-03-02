@@ -189,7 +189,7 @@ void CodegenPass::visit(FnAST* ast) {
   
   // If we try to return a tuple* when the fn specifies a tuple, manually insert a load
   if (RetVal->getType()->isDerivedType()
-      && RetVal->getType() == llvm::PointerType::get(ast->Proto->outArgs[0]->type, 0)) {
+      && RetVal->getType() == llvm::PointerType::get(ast->Proto->resultTy, 0)) {
     RetVal = builder.CreateLoad(RetVal, false, "structPtrToStruct");
   }
 

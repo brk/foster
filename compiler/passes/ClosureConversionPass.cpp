@@ -23,6 +23,8 @@ void closureConvertAnonymousFunctions(FnAST* ast);
 void ClosureConversionPass::visit(BoolAST* ast)                { return; }
 void ClosureConversionPass::visit(IntAST* ast)                 { return; }
 void ClosureConversionPass::visit(VariableAST* ast)            {
+  if (callStack.empty()) return;
+
   if (boundVariables[callStack.back()].count(ast) == 0
     && this->globalNames.count(ast->Name) == 0) {
     //std::cout << "Marking variable " <<ast->Name << " as free in fn " << callStack.back()->Proto->Name << std::endl;
@@ -33,20 +35,11 @@ void ClosureConversionPass::visit(VariableAST* ast)            {
 void ClosureConversionPass::visit(UnaryOpExprAST* ast)         { return; }
 void ClosureConversionPass::visit(BinaryOpExprAST* ast)        { return; }
 void ClosureConversionPass::visit(PrototypeAST* ast)           {
-
   for (int i = 0; i < ast->inArgs.size(); ++i) {
     boundVariables[callStack.back()].insert(ast->inArgs[i]);
     //std::cout << "Marking variable " << ast->inArgs[i]->Name << " as bound in fn " << callStack.back()->Proto->Name << std::endl;
     onVisitChild(ast, ast->inArgs[i]);
   }
-  for (int i = 0; i < ast->outArgs.size(); ++i) {
-    boundVariables[callStack.back()].insert(ast->outArgs[i]);
-    // named out variables aren't mutable so kinda useless...
-    // ... but they are "free" if we don't claim them here
-    onVisitChild(ast, ast->outArgs[i]);
-
-  }
-
 }
 void ClosureConversionPass::visit(FnAST* ast)                  {
   callStack.push_back(ast);

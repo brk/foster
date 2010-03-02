@@ -1,4 +1,4 @@
-fn "main" {
+fn "main" () {
   expect_i32b(11100_2)
   print_i32b(111_2 shl 2)
 

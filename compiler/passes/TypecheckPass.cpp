@@ -189,18 +189,6 @@ void TypecheckPass::visit(BinaryOpExprAST* ast) {
 }
 
 void TypecheckPass::visit(PrototypeAST* ast) {
-  // Make the function type
-  const Type* returnType = NULL;
-  if (ast->outArgs.size() != 1) {
-    std::cerr << "Typecheck error for prototype ast " << ast->Name
-              << ": outArgs.size = " << ast->outArgs.size() << std::endl;
-    std::cerr << "(For now, use an explicit tuple instead of multiple return values)" << std::endl;
-    return;
-  } else {
-    ast->outArgs[0]->accept(this);
-    returnType = ast->outArgs[0]->type;
-  }
-  
   vector<const Type*> argTypes;
   for (int i = 0; i < ast->inArgs.size(); ++i) {
     if (ast->inArgs[i]->noFixedType()) {
@@ -216,13 +204,17 @@ void TypecheckPass::visit(PrototypeAST* ast) {
     argTypes.push_back(ty);
   }
 
-  if (!returnType) {
+  if (!ast->resultTy && ast->tyExpr != NULL) {
+    bool tyParMode = this->typeParsingMode; this->typeParsingMode = true;
+    ast->tyExpr->accept(this);
+    this->typeParsingMode = tyParMode;
+    ast->resultTy = ast->tyExpr->type;
+  }
+
+  if (!ast->resultTy) {
    std::cerr << "Error in typechecking PrototypeAST " << ast->Name << ": null return type!" << std::endl;
-   std::cerr << "#outARgs: " << ast->outArgs.size() << ";";
-   for (int i = 0; i < ast->outArgs.size(); ++i) { std::cerr << "\n\t" << *(ast->outArgs[i]); }
-     std::cerr << std::endl;
   } else {
-    ast->type = FunctionType::get(returnType, argTypes, false);
+    ast->type = FunctionType::get(ast->resultTy, argTypes, false);
   }
 }
 

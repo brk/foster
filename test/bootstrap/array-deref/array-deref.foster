@@ -1,4 +1,4 @@
-fn "main" {
+fn "main" () {
   expect_i32(42)
   print_i32( array { 42, 43 }[0] )
 

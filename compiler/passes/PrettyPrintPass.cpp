@@ -7,6 +7,10 @@
 
 ////////////////////////////////////////////////////////////////////
 
+std::string str(const llvm::Type* ty) {
+  std::stringstream ss; ss << *ty; return ss.str();
+}
+
 void PrettyPrintPass::visit(BoolAST* ast) {
   scan(PPToken( (ast->boolValue) ? "true" : "false" ));
 }
@@ -56,13 +60,9 @@ void PrettyPrintPass::visit(PrototypeAST* ast) {
     scan(PPToken(" "));
     scan(PPToken(ast->inArgs[i]->Name));
   }
-  if (!ast->outArgs.empty()) {
-    scan(PPToken(" "));
-    scan(PPToken("to"));
-    for (int i = 0; i < ast->outArgs.size(); ++i) {
-      scan(PPToken(" "));
-      scan(PPToken(ast->outArgs[i]->Name));
-    }
+  if (ast->resultTy != NULL) {
+    scan(PPToken(" to "));
+    scan(PPToken(str(ast->resultTy)));
   }
   scan(PPToken(" "));
   scan(PPToken(")"));

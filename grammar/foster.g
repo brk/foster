@@ -19,16 +19,13 @@ tokens {
 
 program			:	nl* expr (nl+ expr)* nl* EOF -> ^(EXPRS expr+);
 
-fn			:	'fn' n=str? in=formals? ('to' out=formals)? seq requires? ensures?
+fn			:	'fn' n=str? '(' in=formals? ('to' out=typeexpr)? ')' seq? requires? ensures?
 					-> ^(FN ^(NAME $n) ^(IN $in) ^(OUT $out) ^(BODY seq) ^(GIVEN requires?) ^(GIVES ensures?));
 requires		:	'given' seq;
 ensures			:	'gives' seq;
 
-formals			:	/* names */ comma_sep_formals;
-
-names			:	'(' comma_sep_names ')' | comma_sep_names;
-comma_sep_names		:	name (',' name)* -> name+;
-comma_sep_formals		:	'(' formal (',' formal)* ')' -> formal+;
+//names			:	name (',' name)* -> name+;
+formals			:	formal (',' formal)* -> formal+;
 formal                		:	i=name (':' t=typeexpr)? -> ^(FORMAL $i $t); 	
 
 
@@ -73,7 +70,7 @@ subexpr			:	compound (  binop nl? subexpr	-> ^(binop compound subexpr)
 expr	:	subexpr;
 
 type_of_type	:	name 'of' typeexpr 'to'? typeexpr  -> ^(CTOR name ^(SEQ typeexpr+));
-typeexpr	:	literal | name_or_ctor | custom_terms | type_of_type;
+typeexpr	:	literal | name_or_ctor | custom_terms | type_of_type | fn;
 
 trailer                 :       '(' arglist? ')' -> ^(CALL arglist)
                         |       '.' name         -> ^(LOOKUP name)

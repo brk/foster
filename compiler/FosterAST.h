@@ -425,32 +425,38 @@ struct SubscriptAST : public BinaryExprAST {
 struct PrototypeAST : public ExprAST {
   string Name;
   std::vector<VariableAST*> inArgs;
-  std::vector<VariableAST*> outArgs;
-
-  PrototypeAST(VariableAST* retVar, const string& name)
-    : Name(name) { outArgs.push_back(retVar); }
+  const Type* resultTy;
+  ExprAST* tyExpr;
 
   PrototypeAST(const Type* retTy, const string& name)
-    : Name(name) { outArgs.push_back(new VariableAST("retval", retTy)); }
+    : Name(name), resultTy(retTy), tyExpr(NULL) {}
 
   PrototypeAST(const Type* retTy, const string& name, VariableAST* arg1)
-    : Name(name) { outArgs.push_back(new VariableAST("retval", retTy)); inArgs.push_back(arg1); }
+    : Name(name), resultTy(retTy), tyExpr(NULL) { inArgs.push_back(arg1); }
 
   PrototypeAST(const Type* retTy, const string& name, VariableAST* arg1, VariableAST* arg2)
-    : Name(name) { outArgs.push_back(new VariableAST("retval", retTy)); inArgs.push_back(arg1); inArgs.push_back(arg2); }
+    : Name(name), resultTy(retTy), tyExpr(NULL) { inArgs.push_back(arg1); inArgs.push_back(arg2); }
 
   PrototypeAST(const Type* retTy, const string& name, const std::vector<VariableAST*>& inArgs)
-    : Name(name), inArgs(inArgs) { outArgs.push_back(new VariableAST("retval", retTy)); }
+    : Name(name), resultTy(retTy), tyExpr(NULL), inArgs(inArgs) { }
 
-  PrototypeAST(const string& name, const std::vector<VariableAST*>& inArgs,
-                                   const std::vector<VariableAST*>& outArgs)
-    : Name(name), inArgs(inArgs), outArgs(outArgs) {
-    if (this->outArgs.empty()) {
-      this->outArgs.push_back(new VariableAST("defi32rv", LLVMTypeFor("i32")));
+  PrototypeAST(const string& name, const std::vector<VariableAST*>& inArgs, const Type* retTy)
+    : Name(name), resultTy(retTy), tyExpr(NULL), inArgs(inArgs) {
+    if (resultTy == NULL) {
+      this->resultTy = LLVMTypeFor("i32");
     } else {
-      std::cout << "\n\tProtoAST ctor: out arg 0 ty is " << outArgs[0]->type << "; this->out arg 0 ty is " << this->outArgs[0]->type << std::endl;
+      std::cout << "\n\tProtoAST " << name << " ascribed result type of " << *(resultTy) << std::endl;
     }
   }
+
+  PrototypeAST(const string& name, const std::vector<VariableAST*>& inArgs, ExprAST* retTyExpr)
+      : Name(name), resultTy(NULL), inArgs(inArgs), tyExpr(retTyExpr) {
+      if (tyExpr == NULL) {
+        this->resultTy = LLVMTypeFor("i32");
+      } else {
+        std::cout << "\n\tProtoAST " << name << " ascribed result type expr of " << *(tyExpr) << std::endl;
+      }
+    }
     
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
@@ -458,11 +464,8 @@ struct PrototypeAST : public ExprAST {
     for (int i = 0; i < inArgs.size(); ++i) {
       out << inArgs[i]->Name << " ";
     }
-    if (!outArgs.empty()) {
-      out << " to";
-      for (int i = 0; i < outArgs.size(); ++i) {
-        out << " " << outArgs[i]->Name;
-      }
+    if (resultTy != NULL) {
+      out << " to " << (*resultTy);
     }
     out << ")";
     return out;

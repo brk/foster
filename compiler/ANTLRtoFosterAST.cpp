@@ -173,10 +173,9 @@ std::vector<VariableAST*> getFormals(pTree tree, int depth, bool infn) {
 }
 
 FnAST* buildFn(string name, pTree bodyTree, int depth,
-               std::vector<VariableAST*> in,
-               std::vector<VariableAST*> out) {
+               std::vector<VariableAST*> in, ExprAST* tyExpr) {
   varScope.pushScope("fn proto " + name);
-    PrototypeAST* proto = new PrototypeAST(name, in, out);
+    PrototypeAST* proto = new PrototypeAST(name, in, tyExpr);
     
     { TypecheckPass tyPass; proto->accept(&tyPass); }
 
@@ -221,7 +220,7 @@ FnAST* parseFn(string defaultSymbolTemplate, pTree tree, int depth, bool infn) {
 
   return buildFn(name, child(tree, 3), depth,
                  getFormals(child(tree, 1), depth, infn),
-                 getFormals(child(tree, 2), depth, infn));
+                 ExprAST_from(child(tree, 2), depth, infn));
 }
 
 ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
@@ -265,8 +264,7 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
     if (!formal) return NULL;
 
     std::vector<VariableAST*> in; in.push_back(formal);
-    std::vector<VariableAST*> out;
-    FnAST* fn = buildFn(freshName("<anon_fnlet_%d>"), child(tree, 2), depth, in, out);
+    FnAST* fn = buildFn(freshName("<anon_fnlet_%d>"), child(tree, 2), depth, in, NULL);
 
     ExprAST* a = ExprAST_from(child(tree, 1), depth, infn);
     Exprs args; args.push_back(a);
@@ -335,6 +333,10 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
     return var;
   }
   
+  if (token == OUT) {
+    return (getChildCount(tree) == 0) ? NULL : ExprAST_from(child(tree, 0), depth, infn);
+  }
+
   if (text == "=") { // must come before binaryOps since it's handled specially
     assert(getChildCount(tree) == 2);
     // x = fn { blah }   ===   x = fn "x" { blah }
@@ -373,11 +375,6 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
   }
   if (text == "false" || text == "true") { return new BoolAST(text); }
   
-  /*
-  if (text == "nil") {
-    return new VariableAST(text);
-  }
-  */
 
   // Should have handled all keywords by now...
   if (keywords[text]) {

@@ -16,9 +16,6 @@ void AddParentLinksPass::visit(PrototypeAST* ast)           {
   for (int i = 0; i < ast->inArgs.size(); ++i) {
     onVisitChild(ast, ast->inArgs[i]);
   }
-  for (int i = 0; i < ast->outArgs.size(); ++i) {
-    onVisitChild(ast, ast->outArgs[i]);
-  }
 }
 void AddParentLinksPass::visit(FnAST* ast)                  {
   onVisitChild(ast, ast->Proto);

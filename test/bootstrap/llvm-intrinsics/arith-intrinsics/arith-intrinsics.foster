@@ -6,7 +6,7 @@ check_tuples = fn (x : tuple { i32, i1 }, y : tuple { i32, i1 }) {
   print_i1(y[1])
 }
 
-fn "main" {
+fn "main" () {
   check_tuples( llvm.uadd.with.overflow.i32((1 shl 30), (1 shl 30)),
                 tuple { 1 shl 31, false } );
                 

@@ -1,6 +1,6 @@
-one = fn { 1 }
+one = fn () { 1 }
 
-fn "main" {
+fn "main" () {
   expect_i32(1)
   print_i32(one())
 }

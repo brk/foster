@@ -1,4 +1,4 @@
-fn "main" {
+fn "main" () {
   expect_i1(true)
   print_i1( __COMPILES__ 1_2)
   

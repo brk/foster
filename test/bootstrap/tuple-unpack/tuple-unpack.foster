@@ -13,7 +13,7 @@ test_unpack = fn (x : tuple { i32, i1 }) {
   print4( x[0], x[1], unpack x)
 }
 
-fn "main" {
+fn "main" () {
   print4(42, true, unpack tuple { 42, true })
   
   expect_i1(false) // Unpacking results in type checking error
