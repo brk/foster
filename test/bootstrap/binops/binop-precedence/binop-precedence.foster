@@ -1,0 +1,14 @@
+fn "main" () {
+  expect_i32(14) ;  print_i32(2 + 3 * 4)
+  expect_i32(10) ;  print_i32(2 * 3 + 4)
+
+  expect_i1(true); print_i1(2 * 3   <=   5 + 1)
+  expect_i1(true); print_i1(2 * 3   ==   5 + 1)
+  expect_i1(true); print_i1(2 < 3   ==   4 <= 5)
+
+  expect_i32(25) ;  print_i32(2 + 3 * 4 + 5 + 6)
+  expect_i32(68) ;  print_i32(2 + 3 * 4 * 5 + 6)
+  expect_i32(32) ;  print_i32(2 * 3 + 4 * 5 + 6)
+  expect_i32(126);  print_i32(2 * 3 + 4 * 5 * 6)
+ 
+}
