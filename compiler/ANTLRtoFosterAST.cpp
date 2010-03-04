@@ -50,6 +50,7 @@ pTree child(pTree tree, int i) { return (pTree) tree->getChild(tree, i); }
 Exprs getExprs(pTree tree, int depth, bool infn);
 std::ostream& operator<<(std::ostream& out, Exprs& f) { return out << join("", f); }
 
+std::map<ExprAST*, bool> overridePrecedence; // expressions wrapped in () are marked here
 std::map<string, int> binaryOps;
 std::map<string, bool> keywords;
 std::map<string, bool> reserved_keywords;
@@ -374,22 +375,26 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
     return new UnaryOpExprAST(text, ExprAST_from(child(tree, 0), depth + 1, infn));
   }
 
+  if (token == PARENEXPR) { ExprAST* rv = ExprAST_from(child(tree, 0), depth+1, infn); overridePrecedence[rv] = true; return rv; }
+
   if (token == COMPILES) { return new BuiltinCompilesExprAST(ExprAST_from(child(tree, 0), depth, infn)); }
   if (token == UNPACK)   { return new UnpackExprAST(ExprAST_from(child(tree, 0), depth + 1, infn)); }
   
   if (binaryOps[text] > 0) {
     ExprAST* lhs = ExprAST_from(child(tree, 0), depth + 1, infn);
     ExprAST* rhs = ExprAST_from(child(tree, 1), depth + 1, infn);
+    bool override = overridePrecedence[lhs] || overridePrecedence[rhs];
     std::cout << "saw binary operator " << text << " with lhs " << (*lhs) << " and rhs " << (*rhs) << std::endl;
     if (BinaryOpExprAST* binopRHS = dynamic_cast<BinaryOpExprAST*>(rhs)) {
       int myprec = binaryOps[text];
-      const string& otherop = binopRHS->op;
+      const string otherop = binopRHS->op;
       int theirprec = binaryOps[otherop];
       std::cout << "precedence is " << text << " : " << myprec << " vs " << otherop << " : " << theirprec << std::endl;
-      if (myprec < theirprec) { // we bind tighter, steal their lhs
+      if (!override && myprec < theirprec) { // we bind tighter, steal their lhs
         // (lhs op rhs-lhs) rhs-op (rhs-rhs)
         ExprAST* rhs_lhs = binopRHS->parts[binopRHS->kLHS];
         ExprAST* rhs_rhs = binopRHS->parts[binopRHS->kRHS];
+        delete binopRHS;
         return new BinaryOpExprAST(otherop, new BinaryOpExprAST(text, lhs, rhs_lhs), rhs_rhs);
       } else {
         // (lhs) op (rhs-lhs rhs-op rhs-rhs)

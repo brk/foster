@@ -14,8 +14,8 @@ tokens {
 
 	FN; OUT; BODY; GIVEN; GIVES; SEQ; INT; RAT; EXPRS; NAME; CTOR;
 	TRAILERS; CALL; TUPLE; SUBSCRIPT; LOOKUP; FORMAL; ARRAY; SIMD;
-	LETEXPR;
-}
+	LETEXPR; PARENEXPR;
+	}
 
 program			:	nl* expr (nl+ expr)* nl* EOF -> ^(EXPRS expr+);
 
@@ -45,8 +45,9 @@ letexpr	:	'let' formal '=' arg=expr
 ifexpr                  :       'if' cond=expr 'then' thenpart=expr 'else' elsepart=expr
 					-> ^(IF $cond $thenpart $elsepart);
 					
-custom_terms		:	'(' expr ')' -> expr
+custom_terms		:	parenexpr
                                 | prefix_unop nl? expr -> ^(prefix_unop expr);
+parenexpr	:	'(' expr ')' -> ^(PARENEXPR expr);
                                 
 sugarterm	:	letexpr;
 
