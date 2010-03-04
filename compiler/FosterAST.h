@@ -333,9 +333,11 @@ struct BinaryOpExprAST : public BinaryExprAST {
   virtual std::ostream& operator<<(std::ostream& out) const {
     ExprAST* LHS = this->parts[kLHS];
     ExprAST* RHS = this->parts[kRHS];
+    out << "(";
     if (LHS) out << *LHS; else out << "<nil>";
     out << ' ' << op << ' ';
     if (RHS) out << *RHS; else out << "<nil>";
+    out << ")";
     return out;
   }
 };

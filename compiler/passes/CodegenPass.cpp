@@ -122,6 +122,7 @@ void CodegenPass::visit(BinaryOpExprAST* ast) {
   else if (op == "*") { ast->value = builder.CreateMul(VL, VR, "multmp"); }
   
   else if (op == "<") { ast->value = builder.CreateICmpSLT(VL, VR, "slttmp"); }
+  else if (op == "<=") { ast->value = builder.CreateICmpSLE(VL, VR, "sletmp"); }
   else if (op == "==") { ast->value = builder.CreateICmpEQ(VL, VR, "eqtmp"); }
   else if (op == "!=") { ast->value = builder.CreateICmpNE(VL, VR, "netmp"); }
   

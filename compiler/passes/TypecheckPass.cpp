@@ -89,8 +89,10 @@ void TypecheckPass::visit(IntAST* ast) {
               << activeBits << " bits to represent." << std::endl;
     return;
   } else {
-    std::cerr << "Integer literal '" << ast->Text << "' requires "
+#   if 0
+      std::cerr << "Integer literal '" << ast->Text << "' requires "
                   << activeBits << " bits to represent." << std::endl;
+#   endif
   }
   
   ast->type = LLVMintTypeForNBits(activeBits);
@@ -180,7 +182,7 @@ void TypecheckPass::visit(BinaryOpExprAST* ast) {
       }
     }
 
-    if (op == "<" || op == "==" || op == "!=") {
+    if (op == "<" || op == "==" || op == "!=" || op == "<=") {
       ast->type = LLVMTypeFor("i1");
     } else {
       ast->type = TL;

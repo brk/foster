@@ -50,14 +50,26 @@ pTree child(pTree tree, int i) { return (pTree) tree->getChild(tree, i); }
 Exprs getExprs(pTree tree, int depth, bool infn);
 std::ostream& operator<<(std::ostream& out, Exprs& f) { return out << join("", f); }
 
-std::map<string, bool> binaryOps;
+std::map<string, int> binaryOps;
 std::map<string, bool> keywords;
 std::map<string, bool> reserved_keywords;
-const char* c_binaryOps[] = {
-  "<=", "<", "==",
-  "*", "+", "/", "-",
-  "bitand", "bitor", "bitxor", "shl", "lshr", "ashr",
-  "=" }; // ".."
+struct opspec { const char* op; int precedence; };
+opspec c_binaryOps[] = {
+    { "/", 20 },
+    { "*", 20 },
+    { "+", 25 },
+    { "-", 25 },
+    { "bitand", 30 },
+    { "bitor", 30 },
+    { "bitxor", 30 },
+    { "shl", 40 },
+    { "lshr", 40 },
+    { "ashr", 40 },
+    { "<=", 50 },
+    { "<", 50 },
+    { "==", 60 },
+    { "=", 70 }
+}; // ".."
 const char* c_keywords[] = { "as" , "at" , "def" , "id", "in", "is", "it", "to",
   "given" , "false" , "if" , "match" , "do" , "new" , "nil",
   "gives" , "and" , "or" , "true" , "var" , "while"
@@ -68,15 +80,20 @@ const char* c_reserved_keywords[] = {
   "return", "throw", "trait", "try", "type", "val", "with", "yield"
 };
 
+#ifndef ARRAY_SIZE
+#define ARRAY_SIZE(a) (sizeof(a)/sizeof(((a)[0])))
+#endif
+
 void initMaps() {
-  for (int i = 0; i < sizeof(c_binaryOps)/sizeof(char*); ++i) {
-    binaryOps[c_binaryOps[i]] = true;
+  for (int i = 0; i < ARRAY_SIZE(c_binaryOps); ++i) {
+    binaryOps[c_binaryOps[i].op] = c_binaryOps[i].precedence;
   }
-  for (int i = 0; i < sizeof(c_keywords)/sizeof(char*); ++i) {
+
+  for (int i = 0; i < ARRAY_SIZE(c_keywords); ++i) {
     keywords[c_keywords[i]] = true;
   }
 
-  for (int i = 0; i < sizeof(c_reserved_keywords)/sizeof(char*); ++i) {
+  for (int i = 0; i < ARRAY_SIZE(c_reserved_keywords); ++i) {
     reserved_keywords[c_reserved_keywords[i]] = true;
   }
 
@@ -360,10 +377,30 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
   if (token == COMPILES) { return new BuiltinCompilesExprAST(ExprAST_from(child(tree, 0), depth, infn)); }
   if (token == UNPACK)   { return new UnpackExprAST(ExprAST_from(child(tree, 0), depth + 1, infn)); }
   
-  if (binaryOps[text]) {
-    return new BinaryOpExprAST(text, ExprAST_from(child(tree, 0), depth + 1, infn),
-                                     ExprAST_from(child(tree, 1), depth + 1, infn));
+  if (binaryOps[text] > 0) {
+    ExprAST* lhs = ExprAST_from(child(tree, 0), depth + 1, infn);
+    ExprAST* rhs = ExprAST_from(child(tree, 1), depth + 1, infn);
+    std::cout << "saw binary operator " << text << " with lhs " << (*lhs) << " and rhs " << (*rhs) << std::endl;
+    if (BinaryOpExprAST* binopRHS = dynamic_cast<BinaryOpExprAST*>(rhs)) {
+      int myprec = binaryOps[text];
+      const string& otherop = binopRHS->op;
+      int theirprec = binaryOps[otherop];
+      std::cout << "precedence is " << text << " : " << myprec << " vs " << otherop << " : " << theirprec << std::endl;
+      if (myprec < theirprec) { // we bind tighter, steal their lhs
+        // (lhs op rhs-lhs) rhs-op (rhs-rhs)
+        ExprAST* rhs_lhs = binopRHS->parts[binopRHS->kLHS];
+        ExprAST* rhs_rhs = binopRHS->parts[binopRHS->kRHS];
+        return new BinaryOpExprAST(otherop, new BinaryOpExprAST(text, lhs, rhs_lhs), rhs_rhs);
+      } else {
+        // (lhs) op (rhs-lhs rhs-op rhs-rhs)
+        return new BinaryOpExprAST(text, lhs, rhs);
+      }
+    } else {
+      // (lhs) op (rhs)
+      return new BinaryOpExprAST(text, lhs, rhs);
+    }
   }
+
   if (token == IF) {
     return new IfExprAST(ExprAST_from(child(tree, 0), depth+1, infn),
                          ExprAST_from(child(tree, 1), depth+1, infn),
