@@ -82,6 +82,12 @@ string join(string glue, Exprs args) {
   return ss.str();
 }
 
+string str(ExprAST* expr) {
+  if (expr) {
+    std::stringstream ss; ss << (*expr); return ss.str();
+  } else { return "<nil>"; }
+}
+
 std::map<string, const Type*> builtinTypes;
 
 const Type* LLVMTypeFor(const string& name) {

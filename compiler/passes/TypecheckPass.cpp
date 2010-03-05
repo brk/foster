@@ -18,6 +18,7 @@ using llvm::ConstantInt;
 
 #include <vector>
 #include <map>
+#include <cassert>
 
 using std::vector;
 
@@ -190,9 +191,36 @@ void TypecheckPass::visit(BinaryOpExprAST* ast) {
   }
 }
 
+const llvm::StructType* getSpecificEnvTypeFor(const FunctionType* fnty) {
+  std::vector<const Type*> envTypes;
+  unsigned n = fnty->getNumParams();
+  for (int i = 0; i < n; ++i) {
+    envTypes.push_back(fnty->getParamType(i));
+  }
+  return llvm::StructType::get(getGlobalContext(), envTypes, /*isPacked=*/ false);
+}
+
+const Type* specificClosureTypeFor(const FunctionType* fnty) {
+  const llvm::StructType* envTy = getSpecificEnvTypeFor(fnty);
+  const llvm::PointerType* envPtrTy = llvm::PointerType::get(envTy, 0);
+
+  std::vector<const Type*> fnParams;
+  fnParams.push_back(envPtrTy);
+  const FunctionType* newFnTy = FunctionType::get(fnty->getReturnType(), fnParams, /*isVarArg=*/ false);
+
+  std::vector<const Type*> cloTypes;
+  cloTypes.push_back(llvm::PointerType::get(newFnTy, 0));
+  cloTypes.push_back(envPtrTy);
+  const llvm::StructType* cloTy = llvm::StructType::get(getGlobalContext(), cloTypes, /*isPacked=*/ false);
+
+  return cloTy;
+}
+
 void TypecheckPass::visit(PrototypeAST* ast) {
   vector<const Type*> argTypes;
   for (int i = 0; i < ast->inArgs.size(); ++i) {
+    assert(ast->inArgs[i] != NULL);
+
     if (ast->inArgs[i]->noFixedType()) {
       return;
     }
@@ -203,6 +231,15 @@ void TypecheckPass::visit(PrototypeAST* ast) {
         << "null type for arg '" << ast->inArgs[i]->Name << "'" << std::endl;
       return;
     }
+
+    // Convert function types to their associated specific closure types,
+    // because LLVM isn't happy about passing a function directly.
+    if (const FunctionType* fnty = llvm::dyn_cast<const FunctionType>(ty)) {
+      //ty = specificClosureTypeFor(fnty);
+      ty = llvm::PointerType::get(fnty, 0);
+    }
+
+    std::cout << "\t\targ " << i << " : " << *ty << std::endl;
     argTypes.push_back(ty);
   }
 
@@ -216,20 +253,30 @@ void TypecheckPass::visit(PrototypeAST* ast) {
   if (!ast->resultTy) {
    std::cerr << "Error in typechecking PrototypeAST " << ast->Name << ": null return type!" << std::endl;
   } else {
+    std::cout << "# argtypes: " << argTypes.size() << std::endl;
     ast->type = FunctionType::get(ast->resultTy, argTypes, false);
   }
 }
 
 void TypecheckPass::visit(FnAST* ast) {
+  assert(ast->Proto != NULL);
   ast->Proto->accept(this); bool p = ast->Proto->type != NULL;
-  ast->Body->accept(this);  bool b = ast->Body->type  != NULL;
   
-  if (p && b) {
+  if (ast->Body != NULL) {
+    ast->Body->accept(this);  bool b = ast->Body->type  != NULL;
+
+    if (p && b) {
+      ast->type = ast->Proto->type;
+    }
+  } else {
+    // Probably looking at a function type expr. TODO trust but verify
     ast->type = ast->Proto->type;
   }
 }
 
 void TypecheckPass::visit(IfExprAST* ast) {
+  assert(ast->ifExpr != NULL);
+
   ast->ifExpr->accept(this);
   const Type* ifType = ast->ifExpr->type;
   if (!ifType) {
@@ -408,6 +455,14 @@ void TypecheckPass::visit(CallAST* ast) {
   for (int i = 0; i < numParams; ++i) {
     const Type* formalType = baseFT->getParamType(i);
     const Type* actualType = actualTypes[i];
+
+    // Temporarily view a function type as its associated specific closure type,
+    // since the formal arguments will have undergone the same conversion.
+    if (const FunctionType* fnty = llvm::dyn_cast<const FunctionType>(actualType)) {
+      //actualType = specificClosureTypeFor(fnty);
+      actualType = llvm::PointerType::get(fnty, 0);
+    }
+
     // Note: order here is important! We check conversion from
     // actual to formal, not the other way 'round...
     if (!isCompatible(actualType, formalType)) {

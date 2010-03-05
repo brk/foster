@@ -1,0 +1,12 @@
+// IN: 42 
+
+run-it = fn (f:fn()) {
+  f()
+}
+
+// This just tests passing of (lambda-lifted) function pointers,
+// since the anonymous function defined below is trivially closed. 
+
+fn "main" () {
+  run-it( fn () { read_i32() } )
+}

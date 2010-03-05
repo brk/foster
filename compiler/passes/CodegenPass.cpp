@@ -10,6 +10,8 @@
 #include "llvm/Module.h"
 #include "llvm/Analysis/Verifier.h"
 
+#include <cassert>
+
 using llvm::Type;
 using llvm::BasicBlock;
 using llvm::Function;
@@ -159,6 +161,7 @@ void CodegenPass::visit(PrototypeAST* ast) {
   for (int i = 0; i != ast->inArgs.size(); ++i, ++AI) {
     AI->setName(ast->inArgs[i]->Name);
     scope.insert(ast->inArgs[i]->Name, AI);
+
     std::cout << "Fn param " << ast->inArgs[i]->Name << " ; " 
               << ast->inArgs[i] << " has val " << ast->inArgs[i]->value 
               << ", associated with " << AI << std::endl;
@@ -172,6 +175,8 @@ void CodegenPass::visit(SeqAST* ast) { ast->value = ast->parts.back()->value; }
 
 void CodegenPass::visit(FnAST* ast) {
   std::cout << "Pushing scope ... " << ast->Proto->Name  << std::endl;
+  assert(ast->Body != NULL);
+
   scope.pushScope("fn " + ast->Proto->Name);
   (ast->Proto)->accept(this);
   Function* F = llvm::dyn_cast<Function>(ast->Proto->value);
@@ -187,6 +192,8 @@ void CodegenPass::visit(FnAST* ast) {
 
   (ast->Body)->accept(this);
   Value* RetVal = ast->Body->value;
+  if (RetVal == NULL) std::cerr << "Oops, null body value in fn " << ast->Proto->Name << std::endl;
+  assert (RetVal != NULL);
   
   // If we try to return a tuple* when the fn specifies a tuple, manually insert a load
   if (RetVal->getType()->isDerivedType()
@@ -352,22 +359,35 @@ void tempHackExtendIntTypes(const FunctionType* FT, std::vector<Value*>& valArgs
   // expect_i1 wrapper. And, eventually, implement libfoster in foster ;-)
 }
 
+const FunctionType* tryExtractFunctionPointerType(Value* FV) {
+  const llvm::PointerType* fp = llvm::dyn_cast_or_null<llvm::PointerType>(FV->getType());
+  if (fp == NULL) return NULL;
+  return llvm::dyn_cast<FunctionType>(fp->getElementType());
+}
+
 void CodegenPass::visit(CallAST* ast) {
   //std::cout << "\t" << "Codegen CallAST "  << (ast->base) << std::endl;
   //std::cout << "\t\t\t"  << *(ast->base) << std::endl;
   
   ExprAST* base = ast->parts[0];
+  assert (base != NULL);
+
   base->accept(this);
   Value* FV = base->value;
-  
-  Function* F = llvm::dyn_cast_or_null<Function>(FV);
-  if (!F) {
+  const FunctionType* FT = NULL;
+
+  if (Function* F = llvm::dyn_cast_or_null<Function>(FV)) {
+    // Call to top level function
+    FT = F->getFunctionType();
+  } else if (FT = tryExtractFunctionPointerType(FV)) {
+    // Call to function pointer
+  } else {
+    // Call to something we don't know how to call!
     std::cerr << "base: " << *base << "; FV: " << FV << std::endl;
-    std::cerr << "Unknown function referenced";
+    std::cerr << "Unknown function referenced!" << std::endl;
+
     return;
   }
-  
-  const FunctionType* FT = F->getFunctionType();
   
   std::vector<Value*> valArgs;
   for (int i = 1, argNum = 0; i < ast->parts.size(); ++i) {
@@ -393,15 +413,16 @@ void CodegenPass::visit(CallAST* ast) {
     }
   }
   
-  if (F->arg_size() != valArgs.size()) {
-    std::cerr << "Function " << *base <<  " got " << valArgs.size() << " args, expected "<< F->arg_size();
+  int expectedNumArgs = FT->getNumParams();
+  if (expectedNumArgs != valArgs.size()) {
+    std::cerr << "Function " << *base <<  " got " << valArgs.size() << " args, expected "<< expectedNumArgs;
     return;
   }
   
   // Temporary hack: if a function expects i8 and we have i1, manually convert
   tempHackExtendIntTypes(FT, valArgs);
   
-  ast->value = builder.CreateCall(F, valArgs.begin(), valArgs.end(), "calltmp");
+  ast->value = builder.CreateCall(FV, valArgs.begin(), valArgs.end(), "calltmp");
 }
 
 void CodegenPass::visit(ArrayExprAST* ast) {

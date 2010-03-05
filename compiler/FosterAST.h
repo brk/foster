@@ -43,6 +43,7 @@ extern llvm::IRBuilder<> builder;
 extern Module* module;
 
 string join(string glue, Exprs args);
+string str(ExprAST* expr);
 
 const Type* LLVMTypeFor(const string& name);
 void initModuleTypeNames();
@@ -318,10 +319,7 @@ struct UnaryOpExprAST : public UnaryExprAST {
   explicit UnaryOpExprAST(string op, ExprAST* body) : UnaryExprAST(body), op(op) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    out << '(' << op << ' ';
-    if (this->parts[0]) out << *this->parts[0]; else out << "<nil>";
-    out << ')';
-    return out;
+    return out << '(' << op << ' ' << str(this->parts[0]) << ")";
   }
 };
 
@@ -333,12 +331,7 @@ struct BinaryOpExprAST : public BinaryExprAST {
   virtual std::ostream& operator<<(std::ostream& out) const {
     ExprAST* LHS = this->parts[kLHS];
     ExprAST* RHS = this->parts[kRHS];
-    out << "(";
-    if (LHS) out << *LHS; else out << "<nil>";
-    out << ' ' << op << ' ';
-    if (RHS) out << *RHS; else out << "<nil>";
-    out << ")";
-    return out;
+    return out << "(" << str(LHS) << " " << op << " "  << str(RHS) << ")";
   }
 };
 
@@ -354,7 +347,7 @@ struct CallAST : public ExprAST {
     if (this->parts[0]) out << *this->parts[0]; else out << "<nil>";
     out << "(";
     for (int i = 1; i < this->parts.size(); ++i) {
-      out << " " << *this->parts[i];
+      out << " " << str(this->parts[i]);
     }
     return out << ")";
   }
@@ -366,10 +359,8 @@ struct SeqAST : public ExprAST {
   virtual std::ostream& operator<<(std::ostream& out) const {
     out << "{ ";
     for (int i = 0; i < this->parts.size(); ++i) {
-      if (this->parts[i]) {
-        if (i > 0) out << " ;\n";
-        out << *this->parts[i];
-      }
+      if (i > 0) out << " ;\n";
+      out << str(this->parts[i]);
     }
     return out << " }";
   }
@@ -381,10 +372,7 @@ struct TupleExprAST : public UnaryExprAST {
   }
   virtual void accept(FosterASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    if (!this->parts[0]) {
-      return out << "(tuple)";
-    }
-    return out << "(tuple " << *(this->parts[0]) << ")";
+    return out << "(tuple " << str(this->parts[0]) << ")";
   }
 };
 
@@ -392,10 +380,7 @@ struct ArrayExprAST : public UnaryExprAST {
   explicit ArrayExprAST(ExprAST* expr) : UnaryExprAST(expr) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    if (!this->parts[0]) {
-      return out << "(array)";
-    }
-    return out << "(array " << *(this->parts[0]) << ")";
+    return out << "(array " << str(this->parts[0]) << ")";
   }
 };
 
@@ -404,10 +389,7 @@ struct SimdVectorAST : public UnaryExprAST {
   explicit SimdVectorAST(ExprAST* expr) : UnaryExprAST(expr) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    if (!this->parts[0]) {
-      return out << "(simd-vector)";
-    }
-    return out << "(simd-vector " << *(this->parts[0]) << ")";
+    return out << "(simd-vector " << str(this->parts[0]) << ")";
   }
 };
 
@@ -416,10 +398,7 @@ struct SubscriptAST : public BinaryExprAST {
   explicit SubscriptAST(ExprAST* base, ExprAST* index) : BinaryExprAST(base, index) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    if (this->parts[0]) { out << *(this->parts[0]); } else { out << "<nil>"; }
-    out << "[";
-    if (this->parts[1]) { out << *(this->parts[1]); } else { out << "<nil>"; }
-    return out << "]";
+    out << str(this->parts[0]) << "[" << str(this->parts[1]) << "]";
   }
 };
 
@@ -464,7 +443,7 @@ struct PrototypeAST : public ExprAST {
   virtual std::ostream& operator<<(std::ostream& out) const {
     out << "fn" << " " << Name << "(";
     for (int i = 0; i < inArgs.size(); ++i) {
-      out << inArgs[i]->Name << " ";
+      out << str(inArgs[i]) << " ";
     }
     if (resultTy != NULL) {
       out << " to " << (*resultTy);
@@ -482,7 +461,7 @@ struct FnAST : public ExprAST {
   explicit FnAST(PrototypeAST* proto, ExprAST* body) : Proto(proto), Body(body), wasNested(false) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << (*Proto) << " " << (*Body) << endl;
+    return out << str(Proto) << " " << str(Body) << endl;
   }
 };
 
@@ -492,13 +471,8 @@ struct IfExprAST : public ExprAST {
     : ifExpr(ifExpr), thenExpr(thenExpr), elseExpr(elseExpr) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    out << "if (";
-    if (ifExpr) out << *ifExpr; else out << "<nil>";
-    out << ") ";
-    if (thenExpr) out << *thenExpr; else out << "<nil>";
-    out << " else ";
-    if (elseExpr) out << *elseExpr; else out << "<nil>";
-    return out;
+    return out << "if (" << str(ifExpr) << ")" <<
+        " then " << str(thenExpr) << " else " << str(elseExpr);
   }
 };
 
@@ -506,7 +480,7 @@ struct UnpackExprAST : public UnaryExprAST {
   explicit UnpackExprAST(ExprAST* expr) : UnaryExprAST(expr) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "(unpack " << *(this->parts[0]) << ")";
+    return out << "(unpack " << str(this->parts[0]) << ")";
   }
 };
 
@@ -516,11 +490,7 @@ struct BuiltinCompilesExprAST : public UnaryExprAST {
   // Must manually visit children (for typechecking) because we don't want to codegen our children!
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    if (this->parts[0]) {
-      return out << "(__COMPILES__ " << *(this->parts[0]) << ")";
-    } else {
-      return out << "(__COMPILES__ <nil>)";
-    }
+    return out << "(__COMPILES__ " << str(this->parts[0]) << ")";
   }
 };
 

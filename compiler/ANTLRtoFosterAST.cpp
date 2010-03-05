@@ -168,7 +168,7 @@ VariableAST* parseFormal(pTree tree, int depth, bool infn) {
   if (getChildCount(tree) == 2) {
     ExprAST* tyExpr = ExprAST_from(child(tree, 1), depth + 1, infn);
     if (tyExpr) {
-      std::cout << "\tParsed formal " << varName << " with type expr " << *tyExpr << std::endl;
+      std::cout << "\tParsed formal " << varName << " with type expr " << str(tyExpr) << std::endl;
     } else {
       std::cout << "\tParsed formal " << varName << " with null type expr " << std::endl;
     }
@@ -195,6 +195,8 @@ FnAST* buildFn(string name, pTree bodyTree, int depth,
   varScope.pushScope("fn proto " + name);
     PrototypeAST* proto = new PrototypeAST(name, in, tyExpr);
     
+    std::cout << "type checking fn proto " << name << std::endl;
+
     { TypecheckPass tyPass; proto->accept(&tyPass); }
 
     VariableAST* fnRef;
@@ -203,8 +205,7 @@ FnAST* buildFn(string name, pTree bodyTree, int depth,
     } else {
       std::cout << "Type checking proto " << name << " produced no type; in was: " << endl;
       for (int i = 0; i < in.size(); ++i) {
-        if (in[i]) { std::cout << *in[i] << std::endl; }
-        else { std::cout << "<nil>" << std::endl; }
+        std::cout << str(in[i]) << std::endl;
       }
       fnRef = new VariableAST(name);
     }
