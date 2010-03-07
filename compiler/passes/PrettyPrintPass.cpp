@@ -4,6 +4,7 @@
 
 #include "PrettyPrintPass.h"
 #include "FosterAST.h"
+#include <cassert>
 
 ////////////////////////////////////////////////////////////////////
 
@@ -22,9 +23,14 @@ void PrettyPrintPass::visit(IntAST* ast) {
 // name (: type)
 void PrettyPrintPass::visit(VariableAST* ast) {
   scan(PPToken(ast->Name));
-  if (false && ast->tyExpr) {
+  if (this->printVarTypes) {
     scan(PPToken(":"));
-    ast->tyExpr->accept(this);
+    /*if (ast->tyExpr) {
+      ast->tyExpr->accept(this);
+    } else*/ if (ast->type) {
+      std::stringstream ss; ss << *(ast->type);
+      scan(PPToken(ss.str()));
+    }
   }
 }
 
@@ -58,7 +64,9 @@ void PrettyPrintPass::visit(PrototypeAST* ast) {
   scan(PPToken("("));
   for (int i = 0; i < ast->inArgs.size(); ++i) {
     scan(PPToken(" "));
-    scan(PPToken(ast->inArgs[i]->Name));
+    this->printVarTypes = true;
+    ast->inArgs[i]->accept(this);
+    this->printVarTypes = false;
   }
   if (ast->resultTy != NULL) {
     scan(PPToken(" to "));
@@ -77,6 +85,12 @@ void PrettyPrintPass::visit(FnAST* ast) {
   ast->Proto->accept(this);
   ast->Body->accept(this);
   if (isTopLevelFn) { scan(tNewline); }
+}
+
+void PrettyPrintPass::visit(ClosureAST* ast) {
+  scan(PPToken("<closure "));
+  scan(PPToken(str(ast->fnRef->type)));
+  scan(PPToken(">"));
 }
 
 // if $0 { $1 } else { $2 }

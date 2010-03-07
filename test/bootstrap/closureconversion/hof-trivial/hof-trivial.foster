@@ -8,5 +8,6 @@ run-it = fn (f:fn()) {
 // since the anonymous function defined below is trivially closed. 
 
 fn "main" () {
-  run-it( fn () { read_i32() } )
+  expect_i32(42)
+  print_i32(run-it( fn () { read_i32() } ))
 }

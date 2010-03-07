@@ -3,6 +3,7 @@
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
 #include "FosterAST.h"
+#include "TypecheckPass.h"
 
 #include "llvm/Target/TargetSelect.h"
 #include "llvm/Module.h"
@@ -131,7 +132,17 @@ void FosterASTVisitor::onVisitChild(ExprAST* ast, ExprAST* child) {
   child->accept(this);
 }
 
-llvm::APInt IntAST::getAPInt() { return APInt(this->type->getScalarSizeInBits(), Clean, Base); }
+IntAST* literalIntAST(int lit) {
+  std::stringstream ss; ss << lit;
+  IntAST* rv = new IntAST(string(ss.str()), string(ss.str()), 10);
+  // Assign the proper (smallest) int type to the literal
+  { TypecheckPass tc; rv->accept(&tc); }
+  return rv;
+}
+
+llvm::APInt IntAST::getAPInt() {
+  return APInt(this->type->getScalarSizeInBits(), Clean, Base);
+}
 
 llvm::Constant* IntAST::getConstantValue() {
   return ConstantInt::get(this->type, this->getAPInt());

@@ -3,6 +3,7 @@
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
 #include "CodegenPass.h"
+#include "TypecheckPass.h"
 #include "FosterAST.h"
 
 #include "llvm/DerivedTypes.h"
@@ -141,6 +142,12 @@ void CodegenPass::visit(BinaryOpExprAST* ast) {
 }
 
 void CodegenPass::visit(PrototypeAST* ast) {
+  if (ast->value) {
+    std::cout << "Already codegenned " << ast->Name << std::endl;
+    // Already codegenned!
+    return;
+  }
+
   std::cout << "\t" << "Codegen proto "  << ast->Name << std::endl;
   const llvm::FunctionType* FT = llvm::dyn_cast<FunctionType>(ast->type);
   Function* F = Function::Create(FT, Function::ExternalLinkage, ast->Name, module);
@@ -169,6 +176,8 @@ void CodegenPass::visit(PrototypeAST* ast) {
 
   std::cout << "\tdone codegen proto " << ast->Name << std::endl;
   ast->value = F;
+
+  scope.insert(ast->Name, F);
 }
 
 void CodegenPass::visit(SeqAST* ast) {
@@ -180,16 +189,15 @@ void CodegenPass::visit(SeqAST* ast) {
 }
 
 void CodegenPass::visit(FnAST* ast) {
-  std::cout << "Pushing scope ... " << ast->Proto->Name  << std::endl;
+
   assert(ast->Body != NULL);
 
-  scope.pushScope("fn " + ast->Proto->Name);
   (ast->Proto)->accept(this);
   Function* F = llvm::dyn_cast<Function>(ast->Proto->value);
   if (!F) { return; }
-  
-  // Insert in function-local scope for recursive calls to work
-  scope.insert(ast->Proto->Name, F);
+
+  std::cout << "Pushing scope ... " << ast->Proto->Name  << std::endl;
+  scope.pushScope("fn " + ast->Proto->Name);
 
   this->insertPointStack.push(builder.GetInsertBlock());
 
@@ -210,8 +218,6 @@ void CodegenPass::visit(FnAST* ast) {
   std::cout << "Popping scope ... " << ast->Proto->Name  << std::endl;
   scope.popScope();
   
-  // Insert in parent scope for references from later functions to work
-  scope.insert(ast->Proto->Name, F);
   std::cerr << "Function '" << ast->Proto->Name << "' rv = " << RetVal << std::endl;
   
   if (RetVal) {
@@ -227,6 +233,74 @@ void CodegenPass::visit(FnAST* ast) {
   BasicBlock* prevBlock = this->insertPointStack.top(); this->insertPointStack.pop();
   if (prevBlock) {
     builder.SetInsertPoint(prevBlock);
+  }
+}
+
+// converts t1 (t2, t3) to { t1 (i8*)*, i8* }
+const llvm::StructType* cpgenericClosureTypeFor(const FunctionType* fnty) {
+  const Type* envType = llvm::PointerType::get(LLVMTypeFor("i8"), 0);
+
+  std::vector<const Type*> fnParams;
+  fnParams.push_back(envType);
+
+  const Type* fnTy = llvm::FunctionType::get(fnty->getReturnType(), fnParams, /*isVarArg=*/ false);
+  std::vector<const Type*> cloTypes;
+  cloTypes.push_back(llvm::PointerType::get(fnTy, 0));
+  cloTypes.push_back(envType);
+  return llvm::StructType::get(getGlobalContext(), cloTypes, /*isPacked=*/ false);
+}
+
+// converts   rt (envptrty)   to   { rt (envptrty)*, envptrty }
+// TODO handle functions of native arity >= 1
+const Type* closureTypeFromClosedFnType(const FunctionType* fnty) {
+  const Type* envPtrTy = fnty->getParamType(0);
+
+  std::vector<const Type*> cloTypes;
+  cloTypes.push_back(llvm::PointerType::get(fnty, 0));
+  cloTypes.push_back(envPtrTy);
+  const llvm::StructType* cloTy = llvm::StructType::get(getGlobalContext(), cloTypes, /*isPacked=*/ false);
+
+  std::cout << "Specific closure, fn ty: " << *fnty << std::endl;
+  std::cout << "Specific closure, env ty: " << *envPtrTy << std::endl;
+  std::cout << "Specific closure, cloty: " << *cloTy << std::endl;
+  return cloTy;
+}
+
+
+void CodegenPass::visit(ClosureAST* ast) {
+  ExprAST* env = new TupleExprAST(new SeqAST(ast->parts));
+  { TypecheckPass tp;
+    env->accept(&tp);
+    env->accept(this);
+
+    ast->fnRef->accept(&tp);
+    ast->fnRef->accept(this);
+  }
+
+  assert(ast->fnRef->type != NULL);
+  if (const llvm::PointerType* pfnTy = llvm::dyn_cast<const llvm::PointerType>(ast->fnRef->type)) {
+    if (const FunctionType* fnTy = llvm::dyn_cast<const FunctionType>(pfnTy->getContainedType(0))) {
+
+      // Manually build struct for now, since we don't have PtrAST nodes
+      const Type* specificCloTy = closureTypeFromClosedFnType(fnTy);
+      const llvm::StructType* cloTy = cpgenericClosureTypeFor(fnTy);
+
+      llvm::AllocaInst* clo = builder.CreateAlloca(cloTy, 0, "closure");
+
+      Value* clo_code = builder.CreateConstGEP2_32(clo, 0, 0, "clo_code");
+      Value* bc_fnptr = builder.CreateBitCast(ast->fnRef->value, cloTy->getContainedType(0), "hideclofnty");
+      builder.CreateStore(bc_fnptr, clo_code, /*isVolatile=*/ false);
+
+      Value* clo_env = builder.CreateConstGEP2_32(clo, 0, 1, "clo_env");
+      Value* bc_envptr = builder.CreateBitCast(env->value, cloTy->getContainedType(1), "hidecloenvty");
+      builder.CreateStore(bc_envptr, clo_env, /*isVolatile=*/ false);
+
+      ast->value = clo;
+    }
+  }
+
+  if (!ast->value) {
+    std::cerr << "Closure fn ref had non-function pointer type?!? " << *(ast->fnRef->type) << std::endl;
   }
 }
 
@@ -372,14 +446,17 @@ const FunctionType* tryExtractFunctionPointerType(Value* FV) {
 }
 
 void CodegenPass::visit(CallAST* ast) {
-  //std::cout << "\t" << "Codegen CallAST "  << (ast->base) << std::endl;
-  //std::cout << "\t\t\t"  << *(ast->base) << std::endl;
-  
   ExprAST* base = ast->parts[0];
   assert (base != NULL);
 
+  std::cout << "\t" << "Codegen CallAST "  << (base) << std::endl;
+  //std::cout << "\t\t\tbase ast: "  << *(base) << std::endl;
+
+  // TODO if base has closure type, it should be a ClosureAST node
+
   base->accept(this);
   Value* FV = base->value;
+
   const FunctionType* FT = NULL;
 
   if (Function* F = llvm::dyn_cast_or_null<Function>(FV)) {
@@ -387,14 +464,25 @@ void CodegenPass::visit(CallAST* ast) {
     FT = F->getFunctionType();
   } else if (FT = tryExtractFunctionPointerType(FV)) {
     // Call to function pointer
+  } else if (const llvm::StructType* sty = llvm::dyn_cast<const llvm::StructType>(base->type)) {
+    if (const llvm::PointerType* pt = llvm::dyn_cast<const llvm::PointerType>(sty->getContainedType(0))) {
+      if (const llvm::FunctionType* fty = llvm::dyn_cast<const llvm::FunctionType>(pt->getContainedType(0))) {
+        FT = fty;
+        // Call to closure struct?
+        FV = builder.CreateExtractValue(FV, 0, "subexv");
+      }
+    }
   } else {
     // Call to something we don't know how to call!
-    std::cerr << "base: " << *base << "; FV: " << FV << std::endl;
+    std::cerr << "base: " << *base << "; FV: " << *FV << std::endl;
     std::cerr << "Unknown function referenced!" << std::endl;
+    if (FV != NULL) { std::cerr << "\tFV: "  << *(FV) << std::endl; }
 
     return;
   }
   
+  std::cout << "codegen CallAST base with " << FT->getNumParams() << " params" << std::endl;
+
   std::vector<Value*> valArgs;
   for (int i = 1, argNum = 0; i < ast->parts.size(); ++i) {
     // Args checked for nulls during typechecking
@@ -412,6 +500,11 @@ void CodegenPass::visit(CallAST* ast) {
       return;
     }
     
+    // LLVM will automatically convert a Function Value to a Pointer-to-Function,
+    // so we only have to handle non-trivial closure creation.
+    std::cout << "codegen CallAST arg " << (i-1) << "; argty " << *(arg->type)
+              << " vs fn arg ty " << *(FT->getContainedType(i)) << std::endl;
+
     if (u != NULL) {
       unpackArgs(valArgs, V, FT); // Unpack (recursively) nested structs
     } else {
@@ -428,6 +521,7 @@ void CodegenPass::visit(CallAST* ast) {
   // Temporary hack: if a function expects i8 and we have i1, manually convert
   tempHackExtendIntTypes(FT, valArgs);
   
+  //std::cout << "Creating call for AST {" << valArgs.size() << "} " << *base << std::endl;
   ast->value = builder.CreateCall(FV, valArgs.begin(), valArgs.end(), "calltmp");
 }
 
@@ -517,26 +611,33 @@ void CodegenPass::visit(SimdVectorAST* ast) {
   }
 }
 
+void copyTupleTo(CodegenPass* pass, Value* pt, TupleExprAST* ast) {
+  SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
+  for (int i = 0; i < body->parts.size(); ++i) {
+    Value* dst = builder.CreateConstGEP2_32(pt, 0, i, "gep");
+    ExprAST* part = body->parts[i];
+    part->accept(pass);
+
+    if (TupleExprAST* tu = dynamic_cast<TupleExprAST*>(part)) {
+      copyTupleTo(pass, dst, tu);
+    } else {
+      builder.CreateStore(part->value, dst, /*isVolatile=*/ false);
+    }
+  }
+}
 
 void CodegenPass::visit(TupleExprAST* ast) {
   if (ast->value != NULL) return;
   
+  assert(ast->type != NULL);
+
   // Create struct type underlying tuple
   const Type* tupleType = ast->type;
   module->addTypeName(freshName("tuple"), tupleType);
-  
+
   // Allocate tuple space
   llvm::AllocaInst* pt = builder.CreateAlloca(tupleType, 0, "s");
-  
-  SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
-  for (int i = 0; i < body->parts.size(); ++i) {
-    //std::cout << "Tuple GEP init i = " << i << "/" << body->exprs.size() << std::endl;
-    
-    Value* dst = builder.CreateConstGEP2_32(pt, 0, i, "gep");
-    body->parts[i]->accept(this);
-    builder.CreateStore(body->parts[i]->value, dst, /*isVolatile=*/ false);
-  }
-  
+  copyTupleTo(this, pt, ast);
   ast->value = pt;
 }
 

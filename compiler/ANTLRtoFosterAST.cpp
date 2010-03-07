@@ -284,6 +284,7 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
 
     std::vector<VariableAST*> in; in.push_back(formal);
     FnAST* fn = buildFn(freshName("<anon_fnlet_%d>"), child(tree, 2), depth, in, NULL);
+    fn->lambdaLiftOnly = true;
 
     ExprAST* a = ExprAST_from(child(tree, 1), depth, infn);
     Exprs args; args.push_back(a);

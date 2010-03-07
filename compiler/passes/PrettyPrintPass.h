@@ -36,12 +36,13 @@ struct PrettyPrintPass : public FosterASTVisitor {
     explicit PPToken(const std::string& str) : kind(kString),       str(str) {}
   };
   
+  bool printVarTypes;
   PPToken tBlockOpen, tBlockClose;
   PPToken tIndent, tDedent;
   PPToken tNewline, tOptNewline, tConnNewline;
   
   PrettyPrintPass(std::ostream& out, int width = 80, int indent_width = 2)
-    : out(out), INDENT_WIDTH(indent_width) {
+    : out(out), INDENT_WIDTH(indent_width), printVarTypes(false) {
     tBlockOpen.kind = PPToken::kOpen;
     tBlockClose.kind = PPToken::kClose;
     tIndent.kind = PPToken::kIndent;

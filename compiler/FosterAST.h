@@ -175,6 +175,8 @@ struct IntAST : public ExprAST {
   }
 };
 
+IntAST* literalIntAST(int lit);
+
 struct BoolAST : public ExprAST {
   bool boolValue;
   explicit BoolAST(string val) : boolValue(val == "true") {}
@@ -344,8 +346,7 @@ struct CallAST : public ExprAST {
   // For now, call exprs must manually visit children in case of UnpackExprs
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    if (this->parts[0]) out << *this->parts[0]; else out << "<nil>";
-    out << "(";
+    out << str(this->parts[0]) << "(";
     for (int i = 1; i < this->parts.size(); ++i) {
       out << " " << str(this->parts[i]);
     }
@@ -398,7 +399,7 @@ struct SubscriptAST : public BinaryExprAST {
   explicit SubscriptAST(ExprAST* base, ExprAST* index) : BinaryExprAST(base, index) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    out << str(this->parts[0]) << "[" << str(this->parts[1]) << "]";
+    return out << str(this->parts[0]) << "[" << str(this->parts[1]) << "]";
   }
 };
 
@@ -457,11 +458,35 @@ struct FnAST : public ExprAST {
   PrototypeAST* Proto;
   ExprAST* Body;
   bool wasNested;
+  bool lambdaLiftOnly;
 
-  explicit FnAST(PrototypeAST* proto, ExprAST* body) : Proto(proto), Body(body), wasNested(false) {}
+  explicit FnAST(PrototypeAST* proto, ExprAST* body)
+    : Proto(proto), Body(body), wasNested(false), lambdaLiftOnly(false) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
     return out << str(Proto) << " " << str(Body) << endl;
+  }
+};
+
+// A closure stores a typed function pointer and a typed environment pointer.
+// Its "external" type is a struct of function-taking-generic-env-ptr and
+// generic-env-ptr. This allows type checking to be agnostic of the types stored
+// in the env, while still allowing codegen to insert the appropriate bitcasts.
+struct ClosureAST : public ExprAST {
+  VariableAST* fnRef;
+  Exprs envExprs;
+
+  explicit ClosureAST(VariableAST* fnRef, const Exprs& envExprs)
+    : fnRef(fnRef) {
+    this->parts = envExprs;
+  }
+  virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
+  virtual std::ostream& operator<<(std::ostream& out) const {
+    out << "(closure " << str(fnRef);
+    for (int i = 0; i < envExprs.size(); ++i) {
+      out << "\t" << str(envExprs[i]);
+    }
+    return out << ")";
   }
 };
 

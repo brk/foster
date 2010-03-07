@@ -111,12 +111,14 @@ void TypecheckPass::visit(VariableAST* ast) {
   }
   
   if (ast->tyExpr && ast->type) {
+    /*
     if (ast->tyExpr->type != ast->type) {
       std::cerr << "Error: typechecking variable " << ast->Name << " with both type expr ";
       std::cerr << std::endl << "\t" << *(ast->tyExpr);
       std::cerr << " and type constant "
                 << std::endl << "\t" << *(ast->type) << std::endl;
     }
+    */
     return;
   }
   
@@ -191,28 +193,19 @@ void TypecheckPass::visit(BinaryOpExprAST* ast) {
   }
 }
 
-const llvm::StructType* getSpecificEnvTypeFor(const FunctionType* fnty) {
-  std::vector<const Type*> envTypes;
-  unsigned n = fnty->getNumParams();
-  for (int i = 0; i < n; ++i) {
-    envTypes.push_back(fnty->getParamType(i));
-  }
-  return llvm::StructType::get(getGlobalContext(), envTypes, /*isPacked=*/ false);
-}
-
-const Type* specificClosureTypeFor(const FunctionType* fnty) {
-  const llvm::StructType* envTy = getSpecificEnvTypeFor(fnty);
-  const llvm::PointerType* envPtrTy = llvm::PointerType::get(envTy, 0);
+// converts t1 (t2, t3) to { t1 (i8*)*, i8* }
+const llvm::StructType* genericClosureTypeFor(const FunctionType* fnty) {
+  const Type* envType = llvm::PointerType::get(LLVMTypeFor("i8"), 0);
 
   std::vector<const Type*> fnParams;
-  fnParams.push_back(envPtrTy);
-  const FunctionType* newFnTy = FunctionType::get(fnty->getReturnType(), fnParams, /*isVarArg=*/ false);
+  fnParams.push_back(envType);
 
+  const Type* fnTy = llvm::FunctionType::get(fnty->getReturnType(), fnParams, /*isVarArg=*/ false);
   std::vector<const Type*> cloTypes;
-  cloTypes.push_back(llvm::PointerType::get(newFnTy, 0));
-  cloTypes.push_back(envPtrTy);
+  cloTypes.push_back(llvm::PointerType::get(fnTy, 0));
+  cloTypes.push_back(envType);
   const llvm::StructType* cloTy = llvm::StructType::get(getGlobalContext(), cloTypes, /*isPacked=*/ false);
-
+  //std::cout << "GENERIC CLOSURE TYPE for " << *fnty << " is " << *cloTy << std::endl;
   return cloTy;
 }
 
@@ -220,6 +213,9 @@ void TypecheckPass::visit(PrototypeAST* ast) {
   vector<const Type*> argTypes;
   for (int i = 0; i < ast->inArgs.size(); ++i) {
     assert(ast->inArgs[i] != NULL);
+
+    std::cout << "TyCh Proto " << ast->Name << " arg " << i << "; "
+        << ast->inArgs[i]->Name << ", fixed? " << ast->inArgs[i]->noFixedType() << std::endl;
 
     if (ast->inArgs[i]->noFixedType()) {
       return;
@@ -235,11 +231,10 @@ void TypecheckPass::visit(PrototypeAST* ast) {
     // Convert function types to their associated specific closure types,
     // because LLVM isn't happy about passing a function directly.
     if (const FunctionType* fnty = llvm::dyn_cast<const FunctionType>(ty)) {
-      //ty = specificClosureTypeFor(fnty);
-      ty = llvm::PointerType::get(fnty, 0);
+      ast->inArgs[i]->type = ty = genericClosureTypeFor(fnty);
     }
 
-    std::cout << "\t\targ " << i << " : " << *ty << std::endl;
+    std::cout << "\t\t" << ast->Name << " arg " << i << " : " << *ty << std::endl;
     argTypes.push_back(ty);
   }
 
@@ -271,6 +266,18 @@ void TypecheckPass::visit(FnAST* ast) {
   } else {
     // Probably looking at a function type expr. TODO trust but verify
     ast->type = ast->Proto->type;
+  }
+}
+
+void TypecheckPass::visit(ClosureAST* ast) {
+  ast->fnRef->accept(this);
+  visitChildren(ast);
+
+  if (const llvm::FunctionType* ft = llvm::dyn_cast<const llvm::FunctionType>(ast->fnRef->type)) {
+    ast->type = genericClosureTypeFor(ft);
+  } else {
+    std::cerr << "Error! Function passed to closure does not have function type!" << std::endl;
+    std::cerr << *(ast->fnRef) << std::endl;
   }
 }
 
@@ -394,6 +401,16 @@ void TypecheckPass::visit(SeqAST* ast) {
   ast->type = ast->parts.back()->type;
 }
 
+const llvm::FunctionType* tryExtractCallableType(const Type* ty) {
+  if (const llvm::PointerType* ptrTy = llvm::dyn_cast<llvm::PointerType>(ty)) {
+    // Avoid doing full recursion on pointer types; fn* is callable,
+    // but fn** is not.
+    ty = ptrTy->getContainedType(0);
+  }
+
+  return llvm::dyn_cast_or_null<const llvm::FunctionType>(ty);
+}
+
 void TypecheckPass::visit(CallAST* ast) {
   ExprAST* base = ast->parts[0];
   if (!base) {
@@ -407,10 +424,30 @@ void TypecheckPass::visit(CallAST* ast) {
     std::cerr << "Error: CallAST base expr had null type:\n\t" << *(base) << std::endl;
     return;
   }
-  
-  const llvm::FunctionType* baseFT = llvm::dyn_cast<const llvm::FunctionType>(baseType);
+
+  const llvm::FunctionType* baseFT = tryExtractCallableType(baseType);
   if (baseFT == NULL) {
-    std::cerr << "Error: CallAST base expr had non-function type " << *baseType << std::endl;
+    if (const llvm::StructType* sty = llvm::dyn_cast_or_null<const llvm::StructType>(baseType)) {
+      if (const llvm::PointerType* pt = llvm::dyn_cast<const llvm::PointerType>(sty->getContainedType(0))) {
+        if (const llvm::FunctionType* ft = llvm::dyn_cast<const llvm::FunctionType>(pt->getContainedType(0))) {
+          baseFT = ft;
+
+          /*
+          ast->parts[0] = new SubscriptAST(base, literalIntAST(0));
+          ast->parts[0]->parent = base->parent;
+          ast->parts[0]->type = baseFT;
+          */
+
+          ExprAST* env = new SubscriptAST(base, literalIntAST(1));
+          Exprs::iterator firstArg = ast->parts.begin(); ++firstArg;
+          ast->parts.insert(firstArg, env);
+        }
+      }
+    }
+  }
+
+  if (baseFT == NULL) {
+    std::cerr << "Error: CallAST base expr had non-callable type " << *baseType << std::endl;
     return;
   }
   
@@ -460,7 +497,8 @@ void TypecheckPass::visit(CallAST* ast) {
     // since the formal arguments will have undergone the same conversion.
     if (const FunctionType* fnty = llvm::dyn_cast<const FunctionType>(actualType)) {
       //actualType = specificClosureTypeFor(fnty);
-      actualType = llvm::PointerType::get(fnty, 0);
+      actualType = genericClosureTypeFor(fnty);
+      //actualType = llvm::PointerType::get(fnty, 0);
     }
 
     // Note: order here is important! We check conversion from
@@ -491,7 +529,7 @@ void TypecheckPass::visit(CallAST* ast) {
   }
  
   if (success) {
-    ast->type = llvm::dyn_cast<const llvm::FunctionType>(baseType)->getReturnType();
+    ast->type = baseFT->getReturnType();
   }
 }
 
