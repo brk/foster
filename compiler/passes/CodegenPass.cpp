@@ -171,7 +171,13 @@ void CodegenPass::visit(PrototypeAST* ast) {
   ast->value = F;
 }
 
-void CodegenPass::visit(SeqAST* ast) { ast->value = ast->parts.back()->value; }
+void CodegenPass::visit(SeqAST* ast) {
+  if (ast->parts.empty()) {
+    ast->value = llvm::ConstantInt::get(LLVMTypeFor("i32"), 0);
+  } else {
+    ast->value = ast->parts.back()->value;
+  }
+}
 
 void CodegenPass::visit(FnAST* ast) {
   std::cout << "Pushing scope ... " << ast->Proto->Name  << std::endl;
