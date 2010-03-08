@@ -4,6 +4,7 @@
 
 #include "TypecheckPass.h"
 #include "FosterAST.h"
+#include "FosterUtils.h"
 
 #include "llvm/DerivedTypes.h"
 #include "llvm/LLVMContext.h"
@@ -193,22 +194,6 @@ void TypecheckPass::visit(BinaryOpExprAST* ast) {
   }
 }
 
-// converts t1 (t2, t3) to { t1 (i8*)*, i8* }
-const llvm::StructType* genericClosureTypeFor(const FunctionType* fnty) {
-  const Type* envType = llvm::PointerType::get(LLVMTypeFor("i8"), 0);
-
-  std::vector<const Type*> fnParams;
-  fnParams.push_back(envType);
-
-  const Type* fnTy = llvm::FunctionType::get(fnty->getReturnType(), fnParams, /*isVarArg=*/ false);
-  std::vector<const Type*> cloTypes;
-  cloTypes.push_back(llvm::PointerType::get(fnTy, 0));
-  cloTypes.push_back(envType);
-  const llvm::StructType* cloTy = llvm::StructType::get(getGlobalContext(), cloTypes, /*isPacked=*/ false);
-  //std::cout << "GENERIC CLOSURE TYPE for " << *fnty << " is " << *cloTy << std::endl;
-  return cloTy;
-}
-
 void TypecheckPass::visit(PrototypeAST* ast) {
   vector<const Type*> argTypes;
   for (int i = 0; i < ast->inArgs.size(); ++i) {
@@ -228,8 +213,7 @@ void TypecheckPass::visit(PrototypeAST* ast) {
       return;
     }
 
-    // Convert function types to their associated specific closure types,
-    // because LLVM isn't happy about passing a function directly.
+    // Convert function types to their associated generic closure type.
     if (const FunctionType* fnty = llvm::dyn_cast<const FunctionType>(ty)) {
       ast->inArgs[i]->type = ty = genericClosureTypeFor(fnty);
     }
@@ -273,7 +257,7 @@ void TypecheckPass::visit(ClosureAST* ast) {
   ast->fnRef->accept(this);
   visitChildren(ast);
 
-  if (const llvm::FunctionType* ft = llvm::dyn_cast<const llvm::FunctionType>(ast->fnRef->type)) {
+  if (const llvm::FunctionType* ft = tryExtractCallableType(ast->fnRef->type)) {
     ast->type = genericClosureTypeFor(ft);
   } else {
     std::cerr << "Error! Function passed to closure does not have function type!" << std::endl;
@@ -401,16 +385,6 @@ void TypecheckPass::visit(SeqAST* ast) {
   ast->type = ast->parts.back()->type;
 }
 
-const llvm::FunctionType* tryExtractCallableType(const Type* ty) {
-  if (const llvm::PointerType* ptrTy = llvm::dyn_cast<llvm::PointerType>(ty)) {
-    // Avoid doing full recursion on pointer types; fn* is callable,
-    // but fn** is not.
-    ty = ptrTy->getContainedType(0);
-  }
-
-  return llvm::dyn_cast_or_null<const llvm::FunctionType>(ty);
-}
-
 void TypecheckPass::visit(CallAST* ast) {
   ExprAST* base = ast->parts[0];
   if (!base) {
@@ -428,20 +402,18 @@ void TypecheckPass::visit(CallAST* ast) {
   const llvm::FunctionType* baseFT = tryExtractCallableType(baseType);
   if (baseFT == NULL) {
     if (const llvm::StructType* sty = llvm::dyn_cast_or_null<const llvm::StructType>(baseType)) {
-      if (const llvm::PointerType* pt = llvm::dyn_cast<const llvm::PointerType>(sty->getContainedType(0))) {
-        if (const llvm::FunctionType* ft = llvm::dyn_cast<const llvm::FunctionType>(pt->getContainedType(0))) {
-          baseFT = ft;
+      if (const llvm::FunctionType* ft = tryExtractCallableType(sty->getContainedType(0))) {
+        baseFT = ft;
 
-          /*
-          ast->parts[0] = new SubscriptAST(base, literalIntAST(0));
-          ast->parts[0]->parent = base->parent;
-          ast->parts[0]->type = baseFT;
-          */
+        /*
+        ast->parts[0] = new SubscriptAST(base, literalIntAST(0));
+        ast->parts[0]->parent = base->parent;
+        ast->parts[0]->type = baseFT;
+        */
 
-          ExprAST* env = new SubscriptAST(base, literalIntAST(1));
-          Exprs::iterator firstArg = ast->parts.begin(); ++firstArg;
-          ast->parts.insert(firstArg, env);
-        }
+        ExprAST* env = new SubscriptAST(base, literalIntAST(1));
+        Exprs::iterator firstArg = ast->parts.begin(); ++firstArg;
+        ast->parts.insert(firstArg, env);
       }
     }
   }
@@ -452,7 +424,6 @@ void TypecheckPass::visit(CallAST* ast) {
   }
   
   vector<const Type*> actualTypes;
-  //vector<ExprAST*> actualArgs;
   for (int i = 1; i < ast->parts.size(); ++i) {
     ExprAST* arg = ast->parts[i];
     if (!arg) {
@@ -484,7 +455,7 @@ void TypecheckPass::visit(CallAST* ast) {
   int numParams = baseFT->getNumParams();
   if (numParams != actualTypes.size()) {
     std::cerr << "Error: arity mismatch; " << actualTypes.size() << " args provided"
-      << " for function taking " << numParams << " args." << std::endl;
+      << " for function " << *(base) << std::endl <<  " of type " << *(baseFT) <<  " taking " << numParams << " args." << std::endl;
     return;
   }
   

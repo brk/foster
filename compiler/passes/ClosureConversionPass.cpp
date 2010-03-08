@@ -85,7 +85,7 @@ void ClosureConversionPass::visit(FnAST* ast)                  {
     assert(parentFn != NULL);
     ast->proto->name.replace(0, 1, "<" + parentFn->proto->name + ".");
 
-    std::cout << "Anonymous function, lift (1) or convert (0)?  : " << ast->lambdaLiftOnly << std::endl;
+    //std::cout << "Anonymous function, lift (1) or convert (0)?  : " << ast->lambdaLiftOnly << std::endl;
     if (ast->lambdaLiftOnly) {
       lambdaLiftAnonymousFunction(ast);
     } else {
@@ -119,7 +119,7 @@ void ClosureConversionPass::visit(CallAST* ast)                {
   } else {
     VariableAST* varBase = dynamic_cast<VariableAST*>(base);
     if (varBase) {
-      std::cout << "visited call of var named " << varBase->name << std::endl;
+      //std::cout << "visited call of var named " << varBase->name << std::endl;
     }
   }
   visitChildren(ast); return;

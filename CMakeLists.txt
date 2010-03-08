@@ -96,6 +96,7 @@ add_definitions(${LLVM_CFLAGS} ${DEBUG_FLAGS})
 add_executable(foster
   compiler/ANTLRtoFosterAST.cpp
   compiler/FosterAST.cpp
+  compiler/FosterUtils.cpp
   compiler/foster.cpp
   compiler/passes/CodegenPass.cpp
   compiler/passes/TypecheckPass.cpp

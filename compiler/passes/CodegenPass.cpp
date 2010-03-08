@@ -5,6 +5,7 @@
 #include "CodegenPass.h"
 #include "TypecheckPass.h"
 #include "FosterAST.h"
+#include "FosterUtils.h"
 
 #include "llvm/DerivedTypes.h"
 #include "llvm/LLVMContext.h"
@@ -232,21 +233,7 @@ void CodegenPass::visit(FnAST* ast) {
   }
 }
 
-// converts t1 (t2, t3) to { t1 (i8*)*, i8* }
-const llvm::StructType* cpgenericClosureTypeFor(const FunctionType* fnty) {
-  const Type* envType = llvm::PointerType::get(LLVMTypeFor("i8"), 0);
-
-  std::vector<const Type*> fnParams;
-  fnParams.push_back(envType);
-
-  const Type* fnTy = llvm::FunctionType::get(fnty->getReturnType(), fnParams, /*isVarArg=*/ false);
-  std::vector<const Type*> cloTypes;
-  cloTypes.push_back(llvm::PointerType::get(fnTy, 0));
-  cloTypes.push_back(envType);
-  return llvm::StructType::get(getGlobalContext(), cloTypes, /*isPacked=*/ false);
-}
-
-// converts   rt (envptrty)   to   { rt (envptrty)*, envptrty }
+// converts   t1, (envptrty, t2, t3)   to   { rt (envptrty, t2, t3)*, envptrty }
 // TODO handle functions of native arity >= 1
 const Type* closureTypeFromClosedFnType(const FunctionType* fnty) {
   const Type* envPtrTy = fnty->getParamType(0);
@@ -261,7 +248,6 @@ const Type* closureTypeFromClosedFnType(const FunctionType* fnty) {
   std::cout << "Specific closure, cloty: " << *cloTy << std::endl;
   return cloTy;
 }
-
 
 void CodegenPass::visit(ClosureAST* ast) {
   ExprAST* env = new TupleExprAST(new SeqAST(ast->parts));
@@ -279,7 +265,7 @@ void CodegenPass::visit(ClosureAST* ast) {
 
       // Manually build struct for now, since we don't have PtrAST nodes
       const Type* specificCloTy = closureTypeFromClosedFnType(fnTy);
-      const llvm::StructType* cloTy = cpgenericClosureTypeFor(fnTy);
+      const llvm::StructType* cloTy = genericVersionOfClosureType(fnTy);
 
       llvm::AllocaInst* clo = builder.CreateAlloca(cloTy, 0, "closure");
 
@@ -462,12 +448,10 @@ void CodegenPass::visit(CallAST* ast) {
   } else if (FT = tryExtractFunctionPointerType(FV)) {
     // Call to function pointer
   } else if (const llvm::StructType* sty = llvm::dyn_cast<const llvm::StructType>(base->type)) {
-    if (const llvm::PointerType* pt = llvm::dyn_cast<const llvm::PointerType>(sty->getContainedType(0))) {
-      if (const llvm::FunctionType* fty = llvm::dyn_cast<const llvm::FunctionType>(pt->getContainedType(0))) {
-        FT = fty;
-        // Call to closure struct?
-        FV = builder.CreateExtractValue(FV, 0, "subexv");
-      }
+    if (const llvm::FunctionType* fty = tryExtractCallableType(sty->getContainedType(0))) {
+      // Call to closure struct?
+      FT = fty;
+      FV = builder.CreateExtractValue(FV, 0, "subexv");
     }
   } else {
     // Call to something we don't know how to call!
