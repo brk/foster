@@ -27,6 +27,27 @@ void replaceOldWithNew(ExprAST* inExpr, ExprAST* oldExpr, ExprAST* newExpr) {
   inExpr->accept(&rex);
 }
 
+FnAST* parentFnOf(FnAST* fn) {
+  ExprAST* parent = fn->parent;
+  while (parent) {
+    if (FnAST* fp = dynamic_cast<FnAST*>(parent)) { return fp; }
+    parent = parent->parent;
+  }
+  return NULL;
+}
+
+void foundFreeVariableIn(VariableAST* var, FnAST* scope) {
+  // Mark the variable as being free in all parent scopes in which the
+  // variable has not been marked as bound. This handles the case in which
+  // a variable is free in a parent scope but only appears in a nested scope.
+  do {
+    //std::cout << "Marking variable " << var->name << " as free in fn " << scope->proto->name << std::endl;
+    freeVariables[scope].insert(var);
+
+    scope = parentFnOf(scope);
+  } while (scope != NULL && boundVariables[scope].count(var) == 0);
+}
+
 void closureConvertAnonymousFunction(FnAST* ast);
 void lambdaLiftAnonymousFunction(FnAST* ast);
 bool isAnonymousFunction(FnAST* ast);
@@ -40,8 +61,7 @@ void ClosureConversionPass::visit(VariableAST* ast)            {
 
   if (boundVariables[callStack.back()].count(ast) == 0
     && this->globalNames.count(ast->name) == 0) {
-    //std::cout << "Marking variable " <<ast->name << " as free in fn " << callStack.back()->proto->name << std::endl;
-    freeVariables[callStack.back()].insert(ast);
+    foundFreeVariableIn(ast, callStack.back());
   }
   return;
 }
