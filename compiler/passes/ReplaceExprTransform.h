@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#ifndef H_Foster_ReplaceExprTransform
-#define H_Foster_ReplaceExprTransform
+#ifndef FOSTER_PASSES_REPLACEEXPR
+#define FOSTER_PASSES_REPLACEEXPR
 
 #include "FosterASTVisitor.h"
 
@@ -35,9 +35,8 @@ struct ReplaceExprTransform : public FosterASTVisitor {
 
   ExprAST* rewrite(ExprAST* ast);
 
-#   define FOSTER_AST_INCLUDED_VIA_DECLS_H
-#   include "FosterASTVisitor.base.inc.h"
-#   undef  FOSTER_AST_INCLUDED_VIA_DECLS_H
+# include "FosterASTVisitor.decls.inc.h"
 };
 
 #endif // header guard
+

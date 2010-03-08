@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#ifndef H_4b3f24963055d7_81582449
-#define H_4b3f24963055d7_81582449
+#ifndef FOSTER_PASSES_TYPECHECK
+#define FOSTER_PASSES_TYPECHECK
 
 #include "FosterASTVisitor.h"
 

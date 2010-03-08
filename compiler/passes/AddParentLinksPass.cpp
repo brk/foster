@@ -9,6 +9,11 @@
 
 void includeParentNameInAnonFunctions(FnAST* ast);
 
+// The work of adding parent links is done in the onVisitChild()
+// function defined in AddParentLinksPass.h
+// Thus, the visit() implementations for simple AST nodes and
+// AST nodes that store children in their |parts| are trivial.
+
 void AddParentLinksPass::visit(BoolAST* ast)                { return; }
 void AddParentLinksPass::visit(IntAST* ast)                 { return; }
 void AddParentLinksPass::visit(VariableAST* ast)            { return; }
@@ -31,12 +36,14 @@ void AddParentLinksPass::visit(IfExprAST* ast)              {
   onVisitChild(ast, ast->ifExpr);
   onVisitChild(ast, ast->thenExpr);
   onVisitChild(ast, ast->elseExpr);
+  return;
 }
 void AddParentLinksPass::visit(SubscriptAST* ast)           { return; }
 void AddParentLinksPass::visit(SimdVectorAST* ast)          { return; }
 void AddParentLinksPass::visit(SeqAST* ast)                 { return; }
 void AddParentLinksPass::visit(CallAST* ast)                {
-  visitChildren(ast); return;
+  visitChildren(ast);
+  return;
 }
 void AddParentLinksPass::visit(ArrayExprAST* ast)           { return; }
 void AddParentLinksPass::visit(TupleExprAST* ast)           { return; }

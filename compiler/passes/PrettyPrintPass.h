@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#ifndef H_4b440d519a9368_91435229
-#define H_4b440d519a9368_91435229
+#ifndef FOSTER_PASSES_PRETTYPRINT_PUGH
+#define FOSTER_PASSES_PRETTYPRINT_PUGH
 
 #include "FosterASTVisitor.h"
 
@@ -183,3 +183,4 @@ struct PrettyPrintPass : public FosterASTVisitor {
 };
 
 #endif // header guard
+

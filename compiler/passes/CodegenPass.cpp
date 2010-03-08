@@ -142,9 +142,7 @@ void CodegenPass::visit(BinaryOpExprAST* ast) {
 }
 
 void CodegenPass::visit(PrototypeAST* ast) {
-  if (ast->value) {
-    std::cout << "Already codegenned " << ast->Name << std::endl;
-    // Already codegenned!
+  if (ast->value) { // Already codegenned!
     return;
   }
 
@@ -168,10 +166,11 @@ void CodegenPass::visit(PrototypeAST* ast) {
   for (int i = 0; i != ast->inArgs.size(); ++i, ++AI) {
     AI->setName(ast->inArgs[i]->Name);
     scope.insert(ast->inArgs[i]->Name, AI);
-
+#if 0
     std::cout << "Fn param " << ast->inArgs[i]->Name << " ; " 
               << ast->inArgs[i] << " has val " << ast->inArgs[i]->value 
               << ", associated with " << AI << std::endl;
+#endif
   }
 
   std::cout << "\tdone codegen proto " << ast->Name << std::endl;
@@ -182,6 +181,8 @@ void CodegenPass::visit(PrototypeAST* ast) {
 
 void CodegenPass::visit(SeqAST* ast) {
   if (ast->parts.empty()) {
+    // Give the sequence a default value for now; eventually, this
+    // should probably be assigned a value of unit.
     ast->value = llvm::ConstantInt::get(LLVMTypeFor("i32"), 0);
   } else {
     ast->value = ast->parts.back()->value;
@@ -189,14 +190,12 @@ void CodegenPass::visit(SeqAST* ast) {
 }
 
 void CodegenPass::visit(FnAST* ast) {
-
   assert(ast->Body != NULL);
 
   (ast->Proto)->accept(this);
   Function* F = llvm::dyn_cast<Function>(ast->Proto->value);
   if (!F) { return; }
 
-  std::cout << "Pushing scope ... " << ast->Proto->Name  << std::endl;
   scope.pushScope("fn " + ast->Proto->Name);
 
   this->insertPointStack.push(builder.GetInsertBlock());
@@ -215,11 +214,8 @@ void CodegenPass::visit(FnAST* ast) {
     RetVal = builder.CreateLoad(RetVal, false, "structPtrToStruct");
   }
 
-  std::cout << "Popping scope ... " << ast->Proto->Name  << std::endl;
   scope.popScope();
-  
-  std::cerr << "Function '" << ast->Proto->Name << "' rv = " << RetVal << std::endl;
-  
+
   if (RetVal) {
     builder.CreateRet(RetVal);
     //llvm::verifyFunction(*F);

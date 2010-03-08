@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#ifndef H_4b4cf7a48af8e2_37764720
-#define H_4b4cf7a48af8e2_37764720
+#ifndef FOSTER_PASSES_ADDPARENTLINKS
+#define FOSTER_PASSES_ADDPARENTLINKS
 
 #include "FosterASTVisitor.h"
 
@@ -15,7 +15,6 @@ struct AddParentLinksPass : public FosterASTVisitor {
     child->accept(this);
   }
 };
-
 
 #endif // header guard
 
