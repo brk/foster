@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#ifndef H_4b3f256206be38_88233154
-#define H_4b3f256206be38_88233154
+#ifndef FOSTER_AST_VISITOR
+#define FOSTER_AST_VISITOR
 
 struct ExprAST;
 

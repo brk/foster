@@ -69,11 +69,11 @@ void CodegenPass::visit(VariableAST* ast) {
       ast->lazilyInsertedPrototype->accept(this);
       ast->value = ast->lazilyInsertedPrototype->value;
     } else {
-      ast->value = scope.lookup(ast->Name, "");
+      ast->value = scope.lookup(ast->name, "");
     }
 
     if (!ast->value) {
-      std::cerr << "Error: Unknown variable name " << ast->Name << std::endl;
+      std::cerr << "Error: Unknown variable name " << ast->name << std::endl;
     }
   }
 }
@@ -146,9 +146,9 @@ void CodegenPass::visit(PrototypeAST* ast) {
     return;
   }
 
-  std::cout << "\t" << "Codegen proto "  << ast->Name << std::endl;
+  std::cout << "\t" << "Codegen proto "  << ast->name << std::endl;
   const llvm::FunctionType* FT = llvm::dyn_cast<FunctionType>(ast->type);
-  Function* F = Function::Create(FT, Function::ExternalLinkage, ast->Name, module);
+  Function* F = Function::Create(FT, Function::ExternalLinkage, ast->name, module);
 
   if (!F) {
     std::cout << "Function creation failed!" << std::endl;
@@ -156,27 +156,27 @@ void CodegenPass::visit(PrototypeAST* ast) {
   }
 
   // If F conflicted, there was already something named "Name"
-  if (F->getName() != ast->Name) {
-    std::cout << "Error: redefinition of function " << ast->Name << std::endl;
+  if (F->getName() != ast->name) {
+    std::cout << "Error: redefinition of function " << ast->name << std::endl;
     return;
   }
 
   // Set names for all arguments
   Function::arg_iterator AI = F->arg_begin();
   for (int i = 0; i != ast->inArgs.size(); ++i, ++AI) {
-    AI->setName(ast->inArgs[i]->Name);
-    scope.insert(ast->inArgs[i]->Name, AI);
+    AI->setName(ast->inArgs[i]->name);
+    scope.insert(ast->inArgs[i]->name, AI);
 #if 0
-    std::cout << "Fn param " << ast->inArgs[i]->Name << " ; " 
+    std::cout << "Fn param " << ast->inArgs[i]->name << " ; " 
               << ast->inArgs[i] << " has val " << ast->inArgs[i]->value 
               << ", associated with " << AI << std::endl;
 #endif
   }
 
-  std::cout << "\tdone codegen proto " << ast->Name << std::endl;
+  std::cout << "\tdone codegen proto " << ast->name << std::endl;
   ast->value = F;
 
-  scope.insert(ast->Name, F);
+  scope.insert(ast->name, F);
 }
 
 void CodegenPass::visit(SeqAST* ast) {
@@ -190,27 +190,27 @@ void CodegenPass::visit(SeqAST* ast) {
 }
 
 void CodegenPass::visit(FnAST* ast) {
-  assert(ast->Body != NULL);
+  assert(ast->body != NULL);
 
-  (ast->Proto)->accept(this);
-  Function* F = llvm::dyn_cast<Function>(ast->Proto->value);
+  (ast->proto)->accept(this);
+  Function* F = llvm::dyn_cast<Function>(ast->proto->value);
   if (!F) { return; }
 
-  scope.pushScope("fn " + ast->Proto->Name);
+  scope.pushScope("fn " + ast->proto->name);
 
   this->insertPointStack.push(builder.GetInsertBlock());
 
   BasicBlock* BB = BasicBlock::Create(getGlobalContext(), "entry", F);
   builder.SetInsertPoint(BB);
 
-  (ast->Body)->accept(this);
-  Value* RetVal = ast->Body->value;
-  if (RetVal == NULL) std::cerr << "Oops, null body value in fn " << ast->Proto->Name << std::endl;
+  (ast->body)->accept(this);
+  Value* RetVal = ast->body->value;
+  if (RetVal == NULL) std::cerr << "Oops, null body value in fn " << ast->proto->name << std::endl;
   assert (RetVal != NULL);
   
   // If we try to return a tuple* when the fn specifies a tuple, manually insert a load
   if (RetVal->getType()->isDerivedType()
-      && RetVal->getType() == llvm::PointerType::get(ast->Proto->resultTy, 0)) {
+      && RetVal->getType() == llvm::PointerType::get(ast->proto->resultTy, 0)) {
     RetVal = builder.CreateLoad(RetVal, false, "structPtrToStruct");
   }
 
@@ -222,7 +222,7 @@ void CodegenPass::visit(FnAST* ast) {
     ast->value = F;
   } else {
     F->eraseFromParent();
-    std::cout << "Function '" << ast->Proto->Name << "' retval creation failed" << std::endl;
+    std::cout << "Function '" << ast->proto->name << "' retval creation failed" << std::endl;
   }
 
   // Restore the insertion point from the previous function, if there was one.
@@ -344,9 +344,10 @@ PHINode* codegenIfExpr(Value* cond, const LazyValue& lazyThen, const LazyValue& 
 }
 
 void CodegenPass::visit(IfExprAST* ast) {
-  (ast->ifExpr)->accept(this); Value* cond = ast->ifExpr->value;
+  (ast->testExpr)->accept(this);
+  Value* cond = ast->testExpr->value;
   if (!cond) return;
-  
+
   ast->value = codegenIfExpr(cond, LazyVisitedValue(this, ast->thenExpr),
                                    LazyVisitedValue(this, ast->elseExpr), ast->type);
 }

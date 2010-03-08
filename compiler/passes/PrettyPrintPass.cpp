@@ -22,7 +22,7 @@ void PrettyPrintPass::visit(IntAST* ast) {
 
 // name (: type)
 void PrettyPrintPass::visit(VariableAST* ast) {
-  scan(PPToken(ast->Name));
+  scan(PPToken(ast->name));
   if (this->printVarTypes) {
     scan(PPToken(":"));
     /*if (ast->tyExpr) {
@@ -57,7 +57,7 @@ void PrettyPrintPass::visit(PrototypeAST* ast) {
   //scan(tBlockOpen);
   scan(PPToken("fn"));
   scan(PPToken(" "));
-  scan(PPToken(ast->Name));
+  scan(PPToken(ast->name));
   scan(PPToken(" "));
   //scan(tBlockClose);
   //scan(tBlockOpen);
@@ -82,8 +82,8 @@ void PrettyPrintPass::visit(PrototypeAST* ast) {
 void PrettyPrintPass::visit(FnAST* ast) {
   bool isTopLevelFn = ast->parent->parent == NULL;
   if (isTopLevelFn) { scan(tNewline); }
-  ast->Proto->accept(this);
-  ast->Body->accept(this);
+  ast->proto->accept(this);
+  ast->body->accept(this);
   if (isTopLevelFn) { scan(tNewline); }
 }
 
@@ -98,7 +98,7 @@ void PrettyPrintPass::visit(IfExprAST* ast) {
   //scan(tBlockOpen);
   scan(PPToken("if "));
   //ast->parts[0]->accept(this);
-  ast->ifExpr->accept(this);
+  ast->testExpr->accept(this);
   //scan(tBlockClose);
   
   scan(PPToken(" "));

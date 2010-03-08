@@ -68,8 +68,8 @@ void ReplaceExprTransform::visit(PrototypeAST* ast)           {
   this->newChild = ast; // Prototypes can't be rewritten to anything else...
 }
 void ReplaceExprTransform::visit(FnAST* ast)                  {
-  ast->Proto->accept(this); // No chance of rewriting to proto to a different node type!
-  onVisitChild(ast, &ast->Body);
+  ast->proto->accept(this); // No chance of rewriting to proto to a different node type!
+  onVisitChild(ast, &ast->body);
   this->newChild = rewrite(ast);
 }
 void ReplaceExprTransform::visit(ClosureAST* ast) {
@@ -77,7 +77,7 @@ void ReplaceExprTransform::visit(ClosureAST* ast) {
   this->newChild = ast;
 }
 void ReplaceExprTransform::visit(IfExprAST* ast)              {
-  onVisitChild(ast, &ast->ifExpr);
+  onVisitChild(ast, &ast->testExpr);
   onVisitChild(ast, &ast->thenExpr);
   onVisitChild(ast, &ast->elseExpr);
   this->newChild = rewrite(ast);

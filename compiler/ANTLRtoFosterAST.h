@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#ifndef H_4b2d1929175588_52157406
-#define H_4b2d1929175588_52157406
+#ifndef ANTLR_TO_FOSTER_AST
+#define ANTLR_TO_FOSTER_AST
 
 #include <antlr3defs.h>
 #include <string>

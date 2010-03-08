@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#ifndef H_4b2d1e42da6428_98043102
-#define H_4b2d1e42da6428_98043102
+#ifndef FOSTER_AST_H
+#define FOSTER_AST_H
 
 #include "llvm/DerivedTypes.h"
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
@@ -91,14 +91,14 @@ struct BinaryExprAST : public ExprAST {
 template <typename T>
 class FosterSymbolTable : public NameResolver<T> {
   struct LexicalScope {
-    string Name;
+    string name;
     typedef std::map<string, T*> Map;
     Map val_of;
     T* lookup(const string& ident) {
       T* rv = val_of[ident];
       return rv;
     }
-    LexicalScope(string name) : Name(name) {}
+    LexicalScope(string name) : name(name) {}
   };
   typedef std::vector<LexicalScope> Environment;
   Environment env;
@@ -106,7 +106,7 @@ class FosterSymbolTable : public NameResolver<T> {
   virtual T* lookup(const string& ident, const string& wantedName) {
     for (typename Environment::reverse_iterator it = env.rbegin();
                                                 it != env.rend(); ++it) {
-      string scopeName = (*it).Name;
+      string scopeName = (*it).name;
       if (scopeName == "*" || wantedName == "" || scopeName == wantedName) {
         T* V = (*it).lookup(ident);
         if (V != NULL) return V;
@@ -161,9 +161,9 @@ struct NameResolverAST : public ExprAST {
 };
 
 struct IntAST : public ExprAST {
-  string Text;
-  string Clean;
-  int Base;
+  string Text; // The literal text from the source file; for example, "1010`1011`1101_2"
+  string Clean; // The text without separator chars or base; for example, "101010111101"
+  int Base; // The numeric base, if any, attached to the literal.
   explicit IntAST(string originalText, string valText, int base = 10)
     : Text(originalText), Clean(valText), Base(base) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
@@ -187,14 +187,14 @@ struct BoolAST : public ExprAST {
 };
 
 struct VariableAST : public ExprAST {
-  string Name;
+  string name;
   ExprAST* tyExpr;
   PrototypeAST* lazilyInsertedPrototype;
   bool noInitialType;
   bool noFixedType() { return noInitialType && !tyExpr && !type; }
 
   explicit VariableAST(const string& name)
-      : Name(name), tyExpr(NULL), lazilyInsertedPrototype(NULL) { // of as-yet-undetermined type
+      : name(name), tyExpr(NULL), lazilyInsertedPrototype(NULL) { // of as-yet-undetermined type
     this->type = NULL;
     noInitialType = true;
     std::cout << "new variable named " << name << " of no fixed type..." << std::endl;
@@ -202,13 +202,12 @@ struct VariableAST : public ExprAST {
 
   // TODO need to figure out how/where/when to assign type info to nil
   explicit VariableAST(const string& name, const llvm::Type* aType)
-      : Name(name), tyExpr(NULL), lazilyInsertedPrototype(NULL) {
+      : name(name), tyExpr(NULL), lazilyInsertedPrototype(NULL) {
     this->type = aType;
     noInitialType = false;
-    //std::cout << this << " = new VariableAST("<<name<< ", type ptr " << this->type << ")" << std::endl;
   }
   explicit VariableAST(const string& name, ExprAST* tyExpr)
-      : Name(name), tyExpr(tyExpr), lazilyInsertedPrototype(NULL) {
+      : name(name), tyExpr(tyExpr), lazilyInsertedPrototype(NULL) {
     noInitialType = false;
     if (!tyExpr) {
       std::cerr << "Error: " << this << " = VariableAST("<<name<<", type expr NULL)!" << std::endl;
@@ -217,104 +216,12 @@ struct VariableAST : public ExprAST {
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
     if (type) {
-      return out << Name << " : " << *type;
+      return out << name << " : " << *type;
     } else {
-      return out << Name;
+      return out << name;
     }
   }
 };
-
-#if 0
-  struct StringAST : public ExprAST {
-    string Val;
-    explicit StringAST(string val): Val(val) {}
-    virtual std::ostream& operator<<(std::ostream& out) const { return out << Val; }
-    virtual string GetTypeName() { return "String"; }
-    virtual bool Sema() { return true; }
-    virtual Value* Codegen() {
-      //ArrayType* AType = ArrayType::get(Type::Int32Ty, Val.size() + 1);
-      //return ConstantArray::get(AType, Val.c_str(), Val.size() + 1);
-      //return ConstantArray::get(Val);
-      Value* V = Builder.CreateGlobalStringPtr(Val.c_str(), "String_ptr");
-      return V;
-    }
-  };
-  
-  struct VarDeclAST : public ExprAST {
-    string Name;
-    string Type;
-    ExprAST* Init;
-    virtual bool Sema() {
-      return true;
-    } // TODO
-    explicit VarDeclAST(string name, string type, ExprAST* init)
-      : Name(name), Type(type), Init(init) {}
-    // TODO: associate name with type in symbol table
-    virtual string GetTypeName() { return Type; }
-    virtual std::ostream& operator<<(std::ostream& out) const {
-      out << "\tvar " << Name << " : " << Type;
-      if (Init) out << " = " << *Init;
-      return out << " ;" << endl;
-    }
-  #if LLVM
-    virtual Value* Codegen() {
-      Value* V = Init->Codegen();
-      //NamedValues[Name] = V;
-    }
-  #endif // LLVM
-  };
-  
-  struct UnaryOpAST : public ExprAST {
-    string Op;
-    ExprAST* AST;
-    explicit UnaryOpAST(string op, ExprAST* ast) : Op(op), AST(ast) {}
-    virtual string GetTypeName() { return AST->GetTypeName(); }
-    virtual bool Sema() {
-      if (Op == "!") { return GetTypeName() == "Boolean"; }
-      if (Op == "-") { return GetTypeName() == "Int"; }
-      return false;
-    }
-    virtual std::ostream& operator<<(std::ostream& out) const {
-      out << Op << "(";
-      if (AST) out << *AST; else out << "<nil>";
-      return out << ")";
-    }
-  #if LLVM
-    virtual Value* Codegen() {
-      Value* V = AST->Codegen();
-      if (Op == "!") {
-        return Builder.CreateNot(V, "nottmp");
-      }
-  
-      if (Op == "-") {
-        return Builder.CreateNeg(V, "negtmp");
-      }
-  
-      fprintf(stderr, "Unknown unary operator '%s'!\n", Op.c_str());
-      return NULL;
-    }
-  #endif // LLVM
-  };
-  
-  struct WhileAST : public ExprAST {
-    ExprAST* Cond, *Body;
-    WhileAST(ExprAST* cond, ExprAST* body) : Cond(cond), Body(body) {}
-    virtual string GetTypeName() { return "Unit"; }
-    virtual bool Sema() { return true; } // TODO
-    virtual std::ostream& operator<<(std::ostream& out) const {
-      out << "while (";
-      if (Cond) out << *Cond; else out << "<nil>";
-      out << ") { ";
-      if (Body) out << *Body; else out << "<nil>";
-      return out << " }";
-    }
-  #if LLVM
-    virtual Value* Codegen() {
-      return ErrorV("WhileAST.Codegen() not implemented");
-    }
-  #endif // LLVM
-};
-#endif
 
 struct UnaryOpExprAST : public UnaryExprAST {
   string op;
@@ -405,25 +312,25 @@ struct SubscriptAST : public BinaryExprAST {
 
 // The ->value for a PrototypeAST node is a llvm::Function*
 struct PrototypeAST : public ExprAST {
-  string Name;
+  string name;
   std::vector<VariableAST*> inArgs;
   const Type* resultTy;
   ExprAST* tyExpr;
 
   PrototypeAST(const Type* retTy, const string& name)
-    : Name(name), resultTy(retTy), tyExpr(NULL) {}
+    : name(name), resultTy(retTy), tyExpr(NULL) {}
 
   PrototypeAST(const Type* retTy, const string& name, VariableAST* arg1)
-    : Name(name), resultTy(retTy), tyExpr(NULL) { inArgs.push_back(arg1); }
+    : name(name), resultTy(retTy), tyExpr(NULL) { inArgs.push_back(arg1); }
 
   PrototypeAST(const Type* retTy, const string& name, VariableAST* arg1, VariableAST* arg2)
-    : Name(name), resultTy(retTy), tyExpr(NULL) { inArgs.push_back(arg1); inArgs.push_back(arg2); }
+    : name(name), resultTy(retTy), tyExpr(NULL) { inArgs.push_back(arg1); inArgs.push_back(arg2); }
 
   PrototypeAST(const Type* retTy, const string& name, const std::vector<VariableAST*>& inArgs)
-    : Name(name), resultTy(retTy), tyExpr(NULL), inArgs(inArgs) { }
+    : name(name), resultTy(retTy), tyExpr(NULL), inArgs(inArgs) { }
 
   PrototypeAST(const string& name, const std::vector<VariableAST*>& inArgs, const Type* retTy)
-    : Name(name), resultTy(retTy), tyExpr(NULL), inArgs(inArgs) {
+    : name(name), resultTy(retTy), tyExpr(NULL), inArgs(inArgs) {
     if (resultTy == NULL) {
       this->resultTy = LLVMTypeFor("i32");
     } else {
@@ -432,7 +339,7 @@ struct PrototypeAST : public ExprAST {
   }
 
   PrototypeAST(const string& name, const std::vector<VariableAST*>& inArgs, ExprAST* retTyExpr)
-      : Name(name), resultTy(NULL), inArgs(inArgs), tyExpr(retTyExpr) {
+      : name(name), resultTy(NULL), inArgs(inArgs), tyExpr(retTyExpr) {
       if (tyExpr == NULL) {
         this->resultTy = LLVMTypeFor("i32");
       } else {
@@ -442,7 +349,7 @@ struct PrototypeAST : public ExprAST {
     
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    out << "fn" << " " << Name << "(";
+    out << "fn" << " " << name << "(";
     for (int i = 0; i < inArgs.size(); ++i) {
       out << str(inArgs[i]) << " ";
     }
@@ -455,16 +362,16 @@ struct PrototypeAST : public ExprAST {
 };
 
 struct FnAST : public ExprAST {
-  PrototypeAST* Proto;
-  ExprAST* Body;
+  PrototypeAST* proto;
+  ExprAST* body;
   bool wasNested;
   bool lambdaLiftOnly;
 
   explicit FnAST(PrototypeAST* proto, ExprAST* body)
-    : Proto(proto), Body(body), wasNested(false), lambdaLiftOnly(false) {}
+    : proto(proto), body(body), wasNested(false), lambdaLiftOnly(false) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << str(Proto) << " " << str(Body) << endl;
+    return out << str(proto) << " " << str(body) << endl;
   }
 };
 
@@ -491,12 +398,12 @@ struct ClosureAST : public ExprAST {
 };
 
 struct IfExprAST : public ExprAST {
-  ExprAST* ifExpr, *thenExpr, *elseExpr;
-  IfExprAST(ExprAST* ifExpr, ExprAST* thenExpr, ExprAST* elseExpr)
-    : ifExpr(ifExpr), thenExpr(thenExpr), elseExpr(elseExpr) {}
+  ExprAST* testExpr, *thenExpr, *elseExpr;
+  IfExprAST(ExprAST* testExpr, ExprAST* thenExpr, ExprAST* elseExpr)
+    : testExpr(testExpr), thenExpr(thenExpr), elseExpr(elseExpr) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "if (" << str(ifExpr) << ")" <<
+    return out << "if (" << str(testExpr) << ")" <<
         " then " << str(thenExpr) << " else " << str(elseExpr);
   }
 };

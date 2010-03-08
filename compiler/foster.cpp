@@ -106,7 +106,7 @@ void createParser(ANTLRContext& ctx, string filename) {
 
 VariableAST* checkAndGetLazyRefTo(PrototypeAST* p) {
   { TypecheckPass typ; p->accept(&typ); }
-  VariableAST* fnRef = new VariableAST(p->Name, p->type);
+  VariableAST* fnRef = new VariableAST(p->name, p->type);
   fnRef->lazilyInsertedPrototype = p;
 
   return fnRef;
@@ -144,7 +144,7 @@ ExprAST* lookupOrCreateNamespace(ExprAST* ns, const string& part) {
 std::set<std::string> globalNames;
 
 void addToProperNamespace(VariableAST* var) {
-  const string& fqName = var->Name;
+  const string& fqName = var->name;
   globalNames.insert(fqName);
 
   std::vector<string> parts;

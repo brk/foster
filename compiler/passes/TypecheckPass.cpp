@@ -100,12 +100,12 @@ void TypecheckPass::visit(IntAST* ast) {
 }
 
 void TypecheckPass::visit(VariableAST* ast) {
-  if (this->typeParsingMode) { ast->type = LLVMTypeFor(ast->Name); }
+  if (this->typeParsingMode) { ast->type = LLVMTypeFor(ast->name); }
   
   if (!ast->tyExpr) {
     if (!ast->type) {
       // Eventually we should do local type inference...
-      std::cerr << "Error: typechecking variable " << ast->Name << " <"<< ast <<"> with no type provided! " << ast->type << std::endl;
+      std::cerr << "Error: typechecking variable " << ast->name << " <"<< ast <<"> with no type provided! " << ast->type << std::endl;
     }
     return;
   }
@@ -113,7 +113,7 @@ void TypecheckPass::visit(VariableAST* ast) {
   if (ast->tyExpr && ast->type) {
     /*
     if (ast->tyExpr->type != ast->type) {
-      std::cerr << "Error: typechecking variable " << ast->Name << " with both type expr ";
+      std::cerr << "Error: typechecking variable " << ast->name << " with both type expr ";
       std::cerr << std::endl << "\t" << *(ast->tyExpr);
       std::cerr << " and type constant "
                 << std::endl << "\t" << *(ast->type) << std::endl;
@@ -214,8 +214,8 @@ void TypecheckPass::visit(PrototypeAST* ast) {
   for (int i = 0; i < ast->inArgs.size(); ++i) {
     assert(ast->inArgs[i] != NULL);
 
-    std::cout << "TyCh Proto " << ast->Name << " arg " << i << "; "
-        << ast->inArgs[i]->Name << ", fixed? " << ast->inArgs[i]->noFixedType() << std::endl;
+    std::cout << "TyCh Proto " << ast->name << " arg " << i << "; "
+        << ast->inArgs[i]->name << ", fixed? " << ast->inArgs[i]->noFixedType() << std::endl;
 
     if (ast->inArgs[i]->noFixedType()) {
       return;
@@ -223,8 +223,8 @@ void TypecheckPass::visit(PrototypeAST* ast) {
     ast->inArgs[i]->accept(this);
     const Type* ty =  ast->inArgs[i]->type;
     if (ty == NULL) {
-      std::cerr << "Error: proto " << ast->Name << " had "
-        << "null type for arg '" << ast->inArgs[i]->Name << "'" << std::endl;
+      std::cerr << "Error: proto " << ast->name << " had "
+        << "null type for arg '" << ast->inArgs[i]->name << "'" << std::endl;
       return;
     }
 
@@ -234,7 +234,7 @@ void TypecheckPass::visit(PrototypeAST* ast) {
       ast->inArgs[i]->type = ty = genericClosureTypeFor(fnty);
     }
 
-    std::cout << "\t\t" << ast->Name << " arg " << i << " : " << *ty << std::endl;
+    std::cout << "\t\t" << ast->name << " arg " << i << " : " << *ty << std::endl;
     argTypes.push_back(ty);
   }
 
@@ -246,7 +246,7 @@ void TypecheckPass::visit(PrototypeAST* ast) {
   }
 
   if (!ast->resultTy) {
-   std::cerr << "Error in typechecking PrototypeAST " << ast->Name << ": null return type!" << std::endl;
+   std::cerr << "Error in typechecking PrototypeAST " << ast->name << ": null return type!" << std::endl;
   } else {
     std::cout << "# argtypes: " << argTypes.size() << std::endl;
     ast->type = FunctionType::get(ast->resultTy, argTypes, false);
@@ -254,18 +254,18 @@ void TypecheckPass::visit(PrototypeAST* ast) {
 }
 
 void TypecheckPass::visit(FnAST* ast) {
-  assert(ast->Proto != NULL);
-  ast->Proto->accept(this); bool p = ast->Proto->type != NULL;
+  assert(ast->proto != NULL);
+  ast->proto->accept(this); bool p = ast->proto->type != NULL;
   
-  if (ast->Body != NULL) {
-    ast->Body->accept(this);  bool b = ast->Body->type  != NULL;
+  if (ast->body != NULL) {
+    ast->body->accept(this);  bool b = ast->body->type  != NULL;
 
     if (p && b) {
-      ast->type = ast->Proto->type;
+      ast->type = ast->proto->type;
     }
   } else {
     // Probably looking at a function type expr. TODO trust but verify
-    ast->type = ast->Proto->type;
+    ast->type = ast->proto->type;
   }
 }
 
@@ -282,17 +282,17 @@ void TypecheckPass::visit(ClosureAST* ast) {
 }
 
 void TypecheckPass::visit(IfExprAST* ast) {
-  assert(ast->ifExpr != NULL);
+  assert(ast->testExpr != NULL);
 
-  ast->ifExpr->accept(this);
-  const Type* ifType = ast->ifExpr->type;
+  ast->testExpr->accept(this);
+  const Type* ifType = ast->testExpr->type;
   if (!ifType) {
-    std::cerr << "if condition '" << *(ast->ifExpr) << "' had null type!" << std::endl;
+    std::cerr << "if condition '" << *(ast->testExpr) << "' had null type!" << std::endl;
     return;  
   }
   
   if (ifType != LLVMTypeFor("i1")) {
-    std::cerr << "if condition '"      << *(ast->ifExpr) << "' "
+    std::cerr << "if condition '"      << *(ast->testExpr) << "' "
               << "had non-bool type "  << *ifType << std::endl;
     return;
   }
