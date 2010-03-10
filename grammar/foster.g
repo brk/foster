@@ -26,7 +26,8 @@ ensures			:	'gives' seq;
 
 //names			:	name (',' name)* -> name+;
 formals			:	formal (',' formal)* -> formal+;
-formal                		:	i=name (':' t=typeexpr)? -> ^(FORMAL $i $t); 	
+formal                		:	i=name t=typeinscription? -> ^(FORMAL $i $t); 	
+typeinscription		:	':' typeexpr -> typeexpr;
 
 
 num			:	( int_num -> ^(INT int_num)
@@ -41,7 +42,7 @@ name_or_ctor		:	name (seq -> ^(CTOR name seq)
 
 letexpr	:	'let' formal '=' arg=expr 
 			( ((nl | ';') next=letexpr) 
-			| ('in') body=seq) -> ^(LETEXPR formal $arg $body $next);
+			| ('in') body=seq typeinscription?) -> ^(LETEXPR formal $arg $body $next typeinscription);
 ifexpr                  :       'if' cond=expr 'then' thenpart=expr 'else' elsepart=expr
 					-> ^(IF $cond $thenpart $elsepart);
 					

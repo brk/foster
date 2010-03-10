@@ -3,15 +3,16 @@
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
 #include <cstdio>
+#include <inttypes.h>
 
 // This file provides the bootstrap "standard library" of utility functions for
 // programs compiled (to LLVM IR) with foster. Making these functions available
-// to compiled programs is a collaborative, manual process that needs to be
-// improved, eventually. Current steps for adding a new library function:
+// to compiled programs is a semi-automated process that could still be
+// improved. Current steps for adding a new library function:
 //   1) Write the implementation using whatever C++ features are needed.
 //   2) Add a wrapper function in the `extern "C"` section below.
-//   3) In foster.cpp, add code to insert the correct prototype declaration
-//      to compiled programs, with name and arguments matching the wrapper.
+//
+// TODO: hybrid foster/C++ library functions
 // 
 // The build system must take extra steps to link foster-compiled LLVM IR to
 // this code, but those steps are independent of adding new functions.
@@ -23,9 +24,6 @@
 // test/bootstrap/run_all.py
 //
 // Obvious areas for improvement:
-//   *) Make foster.cpp insert prototypes for standard library functions lazily;
-//      this is one component of a module system. This would work well with,
-//      but would not require, giving compiled programs an "import" expression.
 //   *) Make foster.cpp figure out how to insert prototypes for standard library
 //      functions automatically, rather than manually writing code to insert
 //      each prototype separately. In the general case, this probably requires
@@ -33,12 +31,6 @@
 //      automated for existing C symbols would be really cool! That would
 //      essentially give Foster a "FFI" for interfacing with tons of useful
 //      libraries like OpenGL, gmp, and LLVM's C bindings...
-//
-// Thoughts: we can extract symbol names and types from the libfoster.bc file,
-// either directly or after disassembling the bitcode to LLVM IR. Then the
-// question becomes: what prototypes should be added to the compilee?
-// The only symbols that need to be added are those used by the program; the
-// symbols could be added manually or, probably, automatically...
 //
 // Here's a quick sketch:
 //   Recognize an expression of the form     import foo
@@ -54,9 +46,14 @@
 // but it is probably simple enough to be easily implemented, and useful enough
 // to make the language much faster to iterate on.
 
-int fprint_i32(FILE* f, int x) { return fprintf(f, "%d\n", x) - 1; }
-int fprint_i32x(FILE* f, int x) { return fprintf(f, "%X_16\n", x) - 1; }
-int fprint_i32b(FILE* f, int x) {
+#ifndef PRId64
+#define PRId64 "lld"
+#endif
+
+int fprint_i64(FILE* f, int64_t x) { return fprintf(f, "%" PRId64 "\n", x) - 1; }
+int fprint_i32(FILE* f, int32_t x) { return fprintf(f, "%d\n", x) - 1; }
+int fprint_i32x(FILE* f, int32_t x) { return fprintf(f, "%X_16\n", x) - 1; }
+int fprint_i32b(FILE* f, int32_t x) {
   static char buf[33];
   buf[32] = '\0';
   for (int i = 0; i < 32; ++i) {
@@ -66,16 +63,19 @@ int fprint_i32b(FILE* f, int x) {
 }
 
 extern "C" {
-int  print_i32(int x) { return fprint_i32(stdout, x); }
-int expect_i32(int x) { return fprint_i32(stderr, x); }
+int  print_i32(int32_t x) { return fprint_i32(stdout, x); }
+int expect_i32(int32_t x) { return fprint_i32(stderr, x); }
 
-int  print_i32x(int x) { return fprint_i32x(stdout, x); }
-int expect_i32x(int x) { return fprint_i32x(stderr, x); }
+int  print_i32x(int32_t x) { return fprint_i32x(stdout, x); }
+int expect_i32x(int32_t x) { return fprint_i32x(stderr, x); }
 
-int  print_i32b(int x) { return fprint_i32b(stdout, x); }
-int expect_i32b(int x) { return fprint_i32b(stderr, x); }
+int  print_i32b(int32_t x) { return fprint_i32b(stdout, x); }
+int expect_i32b(int32_t x) { return fprint_i32b(stderr, x); }
 
-int read_i32() { int n; scanf(" %d", &n); return n; }
+int read_i32() { int32_t n; scanf(" %d", &n); return n; }
+
+int  print_i64(int64_t x) { return fprint_i64(stdout, x); }
+int expect_i64(int64_t x) { return fprint_i64(stderr, x); }
 
 //int  print_i8(char x) { return fprint_i8(stdout, x); }
 //int expect_i8(char x) { return fprint_i8(stderr, x); }

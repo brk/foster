@@ -277,13 +277,18 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
     return ExprAST_from(child(tree, 0), depth, infn);
   }
   
-  // <formal arg (body | next)>
+  // <formal arg (body | next) [type]>
   if (token == LETEXPR) {
     VariableAST* formal = parseFormal(child(tree, 0), depth, infn);
     if (!formal) return NULL;
-
     std::vector<VariableAST*> in; in.push_back(formal);
-    FnAST* fn = buildFn(freshName("<anon_fnlet_%d>"), child(tree, 2), depth, in, NULL);
+
+    ExprAST* typeExpr = NULL;
+    if (getChildCount(tree) == 4) {
+      typeExpr = ExprAST_from(child(tree, 3), depth, infn);
+    }
+
+    FnAST* fn = buildFn(freshName("<anon_fnlet_%d>"), child(tree, 2), depth, in, typeExpr);
     fn->lambdaLiftOnly = true;
 
     ExprAST* a = ExprAST_from(child(tree, 1), depth, infn);

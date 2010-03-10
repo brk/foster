@@ -52,7 +52,7 @@ using namespace llvm;
 using std::string;
 using std::endl;
 
-#define FOSTER_VERSION_STR "0.0.1"
+#define FOSTER_VERSION_STR "0.0.2"
 
 // TODO: this isn't scalable...
 #include "antlr3defs.h"
@@ -317,6 +317,24 @@ void printVersionInfo() {
   cl::PrintVersionMessage(); 
 }
 
+void dumpANTLRTreeNode(std::ostream& out, pTree tree, int depth) {
+  out << string(depth, ' ');
+  out << "text:"<< str(tree->getText(tree)) << " ";
+  out << "line:"<< tree->getLine(tree) << " ";
+  out << "charpos:"<< tree->getCharPositionInLine(tree) << " ";
+  out << std::endl;
+}
+
+void dumpANTLRTree(std::ostream& out, pTree tree, int depth) {
+  int nchildren = tree->getChildCount(tree);
+  out << "nchildren:" << nchildren << std::endl;
+  for (int i = 0; i < nchildren; ++i) {
+    dumpANTLRTree(out, (pTree) tree->getChild(tree, i), depth + 1);
+  }
+  dumpANTLRTreeNode(out, tree, depth);
+}
+
+
 int main(int argc, char** argv) {  
   sys::PrintStackTraceOnErrorSignal();
   PrettyStackTraceProgram X(argc, argv);
@@ -338,9 +356,6 @@ int main(int argc, char** argv) {
     std::cout <<  "================" << std::endl;
   }
   
-  ANTLRContext ctx;
-  createParser(ctx, optInputPath.c_str());
-
   fosterLLVMInitializeNativeTarget();
   module = new Module("foster", getGlobalContext());
   ExistingModuleProvider* moduleProvider = new ExistingModuleProvider(module);
@@ -350,12 +365,21 @@ int main(int argc, char** argv) {
   initMaps();
 
   std::cout << "parsing" << endl;
+
+  ANTLRContext ctx;
+  createParser(ctx, optInputPath.c_str());
   fosterParser_program_return langAST = ctx.psr->program(ctx.psr);
 
-  std::cout << "printing" << endl;
-  std::cout << str(langAST.tree->toStringTree(langAST.tree)) << endl << endl;
+  std::cout << "dumping parse trees" << endl;
+  {
+    std::ofstream out("stringtree.dump.txt");
+    out << str(langAST.tree->toStringTree(langAST.tree)) << endl;
+  }
   
-  
+  {
+    std::ofstream out("parsetree.dump.txt");
+    dumpANTLRTree(out, langAST.tree, 0);
+  }
   scope.pushScope("root");
   varScope.pushScope("root");
   
@@ -373,26 +397,28 @@ int main(int argc, char** argv) {
   std::cout << "converting" << endl;
   ExprAST* exprAST = ExprAST_from(langAST.tree, 0, false);
 
-  std::cout << "=========================" << std::endl;
-  std::cout << "unparsing" << endl;
-  std::cout << *exprAST << endl;
-  
-  std::cout << "=========================" << std::endl;
+  {
+    std::string outfile = "ast.dump.1.txt";
+    std::cout << "unparsing to " << outfile << endl;
+    std::ofstream out(outfile.c_str());
+    out << *exprAST << endl;
+  }
   
   { AddParentLinksPass aplPass; exprAST->accept(&aplPass); }
 
   { TypecheckPass tyPass; exprAST->accept(&tyPass); }
+
   bool sema = exprAST->type != NULL;
   std::cout << "Semantic checking: " << sema << endl;
-  if (!sema) return 1;
+  if (!sema) { return 1; }
   
   {
+    std::string outfile = "pp-precc.txt";
     std::cout << "=========================" << std::endl;
-    std::cout << "Pretty printing: " << std::endl;
-  
-    PrettyPrintPass ppPass(std::cout); exprAST->accept(&ppPass); ppPass.flush();
+    std::cout << "Pretty printing to " << outfile << std::endl;
+    std::ofstream out(outfile.c_str());
+    PrettyPrintPass ppPass(out); exprAST->accept(&ppPass); ppPass.flush();
   }
-  std::cout << std::endl;
 
   {
     std::cout << "=========================" << std::endl;
@@ -402,19 +428,21 @@ int main(int argc, char** argv) {
   }
 
   {
+    std::string outfile = "pp-postcc.txt";
     std::cout << "=========================" << std::endl;
-    std::cout << "Pretty printing: " << std::endl;
-
-    PrettyPrintPass ppPass(std::cout); exprAST->accept(&ppPass); ppPass.flush();
+    std::cout << "Pretty printing to " << outfile << std::endl;
+    std::ofstream out(outfile.c_str());
+    PrettyPrintPass ppPass(out); exprAST->accept(&ppPass); ppPass.flush();
   }
 
-  std::cout << std::endl;
   std::cout << "=========================" << std::endl;
 
   { CodegenPass cgPass; exprAST->accept(&cgPass); }
   
   if (!optCompileSeparately) {
-    std::ofstream LLpreASM("foster.prelink.ll");
+    std::string outfile = "foster.prelink.ll";
+    std::cout << "Dumping pre-linked LLVM IR to " << outfile << endl;
+    std::ofstream LLpreASM(outfile.c_str());
     LLpreASM << *module;
   
     std::string errMsg;
