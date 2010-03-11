@@ -267,6 +267,8 @@ void CodegenPass::visit(ClosureAST* ast) {
       const Type* specificCloTy = closureTypeFromClosedFnType(fnTy);
       const llvm::StructType* cloTy = genericVersionOfClosureType(fnTy);
 
+      addClosureTypeName(module, cloTy);
+
       llvm::AllocaInst* clo = builder.CreateAlloca(cloTy, 0, "closure");
 
       Value* clo_code = builder.CreateConstGEP2_32(clo, 0, 0, "clo_code");
@@ -614,6 +616,7 @@ void CodegenPass::visit(TupleExprAST* ast) {
 
   // Create struct type underlying tuple
   const Type* tupleType = ast->type;
+
   module->addTypeName(freshName("tuple"), tupleType);
 
   // Allocate tuple space

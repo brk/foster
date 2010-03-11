@@ -1,8 +1,32 @@
 #include "FosterUtils.h"
 #include "FosterAST.h" // TODO this is just for LLVMTypeFor(), should break this dependency!
 
+#include "llvm/Module.h"
+
+#include <sstream>
+
 using llvm::Type;
 using llvm::FunctionType;
+
+std::map<const Type*, bool> namedClosureTypes;
+
+void addClosureTypeName(llvm::Module* mod, const llvm::StructType* sty) {
+  if (!mod) return;
+  if (namedClosureTypes[sty]) return;
+
+  std::stringstream ss("ClosureTy");
+  const FunctionType* fty = tryExtractCallableType(sty->getContainedType(0));
+  if (fty != NULL) {
+    // Skip generic closure argument
+    for (int i = 1; i < fty->getNumParams(); ++i) {
+      ss << "_" << *(fty->getParamType(i));
+    }
+
+    mod->addTypeName(ss.str(), sty);
+
+    namedClosureTypes[sty] = true;
+  }
+}
 
 const FunctionType* tryExtractCallableType(const Type* ty) {
   if (const llvm::PointerType* ptrTy = llvm::dyn_cast<llvm::PointerType>(ty)) {

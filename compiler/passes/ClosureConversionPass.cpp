@@ -175,6 +175,7 @@ void hoistAnonymousFunctionAndReplaceWith(FnAST* ast, ExprAST* replacement) {
   std::cout << "Hoisting/replacing " << ast->proto->name << std::endl;
   replaceOldWithNew(ast->parent, ast, replacement);
   ast->parent = toplevel;
+
   { // Ensure that the fn proto gets added to the module, so that it can
     // be referenced from other functions.
     CodegenPass cp; ast->proto->accept(&cp);
@@ -219,7 +220,8 @@ void closureConvertAnonymousFunction(FnAST* ast) {
   }
 
   // Rewrite all calls to indirect through the code pointer
-  vector<CallAST*>& calls = callsOf[ast];
+  // -- handled directly at CallAST nodes during codegen
+  // vector<CallAST*>& calls = callsOf[ast];
 
   if (ast->proto->type) {
     // and updates the types of the prototype and function itself, if they already have types

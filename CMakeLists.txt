@@ -93,6 +93,12 @@ link_directories(${LLVM_LD_PATH} ${ANTLR_LIBDIR})
 set(DEBUG_FLAGS -g -DDEBUG)
 add_definitions(${LLVM_CFLAGS} ${DEBUG_FLAGS})
 
+if (CMAKE_HOST_UNIX)
+  # Only works with the GNU Gold linker
+  set(CMAKE_EXE_LINK_FLAGS
+   "${CMAKE_EXE_LINK_FLAGS} --compress-debug-sections=zlib")
+endif(CMAKE_HOST_UNIX)
+
 add_executable(foster
   compiler/ANTLRtoFosterAST.cpp
   compiler/FosterAST.cpp

@@ -7,6 +7,8 @@
 
 #include "llvm/DerivedTypes.h"
 
+void addClosureTypeName(llvm::Module* mod, const llvm::StructType* ty);
+
 const llvm::FunctionType* tryExtractCallableType(const llvm::Type* ty);
 
 // converts t1 (t2, t3) to { t1 (i8*, t2, t3)*, i8* }
