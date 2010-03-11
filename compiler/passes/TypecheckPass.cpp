@@ -199,8 +199,8 @@ void TypecheckPass::visit(PrototypeAST* ast) {
   for (int i = 0; i < ast->inArgs.size(); ++i) {
     assert(ast->inArgs[i] != NULL);
 
-    std::cout << "TyCh Proto " << ast->name << " arg " << i << "; "
-        << ast->inArgs[i]->name << ", fixed? " << ast->inArgs[i]->noFixedType() << std::endl;
+    //std::cout << "TyCh Proto " << ast->name << " arg " << i << "; "
+    //    << ast->inArgs[i]->name << ", fixed? " << ast->inArgs[i]->noFixedType() << std::endl;
 
     if (ast->inArgs[i]->noFixedType()) {
       return;
@@ -218,7 +218,7 @@ void TypecheckPass::visit(PrototypeAST* ast) {
       ast->inArgs[i]->type = ty = genericClosureTypeFor(fnty);
     }
 
-    std::cout << "\t\t" << ast->name << " arg " << i << " : " << *ty << std::endl;
+    //std::cout << "\t\t" << ast->name << " arg " << i << " : " << *ty << std::endl;
     argTypes.push_back(ty);
   }
 
@@ -232,7 +232,6 @@ void TypecheckPass::visit(PrototypeAST* ast) {
   if (!ast->resultTy) {
    std::cerr << "Error in typechecking PrototypeAST " << ast->name << ": null return type!" << std::endl;
   } else {
-    std::cout << "# argtypes: " << argTypes.size() << std::endl;
     ast->type = FunctionType::get(ast->resultTy, argTypes, false);
   }
 }

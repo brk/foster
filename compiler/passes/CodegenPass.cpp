@@ -147,7 +147,7 @@ void CodegenPass::visit(PrototypeAST* ast) {
     return;
   }
 
-  std::cout << "\t" << "Codegen proto "  << ast->name << std::endl;
+  //std::cout << "\t" << "Codegen proto "  << ast->name << std::endl;
   const llvm::FunctionType* FT = llvm::dyn_cast<FunctionType>(ast->type);
   Function* F = Function::Create(FT, Function::ExternalLinkage, ast->name, module);
 
@@ -174,7 +174,7 @@ void CodegenPass::visit(PrototypeAST* ast) {
 #endif
   }
 
-  std::cout << "\tdone codegen proto " << ast->name << std::endl;
+  //std::cout << "\tdone codegen proto " << ast->name << std::endl;
   ast->value = F;
 
   scope.insert(ast->name, F);
@@ -434,7 +434,7 @@ void CodegenPass::visit(CallAST* ast) {
   ExprAST* base = ast->parts[0];
   assert (base != NULL);
 
-  std::cout << "\t" << "Codegen CallAST "  << (base) << std::endl;
+  //std::cout << "\t" << "Codegen CallAST "  << (base) << std::endl;
   //std::cout << "\t\t\tbase ast: "  << *(base) << std::endl;
 
   // TODO if base has closure type, it should be a ClosureAST node
@@ -464,7 +464,7 @@ void CodegenPass::visit(CallAST* ast) {
     return;
   }
   
-  std::cout << "codegen CallAST base with " << FT->getNumParams() << " params" << std::endl;
+  //std::cout << "codegen CallAST base with " << FT->getNumParams() << " params" << std::endl;
 
   std::vector<Value*> valArgs;
   for (int i = 1, argNum = 0; i < ast->parts.size(); ++i) {
@@ -485,8 +485,8 @@ void CodegenPass::visit(CallAST* ast) {
     
     // LLVM will automatically convert a Function Value to a Pointer-to-Function,
     // so we only have to handle non-trivial closure creation.
-    std::cout << "codegen CallAST arg " << (i-1) << "; argty " << *(arg->type)
-              << " vs fn arg ty " << *(FT->getContainedType(i)) << std::endl;
+    //std::cout << "codegen CallAST arg " << (i-1) << "; argty " << *(arg->type)
+    //          << " vs fn arg ty " << *(FT->getContainedType(i)) << std::endl;
 
     if (u != NULL) {
       unpackArgs(valArgs, V, FT); // Unpack (recursively) nested structs
