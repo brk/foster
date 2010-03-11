@@ -334,6 +334,10 @@ void dumpANTLRTree(std::ostream& out, pTree tree, int depth) {
   dumpANTLRTreeNode(out, tree, depth);
 }
 
+std::string dumpdir("fc-output/");
+std::string dumpdirFile(const std::string& filename) {
+  return dumpdir + filename;
+}
 
 int main(int argc, char** argv) {  
   sys::PrintStackTraceOnErrorSignal();
@@ -348,6 +352,10 @@ int main(int argc, char** argv) {
     exit(1);
   }
   
+  std::string dumpdir("fc-output/");
+
+  system(("mkdir -p " + dumpdir).c_str());
+
   {
     std::cout << "Compiling separately? " << optCompileSeparately << std::endl;
     std::cout << "Input file: " << optInputPath << std::endl;
@@ -372,12 +380,12 @@ int main(int argc, char** argv) {
 
   std::cout << "dumping parse trees" << endl;
   {
-    std::ofstream out("stringtree.dump.txt");
+    std::ofstream out(dumpdirFile("stringtree.dump.txt").c_str());
     out << str(langAST.tree->toStringTree(langAST.tree)) << endl;
   }
   
   {
-    std::ofstream out("parsetree.dump.txt");
+    std::ofstream out(dumpdirFile("parsetree.dump.txt").c_str());
     dumpANTLRTree(out, langAST.tree, 0);
   }
   scope.pushScope("root");
@@ -400,7 +408,7 @@ int main(int argc, char** argv) {
   {
     std::string outfile = "ast.dump.1.txt";
     std::cout << "unparsing to " << outfile << endl;
-    std::ofstream out(outfile.c_str());
+    std::ofstream out(dumpdirFile(outfile).c_str());
     out << *exprAST << endl;
   }
   
@@ -416,7 +424,7 @@ int main(int argc, char** argv) {
     std::string outfile = "pp-precc.txt";
     std::cout << "=========================" << std::endl;
     std::cout << "Pretty printing to " << outfile << std::endl;
-    std::ofstream out(outfile.c_str());
+    std::ofstream out(dumpdirFile(outfile).c_str());
     PrettyPrintPass ppPass(out); exprAST->accept(&ppPass); ppPass.flush();
   }
 
@@ -431,7 +439,7 @@ int main(int argc, char** argv) {
     std::string outfile = "pp-postcc.txt";
     std::cout << "=========================" << std::endl;
     std::cout << "Pretty printing to " << outfile << std::endl;
-    std::ofstream out(outfile.c_str());
+    std::ofstream out(dumpdirFile(outfile).c_str());
     PrettyPrintPass ppPass(out); exprAST->accept(&ppPass); ppPass.flush();
   }
 
@@ -442,7 +450,7 @@ int main(int argc, char** argv) {
   if (!optCompileSeparately) {
     std::string outfile = "foster.prelink.ll";
     std::cout << "Dumping pre-linked LLVM IR to " << outfile << endl;
-    std::ofstream LLpreASM(outfile.c_str());
+    std::ofstream LLpreASM(dumpdirFile(outfile).c_str());
     LLpreASM << *module;
   
     std::string errMsg;
