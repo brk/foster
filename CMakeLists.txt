@@ -12,8 +12,10 @@ find_path(ANTLR_DIR antlr-${ANTLR_VERSION}.jar
   PATHS $ENV{HOME}/antlr/${ANTLR_VERSION}
         $ENV{HOME}/sw/local/antlr/${ANTLR_VERSION}
   DOC   "ANTLR library install dir")
-set(ANTLR_JAR ${ANTLR_DIR}/antlr-${ANTLR_VERSION}.jar CACHE FILEPATH "ANTLR jarfile")
+set(ANTLR_JAR ${ANTLR_DIR}/antlr-${ANTLR_VERSION}.jar
+    CACHE FILEPATH "ANTLR jarfile")
 set(ANTLR_LIBDIR ${ANTLR_DIR}/lib)
+
 if (${ANTLR_DIR} STREQUAL "ANTLR_DIR-NOTFOUND")
     message("ANTLR not found! Please configure with ccmake or a CMake GUI")
     return()
@@ -95,8 +97,8 @@ add_definitions(${LLVM_CFLAGS} ${DEBUG_FLAGS})
 
 if (CMAKE_HOST_UNIX)
   # Only works with the GNU Gold linker
-  set(CMAKE_EXE_LINK_FLAGS
-   "${CMAKE_EXE_LINK_FLAGS} --compress-debug-sections=zlib")
+  set(CMAKE_EXE_LINKER_FLAGS
+   "${CMAKE_EXE_LINKER_FLAGS} -Wl,--compress-debug-sections,zlib")
 endif(CMAKE_HOST_UNIX)
 
 add_executable(foster
