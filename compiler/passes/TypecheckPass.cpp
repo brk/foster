@@ -232,6 +232,7 @@ void TypecheckPass::visit(PrototypeAST* ast) {
   if (!ast->resultTy) {
    std::cerr << "Error in typechecking PrototypeAST " << ast->name << ": null return type!" << std::endl;
   } else {
+    std::cout << "Getting fucnction returning type " << *(ast->resultTy) << std::endl;
     ast->type = FunctionType::get(ast->resultTy, argTypes, false);
   }
 }
@@ -619,6 +620,11 @@ void TypecheckPass::visit(TupleExprAST* ast) {
   bool success = true;
   std::vector<const Type*> tupleFieldTypes;
   for (int i = 0; i < body->parts.size(); ++i) {
+    ExprAST* expr = body->parts[i];
+    if (!expr) {
+      std::cerr << "Tuple expr had null component " << i << "!" << std::endl;
+      break;
+    }
     const Type* ty =  body->parts[i]->type;
     if (!ty) {
       std::cerr << "Tuple expr had null constituent type for subexpr " << i << std::endl;

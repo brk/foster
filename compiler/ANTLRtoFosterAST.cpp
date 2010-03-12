@@ -251,6 +251,29 @@ ExprAST* ExprAST_from(pTree tree, int depth, bool infn) {
   //printf("%sToken number %d, text %s, nchildren: %d\n", spaces(depth).c_str(), token, text.c_str(), nchildren);
   //display_pTree(tree, 2);
   
+  if (token == TYPEDEFN) {
+    pTree nameTree = child(tree, 0);
+    string name = textOf(child(nameTree, 0));
+
+    llvm::PATypeHolder namedType = llvm::OpaqueType::get(getGlobalContext());
+    typeScope.pushScope("opaque");
+
+    // Since we can't literally have a type nested in itself, we'll instead
+    // conveniently assume that self-references are implicitly pointers...
+    typeScope.insert(name, llvm::PointerType::get(namedType.get(), 0));
+
+    ExprAST* tyExpr = ExprAST_from(child(tree, 1), depth, infn);
+    { TypecheckPass tyPass; tyPass.typeParsingMode = true; tyExpr->accept(&tyPass); }
+
+    llvm::cast<llvm::OpaqueType>(namedType.get())->refineAbstractTypeTo(tyExpr->type);
+    typeScope.popScope();
+
+    typeScope.insert(name, namedType.get());
+
+    std::cout << "Associated " << name << " with type " << *(namedType.get()) << std::endl;
+    //module->addTypeName(name, namedType.get());
+  }
+
   if (token == TRAILERS) {
     assert(getChildCount(tree) >= 2);
     // name (args) ... (args)

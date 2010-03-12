@@ -94,6 +94,8 @@ std::map<string, const Type*> builtinTypes;
 const Type* LLVMTypeFor(const string& name) {
   if (builtinTypes.count(name) == 1) {
     return builtinTypes[name];
+  } else if (const llvm::Type* ty = typeScope.lookup(name, "")) {
+    return ty;
   } else {
     return module->getTypeByName(name);
   }

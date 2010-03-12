@@ -14,10 +14,10 @@ tokens {
 
 	FN; OUT; BODY; GIVEN; GIVES; SEQ; INT; RAT; EXPRS; NAME; CTOR;
 	TRAILERS; CALL; TUPLE; SUBSCRIPT; LOOKUP; FORMAL; ARRAY; SIMD;
-	LETEXPR; PARENEXPR;
+	LETEXPR; PARENEXPR; TYPEDEFN;
 	}
 
-program			:	nl* expr (nl+ expr)* nl* EOF -> ^(EXPRS expr+);
+program			:	nl* toplevelexpr (nl+ toplevelexpr)* nl* EOF -> ^(EXPRS toplevelexpr+);
 
 fn			:	'fn' n=str? '(' in=formals? ('to' out=typeexpr)? ')' seq? requires? ensures?
 					-> ^(FN ^(NAME $n) ^(IN $in) ^(OUT $out) ^(BODY seq) ^(GIVEN requires?) ^(GIVES ensures?));
@@ -68,8 +68,10 @@ compound                :       (term) ( trailer+ -> ^(TRAILERS term trailer+)
 subexpr			:	compound (  binop nl? subexpr	-> ^(binop compound subexpr)
 					  |		-> ^(compound)
 				);
-
 expr	:	subexpr;
+
+toplevelexpr : expr | typedefn ;
+typedefn : 'type' name '=' typeexpr -> ^(TYPEDEFN name typeexpr);
 
 type_of_type	:	name 'of' typeexpr 'to'? typeexpr  -> ^(CTOR name ^(SEQ typeexpr+));
 typeexpr	:	literal | name_or_ctor | custom_terms | type_of_type | fn;
