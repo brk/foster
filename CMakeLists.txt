@@ -95,7 +95,7 @@ link_directories(${LLVM_LD_PATH} ${ANTLR_LIBDIR})
 set(DEBUG_FLAGS -g -DDEBUG)
 add_definitions(${LLVM_CFLAGS} ${DEBUG_FLAGS})
 
-if (CMAKE_HOST_UNIX)
+if (CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
   # Only works with the GNU Gold linker
   set(CMAKE_EXE_LINKER_FLAGS
    "${CMAKE_EXE_LINKER_FLAGS} -Wl,--compress-debug-sections,zlib")
