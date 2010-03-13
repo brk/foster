@@ -12,7 +12,7 @@ typedef pANTLR3_BASE_TREE pTree;
 
 class ExprAST;
 
-ExprAST* ExprAST_from(pTree tree, int depth, bool infn);
+ExprAST* ExprAST_from(pTree tree, bool infn);
 void initMaps();
 
 std::string str(pANTLR3_STRING pstr);

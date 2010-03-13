@@ -403,7 +403,7 @@ int main(int argc, char** argv) {
   createLLVMBitIntrinsics();
 
   std::cout << "converting" << endl;
-  ExprAST* exprAST = ExprAST_from(langAST.tree, 0, false);
+  ExprAST* exprAST = ExprAST_from(langAST.tree, false);
 
   {
     std::string outfile = "ast.dump.1.txt";
