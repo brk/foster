@@ -14,13 +14,15 @@ void addClosureTypeName(llvm::Module* mod, const llvm::StructType* sty) {
   if (!mod) return;
   if (namedClosureTypes[sty]) return;
 
-  std::stringstream ss("ClosureTy");
+  std::stringstream ss;
+  ss << "ClosureTy";
   const FunctionType* fty = tryExtractCallableType(sty->getContainedType(0));
   if (fty != NULL) {
     // Skip generic closure argument
     for (int i = 1; i < fty->getNumParams(); ++i) {
       ss << "_" << *(fty->getParamType(i));
     }
+    ss << "_to_" << *(fty->getReturnType());
 
     mod->addTypeName(ss.str(), sty);
 

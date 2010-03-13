@@ -371,7 +371,7 @@ struct FnAST : public ExprAST {
     : proto(proto), body(body), wasNested(false), lambdaLiftOnly(false) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << str(proto) << " " << str(body) << endl;
+    return out << str(proto) << "\n\t" << str(body) << endl;
   }
 };
 
