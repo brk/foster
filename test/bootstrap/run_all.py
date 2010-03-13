@@ -20,7 +20,7 @@ def extract_expected_input(path):
   inlines = []
   with open(path, 'r') as f:
      for line in f:
-       print "testing line ", line
+       #print "testing line ", line
        m = re.match(r"//\s*(.+?):\s*(.+)", line)
        if m == None:
          break
