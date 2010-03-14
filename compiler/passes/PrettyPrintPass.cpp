@@ -87,9 +87,20 @@ void PrettyPrintPass::visit(FnAST* ast) {
   if (isTopLevelFn) { scan(tNewline); }
 }
 
+
+void PrettyPrintPass::visit(ClosureTypeAST* ast) {
+  scan(PPToken("<TyClosure "));
+  scan(PPToken(str(ast->proto->type)));
+  scan(PPToken(">"));
+}
+
 void PrettyPrintPass::visit(ClosureAST* ast) {
   scan(PPToken("<closure "));
-  scan(PPToken(str(ast->fnRef->type)));
+  if (ast->fnRef) {
+    scan(PPToken(str(ast->fnRef->type)));
+  } else {
+    scan(PPToken(str(ast->fn->proto->type)));
+  }
   scan(PPToken(">"));
 }
 

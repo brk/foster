@@ -48,7 +48,7 @@ void foundFreeVariableIn(VariableAST* var, FnAST* scope) {
   } while (scope != NULL && boundVariables[scope].count(var) == 0);
 }
 
-void closureConvertAnonymousFunction(FnAST* ast);
+ClosureAST* closureConvertAnonymousFunction(FnAST* ast);
 void lambdaLiftAnonymousFunction(FnAST* ast);
 bool isAnonymousFunction(FnAST* ast);
 
@@ -77,14 +77,19 @@ void ClosureConversionPass::visit(PrototypeAST* ast)           {
 void ClosureConversionPass::visit(FnAST* ast)                  {
   callStack.push_back(ast);
   onVisitChild(ast, ast->proto);
+  
+    // Ensure that top-level functions are not considered free variables.
+  this->globalNames.insert(ast->proto->name);
+  
   onVisitChild(ast, ast->body);
 
   if (isAnonymousFunction(ast)) {
     // Rename anonymous functions to reflect their lexical scoping
     FnAST* parentFn = dynamic_cast<FnAST*>(ast->parent);
-    assert(parentFn != NULL);
-    ast->proto->name.replace(0, 1, "<" + parentFn->proto->name + ".");
-
+    if (parentFn != NULL) {
+      ast->proto->name.replace(0, 1, "<" + parentFn->proto->name + ".");
+    }
+    
     //std::cout << "Anonymous function, lift (1) or convert (0)?  : " << ast->lambdaLiftOnly << std::endl;
     if (ast->lambdaLiftOnly) {
       lambdaLiftAnonymousFunction(ast);
@@ -92,14 +97,38 @@ void ClosureConversionPass::visit(FnAST* ast)                  {
       closureConvertAnonymousFunction(ast);
     }
 
-  } else {
-    // Ensure that top-level functions are not considered free variables.
-    this->globalNames.insert(ast->proto->name);
   }
   callStack.pop_back();
 }
+
+
+
+void ClosureConversionPass::visit(ClosureTypeAST* ast) {
+  std::cout << "ClosureConversionPass::visit(ClosureTypeAST* ast" << std::endl;
+  onVisitChild(ast, ast->proto);
+}
+
+ClosureAST* closureConvertFunction(ClosureConversionPass* pass, FnAST* ast) {
+  callStack.push_back(ast);
+  pass->onVisitChild(ast, ast->proto);
+  pass->onVisitChild(ast, ast->body);
+  ClosureAST* cl = closureConvertAnonymousFunction(ast);
+  callStack.pop_back();
+  return cl;
+}
+
 void ClosureConversionPass::visit(ClosureAST* ast) {
-  visitChildren(ast);
+  if (ast->fnRef) {
+    visitChildren(ast);
+  } else {
+    std::cout << "ClosureConversionPass::visit(ClosureAST* ast fn..." << std::endl;
+    std::cout << "\tproto: " << *(ast->fn->proto) << std::endl;
+    ClosureAST* nu = closureConvertFunction(this, ast->fn);
+    std::cout << "\tnew proto: " << *(nu->fnRef->type) << std::endl;
+    ast->fnRef = nu->fnRef;
+    ast->parts = nu->parts;
+    std::cout << "ClosureConversionPass::visit(ClosureAST fn ..." << std::endl;
+  }
 }
 void ClosureConversionPass::visit(IfExprAST* ast)              {
   onVisitChild(ast, ast->testExpr);
@@ -182,7 +211,7 @@ void hoistAnonymousFunctionAndReplaceWith(FnAST* ast, ExprAST* replacement) {
   }
 }
 
-void closureConvertAnonymousFunction(FnAST* ast) {
+ClosureAST* closureConvertAnonymousFunction(FnAST* ast) {
   std::cout << "Closure converting function" << *ast << std::endl;
   std::cout << "Type: " << *(ast->type) << std::endl;
 
@@ -195,6 +224,9 @@ void closureConvertAnonymousFunction(FnAST* ast) {
 
   set<VariableAST*>::iterator it;
   for (it = freeVars.begin(); it != freeVars.end(); ++it) {
+    std::cout << "Free var: " <<     *(*it) << std::endl;
+    std::cout << "Free var ty: " << *((*it)->type) << std::endl;
+    std::cout << std::endl;
     envTypes.push_back((*it)->type);
     envExprs.push_back(*it);
   }
@@ -202,6 +234,8 @@ void closureConvertAnonymousFunction(FnAST* ast) {
   llvm::StructType* envTy = llvm::StructType::get(getGlobalContext(), envTypes, /*isPacked=*/ false);
   llvm::PointerType* envPtrTy = llvm::PointerType::get(envTy, 0);
 
+  std::cout << "Env ptr ty: " << *envPtrTy << std::endl;
+  
   // Make (a pointer to) this record be the function's first parameter.
   VariableAST* envVar = new VariableAST("env", envPtrTy);
   prependParameter(ast->proto, envVar);
@@ -211,22 +245,23 @@ void closureConvertAnonymousFunction(FnAST* ast) {
   {
     ReplaceExprTransform rex;
     int offset = 0;
-  for (it = freeVars.begin(); it != freeVars.end(); ++it) {
-    std::cout << "Rewriting " << *(*it) << " to go through env" << std::endl;
-    rex.staticReplacements[*it] = new SubscriptAST(envVar, literalIntAST(offset));
-    ++offset;
-  }
+    for (it = freeVars.begin(); it != freeVars.end(); ++it) {
+      std::cout << "Rewriting " << *(*it) << " to go through env" << std::endl;
+      rex.staticReplacements[*it] = new SubscriptAST(envVar, literalIntAST(offset));
+      ++offset;
+    }
     ast->body->accept(&rex);
   }
 
   // Rewrite all calls to indirect through the code pointer
-  // -- handled directly at CallAST nodes during codegen
-  // vector<CallAST*>& calls = callsOf[ast];
+  // ... is handled directly at CallAST nodes during codegen
 
   if (ast->proto->type) {
     // and updates the types of the prototype and function itself, if they already have types
     {
        TypecheckPass p; ast->proto->accept(&p);
+       std::cout << "ClosureConversionPass: updating type from " << *(ast->type)
+                  << " to\n\t" << *(ast->proto->type) << std::endl;
        ast->type = ast->proto->type;
     }
   }
@@ -235,7 +270,7 @@ void closureConvertAnonymousFunction(FnAST* ast) {
   ClosureAST* closure = new ClosureAST(fnPtr, envExprs);
   hoistAnonymousFunctionAndReplaceWith(ast, closure);
   { TypecheckPass tp; closure->accept(&tp); }
-
+  return closure;
 }
 
 void lambdaLiftAnonymousFunction(FnAST* ast) {

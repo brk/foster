@@ -47,7 +47,7 @@ int getChildCount(pTree tree) { return tree->getChildCount(tree); }
 string textOf(pTree tree) { return str(tree->getText(tree)); }
 pTree child(pTree tree, int i) { return (pTree) tree->getChild(tree, i); }
 
-Exprs getExprs(pTree tree, bool infn);
+Exprs getExprs(pTree tree, bool fnMeansClosure);
 std::ostream& operator<<(std::ostream& out, Exprs& f) { return out << join("", f); }
 
 std::map<ExprAST*, bool> overridePrecedence; // expressions wrapped in () are marked here
@@ -154,7 +154,7 @@ IntAST* parseIntFrom(pTree t) {
 
 int typeOf(pTree tree) { return tree->getType(tree); }
 
-VariableAST* parseFormal(pTree tree, bool infn) {
+VariableAST* parseFormal(pTree tree, bool fnMeansClosure) {
   // ^(FORMAL ^(TEXT varName) ^(... type ... ))
   pTree varNameTree = child(tree, 0);
   if (!varNameTree) {
@@ -166,7 +166,7 @@ VariableAST* parseFormal(pTree tree, bool infn) {
   string varName = textOf(child(varNameTree, 0));
   std::cout << "parseFormal varName = " << varName << std::endl;
   if (getChildCount(tree) == 2) {
-    ExprAST* tyExpr = ExprAST_from(child(tree, 1), infn);
+    ExprAST* tyExpr = ExprAST_from(child(tree, 1), true);
     if (tyExpr) {
       std::cout << "\tParsed formal " << varName << " with type expr " << str(tyExpr) << std::endl;
     } else {
@@ -182,36 +182,24 @@ VariableAST* parseFormal(pTree tree, bool infn) {
   }
 }
 
-std::vector<VariableAST*> getFormals(pTree tree, bool infn) {
+std::vector<VariableAST*> getFormals(pTree tree, bool fnMeansClosure) {
   std::vector<VariableAST*> args;
   for (int i = 0; i < getChildCount(tree); ++i) {
-     args.push_back(parseFormal(child(tree, i), infn));
+     args.push_back(parseFormal(child(tree, i), fnMeansClosure));
   }
   return args;
 }
 
-FnAST* buildFn(string name, pTree bodyTree,
+FnAST* buildFn(string name, pTree bodyTree, bool fnMeansClosure,
                 std::vector<VariableAST*> in, ExprAST* tyExpr) {
   varScope.pushScope("fn proto " + name);
     PrototypeAST* proto = new PrototypeAST(name, in, tyExpr);
-    
-    std::cout << "type checking fn proto " << name << std::endl;
+    VariableAST* fnRef = new VariableAST(name, proto);
 
-    { TypecheckPass tyPass; proto->accept(&tyPass); }
-
-    VariableAST* fnRef;
-    if (proto->type) {
-      fnRef = new VariableAST(name, proto->type);
-    } else {
-      std::cout << "Type checking proto " << name << " produced no type; in was: " << endl;
-      for (int i = 0; i < in.size(); ++i) {
-        std::cout << str(in[i]) << std::endl;
-      }
-      fnRef = new VariableAST(name);
-    }
-    
     varScope.insert(name, fnRef);
     
+  //std::cout << "proto for " << name << " : " << *proto << std::endl;
+  
     std::cout << "Parsing body of fn " << name << std::endl;
     ExprAST* body = ExprAST_from(bodyTree, true);
     std::cout << "Parsed  body of fn " << name << std::endl;
@@ -226,7 +214,7 @@ FnAST* buildFn(string name, pTree bodyTree,
 // defaultSymbolTemplate can include "%d" to embed a unique number; otherwise,
 // a unique int will be appended to the template.
 // (FN 0:NAME 1:IN 2:OUT 3:BODY)
-FnAST* parseFn(string defaultSymbolTemplate, pTree tree, bool infn) {
+FnAST* parseFn(string defaultSymbolTemplate, pTree tree, bool fnMeansClosure) {
 
   string name;
   if (getChildCount(child(tree, 0)) == 1) {
@@ -237,12 +225,12 @@ FnAST* parseFn(string defaultSymbolTemplate, pTree tree, bool infn) {
     name = freshName(defaultSymbolTemplate);
   }
 
-  return buildFn(name, child(tree, 3),
-                 getFormals(child(tree, 1), infn),
-                 ExprAST_from(child(tree, 2), infn));
+  return buildFn(name, child(tree, 3), fnMeansClosure,
+                 getFormals( child(tree, 1),  fnMeansClosure),
+                 ExprAST_from(child(tree, 2), fnMeansClosure));
 }
 
-ExprAST* ExprAST_from(pTree tree, bool infn) {
+ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
   if (!tree) return NULL;
 
   int token = typeOf(tree);
@@ -256,15 +244,10 @@ ExprAST* ExprAST_from(pTree tree, bool infn) {
 
     llvm::PATypeHolder namedType = llvm::OpaqueType::get(getGlobalContext());
     typeScope.pushScope("opaque");
-
-    // Since we can't literally have a type nested in itself, we'll instead
-    // conveniently assume that self-references are implicitly pointers...
-    typeScope.insert(name, llvm::PointerType::get(namedType.get(), 0));
-
-    ExprAST* tyExpr = ExprAST_from(child(tree, 1), infn);
-    { TypecheckPass tyPass; tyPass.typeParsingMode = true; tyExpr->accept(&tyPass); }
-
-    llvm::cast<llvm::OpaqueType>(namedType.get())->refineAbstractTypeTo(tyExpr->type);
+      typeScope.insert(name, namedType.get());
+      ExprAST* tyExpr = ExprAST_from(child(tree, 1), fnMeansClosure);
+      { TypecheckPass tyPass; tyPass.typeParsingMode = true; tyExpr->accept(&tyPass); }
+      llvm::cast<llvm::OpaqueType>(namedType.get())->refineAbstractTypeTo(tyExpr->type);
     typeScope.popScope();
 
     typeScope.insert(name, namedType.get());
@@ -276,18 +259,18 @@ ExprAST* ExprAST_from(pTree tree, bool infn) {
   if (token == TRAILERS) {
     assert(getChildCount(tree) >= 2);
     // name (args) ... (args)
-    ExprAST* prefix = ExprAST_from(child(tree, 0), infn);
+    ExprAST* prefix = ExprAST_from(child(tree, 0), fnMeansClosure);
     for (int i = 1; i < getChildCount(tree); ++i) {
       int trailerType = typeOf(child(tree, i));
       if (trailerType == CALL) {
-        prefix = new CallAST(prefix, getExprs(child(tree, i), infn));
+        prefix = new CallAST(prefix, getExprs(child(tree, i), fnMeansClosure));
       } else if (trailerType == LOOKUP) {
         pTree nameNode = child(child(tree, i), 0);
         const string& name = textOf(child(nameNode, 0));
         prefix = prefix->lookup(name, "");
         if (!prefix) { std::cerr << "Lookup of name '" << name << "' failed." << std::endl; }
       } else if (trailerType == SUBSCRIPT) {
-        prefix = new SubscriptAST(prefix, ExprAST_from(child(child(tree, i), 0), infn));
+        prefix = new SubscriptAST(prefix, ExprAST_from(child(child(tree, i), 0), fnMeansClosure));
       } else {
         std::cerr << "Unknown trailer type " << textOf(child(tree, i)) << std::endl;
       }
@@ -296,24 +279,24 @@ ExprAST* ExprAST_from(pTree tree, bool infn) {
   }
 
   if (token == BODY) { // usually contains SEQ
-    return ExprAST_from(child(tree, 0), infn);
+    return ExprAST_from(child(tree, 0), fnMeansClosure);
   }
   
   // <formal arg (body | next) [type]>
   if (token == LETEXPR) {
-    VariableAST* formal = parseFormal(child(tree, 0), infn);
+    VariableAST* formal = parseFormal(child(tree, 0), fnMeansClosure);
     if (!formal) return NULL;
     std::vector<VariableAST*> in; in.push_back(formal);
 
     ExprAST* typeExpr = NULL;
     if (getChildCount(tree) == 4) {
-      typeExpr = ExprAST_from(child(tree, 3), infn);
+      typeExpr = ExprAST_from(child(tree, 3), fnMeansClosure);
     }
 
-    FnAST* fn = buildFn(freshName("<anon_fnlet_%d>"), child(tree, 2), in, typeExpr);
+    FnAST* fn = buildFn(freshName("<anon_fnlet_%d>"), child(tree, 2), fnMeansClosure, in, typeExpr);
     fn->lambdaLiftOnly = true;
 
-    ExprAST* a = ExprAST_from(child(tree, 1), infn);
+    ExprAST* a = ExprAST_from(child(tree, 1), fnMeansClosure);
     Exprs args; args.push_back(a);
     return new CallAST(fn, args);
   }
@@ -321,8 +304,10 @@ ExprAST* ExprAST_from(pTree tree, bool infn) {
   if (token == EXPRS || token == SEQ) {
     Exprs exprs;
     for (int i = 0; i < getChildCount(tree); ++i) {
-      ExprAST* ast = ExprAST_from(child(tree, i), infn);
-      exprs.push_back(ast);
+      ExprAST* ast = ExprAST_from(child(tree, i), fnMeansClosure);
+      if (ast != NULL) {
+        exprs.push_back(ast);
+      }
     }
     return new SeqAST(exprs);
   }
@@ -343,13 +328,13 @@ ExprAST* ExprAST_from(pTree tree, bool infn) {
 
     string name = textOf(child(nameNode, 0));
     if (name == "simd-vector") {
-      return new SimdVectorAST(ExprAST_from(seqArgs, infn));
+      return new SimdVectorAST(ExprAST_from(seqArgs, fnMeansClosure));
     }
     if (name == "array") {
-      return new ArrayExprAST(ExprAST_from(seqArgs, infn));
+      return new ArrayExprAST(ExprAST_from(seqArgs, fnMeansClosure));
     }
     if (name == "tuple") {
-      return new TupleExprAST(ExprAST_from(seqArgs, infn));
+      return new TupleExprAST(ExprAST_from(seqArgs, fnMeansClosure));
     }
 
     std::cerr << "Error: CTOR token parsing found unknown type name '" << name << "'" << std::endl;
@@ -381,7 +366,7 @@ ExprAST* ExprAST_from(pTree tree, bool infn) {
   }
   
   if (token == OUT) {
-    return (getChildCount(tree) == 0) ? NULL : ExprAST_from(child(tree, 0), infn);
+    return (getChildCount(tree) == 0) ? NULL : ExprAST_from(child(tree, 0), fnMeansClosure);
   }
 
   if (text == "=") { // must come before binaryOps since it's handled specially
@@ -391,7 +376,7 @@ ExprAST* ExprAST_from(pTree tree, bool infn) {
     pTree rval = (child(tree, 1));
     
     if (typeOf(lval) == NAME && typeOf(rval) == FN) {
-      FnAST* fn = parseFn(textOf(child(lval, 0)), rval, infn);
+      FnAST* fn = parseFn(textOf(child(lval, 0)), rval, fnMeansClosure);
       return fn;
     } else {
       std::cerr << "Not assigning function to a name?" << std::endl;
@@ -401,21 +386,21 @@ ExprAST* ExprAST_from(pTree tree, bool infn) {
   
   // Handle unary negation explicitly, before the binary op handler
   if ((text == "-" && getChildCount(tree) == 1) || text == "not") {
-    return new UnaryOpExprAST(text, ExprAST_from(child(tree, 0), infn));
+    return new UnaryOpExprAST(text, ExprAST_from(child(tree, 0), fnMeansClosure));
   }
 
   if (token == PARENEXPR) {
-    ExprAST* rv = ExprAST_from(child(tree, 0), infn);
+    ExprAST* rv = ExprAST_from(child(tree, 0), fnMeansClosure);
     overridePrecedence[rv] = true;
     return rv;
   }
 
-  if (token == COMPILES) { return new BuiltinCompilesExprAST(ExprAST_from(child(tree, 0), infn)); }
-  if (token == UNPACK)   { return new UnpackExprAST(ExprAST_from(child(tree, 0), infn)); }
+  if (token == COMPILES) { return new BuiltinCompilesExprAST(ExprAST_from(child(tree, 0), fnMeansClosure)); }
+  if (token == UNPACK)   { return new UnpackExprAST(ExprAST_from(child(tree, 0), fnMeansClosure)); }
   
   if (binaryOps[text] > 0) {
-    ExprAST* lhs = ExprAST_from(child(tree, 0), infn);
-    ExprAST* rhs = ExprAST_from(child(tree, 1), infn);
+    ExprAST* lhs = ExprAST_from(child(tree, 0), fnMeansClosure);
+    ExprAST* rhs = ExprAST_from(child(tree, 1), fnMeansClosure);
     bool override = overridePrecedence[lhs] || overridePrecedence[rhs];
     std::cout << "saw binary operator " << text << " with lhs " << (*lhs) << " and rhs " << (*rhs) << std::endl;
     if (BinaryOpExprAST* binopRHS = dynamic_cast<BinaryOpExprAST*>(rhs)) {
@@ -440,13 +425,26 @@ ExprAST* ExprAST_from(pTree tree, bool infn) {
   }
 
   if (token == IF) {
-    return new IfExprAST(ExprAST_from(child(tree, 0), infn),
-                         ExprAST_from(child(tree, 1), infn),
-                         ExprAST_from(child(tree, 2), infn));
+    return new IfExprAST(ExprAST_from(child(tree, 0), fnMeansClosure),
+                         ExprAST_from(child(tree, 1), fnMeansClosure),
+                         ExprAST_from(child(tree, 2), fnMeansClosure));
   }
   if (token == FN) {
     // for now, this "<anon_fn" prefix is used for closure conversion later on
-    return parseFn("<anon_fn_%d>", tree, infn);
+    FnAST* fn = parseFn("<anon_fn_%d>", tree, fnMeansClosure);
+    if (!fn->body) {
+      std::cout << "NO BODY FOR PROTO " << *fn->proto << std::endl;
+      
+      return new ClosureTypeAST(fn);
+    }
+  
+    if (fnMeansClosure) {
+      //std::cout << "\t\t\tFN MEANS CLOSURE: " << *fn << std::endl;
+      return fn;
+      //return new ClosureAST(fn);
+    } else {
+      return fn;
+    }
   }
   if (text == "false" || text == "true") { return new BoolAST(text); }
   
@@ -467,11 +465,11 @@ ExprAST* ExprAST_from(pTree tree, bool infn) {
   return NULL;
 }
 
-Exprs getExprs(pTree tree, bool infn) {
+Exprs getExprs(pTree tree, bool fnMeansClosure) {
   Exprs f;
   int childCount = getChildCount(tree);
   for (int i = 0; i < childCount; ++i) {
-    f.push_back(ExprAST_from(child(tree, i), infn));
+    f.push_back(ExprAST_from(child(tree, i), fnMeansClosure));
   }
   return f;
 }

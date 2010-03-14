@@ -375,11 +375,26 @@ struct FnAST : public ExprAST {
   }
 };
 
+struct ClosureTypeAST : public ExprAST {
+  PrototypeAST* proto;
+  
+  explicit ClosureTypeAST(FnAST* fn) : proto(fn->proto) {}
+  
+  virtual void accept(FosterASTVisitor* visitor) {
+    visitor->visit(this);
+  }
+  virtual std::ostream& operator<<(std::ostream& out) const {
+    return out << "(type closure " << str(proto) << ")";
+  }
+};
+
 // A closure stores a typed function pointer and a typed environment pointer.
 // Its "external" type is a struct of function-taking-generic-env-ptr and
 // generic-env-ptr. This allows type checking to be agnostic of the types stored
 // in the env, while still allowing codegen to insert the appropriate bitcasts.
 struct ClosureAST : public ExprAST {
+  FnAST* fn;
+  
   VariableAST* fnRef;
   Exprs envExprs;
 
@@ -387,6 +402,10 @@ struct ClosureAST : public ExprAST {
     : fnRef(fnRef) {
     this->parts = envExprs;
   }
+
+  explicit ClosureAST(FnAST* fn) : fn(fn), fnRef(NULL) {
+  }
+  
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
     out << "(closure " << str(fnRef);

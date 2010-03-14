@@ -214,9 +214,9 @@ void TypecheckPass::visit(PrototypeAST* ast) {
     }
 
     // Convert function types to their associated generic closure type.
-    if (const FunctionType* fnty = llvm::dyn_cast<const FunctionType>(ty)) {
-      ast->inArgs[i]->type = ty = genericClosureTypeFor(fnty);
-    }
+    //if (const FunctionType* fnty = llvm::dyn_cast<const FunctionType>(ty)) {
+    //  ast->inArgs[i]->type = ty = genericClosureTypeFor(fnty);
+    //}
 
     //std::cout << "\t\t" << ast->name << " arg " << i << " : " << *ty << std::endl;
     argTypes.push_back(ty);
@@ -232,7 +232,7 @@ void TypecheckPass::visit(PrototypeAST* ast) {
   if (!ast->resultTy) {
    std::cerr << "Error in typechecking PrototypeAST " << ast->name << ": null return type!" << std::endl;
   } else {
-    std::cout << "Getting fucnction returning type " << *(ast->resultTy) << std::endl;
+    //std::cout << "Getting fucnction returning type " << *(ast->resultTy) << std::endl;
     ast->type = FunctionType::get(ast->resultTy, argTypes, false);
   }
 }
@@ -253,16 +253,37 @@ void TypecheckPass::visit(FnAST* ast) {
   }
 }
 
-void TypecheckPass::visit(ClosureAST* ast) {
-  ast->fnRef->accept(this);
-  visitChildren(ast);
-
-  if (const llvm::FunctionType* ft = tryExtractCallableType(ast->fnRef->type)) {
+void TypecheckPass::visit(ClosureTypeAST* ast) {
+  ast->proto->accept(this);
+  if (const llvm::FunctionType* ft = tryExtractCallableType(ast->proto->type)) {
     ast->type = genericClosureTypeFor(ft);
   } else {
-    std::cerr << "Error! Function passed to closure does not have function type!" << std::endl;
-    std::cerr << *(ast->fnRef) << std::endl;
+    std::cerr << "Error! Proto passed to ClosureType does not have function type!" << std::endl;
+    std::cerr << *(ast->proto) << std::endl;
   }
+}
+
+void TypecheckPass::visit(ClosureAST* ast) {
+  if (ast->fnRef) {
+    ast->fnRef->accept(this);
+    visitChildren(ast);
+  
+    if (const llvm::FunctionType* ft = tryExtractCallableType(ast->fnRef->type)) {
+      ast->type = genericClosureTypeFor(ft);
+    } else {
+      std::cerr << "Error! 274 Function passed to closure does not have function type!" << std::endl;
+      std::cerr << *(ast->fnRef) << std::endl;
+    }
+  } else {
+    ast->fn->accept(this);
+    if (const llvm::FunctionType* ft = tryExtractCallableType(ast->fn->type)) {
+      ast->type = genericClosureTypeFor(ft);
+    } else {
+      std::cerr << "Error! 282 Function passed to closure does not have function type!" << std::endl;
+      std::cerr << *(ast->fn) << std::endl;
+    }
+  }
+  
 }
 
 void TypecheckPass::visit(IfExprAST* ast) {
@@ -467,9 +488,7 @@ void TypecheckPass::visit(CallAST* ast) {
     // Temporarily view a function type as its associated specific closure type,
     // since the formal arguments will have undergone the same conversion.
     if (const FunctionType* fnty = llvm::dyn_cast<const FunctionType>(actualType)) {
-      //actualType = specificClosureTypeFor(fnty);
       actualType = genericClosureTypeFor(fnty);
-      //actualType = llvm::PointerType::get(fnty, 0);
     }
 
     // Note: order here is important! We check conversion from

@@ -72,6 +72,11 @@ void ReplaceExprTransform::visit(FnAST* ast)                  {
   onVisitChild(ast, &ast->body);
   this->newChild = rewrite(ast);
 }
+
+void ReplaceExprTransform::visit(ClosureTypeAST* ast) {
+  std::cout << "ReplaceExprTransform ClosureTypeAST" << std::endl;
+}
+
 void ReplaceExprTransform::visit(ClosureAST* ast) {
   visitChildren(ast);
   this->newChild = ast;

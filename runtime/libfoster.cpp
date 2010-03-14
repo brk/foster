@@ -4,6 +4,7 @@
 
 #include <cstdio>
 #include <inttypes.h>
+#include <cstdlib>
 
 // This file provides the bootstrap "standard library" of utility functions for
 // programs compiled (to LLVM IR) with foster. Making these functions available
@@ -63,6 +64,8 @@ int fprint_i32b(FILE* f, int32_t x) {
 }
 
 extern "C" {
+void* memalloc(int64_t sz) { return malloc(sz); }
+  
 int  print_i32(int32_t x) { return fprint_i32(stdout, x); }
 int expect_i32(int32_t x) { return fprint_i32(stderr, x); }
 

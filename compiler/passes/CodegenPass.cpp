@@ -233,6 +233,10 @@ void CodegenPass::visit(FnAST* ast) {
   }
 }
 
+void CodegenPass::visit(ClosureTypeAST* ast) {
+  std::cout << "CodegenPass ClosureTypeAST: " << *ast << std::endl;
+}
+
 // converts   t1, (envptrty, t2, t3)   to   { rt (envptrty, t2, t3)*, envptrty }
 // TODO handle functions of native arity >= 1
 const Type* closureTypeFromClosedFnType(const FunctionType* fnty) {
@@ -250,6 +254,17 @@ const Type* closureTypeFromClosedFnType(const FunctionType* fnty) {
 }
 
 void CodegenPass::visit(ClosureAST* ast) {
+  if (!ast->fnRef) {
+    std::cerr << "Error! Closure made it past closure conversion without getting an environment type!" << std::endl;  
+  }
+  
+  for (int i = 0; i < ast->parts.size(); ++i) {
+    std::cout << "Codegen ClosureAST, part: " << *ast->parts[i] << std::endl;
+    std::cout << "Codegen ClosureAST, part: " << *ast->parts[i]->type << std::endl;
+    std::cout << std::endl;
+  }
+  
+  
   ExprAST* env = new TupleExprAST(new SeqAST(ast->parts));
   { TypecheckPass tp;
     env->accept(&tp);
@@ -266,6 +281,11 @@ void CodegenPass::visit(ClosureAST* ast) {
       // Manually build struct for now, since we don't have PtrAST nodes
       const Type* specificCloTy = closureTypeFromClosedFnType(fnTy);
       const llvm::StructType* cloTy = genericVersionOfClosureType(fnTy);
+      
+      std::cout << std::endl;
+      std::cout << "Fn type: " << *fnTy << std::endl;
+      std::cout << "Specific closure type: " << *specificCloTy << std::endl;
+      std::cout << "Generic closure type: " << *cloTy << std::endl;
 
       addClosureTypeName(module, cloTy);
 
@@ -609,6 +629,17 @@ void copyTupleTo(CodegenPass* pass, Value* pt, TupleExprAST* ast) {
   }
 }
 
+llvm::Value* emitMalloc(const llvm::Type* ty) {
+  llvm::Value* memalloc = scope.lookup("memalloc", "");
+  if (!memalloc) {
+    std::cerr << "NO MEMALLOC IN MODULE! :(" << std::endl;
+    return NULL;
+  }
+  llvm::Value* mem = builder.CreateCall(memalloc, 
+    llvm::ConstantInt::get(getGlobalContext(), llvm::APInt(64, llvm::StringRef("32"), 10)), "mem");
+  return builder.CreateBitCast(mem, llvm::PointerType::getUnqual(ty), "memcast");
+}
+
 void CodegenPass::visit(TupleExprAST* ast) {
   if (ast->value != NULL) return;
   
@@ -621,6 +652,9 @@ void CodegenPass::visit(TupleExprAST* ast) {
 
   // Allocate tuple space
   llvm::AllocaInst* pt = builder.CreateAlloca(tupleType, 0, "s");
+  //llvm::Value* pt = emitMalloc(tupleType);
+  
+  
   copyTupleTo(this, pt, ast);
   ast->value = pt;
 }

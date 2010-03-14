@@ -29,8 +29,14 @@ void AddParentLinksPass::visit(FnAST* ast)                  {
   onVisitChild(ast, ast->body);
   includeParentNameInAnonFunctions(ast);
 }
+void AddParentLinksPass::visit(ClosureTypeAST* ast) {
+  onVisitChild(ast, ast->proto);
+}
 void AddParentLinksPass::visit(ClosureAST* ast) {
-  assert(false && "Closures should not be created at the point of parent AST* linking!");
+  if (ast->fn) {
+    onVisitChild(ast, ast->fn);
+  }
+  //assert(false && "Closures should not be created at the point of parent AST* linking!");
 }
 void AddParentLinksPass::visit(IfExprAST* ast)              {
   onVisitChild(ast, ast->testExpr);
