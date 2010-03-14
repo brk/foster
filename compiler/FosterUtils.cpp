@@ -72,3 +72,61 @@ const llvm::StructType* genericVersionOfClosureType(const FunctionType* fnty) {
   return genericClosureTypeFor(fnty, true);
 }
 
+bool isValidClosureType(const llvm::StructType* sty) {
+  if (sty->getNumElements() != 2) return false;
+  
+  const llvm::Type* maybeEnvTy = sty->getElementType(1);
+  const llvm::Type* maybePtrFn = sty->getElementType(0);
+  if (const llvm::PointerType* ptrMaybeFn = llvm::dyn_cast<llvm::PointerType>(maybePtrFn)) {
+    if (const llvm::FunctionType* fnty = llvm::dyn_cast<llvm::FunctionType>(ptrMaybeFn->getElementType())) {
+      if (fnty->getNumParams() == 0) return false;
+      if (fnty->isVarArg()) return false;
+      if (maybeEnvTy == fnty->getParamType(0)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+
+const llvm::Type* recursivelySubstituteGenericClosureTypes(
+                                    const llvm::Type* ty,
+                                    bool isInClosureType) {
+  if (llvm::isa<llvm::IntegerType>(ty)) { return ty; }
+  if (const FunctionType* fnty = llvm::dyn_cast<FunctionType>(ty)) {
+    const llvm::StructType* sty = NULL;
+    if (isInClosureType) {
+      sty = genericVersionOfClosureType(fnty); 
+      std::cout << "Converted closure fnty " << *fnty << "\n\t"
+                    << "to closure type " << *sty << std::endl;
+    } else {
+      sty = genericClosureTypeFor(fnty); 
+      std::cout << "Converted fnty " << *fnty << "\n\t"
+                    << "to closure type " << *sty << std::endl;
+    }
+    return sty;
+  }
+  if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
+    return llvm::PointerType::get(
+      recursivelySubstituteGenericClosureTypes(pty->getElementType(), isInClosureType),
+      pty->getAddressSpace());
+  }
+  
+  if (const llvm::StructType* sty = llvm::dyn_cast<llvm::StructType>(ty)) {
+    std::vector<const llvm::Type*> argTypes;
+    bool isClosureType = isValidClosureType(sty);
+    for (int i = 0; i < sty->getNumElements(); ++i) {
+      argTypes.push_back(recursivelySubstituteGenericClosureTypes(
+                              sty->getElementType(i), isInClosureType));
+    }
+    return llvm::StructType::get(getGlobalContext(), argTypes, sty->isPacked());
+  }
+  
+  // vectors and opqaue types fall through unmodified
+  return ty;
+  
+  // TODO: unions
+  // TODO: arrays
+}
+
