@@ -256,6 +256,7 @@ void TypecheckPass::visit(ClosureTypeAST* ast) {
 }
 
 void TypecheckPass::visit(ClosureAST* ast) {
+  std::cout << "Type Checking closure AST node " << (*ast) << std::endl;
   if (ast->fnRef) {
     ast->fnRef->accept(this);
     visitChildren(ast);

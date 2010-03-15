@@ -75,6 +75,7 @@ void ClosureConversionPass::visit(PrototypeAST* ast)           {
   }
 }
 void ClosureConversionPass::visit(FnAST* ast)                  {
+  std::cout << "ClosureConversionPass visiting FnAST" << std::endl;
   callStack.push_back(ast);
   onVisitChild(ast, ast->proto);
   
@@ -99,6 +100,7 @@ void ClosureConversionPass::visit(FnAST* ast)                  {
 
   }
   callStack.pop_back();
+  std::cout << "ClosureConversionPass leaving FnAST" << std::endl;
 }
 
 
@@ -118,6 +120,7 @@ ClosureAST* closureConvertFunction(ClosureConversionPass* pass, FnAST* ast) {
 }
 
 void ClosureConversionPass::visit(ClosureAST* ast) {
+  std::cout << "ClosureConversionPass visiting ClosureAST" << std::endl;
   if (ast->fnRef) {
     visitChildren(ast);
   } else {
@@ -129,6 +132,7 @@ void ClosureConversionPass::visit(ClosureAST* ast) {
     ast->parts = nu->parts;
     std::cout << "ClosureConversionPass::visit(ClosureAST fn ..." << std::endl;
   }
+  std::cout << "ClosureConversionPass leaving ClosureAST" << std::endl;
 }
 void ClosureConversionPass::visit(IfExprAST* ast)              {
   onVisitChild(ast, ast->testExpr);

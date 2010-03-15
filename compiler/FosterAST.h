@@ -393,14 +393,21 @@ struct ClosureTypeAST : public ExprAST {
 // generic-env-ptr. This allows type checking to be agnostic of the types stored
 // in the env, while still allowing codegen to insert the appropriate bitcasts.
 struct ClosureAST : public ExprAST {
+  // Closures created for fn AST nodes during AST parsing will
+  // wrap the function AST node, and will not initially have
+  // a fnRef or an environment tuple (which requires calculation of
+  // free variables).
   FnAST* fn;
-  
+
+  // Closures created during closure conversion will get these fields
+  // filled in at creation time; existing closures will steal these fields
+  // from the closure created during closure conversion of the above
+  // fn AST node.
   VariableAST* fnRef;
-  Exprs envExprs;
 
   explicit ClosureAST(VariableAST* fnRef, const Exprs& envExprs)
     : fnRef(fnRef) {
-    this->parts = envExprs;
+      this->parts = envExprs;
   }
 
   explicit ClosureAST(FnAST* fn) : fn(fn), fnRef(NULL) {
@@ -409,8 +416,8 @@ struct ClosureAST : public ExprAST {
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
     out << "(closure " << str(fnRef);
-    for (int i = 0; i < envExprs.size(); ++i) {
-      out << "\t" << str(envExprs[i]);
+    for (int i = 0; i < parts.size(); ++i) {
+      out << "\t" << str(parts[i]);
     }
     return out << ")";
   }
