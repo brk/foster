@@ -199,10 +199,8 @@ void TypecheckPass::visit(PrototypeAST* ast) {
   for (int i = 0; i < ast->inArgs.size(); ++i) {
     assert(ast->inArgs[i] != NULL);
 
-    //std::cout << "TyCh Proto " << ast->name << " arg " << i << "; "
-    //    << ast->inArgs[i]->name << ", fixed? " << ast->inArgs[i]->noFixedType() << std::endl;
-
     if (ast->inArgs[i]->noFixedType()) {
+      // Wait until type inference to resolve the arg's declared type.
       return;
     }
     ast->inArgs[i]->accept(this);
@@ -212,11 +210,6 @@ void TypecheckPass::visit(PrototypeAST* ast) {
         << "null type for arg '" << ast->inArgs[i]->name << "'" << std::endl;
       return;
     }
-
-    // Convert function types to their associated generic closure type.
-    //if (const FunctionType* fnty = llvm::dyn_cast<const FunctionType>(ty)) {
-    //  ast->inArgs[i]->type = ty = genericClosureTypeFor(fnty);
-    //}
 
     //std::cout << "\t\t" << ast->name << " arg " << i << " : " << *ty << std::endl;
     argTypes.push_back(ty);
@@ -232,7 +225,6 @@ void TypecheckPass::visit(PrototypeAST* ast) {
   if (!ast->resultTy) {
    std::cerr << "Error in typechecking PrototypeAST " << ast->name << ": null return type!" << std::endl;
   } else {
-    //std::cout << "Getting fucnction returning type " << *(ast->resultTy) << std::endl;
     ast->type = FunctionType::get(ast->resultTy, argTypes, false);
   }
 }
@@ -283,7 +275,6 @@ void TypecheckPass::visit(ClosureAST* ast) {
       std::cerr << *(ast->fn) << std::endl;
     }
   }
-  
 }
 
 void TypecheckPass::visit(IfExprAST* ast) {

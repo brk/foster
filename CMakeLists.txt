@@ -43,6 +43,7 @@ execute_process(COMMAND ${LLVM_CONFIG} --cppflags
 # be a problem...
 find_program(LLVM_G++ NAMES llvm-g++
   PATHS /opt/local/bin
+        $ENV{HOME}/llvm/${LLVM_VERSION}/gcc/bin
         $ENV{HOME}/Code/LLVM/llvm-2.5/llvm-gcc4.2-2.5-x86-darwin9/bin
         /usr/lib/llvm/llvm/gcc-4.2/bin
   DOC "llvm-g++")
@@ -99,7 +100,7 @@ if (CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
   # Only works with the GNU Gold linker
   set(CMAKE_EXE_LINKER_FLAGS
    "${CMAKE_EXE_LINKER_FLAGS} -Wl,--compress-debug-sections,zlib")
-endif(CMAKE_HOST_UNIX)
+endif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
 
 add_executable(foster
   compiler/ANTLRtoFosterAST.cpp
