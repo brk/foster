@@ -249,6 +249,7 @@ void TypecheckPass::visit(ClosureTypeAST* ast) {
   ast->proto->accept(this);
   if (const llvm::FunctionType* ft = tryExtractCallableType(ast->proto->type)) {
     ast->type = genericClosureTypeFor(ft);
+    std::cout << "ClosureTypeAST typechecking converted " << *ft << " to " << *(ast->type) << std::endl;
   } else {
     std::cerr << "Error! Proto passed to ClosureType does not have function type!" << std::endl;
     std::cerr << *(ast->proto) << std::endl;
@@ -262,7 +263,12 @@ void TypecheckPass::visit(ClosureAST* ast) {
     visitChildren(ast);
   
     if (const llvm::FunctionType* ft = tryExtractCallableType(ast->fnRef->type)) {
-      ast->type = genericClosureTypeFor(ft);
+      ast->type = genericVersionOfClosureType(ft);
+      if (ft && ast->type) {
+        std::cout << "ClosureAST fnRef typechecking converted " << *ft << " to " << *(ast->type) << std::endl;
+        //if (ast->fn && ast->fn->proto) { std::cout << "Just for kicks, fn has type " << *(ast->fn->proto) << std::endl; }
+      }
+
     } else {
       std::cerr << "Error! 274 Function passed to closure does not have function type!" << std::endl;
       std::cerr << *(ast->fnRef) << std::endl;
@@ -271,6 +277,7 @@ void TypecheckPass::visit(ClosureAST* ast) {
     ast->fn->accept(this);
     if (const llvm::FunctionType* ft = tryExtractCallableType(ast->fn->type)) {
       ast->type = genericClosureTypeFor(ft);
+      std::cout << "ClosureTypeAST fn typechecking converted " << *ft << " to " << *(ast->type) << std::endl;
     } else {
       std::cerr << "Error! 282 Function passed to closure does not have function type!" << std::endl;
       std::cerr << *(ast->fn) << std::endl;
@@ -396,6 +403,17 @@ void TypecheckPass::visit(SeqAST* ast) {
   if (!success || ast->parts.empty()) { return; }
 
   ast->type = ast->parts.back()->type;
+}
+
+const FunctionType* getFunctionTypeFromClosureStructType(const Type* ty) {
+  if (const llvm::StructType* sty = llvm::dyn_cast<llvm::StructType>(ty)) {
+    if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(sty->getContainedType(0))) {
+      return llvm::dyn_cast<llvm::FunctionType>(pty->getElementType());
+    }
+  }
+  std::cerr << "ERROR: failed to get function type from closure struct type: " << *ty << std::endl;
+  exit(1);
+  return NULL;
 }
 
 void TypecheckPass::visit(CallAST* ast) {

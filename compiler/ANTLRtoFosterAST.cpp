@@ -438,6 +438,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
       return new ClosureTypeAST(fn);
     }
   
+    std::cout << "Parsed fn " << *(fn->proto) << ", fnMeansClosure? " << fnMeansClosure << std::endl;
     if (fnMeansClosure) {
       //std::cout << "\t\t\tFN MEANS CLOSURE: " << *fn << std::endl;
       return fn;

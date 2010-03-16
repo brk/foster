@@ -412,7 +412,13 @@ int main(int argc, char** argv) {
     out << *exprAST << endl;
   }
   
+  std::cout << "=========================" << std::endl;
+  std::cout << "Adding parent links..." << std::endl;
+
   { AddParentLinksPass aplPass; exprAST->accept(&aplPass); }
+
+  std::cout << "=========================" << std::endl;
+  std::cout << "Type checking... " << std::endl;
 
   { TypecheckPass tyPass; exprAST->accept(&tyPass); }
 

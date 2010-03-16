@@ -3,7 +3,7 @@ test = fn (arg:i32) {
    // (with no free variables); equivalent to
    // definition at top level.
   expect_i32(3)
-  print_i32( fn (x:i32) { x + 1 }(2) )
+  print_i32( fn (a:i32) { a + 1 }(2) )
   
   // requires closure conversion!
   expect_i32(2 + arg)

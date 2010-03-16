@@ -411,15 +411,22 @@ struct ClosureAST : public ExprAST {
   }
 
   explicit ClosureAST(FnAST* fn) : fn(fn), fnRef(NULL) {
+    //fn->parent = this;
   }
   
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    out << "(closure " << str(fnRef);
-    for (int i = 0; i < parts.size(); ++i) {
-      out << "\t" << str(parts[i]);
+    if (fnRef) {
+      out << "(closure " << str(fnRef);
+      for (int i = 0; i < parts.size(); ++i) {
+        out << "\t" << str(parts[i]);
+      }
+      return out << ")";
+    } else if (fn) {
+      return out << "(unrefined closure " << str(fn->proto) << ")";
+    } else {
+      return out << "(malformed closure)";
     }
-    return out << ")";
   }
 };
 
