@@ -254,7 +254,7 @@ const Type* closureTypeFromClosedFnType(const FunctionType* fnty) {
 }
 
 void CodegenPass::visit(ClosureAST* ast) {
-  if (!ast->fnRef) {
+  if (!ast->hasKnownEnvironment) {
     std::cerr << "Error! Closure made it past closure conversion without getting an environment type!" << std::endl;  
   }
   
@@ -266,45 +266,42 @@ void CodegenPass::visit(ClosureAST* ast) {
   
   
   ExprAST* env = new TupleExprAST(new SeqAST(ast->parts));
+  ExprAST* fnPtr = new VariableAST(ast->fn->proto->name, llvm::PointerType::get(ast->fn->type, 0));
   { TypecheckPass tp;
     env->accept(&tp);
     env->accept(this);
 
-    ast->fnRef->accept(&tp);
-    ast->fnRef->accept(this);
+    fnPtr->accept(&tp);
+    fnPtr->accept(this);
   }
 
-  assert(ast->fnRef->type != NULL);
-  if (const llvm::PointerType* pfnTy = llvm::dyn_cast<const llvm::PointerType>(ast->fnRef->type)) {
-    if (const FunctionType* fnTy = llvm::dyn_cast<const FunctionType>(pfnTy->getContainedType(0))) {
+  if (const FunctionType* fnTy = llvm::dyn_cast<const FunctionType>(ast->fn->type)) {
+    // Manually build struct for now, since we don't have PtrAST nodes
+    const Type* specificCloTy = closureTypeFromClosedFnType(fnTy);
+    const llvm::StructType* cloTy = genericVersionOfClosureType(fnTy);
 
-      // Manually build struct for now, since we don't have PtrAST nodes
-      const Type* specificCloTy = closureTypeFromClosedFnType(fnTy);
-      const llvm::StructType* cloTy = genericVersionOfClosureType(fnTy);
-      
-      std::cout << std::endl;
-      std::cout << "Fn type: " << *fnTy << std::endl;
-      std::cout << "Specific closure type: " << *specificCloTy << std::endl;
-      std::cout << "Generic closure type: " << *cloTy << std::endl;
+    std::cout << std::endl;
+    std::cout << "Fn type: " << *fnTy << std::endl;
+    std::cout << "Specific closure type: " << *specificCloTy << std::endl;
+    std::cout << "Generic closure type: " << *cloTy << std::endl;
 
-      addClosureTypeName(module, cloTy);
+    addClosureTypeName(module, cloTy);
 
-      llvm::AllocaInst* clo = builder.CreateAlloca(cloTy, 0, "closure");
+    llvm::AllocaInst* clo = builder.CreateAlloca(cloTy, 0, "closure");
 
-      Value* clo_code = builder.CreateConstGEP2_32(clo, 0, 0, "clo_code");
-      Value* bc_fnptr = builder.CreateBitCast(ast->fnRef->value, cloTy->getContainedType(0), "hideclofnty");
-      builder.CreateStore(bc_fnptr, clo_code, /*isVolatile=*/ false);
+    Value* clo_code = builder.CreateConstGEP2_32(clo, 0, 0, "clo_code");
+    Value* bc_fnptr = builder.CreateBitCast(fnPtr->value, cloTy->getContainedType(0), "hideclofnty");
+    builder.CreateStore(bc_fnptr, clo_code, /*isVolatile=*/ false);
 
-      Value* clo_env = builder.CreateConstGEP2_32(clo, 0, 1, "clo_env");
-      Value* bc_envptr = builder.CreateBitCast(env->value, cloTy->getContainedType(1), "hidecloenvty");
-      builder.CreateStore(bc_envptr, clo_env, /*isVolatile=*/ false);
+    Value* clo_env = builder.CreateConstGEP2_32(clo, 0, 1, "clo_env");
+    Value* bc_envptr = builder.CreateBitCast(env->value, cloTy->getContainedType(1), "hidecloenvty");
+    builder.CreateStore(bc_envptr, clo_env, /*isVolatile=*/ false);
 
-      ast->value = clo;
-    }
+    ast->value = clo;
   }
 
   if (!ast->value) {
-    std::cerr << "Closure fn ref had non-function pointer type?!? " << *(ast->fnRef->type) << std::endl;
+    std::cerr << "Closure fn ref had non-function pointer type?!? " << *(ast->fn->type) << std::endl;
   }
 }
 

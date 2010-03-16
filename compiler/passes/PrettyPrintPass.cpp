@@ -96,9 +96,7 @@ void PrettyPrintPass::visit(ClosureTypeAST* ast) {
 
 void PrettyPrintPass::visit(ClosureAST* ast) {
   scan(PPToken("<closure "));
-  if (ast->fnRef) {
-    scan(PPToken(str(ast->fnRef->type)));
-  } else {
+  if (ast->fn) {
     scan(PPToken(str(ast->fn->proto->type)));
   }
   scan(PPToken(">"));

@@ -121,15 +121,15 @@ ClosureAST* closureConvertFunction(ClosureConversionPass* pass, FnAST* ast) {
 
 void ClosureConversionPass::visit(ClosureAST* ast) {
   std::cout << "ClosureConversionPass visiting ClosureAST" << std::endl;
-  if (ast->fnRef) {
+  if (ast->hasKnownEnvironment) {
     visitChildren(ast);
   } else {
     std::cout << "ClosureConversionPass::visit(ClosureAST* ast fn..." << std::endl;
     std::cout << "\tproto: " << *(ast->fn->proto) << std::endl;
     ClosureAST* nu = closureConvertFunction(this, ast->fn);
-    std::cout << "\tnew proto: " << *(nu->fnRef->type) << std::endl;
-    ast->fnRef = nu->fnRef;
     ast->parts = nu->parts;
+    ast->fn    = nu->fn;
+    ast->hasKnownEnvironment = true;
     std::cout << "ClosureConversionPass::visit(ClosureAST fn ..." << std::endl;
   }
   std::cout << "ClosureConversionPass leaving ClosureAST" << std::endl;
@@ -270,8 +270,7 @@ ClosureAST* closureConvertAnonymousFunction(FnAST* ast) {
     }
   }
 
-  VariableAST* fnPtr = new VariableAST(ast->proto->name, llvm::PointerType::get(ast->type, 0));
-  ClosureAST* closure = new ClosureAST(fnPtr, envExprs);
+  ClosureAST* closure = new ClosureAST(ast, envExprs);
   hoistAnonymousFunctionAndReplaceWith(ast, closure);
   { TypecheckPass tp; closure->accept(&tp); }
   return closure;

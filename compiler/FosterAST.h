@@ -395,29 +395,29 @@ struct ClosureTypeAST : public ExprAST {
 struct ClosureAST : public ExprAST {
   // Closures created for fn AST nodes during AST parsing will
   // wrap the function AST node, and will not initially have
-  // a fnRef or an environment tuple (which requires calculation of
-  // free variables).
+  // known environment type exprs (which requires calculation of
+  // free variables) in this->parts.
   FnAST* fn;
 
-  // Closures created during closure conversion will get these fields
-  // filled in at creation time; existing closures will steal these fields
-  // from the closure created during closure conversion of the above
-  // fn AST node.
-  VariableAST* fnRef;
+  // Closures created during closure conversion will get this flag
+  // set at creation time; existing closures will set this flag
+  // during closure conversion of the above fn AST node.
+  bool hasKnownEnvironment;
 
-  explicit ClosureAST(VariableAST* fnRef, const Exprs& envExprs)
-    : fnRef(fnRef) {
+  explicit ClosureAST(FnAST* fn, const Exprs& envExprs)
+    : fn(fn), hasKnownEnvironment(true) {
       this->parts = envExprs;
+      //fn->parent = this;
   }
 
-  explicit ClosureAST(FnAST* fn) : fn(fn), fnRef(NULL) {
+  explicit ClosureAST(FnAST* fn) : fn(fn), hasKnownEnvironment(false) {
     //fn->parent = this;
   }
   
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    if (fnRef) {
-      out << "(closure " << str(fnRef);
+    if (hasKnownEnvironment && fn) {
+      out << "(closure " << str(fn->proto);
       for (int i = 0; i < parts.size(); ++i) {
         out << "\t" << str(parts[i]);
       }

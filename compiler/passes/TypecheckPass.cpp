@@ -258,11 +258,11 @@ void TypecheckPass::visit(ClosureTypeAST* ast) {
 
 void TypecheckPass::visit(ClosureAST* ast) {
   std::cout << "Type Checking closure AST node " << (*ast) << std::endl;
-  if (ast->fnRef) {
-    ast->fnRef->accept(this);
+  if (ast->hasKnownEnvironment) {
+    ast->fn->accept(this);
     visitChildren(ast);
   
-    if (const llvm::FunctionType* ft = tryExtractCallableType(ast->fnRef->type)) {
+    if (const llvm::FunctionType* ft = tryExtractCallableType(ast->fn->type)) {
       ast->type = genericVersionOfClosureType(ft);
       if (ft && ast->type) {
         std::cout << "ClosureAST fnRef typechecking converted " << *ft << " to " << *(ast->type) << std::endl;
@@ -271,7 +271,7 @@ void TypecheckPass::visit(ClosureAST* ast) {
 
     } else {
       std::cerr << "Error! 274 Function passed to closure does not have function type!" << std::endl;
-      std::cerr << *(ast->fnRef) << std::endl;
+      std::cerr << *(ast->fn) << std::endl;
     }
   } else {
     ast->fn->accept(this);
