@@ -22,6 +22,7 @@ void PrettyPrintPass::visit(IntAST* ast) {
 
 // name (: type)
 void PrettyPrintPass::visit(VariableAST* ast) {
+  scan(tBlockOpen);
   scan(PPToken(ast->name));
   if (this->printVarTypes) {
     scan(PPToken(":"));
@@ -32,6 +33,7 @@ void PrettyPrintPass::visit(VariableAST* ast) {
       scan(PPToken(ss.str()));
     }
   }
+  scan(tBlockClose);
 }
 
 void PrettyPrintPass::visit(UnaryOpExprAST* ast) {
@@ -53,7 +55,7 @@ void PrettyPrintPass::visit(BinaryOpExprAST* ast) {
 
 // fn Name (inArgs to outArgs)
 void PrettyPrintPass::visit(PrototypeAST* ast) {
-  //scan(tBlockOpen);
+  scan(tBlockOpen);
   //scan(tBlockOpen);
   scan(PPToken("fn"));
   scan(PPToken(" "));
@@ -75,15 +77,20 @@ void PrettyPrintPass::visit(PrototypeAST* ast) {
   scan(PPToken(" "));
   scan(PPToken(")"));
   //scan(tBlockClose);
-  //scan(tBlockClose);
+  scan(tBlockClose);
 }
 
 // fnProto fnBody
 void PrettyPrintPass::visit(FnAST* ast) {
   bool isTopLevelFn = ast->parent->parent == NULL;
   if (isTopLevelFn) { scan(tNewline); }
+
   ast->proto->accept(this);
+
+  if (!isTopLevelFn) { scan(tNewline); }
+
   ast->body->accept(this);
+
   if (isTopLevelFn) { scan(tNewline); }
 }
 
@@ -95,11 +102,13 @@ void PrettyPrintPass::visit(ClosureTypeAST* ast) {
 }
 
 void PrettyPrintPass::visit(ClosureAST* ast) {
+  scan(tBlockOpen);
   scan(PPToken("<closure "));
   if (ast->fn) {
     scan(PPToken(str(ast->fn->proto->type)));
   }
   scan(PPToken(">"));
+  scan(tBlockClose);
 }
 
 // if $0 { $1 } else { $2 }
@@ -147,8 +156,10 @@ void PrettyPrintPass::visit(SeqAST* ast) {
   }
 
   for (int i = 0; i < ast->parts.size(); ++i) {
+    scan(tBlockOpen);
     ast->parts[i]->accept(this);
-    
+    scan(tBlockClose);
+
     if (i != ast->parts.size() - 1) {
       if (CallAST* wasCall = dynamic_cast<CallAST*>(ast->parts[i])) {
         scan(tNewline);
@@ -173,8 +184,10 @@ void PrettyPrintPass::visit(SeqAST* ast) {
 // $0 ( $1, $2, ... , $n )
 void PrettyPrintPass::visit(CallAST* ast) {
   scan(tBlockOpen);
+  scan(tBlockOpen);
   ast->parts[0]->accept(this);
-  
+  scan(tBlockClose);
+  scan(tBlockOpen);
   scan(PPToken("("));
 
   if (ast->parts.size() > 1) {
@@ -195,11 +208,13 @@ void PrettyPrintPass::visit(CallAST* ast) {
       scan(tDedent);
     }
 
+    scan(tBlockOpen);
     ast->parts[i]->accept(this);
+    scan(tBlockClose);
   }
 
   scan(PPToken(")"));
-
+  scan(tBlockClose);
   scan(tBlockClose);
 }
 // array $0
