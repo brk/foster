@@ -416,6 +416,18 @@ const FunctionType* getFunctionTypeFromClosureStructType(const Type* ty) {
   return NULL;
 }
 
+// converts { T (env*, Y, Z)*, env* }   to   T (Y, Z)
+const llvm::FunctionType* originalFunctionTypeForClosureStructType(const llvm::StructType* sty) {
+  if (const llvm::FunctionType* ft = tryExtractCallableType(sty->getContainedType(0))) {
+    std::vector<const llvm::Type*> originalArgTypes;
+    for (int i = 1; i < ft->getNumParams(); ++i) {
+      originalArgTypes.push_back(ft->getParamType(i));
+    }
+    return llvm::FunctionType::get(ft->getReturnType(), originalArgTypes, /*isVarArg=*/ false);
+  }
+  return NULL;
+}
+
 void TypecheckPass::visit(CallAST* ast) {
   ExprAST* base = ast->parts[0];
   if (!base) {
@@ -433,19 +445,7 @@ void TypecheckPass::visit(CallAST* ast) {
   const llvm::FunctionType* baseFT = tryExtractCallableType(baseType);
   if (baseFT == NULL) {
     if (const llvm::StructType* sty = llvm::dyn_cast_or_null<const llvm::StructType>(baseType)) {
-      if (const llvm::FunctionType* ft = tryExtractCallableType(sty->getContainedType(0))) {
-        baseFT = ft;
-
-        /*
-        ast->parts[0] = new SubscriptAST(base, literalIntAST(0));
-        ast->parts[0]->parent = base->parent;
-        ast->parts[0]->type = baseFT;
-        */
-
-        ExprAST* env = new SubscriptAST(base, literalIntAST(1));
-        Exprs::iterator firstArg = ast->parts.begin(); ++firstArg;
-        ast->parts.insert(firstArg, env);
-      }
+      baseFT = originalFunctionTypeForClosureStructType(sty);
     }
   }
 

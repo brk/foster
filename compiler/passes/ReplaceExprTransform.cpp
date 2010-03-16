@@ -79,7 +79,7 @@ void ReplaceExprTransform::visit(ClosureTypeAST* ast) {
 
 void ReplaceExprTransform::visit(ClosureAST* ast) {
   visitChildren(ast);
-  this->newChild = ast;
+  this->newChild = rewrite(ast);
 }
 void ReplaceExprTransform::visit(IfExprAST* ast)              {
   onVisitChild(ast, &ast->testExpr);

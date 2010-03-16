@@ -74,16 +74,19 @@ void ClosureConversionPass::visit(PrototypeAST* ast)           {
     onVisitChild(ast, ast->inArgs[i]);
   }
 }
+
 void ClosureConversionPass::visit(FnAST* ast)                  {
   std::cout << "ClosureConversionPass visiting FnAST" << std::endl;
-  callStack.push_back(ast);
-  onVisitChild(ast, ast->proto);
-  
-    // Ensure that top-level functions are not considered free variables.
-  this->globalNames.insert(ast->proto->name);
-  
-  onVisitChild(ast, ast->body);
 
+  callStack.push_back(ast);
+    onVisitChild(ast, ast->proto);
+    // Ensure that this function is not a free variable in its own body
+    this->globalNames.insert(ast->proto->name);
+    onVisitChild(ast, ast->body);
+  callStack.pop_back();
+
+  std::cout << "ClosureConversionPass leaving FnAST" << std::endl;
+  
   if (isAnonymousFunction(ast)) {
     // Rename anonymous functions to reflect their lexical scoping
     FnAST* parentFn = dynamic_cast<FnAST*>(ast->parent);
@@ -95,12 +98,10 @@ void ClosureConversionPass::visit(FnAST* ast)                  {
     if (ast->lambdaLiftOnly) {
       lambdaLiftAnonymousFunction(ast);
     } else {
-      closureConvertAnonymousFunction(ast);
+      std::cout << "Anon function not wanting lambda lifting: " << ast->proto->name << std::endl;
+      //closureConvertAnonymousFunction(ast);
     }
-
   }
-  callStack.pop_back();
-  std::cout << "ClosureConversionPass leaving FnAST" << std::endl;
 }
 
 
@@ -112,10 +113,13 @@ void ClosureConversionPass::visit(ClosureTypeAST* ast) {
 
 ClosureAST* closureConvertFunction(ClosureConversionPass* pass, FnAST* ast) {
   callStack.push_back(ast);
-  pass->onVisitChild(ast, ast->proto);
-  pass->onVisitChild(ast, ast->body);
-  ClosureAST* cl = closureConvertAnonymousFunction(ast);
+    pass->onVisitChild(ast, ast->proto);
+    // Ensure that this function is not a free variable in its own body
+    pass->globalNames.insert(ast->proto->name);
+    pass->onVisitChild(ast, ast->body);
   callStack.pop_back();
+
+  ClosureAST* cl = closureConvertAnonymousFunction(ast);
   return cl;
 }
 
@@ -144,14 +148,18 @@ void ClosureConversionPass::visit(SimdVectorAST* ast)          { return; }
 void ClosureConversionPass::visit(SeqAST* ast)                 { return; }
 void ClosureConversionPass::visit(CallAST* ast)                {
   ExprAST* base = ast->parts[0];
-  FnAST* fnBase = dynamic_cast<FnAST*>(base);
-  if (fnBase) {
+  if (ClosureAST* cloBase = dynamic_cast<ClosureAST*>(base)) {
+    std::cout << "visited direct call of closure, replacing with fn... " << *base << std::endl;
+    replaceOldWithNew(cloBase->parent, cloBase, cloBase->fn);
+    std::cout << *(cloBase->parent) << std::endl;
+    base = ast->parts[0] = cloBase->fn;
+  }
+  if (FnAST* fnBase = dynamic_cast<FnAST*>(base)) {
     std::cout << "visited direct call of fn " << fnBase->proto->name << ", nested? " << fnBase->wasNested << std::endl;
     fnBase->lambdaLiftOnly = true;
     callsOf[fnBase].push_back(ast);
   } else {
-    VariableAST* varBase = dynamic_cast<VariableAST*>(base);
-    if (varBase) {
+    if (VariableAST* varBase = dynamic_cast<VariableAST*>(base)) {
       //std::cout << "visited call of var named " << varBase->name << std::endl;
     }
   }
@@ -193,7 +201,7 @@ ExprAST* getTopLevel(ExprAST* ast) {
   return ast;
 }
 
-void hoistAnonymousFunctionAndReplaceWith(FnAST* ast, ExprAST* replacement) {
+void hoistAnonymousFunction(FnAST* ast, ExprAST* replacement) {
   // Hoist newly-closed function definitions to the top level
   ExprAST* toplevel = getTopLevel(ast);
   if (SeqAST* topseq = dynamic_cast<SeqAST*>(toplevel)) {
@@ -205,7 +213,7 @@ void hoistAnonymousFunctionAndReplaceWith(FnAST* ast, ExprAST* replacement) {
   }
 
   // and replace their old definitions with a variable reference
-  std::cout << "Hoisting/replacing " << ast->proto->name << std::endl;
+  //std::cout << "Hoisting/replacing " << ast->proto->name << std::endl;
   replaceOldWithNew(ast->parent, ast, replacement);
   ast->parent = toplevel;
 
@@ -271,7 +279,7 @@ ClosureAST* closureConvertAnonymousFunction(FnAST* ast) {
   }
 
   ClosureAST* closure = new ClosureAST(ast, envExprs);
-  hoistAnonymousFunctionAndReplaceWith(ast, closure);
+  hoistAnonymousFunction(ast, closure);
   { TypecheckPass tp; closure->accept(&tp); }
   return closure;
 }

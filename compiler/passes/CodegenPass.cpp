@@ -297,7 +297,7 @@ void CodegenPass::visit(ClosureAST* ast) {
     Value* bc_envptr = builder.CreateBitCast(env->value, cloTy->getContainedType(1), "hidecloenvty");
     builder.CreateStore(bc_envptr, clo_env, /*isVolatile=*/ false);
 
-    ast->value = clo;
+    ast->value = builder.CreateLoad(clo, /*isVolatile=*/ false, "loadClosure");
   }
 
   if (!ast->value) {
@@ -369,7 +369,6 @@ Value* getElementFromComposite(Value* compositeValue, Value* idxValue) {
     std::vector<Value*> idx;
     idx.push_back(ConstantInt::get(Type::getInt32Ty(getGlobalContext()), 0));
     idx.push_back(idxValue);
-  
     Value* gep = builder.CreateGEP(compositeValue, idx.begin(), idx.end(), "subgep");
     return builder.CreateLoad(gep, "subgep_ld");
   } else if (llvm::isa<llvm::StructType>(compositeType)
@@ -460,6 +459,7 @@ void CodegenPass::visit(CallAST* ast) {
   Value* FV = base->value;
 
   const FunctionType* FT = NULL;
+  std::vector<Value*> valArgs;
 
   if (Function* F = llvm::dyn_cast_or_null<Function>(FV)) {
     // Call to top level function
@@ -468,9 +468,15 @@ void CodegenPass::visit(CallAST* ast) {
     // Call to function pointer
   } else if (const llvm::StructType* sty = llvm::dyn_cast<const llvm::StructType>(base->type)) {
     if (const llvm::FunctionType* fty = tryExtractCallableType(sty->getContainedType(0))) {
-      // Call to closure struct?
+      // Call to closure struct
       FT = fty;
-      FV = builder.CreateExtractValue(FV, 0, "subexv");
+      llvm::Value* clo = FV;
+      llvm::Value* envPtr = builder.CreateExtractValue(clo, 1, "getCloEnv");
+
+      // Pass env pointer as first parameter to function.
+      valArgs.push_back(envPtr);
+
+      FV = builder.CreateExtractValue(clo, 0, "getCloCode");
     }
   } else {
     // Call to something we don't know how to call!
@@ -483,8 +489,7 @@ void CodegenPass::visit(CallAST* ast) {
   
   //std::cout << "codegen CallAST base with " << FT->getNumParams() << " params" << std::endl;
 
-  std::vector<Value*> valArgs;
-  for (int i = 1, argNum = 0; i < ast->parts.size(); ++i) {
+  for (int i = 1; i < ast->parts.size(); ++i) {
     // Args checked for nulls during typechecking
     ExprAST* arg = ast->parts[i];
     
@@ -496,7 +501,7 @@ void CodegenPass::visit(CallAST* ast) {
     arg->accept(this);
     Value* V = arg->value;
     if (!V) {
-      std::cerr << "Error: null value for argument " << argNum << " found in CallAST codegen!" << std::endl;
+      std::cerr << "Error: null value for argument " << (i - 1) << " found in CallAST codegen!" << std::endl;
       return;
     }
     
@@ -511,17 +516,23 @@ void CodegenPass::visit(CallAST* ast) {
       appendArg(valArgs, V, FT); // Don't unpack non 'unpack'-marked structs
     }
   }
+
+  if (false) {
+    std::cout << "Creating call for AST {" << valArgs.size() << "} " << *base << std::endl;
+    for (int i = 0; i < valArgs.size(); ++i) {
+      std::cout << "\t" << *valArgs[i] << std::endl;
+    }
+  }
   
   int expectedNumArgs = FT->getNumParams();
   if (expectedNumArgs != valArgs.size()) {
-    std::cerr << "Function " << *base <<  " got " << valArgs.size() << " args, expected "<< expectedNumArgs;
+    std::cerr << "Function " << *base <<  " got " << valArgs.size() << " args, expected "<< expectedNumArgs << std::endl;
     return;
   }
   
   // Temporary hack: if a function expects i8 and we have i1, manually convert
   tempHackExtendIntTypes(FT, valArgs);
   
-  //std::cout << "Creating call for AST {" << valArgs.size() << "} " << *base << std::endl;
   ast->value = builder.CreateCall(FV, valArgs.begin(), valArgs.end(), "calltmp");
 }
 
