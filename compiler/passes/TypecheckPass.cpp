@@ -5,6 +5,7 @@
 #include "TypecheckPass.h"
 #include "FosterAST.h"
 #include "FosterUtils.h"
+#include "ANTLRtoFosterAST.h" // for isBitwiseOpName
 
 #include "llvm/DerivedTypes.h"
 #include "llvm/LLVMContext.h"
@@ -179,11 +180,9 @@ void TypecheckPass::visit(BinaryOpExprAST* ast) {
       }
     }
 
-    if (op == "bitand" || op == "bitor" || op == "bitxor" || op == "shl" || op == "lshr" || op == "ashr") {
-      if (!TL->isIntOrIntVector()) {
-        std::cerr << "Error: bitwise op '" << op << "' used with non-inty type " << *TL << std::endl;
-        return;
-      }
+    if (isBitwiseOpName(op) && !TL->isIntOrIntVector()) {
+      std::cerr << "Error: bitwise op '" << op << "' used with non-inty type " << *TL << std::endl;
+      return;
     }
 
     if (op == "<" || op == "==" || op == "!=" || op == "<=") {

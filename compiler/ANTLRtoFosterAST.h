@@ -19,5 +19,7 @@ std::string str(pANTLR3_STRING pstr);
 
 std::string str(pANTLR3_COMMON_TOKEN tok);
 
+bool isBitwiseOpName(const std::string& op);
+
 #endif // header guard
 

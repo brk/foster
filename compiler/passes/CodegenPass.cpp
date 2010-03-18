@@ -134,9 +134,9 @@ void CodegenPass::visit(BinaryOpExprAST* ast) {
   else if (op == "bitor") {  ast->value = builder.CreateOr( VL, VR, "bitortmp"); }
   else if (op == "bitxor") { ast->value = builder.CreateXor(VL, VR, "bitxortmp"); }
 
-  else if (op == "shl") { ast->value = builder.CreateShl(VL, VR, "shltmp"); }
-  else if (op == "lshr") { ast->value = builder.CreateLShr(VL, VR, "lshrtmp"); }
-  else if (op == "ashr") { ast->value = builder.CreateAShr(VL, VR, "ashrtmp"); }
+  else if (op == "bitshl") { ast->value = builder.CreateShl(VL, VR, "shltmp"); }
+  else if (op == "bitlshr") { ast->value = builder.CreateLShr(VL, VR, "lshrtmp"); }
+  else if (op == "bitashr") { ast->value = builder.CreateAShr(VL, VR, "ashrtmp"); }
   else {
     std::cerr << "Couldn't gen code for op " << op << endl;
   }

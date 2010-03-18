@@ -60,12 +60,6 @@ opspec c_binaryOps[] = {
     { "*", 20 },
     { "+", 25 },
     { "-", 25 },
-    { "bitand", 30 },
-    { "bitor", 30 },
-    { "bitxor", 30 },
-    { "shl", 40 },
-    { "lshr", 40 },
-    { "ashr", 40 },
     { "<=", 50 },
     { "<", 50 },
     { "==", 60 },
@@ -84,6 +78,11 @@ const char* c_reserved_keywords[] = {
 #ifndef ARRAY_SIZE
 #define ARRAY_SIZE(a) (sizeof(a)/sizeof(((a)[0])))
 #endif
+
+bool isBitwiseOpName(const string& op) {
+  return op == "bitand" || op == "bitor" || op == "bitxor" ||
+         op == "bitshl" || op == "bitlshr" || op == "bitashr";
+}
 
 void initMaps() {
   for (int i = 0; i < ARRAY_SIZE(c_binaryOps); ++i) {
@@ -263,7 +262,20 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     for (int i = 1; i < getChildCount(tree); ++i) {
       int trailerType = typeOf(child(tree, i));
       if (trailerType == CALL) {
-        prefix = new CallAST(prefix, getExprs(child(tree, i), fnMeansClosure));
+        // Two different things can parse as function calls: normal function calls,
+        // and function-call syntax for built-in bitwise operators.
+        VariableAST* varPrefix = dynamic_cast<VariableAST*>(prefix);
+        if (varPrefix && isBitwiseOpName(varPrefix->name)) {
+          Exprs args = getExprs(child(tree, i), fnMeansClosure);
+          if (args.size() != 2) {
+            std::cerr << "Error! Bitwise operator " << varPrefix->name <<
+                " with bad number of arguments: " << args.size() << "!" << std::endl;
+            return NULL;
+          }
+          prefix = new BinaryOpExprAST(varPrefix->name, args[0], args[1]);
+        } else {
+          prefix = new CallAST(prefix, getExprs(child(tree, i), fnMeansClosure));
+        }
       } else if (trailerType == LOOKUP) {
         pTree nameNode = child(child(tree, i), 0);
         const string& name = textOf(child(nameNode, 0));
@@ -343,7 +355,14 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
 
   if (token == NAME) {
     string varName = textOf(child(tree, 0));
-    
+
+    // Don't bother trying to look up special variable names,
+    // since we'll end up discarding this variable soon anyways.
+    if (isBitwiseOpName(varName)) {
+      // Give a bogus type until type inference is implemented.
+      return new VariableAST(varName, LLVMTypeFor("i32"));
+    }
+
     ExprAST* var = varScope.lookup(varName, "");
     if (!var) {
       // Maybe parsing a type expr, in which case names refer directly to

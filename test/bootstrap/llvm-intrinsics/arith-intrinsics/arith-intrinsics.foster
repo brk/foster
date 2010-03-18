@@ -7,12 +7,12 @@ check_tuples = fn (x : tuple { i32, i1 }, y : tuple { i32, i1 }) {
 }
 
 fn "main" () {
-  check_tuples( llvm.uadd.with.overflow.i32((1 shl 30), (1 shl 30)),
-                tuple { 1 shl 31, false } );
+  check_tuples( llvm.uadd.with.overflow.i32(bitshl(1, 30), bitshl(1, 30)),
+                tuple { bitshl(1, 31), false } );
                 
-  check_tuples( llvm.uadd.with.overflow.i32((1 shl 31), (1 shl 31)),
+  check_tuples( llvm.uadd.with.overflow.i32(bitshl(1, 31), bitshl(1, 31)),
                 tuple { 0, true } );
                 
-  check_tuples( llvm.sadd.with.overflow.i32((1 shl 30), (1 shl 30)),
+  check_tuples( llvm.sadd.with.overflow.i32(bitshl(1, 30), bitshl(1, 30)),
                 tuple { -2147483648, true } );
 }

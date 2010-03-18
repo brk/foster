@@ -88,7 +88,6 @@ sep		:	';' | ','; // semicolon or comma
 
 binop			:	'+' | '-' | '*' | '/' | '..' | '='
 			|	'<' | '<=' | '>=' | '>' | '==' | '!='
-			|	'bitand' | 'bitor' | 'bitxor' | 'shl' | 'lshr' | 'ashr'
 			|	AND | OR | '+=' | '-=' | '*=' | '/=';
 
 prefix_unop		:	'-' | 'not' | COMPILES | UNPACK;

@@ -21,26 +21,26 @@ fn "main" () {
   print_i32(123456789) // Poor man's visual separator
                  
   compare_4xi32( simd-vector { 0011_2, 0111_2, 1100_2, 1111_2 },
-                 simd-vector { 0010_2, 0110_2, 1100_2, 1110_2 } bitor
-                 simd-vector { 0001_2, 0011_2, 0100_2, 0111_2 } )
+           bitor(simd-vector { 0010_2, 0110_2, 1100_2, 1110_2 },
+                 simd-vector { 0001_2, 0011_2, 0100_2, 0111_2 }))
 
   expect_i32(123456789)
   print_i32(123456789) // Poor man's visual separator
                  
   compare_4xi32( simd-vector { 0000_2, 0010_2, 0100_2, 0110_2 },
-                 simd-vector { 0010_2, 0110_2, 1100_2, 1110_2 } bitand
+          bitand(simd-vector { 0010_2, 0110_2, 1100_2, 1110_2 },
                  simd-vector { 0001_2, 0011_2, 0100_2, 0111_2 } )
 
   compare_4xi32( simd-vector { 0011_2, 0101_2, 1000_2, 1001_2 },
-                 simd-vector { 0010_2, 0110_2, 1100_2, 1110_2 } bitxor
-                 simd-vector { 0001_2, 0011_2, 0100_2, 0111_2 } )
+          bitxor(simd-vector { 0010_2, 0110_2, 1100_2, 1110_2 },
+                 simd-vector { 0001_2, 0011_2, 0100_2, 0111_2 }))
 
   expect_i32(32342323)
   print_i32(32342323) // Poor man's visual separator
 
   compare_4xi32( simd-vector { 1, 11000_2, 1110000_2, 111100000_2 },
-                 simd-vector { 1, 3, 7, 15 } shl
-                 simd-vector { 0, 3, 4, 5 } )
+          bitshl(simd-vector { 1, 3, 7, 15 },
+                 simd-vector { 0, 3, 4, 5 }))
 
   expect_i32(123456789)
   print_i32(123456789) // Poor man's visual separator

@@ -1,13 +1,13 @@
 fn "main" () {
   expect_i32b(11100_2)
-  print_i32b(111_2 shl 2)
+  print_i32b(bitshl(111_2, 2))
 
   expect_i32b(1111_2)
-  print_i32b(101_2 bitor 1010_2)
+  print_i32b(bitor(101_2, 1010_2))
 
   expect_i32b(1010_2)
-  print_i32b(1111_2 bitand 1010_2)
+  print_i32b(bitand(1111_2, 1010_2))
   
   expect_i32b(11011_2)
-  print_i32b(10010_2 bitxor 01001_2)
+  print_i32b(bitxor(10010_2, 01001_2))
 }
