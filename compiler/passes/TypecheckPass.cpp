@@ -317,6 +317,59 @@ void TypecheckPass::visit(IfExprAST* ast) {
   }
 }
 
+void TypecheckPass::visit(RefExprAST* ast) {
+  ast->type = llvm::PointerType::getUnqual(ast->parts[0]->type);
+}
+
+void TypecheckPass::visit(DerefExprAST* ast) {
+  const Type* derefType = ast->parts[0]->type;
+  if (const llvm::PointerType* ptrTy = llvm::dyn_cast<llvm::PointerType>(derefType)) {
+    ast->type = ptrTy->getElementType();
+  } else {
+    std::cerr << "Deref() called on a non-pointer type " << *derefType << "!\n";
+    std::cerr << "base: " << *(ast->parts[0]) << std::endl;
+    ast->type = NULL;
+  }
+}
+
+void TypecheckPass::visit(AssignExprAST* ast) {
+  const Type* lhsTy = ast->parts[0]->type;
+  const Type* rhsTy = ast->parts[1]->type;
+
+  if (const llvm::PointerType* plhsTy = llvm::dyn_cast<llvm::PointerType>(lhsTy)) {
+    lhsTy = plhsTy->getElementType();
+    if (isCompatible(lhsTy, rhsTy)) {
+      ast->type = LLVMTypeFor("i32");
+    } else {
+      std::cerr << "Types in assignment are not copy compatible!" << std::endl;
+      std::cerr << "\tLHS (deref'd): " << *(lhsTy) << std::endl;
+      std::cerr << "\tRHS          : " << *(rhsTy) << std::endl;
+      ast->type = NULL;
+    }
+  } else {
+    std::cerr << "Attempted assignment to a non-pointer (internally) type " << *lhsTy << "!\n";
+    std::cerr << "AST dump: " << *(ast) << std::endl;
+    ast->type = NULL;
+  }
+}
+
+// Returns aggregate and vector types directly, and returns the underlying
+// aggregate type for pointer-to-aggregate. Returns NULL in other cases.
+const llvm::CompositeType* getIndexableType(const llvm::Type* ty) {
+  const llvm::Type* baseType = ty;
+  std::cout << "getIndexableType: " << *ty << std::endl;
+  if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
+    ty = pty->getElementType();
+  }
+
+  if (ty->isAggregateType() || llvm::isa<llvm::VectorType>(ty)) {
+    return llvm::dyn_cast<llvm::CompositeType>(ty);
+  } else {
+    std::cerr << "Error: Cannot index into non-aggregate type " << *baseType << std::endl;
+    return NULL;
+  }
+}
+
 void TypecheckPass::visit(SubscriptAST* ast) {
   if (!ast->parts[1]) {
     std::cerr << "Error: SubscriptAST had null index" << std::endl;
@@ -341,50 +394,53 @@ void TypecheckPass::visit(SubscriptAST* ast) {
     return;
   }
   
-  if (!(baseType->isAggregateType() || llvm::isa<llvm::VectorType>(baseType))) {
-    std::cerr << "Error: Cannot index into non-aggregate type " << *baseType << std::endl;
+  const llvm::CompositeType* compositeTy = getIndexableType(baseType);
+  if (compositeTy == NULL) {
+     std::cerr << "Error: attempt to index into a non-composite type " << *baseType << std::endl;
+     return;
+  }
+
+
+  std::cout << "Indexing " << *baseType << " as composite " << *compositeTy << std::endl;
+
+  // Check to see that the given index is valid for this type
+  ConstantInt* cidx = llvm::dyn_cast<ConstantInt>(idx->getConstantValue());
+  const APInt& vidx = cidx->getValue();
+
+  if (!vidx.isSignedIntN(64)) { // an exabyte of memory should be enough for anyone!
+    std::cerr << "Error: Indices must fit in 64 bits; tried to index with '" << *cidx << "'" << std::endl;
+    return;
+  }
+
+  if (!compositeTy->indexValid(cidx) || vidx.isNegative()) {
+    std::cerr << "Error: attempt to index composite with invalid index '" << *cidx << "'" << std::endl;
     return;
   }
   
-  const llvm::CompositeType* compositeTy = llvm::dyn_cast<llvm::CompositeType>(baseType);
-  if (compositeTy != NULL) {
-    // Check to see that the given index is valid for this type
-    ConstantInt* cidx = llvm::dyn_cast<ConstantInt>(idx->getConstantValue());
-    const APInt& vidx = cidx->getValue();
-    
-    if (!vidx.isSignedIntN(64)) { // an exabyte of memory should be enough for anyone!
-      std::cerr << "Error: Indices must fit in 64 bits; tried to index with '" << *cidx << "'" << std::endl;
+  // LLVM doesn't do bounds checking for arrays or vectors, but we do!
+  uint64_t numElements = -1;
+  if (const llvm::ArrayType* ty = llvm::dyn_cast<llvm::ArrayType>(baseType)) {
+    numElements = ty->getNumElements();
+  }
+
+  if (const llvm::VectorType* ty = llvm::dyn_cast<llvm::VectorType>(baseType)) {
+    numElements = ty->getNumElements();
+  }
+
+  if (numElements >= 0) {
+    uint64_t idx_u64 = vidx.getZExtValue();
+    if (idx_u64 >= numElements) {
+      std::cerr << "Error: attempt to index array[" << numElements << "]"
+                << " with invalid index '" << idx_u64 << "'" << std::endl;
       return;
     }
-    
-    if (!compositeTy->indexValid(cidx) || vidx.isNegative()) {
-      std::cerr << "Error: attempt to index composite with invalid index '" << *cidx << "'" << std::endl;
-      return;
-    }
-    
-    // LLVM doesn't do bounds checking for arrays or vectors, but we do!
-    uint64_t numElements = -1;
-    if (const llvm::ArrayType* ty = llvm::dyn_cast<llvm::ArrayType>(baseType)) {
-      numElements = ty->getNumElements();
-    }
-    
-    if (const llvm::VectorType* ty = llvm::dyn_cast<llvm::VectorType>(baseType)) {
-      numElements = ty->getNumElements();
-    }   
-    
-    if (numElements >= 0) {
-      uint64_t idx_u64 = vidx.getZExtValue();
-      if (idx_u64 >= numElements) {
-        std::cerr << "Error: attempt to index array[" << numElements << "]"
-                  << " with invalid index '" << idx_u64 << "'" << std::endl;
-        return;
-      }
-    }
-    
-    std::cout << "Indexing composite with index " << *cidx << "; neg? " << vidx.isNegative() << std::endl;
-    ast->type = compositeTy->getTypeAtIndex(cidx);
-  } else {
-    std::cerr << "Error: attempt to index into a non-composite type " << *baseType << std::endl;
+  }
+
+  std::cout << "Indexing composite with index " << *cidx << "; neg? " << vidx.isNegative() << std::endl;
+  ast->type = compositeTy->getTypeAtIndex(cidx);
+
+  if (this->inAssignLHS) {
+    ast->type = llvm::PointerType::getUnqual(ast->type);
   }
 }
 
@@ -532,6 +588,26 @@ void TypecheckPass::visit(CallAST* ast) {
   }
 }
 
+/// For now, as a special case, simd-vector and array will interpret { 4;i32 }
+/// as meaning the same thing as { i32 ; i32 ; i32 ; i32 }
+int extractNumElementsAndElementType(int maxSize, ExprAST* ast, const Type*& elementType) {
+  SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
+  IntAST* first = dynamic_cast<IntAST*>(body->parts[0]);
+  VariableAST* var = dynamic_cast<VariableAST*>(body->parts[1]);
+  if (first && var) {
+    APInt v = first->getAPInt();
+    unsigned int n = v.getZExtValue();
+    // Sanity check on # elements; nobody? wants a single billion-element vector...
+    if (n <= maxSize) {
+      elementType = var->type;
+      return n;
+    } else {
+      std::cerr << "Concise simd/array declaration too big! : " << *ast << std::endl;
+    }
+  }
+  return 0;
+}
+
 void TypecheckPass::visit(ArrayExprAST* ast) {
   bool success = true;
   std::map<const Type*, bool> fieldTypes;
@@ -544,29 +620,47 @@ void TypecheckPass::visit(ArrayExprAST* ast) {
   
   int numElements = body->parts.size();
   const Type* elementType = NULL;
-  for (int i = 0; i < numElements; ++i) {
-    const Type* ty =  body->parts[i]->type;
-    if (!ty) {
-      std::cerr << "Array expr had null constituent type for subexpr " << i << std::endl;
+
+  if (numElements == 2) {
+    numElements = extractNumElementsAndElementType(256, ast, elementType);
+    if (numElements != 0) {
+      // Don't try to interpret the size + type as initializers!
+      body->parts.clear();
+    } else {
+      numElements = 2;
+    }
+  }
+
+  if (!elementType) {
+    for (int i = 0; i < numElements; ++i) {
+      const Type* ty =  body->parts[i]->type;
+      if (!ty) {
+        std::cerr << "Array expr had null constituent type for subexpr " << i << std::endl;
+        success = false;
+        break;
+      }
+      fieldTypes[ty] = true;
+      elementType = ty;
+    }
+
+    // TODO This should probably be relaxed eventually; for example,
+    // an array of "small" and "large" int literals should silently be accepted
+    // as an array of "large" ints.
+    if (success && fieldTypes.size() > 1) {
+      std::cerr << "Array expression had multiple types! Found:" << std::endl;
+      std::map<const Type*, bool>::const_iterator it;;
+      for (it = fieldTypes.begin(); it != fieldTypes.end(); ++it) {
+        std::cerr << "\t" << *((*it).first) << std::endl;
+      }
       success = false;
-      break;
     }
-    fieldTypes[ty] = true;
-    elementType = ty;
   }
-  
-  // TODO This should probably be relaxed eventually; for example,
-  // an array of "small" and "large" int literals should silently be accepted
-  // as an array of "large" ints.
-  if (success && fieldTypes.size() != 1) {
-    std::cerr << "Array expression had multiple types! Found:" << std::endl;
-    std::map<const Type*, bool>::const_iterator it;;
-    for (it = fieldTypes.begin(); it != fieldTypes.end(); ++it) {
-      std::cerr << "\t" << *((*it).first) << std::endl;
-    }
-    success = false;
+
+  if (!elementType) {
+    std::cerr << "Error: Array had no discernable element type?!?" << std::endl;
+    return;
   }
-  
+
   if (success) {
     ast->type = llvm::ArrayType::get(elementType, numElements);
   }
@@ -586,19 +680,8 @@ void TypecheckPass::visit(SimdVectorAST* ast) {
   int numElements = body->parts.size();
   const Type* elementType = NULL;
 
-  // For now, as a special case, simd-vector will interpret { 4 ; i32 }
-  // as meaning the same thing as { i32 ; i32 ; i32 ; i32 }
   if (numElements == 2) {
-    IntAST* first = dynamic_cast<IntAST*>(body->parts[0]);
-    if (first) {
-      APInt v = first->getAPInt();
-      unsigned int n = v.getZExtValue();
-      // Sanity check on # elements; nobody? wants a single billion-element vector...
-      if (n <= 256) {
-        numElements = n;
-        elementType = body->parts[1]->type;
-      }
-    }
+    numElements = extractNumElementsAndElementType(256, ast, elementType);
   }
 
   // No special case; iterate through and collect all the types

@@ -75,9 +75,17 @@ const char* c_reserved_keywords[] = {
   "return", "throw", "trait", "try", "type", "val", "with", "yield"
 };
 
+bool isUnaryOp(const string& op) {
+  return op == "-" || op == "not";
+}
+
 #ifndef ARRAY_SIZE
 #define ARRAY_SIZE(a) (sizeof(a)/sizeof(((a)[0])))
 #endif
+
+bool isSpecialName(const string& op) {
+  return op == "deref" || isBitwiseOpName(op);
+}
 
 bool isBitwiseOpName(const string& op) {
   return op == "bitand" || op == "bitor" || op == "bitxor" ||
@@ -152,6 +160,17 @@ IntAST* parseIntFrom(pTree t) {
 }
 
 int typeOf(pTree tree) { return tree->getType(tree); }
+
+/// Returns ast if ast may be valid as the LHS of an assign expr, else NULL.
+/// Valid forms for the LHS of an assign expr are:
+/// * Variables (presumably to a ref)
+/// * Subscripts
+/// * Lookups (eventually)
+ExprAST* validateAssignLHS(ExprAST* ast) {
+  if (VariableAST* var = dynamic_cast<VariableAST*>(ast)) { return ast; }
+  if (SubscriptAST* var = dynamic_cast<SubscriptAST*>(ast)) { return ast; }
+  return NULL;
+}
 
 VariableAST* parseFormal(pTree tree, bool fnMeansClosure) {
   // ^(FORMAL ^(TEXT varName) ^(... type ... ))
@@ -262,20 +281,34 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     for (int i = 1; i < getChildCount(tree); ++i) {
       int trailerType = typeOf(child(tree, i));
       if (trailerType == CALL) {
+        Exprs args = getExprs(child(tree, i), fnMeansClosure);
+
         // Two different things can parse as function calls: normal function calls,
         // and function-call syntax for built-in bitwise operators.
         VariableAST* varPrefix = dynamic_cast<VariableAST*>(prefix);
-        if (varPrefix && isBitwiseOpName(varPrefix->name)) {
-          Exprs args = getExprs(child(tree, i), fnMeansClosure);
-          if (args.size() != 2) {
-            std::cerr << "Error! Bitwise operator " << varPrefix->name <<
-                " with bad number of arguments: " << args.size() << "!" << std::endl;
-            return NULL;
+        if (varPrefix) {
+          if (varPrefix->name == "deref") {
+            if (args.size() != 1) {
+              std::cerr << "Error! Deref operator called with bad number of args: " <<
+                  args.size() << std::endl;
+              return NULL;
+            }
+            prefix = new DerefExprAST(args[0]);
+            continue;
           }
-          prefix = new BinaryOpExprAST(varPrefix->name, args[0], args[1]);
-        } else {
-          prefix = new CallAST(prefix, getExprs(child(tree, i), fnMeansClosure));
+
+          if (isBitwiseOpName(varPrefix->name)) {
+            if (args.size() != 2) {
+              std::cerr << "Error! Bitwise operator " << varPrefix->name <<
+                  " with bad number of arguments: " << args.size() << "!" << std::endl;
+              return NULL;
+            }
+            prefix = new BinaryOpExprAST(varPrefix->name, args[0], args[1]);
+            continue;
+          }
+          // Else fall through to general case below
         }
+        prefix = new CallAST(prefix, args);
       } else if (trailerType == LOOKUP) {
         pTree nameNode = child(child(tree, i), 0);
         const string& name = textOf(child(nameNode, 0));
@@ -294,6 +327,18 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     return ExprAST_from(child(tree, 0), fnMeansClosure);
   }
   
+  // <LHS RHS>
+  if (token == SETEXPR) {
+    ExprAST* lhs = validateAssignLHS(ExprAST_from(child(tree, 0), fnMeansClosure));
+    if (!lhs) {
+      std::cerr << "Error! Invalid syntactic form on LHS of assignment;" <<
+          " must be variable or subscript expr" << std::endl;
+      return NULL;
+    }
+    ExprAST* rhs = ExprAST_from(child(tree, 1), fnMeansClosure);
+    return new AssignExprAST(lhs, rhs);
+  }
+
   // <formal arg (body | next) [type]>
   if (token == LETEXPR) {
     VariableAST* formal = parseFormal(child(tree, 0), fnMeansClosure);
@@ -358,7 +403,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
 
     // Don't bother trying to look up special variable names,
     // since we'll end up discarding this variable soon anyways.
-    if (isBitwiseOpName(varName)) {
+    if (isSpecialName(varName)) {
       // Give a bogus type until type inference is implemented.
       return new VariableAST(varName, LLVMTypeFor("i32"));
     }
@@ -388,7 +433,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     return (getChildCount(tree) == 0) ? NULL : ExprAST_from(child(tree, 0), fnMeansClosure);
   }
 
-  if (text == "=") { // must come before binaryOps since it's handled specially
+  if (token == FNDEF) {
     assert(getChildCount(tree) == 2);
     // x = fn { blah }   ===   x = fn "x" { blah }
     pTree lval = (child(tree, 0));
@@ -403,8 +448,14 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     }
   }
   
+  if (text == "new" || text == "ref") {
+    // Currently 'new' and 'ref' are interchangeable, though the intended
+    // convention is that 'new' is for value-exprs and 'ref' is for type-exprs
+    return new RefExprAST(ExprAST_from(child(tree, 0), fnMeansClosure));
+  }
+
   // Handle unary negation explicitly, before the binary op handler
-  if ((text == "-" && getChildCount(tree) == 1) || text == "not") {
+  if (getChildCount(tree) == 1 && isUnaryOp(text)) {
     return new UnaryOpExprAST(text, ExprAST_from(child(tree, 0), fnMeansClosure));
   }
 

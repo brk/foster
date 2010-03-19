@@ -1,0 +1,33 @@
+// IN: 2 3 5 8 13 21
+
+expect-eq-tref = fn (t1:tuple {i32,i32}, t2:tuple{ref i32, ref i32}) {
+  expect_i32(t1[0])
+  print_i32(deref(t2[0]))
+  
+  expect_i32(t1[1])
+  print_i32(deref(t2[1]))
+}
+
+expect-eq-reft = fn (t1:tuple {i32,i32}, t2:ref tuple{i32,i32}) {
+  expect_i32(t1[0])
+  print_i32(deref(t2)[0])
+  
+  expect_i32(t1[1])
+  print_i32(deref(t2)[1])
+}
+
+expect-eq-reftref = fn (t1:tuple {i32,i32}, t2:ref tuple{ref i32, ref i32}) {
+  expect_i32(t1[0])
+  print_i32(deref(deref(t2)[0]))
+  
+  expect_i32(t1[1])
+  print_i32(deref(deref(t2)[1]))
+}
+
+fn "main" () {
+  expect-eq-tref( tuple {2,3}, tuple { new read_i32(), new read_i32() } )
+  
+  expect-eq-reft( tuple {5,8}, new tuple { read_i32(), read_i32() } )
+  
+  expect-eq-reftref( tuple {13,21}, new tuple { new read_i32(), new read_i32() } )
+}

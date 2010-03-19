@@ -21,6 +21,13 @@ struct FosterASTVisitor {
   // By default, merely recursively accepts the visitor at the child node.
   virtual void onVisitChild(ExprAST* ast, ExprAST* child);
   
+  // Usually, subscripting a ref-to-array-of-T results in a value of type T,
+  // but in the LHS of an assignment, it remains of type ref T instead.
+  // TODO? Something similar would need to be done for member lookups
+  bool inAssignLHS;
+
+  explicit FosterASTVisitor() : inAssignLHS(false) {}
+
   // Declare the individual (pure virtual) visit function for the AST node types
   #define FOSTER_AST_VISITOR_PURE_VIRTUAL
   #include "FosterASTVisitor.decls.inc.h"

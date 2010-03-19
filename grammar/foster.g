@@ -14,7 +14,7 @@ tokens {
 
 	FN; OUT; BODY; GIVEN; GIVES; SEQ; INT; RAT; EXPRS; NAME; CTOR;
 	TRAILERS; CALL; TUPLE; SUBSCRIPT; LOOKUP; FORMAL; ARRAY; SIMD;
-	LETEXPR; PARENEXPR; TYPEDEFN;
+	LETEXPR; SETEXPR; PARENEXPR; TYPEDEFN; FNDEF;
 	}
 
 program			:	nl* toplevelexpr (nl+ toplevelexpr)* nl* EOF -> ^(EXPRS toplevelexpr+);
@@ -40,6 +40,9 @@ str	                :       STR;
 name_or_ctor		:	name (seq -> ^(CTOR name seq)
 				        |   -> name);
 
+// lhs = ident or LOOKUP or SUBSCRIPT but not CALL
+setexpr	:	'set' lhs=compound '=' rhs=expr -> ^(SETEXPR $lhs $rhs);
+
 letexpr	:	'let' formal '=' arg=expr 
 			( ((nl | ';') next=letexpr) 
 			| ('in') body=seq typeinscription?) -> ^(LETEXPR formal $arg $body $next typeinscription);
@@ -56,6 +59,7 @@ term			:	( literal
 				| fn
 				| seq
 				| ifexpr
+				| setexpr
 				| sugarterm
 				| name_or_ctor
 				| custom_terms
@@ -70,7 +74,8 @@ subexpr			:	compound (  binop nl? subexpr	-> ^(binop compound subexpr)
 				);
 expr	:	subexpr;
 
-toplevelexpr : expr | typedefn ;
+fndef 	:	 name '=' fn -> ^(FNDEF name fn);
+toplevelexpr : fndef | typedefn | fn;
 typedefn : 'type' name '=' typeexpr -> ^(TYPEDEFN name typeexpr);
 
 type_of_type	:	name 'of' typeexpr 'to'? typeexpr  -> ^(CTOR name ^(SEQ typeexpr+));
@@ -86,11 +91,11 @@ seq			:	'{' nl* exprlist? nl* '}' -> ^(SEQ exprlist);
 exprlist        :       expr ((sep | nl) nl* expr)* sep? -> expr+;
 sep		:	';' | ','; // semicolon or comma
 
-binop			:	'+' | '-' | '*' | '/' | '..' | '='
+binop			:	'+' | '-' | '*' | '/' | '..'
 			|	'<' | '<=' | '>=' | '>' | '==' | '!='
 			|	AND | OR | '+=' | '-=' | '*=' | '/=';
 
-prefix_unop		:	'-' | 'not' | COMPILES | UNPACK;
+prefix_unop		:	'-' | 'not' | 'new' | 'ref' | COMPILES | UNPACK;
 
 nl : NEWLINE;
 

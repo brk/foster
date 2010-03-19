@@ -132,6 +132,24 @@ void PrettyPrintPass::visit(IfExprAST* ast) {
   //ast->parts[2]->accept(this);
 }
 
+void PrettyPrintPass::visit(RefExprAST* ast) {
+  scan(PPToken("ref "));
+  ast->parts[0]->accept(this);
+}
+
+void PrettyPrintPass::visit(DerefExprAST* ast) {
+  scan(PPToken("deref("));
+  ast->parts[0]->accept(this);
+  scan(PPToken(")"));
+}
+
+void PrettyPrintPass::visit(AssignExprAST* ast) {
+  scan(PPToken("set "));
+  ast->parts[0]->accept(this);
+  scan(PPToken(" = "));
+  ast->parts[1]->accept(this);
+}
+
 // $0 [ $1 ]
 void PrettyPrintPass::visit(SubscriptAST* ast) {
   //scan(tBlockOpen);

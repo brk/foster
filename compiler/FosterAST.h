@@ -441,6 +441,37 @@ struct IfExprAST : public ExprAST {
   }
 };
 
+struct RefExprAST : public UnaryExprAST {
+  explicit RefExprAST(ExprAST* expr) : UnaryExprAST(expr) {}
+  virtual void accept(FosterASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
+  virtual std::ostream& operator<<(std::ostream& out) const {
+    return out << "(ref " << str(this->parts[0]) << ")";
+  }
+};
+
+struct DerefExprAST : public UnaryExprAST {
+  explicit DerefExprAST(ExprAST* expr) : UnaryExprAST(expr) {}
+  virtual void accept(FosterASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
+  virtual std::ostream& operator<<(std::ostream& out) const {
+    return out << "(deref " << str(this->parts[0]) << ")";
+  }
+};
+
+struct AssignExprAST : public BinaryExprAST {
+  explicit AssignExprAST(ExprAST* lhs, ExprAST* rhs) : BinaryExprAST(lhs, rhs) {}
+  virtual void accept(FosterASTVisitor* visitor) {
+    visitor->inAssignLHS = true;
+    parts[0]->accept(visitor);
+    visitor->inAssignLHS = false;
+
+    parts[1]->accept(visitor);
+    visitor->visit(this);
+  }
+  virtual std::ostream& operator<<(std::ostream& out) const {
+    return out << "set " << str(this->parts[0]) << " = " << str(parts[1]) << std::endl;
+  }
+};
+
 struct UnpackExprAST : public UnaryExprAST {
   explicit UnpackExprAST(ExprAST* expr) : UnaryExprAST(expr) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }

@@ -118,6 +118,9 @@ void ClosureConversionPass::visit(IfExprAST* ast)              {
   onVisitChild(ast, ast->thenExpr);
   onVisitChild(ast, ast->elseExpr);
 }
+void ClosureConversionPass::visit(RefExprAST* ast)             { return; }
+void ClosureConversionPass::visit(DerefExprAST* ast)           { return; }
+void ClosureConversionPass::visit(AssignExprAST* ast)          { return; }
 void ClosureConversionPass::visit(SubscriptAST* ast)           { return; }
 void ClosureConversionPass::visit(SimdVectorAST* ast)          { return; }
 void ClosureConversionPass::visit(SeqAST* ast)                 { return; }

@@ -87,6 +87,9 @@ void ReplaceExprTransform::visit(IfExprAST* ast)              {
   onVisitChild(ast, &ast->elseExpr);
   this->newChild = rewrite(ast);
 }
+void ReplaceExprTransform::visit(RefExprAST* ast)             { this->newChild = rewrite(ast); }
+void ReplaceExprTransform::visit(DerefExprAST* ast)           { this->newChild = rewrite(ast); }
+void ReplaceExprTransform::visit(AssignExprAST* ast)          { this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(SubscriptAST* ast)           { this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(SimdVectorAST* ast)          { this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(SeqAST* ast)                 { this->newChild = rewrite(ast); }
