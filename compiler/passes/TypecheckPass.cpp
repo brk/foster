@@ -418,16 +418,16 @@ void TypecheckPass::visit(SubscriptAST* ast) {
   }
   
   // LLVM doesn't do bounds checking for arrays or vectors, but we do!
-  uint64_t numElements = -1;
-  if (const llvm::ArrayType* ty = llvm::dyn_cast<llvm::ArrayType>(baseType)) {
+  uint64_t numElements = 0;
+  if (const llvm::ArrayType* ty = llvm::dyn_cast<llvm::ArrayType>(compositeTy)) {
     numElements = ty->getNumElements();
   }
 
-  if (const llvm::VectorType* ty = llvm::dyn_cast<llvm::VectorType>(baseType)) {
+  if (const llvm::VectorType* ty = llvm::dyn_cast<llvm::VectorType>(compositeTy)) {
     numElements = ty->getNumElements();
   }
 
-  if (numElements >= 0) {
+  if (numElements > 0) {
     uint64_t idx_u64 = vidx.getZExtValue();
     if (idx_u64 >= numElements) {
       std::cerr << "Error: attempt to index array[" << numElements << "]"
@@ -588,24 +588,39 @@ void TypecheckPass::visit(CallAST* ast) {
   }
 }
 
+bool hasTyExpr(ExprAST* e) {
+  if (!e) { return false; }
+  if (RefExprAST* v = dynamic_cast<RefExprAST*>(e)) {
+    return hasTyExpr(v->parts[0]);
+  }
+  if (VariableAST* v = dynamic_cast<VariableAST*>(e)) {
+    return LLVMTypeFor(v->name) != NULL;
+  } else {
+    return false;
+  }
+}
+
 /// For now, as a special case, simd-vector and array will interpret { 4;i32 }
 /// as meaning the same thing as { i32 ; i32 ; i32 ; i32 }
 int extractNumElementsAndElementType(int maxSize, ExprAST* ast, const Type*& elementType) {
   SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
-  IntAST* first = dynamic_cast<IntAST*>(body->parts[0]);
-  VariableAST* var = dynamic_cast<VariableAST*>(body->parts[1]);
-  if (first && var) {
-    APInt v = first->getAPInt();
-    unsigned int n = v.getZExtValue();
-    // Sanity check on # elements; nobody? wants a single billion-element vector...
-    if (n <= maxSize) {
-      elementType = var->type;
-      return n;
+  bool secondTyExpr = hasTyExpr(body->parts[1]);
+  if (secondTyExpr) {
+    if (IntAST* first = dynamic_cast<IntAST*>(body->parts[0])) {
+      APInt v = first->getAPInt();
+      unsigned int n = v.getZExtValue();
+      // Sanity check on # elements; nobody? wants a single billion-element vector...
+      if (n <= maxSize) {
+        elementType = body->parts[1]->type;
+        return n;
+      } else {
+        std::cerr << "Concise simd/array declaration too big! : " << *ast << std::endl;
+      }
     } else {
-      std::cerr << "Concise simd/array declaration too big! : " << *ast << std::endl;
+      return 0;
     }
   }
-  return 0;
+  return -1;
 }
 
 void TypecheckPass::visit(ArrayExprAST* ast) {
@@ -623,7 +638,7 @@ void TypecheckPass::visit(ArrayExprAST* ast) {
 
   if (numElements == 2) {
     numElements = extractNumElementsAndElementType(256, ast, elementType);
-    if (numElements != 0) {
+    if (numElements != -1) {
       // Don't try to interpret the size + type as initializers!
       body->parts.clear();
     } else {
@@ -716,6 +731,11 @@ void TypecheckPass::visit(SimdVectorAST* ast) {
     success = false;
   }
   
+  if (!llvm::VectorType::isValidElementType(elementType)) {
+    std::cerr << "simd-vector given invalid element type: " << *elementType << "\n";
+    success = false;
+  }
+
   if (success) {
     ast->type = llvm::VectorType::get(elementType, numElements);
   }

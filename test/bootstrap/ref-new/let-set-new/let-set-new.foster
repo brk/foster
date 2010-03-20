@@ -1,0 +1,19 @@
+fn "main" () {
+  expect_i1(true) ; print_i1(__COMPILES__ let v:ref i32 = new 3 in {0} )
+  expect_i1(true) ; print_i1(__COMPILES__ let v:ref i32 = new i32 in {0})
+  
+  expect_i1(true) ; print_i1(__COMPILES__ let v:ref i32 = new i32 ; let x:ref i32 = new i32 in {0})
+  
+  // No such thing as a properly-typed circular reference, eh?
+  // This vaguely corresponds to the C code:  void* v; v = &v;
+  expect_i1(false) ; print_i1(__COMPILES__ let v:ref i32 = v in {0})
+  
+  expect_i1(true) ; print_i1(__COMPILES__ let v:ref i32 = new i32 ; let x:ref i32 = v in {0})
+
+  
+  let v:ref i32 = new 3
+  let x:ref i32 = v in {
+    // Aliasing test
+    set x = 4 ; expect_i32(4) ; print_i32(deref(v))
+  }
+}

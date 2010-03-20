@@ -1,6 +1,8 @@
 one = fn () { 1 }
 
 fn "main" () {
-  expect_i32(1) ; print_i32(one())  
+  expect_i32(1) ; print_i32(one())
+  
+  // Test that variable scoping is respected: outer v not in scope
   expect_i1(false) ; print_i1(__COMPILES__ fn (v:i32) { v }(v))
 }
