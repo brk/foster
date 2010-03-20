@@ -1,0 +1,21 @@
+// IN: 2 3 5 8 13 21
+
+iota-a4 = fn(a: ref array{4;i32} to ref array{4;i32}) {
+    set a[0] = 0
+    set a[1] = 1
+    set a[2] = 2
+    set a[3] = 3
+    a
+}
+
+fn "main" () { // iota-a4(  )
+  let a:ref array {4;i32} = iota-a4(new array {4,i32}) in {
+    // In the LHS of an assignment, if a is ref-to-array-of-T,
+    //   then a[k] is a ref to element k, of type ref T.
+    // In all other situations, including let bindings and the RHS of an assignment,
+    //   a[k] is automatically dereferenced to be of type T. This is merely
+    //   syntax sugar to avoid many "obviously pointless" derefs.
+    expect_i32(0) ; print_i32(a[0])
+    expect_i32(3) ; print_i32(a[3])
+  }
+}

@@ -99,6 +99,12 @@ class FosterSymbolTable : public NameResolver<T> {
       return rv;
     }
     LexicalScope(string name) : name(name) {}
+    void dump(std::ostream& out) {
+      out << "\t" << name << std::endl;
+      for (typename Map::iterator it = val_of.begin(); it != val_of.end(); ++it) {
+        out << "\t\t" << (*it).first << ": " << (*it).second << std::endl;
+      }
+    }
   };
   typedef std::vector<LexicalScope> Environment;
   Environment env;
@@ -123,8 +129,17 @@ class FosterSymbolTable : public NameResolver<T> {
     env.back().val_of[ident] = V;
     return V;
   }
-  void pushScope(string scopeName) { env.push_back(LexicalScope(scopeName)); }
-  void popScope() { env.pop_back(); }
+  void pushScope(string scopeName) {
+    env.push_back(LexicalScope(scopeName));
+  }
+  void popScope() {
+    env.pop_back();
+  }
+  void dump(std::ostream& out) {
+    for (int i = 0; i < env.size(); ++i) {
+      env[i].dump(out);
+    }
+  }
 };
 
 extern FosterSymbolTable<Value> scope;

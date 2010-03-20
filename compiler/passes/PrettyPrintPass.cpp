@@ -12,6 +12,14 @@ std::string str(const llvm::Type* ty) {
   std::stringstream ss; ss << *ty; return ss.str();
 }
 
+inline void recurse(PrettyPrintPass* p, ExprAST* ast) {
+  if (!ast) {
+    p->scan(PrettyPrintPass::PPToken("<nil>"));
+  } else {
+    ast->accept(p);
+  }
+}
+
 void PrettyPrintPass::visit(BoolAST* ast) {
   scan(PPToken( (ast->boolValue) ? "true" : "false" ));
 }
@@ -85,13 +93,15 @@ void PrettyPrintPass::visit(FnAST* ast) {
   bool isTopLevelFn = ast->parent->parent == NULL;
   if (isTopLevelFn) { scan(tNewline); }
 
-  ast->proto->accept(this);
+  recurse(this, ast->proto);
 
   if (!isTopLevelFn) { scan(tNewline); }
 
-  ast->body->accept(this);
+  if (ast->body) {
+    ast->body->accept(this);
 
-  if (isTopLevelFn) { scan(tNewline); }
+    if (isTopLevelFn) { scan(tNewline); }
+  }
 }
 
 
@@ -115,21 +125,18 @@ void PrettyPrintPass::visit(ClosureAST* ast) {
 void PrettyPrintPass::visit(IfExprAST* ast) {
   //scan(tBlockOpen);
   scan(PPToken("if "));
-  //ast->parts[0]->accept(this);
-  ast->testExpr->accept(this);
+  recurse(this, ast->testExpr);
   //scan(tBlockClose);
   
   scan(PPToken(" "));
   scan(tOptNewline);
   
-  //ast->parts[1]->accept(this);
-  ast->thenExpr->accept(this);
+  recurse(this, ast->thenExpr);
   
   scan(PPToken(" else "));
   scan(tOptNewline);
   
-  ast->elseExpr->accept(this);
-  //ast->parts[2]->accept(this);
+  recurse(this, ast->elseExpr);
 }
 
 void PrettyPrintPass::visit(RefExprAST* ast) {
@@ -145,18 +152,18 @@ void PrettyPrintPass::visit(DerefExprAST* ast) {
 
 void PrettyPrintPass::visit(AssignExprAST* ast) {
   scan(PPToken("set "));
-  ast->parts[0]->accept(this);
+  recurse(this, ast->parts[0]);
   scan(PPToken(" = "));
-  ast->parts[1]->accept(this);
+  recurse(this, ast->parts[1]);
 }
 
 // $0 [ $1 ]
 void PrettyPrintPass::visit(SubscriptAST* ast) {
   //scan(tBlockOpen);
-  ast->parts[0]->accept(this);
+  recurse(this, ast->parts[0]);
   
   scan(PPToken("["));
-  ast->parts[1]->accept(this);
+  recurse(this, ast->parts[1]);
   scan(PPToken("]"));
   //scan(tBlockClose);
 }
@@ -203,7 +210,7 @@ void PrettyPrintPass::visit(SeqAST* ast) {
 void PrettyPrintPass::visit(CallAST* ast) {
   scan(tBlockOpen);
   scan(tBlockOpen);
-  ast->parts[0]->accept(this);
+  recurse(this, ast->parts[0]);
   scan(tBlockClose);
   scan(tBlockOpen);
   scan(PPToken("("));
@@ -227,7 +234,7 @@ void PrettyPrintPass::visit(CallAST* ast) {
     }
 
     scan(tBlockOpen);
-    ast->parts[i]->accept(this);
+    recurse(this, ast->parts[i]);
     scan(tBlockClose);
   }
 

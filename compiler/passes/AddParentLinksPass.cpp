@@ -54,7 +54,7 @@ void AddParentLinksPass::visit(CallAST* ast)                { visitChildren(ast)
 void AddParentLinksPass::visit(ArrayExprAST* ast)           { return; }
 void AddParentLinksPass::visit(TupleExprAST* ast)           { return; }
 void AddParentLinksPass::visit(UnpackExprAST* ast)          { return; }
-void AddParentLinksPass::visit(BuiltinCompilesExprAST* ast) { return; }
+void AddParentLinksPass::visit(BuiltinCompilesExprAST* ast) { visitChildren(ast); }
 
 void includeParentNameInAnonFunctions(FnAST* ast) {
   string& name = ast->proto->name;

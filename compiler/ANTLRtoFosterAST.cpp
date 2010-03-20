@@ -44,8 +44,20 @@ string str(pANTLR3_COMMON_TOKEN tok) {
 // }}}
 
 int getChildCount(pTree tree) { return tree->getChildCount(tree); }
-string textOf(pTree tree) { return str(tree->getText(tree)); }
-pTree child(pTree tree, int i) { return (pTree) tree->getChild(tree, i); }
+string textOf(pTree tree) {
+  if (!tree) {
+    std::cerr << "Error! Can't get text of a null node!" << std::endl;
+    return "<NULL pTree>";
+  }
+  return str(tree->getText(tree));
+}
+pTree child(pTree tree, int i) {
+  if (!tree) {
+    std::cerr << "Error! Can't take child of null pTree!" << std::endl;
+    return NULL;
+  }
+  return (pTree) tree->getChild(tree, i);
+}
 
 Exprs getExprs(pTree tree, bool fnMeansClosure);
 std::ostream& operator<<(std::ostream& out, Exprs& f) { return out << join("", f); }
@@ -173,14 +185,15 @@ ExprAST* validateAssignLHS(ExprAST* ast) {
 }
 
 VariableAST* parseFormal(pTree tree, bool fnMeansClosure) {
-  // ^(FORMAL ^(TEXT varName) ^(... type ... ))
+  // ^(FORMAL ^(NAME varName) ^(... type ... ))
   pTree varNameTree = child(tree, 0);
   if (!varNameTree) {
     std::cerr << "Error! Null var name in parseFormal..." << std::endl;
     display_pTree(tree, 4);
     return NULL;
   }
-
+  std::cout << "parseFormal ";
+  display_pTree(varNameTree, 4);
   string varName = textOf(child(varNameTree, 0));
   std::cout << "parseFormal varName = " << varName << std::endl;
   if (getChildCount(tree) == 2) {
@@ -202,15 +215,23 @@ VariableAST* parseFormal(pTree tree, bool fnMeansClosure) {
 
 std::vector<VariableAST*> getFormals(pTree tree, bool fnMeansClosure) {
   std::vector<VariableAST*> args;
-  for (int i = 0; i < getChildCount(tree); ++i) {
-     args.push_back(parseFormal(child(tree, i), fnMeansClosure));
+  if (textOf(tree) == "FORMAL") {
+    args.push_back(parseFormal(tree, fnMeansClosure));
+  } else {
+    for (int i = 0; i < getChildCount(tree); ++i) {
+       args.push_back(parseFormal(child(tree, i), fnMeansClosure));
+    }
   }
   return args;
 }
 
 FnAST* buildFn(string name, pTree bodyTree, bool fnMeansClosure,
-                std::vector<VariableAST*> in, ExprAST* tyExpr) {
+                pTree formalsTree, pTree tyExprTree) {
   varScope.pushScope("fn proto " + name);
+  display_pTree(formalsTree, 8);
+    std::vector<VariableAST*> in = getFormals(formalsTree, fnMeansClosure);
+    ExprAST* tyExpr = ExprAST_from(tyExprTree, fnMeansClosure);
+
     PrototypeAST* proto = new PrototypeAST(name, in, tyExpr);
     VariableAST* fnRef = new VariableAST(name, proto);
 
@@ -244,8 +265,7 @@ FnAST* parseFn(string defaultSymbolTemplate, pTree tree, bool fnMeansClosure) {
   }
 
   return buildFn(name, child(tree, 3), fnMeansClosure,
-                 getFormals( child(tree, 1),  fnMeansClosure),
-                 ExprAST_from(child(tree, 2), fnMeansClosure));
+                  child(tree, 1), child(tree, 2));
 }
 
 ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
@@ -341,16 +361,15 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
 
   // <formal arg (body | next) [type]>
   if (token == LETEXPR) {
-    VariableAST* formal = parseFormal(child(tree, 0), fnMeansClosure);
-    if (!formal) return NULL;
-    std::vector<VariableAST*> in; in.push_back(formal);
 
-    ExprAST* typeExpr = NULL;
+    pTree tyExprTree = NULL;
     if (getChildCount(tree) == 4) {
-      typeExpr = ExprAST_from(child(tree, 3), fnMeansClosure);
+      tyExprTree = child(tree, 3);
     }
 
-    FnAST* fn = buildFn(freshName("<anon_fnlet_%d>"), child(tree, 2), fnMeansClosure, in, typeExpr);
+    FnAST* fn = buildFn(freshName("<anon_fnlet_%d>"),
+                              child(tree, 2), fnMeansClosure,
+                              child(tree, 0), tyExprTree);
     fn->lambdaLiftOnly = true;
 
     ExprAST* a = ExprAST_from(child(tree, 1), fnMeansClosure);
@@ -425,6 +444,8 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
         //std::cout << "Could not find ExprAST for var name\t" << varName << ", but it's a valid user type name..." << std::endl;
         var = new VariableAST(varName, ty);
       }
+    } else {
+      std::cout << "Found entry for variable " << varName << " in scope." << std::endl;
     }
     return var;
   }

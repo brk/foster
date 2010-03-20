@@ -103,7 +103,7 @@ void TypecheckPass::visit(IntAST* ast) {
 
 void TypecheckPass::visit(VariableAST* ast) {
   if (this->typeParsingMode) { ast->type = LLVMTypeFor(ast->name); }
-  
+
   if (!ast->tyExpr) {
     if (!ast->type) {
       // Eventually we should do local type inference...
@@ -523,7 +523,7 @@ void TypecheckPass::visit(CallAST* ast) {
       std::cerr << "Error: CallAST typecheck: arg " << i << " (" << *(arg) << ") had null type" << std::endl;
       return;
     }
-    
+
     // TODO: add separate prepass to explicitly unpack UnpackExprASTs
     if (UnpackExprAST* u = dynamic_cast<UnpackExprAST*>(arg)) {
       if (const llvm::StructType* st = llvm::dyn_cast<llvm::StructType>(argTy)) {
