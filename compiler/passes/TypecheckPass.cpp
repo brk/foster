@@ -554,6 +554,8 @@ void TypecheckPass::visit(CallAST* ast) {
     // since the formal arguments will have undergone the same conversion.
     if (const FunctionType* fnty = llvm::dyn_cast<const FunctionType>(actualType)) {
       actualType = genericClosureTypeFor(fnty);
+      std::cout << "TYPECHECK CallAST converting " << *fnty << " to " << *actualType << std::endl;
+      std::cout << "\t for formal type:\t" << *formalType << std::endl;
     }
 
     // Note: order here is important! We check conversion from

@@ -79,7 +79,7 @@ void CodegenPass::visit(VariableAST* ast) {
   }
 
   if (!ast->value) {
-    std::cerr << "Error: Unknown variable name " << ast->name << std::endl;
+    std::cerr << "Error: CodegenPass: Unknown variable name " << ast->name << std::endl;
   }
 }
 
@@ -280,11 +280,11 @@ void CodegenPass::visit(ClosureAST* ast) {
   ExprAST* env = new TupleExprAST(new SeqAST(ast->parts));
   ExprAST* fnPtr = new VariableAST(ast->fn->proto->name, llvm::PointerType::get(ast->fn->type, 0));
   { TypecheckPass tp;
-    env->accept(&tp);
-    env->accept(this);
-
     fnPtr->accept(&tp);
     fnPtr->accept(this);
+
+    env->accept(&tp);
+    env->accept(this);
   }
 
   if (const FunctionType* fnTy = llvm::dyn_cast<const FunctionType>(ast->fn->type)) {
@@ -515,6 +515,46 @@ const FunctionType* tryExtractFunctionPointerType(Value* FV) {
   return llvm::dyn_cast<FunctionType>(fp->getElementType());
 }
 
+bool isPointerToFnTy(const llvm::Type* ty, const llvm::FunctionType* fnty) {
+  return ty == llvm::PointerType::getUnqual(fnty);
+}
+
+FnAST* getClosureVersionOf(ExprAST* arg, const llvm::FunctionType* fnty) {
+  static std::map<string, FnAST*> closureVersions;
+  std::cout << "gCVof: " << *arg << std::endl;
+  if (VariableAST* var = dynamic_cast<VariableAST*>(arg)) {
+    string fnName = "__closureVersionOf__" + var->name;
+    if (FnAST* exists = closureVersions[fnName]) {
+      return exists;
+    }
+
+    // Create function    fnName(i8* env, arg-args) { arg(arg-args) }
+    // that hard-codes call to fn referenced by arg
+
+    std::vector<VariableAST*> inArgs;
+    std::vector<ExprAST*> callArgs;
+    inArgs.push_back(new VariableAST("__ignored_env__", llvm::PointerType::getUnqual(LLVMTypeFor("i8"))));
+
+    for (int i = 0; i < fnty->getNumParams(); ++i) {
+      std::stringstream ss; ss << "a" << i;
+      VariableAST* a = new VariableAST(ss.str(), fnty->getParamType(i));
+      inArgs.push_back(a);
+      callArgs.push_back(a);
+    }
+    PrototypeAST* proto = new PrototypeAST(fnty->getReturnType(), fnName, inArgs);
+    ExprAST* body = new CallAST(arg, callArgs);
+    FnAST* fn = new FnAST(proto, body);
+    { TypecheckPass tp; CodegenPass cp; fn->accept(&tp); fn->accept(&cp); }
+    closureVersions[fnName] = fn;
+    return fn;
+  } else {
+    std::cerr << "Error! getClosureVersionOf() expected a variable naming a fn!\n";
+    std::cerr << "\tInstead, got: " << *arg << std::endl;
+    exit(1);
+  }
+  return NULL;
+}
+
 void CodegenPass::visit(CallAST* ast) {
   if (ast->value) return;
 
@@ -567,17 +607,59 @@ void CodegenPass::visit(CallAST* ast) {
       arg = u->parts[0]; // Replace unpack expr with underlying tuple expr
     }
     
+    if (const FunctionType* fnty = llvm::dyn_cast<const FunctionType>(arg->type)) {
+      // If we still have a bare function type at codegen time, it means
+      // the code specified a (top-level) function name.
+      // Since we made it past type checking, we should have only two
+      // possibilities for what kind of function is doing the invoking:
+      //
+      // 1) A C-linkage function which expects a bare function pointer.
+      // 2) A Foster function which expects a closure value.
+      const llvm::Type* expectedType = FT->getContainedType(i);
+      bool passFunctionPointer = isPointerToFnTy(expectedType, fnty);
+
+      if (passFunctionPointer) {
+      // Case 1 is simple; we just change the arg type to "function pointer"
+      // instead of "function value" and LLVM takes care of the rest.
+      } else {
+      // Case 2 is not so simple, since a closure code pointer must take the
+      // environment pointer as its first argument, and presumably the fn
+      // we want to invoke does not take an env pointer. Thus we need a pointer
+      // to a forwarding function, which acts as the opposite of a trampoline:
+      // instead of excising one (implicitly-added) parameter from a function
+      // signature, we add one (implicitly-ignored) parameter to the signature.
+      //
+      // The simplest approach is to lazily generate a "closure version" of any
+      // functions we see being passed directly by name; it would forward
+      // all parameters to the regular function, except for the env ptr.
+        ClosureAST* clo = new ClosureAST(getClosureVersionOf(arg, fnty));
+        clo->hasKnownEnvironment = true; // Empty by definition!
+        { TypecheckPass tp; clo->accept(&tp); }
+        arg = clo;
+
+      //
+      // One slightly more clever approach could use a trampoline to reduce
+      // code bloat. Instead of one "closure version" per function, we'd
+      // generate one "generic closure forwarder" per function type
+      // signature. The forwarder for a function G of type R (X, Y) would be
+      // of type R (R (X, Y)* nest, i8* env, X, Y). The body of the forwarder
+      // would simply call the nest function pointer with the provided params.
+      // The trampoline would embed the pointer to G, yielding a callable
+      // function of the desired type, R (i8* env, X, Y).
+      // This would have the additional benefit of working with anonymous
+      // function pointer values e.g. from a lookup table.
+      }
+
+      std::cout << "codegen CallAST arg " << (i-1) << "; argty " << *(arg->type)
+                << " vs fn arg ty " << *(FT->getContainedType(i)) << std::endl;
+    }
+
     arg->accept(this);
     Value* V = arg->value;
     if (!V) {
       std::cerr << "Error: null value for argument " << (i - 1) << " found in CallAST codegen!" << std::endl;
       return;
     }
-    
-    // LLVM will automatically convert a Function Value to a Pointer-to-Function,
-    // so we only have to handle non-trivial closure creation.
-    //std::cout << "codegen CallAST arg " << (i-1) << "; argty " << *(arg->type)
-    //          << " vs fn arg ty " << *(FT->getContainedType(i)) << std::endl;
 
     if (u != NULL) {
       unpackArgs(valArgs, V, FT); // Unpack (recursively) nested structs
@@ -586,7 +668,7 @@ void CodegenPass::visit(CallAST* ast) {
     }
   }
 
-  if (false) {
+  if (true) {
     std::cout << "Creating call for AST {" << valArgs.size() << "} " << *base << std::endl;
     for (int i = 0; i < valArgs.size(); ++i) {
       std::cout << "\t" << *valArgs[i] << std::endl;

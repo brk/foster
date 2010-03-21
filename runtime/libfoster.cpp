@@ -64,6 +64,8 @@ int fprint_i32b(FILE* f, int32_t x) {
 }
 
 extern "C" {
+void c_invoke_fnptr(void (*f)()) { f(); }
+
 void* memalloc(int64_t sz) { return malloc(sz); }
   
 int  print_i32(int32_t x) { return fprint_i32(stdout, x); }

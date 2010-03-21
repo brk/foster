@@ -214,7 +214,8 @@ void createLLVMBitIntrinsics() {
 
       // atomic.cmp.swap gets two int arguments instead of one
       { "atomic.cmp.swap", kAtomicStub, i8_to_i64 },
-      // All the other functions get just one int argument
+
+      // All the other atomic functions get just one int argument
       { "atomic.swap", kAtomicStub, i8_to_i64 },
       { "atomic.load.add", kAtomicStub, i8_to_i64 },
       { "atomic.load.sub", kAtomicStub, i8_to_i64 },

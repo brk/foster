@@ -342,14 +342,11 @@ struct PrototypeAST : public ExprAST {
     : name(name), resultTy(retTy), tyExpr(NULL) { inArgs.push_back(arg1); inArgs.push_back(arg2); }
 
   PrototypeAST(const Type* retTy, const string& name, const std::vector<VariableAST*>& inArgs)
-    : name(name), resultTy(retTy), tyExpr(NULL), inArgs(inArgs) { }
-
-  PrototypeAST(const string& name, const std::vector<VariableAST*>& inArgs, const Type* retTy)
     : name(name), resultTy(retTy), tyExpr(NULL), inArgs(inArgs) {
-    if (resultTy == NULL) {
+    if (retTy == NULL) {
       this->resultTy = LLVMTypeFor("i32");
     } else {
-      std::cout << "\n\tProtoAST " << name << " ascribed result type of " << *(resultTy) << std::endl;
+      std::cout << "\n\tProtoAST " << name << " ascribed result type of " << *(retTy) << std::endl;
     }
   }
 
