@@ -446,9 +446,12 @@ void TypecheckPass::visit(SubscriptAST* ast) {
 
 void TypecheckPass::visit(SeqAST* ast) {
   bool success = true;
+  const llvm::Type* lastNonVoidType = NULL;
   for (int i = 0; i < ast->parts.size(); ++i) {
     if (ast->parts[i]) {
-      if (!ast->parts[i]->type) { success = false; }
+      const llvm::Type* ty = ast->parts[i]->type;
+      if (!ty) { success = false; }
+      else if (!isVoid(ty)) { lastNonVoidType = ty; }
     } else {
       std::cerr << "Null expr in SeqAST" << std::endl;
       return;
@@ -457,7 +460,8 @@ void TypecheckPass::visit(SeqAST* ast) {
 
   if (!success || ast->parts.empty()) { return; }
 
-  ast->type = ast->parts.back()->type;
+  std::cout << "LastNonVoidType: " << *lastNonVoidType << std::endl;
+  ast->type = lastNonVoidType;
 }
 
 const FunctionType* getFunctionTypeFromClosureStructType(const Type* ty) {
@@ -550,12 +554,19 @@ void TypecheckPass::visit(CallAST* ast) {
     const Type* formalType = baseFT->getParamType(i);
     const Type* actualType = actualTypes[i];
 
-    // Temporarily view a function type as its associated specific closure type,
-    // since the formal arguments will have undergone the same conversion.
     if (const FunctionType* fnty = llvm::dyn_cast<const FunctionType>(actualType)) {
-      actualType = genericClosureTypeFor(fnty);
-      std::cout << "TYPECHECK CallAST converting " << *fnty << " to " << *actualType << std::endl;
-      std::cout << "\t for formal type:\t" << *formalType << std::endl;
+      // If we try to use  fa: i32 () in place of ff: void ()*,
+      // temporarily give the function fa the type of ff.
+      if (isPointerToCompatibleFnTy(formalType, fnty)) {
+        actualType = formalType;
+      } else {
+        // Temporarily view a function type as its associated specific closure type,
+        // since the formal arguments will have undergone the same conversion.
+        actualType = genericClosureTypeFor(fnty);
+        std::cout << "TYPECHECK CallAST converting " << *fnty << " to " << *actualType << std::endl;
+        std::cout << "\t for formal type:\t" << *formalType << std::endl;
+        std::cout << "\t base :: " << *base << std::endl;
+      }
     }
 
     // Note: order here is important! We check conversion from

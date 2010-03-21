@@ -130,3 +130,32 @@ const llvm::Type* recursivelySubstituteGenericClosureTypes(
   // TODO: arrays
 }
 
+bool isVoid(const llvm::Type* ty) {
+  return ty == ty->getVoidTy(getGlobalContext());
+}
+
+bool voidCompatibleReturnTypes(const llvm::FunctionType* expected,
+                               const llvm::FunctionType* actual) {
+  return isVoid(expected->getReturnType())
+      || expected->getReturnType() == actual->getReturnType();
+}
+
+bool isPointerToCompatibleFnTy(const llvm::Type* ty, const llvm::FunctionType* fnty) {
+ if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
+   if (const llvm::FunctionType* pfnty = llvm::dyn_cast<llvm::FunctionType>(pty->getElementType())) {
+     // Compatible means all parameters have same types, and return values are either
+     // same, or pfnty has void and fnty has non-void return type.
+     if (!voidCompatibleReturnTypes(pfnty, fnty)) { return false; }
+
+     if (pfnty->getNumParams() != fnty->getNumParams()) { return false; }
+     for (int i = 0; i < fnty->getNumParams(); ++i) {
+       if (pfnty->getParamType(i) != fnty->getParamType(i)) {
+         return false;
+       }
+     }
+
+     return true;
+   }
+ }
+ return false;
+}

@@ -189,12 +189,20 @@ void CodegenPass::visit(PrototypeAST* ast) {
 void CodegenPass::visit(SeqAST* ast) {
   if (ast->value) return;
 
-  if (ast->parts.empty()) {
+  if (!ast->parts.empty()) {
+    // Find last non-void value
+    for (int n = ast->parts.size() - 1; n >= 0; --n) {
+      ast->value = ast->parts[n]->value;
+      if (!isVoid(ast->value->getType())) {
+        break;
+      }
+    }
+  }
+
+  if (!ast->value) {
     // Give the sequence a default value for now; eventually, this
     // should probably be assigned a value of unit.
     ast->value = llvm::ConstantInt::get(LLVMTypeFor("i32"), 0);
-  } else {
-    ast->value = ast->parts.back()->value;
   }
 }
 
@@ -219,8 +227,11 @@ void CodegenPass::visit(FnAST* ast) {
   if (RetVal == NULL) std::cerr << "Oops, null body value in fn " << ast->proto->name << std::endl;
   assert (RetVal != NULL);
   
+  bool returningVoid = isVoid(ast->proto->resultTy);
+
   // If we try to return a tuple* when the fn specifies a tuple, manually insert a load
   if (RetVal->getType()->isDerivedType()
+      && !returningVoid
       && RetVal->getType() == llvm::PointerType::get(ast->proto->resultTy, 0)) {
     RetVal = builder.CreateLoad(RetVal, false, "structPtrToStruct");
   }
@@ -228,7 +239,13 @@ void CodegenPass::visit(FnAST* ast) {
   scope.popScope();
 
   if (RetVal) {
-    builder.CreateRet(RetVal);
+    if (returningVoid) {
+      builder.CreateRetVoid();
+    } else if (isVoid(RetVal->getType())) {
+      std::cerr << "Error! Can't return non-void value given only a void value!\n";
+    } else {
+      builder.CreateRet(RetVal);
+    }
     //llvm::verifyFunction(*F);
     ast->value = F;
   } else {
@@ -515,13 +532,40 @@ const FunctionType* tryExtractFunctionPointerType(Value* FV) {
   return llvm::dyn_cast<FunctionType>(fp->getElementType());
 }
 
-bool isPointerToFnTy(const llvm::Type* ty, const llvm::FunctionType* fnty) {
-  return ty == llvm::PointerType::getUnqual(fnty);
+FnAST* getVoidReturningVersionOf(ExprAST* arg, const llvm::FunctionType* fnty) {
+  static std::map<string, FnAST*> voidReturningVersions;
+  if (VariableAST* var = dynamic_cast<VariableAST*>(arg)) {
+    string fnName = "__voidReturningVersionOf__" + var->name;
+    if (FnAST* exists = voidReturningVersions[fnName]) {
+      return exists;
+    }
+
+    // Create function  void fnName(arg-args) { arg(arg-args) }
+    std::vector<VariableAST*> inArgs;
+    std::vector<ExprAST*> callArgs;
+
+    for (int i = 0; i < fnty->getNumParams(); ++i) {
+      std::stringstream ss; ss << "a" << i;
+      VariableAST* a = new VariableAST(ss.str(), fnty->getParamType(i));
+      inArgs.push_back(a);
+      callArgs.push_back(a);
+    }
+    PrototypeAST* proto = new PrototypeAST(fnty->getVoidTy(getGlobalContext()), fnName, inArgs);
+    ExprAST* body = new CallAST(arg, callArgs);
+    FnAST* fn = new FnAST(proto, body);
+    { TypecheckPass tp; CodegenPass cp; fn->accept(&tp); fn->accept(&cp); }
+    voidReturningVersions[fnName] = fn;
+    return fn;
+  } else {
+    std::cerr << "Error! getVoidReturningVersionOf() expected a variable naming a fn!\n";
+    std::cerr << "\tInstead, got: " << *arg << std::endl;
+    exit(1);
+  }
+  return NULL;
 }
 
 FnAST* getClosureVersionOf(ExprAST* arg, const llvm::FunctionType* fnty) {
   static std::map<string, FnAST*> closureVersions;
-  std::cout << "gCVof: " << *arg << std::endl;
   if (VariableAST* var = dynamic_cast<VariableAST*>(arg)) {
     string fnName = "__closureVersionOf__" + var->name;
     if (FnAST* exists = closureVersions[fnName]) {
@@ -616,11 +660,22 @@ void CodegenPass::visit(CallAST* ast) {
       // 1) A C-linkage function which expects a bare function pointer.
       // 2) A Foster function which expects a closure value.
       const llvm::Type* expectedType = FT->getContainedType(i);
-      bool passFunctionPointer = isPointerToFnTy(expectedType, fnty);
+      bool passFunctionPointer = isPointerToCompatibleFnTy(expectedType, fnty);
 
       if (passFunctionPointer) {
       // Case 1 is simple; we just change the arg type to "function pointer"
       // instead of "function value" and LLVM takes care of the rest.
+      //
+      // The only wrinkle is return value compatibility: we'd like to
+      // automatically generate a return-value-eating wrapper if we try
+      // to pass a function returning a value to a function expecting
+      // a procedure returning void.
+        if (const FunctionType* expectedFnTy = tryExtractCallableType(expectedType)) {
+          if (isVoid(expectedFnTy->getReturnType()) && !isVoid(fnty)) {
+            arg = getVoidReturningVersionOf(arg, fnty);
+            { TypecheckPass tp; arg->accept(&tp); }
+          }
+        }
       } else {
       // Case 2 is not so simple, since a closure code pointer must take the
       // environment pointer as its first argument, and presumably the fn
@@ -634,9 +689,8 @@ void CodegenPass::visit(CallAST* ast) {
       // all parameters to the regular function, except for the env ptr.
         ClosureAST* clo = new ClosureAST(getClosureVersionOf(arg, fnty));
         clo->hasKnownEnvironment = true; // Empty by definition!
-        { TypecheckPass tp; clo->accept(&tp); }
         arg = clo;
-
+        { TypecheckPass tp; arg->accept(&tp); }
       //
       // One slightly more clever approach could use a trampoline to reduce
       // code bloat. Instead of one "closure version" per function, we'd
@@ -684,7 +738,13 @@ void CodegenPass::visit(CallAST* ast) {
   // Temporary hack: if a function expects i8 and we have i1, manually convert
   tempHackExtendIntTypes(FT, valArgs);
   
-  ast->value = builder.CreateCall(FV, valArgs.begin(), valArgs.end(), "calltmp");
+  std::cout << *FT <<  " ; " << isVoid(FT->getReturnType()) << std::endl;
+
+  if (isVoid(FT->getReturnType())) {
+    ast->value = builder.CreateCall(FV, valArgs.begin(), valArgs.end());
+  } else {
+    ast->value = builder.CreateCall(FV, valArgs.begin(), valArgs.end(), "calltmp");
+  }
 }
 
 bool isComposedOfIntLiterals(ExprAST* ast) {
