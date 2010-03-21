@@ -112,18 +112,31 @@ VariableAST* checkAndGetLazyRefTo(PrototypeAST* p) {
   return fnRef;
 }
 
-VariableAST* proto(const Type* retTy, const std::string& fqName, const Type* ty1, const Type* ty2) {
-  return checkAndGetLazyRefTo(new PrototypeAST(retTy, fqName,
-       new VariableAST("p1", ty1), new VariableAST("p2", ty2)));
+VariableAST* proto(const Type* retTy, const std::string& fqName) {
+  return checkAndGetLazyRefTo(new PrototypeAST(retTy, fqName));
 }
 
-VariableAST* proto(const Type* retTy, const std::string& fqName, const Type* ty1) {
+VariableAST* proto(const Type* retTy, const std::string& fqName,
+    const Type* ty1) {
   return checkAndGetLazyRefTo(new PrototypeAST(retTy, fqName,
        new VariableAST("p1", ty1)));
 }
 
-VariableAST* proto(const Type* retTy, const std::string& fqName) {
-  return checkAndGetLazyRefTo(new PrototypeAST(retTy, fqName));
+VariableAST* proto(const Type* retTy, const std::string& fqName,
+    const Type* ty1, const Type* ty2) {
+  std::vector<VariableAST*> inArgs;
+  inArgs.push_back(new VariableAST("p1", ty1));
+  inArgs.push_back(new VariableAST("p2", ty2));
+  return checkAndGetLazyRefTo(new PrototypeAST(retTy, fqName, inArgs));
+}
+
+VariableAST* proto(const Type* retTy, const std::string& fqName,
+    const Type* ty1, const Type* ty2, const Type* ty3) {
+  std::vector<VariableAST*> inArgs;
+  inArgs.push_back(new VariableAST("p1", ty1));
+  inArgs.push_back(new VariableAST("p2", ty2));
+  inArgs.push_back(new VariableAST("p3", ty3));
+  return checkAndGetLazyRefTo(new PrototypeAST(retTy, fqName, inArgs));
 }
 
 ExprAST* lookupOrCreateNamespace(ExprAST* ns, const string& part) {
@@ -179,7 +192,7 @@ void createLLVMBitIntrinsics() {
 
   const unsigned i16_to_i64 = ((1<<4)|(1<<5)|(1<<6));
   const unsigned i8_to_i64 = ((1<<3)|i16_to_i64);
-  enum intrinsic_kind { kTransform, kOverflow };
+  enum intrinsic_kind { kTransform, kOverflow, kAtomicStub };
   struct bit_intrinsic_spec {
     const char* intrinsicName; // e.g. "bswap" becomes "llvm.bswap.i16", "llvm.bswap.i32" etc
     const intrinsic_kind kind;
@@ -199,6 +212,24 @@ void createLLVMBitIntrinsics() {
       { "umul.with.overflow", kOverflow, i16_to_i64 },
       { "smul.with.overflow", kOverflow, i16_to_i64 },
 
+      // atomic.cmp.swap gets two int arguments instead of one
+      { "atomic.cmp.swap", kAtomicStub, i8_to_i64 },
+      // All the other functions get just one int argument
+      { "atomic.swap", kAtomicStub, i8_to_i64 },
+      { "atomic.load.add", kAtomicStub, i8_to_i64 },
+      { "atomic.load.sub", kAtomicStub, i8_to_i64 },
+      { "atomic.load.and", kAtomicStub, i8_to_i64 },
+      // LLVM's nand intrinsic is misleadingly named for backwards
+      // compatibility with GCC 4.2;
+      // it computes A & ~B instead of ~(A & B)
+      //{ "atomic.load.nand", kAtomicStub, i8_to_i64 },
+      { "atomic.load.or", kAtomicStub, i8_to_i64 },
+      { "atomic.load.xor", kAtomicStub, i8_to_i64 },
+      { "atomic.load.max", kAtomicStub, i8_to_i64 },
+      { "atomic.load.min", kAtomicStub, i8_to_i64 },
+      { "atomic.load.umax", kAtomicStub, i8_to_i64 },
+      { "atomic.load.umin", kAtomicStub, i8_to_i64 },
+
       { NULL, kTransform, 0}
   };
 
@@ -217,6 +248,7 @@ void createLLVMBitIntrinsics() {
         ss << "llvm." << spec->intrinsicName << "." << ssize;
 
         if (spec->kind == kTransform) {
+          // e.g for declaring i16 @llvm.bswap.i16(i16)
           addToProperNamespace( proto(ty, ss.str(), ty) );
         } else if (spec->kind == kOverflow) {
           std::vector<const Type*> params;
@@ -224,7 +256,19 @@ void createLLVMBitIntrinsics() {
           params.push_back(LLVMTypeFor("i1"));
           const Type* retTy = llvm::StructType::get(getGlobalContext(), params, false);
 
+          // e.g. for declaring {16,i1} @llvm.sadd.with.overflow.i16(i16, i16)
           addToProperNamespace( proto(retTy, ss.str(), ty, ty) );
+        } else if (spec->kind == kAtomicStub) {
+          // ss contains something like "llvm.atomic.cmp.swap.i32"
+          ss << ".p0" << ssize; // now "llvm.atomic.cmp.swap.i32.p0i32"
+
+          if (spec->intrinsicName == "atomic.cmp.swap") {
+            // e.g. for declaring i32 @llvm.atomic.cmp.swap.i32.p0i32(i32*, i32, i32)
+            addToProperNamespace( proto(ty, ss.str(), llvm::PointerType::getUnqual(ty), ty, ty) );
+          } else {
+            // e.g. for declaring i32 @llvm.atomic.load.xor.i32.p0i32(i32*, i32)
+            addToProperNamespace( proto(ty, ss.str(), llvm::PointerType::getUnqual(ty), ty) );
+          }
         }
       }
       size *= 2;
