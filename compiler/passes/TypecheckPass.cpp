@@ -699,6 +699,12 @@ void TypecheckPass::visit(SimdVectorAST* ast) {
 
   if (numElements == 2) {
     numElements = extractNumElementsAndElementType(256, ast, elementType);
+    if (numElements != -1) {
+      // Don't try to interpret the size + type as initializers!
+      body->parts.clear();
+    } else {
+      numElements = 2;
+    }
   }
 
   // No special case; iterate through and collect all the types
@@ -717,7 +723,7 @@ void TypecheckPass::visit(SimdVectorAST* ast) {
     // TODO This should probably be relaxed eventually; for example,
     // a simd-vector of "small" and "large" int literals should silently be accepted
     // as a simd-vector of "large" ints.
-    if (success && fieldTypes.size() != 1) {
+    if (success && fieldTypes.size() > 1) {
       std::cerr << "simd-vector expression had multiple types! Found:" << std::endl;
       std::map<const Type*, bool>::const_iterator it;;
       for (it = fieldTypes.begin(); it != fieldTypes.end(); ++it) {
@@ -727,13 +733,13 @@ void TypecheckPass::visit(SimdVectorAST* ast) {
     }
   }
   
-  if (!isSmallPowerOfTwo(numElements)) {
+  if (success && !isSmallPowerOfTwo(numElements)) {
     std::cerr << "simd-vector constructor needs a small"
               << " power of two of elements; got " << numElements << std::endl;
     success = false;
   }
   
-  if (!llvm::VectorType::isValidElementType(elementType)) {
+  if (success && !llvm::VectorType::isValidElementType(elementType)) {
     std::cerr << "simd-vector given invalid element type: " << *elementType << "\n";
     success = false;
   }
