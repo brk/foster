@@ -40,8 +40,8 @@ const FunctionType* tryExtractCallableType(const Type* ty) {
   return llvm::dyn_cast_or_null<const llvm::FunctionType>(ty);
 }
 
-// converts      t1 (t2, t3) to { t1 (i8*, t2, t3)*, i8* }
-// or    t1 (envty*, t2, t3) to { t1 (i8*, t2, t3)*, i8* }
+// converts      t1 (t2, t3) to { t1 (i8* nest, t2, t3)*, i8* }
+// or    t1 (envty* nest, t2, t3) to { t1 (i8* nest, t2, t3)*, i8* }
 static const llvm::StructType* genericClosureTypeFor(const FunctionType* fnty, bool skipFirstArg) {
   const Type* envType = llvm::PointerType::get(LLVMTypeFor("i8"), 0);
 
@@ -89,6 +89,17 @@ bool isValidClosureType(const llvm::StructType* sty) {
   return false;
 }
 
+// converts { T (env*, Y, Z)*, env* }   to   T (Y, Z)
+const llvm::FunctionType* originalFunctionTypeForClosureStructType(const llvm::StructType* sty) {
+  if (const llvm::FunctionType* ft = tryExtractCallableType(sty->getContainedType(0))) {
+    std::vector<const llvm::Type*> originalArgTypes;
+    for (int i = 1; i < ft->getNumParams(); ++i) {
+      originalArgTypes.push_back(ft->getParamType(i));
+    }
+    return llvm::FunctionType::get(ft->getReturnType(), originalArgTypes, /*isVarArg=*/ false);
+  }
+  return NULL;
+}
 
 const llvm::Type* recursivelySubstituteGenericClosureTypes(
                                     const llvm::Type* ty,

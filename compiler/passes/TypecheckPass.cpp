@@ -464,29 +464,6 @@ void TypecheckPass::visit(SeqAST* ast) {
   ast->type = lastNonVoidType;
 }
 
-const FunctionType* getFunctionTypeFromClosureStructType(const Type* ty) {
-  if (const llvm::StructType* sty = llvm::dyn_cast<llvm::StructType>(ty)) {
-    if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(sty->getContainedType(0))) {
-      return llvm::dyn_cast<llvm::FunctionType>(pty->getElementType());
-    }
-  }
-  std::cerr << "ERROR: failed to get function type from closure struct type: " << *ty << std::endl;
-  exit(1);
-  return NULL;
-}
-
-// converts { T (env*, Y, Z)*, env* }   to   T (Y, Z)
-const llvm::FunctionType* originalFunctionTypeForClosureStructType(const llvm::StructType* sty) {
-  if (const llvm::FunctionType* ft = tryExtractCallableType(sty->getContainedType(0))) {
-    std::vector<const llvm::Type*> originalArgTypes;
-    for (int i = 1; i < ft->getNumParams(); ++i) {
-      originalArgTypes.push_back(ft->getParamType(i));
-    }
-    return llvm::FunctionType::get(ft->getReturnType(), originalArgTypes, /*isVarArg=*/ false);
-  }
-  return NULL;
-}
-
 void TypecheckPass::visit(CallAST* ast) {
   ExprAST* base = ast->parts[0];
   if (!base) {
@@ -566,6 +543,17 @@ void TypecheckPass::visit(CallAST* ast) {
         std::cout << "TYPECHECK CallAST converting " << *fnty << " to " << *actualType << std::endl;
         std::cout << "\t for formal type:\t" << *formalType << std::endl;
         std::cout << "\t base :: " << *base << std::endl;
+      }
+    } else if (const llvm::StructType* sty = llvm::dyn_cast<llvm::StructType>(actualType)) {
+      if (isValidClosureType(sty)) {
+        const FunctionType* fnty = originalFunctionTypeForClosureStructType(sty);
+        if (isPointerToCompatibleFnTy(formalType, fnty)) {
+          // We have a closure and will convert it to a bare
+          // trampoline function pointer at codegen time.
+          actualType = formalType;
+          // TODO once UnpackExprs are either made sane or removed,
+          // this would be an excellent place to set ClosureAST::isTrampolineVersion
+        }
       }
     }
 

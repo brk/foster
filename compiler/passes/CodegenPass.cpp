@@ -7,6 +7,8 @@
 #include "FosterAST.h"
 #include "FosterUtils.h"
 
+#include "llvm/Attributes.h"
+#include "llvm/CallingConv.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Module.h"
@@ -304,6 +306,15 @@ void CodegenPass::visit(ClosureAST* ast) {
     env->accept(this);
   }
 
+  if (ast->isTrampolineVersion) {
+    if (Function* func = llvm::dyn_cast<Function>(fnPtr->value)) {
+      func->addAttribute(1, llvm::Attribute::Nest);
+    }
+  }
+
+  std::cout << "Closure conversion " << ast->fn->proto->name << "\n\tfnPtr value: "
+      << *fnPtr->value << "\n\tFunction? " << llvm::isa<Function>(fnPtr->value) << "\n";
+
   if (const FunctionType* fnTy = llvm::dyn_cast<const FunctionType>(ast->fn->type)) {
     // Manually build struct for now, since we don't have PtrAST nodes
     const Type* specificCloTy = closureTypeFromClosedFnType(fnTy);
@@ -564,6 +575,58 @@ FnAST* getVoidReturningVersionOf(ExprAST* arg, const llvm::FunctionType* fnty) {
   return NULL;
 }
 
+Function* getLLVMInitTrampoline() {
+  // This isn't added along with the other intrinsics because
+  // it's not supposed to be directly callable from foster code.
+
+  const llvm::Type* pi8 = llvm::PointerType::getUnqual(LLVMTypeFor("i8"));
+
+  std::vector<const Type*> llvm_init_trampoline_fnty_args;
+  llvm_init_trampoline_fnty_args.push_back(pi8);
+  llvm_init_trampoline_fnty_args.push_back(pi8);
+  llvm_init_trampoline_fnty_args.push_back(pi8);
+  FunctionType* llvm_init_trampoline_fnty = FunctionType::get(
+      pi8, llvm_init_trampoline_fnty_args, /*isVarArg=*/false);
+
+  Function* llvm_init_trampoline = Function::Create(
+      /*Type=*/    llvm_init_trampoline_fnty,
+      /*Linkage=*/ llvm::GlobalValue::ExternalLinkage,
+      /*Name=*/    "llvm.init.trampoline", module); // (external, no body)
+  llvm_init_trampoline->setCallingConv(llvm::CallingConv::C);
+  return llvm_init_trampoline;
+}
+
+llvm::Value* getTrampolineForClosure(ClosureAST* cloAST) {
+  static Function* llvm_init_trampoline = getLLVMInitTrampoline();
+
+  const llvm::Type* i8 = LLVMTypeFor("i8");
+  const llvm::Type* pi8 = llvm::PointerType::getUnqual(i8);
+
+  // We have a closure { code*, env* } and must convert it to a bare
+  // trampoline function pointer.
+  const llvm::Type* trampolineArrayType = llvm::ArrayType::get(i8, 24); // Sufficient for x86 and x86_64
+  llvm::AllocaInst* trampolineBuf = builder.CreateAlloca(trampolineArrayType, 0, "trampBuf");
+  trampolineBuf->setAlignment(16); // sufficient for x86 and x86_64
+  Value* trampi8 = builder.CreateBitCast(trampolineBuf, pi8, "trampi8");
+
+  // It would be nice and easy to extract the code pointer from the closure,
+  // but LLVM requires that pointers passed to trampolines be "obvious" function
+  // pointers. Thus, we need direct access to the closure's underlying fn.
+  ExprAST* fnPtr = new VariableAST(cloAST->fn->proto->name, llvm::PointerType::get(cloAST->fn->type, 0));
+  { TypecheckPass tp; CodegenPass cp;
+    fnPtr->accept(&tp);
+    fnPtr->accept(&cp);
+  }
+  Value* codePtr = fnPtr->value;
+  Value* envPtr = builder.CreateExtractValue(cloAST->value, 1, "getEnvPtr");
+
+  Value* tramp = builder.CreateCall3(llvm_init_trampoline,
+                      trampi8,
+                      builder.CreateBitCast(codePtr, pi8),
+                      builder.CreateBitCast(envPtr,  pi8), "tramp");
+  return tramp;
+}
+
 FnAST* getClosureVersionOf(ExprAST* arg, const llvm::FunctionType* fnty) {
   static std::map<string, FnAST*> closureVersions;
   if (VariableAST* var = dynamic_cast<VariableAST*>(arg)) {
@@ -651,6 +714,10 @@ void CodegenPass::visit(CallAST* ast) {
       arg = u->parts[0]; // Replace unpack expr with underlying tuple expr
     }
     
+    ClosureAST* clo = NULL;
+
+    const llvm::Type* expectedType = FT->getContainedType(i);
+
     if (const FunctionType* fnty = llvm::dyn_cast<const FunctionType>(arg->type)) {
       // If we still have a bare function type at codegen time, it means
       // the code specified a (top-level) function name.
@@ -659,7 +726,6 @@ void CodegenPass::visit(CallAST* ast) {
       //
       // 1) A C-linkage function which expects a bare function pointer.
       // 2) A Foster function which expects a closure value.
-      const llvm::Type* expectedType = FT->getContainedType(i);
       bool passFunctionPointer = isPointerToCompatibleFnTy(expectedType, fnty);
 
       if (passFunctionPointer) {
@@ -706,6 +772,22 @@ void CodegenPass::visit(CallAST* ast) {
 
       std::cout << "codegen CallAST arg " << (i-1) << "; argty " << *(arg->type)
                 << " vs fn arg ty " << *(FT->getContainedType(i)) << std::endl;
+    } else if (const llvm::StructType* sty = llvm::dyn_cast<llvm::StructType>(arg->type)) {
+      if (isValidClosureType(sty)) {
+        const FunctionType* fnty = originalFunctionTypeForClosureStructType(sty);
+        bool passFunctionPointer = isPointerToCompatibleFnTy(expectedType, fnty);
+        if (passFunctionPointer) {
+          std::cout << "getting trampoline for closure: " << *arg << std::endl;
+          if (clo = dynamic_cast<ClosureAST*>(arg)) {
+            clo->isTrampolineVersion = true;
+            // Actually create the trampoline after the closure has been codegenned.
+          } else {
+            std::cerr << "Error: due to a restriction placed by LLVM, only directly-written closures\n"
+                << "may be converted to trampolines for passing to C code." << std::endl;
+            return;
+          }
+        }
+      }
     }
 
     arg->accept(this);
@@ -713,6 +795,10 @@ void CodegenPass::visit(CallAST* ast) {
     if (!V) {
       std::cerr << "Error: null value for argument " << (i - 1) << " found in CallAST codegen!" << std::endl;
       return;
+    }
+
+    if (clo) {
+      V = builder.CreateBitCast(getTrampolineForClosure(clo), expectedType, "trampfn");
     }
 
     if (u != NULL) {

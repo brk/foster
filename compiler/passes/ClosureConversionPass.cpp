@@ -228,8 +228,8 @@ void performClosureConversion(ClosureAST* closure) {
   VariableAST* envVar = new VariableAST("env", envPtrTy);
   prependParameter(ast->proto, envVar);
 
-  // Rewrite the function body to make all references to freeVar
-  // instead go through the passed env
+  // Rewrite the function body to make all references to free vars
+  // instead go through the passed env pointer.
   {
     ReplaceExprTransform rex;
     int offset = 0;

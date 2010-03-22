@@ -4,5 +4,5 @@ f = fn () {
 
 fn "main" () {
   expect_i32(3)
-  c_invoke_fnptr(f)
+  c_invoke_fnptr_void(f)
 }

@@ -18,12 +18,19 @@ const llvm::StructType* genericClosureTypeFor(const llvm::FunctionType* fnty);
 // converts t1 (envptrty*, t2, t3) to { t1 (i8*, t2, t3)*, i8* }
 const llvm::StructType* genericVersionOfClosureType(const llvm::FunctionType* fnty);
 
-bool isPointerToCompatibleFnTy(const llvm::Type* ty, const llvm::FunctionType* fnty);
+// A compatible function type matches at all arguments, except that the return type
+// for the first may be void, and the return type for the second need not be.
+bool isPointerToCompatibleFnTy(const llvm::Type* first, const llvm::FunctionType* second);
 
 bool voidCompatibleReturnTypes(const llvm::FunctionType* expected,
                                const llvm::FunctionType* actual);
 
 bool isVoid(const llvm::Type* ty);
+
+bool isValidClosureType(const llvm::StructType* sty);
+
+// converts { T (env*, Y, Z)*, env* }   to   T (Y, Z)
+const llvm::FunctionType* originalFunctionTypeForClosureStructType(const llvm::StructType* sty);
 
 #endif
 
