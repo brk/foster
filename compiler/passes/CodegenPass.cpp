@@ -770,24 +770,8 @@ void CodegenPass::visit(CallAST* ast) {
       // function pointer values e.g. from a lookup table.
       }
 
-      std::cout << "codegen CallAST arg " << (i-1) << "; argty " << *(arg->type)
-                << " vs fn arg ty " << *(FT->getContainedType(i)) << std::endl;
-    } else if (const llvm::StructType* sty = llvm::dyn_cast<llvm::StructType>(arg->type)) {
-      if (isValidClosureType(sty)) {
-        const FunctionType* fnty = originalFunctionTypeForClosureStructType(sty);
-        bool passFunctionPointer = isPointerToCompatibleFnTy(expectedType, fnty);
-        if (passFunctionPointer) {
-          std::cout << "getting trampoline for closure: " << *arg << std::endl;
-          if (clo = dynamic_cast<ClosureAST*>(arg)) {
-            clo->isTrampolineVersion = true;
-            // Actually create the trampoline after the closure has been codegenned.
-          } else {
-            std::cerr << "Error: due to a restriction placed by LLVM, only directly-written closures\n"
-                << "may be converted to trampolines for passing to C code." << std::endl;
-            return;
-          }
-        }
-      }
+      //std::cout << "codegen CallAST arg " << (i-1) << "; argty " << *(arg->type)
+      //          << " vs fn arg ty " << *(FT->getContainedType(i)) << std::endl;
     }
 
     arg->accept(this);

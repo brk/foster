@@ -31,7 +31,7 @@ void addClosureTypeName(llvm::Module* mod, const llvm::StructType* sty) {
 }
 
 const FunctionType* tryExtractCallableType(const Type* ty) {
-  if (const llvm::PointerType* ptrTy = llvm::dyn_cast<llvm::PointerType>(ty)) {
+  if (const llvm::PointerType* ptrTy = llvm::dyn_cast_or_null<llvm::PointerType>(ty)) {
     // Avoid doing full recursion on pointer types; fn* is callable,
     // but fn** is not.
     ty = ptrTy->getContainedType(0);

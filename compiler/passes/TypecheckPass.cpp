@@ -260,7 +260,9 @@ void TypecheckPass::visit(ClosureAST* ast) {
   if (ast->hasKnownEnvironment) {
     ast->fn->accept(this);
     visitChildren(ast);
-  
+
+    if (!ast->fn || !ast->fn->type) { return; }
+
     if (const llvm::FunctionType* ft = tryExtractCallableType(ast->fn->type)) {
       ast->type = genericVersionOfClosureType(ft);
       if (ft && ast->type) {
@@ -491,6 +493,8 @@ void TypecheckPass::visit(CallAST* ast) {
   }
   
   vector<const Type*> actualTypes;
+  vector<ExprAST*> literalArgs; // any args not from unpack exprs, temp hack!
+
   for (int i = 1; i < ast->parts.size(); ++i) {
     ExprAST* arg = ast->parts[i];
     if (!arg) {
@@ -510,12 +514,14 @@ void TypecheckPass::visit(CallAST* ast) {
       if (const llvm::StructType* st = llvm::dyn_cast<llvm::StructType>(argTy)) {
         for (int j = 0; j < st->getNumElements(); ++j) {
           actualTypes.push_back(st->getElementType(j));
+          literalArgs.push_back(NULL);
         }
       } else {
         std::cerr << "Error: call expression found UnpackExpr with non-struct type " << *argTy << std::endl;
       }
     } else {
       actualTypes.push_back(argTy);
+      literalArgs.push_back(arg);
     }
   }
   
@@ -551,8 +557,20 @@ void TypecheckPass::visit(CallAST* ast) {
           // We have a closure and will convert it to a bare
           // trampoline function pointer at codegen time.
           actualType = formalType;
-          // TODO once UnpackExprs are either made sane or removed,
-          // this would be an excellent place to set ClosureAST::isTrampolineVersion
+
+          if (ExprAST* arg = literalArgs[i]) {
+             if (ClosureAST* clo = dynamic_cast<ClosureAST*>(arg)) {
+               clo->isTrampolineVersion = true;
+             } else {
+               std::cerr << "Error! LLVM requires literal closure definitions"
+                         << " be given at trampoline creation sites!\n";
+               return;
+             }
+          } else {
+            std::cerr << "Error! LLVM requires literal closure definitions"
+                      << " be given at trampoline creation sites! Can't use an unpacked tuple!\n";
+            return;
+          }
         }
       }
     }
