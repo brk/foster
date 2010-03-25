@@ -1,10 +1,16 @@
 from __future__ import with_statement
+import time
 import os
 import re
 import os.path
 import subprocess
 import sys
 import shutil
+
+if os.name == 'nt':
+  walltime = time.clock
+else:
+  walltime = time.time
 
 tests_passed = set()
 tests_failed = set()
@@ -38,7 +44,34 @@ def extract_expected_input(path):
     f.writelines(inlines)
   return open(tmpname, 'r')
 
+def default_lookup(word, table):
+  if word in table:
+    return table[word]
+  else:
+    return word
+
+def elapsed(start, end):
+  return int( (end - start) * 1000 )
+
+def elapsed_since(start):
+  return elapsed(start, walltime())
+
+# returns (status, elapsed-time-ms)
+def run_command(cmd, paths, testpath, stdout=None, stderr=None, stdin=None, strictrv=True):
+  if type(cmd) == str:
+    cmd = cmd.split(' ')
+  arglist = [default_lookup(arg, paths) for arg in cmd]
+
+  start = walltime()
+  rv = subprocess.call( arglist, stdout=stdout, stderr=stderr, stdin=stdin)
+  end = walltime()
+
+  if strictrv and rv != 0:
+    raise Exception(str(rv) + '; Failed to run: ' + ' '.join(arglist) + '\n\tfor test ' + testpath)
+  return elapsed(start, end)
+
 def run_one_test(dir_prefix, basename, paths, tmpdir):
+  start = walltime()
   exp_filename = os.path.join(tmpdir, "expected.txt")
   act_filename = os.path.join(tmpdir, "actual.txt")
   with open(exp_filename, 'w') as expected:
@@ -53,37 +86,38 @@ def run_one_test(dir_prefix, basename, paths, tmpdir):
         if compile_separately:
           fosterc_cmdline.insert(1, "-c")
 
-        print ' '.join(fosterc_cmdline)
-        fc_rv = subprocess.call(fosterc_cmdline, stdout=compilelog, stderr=compilelog)
-        if fc_rv != 0:
-          tests_failed.add(testpath)
-          return
+        #print ' '.join(fosterc_cmdline)
+        fc_elapsed = run_command(fosterc_cmdline, paths, testpath, stdout=compilelog, stderr=compilelog)
+
 
         llvm_asm_path = os.path.join(tmpdir, basename + ".ll")
         shutil.copyfile(paths['foster.ll'], llvm_asm_path)
-        as_rv = subprocess.call([ paths['llvm-as'], paths['foster.ll'], '-f' ])
-        if as_rv != 0:
-          tests_failed.add(testpath)
-          return
+	as_elapsed = run_command('llvm-as foster.ll -f', paths, testpath)
         
         if compile_separately:
-          ld_rv = subprocess.call([ paths['llvm-ld'], paths['foster.bc'], paths['libfoster.bc'], '-o', paths['ll-foster'] ])
-          if ld_rv != 0:
-            tests_failed.add(testpath)
-            return
-
-          rn_rv = subprocess.call([ paths['ll-foster'] ],
-          	                  stdout=actual, stderr=expected, stdin=infile)
+          cc_elapsed = 0
+          ld_elapsed = run_command('llvm-ld foster.bc libfoster.bc -o ll-foster', paths, testpath)
+	  lc_elapsed = 0
+          op_elapsed = 0
+          rn_elapsed = run_command('ll-foster',  paths, testpath, stdout=actual, stderr=expected, stdin=infile, strictrv=False)
         else:
-          rn_rv = subprocess.call([ paths['lli'], paths['foster.bc'] ],
-          	                  stdout=actual, stderr=expected, stdin=infile)
+          ld_elapsed = 0
+	  op_elapsed = 0
+          lc_elapsed = run_command('llc foster.bc -f -o foster.s',  paths, testpath, stdout=actual, stderr=expected, stdin=infile)
+          cc_elapsed = run_command('gcc foster.s',  paths, testpath, stdout=actual, stderr=expected, stdin=infile)
+	  rn_elapsed = run_command('a.out',  paths, testpath, stdout=actual, stderr=expected, stdin=infile, strictrv=False)
 
         df_rv = subprocess.call(['diff', '-u', exp_filename, act_filename])
         if df_rv == 0:
           tests_passed.add(testpath)
         else:
           tests_failed.add(testpath)
+
+        total_elapsed = elapsed_since(start)
+	print "foc:%4d | las:%4d | opt:%4d | llc:%4d | gcc:%4d | run:%4d | all:%5d | %s" % (fc_elapsed, as_elapsed,
+				op_elapsed, lc_elapsed, cc_elapsed, rn_elapsed, total_elapsed, basename)
         infile.close()
+
 
 def run_all_tests(bootstrap_dir, paths, tmpdir):
   for root, dirs, files in os.walk(bootstrap_dir, topdown=False):
@@ -93,17 +127,23 @@ def run_all_tests(bootstrap_dir, paths, tmpdir):
     have_code = os.path.exists(code_path)
 
     if have_code:
+      teststart = walltime()
       paths['code'] = code_path
       test_tmpdir = os.path.join(tmpdir, base)
       ensure_dir_exists(test_tmpdir)
-      run_one_test(root, base, paths, test_tmpdir)
+      try:
+        run_one_test(root, base, paths, test_tmpdir)
+      except:
+        pass
+      testend = walltime()
 
 def main(bootstrap_dir, paths, tmpdir):
+  walkstart = walltime()
   run_all_tests(bootstrap_dir, paths, tmpdir)
+  walkend = walltime()
+  print "Total time: %d ms" % elapsed(walkstart, walkend)
 
   print len(tests_passed), " tests passed"
-  for test in tests_passed:
-    print test
 
   print len(tests_failed), " tests failed"
   if len(tests_failed) > 0:
@@ -124,9 +164,13 @@ if __name__ == "__main__":
       'llvm-as': join(llvmdir, 'llvm-as'),
       'llvm-ld': join(llvmdir, 'llvm-ld'),
       'lli'    : join(llvmdir, 'lli'),
-      'foster.bc': join(bindir, 'foster.bc'),
+      'llc'    : join(llvmdir, 'llc'),
+      'opt'    : join(llvmdir, 'opt'),
+      'foster.bc':    join(bindir, 'foster.bc'),
+      'foster.s':     join(bindir, 'foster.s'),
+      'a.out':        join(bindir, 'a.out'),
       'libfoster.bc': join(bindir, 'libfoster.bc'),
-      'll-foster': join(bindir, 'll-foster'),
+      'll-foster':    join(bindir, 'll-foster'),
   }
   # compiler spits out foster.ll in current directory
   paths['foster.ll'] = os.path.join(os.path.dirname(paths['fosterc']), 'foster.ll')
