@@ -58,6 +58,10 @@ execute_process(COMMAND ${LLVM_CONFIG} --ldflags --libs core jit interpreter nat
 string(REPLACE "\n" "" LLVM_LDFLAGS ${LLVM_LDFLAGS})
 string(STRIP ${LLVM_LDFLAGS} LLVM_LDFLAGS)
 
+find_package(Threads REQUIRED)
+
+# TODO: provide ${CMAKE_THREAD_LIBS_INIT} to compile scripts
+
 ####################### Compilation Rules ##########################
 
 # Use python to build fosterParser.c when grammar/foster.g changes
@@ -79,6 +83,7 @@ add_custom_command(
   DEPENDS ${PROJECT_SOURCE_DIR}/runtime/libfoster.cpp
 )
 add_custom_target(libfoster_bc DEPENDS ${PROJECT_BINARY_DIR}/libfoster.bc)
+
 
 # Look for ANTLR-generated lexer and parser, and ANTLR library files
 include_directories(${ANTLR_DIR}/include ${PROJECT_BINARY_DIR})

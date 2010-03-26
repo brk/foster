@@ -718,6 +718,7 @@ void CodegenPass::visit(CallAST* ast) {
 
     const llvm::Type* expectedType = FT->getContainedType(i);
 
+    // Codegenning   callee( arg )  where arg has raw function type, not closure type!
     if (const FunctionType* fnty = llvm::dyn_cast<const FunctionType>(arg->type)) {
       // If we still have a bare function type at codegen time, it means
       // the code specified a (top-level) function name.
@@ -727,6 +728,8 @@ void CodegenPass::visit(CallAST* ast) {
       // 1) A C-linkage function which expects a bare function pointer.
       // 2) A Foster function which expects a closure value.
       bool passFunctionPointer = isPointerToCompatibleFnTy(expectedType, fnty);
+
+      std::cout << "Passing function to " << (passFunctionPointer ? "fn ptr" : "closure") << "\n";
 
       if (passFunctionPointer) {
       // Case 1 is simple; we just change the arg type to "function pointer"
@@ -770,8 +773,10 @@ void CodegenPass::visit(CallAST* ast) {
       // function pointer values e.g. from a lookup table.
       }
 
-      //std::cout << "codegen CallAST arg " << (i-1) << "; argty " << *(arg->type)
-      //          << " vs fn arg ty " << *(FT->getContainedType(i)) << std::endl;
+      std::cout << "codegen CallAST arg " << (i-1) << "; argty " << *(arg->type)
+                << " vs fn arg ty " << *(FT->getContainedType(i)) << std::endl;
+    } else {
+      clo = dynamic_cast<ClosureAST*>(arg);
     }
 
     arg->accept(this);
@@ -781,7 +786,8 @@ void CodegenPass::visit(CallAST* ast) {
       return;
     }
 
-    if (clo) {
+    if (clo && clo->isTrampolineVersion) {
+      std::cout << "Creating trampoline for closure; bitcasting to " << *expectedType << std::endl;
       V = builder.CreateBitCast(getTrampolineForClosure(clo), expectedType, "trampfn");
     }
 
@@ -795,7 +801,7 @@ void CodegenPass::visit(CallAST* ast) {
   if (true) {
     std::cout << "Creating call for AST {" << valArgs.size() << "} " << *base << std::endl;
     for (int i = 0; i < valArgs.size(); ++i) {
-      std::cout << "\t" << *valArgs[i] << std::endl;
+      std::cout << "\tAST arg " << i << ":\t" << *valArgs[i] << std::endl;
     }
   }
   

@@ -103,8 +103,8 @@ def run_one_test(dir_prefix, basename, paths, tmpdir):
         else:
           ld_elapsed = 0
 	  op_elapsed = 0
-          lc_elapsed = run_command('llc foster.bc -f -o foster.s',  paths, testpath, stdout=actual, stderr=expected, stdin=infile)
-          cc_elapsed = run_command('gcc foster.s',  paths, testpath, stdout=actual, stderr=expected, stdin=infile)
+          lc_elapsed = run_command('llc -O1 foster.bc -f -o foster.s',  paths, testpath, stdout=actual, stderr=expected, stdin=infile)
+          cc_elapsed = run_command('g++ foster.s -lpthread',  paths, testpath, stdout=actual, stderr=expected, stdin=infile)
 	  rn_elapsed = run_command('a.out',  paths, testpath, stdout=actual, stderr=expected, stdin=infile, strictrv=False)
 
         df_rv = subprocess.call(['diff', '-u', exp_filename, act_filename])

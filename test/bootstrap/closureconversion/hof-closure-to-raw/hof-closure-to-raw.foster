@@ -3,6 +3,7 @@
 fn "main" () {
   let a:i32 = read_i32() in {
     expect_i32(5)
+    // Construct a closure that captures |a|, and invoke it from C code.
     c_invoke_fnptr_i32(fn () { print_i32(a + read_i32()) } )
   }
 }

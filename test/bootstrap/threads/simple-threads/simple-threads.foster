@@ -1,0 +1,11 @@
+fib = fn (x : i32) { if x < 3 then { 1 } else { fib(x - 1) + fib(x - 2) } }
+
+fn "main" () {
+
+  // This only starts one thread in order to remain deterministic...
+  
+  expect_i32(832040)
+  thread_create_i32(fn () { print_i32(fib(30)) })
+  
+  thread_waitall()
+}
