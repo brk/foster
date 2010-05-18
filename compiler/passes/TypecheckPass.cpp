@@ -5,7 +5,6 @@
 #include "TypecheckPass.h"
 #include "FosterAST.h"
 #include "FosterUtils.h"
-#include "ANTLRtoFosterAST.h" // for isBitwiseOpName
 
 #include "llvm/DerivedTypes.h"
 #include "llvm/LLVMContext.h"
@@ -103,7 +102,7 @@ void TypecheckPass::visit(IntAST* ast) {
 
 void TypecheckPass::visit(VariableAST* ast) {
   if (this->typeParsingMode) { ast->type = LLVMTypeFor(ast->name); }
-
+  
   if (!ast->tyExpr) {
     if (!ast->type) {
       // Eventually we should do local type inference...
@@ -148,7 +147,7 @@ void TypecheckPass::visit(UnaryOpExprAST* ast) {
       return;
     }
 
-    if (!(opTy->isIntOrIntVector())) {
+    if (!(opTy->isIntOrIntVectorTy())) {
       std::cerr << "Typecheck error: operand to unary '-' had non-inty type " << *opTy << std::endl;
       return;
     }
@@ -174,15 +173,17 @@ void TypecheckPass::visit(BinaryOpExprAST* ast) {
     std::cerr << "Error: binary expr " << op << " failed to typecheck subexprs!" << std::endl;
   } else {
     if (op == "+" || op == "-" || op == "*" || op == "/") {
-      if (!TL->isIntOrIntVector()) {
+      if (!TL->isIntOrIntVectorTy()) {
         std::cerr << "Error: arith op '" << op << "' used with non-inty type " << *TL << std::endl;
         return;
       }
     }
 
-    if (isBitwiseOpName(op) && !TL->isIntOrIntVector()) {
-      std::cerr << "Error: bitwise op '" << op << "' used with non-inty type " << *TL << std::endl;
-      return;
+    if (op == "bitand" || op == "bitor" || op == "bitxor" || op == "shl" || op == "lshr" || op == "ashr") {
+      if (!TL->isIntOrIntVectorTy()) {
+        std::cerr << "Error: bitwise op '" << op << "' used with non-inty type " << *TL << std::endl;
+        return;
+      }
     }
 
     if (op == "<" || op == "==" || op == "!=" || op == "<=") {
@@ -260,9 +261,7 @@ void TypecheckPass::visit(ClosureAST* ast) {
   if (ast->hasKnownEnvironment) {
     ast->fn->accept(this);
     visitChildren(ast);
-
-    if (!ast->fn || !ast->fn->type) { return; }
-
+  
     if (const llvm::FunctionType* ft = tryExtractCallableType(ast->fn->type)) {
       ast->type = genericVersionOfClosureType(ft);
       if (ft && ast->type) {
@@ -319,59 +318,6 @@ void TypecheckPass::visit(IfExprAST* ast) {
   }
 }
 
-void TypecheckPass::visit(RefExprAST* ast) {
-  ast->type = llvm::PointerType::getUnqual(ast->parts[0]->type);
-}
-
-void TypecheckPass::visit(DerefExprAST* ast) {
-  const Type* derefType = ast->parts[0]->type;
-  if (const llvm::PointerType* ptrTy = llvm::dyn_cast<llvm::PointerType>(derefType)) {
-    ast->type = ptrTy->getElementType();
-  } else {
-    std::cerr << "Deref() called on a non-pointer type " << *derefType << "!\n";
-    std::cerr << "base: " << *(ast->parts[0]) << std::endl;
-    ast->type = NULL;
-  }
-}
-
-void TypecheckPass::visit(AssignExprAST* ast) {
-  const Type* lhsTy = ast->parts[0]->type;
-  const Type* rhsTy = ast->parts[1]->type;
-
-  if (const llvm::PointerType* plhsTy = llvm::dyn_cast<llvm::PointerType>(lhsTy)) {
-    lhsTy = plhsTy->getElementType();
-    if (isCompatible(lhsTy, rhsTy)) {
-      ast->type = LLVMTypeFor("i32");
-    } else {
-      std::cerr << "Types in assignment are not copy compatible!" << std::endl;
-      std::cerr << "\tLHS (deref'd): " << *(lhsTy) << std::endl;
-      std::cerr << "\tRHS          : " << *(rhsTy) << std::endl;
-      ast->type = NULL;
-    }
-  } else {
-    std::cerr << "Attempted assignment to a non-pointer (internally) type " << *lhsTy << "!\n";
-    std::cerr << "AST dump: " << *(ast) << std::endl;
-    ast->type = NULL;
-  }
-}
-
-// Returns aggregate and vector types directly, and returns the underlying
-// aggregate type for pointer-to-aggregate. Returns NULL in other cases.
-const llvm::CompositeType* getIndexableType(const llvm::Type* ty) {
-  const llvm::Type* baseType = ty;
-  std::cout << "getIndexableType: " << *ty << std::endl;
-  if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
-    ty = pty->getElementType();
-  }
-
-  if (ty->isAggregateType() || llvm::isa<llvm::VectorType>(ty)) {
-    return llvm::dyn_cast<llvm::CompositeType>(ty);
-  } else {
-    std::cerr << "Error: Cannot index into non-aggregate type " << *baseType << std::endl;
-    return NULL;
-  }
-}
-
 void TypecheckPass::visit(SubscriptAST* ast) {
   if (!ast->parts[1]) {
     std::cerr << "Error: SubscriptAST had null index" << std::endl;
@@ -396,64 +342,58 @@ void TypecheckPass::visit(SubscriptAST* ast) {
     return;
   }
   
-  const llvm::CompositeType* compositeTy = getIndexableType(baseType);
-  if (compositeTy == NULL) {
-     std::cerr << "Error: attempt to index into a non-composite type " << *baseType << std::endl;
-     return;
-  }
-
-
-  std::cout << "Indexing " << *baseType << " as composite " << *compositeTy << std::endl;
-
-  // Check to see that the given index is valid for this type
-  ConstantInt* cidx = llvm::dyn_cast<ConstantInt>(idx->getConstantValue());
-  const APInt& vidx = cidx->getValue();
-
-  if (!vidx.isSignedIntN(64)) { // an exabyte of memory should be enough for anyone!
-    std::cerr << "Error: Indices must fit in 64 bits; tried to index with '" << *cidx << "'" << std::endl;
-    return;
-  }
-
-  if (!compositeTy->indexValid(cidx) || vidx.isNegative()) {
-    std::cerr << "Error: attempt to index composite with invalid index '" << *cidx << "'" << std::endl;
+  if (!(baseType->isAggregateType() || llvm::isa<llvm::VectorType>(baseType))) {
+    llvm::errs() << "Error: Cannot index into non-aggregate type " << *baseType << "\n";
     return;
   }
   
-  // LLVM doesn't do bounds checking for arrays or vectors, but we do!
-  uint64_t numElements = 0;
-  if (const llvm::ArrayType* ty = llvm::dyn_cast<llvm::ArrayType>(compositeTy)) {
-    numElements = ty->getNumElements();
-  }
-
-  if (const llvm::VectorType* ty = llvm::dyn_cast<llvm::VectorType>(compositeTy)) {
-    numElements = ty->getNumElements();
-  }
-
-  if (numElements > 0) {
-    uint64_t idx_u64 = vidx.getZExtValue();
-    if (idx_u64 >= numElements) {
-      std::cerr << "Error: attempt to index array[" << numElements << "]"
-                << " with invalid index '" << idx_u64 << "'" << std::endl;
+  const llvm::CompositeType* compositeTy = llvm::dyn_cast<llvm::CompositeType>(baseType);
+  if (compositeTy != NULL) {
+    // Check to see that the given index is valid for this type
+    ConstantInt* cidx = llvm::dyn_cast<ConstantInt>(idx->getConstantValue());
+    const APInt& vidx = cidx->getValue();
+    
+    if (!vidx.isSignedIntN(64)) { // an exabyte of memory should be enough for anyone!
+      llvm::errs() << "Error: Indices must fit in 64 bits; tried to index with '" << *cidx << "'" << "\n";
       return;
     }
-  }
-
-  std::cout << "Indexing composite with index " << *cidx << "; neg? " << vidx.isNegative() << std::endl;
-  ast->type = compositeTy->getTypeAtIndex(cidx);
-
-  if (this->inAssignLHS) {
-    ast->type = llvm::PointerType::getUnqual(ast->type);
+    
+    if (!compositeTy->indexValid(cidx) || vidx.isNegative()) {
+      llvm::errs() << "Error: attempt to index composite with invalid index '" << *cidx << "'" << "\n";
+      return;
+    }
+    
+    // LLVM doesn't do bounds checking for arrays or vectors, but we do!
+    uint64_t numElements = -1;
+    if (const llvm::ArrayType* ty = llvm::dyn_cast<llvm::ArrayType>(baseType)) {
+      numElements = ty->getNumElements();
+    }
+    
+    if (const llvm::VectorType* ty = llvm::dyn_cast<llvm::VectorType>(baseType)) {
+      numElements = ty->getNumElements();
+    }   
+    
+    if (numElements >= 0) {
+      uint64_t idx_u64 = vidx.getZExtValue();
+      if (idx_u64 >= numElements) {
+        std::cerr << "Error: attempt to index array[" << numElements << "]"
+                  << " with invalid index '" << idx_u64 << "'" << std::endl;
+        return;
+      }
+    }
+    
+    llvm::errs() << "Indexing composite with index " << *cidx << "; neg? " << vidx.isNegative() << "\n";
+    ast->type = compositeTy->getTypeAtIndex(cidx);
+  } else {
+    llvm::errs() << "Error: attempt to index into a non-composite type " << *baseType << "\n";
   }
 }
 
 void TypecheckPass::visit(SeqAST* ast) {
   bool success = true;
-  const llvm::Type* lastNonVoidType = NULL;
   for (int i = 0; i < ast->parts.size(); ++i) {
     if (ast->parts[i]) {
-      const llvm::Type* ty = ast->parts[i]->type;
-      if (!ty) { success = false; }
-      else if (!isVoid(ty)) { lastNonVoidType = ty; }
+      if (!ast->parts[i]->type) { success = false; }
     } else {
       std::cerr << "Null expr in SeqAST" << std::endl;
       return;
@@ -462,8 +402,30 @@ void TypecheckPass::visit(SeqAST* ast) {
 
   if (!success || ast->parts.empty()) { return; }
 
-  std::cout << "LastNonVoidType: " << *lastNonVoidType << std::endl;
-  ast->type = lastNonVoidType;
+  ast->type = ast->parts.back()->type;
+}
+
+const FunctionType* getFunctionTypeFromClosureStructType(const Type* ty) {
+  if (const llvm::StructType* sty = llvm::dyn_cast<llvm::StructType>(ty)) {
+    if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(sty->getContainedType(0))) {
+      return llvm::dyn_cast<llvm::FunctionType>(pty->getElementType());
+    }
+  }
+  std::cerr << "ERROR: failed to get function type from closure struct type: " << *ty << std::endl;
+  exit(1);
+  return NULL;
+}
+
+// converts { T (env*, Y, Z)*, env* }   to   T (Y, Z)
+const llvm::FunctionType* originalFunctionTypeForClosureStructType(const llvm::StructType* sty) {
+  if (const llvm::FunctionType* ft = tryExtractCallableType(sty->getContainedType(0))) {
+    std::vector<const llvm::Type*> originalArgTypes;
+    for (int i = 1; i < ft->getNumParams(); ++i) {
+      originalArgTypes.push_back(ft->getParamType(i));
+    }
+    return llvm::FunctionType::get(ft->getReturnType(), originalArgTypes, /*isVarArg=*/ false);
+  }
+  return NULL;
 }
 
 void TypecheckPass::visit(CallAST* ast) {
@@ -493,8 +455,6 @@ void TypecheckPass::visit(CallAST* ast) {
   }
   
   vector<const Type*> actualTypes;
-  vector<ExprAST*> literalArgs; // any args not from unpack exprs, temp hack!
-
   for (int i = 1; i < ast->parts.size(); ++i) {
     ExprAST* arg = ast->parts[i];
     if (!arg) {
@@ -508,20 +468,18 @@ void TypecheckPass::visit(CallAST* ast) {
       std::cerr << "Error: CallAST typecheck: arg " << i << " (" << *(arg) << ") had null type" << std::endl;
       return;
     }
-
+    
     // TODO: add separate prepass to explicitly unpack UnpackExprASTs
     if (UnpackExprAST* u = dynamic_cast<UnpackExprAST*>(arg)) {
       if (const llvm::StructType* st = llvm::dyn_cast<llvm::StructType>(argTy)) {
         for (int j = 0; j < st->getNumElements(); ++j) {
           actualTypes.push_back(st->getElementType(j));
-          literalArgs.push_back(NULL);
         }
       } else {
         std::cerr << "Error: call expression found UnpackExpr with non-struct type " << *argTy << std::endl;
       }
     } else {
       actualTypes.push_back(argTy);
-      literalArgs.push_back(arg);
     }
   }
   
@@ -537,42 +495,10 @@ void TypecheckPass::visit(CallAST* ast) {
     const Type* formalType = baseFT->getParamType(i);
     const Type* actualType = actualTypes[i];
 
+    // Temporarily view a function type as its associated specific closure type,
+    // since the formal arguments will have undergone the same conversion.
     if (const FunctionType* fnty = llvm::dyn_cast<const FunctionType>(actualType)) {
-      // If we try to use  fa: i32 () in place of ff: void ()*,
-      // temporarily give the function fa the type of ff.
-      if (isPointerToCompatibleFnTy(formalType, fnty)) {
-        actualType = formalType;
-      } else {
-        // Temporarily view a function type as its associated specific closure type,
-        // since the formal arguments will have undergone the same conversion.
-        actualType = genericClosureTypeFor(fnty);
-        std::cout << "TYPECHECK CallAST converting " << *fnty << " to " << *actualType << std::endl;
-        std::cout << "\t for formal type:\t" << *formalType << std::endl;
-        std::cout << "\t base :: " << *base << std::endl;
-      }
-    } else if (const llvm::StructType* sty = llvm::dyn_cast<llvm::StructType>(actualType)) {
-      if (isValidClosureType(sty)) {
-        const FunctionType* fnty = originalFunctionTypeForClosureStructType(sty);
-        if (isPointerToCompatibleFnTy(formalType, fnty)) {
-          // We have a closure and will convert it to a bare
-          // trampoline function pointer at codegen time.
-          actualType = formalType;
-
-          if (ExprAST* arg = literalArgs[i]) {
-             if (ClosureAST* clo = dynamic_cast<ClosureAST*>(arg)) {
-               clo->isTrampolineVersion = true;
-             } else {
-               std::cerr << "Error! LLVM requires literal closure definitions"
-                         << " be given at trampoline creation sites!\n";
-               return;
-             }
-          } else {
-            std::cerr << "Error! LLVM requires literal closure definitions"
-                      << " be given at trampoline creation sites! Can't use an unpacked tuple!\n";
-            return;
-          }
-        }
-      }
+      actualType = genericClosureTypeFor(fnty);
     }
 
     // Note: order here is important! We check conversion from
@@ -607,41 +533,6 @@ void TypecheckPass::visit(CallAST* ast) {
   }
 }
 
-bool hasTyExpr(ExprAST* e) {
-  if (!e) { return false; }
-  if (RefExprAST* v = dynamic_cast<RefExprAST*>(e)) {
-    return hasTyExpr(v->parts[0]);
-  }
-  if (VariableAST* v = dynamic_cast<VariableAST*>(e)) {
-    return LLVMTypeFor(v->name) != NULL;
-  } else {
-    return false;
-  }
-}
-
-/// For now, as a special case, simd-vector and array will interpret { 4;i32 }
-/// as meaning the same thing as { i32 ; i32 ; i32 ; i32 }
-int extractNumElementsAndElementType(int maxSize, ExprAST* ast, const Type*& elementType) {
-  SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
-  bool secondTyExpr = hasTyExpr(body->parts[1]);
-  if (secondTyExpr) {
-    if (IntAST* first = dynamic_cast<IntAST*>(body->parts[0])) {
-      APInt v = first->getAPInt();
-      unsigned int n = v.getZExtValue();
-      // Sanity check on # elements; nobody? wants a single billion-element vector...
-      if (n <= maxSize) {
-        elementType = body->parts[1]->type;
-        return n;
-      } else {
-        std::cerr << "Concise simd/array declaration too big! : " << *ast << std::endl;
-      }
-    } else {
-      return 0;
-    }
-  }
-  return -1;
-}
-
 void TypecheckPass::visit(ArrayExprAST* ast) {
   bool success = true;
   std::map<const Type*, bool> fieldTypes;
@@ -654,47 +545,29 @@ void TypecheckPass::visit(ArrayExprAST* ast) {
   
   int numElements = body->parts.size();
   const Type* elementType = NULL;
-
-  if (numElements == 2) {
-    numElements = extractNumElementsAndElementType(256, ast, elementType);
-    if (numElements != -1) {
-      // Don't try to interpret the size + type as initializers!
-      body->parts.clear();
-    } else {
-      numElements = 2;
-    }
-  }
-
-  if (!elementType) {
-    for (int i = 0; i < numElements; ++i) {
-      const Type* ty =  body->parts[i]->type;
-      if (!ty) {
-        std::cerr << "Array expr had null constituent type for subexpr " << i << std::endl;
-        success = false;
-        break;
-      }
-      fieldTypes[ty] = true;
-      elementType = ty;
-    }
-
-    // TODO This should probably be relaxed eventually; for example,
-    // an array of "small" and "large" int literals should silently be accepted
-    // as an array of "large" ints.
-    if (success && fieldTypes.size() > 1) {
-      std::cerr << "Array expression had multiple types! Found:" << std::endl;
-      std::map<const Type*, bool>::const_iterator it;;
-      for (it = fieldTypes.begin(); it != fieldTypes.end(); ++it) {
-        std::cerr << "\t" << *((*it).first) << std::endl;
-      }
+  for (int i = 0; i < numElements; ++i) {
+    const Type* ty =  body->parts[i]->type;
+    if (!ty) {
+      std::cerr << "Array expr had null constituent type for subexpr " << i << std::endl;
       success = false;
+      break;
     }
+    fieldTypes[ty] = true;
+    elementType = ty;
   }
-
-  if (!elementType) {
-    std::cerr << "Error: Array had no discernable element type?!?" << std::endl;
-    return;
+  
+  // TODO This should probably be relaxed eventually; for example,
+  // an array of "small" and "large" int literals should silently be accepted
+  // as an array of "large" ints.
+  if (success && fieldTypes.size() != 1) {
+    std::cerr << "Array expression had multiple types! Found:" << std::endl;
+    std::map<const Type*, bool>::const_iterator it;;
+    for (it = fieldTypes.begin(); it != fieldTypes.end(); ++it) {
+      std::cerr << "\t" << *((*it).first) << std::endl;
+    }
+    success = false;
   }
-
+  
   if (success) {
     ast->type = llvm::ArrayType::get(elementType, numElements);
   }
@@ -714,13 +587,18 @@ void TypecheckPass::visit(SimdVectorAST* ast) {
   int numElements = body->parts.size();
   const Type* elementType = NULL;
 
+  // For now, as a special case, simd-vector will interpret { 4 ; i32 }
+  // as meaning the same thing as { i32 ; i32 ; i32 ; i32 }
   if (numElements == 2) {
-    numElements = extractNumElementsAndElementType(256, ast, elementType);
-    if (numElements != -1) {
-      // Don't try to interpret the size + type as initializers!
-      body->parts.clear();
-    } else {
-      numElements = 2;
+    IntAST* first = dynamic_cast<IntAST*>(body->parts[0]);
+    if (first) {
+      APInt v = first->getAPInt();
+      unsigned int n = v.getZExtValue();
+      // Sanity check on # elements; nobody? wants a single billion-element vector...
+      if (n <= 256) {
+        numElements = n;
+        elementType = body->parts[1]->type;
+      }
     }
   }
 
@@ -740,7 +618,7 @@ void TypecheckPass::visit(SimdVectorAST* ast) {
     // TODO This should probably be relaxed eventually; for example,
     // a simd-vector of "small" and "large" int literals should silently be accepted
     // as a simd-vector of "large" ints.
-    if (success && fieldTypes.size() > 1) {
+    if (success && fieldTypes.size() != 1) {
       std::cerr << "simd-vector expression had multiple types! Found:" << std::endl;
       std::map<const Type*, bool>::const_iterator it;;
       for (it = fieldTypes.begin(); it != fieldTypes.end(); ++it) {
@@ -750,17 +628,12 @@ void TypecheckPass::visit(SimdVectorAST* ast) {
     }
   }
   
-  if (success && !isSmallPowerOfTwo(numElements)) {
+  if (!isSmallPowerOfTwo(numElements)) {
     std::cerr << "simd-vector constructor needs a small"
               << " power of two of elements; got " << numElements << std::endl;
     success = false;
   }
   
-  if (success && !llvm::VectorType::isValidElementType(elementType)) {
-    std::cerr << "simd-vector given invalid element type: " << *elementType << "\n";
-    success = false;
-  }
-
   if (success) {
     ast->type = llvm::VectorType::get(elementType, numElements);
   }

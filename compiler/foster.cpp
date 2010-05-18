@@ -8,7 +8,6 @@
 #include "llvm/ExecutionEngine/JIT.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Module.h"
-#include "llvm/ModuleProvider.h"
 #include "llvm/Linker.h"
 #include "llvm/PassManager.h"
 #include "llvm/Analysis/Verifier.h"
@@ -278,18 +277,18 @@ void createLLVMBitIntrinsics() {
   }
 }
 
-ModuleProvider* readModuleFromPath(std::string path) {
-  ModuleProvider* mp = NULL;
+Module* readModuleFromPath(std::string path) {
+  Module* m = NULL;
   std::string errMsg;
   
   // TODO test behavior with incorrect paths
   if (MemoryBuffer *memBuf = MemoryBuffer::getFile(path.c_str(), &errMsg)) {
-    //if (mp = getBitcodeModuleProvider(memBuf, getGlobalContext(), &errMsg)) {
+    //if (m = getLazyBitcodeModule(memBuf, getGlobalContext(), &errMsg)) {
     
     // Currently, materalizing functions lazily fails with LLVM 2.6,
     // so this must be an ExistingModuleProvider
-    if (Module* m = ParseBitcodeFile(memBuf, getGlobalContext(), &errMsg)) {
-      mp = new ExistingModuleProvider(m);
+    if (m = ParseBitcodeFile(memBuf, getGlobalContext(), &errMsg)) {
+      // Great!
     } else {
       std::cerr << "Error: could not parse module '" << path << "'" << std::endl;
       std::cerr << "\t" << errMsg << std::endl;
@@ -297,33 +296,27 @@ ModuleProvider* readModuleFromPath(std::string path) {
     delete memBuf;
   }
 
-  return mp;
+  return m;
 }
 
-void putModuleMembersInScope(ModuleProvider* mp) {
-  Module* m = mp->getModule();
+void putModuleMembersInScope(Module* m) {
   if (!m) return;
   
   // Lazily-materialized modules (claim to) have no definition of
   // unmaterialized functions (fair enough, but still...)
-  // TODO: bring up issues found with lazy materialization in #llvm
-  
-  // Materializing functions individually fails with LLVM 2.6 in
-  // BitcodeReader.cpp:219
-  
-  // Materializing the whole module at once fails with LLVM 2.6 in
-  // BitstreamReader.h:474
   for (Module::iterator it = m->begin(); it != m->end(); ++it) {
     const Function& f = *it;
     
     const std::string& name = f.getNameStr();
     bool isCxxLinkage = name[0] == '_' && name[1] == 'Z';
+    /*
     if (!isCxxLinkage) {
       std::string errMsg;
-      if (mp->materializeFunction(it, &errMsg)) {
+      if (m->materializeFunction(it, &errMsg)) {
         std::cout << "Error materializing fn " << name << ": " << errMsg << std::endl;
       }
     }
+     */
     bool hasDef = !f.isDeclaration();
     std::cout << "\tfn " << name << "; def? " << hasDef << std::endl;
    
@@ -383,6 +376,17 @@ std::string dumpdir("fc-output/");
 std::string dumpdirFile(const std::string& filename) {
   return dumpdir + filename;
 }
+void dumpModuleToFile(Module* mod, const std::string& filename) {
+  std::string errInfo;
+  llvm::raw_fd_ostream LLpreASM(filename.c_str(), errInfo);
+  if (errInfo.empty()) {
+    LLpreASM << *mod;
+  } else {
+    std::cerr << "Error dumping module to " << filename << std::endl;
+    std::cerr << errInfo << std::endl;
+    exit(1);
+  }
+}
 
 int main(int argc, char** argv) {  
   sys::PrintStackTraceOnErrorSignal();
@@ -411,9 +415,8 @@ int main(int argc, char** argv) {
   
   fosterLLVMInitializeNativeTarget();
   module = new Module("foster", getGlobalContext());
-  ExistingModuleProvider* moduleProvider = new ExistingModuleProvider(module);
 
-  ee = EngineBuilder(moduleProvider).create();
+  ee = EngineBuilder(module).create();
   
   initMaps();
 
@@ -441,9 +444,8 @@ int main(int argc, char** argv) {
   // This would be consistent with the dot (selection) operator
   // for accessing elements of the module.
   
-  ModuleProvider* mp = NULL;
-  mp = readModuleFromPath("libfoster.bc");
-  putModuleMembersInScope(mp);
+  Module* m = readModuleFromPath("libfoster.bc");
+  putModuleMembersInScope(m);
   
   createLLVMBitIntrinsics();
 
@@ -501,17 +503,15 @@ int main(int argc, char** argv) {
   if (!optCompileSeparately) {
     std::string outfile = "foster.prelink.ll";
     std::cout << "Dumping pre-linked LLVM IR to " << outfile << endl;
-    std::ofstream LLpreASM(dumpdirFile(outfile).c_str());
-    LLpreASM << *module;
-  
+    dumpModuleToFile(module, dumpdirFile(outfile).c_str());
+
     std::string errMsg;
-    if (Linker::LinkModules(module, mp->getModule(), &errMsg)) {
+    if (Linker::LinkModules(module, m, &errMsg)) {
       std::cerr << "Error when linking modules together: " << errMsg << std::endl;
     }
   }
-  
-  std::ofstream LLASM("foster.ll");
-  LLASM << *module;
+
+  dumpModuleToFile(module, "foster.ll");
   
   return 0;
 }
