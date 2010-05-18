@@ -37,7 +37,7 @@ T getSaturating(llvm::Value* v) {
   if (ConstantInt* ci = llvm::dyn_cast<ConstantInt>(v)) {
     return static_cast<T>(ci->getLimitedValue(allOnes));
   } else {
-    std::cerr << "numericOf() got a non-constant-int value " << *v << ", returning " << allOnes << std::endl;
+    llvm::errs() << "numericOf() got a non-constant-int value " << *v << ", returning " << allOnes << "\n";
     return allOnes;
   }
 }
@@ -45,7 +45,7 @@ T getSaturating(llvm::Value* v) {
 Value* tempHackExtendInt(Value* val, const Type* toTy) {
   const Type* valTy = val->getType();
   // The type checker should ensure that size(expTy) is >= size(argTy)
-  if (valTy != toTy && valTy->isInteger() && toTy->isInteger()) {
+  if (valTy != toTy && valTy->isIntegerTy() && toTy->isIntegerTy()) {
     return builder.CreateZExt(val, toTy, "zextimplicit");
   } else {
     return val;
@@ -384,7 +384,7 @@ Value* getElementFromComposite(Value* compositeValue, Value* idxValue) {
       // TODO
     }
   } else {
-    std::cerr << "Cannot index into value type " << *compositeType << " with non-constant index " << *idxValue << std::endl;
+    llvm::errs() << "Cannot index into value type " << *compositeType << " with non-constant index " << *idxValue << "\n";
     return NULL;
   }
 }
@@ -480,9 +480,10 @@ void CodegenPass::visit(CallAST* ast) {
     }
   } else {
     // Call to something we don't know how to call!
-    std::cerr << "base: " << *base << "; FV: " << *FV << std::endl;
+    std::cerr << "base: " << *base << std::endl;
+    llvm::errs() << "; FV: " << *FV << "\n";
     std::cerr << "Unknown function referenced!" << std::endl;
-    if (FV != NULL) { std::cerr << "\tFV: "  << *(FV) << std::endl; }
+    if (FV != NULL) { llvm::errs() << "\tFV: "  << *(FV) << "\n"; }
 
     return;
   }
@@ -520,7 +521,7 @@ void CodegenPass::visit(CallAST* ast) {
   if (false) {
     std::cout << "Creating call for AST {" << valArgs.size() << "} " << *base << std::endl;
     for (int i = 0; i < valArgs.size(); ++i) {
-      std::cout << "\t" << *valArgs[i] << std::endl;
+      llvm::errs() << "\t" << *valArgs[i] << "\n";
     }
   }
   

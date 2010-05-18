@@ -5,10 +5,12 @@
 #ifndef FOSTER_AST_H
 #define FOSTER_AST_H
 
+#include "llvm/LLVMContext.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
 #include "llvm/Constants.h"
 #include "llvm/Support/IRBuilder.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include "FosterASTVisitor.h"
 
@@ -50,6 +52,13 @@ void initModuleTypeNames();
 
 inline bool isSmallPowerOfTwo(int x) {
   return (x == 2) || (x == 4) || (x == 8) || (x == 16);
+}
+
+inline std::ostream& operator<<(std::ostream& out, const llvm::Type& ty) {
+    std::string s;
+    llvm::raw_string_ostream ss(s);
+    ss << ty;
+    return out << ss.str();
 }
 
 ///////////////////////////////////////////////////////////

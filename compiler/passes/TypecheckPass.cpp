@@ -147,7 +147,7 @@ void TypecheckPass::visit(UnaryOpExprAST* ast) {
       return;
     }
 
-    if (!(opTy->isIntOrIntVector())) {
+    if (!(opTy->isIntOrIntVectorTy())) {
       std::cerr << "Typecheck error: operand to unary '-' had non-inty type " << *opTy << std::endl;
       return;
     }
@@ -173,14 +173,14 @@ void TypecheckPass::visit(BinaryOpExprAST* ast) {
     std::cerr << "Error: binary expr " << op << " failed to typecheck subexprs!" << std::endl;
   } else {
     if (op == "+" || op == "-" || op == "*" || op == "/") {
-      if (!TL->isIntOrIntVector()) {
+      if (!TL->isIntOrIntVectorTy()) {
         std::cerr << "Error: arith op '" << op << "' used with non-inty type " << *TL << std::endl;
         return;
       }
     }
 
     if (op == "bitand" || op == "bitor" || op == "bitxor" || op == "shl" || op == "lshr" || op == "ashr") {
-      if (!TL->isIntOrIntVector()) {
+      if (!TL->isIntOrIntVectorTy()) {
         std::cerr << "Error: bitwise op '" << op << "' used with non-inty type " << *TL << std::endl;
         return;
       }
@@ -343,7 +343,7 @@ void TypecheckPass::visit(SubscriptAST* ast) {
   }
   
   if (!(baseType->isAggregateType() || llvm::isa<llvm::VectorType>(baseType))) {
-    std::cerr << "Error: Cannot index into non-aggregate type " << *baseType << std::endl;
+    llvm::errs() << "Error: Cannot index into non-aggregate type " << *baseType << "\n";
     return;
   }
   
@@ -354,12 +354,12 @@ void TypecheckPass::visit(SubscriptAST* ast) {
     const APInt& vidx = cidx->getValue();
     
     if (!vidx.isSignedIntN(64)) { // an exabyte of memory should be enough for anyone!
-      std::cerr << "Error: Indices must fit in 64 bits; tried to index with '" << *cidx << "'" << std::endl;
+      llvm::errs() << "Error: Indices must fit in 64 bits; tried to index with '" << *cidx << "'" << "\n";
       return;
     }
     
     if (!compositeTy->indexValid(cidx) || vidx.isNegative()) {
-      std::cerr << "Error: attempt to index composite with invalid index '" << *cidx << "'" << std::endl;
+      llvm::errs() << "Error: attempt to index composite with invalid index '" << *cidx << "'" << "\n";
       return;
     }
     
@@ -382,10 +382,10 @@ void TypecheckPass::visit(SubscriptAST* ast) {
       }
     }
     
-    std::cout << "Indexing composite with index " << *cidx << "; neg? " << vidx.isNegative() << std::endl;
+    llvm::errs() << "Indexing composite with index " << *cidx << "; neg? " << vidx.isNegative() << "\n";
     ast->type = compositeTy->getTypeAtIndex(cidx);
   } else {
-    std::cerr << "Error: attempt to index into a non-composite type " << *baseType << std::endl;
+    llvm::errs() << "Error: attempt to index into a non-composite type " << *baseType << "\n";
   }
 }
 
