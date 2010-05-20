@@ -18,7 +18,7 @@
 //   2) Add a wrapper function in the `extern "C"` section below.
 //
 // TODO: hybrid foster/C++ library functions
-// 
+//
 // The build system must take extra steps to link foster-compiled LLVM IR to
 // this code, but those steps are independent of adding new functions.
 // Specifically, we must assemble the IR to bitcode (with llvm-as),
@@ -119,13 +119,13 @@ int32_t thread_waitall() {
 }
 
 int32_t c_invoke_closure_i32(FosterClosurei32 clo) { return clo.code(clo.env); }
-void c_invoke_closure_void(FosterClosureVoid clo) { clo.code(clo.env); }
+//void c_invoke_closure_void(FosterClosureVoid clo) { clo.code(clo.env); }
 
 void c_invoke_fnptr_void(void (*f)()) { f(); }
 int32_t c_invoke_fnptr_i32(int32_t (*f)()) { return f(); }
 
 void* memalloc(int64_t sz) { return malloc(sz); }
-  
+
 int  print_i32(int32_t x) { return fprint_i32(stdout, x); }
 int expect_i32(int32_t x) { return fprint_i32(stderr, x); }
 

@@ -41,8 +41,9 @@ execute_process(COMMAND ${LLVM_CONFIG} --cppflags
 # installing the MacPorts version. Since (I hope?) there is link compatibility
 # of bitcode files produced with different versions of llvm-g++, it shouldn't
 # be a problem...
-find_program(LLVM_G++ NAMES llvm-g++
+find_program(LLVM_G++ NAMES llvm-g++ clang
   PATHS /opt/local/bin
+	/usr/bin
         $ENV{HOME}/llvm/${LLVM_VERSION}/gcc/bin
         $ENV{HOME}/Code/LLVM/llvm-2.5/llvm-gcc4.2-2.5-x86-darwin9/bin
         /usr/lib/llvm/llvm/gcc-4.2/bin

@@ -35,7 +35,7 @@ T getSaturating(llvm::Value* v) {
     std::cerr << "numericOf() got a null value, returning " << allOnes << std::endl;
     return allOnes;
   }
-  
+
   if (ConstantInt* ci = llvm::dyn_cast<ConstantInt>(v)) {
     return static_cast<T>(ci->getLimitedValue(allOnes));
   } else {
@@ -108,7 +108,7 @@ void CodegenPass::visit(BinaryOpExprAST* ast) {
   Value* VR = ast->parts[ast->kRHS]->value;
 
   const std::string& op = ast->op;
-  
+
   if (!VL || !VR) {
     std::cerr << "Error: binary expr " << op << " had null subexpr" << std::endl;
     return;
@@ -126,19 +126,19 @@ void CodegenPass::visit(BinaryOpExprAST* ast) {
   else if (op == "-") { ast->value = builder.CreateSub(VL, VR, "subtmp"); }
   else if (op == "/") { ast->value = builder.CreateSDiv(VL, VR, "divtmp"); }
   else if (op == "*") { ast->value = builder.CreateMul(VL, VR, "multmp"); }
-  
+
   else if (op == "<") { ast->value = builder.CreateICmpSLT(VL, VR, "slttmp"); }
   else if (op == "<=") { ast->value = builder.CreateICmpSLE(VL, VR, "sletmp"); }
   else if (op == "==") { ast->value = builder.CreateICmpEQ(VL, VR, "eqtmp"); }
   else if (op == "!=") { ast->value = builder.CreateICmpNE(VL, VR, "netmp"); }
-  
+
   else if (op == "bitand") { ast->value = builder.CreateAnd(VL, VR, "bitandtmp"); }
   else if (op == "bitor") {  ast->value = builder.CreateOr( VL, VR, "bitortmp"); }
   else if (op == "bitxor") { ast->value = builder.CreateXor(VL, VR, "bitxortmp"); }
 
-  else if (op == "shl") { ast->value = builder.CreateShl(VL, VR, "shltmp"); }
-  else if (op == "lshr") { ast->value = builder.CreateLShr(VL, VR, "lshrtmp"); }
-  else if (op == "ashr") { ast->value = builder.CreateAShr(VL, VR, "ashrtmp"); }
+  else if (op == "bitshl") { ast->value = builder.CreateShl(VL, VR, "shltmp"); }
+  else if (op == "bitlshr") { ast->value = builder.CreateLShr(VL, VR, "lshrtmp"); }
+  else if (op == "bitashr") { ast->value = builder.CreateAShr(VL, VR, "ashrtmp"); }
   else {
     std::cerr << "Couldn't gen code for op " << op << endl;
   }
@@ -170,8 +170,8 @@ void CodegenPass::visit(PrototypeAST* ast) {
     AI->setName(ast->inArgs[i]->name);
     scope.insert(ast->inArgs[i]->name, AI);
 #if 0
-    std::cout << "Fn param " << ast->inArgs[i]->name << " ; " 
-              << ast->inArgs[i] << " has val " << ast->inArgs[i]->value 
+    std::cout << "Fn param " << ast->inArgs[i]->name << " ; "
+              << ast->inArgs[i] << " has val " << ast->inArgs[i]->value
               << ", associated with " << AI << std::endl;
 #endif
   }
@@ -210,7 +210,7 @@ void CodegenPass::visit(FnAST* ast) {
   Value* RetVal = ast->body->value;
   if (RetVal == NULL) std::cerr << "Oops, null body value in fn " << ast->proto->name << std::endl;
   assert (RetVal != NULL);
-  
+
   // If we try to return a tuple* when the fn specifies a tuple, manually insert a load
   if (RetVal->getType()->isDerivedType()
       && RetVal->getType() == llvm::PointerType::get(ast->proto->resultTy, 0)) {
@@ -257,16 +257,16 @@ const Type* closureTypeFromClosedFnType(const FunctionType* fnty) {
 
 void CodegenPass::visit(ClosureAST* ast) {
   if (!ast->hasKnownEnvironment) {
-    std::cerr << "Error! Closure made it past closure conversion without getting an environment type!" << std::endl;  
+    std::cerr << "Error! Closure made it past closure conversion without getting an environment type!" << std::endl;
   }
-  
+
   for (int i = 0; i < ast->parts.size(); ++i) {
     std::cout << "Codegen ClosureAST, part: " << *ast->parts[i] << std::endl;
     std::cout << "Codegen ClosureAST, part: " << *ast->parts[i]->type << std::endl;
     std::cout << std::endl;
   }
-  
-  
+
+
   ExprAST* env = new TupleExprAST(new SeqAST(ast->parts));
   ExprAST* fnPtr = new VariableAST(ast->fn->proto->name, llvm::PointerType::get(ast->fn->type, 0));
   { TypecheckPass tp;
@@ -343,7 +343,7 @@ PHINode* codegenIfExpr(Value* cond, const LazyValue& lazyThen, const LazyValue& 
 
   F->getBasicBlockList().push_back(mergeBB);
   builder.SetInsertPoint(mergeBB);
-  
+
   PHINode *PN = builder.CreatePHI(valTy, "iftmp");
   PN->addIncoming(then, thenBB);
   PN->addIncoming(else_, elseBB);
@@ -351,12 +351,63 @@ PHINode* codegenIfExpr(Value* cond, const LazyValue& lazyThen, const LazyValue& 
 }
 
 void CodegenPass::visit(IfExprAST* ast) {
+  if (ast->value) return;
+
   (ast->testExpr)->accept(this);
   Value* cond = ast->testExpr->value;
   if (!cond) return;
 
   ast->value = codegenIfExpr(cond, LazyVisitedValue(this, ast->thenExpr),
                                    LazyVisitedValue(this, ast->elseExpr), ast->type);
+}
+
+void CodegenPass::visit(RefExprAST* ast) {
+  if (ast->value) return;
+
+  // Some values will see that they're a child of a RefExpr and substitute
+  // a malloc for an alloca; others, like int literals or such, must be
+  // manually copied out to a newly-malloc'ed cell.
+  ast->value = ast->parts[0]->value;
+
+  // If we're given a T when we want a T*, malloc a new value and copy.
+  if (llvm::PointerType::getUnqual(ast->value->getType()) == ast->type) {
+
+    std::cout << "RefExpr allocating/copying new value of type "
+        << *(ast->value->getType()) << "\n";
+
+    llvm::Value* mem = emitMalloc(ast->value->getType());
+    builder.CreateStore(ast->value, mem, /*isVolatile=*/ false);
+
+    ast->value = mem;
+  }
+}
+
+void CodegenPass::visit(DerefExprAST* ast) {
+  if (ast->value) return;
+
+  ast->value = builder.CreateLoad(ast->parts[0]->value, /*isVolatile=*/ false, "deref");
+}
+
+void CodegenPass::visit(AssignExprAST* ast) {
+  if (ast->value) return;
+
+  builder.CreateStore(ast->parts[1]->value, ast->parts[0]->value);
+
+  // Mark the assignment as having been codegenned; for now, assignment expressions
+  // evaluate to constant zero (annotated for clarity).
+  ConstantInt* zero = ConstantInt::get(Type::getInt32Ty(getGlobalContext()), 0);
+  ast->value = builder.CreateBitCast(zero, zero->getType(), "assignval");
+}
+
+Value* getPointerToIndex(Value* compositeValue, unsigned idxValue, const std::string& name) {
+  return builder.CreateConstGEP2_32(compositeValue, 0, idxValue, name.c_str());
+}
+
+Value* getPointerToIndex(Value* compositeValue, Value* idxValue, const std::string& name) {
+  std::vector<Value*> idx;
+  idx.push_back(ConstantInt::get(Type::getInt32Ty(getGlobalContext()), 0));
+  idx.push_back(idxValue);
+  return builder.CreateGEP(compositeValue, idx.begin(), idx.end(), name.c_str());
 }
 
 Value* getElementFromComposite(Value* compositeValue, Value* idxValue) {
@@ -368,10 +419,7 @@ Value* getElementFromComposite(Value* compositeValue, Value* idxValue) {
     //        into an array, pointer or vector, integers of any width
     //        are allowed, and they are not required to be constant."
     //   -- http://llvm.org/docs/LangRef.html#i_getelementptr
-    std::vector<Value*> idx;
-    idx.push_back(ConstantInt::get(Type::getInt32Ty(getGlobalContext()), 0));
-    idx.push_back(idxValue);
-    Value* gep = builder.CreateGEP(compositeValue, idx.begin(), idx.end(), "subgep");
+    Value* gep = getPointerToIndex(compositeValue, idxValue, "subgep");
     return builder.CreateLoad(gep, "subgep_ld");
   } else if (llvm::isa<llvm::StructType>(compositeType)
           && llvm::isa<llvm::Constant>(idxValue)) {
@@ -392,7 +440,16 @@ Value* getElementFromComposite(Value* compositeValue, Value* idxValue) {
 }
 
 void CodegenPass::visit(SubscriptAST* ast) {
-  ast->value = getElementFromComposite(ast->parts[0]->value, ast->parts[1]->value);
+  if (ast->value) return;
+
+  Value* base = ast->parts[0]->value;
+  Value* idx  = ast->parts[1]->value;
+
+  if (this->inAssignLHS) {
+    ast->value = getPointerToIndex(base, idx, "assignLHS");
+  } else {
+    ast->value = getElementFromComposite(base, idx);
+  }
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -400,7 +457,7 @@ void CodegenPass::visit(SubscriptAST* ast) {
 void appendArg(std::vector<Value*>& valArgs, Value* V, const FunctionType* FT) {
   //std::cout << "actual arg " << valArgs.size() << " = " << *V << " has type " << *(V->getType()) << std::endl;
   //std::cout << "formal arg " << valArgs.size() << " has type " << *(FT->getParamType(valArgs.size())) << std::endl;
-  
+
   const Type* formalType = FT->getParamType(valArgs.size());
   if (llvm::isa<llvm::StructType>(formalType)) {
     // Is the formal parameter a pass-by-value struct and the provided argument
@@ -410,7 +467,7 @@ void appendArg(std::vector<Value*>& valArgs, Value* V, const FunctionType* FT) {
       V = builder.CreateLoad(V, "loadStructParam");
     }
   }
-  
+
   valArgs.push_back(V);
 }
 
@@ -422,7 +479,7 @@ void unpackArgs(std::vector<Value*>& valArgs, Value* V, const FunctionType* FT) 
       st = llvm::dyn_cast<llvm::StructType>(pt->getTypeAtIndex(0U));
     }
   }
-  
+
   if (!st) {
     // Recursively called; base case for non-structs is direct insertion
     appendArg(valArgs, V, FT);
@@ -436,7 +493,7 @@ void tempHackExtendIntTypes(const FunctionType* FT, std::vector<Value*>& valArgs
   for (int i = 0; i < valArgs.size(); ++i) {
     valArgs[i] = tempHackExtendInt(valArgs[i], FT->getParamType(i));
   }
-  
+
   // TODO better long-term solution is probably make the libfoster
   // function expect_i8 instead of expect_i1, and add a Foster-impl
   // expect_i1 wrapper. And, eventually, implement libfoster in foster ;-)
@@ -449,6 +506,8 @@ const FunctionType* tryExtractFunctionPointerType(Value* FV) {
 }
 
 void CodegenPass::visit(CallAST* ast) {
+  if (ast->value) return;
+
   ExprAST* base = ast->parts[0];
   assert (base != NULL);
 
@@ -489,25 +548,23 @@ void CodegenPass::visit(CallAST* ast) {
 
     return;
   }
-  
-  //std::cout << "codegen CallAST base with " << FT->getNumParams() << " params" << std::endl;
 
   for (int i = 1; i < ast->parts.size(); ++i) {
     // Args checked for nulls during typechecking
     ExprAST* arg = ast->parts[i];
-    
+
     UnpackExprAST* u = dynamic_cast<UnpackExprAST*>(arg);
     if (u != NULL) { // arg i is an unpack expr
       arg = u->parts[0]; // Replace unpack expr with underlying tuple expr
     }
-    
+
     arg->accept(this);
     Value* V = arg->value;
     if (!V) {
       std::cerr << "Error: null value for argument " << (i - 1) << " found in CallAST codegen!" << std::endl;
       return;
     }
-    
+
     // LLVM will automatically convert a Function Value to a Pointer-to-Function,
     // so we only have to handle non-trivial closure creation.
     //std::cout << "codegen CallAST arg " << (i-1) << "; argty " << *(arg->type)
@@ -526,56 +583,17 @@ void CodegenPass::visit(CallAST* ast) {
       llvm::errs() << "\t" << *valArgs[i] << "\n";
     }
   }
-  
+
   int expectedNumArgs = FT->getNumParams();
   if (expectedNumArgs != valArgs.size()) {
     std::cerr << "Function " << *base <<  " got " << valArgs.size() << " args, expected "<< expectedNumArgs << std::endl;
     return;
   }
-  
+
   // Temporary hack: if a function expects i8 and we have i1, manually convert
   tempHackExtendIntTypes(FT, valArgs);
-  
+
   ast->value = builder.CreateCall(FV, valArgs.begin(), valArgs.end(), "calltmp");
-}
-
-void CodegenPass::visit(ArrayExprAST* ast) {
-  if (ast->value != NULL) return;
-  
-  // Create array type
-  const llvm::ArrayType* arrayType = llvm::dyn_cast<llvm::ArrayType>(ast->type);
-  
-  module->addTypeName(freshName("arrayTy"), arrayType);
-  using llvm::GlobalVariable;
-  GlobalVariable* gvar = new GlobalVariable(*module,
-    /*Type=*/         arrayType,
-    /*isConstant=*/   true,
-    /*Linkage=*/      llvm::GlobalValue::PrivateLinkage,
-    /*Initializer=*/  0, // has initializer, specified below
-    /*Name=*/         freshName("arrayGv"));
-
-  // Constant Definitions
-  std::vector<llvm::Constant*> arrayElements;
-  SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
-  for (int i = 0; i < body->parts.size(); ++i) {
-    IntAST* v = dynamic_cast<IntAST*>(body->parts[i]);
-    if (!v) {
-      std::cerr << "Array initializer was not IntAST but instead " << *v << std::endl;
-      return;
-    }
-    
-    ConstantInt* ci = llvm::dyn_cast<ConstantInt>(v->getConstantValue());
-    if (!ci) {
-      std::cerr << "Failed to cast array initializer value to ConstantInt" << std::endl;
-      return;
-    }
-    arrayElements.push_back(ci);
-  }
-  
-  llvm::Constant* constArray = llvm::ConstantArray::get(arrayType, arrayElements);
-  gvar->setInitializer(constArray);
-  
-  ast->value = gvar;
 }
 
 bool isComposedOfIntLiterals(ExprAST* ast) {
@@ -586,15 +604,70 @@ bool isComposedOfIntLiterals(ExprAST* ast) {
   return true;
 }
 
+llvm::GlobalVariable* getGlobalArrayVariable(SeqAST* body, const llvm::ArrayType* arrayType) {
+  using llvm::GlobalVariable;
+  GlobalVariable* gvar = new GlobalVariable(*module,
+    /*Type=*/         arrayType,
+    /*isConstant=*/   true,
+    /*Linkage=*/      llvm::GlobalValue::PrivateLinkage,
+    /*Initializer=*/  0, // has initializer, specified below
+    /*Name=*/         freshName("arrayGv"));
+
+  // Constant Definitions
+  std::vector<llvm::Constant*> arrayElements;
+  for (int i = 0; i < body->parts.size(); ++i) {
+    IntAST* v = dynamic_cast<IntAST*>(body->parts[i]);
+    if (!v) {
+      std::cerr << "Array initializer was not IntAST but instead " << *v << std::endl;
+      return NULL;
+    }
+
+    ConstantInt* ci = llvm::dyn_cast<ConstantInt>(v->getConstantValue());
+    if (!ci) {
+      std::cerr << "Failed to cast array initializer value to ConstantInt" << std::endl;
+      return NULL;
+    }
+    arrayElements.push_back(ci);
+  }
+
+  llvm::Constant* constArray = llvm::ConstantArray::get(arrayType, arrayElements);
+  gvar->setInitializer(constArray);
+  return gvar;
+}
+
+void CodegenPass::visit(ArrayExprAST* ast) {
+  if (ast->value) return;
+
+  const llvm::ArrayType* arrayType = llvm::dyn_cast<llvm::ArrayType>(ast->type);
+  module->addTypeName(freshName("arrayTy"), arrayType);
+
+  SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
+  if (body->parts.empty()) {
+    // No initializer
+    ast->value = builder.CreateAlloca(arrayType, 0, "noInitArr");
+    // TODO add call to memset
+  } else {
+    // Have initializers; are they constants?
+    if (isComposedOfIntLiterals(body)) {
+      ast->value = getGlobalArrayVariable(body, arrayType);
+    } else {
+      ast->value = builder.CreateAlloca(arrayType, 0, "initArr");
+      for (int i = 0; i < body->parts.size(); ++i) {
+        builder.CreateStore(body->parts[i]->value, getPointerToIndex(ast->value, i, "arrInit"));
+      }
+    }
+  }
+}
+
 void CodegenPass::visit(SimdVectorAST* ast) {
-  if (ast->value != NULL) return;
-  
+  if (ast->value) return;
+
   const llvm::VectorType* simdType = llvm::dyn_cast<const llvm::VectorType>(ast->type);
-  
-  
+
+
   SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
   bool isConstant = isComposedOfIntLiterals(body);
-  
+
   using llvm::GlobalVariable;
   GlobalVariable* gvar = new GlobalVariable(*module,
     /*Type=*/         simdType,
@@ -610,7 +683,7 @@ void CodegenPass::visit(SimdVectorAST* ast) {
       llvm::Constant* ci = intlit->getConstantValue();
       elements.push_back(llvm::dyn_cast<llvm::Constant>(ci));
     }
-    
+
     llvm::Constant* constVector = llvm::ConstantVector::get(simdType, elements);
     gvar->setInitializer(constVector);
     ast->value = builder.CreateLoad(gvar, /*isVolatile*/ false, "simdLoad");
@@ -646,14 +719,14 @@ llvm::Value* emitMalloc(const llvm::Type* ty) {
     std::cerr << "NO MEMALLOC IN MODULE! :(" << std::endl;
     return NULL;
   }
-  llvm::Value* mem = builder.CreateCall(memalloc, 
+  llvm::Value* mem = builder.CreateCall(memalloc,
     llvm::ConstantInt::get(getGlobalContext(), llvm::APInt(64, llvm::StringRef("32"), 10)), "mem");
   return builder.CreateBitCast(mem, llvm::PointerType::getUnqual(ty), "memcast");
 }
 
 void CodegenPass::visit(TupleExprAST* ast) {
-  if (ast->value != NULL) return;
-  
+  if (ast->value) return;
+
   assert(ast->type != NULL);
 
   // Create struct type underlying tuple
@@ -664,8 +737,8 @@ void CodegenPass::visit(TupleExprAST* ast) {
   // Allocate tuple space
   llvm::AllocaInst* pt = builder.CreateAlloca(tupleType, 0, "s");
   //llvm::Value* pt = emitMalloc(tupleType);
-  
-  
+
+
   copyTupleTo(this, pt, ast);
   ast->value = pt;
 }
@@ -681,7 +754,7 @@ void CodegenPass::visit(BuiltinCompilesExprAST* ast) {
   } else if (ast->status == ast->kWouldNotCompile) {
     ast->value = ConstantInt::getFalse(getGlobalContext());
   } else {
-    std::cerr << "Error: __COMPILES__ expr not checked!" << std::endl; 
+    std::cerr << "Error: __COMPILES__ expr not checked!" << std::endl;
     ast->value = ConstantInt::getFalse(getGlobalContext());
   }
 }

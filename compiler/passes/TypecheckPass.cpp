@@ -68,7 +68,7 @@ void TypecheckPass::visit(IntAST* ast) {
      || ast->Base == 10 || ast->Base == 16)) {
     return;
   }
-  
+
   // Make sure the literal only contains
   // valid digits for the chosen base.
   const char* digits = "0123456789abcdef";
@@ -79,7 +79,7 @@ void TypecheckPass::visit(IntAST* ast) {
       return;
     }
   }
-  
+
   // Start with a very conservative estimate of how
   // many bits we need to represent this integer
   int bitsPerDigit = int(ceil(log(ast->Base)/log(2)));
@@ -96,13 +96,13 @@ void TypecheckPass::visit(IntAST* ast) {
                   << activeBits << " bits to represent." << std::endl;
 #   endif
   }
-  
+
   ast->type = LLVMintTypeForNBits(activeBits);
 }
 
 void TypecheckPass::visit(VariableAST* ast) {
   if (this->typeParsingMode) { ast->type = LLVMTypeFor(ast->name); }
-  
+
   if (!ast->tyExpr) {
     if (!ast->type) {
       // Eventually we should do local type inference...
@@ -110,7 +110,7 @@ void TypecheckPass::visit(VariableAST* ast) {
     }
     return;
   }
-  
+
   if (ast->tyExpr && ast->type) {
     /*
     if (ast->tyExpr->type != ast->type) {
@@ -122,17 +122,17 @@ void TypecheckPass::visit(VariableAST* ast) {
     */
     return;
   }
-  
+
   // Extract an llvm::Type from the type expression; typeParsingMode
   // causes names to be interpreted directly as type names, rather than
   // variable names.
   std::cerr << "Parsing type for expr " << *(ast->tyExpr) << std::endl;
   TypecheckPass typeParsePass; typeParsePass.typeParsingMode = true;
   ast->tyExpr->accept(&typeParsePass);
-  
-  
+
+
   ast->type = ast->tyExpr->type;
-  
+
   std::cerr << "Parsed type as " << (ast->type) << std::endl;
   if (ast->type) std::cerr << "\t\t" << *(ast->type) << std::endl;
 }
@@ -166,7 +166,7 @@ void TypecheckPass::visit(BinaryOpExprAST* ast) {
   const llvm::Type* TR = ast->parts[ast->kRHS]->type;
 
   const std::string& op = ast->op;
-  
+
   if (!isCompatible(TL, TR)) {
     std::cerr << "Error: binary expr " << op << " had differently typed sides!" << std::endl;
   } else if (!TL) {
@@ -232,7 +232,7 @@ void TypecheckPass::visit(PrototypeAST* ast) {
 void TypecheckPass::visit(FnAST* ast) {
   assert(ast->proto != NULL);
   ast->proto->accept(this); bool p = ast->proto->type != NULL;
-  
+
   if (ast->body != NULL) {
     ast->body->accept(this);  bool b = ast->body->type  != NULL;
 
@@ -261,7 +261,7 @@ void TypecheckPass::visit(ClosureAST* ast) {
   if (ast->hasKnownEnvironment) {
     ast->fn->accept(this);
     visitChildren(ast);
-  
+
     if (const llvm::FunctionType* ft = tryExtractCallableType(ast->fn->type)) {
       ast->type = genericVersionOfClosureType(ft);
       if (ft && ast->type) {
@@ -292,18 +292,18 @@ void TypecheckPass::visit(IfExprAST* ast) {
   const Type* ifType = ast->testExpr->type;
   if (!ifType) {
     std::cerr << "if condition '" << *(ast->testExpr) << "' had null type!" << std::endl;
-    return;  
+    return;
   }
-  
+
   if (ifType != LLVMTypeFor("i1")) {
     std::cerr << "if condition '"      << *(ast->testExpr) << "' "
               << "had non-bool type "  << *ifType << std::endl;
     return;
   }
-  
+
   ast->thenExpr->accept(this); const Type* thenType = ast->thenExpr->type;
   ast->elseExpr->accept(this); const Type* elseType = ast->elseExpr->type;
-  
+
   if (thenType == NULL) {
     std::cerr << "IfExprAST had null type for 'then' expression" << std::endl;
     return;
@@ -318,12 +318,65 @@ void TypecheckPass::visit(IfExprAST* ast) {
   }
 }
 
+void TypecheckPass::visit(RefExprAST* ast) {
+  ast->type = llvm::PointerType::getUnqual(ast->parts[0]->type);
+}
+
+void TypecheckPass::visit(DerefExprAST* ast) {
+  const Type* derefType = ast->parts[0]->type;
+  if (const llvm::PointerType* ptrTy = llvm::dyn_cast<llvm::PointerType>(derefType)) {
+    ast->type = ptrTy->getElementType();
+  } else {
+    std::cerr << "Deref() called on a non-pointer type " << *derefType << "!\n";
+    std::cerr << "base: " << *(ast->parts[0]) << std::endl;
+    ast->type = NULL;
+  }
+}
+
+void TypecheckPass::visit(AssignExprAST* ast) {
+  const Type* lhsTy = ast->parts[0]->type;
+  const Type* rhsTy = ast->parts[1]->type;
+
+  if (const llvm::PointerType* plhsTy = llvm::dyn_cast<llvm::PointerType>(lhsTy)) {
+    lhsTy = plhsTy->getElementType();
+    if (isCompatible(lhsTy, rhsTy)) {
+      ast->type = LLVMTypeFor("i32");
+    } else {
+      std::cerr << "Types in assignment are not copy compatible!" << std::endl;
+      std::cerr << "\tLHS (deref'd): " << *(lhsTy) << std::endl;
+      std::cerr << "\tRHS          : " << *(rhsTy) << std::endl;
+      ast->type = NULL;
+    }
+  } else {
+    std::cerr << "Attempted assignment to a non-pointer (internally) type " << *lhsTy << "!\n";
+    std::cerr << "AST dump: " << *(ast) << std::endl;
+    ast->type = NULL;
+  }
+}
+
+// Returns aggregate and vector types directly, and returns the underlying
+// aggregate type for pointer-to-aggregate. Returns NULL in other cases.
+const llvm::CompositeType* getIndexableType(const llvm::Type* ty) {
+  const llvm::Type* baseType = ty;
+  std::cout << "getIndexableType: " << *ty << std::endl;
+  if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
+    ty = pty->getElementType();
+  }
+
+  if (ty->isAggregateType() || llvm::isa<llvm::VectorType>(ty)) {
+    return llvm::dyn_cast<llvm::CompositeType>(ty);
+  } else {
+    std::cerr << "Error: Cannot index into non-aggregate type " << *baseType << std::endl;
+    return NULL;
+  }
+}
+
 void TypecheckPass::visit(SubscriptAST* ast) {
   if (!ast->parts[1]) {
     std::cerr << "Error: SubscriptAST had null index" << std::endl;
     return;
   }
-  
+
   ExprAST* index = ast->parts[1];
   IntAST* idx = dynamic_cast<IntAST*>(index);
   if (!idx) {
@@ -335,57 +388,60 @@ void TypecheckPass::visit(SubscriptAST* ast) {
     std::cerr << std::endl;
     return;
   }
-  
+
   const Type* baseType = ast->parts[0]->type;
   if (!baseType) {
     std::cerr << "Error: Cannot index into object of null type " << std::endl;
     return;
   }
-  
-  if (!(baseType->isAggregateType() || llvm::isa<llvm::VectorType>(baseType))) {
-    llvm::errs() << "Error: Cannot index into non-aggregate type " << *baseType << "\n";
+
+  const llvm::CompositeType* compositeTy = getIndexableType(baseType);
+  if (compositeTy == NULL) {
+    std::cerr << "Error: attempt to index into a non-composite type " << *baseType << std::endl;
     return;
   }
-  
-  const llvm::CompositeType* compositeTy = llvm::dyn_cast<llvm::CompositeType>(baseType);
-  if (compositeTy != NULL) {
-    // Check to see that the given index is valid for this type
-    ConstantInt* cidx = llvm::dyn_cast<ConstantInt>(idx->getConstantValue());
-    const APInt& vidx = cidx->getValue();
-    
-    if (!vidx.isSignedIntN(64)) { // an exabyte of memory should be enough for anyone!
-      llvm::errs() << "Error: Indices must fit in 64 bits; tried to index with '" << *cidx << "'" << "\n";
+
+
+  std::cout << "Indexing " << *baseType << " as composite " << *compositeTy << std::endl;
+
+  // Check to see that the given index is valid for this type
+  ConstantInt* cidx = llvm::dyn_cast<ConstantInt>(idx->getConstantValue());
+  const APInt& vidx = cidx->getValue();
+
+  if (!vidx.isSignedIntN(64)) { // an exabyte of memory should be enough for anyone!
+    llvm::errs() << "Error: Indices must fit in 64 bits; tried to index with '" << *cidx << "'" << "\n";
+    return;
+  }
+
+  if (!compositeTy->indexValid(cidx) || vidx.isNegative()) {
+    llvm::errs() << "Error: attempt to index composite with invalid index '" << *cidx << "'" << "\n";
+    return;
+  }
+
+  // LLVM doesn't do bounds checking for arrays or vectors, but we do!
+  uint64_t numElements = -1;
+  if (const llvm::ArrayType* ty = llvm::dyn_cast<llvm::ArrayType>(baseType)) {
+    numElements = ty->getNumElements();
+  }
+
+  if (const llvm::VectorType* ty = llvm::dyn_cast<llvm::VectorType>(baseType)) {
+    numElements = ty->getNumElements();
+  }
+
+  if (numElements >= 0) {
+    uint64_t idx_u64 = vidx.getZExtValue();
+    if (idx_u64 >= numElements) {
+      llvm::errs() << "Error: attempt to index array[" << numElements << "]"
+                   << " with invalid index '" << idx_u64 << "'" << "\n";
       return;
     }
-    
-    if (!compositeTy->indexValid(cidx) || vidx.isNegative()) {
-      llvm::errs() << "Error: attempt to index composite with invalid index '" << *cidx << "'" << "\n";
-      return;
-    }
-    
-    // LLVM doesn't do bounds checking for arrays or vectors, but we do!
-    uint64_t numElements = -1;
-    if (const llvm::ArrayType* ty = llvm::dyn_cast<llvm::ArrayType>(baseType)) {
-      numElements = ty->getNumElements();
-    }
-    
-    if (const llvm::VectorType* ty = llvm::dyn_cast<llvm::VectorType>(baseType)) {
-      numElements = ty->getNumElements();
-    }   
-    
-    if (numElements >= 0) {
-      uint64_t idx_u64 = vidx.getZExtValue();
-      if (idx_u64 >= numElements) {
-        std::cerr << "Error: attempt to index array[" << numElements << "]"
-                  << " with invalid index '" << idx_u64 << "'" << std::endl;
-        return;
-      }
-    }
-    
-    llvm::errs() << "Indexing composite with index " << *cidx << "; neg? " << vidx.isNegative() << "\n";
-    ast->type = compositeTy->getTypeAtIndex(cidx);
-  } else {
-    llvm::errs() << "Error: attempt to index into a non-composite type " << *baseType << "\n";
+  }
+
+  llvm::errs() << "Indexing composite with index " << *cidx << "; neg? " << vidx.isNegative() << "\n";
+  ast->type = compositeTy->getTypeAtIndex(cidx);
+
+  if (this->inAssignLHS) {
+    ast->type = llvm::PointerType::getUnqual(ast->type);
   }
 }
 
@@ -416,25 +472,13 @@ const FunctionType* getFunctionTypeFromClosureStructType(const Type* ty) {
   return NULL;
 }
 
-// converts { T (env*, Y, Z)*, env* }   to   T (Y, Z)
-const llvm::FunctionType* originalFunctionTypeForClosureStructType(const llvm::StructType* sty) {
-  if (const llvm::FunctionType* ft = tryExtractCallableType(sty->getContainedType(0))) {
-    std::vector<const llvm::Type*> originalArgTypes;
-    for (int i = 1; i < ft->getNumParams(); ++i) {
-      originalArgTypes.push_back(ft->getParamType(i));
-    }
-    return llvm::FunctionType::get(ft->getReturnType(), originalArgTypes, /*isVarArg=*/ false);
-  }
-  return NULL;
-}
-
 void TypecheckPass::visit(CallAST* ast) {
   ExprAST* base = ast->parts[0];
   if (!base) {
     std::cerr << "Error: CallAST has null base!" << std::endl;
     return;
   }
- 
+
   base->accept(this);
   const Type* baseType = base->type;
   if (baseType == NULL) {
@@ -453,7 +497,7 @@ void TypecheckPass::visit(CallAST* ast) {
     std::cerr << "Error: CallAST base expr had non-callable type " << *baseType << std::endl;
     return;
   }
-  
+
   vector<const Type*> actualTypes;
   for (int i = 1; i < ast->parts.size(); ++i) {
     ExprAST* arg = ast->parts[i];
@@ -461,14 +505,14 @@ void TypecheckPass::visit(CallAST* ast) {
       std::cerr << "Null arg " << i << " for CallAST" << std::endl;
       return;
     }
-    
+
     arg->accept(this);
     const Type* argTy = arg->type;
     if (!argTy) {
       std::cerr << "Error: CallAST typecheck: arg " << i << " (" << *(arg) << ") had null type" << std::endl;
       return;
     }
-    
+
     // TODO: add separate prepass to explicitly unpack UnpackExprASTs
     if (UnpackExprAST* u = dynamic_cast<UnpackExprAST*>(arg)) {
       if (const llvm::StructType* st = llvm::dyn_cast<llvm::StructType>(argTy)) {
@@ -482,14 +526,14 @@ void TypecheckPass::visit(CallAST* ast) {
       actualTypes.push_back(argTy);
     }
   }
-  
+
   int numParams = baseFT->getNumParams();
   if (numParams != actualTypes.size()) {
     std::cerr << "Error: arity mismatch; " << actualTypes.size() << " args provided"
       << " for function " << *(base) << std::endl <<  " of type " << *(baseFT) <<  " taking " << numParams << " args." << std::endl;
     return;
   }
-  
+
   bool success = true;
   for (int i = 0; i < numParams; ++i) {
     const Type* formalType = baseFT->getParamType(i);
@@ -509,7 +553,7 @@ void TypecheckPass::visit(CallAST* ast) {
       std::cerr << "\tformal: " << *formalType << "; actual: " << *actualType << std::endl;
     }
   }
-  
+
   if (!success) {
     std::cerr << "Error in typechecking call of"
               << "\n\t" << *(ast->parts[0]) << "\tof type\t" << *(baseFT) << "\t with args ";
@@ -527,47 +571,86 @@ void TypecheckPass::visit(CallAST* ast) {
       }
     }
   }
- 
+
   if (success) {
     ast->type = baseFT->getReturnType();
   }
 }
 
+/// For now, as a special case, simd-vector and array will interpret { 4;i32 }
+/// as meaning the same thing as { i32 ; i32 ; i32 ; i32 }
+int extractNumElementsAndElementType(int maxSize, ExprAST* ast, const Type*& elementType) {
+  SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
+  IntAST* first = dynamic_cast<IntAST*>(body->parts[0]);
+  VariableAST* var = dynamic_cast<VariableAST*>(body->parts[1]);
+  if (first && var) {
+    APInt v = first->getAPInt();
+    unsigned int n = v.getZExtValue();
+    // Sanity check on # elements; nobody? wants a single billion-element vector...
+    if (n <= maxSize) {
+      elementType = var->type;
+      return n;
+    } else {
+      std::cerr << "Concise simd/array declaration too big! : " << *ast << std::endl;
+    }
+  }
+  return 0;
+}
+
 void TypecheckPass::visit(ArrayExprAST* ast) {
   bool success = true;
   std::map<const Type*, bool> fieldTypes;
-  
+
   SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
   if (!body) {
     std::cerr << "Typecheck of array expr failed because ast.parts[0] = " << ast->parts[0] << " was not a Seq!" << std::endl;
     return;
   }
-  
+
   int numElements = body->parts.size();
   const Type* elementType = NULL;
-  for (int i = 0; i < numElements; ++i) {
-    const Type* ty =  body->parts[i]->type;
-    if (!ty) {
-      std::cerr << "Array expr had null constituent type for subexpr " << i << std::endl;
+
+  if (numElements == 2) {
+    numElements = extractNumElementsAndElementType(256, ast, elementType);
+    if (numElements != 0) {
+      // Don't try to interpret the size + type as initializers!
+      body->parts.clear();
+    } else {
+      numElements = 2;
+    }
+  }
+
+  if (!elementType) {
+    for (int i = 0; i < numElements; ++i) {
+      const Type* ty =  body->parts[i]->type;
+      if (!ty) {
+        std::cerr << "Array expr had null constituent type for subexpr " << i << std::endl;
+        success = false;
+        break;
+      }
+      fieldTypes[ty] = true;
+      elementType = ty;
+    }
+
+    // TODO This should probably be relaxed eventually; for example,
+    // an array of "small" and "large" int literals should silently be accepted
+    // as an array of "large" ints.
+    if (success && fieldTypes.size() > 1) {
+      std::cerr << "Array expression had multiple types! Found:" << std::endl;
+      std::map<const Type*, bool>::const_iterator it;;
+      for (it = fieldTypes.begin(); it != fieldTypes.end(); ++it) {
+        std::cerr << "\t" << *((*it).first) << std::endl;
+      }
       success = false;
-      break;
     }
-    fieldTypes[ty] = true;
-    elementType = ty;
   }
-  
-  // TODO This should probably be relaxed eventually; for example,
-  // an array of "small" and "large" int literals should silently be accepted
-  // as an array of "large" ints.
-  if (success && fieldTypes.size() != 1) {
-    std::cerr << "Array expression had multiple types! Found:" << std::endl;
-    std::map<const Type*, bool>::const_iterator it;;
-    for (it = fieldTypes.begin(); it != fieldTypes.end(); ++it) {
-      std::cerr << "\t" << *((*it).first) << std::endl;
-    }
-    success = false;
+
+  if (!elementType) {
+    std::cerr << "Error: Array had no discernable element type?!?" << std::endl;
+    return;
   }
-  
+
+
   if (success) {
     ast->type = llvm::ArrayType::get(elementType, numElements);
   }
@@ -577,29 +660,18 @@ void TypecheckPass::visit(ArrayExprAST* ast) {
 void TypecheckPass::visit(SimdVectorAST* ast) {
   bool success = true;
   std::map<const Type*, bool> fieldTypes;
-  
+
   SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
   if (!body) {
     std::cerr << "Typecheck of simd-vector expr failed because ast.parts[0] = " << ast->parts[0] << " was not a Seq!" << std::endl;
     return;
   }
-  
+
   int numElements = body->parts.size();
   const Type* elementType = NULL;
 
-  // For now, as a special case, simd-vector will interpret { 4 ; i32 }
-  // as meaning the same thing as { i32 ; i32 ; i32 ; i32 }
   if (numElements == 2) {
-    IntAST* first = dynamic_cast<IntAST*>(body->parts[0]);
-    if (first) {
-      APInt v = first->getAPInt();
-      unsigned int n = v.getZExtValue();
-      // Sanity check on # elements; nobody? wants a single billion-element vector...
-      if (n <= 256) {
-        numElements = n;
-        elementType = body->parts[1]->type;
-      }
-    }
+    numElements = extractNumElementsAndElementType(256, ast, elementType);
   }
 
   // No special case; iterate through and collect all the types
@@ -627,13 +699,13 @@ void TypecheckPass::visit(SimdVectorAST* ast) {
       success = false;
     }
   }
-  
+
   if (!isSmallPowerOfTwo(numElements)) {
     std::cerr << "simd-vector constructor needs a small"
               << " power of two of elements; got " << numElements << std::endl;
     success = false;
   }
-  
+
   if (success) {
     ast->type = llvm::VectorType::get(elementType, numElements);
   }
@@ -645,7 +717,7 @@ void TypecheckPass::visit(TupleExprAST* ast) {
     std::cerr << "Error: typechecking tuple failed; body is not a Seq!" << std::endl;
     return;
   }
-  
+
   bool success = true;
   std::vector<const Type*> tupleFieldTypes;
   for (int i = 0; i < body->parts.size(); ++i) {
@@ -662,7 +734,7 @@ void TypecheckPass::visit(TupleExprAST* ast) {
     }
     tupleFieldTypes.push_back(ty);
   }
-  
+
   if (success) {
     ast->type = llvm::StructType::get(getGlobalContext(), tupleFieldTypes, /*isPacked=*/false);
   }
