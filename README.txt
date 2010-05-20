@@ -18,7 +18,7 @@ $ ctest       # Run tests in mostly-quiet mode; test details will not be shown
 $ ctest -V    # Run tests in verbose mode; output from tests will be printed.
 
 ============================= Installation =================================
-Ubuntu (9.10):
+Ubuntu:
 	Dependencies: CMake, ANTLR3 C runtime, Java, Google glog, LLVM (including llvm-gcc)
 	Assuming you already have LLVM installed, in $PATH and $PKG_CONFIG_PATH...
 	
@@ -26,9 +26,13 @@ Ubuntu (9.10):
 		cmake		llvm-dev	llvm-doc	libgmp3c2
 	(universe)
 		binutils-gold	cmake-curses-gui	llvm-gcc-4.2	mercurial
+		clang		codeblocks		g++	libffi-dev
 
-	If you need Java,
+	If you need Java on Ubuntu 9.10,
 	sudo apt-get install sun-java6-jdk
+
+	on 10.04, install default-jdk
+
 
 	ANTLR_VERSION=3.2
 	ANTLR_DIR=~/antlr/${ANTLR_VERSION}
