@@ -656,7 +656,12 @@ void TypecheckPass::visit(ArrayExprAST* ast) {
   }
 }
 
+bool isPrimitiveNumericType(const Type* ty) {
+  return ty->isFloatingPointTy() || ty->isIntegerTy();
+}
+
 // TODO this is a near-exact duplicate of ArrayExprAST* case...
+// but unlike an array, simd vectors are limited to numeric base types
 void TypecheckPass::visit(SimdVectorAST* ast) {
   bool success = true;
   std::map<const Type*, bool> fieldTypes;
@@ -696,6 +701,11 @@ void TypecheckPass::visit(SimdVectorAST* ast) {
       for (it = fieldTypes.begin(); it != fieldTypes.end(); ++it) {
         std::cerr << "\t" << *((*it).first) << std::endl;
       }
+      success = false;
+    }
+
+    if (success && !isPrimitiveNumericType(elementType)) {
+      std::cerr << "simd-vector expression must be composed of primitive numeric types!" << std::endl;
       success = false;
     }
   }

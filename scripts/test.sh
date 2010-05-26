@@ -1,17 +1,16 @@
 #!/bin/bash
 
-# ${A##0} strips all leading zeros from A
 TIMESTART () {
   STARTS=$(date "+%s");
   STARTZ=$(date "+%N");
-  STARTN=${STARTZ##0};
+  STARTN=`echo $STARTZ | sed 's/^0//'`;
 }
 
 TIMEEND () {
   TIMED_CMD_STATUS=$?
 
   ENDZ=$(date "+%N");
-  ENDN=${ENDZ##0};
+  ENDN=`echo $ENDZ | sed 's/^0//'`;
   ENDS=$(date "+%s");
 
   ELS="$(( $ENDS - $STARTS ))";
@@ -63,7 +62,7 @@ runllc () {
 
   if [ "z$TIMED_CMD_STATUS" != "z0" ]; then return; fi
   TIMESTART
-  gcc $OPT.s -o $OPT
+  g++ $OPT.s -o $OPT -l pthread
   TIMEEND "gcc"
 
   if [ "z$TIMED_CMD_STATUS" != "z0" ]; then return; fi
