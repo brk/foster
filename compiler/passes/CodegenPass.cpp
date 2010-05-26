@@ -7,6 +7,8 @@
 #include "FosterAST.h"
 #include "FosterUtils.h"
 
+#include "llvm/Attributes.h"
+#include "llvm/CallingConv.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Module.h"
@@ -55,33 +57,37 @@ Value* tempHackExtendInt(Value* val, const Type* toTy) {
 }
 
 void CodegenPass::visit(IntAST* ast) {
+  if (ast->value) return;
   ast->value = ast->getConstantValue();
 }
 
 void CodegenPass::visit(BoolAST* ast) {
+  if (ast->value) return;
  ast->value = (ast->boolValue)
       ? ConstantInt::getTrue(getGlobalContext())
       : ConstantInt::getFalse(getGlobalContext());
 }
 
 void CodegenPass::visit(VariableAST* ast) {
-  if (!ast->value) {
-    // This looks up the lexically closest definition for the given variable
-    // name, as provided by a function parameter or some such binding construct.
-    if (ast->lazilyInsertedPrototype) {
-      ast->lazilyInsertedPrototype->accept(this);
-      ast->value = ast->lazilyInsertedPrototype->value;
-    } else {
-      ast->value = scope.lookup(ast->name, "");
-    }
+  if (ast->value) return;
 
-    if (!ast->value) {
-      std::cerr << "Error: Unknown variable name " << ast->name << std::endl;
-    }
+  // This looks up the lexically closest definition for the given variable
+  // name, as provided by a function parameter or some such binding construct.
+  if (ast->lazilyInsertedPrototype) {
+    ast->lazilyInsertedPrototype->accept(this);
+    ast->value = ast->lazilyInsertedPrototype->value;
+  } else {
+    ast->value = scope.lookup(ast->name, "");
+  }
+
+  if (!ast->value) {
+    std::cerr << "Error: CodegenPass: Unknown variable name " << ast->name << std::endl;
   }
 }
 
 void CodegenPass::visit(UnaryOpExprAST* ast) {
+  if (ast->value) return;
+
   Value* V = ast->parts[0]->value;
   const std::string& op = ast->op;
 
@@ -104,6 +110,8 @@ bool leftTypeBiggerInt(const Type* left, const Type* right) {
 }
 
 void CodegenPass::visit(BinaryOpExprAST* ast) {
+  if (ast->value) return;
+
   Value* VL = ast->parts[ast->kLHS]->value;
   Value* VR = ast->parts[ast->kRHS]->value;
 
@@ -145,9 +153,7 @@ void CodegenPass::visit(BinaryOpExprAST* ast) {
 }
 
 void CodegenPass::visit(PrototypeAST* ast) {
-  if (ast->value) { // Already codegenned!
-    return;
-  }
+  if (ast->value) return;
 
   //std::cout << "\t" << "Codegen proto "  << ast->name << std::endl;
   const llvm::FunctionType* FT = llvm::dyn_cast<FunctionType>(ast->type);
@@ -183,16 +189,28 @@ void CodegenPass::visit(PrototypeAST* ast) {
 }
 
 void CodegenPass::visit(SeqAST* ast) {
-  if (ast->parts.empty()) {
+  if (ast->value) return;
+
+  if (!ast->parts.empty()) {
+    // Find last non-void value
+    for (int n = ast->parts.size() - 1; n >= 0; --n) {
+      ast->value = ast->parts[n]->value;
+      if (!isVoid(ast->value->getType())) {
+        break;
+      }
+    }
+  }
+
+  if (!ast->value) {
     // Give the sequence a default value for now; eventually, this
     // should probably be assigned a value of unit.
     ast->value = llvm::ConstantInt::get(LLVMTypeFor("i32"), 0);
-  } else {
-    ast->value = ast->parts.back()->value;
   }
 }
 
 void CodegenPass::visit(FnAST* ast) {
+  if (ast->value) return;
+
   assert(ast->body != NULL);
 
   (ast->proto)->accept(this);
@@ -211,8 +229,11 @@ void CodegenPass::visit(FnAST* ast) {
   if (RetVal == NULL) std::cerr << "Oops, null body value in fn " << ast->proto->name << std::endl;
   assert (RetVal != NULL);
 
+  bool returningVoid = isVoid(ast->proto->resultTy);
+
   // If we try to return a tuple* when the fn specifies a tuple, manually insert a load
   if (RetVal->getType()->isDerivedType()
+      && !returningVoid
       && RetVal->getType() == llvm::PointerType::get(ast->proto->resultTy, 0)) {
     RetVal = builder.CreateLoad(RetVal, false, "structPtrToStruct");
   }
@@ -220,7 +241,13 @@ void CodegenPass::visit(FnAST* ast) {
   scope.popScope();
 
   if (RetVal) {
-    builder.CreateRet(RetVal);
+    if (returningVoid) {
+      builder.CreateRetVoid();
+    } else if (isVoid(RetVal->getType())) {
+      std::cerr << "Error! Can't return non-void value given only a void value!\n";
+    } else {
+      builder.CreateRet(RetVal);
+    }
     //llvm::verifyFunction(*F);
     ast->value = F;
   } else {
@@ -236,7 +263,7 @@ void CodegenPass::visit(FnAST* ast) {
 }
 
 void CodegenPass::visit(ClosureTypeAST* ast) {
-  std::cout << "CodegenPass ClosureTypeAST: " << *ast << std::endl;
+  std::cerr << "CodegenPass ClosureTypeAST: " << *ast << std::endl;
 }
 
 // converts   t1, (envptrty, t2, t3)   to   { rt (envptrty, t2, t3)*, envptrty }
@@ -256,6 +283,8 @@ const Type* closureTypeFromClosedFnType(const FunctionType* fnty) {
 }
 
 void CodegenPass::visit(ClosureAST* ast) {
+  if (ast->value) return;
+
   if (!ast->hasKnownEnvironment) {
     std::cerr << "Error! Closure made it past closure conversion without getting an environment type!" << std::endl;
   }
@@ -270,12 +299,21 @@ void CodegenPass::visit(ClosureAST* ast) {
   ExprAST* env = new TupleExprAST(new SeqAST(ast->parts));
   ExprAST* fnPtr = new VariableAST(ast->fn->proto->name, llvm::PointerType::get(ast->fn->type, 0));
   { TypecheckPass tp;
-    env->accept(&tp);
-    env->accept(this);
-
     fnPtr->accept(&tp);
     fnPtr->accept(this);
+
+    env->accept(&tp);
+    env->accept(this);
   }
+
+  if (ast->isTrampolineVersion) {
+    if (Function* func = llvm::dyn_cast<Function>(fnPtr->value)) {
+      func->addAttribute(1, llvm::Attribute::Nest);
+    }
+  }
+
+  llvm::errs() << "Closure conversion " << ast->fn->proto->name << "\n\tfnPtr value: "
+      << *fnPtr->value << "\n\tFunction? " << llvm::isa<Function>(fnPtr->value) << "\n";
 
   if (const FunctionType* fnTy = llvm::dyn_cast<const FunctionType>(ast->fn->type)) {
     // Manually build struct for now, since we don't have PtrAST nodes
@@ -505,6 +543,125 @@ const FunctionType* tryExtractFunctionPointerType(Value* FV) {
   return llvm::dyn_cast<FunctionType>(fp->getElementType());
 }
 
+FnAST* getVoidReturningVersionOf(ExprAST* arg, const llvm::FunctionType* fnty) {
+  static std::map<string, FnAST*> voidReturningVersions;
+  if (VariableAST* var = dynamic_cast<VariableAST*>(arg)) {
+    string fnName = "__voidReturningVersionOf__" + var->name;
+    if (FnAST* exists = voidReturningVersions[fnName]) {
+      return exists;
+    }
+
+    // Create function  void fnName(arg-args) { arg(arg-args) }
+    std::vector<VariableAST*> inArgs;
+    std::vector<ExprAST*> callArgs;
+
+    for (int i = 0; i < fnty->getNumParams(); ++i) {
+      std::stringstream ss; ss << "a" << i;
+      VariableAST* a = new VariableAST(ss.str(), fnty->getParamType(i));
+      inArgs.push_back(a);
+      callArgs.push_back(a);
+    }
+    PrototypeAST* proto = new PrototypeAST(fnty->getVoidTy(getGlobalContext()), fnName, inArgs);
+    ExprAST* body = new CallAST(arg, callArgs);
+    FnAST* fn = new FnAST(proto, body);
+    { TypecheckPass tp; CodegenPass cp; fn->accept(&tp); fn->accept(&cp); }
+    voidReturningVersions[fnName] = fn;
+    return fn;
+  } else {
+    std::cerr << "Error! getVoidReturningVersionOf() expected a variable naming a fn!\n";
+    std::cerr << "\tInstead, got: " << *arg << std::endl;
+    exit(1);
+  }
+  return NULL;
+}
+
+Function* getLLVMInitTrampoline() {
+  // This isn't added along with the other intrinsics because
+  // it's not supposed to be directly callable from foster code.
+
+  const llvm::Type* pi8 = llvm::PointerType::getUnqual(LLVMTypeFor("i8"));
+
+  std::vector<const Type*> llvm_init_trampoline_fnty_args;
+  llvm_init_trampoline_fnty_args.push_back(pi8);
+  llvm_init_trampoline_fnty_args.push_back(pi8);
+  llvm_init_trampoline_fnty_args.push_back(pi8);
+  FunctionType* llvm_init_trampoline_fnty = FunctionType::get(
+      pi8, llvm_init_trampoline_fnty_args, /*isVarArg=*/false);
+
+  Function* llvm_init_trampoline = Function::Create(
+      /*Type=*/    llvm_init_trampoline_fnty,
+      /*Linkage=*/ llvm::GlobalValue::ExternalLinkage,
+      /*Name=*/    "llvm.init.trampoline", module); // (external, no body)
+  llvm_init_trampoline->setCallingConv(llvm::CallingConv::C);
+  return llvm_init_trampoline;
+}
+
+llvm::Value* getTrampolineForClosure(ClosureAST* cloAST) {
+  static Function* llvm_init_trampoline = getLLVMInitTrampoline();
+
+  const llvm::Type* i8 = LLVMTypeFor("i8");
+  const llvm::Type* pi8 = llvm::PointerType::getUnqual(i8);
+
+  // We have a closure { code*, env* } and must convert it to a bare
+  // trampoline function pointer.
+  const llvm::Type* trampolineArrayType = llvm::ArrayType::get(i8, 24); // Sufficient for x86 and x86_64
+  llvm::AllocaInst* trampolineBuf = builder.CreateAlloca(trampolineArrayType, 0, "trampBuf");
+  trampolineBuf->setAlignment(16); // sufficient for x86 and x86_64
+  Value* trampi8 = builder.CreateBitCast(trampolineBuf, pi8, "trampi8");
+
+  // It would be nice and easy to extract the code pointer from the closure,
+  // but LLVM requires that pointers passed to trampolines be "obvious" function
+  // pointers. Thus, we need direct access to the closure's underlying fn.
+  ExprAST* fnPtr = new VariableAST(cloAST->fn->proto->name, llvm::PointerType::get(cloAST->fn->type, 0));
+  { TypecheckPass tp; CodegenPass cp;
+    fnPtr->accept(&tp);
+    fnPtr->accept(&cp);
+  }
+  Value* codePtr = fnPtr->value;
+  Value* envPtr = builder.CreateExtractValue(cloAST->value, 1, "getEnvPtr");
+
+  Value* tramp = builder.CreateCall3(llvm_init_trampoline,
+                      trampi8,
+                      builder.CreateBitCast(codePtr, pi8),
+                      builder.CreateBitCast(envPtr,  pi8), "tramp");
+  return tramp;
+}
+
+FnAST* getClosureVersionOf(ExprAST* arg, const llvm::FunctionType* fnty) {
+  static std::map<string, FnAST*> closureVersions;
+  if (VariableAST* var = dynamic_cast<VariableAST*>(arg)) {
+    string fnName = "__closureVersionOf__" + var->name;
+    if (FnAST* exists = closureVersions[fnName]) {
+      return exists;
+    }
+
+    // Create function    fnName(i8* env, arg-args) { arg(arg-args) }
+    // that hard-codes call to fn referenced by arg
+
+    std::vector<VariableAST*> inArgs;
+    std::vector<ExprAST*> callArgs;
+    inArgs.push_back(new VariableAST("__ignored_env__", llvm::PointerType::getUnqual(LLVMTypeFor("i8"))));
+
+    for (int i = 0; i < fnty->getNumParams(); ++i) {
+      std::stringstream ss; ss << "a" << i;
+      VariableAST* a = new VariableAST(ss.str(), fnty->getParamType(i));
+      inArgs.push_back(a);
+      callArgs.push_back(a);
+    }
+    PrototypeAST* proto = new PrototypeAST(fnty->getReturnType(), fnName, inArgs);
+    ExprAST* body = new CallAST(arg, callArgs);
+    FnAST* fn = new FnAST(proto, body);
+    { TypecheckPass tp; CodegenPass cp; fn->accept(&tp); fn->accept(&cp); }
+    closureVersions[fnName] = fn;
+    return fn;
+  } else {
+    std::cerr << "Error! getClosureVersionOf() expected a variable naming a fn!\n";
+    std::cerr << "\tInstead, got: " << *arg << std::endl;
+    exit(1);
+  }
+  return NULL;
+}
+
 void CodegenPass::visit(CallAST* ast) {
   if (ast->value) return;
 
@@ -541,7 +698,7 @@ void CodegenPass::visit(CallAST* ast) {
     }
   } else {
     // Call to something we don't know how to call!
-    std::cerr << "base: " << *base << std::endl;
+    std::cerr << "base: " << *base;
     llvm::errs() << "; FV: " << *FV << "\n";
     std::cerr << "Unknown function referenced!" << std::endl;
     if (FV != NULL) { llvm::errs() << "\tFV: "  << *(FV) << "\n"; }
@@ -558,6 +715,71 @@ void CodegenPass::visit(CallAST* ast) {
       arg = u->parts[0]; // Replace unpack expr with underlying tuple expr
     }
 
+    ClosureAST* clo = NULL;
+
+    const llvm::Type* expectedType = FT->getContainedType(i);
+
+    // Codegenning   callee( arg )  where arg has raw function type, not closure type!
+    if (const FunctionType* fnty = llvm::dyn_cast<const FunctionType>(arg->type)) {
+      // If we still have a bare function type at codegen time, it means
+      // the code specified a (top-level) function name.
+      // Since we made it past type checking, we should have only two
+      // possibilities for what kind of function is doing the invoking:
+      //
+      // 1) A C-linkage function which expects a bare function pointer.
+      // 2) A Foster function which expects a closure value.
+      bool passFunctionPointer = isPointerToCompatibleFnTy(expectedType, fnty);
+
+      std::cout << "Passing function to " << (passFunctionPointer ? "fn ptr" : "closure") << "\n";
+
+      if (passFunctionPointer) {
+      // Case 1 is simple; we just change the arg type to "function pointer"
+      // instead of "function value" and LLVM takes care of the rest.
+      //
+      // The only wrinkle is return value compatibility: we'd like to
+      // automatically generate a return-value-eating wrapper if we try
+      // to pass a function returning a value to a function expecting
+      // a procedure returning void.
+        if (const FunctionType* expectedFnTy = tryExtractCallableType(expectedType)) {
+          if (isVoid(expectedFnTy->getReturnType()) && !isVoid(fnty)) {
+            arg = getVoidReturningVersionOf(arg, fnty);
+            { TypecheckPass tp; arg->accept(&tp); }
+          }
+        }
+      } else {
+      // Case 2 is not so simple, since a closure code pointer must take the
+      // environment pointer as its first argument, and presumably the fn
+      // we want to invoke does not take an env pointer. Thus we need a pointer
+      // to a forwarding function, which acts as the opposite of a trampoline:
+      // instead of excising one (implicitly-added) parameter from a function
+      // signature, we add one (implicitly-ignored) parameter to the signature.
+      //
+      // The simplest approach is to lazily generate a "closure version" of any
+      // functions we see being passed directly by name; it would forward
+      // all parameters to the regular function, except for the env ptr.
+        ClosureAST* clo = new ClosureAST(getClosureVersionOf(arg, fnty));
+        clo->hasKnownEnvironment = true; // Empty by definition!
+        arg = clo;
+        { TypecheckPass tp; arg->accept(&tp); }
+      //
+      // One slightly more clever approach could use a trampoline to reduce
+      // code bloat. Instead of one "closure version" per function, we'd
+      // generate one "generic closure forwarder" per function type
+      // signature. The forwarder for a function G of type R (X, Y) would be
+      // of type R (R (X, Y)* nest, i8* env, X, Y). The body of the forwarder
+      // would simply call the nest function pointer with the provided params.
+      // The trampoline would embed the pointer to G, yielding a callable
+      // function of the desired type, R (i8* env, X, Y).
+      // This would have the additional benefit of working with anonymous
+      // function pointer values e.g. from a lookup table.
+      }
+
+      std::cout << "codegen CallAST arg " << (i-1) << "; argty " << *(arg->type)
+                << " vs fn arg ty " << *(FT->getContainedType(i)) << std::endl;
+    } else {
+      clo = dynamic_cast<ClosureAST*>(arg);
+    }
+
     arg->accept(this);
     Value* V = arg->value;
     if (!V) {
@@ -565,10 +787,10 @@ void CodegenPass::visit(CallAST* ast) {
       return;
     }
 
-    // LLVM will automatically convert a Function Value to a Pointer-to-Function,
-    // so we only have to handle non-trivial closure creation.
-    //std::cout << "codegen CallAST arg " << (i-1) << "; argty " << *(arg->type)
-    //          << " vs fn arg ty " << *(FT->getContainedType(i)) << std::endl;
+    if (clo && clo->isTrampolineVersion) {
+      std::cout << "Creating trampoline for closure; bitcasting to " << *expectedType << std::endl;
+      V = builder.CreateBitCast(getTrampolineForClosure(clo), expectedType, "trampfn");
+    }
 
     if (u != NULL) {
       unpackArgs(valArgs, V, FT); // Unpack (recursively) nested structs
@@ -577,10 +799,10 @@ void CodegenPass::visit(CallAST* ast) {
     }
   }
 
-  if (false) {
+  if (true) {
     std::cout << "Creating call for AST {" << valArgs.size() << "} " << *base << std::endl;
     for (int i = 0; i < valArgs.size(); ++i) {
-      llvm::errs() << "\t" << *valArgs[i] << "\n";
+      llvm::errs() << "\tAST arg " << i << ":\t" << *valArgs[i] << "\n";
     }
   }
 
@@ -593,7 +815,13 @@ void CodegenPass::visit(CallAST* ast) {
   // Temporary hack: if a function expects i8 and we have i1, manually convert
   tempHackExtendIntTypes(FT, valArgs);
 
-  ast->value = builder.CreateCall(FV, valArgs.begin(), valArgs.end(), "calltmp");
+  std::cout << *FT <<  " ; " << isVoid(FT->getReturnType()) << std::endl;
+
+  if (isVoid(FT->getReturnType())) {
+    ast->value = builder.CreateCall(FV, valArgs.begin(), valArgs.end());
+  } else {
+    ast->value = builder.CreateCall(FV, valArgs.begin(), valArgs.end(), "calltmp");
+  }
 }
 
 bool isComposedOfIntLiterals(ExprAST* ast) {
@@ -615,6 +843,7 @@ llvm::GlobalVariable* getGlobalArrayVariable(SeqAST* body, const llvm::ArrayType
 
   // Constant Definitions
   std::vector<llvm::Constant*> arrayElements;
+
   for (int i = 0; i < body->parts.size(); ++i) {
     IntAST* v = dynamic_cast<IntAST*>(body->parts[i]);
     if (!v) {
@@ -726,6 +955,8 @@ llvm::Value* emitMalloc(const llvm::Type* ty) {
 
 void CodegenPass::visit(TupleExprAST* ast) {
   if (ast->value) return;
+
+  std::cout << "CodegenPass visiting TupleExprAST " << ast << std::endl;
 
   assert(ast->type != NULL);
 

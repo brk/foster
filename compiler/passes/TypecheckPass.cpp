@@ -262,6 +262,8 @@ void TypecheckPass::visit(ClosureAST* ast) {
     ast->fn->accept(this);
     visitChildren(ast);
 
+    if (!ast->fn || !ast->fn->type) { return; }
+
     if (const llvm::FunctionType* ft = tryExtractCallableType(ast->fn->type)) {
       ast->type = genericVersionOfClosureType(ft);
       if (ft && ast->type) {
@@ -499,6 +501,7 @@ void TypecheckPass::visit(CallAST* ast) {
   }
 
   vector<const Type*> actualTypes;
+  vector<ExprAST*> literalArgs; // any args not from unpack exprs, temp hack!
   for (int i = 1; i < ast->parts.size(); ++i) {
     ExprAST* arg = ast->parts[i];
     if (!arg) {
@@ -518,12 +521,14 @@ void TypecheckPass::visit(CallAST* ast) {
       if (const llvm::StructType* st = llvm::dyn_cast<llvm::StructType>(argTy)) {
         for (int j = 0; j < st->getNumElements(); ++j) {
           actualTypes.push_back(st->getElementType(j));
+          literalArgs.push_back(NULL);
         }
       } else {
         std::cerr << "Error: call expression found UnpackExpr with non-struct type " << *argTy << std::endl;
       }
     } else {
       actualTypes.push_back(argTy);
+      literalArgs.push_back(arg);
     }
   }
 
@@ -539,10 +544,42 @@ void TypecheckPass::visit(CallAST* ast) {
     const Type* formalType = baseFT->getParamType(i);
     const Type* actualType = actualTypes[i];
 
-    // Temporarily view a function type as its associated specific closure type,
-    // since the formal arguments will have undergone the same conversion.
     if (const FunctionType* fnty = llvm::dyn_cast<const FunctionType>(actualType)) {
-      actualType = genericClosureTypeFor(fnty);
+      // If we try to use  fa: i32 () in place of ff: void ()*,
+      // temporarily give the function fa the type of ff.
+      if (isPointerToCompatibleFnTy(formalType, fnty)) {
+        actualType = formalType;
+      } else {
+        // Temporarily view a function type as its associated specific closure type,
+        // since the formal arguments will have undergone the same conversion.
+        actualType = genericClosureTypeFor(fnty);
+        std::cout << "TYPECHECK CallAST converting " << *fnty << " to " << *actualType << std::endl;
+        std::cout << "\t for formal type:\t" << *formalType << std::endl;
+        std::cout << "\t base :: " << *base << std::endl;
+      }
+    } else if (const llvm::StructType* sty = llvm::dyn_cast<llvm::StructType>(actualType)) {
+      if (isValidClosureType(sty)) {
+        const FunctionType* fnty = originalFunctionTypeForClosureStructType(sty);
+        if (isPointerToCompatibleFnTy(formalType, fnty)) {
+          // We have a closure and will convert it to a bare
+          // trampoline function pointer at codegen time.
+          actualType = formalType;
+
+          if (ExprAST* arg = literalArgs[i]) {
+             if (ClosureAST* clo = dynamic_cast<ClosureAST*>(arg)) {
+               clo->isTrampolineVersion = true;
+             } else {
+               std::cerr << "Error! LLVM requires literal closure definitions"
+                         << " be given at trampoline creation sites!\n";
+               return;
+             }
+          } else {
+            std::cerr << "Error! LLVM requires literal closure definitions"
+                      << " be given at trampoline creation sites! Can't use an unpacked tuple!\n";
+            return;
+          }
+        }
+      }
     }
 
     // Note: order here is important! We check conversion from
