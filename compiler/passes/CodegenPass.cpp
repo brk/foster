@@ -26,6 +26,32 @@ using llvm::ConstantInt;
 using llvm::APInt;
 using llvm::PHINode;
 
+// returns type  void (i8**, i8*)
+const FunctionType* get_llvm_gcroot_ty() {
+  const Type* i8ty = LLVMTypeFor("i8");
+  const Type* pi8ty = llvm::PointerType::getUnqual(i8ty);
+  const Type* ppi8ty = llvm::PointerType::getUnqual(pi8ty);
+  const Type* voidty = llvm::Type::getVoidTy(llvm::getGlobalContext());
+  std::vector<const Type*> params;
+  params.push_back(pi8ty);
+  return llvm::FunctionType::get(voidty, params, /*isvararg=*/ false);
+}
+
+void markGCRoot(llvm::Value* root, llvm::Value* meta) {
+  std::cout << "Marking gc root!" << std::endl;
+  llvm::Constant* llvm_gcroot = module->getOrInsertFunction("llvm.gcroot", get_llvm_gcroot_ty());
+  if (!llvm_gcroot) {
+    std::cerr << "Error! Could not mark GC root!" << std::endl;
+    exit(1);
+  }
+
+  if (!meta) {
+    meta = llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(llvm::Type::getInt8Ty(getGlobalContext())));
+  }
+
+  builder.CreateCall2(llvm_gcroot, root, meta);
+}
+
 llvm::Value* emitMalloc(const llvm::Type* ty);
 
 template <typename T>
@@ -217,6 +243,7 @@ void CodegenPass::visit(FnAST* ast) {
   Function* F = llvm::dyn_cast<Function>(ast->proto->value);
   if (!F) { return; }
 
+  F->setGC("shadow-stack");
   scope.pushScope("fn " + ast->proto->name);
 
   this->insertPointStack.push(builder.GetInsertBlock());
@@ -328,6 +355,7 @@ void CodegenPass::visit(ClosureAST* ast) {
     addClosureTypeName(module, cloTy);
 
     llvm::AllocaInst* clo = builder.CreateAlloca(cloTy, 0, "closure");
+    markGCRoot(clo, NULL);
 
     Value* clo_code = builder.CreateConstGEP2_32(clo, 0, 0, "clo_code");
     Value* bc_fnptr = builder.CreateBitCast(fnPtr->value, cloTy->getContainedType(0), "hideclofnty");
@@ -606,8 +634,11 @@ llvm::Value* getTrampolineForClosure(ClosureAST* cloAST) {
   // trampoline function pointer.
   const llvm::Type* trampolineArrayType = llvm::ArrayType::get(i8, 24); // Sufficient for x86 and x86_64
   llvm::AllocaInst* trampolineBuf = builder.CreateAlloca(trampolineArrayType, 0, "trampBuf");
+
   trampolineBuf->setAlignment(16); // sufficient for x86 and x86_64
   Value* trampi8 = builder.CreateBitCast(trampolineBuf, pi8, "trampi8");
+
+  markGCRoot(trampi8, NULL);
 
   // It would be nice and easy to extract the code pointer from the closure,
   // but LLVM requires that pointers passed to trampolines be "obvious" function
@@ -874,6 +905,12 @@ void CodegenPass::visit(ArrayExprAST* ast) {
   if (body->parts.empty()) {
     // No initializer
     ast->value = builder.CreateAlloca(arrayType, 0, "noInitArr");
+
+    // We only need to mark arrays of pointers as GC roots
+    if (arrayType->getElementType()->isPointerTy()) {
+      markGCRoot(ast->value, NULL);
+    }
+
     // TODO add call to memset
   } else {
     // Have initializers; are they constants?
@@ -881,6 +918,12 @@ void CodegenPass::visit(ArrayExprAST* ast) {
       ast->value = getGlobalArrayVariable(body, arrayType);
     } else {
       ast->value = builder.CreateAlloca(arrayType, 0, "initArr");
+
+      // We only need to mark arrays of pointers as GC roots
+      if (arrayType->getElementType()->isPointerTy()) {
+        markGCRoot(ast->value, NULL);
+      }
+
       for (int i = 0; i < body->parts.size(); ++i) {
         builder.CreateStore(body->parts[i]->value, getPointerToIndex(ast->value, i, "arrInit"));
       }
@@ -918,6 +961,7 @@ void CodegenPass::visit(SimdVectorAST* ast) {
     ast->value = builder.CreateLoad(gvar, /*isVolatile*/ false, "simdLoad");
   } else {
     llvm::AllocaInst* pt = builder.CreateAlloca(simdType, 0, "s");
+    // simd vectors are never gc roots
     for (int i = 0; i < body->parts.size(); ++i) {
       Value* dst = builder.CreateConstGEP2_32(pt, 0, i, "simd-gep");
       body->parts[i]->accept(this);
@@ -942,6 +986,7 @@ void copyTupleTo(CodegenPass* pass, Value* pt, TupleExprAST* ast) {
   }
 }
 
+// returns ty*, with a ty** on the stack
 llvm::Value* emitMalloc(const llvm::Type* ty) {
   llvm::Value* memalloc = scope.lookup("memalloc", "");
   if (!memalloc) {
@@ -950,7 +995,23 @@ llvm::Value* emitMalloc(const llvm::Type* ty) {
   }
   llvm::Value* mem = builder.CreateCall(memalloc,
     llvm::ConstantInt::get(getGlobalContext(), llvm::APInt(64, llvm::StringRef("32"), 10)), "mem");
-  return builder.CreateBitCast(mem, llvm::PointerType::getUnqual(ty), "memcast");
+
+  llvm::Value* pointer = builder.CreateBitCast(mem, llvm::PointerType::getUnqual(ty), "memcast");;
+
+  llvm::AllocaInst* stackref = builder.CreateAlloca(llvm::PointerType::getUnqual(ty), 0, "stackref");
+  builder.CreateStore(pointer, stackref, /*isVolatile*/ false);
+  markGCRoot(stackref, NULL);
+
+  return pointer;
+}
+
+bool structTypeContainsPointers(const llvm::StructType* ty) {
+  for (unsigned i = 0; i < ty->getNumElements(); ++i) {
+    if (ty->getTypeAtIndex(i)->isPointerTy()) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void CodegenPass::visit(TupleExprAST* ast) {
@@ -967,9 +1028,13 @@ void CodegenPass::visit(TupleExprAST* ast) {
 
   // Allocate tuple space
   llvm::AllocaInst* pt = builder.CreateAlloca(tupleType, 0, "s");
+
+  // We only need to mark tuples containing pointers as GC roots
+  if (structTypeContainsPointers(llvm::dyn_cast<llvm::StructType>(tupleType))) {
+    markGCRoot(pt, NULL);
+  }
+
   //llvm::Value* pt = emitMalloc(tupleType);
-
-
   copyTupleTo(this, pt, ast);
   ast->value = pt;
 }
