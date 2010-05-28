@@ -50,6 +50,11 @@ find_program(LLVM_G++ NAMES llvm-g++ clang
   DOC "llvm-g++")
 
 
+execute_process(COMMAND ${LLVM_CONFIG} --bindir
+  OUTPUT_VARIABLE LLVM_BINDIR
+)
+string(REPLACE "\n" "" LLVM_BINDIR ${LLVM_BINDIR})
+
 # Collect the linker flags for us to link against LLVM
 execute_process(COMMAND ${LLVM_CONFIG} --ldflags --libs core jit interpreter native linker
   OUTPUT_VARIABLE LLVM_LDFLAGS
@@ -76,12 +81,20 @@ add_custom_command(
   DEPENDS grammar/foster.g
 )
 
+set(LIBFOSTER_CPP_SOURCES
+	${PROJECT_SOURCE_DIR}/runtime/libfoster.cpp
+	${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc.cpp
+)
+
 # Use llvm-g++ to build libfoster.bc
 add_custom_command(
   OUTPUT ${PROJECT_BINARY_DIR}/libfoster.bc
-  COMMAND ${LLVM_G++} ${PROJECT_SOURCE_DIR}/runtime/libfoster.cpp
-            -emit-llvm -c -o ${PROJECT_BINARY_DIR}/libfoster.bc
-  DEPENDS ${PROJECT_SOURCE_DIR}/runtime/libfoster.cpp
+  COMMAND python ${PROJECT_SOURCE_DIR}/scripts/build_libfoster.py
+	${LLVM_G++}
+	${PROJECT_BINARY_DIR}
+	${LLVM_BINDIR}
+	${LIBFOSTER_CPP_SOURCES}
+  DEPENDS ${LIBFOSTER_CPP_SOURCES} ${PROJECT_SOURCE_DIR}/scripts/build_libfoster.py
 )
 add_custom_target(libfoster_bc DEPENDS ${PROJECT_BINARY_DIR}/libfoster.bc)
 

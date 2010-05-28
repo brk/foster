@@ -124,7 +124,27 @@ int32_t c_invoke_closure_i32(FosterClosurei32 clo) { return clo.code(clo.env); }
 void c_invoke_fnptr_void(void (*f)()) { f(); }
 int32_t c_invoke_fnptr_i32(int32_t (*f)()) { return f(); }
 
-void* memalloc(int64_t sz) { return malloc(sz); }
+//////////////////////////////////////////////////////////////////
+
+void visitGCRoots(void (*Visitor)(void **Root, const void *Meta));
+
+void gcPrintVisitor(void** root, const void *meta) {
+	printf("root: %p, meta: %p\n", root, meta);
+}
+
+int64_t memalloced_size = 0;
+bool visited = false;
+void* memalloc(int64_t sz) {
+	memalloced_size += sz;
+	if (!visited && memalloced_size > 319648) {
+		visited = true;
+		printf("+%lld, memalloced size: %lld\n", sz, memalloced_size);
+		visitGCRoots(gcPrintVisitor);
+	}
+	return malloc(sz);
+}
+
+//////////////////////////////////////////////////////////////////
 
 int  print_i32(int32_t x) { return fprint_i32(stdout, x); }
 int expect_i32(int32_t x) { return fprint_i32(stderr, x); }
