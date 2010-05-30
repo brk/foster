@@ -22,7 +22,7 @@ if (${ANTLR_DIR} STREQUAL "ANTLR_DIR-NOTFOUND")
 endif (${ANTLR_DIR} STREQUAL "ANTLR_DIR-NOTFOUND")
 
 
-set(LLVM_VERSION 2.6)
+set(LLVM_VERSION 2.7)
 
 find_program(LLVM_CONFIG NAMES llvm-config
   PATHS $ENV{HOME}/llvm/${LLVM_VERSION}/bin
@@ -41,18 +41,23 @@ execute_process(COMMAND ${LLVM_CONFIG} --cppflags
 # installing the MacPorts version. Since (I hope?) there is link compatibility
 # of bitcode files produced with different versions of llvm-g++, it shouldn't
 # be a problem...
-find_program(LLVM_G++ NAMES llvm-g++ clang
-  PATHS /opt/local/bin
-	/usr/bin
+find_program(LLVM_G++ NAMES llvm-g++ clang++ clang
+  PATHS
+        /usr/bin
         $ENV{HOME}/llvm/${LLVM_VERSION}/gcc/bin
-        $ENV{HOME}/Code/LLVM/llvm-2.5/llvm-gcc4.2-2.5-x86-darwin9/bin
+        $ENV{HOME}/llvm/${LLVM_VERSION}/bin
         /usr/lib/llvm/llvm/gcc-4.2/bin
-  DOC "llvm-g++")
+  DOC "C++ compiler to emit LLVM bytecode: llvm-g++ or clang++")
 
 
 execute_process(COMMAND ${LLVM_CONFIG} --bindir
   OUTPUT_VARIABLE LLVM_BINDIR
 )
+
+message("LLVM_CONFIG is ${LLVM_CONFIG}")
+
+# If llvm-config isn't found, LLVM_BINDIR will be empty
+# and CMake will report an error here.
 string(REPLACE "\n" "" LLVM_BINDIR ${LLVM_BINDIR})
 
 # Collect the linker flags for us to link against LLVM
@@ -61,8 +66,8 @@ execute_process(COMMAND ${LLVM_CONFIG} --ldflags --libs core jit interpreter nat
 )
 
 # Make sure that the linker flags are one physical line
-string(REPLACE "\n" "" LLVM_LDFLAGS ${LLVM_LDFLAGS})
-string(STRIP ${LLVM_LDFLAGS} LLVM_LDFLAGS)
+string(REPLACE "\n" "" LLVM_LDFLAGS "${LLVM_LDFLAGS}")
+string(STRIP "${LLVM_LDFLAGS}" LLVM_LDFLAGS)
 
 find_package(Threads REQUIRED)
 
@@ -90,9 +95,9 @@ set(LIBFOSTER_CPP_SOURCES
 add_custom_command(
   OUTPUT ${PROJECT_BINARY_DIR}/libfoster.bc
   COMMAND python ${PROJECT_SOURCE_DIR}/scripts/build_libfoster.py
-	${LLVM_G++}
+	"${LLVM_G++}"
 	${PROJECT_BINARY_DIR}
-	${LLVM_BINDIR}
+	"${LLVM_BINDIR}"
 	${LIBFOSTER_CPP_SOURCES}
   DEPENDS ${LIBFOSTER_CPP_SOURCES} ${PROJECT_SOURCE_DIR}/scripts/build_libfoster.py
 )
@@ -108,7 +113,7 @@ include_directories(
   ${PROJECT_SOURCE_DIR}/third_party)
 
 # Assumes path to LLVM lib dir has no spaces in it!
-string(REGEX MATCH "-L[^ ]+" LLVM_LD_PATH ${LLVM_LDFLAGS})
+string(REGEX MATCH "-L[^ ]+" LLVM_LD_PATH "${LLVM_LDFLAGS}")
 
 link_directories(${LLVM_LD_PATH} ${ANTLR_LIBDIR})
 
