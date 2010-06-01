@@ -87,7 +87,7 @@ speedtest () {
 
 runfosterc () {
   TIMESTART
-  ./foster $1
+  ./fosterc $1
   TIMEEND "fosterc"
 }
 

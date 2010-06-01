@@ -126,7 +126,7 @@ if (CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
    "${CMAKE_EXE_LINKER_FLAGS} -Wl,--compress-debug-sections,zlib")
 endif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
 
-add_executable(foster
+add_executable(fosterc
   compiler/ANTLRtoFosterAST.cpp
   compiler/FosterAST.cpp
   compiler/FosterUtils.cpp
@@ -142,9 +142,9 @@ add_executable(foster
   ${PROJECT_BINARY_DIR}/fosterLexer.c
 )
 
-target_link_libraries(foster antlr3c ${LLVM_LDFLAGS})
+target_link_libraries(fosterc antlr3c ${LLVM_LDFLAGS})
 
-add_dependencies(foster libfoster_bc)
+add_dependencies(fosterc libfoster_bc)
 
 #####################################################################
 
