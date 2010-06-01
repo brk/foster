@@ -355,7 +355,10 @@ void CodegenPass::visit(ClosureAST* ast) {
     addClosureTypeName(module, cloTy);
 
     llvm::AllocaInst* clo = builder.CreateAlloca(cloTy, 0, "closure");
-    markGCRoot(clo, NULL);
+
+    // TODO the (stack reference to the) closure should only be marked as
+    // a GC root if the environment has been dynamically allocated...
+    //markGCRoot(clo, NULL);
 
     Value* clo_code = builder.CreateConstGEP2_32(clo, 0, 0, "clo_code");
     Value* bc_fnptr = builder.CreateBitCast(fnPtr->value, cloTy->getContainedType(0), "hideclofnty");
@@ -679,7 +682,7 @@ llvm::Value* getTrampolineForClosure(ClosureAST* cloAST) {
   trampolineBuf->setAlignment(16); // sufficient for x86 and x86_64
   Value* trampi8 = builder.CreateBitCast(trampolineBuf, pi8, "trampi8");
 
-  markGCRoot(trampi8, NULL);
+  //markGCRoot(trampolineBuf, NULL);
 
   // It would be nice and easy to extract the code pointer from the closure,
   // but LLVM requires that pointers passed to trampolines be "obvious" function
@@ -947,10 +950,11 @@ void CodegenPass::visit(ArrayExprAST* ast) {
     // No initializer
     ast->value = builder.CreateAlloca(arrayType, 0, "noInitArr");
 
-    // We only need to mark arrays of pointers as GC roots
-    if (arrayType->getElementType()->isPointerTy()) {
-      markGCRoot(ast->value, NULL);
-    }
+    // We only need to mark arrays of non-atomic objects as GC roots
+    // TODO handle rooting arrays of non-atomic objects
+    //if (containsPointers(arrayType->getElementType())) {
+    //  markGCRoot(ast->value, NULL);
+    //}
 
     // TODO add call to memset
   } else {
@@ -960,10 +964,11 @@ void CodegenPass::visit(ArrayExprAST* ast) {
     } else {
       ast->value = builder.CreateAlloca(arrayType, 0, "initArr");
 
-      // We only need to mark arrays of pointers as GC roots
-      if (arrayType->getElementType()->isPointerTy()) {
-        markGCRoot(ast->value, NULL);
-      }
+      // We only need to mark arrays of non-atomic objects as GC roots
+	  // TODO handle rooting arrays of non-atomic objects
+	  //if (containsPointers(arrayType->getElementType())) {
+	  //  markGCRoot(ast->value, NULL);
+	  //}
 
       for (int i = 0; i < body->parts.size(); ++i) {
         builder.CreateStore(body->parts[i]->value, getPointerToIndex(ast->value, i, "arrInit"));
@@ -1070,9 +1075,15 @@ void CodegenPass::visit(TupleExprAST* ast) {
   // Allocate tuple space
   llvm::AllocaInst* pt = builder.CreateAlloca(tupleType, 0, "s");
 
+
   // We only need to mark tuples containing pointers as GC roots
   if (structTypeContainsPointers(llvm::dyn_cast<llvm::StructType>(tupleType))) {
-    markGCRoot(pt, NULL);
+	const llvm::Type* tuplePtrTy = llvm::PointerType::getUnqual(tupleType);
+	const llvm::Type* pi8 = llvm::PointerType::getUnqual(LLVMTypeFor("i32"));
+    llvm::AllocaInst* stackref = builder.CreateAlloca(pi8, 0, "tuple_stackref");
+    Value* rawaddr = builder.CreateBitCast(pt, pi8);
+    builder.CreateStore(rawaddr, stackref, /*isVolatile=*/ false);
+    markGCRoot(stackref, NULL);
   }
 
   //llvm::Value* pt = emitMalloc(tupleType);

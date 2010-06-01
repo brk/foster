@@ -160,7 +160,7 @@ if __name__ == "__main__":
   llvmdir = os.path.dirname(llvm_config_path)
   paths = {
       # Haven't renamed the binary from foster to fosterc yet
-      'fosterc': join(bindir, 'foster'),
+      'fosterc': join(bindir, 'fosterc'),
       'llvm-as': join(llvmdir, 'llvm-as'),
       'llvm-ld': join(llvmdir, 'llvm-ld'),
       'lli'    : join(llvmdir, 'lli'),
