@@ -1,39 +1,117 @@
 #include <inttypes.h>
 #include <cstdlib>
+#include <cstdio>
 
-/// @brief The map for a single function's stack frame. One of these is
-///        compiled as constant data into the executable for each function.
-/// 
-/// Storage of metadata values is elided if the %metadata parameter to
-/// @llvm.gcroot is null.
-struct FrameMap {
-  int32_t NumRoots;    //< Number of roots in stack frame.
-  int32_t NumMeta;     //< Number of metadata entries. May be < NumRoots.
-  const void *Meta[0]; //< Metadata for each root.
-};
+#include "foster_gc.h"
 
-/// @brief A link in the dynamic shadow stack. One of these is embedded in the
-///        stack frame of each function on the call stack.
-struct StackEntry {
-  StackEntry *Next;    //< Link to next stack entry (the caller's).
-  const FrameMap *Map; //< Pointer to constant FrameMap.
-  void *Roots[0];      //< Stack roots (in-place array).
-};
+/////////////////////////////////////////////////////////////////
 
-/// @brief The head of the singly-linked list of StackEntries. Functions push
-///        and pop onto this in their prologue and epilogue.
-/// 
-/// Since there is only a global list, this technique is not threadsafe.
+// This implements a mark-sweep heap by doing the
+// Simplest Thing That Could Possibly Work:
+//
+// We keep an explicit list of every allocation made, in order
+// to make the sweep phase as simple as possible. The mark phase
+// is simplified by storing mark bits in a STL map.
+//
+// This is, needless to say, hilariously inefficient, but it
+// provides a baseline to measure improvements from.
+
+/////////////////////////////////////////////////////////////////
+
+extern "C" void visitGCRoots(void (*Visitor)(void **Root, const void *Meta));
+
+/////////////////////////////////////////////////////////////////
+
+#include <list>
+
+std::list<void*> allocated_blocks;
+
+/////////////////////////////////////////////////////////////////
+
+void gc();
+
+static FILE* gclog = NULL;
+
+void gcPrintVisitor(void** root, const void *meta) {
+	fprintf(gclog, "root: %p -> %p, meta: %p\n", root, *root, meta);
+}
+
+int64_t heap_size = 0;
+bool visited = false;
+
+const int64_t MAX_HEAP_SIZE = 4 * 1024;
+
+extern "C" void* memalloc(int64_t sz) {
+	heap_size += sz;
+
+	if (heap_size > MAX_HEAP_SIZE) {
+		gc();
+	}
+
+	void* addr = malloc(sz);
+	allocated_blocks.push_back(addr);
+#if 0
+	if (!gclog) {
+		gclog = fopen("gclog.txt", "w");
+	}
+
+	if (memalloc_call_num % 10 == 0) {
+		fprintf(gclog, "after %lld calls, sz = +%lld, memalloced size: %lld\n",
+			memalloc_call_num, sz, memalloced_size);
+		fprintf(gclog, "have %d blocks; allocated block at address: %p\n",
+			allocated_blocks.size(), addr);
+		visitGCRoots(gcPrintVisitor);
+	}
+#endif
+	return addr;
+}
+
+/////////////////////////////////////////////////////////////////
+
+#include <map>
+std::map<void*, bool> mark_bitmap;
+
+// root is the stack address; *root is the heap address
+void gcMarkingVisitor(void** root, const void *meta) {
+	//printf("MARKING root: %p -> %p, meta: %p\n", root, *root, meta);
+	// for now, we assume all allocations are atomic
+	mark_bitmap[*root] = true;
+}
+
+void mark() {
+	mark_bitmap.clear();
+	visitGCRoots(gcMarkingVisitor);
+}
+
+void sweep() {
+	std::list<void*>::iterator iter;
+	for (iter = allocated_blocks.begin();
+	    iter != allocated_blocks.end(); /* ... */ ) {
+		// advance iter before possibly erasing it
+		std::list<void*>::iterator it = iter++;
+		void* addr = *it;
+		if (!mark_bitmap[addr]) {
+			free(addr);
+			allocated_blocks.erase(it);
+			heap_size -= 32; // TODO get real block size
+		}
+	}
+}
+
+void gc() {
+	mark();
+	sweep();
+	/*
+	float heap_residency = float(heap_size) / float(MAX_HEAP_SIZE);
+	printf("after gc, heap size is %lld/%lld = %f%% full\n",
+			heap_size, MAX_HEAP_SIZE, heap_residency);
+	*/
+}
+
+/////////////////////////////////////////////////////////////////
+
 StackEntry *llvm_gc_root_chain;
 
-/// @brief Calls Visitor(root, meta) for each GC root on the stack.
-///        root and meta are exactly the values passed to
-///        @llvm.gcroot.
-/// 
-/// Visitor could be a function to recursively mark live objects. Or it
-/// might copy them to another heap or generation.
-/// 
-/// @param Visitor A function to invoke for every GC root on the stack.
 extern "C" void visitGCRoots(void (*Visitor)(void **Root, const void *Meta)) {
   for (StackEntry *R = llvm_gc_root_chain; R; R = R->Next) {
     unsigned i = 0;
@@ -47,3 +125,4 @@ extern "C" void visitGCRoots(void (*Visitor)(void **Root, const void *Meta)) {
       Visitor(&R->Roots[i], NULL);
   }
 }
+

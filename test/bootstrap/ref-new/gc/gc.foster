@@ -1,10 +1,10 @@
 wastememory  = fn (x : i32) {
-  for i in 0 to 20 do {
-    expect_i32(i) ; print_i32(i) ; new i
+  for i in 0 to x do {
+    new i
   }
 }
 
 fn "main" () {
-  wastememory(20)
+  wastememory(10`000`000)
   0
 }
