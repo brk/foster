@@ -1,5 +1,7 @@
 #!/bin/bash
 
+OUTPUT=fc-output
+
 TIMESTART () {
   STARTS=$(date "+%s");
   STARTZ=$(date "+%N");
@@ -39,7 +41,7 @@ runlli () {
 
 # $1 like foster.bc
 runllc () {
-  OPT=fc-output/fstrprog.O2
+  OPT=$OUTPUT/fstrprog.O2
 
   TIMESTART
   llvm-as foster.ll -f
@@ -92,7 +94,7 @@ runfosterc () {
 RUN="runllc"
 
 cleanout () {
-  rm -f fstrprog.O2.bc foster.bc
+  rm -f $OUTPUT/fstrprog.O2.bc foster.bc a.out foster.ll
 }
 
 make && cleanout && runfosterc $1 && extractinput $1 && $RUN foster.bc ; echo $?
