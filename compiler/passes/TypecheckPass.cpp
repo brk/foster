@@ -320,6 +320,37 @@ void TypecheckPass::visit(IfExprAST* ast) {
   }
 }
 
+void TypecheckPass::visit(ForRangeExprAST* ast) {
+  assert(ast->startExpr != NULL);
+  ast->startExpr->accept(this);
+  const Type* startType = ast->startExpr->type;
+  if (!startType) {
+    std::cerr << "for range start expression '" << *(ast->startExpr) << "' had null type!" << std::endl;
+    return;
+  }
+
+  if (startType != LLVMTypeFor("i32")) {
+    std::cerr << "expected for range start expression to have type i32, but got type " << *startType << std::endl;
+  }
+
+  assert(ast->endExpr != NULL);
+  ast->endExpr->accept(this);
+  const Type* endType = ast->endExpr->type;
+  if (!endType) {
+    std::cerr << "for range end expression '" << *(ast->endExpr) << "' had null type!" << std::endl;
+    return;
+  }
+
+  ast->bodyExpr->accept(this);
+  const Type* bodyType = ast->bodyExpr->type;
+  if (!bodyType) {
+    std::cerr << "for range body expression '" << *(ast->bodyExpr) << "' had null type!" << std::endl;
+    return;
+  }
+
+  ast->type = LLVMTypeFor("i32");
+}
+
 void TypecheckPass::visit(RefExprAST* ast) {
   ast->type = llvm::PointerType::getUnqual(ast->parts[0]->type);
 }

@@ -127,17 +127,36 @@ void PrettyPrintPass::visit(IfExprAST* ast) {
   scan(PPToken("if "));
   recurse(this, ast->testExpr);
   //scan(tBlockClose);
-  
+
   scan(PPToken(" "));
   scan(tOptNewline);
-  
+
   recurse(this, ast->thenExpr);
-  
+
   scan(PPToken(" else "));
   scan(tOptNewline);
-  
+
   recurse(this, ast->elseExpr);
 }
+
+// for $0 in $1 to $2 do $3
+void PrettyPrintPass::visit(ForRangeExprAST* ast) {
+  //scan(tBlockOpen);
+  scan(PPToken("for "));
+  scan(PPToken(ast->varName));
+  //scan(tBlockClose);
+
+  scan(PPToken(" in "));
+  recurse(this, ast->startExpr);
+  scan(PPToken(" to "));
+  recurse(this, ast->endExpr);
+
+  scan(PPToken(" do "));
+  scan(tOptNewline);
+
+  recurse(this, ast->bodyExpr);
+}
+
 
 void PrettyPrintPass::visit(RefExprAST* ast) {
   scan(PPToken("ref "));
@@ -161,7 +180,7 @@ void PrettyPrintPass::visit(AssignExprAST* ast) {
 void PrettyPrintPass::visit(SubscriptAST* ast) {
   //scan(tBlockOpen);
   recurse(this, ast->parts[0]);
-  
+
   scan(PPToken("["));
   recurse(this, ast->parts[1]);
   scan(PPToken("]"));
@@ -249,7 +268,7 @@ void PrettyPrintPass::visit(ArrayExprAST* ast) {
   if (ast->parts[0]) {
     ast->parts[0]->accept(this);
   } else {
-    scan(PPToken("<nil>"));  
+    scan(PPToken("<nil>"));
   }
 }
 
@@ -291,7 +310,7 @@ void PrettyPrintPass::visit(BuiltinCompilesExprAST* ast) {
   if (ast->parts[0]) {
       ast->parts[0]->accept(this);
   } else {
-      scan(PPToken("<nil>")); 
+      scan(PPToken("<nil>"));
   }
   //scan(tBlockClose);
 }

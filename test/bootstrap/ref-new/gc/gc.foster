@@ -1,10 +1,10 @@
 wastememory  = fn (x : i32) {
-  if 0 < x then {
-    let z : ref i32 = new 42 in { wastememory ( x - 1 ) }
-  } else { 0 }
+  for i in 0 to 20 do {
+    print_i32(i) ; new i
+  }
 }
 
 fn "main" () {
-  wastememory(10000)
+  wastememory(20)
   0
 }

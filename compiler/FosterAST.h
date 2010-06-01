@@ -71,10 +71,10 @@ struct NameResolver {
 struct ExprAST : public NameResolver<ExprAST> {
   ExprAST* parent;
   std::vector<ExprAST*> parts;
-  
+
   llvm::Value* value;
   const llvm::Type* type;
-  
+
   explicit ExprAST(ExprAST* parent = NULL) : parent(parent), value(NULL), type(NULL) {}
   virtual ~ExprAST() {}
   virtual std::ostream& operator<<(std::ostream& out) const = 0;
@@ -193,7 +193,7 @@ struct IntAST : public ExprAST {
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   llvm::Constant* getConstantValue();
   llvm::APInt getAPInt();
-  
+
   virtual std::ostream& operator<<(std::ostream& out) const {
     return out << Text;
   }
@@ -367,7 +367,7 @@ struct PrototypeAST : public ExprAST {
         std::cout << "\n\tProtoAST " << name << " ascribed result type expr of " << *(tyExpr) << std::endl;
       }
     }
-    
+
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
     out << "fn" << " " << name << "(";
@@ -398,9 +398,9 @@ struct FnAST : public ExprAST {
 
 struct ClosureTypeAST : public ExprAST {
   PrototypeAST* proto;
-  
+
   explicit ClosureTypeAST(FnAST* fn) : proto(fn->proto) {}
-  
+
   virtual void accept(FosterASTVisitor* visitor) {
     visitor->visit(this);
   }
@@ -437,7 +437,7 @@ struct ClosureAST : public ExprAST {
   explicit ClosureAST(FnAST* fn)
     : fn(fn), hasKnownEnvironment(false), isTrampolineVersion(false) {
   }
-  
+
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
     if (hasKnownEnvironment && fn) {
@@ -462,6 +462,21 @@ struct IfExprAST : public ExprAST {
   virtual std::ostream& operator<<(std::ostream& out) const {
     return out << "if (" << str(testExpr) << ")" <<
         " then " << str(thenExpr) << " else " << str(elseExpr);
+  }
+};
+
+// for var in start to end { body }
+struct ForRangeExprAST : public ExprAST {
+  string varName;
+  ExprAST* startExpr;
+  ExprAST* endExpr;
+  ExprAST* bodyExpr;
+
+  explicit ForRangeExprAST(string var, ExprAST* start, ExprAST* end, ExprAST* body)
+    : varName(var), startExpr(start), endExpr(end), bodyExpr(body) {}
+  virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
+  virtual std::ostream& operator<<(std::ostream& out) const {
+    return out << "for " << varName << " in " << str(startExpr) << " to " << str(endExpr) << str(bodyExpr);
   }
 };
 

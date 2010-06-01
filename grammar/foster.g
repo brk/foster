@@ -14,7 +14,7 @@ tokens {
 
 	FN; OUT; BODY; GIVEN; GIVES; SEQ; INT; RAT; EXPRS; NAME; CTOR;
 	TRAILERS; CALL; TUPLE; SUBSCRIPT; LOOKUP; FORMAL; ARRAY; SIMD;
-	LETEXPR; SETEXPR; PARENEXPR; TYPEDEFN; FNDEF;
+	LETEXPR; SETEXPR; PARENEXPR; TYPEDEFN; FNDEF; FORRANGE;
 	}
 
 program			:	nl* toplevelexpr (nl+ toplevelexpr)* nl* EOF -> ^(EXPRS toplevelexpr+);
@@ -37,8 +37,11 @@ literal			:	TRUE | FALSE | num;
 name			:	n=IDENT -> ^(NAME $n);
 str	                :       STR;
 
+// name seq?
 name_or_ctor		:	name (seq -> ^(CTOR name seq)
 				        |   -> name);
+
+forrange	:	FOR var=name IN start=expr TO end=expr DO body=expr nl? -> ^(FORRANGE $var $start $end $body);
 
 // lhs = ident or LOOKUP or SUBSCRIPT but not CALL
 setexpr	:	'set' lhs=compound '=' rhs=expr -> ^(SETEXPR $lhs $rhs);
@@ -60,6 +63,7 @@ term			:	( literal
 				| seq
 				| ifexpr
 				| setexpr
+				| forrange
 				| sugarterm
 				| name_or_ctor
 				| custom_terms

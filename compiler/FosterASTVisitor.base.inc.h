@@ -75,6 +75,7 @@ FOSTER_AST_VISITOR_GEN(UnpackExprAST);
 FOSTER_AST_VISITOR_GEN(ClosureTypeAST);
 FOSTER_AST_VISITOR_GEN(UnaryOpExprAST);
 FOSTER_AST_VISITOR_GEN(BinaryOpExprAST);
+FOSTER_AST_VISITOR_GEN(ForRangeExprAST);
 FOSTER_AST_VISITOR_GEN(BuiltinCompilesExprAST);
 
 // ----------------------------------------------------------------------------

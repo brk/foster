@@ -154,7 +154,7 @@ IntAST* parseIntFrom(pTree t) {
       } else {
         string baseText = textOf(child(t, i+1));
         alltext << "_" << baseText;
-        
+
         std::stringstream ss_base(baseText);
         ss_base >> base;
         break;
@@ -236,17 +236,17 @@ FnAST* buildFn(string name, pTree bodyTree, bool fnMeansClosure,
     VariableAST* fnRef = new VariableAST(name, proto);
 
     varScope.insert(name, fnRef);
-    
+
   //std::cout << "proto for " << name << " : " << *proto << std::endl;
-  
+
     std::cout << "Parsing body of fn " << name << std::endl;
     ExprAST* body = ExprAST_from(bodyTree, true);
     std::cout << "Parsed  body of fn " << name << std::endl;
   varScope.popScope();
-  
+
   FnAST* fn = new FnAST(proto, body);
   varScope.insert(name, fnRef);
-  
+
   return fn;
 }
 
@@ -275,7 +275,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
   string text = textOf(tree);
   int nchildren = getChildCount(tree);
   //display_pTree(tree, 2);
-  
+
   if (token == TYPEDEFN) {
     pTree nameTree = child(tree, 0);
     string name = textOf(child(nameTree, 0));
@@ -346,7 +346,22 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
   if (token == BODY) { // usually contains SEQ
     return ExprAST_from(child(tree, 0), fnMeansClosure);
   }
-  
+
+  // <var start end body>
+  if (token == FORRANGE) {
+    string var = textOf(child(child(tree, 0), 0));
+    ExprAST* start = ExprAST_from(child(tree, 1), fnMeansClosure);
+    ExprAST* end   = ExprAST_from(child(tree, 2), fnMeansClosure);
+
+    varScope.pushScope("for-range " + var);
+    varScope.insert(var, new VariableAST(var, LLVMTypeFor("i32")));
+    ExprAST* body  = ExprAST_from(child(tree, 3), fnMeansClosure);
+    varScope.popScope();
+
+    std::cout << "for (" << var <<" in _ to _ ...)" << std::endl;
+    return new ForRangeExprAST(var, start, end, body);
+  }
+
   // <LHS RHS>
   if (token == SETEXPR) {
     ExprAST* lhs = validateAssignLHS(ExprAST_from(child(tree, 0), fnMeansClosure));
@@ -397,7 +412,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
       return NULL;
     }
   }
-  
+
   if (token == CTOR) { // ^(CTOR ^(NAME blah) ^(SEQ ...))
     pTree nameNode = child(tree, 0);
     pTree seqArgs = child(tree, 1);
@@ -437,7 +452,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
         if (ty) {
           //std::cout << "Could not find ExprAST for var name\t" << varName << ", but it's a valid builtin type name..." << std::endl;
           var = new VariableAST(varName, ty);
-        } else {            
+        } else {
           std::cerr << "Could not find ExprAST for var name\t" << varName << ", and it's not a valid type name..." << std::endl;
         }
       } else {
@@ -449,7 +464,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     }
     return var;
   }
-  
+
   if (token == OUT) {
     return (getChildCount(tree) == 0) ? NULL : ExprAST_from(child(tree, 0), fnMeansClosure);
   }
@@ -459,7 +474,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     // x = fn { blah }   ===   x = fn "x" { blah }
     pTree lval = (child(tree, 0));
     pTree rval = (child(tree, 1));
-    
+
     if (typeOf(lval) == NAME && typeOf(rval) == FN) {
       FnAST* fn = parseFn(textOf(child(lval, 0)), rval, fnMeansClosure);
       return fn;
@@ -468,7 +483,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
       return NULL;
     }
   }
-  
+
   if (text == "new" || text == "ref") {
     // Currently 'new' and 'ref' are interchangeable, though the intended
     // convention is that 'new' is for value-exprs and 'ref' is for type-exprs
@@ -488,7 +503,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
 
   if (token == COMPILES) { return new BuiltinCompilesExprAST(ExprAST_from(child(tree, 0), fnMeansClosure)); }
   if (token == UNPACK)   { return new UnpackExprAST(ExprAST_from(child(tree, 0), fnMeansClosure)); }
-  
+
   if (binaryOps[text] > 0) {
     ExprAST* lhs = ExprAST_from(child(tree, 0), fnMeansClosure);
     ExprAST* rhs = ExprAST_from(child(tree, 1), fnMeansClosure);
@@ -525,10 +540,10 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     FnAST* fn = parseFn("<anon_fn_%d>", tree, fnMeansClosure);
     if (!fn->body) {
       std::cout << "NO BODY FOR PROTO " << *fn->proto << std::endl;
-      
+
       return new ClosureTypeAST(fn);
     }
-  
+
     std::cout << "Parsed fn " << *(fn->proto) << ", fnMeansClosure? " << fnMeansClosure << std::endl;
     if (fnMeansClosure) {
       std::cout << "\t\t\tFN MEANS CLOSURE: " << *fn << std::endl;
@@ -539,7 +554,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     }
   }
   if (text == "false" || text == "true") { return new BoolAST(text); }
-  
+
 
   // Should have handled all keywords by now...
   if (keywords[text]) {

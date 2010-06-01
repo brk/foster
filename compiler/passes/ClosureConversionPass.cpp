@@ -89,7 +89,7 @@ void ClosureConversionPass::visit(FnAST* ast)                  {
     if (parentFn != NULL) {
       ast->proto->name.replace(0, 1, "<" + parentFn->proto->name + ".");
     }
-    
+
     if (ast->lambdaLiftOnly) {
       lambdaLiftAnonymousFunction(ast);
     } else {
@@ -117,6 +117,11 @@ void ClosureConversionPass::visit(IfExprAST* ast)              {
   onVisitChild(ast, ast->testExpr);
   onVisitChild(ast, ast->thenExpr);
   onVisitChild(ast, ast->elseExpr);
+}
+void ClosureConversionPass::visit(ForRangeExprAST* ast)              {
+  onVisitChild(ast, ast->startExpr);
+  onVisitChild(ast, ast->endExpr);
+  onVisitChild(ast, ast->bodyExpr);
 }
 void ClosureConversionPass::visit(RefExprAST* ast)             { return; }
 void ClosureConversionPass::visit(DerefExprAST* ast)           { return; }
@@ -223,7 +228,7 @@ void performClosureConversion(ClosureAST* closure) {
   llvm::PointerType* envPtrTy = llvm::PointerType::get(envTy, 0);
 
   std::cout << "Env ptr ty: " << *envPtrTy << std::endl;
-  
+
   // Make (a pointer to) this record be the function's first parameter.
   VariableAST* envVar = new VariableAST("env", envPtrTy);
   prependParameter(ast->proto, envVar);

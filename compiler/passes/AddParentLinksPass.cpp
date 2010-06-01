@@ -44,6 +44,12 @@ void AddParentLinksPass::visit(IfExprAST* ast)              {
   onVisitChild(ast, ast->elseExpr);
   return;
 }
+void AddParentLinksPass::visit(ForRangeExprAST* ast)              {
+  onVisitChild(ast, ast->startExpr);
+  onVisitChild(ast, ast->endExpr);
+  onVisitChild(ast, ast->bodyExpr);
+  return;
+}
 void AddParentLinksPass::visit(RefExprAST* ast)             { return; }
 void AddParentLinksPass::visit(DerefExprAST* ast)           { return; }
 void AddParentLinksPass::visit(AssignExprAST* ast)          { return; }
