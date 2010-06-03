@@ -33,6 +33,7 @@ const FunctionType* get_llvm_gcroot_ty() {
   const Type* ppi8ty = llvm::PointerType::getUnqual(pi8ty);
   const Type* voidty = llvm::Type::getVoidTy(llvm::getGlobalContext());
   std::vector<const Type*> params;
+  params.push_back(ppi8ty);
   params.push_back(pi8ty);
   return llvm::FunctionType::get(voidty, params, /*isvararg=*/ false);
 }
@@ -1042,12 +1043,15 @@ llvm::Value* emitMalloc(const llvm::Type* ty) {
   llvm::Value* mem = builder.CreateCall(memalloc,
     llvm::ConstantInt::get(getGlobalContext(), llvm::APInt(64, llvm::StringRef("32"), 10)), "mem");
 
-  llvm::Value* pointer = builder.CreateBitCast(mem, llvm::PointerType::getUnqual(ty), "memcast");;
+  const Type* i8ty = LLVMTypeFor("i8");
+  const Type* pi8ty = llvm::PointerType::getUnqual(i8ty);
+  const Type* ppi8ty = llvm::PointerType::getUnqual(pi8ty);
 
-  llvm::AllocaInst* stackref = builder.CreateAlloca(llvm::PointerType::getUnqual(ty), 0, "stackref");
-  builder.CreateStore(pointer, stackref, /*isVolatile*/ false);
+  llvm::AllocaInst* stackref = builder.CreateAlloca(pi8ty, 0, "stackref");
+  builder.CreateStore(mem, stackref, /*isVolatile*/ false);
   markGCRoot(stackref, NULL);
 
+  llvm::Value* pointer = builder.CreateBitCast(mem, llvm::PointerType::getUnqual(ty), "memcast");;
   return pointer;
 }
 

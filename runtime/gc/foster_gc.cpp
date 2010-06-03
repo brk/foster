@@ -110,7 +110,11 @@ void gc() {
 
 /////////////////////////////////////////////////////////////////
 
+namespace {
+// This goes in a private namespace so that the symbol won't be
+// exported in the bitcode file, which could interfere with llc
 StackEntry *llvm_gc_root_chain;
+}
 
 extern "C" void visitGCRoots(void (*Visitor)(void **Root, const void *Meta)) {
   for (StackEntry *R = llvm_gc_root_chain; R; R = R->Next) {

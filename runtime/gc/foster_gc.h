@@ -19,11 +19,5 @@ struct StackEntry {
   void *Roots[0];      //< Stack roots (in-place array).
 };
 
-/// @brief The head of the singly-linked list of StackEntries. Functions push
-///        and pop onto this in their prologue and epilogue.
-/// 
-/// Since there is only a global list, this technique is not threadsafe.
-extern StackEntry *llvm_gc_root_chain;
-
 void visitGCRoots(void (*Visitor)(void **Root, const void *Meta));
 
