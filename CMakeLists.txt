@@ -79,11 +79,13 @@ find_package(Threads REQUIRED)
 add_custom_command(
   OUTPUT ${PROJECT_BINARY_DIR}/fosterParser.c
          ${PROJECT_BINARY_DIR}/fosterLexer.c
-  COMMAND python ${PROJECT_SOURCE_DIR}/run_antlr.py
+  COMMAND python ${PROJECT_SOURCE_DIR}/scripts/run_antlr.py
                     ${ANTLR_JAR}
                     ${PROJECT_BINARY_DIR}
                     ${PROJECT_SOURCE_DIR}/grammar/foster.g
-  DEPENDS grammar/foster.g
+  DEPENDS
+  	grammar/foster.g
+	${PROJECT_SOURCE_DIR}/scripts/run_antlr.py
 )
 
 set(LIBFOSTER_CPP_SOURCES
