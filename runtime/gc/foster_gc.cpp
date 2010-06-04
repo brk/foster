@@ -4,6 +4,12 @@
 
 #include "foster_gc.h"
 
+namespace {
+// This goes in a private namespace so that the symbol won't be
+// exported in the bitcode file, which could interfere with llc
+foster::runtime::gc::StackEntry *llvm_gc_root_chain;
+}
+
 /////////////////////////////////////////////////////////////////
 
 // This implements a mark-sweep heap by doing the
@@ -16,13 +22,24 @@
 // This is, needless to say, hilariously inefficient, but it
 // provides a baseline to measure improvements from.
 
-/////////////////////////////////////////////////////////////////
-
-extern "C" void visitGCRoots(void (*Visitor)(void **Root, const void *Meta));
-
-/////////////////////////////////////////////////////////////////
-
 #include <list>
+#include <map>
+
+namespace foster {
+namespace runtime {
+namespace gc {
+
+void initialize() {
+
+}
+
+void cleanup() {
+
+}
+
+void visitGCRoots(void (*Visitor)(void **Root, const void *Meta));
+
+/////////////////////////////////////////////////////////////////
 
 std::list<void*> allocated_blocks;
 
@@ -68,7 +85,6 @@ extern "C" void* memalloc(int64_t sz) {
 
 /////////////////////////////////////////////////////////////////
 
-#include <map>
 std::map<void*, bool> mark_bitmap;
 
 // root is the stack address; *root is the heap address
@@ -110,13 +126,7 @@ void gc() {
 
 /////////////////////////////////////////////////////////////////
 
-namespace {
-// This goes in a private namespace so that the symbol won't be
-// exported in the bitcode file, which could interfere with llc
-StackEntry *llvm_gc_root_chain;
-}
-
-extern "C" void visitGCRoots(void (*Visitor)(void **Root, const void *Meta)) {
+void visitGCRoots(void (*Visitor)(void **Root, const void *Meta)) {
   for (StackEntry *R = llvm_gc_root_chain; R; R = R->Next) {
     unsigned i = 0;
     
@@ -129,4 +139,6 @@ extern "C" void visitGCRoots(void (*Visitor)(void **Root, const void *Meta)) {
       Visitor(&R->Roots[i], NULL);
   }
 }
+
+} } } // namespace foster::runtime::gc
 

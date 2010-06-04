@@ -6,14 +6,18 @@
 // because having a main() function there interferes with
 // fosterc's linking process.
 
+////////////////////////////////////////////////////////////////
+
 // This symbol is hardcoded in fosterc (specifically, CodegenPass.cpp)
 // as the replacement for any "main" function.
 extern "C" int foster__main();
 
+#include "foster_gc.h"
+
 int main(int argc, char** argv) {
-
+  foster::runtime::gc::initialize();
   int rv = foster__main();
-
+  foster::runtime::gc::cleanup();
   return rv;
 }
 

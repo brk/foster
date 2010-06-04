@@ -91,17 +91,30 @@ set(LIBFOSTER_CPP_SOURCES
 	${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc.cpp
 )
 
+add_custom_command(
+  OUTPUT ${PROJECT_BINARY_DIR}/libfoster_main.o
+  COMMAND 	
+	g++ ${PROJECT_SOURCE_DIR}/runtime/libfoster_main.cpp
+		-I ${PROJECT_SOURCE_DIR}/runtime/gc
+		-c -o ${PROJECT_BINARY_DIR}/libfoster_main.o
+  DEPENDS
+	${PROJECT_SOURCE_DIR}/runtime/libfoster_main.cpp
+)
+
 # Use llvm-g++ to build libfoster.bc
 add_custom_command(
   OUTPUT ${PROJECT_BINARY_DIR}/libfoster.bc
   COMMAND python ${PROJECT_SOURCE_DIR}/scripts/build_libfoster.py
 	"${LLVM_G++}"
+        ${PROJECT_SOURCE_DIR}
 	${PROJECT_BINARY_DIR}
 	"${LLVM_BINDIR}"
 	${LIBFOSTER_CPP_SOURCES}
   DEPENDS ${LIBFOSTER_CPP_SOURCES} ${PROJECT_SOURCE_DIR}/scripts/build_libfoster.py
 )
-add_custom_target(libfoster_bc DEPENDS ${PROJECT_BINARY_DIR}/libfoster.bc)
+add_custom_target(libfoster_bc DEPENDS
+	${PROJECT_BINARY_DIR}/libfoster.bc
+	${PROJECT_BINARY_DIR}/libfoster_main.o)
 
 
 # Look for ANTLR-generated lexer and parser, and ANTLR library files

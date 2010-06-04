@@ -33,7 +33,8 @@ def transplant(path, newdir):
 
 def compile_source(src):
   outbc = re.sub('\.cpp$', '.bc', transplant(src, outdir))
-  cmd = "%s %s -emit-llvm -c -o %s" % (clang, src, outbc)
+  incdir = os.path.join(srcdir, 'runtime', 'gc')
+  cmd = "%s %s -I %s -emit-llvm -c -o %s" % (clang, src, incdir, outbc)
   print cmd
   subprocess.call(cmd.split(" "))
   return outbc
@@ -46,12 +47,13 @@ def link_all(bcs):
 
 if __name__ == '__main__':
   clang  = sys.argv[1]
-  bindir = sys.argv[2]
-  llvmld = os.path.join(sys.argv[3], 'llvm-ld')
+  srcdir = sys.argv[2]
+  bindir = sys.argv[3]
+  llvmld = os.path.join(sys.argv[4], 'llvm-ld')
   outdir = os.path.join(bindir, "gc_bc")
   ensure_dir_exists(outdir)
 
-  sources = sys.argv[4:]
+  sources = sys.argv[5:]
 
   bitcodes = [compile_source(source) for source in sources]
 

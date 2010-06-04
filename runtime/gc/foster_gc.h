@@ -1,5 +1,14 @@
 #include <inttypes.h>
 
+namespace foster {
+namespace runtime {
+namespace gc {
+
+void initialize();
+void cleanup();
+
+//void visitGCRoots(void (*Visitor)(void **Root, const void *Meta));
+
 /// @brief The map for a single function's stack frame. One of these is
 ///        compiled as constant data into the executable for each function.
 /// 
@@ -19,5 +28,5 @@ struct StackEntry {
   void *Roots[0];      //< Stack roots (in-place array).
 };
 
-void visitGCRoots(void (*Visitor)(void **Root, const void *Meta));
+} } } // namespace foster::runtime::gc
 

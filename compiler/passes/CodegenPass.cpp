@@ -1095,7 +1095,7 @@ void CodegenPass::visit(TupleExprAST* ast) {
   // We only need to mark tuples containing pointers as GC roots
   if (structTypeContainsPointers(llvm::dyn_cast<llvm::StructType>(tupleType))) {
 	const llvm::Type* tuplePtrTy = llvm::PointerType::getUnqual(tupleType);
-	const llvm::Type* pi8 = llvm::PointerType::getUnqual(LLVMTypeFor("i32"));
+	const llvm::Type* pi8 = llvm::PointerType::getUnqual(LLVMTypeFor("i8"));
     llvm::AllocaInst* stackref = builder.CreateAlloca(pi8, 0, "tuple_stackref");
     Value* rawaddr = builder.CreateBitCast(pt, pi8);
     builder.CreateStore(rawaddr, stackref, /*isVolatile=*/ false);
