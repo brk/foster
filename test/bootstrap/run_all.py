@@ -67,7 +67,8 @@ def run_command(cmd, paths, testpath, stdout=None, stderr=None, stdin=None, stri
   end = walltime()
 
   if strictrv and rv != 0:
-    raise Exception(str(rv) + '; Failed to run: ' + ' '.join(arglist) + '\n\tfor test ' + testpath)
+    raise Exception(str(rv) + '; Failed to run: ' +
+	' '.join(arglist) + '\n\tfor test ' + testpath)
   return elapsed(start, end)
 
 def run_one_test(dir_prefix, basename, paths, tmpdir):
@@ -86,7 +87,7 @@ def run_one_test(dir_prefix, basename, paths, tmpdir):
         if compile_separately:
           fosterc_cmdline.insert(1, "-c")
 
-        #print ' '.join(fosterc_cmdline)
+        print ' '.join(fosterc_cmdline)
         fc_elapsed = run_command(fosterc_cmdline, paths, testpath, stdout=compilelog, stderr=compilelog)
 
 
@@ -104,7 +105,7 @@ def run_one_test(dir_prefix, basename, paths, tmpdir):
           ld_elapsed = 0
 	  op_elapsed = 0
           lc_elapsed = run_command('llc -O1 foster.bc -f -o foster.s',  paths, testpath, stdout=actual, stderr=expected, stdin=infile)
-          cc_elapsed = run_command('g++ foster.s -lpthread',  paths, testpath, stdout=actual, stderr=expected, stdin=infile)
+          cc_elapsed = run_command('g++ foster.s libfoster_main.cpp -lpthread',  paths, testpath, stdout=actual, stderr=expected, stdin=infile)
 	  rn_elapsed = run_command('a.out',  paths, testpath, stdout=actual, stderr=expected, stdin=infile, strictrv=False)
 
         df_rv = subprocess.call(['diff', '-u', exp_filename, act_filename])
@@ -170,6 +171,8 @@ if __name__ == "__main__":
       'foster.s':     join(bindir, 'foster.s'),
       'a.out':        join(bindir, 'a.out'),
       'libfoster.bc': join(bindir, 'libfoster.bc'),
+      'libfoster_main.cpp': join(bootstrap_dir, '..', '..',
+				'runtime', 'libfoster_main.cpp'),
       'll-foster':    join(bindir, 'll-foster'),
   }
   # compiler spits out foster.ll in current directory

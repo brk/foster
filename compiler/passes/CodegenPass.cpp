@@ -182,18 +182,30 @@ void CodegenPass::visit(BinaryOpExprAST* ast) {
 void CodegenPass::visit(PrototypeAST* ast) {
   if (ast->value) return;
 
-  //std::cout << "\t" << "Codegen proto "  << ast->name << std::endl;
+  std::string sourceName = ast->name;
+  std::string symbolName = sourceName;
+
+  // TODO this substitution should probably be explicitly restricted
+  // to apply only to top-level function definitions.
+  if (symbolName == "main") {
+    // libfoster contains a main() symbol that handles
+    // initialization and shutdown/cleanup of the runtime,
+    // calling this symbol in between.
+    symbolName = "foster__main";
+  }
+
+  //std::cout << "\t" << "Codegen proto "  << sourceName << std::endl;
   const llvm::FunctionType* FT = llvm::dyn_cast<FunctionType>(ast->type);
-  Function* F = Function::Create(FT, Function::ExternalLinkage, ast->name, module);
+  Function* F = Function::Create(FT, Function::ExternalLinkage, symbolName, module);
 
   if (!F) {
     std::cout << "Function creation failed!" << std::endl;
     return;
   }
 
-  // If F conflicted, there was already something named "Name"
-  if (F->getName() != ast->name) {
-    std::cout << "Error: redefinition of function " << ast->name << std::endl;
+  // If F conflicted, there was already something with our desired name 
+  if (F->getName() != symbolName) {
+    std::cout << "Error: redefinition of function " << symbolName << std::endl;
     return;
   }
 
@@ -209,10 +221,10 @@ void CodegenPass::visit(PrototypeAST* ast) {
 #endif
   }
 
-  //std::cout << "\tdone codegen proto " << ast->name << std::endl;
+  //std::cout << "\tdone codegen proto " << sourceName << std::endl;
   ast->value = F;
 
-  scope.insert(ast->name, F);
+  scope.insert(sourceName, F);
 }
 
 void CodegenPass::visit(SeqAST* ast) {

@@ -64,7 +64,7 @@ runllc () {
 
   if [ "z$TIMED_CMD_STATUS" != "z0" ]; then return; fi
   TIMESTART
-  g++ $OPT.s -o $OPT -l pthread
+  g++ $OPT.s ../foster/runtime/libfoster_main.cpp -o $OPT -l pthread
   TIMEEND "gcc"
 
   if [ "z$TIMED_CMD_STATUS" != "z0" ]; then return; fi
