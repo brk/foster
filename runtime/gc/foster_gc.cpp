@@ -1,6 +1,7 @@
 #include <inttypes.h>
 #include <cstdlib>
 #include <cstdio>
+#include <cstring>
 
 #include "foster_gc.h"
 
@@ -29,25 +30,131 @@ namespace foster {
 namespace runtime {
 namespace gc {
 
-void initialize() {
+void visitGCRoots(void (*Visitor)(void **Root, const void *Meta));
 
+FILE* gclog = NULL;
+
+class copying_gc {
+  class semispace {
+	  semispace(uint64_t size) {
+		  start = (char*) malloc(size);
+		  end   = start + size;
+		  bump  = start;
+	  }
+
+	  ~semispace() {
+		free(start);
+	  }
+
+	  char* start;
+	  char* end;
+	  char* bump;
+
+  public:
+	  bool can_allocate(uint64_t size) {
+        return bump + size < end;
+	  }
+
+	  void* allocate_prechecked(uint64_t size) {
+		void* allot = bump;
+		bump += size;
+		((uint64_t*) allot)[0] = size;
+		return &((uint64_t*) allot)[1];
+	  }
+  };
+
+  semispace* curr;
+  semispace* next;
+
+  int num_allocations;
+  int num_collections;
+
+  void gc();
+
+  // precondition: all active cells from curr have been copied to next
+  void flip() {
+	// curr is the old semispace, so we reset its bump ptr
+	curr->bump = curr->start;
+	std::swap(curr, next);
+  }
+
+public:
+  copying_gc(uint64_t size) {
+	curr = new semispace(size);
+	next = new semispace(size);
+
+	num_allocations = 0;
+	num_collections = 0;
+  }
+
+  ~copying_gc() {
+	fprintf(gclog, "num allocations: %d, num collections: %d\n",
+			num_allocations, num_collections);
+  }
+
+  // copy the cell at the given address to the next semispace
+  void copy(void* cell);
+
+  void* allocate(uint64_t size) {
+	++num_allocations;
+
+	if (curr->can_allocate(size)) {
+	  return curr->allocate_prechecked(size);
+	} else {
+	  gc();
+	  if (curr->can_allocate(size)) {
+		return curr->allocate_prechecked(size);
+	  } else {
+		return NULL;
+	  }
+	}
+  }
+};
+
+copying_gc* allocator = NULL;
+
+void copying_gc_root_visitor(void **root, const void *meta) {
+  void* cell = *root;
+  allocator->copy(cell);
+}
+
+void copying_gc::copy(void* cell) {
+	uint64_t size = ((uint64_t*) cell)[0];
+	memcpy(next->bump, cell, size);
+	next->bump += size;
+}
+
+void copying_gc::gc() {
+  ++num_collections;
+  // copy all used blocks to the next semispace
+  visitGCRoots(copying_gc_root_visitor);
+  flip();
+}
+
+void initialize() {
+	gclog = fopen("gclog.txt", "w");
+
+	const int KB = 1024;
+	allocator = new copying_gc(32 * KB);
 }
 
 void cleanup() {
-
+	delete allocator;
 }
 
-void visitGCRoots(void (*Visitor)(void **Root, const void *Meta));
+extern "C" void* memalloc(int64_t sz) {
+	return allocator->allocate(sz);
+}
 
+#if 0
 /////////////////////////////////////////////////////////////////
 
 std::list<void*> allocated_blocks;
 
 /////////////////////////////////////////////////////////////////
 
-void gc();
-
-static FILE* gclog = NULL;
+void mark();
+void* lazy_sweep();
 
 void gcPrintVisitor(void** root, const void *meta) {
 	fprintf(gclog, "root: %p -> %p, meta: %p\n", root, *root, meta);
@@ -55,23 +162,21 @@ void gcPrintVisitor(void** root, const void *meta) {
 
 int64_t heap_size = 0;
 bool visited = false;
-
+bool marked = false;
+int lazy_sweep_remaining = 0;
 const int64_t MAX_HEAP_SIZE = 4 * 1024;
 
-extern "C" void* memalloc(int64_t sz) {
-	heap_size += sz;
-
-	if (heap_size > MAX_HEAP_SIZE) {
-		gc();
+extern "C" void* memalloc_lazy_sweep(int64_t sz) {
+	if (heap_size + sz > MAX_HEAP_SIZE) {
+		if (!marked) { mark(); marked = true; lazy_sweep_remaining = allocated_blocks.size(); }
+		void* addr = lazy_sweep();
+		if (addr) return addr;
 	}
 
+	heap_size += sz;
 	void* addr = malloc(sz);
 	allocated_blocks.push_back(addr);
 #if 0
-	if (!gclog) {
-		gclog = fopen("gclog.txt", "w");
-	}
-
 	if (memalloc_call_num % 10 == 0) {
 		fprintf(gclog, "after %lld calls, sz = +%lld, memalloced size: %lld\n",
 			memalloc_call_num, sz, memalloced_size);
@@ -99,31 +204,26 @@ void mark() {
 	visitGCRoots(gcMarkingVisitor);
 }
 
-void sweep() {
+void* lazy_sweep() {
 	std::list<void*>::iterator iter;
 	for (iter = allocated_blocks.begin();
-	    iter != allocated_blocks.end(); /* ... */ ) {
+	    iter != allocated_blocks.end() && --lazy_sweep_remaining >= 0; /* ... */ ) {
 		// advance iter before possibly erasing it
 		std::list<void*>::iterator it = iter++;
 		void* addr = *it;
 		if (!mark_bitmap[addr]) {
-			free(addr);
-			allocated_blocks.erase(it);
-			heap_size -= 32; // TODO get real block size
+			// move reused block to the end of the list
+			mark_bitmap[addr] = true;
+			allocated_blocks.splice(allocated_blocks.end(), allocated_blocks, it);
+			return addr;
 		}
 	}
-}
 
-void gc() {
-	mark();
-	sweep();
-	/*
-	float heap_residency = float(heap_size) / float(MAX_HEAP_SIZE);
-	printf("after gc, heap size is %lld/%lld = %f%% full\n",
-			heap_size, MAX_HEAP_SIZE, heap_residency);
-	*/
+	mark_bitmap.clear();
+	marked = false;
+	return NULL;
 }
-
+#endif
 /////////////////////////////////////////////////////////////////
 
 void visitGCRoots(void (*Visitor)(void **Root, const void *Meta)) {
