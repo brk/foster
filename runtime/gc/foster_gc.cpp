@@ -5,6 +5,8 @@
 
 #include "foster_gc.h"
 
+#include "base/time.h"
+
 namespace {
 // This goes in a private namespace so that the symbol won't be
 // exported in the bitcode file, which could interfere with llc
@@ -119,9 +121,9 @@ void copying_gc_root_visitor(void **root, const void *meta) {
 }
 
 void copying_gc::copy(void* cell) {
-	uint64_t size = ((uint64_t*) cell)[0];
-	memcpy(next->bump, cell, size);
-	next->bump += size;
+  uint64_t size = ((uint64_t*) cell)[0];
+  memcpy(next->bump, cell, size);
+  next->bump += size;
 }
 
 void copying_gc::gc() {
@@ -131,15 +133,23 @@ void copying_gc::gc() {
   flip();
 }
 
-void initialize() {
-	gclog = fopen("gclog.txt", "w");
+base::TimeTicks start;
 
-	const int KB = 1024;
-	allocator = new copying_gc(32 * KB);
+void initialize() {
+  gclog = fopen("gclog.txt", "w");
+
+  const int KB = 1024;
+  allocator = new copying_gc(32 * KB);
+
+  start = base::TimeTicks::HighResNow();
 }
 
 void cleanup() {
-	delete allocator;
+  base::TimeDelta elapsed = base::TimeTicks::HighResNow() - start;
+  fprintf(gclog, "Elapsed runtime: %lld.%lld s\n",
+		  elapsed.InSeconds(), elapsed.InMilliseconds() - (elapsed.InSeconds() * 1000));
+
+  delete allocator;
 }
 
 extern "C" void* memalloc(int64_t sz) {

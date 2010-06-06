@@ -2,3 +2,4 @@ glob:*.class
 glob:*.java
 glob:*~
 glob:output
+glob:third_party/chromium_base

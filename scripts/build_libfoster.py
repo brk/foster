@@ -33,8 +33,9 @@ def transplant(path, newdir):
 
 def compile_source(src):
   outbc = re.sub('\.cpp$', '.bc', transplant(src, outdir))
-  incdir = os.path.join(srcdir, 'runtime', 'gc')
-  cmd = "%s %s -I %s -emit-llvm -c -o %s" % (clang, src, incdir, outbc)
+  runtime_gc = os.path.join(srcdir, 'runtime', 'gc')
+  basedir    = os.path.join(srcdir, 'third_party', 'chromium_base')
+  cmd = "%s %s -I %s -I %s -emit-llvm -c -o %s" % (clang, src, runtime_gc, basedir, outbc)
   print cmd
   subprocess.call(cmd.split(" "))
   return outbc
@@ -49,11 +50,12 @@ if __name__ == '__main__':
   clang  = sys.argv[1]
   srcdir = sys.argv[2]
   bindir = sys.argv[3]
-  llvmld = os.path.join(sys.argv[4], 'llvm-ld')
+  libchromium_base = sys.argv[4]
+  llvmld = os.path.join(sys.argv[5], 'llvm-ld')
   outdir = os.path.join(bindir, "gc_bc")
   ensure_dir_exists(outdir)
 
-  sources = sys.argv[5:]
+  sources = sys.argv[6:]
 
   bitcodes = [compile_source(source) for source in sources]
 

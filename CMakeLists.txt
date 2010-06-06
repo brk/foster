@@ -98,6 +98,7 @@ add_custom_command(
   COMMAND 	
 	g++ ${PROJECT_SOURCE_DIR}/runtime/libfoster_main.cpp
 		-I ${PROJECT_SOURCE_DIR}/runtime/gc
+                -I ${PROJECT_SOURCE_DIR}/third_party/chromium_base
 		-c -o ${PROJECT_BINARY_DIR}/libfoster_main.o
   DEPENDS
 	${PROJECT_SOURCE_DIR}/runtime/libfoster_main.cpp
@@ -110,6 +111,7 @@ add_custom_command(
 	"${LLVM_G++}"
         ${PROJECT_SOURCE_DIR}
 	${PROJECT_BINARY_DIR}
+        libchromium_base${CMAKE_STATIC_LIBRARY_SUFFIX}
 	"${LLVM_BINDIR}"
 	${LIBFOSTER_CPP_SOURCES}
   DEPENDS ${LIBFOSTER_CPP_SOURCES} ${PROJECT_SOURCE_DIR}/scripts/build_libfoster.py
@@ -125,7 +127,9 @@ include_directories(${ANTLR_DIR}/include ${PROJECT_BINARY_DIR})
 include_directories(
   ${PROJECT_SOURCE_DIR}/compiler
   ${PROJECT_SOURCE_DIR}/compiler/passes
-  ${PROJECT_SOURCE_DIR}/third_party)
+  ${PROJECT_SOURCE_DIR}/third_party
+  ${PROJECT_SOURCE_DIR}/third_party/chromium_base
+)
 
 # Assumes path to LLVM lib dir has no spaces in it!
 string(REGEX MATCH "-L[^ ]+" LLVM_LD_PATH "${LLVM_LDFLAGS}")
@@ -140,6 +144,8 @@ if (CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
   set(CMAKE_EXE_LINKER_FLAGS
    "${CMAKE_EXE_LINKER_FLAGS} -Wl,--compress-debug-sections,zlib")
 endif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+
+include(${PROJECT_SOURCE_DIR}/third_party/chromium_base/CMakeLists.txt)
 
 add_executable(fosterc
   compiler/ANTLRtoFosterAST.cpp
@@ -159,6 +165,7 @@ add_executable(fosterc
 
 target_link_libraries(fosterc antlr3c ${LLVM_LDFLAGS})
 
+add_dependencies(libfoster_bc chromium_base)
 add_dependencies(fosterc libfoster_bc)
 
 #####################################################################

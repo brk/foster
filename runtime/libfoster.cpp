@@ -22,8 +22,8 @@
 // The build system must take extra steps to link foster-compiled LLVM IR to
 // this code, but those steps are independent of adding new functions.
 // Specifically, we must assemble the IR to bitcode (with llvm-as),
-// compile this file to bitcode (with llvm-gcc or, eventually, clang),
-// and link the two bitcode files together with llvm-ld.
+// compile this file to bitcode (with llvm-gcc or clang),
+// and link the two bitcode files together.
 //
 // These steps are, as of this writing, done via shell scripts and the code in
 // test/bootstrap/run_all.py
