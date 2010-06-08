@@ -1,5 +1,6 @@
 glob:*.class
 glob:*.java
 glob:*~
+glob:.svn
 glob:output
-glob:third_party/chromium_base
+glob:third_party/chromium_base/base/*
