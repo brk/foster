@@ -322,23 +322,50 @@ void TypecheckPass::visit(IfExprAST* ast) {
 
 void TypecheckPass::visit(ForRangeExprAST* ast) {
   assert(ast->startExpr != NULL);
+
+  // ast = for VAR in START to END by INCR do BODY
+
+  // Check type of START
   ast->startExpr->accept(this);
   const Type* startType = ast->startExpr->type;
   if (!startType) {
     std::cerr << "for range start expression '" << *(ast->startExpr) << "' had null type!" << std::endl;
     return;
-  }
-
-  if (startType != LLVMTypeFor("i32")) {
+  } else if (startType != LLVMTypeFor("i32")) {
     std::cerr << "expected for range start expression to have type i32, but got type " << *startType << std::endl;
+    return;
   }
 
+  // Check that we can bind START to VAR
+  ast->var->accept(this);
+  if (!canAssignType(startType, ast->var->type)) {
+	std::cerr << "Could not bind for range start expr to declared variable!" << std::endl;
+	return;
+  }
+
+  // Check that END has same type as START
   assert(ast->endExpr != NULL);
   ast->endExpr->accept(this);
   const Type* endType = ast->endExpr->type;
   if (!endType) {
     std::cerr << "for range end expression '" << *(ast->endExpr) << "' had null type!" << std::endl;
     return;
+  } else if (startType != endType) {
+	std::cerr << "for range start and end expressions had different types!" << std::endl;
+	return;
+  }
+
+  // Check that incrExpr, if it exists, has same type as START
+  if (ast->incrExpr) {
+	ast->incrExpr->accept(this);
+	const Type* incrType = ast->incrExpr->type;
+	if (!incrType) {
+	  std::cerr << "for range incr expression '" << *(ast->incrExpr) << "' had null type!" << std::endl;
+	  return;
+	} else if (startType != incrType) {
+		std::cerr << "for range start and incr expressions had different types!" << std::endl;
+	    return;
+	}
   }
 
   ast->bodyExpr->accept(this);

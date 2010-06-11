@@ -347,19 +347,25 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     return ExprAST_from(child(tree, 0), fnMeansClosure);
   }
 
-  // <var start end body>
+  // <var start end body incr?>
   if (token == FORRANGE) {
-    string var = textOf(child(child(tree, 0), 0));
+    string varName = textOf(child(child(tree, 0), 0));
+    VariableAST* var = new VariableAST(varName, LLVMTypeFor("i32"));
     ExprAST* start = ExprAST_from(child(tree, 1), fnMeansClosure);
     ExprAST* end   = ExprAST_from(child(tree, 2), fnMeansClosure);
+    ExprAST* incr  = NULL;
 
-    varScope.pushScope("for-range " + var);
-    varScope.insert(var, new VariableAST(var, LLVMTypeFor("i32")));
+    if (getChildCount(tree) >= 5) {
+      incr = ExprAST_from(child(tree, 4), fnMeansClosure);
+    }
+
+    varScope.pushScope("for-range " + varName);
+    varScope.insert(varName, var);
     ExprAST* body  = ExprAST_from(child(tree, 3), fnMeansClosure);
     varScope.popScope();
 
-    std::cout << "for (" << var <<" in _ to _ ...)" << std::endl;
-    return new ForRangeExprAST(var, start, end, body);
+    std::cout << "for (" << varName <<" in _ to _ ...)" << std::endl;
+    return new ForRangeExprAST(var, start, end, body, incr);
   }
 
   // <LHS RHS>

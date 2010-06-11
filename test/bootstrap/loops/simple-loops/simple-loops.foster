@@ -1,0 +1,30 @@
+half-open-loops = fn () {
+  // loops correspond to half-open ranges: [0, 1)
+  expect_i32(0) ; for i in 0 to 1 do { print_i32(i) }
+}
+
+terminate-on-overshoot = fn () {
+  // termination is computed by <, not !=, so this terminates
+  expect_i32(4)
+  for i in 0 to 6 by 2 do {
+    if 3 < i then { print_i32(i) } else { 0 }
+  }
+}
+
+incr-is-static = fn () {
+  expect_i32(5)
+  let incr : ref i32 = new 1 in {
+    for i in 0 to 6 by deref(incr) do {
+      // this does not affect loop iterations
+      set incr = 10
+      
+      if 4 < i then { print_i32(i) } else { 0 }
+    }
+  }
+}
+
+fn "main" () {
+  half-open-loops()
+  terminate-on-overshoot()
+  incr-is-static()
+}

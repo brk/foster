@@ -41,7 +41,7 @@ str	                :       STR;
 name_or_ctor		:	name (seq -> ^(CTOR name seq)
 				        |   -> name);
 
-forrange	:	FOR var=name IN start=expr TO end=expr DO body=expr nl? -> ^(FORRANGE $var $start $end $body);
+forrange	:	FOR var=name IN start=expr TO end=expr ('by' incr=expr)? DO body=expr nl? -> ^(FORRANGE $var $start $end $body $incr);
 
 // lhs = ident or LOOKUP or SUBSCRIPT but not CALL
 setexpr	:	'set' lhs=compound '=' rhs=expr -> ^(SETEXPR $lhs $rhs);

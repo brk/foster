@@ -90,6 +90,7 @@ void ReplaceExprTransform::visit(IfExprAST* ast)              {
 void ReplaceExprTransform::visit(ForRangeExprAST* ast)              {
   onVisitChild(ast, &ast->startExpr);
   onVisitChild(ast, &ast->endExpr);
+  if (ast->incrExpr) { onVisitChild(ast, &ast->incrExpr); }
   onVisitChild(ast, &ast->bodyExpr);
   this->newChild = rewrite(ast);
 }

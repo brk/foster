@@ -143,13 +143,18 @@ void PrettyPrintPass::visit(IfExprAST* ast) {
 void PrettyPrintPass::visit(ForRangeExprAST* ast) {
   //scan(tBlockOpen);
   scan(PPToken("for "));
-  scan(PPToken(ast->varName));
+  scan(PPToken(ast->var->name));
   //scan(tBlockClose);
 
   scan(PPToken(" in "));
   recurse(this, ast->startExpr);
   scan(PPToken(" to "));
   recurse(this, ast->endExpr);
+
+  if (ast->incrExpr) {
+	scan(PPToken(" by "));
+	recurse(this, ast->incrExpr);
+  }
 
   scan(PPToken(" do "));
   scan(tOptNewline);

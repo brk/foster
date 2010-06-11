@@ -467,16 +467,21 @@ struct IfExprAST : public ExprAST {
 
 // for var in start to end { body }
 struct ForRangeExprAST : public ExprAST {
-  string varName;
+  VariableAST* var;
   ExprAST* startExpr;
   ExprAST* endExpr;
   ExprAST* bodyExpr;
+  ExprAST* incrExpr;
 
-  explicit ForRangeExprAST(string var, ExprAST* start, ExprAST* end, ExprAST* body)
-    : varName(var), startExpr(start), endExpr(end), bodyExpr(body) {}
+  explicit ForRangeExprAST(VariableAST* var,
+		  ExprAST* start, ExprAST* end, ExprAST* body, ExprAST* incr)
+    : var(var), startExpr(start), endExpr(end), bodyExpr(body), incrExpr(incr) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "for " << varName << " in " << str(startExpr) << " to " << str(endExpr) << str(bodyExpr);
+    out << "for " << var->name << " in " << str(startExpr) << " to " << str(endExpr);
+    if (incrExpr) out  << " by " << str(incrExpr);
+    out << " do " << str(bodyExpr);
+    return out;
   }
 };
 

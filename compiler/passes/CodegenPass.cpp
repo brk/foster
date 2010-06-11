@@ -446,6 +446,15 @@ void CodegenPass::visit(IfExprAST* ast) {
 void CodegenPass::visit(ForRangeExprAST* ast) {
   if (ast->value) return;
 
+  Value* incr;
+  if (ast->incrExpr) {
+	(ast->incrExpr)->accept(this);
+	if (!ast->incrExpr->value) { return; }
+	incr = ast->incrExpr->value;
+  } else {
+	incr = ConstantInt::get(LLVMTypeFor("i32"), 1);
+  }
+
   (ast->startExpr)->accept(this);
   if (!ast->startExpr->value) { return; }
 
@@ -456,27 +465,26 @@ void CodegenPass::visit(ForRangeExprAST* ast) {
   builder.CreateBr(loopBB);
   builder.SetInsertPoint(loopBB);
 
-  llvm::PHINode* pickvar = builder.CreatePHI(LLVMTypeFor("i32"), ast->varName);
+  llvm::PHINode* pickvar = builder.CreatePHI(ast->var->type, ast->var->name);
   pickvar->addIncoming(ast->startExpr->value, preLoopBB);
 
-  scope.pushScope("for-range " + ast->varName);
-  scope.insert(ast->varName, pickvar);
+  scope.pushScope("for-range " + ast->var->name);
+  scope.insert(ast->var->name, pickvar);
 
   (ast->bodyExpr)->accept(this);
   if (!ast->bodyExpr->value) { return; }
   scope.popScope();
 
-  Value* one  = ConstantInt::get(LLVMTypeFor("i32"), 1);
-  Value* next = builder.CreateAdd(pickvar, one, "next");
+  Value* next = builder.CreateAdd(pickvar, incr, "next");
 
   (ast->endExpr)->accept(this);
   if (!ast->endExpr->value) { return; }
   Value* end = ast->endExpr->value;
-  Value* endCond = builder.CreateICmpNE(next, end, "loopcond");
+  Value* endCond = builder.CreateICmpSLT(next, end, "loopcond");
 
   BasicBlock* loopEndBB = builder.GetInsertBlock();
   BasicBlock* afterBB   = BasicBlock::Create(getGlobalContext(), "postloop", parentFn);
-  builder.CreateCondBr(endCond, loopEndBB, afterBB);
+  builder.CreateCondBr(endCond, loopBB, afterBB);
   builder.SetInsertPoint(afterBB);
 
   pickvar->addIncoming(next, loopEndBB);

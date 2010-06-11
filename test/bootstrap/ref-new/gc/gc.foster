@@ -5,6 +5,6 @@ wastememory  = fn (x : i32) {
 }
 
 fn "main" () {
-  wastememory(100`000`000)
+  wastememory(10`000`000)
   0
 }

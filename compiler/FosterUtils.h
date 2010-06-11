@@ -7,6 +7,8 @@
 
 #include "llvm/DerivedTypes.h"
 
+bool canAssignType(const llvm::Type* from, const llvm::Type* to);
+
 void addClosureTypeName(llvm::Module* mod, const llvm::StructType* ty);
 
 // Converts T (X, Y) and T (X, Y)* to T (X, Y)

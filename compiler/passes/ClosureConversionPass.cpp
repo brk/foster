@@ -118,10 +118,14 @@ void ClosureConversionPass::visit(IfExprAST* ast)              {
   onVisitChild(ast, ast->thenExpr);
   onVisitChild(ast, ast->elseExpr);
 }
-void ClosureConversionPass::visit(ForRangeExprAST* ast)              {
+void ClosureConversionPass::visit(ForRangeExprAST* ast) {
   onVisitChild(ast, ast->startExpr);
   onVisitChild(ast, ast->endExpr);
+  if (ast->incrExpr) { onVisitChild(ast, ast->incrExpr); }
+
+  boundVariables[callStack.back()].insert(ast->var);
   onVisitChild(ast, ast->bodyExpr);
+  boundVariables[callStack.back()].erase(ast->var);
 }
 void ClosureConversionPass::visit(RefExprAST* ast)             { return; }
 void ClosureConversionPass::visit(DerefExprAST* ast)           { return; }

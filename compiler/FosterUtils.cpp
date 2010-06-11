@@ -1,3 +1,7 @@
+// Copyright (c) 2010 Ben Karel. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
+
 #include "FosterUtils.h"
 #include "FosterAST.h" // TODO this is just for LLVMTypeFor(), should break this dependency!
 
@@ -7,6 +11,11 @@
 
 using llvm::Type;
 using llvm::FunctionType;
+
+bool canAssignType(const Type* from, const Type* to) {
+  // TODO refine this!
+  return from == to;
+}
 
 std::map<const Type*, bool> namedClosureTypes;
 
