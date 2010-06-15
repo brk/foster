@@ -10,6 +10,8 @@
 
 #include <pthread.h>
 
+#include "foster_gc.h"
+
 // This file provides the bootstrap "standard library" of utility functions for
 // programs compiled (to LLVM IR) with foster. Making these functions available
 // to compiled programs is a semi-automated process that could still be
@@ -53,6 +55,18 @@
 
 ////////////////////////////////////////////////////////////////
 
+
+namespace foster {
+namespace runtime {
+
+void initialize() {
+  gc::initialize();
+}
+
+void cleanup() {
+  gc::cleanup();
+}
+
 #ifndef PRId64
 #define PRId64 "lld"
 #endif
@@ -83,6 +97,10 @@ void* i32_callback_invoker(void* arg) {
   int32_t rv = ((i32Callback) arg)();
   return NULL;
 }
+
+} } // namespace foster::runtime
+
+using namespace foster::runtime;
 
 extern "C" {
   // This interface is slightly awkward, with the extra indirection, because:

@@ -12,12 +12,12 @@
 // as the replacement for any "main" function.
 extern "C" int foster__main();
 
-#include "foster_gc.h"
+#include "libfoster.h"
 
 int main(int argc, char** argv) {
-  foster::runtime::gc::initialize();
+  foster::runtime::initialize();
   int rv = foster__main();
-  foster::runtime::gc::cleanup();
+  foster::runtime::cleanup();
   return rv;
 }
 
