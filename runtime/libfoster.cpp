@@ -11,6 +11,7 @@
 #include <pthread.h>
 
 #include "foster_gc.h"
+#include "cpuid.h"
 
 // This file provides the bootstrap "standard library" of utility functions for
 // programs compiled (to LLVM IR) with foster. Making these functions available
@@ -60,6 +61,9 @@ namespace foster {
 namespace runtime {
 
 void initialize() {
+  cpuid_info info;
+  cpuid_introspect(info);
+
   gc::initialize();
 }
 

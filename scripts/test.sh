@@ -2,7 +2,7 @@
 
 OUTPUT=fc-output
 
-RUNTIME_LIBS="libfoster_main.o libchromium_base.a -lrt"
+RUNTIME_LIBS="libfoster_main.o libchromium_base.a libcpuid.a -lrt"
 
 TIMESTART () {
   STARTS=$(date "+%s");

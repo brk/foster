@@ -35,7 +35,10 @@ def compile_source(src):
   outbc = re.sub('\.cpp$', '.bc', transplant(src, outdir))
   runtime_gc = os.path.join(srcdir, 'runtime', 'gc')
   basedir    = os.path.join(srcdir, 'third_party', 'chromium_base')
-  cmd = "%s %s -I %s -I %s -emit-llvm -c -o %s" % (clang, src, runtime_gc, basedir, outbc)
+  cpuiddir   = os.path.join(srcdir, 'third_party', 'cpuid')
+  include_dirs = [runtime_gc, basedir, cpuiddir]
+  includes = ' '.join(['-I ' + path for path in include_dirs])
+  cmd = "%s %s %s -emit-llvm -c -o %s" % (clang, src, includes, outbc)
   print cmd
   subprocess.call(cmd.split(" "))
   return outbc
