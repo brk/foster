@@ -87,7 +87,7 @@ def run_one_test(dir_prefix, basename, paths, tmpdir):
         if compile_separately:
           fosterc_cmdline.insert(1, "-c")
 
-        print ' '.join(fosterc_cmdline)
+        #print ' '.join(fosterc_cmdline)
         fc_elapsed = run_command(fosterc_cmdline, paths, testpath, stdout=compilelog, stderr=compilelog)
 
 

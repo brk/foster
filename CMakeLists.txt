@@ -109,7 +109,7 @@ add_custom_command(
 	"${LLVM_G++}"
         ${PROJECT_SOURCE_DIR}
 	${PROJECT_BINARY_DIR}
-        libchromium_base${CMAKE_STATIC_LIBRARY_SUFFIX}
+        "${CMAKE_STATIC_LIBRARY_SUFFIX}"
 	"${LLVM_BINDIR}"
 	${LIBFOSTER_CPP_SOURCES}
   DEPENDS ${LIBFOSTER_CPP_SOURCES} ${PROJECT_SOURCE_DIR}/scripts/build_libfoster.py
@@ -143,7 +143,9 @@ if (CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
    "${CMAKE_EXE_LINKER_FLAGS} -Wl,--compress-debug-sections,zlib")
 endif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
 
+#####################################################################
 include(${PROJECT_SOURCE_DIR}/third_party/chromium_base/CMakeLists.txt)
+include(${PROJECT_SOURCE_DIR}/third_party/cpuid/CMakeLists.txt)
 
 add_executable(fosterc
   compiler/ANTLRtoFosterAST.cpp
@@ -163,8 +165,10 @@ add_executable(fosterc
 
 target_link_libraries(fosterc antlr3c ${LLVM_LDFLAGS})
 
-add_dependencies(libfoster_bc chromium_base)
 add_dependencies(fosterc libfoster_bc)
+
+add_dependencies(libfoster_bc chromium_base)
+add_dependencies(libfoster_bc cpuid)
 
 #####################################################################
 

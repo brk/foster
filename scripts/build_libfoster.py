@@ -50,7 +50,7 @@ if __name__ == '__main__':
   clang  = sys.argv[1]
   srcdir = sys.argv[2]
   bindir = sys.argv[3]
-  libchromium_base = sys.argv[4]
+  staticlibsuffix_unused = sys.argv[4]
   llvmld = os.path.join(sys.argv[5], 'llvm-ld')
   outdir = os.path.join(bindir, "gc_bc")
   ensure_dir_exists(outdir)

@@ -2,6 +2,8 @@
 
 OUTPUT=fc-output
 
+RUNTIME_LIBS="libfoster_main.o libchromium_base.a -lrt"
+
 TIMESTART () {
   STARTS=$(date "+%s");
   STARTZ=$(date "+%N");
@@ -65,7 +67,7 @@ runllc () {
   if [ "z$TIMED_CMD_STATUS" != "z0" ]; then return; fi
   TIMESTART
   #`llvm-config --libdir`/libprofile_rt.so 
-  g++ $OPT.s libfoster_main.o -o $OPT -l pthread
+  g++ -lrt $OPT.s ${RUNTIME_LIBS} -o $OPT -l pthread
   TIMEEND "gcc"
 
   if [ "z$TIMED_CMD_STATUS" != "z0" ]; then return; fi
@@ -95,7 +97,7 @@ runfosterc () {
 RUN="runllc"
 
 cleanout () {
-  rm -f $OUTPUT/fstrprog.O2.bc foster.bc a.out foster.ll
+  rm -f $OUTPUT/fstrprog.O2.bc foster.bc a.out foster.ll gclog.txt
 }
 
 make && cleanout && runfosterc $1 && extractinput $1 && $RUN foster.bc ; echo $?
