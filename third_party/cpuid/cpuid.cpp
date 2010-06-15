@@ -6,6 +6,47 @@
 
 ///////////////////////////////////////////////////////////////
 
+int cache_type_tag(char c) {
+  switch (c) {
+    case 'd': return 1; // data
+    case 'i': return 2; // instruction
+    case 'u': return 3; // unified
+  }
+  return 0; // default
+}
+
+int cpuid_small_cache_size(cpuid_info& info) {
+  int min_size = 1<<30;
+  int instr_cache = cache_type_tag('i');
+
+  cpuid_info::cache_parameters::iterator it;
+  for (it = info.processor_cache_parameters.begin();
+      it != info.processor_cache_parameters.end();
+      ++it) {
+    if (it->cache_type == instr_cache) continue;
+    if (it->size_in_bytes < min_size) {
+      min_size = it->size_in_bytes;
+    }
+  }
+
+  return min_size;
+}
+
+int cpuid_large_cache_size(cpuid_info& info) {
+  int max_size = -1;
+
+  cpuid_info::cache_parameters::iterator it;
+  for (it = info.processor_cache_parameters.begin();
+      it != info.processor_cache_parameters.end();
+      ++it) {
+    if (it->size_in_bytes > max_size) {
+      max_size = it->size_in_bytes;
+    }
+  }
+
+  return max_size;
+}
+
 // low bit is bit 0, high bit on IA-32 is bit 31
 #define BIT(n) (1U << (n))
 
@@ -305,15 +346,6 @@ uint64 rdtsc_serialized() {
   return ticks;
 }
 
-
-int cache_type_tag(char c) {
-  switch (c) {
-    case 'd': return 1; // data
-    case 'i': return 2; // instruction
-    case 'u': return 3; // unified
-  }
-  return 0; // default
-}
 
 
 void intel_fill_processor_features(cpuid_info& info) {

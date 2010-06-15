@@ -64,6 +64,9 @@ void initialize() {
   cpuid_info info;
   cpuid_introspect(info);
 
+  int cachesmall = cpuid_small_cache_size(info);
+  int cachelarge = cpuid_large_cache_size(info);
+
   gc::initialize();
 }
 

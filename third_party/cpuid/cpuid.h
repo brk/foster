@@ -1,7 +1,7 @@
 #ifndef CPUID_H
 #define CPUID_H
 
-#define CPUID_VERSION_STRING "2009-09-16"
+#define CPUID_VERSION_STRING "2010-06-14"
 
 // Based on revision 036 (August 2009) of Intel's Application Note 485,
 // Intel (r) Processor Identification and the CPUID Instruction.
@@ -19,6 +19,9 @@ typedef          long long  int64;
 struct cpuid_info;
 
 bool cpuid_introspect(cpuid_info&);
+
+int cpuid_small_cache_size(cpuid_info&);
+int cpuid_large_cache_size(cpuid_info&);
 
 /////////////////////////////////////////////////////////////////////
 
@@ -87,7 +90,8 @@ struct cpuid_info {
   double rdtsc_serialized_overhead_cycles;
   double rdtsc_unserialized_overhead_cycles;
 
-  std::vector<tag_processor_cache_parameter_set> processor_cache_parameters;
+  typedef std::vector<tag_processor_cache_parameter_set> cache_parameters;
+  cache_parameters processor_cache_parameters;
 
   tag_processor_features           processor_features;
   tag_processor_cache_descriptors  processor_cache_descriptors;
