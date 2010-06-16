@@ -26,6 +26,16 @@ using llvm::ConstantInt;
 using llvm::APInt;
 using llvm::PHINode;
 
+void registerType(const llvm::Type* ty, std::string name) {
+  static std::map<const llvm::Type*, bool> registeredTypes;
+
+  if (registeredTypes[ty]) return;
+
+  registeredTypes[ty] = true;
+
+  module->addTypeName(freshName(name), ty);
+}
+
 // returns type  void (i8**, i8*)
 const FunctionType* get_llvm_gcroot_ty() {
   const Type* i8ty = LLVMTypeFor("i8");
@@ -1094,7 +1104,7 @@ void CodegenPass::visit(TupleExprAST* ast) {
   // Create struct type underlying tuple
   const Type* tupleType = ast->type;
 
-  module->addTypeName(freshName("tuple"), tupleType);
+  registerType(tupleType, "tuple");
 
   // Allocate tuple space
   llvm::AllocaInst* pt = builder.CreateAlloca(tupleType, 0, "s");
