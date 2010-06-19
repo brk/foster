@@ -108,6 +108,9 @@ void initModuleTypeNames() {
   builtinTypes["i32"] = llvm::IntegerType::get(getGlobalContext(), 32);
   builtinTypes["i64"] = llvm::IntegerType::get(getGlobalContext(), 64);
   
+  builtinTypes["i8*"] = llvm::PointerType::getUnqual(builtinTypes["i8"]);
+  builtinTypes["i8**"] = llvm::PointerType::getUnqual(builtinTypes["i8*"]);
+
   /*
   std::vector<const Type*> StringParts;
   StringParts.push_back(Type::Int32Ty);

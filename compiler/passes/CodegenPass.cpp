@@ -13,9 +13,12 @@
 #include "llvm/LLVMContext.h"
 #include "llvm/Module.h"
 #include "llvm/Analysis/Verifier.h"
+#include "llvm/Target/TargetData.h"
 
 #include <cassert>
 #include <sstream>
+#include <map>
+#include <set>
 
 using llvm::Type;
 using llvm::BasicBlock;
@@ -27,33 +30,57 @@ using llvm::ConstantInt;
 using llvm::APInt;
 using llvm::PHINode;
 
-int countPointersInType(const llvm::Type* ty) {
-  if (ty->isPointerTy()) { return 1; }
-  if (ty->isVectorTy()) return 0;
+typedef std::pair<const llvm::Type*, int> OffsetInfo;
+typedef std::set<OffsetInfo> OffsetSet;
+
+// TODO replace with ConstantExpr::getOffsetOf(ty, slot) ?
+int getOffsetOfStructSlot(const llvm::StructType* ty, int slot) {
+  const llvm::TargetData* td = ee->getTargetData();
+  int offset = 0;
+  for (int i = 0; i < slot; ++i) {
+	offset += td->getTypeStoreSize(ty->getContainedType(i));
+  }
+  return offset;
+}
+
+OffsetSet countPointersInType(const llvm::Type* ty) {
+  assert(ty != NULL && "Can't count pointers in a NULL type!");
+
+  OffsetSet rv;
+  if (ty->isPointerTy()) {
+	rv.insert(OffsetInfo(ty->getContainedType(0), 0));
+  }
+
   // array, struct, union
-  if (const llvm::ArrayType* aty = llvm::dyn_cast<const llvm::ArrayType>(ty)) {
+  else if (const llvm::ArrayType* aty = llvm::dyn_cast<const llvm::ArrayType>(ty)) {
 	// TODO need to decide how Foster semantics will map to LLVM IR for arrays.
 	// Will EVERY (C++), SOME (Factor, C#?), or NO (Java) types be unboxed in arrays?
 	// Also need to figure out how the gc will collect arrays.
-    return aty->getNumElements() * countPointersInType(aty->getElementType());
+    //return aty->getNumElements() * countPointersInType(aty->getElementType());
   }
 
-  if (const llvm::StructType* sty = llvm::dyn_cast<const llvm::StructType>(ty)) {
-    int numPtrs = 0;
+  // if we have a struct { T1; T2 } then our offset set will be the set for T1,
+  // plus the set for T2 with offsets incremented by the size of T1.
+  else if (const llvm::StructType* sty = llvm::dyn_cast<const llvm::StructType>(ty)) {
     for (int i = 0; i < sty->getNumElements(); ++i) {
-      numPtrs += countPointersInType(sty->getTypeAtIndex(i));
+      int slotOffset = getOffsetOfStructSlot(sty, i);
+      OffsetSet sub = countPointersInType(sty->getTypeAtIndex(i));
+      for (OffsetSet::iterator si = sub.begin(); si != sub.end(); ++si) {
+    	const llvm::Type* subty = si->first;
+    	int suboffset = si->second;
+    	rv.insert(OffsetInfo(subty, suboffset + slotOffset));
+      }
     }
-    return numPtrs;
   }
 
   // TODO Also need to decide how to represent type maps for unions
   // in such a way that the GC can safely collect unions.
-  if (const llvm::UnionType* uty = llvm::dyn_cast<const llvm::UnionType>(ty)) {
-    return 0;
+  else if (const llvm::UnionType* uty = llvm::dyn_cast<const llvm::UnionType>(ty)) {
+    //return 0;
   }
 
   // all other types do not contain pointers
-  return 0;
+  return rv;
 }
 
 llvm::ConstantInt* getConstantInt32For(int val) {
@@ -61,11 +88,27 @@ llvm::ConstantInt* getConstantInt32For(int val) {
   return llvm::ConstantInt::get(getGlobalContext(), llvm::APInt(32, ss.str(), 10));
 }
 
-llvm::Constant* getConstantInt32PairFor(const llvm::StructType* i32x2, int v1, int v2) {
+std::map<const llvm::Type*, llvm::GlobalVariable*> typeMapForType;
+
+llvm::Constant* getTypeMapEntryFor(
+		const llvm::StructType* typeMapEntryTy,
+		const llvm::Type* entryTy, int v2) {
   std::vector<llvm::Constant*> fields;
-  fields.push_back(getConstantInt32For(v1));
+
+  llvm::GlobalVariable* typeMapVar = typeMapForType[entryTy];
+  if (typeMapVar) {
+	fields.push_back(llvm::ConstantExpr::getCast(llvm::Instruction::BitCast,
+			typeMapVar, LLVMTypeFor("i8*")));
+  } else {
+	// If we can't tell the garbage collector how to collect a type by
+	// giving it a pointer to a type map, it's probably because the type
+	// doesn't have a type map, i.e. the type is atomic. Instead, tell
+	// the garbage collector how large the type is.
+	fields.push_back(llvm::ConstantExpr::getCast(llvm::Instruction::IntToPtr,
+	  		llvm::ConstantExpr::getSizeOf(entryTy), LLVMTypeFor("i8*")));
+  }
   fields.push_back(getConstantInt32For(v2));
-  return llvm::ConstantStruct::get(i32x2, fields);
+  return llvm::ConstantStruct::get(typeMapEntryTy, fields);
 }
 
 // return a global corresponding to the following layout:
@@ -76,13 +119,15 @@ llvm::Constant* getConstantInt32PairFor(const llvm::StructType* i32x2, int v1, i
 llvm::GlobalVariable* emitTypeMap(const llvm::Type* ty, std::string name) {
   using llvm::StructType;
 
-  int numPointers = countPointersInType(ty);
+  OffsetSet pointerOffsets = countPointersInType(ty);
+  int numPointers = pointerOffsets.size();
 
   // Construct the type map's LLVM type
-  std::vector<const Type*> i32x2;
-  i32x2.push_back(LLVMTypeFor("i32"));
-  i32x2.push_back(LLVMTypeFor("i32"));
-  StructType* entryty = StructType::get(getGlobalContext(), i32x2, /*isPacked=*/false);
+  std::vector<const Type*> entryty_types;
+  entryty_types.push_back(LLVMTypeFor("i8*"));
+  entryty_types.push_back(LLVMTypeFor("i32"));
+  StructType* entryty = StructType::get(getGlobalContext(), entryty_types, /*isPacked=*/false);
+  module->addTypeName("typemap_entry", entryty);
 
   std::vector<const Type*> typeMapTyFields;
   llvm::ArrayType* entriesty = llvm::ArrayType::get(entryty, numPointers);
@@ -92,28 +137,44 @@ llvm::GlobalVariable* emitTypeMap(const llvm::Type* ty, std::string name) {
 
   const StructType* typeMapTy = StructType::get(getGlobalContext(), typeMapTyFields);
 
-  // Construct the type map itself
-  std::vector<llvm::Constant*> typeMapFields;
-  typeMapFields.push_back(getConstantInt32For(numPointers));
-
-  std::vector<llvm::Constant*> typeMapEntries;
-  for (int i = 0; i < numPointers; ++i) {
-	typeMapEntries.push_back(getConstantInt32PairFor(entryty, i, 0));
-  }
-  typeMapFields.push_back(llvm::ConstantArray::get(entriesty, typeMapEntries));
-
-  llvm::Constant* typeMap = llvm::ConstantStruct::get(typeMapTy, typeMapFields);
-
   llvm::GlobalVariable* typeMapVar = new llvm::GlobalVariable(
     /*Module=*/     *module,
     /*Type=*/       typeMapTy,
     /*isConstant=*/ false,
     /*Linkage=*/    llvm::GlobalValue::ExternalLinkage,
-    /*Initializer=*/ typeMap,
+    /*Initializer=*/ 0,
     /*Name=*/        "__foster_typemap_" + name,
     /*ThreadLocal=*/ false);
   typeMapVar->setAlignment(16);
 
+  // Register the (as-yet uninitialized) variable to avoid problems
+  // with recursive types.
+  typeMapForType[ty] = typeMapVar;
+
+
+  // Construct the type map itself
+  std::vector<llvm::Constant*> typeMapFields;
+  typeMapFields.push_back(getConstantInt32For(numPointers));
+
+  std::vector<llvm::Constant*> typeMapEntries;
+  for (OffsetSet::iterator si =  pointerOffsets.begin();
+		                   si != pointerOffsets.end(); ++si) {
+	const llvm::Type* subty = si->first;
+	int suboffset = si->second;
+	typeMapEntries.push_back(
+	  getTypeMapEntryFor(entryty, subty, suboffset));
+  }
+
+
+  typeMapFields.push_back(llvm::ConstantArray::get(entriesty, typeMapEntries));
+
+  std::cerr << "building type map : " << typeMapVar << std::endl;
+  llvm::Constant* typeMap = llvm::ConstantStruct::get(typeMapTy, typeMapFields);
+
+
+
+  typeMapVar->setInitializer(typeMap);
+  std::cerr << "emitTypeMap return" << std::endl;
   return typeMapVar;
 }
 
