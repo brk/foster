@@ -20,6 +20,13 @@ namespace foster {
 namespace runtime {
 namespace gc {
 
+struct typemap {
+  const char* name;
+  int32_t numPointers;
+  struct entry { void* typeinfo; int32_t offset; };
+  entry entries[0];
+};
+
 struct heap_cell { int64_t _size; unsigned char _body[0];
   void* body() { return (void*) &_body; }
   int64_t size() { return _size; }
@@ -148,7 +155,12 @@ copying_gc* allocator = NULL;
 void copying_gc_root_visitor(void **root, const void *meta) {
   void* cell = *root;
   if (cell) {
-    fprintf(gclog, "gc root visited: %p, meta: %p\n", cell, meta);
+    fprintf(gclog, "gc root visited: %p, meta: %p", cell, meta);
+    if (meta) {
+      typemap* map = (typemap*) meta;
+      fprintf(gclog, "\tname: %s", map->name);
+    }
+    fprintf(gclog, "\n");
     allocator->copy(cell, meta);
   }
 }

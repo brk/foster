@@ -116,10 +116,18 @@ llvm::Constant* getTypeMapEntryFor(
   return llvm::ConstantStruct::get(typeMapEntryTy, fields);
 }
 
+llvm::Constant* arrayVariableToPointer(llvm::GlobalVariable* arr) {
+  std::vector<llvm::Constant*> idx;
+  idx.push_back(getConstantInt64For(0));
+  idx.push_back(getConstantInt64For(0));
+  return llvm::ConstantExpr::getGetElementPtr(arr, &idx[0], idx.size());
+}
+
 // return a global corresponding to the following layout:
 // struct {
+//   const char* typeName;
 //   i32 numPtrEntries;
-//   struct { i32 offset; i32 typeCode }[numPtrEntries];
+//   struct { i8* typeinfo; i32 offset }[numPtrEntries];
 // }
 llvm::GlobalVariable* emitTypeMap(const llvm::Type* ty, std::string name) {
   using llvm::StructType;
@@ -137,6 +145,7 @@ llvm::GlobalVariable* emitTypeMap(const llvm::Type* ty, std::string name) {
   std::vector<const Type*> typeMapTyFields;
   llvm::ArrayType* entriesty = llvm::ArrayType::get(entryty, numPointers);
 
+  typeMapTyFields.push_back(LLVMTypeFor("i8*"));
   typeMapTyFields.push_back(LLVMTypeFor("i32"));
   typeMapTyFields.push_back(entriesty);
 
@@ -156,9 +165,22 @@ llvm::GlobalVariable* emitTypeMap(const llvm::Type* ty, std::string name) {
   // with recursive types.
   typeMapForType[ty] = typeMapVar;
 
-
   // Construct the type map itself
+  std::stringstream ss; ss << name << " = " << *ty;
   std::vector<llvm::Constant*> typeMapFields;
+  llvm::Constant* cname = llvm::ConstantArray::get(getGlobalContext(), ss.str().c_str(), true);
+  llvm::GlobalVariable* typeNameVar = new llvm::GlobalVariable(
+      /*Module=*/      *module,
+      /*Type=*/        cname->getType(),
+      /*isConstant=*/  true,
+      /*Linkage=*/     llvm::GlobalValue::PrivateLinkage,
+      /*Initializer=*/ cname,
+      /*Name=*/        ".typename." + name);
+  typeNameVar->setAlignment(1);
+
+  llvm::Constant* cnameptr = arrayVariableToPointer(typeNameVar);
+  typeMapFields.push_back(cnameptr);
+  //typeMapFields.push_back(llvm::ConstantPointerNull::getNullValue(LLVMTypeFor("i8*")));
   typeMapFields.push_back(getConstantInt32For(numPointers));
 
   std::vector<llvm::Constant*> typeMapEntries;
@@ -173,13 +195,9 @@ llvm::GlobalVariable* emitTypeMap(const llvm::Type* ty, std::string name) {
 
   typeMapFields.push_back(llvm::ConstantArray::get(entriesty, typeMapEntries));
 
-  std::cerr << "building type map : " << typeMapVar << std::endl;
   llvm::Constant* typeMap = llvm::ConstantStruct::get(typeMapTy, typeMapFields);
 
-
-
   typeMapVar->setInitializer(typeMap);
-  std::cerr << "emitTypeMap return" << std::endl;
   return typeMapVar;
 }
 
