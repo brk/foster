@@ -97,6 +97,7 @@ add_custom_command(
   OUTPUT ${PROJECT_BINARY_DIR}/libfoster_main.o
   COMMAND 	
 	g++ ${PROJECT_SOURCE_DIR}/runtime/libfoster_main.cpp
+	  -I ${PROJECT_SOURCE_DIR}/runtime/gc/
 		-c -o ${PROJECT_BINARY_DIR}/libfoster_main.o
   DEPENDS
 	${PROJECT_SOURCE_DIR}/runtime/libfoster_main.cpp

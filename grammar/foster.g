@@ -37,6 +37,8 @@ literal			:	TRUE | FALSE | num;
 name			:	n=IDENT -> ^(NAME $n);
 str	                :       STR;
 
+nil	:	NIL;
+
 // name seq?
 name_or_ctor		:	name (seq -> ^(CTOR name seq)
 				        |   -> name);
@@ -55,11 +57,12 @@ ifexpr                  :       'if' cond=expr 'then' thenpart=expr 'else' elsep
 custom_terms		:	parenexpr
                                 | prefix_unop nl? expr -> ^(prefix_unop expr);
 parenexpr	:	'(' expr ')' -> ^(PARENEXPR expr);
-                                
+
 sugarterm	:	letexpr;
 
 term			:	( literal
 				| fn
+				| nil
 				| seq
 				| ifexpr
 				| setexpr
@@ -99,7 +102,8 @@ binop			:	'+' | '-' | '*' | '/' | '..'
 			|	'<' | '<=' | '>=' | '>' | '==' | '!='
 			|	AND | OR | '+=' | '-=' | '*=' | '/=';
 
-prefix_unop		:	'-' | 'not' | 'new' | 'ref' | COMPILES | UNPACK;
+REF	:	'ref' | '?ref';
+prefix_unop		:	'-' | 'not' | 'new' | REF | COMPILES | UNPACK;
 
 nl : NEWLINE;
 

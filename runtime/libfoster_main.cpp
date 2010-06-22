@@ -13,6 +13,11 @@
 extern "C" int foster__main();
 
 #include "libfoster.h"
+#include "foster_gc.h"
+
+// This goes in a private namespace so that the symbol won't be
+// exported in the bitcode file, which could interfere with llc
+foster::runtime::gc::StackEntry *llvm_gc_root_chain;
 
 int main(int argc, char** argv) {
   foster::runtime::initialize();

@@ -7,23 +7,11 @@
 
 #include "base/time.h"
 
-namespace {
-// This goes in a private namespace so that the symbol won't be
-// exported in the bitcode file, which could interfere with llc
-foster::runtime::gc::StackEntry *llvm_gc_root_chain;
-}
+// extract frame pointer (libunwind or llvm.frameaddress?)
+// lookup stack map based on fp
+//
 
 /////////////////////////////////////////////////////////////////
-
-// This implements a mark-sweep heap by doing the
-// Simplest Thing That Could Possibly Work:
-//
-// We keep an explicit list of every allocation made, in order
-// to make the sweep phase as simple as possible. The mark phase
-// is simplified by storing mark bits in a STL map.
-//
-// This is, needless to say, hilariously inefficient, but it
-// provides a baseline to measure improvements from.
 
 #include <list>
 #include <map>
@@ -32,13 +20,29 @@ namespace foster {
 namespace runtime {
 namespace gc {
 
+struct heap_cell { int64_t _size; unsigned char _body[0];
+  void* body() { return (void*) &body; }
+  int64_t size() { return _size; }
+  void set_size(int64_t size) { _size = size; }
+};
+
+#define HEAP_CELL_FOR_BODY(ptr) ((heap_cell*) &((int64_t*)(ptr))[-1])
+const uint64_t FORDWARDED_BIT = 0x02;
+
+inline bool is_forwarded(heap_cell* cell) {
+  return (((uint64_t) cell->size) & FORWARDED_BIT) != 0;
+}
+inline heap_cell* forwarded_to_body(heap_cell* cell) {
+  return ((uint64_t) cell->size) & ~FORWARDED_BIT;
+}
+
 void visitGCRoots(void (*Visitor)(void **Root, const void *Meta));
 
 FILE* gclog = NULL;
 
 class copying_gc {
   class semispace {
-	  semispace(uint64_t size) {
+	  semispace(int64_t size) {
 		  start = (char*) malloc(size);
 		  end   = start + size;
 		  bump  = start;
@@ -53,15 +57,38 @@ class copying_gc {
 	  char* bump;
 
   public:
-	  bool can_allocate(uint64_t size) {
+	  void clear() { memset(start, 255, end - start); }
+
+	  int64_t free_size() { return end - bump; }
+
+	  bool can_allocate(int64_t size) {
         return bump + size < end;
 	  }
 
-	  void* allocate_prechecked(uint64_t size) {
-		void* allot = bump;
+	  void* allocate_prechecked(int64_t size) {
+		heap_cell* allot = (heap_cell*) bump;
 		bump += size;
-		((uint64_t*) allot)[0] = size;
-		return &((uint64_t*) allot)[1];
+		allot->set_size(size);
+		return allot->body();
+	  }
+
+	  void copy(void* body) {
+	    heap_cell* cell = HEAP_CELL_FOR_BODY(body);
+
+	    int64_t size = cell->size;
+	    if (can_allocate(size)) {
+	      memcpy(bump, cell, size);
+	      bump += size;
+
+	      // TODO
+	      // get type map for cell
+	      // for each pointer field in the cell
+	      //   recursively copy the field from cell, yielding subfwdaddr
+	      //   set the copied cell field to subfwdaddr
+	    } else {
+	      printf("not enough space to copy! have %lld, need %lld\n", free_size(), size);
+	      //exit(255);
+	    }
 	  }
   };
 
@@ -81,7 +108,7 @@ class copying_gc {
   }
 
 public:
-  copying_gc(uint64_t size) {
+  copying_gc(int64_t size) {
 	curr = new semispace(size);
 	next = new semispace(size);
 
@@ -97,7 +124,7 @@ public:
   // copy the cell at the given address to the next semispace
   void copy(void* cell);
 
-  void* allocate(uint64_t size) {
+  void* allocate(int64_t size) {
 	++num_allocations;
 
 	if (curr->can_allocate(size)) {
@@ -105,9 +132,12 @@ public:
 	} else {
 	  gc();
 	  if (curr->can_allocate(size)) {
+	    printf("gc collection freed space, now have %lld\n", curr->free_size());
 		return curr->allocate_prechecked(size);
 	  } else {
-		return NULL;
+	    printf("working set exceeded heap size! aborting...\n");
+	    exit(255);
+	    return NULL;
 	  }
 	}
   }
@@ -117,13 +147,14 @@ copying_gc* allocator = NULL;
 
 void copying_gc_root_visitor(void **root, const void *meta) {
   void* cell = *root;
-  allocator->copy(cell);
+  if (cell) {
+    // fprintf(gclog, "gc root visited: %p\n", cell);
+    allocator->copy(cell);
+  }
 }
 
 void copying_gc::copy(void* cell) {
-  uint64_t size = ((uint64_t*) cell)[0];
-  memcpy(next->bump, cell, size);
-  next->bump += size;
+  next->copy(cell);
 }
 
 void copying_gc::gc() {
@@ -131,15 +162,18 @@ void copying_gc::gc() {
   // copy all used blocks to the next semispace
   visitGCRoots(copying_gc_root_visitor);
   flip();
+  // for debugging purposes
+  next->clear();
 }
 
 base::TimeTicks start;
 
 void initialize() {
   gclog = fopen("gclog.txt", "w");
+  fprintf(gclog, "----------- gclog ------------\n");
 
   const int KB = 1024;
-  allocator = new copying_gc(32 * KB);
+  allocator = new copying_gc(512);
 
   start = base::TimeTicks::HighResNow();
 }
@@ -153,11 +187,20 @@ void cleanup() {
 }
 
 extern "C" void* memalloc(int64_t sz) {
-	return allocator->allocate(sz);
+  return allocator->allocate(sz);
 }
 
 #if 0
 /////////////////////////////////////////////////////////////////
+// This implements a mark-sweep heap by doing the
+// Simplest Thing That Could Possibly Work:
+//
+// We keep an explicit list of every allocation made, in order
+// to make the sweep phase as simple as possible. The mark phase
+// is simplified by storing mark bits in a STL map.
+//
+// This is, needless to say, hilariously inefficient, but it
+// provides a baseline to measure improvements from.
 
 std::list<void*> allocated_blocks;
 
@@ -245,8 +288,9 @@ void visitGCRoots(void (*Visitor)(void **Root, const void *Meta)) {
       Visitor(&R->Roots[i], R->Map->Meta[i]);
     
     // For roots [NumMeta, NumRoots), the metadata pointer is null.
-    for (unsigned e = R->Map->NumRoots; i != e; ++i)
+    for (unsigned e = R->Map->NumRoots; i != e; ++i) {
       Visitor(&R->Roots[i], NULL);
+    }
   }
 }
 

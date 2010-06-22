@@ -299,6 +299,10 @@ struct SeqAST : public ExprAST {
 };
 
 struct TupleExprAST : public UnaryExprAST {
+  explicit TupleExprAST(ExprAST* expr, const llvm::Type* ty)
+    : UnaryExprAST(expr) {
+	type = ty;
+  }
   explicit TupleExprAST(ExprAST* expr) : UnaryExprAST(expr) {
     std::cout << "\t\t\tTupleExprAST " << expr << " ; " << this->parts[0] << std::endl;
   }
@@ -485,11 +489,23 @@ struct ForRangeExprAST : public ExprAST {
   }
 };
 
+struct NilExprAST : public ExprAST {
+  explicit NilExprAST() {}
+  virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
+  virtual std::ostream& operator<<(std::ostream& out) const {
+    return out << "nil";
+  }
+};
+
 struct RefExprAST : public UnaryExprAST {
-  explicit RefExprAST(ExprAST* expr) : UnaryExprAST(expr) {}
+  bool isNullable;
+  explicit RefExprAST(ExprAST* expr, bool isNullable)
+    : UnaryExprAST(expr), isNullable(isNullable) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "(ref " << str(this->parts[0]) << ")";
+    out << "(";
+    if (isNullable) { out << "?ref "; } else { out << "ref"; }
+    return out << str(this->parts[0]) << ")";
   }
 };
 

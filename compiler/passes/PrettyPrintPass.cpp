@@ -162,9 +162,17 @@ void PrettyPrintPass::visit(ForRangeExprAST* ast) {
   recurse(this, ast->bodyExpr);
 }
 
+void PrettyPrintPass::visit(NilExprAST* ast) {
+  scan(PPToken("nil"));
+}
 
 void PrettyPrintPass::visit(RefExprAST* ast) {
-  scan(PPToken("ref "));
+  if (ast->isNullable) {
+	scan(PPToken("?ref "));
+  } else {
+	scan(PPToken("ref "));
+  }
+
   ast->parts[0]->accept(this);
 }
 

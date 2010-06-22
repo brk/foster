@@ -202,6 +202,7 @@ const FunctionType* get_llvm_gcroot_ty() {
   return llvm::FunctionType::get(voidty, params, /*isvararg=*/ false);
 }
 
+// root should be an AllocaInst or a bitcast of such
 void markGCRoot(llvm::Value* root, llvm::Value* meta) {
   std::cout << "Marking gc root!" << std::endl;
   llvm::Constant* llvm_gcroot = module->getOrInsertFunction("llvm.gcroot", get_llvm_gcroot_ty());
@@ -215,6 +216,20 @@ void markGCRoot(llvm::Value* root, llvm::Value* meta) {
   }
 
   builder.CreateCall2(llvm_gcroot, root, meta);
+}
+
+// Unlike markGCRoot, this does not require the root be an AllocaInst
+// (though it should still be a pointer).
+// This function is intended for marking intermediate values. It stores
+// the value into a new stack slot, and marks the stack slot as a root.
+void storeAndMarkValueAsGCRoot(llvm::Value* val, llvm::Value* meta) {
+  assert(val->getType()->isPointerTy());
+
+  const llvm::Type* pi8 = LLVMTypeFor("i8*");
+  llvm::AllocaInst* root = builder.CreateAlloca(pi8, 0, "stackref");
+  Value* rawaddr = builder.CreateBitCast(val, pi8);
+  builder.CreateStore(rawaddr, root, /*isVolatile=*/ false);
+  markGCRoot(root, meta);
 }
 
 llvm::Value* emitMalloc(const llvm::Type* ty);
@@ -656,6 +671,12 @@ void CodegenPass::visit(ForRangeExprAST* ast) {
   ast->value = ConstantInt::get(LLVMTypeFor("i32"), 0);
 }
 
+void CodegenPass::visit(NilExprAST* ast) {
+  if (ast->value) return;
+  ast->value = llvm::ConstantPointerNull::getNullValue(ast->type);
+		  //ast->type->getContainedType(0));
+}
+
 void CodegenPass::visit(RefExprAST* ast) {
   if (ast->value) return;
 
@@ -1082,6 +1103,10 @@ void CodegenPass::visit(CallAST* ast) {
   } else {
     ast->value = builder.CreateCall(FV, valArgs.begin(), valArgs.end(), "calltmp");
   }
+
+  if (ast->value->getType()->isPointerTy()) {
+    storeAndMarkValueAsGCRoot(ast->value, NULL);
+  }
 }
 
 bool isComposedOfIntLiterals(ExprAST* ast) {
@@ -1260,21 +1285,22 @@ void CodegenPass::visit(TupleExprAST* ast) {
 
   registerType(tupleType, "tuple");
 
+  llvm::Value* pt = NULL;
+
   // Allocate tuple space
-  llvm::AllocaInst* pt = builder.CreateAlloca(tupleType, 0, "s");
-
-
-  // We only need to mark tuples containing pointers as GC roots
-  if (structTypeContainsPointers(llvm::dyn_cast<llvm::StructType>(tupleType))) {
-	const llvm::Type* tuplePtrTy = llvm::PointerType::getUnqual(tupleType);
-	const llvm::Type* pi8 = llvm::PointerType::getUnqual(LLVMTypeFor("i8"));
-    llvm::AllocaInst* stackref = builder.CreateAlloca(pi8, 0, "tuple_stackref");
-    Value* rawaddr = builder.CreateBitCast(pt, pi8);
-    builder.CreateStore(rawaddr, stackref, /*isVolatile=*/ false);
-    markGCRoot(stackref, NULL);
+  if (RefExprAST* ref = dynamic_cast<RefExprAST*>(ast->parent)) {
+    pt = emitMalloc(tupleType);
+  } else {
+    pt = builder.CreateAlloca(tupleType, 0, "s");
   }
 
-  //llvm::Value* pt = emitMalloc(tupleType);
+#if 0
+  // We only need to mark tuples containing pointers as GC roots
+  if (structTypeContainsPointers(llvm::dyn_cast<llvm::StructType>(tupleType))) {
+    storeAndMarkValueAsGCRoot(pt);
+  }
+#endif
+
   copyTupleTo(this, pt, ast);
   ast->value = pt;
 }

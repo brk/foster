@@ -30,3 +30,4 @@ struct StackEntry {
 
 } } } // namespace foster::runtime::gc
 
+extern foster::runtime::gc::StackEntry *llvm_gc_root_chain;

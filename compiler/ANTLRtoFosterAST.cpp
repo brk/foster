@@ -75,16 +75,19 @@ opspec c_binaryOps[] = {
     { "<=", 50 },
     { "<", 50 },
     { "==", 60 },
+    { "!=", 60 },
     { "=", 70 }
 }; // ".."
-const char* c_keywords[] = { "as" , "at" , "def" , "id", "in", "is", "it", "to",
+const char* c_keywords[] = {
+  "as" , "at" , "def" , "id", "in", "is", "it", "to",
   "given" , "false" , "if" , "match" , "do" , "new" , "nil",
-  "gives" , "and" , "or" , "true" , "var" , "while"
+  "gives" , "and" , "or" , "true" , "var" , "while",
+  "for", "ref", "?ref"
 };
 const char* c_reserved_keywords[] = {
-  "def", "catch", "for",
-  "lazy", "object", "package", "private", "protected", "requires", "ensures"
-  "return", "throw", "trait", "try", "type", "val", "with", "yield"
+  "def", "catch", "lazy", "object", "package", "private",
+  "protected", "return", "throw", "trait", "try", "type",
+  "val", "with", "yield", "except"
 };
 
 bool isUnaryOp(const string& op) {
@@ -434,6 +437,11 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
       return new TupleExprAST(ExprAST_from(seqArgs, fnMeansClosure));
     }
 
+    // TODO for now, new mytype { args } is equivalent to new tuple { args }
+    if (const llvm::Type* ty = typeScope.lookup(name, "")) {
+      return new TupleExprAST(ExprAST_from(seqArgs, fnMeansClosure), ty);
+    }
+
     std::cerr << "Error: CTOR token parsing found unknown type name '" << name << "'" << std::endl;
     return NULL;
   }
@@ -490,11 +498,15 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     }
   }
 
-  if (text == "new" || text == "ref") {
+  if (text == "new" || text == "ref" || text == "?ref") {
+	bool isNullableTypeDecl = text == "?ref";
     // Currently 'new' and 'ref' are interchangeable, though the intended
     // convention is that 'new' is for value-exprs and 'ref' is for type-exprs
-    return new RefExprAST(ExprAST_from(child(tree, 0), fnMeansClosure));
+    return new RefExprAST(ExprAST_from(child(tree, 0), fnMeansClosure),
+    		isNullableTypeDecl);
   }
+
+  if (text == "nil") { return new NilExprAST(); }
 
   // Handle unary negation explicitly, before the binary op handler
   if (getChildCount(tree) == 1 && isUnaryOp(text)) {

@@ -127,6 +127,7 @@ void ClosureConversionPass::visit(ForRangeExprAST* ast) {
   onVisitChild(ast, ast->bodyExpr);
   boundVariables[callStack.back()].erase(ast->var);
 }
+void ClosureConversionPass::visit(NilExprAST* ast)             { return; }
 void ClosureConversionPass::visit(RefExprAST* ast)             { return; }
 void ClosureConversionPass::visit(DerefExprAST* ast)           { return; }
 void ClosureConversionPass::visit(AssignExprAST* ast)          { return; }

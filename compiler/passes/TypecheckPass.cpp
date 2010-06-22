@@ -313,7 +313,8 @@ void TypecheckPass::visit(IfExprAST* ast) {
     std::cerr << "IfExprAST had null type for 'else' expression" << std::endl;
     return;
   } else if (thenType != elseType) {
-    std::cerr << "IfExprAST had different (incompatible?) types for then/else exprs" << std::endl;
+    std::cerr << "IfExprAST had different (incompatible?) types for then/else exprs: "
+    		<< "\n\t" << *thenType << " vs " << *elseType << std::endl;
     return;
   } else if (thenType == elseType) {
     ast->type = thenType;
@@ -376,6 +377,49 @@ void TypecheckPass::visit(ForRangeExprAST* ast) {
   }
 
   ast->type = LLVMTypeFor("i32");
+}
+
+void TypecheckPass::visit(NilExprAST* ast) {
+  if (ast->type) return;
+
+  // TODO this will eventually be superceded by real type inference
+  if (ast->parent && ast->parent->parent) {
+	if (ast->parent->parent->type) {
+	  // If we have a type for the parent already, it's probably because
+	  // it's a   new _type_ { ... nil ... }  -like expr.
+      if (const llvm::StructType* tupleTy =
+          llvm::dyn_cast<const llvm::StructType>(ast->parent->parent->type)) {
+        std::vector<ExprAST*>::iterator nilPos
+                    = std::find(ast->parent->parts.begin(),
+                                ast->parent->parts.end(),   ast);
+        if (nilPos != ast->parent->parts.end()) {
+          int nilOffset = std::distance(ast->parent->parts.begin(), nilPos);
+          ast->type = tupleTy->getContainedType(nilOffset);
+          std::cout << "\tmunging gave nil type " << *(ast->type) << std::endl;
+        }
+      }
+	}
+
+	// 'if (typed-expr ==/!= nil)'  --> nil should have type of other side
+	if (IfExprAST* ifast = dynamic_cast<IfExprAST*>(ast->parent->parent)) {
+      if (BinaryOpExprAST* cmpast = dynamic_cast<BinaryOpExprAST*>(ast->parent)) {
+        if (cmpast->parts[0]->type) {
+          ast->type = cmpast->parts[0]->type;
+        } else if (cmpast->parts[1]->type) {
+          ast->type = cmpast->parts[1]->type;
+        }
+      }
+	}
+  }
+
+  if (!ast->type) {
+	std::cerr << "TODO: munge around to extract expected (pointer) type of nil exprs" << std::endl;
+	std::cout << "nil parent: " << *(ast->parent) << std::endl;
+	std::cout << "nil parent parent: " << *(ast->parent->parent) << std::endl;
+	std::cout << "nil parent parent ty: " << ast->parent->parent->type << std::endl;
+
+	ast->type = LLVMTypeFor("i8*");
+  }
 }
 
 void TypecheckPass::visit(RefExprAST* ast) {

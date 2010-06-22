@@ -94,6 +94,7 @@ void ReplaceExprTransform::visit(ForRangeExprAST* ast)              {
   onVisitChild(ast, &ast->bodyExpr);
   this->newChild = rewrite(ast);
 }
+void ReplaceExprTransform::visit(NilExprAST* ast)             { this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(RefExprAST* ast)             { this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(DerefExprAST* ast)           { this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(AssignExprAST* ast)          { this->newChild = rewrite(ast); }
