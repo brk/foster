@@ -21,22 +21,22 @@ namespace runtime {
 namespace gc {
 
 struct heap_cell { int64_t _size; unsigned char _body[0];
-  void* body() { return (void*) &body; }
+  void* body() { return (void*) &_body; }
   int64_t size() { return _size; }
   void set_size(int64_t size) { _size = size; }
 };
 
 #define HEAP_CELL_FOR_BODY(ptr) ((heap_cell*) &((int64_t*)(ptr))[-1])
-const uint64_t FORDWARDED_BIT = 0x02;
+const uint64_t FORWARDED_BIT = 0x02;
 
 inline bool is_forwarded(heap_cell* cell) {
-  return (((uint64_t) cell->size) & FORWARDED_BIT) != 0;
+  return (((uint64_t) cell->size()) & FORWARDED_BIT) != 0;
 }
 inline heap_cell* forwarded_to_body(heap_cell* cell) {
-  return ((uint64_t) cell->size) & ~FORWARDED_BIT;
+  return (heap_cell*) (((uint64_t) cell->size()) & ~FORWARDED_BIT);
 }
 
-void visitGCRoots(void (*Visitor)(void **Root, const void *Meta));
+void visitGCRoots(void (*visitor)(void **root, const void *meta));
 
 FILE* gclog = NULL;
 
@@ -72,10 +72,10 @@ class copying_gc {
 		return allot->body();
 	  }
 
-	  void copy(void* body) {
+	  void copy(void* body, const void* meta) {
 	    heap_cell* cell = HEAP_CELL_FOR_BODY(body);
 
-	    int64_t size = cell->size;
+	    int64_t size = cell->size();
 	    if (can_allocate(size)) {
 	      memcpy(bump, cell, size);
 	      bump += size;
@@ -122,7 +122,7 @@ public:
   }
 
   // copy the cell at the given address to the next semispace
-  void copy(void* cell);
+  void copy(void* cell, const void* meta);
 
   void* allocate(int64_t size) {
 	++num_allocations;
@@ -148,13 +148,13 @@ copying_gc* allocator = NULL;
 void copying_gc_root_visitor(void **root, const void *meta) {
   void* cell = *root;
   if (cell) {
-    // fprintf(gclog, "gc root visited: %p\n", cell);
-    allocator->copy(cell);
+    fprintf(gclog, "gc root visited: %p, meta: %p\n", cell, meta);
+    allocator->copy(cell, meta);
   }
 }
 
-void copying_gc::copy(void* cell) {
-  next->copy(cell);
+void copying_gc::copy(void* cell, const void* meta) {
+  next->copy(cell, meta);
 }
 
 void copying_gc::gc() {
@@ -163,7 +163,7 @@ void copying_gc::gc() {
   visitGCRoots(copying_gc_root_visitor);
   flip();
   // for debugging purposes
-  next->clear();
+  //next->clear();
 }
 
 base::TimeTicks start;

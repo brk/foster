@@ -83,6 +83,11 @@ OffsetSet countPointersInType(const llvm::Type* ty) {
   return rv;
 }
 
+llvm::ConstantInt* getConstantInt64For(int64_t val) {
+  std::stringstream ss; ss << val;
+  return llvm::ConstantInt::get(getGlobalContext(), llvm::APInt(64, ss.str(), 10));
+}
+
 llvm::ConstantInt* getConstantInt32For(int val) {
   std::stringstream ss; ss << val;
   return llvm::ConstantInt::get(getGlobalContext(), llvm::APInt(32, ss.str(), 10));
@@ -203,7 +208,7 @@ const FunctionType* get_llvm_gcroot_ty() {
 }
 
 // root should be an AllocaInst or a bitcast of such
-void markGCRoot(llvm::Value* root, llvm::Value* meta) {
+void markGCRoot(llvm::Value* root, llvm::Constant* meta) {
   std::cout << "Marking gc root!" << std::endl;
   llvm::Constant* llvm_gcroot = module->getOrInsertFunction("llvm.gcroot", get_llvm_gcroot_ty());
   if (!llvm_gcroot) {
@@ -212,7 +217,13 @@ void markGCRoot(llvm::Value* root, llvm::Value* meta) {
   }
 
   if (!meta) {
+    meta = typeMapForType[root->getType()];
+  }
+
+  if (!meta) {
     meta = llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(llvm::Type::getInt8Ty(getGlobalContext())));
+  } else if (meta->getType() != LLVMTypeFor("i8*")) {
+    meta = llvm::ConstantExpr::getBitCast(meta, LLVMTypeFor("i8*"));
   }
 
   builder.CreateCall2(llvm_gcroot, root, meta);
@@ -222,17 +233,33 @@ void markGCRoot(llvm::Value* root, llvm::Value* meta) {
 // (though it should still be a pointer).
 // This function is intended for marking intermediate values. It stores
 // the value into a new stack slot, and marks the stack slot as a root.
-void storeAndMarkValueAsGCRoot(llvm::Value* val, llvm::Value* meta) {
+void storeAndMarkPointerAsGCRoot(llvm::Value* val) {
   assert(val->getType()->isPointerTy());
 
   const llvm::Type* pi8 = LLVMTypeFor("i8*");
   llvm::AllocaInst* root = builder.CreateAlloca(pi8, 0, "stackref");
   Value* rawaddr = builder.CreateBitCast(val, pi8);
   builder.CreateStore(rawaddr, root, /*isVolatile=*/ false);
-  markGCRoot(root, meta);
+
+  markGCRoot(root, typeMapForType[val->getType()->getContainedType(0)]);
 }
 
-llvm::Value* emitMalloc(const llvm::Type* ty);
+// returns ty*, with a ty** on the stack
+llvm::Value* emitMalloc(const llvm::Type* ty) {
+  llvm::Value* memalloc = scope.lookup("memalloc", "");
+  if (!memalloc) {
+    std::cerr << "NO MEMALLOC IN MODULE! :(" << std::endl;
+    return NULL;
+  }
+  llvm::Value* mem = builder.CreateCall(memalloc, getConstantInt64For(32), "mem");
+
+  llvm::AllocaInst* stackref = builder.CreateAlloca(LLVMTypeFor("i8*"), 0, "stackref");
+  builder.CreateStore(mem, stackref, /*isVolatile*/ false);
+  markGCRoot(stackref, typeMapForType[ty]);
+
+  llvm::Value* pointer = builder.CreateBitCast(mem, llvm::PointerType::getUnqual(ty), "memcast");;
+  return pointer;
+}
 
 template <typename T>
 T getSaturating(llvm::Value* v) {
@@ -1105,7 +1132,7 @@ void CodegenPass::visit(CallAST* ast) {
   }
 
   if (ast->value->getType()->isPointerTy()) {
-    storeAndMarkValueAsGCRoot(ast->value, NULL);
+    storeAndMarkPointerAsGCRoot(ast->value);
   }
 }
 
@@ -1240,28 +1267,6 @@ void copyTupleTo(CodegenPass* pass, Value* pt, TupleExprAST* ast) {
       builder.CreateStore(part->value, dst, /*isVolatile=*/ false);
     }
   }
-}
-
-// returns ty*, with a ty** on the stack
-llvm::Value* emitMalloc(const llvm::Type* ty) {
-  llvm::Value* memalloc = scope.lookup("memalloc", "");
-  if (!memalloc) {
-    std::cerr << "NO MEMALLOC IN MODULE! :(" << std::endl;
-    return NULL;
-  }
-  llvm::Value* mem = builder.CreateCall(memalloc,
-    llvm::ConstantInt::get(getGlobalContext(), llvm::APInt(64, llvm::StringRef("32"), 10)), "mem");
-
-  const Type* i8ty = LLVMTypeFor("i8");
-  const Type* pi8ty = llvm::PointerType::getUnqual(i8ty);
-  const Type* ppi8ty = llvm::PointerType::getUnqual(pi8ty);
-
-  llvm::AllocaInst* stackref = builder.CreateAlloca(pi8ty, 0, "stackref");
-  builder.CreateStore(mem, stackref, /*isVolatile*/ false);
-  markGCRoot(stackref, NULL);
-
-  llvm::Value* pointer = builder.CreateBitCast(mem, llvm::PointerType::getUnqual(ty), "memcast");;
-  return pointer;
 }
 
 bool structTypeContainsPointers(const llvm::StructType* ty) {
