@@ -49,6 +49,11 @@ struct heap_cell { int64_t _size; unsigned char _body[0];
   }
 };
 
+// Performs byte-wise addition on void pointer base
+void* offset(void* base, int off) {
+  return (void*) (((char*) base) + off);
+}
+
 void visitGCRoots(void (*visitor)(void **root, const void *meta));
 
 FILE* gclog = NULL;
@@ -74,7 +79,10 @@ class copying_gc {
 	    return (ptr >= start) && (ptr < end);
 	  }
 
-	  void clear() { memset(start, 255, end - start); }
+	  void clear() {
+	    fprintf(gclog, "clearing mem from %p to %p\n", start, end);
+	    memset(start, 255, end - start);
+	  }
 
 	  int64_t free_size() { return end - bump; }
 
@@ -108,28 +116,23 @@ class copying_gc {
 
 	      if (meta) {
 	        const typemap* map = (const typemap*) meta;
-	        const char* bodybytes = (const char*) body;
-	        struct tuple_t { void* l, *r; int s; };
-
-
 	        // for each pointer field in the cell
 	        for (int i = 0; i < map->numPointers; ++i) {
 	          const typemap::entry& e = map->entries[i];
-	          char* oldbodybytes = (char*) body;
-	          void** old_ptr_slot    = (void**) &oldbodybytes[e.offset];
-	          void* old_ptr_slot_val = (void*) *old_ptr_slot;
+	          void** oldslot = (void**) offset(body, e.offset);
 
 	          //fprintf(gclog, "body is %p, offset is %d, typeinfo is %p, addr_of_ptr_slot is %p, ptr_slot_val is %p\n",
-	          //    body, e.offset, e.typeinfo, addr_of_ptr_slot, ptr_slot_val);
+	          //    body, e.offset, e.typeinfo, oldslot, *oldslot);
 	          // recursively copy the field from cell, yielding subfwdaddr
 	          // set the copied cell field to subfwdaddr
-	          if (old_ptr_slot_val != NULL) {
-	            char* newbodybytes = (char*) new_addr->body();
-	            void** newslot = (void**) &newbodybytes[e.offset];
-	            *newslot = copy(old_ptr_slot_val, e.typeinfo);
+	          if (*oldslot != NULL) {
+	            void** newslot = (void**) offset(new_addr->body(), e.offset);
+	            *newslot = copy(*oldslot, e.typeinfo);
 	          }
 	        }
+
 	        {
+	          struct tuple_t { void* l, *r; int s; };
 	          tuple_t& t1 = * (tuple_t*)body;
               tuple_t& t2 = * (tuple_t*)new_addr->body();
               fprintf(gclog, "%p : {%p, %p, %d} -> %p: { %p , %p, %d }\n", body,
