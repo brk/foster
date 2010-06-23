@@ -15,6 +15,7 @@
 
 #include <sstream>
 #include <list>
+#include <vector>
 #include <map>
 
 namespace foster {
@@ -24,25 +25,29 @@ namespace gc {
 struct typemap {
   const char* name;
   int32_t numPointers;
-  struct entry { void* typeinfo; int32_t offset; };
+  struct entry { const void* typeinfo; int32_t offset; };
   entry entries[0];
 };
+
+
+#define HEAP_CELL_FOR_BODY(ptr) ((heap_cell*) &((int64_t*)(ptr))[-1])
+const uint64_t FORWARDED_BIT = 0x02;
 
 struct heap_cell { int64_t _size; unsigned char _body[0];
   void* body() { return (void*) &_body; }
   int64_t size() { return _size; }
   void set_size(int64_t size) { _size = size; }
+
+  bool is_forwarded() {
+    return (((uint64_t) size()) & FORWARDED_BIT) != 0;
+  }
+  void set_forwarded_body(void* body) {
+    _size = ((uint64_t) body) | FORWARDED_BIT;
+  }
+  void* get_forwarded_body() {
+    return (void*) (((uint64_t) size()) & ~FORWARDED_BIT);
+  }
 };
-
-#define HEAP_CELL_FOR_BODY(ptr) ((heap_cell*) &((int64_t*)(ptr))[-1])
-const uint64_t FORWARDED_BIT = 0x02;
-
-inline bool is_forwarded(heap_cell* cell) {
-  return (((uint64_t) cell->size()) & FORWARDED_BIT) != 0;
-}
-inline heap_cell* forwarded_to_body(heap_cell* cell) {
-  return (heap_cell*) (((uint64_t) cell->size()) & ~FORWARDED_BIT);
-}
 
 void visitGCRoots(void (*visitor)(void **root, const void *meta));
 
@@ -84,22 +89,61 @@ class copying_gc {
 		return allot->body();
 	  }
 
-	  void copy(void* body, const void* meta) {
+	  // returns body of newly allocated cell
+	  void* copy(void* body, const void* meta) {
 	    heap_cell* cell = HEAP_CELL_FOR_BODY(body);
 
+	    if (cell->is_forwarded()) {
+	      return cell->get_forwarded_body();
+	    }
+
 	    int64_t size = cell->size();
+
 	    if (can_allocate(size)) {
 	      memcpy(bump, cell, size);
+	      heap_cell* new_addr = (heap_cell*) bump;
 	      bump += size;
 
-	      // TODO
-	      // get type map for cell
-	      // for each pointer field in the cell
-	      //   recursively copy the field from cell, yielding subfwdaddr
-	      //   set the copied cell field to subfwdaddr
+	      cell->set_forwarded_body(new_addr->body());
+
+	      if (meta) {
+	        const typemap* map = (const typemap*) meta;
+	        const char* bodybytes = (const char*) body;
+	        struct tuple_t { void* l, *r; int s; };
+
+
+	        // for each pointer field in the cell
+	        for (int i = 0; i < map->numPointers; ++i) {
+	          const typemap::entry& e = map->entries[i];
+	          char* oldbodybytes = (char*) body;
+	          void** old_ptr_slot    = (void**) &oldbodybytes[e.offset];
+	          void* old_ptr_slot_val = (void*) *old_ptr_slot;
+
+	          //fprintf(gclog, "body is %p, offset is %d, typeinfo is %p, addr_of_ptr_slot is %p, ptr_slot_val is %p\n",
+	          //    body, e.offset, e.typeinfo, addr_of_ptr_slot, ptr_slot_val);
+	          // recursively copy the field from cell, yielding subfwdaddr
+	          // set the copied cell field to subfwdaddr
+	          if (old_ptr_slot_val != NULL) {
+	            char* newbodybytes = (char*) new_addr->body();
+	            void** newslot = (void**) &newbodybytes[e.offset];
+	            *newslot = copy(old_ptr_slot_val, e.typeinfo);
+	          }
+	        }
+	        {
+	          tuple_t& t1 = * (tuple_t*)body;
+              tuple_t& t2 = * (tuple_t*)new_addr->body();
+              fprintf(gclog, "%p : {%p, %p, %d} -> %p: { %p , %p, %d }\n", body,
+                  t1.l, t1.r, t1.s, new_addr->body(), t2.l, t2.r, t2.s);
+	        }
+	      } else {
+	        fprintf(gclog, "called copy with null metadata\n");
+	      }
+
+	      return cell->get_forwarded_body();
 	    } else {
 	      printf("not enough space to copy! have %lld, need %lld\n", free_size(), size);
 	      //exit(255);
+	      return NULL;
 	    }
 	  }
   };
@@ -122,7 +166,17 @@ class copying_gc {
 public:
   copying_gc(int64_t size) {
 	curr = new semispace(size);
+
+	// Allocate some temporary memory to force curr and next
+	// to have visually distinct address ranges.
+	std::vector<semispace*> stretches;
+	for (int i = (4 * 1000 * 1000) / size; i >= 0; --i) {
+	  stretches.push_back(new semispace(size));
+	}
 	next = new semispace(size);
+	for (int i = 0; i < stretches.size(); --i) {
+      delete stretches[i]; stretches[i] = NULL;
+    }
 
 	num_allocations = 0;
 	num_collections = 0;
@@ -140,7 +194,7 @@ public:
   }
 
   // copy the cell at the given address to the next semispace
-  void copy(void* cell, const void* meta);
+  void* copy(void* body, const void* meta);
 
   void* allocate(int64_t size) {
 	++num_allocations;
@@ -166,18 +220,20 @@ copying_gc* allocator = NULL;
 void copying_gc_root_visitor(void **root, const void *meta) {
   void* cell = *root;
   if (cell) {
+    void* newaddr = allocator->copy(cell, meta);
+
     fprintf(gclog, "gc root visited: %p, meta: %p", cell, meta);
     if (meta) {
       typemap* map = (typemap*) meta;
       fprintf(gclog, "\tname: %s", map->name);
     }
-    fprintf(gclog, "\n");
-    allocator->copy(cell, meta);
+    fprintf(gclog, "; replacing %p with %p\n", cell, newaddr);
+    *root = newaddr;
   }
 }
 
-void copying_gc::copy(void* cell, const void* meta) {
-  next->copy(cell, meta);
+void* copying_gc::copy(void* cell, const void* meta) {
+  return next->copy(cell, meta);
 }
 
 void copying_gc::gc() {
@@ -185,8 +241,14 @@ void copying_gc::gc() {
   // copy all used blocks to the next semispace
   visitGCRoots(copying_gc_root_visitor);
   flip();
+
   // for debugging purposes
-  //next->clear();
+  next->clear();
+  // TODO clobbering the oldspace gives segfaults, which
+  // implies that we didn't update some pointers when we copied...
+
+  fprintf(gclog, "\t/gc\n");
+  fflush(gclog);
 }
 
 base::TimeTicks start;
@@ -196,7 +258,7 @@ void initialize() {
   fprintf(gclog, "----------- gclog ------------\n");
 
   const int KB = 1024;
-  allocator = new copying_gc(512);
+  allocator = new copying_gc(1 * KB);
 
   start = base::TimeTicks::HighResNow();
 }
