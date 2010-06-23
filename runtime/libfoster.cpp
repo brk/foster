@@ -156,6 +156,11 @@ void* memalloc(int64_t sz);
 
 //////////////////////////////////////////////////////////////////
 
+int print_ref(void* x) {
+  std::string fmt = gc::format_ref(x);
+  return fprintf(stdout, "%s\n", fmt.c_str());
+}
+
 int  print_i32(int32_t x) { return fprint_i32(stdout, x); }
 int expect_i32(int32_t x) { return fprint_i32(stderr, x); }
 

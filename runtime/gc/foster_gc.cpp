@@ -13,6 +13,7 @@
 
 /////////////////////////////////////////////////////////////////
 
+#include <sstream>
 #include <list>
 #include <map>
 
@@ -64,6 +65,10 @@ class copying_gc {
 	  char* bump;
 
   public:
+	  bool contains(void* ptr) {
+	    return (ptr >= start) && (ptr < end);
+	  }
+
 	  void clear() { memset(start, 255, end - start); }
 
 	  int64_t free_size() { return end - bump; }
@@ -126,6 +131,12 @@ public:
   ~copying_gc() {
 	fprintf(gclog, "num allocations: %d, num collections: %d\n",
 			num_allocations, num_collections);
+  }
+
+  const char* describe(void* ptr) {
+    if (curr->contains(ptr)) return "curr";
+    if (next->contains(ptr)) return "next";
+    return "unknown";
   }
 
   // copy the cell at the given address to the next semispace
@@ -196,6 +207,13 @@ void cleanup() {
 		  elapsed.InSeconds(), elapsed.InMilliseconds() - (elapsed.InSeconds() * 1000));
 
   delete allocator;
+}
+
+std::string format_ref(void* ptr) {
+  static char buf[64];
+  // TODO add method lock
+  sprintf(buf, "%p - (%s)", ptr, allocator->describe(ptr));
+  return std::string(buf);
 }
 
 extern "C" void* memalloc(int64_t sz) {

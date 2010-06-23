@@ -1,4 +1,5 @@
 #include <inttypes.h>
+#include <string>
 
 namespace foster {
 namespace runtime {
@@ -6,6 +7,7 @@ namespace gc {
 
 void initialize();
 void cleanup();
+std::string format_ref(void*);
 
 //void visitGCRoots(void (*Visitor)(void **Root, const void *Meta));
 

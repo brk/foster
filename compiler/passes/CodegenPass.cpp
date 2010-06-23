@@ -1113,6 +1113,10 @@ void CodegenPass::visit(CallAST* ast) {
       return;
     }
 
+    if (V->getType()->isPointerTy() && V->getType() != expectedType) {
+      V = builder.CreateBitCast(V, expectedType, "polyptr");
+    }
+
     if (clo && clo->isTrampolineVersion) {
       std::cout << "Creating trampoline for closure; bitcasting to " << *expectedType << std::endl;
       V = builder.CreateBitCast(getTrampolineForClosure(clo), expectedType, "trampfn");

@@ -590,6 +590,27 @@ void TypecheckPass::visit(CallAST* ast) {
     return;
   }
 
+  // HACK HACK HACK - give print_ref special polymorphic type (with hardcoded ret ty)
+  if (VariableAST* var = dynamic_cast<VariableAST*>(base)) {
+    if (var->name == "print_ref") {
+      if (ast->parts.size() < 2) {
+        std::cerr << "print_ref() must be given an arg!" << std::endl;
+        return;
+      }
+      ExprAST* arg = ast->parts[1];
+      arg->accept(this);
+      if (!arg->type) {
+        std::cerr << "print_ref() given arg of no discernable type!" << std::endl;
+      } else if (!arg->type->isPointerTy()) {
+        std::cerr << "print_ref() given arg of non-pointer type! " << *(arg->type) << std::endl;
+      } else {
+        std::cout << "print_ref given free pass..." << std::endl;
+        ast->type = LLVMTypeFor("i32");
+      }
+      return;
+    }
+  }
+
   const llvm::FunctionType* baseFT = tryExtractCallableType(baseType);
   if (baseFT == NULL) {
     if (const llvm::StructType* sty = llvm::dyn_cast_or_null<const llvm::StructType>(baseType)) {
