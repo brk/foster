@@ -247,22 +247,37 @@ void markGCRoot(llvm::Value* root, llvm::Constant* meta) {
   builder.CreateCall2(llvm_gcroot, root, meta);
 }
 
+// Creates an AllocaInst in the entry block of the current function,
+// so that mem2reg will be able to optimize loads and stores from the alloca.
+// Code from the Kaleidoscope tutorial on mutable variables,
+// http://llvm.org/docs/tutorial/LangImpl7.html
+llvm::AllocaInst* CreateEntryAlloca(const llvm::Type* ty, const char* name) {
+  llvm::BasicBlock& entryBlock =
+      builder.GetInsertBlock()->getParent()->getEntryBlock();
+  llvm::IRBuilder<> tmpBuilder(&entryBlock, entryBlock.begin());
+  return tmpBuilder.CreateAlloca(ty, /*ArraySize=*/ 0, name);
+}
+
 // Unlike markGCRoot, this does not require the root be an AllocaInst
 // (though it should still be a pointer).
 // This function is intended for marking intermediate values. It stores
 // the value into a new stack slot, and marks the stack slot as a root.
-void storeAndMarkPointerAsGCRoot(llvm::Value* val) {
+llvm::Value* storeAndMarkPointerAsGCRoot(llvm::Value* val) {
   assert(val->getType()->isPointerTy());
 
-  const llvm::Type* pi8 = LLVMTypeFor("i8*");
-  llvm::AllocaInst* root = builder.CreateAlloca(pi8, 0, "stackref");
-  Value* rawaddr = builder.CreateBitCast(val, pi8);
-  builder.CreateStore(rawaddr, root, /*isVolatile=*/ false);
+  llvm::AllocaInst* stackslot = CreateEntryAlloca(val->getType(), "stackref");
+  llvm::Value* root = builder.CreateBitCast(stackslot, LLVMTypeFor("i8**"), "gcroot");
 
   markGCRoot(root, typeMapForType[val->getType()->getContainedType(0)]);
+  builder.CreateStore(val, stackslot, /*isVolatile=*/ false);
+
+  // Instead of returning the pointer (of type T*),
+  // we return the stack slot (of type T**) so that copying GC will be able to
+  // modify the stack slot effectively.
+  return stackslot;
 }
 
-// returns ty*, with a ty** on the stack
+// returns ty**, the stack slot containing a ty*
 llvm::Value* emitMalloc(const llvm::Type* ty) {
   llvm::Value* memalloc = scope.lookup("memalloc", "");
   if (!memalloc) {
@@ -270,13 +285,8 @@ llvm::Value* emitMalloc(const llvm::Type* ty) {
     return NULL;
   }
   llvm::Value* mem = builder.CreateCall(memalloc, getConstantInt64For(32), "mem");
-
-  llvm::AllocaInst* stackref = builder.CreateAlloca(LLVMTypeFor("i8*"), 0, "stackref");
-  builder.CreateStore(mem, stackref, /*isVolatile*/ false);
-  markGCRoot(stackref, typeMapForType[ty]);
-
-  llvm::Value* pointer = builder.CreateBitCast(mem, llvm::PointerType::getUnqual(ty), "memcast");;
-  return pointer;
+  return storeAndMarkPointerAsGCRoot(
+      builder.CreateBitCast(mem, llvm::PointerType::getUnqual(ty), "ptr"));
 }
 
 template <typename T>
@@ -330,6 +340,14 @@ void CodegenPass::visit(VariableAST* ast) {
   } else {
     ast->value = scope.lookup(ast->name, "");
   }
+
+#if 0
+  if (isPointerToType(ast->value->getType(), ast->type) &&
+      !ast->type->isFunctionTy()) {
+    std::cout << "\tfound indirect variable of type "
+        << *(ast->type) << ": " << ast->name << std::endl;
+  }
+#endif
 
   if (!ast->value) {
     std::cerr << "Error: CodegenPass: Unknown variable name " << ast->name << std::endl;
@@ -488,6 +506,19 @@ void CodegenPass::visit(FnAST* ast) {
   BasicBlock* BB = BasicBlock::Create(getGlobalContext(), "entry", F);
   builder.SetInsertPoint(BB);
 
+  // If the body of the function might allocate memory, the first thing
+  // the function should do is create stack slots/GC roots to hold
+  // dynamically-allocated pointer parameters.
+  if (true) { // conservative approximation to MightAlloc
+    Function::arg_iterator AI = F->arg_begin();
+    for (int i = 0; i != ast->proto->inArgs.size(); ++i, ++AI) {
+      if (AI->getType()->isPointerTy()) {
+        scope.insert(ast->proto->inArgs[i]->name,
+            storeAndMarkPointerAsGCRoot(AI));
+      }
+    }
+  }
+
   (ast->body)->accept(this);
   Value* RetVal = ast->body->value;
   if (RetVal == NULL) std::cerr << "Oops, null body value in fn " << ast->proto->name << std::endl;
@@ -498,7 +529,7 @@ void CodegenPass::visit(FnAST* ast) {
   // If we try to return a tuple* when the fn specifies a tuple, manually insert a load
   if (RetVal->getType()->isDerivedType()
       && !returningVoid
-      && RetVal->getType() == llvm::PointerType::get(ast->proto->resultTy, 0)) {
+      && isPointerToType(RetVal->getType(), ast->proto->resultTy)) {
     RetVal = builder.CreateLoad(RetVal, false, "structPtrToStruct");
   }
 
@@ -591,7 +622,8 @@ void CodegenPass::visit(ClosureAST* ast) {
 
     addClosureTypeName(module, cloTy);
 
-    llvm::AllocaInst* clo = builder.CreateAlloca(cloTy, 0, "closure");
+    llvm::AllocaInst* clo = CreateEntryAlloca(cloTy, "closure");
+    std::cout << "clo has type " << *(clo->getType()) << std::endl;
 
     // TODO the (stack reference to the) closure should only be marked as
     // a GC root if the environment has been dynamically allocated...
@@ -622,7 +654,10 @@ struct LazyVisitedValue : public LazyValue {
 struct MemoValue : public LazyValue {
   Value* v; MemoValue(Value* v) : v(v) {}; Value* get() const { return v; }; };
 
-PHINode* codegenIfExpr(Value* cond, const LazyValue& lazyThen, const LazyValue& lazyElse, const Type* valTy) {
+PHINode* codegenIfExpr(Value* cond,
+    const LazyValue& lazyThen,
+    const LazyValue& lazyElse,
+    const Type* valTy) {
   Function *F = builder.GetInsertBlock()->getParent();
 
   BasicBlock* thenBB = BasicBlock::Create(getGlobalContext(), "then", F);
@@ -649,6 +684,14 @@ PHINode* codegenIfExpr(Value* cond, const LazyValue& lazyThen, const LazyValue& 
 
   F->getBasicBlockList().push_back(mergeBB);
   builder.SetInsertPoint(mergeBB);
+
+  // If we have a code construct like
+  //   if cond then { new blah {} } else { new blah {} }
+  // then the ast type (and thus valType) will be blah*
+  // but the exprs will be stack slots of type blah**
+  if (valTy != then->getType() && isPointerToType(then->getType(), valTy)) {
+    valTy = then->getType();
+  }
 
   PHINode *PN = builder.CreatePHI(valTy, "iftmp");
   PN->addIncoming(then, thenBB);
@@ -729,30 +772,74 @@ void CodegenPass::visit(RefExprAST* ast) {
   // a malloc for an alloca; others, like int literals or such, must be
   // manually copied out to a newly-malloc'ed cell.
   ast->value = ast->parts[0]->value;
+#if 1
+  std::cout << "refExprAST (indirect? "<< ast->isIndirect() << ")"
+      << ": val ty is " << *(ast->value->getType())
+      << "; ast ty is " << *(ast->type) << std::endl;
+#endif
 
-  // If we're given a T when we want a T*, malloc a new value and copy.
-  if (llvm::PointerType::getUnqual(ast->value->getType()) == ast->type) {
-
-    std::cout << "RefExpr allocating/copying new value of type "
-        << *(ast->value->getType()) << "\n";
-
-    llvm::Value* mem = emitMalloc(ast->value->getType());
-    builder.CreateStore(ast->value, mem, /*isVolatile=*/ false);
-
-    ast->value = mem;
+  if (ast->isIndirect()) {
+    if (ast->type == ast->value->getType()) {
+      // e.g. ast type is i32* but value type is i32* instead of i32**
+      llvm::Value* stackslot = CreateEntryAlloca(ast->value->getType(), "stackslot");
+      builder.CreateStore(ast->value, stackslot, /*isVolatile=*/ false);
+      ast->value = stackslot;
+    } else if (isPointerToType(ast->type, ast->value->getType())) {
+      // If we're given a T when we want a T**, malloc a new T to get a T*
+      // stored in a T** on the stack, then copy our T into the T*.
+      const llvm::Type* T = ast->value->getType();
+      // stackslot has type T**
+      llvm::Value* stackslot = emitMalloc(T);
+      // mem has type T*
+      llvm::Value* mem = builder.CreateLoad(stackslot, /*isVolatile=*/false, "destack");
+      // write our T into the T* given by malloc
+      builder.CreateStore(ast->value, mem, /*isVolatile=*/ false);
+      ast->value = stackslot;
+    }
+  } else {
+    if (isPointerToType(ast->type, ast->value->getType())) {
+      // e.g. ast type is i32* but value type is i32
+      // stackslot has type i32* (not i32**)
+      llvm::Value* stackslot = CreateEntryAlloca(ast->value->getType(), "stackslot");
+      builder.CreateStore(ast->value, stackslot, /*isVolatile=*/ false);
+      ast->value = stackslot;
+    }
   }
 }
 
 void CodegenPass::visit(DerefExprAST* ast) {
   if (ast->value) return;
 
-  ast->value = builder.CreateLoad(ast->parts[0]->value, /*isVolatile=*/ false, "deref");
+  llvm::Value* src = ast->parts[0]->value;
+#if 0
+  std::cout << "deref value of type " << *(src->getType())
+       << " vs ast type of " << *(ast->type) << std::endl;
+#endif
+  if (isPointerToPointerToType(src->getType(), ast->type)) {
+    src = builder.CreateLoad(src, /*isVolatile=*/ false, "prederef");
+  }
+
+  assert(isPointerToType(src->getType(), ast->type)
+      && "deref needs a T* to produce a T!");
+  ast->value = builder.CreateLoad(src, /*isVolatile=*/ false, "deref");
 }
 
 void CodegenPass::visit(AssignExprAST* ast) {
   if (ast->value) return;
 
-  builder.CreateStore(ast->parts[1]->value, ast->parts[0]->value);
+  const llvm::Type* srcty = ast->parts[1]->value->getType();
+  llvm::Value* dst = ast->parts[0]->value;
+#if 0
+  std::cout << "assign " << *(srcty) << " to " << *(dst->getType()) << std::endl;
+#endif
+
+  if (isPointerToPointerToType(dst->getType(), srcty)) {
+    dst = builder.CreateLoad(dst, /*isVolatile=*/ false, "unstack");
+  }
+
+  assert(isPointerToType(dst->getType(), srcty) && "assignment must store T in a T*");
+
+  builder.CreateStore(ast->parts[1]->value, dst);
 
   // Mark the assignment as having been codegenned; for now, assignment expressions
   // evaluate to constant zero (annotated for clarity).
@@ -805,6 +892,20 @@ void CodegenPass::visit(SubscriptAST* ast) {
 
   Value* base = ast->parts[0]->value;
   Value* idx  = ast->parts[1]->value;
+
+#if 0
+  llvm::errs() << "subscriptast base: " << *base
+      << "\n\tof type " << *(base->getType())
+      << "\n\twith ast type: " << *(ast->type) << "\n";
+#endif
+
+  // TODO why does ast have no type here...?
+  const llvm::Type* baseTy = base->getType();
+  if ((ast->type && isPointerToType(baseTy, ast->type))
+      || (baseTy->isPointerTy()
+       && baseTy->getContainedType(0)->isPointerTy())) {
+    base = builder.CreateLoad(base, /*isVolatile*/ false, "subload");
+  }
 
   if (this->inAssignLHS) {
     ast->value = getPointerToIndex(base, idx, "assignLHS");
@@ -928,7 +1029,7 @@ llvm::Value* getTrampolineForClosure(ClosureAST* cloAST) {
   // We have a closure { code*, env* } and must convert it to a bare
   // trampoline function pointer.
   const llvm::Type* trampolineArrayType = llvm::ArrayType::get(i8, 24); // Sufficient for x86 and x86_64
-  llvm::AllocaInst* trampolineBuf = builder.CreateAlloca(trampolineArrayType, 0, "trampBuf");
+  llvm::AllocaInst* trampolineBuf = CreateEntryAlloca(trampolineArrayType, "trampBuf");
 
   trampolineBuf->setAlignment(16); // sufficient for x86 and x86_64
   Value* trampi8 = builder.CreateBitCast(trampolineBuf, pi8, "trampi8");
@@ -1113,10 +1214,6 @@ void CodegenPass::visit(CallAST* ast) {
       return;
     }
 
-    if (V->getType()->isPointerTy() && V->getType() != expectedType) {
-      V = builder.CreateBitCast(V, expectedType, "polyptr");
-    }
-
     if (clo && clo->isTrampolineVersion) {
       std::cout << "Creating trampoline for closure; bitcasting to " << *expectedType << std::endl;
       V = builder.CreateBitCast(getTrampolineForClosure(clo), expectedType, "trampfn");
@@ -1129,7 +1226,37 @@ void CodegenPass::visit(CallAST* ast) {
     }
   }
 
-  if (true) {
+  // Stack slot loads must be done after codegen for all arguments
+  // has taken place, in order to ensure that no allocations will occur
+  // between the load and the call.
+  for (int i = 0; i < valArgs.size(); ++i) {
+    llvm::Value*& V = valArgs[i];
+
+    // ContainedType[0] is the return type; args start at 1
+    const llvm::Type* expectedType = FT->getContainedType(i + 1);
+
+    // If we're given a T** when we expect a T*,
+    // automatically load the reference from the stack.
+    if (V->getType() != expectedType
+     && expectedType->isPointerTy()
+     && isPointerToType(V->getType(), expectedType)) {
+      V = builder.CreateLoad(V, /*isVolatile=*/ false, "unstackref");
+    }
+
+    // Give print_ref() "polymorphic" behavior by converting a pointer argument
+    // of any type to the expected type (i8*, probably).
+    if (V->getType() != expectedType
+     && V->getType()->isPointerTy() && isPrintRef(base)) {
+      V = builder.CreateBitCast(V, expectedType, "polyptr");
+    }
+
+    if (V->getType() != expectedType) {
+      std::cout << "Error: arg " << i << " of call to " << *base << " has type mismatch:\n"
+          << *(V->getType()) << " vs expected type " << *(expectedType) << "\n";
+    }
+  }
+
+  if (false) {
     std::cout << "Creating call for AST {" << valArgs.size() << "} " << *base << std::endl;
     for (int i = 0; i < valArgs.size(); ++i) {
       llvm::errs() << "\tAST arg " << i << ":\t" << *valArgs[i] << "\n";
@@ -1153,8 +1280,20 @@ void CodegenPass::visit(CallAST* ast) {
     ast->value = builder.CreateCall(FV, valArgs.begin(), valArgs.end(), "calltmp");
   }
 
+  // If we have e.g. a function like mk-tree(... to ref node)
+  // that returns a pointer, we assume that the pointer refers to
+  // heap-allocated memory and must be stored on the stack and marked
+  // as a GC root. In order that updates from the GC take effect,
+  // we use the stack slot (of type T**) instead of the pointer (T*) itself
+  // as the return value of the call.
   if (ast->value->getType()->isPointerTy()) {
-    storeAndMarkPointerAsGCRoot(ast->value);
+    const llvm::Type* retty = ast->value->getType();
+    if (retty->getContainedType(0)->isPointerTy()) {
+      // have T**; load T* value so it can be stored in a gcroot slot
+      ast->value = builder.CreateLoad(ast->value, /*isVolatile=*/ false, "destack");
+    }
+
+    ast->value = storeAndMarkPointerAsGCRoot(ast->value);
   }
 }
 
@@ -1207,7 +1346,7 @@ void CodegenPass::visit(ArrayExprAST* ast) {
   SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
   if (body->parts.empty()) {
     // No initializer
-    ast->value = builder.CreateAlloca(arrayType, 0, "noInitArr");
+    ast->value = CreateEntryAlloca(arrayType, "noInitArr");
 
     // We only need to mark arrays of non-atomic objects as GC roots
     // TODO handle rooting arrays of non-atomic objects
@@ -1221,7 +1360,7 @@ void CodegenPass::visit(ArrayExprAST* ast) {
     if (isComposedOfIntLiterals(body)) {
       ast->value = getGlobalArrayVariable(body, arrayType);
     } else {
-      ast->value = builder.CreateAlloca(arrayType, 0, "initArr");
+      ast->value = CreateEntryAlloca(arrayType, "initArr");
 
       // We only need to mark arrays of non-atomic objects as GC roots
 	  // TODO handle rooting arrays of non-atomic objects
@@ -1265,7 +1404,7 @@ void CodegenPass::visit(SimdVectorAST* ast) {
     gvar->setInitializer(constVector);
     ast->value = builder.CreateLoad(gvar, /*isVolatile*/ false, "simdLoad");
   } else {
-    llvm::AllocaInst* pt = builder.CreateAlloca(simdType, 0, "s");
+    llvm::AllocaInst* pt = CreateEntryAlloca(simdType, "s");
     // simd vectors are never gc roots
     for (int i = 0; i < body->parts.size(); ++i) {
       Value* dst = builder.CreateConstGEP2_32(pt, 0, i, "simd-gep");
@@ -1276,7 +1415,16 @@ void CodegenPass::visit(SimdVectorAST* ast) {
   }
 }
 
+// pt should be an alloca, either of type tuple* or tuple**,
+// where tuple is the type of the TupleExprAST
 void copyTupleTo(CodegenPass* pass, Value* pt, TupleExprAST* ast) {
+  if (isPointerToPointerToType(pt->getType(), ast->type)) {
+    pt = builder.CreateLoad(pt, false, "stackload");
+  }
+
+  // pt should now be of type tuple*
+  assert(isPointerToType(pt->getType(), ast->type));
+
   SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
   for (int i = 0; i < body->parts.size(); ++i) {
     Value* dst = builder.CreateConstGEP2_32(pt, 0, i, "gep");
@@ -1286,7 +1434,17 @@ void copyTupleTo(CodegenPass* pass, Value* pt, TupleExprAST* ast) {
     if (TupleExprAST* tu = dynamic_cast<TupleExprAST*>(part)) {
       copyTupleTo(pass, dst, tu);
     } else {
-      builder.CreateStore(part->value, dst, /*isVolatile=*/ false);
+      if (part->value->getType() == dst->getType()) {
+        // Storing a T* in a T* -- need to load to store a T in the T*
+        llvm::Value* derefed = builder.CreateLoad(
+            part->value, /*isVolatile=*/ false, "derefed");
+        builder.CreateStore(derefed, dst, /*isVolatile=*/ false);
+      } else if (isPointerToType(dst->getType(), part->value->getType())) {
+        builder.CreateStore(part->value, dst, /*isVolatile=*/ false);
+      } else {
+        std::cerr << "Can't store a value of type " << *(part->value->getType())
+            << " in a pointer of type " << *(dst->getType()) << std::endl;
+      }
     }
   }
 }
@@ -1316,9 +1474,11 @@ void CodegenPass::visit(TupleExprAST* ast) {
 
   // Allocate tuple space
   if (RefExprAST* ref = dynamic_cast<RefExprAST*>(ast->parent)) {
+    // pt has type tuple**
     pt = emitMalloc(tupleType);
   } else {
-    pt = builder.CreateAlloca(tupleType, 0, "s");
+    // pt has type tuple*
+    pt = CreateEntryAlloca(tupleType, "s");
   }
 
 #if 0
@@ -1328,7 +1488,9 @@ void CodegenPass::visit(TupleExprAST* ast) {
   }
 #endif
 
+  std::cout << "1350" << std::endl;
   copyTupleTo(this, pt, ast);
+  std::cout << "1352" << std::endl;
   ast->value = pt;
 }
 

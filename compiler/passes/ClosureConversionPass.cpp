@@ -276,15 +276,25 @@ void lambdaLiftAnonymousFunction(FnAST* ast) {
   set<VariableAST*>::iterator it;
   for (it = freeVars.begin(); it != freeVars.end(); ++it) {
     // For each free variable in the function:
+    VariableAST* parentScopeVar = *it;
+    VariableAST* var = new VariableAST(parentScopeVar->name, parentScopeVar->type);
 
     // add a parameter to the function prototype
-    appendParameter(ast->proto, *it);
+    appendParameter(ast->proto, var);
 
-    // and rewrite all usages inside the function?
+    // and rewrite all usages inside the function
+    {
+      ReplaceExprTransform rex;
+      rex.staticReplacements[parentScopeVar] = var;
+      ast->body->accept(&rex);
+      // This rewriting must be done even if the variable maintains
+      // the same name so that llvm::Values from the inner function
+      // don't leak out via the 'scope' table to calling functions.
+    }
 
-    // and rewrite all call sites to pass the extra parameter
+    // and rewrite all external call sites to pass the extra parameter
     for (int i = 0; i < calls.size(); ++i) {
-      appendParameter(calls[i], *it);
+      appendParameter(calls[i], parentScopeVar);
     }
   }
 

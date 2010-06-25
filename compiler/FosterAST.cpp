@@ -4,6 +4,7 @@
 
 #include "FosterAST.h"
 #include "TypecheckPass.h"
+#include "FosterUtils.h"
 
 #include "llvm/Target/TargetSelect.h"
 #include "llvm/Module.h"
@@ -153,3 +154,6 @@ llvm::Constant* IntAST::getConstantValue() {
   return ConstantInt::get(this->type, this->getAPInt());
 }
 
+bool RefExprAST::isIndirect() {
+  return isIndirect_ || (type && value && isPointerToType(value->getType(), type));
+}

@@ -1,0 +1,78 @@
+// IN: 4 8 16 32
+
+type node = tuple { ?ref node, ?ref node, i32 }
+
+type mixed-node = tuple { ref node, ?ref node }
+
+test-ref-nil = fn () {
+  expect_i1(true)
+  print_i1(__COMPILES__ new node { nil, nil, 100 })
+  
+  expect_i1(false) // can't assign nil to ref, only to ?ref
+  print_i1(__COMPILES__ new mixed-node { nil, nil })
+  
+  expect_i1(true)
+  print_i1(__COMPILES__ new mixed-node { new node { nil, nil, 101 }, nil })
+}
+
+mk-full-tree = fn (depth : i32 to ref node) {
+  if depth < 1 then {
+    //print_i32(depth)
+    new node { nil, nil, depth }
+  } else {
+    fn (l : ref node, r : ref node to ref node) {
+      //print_i32(depth)
+      print_ref(l)
+      new node { l, r, depth }
+    } (mk-full-tree(depth - 1), mk-full-tree(depth - 1))
+  }
+}
+
+sum-tree = fn (n : ref node) {
+  deref(n)[2] + if deref(n)[0] != nil then {
+    2 * sum-tree(deref(n)[0])
+  } else { 0 }
+}
+
+count-nodes-in-tree = fn (n : ref node) {
+  print_ref(n)
+  print_ref(deref(n)[0])
+  print_i32(deref(n)[2])
+  
+  print_i32(12345)
+  
+  1 + if deref(n)[0] != nil then {
+    2 * count-nodes-in-tree(deref(n)[0])// + count-nodes-in-tree(deref(n)[1])
+  } else { 0 }
+}
+
+print-tree = fn (n : ref node) {
+  print_i32( deref(n)[2] )
+  if deref(n)[0] != nil then {
+    print-tree( deref(n)[0] )
+    print-tree( deref(n)[1] )
+  } else { 0 }
+}
+
+fn "main" () {
+  test-ref-nil()
+  for i in 1 to 10 do {
+    expect_i32(i)
+    print_i32(i)
+    
+    print_i32(-123)
+    
+    let n : i32 = 3
+    let t : ref node = mk-full-tree(n) in {
+      print_i32(bitshl(1, n + 1) - 1)
+      print_i32(count-nodes-in-tree(t))
+      print-tree(t)
+    }
+    
+    print_i32(-124)
+    //expect_i32( (bitshl(1, i + 1) - i) - 2 )
+    //print_i32(sum-tree(mk-full-tree(i)))
+  }
+  //let t4 : ref node = mk-full-tree(3) in { expect_i32(26) ; print_i32(sum-tree(t4)) }
+  //let t-med : ref node = mk-full-tree(5) in {  print_i32(sum-tree(t-med)) }
+}

@@ -20,5 +20,14 @@ struct TypecheckPass : public FosterASTVisitor {
   #include "FosterASTVisitor.decls.inc.h"
 };
 
+inline bool isPrintRef(const ExprAST* base) {
+  if (const VariableAST* var = dynamic_cast<const VariableAST*>(base)) {
+    if (var->name == "print_ref") {
+      return true;
+    }
+  }
+  return false;
+}
+
 #endif // header guard
 

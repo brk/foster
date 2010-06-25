@@ -124,7 +124,9 @@ class FosterSymbolTable : public NameResolver<T> {
       string scopeName = (*it).name;
       if (scopeName == "*" || wantedName == "" || scopeName == wantedName) {
         T* V = (*it).lookup(ident);
-        if (V != NULL) return V;
+        if (V != NULL) {
+          return V;
+        }
       }
     }
     return NULL;
@@ -499,14 +501,19 @@ struct NilExprAST : public ExprAST {
 
 struct RefExprAST : public UnaryExprAST {
   bool isNullable;
-  explicit RefExprAST(ExprAST* expr, bool isNullable)
-    : UnaryExprAST(expr), isNullable(isNullable) {}
+  bool isIndirect_;
+  explicit RefExprAST(ExprAST* expr, bool isNullable, bool isIndirect)
+    : UnaryExprAST(expr), isNullable(isNullable), isIndirect_(isIndirect) {}
   virtual void accept(FosterASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
     out << "(";
     if (isNullable) { out << "?ref "; } else { out << "ref"; }
     return out << str(this->parts[0]) << ")";
   }
+
+  // Returns true if the physical representation of this reference
+  // is T** instead of a simple T*.
+  virtual bool isIndirect();
 };
 
 struct DerefExprAST : public UnaryExprAST {

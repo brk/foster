@@ -422,6 +422,10 @@ void TypecheckPass::visit(NilExprAST* ast) {
   }
 }
 
+// In order for copying GC to be able to move GC roots,
+// the root must be stored on the stack; thus, new T is implemented
+// so that it evaluates to a T** (a stack slot containing a T*)
+// instead of a simple T*, which would not be modifiable by the GC.
 void TypecheckPass::visit(RefExprAST* ast) {
   ast->type = llvm::PointerType::getUnqual(ast->parts[0]->type);
 }
@@ -591,24 +595,22 @@ void TypecheckPass::visit(CallAST* ast) {
   }
 
   // HACK HACK HACK - give print_ref special polymorphic type (with hardcoded ret ty)
-  if (VariableAST* var = dynamic_cast<VariableAST*>(base)) {
-    if (var->name == "print_ref") {
-      if (ast->parts.size() < 2) {
-        std::cerr << "print_ref() must be given an arg!" << std::endl;
-        return;
-      }
-      ExprAST* arg = ast->parts[1];
-      arg->accept(this);
-      if (!arg->type) {
-        std::cerr << "print_ref() given arg of no discernable type!" << std::endl;
-      } else if (!arg->type->isPointerTy()) {
-        std::cerr << "print_ref() given arg of non-pointer type! " << *(arg->type) << std::endl;
-      } else {
-        std::cout << "print_ref given free pass..." << std::endl;
-        ast->type = LLVMTypeFor("i32");
-      }
+  if (isPrintRef(base)) {
+    if (ast->parts.size() < 2) {
+      std::cerr << "print_ref() must be given an arg!" << std::endl;
       return;
     }
+    ExprAST* arg = ast->parts[1];
+    arg->accept(this);
+    if (!arg->type) {
+      std::cerr << "print_ref() given arg of no discernable type!" << std::endl;
+    } else if (!arg->type->isPointerTy()) {
+      std::cerr << "print_ref() given arg of non-pointer type! " << *(arg->type) << std::endl;
+    } else {
+      std::cout << "print_ref given free pass..." << std::endl;
+      ast->type = LLVMTypeFor("i32");
+    }
+    return;
   }
 
   const llvm::FunctionType* baseFT = tryExtractCallableType(baseType);

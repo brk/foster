@@ -500,10 +500,12 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
 
   if (text == "new" || text == "ref" || text == "?ref") {
 	bool isNullableTypeDecl = text == "?ref";
+	bool isKnownIndirect    = text == "new";
+
     // Currently 'new' and 'ref' are interchangeable, though the intended
     // convention is that 'new' is for value-exprs and 'ref' is for type-exprs
     return new RefExprAST(ExprAST_from(child(tree, 0), fnMeansClosure),
-    		isNullableTypeDecl);
+    		isNullableTypeDecl, isKnownIndirect);
   }
 
   if (text == "nil") { return new NilExprAST(); }

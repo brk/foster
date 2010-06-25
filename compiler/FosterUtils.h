@@ -7,6 +7,16 @@
 
 #include "llvm/DerivedTypes.h"
 
+// returns true if p == t*
+inline bool isPointerToType(const llvm::Type* p, const llvm::Type* t) {
+  return p->isPointerTy() && p->getContainedType(0) == t;
+}
+
+// returns true if p == t**
+inline bool isPointerToPointerToType(const llvm::Type* p, const llvm::Type* t) {
+  return p->isPointerTy() && isPointerToType(p->getContainedType(0), t);
+}
+
 bool canAssignType(const llvm::Type* from, const llvm::Type* to);
 
 void addClosureTypeName(llvm::Module* mod, const llvm::StructType* ty);

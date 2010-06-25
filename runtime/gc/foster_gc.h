@@ -30,6 +30,6 @@ struct StackEntry {
   void *Roots[0];      //< Stack roots (in-place array).
 };
 
-} } } // namespace foster::runtime::gc
+void visitGCRoots(void (*Visitor)(void **Root, const void *Meta));
 
-extern foster::runtime::gc::StackEntry *llvm_gc_root_chain;
+} } } // namespace foster::runtime::gc
