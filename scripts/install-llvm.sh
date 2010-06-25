@@ -29,7 +29,7 @@ popd
 # invoke from LLVM_ROOT
 build_source () {
 pushd src/llvm-${LLVM_VERSION}
-	./configure --prefix=${LLVM_ROOT}/${LLVM_VERSION}
+	./configure --prefix=${LLVM_ROOT}/${LLVM_VERSION} --enable-targets=host --enable-debug-symbols
 
 	make
 
@@ -44,5 +44,5 @@ cd ${LLVM_ROOT}
 mkdir -p src
 mkdir -p ${LLVM_VERSION}
 
-#download_source
+download_source
 build_source

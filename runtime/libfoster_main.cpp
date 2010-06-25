@@ -15,11 +15,10 @@ extern "C" int foster__main();
 #include "libfoster.h"
 #include "foster_gc.h"
 
-// This goes in the unnamed namespace so that the symbol won't be
-// exported in the bitcode file, which could interfere with llc.
-namespace {
+// This goes in the separately-compiled libfoster_main .o file,
+// instead of the fosterc-compiled bitcode file, because having the
+// llvm_gc_root_chain variable in the .bc can interfere with llc.
 foster::runtime::gc::StackEntry *llvm_gc_root_chain;
-}
 
 namespace foster {
 namespace runtime {

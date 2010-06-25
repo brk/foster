@@ -1247,6 +1247,9 @@ void CodegenPass::visit(CallAST* ast) {
     // of any type to the expected type (i8*, probably).
     if (V->getType() != expectedType
      && V->getType()->isPointerTy() && isPrintRef(base)) {
+      while (V->getType()->getContainedType(0)->isPointerTy()) {
+        V = builder.CreateLoad(V, false, "strip-all-indirection");
+      }
       V = builder.CreateBitCast(V, expectedType, "polyptr");
     }
 
