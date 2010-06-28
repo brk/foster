@@ -301,8 +301,10 @@ struct SeqAST : public ExprAST {
 };
 
 struct TupleExprAST : public UnaryExprAST {
+  bool isClosureEnvironment;
+
   explicit TupleExprAST(ExprAST* expr, const llvm::Type* ty)
-    : UnaryExprAST(expr) {
+    : UnaryExprAST(expr), isClosureEnvironment(false) {
 	type = ty;
   }
   explicit TupleExprAST(ExprAST* expr) : UnaryExprAST(expr) {

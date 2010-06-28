@@ -17,6 +17,16 @@ bool canAssignType(const Type* from, const Type* to) {
   return from == to;
 }
 
+const FunctionType* tryExtractCallableType(const Type* ty) {
+  if (const llvm::PointerType* ptrTy = llvm::dyn_cast_or_null<llvm::PointerType>(ty)) {
+    // Avoid doing full recursion on pointer types; fn* is callable,
+    // but fn** is not.
+    ty = ptrTy->getContainedType(0);
+  }
+
+  return llvm::dyn_cast_or_null<const llvm::FunctionType>(ty);
+}
+
 std::map<const Type*, bool> namedClosureTypes;
 
 void addClosureTypeName(llvm::Module* mod, const llvm::StructType* sty) {
@@ -33,20 +43,10 @@ void addClosureTypeName(llvm::Module* mod, const llvm::StructType* sty) {
     }
     ss << "_to_" << *(fty->getReturnType());
 
-    mod->addTypeName(ss.str(), sty);
+    mod->addTypeName(freshName(ss.str()), sty);
 
     namedClosureTypes[sty] = true;
   }
-}
-
-const FunctionType* tryExtractCallableType(const Type* ty) {
-  if (const llvm::PointerType* ptrTy = llvm::dyn_cast_or_null<llvm::PointerType>(ty)) {
-    // Avoid doing full recursion on pointer types; fn* is callable,
-    // but fn** is not.
-    ty = ptrTy->getContainedType(0);
-  }
-
-  return llvm::dyn_cast_or_null<const llvm::FunctionType>(ty);
 }
 
 // converts      t1 (t2, t3) to { t1 (i8* nest, t2, t3)*, i8* }

@@ -220,6 +220,14 @@ void performClosureConversion(ClosureAST* closure) {
   std::vector<const Type*> envTypes;
   Exprs envExprs;
 
+  // The first entry in the environment is just a placeholder for the typemap.
+  // We must embed a typemap in the environment so the garbage collector
+  // will be able to handle the closure in functions that can be passed
+  // closures with multiple different environments.
+  NilExprAST* nilptr = new NilExprAST(); nilptr->type = LLVMTypeFor("i8*");
+  envTypes.push_back(nilptr->type);
+  envExprs.push_back(nilptr);
+
   set<VariableAST*>::iterator it;
   for (it = freeVars.begin(); it != freeVars.end(); ++it) {
     std::cout << "Free var: " <<     *(*it) << std::endl;
@@ -242,11 +250,11 @@ void performClosureConversion(ClosureAST* closure) {
   // instead go through the passed env pointer.
   {
     ReplaceExprTransform rex;
-    int offset = 0;
+    int envOffset = 1; // offset 0 is reserved for typemamp
     for (it = freeVars.begin(); it != freeVars.end(); ++it) {
       std::cout << "Rewriting " << *(*it) << " to go through env" << std::endl;
-      rex.staticReplacements[*it] = new SubscriptAST(envVar, literalIntAST(offset));
-      ++offset;
+      rex.staticReplacements[*it] = new SubscriptAST(envVar, literalIntAST(envOffset));
+      ++envOffset;
     }
     ast->body->accept(&rex);
   }

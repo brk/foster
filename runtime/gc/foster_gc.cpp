@@ -29,7 +29,6 @@ struct typemap {
   entry entries[0];
 };
 
-
 #define HEAP_CELL_FOR_BODY(ptr) ((heap_cell*) &((int64_t*)(ptr))[-1])
 const uint64_t FORWARDED_BIT = 0x02;
 
@@ -60,10 +59,12 @@ FILE* gclog = NULL;
 
 class copying_gc {
   class semispace {
-	  semispace(int64_t size) {
+	  semispace(int64_t size, copying_gc* parent) : parent(parent) {
 		  start = (char*) malloc(size);
 		  end   = start + size;
 		  bump  = start;
+
+		  genericClosureMarker = NULL;
 	  }
 
 	  ~semispace() {
@@ -73,6 +74,9 @@ class copying_gc {
 	  char* start;
 	  char* end;
 	  char* bump;
+	  copying_gc* parent;
+
+	  char* genericClosureMarker;
 
   public:
 	  bool contains(void* ptr) {
@@ -97,12 +101,83 @@ class copying_gc {
 		return allot->body();
 	  }
 
+	  // Prerequisite: body is a stack pointer.
+	  // Behavior:
+	  // * Any slots containing stack pointers should be recursively update()ed.
+	  // * Any slots containing heap pointers should be overwritten
+	  // with copy()'d values.
+	  void update(void* body, const void* meta) {
+	    if (!meta) {
+	      fprintf(gclog, "can't update body %p with no type map!\n", body);
+	      return;
+	    }
+
+        const typemap* map = (const typemap*) meta;
+
+        bool isClosure =
+            (genericClosureMarker && genericClosureMarker == map->name)
+            || strncmp("genericClosure", map->name, 14) == 0;
+        if (isClosure) {
+
+          // closure value is { code*, env = i8* }
+          // but we don't want to use the (i8*) typemap entry for the env ptr.
+          // Instead, we manually fetch the correct typemap from the
+          // environment itself, and use it instead of e.typeinfo
+          void** envptr_slot = (void**) offset(body, 4);
+          void** envptr = *(void***) envptr_slot;
+          if (!envptr) return;
+          typemap* envmap = (typemap*) *envptr;
+          if (this->parent->is_probable_stack_pointer(envptr, envptr_slot)) {
+            update(envptr, envmap);
+          } else {
+            *envptr_slot = copy(envptr, envmap);
+          }
+          return;
+        }
+
+        // for each pointer field in the cell
+        for (int i = 0; i < map->numPointers; ++i) {
+          const typemap::entry& e = map->entries[i];
+          void** oldslot = (void**) offset(body, e.offset);
+#if 0
+          fprintf(gclog, "update: body is %p, offset is %d, "
+              "oldslot is %p, slotval is %p, typeinfo is %p\n",
+              body, e.offset, oldslot, *oldslot, e.typeinfo);
+#endif
+          // recursively copy the field from cell, yielding subfwdaddr
+          // set the copied cell field to subfwdaddr
+          if (*oldslot != NULL) {
+            if (this->parent->is_probable_stack_pointer(*oldslot, oldslot)) {
+              update(*oldslot, e.typeinfo);
+            } else {
+              *oldslot = copy(*oldslot, e.typeinfo);
+            }
+          }
+        }
+	  }
+
 	  // returns body of newly allocated cell
 	  void* copy(void* body, const void* meta) {
+	    if (!meta) {
+	      void** bp4 = (void**)offset(body,4);
+          fprintf(gclog, "called copy with null metadata\n");
+          fprintf(gclog, "body   is %p -> %p\n", body, *(void**)body);
+          fprintf(gclog, "body+4 is %p -> %p\n", offset(body,4), *bp4);
+          fprintf(gclog, "body-4 is %p -> %p\n", offset(body,-4), *(void**)offset(body,-4));
+          void** envptr = (void**)*bp4;
+          fprintf(gclog, "envptr: %p -> %p\n", envptr, *envptr);
+          typemap* envtm = (typemap*) *envptr;
+          fprintf(gclog, "env tm name is %s, # ptrs = %d\n", envtm->name, envtm->numPointers);
+          return NULL;
+        }
+
 	    heap_cell* cell = HEAP_CELL_FOR_BODY(body);
 
 	    if (cell->is_forwarded()) {
-	      return cell->get_forwarded_body();
+	      void* fwd = cell->get_forwarded_body();
+	      fprintf(gclog, "cell %p(->0x%x) considered forwarded to %p for body %p(->0x%x)\n",
+	          cell, *(unsigned int*)cell, fwd, body, *(unsigned int*)body);
+	      return fwd;
 	    }
 
 	    int64_t size = cell->size();
@@ -138,8 +213,6 @@ class copying_gc {
               fprintf(gclog, "%p : {%p, %p, %d} -> %p: { %p , %p, %d }\n", body,
                   t1.l, t1.r, t1.s, new_addr->body(), t2.l, t2.r, t2.s);
 	        }
-	      } else {
-	        fprintf(gclog, "called copy with null metadata\n");
 	      }
 
 	      return cell->get_forwarded_body();
@@ -168,15 +241,15 @@ class copying_gc {
 
 public:
   copying_gc(int64_t size) {
-	curr = new semispace(size);
+	curr = new semispace(size, this);
 
 	// Allocate some temporary memory to force curr and next
 	// to have visually distinct address ranges.
 	std::vector<semispace*> stretches;
 	for (int i = (4 * 1000 * 1000) / size; i >= 0; --i) {
-	  stretches.push_back(new semispace(size));
+	  stretches.push_back(new semispace(size, this));
 	}
-	next = new semispace(size);
+	next = new semispace(size, this);
 	for (int i = 0; i < stretches.size(); --i) {
       delete stretches[i]; stretches[i] = NULL;
     }
@@ -190,14 +263,28 @@ public:
 			num_allocations, num_collections);
   }
 
+  void force_gc_for_debugging_purposes() { this->gc(); }
+
   const char* describe(void* ptr) {
     if (curr->contains(ptr)) return "curr";
     if (next->contains(ptr)) return "next";
     return "unknown";
   }
 
+  bool is_probable_stack_pointer(void* suspect, void* knownstackaddr) {
+    if (curr->contains(suspect) || next->contains(suspect)) return false;
+    return (labs(((char*)suspect) - (char*)knownstackaddr) < (1<<20));
+  }
+
   // copy the cell at the given address to the next semispace
-  void* copy(void* body, const void* meta);
+  void* copy(void* body, const void* meta) {
+    return next->copy(body, meta);
+  }
+
+  // update slots in the body containing pointers to heap cells
+  void update(void* body, const void* meta) {
+    next->update(body, meta);
+  }
 
   void* allocate(int64_t size) {
 	++num_allocations;
@@ -221,22 +308,30 @@ public:
 copying_gc* allocator = NULL;
 
 void copying_gc_root_visitor(void **root, const void *meta) {
-  void* cell = *root;
-  if (cell) {
-    void* newaddr = allocator->copy(cell, meta);
+  void* body = *root;
+  if (body) {
+    fprintf(gclog, "gc root@%p visited: %p, meta: %p\n", root, body, meta);
 
-    fprintf(gclog, "gc root visited: %p, meta: %p", cell, meta);
-    if (meta) {
-      typemap* map = (typemap*) meta;
-      fprintf(gclog, "\tname: %s", map->name);
+    if (allocator->is_probable_stack_pointer(body, root)) {
+      fprintf(gclog, "found stack pointer\n");
+      if (meta) {
+        typemap* map = (typemap*) meta;
+        fprintf(gclog, "name is %s, # ptrs is %d\n", map->name, map->numPointers);
+      }
+
+      allocator->update(body, meta);
+    } else {
+      void* newaddr = allocator->copy(body, meta);
+      if (meta) {
+        typemap* map = (typemap*) meta;
+        fprintf(gclog, "\tname: %s", map->name);
+      }
+      if (newaddr) {
+        fprintf(gclog, "; replacing %p with %p\n", body, newaddr);
+        *root = newaddr;
+      }
     }
-    fprintf(gclog, "; replacing %p with %p\n", cell, newaddr);
-    *root = newaddr;
   }
-}
-
-void* copying_gc::copy(void* cell, const void* meta) {
-  return next->copy(cell, meta);
 }
 
 void copying_gc::gc() {
@@ -283,6 +378,10 @@ std::string format_ref(void* ptr) {
 
 extern "C" void* memalloc(int64_t sz) {
   return allocator->allocate(sz);
+}
+
+extern "C" void force_gc_for_debugging_purposes() {
+  allocator->force_gc_for_debugging_purposes();
 }
 
 #if 0

@@ -123,16 +123,45 @@ llvm::Constant* arrayVariableToPointer(llvm::GlobalVariable* arr) {
   return llvm::ConstantExpr::getGetElementPtr(arr, &idx[0], idx.size());
 }
 
+void printOffsets(std::ostream& out, const OffsetSet& os) {
+  for (OffsetSet::iterator it = os.begin(); it != os.end(); ++it) {
+    out << "\t{ " << it->second << " : " << *(it->first) << " }\n";
+  }
+}
+
+void removeEntryWithOffset(OffsetSet& os, int offset) {
+  OffsetSet::iterator toRemove = os.end();
+  for (OffsetSet::iterator it = os.begin(); it != os.end(); ++it) {
+    if (it->second == offset) {
+      toRemove = it;
+      break;
+    }
+  }
+
+  if (toRemove != os.end()) {
+    os.erase(toRemove);
+  }
+}
+
 // return a global corresponding to the following layout:
 // struct {
 //   const char* typeName;
 //   i32 numPtrEntries;
 //   struct { i8* typeinfo; i32 offset }[numPtrEntries];
 // }
-llvm::GlobalVariable* emitTypeMap(const llvm::Type* ty, std::string name) {
+// The returned global is also stored in the typeMapForType[] map.
+llvm::GlobalVariable* emitTypeMap(const llvm::Type* ty, std::string name,
+    bool skipOffsetZero = false) {
   using llvm::StructType;
 
   OffsetSet pointerOffsets = countPointersInType(ty);
+  std::cout << "emitting type map for type " << *ty << " ; skipping offset zero? " << skipOffsetZero << std::endl;
+
+  if (skipOffsetZero) {
+    // Remove entry for first pointer, which corresponds
+    // to the type map for the environment.
+    removeEntryWithOffset(pointerOffsets, 0);
+  }
   int numPointers = pointerOffsets.size();
 
   // Construct the type map's LLVM type
@@ -201,7 +230,8 @@ llvm::GlobalVariable* emitTypeMap(const llvm::Type* ty, std::string name) {
   return typeMapVar;
 }
 
-void registerType(const llvm::Type* ty, std::string desiredName) {
+void registerType(const llvm::Type* ty, std::string desiredName,
+    bool isClosureEnvironment = false) {
   static std::map<const llvm::Type*, bool> registeredTypes;
 
   if (registeredTypes[ty]) return;
@@ -210,7 +240,7 @@ void registerType(const llvm::Type* ty, std::string desiredName) {
 
   std::string name = freshName(desiredName);
   module->addTypeName(name, ty);
-  emitTypeMap(ty, name);
+  emitTypeMap(ty, name, isClosureEnvironment);
 }
 
 // returns type  void (i8**, i8*)
@@ -227,7 +257,6 @@ const FunctionType* get_llvm_gcroot_ty() {
 
 // root should be an AllocaInst or a bitcast of such
 void markGCRoot(llvm::Value* root, llvm::Constant* meta) {
-  std::cout << "Marking gc root!" << std::endl;
   llvm::Constant* llvm_gcroot = module->getOrInsertFunction("llvm.gcroot", get_llvm_gcroot_ty());
   if (!llvm_gcroot) {
     std::cerr << "Error! Could not mark GC root!" << std::endl;
@@ -238,8 +267,13 @@ void markGCRoot(llvm::Value* root, llvm::Constant* meta) {
     meta = typeMapForType[root->getType()];
   }
 
+  llvm::outs() << "Marking gc root " << *root << " with ";
+  if (meta) llvm::outs() << *meta;
+  else      llvm::outs() << " null metadata pointer";
+  llvm::outs() << "\n";
+
   if (!meta) {
-    meta = llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(llvm::Type::getInt8Ty(getGlobalContext())));
+    meta = llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(LLVMTypeFor("i8")));
   } else if (meta->getType() != LLVMTypeFor("i8*")) {
     meta = llvm::ConstantExpr::getBitCast(meta, LLVMTypeFor("i8*"));
   }
@@ -258,17 +292,57 @@ llvm::AllocaInst* CreateEntryAlloca(const llvm::Type* ty, const char* name) {
   return tmpBuilder.CreateAlloca(ty, /*ArraySize=*/ 0, name);
 }
 
+// Checks that ty == { i32 (i8*)*, i8* }
+bool isGenericClosureType(const llvm::Type* ty) {
+  if (const llvm::StructType* sty = llvm::dyn_cast<const llvm::StructType>(ty)) {
+    if (!isValidClosureType(sty)) return false;
+    if (sty->getContainedType(1) != LLVMTypeFor("i8*")) return false;
+    if (!sty->getContainedType(0)->isPointerTy()) return false;
+
+    const llvm::Type* fnty = sty->getContainedType(0)->getContainedType(0);
+    if (!fnty->isFunctionTy()) return false;
+    if (fnty->getContainedType(0) != LLVMTypeFor("i32")) return false;
+    if (fnty->getContainedType(1) != LLVMTypeFor("i8*")) return false;
+    return fnty->getNumContainedTypes() == 2;
+  }
+  return false;
+}
+
+llvm::GlobalVariable* getTypeMapForType(const llvm::Type* ty) {
+  llvm::GlobalVariable* gv = typeMapForType[ty];
+  if (gv) return gv;
+
+  if (!ty->isAbstract() && !ty->isAggregateType()) {
+    gv = emitTypeMap(ty, freshName("gcatom"));
+    // emitTypeMap also sticks gv in typeMapForType
+  } else if (isGenericClosureType(ty)) {
+    gv = emitTypeMap(ty, freshName("genericClosure"),
+        /*skipOffsetZero*/ true);
+  }
+
+  if (!gv) {
+    std::cout << "No type map for type " << *(ty) << std::endl;
+  }
+
+  return gv;
+}
+
 // Unlike markGCRoot, this does not require the root be an AllocaInst
 // (though it should still be a pointer).
 // This function is intended for marking intermediate values. It stores
 // the value into a new stack slot, and marks the stack slot as a root.
 llvm::Value* storeAndMarkPointerAsGCRoot(llvm::Value* val) {
-  assert(val->getType()->isPointerTy());
+  if (!val->getType()->isPointerTy()) {
+     llvm::Value* valptr = CreateEntryAlloca(val->getType(), "ptrfromnonptr");
+     builder.CreateStore(val, valptr, /*isVolatile=*/ false);
+     val = valptr;
+  }
 
+  // allocate a slot for a T* on the stack
   llvm::AllocaInst* stackslot = CreateEntryAlloca(val->getType(), "stackref");
   llvm::Value* root = builder.CreateBitCast(stackslot, LLVMTypeFor("i8**"), "gcroot");
 
-  markGCRoot(root, typeMapForType[val->getType()->getContainedType(0)]);
+  markGCRoot(root, getTypeMapForType(val->getType()->getContainedType(0)));
   builder.CreateStore(val, stackslot, /*isVolatile=*/ false);
 
   // Instead of returning the pointer (of type T*),
@@ -287,6 +361,14 @@ llvm::Value* emitMalloc(const llvm::Type* ty) {
   llvm::Value* mem = builder.CreateCall(memalloc, getConstantInt64For(32), "mem");
   return storeAndMarkPointerAsGCRoot(
       builder.CreateBitCast(mem, llvm::PointerType::getUnqual(ty), "ptr"));
+}
+
+
+bool mightContainHeapPointers(const llvm::Type* ty) {
+  // For now, we don't distinguish between different kinds of pointer;
+  // we consider any pointer to be a possible heap pointer.
+  OffsetSet offsets = countPointersInType(ty);
+  return !offsets.empty();
 }
 
 template <typename T>
@@ -512,7 +594,10 @@ void CodegenPass::visit(FnAST* ast) {
   if (true) { // conservative approximation to MightAlloc
     Function::arg_iterator AI = F->arg_begin();
     for (int i = 0; i != ast->proto->inArgs.size(); ++i, ++AI) {
-      if (AI->getType()->isPointerTy()) {
+      if (mightContainHeapPointers(AI->getType())) {
+        std::cout << "marking root for var " << ast->proto->inArgs[i]->name
+            << " of ast type " << *(ast->proto->inArgs[i]->type)
+            << " and value type " << *(AI->getType()) << std::endl;
         scope.insert(ast->proto->inArgs[i]->name,
             storeAndMarkPointerAsGCRoot(AI));
       }
@@ -563,7 +648,7 @@ void CodegenPass::visit(ClosureTypeAST* ast) {
 
 // converts   t1, (envptrty, t2, t3)   to   { rt (envptrty, t2, t3)*, envptrty }
 // TODO handle functions of native arity >= 1
-const Type* closureTypeFromClosedFnType(const FunctionType* fnty) {
+const llvm::StructType* closureTypeFromClosedFnType(const FunctionType* fnty) {
   const Type* envPtrTy = fnty->getParamType(0);
 
   std::vector<const Type*> cloTypes;
@@ -590,13 +675,13 @@ void CodegenPass::visit(ClosureAST* ast) {
     std::cout << std::endl;
   }
 
-
-  ExprAST* env = new TupleExprAST(new SeqAST(ast->parts));
+  TupleExprAST* env = new TupleExprAST(new SeqAST(ast->parts));
   ExprAST* fnPtr = new VariableAST(ast->fn->proto->name, llvm::PointerType::get(ast->fn->type, 0));
   { TypecheckPass tp;
     fnPtr->accept(&tp);
     fnPtr->accept(this);
 
+    env->isClosureEnvironment = true;
     env->accept(&tp);
     env->accept(this);
   }
@@ -612,32 +697,46 @@ void CodegenPass::visit(ClosureAST* ast) {
 
   if (const FunctionType* fnTy = llvm::dyn_cast<const FunctionType>(ast->fn->type)) {
     // Manually build struct for now, since we don't have PtrAST nodes
-    const Type* specificCloTy = closureTypeFromClosedFnType(fnTy);
-    const llvm::StructType* cloTy = genericVersionOfClosureType(fnTy);
+    const llvm::StructType* specificCloTy = closureTypeFromClosedFnType(fnTy);
+    const llvm::StructType* genericCloTy = genericVersionOfClosureType(fnTy);
 
     std::cout << std::endl;
     std::cout << "Fn type: " << *fnTy << std::endl;
     std::cout << "Specific closure type: " << *specificCloTy << std::endl;
-    std::cout << "Generic closure type: " << *cloTy << std::endl;
+    std::cout << "Generic closure type: " << *genericCloTy << std::endl;
 
-    addClosureTypeName(module, cloTy);
+    addClosureTypeName(module, genericCloTy);
 
-    llvm::AllocaInst* clo = CreateEntryAlloca(cloTy, "closure");
-    std::cout << "clo has type " << *(clo->getType()) << std::endl;
+    // { code*, env* }*
+    llvm::AllocaInst* clo = CreateEntryAlloca(specificCloTy, "closure");
 
     // TODO the (stack reference to the) closure should only be marked as
     // a GC root if the environment has been dynamically allocated...
     //markGCRoot(clo, NULL);
 
-    Value* clo_code = builder.CreateConstGEP2_32(clo, 0, 0, "clo_code");
-    Value* bc_fnptr = builder.CreateBitCast(fnPtr->value, cloTy->getContainedType(0), "hideclofnty");
-    builder.CreateStore(bc_fnptr, clo_code, /*isVolatile=*/ false);
+    // (code*)*
+    Value* clo_code_slot = builder.CreateConstGEP2_32(clo, 0, 0, "clo_code");
+    builder.CreateStore(fnPtr->value, clo_code_slot, /*isVolatile=*/ false);
 
-    Value* clo_env = builder.CreateConstGEP2_32(clo, 0, 1, "clo_env");
-    Value* bc_envptr = builder.CreateBitCast(env->value, cloTy->getContainedType(1), "hidecloenvty");
-    builder.CreateStore(bc_envptr, clo_env, /*isVolatile=*/ false);
+    // (env*)*
+    Value* clo_env_slot = builder.CreateConstGEP2_32(clo, 0, 1, "clo_env");
+    // Store the typemap in the environment
+    const llvm::Type* specificEnvTyPtr = specificCloTy->getContainedType(1);
+    const llvm::Type* specificEnvTy = specificEnvTyPtr->getContainedType(0);
 
-    ast->value = builder.CreateLoad(clo, /*isVolatile=*/ false, "loadClosure");
+    llvm::GlobalVariable* clo_env_typemap
+        = getTypeMapForType(specificEnvTy);
+
+    Value* clo_env_typemap_slot = builder.CreateConstGEP2_32(env->value, 0, 0, "clo_env_typemap_slot");
+    builder.CreateStore(llvm::ConstantExpr::getBitCast(
+        clo_env_typemap, clo_env_typemap_slot->getType()->getContainedType(0)),
+        clo_env_typemap_slot, /*isVolatile=*/ false);
+
+    builder.CreateStore(env->value, clo_env_slot, /*isVolatile=*/ false);
+
+    Value* genericClo = builder.CreateBitCast(clo,
+        llvm::PointerType::getUnqual(genericCloTy), "hideCloTy");
+    ast->value = builder.CreateLoad(genericClo, /*isVolatile=*/ false, "loadClosure");
   }
 
   if (!ast->value) {
@@ -1116,6 +1215,16 @@ void CodegenPass::visit(CallAST* ast) {
       // Call to closure struct
       FT = fty;
       llvm::Value* clo = FV;
+
+      if (clo->getType()->isPointerTy()) {
+        clo = builder.CreateLoad(clo, /*isVolatile=*/ false, "derefCloPtr");
+      }
+      if (clo->getType()->isPointerTy()) {
+        clo = builder.CreateLoad(clo, /*isVolatile=*/ false, "derefCloPtr");
+      }
+
+      assert(!clo->getType()->isPointerTy()
+          && "clo value should be a tuple, not a pointer");
       llvm::Value* envPtr = builder.CreateExtractValue(clo, 1, "getCloEnv");
 
       // Pass env pointer as first parameter to function.
@@ -1147,7 +1256,7 @@ void CodegenPass::visit(CallAST* ast) {
     const llvm::Type* expectedType = FT->getContainedType(i);
 
     // Codegenning   callee( arg )  where arg has raw function type, not closure type!
-    if (const FunctionType* fnty = llvm::dyn_cast<const FunctionType>(arg->type)) {
+    if (const FunctionType* fnty = llvm::dyn_cast_or_null<const FunctionType>(arg->type)) {
       // If we still have a bare function type at codegen time, it means
       // the code specified a (top-level) function name.
       // Since we made it past type checking, we should have only two
@@ -1470,8 +1579,8 @@ void CodegenPass::visit(TupleExprAST* ast) {
 
   // Create struct type underlying tuple
   const Type* tupleType = ast->type;
-
-  registerType(tupleType, "tuple");
+  const char* typeName = (ast->isClosureEnvironment) ? "env" : "tuple";
+  registerType(tupleType, typeName, ast->isClosureEnvironment);
 
   llvm::Value* pt = NULL;
 
@@ -1491,9 +1600,7 @@ void CodegenPass::visit(TupleExprAST* ast) {
   }
 #endif
 
-  std::cout << "1350" << std::endl;
   copyTupleTo(this, pt, ast);
-  std::cout << "1352" << std::endl;
   ast->value = pt;
 }
 

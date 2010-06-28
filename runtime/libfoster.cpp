@@ -156,6 +156,10 @@ void* memalloc(int64_t sz);
 
 //////////////////////////////////////////////////////////////////
 
+int force_gc_for_debugging_purposes() {
+  gc::force_gc_for_debugging_purposes(); return 0;
+}
+
 int print_ref(void* x) {
   std::string fmt = gc::format_ref(x);
   return fprintf(stdout, "%s\n", fmt.c_str());
