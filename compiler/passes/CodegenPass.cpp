@@ -36,6 +36,7 @@ typedef std::set<OffsetInfo> OffsetSet;
 // TODO replace with ConstantExpr::getOffsetOf(ty, slot) ?
 int getOffsetOfStructSlot(const llvm::StructType* ty, int slot) {
   const llvm::TargetData* td = ee->getTargetData();
+  assert(td && "Need TargetData to compute struct offsets!");
   int offset = 0;
   for (int i = 0; i < slot; ++i) {
 	offset += td->getTypeStoreSize(ty->getContainedType(i));

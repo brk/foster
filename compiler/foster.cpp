@@ -4,16 +4,21 @@
 
 #include "llvm/DerivedTypes.h"
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
-#include "llvm/ExecutionEngine/Interpreter.h"
+// We don't actually use the JIT, but we need this header for
+// the TargetData member of the ExecutionEngine to be properly
+// initialized to the host machine's native target.
 #include "llvm/ExecutionEngine/JIT.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Module.h"
 #include "llvm/Linker.h"
+#include "llvm/Support/StandardPasses.h"
+#include "llvm/Support/PassNameParser.h"
 #include "llvm/PassManager.h"
 #include "llvm/Analysis/Verifier.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Support/IRBuilder.h"
+#include "llvm/Support/IRReader.h"
 
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Bitcode/ReaderWriter.h"
@@ -278,9 +283,12 @@ void createLLVMBitIntrinsics() {
 }
 
 Module* readModuleFromPath(std::string path) {
+  SMDiagnostic diag;
+  return llvm::ParseIRFile(path, diag, llvm::getGlobalContext());
+
+#if 0
   Module* m = NULL;
   std::string errMsg;
-  
   // TODO test behavior with incorrect paths
   if (MemoryBuffer *memBuf = MemoryBuffer::getFile(path.c_str(), &errMsg)) {
     //if (m = getLazyBitcodeModule(memBuf, getGlobalContext(), &errMsg)) {
@@ -295,8 +303,8 @@ Module* readModuleFromPath(std::string path) {
     }
     delete memBuf;
   }
-
   return m;
+#endif
 }
 
 void putModuleMembersInScope(Module* m) {
@@ -344,6 +352,18 @@ static cl::opt<bool>
 optCompileSeparately("c",
   cl::desc("Compile separately, don't automatically link imported modules"));
 
+static cl::opt<bool>
+optDumpPreLinkedIR("dump-prelinked",
+  cl::desc("Dump LLVM IR before linking with standard library"));
+
+static cl::opt<bool>
+optDumpPostLinkedIR("dump-postlinked",
+  cl::desc("Dump LLVM IR after linking with standard library"));
+
+static cl::opt<bool>
+optOptimizeZero("O0",
+  cl::desc("Disable optimization passes after linking with standard library"));
+
 void printVersionInfo() {
   std::cout << "Foster version: " << FOSTER_VERSION_STR;
   std::cout << ", compiled: " << __DATE__ << " at " << __TIME__ << std::endl;
@@ -387,6 +407,75 @@ void dumpModuleToFile(Module* mod, const std::string& filename) {
     exit(1);
   }
 }
+
+void dumpModuleToBitcode(Module* mod, const std::string& filename) {
+  std::string errInfo;
+  sys::RemoveFileOnSignal(sys::Path(filename), &errInfo);
+
+  raw_fd_ostream out(filename.c_str(), errInfo, raw_fd_ostream::F_Binary);
+  if (!errInfo.empty()) {
+    std::cerr << "Error when preparing to write bitcode to " << filename
+        << "\n" << errInfo << std::endl;
+    exit(1);
+  }
+
+  WriteBitcodeToFile(mod, out);
+}
+
+TargetData* getTargetDataForModule(Module* mod) {
+  const std::string& layout = mod->getDataLayout();
+  if (layout.empty()) return NULL;
+  return new TargetData(layout);
+}
+
+void optimizeModule(Module* mod) {
+  PassManager passes;
+  FunctionPassManager fpasses(mod);
+
+  TargetData* td = getTargetDataForModule(mod);
+  if (td) {
+    passes.add(td);
+    fpasses.add(new TargetData(*td));
+  } else {
+    std::cout << "Warning: no target data for module!" << std::endl;
+  }
+
+  passes.add(llvm::createVerifierPass());
+
+  llvm::createStandardModulePasses(&passes, 2,
+      /*OptimizeSize*/ false,
+      /*UnitAtATime*/ true,
+      /*UnrollLoops*/ true,
+      /*SimplifyLibCalls*/ true,
+      /*HaveExceptions*/ false,
+      llvm::createFunctionInliningPass());
+  llvm::createStandardLTOPasses(&passes,
+      /*Internalize*/ true,
+      /*RunInliner*/ true,
+      /*VerifyEach*/ true);
+  llvm::createStandardModulePasses(&passes, 3,
+      /*OptimizeSize*/ false,
+      /*UnitAtATime*/ true,
+      /*UnrollLoops*/ true,
+      /*SimplifyLibCalls*/ true,
+      /*HaveExceptions*/ false,
+      llvm::createFunctionInliningPass());
+
+  passes.add(llvm::createVerifierPass());
+
+
+  llvm::createStandardFunctionPasses(&fpasses, 2);
+  llvm::createStandardFunctionPasses(&fpasses, 3);
+
+  fpasses.doInitialization();
+  for (Module::iterator it = mod->begin(); it != mod->end(); ++it) {
+    fpasses.run(*it);
+  }
+  fpasses.doFinalization();
+
+  passes.run(*mod);
+}
+
 
 int main(int argc, char** argv) {  
   sys::PrintStackTraceOnErrorSignal();
@@ -500,19 +589,47 @@ int main(int argc, char** argv) {
 
   { CodegenPass cgPass; exprAST->accept(&cgPass); }
   
+
   if (!optCompileSeparately) {
-    std::string outfile = "foster.prelink.ll";
-    std::cout << "Dumping pre-linked LLVM IR to " << outfile << endl;
-    dumpModuleToFile(module, dumpdirFile(outfile).c_str());
+    if (optDumpPreLinkedIR) {
+      std::string outfile = "out.prelink.ll";
+      std::cout << "Dumping pre-linked LLVM IR to " << outfile << endl;
+      dumpModuleToFile(module, dumpdirFile(outfile).c_str());
+    }
 
     std::string errMsg;
     if (Linker::LinkModules(module, m, &errMsg)) {
       std::cerr << "Error when linking modules together: " << errMsg << std::endl;
     }
+
+    if (optDumpPostLinkedIR) {
+      dumpModuleToFile(module, "out.ll");
+    }
+
+    // Okay, this is a gross hack.
+    // LLVM doesn't seem to want to do anything with the linked
+    // module other than print it out to an IR file. In particular,
+    // running optimizations, module verification, and printing to bitcode
+    // all fail. As far as I can tell, calls to functions in the
+    // standard library are rejected because it's a "different" module.
+    //
+    // The "solution" (until I figure out how to keep everything in memory)
+    // is to print out the module to a file, then read it directly back,
+    // yielding a new module, which we can then optimize and spit back out again.
+
+    std::string tmpFilename(dumpdirFile("_uglyhack.ll"));
+    dumpModuleToFile(module, tmpFilename);
+    delete module;
+    delete m;
+    module = readModuleFromPath(tmpFilename);
   }
 
-  dumpModuleToFile(module, "foster.ll");
+  if (!optOptimizeZero) { optimizeModule(module); }
   
+  std::string finalBitcodeFile(dumpdirFile("out.bc"));
+  dumpModuleToBitcode(module, finalBitcodeFile);
+  // TODO clone llc bc -> .s
+  // TODO invoke g++ .s -> exe
   return 0;
 }
 

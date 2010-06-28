@@ -61,7 +61,8 @@ message("LLVM_CONFIG is ${LLVM_CONFIG}")
 string(REPLACE "\n" "" LLVM_BINDIR ${LLVM_BINDIR})
 
 # Collect the linker flags for us to link against LLVM
-execute_process(COMMAND ${LLVM_CONFIG} --ldflags --libs core jit interpreter native linker
+execute_process(COMMAND
+    ${LLVM_CONFIG} --ldflags --libs core jit interpreter native linker ipo scalaropts bitwriter bitreader executionengine asmparser
   OUTPUT_VARIABLE LLVM_LDFLAGS
 )
 
