@@ -195,10 +195,7 @@ VariableAST* parseFormal(pTree tree, bool fnMeansClosure) {
     display_pTree(tree, 4);
     return NULL;
   }
-  std::cout << "parseFormal ";
-  display_pTree(varNameTree, 4);
   string varName = textOf(child(varNameTree, 0));
-  std::cout << "parseFormal varName = " << varName << std::endl;
   if (getChildCount(tree) == 2) {
     ExprAST* tyExpr = ExprAST_from(child(tree, 1), true);
     if (tyExpr) {
@@ -231,7 +228,7 @@ std::vector<VariableAST*> getFormals(pTree tree, bool fnMeansClosure) {
 FnAST* buildFn(string name, pTree bodyTree, bool fnMeansClosure,
                 pTree formalsTree, pTree tyExprTree) {
   varScope.pushScope("fn proto " + name);
-  display_pTree(formalsTree, 8);
+  //display_pTree(formalsTree, 8);
     std::vector<VariableAST*> in = getFormals(formalsTree, fnMeansClosure);
     ExprAST* tyExpr = ExprAST_from(tyExprTree, fnMeansClosure);
 
@@ -242,9 +239,9 @@ FnAST* buildFn(string name, pTree bodyTree, bool fnMeansClosure,
 
   //std::cout << "proto for " << name << " : " << *proto << std::endl;
 
-    std::cout << "Parsing body of fn " << name << std::endl;
+    //std::cout << "Parsing body of fn " << name << std::endl;
     ExprAST* body = ExprAST_from(bodyTree, true);
-    std::cout << "Parsed  body of fn " << name << std::endl;
+    //std::cout << "Parsed  body of fn " << name << std::endl;
   varScope.popScope();
 
   FnAST* fn = new FnAST(proto, body);
@@ -474,7 +471,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
         var = new VariableAST(varName, ty);
       }
     } else {
-      std::cout << "Found entry for variable " << varName << " in scope." << std::endl;
+      //std::cout << "Found entry for variable " << varName << " in scope." << std::endl;
     }
     return var;
   }
@@ -528,7 +525,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     ExprAST* lhs = ExprAST_from(child(tree, 0), fnMeansClosure);
     ExprAST* rhs = ExprAST_from(child(tree, 1), fnMeansClosure);
     bool override = overridePrecedence[lhs] || overridePrecedence[rhs];
-    std::cout << "saw binary operator " << text << " with lhs " << (*lhs) << " and rhs " << (*rhs) << std::endl;
+    //std::cout << "saw binary operator " << text << " with lhs " << (*lhs) << " and rhs " << (*rhs) << std::endl;
     if (BinaryOpExprAST* binopRHS = dynamic_cast<BinaryOpExprAST*>(rhs)) {
       int myprec = binaryOps[text];
       const string otherop = binopRHS->op;

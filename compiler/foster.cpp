@@ -333,7 +333,7 @@ void putModuleMembersInScope(Module* m) {
     }
      */
     bool hasDef = !f.isDeclaration();
-    std::cout << "\tfn " << name << "; def? " << hasDef << std::endl;
+    //std::cout << "\tfn " << name << "; def? " << hasDef << std::endl;
    
     
     if (hasDef && !isCxxLinkage) {
