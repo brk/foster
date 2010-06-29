@@ -15,7 +15,12 @@
 #include "llvm/Support/PassNameParser.h"
 #include "llvm/PassManager.h"
 #include "llvm/Analysis/Verifier.h"
+#include "llvm/ADT/Triple.h"
+#include "llvm/System/Host.h"
 #include "llvm/Target/TargetData.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetRegistry.h"
+#include "llvm/Target/SubtargetFeature.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Support/IRBuilder.h"
 #include "llvm/Support/IRReader.h"
@@ -25,8 +30,10 @@
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/PrettyStackTrace.h"
+#include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/System/Signals.h"
+#include "llvm/CodeGen/LinkAllCodegenComponents.h"
 
 #include "fosterLexer.h"
 #include "fosterParser.h"
@@ -476,6 +483,63 @@ void optimizeModule(Module* mod) {
   passes.run(*mod);
 }
 
+void compileToNativeAssembly(Module* mod, const std::string& filename) {
+  llvm::Triple triple(mod->getTargetTriple());
+  if (triple.getTriple().empty()) {
+    triple.setTriple(llvm::sys::getHostTriple());
+  }
+
+  const Target* target = NULL;
+  std::string err;
+  target = llvm::TargetRegistry::lookupTarget(triple.getTriple(), err);
+  if (!target) {
+    std::cerr << "Unable to pick a target for compiling to assembly!" << std::endl;
+    exit(1);
+  }
+
+  TargetMachine* tm = target->createTargetMachine(triple.getTriple(), "");
+  if (!tm) {
+    std::cerr << "Error! Creation of target machine"
+        " failed for triple " << triple.getTriple() << std::endl;
+    exit(1);
+  }
+
+  tm->setAsmVerbosityDefault(true);
+
+  // TODO replace TargetData from ee (in Codegen) with this TargetData
+  FunctionPassManager passes(mod);
+  if (const TargetData* td = tm->getTargetData()) {
+    passes.add(new TargetData(*td));
+  } else {
+    passes.add(new TargetData(mod));
+  }
+
+  bool disableVerify = true;
+
+  llvm::raw_fd_ostream raw_out(filename.c_str(), err, 0);
+  if (!err.empty()) {
+    std::cerr << "Error when opening file to print assembly to:\n\t"
+        << err << std::endl;
+    exit(1);
+  }
+  llvm::formatted_raw_ostream out(raw_out,
+      llvm::formatted_raw_ostream::PRESERVE_STREAM);
+  if (tm->addPassesToEmitFile(passes, out,
+      TargetMachine::CGFT_AssemblyFile,
+      CodeGenOpt::Aggressive,
+      disableVerify)) {
+    std::cerr << "Unable to emit assembly file! " << std::endl;
+    exit(1);
+  }
+
+  passes.doInitialization();
+  for (Module::iterator it = mod->begin(); it != mod->end(); ++it) {
+    if (it->isDeclaration()) continue;
+    passes.run(*it);
+  }
+  passes.doFinalization();
+}
+
 
 int main(int argc, char** argv) {  
   sys::PrintStackTraceOnErrorSignal();
@@ -502,7 +566,7 @@ int main(int argc, char** argv) {
     std::cout <<  "================" << std::endl;
   }
   
-  fosterLLVMInitializeNativeTarget();
+  fosterInitializeLLVM();
   module = new Module("foster", getGlobalContext());
 
   ee = EngineBuilder(module).create();
@@ -616,7 +680,6 @@ int main(int argc, char** argv) {
     // The "solution" (until I figure out how to keep everything in memory)
     // is to print out the module to a file, then read it directly back,
     // yielding a new module, which we can then optimize and spit back out again.
-
     std::string tmpFilename(dumpdirFile("_uglyhack.ll"));
     dumpModuleToFile(module, tmpFilename);
     delete module;
@@ -626,9 +689,7 @@ int main(int argc, char** argv) {
 
   if (!optOptimizeZero) { optimizeModule(module); }
   
-  std::string finalBitcodeFile(dumpdirFile("out.bc"));
-  dumpModuleToBitcode(module, finalBitcodeFile);
-  // TODO clone llc bc -> .s
+  compileToNativeAssembly(module, dumpdirFile("out.s"));
   // TODO invoke g++ .s -> exe
   return 0;
 }

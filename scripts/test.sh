@@ -36,33 +36,9 @@ TIMEEND () {
 extractinput () {
   grep '// IN:' $1 | sed 's/.. IN: //' > recorded-input.txt
 }
-runlli () {
-  llvm-as foster.ll -f
-  lli $1;
-}
 
-# $1 like foster.bc
-runllc () {
-  OPT=$OUTPUT/fstrprog.O2
-
-  TIMESTART
-  llvm-as foster.ll -f
-  TIMEEND "las"
-
-  if [ "z$TIMED_CMD_STATUS" != "z0" ]; then return; fi
-  TIMESTART
-  opt $1 -O2 -o=$OPT.bc -f
-  TIMEEND "opt"
-
-  if [ "z$TIMED_CMD_STATUS" != "z0" ]; then return; fi
-  TIMESTART
-  llvm-dis $OPT.bc -f
-  TIMEEND "dis"
-
-  if [ "z$TIMED_CMD_STATUS" != "z0" ]; then return; fi
-  TIMESTART
-  llc $OPT.bc -f # -> $OPT.s
-  TIMEEND "llc"
+run () {
+  OPT=$OUTPUT/out
 
   if [ "z$TIMED_CMD_STATUS" != "z0" ]; then return; fi
   TIMESTART
@@ -94,10 +70,8 @@ runfosterc () {
   TIMEEND "fosterc"
 }
 
-RUN="runllc"
-
 cleanout () {
   rm -f $OUTPUT/fstrprog.O2.bc foster.bc a.out foster.ll gclog.txt
 }
 
-make && cleanout && runfosterc $1 && extractinput $1 && $RUN foster.bc ; echo $?
+make && cleanout && runfosterc $1 && extractinput $1 && run ; echo $?

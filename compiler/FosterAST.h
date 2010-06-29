@@ -36,7 +36,7 @@ class ExprAST; // fwd decl
 typedef std::vector<ExprAST*> Exprs;
 std::ostream& operator<<(std::ostream& out, ExprAST& expr);
 
-void fosterLLVMInitializeNativeTarget();
+void fosterInitializeLLVM();
 
 string freshName(string like);
 

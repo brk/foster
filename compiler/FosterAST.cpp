@@ -37,8 +37,9 @@ std::ostream& operator<<(std::ostream& out, ExprAST& expr) {
 }
 
 /** Macros in TargetSelect.h conflict with those from ANTLR... */
-void fosterLLVMInitializeNativeTarget() {
+void fosterInitializeLLVM() {
   llvm::InitializeNativeTarget();
+  llvm::InitializeAllAsmPrinters();
 }
 
 /// Generates a unique name given a template; each template gets a separate
