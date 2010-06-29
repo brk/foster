@@ -268,10 +268,12 @@ void markGCRoot(llvm::Value* root, llvm::Constant* meta) {
     meta = typeMapForType[root->getType()];
   }
 
+#if 0
   llvm::outs() << "Marking gc root " << *root << " with ";
   if (meta) llvm::outs() << *meta;
   else      llvm::outs() << " null metadata pointer";
   llvm::outs() << "\n";
+#endif
 
   if (!meta) {
     meta = llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(LLVMTypeFor("i8")));
@@ -596,9 +598,11 @@ void CodegenPass::visit(FnAST* ast) {
     Function::arg_iterator AI = F->arg_begin();
     for (int i = 0; i != ast->proto->inArgs.size(); ++i, ++AI) {
       if (mightContainHeapPointers(AI->getType())) {
+#if 0
         std::cout << "marking root for var " << ast->proto->inArgs[i]->name
             << " of ast type " << *(ast->proto->inArgs[i]->type)
             << " and value type " << *(AI->getType()) << std::endl;
+#endif
         scope.insert(ast->proto->inArgs[i]->name,
             storeAndMarkPointerAsGCRoot(AI));
       }

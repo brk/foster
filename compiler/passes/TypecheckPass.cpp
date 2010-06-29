@@ -410,6 +410,21 @@ void TypecheckPass::visit(NilExprAST* ast) {
         }
       }
 	}
+
+	if (CallAST* callast = dynamic_cast<CallAST*>(ast->parent)) {
+	  // find the arg position of our nil
+	  ExprAST* callee = callast->parts[0];
+	  if (const llvm::FunctionType* fnty =
+	      llvm::dyn_cast_or_null<const llvm::FunctionType>(callee->type)) {
+        for (int i = 1; i < callast->parts.size(); ++i) {
+          if (ast == callast->parts[i]) {
+            ast->type = fnty->getParamType(i - 1);
+          }
+        }
+	  } else if (callee->type) {
+	    std::cout << "\t\tCALLEE HAS TYPE " << *(callee->type) << std::endl;
+	  }
+	}
   }
 
   if (!ast->type) {
@@ -466,7 +481,7 @@ void TypecheckPass::visit(AssignExprAST* ast) {
 // aggregate type for pointer-to-aggregate. Returns NULL in other cases.
 const llvm::CompositeType* getIndexableType(const llvm::Type* ty) {
   const llvm::Type* baseType = ty;
-  std::cout << "getIndexableType: " << *ty << std::endl;
+  //std::cout << "getIndexableType: " << *ty << std::endl;
   if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
     ty = pty->getElementType();
   }
@@ -510,7 +525,7 @@ void TypecheckPass::visit(SubscriptAST* ast) {
   }
 
 
-  std::cout << "Indexing " << *baseType << " as composite " << *compositeTy << std::endl;
+  //std::cout << "Indexing " << *baseType << " as composite " << *compositeTy << std::endl;
 
   // Check to see that the given index is valid for this type
   ConstantInt* cidx = llvm::dyn_cast<ConstantInt>(idx->getConstantValue());
@@ -545,7 +560,7 @@ void TypecheckPass::visit(SubscriptAST* ast) {
     }
   }
 
-  llvm::errs() << "Indexing composite with index " << *cidx << "; neg? " << vidx.isNegative() << "\n";
+  //llvm::errs() << "Indexing composite with index " << *cidx << "; neg? " << vidx.isNegative() << "\n";
   ast->type = compositeTy->getTypeAtIndex(cidx);
 
   if (this->inAssignLHS) {
@@ -607,7 +622,6 @@ void TypecheckPass::visit(CallAST* ast) {
     } else if (!arg->type->isPointerTy()) {
       std::cerr << "print_ref() given arg of non-pointer type! " << *(arg->type) << std::endl;
     } else {
-      std::cout << "print_ref given free pass..." << std::endl;
       ast->type = LLVMTypeFor("i32");
     }
     return;
@@ -898,7 +912,7 @@ void TypecheckPass::visit(TupleExprAST* ast) {
       std::cerr << "Tuple expr had null component " << i << "!" << std::endl;
       break;
     }
-    const Type* ty =  body->parts[i]->type;
+    const Type* ty = expr->type;
     if (!ty) {
       std::cerr << "Tuple expr had null constituent type for subexpr " << i << std::endl;
       success = false;

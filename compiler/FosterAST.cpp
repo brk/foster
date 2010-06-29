@@ -39,7 +39,15 @@ std::ostream& operator<<(std::ostream& out, ExprAST& expr) {
 /** Macros in TargetSelect.h conflict with those from ANTLR... */
 void fosterInitializeLLVM() {
   llvm::InitializeNativeTarget();
-  llvm::InitializeAllAsmPrinters();
+
+  // Initializing the native target doesn't initialize the native
+  // target's ASM printer, so we have to do it ourselves.
+#if LLVM_NATIVE_ARCH == X86Target
+  LLVMInitializeX86AsmPrinter();
+#else
+  std::cerr << "Warning: not initializing any asm printer!" << std::endl;
+#endif
+
 }
 
 /// Generates a unique name given a template; each template gets a separate

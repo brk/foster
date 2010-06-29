@@ -63,6 +63,17 @@ inline std::ostream& operator<<(std::ostream& out, const llvm::Type& ty) {
 
 ///////////////////////////////////////////////////////////
 
+class TypeAST {
+  // Equivalent (equal or convertible) representation types
+  // is a necessary but not sufficient precondition for two
+  // types to be compatible. For example, nullable and non-
+  // nullable reference to T are both representated by type
+  // T*, but they are not always compatible.
+  const llvm::Type* repr;
+};
+
+///////////////////////////////////////////////////////////
+
 template <typename T>
 struct NameResolver {
   virtual T* lookup(const string& name, const string& meta) = 0;

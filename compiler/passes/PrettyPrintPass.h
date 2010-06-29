@@ -133,7 +133,7 @@ struct PrettyPrintPass : public FosterASTVisitor {
             }
             break_level = std::min(break_level, current_level);
           } else {
-            std::cerr << "No breaks to take!" << std::endl;
+            //std::cerr << "No breaks to take!" << std::endl;
           }
         }
         

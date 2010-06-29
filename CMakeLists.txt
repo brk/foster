@@ -62,7 +62,7 @@ string(REPLACE "\n" "" LLVM_BINDIR ${LLVM_BINDIR})
 
 # Collect the linker flags for us to link against LLVM
 execute_process(COMMAND
-    ${LLVM_CONFIG} --ldflags --libs core jit interpreter native linker ipo scalaropts bitwriter bitreader executionengine asmparser
+    ${LLVM_CONFIG} --ldflags --libs core jit interpreter native linker ipo scalaropts bitwriter bitreader executionengine asmparser asmprinter
   OUTPUT_VARIABLE LLVM_LDFLAGS
 )
 
