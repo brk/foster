@@ -342,7 +342,7 @@ struct SubscriptAST : public BinaryExprAST {
 struct PrototypeAST : public ExprAST {
   string name;
   std::vector<VariableAST*> inArgs;
-  const Type* resultTy;
+  const Type* resultTy; // TODO switch to TypeAST*
   ExprAST* tyExpr;
 
   PrototypeAST(const Type* retTy, const string& name)

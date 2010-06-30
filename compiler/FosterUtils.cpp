@@ -17,14 +17,15 @@ bool canAssignType(TypeAST* from, TypeAST* to) {
   return from == to;
 }
 
-const FunctionType* tryExtractCallableType(const Type* ty) {
-  if (const llvm::PointerType* ptrTy = llvm::dyn_cast_or_null<llvm::PointerType>(ty)) {
+// Converts T (X, Y) and T (X, Y)* to T (X, Y)
+FnTypeAST* tryExtractCallableType(TypeAST* ty) {
+  if (RefTypeAST* r = dynamic_cast<RefTypeAST*>(ty)) {
     // Avoid doing full recursion on pointer types; fn* is callable,
     // but fn** is not.
-    ty = ptrTy->getContainedType(0);
+    ty = r->getElementType();
   }
-
-  return llvm::dyn_cast_or_null<const llvm::FunctionType>(ty);
+  if (FnTypeAST* f = dynamic_cast<FnTypeAST*>(ty)) { return f; }
+  return NULL;
 }
 
 std::map<const Type*, bool> namedClosureTypes;
@@ -35,7 +36,7 @@ void addClosureTypeName(llvm::Module* mod, const llvm::StructType* sty) {
 
   std::stringstream ss;
   ss << "ClosureTy";
-  const FunctionType* fty = tryExtractCallableType(sty->getContainedType(0));
+  FnTypeAST* fty = tryExtractCallableType(TypeAST::get(sty->getContainedType(0)));
   if (fty != NULL) {
     // Skip generic closure argument
     for (int i = 1; i < fty->getNumParams(); ++i) {
@@ -100,12 +101,14 @@ bool isValidClosureType(const llvm::StructType* sty) {
 
 // converts { T (env*, Y, Z)*, env* }   to   T (Y, Z)
 const llvm::FunctionType* originalFunctionTypeForClosureStructType(const llvm::StructType* sty) {
-  if (const llvm::FunctionType* ft = tryExtractCallableType(sty->getContainedType(0))) {
+  if (FnTypeAST* ft = tryExtractCallableType(
+                          TypeAST::get(sty->getContainedType(0)))) {
     std::vector<const llvm::Type*> originalArgTypes;
     for (int i = 1; i < ft->getNumParams(); ++i) {
-      originalArgTypes.push_back(ft->getParamType(i));
+      originalArgTypes.push_back(ft->getParamType(i)->getLLVMType());
     }
-    return llvm::FunctionType::get(ft->getReturnType(), originalArgTypes, /*isVarArg=*/ false);
+    return llvm::FunctionType::get(ft->getReturnType()->getLLVMType(),
+                                   originalArgTypes, /*isVarArg=*/ false);
   }
   return NULL;
 }

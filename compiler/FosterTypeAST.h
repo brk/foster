@@ -10,6 +10,8 @@
 
 #include <map>
 #include <string>
+#include <vector>
+#include <ostream>
 
 class TypeAST;
 std::ostream& operator<<(std::ostream& out, TypeAST& expr);
@@ -28,6 +30,10 @@ inline std::string str(const llvm::Type* ty) {
   return ss.str();
 }
 
+bool hasEqualRepr(TypeAST* src, TypeAST* dst);
+bool arePhysicallyCompatible(const llvm::Type* src,
+                             const llvm::Type* dst);
+
 class TypeAST {
   // Equivalent (equal or convertible) representation types
   // is a necessary but not sufficient precondition for two
@@ -44,28 +50,95 @@ protected:
     : repr(underlyingType) {}
 
 public:
-  const llvm::Type* getLLVMType() { return repr; }
+  const llvm::Type* getLLVMType() const { return repr; }
 
   virtual std::ostream& operator<<(std::ostream& out) const {
     return out << str(repr);
   };
 
+  virtual bool canConvertTo(TypeAST* otherType);
+
   static TypeAST* get(const llvm::Type* loweredType);
 };
 
+
 class RefTypeAST : public TypeAST {
   bool isNullable;
-  explicit RefTypeAST(const llvm::Type* ptrType, bool nullable)
-    : TypeAST(ptrType), isNullable(nullable) {}
+  TypeAST* underlyingType;
 
-  static std::map<std::pair<const llvm::Type*, bool>, RefTypeAST*> refCache;
+  explicit RefTypeAST(TypeAST* underlyingType, bool nullable)
+    : TypeAST(llvm::PointerType::getUnqual(underlyingType->getLLVMType())),
+      isNullable(nullable),
+      underlyingType(underlyingType) {
+    assert(getLLVMType()->isPointerTy());
+  }
+
+  typedef std::pair<TypeAST*, bool> RefTypeArgs;
+  static std::map<RefTypeArgs, RefTypeAST*> refCache;
 public:
+  virtual std::ostream& operator<<(std::ostream& out) const {
+    if (isNullable) {
+      return out << "(nullable " << str(getLLVMType()) << ")";
+    } else {
+      return out << str(getLLVMType());
+    }
+  };
+
+  virtual bool canConvertTo(TypeAST* otherType);
+
+  TypeAST* getElementType() { return underlyingType; }
+
   // given (T), returns (ref T)
-  static RefTypeAST* get(const llvm::Type* baseType, bool nullable);
+  static RefTypeAST* get(TypeAST* baseType, bool nullable);
 
   // given (T*), returns (?ref T)
-  static RefTypeAST* getNullableVersionOf(const llvm::Type* ptrType); 
+  static RefTypeAST* getNullableVersionOf(TypeAST* ptrType); 
 };
+
+
+class FnTypeAST : public TypeAST {
+  TypeAST* returnType;
+  std::vector<TypeAST*> argTypes;
+
+  explicit FnTypeAST(const llvm::FunctionType* fnty,
+                    TypeAST* returnType,
+                    const std::vector<TypeAST*>& argTypes)
+    : TypeAST(fnty),
+      returnType(returnType),
+      argTypes(argTypes) {}
+
+  typedef std::pair<TypeAST*, std::vector<TypeAST*> > FnTypeArgs;
+  static std::map<FnTypeArgs, FnTypeAST*> fnTypeCache;
+public:
+  virtual std::ostream& operator<<(std::ostream& out) const {
+    return out << str(getLLVMType());
+  };
+
+  static FnTypeAST* get(TypeAST* retTy,
+                        const std::vector<TypeAST*>& argTypes);
+
+  TypeAST* getParamType(int i) { return argTypes[i]; }
+
+  TypeAST* getReturnType() { return returnType; }
+
+  bool getNumParams() { return argTypes.size(); }
+};
+
+
+class TupleTypeAST : public TypeAST {
+  std::vector<TypeAST*> parts;
+
+  explicit TupleTypeAST(const llvm::StructType* sty,
+                    const std::vector<TypeAST*>& parts)
+    : TypeAST(sty),
+      parts(parts) {}
+
+  typedef std::pair<TypeAST*, std::vector<TypeAST*> > TupleTypeArgs;
+  static std::map<TupleTypeArgs, TupleTypeAST*> tupleTypeCache;
+public:
+  static TupleTypeAST* get(const std::vector<TypeAST*>& parts);
+};
+
 
 #endif // header guard
 

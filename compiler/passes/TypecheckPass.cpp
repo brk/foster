@@ -25,39 +25,6 @@ using std::vector;
 
 ////////////////////////////////////////////////////////////////////
 
-bool isAutoConvertible(const Type* fromTy, const Type* toTy) {
-  // no case for i1 needed because equality is taken care of
-  bool to8  = toTy == LLVMTypeFor("i8");
-  bool to16 = toTy == LLVMTypeFor("i16");
-  bool to32 = toTy == LLVMTypeFor("i32");
-  bool to64 = toTy == LLVMTypeFor("i64");
-
-  if (fromTy == LLVMTypeFor("i1")) {
-    return /**/ to8 /*|| to16 || to32 || to64*/;
-  } else if (fromTy == LLVMTypeFor("i8")) {
-    return /*to8 ||*/ to16 || to32 || to64;
-  } else if (fromTy == LLVMTypeFor("i16")) {
-    return /*to8 || to16 ||*/ to32 || to64;
-  } else if (fromTy == LLVMTypeFor("i32")) {
-    return /*to8 || to16 || to32 ||*/ to64;
-  }
-  // 64 bits:
-  return false;
-}
-
-bool isEqualRepr(TypeAST* src, TypeAST* dst) {
-  return src->getLLVMType() == dst->getLLVMType();
-}
-
-bool isCompatible(const Type* src, const Type* dst) {
-  return src == dst || isAutoConvertible(src, dst);
-}
-
-bool isCompatible(TypeAST* src, TypeAST* dst) {
-  return isCompatible(src->getLLVMType(),
-                      dst->getLLVMType());
-}
-
 void TypecheckPass::visit(BoolAST* ast) {
   ast->type = TypeAST::get(LLVMTypeFor("i1"));
 }
@@ -112,11 +79,12 @@ void TypecheckPass::visit(IntAST* ast) {
 void TypecheckPass::visit(VariableAST* ast) {
   if (this->typeParsingMode) {
     ast->type = TypeAST::get(LLVMTypeFor(ast->name));
+#if 0
     std::cout << "visited var " << ast->name << " in type parsing mode;"
 	" ast->type is " << str(ast->type)
 	<< "; tyExpr = " << str(ast->tyExpr)
 	<< std::endl;
-	
+#endif
   }
 
   if (!ast->tyExpr) {
@@ -142,11 +110,9 @@ void TypecheckPass::visit(VariableAST* ast) {
   // Extract an llvm::Type from the type expression; typeParsingMode
   // causes names to be interpreted directly as type names, rather than
   // variable names.
-  std::cerr << "Parsing type for expr " << *(ast->tyExpr) << std::endl;
+  //std::cerr << "Parsing type for expr " << *(ast->tyExpr) << std::endl;
   TypecheckPass typeParsePass; typeParsePass.typeParsingMode = true;
   ast->tyExpr->accept(&typeParsePass);
-
-
   ast->type = ast->tyExpr->type;
 
   //std::cerr << "Parsed type as " << (ast->type) << std::endl;
@@ -181,11 +147,10 @@ void TypecheckPass::visit(BinaryOpExprAST* ast) {
   TypeAST* Lty = ast->parts[ast->kLHS]->type;
   TypeAST* Rty = ast->parts[ast->kRHS]->type;
   const llvm::Type* TL = Lty->getLLVMType();
-  const llvm::Type* TR = Rty->getLLVMType();
 
   const std::string& op = ast->op;
 
-  if (!isCompatible(TL, TR)) {
+  if (! Lty->canConvertTo(Rty)) {
     std::cerr << "Error: binary expr " << op << " had differently typed sides!" << std::endl;
   } else if (!TL) {
     std::cerr << "Error: binary expr " << op << " failed to typecheck subexprs!" << std::endl;
@@ -207,13 +172,13 @@ void TypecheckPass::visit(BinaryOpExprAST* ast) {
     if (op == "<" || op == "==" || op == "!=" || op == "<=") {
       ast->type = TypeAST::get(LLVMTypeFor("i1"));
     } else {
-      ast->type = TypeAST::get(TL);
+      ast->type = Lty;
     }
   }
 }
 
 void TypecheckPass::visit(PrototypeAST* ast) {
-  vector<const Type*> argTypes;
+  vector<TypeAST*> argTypes;
   for (int i = 0; i < ast->inArgs.size(); ++i) {
     assert(ast->inArgs[i] != NULL);
 
@@ -222,14 +187,14 @@ void TypecheckPass::visit(PrototypeAST* ast) {
       return;
     }
     ast->inArgs[i]->accept(this);
-    const Type* ty =  ast->inArgs[i]->type->getLLVMType();
+    TypeAST* ty =  ast->inArgs[i]->type;
     if (ty == NULL) {
       std::cerr << "Error: proto " << ast->name << " had "
         << "null type for arg '" << ast->inArgs[i]->name << "'" << std::endl;
       return;
     }
 
-    //std::cout << "\t\t" << ast->name << " arg " << i << " : " << *ty << std::endl;
+    std::cout << "\t\t" << ast->name << " arg " << i << " : " << *ty << std::endl;
     argTypes.push_back(ty);
   }
 
@@ -243,7 +208,7 @@ void TypecheckPass::visit(PrototypeAST* ast) {
   if (!ast->resultTy) {
    std::cerr << "Error in typechecking PrototypeAST " << ast->name << ": null return type!" << std::endl;
   } else {
-    ast->type = TypeAST::get(FunctionType::get(ast->resultTy, argTypes, false));
+    ast->type = FnTypeAST::get(TypeAST::get(ast->resultTy), argTypes);
   }
 }
 
@@ -265,9 +230,9 @@ void TypecheckPass::visit(FnAST* ast) {
 
 void TypecheckPass::visit(ClosureTypeAST* ast) {
   ast->proto->accept(this);
-  if (const llvm::FunctionType* ft
-        = tryExtractCallableType(ast->proto->type->getLLVMType())) {
-    ast->type = TypeAST::get(genericClosureTypeFor(ft));
+  if (FnTypeAST* ft = tryExtractCallableType(ast->proto->type)) {
+    ast->type = TypeAST::get(genericClosureTypeFor(
+	llvm::cast<const llvm::FunctionType>(ft->getLLVMType())));
     std::cout << "ClosureTypeAST typechecking converted " << *ft << " to " << *(ast->type) << std::endl;
   } else {
     std::cerr << "Error! Proto passed to ClosureType does not have function type!" << std::endl;
@@ -283,9 +248,10 @@ void TypecheckPass::visit(ClosureAST* ast) {
 
     if (!ast->fn || !ast->fn->type) { return; }
 
-    if (const llvm::FunctionType* ft
-          = tryExtractCallableType(ast->fn->type->getLLVMType())) {
-      ast->type = TypeAST::get(genericVersionOfClosureType(ft));
+    if (FnTypeAST* ft
+          = tryExtractCallableType(ast->fn->type)) {
+      ast->type = TypeAST::get(genericVersionOfClosureType(
+	       llvm::cast<const llvm::FunctionType>(ft->getLLVMType())));
       if (ft && ast->type) {
         std::cout << "ClosureAST fnRef typechecking converted " << *ft << " to " << *(ast->type) << std::endl;
         //if (ast->fn && ast->fn->proto) { std::cout << "Just for kicks, fn has type " << *(ast->fn->proto) << std::endl; }
@@ -297,8 +263,9 @@ void TypecheckPass::visit(ClosureAST* ast) {
     }
   } else {
     ast->fn->accept(this);
-    if (const llvm::FunctionType* ft = tryExtractCallableType(ast->fn->type->getLLVMType())) {
-      ast->type = TypeAST::get(genericClosureTypeFor(ft));
+    if (FnTypeAST* ft = tryExtractCallableType(ast->fn->type)) {
+      ast->type = TypeAST::get(genericClosureTypeFor(
+                    llvm::cast<const llvm::FunctionType>(ft->getLLVMType())));
       std::cout << "ClosureTypeAST fn typechecking converted " << *ft << " to " << *(ast->type) << std::endl;
     } else {
       std::cerr << "Error! 282 Function passed to closure does not have function type!" << std::endl;
@@ -371,7 +338,7 @@ void TypecheckPass::visit(ForRangeExprAST* ast) {
   if (!endType) {
     std::cerr << "for range end expression '" << *(ast->endExpr) << "' had null type!" << std::endl;
     return;
-  } else if (!isEqualRepr(startType, endType)) {
+  } else if (!hasEqualRepr(startType, endType)) {
 	std::cerr << "for range start and end expressions had different types!" << std::endl;
 	return;
   }
@@ -383,7 +350,7 @@ void TypecheckPass::visit(ForRangeExprAST* ast) {
 	if (!incrType) {
 	  std::cerr << "for range incr expression '" << *(ast->incrExpr) << "' had null type!" << std::endl;
 	  return;
-	} else if (isEqualRepr(startType, incrType)) {
+	} else if (hasEqualRepr(startType, incrType)) {
             std::cerr << "for range start and incr expressions had different types!" << std::endl;
 	    return;
 	}
@@ -454,7 +421,7 @@ void TypecheckPass::visit(NilExprAST* ast) {
 	std::cout << "nil parent parent: " << *(ast->parent->parent) << std::endl;
 	std::cout << "nil parent parent ty: " << ast->parent->parent->type << std::endl;
 
-	ast->type = RefTypeAST::getNullableVersionOf(LLVMTypeFor("i8*"));
+	ast->type = RefTypeAST::get(TypeAST::get(LLVMTypeFor("i8")), true);
   }
 }
 
@@ -465,7 +432,7 @@ void TypecheckPass::visit(NilExprAST* ast) {
 void TypecheckPass::visit(RefExprAST* ast) {
   assert(ast->parts[0]->type && "Need arg to typecheck ref!");
   ast->type = RefTypeAST::get(
-                ast->parts[0]->type->getLLVMType(),
+                ast->parts[0]->type,
                 ast->isNullable);
 }
 
@@ -483,12 +450,13 @@ void TypecheckPass::visit(DerefExprAST* ast) {
 }
 
 void TypecheckPass::visit(AssignExprAST* ast) {
-  const Type* lhsTy = ast->parts[0]->type->getLLVMType();
-  const Type* rhsTy = ast->parts[1]->type->getLLVMType();
+  TypeAST* lhsTy = ast->parts[0]->type;
+  TypeAST* rhsTy = ast->parts[1]->type;
 
-  if (const llvm::PointerType* plhsTy = llvm::dyn_cast<llvm::PointerType>(lhsTy)) {
-    lhsTy = plhsTy->getElementType();
-    if (isCompatible(lhsTy, rhsTy)) {
+  // TODO this needs to be rewritten for elegance...
+  if (const llvm::PointerType* plhsTy = llvm::dyn_cast<llvm::PointerType>(lhsTy->getLLVMType())) {
+    lhsTy = TypeAST::get(plhsTy->getElementType());
+    if (rhsTy->canConvertTo(lhsTy)) {
       ast->type = TypeAST::get(LLVMTypeFor("i32"));
     } else {
       std::cerr << "Types in assignment are not copy compatible!" << std::endl;
@@ -629,7 +597,7 @@ void TypecheckPass::visit(CallAST* ast) {
   }
 
   base->accept(this);
-  const Type* baseType = base->type->getLLVMType();
+  TypeAST* baseType = base->type;
   if (baseType == NULL) {
     std::cerr << "Error: CallAST base expr had null type:\n\t" << *(base) << std::endl;
     return;
@@ -653,10 +621,12 @@ void TypecheckPass::visit(CallAST* ast) {
     return;
   }
 
-  const llvm::FunctionType* baseFT = tryExtractCallableType(baseType);
+  FnTypeAST* baseFT = tryExtractCallableType(baseType);
   if (baseFT == NULL) {
-    if (const llvm::StructType* sty = llvm::dyn_cast_or_null<const llvm::StructType>(baseType)) {
-      baseFT = originalFunctionTypeForClosureStructType(sty);
+    // TODO eliminate lossy roundtrip to lowered types
+    if (const llvm::StructType* sty = llvm::dyn_cast_or_null<const llvm::StructType>(baseType->getLLVMType())) {
+      std::cerr << "TEMPORARILY BROKEN CASE..." << std::endl;
+      baseFT = NULL; // TypeAST::get(originalFunctionTypeForClosureStructType(sty));
     }
   }
 
@@ -665,7 +635,7 @@ void TypecheckPass::visit(CallAST* ast) {
     return;
   }
 
-  vector<const Type*> actualTypes;
+  vector<TypeAST*> actualTypes;
   vector<ExprAST*> literalArgs; // any args not from unpack exprs, temp hack!
   for (int i = 1; i < ast->parts.size(); ++i) {
     ExprAST* arg = ast->parts[i];
@@ -675,7 +645,7 @@ void TypecheckPass::visit(CallAST* ast) {
     }
 
     arg->accept(this);
-    const Type* argTy = arg->type->getLLVMType();
+    TypeAST* argTy = arg->type;
     if (!argTy) {
       std::cerr << "Error: CallAST typecheck: arg " << i << " (" << *(arg) << ") had null type" << std::endl;
       return;
@@ -683,9 +653,9 @@ void TypecheckPass::visit(CallAST* ast) {
 
     // TODO: add separate prepass to explicitly unpack UnpackExprASTs
     if (UnpackExprAST* u = dynamic_cast<UnpackExprAST*>(arg)) {
-      if (const llvm::StructType* st = llvm::dyn_cast<llvm::StructType>(argTy)) {
+      if (const llvm::StructType* st = llvm::dyn_cast<llvm::StructType>(argTy->getLLVMType())) {
         for (int j = 0; j < st->getNumElements(); ++j) {
-          actualTypes.push_back(st->getElementType(j));
+          actualTypes.push_back(TypeAST::get(st->getElementType(j)));
           literalArgs.push_back(NULL);
         }
       } else {
@@ -706,26 +676,26 @@ void TypecheckPass::visit(CallAST* ast) {
 
   bool success = true;
   for (int i = 0; i < numParams; ++i) {
-    const Type* formalType = baseFT->getParamType(i);
-    const Type* actualType = actualTypes[i];
+    TypeAST* formalType = baseFT->getParamType(i);
+    TypeAST* actualType = actualTypes[i];
 
-    if (const FunctionType* fnty = llvm::dyn_cast<const FunctionType>(actualType)) {
+    if (const FunctionType* fnty = llvm::dyn_cast<const FunctionType>(actualType->getLLVMType())) {
       // If we try to use  fa: i32 () in place of ff: void ()*,
       // temporarily give the function fa the type of ff.
-      if (isPointerToCompatibleFnTy(formalType, fnty)) {
+      if (isPointerToCompatibleFnTy(formalType->getLLVMType(), fnty)) {
         actualType = formalType;
       } else {
         // Temporarily view a function type as its associated specific closure type,
         // since the formal arguments will have undergone the same conversion.
-        actualType = genericClosureTypeFor(fnty);
+        actualType = TypeAST::get(genericClosureTypeFor(fnty));
         std::cout << "TYPECHECK CallAST converting " << *fnty << " to " << *actualType << std::endl;
         std::cout << "\t for formal type:\t" << *formalType << std::endl;
         std::cout << "\t base :: " << *base << std::endl;
       }
-    } else if (const llvm::StructType* sty = llvm::dyn_cast<llvm::StructType>(actualType)) {
+    } else if (const llvm::StructType* sty = llvm::dyn_cast<llvm::StructType>(actualType->getLLVMType())) {
       if (isValidClosureType(sty)) {
         const FunctionType* fnty = originalFunctionTypeForClosureStructType(sty);
-        if (isPointerToCompatibleFnTy(formalType, fnty)) {
+        if (isPointerToCompatibleFnTy(formalType->getLLVMType(), fnty)) {
           // We have a closure and will convert it to a bare
           // trampoline function pointer at codegen time.
           actualType = formalType;
@@ -747,9 +717,7 @@ void TypecheckPass::visit(CallAST* ast) {
       }
     }
 
-    // Note: order here is important! We check conversion from
-    // actual to formal, not the other way 'round...
-    if (!isCompatible(actualType, formalType)) {
+    if (!actualType->canConvertTo(formalType)) {
       success = false;
       std::cerr << "Type mismatch between actual and formal arg " << i << std::endl;
       std::cerr << "\tformal: " << *formalType << "; actual: " << *actualType << std::endl;
@@ -762,12 +730,7 @@ void TypecheckPass::visit(CallAST* ast) {
     for (int i = 1; i < ast->parts.size(); ++i) {
       std::cerr << "\n\t" << i << ":\t";
       if (ExprAST* arg = ast->parts[i]) {
-        std::cerr << *arg << " : ";
-        if (arg->type) {
-          std::cerr << *(arg->type) << std::endl;
-        } else {
-          std::cerr << "<NULL>" << std::endl;
-        }
+        std::cerr << *arg << " : " << str(arg->type);
       } else {
         std::cerr << "<NULL arg>" << std::endl;
       }
@@ -775,7 +738,7 @@ void TypecheckPass::visit(CallAST* ast) {
   }
 
   if (success) {
-    ast->type = TypeAST::get(baseFT->getReturnType());
+    ast->type = baseFT->getReturnType();
   }
 }
 

@@ -39,7 +39,7 @@ int getOffsetOfStructSlot(const llvm::StructType* ty, int slot) {
   assert(td && "Need TargetData to compute struct offsets!");
   int offset = 0;
   for (int i = 0; i < slot; ++i) {
-	offset += td->getTypeStoreSize(ty->getContainedType(i));
+        offset += td->getTypeStoreSize(ty->getContainedType(i));
   }
   return offset;
 }
@@ -49,14 +49,14 @@ OffsetSet countPointersInType(const llvm::Type* ty) {
 
   OffsetSet rv;
   if (ty->isPointerTy()) {
-	rv.insert(OffsetInfo(ty->getContainedType(0), 0));
+        rv.insert(OffsetInfo(ty->getContainedType(0), 0));
   }
 
   // array, struct, union
   else if (const llvm::ArrayType* aty = llvm::dyn_cast<const llvm::ArrayType>(ty)) {
-	// TODO need to decide how Foster semantics will map to LLVM IR for arrays.
-	// Will EVERY (C++), SOME (Factor, C#?), or NO (Java) types be unboxed in arrays?
-	// Also need to figure out how the gc will collect arrays.
+        // TODO need to decide how Foster semantics will map to LLVM IR for arrays.
+        // Will EVERY (C++), SOME (Factor, C#?), or NO (Java) types be unboxed in arrays?
+        // Also need to figure out how the gc will collect arrays.
     //return aty->getNumElements() * countPointersInType(aty->getElementType());
   }
 
@@ -67,9 +67,9 @@ OffsetSet countPointersInType(const llvm::Type* ty) {
       int slotOffset = getOffsetOfStructSlot(sty, i);
       OffsetSet sub = countPointersInType(sty->getTypeAtIndex(i));
       for (OffsetSet::iterator si = sub.begin(); si != sub.end(); ++si) {
-    	const llvm::Type* subty = si->first;
-    	int suboffset = si->second;
-    	rv.insert(OffsetInfo(subty, suboffset + slotOffset));
+        const llvm::Type* subty = si->first;
+        int suboffset = si->second;
+        rv.insert(OffsetInfo(subty, suboffset + slotOffset));
       }
     }
   }
@@ -97,21 +97,21 @@ llvm::ConstantInt* getConstantInt32For(int val) {
 std::map<const llvm::Type*, llvm::GlobalVariable*> typeMapForType;
 
 llvm::Constant* getTypeMapEntryFor(
-		const llvm::StructType* typeMapEntryTy,
-		const llvm::Type* entryTy, int v2) {
+                const llvm::StructType* typeMapEntryTy,
+                const llvm::Type* entryTy, int v2) {
   std::vector<llvm::Constant*> fields;
 
   llvm::GlobalVariable* typeMapVar = typeMapForType[entryTy];
   if (typeMapVar) {
-	fields.push_back(llvm::ConstantExpr::getCast(llvm::Instruction::BitCast,
-			typeMapVar, LLVMTypeFor("i8*")));
+        fields.push_back(llvm::ConstantExpr::getCast(llvm::Instruction::BitCast,
+                        typeMapVar, LLVMTypeFor("i8*")));
   } else {
-	// If we can't tell the garbage collector how to collect a type by
-	// giving it a pointer to a type map, it's probably because the type
-	// doesn't have a type map, i.e. the type is atomic. Instead, tell
-	// the garbage collector how large the type is.
-	fields.push_back(llvm::ConstantExpr::getCast(llvm::Instruction::IntToPtr,
-	  		llvm::ConstantExpr::getSizeOf(entryTy), LLVMTypeFor("i8*")));
+        // If we can't tell the garbage collector how to collect a type by
+        // giving it a pointer to a type map, it's probably because the type
+        // doesn't have a type map, i.e. the type is atomic. Instead, tell
+        // the garbage collector how large the type is.
+        fields.push_back(llvm::ConstantExpr::getCast(llvm::Instruction::IntToPtr,
+                        llvm::ConstantExpr::getSizeOf(entryTy), LLVMTypeFor("i8*")));
   }
   fields.push_back(getConstantInt32For(v2));
   return llvm::ConstantStruct::get(typeMapEntryTy, fields);
@@ -215,11 +215,11 @@ llvm::GlobalVariable* emitTypeMap(const llvm::Type* ty, std::string name,
 
   std::vector<llvm::Constant*> typeMapEntries;
   for (OffsetSet::iterator si =  pointerOffsets.begin();
-		                   si != pointerOffsets.end(); ++si) {
-	const llvm::Type* subty = si->first;
-	int suboffset = si->second;
-	typeMapEntries.push_back(
-	  getTypeMapEntryFor(entryty, subty, suboffset));
+                                   si != pointerOffsets.end(); ++si) {
+        const llvm::Type* subty = si->first;
+        int suboffset = si->second;
+        typeMapEntries.push_back(
+          getTypeMapEntryFor(entryty, subty, suboffset));
   }
 
 
@@ -819,11 +819,11 @@ void CodegenPass::visit(ForRangeExprAST* ast) {
 
   Value* incr;
   if (ast->incrExpr) {
-	(ast->incrExpr)->accept(this);
-	if (!ast->incrExpr->value) { return; }
-	incr = ast->incrExpr->value;
+        (ast->incrExpr)->accept(this);
+        if (!ast->incrExpr->value) { return; }
+        incr = ast->incrExpr->value;
   } else {
-	incr = ConstantInt::get(LLVMTypeFor("i32"), 1);
+        incr = ConstantInt::get(LLVMTypeFor("i32"), 1);
   }
 
   (ast->startExpr)->accept(this);
@@ -1215,9 +1215,10 @@ void CodegenPass::visit(CallAST* ast) {
   } else if (FT = tryExtractFunctionPointerType(FV)) {
     // Call to function pointer
   } else if (const llvm::StructType* sty = llvm::dyn_cast<const llvm::StructType>(base->type->getLLVMType())) {
-    if (const llvm::FunctionType* fty = tryExtractCallableType(sty->getContainedType(0))) {
+    if (FnTypeAST* fty = tryExtractCallableType(
+                          TypeAST::get(sty->getContainedType(0)))) {
       // Call to closure struct
-      FT = fty;
+      FT = llvm::dyn_cast<const FunctionType>(fty->getLLVMType());
       llvm::Value* clo = FV;
 
       if (clo->getType()->isPointerTy()) {
@@ -1280,8 +1281,9 @@ void CodegenPass::visit(CallAST* ast) {
       // automatically generate a return-value-eating wrapper if we try
       // to pass a function returning a value to a function expecting
       // a procedure returning void.
-        if (const FunctionType* expectedFnTy = tryExtractCallableType(expectedType)) {
-          if (isVoid(expectedFnTy->getReturnType()) && !isVoid(fnty)) {
+        if (FnTypeAST* expectedFnTy = tryExtractCallableType(
+                                        TypeAST::get(expectedType))) {
+          if (isVoid(expectedFnTy->getReturnType()->getLLVMType()) && !isVoid(fnty)) {
             arg = getVoidReturningVersionOf(arg, fnty);
             { TypecheckPass tp; arg->accept(&tp); }
           }
@@ -1479,10 +1481,10 @@ void CodegenPass::visit(ArrayExprAST* ast) {
       ast->value = CreateEntryAlloca(arrayType, "initArr");
 
       // We only need to mark arrays of non-atomic objects as GC roots
-	  // TODO handle rooting arrays of non-atomic objects
-	  //if (containsPointers(arrayType->getElementType())) {
-	  //  markGCRoot(ast->value, NULL);
-	  //}
+          // TODO handle rooting arrays of non-atomic objects
+          //if (containsPointers(arrayType->getElementType())) {
+          //  markGCRoot(ast->value, NULL);
+          //}
 
       for (int i = 0; i < body->parts.size(); ++i) {
         builder.CreateStore(body->parts[i]->value, getPointerToIndex(ast->value, i, "arrInit"));
