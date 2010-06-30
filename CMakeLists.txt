@@ -150,10 +150,11 @@ include(${PROJECT_SOURCE_DIR}/third_party/chromium_base/CMakeLists.txt)
 include(${PROJECT_SOURCE_DIR}/third_party/cpuid/CMakeLists.txt)
 
 add_executable(fosterc
-  compiler/ANTLRtoFosterAST.cpp
+  compiler/foster.cpp
   compiler/FosterAST.cpp
   compiler/FosterUtils.cpp
-  compiler/foster.cpp
+  compiler/FosterTypeAST.cpp
+  compiler/ANTLRtoFosterAST.cpp
   compiler/passes/CodegenPass.cpp
   compiler/passes/TypecheckPass.cpp
   compiler/passes/PrettyPrintPass.cpp

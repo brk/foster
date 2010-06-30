@@ -8,10 +8,6 @@
 
 ////////////////////////////////////////////////////////////////////
 
-std::string str(const llvm::Type* ty) {
-  std::stringstream ss; ss << *ty; return ss.str();
-}
-
 inline void recurse(PrettyPrintPass* p, ExprAST* ast) {
   if (!ast) {
     p->scan(PrettyPrintPass::PPToken("<nil>"));

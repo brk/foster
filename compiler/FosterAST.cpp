@@ -32,10 +32,6 @@ FosterSymbolTable<Value> scope;
 FosterSymbolTable<const Type> typeScope;
 FosterSymbolTable<ExprAST> varScope;
 
-// static
-std::map<const llvm::Type*, TypeAST*>
-TypeAST::thinWrappers;
-
 std::ostream& operator<<(std::ostream& out, TypeAST& type) {
   return type.operator<<(out);
 }

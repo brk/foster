@@ -13,6 +13,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include "FosterASTVisitor.h"
+#include "FosterTypeAST.h"
 
 #include <iostream>
 #include <vector>
@@ -36,7 +37,6 @@ class TypeAST; // fwd decl
 
 typedef std::vector<ExprAST*> Exprs;
 std::ostream& operator<<(std::ostream& out, ExprAST& expr);
-std::ostream& operator<<(std::ostream& out, TypeAST& expr);
 
 void fosterInitializeLLVM();
 
@@ -56,49 +56,6 @@ void initModuleTypeNames();
 inline bool isSmallPowerOfTwo(int x) {
   return (x == 2) || (x == 4) || (x == 8) || (x == 16);
 }
-
-inline std::ostream& operator<<(std::ostream& out, const llvm::Type& ty) {
-    std::string s;
-    llvm::raw_string_ostream ss(s);
-    ss << ty;
-    return out << ss.str();
-}
-
-///////////////////////////////////////////////////////////
-
-class TypeAST {
-  // Equivalent (equal or convertible) representation types
-  // is a necessary but not sufficient precondition for two
-  // types to be compatible. For example, nullable and non-
-  // nullable reference to T are both representated by type
-  // T*, but they are not always compatible.
-  const llvm::Type* repr;
-
-
-  TypeAST(const llvm::Type* underlyingType)
-    : repr(underlyingType) {}
-
-  static std::map<const llvm::Type*, TypeAST*> thinWrappers;
-public:
-  const llvm::Type* getLLVMType() { return repr; }
-
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << *repr;
-  };
-
-  static TypeAST* get(const llvm::Type* loweredType) {
-    TypeAST* tyast = thinWrappers[loweredType];
-    if (tyast) { return tyast; }
-    tyast = new TypeAST(loweredType); 
-    thinWrappers[loweredType] = tyast;
-    return tyast;
-  }
-
-  // given (T*), returns (?ref T)
-  static TypeAST* getNullableVersionOf(const llvm::Type* ptrType) {
-    return TypeAST::get(ptrType);
-  }
-};
 
 ///////////////////////////////////////////////////////////
 
@@ -422,7 +379,7 @@ struct PrototypeAST : public ExprAST {
       out << ", arg["<<i<<"] = " << str(inArgs[i]);
     }
     if (resultTy != NULL) {
-      out << ", resultTy=" << *resultTy;
+      out << ", resultTy=" << str(resultTy);
     }
     out << ")";
     return out;

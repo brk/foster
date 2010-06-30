@@ -112,6 +112,11 @@ void TypecheckPass::visit(IntAST* ast) {
 void TypecheckPass::visit(VariableAST* ast) {
   if (this->typeParsingMode) {
     ast->type = TypeAST::get(LLVMTypeFor(ast->name));
+    std::cout << "visited var " << ast->name << " in type parsing mode;"
+	" ast->type is " << str(ast->type)
+	<< "; tyExpr = " << str(ast->tyExpr)
+	<< std::endl;
+	
   }
 
   if (!ast->tyExpr) {
@@ -449,7 +454,7 @@ void TypecheckPass::visit(NilExprAST* ast) {
 	std::cout << "nil parent parent: " << *(ast->parent->parent) << std::endl;
 	std::cout << "nil parent parent ty: " << ast->parent->parent->type << std::endl;
 
-	ast->type = TypeAST::getNullableVersionOf(LLVMTypeFor("i8*"));
+	ast->type = RefTypeAST::getNullableVersionOf(LLVMTypeFor("i8*"));
   }
 }
 
@@ -459,7 +464,9 @@ void TypecheckPass::visit(NilExprAST* ast) {
 // instead of a simple T*, which would not be modifiable by the GC.
 void TypecheckPass::visit(RefExprAST* ast) {
   assert(ast->parts[0]->type && "Need arg to typecheck ref!");
-  ast->type = TypeAST::get(llvm::PointerType::getUnqual(ast->parts[0]->type->getLLVMType()));
+  ast->type = RefTypeAST::get(
+                ast->parts[0]->type->getLLVMType(),
+                ast->isNullable);
 }
 
 void TypecheckPass::visit(DerefExprAST* ast) {
