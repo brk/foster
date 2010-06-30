@@ -25,6 +25,7 @@ FnTypeAST* tryExtractCallableType(TypeAST* ty) {
     ty = r->getElementType();
   }
   if (FnTypeAST* f = dynamic_cast<FnTypeAST*>(ty)) { return f; }
+  std::cerr << "RETURNING NULL for extracting callable type from " << str(ty) << std::endl;
   return NULL;
 }
 
@@ -52,10 +53,10 @@ void addClosureTypeName(llvm::Module* mod, const llvm::StructType* sty) {
 
 // converts      t1 (t2, t3) to { t1 (i8* nest, t2, t3)*, i8* }
 // or    t1 (envty* nest, t2, t3) to { t1 (i8* nest, t2, t3)*, i8* }
-static const llvm::StructType* genericClosureTypeFor(const FunctionType* fnty, bool skipFirstArg) {
-  const Type* envType = llvm::PointerType::get(LLVMTypeFor("i8"), 0);
+static TupleTypeAST* genericClosureTypeFor(FnTypeAST* fnty, bool skipFirstArg) {
+  TypeAST* envType = RefTypeAST::get(TypeAST::get(LLVMTypeFor("i8")));
 
-  std::vector<const Type*> fnParams;
+  std::vector<TypeAST*> fnParams;
   fnParams.push_back(envType);
 
   int firstArg = skipFirstArg ? 1 : 0;
@@ -63,36 +64,41 @@ static const llvm::StructType* genericClosureTypeFor(const FunctionType* fnty, b
     fnParams.push_back(fnty->getParamType(i));
   }
 
-  const Type* fnTy = llvm::FunctionType::get(fnty->getReturnType(), fnParams, /*isVarArg=*/ false);
-  std::vector<const Type*> cloTypes;
-  cloTypes.push_back(llvm::PointerType::get(fnTy, 0));
+  FnTypeAST* newFnTy = FnTypeAST::get(fnty->getReturnType(), fnParams);
+  std::vector<TypeAST*> cloTypes;
+  cloTypes.push_back(RefTypeAST::get(newFnTy));
   cloTypes.push_back(envType);
-  const llvm::StructType* cloTy = llvm::StructType::get(getGlobalContext(), cloTypes, /*isPacked=*/ false);
+  TupleTypeAST* cloTy = TupleTypeAST::get(cloTypes);
   //std::cout << "GENERIC CLOSURE TYPE for " << *fnty << " is " << *cloTy << std::endl;
   return cloTy;
 }
 
 // converts t1 (t2, t3) to { t1 (i8*, t2, t3)*, i8* }
-const llvm::StructType* genericClosureTypeFor(const FunctionType* fnty) {
+TupleTypeAST* genericClosureTypeFor(FnTypeAST* fnty) {
   return genericClosureTypeFor(fnty, false);
 }
 
 // converts t1 (envty*, t2, t3) to { t1 (i8*, t2, t3)*, i8* }
-const llvm::StructType* genericVersionOfClosureType(const FunctionType* fnty) {
+TupleTypeAST* genericVersionOfClosureType(FnTypeAST* fnty) {
   return genericClosureTypeFor(fnty, true);
 }
 
-bool isValidClosureType(const llvm::StructType* sty) {
-  if (sty->getNumElements() != 2) return false;
-  
-  const llvm::Type* maybeEnvTy = sty->getElementType(1);
-  const llvm::Type* maybePtrFn = sty->getElementType(0);
-  if (const llvm::PointerType* ptrMaybeFn = llvm::dyn_cast<llvm::PointerType>(maybePtrFn)) {
-    if (const llvm::FunctionType* fnty = llvm::dyn_cast<llvm::FunctionType>(ptrMaybeFn->getElementType())) {
-      if (fnty->getNumParams() == 0) return false;
-      if (fnty->isVarArg()) return false;
-      if (maybeEnvTy == fnty->getParamType(0)) {
-        return true;
+bool isValidClosureType(const llvm::Type* ty) {
+  if (const llvm::StructType* sty =
+         llvm::dyn_cast_or_null<const llvm::StructType>(ty)) {
+    if (sty->getNumElements() != 2) return false;
+    
+    const llvm::Type* maybeEnvTy = sty->getElementType(1);
+    const llvm::Type* maybePtrFn = sty->getElementType(0);
+    if (const llvm::PointerType* ptrMaybeFn
+            = llvm::dyn_cast<llvm::PointerType>(maybePtrFn)) {
+      if (const llvm::FunctionType* fnty
+            = llvm::dyn_cast<llvm::FunctionType>(ptrMaybeFn->getElementType())) {
+	if (fnty->getNumParams() == 0) return false;
+	if (fnty->isVarArg()) return false;
+	if (maybeEnvTy == fnty->getParamType(0)) {
+	  return true;
+	}
       }
     }
   }
@@ -100,25 +106,33 @@ bool isValidClosureType(const llvm::StructType* sty) {
 }
 
 // converts { T (env*, Y, Z)*, env* }   to   T (Y, Z)
-const llvm::FunctionType* originalFunctionTypeForClosureStructType(const llvm::StructType* sty) {
-  if (FnTypeAST* ft = tryExtractCallableType(
-                          TypeAST::get(sty->getContainedType(0)))) {
-    std::vector<const llvm::Type*> originalArgTypes;
-    for (int i = 1; i < ft->getNumParams(); ++i) {
-      originalArgTypes.push_back(ft->getParamType(i)->getLLVMType());
+FnTypeAST* originalFunctionTypeForClosureStructType(TypeAST* ty) {
+  if (TupleTypeAST* tty = dynamic_cast<TupleTypeAST*>(ty)) {
+    if (FnTypeAST* ft = tryExtractCallableType(tty->getContainedType(0))) {
+      // Create a new function type without the env ptr
+      std::vector<TypeAST*> originalArgTypes;
+      for (int i = 1; i < ft->getNumParams(); ++i) {
+	originalArgTypes.push_back(ft->getParamType(i));
+      }
+      FnTypeAST* rv = FnTypeAST::get(ft->getReturnType(), originalArgTypes);
+#if 0
+      ft->dumpParams();
+      std::cout << "originalFunc...() " << str(ty) << " => " << str(ft) 
+	<< ";;; " << ft->getNumParams() << " ;; to " << str(rv) << std::endl;
+#endif
+      return rv;
     }
-    return llvm::FunctionType::get(ft->getReturnType()->getLLVMType(),
-                                   originalArgTypes, /*isVarArg=*/ false);
   }
   return NULL;
 }
 
+#if 0
 const llvm::Type* recursivelySubstituteGenericClosureTypes(
                                     const llvm::Type* ty,
                                     bool isInClosureType) {
   if (llvm::isa<llvm::IntegerType>(ty)) { return ty; }
   if (const FunctionType* fnty = llvm::dyn_cast<FunctionType>(ty)) {
-    const llvm::StructType* sty = NULL;
+    TupleTypeAST* sty = NULL;
     if (isInClosureType) {
       sty = genericVersionOfClosureType(fnty); 
       std::cout << "Converted closure fnty " << *fnty << "\n\t"
@@ -152,6 +166,7 @@ const llvm::Type* recursivelySubstituteGenericClosureTypes(
   // TODO: unions
   // TODO: arrays
 }
+#endif
 
 bool isVoid(const llvm::Type* ty) {
   return ty == ty->getVoidTy(getGlobalContext());

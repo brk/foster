@@ -681,7 +681,8 @@ void CodegenPass::visit(ClosureAST* ast) {
   }
 
   TupleExprAST* env = new TupleExprAST(new SeqAST(ast->parts));
-  ExprAST* fnPtr = new VariableAST(ast->fn->proto->name, llvm::PointerType::get(ast->fn->type->getLLVMType(), 0));
+  ExprAST* fnPtr = new VariableAST(ast->fn->proto->name,
+                   RefTypeAST::get(ast->fn->type));
   { TypecheckPass tp;
     fnPtr->accept(&tp);
     fnPtr->accept(this);
@@ -700,17 +701,18 @@ void CodegenPass::visit(ClosureAST* ast) {
   llvm::errs() << "Closure conversion " << ast->fn->proto->name << "\n\tfnPtr value: "
       << *fnPtr->value << "\n\tFunction? " << llvm::isa<Function>(fnPtr->value) << "\n";
 
-  if (const FunctionType* fnTy = llvm::dyn_cast<const FunctionType>(ast->fn->type->getLLVMType())) {
+  if (FnTypeAST* fnTy = dynamic_cast<FnTypeAST*>(ast->fn->type)) {
     // Manually build struct for now, since we don't have PtrAST nodes
-    const llvm::StructType* specificCloTy = closureTypeFromClosedFnType(fnTy);
-    const llvm::StructType* genericCloTy = genericVersionOfClosureType(fnTy);
+    const llvm::StructType* specificCloTy = closureTypeFromClosedFnType(
+        llvm::cast<FunctionType>(fnTy->getLLVMType()));
+    TupleTypeAST* genericCloTy = genericVersionOfClosureType(fnTy);
 
     std::cout << std::endl;
     std::cout << "Fn type: " << *fnTy << std::endl;
     std::cout << "Specific closure type: " << *specificCloTy << std::endl;
     std::cout << "Generic closure type: " << *genericCloTy << std::endl;
 
-    addClosureTypeName(module, genericCloTy);
+    addClosureTypeName(module, llvm::cast<llvm::StructType>(genericCloTy->getLLVMType()));
 
     // { code*, env* }*
     llvm::AllocaInst* clo = CreateEntryAlloca(specificCloTy, "closure");
@@ -740,7 +742,7 @@ void CodegenPass::visit(ClosureAST* ast) {
     builder.CreateStore(env->value, clo_env_slot, /*isVolatile=*/ false);
 
     Value* genericClo = builder.CreateBitCast(clo,
-        llvm::PointerType::getUnqual(genericCloTy), "hideCloTy");
+        llvm::PointerType::getUnqual(genericCloTy->getLLVMType()), "hideCloTy");
     ast->value = builder.CreateLoad(genericClo, /*isVolatile=*/ false, "loadClosure");
   }
 
@@ -1084,7 +1086,8 @@ FnAST* getVoidReturningVersionOf(ExprAST* arg, const llvm::FunctionType* fnty) {
 
     for (int i = 0; i < fnty->getNumParams(); ++i) {
       std::stringstream ss; ss << "a" << i;
-      VariableAST* a = new VariableAST(ss.str(), fnty->getParamType(i));
+      // TODO fix this...
+      VariableAST* a = new VariableAST(ss.str(), TypeAST::get(fnty->getParamType(i)));
       inArgs.push_back(a);
       callArgs.push_back(a);
     }
@@ -1142,7 +1145,8 @@ llvm::Value* getTrampolineForClosure(ClosureAST* cloAST) {
   // It would be nice and easy to extract the code pointer from the closure,
   // but LLVM requires that pointers passed to trampolines be "obvious" function
   // pointers. Thus, we need direct access to the closure's underlying fn.
-  ExprAST* fnPtr = new VariableAST(cloAST->fn->proto->name, llvm::PointerType::get(cloAST->fn->type->getLLVMType(), 0));
+  ExprAST* fnPtr = new VariableAST(cloAST->fn->proto->name,
+                               RefTypeAST::get(cloAST->fn->type));
   { TypecheckPass tp; CodegenPass cp;
     fnPtr->accept(&tp);
     fnPtr->accept(&cp);
@@ -1170,11 +1174,12 @@ FnAST* getClosureVersionOf(ExprAST* arg, const llvm::FunctionType* fnty) {
 
     std::vector<VariableAST*> inArgs;
     std::vector<ExprAST*> callArgs;
-    inArgs.push_back(new VariableAST("__ignored_env__", llvm::PointerType::getUnqual(LLVMTypeFor("i8"))));
+    inArgs.push_back(new VariableAST("__ignored_env__",
+        RefTypeAST::get(TypeAST::get(LLVMTypeFor("i8")))));
 
     for (int i = 0; i < fnty->getNumParams(); ++i) {
       std::stringstream ss; ss << "a" << i;
-      VariableAST* a = new VariableAST(ss.str(), fnty->getParamType(i));
+      VariableAST* a = new VariableAST(ss.str(), TypeAST::get(fnty->getParamType(i)));
       inArgs.push_back(a);
       callArgs.push_back(a);
     }

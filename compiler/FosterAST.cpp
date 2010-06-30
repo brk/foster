@@ -29,7 +29,7 @@ llvm::IRBuilder<> builder(getGlobalContext());
 llvm::Module* module;
 
 FosterSymbolTable<Value> scope;
-FosterSymbolTable<const Type> typeScope;
+FosterSymbolTable<TypeAST> typeScope;
 FosterSymbolTable<ExprAST> varScope;
 
 std::ostream& operator<<(std::ostream& out, TypeAST& type) {
@@ -111,11 +111,23 @@ string str(TypeAST* expr) {
 
 std::map<string, const Type*> builtinTypes;
 
+TypeAST*    TypeASTFor(const string& name) {
+  if (builtinTypes.count(name) == 1) {
+    return TypeAST::get(builtinTypes[name]);
+  } else if (TypeAST* ty = typeScope.lookup(name, "")) {
+    return ty;
+  } else {
+    const Type* ty = LLVMTypeFor(name);
+    if (ty) {
+      std::cerr << "WARNING: LLVMTypeFor("<<name<<") > TypeASTFor(...)" << std::endl;
+    }
+    return NULL;
+  }
+}
+
 const Type* LLVMTypeFor(const string& name) {
   if (builtinTypes.count(name) == 1) {
     return builtinTypes[name];
-  } else if (const llvm::Type* ty = typeScope.lookup(name, "")) {
-    return ty;
   } else {
     return module->getTypeByName(name);
   }

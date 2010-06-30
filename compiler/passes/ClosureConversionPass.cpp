@@ -239,12 +239,10 @@ void performClosureConversion(ClosureAST* closure) {
   }
 
   llvm::StructType* envTy = llvm::StructType::get(getGlobalContext(), envTypes, /*isPacked=*/ false);
-  llvm::PointerType* envPtrTy = llvm::PointerType::get(envTy, 0);
-
-  std::cout << "Env ptr ty: " << *envPtrTy << std::endl;
+  std::cout << "Env ty: " << *envTy << std::endl;
 
   // Make (a pointer to) this record be the function's first parameter.
-  VariableAST* envVar = new VariableAST("env", envPtrTy);
+  VariableAST* envVar = new VariableAST("env", RefTypeAST::get(TypeAST::get(envTy)));
   prependParameter(ast->proto, envVar);
 
   // Rewrite the function body to make all references to free vars
@@ -286,7 +284,7 @@ void lambdaLiftAnonymousFunction(FnAST* ast) {
   for (it = freeVars.begin(); it != freeVars.end(); ++it) {
     // For each free variable in the function:
     VariableAST* parentScopeVar = *it;
-    VariableAST* var = new VariableAST(parentScopeVar->name, parentScopeVar->type->getLLVMType());
+    VariableAST* var = new VariableAST(parentScopeVar->name, parentScopeVar->type);
 
     // add a parameter to the function prototype
     appendParameter(ast->proto, var);

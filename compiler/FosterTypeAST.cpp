@@ -39,12 +39,46 @@ bool arePhysicallyCompatible(const llvm::Type* src,
 
 std::map<const llvm::Type*, TypeAST*> TypeAST::thinWrappers;
 
+static std::map<const llvm::Type*, TypeAST*> seen;
+
 TypeAST* TypeAST::get(const llvm::Type* loweredType) {
   if (!loweredType) return NULL;
 
-  assert((!loweredType->isPointerTy()) &&
-      "pointer types should become RefTypeASTs,"
-      " not base TypeASTs!");
+  if (loweredType->isPointerTy()) {
+    if (0) std::cerr << "TypeAST::get() warning: pointer types should "
+             " be passed to RefTypeAST, not base TypeAST!" << std::endl;
+    const llvm::Type* pointee = loweredType->getContainedType(0);
+    if (TypeAST* s = seen[pointee]) {
+      if (s == (TypeAST*) 1) {
+        return RefTypeAST::get(new TypeAST(pointee));
+      } else {
+        return s;
+      }
+    }
+    return RefTypeAST::get(TypeAST::get(pointee)); 
+  }
+
+  if (const llvm::FunctionType* fnty
+         = llvm::dyn_cast<const llvm::FunctionType>(loweredType)) {
+    if (0) std::cerr << "TypeAST::get() warning: function types should "
+                 "not be passed to TypeAST::get()!" << std::endl;
+    TypeAST* ret = TypeAST::get(fnty->getReturnType());
+    std::vector<TypeAST*> args;
+    for (int i = 0; i < fnty->getNumParams(); ++i) {
+       args.push_back(TypeAST::get(fnty->getParamType(i))); 
+    }
+    return FnTypeAST::get(ret, args);
+  }
+
+  if (const llvm::StructType* sty
+         = llvm::dyn_cast<const llvm::StructType>(loweredType)) {
+    seen[sty] = (TypeAST*) 1;
+    std::vector<TypeAST*> args;
+    for (int i = 0; i < sty->getNumElements(); ++i) {
+       args.push_back(TypeAST::get(sty->getContainedType(i))); 
+    }
+    return TupleTypeAST::get(args);
+  }
 
   TypeAST* tyast = thinWrappers[loweredType];
   if (tyast) { return tyast; }
@@ -67,7 +101,7 @@ bool TypeAST::canConvertTo(TypeAST* otherType) {
 
 std::map<RefTypeAST::RefTypeArgs, RefTypeAST*> RefTypeAST::refCache;
 
-RefTypeAST* RefTypeAST::get(TypeAST* baseType, bool nullable) {
+RefTypeAST* RefTypeAST::get(TypeAST* baseType, bool nullable /* = false */) {
   assert(baseType);
 
   RefTypeArgs args = std::make_pair(baseType, nullable);
@@ -91,8 +125,12 @@ RefTypeAST* RefTypeAST::getNullableVersionOf(TypeAST* ptrType) {
 
 // virtual
 bool RefTypeAST::canConvertTo(TypeAST* otherType) {
-  std::cout << str(this) << " ~~?~~> " << str(otherType) << std::endl;
-  return static_cast<TypeAST*>(this)->canConvertTo(otherType);
+  if (RefTypeAST* other = dynamic_cast<RefTypeAST*>(otherType)) {
+    if (isNullable() && !other->isNullable()) {
+      return false;
+    }
+  }
+  return TypeAST::canConvertTo(otherType);
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -114,11 +152,28 @@ FnTypeAST* FnTypeAST::get(TypeAST* returnType,
   } 
   fnty = new FnTypeAST(
 	    llvm::FunctionType::get(returnType->getLLVMType(),
-                                    loweredArgTypes, false),
+                                    loweredArgTypes, /*isVarArg=*/ false),
                        returnType,
                        argTypes);
   fnTypeCache[args] = fnty;
   return fnty;
 }
 
+/////////////////////////////////////////////////////////////////////
 
+std::map<TupleTypeAST::Args, TupleTypeAST*> TupleTypeAST::tupleTypeCache;
+
+TupleTypeAST* TupleTypeAST::get(const std::vector<TypeAST*>& argTypes) {
+  TupleTypeAST* tup = tupleTypeCache[argTypes];
+  if (tup) return tup;
+
+  std::vector<const llvm::Type*> loweredTypes;
+  for (int i = 0; i < argTypes.size(); ++i) {
+    loweredTypes.push_back(argTypes[i]->getLLVMType());
+  }
+  const llvm::StructType* sty = llvm::StructType::get(
+            llvm::getGlobalContext(), loweredTypes, /*isPacked=*/false);
+  tup = new TupleTypeAST(sty, argTypes);
+  tupleTypeCache[argTypes] = tup;
+  return tup;
+}

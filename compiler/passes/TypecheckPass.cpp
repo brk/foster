@@ -78,11 +78,12 @@ void TypecheckPass::visit(IntAST* ast) {
 
 void TypecheckPass::visit(VariableAST* ast) {
   if (this->typeParsingMode) {
-    ast->type = TypeAST::get(LLVMTypeFor(ast->name));
-#if 0
+    ast->type = TypeASTFor(ast->name);
+#if 1
     std::cout << "visited var " << ast->name << " in type parsing mode;"
 	" ast->type is " << str(ast->type)
 	<< "; tyExpr = " << str(ast->tyExpr)
+	<< "; llType = " << str(LLVMTypeFor(ast->name))
 	<< std::endl;
 #endif
   }
@@ -120,7 +121,8 @@ void TypecheckPass::visit(VariableAST* ast) {
 }
 
 void TypecheckPass::visit(UnaryOpExprAST* ast) {
-  const llvm::Type* opTy = ast->parts[0]->type->getLLVMType();
+  TypeAST* innerType = ast->parts[0]->type;
+  const llvm::Type* opTy = innerType->getLLVMType();
   const std::string& op = ast->op;
 
   if (op == "-") {
@@ -140,7 +142,7 @@ void TypecheckPass::visit(UnaryOpExprAST* ast) {
     }
   }
 
-  ast->type = TypeAST::get(opTy);
+  ast->type = innerType;
 }
 
 void TypecheckPass::visit(BinaryOpExprAST* ast) {
@@ -231,8 +233,7 @@ void TypecheckPass::visit(FnAST* ast) {
 void TypecheckPass::visit(ClosureTypeAST* ast) {
   ast->proto->accept(this);
   if (FnTypeAST* ft = tryExtractCallableType(ast->proto->type)) {
-    ast->type = TypeAST::get(genericClosureTypeFor(
-	llvm::cast<const llvm::FunctionType>(ft->getLLVMType())));
+    ast->type = genericClosureTypeFor(ft);
     std::cout << "ClosureTypeAST typechecking converted " << *ft << " to " << *(ast->type) << std::endl;
   } else {
     std::cerr << "Error! Proto passed to ClosureType does not have function type!" << std::endl;
@@ -250,8 +251,7 @@ void TypecheckPass::visit(ClosureAST* ast) {
 
     if (FnTypeAST* ft
           = tryExtractCallableType(ast->fn->type)) {
-      ast->type = TypeAST::get(genericVersionOfClosureType(
-	       llvm::cast<const llvm::FunctionType>(ft->getLLVMType())));
+      ast->type = genericVersionOfClosureType(ft);
       if (ft && ast->type) {
         std::cout << "ClosureAST fnRef typechecking converted " << *ft << " to " << *(ast->type) << std::endl;
         //if (ast->fn && ast->fn->proto) { std::cout << "Just for kicks, fn has type " << *(ast->fn->proto) << std::endl; }
@@ -264,8 +264,7 @@ void TypecheckPass::visit(ClosureAST* ast) {
   } else {
     ast->fn->accept(this);
     if (FnTypeAST* ft = tryExtractCallableType(ast->fn->type)) {
-      ast->type = TypeAST::get(genericClosureTypeFor(
-                    llvm::cast<const llvm::FunctionType>(ft->getLLVMType())));
+      ast->type = genericClosureTypeFor(ft);
       std::cout << "ClosureTypeAST fn typechecking converted " << *ft << " to " << *(ast->type) << std::endl;
     } else {
       std::cerr << "Error! 282 Function passed to closure does not have function type!" << std::endl;
@@ -290,8 +289,8 @@ void TypecheckPass::visit(IfExprAST* ast) {
     return;
   }
 
-  ast->thenExpr->accept(this); const Type* thenType = ast->thenExpr->type->getLLVMType();
-  ast->elseExpr->accept(this); const Type* elseType = ast->elseExpr->type->getLLVMType();
+  ast->thenExpr->accept(this); TypeAST* thenType = ast->thenExpr->type;
+  ast->elseExpr->accept(this); TypeAST* elseType = ast->elseExpr->type;
 
   if (thenType == NULL) {
     std::cerr << "IfExprAST had null type for 'then' expression" << std::endl;
@@ -299,12 +298,12 @@ void TypecheckPass::visit(IfExprAST* ast) {
   } else if (elseType == NULL) {
     std::cerr << "IfExprAST had null type for 'else' expression" << std::endl;
     return;
-  } else if (thenType != elseType) {
+  } else if (thenType->getLLVMType() != elseType->getLLVMType()) {
     std::cerr << "IfExprAST had different (incompatible?) types for then/else exprs: "
     		<< "\n\t" << *thenType << " vs " << *elseType << std::endl;
     return;
-  } else if (thenType == elseType) {
-    ast->type = TypeAST::get(thenType);
+  } else {
+    ast->type = thenType;
   }
 }
 
@@ -371,7 +370,7 @@ void TypecheckPass::visit(NilExprAST* ast) {
 
   // TODO this will eventually be superceded by real type inference
   if (ast->parent && ast->parent->parent) {
-	if (ast->parent->parent->type) {
+    if (ast->parent->parent->type) {
 	  // If we have a type for the parent already, it's probably because
 	  // it's a   new _type_ { ... nil ... }  -like expr.
       if (const llvm::StructType* tupleTy =
@@ -386,10 +385,10 @@ void TypecheckPass::visit(NilExprAST* ast) {
           std::cout << "\tmunging gave nil type " << *(ast->type) << std::endl;
         }
       }
-	}
+    }
 
-	// 'if (typed-expr ==/!= nil)'  --> nil should have type of other side
-	if (IfExprAST* ifast = dynamic_cast<IfExprAST*>(ast->parent->parent)) {
+    // 'if (typed-expr ==/!= nil)'  --> nil should have type of other side
+    if (IfExprAST* ifast = dynamic_cast<IfExprAST*>(ast->parent->parent)) {
       if (BinaryOpExprAST* cmpast = dynamic_cast<BinaryOpExprAST*>(ast->parent)) {
         if (cmpast->parts[0]->type) {
           ast->type = cmpast->parts[0]->type;
@@ -397,22 +396,31 @@ void TypecheckPass::visit(NilExprAST* ast) {
           ast->type = cmpast->parts[1]->type;
         }
       }
-	}
+    }
 
-	if (CallAST* callast = dynamic_cast<CallAST*>(ast->parent)) {
-	  // find the arg position of our nil
-	  ExprAST* callee = callast->parts[0];
-	  if (const llvm::FunctionType* fnty =
-	      llvm::dyn_cast_or_null<const llvm::FunctionType>(callee->type->getLLVMType())) {
+    // callee(... nil ...)
+    if (CallAST* callast = dynamic_cast<CallAST*>(ast->parent)) {
+      // find the arg position of our nil
+      ExprAST* callee = callast->parts[0];
+      const llvm::Type* loweredType = callee->type->getLLVMType();
+
+      // First, try converting closures to their underlying fn type
+      if (isValidClosureType(loweredType)) {
+        FnTypeAST* f = originalFunctionTypeForClosureStructType(callee->type);
+        loweredType = f->getLLVMType();
+      }
+
+      if (const llvm::FunctionType* fnty =
+	  llvm::dyn_cast_or_null<const llvm::FunctionType>(loweredType)) {
         for (int i = 1; i < callast->parts.size(); ++i) {
           if (ast == callast->parts[i]) {
             ast->type = TypeAST::get(fnty->getParamType(i - 1));
           }
         }
-	  } else if (callee->type) {
-	    std::cout << "\t\tCALLEE HAS TYPE " << *(callee->type) << std::endl;
-	  }
-	}
+      } else {
+	std::cout << "\t\tCALLEE HAS TYPE " << *(callee->type) << std::endl;
+      }
+    }
   }
 
   if (!ast->type) {
@@ -422,7 +430,95 @@ void TypecheckPass::visit(NilExprAST* ast) {
 	std::cout << "nil parent parent ty: " << ast->parent->parent->type << std::endl;
 
 	ast->type = RefTypeAST::get(TypeAST::get(LLVMTypeFor("i8")), true);
+  } else {
+    // make sure it's a nullable type, since this is nil...
+    if (RefTypeAST* ref = dynamic_cast<RefTypeAST*>(ast->type)) {
+      if (!ref->isNullable()) {
+        ast->type = RefTypeAST::getNullableVersionOf(ast->type); 
+      }
+    }
+    std::cout << "nil given type: " << str(ast->type) << std::endl;
   }
+}
+
+bool exprBindsName(ExprAST* ast, const std::string& name) {
+  // TODO test for-range exprs
+  if (FnAST* fn = dynamic_cast<FnAST*>(ast)) {
+    PrototypeAST* proto = fn->proto;
+    for (int i = 0; i < proto->inArgs.size(); ++i) {
+      if (proto->inArgs[i]->name == name) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  if (ClosureAST* clo = dynamic_cast<ClosureAST*>(ast)) {
+    std::cout << "TODO: does " << str(clo)
+              << " bind variable " << name << "???" << std::endl;
+  }
+}
+
+enum NullTestStatus {
+  eNoTest,
+  eThenBranch,
+  eElseBranch
+};
+
+bool isNil(ExprAST* ast) {
+  if (NilExprAST* enil = dynamic_cast<NilExprAST*>(ast)) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
+// var == nil, nil == var ==> elsebranch
+// var != nil, nil != var ==> thenbranch
+// else: notest
+NullTestStatus examineForNullTest(ExprAST* test, VariableAST* var) {
+  std::cout << "TEsT: " << str(test) << std::endl;
+  if (BinaryOpExprAST* binopExpr = dynamic_cast<BinaryOpExprAST*>(test)) {
+    ExprAST* lhs = binopExpr->parts[0];
+    ExprAST* rhs = binopExpr->parts[1];
+    bool lhsnil = isNil(lhs);
+    bool rhsnil = isNil(rhs);
+    bool lhsvar = (lhs == var);
+    bool rhsvar = (rhs == var);
+
+    if (lhsnil && rhsvar || lhsvar && rhsnil) {
+      return (binopExpr->op == "==") ? eElseBranch : eThenBranch;
+    }
+  }
+  return eNoTest;
+}
+
+// A nullable pointer is okay to deref if it has been tested
+// for nullness, successfully.
+// There should exist some parent, P, with parent(P) = P_if,
+// such that P_if is an IfExpr testing ast for nullity
+// and P is the appropriate branch of P_if (such that ast
+// will be non-nil).
+// Note that the search terminates at the closest lexical
+// binding of ast.
+bool isOkayToDeref(VariableAST* ast, ExprAST* parent) {
+  std::cout << "\t\tAST = " << str(ast) << std::endl;
+  while (parent) {
+    if (exprBindsName(parent, ast->name)) {
+      std::cout << "Found the closest lexical binding for " << ast->name
+		<< ", so ending search (not okay to deref)" << std::endl;
+      break;
+    }
+    ExprAST* pp = parent->parent;
+    if (!pp) break;
+    if (IfExprAST* Pif = dynamic_cast<IfExprAST*>(pp)) {
+      NullTestStatus status = examineForNullTest(Pif->testExpr, ast);
+      if (status == eElseBranch && Pif->elseExpr == parent) return true;
+      if (status == eThenBranch && Pif->thenExpr == parent) return true;
+    }
+    parent = parent->parent;
+  }
+  return false;
 }
 
 // In order for copying GC to be able to move GC roots,
@@ -434,14 +530,27 @@ void TypecheckPass::visit(RefExprAST* ast) {
   ast->type = RefTypeAST::get(
                 ast->parts[0]->type,
                 ast->isNullable);
+  std::cout << "refexpr (" << ast->isNullable << ") = " << str(ast->type) << std::endl;
 }
 
 void TypecheckPass::visit(DerefExprAST* ast) {
   assert(ast->parts[0]->type && "Need arg to typecheck deref!");
 
-  const Type* derefType = ast->parts[0]->type->getLLVMType();
-  if (const llvm::PointerType* ptrTy = llvm::dyn_cast<llvm::PointerType>(derefType)) {
-    ast->type = TypeAST::get(ptrTy->getElementType());
+  TypeAST* derefType = ast->parts[0]->type;
+  if (RefTypeAST* ptrTy = dynamic_cast<RefTypeAST*>(derefType)) {
+    ast->type = ptrTy->getElementType();
+
+    if (ptrTy->isNullable()) {
+      if (VariableAST* var = dynamic_cast<VariableAST*>(ast->parts[0])) {
+	if (!isOkayToDeref(var, ast->parent)) {
+	  ast->type = NULL;
+	}
+      } else {
+        // If it's not a variable, we'll suppose (for the sake of
+        //  simplification) that it hasn't been tested for nullity.
+        ast->type = NULL;
+      }
+    }
   } else {
     std::cerr << "Deref() called on a non-pointer type " << *derefType << "!\n";
     std::cerr << "base: " << *(ast->parts[0]) << std::endl;
@@ -453,9 +562,8 @@ void TypecheckPass::visit(AssignExprAST* ast) {
   TypeAST* lhsTy = ast->parts[0]->type;
   TypeAST* rhsTy = ast->parts[1]->type;
 
-  // TODO this needs to be rewritten for elegance...
-  if (const llvm::PointerType* plhsTy = llvm::dyn_cast<llvm::PointerType>(lhsTy->getLLVMType())) {
-    lhsTy = TypeAST::get(plhsTy->getElementType());
+  if (RefTypeAST* plhsTy = dynamic_cast<RefTypeAST*>(lhsTy)) {
+    lhsTy = plhsTy->getElementType();
     if (rhsTy->canConvertTo(lhsTy)) {
       ast->type = TypeAST::get(LLVMTypeFor("i32"));
     } else {
@@ -555,6 +663,8 @@ void TypecheckPass::visit(SubscriptAST* ast) {
   }
 
   //llvm::errs() << "Indexing composite with index " << *cidx << "; neg? " << vidx.isNegative() << "\n";
+
+  // TODO need to avoid losing typeinfo here
   ast->type = TypeAST::get(compositeTy->getTypeAtIndex(cidx));
 
   if (this->inAssignLHS) {
@@ -621,13 +731,12 @@ void TypecheckPass::visit(CallAST* ast) {
     return;
   }
 
+  std::cout << "622: baseType = " << str(baseType) << std::endl;
   FnTypeAST* baseFT = tryExtractCallableType(baseType);
+  std::cout << "623: baseFT = " << str(baseFT) << std::endl;
   if (baseFT == NULL) {
-    // TODO eliminate lossy roundtrip to lowered types
-    if (const llvm::StructType* sty = llvm::dyn_cast_or_null<const llvm::StructType>(baseType->getLLVMType())) {
-      std::cerr << "TEMPORARILY BROKEN CASE..." << std::endl;
-      baseFT = NULL; // TypeAST::get(originalFunctionTypeForClosureStructType(sty));
-    }
+    baseFT = originalFunctionTypeForClosureStructType(baseType);
+    std::cout << "627: baseFT = " << str(baseFT) << std::endl;
   }
 
   if (baseFT == NULL) {
@@ -687,15 +796,16 @@ void TypecheckPass::visit(CallAST* ast) {
       } else {
         // Temporarily view a function type as its associated specific closure type,
         // since the formal arguments will have undergone the same conversion.
-        actualType = TypeAST::get(genericClosureTypeFor(fnty));
+        actualType = genericClosureTypeFor(dynamic_cast<FnTypeAST*>(actualType));
         std::cout << "TYPECHECK CallAST converting " << *fnty << " to " << *actualType << std::endl;
         std::cout << "\t for formal type:\t" << *formalType << std::endl;
         std::cout << "\t base :: " << *base << std::endl;
       }
     } else if (const llvm::StructType* sty = llvm::dyn_cast<llvm::StructType>(actualType->getLLVMType())) {
       if (isValidClosureType(sty)) {
-        const FunctionType* fnty = originalFunctionTypeForClosureStructType(sty);
-        if (isPointerToCompatibleFnTy(formalType->getLLVMType(), fnty)) {
+        FnTypeAST* fnty = originalFunctionTypeForClosureStructType(actualType);
+        if (isPointerToCompatibleFnTy(formalType->getLLVMType(),
+             llvm::cast<FunctionType>(fnty->getLLVMType()))) {
           // We have a closure and will convert it to a bare
           // trampoline function pointer at codegen time.
           actualType = formalType;
@@ -894,14 +1004,14 @@ void TypecheckPass::visit(TupleExprAST* ast) {
   }
 
   bool success = true;
-  std::vector<const Type*> tupleFieldTypes;
+  std::vector<TypeAST*> tupleFieldTypes;
   for (int i = 0; i < body->parts.size(); ++i) {
     ExprAST* expr = body->parts[i];
     if (!expr) {
       std::cerr << "Tuple expr had null component " << i << "!" << std::endl;
       break;
     }
-    const Type* ty = expr->type->getLLVMType();
+    TypeAST* ty = expr->type;
     if (!ty) {
       std::cerr << "Tuple expr had null constituent type for subexpr " << i << std::endl;
       success = false;
@@ -911,7 +1021,7 @@ void TypecheckPass::visit(TupleExprAST* ast) {
   }
 
   if (success) {
-    ast->type = TypeAST::get(llvm::StructType::get(getGlobalContext(), tupleFieldTypes, /*isPacked=*/false));
+    ast->type = TupleTypeAST::get(tupleFieldTypes);
   }
 }
 

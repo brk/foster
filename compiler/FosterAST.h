@@ -50,6 +50,7 @@ string join(string glue, Exprs args);
 string str(ExprAST* expr);
 string str(TypeAST* expr);
 
+TypeAST* TypeASTFor(const string& name);
 const Type* LLVMTypeFor(const string& name);
 void initModuleTypeNames();
 
@@ -150,7 +151,7 @@ class FosterSymbolTable : public NameResolver<T> {
 };
 
 extern FosterSymbolTable<Value> scope;
-extern FosterSymbolTable<const Type> typeScope;
+extern FosterSymbolTable<TypeAST> typeScope;
 extern FosterSymbolTable<ExprAST> varScope;
 // }}}
 
@@ -223,9 +224,9 @@ struct VariableAST : public ExprAST {
   }
 
   // TODO need to figure out how/where/when to assign type info to nil
-  explicit VariableAST(const string& name, const llvm::Type* aType)
+  explicit VariableAST(const string& name, TypeAST* aType)
       : name(name), tyExpr(NULL), lazilyInsertedPrototype(NULL) {
-    this->type = TypeAST::get(aType);
+    this->type = aType;
     noInitialType = false;
   }
   explicit VariableAST(const string& name, ExprAST* tyExpr)
@@ -299,9 +300,9 @@ struct SeqAST : public ExprAST {
 struct TupleExprAST : public UnaryExprAST {
   bool isClosureEnvironment;
 
-  explicit TupleExprAST(ExprAST* expr, const llvm::Type* ty)
+  explicit TupleExprAST(ExprAST* expr, TypeAST* ty)
     : UnaryExprAST(expr), isClosureEnvironment(false) {
-	type = TypeAST::get(ty);
+	type = ty;
   }
   explicit TupleExprAST(ExprAST* expr) : UnaryExprAST(expr) {
     std::cout << "\t\t\tTupleExprAST " << expr << " ; " << this->parts[0] << std::endl;

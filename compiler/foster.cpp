@@ -117,7 +117,7 @@ void createParser(ANTLRContext& ctx, string filename) {
 
 VariableAST* checkAndGetLazyRefTo(PrototypeAST* p) {
   { TypecheckPass typ; p->accept(&typ); }
-  VariableAST* fnRef = new VariableAST(p->name, p->type->getLLVMType());
+  VariableAST* fnRef = new VariableAST(p->name, p->type);
   fnRef->lazilyInsertedPrototype = p;
 
   return fnRef;
@@ -128,13 +128,13 @@ VariableAST* proto(const Type* retTy, const std::string& fqName) {
 }
 
 VariableAST* proto(const Type* retTy, const std::string& fqName,
-    const Type* ty1) {
+    TypeAST* ty1) {
   return checkAndGetLazyRefTo(new PrototypeAST(retTy, fqName,
        new VariableAST("p1", ty1)));
 }
 
 VariableAST* proto(const Type* retTy, const std::string& fqName,
-    const Type* ty1, const Type* ty2) {
+    TypeAST* ty1, TypeAST* ty2) {
   std::vector<VariableAST*> inArgs;
   inArgs.push_back(new VariableAST("p1", ty1));
   inArgs.push_back(new VariableAST("p2", ty2));
@@ -142,7 +142,7 @@ VariableAST* proto(const Type* retTy, const std::string& fqName,
 }
 
 VariableAST* proto(const Type* retTy, const std::string& fqName,
-    const Type* ty1, const Type* ty2, const Type* ty3) {
+    TypeAST* ty1, TypeAST* ty2, TypeAST* ty3) {
   std::vector<VariableAST*> inArgs;
   inArgs.push_back(new VariableAST("p1", ty1));
   inArgs.push_back(new VariableAST("p2", ty2));
@@ -254,17 +254,17 @@ void createLLVMBitIntrinsics() {
     while (size <= 64) {
       if (size & spec->sizeFlags) {
         sprintf(ssize, "i%d", size);
-        const Type* ty = LLVMTypeFor(ssize);
+        TypeAST* ty = TypeAST::get(LLVMTypeFor(ssize));
 
         std::stringstream ss;
         ss << "llvm." << spec->intrinsicName << "." << ssize;
 
         if (spec->kind == kTransform) {
           // e.g for declaring i16 @llvm.bswap.i16(i16)
-          addToProperNamespace( proto(ty, ss.str(), ty) );
+          addToProperNamespace( proto(ty->getLLVMType(), ss.str(), ty) );
         } else if (spec->kind == kOverflow) {
           std::vector<const Type*> params;
-          params.push_back(ty);
+          params.push_back(ty->getLLVMType());
           params.push_back(LLVMTypeFor("i1"));
           const Type* retTy = llvm::StructType::get(getGlobalContext(), params, false);
 
@@ -276,10 +276,12 @@ void createLLVMBitIntrinsics() {
 
           if (spec->intrinsicName == "atomic.cmp.swap") {
             // e.g. for declaring i32 @llvm.atomic.cmp.swap.i32.p0i32(i32*, i32, i32)
-            addToProperNamespace( proto(ty, ss.str(), llvm::PointerType::getUnqual(ty), ty, ty) );
+            addToProperNamespace( proto(ty->getLLVMType(), ss.str(),
+                RefTypeAST::get(ty, false), ty, ty) );
           } else {
             // e.g. for declaring i32 @llvm.atomic.load.xor.i32.p0i32(i32*, i32)
-            addToProperNamespace( proto(ty, ss.str(), llvm::PointerType::getUnqual(ty), ty) );
+            addToProperNamespace( proto(ty->getLLVMType(), ss.str(),
+                RefTypeAST::get(ty, false), ty) );
           }
         }
       }
@@ -341,10 +343,12 @@ void putModuleMembersInScope(Module* m) {
       std::cout << "Inserting ref to fn " << name << " in scopes" << std::endl;
       // Ensure that, when parsing, function calls to this name will find it
       const Type* ty = f.getType();
+      // TODO i don't remember why we need this dereference...
       if (const PointerType* pty = llvm::dyn_cast<PointerType>(ty)) {
         ty = pty->getElementType();
       }
-      varScope.insert(name, new VariableAST(name, ty));
+      // TODO again, this ::get() is basically wrong...
+      varScope.insert(name, new VariableAST(name, TypeAST::get(ty)));
       
       // Ensure that codegen for the given function finds it
       scope.insert(name, it);

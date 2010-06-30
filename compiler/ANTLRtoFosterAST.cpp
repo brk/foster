@@ -280,17 +280,19 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     pTree nameTree = child(tree, 0);
     string name = textOf(child(nameTree, 0));
 
+    // %node = { %node*, i32 }
+    // %node = { \2*, i32 }
     llvm::PATypeHolder namedType = llvm::OpaqueType::get(getGlobalContext());
     typeScope.pushScope("opaque");
-      typeScope.insert(name, namedType.get());
+      typeScope.insert(name, TypeAST::get(namedType.get()));
       ExprAST* tyExpr = ExprAST_from(child(tree, 1), fnMeansClosure);
       { TypecheckPass tyPass; tyPass.typeParsingMode = true; tyExpr->accept(&tyPass); }
       llvm::cast<llvm::OpaqueType>(namedType.get())->refineAbstractTypeTo(tyExpr->type->getLLVMType());
     typeScope.popScope();
 
-    typeScope.insert(name, namedType.get());
+    typeScope.insert(name, tyExpr->type);
 
-    std::cout << "Associated " << name << " with type " << *(namedType.get()) << std::endl;
+    std::cout << "Associated " << name << " with type " << *(tyExpr->type) << std::endl;
     //module->addTypeName(name, namedType.get());
   }
 
@@ -350,7 +352,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
   // <var start end body incr?>
   if (token == FORRANGE) {
     string varName = textOf(child(child(tree, 0), 0));
-    VariableAST* var = new VariableAST(varName, LLVMTypeFor("i32"));
+    VariableAST* var = new VariableAST(varName, TypeAST::get(LLVMTypeFor("i32")));
     ExprAST* start = ExprAST_from(child(tree, 1), fnMeansClosure);
     ExprAST* end   = ExprAST_from(child(tree, 2), fnMeansClosure);
     ExprAST* incr  = NULL;
@@ -435,7 +437,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     }
 
     // TODO for now, new mytype { args } is equivalent to new tuple { args }
-    if (const llvm::Type* ty = typeScope.lookup(name, "")) {
+    if (TypeAST* ty = typeScope.lookup(name, "")) {
       return new TupleExprAST(ExprAST_from(seqArgs, fnMeansClosure), ty);
     }
 
@@ -450,16 +452,16 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     // since we'll end up discarding this variable soon anyways.
     if (isSpecialName(varName)) {
       // Give a bogus type until type inference is implemented.
-      return new VariableAST(varName, LLVMTypeFor("i32"));
+      return new VariableAST(varName, TypeAST::get(LLVMTypeFor("i32")));
     }
 
     ExprAST* var = varScope.lookup(varName, "");
     if (!var) {
       // Maybe parsing a type expr, in which case names refer directly to
       // types, either user-defined or built-in (to Foster or LLVM)
-      const llvm::Type* ty = typeScope.lookup(varName, "");
+      TypeAST* ty = typeScope.lookup(varName, "");
       if (!ty) {
-        ty = LLVMTypeFor(varName);
+        ty = TypeASTFor(varName);
         if (ty) {
           //std::cout << "Could not find ExprAST for var name\t" << varName << ", but it's a valid builtin type name..." << std::endl;
           var = new VariableAST(varName, ty);

@@ -2,28 +2,6 @@
 
 type node = tuple { ?ref node, ?ref node, i32 }
 
-type mixed-node = tuple { ref node, ?ref node }
-
-test-ref-nil = fn () {
-  //expect_i1(true)
-  //print_i1(__COMPILES__ new node { nil, nil, 100 })
-  
-  //expect_i1(false) // can't assign nil to ref, only to ?ref
-  //print_i1(__COMPILES__ new mixed-node { nil, nil })
-  
-  //expect_i1(true)
-  //print_i1(__COMPILES__ new mixed-node { new node { nil, nil, 101 }, nil })
-  
-  expect_i1(false)
-  print_i1(__COMPILES__ let r:ref i32 = nil in { 0 })
-  
-  //expect_i1(true)
-  //print_i1(__COMPILES__ let r:?ref i32 = nil in { 0 })
-  
-  //expect_i1(false)
-  //print_i1(__COMPILES__ let r:ref i32 = new node {nil,nil,0} in { 0 })
-}
-
 mk-full-tree = fn (depth : i32 to ref node) {
   if depth < 1 then {
     //print_i32(depth)
@@ -64,7 +42,6 @@ print-tree = fn (n : ref node) {
 }
 
 fn "main" () {
-  test-ref-nil()  
   //for i in 1 to 0 do {
     //let n : i32 = 3
     //let t : ref node = mk-full-tree(n) in {
