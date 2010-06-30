@@ -15,6 +15,7 @@
 #include "llvm/Support/PassNameParser.h"
 #include "llvm/PassManager.h"
 #include "llvm/Analysis/Verifier.h"
+#include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/System/Host.h"
 #include "llvm/Target/TargetData.h"
@@ -33,6 +34,7 @@
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/System/Signals.h"
+#include "llvm/System/TimeValue.h"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
 
 #include "fosterLexer.h"
@@ -63,7 +65,19 @@ using namespace llvm;
 using std::string;
 using std::endl;
 
-#define FOSTER_VERSION_STR "0.0.2"
+#define FOSTER_VERSION_STR "0.0.3"
+
+struct ScopedTimer {
+  ScopedTimer(llvm::Statistic& stat)
+     : stat(stat), start(llvm::sys::TimeValue::now()) {}
+  ~ScopedTimer() {
+    llvm::sys::TimeValue end = llvm::sys::TimeValue::now();
+    stat += (end - start).msec();
+  }
+private:
+  llvm::Statistic& stat;
+  llvm::sys::TimeValue start;
+};
 
 // TODO: this isn't scalable...
 #include "antlr3defs.h"
@@ -291,7 +305,50 @@ void createLLVMBitIntrinsics() {
   }
 }
 
+static cl::opt<std::string>
+optInputPath(cl::Positional, cl::desc("<input file>"));
+
+static cl::opt<bool>
+optCompileSeparately("c",
+  cl::desc("[foster] Compile separately, don't automatically link imported modules"));
+
+static cl::opt<bool>
+optDumpPreLinkedIR("dump-prelinked",
+  cl::desc("[foster] Dump LLVM IR before linking with standard library"));
+
+static cl::opt<bool>
+optDumpPostLinkedIR("dump-postlinked",
+  cl::desc("[foster] Dump LLVM IR after linking with standard library"));
+
+static cl::opt<bool>
+optOptimizeZero("O0",
+  cl::desc("[foster] Disable optimization passes after linking with standard library"));
+
+void printVersionInfo() {
+  std::cout << "Foster version: " << FOSTER_VERSION_STR;
+  std::cout << ", compiled: " << __DATE__ << " at " << __TIME__ << std::endl;
+  
+  // TODO: could extract more detailed ANTLR version information
+  // from the generated lexer/parser files...
+  std::cout << "ANTLR version " << ANTLR_VERSION_STR << std::endl;
+  
+  cl::PrintVersionMessage(); 
+}
+
+#define DEBUG_TYPE "fosterc"
+STATISTIC(statOptMs, "[foster] Time spent in LLVM IR optimization (ms)");
+STATISTIC(statOverallRuntimeMs, "[foster] Overall compiler runtime (ms)");
+STATISTIC(statParseTimeMs, "[foster] Time spent parsing input file (ms)");
+STATISTIC(statFileIOMs, "[foster] Time spent doing non-parsing I/O (ms)");
+STATISTIC(statLinkingMs, "[foster] Time spent linking LLVM modules (ms)");
+STATISTIC(statIRtoAsmMs, "[foster] Time spent doing llc's job (IR->asm) (ms)");
+STATISTIC(statPrettyPrintMs, "[foster] Time spent in pretty-printing (ms)");
+STATISTIC(statTypeCheckingMs, "[foster] Time spent doing type checking (ms)");
+STATISTIC(statCodegenMs, "[foster] Time spent doing Foster AST -> LLVM IR lowering (ms)");
+STATISTIC(statClosureConversionMs, "[foster] Time spent performing closure conversion (ms)");
+
 Module* readModuleFromPath(std::string path) {
+  ScopedTimer timer(statFileIOMs);
   SMDiagnostic diag;
   return llvm::ParseIRFile(path, diag, llvm::getGlobalContext());
 
@@ -356,35 +413,6 @@ void putModuleMembersInScope(Module* m) {
   }
 }
 
-static cl::opt<std::string>
-optInputPath(cl::Positional, cl::desc("<input file>"));
-
-static cl::opt<bool>
-optCompileSeparately("c",
-  cl::desc("Compile separately, don't automatically link imported modules"));
-
-static cl::opt<bool>
-optDumpPreLinkedIR("dump-prelinked",
-  cl::desc("Dump LLVM IR before linking with standard library"));
-
-static cl::opt<bool>
-optDumpPostLinkedIR("dump-postlinked",
-  cl::desc("Dump LLVM IR after linking with standard library"));
-
-static cl::opt<bool>
-optOptimizeZero("O0",
-  cl::desc("Disable optimization passes after linking with standard library"));
-
-void printVersionInfo() {
-  std::cout << "Foster version: " << FOSTER_VERSION_STR;
-  std::cout << ", compiled: " << __DATE__ << " at " << __TIME__ << std::endl;
-  
-  // TODO: could extract more detailed ANTLR version information
-  // from the generated lexer/parser files...
-  std::cout << "ANTLR version " << ANTLR_VERSION_STR << std::endl;
-  
-  cl::PrintVersionMessage(); 
-}
 
 void dumpANTLRTreeNode(std::ostream& out, pTree tree, int depth) {
   out << string(depth, ' ');
@@ -408,6 +436,7 @@ std::string dumpdirFile(const std::string& filename) {
   return dumpdir + filename;
 }
 void dumpModuleToFile(Module* mod, const std::string& filename) {
+  ScopedTimer timer(statFileIOMs);
   std::string errInfo;
   llvm::raw_fd_ostream LLpreASM(filename.c_str(), errInfo);
   if (errInfo.empty()) {
@@ -420,6 +449,7 @@ void dumpModuleToFile(Module* mod, const std::string& filename) {
 }
 
 void dumpModuleToBitcode(Module* mod, const std::string& filename) {
+  ScopedTimer timer(statFileIOMs);
   std::string errInfo;
   sys::RemoveFileOnSignal(sys::Path(filename), &errInfo);
 
@@ -440,6 +470,7 @@ TargetData* getTargetDataForModule(Module* mod) {
 }
 
 void optimizeModule(Module* mod) {
+  ScopedTimer timer(statOptMs);
   PassManager passes;
   FunctionPassManager fpasses(mod);
 
@@ -488,6 +519,8 @@ void optimizeModule(Module* mod) {
 }
 
 void compileToNativeAssembly(Module* mod, const std::string& filename) {
+  ScopedTimer timer(statIRtoAsmMs);
+
   llvm::Triple triple(mod->getTargetTriple());
   if (triple.getTriple().empty()) {
     triple.setTriple(llvm::sys::getHostTriple());
@@ -572,10 +605,12 @@ void validateInputFile(const std::string& pathstr) {
 }
 
 
-int main(int argc, char** argv) {  
+int main(int argc, char** argv) {
   sys::PrintStackTraceOnErrorSignal();
   PrettyStackTraceProgram X(argc, argv);
   llvm_shutdown_obj Y;
+
+  ScopedTimer wholeProgramTimer(statOverallRuntimeMs);
 
   cl::SetVersionPrinter(&printVersionInfo);
   cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster compiler\n");
@@ -603,19 +638,22 @@ int main(int argc, char** argv) {
 
   std::cout << "parsing" << endl;
 
+  ScopedTimer* timer = new ScopedTimer(statParseTimeMs); 
   ANTLRContext ctx;
   createParser(ctx, optInputPath.c_str());
   fosterParser_program_return langAST = ctx.psr->program(ctx.psr);
+  delete timer; // not block-scoped to allow proper binding of langAST
 
-  std::cout << "dumping parse trees" << endl;
-  {
-    std::ofstream out(dumpdirFile("stringtree.dump.txt").c_str());
-    out << str(langAST.tree->toStringTree(langAST.tree)) << endl;
-  }
-  
-  {
-    std::ofstream out(dumpdirFile("parsetree.dump.txt").c_str());
-    dumpANTLRTree(out, langAST.tree, 0);
+  { ScopedTimer timer(statFileIOMs);
+    std::cout << "dumping parse trees" << endl;
+    {
+      std::ofstream out(dumpdirFile("stringtree.dump.txt").c_str());
+      out << str(langAST.tree->toStringTree(langAST.tree)) << endl;
+    }
+    {
+      std::ofstream out(dumpdirFile("parsetree.dump.txt").c_str());
+      dumpANTLRTree(out, langAST.tree, 0);
+    }
   }
   scope.pushScope("root");
   varScope.pushScope("root");
@@ -624,7 +662,7 @@ int main(int argc, char** argv) {
   // a struct containing the elements of the underlying module?
   // This would be consistent with the dot (selection) operator
   // for accessing elements of the module.
-  
+ 
   Module* m = readModuleFromPath("libfoster.bc");
   putModuleMembersInScope(m);
   
@@ -633,6 +671,7 @@ int main(int argc, char** argv) {
   std::cout << "converting" << endl;
   ExprAST* exprAST = ExprAST_from(langAST.tree, false);
 
+  { ScopedTimer timer(statFileIOMs);
   {
     std::string outfile = "ast.dump.1.txt";
     std::cout << "unparsing to " << outfile << endl;
@@ -642,56 +681,73 @@ int main(int argc, char** argv) {
   
   std::cout << "=========================" << std::endl;
   std::cout << "Adding parent links..." << std::endl;
+  }
 
   { AddParentLinksPass aplPass; exprAST->accept(&aplPass); }
-
+ 
+  { ScopedTimer timer(statFileIOMs);
   std::cout << "=========================" << std::endl;
   std::cout << "Type checking... " << std::endl;
+  }
 
-  { TypecheckPass tyPass; exprAST->accept(&tyPass); }
+  { ScopedTimer timer(statTypeCheckingMs);
+    TypecheckPass tyPass; exprAST->accept(&tyPass);
+  }
 
   bool sema = exprAST->type != NULL;
   std::cout << "Semantic checking: " << sema << endl;
   if (!sema) { return 1; }
   
-  {
+  { ScopedTimer timer(statFileIOMs);
     std::string outfile = "pp-precc.txt";
     std::cout << "=========================" << std::endl;
     std::cout << "Pretty printing to " << outfile << std::endl;
     std::ofstream out(dumpdirFile(outfile).c_str());
+    ScopedTimer pptimer(statPrettyPrintMs);
     PrettyPrintPass ppPass(out); exprAST->accept(&ppPass); ppPass.flush();
   }
 
-  {
+  { ScopedTimer timer(statFileIOMs);
     std::cout << "=========================" << std::endl;
     std::cout << "Performing closure conversion..." << std::endl;
+  }
 
+  { ScopedTimer timer(statClosureConversionMs);
     ClosureConversionPass p(globalNames); exprAST->accept(&p);
   }
 
-  {
+  { ScopedTimer timer(statFileIOMs);
     std::string outfile = "pp-postcc.txt";
     std::cout << "=========================" << std::endl;
     std::cout << "Pretty printing to " << outfile << std::endl;
     std::ofstream out(dumpdirFile(outfile).c_str());
+    ScopedTimer pptimer(statPrettyPrintMs);
     PrettyPrintPass ppPass(out); exprAST->accept(&ppPass); ppPass.flush();
   }
 
   std::cout << "=========================" << std::endl;
 
-  { CodegenPass cgPass; exprAST->accept(&cgPass); }
+  {
+    ScopedTimer timer(statCodegenMs);
+    CodegenPass cgPass; exprAST->accept(&cgPass);
+  }
   
 
   if (!optCompileSeparately) {
     if (optDumpPreLinkedIR) {
       std::string outfile = "out.prelink.ll";
+      { ScopedTimer timer(statFileIOMs);
       std::cout << "Dumping pre-linked LLVM IR to " << outfile << endl;
+      }
       dumpModuleToFile(module, dumpdirFile(outfile).c_str());
     }
 
     std::string errMsg;
+    {
+      ScopedTimer timer(statLinkingMs);
     if (Linker::LinkModules(module, m, &errMsg)) {
       std::cerr << "Error when linking modules together: " << errMsg << std::endl;
+    }
     }
 
     if (optDumpPostLinkedIR) {
