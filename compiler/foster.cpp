@@ -544,6 +544,33 @@ void compileToNativeAssembly(Module* mod, const std::string& filename) {
   passes.doFinalization();
 }
 
+void validateInputFile(const std::string& pathstr) {
+  llvm::sys::PathWithStatus path(pathstr);
+
+  if (path.empty()) {
+    std::cerr << "Error: need an input filename!" << std::endl;
+    exit(1);
+  }
+
+  std::string err;
+  const llvm::sys::FileStatus* status
+         = path.getFileStatus(/*forceUpdate=*/ false, &err);
+  if (!status) {
+    if (err.empty()) {
+      std::cerr << "Error occurred when reading input path '"
+                << pathstr << "'" << std::endl;
+    } else {
+      std::cerr << err << std::endl;
+    }
+    exit(1);
+  }
+
+  if (status->isDir) {
+    std::cerr << "Error: input must be a file, not a directory!" << std::endl;
+    exit(1);
+  }
+}
+
 
 int main(int argc, char** argv) {  
   sys::PrintStackTraceOnErrorSignal();
@@ -552,11 +579,8 @@ int main(int argc, char** argv) {
 
   cl::SetVersionPrinter(&printVersionInfo);
   cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster compiler\n");
-  
-  if (optInputPath.empty()) {
-    std::cerr << "Error: need an input filename!" << std::endl;
-    exit(1);
-  }
+
+  validateInputFile(optInputPath);
   
   std::string dumpdir("fc-output/");
 
