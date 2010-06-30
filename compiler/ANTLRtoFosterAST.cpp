@@ -285,7 +285,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
       typeScope.insert(name, namedType.get());
       ExprAST* tyExpr = ExprAST_from(child(tree, 1), fnMeansClosure);
       { TypecheckPass tyPass; tyPass.typeParsingMode = true; tyExpr->accept(&tyPass); }
-      llvm::cast<llvm::OpaqueType>(namedType.get())->refineAbstractTypeTo(tyExpr->type);
+      llvm::cast<llvm::OpaqueType>(namedType.get())->refineAbstractTypeTo(tyExpr->type->getLLVMType());
     typeScope.popScope();
 
     typeScope.insert(name, namedType.get());

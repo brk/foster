@@ -45,12 +45,21 @@ bool isAutoConvertible(const Type* fromTy, const Type* toTy) {
   return false;
 }
 
+bool isEqualRepr(TypeAST* src, TypeAST* dst) {
+  return src->getLLVMType() == dst->getLLVMType();
+}
+
 bool isCompatible(const Type* src, const Type* dst) {
   return src == dst || isAutoConvertible(src, dst);
 }
 
+bool isCompatible(TypeAST* src, TypeAST* dst) {
+  return isCompatible(src->getLLVMType(),
+                      dst->getLLVMType());
+}
+
 void TypecheckPass::visit(BoolAST* ast) {
-  ast->type = LLVMTypeFor("i1");
+  ast->type = TypeAST::get(LLVMTypeFor("i1"));
 }
 
 const Type* LLVMintTypeForNBits(unsigned n) {
@@ -97,16 +106,18 @@ void TypecheckPass::visit(IntAST* ast) {
 #   endif
   }
 
-  ast->type = LLVMintTypeForNBits(activeBits);
+  ast->type = TypeAST::get(LLVMintTypeForNBits(activeBits));
 }
 
 void TypecheckPass::visit(VariableAST* ast) {
-  if (this->typeParsingMode) { ast->type = LLVMTypeFor(ast->name); }
+  if (this->typeParsingMode) {
+    ast->type = TypeAST::get(LLVMTypeFor(ast->name));
+  }
 
   if (!ast->tyExpr) {
     if (!ast->type) {
       // Eventually we should do local type inference...
-      std::cerr << "Error: typechecking variable " << ast->name << " <"<< ast <<"> with no type provided! " << ast->type << std::endl;
+      std::cerr << "Error: typechecking variable " << ast->name << " <"<< ast <<"> with no type provided! " << std::endl;
     }
     return;
   }
@@ -133,12 +144,12 @@ void TypecheckPass::visit(VariableAST* ast) {
 
   ast->type = ast->tyExpr->type;
 
-  std::cerr << "Parsed type as " << (ast->type) << std::endl;
-  if (ast->type) std::cerr << "\t\t" << *(ast->type) << std::endl;
+  //std::cerr << "Parsed type as " << (ast->type) << std::endl;
+  //if (ast->type) std::cerr << "\t\t" << *(ast->type) << std::endl;
 }
 
 void TypecheckPass::visit(UnaryOpExprAST* ast) {
-  const llvm::Type* opTy = ast->parts[0]->type;
+  const llvm::Type* opTy = ast->parts[0]->type->getLLVMType();
   const std::string& op = ast->op;
 
   if (op == "-") {
@@ -158,12 +169,14 @@ void TypecheckPass::visit(UnaryOpExprAST* ast) {
     }
   }
 
-  ast->type = opTy;
+  ast->type = TypeAST::get(opTy);
 }
 
 void TypecheckPass::visit(BinaryOpExprAST* ast) {
-  const llvm::Type* TL = ast->parts[ast->kLHS]->type;
-  const llvm::Type* TR = ast->parts[ast->kRHS]->type;
+  TypeAST* Lty = ast->parts[ast->kLHS]->type;
+  TypeAST* Rty = ast->parts[ast->kRHS]->type;
+  const llvm::Type* TL = Lty->getLLVMType();
+  const llvm::Type* TR = Rty->getLLVMType();
 
   const std::string& op = ast->op;
 
@@ -187,9 +200,9 @@ void TypecheckPass::visit(BinaryOpExprAST* ast) {
     }
 
     if (op == "<" || op == "==" || op == "!=" || op == "<=") {
-      ast->type = LLVMTypeFor("i1");
+      ast->type = TypeAST::get(LLVMTypeFor("i1"));
     } else {
-      ast->type = TL;
+      ast->type = TypeAST::get(TL);
     }
   }
 }
@@ -204,7 +217,7 @@ void TypecheckPass::visit(PrototypeAST* ast) {
       return;
     }
     ast->inArgs[i]->accept(this);
-    const Type* ty =  ast->inArgs[i]->type;
+    const Type* ty =  ast->inArgs[i]->type->getLLVMType();
     if (ty == NULL) {
       std::cerr << "Error: proto " << ast->name << " had "
         << "null type for arg '" << ast->inArgs[i]->name << "'" << std::endl;
@@ -219,13 +232,13 @@ void TypecheckPass::visit(PrototypeAST* ast) {
     bool tyParMode = this->typeParsingMode; this->typeParsingMode = true;
     ast->tyExpr->accept(this);
     this->typeParsingMode = tyParMode;
-    ast->resultTy = ast->tyExpr->type;
+    ast->resultTy = ast->tyExpr->type->getLLVMType();
   }
 
   if (!ast->resultTy) {
    std::cerr << "Error in typechecking PrototypeAST " << ast->name << ": null return type!" << std::endl;
   } else {
-    ast->type = FunctionType::get(ast->resultTy, argTypes, false);
+    ast->type = TypeAST::get(FunctionType::get(ast->resultTy, argTypes, false));
   }
 }
 
@@ -247,8 +260,9 @@ void TypecheckPass::visit(FnAST* ast) {
 
 void TypecheckPass::visit(ClosureTypeAST* ast) {
   ast->proto->accept(this);
-  if (const llvm::FunctionType* ft = tryExtractCallableType(ast->proto->type)) {
-    ast->type = genericClosureTypeFor(ft);
+  if (const llvm::FunctionType* ft
+        = tryExtractCallableType(ast->proto->type->getLLVMType())) {
+    ast->type = TypeAST::get(genericClosureTypeFor(ft));
     std::cout << "ClosureTypeAST typechecking converted " << *ft << " to " << *(ast->type) << std::endl;
   } else {
     std::cerr << "Error! Proto passed to ClosureType does not have function type!" << std::endl;
@@ -264,8 +278,9 @@ void TypecheckPass::visit(ClosureAST* ast) {
 
     if (!ast->fn || !ast->fn->type) { return; }
 
-    if (const llvm::FunctionType* ft = tryExtractCallableType(ast->fn->type)) {
-      ast->type = genericVersionOfClosureType(ft);
+    if (const llvm::FunctionType* ft
+          = tryExtractCallableType(ast->fn->type->getLLVMType())) {
+      ast->type = TypeAST::get(genericVersionOfClosureType(ft));
       if (ft && ast->type) {
         std::cout << "ClosureAST fnRef typechecking converted " << *ft << " to " << *(ast->type) << std::endl;
         //if (ast->fn && ast->fn->proto) { std::cout << "Just for kicks, fn has type " << *(ast->fn->proto) << std::endl; }
@@ -277,8 +292,8 @@ void TypecheckPass::visit(ClosureAST* ast) {
     }
   } else {
     ast->fn->accept(this);
-    if (const llvm::FunctionType* ft = tryExtractCallableType(ast->fn->type)) {
-      ast->type = genericClosureTypeFor(ft);
+    if (const llvm::FunctionType* ft = tryExtractCallableType(ast->fn->type->getLLVMType())) {
+      ast->type = TypeAST::get(genericClosureTypeFor(ft));
       std::cout << "ClosureTypeAST fn typechecking converted " << *ft << " to " << *(ast->type) << std::endl;
     } else {
       std::cerr << "Error! 282 Function passed to closure does not have function type!" << std::endl;
@@ -291,7 +306,7 @@ void TypecheckPass::visit(IfExprAST* ast) {
   assert(ast->testExpr != NULL);
 
   ast->testExpr->accept(this);
-  const Type* ifType = ast->testExpr->type;
+  const Type* ifType = ast->testExpr->type->getLLVMType();
   if (!ifType) {
     std::cerr << "if condition '" << *(ast->testExpr) << "' had null type!" << std::endl;
     return;
@@ -303,8 +318,8 @@ void TypecheckPass::visit(IfExprAST* ast) {
     return;
   }
 
-  ast->thenExpr->accept(this); const Type* thenType = ast->thenExpr->type;
-  ast->elseExpr->accept(this); const Type* elseType = ast->elseExpr->type;
+  ast->thenExpr->accept(this); const Type* thenType = ast->thenExpr->type->getLLVMType();
+  ast->elseExpr->accept(this); const Type* elseType = ast->elseExpr->type->getLLVMType();
 
   if (thenType == NULL) {
     std::cerr << "IfExprAST had null type for 'then' expression" << std::endl;
@@ -317,7 +332,7 @@ void TypecheckPass::visit(IfExprAST* ast) {
     		<< "\n\t" << *thenType << " vs " << *elseType << std::endl;
     return;
   } else if (thenType == elseType) {
-    ast->type = thenType;
+    ast->type = TypeAST::get(thenType);
   }
 }
 
@@ -328,11 +343,11 @@ void TypecheckPass::visit(ForRangeExprAST* ast) {
 
   // Check type of START
   ast->startExpr->accept(this);
-  const Type* startType = ast->startExpr->type;
+  TypeAST* startType = ast->startExpr->type;
   if (!startType) {
     std::cerr << "for range start expression '" << *(ast->startExpr) << "' had null type!" << std::endl;
     return;
-  } else if (startType != LLVMTypeFor("i32")) {
+  } else if (startType->getLLVMType() != LLVMTypeFor("i32")) {
     std::cerr << "expected for range start expression to have type i32, but got type " << *startType << std::endl;
     return;
   }
@@ -347,11 +362,11 @@ void TypecheckPass::visit(ForRangeExprAST* ast) {
   // Check that END has same type as START
   assert(ast->endExpr != NULL);
   ast->endExpr->accept(this);
-  const Type* endType = ast->endExpr->type;
+  TypeAST* endType = ast->endExpr->type;
   if (!endType) {
     std::cerr << "for range end expression '" << *(ast->endExpr) << "' had null type!" << std::endl;
     return;
-  } else if (startType != endType) {
+  } else if (!isEqualRepr(startType, endType)) {
 	std::cerr << "for range start and end expressions had different types!" << std::endl;
 	return;
   }
@@ -359,24 +374,24 @@ void TypecheckPass::visit(ForRangeExprAST* ast) {
   // Check that incrExpr, if it exists, has same type as START
   if (ast->incrExpr) {
 	ast->incrExpr->accept(this);
-	const Type* incrType = ast->incrExpr->type;
+	TypeAST* incrType = ast->incrExpr->type;
 	if (!incrType) {
 	  std::cerr << "for range incr expression '" << *(ast->incrExpr) << "' had null type!" << std::endl;
 	  return;
-	} else if (startType != incrType) {
-		std::cerr << "for range start and incr expressions had different types!" << std::endl;
+	} else if (isEqualRepr(startType, incrType)) {
+            std::cerr << "for range start and incr expressions had different types!" << std::endl;
 	    return;
 	}
   }
 
   ast->bodyExpr->accept(this);
-  const Type* bodyType = ast->bodyExpr->type;
+  TypeAST* bodyType = ast->bodyExpr->type;
   if (!bodyType) {
     std::cerr << "for range body expression '" << *(ast->bodyExpr) << "' had null type!" << std::endl;
     return;
   }
 
-  ast->type = LLVMTypeFor("i32");
+  ast->type = TypeAST::get(LLVMTypeFor("i32"));
 }
 
 void TypecheckPass::visit(NilExprAST* ast) {
@@ -388,13 +403,14 @@ void TypecheckPass::visit(NilExprAST* ast) {
 	  // If we have a type for the parent already, it's probably because
 	  // it's a   new _type_ { ... nil ... }  -like expr.
       if (const llvm::StructType* tupleTy =
-          llvm::dyn_cast<const llvm::StructType>(ast->parent->parent->type)) {
+          llvm::dyn_cast<const llvm::StructType>(
+		ast->parent->parent->type->getLLVMType())) {
         std::vector<ExprAST*>::iterator nilPos
                     = std::find(ast->parent->parts.begin(),
                                 ast->parent->parts.end(),   ast);
         if (nilPos != ast->parent->parts.end()) {
           int nilOffset = std::distance(ast->parent->parts.begin(), nilPos);
-          ast->type = tupleTy->getContainedType(nilOffset);
+          ast->type = TypeAST::get(tupleTy->getContainedType(nilOffset));
           std::cout << "\tmunging gave nil type " << *(ast->type) << std::endl;
         }
       }
@@ -415,10 +431,10 @@ void TypecheckPass::visit(NilExprAST* ast) {
 	  // find the arg position of our nil
 	  ExprAST* callee = callast->parts[0];
 	  if (const llvm::FunctionType* fnty =
-	      llvm::dyn_cast_or_null<const llvm::FunctionType>(callee->type)) {
+	      llvm::dyn_cast_or_null<const llvm::FunctionType>(callee->type->getLLVMType())) {
         for (int i = 1; i < callast->parts.size(); ++i) {
           if (ast == callast->parts[i]) {
-            ast->type = fnty->getParamType(i - 1);
+            ast->type = TypeAST::get(fnty->getParamType(i - 1));
           }
         }
 	  } else if (callee->type) {
@@ -433,7 +449,7 @@ void TypecheckPass::visit(NilExprAST* ast) {
 	std::cout << "nil parent parent: " << *(ast->parent->parent) << std::endl;
 	std::cout << "nil parent parent ty: " << ast->parent->parent->type << std::endl;
 
-	ast->type = LLVMTypeFor("i8*");
+	ast->type = TypeAST::getNullableVersionOf(LLVMTypeFor("i8*"));
   }
 }
 
@@ -442,13 +458,16 @@ void TypecheckPass::visit(NilExprAST* ast) {
 // so that it evaluates to a T** (a stack slot containing a T*)
 // instead of a simple T*, which would not be modifiable by the GC.
 void TypecheckPass::visit(RefExprAST* ast) {
-  ast->type = llvm::PointerType::getUnqual(ast->parts[0]->type);
+  assert(ast->parts[0]->type && "Need arg to typecheck ref!");
+  ast->type = TypeAST::get(llvm::PointerType::getUnqual(ast->parts[0]->type->getLLVMType()));
 }
 
 void TypecheckPass::visit(DerefExprAST* ast) {
-  const Type* derefType = ast->parts[0]->type;
+  assert(ast->parts[0]->type && "Need arg to typecheck deref!");
+
+  const Type* derefType = ast->parts[0]->type->getLLVMType();
   if (const llvm::PointerType* ptrTy = llvm::dyn_cast<llvm::PointerType>(derefType)) {
-    ast->type = ptrTy->getElementType();
+    ast->type = TypeAST::get(ptrTy->getElementType());
   } else {
     std::cerr << "Deref() called on a non-pointer type " << *derefType << "!\n";
     std::cerr << "base: " << *(ast->parts[0]) << std::endl;
@@ -457,13 +476,13 @@ void TypecheckPass::visit(DerefExprAST* ast) {
 }
 
 void TypecheckPass::visit(AssignExprAST* ast) {
-  const Type* lhsTy = ast->parts[0]->type;
-  const Type* rhsTy = ast->parts[1]->type;
+  const Type* lhsTy = ast->parts[0]->type->getLLVMType();
+  const Type* rhsTy = ast->parts[1]->type->getLLVMType();
 
   if (const llvm::PointerType* plhsTy = llvm::dyn_cast<llvm::PointerType>(lhsTy)) {
     lhsTy = plhsTy->getElementType();
     if (isCompatible(lhsTy, rhsTy)) {
-      ast->type = LLVMTypeFor("i32");
+      ast->type = TypeAST::get(LLVMTypeFor("i32"));
     } else {
       std::cerr << "Types in assignment are not copy compatible!" << std::endl;
       std::cerr << "\tLHS (deref'd): " << *(lhsTy) << std::endl;
@@ -496,7 +515,7 @@ const llvm::CompositeType* getIndexableType(const llvm::Type* ty) {
 
 void TypecheckPass::visit(SubscriptAST* ast) {
   if (!ast->parts[1]) {
-    std::cerr << "Error: SubscriptAST had null index" << std::endl;
+    std::cerr << "Error: " << *(ast) << " had null index" << std::endl;
     return;
   }
 
@@ -512,7 +531,7 @@ void TypecheckPass::visit(SubscriptAST* ast) {
     return;
   }
 
-  const Type* baseType = ast->parts[0]->type;
+  const Type* baseType = ast->parts[0]->type->getLLVMType();
   if (!baseType) {
     std::cerr << "Error: Cannot index into object of null type " << std::endl;
     return;
@@ -561,10 +580,10 @@ void TypecheckPass::visit(SubscriptAST* ast) {
   }
 
   //llvm::errs() << "Indexing composite with index " << *cidx << "; neg? " << vidx.isNegative() << "\n";
-  ast->type = compositeTy->getTypeAtIndex(cidx);
+  ast->type = TypeAST::get(compositeTy->getTypeAtIndex(cidx));
 
   if (this->inAssignLHS) {
-    ast->type = llvm::PointerType::getUnqual(ast->type);
+    ast->type = TypeAST::get(llvm::PointerType::getUnqual(ast->type->getLLVMType()));
   }
 }
 
@@ -603,7 +622,7 @@ void TypecheckPass::visit(CallAST* ast) {
   }
 
   base->accept(this);
-  const Type* baseType = base->type;
+  const Type* baseType = base->type->getLLVMType();
   if (baseType == NULL) {
     std::cerr << "Error: CallAST base expr had null type:\n\t" << *(base) << std::endl;
     return;
@@ -619,10 +638,10 @@ void TypecheckPass::visit(CallAST* ast) {
     arg->accept(this);
     if (!arg->type) {
       std::cerr << "print_ref() given arg of no discernable type!" << std::endl;
-    } else if (!arg->type->isPointerTy()) {
+    } else if (!arg->type->getLLVMType()->isPointerTy()) {
       std::cerr << "print_ref() given arg of non-pointer type! " << *(arg->type) << std::endl;
     } else {
-      ast->type = LLVMTypeFor("i32");
+      ast->type = TypeAST::get(LLVMTypeFor("i32"));
     }
     return;
   }
@@ -649,7 +668,7 @@ void TypecheckPass::visit(CallAST* ast) {
     }
 
     arg->accept(this);
-    const Type* argTy = arg->type;
+    const Type* argTy = arg->type->getLLVMType();
     if (!argTy) {
       std::cerr << "Error: CallAST typecheck: arg " << i << " (" << *(arg) << ") had null type" << std::endl;
       return;
@@ -749,7 +768,7 @@ void TypecheckPass::visit(CallAST* ast) {
   }
 
   if (success) {
-    ast->type = baseFT->getReturnType();
+    ast->type = TypeAST::get(baseFT->getReturnType());
   }
 }
 
@@ -764,7 +783,7 @@ int extractNumElementsAndElementType(int maxSize, ExprAST* ast, const Type*& ele
     unsigned int n = v.getZExtValue();
     // Sanity check on # elements; nobody? wants a single billion-element vector...
     if (n <= maxSize) {
-      elementType = var->type;
+      elementType = var->type->getLLVMType();
       return n;
     } else {
       std::cerr << "Concise simd/array declaration too big! : " << *ast << std::endl;
@@ -798,7 +817,7 @@ void TypecheckPass::visit(ArrayExprAST* ast) {
 
   if (!elementType) {
     for (int i = 0; i < numElements; ++i) {
-      const Type* ty =  body->parts[i]->type;
+      const Type* ty =  body->parts[i]->type->getLLVMType();
       if (!ty) {
         std::cerr << "Array expr had null constituent type for subexpr " << i << std::endl;
         success = false;
@@ -828,7 +847,7 @@ void TypecheckPass::visit(ArrayExprAST* ast) {
 
 
   if (success) {
-    ast->type = llvm::ArrayType::get(elementType, numElements);
+    ast->type = TypeAST::get(llvm::ArrayType::get(elementType, numElements));
   }
 }
 
@@ -858,7 +877,7 @@ void TypecheckPass::visit(SimdVectorAST* ast) {
   // No special case; iterate through and collect all the types
   if (!elementType) {
     for (int i = 0; i < numElements; ++i) {
-      const Type* ty =  body->parts[i]->type;
+      const Type* ty =  body->parts[i]->type->getLLVMType();
       if (!ty) {
         std::cerr << "simd-vector expr had null constituent type for subexpr " << i << std::endl;
         success = false;
@@ -893,7 +912,7 @@ void TypecheckPass::visit(SimdVectorAST* ast) {
   }
 
   if (success) {
-    ast->type = llvm::VectorType::get(elementType, numElements);
+    ast->type = TypeAST::get(llvm::VectorType::get(elementType, numElements));
   }
 }
 
@@ -912,7 +931,7 @@ void TypecheckPass::visit(TupleExprAST* ast) {
       std::cerr << "Tuple expr had null component " << i << "!" << std::endl;
       break;
     }
-    const Type* ty = expr->type;
+    const Type* ty = expr->type->getLLVMType();
     if (!ty) {
       std::cerr << "Tuple expr had null constituent type for subexpr " << i << std::endl;
       success = false;
@@ -922,15 +941,17 @@ void TypecheckPass::visit(TupleExprAST* ast) {
   }
 
   if (success) {
-    ast->type = llvm::StructType::get(getGlobalContext(), tupleFieldTypes, /*isPacked=*/false);
+    ast->type = TypeAST::get(llvm::StructType::get(getGlobalContext(), tupleFieldTypes, /*isPacked=*/false));
   }
 }
 
 
 void TypecheckPass::visit(UnpackExprAST* ast) {
-  if (!llvm::isa<llvm::StructType>(ast->parts[0]->type)) {
+  const llvm::Type* unpackeeType = 
+     ast->parts[0]->type->getLLVMType();
+  if (!llvm::isa<llvm::StructType>(unpackeeType)) {
     std::cerr << "Cannot unpack non-struct expression:\n\t" << *(ast->parts[0])
-              << "of type\n\t" << *(ast->parts[0]->type) << std::endl;
+              << "of type\n\t" << *(unpackeeType) << std::endl;
   } else {
     // This is really just a valid non-null pointer; since an unpack
     // "expression" is syntactic sugar for a complex expression that
@@ -947,6 +968,6 @@ void TypecheckPass::visit(BuiltinCompilesExprAST* ast) {
   } else {
     ast->status = ast->kWouldNotCompile;
   }
-  ast->type = LLVMTypeFor("i1");
+  ast->type = TypeAST::get(LLVMTypeFor("i1"));
 }
 

@@ -117,7 +117,7 @@ void createParser(ANTLRContext& ctx, string filename) {
 
 VariableAST* checkAndGetLazyRefTo(PrototypeAST* p) {
   { TypecheckPass typ; p->accept(&typ); }
-  VariableAST* fnRef = new VariableAST(p->name, p->type);
+  VariableAST* fnRef = new VariableAST(p->name, p->type->getLLVMType());
   fnRef->lazilyInsertedPrototype = p;
 
   return fnRef;

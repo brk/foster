@@ -32,6 +32,14 @@ FosterSymbolTable<Value> scope;
 FosterSymbolTable<const Type> typeScope;
 FosterSymbolTable<ExprAST> varScope;
 
+// static
+std::map<const llvm::Type*, TypeAST*>
+TypeAST::thinWrappers;
+
+std::ostream& operator<<(std::ostream& out, TypeAST& type) {
+  return type.operator<<(out);
+}
+
 std::ostream& operator<<(std::ostream& out, ExprAST& expr) {
   return expr.operator<<(out);
 }
@@ -99,6 +107,12 @@ string str(ExprAST* expr) {
   } else { return "<nil>"; }
 }
 
+string str(TypeAST* expr) {
+  if (expr) {
+    std::stringstream ss; ss << (*expr); return ss.str();
+  } else { return "<nil>"; }
+}
+
 std::map<string, const Type*> builtinTypes;
 
 const Type* LLVMTypeFor(const string& name) {
@@ -156,13 +170,14 @@ IntAST* literalIntAST(int lit) {
 }
 
 llvm::APInt IntAST::getAPInt() {
-  return APInt(this->type->getScalarSizeInBits(), Clean, Base);
+  return APInt(this->type->getLLVMType()->getScalarSizeInBits(),
+               Clean, Base);
 }
 
 llvm::Constant* IntAST::getConstantValue() {
-  return ConstantInt::get(this->type, this->getAPInt());
+  return ConstantInt::get(this->type->getLLVMType(), this->getAPInt());
 }
 
 bool RefExprAST::isIndirect() {
-  return isIndirect_ || (type && value && isPointerToType(value->getType(), type));
+  return isIndirect_ || (type && value && isPointerToType(value->getType(), type->getLLVMType()));
 }

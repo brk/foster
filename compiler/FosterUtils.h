@@ -6,6 +6,7 @@
 #define FOSTER_UTILS_H
 
 #include "llvm/DerivedTypes.h"
+#include "FosterAST.h"
 
 // returns true if p == t*
 inline bool isPointerToType(const llvm::Type* p, const llvm::Type* t) {
@@ -17,7 +18,7 @@ inline bool isPointerToPointerToType(const llvm::Type* p, const llvm::Type* t) {
   return p->isPointerTy() && isPointerToType(p->getContainedType(0), t);
 }
 
-bool canAssignType(const llvm::Type* from, const llvm::Type* to);
+bool canAssignType(TypeAST* from, TypeAST* to);
 
 void addClosureTypeName(llvm::Module* mod, const llvm::StructType* ty);
 

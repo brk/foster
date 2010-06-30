@@ -522,7 +522,7 @@ void CodegenPass::visit(PrototypeAST* ast) {
   }
 
   //std::cout << "\t" << "Codegen proto "  << sourceName << std::endl;
-  const llvm::FunctionType* FT = llvm::dyn_cast<FunctionType>(ast->type);
+  const llvm::FunctionType* FT = llvm::dyn_cast<FunctionType>(ast->type->getLLVMType());
   Function* F = Function::Create(FT, Function::ExternalLinkage, symbolName, module);
 
   if (!F) {
@@ -681,7 +681,7 @@ void CodegenPass::visit(ClosureAST* ast) {
   }
 
   TupleExprAST* env = new TupleExprAST(new SeqAST(ast->parts));
-  ExprAST* fnPtr = new VariableAST(ast->fn->proto->name, llvm::PointerType::get(ast->fn->type, 0));
+  ExprAST* fnPtr = new VariableAST(ast->fn->proto->name, llvm::PointerType::get(ast->fn->type->getLLVMType(), 0));
   { TypecheckPass tp;
     fnPtr->accept(&tp);
     fnPtr->accept(this);
@@ -700,7 +700,7 @@ void CodegenPass::visit(ClosureAST* ast) {
   llvm::errs() << "Closure conversion " << ast->fn->proto->name << "\n\tfnPtr value: "
       << *fnPtr->value << "\n\tFunction? " << llvm::isa<Function>(fnPtr->value) << "\n";
 
-  if (const FunctionType* fnTy = llvm::dyn_cast<const FunctionType>(ast->fn->type)) {
+  if (const FunctionType* fnTy = llvm::dyn_cast<const FunctionType>(ast->fn->type->getLLVMType())) {
     // Manually build struct for now, since we don't have PtrAST nodes
     const llvm::StructType* specificCloTy = closureTypeFromClosedFnType(fnTy);
     const llvm::StructType* genericCloTy = genericVersionOfClosureType(fnTy);
@@ -811,7 +811,7 @@ void CodegenPass::visit(IfExprAST* ast) {
   if (!cond) return;
 
   ast->value = codegenIfExpr(cond, LazyVisitedValue(this, ast->thenExpr),
-                                   LazyVisitedValue(this, ast->elseExpr), ast->type);
+                                   LazyVisitedValue(this, ast->elseExpr), ast->type->getLLVMType());
 }
 
 void CodegenPass::visit(ForRangeExprAST* ast) {
@@ -836,7 +836,7 @@ void CodegenPass::visit(ForRangeExprAST* ast) {
   builder.CreateBr(loopBB);
   builder.SetInsertPoint(loopBB);
 
-  llvm::PHINode* pickvar = builder.CreatePHI(ast->var->type, ast->var->name);
+  llvm::PHINode* pickvar = builder.CreatePHI(ast->var->type->getLLVMType(), ast->var->name);
   pickvar->addIncoming(ast->startExpr->value, preLoopBB);
 
   scope.pushScope("for-range " + ast->var->name);
@@ -865,8 +865,7 @@ void CodegenPass::visit(ForRangeExprAST* ast) {
 
 void CodegenPass::visit(NilExprAST* ast) {
   if (ast->value) return;
-  ast->value = llvm::ConstantPointerNull::getNullValue(ast->type);
-		  //ast->type->getContainedType(0));
+  ast->value = llvm::ConstantPointerNull::getNullValue(ast->type->getLLVMType());
 }
 
 void CodegenPass::visit(RefExprAST* ast) {
@@ -883,12 +882,12 @@ void CodegenPass::visit(RefExprAST* ast) {
 #endif
 
   if (ast->isIndirect()) {
-    if (ast->type == ast->value->getType()) {
+    if (ast->type->getLLVMType() == ast->value->getType()) {
       // e.g. ast type is i32* but value type is i32* instead of i32**
       llvm::Value* stackslot = CreateEntryAlloca(ast->value->getType(), "stackslot");
       builder.CreateStore(ast->value, stackslot, /*isVolatile=*/ false);
       ast->value = stackslot;
-    } else if (isPointerToType(ast->type, ast->value->getType())) {
+    } else if (isPointerToType(ast->type->getLLVMType(), ast->value->getType())) {
       // If we're given a T when we want a T**, malloc a new T to get a T*
       // stored in a T** on the stack, then copy our T into the T*.
       const llvm::Type* T = ast->value->getType();
@@ -901,7 +900,7 @@ void CodegenPass::visit(RefExprAST* ast) {
       ast->value = stackslot;
     }
   } else {
-    if (isPointerToType(ast->type, ast->value->getType())) {
+    if (isPointerToType(ast->type->getLLVMType(), ast->value->getType())) {
       // e.g. ast type is i32* but value type is i32
       // stackslot has type i32* (not i32**)
       llvm::Value* stackslot = CreateEntryAlloca(ast->value->getType(), "stackslot");
@@ -919,11 +918,11 @@ void CodegenPass::visit(DerefExprAST* ast) {
   std::cout << "deref value of type " << *(src->getType())
        << " vs ast type of " << *(ast->type) << std::endl;
 #endif
-  if (isPointerToPointerToType(src->getType(), ast->type)) {
+  if (isPointerToPointerToType(src->getType(), ast->type->getLLVMType())) {
     src = builder.CreateLoad(src, /*isVolatile=*/ false, "prederef");
   }
 
-  assert(isPointerToType(src->getType(), ast->type)
+  assert(isPointerToType(src->getType(), ast->type->getLLVMType())
       && "deref needs a T* to produce a T!");
   ast->value = builder.CreateLoad(src, /*isVolatile=*/ false, "deref");
 }
@@ -1005,7 +1004,7 @@ void CodegenPass::visit(SubscriptAST* ast) {
 
   // TODO why does ast have no type here...?
   const llvm::Type* baseTy = base->getType();
-  if ((ast->type && isPointerToType(baseTy, ast->type))
+  if ((ast->type->getLLVMType() && isPointerToType(baseTy, ast->type->getLLVMType()))
       || (baseTy->isPointerTy()
        && baseTy->getContainedType(0)->isPointerTy())) {
     base = builder.CreateLoad(base, /*isVolatile*/ false, "subload");
@@ -1143,7 +1142,7 @@ llvm::Value* getTrampolineForClosure(ClosureAST* cloAST) {
   // It would be nice and easy to extract the code pointer from the closure,
   // but LLVM requires that pointers passed to trampolines be "obvious" function
   // pointers. Thus, we need direct access to the closure's underlying fn.
-  ExprAST* fnPtr = new VariableAST(cloAST->fn->proto->name, llvm::PointerType::get(cloAST->fn->type, 0));
+  ExprAST* fnPtr = new VariableAST(cloAST->fn->proto->name, llvm::PointerType::get(cloAST->fn->type->getLLVMType(), 0));
   { TypecheckPass tp; CodegenPass cp;
     fnPtr->accept(&tp);
     fnPtr->accept(&cp);
@@ -1215,7 +1214,7 @@ void CodegenPass::visit(CallAST* ast) {
     FT = F->getFunctionType();
   } else if (FT = tryExtractFunctionPointerType(FV)) {
     // Call to function pointer
-  } else if (const llvm::StructType* sty = llvm::dyn_cast<const llvm::StructType>(base->type)) {
+  } else if (const llvm::StructType* sty = llvm::dyn_cast<const llvm::StructType>(base->type->getLLVMType())) {
     if (const llvm::FunctionType* fty = tryExtractCallableType(sty->getContainedType(0))) {
       // Call to closure struct
       FT = fty;
@@ -1261,7 +1260,7 @@ void CodegenPass::visit(CallAST* ast) {
     const llvm::Type* expectedType = FT->getContainedType(i);
 
     // Codegenning   callee( arg )  where arg has raw function type, not closure type!
-    if (const FunctionType* fnty = llvm::dyn_cast_or_null<const FunctionType>(arg->type)) {
+    if (const FunctionType* fnty = llvm::dyn_cast_or_null<const FunctionType>(arg->type->getLLVMType())) {
       // If we still have a bare function type at codegen time, it means
       // the code specified a (top-level) function name.
       // Since we made it past type checking, we should have only two
@@ -1457,7 +1456,7 @@ llvm::GlobalVariable* getGlobalArrayVariable(SeqAST* body, const llvm::ArrayType
 void CodegenPass::visit(ArrayExprAST* ast) {
   if (ast->value) return;
 
-  const llvm::ArrayType* arrayType = llvm::dyn_cast<llvm::ArrayType>(ast->type);
+  const llvm::ArrayType* arrayType = llvm::dyn_cast<llvm::ArrayType>(ast->type->getLLVMType());
   module->addTypeName(freshName("arrayTy"), arrayType);
 
   SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
@@ -1495,7 +1494,7 @@ void CodegenPass::visit(ArrayExprAST* ast) {
 void CodegenPass::visit(SimdVectorAST* ast) {
   if (ast->value) return;
 
-  const llvm::VectorType* simdType = llvm::dyn_cast<const llvm::VectorType>(ast->type);
+  const llvm::VectorType* simdType = llvm::dyn_cast<const llvm::VectorType>(ast->type->getLLVMType());
 
 
   SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
@@ -1535,12 +1534,12 @@ void CodegenPass::visit(SimdVectorAST* ast) {
 // pt should be an alloca, either of type tuple* or tuple**,
 // where tuple is the type of the TupleExprAST
 void copyTupleTo(CodegenPass* pass, Value* pt, TupleExprAST* ast) {
-  if (isPointerToPointerToType(pt->getType(), ast->type)) {
+  if (isPointerToPointerToType(pt->getType(), ast->type->getLLVMType())) {
     pt = builder.CreateLoad(pt, false, "stackload");
   }
 
   // pt should now be of type tuple*
-  assert(isPointerToType(pt->getType(), ast->type));
+  assert(isPointerToType(pt->getType(), ast->type->getLLVMType()));
 
   SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
   for (int i = 0; i < body->parts.size(); ++i) {
@@ -1583,7 +1582,7 @@ void CodegenPass::visit(TupleExprAST* ast) {
   assert(ast->type != NULL);
 
   // Create struct type underlying tuple
-  const Type* tupleType = ast->type;
+  const Type* tupleType = ast->type->getLLVMType();
   const char* typeName = (ast->isClosureEnvironment) ? "env" : "tuple";
   registerType(tupleType, typeName, ast->isClosureEnvironment);
 

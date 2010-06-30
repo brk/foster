@@ -224,8 +224,9 @@ void performClosureConversion(ClosureAST* closure) {
   // We must embed a typemap in the environment so the garbage collector
   // will be able to handle the closure in functions that can be passed
   // closures with multiple different environments.
-  NilExprAST* nilptr = new NilExprAST(); nilptr->type = LLVMTypeFor("i8*");
-  envTypes.push_back(nilptr->type);
+  NilExprAST* nilptr = new NilExprAST();
+  nilptr->type = TypeAST::get(LLVMTypeFor("i8*"));
+  envTypes.push_back(nilptr->type->getLLVMType());
   envExprs.push_back(nilptr);
 
   set<VariableAST*>::iterator it;
@@ -233,7 +234,7 @@ void performClosureConversion(ClosureAST* closure) {
     std::cout << "Free var: " <<     *(*it) << std::endl;
     std::cout << "Free var ty: " << *((*it)->type) << std::endl;
     std::cout << std::endl;
-    envTypes.push_back((*it)->type);
+    envTypes.push_back((*it)->type->getLLVMType());
     envExprs.push_back(*it);
   }
 
@@ -285,7 +286,7 @@ void lambdaLiftAnonymousFunction(FnAST* ast) {
   for (it = freeVars.begin(); it != freeVars.end(); ++it) {
     // For each free variable in the function:
     VariableAST* parentScopeVar = *it;
-    VariableAST* var = new VariableAST(parentScopeVar->name, parentScopeVar->type);
+    VariableAST* var = new VariableAST(parentScopeVar->name, parentScopeVar->type->getLLVMType());
 
     // add a parameter to the function prototype
     appendParameter(ast->proto, var);

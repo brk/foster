@@ -12,7 +12,7 @@
 using llvm::Type;
 using llvm::FunctionType;
 
-bool canAssignType(const Type* from, const Type* to) {
+bool canAssignType(TypeAST* from, TypeAST* to) {
   // TODO refine this!
   return from == to;
 }

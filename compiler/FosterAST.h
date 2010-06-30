@@ -32,9 +32,11 @@ using llvm::APInt;
 using llvm::Function;
 
 class ExprAST; // fwd decl
+class TypeAST; // fwd decl
 
 typedef std::vector<ExprAST*> Exprs;
 std::ostream& operator<<(std::ostream& out, ExprAST& expr);
+std::ostream& operator<<(std::ostream& out, TypeAST& expr);
 
 void fosterInitializeLLVM();
 
@@ -46,6 +48,7 @@ extern Module* module;
 
 string join(string glue, Exprs args);
 string str(ExprAST* expr);
+string str(TypeAST* expr);
 
 const Type* LLVMTypeFor(const string& name);
 void initModuleTypeNames();
@@ -70,6 +73,31 @@ class TypeAST {
   // nullable reference to T are both representated by type
   // T*, but they are not always compatible.
   const llvm::Type* repr;
+
+
+  TypeAST(const llvm::Type* underlyingType)
+    : repr(underlyingType) {}
+
+  static std::map<const llvm::Type*, TypeAST*> thinWrappers;
+public:
+  const llvm::Type* getLLVMType() { return repr; }
+
+  virtual std::ostream& operator<<(std::ostream& out) const {
+    return out << *repr;
+  };
+
+  static TypeAST* get(const llvm::Type* loweredType) {
+    TypeAST* tyast = thinWrappers[loweredType];
+    if (tyast) { return tyast; }
+    tyast = new TypeAST(loweredType); 
+    thinWrappers[loweredType] = tyast;
+    return tyast;
+  }
+
+  // given (T*), returns (?ref T)
+  static TypeAST* getNullableVersionOf(const llvm::Type* ptrType) {
+    return TypeAST::get(ptrType);
+  }
 };
 
 ///////////////////////////////////////////////////////////
@@ -84,7 +112,7 @@ struct ExprAST : public NameResolver<ExprAST> {
   std::vector<ExprAST*> parts;
 
   llvm::Value* value;
-  const llvm::Type* type;
+  TypeAST* type;
 
   explicit ExprAST(ExprAST* parent = NULL) : parent(parent), value(NULL), type(NULL) {}
   virtual ~ExprAST() {}
@@ -240,7 +268,7 @@ struct VariableAST : public ExprAST {
   // TODO need to figure out how/where/when to assign type info to nil
   explicit VariableAST(const string& name, const llvm::Type* aType)
       : name(name), tyExpr(NULL), lazilyInsertedPrototype(NULL) {
-    this->type = aType;
+    this->type = TypeAST::get(aType);
     noInitialType = false;
   }
   explicit VariableAST(const string& name, ExprAST* tyExpr)
@@ -253,7 +281,7 @@ struct VariableAST : public ExprAST {
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
     if (type) {
-      return out << "VarAST( " << name << " : " << *type << ")";
+      return out << "VarAST( " << name << " : " << str(type) << ")";
     } else {
       return out << "VarAST( " << name << " : " << ")";
     }
@@ -316,7 +344,7 @@ struct TupleExprAST : public UnaryExprAST {
 
   explicit TupleExprAST(ExprAST* expr, const llvm::Type* ty)
     : UnaryExprAST(expr), isClosureEnvironment(false) {
-	type = ty;
+	type = TypeAST::get(ty);
   }
   explicit TupleExprAST(ExprAST* expr) : UnaryExprAST(expr) {
     std::cout << "\t\t\tTupleExprAST " << expr << " ; " << this->parts[0] << std::endl;
