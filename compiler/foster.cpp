@@ -35,6 +35,8 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/System/Signals.h"
 #include "llvm/System/TimeValue.h"
+#include "llvm/Support/PluginLoader.h"
+#include "llvm/Support/PassNameParser.h"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
 
 #include "fosterLexer.h"
@@ -324,6 +326,9 @@ static cl::opt<bool>
 optOptimizeZero("O0",
   cl::desc("[foster] Disable optimization passes after linking with standard library"));
 
+static cl::list<const PassInfo*, bool, PassNameParser>
+cmdLinePassList(cl::desc("Optimizations available:"));
+
 void printVersionInfo() {
   std::cout << "Foster version: " << FOSTER_VERSION_STR;
   std::cout << ", compiled: " << __DATE__ << " at " << __TIME__ << std::endl;
@@ -469,7 +474,7 @@ TargetData* getTargetDataForModule(Module* mod) {
   return new TargetData(layout);
 }
 
-void optimizeModule(Module* mod) {
+void optimizeModuleAndRunPasses(Module* mod) {
   ScopedTimer timer(statOptMs);
   PassManager passes;
   FunctionPassManager fpasses(mod);
@@ -484,30 +489,45 @@ void optimizeModule(Module* mod) {
 
   passes.add(llvm::createVerifierPass());
 
-  llvm::createStandardModulePasses(&passes, 2,
-      /*OptimizeSize*/ false,
-      /*UnitAtATime*/ true,
-      /*UnrollLoops*/ true,
-      /*SimplifyLibCalls*/ true,
-      /*HaveExceptions*/ false,
-      llvm::createFunctionInliningPass());
-  llvm::createStandardLTOPasses(&passes,
-      /*Internalize*/ true,
-      /*RunInliner*/ true,
-      /*VerifyEach*/ true);
-  llvm::createStandardModulePasses(&passes, 3,
-      /*OptimizeSize*/ false,
-      /*UnitAtATime*/ true,
-      /*UnrollLoops*/ true,
-      /*SimplifyLibCalls*/ true,
-      /*HaveExceptions*/ false,
-      llvm::createFunctionInliningPass());
+  if (!optOptimizeZero) {
+    llvm::createStandardModulePasses(&passes, 2,
+        /*OptimizeSize*/ false,
+        /*UnitAtATime*/ true,
+        /*UnrollLoops*/ true,
+        /*SimplifyLibCalls*/ true,
+        /*HaveExceptions*/ false,
+        llvm::createFunctionInliningPass());
+    llvm::createStandardLTOPasses(&passes,
+        /*Internalize*/ true,
+        /*RunInliner*/ true,
+        /*VerifyEach*/ true);
+  }
 
-  passes.add(llvm::createVerifierPass());
+  // Add command line passes
+  for (int i = 0; i < cmdLinePassList.size(); ++i) {
+    const PassInfo* pi = cmdLinePassList[i];
+    llvm::Pass* p = (pi->getNormalCtor()) ? pi->getNormalCtor()() : NULL;
+    if (p) {
+      passes.add(p);
+    } else {
+      std::cerr << "Error: unable to create pass " << pi->getPassName() << std::endl;
+    }
+  }
 
+  if (!optOptimizeZero) {
+    llvm::createStandardModulePasses(&passes, 3,
+        /*OptimizeSize*/ false,
+        /*UnitAtATime*/ true,
+        /*UnrollLoops*/ true,
+        /*SimplifyLibCalls*/ true,
+        /*HaveExceptions*/ false,
+        llvm::createFunctionInliningPass());
 
-  llvm::createStandardFunctionPasses(&fpasses, 2);
-  llvm::createStandardFunctionPasses(&fpasses, 3);
+    passes.add(llvm::createVerifierPass());
+
+    llvm::createStandardFunctionPasses(&fpasses, 2);
+    llvm::createStandardFunctionPasses(&fpasses, 3);
+  }
 
   fpasses.doInitialization();
   for (Module::iterator it = mod->begin(); it != mod->end(); ++it) {
@@ -771,8 +791,7 @@ int main(int argc, char** argv) {
     module = readModuleFromPath(tmpFilename);
   }
 
-  if (!optOptimizeZero) { optimizeModule(module); }
-  
+  optimizeModuleAndRunPasses(module);
   compileToNativeAssembly(module, dumpdirFile("out.s"));
   // TODO invoke g++ .s -> exe
   return 0;

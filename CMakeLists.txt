@@ -161,6 +161,7 @@ add_executable(fosterc
   compiler/passes/AddParentLinksPass.cpp
   compiler/passes/ReplaceExprTransform.cpp
   compiler/passes/ClosureConversionPass.cpp
+  compiler/llvm/passes/Hello.cpp
   third_party/pystring/pystring.cpp
   ${PROJECT_BINARY_DIR}/fosterParser.c
   ${PROJECT_BINARY_DIR}/fosterLexer.c
