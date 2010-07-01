@@ -1,0 +1,4 @@
+main = fn () {
+  expect_i1(false)
+  print_i1( __COMPILES__ fn (a:i32, a:i32) { a } )
+}

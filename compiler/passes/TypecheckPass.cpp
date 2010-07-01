@@ -179,7 +179,21 @@ void TypecheckPass::visit(BinaryOpExprAST* ast) {
   }
 }
 
+bool areNamesDisjoint(const std::vector<VariableAST*>& vars) {
+  std::map<std::string, bool> seen;
+  for (int i = 0; i < vars.size(); ++i) {
+    seen[vars[i]->name] = true;
+  }
+  return seen.size() == vars.size();
+}
+
 void TypecheckPass::visit(PrototypeAST* ast) {
+  if (!areNamesDisjoint(ast->inArgs)) {
+    std::cout << "Error: formal argument names for function "
+              << ast->name << " are not disjoint!" << std::endl;
+    return;
+  }
+
   vector<TypeAST*> argTypes;
   for (int i = 0; i < ast->inArgs.size(); ++i) {
     assert(ast->inArgs[i] != NULL);
