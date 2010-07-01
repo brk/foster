@@ -91,10 +91,12 @@ TypeAST* TypeAST::get(const llvm::Type* loweredType) {
 
 // virtual
 bool TypeAST::canConvertTo(TypeAST* otherType) {
-  std::cout << str(this) << "  canConvertTo?  " << str(otherType) << std::endl;
-  return arePhysicallyCompatible(
-	       this->getLLVMType(),
-	       otherType->getLLVMType());
+  bool rv = arePhysicallyCompatible(this->getLLVMType(),
+                                    otherType->getLLVMType());
+  if (!rv) {
+    std::cout << str(this) << "  [cannot convert to]  " << str(otherType) << std::endl;
+  }
+  return rv;
 }
 
 ////////////////////////////////////////////////////////////////////

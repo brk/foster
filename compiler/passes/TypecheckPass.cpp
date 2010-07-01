@@ -731,12 +731,9 @@ void TypecheckPass::visit(CallAST* ast) {
     return;
   }
 
-  std::cout << "622: baseType = " << str(baseType) << std::endl;
   FnTypeAST* baseFT = tryExtractCallableType(baseType);
-  std::cout << "623: baseFT = " << str(baseFT) << std::endl;
   if (baseFT == NULL) {
     baseFT = originalFunctionTypeForClosureStructType(baseType);
-    std::cout << "627: baseFT = " << str(baseFT) << std::endl;
   }
 
   if (baseFT == NULL) {

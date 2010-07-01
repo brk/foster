@@ -49,11 +49,13 @@ void PrettyPrintPass::visit(UnaryOpExprAST* ast) {
 // $0 op $1
 void PrettyPrintPass::visit(BinaryOpExprAST* ast) {
   scan(tBlockOpen);
+  scan(PPToken("("));
   ast->parts[0]->accept(this);
   scan(PPToken(" "));
   scan(PPToken(ast->op));
   scan(PPToken(" "));
   ast->parts[1]->accept(this);
+  scan(PPToken(")"));
   scan(tBlockClose);
 }
 

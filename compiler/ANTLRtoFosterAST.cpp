@@ -63,20 +63,31 @@ Exprs getExprs(pTree tree, bool fnMeansClosure);
 std::ostream& operator<<(std::ostream& out, Exprs& f) { return out << join("", f); }
 
 std::map<ExprAST*, bool> overridePrecedence; // expressions wrapped in () are marked here
-std::map<string, int> binaryOps;
 std::map<string, bool> keywords;
 std::map<string, bool> reserved_keywords;
-struct opspec { const char* op; int precedence; };
-opspec c_binaryOps[] = {
-    { "/", 20 },
-    { "*", 20 },
-    { "+", 25 },
-    { "-", 25 },
-    { "<=", 50 },
-    { "<", 50 },
-    { "==", 60 },
-    { "!=", 60 },
-    { "=", 70 }
+
+enum OperatorAssociativity {
+  eLeftAssociative,
+  eRightAssociative,
+  eNotAssociative };
+struct OpSpec { const char* name; int precedence; OperatorAssociativity assoc; };
+
+std::map<string, OpSpec> binaryOps;
+bool isBinaryOp(const std::string& name) {
+  return binaryOps[name].precedence > 0;
+}
+// TODO: enforce associativity
+// TODO: exponentiation operator?
+OpSpec c_binaryOps[] = {
+    { "/",  20, eLeftAssociative },
+    { "*",  20, eLeftAssociative },
+    { "-",  25, eLeftAssociative },
+    { "+",  25, eLeftAssociative },
+    { "<=", 50, eLeftAssociative },
+    { "<",  50, eLeftAssociative },
+    { "==", 60, eLeftAssociative },
+    { "!=", 60, eLeftAssociative },
+    { "=",  70, eNotAssociative  }
 }; // ".."
 const char* c_keywords[] = {
   "as" , "at" , "def" , "id", "in", "is", "it", "to",
@@ -109,7 +120,7 @@ bool isBitwiseOpName(const string& op) {
 
 void initMaps() {
   for (int i = 0; i < ARRAY_SIZE(c_binaryOps); ++i) {
-    binaryOps[c_binaryOps[i].op] = c_binaryOps[i].precedence;
+    binaryOps[c_binaryOps[i].name] = OpSpec(c_binaryOps[i]);
   }
 
   for (int i = 0; i < ARRAY_SIZE(c_keywords); ++i) {
@@ -248,6 +259,37 @@ FnAST* buildFn(string name, pTree bodyTree, bool fnMeansClosure,
   varScope.insert(name, fnRef);
 
   return fn;
+}
+
+// parses    a  op  b...c
+ExprAST* parseBinaryOpExpr(const std::string& opname, ExprAST* a, ExprAST* bc) {
+  if (BinaryOpExprAST* rhs = dynamic_cast<BinaryOpExprAST*>(bc)) {
+    // ExprAST_from strips parens from expressions; instead of recording their
+    // presence in the original source in the ExprAST, we store parenthesized
+    // AST nodes in a separate table.
+    bool wasExplicitlyParenthesized = overridePrecedence[rhs];
+    if (wasExplicitlyParenthesized) {
+      // Can't split the RHS up; no choice but to return op(a, (b...c))
+      goto done;
+    }
+
+    ExprAST* b = rhs->parts[rhs->kLHS];
+    ExprAST* c = rhs->parts[rhs->kRHS];
+    std::string rop = rhs->op;
+
+    // a opname b rop c
+    if (binaryOps[opname].precedence <= binaryOps[rop].precedence) {
+      delete rhs;
+      return new BinaryOpExprAST(rop, parseBinaryOpExpr(opname, a, b), c);
+    }
+  }
+
+  done:
+  return new BinaryOpExprAST(opname, a, bc);
+}
+
+std::ostream& operator<<(std::ostream& out, const OpSpec& op) {
+  return out << "(opr " << op.name << " : " << op.precedence << ")";
 }
 
 // defaultSymbolTemplate can include "%d" to embed a unique number; otherwise,
@@ -523,30 +565,10 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
   if (token == COMPILES) { return new BuiltinCompilesExprAST(ExprAST_from(child(tree, 0), fnMeansClosure)); }
   if (token == UNPACK)   { return new UnpackExprAST(ExprAST_from(child(tree, 0), fnMeansClosure)); }
 
-  if (binaryOps[text] > 0) {
+  if (isBinaryOp(text)) {
     ExprAST* lhs = ExprAST_from(child(tree, 0), fnMeansClosure);
     ExprAST* rhs = ExprAST_from(child(tree, 1), fnMeansClosure);
-    bool override = overridePrecedence[lhs] || overridePrecedence[rhs];
-    //std::cout << "saw binary operator " << text << " with lhs " << (*lhs) << " and rhs " << (*rhs) << std::endl;
-    if (BinaryOpExprAST* binopRHS = dynamic_cast<BinaryOpExprAST*>(rhs)) {
-      int myprec = binaryOps[text];
-      const string otherop = binopRHS->op;
-      int theirprec = binaryOps[otherop];
-      std::cout << "precedence is " << text << " : " << myprec << " vs " << otherop << " : " << theirprec << std::endl;
-      if (!override && myprec < theirprec) { // we bind tighter, steal their lhs
-        // (lhs op rhs-lhs) rhs-op (rhs-rhs)
-        ExprAST* rhs_lhs = binopRHS->parts[binopRHS->kLHS];
-        ExprAST* rhs_rhs = binopRHS->parts[binopRHS->kRHS];
-        delete binopRHS;
-        return new BinaryOpExprAST(otherop, new BinaryOpExprAST(text, lhs, rhs_lhs), rhs_rhs);
-      } else {
-        // (lhs) op (rhs-lhs rhs-op rhs-rhs)
-        return new BinaryOpExprAST(text, lhs, rhs);
-      }
-    } else {
-      // (lhs) op (rhs)
-      return new BinaryOpExprAST(text, lhs, rhs);
-    }
+    return parseBinaryOpExpr(text, lhs, rhs);
   }
 
   if (token == IF) {
