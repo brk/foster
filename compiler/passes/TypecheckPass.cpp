@@ -353,6 +353,8 @@ void TypecheckPass::visit(ForRangeExprAST* ast) {
     return;
   } else if (!hasEqualRepr(startType, endType)) {
 	std::cerr << "for range start and end expressions had different types!" << std::endl;
+	std::cerr << "for range start: " << str(startType) << std::endl;
+	std::cerr << "for range end  : " << str(endType) << std::endl;
 	return;
   }
 
@@ -363,8 +365,10 @@ void TypecheckPass::visit(ForRangeExprAST* ast) {
 	if (!incrType) {
 	  std::cerr << "for range incr expression '" << *(ast->incrExpr) << "' had null type!" << std::endl;
 	  return;
-	} else if (hasEqualRepr(startType, incrType)) {
-            std::cerr << "for range start and incr expressions had different types!" << std::endl;
+	} else if (!hasEqualRepr(startType, incrType)) {
+	  std::cerr << "for range start and incr expressions had different types!" << std::endl;
+	  std::cerr << "for range start: " << str(startType) << std::endl;
+	  std::cerr << "for range incr : " << str(incrType) << std::endl;
 	    return;
 	}
   }
