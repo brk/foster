@@ -236,29 +236,25 @@ std::vector<VariableAST*> getFormals(pTree tree, bool fnMeansClosure) {
   return args;
 }
 
-FnAST* buildFn(string name, pTree bodyTree, bool fnMeansClosure,
-                pTree formalsTree, pTree tyExprTree) {
-  varScope.pushScope("fn proto " + name);
-  //display_pTree(formalsTree, 8);
+PrototypeAST* getFnProto(string name, bool fnMeansClosure, pTree formalsTree, pTree tyExprTree) {
+  FosterSymbolTable<ExprAST>::LexicalScope* protoScope = varScope.pushScope("fn proto " + name);
     std::vector<VariableAST*> in = getFormals(formalsTree, fnMeansClosure);
     ExprAST* tyExpr = ExprAST_from(tyExprTree, fnMeansClosure);
-
-    PrototypeAST* proto = new PrototypeAST(name, in, tyExpr);
-    VariableAST* fnRef = new VariableAST(name, proto);
-
-    varScope.insert(name, fnRef);
-
-  //std::cout << "proto for " << name << " : " << *proto << std::endl;
-
-    //std::cout << "Parsing body of fn " << name << std::endl;
-    ExprAST* body = ExprAST_from(bodyTree, true);
-    //std::cout << "Parsed  body of fn " << name << std::endl;
   varScope.popScope();
 
-  FnAST* fn = new FnAST(proto, body);
-  varScope.insert(name, fnRef);
+  PrototypeAST* proto = new PrototypeAST(name, in, tyExpr, protoScope);
+  VariableAST* fnRef = new VariableAST(proto->name, proto);
+  varScope.insert(proto->name, fnRef);
 
-  return fn;
+  return proto;
+}
+
+FnAST* buildFn(PrototypeAST* proto, pTree bodyTree) {
+  varScope.pushExistingScope(proto->scope);
+    ExprAST* body = ExprAST_from(bodyTree, true);
+  varScope.popExistingScope(proto->scope);
+
+  return new FnAST(proto, body);
 }
 
 // parses    a  op  b...c
@@ -294,9 +290,7 @@ std::ostream& operator<<(std::ostream& out, const OpSpec& op) {
 
 // defaultSymbolTemplate can include "%d" to embed a unique number; otherwise,
 // a unique int will be appended to the template.
-// (FN 0:NAME 1:IN 2:OUT 3:BODY)
-FnAST* parseFn(string defaultSymbolTemplate, pTree tree, bool fnMeansClosure) {
-
+string parseFnName(string defaultSymbolTemplate, pTree tree) {
   string name;
   if (getChildCount(child(tree, 0)) == 1) {
     pTree treeName = child(tree, 0);
@@ -305,9 +299,73 @@ FnAST* parseFn(string defaultSymbolTemplate, pTree tree, bool fnMeansClosure) {
   } else {
     name = freshName(defaultSymbolTemplate);
   }
+  return name;
+}
 
-  return buildFn(name, child(tree, 3), fnMeansClosure,
-                  child(tree, 1), child(tree, 2));
+FnAST* parseFn(string defaultSymbolTemplate, pTree tree, bool fnMeansClosure) {
+  // (FN 0:NAME 1:IN 2:OUT 3:BODY)
+  string name = parseFnName(defaultSymbolTemplate, tree);
+  PrototypeAST* proto = getFnProto(name, fnMeansClosure, child(tree, 1), child(tree, 2));
+  return buildFn(proto, child(tree, 3));
+}
+
+// ExprAST_from() is straight-up recursive, and uses varScope and typeScope
+// to keep track of lexical scoping for types and variables, respectively.
+// This works wonderfully for function bodies, where variables must appear
+// in topologically sorted order. In order to allow functions at the top-level
+// to appear in unsorted order, we have to separate the extraction of function
+// prototypes (and insertion of said name/proto pair into the varScope symbol
+// table) from the actual parsing of the function body.
+ExprAST* parseTopLevel(pTree tree) {
+  std::vector<pTree> pendingParseTrees(getChildCount(tree));
+  std::vector<ExprAST*> exprs(getChildCount(tree));
+  // forall i, exprs[i] == pendingParseTrees[i] == NULL
+
+  for (int i = 0; i < getChildCount(tree); ++i) {
+    pendingParseTrees[i] = child(tree, i);
+  }
+
+  // forall i, exprs[i] == NULL, pendingParseTrees[i] != NULL
+  std::map<pTree, PrototypeAST*> protos;
+
+  for (int i = 0; i < pendingParseTrees.size(); ++i) {
+    pTree c = pendingParseTrees[i];
+    int token = typeOf(c);
+
+    if (token == TYPEDEFN) { exprs[i] = ExprAST_from(c, false); }
+    else if (token == FNDEF) {
+      assert(getChildCount(c) == 2);
+      // x = fn { blah }   ===   x = fn "x" { blah }
+      pTree lval = (child(c, 0));
+      pTree rval = (child(c, 1));
+      if (typeOf(lval) == NAME && typeOf(rval) == FN) {
+        // (FN 0:NAME 1:IN 2:OUT 3:BODY)
+        string name = parseFnName(textOf(child(lval, 0)), rval);
+        protos[c] = getFnProto(name, true, child(rval, 1), child(rval, 2));
+      } else {
+        std::cerr << "Not assigning top-level function to a name?" << std::endl;
+      }
+    } else {
+      exprs[i] = ExprAST_from(c, false);
+    }
+  }
+
+  // forall i, either exprs[i] == NULL && pendingParseTrees[i] != NULL
+  //              or  exprs[i] != NULL && pendingParseTrees[i] == NULL
+
+  for (int i = 0; i < pendingParseTrees.size(); ++i) {
+    if (!exprs[i]) {
+      pTree c = pendingParseTrees[i];
+      if (PrototypeAST* proto = protos[c]) {
+        pTree rval = child(c, 1);
+        exprs[i] = buildFn(proto, child(rval, 3));
+      } else {
+        exprs[i] = ExprAST_from(c, false);
+      }
+    }
+  }
+
+  return new SeqAST(exprs);
 }
 
 ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
@@ -322,8 +380,6 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     pTree nameTree = child(tree, 0);
     string name = textOf(child(nameTree, 0));
 
-    // %node = { %node*, i32 }
-    // %node = { \2*, i32 }
     llvm::PATypeHolder namedType = llvm::OpaqueType::get(getGlobalContext());
     typeScope.pushScope("opaque");
       typeScope.insert(name, TypeAST::get(namedType.get()));
@@ -333,9 +389,8 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     typeScope.popScope();
 
     typeScope.insert(name, tyExpr->type);
-
     std::cout << "Associated " << name << " with type " << *(tyExpr->type) << std::endl;
-    //module->addTypeName(name, namedType.get());
+    //module->addTypeName(name, tyExpr->type->getLLVMType());
   }
 
   if (token == TRAILERS) {
@@ -426,15 +481,13 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
 
   // <formal arg (body | next) [type]>
   if (token == LETEXPR) {
-
     pTree tyExprTree = NULL;
     if (getChildCount(tree) == 4) {
       tyExprTree = child(tree, 3);
     }
 
-    FnAST* fn = buildFn(freshName("<anon_fnlet_%d>"),
-                              child(tree, 2), fnMeansClosure,
-                              child(tree, 0), tyExprTree);
+    PrototypeAST* proto = getFnProto(freshName("<anon_fnlet_%d>"), fnMeansClosure, child(tree, 0), tyExprTree);
+    FnAST* fn = buildFn(proto, child(tree, 2));
     fn->lambdaLiftOnly = true;
 
     ExprAST* a = ExprAST_from(child(tree, 1), fnMeansClosure);
@@ -443,14 +496,18 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
   }
 
   if (token == EXPRS || token == SEQ) {
-    Exprs exprs;
-    for (int i = 0; i < getChildCount(tree); ++i) {
-      ExprAST* ast = ExprAST_from(child(tree, i), fnMeansClosure);
-      if (ast != NULL) {
-        exprs.push_back(ast);
+    if (fnMeansClosure) {
+      Exprs exprs;
+      for (int i = 0; i < getChildCount(tree); ++i) {
+        ExprAST* ast = ExprAST_from(child(tree, i), fnMeansClosure);
+        if (ast != NULL) {
+          exprs.push_back(ast);
+        }
       }
+      return new SeqAST(exprs);
+    } else {
+      return parseTopLevel(tree);
     }
-    return new SeqAST(exprs);
   }
 
   if (token == INT) {
@@ -532,8 +589,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     pTree rval = (child(tree, 1));
 
     if (typeOf(lval) == NAME && typeOf(rval) == FN) {
-      FnAST* fn = parseFn(textOf(child(lval, 0)), rval, fnMeansClosure);
-      return fn;
+      return parseFn(textOf(child(lval, 0)), rval, fnMeansClosure);
     } else {
       std::cerr << "Not assigning function to a name?" << std::endl;
       return NULL;

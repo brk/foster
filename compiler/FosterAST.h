@@ -93,63 +93,72 @@ struct BinaryExprAST : public ExprAST {
   }
 };
 
-// {{{ |scope| maps names (var/fn) to llvm::Value*/llvm::Function*
+// Implements persistent lexical scopes using a cactus stack arrangement
 template <typename T>
 class FosterSymbolTable : public NameResolver<T> {
-  struct LexicalScope {
+public:
+  class LexicalScope : public NameResolver<T> {
     string name;
     typedef std::map<string, T*> Map;
     Map val_of;
-    T* lookup(const string& ident) {
-      T* rv = val_of[ident];
-      return rv;
+  public:
+    LexicalScope* parent;
+
+    LexicalScope(string name, LexicalScope* parent) : name(name), parent(parent) {}
+
+    T* insert(const string& ident, T* V) { val_of[ident] = V; return V; }
+    T* lookup(const string& ident, const string& wantedScopeName) {
+      if (name == "*" || wantedScopeName == "" || name == wantedScopeName) {
+        T* rv = val_of[ident];
+        if (rv) return rv;
+      }
+      if (parent) {
+        return parent->lookup(ident, wantedScopeName);
+      } else {
+        return NULL;
+      }
     }
-    LexicalScope(string name) : name(name) {}
     void dump(std::ostream& out) {
       out << "\t" << name << std::endl;
       for (typename Map::iterator it = val_of.begin(); it != val_of.end(); ++it) {
         out << "\t\t" << (*it).first << ": " << (*it).second << std::endl;
       }
+      if (parent) { parent->dump(out); }
     }
   };
-  typedef std::vector<LexicalScope> Environment;
-  Environment env;
- public:
-  virtual T* lookup(const string& ident, const string& wantedName) {
-    for (typename Environment::reverse_iterator it = env.rbegin();
-                                                it != env.rend(); ++it) {
-      string scopeName = (*it).name;
-      if (scopeName == "*" || wantedName == "" || scopeName == wantedName) {
-        T* V = (*it).lookup(ident);
-        if (V != NULL) {
-          return V;
-        }
-      }
-    }
-    return NULL;
+
+  FosterSymbolTable() {
+    pushExistingScope(new LexicalScope("*", NULL));
+  }
+  T* lookup(const string& ident, const string& wantedScopeName) {
+    return currentScope()->lookup(ident, wantedScopeName);
+  }
+  T* insert(string ident, T* V) { return currentScope()->insert(ident, V); }
+  LexicalScope* pushScope(string scopeName) {
+    currentScope() = new LexicalScope(scopeName, currentScope());
+    return currentScope();
+  }
+  LexicalScope* popScope() {
+    currentScope() = currentScope()->parent;
+    return currentScope();
   }
 
-  T* insert(string ident, T* V) {
-    if (env.empty()) {
-      std::cerr << "Inserted into empty symbol table!" << std::endl;
-      pushScope("*");
-    }
-    env.back().val_of[ident] = V;
-    return V;
+  void pushExistingScope(LexicalScope* scope) {
+    scopeStack.push_back(scope);
   }
-  void pushScope(string scopeName) {
-    env.push_back(LexicalScope(scopeName));
+  void popExistingScope(LexicalScope* expectedCurrentScope) {
+    assert(currentScope() == expectedCurrentScope);
+    scopeStack.pop_back();
   }
-  void popScope() {
-    env.pop_back();
-  }
-  void dump(std::ostream& out) {
-    for (int i = 0; i < env.size(); ++i) {
-      env[i].dump(out);
-    }
-  }
+
+  void dump(std::ostream& out) { currentScope()->dump(out); }
+
+  private:
+  LexicalScope*& currentScope() { return scopeStack.back(); }
+  std::vector<LexicalScope*> scopeStack;
 };
 
+// {{{ |scope| maps names (var/fn) to llvm::Value*/llvm::Function*
 extern FosterSymbolTable<Value> scope;
 extern FosterSymbolTable<TypeAST> typeScope;
 extern FosterSymbolTable<ExprAST> varScope;
@@ -346,6 +355,7 @@ struct PrototypeAST : public ExprAST {
   std::vector<VariableAST*> inArgs;
   const Type* resultTy; // TODO switch to TypeAST*
   ExprAST* tyExpr;
+  FosterSymbolTable<ExprAST>::LexicalScope* scope;
 
   PrototypeAST(const Type* retTy, const string& name)
     : name(name), resultTy(retTy), tyExpr(NULL) {}
@@ -365,8 +375,11 @@ struct PrototypeAST : public ExprAST {
     }
   }
 
-  PrototypeAST(const string& name, const std::vector<VariableAST*>& inArgs, ExprAST* retTyExpr)
-      : name(name), resultTy(NULL), inArgs(inArgs), tyExpr(retTyExpr) {
+  PrototypeAST(const string& name,
+               const std::vector<VariableAST*>& inArgs,
+               ExprAST* retTyExpr,
+               FosterSymbolTable<ExprAST>::LexicalScope* scope)
+      : name(name), resultTy(NULL), inArgs(inArgs), tyExpr(retTyExpr), scope(scope) {
       if (tyExpr == NULL) {
         this->resultTy = LLVMTypeFor("i32");
       } else {

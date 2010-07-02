@@ -70,8 +70,7 @@ def run_command(cmd, paths, testpath, stdout=None, stderr=None, stdin=None, stri
   end = walltime()
 
   if strictrv and rv != 0:
-    raise Exception(str(rv) + '; Failed to run: ' +
-	' '.join(arglist) + '\n\tfor test ' + testpath)
+    raise Exception(str(rv) + '; Failed to run: ' + ' '.join(arglist) + "\n\tfor test " + testpath)
   return elapsed(start, end)
 
 def run_one_test(dir_prefix, basename, paths, tmpdir):
@@ -90,11 +89,11 @@ def run_one_test(dir_prefix, basename, paths, tmpdir):
         if compile_separately:
           fosterc_cmdline.insert(1, "-c")
 
-        print ' '.join(fosterc_cmdline)
+        #print ' '.join(fosterc_cmdline)
         fc_elapsed = run_command(fosterc_cmdline, paths, testpath, stdout=compilelog, stderr=compilelog)
         
         if compile_separately:
-          raise "Unsupported..."
+          raise Exception("Unsupported...")
         else:
           ld_elapsed = 0
 	  op_elapsed = 0
@@ -131,8 +130,7 @@ def run_all_tests(bootstrap_dir, paths, tmpdir):
       except KeyboardInterrupt:
         return
       except:
-        #print 'Test failed: ' + str(sys.exc_info()[2])
-        traceback.print_tb(sys.exc_info()[2])
+	tests_failed.add(os.path.join(root, base))
       testend = walltime()
 
 def main(bootstrap_dir, paths, tmpdir):
