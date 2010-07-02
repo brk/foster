@@ -318,7 +318,7 @@ FnAST* parseFn(string defaultSymbolTemplate, pTree tree, bool fnMeansClosure) {
 // table) from the actual parsing of the function body.
 ExprAST* parseTopLevel(pTree tree) {
   std::vector<pTree> pendingParseTrees(getChildCount(tree));
-  std::vector<ExprAST*> exprs(getChildCount(tree));
+  std::vector<ExprAST*> parsedExprs(getChildCount(tree));
   // forall i, exprs[i] == pendingParseTrees[i] == NULL
 
   for (int i = 0; i < getChildCount(tree); ++i) {
@@ -332,7 +332,7 @@ ExprAST* parseTopLevel(pTree tree) {
     pTree c = pendingParseTrees[i];
     int token = typeOf(c);
 
-    if (token == TYPEDEFN) { exprs[i] = ExprAST_from(c, false); }
+    if (token == TYPEDEFN) { parsedExprs[i] = ExprAST_from(c, false); }
     else if (token == FNDEF) {
       assert(getChildCount(c) == 2);
       // x = fn { blah }   ===   x = fn "x" { blah }
@@ -346,7 +346,7 @@ ExprAST* parseTopLevel(pTree tree) {
         std::cerr << "Not assigning top-level function to a name?" << std::endl;
       }
     } else {
-      exprs[i] = ExprAST_from(c, false);
+      parsedExprs[i] = ExprAST_from(c, false);
     }
   }
 
@@ -354,14 +354,21 @@ ExprAST* parseTopLevel(pTree tree) {
   //              or  exprs[i] != NULL && pendingParseTrees[i] == NULL
 
   for (int i = 0; i < pendingParseTrees.size(); ++i) {
-    if (!exprs[i]) {
+    if (!parsedExprs[i]) {
       pTree c = pendingParseTrees[i];
       if (PrototypeAST* proto = protos[c]) {
         pTree rval = child(c, 1);
-        exprs[i] = buildFn(proto, child(rval, 3));
-      } else {
-        exprs[i] = ExprAST_from(c, false);
+        parsedExprs[i] = buildFn(proto, child(rval, 3));
+      } else if (typeOf(c) != TYPEDEFN) {
+        parsedExprs[i] = ExprAST_from(c, false);
       }
+    }
+  }
+
+  std::vector<ExprAST*> exprs;
+  for (int i = 0; i < parsedExprs.size(); ++i) {
+    if (parsedExprs[i]) {
+      exprs.push_back(parsedExprs[i]);
     }
   }
 
