@@ -660,18 +660,18 @@ void TypecheckPass::visit(SubscriptAST* ast) {
     return;
   }
 
-  const Type* baseType = ast->parts[0]->type->getLLVMType();
+  TypeAST* baseType = ast->parts[0]->type;
   if (!baseType) {
     std::cerr << "Error: Cannot index into object of null type " << std::endl;
     return;
   }
 
-  const llvm::CompositeType* compositeTy = getIndexableType(baseType);
+  const llvm::Type* loweredBaseType = baseType->getLLVMType();
+  const llvm::CompositeType* compositeTy = getIndexableType(loweredBaseType);
   if (compositeTy == NULL) {
     std::cerr << "Error: attempt to index into a non-composite type " << *baseType << std::endl;
     return;
   }
-
 
   //std::cout << "Indexing " << *baseType << " as composite " << *compositeTy << std::endl;
 
@@ -691,11 +691,11 @@ void TypecheckPass::visit(SubscriptAST* ast) {
 
   // LLVM doesn't do bounds checking for arrays or vectors, but we do!
   uint64_t numElements = -1;
-  if (const llvm::ArrayType* ty = llvm::dyn_cast<llvm::ArrayType>(baseType)) {
+  if (const llvm::ArrayType* ty = llvm::dyn_cast<llvm::ArrayType>(loweredBaseType)) {
     numElements = ty->getNumElements();
   }
 
-  if (const llvm::VectorType* ty = llvm::dyn_cast<llvm::VectorType>(baseType)) {
+  if (const llvm::VectorType* ty = llvm::dyn_cast<llvm::VectorType>(loweredBaseType)) {
     numElements = ty->getNumElements();
   }
 
