@@ -480,7 +480,8 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
 
     // TODO for now, new mytype { args } is equivalent to new tuple { args }
     if (TypeAST* ty = typeScope.lookup(name, "")) {
-      return new TupleExprAST(ExprAST_from(seqArgs, fnMeansClosure), ty);
+      assert(ty->getLLVMType() && ty->getLLVMType()->isStructTy());
+      return new TupleExprAST(ExprAST_from(seqArgs, fnMeansClosure), name);
     }
 
     std::cerr << "Error: CTOR token parsing found unknown type name '" << name << "'" << std::endl;

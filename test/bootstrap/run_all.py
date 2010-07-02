@@ -6,6 +6,7 @@ import os.path
 import subprocess
 import sys
 import shutil
+import traceback
 
 if os.name == 'nt':
   walltime = time.clock
@@ -64,6 +65,8 @@ def run_command(cmd, paths, testpath, stdout=None, stderr=None, stdin=None, stri
 
   start = walltime()
   rv = subprocess.call( arglist, stdout=stdout, stderr=stderr, stdin=stdin)
+  #print ' '.join(arglist) , ' returned rv = ' , rv
+
   end = walltime()
 
   if strictrv and rv != 0:
@@ -83,29 +86,20 @@ def run_one_test(dir_prefix, basename, paths, tmpdir):
 
         # Hack for now, since this option is baked in to the compiler.
         compile_separately = False
-        fosterc_cmdline = [ paths['fosterc'], paths['code'] ]
+        fosterc_cmdline = [ paths['fosterc'], paths['code'], '-O0' ]
         if compile_separately:
           fosterc_cmdline.insert(1, "-c")
 
-        #print ' '.join(fosterc_cmdline)
+        print ' '.join(fosterc_cmdline)
         fc_elapsed = run_command(fosterc_cmdline, paths, testpath, stdout=compilelog, stderr=compilelog)
-
-
-        llvm_asm_path = os.path.join(tmpdir, basename + ".ll")
-        shutil.copyfile(paths['foster.ll'], llvm_asm_path)
-	as_elapsed = run_command('llvm-as foster.ll -f', paths, testpath)
         
         if compile_separately:
-          cc_elapsed = 0
-          ld_elapsed = run_command('llvm-ld foster.bc libfoster.bc -o ll-foster', paths, testpath)
-	  lc_elapsed = 0
-          op_elapsed = 0
-          rn_elapsed = run_command('ll-foster',  paths, testpath, stdout=actual, stderr=expected, stdin=infile, strictrv=False)
+          raise "Unsupported..."
         else:
           ld_elapsed = 0
 	  op_elapsed = 0
-          lc_elapsed = run_command('llc -O1 foster.bc -f -o foster.s',  paths, testpath, stdout=actual, stderr=expected, stdin=infile)
-          cc_elapsed = run_command('g++ foster.s libfoster_main.o libchromium_base.a libcpuid.a -lrt -lpthread',  paths, testpath, stdout=actual, stderr=expected, stdin=infile)
+          cc_elapsed = run_command('g++ out.s libfoster_main.o libchromium_base.a libcpuid.a -lrt -lpthread -o a.out',
+                                      paths, testpath, stdout=actual, stderr=expected, stdin=infile)
 	  rn_elapsed = run_command('a.out',  paths, testpath, stdout=actual, stderr=expected, stdin=infile, strictrv=False)
 
         df_rv = subprocess.call(['diff', '-u', exp_filename, act_filename])
@@ -115,8 +109,8 @@ def run_one_test(dir_prefix, basename, paths, tmpdir):
           tests_failed.add(testpath)
 
         total_elapsed = elapsed_since(start)
-	print "foc:%4d | las:%4d | opt:%4d | llc:%4d | gcc:%4d | run:%4d | all:%5d | %s" % (fc_elapsed, as_elapsed,
-				op_elapsed, lc_elapsed, cc_elapsed, rn_elapsed, total_elapsed, basename)
+	print "foc:%4d | gcc:%4d | run:%4d | all:%5d | %s" % (fc_elapsed,
+			cc_elapsed, rn_elapsed, total_elapsed, basename)
         infile.close()
 
 
@@ -134,8 +128,11 @@ def run_all_tests(bootstrap_dir, paths, tmpdir):
       ensure_dir_exists(test_tmpdir)
       try:
         run_one_test(root, base, paths, test_tmpdir)
+      except KeyboardInterrupt:
+        return
       except:
-        pass
+        #print 'Test failed: ' + str(sys.exc_info()[2])
+        traceback.print_tb(sys.exc_info()[2])
       testend = walltime()
 
 def main(bootstrap_dir, paths, tmpdir):
@@ -162,17 +159,11 @@ if __name__ == "__main__":
   paths = {
       # Haven't renamed the binary from foster to fosterc yet
       'fosterc': join(bindir, 'fosterc'),
-      'llvm-as': join(llvmdir, 'llvm-as'),
-      'llvm-ld': join(llvmdir, 'llvm-ld'),
-      'lli'    : join(llvmdir, 'lli'),
-      'llc'    : join(llvmdir, 'llc'),
-      'opt'    : join(llvmdir, 'opt'),
-      'foster.bc':    join(bindir, 'foster.bc'),
-      'foster.s':     join(bindir, 'foster.s'),
-      'a.out':        join(bindir, 'a.out'),
+      'out.s':     join(bindir, 'fc-output', 'out.s'),
+      'a.out':     join(bindir, 'fc-output', 'a.out'),
       'libfoster.bc': join(bindir, 'libfoster.bc'),
+      'libcpuid.o':   join(bindir, 'libcpuid.o'),
       'libfoster_main.o': join(bindir, 'libfoster_main.o'),
-      'll-foster':    join(bindir, 'll-foster'),
   }
   # compiler spits out foster.ll in current directory
   paths['foster.ll'] = os.path.join(os.path.dirname(paths['fosterc']), 'foster.ll')

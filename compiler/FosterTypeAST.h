@@ -158,6 +158,7 @@ public:
     out << " }";
     return out;
   };
+  virtual int getNumContainedTypes() { return parts.size(); }
   virtual TypeAST* getContainedType(int i) { return parts[i]; }
   static TupleTypeAST* get(const std::vector<TypeAST*>& parts);
 };

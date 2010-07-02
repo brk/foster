@@ -299,11 +299,12 @@ struct SeqAST : public ExprAST {
 
 struct TupleExprAST : public UnaryExprAST {
   bool isClosureEnvironment;
+  std::string typeName;
 
-  explicit TupleExprAST(ExprAST* expr, TypeAST* ty)
-    : UnaryExprAST(expr), isClosureEnvironment(false) {
-	type = ty;
+  explicit TupleExprAST(ExprAST* expr, const std::string& typeName)
+    : UnaryExprAST(expr), isClosureEnvironment(false), typeName(typeName) {
   }
+
   explicit TupleExprAST(ExprAST* expr) : UnaryExprAST(expr) {
     std::cout << "\t\t\tTupleExprAST " << expr << " ; " << this->parts[0] << std::endl;
   }

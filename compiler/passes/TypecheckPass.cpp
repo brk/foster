@@ -379,6 +379,16 @@ void TypecheckPass::visit(ForRangeExprAST* ast) {
   ast->type = TypeAST::get(LLVMTypeFor("i32"));
 }
 
+int indexInParent(ExprAST* child, int startingIndex) {
+  std::vector<ExprAST*>& parts = child->parent->parts;
+  for (int i = startingIndex; i < parts.size(); ++i) {
+    if (parts[i] == child) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 void TypecheckPass::visit(NilExprAST* ast) {
   if (ast->type) return;
 
@@ -426,13 +436,30 @@ void TypecheckPass::visit(NilExprAST* ast) {
 
       if (const llvm::FunctionType* fnty =
 	  llvm::dyn_cast_or_null<const llvm::FunctionType>(loweredType)) {
-        for (int i = 1; i < callast->parts.size(); ++i) {
-          if (ast == callast->parts[i]) {
-            ast->type = TypeAST::get(fnty->getParamType(i - 1));
-          }
+        // callast.parts[0] is callee; args start at 1
+        int i = indexInParent(ast, 1);
+        if (i >= 0) {
+          // TODO should this stay in TypeAST?
+          ast->type = TypeAST::get(fnty->getParamType(i - 1));
         }
       } else {
-	std::cout << "\t\tCALLEE HAS TYPE " << *(callee->type) << std::endl;
+        std::cout << "\t\tCALLEE HAS TYPE " << *(callee->type) << std::endl;
+      }
+    }
+
+    if (TupleExprAST* tupleast = dynamic_cast<TupleExprAST*>(ast->parent->parent)) {
+      if (!tupleast->typeName.empty()) {
+        TypeAST* ty = typeScope.lookup(tupleast->typeName, "");
+        if (TupleTypeAST* tuplety = dynamic_cast<TupleTypeAST*>(ty)) {
+          int i = indexInParent(ast, 0);
+          if (i >= 0) {
+            TypeAST* targetType = tuplety->getContainedType(i);
+            ast->type = RefTypeAST::getNullableVersionOf(targetType);
+          }
+        } else {
+          std::cerr << "Warning: expected type " << tupleast->typeName
+              << " to have TupleTypeAST; has type " << str(ty) << std::endl;
+        }
       }
     }
   }
@@ -541,9 +568,14 @@ bool isOkayToDeref(VariableAST* ast, ExprAST* parent) {
 // instead of a simple T*, which would not be modifiable by the GC.
 void TypecheckPass::visit(RefExprAST* ast) {
   assert(ast->parts[0]->type && "Need arg to typecheck ref!");
-  ast->type = RefTypeAST::get(
-                ast->parts[0]->type,
-                ast->isNullable);
+  if (ast->parts[0]->type) {
+    ast->type = RefTypeAST::get(
+                      ast->parts[0]->type,
+                      ast->isNullable);
+  } else {
+    ast->type = NULL;
+  }
+
   std::cout << "refexpr (" << ast->isNullable << ") = " << str(ast->type) << std::endl;
 }
 
@@ -1014,6 +1046,20 @@ void TypecheckPass::visit(TupleExprAST* ast) {
     return;
   }
 
+  TupleTypeAST* expectedTupleType = NULL;
+  if (!ast->typeName.empty()) {
+    expectedTupleType = dynamic_cast<TupleTypeAST*>(typeScope.lookup(ast->typeName, ""));
+  }
+
+  if (expectedTupleType) {
+    int expectedSize = expectedTupleType->getNumContainedTypes();
+    if (expectedSize != body->parts.size()) {
+      std::cerr << "Error: mismatch between size of tuple type (" << expectedSize << ")"
+          << " and number of expressions in tuple (" << body->parts.size() << ")" << std::endl;
+      return;
+    }
+  }
+
   bool success = true;
   std::vector<TypeAST*> tupleFieldTypes;
   for (int i = 0; i < body->parts.size(); ++i) {
@@ -1028,12 +1074,30 @@ void TypecheckPass::visit(TupleExprAST* ast) {
       success = false;
       break;
     }
+
+    if (expectedTupleType) {
+      TypeAST* expectedType = expectedTupleType->getContainedType(i);
+      std::cerr << ast->typeName << " :: " << str(expectedTupleType) << " " << i
+          << "; low: " << str(expectedTupleType->getLLVMType())
+          << "; ty = " << str(ty) << "; exp " << expectedType << std::endl;
+      if (!ty->canConvertTo(expectedType)) {
+        std::cerr << "Typecheck error in constructing tuple,"
+                  << " type mismatch at parameter " << i << ": "
+                  << str(ty) << " vs expected type " << str(expectedType) << std::endl;
+        success = false;
+        break;
+      }
+    }
+
     tupleFieldTypes.push_back(ty);
   }
 
   if (success) {
     ast->type = TupleTypeAST::get(tupleFieldTypes);
   }
+
+  fail:
+  return;
 }
 
 

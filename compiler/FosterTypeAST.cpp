@@ -114,14 +114,14 @@ RefTypeAST* RefTypeAST::get(TypeAST* baseType, bool nullable /* = false */) {
   return ref;
 }
 
-RefTypeAST* RefTypeAST::getNullableVersionOf(TypeAST* ptrType) {
-  assert(ptrType && ptrType->getLLVMType()->isPointerTy());
-  if (RefTypeAST* ref = dynamic_cast<RefTypeAST*>(ptrType)) {
+// Assuming T is a non-pointer type, convert both
+// (T*) and (T ) to (nullable T*).
+RefTypeAST* RefTypeAST::getNullableVersionOf(TypeAST* ty) {
+  assert(ty && "Can't get nullable version of NULL!");
+  if (RefTypeAST* ref = dynamic_cast<RefTypeAST*>(ty)) {
     return RefTypeAST::get(ref->getElementType(), true);
   } else {
-    std::cerr << "Error! getNullableVersionOf() given non-ptr"
-              "arg: " << str(ptrType) << std::endl;
-    return NULL;
+    return RefTypeAST::get(ty, true);
   }
 }
 
