@@ -50,7 +50,7 @@ protected:
     : repr(underlyingType) {}
 
 public:
-  const llvm::Type* getLLVMType() const { return repr; }
+  virtual const llvm::Type* getLLVMType() const { return repr; }
 
   virtual std::ostream& operator<<(std::ostream& out) const {
     return out << str(repr);
