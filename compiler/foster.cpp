@@ -382,42 +382,38 @@ Module* readModuleFromPath(std::string path) {
 #endif
 }
 
-void putModuleMembersInScope(Module* m) {
+// Add module m's C-linkage functions in the global scopes,
+// and also add prototypes to the linkee module.
+void putModuleMembersInScope(Module* m, Module* linkee) {
   if (!m) return;
-  
-  // Lazily-materialized modules (claim to) have no definition of
-  // unmaterialized functions (fair enough, but still...)
+
   for (Module::iterator it = m->begin(); it != m->end(); ++it) {
     const Function& f = *it;
     
     const std::string& name = f.getNameStr();
     bool isCxxLinkage = name[0] == '_' && name[1] == 'Z';
-    /*
-    if (!isCxxLinkage) {
-      std::string errMsg;
-      if (m->materializeFunction(it, &errMsg)) {
-        std::cout << "Error materializing fn " << name << ": " << errMsg << std::endl;
-      }
-    }
-     */
+
     bool hasDef = !f.isDeclaration();
-    //std::cout << "\tfn " << name << "; def? " << hasDef << std::endl;
-   
-    
     if (hasDef && !isCxxLinkage) {
       globalNames.insert(name);
-      std::cout << "Inserting ref to fn " << name << " in scopes" << std::endl;
+      //std::cout << "Inserting ref to fn " << name << " in scopes" << std::endl;
+
       // Ensure that, when parsing, function calls to this name will find it
       const Type* ty = f.getType();
-      // TODO i don't remember why we need this dereference...
+      // We get a pointer-to-whatever-function type, because f is a global
+      // value (therefore ptr), but we want just the function type.
       if (const PointerType* pty = llvm::dyn_cast<PointerType>(ty)) {
         ty = pty->getElementType();
       }
-      // TODO again, this ::get() is basically wrong...
+
       varScope.insert(name, new VariableAST(name, TypeAST::get(ty)));
       
-      // Ensure that codegen for the given function finds it
-      scope.insert(name, it);
+      // Ensure that codegen for the given function finds the 'extern' declaration
+      Value* decl = linkee->getOrInsertFunction(
+          llvm::StringRef(name),
+          llvm::dyn_cast<llvm::FunctionType>(ty),
+          f.getAttributes());
+      scope.insert(name, decl);
     }
   }
 }
@@ -640,27 +636,23 @@ int main(int argc, char** argv) {
   cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster compiler\n");
 
   validateInputFile(optInputPath);
-  
-  std::string dumpdir("fc-output/");
 
-  system(("mkdir -p " + dumpdir).c_str());
+  { ScopedTimer timer(statFileIOMs);
+    system(("mkdir -p " + dumpdir).c_str());
 
-  {
     std::cout << "Compiling separately? " << optCompileSeparately << std::endl;
-    std::cout << "Input file: " << optInputPath << std::endl;
-    std::cout <<  "================" << std::endl;
-    system(("cat " + optInputPath).c_str());
-    std::cout <<  "================" << std::endl;
+    if (optDumpASTs) {
+      std::cout << "Input file: " << optInputPath << std::endl;
+      std::cout <<  "================" << std::endl;
+      system(("cat " + optInputPath).c_str());
+      std::cout <<  "================" << std::endl;
+    }
   }
   
   fosterInitializeLLVM();
   module = new Module("foster", getGlobalContext());
-
   ee = EngineBuilder(module).create();
-  
   initMaps();
-
-  std::cout << "parsing" << endl;
 
   ScopedTimer* timer = new ScopedTimer(statParseTimeMs); 
   ANTLRContext ctx;
@@ -679,8 +671,6 @@ int main(int argc, char** argv) {
       dumpANTLRTree(out, langAST.tree, 0);
     }
   }
-  scope.pushScope("root");
-  varScope.pushScope("root");
   
   // TODO: I think the LLVM Type* of a module should be
   // a struct containing the elements of the underlying module?
@@ -688,7 +678,7 @@ int main(int argc, char** argv) {
   // for accessing elements of the module.
  
   Module* m = readModuleFromPath("libfoster.bc");
-  putModuleMembersInScope(m);
+  putModuleMembersInScope(m, module);
   
   createLLVMBitIntrinsics();
 
@@ -756,16 +746,11 @@ int main(int argc, char** argv) {
     CodegenPass cgPass; exprAST->accept(&cgPass);
   }
   
+  if (optDumpPreLinkedIR) {
+    dumpModuleToFile(module, dumpdirFile("out.prelink.ll").c_str());
+  }
 
   if (!optCompileSeparately) {
-    if (optDumpPreLinkedIR) {
-      std::string outfile = "out.prelink.ll";
-      { ScopedTimer timer(statFileIOMs);
-      std::cout << "Dumping pre-linked LLVM IR to " << outfile << endl;
-      }
-      dumpModuleToFile(module, dumpdirFile(outfile).c_str());
-    }
-
     std::string errMsg;
     {
       ScopedTimer timer(statLinkingMs);
@@ -788,15 +773,12 @@ int main(int argc, char** argv) {
     // The "solution" (until I figure out how to keep everything in memory)
     // is to print out the module to a file, then read it directly back,
     // yielding a new module, which we can then optimize and spit back out again.
-    std::string tmpFilename(dumpdirFile("_uglyhack.ll"));
-    dumpModuleToFile(module, tmpFilename);
-    delete module;
-    delete m;
-    module = readModuleFromPath(tmpFilename);
-  }
 
-  optimizeModuleAndRunPasses(module);
-  compileToNativeAssembly(module, dumpdirFile("out.s"));
+    optimizeModuleAndRunPasses(module);
+    compileToNativeAssembly(module, dumpdirFile("out.s"));
+  } else { // -c, compile to bitcode instead of native assembly
+    dumpModuleToBitcode(module, dumpdirFile("out.bc"));
+  }
   // TODO invoke g++ .s -> exe
   return 0;
 }

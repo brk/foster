@@ -109,8 +109,10 @@ public:
     T* insert(const string& ident, T* V) { val_of[ident] = V; return V; }
     T* lookup(const string& ident, const string& wantedScopeName) {
       if (name == "*" || wantedScopeName == "" || name == wantedScopeName) {
-        T* rv = val_of[ident];
-        if (rv) return rv;
+        typename Map::iterator it = val_of.find(ident);
+        if (it != val_of.end()) {
+          return (*it).second;
+        }
       }
       if (parent) {
         return parent->lookup(ident, wantedScopeName);
@@ -119,7 +121,7 @@ public:
       }
     }
     void dump(std::ostream& out) {
-      out << "\t" << name << std::endl;
+      out << "\t" << name << "(@ " << this << ")" << std::endl;
       for (typename Map::iterator it = val_of.begin(); it != val_of.end(); ++it) {
         out << "\t\t" << (*it).first << ": " << (*it).second << std::endl;
       }

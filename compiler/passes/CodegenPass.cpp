@@ -295,7 +295,7 @@ llvm::AllocaInst* CreateEntryAlloca(const llvm::Type* ty, const char* name) {
   return tmpBuilder.CreateAlloca(ty, /*ArraySize=*/ 0, name);
 }
 
-// Checks that ty == { i32 (i8*)*, i8* }
+// Checks that ty == { i32 (i8*, ...)*, i8* }
 bool isGenericClosureType(const llvm::Type* ty) {
   if (const llvm::StructType* sty = llvm::dyn_cast<const llvm::StructType>(ty)) {
     if (!isValidClosureType(sty)) return false;
@@ -304,9 +304,10 @@ bool isGenericClosureType(const llvm::Type* ty) {
 
     const llvm::Type* fnty = sty->getContainedType(0)->getContainedType(0);
     if (!fnty->isFunctionTy()) return false;
+    if (!fnty->getNumContainedTypes() >= 2) return false;
     if (fnty->getContainedType(0) != LLVMTypeFor("i32")) return false;
     if (fnty->getContainedType(1) != LLVMTypeFor("i8*")) return false;
-    return fnty->getNumContainedTypes() == 2;
+    return true;
   }
   return false;
 }
@@ -429,6 +430,10 @@ void CodegenPass::visit(VariableAST* ast) {
     ast->value = ast->lazilyInsertedPrototype->value;
   } else {
     ast->value = scope.lookup(ast->name, "");
+    if (!ast->value) {
+      std::cout << "looking up variable " << ast->name << " in scope, got " << ast->value << std::endl;
+      scope.dump(std::cout);
+    }
   }
 
 #if 0
@@ -511,20 +516,22 @@ void CodegenPass::visit(BinaryOpExprAST* ast) {
   }
 }
 
-void CodegenPass::visit(PrototypeAST* ast) {
-  if (ast->value) return;
-
-  std::string sourceName = ast->name;
-  std::string symbolName = sourceName;
-
+std::string getSymbolName(const std::string& sourceName) {
   // TODO this substitution should probably be explicitly restricted
   // to apply only to top-level function definitions.
-  if (symbolName == "main") {
+  if (sourceName == "main") {
     // libfoster contains a main() symbol that handles
     // initialization and shutdown/cleanup of the runtime,
     // calling this symbol in between.
-    symbolName = "foster__main";
+    return "foster__main";
   }
+  return sourceName;
+}
+
+void CodegenPass::visit(PrototypeAST* ast) {
+  if (ast->value) return;
+
+  std::string symbolName = getSymbolName(ast->name);
 
   //std::cout << "\t" << "Codegen proto "  << sourceName << std::endl;
   const llvm::FunctionType* FT = llvm::dyn_cast<FunctionType>(getLLVMType(ast->type));
@@ -555,8 +562,6 @@ void CodegenPass::visit(PrototypeAST* ast) {
 
   //std::cout << "\tdone codegen proto " << sourceName << std::endl;
   ast->value = F;
-
-  scope.insert(sourceName, F);
 }
 
 void CodegenPass::visit(SeqAST* ast) {
@@ -584,12 +589,16 @@ void CodegenPass::visit(FnAST* ast) {
 
   assert(ast->body != NULL);
 
+  scope.pushScope("fn " + ast->proto->name);
+
   (ast->proto)->accept(this);
   Function* F = llvm::dyn_cast<Function>(ast->proto->value);
-  if (!F) { return; }
+  if (!F) {
+    scope.popScope();
+    return;
+  }
 
   F->setGC("shadow-stack");
-  scope.pushScope("fn " + ast->proto->name);
 
   this->insertPointStack.push(builder.GetInsertBlock());
 
@@ -614,6 +623,7 @@ void CodegenPass::visit(FnAST* ast) {
     }
   }
 
+  scope.insert(ast->proto->name, F);
   (ast->body)->accept(this);
   Value* RetVal = ast->body->value;
   if (RetVal == NULL) std::cerr << "Oops, null body value in fn " << ast->proto->name << std::endl;
@@ -629,6 +639,7 @@ void CodegenPass::visit(FnAST* ast) {
   }
 
   scope.popScope();
+  scope.insert(ast->proto->name, F);
 
   if (RetVal) {
     if (returningVoid) {
@@ -685,6 +696,10 @@ void CodegenPass::visit(ClosureAST* ast) {
     std::cout << std::endl;
   }
 
+  if (ast->parts.size() == 0) {
+    std::cout << "\t\t\tclosure with empty env: " << ast << "; " << *ast << std::endl;
+  }
+
   TupleExprAST* env = new TupleExprAST(new SeqAST(ast->parts));
   ExprAST* fnPtr = new VariableAST(ast->fn->proto->name,
                    RefTypeAST::get(ast->fn->type));
@@ -719,6 +734,8 @@ void CodegenPass::visit(ClosureAST* ast) {
 
     addClosureTypeName(module, llvm::cast<llvm::StructType>(genericCloTy->getLLVMType()));
 
+    std::cout << __FILE__ << ":" << __LINE__ << std::endl;
+
     // { code*, env* }*
     llvm::AllocaInst* clo = CreateEntryAlloca(specificCloTy, "closure");
 
@@ -730,21 +747,36 @@ void CodegenPass::visit(ClosureAST* ast) {
     Value* clo_code_slot = builder.CreateConstGEP2_32(clo, 0, 0, "clo_code");
     builder.CreateStore(fnPtr->value, clo_code_slot, /*isVolatile=*/ false);
 
+    std::cout << __FILE__ << ":" << __LINE__ << std::endl;
+
     // (env*)*
     Value* clo_env_slot = builder.CreateConstGEP2_32(clo, 0, 1, "clo_env");
-    // Store the typemap in the environment
-    const llvm::Type* specificEnvTyPtr = specificCloTy->getContainedType(1);
-    const llvm::Type* specificEnvTy = specificEnvTyPtr->getContainedType(0);
 
-    llvm::GlobalVariable* clo_env_typemap
-        = getTypeMapForType(specificEnvTy);
+    if (!ast->parts.empty()) {
+      // Store the typemap in the environment
+      const llvm::Type* specificEnvTyPtr = specificCloTy->getContainedType(1);
+      const llvm::Type* specificEnvTy = specificEnvTyPtr->getContainedType(0);
 
-    Value* clo_env_typemap_slot = builder.CreateConstGEP2_32(env->value, 0, 0, "clo_env_typemap_slot");
-    builder.CreateStore(llvm::ConstantExpr::getBitCast(
-        clo_env_typemap, clo_env_typemap_slot->getType()->getContainedType(0)),
-        clo_env_typemap_slot, /*isVolatile=*/ false);
+      llvm::GlobalVariable* clo_env_typemap
+          = getTypeMapForType(specificEnvTy);
 
-    builder.CreateStore(env->value, clo_env_slot, /*isVolatile=*/ false);
+      Value* clo_env_typemap_slot = builder.CreateConstGEP2_32(env->value, 0, 0, "clo_env_typemap_slot");
+      builder.CreateStore(llvm::ConstantExpr::getBitCast(
+          clo_env_typemap, clo_env_typemap_slot->getType()->getContainedType(0)),
+          clo_env_typemap_slot, /*isVolatile=*/ false);
+      builder.CreateStore(env->value, clo_env_slot, /*isVolatile=*/ false);
+    } else {
+      // Store null env pointer if environment is empty
+      builder.CreateStore(
+          llvm::ConstantPointerNull::getNullValue(clo_env_slot->getType()->getContainedType(0)),
+          clo_env_slot,
+          /* isVolatile= */ false);
+    }
+
+
+
+
+    std::cout << __FILE__ << ":" << __LINE__ << std::endl;
 
     Value* genericClo = builder.CreateBitCast(clo,
         llvm::PointerType::getUnqual(genericCloTy->getLLVMType()), "hideCloTy");
@@ -754,6 +786,8 @@ void CodegenPass::visit(ClosureAST* ast) {
   if (!ast->value) {
     std::cerr << "Closure fn ref had non-function pointer type?!? " << *(ast->fn->type) << std::endl;
   }
+
+  std::cout << __FILE__ << ":" << __LINE__ << std::endl;
 }
 
 struct LazyValue { virtual Value* get() const = 0; };
@@ -1202,14 +1236,24 @@ FnAST* getClosureVersionOf(ExprAST* arg, const llvm::FunctionType* fnty) {
   return NULL;
 }
 
+llvm::Value* getClosureStructValue(llvm::Value* maybePtrToClo) {
+  if (maybePtrToClo->getType()->isPointerTy()) {
+    maybePtrToClo = builder.CreateLoad(maybePtrToClo, /*isVolatile=*/ false, "derefCloPtr");
+  }
+  if (maybePtrToClo->getType()->isPointerTy()) {
+    maybePtrToClo = builder.CreateLoad(maybePtrToClo, /*isVolatile=*/ false, "derefCloPtr");
+  }
+  return maybePtrToClo;
+}
+
 void CodegenPass::visit(CallAST* ast) {
   if (ast->value) return;
 
   ExprAST* base = ast->parts[0];
   assert (base != NULL);
 
-  //std::cout << "\t" << "Codegen CallAST "  << (base) << std::endl;
-  //std::cout << "\t\t\tbase ast: "  << *(base) << std::endl;
+  std::cout << "\t" << "Codegen CallAST "  << (base) << std::endl;
+  std::cout << "\t\t\tbase ast: "  << *(base) << std::endl;
 
   // TODO if base has closure type, it should be a ClosureAST node
 
@@ -1229,14 +1273,7 @@ void CodegenPass::visit(CallAST* ast) {
                           TypeAST::get(sty->getContainedType(0)))) {
       // Call to closure struct
       FT = llvm::dyn_cast<const FunctionType>(fty->getLLVMType());
-      llvm::Value* clo = FV;
-
-      if (clo->getType()->isPointerTy()) {
-        clo = builder.CreateLoad(clo, /*isVolatile=*/ false, "derefCloPtr");
-      }
-      if (clo->getType()->isPointerTy()) {
-        clo = builder.CreateLoad(clo, /*isVolatile=*/ false, "derefCloPtr");
-      }
+      llvm::Value* clo = getClosureStructValue(FV);
 
       assert(!clo->getType()->isPointerTy()
           && "clo value should be a tuple, not a pointer");
@@ -1310,6 +1347,7 @@ void CodegenPass::visit(CallAST* ast) {
       // functions we see being passed directly by name; it would forward
       // all parameters to the regular function, except for the env ptr.
         ClosureAST* clo = new ClosureAST(getClosureVersionOf(arg, fnty));
+        std::cout << "clo 1347 = " << clo << std::endl;
         clo->hasKnownEnvironment = true; // Empty by definition!
         arg = clo;
         { TypecheckPass tp; arg->accept(&tp); }
@@ -1366,6 +1404,23 @@ void CodegenPass::visit(CallAST* ast) {
      && expectedType->isPointerTy()
      && isPointerToType(V->getType(), expectedType)) {
       V = builder.CreateLoad(V, /*isVolatile=*/ false, "unstackref");
+    }
+
+    bool needsAdjusting = V->getType() != expectedType;
+    if (needsAdjusting) {
+      std::cout << "V->getType() is " << str(V->getType()) << "; expecting " << str(expectedType) << std::endl;
+    }
+
+    // If we're given a clo** when we expect a clo,
+    // automatically load the reference from the stack.
+    if (isPointerToPointerToType(V->getType(), expectedType)
+     && isGenericClosureType(expectedType)) {
+      V = getClosureStructValue(V);
+    }
+
+    if (needsAdjusting) {
+      std::cout << "V->getType() is " << str(V->getType())
+          << "; expect clo? " << isGenericClosureType(expectedType) << std::endl;
     }
 
     // Give print_ref() "polymorphic" behavior by converting a pointer argument

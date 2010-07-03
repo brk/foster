@@ -11,6 +11,8 @@ fx = fn (to i32) { read_i32() }
 
 fn "main" () {
   expect_i32(42) ;  print_i32(run-it(fx)) // Foster fn
-  
+ 
   expect_i32(48) ;  print_i32(run-it(read_i32)) // C fn
+  
+  force_gc_for_debugging_purposes()
 }

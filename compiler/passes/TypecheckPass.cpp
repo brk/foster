@@ -210,7 +210,6 @@ void TypecheckPass::visit(PrototypeAST* ast) {
       return;
     }
 
-    std::cout << "\t\t" << ast->name << " arg " << i << " : " << *ty << std::endl;
     argTypes.push_back(ty);
   }
 
@@ -712,7 +711,8 @@ void TypecheckPass::visit(SubscriptAST* ast) {
     }
   }
 
-  //llvm::errs() << "Indexing composite with index " << *cidx << "; neg? " << vidx.isNegative() << "\n";
+  llvm::outs() << "Indexing composite type " << str(compositeTy)
+               << " with index " << *cidx << "; neg? " << vidx.isNegative() << "\n";
 
   // TODO need to avoid losing typeinfo here
   ast->type = TypeAST::get(compositeTy->getTypeAtIndex(cidx));
@@ -904,13 +904,13 @@ void TypecheckPass::visit(CallAST* ast) {
 int extractNumElementsAndElementType(int maxSize, ExprAST* ast, const Type*& elementType) {
   SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
   IntAST* first = dynamic_cast<IntAST*>(body->parts[0]);
-  VariableAST* var = dynamic_cast<VariableAST*>(body->parts[1]);
-  if (first && var) {
+  IntAST* second = dynamic_cast<IntAST*>(body->parts[1]);
+  if (first && !second && body->parts[1]->type) {
     APInt v = first->getAPInt();
     unsigned int n = v.getZExtValue();
     // Sanity check on # elements; nobody? wants a single billion-element vector...
     if (n <= maxSize) {
-      elementType = var->type->getLLVMType();
+      elementType = body->parts[1]->type->getLLVMType();
       return n;
     } else {
       std::cerr << "Concise simd/array declaration too big! : " << *ast << std::endl;

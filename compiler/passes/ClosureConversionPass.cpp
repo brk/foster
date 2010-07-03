@@ -205,6 +205,7 @@ void hoistAnonymousFunction(FnAST* ast) {
   { // Ensure that the fn proto gets added to the module, so that it can
     // be referenced from other functions.
     CodegenPass cp; ast->proto->accept(&cp);
+    scope.insert(ast->proto->name, ast->proto->value);
   }
 }
 
