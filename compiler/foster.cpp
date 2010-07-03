@@ -323,6 +323,10 @@ optDumpPostLinkedIR("dump-postlinked",
   cl::desc("[foster] Dump LLVM IR after linking with standard library"));
 
 static cl::opt<bool>
+optDumpASTs("dump-asts",
+  cl::desc("[foster] Dump intermediate ASTs (and ANLTR parse tree)"));
+
+static cl::opt<bool>
 optOptimizeZero("O0",
   cl::desc("[foster] Disable optimization passes after linking with standard library"));
 
@@ -664,7 +668,7 @@ int main(int argc, char** argv) {
   fosterParser_program_return langAST = ctx.psr->program(ctx.psr);
   delete timer; // not block-scoped to allow proper binding of langAST
 
-  { ScopedTimer timer(statFileIOMs);
+  if (optDumpASTs) { ScopedTimer timer(statFileIOMs);
     std::cout << "dumping parse trees" << endl;
     {
       std::ofstream out(dumpdirFile("stringtree.dump.txt").c_str());
@@ -692,7 +696,7 @@ int main(int argc, char** argv) {
   ExprAST* exprAST = ExprAST_from(langAST.tree, false);
 
   { ScopedTimer timer(statFileIOMs);
-  {
+  if (optDumpASTs) {
     std::string outfile = "ast.dump.1.txt";
     std::cout << "unparsing to " << outfile << endl;
     std::ofstream out(dumpdirFile(outfile).c_str());
@@ -718,7 +722,7 @@ int main(int argc, char** argv) {
   std::cout << "Semantic checking: " << sema << endl;
   if (!sema) { return 1; }
   
-  { ScopedTimer timer(statFileIOMs);
+  if (optDumpASTs) { ScopedTimer timer(statFileIOMs);
     std::string outfile = "pp-precc.txt";
     std::cout << "=========================" << std::endl;
     std::cout << "Pretty printing to " << outfile << std::endl;
