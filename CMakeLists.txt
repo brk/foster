@@ -153,6 +153,7 @@ add_executable(fosterc
   compiler/foster.cpp
   compiler/InputFile.cpp
   compiler/FosterAST.cpp
+  compiler/SourceRange.cpp
   compiler/FosterUtils.cpp
   compiler/FosterTypeAST.cpp
   compiler/ANTLRtoFosterAST.cpp

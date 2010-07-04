@@ -15,6 +15,7 @@
 #include "FosterASTVisitor.h"
 #include "FosterTypeAST.h"
 #include "InputFile.h"
+#include "SourceRange.h"
 
 #include <iostream>
 #include <vector>
@@ -32,30 +33,6 @@ using llvm::Value;
 using llvm::getGlobalContext;
 using llvm::APInt;
 using llvm::Function;
-
-namespace foster {
-extern InputFile* gInputFile;
-struct SourceLocation {
-  int line, column;
-  SourceLocation(int line, int column) : line(line), column(column) {}
-  bool operator<(const SourceLocation& o) const {
-    return (line < o.line || (line == o.line && column < o.column));
-  }
-};
-
-class SourceRange {
-public:
-  const foster::InputFile* source;
-  const foster::SourceLocation begin;
-  const foster::SourceLocation end;
-  SourceRange(foster::InputFile* source,
-              foster::SourceLocation begin,
-              foster::SourceLocation end)
-    : source(source), begin(begin), end(end) {}
-  bool empty() const { return !(begin < end); }
-  bool isSingleLine() const { return begin.line == end.line; }
-};
-}
 
 std::ostream& operator <<(std::ostream& out, const foster::SourceRange& r);
 
