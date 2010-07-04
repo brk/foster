@@ -21,7 +21,6 @@ void InputFile::initializeLineCache() {
     if (data[i] == '\n') {
       int len = i - currentLineStart;
       llvm::StringRef line = llvm::StringRef(&data[currentLineStart], len);
-      std::cout << "line " << lineCache.size() << " is: " << line.str() << std::endl;
       this->lineCache.push_back(line);
 
       ++currentLineNumber;

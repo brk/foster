@@ -48,6 +48,8 @@ std::ostream& operator <<(std::ostream& out, const foster::SourceRange& r) {
     for (int i = 0; i < r.end.column; ++i) {
       if (i < r.begin.column) {
         out << ' ';
+      } else if (i == r.begin.column) {
+        out << '^';
       } else {
         out << '~';
       }

@@ -41,20 +41,33 @@ string str(pANTLR3_COMMON_TOKEN tok) {
   }
 }
 
-// ANTLR3C 3.2 appears to have a broken getParent/setParent implementation,
-// inasmuch as getParent() does not return the parent set by setParent().
-// So, we maintain the mapping of children to parents ourselves, here.
-extern std::map<pTree, pTree> pTreeParents;
+typedef void                  (*setTokenBoundariesFunc)
+  (struct ANTLR3_BASE_TREE_ADAPTOR_struct * adaptor, void * t,
+      pANTLR3_COMMON_TOKEN startToken, pANTLR3_COMMON_TOKEN stopToken);
 
-std::map<pTree, pTree> pTreeParents;
+static setTokenBoundariesFunc sgDefaultSTB;
 
-void recursivelySetParentPointers(pTree tree) {
-  for (int i = 0, e = tree->getChildCount(tree); i != e; ++i) {
-    pTree ch = (pTree) tree->getChild(tree, i);
-    ch->setChildIndex(ch, i);
-    pTreeParents[ch] = tree;
-    recursivelySetParentPointers(ch);
-  }
+std::map<pTree, pANTLR3_COMMON_TOKEN> startTokens;
+std::map<pTree, pANTLR3_COMMON_TOKEN>   endTokens;
+
+static void customSetTokenBoundariesFunc
+  (struct ANTLR3_BASE_TREE_ADAPTOR_struct * adaptor, void * t,
+      pANTLR3_COMMON_TOKEN startToken, pANTLR3_COMMON_TOKEN stopToken) {
+  sgDefaultSTB(adaptor, t, startToken, stopToken);
+
+  startTokens[(pTree)t] = startToken;
+    endTokens[(pTree)t] =  stopToken;
+}
+
+// This is a vaguely unpleasant (but terrifically accurate) hack
+// to monitor the token boundaries computed for tree nodes, which
+// are unfortunately (and strangely) not actually stored in the nodes
+// themselves, but rather in shadow parent nodes inaccessible from
+// the tree nodes themselves. Anyways, we just replace the function pointer
+// in the virtual table with a thin shim, above.
+void installTreeTokenBoundaryTracker(pANTLR3_BASE_TREE_ADAPTOR adaptor) {
+  sgDefaultSTB = adaptor->setTokenBoundaries;
+  adaptor->setTokenBoundaries = customSetTokenBoundariesFunc;
 }
 // }}}
 
@@ -74,58 +87,25 @@ pTree child(pTree tree, int i) {
   return (pTree) tree->getChild(tree, i);
 }
 
-pTree getNextSibling(pTree c) {
-  pTree parent = pTreeParents[c];
-  if (!parent) { return NULL; }
-  int indexInParent = c->getChildIndex(c);
-  if (indexInParent + 1 == 0) { return NULL; }
-  if (indexInParent + 1 == getChildCount(parent)) { return NULL; }
-  return child(parent, indexInParent + 1);
-}
-
-foster::SourceLocation getStartLocation(pTree tree) {
+foster::SourceLocation getStartLocation(pANTLR3_COMMON_TOKEN tok) {
   // ANTLR gives source locations starting from 1; we want them from 0
-  return foster::SourceLocation(tree->getLine(tree) - 1,
-                                tree->getCharPositionInLine(tree));
+  return foster::SourceLocation(tok->getLine(tok) - 1,
+                                tok->getCharPositionInLine(tok));
 }
 
-// The end location for a tree is the start location of the next sibling tree.
-// Theoretically, at least. ANTLR doesn't record detailed token information in
-// parse trees (such as commas and newlines), so the start of the next tree node
-// could be lines away from the "right" end position for the given node.
-foster::SourceLocation getEndLocation(pTree tree) {
-  pTree sib = getNextSibling(tree);
-  pTree parent = tree;
-  while (!sib) {
-    parent = pTreeParents[parent];
-    if (!parent) {
-      return foster::SourceLocation(-1, -1);
-    }
-    sib = getNextSibling(parent);
-  }
-  return getStartLocation(sib);
-}
-
-foster::SourceRange rangeOf(pTree tree) {
-  foster::SourceLocation start = getStartLocation(tree);
-
-  // Single-token tree nodes can be given exact ranges...
-  if (tree->getType(tree) == NAME) {
-    return foster::SourceRange(foster::gInputFile, start,
-        foster::SourceLocation(
-            start.line,
-            start.column + textOf(child(tree, 0)).size()));
-  }
-
-  return foster::SourceRange(foster::gInputFile,
-      start,
-      getEndLocation(tree));
+foster::SourceLocation getEndLocation(pANTLR3_COMMON_TOKEN tok) {
+  return foster::SourceLocation(tok->getLine(tok) - 1,
+      tok->getCharPositionInLine(tok) + tok->getText(tok)->len);
 }
 
 foster::SourceRange rangeFrom(pTree start, pTree end) {
   return foster::SourceRange(foster::gInputFile,
-      getStartLocation(start),
-      getEndLocation(end));
+      getStartLocation(startTokens[start]),
+      getEndLocation(endTokens[end]));
+}
+
+foster::SourceRange rangeOf(pTree tree) {
+  return rangeFrom(tree, tree);
 }
 
 Exprs getExprs(pTree tree, bool fnMeansClosure);

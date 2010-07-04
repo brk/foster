@@ -11,10 +11,7 @@
 
 typedef pANTLR3_BASE_TREE pTree;
 
-// ANTLR3C 3.2 appears to have a broken getParent/setParent implementation,
-// inasmuch as getParent() does not return the parent set by setParent().
-// So, we call this function to set up the mapping ourselves.
-void recursivelySetParentPointers(pTree tree);
+void installTreeTokenBoundaryTracker(pANTLR3_BASE_TREE_ADAPTOR adaptor);
 
 class ExprAST;
 

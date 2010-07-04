@@ -622,7 +622,6 @@ void validateInputFile(const std::string& pathstr) {
   }
 }
 
-
 int main(int argc, char** argv) {
   sys::PrintStackTraceOnErrorSignal();
   PrettyStackTraceProgram X(argc, argv);
@@ -658,6 +657,7 @@ int main(int argc, char** argv) {
   ScopedTimer* timer = new ScopedTimer(statParseTimeMs); 
   ANTLRContext ctx;
   createParser(ctx, infile);
+  installTreeTokenBoundaryTracker(ctx.psr->adaptor);
   fosterParser_program_return langAST = ctx.psr->program(ctx.psr);
   delete timer; // not block-scoped to allow proper binding of langAST
 
@@ -683,9 +683,6 @@ int main(int argc, char** argv) {
   
   createLLVMBitIntrinsics();
 
-  std::cout << "converting" << endl;
-  recursivelySetParentPointers(langAST.tree);
-  langAST.tree->setParent(langAST.tree, NULL);
   ExprAST* exprAST = ExprAST_from(langAST.tree, false);
 
   { ScopedTimer timer(statFileIOMs);
