@@ -44,6 +44,7 @@
 
 #include "FosterAST.h"
 #include "ANTLRtoFosterAST.h"
+#include "InputFile.h"
 
 #include "TypecheckPass.h"
 #include "CodegenPass.h"
@@ -100,17 +101,14 @@ struct ANTLRContext {
   }
 };
 
-void createParser(ANTLRContext& ctx, string filename) {
-  ctx.filename = filename;
-  ctx.input = antlr3AsciiFileStreamNew( (pANTLR3_UINT8) filename.c_str() );
-  if (ctx.input == NULL) {
-    ANTLR3_FPRINTF(stderr, "Unable to open file '%s' due to malloc()"
-                   "failure.\n", (char*) ctx.filename.c_str());
-    exit(1);
-  }
-
+void createParser(ANTLRContext& ctx, const foster::InputFile& f) {
+  assert(inbuf->getBufferSize() <= ((ANTLR3_UINT32)-1)
+      && "Trying to parse files larger than 4GB makes me cry.");
+  ctx.filename = f.getFilePath();
+  ctx.input = antlr3NewAsciiStringInPlaceStream((pANTLR3_UINT8) f.getBuffer()->getBufferStart(),
+                                                (ANTLR3_UINT32) f.getBuffer()->getBufferSize(),
+                                                NULL);
   ctx.lxr = fosterLexerNew(ctx.input);
-
   if (ctx.lxr == NULL) {
     ANTLR3_FPRINTF(stderr, "Unable to create lexer\n");
     exit(ANTLR3_ERR_NOMEM);
@@ -654,9 +652,11 @@ int main(int argc, char** argv) {
   ee = EngineBuilder(module).create();
   initMaps();
 
+  foster::InputFile infile(optInputPath);
+
   ScopedTimer* timer = new ScopedTimer(statParseTimeMs); 
   ANTLRContext ctx;
-  createParser(ctx, optInputPath.c_str());
+  createParser(ctx, infile);
   fosterParser_program_return langAST = ctx.psr->program(ctx.psr);
   delete timer; // not block-scoped to allow proper binding of langAST
 
