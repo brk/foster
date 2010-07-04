@@ -68,7 +68,7 @@ using namespace llvm;
 using std::string;
 using std::endl;
 
-#define FOSTER_VERSION_STR "0.0.3"
+#define FOSTER_VERSION_STR "0.0.4"
 
 struct ScopedTimer {
   ScopedTimer(llvm::Statistic& stat)
@@ -653,6 +653,7 @@ int main(int argc, char** argv) {
   initMaps();
 
   foster::InputFile infile(optInputPath);
+  foster::gInputFile = &infile;
 
   ScopedTimer* timer = new ScopedTimer(statParseTimeMs); 
   ANTLRContext ctx;
@@ -683,6 +684,8 @@ int main(int argc, char** argv) {
   createLLVMBitIntrinsics();
 
   std::cout << "converting" << endl;
+  recursivelySetParentPointers(langAST.tree);
+  langAST.tree->setParent(langAST.tree, NULL);
   ExprAST* exprAST = ExprAST_from(langAST.tree, false);
 
   { ScopedTimer timer(statFileIOMs);

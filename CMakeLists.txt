@@ -151,6 +151,7 @@ include(${PROJECT_SOURCE_DIR}/third_party/cpuid/CMakeLists.txt)
 
 add_executable(fosterc
   compiler/foster.cpp
+  compiler/InputFile.cpp
   compiler/FosterAST.cpp
   compiler/FosterUtils.cpp
   compiler/FosterTypeAST.cpp

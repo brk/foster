@@ -32,6 +32,34 @@ FosterSymbolTable<Value> scope;
 FosterSymbolTable<TypeAST> typeScope;
 FosterSymbolTable<ExprAST> varScope;
 
+namespace foster {
+InputFile* gInputFile;
+}
+
+std::ostream& operator <<(std::ostream& out, const foster::SourceRange& r) {
+  const foster::InputFile* f = r.source;
+  if (r.empty()) {
+    out << "<" << r.source->getFilePath()
+        << ":" << r.begin.line << "::" << r.begin.column
+        << " - " << r.end.line << "::" << r.end.column << ">";
+  } else if (r.isSingleLine()) {
+    llvm::StringRef line = r.source->getLine(r.begin.line);
+    out << line.str() << "\n";
+    for (int i = 0; i < r.end.column; ++i) {
+      if (i < r.begin.column) {
+        out << ' ';
+      } else {
+        out << '~';
+      }
+    }
+  } else {
+    out << "<" << r.source->getFilePath()
+        << ":" << r.begin.line << "::" << r.begin.column
+        << " - " << r.end.line << "::" << r.end.column << ">";
+  }
+  return out;
+}
+
 std::ostream& operator<<(std::ostream& out, TypeAST& type) {
   return type.operator<<(out);
 }
