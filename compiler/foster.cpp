@@ -254,8 +254,6 @@ void createLLVMBitIntrinsics() {
       { "atomic.load.max", kAtomicStub, i8_to_i64 },
       { "atomic.load.min", kAtomicStub, i8_to_i64 },
       { "atomic.load.umax", kAtomicStub, i8_to_i64 },
-      { "atomic.load.umin", kAtomicStub, i8_to_i64 },
-
       { NULL, kTransform, 0}
   };
 
@@ -334,11 +332,7 @@ cmdLinePassList(cl::desc("Optimizations available:"));
 void printVersionInfo() {
   std::cout << "Foster version: " << FOSTER_VERSION_STR;
   std::cout << ", compiled: " << __DATE__ << " at " << __TIME__ << std::endl;
-  
-  // TODO: could extract more detailed ANTLR version information
-  // from the generated lexer/parser files...
   std::cout << "ANTLR version " << ANTLR_VERSION_STR << std::endl;
-  
   cl::PrintVersionMessage(); 
 }
 
@@ -358,26 +352,6 @@ Module* readModuleFromPath(std::string path) {
   ScopedTimer timer(statFileIOMs);
   SMDiagnostic diag;
   return llvm::ParseIRFile(path, diag, llvm::getGlobalContext());
-
-#if 0
-  Module* m = NULL;
-  std::string errMsg;
-  // TODO test behavior with incorrect paths
-  if (MemoryBuffer *memBuf = MemoryBuffer::getFile(path.c_str(), &errMsg)) {
-    //if (m = getLazyBitcodeModule(memBuf, getGlobalContext(), &errMsg)) {
-    
-    // Currently, materalizing functions lazily fails with LLVM 2.6,
-    // so this must be an ExistingModuleProvider
-    if (m = ParseBitcodeFile(memBuf, getGlobalContext(), &errMsg)) {
-      // Great!
-    } else {
-      std::cerr << "Error: could not parse module '" << path << "'" << std::endl;
-      std::cerr << "\t" << errMsg << std::endl;
-    }
-    delete memBuf;
-  }
-  return m;
-#endif
 }
 
 // Add module m's C-linkage functions in the global scopes,
@@ -394,7 +368,6 @@ void putModuleMembersInScope(Module* m, Module* linkee) {
     bool hasDef = !f.isDeclaration();
     if (hasDef && !isCxxLinkage) {
       globalNames.insert(name);
-      //std::cout << "Inserting ref to fn " << name << " in scopes" << std::endl;
 
       // Ensure that, when parsing, function calls to this name will find it
       const Type* ty = f.getType();
@@ -673,11 +646,6 @@ int main(int argc, char** argv) {
     }
   }
   
-  // TODO: I think the LLVM Type* of a module should be
-  // a struct containing the elements of the underlying module?
-  // This would be consistent with the dot (selection) operator
-  // for accessing elements of the module.
- 
   Module* m = readModuleFromPath("libfoster.bc");
   putModuleMembersInScope(m, module);
   
@@ -762,17 +730,6 @@ int main(int argc, char** argv) {
     if (optDumpPostLinkedIR) {
       dumpModuleToFile(module, "out.ll");
     }
-
-    // Okay, this is a gross hack.
-    // LLVM doesn't seem to want to do anything with the linked
-    // module other than print it out to an IR file. In particular,
-    // running optimizations, module verification, and printing to bitcode
-    // all fail. As far as I can tell, calls to functions in the
-    // standard library are rejected because it's a "different" module.
-    //
-    // The "solution" (until I figure out how to keep everything in memory)
-    // is to print out the module to a file, then read it directly back,
-    // yielding a new module, which we can then optimize and spit back out again.
 
     optimizeModuleAndRunPasses(module);
     compileToNativeAssembly(module, dumpdirFile("out.s"));
