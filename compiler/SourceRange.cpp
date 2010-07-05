@@ -8,11 +8,30 @@ namespace foster {
 
 const InputFile* gInputFile;
 
+static void fixupLocation(const InputFile* source, SourceLocation& loc) {
+  if (loc.line > 0) { loc.line--; }
+  loc.column = source->getLine(loc.line).size() - 1;
+}
+
+SourceRange::SourceRange(const InputFile* source,
+                         SourceLocation abegin,
+                         SourceLocation aend)
+    : source(source), begin(abegin), end(aend) {
+  // In error situations, ANTLR will sometimes give us invalid
+  // line/column information, such as providing 2/-1
+  // instead of 1/endofline1.
+  // We do fixup here so that we know the length of the previous line.
+  if (begin.line >= 0 && begin.column == -1) {
+    fixupLocation(source, const_cast<SourceLocation&>(begin));
+    const_cast<SourceLocation&>(end) = begin;
+  }
+  if (end.line >= 0 && end.column == -1) {
+    fixupLocation(source, const_cast<SourceLocation&>(end));
+  }
+}
 
 bool SourceRange::isValid() const {
-  // We assume that invalid ranges will also be empty,
-  // so we don't need to explicitly test for invalid line numbers.
-  return begin < end;
+  return begin < end && begin.isValid() && end.isValid();
 }
 
 bool SourceRange::isJustStartLocation() const {

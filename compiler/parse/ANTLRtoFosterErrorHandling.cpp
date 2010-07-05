@@ -117,7 +117,6 @@ const char* describeApproximateStartPosition(const SourceRange& r) {
 
 bool handleNoViableAlt(pANTLR3_EXCEPTION ex, pANTLR3_UINT8* tokenNames) {
   pANTLR3_COMMON_TOKEN tok = (pANTLR3_COMMON_TOKEN) ex->token;
-
   SourceLocation errStart(ex->line - 1, ex->charPositionInLine);
   string tokenText;
   bool isPhysicalToken = false;
@@ -142,7 +141,7 @@ bool handleNoViableAlt(pANTLR3_EXCEPTION ex, pANTLR3_UINT8* tokenNames) {
   const char* approxPosition = describeApproximateStartPosition(r);
   std::cerr << r.source->getFilePath() << ":"
             << "error: got stuck parsing near the " << approxPosition
-            << " of line " << ex->line << ":\n\n"
+            << " of line " << (r.begin.line + 1) << ":\n\n"
             << r << std::endl;
   if (tok) {
     //std::cerr << tok->toString(tok)->chars << std::endl;

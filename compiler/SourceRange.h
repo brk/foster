@@ -20,7 +20,7 @@ struct SourceLocation {
   int line, column;
   SourceLocation(int line, int column) : line(line), column(column) {}
 
-  bool isValid() const { return SourceLocation(0, 0) < *this; }
+  bool isValid() const { return (SourceLocation(0, 0) < *this) && column >= 0; }
   bool operator<(const SourceLocation& o) const {
     return (line < o.line || (line == o.line && column < o.column));
   }
@@ -39,8 +39,7 @@ public:
 
   SourceRange(const foster::InputFile* source,
               foster::SourceLocation begin,
-              foster::SourceLocation end)
-    : source(source), begin(begin), end(end) {}
+              foster::SourceLocation end);
 
   bool isValid() const;
   bool isJustStartLocation() const;
