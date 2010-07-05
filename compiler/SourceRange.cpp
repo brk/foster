@@ -4,8 +4,6 @@
 
 #include "SourceRange.h"
 
-#include <ostream>
-
 namespace foster {
 
 const InputFile* gInputFile;
@@ -29,30 +27,39 @@ bool SourceRange::isSingleLine() const {
   return begin.line == end.line && begin.line >= 0;
 }
 
-}
-
-std::ostream& operator <<(std::ostream& out, const foster::SourceRange& r) {
-  const foster::InputFile* f = r.source;
-  if (r.isEmpty()) {
-    out << "<" << r.source->getFilePath()
-        << ":" << r.begin.line << "::" << r.begin.column
-        << " - " << r.end.line << "::" << r.end.column << ">";
-  } else if (r.isSingleLine()) {
-    llvm::StringRef line = r.source->getLine(r.begin.line);
+void SourceRange::highlightWithCaret(std::ostream& out,
+                                     SourceLocation caret) const {
+  if (isEmpty()) {
+    out << "<" << source->getFilePath()
+        << ":" << begin.line << "::" << begin.column
+        << " - " << end.line << "::" << end.column << " (empty)>";
+  } else if (isSingleLine()) {
+    llvm::StringRef line = source->getLine(begin.line);
     out << line.str() << "\n";
-    for (int i = 0; i < r.end.column; ++i) {
-      if (i < r.begin.column) {
+
+    // The end of the range should, by definition, be after the start..
+    int endcol = (end.column > begin.column) ? end.column : begin.column + 1;
+    // We should try to include the caret...
+    if (endcol <= caret.column) endcol = caret.column + 1;
+    // ... but not such that we color outside the lines.
+    endcol = (std::min)(endcol, (int) line.size());
+
+    for (int i = 0; i < endcol; ++i) {
+      if (i < begin.column) {
         out << ' ';
-      } else if (i == r.begin.column) {
+      } else if (i == caret.column) {
         out << '^';
-      } else {
+      } else if (i < endcol) {
         out << '~';
       }
     }
+    out << "\n";
   } else {
-    out << "<" << r.source->getFilePath()
-        << ":" << r.begin.line << "::" << r.begin.column
-        << " - " << r.end.line << "::" << r.end.column << ">";
+    out << "<" << source->getFilePath()
+        << ":" << begin.line << "::" << begin.column
+        << " - " << end.line << "::" << end.column << ">";
   }
-  return out;
 }
+
+} // namespace foster
+

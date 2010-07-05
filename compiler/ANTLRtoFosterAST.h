@@ -7,7 +7,6 @@
 
 #include <antlr3defs.h>
 #include <string>
-#include <map>
 
 typedef pANTLR3_BASE_TREE pTree;
 

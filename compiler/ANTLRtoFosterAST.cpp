@@ -41,6 +41,8 @@ string str(pANTLR3_COMMON_TOKEN tok) {
   }
 }
 
+/////////////////////////////////////////////////////////////////////
+
 void display_pTree(pTree t, int nspaces);
 
 typedef void                  (*setTokenBoundariesFunc)

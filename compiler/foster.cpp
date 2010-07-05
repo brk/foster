@@ -45,6 +45,7 @@
 #include "FosterAST.h"
 #include "ANTLRtoFosterAST.h"
 #include "InputFile.h"
+#include "parse/ANTLRtoFosterErrorHandling.h"
 
 #include "TypecheckPass.h"
 #include "CodegenPass.h"
@@ -637,6 +638,7 @@ int main(int argc, char** argv) {
   ANTLRContext ctx;
   createParser(ctx, infile);
   installTreeTokenBoundaryTracker(ctx.psr->adaptor);
+  foster::installRecognitionErrorFilter(ctx.psr->pParser->rec);
   fosterParser_program_return langAST = ctx.psr->program(ctx.psr);
   delete timer; // not block-scoped to allow proper binding of langAST
 

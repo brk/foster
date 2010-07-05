@@ -36,6 +36,7 @@ void InputFile::initializeLineCache() {
 }
 
 llvm::StringRef InputFile::getLine(int n) const {
+  assert(n < lineCache.size());
   return this->lineCache[n];
 }
 }

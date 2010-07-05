@@ -7,6 +7,8 @@
 
 #include "InputFile.h"
 
+#include <ostream>
+
 namespace foster {
 
 // Maintaining a global pointer to the current input file is a convenient
@@ -45,12 +47,19 @@ public:
   bool isEmpty() const;
   bool isSingleLine() const;
 
+  void highlightWithCaret(std::ostream& out, SourceLocation caret) const;
+
   static SourceRange getEmptyRange() {
     return SourceRange(gInputFile,
               SourceLocation::getInvalidLocation(),
               SourceLocation::getInvalidLocation());
   }
 };
+} // namespace foster
+
+inline std::ostream& operator <<(std::ostream& out, const foster::SourceRange& r) {
+  r.highlightWithCaret(out, r.begin);
+  return out;
 }
 
 #endif // header guard
