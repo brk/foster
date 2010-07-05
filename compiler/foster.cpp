@@ -102,7 +102,7 @@ struct ANTLRContext {
 };
 
 void createParser(ANTLRContext& ctx, const foster::InputFile& f) {
-  assert(inbuf->getBufferSize() <= ((ANTLR3_UINT32)-1)
+  assert(f.getBuffer()->getBufferSize() <= ((ANTLR3_UINT32)-1)
       && "Trying to parse files larger than 4GB makes me cry.");
   ctx.filename = f.getFilePath();
   ctx.input = antlr3NewAsciiStringInPlaceStream((pANTLR3_UINT8) f.getBuffer()->getBufferStart(),
