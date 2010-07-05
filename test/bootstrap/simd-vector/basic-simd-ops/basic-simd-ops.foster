@@ -29,7 +29,7 @@ fn "main" () {
                  
   compare_4xi32( simd-vector { 0000_2, 0010_2, 0100_2, 0110_2 },
           bitand(simd-vector { 0010_2, 0110_2, 1100_2, 1110_2 },
-                 simd-vector { 0001_2, 0011_2, 0100_2, 0111_2 } )
+                 simd-vector { 0001_2, 0011_2, 0100_2, 0111_2 }))
 
   compare_4xi32( simd-vector { 0011_2, 0101_2, 1000_2, 1001_2 },
           bitxor(simd-vector { 0010_2, 0110_2, 1100_2, 1110_2 },
