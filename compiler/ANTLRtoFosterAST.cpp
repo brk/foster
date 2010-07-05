@@ -102,7 +102,8 @@ pANTLR3_COMMON_TOKEN getStartToken(pTree tree) {
   // Some nodes we're okay with having no token info for...
   if (getChildCount(tree) == 0) {
     int tag = typeOf(tree);
-    if (tag == OUT || tag == IN || tag == BODY) {
+    if (tag == OUT || tag == IN || tag == BODY
+     || tag == ANTLR3_TOKEN_INVALID) {
       return NULL;
     }
   }
@@ -118,7 +119,7 @@ pANTLR3_COMMON_TOKEN getStartToken(pTree tree) {
   }
   if (!tok) {
     std::cout << "Warning: unable to find start token for ANTLR parse tree"
-              << " node " << textOf(tree) << " @ " << tree << std::endl;
+              << " node " << textOf(tree) << " @ " << tree << " , " << typeOf(tree) << std::endl;
   }
   return tok;
 }
@@ -130,7 +131,8 @@ pANTLR3_COMMON_TOKEN getEndToken(pTree tree) {
 
   if (getChildCount(tree) == 0) {
     int tag = typeOf(tree);
-    if (tag == OUT || tag == IN || tag == BODY) {
+    if (tag == OUT || tag == IN || tag == BODY
+     || tag == ANTLR3_TOKEN_INVALID) {
       return NULL;
     }
   }
