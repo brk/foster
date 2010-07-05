@@ -653,6 +653,11 @@ int main(int argc, char** argv) {
       dumpANTLRTree(out, langAST.tree, 0);
     }
   }
+
+  unsigned numParseErrors = ctx.psr->pParser->rec->state->errorCount;
+  if (numParseErrors > 0) {
+    exit(2);
+  }
   
   Module* m = readModuleFromPath("libfoster.bc");
   putModuleMembersInScope(m, module);
