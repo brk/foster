@@ -8,13 +8,32 @@
 
 namespace foster {
 
-InputFile* gInputFile;
+const InputFile* gInputFile;
+
+
+bool SourceRange::isValid() const {
+  // We assume that invalid ranges will also be empty,
+  // so we don't need to explicitly test for invalid line numbers.
+  return begin < end;
+}
+
+bool SourceRange::isJustStartLocation() const {
+  return !isValid() && begin.isValid();
+}
+
+bool SourceRange::isEmpty() const {
+  return !isValid() && !begin.isValid();
+}
+
+bool SourceRange::isSingleLine() const {
+  return begin.line == end.line && begin.line >= 0;
+}
 
 }
 
 std::ostream& operator <<(std::ostream& out, const foster::SourceRange& r) {
   const foster::InputFile* f = r.source;
-  if (r.empty()) {
+  if (r.isEmpty()) {
     out << "<" << r.source->getFilePath()
         << ":" << r.begin.line << "::" << r.begin.column
         << " - " << r.end.line << "::" << r.end.column << ">";

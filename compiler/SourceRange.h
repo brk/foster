@@ -12,13 +12,19 @@ namespace foster {
 // Maintaining a global pointer to the current input file is a convenient
 // alternative to threading the current input file through ExprAST_from()
 // call graph in ANTLRtoFosterAST.cpp.
-extern InputFile* gInputFile;
+extern const InputFile* gInputFile;
 
 struct SourceLocation {
   int line, column;
   SourceLocation(int line, int column) : line(line), column(column) {}
+
+  bool isValid() const { return SourceLocation(0, 0) < *this; }
   bool operator<(const SourceLocation& o) const {
     return (line < o.line || (line == o.line && column < o.column));
+  }
+
+  static SourceLocation getInvalidLocation() {
+    return SourceLocation(-1, -1);
   }
 };
 
@@ -28,12 +34,22 @@ public:
   const foster::InputFile* source;
   const foster::SourceLocation begin;
   const foster::SourceLocation end;
-  SourceRange(foster::InputFile* source,
+
+  SourceRange(const foster::InputFile* source,
               foster::SourceLocation begin,
               foster::SourceLocation end)
     : source(source), begin(begin), end(end) {}
-  bool empty() const { return !(begin < end); }
-  bool isSingleLine() const { return begin.line == end.line; }
+
+  bool isValid() const;
+  bool isJustStartLocation() const;
+  bool isEmpty() const;
+  bool isSingleLine() const;
+
+  static SourceRange getEmptyRange() {
+    return SourceRange(gInputFile,
+              SourceLocation::getInvalidLocation(),
+              SourceLocation::getInvalidLocation());
+  }
 };
 }
 
