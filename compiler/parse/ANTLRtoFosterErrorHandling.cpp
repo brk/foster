@@ -27,8 +27,56 @@ namespace foster {
 displayRecognitionErrorFunc sgDefaultDRE;
 
 // Handler functions should return false to prevent default ANTLR printouts.
-bool handleMissingToken(pANTLR3_EXCEPTION ex, pANTLR3_UINT8* tokenNames);
-bool handleNoViableAlt(pANTLR3_EXCEPTION ex, pANTLR3_UINT8* tokenNames);
+bool handleNoViableAlt(pANTLR3_EXCEPTION, const string&, const SourceRange&);
+bool handleGenericError(pANTLR3_EXCEPTION, const string&, const SourceRange&);
+bool handleMissingToken(pANTLR3_EXCEPTION, const string&, const SourceRange&);
+bool handleUnwantedToken(pANTLR3_EXCEPTION, const string&, const SourceRange&);
+bool handleMismatchedToken(pANTLR3_EXCEPTION, const string&, const SourceRange&);
+
+inline SourceLocation advanceColumn(foster::SourceLocation s, int n) {
+  return SourceLocation(s.line, s.column + n);
+}
+
+bool computeTokenText(string& outTokenText,
+                      pANTLR3_EXCEPTION ex,
+                      pANTLR3_UINT8* tokenNames) {
+  pANTLR3_COMMON_TOKEN tok = (pANTLR3_COMMON_TOKEN) ex->token;
+
+  bool isPhysicalToken = false;
+
+  if (ex->expecting == ANTLR3_TOKEN_EOF) {
+    outTokenText = "<EOF>";
+  } else if (!tokenNames) {
+    std::stringstream ss; ss << "<token ID " << ex->expecting << ">";
+    outTokenText = ss.str();
+  } else if (tok && ex->type != ANTLR3_MISSING_TOKEN_EXCEPTION) {
+    // The text for the physical token in the case of missing tokens
+    // is "missing 'TOKEN'" but we just want "TOKEN".
+    outTokenText = string((const char*)tok->getText(tok)->chars);
+    std::cout << "tok : " << outTokenText << "; tokenNames: "
+              << (const char*) tokenNames[ex->expecting] << std::endl;
+    isPhysicalToken = true;
+  } else {
+    // TODO names are e.g. ')' instead of ),
+    // which messes up highlighting
+    outTokenText = string((const char*)tokenNames[ex->expecting]);
+    std::cout << "tokenNames: " << outTokenText << std::endl;
+    isPhysicalToken = true;
+  }
+
+  return isPhysicalToken;
+}
+
+SourceRange computeSourceRange(pANTLR3_EXCEPTION ex,
+                               const string& tokenText,
+                               bool isPhysicalToken) {
+  //std::cout << "token text is " << tokenText
+  //            << ", start col is " << ex->charPositionInLine << std::endl;
+  SourceLocation errStart(ex->line - 1, ex->charPositionInLine);
+  SourceLocation errEnd
+     = advanceColumn(errStart, isPhysicalToken ? tokenText.size() : 1);
+  return SourceRange(gInputFile, errStart, errEnd);
+}
 
 // This function will get called when ANTLR's parser runs into a problem.
 // If we can't print a good error message, we'll simply defer to the
@@ -42,12 +90,25 @@ static void	customDisplayRecognitionErrorFunc
   bool doDefault = true;
   pANTLR3_EXCEPTION ex = recognizer->state->exception;
 
+  string tokenText;
+  bool isPhysicalToken = computeTokenText(tokenText, ex, tokenNames);
+  SourceRange sourceRange = computeSourceRange(ex, tokenText, isPhysicalToken);
+
   switch (ex->type) {
     case ANTLR3_MISSING_TOKEN_EXCEPTION:
-      doDefault = handleMissingToken(ex, tokenNames);
+      doDefault = handleMissingToken(ex, tokenText, sourceRange);
       break;
     case ANTLR3_NO_VIABLE_ALT_EXCEPTION:
-      doDefault = handleNoViableAlt(ex, tokenNames);
+      doDefault = handleNoViableAlt(ex, tokenText, sourceRange);
+      break;
+    case ANTLR3_MISMATCHED_TOKEN_EXCEPTION:
+      doDefault = handleMismatchedToken(ex, tokenText, sourceRange);
+      break;
+    case ANTLR3_RECOGNITION_EXCEPTION:
+      doDefault = handleGenericError(ex, tokenText, sourceRange);
+      break;
+    case ANTLR3_UNWANTED_TOKEN_EXCEPTION:
+      doDefault = handleUnwantedToken(ex, tokenText, sourceRange);
       break;
     default:
       break;
@@ -66,34 +127,15 @@ void installRecognitionErrorFilter(pANTLR3_BASE_RECOGNIZER recognizer) {
 
 /////////////////////////////////////////////////////////////////////
 
-inline SourceLocation advanceColumn(foster::SourceLocation s, int n) {
-  return SourceLocation(s.line, s.column + n);
-}
-
-bool handleMissingToken(pANTLR3_EXCEPTION ex, pANTLR3_UINT8* tokenNames) {
-  pANTLR3_COMMON_TOKEN tok = (pANTLR3_COMMON_TOKEN) ex->token;
-
-  SourceLocation errStart(ex->line - 1, ex->charPositionInLine);
-  string tokenText;
-  bool isPhysicalToken = false;
-
-  if (ex->expecting == ANTLR3_TOKEN_EOF) {
-    tokenText = "<EOF>";
-  } else if (!tokenNames) {
-    std::stringstream ss; ss << "<token ID " << ex->expecting << ">";
-    tokenText = ss.str();
-  } else {
-    tokenText = string((const char*)tokenNames[ex->expecting]);
-  }
-
-  SourceLocation errEnd
-     = advanceColumn(errStart, isPhysicalToken ? tokenText.size() : 1);
-
-  SourceRange r(gInputFile, errStart, errEnd);
+bool handleMissingToken(pANTLR3_EXCEPTION ex,
+                        const string& tokenText,
+                        const SourceRange& r) {
   std::cerr << "Warning: inserted missing " << tokenText << ":\n\n"
             << r << std::endl;
   return false;
 }
+
+/////////////////////////////////////////////////////////////////////
 
 int getFirstNonWhitespacePosition(llvm::StringRef line) {
   int i = 0, e = line.size();
@@ -115,39 +157,57 @@ const char* describeApproximateStartPosition(const SourceRange& r) {
   }
 }
 
-bool handleNoViableAlt(pANTLR3_EXCEPTION ex, pANTLR3_UINT8* tokenNames) {
-  pANTLR3_COMMON_TOKEN tok = (pANTLR3_COMMON_TOKEN) ex->token;
-  SourceLocation errStart(ex->line - 1, ex->charPositionInLine);
-  string tokenText;
-  bool isPhysicalToken = false;
-
-  if (ex->expecting == ANTLR3_TOKEN_EOF) {
-    tokenText = "<EOF>";
-  } else if (!tokenNames) {
-    std::stringstream ss; ss << "<token ID " << ex->expecting << ">";
-    tokenText = ss.str();
-  } else if (tok) {
-    tokenText = string((const char*)tok->getText(tok)->chars);
-    isPhysicalToken = true;
-  } else {
-    tokenText = string((const char*)tokenNames[ex->expecting]);
-    isPhysicalToken = true;
-  }
-
-  SourceLocation errEnd
-     = advanceColumn(errStart, isPhysicalToken ? tokenText.size() : 1);
-
-  SourceRange r(gInputFile, errStart, errEnd);
+bool handleNoViableAlt(pANTLR3_EXCEPTION ex,
+                        const string& tokenText,
+                        const SourceRange& r) {
   const char* approxPosition = describeApproximateStartPosition(r);
   std::cerr << r.source->getFilePath() << ":"
             << "error: got stuck parsing near the " << approxPosition
             << " of line " << (r.begin.line + 1) << ":\n\n"
             << r << std::endl;
-  if (tok) {
-    //std::cerr << tok->toString(tok)->chars << std::endl;
-  }
   return false;
 }
 
+/////////////////////////////////////////////////////////////////////
+
+bool handleMismatchedToken(pANTLR3_EXCEPTION ex,
+                        const string& tokenText,
+                        const SourceRange& r) {
+  const char* approxPosition = describeApproximateStartPosition(r);
+  std::cerr << r.source->getFilePath() << ":"
+            << "error: unexpected token near the " << approxPosition
+            << " of line " << (r.begin.line + 1) << ":\n\n"
+            << r << std::endl;
+  return false;
+}
+
+/////////////////////////////////////////////////////////////////////
+
+bool handleGenericError(pANTLR3_EXCEPTION ex,
+                        const string& tokenText,
+                        const SourceRange& r) {
+  const char* approxPosition = describeApproximateStartPosition(r);
+  std::cerr << r.source->getFilePath() << ":"
+            << "generic error: " << ((const char*) ex->message) << " near the " << approxPosition
+            << " of line " << (r.begin.line + 1) << ":\n\n"
+            << r << std::endl;
+  return false;
+}
+
+/////////////////////////////////////////////////////////////////////
+
+bool handleUnwantedToken(pANTLR3_EXCEPTION ex,
+                        const string& tokenText,
+                        const SourceRange& r) {
+  const char* approxPosition = describeApproximateStartPosition(r);
+  std::cerr << r.source->getFilePath() << ":"
+            << "error: " << ((const char*) ex->message)
+            << " " << tokenText  << " near the " << approxPosition
+            << " of line " << (r.begin.line + 1) << ":\n\n"
+            << r << std::endl;
+  return false;
+}
 } // namespace foster
+
+
 
