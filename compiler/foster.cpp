@@ -131,37 +131,42 @@ void createParser(ANTLRContext& ctx, const foster::InputFile& f) {
 
 VariableAST* checkAndGetLazyRefTo(PrototypeAST* p) {
   { TypecheckPass typ; p->accept(&typ); }
-  VariableAST* fnRef = new VariableAST(p->name, p->type);
+  VariableAST* fnRef = new VariableAST(p->name, p->type,
+                              foster::SourceRange::getEmptyRange());
   fnRef->lazilyInsertedPrototype = p;
 
   return fnRef;
 }
 
 VariableAST* proto(const Type* retTy, const std::string& fqName) {
-  return checkAndGetLazyRefTo(new PrototypeAST(retTy, fqName));
+  return checkAndGetLazyRefTo(new PrototypeAST(retTy, fqName,
+                                    foster::SourceRange::getEmptyRange()));
 }
 
 VariableAST* proto(const Type* retTy, const std::string& fqName,
     TypeAST* ty1) {
-  return checkAndGetLazyRefTo(new PrototypeAST(retTy, fqName,
-       new VariableAST("p1", ty1)));
+  VariableAST* p1 = new VariableAST("p1", ty1, foster::SourceRange::getEmptyRange());
+  return checkAndGetLazyRefTo(new PrototypeAST(retTy, fqName, p1,
+                                    foster::SourceRange::getEmptyRange()));
 }
 
 VariableAST* proto(const Type* retTy, const std::string& fqName,
     TypeAST* ty1, TypeAST* ty2) {
   std::vector<VariableAST*> inArgs;
-  inArgs.push_back(new VariableAST("p1", ty1));
-  inArgs.push_back(new VariableAST("p2", ty2));
-  return checkAndGetLazyRefTo(new PrototypeAST(retTy, fqName, inArgs));
+  inArgs.push_back(new VariableAST("p1", ty1, foster::SourceRange::getEmptyRange()));
+  inArgs.push_back(new VariableAST("p2", ty2, foster::SourceRange::getEmptyRange()));
+  return checkAndGetLazyRefTo(new PrototypeAST(retTy, fqName, inArgs,
+                                    foster::SourceRange::getEmptyRange()));
 }
 
 VariableAST* proto(const Type* retTy, const std::string& fqName,
     TypeAST* ty1, TypeAST* ty2, TypeAST* ty3) {
   std::vector<VariableAST*> inArgs;
-  inArgs.push_back(new VariableAST("p1", ty1));
-  inArgs.push_back(new VariableAST("p2", ty2));
-  inArgs.push_back(new VariableAST("p3", ty3));
-  return checkAndGetLazyRefTo(new PrototypeAST(retTy, fqName, inArgs));
+  inArgs.push_back(new VariableAST("p1", ty1, foster::SourceRange::getEmptyRange()));
+  inArgs.push_back(new VariableAST("p2", ty2, foster::SourceRange::getEmptyRange()));
+  inArgs.push_back(new VariableAST("p3", ty3, foster::SourceRange::getEmptyRange()));
+  return checkAndGetLazyRefTo(new PrototypeAST(retTy, fqName, inArgs,
+                                    foster::SourceRange::getEmptyRange()));
 }
 
 ExprAST* lookupOrCreateNamespace(ExprAST* ns, const string& part) {
@@ -377,7 +382,8 @@ void putModuleMembersInScope(Module* m, Module* linkee) {
         ty = pty->getElementType();
       }
 
-      varScope.insert(name, new VariableAST(name, TypeAST::get(ty)));
+      varScope.insert(name, new VariableAST(name, TypeAST::get(ty),
+                                  foster::SourceRange::getEmptyRange()));
       
       // Ensure that codegen for the given function finds the 'extern' declaration
       Value* decl = linkee->getOrInsertFunction(

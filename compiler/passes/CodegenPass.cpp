@@ -30,6 +30,8 @@ using llvm::ConstantInt;
 using llvm::APInt;
 using llvm::PHINode;
 
+using foster::SourceRange;
+
 typedef std::pair<const llvm::Type*, int> OffsetInfo;
 typedef std::set<OffsetInfo> OffsetSet;
 
@@ -700,9 +702,11 @@ void CodegenPass::visit(ClosureAST* ast) {
     std::cout << "\t\t\tclosure with empty env: " << ast << "; " << *ast << std::endl;
   }
 
-  TupleExprAST* env = new TupleExprAST(new SeqAST(ast->parts));
+  TupleExprAST* env = new TupleExprAST(new SeqAST(ast->parts,
+                                          SourceRange::getEmptyRange()),
+                                       SourceRange::getEmptyRange());
   ExprAST* fnPtr = new VariableAST(ast->fn->proto->name,
-                   RefTypeAST::get(ast->fn->type));
+                   RefTypeAST::get(ast->fn->type), SourceRange::getEmptyRange());
   { TypecheckPass tp;
     fnPtr->accept(&tp);
     fnPtr->accept(this);
@@ -1126,13 +1130,18 @@ FnAST* getVoidReturningVersionOf(ExprAST* arg, const llvm::FunctionType* fnty) {
     for (int i = 0; i < fnty->getNumParams(); ++i) {
       std::stringstream ss; ss << "a" << i;
       // TODO fix this...
-      VariableAST* a = new VariableAST(ss.str(), TypeAST::get(fnty->getParamType(i)));
+      VariableAST* a = new VariableAST(ss.str(),
+                             TypeAST::get(fnty->getParamType(i)),
+                             SourceRange::getEmptyRange());
       inArgs.push_back(a);
       callArgs.push_back(a);
     }
-    PrototypeAST* proto = new PrototypeAST(fnty->getVoidTy(getGlobalContext()), fnName, inArgs);
-    ExprAST* body = new CallAST(arg, callArgs);
-    FnAST* fn = new FnAST(proto, body);
+    PrototypeAST* proto = new PrototypeAST(
+                                fnty->getVoidTy(getGlobalContext()),
+                                fnName, inArgs,
+                                SourceRange::getEmptyRange());
+    ExprAST* body = new CallAST(arg, callArgs, SourceRange::getEmptyRange());
+    FnAST* fn = new FnAST(proto, body, SourceRange::getEmptyRange());
     { TypecheckPass tp; CodegenPass cp; fn->accept(&tp); fn->accept(&cp); }
     voidReturningVersions[fnName] = fn;
     return fn;
@@ -1185,7 +1194,8 @@ llvm::Value* getTrampolineForClosure(ClosureAST* cloAST) {
   // but LLVM requires that pointers passed to trampolines be "obvious" function
   // pointers. Thus, we need direct access to the closure's underlying fn.
   ExprAST* fnPtr = new VariableAST(cloAST->fn->proto->name,
-                               RefTypeAST::get(cloAST->fn->type));
+                               RefTypeAST::get(cloAST->fn->type),
+                               SourceRange::getEmptyRange());
   { TypecheckPass tp; CodegenPass cp;
     fnPtr->accept(&tp);
     fnPtr->accept(&cp);
@@ -1214,17 +1224,21 @@ FnAST* getClosureVersionOf(ExprAST* arg, const llvm::FunctionType* fnty) {
     std::vector<VariableAST*> inArgs;
     std::vector<ExprAST*> callArgs;
     inArgs.push_back(new VariableAST("__ignored_env__",
-        RefTypeAST::get(TypeAST::get(LLVMTypeFor("i8")))));
+        RefTypeAST::get(TypeAST::get(LLVMTypeFor("i8"))),
+        SourceRange::getEmptyRange()));
 
     for (int i = 0; i < fnty->getNumParams(); ++i) {
       std::stringstream ss; ss << "a" << i;
-      VariableAST* a = new VariableAST(ss.str(), TypeAST::get(fnty->getParamType(i)));
+      VariableAST* a = new VariableAST(ss.str(),
+                             TypeAST::get(fnty->getParamType(i)),
+                             SourceRange::getEmptyRange());
       inArgs.push_back(a);
       callArgs.push_back(a);
     }
-    PrototypeAST* proto = new PrototypeAST(fnty->getReturnType(), fnName, inArgs);
-    ExprAST* body = new CallAST(arg, callArgs);
-    FnAST* fn = new FnAST(proto, body);
+    PrototypeAST* proto = new PrototypeAST(fnty->getReturnType(),
+                               fnName, inArgs, SourceRange::getEmptyRange());
+    ExprAST* body = new CallAST(arg, callArgs, SourceRange::getEmptyRange());
+    FnAST* fn = new FnAST(proto, body, SourceRange::getEmptyRange());
     { TypecheckPass tp; CodegenPass cp; fn->accept(&tp); fn->accept(&cp); }
     closureVersions[fnName] = fn;
     return fn;
@@ -1346,7 +1360,8 @@ void CodegenPass::visit(CallAST* ast) {
       // The simplest approach is to lazily generate a "closure version" of any
       // functions we see being passed directly by name; it would forward
       // all parameters to the regular function, except for the env ptr.
-        ClosureAST* clo = new ClosureAST(getClosureVersionOf(arg, fnty));
+        ClosureAST* clo = new ClosureAST(getClosureVersionOf(arg, fnty),
+                                        SourceRange::getEmptyRange());
         std::cout << "clo 1347 = " << clo << std::endl;
         clo->hasKnownEnvironment = true; // Empty by definition!
         arg = clo;

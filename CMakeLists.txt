@@ -180,7 +180,8 @@ add_dependencies(libfoster_bc cpuid)
 
 enable_testing()
 
-add_test(bootstrap python ${PROJECT_SOURCE_DIR}/test/bootstrap/run_all.py
+add_test(bootstrap
+  python ${PROJECT_SOURCE_DIR}/test/bootstrap/run_all.py
   ${PROJECT_SOURCE_DIR}/test/bootstrap
   ${PROJECT_BINARY_DIR}
   ${PROJECT_BINARY_DIR}/test-bootstrap-output

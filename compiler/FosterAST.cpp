@@ -172,7 +172,8 @@ void FosterASTVisitor::onVisitChild(ExprAST* ast, ExprAST* child) {
 
 IntAST* literalIntAST(int lit) {
   std::stringstream ss; ss << lit;
-  IntAST* rv = new IntAST(string(ss.str()), string(ss.str()), 10);
+  string text = ss.str();
+  IntAST* rv = new IntAST(text, text, foster::SourceRange::getEmptyRange(), 10);
   // Assign the proper (smallest) int type to the literal
   { TypecheckPass tc; rv->accept(&tc); }
   return rv;

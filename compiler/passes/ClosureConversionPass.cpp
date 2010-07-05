@@ -225,7 +225,7 @@ void performClosureConversion(ClosureAST* closure) {
   // We must embed a typemap in the environment so the garbage collector
   // will be able to handle the closure in functions that can be passed
   // closures with multiple different environments.
-  NilExprAST* nilptr = new NilExprAST();
+  NilExprAST* nilptr = new NilExprAST(foster::SourceRange::getEmptyRange());
   nilptr->type = TypeAST::get(LLVMTypeFor("i8*"));
   envTypes.push_back(nilptr->type->getLLVMType());
   envExprs.push_back(nilptr);
@@ -243,7 +243,9 @@ void performClosureConversion(ClosureAST* closure) {
   std::cout << "Env ty: " << *envTy << std::endl;
 
   // Make (a pointer to) this record be the function's first parameter.
-  VariableAST* envVar = new VariableAST("env", RefTypeAST::get(TypeAST::get(envTy)));
+  VariableAST* envVar = new VariableAST("env",
+                              RefTypeAST::get(TypeAST::get(envTy)),
+                              foster::SourceRange::getEmptyRange());
   prependParameter(ast->proto, envVar);
 
   // Rewrite the function body to make all references to free vars
@@ -253,7 +255,10 @@ void performClosureConversion(ClosureAST* closure) {
     int envOffset = 1; // offset 0 is reserved for typemamp
     for (it = freeVars.begin(); it != freeVars.end(); ++it) {
       std::cout << "Rewriting " << *(*it) << " to go through env" << std::endl;
-      rex.staticReplacements[*it] = new SubscriptAST(envVar, literalIntAST(envOffset));
+      rex.staticReplacements[*it] = new SubscriptAST(
+                                          envVar,
+                                          literalIntAST(envOffset),
+                                          foster::SourceRange::getEmptyRange());
       ++envOffset;
     }
     ast->body->accept(&rex);
@@ -285,7 +290,10 @@ void lambdaLiftAnonymousFunction(FnAST* ast) {
   for (it = freeVars.begin(); it != freeVars.end(); ++it) {
     // For each free variable in the function:
     VariableAST* parentScopeVar = *it;
-    VariableAST* var = new VariableAST(parentScopeVar->name, parentScopeVar->type);
+    VariableAST* var = new VariableAST(
+                             parentScopeVar->name,
+                             parentScopeVar->type,
+                             foster::SourceRange::getEmptyRange());
 
     // add a parameter to the function prototype
     appendParameter(ast->proto, var);
