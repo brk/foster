@@ -10,7 +10,7 @@ options {
 tokens {
 	AS='as'; AT='at'; DO='do'; ID='id'; IF='if'; IN='in'; IS='is'; IT='it'; TO='to';
 	FOR='for'; NIL='nil'; TRUE='true'; FALSE='false'; AND='and'; OR='or';
-	COMPILES='__COMPILES__'; UNPACK='unpack'; STRUCTURE='struct';
+	COMPILES='__COMPILES__'; STRUCTURE='struct';
 
 	FN; OUT; BODY; GIVEN; GIVES; SEQ; INT; RAT; EXPRS; NAME; CTOR;
 	TRAILERS; CALL; TUPLE; SUBSCRIPT; LOOKUP; FORMAL; ARRAY; SIMD;
@@ -103,7 +103,7 @@ binop			:	'+' | '-' | '*' | '/' | '..'
 			|	AND | OR | '+=' | '-=' | '*=' | '/=';
 
 REF	:	'ref' | '?ref';
-prefix_unop		:	'-' | 'not' | 'new' | REF | COMPILES | UNPACK;
+prefix_unop		:	'-' | 'not' | 'new' | REF | COMPILES;
 
 nl : NEWLINE;
 

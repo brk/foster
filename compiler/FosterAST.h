@@ -304,7 +304,6 @@ struct CallAST : public ExprAST {
     parts.push_back(base);
     for (int i = 0; i < args.size(); ++i) parts.push_back(args[i]);
   }
-  // For now, call exprs must manually visit children in case of UnpackExprs
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
     out << "CallAST(base = " << str(this->parts[0]) << ", args = ";
@@ -610,15 +609,6 @@ struct AssignExprAST : public BinaryExprAST {
   virtual std::ostream& operator<<(std::ostream& out) const {
     return out << "AssignExprAST(lhs=" << str(this->parts[0])
         << ", rhs=" << str(parts[1]) << ")" << std::endl;
-  }
-};
-
-struct UnpackExprAST : public UnaryExprAST {
-  explicit UnpackExprAST(ExprAST* expr, foster::SourceRange sourceRange)
-    : UnaryExprAST(expr, sourceRange) {}
-  virtual void accept(FosterASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "(unpack " << str(this->parts[0]) << ")";
   }
 };
 

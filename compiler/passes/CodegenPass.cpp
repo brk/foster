@@ -1081,24 +1081,6 @@ void appendArg(std::vector<Value*>& valArgs, Value* V, const FunctionType* FT) {
   valArgs.push_back(V);
 }
 
-void unpackArgs(std::vector<Value*>& valArgs, Value* V, const FunctionType* FT) {
-  const llvm::StructType* st = llvm::dyn_cast<llvm::StructType>(V->getType());
-  if (!st) {
-    const llvm::PointerType* pt = llvm::dyn_cast<llvm::PointerType>(V->getType());
-    if (pt) {
-      st = llvm::dyn_cast<llvm::StructType>(pt->getTypeAtIndex(0U));
-    }
-  }
-
-  if (!st) {
-    // Recursively called; base case for non-structs is direct insertion
-    appendArg(valArgs, V, FT);
-  } else for (int j = 0; j < st->getNumElements(); ++j) {
-    // appendArg(...) for non-recursive unpack
-    unpackArgs(valArgs, getElementFromComposite(V, ConstantInt::get(Type::getInt32Ty(getGlobalContext()), j)), FT);
-  }
-}
-
 void tempHackExtendIntTypes(const FunctionType* FT, std::vector<Value*>& valArgs) {
   for (int i = 0; i < valArgs.size(); ++i) {
     valArgs[i] = tempHackExtendInt(valArgs[i], FT->getParamType(i));
@@ -1312,11 +1294,6 @@ void CodegenPass::visit(CallAST* ast) {
     // Args checked for nulls during typechecking
     ExprAST* arg = ast->parts[i];
 
-    UnpackExprAST* u = dynamic_cast<UnpackExprAST*>(arg);
-    if (u != NULL) { // arg i is an unpack expr
-      arg = u->parts[0]; // Replace unpack expr with underlying tuple expr
-    }
-
     ClosureAST* clo = NULL;
 
     const llvm::Type* expectedType = FT->getContainedType(i);
@@ -1397,11 +1374,7 @@ void CodegenPass::visit(CallAST* ast) {
       V = builder.CreateBitCast(getTrampolineForClosure(clo), expectedType, "trampfn");
     }
 
-    if (u != NULL) {
-      unpackArgs(valArgs, V, FT); // Unpack (recursively) nested structs
-    } else {
-      appendArg(valArgs, V, FT); // Don't unpack non 'unpack'-marked structs
-    }
+    appendArg(valArgs, V, FT); // Don't unpack non 'unpack'-marked structs
   }
 
   // Stack slot loads must be done after codegen for all arguments
@@ -1686,11 +1659,6 @@ void CodegenPass::visit(TupleExprAST* ast) {
 
   copyTupleTo(this, pt, ast);
   ast->value = pt;
-}
-
-// TODO: need tests for unpack outside of call
-void CodegenPass::visit(UnpackExprAST* ast) {
-  std::cerr << "Error: Cannot codegen an UnpackExprAST outside of a function call!" << std::endl;
 }
 
 void CodegenPass::visit(BuiltinCompilesExprAST* ast) {

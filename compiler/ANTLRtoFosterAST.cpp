@@ -786,9 +786,6 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
   if (token == COMPILES) {
      return new BuiltinCompilesExprAST(
                   ExprAST_from(child(tree, 0), fnMeansClosure), sourceRange); }
-  if (token == UNPACK) {
-     return new UnpackExprAST(
-                  ExprAST_from(child(tree, 0), fnMeansClosure), sourceRange); }
 
   if (isBinaryOp(text)) {
     ExprAST* lhs = ExprAST_from(child(tree, 0), fnMeansClosure);

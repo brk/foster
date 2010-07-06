@@ -807,20 +807,8 @@ void TypecheckPass::visit(CallAST* ast) {
       return;
     }
 
-    // TODO: add separate prepass to explicitly unpack UnpackExprASTs
-    if (UnpackExprAST* u = dynamic_cast<UnpackExprAST*>(arg)) {
-      if (const llvm::StructType* st = llvm::dyn_cast<llvm::StructType>(argTy->getLLVMType())) {
-        for (int j = 0; j < st->getNumElements(); ++j) {
-          actualTypes.push_back(TypeAST::get(st->getElementType(j)));
-          literalArgs.push_back(NULL);
-        }
-      } else {
-        std::cerr << "Error: call expression found UnpackExpr with non-struct type " << *argTy << std::endl;
-      }
-    } else {
-      actualTypes.push_back(argTy);
-      literalArgs.push_back(arg);
-    }
+    actualTypes.push_back(argTy);
+    literalArgs.push_back(arg);
   }
 
   int numParams = baseFT->getNumParams();
@@ -1102,22 +1090,6 @@ void TypecheckPass::visit(TupleExprAST* ast) {
 
   fail:
   return;
-}
-
-
-void TypecheckPass::visit(UnpackExprAST* ast) {
-  const llvm::Type* unpackeeType = 
-     ast->parts[0]->type->getLLVMType();
-  if (!llvm::isa<llvm::StructType>(unpackeeType)) {
-    std::cerr << "Cannot unpack non-struct expression:\n\t" << *(ast->parts[0])
-              << "of type\n\t" << *(unpackeeType) << std::endl;
-  } else {
-    // This is really just a valid non-null pointer; since an unpack
-    // "expression" is syntactic sugar for a complex expression that
-    // generates multiple values, it doesn't have a single well-defined type...
-    // But this is the closest thing, and is useful for type checking calls.
-    ast->type = ast->parts[0]->type;
-  }
 }
 
 void TypecheckPass::visit(BuiltinCompilesExprAST* ast) {

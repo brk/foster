@@ -306,13 +306,6 @@ void PrettyPrintPass::visit(SimdVectorAST* ast) {
   }
 }
 
-// unpack $0
-void PrettyPrintPass::visit(UnpackExprAST* ast) {
-  scan(PPToken("unpack"));
-  scan(PPToken(" "));
-  ast->parts[0]->accept(this);
-}
-
 // __COMPILES__ $0
 void PrettyPrintPass::visit(BuiltinCompilesExprAST* ast) {
   //scan(tBlockClose);

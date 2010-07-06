@@ -155,7 +155,6 @@ void ClosureConversionPass::visit(CallAST* ast)                {
 }
 void ClosureConversionPass::visit(ArrayExprAST* ast)           { return; }
 void ClosureConversionPass::visit(TupleExprAST* ast)           { return; }
-void ClosureConversionPass::visit(UnpackExprAST* ast)          { return; }
 void ClosureConversionPass::visit(BuiltinCompilesExprAST* ast) { return; }
 
 void prependParameter(PrototypeAST* ast, VariableAST* var) {
