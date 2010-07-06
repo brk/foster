@@ -2,5 +2,7 @@ glob:*.class
 glob:*.java
 glob:*~
 glob:.svn
+glob:.*.swp
 glob:output
 glob:third_party/chromium_base/base/*
+diff.txt
