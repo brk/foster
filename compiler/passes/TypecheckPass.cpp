@@ -5,6 +5,10 @@
 #include "TypecheckPass.h"
 #include "FosterAST.h"
 #include "FosterUtils.h"
+#include "base/Diagnostics.h"
+
+using foster::EDiag;
+using foster::show;
 
 #include "llvm/DerivedTypes.h"
 #include "llvm/LLVMContext.h"
@@ -688,7 +692,9 @@ void TypecheckPass::visit(SubscriptAST* ast) {
   }
 
   if (!compositeTy->indexValid(cidx) || vidx.isNegative()) {
-    llvm::errs() << "Error: attempt to index composite with invalid index '" << *cidx << "'" << "\n";
+    EDiag() << "Attempt to index composite with invalid index:"
+            << show(index);
+    //llvm::errs() << "Error: attempt to index composite with invalid index '" << *cidx << "'" << "\n";
     return;
   }
 
@@ -711,8 +717,8 @@ void TypecheckPass::visit(SubscriptAST* ast) {
     }
   }
 
-  llvm::outs() << "Indexing composite type " << str(compositeTy)
-               << " with index " << *cidx << "; neg? " << vidx.isNegative() << "\n";
+  //llvm::outs() << "Indexing composite type " << str(compositeTy)
+  //             << " with index " << *cidx << "; neg? " << vidx.isNegative() << "\n";
 
   // TODO need to avoid losing typeinfo here
   ast->type = TypeAST::get(compositeTy->getTypeAtIndex(cidx));

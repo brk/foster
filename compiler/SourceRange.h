@@ -6,8 +6,7 @@
 #define FOSTER_SOURCERANGE_H
 
 #include "InputFile.h"
-
-#include <ostream>
+#include "llvm/Support/raw_os_ostream.h"
 
 namespace foster {
 
@@ -46,7 +45,7 @@ public:
   bool isEmpty() const;
   bool isSingleLine() const;
 
-  void highlightWithCaret(std::ostream& out, SourceLocation caret) const;
+  void highlightWithCaret(llvm::raw_ostream& out, SourceLocation caret) const;
 
   static SourceRange getEmptyRange() {
     return SourceRange(gInputFile,
@@ -57,7 +56,8 @@ public:
 } // namespace foster
 
 inline std::ostream& operator <<(std::ostream& out, const foster::SourceRange& r) {
-  r.highlightWithCaret(out, r.begin);
+  llvm::raw_os_ostream raw(out);
+  r.highlightWithCaret(raw, r.begin);
   return out;
 }
 

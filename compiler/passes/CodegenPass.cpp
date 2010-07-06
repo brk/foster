@@ -158,7 +158,7 @@ llvm::GlobalVariable* emitTypeMap(const llvm::Type* ty, std::string name,
   using llvm::StructType;
 
   OffsetSet pointerOffsets = countPointersInType(ty);
-  std::cout << "emitting type map for type " << *ty << " ; skipping offset zero? " << skipOffsetZero << std::endl;
+  //std::cout << "emitting type map for type " << *ty << " ; skipping offset zero? " << skipOffsetZero << std::endl;
 
   if (skipOffsetZero) {
     // Remove entry for first pointer, which corresponds
@@ -1266,8 +1266,8 @@ void CodegenPass::visit(CallAST* ast) {
   ExprAST* base = ast->parts[0];
   assert (base != NULL);
 
-  std::cout << "\t" << "Codegen CallAST "  << (base) << std::endl;
-  std::cout << "\t\t\tbase ast: "  << *(base) << std::endl;
+  //std::cout << "\t" << "Codegen CallAST "  << (base) << std::endl;
+  //std::cout << "\t\t\tbase ast: "  << *(base) << std::endl;
 
   // TODO if base has closure type, it should be a ClosureAST node
 
@@ -1379,8 +1379,8 @@ void CodegenPass::visit(CallAST* ast) {
       // function pointer values e.g. from a lookup table.
       }
 
-      std::cout << "codegen CallAST arg " << (i-1) << "; argty " << *(arg->type)
-                << " vs fn arg ty " << *(FT->getContainedType(i)) << std::endl;
+      //std::cout << "codegen CallAST arg " << (i-1) << "; argty " << *(arg->type)
+      //          << " vs fn arg ty " << *(FT->getContainedType(i)) << std::endl;
     } else {
       clo = dynamic_cast<ClosureAST*>(arg);
     }
@@ -1469,8 +1469,6 @@ void CodegenPass::visit(CallAST* ast) {
 
   // Temporary hack: if a function expects i8 and we have i1, manually convert
   tempHackExtendIntTypes(FT, valArgs);
-
-  std::cout << *FT <<  " ; " << isVoid(FT->getReturnType()) << std::endl;
 
   if (isVoid(FT->getReturnType())) {
     ast->value = builder.CreateCall(FV, valArgs.begin(), valArgs.end());
@@ -1659,7 +1657,7 @@ bool structTypeContainsPointers(const llvm::StructType* ty) {
 void CodegenPass::visit(TupleExprAST* ast) {
   if (ast->value) return;
 
-  std::cout << "CodegenPass visiting TupleExprAST " << ast << std::endl;
+  //std::cout << "CodegenPass visiting TupleExprAST " << ast << std::endl;
 
   assert(ast->type != NULL);
 

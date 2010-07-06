@@ -46,7 +46,7 @@ bool SourceRange::isSingleLine() const {
   return begin.line == end.line && begin.line >= 0;
 }
 
-void SourceRange::highlightWithCaret(std::ostream& out,
+void SourceRange::highlightWithCaret(llvm::raw_ostream& out,
                                      SourceLocation caret) const {
   if (isEmpty()) {
     out << "<" << source->getFilePath()
