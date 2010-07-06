@@ -634,9 +634,8 @@ void TypecheckPass::visit(AssignExprAST* ast) {
 
 // Returns aggregate and vector types directly, and returns the underlying
 // aggregate type for pointer-to-aggregate. Returns NULL in other cases.
-const llvm::CompositeType* getIndexableType(const llvm::Type* ty) {
+const llvm::CompositeType* tryGetIndexableType(const llvm::Type* ty) {
   const llvm::Type* baseType = ty;
-  //std::cout << "getIndexableType: " << *ty << std::endl;
   if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
     ty = pty->getElementType();
   }
@@ -644,7 +643,6 @@ const llvm::CompositeType* getIndexableType(const llvm::Type* ty) {
   if (ty->isAggregateType() || llvm::isa<llvm::VectorType>(ty)) {
     return llvm::dyn_cast<llvm::CompositeType>(ty);
   } else {
-    std::cerr << "Error: Cannot index into non-aggregate type " << *baseType << std::endl;
     return NULL;
   }
 }
@@ -658,12 +656,8 @@ void TypecheckPass::visit(SubscriptAST* ast) {
   ExprAST* index = ast->parts[1];
   IntAST* idx = dynamic_cast<IntAST*>(index);
   if (!idx) {
-    std::cerr << "Error: SubscriptAST needs constant int (IntAST) index; got '"
-              << *(index) << "'";
-    if (index->type) {
-      std::cerr << " of type " << *(index->type);
-    }
-    std::cerr << std::endl;
+    EDiag() << "SubscriptAST (for now) needs constant int index"
+            << show(index);
     return;
   }
 
@@ -674,9 +668,10 @@ void TypecheckPass::visit(SubscriptAST* ast) {
   }
 
   const llvm::Type* loweredBaseType = baseType->getLLVMType();
-  const llvm::CompositeType* compositeTy = getIndexableType(loweredBaseType);
+  const llvm::CompositeType* compositeTy = tryGetIndexableType(loweredBaseType);
   if (compositeTy == NULL) {
-    std::cerr << "Error: attempt to index into a non-composite type " << *baseType << std::endl;
+    EDiag() << "attempt to index into a non-composite type "
+            << str(baseType) << show(ast);
     return;
   }
 
@@ -692,9 +687,8 @@ void TypecheckPass::visit(SubscriptAST* ast) {
   }
 
   if (!compositeTy->indexValid(cidx) || vidx.isNegative()) {
-    EDiag() << "Attempt to index composite with invalid index:"
+    EDiag() << "attempt to index composite with invalid index:"
             << show(index);
-    //llvm::errs() << "Error: attempt to index composite with invalid index '" << *cidx << "'" << "\n";
     return;
   }
 

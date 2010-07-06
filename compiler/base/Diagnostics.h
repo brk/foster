@@ -19,6 +19,10 @@ struct SourceRangeHighlighter {
 };
 
 SourceRangeHighlighter show(ExprAST* ast) {
+  if (!ast) {
+    SourceLocation empty = SourceLocation::getInvalidLocation();
+    return SourceRangeHighlighter(SourceRange(NULL, empty, empty), empty);
+  }
   SourceRangeHighlighter h(ast->sourceRange, ast->sourceRange.begin);
   return h;
 }
@@ -33,25 +37,30 @@ protected:
   SourceLocation sourceLoc;
 
   DiagBase(llvm::raw_ostream& out, const char* levelstr)
-    : levelstr(levelstr), msg(msgstr), out(out), sourceLoc(-1, -1) {}
+    : levelstr(levelstr), msg(msgstr), out(out), sourceFile(NULL), sourceLoc(-1, -1) {}
   ~DiagBase() {
-    if (sourceFile) {
-       out << sourceFile->getFilePath()
-           << ":" << sourceLoc.line << ":" << sourceLoc.column
-           << ": " << levelstr
-           << ": " << msg.str() << '\n';
-    } else { out << msg.str() << '\n';  }
+    const InputFile* source = (sourceFile ? sourceFile : gInputFile);
+    out << source->getFilePath();
+    if (sourceLoc.isValid()) {
+      out << ":" << sourceLoc.line << ":" << sourceLoc.column;
+    }
+    out << ": " << levelstr
+        << ": " << msg.str() << '\n';
   }
 
   virtual void add(const char* str) { msg << str; }
+  virtual void add(const std::string& str) { msg << str; }
   virtual void add(const SourceRangeHighlighter& h) {
-    sourceFile = h.r.source;
-    sourceLoc  = h.caret;
-    msg << '\n';
-    h.r.highlightWithCaret(msg, h.caret);
+    if (h.r.source) {
+      sourceFile = h.r.source;
+      sourceLoc  = h.caret;
+      msg << '\n';
+      h.r.highlightWithCaret(msg, h.caret);
+    }
   }
 public:
   DiagBase& operator<<(const char* str) { add(str); return *this; }
+  DiagBase& operator<<(const std::string& str) { add(str); return *this; }
   DiagBase& operator<<(const SourceRangeHighlighter& h) { add(h); return *this; }
 };
 
