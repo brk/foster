@@ -328,6 +328,12 @@ static cl::opt<bool>
 optDumpASTs("dump-asts",
   cl::desc("[foster] Dump intermediate ASTs (and ANLTR parse tree)"));
 
+#ifdef LLVM_GE_2_8
+static cl::opt<bool>
+optDumpStats("dump-stats",
+  cl::desc("[foster] Dump timing and other statistics from compilation"));
+#endif
+
 static cl::opt<bool>
 optOptimizeZero("O0",
   cl::desc("[foster] Disable optimization passes after linking with standard library"));
@@ -750,6 +756,15 @@ int main(int argc, char** argv) {
     dumpModuleToBitcode(module, dumpdirFile("out.bc"));
   }
   // TODO invoke g++ .s -> exe
+
+#ifdef LLVM_GE_2_8
+  if (optDumpStats) {
+    std::string err;
+    llvm::raw_fd_ostream out(dumpdirFile("stats.txt").c_str(), err);
+    llvm::PrintStatistics(out);
+  }
+#endif
+
   return 0;
 }
 
