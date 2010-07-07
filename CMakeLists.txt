@@ -147,6 +147,7 @@ endif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
 #####################################################################
 include(${PROJECT_SOURCE_DIR}/third_party/chromium_base/CMakeLists.txt)
 include(${PROJECT_SOURCE_DIR}/third_party/cpuid/CMakeLists.txt)
+include(${PROJECT_SOURCE_DIR}/third_party/gtest/CMakeLists.txt)
 
 add_executable(fosterc
   compiler/foster.cpp
@@ -156,6 +157,7 @@ add_executable(fosterc
   compiler/FosterUtils.cpp
   compiler/FosterTypeAST.cpp
   compiler/ANTLRtoFosterAST.cpp
+  compiler/base/PathManager.cpp
   compiler/passes/CodegenPass.cpp
   compiler/passes/TypecheckPass.cpp
   compiler/passes/PrettyPrintPass.cpp
@@ -178,6 +180,12 @@ add_dependencies(libfoster_bc cpuid)
 
 #####################################################################
 
+add_executable(unittest_fosterc
+  ${PROJECT_SOURCE_DIR}/compiler/base/PathManager_unittest.cpp)
+target_link_libraries(unittest_fosterc gtest_main ${LLVM_LDFLAGS})
+
+#####################################################################
+
 enable_testing()
 
 add_test(bootstrap
@@ -190,3 +198,7 @@ add_test(bootstrap
 # Look for non-silent diff -u output
 set(CTEST_CUSTOM_ERROR_MATCH ${CTEST_CUSTOM_ERROR_MATCH}
   "[1-9][0-9] tests failed")
+
+add_test(NAME fosterc
+  COMMAND ${PROJECT_BINARY_DIR}/unittest_fosterc)
+
