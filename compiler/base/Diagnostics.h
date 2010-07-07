@@ -48,6 +48,7 @@ protected:
         << ": " << msg.str() << '\n';
   }
 
+  virtual void add(int64_t i) { msg << i; }
   virtual void add(const char* str) { msg << str; }
   virtual void add(const std::string& str) { msg << str; }
   virtual void add(const SourceRangeHighlighter& h) {
@@ -59,6 +60,7 @@ protected:
     }
   }
 public:
+  DiagBase& operator<<(int64_t i) { add(i); return *this; }
   DiagBase& operator<<(const char* str) { add(str); return *this; }
   DiagBase& operator<<(const std::string& str) { add(str); return *this; }
   DiagBase& operator<<(const SourceRangeHighlighter& h) { add(h); return *this; }
