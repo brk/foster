@@ -33,14 +33,15 @@ execute_process(COMMAND ${LLVM_CONFIG} --cppflags
   OUTPUT_VARIABLE LLVM_CFLAGS
 )
 
-# Hack for now: rather than running all programs JITted from the main foster
+# We want to control whether our binaries are compiled
+# in debug mode independently of whether LLVM was so compiled.
+string(REPLACE "-DNDEBUG" "" LLVM_CFLAGS "${LLVM_CFLAGS}")
+string(REPLACE "-g" "" LLVM_CFLAGS "${LLVM_CFLAGS}")
+
+# Hack for now: rather than running all programs JITted from the main fosterc
 # compiler binary (and embedding the foster runtime inside the foster compiler)
 # we instead compile the foster runtime with llvm-g++ to bitcode, then link the
 # foster runtime bitcode in along with the bitcode for a program to run it.
-# For now I'm reusing an older version 2.5 llvm-g++ installation rather than
-# installing the MacPorts version. Since (I hope?) there is link compatibility
-# of bitcode files produced with different versions of llvm-g++, it shouldn't
-# be a problem...
 find_program(LLVM_G++ NAMES llvm-g++ clang++ clang
   PATHS
         /usr/bin
@@ -50,11 +51,7 @@ find_program(LLVM_G++ NAMES llvm-g++ clang++ clang
   DOC "C++ compiler to emit LLVM bytecode: llvm-g++ or clang++")
 
 
-execute_process(COMMAND ${LLVM_CONFIG} --bindir
-  OUTPUT_VARIABLE LLVM_BINDIR
-)
-
-message("LLVM_CONFIG is ${LLVM_CONFIG}")
+execute_process(COMMAND ${LLVM_CONFIG} --bindir OUTPUT_VARIABLE LLVM_BINDIR)
 
 # If llvm-config isn't found, LLVM_BINDIR will be empty
 # and CMake will report an error here.
@@ -89,19 +86,20 @@ add_custom_command(
 	${PROJECT_SOURCE_DIR}/scripts/run_antlr.py
 )
 
-set(LIBFOSTER_CPP_SOURCES
-	${PROJECT_SOURCE_DIR}/runtime/libfoster.cpp
-	${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc.cpp
-)
-
 add_custom_command(
   OUTPUT ${PROJECT_BINARY_DIR}/libfoster_main.o
   COMMAND 	
-	g++ ${PROJECT_SOURCE_DIR}/runtime/libfoster_main.cpp
+	${CMAKE_CXX_COMPILER}
+          ${PROJECT_SOURCE_DIR}/runtime/libfoster_main.cpp
 	  -I ${PROJECT_SOURCE_DIR}/runtime/gc/
 		-c -o ${PROJECT_BINARY_DIR}/libfoster_main.o
   DEPENDS
 	${PROJECT_SOURCE_DIR}/runtime/libfoster_main.cpp
+)
+
+set(LIBFOSTER_CPP_SOURCES
+	${PROJECT_SOURCE_DIR}/runtime/libfoster.cpp
+	${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc.cpp
 )
 
 # Use llvm-g++ to build libfoster.bc
@@ -181,7 +179,8 @@ add_dependencies(libfoster_bc cpuid)
 #####################################################################
 
 add_executable(unittest_fosterc
-  ${PROJECT_SOURCE_DIR}/compiler/base/PathManager_unittest.cpp)
+  ${PROJECT_SOURCE_DIR}/compiler/base/PathManager_unittest.cpp
+)
 target_link_libraries(unittest_fosterc gtest_main ${LLVM_LDFLAGS})
 
 #####################################################################
