@@ -447,7 +447,8 @@ void CodegenPass::visit(VariableAST* ast) {
 #endif
 
   if (!ast->value) {
-    std::cerr << "Error: CodegenPass: Unknown variable name " << ast->name << std::endl;
+    EDiag() << "Unknown variable name " << ast->name << " in CodegenPass"
+            << show(ast);
   }
 }
 
@@ -458,14 +459,14 @@ void CodegenPass::visit(UnaryOpExprAST* ast) {
   const std::string& op = ast->op;
 
   if (!V) {
-    std::cerr << "Error: unary expr " << op << " had null operand" << std::endl;
+    EDiag() << "unary op " << op << " had null operand" << show(ast);
     return;
   }
 
        if (op == "-")   { ast->value = builder.CreateNeg(V, "negtmp"); }
   else if (op == "not") { ast->value = builder.CreateNot(V, "nottmp"); }
   else {
-    std::cerr << "Error: unknown unary op '" << op << "' encountered during codegen" << std::endl;
+    EDiag() << "unknown unary op '" << op << "' during codegen" << show(ast);
   }
 }
 
@@ -484,7 +485,7 @@ void CodegenPass::visit(BinaryOpExprAST* ast) {
   const std::string& op = ast->op;
 
   if (!VL || !VR) {
-    std::cerr << "Error: binary expr " << op << " had null subexpr" << std::endl;
+    EDiag() << "binary '" << op << "' had null operand " << show(ast);
     return;
   }
 
@@ -514,7 +515,7 @@ void CodegenPass::visit(BinaryOpExprAST* ast) {
   else if (op == "bitlshr") { ast->value = builder.CreateLShr(VL, VR, "lshrtmp"); }
   else if (op == "bitashr") { ast->value = builder.CreateAShr(VL, VR, "ashrtmp"); }
   else {
-    std::cerr << "Couldn't gen code for op " << op << endl;
+    EDiag() << "unable to codegen binary '" << op << "'" << show(ast);
   }
 }
 
@@ -628,7 +629,11 @@ void CodegenPass::visit(FnAST* ast) {
   scope.insert(ast->proto->name, F);
   (ast->body)->accept(this);
   Value* RetVal = ast->body->value;
-  if (RetVal == NULL) std::cerr << "Oops, null body value in fn " << ast->proto->name << std::endl;
+  if (RetVal == NULL) {
+    EDiag() << "null body value when codegenning function " << ast->proto->name
+            << show(ast);
+    return;
+  }
   assert (RetVal != NULL);
 
   bool returningVoid = isVoid(ast->proto->resultTy);
@@ -647,7 +652,7 @@ void CodegenPass::visit(FnAST* ast) {
     if (returningVoid) {
       builder.CreateRetVoid();
     } else if (isVoid(RetVal->getType())) {
-      std::cerr << "Error! Can't return non-void value given only a void value!\n";
+      EDiag() << "unable to return non-void value given only void" << show(ast);
     } else {
       builder.CreateRet(RetVal);
     }
@@ -689,9 +694,10 @@ void CodegenPass::visit(ClosureAST* ast) {
   if (ast->value) return;
 
   if (!ast->hasKnownEnvironment) {
-    std::cerr << "Error! Closure made it past closure conversion without getting an environment type!" << std::endl;
+    EDiag() << "closure made it to codegen with no environment type" << show(ast);
   }
 
+#if 0
   for (int i = 0; i < ast->parts.size(); ++i) {
     std::cout << "Codegen ClosureAST, part: " << *ast->parts[i] << std::endl;
     std::cout << "Codegen ClosureAST, part: " << *ast->parts[i]->type << std::endl;
@@ -701,6 +707,7 @@ void CodegenPass::visit(ClosureAST* ast) {
   if (ast->parts.size() == 0) {
     std::cout << "\t\t\tclosure with empty env: " << ast << "; " << *ast << std::endl;
   }
+#endif
 
   TupleExprAST* env = new TupleExprAST(new SeqAST(ast->parts,
                                           SourceRange::getEmptyRange()),
@@ -722,8 +729,10 @@ void CodegenPass::visit(ClosureAST* ast) {
     }
   }
 
+#if 0
   llvm::errs() << "Closure conversion " << ast->fn->proto->name << "\n\tfnPtr value: "
       << *fnPtr->value << "\n\tFunction? " << llvm::isa<Function>(fnPtr->value) << "\n";
+#endif
 
   if (FnTypeAST* fnTy = dynamic_cast<FnTypeAST*>(ast->fn->type)) {
     // Manually build struct for now, since we don't have PtrAST nodes
@@ -731,14 +740,14 @@ void CodegenPass::visit(ClosureAST* ast) {
         llvm::cast<FunctionType>(fnTy->getLLVMType()));
     TupleTypeAST* genericCloTy = genericVersionOfClosureType(fnTy);
 
+#if 0
     std::cout << std::endl;
     std::cout << "Fn type: " << *fnTy << std::endl;
     std::cout << "Specific closure type: " << *specificCloTy << std::endl;
     std::cout << "Generic closure type: " << *genericCloTy << std::endl;
+#endif
 
     addClosureTypeName(module, llvm::cast<llvm::StructType>(genericCloTy->getLLVMType()));
-
-    std::cout << __FILE__ << ":" << __LINE__ << std::endl;
 
     // { code*, env* }*
     llvm::AllocaInst* clo = CreateEntryAlloca(specificCloTy, "closure");
@@ -750,8 +759,6 @@ void CodegenPass::visit(ClosureAST* ast) {
     // (code*)*
     Value* clo_code_slot = builder.CreateConstGEP2_32(clo, 0, 0, "clo_code");
     builder.CreateStore(fnPtr->value, clo_code_slot, /*isVolatile=*/ false);
-
-    std::cout << __FILE__ << ":" << __LINE__ << std::endl;
 
     // (env*)*
     Value* clo_env_slot = builder.CreateConstGEP2_32(clo, 0, 1, "clo_env");
@@ -777,21 +784,15 @@ void CodegenPass::visit(ClosureAST* ast) {
           /* isVolatile= */ false);
     }
 
-
-
-
-    std::cout << __FILE__ << ":" << __LINE__ << std::endl;
-
     Value* genericClo = builder.CreateBitCast(clo,
         llvm::PointerType::getUnqual(genericCloTy->getLLVMType()), "hideCloTy");
     ast->value = builder.CreateLoad(genericClo, /*isVolatile=*/ false, "loadClosure");
   }
 
   if (!ast->value) {
-    std::cerr << "Closure fn ref had non-function pointer type?!? " << *(ast->fn->type) << std::endl;
+    EDiag() << "closure fn ref had non-function pointer type?!? "
+            << str(ast->fn->type) << show(ast);
   }
-
-  std::cout << __FILE__ << ":" << __LINE__ << std::endl;
 }
 
 struct LazyValue { virtual Value* get() const = 0; };
@@ -817,7 +818,9 @@ PHINode* codegenIfExpr(Value* cond,
   builder.SetInsertPoint(thenBB);
   Value* then = lazyThen.get();
   if (!then) {
-    std::cerr << "Codegen for if condition failed due to missing Value for 'then' part";
+    EDiag() << "codegen for if expr failed due to missing 'then' branch"
+            << show(ast);
+    return;
   }
   builder.CreateBr(mergeBB);
   thenBB = builder.GetInsertBlock();
@@ -826,7 +829,9 @@ PHINode* codegenIfExpr(Value* cond,
   builder.SetInsertPoint(elseBB);
   Value* else_ = lazyElse.get();
   if (!else_) {
-    std::cerr << "Codegen for if condition failed due to missing Value for 'else' part";
+    EDiag() << "codegen for if expr failed due to missing 'else' branch"
+            << show(ast);
+    return;
   }
   builder.CreateBr(mergeBB);
   elseBB = builder.GetInsertBlock();
@@ -1026,13 +1031,14 @@ Value* getElementFromComposite(Value* compositeValue, Value* idxValue) {
     if (llvm::isa<llvm::Constant>(idxValue)) {
       return builder.CreateExtractElement(compositeValue, idxValue, "simdexv");
     } else {
-      std::cerr << "TODO: codegen for indexing vectors by non-constants " << __FILE__ << ":" << __LINE__ << std::endl;
-      // TODO
+      EDiag() << "TODO: codegen for indexing vectors by non-constants"
+              << __FILE__ << ":" << __LINE__ << "\n";
     }
   } else {
-    llvm::errs() << "Cannot index into value type " << *compositeType << " with non-constant index " << *idxValue << "\n";
-    return NULL;
+    llvm::errs() << "Cannot index into value type " << *compositeType
+                 << " with non-constant index " << *idxValue << "\n";
   }
+  return NULL;
 }
 
 void CodegenPass::visit(SubscriptAST* ast) {
@@ -1128,8 +1134,8 @@ FnAST* getVoidReturningVersionOf(ExprAST* arg, const llvm::FunctionType* fnty) {
     voidReturningVersions[fnName] = fn;
     return fn;
   } else {
-    std::cerr << "Error! getVoidReturningVersionOf() expected a variable naming a fn!\n";
-    std::cerr << "\tInstead, got: " << *arg << std::endl;
+    EDiag() << "getVoidReturningVersionOf() expected a variable naming a fn, "
+            << "but got" << show(arg);
     exit(1);
   }
   return NULL;
@@ -1225,8 +1231,8 @@ FnAST* getClosureVersionOf(ExprAST* arg, const llvm::FunctionType* fnty) {
     closureVersions[fnName] = fn;
     return fn;
   } else {
-    std::cerr << "Error! getClosureVersionOf() expected a variable naming a fn!\n";
-    std::cerr << "\tInstead, got: " << *arg << std::endl;
+    EDiag() << "getClosureVersionOf() expected a variable naming a fn, "
+            << "but got" << show(arg);
     exit(1);
   }
   return NULL;
@@ -1281,12 +1287,8 @@ void CodegenPass::visit(CallAST* ast) {
       FV = builder.CreateExtractValue(clo, 0, "getCloCode");
     }
   } else {
-    // Call to something we don't know how to call!
-    std::cerr << "base: " << *base;
-    llvm::errs() << "; FV: " << *FV << "\n";
-    std::cerr << "Unknown function referenced!" << std::endl;
-    if (FV != NULL) { llvm::errs() << "\tFV: "  << *(FV) << "\n"; }
-
+    EDiag() << "call to uncallable something" << show(base)
+            << "\nFV: " << str(FV);
     return;
   }
 
@@ -1365,7 +1367,8 @@ void CodegenPass::visit(CallAST* ast) {
     arg->accept(this);
     Value* V = arg->value;
     if (!V) {
-      std::cerr << "Error: null value for argument " << (i - 1) << " found in CallAST codegen!" << std::endl;
+      EDiag() << "null value for argument " << (i - 1) << " of call"
+              << show(arg);
       return;
     }
 
@@ -1436,7 +1439,9 @@ void CodegenPass::visit(CallAST* ast) {
 
   int expectedNumArgs = FT->getNumParams();
   if (expectedNumArgs != valArgs.size()) {
-    std::cerr << "Function " << *base <<  " got " << valArgs.size() << " args, expected "<< expectedNumArgs << std::endl;
+    EDiag() << "function arity mismatch, got " << valArgs.size()
+            << " but expected " << expectedNumArgs
+            << show(base);
     return;
   }
 
@@ -1489,13 +1494,13 @@ llvm::GlobalVariable* getGlobalArrayVariable(SeqAST* body, const llvm::ArrayType
   for (int i = 0; i < body->parts.size(); ++i) {
     IntAST* v = dynamic_cast<IntAST*>(body->parts[i]);
     if (!v) {
-      std::cerr << "Array initializer was not IntAST but instead " << *v << std::endl;
+      EDiag() << "array initializer was not IntAST" << show(body->parts[i]);
       return NULL;
     }
 
     ConstantInt* ci = llvm::dyn_cast<ConstantInt>(v->getConstantValue());
     if (!ci) {
-      std::cerr << "Failed to cast array initializer value to ConstantInt" << std::endl;
+      EDiag() << "array initializer was not a constant" << show(body->parts[i]);
       return NULL;
     }
     arrayElements.push_back(ci);
@@ -1611,8 +1616,9 @@ void copyTupleTo(CodegenPass* pass, Value* pt, TupleExprAST* ast) {
       } else if (isPointerToType(dst->getType(), part->value->getType())) {
         builder.CreateStore(part->value, dst, /*isVolatile=*/ false);
       } else {
-        std::cerr << "Can't store a value of type " << *(part->value->getType())
-            << " in a pointer of type " << *(dst->getType()) << std::endl;
+        EDiag() << "can't store a value of type " << str(part->value->getType())
+                << " through a pointer of type " << str(dst->getType())
+                << show(part);
       }
     }
   }
@@ -1629,8 +1635,6 @@ bool structTypeContainsPointers(const llvm::StructType* ty) {
 
 void CodegenPass::visit(TupleExprAST* ast) {
   if (ast->value) return;
-
-  //std::cout << "CodegenPass visiting TupleExprAST " << ast << std::endl;
 
   assert(ast->type != NULL);
 
@@ -1667,7 +1671,7 @@ void CodegenPass::visit(BuiltinCompilesExprAST* ast) {
   } else if (ast->status == ast->kWouldNotCompile) {
     ast->value = ConstantInt::getFalse(getGlobalContext());
   } else {
-    std::cerr << "Error: __COMPILES__ expr not checked!" << std::endl;
+    EDiag() << "__COMPILES__ expression not checked" << show(ast);
     ast->value = ConstantInt::getFalse(getGlobalContext());
   }
 }
