@@ -615,7 +615,13 @@ TypeAST* parseCtorType(pTree tree,
     // e.g. simd-vector of 4 i32
     TypeAST* size = TypeAST_from(child(seqArgs, 0));
     TypeAST* type = TypeAST_from(child(seqArgs, 1));
-    return SimdVectorTypeAST::get(size, type, sourceRange);
+    if (LiteralIntTypeAST* litsize = dynamic_cast<LiteralIntTypeAST*>(size)) {
+      return SimdVectorTypeAST::get(litsize, type, sourceRange);
+    } else {
+      EDiag() << "simd-vector type must be parameterized by a literal int size"
+              << show(rangeOf(child(seqArgs, 0)));
+      return NULL;
+    }
   }
   if (name == "array") {
     foster::EDiag() << "array types not yet supported!"
@@ -919,12 +925,16 @@ TypeAST* TypeAST_from(pTree tree) {
   string text = textOf(tree);
   foster::SourceRange sourceRange = rangeOf(tree);
 
-  if (token == PARENEXPR) {
-    return TypeAST_from(child(tree, 0));
-  }
+  if (token == PARENEXPR) { return TypeAST_from(child(tree, 0));  }
+  if (token == CTOR) { return parseCtorType(tree, sourceRange);  }
 
-  if (token == CTOR) {
-    return parseCtorType(tree, sourceRange);
+  if (token == INT) {
+    IntAST* ast = parseIntFrom(tree);
+    if (ast) {
+      TypecheckPass tp; ast->accept(&tp);
+      uint64_t val = getSaturating<uint64_t>(ast->getConstantValue());
+      return new LiteralIntTypeAST(val, sourceRange);
+    }
   }
 
   if (token == NAME) {

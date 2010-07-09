@@ -5,7 +5,9 @@
 #ifndef FOSTER_TYPE_AST_H
 #define FOSTER_TYPE_AST_H
 
+
 #include "llvm/DerivedTypes.h"
+#include "llvm/LLVMContext.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include "SourceRange.h"
@@ -173,7 +175,7 @@ public:
     }
     out << " }";
     return out;
-  };
+  }
   virtual int getNumContainedTypes() { return parts.size(); }
   virtual TypeAST* getContainedType(int i) { return parts[i]; }
   static TupleTypeAST* get(const std::vector<TypeAST*>& parts);
@@ -196,6 +198,23 @@ public:
 };
 
 
+class LiteralIntTypeAST : public TypeAST {
+  uint64_t value;
+public:
+  explicit LiteralIntTypeAST(uint64_t value,
+                      const foster::SourceRange& sourceRange)
+    : TypeAST(llvm::IntegerType::get(llvm::getGlobalContext(), 64),
+              sourceRange),
+      value(value) { }
+
+  virtual std::ostream& operator<<(std::ostream& out) const {
+    return out << value;
+  }
+
+  uint64_t getNumericalValue() { return value; }
+};
+
+
 class SimdVectorTypeAST : public TypeAST {
 public:
   explicit SimdVectorTypeAST(const llvm::Type* simdVectorTy,
@@ -205,9 +224,9 @@ public:
   virtual std::ostream& operator<<(std::ostream& out) const {
     out << "SimdVectorTypeAST(" << str(repr) << ")";
     return out;
-  };
+  }
 
-  static SimdVectorTypeAST* get(TypeAST* size, TypeAST* type,
+  static SimdVectorTypeAST* get(LiteralIntTypeAST* size, TypeAST* type,
                                 const foster::SourceRange& sourceRange);
 };
 

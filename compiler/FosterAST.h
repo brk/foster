@@ -63,6 +63,24 @@ inline bool isSmallPowerOfTwo(int x) {
   return (x == 2) || (x == 4) || (x == 8) || (x == 16);
 }
 
+template <typename T>
+T getSaturating(llvm::Value* v) {
+  // If the value requires more bits than T can represent, we want
+  // to return ~0, not 0. Otherwise, we should leave the value alone.
+  T allOnes = ~T(0);
+  if (!v) {
+    std::cerr << "numericOf() got a null value, returning " << allOnes << std::endl;
+    return allOnes;
+  }
+
+  if (llvm::ConstantInt* ci = llvm::dyn_cast<llvm::ConstantInt>(v)) {
+    return static_cast<T>(ci->getLimitedValue(allOnes));
+  } else {
+    llvm::errs() << "numericOf() got a non-constant-int value " << *v << ", returning " << allOnes << "\n";
+    return allOnes;
+  }
+}
+
 ///////////////////////////////////////////////////////////
 
 template <typename T>

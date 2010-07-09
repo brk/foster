@@ -380,24 +380,6 @@ bool mightContainHeapPointers(const llvm::Type* ty) {
   return !offsets.empty();
 }
 
-template <typename T>
-T getSaturating(llvm::Value* v) {
-  // If the value requires more bits than T can represent, we want
-  // to return ~0, not 0. Otherwise, we should leave the value alone.
-  T allOnes = ~T(0);
-  if (!v) {
-    std::cerr << "numericOf() got a null value, returning " << allOnes << std::endl;
-    return allOnes;
-  }
-
-  if (ConstantInt* ci = llvm::dyn_cast<ConstantInt>(v)) {
-    return static_cast<T>(ci->getLimitedValue(allOnes));
-  } else {
-    llvm::errs() << "numericOf() got a non-constant-int value " << *v << ", returning " << allOnes << "\n";
-    return allOnes;
-  }
-}
-
 Value* tempHackExtendInt(Value* val, const Type* toTy) {
   const Type* valTy = val->getType();
   // The type checker should ensure that size(expTy) is >= size(argTy)

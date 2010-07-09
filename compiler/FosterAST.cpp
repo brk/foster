@@ -5,6 +5,7 @@
 #include "FosterAST.h"
 #include "TypecheckPass.h"
 #include "FosterUtils.h"
+#include "base/Diagnostics.h"
 
 #include "llvm/Target/TargetSelect.h"
 #include "llvm/Module.h"
@@ -12,6 +13,9 @@
 #include <map>
 #include <vector>
 #include <sstream>
+
+using foster::EDiag;
+using foster::show;
 
 using llvm::Type;
 using llvm::BasicBlock;
@@ -168,7 +172,7 @@ void FosterASTVisitor::visitChildren(ExprAST* ast) {
     if (ast->parts[i]) {
       this->onVisitChild(ast, ast->parts[i]);
     } else {
-      std::cerr << "visitChildren saw null part " << i << " for ast node " << (*ast) << std::endl;
+      EDiag() << "visitChildren saw null part " << i << " for ast node " << str(ast) << show(ast);
     }
   }
 }
@@ -187,11 +191,15 @@ IntAST* literalIntAST(int lit) {
 }
 
 llvm::APInt IntAST::getAPInt() {
+  assert(this->type && this->type->getLLVMType());
+
   return APInt(this->type->getLLVMType()->getScalarSizeInBits(),
                Clean, Base);
 }
 
 llvm::Constant* IntAST::getConstantValue() {
+  assert(this->type && this->type->getLLVMType());
+
   return ConstantInt::get(this->type->getLLVMType(), this->getAPInt());
 }
 

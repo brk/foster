@@ -46,6 +46,7 @@ void TypecheckPass::visit(IntAST* ast) {
   // Make sure the base is a reasonable one
   if (!(ast->Base == 2  || ast->Base == 8
      || ast->Base == 10 || ast->Base == 16)) {
+    EDiag() << "int base must be 2, 8, 10, or 16, but was " << ast->Base << show(ast);
     return;
   }
 
@@ -70,11 +71,6 @@ void TypecheckPass::visit(IntAST* ast) {
     std::cerr << "Integer literal '" << ast->Text << "' requires "
               << activeBits << " bits to represent." << std::endl;
     return;
-  } else {
-#   if 0
-      std::cerr << "Integer literal '" << ast->Text << "' requires "
-                  << activeBits << " bits to represent." << std::endl;
-#   endif
   }
 
   ast->type = TypeAST::get(LLVMintTypeForNBits(activeBits));
@@ -210,19 +206,6 @@ void TypecheckPass::visit(FnAST* ast) {
     ast->type = ast->proto->type;
   }
 }
-
-#if 0
-void TypecheckPass::visit(ClosureTypeAST* ast) {
-  ast->proto->accept(this);
-  if (FnTypeAST* ft = tryExtractCallableType(ast->proto->type)) {
-    ast->type = genericClosureTypeFor(ft);
-    std::cout << "ClosureTypeAST typechecking converted " << *ft << " to " << *(ast->type) << std::endl;
-  } else {
-    std::cerr << "Error! Proto passed to ClosureType does not have function type!" << std::endl;
-    std::cerr << *(ast->proto) << std::endl;
-  }
-}
-#endif
 
 void TypecheckPass::visit(ClosureAST* ast) {
   std::cout << "Type Checking closure AST node " << (*ast) << std::endl;
@@ -543,8 +526,7 @@ bool isOkayToDeref(VariableAST* ast, ExprAST* parent) {
 // so that it evaluates to a T** (a stack slot containing a T*)
 // instead of a simple T*, which would not be modifiable by the GC.
 void TypecheckPass::visit(RefExprAST* ast) {
-  assert(ast->parts[0]->type && "Need arg to typecheck ref!");
-  if (ast->parts[0]->type) {
+  if (ast->parts[0] && ast->parts[0]->type) {
     ast->type = RefTypeAST::get(
                       ast->parts[0]->type,
                       ast->isNullable);
@@ -701,7 +683,10 @@ void TypecheckPass::visit(SeqAST* ast) {
     }
   }
 
-  if (!success || ast->parts.empty()) { return; }
+  if (!success || ast->parts.empty()) {
+    EDiag() << "expression block must not be empty" << show(ast);
+    return;
+  }
 
   ast->type = ast->parts.back()->type;
 }
@@ -940,74 +925,72 @@ bool isPrimitiveNumericType(const Type* ty) {
   return ty->isFloatingPointTy() || ty->isIntegerTy();
 }
 
-// TODO this is a near-exact duplicate of ArrayExprAST* case...
-// but unlike an array, simd vectors are limited to numeric base types
-void TypecheckPass::visit(SimdVectorAST* ast) {
-  bool success = true;
-  std::map<const Type*, bool> fieldTypes;
-
+SimdVectorTypeAST* synthesizeSimdVectorType(SimdVectorAST* ast) {
   SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
   if (!body) {
-    std::cerr << "Typecheck of simd-vector expr failed because ast.parts[0] = " << ast->parts[0] << " was not a Seq!" << std::endl;
-    return;
+    EDiag() << "simd-vector ast.parts[0] = " << str(ast->parts[0]) << " was not a seq!"
+            << show(ast);
+    return NULL;
   }
 
   int numElements = body->parts.size();
-  const Type* elementType = NULL;
-
-  if (numElements == 2) {
-    numElements = extractNumElementsAndElementType(256, ast, elementType);
-  }
-
-  // No special case; iterate through and collect all the types
-  if (!elementType) {
-    for (int i = 0; i < numElements; ++i) {
-      const Type* ty =  body->parts[i]->type->getLLVMType();
-      if (!ty) {
-        std::cerr << "simd-vector expr had null constituent type for subexpr " << i << std::endl;
-        success = false;
-        break;
-      }
-      fieldTypes[ty] = true;
-      elementType = ty;
-    }
-
-    // TODO This should probably be relaxed eventually; for example,
-    // a simd-vector of "small" and "large" int literals should silently be accepted
-    // as a simd-vector of "large" ints.
-    if (success && fieldTypes.size() == 0) {
-      EDiag() << "simd-vector cannot be empty" << show(ast);
-      success = false;
-    }
-
-    if (success && fieldTypes.size() > 1) {
-      std::string s; llvm::raw_string_ostream ss(s);
-      std::map<const Type*, bool>::const_iterator it;;
-      for (it = fieldTypes.begin(); it != fieldTypes.end(); ++it) {
-        ss << "\n\t" << str((*it).first);
-      }
-      EDiag() << "simd-vector expression had multiple types, found"
-              << ss.str() << show(ast); 
-      success = false;
-    }
-
-    if (success && !isPrimitiveNumericType(elementType)) {
-      EDiag() << "simd-vector must be composed of primitive numeric types"
-              << show(ast);
-      success = false;
-    }
-  }
 
   if (!isSmallPowerOfTwo(numElements)) {
     EDiag() << "simd-vector must contain a small power of two"
             << " of elements; got " << numElements
             << show(ast);
-    success = false;
+    return NULL;
   }
 
-  if (success) {
-    ast->type = TypeAST::get(llvm::VectorType::get(elementType, numElements));
+  const Type* elementType = NULL;
+  std::map<const Type*, bool> fieldTypes;
+
+  for (int i = 0; i < numElements; ++i) {
+    const Type* ty =  body->parts[i]->type->getLLVMType();
+    if (!ty) {
+      EDiag() << "simd-vector expr had null constituent type for subexpr " << i
+              << show(body->parts[i]);
+      return NULL;
+    }
+    fieldTypes[ty] = true;
+    elementType = ty;
   }
+
+  // TODO This should probably be relaxed eventually; for example,
+  // a simd-vector of "small" and "large" int literals should silently be accepted
+  // as a simd-vector of "large" ints.
+  if (fieldTypes.size() == 0) {
+    EDiag() << "simd-vector cannot be empty" << show(ast);
+    return NULL;
+  }
+
+  if (fieldTypes.size() > 1) {
+    std::string s; llvm::raw_string_ostream ss(s);
+    std::map<const Type*, bool>::const_iterator it;;
+    for (it = fieldTypes.begin(); it != fieldTypes.end(); ++it) {
+      ss << "\n\t" << str((*it).first);
+    }
+    EDiag() << "simd-vector expression had multiple types, found"
+            << ss.str() << show(ast);
+    return NULL;
+  }
+
+  if (!isPrimitiveNumericType(elementType)) {
+    EDiag() << "simd-vector must be composed of primitive numeric types"
+            << show(ast);
+    return NULL;
+  }
+
+  return SimdVectorTypeAST::get(
+      new LiteralIntTypeAST(numElements, SourceRange::getEmptyRange()),
+      TypeAST::get(elementType),
+      ast->sourceRange);
+}
+
+void TypecheckPass::visit(SimdVectorAST* ast) {
+  if (ast->type) return;
+
+  ast->type = synthesizeSimdVectorType(ast);
 }
 
 void TypecheckPass::visit(TupleExprAST* ast) {

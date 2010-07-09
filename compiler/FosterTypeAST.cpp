@@ -210,9 +210,9 @@ const llvm::Type* ClosureTypeAST::getLLVMType() const {
 }
 
 // static
-SimdVectorTypeAST* SimdVectorTypeAST::get(TypeAST* size, TypeAST* type,
+SimdVectorTypeAST* SimdVectorTypeAST::get(LiteralIntTypeAST* size, TypeAST* type,
                               const foster::SourceRange& sourceRange) {
-  foster::EDiag() << "simd-vector types not yet supported!"
-                  << foster::show(sourceRange);
-  return NULL;
+  llvm::VectorType* vecTy = llvm::VectorType::get(type->getLLVMType(),
+                                                  size->getNumericalValue());
+  return new SimdVectorTypeAST(vecTy, sourceRange);
 }
