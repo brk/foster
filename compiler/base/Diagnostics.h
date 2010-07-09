@@ -18,13 +18,16 @@ struct SourceRangeHighlighter {
   SourceLocation caret;
 };
 
-SourceRangeHighlighter show(ExprAST* ast) {
+inline SourceRangeHighlighter show(const SourceRange& r) {
+  return SourceRangeHighlighter(r, r.begin);
+}
+
+inline SourceRangeHighlighter show(ExprAST* ast) {
   if (!ast) {
     SourceLocation empty = SourceLocation::getInvalidLocation();
     return SourceRangeHighlighter(SourceRange(NULL, empty, empty), empty);
   }
-  SourceRangeHighlighter h(ast->sourceRange, ast->sourceRange.begin);
-  return h;
+  return show(ast->sourceRange);
 }
 
 class DiagBase {

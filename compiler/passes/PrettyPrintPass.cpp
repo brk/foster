@@ -102,12 +102,13 @@ void PrettyPrintPass::visit(FnAST* ast) {
   }
 }
 
-
+#if 0
 void PrettyPrintPass::visit(ClosureTypeAST* ast) {
   scan(PPToken("<TyClosure "));
   scan(PPToken(str(ast->proto->type)));
   scan(PPToken(">"));
 }
+#endif
 
 void PrettyPrintPass::visit(ClosureAST* ast) {
   scan(tBlockOpen);

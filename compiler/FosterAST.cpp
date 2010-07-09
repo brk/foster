@@ -110,6 +110,13 @@ string str(TypeAST* expr) {
   } else { return "<nil>"; }
 }
 
+string str(Value* value) {
+  if (value) {
+    std::string s;
+    llvm::raw_string_ostream ss(s); ss << *value; return ss.str();
+  } else { return "<nil>"; }
+}
+
 std::map<string, const Type*> builtinTypes;
 
 TypeAST*    TypeASTFor(const string& name) {

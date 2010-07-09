@@ -52,7 +52,8 @@ extern Module* module;
 
 string join(string glue, Exprs args);
 string str(ExprAST* expr);
-string str(TypeAST* expr);
+string str(TypeAST* type);
+string str(Value* value);
 
 TypeAST* TypeASTFor(const string& name);
 const Type* LLVMTypeFor(const string& name);
@@ -233,36 +234,18 @@ struct BoolAST : public ExprAST {
 
 struct VariableAST : public ExprAST {
   string name;
-  ExprAST* tyExpr;
   PrototypeAST* lazilyInsertedPrototype;
   bool noInitialType;
-  bool noFixedType() { return noInitialType && !tyExpr && !type; }
-
-  explicit VariableAST(const string& name, foster::SourceRange sourceRange)
-      : ExprAST(sourceRange), name(name), tyExpr(NULL),
-        lazilyInsertedPrototype(NULL) { // of as-yet-undetermined type
-    this->type = NULL;
-    noInitialType = true;
-    std::cout << "new variable named " << name << " of no fixed type..." << std::endl;
-  }
+  bool noFixedType() { return noInitialType && !type; }
 
   // TODO need to figure out how/where/when to assign type info to nil
   explicit VariableAST(const string& name, TypeAST* aType,
                        foster::SourceRange sourceRange)
-      : ExprAST(sourceRange), name(name), tyExpr(NULL),
-        lazilyInsertedPrototype(NULL) {
+      : ExprAST(sourceRange), name(name), lazilyInsertedPrototype(NULL) {
     this->type = aType;
-    noInitialType = false;
+    noInitialType = (aType == NULL);
   }
-  explicit VariableAST(const string& name, ExprAST* tyExpr,
-                       foster::SourceRange sourceRange)
-      : ExprAST(sourceRange), name(name), tyExpr(tyExpr),
-        lazilyInsertedPrototype(NULL) {
-    noInitialType = false;
-    if (!tyExpr) {
-      std::cerr << "Error: " << this << " = VariableAST("<<name<<", type expr NULL)!" << std::endl;
-    }
-  }
+
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
     if (type) {
@@ -381,54 +364,37 @@ struct SubscriptAST : public BinaryExprAST {
 struct PrototypeAST : public ExprAST {
   string name;
   std::vector<VariableAST*> inArgs;
-  const Type* resultTy; // TODO switch to TypeAST*
-  ExprAST* tyExpr;
+  TypeAST* resultTy;
+
   FosterSymbolTable<ExprAST>::LexicalScope* scope;
 
-  PrototypeAST(const Type* retTy, const string& name,
+  PrototypeAST(TypeAST* retTy, const string& name,
                foster::SourceRange sourceRange)
-      : ExprAST(sourceRange), name(name), resultTy(retTy), tyExpr(NULL) {
+      : ExprAST(sourceRange), name(name), resultTy(retTy), scope(NULL) {
   }
 
-  PrototypeAST(const Type* retTy, const string& name,
-               VariableAST* arg1,
-               foster::SourceRange sourceRange)
-      : ExprAST(sourceRange), name(name), resultTy(retTy), tyExpr(NULL) {
-    inArgs.push_back(arg1);
-  }
-
-  PrototypeAST(const Type* retTy, const string& name,
-               VariableAST* arg1, VariableAST* arg2,
-               foster::SourceRange sourceRange)
-      : ExprAST(sourceRange), name(name), resultTy(retTy), tyExpr(NULL) {
-    inArgs.push_back(arg1);
-    inArgs.push_back(arg2);
-  }
-
-  PrototypeAST(const Type* retTy, const string& name,
+  PrototypeAST(TypeAST* retTy, const string& name,
                const std::vector<VariableAST*>& inArgs,
                foster::SourceRange sourceRange)
       : ExprAST(sourceRange),
-        name(name), resultTy(retTy), tyExpr(NULL), inArgs(inArgs) {
-    if (retTy == NULL) {
-      this->resultTy = LLVMTypeFor("i32");
+        name(name), resultTy(retTy), inArgs(inArgs), scope(NULL) {
+    if (resultTy == NULL) {
+      this->resultTy = TypeAST::get(LLVMTypeFor("i32"));
     } else {
       //std::cout << "\n\tProtoAST " << name << " ascribed result type of " << *(retTy) << std::endl;
     }
   }
 
-  PrototypeAST(const string& name,
+  PrototypeAST(TypeAST* retTy, const string& name,
                const std::vector<VariableAST*>& inArgs,
-               ExprAST* retTyExpr,
                FosterSymbolTable<ExprAST>::LexicalScope* scope,
                foster::SourceRange sourceRange)
       : ExprAST(sourceRange),
-        name(name), resultTy(NULL), inArgs(inArgs),
-        tyExpr(retTyExpr), scope(scope) {
-    if (tyExpr == NULL) {
-      this->resultTy = LLVMTypeFor("i32");
+        name(name), resultTy(retTy), inArgs(inArgs), scope(scope) {
+    if (resultTy == NULL) {
+      this->resultTy = TypeAST::get(LLVMTypeFor("i32"));
     } else {
-      std::cout << "\n\tProtoAST " << name << " ascribed result type expr of " << *(tyExpr) << std::endl;
+      std::cout << "\n\tProtoAST " << name << " ascribed result type expr of " << str(retTy) << std::endl;
     }
   }
 
@@ -460,21 +426,6 @@ struct FnAST : public ExprAST {
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
     return out << "FnAST(proto = " << str(proto) << ", body = " << str(body) << endl;
-  }
-};
-
-// TODO move this under TypeAST instead of ExprAST
-struct ClosureTypeAST : public ExprAST {
-  PrototypeAST* proto;
-
-  explicit ClosureTypeAST(FnAST* fn, foster::SourceRange sourceRange)
-     : ExprAST(sourceRange), proto(fn->proto) {}
-
-  virtual void accept(FosterASTVisitor* visitor) {
-    visitor->visit(this);
-  }
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "ClosureTypeAST(" << str(proto) << ")";
   }
 };
 

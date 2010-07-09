@@ -29,9 +29,11 @@ void AddParentLinksPass::visit(FnAST* ast)                  {
   onVisitChild(ast, ast->body);
   includeParentNameInAnonFunctions(ast);
 }
+#if 0
 void AddParentLinksPass::visit(ClosureTypeAST* ast) {
   onVisitChild(ast, ast->proto);
 }
+#endif
 void AddParentLinksPass::visit(ClosureAST* ast) {
   if (ast->fn) {
     onVisitChild(ast, ast->fn);

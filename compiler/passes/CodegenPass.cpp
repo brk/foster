@@ -6,6 +6,7 @@
 #include "TypecheckPass.h"
 #include "FosterAST.h"
 #include "FosterUtils.h"
+#include "base/Diagnostics.h"
 
 #include "llvm/Attributes.h"
 #include "llvm/CallingConv.h"
@@ -31,6 +32,8 @@ using llvm::APInt;
 using llvm::PHINode;
 
 using foster::SourceRange;
+using foster::EDiag;
+using foster::show;
 
 typedef std::pair<const llvm::Type*, int> OffsetInfo;
 typedef std::set<OffsetInfo> OffsetSet;
@@ -641,7 +644,7 @@ void CodegenPass::visit(FnAST* ast) {
   // If we try to return a tuple* when the fn specifies a tuple, manually insert a load
   if (RetVal->getType()->isDerivedType()
       && !returningVoid
-      && isPointerToType(RetVal->getType(), ast->proto->resultTy)) {
+      && isPointerToType(RetVal->getType(), ast->proto->resultTy->getLLVMType())) {
     RetVal = builder.CreateLoad(RetVal, false, "structPtrToStruct");
   }
 
@@ -668,10 +671,6 @@ void CodegenPass::visit(FnAST* ast) {
   if (prevBlock) {
     builder.SetInsertPoint(prevBlock);
   }
-}
-
-void CodegenPass::visit(ClosureTypeAST* ast) {
-  std::cerr << "CodegenPass ClosureTypeAST: " << *ast << std::endl;
 }
 
 // converts   t1, (envptrty, t2, t3)   to   { rt (envptrty, t2, t3)*, envptrty }
@@ -818,9 +817,8 @@ PHINode* codegenIfExpr(Value* cond,
   builder.SetInsertPoint(thenBB);
   Value* then = lazyThen.get();
   if (!then) {
-    EDiag() << "codegen for if expr failed due to missing 'then' branch"
-            << show(ast);
-    return;
+    EDiag() << "codegen for if expr failed due to missing 'then' branch";
+    return NULL;
   }
   builder.CreateBr(mergeBB);
   thenBB = builder.GetInsertBlock();
@@ -829,9 +827,8 @@ PHINode* codegenIfExpr(Value* cond,
   builder.SetInsertPoint(elseBB);
   Value* else_ = lazyElse.get();
   if (!else_) {
-    EDiag() << "codegen for if expr failed due to missing 'else' branch"
-            << show(ast);
-    return;
+    EDiag() << "codegen for if expr failed due to missing 'else' branch";
+    return NULL;
   }
   builder.CreateBr(mergeBB);
   elseBB = builder.GetInsertBlock();
@@ -1125,7 +1122,7 @@ FnAST* getVoidReturningVersionOf(ExprAST* arg, const llvm::FunctionType* fnty) {
       callArgs.push_back(a);
     }
     PrototypeAST* proto = new PrototypeAST(
-                                fnty->getVoidTy(getGlobalContext()),
+                                TypeAST::get(fnty->getVoidTy(getGlobalContext())),
                                 fnName, inArgs,
                                 SourceRange::getEmptyRange());
     ExprAST* body = new CallAST(arg, callArgs, SourceRange::getEmptyRange());
@@ -1223,7 +1220,8 @@ FnAST* getClosureVersionOf(ExprAST* arg, const llvm::FunctionType* fnty) {
       inArgs.push_back(a);
       callArgs.push_back(a);
     }
-    PrototypeAST* proto = new PrototypeAST(fnty->getReturnType(),
+    // TODO change fnty to TypeAST
+    PrototypeAST* proto = new PrototypeAST(TypeAST::get(fnty->getReturnType()),
                                fnName, inArgs, SourceRange::getEmptyRange());
     ExprAST* body = new CallAST(arg, callArgs, SourceRange::getEmptyRange());
     FnAST* fn = new FnAST(proto, body, SourceRange::getEmptyRange());
@@ -1323,7 +1321,7 @@ void CodegenPass::visit(CallAST* ast) {
       // a procedure returning void.
         if (FnTypeAST* expectedFnTy = tryExtractCallableType(
                                         TypeAST::get(expectedType))) {
-          if (isVoid(expectedFnTy->getReturnType()->getLLVMType()) && !isVoid(fnty)) {
+          if (isVoid(expectedFnTy->getReturnType()) && !isVoid(fnty)) {
             arg = getVoidReturningVersionOf(arg, fnty);
             { TypecheckPass tp; arg->accept(&tp); }
           }

@@ -5,6 +5,7 @@
 #include "ANTLRtoFosterAST.h"
 #include "FosterAST.h"
 #include "TypecheckPass.h"
+#include "base/Diagnostics.h"
 
 #include "fosterLexer.h"
 #include "fosterParser.h"
@@ -18,6 +19,9 @@
 
 using std::string;
 using std::endl;
+
+using foster::EDiag;
+using foster::show;
 
 // {{{ ANTLR stuff
 std::string str(pANTLR3_STRING pstr) { return string((const char*)pstr->chars); }
@@ -349,7 +353,7 @@ VariableAST* parseFormal(pTree tree, bool fnMeansClosure) {
   }
   string varName = textOf(child(varNameTree, 0));
   if (getChildCount(tree) == 2) {
-    ExprAST* tyExpr = ExprAST_from(child(tree, 1), true);
+    TypeAST* tyExpr = TypeAST_from(child(tree, 1));
     if (tyExpr) {
       std::cout << "\tParsed formal " << varName << " with type expr " << str(tyExpr) << std::endl;
     } else {
@@ -360,7 +364,7 @@ VariableAST* parseFormal(pTree tree, bool fnMeansClosure) {
     return var;
   } else {
     // no fixed type, infer later
-    VariableAST* var = new VariableAST(varName, rangeOf(tree));
+    VariableAST* var = new VariableAST(varName, NULL, rangeOf(tree));
     varScope.insert(varName, var);
     return var;
   }
@@ -378,17 +382,19 @@ std::vector<VariableAST*> getFormals(pTree tree, bool fnMeansClosure) {
   return args;
 }
 
-PrototypeAST* getFnProto(string name, bool fnMeansClosure, pTree formalsTree, pTree tyExprTree) {
+PrototypeAST* getFnProto(string name, bool fnMeansClosure, pTree formalsTree, pTree retTyExprTree) {
   FosterSymbolTable<ExprAST>::LexicalScope* protoScope = varScope.pushScope("fn proto " + name);
     std::vector<VariableAST*> in = getFormals(formalsTree, fnMeansClosure);
-    ExprAST* tyExpr = ExprAST_from(tyExprTree, fnMeansClosure);
+    TypeAST* retTy = TypeAST_from(retTyExprTree);
   varScope.popScope();
 
-  pTree sourceEndTree = (tyExprTree != NULL) ? tyExprTree : formalsTree;
+  pTree sourceEndTree = (retTyExprTree != NULL) ? retTyExprTree : formalsTree;
   foster::SourceRange sourceRange = rangeFrom(formalsTree, sourceEndTree);
-  PrototypeAST* proto = new PrototypeAST(name, in, tyExpr, protoScope,
+  PrototypeAST* proto = new PrototypeAST(retTy, name, in, protoScope,
                               sourceRange);
-  VariableAST* fnRef = new VariableAST(proto->name, proto, sourceRange);
+  { TypecheckPass tp; proto->accept(&tp); }
+  std::cout << "396: "<< str(proto->type) << std::endl;
+  VariableAST* fnRef = new VariableAST(proto->name, proto->type, sourceRange);
   varScope.insert(proto->name, fnRef);
 
   return proto;
@@ -455,6 +461,7 @@ FnAST* parseFn(string defaultSymbolTemplate, pTree tree, bool fnMeansClosure) {
   // (FN 0:NAME 1:IN 2:OUT 3:BODY)
   string name = parseFnName(defaultSymbolTemplate, tree);
   PrototypeAST* proto = getFnProto(name, fnMeansClosure, child(tree, 1), child(tree, 2));
+  std::cout << "parseFn proto = " << str(proto) << std::endl;
   return buildFn(proto, child(tree, 3));
 }
 
@@ -496,6 +503,7 @@ ExprAST* parseTopLevel(pTree tree) {
       }
     } else {
       parsedExprs[i] = ExprAST_from(c, false);
+      pendingParseTrees[i] = NULL;
     }
   }
 
@@ -524,6 +532,111 @@ ExprAST* parseTopLevel(pTree tree) {
   return new SeqAST(exprs, rangeOf(tree));
 }
 
+ExprAST* parseTypeDefinition(pTree tree, bool fnMeansClosure) {
+  pTree nameTree = child(tree, 0);
+  string name = textOf(child(nameTree, 0));
+
+  llvm::PATypeHolder namedType = llvm::OpaqueType::get(getGlobalContext());
+  typeScope.pushScope("opaque");
+    typeScope.insert(name, TypeAST::get(namedType.get()));
+    TypeAST* tyExpr = TypeAST_from(child(tree, 1));
+    llvm::cast<llvm::OpaqueType>(namedType.get())->
+               refineAbstractTypeTo(tyExpr->getLLVMType());
+  typeScope.popScope();
+
+  typeScope.insert(name, tyExpr);
+  std::cout << "Associated " << name << " with type " << str(tyExpr) << std::endl;
+  //module->addTypeName(name, tyExpr->getLLVMType());
+  return NULL;
+}
+
+ExprAST* parseForRange(pTree tree, bool fnMeansClosure,
+                       const SourceRange& sourceRange) {
+  pTree varNameTree = child(tree, 0);
+  string varName = textOf(child(varNameTree, 0));
+  VariableAST* var = new VariableAST(varName,
+			    TypeAST::get(LLVMTypeFor("i32")),
+			    rangeOf(varNameTree));
+  ExprAST* start = ExprAST_from(child(tree, 1), fnMeansClosure);
+  ExprAST* end   = ExprAST_from(child(tree, 2), fnMeansClosure);
+  ExprAST* incr  = NULL;
+
+  if (getChildCount(tree) >= 5) {
+    incr = ExprAST_from(child(tree, 4), fnMeansClosure);
+  }
+
+  varScope.pushScope("for-range " + varName);
+  varScope.insert(varName, var);
+  ExprAST* body  = ExprAST_from(child(tree, 3), fnMeansClosure);
+  varScope.popScope();
+
+  std::cout << "for (" << varName <<" in _ to _ ...)" << std::endl;
+  return new ForRangeExprAST(var, start, end, body, incr, sourceRange);
+}
+
+// ^(CTOR ^(NAME blah) ^(SEQ ...))
+ExprAST* parseCtorExpr(pTree tree, bool fnMeansClosure,
+                       const foster::SourceRange& sourceRange) {
+  pTree nameNode = child(tree, 0);
+  pTree seqArgs = child(tree, 1);
+
+  string name = textOf(child(nameNode, 0));
+  if (name == "simd-vector") {
+    return new SimdVectorAST(ExprAST_from(seqArgs, fnMeansClosure), sourceRange);
+  }
+  if (name == "array") {
+    return new ArrayExprAST(ExprAST_from(seqArgs, fnMeansClosure), sourceRange);
+  }
+  if (name == "tuple") {
+    return new TupleExprAST(ExprAST_from(seqArgs, fnMeansClosure), sourceRange);
+  }
+
+  if (TypeAST* ty = typeScope.lookup(name, "")) {
+    assert(ty->getLLVMType() && ty->getLLVMType()->isStructTy());
+    return new TupleExprAST(ExprAST_from(seqArgs, fnMeansClosure), name, sourceRange);
+  }
+
+  foster::EDiag() << "CTOR token parsing found unknown"
+                  << " type name '" << name << "'"
+                  << foster::show(sourceRange);
+  return NULL;
+}
+
+std::vector<TypeAST*> getTypes(pTree tree);
+
+// ^(CTOR ^(NAME blah) ^(SEQ ...))
+TypeAST* parseCtorType(pTree tree,
+                       const foster::SourceRange& sourceRange) {
+  pTree nameNode = child(tree, 0);
+  pTree seqArgs = child(tree, 1);
+
+  string name = textOf(child(nameNode, 0));
+  if (name == "simd-vector") {
+    // e.g. simd-vector of 4 i32
+    TypeAST* size = TypeAST_from(child(seqArgs, 0));
+    TypeAST* type = TypeAST_from(child(seqArgs, 1));
+    return SimdVectorTypeAST::get(size, type, sourceRange);
+  }
+  if (name == "array") {
+    foster::EDiag() << "array types not yet supported!"
+                    << foster::show(sourceRange);
+    //return new ArrayTypeAST(TypeAST_from(seqArgs), sourceRange);
+    return NULL;
+  }
+  if (name == "tuple") {
+    return TupleTypeAST::get(getTypes(seqArgs)); //, sourceRange);
+  }
+
+  if (TypeAST* ty = typeScope.lookup(name, "")) {
+    return ty; // TODO fix
+  }
+
+  foster::EDiag() << "CTOR type parsing found unknown"
+                  << " type name '" << name << "'"
+                  << foster::show(sourceRange);
+  return NULL;
+}
+
 ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
   if (!tree) return NULL;
 
@@ -531,23 +644,9 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
   string text = textOf(tree);
   int nchildren = getChildCount(tree);
   foster::SourceRange sourceRange = rangeOf(tree);
-  //display_pTree(tree, 2);
 
   if (token == TYPEDEFN) {
-    pTree nameTree = child(tree, 0);
-    string name = textOf(child(nameTree, 0));
-
-    llvm::PATypeHolder namedType = llvm::OpaqueType::get(getGlobalContext());
-    typeScope.pushScope("opaque");
-      typeScope.insert(name, TypeAST::get(namedType.get()));
-      ExprAST* tyExpr = ExprAST_from(child(tree, 1), fnMeansClosure);
-      { TypecheckPass tyPass; tyPass.typeParsingMode = true; tyExpr->accept(&tyPass); }
-      llvm::cast<llvm::OpaqueType>(namedType.get())->refineAbstractTypeTo(tyExpr->type->getLLVMType());
-    typeScope.popScope();
-
-    typeScope.insert(name, tyExpr->type);
-    std::cout << "Associated " << name << " with type " << *(tyExpr->type) << std::endl;
-    //module->addTypeName(name, tyExpr->type->getLLVMType());
+    return parseTypeDefinition(tree, fnMeansClosure);
   }
 
   if (token == TRAILERS) {
@@ -606,26 +705,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
 
   // <var start end body incr?>
   if (token == FORRANGE) {
-    pTree varNameTree = child(tree, 0);
-    string varName = textOf(child(varNameTree, 0));
-    VariableAST* var = new VariableAST(varName,
-                              TypeAST::get(LLVMTypeFor("i32")),
-                              rangeOf(varNameTree));
-    ExprAST* start = ExprAST_from(child(tree, 1), fnMeansClosure);
-    ExprAST* end   = ExprAST_from(child(tree, 2), fnMeansClosure);
-    ExprAST* incr  = NULL;
-
-    if (getChildCount(tree) >= 5) {
-      incr = ExprAST_from(child(tree, 4), fnMeansClosure);
-    }
-
-    varScope.pushScope("for-range " + varName);
-    varScope.insert(varName, var);
-    ExprAST* body  = ExprAST_from(child(tree, 3), fnMeansClosure);
-    varScope.popScope();
-
-    std::cout << "for (" << varName <<" in _ to _ ...)" << std::endl;
-    return new ForRangeExprAST(var, start, end, body, incr, sourceRange);
+    return parseForRange(tree, fnMeansClosure, sourceRange);
   }
 
   // <LHS RHS>
@@ -681,28 +761,8 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     }
   }
 
-  if (token == CTOR) { // ^(CTOR ^(NAME blah) ^(SEQ ...))
-    pTree nameNode = child(tree, 0);
-    pTree seqArgs = child(tree, 1);
-
-    string name = textOf(child(nameNode, 0));
-    if (name == "simd-vector") {
-      return new SimdVectorAST(ExprAST_from(seqArgs, fnMeansClosure), sourceRange);
-    }
-    if (name == "array") {
-      return new ArrayExprAST(ExprAST_from(seqArgs, fnMeansClosure), sourceRange);
-    }
-    if (name == "tuple") {
-      return new TupleExprAST(ExprAST_from(seqArgs, fnMeansClosure), sourceRange);
-    }
-
-    if (TypeAST* ty = typeScope.lookup(name, "")) {
-      assert(ty->getLLVMType() && ty->getLLVMType()->isStructTy());
-      return new TupleExprAST(ExprAST_from(seqArgs, fnMeansClosure), name, sourceRange);
-    }
-
-    std::cerr << "Error: CTOR token parsing found unknown type name '" << name << "'" << std::endl;
-    return NULL;
+  if (token == CTOR) {
+    return parseCtorExpr(tree, fnMeansClosure, sourceRange);
   }
 
   if (token == NAME) {
@@ -716,6 +776,10 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     }
 
     ExprAST* var = varScope.lookup(varName, "");
+    if (!var) {
+      EDiag() << "unknown var name: " << varName << show(sourceRange);
+    }
+#if 0
     if (!var) {
       // Maybe parsing a type expr, in which case names refer directly to
       // types, either user-defined or built-in (to Foster or LLVM)
@@ -735,6 +799,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     } else {
       //std::cout << "Found entry for variable " << varName << " in scope." << std::endl;
     }
+#endif
     return var;
   }
 
@@ -803,9 +868,9 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     // for now, this "<anon_fn" prefix is used for closure conversion later on
     FnAST* fn = parseFn("<anon_fn_%d>", tree, fnMeansClosure);
     if (!fn->body) {
-      std::cout << "NO BODY FOR PROTO " << *fn->proto << std::endl;
-
-      return new ClosureTypeAST(fn, sourceRange);
+      foster::EDiag() << "NO BODY FOR PROTO "
+                      << foster::show(fn);
+      return NULL;
     }
 
     std::cout << "Parsed fn " << *(fn->proto) << ", fnMeansClosure? " << fnMeansClosure << std::endl;
@@ -818,22 +883,23 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
       return fn;
     }
   }
-  if (text == "false" || text == "true") { return new BoolAST(text, sourceRange); }
 
+  if (text == "false" || text == "true") { return new BoolAST(text, sourceRange); }
 
   // Should have handled all keywords by now...
   if (keywords[text]) {
-    std::cerr << "Illegal use of keyword '" << text << "' !" << endl;
+    EDiag() << "illegal use of keyword '" << text << "'"  << show(sourceRange);
     return NULL;
   }
 
   if (reserved_keywords[text]) {
-    std::cerr << "Cannot use reserved keyword '" << text << "' !" << endl;
+    EDiag() << "cannot use reserved keyword '" << text << "'"  << show(sourceRange);
     return NULL;
   }
 
   string name = str(tree->getToken(tree));
-  printf("returning NULL ExprAST for tree token %s\n", name.c_str());
+  foster::EDiag() << "returning NULL ExprAST for tree token " << name
+                  << foster::show(sourceRange);
   return NULL;
 }
 
@@ -846,3 +912,76 @@ Exprs getExprs(pTree tree, bool fnMeansClosure) {
   return f;
 }
 
+TypeAST* TypeAST_from(pTree tree) {
+  if (!tree) return NULL;
+
+  int token = typeOf(tree);
+  string text = textOf(tree);
+  foster::SourceRange sourceRange = rangeOf(tree);
+
+  if (token == PARENEXPR) {
+    return TypeAST_from(child(tree, 0));
+  }
+
+  if (token == CTOR) {
+    return parseCtorType(tree, sourceRange);
+  }
+
+  if (token == NAME) {
+    string name = textOf(child(tree, 0));
+    TypeAST* ty = TypeASTFor(name);
+    if (!ty) {
+      EDiag() << "name " << name << " appears to not be a valid type name"
+              << show(sourceRange);
+    }
+    return ty;
+  }
+
+  if (token == FN) {
+    display_pTree(tree, 0);
+    FnAST* fn = parseFn("<anon_fn_%d>", tree, true);
+    if (!fn) {
+      EDiag() << "no fn expr when parsing fn type!" << show(sourceRange);
+      return NULL;
+    }
+    if (fn->body) {
+      EDiag() << "had unexpected fn body when parsing fn type!" << show(fn);
+    }
+    return new ClosureTypeAST(fn->proto, NULL, sourceRange);
+  }
+
+  if (text == "ref" || text == "?ref") {
+    bool isNullableTypeDecl = text == "?ref";
+    // TODO add sourcerange or make ctor public
+    return RefTypeAST::get(
+                 TypeAST_from(child(tree, 0)),
+    		 isNullableTypeDecl);
+  }
+
+  if (token == OUT) {
+    return (getChildCount(tree) == 0) ? NULL : TypeAST_from(child(tree, 0));
+  }
+
+  string name = str(tree->getToken(tree));
+  foster::EDiag() << "returning NULL TypeAST for tree token " << name
+                  << foster::show(sourceRange);
+  return NULL;
+}
+
+std::vector<TypeAST*> getTypes(pTree tree) {
+  int token = typeOf(tree);
+
+  std::vector<TypeAST*> types;
+  if (token == EXPRS || token == SEQ) {
+    for (int i = 0; i < getChildCount(tree); ++i) {
+      TypeAST* ast = TypeAST_from(child(tree, i));
+      if (ast != NULL) {
+	types.push_back(ast);
+      }
+    }
+  } else {
+    display_pTree(tree, 0);
+    foster::EDiag() << "getTypes called with unexpected tree!";
+  }
+  return types;
+}

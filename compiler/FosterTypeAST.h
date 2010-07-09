@@ -8,12 +8,21 @@
 #include "llvm/DerivedTypes.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include "SourceRange.h"
+
 #include <map>
 #include <string>
 #include <vector>
 #include <ostream>
 
+using foster::SourceRange;
+
 class TypeAST;
+class FnTypeAST;
+class RefTypeAST;
+class TupleTypeAST;
+class ClosureTypeAST;
+
 std::ostream& operator<<(std::ostream& out, TypeAST& expr);
 
 inline std::ostream& operator<<(std::ostream& out, const llvm::Type& ty) {
@@ -34,20 +43,23 @@ bool hasEqualRepr(TypeAST* src, TypeAST* dst);
 bool arePhysicallyCompatible(const llvm::Type* src,
                              const llvm::Type* dst);
 
+// TODO namespace foster { }
+
 class TypeAST {
+protected:
   // Equivalent (equal or convertible) representation types
   // is a necessary but not sufficient precondition for two
   // types to be compatible. For example, nullable and non-
   // nullable reference to T are both representated by type
   // T*, but they are not always compatible.
   const llvm::Type* repr;
-
+  const foster::SourceRange sourceRange;
 
   static std::map<const llvm::Type*, TypeAST*> thinWrappers;
 
-protected:
-  explicit TypeAST(const llvm::Type* underlyingType)
-    : repr(underlyingType) {}
+  explicit TypeAST(const llvm::Type* underlyingType,
+                   const foster::SourceRange& sourceRange)
+    : repr(underlyingType), sourceRange(sourceRange) {}
 
 public:
   virtual const llvm::Type* getLLVMType() const { return repr; }
@@ -74,8 +86,10 @@ class RefTypeAST : public TypeAST {
   bool nullable;
   TypeAST* underlyingType;
 
-  explicit RefTypeAST(TypeAST* underlyingType, bool nullable)
-    : TypeAST(llvm::PointerType::getUnqual(underlyingType->getLLVMType())),
+  explicit RefTypeAST(TypeAST* underlyingType, bool nullable,
+                      const foster::SourceRange& sourceRange)
+    : TypeAST(llvm::PointerType::getUnqual(underlyingType->getLLVMType()),
+              sourceRange),
       nullable(nullable),
       underlyingType(underlyingType) {
     assert(getLLVMType()->isPointerTy());
@@ -110,8 +124,9 @@ class FnTypeAST : public TypeAST {
 
   explicit FnTypeAST(const llvm::FunctionType* fnty,
                     TypeAST* returnType,
-                    const std::vector<TypeAST*>& argTypes)
-    : TypeAST(fnty),
+                    const std::vector<TypeAST*>& argTypes,
+                    const foster::SourceRange& sourceRange)
+    : TypeAST(fnty, sourceRange),
       returnType(returnType),
       argTypes(argTypes) {}
 
@@ -143,8 +158,9 @@ class TupleTypeAST : public TypeAST {
   std::vector<TypeAST*> parts;
 
   explicit TupleTypeAST(const llvm::StructType* sty,
-                    const std::vector<TypeAST*>& parts)
-    : TypeAST(sty),
+                    const std::vector<TypeAST*>& parts,
+                    const foster::SourceRange& sourceRange)
+    : TypeAST(sty, sourceRange),
       parts(parts) {}
 
   typedef std::vector<TypeAST*> Args;
@@ -163,6 +179,37 @@ public:
   static TupleTypeAST* get(const std::vector<TypeAST*>& parts);
 };
 
+class PrototypeAST;
+
+class ClosureTypeAST : public TypeAST {
+public:
+  PrototypeAST* proto;
+  mutable FnTypeAST* fntype;
+  mutable TupleTypeAST* clotype;
+  explicit ClosureTypeAST(PrototypeAST* proto, const llvm::Type* underlyingType,
+                          const foster::SourceRange& sourceRange)
+     : TypeAST(underlyingType, sourceRange), proto(proto), fntype(NULL), clotype(NULL) {}
+
+  virtual std::ostream& operator<<(std::ostream& out) const;
+  virtual const llvm::Type* getLLVMType() const;
+  FnTypeAST* getFnType() const;
+};
+
+
+class SimdVectorTypeAST : public TypeAST {
+public:
+  explicit SimdVectorTypeAST(const llvm::Type* simdVectorTy,
+                             const foster::SourceRange& sourceRange)
+     : TypeAST(simdVectorTy, sourceRange) {}
+
+  virtual std::ostream& operator<<(std::ostream& out) const {
+    out << "SimdVectorTypeAST(" << str(repr) << ")";
+    return out;
+  };
+
+  static SimdVectorTypeAST* get(TypeAST* size, TypeAST* type,
+                                const foster::SourceRange& sourceRange);
+};
 
 #endif // header guard
 

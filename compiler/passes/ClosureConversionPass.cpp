@@ -98,10 +98,12 @@ void ClosureConversionPass::visit(FnAST* ast)                  {
   }
 }
 
+#if 0
 void ClosureConversionPass::visit(ClosureTypeAST* ast) {
   std::cout << "ClosureConversionPass::visit(ClosureTypeAST* ast" << std::endl;
   onVisitChild(ast, ast->proto);
 }
+#endif
 
 void ClosureConversionPass::visit(ClosureAST* ast) {
   if (ast->hasKnownEnvironment) {

@@ -5,6 +5,8 @@
 #include "FosterUtils.h"
 #include "FosterAST.h" // TODO this is just for LLVMTypeFor(), should break this dependency!
 
+#include "base/Diagnostics.h"
+
 #include "llvm/Module.h"
 
 #include <sstream>
@@ -25,7 +27,7 @@ FnTypeAST* tryExtractCallableType(TypeAST* ty) {
     ty = r->getElementType();
   }
   if (FnTypeAST* f = dynamic_cast<FnTypeAST*>(ty)) { return f; }
-  std::cerr << "RETURNING NULL for extracting callable type from " << str(ty) << std::endl;
+  std::cerr << "RETURNING NULL for extracting function type from " << str(ty) << std::endl;
   return NULL;
 }
 
@@ -53,34 +55,46 @@ void addClosureTypeName(llvm::Module* mod, const llvm::StructType* sty) {
 
 // converts      t1 (t2, t3) to { t1 (i8* nest, t2, t3)*, i8* }
 // or    t1 (envty* nest, t2, t3) to { t1 (i8* nest, t2, t3)*, i8* }
-static TupleTypeAST* genericClosureTypeFor(FnTypeAST* fnty, bool skipFirstArg) {
-  TypeAST* envType = RefTypeAST::get(TypeAST::get(LLVMTypeFor("i8")));
-
-  std::vector<TypeAST*> fnParams;
-  fnParams.push_back(envType);
-
-  int firstArg = skipFirstArg ? 1 : 0;
-  for (int i = firstArg; i < fnty->getNumParams(); ++i) {
-    fnParams.push_back(fnty->getParamType(i));
+static TupleTypeAST* genericClosureTypeFor(TypeAST* ty, bool skipFirstArg) {
+  std::cout << "59: " << str(ty) << std::endl;
+#if 0
+  if (ClosureTypeAST* cloty = dynamic_cast<ClosureTypeAST*>(ty)) {
+    ty = cloty->getFnType();
   }
+#endif
 
-  FnTypeAST* newFnTy = FnTypeAST::get(fnty->getReturnType(), fnParams);
-  std::vector<TypeAST*> cloTypes;
-  cloTypes.push_back(RefTypeAST::get(newFnTy));
-  cloTypes.push_back(envType);
-  TupleTypeAST* cloTy = TupleTypeAST::get(cloTypes);
-  //std::cout << "GENERIC CLOSURE TYPE for " << *fnty << " is " << *cloTy << std::endl;
-  return cloTy;
+  if (FnTypeAST* fnty = dynamic_cast<FnTypeAST*>(ty)) {
+    TypeAST* envType = RefTypeAST::get(TypeAST::get(LLVMTypeFor("i8")));
+
+    std::vector<TypeAST*> fnParams;
+    fnParams.push_back(envType);
+
+    int firstArg = skipFirstArg ? 1 : 0;
+    for (int i = firstArg; i < fnty->getNumParams(); ++i) {
+      fnParams.push_back(fnty->getParamType(i));
+    }
+
+    FnTypeAST* newFnTy = FnTypeAST::get(fnty->getReturnType(), fnParams);
+    std::vector<TypeAST*> cloTypes;
+    cloTypes.push_back(RefTypeAST::get(newFnTy));
+    cloTypes.push_back(envType);
+    TupleTypeAST* cloTy = TupleTypeAST::get(cloTypes);
+    //std::cout << "GENERIC CLOSURE TYPE for " << *fnty << " is " << *cloTy << std::endl;
+    return cloTy;
+  } else {
+    foster::EDiag() << "unable to extract fn type from " << str(ty) << "\n";
+    return NULL;
+  }
 }
 
 // converts t1 (t2, t3) to { t1 (i8*, t2, t3)*, i8* }
-TupleTypeAST* genericClosureTypeFor(FnTypeAST* fnty) {
-  return genericClosureTypeFor(fnty, false);
+TupleTypeAST* genericClosureTypeFor(TypeAST* ty) {
+  return genericClosureTypeFor(ty, false);
 }
 
 // converts t1 (envty*, t2, t3) to { t1 (i8*, t2, t3)*, i8* }
-TupleTypeAST* genericVersionOfClosureType(FnTypeAST* fnty) {
-  return genericClosureTypeFor(fnty, true);
+TupleTypeAST* genericVersionOfClosureType(TypeAST* ty) {
+  return genericClosureTypeFor(ty, true);
 }
 
 bool isValidClosureType(const llvm::Type* ty) {
@@ -122,6 +136,8 @@ FnTypeAST* originalFunctionTypeForClosureStructType(TypeAST* ty) {
 #endif
       return rv;
     }
+  } else if (ClosureTypeAST* cloty = dynamic_cast<ClosureTypeAST*>(ty)) {
+    return cloty->getFnType();
   }
   return NULL;
 }
@@ -170,6 +186,9 @@ const llvm::Type* recursivelySubstituteGenericClosureTypes(
 
 bool isVoid(const llvm::Type* ty) {
   return ty == ty->getVoidTy(getGlobalContext());
+}
+bool isVoid(const TypeAST* ty) {
+  return isVoid(ty->getLLVMType());
 }
 
 bool voidCompatibleReturnTypes(const llvm::FunctionType* expected,

@@ -81,47 +81,9 @@ void TypecheckPass::visit(IntAST* ast) {
 }
 
 void TypecheckPass::visit(VariableAST* ast) {
-  if (this->typeParsingMode) {
-    ast->type = TypeASTFor(ast->name);
-#if 0
-    std::cout << "visited var " << ast->name << " in type parsing mode;"
-	" ast->type is " << str(ast->type)
-	<< "; tyExpr = " << str(ast->tyExpr)
-	<< "; llType = " << str(LLVMTypeFor(ast->name))
-	<< std::endl;
-#endif
-  }
-
-  if (!ast->tyExpr) {
-    if (!ast->type) {
-      // Eventually we should do local type inference...
-      std::cerr << "Error: typechecking variable " << ast->name << " <"<< ast <<"> with no type provided! " << std::endl;
-    }
-    return;
-  }
-
-  if (ast->tyExpr && ast->type) {
-    /*
-    if (ast->tyExpr->type != ast->type) {
-      std::cerr << "Error: typechecking variable " << ast->name << " with both type expr ";
-      std::cerr << std::endl << "\t" << *(ast->tyExpr);
-      std::cerr << " and type constant "
-                << std::endl << "\t" << *(ast->type) << std::endl;
-    }
-    */
-    return;
-  }
-
-  // Extract an llvm::Type from the type expression; typeParsingMode
-  // causes names to be interpreted directly as type names, rather than
-  // variable names.
-  //std::cerr << "Parsing type for expr " << *(ast->tyExpr) << std::endl;
-  TypecheckPass typeParsePass; typeParsePass.typeParsingMode = true;
-  ast->tyExpr->accept(&typeParsePass);
-  ast->type = ast->tyExpr->type;
-
-  //std::cerr << "Parsed type as " << (ast->type) << std::endl;
-  //if (ast->type) std::cerr << "\t\t" << *(ast->type) << std::endl;
+  if (ast->type) { return; }
+  
+  EDiag() << "variable " << ast->name << " has no type!" << show(ast);
 }
 
 void TypecheckPass::visit(UnaryOpExprAST* ast) {
@@ -198,8 +160,8 @@ bool areNamesDisjoint(const std::vector<VariableAST*>& vars) {
 
 void TypecheckPass::visit(PrototypeAST* ast) {
   if (!areNamesDisjoint(ast->inArgs)) {
-    std::cout << "Error: formal argument names for function "
-              << ast->name << " are not disjoint!" << std::endl;
+    EDiag() << "formal argument names for function "
+              << ast->name << " are not disjoint" << show(ast);
     return;
   }
 
@@ -222,17 +184,14 @@ void TypecheckPass::visit(PrototypeAST* ast) {
     argTypes.push_back(ty);
   }
 
-  if (!ast->resultTy && ast->tyExpr != NULL) {
-    bool tyParMode = this->typeParsingMode; this->typeParsingMode = true;
-    ast->tyExpr->accept(this);
-    this->typeParsingMode = tyParMode;
-    ast->resultTy = ast->tyExpr->type->getLLVMType();
+  if (!ast->resultTy && ast->type != NULL) {
+    EDiag() << "TYPE BU NO RESULT TYPE FOR PROTO" << show(ast);
   }
 
   if (!ast->resultTy) {
    std::cerr << "Error in typechecking PrototypeAST " << ast->name << ": null return type!" << std::endl;
   } else {
-    ast->type = FnTypeAST::get(TypeAST::get(ast->resultTy), argTypes);
+    ast->type = FnTypeAST::get(ast->resultTy, argTypes);
   }
 }
 
@@ -252,6 +211,7 @@ void TypecheckPass::visit(FnAST* ast) {
   }
 }
 
+#if 0
 void TypecheckPass::visit(ClosureTypeAST* ast) {
   ast->proto->accept(this);
   if (FnTypeAST* ft = tryExtractCallableType(ast->proto->type)) {
@@ -262,6 +222,7 @@ void TypecheckPass::visit(ClosureTypeAST* ast) {
     std::cerr << *(ast->proto) << std::endl;
   }
 }
+#endif
 
 void TypecheckPass::visit(ClosureAST* ast) {
   std::cout << "Type Checking closure AST node " << (*ast) << std::endl;
@@ -841,7 +802,8 @@ void TypecheckPass::visit(CallAST* ast) {
       } else {
         // Temporarily view a function type as its associated specific closure type,
         // since the formal arguments will have undergone the same conversion.
-        actualType = genericClosureTypeFor(dynamic_cast<FnTypeAST*>(actualType));
+        std::cout << "actualtype = " << str(actualType) << std::endl;
+        actualType = genericClosureTypeFor(actualType);
         std::cout << "TYPECHECK CallAST converting " << *fnty << " to " << *actualType << std::endl;
         std::cout << "\t for formal type:\t" << *formalType << std::endl;
         std::cout << "\t base :: " << *base << std::endl;

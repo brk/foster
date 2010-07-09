@@ -73,10 +73,6 @@ void ReplaceExprTransform::visit(FnAST* ast)                  {
   this->newChild = rewrite(ast);
 }
 
-void ReplaceExprTransform::visit(ClosureTypeAST* ast) {
-  std::cout << "ReplaceExprTransform ClosureTypeAST" << std::endl;
-}
-
 void ReplaceExprTransform::visit(ClosureAST* ast) {
   visitChildren(ast);
   this->newChild = rewrite(ast);
