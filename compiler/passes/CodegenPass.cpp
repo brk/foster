@@ -548,7 +548,6 @@ void CodegenPass::visit(PrototypeAST* ast) {
 #endif
   }
 
-  //std::cout << "\tdone codegen proto " << sourceName << std::endl;
   ast->value = F;
 }
 
@@ -776,62 +775,6 @@ void CodegenPass::visit(ClosureAST* ast) {
   }
 }
 
-struct LazyValue { virtual Value* get() const = 0; };
-struct LazyVisitedValue : public LazyValue {
-  FosterASTVisitor* visitor; ExprAST* expr;
-  LazyVisitedValue(FosterASTVisitor* v, ExprAST* e) : visitor(v), expr(e) {}
-  Value* get() const { expr->accept(visitor); return expr->value; }
-};
-struct MemoValue : public LazyValue {
-  Value* v; MemoValue(Value* v) : v(v) {}; Value* get() const { return v; }; };
-
-PHINode* codegenIfExpr(Value* cond,
-    const LazyValue& lazyThen,
-    const LazyValue& lazyElse,
-    const Type* valTy) {
-  Function *F = builder.GetInsertBlock()->getParent();
-
-  BasicBlock* thenBB = BasicBlock::Create(getGlobalContext(), "then", F);
-  BasicBlock* elseBB = BasicBlock::Create(getGlobalContext(), "else");
-  BasicBlock* mergeBB = BasicBlock::Create(getGlobalContext(), "ifcont");
-
-  builder.CreateCondBr(cond, thenBB, elseBB);
-  builder.SetInsertPoint(thenBB);
-  Value* then = lazyThen.get();
-  if (!then) {
-    EDiag() << "codegen for if expr failed due to missing 'then' branch";
-    return NULL;
-  }
-  builder.CreateBr(mergeBB);
-  thenBB = builder.GetInsertBlock();
-
-  F->getBasicBlockList().push_back(elseBB);
-  builder.SetInsertPoint(elseBB);
-  Value* else_ = lazyElse.get();
-  if (!else_) {
-    EDiag() << "codegen for if expr failed due to missing 'else' branch";
-    return NULL;
-  }
-  builder.CreateBr(mergeBB);
-  elseBB = builder.GetInsertBlock();
-
-  F->getBasicBlockList().push_back(mergeBB);
-  builder.SetInsertPoint(mergeBB);
-
-  // If we have a code construct like
-  //   if cond then { new blah {} } else { new blah {} }
-  // then the ast type (and thus valType) will be blah*
-  // but the exprs will be stack slots of type blah**
-  if (valTy != then->getType() && isPointerToType(then->getType(), valTy)) {
-    valTy = then->getType();
-  }
-
-  PHINode *PN = builder.CreatePHI(valTy, "iftmp");
-  PN->addIncoming(then, thenBB);
-  PN->addIncoming(else_, elseBB);
-  return PN;
-}
-
 void CodegenPass::visit(IfExprAST* ast) {
   if (ast->value) return;
 
@@ -839,8 +782,59 @@ void CodegenPass::visit(IfExprAST* ast) {
   Value* cond = ast->testExpr->value;
   if (!cond) return;
 
-  ast->value = codegenIfExpr(cond, LazyVisitedValue(this, ast->thenExpr),
-                                   LazyVisitedValue(this, ast->elseExpr), getLLVMType(ast->type));
+  Function *F = builder.GetInsertBlock()->getParent();
+
+  BasicBlock* thenBB = BasicBlock::Create(getGlobalContext(), "then", F);
+  BasicBlock* elseBB = BasicBlock::Create(getGlobalContext(), "else");
+  BasicBlock* mergeBB = BasicBlock::Create(getGlobalContext(), "ifcont");
+
+  builder.CreateCondBr(cond, thenBB, elseBB);
+
+  Value* then; Value* else_;
+
+  { // Codegen the then-branch of the if expression
+    builder.SetInsertPoint(thenBB);
+    ast->thenExpr->accept(this);
+    then = ast->thenExpr->value;
+    if (!then) {
+      EDiag() << "codegen for if expr failed due to missing 'then' branch";
+      return;
+    }
+    builder.CreateBr(mergeBB);
+    thenBB = builder.GetInsertBlock();
+  }
+
+  { // Codegen the else-branch of the if expression
+    F->getBasicBlockList().push_back(elseBB);
+    builder.SetInsertPoint(elseBB);
+    ast->elseExpr->accept(this);
+    else_ = ast->elseExpr->value;
+    if (!else_) {
+      EDiag() << "codegen for if expr failed due to missing 'else' branch";
+      return;
+    }
+    builder.CreateBr(mergeBB);
+    elseBB = builder.GetInsertBlock();
+  }
+
+  { // Codegen the PHI node to merge control flow
+    const Type* valTy = getLLVMType(ast->type);
+    if (valTy != then->getType() && isPointerToType(then->getType(), valTy)) {
+      // If we have a code construct like
+      //   if cond then { new blah {} } else { new blah {} }
+      // then the ast type (and thus valType) will be blah*
+      // but the exprs will be stack slots of type blah**
+      valTy = then->getType();
+    }
+
+    F->getBasicBlockList().push_back(mergeBB);
+    builder.SetInsertPoint(mergeBB);
+
+    PHINode *PN = builder.CreatePHI(valTy, "iftmp");
+    PN->addIncoming(then, thenBB);
+    PN->addIncoming(else_, elseBB);
+    ast->value = PN;
+  }
 }
 
 void CodegenPass::visit(ForRangeExprAST* ast) {

@@ -691,6 +691,26 @@ void TypecheckPass::visit(SeqAST* ast) {
   ast->type = ast->parts.back()->type;
 }
 
+// HACK HACK HACK - give print_ref special polymorphic type (with hardcoded ret ty)
+void givePrintRefPseudoPolymorphicType(CallAST* ast, TypecheckPass* pass) {
+ if (ast->parts.size() < 2) {
+    EDiag() << "arity mismatch, required one argument but got none"
+            << show(ast);
+    return;
+  }
+
+  ExprAST* arg = ast->parts[1];
+  arg->accept(pass);
+  if (!arg->type) {
+    EDiag() << "print_ref() given arg of no discernable type" << show(arg);
+  } else if (!arg->type->getLLVMType()->isPointerTy()) {
+    EDiag() << "print_ref() given arg of non-ref type " << str(arg->type)
+            << show(arg);
+  } else {
+    ast->type = TypeAST::get(LLVMTypeFor("i32"));
+  }
+}
+
 const FunctionType* getFunctionTypeFromClosureStructType(const Type* ty) {
   if (const llvm::StructType* sty = llvm::dyn_cast<llvm::StructType>(ty)) {
     if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(sty->getContainedType(0))) {
@@ -716,21 +736,8 @@ void TypecheckPass::visit(CallAST* ast) {
     return;
   }
 
-  // HACK HACK HACK - give print_ref special polymorphic type (with hardcoded ret ty)
   if (isPrintRef(base)) {
-    if (ast->parts.size() < 2) {
-      std::cerr << "print_ref() must be given an arg!" << std::endl;
-      return;
-    }
-    ExprAST* arg = ast->parts[1];
-    arg->accept(this);
-    if (!arg->type) {
-      std::cerr << "print_ref() given arg of no discernable type!" << std::endl;
-    } else if (!arg->type->getLLVMType()->isPointerTy()) {
-      std::cerr << "print_ref() given arg of non-pointer type! " << *(arg->type) << std::endl;
-    } else {
-      ast->type = TypeAST::get(LLVMTypeFor("i32"));
-    }
+    givePrintRefPseudoPolymorphicType(ast, this);
     return;
   }
 
@@ -745,8 +752,8 @@ void TypecheckPass::visit(CallAST* ast) {
     return;
   }
 
-  vector<TypeAST*> actualTypes;
-  vector<ExprAST*> literalArgs; // any args not from unpack exprs, temp hack!
+  // Collect args in separate zero-based array for easier counting and indexing
+  vector<ExprAST*> args;
   for (int i = 1; i < ast->parts.size(); ++i) {
     ExprAST* arg = ast->parts[i];
     if (!arg) {
@@ -761,13 +768,12 @@ void TypecheckPass::visit(CallAST* ast) {
       return;
     }
 
-    actualTypes.push_back(argTy);
-    literalArgs.push_back(arg);
+    args.push_back(arg);
   }
 
   int numParams = baseFT->getNumParams();
-  if (numParams != actualTypes.size()) {
-    EDiag() << "arity mismatch, " << actualTypes.size()
+  if (numParams != args.size()) {
+    EDiag() << "arity mismatch, " << args.size()
             << " args provided for function of type " << str(baseFT)
             << " taking " << numParams << " args"
             << show(ast);
@@ -777,7 +783,7 @@ void TypecheckPass::visit(CallAST* ast) {
   bool success = true;
   for (int i = 0; i < numParams; ++i) {
     TypeAST* formalType = baseFT->getParamType(i);
-    TypeAST* actualType = actualTypes[i];
+    TypeAST* actualType = args[i]->type;
 
     if (const FunctionType* fnty = llvm::dyn_cast<const FunctionType>(actualType->getLLVMType())) {
       // If we try to use  fa: i32 () in place of ff: void ()*,
@@ -802,7 +808,7 @@ void TypecheckPass::visit(CallAST* ast) {
           // trampoline function pointer at codegen time.
           actualType = formalType;
 
-          if (ExprAST* arg = literalArgs[i]) {
+          if (ExprAST* arg = args[i]) {
              if (ClosureAST* clo = dynamic_cast<ClosureAST*>(arg)) {
                clo->isTrampolineVersion = true;
              } else {
@@ -820,25 +826,14 @@ void TypecheckPass::visit(CallAST* ast) {
       success = false;
       EDiag() << "type mismatch, expected " << str(formalType)
               << " but got " << str(actualType)
-              << show(literalArgs[i]);
-    }
-  }
-
-  if (false && !success) {
-    std::cerr << "Error in typechecking call of"
-              << "\n\t" << *(ast->parts[0]) << "\tof type\t" << *(baseFT) << "\t with args ";
-    for (int i = 1; i < ast->parts.size(); ++i) {
-      std::cerr << "\n\t" << i << ":\t";
-      if (ExprAST* arg = ast->parts[i]) {
-        std::cerr << *arg << " : " << str(arg->type);
-      } else {
-        std::cerr << "<NULL arg>" << std::endl;
-      }
+              << show(args[i]);
     }
   }
 
   if (success) {
     ast->type = baseFT->getReturnType();
+  } else {
+    EDiag() << "unable to typecheck call " << show(ast);
   }
 }
 
@@ -856,7 +851,7 @@ int extractNumElementsAndElementType(int maxSize, ExprAST* ast, const Type*& ele
       elementType = body->parts[1]->type->getLLVMType();
       return n;
     } else {
-      std::cerr << "Concise simd/array declaration too big! : " << *ast << std::endl;
+      EDiag() << "concise simd/array declaration too big" << show(ast);
     }
   }
   return 0;
