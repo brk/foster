@@ -841,6 +841,17 @@ void CodegenPass::visit(IfExprAST* ast) {
 void CodegenPass::visit(ForRangeExprAST* ast) {
   if (ast->value) return;
 
+  Function* parentFn = builder.GetInsertBlock()->getParent();
+  BasicBlock* preLoopBB  = builder.GetInsertBlock();
+  BasicBlock* loopHdrBB  = BasicBlock::Create(llvm::getGlobalContext(), "forToHdr", parentFn);
+  BasicBlock* loopBB     = BasicBlock::Create(llvm::getGlobalContext(), "forTo", parentFn);
+  BasicBlock* afterBB    = BasicBlock::Create(llvm::getGlobalContext(), "postloop", parentFn);
+
+  // InsertPoint is preLoopBB
+  builder.CreateBr(loopHdrBB);
+
+
+  builder.SetInsertPoint(loopHdrBB);
   Value* incr;
   if (ast->incrExpr) {
     (ast->incrExpr)->accept(this);
@@ -856,19 +867,29 @@ void CodegenPass::visit(ForRangeExprAST* ast) {
   (ast->endExpr)->accept(this);
   if (!ast->endExpr->value) { return; }
 
+
+
 /* Generate LLVM IR with the following CFG structure:
 preLoopBB:
+      ...
+      br loopHdrBB
+
+loopHdrBB:
+      incr = incrExpr
+      end = endExpr
       sv = startExpr
       precond = sv < end
       br precond? loopBB afterBB
 
 loopBB:
       loopvar = phi...
-      body...
+      body
+      ...
 
 loopEndBB:
+      ...
       next = loopvar + 1
-      endExpr = ...
+
       cond = next < end
       br cond? loopBB afterBB
 
@@ -876,37 +897,41 @@ afterBB:
       (to be filled in by further codegen)
  */
 
-  Function* parentFn = builder.GetInsertBlock()->getParent();
-  BasicBlock* preLoopBB  = builder.GetInsertBlock();
-  BasicBlock* loopBB     = BasicBlock::Create(llvm::getGlobalContext(), "forTo", parentFn);
-
   builder.SetInsertPoint(loopBB);
 
-  llvm::PHINode* pickvar = builder.CreatePHI(getLLVMType(ast->var->type), ast->var->name);
-  pickvar->addIncoming(ast->startExpr->value, preLoopBB);
+    llvm::PHINode* pickvar = builder.CreatePHI(getLLVMType(ast->var->type),
+                                               ast->var->name);
 
-  scope.pushScope("for-range " + ast->var->name);
-  scope.insert(ast->var->name, pickvar);
+    scope.pushScope("for-range " + ast->var->name);
+    scope.insert(ast->var->name, pickvar);
 
-  (ast->bodyExpr)->accept(this);
-  if (!ast->bodyExpr->value) { return; }
-  scope.popScope();
+    (ast->bodyExpr)->accept(this);
+    if (!ast->bodyExpr->value) { return; }
+    scope.popScope();
 
-  Value* next = builder.CreateAdd(pickvar, incr, "next");
-  Value* endCond = builder.CreateICmpSLT(next, ast->endExpr->value, "loopcond");
 
   BasicBlock* loopEndBB = builder.GetInsertBlock();
-  pickvar->addIncoming(next, loopEndBB);
 
-  BasicBlock* afterBB   = BasicBlock::Create(getGlobalContext(), "postloop", parentFn);
-  builder.CreateCondBr(endCond, loopBB, afterBB);
+  builder.SetInsertPoint(loopEndBB);
+
+    Value* next = builder.CreateAdd(pickvar, incr, "next");
+    Value* endCond = builder.CreateICmpSLT(next, ast->endExpr->value,
+                                           "loopcond");
+    builder.CreateCondBr(endCond, loopBB, afterBB);
+
 
   // At the start of the loop, compare the start and end (instead of next and end)
   // and skip the loop if we shouldn't execute it.
-  builder.SetInsertPoint(preLoopBB);
-  Value* startCond = builder.CreateICmpSLT(ast->startExpr->value,
-                                           ast->endExpr->value, "preloopcond");
-  builder.CreateCondBr(startCond, loopBB, afterBB);
+  builder.SetInsertPoint(loopHdrBB);
+  {
+    Value* startCond = builder.CreateICmpSLT(ast->startExpr->value,
+                                             ast->endExpr->value,
+                                             "preloopcond");
+    builder.CreateCondBr(startCond, loopBB, afterBB);
+  }
+
+  pickvar->addIncoming(ast->startExpr->value, loopHdrBB);
+  pickvar->addIncoming(next, loopEndBB);
 
   // Leave the insert point after the loop for later codegenning.
   builder.SetInsertPoint(afterBB);
