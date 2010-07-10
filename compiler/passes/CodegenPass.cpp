@@ -418,7 +418,8 @@ void CodegenPass::visit(VariableAST* ast) {
   } else {
     ast->value = scope.lookup(ast->name, "");
     if (!ast->value) {
-      std::cout << "looking up variable " << ast->name << " in scope, got " << ast->value << std::endl;
+      EDiag() << "looking up variable " << ast->name << " in scope, got "
+              << str(ast->value) << show(ast);
       scope.dump(std::cout);
     }
   }
@@ -526,13 +527,13 @@ void CodegenPass::visit(PrototypeAST* ast) {
   Function* F = Function::Create(FT, Function::ExternalLinkage, symbolName, module);
 
   if (!F) {
-    std::cout << "Function creation failed!" << std::endl;
+    EDiag() << "function creation failed" << show(ast);
     return;
   }
 
   // If F conflicted, there was already something with our desired name 
   if (F->getName() != symbolName) {
-    std::cout << "Error: redefinition of function " << symbolName << std::endl;
+    EDiag() << "redefinition of function " << symbolName << show(ast);
     return;
   }
 
@@ -842,21 +843,43 @@ void CodegenPass::visit(ForRangeExprAST* ast) {
 
   Value* incr;
   if (ast->incrExpr) {
-        (ast->incrExpr)->accept(this);
-        if (!ast->incrExpr->value) { return; }
-        incr = ast->incrExpr->value;
+    (ast->incrExpr)->accept(this);
+    if (!ast->incrExpr->value) { return; }
+    incr = ast->incrExpr->value;
   } else {
-        incr = ConstantInt::get(LLVMTypeFor("i32"), 1);
+    incr = ConstantInt::get(LLVMTypeFor("i32"), 1);
   }
 
   (ast->startExpr)->accept(this);
   if (!ast->startExpr->value) { return; }
 
+  (ast->endExpr)->accept(this);
+  if (!ast->endExpr->value) { return; }
+
+/* Generate LLVM IR with the following CFG structure:
+preLoopBB:
+      sv = startExpr
+      precond = sv < end
+      br precond? loopBB afterBB
+
+loopBB:
+      loopvar = phi...
+      body...
+
+loopEndBB:
+      next = loopvar + 1
+      endExpr = ...
+      cond = next < end
+      br cond? loopBB afterBB
+
+afterBB:
+      (to be filled in by further codegen)
+ */
+
   Function* parentFn = builder.GetInsertBlock()->getParent();
   BasicBlock* preLoopBB  = builder.GetInsertBlock();
   BasicBlock* loopBB     = BasicBlock::Create(llvm::getGlobalContext(), "forTo", parentFn);
 
-  builder.CreateBr(loopBB);
   builder.SetInsertPoint(loopBB);
 
   llvm::PHINode* pickvar = builder.CreatePHI(getLLVMType(ast->var->type), ast->var->name);
@@ -870,18 +893,23 @@ void CodegenPass::visit(ForRangeExprAST* ast) {
   scope.popScope();
 
   Value* next = builder.CreateAdd(pickvar, incr, "next");
-
-  (ast->endExpr)->accept(this);
-  if (!ast->endExpr->value) { return; }
-  Value* end = ast->endExpr->value;
-  Value* endCond = builder.CreateICmpSLT(next, end, "loopcond");
+  Value* endCond = builder.CreateICmpSLT(next, ast->endExpr->value, "loopcond");
 
   BasicBlock* loopEndBB = builder.GetInsertBlock();
+  pickvar->addIncoming(next, loopEndBB);
+
   BasicBlock* afterBB   = BasicBlock::Create(getGlobalContext(), "postloop", parentFn);
   builder.CreateCondBr(endCond, loopBB, afterBB);
-  builder.SetInsertPoint(afterBB);
 
-  pickvar->addIncoming(next, loopEndBB);
+  // At the start of the loop, compare the start and end (instead of next and end)
+  // and skip the loop if we shouldn't execute it.
+  builder.SetInsertPoint(preLoopBB);
+  Value* startCond = builder.CreateICmpSLT(ast->startExpr->value,
+                                           ast->endExpr->value, "preloopcond");
+  builder.CreateCondBr(startCond, loopBB, afterBB);
+
+  // Leave the insert point after the loop for later codegenning.
+  builder.SetInsertPoint(afterBB);
 
   ast->value = ConstantInt::get(LLVMTypeFor("i32"), 0);
 }
@@ -1373,7 +1401,8 @@ void CodegenPass::visit(CallAST* ast) {
 
     bool needsAdjusting = V->getType() != expectedType;
     if (needsAdjusting) {
-      std::cout << "V->getType() is " << str(V->getType()) << "; expecting " << str(expectedType) << std::endl;
+      EDiag() << str(V) << "->getType() is " << str(V->getType())
+              << "; expecting " << str(expectedType) << show(ast->parts[i + 1]);
     }
 
     // If we're given a clo** when we expect a clo,
@@ -1384,7 +1413,7 @@ void CodegenPass::visit(CallAST* ast) {
     }
 
     if (needsAdjusting) {
-      std::cout << "V->getType() is " << str(V->getType())
+      std::cout << V << "->getType() is " << str(V->getType())
           << "; expect clo? " << isGenericClosureType(expectedType) << std::endl;
     }
 
@@ -1399,8 +1428,8 @@ void CodegenPass::visit(CallAST* ast) {
     }
 
     if (V->getType() != expectedType) {
-      std::cout << "Error: arg " << i << " of call to " << *base << " has type mismatch:\n"
-          << *(V->getType()) << " vs expected type " << *(expectedType) << "\n";
+      EDiag() << "type mismatch, " << str(V->getType())
+              << " vs expected type " << str(expectedType) << show(ast->parts[i + 1]);
     }
   }
 

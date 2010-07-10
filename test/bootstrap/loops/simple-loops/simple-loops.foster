@@ -23,8 +23,52 @@ incr-is-static = fn () {
   }
 }
 
+no-guaranteed-iterations = fn () {
+  expect_i32(1234)
+  for i in 42 to 42 do {
+    print_i32(i)
+  }
+  ; // TODO this semicolon shouldn't be needed
+  print_i32(1234)
+}
+
+simple-nesting = fn () {
+  expect_i32(100); expect_i32(200)
+  expect_i32(100); expect_i32(201)
+  expect_i32(101); expect_i32(200)
+  expect_i32(101); expect_i32(201)
+
+  for i in 100 to 102 do {
+    for j in 200 to 202 do {
+      print_i32(i) ; print_i32(j)
+    }
+  }
+}
+
+silly-nesting = fn () {
+  expect_i32(200)
+  expect_i32(201)
+  expect_i32(100)
+  
+  expect_i32(200)
+  expect_i32(201)
+  expect_i32(101)
+  
+  for i in 100 to 102 do {
+    for i in 200 to 202 do {
+      print_i32(i)
+    }
+    // shadowing is fine, and does not interfere
+    // with outer loop variables
+    print_i32(i)
+  }
+}
+
 fn "main" () {
   half-open-loops()
   terminate-on-overshoot()
   incr-is-static()
+  no-guaranteed-iterations()
+  simple-nesting()
+  silly-nesting()
 }
