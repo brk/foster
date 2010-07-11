@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#include "PrettyPrintPass.h"
-#include "FosterAST.h"
+#include "passes/PrettyPrintPass.h"
+#include "parse/FosterAST.h"
 
 ////////////////////////////////////////////////////////////////////
 

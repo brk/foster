@@ -5,7 +5,7 @@
 #ifndef FOSTER_PASSES_TYPECHECK
 #define FOSTER_PASSES_TYPECHECK
 
-#include "FosterASTVisitor.h"
+#include "parse/FosterASTVisitor.h"
 
 struct TypecheckPass : public FosterASTVisitor {
   // typeParsingMode allows us to parse an AST as a type specification.
@@ -17,7 +17,7 @@ struct TypecheckPass : public FosterASTVisitor {
   
   TypecheckPass() : typeParsingMode(false) {}
   
-  #include "FosterASTVisitor.decls.inc.h"
+  #include "parse/FosterASTVisitor.decls.inc.h"
 };
 
 inline bool isPrintRef(const ExprAST* base) {

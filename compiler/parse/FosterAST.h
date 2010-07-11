@@ -12,11 +12,11 @@
 #include "llvm/Support/IRBuilder.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include "FosterASTVisitor.h"
-#include "FosterTypeAST.h"
-#include "InputFile.h"
-#include "SourceRange.h"
 #include "base/Assert.h"
+#include "base/InputFile.h"
+#include "base/Diagnostics.h"
+#include "parse/FosterASTVisitor.h"
+#include "parse/FosterTypeAST.h"
 
 #include <iostream>
 #include <vector>
@@ -55,6 +55,9 @@ string join(string glue, Exprs args);
 string str(ExprAST* expr);
 string str(TypeAST* type);
 string str(Value* value);
+namespace foster {
+SourceRangeHighlighter show(ExprAST* ast);
+}
 
 TypeAST* TypeASTFor(const string& name);
 const Type* LLVMTypeFor(const string& name);

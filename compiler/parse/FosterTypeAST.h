@@ -9,9 +9,9 @@
 #include "llvm/DerivedTypes.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Support/raw_ostream.h"
-#include "base/Assert.h"
 
-#include "SourceRange.h"
+#include "base/Assert.h"
+#include "base/SourceRange.h"
 
 #include <map>
 #include <string>

@@ -5,7 +5,7 @@
 #ifndef FOSTER_PASSES_PRETTYPRINT_PUGH
 #define FOSTER_PASSES_PRETTYPRINT_PUGH
 
-#include "FosterASTVisitor.h"
+#include "parse/FosterASTVisitor.h"
 
 #include <string>
 #include <deque>
@@ -18,7 +18,7 @@
 
 // TODO opt linebreaks don't seem to be working as expected...
 struct PrettyPrintPass : public FosterASTVisitor {
-  #include "FosterASTVisitor.decls.inc.h"
+  #include "parse/FosterASTVisitor.decls.inc.h"
   
   virtual void visitChildren(ExprAST* ast) {
    // Only visit children manually!

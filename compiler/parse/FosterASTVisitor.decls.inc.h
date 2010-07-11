@@ -4,5 +4,5 @@
 #endif
 
 #define FOSTER_AST_INCLUDED_VIA_DECLS_H
-#include "FosterASTVisitor.base.inc.h"
+#include "parse/FosterASTVisitor.base.inc.h"
 #undef  FOSTER_AST_INCLUDED_VIA_DECLS_H

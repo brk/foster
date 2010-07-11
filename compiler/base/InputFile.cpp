@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#include "InputFile.h"
+#include "base/InputFile.h"
 #include "base/Assert.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include <iostream>
 
 namespace foster {
+
 InputFile::InputFile(const std::string& filePath) : filePath(filePath) {
   buf = llvm::MemoryBuffer::getFile(filePath);
   initializeLineCache();

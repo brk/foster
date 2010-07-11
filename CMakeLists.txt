@@ -129,7 +129,6 @@ include_directories(${ANTLR_DIR}/include ${PROJECT_BINARY_DIR})
 
 include_directories(
   ${PROJECT_SOURCE_DIR}/compiler
-  ${PROJECT_SOURCE_DIR}/compiler/passes
   ${PROJECT_SOURCE_DIR}/third_party
   ${PROJECT_SOURCE_DIR}/third_party/chromium_base
 )
@@ -154,20 +153,20 @@ include(${PROJECT_SOURCE_DIR}/third_party/gtest/CMakeLists.txt)
 
 add_executable(fosterc
   compiler/foster.cpp
-  compiler/InputFile.cpp
-  compiler/FosterAST.cpp
-  compiler/SourceRange.cpp
   compiler/FosterUtils.cpp
-  compiler/FosterTypeAST.cpp
-  compiler/ANTLRtoFosterAST.cpp
+  compiler/base/InputFile.cpp
   compiler/base/PathManager.cpp
+  compiler/base/SourceRange.cpp
+  compiler/parse/FosterAST.cpp
+  compiler/parse/FosterTypeAST.cpp
+  compiler/parse/ANTLRtoFosterAST.cpp
+  compiler/parse/ANTLRtoFosterErrorHandling.cpp
   compiler/passes/CodegenPass.cpp
   compiler/passes/TypecheckPass.cpp
   compiler/passes/PrettyPrintPass.cpp
   compiler/passes/AddParentLinksPass.cpp
   compiler/passes/ReplaceExprTransform.cpp
   compiler/passes/ClosureConversionPass.cpp
-  compiler/parse/ANTLRtoFosterErrorHandling.cpp
   compiler/llvm/passes/Hello.cpp
   compiler/llvm/passes/LLVMCallGraphDotPrinter.cpp
   third_party/pystring/pystring.cpp

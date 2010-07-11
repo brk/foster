@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#include "FosterAST.h"
-#include "TypecheckPass.h"
-#include "FosterUtils.h"
-#include "base/Diagnostics.h"
 #include "base/Assert.h"
+#include "base/Diagnostics.h"
+#include "parse/FosterAST.h"
+#include "passes/TypecheckPass.h"
+#include "FosterUtils.h"
 
 #include "llvm/Target/TargetSelect.h"
 #include "llvm/Module.h"
@@ -17,6 +17,9 @@
 
 using foster::EDiag;
 using foster::show;
+using foster::SourceRange;
+using foster::SourceRangeHighlighter;
+using foster::SourceLocation;
 
 using llvm::Type;
 using llvm::BasicBlock;
@@ -121,6 +124,18 @@ string str(Value* value) {
     llvm::raw_string_ostream ss(s); ss << *value; return ss.str();
   } else { return "<nil>"; }
 }
+
+namespace foster {
+
+SourceRangeHighlighter show(ExprAST* ast) {
+  if (!ast) {
+    SourceLocation empty = SourceLocation::getInvalidLocation();
+    return SourceRangeHighlighter(SourceRange(NULL, empty, empty), empty);
+  }
+  return show(ast->sourceRange);
+}
+
+} // namespace foster
 
 std::map<string, const Type*> builtinTypes;
 

@@ -5,7 +5,7 @@
 #ifndef FOSTER_PASSES_REPLACEEXPR
 #define FOSTER_PASSES_REPLACEEXPR
 
-#include "FosterASTVisitor.h"
+#include "parse/FosterASTVisitor.h"
 
 #include <map>
 #include <vector>
@@ -35,7 +35,7 @@ struct ReplaceExprTransform : public FosterASTVisitor {
 
   ExprAST* rewrite(ExprAST* ast);
 
-# include "FosterASTVisitor.decls.inc.h"
+# include "parse/FosterASTVisitor.decls.inc.h"
 };
 
 #endif // header guard

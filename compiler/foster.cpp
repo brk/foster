@@ -40,17 +40,17 @@
 #include "fosterLexer.h"
 #include "fosterParser.h"
 
-#include "FosterAST.h"
-#include "ANTLRtoFosterAST.h"
-#include "InputFile.h"
-#include "parse/ANTLRtoFosterErrorHandling.h"
 #include "base/Assert.h"
+#include "base/InputFile.h"
+#include "parse/FosterAST.h"
+#include "parse/ANTLRtoFosterAST.h"
+#include "parse/ANTLRtoFosterErrorHandling.h"
 
-#include "TypecheckPass.h"
-#include "CodegenPass.h"
-#include "AddParentLinksPass.h"
-#include "PrettyPrintPass.h"
-#include "ClosureConversionPass.h"
+#include "passes/TypecheckPass.h"
+#include "passes/CodegenPass.h"
+#include "passes/AddParentLinksPass.h"
+#include "passes/PrettyPrintPass.h"
+#include "passes/ClosureConversionPass.h"
 
 #include "pystring/pystring.h"
 

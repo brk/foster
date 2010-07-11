@@ -5,6 +5,8 @@
 #ifndef FOSTER_DIAGNOSTICS_H
 #define FOSTER_DIAGNOSTICS_H
 
+#include "base/SourceRange.h"
+
 // Foster's diagnostics subsystem is inspired by Clang's,
 // though with less emphasis on configurability and more
 // emphasis on making it easy to mark and display errors.
@@ -20,14 +22,6 @@ struct SourceRangeHighlighter {
 
 inline SourceRangeHighlighter show(const SourceRange& r) {
   return SourceRangeHighlighter(r, r.begin);
-}
-
-inline SourceRangeHighlighter show(ExprAST* ast) {
-  if (!ast) {
-    SourceLocation empty = SourceLocation::getInvalidLocation();
-    return SourceRangeHighlighter(SourceRange(NULL, empty, empty), empty);
-  }
-  return show(ast->sourceRange);
 }
 
 class DiagBase {

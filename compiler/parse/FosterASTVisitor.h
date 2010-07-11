@@ -9,7 +9,7 @@ struct ExprAST;
 
 // Forward-declare all the AST node types
 #define FOSTER_AST_VISITOR_GEN(type) struct type;
-#include "FosterASTVisitor.decls.inc.h"
+#include "parse/FosterASTVisitor.decls.inc.h"
 #undef  FOSTER_AST_VISITOR_GEN
 
 struct FosterASTVisitor {

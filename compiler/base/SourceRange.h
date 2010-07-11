@@ -5,7 +5,7 @@
 #ifndef FOSTER_SOURCERANGE_H
 #define FOSTER_SOURCERANGE_H
 
-#include "InputFile.h"
+#include "base/InputFile.h"
 #include "llvm/Support/raw_os_ostream.h"
 
 namespace foster {

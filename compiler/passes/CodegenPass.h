@@ -5,11 +5,11 @@
 #ifndef FOSTER_PASSES_CODEGEN
 #define FOSTER_PASSES_CODEGEN
 
-#include "FosterASTVisitor.h"
+#include "parse/FosterASTVisitor.h"
 #include <stack>
 
 struct CodegenPass : public FosterASTVisitor {
-  #include "FosterASTVisitor.decls.inc.h"
+  #include "parse/FosterASTVisitor.decls.inc.h"
 
   // The insertPointStack is used to tranparently perform function hoisting
   // while doing our normal codegen tree traversal. Specifically, this stack

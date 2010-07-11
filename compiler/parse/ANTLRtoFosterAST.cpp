@@ -2,11 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#include "ANTLRtoFosterAST.h"
-#include "FosterAST.h"
-#include "TypecheckPass.h"
-#include "base/Diagnostics.h"
-#include "base/Assert.h"
+#include "parse/ANTLRtoFosterAST.h"
+#include "parse/FosterAST.h"
+#include "passes/TypecheckPass.h"
 
 #include "fosterLexer.h"
 #include "fosterParser.h"
@@ -786,27 +784,6 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     if (!var) {
       EDiag() << "unknown var name: " << varName << show(sourceRange);
     }
-#if 0
-    if (!var) {
-      // Maybe parsing a type expr, in which case names refer directly to
-      // types, either user-defined or built-in (to Foster or LLVM)
-      TypeAST* ty = typeScope.lookup(varName, "");
-      if (!ty) {
-        ty = TypeASTFor(varName);
-        if (ty) {
-          //std::cout << "Could not find ExprAST for var name\t" << varName << ", but it's a valid builtin type name..." << std::endl;
-          var = new VariableAST(varName, ty, sourceRange);
-        } else {
-          std::cerr << "Could not find ExprAST for var name\t" << varName << ", and it's not a valid type name..." << std::endl;
-        }
-      } else {
-        //std::cout << "Could not find ExprAST for var name\t" << varName << ", but it's a valid user type name..." << std::endl;
-        var = new VariableAST(varName, ty, sourceRange);
-      }
-    } else {
-      //std::cout << "Found entry for variable " << varName << " in scope." << std::endl;
-    }
-#endif
     return var;
   }
 

@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#include "ClosureConversionPass.h"
-#include "ReplaceExprTransform.h"
-#include "TypecheckPass.h"
-#include "CodegenPass.h"
-#include "FosterAST.h"
+#include "passes/ClosureConversionPass.h"
+#include "passes/ReplaceExprTransform.h"
+#include "passes/TypecheckPass.h"
+#include "passes/CodegenPass.h"
+#include "parse/FosterAST.h"
 
 #include <vector>
 #include <map>

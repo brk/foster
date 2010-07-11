@@ -3,7 +3,7 @@
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
 #include "FosterUtils.h"
-#include "FosterAST.h" // TODO this is just for LLVMTypeFor(), should break this dependency!
+#include "parse/FosterAST.h" // TODO this is just for LLVMTypeFor(), should break this dependency!
 
 #include "base/Diagnostics.h"
 

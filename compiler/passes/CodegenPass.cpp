@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#include "CodegenPass.h"
-#include "TypecheckPass.h"
-#include "FosterAST.h"
-#include "FosterUtils.h"
 #include "base/Diagnostics.h"
+#include "parse/FosterAST.h"
+#include "passes/CodegenPass.h"
+#include "passes/TypecheckPass.h"
+#include "FosterUtils.h"
 
 #include "llvm/Attributes.h"
 #include "llvm/CallingConv.h"
