@@ -37,7 +37,7 @@ protected:
     : levelstr(levelstr), msg(msgstr), out(out), sourceFile(NULL), sourceLoc(-1, -1) {}
   ~DiagBase() {
     const InputFile* source = (sourceFile ? sourceFile : gInputFile);
-    out << source->getFilePath();
+    out << source->getShortSuffixPath();
     if (sourceLoc.isValid()) {
       out << ":" << sourceLoc.line << ":" << sourceLoc.column;
     }

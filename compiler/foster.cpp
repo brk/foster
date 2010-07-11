@@ -104,7 +104,7 @@ struct ANTLRContext {
 void createParser(ANTLRContext& ctx, const foster::InputFile& f) {
   ASSERT(f.getBuffer()->getBufferSize() <= ((ANTLR3_UINT32)-1)
       && "Trying to parse files larger than 4GB makes me cry.");
-  ctx.filename = f.getFilePath();
+  ctx.filename = f.getPath().str();
   ctx.input = antlr3NewAsciiStringInPlaceStream((pANTLR3_UINT8) f.getBuffer()->getBufferStart(),
                                                 (ANTLR3_UINT32) f.getBuffer()->getBufferSize(),
                                                 NULL);
@@ -637,7 +637,8 @@ int main(int argc, char** argv) {
   ee = EngineBuilder(module).create();
   initMaps();
 
-  foster::InputFile infile(optInputPath);
+  llvm::sys::Path inPath(optInputPath);
+  const foster::InputFile infile(inPath);
   foster::gInputFile = &infile;
 
   ScopedTimer* timer = new ScopedTimer(statParseTimeMs); 

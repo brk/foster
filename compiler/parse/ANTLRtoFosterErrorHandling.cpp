@@ -162,7 +162,7 @@ bool handleNoViableAlt(pANTLR3_EXCEPTION ex,
                         const string& tokenText,
                         const SourceRange& r) {
   const char* approxPosition = describeApproximateStartPosition(r);
-  std::cerr << r.source->getFilePath() << ":"
+  std::cerr << r.source->getShortSuffixPath() << ":"
             << "error: got stuck parsing near the " << approxPosition
             << " of line " << (r.begin.line + 1) << ":\n\n"
             << r << std::endl;
@@ -175,7 +175,7 @@ bool handleMismatchedToken(pANTLR3_EXCEPTION ex,
                         const string& tokenText,
                         const SourceRange& r) {
   const char* approxPosition = describeApproximateStartPosition(r);
-  std::cerr << r.source->getFilePath() << ":"
+  std::cerr << r.source->getShortSuffixPath() << ":"
             << "error: unexpected token near the " << approxPosition
             << " of line " << (r.begin.line + 1) << ":\n\n"
             << r << std::endl;
@@ -188,7 +188,7 @@ bool handleGenericError(pANTLR3_EXCEPTION ex,
                         const string& tokenText,
                         const SourceRange& r) {
   const char* approxPosition = describeApproximateStartPosition(r);
-  std::cerr << r.source->getFilePath() << ":"
+  std::cerr << r.source->getShortSuffixPath() << ":"
             << "generic error: " << ((const char*) ex->message) << " near the " << approxPosition
             << " of line " << (r.begin.line + 1) << ":\n\n"
             << r << std::endl;
@@ -201,7 +201,7 @@ bool handleUnwantedToken(pANTLR3_EXCEPTION ex,
                         const string& tokenText,
                         const SourceRange& r) {
   const char* approxPosition = describeApproximateStartPosition(r);
-  std::cerr << r.source->getFilePath() << ":"
+  std::cerr << r.source->getShortSuffixPath() << ":"
             << "error: " << ((const char*) ex->message)
             << " " << tokenText  << " near the " << approxPosition
             << " of line " << (r.begin.line + 1) << ":\n\n"

@@ -4,13 +4,15 @@
 
 #include "base/InputFile.h"
 #include "base/Assert.h"
+#include "base/PathManager.h"
+#include "llvm/System/Path.h"
 #include "llvm/Support/MemoryBuffer.h"
-#include <iostream>
 
 namespace foster {
 
-InputFile::InputFile(const std::string& filePath) : filePath(filePath) {
-  buf = llvm::MemoryBuffer::getFile(filePath);
+InputFile::InputFile(const llvm::sys::Path& path) : path(path) {
+  buf = llvm::MemoryBuffer::getFile(path.str());
+  gPathManager.registerPath(path);
   initializeLineCache();
 }
 
@@ -41,4 +43,9 @@ llvm::StringRef InputFile::getLine(int n) const {
   ASSERT(n < lineCache.size());
   return this->lineCache[n];
 }
+
+std::string InputFile::getShortSuffixPath() const {
+  return gPathManager.getShortestUnambiguousSuffix(path);
 }
+
+} // namespace foster

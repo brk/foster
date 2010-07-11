@@ -10,6 +10,8 @@ using llvm::sys::Path;
 
 namespace foster {
 
+PathManager gPathManager;
+
 void PathManager::registerPath(const Path& path) {
   candidates[path.getLast()].insert( path.str() );
 }

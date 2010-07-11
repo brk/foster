@@ -29,6 +29,8 @@ public:
   std::string getShortestUnambiguousSuffix(const llvm::sys::Path& path);
 };
 
+extern PathManager gPathManager;
+
 } // namespace foster
 
 #endif

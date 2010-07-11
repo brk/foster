@@ -76,7 +76,7 @@ void displaySourceLine(llvm::raw_ostream& out,
 void SourceRange::highlightWithCaret(llvm::raw_ostream& out,
                                      SourceLocation caret) const {
   if (isEmpty()) {
-    out << "<" << source->getFilePath()
+    out << "<" << source->getShortSuffixPath()
         << ":" << begin.line << "::" << begin.column
         << " - " << end.line << "::" << end.column << " (empty)>";
   } else if (isSingleLine()) {

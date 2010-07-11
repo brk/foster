@@ -13,6 +13,8 @@
 #include <sstream>
 #include <cassert>
 
+using std::string;
+
 // Straightforward implementation of Pugh & Sinofsky's prettyprinting algorithm
 // from    http://ecommons.library.cornell.edu/bitstream/1813/6648/1/87-808.pdf
 

@@ -8,22 +8,28 @@
 #ifndef FOSTER_INPUT_FILE_H
 #define FOSTER_INPUT_FILE_H
 
-namespace llvm { class MemoryBuffer; }
+namespace llvm {
+  class MemoryBuffer;
+  namespace sys {
+    class Path;
+  }
+}
 
 namespace foster {
 
 class InputFile {
-  std::string filePath;
+  const llvm::sys::Path& path;
   llvm::MemoryBuffer* buf;
   std::vector<llvm::StringRef> lineCache;
   void initializeLineCache();
 
 public:
   // precondition: file specified by filePath exists, and is readable
-  InputFile(const std::string& filePath);
+  InputFile(const llvm::sys::Path& path);
 
   llvm::MemoryBuffer* getBuffer() const { return buf; }
-  const std::string& getFilePath() const { return filePath; }
+  const llvm::sys::Path& getPath() const { return path; }
+  std::string getShortSuffixPath() const;
   llvm::StringRef getLine(int n) const;
 };
 
