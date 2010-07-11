@@ -5,6 +5,7 @@
 #include "FosterTypeAST.h"
 #include "FosterAST.h"
 #include "base/Diagnostics.h"
+#include "base/Assert.h"
 
 #include "FosterUtils.h"
 #include "TypecheckPass.h"
@@ -109,7 +110,7 @@ bool TypeAST::canConvertTo(TypeAST* otherType) {
 std::map<RefTypeAST::RefTypeArgs, RefTypeAST*> RefTypeAST::refCache;
 
 RefTypeAST* RefTypeAST::get(TypeAST* baseType, bool nullable /* = false */) {
-  assert(baseType);
+  ASSERT(baseType);
 
   RefTypeArgs args = std::make_pair(baseType, nullable);
   RefTypeAST* ref = refCache[args];
@@ -122,7 +123,7 @@ RefTypeAST* RefTypeAST::get(TypeAST* baseType, bool nullable /* = false */) {
 // Assuming T is a non-pointer type, convert both
 // (T*) and (T ) to (nullable T*).
 RefTypeAST* RefTypeAST::getNullableVersionOf(TypeAST* ty) {
-  assert(ty && "Can't get nullable version of NULL!");
+  ASSERT(ty) << "Can't get nullable version of NULL!";
   if (RefTypeAST* ref = dynamic_cast<RefTypeAST*>(ty)) {
     return RefTypeAST::get(ref->getElementType(), true);
   } else {

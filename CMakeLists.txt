@@ -35,7 +35,9 @@ execute_process(COMMAND ${LLVM_CONFIG} --cppflags
 
 # We want to control whether our binaries are compiled
 # in debug mode independently of whether LLVM was so compiled.
-string(REPLACE "-DNDEBUG" "" LLVM_CFLAGS "${LLVM_CFLAGS}")
+# Stripping -DNDEBUG can cause problems with CallGraph analysis,
+# so we simply leave it and use a custom ASSERT() instead of the
+# standard <cassert> macro.
 string(REPLACE "-g" "" LLVM_CFLAGS "${LLVM_CFLAGS}")
 
 # Hack for now: rather than running all programs JITted from the main fosterc
@@ -167,6 +169,7 @@ add_executable(fosterc
   compiler/passes/ClosureConversionPass.cpp
   compiler/parse/ANTLRtoFosterErrorHandling.cpp
   compiler/llvm/passes/Hello.cpp
+  compiler/llvm/passes/LLVMCallGraphDotPrinter.cpp
   third_party/pystring/pystring.cpp
   ${PROJECT_BINARY_DIR}/fosterParser.c
   ${PROJECT_BINARY_DIR}/fosterLexer.c
@@ -183,6 +186,7 @@ add_dependencies(libfoster_bc cpuid)
 
 add_executable(unittest_fosterc
   ${PROJECT_SOURCE_DIR}/compiler/base/PathManager_unittest.cpp
+  ${PROJECT_SOURCE_DIR}/compiler/base/Assert_unittest.cpp
 )
 target_link_libraries(unittest_fosterc gtest_main ${LLVM_LDFLAGS})
 

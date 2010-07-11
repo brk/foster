@@ -6,6 +6,7 @@
 #include "FosterAST.h"
 #include "TypecheckPass.h"
 #include "base/Diagnostics.h"
+#include "base/Assert.h"
 
 #include "fosterLexer.h"
 #include "fosterParser.h"
@@ -189,7 +190,7 @@ foster::SourceRange rangeOf(pTree tree) {
 foster::SourceRange rangeFrom(ExprAST* a, ExprAST* b) {
   foster::SourceRange ar = a->sourceRange;
   foster::SourceRange br = b->sourceRange;
-  assert(ar.source == br.source);
+  ASSERT(ar.source == br.source);
   return foster::SourceRange(ar.source, ar.begin, br.end);
 }
 
@@ -490,7 +491,7 @@ ExprAST* parseTopLevel(pTree tree) {
 
     if (token == TYPEDEFN) { parsedExprs[i] = ExprAST_from(c, false); }
     else if (token == FNDEF) {
-      assert(getChildCount(c) == 2);
+      ASSERT(getChildCount(c) == 2);
       // x = fn { blah }   ===   x = fn "x" { blah }
       pTree lval = (child(c, 0));
       pTree rval = (child(c, 1));
@@ -592,7 +593,7 @@ ExprAST* parseCtorExpr(pTree tree, bool fnMeansClosure,
   }
 
   if (TypeAST* ty = typeScope.lookup(name, "")) {
-    assert(ty->getLLVMType() && ty->getLLVMType()->isStructTy());
+    ASSERT(ty->getLLVMType() && ty->getLLVMType()->isStructTy());
     return new TupleExprAST(ExprAST_from(seqArgs, fnMeansClosure), name, sourceRange);
   }
 
@@ -656,7 +657,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
   }
 
   if (token == TRAILERS) {
-    assert(getChildCount(tree) >= 2);
+    ASSERT(getChildCount(tree) >= 2);
     // name (args) ... (args)
     ExprAST* prefix = ExprAST_from(child(tree, 0), fnMeansClosure);
     for (int i = 1; i < getChildCount(tree); ++i) {
@@ -814,7 +815,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
   }
 
   if (token == FNDEF) {
-    assert(getChildCount(tree) == 2);
+    ASSERT(getChildCount(tree) == 2);
     // x = fn { blah }   ===   x = fn "x" { blah }
     pTree lval = (child(tree, 0));
     pTree rval = (child(tree, 1));

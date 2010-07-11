@@ -16,6 +16,7 @@
 #include "FosterTypeAST.h"
 #include "InputFile.h"
 #include "SourceRange.h"
+#include "base/Assert.h"
 
 #include <iostream>
 #include <vector>
@@ -176,7 +177,7 @@ public:
     scopeStack.push_back(scope);
   }
   void popExistingScope(LexicalScope* expectedCurrentScope) {
-    assert(currentScope() == expectedCurrentScope);
+    ASSERT(currentScope() == expectedCurrentScope);
     scopeStack.pop_back();
   }
 

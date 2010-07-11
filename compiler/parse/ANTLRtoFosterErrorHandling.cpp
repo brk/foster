@@ -4,6 +4,7 @@
 
 #include "parse/ANTLRtoFosterErrorHandling.h"
 #include "SourceRange.h"
+#include "base/Assert.h"
 
 #include <antlr3.h>
 
@@ -85,7 +86,7 @@ static void	customDisplayRecognitionErrorFunc
   (struct ANTLR3_BASE_RECOGNIZER_struct * recognizer,
       pANTLR3_UINT8 * tokenNames) {
 
-  assert(recognizer->type == ANTLR3_TYPE_PARSER);
+  ASSERT(recognizer->type == ANTLR3_TYPE_PARSER);
 
   bool doDefault = true;
   pANTLR3_EXCEPTION ex = recognizer->state->exception;

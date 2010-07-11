@@ -16,7 +16,6 @@
 #include "llvm/Analysis/Verifier.h"
 #include "llvm/Target/TargetData.h"
 
-#include <cassert>
 #include <sstream>
 #include <map>
 #include <set>
@@ -41,7 +40,7 @@ typedef std::set<OffsetInfo> OffsetSet;
 // TODO replace with ConstantExpr::getOffsetOf(ty, slot) ?
 int getOffsetOfStructSlot(const llvm::StructType* ty, int slot) {
   const llvm::TargetData* td = ee->getTargetData();
-  assert(td && "Need TargetData to compute struct offsets!");
+  ASSERT(td) << "Need TargetData to compute struct offsets!";
   int offset = 0;
   for (int i = 0; i < slot; ++i) {
         offset += td->getTypeStoreSize(ty->getContainedType(i));
@@ -50,7 +49,7 @@ int getOffsetOfStructSlot(const llvm::StructType* ty, int slot) {
 }
 
 OffsetSet countPointersInType(const llvm::Type* ty) {
-  assert(ty != NULL && "Can't count pointers in a NULL type!");
+  ASSERT(ty) << "Can't count pointers in a NULL type!";
 
   OffsetSet rv;
   if (ty->isPointerTy()) {
@@ -575,7 +574,7 @@ void CodegenPass::visit(SeqAST* ast) {
 void CodegenPass::visit(FnAST* ast) {
   if (ast->value) return;
 
-  assert(ast->body != NULL);
+  ASSERT(ast->body != NULL);
 
   scope.pushScope("fn " + ast->proto->name);
 
@@ -619,7 +618,7 @@ void CodegenPass::visit(FnAST* ast) {
             << show(ast);
     return;
   }
-  assert (RetVal != NULL);
+  ASSERT(RetVal != NULL);
 
   bool returningVoid = isVoid(ast->proto->resultTy);
 
@@ -998,8 +997,9 @@ void CodegenPass::visit(DerefExprAST* ast) {
     src = builder.CreateLoad(src, /*isVolatile=*/ false, "prederef");
   }
 
-  assert(isPointerToType(src->getType(), getLLVMType(ast->type))
-      && "deref needs a T* to produce a T!");
+  ASSERT(isPointerToType(src->getType(), getLLVMType(ast->type)))
+      << "deref needs a T* to produce a T, given src type "
+      << str(src->getType()) << " and ast type " << str(getLLVMType(ast->type));
   ast->value = builder.CreateLoad(src, /*isVolatile=*/ false, "deref");
 }
 
@@ -1016,7 +1016,9 @@ void CodegenPass::visit(AssignExprAST* ast) {
     dst = builder.CreateLoad(dst, /*isVolatile=*/ false, "unstack");
   }
 
-  assert(isPointerToType(dst->getType(), srcty) && "assignment must store T in a T*");
+  ASSERT(isPointerToType(dst->getType(), srcty))
+    << "assignment must store T in a T*, given dst type "
+    << str(dst->getType()) << " and srcty " << str(srcty);
 
   builder.CreateStore(ast->parts[1]->value, dst);
 
@@ -1279,7 +1281,7 @@ void CodegenPass::visit(CallAST* ast) {
   if (ast->value) return;
 
   ExprAST* base = ast->parts[0];
-  assert (base != NULL);
+  ASSERT(base != NULL);
 
   //std::cout << "\t" << "Codegen CallAST "  << (base) << std::endl;
   //std::cout << "\t\t\tbase ast: "  << *(base) << std::endl;
@@ -1304,8 +1306,8 @@ void CodegenPass::visit(CallAST* ast) {
       FT = llvm::dyn_cast<const FunctionType>(fty->getLLVMType());
       llvm::Value* clo = getClosureStructValue(FV);
 
-      assert(!clo->getType()->isPointerTy()
-          && "clo value should be a tuple, not a pointer");
+      ASSERT(!clo->getType()->isPointerTy())
+          << "clo value should be a tuple, not a pointer";
       llvm::Value* envPtr = builder.CreateExtractValue(clo, 1, "getCloEnv");
 
       // Pass env pointer as first parameter to function.
@@ -1625,7 +1627,7 @@ void copyTupleTo(CodegenPass* pass, Value* pt, TupleExprAST* ast) {
   }
 
   // pt should now be of type tuple*
-  assert(isPointerToType(pt->getType(), getLLVMType(ast->type)));
+  ASSERT(isPointerToType(pt->getType(), getLLVMType(ast->type)));
 
   SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
   for (int i = 0; i < body->parts.size(); ++i) {
@@ -1664,7 +1666,7 @@ bool structTypeContainsPointers(const llvm::StructType* ty) {
 void CodegenPass::visit(TupleExprAST* ast) {
   if (ast->value) return;
 
-  assert(ast->type != NULL);
+  ASSERT(ast->type != NULL);
 
   // Create struct type underlying tuple
   const Type* tupleType = getLLVMType(ast->type);

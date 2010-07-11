@@ -11,7 +11,6 @@
 #include <vector>
 #include <map>
 #include <set>
-#include <cassert>
 
 using namespace std;
 

@@ -5,8 +5,6 @@
 #include "AddParentLinksPass.h"
 #include "FosterAST.h"
 
-#include <cassert>
-
 void includeParentNameInAnonFunctions(FnAST* ast);
 
 // The work of adding parent links is done in the onVisitChild()
@@ -29,16 +27,10 @@ void AddParentLinksPass::visit(FnAST* ast)                  {
   onVisitChild(ast, ast->body);
   includeParentNameInAnonFunctions(ast);
 }
-#if 0
-void AddParentLinksPass::visit(ClosureTypeAST* ast) {
-  onVisitChild(ast, ast->proto);
-}
-#endif
 void AddParentLinksPass::visit(ClosureAST* ast) {
   if (ast->fn) {
     onVisitChild(ast, ast->fn);
   }
-  //assert(false && "Closures should not be created at the point of parent AST* linking!");
 }
 void AddParentLinksPass::visit(IfExprAST* ast)              {
   onVisitChild(ast, ast->testExpr);

@@ -6,6 +6,7 @@
 #include "TypecheckPass.h"
 #include "FosterUtils.h"
 #include "base/Diagnostics.h"
+#include "base/Assert.h"
 
 #include "llvm/Target/TargetSelect.h"
 #include "llvm/Module.h"
@@ -191,14 +192,14 @@ IntAST* literalIntAST(int lit) {
 }
 
 llvm::APInt IntAST::getAPInt() {
-  assert(this->type && this->type->getLLVMType());
+  ASSERT(this->type && this->type->getLLVMType());
 
   return APInt(this->type->getLLVMType()->getScalarSizeInBits(),
                Clean, Base);
 }
 
 llvm::Constant* IntAST::getConstantValue() {
-  assert(this->type && this->type->getLLVMType());
+  ASSERT(this->type && this->type->getLLVMType());
 
   return ConstantInt::get(this->type->getLLVMType(), this->getAPInt());
 }

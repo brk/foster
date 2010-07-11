@@ -6,6 +6,7 @@
 #include "FosterAST.h"
 #include "FosterUtils.h"
 #include "base/Diagnostics.h"
+#include "base/Assert.h"
 
 using foster::EDiag;
 using foster::show;
@@ -23,7 +24,6 @@ using llvm::ConstantInt;
 
 #include <vector>
 #include <map>
-#include <cassert>
 
 using std::vector;
 
@@ -163,7 +163,7 @@ void TypecheckPass::visit(PrototypeAST* ast) {
 
   vector<TypeAST*> argTypes;
   for (int i = 0; i < ast->inArgs.size(); ++i) {
-    assert(ast->inArgs[i] != NULL);
+    ASSERT(ast->inArgs[i] != NULL);
 
     if (ast->inArgs[i]->noFixedType()) {
       // Wait until type inference to resolve the arg's declared type.
@@ -192,7 +192,7 @@ void TypecheckPass::visit(PrototypeAST* ast) {
 }
 
 void TypecheckPass::visit(FnAST* ast) {
-  assert(ast->proto != NULL);
+  ASSERT(ast->proto != NULL);
   ast->proto->accept(this); bool p = ast->proto->type != NULL;
 
   if (ast->body != NULL) {
@@ -240,7 +240,7 @@ void TypecheckPass::visit(ClosureAST* ast) {
 }
 
 void TypecheckPass::visit(IfExprAST* ast) {
-  assert(ast->testExpr != NULL);
+  ASSERT(ast->testExpr != NULL);
 
   ast->testExpr->accept(this);
   const Type* ifType = ast->testExpr->type->getLLVMType();
@@ -277,7 +277,7 @@ void TypecheckPass::visit(IfExprAST* ast) {
 }
 
 void TypecheckPass::visit(ForRangeExprAST* ast) {
-  assert(ast->startExpr != NULL);
+  ASSERT(ast->startExpr != NULL);
 
   // ast = for VAR in START to END by INCR do BODY
 
@@ -300,7 +300,7 @@ void TypecheckPass::visit(ForRangeExprAST* ast) {
   }
 
   // Check that END has same type as START
-  assert(ast->endExpr != NULL);
+  ASSERT(ast->endExpr != NULL);
   ast->endExpr->accept(this);
   TypeAST* endType = ast->endExpr->type;
   if (!endType) {
@@ -536,7 +536,7 @@ void TypecheckPass::visit(RefExprAST* ast) {
 }
 
 void TypecheckPass::visit(DerefExprAST* ast) {
-  assert(ast->parts[0]->type && "Need arg to typecheck deref!");
+  ASSERT(ast->parts[0]->type) << "Need arg to typecheck deref!";
 
   TypeAST* derefType = ast->parts[0]->type;
   if (RefTypeAST* ptrTy = dynamic_cast<RefTypeAST*>(derefType)) {

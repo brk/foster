@@ -4,11 +4,11 @@
 
 #include "ReplaceExprTransform.h"
 #include "FosterAST.h"
+#include "base/Assert.h"
 
 #include <vector>
 #include <map>
 #include <set>
-#include <cassert>
 
 using namespace std;
 
@@ -30,7 +30,7 @@ void ReplaceExprTransform::visitChildren(ExprAST* ast) {
 void ReplaceExprTransform::onVisitChild(ExprAST* ast, ExprAST** child) {
   this->newChild = NULL;
   (*child)->accept(this); // Should write to newChild...
-  assert(this->newChild != NULL);
+  ASSERT(this->newChild != NULL);
   if (*child != this->newChild) {
     this->newChild->parent = (*child)->parent;
     (*child) = this->newChild;

@@ -3,6 +3,7 @@
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
 #include "InputFile.h"
+#include "base/Assert.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include <iostream>
 
@@ -36,7 +37,7 @@ void InputFile::initializeLineCache() {
 }
 
 llvm::StringRef InputFile::getLine(int n) const {
-  assert(n < lineCache.size());
+  ASSERT(n < lineCache.size());
   return this->lineCache[n];
 }
 }

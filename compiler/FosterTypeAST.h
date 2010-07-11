@@ -9,6 +9,7 @@
 #include "llvm/DerivedTypes.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Support/raw_ostream.h"
+#include "base/Assert.h"
 
 #include "SourceRange.h"
 
@@ -94,7 +95,7 @@ class RefTypeAST : public TypeAST {
               sourceRange),
       nullable(nullable),
       underlyingType(underlyingType) {
-    assert(getLLVMType()->isPointerTy());
+    ASSERT(getLLVMType()->isPointerTy());
   }
 
   typedef std::pair<TypeAST*, bool> RefTypeArgs;
