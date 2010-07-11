@@ -46,6 +46,33 @@ bool SourceRange::isSingleLine() const {
   return begin.line == end.line && begin.line >= 0;
 }
 
+void displaySourceLine(llvm::raw_ostream& out,
+                       const foster::InputFile* source,
+                       int linenum, int caretcol,
+                       int begincol, int endcol) {
+
+  llvm::StringRef line = source->getLine(linenum);
+  out << line.str() << "\n";
+
+  // The end of the range should, by definition, be after the start..
+  if (endcol <= begincol) { endcol = begincol + 1; }
+  // We should try to include the caret...
+  if (endcol <= caretcol) { endcol = caretcol + 1; }
+  // ... but not such that we color outside the lines.
+  endcol = (std::min)(endcol, (int) line.size());
+
+  for (int i = 0; i < endcol; ++i) {
+    if (i < begincol) {
+      out << ' ';
+    } else if (i == caretcol) {
+      out << '^';
+    } else if (i < endcol) {
+      out << '~';
+    }
+  }
+  out << "\n";
+}
+
 void SourceRange::highlightWithCaret(llvm::raw_ostream& out,
                                      SourceLocation caret) const {
   if (isEmpty()) {
@@ -53,30 +80,10 @@ void SourceRange::highlightWithCaret(llvm::raw_ostream& out,
         << ":" << begin.line << "::" << begin.column
         << " - " << end.line << "::" << end.column << " (empty)>";
   } else if (isSingleLine()) {
-    llvm::StringRef line = source->getLine(begin.line);
-    out << line.str() << "\n";
-
-    // The end of the range should, by definition, be after the start..
-    int endcol = (end.column > begin.column) ? end.column : begin.column + 1;
-    // We should try to include the caret...
-    if (endcol <= caret.column) endcol = caret.column + 1;
-    // ... but not such that we color outside the lines.
-    endcol = (std::min)(endcol, (int) line.size());
-
-    for (int i = 0; i < endcol; ++i) {
-      if (i < begin.column) {
-        out << ' ';
-      } else if (i == caret.column) {
-        out << '^';
-      } else if (i < endcol) {
-        out << '~';
-      }
-    }
-    out << "\n";
+    displaySourceLine(out, source, begin.line, caret.column, begin.column, end.column);
   } else {
-    out << "<" << source->getFilePath()
-        << ":" << begin.line << "::" << begin.column
-        << " - " << end.line << "::" << end.column << ">";
+    // Display the source line with no highlighting except caret
+    displaySourceLine(out, source, begin.line, caret.column, caret.column, caret.column);
   }
 }
 
