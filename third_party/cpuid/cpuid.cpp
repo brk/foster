@@ -162,16 +162,16 @@ feature_bit amd_ext_feature_bits[] = { // EAX = 0x80000001
 //////////////////////////////////////////////////////////////////////////////
 
 void init_all_features_to_false(cpuid_info& info) {
-  for (int i = 0; i < ARRAY_SIZE(intel_feature_bits); ++i) {
+  for (unsigned i = 0; i < ARRAY_SIZE(intel_feature_bits); ++i) {
     info.features[intel_feature_bits[i].name] = false;
   }
-  for (int i = 0; i < ARRAY_SIZE(intel_ext_feature_bits); ++i) {
+  for (unsigned i = 0; i < ARRAY_SIZE(intel_ext_feature_bits); ++i) {
     info.features[intel_ext_feature_bits[i].name] = false;
   }
-  for (int i = 0; i < ARRAY_SIZE(amd_feature_bits); ++i) {
+  for (unsigned i = 0; i < ARRAY_SIZE(amd_feature_bits); ++i) {
     info.features[amd_feature_bits[i].name] = false;
   }
-  for (int i = 0; i < ARRAY_SIZE(amd_ext_feature_bits); ++i) {
+  for (unsigned i = 0; i < ARRAY_SIZE(amd_ext_feature_bits); ++i) {
     info.features[amd_ext_feature_bits[i].name] = false;
   }
 }
@@ -350,7 +350,7 @@ uint64 rdtsc_serialized() {
 
 void intel_fill_processor_features(cpuid_info& info) {
   cpuid_with_eax(1);
-  for (int i = 0; i < ARRAY_SIZE(intel_feature_bits); ++i) {
+  for (unsigned i = 0; i < ARRAY_SIZE(intel_feature_bits); ++i) {
     feature_bit f(intel_feature_bits[i]);
     info.features[f.name] = BIT_IS_SET(reg[f.reg], f.offset);
   }
@@ -358,7 +358,7 @@ void intel_fill_processor_features(cpuid_info& info) {
   info.processor_features.threads = MASK_RANGE_IN(ebx, 23, 16);
 
   cpuid_with_eax(0x80000001);
-  for (int i = 0; i < ARRAY_SIZE(intel_ext_feature_bits); ++i) {
+  for (unsigned i = 0; i < ARRAY_SIZE(intel_ext_feature_bits); ++i) {
     feature_bit f(intel_ext_feature_bits[i]);
     info.features[f.name] = BIT_IS_SET(reg[f.reg], f.offset);
   }
@@ -375,7 +375,7 @@ void intel_fill_processor_features(cpuid_info& info) {
 
 void amd_fill_processor_features(cpuid_info& info) {
   cpuid_with_eax(1);
-  for (int i = 0; i < ARRAY_SIZE(amd_feature_bits); ++i) {
+  for (unsigned i = 0; i < ARRAY_SIZE(amd_feature_bits); ++i) {
     feature_bit f(amd_feature_bits[i]);
     info.features[f.name] = BIT_IS_SET(reg[f.reg], f.offset);
   }
@@ -387,7 +387,7 @@ void amd_fill_processor_features(cpuid_info& info) {
   }
 
   cpuid_with_eax(0x80000001);
-  for (int i = 0; i < ARRAY_SIZE(amd_ext_feature_bits); ++i) {
+  for (unsigned i = 0; i < ARRAY_SIZE(amd_ext_feature_bits); ++i) {
     feature_bit f(amd_ext_feature_bits[i]);
     info.features[f.name] = BIT_IS_SET(reg[f.reg], f.offset);
   }
@@ -632,6 +632,6 @@ bool cpuid_introspect(cpuid_info& info) {
   if (info.features["tsc"]) {
     estimate_rdtsc_overhead(info);
   }
-
+  return true;
 }
 

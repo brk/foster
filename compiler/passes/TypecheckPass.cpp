@@ -40,6 +40,7 @@ const Type* LLVMintTypeForNBits(unsigned n) {
   //if (n <= 16) return LLVMTypeFor("i16");
   if (n <= 32) return LLVMTypeFor("i32");
   if (n <= 64) return LLVMTypeFor("i64");
+  return NULL;
 }
 
 void TypecheckPass::visit(IntAST* ast) {
@@ -53,7 +54,7 @@ void TypecheckPass::visit(IntAST* ast) {
   // Make sure the literal only contains
   // valid digits for the chosen base.
   const char* digits = "0123456789abcdef";
-  for (int i = 0; i < ast->Clean.size(); ++i) {
+  for (size_t i = 0; i < ast->Clean.size(); ++i) {
     char c = tolower(ast->Clean[i]);
     ptrdiff_t pos = std::find(digits, digits + 16, c) - digits;
     if (pos >= ast->Base) {
@@ -148,7 +149,7 @@ void TypecheckPass::visit(BinaryOpExprAST* ast) {
 
 bool areNamesDisjoint(const std::vector<VariableAST*>& vars) {
   std::map<std::string, bool> seen;
-  for (int i = 0; i < vars.size(); ++i) {
+  for (size_t i = 0; i < vars.size(); ++i) {
     seen[vars[i]->name] = true;
   }
   return seen.size() == vars.size();
@@ -162,7 +163,7 @@ void TypecheckPass::visit(PrototypeAST* ast) {
   }
 
   vector<TypeAST*> argTypes;
-  for (int i = 0; i < ast->inArgs.size(); ++i) {
+  for (size_t i = 0; i < ast->inArgs.size(); ++i) {
     ASSERT(ast->inArgs[i] != NULL);
 
     if (ast->inArgs[i]->noFixedType()) {
@@ -340,7 +341,7 @@ void TypecheckPass::visit(ForRangeExprAST* ast) {
 
 int indexInParent(ExprAST* child, int startingIndex) {
   std::vector<ExprAST*>& parts = child->parent->parts;
-  for (int i = startingIndex; i < parts.size(); ++i) {
+  for (size_t i = startingIndex; i < parts.size(); ++i) {
     if (parts[i] == child) {
       return i;
     }
@@ -371,7 +372,7 @@ void TypecheckPass::visit(NilExprAST* ast) {
     }
 
     // 'if (typed-expr ==/!= nil)'  --> nil should have type of other side
-    if (IfExprAST* ifast = dynamic_cast<IfExprAST*>(ast->parent->parent)) {
+    if (dynamic_cast<IfExprAST*>(ast->parent->parent)) {
       if (BinaryOpExprAST* cmpast = dynamic_cast<BinaryOpExprAST*>(ast->parent)) {
         if (cmpast->parts[0]->type) {
           ast->type = cmpast->parts[0]->type;
@@ -445,7 +446,7 @@ bool exprBindsName(ExprAST* ast, const std::string& name) {
   // TODO test for-range exprs
   if (FnAST* fn = dynamic_cast<FnAST*>(ast)) {
     PrototypeAST* proto = fn->proto;
-    for (int i = 0; i < proto->inArgs.size(); ++i) {
+    for (size_t i = 0; i < proto->inArgs.size(); ++i) {
       if (proto->inArgs[i]->name == name) {
         return true;
       }
@@ -457,6 +458,7 @@ bool exprBindsName(ExprAST* ast, const std::string& name) {
     std::cout << "TODO: does " << str(clo)
               << " bind variable " << name << "???" << std::endl;
   }
+  return false;
 }
 
 enum NullTestStatus {
@@ -466,7 +468,7 @@ enum NullTestStatus {
 };
 
 bool isNil(ExprAST* ast) {
-  if (NilExprAST* enil = dynamic_cast<NilExprAST*>(ast)) {
+  if (dynamic_cast<NilExprAST*>(ast)) {
     return true;
   } else {
     return false;
@@ -584,7 +586,6 @@ void TypecheckPass::visit(AssignExprAST* ast) {
 // Returns aggregate and vector types directly, and returns the underlying
 // aggregate type for pointer-to-aggregate. Returns NULL in other cases.
 const llvm::CompositeType* tryGetIndexableType(const llvm::Type* ty) {
-  const llvm::Type* baseType = ty;
   if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
     ty = pty->getElementType();
   }
@@ -674,7 +675,7 @@ void TypecheckPass::visit(SubscriptAST* ast) {
 
 void TypecheckPass::visit(SeqAST* ast) {
   bool success = true;
-  for (int i = 0; i < ast->parts.size(); ++i) {
+  for (size_t i = 0; i < ast->parts.size(); ++i) {
     if (ast->parts[i]) {
       if (!ast->parts[i]->type) { success = false; }
     } else {
@@ -754,7 +755,7 @@ void TypecheckPass::visit(CallAST* ast) {
 
   // Collect args in separate zero-based array for easier counting and indexing
   vector<ExprAST*> args;
-  for (int i = 1; i < ast->parts.size(); ++i) {
+  for (size_t i = 1; i < ast->parts.size(); ++i) {
     ExprAST* arg = ast->parts[i];
     if (!arg) {
       EDiag() << "invalid call, arg " << i << " was null" << show(ast);
@@ -771,7 +772,7 @@ void TypecheckPass::visit(CallAST* ast) {
     args.push_back(arg);
   }
 
-  int numParams = baseFT->getNumParams();
+  size_t numParams = baseFT->getNumParams();
   if (numParams != args.size()) {
     EDiag() << "arity mismatch, " << args.size()
             << " args provided for function of type " << str(baseFT)
@@ -781,7 +782,7 @@ void TypecheckPass::visit(CallAST* ast) {
   }
 
   bool success = true;
-  for (int i = 0; i < numParams; ++i) {
+  for (size_t i = 0; i < numParams; ++i) {
     TypeAST* formalType = baseFT->getParamType(i);
     TypeAST* actualType = args[i]->type;
 
@@ -839,14 +840,15 @@ void TypecheckPass::visit(CallAST* ast) {
 
 /// For now, as a special case, simd-vector and array will interpret { 4;i32 }
 /// as meaning the same thing as { i32 ; i32 ; i32 ; i32 }
-int extractNumElementsAndElementType(int maxSize, ExprAST* ast, const Type*& elementType) {
+int extractNumElementsAndElementType(unsigned int maxSize, ExprAST* ast,
+                                     const Type*& elementType) {
   SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
   IntAST* first = dynamic_cast<IntAST*>(body->parts[0]);
   IntAST* second = dynamic_cast<IntAST*>(body->parts[1]);
   if (first && !second && body->parts[1]->type) {
     APInt v = first->getAPInt();
     unsigned int n = v.getZExtValue();
-    // Sanity check on # elements; nobody? wants a single billion-element vector...
+    // Sanity check on # elements; nobody (?) wants a billion-element vector
     if (n <= maxSize) {
       elementType = body->parts[1]->type->getLLVMType();
       return n;
@@ -863,11 +865,12 @@ void TypecheckPass::visit(ArrayExprAST* ast) {
 
   SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
   if (!body) {
-    std::cerr << "Typecheck of array expr failed because ast.parts[0] = " << ast->parts[0] << " was not a Seq!" << std::endl;
+    std::cerr << "Typecheck of array expr failed because ast.parts[0] = "
+              << ast->parts[0] << " was not a Seq!" << std::endl;
     return;
   }
 
-  int numElements = body->parts.size();
+  size_t numElements = body->parts.size();
   const Type* elementType = NULL;
 
   if (numElements == 2) {
@@ -881,7 +884,7 @@ void TypecheckPass::visit(ArrayExprAST* ast) {
   }
 
   if (!elementType) {
-    for (int i = 0; i < numElements; ++i) {
+    for (size_t i = 0; i < numElements; ++i) {
       const Type* ty =  body->parts[i]->type->getLLVMType();
       if (!ty) {
         std::cerr << "Array expr had null constituent type for subexpr " << i << std::endl;
@@ -928,7 +931,7 @@ SimdVectorTypeAST* synthesizeSimdVectorType(SimdVectorAST* ast) {
     return NULL;
   }
 
-  int numElements = body->parts.size();
+  size_t numElements = body->parts.size();
 
   if (!isSmallPowerOfTwo(numElements)) {
     EDiag() << "simd-vector must contain a small power of two"
@@ -940,7 +943,7 @@ SimdVectorTypeAST* synthesizeSimdVectorType(SimdVectorAST* ast) {
   const Type* elementType = NULL;
   std::map<const Type*, bool> fieldTypes;
 
-  for (int i = 0; i < numElements; ++i) {
+  for (size_t i = 0; i < numElements; ++i) {
     const Type* ty =  body->parts[i]->type->getLLVMType();
     if (!ty) {
       EDiag() << "simd-vector expr had null constituent type for subexpr " << i
@@ -1001,7 +1004,7 @@ void TypecheckPass::visit(TupleExprAST* ast) {
   }
 
   if (expectedTupleType) {
-    int expectedSize = expectedTupleType->getNumContainedTypes();
+    size_t expectedSize = expectedTupleType->getNumContainedTypes();
     if (expectedSize != body->parts.size()) {
       EDiag() << "mismatch between size of tuple type (" << expectedSize << ")"
               << " and number of expressions in tuple (" << body->parts.size() << ")"
@@ -1012,7 +1015,7 @@ void TypecheckPass::visit(TupleExprAST* ast) {
 
   bool success = true;
   std::vector<TypeAST*> tupleFieldTypes;
-  for (int i = 0; i < body->parts.size(); ++i) {
+  for (size_t i = 0; i < body->parts.size(); ++i) {
     ExprAST* expr = body->parts[i];
     if (!expr) {
       std::cerr << "Tuple expr had null component " << i << "!" << std::endl;
@@ -1049,7 +1052,6 @@ void TypecheckPass::visit(TupleExprAST* ast) {
     ast->type = TupleTypeAST::get(tupleFieldTypes);
   }
 
-  fail:
   return;
 }
 

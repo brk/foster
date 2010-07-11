@@ -90,6 +90,7 @@ T getSaturating(llvm::Value* v) {
 template <typename T>
 struct NameResolver {
   virtual T* lookup(const string& name, const string& meta) = 0;
+  virtual ~NameResolver() {}
 };
 
 struct ExprAST : public NameResolver<ExprAST> {
@@ -134,9 +135,10 @@ public:
     Map val_of;
   public:
     LexicalScope* parent;
-
+    
     LexicalScope(string name, LexicalScope* parent) : name(name), parent(parent) {}
-
+    virtual ~LexicalScope() {}
+    
     T* insert(const string& ident, T* V) { val_of[ident] = V; return V; }
     T* lookup(const string& ident, const string& wantedScopeName) {
       if (name == "*" || wantedScopeName == "" || name == wantedScopeName) {
@@ -163,6 +165,7 @@ public:
   FosterSymbolTable() {
     pushExistingScope(new LexicalScope("*", NULL));
   }
+  virtual ~FosterSymbolTable() {}
   T* lookup(const string& ident, const string& wantedScopeName) {
     return currentScope()->lookup(ident, wantedScopeName);
   }
@@ -307,12 +310,12 @@ struct CallAST : public ExprAST {
   CallAST(ExprAST* base, Exprs args, foster::SourceRange sourceRange)
       : ExprAST(sourceRange) {
     parts.push_back(base);
-    for (int i = 0; i < args.size(); ++i) parts.push_back(args[i]);
+    for (size_t i = 0; i < args.size(); ++i) parts.push_back(args[i]);
   }
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
     out << "CallAST(base = " << str(this->parts[0]) << ", args = ";
-    for (int i = 1; i < this->parts.size(); ++i) {
+    for (size_t i = 1; i < this->parts.size(); ++i) {
       out << " " << str(this->parts[i]) << ", ";
     }
     return out << ")";
@@ -325,7 +328,7 @@ struct SeqAST : public ExprAST {
   virtual void accept(FosterASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
     out << "SeqAST { ";
-    for (int i = 0; i < this->parts.size(); ++i) {
+    for (size_t i = 0; i < this->parts.size(); ++i) {
       if (i > 0) out << " ;\n";
       out << str(this->parts[i]);
     }
@@ -399,7 +402,7 @@ struct PrototypeAST : public ExprAST {
                const std::vector<VariableAST*>& inArgs,
                foster::SourceRange sourceRange)
       : ExprAST(sourceRange),
-        name(name), resultTy(retTy), inArgs(inArgs), scope(NULL) {
+        name(name), inArgs(inArgs), resultTy(retTy), scope(NULL) {
     if (resultTy == NULL) {
       this->resultTy = TypeAST::get(LLVMTypeFor("i32"));
     } else {
@@ -412,7 +415,7 @@ struct PrototypeAST : public ExprAST {
                FosterSymbolTable<ExprAST>::LexicalScope* scope,
                foster::SourceRange sourceRange)
       : ExprAST(sourceRange),
-        name(name), resultTy(retTy), inArgs(inArgs), scope(scope) {
+        name(name), inArgs(inArgs), resultTy(retTy), scope(scope) {
     if (resultTy == NULL) {
       this->resultTy = TypeAST::get(LLVMTypeFor("i32"));
     } else {
@@ -423,7 +426,7 @@ struct PrototypeAST : public ExprAST {
   virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
     out << "PrototypeAST(name = " << name;
-    for (int i = 0; i < inArgs.size(); ++i) {
+    for (size_t i = 0; i < inArgs.size(); ++i) {
       out << ", arg["<<i<<"] = " << str(inArgs[i]);
     }
     if (resultTy != NULL) {
@@ -484,7 +487,7 @@ struct ClosureAST : public ExprAST {
   virtual std::ostream& operator<<(std::ostream& out) const {
     if (hasKnownEnvironment && fn) {
       out << "(closure " << str(fn->proto);
-      for (int i = 0; i < parts.size(); ++i) {
+      for (size_t i = 0; i < parts.size(); ++i) {
         out << "\t" << str(parts[i]);
       }
       return out << ")";

@@ -205,7 +205,7 @@ bool isPointerToCompatibleFnTy(const llvm::Type* ty, const llvm::FunctionType* f
      if (!voidCompatibleReturnTypes(pfnty, fnty)) { return false; }
 
      if (pfnty->getNumParams() != fnty->getNumParams()) { return false; }
-     for (int i = 0; i < fnty->getNumParams(); ++i) {
+     for (size_t i = 0; i < fnty->getNumParams(); ++i) {
        if (pfnty->getParamType(i) != fnty->getParamType(i)) {
          return false;
        }

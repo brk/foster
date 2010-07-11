@@ -16,6 +16,7 @@ struct ExprReplacer {
 
   // "No replacement" is signified by directly returning the input.
   virtual ExprAST* maybeReplace(ExprAST*) = 0;
+  virtual ~ExprReplacer() {}
 };
 
 struct ReplaceExprTransform : public FosterASTVisitor {

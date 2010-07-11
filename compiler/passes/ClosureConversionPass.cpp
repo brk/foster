@@ -67,7 +67,7 @@ void ClosureConversionPass::visit(VariableAST* ast)            {
 void ClosureConversionPass::visit(UnaryOpExprAST* ast)         { return; }
 void ClosureConversionPass::visit(BinaryOpExprAST* ast)        { return; }
 void ClosureConversionPass::visit(PrototypeAST* ast)           {
-  for (int i = 0; i < ast->inArgs.size(); ++i) {
+  for (size_t i = 0; i < ast->inArgs.size(); ++i) {
     boundVariables[callStack.back()].insert(ast->inArgs[i]);
     //std::cout << "Marking variable " << ast->inArgs[i]->name << " as bound in fn " << callStack.back()->proto->name << std::endl;
     onVisitChild(ast, ast->inArgs[i]);
@@ -147,10 +147,6 @@ void ClosureConversionPass::visit(CallAST* ast)                {
     std::cout << "visited direct call of fn " << fnBase->proto->name << ", nested? " << fnBase->wasNested << std::endl;
     fnBase->lambdaLiftOnly = true;
     callsOf[fnBase].push_back(ast);
-  } else {
-    if (VariableAST* varBase = dynamic_cast<VariableAST*>(base)) {
-      //std::cout << "visited call of var named " << varBase->name << std::endl;
-    }
   }
   visitChildren(ast); return;
 }
@@ -309,7 +305,7 @@ void lambdaLiftAnonymousFunction(FnAST* ast) {
     }
 
     // and rewrite all external call sites to pass the extra parameter
-    for (int i = 0; i < calls.size(); ++i) {
+    for (size_t i = 0; i < calls.size(); ++i) {
       appendParameter(calls[i], parentScopeVar);
     }
   }

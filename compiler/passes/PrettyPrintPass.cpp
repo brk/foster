@@ -69,7 +69,7 @@ void PrettyPrintPass::visit(PrototypeAST* ast) {
   //scan(tBlockClose);
   //scan(tBlockOpen);
   scan(PPToken("("));
-  for (int i = 0; i < ast->inArgs.size(); ++i) {
+  for (size_t i = 0; i < ast->inArgs.size(); ++i) {
     scan(PPToken(" "));
     this->printVarTypes = true;
     recurse(this, ast->inArgs[i]);
@@ -210,7 +210,7 @@ void PrettyPrintPass::visit(SeqAST* ast) {
     scan(PPToken("{ "));
   }
 
-  for (int i = 0; i < ast->parts.size(); ++i) {
+  for (size_t i = 0; i < ast->parts.size(); ++i) {
     scan(tBlockOpen);
     recurse(this, ast->parts[i]);
     scan(tBlockClose);
@@ -250,7 +250,7 @@ void PrettyPrintPass::visit(CallAST* ast) {
   }
 
   bool first = true;
-  for (int i = 1; i < ast->parts.size(); ++i) {
+  for (size_t i = 1; i < ast->parts.size(); ++i) {
     if (!first) {
       scan(PPToken(","));
       scan(PPToken(" "));

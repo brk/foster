@@ -57,7 +57,7 @@ OffsetSet countPointersInType(const llvm::Type* ty) {
   }
 
   // array, struct, union
-  else if (const llvm::ArrayType* aty = llvm::dyn_cast<const llvm::ArrayType>(ty)) {
+  else if (llvm::dyn_cast<const llvm::ArrayType>(ty)) {
         // TODO need to decide how Foster semantics will map to LLVM IR for arrays.
         // Will EVERY (C++), SOME (Factor, C#?), or NO (Java) types be unboxed in arrays?
         // Also need to figure out how the gc will collect arrays.
@@ -67,7 +67,7 @@ OffsetSet countPointersInType(const llvm::Type* ty) {
   // if we have a struct { T1; T2 } then our offset set will be the set for T1,
   // plus the set for T2 with offsets incremented by the size of T1.
   else if (const llvm::StructType* sty = llvm::dyn_cast<const llvm::StructType>(ty)) {
-    for (int i = 0; i < sty->getNumElements(); ++i) {
+    for (size_t i = 0; i < sty->getNumElements(); ++i) {
       int slotOffset = getOffsetOfStructSlot(sty, i);
       OffsetSet sub = countPointersInType(sty->getTypeAtIndex(i));
       for (OffsetSet::iterator si = sub.begin(); si != sub.end(); ++si) {
@@ -80,7 +80,7 @@ OffsetSet countPointersInType(const llvm::Type* ty) {
 
   // TODO Also need to decide how to represent type maps for unions
   // in such a way that the GC can safely collect unions.
-  else if (const llvm::UnionType* uty = llvm::dyn_cast<const llvm::UnionType>(ty)) {
+  else if (llvm::dyn_cast<const llvm::UnionType>(ty)) {
     //return 0;
   }
 
@@ -538,7 +538,7 @@ void CodegenPass::visit(PrototypeAST* ast) {
 
   // Set names for all arguments
   Function::arg_iterator AI = F->arg_begin();
-  for (int i = 0; i != ast->inArgs.size(); ++i, ++AI) {
+  for (size_t i = 0; i != ast->inArgs.size(); ++i, ++AI) {
     AI->setName(ast->inArgs[i]->name);
     scope.insert(ast->inArgs[i]->name, AI);
 #if 0
@@ -597,7 +597,7 @@ void CodegenPass::visit(FnAST* ast) {
   // dynamically-allocated pointer parameters.
   if (true) { // conservative approximation to MightAlloc
     Function::arg_iterator AI = F->arg_begin();
-    for (int i = 0; i != ast->proto->inArgs.size(); ++i, ++AI) {
+    for (size_t i = 0; i != ast->proto->inArgs.size(); ++i, ++AI) {
       if (mightContainHeapPointers(AI->getType())) {
 #if 0
         std::cout << "marking root for var " << ast->proto->inArgs[i]->name
@@ -678,7 +678,7 @@ void CodegenPass::visit(ClosureAST* ast) {
   }
 
 #if 0
-  for (int i = 0; i < ast->parts.size(); ++i) {
+  for (size_t i = 0; i < ast->parts.size(); ++i) {
     std::cout << "Codegen ClosureAST, part: " << *ast->parts[i] << std::endl;
     std::cout << "Codegen ClosureAST, part: " << *ast->parts[i]->type << std::endl;
     std::cout << std::endl;
@@ -841,7 +841,7 @@ void CodegenPass::visit(ForRangeExprAST* ast) {
   if (ast->value) return;
 
   Function* parentFn = builder.GetInsertBlock()->getParent();
-  BasicBlock* preLoopBB  = builder.GetInsertBlock();
+  ////BasicBlock* preLoopBB  = builder.GetInsertBlock();
   BasicBlock* loopHdrBB  = BasicBlock::Create(llvm::getGlobalContext(), "forToHdr", parentFn);
   BasicBlock* loopBB     = BasicBlock::Create(llvm::getGlobalContext(), "forTo", parentFn);
   BasicBlock* afterBB    = BasicBlock::Create(llvm::getGlobalContext(), "postloop", parentFn);
@@ -1116,7 +1116,7 @@ void appendArg(std::vector<Value*>& valArgs, Value* V, const FunctionType* FT) {
 }
 
 void tempHackExtendIntTypes(const FunctionType* FT, std::vector<Value*>& valArgs) {
-  for (int i = 0; i < valArgs.size(); ++i) {
+  for (size_t i = 0; i < valArgs.size(); ++i) {
     valArgs[i] = tempHackExtendInt(valArgs[i], FT->getParamType(i));
   }
 
@@ -1143,7 +1143,7 @@ FnAST* getVoidReturningVersionOf(ExprAST* arg, const llvm::FunctionType* fnty) {
     std::vector<VariableAST*> inArgs;
     std::vector<ExprAST*> callArgs;
 
-    for (int i = 0; i < fnty->getNumParams(); ++i) {
+    for (size_t i = 0; i < fnty->getNumParams(); ++i) {
       std::stringstream ss; ss << "a" << i;
       // TODO fix this...
       VariableAST* a = new VariableAST(ss.str(),
@@ -1243,7 +1243,7 @@ FnAST* getClosureVersionOf(ExprAST* arg, const llvm::FunctionType* fnty) {
         RefTypeAST::get(TypeAST::get(LLVMTypeFor("i8"))),
         SourceRange::getEmptyRange()));
 
-    for (int i = 0; i < fnty->getNumParams(); ++i) {
+    for (size_t i = 0; i < fnty->getNumParams(); ++i) {
       std::stringstream ss; ss << "a" << i;
       VariableAST* a = new VariableAST(ss.str(),
                              TypeAST::get(fnty->getParamType(i)),
@@ -1321,7 +1321,7 @@ void CodegenPass::visit(CallAST* ast) {
     return;
   }
 
-  for (int i = 1; i < ast->parts.size(); ++i) {
+  for (size_t i = 1; i < ast->parts.size(); ++i) {
     // Args checked for nulls during typechecking
     ExprAST* arg = ast->parts[i];
 
@@ -1412,7 +1412,7 @@ void CodegenPass::visit(CallAST* ast) {
   // Stack slot loads must be done after codegen for all arguments
   // has taken place, in order to ensure that no allocations will occur
   // between the load and the call.
-  for (int i = 0; i < valArgs.size(); ++i) {
+  for (size_t i = 0; i < valArgs.size(); ++i) {
     llvm::Value*& V = valArgs[i];
 
     // ContainedType[0] is the return type; args start at 1
@@ -1462,12 +1462,12 @@ void CodegenPass::visit(CallAST* ast) {
 
   if (false) {
     std::cout << "Creating call for AST {" << valArgs.size() << "} " << *base << std::endl;
-    for (int i = 0; i < valArgs.size(); ++i) {
+    for (size_t i = 0; i < valArgs.size(); ++i) {
       llvm::errs() << "\tAST arg " << i << ":\t" << *valArgs[i] << "\n";
     }
   }
 
-  int expectedNumArgs = FT->getNumParams();
+  size_t expectedNumArgs = FT->getNumParams();
   if (expectedNumArgs != valArgs.size()) {
     EDiag() << "function arity mismatch, got " << valArgs.size()
             << " but expected " << expectedNumArgs
@@ -1502,7 +1502,7 @@ void CodegenPass::visit(CallAST* ast) {
 }
 
 bool isComposedOfIntLiterals(ExprAST* ast) {
-  for (int i = 0; i < ast->parts.size(); ++i) {
+  for (size_t i = 0; i < ast->parts.size(); ++i) {
     IntAST* v = dynamic_cast<IntAST*>(ast->parts[i]);
     if (!v) { return false; }
   }
@@ -1521,7 +1521,7 @@ llvm::GlobalVariable* getGlobalArrayVariable(SeqAST* body, const llvm::ArrayType
   // Constant Definitions
   std::vector<llvm::Constant*> arrayElements;
 
-  for (int i = 0; i < body->parts.size(); ++i) {
+  for (size_t i = 0; i < body->parts.size(); ++i) {
     IntAST* v = dynamic_cast<IntAST*>(body->parts[i]);
     if (!v) {
       EDiag() << "array initializer was not IntAST" << show(body->parts[i]);
@@ -1572,7 +1572,7 @@ void CodegenPass::visit(ArrayExprAST* ast) {
           //  markGCRoot(ast->value, NULL);
           //}
 
-      for (int i = 0; i < body->parts.size(); ++i) {
+      for (size_t i = 0; i < body->parts.size(); ++i) {
         builder.CreateStore(body->parts[i]->value, getPointerToIndex(ast->value, i, "arrInit"));
       }
     }
@@ -1598,7 +1598,7 @@ void CodegenPass::visit(SimdVectorAST* ast) {
 
   if (isConstant) {
     std::vector<llvm::Constant*> elements;
-    for (int i = 0; i < body->parts.size(); ++i) {
+    for (size_t i = 0; i < body->parts.size(); ++i) {
       IntAST* intlit = dynamic_cast<IntAST*>(body->parts[i]);
       llvm::Constant* ci = intlit->getConstantValue();
       elements.push_back(llvm::dyn_cast<llvm::Constant>(ci));
@@ -1610,7 +1610,7 @@ void CodegenPass::visit(SimdVectorAST* ast) {
   } else {
     llvm::AllocaInst* pt = CreateEntryAlloca(simdType, "s");
     // simd vectors are never gc roots
-    for (int i = 0; i < body->parts.size(); ++i) {
+    for (size_t i = 0; i < body->parts.size(); ++i) {
       Value* dst = builder.CreateConstGEP2_32(pt, 0, i, "simd-gep");
       body->parts[i]->accept(this);
       builder.CreateStore(body->parts[i]->value, dst, /*isVolatile=*/ false);
@@ -1630,7 +1630,7 @@ void copyTupleTo(CodegenPass* pass, Value* pt, TupleExprAST* ast) {
   ASSERT(isPointerToType(pt->getType(), getLLVMType(ast->type)));
 
   SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
-  for (int i = 0; i < body->parts.size(); ++i) {
+  for (size_t i = 0; i < body->parts.size(); ++i) {
     Value* dst = builder.CreateConstGEP2_32(pt, 0, i, "gep");
     ExprAST* part = body->parts[i];
     part->accept(pass);
@@ -1676,7 +1676,7 @@ void CodegenPass::visit(TupleExprAST* ast) {
   llvm::Value* pt = NULL;
 
   // Allocate tuple space
-  if (RefExprAST* ref = dynamic_cast<RefExprAST*>(ast->parent)) {
+  if (dynamic_cast<RefExprAST*>(ast->parent)) {
     // pt has type tuple**
     pt = emitMalloc(tupleType);
   } else {

@@ -4,6 +4,7 @@
 
 #include "base/PathManager.h"
 
+#include <algorithm>
 #include <iostream>
 
 using llvm::sys::Path;
@@ -76,14 +77,13 @@ static std::string disamb(const std::set<std::string>& candidates,
   while (offsetFromBack < inputPathLength
       && !remainingCandidates.empty()) {
     potentialCandidates.clear();
-    // TODO replace with std::copy
-    for (CandSet::iterator it = remainingCandidates.begin();
-                           it != remainingCandidates.end();
-                           ++it) {
-      potentialCandidates.insert(*it);
-    }
+    std::copy(remainingCandidates.begin(),
+              remainingCandidates.end(),
+              std::inserter(potentialCandidates, potentialCandidates.begin()));
     remainingCandidates.clear();
 
+    
+    // TODO use reverse and mismatch?
     for (CandSet::iterator it = potentialCandidates.begin();
                            it != potentialCandidates.end();
                            ++it) {
@@ -98,10 +98,6 @@ static std::string disamb(const std::set<std::string>& candidates,
     ++offsetFromBack;
   }
 
-  const std::string& matchingPath(
-     (remainingCandidates.size() == 1)
-        ? *(remainingCandidates.begin())
-        :  inputPathStr);
   return wellFormedSuffixIncluding(inputPath, offsetFromBack);
 }
 

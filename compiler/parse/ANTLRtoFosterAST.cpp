@@ -78,7 +78,9 @@ void installTreeTokenBoundaryTracker(pANTLR3_BASE_TREE_ADAPTOR adaptor) {
 }
 // }}}
 
-int getChildCount(pTree tree) { return tree->getChildCount(tree); }
+size_t getChildCount(pTree tree) {
+  return static_cast<size_t>(tree->getChildCount(tree));
+}
 string textOf(pTree tree) {
   if (!tree) {
     std::cerr << "Error! Can't get text of a null node!" << std::endl;
@@ -252,15 +254,15 @@ bool isBitwiseOpName(const string& op) {
 }
 
 void initMaps() {
-  for (int i = 0; i < ARRAY_SIZE(c_binaryOps); ++i) {
+  for (size_t i = 0; i < ARRAY_SIZE(c_binaryOps); ++i) {
     binaryOps[c_binaryOps[i].name] = OpSpec(c_binaryOps[i]);
   }
 
-  for (int i = 0; i < ARRAY_SIZE(c_keywords); ++i) {
+  for (size_t i = 0; i < ARRAY_SIZE(c_keywords); ++i) {
     keywords[c_keywords[i]] = true;
   }
 
-  for (int i = 0; i < ARRAY_SIZE(c_reserved_keywords); ++i) {
+  for (size_t i = 0; i < ARRAY_SIZE(c_reserved_keywords); ++i) {
     reserved_keywords[c_reserved_keywords[i]] = true;
   }
 
@@ -374,7 +376,7 @@ std::vector<VariableAST*> getFormals(pTree tree, bool fnMeansClosure) {
   if (textOf(tree) == "FORMAL") {
     args.push_back(parseFormal(tree, fnMeansClosure));
   } else {
-    for (int i = 0; i < getChildCount(tree); ++i) {
+    for (size_t i = 0; i < getChildCount(tree); ++i) {
        args.push_back(parseFormal(child(tree, i), fnMeansClosure));
     }
   }
@@ -476,14 +478,14 @@ ExprAST* parseTopLevel(pTree tree) {
   std::vector<ExprAST*> parsedExprs(getChildCount(tree));
   // forall i, exprs[i] == pendingParseTrees[i] == NULL
 
-  for (int i = 0; i < getChildCount(tree); ++i) {
+  for (size_t i = 0; i < getChildCount(tree); ++i) {
     pendingParseTrees[i] = child(tree, i);
   }
 
   // forall i, exprs[i] == NULL, pendingParseTrees[i] != NULL
   std::map<pTree, PrototypeAST*> protos;
 
-  for (int i = 0; i < pendingParseTrees.size(); ++i) {
+  for (size_t i = 0; i < pendingParseTrees.size(); ++i) {
     pTree c = pendingParseTrees[i];
     int token = typeOf(c);
 
@@ -509,7 +511,7 @@ ExprAST* parseTopLevel(pTree tree) {
   // forall i, either exprs[i] == NULL && pendingParseTrees[i] != NULL
   //              or  exprs[i] != NULL && pendingParseTrees[i] == NULL
 
-  for (int i = 0; i < pendingParseTrees.size(); ++i) {
+  for (size_t i = 0; i < pendingParseTrees.size(); ++i) {
     if (!parsedExprs[i]) {
       pTree c = pendingParseTrees[i];
       if (PrototypeAST* proto = protos[c]) {
@@ -522,7 +524,7 @@ ExprAST* parseTopLevel(pTree tree) {
   }
 
   std::vector<ExprAST*> exprs;
-  for (int i = 0; i < parsedExprs.size(); ++i) {
+  for (size_t i = 0; i < parsedExprs.size(); ++i) {
     if (parsedExprs[i]) {
       exprs.push_back(parsedExprs[i]);
     }
@@ -647,7 +649,6 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
 
   int token = typeOf(tree);
   string text = textOf(tree);
-  int nchildren = getChildCount(tree);
   foster::SourceRange sourceRange = rangeOf(tree);
 
   if (token == TYPEDEFN) {
@@ -658,19 +659,19 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     ASSERT(getChildCount(tree) >= 2);
     // name (args) ... (args)
     ExprAST* prefix = ExprAST_from(child(tree, 0), fnMeansClosure);
-    for (int i = 1; i < getChildCount(tree); ++i) {
+    for (size_t i = 1; i < getChildCount(tree); ++i) {
       int trailerType = typeOf(child(tree, i));
       if (trailerType == CALL) {
         Exprs args = getExprs(child(tree, i), fnMeansClosure);
 
-        // Two different things can parse as function calls: normal function calls,
-        // and function-call syntax for built-in bitwise operators.
+        // Two different things can parse as function calls: normal function
+        // calls, and function-call syntax for built-in bitwise operators.
         VariableAST* varPrefix = dynamic_cast<VariableAST*>(prefix);
         if (varPrefix) {
           if (varPrefix->name == "deref") {
             if (args.size() != 1) {
-              std::cerr << "Error! Deref operator called with bad number of args: " <<
-                  args.size() << std::endl;
+              std::cerr << "Error! Deref operator called with "
+                        << " bad number of args: " << args.size() << std::endl;
               return NULL;
             }
             prefix = new DerefExprAST(args[0], sourceRange);
@@ -679,8 +680,9 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
 
           if (isBitwiseOpName(varPrefix->name)) {
             if (args.size() != 2) {
-              std::cerr << "Error! Bitwise operator " << varPrefix->name <<
-                  " with bad number of arguments: " << args.size() << "!" << std::endl;
+              std::cerr << "Error! Bitwise operator " << varPrefix->name
+                        << " with bad number of arguments: " << args.size()
+                        << std::endl;
               return NULL;
             }
             prefix = new BinaryOpExprAST(varPrefix->name, args[0], args[1], sourceRange);
@@ -744,7 +746,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
   if (token == EXPRS || token == SEQ) {
     if (fnMeansClosure) {
       Exprs exprs;
-      for (int i = 0; i < getChildCount(tree); ++i) {
+      for (size_t i = 0; i < getChildCount(tree); ++i) {
         ExprAST* ast = ExprAST_from(child(tree, i), fnMeansClosure);
         if (ast != NULL) {
           exprs.push_back(ast);
@@ -857,27 +859,31 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
       return NULL;
     }
 
-    std::cout << "Parsed fn " << *(fn->proto) << ", fnMeansClosure? " << fnMeansClosure << std::endl;
+    std::cout << "Parsed fn " << *(fn->proto) << ", fnMeansClosure? "
+              << fnMeansClosure << std::endl;
     if (fnMeansClosure) {
       ClosureAST* cloast = new ClosureAST(fn, sourceRange);
-      std::cout << "\t\t\tFN MEANS CLOSURE: " << *fn << "; cloast = " << cloast << std::endl;
-      //return fn;
+      std::cout << "\t\t\tFN MEANS CLOSURE: " << *fn
+                << "; cloast = " << cloast << std::endl;
       return cloast;
     } else {
       return fn;
     }
   }
 
-  if (text == "false" || text == "true") { return new BoolAST(text, sourceRange); }
+  if (text == "false" || text == "true") {
+    return new BoolAST(text, sourceRange);
+  }
 
   // Should have handled all keywords by now...
   if (keywords[text]) {
-    EDiag() << "illegal use of keyword '" << text << "'"  << show(sourceRange);
+    EDiag() << "illegal use of keyword '" << text << "'" << show(sourceRange);
     return NULL;
   }
 
   if (reserved_keywords[text]) {
-    EDiag() << "cannot use reserved keyword '" << text << "'"  << show(sourceRange);
+    EDiag() << "cannot use reserved keyword '" << text << "'"
+            << show(sourceRange);
     return NULL;
   }
 
@@ -889,8 +895,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
 
 Exprs getExprs(pTree tree, bool fnMeansClosure) {
   Exprs f;
-  int childCount = getChildCount(tree);
-  for (int i = 0; i < childCount; ++i) {
+  for (size_t i = 0; i < getChildCount(tree); ++i) {
     f.push_back(ExprAST_from(child(tree, i), fnMeansClosure));
   }
   return f;
@@ -961,7 +966,7 @@ std::vector<TypeAST*> getTypes(pTree tree) {
 
   std::vector<TypeAST*> types;
   if (token == EXPRS || token == SEQ) {
-    for (int i = 0; i < getChildCount(tree); ++i) {
+    for (size_t i = 0; i < getChildCount(tree); ++i) {
       TypeAST* ast = TypeAST_from(child(tree, i));
       if (ast != NULL) {
 	types.push_back(ast);

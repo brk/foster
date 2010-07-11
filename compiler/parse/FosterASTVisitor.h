@@ -27,6 +27,7 @@ struct FosterASTVisitor {
   bool inAssignLHS;
 
   explicit FosterASTVisitor() : inAssignLHS(false) {}
+  virtual ~FosterASTVisitor() {}
 
   // Declare the individual (pure virtual) visit function for the AST node types
   #define FOSTER_AST_VISITOR_PURE_VIRTUAL

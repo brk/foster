@@ -68,7 +68,7 @@ void fosterInitializeLLVM() {
 string freshName(string like) {
   static std::map<string, int> counts;
   std::stringstream ss;
-  int pos = like.find("%d", 0);
+  size_t pos = like.find("%d", 0);
   int curr = counts[like]++;
   if (string::npos == pos) { // append uniquifier, if any
     if (curr == 0) {
@@ -94,7 +94,7 @@ string join(string glue, Exprs args) {
     } else {
       ss << "<nil>";
     }
-    for (int i = 1; i < args.size(); ++i) {
+    for (size_t i = 1; i < args.size(); ++i) {
       ss << glue;
       if (args[i]) {
         ss << *args[i];
@@ -184,7 +184,7 @@ void initModuleTypeNames() {
 }
 
 void FosterASTVisitor::visitChildren(ExprAST* ast) {
-  for (int i = 0; i < ast->parts.size(); ++i) {
+  for (size_t i = 0; i < ast->parts.size(); ++i) {
     if (ast->parts[i]) {
       this->onVisitChild(ast, ast->parts[i]);
     } else {

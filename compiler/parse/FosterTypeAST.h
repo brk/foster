@@ -63,7 +63,7 @@ protected:
   explicit TypeAST(const llvm::Type* underlyingType,
                    const foster::SourceRange& sourceRange)
     : repr(underlyingType), sourceRange(sourceRange) {}
-
+  virtual ~TypeAST();
 public:
   virtual const llvm::Type* getLLVMType() const { return repr; }
 
@@ -171,7 +171,7 @@ class TupleTypeAST : public TypeAST {
 public:
   virtual std::ostream& operator<<(std::ostream& out) const {
     out << "tuple { ";
-    for (int i = 0; i < parts.size(); ++i) {
+    for (size_t i = 0; i < parts.size(); ++i) {
       out << *(parts[i]) << ", ";
     }
     out << " }";

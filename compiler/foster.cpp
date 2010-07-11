@@ -488,7 +488,7 @@ void optimizeModuleAndRunPasses(Module* mod) {
   }
 
   // Add command line passes
-  for (int i = 0; i < cmdLinePassList.size(); ++i) {
+  for (size_t i = 0; i < cmdLinePassList.size(); ++i) {
     const PassInfo* pi = cmdLinePassList[i];
     llvm::Pass* p = (pi->getNormalCtor()) ? pi->getNormalCtor()() : NULL;
     if (p) {

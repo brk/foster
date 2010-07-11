@@ -44,7 +44,7 @@ struct PrettyPrintPass : public FosterASTVisitor {
   PPToken tNewline, tOptNewline, tConnNewline;
   
   PrettyPrintPass(std::ostream& out, int width = 80, int indent_width = 2)
-    : out(out), INDENT_WIDTH(indent_width), printVarTypes(false) {
+    : printVarTypes(false), out(out), INDENT_WIDTH(indent_width) {
     tBlockOpen.kind = PPToken::kOpen;
     tBlockClose.kind = PPToken::kClose;
     tIndent.kind = PPToken::kIndent;
@@ -114,7 +114,7 @@ struct PrettyPrintPass : public FosterASTVisitor {
   void scan(PPToken t) {
     switch (t.kind) {
     case PPToken::kString:
-      for (int i = 0; i < t.str.size(); ++i) {
+      for (size_t i = 0; i < t.str.size(); ++i) {
         char c = t.str[i];
         if (c == '\n') { // Handle explicit newline embedded in string
           break_dq.clear();

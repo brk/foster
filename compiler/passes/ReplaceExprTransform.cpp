@@ -17,7 +17,7 @@ using namespace std;
 // children inspected again. Hopefully it will be flexible enough.
 
 void ReplaceExprTransform::visitChildren(ExprAST* ast) {
-  for (int i = 0; i < ast->parts.size(); ++i) {
+  for (size_t i = 0; i < ast->parts.size(); ++i) {
     if (ast->parts[i]) {
       this->onVisitChild(ast, &ast->parts[i]);
     } else {
@@ -52,7 +52,7 @@ void ReplaceExprTransform::visit(VariableAST* ast)            { this->newChild =
 void ReplaceExprTransform::visit(UnaryOpExprAST* ast)         { this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(BinaryOpExprAST* ast)        { this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(PrototypeAST* ast)           {
-  for (int i = 0; i < ast->inArgs.size(); ++i) {
+  for (size_t i = 0; i < ast->inArgs.size(); ++i) {
     // Manually add variance, blah.
     ExprAST* var = ast->inArgs[i];
     onVisitChild(ast, &var);

@@ -168,7 +168,7 @@ add_executable(fosterc
   compiler/passes/ReplaceExprTransform.cpp
   compiler/passes/ClosureConversionPass.cpp
   compiler/llvm/passes/Hello.cpp
-  compiler/llvm/passes/LLVMCallGraphDotPrinter.cpp
+  #  compiler/llvm/passes/LLVMCallGraphDotPrinter.cpp
   third_party/pystring/pystring.cpp
   ${PROJECT_BINARY_DIR}/fosterParser.c
   ${PROJECT_BINARY_DIR}/fosterLexer.c

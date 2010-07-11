@@ -42,6 +42,9 @@ bool arePhysicallyCompatible(const llvm::Type* src,
 
 /////////////////////////////////////////////////////////////////////
 
+//virtual
+TypeAST::~TypeAST() {}
+
 std::map<const llvm::Type*, TypeAST*> TypeAST::thinWrappers;
 
 static std::map<const llvm::Type*, TypeAST*> seen;
@@ -70,7 +73,7 @@ TypeAST* TypeAST::get(const llvm::Type* loweredType) {
                  "not be passed to TypeAST::get()!" << std::endl;
     TypeAST* ret = TypeAST::get(fnty->getReturnType());
     std::vector<TypeAST*> args;
-    for (int i = 0; i < fnty->getNumParams(); ++i) {
+    for (size_t i = 0; i < fnty->getNumParams(); ++i) {
        args.push_back(TypeAST::get(fnty->getParamType(i))); 
     }
     return FnTypeAST::get(ret, args);
@@ -80,7 +83,7 @@ TypeAST* TypeAST::get(const llvm::Type* loweredType) {
          = llvm::dyn_cast<const llvm::StructType>(loweredType)) {
     seen[sty] = (TypeAST*) 1;
     std::vector<TypeAST*> args;
-    for (int i = 0; i < sty->getNumElements(); ++i) {
+    for (size_t i = 0; i < sty->getNumElements(); ++i) {
        args.push_back(TypeAST::get(sty->getContainedType(i))); 
     }
     return TupleTypeAST::get(args);
@@ -155,7 +158,7 @@ FnTypeAST* FnTypeAST::get(TypeAST* returnType,
   if (fnty) return fnty;
   
   std::vector<const llvm::Type*> loweredArgTypes;
-  for (int i = 0; i < argTypes.size(); ++i) {
+  for (size_t i = 0; i < argTypes.size(); ++i) {
     loweredArgTypes.push_back(argTypes[i]->getLLVMType());
   } 
   fnty = new FnTypeAST(
@@ -176,7 +179,7 @@ TupleTypeAST* TupleTypeAST::get(const std::vector<TypeAST*>& argTypes) {
   if (tup) return tup;
 
   std::vector<const llvm::Type*> loweredTypes;
-  for (int i = 0; i < argTypes.size(); ++i) {
+  for (size_t i = 0; i < argTypes.size(); ++i) {
     loweredTypes.push_back(argTypes[i]->getLLVMType());
   }
   const llvm::StructType* sty = llvm::StructType::get(

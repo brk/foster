@@ -18,7 +18,7 @@ void AddParentLinksPass::visit(VariableAST* ast)            { return; }
 void AddParentLinksPass::visit(UnaryOpExprAST* ast)         { return; }
 void AddParentLinksPass::visit(BinaryOpExprAST* ast)        { return; }
 void AddParentLinksPass::visit(PrototypeAST* ast)           {
-  for (int i = 0; i < ast->inArgs.size(); ++i) {
+  for (size_t i = 0; i < ast->inArgs.size(); ++i) {
     onVisitChild(ast, ast->inArgs[i]);
   }
 }

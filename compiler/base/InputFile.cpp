@@ -40,7 +40,7 @@ void InputFile::initializeLineCache() {
 }
 
 llvm::StringRef InputFile::getLine(int n) const {
-  ASSERT(n < lineCache.size());
+  ASSERT(n >= 0 && static_cast<size_t>(n) < lineCache.size());
   return this->lineCache[n];
 }
 

@@ -35,7 +35,7 @@ protected:
 
   DiagBase(llvm::raw_ostream& out, const char* levelstr)
     : levelstr(levelstr), msg(msgstr), out(out), sourceFile(NULL), sourceLoc(-1, -1) {}
-  ~DiagBase() {
+  virtual ~DiagBase() {
     const InputFile* source = (sourceFile ? sourceFile : gInputFile);
     out << source->getShortSuffixPath();
     if (sourceLoc.isValid()) {
