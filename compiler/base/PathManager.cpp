@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <iostream>
+#include <iterator>
+#include <queue>
 
 using llvm::sys::Path;
 
@@ -47,58 +49,47 @@ static std::string wellFormedSuffixIncluding(
 
 static std::string disamb(const std::set<std::string>& candidates,
                           const Path& inputPath) {
-  if (candidates.empty()) {
-    return inputPath.str();
-  }
+  
+  std::string pathstr = inputPath.str();
+  if (candidates.empty()) { return pathstr; }
 
   // Our input path is ..../d/c/b.a
   // and we have a set of paths that end in b.a;
   // they may or may not match c/b.a.
-  // We'll iterate backwards through the input path,
-  // narrowing the set of the candidates that have
-  // matched every subcomponent of the path so far.
-  // When the set of matching candidates (not including
-  // the input path) becomes empty, the desired
-  // suffix is the subpath formed by concatenating
-  // the inspected components.
-  typedef std::set<std::string> CandSet; 
-  CandSet remainingCandidates(candidates);
-  CandSet potentialCandidates;
-  size_t offsetFromBack = inputPath.getLast().size();
-  const std::string& inputPathStr = inputPath.str(); 
-  size_t inputPathLength  = inputPath.size(); 
+  //
+  // We'll choose the candidate with the longest matching suffix.
+  typedef std::set<std::string> CandSet;
+  typedef std::string::reverse_iterator rit;
+  typedef std::pair<int, const std::string*> MatchedLengthSuffix;
+  std::priority_queue<MatchedLengthSuffix> pq;
+  
+  // Given no alternatives, the shortest unambiguous suffix
+  // for the input path is the last component of the input path.
+  pq.push(MatchedLengthSuffix(inputPath.getLast().size(), &pathstr));
 
-  remainingCandidates.erase(inputPathStr);
-
-  // Loop invariant: at the header, remainingCandidates
-  // is the set of paths, not including the input path,
-  // that have matched the last offsetFromBack characters
-  // in inputPath.
-  while (offsetFromBack < inputPathLength
-      && !remainingCandidates.empty()) {
-    potentialCandidates.clear();
-    std::copy(remainingCandidates.begin(),
-              remainingCandidates.end(),
-              std::inserter(potentialCandidates, potentialCandidates.begin()));
-    remainingCandidates.clear();
-
+  for (CandSet::iterator it = candidates.begin();
+                         it != candidates.end();
+                       ++it) {
+    std::string s = *it;
     
-    // TODO use reverse and mismatch?
-    for (CandSet::iterator it = potentialCandidates.begin();
-                           it != potentialCandidates.end();
-                           ++it) {
-      const std::string& s = *it;
-      if (offsetFromBack >= s.size()) continue;
-      char sc = s[s.size() - offsetFromBack];
-      char ic = inputPathStr[inputPathStr.size() - offsetFromBack];
-      if (sc == ic) {
-        remainingCandidates.insert(s);
-      }
-    }
-    ++offsetFromBack;
+    // We've already created an entry for the input path, so skip it.
+    if (s == pathstr) continue;
+    
+    // Make sure we don't inspect more characters than either string's length.
+    size_t commonLength = (std::min)(pathstr.size(), s.size());
+    
+    // Find the first mismatched character from the backs of each string.
+    std::pair<rit, rit> mm = std::mismatch(
+          s.rbegin(),
+          s.rbegin() + commonLength,
+          pathstr.rbegin());
+    
+    // Store a pointer to the string, along with the matched length.
+    size_t offsetFromBack = std::distance(s.rbegin(), mm.first);
+    pq.push(MatchedLengthSuffix(offsetFromBack, &(*it)));
   }
-
-  return wellFormedSuffixIncluding(inputPath, offsetFromBack);
+  
+  return wellFormedSuffixIncluding(inputPath, pq.top().first);
 }
 
 std::string PathManager::getShortestUnambiguousSuffix(const Path& path) {
