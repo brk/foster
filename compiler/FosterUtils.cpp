@@ -147,6 +147,7 @@ const llvm::Type* recursivelySubstituteGenericClosureTypes(
                                     const llvm::Type* ty,
                                     bool isInClosureType) {
   if (llvm::isa<llvm::IntegerType>(ty)) { return ty; }
+  
   if (const FunctionType* fnty = llvm::dyn_cast<FunctionType>(ty)) {
     TupleTypeAST* sty = NULL;
     if (isInClosureType) {
@@ -160,9 +161,11 @@ const llvm::Type* recursivelySubstituteGenericClosureTypes(
     }
     return sty;
   }
+  
   if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
     return llvm::PointerType::get(
-      recursivelySubstituteGenericClosureTypes(pty->getElementType(), isInClosureType),
+      recursivelySubstituteGenericClosureTypes(pty->getElementType(),
+                                               isInClosureType),
       pty->getAddressSpace());
   }
   
@@ -197,11 +200,13 @@ bool voidCompatibleReturnTypes(const llvm::FunctionType* expected,
       || expected->getReturnType() == actual->getReturnType();
 }
 
-bool isPointerToCompatibleFnTy(const llvm::Type* ty, const llvm::FunctionType* fnty) {
+bool isPointerToCompatibleFnTy(const llvm::Type* ty,
+                               const llvm::FunctionType* fnty) {
  if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
-   if (const llvm::FunctionType* pfnty = llvm::dyn_cast<llvm::FunctionType>(pty->getElementType())) {
-     // Compatible means all parameters have same types, and return values are either
-     // same, or pfnty has void and fnty has non-void return type.
+   if (const llvm::FunctionType* pfnty = llvm::dyn_cast<llvm::FunctionType>(
+                                                     pty->getElementType())) {
+     // Compatible means all parameters have same types, and return values are
+     // either same, or pfnty has void and fnty has non-void return type.
      if (!voidCompatibleReturnTypes(pfnty, fnty)) { return false; }
 
      if (pfnty->getNumParams() != fnty->getNumParams()) { return false; }

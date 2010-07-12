@@ -16,6 +16,7 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/Bitcode/ReaderWriter.h"
+#include "llvm/Config/config.h"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetMachine.h"
@@ -36,6 +37,13 @@
 #include "llvm/System/Host.h"
 #include "llvm/System/Signals.h"
 #include "llvm/System/TimeValue.h"
+
+// These macros are conflicted between llvm/Config/config.h and antlr3config.h
+#undef PACKAGE_BUGREPORT
+#undef PACKAGE_NAME
+#undef PACKAGE_STRING
+#undef PACKAGE_TARNAME
+#undef PACKAGE_VERSION
 
 #include "fosterLexer.h"
 #include "fosterParser.h"
@@ -59,11 +67,12 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
-#include <string>
 #include <map>
 #include <vector>
 
 using namespace llvm;
+
+using foster::SourceRange;
 
 using std::string;
 using std::endl;
@@ -105,8 +114,9 @@ void createParser(ANTLRContext& ctx, const foster::InputFile& f) {
   ASSERT(f.getBuffer()->getBufferSize() <= ((ANTLR3_UINT32)-1)
       && "Trying to parse files larger than 4GB makes me cry.");
   ctx.filename = f.getPath().str();
-  ctx.input = antlr3NewAsciiStringInPlaceStream((pANTLR3_UINT8) f.getBuffer()->getBufferStart(),
-                                                (ANTLR3_UINT32) f.getBuffer()->getBufferSize(),
+  ctx.input = antlr3NewAsciiStringInPlaceStream(
+                                (pANTLR3_UINT8) f.getBuffer()->getBufferStart(),
+                                (ANTLR3_UINT32) f.getBuffer()->getBufferSize(),
                                                 NULL);
   ctx.lxr = fosterLexerNew(ctx.input);
   if (ctx.lxr == NULL) {
@@ -132,42 +142,42 @@ void createParser(ANTLRContext& ctx, const foster::InputFile& f) {
 VariableAST* checkAndGetLazyRefTo(PrototypeAST* p) {
   { TypecheckPass typ; p->accept(&typ); }
   VariableAST* fnRef = new VariableAST(p->name, p->type,
-                              foster::SourceRange::getEmptyRange());
+                              SourceRange::getEmptyRange());
   fnRef->lazilyInsertedPrototype = p;
 
   return fnRef;
 }
 
-VariableAST* proto(TypeAST* retTy, const std::string& fqName) {
+VariableAST* proto(TypeAST* retTy, const string& fqName) {
   return checkAndGetLazyRefTo(new PrototypeAST(retTy, fqName,
-                                    foster::SourceRange::getEmptyRange()));
+                                    SourceRange::getEmptyRange()));
 }
 
-VariableAST* proto(TypeAST* retTy, const std::string& fqName,
+VariableAST* proto(TypeAST* retTy, const string& fqName,
     TypeAST* ty1) {
   std::vector<VariableAST*> inArgs;
-  inArgs.push_back(new VariableAST("p1", ty1, foster::SourceRange::getEmptyRange()));
+  inArgs.push_back(new VariableAST("p1", ty1, SourceRange::getEmptyRange()));
   return checkAndGetLazyRefTo(new PrototypeAST(retTy, fqName, inArgs,
-                                    foster::SourceRange::getEmptyRange()));
+                                    SourceRange::getEmptyRange()));
 }
 
-VariableAST* proto(TypeAST* retTy, const std::string& fqName,
+VariableAST* proto(TypeAST* retTy, const string& fqName,
     TypeAST* ty1, TypeAST* ty2) {
   std::vector<VariableAST*> inArgs;
-  inArgs.push_back(new VariableAST("p1", ty1, foster::SourceRange::getEmptyRange()));
-  inArgs.push_back(new VariableAST("p2", ty2, foster::SourceRange::getEmptyRange()));
+  inArgs.push_back(new VariableAST("p1", ty1, SourceRange::getEmptyRange()));
+  inArgs.push_back(new VariableAST("p2", ty2, SourceRange::getEmptyRange()));
   return checkAndGetLazyRefTo(new PrototypeAST(retTy, fqName, inArgs,
-                                    foster::SourceRange::getEmptyRange()));
+                                    SourceRange::getEmptyRange()));
 }
 
-VariableAST* proto(TypeAST* retTy, const std::string& fqName,
+VariableAST* proto(TypeAST* retTy, const string& fqName,
     TypeAST* ty1, TypeAST* ty2, TypeAST* ty3) {
   std::vector<VariableAST*> inArgs;
-  inArgs.push_back(new VariableAST("p1", ty1, foster::SourceRange::getEmptyRange()));
-  inArgs.push_back(new VariableAST("p2", ty2, foster::SourceRange::getEmptyRange()));
-  inArgs.push_back(new VariableAST("p3", ty3, foster::SourceRange::getEmptyRange()));
+  inArgs.push_back(new VariableAST("p1", ty1, SourceRange::getEmptyRange()));
+  inArgs.push_back(new VariableAST("p2", ty2, SourceRange::getEmptyRange()));
+  inArgs.push_back(new VariableAST("p3", ty3, SourceRange::getEmptyRange()));
   return checkAndGetLazyRefTo(new PrototypeAST(retTy, fqName, inArgs,
-                                    foster::SourceRange::getEmptyRange()));
+                                    SourceRange::getEmptyRange()));
 }
 
 ExprAST* lookupOrCreateNamespace(ExprAST* ns, const string& part) {
@@ -177,15 +187,16 @@ ExprAST* lookupOrCreateNamespace(ExprAST* ns, const string& part) {
     if (nr) {
       return nr->newNamespace(part);
     } else {
-      std::cerr << "Error: lookupOrCreateNamespace failed because ns did not contain"
-          " an entry for '" << part << "' and ns was not a NameResolverAST* !" << std::endl;
+      std::cerr << "Error: lookupOrCreateNamespace failed because "
+                << " ns did not contain an entry for '" << part << "'"
+                << " and ns was not a NameResolverAST*" << std::endl;
     }
   }
 
   return nsPart;
 }
 
-std::set<std::string> globalNames;
+std::set<string> globalNames;
 
 void addToProperNamespace(VariableAST* var) {
   const string& fqName = var->name;
@@ -196,7 +207,8 @@ void addToProperNamespace(VariableAST* var) {
 
   ExprAST* ns = varScope.lookup(parts[0], "");
   if (!ns) {
-    std::cerr << "Error: could not find root namespace for fqName " << fqName << std::endl;
+    std::cerr << "Error: could not find root namespace for fqName "
+              << fqName << std::endl;
     return;
   }
 
@@ -225,7 +237,8 @@ void createLLVMBitIntrinsics() {
   const unsigned i8_to_i64 = ((1<<3)|i16_to_i64);
   enum intrinsic_kind { kTransform, kOverflow, kAtomicStub };
   struct bit_intrinsic_spec {
-    const char* intrinsicName; // e.g. "bswap" becomes "llvm.bswap.i16", "llvm.bswap.i32" etc
+    // e.g. "bswap" becomes "llvm.bswap.i16", "llvm.bswap.i32" etc
+    const char* intrinsicName;
     const intrinsic_kind kind;
     const unsigned sizeFlags;
   };
@@ -292,7 +305,7 @@ void createLLVMBitIntrinsics() {
           // ss contains something like "llvm.atomic.cmp.swap.i32"
           ss << ".p0" << ssize; // now "llvm.atomic.cmp.swap.i32.p0i32"
 
-          if (spec->intrinsicName == std::string("atomic.cmp.swap")) {
+          if (spec->intrinsicName == string("atomic.cmp.swap")) {
             // e.g. for declaring i32 @llvm.atomic.cmp.swap.i32.p0i32(i32*, i32, i32)
             addToProperNamespace( proto(ty, ss.str(),
                 RefTypeAST::get(ty, false), ty, ty) );
@@ -309,7 +322,7 @@ void createLLVMBitIntrinsics() {
   }
 }
 
-static cl::opt<std::string>
+static cl::opt<string>
 optInputPath(cl::Positional, cl::desc("<input file>"));
 
 static cl::opt<bool>
@@ -323,6 +336,10 @@ optDumpPreLinkedIR("dump-prelinked",
 static cl::opt<bool>
 optDumpPostLinkedIR("dump-postlinked",
   cl::desc("[foster] Dump LLVM IR after linking with standard library"));
+
+static cl::opt<bool>
+optDumpPostOptIR("dump-postopt",
+  cl::desc("[foster] Dump LLVM IR after linking and optimization passes"));
 
 static cl::opt<bool>
 optDumpASTs("dump-asts",
@@ -360,7 +377,7 @@ STATISTIC(statTypeCheckingMs, "[foster] Time spent doing type checking (ms)");
 STATISTIC(statCodegenMs, "[foster] Time spent doing Foster AST -> LLVM IR lowering (ms)");
 STATISTIC(statClosureConversionMs, "[foster] Time spent performing closure conversion (ms)");
 
-Module* readModuleFromPath(std::string path) {
+Module* readModuleFromPath(string path) {
   ScopedTimer timer(statFileIOMs);
   SMDiagnostic diag;
   return llvm::ParseIRFile(path, diag, llvm::getGlobalContext());
@@ -374,7 +391,7 @@ void putModuleMembersInScope(Module* m, Module* linkee) {
   for (Module::iterator it = m->begin(); it != m->end(); ++it) {
     const Function& f = *it;
     
-    const std::string& name = f.getNameStr();
+    const string& name = f.getNameStr();
     bool isCxxLinkage = name[0] == '_' && name[1] == 'Z';
 
     bool hasDef = !f.isDeclaration();
@@ -390,9 +407,10 @@ void putModuleMembersInScope(Module* m, Module* linkee) {
       }
 
       varScope.insert(name, new VariableAST(name, TypeAST::get(ty),
-                                  foster::SourceRange::getEmptyRange()));
+                                  SourceRange::getEmptyRange()));
       
-      // Ensure that codegen for the given function finds the 'extern' declaration
+      // Ensure that codegen for the given function finds the 'declare'
+      // TODO make lazy prototype?
       Value* decl = linkee->getOrInsertFunction(
           llvm::StringRef(name),
           llvm::dyn_cast<llvm::FunctionType>(ty),
@@ -420,13 +438,13 @@ void dumpANTLRTree(std::ostream& out, pTree tree, int depth) {
   dumpANTLRTreeNode(out, tree, depth);
 }
 
-std::string dumpdir("fc-output/");
-std::string dumpdirFile(const std::string& filename) {
+string dumpdir("fc-output/");
+string dumpdirFile(const string& filename) {
   return dumpdir + filename;
 }
-void dumpModuleToFile(Module* mod, const std::string& filename) {
+void dumpModuleToFile(Module* mod, const string& filename) {
   ScopedTimer timer(statFileIOMs);
-  std::string errInfo;
+  string errInfo;
   llvm::raw_fd_ostream LLpreASM(filename.c_str(), errInfo);
   if (errInfo.empty()) {
     LLpreASM << *mod;
@@ -437,9 +455,9 @@ void dumpModuleToFile(Module* mod, const std::string& filename) {
   }
 }
 
-void dumpModuleToBitcode(Module* mod, const std::string& filename) {
+void dumpModuleToBitcode(Module* mod, const string& filename) {
   ScopedTimer timer(statFileIOMs);
-  std::string errInfo;
+  string errInfo;
   sys::RemoveFileOnSignal(sys::Path(filename), &errInfo);
 
   raw_fd_ostream out(filename.c_str(), errInfo, raw_fd_ostream::F_Binary);
@@ -453,7 +471,7 @@ void dumpModuleToBitcode(Module* mod, const std::string& filename) {
 }
 
 TargetData* getTargetDataForModule(Module* mod) {
-  const std::string& layout = mod->getDataLayout();
+  const string& layout = mod->getDataLayout();
   if (layout.empty()) return NULL;
   return new TargetData(layout);
 }
@@ -494,7 +512,8 @@ void optimizeModuleAndRunPasses(Module* mod) {
     if (p) {
       passes.add(p);
     } else {
-      std::cerr << "Error: unable to create pass " << pi->getPassName() << std::endl;
+      std::cerr << "Error: unable to create LLMV pass "
+                << "'" << pi->getPassName() << "'" << std::endl;
     }
   }
 
@@ -522,7 +541,7 @@ void optimizeModuleAndRunPasses(Module* mod) {
   passes.run(*mod);
 }
 
-void compileToNativeAssembly(Module* mod, const std::string& filename) {
+void compileToNativeAssembly(Module* mod, const string& filename) {
   ScopedTimer timer(statIRtoAsmMs);
 
   llvm::Triple triple(mod->getTargetTriple());
@@ -531,10 +550,11 @@ void compileToNativeAssembly(Module* mod, const std::string& filename) {
   }
 
   const Target* target = NULL;
-  std::string err;
+  string err;
   target = llvm::TargetRegistry::lookupTarget(triple.getTriple(), err);
   if (!target) {
-    std::cerr << "Unable to pick a target for compiling to assembly!" << std::endl;
+    std::cerr << "Error: unable to pick a target for compiling to assembly"
+              << std::endl;
     exit(1);
   }
 
@@ -581,7 +601,7 @@ void compileToNativeAssembly(Module* mod, const std::string& filename) {
   passes.doFinalization();
 }
 
-void validateInputFile(const std::string& pathstr) {
+void validateInputFile(const string& pathstr) {
   llvm::sys::PathWithStatus path(pathstr);
 
   if (path.empty()) {
@@ -589,7 +609,7 @@ void validateInputFile(const std::string& pathstr) {
     exit(1);
   }
 
-  std::string err;
+  string err;
   const llvm::sys::FileStatus* status
          = path.getFileStatus(/*forceUpdate=*/ false, &err);
   if (!status) {
@@ -608,12 +628,24 @@ void validateInputFile(const std::string& pathstr) {
   }
 }
 
+void setDefaultCommandLineOptions() {
+  if (string(LLVM_HOSTTRIPLE).find("darwin") != string::npos) {
+    // Applications on Mac OS X must be compiled with relocatable symbols, which
+    // is -mdynamic-no-pic (GCC) or -relocation-model=dynamic-no-pic (llc).
+    // Setting the flag here gives us the proper default, while still allowing
+    // the user to override via command line options if need be.
+    llvm::TargetMachine::setRelocationModel(llvm::Reloc::DynamicNoPIC);
+  }
+}
+
 int main(int argc, char** argv) {
   sys::PrintStackTraceOnErrorSignal();
   PrettyStackTraceProgram X(argc, argv);
   llvm_shutdown_obj Y;
 
   ScopedTimer wholeProgramTimer(statOverallRuntimeMs);
+
+  setDefaultCommandLineOptions();
 
   cl::SetVersionPrinter(&printVersionInfo);
   cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster compiler\n");
@@ -675,7 +707,7 @@ int main(int argc, char** argv) {
 
   { ScopedTimer timer(statFileIOMs);
   if (optDumpASTs) {
-    std::string outfile = "ast.dump.1.txt";
+    string outfile = "ast.dump.1.txt";
     std::cout << "unparsing to " << outfile << endl;
     std::ofstream out(dumpdirFile(outfile).c_str());
     out << *exprAST << endl;
@@ -701,7 +733,7 @@ int main(int argc, char** argv) {
   if (!sema) { return 1; }
   
   if (optDumpASTs) { ScopedTimer timer(statFileIOMs);
-    std::string outfile = "pp-precc.txt";
+    string outfile = "pp-precc.txt";
     std::cout << "=========================" << std::endl;
     std::cout << "Pretty printing to " << outfile << std::endl;
     std::ofstream out(dumpdirFile(outfile).c_str());
@@ -719,7 +751,7 @@ int main(int argc, char** argv) {
   }
 
   { ScopedTimer timer(statFileIOMs);
-    std::string outfile = "pp-postcc.txt";
+    string outfile = "pp-postcc.txt";
     std::cout << "=========================" << std::endl;
     std::cout << "Pretty printing to " << outfile << std::endl;
     std::ofstream out(dumpdirFile(outfile).c_str());
@@ -739,19 +771,24 @@ int main(int argc, char** argv) {
   }
 
   if (!optCompileSeparately) {
-    std::string errMsg;
+    string errMsg;
     {
       ScopedTimer timer(statLinkingMs);
     if (Linker::LinkModules(module, m, &errMsg)) {
-      std::cerr << "Error when linking modules together: " << errMsg << std::endl;
+      std::cerr << "Error when linking modules: " << errMsg << std::endl;
     }
     }
 
     if (optDumpPostLinkedIR) {
-      dumpModuleToFile(module, dumpdirFile("out.ll"));
+      dumpModuleToFile(module, dumpdirFile("out.preopt.ll"));
     }
 
     optimizeModuleAndRunPasses(module);
+    
+    if (optDumpPostOptIR) {
+      dumpModuleToFile(module, dumpdirFile("out.postopt.ll"));
+    }
+    
     compileToNativeAssembly(module, dumpdirFile("out.s"));
   } else { // -c, compile to bitcode instead of native assembly
     dumpModuleToBitcode(module, dumpdirFile("out.bc"));
@@ -760,7 +797,7 @@ int main(int argc, char** argv) {
 
 #ifdef LLVM_GE_2_8
   if (optDumpStats) {
-    std::string err;
+    string err;
     llvm::raw_fd_ostream out(dumpdirFile("stats.txt").c_str(), err);
     llvm::PrintStatistics(out);
   }

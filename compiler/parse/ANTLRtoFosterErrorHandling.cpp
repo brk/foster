@@ -147,8 +147,9 @@ int getFirstNonWhitespacePosition(llvm::StringRef line) {
 const char* describeApproximateStartPosition(const SourceRange& r) {
   llvm::StringRef line = r.source->getLine(r.begin.line);
   int lineStart = getFirstNonWhitespacePosition(line);
-  float lineLength = (std::min)(1.0f, float(line.size() - lineStart));
-  float percentThroughLine = 100.0f * float(r.begin.column - lineStart) / lineLength;
+  float lineLength = (std::min)(1.0f, float(line.size()    - lineStart));
+  float percentThroughLine = 100.0f * float(r.begin.column - lineStart)
+                                    / lineLength;
   if (percentThroughLine < 30.0f) {
     return "start";
   } else if (percentThroughLine < 70.0f) {
@@ -189,7 +190,8 @@ bool handleGenericError(pANTLR3_EXCEPTION ex,
                         const SourceRange& r) {
   const char* approxPosition = describeApproximateStartPosition(r);
   std::cerr << r.source->getShortSuffixPath() << ":"
-            << "generic error: " << ((const char*) ex->message) << " near the " << approxPosition
+            << "generic error: " << ((const char*) ex->message)
+            << " near the " << approxPosition
             << " of line " << (r.begin.line + 1) << ":\n\n"
             << r << std::endl;
   return false;
@@ -203,7 +205,8 @@ bool handleUnwantedToken(pANTLR3_EXCEPTION ex,
   const char* approxPosition = describeApproximateStartPosition(r);
   std::cerr << r.source->getShortSuffixPath() << ":"
             << "error: " << ((const char*) ex->message)
-            << " " << tokenText  << " near the " << approxPosition
+            << " " << tokenText 
+            << " near the " << approxPosition
             << " of line " << (r.begin.line + 1) << ":\n\n"
             << r << std::endl;
   return false;

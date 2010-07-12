@@ -80,10 +80,12 @@ void SourceRange::highlightWithCaret(llvm::raw_ostream& out,
         << ":" << begin.line << "::" << begin.column
         << " - " << end.line << "::" << end.column << " (empty)>";
   } else if (isSingleLine()) {
-    displaySourceLine(out, source, begin.line, caret.column, begin.column, end.column);
+    displaySourceLine(out, source, begin.line, caret.column,
+                      begin.column, end.column);
   } else {
     // Display the source line with no highlighting except caret
-    displaySourceLine(out, source, begin.line, caret.column, caret.column, caret.column);
+    displaySourceLine(out, source, begin.line, caret.column,
+                      caret.column, caret.column);
   }
 }
 

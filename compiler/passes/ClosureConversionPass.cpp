@@ -40,7 +40,6 @@ void foundFreeVariableIn(VariableAST* var, FnAST* scope) {
   // variable has not been marked as bound. This handles the case in which
   // a variable is free in a parent scope but only appears in a nested scope.
   do {
-    //std::cout << "Marking variable " << var->name << " as free in fn " << scope->proto->name << std::endl;
     freeVariables[scope].insert(var);
 
     scope = parentFnOf(scope);
@@ -69,7 +68,6 @@ void ClosureConversionPass::visit(BinaryOpExprAST* ast)        { return; }
 void ClosureConversionPass::visit(PrototypeAST* ast)           {
   for (size_t i = 0; i < ast->inArgs.size(); ++i) {
     boundVariables[callStack.back()].insert(ast->inArgs[i]);
-    //std::cout << "Marking variable " << ast->inArgs[i]->name << " as bound in fn " << callStack.back()->proto->name << std::endl;
     onVisitChild(ast, ast->inArgs[i]);
   }
 }
@@ -92,7 +90,8 @@ void ClosureConversionPass::visit(FnAST* ast)                  {
     if (ast->lambdaLiftOnly) {
       lambdaLiftAnonymousFunction(ast);
     } else {
-      //std::cout << "Anon function not wanting lambda lifting: " << ast->proto->name << std::endl;
+      //std::cout << "Anon function not wanting lambda lifting: "
+      //          << ast->proto->name << std::endl;
     }
   }
 }
@@ -108,7 +107,7 @@ void ClosureConversionPass::visit(ClosureAST* ast) {
   if (ast->hasKnownEnvironment) {
     visitChildren(ast);
   } else {
-    //std::cout << "ClosureConversionPass::visit(ClosureAST* ast fn..." << std::endl;
+    //std::cout << "ClosureConversionPass::visit(ClosureAST* ast fn...\n";
     //std::cout << "\tproto: " << *(ast->fn->proto) << std::endl;
     ast->fn->accept(this);
     performClosureConversion(ast);
@@ -138,13 +137,15 @@ void ClosureConversionPass::visit(SeqAST* ast)                 { return; }
 void ClosureConversionPass::visit(CallAST* ast)                {
   ExprAST* base = ast->parts[0];
   if (ClosureAST* cloBase = dynamic_cast<ClosureAST*>(base)) {
-    std::cout << "visited direct call of closure, replacing with fn... " << *base << std::endl;
+    std::cout << "visited direct call of closure, replacing with fn... "
+              << *base << std::endl;
     replaceOldWithNew(cloBase->parent, cloBase, cloBase->fn);
     std::cout << *(cloBase->parent) << std::endl;
     base = ast->parts[0] = cloBase->fn;
   }
   if (FnAST* fnBase = dynamic_cast<FnAST*>(base)) {
-    std::cout << "visited direct call of fn " << fnBase->proto->name << ", nested? " << fnBase->wasNested << std::endl;
+    std::cout << "visited direct call of fn " << fnBase->proto->name
+              << ", nested? " << fnBase->wasNested << std::endl;
     fnBase->lambdaLiftOnly = true;
     callsOf[fnBase].push_back(ast);
   }
@@ -235,7 +236,9 @@ void performClosureConversion(ClosureAST* closure) {
     envExprs.push_back(*it);
   }
 
-  llvm::StructType* envTy = llvm::StructType::get(getGlobalContext(), envTypes, /*isPacked=*/ false);
+  llvm::StructType* envTy = llvm::StructType::get(getGlobalContext(),
+                                                  envTypes,
+                                                  /*isPacked=*/ false);
   std::cout << "Env ty: " << *envTy << std::endl;
 
   // Make (a pointer to) this record be the function's first parameter.
@@ -264,7 +267,8 @@ void performClosureConversion(ClosureAST* closure) {
   // ... is handled directly at CallAST nodes during codegen
 
   if (ast->proto->type) {
-    // and updates the types of the prototype and function itself, if they already have types
+    // and updates the types of the prototype and function itself,
+    // if they already have types.
     {
        TypecheckPass p; ast->proto->accept(&p);
        std::cout << "ClosureConversionPass: updating type from " << *(ast->type)
@@ -311,7 +315,8 @@ void lambdaLiftAnonymousFunction(FnAST* ast) {
   }
 
   if (ast->proto->type) {
-    // and updates the types of the prototype and function itself, if they already have types
+    // and updates the types of the prototype and function itself,
+    // if they already have types
     {
        TypecheckPass p; ast->proto->accept(&p);
        // We just typecheck the prototype and not the function

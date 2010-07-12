@@ -57,6 +57,14 @@ def elapsed(start, end):
 def elapsed_since(start):
   return elapsed(start, walltime())
 
+def get_link_flags():
+  import platform
+  flags = {
+    'Darwin': lambda: ['-lpthread', '-framework', 'CoreFoundation'],
+    'Linux': lambda: ['-lrt', '-lpthread']
+  }[platform.system()]()
+  return ' '.join(flags)
+
 # returns (status, elapsed-time-ms)
 def run_command(cmd, paths, testpath, stdout=None, stderr=None, stdin=None, strictrv=True):
   if type(cmd) == str:
@@ -91,15 +99,15 @@ def run_one_test(dir_prefix, basename, paths, tmpdir):
 
         #print ' '.join(fosterc_cmdline)
         fc_elapsed = run_command(fosterc_cmdline, paths, testpath, stdout=compilelog, stderr=compilelog)
-        
+
         if compile_separately:
           raise Exception("Unsupported...")
         else:
           ld_elapsed = 0
-	  op_elapsed = 0
-          cc_elapsed = run_command('g++ out.s libfoster_main.o libchromium_base.a libcpuid.a -lrt -lpthread -o a.out',
+          op_elapsed = 0
+          cc_elapsed = run_command('g++ out.s libfoster_main.o libchromium_base.a libcpuid.a %s -o a.out' % get_link_flags(),
                                       paths, testpath, stdout=actual, stderr=expected, stdin=infile)
-	  rn_elapsed = run_command('a.out',  paths, testpath, stdout=actual, stderr=expected, stdin=infile, strictrv=False)
+          rn_elapsed = run_command('a.out',  paths, testpath, stdout=actual, stderr=expected, stdin=infile, strictrv=False)
 
         df_rv = subprocess.call(['diff', '-u', exp_filename, act_filename])
         if df_rv == 0:

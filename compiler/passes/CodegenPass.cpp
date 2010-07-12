@@ -16,7 +16,6 @@
 #include "llvm/Analysis/Verifier.h"
 #include "llvm/Target/TargetData.h"
 
-#include <sstream>
 #include <map>
 #include <set>
 
@@ -29,6 +28,7 @@ using llvm::Value;
 using llvm::ConstantInt;
 using llvm::APInt;
 using llvm::PHINode;
+using llvm::dyn_cast;
 
 using foster::SourceRange;
 using foster::EDiag;
@@ -57,16 +57,17 @@ OffsetSet countPointersInType(const llvm::Type* ty) {
   }
 
   // array, struct, union
-  else if (llvm::dyn_cast<const llvm::ArrayType>(ty)) {
-        // TODO need to decide how Foster semantics will map to LLVM IR for arrays.
-        // Will EVERY (C++), SOME (Factor, C#?), or NO (Java) types be unboxed in arrays?
-        // Also need to figure out how the gc will collect arrays.
+  else if (dyn_cast<const llvm::ArrayType>(ty)) {
+    // TODO need to decide how Foster semantics will map to LLVM IR for arrays.
+    // Will EVERY (C++), SOME (Factor, C#?), or NO (Java) types be unboxed?
+    // Also need to figure out how the gc will collect arrays.
     //return aty->getNumElements() * countPointersInType(aty->getElementType());
   }
 
   // if we have a struct { T1; T2 } then our offset set will be the set for T1,
   // plus the set for T2 with offsets incremented by the size of T1.
-  else if (const llvm::StructType* sty = llvm::dyn_cast<const llvm::StructType>(ty)) {
+  else if (const llvm::StructType* sty
+                            = dyn_cast<const llvm::StructType>(ty)) {
     for (size_t i = 0; i < sty->getNumElements(); ++i) {
       int slotOffset = getOffsetOfStructSlot(sty, i);
       OffsetSet sub = countPointersInType(sty->getTypeAtIndex(i));
@@ -80,7 +81,7 @@ OffsetSet countPointersInType(const llvm::Type* ty) {
 
   // TODO Also need to decide how to represent type maps for unions
   // in such a way that the GC can safely collect unions.
-  else if (llvm::dyn_cast<const llvm::UnionType>(ty)) {
+  else if (dyn_cast<const llvm::UnionType>(ty)) {
     //return 0;
   }
 
@@ -89,13 +90,11 @@ OffsetSet countPointersInType(const llvm::Type* ty) {
 }
 
 llvm::ConstantInt* getConstantInt64For(int64_t val) {
-  std::stringstream ss; ss << val;
-  return llvm::ConstantInt::get(getGlobalContext(), llvm::APInt(64, ss.str(), 10));
+  return ConstantInt::get(Type::getInt64Ty(getGlobalContext()), val);
 }
 
 llvm::ConstantInt* getConstantInt32For(int val) {
-  std::stringstream ss; ss << val;
-  return llvm::ConstantInt::get(getGlobalContext(), llvm::APInt(32, ss.str(), 10));
+  return ConstantInt::get(Type::getInt32Ty(getGlobalContext()), val);
 }
 
 std::map<const llvm::Type*, llvm::GlobalVariable*> typeMapForType;
@@ -114,8 +113,10 @@ llvm::Constant* getTypeMapEntryFor(
         // giving it a pointer to a type map, it's probably because the type
         // doesn't have a type map, i.e. the type is atomic. Instead, tell
         // the garbage collector how large the type is.
-        fields.push_back(llvm::ConstantExpr::getCast(llvm::Instruction::IntToPtr,
-                        llvm::ConstantExpr::getSizeOf(entryTy), LLVMTypeFor("i8*")));
+        fields.push_back(
+            llvm::ConstantExpr::getCast(llvm::Instruction::IntToPtr,
+                                        llvm::ConstantExpr::getSizeOf(entryTy),
+                                        LLVMTypeFor("i8*")));
   }
   fields.push_back(getConstantInt32For(v2));
   return llvm::ConstantStruct::get(typeMapEntryTy, fields);
@@ -160,7 +161,8 @@ llvm::GlobalVariable* emitTypeMap(const llvm::Type* ty, std::string name,
   using llvm::StructType;
 
   OffsetSet pointerOffsets = countPointersInType(ty);
-  //std::cout << "emitting type map for type " << *ty << " ; skipping offset zero? " << skipOffsetZero << std::endl;
+  //std::cout << "emitting type map for type " << *ty 
+  // << " ; skipping offset zero? " << skipOffsetZero << std::endl;
 
   if (skipOffsetZero) {
     // Remove entry for first pointer, which corresponds
@@ -173,7 +175,9 @@ llvm::GlobalVariable* emitTypeMap(const llvm::Type* ty, std::string name,
   std::vector<const Type*> entryty_types;
   entryty_types.push_back(LLVMTypeFor("i8*"));
   entryty_types.push_back(LLVMTypeFor("i32"));
-  StructType* entryty = StructType::get(getGlobalContext(), entryty_types, /*isPacked=*/false);
+  StructType* entryty = StructType::get(getGlobalContext(),
+                                        entryty_types,
+                                        /*isPacked=*/false);
   module->addTypeName("typemap_entry", entryty);
 
   std::vector<const Type*> typeMapTyFields;
@@ -183,7 +187,8 @@ llvm::GlobalVariable* emitTypeMap(const llvm::Type* ty, std::string name,
   typeMapTyFields.push_back(LLVMTypeFor("i32"));
   typeMapTyFields.push_back(entriesty);
 
-  const StructType* typeMapTy = StructType::get(getGlobalContext(), typeMapTyFields);
+  const StructType* typeMapTy = StructType::get(getGlobalContext(),
+                                                typeMapTyFields);
 
   llvm::GlobalVariable* typeMapVar = new llvm::GlobalVariable(
     /*Module=*/     *module,
@@ -202,7 +207,9 @@ llvm::GlobalVariable* emitTypeMap(const llvm::Type* ty, std::string name,
   // Construct the type map itself
   std::stringstream ss; ss << name << " = " << *ty;
   std::vector<llvm::Constant*> typeMapFields;
-  llvm::Constant* cname = llvm::ConstantArray::get(getGlobalContext(), ss.str().c_str(), true);
+  llvm::Constant* cname = llvm::ConstantArray::get(getGlobalContext(),
+                                                   ss.str().c_str(),
+                                                   true);
   llvm::GlobalVariable* typeNameVar = new llvm::GlobalVariable(
       /*Module=*/      *module,
       /*Type=*/        cname->getType(),
@@ -214,7 +221,6 @@ llvm::GlobalVariable* emitTypeMap(const llvm::Type* ty, std::string name,
 
   llvm::Constant* cnameptr = arrayVariableToPointer(typeNameVar);
   typeMapFields.push_back(cnameptr);
-  //typeMapFields.push_back(llvm::ConstantPointerNull::getNullValue(LLVMTypeFor("i8*")));
   typeMapFields.push_back(getConstantInt32For(numPointers));
 
   std::vector<llvm::Constant*> typeMapEntries;
@@ -262,7 +268,8 @@ const FunctionType* get_llvm_gcroot_ty() {
 
 // root should be an AllocaInst or a bitcast of such
 void markGCRoot(llvm::Value* root, llvm::Constant* meta) {
-  llvm::Constant* llvm_gcroot = module->getOrInsertFunction("llvm.gcroot", get_llvm_gcroot_ty());
+  llvm::Constant* llvm_gcroot = module->getOrInsertFunction("llvm.gcroot",
+                                                          get_llvm_gcroot_ty());
   if (!llvm_gcroot) {
     std::cerr << "Error! Could not mark GC root!" << std::endl;
     exit(1);
@@ -280,7 +287,8 @@ void markGCRoot(llvm::Value* root, llvm::Constant* meta) {
 #endif
 
   if (!meta) {
-    meta = llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(LLVMTypeFor("i8")));
+    meta = llvm::ConstantPointerNull::get(
+                               llvm::PointerType::getUnqual(LLVMTypeFor("i8")));
   } else if (meta->getType() != LLVMTypeFor("i8*")) {
     meta = llvm::ConstantExpr::getBitCast(meta, LLVMTypeFor("i8*"));
   }
@@ -301,7 +309,7 @@ llvm::AllocaInst* CreateEntryAlloca(const llvm::Type* ty, const char* name) {
 
 // Checks that ty == { i32 (i8*, ...)*, i8* }
 bool isGenericClosureType(const llvm::Type* ty) {
-  if (const llvm::StructType* sty = llvm::dyn_cast<const llvm::StructType>(ty)) {
+  if (const llvm::StructType* sty= dyn_cast<const llvm::StructType>(ty)) {
     if (!isValidClosureType(sty)) return false;
     if (sty->getContainedType(1) != LLVMTypeFor("i8*")) return false;
     if (!sty->getContainedType(0)->isPointerTy()) return false;
@@ -325,7 +333,7 @@ llvm::GlobalVariable* getTypeMapForType(const llvm::Type* ty) {
     // emitTypeMap also sticks gv in typeMapForType
   } else if (isGenericClosureType(ty)) {
     gv = emitTypeMap(ty, freshName("genericClosure"),
-        /*skipOffsetZero*/ true);
+                     /*skipOffsetZero*/ true);
   }
 
   if (!gv) {
@@ -348,7 +356,9 @@ llvm::Value* storeAndMarkPointerAsGCRoot(llvm::Value* val) {
 
   // allocate a slot for a T* on the stack
   llvm::AllocaInst* stackslot = CreateEntryAlloca(val->getType(), "stackref");
-  llvm::Value* root = builder.CreateBitCast(stackslot, LLVMTypeFor("i8**"), "gcroot");
+  llvm::Value* root = builder.CreateBitCast(stackslot,
+                                            LLVMTypeFor("i8**"),
+                                            "gcroot");
 
   markGCRoot(root, getTypeMapForType(val->getType()->getContainedType(0)));
   builder.CreateStore(val, stackslot, /*isVolatile=*/ false);
@@ -366,7 +376,9 @@ llvm::Value* emitMalloc(const llvm::Type* ty) {
     std::cerr << "NO MEMALLOC IN MODULE! :(" << std::endl;
     return NULL;
   }
-  llvm::Value* mem = builder.CreateCall(memalloc, getConstantInt64For(32), "mem");
+  llvm::Value* mem = builder.CreateCall(memalloc,
+                                        getConstantInt64For(32),
+                                        "mem");
   return storeAndMarkPointerAsGCRoot(
       builder.CreateBitCast(mem, llvm::PointerType::getUnqual(ty), "ptr"));
 }
@@ -455,8 +467,12 @@ void CodegenPass::visit(UnaryOpExprAST* ast) {
   }
 }
 
-bool isArithOp(string op) { return op == "+" || op == "-" || op == "/" || op == "*"; }
-bool isCmpOp(string op) { return op == "<" || op == "==" || op == "!="; }
+bool isArithOp(string op) {
+  return op == "+" || op == "-" || op == "/" || op == "*";
+}
+bool isCmpOp(string op) {
+  return op == "<" || op == "==" || op == "!=";
+}
 bool leftTypeBiggerInt(const Type* left, const Type* right) {
   return left->getScalarSizeInBits() > right->getScalarSizeInBits();
 }
@@ -522,7 +538,7 @@ void CodegenPass::visit(PrototypeAST* ast) {
   std::string symbolName = getSymbolName(ast->name);
 
   //std::cout << "\t" << "Codegen proto "  << sourceName << std::endl;
-  const llvm::FunctionType* FT = llvm::dyn_cast<FunctionType>(getLLVMType(ast->type));
+  const llvm::FunctionType* FT = dyn_cast<FunctionType>(getLLVMType(ast->type));
   Function* F = Function::Create(FT, Function::ExternalLinkage, symbolName, module);
 
   if (!F) {
@@ -579,7 +595,7 @@ void CodegenPass::visit(FnAST* ast) {
   scope.pushScope("fn " + ast->proto->name);
 
   (ast->proto)->accept(this);
-  Function* F = llvm::dyn_cast<Function>(ast->proto->value);
+  Function* F = dyn_cast<Function>(ast->proto->value);
   if (!F) {
     scope.popScope();
     return;
@@ -644,7 +660,8 @@ void CodegenPass::visit(FnAST* ast) {
     ast->value = F;
   } else {
     F->eraseFromParent();
-    std::cout << "Function '" << ast->proto->name << "' retval creation failed" << std::endl;
+    EDiag() << "function '" << ast->proto->name
+              << "' retval creation failed" << show(ast);
   }
 
   // Restore the insertion point from the previous function, if there was one.
@@ -662,7 +679,9 @@ const llvm::StructType* closureTypeFromClosedFnType(const FunctionType* fnty) {
   std::vector<const Type*> cloTypes;
   cloTypes.push_back(llvm::PointerType::get(fnty, 0));
   cloTypes.push_back(envPtrTy);
-  const llvm::StructType* cloTy = llvm::StructType::get(getGlobalContext(), cloTypes, /*isPacked=*/ false);
+  const llvm::StructType* cloTy = llvm::StructType::get(getGlobalContext(),
+                                                        cloTypes,
+                                                        /*isPacked=*/ false);
 
   std::cout << "Specific closure, fn ty: " << *fnty << std::endl;
   std::cout << "Specific closure, env ty: " << *envPtrTy << std::endl;
@@ -704,7 +723,7 @@ void CodegenPass::visit(ClosureAST* ast) {
   }
 
   if (ast->isTrampolineVersion) {
-    if (Function* func = llvm::dyn_cast<Function>(fnPtr->value)) {
+    if (Function* func = dyn_cast<Function>(fnPtr->value)) {
       func->addAttribute(1, llvm::Attribute::Nest);
     }
   }
@@ -727,7 +746,8 @@ void CodegenPass::visit(ClosureAST* ast) {
     std::cout << "Generic closure type: " << *genericCloTy << std::endl;
 #endif
 
-    addClosureTypeName(module, llvm::cast<llvm::StructType>(genericCloTy->getLLVMType()));
+    addClosureTypeName(module, llvm::cast<llvm::StructType>(
+                                                  genericCloTy->getLLVMType()));
 
     // { code*, env* }*
     llvm::AllocaInst* clo = CreateEntryAlloca(specificCloTy, "closure");
@@ -751,7 +771,8 @@ void CodegenPass::visit(ClosureAST* ast) {
       llvm::GlobalVariable* clo_env_typemap
           = getTypeMapForType(specificEnvTy);
 
-      Value* clo_env_typemap_slot = builder.CreateConstGEP2_32(env->value, 0, 0, "clo_env_typemap_slot");
+      Value* clo_env_typemap_slot = builder.CreateConstGEP2_32(env->value, 0, 0,
+                                                        "clo_env_typemap_slot");
       builder.CreateStore(llvm::ConstantExpr::getBitCast(
           clo_env_typemap, clo_env_typemap_slot->getType()->getContainedType(0)),
           clo_env_typemap_slot, /*isVolatile=*/ false);
@@ -759,7 +780,8 @@ void CodegenPass::visit(ClosureAST* ast) {
     } else {
       // Store null env pointer if environment is empty
       builder.CreateStore(
-          llvm::ConstantPointerNull::getNullValue(clo_env_slot->getType()->getContainedType(0)),
+          llvm::ConstantPointerNull::getNullValue(
+                         clo_env_slot->getType()->getContainedType(0)),
           clo_env_slot,
           /* isVolatile= */ false);
     }
@@ -919,7 +941,7 @@ afterBB:
     builder.CreateCondBr(endCond, loopBB, afterBB);
 
 
-  // At the start of the loop, compare the start and end (instead of next and end)
+  // At the start of the loop, compare start and end (instead of next and end)
   // and skip the loop if we shouldn't execute it.
   builder.SetInsertPoint(loopHdrBB);
   {
@@ -959,7 +981,8 @@ void CodegenPass::visit(RefExprAST* ast) {
   if (ast->isIndirect()) {
     if (getLLVMType(ast->type) == ast->value->getType()) {
       // e.g. ast type is i32* but value type is i32* instead of i32**
-      llvm::Value* stackslot = CreateEntryAlloca(ast->value->getType(), "stackslot");
+      llvm::Value* stackslot = CreateEntryAlloca(ast->value->getType(),
+                                                 "stackslot");
       builder.CreateStore(ast->value, stackslot, /*isVolatile=*/ false);
       ast->value = stackslot;
     } else if (isPointerToType(getLLVMType(ast->type), ast->value->getType())) {
@@ -969,7 +992,9 @@ void CodegenPass::visit(RefExprAST* ast) {
       // stackslot has type T**
       llvm::Value* stackslot = emitMalloc(T);
       // mem has type T*
-      llvm::Value* mem = builder.CreateLoad(stackslot, /*isVolatile=*/false, "destack");
+      llvm::Value* mem = builder.CreateLoad(stackslot,
+                                            /*isVolatile=*/false,
+                                            "destack");
       // write our T into the T* given by malloc
       builder.CreateStore(ast->value, mem, /*isVolatile=*/ false);
       ast->value = stackslot;
@@ -978,7 +1003,8 @@ void CodegenPass::visit(RefExprAST* ast) {
     if (isPointerToType(getLLVMType(ast->type), ast->value->getType())) {
       // e.g. ast type is i32* but value type is i32
       // stackslot has type i32* (not i32**)
-      llvm::Value* stackslot = CreateEntryAlloca(ast->value->getType(), "stackslot");
+      llvm::Value* stackslot = CreateEntryAlloca(ast->value->getType(),
+                                                 "stackslot");
       builder.CreateStore(ast->value, stackslot, /*isVolatile=*/ false);
       ast->value = stackslot;
     }
@@ -1022,17 +1048,21 @@ void CodegenPass::visit(AssignExprAST* ast) {
 
   builder.CreateStore(ast->parts[1]->value, dst);
 
-  // Mark the assignment as having been codegenned; for now, assignment expressions
-  // evaluate to constant zero (annotated for clarity).
+  // Mark the assignment as having been codegenned; for now, assignment
+  // expressions evaluate to constant zero (annotated for clarity).
   ConstantInt* zero = ConstantInt::get(Type::getInt32Ty(getGlobalContext()), 0);
   ast->value = builder.CreateBitCast(zero, zero->getType(), "assignval");
 }
 
-Value* getPointerToIndex(Value* compositeValue, unsigned idxValue, const std::string& name) {
+Value* getPointerToIndex(Value* compositeValue,
+                         unsigned idxValue,
+                         const std::string& name) {
   return builder.CreateConstGEP2_32(compositeValue, 0, idxValue, name.c_str());
 }
 
-Value* getPointerToIndex(Value* compositeValue, Value* idxValue, const std::string& name) {
+Value* getPointerToIndex(Value* compositeValue,
+                         Value* idxValue,
+                         const std::string& name) {
   std::vector<Value*> idx;
   idx.push_back(ConstantInt::get(Type::getInt32Ty(getGlobalContext()), 0));
   idx.push_back(idxValue);
@@ -1099,9 +1129,6 @@ void CodegenPass::visit(SubscriptAST* ast) {
 ////////////////////////////////////////////////////////////////////
 
 void appendArg(std::vector<Value*>& valArgs, Value* V, const FunctionType* FT) {
-  //std::cout << "actual arg " << valArgs.size() << " = " << *V << " has type " << *(V->getType()) << std::endl;
-  //std::cout << "formal arg " << valArgs.size() << " has type " << *(FT->getParamType(valArgs.size())) << std::endl;
-
   const Type* formalType = FT->getParamType(valArgs.size());
   if (llvm::isa<llvm::StructType>(formalType)) {
     // Is the formal parameter a pass-by-value struct and the provided argument
@@ -1126,9 +1153,10 @@ void tempHackExtendIntTypes(const FunctionType* FT, std::vector<Value*>& valArgs
 }
 
 const FunctionType* tryExtractFunctionPointerType(Value* FV) {
-  const llvm::PointerType* fp = llvm::dyn_cast_or_null<llvm::PointerType>(FV->getType());
+  const llvm::PointerType* fp =
+                       llvm::dyn_cast_or_null<llvm::PointerType>(FV->getType());
   if (fp == NULL) return NULL;
-  return llvm::dyn_cast<FunctionType>(fp->getElementType());
+  return dyn_cast<FunctionType>(fp->getElementType());
 }
 
 FnAST* getVoidReturningVersionOf(ExprAST* arg, const llvm::FunctionType* fnty) {
@@ -1198,10 +1226,10 @@ llvm::Value* getTrampolineForClosure(ClosureAST* cloAST) {
 
   // We have a closure { code*, env* } and must convert it to a bare
   // trampoline function pointer.
-  const llvm::Type* trampolineArrayType = llvm::ArrayType::get(i8, 24); // Sufficient for x86 and x86_64
+  const llvm::Type* trampolineArrayType = llvm::ArrayType::get(i8, 32); // Sufficient for x86 and x86_64
   llvm::AllocaInst* trampolineBuf = CreateEntryAlloca(trampolineArrayType, "trampBuf");
 
-  trampolineBuf->setAlignment(16); // sufficient for x86 and x86_64
+  trampolineBuf->setAlignment(32); // sufficient for x86 and x86_64
   Value* trampi8 = builder.CreateBitCast(trampolineBuf, pi8, "trampi8");
 
   //markGCRoot(trampolineBuf, NULL);
@@ -1299,11 +1327,11 @@ void CodegenPass::visit(CallAST* ast) {
     FT = F->getFunctionType();
   } else if (FT = tryExtractFunctionPointerType(FV)) {
     // Call to function pointer
-  } else if (const llvm::StructType* sty = llvm::dyn_cast<const llvm::StructType>(getLLVMType(base->type))) {
+  } else if (const llvm::StructType* sty = dyn_cast<const llvm::StructType>(getLLVMType(base->type))) {
     if (FnTypeAST* fty = tryExtractCallableType(
                           TypeAST::get(sty->getContainedType(0)))) {
       // Call to closure struct
-      FT = llvm::dyn_cast<const FunctionType>(fty->getLLVMType());
+      FT = dyn_cast<const FunctionType>(fty->getLLVMType());
       llvm::Value* clo = getClosureStructValue(FV);
 
       ASSERT(!clo->getType()->isPointerTy())
@@ -1330,7 +1358,8 @@ void CodegenPass::visit(CallAST* ast) {
     const llvm::Type* expectedType = FT->getContainedType(i);
 
     // Codegenning   callee( arg )  where arg has raw function type, not closure type!
-    if (const FunctionType* fnty = llvm::dyn_cast_or_null<const FunctionType>(getLLVMType(arg->type))) {
+    if (const FunctionType* fnty =
+           llvm::dyn_cast_or_null<const FunctionType>(getLLVMType(arg->type))) {
       // If we still have a bare function type at codegen time, it means
       // the code specified a (top-level) function name.
       // Since we made it past type checking, we should have only two
@@ -1509,7 +1538,8 @@ bool isComposedOfIntLiterals(ExprAST* ast) {
   return true;
 }
 
-llvm::GlobalVariable* getGlobalArrayVariable(SeqAST* body, const llvm::ArrayType* arrayType) {
+llvm::GlobalVariable* getGlobalArrayVariable(SeqAST* body,
+                                             const llvm::ArrayType* arrayType) {
   using llvm::GlobalVariable;
   GlobalVariable* gvar = new GlobalVariable(*module,
     /*Type=*/         arrayType,
@@ -1528,7 +1558,7 @@ llvm::GlobalVariable* getGlobalArrayVariable(SeqAST* body, const llvm::ArrayType
       return NULL;
     }
 
-    ConstantInt* ci = llvm::dyn_cast<ConstantInt>(v->getConstantValue());
+    ConstantInt* ci = dyn_cast<ConstantInt>(v->getConstantValue());
     if (!ci) {
       EDiag() << "array initializer was not a constant" << show(body->parts[i]);
       return NULL;
@@ -1544,7 +1574,8 @@ llvm::GlobalVariable* getGlobalArrayVariable(SeqAST* body, const llvm::ArrayType
 void CodegenPass::visit(ArrayExprAST* ast) {
   if (ast->value) return;
 
-  const llvm::ArrayType* arrayType = llvm::dyn_cast<llvm::ArrayType>(getLLVMType(ast->type));
+  const llvm::ArrayType* arrayType
+                            = dyn_cast<llvm::ArrayType>(getLLVMType(ast->type));
   module->addTypeName(freshName("arrayTy"), arrayType);
 
   SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
@@ -1573,7 +1604,8 @@ void CodegenPass::visit(ArrayExprAST* ast) {
           //}
 
       for (size_t i = 0; i < body->parts.size(); ++i) {
-        builder.CreateStore(body->parts[i]->value, getPointerToIndex(ast->value, i, "arrInit"));
+        builder.CreateStore(body->parts[i]->value,
+                            getPointerToIndex(ast->value, i, "arrInit"));
       }
     }
   }
@@ -1582,8 +1614,8 @@ void CodegenPass::visit(ArrayExprAST* ast) {
 void CodegenPass::visit(SimdVectorAST* ast) {
   if (ast->value) return;
 
-  const llvm::VectorType* simdType = llvm::dyn_cast<const llvm::VectorType>(getLLVMType(ast->type));
-
+  const llvm::VectorType* simdType
+                     = dyn_cast<const llvm::VectorType>(getLLVMType(ast->type));
 
   SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
   bool isConstant = isComposedOfIntLiterals(body);
@@ -1601,7 +1633,7 @@ void CodegenPass::visit(SimdVectorAST* ast) {
     for (size_t i = 0; i < body->parts.size(); ++i) {
       IntAST* intlit = dynamic_cast<IntAST*>(body->parts[i]);
       llvm::Constant* ci = intlit->getConstantValue();
-      elements.push_back(llvm::dyn_cast<llvm::Constant>(ci));
+      elements.push_back(dyn_cast<llvm::Constant>(ci));
     }
 
     llvm::Constant* constVector = llvm::ConstantVector::get(simdType, elements);
@@ -1686,7 +1718,7 @@ void CodegenPass::visit(TupleExprAST* ast) {
 
 #if 0
   // We only need to mark tuples containing pointers as GC roots
-  if (structTypeContainsPointers(llvm::dyn_cast<llvm::StructType>(tupleType))) {
+  if (structTypeContainsPointers(dyn_cast<llvm::StructType>(tupleType))) {
     storeAndMarkValueAsGCRoot(pt);
   }
 #endif

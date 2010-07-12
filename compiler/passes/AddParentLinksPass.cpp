@@ -80,7 +80,8 @@ void includeParentNameInAnonFunctions(FnAST* ast) {
   }
 
   if (!parent) {
-    std::cerr << "Odd, couldn't find parent fn ast for anonymous function " << ast->proto->name << std::endl;
+    std::cerr << "Odd, couldn't find parent fn ast for anonymous function "
+              << ast->proto->name << std::endl;
     return;
   }
 

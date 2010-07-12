@@ -3,8 +3,10 @@
 D=../foster/test/$1
 T=$D/`basename $1`.foster
 
+shift
+
 if [ -d $D ]; then
-    ./test.sh ${T}
+    ./test.sh ${T} $@
 else
   echo "Make new test $T? y/[n]"
   read CONFIRM

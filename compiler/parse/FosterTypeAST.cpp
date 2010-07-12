@@ -10,6 +10,8 @@
 #include "FosterUtils.h"
 #include "passes/TypecheckPass.h"
 
+using foster::SourceRange;
+
 bool hasEqualRepr(TypeAST* src, TypeAST* dst) {
   return src->getLLVMType() == dst->getLLVMType();
 }
@@ -59,7 +61,7 @@ TypeAST* TypeAST::get(const llvm::Type* loweredType) {
     if (TypeAST* s = seen[pointee]) {
       if (s == (TypeAST*) 1) {
         return RefTypeAST::get(new TypeAST(pointee,
-                                   foster::SourceRange::getEmptyRange()));
+                                   SourceRange::getEmptyRange()));
       } else {
         return s;
       }
@@ -91,7 +93,7 @@ TypeAST* TypeAST::get(const llvm::Type* loweredType) {
 
   TypeAST* tyast = thinWrappers[loweredType];
   if (tyast) { return tyast; }
-  tyast = new TypeAST(loweredType, foster::SourceRange::getEmptyRange()); 
+  tyast = new TypeAST(loweredType, SourceRange::getEmptyRange()); 
   thinWrappers[loweredType] = tyast;
   return tyast;
 }
@@ -103,7 +105,9 @@ bool TypeAST::canConvertTo(TypeAST* otherType) {
   bool rv = arePhysicallyCompatible(this->getLLVMType(),
                                     otherType->getLLVMType());
   if (!rv) {
-    std::cout << str(this) << "  [cannot convert to]  " << str(otherType) << std::endl;
+    // TODO want source range from ExprAST asking for conversion
+    std::cout << str(this) << "  [cannot convert to]  "
+              << str(otherType) << std::endl;
   }
   return rv;
 }
@@ -118,7 +122,7 @@ RefTypeAST* RefTypeAST::get(TypeAST* baseType, bool nullable /* = false */) {
   RefTypeArgs args = std::make_pair(baseType, nullable);
   RefTypeAST* ref = refCache[args];
   if (ref) return ref;
-  ref = new RefTypeAST(baseType, nullable, foster::SourceRange::getEmptyRange());
+  ref = new RefTypeAST(baseType, nullable, SourceRange::getEmptyRange());
   refCache[args] = ref;
   return ref;
 }
@@ -165,7 +169,7 @@ FnTypeAST* FnTypeAST::get(TypeAST* returnType,
 	    llvm::FunctionType::get(returnType->getLLVMType(),
                                     loweredArgTypes, /*isVarArg=*/ false),
                        returnType,
-                       argTypes, foster::SourceRange::getEmptyRange());
+                       argTypes, SourceRange::getEmptyRange());
   fnTypeCache[args] = fnty;
   return fnty;
 }
@@ -184,7 +188,7 @@ TupleTypeAST* TupleTypeAST::get(const std::vector<TypeAST*>& argTypes) {
   }
   const llvm::StructType* sty = llvm::StructType::get(
             llvm::getGlobalContext(), loweredTypes, /*isPacked=*/false);
-  tup = new TupleTypeAST(sty, argTypes, foster::SourceRange::getEmptyRange());
+  tup = new TupleTypeAST(sty, argTypes, SourceRange::getEmptyRange());
   tupleTypeCache[argTypes] = tup;
   return tup;
 }
@@ -214,8 +218,9 @@ const llvm::Type* ClosureTypeAST::getLLVMType() const {
 }
 
 // static
-SimdVectorTypeAST* SimdVectorTypeAST::get(LiteralIntTypeAST* size, TypeAST* type,
-                              const foster::SourceRange& sourceRange) {
+SimdVectorTypeAST* SimdVectorTypeAST::get(LiteralIntTypeAST* size,
+                                          TypeAST* type,
+                                          const SourceRange& sourceRange) {
   llvm::VectorType* vecTy = llvm::VectorType::get(type->getLLVMType(),
                                                   size->getNumericalValue());
   return new SimdVectorTypeAST(vecTy, sourceRange);

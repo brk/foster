@@ -147,7 +147,8 @@ TypeAST*    TypeASTFor(const string& name) {
   } else {
     const Type* ty = LLVMTypeFor(name);
     if (ty) {
-      std::cerr << "WARNING: LLVMTypeFor("<<name<<") > TypeASTFor(...)" << std::endl;
+      std::cerr << "WARNING: have LLVMTypeFor("<<name<<")"
+                << " but no TypeASTFor(...)" << std::endl;
     }
     return NULL;
   }
@@ -170,17 +171,6 @@ void initModuleTypeNames() {
   
   builtinTypes["i8*"] = llvm::PointerType::getUnqual(builtinTypes["i8"]);
   builtinTypes["i8**"] = llvm::PointerType::getUnqual(builtinTypes["i8*"]);
-
-  /*
-  std::vector<const Type*> StringParts;
-  StringParts.push_back(Type::Int32Ty);
-  StringParts.push_back(PointerType::get(Type::Int8Ty, DEFAULT_ADDRESS_SPACE));
-  module->addTypeName("String", StructType::get(StringParts));
-  */
-
-  //const unsigned DEFAULT_ADDRESS_SPACE = 0u;
-  //module->addTypeName("String",
-  //  llvm::PointerType::get(Type::getInt8Ty(gcon), DEFAULT_ADDRESS_SPACE));
 }
 
 void FosterASTVisitor::visitChildren(ExprAST* ast) {
@@ -220,5 +210,7 @@ llvm::Constant* IntAST::getConstantValue() {
 }
 
 bool RefExprAST::isIndirect() {
-  return isIndirect_ || (type && value && isPointerToType(value->getType(), type->getLLVMType()));
+  if (isIndirect_) return true;
+  return (type && value &&
+          isPointerToType(value->getType(), type->getLLVMType()));
 }

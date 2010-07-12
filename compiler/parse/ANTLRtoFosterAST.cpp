@@ -18,12 +18,16 @@
 
 using std::string;
 using std::endl;
+using std::cout;
+using std::cerr;
 
 using foster::EDiag;
 using foster::show;
 
 // {{{ ANTLR stuff
-std::string str(pANTLR3_STRING pstr) { return string((const char*)pstr->chars); }
+std::string str(pANTLR3_STRING pstr) {
+  return string((const char*)pstr->chars);
+}
 
 string str(pANTLR3_COMMON_TOKEN tok) {
   if (!tok) return "<nil tok>";
@@ -83,7 +87,7 @@ size_t getChildCount(pTree tree) {
 }
 string textOf(pTree tree) {
   if (!tree) {
-    std::cerr << "Error! Can't get text of a null node!" << std::endl;
+    cerr << "Error! Can't get text of a null node!" << endl;
     return "<NULL pTree>";
   }
   return str(tree->getText(tree));
@@ -91,7 +95,7 @@ string textOf(pTree tree) {
 
 pTree child(pTree tree, int i) {
   if (!tree) {
-    std::cerr << "Error! Can't take child of null pTree!" << std::endl;
+    cerr << "Error! Can't take child of null pTree!" << endl;
     return NULL;
   }
   return (pTree) tree->getChild(tree, i);
@@ -123,8 +127,9 @@ pANTLR3_COMMON_TOKEN getStartToken(pTree tree) {
     tok = startTokens[node];
   }
   if (!tok) {
-    std::cout << "Warning: unable to find start token for ANTLR parse tree"
-              << " node " << textOf(tree) << " @ " << tree << " , " << typeOf(tree) << std::endl;
+    cout << "Warning: unable to find start token for ANTLR parse tree"
+              << " node " << textOf(tree) << " @ " << tree
+              << " , " << typeOf(tree) << endl;
   }
   return tok;
 }
@@ -148,8 +153,8 @@ pANTLR3_COMMON_TOKEN getEndToken(pTree tree) {
     tok = endTokens[node];
   }
   if (!tok) {
-    std::cout << "Warning: unable to find end token for ANTLR parse tree"
-              << " node " << textOf(tree) << " @ " << tree << std::endl;
+    cout << "Warning: unable to find end token for ANTLR parse tree"
+              << " node " << textOf(tree) << " @ " << tree << endl;
   }
   return tok;
 }
@@ -173,8 +178,8 @@ foster::SourceRange rangeFrom(pTree start, pTree end) {
   pANTLR3_COMMON_TOKEN stok = getStartToken(start);
   pANTLR3_COMMON_TOKEN etok = getEndToken(end);
   if (false && (!stok || !etok)) {
-    std::cout << "rangeFrom " << start << " => " << stok << " ;; "
-              << end << " => " << etok << std::endl;
+    cout << "rangeFrom " << start << " => " << stok << " ;; "
+              << end << " => " << etok << endl;
     if (!stok) { display_pTree(start, 2); }
     if (!etok) { display_pTree(  end, 2); }
   }
@@ -195,9 +200,13 @@ foster::SourceRange rangeFrom(ExprAST* a, ExprAST* b) {
 }
 
 Exprs getExprs(pTree tree, bool fnMeansClosure);
-std::ostream& operator<<(std::ostream& out, Exprs& f) { return out << join("", f); }
+std::ostream& operator<<(std::ostream& out, Exprs& f) {
+  return out << join("", f);
+}
 
-std::map<ExprAST*, bool> overridePrecedence; // expressions wrapped in () are marked here
+// expressions wrapped in () are marked here
+std::map<ExprAST*, bool> overridePrecedence;
+
 std::map<string, bool> keywords;
 std::map<string, bool> reserved_keywords;
 
@@ -273,7 +282,7 @@ string spaces(int n) { return string(n, ' '); }
 
 void display_pTree(pTree t, int nspaces) {
   if (!t) {
-    std::cout << spaces(nspaces) << "<NULL tree>" << std::endl;
+    cout << spaces(nspaces) << "<NULL tree>" << endl;
     return;
   }
 
@@ -282,21 +291,22 @@ void display_pTree(pTree t, int nspaces) {
   int nchildren = getChildCount(t);
   std::stringstream ss;
   ss << spaces(nspaces) << "<" << text << "; ";
-  std::cout << ss.str() << spaces(70 - ss.str().size())
+  cout << ss.str() << spaces(70 - ss.str().size())
             << token << " @ " << t;
-  std::cout << " (";
-  std::cout << (startTokens[t] ? '+' : '-');
-  std::cout << (  endTokens[t] ? '+' : '-');
-  std::cout << ")" << std::endl;
+  cout << " (";
+  cout << (startTokens[t] ? '+' : '-');
+  cout << (  endTokens[t] ? '+' : '-');
+  cout << ")" << endl;
   for (int i = 0; i < nchildren; ++i) {
     display_pTree(child(t, i), nspaces+2);
   }
-  std::cout << spaces(nspaces) << "/" << text << ">" << std::endl;
+  cout << spaces(nspaces) << "/" << text << ">" << endl;
 }
 
 IntAST* parseIntFrom(pTree t) {
   if (textOf(t) != "INT") {
-    std::cerr << "Error: parseIntFrom() called on a " << textOf(t) << "!";
+    EDiag() << "parseIntFrom() called on non-INT token " << textOf(t)
+            << show(rangeOf(t));
     return NULL;
   }
 
@@ -310,7 +320,8 @@ IntAST* parseIntFrom(pTree t) {
 
     if (text == "_") {
       if (i != nchildren - 2) {
-        std::cerr << "Error: number can have only one underscore, in 2nd-to-last position!";
+        EDiag() << "number can have only one underscore,"
+                << "in 2nd-to-last position!" << show(rangeOf(t));
         return NULL;
       } else {
         string baseText = textOf(child(t, i+1));
@@ -348,7 +359,7 @@ VariableAST* parseFormal(pTree tree, bool fnMeansClosure) {
   // ^(FORMAL ^(NAME varName) ^(... type ... ))
   pTree varNameTree = child(tree, 0);
   if (!varNameTree) {
-    std::cerr << "Error! Null var name in parseFormal..." << std::endl;
+    cerr << "Error! Null var name in parseFormal..." << endl;
     display_pTree(tree, 4);
     return NULL;
   }
@@ -356,9 +367,11 @@ VariableAST* parseFormal(pTree tree, bool fnMeansClosure) {
   if (getChildCount(tree) == 2) {
     TypeAST* tyExpr = TypeAST_from(child(tree, 1));
     if (tyExpr) {
-      std::cout << "\tParsed formal " << varName << " with type expr " << str(tyExpr) << std::endl;
+      if (0) cout << "\tParsed formal " << varName
+                << " with type expr " << str(tyExpr) << endl;
     } else {
-      std::cout << "\tParsed formal " << varName << " with null type expr " << std::endl;
+      if (0) cout << "\tParsed formal " << varName
+                       << " with null type expr " << endl;
     }
     VariableAST* var = new VariableAST(varName, tyExpr, rangeOf(tree));
     varScope.insert(varName, var);
@@ -383,8 +396,13 @@ std::vector<VariableAST*> getFormals(pTree tree, bool fnMeansClosure) {
   return args;
 }
 
-PrototypeAST* getFnProto(string name, bool fnMeansClosure, pTree formalsTree, pTree retTyExprTree) {
-  FosterSymbolTable<ExprAST>::LexicalScope* protoScope = varScope.pushScope("fn proto " + name);
+PrototypeAST* getFnProto(string name,
+                         bool fnMeansClosure,
+                         pTree formalsTree,
+                         pTree retTyExprTree)
+{
+  FosterSymbolTable<ExprAST>::LexicalScope* protoScope =
+                                    varScope.pushScope("fn proto " + name);
     std::vector<VariableAST*> in = getFormals(formalsTree, fnMeansClosure);
     TypeAST* retTy = TypeAST_from(retTyExprTree);
   varScope.popScope();
@@ -394,7 +412,7 @@ PrototypeAST* getFnProto(string name, bool fnMeansClosure, pTree formalsTree, pT
   PrototypeAST* proto = new PrototypeAST(retTy, name, in, protoScope,
                               sourceRange);
   { TypecheckPass tp; proto->accept(&tp); }
-  std::cout << "396: "<< str(proto->type) << std::endl;
+  cout << "396: "<< str(proto->type) << endl;
   VariableAST* fnRef = new VariableAST(proto->name, proto->type, sourceRange);
   varScope.insert(proto->name, fnRef);
 
@@ -461,8 +479,10 @@ string parseFnName(string defaultSymbolTemplate, pTree tree) {
 FnAST* parseFn(string defaultSymbolTemplate, pTree tree, bool fnMeansClosure) {
   // (FN 0:NAME 1:IN 2:OUT 3:BODY)
   string name = parseFnName(defaultSymbolTemplate, tree);
-  PrototypeAST* proto = getFnProto(name, fnMeansClosure, child(tree, 1), child(tree, 2));
-  std::cout << "parseFn proto = " << str(proto) << std::endl;
+  PrototypeAST* proto = getFnProto(name, fnMeansClosure,
+                                   child(tree, 1),
+                                   child(tree, 2));
+  cout << "parseFn proto = " << str(proto) << endl;
   return buildFn(proto, child(tree, 3));
 }
 
@@ -500,7 +520,7 @@ ExprAST* parseTopLevel(pTree tree) {
         string name = parseFnName(textOf(child(lval, 0)), rval);
         protos[c] = getFnProto(name, true, child(rval, 1), child(rval, 2));
       } else {
-        std::cerr << "Not assigning top-level function to a name?" << std::endl;
+        cerr << "Not assigning top-level function to a name?" << endl;
       }
     } else {
       parsedExprs[i] = ExprAST_from(c, false);
@@ -546,7 +566,7 @@ ExprAST* parseTypeDefinition(pTree tree, bool fnMeansClosure) {
   typeScope.popScope();
 
   typeScope.insert(name, tyExpr);
-  std::cout << "Associated " << name << " with type " << str(tyExpr) << std::endl;
+  cout << "Associated " << name << " with type " << str(tyExpr) << endl;
   //module->addTypeName(name, tyExpr->getLLVMType());
   return NULL;
 }
@@ -571,7 +591,7 @@ ExprAST* parseForRange(pTree tree, bool fnMeansClosure,
   ExprAST* body  = ExprAST_from(child(tree, 3), fnMeansClosure);
   varScope.popScope();
 
-  std::cout << "for (" << varName <<" in _ to _ ...)" << std::endl;
+  cout << "for (" << varName <<" in _ to _ ...)" << endl;
   return new ForRangeExprAST(var, start, end, body, incr, sourceRange);
 }
 
@@ -594,7 +614,8 @@ ExprAST* parseCtorExpr(pTree tree, bool fnMeansClosure,
 
   if (TypeAST* ty = typeScope.lookup(name, "")) {
     ASSERT(ty->getLLVMType() && ty->getLLVMType()->isStructTy());
-    return new TupleExprAST(ExprAST_from(seqArgs, fnMeansClosure), name, sourceRange);
+    return new TupleExprAST(ExprAST_from(seqArgs, fnMeansClosure),
+                            name, sourceRange);
   }
 
   foster::EDiag() << "CTOR token parsing found unknown"
@@ -670,8 +691,8 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
         if (varPrefix) {
           if (varPrefix->name == "deref") {
             if (args.size() != 1) {
-              std::cerr << "Error! Deref operator called with "
-                        << " bad number of args: " << args.size() << std::endl;
+              cerr << "Error! Deref operator called with "
+                        << " bad number of args: " << args.size() << endl;
               return NULL;
             }
             prefix = new DerefExprAST(args[0], sourceRange);
@@ -680,12 +701,13 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
 
           if (isBitwiseOpName(varPrefix->name)) {
             if (args.size() != 2) {
-              std::cerr << "Error! Bitwise operator " << varPrefix->name
+              cerr << "Error! Bitwise operator " << varPrefix->name
                         << " with bad number of arguments: " << args.size()
-                        << std::endl;
+                        << endl;
               return NULL;
             }
-            prefix = new BinaryOpExprAST(varPrefix->name, args[0], args[1], sourceRange);
+            prefix = new BinaryOpExprAST(varPrefix->name, args[0], args[1],
+                                         sourceRange);
             continue;
           }
           // Else fall through to general case below
@@ -695,12 +717,16 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
         pTree nameNode = child(child(tree, i), 0);
         const string& name = textOf(child(nameNode, 0));
         prefix = prefix->lookup(name, "");
-        if (!prefix) { std::cerr << "Lookup of name '" << name << "' failed." << std::endl; }
+        if (!prefix) {
+          cerr << "Lookup of name '" << name << "' failed." << endl;
+        }
       } else if (trailerType == SUBSCRIPT) {
         prefix = new SubscriptAST(prefix,
-                      ExprAST_from(child(child(tree, i), 0), fnMeansClosure), sourceRange);
+                                  ExprAST_from(child(child(tree, i), 0),
+                                               fnMeansClosure),
+                                  sourceRange);
       } else {
-        std::cerr << "Unknown trailer type " << textOf(child(tree, i)) << std::endl;
+        cerr << "Unknown trailer type " << textOf(child(tree, i)) << endl;
       }
     }
     return prefix;
@@ -717,10 +743,11 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
 
   // <LHS RHS>
   if (token == SETEXPR) {
-    ExprAST* lhs = validateAssignLHS(ExprAST_from(child(tree, 0), fnMeansClosure));
+    ExprAST* lhs = validateAssignLHS(
+                       ExprAST_from(child(tree, 0), fnMeansClosure));
     if (!lhs) {
-      std::cerr << "Error! Invalid syntactic form on LHS of assignment;" <<
-          " must be variable or subscript expr" << std::endl;
+      cerr << "Error! Invalid syntactic form on LHS of assignment;" <<
+          " must be variable or subscript expr" << endl;
       return NULL;
     }
     ExprAST* rhs = ExprAST_from(child(tree, 1), fnMeansClosure);
@@ -734,7 +761,10 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
       tyExprTree = child(tree, 3);
     }
 
-    PrototypeAST* proto = getFnProto(freshName("<anon_fnlet_%d>"), fnMeansClosure, child(tree, 0), tyExprTree);
+    PrototypeAST* proto = getFnProto(freshName("<anon_fnlet_%d>"),
+                                     fnMeansClosure,
+                                     child(tree, 0),
+                                     tyExprTree);
     FnAST* fn = buildFn(proto, child(tree, 2));
     fn->lambdaLiftOnly = true;
 
@@ -763,7 +793,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     if (ast) {
       return ast;
     } else {
-      std::cout << "Could not parse int!"; // TODO improve error message
+      cout << "Could not parse int!"; // TODO improve error message
       return NULL;
     }
   }
@@ -779,7 +809,9 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     // since we'll end up discarding this variable soon anyways.
     if (isSpecialName(varName)) {
       // Give a bogus type until type inference is implemented.
-      return new VariableAST(varName, TypeAST::get(LLVMTypeFor("i32")), sourceRange);
+      return new VariableAST(varName,
+                             TypeAST::get(LLVMTypeFor("i32")),
+                             sourceRange);
     }
 
     ExprAST* var = varScope.lookup(varName, "");
@@ -790,7 +822,9 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
   }
 
   if (token == OUT) {
-    return (getChildCount(tree) == 0) ? NULL : ExprAST_from(child(tree, 0), fnMeansClosure);
+    return (getChildCount(tree) == 0)
+              ? NULL
+              : ExprAST_from(child(tree, 0), fnMeansClosure);
   }
 
   if (token == FNDEF) {
@@ -802,7 +836,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     if (typeOf(lval) == NAME && typeOf(rval) == FN) {
       return parseFn(textOf(child(lval, 0)), rval, fnMeansClosure);
     } else {
-      std::cerr << "Not assigning function to a name?" << std::endl;
+      cerr << "Not assigning function to a name?" << endl;
       return NULL;
     }
   }
@@ -859,12 +893,12 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
       return NULL;
     }
 
-    std::cout << "Parsed fn " << *(fn->proto) << ", fnMeansClosure? "
-              << fnMeansClosure << std::endl;
+    cout << "Parsed fn " << *(fn->proto) << ", fnMeansClosure? "
+              << fnMeansClosure << endl;
     if (fnMeansClosure) {
       ClosureAST* cloast = new ClosureAST(fn, sourceRange);
-      std::cout << "\t\t\tFN MEANS CLOSURE: " << *fn
-                << "; cloast = " << cloast << std::endl;
+      cout << "\t\t\tFN MEANS CLOSURE: " << *fn
+                << "; cloast = " << cloast << endl;
       return cloast;
     } else {
       return fn;

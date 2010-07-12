@@ -10,6 +10,11 @@ set (BASE_COMMON_SOURCES
 	${CHROMIUM_BASE}/base/utf_string_conversions.cc
 )
 
+set(BASE_SOURCES_Darwin
+	${CHROMIUM_BASE}/base/time_mac.cc
+)
+
 add_library(chromium_base STATIC
   ${BASE_COMMON_SOURCES}
+  ${BASE_SOURCES_${CMAKE_SYSTEM_NAME}}
 )

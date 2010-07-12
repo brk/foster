@@ -2,7 +2,19 @@
 
 OUTPUT=fc-output
 
-RUNTIME_LIBS="libfoster_main.o libchromium_base.a libcpuid.a -lrt"
+STATIC_LIBS="libfoster_main.o libchromium_base.a libcpuid.a"
+case `uname -s` in
+  Darwin)
+    RUNTIME_LIBS="-lpthread -framework CoreFoundation"
+    ;;
+  Linux)
+    RUNTIME_LIBS="-lrt -lpthread"
+    ;;
+  *)
+    echo "Unknown OS!"
+    RUNTIME_LIBS="-lpthread"
+    ;;
+esac
 
 TIMESTART () {
   STARTS=$(date "+%s");
@@ -43,7 +55,8 @@ run () {
   if [ "z$TIMED_CMD_STATUS" != "z0" ]; then return; fi
   TIMESTART
   #`llvm-config --libdir`/libprofile_rt.so 
-  g++ -lrt $OPT.s ${RUNTIME_LIBS} -o $OPT -l pthread
+  echo "g++ $OPT.s ${STATIC_LIBS} ${RUNTIME_LIBS} -o $OPT"
+  g++ $OPT.s ${STATIC_LIBS} ${RUNTIME_LIBS} -o $OPT
   TIMEEND "gcc"
 
   if [ "z$TIMED_CMD_STATUS" != "z0" ]; then return; fi
@@ -66,7 +79,7 @@ speedtest () {
 
 runfosterc () {
   TIMESTART
-  ./fosterc $1
+  ./fosterc $@
   TIMEEND "fosterc"
 }
 
@@ -74,4 +87,8 @@ cleanout () {
   rm -f $OUTPUT/fstrprog.O2.bc foster.bc a.out foster.ll gclog.txt
 }
 
-make && cleanout && runfosterc $1 && extractinput $1 && run ; echo $?
+testpath=$1
+
+shift
+
+make && cleanout && runfosterc $testpath $@ && extractinput $testpath && run ; echo $?
