@@ -1226,6 +1226,16 @@ llvm::Value* getTrampolineForClosure(ClosureAST* cloAST) {
 
   // We have a closure { code*, env* } and must convert it to a bare
   // trampoline function pointer.
+
+  // TODO need to call a runtime library function to get mprotect()ed pages
+  // on Mac OS X; 10.5 marks stack as NX, and 10.6 marks stack and heap pages
+  // as NX by default.
+  //
+  // TODO also need to think about if/how trampolines, external C code, and GC
+  // might play nice. Trampolines effectively serve as (very likely) GC roots
+  // that we don't control and cannot directly track, and which (probably) must
+  // pin whatever memory they can access, to avoid possible data races with
+  // C code when updating pointers in the trampoline env after copying GC.
   const llvm::Type* trampolineArrayType = llvm::ArrayType::get(i8, 32); // Sufficient for x86 and x86_64
   llvm::AllocaInst* trampolineBuf = CreateEntryAlloca(trampolineArrayType, "trampBuf");
 
