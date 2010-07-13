@@ -19,14 +19,15 @@ $ ctest -V    # Run tests in verbose mode; output from tests will be printed.
 
 ============================= Installation =================================
 Ubuntu:
-	Dependencies: CMake, ANTLR3 C runtime, Java, Google glog, LLVM (including llvm-gcc)
+	Dependencies: CMake, ANTLR3 C runtime, Java, LLVM
 	Assuming you already have LLVM installed, in $PATH and $PKG_CONFIG_PATH...
 	
 	Interesting packages:
 		cmake		llvm-dev	llvm-doc	libgmp3c2
 	(universe)
-		binutils-gold	cmake-curses-gui	llvm-gcc-4.2	mercurial
-		clang		codeblocks		g++	libffi-dev
+		binutils-gold	cmake-curses-gui	mercurial
+		clang		g++			libffi-dev
+		ccache		ack-grep
 
 	If you need Java on Ubuntu 9.10,
 	sudo apt-get install sun-java6-jdk
@@ -34,23 +35,15 @@ Ubuntu:
 	on 10.04, install default-jdk
 
 
+	sudo apt-get install cmake cmake-curses-gui
 	ANTLR_VERSION=3.2
 	ANTLR_DIR=~/antlr/${ANTLR_VERSION}
-	GLOG_VERSION=0.3.0
-	GLOG_DIR=~/glog/${GLOG_VERSION}
-	sudo apt-get install cmake cmake-curses-gui
 	mkdir tmp
 	cd tmp
 		wget http://antlr.org/download/C/libantlr3c-${ANTLR_VERSION}.tar.gz
 		tar xzvf libantlr3c-${ANTLR_VERSION}.tar.gz
                 cd libantlr3c-${ANTLR_VERSION}
 		./configure --prefix=${ANTLR_DIR} && make && make install
-                cd ..
-
-		wget http://google-glog.googlecode.com/files/glog-${GLOG_VERSION}.tar.gz
-		tar xzvf glog-${GLOG_VERSION}.tar.gz
-		cd glog-${GLOG_VERSION}
-		./configure --prefix=${GLOG_DIR} && make && make install
                 cd ..
 	cd ..
 	rm -rf ./tmp
