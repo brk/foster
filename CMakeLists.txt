@@ -159,6 +159,7 @@ add_executable(fosterc
   compiler/base/SourceRange.cpp
   compiler/parse/FosterAST.cpp
   compiler/parse/FosterTypeAST.cpp
+  compiler/parse/FosterSymbolTable.cpp
   compiler/parse/ANTLRtoFosterAST.cpp
   compiler/parse/ANTLRtoFosterErrorHandling.cpp
   compiler/cfg/CFG.cpp

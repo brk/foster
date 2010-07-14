@@ -401,7 +401,7 @@ PrototypeAST* getFnProto(string name,
                          pTree formalsTree,
                          pTree retTyExprTree)
 {
-  FosterSymbolTable<ExprAST>::LexicalScope* protoScope =
+  foster::SymbolTable<ExprAST>::LexicalScope* protoScope =
                                     varScope.pushScope("fn proto " + name);
     std::vector<VariableAST*> in = getFormals(formalsTree, fnMeansClosure);
     TypeAST* retTy = TypeAST_from(retTyExprTree);

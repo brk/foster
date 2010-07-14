@@ -36,11 +36,6 @@ llvm::ExecutionEngine* ee;
 llvm::IRBuilder<> builder(getGlobalContext());
 llvm::Module* module;
 
-FosterSymbolTable<Value> scope;
-FosterSymbolTable<TypeAST> typeScope;
-FosterSymbolTable<ExprAST> varScope;
-
-
 std::ostream& operator<<(std::ostream& out, TypeAST& type) {
   return type.operator<<(out);
 }

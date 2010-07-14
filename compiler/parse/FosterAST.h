@@ -17,6 +17,7 @@
 #include "base/Diagnostics.h"
 #include "parse/FosterASTVisitor.h"
 #include "parse/FosterTypeAST.h"
+#include "parse/FosterSymbolTable.h"
 
 #include <iostream>
 #include <vector>
@@ -55,9 +56,10 @@ string join(string glue, Exprs args);
 string str(ExprAST* expr);
 string str(TypeAST* type);
 string str(Value* value);
+
 namespace foster {
-SourceRangeHighlighter show(ExprAST* ast);
-struct CFG;
+  SourceRangeHighlighter show(ExprAST* ast);
+  struct CFG;
 }
 
 TypeAST* TypeASTFor(const string& name);
@@ -88,13 +90,7 @@ T getSaturating(llvm::Value* v) {
 
 ///////////////////////////////////////////////////////////
 
-template <typename T>
-struct NameResolver {
-  virtual T* lookup(const string& name, const string& meta) = 0;
-  virtual ~NameResolver() {}
-};
-
-struct ExprAST : public NameResolver<ExprAST> {
+struct ExprAST : public foster::NameResolver<ExprAST> {
   ExprAST* parent;
   std::vector<ExprAST*> parts;
 
@@ -126,84 +122,9 @@ struct BinaryExprAST : public ExprAST {
   }
 };
 
-// Implements persistent lexical scopes using a cactus stack arrangement
-template <typename T>
-class FosterSymbolTable : public NameResolver<T> {
-public:
-  class LexicalScope : public NameResolver<T> {
-    string name;
-    typedef std::map<string, T*> Map;
-    Map val_of;
-  public:
-    LexicalScope* parent;
-    
-    LexicalScope(string name, LexicalScope* parent) : name(name), parent(parent) {}
-    virtual ~LexicalScope() {}
-    
-    T* insert(const string& ident, T* V) { val_of[ident] = V; return V; }
-    T* lookup(const string& ident, const string& wantedScopeName) {
-      if (name == "*" || wantedScopeName == "" || name == wantedScopeName) {
-        typename Map::iterator it = val_of.find(ident);
-        if (it != val_of.end()) {
-          return (*it).second;
-        }
-      }
-      if (parent) {
-        return parent->lookup(ident, wantedScopeName);
-      } else {
-        return NULL;
-      }
-    }
-    void dump(std::ostream& out) {
-      out << "\t" << name << "(@ " << this << ")" << std::endl;
-      for (typename Map::iterator it = val_of.begin(); it != val_of.end(); ++it) {
-        out << "\t\t" << (*it).first << ": " << (*it).second << std::endl;
-      }
-      if (parent) { parent->dump(out); }
-    }
-  };
-
-  FosterSymbolTable() {
-    pushExistingScope(new LexicalScope("*", NULL));
-  }
-  virtual ~FosterSymbolTable() {}
-  T* lookup(const string& ident, const string& wantedScopeName) {
-    return currentScope()->lookup(ident, wantedScopeName);
-  }
-  T* insert(string ident, T* V) { return currentScope()->insert(ident, V); }
-  LexicalScope* pushScope(string scopeName) {
-    currentScope() = new LexicalScope(scopeName, currentScope());
-    return currentScope();
-  }
-  LexicalScope* popScope() {
-    currentScope() = currentScope()->parent;
-    return currentScope();
-  }
-
-  void pushExistingScope(LexicalScope* scope) {
-    scopeStack.push_back(scope);
-  }
-  void popExistingScope(LexicalScope* expectedCurrentScope) {
-    ASSERT(currentScope() == expectedCurrentScope);
-    scopeStack.pop_back();
-  }
-
-  void dump(std::ostream& out) { currentScope()->dump(out); }
-
-  private:
-  LexicalScope*& currentScope() { return scopeStack.back(); }
-  std::vector<LexicalScope*> scopeStack;
-};
-
-// {{{ |scope| maps names (var/fn) to llvm::Value*/llvm::Function*
-extern FosterSymbolTable<Value> scope;
-extern FosterSymbolTable<TypeAST> typeScope;
-extern FosterSymbolTable<ExprAST> varScope;
-// }}}
-
 // "Fake" AST node for doing iterative lookup; AST stand-in for namespaces.
 struct NameResolverAST : public ExprAST {
-  FosterSymbolTable<ExprAST> localScope;
+  foster::SymbolTable<ExprAST> localScope;
   const std::string& scopeName;
 
   explicit NameResolverAST(const std::string& name)
@@ -392,7 +313,7 @@ struct PrototypeAST : public ExprAST {
   std::vector<VariableAST*> inArgs;
   TypeAST* resultTy;
 
-  FosterSymbolTable<ExprAST>::LexicalScope* scope;
+  foster::SymbolTable<ExprAST>::LexicalScope* scope;
 
   PrototypeAST(TypeAST* retTy, const string& name,
                foster::SourceRange sourceRange)
@@ -413,7 +334,7 @@ struct PrototypeAST : public ExprAST {
 
   PrototypeAST(TypeAST* retTy, const string& name,
                const std::vector<VariableAST*>& inArgs,
-               FosterSymbolTable<ExprAST>::LexicalScope* scope,
+               foster::SymbolTable<ExprAST>::LexicalScope* scope,
                foster::SourceRange sourceRange)
       : ExprAST(sourceRange),
         name(name), inArgs(inArgs), resultTy(retTy), scope(scope) {
