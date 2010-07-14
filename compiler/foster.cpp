@@ -45,20 +45,21 @@
 #undef PACKAGE_TARNAME
 #undef PACKAGE_VERSION
 
-#include "fosterLexer.h"
-#include "fosterParser.h"
-
 #include "base/Assert.h"
 #include "base/InputFile.h"
 #include "parse/FosterAST.h"
 #include "parse/ANTLRtoFosterAST.h"
 #include "parse/ANTLRtoFosterErrorHandling.h"
 
+#include "passes/BuildCFG.h"
 #include "passes/TypecheckPass.h"
 #include "passes/CodegenPass.h"
 #include "passes/AddParentLinksPass.h"
 #include "passes/PrettyPrintPass.h"
 #include "passes/ClosureConversionPass.h"
+
+#include "fosterLexer.h"
+#include "fosterParser.h"
 
 #include "pystring/pystring.h"
 
@@ -719,6 +720,34 @@ int main(int argc, char** argv) {
 
   { AddParentLinksPass aplPass; exprAST->accept(&aplPass); }
  
+  {
+    std::cout << "=========================" << std::endl;
+    std::cout << "building CFG" << std::endl;
+    if (SeqAST* seq = dynamic_cast<SeqAST*>(exprAST)) {
+      for (size_t i = 0; i < seq->parts.size(); ++i) {
+        ExprAST* ast = seq->parts[i];
+        if (FnAST* fnast = dynamic_cast<FnAST*>(ast)) {
+
+          const string& name = fnast->proto->name;
+          string filename(dumpdirFile(name + ".dot"));
+          std::cout << "Building CFG for " << filename  << std::endl;
+          BuildCFG p; fnast->accept(&p);
+
+          if (!fnast->cfgs.empty()) {
+            std::cout << "Writing " << filename << std::endl;
+            std::string err;
+            llvm::raw_fd_ostream f(filename.c_str(), err);
+            if (err.empty()) {
+              llvm::WriteGraph(f, fnast);
+            }
+          } else {
+            foster::EDiag() << "no CFG for " << name << foster::show(ast);
+          }
+        }
+      }
+    }
+  }
+
   { ScopedTimer timer(statFileIOMs);
   std::cout << "=========================" << std::endl;
   std::cout << "Type checking... " << std::endl;

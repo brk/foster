@@ -568,11 +568,12 @@ void CodegenPass::visit(PrototypeAST* ast) {
 }
 
 void CodegenPass::visit(SeqAST* ast) {
+  EDiag() << "Codegen for SeqASTs should be subsumed by CFG building!";
   if (ast->value) return;
 
   if (!ast->parts.empty()) {
     // Find last non-void value
-    for (int n = ast->parts.size() - 1; n >= 0; --n) {
+    for (size_t n = ast->parts.size() - 1; n >= 0; --n) {
       ast->value = ast->parts[n]->value;
       if (!isVoid(ast->value->getType())) {
         break;
@@ -798,6 +799,7 @@ void CodegenPass::visit(ClosureAST* ast) {
 }
 
 void CodegenPass::visit(IfExprAST* ast) {
+  EDiag() << "Codegen for IfExprASTs should be subsumed by CFG building!";
   if (ast->value) return;
 
   (ast->testExpr)->accept(this);

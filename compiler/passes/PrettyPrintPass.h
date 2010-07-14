@@ -66,7 +66,6 @@ struct PrettyPrintPass : public FosterASTVisitor {
   }
   void flush() { print_buffer(buffer.size()); }
   
-  std::stringstream ss;
   std::ostream& out;
   const static short kInfinity = (1<<15) - 1;
   const int INDENT_WIDTH;

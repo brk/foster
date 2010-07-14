@@ -138,7 +138,7 @@ string(REGEX MATCH "-L[^ ]+" LLVM_LD_PATH "${LLVM_LDFLAGS}")
 
 link_directories(${LLVM_LD_PATH} ${ANTLR_LIBDIR})
 
-add_definitions(${LLVM_CFLAGS})
+add_definitions(${LLVM_CFLAGS} "-ggdb")
 
 if (CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
   # Only works with the GNU Gold linker
@@ -161,6 +161,8 @@ add_executable(fosterc
   compiler/parse/FosterTypeAST.cpp
   compiler/parse/ANTLRtoFosterAST.cpp
   compiler/parse/ANTLRtoFosterErrorHandling.cpp
+  compiler/cfg/CFG.cpp
+  compiler/passes/BuildCFG.cpp
   compiler/passes/CodegenPass.cpp
   compiler/passes/TypecheckPass.cpp
   compiler/passes/PrettyPrintPass.cpp

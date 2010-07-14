@@ -57,6 +57,7 @@ string str(TypeAST* type);
 string str(Value* value);
 namespace foster {
 SourceRangeHighlighter show(ExprAST* ast);
+struct CFG;
 }
 
 TypeAST* TypeASTFor(const string& name);
@@ -442,6 +443,8 @@ struct FnAST : public ExprAST {
   ExprAST* body;
   bool wasNested;
   bool lambdaLiftOnly;
+
+  std::vector<foster::CFG*> cfgs;
 
   explicit FnAST(PrototypeAST* proto, ExprAST* body,
                  foster::SourceRange sourceRange)

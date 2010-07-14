@@ -107,6 +107,7 @@ prefix_unop		:	'-' | 'not' | 'new' | REF | COMPILES;
 
 nl : NEWLINE;
 
+
 // TODO: sema should warn if int_num starts with zero and doesn't include a base
 // TODO: sema should error if int_num contains hex digits without specifying a hex base
 // TODO: sema should error if hex_clump contains non_hex chars
@@ -132,7 +133,14 @@ STR
     |  '"'  ~('\\'|'"' )* ( ESC_SEQ | ~('\\'|'"' ) )* '"'
     ;
 
-COMMENT			:	'//' ~('\n'|'\r')* '\r'?  /*'\n'*/ {$channel=HIDDEN;} ;
+LINE_COMMENT	:	'//' ~('\n'|'\r')* '\r'? {$channel=HIDDEN;} ;
+NESTING_COMMENT	:
+		'/*' ( options {greedy=false;} :
+		       NESTING_COMMENT | .
+		      ) *
+		'*/' {$channel=HIDDEN;}
+		;
+
 
 fragment ESC_SEQ	:	'\\' ('t'|'n'|'r'|'"'|'\''|'\\') | UNICODE_ESC;
 fragment UNICODE_ESC    :	'\\' ('u' | 'U') HEX_DIGIT HEX_DIGIT HEX_DIGIT HEX_DIGIT;
