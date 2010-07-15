@@ -1296,7 +1296,7 @@ llvm::Value* getTrampolineForClosure(ClosureAST* cloAST) {
   return tramp;
 }
 
-FnAST* getClosureVersionOf(ExprAST* arg, const llvm::FunctionType* fnty) {
+FnAST* getClosureVersionOf(ExprAST* arg, FnTypeAST* fnty) {
   static std::map<string, FnAST*> closureVersions;
   if (VariableAST* var = dynamic_cast<VariableAST*>(arg)) {
     string fnName = "__closureVersionOf__" + var->name;
@@ -1316,13 +1316,13 @@ FnAST* getClosureVersionOf(ExprAST* arg, const llvm::FunctionType* fnty) {
     for (size_t i = 0; i < fnty->getNumParams(); ++i) {
       std::stringstream ss; ss << "a" << i;
       VariableAST* a = new VariableAST(ss.str(),
-                             TypeAST::get(fnty->getParamType(i)),
+                             fnty->getParamType(i),
                              SourceRange::getEmptyRange());
       inArgs.push_back(a);
       callArgs.push_back(a);
     }
-    // TODO change fnty to TypeAST
-    PrototypeAST* proto = new PrototypeAST(TypeAST::get(fnty->getReturnType()),
+
+    PrototypeAST* proto = new PrototypeAST(fnty->getReturnType(),
                                fnName, inArgs, SourceRange::getEmptyRange());
     ExprAST* body = new CallAST(arg, callArgs, SourceRange::getEmptyRange());
     FnAST* fn = new FnAST(proto, body, SourceRange::getEmptyRange());
@@ -1400,8 +1400,9 @@ void CodegenPass::visit(CallAST* ast) {
     const llvm::Type* expectedType = FT->getContainedType(i);
 
     // Codegenning   callee( arg )  where arg has raw function type, not closure type!
-    if (const FunctionType* fnty =
-           llvm::dyn_cast_or_null<const FunctionType>(getLLVMType(arg->type))) {
+    if (FnTypeAST* fnty = dynamic_cast<FnTypeAST*>(arg->type)) {
+      const llvm::FunctionType* llvmFnTy =
+	    llvm::dyn_cast<const llvm::FunctionType>(fnty->getLLVMType());
       // If we still have a bare function type at codegen time, it means
       // the code specified a (top-level) function name.
       // Since we made it past type checking, we should have only two
@@ -1409,7 +1410,7 @@ void CodegenPass::visit(CallAST* ast) {
       //
       // 1) A C-linkage function which expects a bare function pointer.
       // 2) A Foster function which expects a closure value.
-      bool passFunctionPointer = isPointerToCompatibleFnTy(expectedType, fnty);
+      bool passFunctionPointer = isPointerToCompatibleFnTy(expectedType, llvmFnTy);
 
       std::cout << "Passing function to " << (passFunctionPointer ? "fn ptr" : "closure") << "\n";
 
@@ -1423,8 +1424,8 @@ void CodegenPass::visit(CallAST* ast) {
       // a procedure returning void.
         if (FnTypeAST* expectedFnTy = tryExtractCallableType(
                                         TypeAST::get(expectedType))) {
-          if (isVoid(expectedFnTy->getReturnType()) && !isVoid(fnty)) {
-            arg = getVoidReturningVersionOf(arg, fnty);
+          if (isVoid(expectedFnTy->getReturnType()) && !isVoid(llvmFnTy)) {
+            arg = getVoidReturningVersionOf(arg, llvmFnTy);
             { TypecheckPass tp; arg->accept(&tp); }
           }
         }
