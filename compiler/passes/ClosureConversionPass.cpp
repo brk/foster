@@ -18,7 +18,8 @@ using namespace std;
 vector<FnAST*> callStack;
 map<FnAST*, set<VariableAST*> > boundVariables;
 map<FnAST*, set<VariableAST*> > freeVariables;
-map<FnAST*, vector<CallAST*> > callsOf;
+typedef set<CallAST*> CallSet;
+map<FnAST*, CallSet> callsOf;
 
 void replaceOldWithNew(ExprAST* inExpr, ExprAST* oldExpr, ExprAST* newExpr) {
   ReplaceExprTransform rex;
@@ -147,7 +148,7 @@ void ClosureConversionPass::visit(CallAST* ast)                {
     std::cout << "visited direct call of fn " << fnBase->proto->name
               << ", nested? " << fnBase->wasNested << std::endl;
     fnBase->lambdaLiftOnly = true;
-    callsOf[fnBase].push_back(ast);
+    callsOf[fnBase].insert(ast);
   }
   visitChildren(ast); return;
 }
@@ -291,7 +292,7 @@ void performClosureConversion(ClosureAST* closure) {
 
 void lambdaLiftAnonymousFunction(FnAST* ast) {
   set<VariableAST*>& freeVars = freeVariables[ast];
-  vector<CallAST*>& calls = callsOf[ast];
+  CallSet& calls = callsOf[ast];
 
   set<VariableAST*>::iterator it;
   for (it = freeVars.begin(); it != freeVars.end(); ++it) {
@@ -316,8 +317,8 @@ void lambdaLiftAnonymousFunction(FnAST* ast) {
     }
 
     // and rewrite all external call sites to pass the extra parameter
-    for (size_t i = 0; i < calls.size(); ++i) {
-      appendParameter(calls[i], parentScopeVar);
+    for (CallSet::iterator it = calls.begin(); it != calls.end(); ++it) {
+      appendParameter(*it, parentScopeVar);
     }
   }
 
