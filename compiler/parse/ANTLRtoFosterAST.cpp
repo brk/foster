@@ -193,10 +193,18 @@ foster::SourceRange rangeOf(pTree tree) {
 }
 
 foster::SourceRange rangeFrom(ExprAST* a, ExprAST* b) {
-  foster::SourceRange ar = a->sourceRange;
-  foster::SourceRange br = b->sourceRange;
-  ASSERT(ar.source == br.source);
-  return foster::SourceRange(ar.source, ar.begin, br.end);
+  if (a && b) {
+    foster::SourceRange ar = a->sourceRange;
+    foster::SourceRange br = b->sourceRange;
+    ASSERT(ar.source == br.source);
+    return foster::SourceRange(ar.source, ar.begin, br.end);
+  } else if (a) {
+    foster::SourceRange ar = a->sourceRange;
+    return foster::SourceRange(ar.source, ar.begin,
+                   foster::SourceLocation::getInvalidLocation());
+  } else {
+    return foster::SourceRange::getEmptyRange();
+  }
 }
 
 Exprs getExprs(pTree tree, bool fnMeansClosure);
@@ -405,6 +413,7 @@ PrototypeAST* getFnProto(string name,
                                     gScope.pushScope("fn proto " + name);
     std::vector<VariableAST*> in = getFormals(formalsTree, fnMeansClosure);
     TypeAST* retTy = TypeAST_from(retTyExprTree);
+  //gScope.popExistingScope(protoScope);
   gScope.popScope();
 
   pTree sourceEndTree = (retTyExprTree != NULL) ? retTyExprTree : formalsTree;
@@ -412,8 +421,10 @@ PrototypeAST* getFnProto(string name,
   PrototypeAST* proto = new PrototypeAST(retTy, name, in, protoScope,
                               sourceRange);
   { TypecheckPass tp; proto->accept(&tp); }
-  cout << "396: "<< str(proto->type) << endl;
+
   VariableAST* fnRef = new VariableAST(proto->name, proto->type, sourceRange);
+
+  // We may or may not be inserting into the root scope node.
   gScope.insert(proto->name, new foster::SymbolInfo(fnRef));
 
   return proto;

@@ -537,38 +537,50 @@ void CodegenPass::visit(PrototypeAST* ast) {
 
   std::string symbolName = getSymbolName(ast->name);
 
-  //std::cout << "\t" << "Codegen proto "  << sourceName << std::endl;
+  if (ast->scope) {
+    gScope.pushExistingScope(ast->scope);
+  } else {
+    gScope.pushScope(ast->name);
+  }
+
   const llvm::FunctionType* FT = dyn_cast<FunctionType>(getLLVMType(ast->type));
   Function* F = Function::Create(FT, Function::ExternalLinkage, symbolName, module);
 
   if (!F) {
     EDiag() << "function creation failed" << show(ast);
-    return;
-  }
-
-  // If F conflicted, there was already something with our desired name 
-  if (F->getName() != symbolName) {
+  } else if (F->getName() != symbolName) {
+    // If F conflicted, there was already something with our desired name
     EDiag() << "redefinition of function " << symbolName << show(ast);
-    return;
+  } else {
+    // Set names for all arguments
+    Function::arg_iterator AI = F->arg_begin();
+    for (size_t i = 0; i != ast->inArgs.size(); ++i, ++AI) {
+      AI->setName(ast->inArgs[i]->name);
+
+      std::cout << "559 inserting " << ast->inArgs[i]->name
+          << " to " << gScope._private_getCurrentScope()
+      //<< " to " << gScope._private_getCurrentScope()->getName()
+      << std::endl;
+
+      gScopeInsert(ast->inArgs[i]->name, (AI));
+  #if 0
+      std::cout << "Fn param " << ast->inArgs[i]->name << " ; "
+                << ast->inArgs[i] << " has val " << ast->inArgs[i]->value
+                << ", associated with " << AI << std::endl;
+  #endif
+    }
   }
 
-  // Set names for all arguments
-  Function::arg_iterator AI = F->arg_begin();
-  for (size_t i = 0; i != ast->inArgs.size(); ++i, ++AI) {
-    AI->setName(ast->inArgs[i]->name);
-    gScopeInsert(ast->inArgs[i]->name, (AI));
-#if 0
-    std::cout << "Fn param " << ast->inArgs[i]->name << " ; "
-              << ast->inArgs[i] << " has val " << ast->inArgs[i]->value
-              << ", associated with " << AI << std::endl;
-#endif
+  if (ast->scope) {
+    gScope.popExistingScope(ast->scope);
+  } else {
+    gScope.popScope();
   }
-
   ast->value = F;
 }
 
 void CodegenPass::visit(SeqAST* ast) {
-  EDiag() << "Codegen for SeqASTs should be subsumed by CFG building!";
+  //EDiag() << "Codegen for SeqASTs should (eventually) be subsumed by CFG building!";
   if (ast->value) return;
 
   if (!ast->parts.empty()) {
@@ -593,21 +605,24 @@ void CodegenPass::visit(FnAST* ast) {
 
   ASSERT(ast->body != NULL);
 
-  gScope.pushScope("fn " + ast->proto->name);
-
   (ast->proto)->accept(this);
   Function* F = dyn_cast<Function>(ast->proto->value);
-  if (!F) {
-    gScope.popScope();
-    return;
-  }
+  if (!F) { return; }
 
   F->setGC("shadow-stack");
 
   this->insertPointStack.push(builder.GetInsertBlock());
 
+  std::cout << ast->proto->name << ": insert point stack depth: " << this->insertPointStack.size() << std::endl;
+
   BasicBlock* BB = BasicBlock::Create(getGlobalContext(), "entry", F);
   builder.SetInsertPoint(BB);
+
+  if (ast->proto->scope) {
+    gScope.pushExistingScope(ast->proto->scope);
+  } else {
+    gScope.pushScope(std::string("fn " + ast->proto->name));
+  }
 
   // If the body of the function might allocate memory, the first thing
   // the function should do is create stack slots/GC roots to hold
@@ -621,11 +636,16 @@ void CodegenPass::visit(FnAST* ast) {
             << " of ast type " << *(ast->proto->inArgs[i]->type)
             << " and value type " << *(AI->getType()) << std::endl;
 #endif
+        std::cout << "640 inserting " << ast->proto->inArgs[i]->name << " to "
+              << gScope._private_getCurrentScope()->getName() << std::endl;
         gScopeInsert(ast->proto->inArgs[i]->name,
             storeAndMarkPointerAsGCRoot(AI));
       }
     }
   }
+
+  std::cout << "648 inserting " << ast->proto->name << " to "
+        << gScope._private_getCurrentScope()->getName() << std::endl;
 
   gScopeInsert(ast->proto->name, F);
   (ast->body)->accept(this);
@@ -646,7 +666,14 @@ void CodegenPass::visit(FnAST* ast) {
     RetVal = builder.CreateLoad(RetVal, false, "structPtrToStruct");
   }
 
-  gScope.popScope();
+  if (ast->proto->scope) {
+    gScope.popExistingScope(ast->proto->scope);
+  } else {
+    gScope.popScope();
+  }
+
+  std::cout << "676 inserting " << ast->proto->name << " to "
+        << gScope._private_getCurrentScope()->getName() << std::endl;
   gScopeInsert(ast->proto->name, F);
 
   if (RetVal) {
@@ -799,7 +826,7 @@ void CodegenPass::visit(ClosureAST* ast) {
 }
 
 void CodegenPass::visit(IfExprAST* ast) {
-  EDiag() << "Codegen for IfExprASTs should be subsumed by CFG building!";
+  //EDiag() << "Codegen for IfExprASTs should (eventually) be subsumed by CFG building!";
   if (ast->value) return;
 
   (ast->testExpr)->accept(this);
@@ -863,6 +890,7 @@ void CodegenPass::visit(IfExprAST* ast) {
 
 void CodegenPass::visit(ForRangeExprAST* ast) {
   if (ast->value) return;
+  //EDiag() << "Codegen for ForRangeExprASTs should (eventually) be subsumed by CFG building!";
 
   Function* parentFn = builder.GetInsertBlock()->getParent();
   ////BasicBlock* preLoopBB  = builder.GetInsertBlock();
@@ -926,6 +954,8 @@ afterBB:
                                                ast->var->name);
 
     gScope.pushScope("for-range " + ast->var->name);
+    std::cout << "957 inserting " << ast->var->name << " to "
+          << gScope._private_getCurrentScope()->getName() << std::endl;
     gScopeInsert(ast->var->name, (pickvar));
 
     (ast->bodyExpr)->accept(this);

@@ -37,6 +37,7 @@ struct GraphTraits<FOSTER_SYMTAB::LexicalScope*> {
   }
 };
 
+
 template <>
 struct GraphTraits<FOSTER_SYMTAB*>
       : public GraphTraits<FOSTER_SYMTAB::LexicalScope*> {

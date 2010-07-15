@@ -100,27 +100,45 @@ public:
     return currentScope()->lookup(ident, wantedScopeName);
   }
 
+  /// Inserts the given value into the current scope.
   T* insert(string ident, T* V) { return currentScope()->insert(ident, V); }
 
+  /// Creates and returns a new scope within the current scope.
   LexicalScope* pushScope(string scopeName) {
     currentScope() = new LexicalScope(scopeName, currentScope());
     _private_allScopes.push_back(currentScope());
     return currentScope();
   }
 
+  /// Returns to the current scope's parent,
+  /// undoing the effect of pushScope().
   LexicalScope* popScope() {
     currentScope() = currentScope()->parent;
     return currentScope();
   }
 
+  /// Creates a new scope chain, with the root scope node as its parent.
+  /// NOTE: the inverse operation is popExistingScope(), not popScope()!
+  LexicalScope* newScope(string scopeName) {
+    scopeStack.push_back(new LexicalScope(scopeName, getRootScope()));
+    _private_allScopes.push_back(currentScope());
+    return currentScope();
+  }
 
+  /// Updates the current scope to be the given scope;
+  /// the previous current scope is remembered, not overwritten.
   void pushExistingScope(LexicalScope* scope) {
     scopeStack.push_back(scope);
   }
+
+  /// Undoes the effect of a pushExistingScope(), sanity-checking
+  /// that we're popping the same scope the caller thinks we are.
   void popExistingScope(LexicalScope* expectedCurrentScope) {
     ASSERT(currentScope() == expectedCurrentScope);
     scopeStack.pop_back();
   }
+
+  LexicalScope* getRootScope() { return scopeStack[0]; }
 
   void dump(std::ostream& out) { currentScope()->dump(out); }
 
@@ -156,6 +174,11 @@ void gScopeInsert(const std::string& str, ExprAST* ast);
 // }}}
 
 } // namespace foster
+
+
+namespace std {
+  ostream& operator<<(ostream& out, foster::SymbolInfo* info);
+}
 
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////

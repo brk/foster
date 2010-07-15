@@ -126,30 +126,31 @@ struct BinaryExprAST : public ExprAST {
 
 // "Fake" AST node for doing iterative lookup; AST stand-in for namespaces.
 struct NameResolverAST : public ExprAST {
-  ExprAST::ScopeType* localScope;
-  const std::string& scopeName;
+  ExprAST::ScopeType* scope;
 
   explicit NameResolverAST(const std::string& name)
-      : ExprAST(foster::SourceRange::getEmptyRange()), scopeName(name) {
-    localScope = new ScopeType(scopeName, NULL);
+      : ExprAST(foster::SourceRange::getEmptyRange()) {
+    // TODO these scopes should integrate with gScope
+    scope = new ScopeType(name, NULL);
   }
   virtual ~NameResolverAST() { }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "(NameResolver " << scopeName << ")";
+    return out << "(NameResolver " << scope->getName() << ")";
   }
   virtual void accept(FosterASTVisitor* visitor) {
     std::cerr << "Visitor called on NameResolverAST! This is probably not desired..." << std::endl;
   }
   NameResolverAST* newNamespace(const std::string& name) {
     NameResolverAST* nu = new NameResolverAST(name);
-    localScope->insert(name, nu);
+    scope->insert(name, nu);
     return nu;
   }
   virtual ExprAST* lookup(const string& name, const string& meta) {
-    return localScope->lookup(name, meta);
+    return scope->lookup(name, meta);
   }
+  // TODO add wrapper to distinguish qualified from unqualified strings
   virtual ExprAST* insert(const string& fullyQualifiedName, VariableAST* var) {
-    return localScope->insert(fullyQualifiedName, (ExprAST*)(var));
+    return scope->insert(fullyQualifiedName, (ExprAST*)(var));
   }
 };
 
@@ -340,6 +341,8 @@ struct PrototypeAST : public ExprAST {
                foster::SourceRange sourceRange)
       : ExprAST(sourceRange),
         name(name), inArgs(inArgs), resultTy(retTy), scope(ascope) {
+    ASSERT(scope != NULL);
+
     if (resultTy == NULL) {
       this->resultTy = TypeAST::get(LLVMTypeFor("i32"));
     } else {

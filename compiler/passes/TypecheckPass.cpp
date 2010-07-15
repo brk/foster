@@ -162,8 +162,12 @@ bool areNamesDisjoint(const std::vector<VariableAST*>& vars) {
 
 void TypecheckPass::visit(PrototypeAST* ast) {
   if (!areNamesDisjoint(ast->inArgs)) {
-    EDiag() << "formal argument names for function "
-              << ast->name << " are not disjoint" << show(ast);
+    EDiag d; d << "formal argument names for function "
+              << ast->name << " are not disjoint";
+    for (size_t i = 0; i < ast->inArgs.size(); ++i) {
+      d << "\n\t" << ast->inArgs[i]->name;
+    }
+      d       << show(ast);
     return;
   }
 

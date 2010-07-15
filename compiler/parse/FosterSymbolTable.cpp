@@ -5,6 +5,20 @@
 #include "parse/FosterSymbolTable.h"
 #include "parse/FosterAST.h"
 
+namespace std {
+  ostream& operator<<(ostream& out, foster::SymbolInfo* info) {
+    if (info) {
+      out << "<ast: " << info->ast;
+      if (info->ast) out << ";\tast->type: " << info->ast->type;
+      if (info->ast) out << ";\tast->value: " << info->ast->value;
+      out << ";\tvalue: " << info->value << "> ";
+      return out << std::endl;
+    } else {
+      return out << "<no info!> " << std::endl;
+    }
+  }
+}
+
 namespace foster {
 
 SymbolTable<TypeAST> gTypeScope;

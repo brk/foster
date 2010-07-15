@@ -8,6 +8,10 @@
 #include "passes/CodegenPass.h"
 #include "parse/FosterAST.h"
 
+#include "base/Diagnostics.h"
+using foster::show;
+using foster::EDiag;
+
 #include <vector>
 #include <map>
 #include <set>
@@ -91,8 +95,8 @@ void ClosureConversionPass::visit(FnAST* ast)                  {
     if (ast->lambdaLiftOnly) {
       lambdaLiftAnonymousFunction(ast);
     } else {
-      //std::cout << "Anon function not wanting lambda lifting: "
-      //          << ast->proto->name << std::endl;
+      std::cout << "Anon function not wanting lambda lifting: "
+                << ast->proto->name << std::endl;
     }
   }
 }
@@ -200,17 +204,18 @@ void hoistAnonymousFunction(FnAST* ast) {
 
   ast->parent = toplevel;
 
-  { // Ensure that the fn proto gets added to the module, so that it can
+  {
+    // Alter the symbol table structure to reflect the fact that we're
+    // hoisting the function to the root scope.
+    ast->proto->scope->parent = gScope.getRootScope();
+
+    // Ensure that the fn proto gets added to the module, so that it can
     // be referenced from other functions.
-    std::cout << "pre codegen scope: " << std::endl;
-    gScope.dump(std::cout);
-
     CodegenPass cp; ast->proto->accept(&cp);
-    std::cout << "Inserting newly-codegen'd value for " << ast->proto->name << std::endl;
-    gScopeInsert(ast->proto->name, ast->proto->value);
 
-    std::cout << "post codegen scope: " << std::endl;
-    gScope.dump(std::cout);
+    std::cout << "Inserting newly-codegen'd value for "
+        << ast->proto->name << " to scope " << gScope._private_getCurrentScope()->getName() << std::endl;
+    gScopeInsert(ast->proto->name, ast->proto->value);
   }
 }
 
@@ -299,7 +304,7 @@ void lambdaLiftAnonymousFunction(FnAST* ast) {
     // For each free variable in the function:
     VariableAST* parentScopeVar = *it;
     VariableAST* var = new VariableAST(
-                             parentScopeVar->name,
+                             "_lift_"+parentScopeVar->name,
                              parentScopeVar->type,
                              foster::SourceRange::getEmptyRange());
 
@@ -333,4 +338,26 @@ void lambdaLiftAnonymousFunction(FnAST* ast) {
        ast->type = ast->proto->type;
     }
   }
+
+/* TODO trying to lift closures breaks, hard, -- need to figure out why.
+  std::cout << "# calls for " << ast->proto->name << " is " << calls.size() << std::endl;
+  VariableAST* varReferringToFunction = new VariableAST(
+                                    ast->proto->name,
+                                    ast->proto->type,
+                                    foster::SourceRange::getEmptyRange());
+
+  // Rewrite external calls to refer to the function by name.
+  for (CallSet::iterator it = calls.begin(); it != calls.end(); ++it) {
+    CallAST* call = *it;
+    if (call->parts[0] == ast) {
+      call->parts[0] = varReferringToFunction;
+    } else {
+      EDiag() << "ast: " << show(ast);
+      EDiag() << "base:" << show(call->parts[0]) << str(call->parts[0]);
+    }
+  }
+
+  // And move the now-rootless function to the top level, where it belongs.
+  hoistAnonymousFunction(ast);
+  */
 }
