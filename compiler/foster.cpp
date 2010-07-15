@@ -393,10 +393,11 @@ void putModuleMembersInScope(Module* m, Module* linkee) {
     const Function& f = *it;
     
     const string& name = f.getNameStr();
-    bool isCxxLinkage = name[0] == '_' && name[1] == 'Z';
+    bool isCxxLinkage = pystring::startswith(name, "_Z", 0);
 
     bool hasDef = !f.isDeclaration();
-    if (hasDef && !isCxxLinkage) {
+    if (hasDef && !isCxxLinkage
+               && !pystring::startswith(name, "__cxx_", 0)) {
       globalNames.insert(name);
 
       // Ensure that, when parsing, function calls to this name will find it
@@ -797,6 +798,25 @@ int main(int argc, char** argv) {
   
   if (optDumpPreLinkedIR) {
     dumpModuleToFile(module, dumpdirFile("out.prelink.ll").c_str());
+  }
+
+  {
+    std::string err;
+    llvm::raw_fd_ostream f(dumpdirFile("varScope.dot").c_str(), err);
+    if (err.empty()) {
+      llvm::WriteGraph(f, &varScope);
+    } else {
+      foster::EDiag() << "no file to write varScope.dot";
+    }
+  }
+  {
+    std::string err;
+    llvm::raw_fd_ostream f(dumpdirFile("valScope.dot").c_str(), err);
+    if (err.empty()) {
+      llvm::WriteGraph(f, &scope);
+    } else {
+      foster::EDiag() << "no file to write valScope.dot";
+    }
   }
 
   if (!optCompileSeparately) {

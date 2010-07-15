@@ -6,6 +6,8 @@
 #define FOSTER_SYMBOL_TABLE_H
 
 #include "llvm/Value.h"
+#include "llvm/Support/CFG.h"
+#include "llvm/Support/GraphWriter.h"
 
 #include <string>
 #include <map>
@@ -54,29 +56,48 @@ public:
     }
     void dump(std::ostream& out) {
       out << "\t" << name << "(@ " << this << ")" << std::endl;
-      for (typename Map::iterator it = val_of.begin(); it != val_of.end(); ++it) {
+      for (const_iterator it = begin(); it != end(); ++it) {
         out << "\t\t" << (*it).first << ": " << (*it).second << std::endl;
       }
       if (parent) { parent->dump(out); }
     }
+
+    // These methods allow lexical scopes to be treated as LLVM graph nodes:
+    size_t getNumSuccessors() { return 1; }
+    LexicalScope* getSuccessor(size_t i) { return parent; }
+    LexicalScope* getParent() { return parent; }
+    const std::string& getName() const { return name; }
+
+    // These allow graphs to include detailed information about scope contents
+    typedef typename Map::const_iterator const_iterator;
+    const_iterator begin() const { return val_of.begin(); }
+    const_iterator end  () const { return val_of.end(); }
   };
 
   SymbolTable() {
     pushExistingScope(new LexicalScope("*", NULL));
+    _private_allScopes.push_back(currentScope());
   }
+
   virtual ~SymbolTable() {}
+
   T* lookup(const string& ident, const string& wantedScopeName) {
     return currentScope()->lookup(ident, wantedScopeName);
   }
+
   T* insert(string ident, T* V) { return currentScope()->insert(ident, V); }
+
   LexicalScope* pushScope(string scopeName) {
     currentScope() = new LexicalScope(scopeName, currentScope());
+    _private_allScopes.push_back(currentScope());
     return currentScope();
   }
+
   LexicalScope* popScope() {
     currentScope() = currentScope()->parent;
     return currentScope();
   }
+
 
   void pushExistingScope(LexicalScope* scope) {
     scopeStack.push_back(scope);
@@ -87,6 +108,10 @@ public:
   }
 
   void dump(std::ostream& out) { currentScope()->dump(out); }
+
+  // need to expose these as public for GraphTraits and friends
+  LexicalScope* _private_getCurrentScope() { return currentScope(); }
+  std::vector<LexicalScope*> _private_allScopes;
 
   private:
   LexicalScope*& currentScope() { return scopeStack.back(); }
@@ -100,6 +125,11 @@ extern SymbolTable<ExprAST> varScope;
 // }}}
 
 } // namespace foster
+
+////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////
+
+#include "FosterSymbolTableTraits-inl.h"
 
 using foster::scope;
 using foster::typeScope;
