@@ -425,7 +425,7 @@ void TypecheckPass::visit(NilExprAST* ast) {
 
     if (TupleExprAST* tupleast = dynamic_cast<TupleExprAST*>(ast->parent->parent)) {
       if (!tupleast->typeName.empty()) {
-        TypeAST* ty = typeScope.lookup(tupleast->typeName, "");
+        TypeAST* ty = gTypeScope.lookup(tupleast->typeName, "");
         if (TupleTypeAST* tuplety = dynamic_cast<TupleTypeAST*>(ty)) {
           int i = indexInParent(ast, 0);
           if (i >= 0) {
@@ -1023,7 +1023,7 @@ void TypecheckPass::visit(TupleExprAST* ast) {
   TupleTypeAST* expectedTupleType = NULL;
   if (!ast->typeName.empty()) {
     expectedTupleType
-            = dynamic_cast<TupleTypeAST*>(typeScope.lookup(ast->typeName, ""));
+            = dynamic_cast<TupleTypeAST*>(gTypeScope.lookup(ast->typeName, ""));
   }
 
   if (expectedTupleType) {

@@ -374,12 +374,12 @@ VariableAST* parseFormal(pTree tree, bool fnMeansClosure) {
                        << " with null type expr " << endl;
     }
     VariableAST* var = new VariableAST(varName, tyExpr, rangeOf(tree));
-    varScope.insert(varName, var);
+    gScope.insert(varName, new foster::SymbolInfo(var));
     return var;
   } else {
     // no fixed type, infer later
     VariableAST* var = new VariableAST(varName, NULL, rangeOf(tree));
-    varScope.insert(varName, var);
+    gScope.insert(varName, new foster::SymbolInfo(var));
     return var;
   }
 }
@@ -401,11 +401,11 @@ PrototypeAST* getFnProto(string name,
                          pTree formalsTree,
                          pTree retTyExprTree)
 {
-  foster::SymbolTable<ExprAST>::LexicalScope* protoScope =
-                                    varScope.pushScope("fn proto " + name);
+  foster::SymbolTable<foster::SymbolInfo>::LexicalScope* protoScope =
+                                    gScope.pushScope("fn proto " + name);
     std::vector<VariableAST*> in = getFormals(formalsTree, fnMeansClosure);
     TypeAST* retTy = TypeAST_from(retTyExprTree);
-  varScope.popScope();
+  gScope.popScope();
 
   pTree sourceEndTree = (retTyExprTree != NULL) ? retTyExprTree : formalsTree;
   foster::SourceRange sourceRange = rangeFrom(formalsTree, sourceEndTree);
@@ -414,15 +414,15 @@ PrototypeAST* getFnProto(string name,
   { TypecheckPass tp; proto->accept(&tp); }
   cout << "396: "<< str(proto->type) << endl;
   VariableAST* fnRef = new VariableAST(proto->name, proto->type, sourceRange);
-  varScope.insert(proto->name, fnRef);
+  gScope.insert(proto->name, new foster::SymbolInfo(fnRef));
 
   return proto;
 }
 
 FnAST* buildFn(PrototypeAST* proto, pTree bodyTree) {
-  varScope.pushExistingScope(proto->scope);
+  gScope.pushExistingScope(proto->scope);
     ExprAST* body = ExprAST_from(bodyTree, true);
-  varScope.popExistingScope(proto->scope);
+  gScope.popExistingScope(proto->scope);
 
   // TODO make source range more accurate
   return new FnAST(proto, body, rangeOf(bodyTree));
@@ -558,14 +558,14 @@ ExprAST* parseTypeDefinition(pTree tree, bool fnMeansClosure) {
   string name = textOf(child(nameTree, 0));
 
   llvm::PATypeHolder namedType = llvm::OpaqueType::get(getGlobalContext());
-  typeScope.pushScope("opaque");
-    typeScope.insert(name, TypeAST::get(namedType.get()));
+  gTypeScope.pushScope("opaque");
+    gTypeScope.insert(name, TypeAST::get(namedType.get()));
     TypeAST* tyExpr = TypeAST_from(child(tree, 1));
     llvm::cast<llvm::OpaqueType>(namedType.get())->
                refineAbstractTypeTo(tyExpr->getLLVMType());
-  typeScope.popScope();
+  gTypeScope.popScope();
 
-  typeScope.insert(name, tyExpr);
+  gTypeScope.insert(name, tyExpr);
   cout << "Associated " << name << " with type " << str(tyExpr) << endl;
   //module->addTypeName(name, tyExpr->getLLVMType());
   return NULL;
@@ -586,10 +586,10 @@ ExprAST* parseForRange(pTree tree, bool fnMeansClosure,
     incr = ExprAST_from(child(tree, 4), fnMeansClosure);
   }
 
-  varScope.pushScope("for-range " + varName);
-  varScope.insert(varName, var);
+  gScope.pushScope("for-range " + varName);
+  gScope.insert(varName, new foster::SymbolInfo(var));
   ExprAST* body  = ExprAST_from(child(tree, 3), fnMeansClosure);
-  varScope.popScope();
+  gScope.popScope();
 
   cout << "for (" << varName <<" in _ to _ ...)" << endl;
   return new ForRangeExprAST(var, start, end, body, incr, sourceRange);
@@ -612,7 +612,7 @@ ExprAST* parseCtorExpr(pTree tree, bool fnMeansClosure,
     return new TupleExprAST(ExprAST_from(seqArgs, fnMeansClosure), sourceRange);
   }
 
-  if (TypeAST* ty = typeScope.lookup(name, "")) {
+  if (TypeAST* ty = gTypeScope.lookup(name, "")) {
     ASSERT(ty->getLLVMType() && ty->getLLVMType()->isStructTy());
     return new TupleExprAST(ExprAST_from(seqArgs, fnMeansClosure),
                             name, sourceRange);
@@ -655,7 +655,7 @@ TypeAST* parseCtorType(pTree tree,
     return TupleTypeAST::get(getTypes(seqArgs)); //, sourceRange);
   }
 
-  if (TypeAST* ty = typeScope.lookup(name, "")) {
+  if (TypeAST* ty = gTypeScope.lookup(name, "")) {
     return ty; // TODO fix
   }
 
@@ -814,7 +814,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
                              sourceRange);
     }
 
-    ExprAST* var = varScope.lookup(varName, "");
+    ExprAST* var = gScopeLookupAST(varName);
     if (!var) {
       EDiag() << "unknown var name: " << varName << show(sourceRange);
     }

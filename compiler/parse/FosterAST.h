@@ -91,6 +91,8 @@ T getSaturating(llvm::Value* v) {
 ///////////////////////////////////////////////////////////
 
 struct ExprAST : public foster::NameResolver<ExprAST> {
+  typedef foster::SymbolTable<ExprAST>::LexicalScope ScopeType;
+
   ExprAST* parent;
   std::vector<ExprAST*> parts;
 
@@ -104,7 +106,7 @@ struct ExprAST : public foster::NameResolver<ExprAST> {
   virtual std::ostream& operator<<(std::ostream& out) const = 0;
   virtual void accept(FosterASTVisitor* visitor) = 0;
   virtual ExprAST* lookup(const string& name, const string& meta) {
-    std::cerr << "ExprAST.lookup() called!" << std::endl;
+    ASSERT(false) << "ExprAST.lookup() called!";
     return NULL;
   }
 };
@@ -124,14 +126,14 @@ struct BinaryExprAST : public ExprAST {
 
 // "Fake" AST node for doing iterative lookup; AST stand-in for namespaces.
 struct NameResolverAST : public ExprAST {
-  foster::SymbolTable<ExprAST> localScope;
+  ExprAST::ScopeType* localScope;
   const std::string& scopeName;
 
   explicit NameResolverAST(const std::string& name)
       : ExprAST(foster::SourceRange::getEmptyRange()), scopeName(name) {
-    localScope.pushScope(scopeName);
+    localScope = new ScopeType(scopeName, NULL);
   }
-  virtual ~NameResolverAST() { localScope.popScope(); }
+  virtual ~NameResolverAST() { }
   virtual std::ostream& operator<<(std::ostream& out) const {
     return out << "(NameResolver " << scopeName << ")";
   }
@@ -140,14 +142,14 @@ struct NameResolverAST : public ExprAST {
   }
   NameResolverAST* newNamespace(const std::string& name) {
     NameResolverAST* nu = new NameResolverAST(name);
-    localScope.insert(name, nu);
+    localScope->insert(name, nu);
     return nu;
   }
   virtual ExprAST* lookup(const string& name, const string& meta) {
-    return localScope.lookup(name, meta);
+    return localScope->lookup(name, meta);
   }
   virtual ExprAST* insert(const string& fullyQualifiedName, VariableAST* var) {
-    return localScope.insert(fullyQualifiedName, (ExprAST*)(var));
+    return localScope->insert(fullyQualifiedName, (ExprAST*)(var));
   }
 };
 
@@ -313,7 +315,7 @@ struct PrototypeAST : public ExprAST {
   std::vector<VariableAST*> inArgs;
   TypeAST* resultTy;
 
-  foster::SymbolTable<ExprAST>::LexicalScope* scope;
+  foster::SymbolTable<foster::SymbolInfo>::LexicalScope* scope;
 
   PrototypeAST(TypeAST* retTy, const string& name,
                foster::SourceRange sourceRange)
@@ -334,10 +336,10 @@ struct PrototypeAST : public ExprAST {
 
   PrototypeAST(TypeAST* retTy, const string& name,
                const std::vector<VariableAST*>& inArgs,
-               foster::SymbolTable<ExprAST>::LexicalScope* scope,
+               foster::SymbolTable<foster::SymbolInfo>::LexicalScope* ascope,
                foster::SourceRange sourceRange)
       : ExprAST(sourceRange),
-        name(name), inArgs(inArgs), resultTy(retTy), scope(scope) {
+        name(name), inArgs(inArgs), resultTy(retTy), scope(ascope) {
     if (resultTy == NULL) {
       this->resultTy = TypeAST::get(LLVMTypeFor("i32"));
     } else {

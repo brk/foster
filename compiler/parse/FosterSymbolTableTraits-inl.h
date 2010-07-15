@@ -1,10 +1,24 @@
-// varScope : SymbolTable<ExprAST>
+// gScope : SymbolTable<foster::SymbolInfo>
 
 #include <sstream>
 #include <iostream>
 #include "llvm/Support/raw_ostream.h"
 
-#define FOSTER_SYMTAB foster::SymbolTable<ExprAST>
+namespace foster {
+std::string
+getFullSymbolInfoNodeLabel(
+    const foster::SymbolTable<foster::SymbolInfo>::LexicalScope* node,
+    const foster::SymbolTable<foster::SymbolInfo>* graph);
+}
+namespace foster {
+std::string
+getFullTypeASTNodeLabel(
+    const foster::SymbolTable<TypeAST>::LexicalScope* node,
+    const foster::SymbolTable<TypeAST>* graph);
+}
+
+
+#define FOSTER_SYMTAB foster::SymbolTable<foster::SymbolInfo>
 
 namespace llvm {
 
@@ -68,16 +82,7 @@ struct DOTGraphTraits<FOSTER_SYMTAB*>
   static std::string
   getFullNodeLabel(const FOSTER_SYMTAB::LexicalScope* node,
                    const FOSTER_SYMTAB* graph) {
-    const char* newline = "\\l";
-    std::stringstream ss;
-    ss << getSimpleNodeLabel(node, graph);
-    for (FOSTER_SYMTAB::LexicalScope::const_iterator it = node->begin();
-          it != node->end(); ++it) {
-      // (*it).first  : string
-      // (*it).second : ExprAST
-      ss << newline << it->first << " : " << (*it).second;
-    }
-    return ss.str();
+    return std::string(foster::getFullSymbolInfoNodeLabel(node, graph));
   }
 
   static std::string
@@ -95,9 +100,9 @@ struct DOTGraphTraits<FOSTER_SYMTAB*>
 
 ////////////////////////////////////////////////////////////////////
 
-// scope    : SymbolTable<Value>
+// gTypeScope    : SymbolTable<TypeAST>
 
-#define FOSTER_SYMTAB foster::SymbolTable<llvm::Value>
+#define FOSTER_SYMTAB foster::SymbolTable<TypeAST>
 
 namespace llvm {
 
@@ -161,17 +166,7 @@ struct DOTGraphTraits<FOSTER_SYMTAB*>
   static std::string
   getFullNodeLabel(const FOSTER_SYMTAB::LexicalScope* node,
                    const FOSTER_SYMTAB* graph) {
-    const char* newline = "\\l";
-    std::stringstream ss;
-
-    ss << getSimpleNodeLabel(node, graph);
-    for (FOSTER_SYMTAB::LexicalScope::const_iterator it = node->begin();
-          it != node->end(); ++it) {
-      const std::string& name = it->first;
-      const llvm::Type* t  = (*it).second->getRawType();
-      ss << newline << name << " : " << t->getDescription();
-    }
-    return ss.str();
+    return std::string(foster::getFullTypeASTNodeLabel(node, graph));
   }
 
   static std::string

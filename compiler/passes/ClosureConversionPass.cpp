@@ -201,8 +201,15 @@ void hoistAnonymousFunction(FnAST* ast) {
 
   { // Ensure that the fn proto gets added to the module, so that it can
     // be referenced from other functions.
+    std::cout << "pre codegen scope: " << std::endl;
+    gScope.dump(std::cout);
+
     CodegenPass cp; ast->proto->accept(&cp);
-    scope.insert(ast->proto->name, ast->proto->value);
+    std::cout << "Inserting newly-codegen'd value for " << ast->proto->name << std::endl;
+    gScopeInsert(ast->proto->name, ast->proto->value);
+
+    std::cout << "post codegen scope: " << std::endl;
+    gScope.dump(std::cout);
   }
 }
 

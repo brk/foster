@@ -371,7 +371,7 @@ llvm::Value* storeAndMarkPointerAsGCRoot(llvm::Value* val) {
 
 // returns ty**, the stack slot containing a ty*
 llvm::Value* emitMalloc(const llvm::Type* ty) {
-  llvm::Value* memalloc = scope.lookup("memalloc", "");
+  llvm::Value* memalloc = gScopeLookupValue("memalloc");
   if (!memalloc) {
     std::cerr << "NO MEMALLOC IN MODULE! :(" << std::endl;
     return NULL;
@@ -427,11 +427,11 @@ void CodegenPass::visit(VariableAST* ast) {
     ast->lazilyInsertedPrototype->accept(this);
     ast->value = ast->lazilyInsertedPrototype->value;
   } else {
-    ast->value = scope.lookup(ast->name, "");
+    ast->value = gScopeLookupValue(ast->name);
     if (!ast->value) {
       EDiag() << "looking up variable " << ast->name << " in scope, got "
               << str(ast->value) << show(ast);
-      scope.dump(std::cout);
+      gScope.dump(std::cout);
     }
   }
 
@@ -556,7 +556,7 @@ void CodegenPass::visit(PrototypeAST* ast) {
   Function::arg_iterator AI = F->arg_begin();
   for (size_t i = 0; i != ast->inArgs.size(); ++i, ++AI) {
     AI->setName(ast->inArgs[i]->name);
-    scope.insert(ast->inArgs[i]->name, AI);
+    gScopeInsert(ast->inArgs[i]->name, (AI));
 #if 0
     std::cout << "Fn param " << ast->inArgs[i]->name << " ; "
               << ast->inArgs[i] << " has val " << ast->inArgs[i]->value
@@ -593,12 +593,12 @@ void CodegenPass::visit(FnAST* ast) {
 
   ASSERT(ast->body != NULL);
 
-  scope.pushScope("fn " + ast->proto->name);
+  gScope.pushScope("fn " + ast->proto->name);
 
   (ast->proto)->accept(this);
   Function* F = dyn_cast<Function>(ast->proto->value);
   if (!F) {
-    scope.popScope();
+    gScope.popScope();
     return;
   }
 
@@ -621,13 +621,13 @@ void CodegenPass::visit(FnAST* ast) {
             << " of ast type " << *(ast->proto->inArgs[i]->type)
             << " and value type " << *(AI->getType()) << std::endl;
 #endif
-        scope.insert(ast->proto->inArgs[i]->name,
+        gScopeInsert(ast->proto->inArgs[i]->name,
             storeAndMarkPointerAsGCRoot(AI));
       }
     }
   }
 
-  scope.insert(ast->proto->name, F);
+  gScopeInsert(ast->proto->name, F);
   (ast->body)->accept(this);
   Value* RetVal = ast->body->value;
   if (RetVal == NULL) {
@@ -646,8 +646,8 @@ void CodegenPass::visit(FnAST* ast) {
     RetVal = builder.CreateLoad(RetVal, false, "structPtrToStruct");
   }
 
-  scope.popScope();
-  scope.insert(ast->proto->name, F);
+  gScope.popScope();
+  gScopeInsert(ast->proto->name, F);
 
   if (RetVal) {
     if (returningVoid) {
@@ -925,12 +925,12 @@ afterBB:
     llvm::PHINode* pickvar = builder.CreatePHI(getLLVMType(ast->var->type),
                                                ast->var->name);
 
-    scope.pushScope("for-range " + ast->var->name);
-    scope.insert(ast->var->name, pickvar);
+    gScope.pushScope("for-range " + ast->var->name);
+    gScopeInsert(ast->var->name, (pickvar));
 
     (ast->bodyExpr)->accept(this);
     if (!ast->bodyExpr->value) { return; }
-    scope.popScope();
+    gScope.popScope();
 
 
   BasicBlock* loopEndBB = builder.GetInsertBlock();

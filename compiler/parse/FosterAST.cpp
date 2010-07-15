@@ -137,7 +137,7 @@ std::map<string, const Type*> builtinTypes;
 TypeAST*    TypeASTFor(const string& name) {
   if (builtinTypes.count(name) == 1) {
     return TypeAST::get(builtinTypes[name]);
-  } else if (TypeAST* ty = typeScope.lookup(name, "")) {
+  } else if (TypeAST* ty = gTypeScope.lookup(name, "")) {
     return ty;
   } else {
     const Type* ty = LLVMTypeFor(name);

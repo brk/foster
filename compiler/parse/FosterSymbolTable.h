@@ -12,6 +12,7 @@
 #include <string>
 #include <map>
 #include <vector>
+#include <iostream>
 
 using std::string;
 
@@ -40,20 +41,34 @@ public:
     LexicalScope(string name, LexicalScope* parent) : name(name), parent(parent) {}
     virtual ~LexicalScope() {}
     
-    T* insert(const string& ident, T* V) { val_of[ident] = V; return V; }
-    T* lookup(const string& ident, const string& wantedScopeName) {
+    T* insert(const string& ident, T* V) {
+      T* old = val_of[ident];
+      if (old) {
+        std::cerr << "Unexpectedly overwriting old value of " << ident << std::endl;
+      }
+      val_of[ident] = V;
+      return V;
+    }
+
+    bool thisLevelContains(const string& ident) {
+      return val_of.find(ident) != val_of.end();
+    }
+
+    virtual T* lookup(const string& ident, const string& wantedScopeName) {
       if (name == "*" || wantedScopeName == "" || name == wantedScopeName) {
         typename Map::iterator it = val_of.find(ident);
         if (it != val_of.end()) {
-          return (*it).second;
+          return ((*it).second);
         }
       }
+
       if (parent) {
         return parent->lookup(ident, wantedScopeName);
       } else {
         return NULL;
       }
     }
+
     void dump(std::ostream& out) {
       out << "\t" << name << "(@ " << this << ")" << std::endl;
       for (const_iterator it = begin(); it != end(); ++it) {
@@ -81,7 +96,7 @@ public:
 
   virtual ~SymbolTable() {}
 
-  T* lookup(const string& ident, const string& wantedScopeName) {
+  virtual T* lookup(const string& ident, const string& wantedScopeName) {
     return currentScope()->lookup(ident, wantedScopeName);
   }
 
@@ -118,10 +133,26 @@ public:
   std::vector<LexicalScope*> scopeStack;
 };
 
+struct SymbolInfo {
+  ExprAST*           ast;
+  llvm::Value* value;
+
+  SymbolInfo(ExprAST* aast) : ast(aast), value(NULL) {}
+  SymbolInfo(llvm::Value* aval) : ast(NULL), value(aval) {}
+  SymbolInfo(ExprAST* aast, llvm::Value* aval)
+    : ast(aast), value(aval) {}
+};
+
 // {{{ |scope| maps names (var/fn) to llvm::Value*/llvm::Function*
-extern SymbolTable<llvm::Value> scope;
-extern SymbolTable<TypeAST> typeScope;
-extern SymbolTable<ExprAST> varScope;
+extern SymbolTable<SymbolInfo> gScope;
+extern SymbolTable<TypeAST> gTypeScope;
+
+llvm::Value* gScopeLookupValue(const std::string& str);
+ExprAST*     gScopeLookupAST(const std::string& str);
+
+void gScopeInsert(const std::string& str, llvm::Value* val);
+void gScopeInsert(const std::string& str, ExprAST* ast);
+
 // }}}
 
 } // namespace foster
@@ -131,8 +162,10 @@ extern SymbolTable<ExprAST> varScope;
 
 #include "FosterSymbolTableTraits-inl.h"
 
-using foster::scope;
-using foster::typeScope;
-using foster::varScope;
+using foster::gScope;
+using foster::gScopeLookupValue;
+using foster::gScopeLookupAST;
+using foster::gScopeInsert;
+using foster::gTypeScope;
 
 #endif // header guard

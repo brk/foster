@@ -74,6 +74,9 @@
 using namespace llvm;
 
 using foster::SourceRange;
+using foster::EDiag;
+
+namespace foster { struct ScopeInfo; }
 
 using std::string;
 using std::endl;
@@ -183,18 +186,19 @@ VariableAST* proto(TypeAST* retTy, const string& fqName,
 
 ExprAST* lookupOrCreateNamespace(ExprAST* ns, const string& part) {
   ExprAST* nsPart = ns->lookup(part, "");
-  if (!nsPart) {
-    NameResolverAST* nr = dynamic_cast<NameResolverAST*>(ns);
-    if (nr) {
-      return nr->newNamespace(part);
-    } else {
-      std::cerr << "Error: lookupOrCreateNamespace failed because "
-                << " ns did not contain an entry for '" << part << "'"
-                << " and ns was not a NameResolverAST*" << std::endl;
-    }
+  if (nsPart) {
+    return nsPart;
   }
 
-  return nsPart;
+  NameResolverAST* nr = dynamic_cast<NameResolverAST*>(ns);
+  if (nr) {
+    return nr->newNamespace(part);
+  } else {
+    EDiag() << "Error: lookupOrCreateNamespace failed because "
+            << " ns did not contain an entry for '" << part << "'"
+            << " and ns was not a NameResolverAST*";
+  }
+  return NULL;
 }
 
 std::set<string> globalNames;
@@ -206,7 +210,7 @@ void addToProperNamespace(VariableAST* var) {
   std::vector<string> parts;
   pystring::split(fqName, parts, ".");
 
-  ExprAST* ns = varScope.lookup(parts[0], "");
+  ExprAST* ns = gScopeLookupAST(parts[0]);
   if (!ns) {
     std::cerr << "Error: could not find root namespace for fqName "
               << fqName << std::endl;
@@ -232,7 +236,7 @@ void addToProperNamespace(VariableAST* var) {
 void createLLVMBitIntrinsics() {
   // Make the module heirarchy available to code referencing llvm.blah.blah.
   // (The NameResolverAST name is mostly a convenience for examining the AST).
-  varScope.insert("llvm", new NameResolverAST("llvm intrinsics"));
+  gScope.insert("llvm", new foster::SymbolInfo(new NameResolverAST("llvm intrinsics")));
 
   const unsigned i16_to_i64 = ((1<<4)|(1<<5)|(1<<6));
   const unsigned i8_to_i64 = ((1<<3)|i16_to_i64);
@@ -408,16 +412,17 @@ void putModuleMembersInScope(Module* m, Module* linkee) {
         ty = pty->getElementType();
       }
 
-      varScope.insert(name, new VariableAST(name, TypeAST::get(ty),
-                                  SourceRange::getEmptyRange()));
-      
       // Ensure that codegen for the given function finds the 'declare'
       // TODO make lazy prototype?
       Value* decl = linkee->getOrInsertFunction(
           llvm::StringRef(name),
           llvm::dyn_cast<llvm::FunctionType>(ty),
           f.getAttributes());
-      scope.insert(name, decl);
+
+      gScope.insert(name, new foster::SymbolInfo(
+                              new VariableAST(name, TypeAST::get(ty),
+                                              SourceRange::getEmptyRange()),
+                              decl));
     }
   }
 }
@@ -802,18 +807,18 @@ int main(int argc, char** argv) {
 
   {
     std::string err;
-    llvm::raw_fd_ostream f(dumpdirFile("varScope.dot").c_str(), err);
+    llvm::raw_fd_ostream f(dumpdirFile("gScope.dot").c_str(), err);
     if (err.empty()) {
-      llvm::WriteGraph(f, &varScope);
+      llvm::WriteGraph(f, &gScope);
     } else {
       foster::EDiag() << "no file to write varScope.dot";
     }
   }
   {
     std::string err;
-    llvm::raw_fd_ostream f(dumpdirFile("valScope.dot").c_str(), err);
+    llvm::raw_fd_ostream f(dumpdirFile("gTypeScope.dot").c_str(), err);
     if (err.empty()) {
-      llvm::WriteGraph(f, &scope);
+      llvm::WriteGraph(f, &gTypeScope);
     } else {
       foster::EDiag() << "no file to write valScope.dot";
     }
