@@ -557,17 +557,7 @@ void CodegenPass::visit(PrototypeAST* ast) {
     for (size_t i = 0; i != ast->inArgs.size(); ++i, ++AI) {
       AI->setName(ast->inArgs[i]->name);
 
-      std::cout << "559 inserting " << ast->inArgs[i]->name
-          << " to " << gScope._private_getCurrentScope()
-      //<< " to " << gScope._private_getCurrentScope()->getName()
-      << std::endl;
-
       gScopeInsert(ast->inArgs[i]->name, (AI));
-  #if 0
-      std::cout << "Fn param " << ast->inArgs[i]->name << " ; "
-                << ast->inArgs[i] << " has val " << ast->inArgs[i]->value
-                << ", associated with " << AI << std::endl;
-  #endif
     }
   }
 
@@ -636,16 +626,11 @@ void CodegenPass::visit(FnAST* ast) {
             << " of ast type " << *(ast->proto->inArgs[i]->type)
             << " and value type " << *(AI->getType()) << std::endl;
 #endif
-        std::cout << "640 inserting " << ast->proto->inArgs[i]->name << " to "
-              << gScope._private_getCurrentScope()->getName() << std::endl;
         gScopeInsert(ast->proto->inArgs[i]->name,
             storeAndMarkPointerAsGCRoot(AI));
       }
     }
   }
-
-  std::cout << "648 inserting " << ast->proto->name << " to "
-        << gScope._private_getCurrentScope()->getName() << std::endl;
 
   gScopeInsert(ast->proto->name, F);
   (ast->body)->accept(this);
@@ -672,8 +657,6 @@ void CodegenPass::visit(FnAST* ast) {
     gScope.popScope();
   }
 
-  std::cout << "676 inserting " << ast->proto->name << " to "
-        << gScope._private_getCurrentScope()->getName() << std::endl;
   gScopeInsert(ast->proto->name, F);
 
   if (RetVal) {
@@ -954,8 +937,6 @@ afterBB:
                                                ast->var->name);
 
     gScope.pushScope("for-range " + ast->var->name);
-    std::cout << "957 inserting " << ast->var->name << " to "
-          << gScope._private_getCurrentScope()->getName() << std::endl;
     gScopeInsert(ast->var->name, (pickvar));
 
     (ast->bodyExpr)->accept(this);
@@ -1458,9 +1439,6 @@ void CodegenPass::visit(CallAST* ast) {
       // This would have the additional benefit of working with anonymous
       // function pointer values e.g. from a lookup table.
       }
-
-      //std::cout << "codegen CallAST arg " << (i-1) << "; argty " << *(arg->type)
-      //          << " vs fn arg ty " << *(FT->getContainedType(i)) << std::endl;
     } else {
       clo = dynamic_cast<ClosureAST*>(arg);
     }
