@@ -33,12 +33,31 @@ class SymbolTable : public NameResolver<T> {
 public:
   class LexicalScope : public NameResolver<T> {
     string name;
+    // This reference is threaded through all newly-created scopes.
+    std::vector<LexicalScope*>& parentSymbolTableScopeList;
     typedef std::map<string, T*> Map;
     Map val_of;
+
+    LexicalScope(string name, LexicalScope* parent)
+      : name(name),
+        parentSymbolTableScopeList(parent->parentSymbolTableScopeList),
+        parent(parent) {
+      parentSymbolTableScopeList.push_back(this);
+    }
   public:
+    // This constructor is needed to create the root scope,
+    // where we have no non-NULL parent scope to initialize from.
+    LexicalScope(string name, std::vector<LexicalScope*>& scopes)
+      : name(name), parentSymbolTableScopeList(scopes), parent(NULL) {
+      parentSymbolTableScopeList.push_back(this);
+    }
+
+    LexicalScope* newNestedScope(const string& name) {
+      return new LexicalScope(name, this);
+    }
+
     LexicalScope* parent;
     
-    LexicalScope(string name, LexicalScope* parent) : name(name), parent(parent) {}
     virtual ~LexicalScope() {}
 
     T* insert(const string& ident, T* V) {
@@ -90,8 +109,7 @@ public:
   };
 
   SymbolTable() {
-    pushExistingScope(new LexicalScope("*", NULL));
-    _private_allScopes.push_back(currentScope());
+    pushExistingScope(new LexicalScope("*", _private_allScopes));
   }
 
   virtual ~SymbolTable() {}
@@ -105,23 +123,19 @@ public:
 
   /// Creates and returns a new scope within the current scope.
   LexicalScope* pushScope(string scopeName) {
-    currentScope() = new LexicalScope(scopeName, currentScope());
-    _private_allScopes.push_back(currentScope());
-    return currentScope();
+    return currentScope() = currentScope()->newNestedScope(scopeName);
   }
 
   /// Returns to the current scope's parent,
   /// undoing the effect of pushScope().
   LexicalScope* popScope() {
-    currentScope() = currentScope()->parent;
-    return currentScope();
+    return currentScope() = currentScope()->parent;
   }
 
   /// Creates a new scope chain, with the root scope node as its parent.
   /// NOTE: the inverse operation is popExistingScope(), not popScope()!
   LexicalScope* newScope(string scopeName) {
-    scopeStack.push_back(new LexicalScope(scopeName, getRootScope()));
-    _private_allScopes.push_back(currentScope());
+    scopeStack.push_back(getRootScope()->newNestedScope(scopeName));
     return currentScope();
   }
 

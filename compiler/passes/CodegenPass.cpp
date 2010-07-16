@@ -429,8 +429,7 @@ void CodegenPass::visit(VariableAST* ast) {
   } else {
     ast->value = gScopeLookupValue(ast->name);
     if (!ast->value) {
-      EDiag() << "looking up variable " << ast->name << " in scope "
-              << gScope._private_getCurrentScope()->getName() << ", got "
+      EDiag() << "looking up variable " << ast->name << ", got "
               << str(ast->value) << show(ast);
       gScope.dump(std::cout);
     }

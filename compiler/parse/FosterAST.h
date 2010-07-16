@@ -91,7 +91,7 @@ T getSaturating(llvm::Value* v) {
 ///////////////////////////////////////////////////////////
 
 struct ExprAST : public foster::NameResolver<ExprAST> {
-  typedef foster::SymbolTable<ExprAST>::LexicalScope ScopeType;
+  typedef foster::SymbolTable<foster::SymbolInfo>::LexicalScope ScopeType;
 
   ExprAST* parent;
   std::vector<ExprAST*> parts;
@@ -128,10 +128,10 @@ struct BinaryExprAST : public ExprAST {
 struct NameResolverAST : public ExprAST {
   ExprAST::ScopeType* scope;
 
-  explicit NameResolverAST(const std::string& name)
-      : ExprAST(foster::SourceRange::getEmptyRange()) {
-    // TODO these scopes should integrate with gScope
-    scope = new ScopeType(name, NULL);
+  explicit NameResolverAST(const std::string& name,
+                           ExprAST::ScopeType* parentScope)
+      : ExprAST(foster::SourceRange::getEmptyRange()),
+        scope(parentScope->newNestedScope(name)) {
   }
   virtual ~NameResolverAST() { }
   virtual std::ostream& operator<<(std::ostream& out) const {
@@ -141,16 +141,19 @@ struct NameResolverAST : public ExprAST {
     std::cerr << "Visitor called on NameResolverAST! This is probably not desired..." << std::endl;
   }
   NameResolverAST* newNamespace(const std::string& name) {
-    NameResolverAST* nu = new NameResolverAST(name);
-    scope->insert(name, nu);
+    NameResolverAST* nu = new NameResolverAST(name, scope);
+    scope->insert(name, new foster::SymbolInfo(nu));
     return nu;
   }
   virtual ExprAST* lookup(const string& name, const string& meta) {
-    return scope->lookup(name, meta);
+    foster::SymbolInfo* info = scope->lookup(name, meta);
+    return info ? info->ast : NULL;
   }
   // TODO add wrapper to distinguish qualified from unqualified strings
   virtual ExprAST* insert(const string& fullyQualifiedName, VariableAST* var) {
-    return scope->insert(fullyQualifiedName, (ExprAST*)(var));
+    foster::SymbolInfo* info = scope->insert(fullyQualifiedName,
+                                 new foster::SymbolInfo((ExprAST*)var));
+    return info ? info->ast : NULL;
   }
 };
 

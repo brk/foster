@@ -236,7 +236,9 @@ void addToProperNamespace(VariableAST* var) {
 void createLLVMBitIntrinsics() {
   // Make the module heirarchy available to code referencing llvm.blah.blah.
   // (The NameResolverAST name is mostly a convenience for examining the AST).
-  gScope.insert("llvm", new foster::SymbolInfo(new NameResolverAST("llvm intrinsics")));
+  gScope.insert("llvm", new foster::SymbolInfo(
+                           new NameResolverAST("llvm intrinsics",
+                                               gScope.getRootScope())));
 
   const unsigned i16_to_i64 = ((1<<4)|(1<<5)|(1<<6));
   const unsigned i8_to_i64 = ((1<<3)|i16_to_i64);
