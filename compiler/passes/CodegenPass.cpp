@@ -446,6 +446,7 @@ void CodegenPass::visit(VariableAST* ast) {
   if (!ast->value) {
     EDiag() << "Unknown variable name " << ast->name << " in CodegenPass"
             << show(ast);
+    exit(2);
   }
 }
 
