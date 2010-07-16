@@ -712,7 +712,7 @@ int main(int argc, char** argv) {
   
   createLLVMBitIntrinsics();
 
-  ExprAST* exprAST = ExprAST_from(langAST.tree, false);
+  ExprAST* exprAST = parseTopLevel(langAST.tree);
 
   { ScopedTimer timer(statFileIOMs);
   if (optDumpASTs) {

@@ -51,6 +51,7 @@ string str(pANTLR3_COMMON_TOKEN tok) {
 /////////////////////////////////////////////////////////////////////
 
 void display_pTree(pTree t, int nspaces);
+ExprAST* ExprAST_from(pTree tree, bool infn);
 
 typedef void                  (*setTokenBoundariesFunc)
   (struct ANTLR3_BASE_TREE_ADAPTOR_struct * adaptor, void * t,
@@ -496,14 +497,20 @@ FnAST* parseFn(string defaultSymbolTemplate, pTree tree, bool fnMeansClosure) {
   return buildFn(proto, child(tree, 3));
 }
 
-// ExprAST_from() is straight-up recursive, and uses varScope and typeScope
-// to keep track of lexical scoping for types and variables, respectively.
+// ExprAST_from() is straight-up recursive, and uses gScope and gTypeScope
+// to keep track of lexical scoping for variables and types, respectively.
 // This works wonderfully for function bodies, where variables must appear
 // in topologically sorted order. In order to allow functions at the top-level
 // to appear in unsorted order, we have to separate the extraction of function
-// prototypes (and insertion of said name/proto pair into the varScope symbol
+// prototypes (and insertion of said name/proto pair into the gScope symbol
 // table) from the actual parsing of the function body.
 ExprAST* parseTopLevel(pTree tree) {
+  // The top level is composed of:
+  // * Type definitions, such as
+  //        type node = tuple { ?ref node, i32 }
+  // * Function definitions, such as
+  //        f = fn () { 0 }
+
   std::vector<pTree> pendingParseTrees(getChildCount(tree));
   std::vector<ExprAST*> parsedExprs(getChildCount(tree));
   // forall i, exprs[i] == pendingParseTrees[i] == NULL
@@ -534,12 +541,11 @@ ExprAST* parseTopLevel(pTree tree) {
       }
     } else {
       parsedExprs[i] = ExprAST_from(c, false);
-      pendingParseTrees[i] = NULL;
     }
   }
 
-  // forall i, either exprs[i] == NULL && pendingParseTrees[i] != NULL
-  //              or  exprs[i] != NULL && pendingParseTrees[i] == NULL
+  // forall i, either parsedExprs[i] == NULL && protos[i] != NULL
+  //              or  parsedExprs[i] != NULL
 
   for (size_t i = 0; i < pendingParseTrees.size(); ++i) {
     if (!parsedExprs[i]) {
@@ -548,6 +554,7 @@ ExprAST* parseTopLevel(pTree tree) {
         pTree rval = child(c, 1);
         parsedExprs[i] = buildFn(proto, child(rval, 3));
       } else if (typeOf(c) != TYPEDEFN) {
+        ASSERT(false) << "no proto, not a type defn, no parsed expr?!?";
         parsedExprs[i] = ExprAST_from(c, false);
       }
     }
@@ -784,18 +791,14 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
   }
 
   if (token == EXPRS || token == SEQ) {
-    if (fnMeansClosure) {
-      Exprs exprs;
-      for (size_t i = 0; i < getChildCount(tree); ++i) {
-        ExprAST* ast = ExprAST_from(child(tree, i), fnMeansClosure);
-        if (ast != NULL) {
-          exprs.push_back(ast);
-        }
+    Exprs exprs;
+    for (size_t i = 0; i < getChildCount(tree); ++i) {
+      ExprAST* ast = ExprAST_from(child(tree, i), fnMeansClosure);
+      if (ast != NULL) {
+        exprs.push_back(ast);
       }
-      return new SeqAST(exprs, sourceRange);
-    } else {
-      return parseTopLevel(tree);
     }
+    return new SeqAST(exprs, sourceRange);
   }
 
   if (token == INT) {
@@ -894,6 +897,11 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
                          ExprAST_from(child(tree, 2), fnMeansClosure),
                          sourceRange);
   }
+
+  // This could be either an anonymous function, in which case
+  // fnMeansClosure will be true, or it could be a function with
+  // an embedded name like fn "main" () { blah }, and fnMeansClosure
+  // will be false.
   if (token == FN) {
     // for now, this "<anon_fn" prefix is used for closure conversion later on
     FnAST* fn = parseFn("<anon_fn_%d>", tree, fnMeansClosure);
