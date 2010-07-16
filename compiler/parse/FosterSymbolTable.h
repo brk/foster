@@ -40,7 +40,7 @@ public:
     
     LexicalScope(string name, LexicalScope* parent) : name(name), parent(parent) {}
     virtual ~LexicalScope() {}
-    
+
     T* insert(const string& ident, T* V) {
       T* old = val_of[ident];
       if (old) {

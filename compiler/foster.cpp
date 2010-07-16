@@ -782,7 +782,9 @@ int main(int argc, char** argv) {
   }
 
   { ScopedTimer timer(statClosureConversionMs);
-    ClosureConversionPass p(globalNames); exprAST->accept(&p);
+    ClosureConversionPass p(globalNames,
+                            dynamic_cast<SeqAST*>(exprAST));
+    exprAST->accept(&p);
   }
 
   { ScopedTimer timer(statFileIOMs);

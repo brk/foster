@@ -13,7 +13,19 @@
 struct ClosureConversionPass : public FosterASTVisitor {
   #include "parse/FosterASTVisitor.decls.inc.h"
   std::set<std::string> globalNames;
-  ClosureConversionPass(const std::set<std::string>& globalNames) : globalNames(globalNames) {}
+  SeqAST* toplevel;
+
+  std::vector<FnAST*> newlyHoistedFunctions;
+  ClosureConversionPass(const std::set<std::string>& globalNames,
+                        SeqAST* toplevel)
+     : globalNames(globalNames), toplevel(toplevel) {}
+
+  ~ClosureConversionPass() {
+    // Hoist newly-closed function definitions to the top level
+    for (size_t i = 0; i < newlyHoistedFunctions.size(); ++i) {
+      toplevel->parts.push_back( newlyHoistedFunctions[i] );
+    }
+  }
 };
 
 #endif // header guard

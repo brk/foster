@@ -51,8 +51,8 @@ void foundFreeVariableIn(VariableAST* var, FnAST* scope) {
   } while (scope != NULL && boundVariables[scope].count(var) == 0);
 }
 
-void performClosureConversion(ClosureAST* ast);
-void lambdaLiftAnonymousFunction(FnAST* ast);
+void performClosureConversion(ClosureAST* ast, ClosureConversionPass* ccp);
+void lambdaLiftAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp);
 bool isAnonymousFunction(FnAST* ast);
 
 void ClosureConversionPass::visit(BoolAST* ast)                { return; }
@@ -93,7 +93,7 @@ void ClosureConversionPass::visit(FnAST* ast)                  {
     }
 
     if (ast->lambdaLiftOnly) {
-      lambdaLiftAnonymousFunction(ast);
+      lambdaLiftAnonymousFunction(ast, this);
     } else {
       std::cout << "Anon function not wanting lambda lifting: "
                 << ast->proto->name << std::endl;
@@ -101,21 +101,12 @@ void ClosureConversionPass::visit(FnAST* ast)                  {
   }
 }
 
-#if 0
-void ClosureConversionPass::visit(ClosureTypeAST* ast) {
-  std::cout << "ClosureConversionPass::visit(ClosureTypeAST* ast" << std::endl;
-  onVisitChild(ast, ast->proto);
-}
-#endif
-
 void ClosureConversionPass::visit(ClosureAST* ast) {
   if (ast->hasKnownEnvironment) {
     visitChildren(ast);
   } else {
-    //std::cout << "ClosureConversionPass::visit(ClosureAST* ast fn...\n";
-    //std::cout << "\tproto: " << *(ast->fn->proto) << std::endl;
     ast->fn->accept(this);
-    performClosureConversion(ast);
+    performClosureConversion(ast, this);
   }
 }
 void ClosureConversionPass::visit(IfExprAST* ast)              {
@@ -180,29 +171,17 @@ void appendParameter(CallAST* call, VariableAST* var) {
 bool isAnonymousFunction(FnAST* ast) {
   string& name = ast->proto->name;
   if (name.find("<anon_fn") == 0) {
-    std::cout << "\t\tClosure conversion found an anonymous function: " << name << std::endl;
+    std::cout << "\t\tClosure conversion found an anonymous function: " << name << "\n\n";
     ast->wasNested = true;
     return true;
   } else { return false; }
 }
 
-ExprAST* getTopLevel(ExprAST* ast) {
-  while (ast->parent) ast = ast->parent;
-  return ast;
-}
+void hoistAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) {
+  // TODO support mutually recursive function...
+  ccp->newlyHoistedFunctions.push_back(ast);
 
-void hoistAnonymousFunction(FnAST* ast) {
-  // Hoist newly-closed function definitions to the top level
-  ExprAST* toplevel = getTopLevel(ast);
-  if (SeqAST* topseq = dynamic_cast<SeqAST*>(toplevel)) {
-    // TODO support mutually recursive function...
-    topseq->parts.push_back(ast);
-    //scope.insert(ast->proto->name, ast->value);
-  } else {
-    std::cerr << "ClosureConversionPass: Uh oh, root expression wasn't a seq!" << std::endl;
-  }
-
-  ast->parent = toplevel;
+  ast->parent = ccp->toplevel;
 
   {
     // Alter the symbol table structure to reflect the fact that we're
@@ -213,13 +192,12 @@ void hoistAnonymousFunction(FnAST* ast) {
     // be referenced from other functions.
     CodegenPass cp; ast->proto->accept(&cp);
 
-    std::cout << "Inserting newly-codegen'd value for "
-        << ast->proto->name << " to scope " << gScope._private_getCurrentScope()->getName() << std::endl;
     gScopeInsert(ast->proto->name, ast->proto->value);
   }
 }
 
-void performClosureConversion(ClosureAST* closure) {
+void performClosureConversion(ClosureAST* closure,
+                              ClosureConversionPass* ccp) {
   FnAST* ast = closure->fn;
   std::cout << "Closure converting function" << *ast << std::endl;
   std::cout << "Type: " << *(ast->type) << std::endl;
@@ -292,10 +270,10 @@ void performClosureConversion(ClosureAST* closure) {
 
   closure->parts = envExprs;
   closure->hasKnownEnvironment = true;
-  hoistAnonymousFunction(ast);
+  hoistAnonymousFunction(ast, ccp);
 }
 
-void lambdaLiftAnonymousFunction(FnAST* ast) {
+void lambdaLiftAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) {
   set<VariableAST*>& freeVars = freeVariables[ast];
   CallSet& calls = callsOf[ast];
 
@@ -339,8 +317,6 @@ void lambdaLiftAnonymousFunction(FnAST* ast) {
     }
   }
 
-/* TODO trying to lift closures breaks, hard, -- need to figure out why.
-  std::cout << "# calls for " << ast->proto->name << " is " << calls.size() << std::endl;
   VariableAST* varReferringToFunction = new VariableAST(
                                     ast->proto->name,
                                     ast->proto->type,
@@ -349,15 +325,10 @@ void lambdaLiftAnonymousFunction(FnAST* ast) {
   // Rewrite external calls to refer to the function by name.
   for (CallSet::iterator it = calls.begin(); it != calls.end(); ++it) {
     CallAST* call = *it;
-    if (call->parts[0] == ast) {
-      call->parts[0] = varReferringToFunction;
-    } else {
-      EDiag() << "ast: " << show(ast);
-      EDiag() << "base:" << show(call->parts[0]) << str(call->parts[0]);
-    }
+    ASSERT(call->parts[0] = ast);
+    call->parts[0] = varReferringToFunction;
   }
 
   // And move the now-rootless function to the top level, where it belongs.
-  hoistAnonymousFunction(ast);
-  */
+  hoistAnonymousFunction(ast, ccp);
 }

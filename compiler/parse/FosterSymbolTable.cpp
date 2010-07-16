@@ -12,7 +12,7 @@ namespace std {
       if (info->ast) out << ";\tast->type: " << info->ast->type;
       if (info->ast) out << ";\tast->value: " << info->ast->value;
       out << ";\tvalue: " << info->value << "> ";
-      return out << std::endl;
+      return out;
     } else {
       return out << "<no info!> " << std::endl;
     }

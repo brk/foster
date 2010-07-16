@@ -429,7 +429,8 @@ void CodegenPass::visit(VariableAST* ast) {
   } else {
     ast->value = gScopeLookupValue(ast->name);
     if (!ast->value) {
-      EDiag() << "looking up variable " << ast->name << " in scope, got "
+      EDiag() << "looking up variable " << ast->name << " in scope "
+              << gScope._private_getCurrentScope()->getName() << ", got "
               << str(ast->value) << show(ast);
       gScope.dump(std::cout);
     }
@@ -608,6 +609,8 @@ void CodegenPass::visit(FnAST* ast) {
   BasicBlock* BB = BasicBlock::Create(getGlobalContext(), "entry", F);
   builder.SetInsertPoint(BB);
 
+  gScopeInsert(ast->proto->name, F);
+
   if (ast->proto->scope) {
     gScope.pushExistingScope(ast->proto->scope);
   } else {
@@ -632,7 +635,6 @@ void CodegenPass::visit(FnAST* ast) {
     }
   }
 
-  gScopeInsert(ast->proto->name, F);
   (ast->body)->accept(this);
   Value* RetVal = ast->body->value;
   if (RetVal == NULL) {
@@ -656,8 +658,6 @@ void CodegenPass::visit(FnAST* ast) {
   } else {
     gScope.popScope();
   }
-
-  gScopeInsert(ast->proto->name, F);
 
   if (RetVal) {
     if (returningVoid) {

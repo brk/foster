@@ -424,8 +424,7 @@ PrototypeAST* getFnProto(string name,
 
   VariableAST* fnRef = new VariableAST(proto->name, proto->type, sourceRange);
 
-  // We may or may not be inserting into the root scope node.
-  gScope.insert(proto->name, new foster::SymbolInfo(fnRef));
+  gScope.getRootScope()->insert(proto->name, new foster::SymbolInfo(fnRef));
 
   return proto;
 }
