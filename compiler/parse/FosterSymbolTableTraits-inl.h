@@ -46,8 +46,8 @@ struct GraphTraits<FOSTER_SYMTAB*>
     return f->_private_getCurrentScope();
   }
 
-  typedef std::vector<FOSTER_SYMTAB::LexicalScope*>::iterator
-                                                     nodes_iterator;
+  typedef std::set<FOSTER_SYMTAB::LexicalScope*>::iterator
+                                            nodes_iterator;
   static nodes_iterator    nodes_begin(FOSTER_SYMTAB* f) {
     return f->_private_allScopes.begin(); }
   static nodes_iterator    nodes_end  (FOSTER_SYMTAB* f) {
@@ -130,8 +130,8 @@ struct GraphTraits<FOSTER_SYMTAB*>
     return f->_private_getCurrentScope();
   }
 
-  typedef std::vector<FOSTER_SYMTAB::LexicalScope*>::iterator
-                                                     nodes_iterator;
+  typedef std::set<FOSTER_SYMTAB::LexicalScope*>::iterator
+                                            nodes_iterator;
   static nodes_iterator    nodes_begin(FOSTER_SYMTAB* f) {
     return f->_private_allScopes.begin(); }
   static nodes_iterator    nodes_end  (FOSTER_SYMTAB* f) {

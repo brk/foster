@@ -11,6 +11,7 @@
 
 #include <string>
 #include <map>
+#include <set>
 #include <vector>
 #include <iostream>
 
@@ -34,22 +35,27 @@ public:
   class LexicalScope : public NameResolver<T> {
     string name;
     // This reference is threaded through all newly-created scopes.
-    std::vector<LexicalScope*>& parentSymbolTableScopeList;
+    std::set<LexicalScope*>& parentSymbolTableScopes;
     typedef std::map<string, T*> Map;
     Map val_of;
 
     LexicalScope(string name, LexicalScope* parent)
       : name(name),
-        parentSymbolTableScopeList(parent->parentSymbolTableScopeList),
+        parentSymbolTableScopes(parent->parentSymbolTableScopes),
         parent(parent) {
-      parentSymbolTableScopeList.push_back(this);
+      if (parentSymbolTableScopes.count(parent) == 1
+          && name != "llvm intrinsics") {
+        // Don't include LLVM intrinsics in DOT graphs of our
+        // symbol table, since they make it large and unwieldy.
+        parentSymbolTableScopes.insert(this);
+      }
     }
   public:
     // This constructor is needed to create the root scope,
     // where we have no non-NULL parent scope to initialize from.
-    LexicalScope(string name, std::vector<LexicalScope*>& scopes)
-      : name(name), parentSymbolTableScopeList(scopes), parent(NULL) {
-      parentSymbolTableScopeList.push_back(this);
+    LexicalScope(string name, std::set<LexicalScope*>& scopes)
+      : name(name), parentSymbolTableScopes(scopes), parent(NULL) {
+      parentSymbolTableScopes.insert(this);
     }
 
     LexicalScope* newNestedScope(const string& name) {
@@ -158,7 +164,7 @@ public:
 
   // need to expose these as public for GraphTraits and friends
   LexicalScope* _private_getCurrentScope() { return currentScope(); }
-  std::vector<LexicalScope*> _private_allScopes;
+  std::set<LexicalScope*> _private_allScopes;
 
   private:
   LexicalScope*& currentScope() { return scopeStack.back(); }
