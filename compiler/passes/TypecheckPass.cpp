@@ -164,11 +164,9 @@ void TypecheckPass::visit(PrototypeAST* ast) {
   if (!areNamesDisjoint(ast->inArgs)) {
     EDiag d; d << "formal argument names for function "
               << ast->name << " are not disjoint";
-/*
     for (size_t i = 0; i < ast->inArgs.size(); ++i) {
       d << "\n\t" << ast->inArgs[i]->name;
     }
-*/
       d       << show(ast);
     return;
   }

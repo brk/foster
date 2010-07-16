@@ -10,12 +10,6 @@
 
 struct CodegenPass : public FosterASTVisitor {
   #include "parse/FosterASTVisitor.decls.inc.h"
-
-  // The insertPointStack is used to tranparently perform function hoisting
-  // while doing our normal codegen tree traversal. Specifically, this stack
-  // allows us to return to the "parent" function context after finishing
-  // codegenning a nested child function's body.
-  std::stack<llvm::BasicBlock*> insertPointStack;
 };
 
 #endif // header guard

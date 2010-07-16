@@ -602,10 +602,7 @@ void CodegenPass::visit(FnAST* ast) {
 
   F->setGC("shadow-stack");
 
-  this->insertPointStack.push(builder.GetInsertBlock());
-
-  std::cout << ast->proto->name << ": insert point stack depth: " << this->insertPointStack.size() << std::endl;
-
+  BasicBlock* prevBB = builder.GetInsertBlock();
   BasicBlock* BB = BasicBlock::Create(getGlobalContext(), "entry", F);
   builder.SetInsertPoint(BB);
 
@@ -675,10 +672,10 @@ void CodegenPass::visit(FnAST* ast) {
               << "' retval creation failed" << show(ast);
   }
 
-  // Restore the insertion point from the previous function, if there was one.
-  BasicBlock* prevBlock = this->insertPointStack.top(); this->insertPointStack.pop();
-  if (prevBlock) {
-    builder.SetInsertPoint(prevBlock);
+  // Restore the insertion point, if there was one.
+  std::cout << "prevBB: " << prevBB << " vs current " << builder.GetInsertBlock() << " for fn " << ast->proto->name << std::endl;
+  if (prevBB) {
+    builder.SetInsertPoint(prevBB);
   }
 }
 
@@ -1407,7 +1404,6 @@ void CodegenPass::visit(CallAST* ast) {
                                         TypeAST::get(expectedType))) {
           if (isVoid(expectedFnTy->getReturnType()) && !isVoid(llvmFnTy)) {
             arg = getVoidReturningVersionOf(arg, llvmFnTy);
-            { TypecheckPass tp; arg->accept(&tp); }
           }
         }
       } else {

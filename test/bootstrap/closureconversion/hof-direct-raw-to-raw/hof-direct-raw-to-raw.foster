@@ -1,8 +1,15 @@
+g_inner = fn () { 0 }
+g = fn () {
+  c_invoke_fnptr_void(g_inner)
+  3
+}
+
 f = fn () {
-  print_i32(3)
+  print_i32(g())
 }
 
 fn "main" () {
   expect_i32(3)
   c_invoke_fnptr_void(f)
 }
+
