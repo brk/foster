@@ -423,9 +423,7 @@ PrototypeAST* getFnProto(string name,
                               sourceRange);
   { TypecheckPass tp; proto->accept(&tp); }
 
-  VariableAST* fnRef = new VariableAST(proto->name, proto->type, sourceRange);
-
-  gScope.getRootScope()->insert(proto->name, new foster::SymbolInfo(fnRef));
+  gScope.getRootScope()->insert(proto->name, new foster::SymbolInfo(proto));
 
   return proto;
 }
@@ -536,9 +534,14 @@ ExprAST* parseTopLevel(pTree tree) {
         // (FN 0:NAME 1:IN 2:OUT 3:BODY)
         string name = parseFnName(textOf(child(lval, 0)), rval);
         protos[c] = getFnProto(name, true, child(rval, 1), child(rval, 2));
+        std::cout << "proto " << protos[c]->name << std::endl;
       } else {
         cerr << "Not assigning top-level function to a name?" << endl;
       }
+    } else if (token == FN) {
+      // (FN 0:NAME 1:IN 2:OUT 3:BODY)
+      string name = parseFnName(textOf(child(c, 0)), c);
+      protos[c] = getFnProto(name, true, child(c, 1), child(c, 2));
     } else {
       parsedExprs[i] = ExprAST_from(c, false);
     }
@@ -551,8 +554,10 @@ ExprAST* parseTopLevel(pTree tree) {
     if (!parsedExprs[i]) {
       pTree c = pendingParseTrees[i];
       if (PrototypeAST* proto = protos[c]) {
-        pTree rval = child(c, 1);
-        parsedExprs[i] = buildFn(proto, child(rval, 3));
+        pTree fntree =   (typeOf(c) == FNDEF)   ?   child(c, 1)
+                       : (typeOf(c) == FN   )   ?   c
+                       :                            NULL;
+        parsedExprs[i] = buildFn(proto, child(fntree, 3));
       } else if (typeOf(c) != TYPEDEFN) {
         ASSERT(false) << "no proto, not a type defn, no parsed expr?!?";
         parsedExprs[i] = ExprAST_from(c, false);
@@ -563,6 +568,9 @@ ExprAST* parseTopLevel(pTree tree) {
   std::vector<ExprAST*> exprs;
   for (size_t i = 0; i < parsedExprs.size(); ++i) {
     if (parsedExprs[i]) {
+      if (FnAST* fn = dynamic_cast<FnAST*>(parsedExprs[i])) {
+        std::cout << "fn " << fn->proto->name << std::endl;
+      }
       exprs.push_back(parsedExprs[i]);
     }
   }

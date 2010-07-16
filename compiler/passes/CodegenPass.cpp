@@ -1161,8 +1161,15 @@ const FunctionType* tryExtractFunctionPointerType(Value* FV) {
 
 FnAST* getVoidReturningVersionOf(ExprAST* arg, const llvm::FunctionType* fnty) {
   static std::map<string, FnAST*> voidReturningVersions;
+  string protoName;
   if (VariableAST* var = dynamic_cast<VariableAST*>(arg)) {
-    string fnName = "__voidReturningVersionOf__" + var->name;
+    protoName = var->name;
+  } else if (PrototypeAST* proto = dynamic_cast<PrototypeAST*>(arg)) {
+    protoName = proto->name;
+  }
+
+  if (!protoName.empty()) {
+    string fnName = "__voidReturningVersionOf__" + protoName;
     if (FnAST* exists = voidReturningVersions[fnName]) {
       return exists;
     }
@@ -1270,8 +1277,15 @@ llvm::Value* getTrampolineForClosure(ClosureAST* cloAST) {
 
 FnAST* getClosureVersionOf(ExprAST* arg, FnTypeAST* fnty) {
   static std::map<string, FnAST*> closureVersions;
+  string protoName;
   if (VariableAST* var = dynamic_cast<VariableAST*>(arg)) {
-    string fnName = "__closureVersionOf__" + var->name;
+    protoName = var->name;
+  } else if (PrototypeAST* proto = dynamic_cast<PrototypeAST*>(arg)) {
+    protoName = proto->name;
+  }
+
+  if (!protoName.empty()) {
+    string fnName = "__closureVersionOf__" + protoName;
     if (FnAST* exists = closureVersions[fnName]) {
       return exists;
     }
@@ -1306,8 +1320,8 @@ FnAST* getClosureVersionOf(ExprAST* arg, FnTypeAST* fnty) {
     closureVersions[fnName] = fn;
     return fn;
   } else {
-    EDiag() << "getClosureVersionOf() expected a variable naming a fn, "
-            << "but got" << show(arg);
+    EDiag() << "getClosureVersionOf() expected a variable or prototype of a fn, "
+            << "but got" << str(arg) << show(arg);
     exit(1);
   }
   return NULL;

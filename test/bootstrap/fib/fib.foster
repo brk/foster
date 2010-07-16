@@ -1,5 +1,3 @@
-fib = fn (x : i32) { if x < 3 then { 1 } else { fib(x - 1) + fib(x - 2) } }
-
 // http://www.research.att.com/~njas/sequences/table?a=45&fmt=4
 fn "main" () {
   expect_i32(55)
@@ -11,3 +9,5 @@ fn "main" () {
   expect_i32(832040)
   print_i32(fib(30))
 }
+
+fib = fn (x : i32) { if x < 3 then { 1 } else { fib(x - 1) + fib(x - 2) } }
