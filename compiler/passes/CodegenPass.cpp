@@ -595,6 +595,7 @@ void CodegenPass::visit(FnAST* ast) {
   if (ast->value) return;
 
   ASSERT(ast->body != NULL);
+  ASSERT(ast->proto->scope) << " no scope for " << ast->proto->name;
 
   (ast->proto)->accept(this);
   Function* F = dyn_cast<Function>(ast->proto->value);
@@ -607,12 +608,7 @@ void CodegenPass::visit(FnAST* ast) {
   builder.SetInsertPoint(BB);
 
   gScopeInsert(ast->proto->name, F);
-
-  if (ast->proto->scope) {
-    gScope.pushExistingScope(ast->proto->scope);
-  } else {
-    gScope.pushScope(std::string("fn " + ast->proto->name));
-  }
+  gScope.pushExistingScope(ast->proto->scope);
 
   // If the body of the function might allocate memory, the first thing
   // the function should do is create stack slots/GC roots to hold
@@ -650,11 +646,7 @@ void CodegenPass::visit(FnAST* ast) {
     RetVal = builder.CreateLoad(RetVal, false, "structPtrToStruct");
   }
 
-  if (ast->proto->scope) {
-    gScope.popExistingScope(ast->proto->scope);
-  } else {
-    gScope.popScope();
-  }
+  gScope.popExistingScope(ast->proto->scope);
 
   if (RetVal) {
     if (returningVoid) {
@@ -673,7 +665,6 @@ void CodegenPass::visit(FnAST* ast) {
   }
 
   // Restore the insertion point, if there was one.
-  std::cout << "prevBB: " << prevBB << " vs current " << builder.GetInsertBlock() << " for fn " << ast->proto->name << std::endl;
   if (prevBB) {
     builder.SetInsertPoint(prevBB);
   }
@@ -1190,9 +1181,13 @@ FnAST* getVoidReturningVersionOf(ExprAST* arg, const llvm::FunctionType* fnty) {
       inArgs.push_back(a);
       callArgs.push_back(a);
     }
+
+    foster::SymbolTable<foster::SymbolInfo>::LexicalScope* protoScope =
+                                    gScope.newScope("fn proto " + fnName);
+    gScope.popExistingScope(protoScope);
     PrototypeAST* proto = new PrototypeAST(
                                 TypeAST::get(fnty->getVoidTy(getGlobalContext())),
-                                fnName, inArgs,
+                                fnName, inArgs, protoScope,
                                 SourceRange::getEmptyRange());
     ExprAST* body = new CallAST(arg, callArgs, SourceRange::getEmptyRange());
     FnAST* fn = new FnAST(proto, body, SourceRange::getEmptyRange());
@@ -1300,8 +1295,12 @@ FnAST* getClosureVersionOf(ExprAST* arg, FnTypeAST* fnty) {
       callArgs.push_back(a);
     }
 
+    foster::SymbolTable<foster::SymbolInfo>::LexicalScope* protoScope =
+                                    gScope.newScope("fn proto " + fnName);
+    gScope.popExistingScope(protoScope);
     PrototypeAST* proto = new PrototypeAST(fnty->getReturnType(),
-                               fnName, inArgs, SourceRange::getEmptyRange());
+                               fnName, inArgs, protoScope,
+                                               SourceRange::getEmptyRange());
     ExprAST* body = new CallAST(arg, callArgs, SourceRange::getEmptyRange());
     FnAST* fn = new FnAST(proto, body, SourceRange::getEmptyRange());
     { TypecheckPass tp; CodegenPass cp; fn->accept(&tp); fn->accept(&cp); }
