@@ -78,9 +78,8 @@ void ReplaceExprTransform::visit(ClosureAST* ast) {
   this->newChild = rewrite(ast);
 }
 void ReplaceExprTransform::visit(ModuleAST* ast) {
-  for (size_t i = 0; i < ast->functions.size(); ++i) {
-    onVisitChild((ExprAST*)(NULL),
-            reinterpret_cast<ExprAST**>(&ast->functions[i]));
+  for (size_t i = 0; i < ast->parts.size(); ++i) {
+    onVisitChild(ast, &ast->parts[i]);
   }
   // No replacing entire modules...
 }

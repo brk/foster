@@ -33,8 +33,8 @@ void AddParentLinksPass::visit(ClosureAST* ast) {
   }
 }
 void AddParentLinksPass::visit(ModuleAST* ast)              {
-  for (size_t i = 0; i < ast->functions.size(); ++i) {
-    onVisitChild(NULL, ast->functions[i]);
+  for (size_t i = 0; i < ast->parts.size(); ++i) {
+    onVisitChild(NULL, ast->parts[i]);
   }
 }
 void AddParentLinksPass::visit(IfExprAST* ast)              {

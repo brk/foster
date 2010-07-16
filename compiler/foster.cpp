@@ -238,7 +238,8 @@ void createLLVMBitIntrinsics() {
   // (The NameResolverAST name is mostly a convenience for examining the AST).
   gScope.insert("llvm", new foster::SymbolInfo(
                            new NameResolverAST("llvm intrinsics",
-                                               gScope.getRootScope())));
+                                               gScope.getRootScope(),
+                                       foster::SourceRange::getEmptyRange())));
 
   const unsigned i16_to_i64 = ((1<<4)|(1<<5)|(1<<6));
   const unsigned i8_to_i64 = ((1<<3)|i16_to_i64);
@@ -719,7 +720,7 @@ int main(int argc, char** argv) {
     string outfile = "ast.dump.1.txt";
     std::cout << "unparsing to " << outfile << endl;
     std::ofstream out(dumpdirFile(outfile).c_str());
-    exprAST->dump(std::cout) << endl;
+    std::cout << *exprAST << endl;
   }
   
   std::cout << "=========================" << std::endl;
@@ -732,8 +733,9 @@ int main(int argc, char** argv) {
     std::cout << "=========================" << std::endl;
     std::cout << "building CFGs" << std::endl;
     { BuildCFG p; exprAST->accept(&p); }
-    for (size_t i = 0; i < exprAST->functions.size(); ++i) {
-      FnAST* fnast = exprAST->functions[i];
+    for (ModuleAST::FnAST_iterator it = exprAST->fn_begin();
+           it != exprAST->fn_end(); ++it) {
+      FnAST* fnast = *it;
       const string& name = fnast->proto->name;
       string filename(dumpdirFile(name + ".dot"));
       if (!fnast->cfgs.empty()) {
@@ -758,7 +760,7 @@ int main(int argc, char** argv) {
     TypecheckPass tyPass; exprAST->accept(&tyPass);
   }
 
-  bool sema = exprAST->typechecked;
+  bool sema = exprAST->type != NULL;
   std::cout << "Semantic checking: " << sema << endl;
   if (!sema) { return 1; }
   

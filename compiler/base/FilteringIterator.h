@@ -45,6 +45,8 @@ struct dynamic_cast_filtering_iterator
   bool operator==(const Self& other) const {
     return it == other.it;
   }
+  bool operator!=(const Self& other) const { return !operator==(other); }
+
 };
 
 } // namespace foster

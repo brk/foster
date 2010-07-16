@@ -255,14 +255,12 @@ void TypecheckPass::visit(ClosureAST* ast) {
 }
 
 void TypecheckPass::visit(ModuleAST* ast) {
-  for (size_t i = 0; i < ast->functions.size(); ++i) {
-    ast->functions[i]->accept(this);
-    if (!ast->functions[i]->type) {
-      ast->typechecked = false;
-      break;
+  for (size_t i = 0; i < ast->parts.size(); ++i) {
+    ast->parts[i]->accept(this);
+    if (ast->parts[i]->type) {
+      ast->type = ast->parts[i]->type;
     }
   }
-  ast->typechecked = true;
 }
 
 void TypecheckPass::visit(IfExprAST* ast) {

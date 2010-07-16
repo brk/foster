@@ -570,10 +570,15 @@ ModuleAST* parseTopLevel(pTree tree) {
                    :                            NULL;
     parsedFunctions.push_back(buildFn(proto, child(fntree, 3)));
   }
-  std::cout << "parsed functions size: " << parsedFunctions.size() << std::endl;
 
-  return new ModuleAST("TODOprovideRealModuleName",
-                       parsedFunctions,
+  std::vector<ExprAST*> exprs;
+  for (size_t i = 0; i < parsedFunctions.size(); ++i) {
+    exprs.push_back(parsedFunctions[i]);
+  }
+
+  return new ModuleAST(exprs,
+                       "TODOprovideRealModuleName",
+                       gScope.getRootScope(),
                        rangeOf(tree));
 }
 

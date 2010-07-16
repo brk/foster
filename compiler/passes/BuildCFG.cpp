@@ -44,8 +44,10 @@ void BuildCFG::visit(PrototypeAST* ast) {
 }
 
 void BuildCFG::visit(ModuleAST* ast)              {
-  for (size_t i = 0; i < ast->functions.size(); ++i) {
-    ast->functions[i]->accept(this);
+  for (ModuleAST::FnAST_iterator
+       it  = ast->fn_begin();
+       it != ast->fn_end(); ++it) {
+    (*it)->accept(this);
   }
 }
 

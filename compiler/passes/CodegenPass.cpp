@@ -797,8 +797,8 @@ void CodegenPass::visit(ClosureAST* ast) {
 }
 
 void CodegenPass::visit(ModuleAST* ast) {
-  for (size_t i = 0; i < ast->functions.size(); ++i) {
-    ast->functions[i]->accept(this);
+  for (size_t i = 0; i < ast->parts.size(); ++i) {
+    ast->parts[i]->accept(this);
   }
 }
 

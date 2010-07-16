@@ -15,6 +15,7 @@
 #include "base/Assert.h"
 #include "base/InputFile.h"
 #include "base/Diagnostics.h"
+#include "base/FilteringIterator.h"
 #include "parse/FosterASTVisitor.h"
 #include "parse/FosterTypeAST.h"
 #include "parse/FosterSymbolTable.h"
@@ -129,8 +130,9 @@ struct NameResolverAST : public ExprAST {
   ExprAST::ScopeType* scope;
 
   explicit NameResolverAST(const std::string& name,
-                           ExprAST::ScopeType* parentScope)
-      : ExprAST(foster::SourceRange::getEmptyRange()),
+                           ExprAST::ScopeType* parentScope,
+                           foster::SourceRange sourceRange)
+      : ExprAST(sourceRange),
         scope(parentScope->newNestedScope(name)) {
   }
   virtual ~NameResolverAST() { }
@@ -141,7 +143,8 @@ struct NameResolverAST : public ExprAST {
     std::cerr << "Visitor called on NameResolverAST! This is probably not desired..." << std::endl;
   }
   NameResolverAST* newNamespace(const std::string& name) {
-    NameResolverAST* nu = new NameResolverAST(name, scope);
+    NameResolverAST* nu = new NameResolverAST(name, scope,
+        foster::SourceRange::getEmptyRange());
     scope->insert(name, new foster::SymbolInfo(nu));
     return nu;
   }
@@ -155,24 +158,6 @@ struct NameResolverAST : public ExprAST {
                                  new foster::SymbolInfo((ExprAST*)var));
     return info ? info->ast : NULL;
   }
-};
-
-struct ModuleAST {
-  std::string name;
-  std::vector<FnAST*> functions;
-  foster::SourceRange sourceRange;
-  bool typechecked;
-
-  explicit ModuleAST(const std::string& name,
-                     std::vector<FnAST*> functions,
-                     foster::SourceRange sourceRange)
-      : sourceRange(sourceRange), name(name),
-        functions(functions), typechecked(false) {}
-
-  std::ostream& dump(std::ostream& out) const {
-    return out << "(Module " << name << ")";
-  }
-  virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
 };
 
 struct IntAST : public ExprAST {
@@ -447,6 +432,30 @@ struct ClosureAST : public ExprAST {
       return out << "(malformed closure)";
     }
   }
+};
+
+struct ModuleAST : public NameResolverAST {
+  typedef foster::dynamic_cast_filtering_iterator<ExprAST, FnAST>
+          FnAST_iterator;
+  FnAST_iterator fn_begin() {
+    return FnAST_iterator(parts.begin(), parts.end());
+  }
+  FnAST_iterator fn_end() {
+    return FnAST_iterator(parts.end()  , parts.end());
+  }
+
+  explicit ModuleAST(const std::vector<ExprAST*>& _parts,
+                     const std::string& name,
+                     ExprAST::ScopeType* parentScope,
+                     foster::SourceRange sourceRange)
+      : NameResolverAST(name, parentScope, sourceRange) {
+    this->parts = _parts;
+  }
+
+  virtual std::ostream& operator<<(std::ostream& out) const {
+    return out << "(Module " << scope->getName() << ")";
+  }
+  virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
 };
 
 struct IfExprAST : public ExprAST {

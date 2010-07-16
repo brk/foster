@@ -23,7 +23,7 @@ struct ClosureConversionPass : public FosterASTVisitor {
   ~ClosureConversionPass() {
     // Hoist newly-closed function definitions to the top level
     for (size_t i = 0; i < newlyHoistedFunctions.size(); ++i) {
-      toplevel->functions.push_back( newlyHoistedFunctions[i] );
+      toplevel->parts.push_back( newlyHoistedFunctions[i] );
     }
   }
 };

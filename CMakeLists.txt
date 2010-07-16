@@ -189,6 +189,7 @@ add_dependencies(libfoster_bc cpuid)
 add_executable(unittest_fosterc
   ${PROJECT_SOURCE_DIR}/compiler/base/PathManager_unittest.cpp
   ${PROJECT_SOURCE_DIR}/compiler/base/Assert_unittest.cpp
+  ${PROJECT_SOURCE_DIR}/compiler/base/FilteringIterator_unittest.cpp
 )
 target_link_libraries(unittest_fosterc gtest_main ${LLVM_LDFLAGS})
 
