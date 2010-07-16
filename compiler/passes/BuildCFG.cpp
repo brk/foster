@@ -43,6 +43,12 @@ void BuildCFG::visit(PrototypeAST* ast) {
   // skip
 }
 
+void BuildCFG::visit(ModuleAST* ast)              {
+  for (size_t i = 0; i < ast->functions.size(); ++i) {
+    ast->functions[i]->accept(this);
+  }
+}
+
 void BuildCFG::visit(IfExprAST* ast) {
   /*
   // Does the standard thing, pretty much:

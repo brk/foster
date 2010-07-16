@@ -157,6 +157,24 @@ struct NameResolverAST : public ExprAST {
   }
 };
 
+struct ModuleAST {
+  std::string name;
+  std::vector<FnAST*> functions;
+  foster::SourceRange sourceRange;
+  bool typechecked;
+
+  explicit ModuleAST(const std::string& name,
+                     std::vector<FnAST*> functions,
+                     foster::SourceRange sourceRange)
+      : sourceRange(sourceRange), name(name),
+        functions(functions), typechecked(false) {}
+
+  std::ostream& dump(std::ostream& out) const {
+    return out << "(Module " << name << ")";
+  }
+  virtual void accept(FosterASTVisitor* visitor) { visitor->visit(this); }
+};
+
 struct IntAST : public ExprAST {
   string Text; // The literal text from the source file; for example, "1010`1011`1101_2"
   string Clean; // The text without separator chars or base; for example, "101010111101"

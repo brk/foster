@@ -12,8 +12,8 @@ typedef pANTLR3_BASE_TREE pTree;
 
 void installTreeTokenBoundaryTracker(pANTLR3_BASE_TREE_ADAPTOR adaptor);
 
-class ExprAST;
-ExprAST* parseTopLevel(pTree tree);
+class ModuleAST;
+ModuleAST* parseTopLevel(pTree tree);
 
 class TypeAST;
 TypeAST* TypeAST_from(pTree tree);

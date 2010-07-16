@@ -109,6 +109,11 @@ void ClosureConversionPass::visit(ClosureAST* ast) {
     performClosureConversion(ast, this);
   }
 }
+void ClosureConversionPass::visit(ModuleAST* ast)              {
+  for (size_t i = 0; i < ast->functions.size(); ++i) {
+    ast->functions[i]->accept(this);
+  }
+}
 void ClosureConversionPass::visit(IfExprAST* ast)              {
   onVisitChild(ast, ast->testExpr);
   onVisitChild(ast, ast->thenExpr);
@@ -181,7 +186,7 @@ void hoistAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) {
   // TODO support mutually recursive function...
   ccp->newlyHoistedFunctions.push_back(ast);
 
-  ast->parent = ccp->toplevel;
+  ast->parent = NULL;
 
   {
     // Alter the symbol table structure to reflect the fact that we're

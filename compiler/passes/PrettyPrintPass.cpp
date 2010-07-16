@@ -87,7 +87,7 @@ void PrettyPrintPass::visit(PrototypeAST* ast) {
 
 // fnProto fnBody
 void PrettyPrintPass::visit(FnAST* ast) {
-  bool isTopLevelFn = ast->parent->parent == NULL;
+  bool isTopLevelFn = ast->parent == NULL;
   if (isTopLevelFn) { scan(tNewline); }
 
   recurse(this, ast->proto);
@@ -101,13 +101,12 @@ void PrettyPrintPass::visit(FnAST* ast) {
   }
 }
 
-#if 0
-void PrettyPrintPass::visit(ClosureTypeAST* ast) {
-  scan(PPToken("<TyClosure "));
-  scan(PPToken(str(ast->proto->type)));
-  scan(PPToken(">"));
+void PrettyPrintPass::visit(ModuleAST* ast) {
+  for (size_t i = 0; i < ast->functions.size(); ++i) {
+    ast->functions[i]->accept(this);
+    scan(tNewline);
+  }
 }
-#endif
 
 void PrettyPrintPass::visit(ClosureAST* ast) {
   scan(tBlockOpen);

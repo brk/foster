@@ -254,6 +254,17 @@ void TypecheckPass::visit(ClosureAST* ast) {
   }
 }
 
+void TypecheckPass::visit(ModuleAST* ast) {
+  for (size_t i = 0; i < ast->functions.size(); ++i) {
+    ast->functions[i]->accept(this);
+    if (!ast->functions[i]->type) {
+      ast->typechecked = false;
+      break;
+    }
+  }
+  ast->typechecked = true;
+}
+
 void TypecheckPass::visit(IfExprAST* ast) {
   ASSERT(ast->testExpr != NULL);
 

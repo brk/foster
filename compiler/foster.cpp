@@ -712,14 +712,14 @@ int main(int argc, char** argv) {
   
   createLLVMBitIntrinsics();
 
-  ExprAST* exprAST = parseTopLevel(langAST.tree);
+  ModuleAST* exprAST = parseTopLevel(langAST.tree);
 
   { ScopedTimer timer(statFileIOMs);
   if (optDumpASTs) {
     string outfile = "ast.dump.1.txt";
     std::cout << "unparsing to " << outfile << endl;
     std::ofstream out(dumpdirFile(outfile).c_str());
-    out << *exprAST << endl;
+    exprAST->dump(std::cout) << endl;
   }
   
   std::cout << "=========================" << std::endl;
@@ -730,28 +730,21 @@ int main(int argc, char** argv) {
  
   {
     std::cout << "=========================" << std::endl;
-    std::cout << "building CFG" << std::endl;
-    if (SeqAST* seq = dynamic_cast<SeqAST*>(exprAST)) {
-      for (size_t i = 0; i < seq->parts.size(); ++i) {
-        ExprAST* ast = seq->parts[i];
-        if (FnAST* fnast = dynamic_cast<FnAST*>(ast)) {
-
-          const string& name = fnast->proto->name;
-          string filename(dumpdirFile(name + ".dot"));
-          std::cout << "Building CFG for " << filename  << std::endl;
-          BuildCFG p; fnast->accept(&p);
-
-          if (!fnast->cfgs.empty()) {
-            std::cout << "Writing " << filename << std::endl;
-            std::string err;
-            llvm::raw_fd_ostream f(filename.c_str(), err);
-            if (err.empty()) {
-              llvm::WriteGraph(f, fnast);
-            }
-          } else {
-            foster::EDiag() << "no CFG for " << name << foster::show(ast);
-          }
+    std::cout << "building CFGs" << std::endl;
+    { BuildCFG p; exprAST->accept(&p); }
+    for (size_t i = 0; i < exprAST->functions.size(); ++i) {
+      FnAST* fnast = exprAST->functions[i];
+      const string& name = fnast->proto->name;
+      string filename(dumpdirFile(name + ".dot"));
+      if (!fnast->cfgs.empty()) {
+        std::cout << "Writing " << filename << std::endl;
+        std::string err;
+        llvm::raw_fd_ostream f(filename.c_str(), err);
+        if (err.empty()) {
+          llvm::WriteGraph(f, fnast);
         }
+      } else {
+        foster::EDiag() << "no CFG for " << name;
       }
     }
   }
@@ -765,7 +758,7 @@ int main(int argc, char** argv) {
     TypecheckPass tyPass; exprAST->accept(&tyPass);
   }
 
-  bool sema = exprAST->type != NULL;
+  bool sema = exprAST->typechecked;
   std::cout << "Semantic checking: " << sema << endl;
   if (!sema) { return 1; }
   
@@ -784,8 +777,7 @@ int main(int argc, char** argv) {
   }
 
   { ScopedTimer timer(statClosureConversionMs);
-    ClosureConversionPass p(globalNames,
-                            dynamic_cast<SeqAST*>(exprAST));
+    ClosureConversionPass p(globalNames, exprAST);
     exprAST->accept(&p);
   }
 

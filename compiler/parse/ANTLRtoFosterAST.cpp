@@ -502,15 +502,19 @@ FnAST* parseFn(string defaultSymbolTemplate, pTree tree, bool fnMeansClosure) {
 // to appear in unsorted order, we have to separate the extraction of function
 // prototypes (and insertion of said name/proto pair into the gScope symbol
 // table) from the actual parsing of the function body.
-ExprAST* parseTopLevel(pTree tree) {
+ModuleAST* parseTopLevel(pTree tree) {
   // The top level is composed of:
+  //
   // * Type definitions, such as
   //        type node = tuple { ?ref node, i32 }
   // * Function definitions, such as
   //        f = fn () { 0 }
+  //
+  // For now, only the functions are explicitly listed in the module;
+  // types are present in symbol tables and the underlying llvm::Module.
 
   std::vector<pTree> pendingParseTrees(getChildCount(tree));
-  std::vector<ExprAST*> parsedExprs(getChildCount(tree));
+  std::vector<FnAST*> parsedFunctions;
   // forall i, exprs[i] == pendingParseTrees[i] == NULL
 
   for (size_t i = 0; i < getChildCount(tree); ++i) {
@@ -518,14 +522,17 @@ ExprAST* parseTopLevel(pTree tree) {
   }
 
   // forall i, exprs[i] == NULL, pendingParseTrees[i] != NULL
-  std::map<pTree, PrototypeAST*> protos;
+  typedef std::map<pTree, PrototypeAST*> ProtoMap;
+  ProtoMap protos;
 
   for (size_t i = 0; i < pendingParseTrees.size(); ++i) {
     pTree c = pendingParseTrees[i];
     int token = typeOf(c);
 
-    if (token == TYPEDEFN) { parsedExprs[i] = ExprAST_from(c, false); }
-    else if (token == FNDEF) {
+    if (token == TYPEDEFN) {
+      ExprAST* typeDefn = ExprAST_from(c, false);
+      ASSERT(!typeDefn) << "expected type definition to return NULL";
+    } else if (token == FNDEF) {
       ASSERT(getChildCount(c) == 2);
       // x = fn { blah }   ===   x = fn "x" { blah }
       pTree lval = (child(c, 0));
@@ -534,7 +541,6 @@ ExprAST* parseTopLevel(pTree tree) {
         // (FN 0:NAME 1:IN 2:OUT 3:BODY)
         string name = parseFnName(textOf(child(lval, 0)), rval);
         protos[c] = getFnProto(name, true, child(rval, 1), child(rval, 2));
-        std::cout << "proto " << protos[c]->name << std::endl;
       } else {
         cerr << "Not assigning top-level function to a name?" << endl;
       }
@@ -543,39 +549,32 @@ ExprAST* parseTopLevel(pTree tree) {
       string name = parseFnName(textOf(child(c, 0)), c);
       protos[c] = getFnProto(name, true, child(c, 1), child(c, 2));
     } else {
-      parsedExprs[i] = ExprAST_from(c, false);
+      ExprAST* otherExpr = ExprAST_from(c, false);
+      if (FnAST* explicitlyNamedFn = dynamic_cast<FnAST*>(otherExpr)) {
+        parsedFunctions.push_back(explicitlyNamedFn);
+      } else {
+        EDiag() << "expected function or type";
+        display_pTree(c, 2);
+      }
     }
   }
 
   // forall i, either parsedExprs[i] == NULL && protos[i] != NULL
   //              or  parsedExprs[i] != NULL
 
-  for (size_t i = 0; i < pendingParseTrees.size(); ++i) {
-    if (!parsedExprs[i]) {
-      pTree c = pendingParseTrees[i];
-      if (PrototypeAST* proto = protos[c]) {
-        pTree fntree =   (typeOf(c) == FNDEF)   ?   child(c, 1)
-                       : (typeOf(c) == FN   )   ?   c
-                       :                            NULL;
-        parsedExprs[i] = buildFn(proto, child(fntree, 3));
-      } else if (typeOf(c) != TYPEDEFN) {
-        ASSERT(false) << "no proto, not a type defn, no parsed expr?!?";
-        parsedExprs[i] = ExprAST_from(c, false);
-      }
-    }
+  for (ProtoMap::iterator it = protos.begin(); it != protos.end(); ++it) {
+    pTree c = it->first;
+    PrototypeAST* proto = it->second;
+    pTree fntree =   (typeOf(c) == FNDEF)   ?   child(c, 1)
+                   : (typeOf(c) == FN   )   ?   c
+                   :                            NULL;
+    parsedFunctions.push_back(buildFn(proto, child(fntree, 3)));
   }
+  std::cout << "parsed functions size: " << parsedFunctions.size() << std::endl;
 
-  std::vector<ExprAST*> exprs;
-  for (size_t i = 0; i < parsedExprs.size(); ++i) {
-    if (parsedExprs[i]) {
-      if (FnAST* fn = dynamic_cast<FnAST*>(parsedExprs[i])) {
-        std::cout << "fn " << fn->proto->name << std::endl;
-      }
-      exprs.push_back(parsedExprs[i]);
-    }
-  }
-
-  return new SeqAST(exprs, rangeOf(tree));
+  return new ModuleAST("TODOprovideRealModuleName",
+                       parsedFunctions,
+                       rangeOf(tree));
 }
 
 ExprAST* parseTypeDefinition(pTree tree, bool fnMeansClosure) {

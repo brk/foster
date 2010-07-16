@@ -796,6 +796,12 @@ void CodegenPass::visit(ClosureAST* ast) {
   }
 }
 
+void CodegenPass::visit(ModuleAST* ast) {
+  for (size_t i = 0; i < ast->functions.size(); ++i) {
+    ast->functions[i]->accept(this);
+  }
+}
+
 void CodegenPass::visit(IfExprAST* ast) {
   //EDiag() << "Codegen for IfExprASTs should (eventually) be subsumed by CFG building!";
   if (ast->value) return;

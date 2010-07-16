@@ -13,17 +13,17 @@
 struct ClosureConversionPass : public FosterASTVisitor {
   #include "parse/FosterASTVisitor.decls.inc.h"
   std::set<std::string> globalNames;
-  SeqAST* toplevel;
+  ModuleAST* toplevel;
 
   std::vector<FnAST*> newlyHoistedFunctions;
   ClosureConversionPass(const std::set<std::string>& globalNames,
-                        SeqAST* toplevel)
+                        ModuleAST* toplevel)
      : globalNames(globalNames), toplevel(toplevel) {}
 
   ~ClosureConversionPass() {
     // Hoist newly-closed function definitions to the top level
     for (size_t i = 0; i < newlyHoistedFunctions.size(); ++i) {
-      toplevel->parts.push_back( newlyHoistedFunctions[i] );
+      toplevel->functions.push_back( newlyHoistedFunctions[i] );
     }
   }
 };

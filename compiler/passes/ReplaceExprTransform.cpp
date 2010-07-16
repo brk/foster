@@ -27,7 +27,7 @@ void ReplaceExprTransform::visitChildren(ExprAST* ast) {
 }
 
 // Note! child is a *reference* to a pointer!
-void ReplaceExprTransform::onVisitChild(ExprAST* ast, ExprAST** child) {
+void ReplaceExprTransform::onVisitChild(ExprAST*, ExprAST** child) {
   this->newChild = NULL;
   (*child)->accept(this); // Should write to newChild...
   ASSERT(this->newChild != NULL);
@@ -76,6 +76,13 @@ void ReplaceExprTransform::visit(FnAST* ast)                  {
 void ReplaceExprTransform::visit(ClosureAST* ast) {
   visitChildren(ast);
   this->newChild = rewrite(ast);
+}
+void ReplaceExprTransform::visit(ModuleAST* ast) {
+  for (size_t i = 0; i < ast->functions.size(); ++i) {
+    onVisitChild((ExprAST*)(NULL),
+            reinterpret_cast<ExprAST**>(&ast->functions[i]));
+  }
+  // No replacing entire modules...
 }
 void ReplaceExprTransform::visit(IfExprAST* ast)              {
   onVisitChild(ast, &ast->testExpr);

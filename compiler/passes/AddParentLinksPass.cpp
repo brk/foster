@@ -32,18 +32,21 @@ void AddParentLinksPass::visit(ClosureAST* ast) {
     onVisitChild(ast, ast->fn);
   }
 }
+void AddParentLinksPass::visit(ModuleAST* ast)              {
+  for (size_t i = 0; i < ast->functions.size(); ++i) {
+    onVisitChild(NULL, ast->functions[i]);
+  }
+}
 void AddParentLinksPass::visit(IfExprAST* ast)              {
   onVisitChild(ast, ast->testExpr);
   onVisitChild(ast, ast->thenExpr);
   onVisitChild(ast, ast->elseExpr);
-  return;
 }
 void AddParentLinksPass::visit(ForRangeExprAST* ast)              {
   onVisitChild(ast, ast->startExpr);
   onVisitChild(ast, ast->endExpr);
   if (ast->incrExpr) { onVisitChild(ast, ast->incrExpr); }
   onVisitChild(ast, ast->bodyExpr);
-  return;
 }
 void AddParentLinksPass::visit(NilExprAST* ast)             { return; }
 void AddParentLinksPass::visit(RefExprAST* ast)             { return; }
