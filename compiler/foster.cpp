@@ -428,24 +428,6 @@ void putModuleMembersInScope(Module* m, Module* linkee) {
   }
 }
 
-
-void dumpANTLRTreeNode(std::ostream& out, pTree tree, int depth) {
-  out << string(depth, ' ');
-  out << "text:"<< str(tree->getText(tree)) << " ";
-  out << "line:"<< tree->getLine(tree) << " ";
-  out << "charpos:"<< tree->getCharPositionInLine(tree) << " ";
-  out << std::endl;
-}
-
-void dumpANTLRTree(std::ostream& out, pTree tree, int depth) {
-  int nchildren = tree->getChildCount(tree);
-  out << "nchildren:" << nchildren << std::endl;
-  for (int i = 0; i < nchildren; ++i) {
-    dumpANTLRTree(out, (pTree) tree->getChild(tree, i), depth + 1);
-  }
-  dumpANTLRTreeNode(out, tree, depth);
-}
-
 string dumpdir("fc-output/");
 string dumpdirFile(const string& filename) {
   return dumpdir + filename;

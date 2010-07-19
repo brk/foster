@@ -7,6 +7,7 @@
 
 #include <antlr3defs.h>
 #include <string>
+#include <iosfwd>
 
 typedef pANTLR3_BASE_TREE pTree;
 
@@ -19,6 +20,8 @@ class TypeAST;
 TypeAST* TypeAST_from(pTree tree);
 
 void initMaps();
+
+void dumpANTLRTree(std::ostream& out, pTree tree, int depth);
 
 std::string str(pANTLR3_STRING pstr);
 
