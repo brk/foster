@@ -25,12 +25,16 @@ namespace foster {
 
 class CFG {
 public:
-  CFG(const std::string& suggestedName, ExprAST* parentAST)
+  CFG(const std::string& suggestedName,
+      ExprAST* parentAST,
+      FnAST* parentFn)
       : suggestedName(suggestedName),
         parentAST(parentAST),
         ourBB(NULL),
         lastNonVoidValue(NULL),
-        terminator(NULL) {}
+        terminator(getDefaultTerminator()) {
+    parentFn->cfgs.push_back(this);
+  }
 
   void append(ExprAST* expr);
 
@@ -57,14 +61,15 @@ public:
     virtual void codegen(CodegenPass* p) = 0;
   };
 
+  static Terminator* getDefaultTerminator();
+
   std::string getBlockName() const { return suggestedName; }
 
   void addPredecessor(CFG* cfg);
   void setTerminator(Terminator* newterminator);
   void branchTo(CFG* next);
   void branchCond(ExprAST* cond, CFG* condTrue, CFG* condFalse);
-  Terminator* getTerminator() { return terminator; }
-
+  Terminator* getTerminator();
 private:
   // Makes codegen easy, but graph iteration hard
   Terminator* terminator;

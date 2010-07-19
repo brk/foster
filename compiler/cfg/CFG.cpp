@@ -17,26 +17,43 @@ using foster::show;
 
 namespace foster {
 
+struct RetTerminator : public CFG::Terminator {
+  explicit RetTerminator() {}
+
+  virtual void codegen(CodegenPass* p) {
+    ASSERT(false) << "RetTerminator codegen not implemented";
+  }
+};
+
+CFG::Terminator* CFG::getDefaultTerminator() {
+  return new RetTerminator();
+}
+
 void CFG::append(ExprAST* ast) { exprs.push_back(ast); }
 
 struct UnconditionalBranch : public CFG::Terminator {
-  UnconditionalBranch(CFG* target) {
+  explicit UnconditionalBranch(CFG* target) {
     edges.push_back(CFG::Edge(NULL, target));
   }
 
-  virtual void codegen(CodegenPass* p) {}
+  virtual void codegen(CodegenPass* p) {
+    ASSERT(false) << "UnconditionalBranch codegen not implemented";
+  }
 };
 
 struct ConditionalBranch : public CFG::Terminator {
   ExprAST* cond;
-  ConditionalBranch(ExprAST* cond,
-                    CFG* condTrue, CFG* condFalse)
-      : cond(cond) {
-    edges.push_back(CFG::Edge(cond, condTrue));
-    edges.push_back(CFG::Edge(NULL, condFalse)); // negate cond
+  explicit ConditionalBranch(ExprAST* cond,
+                             CFG* whenTrue,
+                             CFG* whenFalse)
+  : cond(cond) {
+    edges.push_back(CFG::Edge(cond, whenTrue));
+    edges.push_back(CFG::Edge(NULL, whenFalse)); // negate cond
   }
 
-  virtual void codegen(CodegenPass* p) {}
+  virtual void codegen(CodegenPass* p) {
+    ASSERT(false) << "ConditionalBranch codegen not implemented";
+  }
 };
 
 void CFG::addPredecessor(CFG* cfg) {
@@ -45,6 +62,12 @@ void CFG::addPredecessor(CFG* cfg) {
 
 void CFG::setTerminator(CFG::Terminator* newterminator) {
   this->terminator = newterminator;
+}
+
+
+CFG::Terminator* CFG::getTerminator() {
+  ASSERT(terminator);
+  return terminator;
 }
 
 void CFG::branchTo(CFG* next) {

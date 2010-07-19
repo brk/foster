@@ -85,8 +85,8 @@ void BuildCFG::visit(IfExprAST* ast) {
   ast->testExpr->accept(this);
   CFG* root = currentRoot;
 
-  CFG* thenCFGroot = new CFG("if.then", ast->thenExpr);
-  CFG* elseCFGroot = new CFG("if.else", ast->elseExpr);
+  CFG* thenCFGroot = new CFG("if.then", ast->thenExpr, currentFn);
+  CFG* elseCFGroot = new CFG("if.else", ast->elseExpr, currentFn);
 
   this->currentRoot = thenCFGroot;
   ast->thenExpr->accept(this);
@@ -96,17 +96,13 @@ void BuildCFG::visit(IfExprAST* ast) {
   ast->elseExpr->accept(this);
   CFG* elseCFGtail = this->currentRoot;
 
-  this->currentRoot = new CFG("if.cont", ast->parent);
+  this->currentRoot = new CFG("if.cont", ast->parent, currentFn);
 
   // Connect the CFGs
   root->branchCond(ast->testExpr, thenCFGroot, elseCFGroot);
 
   thenCFGtail->branchTo(currentRoot);
   elseCFGtail->branchTo(currentRoot);
-
-  currentFn->cfgs.push_back(thenCFGroot);
-  currentFn->cfgs.push_back(elseCFGroot);
-  currentFn->cfgs.push_back(currentRoot);
 }
 
 void BuildCFG::visit(ForRangeExprAST* ast) {
@@ -139,13 +135,13 @@ void BuildCFG::visit(ForRangeExprAST* ast) {
         ...
    */
 
-  CFG* loopHdr = new CFG("forToHdr", ast);
+  CFG* loopHdr = new CFG("forToHdr", ast, currentFn);
 
   std::cout << "current fn is " << this->currentFn->proto->name
       << ", forToHdr: " << loopHdr << ", for range:" << ast << " => " << str(ast) << std::endl;
-  CFG* loop    = new CFG("forTo",    ast);
-  CFG* loopEnd = new CFG("forToEnd", ast);
-  CFG* after   = new CFG("postloop", ast);
+  CFG* loop    = new CFG("forTo",    ast, currentFn);
+  CFG* loopEnd = new CFG("forToEnd", ast, currentFn);
+  CFG* after   = new CFG("postloop", ast, currentFn);
 
   CFG* preLoop = currentRoot;
 
@@ -170,18 +166,12 @@ void BuildCFG::visit(ForRangeExprAST* ast) {
   endBody->branchTo(loopEnd);
   endStart->branchCond(NULL, loop, after);
   loopEnd->branchCond(NULL, loop, after);
-
-  currentFn->cfgs.push_back(loopHdr);
-  currentFn->cfgs.push_back(loop);
-  currentFn->cfgs.push_back(loopEnd);
-  currentFn->cfgs.push_back(after);
 }
 
 void BuildCFG::visit(FnAST* ast) {
-  currentRoot = new CFG(ast->proto->name + std::string(".entry"), ast);
   currentFn   = ast;
-  currentFn->cfgs.push_back(currentRoot);
-
+  currentRoot = new CFG(ast->proto->name + std::string(".entry"),
+                        ast, currentFn);
   ast->body->accept(this);
 }
 
