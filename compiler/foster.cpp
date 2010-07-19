@@ -190,13 +190,12 @@ ExprAST* lookupOrCreateNamespace(ExprAST* ns, const string& part) {
     return nsPart;
   }
 
-  NameResolverAST* nr = dynamic_cast<NameResolverAST*>(ns);
-  if (nr) {
+  if (NamespaceAST* nr = dynamic_cast<NamespaceAST*>(ns)) {
     return nr->newNamespace(part);
   } else {
     EDiag() << "Error: lookupOrCreateNamespace failed because "
             << " ns did not contain an entry for '" << part << "'"
-            << " and ns was not a NameResolverAST*";
+            << " and ns was not a NamespaceAST*";
   }
   return NULL;
 }
@@ -224,21 +223,20 @@ void addToProperNamespace(VariableAST* var) {
   }
 
   // For the leaf name, insert variable ref rather than new namespace
-  NameResolverAST* parentNS = dynamic_cast<NameResolverAST*>(ns);
-  if (parentNS) {
+  if (NamespaceAST* parentNS = dynamic_cast<NamespaceAST*>(ns)) {
     parentNS->insert(parts.back(), var);
   } else {
     std::cerr << "Error: final parent namespace for fqName '"
-              << fqName << "' was not a NameResolverAST" << std::endl;
+              << fqName << "' was not a NamespaceAST" << std::endl;
   }
 }
 
 void createLLVMBitIntrinsics() {
   // Make the module heirarchy available to code referencing llvm.blah.blah.
-  // (The NameResolverAST name is mostly a convenience for examining the AST).
+  // (The NamespaceAST name is mostly a convenience for examining the AST).
   gScope.insert("llvm", new foster::SymbolInfo(
-                           new NameResolverAST("llvm intrinsics",
-                                               gScope.getRootScope(),
+                           new NamespaceAST("llvm intrinsics",
+                                            gScope.getRootScope(),
                                        foster::SourceRange::getEmptyRange())));
 
   const unsigned i16_to_i64 = ((1<<4)|(1<<5)|(1<<6));

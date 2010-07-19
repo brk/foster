@@ -125,33 +125,36 @@ struct BinaryExprAST : public ExprAST {
   }
 };
 
-// "Fake" AST node for doing iterative lookup; AST stand-in for namespaces.
-struct NameResolverAST : public ExprAST {
+// "Fake" AST node for doing iterative lookup.
+struct NamespaceAST : public ExprAST {
   ExprAST::ScopeType* scope;
 
-  explicit NameResolverAST(const std::string& name,
+  explicit NamespaceAST(const std::string& name,
                            ExprAST::ScopeType* parentScope,
                            foster::SourceRange sourceRange)
       : ExprAST(sourceRange),
         scope(parentScope->newNestedScope(name)) {
   }
-  virtual ~NameResolverAST() { }
+  virtual ~NamespaceAST() { }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "(NameResolver " << scope->getName() << ")";
+    return out << "(NamespaceAST " << scope->getName() << ")";
   }
   virtual void accept(FosterASTVisitor* visitor) {
-    std::cerr << "Visitor called on NameResolverAST! This is probably not desired..." << std::endl;
+    std::cerr << "Visitor called on NamespaceAST! This is probably not desired..." << std::endl;
   }
-  NameResolverAST* newNamespace(const std::string& name) {
-    NameResolverAST* nu = new NameResolverAST(name, scope,
+
+  NamespaceAST* newNamespace(const std::string& name) {
+    NamespaceAST* nu = new NamespaceAST(name, scope,
         foster::SourceRange::getEmptyRange());
     scope->insert(name, new foster::SymbolInfo(nu));
     return nu;
   }
+
   virtual ExprAST* lookup(const string& name, const string& meta) {
     foster::SymbolInfo* info = scope->lookup(name, meta);
     return info ? info->ast : NULL;
   }
+
   // TODO add wrapper to distinguish qualified from unqualified strings
   virtual ExprAST* insert(const string& fullyQualifiedName, VariableAST* var) {
     foster::SymbolInfo* info = scope->insert(fullyQualifiedName,
@@ -434,7 +437,7 @@ struct ClosureAST : public ExprAST {
   }
 };
 
-struct ModuleAST : public NameResolverAST {
+struct ModuleAST : public NamespaceAST {
   typedef foster::dynamic_cast_filtering_iterator<ExprAST, FnAST>
           FnAST_iterator;
   FnAST_iterator fn_begin() {
@@ -448,7 +451,7 @@ struct ModuleAST : public NameResolverAST {
                      const std::string& name,
                      ExprAST::ScopeType* parentScope,
                      foster::SourceRange sourceRange)
-      : NameResolverAST(name, parentScope, sourceRange) {
+      : NamespaceAST(name, parentScope, sourceRange) {
     this->parts = _parts;
   }
 
