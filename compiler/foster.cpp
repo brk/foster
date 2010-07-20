@@ -663,13 +663,15 @@ int main(int argc, char** argv) {
   const foster::InputFile infile(inPath);
   foster::gInputFile = &infile;
 
-  ScopedTimer* timer = new ScopedTimer(statParseTimeMs); 
+  fosterParser_program_return langAST;
   ANTLRContext ctx;
-  createParser(ctx, infile);
-  installTreeTokenBoundaryTracker(ctx.psr->adaptor);
-  foster::installRecognitionErrorFilter(ctx.psr->pParser->rec);
-  fosterParser_program_return langAST = ctx.psr->program(ctx.psr);
-  delete timer; // not block-scoped to allow proper binding of langAST
+
+  { ScopedTimer timer(statParseTimeMs);
+    createParser(ctx, infile);
+    installTreeTokenBoundaryTracker(ctx.psr->adaptor);
+    foster::installRecognitionErrorFilter(ctx.psr->pParser->rec);
+    langAST = ctx.psr->program(ctx.psr);
+  }
 
   if (optDumpASTs) { ScopedTimer timer(statFileIOMs);
     std::cout << "dumping parse trees" << endl;
