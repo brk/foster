@@ -33,17 +33,9 @@ protected:
   const InputFile* sourceFile;
   SourceLocation sourceLoc;
 
-  DiagBase(llvm::raw_ostream& out, const char* levelstr)
+  explicit DiagBase(llvm::raw_ostream& out, const char* levelstr)
     : levelstr(levelstr), msg(msgstr), out(out), sourceFile(NULL), sourceLoc(-1, -1) {}
-  virtual ~DiagBase() {
-    const InputFile* source = (sourceFile ? sourceFile : gInputFile);
-    out << source->getShortSuffixPath();
-    if (sourceLoc.isValid()) {
-      out << ":" << sourceLoc.line << ":" << sourceLoc.column;
-    }
-    out << ": " << levelstr
-        << ": " << msg.str() << '\n';
-  }
+  virtual ~DiagBase();
 
   virtual void add(int64_t i) { msg << i; }
   virtual void add(const char* str) { msg << str; }
@@ -61,13 +53,18 @@ public:
   DiagBase& operator<<(const char* str) { add(str); return *this; }
   DiagBase& operator<<(const std::string& str) { add(str); return *this; }
   DiagBase& operator<<(const SourceRangeHighlighter& h) { add(h); return *this; }
+
+private:
+  DiagBase(const DiagBase&);
 };
 
 // Error diagnostic builder
 class EDiag : public DiagBase {
 public:
-  EDiag() : DiagBase(llvm::errs(), "error") {}
-  ~EDiag() {}
+  explicit EDiag() : DiagBase(llvm::errs(), "error") {}
+  virtual ~EDiag();
+private:
+  EDiag(const EDiag&);
 };
 
 } // namespace

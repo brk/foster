@@ -151,12 +151,17 @@ include(${PROJECT_SOURCE_DIR}/third_party/chromium_base/CMakeLists.txt)
 include(${PROJECT_SOURCE_DIR}/third_party/cpuid/CMakeLists.txt)
 include(${PROJECT_SOURCE_DIR}/third_party/gtest/CMakeLists.txt)
 
-add_executable(fosterc
-  compiler/foster.cpp
-  compiler/FosterUtils.cpp
+add_library(fosterc_base STATIC
+  compiler/base/Assert.cpp
+  compiler/base/Diagnostics.cpp
   compiler/base/InputFile.cpp
   compiler/base/PathManager.cpp
   compiler/base/SourceRange.cpp
+)
+
+add_executable(fosterc
+  compiler/foster.cpp
+  compiler/FosterUtils.cpp
   compiler/parse/FosterAST.cpp
   compiler/parse/FosterTypeAST.cpp
   compiler/parse/FosterSymbolTable.cpp
@@ -177,7 +182,7 @@ add_executable(fosterc
   ${PROJECT_BINARY_DIR}/fosterLexer.c
 )
 
-target_link_libraries(fosterc antlr3c ${LLVM_LDFLAGS})
+target_link_libraries(fosterc fosterc_base antlr3c ${LLVM_LDFLAGS})
 
 add_dependencies(fosterc libfoster_bc)
 
@@ -191,7 +196,7 @@ add_executable(unittest_fosterc
   ${PROJECT_SOURCE_DIR}/compiler/base/Assert_unittest.cpp
   ${PROJECT_SOURCE_DIR}/compiler/base/FilteringIterator_unittest.cpp
 )
-target_link_libraries(unittest_fosterc gtest_main ${LLVM_LDFLAGS})
+target_link_libraries(unittest_fosterc fosterc_base gtest_main ${LLVM_LDFLAGS})
 
 #####################################################################
 

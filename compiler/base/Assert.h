@@ -5,27 +5,41 @@
 #ifndef FOSTER_CHECK_H
 #define FOSTER_CHECK_H
 
-#include "llvm/Support/raw_ostream.h"
+#include "base/Diagnostics.h"
 #include <cstdlib>
 
 #define ASSERT(cond) \
   (cond) \
-    ? llvm::nulls() \
-    : foster::LogWrapper(llvm::errs(), __FILE__, __LINE__, __PRETTY_FUNCTION__, #cond).get_raw_ostream()
+    ? foster::DiagIgnore::get() \
+    : foster::DiagWrapper(__FILE__, __LINE__, __PRETTY_FUNCTION__, #cond).getDiag()
 
 namespace foster {
 
-class LogWrapper {
-  llvm::raw_ostream& out;
+class DiagWrapper {
+  foster::EDiag* diag;
 public:
-  LogWrapper(llvm::raw_ostream& out, const char* file, int line,
-             const char* func, const char* cond) : out(out) {
-    out << file << ":" << line << ": ASSERT(" << cond << ") failed. ";
-  }
+  DiagWrapper(const char* file, int line,
+             const char* func, const char* cond);
 
-  llvm::raw_ostream& get_raw_ostream() { return out; }
+  foster::DiagBase& getDiag() { return *diag; }
 
-  ~LogWrapper() { out << "\n"; abort(); }
+  ~DiagWrapper();
+};
+
+
+class DiagIgnore : public DiagBase {
+public:
+  static DiagBase& get() { static DiagIgnore d; return d; }
+
+private:
+  DiagIgnore() : DiagBase(llvm::errs(), "none") {}
+  ~DiagIgnore();
+
+protected:
+  virtual void add(int64_t i) {}
+  virtual void add(const char* str) {}
+  virtual void add(const std::string& str) {}
+  virtual void add(const SourceRangeHighlighter& h) {}
 };
 
 } // namespace foster

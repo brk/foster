@@ -2,11 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#include "base/PathManager.h"
 #include "gtest/gtest.h"
 
-// hack to avoid making a separate static library to link to
-#include "base/PathManager.cpp"
+#include "base/PathManager.h"
 
 using foster::PathManager;
 using llvm::sys::Path;
