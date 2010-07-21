@@ -472,7 +472,8 @@ bool isArithOp(string op) {
   return op == "+" || op == "-" || op == "/" || op == "*";
 }
 bool isCmpOp(string op) {
-  return op == "<" || op == "==" || op == "!=";
+  return op == "<" || op == "<=" || op == ">" || op == ">="
+      || op == "==" || op == "!=";
 }
 bool leftTypeBiggerInt(const Type* left, const Type* right) {
   return left->getScalarSizeInBits() > right->getScalarSizeInBits();
@@ -504,8 +505,10 @@ void CodegenPass::visit(BinaryOpExprAST* ast) {
   else if (op == "/") { ast->value = builder.CreateSDiv(VL, VR, "divtmp"); }
   else if (op == "*") { ast->value = builder.CreateMul(VL, VR, "multmp"); }
 
-  else if (op == "<") { ast->value = builder.CreateICmpSLT(VL, VR, "slttmp"); }
+  else if (op == "<")  { ast->value = builder.CreateICmpSLT(VL, VR, "slttmp"); }
   else if (op == "<=") { ast->value = builder.CreateICmpSLE(VL, VR, "sletmp"); }
+  else if (op == ">")  { ast->value = builder.CreateICmpSGT(VL, VR, "sgttmp"); }
+  else if (op == ">=") { ast->value = builder.CreateICmpSGE(VL, VR, "sgetmp"); }
   else if (op == "==") { ast->value = builder.CreateICmpEQ(VL, VR, "eqtmp"); }
   else if (op == "!=") { ast->value = builder.CreateICmpNE(VL, VR, "netmp"); }
 

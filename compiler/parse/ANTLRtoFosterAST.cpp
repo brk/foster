@@ -238,6 +238,8 @@ OpSpec c_binaryOps[] = {
     { "+",  25, eLeftAssociative },
     { "<=", 50, eLeftAssociative },
     { "<",  50, eLeftAssociative },
+    { ">=", 50, eLeftAssociative },
+    { ">",  50, eLeftAssociative },
     { "==", 60, eLeftAssociative },
     { "!=", 60, eLeftAssociative },
     { "=",  70, eNotAssociative  }
