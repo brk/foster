@@ -21,8 +21,8 @@ program			:	nl* toplevelexpr (nl+ toplevelexpr)* nl* EOF -> ^(EXPRS toplevelexpr
 
 fn			:	'fn' n=str? '(' in=formals? ('to' out=typeexpr)? ')' seq? requires? ensures?
 					-> ^(FN ^(NAME $n) ^(IN $in) ^(OUT $out) ^(BODY seq) ^(GIVEN requires?) ^(GIVES ensures?));
-requires		:	'given' seq;
-ensures			:	'gives' seq;
+requires		:	nl? 'given' nl? seq;
+ensures		:	nl? 'gives' nl? seq;
 
 //names			:	name (',' name)* -> name+;
 formals			:	formal (',' formal)* -> formal+;
