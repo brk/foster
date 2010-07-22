@@ -289,7 +289,7 @@ void lambdaLiftAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) {
     // For each free variable in the function:
     VariableAST* parentScopeVar = *it;
     VariableAST* var = new VariableAST(
-                             "_lift_"+parentScopeVar->name,
+                             parentScopeVar->name,
                              parentScopeVar->type,
                              foster::SourceRange::getEmptyRange());
 

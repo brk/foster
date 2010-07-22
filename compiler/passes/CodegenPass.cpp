@@ -468,13 +468,6 @@ void CodegenPass::visit(UnaryOpExprAST* ast) {
   }
 }
 
-bool isArithOp(string op) {
-  return op == "+" || op == "-" || op == "/" || op == "*";
-}
-bool isCmpOp(string op) {
-  return op == "<" || op == "<=" || op == ">" || op == ">="
-      || op == "==" || op == "!=";
-}
 bool leftTypeBiggerInt(const Type* left, const Type* right) {
   return left->getScalarSizeInBits() > right->getScalarSizeInBits();
 }

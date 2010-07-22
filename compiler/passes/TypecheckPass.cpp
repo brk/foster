@@ -146,7 +146,7 @@ void TypecheckPass::visit(BinaryOpExprAST* ast) {
       }
     }
 
-    if (op == "<" || op == "==" || op == "!=" || op == "<=") {
+    if (isCmpOp(op)) {
       ast->type = TypeAST::get(LLVMTypeFor("i1"));
     } else {
       ast->type = Lty;

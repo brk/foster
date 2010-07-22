@@ -6,6 +6,7 @@
 #define FOSTER_PASSES_TYPECHECK
 
 #include "parse/FosterASTVisitor.h"
+#include <string>
 
 struct TypecheckPass : public FosterASTVisitor {
   // typeParsingMode allows us to parse an AST as a type specification.
@@ -28,6 +29,16 @@ inline bool isPrintRef(const ExprAST* base) {
   }
   return false;
 }
+
+inline bool isArithOp(const std::string& op) {
+  return op == "+" || op == "-" || op == "/" || op == "*";
+}
+
+inline bool isCmpOp(const std::string& op) {
+  return op == "<" || op == "<=" || op == ">" || op == ">="
+      || op == "==" || op == "!=";
+}
+
 
 #endif // header guard
 
