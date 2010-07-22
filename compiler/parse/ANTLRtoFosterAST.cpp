@@ -433,13 +433,13 @@ PrototypeAST* getFnProto(string name,
                                     gScope.pushScope("fn proto " + name);
     std::vector<VariableAST*> in = getFormals(formalsTree, fnMeansClosure);
     TypeAST* retTy = TypeAST_from(retTyExprTree);
-  //gScope.popExistingScope(protoScope);
   gScope.popScope();
 
   pTree sourceEndTree = (retTyExprTree != NULL) ? retTyExprTree : formalsTree;
   foster::SourceRange sourceRange = rangeFrom(formalsTree, sourceEndTree);
   PrototypeAST* proto = new PrototypeAST(retTy, name, in, protoScope,
                               sourceRange);
+  // TODO I forget why this needs to be typechecked...
   { TypecheckPass tp; proto->accept(&tp); }
 
   gScope.getRootScope()->insert(proto->name, new foster::SymbolInfo(proto));

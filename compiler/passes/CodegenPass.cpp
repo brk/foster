@@ -570,6 +570,11 @@ void CodegenPass::visit(PrototypeAST* ast) {
   } else {
     gScope.popScope();
   }
+
+  if (FnTypeAST* fnty = dynamic_cast<FnTypeAST*>(ast->type)) {
+    F->setCallingConv(fnty->getCallingConventionID());
+  }
+
   ast->value = F;
 }
 
@@ -727,6 +732,10 @@ void CodegenPass::visit(ClosureAST* ast) {
   if (ast->isTrampolineVersion) {
     if (Function* func = dyn_cast<Function>(fnPtr->value)) {
       func->addAttribute(1, llvm::Attribute::Nest);
+      // If we're creating a trampoline, it must be to get a value
+      // callable from C; thus, we must ensure that the underlying
+      // function itself gets a standard C calling convention.
+      func->setCallingConv(llvm::CallingConv::C);
     }
   }
 
@@ -1364,11 +1373,16 @@ void CodegenPass::visit(CallAST* ast) {
   const FunctionType* FT = NULL;
   std::vector<Value*> valArgs;
 
+  // TODO extract directly from FnTypeAST
+  llvm::CallingConv::ID callingConv = llvm::CallingConv::C;
+
   if (Function* F = llvm::dyn_cast_or_null<Function>(FV)) {
     // Call to top level function
     FT = F->getFunctionType();
+    callingConv = F->getCallingConv();
   } else if (FT = tryExtractFunctionPointerType(FV)) {
     // Call to function pointer
+    ASSERT(false) << "don't know what calling convention to use for ptrs";
   } else if (const llvm::StructType* sty = dyn_cast<const llvm::StructType>(getLLVMType(base->type))) {
     if (FnTypeAST* fty = tryExtractCallableType(
                           TypeAST::get(sty->getContainedType(0)))) {
@@ -1384,6 +1398,7 @@ void CodegenPass::visit(CallAST* ast) {
       valArgs.push_back(envPtr);
 
       FV = builder.CreateExtractValue(clo, 0, "getCloCode");
+      callingConv = llvm::CallingConv::Fast;
     }
   } else {
     EDiag() << "call to uncallable something" << show(base)
@@ -1546,11 +1561,16 @@ void CodegenPass::visit(CallAST* ast) {
   // Temporary hack: if a function expects i8 and we have i1, manually convert
   tempHackExtendIntTypes(FT, valArgs);
 
+  llvm::CallInst* callInst = NULL;
   if (isVoid(FT->getReturnType())) {
-    ast->value = builder.CreateCall(FV, valArgs.begin(), valArgs.end());
+    callInst = builder.CreateCall(FV, valArgs.begin(), valArgs.end());
   } else {
-    ast->value = builder.CreateCall(FV, valArgs.begin(), valArgs.end(), "calltmp");
+    callInst = builder.CreateCall(FV, valArgs.begin(), valArgs.end(), "calltmp");
   }
+
+  callInst->setCallingConv(callingConv);
+
+  ast->value = callInst;
 
   // If we have e.g. a function like mk-tree(... to ref node)
   // that returns a pointer, we assume that the pointer refers to

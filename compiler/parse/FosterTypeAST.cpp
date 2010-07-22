@@ -78,7 +78,7 @@ TypeAST* TypeAST::get(const llvm::Type* loweredType) {
     for (size_t i = 0; i < fnty->getNumParams(); ++i) {
        args.push_back(TypeAST::get(fnty->getParamType(i))); 
     }
-    return FnTypeAST::get(ret, args);
+    return FnTypeAST::get(ret, args, "fastcc");
   }
 
   if (const llvm::StructType* sty
@@ -150,28 +150,32 @@ bool RefTypeAST::canConvertTo(TypeAST* otherType) {
 
 /////////////////////////////////////////////////////////////////////
 
-std::map<FnTypeAST::FnTypeArgs, FnTypeAST*> FnTypeAST::fnTypeCache;
-
 FnTypeAST* FnTypeAST::get(TypeAST* returnType,
-                          const std::vector<TypeAST*>& argTypes) {
-  // TODO this is one reason why TypeAST* uniquing should be
-  // a valid but not required optimization, unlike for the
-  // underlying llvm::Type*s
-  FnTypeAST::FnTypeArgs args = std::make_pair(returnType, argTypes);
-  FnTypeAST* fnty = fnTypeCache[args];
-  if (fnty) return fnty;
-  
+                          const std::vector<TypeAST*>& argTypes,
+                          const std::string& callingConvName) {
   std::vector<const llvm::Type*> loweredArgTypes;
   for (size_t i = 0; i < argTypes.size(); ++i) {
     loweredArgTypes.push_back(argTypes[i]->getLLVMType());
-  } 
-  fnty = new FnTypeAST(
+  }
+
+  return new FnTypeAST(
 	    llvm::FunctionType::get(returnType->getLLVMType(),
                                     loweredArgTypes, /*isVarArg=*/ false),
                        returnType,
-                       argTypes, SourceRange::getEmptyRange());
-  fnTypeCache[args] = fnty;
-  return fnty;
+                       argTypes,
+                       callingConvName,
+                       SourceRange::getEmptyRange());
+}
+
+llvm::CallingConv::ID FnTypeAST::getCallingConventionID() {
+  if (callingConvention == "fastcc") {
+    return llvm::CallingConv::Fast;
+  } else if (callingConvention == "ccc") {
+    return llvm::CallingConv::C;
+  } else {
+    ASSERT(false) << "Unknown calling convention: " << callingConvention;
+    return llvm::CallingConv::C;
+  }
 }
 
 /////////////////////////////////////////////////////////////////////

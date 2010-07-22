@@ -11,6 +11,8 @@
 using foster::EDiag;
 using foster::show;
 
+#include "pystring/pystring.h"
+
 #include "llvm/DerivedTypes.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/ADT/APInt.h"
@@ -160,6 +162,22 @@ bool areNamesDisjoint(const std::vector<VariableAST*>& vars) {
   return seen.size() == vars.size();
 }
 
+bool isTopLevel(PrototypeAST* ast) {
+  bool rv = ast && ast->parent && !ast->parent->parent;
+  std::cout << "isTopLevel " << ast->name << ": " << rv << std::endl;
+  return rv;
+}
+
+const char* getCallingConvention(PrototypeAST* ast) {
+  if (ast->name == "main"
+  ||  pystring::startswith(ast->name, "llvm.")
+  ||  pystring::startswith(ast->name, "__voidReturningVersionOf__")) {
+    return "ccc";
+  } else {
+    return "fastcc";
+  }
+}
+
 void TypecheckPass::visit(PrototypeAST* ast) {
   if (!areNamesDisjoint(ast->inArgs)) {
     EDiag d; d << "formal argument names for function "
@@ -197,7 +215,8 @@ void TypecheckPass::visit(PrototypeAST* ast) {
   if (!ast->resultTy) {
     EDiag() << "NULL return type for PrototypeAST " << ast->name << show(ast);
   } else {
-    ast->type = FnTypeAST::get(ast->resultTy, argTypes);
+    ast->type = FnTypeAST::get(ast->resultTy, argTypes,
+                               getCallingConvention(ast));
   }
 }
 

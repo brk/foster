@@ -74,7 +74,9 @@ static TupleTypeAST* genericClosureTypeFor(TypeAST* ty, bool skipFirstArg) {
       fnParams.push_back(fnty->getParamType(i));
     }
 
-    FnTypeAST* newFnTy = FnTypeAST::get(fnty->getReturnType(), fnParams);
+    // We can mark closures with whatever calling convention we want,
+    // since closures are internal by definition.
+    FnTypeAST* newFnTy = FnTypeAST::get(fnty->getReturnType(), fnParams, "fastcc");
     std::vector<TypeAST*> cloTypes;
     cloTypes.push_back(RefTypeAST::get(newFnTy));
     cloTypes.push_back(envType);
@@ -128,7 +130,9 @@ FnTypeAST* originalFunctionTypeForClosureStructType(TypeAST* ty) {
       for (int i = 1; i < ft->getNumParams(); ++i) {
 	originalArgTypes.push_back(ft->getParamType(i));
       }
-      FnTypeAST* rv = FnTypeAST::get(ft->getReturnType(), originalArgTypes);
+      FnTypeAST* rv = FnTypeAST::get(ft->getReturnType(),
+                                     originalArgTypes,
+                                     "fastcc");
 #if 0
       ft->dumpParams();
       std::cout << "originalFunc...() " << str(ty) << " => " << str(ft) 

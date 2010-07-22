@@ -5,7 +5,7 @@
 #ifndef FOSTER_TYPE_AST_H
 #define FOSTER_TYPE_AST_H
 
-
+#include "llvm/CallingConv.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Support/raw_ostream.h"
@@ -124,17 +124,18 @@ public:
 class FnTypeAST : public TypeAST {
   TypeAST* returnType;
   std::vector<TypeAST*> argTypes;
+  std::string callingConvention;
 
   explicit FnTypeAST(const llvm::FunctionType* fnty,
                     TypeAST* returnType,
                     const std::vector<TypeAST*>& argTypes,
+                    const std::string& callingConvention,
                     const foster::SourceRange& sourceRange)
     : TypeAST(fnty, sourceRange),
       returnType(returnType),
-      argTypes(argTypes) {}
+      argTypes(argTypes),
+      callingConvention(callingConvention) {}
 
-  typedef std::pair<TypeAST*, std::vector<TypeAST*> > FnTypeArgs;
-  static std::map<FnTypeArgs, FnTypeAST*> fnTypeCache;
 public:
   virtual std::ostream& operator<<(std::ostream& out) const {
     out << "FnTypeAST(";
@@ -147,13 +148,16 @@ public:
   };
 
   static FnTypeAST* get(TypeAST* retTy,
-                        const std::vector<TypeAST*>& argTypes);
+                        const std::vector<TypeAST*>& argTypes,
+                        const std::string& callingConvName);
 
   TypeAST* getParamType(int i) const { return argTypes[i]; }
 
   TypeAST* getReturnType() const { return returnType; }
 
   int getNumParams() const { return argTypes.size(); }
+
+  llvm::CallingConv::ID getCallingConventionID();
 };
 
 
