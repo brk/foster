@@ -32,7 +32,7 @@ public:
   static DiagBase& get() { static DiagIgnore d; return d; }
 
 private:
-  DiagIgnore() : DiagBase(llvm::errs(), "none") {}
+  DiagIgnore() : DiagBase(llvm::nulls(), "none") {}
   ~DiagIgnore();
 
 protected:
