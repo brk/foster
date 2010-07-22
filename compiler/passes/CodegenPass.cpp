@@ -16,6 +16,8 @@
 #include "llvm/Analysis/Verifier.h"
 #include "llvm/Target/TargetData.h"
 
+#include "pystring/pystring.h"
+
 #include <map>
 #include <set>
 
@@ -540,8 +542,13 @@ void CodegenPass::visit(PrototypeAST* ast) {
     gScope.pushScope(ast->name);
   }
 
+  llvm::GlobalValue::LinkageTypes functionLinkage =
+      (ast->name.find("anon_fnlet_") != string::npos)
+        ? Function::InternalLinkage
+        : Function::ExternalLinkage;
+
   const llvm::FunctionType* FT = dyn_cast<FunctionType>(getLLVMType(ast->type));
-  Function* F = Function::Create(FT, Function::ExternalLinkage, symbolName, module);
+  Function* F = Function::Create(FT, functionLinkage, symbolName, module);
 
   if (!F) {
     EDiag() << "function creation failed" << show(ast);
