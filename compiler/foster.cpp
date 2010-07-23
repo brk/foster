@@ -781,6 +781,7 @@ int main(int argc, char** argv) {
   }
 #endif
 
+  foster::gInputFile = NULL;
   return 0;
 }
 
