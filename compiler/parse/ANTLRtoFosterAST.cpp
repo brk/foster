@@ -4,10 +4,13 @@
 
 #include "parse/ANTLRtoFosterAST.h"
 #include "parse/FosterAST.h"
+#include "parse/ANTLRtoFosterErrorHandling.h"
 #include "passes/TypecheckPass.h"
 
 #include "fosterLexer.h"
 #include "fosterParser.h"
+
+#include "llvm/Support/MemoryBuffer.h"
 
 #include <iostream>
 #include <string>
@@ -27,6 +30,10 @@ using foster::show;
 // {{{ ANTLR stuff
 std::string str(pANTLR3_STRING pstr) {
   return string((const char*)pstr->chars);
+}
+
+std::string stringTreeFrom(pTree parseTree) {
+  return str(parseTree->toStringTree(parseTree));
 }
 
 string str(pANTLR3_COMMON_TOKEN tok) {
@@ -52,10 +59,13 @@ string str(pANTLR3_COMMON_TOKEN tok) {
 
 void display_pTree(pTree t, int nspaces);
 ExprAST* ExprAST_from(pTree tree, bool infn);
+// }}}
+
+namespace {
 
 typedef void                  (*setTokenBoundariesFunc)
-  (struct ANTLR3_BASE_TREE_ADAPTOR_struct * adaptor, void * t,
-      pANTLR3_COMMON_TOKEN startToken, pANTLR3_COMMON_TOKEN stopToken);
+(struct ANTLR3_BASE_TREE_ADAPTOR_struct * adaptor, void * t,
+ pANTLR3_COMMON_TOKEN startToken, pANTLR3_COMMON_TOKEN stopToken);
 
 static setTokenBoundariesFunc sgDefaultSTB;
 
@@ -63,8 +73,8 @@ std::map<pTree, pANTLR3_COMMON_TOKEN> startTokens;
 std::map<pTree, pANTLR3_COMMON_TOKEN>   endTokens;
 
 static void customSetTokenBoundariesFunc
-  (struct ANTLR3_BASE_TREE_ADAPTOR_struct * adaptor, void * t,
-      pANTLR3_COMMON_TOKEN startToken, pANTLR3_COMMON_TOKEN stopToken) {
+(struct ANTLR3_BASE_TREE_ADAPTOR_struct * adaptor, void * t,
+ pANTLR3_COMMON_TOKEN startToken, pANTLR3_COMMON_TOKEN stopToken) {
   sgDefaultSTB(adaptor, t, startToken, stopToken);
 
   startTokens[(pTree)t] = startToken;
@@ -81,11 +91,13 @@ void installTreeTokenBoundaryTracker(pANTLR3_BASE_TREE_ADAPTOR adaptor) {
   sgDefaultSTB = adaptor->setTokenBoundaries;
   adaptor->setTokenBoundaries = customSetTokenBoundariesFunc;
 }
-// }}}
+
+} // unnamed namespace
 
 size_t getChildCount(pTree tree) {
   return static_cast<size_t>(tree->getChildCount(tree));
 }
+
 string textOf(pTree tree) {
   if (!tree) {
     cerr << "Error! Can't get text of a null node!" << endl;
@@ -1061,3 +1073,86 @@ std::vector<TypeAST*> getTypes(pTree tree) {
   }
   return types;
 }
+
+namespace {
+
+struct ANTLRContext {
+  string filename;
+  pANTLR3_INPUT_STREAM input;
+  pfosterLexer lxr;
+  pANTLR3_COMMON_TOKEN_STREAM tstream;
+  pfosterParser psr;
+
+  ~ANTLRContext() {
+    psr     ->free  (psr);      psr     = NULL;
+    tstream ->free  (tstream);  tstream = NULL;
+    lxr     ->free  (lxr);      lxr     = NULL;
+    input   ->close (input);    input   = NULL;
+  }
+};
+
+void createParser(ANTLRContext& ctx,
+                  const string& filepath,
+                  llvm::MemoryBuffer* buf) {
+  ASSERT(buf->getBufferSize() <= ((ANTLR3_UINT32)-1)
+         && "Trying to parse files larger than 4GB makes me cry.");
+  ctx.filename = filepath;
+  ctx.input = antlr3NewAsciiStringInPlaceStream(
+                                (pANTLR3_UINT8) buf->getBufferStart(),
+                                (ANTLR3_UINT32) buf->getBufferSize(),
+                                NULL);
+  ctx.lxr = fosterLexerNew(ctx.input);
+  if (ctx.lxr == NULL) {
+    ANTLR3_FPRINTF(stderr, "Unable to create lexer\n");
+    exit(ANTLR3_ERR_NOMEM);
+  }
+
+  ctx.tstream = antlr3CommonTokenStreamSourceNew(ANTLR3_SIZE_HINT,
+                                                 TOKENSOURCE(ctx.lxr));
+
+  if (ctx.tstream == NULL) {
+    ANTLR3_FPRINTF(stderr, "Out of memory trying to allocate token stream.\n");
+    exit(ANTLR3_ERR_NOMEM);
+  }
+
+  ctx.psr = fosterParserNew(ctx.tstream);
+  if (ctx.psr == NULL) {
+    ANTLR3_FPRINTF(stderr, "Out of memory trying to allocate parser.\n");
+    exit(ANTLR3_ERR_NOMEM);
+  }
+}
+
+void createParser(ANTLRContext& ctx,
+                  const foster::InputFile& infile) {
+  createParser(ctx, infile.getPath().str(), infile.getBuffer());
+}
+
+} // unnamed namespace
+
+namespace foster {
+
+ExprAST* parseExpr(const std::string& source,
+                   pTree& outTree,
+                   unsigned& outNumANTLRErrors) {
+  return NULL;
+}
+
+ModuleAST* parseModule(const InputFile& file,
+                       pTree& outTree,
+                       unsigned& outNumANTLRErrors) {
+  ANTLRContext ctx;
+  createParser(ctx, file);
+
+  installTreeTokenBoundaryTracker(ctx.psr->adaptor);
+  foster::installRecognitionErrorFilter(ctx.psr->pParser->rec);
+  fosterParser_program_return langAST = ctx.psr->program(ctx.psr);
+
+  outTree = langAST.tree;
+  outNumANTLRErrors = ctx.psr->pParser->rec->state->errorCount;
+
+  return parseTopLevel(outTree);
+}
+
+} // namespace foster
+
+const char* ANTLR_VERSION_STR = PACKAGE_VERSION;

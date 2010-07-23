@@ -11,11 +11,6 @@
 
 typedef pANTLR3_BASE_TREE pTree;
 
-void installTreeTokenBoundaryTracker(pANTLR3_BASE_TREE_ADAPTOR adaptor);
-
-class ModuleAST;
-ModuleAST* parseTopLevel(pTree tree);
-
 class TypeAST;
 TypeAST* TypeAST_from(pTree tree);
 
@@ -23,11 +18,28 @@ void initMaps();
 
 void dumpANTLRTree(std::ostream& out, pTree tree, int depth);
 
-std::string str(pANTLR3_STRING pstr);
-
+std::string stringTreeFrom(pTree tree);
 std::string str(pANTLR3_COMMON_TOKEN tok);
 
 bool isBitwiseOpName(const std::string& op);
+
+
+class ExprAST;
+class ModuleAST;
+
+namespace foster {
+
+struct InputFile;
+
+ExprAST* parseExpr(const std::string& source,
+                   pTree& outTree,
+                   unsigned& outNumANTLRErrors);
+
+ModuleAST* parseModule(const InputFile& file,
+                       pTree& outTree,
+                       unsigned& outNumANTLRErrors);
+
+} // namespace foster
 
 #endif // header guard
 

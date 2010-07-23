@@ -49,7 +49,6 @@
 #include "base/InputFile.h"
 #include "parse/FosterAST.h"
 #include "parse/ANTLRtoFosterAST.h"
-#include "parse/ANTLRtoFosterErrorHandling.h"
 
 #include "passes/BuildCFG.h"
 #include "passes/TypecheckPass.h"
@@ -57,9 +56,6 @@
 #include "passes/AddParentLinksPass.h"
 #include "passes/PrettyPrintPass.h"
 #include "passes/ClosureConversionPass.h"
-
-#include "fosterLexer.h"
-#include "fosterParser.h"
 
 #include "pystring/pystring.h"
 
@@ -82,6 +78,7 @@ using std::string;
 using std::endl;
 
 #define FOSTER_VERSION_STR "0.0.4"
+extern const char* ANTLR_VERSION_STR;
 
 struct ScopedTimer {
   ScopedTimer(llvm::Statistic& stat)
@@ -95,53 +92,6 @@ private:
   llvm::sys::TimeValue start;
 };
 
-// TODO: this isn't scalable...
-#include "antlr3defs.h"
-const char* ANTLR_VERSION_STR = PACKAGE_VERSION;
-
-struct ANTLRContext {
-  string filename;
-  pANTLR3_INPUT_STREAM input;
-  pfosterLexer lxr;
-  pANTLR3_COMMON_TOKEN_STREAM tstream;
-  pfosterParser psr;
-
-  ~ANTLRContext() {
-    psr     ->free  (psr);      psr     = NULL;
-    tstream ->free  (tstream);  tstream = NULL;
-    lxr     ->free  (lxr);      lxr     = NULL;
-    input   ->close (input);    input   = NULL;
-  }
-};
-
-void createParser(ANTLRContext& ctx, const foster::InputFile& f) {
-  ASSERT(f.getBuffer()->getBufferSize() <= ((ANTLR3_UINT32)-1)
-      && "Trying to parse files larger than 4GB makes me cry.");
-  ctx.filename = f.getPath().str();
-  ctx.input = antlr3NewAsciiStringInPlaceStream(
-                                (pANTLR3_UINT8) f.getBuffer()->getBufferStart(),
-                                (ANTLR3_UINT32) f.getBuffer()->getBufferSize(),
-                                                NULL);
-  ctx.lxr = fosterLexerNew(ctx.input);
-  if (ctx.lxr == NULL) {
-    ANTLR3_FPRINTF(stderr, "Unable to create lexer\n");
-    exit(ANTLR3_ERR_NOMEM);
-  }
-
-  ctx.tstream = antlr3CommonTokenStreamSourceNew(ANTLR3_SIZE_HINT,
-                                                 TOKENSOURCE(ctx.lxr));
-
-  if (ctx.tstream == NULL) {
-    ANTLR3_FPRINTF(stderr, "Out of memory trying to allocate token stream.\n");
-    exit(ANTLR3_ERR_NOMEM);
-  }
-
-  ctx.psr = fosterParserNew(ctx.tstream);
-  if (ctx.psr == NULL) {
-    ANTLR3_FPRINTF(stderr, "Out of memory trying to allocate parser.\n");
-    exit(ANTLR3_ERR_NOMEM);
-  }
-}
 
 VariableAST* checkAndGetLazyRefTo(PrototypeAST* p) {
   { TypecheckPass typ; p->accept(&typ); }
@@ -659,43 +609,37 @@ int main(int argc, char** argv) {
   ee = EngineBuilder(module).create();
   initMaps();
 
-  llvm::sys::Path inPath(optInputPath);
-  const foster::InputFile infile(inPath);
-  foster::gInputFile = &infile;
-
-  fosterParser_program_return langAST;
-  ANTLRContext ctx;
-
-  { ScopedTimer timer(statParseTimeMs);
-    createParser(ctx, infile);
-    installTreeTokenBoundaryTracker(ctx.psr->adaptor);
-    foster::installRecognitionErrorFilter(ctx.psr->pParser->rec);
-    langAST = ctx.psr->program(ctx.psr);
-  }
-
-  if (optDumpASTs) { ScopedTimer timer(statFileIOMs);
-    std::cout << "dumping parse trees" << endl;
-    {
-      std::ofstream out(dumpdirFile("stringtree.dump.txt").c_str());
-      out << str(langAST.tree->toStringTree(langAST.tree)) << endl;
-    }
-    {
-      std::ofstream out(dumpdirFile("parsetree.dump.txt").c_str());
-      dumpANTLRTree(out, langAST.tree, 0);
-    }
-  }
-
-  unsigned numParseErrors = ctx.psr->pParser->rec->state->errorCount;
-  if (numParseErrors > 0) {
-    exit(2);
-  }
-  
   Module* m = readModuleFromPath("libfoster.bc");
   putModuleMembersInScope(m, module);
   
   createLLVMBitIntrinsics();
+  
+  llvm::sys::Path inPath(optInputPath);
+  const foster::InputFile infile(inPath);
+  foster::gInputFile = &infile;
 
-  ModuleAST* exprAST = parseTopLevel(langAST.tree);
+  pANTLR3_BASE_TREE parseTree = NULL;
+  unsigned numParseErrors = 0;
+  ModuleAST* exprAST = NULL;
+  { ScopedTimer timer(statParseTimeMs);
+    exprAST = foster::parseModule(infile, parseTree, numParseErrors);
+  }
+  
+  if (optDumpASTs) { ScopedTimer timer(statFileIOMs);
+    std::cout << "dumping parse trees" << endl;
+    {
+      std::ofstream out(dumpdirFile("stringtree.dump.txt").c_str());
+      out << stringTreeFrom(parseTree) << endl;
+    }
+    {
+      std::ofstream out(dumpdirFile("parsetree.dump.txt").c_str());
+      dumpANTLRTree(out, parseTree, 0);
+    }
+  }
+
+  if (numParseErrors > 0) {
+    exit(2);
+  }
 
   { ScopedTimer timer(statFileIOMs);
   if (optDumpASTs) {
