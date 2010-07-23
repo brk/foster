@@ -159,14 +159,18 @@ add_library(fosterc_base STATIC
   compiler/base/SourceRange.cpp
 )
 
-add_executable(fosterc
-  compiler/foster.cpp
-  compiler/FosterUtils.cpp
+add_library(fosterc_parse STATIC
   compiler/parse/FosterAST.cpp
   compiler/parse/FosterTypeAST.cpp
   compiler/parse/FosterSymbolTable.cpp
   compiler/parse/ANTLRtoFosterAST.cpp
   compiler/parse/ANTLRtoFosterErrorHandling.cpp
+)
+add_dependencies(fosterc_parse fosterc_base)
+
+add_executable(fosterc
+  compiler/foster.cpp
+  compiler/FosterUtils.cpp
   compiler/cfg/CFG.cpp
   compiler/passes/BuildCFG.cpp
   compiler/passes/CodegenPass.cpp
@@ -182,7 +186,8 @@ add_executable(fosterc
   ${PROJECT_BINARY_DIR}/fosterLexer.c
 )
 
-target_link_libraries(fosterc fosterc_base antlr3c ${LLVM_LDFLAGS})
+target_link_libraries(fosterc
+  fosterc_base fosterc_parse antlr3c ${LLVM_LDFLAGS})
 
 add_dependencies(fosterc libfoster_bc)
 
