@@ -16,13 +16,20 @@ set(ANTLR_JAR ${ANTLR_DIR}/antlr-${ANTLR_VERSION}.jar
     CACHE FILEPATH "ANTLR jarfile")
 set(ANTLR_LIBDIR ${ANTLR_DIR}/lib)
 
+set(LLVM_VERSION 2.7)
+
+option(USE_FOSTER_GC_PLUGIN
+       "Use compiled stackmaps for garbage collection"
+       true)
+
 if (${ANTLR_DIR} STREQUAL "ANTLR_DIR-NOTFOUND")
     message("ANTLR not found! Please configure with ccmake or a CMake GUI")
     return()
 endif (${ANTLR_DIR} STREQUAL "ANTLR_DIR-NOTFOUND")
 
 
-set(LLVM_VERSION 2.7)
+configure_file(${PROJECT_SOURCE_DIR}/FosterConfig.in.h
+               ${PROJECT_BINARY_DIR}/FosterConfig.h)
 
 find_program(LLVM_CONFIG NAMES llvm-config
   PATHS $ENV{HOME}/llvm/${LLVM_VERSION}/bin
