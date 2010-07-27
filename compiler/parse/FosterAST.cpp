@@ -63,26 +63,6 @@ string freshName(string like) {
   return ss.str();
 }
 
-string join(string glue, Exprs args) {
-  std::stringstream ss;
-  if (args.size() > 0) {
-    if (args[0]) {
-      ss << *args[0];
-    } else {
-      ss << "<nil>";
-    }
-    for (size_t i = 1; i < args.size(); ++i) {
-      ss << glue;
-      if (args[i]) {
-        ss << *args[i];
-      } else {
-        ss << "<nil>";
-      }
-    }
-  }
-  return ss.str();
-}
-
 string str(ExprAST* expr) {
   if (expr) {
     std::stringstream ss; ss << (*expr); return ss.str();

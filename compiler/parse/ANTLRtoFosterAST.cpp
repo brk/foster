@@ -221,9 +221,6 @@ foster::SourceRange rangeFrom(ExprAST* a, ExprAST* b) {
 }
 
 Exprs getExprs(pTree tree, bool fnMeansClosure);
-std::ostream& operator<<(std::ostream& out, Exprs& f) {
-  return out << join("", f);
-}
 
 // expressions wrapped in () are marked here
 std::map<ExprAST*, bool> overridePrecedence;
