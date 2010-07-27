@@ -135,7 +135,7 @@ add_custom_target(libfoster_bc DEPENDS
 include_directories(${ANTLR_DIR}/include ${PROJECT_BINARY_DIR})
 
 include_directories(
-  ${PROJECT_SOURCE_DIR}/compiler
+  ${PROJECT_SOURCE_DIR}/compiler/include/foster
   ${PROJECT_SOURCE_DIR}/third_party
   ${PROJECT_SOURCE_DIR}/third_party/chromium_base
 )
