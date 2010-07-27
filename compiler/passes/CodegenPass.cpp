@@ -1188,7 +1188,7 @@ const FunctionType* tryExtractFunctionPointerType(Value* FV) {
   return dyn_cast<FunctionType>(fp->getElementType());
 }
 
-FnAST* getVoidReturningVersionOf(ExprAST* arg, const llvm::FunctionType* fnty) {
+FnAST* getVoidReturningVersionOf(ExprAST* arg, FnTypeAST* fnty) {
   static std::map<string, FnAST*> voidReturningVersions;
   string protoName;
   if (VariableAST* var = dynamic_cast<VariableAST*>(arg)) {
@@ -1211,8 +1211,8 @@ FnAST* getVoidReturningVersionOf(ExprAST* arg, const llvm::FunctionType* fnty) {
       std::stringstream ss; ss << "a" << i;
       // TODO fix this...
       VariableAST* a = new VariableAST(ss.str(),
-                             TypeAST::get(fnty->getParamType(i)),
-                             SourceRange::getEmptyRange());
+                                       fnty->getParamType(i),
+                                       SourceRange::getEmptyRange());
       inArgs.push_back(a);
       callArgs.push_back(a);
     }
@@ -1221,7 +1221,7 @@ FnAST* getVoidReturningVersionOf(ExprAST* arg, const llvm::FunctionType* fnty) {
                                     gScope.newScope("fn proto " + fnName);
     gScope.popExistingScope(protoScope);
     PrototypeAST* proto = new PrototypeAST(
-                                TypeAST::get(fnty->getVoidTy(getGlobalContext())),
+                                TypeAST::getVoid(),
                                 fnName, inArgs, protoScope,
                                 SourceRange::getEmptyRange());
     ExprAST* body = new CallAST(arg, callArgs, SourceRange::getEmptyRange());
@@ -1325,7 +1325,7 @@ FnAST* getClosureVersionOf(ExprAST* arg, FnTypeAST* fnty) {
     std::vector<VariableAST*> inArgs;
     std::vector<ExprAST*> callArgs;
     inArgs.push_back(new VariableAST("__ignored_env__",
-        RefTypeAST::get(TypeAST::get(LLVMTypeFor("i8"))),
+        RefTypeAST::get(TypeAST::i(8)),
         SourceRange::getEmptyRange()));
 
     for (size_t i = 0; i < fnty->getNumParams(); ++i) {
@@ -1450,7 +1450,7 @@ void CodegenPass::visit(CallAST* ast) {
         if (FnTypeAST* expectedFnTy = tryExtractCallableType(
                                         TypeAST::get(expectedType))) {
           if (isVoid(expectedFnTy->getReturnType()) && !isVoid(llvmFnTy)) {
-            arg = getVoidReturningVersionOf(arg, llvmFnTy);
+            arg = getVoidReturningVersionOf(arg, fnty);
           }
         }
       } else {

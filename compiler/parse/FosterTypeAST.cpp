@@ -56,6 +56,12 @@ std::map<const llvm::Type*, TypeAST*> TypeAST::thinWrappers;
 
 static std::map<const llvm::Type*, TypeAST*> seen;
 
+TypeAST* TypeAST::i(int n) { return TypeAST::get(llvmIntType(n)); }
+
+TypeAST* TypeAST::getVoid() {
+  return TypeAST::get(llvm::Type::getVoidTy(llvm::getGlobalContext()));
+}
+
 TypeAST* TypeAST::get(const llvm::Type* loweredType) {
   if (!loweredType) return NULL;
 

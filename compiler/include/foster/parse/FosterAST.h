@@ -321,7 +321,7 @@ struct PrototypeAST : public ExprAST {
       : ExprAST(sourceRange),
         name(name), inArgs(inArgs), resultTy(retTy), scope(NULL) {
     if (resultTy == NULL) {
-      this->resultTy = TypeAST::get(foster::LLVMTypeFor("i32"));
+      this->resultTy = TypeAST::i(32);
     } else {
       //std::cout << "\n\tProtoAST " << name << " ascribed result type of " << *(retTy) << std::endl;
     }
@@ -336,7 +336,7 @@ struct PrototypeAST : public ExprAST {
     ASSERT(scope != NULL);
 
     if (resultTy == NULL) {
-      this->resultTy = TypeAST::get(foster::LLVMTypeFor("i32"));
+      this->resultTy = TypeAST::i(32);
     } else {
       std::cout << "\n\tProtoAST " << name << " ascribed result type expr of " << str(retTy) << std::endl;
     }

@@ -34,9 +34,7 @@ using std::vector;
 
 ////////////////////////////////////////////////////////////////////
 
-void TypecheckPass::visit(BoolAST* ast) {
-  ast->type = TypeAST::get(LLVMTypeFor("i1"));
-}
+void TypecheckPass::visit(BoolAST* ast) { ast->type = TypeAST::i(1); }
 
 const Type* LLVMintTypeForNBits(unsigned n) {
   // Disabled until we get better inferred literal types
@@ -150,7 +148,7 @@ void TypecheckPass::visit(BinaryOpExprAST* ast) {
     }
 
     if (isCmpOp(op)) {
-      ast->type = TypeAST::get(LLVMTypeFor("i1"));
+      ast->type = TypeAST::i(1);
     } else {
       ast->type = Lty;
     }
@@ -387,7 +385,7 @@ void TypecheckPass::visit(ForRangeExprAST* ast) {
     return;
   }
 
-  ast->type = TypeAST::get(LLVMTypeFor("i32"));
+  ast->type = TypeAST::i(32);
 }
 
 int indexInParent(ExprAST* child, int startingIndex) {
@@ -481,7 +479,7 @@ void TypecheckPass::visit(NilExprAST* ast) {
 	std::cout << "nil parent parent: " << *(ast->parent->parent) << std::endl;
 	std::cout << "nil parent parent ty: " << ast->parent->parent->type << std::endl;
 
-	ast->type = RefTypeAST::get(TypeAST::get(LLVMTypeFor("i8")), true);
+	ast->type = RefTypeAST::get(TypeAST::i(8), true);
   } else {
     // make sure it's a nullable type, since this is nil...
     if (RefTypeAST* ref = dynamic_cast<RefTypeAST*>(ast->type)) {
@@ -620,7 +618,7 @@ void TypecheckPass::visit(AssignExprAST* ast) {
   if (RefTypeAST* plhsTy = dynamic_cast<RefTypeAST*>(lhsTy)) {
     lhsTy = plhsTy->getElementType();
     if (rhsTy->canConvertTo(lhsTy)) {
-      ast->type = TypeAST::get(LLVMTypeFor("i32"));
+      ast->type = TypeAST::i(32);
     } else {
       EDiag() << "types in assignment not copy-compatible"
               << "\n\tLHS (deref'd): " << str(lhsTy)
@@ -761,7 +759,7 @@ void givePrintRefPseudoPolymorphicType(CallAST* ast, TypecheckPass* pass) {
     EDiag() << "print_ref() given arg of non-ref type " << str(arg->type)
             << show(arg);
   } else {
-    ast->type = TypeAST::get(LLVMTypeFor("i32"));
+    ast->type = TypeAST::i(32);
   }
 }
 
@@ -1120,6 +1118,6 @@ void TypecheckPass::visit(BuiltinCompilesExprAST* ast) {
   } else {
     ast->status = ast->kWouldNotCompile;
   }
-  ast->type = TypeAST::get(LLVMTypeFor("i1"));
+  ast->type = TypeAST::i(1);
 }
 

@@ -75,6 +75,8 @@ public:
 
   virtual bool canConvertTo(TypeAST* otherType);
 
+  static TypeAST* i(int n);
+  static TypeAST* getVoid();
   static TypeAST* get(const llvm::Type* loweredType);
   // TODO in some situations, such as (for now)
   // when a llvm::Module gives us a function type, we need

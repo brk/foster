@@ -236,7 +236,7 @@ void createLLVMBitIntrinsics() {
       { NULL, kTransform, 0}
   };
 
-  addToProperNamespace( proto(TypeAST::get(LLVMTypeFor("i64")), "llvm.readcyclecounter") );
+  addToProperNamespace( proto(TypeAST::i(64), "llvm.readcyclecounter") );
 
   bit_intrinsic_spec* spec = spec_table;
   while (spec->intrinsicName) {
@@ -256,7 +256,7 @@ void createLLVMBitIntrinsics() {
         } else if (spec->kind == kOverflow) {
           std::vector<TypeAST*> params;
           params.push_back(ty);
-          params.push_back(TypeAST::get(LLVMTypeFor("i1")));
+          params.push_back(TypeAST::i(1));
           TypeAST* retTy = TupleTypeAST::get(params);
 
           // e.g. for declaring {16,i1} @llvm.sadd.with.overflow.i16(i16, i16)

@@ -194,6 +194,7 @@ const llvm::Type* recursivelySubstituteGenericClosureTypes(
 bool isVoid(const llvm::Type* ty) {
   return ty == ty->getVoidTy(llvm::getGlobalContext());
 }
+
 bool isVoid(const TypeAST* ty) {
   return isVoid(ty->getLLVMType());
 }
