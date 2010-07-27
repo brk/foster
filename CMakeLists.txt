@@ -178,6 +178,7 @@ add_dependencies(fosterc_parse fosterc_base)
 add_executable(fosterc
   compiler/foster.cpp
   compiler/FosterUtils.cpp
+  compiler/CompilationContext.cpp
   compiler/cfg/CFG.cpp
   compiler/passes/BuildCFG.cpp
   compiler/passes/CodegenPass.cpp

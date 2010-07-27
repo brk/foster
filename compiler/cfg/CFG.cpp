@@ -88,7 +88,7 @@ llvm::BasicBlock* CFG::codegen(CodegenPass* p, llvm::Function* parentFunction) {
                            << str(this->parentAST);
 
   // Create our LLVM basic block
-  ourBB = llvm::BasicBlock::Create(getGlobalContext(),
+  ourBB = llvm::BasicBlock::Create(llvm::getGlobalContext(),
                                    this->suggestedName,
                                    parentFunction);
 

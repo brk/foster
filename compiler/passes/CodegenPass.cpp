@@ -8,6 +8,7 @@
 #include "passes/TypecheckPass.h"
 #include "FosterUtils.h"
 #include "FosterConfig.h"
+#include "CompilationContext.h"
 
 #include "llvm/Attributes.h"
 #include "llvm/CallingConv.h"
@@ -27,12 +28,15 @@ using llvm::BasicBlock;
 using llvm::Function;
 using llvm::FunctionType;
 using llvm::IntegerType;
+using llvm::getGlobalContext;
 using llvm::Value;
 using llvm::ConstantInt;
 using llvm::APInt;
 using llvm::PHINode;
 using llvm::dyn_cast;
 
+using foster::module;
+using foster::builder;
 using foster::SourceRange;
 using foster::EDiag;
 using foster::show;
@@ -42,7 +46,7 @@ typedef std::set<OffsetInfo> OffsetSet;
 
 // TODO replace with ConstantExpr::getOffsetOf(ty, slot) ?
 int getOffsetOfStructSlot(const llvm::StructType* ty, int slot) {
-  const llvm::TargetData* td = ee->getTargetData();
+  const llvm::TargetData* td = foster::ee->getTargetData();
   ASSERT(td) << "Need TargetData to compute struct offsets!";
   int offset = 0;
   for (int i = 0; i < slot; ++i) {

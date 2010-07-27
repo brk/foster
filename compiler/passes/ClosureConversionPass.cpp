@@ -234,7 +234,7 @@ void performClosureConversion(ClosureAST* closure,
     envExprs.push_back(*it);
   }
 
-  llvm::StructType* envTy = llvm::StructType::get(getGlobalContext(),
+  llvm::StructType* envTy = llvm::StructType::get(llvm::getGlobalContext(),
                                                   envTypes,
                                                   /*isPacked=*/ false);
   std::cout << "Env ty: " << *envTy << std::endl;

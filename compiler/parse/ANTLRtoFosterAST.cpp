@@ -617,7 +617,7 @@ ExprAST* parseTypeDefinition(pTree tree, bool fnMeansClosure) {
   pTree nameTree = child(tree, 0);
   string name = textOf(child(nameTree, 0));
 
-  llvm::PATypeHolder namedType = llvm::OpaqueType::get(getGlobalContext());
+  llvm::PATypeHolder namedType = llvm::OpaqueType::get(llvm::getGlobalContext());
   gTypeScope.pushScope("opaque");
     gTypeScope.insert(name, TypeAST::get(namedType.get()));
     TypeAST* tyExpr = TypeAST_from(child(tree, 1));

@@ -59,6 +59,8 @@
 #include "passes/PrettyPrintPass.h"
 #include "passes/ClosureConversionPass.h"
 
+#include "CompilationContext.h"
+
 #include "pystring/pystring.h"
 
 #include <cassert>
@@ -612,7 +614,10 @@ int main(int argc, char** argv) {
     }
   }
   
-  fosterInitializeLLVM();
+  using foster::module;
+  using foster::ee;
+
+  foster::initializeLLVM();
   module = new Module("foster", getGlobalContext());
   ee = EngineBuilder(module).create();
   initMaps();

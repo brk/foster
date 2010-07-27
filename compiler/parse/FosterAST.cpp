@@ -8,8 +8,7 @@
 #include "passes/TypecheckPass.h"
 #include "FosterUtils.h"
 
-#include "llvm/Target/TargetSelect.h"
-#include "llvm/Module.h"
+#include "CompilationContext.h"
 
 #include <map>
 #include <vector>
@@ -24,6 +23,7 @@ using foster::SourceLocation;
 using llvm::Type;
 using llvm::BasicBlock;
 using llvm::Function;
+using llvm::getGlobalContext;
 using llvm::FunctionType;
 using llvm::IntegerType;
 using llvm::Value;
@@ -32,30 +32,12 @@ using llvm::ConstantInt;
 using std::vector;
 using std::string;
 
-llvm::ExecutionEngine* ee;
-llvm::IRBuilder<> builder(getGlobalContext());
-llvm::Module* module;
-
 std::ostream& operator<<(std::ostream& out, TypeAST& type) {
   return type.operator<<(out);
 }
 
 std::ostream& operator<<(std::ostream& out, ExprAST& expr) {
   return expr.operator<<(out);
-}
-
-/** Macros in TargetSelect.h conflict with those from ANTLR... */
-void fosterInitializeLLVM() {
-  llvm::InitializeNativeTarget();
-
-  // Initializing the native target doesn't initialize the native
-  // target's ASM printer, so we have to do it ourselves.
-#if LLVM_NATIVE_ARCH == X86Target
-  LLVMInitializeX86AsmPrinter();
-#else
-  std::cerr << "Warning: not initializing any asm printer!" << std::endl;
-#endif
-
 }
 
 /// Generates a unique name given a template; each template gets a separate
@@ -153,7 +135,7 @@ const Type* LLVMTypeFor(const string& name) {
   if (builtinTypes.count(name) == 1) {
     return builtinTypes[name];
   } else {
-    return module->getTypeByName(name);
+    return foster::module->getTypeByName(name);
   }
 }
 

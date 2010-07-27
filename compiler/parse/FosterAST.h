@@ -5,7 +5,6 @@
 #ifndef FOSTER_AST_H
 #define FOSTER_AST_H
 
-#include "llvm/LLVMContext.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
 #include "llvm/Constants.h"
@@ -33,7 +32,6 @@ using std::endl;
 using llvm::Type;
 using llvm::Module;
 using llvm::Value;
-using llvm::getGlobalContext;
 using llvm::APInt;
 using llvm::Function;
 
@@ -45,13 +43,7 @@ class TypeAST; // fwd decl
 typedef std::vector<ExprAST*> Exprs;
 std::ostream& operator<<(std::ostream& out, ExprAST& expr);
 
-void fosterInitializeLLVM();
-
 string freshName(string like);
-
-extern llvm::ExecutionEngine* ee;
-extern llvm::IRBuilder<> builder;
-extern Module* module;
 
 string join(string glue, Exprs args);
 string str(ExprAST* expr);
@@ -63,7 +55,6 @@ namespace foster {
   struct CFG;
 }
 
-TypeAST* TypeASTFor(const string& name);
 const Type* LLVMTypeFor(const string& name);
 void initModuleTypeNames();
 
