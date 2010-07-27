@@ -5,10 +5,9 @@
 #include "base/Assert.h"
 #include "base/Diagnostics.h"
 #include "parse/FosterAST.h"
+#include "parse/CompilationContext.h"
 #include "passes/TypecheckPass.h"
 #include "FosterUtils.h"
-
-#include "CompilationContext.h"
 
 #include <map>
 #include <vector>
@@ -93,42 +92,6 @@ SourceRangeHighlighter show(ExprAST* ast) {
 }
 
 } // namespace foster
-
-std::map<string, const Type*> builtinTypes;
-
-TypeAST*    TypeASTFor(const string& name) {
-  if (builtinTypes.count(name) == 1) {
-    return TypeAST::get(builtinTypes[name]);
-  } else if (TypeAST* ty = gTypeScope.lookup(name, "")) {
-    return ty;
-  } else {
-    const Type* ty = LLVMTypeFor(name);
-    if (ty) {
-      std::cerr << "WARNING: have LLVMTypeFor("<<name<<")"
-                << " but no TypeASTFor(...)" << std::endl;
-    }
-    return NULL;
-  }
-}
-
-const Type* LLVMTypeFor(const string& name) {
-  if (builtinTypes.count(name) == 1) {
-    return builtinTypes[name];
-  } else {
-    return foster::module->getTypeByName(name);
-  }
-}
-
-void initModuleTypeNames() {
-  builtinTypes["i1"] = llvm::IntegerType::get(getGlobalContext(), 1);
-  builtinTypes["i8"] = llvm::IntegerType::get(getGlobalContext(), 8);
-  builtinTypes["i16"] = llvm::IntegerType::get(getGlobalContext(), 16);
-  builtinTypes["i32"] = llvm::IntegerType::get(getGlobalContext(), 32);
-  builtinTypes["i64"] = llvm::IntegerType::get(getGlobalContext(), 64);
-  
-  builtinTypes["i8*"] = llvm::PointerType::getUnqual(builtinTypes["i8"]);
-  builtinTypes["i8**"] = llvm::PointerType::getUnqual(builtinTypes["i8*"]);
-}
 
 void FosterASTVisitor::visitChildren(ExprAST* ast) {
   for (size_t i = 0; i < ast->parts.size(); ++i) {

@@ -6,10 +6,13 @@
 #include "base/Diagnostics.h"
 #include "passes/TypecheckPass.h"
 #include "parse/FosterAST.h"
+#include "parse/CompilationContext.h"
+
 #include "FosterUtils.h"
 
 using foster::EDiag;
 using foster::show;
+using foster::LLVMTypeFor;
 
 #include "pystring/pystring.h"
 
@@ -975,6 +978,9 @@ void TypecheckPass::visit(ArrayExprAST* ast) {
 
 bool isPrimitiveNumericType(const Type* ty) {
   return ty->isFloatingPointTy() || ty->isIntegerTy();
+}
+bool isSmallPowerOfTwo(int x) {
+  return (x == 2) || (x == 4) || (x == 8) || (x == 16);
 }
 
 SimdVectorTypeAST* synthesizeSimdVectorType(SimdVectorAST* ast) {

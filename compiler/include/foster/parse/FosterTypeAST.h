@@ -28,7 +28,6 @@ class RefTypeAST;
 class TupleTypeAST;
 class ClosureTypeAST;
 
-TypeAST* TypeASTFor(const string& name);
 std::ostream& operator<<(std::ostream& out, TypeAST& expr);
 
 inline std::ostream& operator<<(std::ostream& out, const llvm::Type& ty) {

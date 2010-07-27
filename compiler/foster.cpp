@@ -51,6 +51,7 @@
 #include "base/InputFile.h"
 #include "parse/FosterAST.h"
 #include "parse/ANTLRtoFosterAST.h"
+#include "parse/CompilationContext.h"
 
 #include "passes/BuildCFG.h"
 #include "passes/TypecheckPass.h"
@@ -58,8 +59,6 @@
 #include "passes/AddParentLinksPass.h"
 #include "passes/PrettyPrintPass.h"
 #include "passes/ClosureConversionPass.h"
-
-#include "CompilationContext.h"
 
 #include "pystring/pystring.h"
 
@@ -73,6 +72,7 @@
 
 using namespace llvm;
 
+using foster::LLVMTypeFor;
 using foster::SourceRange;
 using foster::EDiag;
 
@@ -547,6 +547,7 @@ void compileToNativeAssembly(Module* mod, const string& filename) {
   passes.doFinalization();
 }
 
+/// Ensures that the given path exists and is a file, not a directory.
 void validateInputFile(const string& pathstr) {
   llvm::sys::PathWithStatus path(pathstr);
 

@@ -4,11 +4,11 @@
 
 #include "base/Diagnostics.h"
 #include "parse/FosterAST.h"
+#include "parse/CompilationContext.h"
 #include "passes/CodegenPass.h"
 #include "passes/TypecheckPass.h"
 #include "FosterUtils.h"
 #include "FosterConfig.h"
-#include "CompilationContext.h"
 
 #include "llvm/Attributes.h"
 #include "llvm/CallingConv.h"
@@ -35,6 +35,7 @@ using llvm::APInt;
 using llvm::PHINode;
 using llvm::dyn_cast;
 
+using foster::LLVMTypeFor;
 using foster::module;
 using foster::builder;
 using foster::SourceRange;

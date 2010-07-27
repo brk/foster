@@ -3,7 +3,6 @@
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
 #include "FosterUtils.h"
-#include "parse/FosterAST.h" // TODO this is just for LLVMTypeFor(), should break this dependency!
 
 #include "base/Diagnostics.h"
 
@@ -64,7 +63,8 @@ static TupleTypeAST* genericClosureTypeFor(TypeAST* ty, bool skipFirstArg) {
 #endif
 
   if (FnTypeAST* fnty = dynamic_cast<FnTypeAST*>(ty)) {
-    TypeAST* envType = RefTypeAST::get(TypeAST::get(LLVMTypeFor("i8")));
+    TypeAST* envType = RefTypeAST::get(TypeAST::get(
+        llvm::IntegerType::get(llvm::getGlobalContext(), 8)));
 
     std::vector<TypeAST*> fnParams;
     fnParams.push_back(envType);

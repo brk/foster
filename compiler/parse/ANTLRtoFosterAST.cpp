@@ -6,6 +6,7 @@
 #include "parse/FosterAST.h"
 #include "parse/ANTLRtoFosterErrorHandling.h"
 #include "passes/TypecheckPass.h"
+#include "parse/CompilationContext.h"
 
 #include "fosterLexer.h"
 #include "fosterParser.h"
@@ -24,6 +25,8 @@ using std::endl;
 using std::cout;
 using std::cerr;
 
+using foster::TypeASTFor;
+using foster::LLVMTypeFor;
 using foster::EDiag;
 using foster::show;
 
@@ -294,8 +297,6 @@ void initMaps() {
   for (size_t i = 0; i < ARRAY_SIZE(c_reserved_keywords); ++i) {
     reserved_keywords[c_reserved_keywords[i]] = true;
   }
-
-  initModuleTypeNames();
 }
 
 string spaces(int n) { return string(n, ' '); }
@@ -338,6 +339,10 @@ void dumpANTLRTree(std::ostream& out, pTree tree, int depth) {
     dumpANTLRTree(out, (pTree) tree->getChild(tree, i), depth + 1);
   }
   dumpANTLRTreeNode(out, tree, depth);
+}
+
+TypeAST* getTypeAST_i32() {
+  return TypeAST::get(llvm::IntegerType::get(llvm::getGlobalContext(), 32));
 }
 
 IntAST* parseIntFrom(pTree t) {
@@ -633,8 +638,8 @@ ExprAST* parseForRange(pTree tree, bool fnMeansClosure,
   pTree varNameTree = child(tree, 0);
   string varName = textOf(child(varNameTree, 0));
   VariableAST* var = new VariableAST(varName,
-			    TypeAST::get(LLVMTypeFor("i32")),
-			    rangeOf(varNameTree));
+                                     getTypeAST_i32(),
+			                         rangeOf(varNameTree));
   ExprAST* start = ExprAST_from(child(tree, 1), fnMeansClosure);
   ExprAST* end   = ExprAST_from(child(tree, 2), fnMeansClosure);
   ExprAST* incr  = NULL;
@@ -862,9 +867,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     // since we'll end up discarding this variable soon anyways.
     if (isSpecialName(varName)) {
       // Give a bogus type until type inference is implemented.
-      return new VariableAST(varName,
-                             TypeAST::get(LLVMTypeFor("i32")),
-                             sourceRange);
+      return new VariableAST(varName, getTypeAST_i32(), sourceRange);
     }
 
     ExprAST* var = gScopeLookupAST(varName);

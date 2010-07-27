@@ -2,13 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
+#include "base/Diagnostics.h"
+
 #include "passes/ClosureConversionPass.h"
 #include "passes/ReplaceExprTransform.h"
 #include "passes/TypecheckPass.h"
 #include "passes/CodegenPass.h"
 #include "parse/FosterAST.h"
 
-#include "base/Diagnostics.h"
+#include "parse/CompilationContext.h"
+
 using foster::show;
 using foster::EDiag;
 
@@ -221,7 +224,7 @@ void performClosureConversion(ClosureAST* closure,
   // will be able to handle the closure in functions that can be passed
   // closures with multiple different environments.
   NilExprAST* nilptr = new NilExprAST(foster::SourceRange::getEmptyRange());
-  nilptr->type = TypeAST::get(LLVMTypeFor("i8*"));
+  nilptr->type = TypeAST::get(foster::LLVMTypeFor("i8*"));
   envTypes.push_back(nilptr->type->getLLVMType());
   envExprs.push_back(nilptr);
 

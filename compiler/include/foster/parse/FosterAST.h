@@ -19,6 +19,8 @@
 #include "parse/FosterTypeAST.h"
 #include "parse/FosterSymbolTable.h"
 
+#include "CompilationContext.h"
+
 #include <iostream>
 #include <vector>
 #include <string>
@@ -35,8 +37,6 @@ using llvm::Value;
 using llvm::APInt;
 using llvm::Function;
 
-std::ostream& operator <<(std::ostream& out, const foster::SourceRange& r);
-
 class ExprAST; // fwd decl
 class TypeAST; // fwd decl
 
@@ -45,7 +45,6 @@ std::ostream& operator<<(std::ostream& out, ExprAST& expr);
 
 string freshName(string like);
 
-string join(string glue, Exprs args);
 string str(ExprAST* expr);
 string str(TypeAST* type);
 string str(Value* value);
@@ -53,13 +52,6 @@ string str(Value* value);
 namespace foster {
   SourceRangeHighlighter show(ExprAST* ast);
   struct CFG;
-}
-
-const Type* LLVMTypeFor(const string& name);
-void initModuleTypeNames();
-
-inline bool isSmallPowerOfTwo(int x) {
-  return (x == 2) || (x == 4) || (x == 8) || (x == 16);
 }
 
 template <typename T>
@@ -329,7 +321,7 @@ struct PrototypeAST : public ExprAST {
       : ExprAST(sourceRange),
         name(name), inArgs(inArgs), resultTy(retTy), scope(NULL) {
     if (resultTy == NULL) {
-      this->resultTy = TypeAST::get(LLVMTypeFor("i32"));
+      this->resultTy = TypeAST::get(foster::LLVMTypeFor("i32"));
     } else {
       //std::cout << "\n\tProtoAST " << name << " ascribed result type of " << *(retTy) << std::endl;
     }
@@ -344,7 +336,7 @@ struct PrototypeAST : public ExprAST {
     ASSERT(scope != NULL);
 
     if (resultTy == NULL) {
-      this->resultTy = TypeAST::get(LLVMTypeFor("i32"));
+      this->resultTy = TypeAST::get(foster::LLVMTypeFor("i32"));
     } else {
       std::cout << "\n\tProtoAST " << name << " ascribed result type expr of " << str(retTy) << std::endl;
     }
