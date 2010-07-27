@@ -1,15 +1,20 @@
+// Copyright (c) 2010 Ben Karel. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
+
 #include <inttypes.h>
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
 
 #include "foster_gc.h"
+#include "FosterConfig.h"
 
 #include "base/time.h"
 
-// extract frame pointer (libunwind or llvm.frameaddress?)
-// lookup stack map based on fp
-//
+#if USE_FOSTER_GC_PLUGIN
+#include "execinfo.h"
+#endif
 
 /////////////////////////////////////////////////////////////////
 
@@ -28,6 +33,34 @@ struct typemap {
   struct entry { const void* typeinfo; int32_t offset; };
   entry entries[0];
 };
+
+#if USE_FOSTER_GC_PLUGIN
+struct stackmap {
+  struct OffsetWithMetadata { void* metadata; int32_t offset; };
+
+  int32_t pointClusterCount;
+  struct PointCluster {
+    int32_t frameSize;
+    int32_t addressCount;
+    int32_t liveCountWithMetadata;
+    int32_t liveCountWithoutMetadata;
+    OffsetWithMetadata
+            liveOffsetsWithMetadata[0];
+    int32_t liveOffsetsWithoutMetadata[0];
+    void*   safePointAddresses[0];
+  };
+  PointCluster pointClusters[0];
+};
+
+struct stackmap_table {
+  int32_t numStackMaps;
+  stackmap stackmaps[0];
+};
+
+// This symbol is emitted by the fostergc LLVM GC plugin to the
+// final generated assembly.
+extern "C" stackmap_table __foster_gcmaps;
+#endif
 
 #define HEAP_CELL_FOR_BODY(ptr) ((heap_cell*) &((int64_t*)(ptr))[-1])
 const uint64_t FORWARDED_BIT = 0x02;
@@ -53,7 +86,11 @@ void* offset(void* base, int off) {
   return (void*) (((char*) base) + off);
 }
 
+#if USE_FOSTER_GC_PLUGIN
+void visitGCRootsWithStackMaps(void (*visitor)(void **root, const void *meta));
+#else
 void visitGCRoots(void (*visitor)(void **root, const void *meta));
+#endif
 
 FILE* gclog = NULL;
 
@@ -336,18 +373,62 @@ void copying_gc_root_visitor(void **root, const void *meta) {
 
 void copying_gc::gc() {
   ++num_collections;
+
+#if USE_FOSTER_GC_PLUGIN
+  visitGCRootsWithStackMaps(copying_gc_root_visitor);
+#else
   // copy all used blocks to the next semispace
   visitGCRoots(copying_gc_root_visitor);
+#endif
+
   flip();
 
-  // for debugging purposes
-  next->clear();
-  // TODO clobbering the oldspace gives segfaults, which
-  // implies that we didn't update some pointers when we copied...
+  next->clear(); // for debugging purposes
 
   fprintf(gclog, "\t/gc\n");
   fflush(gclog);
 }
+
+#if USE_FOSTER_GC_PLUGIN
+std::map<void*, const stackmap::PointCluster*> clusterForAddress;
+
+void register_stackmaps() {
+  int32_t numStackMaps = __foster_gcmaps.numStackMaps;
+  fprintf(gclog, "num stack maps: %d\n", numStackMaps);
+
+  void* ps = (void*) __foster_gcmaps.stackmaps;
+  size_t totalOffset = 0; // 
+
+  for (int32_t m = 0; m < numStackMaps; ++m) {
+    const stackmap& s = *(const stackmap*) offset(ps, totalOffset);
+    int32_t numClusters = s.pointClusterCount; 
+    fprintf(gclog, "  num clusters: %d\n", numClusters);
+
+    totalOffset += sizeof(s.pointClusterCount);
+
+    for (int32_t i = 0; i < numClusters; ++i) {
+      const stackmap::PointCluster* pc =
+        (const stackmap::PointCluster*) offset(ps, totalOffset);
+      const stackmap::PointCluster& c = *pc;
+      totalOffset += sizeof(int32_t) * 4 // sizes + counts
+                   + sizeof(int32_t) * c.liveCountWithoutMetadata
+                   + sizeof(stackmap::OffsetWithMetadata)
+                                     * c.liveCountWithMetadata;
+      void** safePointAddresses = (void**) offset(ps, totalOffset);
+      totalOffset += sizeof(void*)   * c.addressCount;
+
+      for (int32_t i = 0; i < c.addressCount; ++i) {
+        void* safePointAddress = safePointAddresses[i];
+        clusterForAddress[safePointAddress] = pc;
+      }
+
+      fprintf(gclog, "    cluster fsize %d, & %d, live: %d + %d\n",
+		     c.frameSize, c.addressCount,
+		     c.liveCountWithMetadata, c.liveCountWithoutMetadata);
+    }
+  }
+}
+#endif
 
 base::TimeTicks start;
 
@@ -357,6 +438,10 @@ void initialize() {
 
   const int KB = 1024;
   allocator = new copying_gc(1 * KB);
+
+#if USE_FOSTER_GC_PLUGIN
+  register_stackmaps(); 
+#endif
 
   start = base::TimeTicks::HighResNow();
 }
@@ -383,6 +468,88 @@ extern "C" void* memalloc(int64_t sz) {
 extern "C" void force_gc_for_debugging_purposes() {
   allocator->force_gc_for_debugging_purposes();
 }
+
+#if USE_FOSTER_GC_PLUGIN
+struct frameinfo { frameinfo* frameptr; void* retaddr; };
+int backtrace_x86_32(frameinfo* frames, size_t sz) {
+  frameinfo* frame = (frameinfo*) __builtin_frame_address(0);
+  int i = 0;
+  while (frame && sz --> 0) {
+    frames[i] = (*frame);
+    frame     = (*frame).frameptr;
+    ++i;
+  }
+  return i;
+}
+
+void visitGCRootsWithStackMaps(void (*visitor)(void **root, const void *meta)) {
+  enum { MAX_NUM_RET_ADDRS = 1024 };
+  static void* retaddrs[MAX_NUM_RET_ADDRS];
+  static frameinfo frames[MAX_NUM_RET_ADDRS];
+
+  int nFrames = backtrace_x86_32(frames, MAX_NUM_RET_ADDRS);
+
+  const bool SANITY_CHECK_CUSTOM_BACKTRACE = true;
+  if (SANITY_CHECK_CUSTOM_BACKTRACE) {
+    int numRetAddrs = backtrace((void**)&retaddrs, MAX_NUM_RET_ADDRS);
+#if 0
+    for (int i = 0; i < numRetAddrs; ++i) {
+      fprintf(gclog, "backtrace: %p\n",  retaddrs[i]);
+    }
+    for (int i = 0; i < nFrames; ++i) {
+      fprintf(gclog, "           %p\n", frames[i].retaddr);
+    }
+#endif
+
+    int diff = numRetAddrs - nFrames;
+    for (int i = 0; i < numRetAddrs; ++i) {
+      if (frames[i].retaddr != retaddrs[diff + i]) {
+        fprintf(gclog, "custom + system backtraces disagree: %p vs %p, diff %d\n", frames[diff + i].retaddr, retaddrs[i], diff);
+        exit(1);
+      }
+    }
+  }
+
+  // For now, we must disable frame pointer elimination
+  // to ensure that we can calculate the stack pointer
+  // (which requires that we have a frame pointer).
+  // It would be nice to eventually allow FPE and use debug
+  // info (unwind tables) to reconstruct frame sizes.
+  // But, judging by
+  // http://mituzas.lt/2009/07/26/on-binaries-and-fomit-frame-pointer/
+  // the performance gain from FPE is only on the order of
+  // 1 to 3%, so it's not a critical optimization.
+  //
+  // Note that while LLVM's GC plugin architecture tells us
+  // frame sizes for Foster functions, and thus lets us
+  // theoretically reconstruct frame boundaries once we
+  // reach the land of Foster, we still need "a few"
+  // frame pointers to get from Here to There.
+  //
+  // If we were willing to accept a dependency on libgcc,
+  // we could reuse the _Unwind_Backtrace function to unwind
+  // past libfoster frames and then use LLVM's computed
+  // stack frame sizes to crawl the rest of the stack.
+
+  for (int i = 0; i < nFrames; ++i) {
+    void* safePointAddr = frames[i].retaddr;
+    void* frameptr = (void*) frames[i].frameptr;
+    
+    const stackmap::PointCluster* pc = clusterForAddress[safePointAddr];
+    if (!pc) continue;
+
+    int32_t frameSize = pc->frameSize;
+
+    for (int a = 0; a < pc->liveCountWithMetadata; ++a) {
+      int32_t off = pc->liveOffsetsWithMetadata[a].offset;
+      const void* meta = pc->liveOffsetsWithMetadata[a].metadata;
+      void* rootaddr = offset(frameptr, off);
+      visitor((void**) rootaddr, meta);
+    }
+  }
+
+}
+#endif
 
 #if 0
 /////////////////////////////////////////////////////////////////

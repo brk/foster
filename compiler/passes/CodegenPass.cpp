@@ -7,6 +7,7 @@
 #include "passes/CodegenPass.h"
 #include "passes/TypecheckPass.h"
 #include "FosterUtils.h"
+#include "FosterConfig.h"
 
 #include "llvm/Attributes.h"
 #include "llvm/CallingConv.h"
@@ -609,7 +610,11 @@ void CodegenPass::visit(FnAST* ast) {
   Function* F = dyn_cast<Function>(ast->proto->value);
   if (!F) { return; }
 
+#if USE_FOSTER_GC_PLUGIN
+  F->setGC("fostergc");
+#else
   F->setGC("shadow-stack");
+#endif
 
   BasicBlock* prevBB = builder.GetInsertBlock();
   BasicBlock* BB = BasicBlock::Create(getGlobalContext(), "entry", F);

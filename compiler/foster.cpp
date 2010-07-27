@@ -18,9 +18,11 @@
 #include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/Config/config.h"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
+#include "llvm/CodeGen/LinkAllAsmWriterComponents.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetRegistry.h"
+#include "llvm/Target/TargetOptions.h"
 #include "llvm/Target/SubtargetFeature.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Support/StandardPasses.h"
@@ -523,8 +525,10 @@ void compileToNativeAssembly(Module* mod, const string& filename) {
         << err << std::endl;
     exit(1);
   }
+
   llvm::formatted_raw_ostream out(raw_out,
       llvm::formatted_raw_ostream::PRESERVE_STREAM);
+
   if (tm->addPassesToEmitFile(passes, out,
       TargetMachine::CGFT_AssemblyFile,
       CodeGenOpt::Aggressive,
@@ -576,6 +580,10 @@ void setDefaultCommandLineOptions() {
     // the user to override via command line options if need be.
     llvm::TargetMachine::setRelocationModel(llvm::Reloc::DynamicNoPIC);
   }
+
+  // Ensure we always compile with -disable-fp-elim
+  // to enable simple stack walking for the GC.
+  llvm::NoFramePointerElim = true;
 }
 
 int main(int argc, char** argv) {

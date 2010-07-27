@@ -36,7 +36,7 @@ def compile_source(src):
   runtime_gc = os.path.join(srcdir, 'runtime', 'gc')
   basedir    = os.path.join(srcdir, 'third_party', 'chromium_base')
   cpuiddir   = os.path.join(srcdir, 'third_party', 'cpuid')
-  include_dirs = [runtime_gc, basedir, cpuiddir]
+  include_dirs = [bindir, runtime_gc, basedir, cpuiddir]
   includes = ' '.join(['-I ' + path for path in include_dirs])
   cmd = "%s %s %s -emit-llvm -c -o %s" % (clang, src, includes, outbc)
   print cmd
