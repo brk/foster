@@ -8,7 +8,7 @@
 #include <cstring>
 
 #include "foster_gc.h"
-#include "FosterConfig.h"
+#include "_generated_/FosterConfig.h"
 
 #include "base/time.h"
 

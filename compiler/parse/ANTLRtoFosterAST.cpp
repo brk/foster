@@ -8,8 +8,8 @@
 #include "passes/TypecheckPass.h"
 #include "parse/CompilationContext.h"
 
-#include "fosterLexer.h"
-#include "fosterParser.h"
+#include "_generated_/fosterLexer.h"
+#include "_generated_/fosterParser.h"
 
 #include "llvm/Support/MemoryBuffer.h"
 

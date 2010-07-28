@@ -27,9 +27,10 @@ if (${ANTLR_DIR} STREQUAL "ANTLR_DIR-NOTFOUND")
     return()
 endif (${ANTLR_DIR} STREQUAL "ANTLR_DIR-NOTFOUND")
 
+set(GENERATED ${PROJECT_BINARY_DIR}/_generated_)
 
 configure_file(${PROJECT_SOURCE_DIR}/FosterConfig.in.h
-               ${PROJECT_BINARY_DIR}/FosterConfig.h)
+               ${GENERATED}/FosterConfig.h)
 
 find_program(LLVM_CONFIG NAMES llvm-config
   PATHS $ENV{HOME}/llvm/${LLVM_VERSION}/bin
@@ -87,11 +88,11 @@ find_package(Threads REQUIRED)
 
 # Use python to build fosterParser.c when grammar/foster.g changes
 add_custom_command(
-  OUTPUT ${PROJECT_BINARY_DIR}/fosterParser.c
-         ${PROJECT_BINARY_DIR}/fosterLexer.c
+  OUTPUT ${GENERATED}/fosterParser.c
+         ${GENERATED}/fosterLexer.c
   COMMAND python ${PROJECT_SOURCE_DIR}/scripts/run_antlr.py
                     ${ANTLR_JAR}
-                    ${PROJECT_BINARY_DIR}
+                    ${GENERATED}
                     ${PROJECT_SOURCE_DIR}/grammar/foster.g
   DEPENDS
   	grammar/foster.g
@@ -173,6 +174,8 @@ add_library(fosterc_parse STATIC
   compiler/parse/ANTLRtoFosterAST.cpp
   compiler/parse/ANTLRtoFosterErrorHandling.cpp
   compiler/parse/CompilationContext.cpp
+  ${GENERATED}/fosterParser.c
+  ${GENERATED}/fosterLexer.c
 )
 add_dependencies(fosterc_parse fosterc_base)
 
@@ -191,8 +194,6 @@ add_executable(fosterc
   compiler/llvm/plugins/FosterGC.cpp
   #  compiler/llvm/passes/LLVMCallGraphDotPrinter.cpp
   third_party/pystring/pystring.cpp
-  ${PROJECT_BINARY_DIR}/fosterParser.c
-  ${PROJECT_BINARY_DIR}/fosterLexer.c
 )
 
 target_link_libraries(fosterc
