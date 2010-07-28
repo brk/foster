@@ -9,14 +9,7 @@
 #include <string>
 
 struct TypecheckPass : public FosterASTVisitor {
-  // typeParsingMode allows us to parse an AST as a type specification.
-  // The only difference from the "main" TypecheckPass is that the type of
-  // a variable is determined from its name; e.g.
-  // VariableAST("i32", ...) gets type LLVMTypeFor("i32") instead of inspecting
-  // the "provided" type.
-  bool typeParsingMode;
-  
-  TypecheckPass() : typeParsingMode(false) {}
+  explicit TypecheckPass() {}
   
   #include "parse/FosterASTVisitor.decls.inc.h"
 };
