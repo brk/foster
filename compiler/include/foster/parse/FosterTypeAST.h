@@ -77,8 +77,11 @@ public:
 
   static TypeAST* i(int n);
   static TypeAST* getVoid();
+  // get() should be used for primitive LLVM types;
+  // reconstruct() should be used for derived llvm types.
   static TypeAST* get(const llvm::Type* loweredType);
-  // TODO in some situations, such as (for now)
+  
+  // In some situations, such as (for now)
   // when a llvm::Module gives us a function type, we need
   // to make a best effort at reconstruting a specific
   // TypeAST tree based on the provided llvm::Type.
@@ -86,6 +89,20 @@ public:
   // emit interface definitions in parallel with compiled
   // Modules, so that we don't lose e.g. nullability info
   // in the first place.
+  static TypeAST* reconstruct(const llvm::Type* loweredType);
+};
+
+class IndexableTypeAST : public TypeAST {
+protected:
+  explicit IndexableTypeAST(const llvm::Type* underlyingType,
+                   const foster::SourceRange& sourceRange)
+    : TypeAST(underlyingType, sourceRange) {}
+  virtual ~IndexableTypeAST() {}
+  
+public:
+  virtual TypeAST* getContainedType(size_t idx) const = 0;
+  virtual int64_t  getNumElements() const = 0; 
+  virtual bool     indexValid(int idx) const { return idx < getNumElements(); } 
 };
 
 
@@ -165,13 +182,13 @@ public:
 };
 
 
-class TupleTypeAST : public TypeAST {
+class TupleTypeAST : public IndexableTypeAST {
   std::vector<TypeAST*> parts;
 
   explicit TupleTypeAST(const llvm::StructType* sty,
                     const std::vector<TypeAST*>& parts,
                     const foster::SourceRange& sourceRange)
-    : TypeAST(sty, sourceRange),
+    : IndexableTypeAST(sty, sourceRange),
       parts(parts) {}
 
   typedef std::vector<TypeAST*> Args;
@@ -185,8 +202,12 @@ public:
     out << " }";
     return out;
   }
-  virtual int getNumContainedTypes() { return parts.size(); }
-  virtual TypeAST* getContainedType(int i) { return parts[i]; }
+  virtual int getNumContainedTypes() const { return parts.size(); }
+  virtual int64_t getNumElements()   const { return parts.size(); }
+  virtual TypeAST* getContainedType(size_t i) const {
+    if (indexValid(i)) return parts[i]; else return NULL;
+  }
+  
   static TupleTypeAST* get(const std::vector<TypeAST*>& parts);
 };
 
@@ -199,7 +220,8 @@ public:
   mutable TupleTypeAST* clotype;
   explicit ClosureTypeAST(PrototypeAST* proto, const llvm::Type* underlyingType,
                           const foster::SourceRange& sourceRange)
-     : TypeAST(underlyingType, sourceRange), proto(proto), fntype(NULL), clotype(NULL) {}
+     : TypeAST(underlyingType, sourceRange),
+       proto(proto), fntype(NULL), clotype(NULL) {}
 
   virtual std::ostream& operator<<(std::ostream& out) const;
   virtual const llvm::Type* getLLVMType() const;
@@ -207,10 +229,10 @@ public:
 };
 
 
-class LiteralIntTypeAST : public TypeAST {
+class LiteralIntValueTypeAST : public TypeAST {
   uint64_t value;
 public:
-  explicit LiteralIntTypeAST(uint64_t value,
+  explicit LiteralIntValueTypeAST(uint64_t value,
                       const foster::SourceRange& sourceRange)
     : TypeAST(llvm::IntegerType::get(llvm::getGlobalContext(), 64),
               sourceRange),
@@ -220,22 +242,31 @@ public:
     return out << value;
   }
 
-  uint64_t getNumericalValue() { return value; }
+  uint64_t getNumericalValue() const { return value; }
 };
 
 
-class SimdVectorTypeAST : public TypeAST {
-public:
-  explicit SimdVectorTypeAST(const llvm::Type* simdVectorTy,
-                             const foster::SourceRange& sourceRange)
-     : TypeAST(simdVectorTy, sourceRange) {}
+class SimdVectorTypeAST : public IndexableTypeAST {
+  LiteralIntValueTypeAST* size;
+  TypeAST*                elementType;
 
+  explicit SimdVectorTypeAST(const llvm::Type* simdVectorTy,
+                             LiteralIntValueTypeAST* size,
+                             TypeAST*                elementType,
+                             const foster::SourceRange& sourceRange)
+     : IndexableTypeAST(simdVectorTy, sourceRange),
+       size(size), elementType(elementType) {}
+
+public:
   virtual std::ostream& operator<<(std::ostream& out) const {
     out << "SimdVectorTypeAST(" << str(repr) << ")";
     return out;
   }
-
-  static SimdVectorTypeAST* get(LiteralIntTypeAST* size, TypeAST* type,
+  
+  virtual TypeAST* getContainedType(size_t i) const { return elementType; }
+  virtual int64_t  getNumElements() const { return size->getNumericalValue(); }
+  
+  static SimdVectorTypeAST* get(LiteralIntValueTypeAST* size, TypeAST* type,
                                 const foster::SourceRange& sourceRange);
 };
 

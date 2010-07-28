@@ -341,10 +341,6 @@ void dumpANTLRTree(std::ostream& out, pTree tree, int depth) {
   dumpANTLRTreeNode(out, tree, depth);
 }
 
-TypeAST* getTypeAST_i32() {
-  return TypeAST::get(llvm::IntegerType::get(llvm::getGlobalContext(), 32));
-}
-
 IntAST* parseIntFrom(pTree t) {
   if (textOf(t) != "INT") {
     EDiag() << "parseIntFrom() called on non-INT token " << textOf(t)
@@ -621,7 +617,10 @@ ExprAST* parseTypeDefinition(pTree tree, bool fnMeansClosure) {
 
   llvm::PATypeHolder namedType = llvm::OpaqueType::get(llvm::getGlobalContext());
   gTypeScope.pushScope("opaque");
-    gTypeScope.insert(name, TypeAST::get(namedType.get()));
+    // namedType.get() is an OpaqueType at this point, so we cannot yet do
+    // anything but wrap it directly.
+    gTypeScope.insert(name, TypeAST::reconstruct(
+          llvm::dyn_cast<const llvm::OpaqueType>(namedType.get())));
     TypeAST* tyExpr = TypeAST_from(child(tree, 1));
     llvm::cast<llvm::OpaqueType>(namedType.get())->
                refineAbstractTypeTo(tyExpr->getLLVMType());
@@ -638,7 +637,7 @@ ExprAST* parseForRange(pTree tree, bool fnMeansClosure,
   pTree varNameTree = child(tree, 0);
   string varName = textOf(child(varNameTree, 0));
   VariableAST* var = new VariableAST(varName,
-                                     getTypeAST_i32(),
+                                     TypeAST::i(32),
 			                         rangeOf(varNameTree));
   ExprAST* start = ExprAST_from(child(tree, 1), fnMeansClosure);
   ExprAST* end   = ExprAST_from(child(tree, 2), fnMeansClosure);
@@ -699,7 +698,8 @@ TypeAST* parseCtorType(pTree tree,
     // e.g. simd-vector of 4 i32
     TypeAST* size = TypeAST_from(child(seqArgs, 0));
     TypeAST* type = TypeAST_from(child(seqArgs, 1));
-    if (LiteralIntTypeAST* litsize = dynamic_cast<LiteralIntTypeAST*>(size)) {
+    if (LiteralIntValueTypeAST* litsize =
+                                 dynamic_cast<LiteralIntValueTypeAST*>(size)) {
       return SimdVectorTypeAST::get(litsize, type, sourceRange);
     } else {
       EDiag() << "simd-vector type must be parameterized by a literal int size"
@@ -867,7 +867,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     // since we'll end up discarding this variable soon anyways.
     if (isSpecialName(varName)) {
       // Give a bogus type until type inference is implemented.
-      return new VariableAST(varName, getTypeAST_i32(), sourceRange);
+      return new VariableAST(varName, TypeAST::i(32), sourceRange);
     }
 
     ExprAST* var = gScopeLookupAST(varName);
@@ -1011,7 +1011,7 @@ TypeAST* TypeAST_from(pTree tree) {
     if (ast) {
       TypecheckPass tp; ast->accept(&tp);
       uint64_t val = getSaturating<uint64_t>(ast->getConstantValue());
-      return new LiteralIntTypeAST(val, sourceRange);
+      return new LiteralIntValueTypeAST(val, sourceRange);
     }
   }
 

@@ -1393,23 +1393,24 @@ void CodegenPass::visit(CallAST* ast) {
   } else if (FT = tryExtractFunctionPointerType(FV)) {
     // Call to function pointer
     ASSERT(false) << "don't know what calling convention to use for ptrs";
-  } else if (const llvm::StructType* sty = dyn_cast<const llvm::StructType>(getLLVMType(base->type))) {
-    if (FnTypeAST* fty = tryExtractCallableType(
-                          TypeAST::get(sty->getContainedType(0)))) {
-      // Call to closure struct
-      FT = dyn_cast<const FunctionType>(fty->getLLVMType());
-      llvm::Value* clo = getClosureStructValue(FV);
+  } else if (ClosureTypeAST* cty = dynamic_cast<ClosureTypeAST*>(base->type)) {
+    // Call to closure struct
+    FnTypeAST* fty = tryExtractCallableType(cty->clotype->getContainedType(0));
+    std::cout << "closure fntype is " << fty << std::endl;
+    ASSERT(fty) << "closure must have function type at codegen time!";
+    
+    FT = dyn_cast<const FunctionType>(fty->getLLVMType());
+    llvm::Value* clo = getClosureStructValue(FV);
 
-      ASSERT(!clo->getType()->isPointerTy())
-          << "clo value should be a tuple, not a pointer";
-      llvm::Value* envPtr = builder.CreateExtractValue(clo, 1, "getCloEnv");
+    ASSERT(!clo->getType()->isPointerTy())
+        << "clo value should be a tuple, not a pointer";
+    llvm::Value* envPtr = builder.CreateExtractValue(clo, 1, "getCloEnv");
 
-      // Pass env pointer as first parameter to function.
-      valArgs.push_back(envPtr);
+    // Pass env pointer as first parameter to function.
+    valArgs.push_back(envPtr);
 
-      FV = builder.CreateExtractValue(clo, 0, "getCloCode");
-      callingConv = llvm::CallingConv::Fast;
-    }
+    FV = builder.CreateExtractValue(clo, 0, "getCloCode");
+    callingConv = llvm::CallingConv::Fast;
   } else {
     EDiag() << "call to uncallable something" << show(base)
             << "\nFV: " << str(FV);
@@ -1447,8 +1448,9 @@ void CodegenPass::visit(CallAST* ast) {
       // automatically generate a return-value-eating wrapper if we try
       // to pass a function returning a value to a function expecting
       // a procedure returning void.
-        if (FnTypeAST* expectedFnTy = tryExtractCallableType(
-                                        TypeAST::get(expectedType))) {
+        if (FnTypeAST* expectedFnTy =
+              tryExtractCallableType(TypeAST::reconstruct(
+                  llvm::dyn_cast<const llvm::DerivedType>(expectedType)))) {
           if (isVoid(expectedFnTy->getReturnType()) && !isVoid(llvmFnTy)) {
             arg = getVoidReturningVersionOf(arg, fnty);
           }
@@ -1510,6 +1512,8 @@ void CodegenPass::visit(CallAST* ast) {
 
     // ContainedType[0] is the return type; args start at 1
     const llvm::Type* expectedType = FT->getContainedType(i + 1);
+    
+    std::cout <<" FT: " << str(FT) << std::endl;
 
     // If we're given a T** when we expect a T*,
     // automatically load the reference from the stack.

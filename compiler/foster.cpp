@@ -241,14 +241,12 @@ void createLLVMBitIntrinsics() {
   bit_intrinsic_spec* spec = spec_table;
   while (spec->intrinsicName) {
     unsigned size = 8;
-    char ssize[16] = {0};
     while (size <= 64) {
       if (size & spec->sizeFlags) {
-        sprintf(ssize, "i%d", size);
-        TypeAST* ty = TypeAST::get(LLVMTypeFor(ssize));
+        TypeAST* ty = TypeAST::i(size);
 
         std::stringstream ss;
-        ss << "llvm." << spec->intrinsicName << "." << ssize;
+        ss << "llvm." << spec->intrinsicName << ".i" << size;
 
         if (spec->kind == kTransform) {
           // e.g for declaring i16 @llvm.bswap.i16(i16)
@@ -263,7 +261,7 @@ void createLLVMBitIntrinsics() {
           addToProperNamespace( proto(retTy, ss.str(), ty, ty) );
         } else if (spec->kind == kAtomicStub) {
           // ss contains something like "llvm.atomic.cmp.swap.i32"
-          ss << ".p0" << ssize; // now "llvm.atomic.cmp.swap.i32.p0i32"
+          ss << ".p0i" << size; // now "llvm.atomic.cmp.swap.i32.p0i32"
 
           if (spec->intrinsicName == string("atomic.cmp.swap")) {
             // e.g. for declaring i32 @llvm.atomic.cmp.swap.i32.p0i32(i32*, i32, i32)
@@ -367,17 +365,24 @@ void putModuleMembersInScope(Module* m, Module* linkee) {
         ty = pty->getElementType();
       }
 
-      // Ensure that codegen for the given function finds the 'declare'
-      // TODO make lazy prototype?
-      Value* decl = linkee->getOrInsertFunction(
-          llvm::StringRef(name),
-          llvm::dyn_cast<llvm::FunctionType>(ty),
-          f.getAttributes());
-
-      gScope.insert(name, new foster::SymbolInfo(
-                              new VariableAST(name, TypeAST::get(ty),
+      if (const llvm::FunctionType* fnty =
+                                      llvm::dyn_cast<llvm::FunctionType>(ty)) {
+        // Ensure that codegen for the given function finds the 'declare'
+        // TODO make lazy prototype?
+        Value* decl = linkee->getOrInsertFunction(
+            llvm::StringRef(name),
+            fnty,
+            f.getAttributes());
+  
+        std::cout << "inserting variable in global scope: " << name << " : "
+                  << str(fnty) << std::endl;
+        gScope.insert(name, new foster::SymbolInfo(
+                              new VariableAST(name, TypeAST::reconstruct(fnty),
                                               SourceRange::getEmptyRange()),
                               decl));
+      } else {
+        ASSERT(false) << "how could a function not have function type?!?";
+      }
     }
   }
 }

@@ -64,10 +64,27 @@ TypeAST* TypeAST::getVoid() {
 
 TypeAST* TypeAST::get(const llvm::Type* loweredType) {
   if (!loweredType) return NULL;
+  if (const llvm::DerivedType* derived
+                       = llvm::dyn_cast<const llvm::DerivedType>(loweredType)) {
+    if (llvm::dyn_cast<const llvm::IntegerType>(loweredType)) {
+      // fall through to non-derived case
+    } else {
+      std::cerr << "TypeAST::get() warning: derived types should "
+                   " not be passed to TypeAST::get()! Got: "
+                << str(loweredType) << std::endl;
+      return TypeAST::reconstruct(derived);
+    }
+  }
+  
+  TypeAST* tyast = thinWrappers[loweredType];
+  if (tyast) { return tyast; }
+  tyast = new TypeAST(loweredType, SourceRange::getEmptyRange()); 
+  thinWrappers[loweredType] = tyast;
+  return tyast;
+}
 
+TypeAST* TypeAST::reconstruct(const llvm::Type* loweredType) {
   if (loweredType->isPointerTy()) {
-    if (0) std::cerr << "TypeAST::get() warning: pointer types should "
-             " be passed to RefTypeAST, not base TypeAST!" << std::endl;
     const llvm::Type* pointee = loweredType->getContainedType(0);
     if (TypeAST* s = seen[pointee]) {
       if (s == (TypeAST*) 1) {
@@ -77,17 +94,15 @@ TypeAST* TypeAST::get(const llvm::Type* loweredType) {
         return s;
       }
     }
-    return RefTypeAST::get(TypeAST::get(pointee)); 
+    return RefTypeAST::get(TypeAST::reconstruct(pointee)); 
   }
 
   if (const llvm::FunctionType* fnty
          = llvm::dyn_cast<const llvm::FunctionType>(loweredType)) {
-    if (0) std::cerr << "TypeAST::get() warning: function types should "
-                 "not be passed to TypeAST::get()!" << std::endl;
-    TypeAST* ret = TypeAST::get(fnty->getReturnType());
+    TypeAST* ret = TypeAST::reconstruct(fnty->getReturnType());
     std::vector<TypeAST*> args;
     for (size_t i = 0; i < fnty->getNumParams(); ++i) {
-       args.push_back(TypeAST::get(fnty->getParamType(i))); 
+       args.push_back(TypeAST::reconstruct(fnty->getParamType(i))); 
     }
     return FnTypeAST::get(ret, args, "fastcc");
   }
@@ -97,16 +112,23 @@ TypeAST* TypeAST::get(const llvm::Type* loweredType) {
     seen[sty] = (TypeAST*) 1;
     std::vector<TypeAST*> args;
     for (size_t i = 0; i < sty->getNumElements(); ++i) {
-       args.push_back(TypeAST::get(sty->getContainedType(i))); 
+       args.push_back(TypeAST::reconstruct(sty->getContainedType(i))); 
     }
     return TupleTypeAST::get(args);
   }
-
-  TypeAST* tyast = thinWrappers[loweredType];
-  if (tyast) { return tyast; }
-  tyast = new TypeAST(loweredType, SourceRange::getEmptyRange()); 
-  thinWrappers[loweredType] = tyast;
-  return tyast;
+  
+  if (const llvm::ArrayType* aty =
+    llvm::dyn_cast<const llvm::ArrayType>(loweredType)) {
+    // TODO add ArrayTypeAST...
+    return new TypeAST(loweredType, SourceRange::getEmptyRange());
+  }
+  
+  if (const llvm::OpaqueType* ty =
+            llvm::dyn_cast<const llvm::OpaqueType>(loweredType)) {
+    return new TypeAST(loweredType, SourceRange::getEmptyRange());
+  }
+  
+  return TypeAST::get(loweredType);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -233,10 +255,10 @@ const llvm::Type* ClosureTypeAST::getLLVMType() const {
 }
 
 // static
-SimdVectorTypeAST* SimdVectorTypeAST::get(LiteralIntTypeAST* size,
+SimdVectorTypeAST* SimdVectorTypeAST::get(LiteralIntValueTypeAST* size,
                                           TypeAST* type,
                                           const SourceRange& sourceRange) {
   llvm::VectorType* vecTy = llvm::VectorType::get(type->getLLVMType(),
                                                   size->getNumericalValue());
-  return new SimdVectorTypeAST(vecTy, sourceRange);
+  return new SimdVectorTypeAST(vecTy, size, type, sourceRange);
 }

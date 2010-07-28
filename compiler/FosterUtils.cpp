@@ -63,8 +63,7 @@ static TupleTypeAST* genericClosureTypeFor(TypeAST* ty, bool skipFirstArg) {
 #endif
 
   if (FnTypeAST* fnty = dynamic_cast<FnTypeAST*>(ty)) {
-    TypeAST* envType = RefTypeAST::get(TypeAST::get(
-        llvm::IntegerType::get(llvm::getGlobalContext(), 8)));
+    TypeAST* envType = RefTypeAST::get(TypeAST::i(8));
 
     std::vector<TypeAST*> fnParams;
     fnParams.push_back(envType);

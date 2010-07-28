@@ -216,7 +216,7 @@ void performClosureConversion(ClosureAST* closure,
   set<VariableAST*>& freeVars = freeVariables[ast];
 
   // Create a record to contain the free variables
-  std::vector<const Type*> envTypes;
+  std::vector<TypeAST*> envTypes;
   Exprs envExprs;
 
   // The first entry in the environment is just a placeholder for the typemap.
@@ -224,8 +224,8 @@ void performClosureConversion(ClosureAST* closure,
   // will be able to handle the closure in functions that can be passed
   // closures with multiple different environments.
   NilExprAST* nilptr = new NilExprAST(foster::SourceRange::getEmptyRange());
-  nilptr->type = TypeAST::get(foster::LLVMTypeFor("i8*"));
-  envTypes.push_back(nilptr->type->getLLVMType());
+  nilptr->type = RefTypeAST::get(TypeAST::i(8));
+  envTypes.push_back(nilptr->type);
   envExprs.push_back(nilptr);
 
   set<VariableAST*>::iterator it;
@@ -233,18 +233,15 @@ void performClosureConversion(ClosureAST* closure,
     std::cout << "Free var: " <<     *(*it) << std::endl;
     std::cout << "Free var ty: " << *((*it)->type) << std::endl;
     std::cout << std::endl;
-    envTypes.push_back((*it)->type->getLLVMType());
+    envTypes.push_back((*it)->type);
     envExprs.push_back(*it);
   }
 
-  llvm::StructType* envTy = llvm::StructType::get(llvm::getGlobalContext(),
-                                                  envTypes,
-                                                  /*isPacked=*/ false);
-  std::cout << "Env ty: " << *envTy << std::endl;
+  TupleTypeAST* envTy = TupleTypeAST::get(envTypes);
 
   // Make (a pointer to) this record be the function's first parameter.
   VariableAST* envVar = new VariableAST("env",
-                              RefTypeAST::get(TypeAST::get(envTy)),
+                              RefTypeAST::get(envTy),
                               foster::SourceRange::getEmptyRange());
   prependParameter(ast->proto, envVar);
 

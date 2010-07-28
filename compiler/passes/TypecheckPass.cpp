@@ -19,6 +19,7 @@ using foster::LLVMTypeFor;
 #include "llvm/DerivedTypes.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/ADT/APInt.h"
+#include "llvm/Support/MathExtras.h"
 
 using llvm::Type;
 using llvm::Function;
@@ -36,13 +37,13 @@ using std::vector;
 
 void TypecheckPass::visit(BoolAST* ast) { ast->type = TypeAST::i(1); }
 
-const Type* LLVMintTypeForNBits(unsigned n) {
+unsigned intSizeForNBits(unsigned n) {
   // Disabled until we get better inferred literal types
   //if (n <= 1) return LLVMTypeFor("i1");
   //if (n <= 8) return LLVMTypeFor("i8");
   //if (n <= 16) return LLVMTypeFor("i16");
-  if (n <= 32) return LLVMTypeFor("i32");
-  if (n <= 64) return LLVMTypeFor("i64");
+  if (n <= 32) return 32;
+  if (n <= 64) return 64;
   return NULL;
 }
 
@@ -77,7 +78,7 @@ void TypecheckPass::visit(IntAST* ast) {
     return;
   }
 
-  ast->type = TypeAST::get(LLVMintTypeForNBits(activeBits));
+  ast->type = TypeAST::i(intSizeForNBits(activeBits));
 }
 
 void TypecheckPass::visit(VariableAST* ast) {
@@ -406,15 +407,14 @@ void TypecheckPass::visit(NilExprAST* ast) {
     if (ast->parent->parent->type) {
 	  // If we have a type for the parent already, it's probably because
 	  // it's a   new _type_ { ... nil ... }  -like expr.
-      if (const llvm::StructType* tupleTy =
-          llvm::dyn_cast<const llvm::StructType>(
-		ast->parent->parent->type->getLLVMType())) {
+      if (TupleTypeAST* tupleTy =
+                      dynamic_cast<TupleTypeAST*>(ast->parent->parent->type)) {
         std::vector<ExprAST*>::iterator nilPos
                     = std::find(ast->parent->parts.begin(),
                                 ast->parent->parts.end(),   ast);
         if (nilPos != ast->parent->parts.end()) {
           int nilOffset = std::distance(ast->parent->parts.begin(), nilPos);
-          ast->type = TypeAST::get(tupleTy->getContainedType(nilOffset));
+          ast->type = tupleTy->getContainedType(nilOffset);
           std::cout << "\tmunging gave nil type " << *(ast->type) << std::endl;
         }
       }
@@ -435,24 +435,22 @@ void TypecheckPass::visit(NilExprAST* ast) {
     if (CallAST* callast = dynamic_cast<CallAST*>(ast->parent)) {
       // find the arg position of our nil
       ExprAST* callee = callast->parts[0];
-      const llvm::Type* loweredType = callee->type->getLLVMType();
+      TypeAST* baseType = callee->type;
 
       // First, try converting closures to their underlying fn type
-      if (isValidClosureType(loweredType)) {
-        FnTypeAST* f = originalFunctionTypeForClosureStructType(callee->type);
-        loweredType = f->getLLVMType();
+      if (isValidClosureType(baseType->getLLVMType())) {
+        baseType = originalFunctionTypeForClosureStructType(baseType);
       }
-
-      if (const llvm::FunctionType* fnty =
-	  llvm::dyn_cast_or_null<const llvm::FunctionType>(loweredType)) {
+      if (baseType) {
+      if (FnTypeAST* fnty = dynamic_cast<FnTypeAST*>(baseType)) {
         // callast.parts[0] is callee; args start at 1
         int i = indexInParent(ast, 1);
         if (i >= 0) {
-          // TODO should this stay in TypeAST?
-          ast->type = TypeAST::get(fnty->getParamType(i - 1));
+          ast->type = fnty->getParamType(i - 1);
         }
       } else {
         std::cout << "\t\tCALLEE HAS TYPE " << *(callee->type) << std::endl;
+      }
       }
     }
 
@@ -633,18 +631,15 @@ void TypecheckPass::visit(AssignExprAST* ast) {
   }
 }
 
-// Returns aggregate and vector types directly, and returns the underlying
-// aggregate type for pointer-to-aggregate. Returns NULL in other cases.
-const llvm::CompositeType* tryGetIndexableType(const llvm::Type* ty) {
-  if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
-    ty = pty->getElementType();
+// Returns aggregate (struct, array, union) and vector types directly,
+// and returns the underlying aggregate type for pointer-to-aggregate.
+// Returns NULL in other cases.
+IndexableTypeAST* tryGetIndexableType(TypeAST* ty) {
+  if (RefTypeAST* r = dynamic_cast<RefTypeAST*>(ty)) {
+    ty = r->getElementType();
   }
 
-  if (ty->isAggregateType() || llvm::isa<llvm::VectorType>(ty)) {
-    return llvm::dyn_cast<llvm::CompositeType>(ty);
-  } else {
-    return NULL;
-  }
+  return dynamic_cast<IndexableTypeAST*>(ty);
 }
 
 void TypecheckPass::visit(SubscriptAST* ast) {
@@ -666,17 +661,11 @@ void TypecheckPass::visit(SubscriptAST* ast) {
     EDiag() << "cannot index into object of null type" << show(ast);
     return;
   }
-
-  const llvm::Type* loweredBaseType = baseType->getLLVMType();
-  const llvm::CompositeType* compositeTy = tryGetIndexableType(loweredBaseType);
-  if (compositeTy == NULL) {
-    EDiag() << "attempt to index into a non-composite type "
-            << str(baseType) << show(ast);
-    return;
+  
+  if (dynamic_cast<RefTypeAST*>(baseType)) {
+    EDiag() << "cannot index into ref types" << show(ast);
+    return; 
   }
-
-  //std::cout << "Indexing " << *baseType
-  //          << " as composite " << *compositeTy << std::endl;
 
   // Check to see that the given index is valid for this type
   ConstantInt* cidx = llvm::dyn_cast<ConstantInt>(idx->getConstantValue());
@@ -688,24 +677,38 @@ void TypecheckPass::visit(SubscriptAST* ast) {
     return;
   }
 
-  if (!compositeTy->indexValid(cidx) || vidx.isNegative()) {
-    EDiag() << "attempt to index composite with invalid index:"
-            << show(index);
+  
+  IndexableTypeAST* compositeTy = tryGetIndexableType(baseType);
+  const llvm::ArrayType* arrayTy =
+              llvm::dyn_cast<llvm::ArrayType>(baseType->getLLVMType());
+  if (!compositeTy && !arrayTy) {
+    EDiag() << "attempt to index into a non-indexable type "
+            << str(baseType) << show(ast);
     return;
   }
 
   // LLVM doesn't do bounds checking for arrays or vectors, but we do!
   uint64_t numElements = -1;
-  if (const llvm::ArrayType* ty
-                           = llvm::dyn_cast<llvm::ArrayType>(loweredBaseType)) {
+  bool isNonArrayWithLargeIndex = false;
+
+  if (arrayTy) {
+    numElements = arrayTy->getNumElements();
+  } else {
+    isNonArrayWithLargeIndex = !vidx.isIntN(32);
+  }
+  
+  if (vidx.isNegative() || isNonArrayWithLargeIndex) {
+    EDiag() << "attempt to index composite with invalid index:"
+            << show(index);
+    return;
+  }
+  
+  if (SimdVectorTypeAST* ty = dynamic_cast<SimdVectorTypeAST*>(baseType)) {
     numElements = ty->getNumElements();
   }
 
-  if (const llvm::VectorType* ty
-                          = llvm::dyn_cast<llvm::VectorType>(loweredBaseType)) {
-    numElements = ty->getNumElements();
-  }
-
+  uint64_t idx_u64 = vidx.getZExtValue();
+  
   if (numElements >= 0) {
     uint64_t idx_u64 = vidx.getZExtValue();
     if (idx_u64 >= numElements) {
@@ -716,11 +719,14 @@ void TypecheckPass::visit(SubscriptAST* ast) {
     }
   }
 
-  // TODO need to avoid losing typeinfo here
-  ast->type = TypeAST::get(compositeTy->getTypeAtIndex(cidx));
+  if (compositeTy) {
+    ast->type = compositeTy->getContainedType(vidx.getSExtValue());
+  } else {
+    ast->type = TypeAST::get(arrayTy->getElementType());
+  }
 
   if (this->inAssignLHS) {
-    ast->type = TypeAST::get(llvm::PointerType::getUnqual(ast->type->getLLVMType()));
+    ast->type = RefTypeAST::get(ast->type, /*nullable*/ false);
   }
 }
 
@@ -998,17 +1004,18 @@ SimdVectorTypeAST* synthesizeSimdVectorType(SimdVectorAST* ast) {
     return NULL;
   }
 
-  const Type* elementType = NULL;
-  std::map<const Type*, bool> fieldTypes;
+  TypeAST* elementType = NULL;
+  std::map<const Type*, TypeAST*> fieldTypes;
 
   for (size_t i = 0; i < numElements; ++i) {
-    const Type* ty =  body->parts[i]->type->getLLVMType();
-    if (!ty) {
+    TypeAST* ty =  body->parts[i]->type;
+    const Type* lty = (ty) ? ty->getLLVMType() : NULL;
+    if (!ty || !lty) {
       EDiag() << "simd-vector expr had null constituent type for subexpr " << i
               << show(body->parts[i]);
       return NULL;
     }
-    fieldTypes[ty] = true;
+    fieldTypes[lty] = ty;
     elementType = ty;
   }
 
@@ -1022,7 +1029,7 @@ SimdVectorTypeAST* synthesizeSimdVectorType(SimdVectorAST* ast) {
 
   if (fieldTypes.size() > 1) {
     std::string s; llvm::raw_string_ostream ss(s);
-    std::map<const Type*, bool>::const_iterator it;;
+    std::map<const Type*, TypeAST*>::const_iterator it;;
     for (it = fieldTypes.begin(); it != fieldTypes.end(); ++it) {
       ss << "\n\t" << str((*it).first);
     }
@@ -1031,15 +1038,15 @@ SimdVectorTypeAST* synthesizeSimdVectorType(SimdVectorAST* ast) {
     return NULL;
   }
 
-  if (!isPrimitiveNumericType(elementType)) {
+  if (!isPrimitiveNumericType(elementType->getLLVMType())) {
     EDiag() << "simd-vector must be composed of primitive numeric types"
             << show(ast);
     return NULL;
   }
 
   return SimdVectorTypeAST::get(
-      new LiteralIntTypeAST(numElements, SourceRange::getEmptyRange()),
-      TypeAST::get(elementType),
+      new LiteralIntValueTypeAST(numElements, SourceRange::getEmptyRange()),
+      elementType,
       ast->sourceRange);
 }
 
