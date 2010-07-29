@@ -6,7 +6,8 @@
 #define FOSTER_UTILS_H
 
 #include "llvm/DerivedTypes.h"
-#include "parse/FosterAST.h"
+
+class TypeAST;
 
 // returns true if p == t*
 inline bool isPointerToType(const llvm::Type* p, const llvm::Type* t) {

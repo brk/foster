@@ -55,7 +55,7 @@ protected:
   // Equivalent (equal or convertible) representation types
   // is a necessary but not sufficient precondition for two
   // types to be compatible. For example, nullable and non-
-  // nullable reference to T are both representated by type
+  // nullable reference to T are both represented by type
   // T*, but they are not always compatible.
   const llvm::Type* repr;
   const foster::SourceRange sourceRange;
@@ -204,9 +204,7 @@ public:
   }
   virtual int getNumContainedTypes() const { return parts.size(); }
   virtual int64_t getNumElements()   const { return parts.size(); }
-  virtual TypeAST* getContainedType(size_t i) const {
-    if (indexValid(i)) return parts[i]; else return NULL;
-  }
+  virtual TypeAST* getContainedType(size_t i) const;
   
   static TupleTypeAST* get(const std::vector<TypeAST*>& parts);
 };

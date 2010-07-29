@@ -10,6 +10,9 @@
 #include "FosterUtils.h"
 #include "passes/TypecheckPass.h"
 
+using std::vector;
+using std::map;
+
 using foster::SourceRange;
 
 bool hasEqualRepr(TypeAST* src, TypeAST* dst) {
@@ -52,9 +55,9 @@ bool arePhysicallyCompatible(const llvm::Type* src,
 //virtual
 TypeAST::~TypeAST() {}
 
-std::map<const llvm::Type*, TypeAST*> TypeAST::thinWrappers;
+map<const llvm::Type*, TypeAST*> TypeAST::thinWrappers;
 
-static std::map<const llvm::Type*, TypeAST*> seen;
+static map<const llvm::Type*, TypeAST*> seen;
 
 TypeAST* TypeAST::i(int n) { return TypeAST::get(llvmIntType(n)); }
 
@@ -100,7 +103,7 @@ TypeAST* TypeAST::reconstruct(const llvm::Type* loweredType) {
   if (const llvm::FunctionType* fnty
          = llvm::dyn_cast<const llvm::FunctionType>(loweredType)) {
     TypeAST* ret = TypeAST::reconstruct(fnty->getReturnType());
-    std::vector<TypeAST*> args;
+    vector<TypeAST*> args;
     for (size_t i = 0; i < fnty->getNumParams(); ++i) {
        args.push_back(TypeAST::reconstruct(fnty->getParamType(i))); 
     }
@@ -110,7 +113,7 @@ TypeAST* TypeAST::reconstruct(const llvm::Type* loweredType) {
   if (const llvm::StructType* sty
          = llvm::dyn_cast<const llvm::StructType>(loweredType)) {
     seen[sty] = (TypeAST*) 1;
-    std::vector<TypeAST*> args;
+    vector<TypeAST*> args;
     for (size_t i = 0; i < sty->getNumElements(); ++i) {
        args.push_back(TypeAST::reconstruct(sty->getContainedType(i))); 
     }
@@ -147,7 +150,7 @@ bool TypeAST::canConvertTo(TypeAST* otherType) {
 
 ////////////////////////////////////////////////////////////////////
 
-std::map<RefTypeAST::RefTypeArgs, RefTypeAST*> RefTypeAST::refCache;
+map<RefTypeAST::RefTypeArgs, RefTypeAST*> RefTypeAST::refCache;
 
 RefTypeAST* RefTypeAST::get(TypeAST* baseType, bool nullable /* = false */) {
   ASSERT(baseType);
@@ -184,9 +187,9 @@ bool RefTypeAST::canConvertTo(TypeAST* otherType) {
 /////////////////////////////////////////////////////////////////////
 
 FnTypeAST* FnTypeAST::get(TypeAST* returnType,
-                          const std::vector<TypeAST*>& argTypes,
+                          const vector<TypeAST*>& argTypes,
                           const std::string& callingConvName) {
-  std::vector<const llvm::Type*> loweredArgTypes;
+  vector<const llvm::Type*> loweredArgTypes;
   for (size_t i = 0; i < argTypes.size(); ++i) {
     loweredArgTypes.push_back(argTypes[i]->getLLVMType());
   }
@@ -213,13 +216,18 @@ llvm::CallingConv::ID FnTypeAST::getCallingConventionID() {
 
 /////////////////////////////////////////////////////////////////////
 
-std::map<TupleTypeAST::Args, TupleTypeAST*> TupleTypeAST::tupleTypeCache;
+TypeAST* TupleTypeAST::getContainedType(size_t i) const {
+  ASSERT(indexValid(i));
+  return parts[i];
+}
 
-TupleTypeAST* TupleTypeAST::get(const std::vector<TypeAST*>& argTypes) {
+map<TupleTypeAST::Args, TupleTypeAST*> TupleTypeAST::tupleTypeCache;
+
+TupleTypeAST* TupleTypeAST::get(const vector<TypeAST*>& argTypes) {
   TupleTypeAST* tup = tupleTypeCache[argTypes];
   if (tup) return tup;
 
-  std::vector<const llvm::Type*> loweredTypes;
+  vector<const llvm::Type*> loweredTypes;
   for (size_t i = 0; i < argTypes.size(); ++i) {
     loweredTypes.push_back(argTypes[i]->getLLVMType());
   }
