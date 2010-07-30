@@ -6,7 +6,7 @@ message SourceLocation {
 }
 
 message SourceRange {
-  required string         file_path = 1;
+  optional string         file_path = 1;
   required SourceLocation begin     = 2;
   required SourceLocation end       = 3;
 }

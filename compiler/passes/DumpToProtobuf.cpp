@@ -4,6 +4,7 @@
 
 #include "parse/FosterAST.h"
 #include "passes/DumpToProtobuf.h"
+#include "llvm/System/Path.h"
 
 // Protobufs do not easily allow mirroring of existing object
 // graph structures, because repeated (pointer) fields only allow
@@ -17,27 +18,57 @@
 // pb::Expr*s before recursing to child nodes.
 
 
-void dumpChild(DumpToProtobufPass* pass, foster::pb::Expr* target, ExprAST* child) {
+void dumpChild(DumpToProtobufPass* pass,
+               foster::pb::Expr* target,
+               ExprAST* child) {
   foster::pb::Expr* saved = pass->current;
   pass->current = target;
   child->accept(pass);
   pass->current = saved;
 }
 
-void dumpChildren(DumpToProtobufPass* pass, ExprAST* ast) {
+void dumpChildren(DumpToProtobufPass* pass,
+                  ExprAST* ast) {
   pass->current->mutable_parts()->Reserve(ast->parts.size());
   for (size_t i = 0; i < ast->parts.size(); ++i) {
     dumpChild(pass, pass->current->add_parts(), ast->parts[i]);
   }
 }
 
+void setSourceLocation(foster::pb::SourceLocation* pbloc,
+                       const foster::SourceLocation& loc) {
+  pbloc->set_column(loc.column);
+  pbloc->set_line(loc.line);
+}
+
+void setSourceRange(foster::pb::SourceRange* pbr,
+                    const foster::SourceRange& r) {
+  if (r.source) {
+    llvm::sys::Path p(r.source->getPath());
+    p.makeAbsolute(); // TODO perhaps all paths should be stored absolute...?
+    pbr->set_file_path(p.str());
+  }
+
+  setSourceLocation(pbr->mutable_begin(), r.begin);
+  setSourceLocation(pbr->mutable_end(),   r.end);
+}
+
+void processExprAST(foster::pb::Expr* current,
+                    ExprAST* ast,
+                    foster::pb::Expr::Tag tag) {
+  current->set_tag(tag);
+  setSourceRange(current->mutable_range(), ast->sourceRange);
+}
+
+/////////////////////////////////////////////////////////////////////
+
 void DumpToProtobufPass::visit(BoolAST* ast)                {
-  current->set_tag(foster::pb::Expr::BOOL);
+  processExprAST(current, ast, foster::pb::Expr::BOOL);
   current->set_bool_value(ast->boolValue);
 }
 
 void DumpToProtobufPass::visit(IntAST* ast)                 {
-  current->set_tag(foster::pb::Expr::INT);
+  processExprAST(current, ast, foster::pb::Expr::INT);
   foster::pb::Int* int_ = current->mutable_int_();
   int_->set_base(ast->Base);
   int_->set_clean(ast->Clean);
@@ -45,24 +76,24 @@ void DumpToProtobufPass::visit(IntAST* ast)                 {
 }
 
 void DumpToProtobufPass::visit(VariableAST* ast)            {
-  current->set_tag(foster::pb::Expr::VAR);
+  processExprAST(current, ast, foster::pb::Expr::VAR);
   current->set_name(ast->name);
 }
 
 void DumpToProtobufPass::visit(UnaryOpExprAST* ast)         {
-  current->set_tag(foster::pb::Expr::OP);
+  processExprAST(current, ast, foster::pb::Expr::OP);
   current->set_name(ast->op);
   dumpChildren(this, ast);
 }
 
 void DumpToProtobufPass::visit(BinaryOpExprAST* ast)        {
-  current->set_tag(foster::pb::Expr::OP);
+  processExprAST(current, ast, foster::pb::Expr::OP);
   current->set_name(ast->op);
   dumpChildren(this, ast);
 }
 
 void DumpToProtobufPass::visit(PrototypeAST* ast)           {
-  current->set_tag(foster::pb::Expr::PROTO);
+  processExprAST(current, ast, foster::pb::Expr::PROTO);
   foster::pb::Proto* proto = current->mutable_proto();
   proto->set_name(ast->name);
 
@@ -72,7 +103,7 @@ void DumpToProtobufPass::visit(PrototypeAST* ast)           {
   }
 }
 void DumpToProtobufPass::visit(FnAST* ast)                  {
-  current->set_tag(foster::pb::Expr::FN);
+  processExprAST(current, ast, foster::pb::Expr::FN);
   foster::pb::Fn* fn = current->mutable_fn();
   dumpChild(this, fn->mutable_proto(), ast->proto);
   dumpChild(this, fn->mutable_body(), ast->body);
@@ -80,25 +111,25 @@ void DumpToProtobufPass::visit(FnAST* ast)                  {
   fn->set_was_nested(ast->wasNested);
 }
 void DumpToProtobufPass::visit(ClosureAST* ast) {
-  current->set_tag(foster::pb::Expr::CLOSURE);
+  processExprAST(current, ast, foster::pb::Expr::CLOSURE);
   foster::pb::Closure* clo = current->mutable_closure();
   if (ast->fn) {
     dumpChild(this, clo->mutable_fn(), ast->fn);
   }
 }
 void DumpToProtobufPass::visit(ModuleAST* ast)              {
-  current->set_tag(foster::pb::Expr::MODULE);
+  processExprAST(current, ast, foster::pb::Expr::MODULE);
   dumpChildren(this, ast);
 }
 void DumpToProtobufPass::visit(IfExprAST* ast)              {
-  current->set_tag(foster::pb::Expr::FORRANGE);
+  processExprAST(current, ast, foster::pb::Expr::IF);
   foster::pb::If* if_ = current->mutable_if_();
   dumpChild(this, if_->mutable_test_expr(), ast->testExpr);
   dumpChild(this, if_->mutable_then_expr(), ast->thenExpr);
   dumpChild(this, if_->mutable_else_expr(), ast->elseExpr);
 }
 void DumpToProtobufPass::visit(ForRangeExprAST* ast)              {
-  current->set_tag(foster::pb::Expr::FORRANGE);
+  processExprAST(current, ast, foster::pb::Expr::FORRANGE);
   foster::pb::ForRange* fr = current->mutable_for_range();
   dumpChild(this, fr->mutable_var(), ast->var);
   dumpChild(this, fr->mutable_start(), ast->startExpr);
@@ -109,34 +140,34 @@ void DumpToProtobufPass::visit(ForRangeExprAST* ast)              {
   }
 }
 void DumpToProtobufPass::visit(NilExprAST* ast)             {
-  current->set_tag(foster::pb::Expr::NIL);
+  processExprAST(current, ast, foster::pb::Expr::NIL);
 }
 void DumpToProtobufPass::visit(RefExprAST* ast)             {
-  current->set_tag(foster::pb::Expr::REF);
+  processExprAST(current, ast, foster::pb::Expr::REF);
   dumpChildren(this, ast);
 }
 void DumpToProtobufPass::visit(DerefExprAST* ast)           {
-  current->set_tag(foster::pb::Expr::DEREF);
+  processExprAST(current, ast, foster::pb::Expr::DEREF);
   dumpChildren(this, ast);
 }
 void DumpToProtobufPass::visit(AssignExprAST* ast)          {
-  current->set_tag(foster::pb::Expr::ASSIGN);
+  processExprAST(current, ast, foster::pb::Expr::ASSIGN);
   dumpChildren(this, ast);
 }
 void DumpToProtobufPass::visit(SubscriptAST* ast)           {
-  current->set_tag(foster::pb::Expr::SUBSCRIPT);
+  processExprAST(current, ast, foster::pb::Expr::SUBSCRIPT);
   dumpChildren(this, ast);
 }
 void DumpToProtobufPass::visit(SimdVectorAST* ast)          {
-  current->set_tag(foster::pb::Expr::SIMD);
+  processExprAST(current, ast, foster::pb::Expr::SIMD);
   dumpChildren(this, ast);
 }
 void DumpToProtobufPass::visit(SeqAST* ast)                 {
-  current->set_tag(foster::pb::Expr::SEQ);
+  processExprAST(current, ast, foster::pb::Expr::SEQ);
   dumpChildren(this, ast);
 }
 void DumpToProtobufPass::visit(CallAST* ast)                {
-  current->set_tag(foster::pb::Expr::CALL);
+  processExprAST(current, ast, foster::pb::Expr::CALL);
   dumpChildren(this, ast);
 }
 void DumpToProtobufPass::visit(ArrayExprAST* ast)           {
@@ -144,12 +175,12 @@ void DumpToProtobufPass::visit(ArrayExprAST* ast)           {
 }
 
 void DumpToProtobufPass::visit(TupleExprAST* ast)           {
-  current->set_tag(foster::pb::Expr::TUPLE);
+  processExprAST(current, ast, foster::pb::Expr::TUPLE);
   current->set_is_closure_environment(ast->isClosureEnvironment);
   dumpChildren(this, ast);
 }
 void DumpToProtobufPass::visit(BuiltinCompilesExprAST* ast) {
-  current->set_tag(foster::pb::Expr::COMPILES);
+  processExprAST(current, ast, foster::pb::Expr::COMPILES);
   switch (ast->status) {
     case BuiltinCompilesExprAST::kNotChecked:
       break;
