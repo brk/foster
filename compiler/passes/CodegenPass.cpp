@@ -427,12 +427,15 @@ void CodegenPass::visit(BoolAST* ast) {
 }
 
 void CodegenPass::visit(VariableAST* ast) {
-  if (ast->value) return;
-
   // This looks up the lexically closest definition for the given variable
   // name, as provided by a function parameter or some such binding construct.
+  // Note that ast->value is NOT used to cache the result; this ensures
+  // that closure conversion is free to duplicate AST nodes and still get
+  // properly scoped argument values inside converted functions.
   if (ast->lazilyInsertedPrototype) {
-    ast->lazilyInsertedPrototype->accept(this);
+    if (!ast->lazilyInsertedPrototype->value) {
+      ast->lazilyInsertedPrototype->accept(this);
+    }
     ast->value = ast->lazilyInsertedPrototype->value;
   } else {
     ast->value = gScopeLookupValue(ast->name);

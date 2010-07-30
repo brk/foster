@@ -1,13 +1,33 @@
+// IN: 10 20 30
 // http://www.research.att.com/~njas/sequences/table?a=45&fmt=4
 fn "main" () {
   expect_i32(55)
-  print_i32(fib(10))
+  print_i32(fib-naive(read_i32()))
 
   expect_i32(6765)
-  print_i32(fib(20))
+  print_i32(fib-tailrecursive(read_i32(), 0, 1))
 
   expect_i32(832040)
-  print_i32(fib(30))
+  print_i32(fib-loop(read_i32()))
 }
 
-fib = fn (x : i32) { if x < 3 then { 1 } else { fib(x - 1) + fib(x - 2) } }
+fib-naive = fn (x : i32) {
+  if x < 3 then { 1 } else { fib-naive(x - 1) + fib-naive(x - 2) }
+}
+
+fib-tailrecursive = fn (x : i32, current : i32, next : i32) {
+  if x == 0 then { current } else { fib-tailrecursive(x - 1, next, current + next) }
+}
+
+fib-loop = fn (x : i32) {
+  let first : ref i32 = new 0
+  let second : ref i32 = new 1
+  let tmp : ref i32 = new 0 in {
+  for i in 0 to x do {
+    set tmp = deref(first) + deref(second)
+    set first = deref(second)
+    set second = deref(tmp)
+  };
+  deref(first)
+  }
+}
