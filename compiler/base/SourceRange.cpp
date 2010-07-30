@@ -6,11 +6,13 @@
 
 namespace foster {
 
-const InputFile* gInputFile;
+const InputFile* gInputFile = NULL;
 
 static void fixupLocation(const InputFile* source, SourceLocation& loc) {
   if (loc.line > 0) { loc.line--; }
-  loc.column = source->getLine(loc.line).size() - 1;
+  if (source) {
+    loc.column = source->getLine(loc.line).size() - 1;
+  }
 }
 
 SourceRange::SourceRange(const InputFile* source,

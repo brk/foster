@@ -23,6 +23,12 @@ struct SourceLocation {
   bool operator<(const SourceLocation& o) const {
     return (line < o.line || (line == o.line && column < o.column));
   }
+  bool operator==(const SourceLocation& o) const {
+    return line == o.line && column == o.column;
+  }
+  bool operator!=(const SourceLocation& o) const {
+    return !(o == *this);
+  }
 
   static SourceLocation getInvalidLocation() {
     return SourceLocation(-1, -1);
@@ -51,6 +57,12 @@ public:
     return SourceRange(gInputFile,
               SourceLocation::getInvalidLocation(),
               SourceLocation::getInvalidLocation());
+  }
+  bool operator==(const SourceRange& o) const {
+    return ((void*)source == (void*)o.source) && end == o.end && begin == o.begin;
+  }
+  bool operator!=(const SourceRange& o) const {
+    return !(o == *this);
   }
 };
 } // namespace foster
