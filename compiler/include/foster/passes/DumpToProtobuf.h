@@ -5,10 +5,12 @@
 #ifndef FOSTER_PASSES_DUMPTOPROTOBUF
 #define FOSTER_PASSES_DUMPTOPROTOBUF
 
-#include "parse/FosterASTVisitor.h"
+#include "parse/ExprASTVisitor.h"
+#include "parse/TypeASTVisitor.h"
 #include "_generated_/FosterAST.pb.h"
 
-struct DumpToProtobufPass : public FosterASTVisitor {
+
+struct DumpToProtobufPass : public ExprASTVisitor {
   foster::pb::Expr* current;
 
   DumpToProtobufPass(foster::pb::Expr* current) : current(current) {}
@@ -17,8 +19,22 @@ struct DumpToProtobufPass : public FosterASTVisitor {
     // Only visit children manually!
   }
 
-  #include "parse/FosterASTVisitor.decls.inc.h"
+  #include "parse/ExprASTVisitor.decls.inc.h"
 };
+
+
+struct DumpTypeToProtobufPass : public TypeASTVisitor {
+  foster::pb::Type* current;
+
+  DumpTypeToProtobufPass(foster::pb::Type* current) : current(current) {}
+
+  virtual void visitChildren(TypeAST* ast) {
+    // Only visit children manually!
+  }
+
+  #include "parse/TypeASTVisitor.decls.inc.h"
+};
+
 
 #endif // header guard
 

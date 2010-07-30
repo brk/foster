@@ -2,17 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#ifndef FOSTER_AST_VISITOR
-#define FOSTER_AST_VISITOR
+#ifndef FOSTER_EXPR_AST_VISITOR
+#define FOSTER_EXPR_AST_VISITOR
 
 struct ExprAST;
 
-// Forward-declare all the AST node types
+// Forward-declare all the ExprAST node types
 #define FOSTER_AST_VISITOR_GEN(type) struct type;
-#include "parse/FosterASTVisitor.decls.inc.h"
+#include "parse/ExprASTVisitor.decls.inc.h"
 #undef  FOSTER_AST_VISITOR_GEN
 
-struct FosterASTVisitor {
+struct ExprASTVisitor {
   // This is given a default depth-first implementation in FosterAST.cpp ;
   // The AST node classes determine if/when to call visitChildren() themselves,
   // and generally visit children before the parent node.
@@ -26,12 +26,12 @@ struct FosterASTVisitor {
   // TODO? Something similar would need to be done for member lookups
   bool inAssignLHS;
 
-  explicit FosterASTVisitor() : inAssignLHS(false) {}
-  virtual ~FosterASTVisitor() {}
+  explicit ExprASTVisitor() : inAssignLHS(false) {}
+  virtual ~ExprASTVisitor() {}
 
   // Declare the individual (pure virtual) visit function for the AST node types
   #define FOSTER_AST_VISITOR_PURE_VIRTUAL
-  #include "FosterASTVisitor.decls.inc.h"
+  #include "parse/ExprASTVisitor.decls.inc.h"
   #undef  FOSTER_AST_VISITOR_PURE_VIRTUAL
 };
 

@@ -93,7 +93,7 @@ SourceRangeHighlighter show(ExprAST* ast) {
 
 } // namespace foster
 
-void FosterASTVisitor::visitChildren(ExprAST* ast) {
+void ExprASTVisitor::visitChildren(ExprAST* ast) {
   for (size_t i = 0; i < ast->parts.size(); ++i) {
     if (ast->parts[i]) {
       this->onVisitChild(ast, ast->parts[i]);
@@ -103,7 +103,7 @@ void FosterASTVisitor::visitChildren(ExprAST* ast) {
   }
 }
 
-void FosterASTVisitor::onVisitChild(ExprAST* ast, ExprAST* child) {
+void ExprASTVisitor::onVisitChild(ExprAST* ast, ExprAST* child) {
   child->accept(this);
 }
 

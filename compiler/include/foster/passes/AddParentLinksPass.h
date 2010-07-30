@@ -5,10 +5,10 @@
 #ifndef FOSTER_PASSES_ADDPARENTLINKS
 #define FOSTER_PASSES_ADDPARENTLINKS
 
-#include "parse/FosterASTVisitor.h"
+#include "parse/ExprASTVisitor.h"
 
-struct AddParentLinksPass : public FosterASTVisitor {
-  #include "parse/FosterASTVisitor.decls.inc.h"
+struct AddParentLinksPass : public ExprASTVisitor {
+  #include "parse/ExprASTVisitor.decls.inc.h"
   
   virtual void onVisitChild(ExprAST* ast, ExprAST* child) {
     child->parent = ast;

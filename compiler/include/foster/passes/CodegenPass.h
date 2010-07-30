@@ -5,11 +5,11 @@
 #ifndef FOSTER_PASSES_CODEGEN
 #define FOSTER_PASSES_CODEGEN
 
-#include "parse/FosterASTVisitor.h"
+#include "parse/ExprASTVisitor.h"
 #include <stack>
 
-struct CodegenPass : public FosterASTVisitor {
-  #include "parse/FosterASTVisitor.decls.inc.h"
+struct CodegenPass : public ExprASTVisitor {
+  #include "parse/ExprASTVisitor.decls.inc.h"
 };
 
 #endif // header guard

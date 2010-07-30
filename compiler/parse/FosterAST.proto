@@ -8,12 +8,10 @@ message SourceLocation {
 message SourceRange {
   optional string         file_path = 1;
   required SourceLocation begin     = 2;
-  required SourceLocation end       = 3;
+  optional SourceLocation end       = 3;
 }
 
 message Type {
-  optional SourceRange range = 1;
-
   enum Tag {
     LLVM_NAMED = 1; // i32, void, etc
     REF = 2;
@@ -21,10 +19,14 @@ message Type {
     CLOSURE = 4;
     TUPLE = 5;
     LITERAL_INT_VALUE = 6;
-    SIMD_VECTOR = 7;
+    SIMD = 7;
   }
 
-  optional string llvm_type_name = 2;
+  optional SourceRange range = 1;
+  required Tag         tag   = 2;
+
+
+  optional string llvm_type_name = 3;
   optional Type ref_underlying_type = 16;
   optional FnType fnty = 17;
   repeated Type tuple_parts = 18;

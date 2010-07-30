@@ -5,13 +5,13 @@
 #ifndef FOSTER_PASSES_TYPECHECK
 #define FOSTER_PASSES_TYPECHECK
 
-#include "parse/FosterASTVisitor.h"
+#include "parse/ExprASTVisitor.h"
 #include <string>
 
-struct TypecheckPass : public FosterASTVisitor {
+struct TypecheckPass : public ExprASTVisitor {
   explicit TypecheckPass() {}
   
-  #include "parse/FosterASTVisitor.decls.inc.h"
+  #include "parse/ExprASTVisitor.decls.inc.h"
 };
 
 inline bool isPrintRef(const ExprAST* base) {

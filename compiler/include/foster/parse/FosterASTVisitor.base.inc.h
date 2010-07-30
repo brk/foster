@@ -9,7 +9,11 @@
 /// Externally-settable macros
 ///
 ///  FOSTER_AST_VISITOR_GEN              (optionally #define to declaration)
-///   called for each AST node type
+///   called for each AST node type.
+///
+///  FOSTER_AST_VISITOR_EXPRS  or  FOSTER_AST_VISITOR_TYPES
+///   should be set, which determines whether ExprAST or TypeAST declarations
+///   are emitted.
 ///
 /// ---------------------------------------------------------------------------
 ///
@@ -35,6 +39,13 @@
 
 // ----------------------------------------------------------------------------
 
+#if !defined(FOSTER_AST_VISITOR_EXPRS) && !defined(FOSTER_AST_VISITOR_TYPES)
+#error "FosterASTVisitor.base.inc.h needs to know whether it should declare"
+#error " Exprs or Types!"
+#endif
+
+// ----------------------------------------------------------------------------
+
 #ifdef  FOSTER_AST_VISITOR_PURE_VIRTUAL
 #define FOSTER_AST_VISITOR_IMPL    = 0
 #else
@@ -55,6 +66,7 @@
 
 // ----------------------------------------------------------------------------
 
+#ifdef FOSTER_AST_VISITOR_EXPRS
 FOSTER_AST_VISITOR_GEN(FnAST);
 FOSTER_AST_VISITOR_GEN(SeqAST);
 FOSTER_AST_VISITOR_GEN(BoolAST);
@@ -77,6 +89,17 @@ FOSTER_AST_VISITOR_GEN(UnaryOpExprAST);
 FOSTER_AST_VISITOR_GEN(BinaryOpExprAST);
 FOSTER_AST_VISITOR_GEN(ForRangeExprAST);
 FOSTER_AST_VISITOR_GEN(BuiltinCompilesExprAST);
+#endif
+
+#ifdef FOSTER_AST_VISITOR_TYPES
+FOSTER_AST_VISITOR_GEN(TypeAST);
+FOSTER_AST_VISITOR_GEN(FnTypeAST);
+FOSTER_AST_VISITOR_GEN(RefTypeAST);
+FOSTER_AST_VISITOR_GEN(TupleTypeAST);
+FOSTER_AST_VISITOR_GEN(ClosureTypeAST);
+FOSTER_AST_VISITOR_GEN(SimdVectorTypeAST);
+FOSTER_AST_VISITOR_GEN(LiteralIntValueTypeAST);
+#endif
 
 // ----------------------------------------------------------------------------
 

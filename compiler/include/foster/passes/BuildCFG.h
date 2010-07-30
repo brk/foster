@@ -5,12 +5,12 @@
 #ifndef FOSTER_PASSES_BUILD_CFG
 #define FOSTER_PASSES_BUILD_CFG
 
-#include "parse/FosterASTVisitor.h"
+#include "parse/ExprASTVisitor.h"
 
 #include "cfg/CFG.h"
 
-struct BuildCFG : public FosterASTVisitor {
-  #include "parse/FosterASTVisitor.decls.inc.h"
+struct BuildCFG : public ExprASTVisitor {
+  #include "parse/ExprASTVisitor.decls.inc.h"
 
   virtual void visitChildren(ExprAST* ast) {
     // Only visit children manually!

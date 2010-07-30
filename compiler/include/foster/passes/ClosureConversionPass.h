@@ -5,13 +5,13 @@
 #ifndef FOSTER_PASSES_CLOSURECONVERSION
 #define FOSTER_PASSES_CLOSURECONVERSION
 
-#include "parse/FosterASTVisitor.h"
+#include "parse/ExprASTVisitor.h"
 
 #include <set>
 #include <string>
 
-struct ClosureConversionPass : public FosterASTVisitor {
-  #include "parse/FosterASTVisitor.decls.inc.h"
+struct ClosureConversionPass : public ExprASTVisitor {
+  #include "parse/ExprASTVisitor.decls.inc.h"
   std::set<std::string> globalNames;
   ModuleAST* toplevel;
 

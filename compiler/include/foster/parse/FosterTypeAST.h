@@ -12,6 +12,7 @@
 
 #include "base/Assert.h"
 #include "base/SourceRange.h"
+#include "parse/TypeASTVisitor.h"
 
 #include <map>
 #include <string>
@@ -27,6 +28,8 @@ class FnTypeAST;
 class RefTypeAST;
 class TupleTypeAST;
 class ClosureTypeAST;
+
+class DumpTypeToProtobufPass;
 
 std::ostream& operator<<(std::ostream& out, TypeAST& expr);
 
@@ -67,11 +70,13 @@ protected:
     : repr(underlyingType), sourceRange(sourceRange) {}
   virtual ~TypeAST();
 public:
+  const foster::SourceRange& getSourceRange() const { return sourceRange; }
   virtual const llvm::Type* getLLVMType() const { return repr; }
 
   virtual std::ostream& operator<<(std::ostream& out) const {
     return out << str(repr);
   };
+  virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
 
   virtual bool canConvertTo(TypeAST* otherType);
 
@@ -100,6 +105,8 @@ protected:
   virtual ~IndexableTypeAST() {}
   
 public:
+  virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
+
   virtual TypeAST* getContainedType(size_t idx) const = 0;
   virtual int64_t  getNumElements() const = 0; 
   virtual bool     indexValid(int idx) const { return idx < getNumElements(); } 
@@ -179,6 +186,7 @@ public:
   int getNumParams() const { return argTypes.size(); }
 
   llvm::CallingConv::ID getCallingConventionID();
+  friend class DumpTypeToProtobufPass;
 };
 
 
@@ -266,6 +274,7 @@ public:
   
   static SimdVectorTypeAST* get(LiteralIntValueTypeAST* size, TypeAST* type,
                                 const foster::SourceRange& sourceRange);
+  friend class DumpTypeToProtobufPass;
 };
 
 #endif // header guard

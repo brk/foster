@@ -46,18 +46,30 @@ void setSourceRange(foster::pb::SourceRange* pbr,
   if (r.source) {
     llvm::sys::Path p(r.source->getPath());
     p.makeAbsolute(); // TODO perhaps all paths should be stored absolute...?
-    pbr->set_file_path(p.str());
+    //pbr->set_file_path(p.str());
   }
 
-  setSourceLocation(pbr->mutable_begin(), r.begin);
-  setSourceLocation(pbr->mutable_end(),   r.end);
+  if (r.begin != foster::SourceLocation::getInvalidLocation()) {
+    setSourceLocation(pbr->mutable_begin(), r.begin);
+  }
+  if (r.end   != foster::SourceLocation::getInvalidLocation()) {
+    setSourceLocation(pbr->mutable_end(),   r.end);
+  }
 }
 
 void processExprAST(foster::pb::Expr* current,
                     ExprAST* ast,
                     foster::pb::Expr::Tag tag) {
   current->set_tag(tag);
-  setSourceRange(current->mutable_range(), ast->sourceRange);
+
+  if (ast->sourceRange.isValid()) {
+    setSourceRange(current->mutable_range(), ast->sourceRange);
+  }
+
+  if (ast->type) {
+    DumpTypeToProtobufPass dt(current->mutable_type());
+    ast->type->accept(&dt);
+  }
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -190,3 +202,94 @@ void DumpToProtobufPass::visit(BuiltinCompilesExprAST* ast) {
       current->set_compiles(false); break;
   }
 }
+
+/////////////////////////////////////////////////////////////////////
+
+void dumpChild(DumpTypeToProtobufPass* pass,
+               foster::pb::Type* target,
+               TypeAST* child) {
+  if (!child) return;
+
+  foster::pb::Type* saved = pass->current;
+  pass->current = target;
+  child->accept(pass);
+  pass->current = saved;
+}
+
+void setTagAndRange(foster::pb::Type* target,
+                    TypeAST* ast,
+                    foster::pb::Type::Tag tag) {
+  target->set_tag(tag);
+  if (ast->getSourceRange().isValid()) {
+    setSourceRange(target->mutable_range(), ast->getSourceRange());
+  }
+}
+
+
+void DumpTypeToProtobufPass::visit(TypeAST* ast) {
+  setTagAndRange(current, ast, foster::pb::Type::LLVM_NAMED);
+
+  current->set_llvm_type_name(str(ast->getLLVMType()));
+}
+
+void DumpTypeToProtobufPass::visit(FnTypeAST* ast) {
+  setTagAndRange(current, ast, foster::pb::Type::FN);
+
+  foster::pb::FnType* fnty = current->mutable_fnty();
+  fnty->set_calling_convention(ast->callingConvention);
+
+  if (ast->getReturnType()) {
+    dumpChild(this, fnty->mutable_ret_type(), ast->getReturnType());
+  }
+
+  fnty->mutable_arg_types()->Reserve(ast->getNumParams());
+  for (int i = 0; i < ast->getNumParams(); ++i) {
+    dumpChild(this, fnty->add_arg_types(), ast->getParamType(i));
+  }
+}
+
+void DumpTypeToProtobufPass::visit(RefTypeAST* ast) {
+  setTagAndRange(current, ast, foster::pb::Type::REF);
+
+  if (ast->getElementType()) {
+    dumpChild(this, current->mutable_ref_underlying_type(), ast->getElementType());
+  }
+}
+
+void DumpTypeToProtobufPass::visit(TupleTypeAST* ast) {
+  setTagAndRange(current, ast, foster::pb::Type::TUPLE);
+
+  current->mutable_tuple_parts()->Reserve(ast->getNumContainedTypes());
+  for (int i = 0; i < ast->getNumContainedTypes(); ++i) {
+    dumpChild(this, current->add_tuple_parts(), ast->getContainedType(i));
+  }
+}
+
+void DumpTypeToProtobufPass::visit(ClosureTypeAST* ast) {
+  setTagAndRange(current, ast, foster::pb::Type::CLOSURE);
+
+  foster::pb::ClosureType* cloty = current->mutable_closurety();
+  { DumpToProtobufPass p(cloty->mutable_proto());
+    ast->proto->accept(&p);
+  }
+
+  if (ast->getFnType()) {
+    dumpChild(this, cloty->mutable_fntype(), ast->getFnType());
+  }
+
+  // TODO clo tuple type?
+}
+
+void DumpTypeToProtobufPass::visit(SimdVectorTypeAST* ast) {
+  setTagAndRange(current, ast, foster::pb::Type::SIMD);
+
+  foster::pb::SimdVectorType* simd = current->mutable_simd_vector();
+  dumpChild(this, simd->mutable_literal_int_size(), ast->size);
+  dumpChild(this, simd->mutable_element_type(), ast->getContainedType(0));
+}
+
+void DumpTypeToProtobufPass::visit(LiteralIntValueTypeAST* ast) {
+  current->set_tag(foster::pb::Type::LITERAL_INT_VALUE);
+  current->set_literal_int_value(ast->getNumericalValue());
+}
+

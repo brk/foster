@@ -3,6 +3,8 @@
 #define FOSTER_AST_RETVAL void
 #endif
 
+#define FOSTER_AST_VISITOR_TYPES
 #define FOSTER_AST_INCLUDED_VIA_DECLS_H
 #include "parse/FosterASTVisitor.base.inc.h"
 #undef  FOSTER_AST_INCLUDED_VIA_DECLS_H
+#undef  FOSTER_AST_VISITOR_TYPES

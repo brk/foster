@@ -5,7 +5,7 @@
 #ifndef FOSTER_PASSES_REPLACEEXPR
 #define FOSTER_PASSES_REPLACEEXPR
 
-#include "parse/FosterASTVisitor.h"
+#include "parse/ExprASTVisitor.h"
 
 #include <map>
 #include <vector>
@@ -19,7 +19,7 @@ struct ExprReplacer {
   virtual ~ExprReplacer() {}
 };
 
-struct ReplaceExprTransform : public FosterASTVisitor {
+struct ReplaceExprTransform : public ExprASTVisitor {
 
   // These are public; clients should directly register whatever
   // replacements they might wish to apply to the tree.
@@ -36,7 +36,7 @@ struct ReplaceExprTransform : public FosterASTVisitor {
 
   ExprAST* rewrite(ExprAST* ast);
 
-# include "parse/FosterASTVisitor.decls.inc.h"
+# include "parse/ExprASTVisitor.decls.inc.h"
 };
 
 #endif // header guard
