@@ -329,6 +329,7 @@ STATISTIC(statOptMs, "[foster] Time spent in LLVM IR optimization (ms)");
 STATISTIC(statOverallRuntimeMs, "[foster] Overall compiler runtime (ms)");
 STATISTIC(statParseTimeMs, "[foster] Time spent parsing input file (ms)");
 STATISTIC(statFileIOMs, "[foster] Time spent doing non-parsing I/O (ms)");
+STATISTIC(statProtobufsMs, "[foster] Time spent snogging protocol buffers (ms)");
 STATISTIC(statLinkingMs, "[foster] Time spent linking LLVM modules (ms)");
 STATISTIC(statIRtoAsmMs, "[foster] Time spent doing llc's job (IR->asm) (ms)");
 STATISTIC(statPrettyPrintMs, "[foster] Time spent in pretty-printing (ms)");
@@ -666,6 +667,7 @@ int main(int argc, char** argv) {
     }
 
     if (1) {
+      ScopedTimer timer(statProtobufsMs);
       std::ofstream out(dumpdirFile("ast.postparse.pb").c_str(),
                         std::ios::trunc | std::ios::binary);
       foster::pb::Expr pbModuleExpr;
