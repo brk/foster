@@ -32,6 +32,9 @@ set(GENERATED ${PROJECT_BINARY_DIR}/_generated_)
 configure_file(${PROJECT_SOURCE_DIR}/FosterConfig.in.h
                ${GENERATED}/FosterConfig.h)
 
+find_program(PROTOC      NAMES protoc
+  DOC "protobuf compiler")
+
 find_program(LLVM_CONFIG NAMES llvm-config
   PATHS $ENV{HOME}/llvm/${LLVM_VERSION}/bin
   DOC "llvm-config")
@@ -68,7 +71,7 @@ execute_process(COMMAND ${LLVM_CONFIG} --bindir OUTPUT_VARIABLE LLVM_BINDIR)
 string(REPLACE "\n" "" LLVM_BINDIR ${LLVM_BINDIR})
 
 # Collect the linker flags for us to link against LLVM
-set(LLVM_COMPONENTS_NEEDED core jit interpreter native linker executionengine 
+set(LLVM_COMPONENTS_NEEDED core jit interpreter native linker executionengine
   analysis ipo scalaropts bitwriter bitreader asmparser asmprinter instrumentation
 )
 execute_process(COMMAND
@@ -95,41 +98,57 @@ add_custom_command(
                     ${GENERATED}
                     ${PROJECT_SOURCE_DIR}/grammar/foster.g
   DEPENDS
-  	grammar/foster.g
-	${PROJECT_SOURCE_DIR}/scripts/run_antlr.py
+        grammar/foster.g
+        ${PROJECT_SOURCE_DIR}/scripts/run_antlr.py
 )
+
+# Generate C++, Java, and Python code to manipulate AST protobuf files.
+add_custom_command(
+  OUTPUT
+          ${GENERATED}/FosterAST.pb.h
+          ${GENERATED}/FosterAST.pb.cc
+          ${GENERATED}/FosterAST_pb2.py
+  COMMAND ${PROTOC}
+          -I ${PROJECT_SOURCE_DIR}/compiler/parse/
+          ${PROJECT_SOURCE_DIR}/compiler/parse/FosterAST.proto
+          --cpp_out=${GENERATED}
+          --java_out=${GENERATED}
+          --python_out=${GENERATED}
+  DEPENDS
+          ${PROJECT_SOURCE_DIR}/compiler/parse/FosterAST.proto
+  )
 
 add_custom_command(
   OUTPUT ${PROJECT_BINARY_DIR}/libfoster_main.o
-  COMMAND 	
-	${CMAKE_CXX_COMPILER}
+  COMMAND
+        ${CMAKE_CXX_COMPILER}
           ${PROJECT_SOURCE_DIR}/runtime/libfoster_main.cpp
-	  -I ${PROJECT_SOURCE_DIR}/runtime/gc/
-		-c -o ${PROJECT_BINARY_DIR}/libfoster_main.o
+          -I ${PROJECT_SOURCE_DIR}/runtime/gc/
+                -c -o ${PROJECT_BINARY_DIR}/libfoster_main.o
   DEPENDS
-	${PROJECT_SOURCE_DIR}/runtime/libfoster_main.cpp
+        ${PROJECT_SOURCE_DIR}/runtime/libfoster_main.cpp
 )
 
 set(LIBFOSTER_CPP_SOURCES
-	${PROJECT_SOURCE_DIR}/runtime/libfoster.cpp
-	${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc.cpp
+        ${PROJECT_SOURCE_DIR}/runtime/libfoster.cpp
+        ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc.cpp
 )
 
 # Use llvm-g++ to build libfoster.bc
 add_custom_command(
   OUTPUT ${PROJECT_BINARY_DIR}/libfoster.bc
   COMMAND python ${PROJECT_SOURCE_DIR}/scripts/build_libfoster.py
-	"${LLVM_G++}"
+        "${LLVM_G++}"
         ${PROJECT_SOURCE_DIR}
-	${PROJECT_BINARY_DIR}
+        ${PROJECT_BINARY_DIR}
         "${CMAKE_STATIC_LIBRARY_SUFFIX}"
-	"${LLVM_BINDIR}"
-	${LIBFOSTER_CPP_SOURCES}
+        "${LLVM_BINDIR}"
+        ${LIBFOSTER_CPP_SOURCES}
   DEPENDS ${LIBFOSTER_CPP_SOURCES} ${PROJECT_SOURCE_DIR}/scripts/build_libfoster.py
 )
 add_custom_target(libfoster_bc DEPENDS
-	${PROJECT_BINARY_DIR}/libfoster.bc
-	${PROJECT_BINARY_DIR}/libfoster_main.o)
+        ${PROJECT_BINARY_DIR}/libfoster.bc
+        ${PROJECT_BINARY_DIR}/libfoster_main.o)
 
 
 # Look for ANTLR-generated lexer and parser, and ANTLR library files
@@ -154,6 +173,8 @@ if (CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
    "${CMAKE_EXE_LINKER_FLAGS} -Wl,--compress-debug-sections,zlib")
 endif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
 
+add_custom_target(fosterc_config_h DEPENDS ${GENERATED}/FosterConfig.h)
+
 #####################################################################
 include(${PROJECT_SOURCE_DIR}/third_party/chromium_base/CMakeLists.txt)
 include(${PROJECT_SOURCE_DIR}/third_party/cpuid/CMakeLists.txt)
@@ -166,6 +187,7 @@ add_library(fosterc_base STATIC
   compiler/base/PathManager.cpp
   compiler/base/SourceRange.cpp
 )
+add_dependencies(fosterc_base fosterc_config_h)
 
 add_library(fosterc_parse STATIC
   compiler/parse/FosterAST.cpp
@@ -186,6 +208,7 @@ add_executable(fosterc
   compiler/passes/BuildCFG.cpp
   compiler/passes/CodegenPass.cpp
   compiler/passes/TypecheckPass.cpp
+  compiler/passes/DumpToProtobuf.cpp
   compiler/passes/PrettyPrintPass.cpp
   compiler/passes/AddParentLinksPass.cpp
   compiler/passes/ReplaceExprTransform.cpp
@@ -194,10 +217,12 @@ add_executable(fosterc
   compiler/llvm/plugins/FosterGC.cpp
   #  compiler/llvm/passes/LLVMCallGraphDotPrinter.cpp
   third_party/pystring/pystring.cpp
+  ${GENERATED}/FosterAST.pb.cc
 )
 
 target_link_libraries(fosterc
-  fosterc_base fosterc_parse antlr3c ${LLVM_LDFLAGS})
+  fosterc_base fosterc_parse
+  protobuf antlr3c ${LLVM_LDFLAGS})
 
 add_dependencies(fosterc libfoster_bc)
 

@@ -59,6 +59,7 @@
 #include "passes/AddParentLinksPass.h"
 #include "passes/PrettyPrintPass.h"
 #include "passes/ClosureConversionPass.h"
+#include "passes/DumpToProtobuf.h"
 
 #include "pystring/pystring.h"
 
@@ -387,10 +388,15 @@ void putModuleMembersInScope(Module* m, Module* linkee) {
   }
 }
 
-string dumpdir("fc-output/");
 string dumpdirFile(const string& filename) {
+  static string dumpdir("fc-output/");
   return dumpdir + filename;
 }
+
+string dotdirFile(const string& filename) {
+  return dumpdirFile("dot/" + filename);
+}
+
 void dumpModuleToFile(Module* mod, const string& filename) {
   ScopedTimer timer(statFileIOMs);
   string errInfo;
@@ -595,6 +601,8 @@ void setDefaultCommandLineOptions() {
 }
 
 int main(int argc, char** argv) {
+  GOOGLE_PROTOBUF_VERIFY_VERSION;
+
   sys::PrintStackTraceOnErrorSignal();
   PrettyStackTraceProgram X(argc, argv);
   llvm_shutdown_obj Y;
@@ -609,7 +617,8 @@ int main(int argc, char** argv) {
   validateInputFile(optInputPath);
 
   { ScopedTimer timer(statFileIOMs);
-    system(("mkdir -p " + dumpdir).c_str());
+    system(("mkdir -p " + dumpdirFile("")).c_str());
+    system(("mkdir -p " + dotdirFile("")).c_str());
 
     std::cout << "Compiling separately? " << optCompileSeparately << std::endl;
     if (optDumpASTs) {
@@ -646,13 +655,22 @@ int main(int argc, char** argv) {
   
   if (optDumpASTs) { ScopedTimer timer(statFileIOMs);
     std::cout << "dumping parse trees" << endl;
-    {
+    if (0) {
       std::ofstream out(dumpdirFile("stringtree.dump.txt").c_str());
-      out << stringTreeFrom(parseTree) << endl;
+     out << stringTreeFrom(parseTree) << endl;
     }
-    {
+
+    if (0) {
       std::ofstream out(dumpdirFile("parsetree.dump.txt").c_str());
       dumpANTLRTree(out, parseTree, 0);
+    }
+
+    if (1) {
+      std::ofstream out(dumpdirFile("ast.postparse.pb").c_str(),
+                        std::ios::trunc | std::ios::binary);
+      foster::pb::Expr pbModuleExpr;
+      DumpToProtobufPass p(&pbModuleExpr); exprAST->accept(&p);
+      pbModuleExpr.SerializeToOstream(&out);
     }
   }
 
@@ -682,7 +700,7 @@ int main(int argc, char** argv) {
            it != exprAST->fn_end(); ++it) {
       FnAST* fnast = *it;
       const string& name = fnast->proto->name;
-      string filename(dumpdirFile(name + ".dot"));
+      string filename(dotdirFile(name + ".dot"));
       if (!fnast->cfgs.empty()) {
         std::cout << "Writing " << filename << std::endl;
         std::string err;
@@ -800,6 +818,7 @@ int main(int argc, char** argv) {
   }
 #endif
 
+  google::protobuf::ShutdownProtobufLibrary();
   foster::gInputFile = NULL;
   return 0;
 }

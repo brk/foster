@@ -19,15 +19,17 @@ $ ctest -V    # Run tests in verbose mode; output from tests will be printed.
 
 ============================= Installation =================================
 Ubuntu:
-	Dependencies: CMake, ANTLR3 C runtime, Java, LLVM
+	Dependencies: CMake, ANTLR3 C runtime, Java, LLVM, Google protobuf
 	Assuming you already have LLVM installed, in $PATH and $PKG_CONFIG_PATH...
-	
+
 	Interesting packages:
 		cmake		llvm-dev	llvm-doc	libgmp3c2
 	(universe)
 		binutils-gold	cmake-curses-gui	mercurial
 		clang		g++			libffi-dev
 		ccache		ack-grep
+                libprotobuf5    protobuf-compiler       libprotobuf-dev
+                python-protobuf libprotobuf-java
 
 	If you need Java on Ubuntu 9.10,
 	sudo apt-get install sun-java6-jdk

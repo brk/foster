@@ -1,0 +1,137 @@
+package foster.pb;
+
+message SourceLocation {
+  required int32 line   = 1;
+  required int32 column = 2;
+}
+
+message SourceRange {
+  required string         file_path = 1;
+  required SourceLocation begin     = 2;
+  required SourceLocation end       = 3;
+}
+
+message Type {
+  optional SourceRange range = 1;
+
+  enum Tag {
+    LLVM_NAMED = 1; // i32, void, etc
+    REF = 2;
+    FN  = 3;
+    CLOSURE = 4;
+    TUPLE = 5;
+    LITERAL_INT_VALUE = 6;
+    SIMD_VECTOR = 7;
+  }
+
+  optional string llvm_type_name = 2;
+  optional Type ref_underlying_type = 16;
+  optional FnType fnty = 17;
+  repeated Type tuple_parts = 18;
+  optional ClosureType closurety = 19;
+  optional uint64 literal_int_value = 20;
+  optional SimdVectorType simd_vector = 21;
+}
+
+message FnType {
+  repeated Type arg_types = 1;
+  optional Type ret_type  = 2;
+  optional string calling_convention = 3;
+}
+
+message ClosureType {
+  optional Expr proto = 1;
+  optional Type   fntype = 2;
+  optional Type clo_tuple_type = 3;
+}
+
+message SimdVectorType {
+  required Type literal_int_size = 1;
+  required Type element_type     = 2;
+}
+
+message Expr {
+  enum Tag {
+    INT = 16;
+    BOOL = 17;
+    VAR = 18;
+    OP = 19;
+    TUPLE = 20;
+    FN = 21;
+    PROTO = 22;
+    CALL = 23;
+    SEQ = 24;
+    SIMD = 25;
+    SUBSCRIPT = 26;
+    NIL = 27;
+    REF = 28;
+    DEREF = 29;
+    ASSIGN = 30;
+    COMPILES = 31;
+    IF = 32;
+    FORRANGE = 33;
+    CLOSURE = 34;
+    MODULE = 35;
+  }
+  repeated Expr   parts = 1;
+  required Tag     tag = 2;
+  optional Type   type = 3;
+  optional SourceRange range = 4;
+
+  optional Int   int   = 17;
+  optional Proto proto = 18;
+  optional Fn    fn    = 19;
+  optional Closure closure = 20;
+  optional If    if    = 21;
+  optional ForRange for_range = 22;
+
+  // Bool
+  optional bool   bool_value = 23;
+
+  // Var, Op
+  optional string name  = 24;
+
+  // Tuple
+  optional bool   is_closure_environment = 25;
+
+  // Compiles
+  optional bool compiles = 26;
+}
+
+message Int {
+  required string text =  2;
+  required string clean = 3;
+  required int32  base  = 4;
+}
+
+message Proto {
+  repeated Expr   in_args = 2; // really Var nodes
+  optional Type   result  = 3;
+  required string name    = 4;
+}
+
+message Fn {
+  required Expr  proto = 2;
+  required Expr  body  = 3;
+  optional bool  was_nested = 4;
+  optional bool  lambda_lift_only = 5;
+}
+
+message Closure {
+  required Expr  fn = 2;
+  required bool  is_trampoline_version = 3 [default = false];
+}
+
+message If {
+  required Expr test_expr = 2;
+  required Expr then_expr = 3;
+  required Expr else_expr = 4;
+}
+
+message ForRange {
+  required Expr   var = 2;
+  required Expr start = 3;
+  required Expr   end = 4;
+  required Expr  body = 5;
+  optional Expr  incr = 6;
+}
