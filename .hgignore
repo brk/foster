@@ -1,8 +1,10 @@
 glob:*.class
 glob:*.java
+glob:*.pyc
 glob:*~
 glob:.svn
 glob:.*.swp
+glob:.*.swo
 glob:output
 glob:third_party/chromium_base/base/*
 diff.txt

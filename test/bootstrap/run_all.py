@@ -57,6 +57,9 @@ def elapsed(start, end):
 def elapsed_since(start):
   return elapsed(start, walltime())
 
+def get_static_libs():
+  return "libfoster_main.o libchromium_base.a libcpuid.a"
+
 def get_link_flags():
   import platform
   flags = {
@@ -91,23 +94,14 @@ def run_one_test(dir_prefix, basename, paths, tmpdir):
         testpath = os.path.join(dir_prefix, basename)
         infile = extract_expected_input(paths['code'])
 
-        # Hack for now, since this option is baked in to the compiler.
-        compile_separately = False
         fosterc_cmdline = [ paths['fosterc'], paths['code'], '-O0' ]
-        if compile_separately:
-          fosterc_cmdline.insert(1, "-c")
 
         #print ' '.join(fosterc_cmdline)
         fc_elapsed = run_command(fosterc_cmdline, paths, testpath, stdout=compilelog, stderr=compilelog)
 
-        if compile_separately:
-          raise Exception("Unsupported...")
-        else:
-          ld_elapsed = 0
-          op_elapsed = 0
-          cc_elapsed = run_command('g++ out.s libfoster_main.o libchromium_base.a libcpuid.a %s -o a.out' % get_link_flags(),
-                                      paths, testpath, stdout=actual, stderr=expected, stdin=infile)
-          rn_elapsed = run_command('a.out',  paths, testpath, stdout=actual, stderr=expected, stdin=infile, strictrv=False)
+        cc_elapsed = run_command('g++ out.s %s %s -o a.out' % (get_static_libs(), get_link_flags()),
+                                    paths, testpath)
+        rn_elapsed = run_command('a.out',  paths, testpath, stdout=actual, stderr=expected, stdin=infile, strictrv=False)
 
         df_rv = subprocess.call(['diff', '-u', exp_filename, act_filename])
         if df_rv == 0:
@@ -116,8 +110,9 @@ def run_one_test(dir_prefix, basename, paths, tmpdir):
           tests_failed.add(testpath)
 
         total_elapsed = elapsed_since(start)
-	print "foc:%4d | gcc:%4d | run:%4d | all:%5d | %s" % (fc_elapsed,
-			cc_elapsed, rn_elapsed, total_elapsed, basename)
+        print "foc:%4d | gcc:%4d | run:%4d | py:%3d | tot:%5d | %s" % (fc_elapsed,
+			cc_elapsed, rn_elapsed, (total_elapsed - (fc_elapsed + cc_elapsed + rn_elapsed)),
+                        total_elapsed, basename)
         infile.close()
 
 

@@ -79,16 +79,15 @@ speedtest () {
 
 runfosterc () {
   TIMESTART
-  ./fosterc $@
-  TIMEEND "fosterc"
+  ./fosterc $TESTPATH $@
+  TIMEEND "fosterc $@"
 }
 
 cleanout () {
   rm -f $OUTPUT/fstrprog.O2.bc foster.bc a.out foster.ll gclog.txt
 }
 
-testpath=$1
-
+TESTPATH=$1
 shift
 
-make && cleanout && runfosterc $testpath $@ && extractinput $testpath && run ; echo $?
+make && cleanout && runfosterc $@ && extractinput $TESTPATH && run ; echo $?
