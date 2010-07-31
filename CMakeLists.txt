@@ -244,7 +244,7 @@ target_link_libraries(unittest_fosterc fosterc_base gtest_main ${LLVM_LDFLAGS})
 enable_testing()
 
 add_test(bootstrap
-  python ${PROJECT_SOURCE_DIR}/test/bootstrap/run_all.py
+  python ${PROJECT_SOURCE_DIR}/scripts/run_all.py
          ${PROJECT_SOURCE_DIR}/test/bootstrap
          ${PROJECT_BINARY_DIR}
   )

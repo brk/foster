@@ -8,13 +8,13 @@ import sys
 import shutil
 import traceback
 
+tests_passed = set()
+tests_failed = set()
+
 if os.name == 'nt':
   walltime = time.clock
 else:
   walltime = time.time
-
-tests_passed = set()
-tests_failed = set()
 
 def ensure_dir_exists(dirname):
   if not os.path.exists(dirname):
@@ -26,19 +26,16 @@ def extract_expected_input(path):
      until it sees a line that is not a commented key/value pair."""
   inlines = []
   with open(path, 'r') as f:
-     for line in f:
-       #print "testing line ", line
-       m = re.match(r"//\s*(.+?):\s*(.+)", line)
-       if m == None:
-         break
-       
-       label = m.group(1)
-       value = m.group(2)
-       if label == "IN":
-         inlines.append(value) 
+    for line in f:
+      #print "testing line ", line
+      m = re.match(r"//\s*(.+?):\s*(.+)", line)
+      if m == None:
+        break
 
-  #if len(inlines) == 0:
-  #  return None
+      label = m.group(1)
+      value = m.group(2)
+      if label == "IN":
+        inlines.append(value) 
 
   tmpname = 'tmp.input.txt'
   with open(tmpname, 'w') as f:
@@ -68,6 +65,13 @@ def get_link_flags():
   }[platform.system()]()
   return ' '.join(flags)
 
+class TestFailed(Exception):
+  def __init__(self, arglist, path):
+    self.arglist = arglist
+    self.path = path
+  def __str__(self):
+    return "Failed to run " + ' '.join(self.arglist) + "\n\tfor test " + self.path
+
 # returns (status, elapsed-time-ms)
 def run_command(cmd, paths, testpath, stdout=None, stderr=None, stdin=None, strictrv=True):
   if type(cmd) == str:
@@ -81,17 +85,20 @@ def run_command(cmd, paths, testpath, stdout=None, stderr=None, stdin=None, stri
   end = walltime()
 
   if strictrv and rv != 0:
-    raise Exception(str(rv) + '; Failed to run: ' + ' '.join(arglist) + "\n\tfor test " + testpath)
+    raise TestFailed(arglist, testpath)
   return elapsed(start, end)
 
-def run_one_test(dir_prefix, basename, paths, tmpdir):
+def testname(testpath):
+  """Given '/path/to/some/test.foster', returns 'test'"""
+  return os.path.basename(testpath).replace('.foster', '')
+
+def run_one_test(testpath, paths, tmpdir):
   start = walltime()
   exp_filename = os.path.join(tmpdir, "expected.txt")
   act_filename = os.path.join(tmpdir, "actual.txt")
   with open(exp_filename, 'w') as expected:
     with open(act_filename, 'w') as actual:
       with open(os.path.join(tmpdir, "compile.log.txt"), 'w') as compilelog:
-        testpath = os.path.join(dir_prefix, basename)
         infile = extract_expected_input(paths['code'])
 
         fosterc_cmdline = [ paths['fosterc'], paths['code'], '-O0' ]
@@ -112,59 +119,14 @@ def run_one_test(dir_prefix, basename, paths, tmpdir):
         total_elapsed = elapsed_since(start)
         print "foc:%4d | gcc:%4d | run:%4d | py:%3d | tot:%5d | %s" % (fc_elapsed,
 			cc_elapsed, rn_elapsed, (total_elapsed - (fc_elapsed + cc_elapsed + rn_elapsed)),
-                        total_elapsed, basename)
+                        total_elapsed, testname(testpath))
         infile.close()
 
-
-def run_all_tests(bootstrap_dir, paths, tmpdir):
-  for root, dirs, files in os.walk(bootstrap_dir, topdown=False):
-    base = os.path.basename(root)
-
-    code_path = os.path.join(root, base + ".foster")
-    have_code = os.path.exists(code_path)
-
-    if have_code:
-      teststart = walltime()
-      paths['code'] = code_path
-      test_tmpdir = os.path.join(tmpdir, base)
-      ensure_dir_exists(test_tmpdir)
-      try:
-        run_one_test(root, base, paths, test_tmpdir)
-      except KeyboardInterrupt:
-        return
-      except:
-	tests_failed.add(os.path.join(root, base))
-      testend = walltime()
-
 def main(bootstrap_dir, paths, tmpdir):
-  walkstart = walltime()
-  run_all_tests(bootstrap_dir, paths, tmpdir)
-  walkend = walltime()
-  print "Total time: %d ms" % elapsed(walkstart, walkend)
+  run_one_test(testpath, paths, os.path.join(tmpdir, testname(testpath)))
 
-  print len(tests_passed), " tests passed"
-
-  print len(tests_failed), " tests failed"
-  if len(tests_failed) > 0:
-    for test in tests_failed:
-      print test
-  sys.exit(len(tests_failed))
-
-if __name__ == "__main__":
-  if not len(sys.argv) in [2, 3]:
-    print "Usage: %s <bootstrap_test_dir> [project_bin_dir = .]"
-    sys.exit(1)
-
+def get_paths(bindir):
   join = os.path.join
-
-  bootstrap_dir = sys.argv[1]
-  bindir = os.getcwd()
-  if len(sys.argv) == 3:
-    bindir = sys.argv[2]
-
-  tmpdir = join(bindir, 'test-tmpdir')
-  ensure_dir_exists(tmpdir)
-
   paths = {
       'fosterc': join(bindir, 'fosterc'),
       'out.s':     join(bindir, 'fc-output', 'out.s'),
@@ -175,5 +137,19 @@ if __name__ == "__main__":
   }
   # compiler spits out foster.ll in current directory
   paths['foster.ll'] = join(os.path.dirname(paths['fosterc']), 'foster.ll')
+  return paths
 
-  main(bootstrap_dir, paths, tmpdir)
+if __name__ == "__main__":
+  if not len(sys.argv) in [2, 3]:
+    print "Usage: %s <test_path> [project_bin_dir = .]"
+    sys.exit(1)
+
+  testpath = sys.argv[1]
+  bindir = os.getcwd()
+  if len(sys.argv) == 3:
+    bindir = sys.argv[2]
+
+  tmpdir = os.path.join(bindir, 'test-tmpdir')
+  ensure_dir_exists(tmpdir)
+
+  main(testpath, get_paths(), tmpdir)
