@@ -151,14 +151,21 @@ def main(bootstrap_dir, paths, tmpdir):
   sys.exit(len(tests_failed))
 
 if __name__ == "__main__":
-  if len(sys.argv) != 5:
-    print "Usage: %s <bootstrap_test_dir> <project_bin_dir> <tmpdir> <llvm_config_path>"
+  if not len(sys.argv) in [2, 3]:
+    print "Usage: %s <bootstrap_test_dir> [project_bin_dir = .]"
     sys.exit(1)
+
   join = os.path.join
-  progname, bootstrap_dir, bindir, tmpdir, llvm_config_path = sys.argv
-  llvmdir = os.path.dirname(llvm_config_path)
+
+  bootstrap_dir = sys.argv[1]
+  bindir = os.getcwd()
+  if len(sys.argv) == 3:
+    bindir = sys.argv[2]
+
+  tmpdir = join(bindir, 'test-tmpdir')
+  ensure_dir_exists(tmpdir)
+
   paths = {
-      # Haven't renamed the binary from foster to fosterc yet
       'fosterc': join(bindir, 'fosterc'),
       'out.s':     join(bindir, 'fc-output', 'out.s'),
       'a.out':     join(bindir, 'fc-output', 'a.out'),
@@ -167,8 +174,6 @@ if __name__ == "__main__":
       'libfoster_main.o': join(bindir, 'libfoster_main.o'),
   }
   # compiler spits out foster.ll in current directory
-  paths['foster.ll'] = os.path.join(os.path.dirname(paths['fosterc']), 'foster.ll')
-
-  ensure_dir_exists(tmpdir)
+  paths['foster.ll'] = join(os.path.dirname(paths['fosterc']), 'foster.ll')
 
   main(bootstrap_dir, paths, tmpdir)
