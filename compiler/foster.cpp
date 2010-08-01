@@ -35,6 +35,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/FormattedStream.h"
+#include "llvm/Support/Format.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/System/Host.h"
 #include "llvm/System/Signals.h"
@@ -65,7 +66,6 @@
 
 #include <cassert>
 #include <memory>
-#include <iostream>
 #include <fstream>
 #include <sstream>
 #include <map>
@@ -80,20 +80,74 @@ using foster::EDiag;
 namespace foster { struct ScopeInfo; }
 
 using std::string;
-using std::endl;
 
 #define FOSTER_VERSION_STR "0.0.4"
 extern const char* ANTLR_VERSION_STR;
 
+class TimingsRepository {
+  std::map<string, uint64_t> totals;
+  std::map<string, uint64_t> locals;
+  std::map<string, string> descriptions;
+
+public:
+  void describe(string path, string desc) {
+    descriptions[path] += desc;
+  }
+
+  void incr(const char* dottedpath, uint64_t n) {
+    std::vector<string> parts;
+    pystring::split(dottedpath, parts, ".");
+
+    locals[dottedpath] += n;
+
+    string prefix;
+    for (size_t i = 0; i < parts.size(); ++i) {
+      if (i > 0) prefix += ".";
+      prefix += parts[i];
+      totals[prefix] += n;
+    }
+  }
+
+  void print() {
+    typedef std::map<string, uint64_t>::iterator Iter;
+    size_t maxTotalLength = 0;
+    for (Iter it = totals.begin(); it != totals.end(); ++it) {
+      const string& s = (*it).first;
+      maxTotalLength = (std::max)(maxTotalLength, s.size());
+    }
+    string pathFormatString;
+    llvm::raw_string_ostream pfs(pathFormatString);
+    pfs << "%-" << (maxTotalLength) << "s";
+    pfs.flush();
+
+    llvm::outs() << llvm::format(pathFormatString.c_str(), (const char*) "Category name")
+        << "Total" << "  " << "Local" << "\n";
+
+    for (Iter it = totals.begin(); it != totals.end(); ++it) {
+      const string& s = (*it).first;
+      llvm::outs() << llvm::format(pathFormatString.c_str(), s.c_str())
+                  << "  " << llvm::format("%5u", (unsigned) totals[s])
+                  << "  "  << llvm::format("%5u", (unsigned) locals[s]);
+      const string& d = descriptions[s];
+      if (!d.empty()) {
+        llvm::outs() << " -- " << d;
+      }
+      llvm::outs() << "\n";
+    }
+  }
+};
+
+TimingsRepository gTimings;
+
 struct ScopedTimer {
-  ScopedTimer(llvm::Statistic& stat)
+  ScopedTimer(const char* stat)
      : stat(stat), start(llvm::sys::TimeValue::now()) {}
   ~ScopedTimer() {
     llvm::sys::TimeValue end = llvm::sys::TimeValue::now();
-    stat += (end - start).msec();
+    gTimings.incr(stat, (end - start).msec());
   }
 private:
-  llvm::Statistic& stat;
+  const char* stat;
   llvm::sys::TimeValue start;
 };
 
@@ -166,8 +220,8 @@ void addToProperNamespace(VariableAST* var) {
 
   ExprAST* ns = gScopeLookupAST(parts[0]);
   if (!ns) {
-    std::cerr << "Error: could not find root namespace for fqName "
-              << fqName << std::endl;
+    llvm::errs() << "Error: could not find root namespace for fqName "
+              << fqName << "\n";
     return;
   }
 
@@ -181,8 +235,8 @@ void addToProperNamespace(VariableAST* var) {
   if (NamespaceAST* parentNS = dynamic_cast<NamespaceAST*>(ns)) {
     parentNS->insert(parts.back(), var);
   } else {
-    std::cerr << "Error: final parent namespace for fqName '"
-              << fqName << "' was not a NamespaceAST" << std::endl;
+    llvm::errs() << "Error: final parent namespace for fqName '"
+              << fqName << "' was not a NamespaceAST" << "\n";
   }
 }
 
@@ -311,6 +365,10 @@ optDumpStats("dump-stats",
 #endif
 
 static cl::opt<bool>
+optPrintTimings("fosterc-time",
+  cl::desc("[foster] Print timing measurements of compiler passes"));
+
+static cl::opt<bool>
 optOptimizeZero("O0",
   cl::desc("[foster] Disable optimization passes after linking with standard library"));
 
@@ -318,27 +376,33 @@ static cl::list<const PassInfo*, bool, PassNameParser>
 cmdLinePassList(cl::desc("Optimizations available:"));
 
 void printVersionInfo() {
-  std::cout << "Foster version: " << FOSTER_VERSION_STR;
-  std::cout << ", compiled: " << __DATE__ << " at " << __TIME__ << std::endl;
-  std::cout << "ANTLR version " << ANTLR_VERSION_STR << std::endl;
+  llvm::outs() << "Foster version: " << FOSTER_VERSION_STR;
+  llvm::outs() << ", compiled: " << __DATE__ << " at " << __TIME__ << "\n";
+  llvm::outs() << "ANTLR version " << ANTLR_VERSION_STR << "\n";
   cl::PrintVersionMessage(); 
 }
 
-#define DEBUG_TYPE "fosterc"
-STATISTIC(statOptMs, "[foster] Time spent in LLVM IR optimization (ms)");
-STATISTIC(statOverallRuntimeMs, "[foster] Overall compiler runtime (ms)");
-STATISTIC(statParseTimeMs, "[foster] Time spent parsing input file (ms)");
-STATISTIC(statFileIOMs, "[foster] Time spent doing non-parsing I/O (ms)");
-STATISTIC(statProtobufsMs, "[foster] Time spent snogging protocol buffers (ms)");
-STATISTIC(statLinkingMs, "[foster] Time spent linking LLVM modules (ms)");
-STATISTIC(statIRtoAsmMs, "[foster] Time spent doing llc's job (IR->asm) (ms)");
-STATISTIC(statPrettyPrintMs, "[foster] Time spent in pretty-printing (ms)");
-STATISTIC(statTypeCheckingMs, "[foster] Time spent doing type checking (ms)");
-STATISTIC(statCodegenMs, "[foster] Time spent doing Foster AST -> LLVM IR lowering (ms)");
-STATISTIC(statClosureConversionMs, "[foster] Time spent performing closure conversion (ms)");
+void setTimingDescriptions() {
+  gTimings.describe("total", "Overall compiler runtime (ms)");
+
+  gTimings.describe("io.parse", "Time spent parsing input file (ms)");
+  gTimings.describe("io.file",  "Time spent doing non-parsing I/O (ms)");
+  gTimings.describe("io.dot",   "Time spent writing DOT graphs (ms)");
+  gTimings.describe("io.prettyprint", "Time spent in pretty-printing (ms)");
+
+  gTimings.describe("llvm.opt",  "Time spent in LLVM IR optimization (ms)");
+  gTimings.describe("llvm.link", "Time spent linking LLVM modules (ms)");
+  gTimings.describe("llvm.llc",  "Time spent doing llc's job (IR->asm) (ms)");
+
+  gTimings.describe("protobuf", "Time spent snogging protocol buffers (ms)");
+
+  gTimings.describe("foster.typecheck", "Time spent doing type checking (ms)");
+  gTimings.describe("foster.codegen",   "Time spent doing Foster AST -> LLVM IR lowering (ms)");
+  gTimings.describe("foster.closureconv", "Time spent performing closure conversion (ms)");
+}
 
 Module* readModuleFromPath(string path) {
-  ScopedTimer timer(statFileIOMs);
+  ScopedTimer timer("io.file.readmodule");
   SMDiagnostic diag;
   return llvm::ParseIRFile(path, diag, llvm::getGlobalContext());
 }
@@ -375,9 +439,10 @@ void putModuleMembersInScope(Module* m, Module* linkee) {
             llvm::StringRef(name),
             fnty,
             f.getAttributes());
-  
-        std::cout << "inserting variable in global scope: " << name << " : "
-                  << str(fnty) << std::endl;
+        /*
+        llvm::outs() << "inserting variable in global scope: " << name << " : "
+                  << str(fnty) << "\n";
+        */
         gScope.insert(name, new foster::SymbolInfo(
                               new VariableAST(name, TypeAST::reconstruct(fnty),
                                               SourceRange::getEmptyRange()),
@@ -398,28 +463,51 @@ string dotdirFile(const string& filename) {
   return dumpdirFile("dot/" + filename);
 }
 
+void dumpScopesToDotGraphs() {
+  ScopedTimer timer("io.dot");
+  {
+    std::string err;
+    llvm::raw_fd_ostream f(dumpdirFile("gScope.dot").c_str(), err);
+    if (err.empty()) {
+      llvm::WriteGraph(f, &gScope);
+    } else {
+      foster::EDiag() << "no file to write gScope.dot";
+    }
+  }
+
+  {
+    std::string err;
+    llvm::raw_fd_ostream f(dumpdirFile("gTypeScope.dot").c_str(), err);
+    if (err.empty()) {
+      llvm::WriteGraph(f, &gTypeScope);
+    } else {
+      foster::EDiag() << "no file to write gTypeScope.dot";
+    }
+  }
+}
+
 void dumpModuleToFile(Module* mod, const string& filename) {
-  ScopedTimer timer(statFileIOMs);
+  ScopedTimer timer("io.file.dumpmodule.ir");
   string errInfo;
   llvm::raw_fd_ostream LLpreASM(filename.c_str(), errInfo);
   if (errInfo.empty()) {
     LLpreASM << *mod;
   } else {
-    std::cerr << "Error dumping module to " << filename << std::endl;
-    std::cerr << errInfo << std::endl;
+    llvm::errs() << "Error dumping module to " << filename << "\n";
+    llvm::errs() << errInfo << "\n";
     exit(1);
   }
 }
 
 void dumpModuleToBitcode(Module* mod, const string& filename) {
-  ScopedTimer timer(statFileIOMs);
+  ScopedTimer timer("io.file.dumpmodule.bitcode");
   string errInfo;
   sys::RemoveFileOnSignal(sys::Path(filename), &errInfo);
 
   raw_fd_ostream out(filename.c_str(), errInfo, raw_fd_ostream::F_Binary);
   if (!errInfo.empty()) {
-    std::cerr << "Error when preparing to write bitcode to " << filename
-        << "\n" << errInfo << std::endl;
+    llvm::errs() << "Error when preparing to write bitcode to " << filename
+        << "\n" << errInfo << "\n";
     exit(1);
   }
 
@@ -433,7 +521,7 @@ TargetData* getTargetDataForModule(Module* mod) {
 }
 
 void optimizeModuleAndRunPasses(Module* mod) {
-  ScopedTimer timer(statOptMs);
+  ScopedTimer timer("llvm.opt");
   PassManager passes;
   FunctionPassManager fpasses(mod);
 
@@ -442,7 +530,7 @@ void optimizeModuleAndRunPasses(Module* mod) {
     passes.add(td);
     fpasses.add(new TargetData(*td));
   } else {
-    std::cout << "Warning: no target data for module!" << std::endl;
+    llvm::outs() << "Warning: no target data for module!" << "\n";
   }
 
   passes.add(llvm::createVerifierPass());
@@ -468,8 +556,8 @@ void optimizeModuleAndRunPasses(Module* mod) {
     if (p) {
       passes.add(p);
     } else {
-      std::cerr << "Error: unable to create LLMV pass "
-                << "'" << pi->getPassName() << "'" << std::endl;
+      llvm::errs() << "Error: unable to create LLMV pass "
+                << "'" << pi->getPassName() << "'" << "\n";
     }
   }
 
@@ -498,7 +586,7 @@ void optimizeModuleAndRunPasses(Module* mod) {
 }
 
 void compileToNativeAssembly(Module* mod, const string& filename) {
-  ScopedTimer timer(statIRtoAsmMs);
+  ScopedTimer timer("llvm.llc");
 
   llvm::Triple triple(mod->getTargetTriple());
   if (triple.getTriple().empty()) {
@@ -509,15 +597,15 @@ void compileToNativeAssembly(Module* mod, const string& filename) {
   string err;
   target = llvm::TargetRegistry::lookupTarget(triple.getTriple(), err);
   if (!target) {
-    std::cerr << "Error: unable to pick a target for compiling to assembly"
-              << std::endl;
+    llvm::errs() << "Error: unable to pick a target for compiling to assembly"
+              << "\n";
     exit(1);
   }
 
   TargetMachine* tm = target->createTargetMachine(triple.getTriple(), "");
   if (!tm) {
-    std::cerr << "Error! Creation of target machine"
-        " failed for triple " << triple.getTriple() << std::endl;
+    llvm::errs() << "Error! Creation of target machine"
+        " failed for triple " << triple.getTriple() << "\n";
     exit(1);
   }
 
@@ -535,8 +623,8 @@ void compileToNativeAssembly(Module* mod, const string& filename) {
 
   llvm::raw_fd_ostream raw_out(filename.c_str(), err, 0);
   if (!err.empty()) {
-    std::cerr << "Error when opening file to print assembly to:\n\t"
-        << err << std::endl;
+    llvm::errs() << "Error when opening file to print assembly to:\n\t"
+        << err << "\n";
     exit(1);
   }
 
@@ -547,7 +635,7 @@ void compileToNativeAssembly(Module* mod, const string& filename) {
       TargetMachine::CGFT_AssemblyFile,
       CodeGenOpt::Aggressive,
       disableVerify)) {
-    std::cerr << "Unable to emit assembly file! " << std::endl;
+    llvm::errs() << "Unable to emit assembly file! " << "\n";
     exit(1);
   }
 
@@ -564,7 +652,7 @@ void validateInputFile(const string& pathstr) {
   llvm::sys::PathWithStatus path(pathstr);
 
   if (path.empty()) {
-    std::cerr << "Error: need an input filename!" << std::endl;
+    llvm::errs() << "Error: need an input filename!" << "\n";
     exit(1);
   }
 
@@ -573,16 +661,16 @@ void validateInputFile(const string& pathstr) {
          = path.getFileStatus(/*forceUpdate=*/ false, &err);
   if (!status) {
     if (err.empty()) {
-      std::cerr << "Error occurred when reading input path '"
-                << pathstr << "'" << std::endl;
+      llvm::errs() << "Error occurred when reading input path '"
+                << pathstr << "'" << "\n";
     } else {
-      std::cerr << err << std::endl;
+      llvm::errs() << err << "\n";
     }
     exit(1);
   }
 
   if (status->isDir) {
-    std::cerr << "Error: input must be a file, not a directory!" << std::endl;
+    llvm::errs() << "Error: input must be a file, not a directory!" << "\n";
     exit(1);
   }
 }
@@ -608,7 +696,7 @@ int main(int argc, char** argv) {
   PrettyStackTraceProgram X(argc, argv);
   llvm_shutdown_obj Y;
 
-  ScopedTimer wholeProgramTimer(statOverallRuntimeMs);
+  ScopedTimer* wholeProgramTimer = new ScopedTimer("total");
 
   setDefaultCommandLineOptions();
 
@@ -617,16 +705,16 @@ int main(int argc, char** argv) {
 
   validateInputFile(optInputPath);
 
-  { ScopedTimer timer(statFileIOMs);
+  { ScopedTimer timer("io.file.mkdir");
     system(("mkdir -p " + dumpdirFile("")).c_str());
     system(("mkdir -p " + dotdirFile("")).c_str());
 
-    std::cout << "Compiling separately? " << optCompileSeparately << std::endl;
+    llvm::outs() << "Compiling separately? " << optCompileSeparately << "\n";
     if (optDumpASTs) {
-      std::cout << "Input file: " << optInputPath << std::endl;
-      std::cout <<  "================" << std::endl;
+      llvm::outs() << "Input file: " << optInputPath << "\n";
+      llvm::outs() <<  "================" << "\n";
       system(("cat " + optInputPath).c_str());
-      std::cout <<  "================" << std::endl;
+      llvm::outs() <<  "================" << "\n";
     }
   }
   
@@ -650,15 +738,15 @@ int main(int argc, char** argv) {
   pANTLR3_BASE_TREE parseTree = NULL;
   unsigned numParseErrors = 0;
   ModuleAST* exprAST = NULL;
-  { ScopedTimer timer(statParseTimeMs);
+  { ScopedTimer timer("io.parse");
     exprAST = foster::parseModule(infile, parseTree, numParseErrors);
   }
   
-  if (optDumpASTs) { ScopedTimer timer(statFileIOMs);
-    std::cout << "dumping parse trees" << endl;
+  if (optDumpASTs) { ScopedTimer timer("io.file");
+    llvm::outs() << "dumping parse trees" << "\n";
     if (0) {
       std::ofstream out(dumpdirFile("stringtree.dump.txt").c_str());
-     out << stringTreeFrom(parseTree) << endl;
+      out << stringTreeFrom(parseTree) << "\n";
     }
 
     if (0) {
@@ -667,12 +755,16 @@ int main(int argc, char** argv) {
     }
 
     if (1) {
-      ScopedTimer timer(statProtobufsMs);
-      std::ofstream out(dumpdirFile("ast.postparse.pb").c_str(),
-                        std::ios::trunc | std::ios::binary);
       foster::pb::Expr pbModuleExpr;
-      DumpToProtobufPass p(&pbModuleExpr); exprAST->accept(&p);
-      pbModuleExpr.SerializeToOstream(&out);
+
+      { ScopedTimer timer("protobuf");
+        DumpToProtobufPass p(&pbModuleExpr); exprAST->accept(&p);
+      }
+      { ScopedTimer timer("protobuf.io");
+        std::ofstream out(dumpdirFile("ast.postparse.pb").c_str(),
+                              std::ios::trunc | std::ios::binary);
+        pbModuleExpr.SerializeToOstream(&out);
+      }
     }
   }
 
@@ -680,23 +772,15 @@ int main(int argc, char** argv) {
     exit(2);
   }
 
-  { ScopedTimer timer(statFileIOMs);
-  if (optDumpASTs) {
-    string outfile = "ast.dump.1.txt";
-    std::cout << "unparsing to " << outfile << endl;
-    std::ofstream out(dumpdirFile(outfile).c_str());
-    std::cout << *exprAST << endl;
+  {
+    llvm::outs() << "=========================" << "\n";
+    llvm::outs() << "Adding parent links..." << "\n";
+    AddParentLinksPass aplPass; exprAST->accept(&aplPass);
   }
-  
-  std::cout << "=========================" << std::endl;
-  std::cout << "Adding parent links..." << std::endl;
-  }
-
-  { AddParentLinksPass aplPass; exprAST->accept(&aplPass); }
  
   {
-    std::cout << "=========================" << std::endl;
-    std::cout << "building CFGs" << std::endl;
+    llvm::outs() << "=========================" << "\n";
+    llvm::outs() << "building CFGs" << "\n";
     { BuildCFG p; exprAST->accept(&p); }
     for (ModuleAST::FnAST_iterator it = exprAST->fn_begin();
            it != exprAST->fn_end(); ++it) {
@@ -704,10 +788,10 @@ int main(int argc, char** argv) {
       const string& name = fnast->proto->name;
       string filename(dotdirFile(name + ".dot"));
       if (!fnast->cfgs.empty()) {
-        std::cout << "Writing " << filename << std::endl;
+        llvm::outs() << "Writing " << filename << "\n";
         std::string err;
         llvm::raw_fd_ostream f(filename.c_str(), err);
-        if (err.empty()) {
+        if (err.empty()) { ScopedTimer timer("io.dot");
           llvm::WriteGraph(f, fnast);
         }
       } else {
@@ -716,51 +800,51 @@ int main(int argc, char** argv) {
     }
   }
 
-  { ScopedTimer timer(statFileIOMs);
-  std::cout << "=========================" << std::endl;
-  std::cout << "Type checking... " << std::endl;
+  {
+  llvm::outs() << "=========================" << "\n";
+  llvm::outs() << "Type checking... " << "\n";
   }
 
-  { ScopedTimer timer(statTypeCheckingMs);
+  { ScopedTimer timer("foster.typecheck");
     TypecheckPass tyPass; exprAST->accept(&tyPass);
   }
 
   bool sema = exprAST->type != NULL;
-  std::cout << "Semantic checking: " << sema << endl;
+  llvm::outs() << "Semantic checking: " << sema << "\n";
   if (!sema) { return 1; }
   
-  if (optDumpASTs) { ScopedTimer timer(statFileIOMs);
+  if (optDumpASTs) { ScopedTimer timer("io.file");
     string outfile = "pp-precc.txt";
-    std::cout << "=========================" << std::endl;
-    std::cout << "Pretty printing to " << outfile << std::endl;
+    llvm::outs() << "=========================" << "\n";
+    llvm::outs() << "Pretty printing to " << outfile << "\n";
     std::ofstream out(dumpdirFile(outfile).c_str());
-    ScopedTimer pptimer(statPrettyPrintMs);
+    ScopedTimer pptimer("io.prettyprint");
     PrettyPrintPass ppPass(out); exprAST->accept(&ppPass); ppPass.flush();
   }
 
-  { ScopedTimer timer(statFileIOMs);
-    std::cout << "=========================" << std::endl;
-    std::cout << "Performing closure conversion..." << std::endl;
+  {
+    llvm::outs() << "=========================" << "\n";
+    llvm::outs() << "Performing closure conversion..." << "\n";
   }
 
-  { ScopedTimer timer(statClosureConversionMs);
+  { ScopedTimer timer("foster.closureconv");
     ClosureConversionPass p(globalNames, exprAST);
     exprAST->accept(&p);
   }
 
-  { ScopedTimer timer(statFileIOMs);
+  { ScopedTimer timer("io.file");
     string outfile = "pp-postcc.txt";
-    std::cout << "=========================" << std::endl;
-    std::cout << "Pretty printing to " << outfile << std::endl;
+    llvm::outs() << "=========================" << "\n";
+    llvm::outs() << "Pretty printing to " << outfile << "\n";
     std::ofstream out(dumpdirFile(outfile).c_str());
-    ScopedTimer pptimer(statPrettyPrintMs);
+    ScopedTimer pptimer("io.prettyprint");
     PrettyPrintPass ppPass(out); exprAST->accept(&ppPass); ppPass.flush();
   }
 
-  std::cout << "=========================" << std::endl;
+  llvm::outs() << "=========================" << "\n";
 
   {
-    ScopedTimer timer(statCodegenMs);
+    ScopedTimer timer("foster.codegen");
     CodegenPass cgPass; exprAST->accept(&cgPass);
   }
   
@@ -768,31 +852,13 @@ int main(int argc, char** argv) {
     dumpModuleToFile(module, dumpdirFile("out.prelink.ll").c_str());
   }
 
-  {
-    std::string err;
-    llvm::raw_fd_ostream f(dumpdirFile("gScope.dot").c_str(), err);
-    if (err.empty()) {
-      llvm::WriteGraph(f, &gScope);
-    } else {
-      foster::EDiag() << "no file to write varScope.dot";
-    }
-  }
-  {
-    std::string err;
-    llvm::raw_fd_ostream f(dumpdirFile("gTypeScope.dot").c_str(), err);
-    if (err.empty()) {
-      llvm::WriteGraph(f, &gTypeScope);
-    } else {
-      foster::EDiag() << "no file to write valScope.dot";
-    }
-  }
+  dumpScopesToDotGraphs();
 
   if (!optCompileSeparately) {
     string errMsg;
-    {
-      ScopedTimer timer(statLinkingMs);
+    { ScopedTimer timer("llvm.link");
     if (Linker::LinkModules(module, m, &errMsg)) {
-      std::cerr << "Error when linking modules: " << errMsg << std::endl;
+      llvm::errs() << "Error when linking modules: " << errMsg << "\n";
     }
     }
 
@@ -820,8 +886,20 @@ int main(int argc, char** argv) {
   }
 #endif
 
-  google::protobuf::ShutdownProtobufLibrary();
+  { ScopedTimer timer("protobuf.shutdown");
+    google::protobuf::ShutdownProtobufLibrary();
+  }
   foster::gInputFile = NULL;
+  { ScopedTimer timer("io.file.flush");
+    llvm::outs().flush();
+    llvm::errs().flush();
+  }
+
+  delete wholeProgramTimer;
+  if (optPrintTimings) {
+    setTimingDescriptions();
+    gTimings.print();
+  }
   return 0;
 }
 
