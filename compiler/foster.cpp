@@ -121,7 +121,7 @@ public:
     pfs.flush();
 
     llvm::outs() << llvm::format(pathFormatString.c_str(), (const char*) "Category name")
-        << "Total" << "  " << "Local" << "\n";
+        << "    Total" << "  " << "Local" << "\n";
 
     for (Iter it = totals.begin(); it != totals.end(); ++it) {
       const string& s = (*it).first;
@@ -399,6 +399,13 @@ void setTimingDescriptions() {
   gTimings.describe("foster.typecheck", "Time spent doing type checking (ms)");
   gTimings.describe("foster.codegen",   "Time spent doing Foster AST -> LLVM IR lowering (ms)");
   gTimings.describe("foster.closureconv", "Time spent performing closure conversion (ms)");
+}
+
+void ensureDirectoryExists(const string& pathstr) {
+  llvm::sys::Path p(pathstr);
+  if (!p.isDirectory()) {
+    p.createDirectoryOnDisk(true, NULL);
+  }
 }
 
 Module* readModuleFromPath(string path) {
@@ -705,19 +712,9 @@ int main(int argc, char** argv) {
 
   validateInputFile(optInputPath);
 
-  { ScopedTimer timer("io.file.mkdir");
-    system(("mkdir -p " + dumpdirFile("")).c_str());
-    system(("mkdir -p " + dotdirFile("")).c_str());
+  ensureDirectoryExists(dumpdirFile(""));
+  ensureDirectoryExists( dotdirFile(""));
 
-    llvm::outs() << "Compiling separately? " << optCompileSeparately << "\n";
-    if (optDumpASTs) {
-      llvm::outs() << "Input file: " << optInputPath << "\n";
-      llvm::outs() <<  "================" << "\n";
-      system(("cat " + optInputPath).c_str());
-      llvm::outs() <<  "================" << "\n";
-    }
-  }
-  
   using foster::module;
   using foster::ee;
 
@@ -736,22 +733,20 @@ int main(int argc, char** argv) {
   foster::gInputFile = &infile;
 
   pANTLR3_BASE_TREE parseTree = NULL;
+  foster::ANTLRContext* ctx = NULL;
   unsigned numParseErrors = 0;
   ModuleAST* exprAST = NULL;
+
+
   { ScopedTimer timer("io.parse");
-    exprAST = foster::parseModule(infile, parseTree, numParseErrors);
+    exprAST = foster::parseModule(infile, parseTree, ctx, numParseErrors);
   }
   
-  if (optDumpASTs) { ScopedTimer timer("io.file");
+  if (optDumpASTs) {
     llvm::outs() << "dumping parse trees" << "\n";
-    if (0) {
+    if (1) {
       std::ofstream out(dumpdirFile("stringtree.dump.txt").c_str());
       out << stringTreeFrom(parseTree) << "\n";
-    }
-
-    if (0) {
-      std::ofstream out(dumpdirFile("parsetree.dump.txt").c_str());
-      dumpANTLRTree(out, parseTree, 0);
     }
 
     if (1) {
@@ -895,7 +890,9 @@ int main(int argc, char** argv) {
     llvm::errs().flush();
   }
 
+  foster::deleteANTLRContext(ctx);
   delete wholeProgramTimer;
+
   if (optPrintTimings) {
     setTimingDescriptions();
     gTimings.print();

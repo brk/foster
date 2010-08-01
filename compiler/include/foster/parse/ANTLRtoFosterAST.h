@@ -29,6 +29,10 @@ class ModuleAST;
 
 namespace foster {
 
+class ANTLRContext;
+
+void deleteANTLRContext(ANTLRContext* ctx);
+
 struct InputFile;
 
 ExprAST* parseExpr(const std::string& source,
@@ -37,6 +41,7 @@ ExprAST* parseExpr(const std::string& source,
 
 ModuleAST* parseModule(const InputFile& file,
                        pTree& outTree,
+                       ANTLRContext*& outContext,
                        unsigned& outNumANTLRErrors);
 
 } // namespace foster

@@ -1074,7 +1074,8 @@ std::vector<TypeAST*> getTypes(pTree tree) {
   return types;
 }
 
-namespace {
+
+namespace foster {
 
 struct ANTLRContext {
   string filename;
@@ -1091,7 +1092,10 @@ struct ANTLRContext {
   }
 };
 
-void createParser(ANTLRContext& ctx,
+
+namespace {
+
+void createParser(foster::ANTLRContext& ctx,
                   const string& filepath,
                   llvm::MemoryBuffer* buf) {
   ASSERT(buf->getBufferSize() <= ((ANTLR3_UINT32)-1)
@@ -1122,14 +1126,14 @@ void createParser(ANTLRContext& ctx,
   }
 }
 
-void createParser(ANTLRContext& ctx,
+void createParser(foster::ANTLRContext& ctx,
                   const foster::InputFile& infile) {
   createParser(ctx, infile.getPath().str(), infile.getBuffer());
 }
 
 } // unnamed namespace
 
-namespace foster {
+void deleteANTLRContext(ANTLRContext* ctx) { delete ctx; }
 
 ExprAST* parseExpr(const std::string& source,
                    pTree& outTree,
@@ -1139,16 +1143,17 @@ ExprAST* parseExpr(const std::string& source,
 
 ModuleAST* parseModule(const InputFile& file,
                        pTree& outTree,
+                       ANTLRContext*& ctx,
                        unsigned& outNumANTLRErrors) {
-  ANTLRContext ctx;
-  createParser(ctx, file);
+  ctx = new ANTLRContext();
+  createParser(*ctx, file);
 
-  installTreeTokenBoundaryTracker(ctx.psr->adaptor);
-  foster::installRecognitionErrorFilter(ctx.psr->pParser->rec);
-  fosterParser_program_return langAST = ctx.psr->program(ctx.psr);
+  installTreeTokenBoundaryTracker(ctx->psr->adaptor);
+  foster::installRecognitionErrorFilter(ctx->psr->pParser->rec);
+  fosterParser_program_return langAST = ctx->psr->program(ctx->psr);
 
   outTree = langAST.tree;
-  outNumANTLRErrors = ctx.psr->pParser->rec->state->errorCount;
+  outNumANTLRErrors = ctx->psr->pParser->rec->state->errorCount;
 
   return parseTopLevel(outTree);
 }
