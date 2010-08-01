@@ -8,6 +8,7 @@
 #include "llvm/DerivedTypes.h"
 
 class TypeAST;
+class TupleTypeAST;
 
 // returns true if p == t*
 inline bool isPointerToType(const llvm::Type* p, const llvm::Type* t) {
@@ -21,7 +22,7 @@ inline bool isPointerToPointerToType(const llvm::Type* p, const llvm::Type* t) {
 
 bool canAssignType(TypeAST* from, TypeAST* to);
 
-void addClosureTypeName(llvm::Module* mod, const llvm::StructType* ty);
+void addClosureTypeName(llvm::Module* mod, TupleTypeAST* ty);
 
 // Converts T (X, Y) and T (X, Y)* to T (X, Y)
 FnTypeAST* tryExtractCallableType(TypeAST* ty);

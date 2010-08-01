@@ -131,6 +131,8 @@ TypeAST* TypeAST::reconstruct(const llvm::Type* loweredType) {
     return new TypeAST(loweredType, SourceRange::getEmptyRange());
   }
   
+  llvm::outs() << "TypeAST::reconstruct() deferring to TypeAST::get() for " << str(loweredType) << "\n";
+
   return TypeAST::get(loweredType);
 }
 

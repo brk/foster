@@ -31,15 +31,15 @@ FnTypeAST* tryExtractCallableType(TypeAST* ty) {
   return NULL;
 }
 
-std::map<const Type*, bool> namedClosureTypes;
+std::map<TupleTypeAST*, bool> namedClosureTypes;
 
-void addClosureTypeName(llvm::Module* mod, const llvm::StructType* sty) {
+void addClosureTypeName(llvm::Module* mod, TupleTypeAST* cty) {
   if (!mod) return;
-  if (namedClosureTypes[sty]) return;
+  if (namedClosureTypes[cty]) return;
 
   std::stringstream ss;
   ss << "ClosureTy";
-  FnTypeAST* fty = tryExtractCallableType(TypeAST::get(sty->getContainedType(0)));
+  FnTypeAST* fty = tryExtractCallableType(cty->getContainedType(0));
   if (fty != NULL) {
     // Skip generic closure argument
     for (int i = 1; i < fty->getNumParams(); ++i) {
@@ -47,9 +47,9 @@ void addClosureTypeName(llvm::Module* mod, const llvm::StructType* sty) {
     }
     ss << "_to_" << *(fty->getReturnType());
 
-    mod->addTypeName(freshName(ss.str()), sty);
+    mod->addTypeName(freshName(ss.str()), cty->getLLVMType());
 
-    namedClosureTypes[sty] = true;
+    namedClosureTypes[cty] = true;
   }
 }
 
