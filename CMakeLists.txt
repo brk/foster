@@ -286,5 +286,6 @@ set(CTEST_CUSTOM_ERROR_MATCH ${CTEST_CUSTOM_ERROR_MATCH}
   "[1-9][0-9] tests failed")
 
 add_test(NAME fosterc_unittest
-  COMMAND ${PROJECT_BINARY_DIR}/unittest_fosterc)
+  COMMAND python ${PROJECT_SOURCE_DIR}/scripts/gtest_wrapper.py
+                 ${PROJECT_BINARY_DIR}/unittest_fosterc)
 
