@@ -43,9 +43,9 @@ void addClosureTypeName(llvm::Module* mod, const llvm::StructType* sty) {
   if (fty != NULL) {
     // Skip generic closure argument
     for (int i = 1; i < fty->getNumParams(); ++i) {
-      ss << "_" << *(fty->getParamType(i));
+      ss << "_" << *(fty->getParamType(i)->getLLVMType());
     }
-    ss << "_to_" << *(fty->getReturnType());
+    ss << "_to_" << *(fty->getReturnType()->getLLVMType());
 
     mod->addTypeName(freshName(ss.str()), sty);
 

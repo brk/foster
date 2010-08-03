@@ -415,7 +415,7 @@ void TypecheckPass::visit(NilExprAST* ast) {
         if (nilPos != ast->parent->parts.end()) {
           int nilOffset = std::distance(ast->parent->parts.begin(), nilPos);
           ast->type = tupleTy->getContainedType(nilOffset);
-          std::cout << "\tmunging gave nil type " << *(ast->type) << std::endl;
+          std::cout << "\tmunging gave nil type " << *(ast->type->getLLVMType()) << std::endl;
         }
       }
     }
@@ -449,7 +449,7 @@ void TypecheckPass::visit(NilExprAST* ast) {
           ast->type = fnty->getParamType(i - 1);
         }
       } else {
-        std::cout << "\t\tCALLEE HAS TYPE " << *(callee->type) << std::endl;
+        std::cout << "\t\tCALLEE HAS TYPE " << *(callee->type->getLLVMType()) << std::endl;
       }
       }
     }
@@ -603,7 +603,8 @@ void TypecheckPass::visit(DerefExprAST* ast) {
       }
     }
   } else {
-    std::cerr << "Deref() called on a non-pointer type " << *derefType << "!\n";
+    std::cerr << "Deref() called on a non-pointer type "
+              << str(derefType->getLLVMType()) << "!\n";
     std::cerr << "base: " << *(ast->parts[0]) << std::endl;
     ast->type = NULL;
   }
@@ -856,8 +857,10 @@ void TypecheckPass::visit(CallAST* ast) {
         // since the formal arguments will have undergone the same conversion.
         std::cout << "actualtype = " << str(actualType) << std::endl;
         actualType = genericClosureTypeFor(actualType);
-        std::cout << "TYPECHECK CallAST converting " << *fnty << " to " << *actualType << std::endl;
-        std::cout << "\t for formal type:\t" << *formalType << std::endl;
+        std::cout << "TYPECHECK CallAST converting " << *fnty
+                  << " to " << str(actualType->getLLVMType()) << std::endl;
+        std::cout << "\t for formal type:\t" << str(formalType->getLLVMType())
+                  << std::endl;
         std::cout << "\t base :: " << *base << std::endl;
       }
     } else if (const llvm::StructType* sty = llvm::dyn_cast<llvm::StructType>(actualType->getLLVMType())) {

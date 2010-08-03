@@ -31,8 +31,6 @@ class ClosureTypeAST;
 
 class DumpTypeToProtobufPass;
 
-std::ostream& operator<<(std::ostream& out, TypeAST& expr);
-
 inline std::ostream& operator<<(std::ostream& out, const llvm::Type& ty) {
   std::string s;
   llvm::raw_string_ostream ss(s);
@@ -129,14 +127,6 @@ class RefTypeAST : public TypeAST {
   typedef std::pair<TypeAST*, bool> RefTypeArgs;
   static std::map<RefTypeArgs, RefTypeAST*> refCache;
 public:
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    if (isNullable()) {
-      return out << "(nullable " << str(getLLVMType()) << ")";
-    } else {
-      return out << str(getLLVMType());
-    }
-  };
-
   bool isNullable() const { return nullable; }
   virtual bool canConvertTo(TypeAST* otherType);
   TypeAST* getElementType() { return underlyingType; }
@@ -165,16 +155,6 @@ class FnTypeAST : public TypeAST {
       callingConvention(callingConvention) {}
 
 public:
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    out << "FnTypeAST(";
-    for (int i = 0; i < getNumParams(); ++i) {
-      out << "arg["<<i<<"] = " << *(getParamType(i)) << ", ";
-    }
-    out << "--> " << *getReturnType();
-    out << ")";
-    return out;
-  };
-
   static FnTypeAST* get(TypeAST* retTy,
                         const std::vector<TypeAST*>& argTypes,
                         const std::string& callingConvName);
@@ -202,14 +182,6 @@ class TupleTypeAST : public IndexableTypeAST {
   typedef std::vector<TypeAST*> Args;
   static std::map<Args, TupleTypeAST*> tupleTypeCache;
 public:
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    out << "tuple { ";
-    for (size_t i = 0; i < parts.size(); ++i) {
-      out << *(parts[i]) << ", ";
-    }
-    out << " }";
-    return out;
-  }
   virtual int getNumContainedTypes() const { return parts.size(); }
   virtual int64_t getNumElements()   const { return parts.size(); }
   virtual TypeAST* getContainedType(size_t i) const;
@@ -244,10 +216,6 @@ public:
               sourceRange),
       value(value) { }
 
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << value;
-  }
-
   uint64_t getNumericalValue() const { return value; }
 };
 
@@ -264,11 +232,6 @@ class SimdVectorTypeAST : public IndexableTypeAST {
        size(size), elementType(elementType) {}
 
 public:
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    out << "SimdVectorTypeAST(" << str(repr) << ")";
-    return out;
-  }
-  
   virtual TypeAST* getContainedType(size_t i) const { return elementType; }
   virtual int64_t  getNumElements() const { return size->getNumericalValue(); }
   

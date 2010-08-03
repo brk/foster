@@ -1004,11 +1004,6 @@ void CodegenPass::visit(RefExprAST* ast) {
   // a malloc for an alloca; others, like int literals or such, must be
   // manually copied out to a newly-malloc'ed cell.
   ast->value = ast->parts[0]->value;
-#if 1
-  std::cout << "refExprAST (indirect? "<< ast->isIndirect() << ")"
-      << ": val ty is " << *(ast->value->getType())
-      << "; ast ty is " << *(ast->type) << std::endl;
-#endif
 
   if (ast->isIndirect()) {
     if (getLLVMType(ast->type) == ast->value->getType()) {

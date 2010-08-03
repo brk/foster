@@ -210,7 +210,6 @@ void performClosureConversion(ClosureAST* closure,
                               ClosureConversionPass* ccp) {
   FnAST* ast = closure->fn;
   std::cout << "Closure converting function" << *ast << std::endl;
-  std::cout << "Type: " << *(ast->type) << std::endl;
 
   // Find the set of free variables for the function
   set<VariableAST*>& freeVars = freeVariables[ast];
@@ -230,9 +229,6 @@ void performClosureConversion(ClosureAST* closure,
 
   set<VariableAST*>::iterator it;
   for (it = freeVars.begin(); it != freeVars.end(); ++it) {
-    std::cout << "Free var: " <<     *(*it) << std::endl;
-    std::cout << "Free var ty: " << *((*it)->type) << std::endl;
-    std::cout << std::endl;
     envTypes.push_back((*it)->type);
     envExprs.push_back(*it);
   }
@@ -269,8 +265,9 @@ void performClosureConversion(ClosureAST* closure,
     // if they already have types.
     {
        TypecheckPass p; ast->proto->accept(&p);
-       std::cout << "ClosureConversionPass: updating type from " << *(ast->type)
-                  << " to\n\t" << *(ast->proto->type) << std::endl;
+       std::cout << "ClosureConversionPass: updating type from "
+                  << str(ast->type->getLLVMType())
+                  << " to\n\t" << str(ast->proto->type->getLLVMType()) << std::endl;
        ast->type = ast->proto->type;
     }
   }

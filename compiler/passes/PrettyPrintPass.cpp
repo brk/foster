@@ -32,8 +32,9 @@ void PrettyPrintPass::visit(VariableAST* ast) {
     /*if (ast->tyExpr) {
       ast->tyExpr->accept(this);
     } else*/ if (ast->type) {
-      std::stringstream ss; ss << *(ast->type);
-      scan(PPToken(ss.str()));
+      // TODO this isn't kosher for round-tripping, need to write a
+      // pretty-printer for types...
+      scan(PPToken(str(ast->type->getLLVMType())));
     }
   }
   scan(tBlockClose);
