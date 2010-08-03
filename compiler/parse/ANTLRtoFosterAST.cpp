@@ -11,6 +11,7 @@
 #include "_generated_/fosterParser.h"
 
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/ADT/APInt.h"
 
 #include <iostream>
 #include <string>
@@ -340,6 +341,51 @@ void dumpANTLRTree(std::ostream& out, pTree tree, int depth) {
   dumpANTLRTreeNode(out, tree, depth);
 }
 
+namespace foster {
+APInt* parseAPIntFromClean(const std::string& clean, int base,
+                           const SourceRange& sourceRange) {
+  // Make sure the base is a reasonable one.
+  if (!(base == 2  || base == 8
+     || base == 10 || base == 16)) {
+    EDiag() << "int base must be 2, 8, 10, or 16, but was "
+            << base << show(sourceRange);
+    return NULL;
+  }
+
+  // Now, clean is a string of only (possibly hex) digits.
+  
+  // Make sure the literal only contains
+  // valid digits for the chosen base.
+  const char* digits = "0123456789abcdef";
+  for (size_t i = 0; i < clean.size(); ++i) {
+    char c = tolower(clean[i]);
+    ptrdiff_t pos = std::find(digits, digits + 16, c) - digits;
+    if (pos >= base) {
+      EDiag() << "int literal contained invalid digit '" << digits[pos] << "'"
+              << show(sourceRange);
+      return NULL;
+    }
+  }
+
+  // Start with a conservative estimate of how
+  // many bits we need to represent this integer
+  int bitsPerDigit = int(ceil(log(base)/log(2)));
+  int conservativeBitsNeeded = bitsPerDigit * clean.size() + 2;
+  
+  llvm::APInt* apint = new llvm::APInt(conservativeBitsNeeded, clean, base);
+  
+  // This is just a temporary safety measure/sanity check.
+  unsigned activeBits = apint->getActiveBits();
+  if (activeBits > 32) {
+    EDiag() << "Integer literal requires " << activeBits
+            << " bits to represent." << show(sourceRange);
+    return NULL;
+  }
+  
+  return apint;
+}
+} // namespace foster
+
 IntAST* parseIntFrom(pTree t) {
   if (textOf(t) != "INT") {
     EDiag() << "parseIntFrom() called on non-INT token " << textOf(t)
@@ -375,10 +421,17 @@ IntAST* parseIntFrom(pTree t) {
       alltext << text;
     }
   }
+  
+  SourceRange sourceRange = rangeOf(t);
+  const APInt* apint = foster::parseAPIntFromClean(
+                                              clean.str(), base, sourceRange);
+  if (!apint) {
+    return NULL;
+  }
 
-  // LLVM will decide what does or does not constitute
-  // a valid int string for a given radix.
-  return new IntAST(alltext.str(), clean.str(), rangeOf(t), base);
+  return new IntAST(apint->getActiveBits(),
+                    alltext.str(), clean.str(),
+                    base, sourceRange);
 }
 
 /// Returns ast if ast may be valid as the LHS of an assign expr, else NULL.

@@ -27,8 +27,16 @@ bool isBitwiseOpName(const std::string& op);
 class ExprAST;
 class ModuleAST;
 
+namespace llvm {
+class APInt;
+}
+
 namespace foster {
 
+class SourceRange;
+llvm::APInt* parseAPIntFromClean(const std::string& clean, int base,
+                                 const SourceRange& sourceRange);
+  
 class ANTLRContext;
 
 void deleteANTLRContext(ANTLRContext* ctx);

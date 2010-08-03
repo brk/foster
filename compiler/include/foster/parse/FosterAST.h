@@ -147,18 +147,43 @@ struct NamespaceAST : public ExprAST {
 };
 
 struct IntAST : public ExprAST {
-  string Text; // The literal text from the source file; for example, "1010`1011`1101_2"
-  string Clean; // The text without separator chars or base; for example, "101010111101"
-  int Base; // The numeric base, if any, attached to the literal.
-  explicit IntAST(string originalText, string valText,
-                  foster::SourceRange sourceRange, int base = 10)
-    : ExprAST(sourceRange), Text(originalText), Clean(valText), Base(base) {}
+private:
+  const APInt* apint;
+  const string text;
+  const int base;
+public:
+  explicit IntAST(int activeBits,
+                  const string& originalText,
+                  const string& cleanText, int base,
+                  foster::SourceRange sourceRange)
+        : ExprAST(sourceRange), text(originalText), base(base) {
+    // Debug builds of LLVM don't ignore leading zeroes when considering
+    // needed bit widths.
+    int bitsLLVMneeds = (std::max)(intSizeForNBits(activeBits),
+                                   (unsigned) cleanText.size());
+    int ourSize = intSizeForNBits(bitsLLVMneeds);
+    apint = new APInt(ourSize, cleanText, base);
+    type = TypeAST::i(ourSize);
+  }
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
-  llvm::Constant* getConstantValue();
-  llvm::APInt getAPInt();
+
+  llvm::Constant* getConstantValue() const;
+  llvm::APInt getAPInt() const;
+  std::string getOriginalText() const;
+  int getBase() const { return base; }
+  
+  unsigned intSizeForNBits(unsigned n) {
+    // Disabled until we get better inferred literal types
+    //if (n <= 1) return LLVMTypeFor("i1");
+    //if (n <= 8) return LLVMTypeFor("i8");
+    //if (n <= 16) return LLVMTypeFor("i16");
+    if (n <= 32) return 32;
+    if (n <= 64) return 64;
+    return NULL;
+  }
 
   virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "IntAST(" << Text << ")";
+    return out << "IntAST(" << getOriginalText() << ")";
   }
 };
 

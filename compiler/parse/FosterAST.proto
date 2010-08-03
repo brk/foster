@@ -102,8 +102,6 @@ message Expr {
 
 message Int {
   required string text =  2;
-  required string clean = 3;
-  required int32  base  = 4;
 }
 
 message Proto {

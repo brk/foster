@@ -273,7 +273,10 @@ LiteralIntValueTypeAST* LiteralIntValueTypeAST::get(uint64_t value,
 
 uint64_t LiteralIntValueTypeAST::getNumericalValue() const {
   if (intAST) {
-    { TypecheckPass tp; intAST->accept(&tp); }
+    { TypecheckPass tp; intAST->accept(&tp);
+      llvm::outs() << intAST->getOriginalText() << " ; "
+                  << str(intAST->type) << "\n";
+    }
     return getSaturating<uint64_t>(intAST->getConstantValue());
   } else {
     return value;

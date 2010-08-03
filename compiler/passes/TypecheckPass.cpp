@@ -37,48 +37,8 @@ using std::vector;
 
 void TypecheckPass::visit(BoolAST* ast) { ast->type = TypeAST::i(1); }
 
-unsigned intSizeForNBits(unsigned n) {
-  // Disabled until we get better inferred literal types
-  //if (n <= 1) return LLVMTypeFor("i1");
-  //if (n <= 8) return LLVMTypeFor("i8");
-  //if (n <= 16) return LLVMTypeFor("i16");
-  if (n <= 32) return 32;
-  if (n <= 64) return 64;
-  return NULL;
-}
-
 void TypecheckPass::visit(IntAST* ast) {
-  // Make sure the base is a reasonable one
-  if (!(ast->Base == 2  || ast->Base == 8
-     || ast->Base == 10 || ast->Base == 16)) {
-    EDiag() << "int base must be 2, 8, 10, or 16, but was " << ast->Base << show(ast);
-    return;
-  }
-
-  // Make sure the literal only contains
-  // valid digits for the chosen base.
-  const char* digits = "0123456789abcdef";
-  for (size_t i = 0; i < ast->Clean.size(); ++i) {
-    char c = tolower(ast->Clean[i]);
-    ptrdiff_t pos = std::find(digits, digits + 16, c) - digits;
-    if (pos >= ast->Base) {
-      return;
-    }
-  }
-
-  // Start with a very conservative estimate of how
-  // many bits we need to represent this integer
-  int bitsPerDigit = int(ceil(log(ast->Base)/log(2)));
-  int conservativeBitsNeeded = bitsPerDigit * ast->Clean.size();
-  APInt n(conservativeBitsNeeded, ast->Clean, ast->Base);
-  unsigned activeBits = n.getActiveBits();
-  if (activeBits > 32) {
-    std::cerr << "Integer literal '" << ast->Text << "' requires "
-              << activeBits << " bits to represent." << std::endl;
-    return;
-  }
-
-  ast->type = TypeAST::i(intSizeForNBits(activeBits));
+  ASSERT(ast->type);
 }
 
 void TypecheckPass::visit(VariableAST* ast) {

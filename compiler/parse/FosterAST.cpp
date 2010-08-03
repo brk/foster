@@ -6,6 +6,7 @@
 #include "base/Diagnostics.h"
 #include "parse/FosterAST.h"
 #include "parse/CompilationContext.h"
+#include "parse/ANTLRtoFosterAST.h" // just for parseAPIntFromClean()
 #include "passes/TypecheckPass.h"
 #include "FosterUtils.h"
 
@@ -111,20 +112,22 @@ void ExprASTVisitor::onVisitChild(ExprAST* ast, ExprAST* child) {
 IntAST* literalIntAST(int lit) {
   std::stringstream ss; ss << lit;
   string text = ss.str();
-  IntAST* rv = new IntAST(text, text, foster::SourceRange::getEmptyRange(), 10);
+  
+  APInt* p = foster::parseAPIntFromClean(
+                          text, 10, foster::SourceRange::getEmptyRange());
+  IntAST* rv = new IntAST(p->getActiveBits(), text,
+                          text, 10, foster::SourceRange::getEmptyRange());
+  
   // Assign the proper (smallest) int type to the literal
   { TypecheckPass tc; rv->accept(&tc); }
   return rv;
 }
 
-llvm::APInt IntAST::getAPInt() {
-  ASSERT(this->type && this->type->getLLVMType());
+llvm::APInt IntAST::getAPInt() const { return *apint; }
+std::string IntAST::getOriginalText() const { return text; }
 
-  return APInt(this->type->getLLVMType()->getScalarSizeInBits(),
-               Clean, Base);
-}
 
-llvm::Constant* IntAST::getConstantValue() {
+llvm::Constant* IntAST::getConstantValue() const {
   ASSERT(this->type && this->type->getLLVMType());
 
   return ConstantInt::get(this->type->getLLVMType(), this->getAPInt());

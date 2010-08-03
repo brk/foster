@@ -1,4 +1,5 @@
 fn "main" () {
+
   expect_i1(true)
   print_i1( __COMPILES__ 1_2)
   
@@ -56,16 +57,16 @@ fn "main" () {
   
   expect_i1(true) // 16 bits
   print_i1( __COMPILES__ 1111`1111`1111`1111_2)
-  
+
   // TODO LLVM i<n> type counts bits only
   // signedness comes from operations
   
   expect_i1(true) // 32 bits
   print_i1( __COMPILES__ 1111`1111`1111`1111`1111`1111`1111`1111_2)
-  
+
   expect_i1(true) // zero + 32 bits
   print_i1( __COMPILES__ 0`1111`1111`1111`1111`1111`1111`1111`1111_2)
-  
+
   expect_i1(false) // one + 32 bits
   print_i1( __COMPILES__ 1`1111`1111`1111`1111`1111`1111`1111`1111_2)
   

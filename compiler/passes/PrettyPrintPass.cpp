@@ -20,7 +20,7 @@ void PrettyPrintPass::visit(BoolAST* ast) {
 }
 
 void PrettyPrintPass::visit(IntAST* ast) {
-  scan(PPToken(ast->Text));
+  scan(PPToken(ast->getOriginalText()));
 }
 
 // name (: type)

@@ -148,7 +148,7 @@ void BuildCFG::visit(ForRangeExprAST* ast) {
   if (ast->incrExpr) {
     ast->incrExpr->accept(this);
   } else {
-    (new IntAST("1", "1", SourceRange::getEmptyRange()))->accept(this);
+    literalIntAST(1)->accept(this);
   }
 
   currentRoot = loopHdr;
