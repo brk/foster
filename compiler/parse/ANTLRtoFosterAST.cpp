@@ -5,7 +5,6 @@
 #include "parse/ANTLRtoFosterAST.h"
 #include "parse/FosterAST.h"
 #include "parse/ANTLRtoFosterErrorHandling.h"
-#include "passes/TypecheckPass.h"
 #include "parse/CompilationContext.h"
 
 #include "_generated_/fosterLexer.h"
@@ -449,10 +448,8 @@ PrototypeAST* getFnProto(string name,
   foster::SourceRange sourceRange = rangeFrom(formalsTree, sourceEndTree);
   PrototypeAST* proto = new PrototypeAST(retTy, name, in, protoScope,
                               sourceRange);
-  // TODO I forget why this needs to be typechecked...
-  { TypecheckPass tp; proto->accept(&tp); }
 
-  gScope.getRootScope()->insert(proto->name, new foster::SymbolInfo(proto));
+  gScope.getRootScope()->insert(name, new foster::SymbolInfo(proto));
 
   return proto;
 }
@@ -1009,9 +1006,7 @@ TypeAST* TypeAST_from(pTree tree) {
   if (token == INT) {
     IntAST* ast = parseIntFrom(tree);
     if (ast) {
-      TypecheckPass tp; ast->accept(&tp);
-      uint64_t val = getSaturating<uint64_t>(ast->getConstantValue());
-      return new LiteralIntValueTypeAST(val, sourceRange);
+      return LiteralIntValueTypeAST::get(ast);
     }
   }
 

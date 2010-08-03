@@ -23,6 +23,8 @@ using std::string;
 
 using foster::SourceRange;
 
+class IntAST;
+
 class TypeAST;
 class FnTypeAST;
 class RefTypeAST;
@@ -59,21 +61,18 @@ protected:
   // nullable reference to T are both represented by type
   // T*, but they are not always compatible.
   const llvm::Type* repr;
-  const foster::SourceRange sourceRange;
+  const SourceRange sourceRange;
 
   static std::map<const llvm::Type*, TypeAST*> thinWrappers;
 
   explicit TypeAST(const llvm::Type* underlyingType,
-                   const foster::SourceRange& sourceRange)
+                   const SourceRange& sourceRange)
     : repr(underlyingType), sourceRange(sourceRange) {}
   virtual ~TypeAST();
 public:
-  const foster::SourceRange& getSourceRange() const { return sourceRange; }
+  const SourceRange& getSourceRange() const { return sourceRange; }
   virtual const llvm::Type* getLLVMType() const { return repr; }
 
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << str(repr);
-  };
   virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
 
   virtual bool canConvertTo(TypeAST* otherType);
@@ -98,7 +97,7 @@ public:
 class IndexableTypeAST : public TypeAST {
 protected:
   explicit IndexableTypeAST(const llvm::Type* underlyingType,
-                   const foster::SourceRange& sourceRange)
+                   const SourceRange& sourceRange)
     : TypeAST(underlyingType, sourceRange) {}
   virtual ~IndexableTypeAST() {}
   
@@ -116,7 +115,7 @@ class RefTypeAST : public TypeAST {
   TypeAST* underlyingType;
 
   explicit RefTypeAST(TypeAST* underlyingType, bool nullable,
-                      const foster::SourceRange& sourceRange)
+                      const SourceRange& sourceRange)
     : TypeAST(llvm::PointerType::getUnqual(underlyingType->getLLVMType()),
               sourceRange),
       nullable(nullable),
@@ -148,7 +147,7 @@ class FnTypeAST : public TypeAST {
                     TypeAST* returnType,
                     const std::vector<TypeAST*>& argTypes,
                     const std::string& callingConvention,
-                    const foster::SourceRange& sourceRange)
+                    const SourceRange& sourceRange)
     : TypeAST(fnty, sourceRange),
       returnType(returnType),
       argTypes(argTypes),
@@ -175,7 +174,7 @@ class TupleTypeAST : public IndexableTypeAST {
 
   explicit TupleTypeAST(const llvm::StructType* sty,
                     const std::vector<TypeAST*>& parts,
-                    const foster::SourceRange& sourceRange)
+                    const SourceRange& sourceRange)
     : IndexableTypeAST(sty, sourceRange),
       parts(parts) {}
 
@@ -197,26 +196,35 @@ public:
   mutable FnTypeAST* fntype;
   mutable TupleTypeAST* clotype;
   explicit ClosureTypeAST(PrototypeAST* proto, const llvm::Type* underlyingType,
-                          const foster::SourceRange& sourceRange)
+                          const SourceRange& sourceRange)
      : TypeAST(underlyingType, sourceRange),
        proto(proto), fntype(NULL), clotype(NULL) {}
 
-  virtual std::ostream& operator<<(std::ostream& out) const;
   virtual const llvm::Type* getLLVMType() const;
   FnTypeAST* getFnType() const;
 };
 
 
 class LiteralIntValueTypeAST : public TypeAST {
+  IntAST* intAST;
   uint64_t value;
-public:
-  explicit LiteralIntValueTypeAST(uint64_t value,
-                      const foster::SourceRange& sourceRange)
+protected:
+  explicit LiteralIntValueTypeAST(IntAST* intAST,
+                      const SourceRange& sourceRange)
     : TypeAST(llvm::IntegerType::get(llvm::getGlobalContext(), 64),
               sourceRange),
-      value(value) { }
+      intAST(intAST), value(0) { }
+  explicit LiteralIntValueTypeAST(uint64_t value,
+                      const SourceRange& sourceRange)
+    : TypeAST(llvm::IntegerType::get(llvm::getGlobalContext(), 64),
+              sourceRange),
+      intAST(NULL), value(value) { }
 
-  uint64_t getNumericalValue() const { return value; }
+public:
+  uint64_t getNumericalValue() const;
+  
+  static LiteralIntValueTypeAST* get(IntAST* intAST);
+  static LiteralIntValueTypeAST* get(uint64_t value, const SourceRange& range);
 };
 
 
@@ -227,7 +235,7 @@ class SimdVectorTypeAST : public IndexableTypeAST {
   explicit SimdVectorTypeAST(const llvm::Type* simdVectorTy,
                              LiteralIntValueTypeAST* size,
                              TypeAST*                elementType,
-                             const foster::SourceRange& sourceRange)
+                             const SourceRange& sourceRange)
      : IndexableTypeAST(simdVectorTy, sourceRange),
        size(size), elementType(elementType) {}
 
@@ -236,7 +244,7 @@ public:
   virtual int64_t  getNumElements() const { return size->getNumericalValue(); }
   
   static SimdVectorTypeAST* get(LiteralIntValueTypeAST* size, TypeAST* type,
-                                const foster::SourceRange& sourceRange);
+                                const SourceRange& sourceRange);
   friend class DumpTypeToProtobufPass;
 };
 

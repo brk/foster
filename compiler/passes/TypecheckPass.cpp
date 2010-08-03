@@ -1048,7 +1048,7 @@ SimdVectorTypeAST* synthesizeSimdVectorType(SimdVectorAST* ast) {
   }
 
   return SimdVectorTypeAST::get(
-      new LiteralIntValueTypeAST(numElements, SourceRange::getEmptyRange()),
+      LiteralIntValueTypeAST::get(numElements, SourceRange::getEmptyRange()),
       elementType,
       ast->sourceRange);
 }

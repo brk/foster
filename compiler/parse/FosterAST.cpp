@@ -32,12 +32,13 @@ using std::vector;
 using std::string;
 
 std::ostream& operator<<(std::ostream& out, TypeAST& type) {
-  return type.operator<<(out);
+  return out << str(type.getLLVMType());
 }
 
 std::ostream& operator<<(std::ostream& out, ExprAST& expr) {
   return expr.operator<<(out);
 }
+
 
 /// Generates a unique name given a template; each template gets a separate
 /// sequence of uniquifying numbers either embedded or appended.

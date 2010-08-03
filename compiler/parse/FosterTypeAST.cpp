@@ -250,9 +250,6 @@ FnTypeAST* ClosureTypeAST::getFnType() const {
   return fntype;
 }
 
-std::ostream& ClosureTypeAST:: operator<<(std::ostream& out) const {
-  return out << "ClosureTypeAST(" << str(proto->type) << ")";
-}
 
 const llvm::Type* ClosureTypeAST::getLLVMType() const {
   if (!repr) {
@@ -261,6 +258,29 @@ const llvm::Type* ClosureTypeAST::getLLVMType() const {
   }
   return repr;
 }
+
+/////////////////////////////////////////////////////////////////////
+
+LiteralIntValueTypeAST* LiteralIntValueTypeAST::get(IntAST* intAST) {
+  ASSERT(intAST) << "can't have an int with no int";
+  return new LiteralIntValueTypeAST(intAST, intAST->sourceRange); 
+}
+
+LiteralIntValueTypeAST* LiteralIntValueTypeAST::get(uint64_t value,
+                                            const SourceRange& sourceRange) {
+  return new LiteralIntValueTypeAST(value, sourceRange); 
+}
+
+uint64_t LiteralIntValueTypeAST::getNumericalValue() const {
+  if (intAST) {
+    { TypecheckPass tp; intAST->accept(&tp); }
+    return getSaturating<uint64_t>(intAST->getConstantValue());
+  } else {
+    return value;
+  }
+}
+
+/////////////////////////////////////////////////////////////////////
 
 // static
 SimdVectorTypeAST* SimdVectorTypeAST::get(LiteralIntValueTypeAST* size,
