@@ -217,7 +217,7 @@ llvm::CallingConv::ID FnTypeAST::getCallingConventionID() {
 /////////////////////////////////////////////////////////////////////
 
 TypeAST* TupleTypeAST::getContainedType(size_t i) const {
-  ASSERT(indexValid(i));
+  if (!indexValid(i)) return NULL;
   return parts[i];
 }
 
