@@ -32,16 +32,16 @@ set(GENERATED ${PROJECT_BINARY_DIR}/_generated_)
 configure_file(${PROJECT_SOURCE_DIR}/FosterConfig.in.h
                ${GENERATED}/FosterConfig.h)
 
-find_program(PROTOC      NAMES protoc
-  DOC "protobuf compiler")
+find_package(Protobuf REQUIRED)
+include_directories(${PROTOBUF_INCLUDE_DIRS})
 
 find_program(LLVM_CONFIG NAMES llvm-config
   PATHS $ENV{HOME}/llvm/${LLVM_VERSION}/bin
   DOC "llvm-config")
 
 # Get flags for LLVM
-execute_process(COMMAND ${LLVM_CONFIG} --cppflags
-  OUTPUT_VARIABLE LLVM_CFLAGS
+execute_process(COMMAND ${LLVM_CONFIG} --cxxflags
+  OUTPUT_VARIABLE LLVM_ORIGINAL_CFLAGS
 )
 
 # We want to control whether our binaries are compiled
@@ -49,12 +49,30 @@ execute_process(COMMAND ${LLVM_CONFIG} --cppflags
 # Stripping -DNDEBUG can cause problems with CallGraph analysis,
 # so we simply leave it and use a custom ASSERT() instead of the
 # standard <cassert> macro.
-string(REPLACE "-g" "" LLVM_CFLAGS "${LLVM_CFLAGS}")
+#
+string(REPLACE "-g"                   "" LLVM_CFLAGS "${LLVM_ORIGINAL_CFLAGS}")
+
+# This flag is C++ only, and the generated ANTLR files are in plain C.
+#
+string(REPLACE "-Woverloaded-virtual" "" LLVM_CFLAGS "${LLVM_CFLAGS}")
+
+# LLVM libraries may also be compiled with -fno-rtti.
+# We are free to compile almost all of our code with RTTI,
+# except for LLVM plugins, which inherit from LLVM classes and
+# therefore must agree on whether to expect and use typeinfo or not.
+#
+string(REPLACE "-fno-rtti" "" LLVM_CFLAGS "${LLVM_CFLAGS}")
+
+# Make sure we don't have any extraneous newlines in generated Makefiles
+#
+string(STRIP "${LLVM_ORIGINAL_CFLAGS}" LLVM_ORIGINAL_CFLAGS)
+
 
 # Hack for now: rather than running all programs JITted from the main fosterc
 # compiler binary (and embedding the foster runtime inside the foster compiler)
 # we instead compile the foster runtime with llvm-g++ to bitcode, then link the
 # foster runtime bitcode in along with the bitcode for a program to run it.
+#
 find_program(LLVM_G++ NAMES llvm-g++ clang++ clang
   PATHS
         /usr/bin
@@ -108,7 +126,7 @@ add_custom_command(
           ${GENERATED}/FosterAST.pb.h
           ${GENERATED}/FosterAST.pb.cc
           ${GENERATED}/FosterAST_pb2.py
-  COMMAND ${PROTOC}
+  COMMAND ${PROTOBUF_PROTOC_EXECUTABLE}
           -I ${PROJECT_SOURCE_DIR}/compiler/parse/
           ${PROJECT_SOURCE_DIR}/compiler/parse/FosterAST.proto
           --cpp_out=${GENERATED}
@@ -201,6 +219,22 @@ add_library(fosterc_parse STATIC
 )
 add_dependencies(fosterc_parse fosterc_base)
 
+add_library(fosterc_llvm STATIC
+  compiler/llvm/passes/Hello.cpp
+  compiler/llvm/plugins/FosterGC.cpp
+)
+
+# We've already set most of llvm-config's flags above via LLVM_CFLAGS;
+# here, we just want to set the flags we removed from LLVM_CFLAGS.
+#
+set (NO_RTTI_FLAG "-fno-rtti")
+if (${LLVM_ORIGINAL_CFLAGS} MATCHES ${NO_RTTI_FLAG})
+set_target_properties(fosterc_llvm
+  PROPERTIES
+  COMPILE_FLAGS ${NO_RTTI_FLAG}
+)
+endif (${LLVM_ORIGINAL_CFLAGS} MATCHES ${NO_RTTI_FLAG})
+
 add_executable(fosterc
   compiler/foster.cpp
   compiler/FosterUtils.cpp
@@ -213,16 +247,14 @@ add_executable(fosterc
   compiler/passes/AddParentLinksPass.cpp
   compiler/passes/ReplaceExprTransform.cpp
   compiler/passes/ClosureConversionPass.cpp
-  compiler/llvm/passes/Hello.cpp
-  compiler/llvm/plugins/FosterGC.cpp
   #  compiler/llvm/passes/LLVMCallGraphDotPrinter.cpp
   third_party/pystring/pystring.cpp
   ${GENERATED}/FosterAST.pb.cc
 )
 
 target_link_libraries(fosterc
-  fosterc_base fosterc_parse
-  protobuf antlr3c ${LLVM_LDFLAGS})
+  fosterc_base fosterc_parse fosterc_llvm
+  ${PROTOBUF_LIBRARY} antlr3c ${LLVM_LDFLAGS})
 
 add_dependencies(fosterc libfoster_bc)
 

@@ -37,7 +37,15 @@ Ubuntu:
 	on 10.04, install default-jdk
 
 
-	sudo apt-get install cmake cmake-curses-gui
+	sudo apt-get install cmake cmake-curses-gui # etc
+	
+Mac OS X:
+	Interesting ports (via MacPorts):
+	
+	protobuf-cpp protobuf-java protobuf-python26
+
+
+ANTLR on Linux and OS X:
 	ANTLR_VERSION=3.2
 	ANTLR_DIR=~/antlr/${ANTLR_VERSION}
 	mkdir tmp
