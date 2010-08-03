@@ -24,6 +24,10 @@ using llvm::GCFunctionInfo;
 #include <set>
 #include <map>
 
+namespace foster {
+  void linkFosterGC() { }
+}
+
 namespace {
 
 class FosterGC : public llvm::GCStrategy {
@@ -39,15 +43,24 @@ X1("fostergc", "Foster GC");
 
 /////////////////////////////////////////////////////////////////////
 
+const char kFosterGCMapsSymbolName[]      = "foster__gcmaps";
+const char kFosterGCMapSymbolNamePrefix[] = "fos\"ter__gcmap>";
+
 void EmitSymbol(const llvm::Twine& sym,
                 llvm::raw_ostream& OS,
                 llvm::AsmPrinter& AP,
                 const llvm::MCAsmInfo& MAI) {
-  std::string symbol = (MAI.getGlobalPrefix() + sym).str();
 
-  llvm::SmallVectorImpl<char> mangledName(symbol.size());
-  AP.Mang->getNameWithPrefix(mangledName, symbol);
-  symbol = std::string(mangledName.begin(), mangledName.end());
+  llvm::SmallVectorImpl<char> mangledName(sym.str().size());
+  AP.Mang->getNameWithPrefix(mangledName, sym);
+  std::string symbol(mangledName.begin(), mangledName.end());
+
+  if (MAI.doesAllowQuotesInName()) {
+    // The mangler doesn't tell us whether it expects us to quote
+    // the symbol ourselves, so we'll assume we need to if we can.
+    symbol = '"' + symbol + '"';
+  }
+
   if (const char *GlobalDirective = MAI.getGlobalDirective()) {
     OS << GlobalDirective << symbol << "\n";
   }
@@ -120,7 +133,7 @@ public:
 
     // Emit a label and count of function maps
     AP.EmitAlignment(AddressAlignLog);
-    EmitSymbol("__foster_gcmaps", OS, AP, MAI);
+    EmitSymbol(kFosterGCMapsSymbolName, OS, AP, MAI);
     AP.OutStreamer.AddComment("number of function gc maps");
     AP.EmitInt32(end() - begin()); 
 
@@ -148,7 +161,7 @@ public:
       AP.EmitAlignment(AddressAlignLog);
 
       // Emit the symbol by which the stack map entry can be found.
-      EmitSymbol("__foster_gcmap_" + MD.getFunction().getName(),
+      EmitSymbol(kFosterGCMapSymbolNamePrefix + MD.getFunction().getName(),
                  OS, AP, MAI);
 
       // Compute the safe point clusters for this function.

@@ -59,7 +59,9 @@ struct stackmap_table {
 
 // This symbol is emitted by the fostergc LLVM GC plugin to the
 // final generated assembly.
-extern "C" stackmap_table __foster_gcmaps;
+extern "C" {
+  extern stackmap_table foster__gcmaps;
+}
 #endif
 
 #define HEAP_CELL_FOR_BODY(ptr) ((heap_cell*) &((int64_t*)(ptr))[-1])
@@ -393,10 +395,10 @@ void copying_gc::gc() {
 std::map<void*, const stackmap::PointCluster*> clusterForAddress;
 
 void register_stackmaps() {
-  int32_t numStackMaps = __foster_gcmaps.numStackMaps;
+  int32_t numStackMaps = foster__gcmaps.numStackMaps;
   fprintf(gclog, "num stack maps: %d\n", numStackMaps);
 
-  void* ps = (void*) __foster_gcmaps.stackmaps;
+  void* ps = (void*) foster__gcmaps.stackmaps;
   size_t totalOffset = 0; // 
 
   for (int32_t m = 0; m < numStackMaps; ++m) {

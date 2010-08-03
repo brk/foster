@@ -77,7 +77,10 @@ using foster::LLVMTypeFor;
 using foster::SourceRange;
 using foster::EDiag;
 
-namespace foster { struct ScopeInfo; }
+namespace foster {
+  struct ScopeInfo;
+  void linkFosterGC(); // defined in llmv/plugins/FosterGC.cpp
+}
 
 using std::string;
 
@@ -341,6 +344,12 @@ optInputPath(cl::Positional, cl::desc("<input file>"));
 static cl::opt<bool>
 optCompileSeparately("c",
   cl::desc("[foster] Compile separately, don't automatically link imported modules"));
+
+#ifdef FOSTERC_DEBUG_INFO_NOT_YET_GENERATED
+static cl::opt<bool>
+optEmitDebugInfo("g",
+  cl::desc("[foster] Emit debug information in generated code"));
+#endif
 
 static cl::opt<bool>
 optDumpPreLinkedIR("dump-prelinked",
@@ -698,7 +707,7 @@ void setDefaultCommandLineOptions() {
 
 int main(int argc, char** argv) {
   GOOGLE_PROTOBUF_VERIFY_VERSION;
-
+  foster::linkFosterGC(); // statically, not dynamically
   sys::PrintStackTraceOnErrorSignal();
   PrettyStackTraceProgram X(argc, argv);
   llvm_shutdown_obj Y;
