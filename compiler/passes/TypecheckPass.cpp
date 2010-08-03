@@ -8,7 +8,7 @@
 #include "parse/FosterAST.h"
 #include "parse/CompilationContext.h"
 
-#include "FosterUtils.h"
+#include "parse/FosterUtils.h"
 
 using foster::EDiag;
 using foster::show;

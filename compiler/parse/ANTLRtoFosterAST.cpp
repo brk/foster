@@ -239,6 +239,7 @@ struct OpSpec { const char* name; int precedence; OperatorAssociativity assoc; }
 
 std::map<string, OpSpec> binaryOps;
 bool isBinaryOp(const std::string& name) {
+  initMaps(); // Hack to ensure that initMaps is called from unit tests.
   return binaryOps[name].precedence > 0;
 }
 // TODO: enforce associativity
@@ -286,6 +287,10 @@ bool isBitwiseOpName(const string& op) {
 }
 
 void initMaps() {
+  static bool didInit = false;
+  if (didInit) return;
+  didInit = true;
+  
   for (size_t i = 0; i < ARRAY_SIZE(c_binaryOps); ++i) {
     binaryOps[c_binaryOps[i].name] = OpSpec(c_binaryOps[i]);
   }
@@ -1034,6 +1039,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
 
   string name = str(tree->getToken(tree));
   foster::EDiag() << "returning NULL ExprAST for tree token " << name
+                  << "with text '" << text << "'"
                   << foster::show(sourceRange);
   return NULL;
 }
@@ -1184,9 +1190,25 @@ void createParser(foster::ANTLRContext& ctx,
 void deleteANTLRContext(ANTLRContext* ctx) { delete ctx; }
 
 ExprAST* parseExpr(const std::string& source,
-                   pTree& outTree,
                    unsigned& outNumANTLRErrors) {
-  return NULL;
+  ANTLRContext* ctx = new ANTLRContext();
+  const char* s = source.c_str();
+  llvm::MemoryBuffer* membuf = llvm::MemoryBuffer::getMemBuffer(
+                                  s, s + source.size());
+  //                               llvm::StringRef(source)); // for LLVM 2.8
+  createParser(*ctx, "", membuf);
+
+  installTreeTokenBoundaryTracker(ctx->psr->adaptor);
+  foster::installRecognitionErrorFilter(ctx->psr->pParser->rec);
+  fosterParser_expr_return langAST = ctx->psr->expr(ctx->psr);
+
+  outNumANTLRErrors = ctx->psr->pParser->rec->state->errorCount;
+
+  ExprAST* rv = ExprAST_from(langAST.tree, false);
+  delete ctx;
+  delete membuf;
+  
+  return rv;
 }
 
 ModuleAST* parseModule(const InputFile& file,

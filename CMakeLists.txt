@@ -214,6 +214,7 @@ add_library(fosterc_parse STATIC
   compiler/parse/ANTLRtoFosterAST.cpp
   compiler/parse/ANTLRtoFosterErrorHandling.cpp
   compiler/parse/CompilationContext.cpp
+  compiler/parse/FosterUtils.cpp
   ${GENERATED}/fosterParser.c
   ${GENERATED}/fosterLexer.c
 )
@@ -237,7 +238,6 @@ endif (${LLVM_ORIGINAL_CFLAGS} MATCHES ${NO_RTTI_FLAG})
 
 add_executable(fosterc
   compiler/foster.cpp
-  compiler/FosterUtils.cpp
   compiler/cfg/CFG.cpp
   compiler/passes/BuildCFG.cpp
   compiler/passes/CodegenPass.cpp
@@ -263,13 +263,25 @@ add_dependencies(libfoster_bc cpuid)
 
 #####################################################################
 
-add_executable(unittest_fosterc
+add_executable(unittest_fosterc_base
   ${PROJECT_SOURCE_DIR}/compiler/base/Assert_unittest.cpp
   ${PROJECT_SOURCE_DIR}/compiler/base/PathManager_unittest.cpp
   ${PROJECT_SOURCE_DIR}/compiler/base/SourceRange_unittest.cpp
   ${PROJECT_SOURCE_DIR}/compiler/base/FilteringIterator_unittest.cpp
 )
-target_link_libraries(unittest_fosterc fosterc_base gtest_main ${LLVM_LDFLAGS})
+target_link_libraries(unittest_fosterc_base
+  fosterc_base fosterc_parse antlr3c gtest_main ${LLVM_LDFLAGS})
+
+#######
+
+add_executable(unittest_fosterc_parse
+  ${PROJECT_SOURCE_DIR}/compiler/parse/ANTLRtoFosterAST_unittest.cpp
+  ${PROJECT_SOURCE_DIR}/compiler/passes/TypecheckPass.cpp
+  ${PROJECT_SOURCE_DIR}/compiler/passes/PrettyPrintPass.cpp
+  ${PROJECT_SOURCE_DIR}/third_party/pystring/pystring.cpp
+)
+target_link_libraries(unittest_fosterc_parse
+  fosterc_base fosterc_parse antlr3c gtest_main ${LLVM_LDFLAGS})
 
 #####################################################################
 
@@ -285,7 +297,10 @@ add_test(bootstrap
 set(CTEST_CUSTOM_ERROR_MATCH ${CTEST_CUSTOM_ERROR_MATCH}
   "[1-9][0-9] tests failed")
 
-add_test(NAME fosterc_unittest
+add_test(NAME fosterc_unittest_base
   COMMAND python ${PROJECT_SOURCE_DIR}/scripts/gtest_wrapper.py
-                 ${PROJECT_BINARY_DIR}/unittest_fosterc)
+                 ${PROJECT_BINARY_DIR}/unittest_fosterc_base)
 
+add_test(NAME fosterc_unittest_parse
+  COMMAND python ${PROJECT_SOURCE_DIR}/scripts/gtest_wrapper.py
+                 ${PROJECT_BINARY_DIR}/unittest_fosterc_parse)

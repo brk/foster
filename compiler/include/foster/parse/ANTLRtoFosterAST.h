@@ -44,7 +44,6 @@ void deleteANTLRContext(ANTLRContext* ctx);
 struct InputFile;
 
 ExprAST* parseExpr(const std::string& source,
-                   pTree& outTree,
                    unsigned& outNumANTLRErrors);
 
 ModuleAST* parseModule(const InputFile& file,

@@ -7,7 +7,7 @@
 #include "parse/CompilationContext.h"
 #include "passes/CodegenPass.h"
 #include "passes/TypecheckPass.h"
-#include "FosterUtils.h"
+#include "parse/FosterUtils.h"
 #include "_generated_/FosterConfig.h"
 
 #include "llvm/Attributes.h"

@@ -7,7 +7,7 @@
 #include "base/Diagnostics.h"
 #include "base/Assert.h"
 
-#include "FosterUtils.h"
+#include "parse/FosterUtils.h"
 #include "passes/TypecheckPass.h"
 
 using std::vector;

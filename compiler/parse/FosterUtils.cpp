@@ -5,7 +5,7 @@
 
 #include "base/Diagnostics.h"
 #include "parse/FosterAST.h"
-#include "FosterUtils.h"
+#include "parse/FosterUtils.h"
 
 #include "llvm/Module.h"
 

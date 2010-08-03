@@ -8,7 +8,7 @@
 #include "parse/CompilationContext.h"
 #include "parse/ANTLRtoFosterAST.h" // just for parseAPIntFromClean()
 #include "passes/TypecheckPass.h"
-#include "FosterUtils.h"
+#include "parse/FosterUtils.h"
 
 #include <map>
 #include <vector>
