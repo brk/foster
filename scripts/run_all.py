@@ -14,8 +14,7 @@ from run_test import *
 def run_all_tests(bootstrap_dir, paths, tmpdir):
   tests = collect_all_tests(bootstrap_dir)
   for testpath in tests:
-    paths['code'] = testpath
-
+    
     test_tmpdir = os.path.join(tmpdir, testname(testpath))
     ensure_dir_exists(test_tmpdir)
     #run_one_test(testpath, paths, test_tmpdir)

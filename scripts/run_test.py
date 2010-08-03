@@ -1,5 +1,11 @@
+#!/usr/bin/env python
+
+# Copyright (c) 2010 Ben Karel. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
+
 from __future__ import with_statement
-import time
+
 import os
 import re
 import os.path
@@ -8,13 +14,10 @@ import sys
 import shutil
 import traceback
 
+from run_cmd import *
+
 tests_passed = set()
 tests_failed = set()
-
-if os.name == 'nt':
-  walltime = time.clock
-else:
-  walltime = time.time
 
 def ensure_dir_exists(dirname):
   if not os.path.exists(dirname):
@@ -42,18 +45,6 @@ def extract_expected_input(path):
     f.writelines(inlines)
   return open(tmpname, 'r')
 
-def default_lookup(word, table):
-  if word in table:
-    return table[word]
-  else:
-    return word
-
-def elapsed(start, end):
-  return int( (end - start) * 1000 )
-
-def elapsed_since(start):
-  return elapsed(start, walltime())
-
 def get_static_libs():
   return "libfoster_main.o libchromium_base.a libcpuid.a"
 
@@ -64,29 +55,6 @@ def get_link_flags():
     'Linux': lambda: ['-lrt', '-lpthread']
   }[platform.system()]()
   return ' '.join(flags)
-
-class TestFailed(Exception):
-  def __init__(self, arglist, path):
-    self.arglist = arglist
-    self.path = path
-  def __str__(self):
-    return "Failed to run " + ' '.join(self.arglist) + "\n\tfor test " + self.path
-
-# returns (status, elapsed-time-ms)
-def run_command(cmd, paths, testpath, stdout=None, stderr=None, stdin=None, strictrv=True):
-  if type(cmd) == str:
-    cmd = cmd.split(' ')
-  arglist = [default_lookup(arg, paths) for arg in cmd]
-
-  start = walltime()
-  rv = subprocess.call( arglist, stdout=stdout, stderr=stderr, stdin=stdin)
-  #print ' '.join(arglist) , ' returned rv = ' , rv
-
-  end = walltime()
-
-  if strictrv and rv != 0:
-    raise TestFailed(arglist, testpath)
-  return elapsed(start, end)
 
 def testname(testpath):
   """Given '/path/to/some/test.foster', returns 'test'"""
@@ -99,9 +67,9 @@ def run_one_test(testpath, paths, tmpdir):
   with open(exp_filename, 'w') as expected:
     with open(act_filename, 'w') as actual:
       with open(os.path.join(tmpdir, "compile.log.txt"), 'w') as compilelog:
-        infile = extract_expected_input(paths['code'])
+        infile = extract_expected_input(testpath)
 
-        fosterc_cmdline = [ paths['fosterc'], paths['code'], '-O0' ]
+        fosterc_cmdline = [ paths['fosterc'], testpath, '-O0' ]
 
         #print ' '.join(fosterc_cmdline)
         fc_elapsed = run_command(fosterc_cmdline, paths, testpath, stdout=compilelog, stderr=compilelog)
@@ -122,7 +90,7 @@ def run_one_test(testpath, paths, tmpdir):
                         total_elapsed, testname(testpath))
         infile.close()
 
-def main(bootstrap_dir, paths, tmpdir):
+def main(testpath, paths, tmpdir):
   run_one_test(testpath, paths, os.path.join(tmpdir, testname(testpath)))
 
 def get_paths(bindir):
@@ -152,4 +120,4 @@ if __name__ == "__main__":
   tmpdir = os.path.join(bindir, 'test-tmpdir')
   ensure_dir_exists(tmpdir)
 
-  main(testpath, get_paths(), tmpdir)
+  main(testpath, get_paths(bindir), tmpdir)
