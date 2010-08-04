@@ -23,7 +23,6 @@ std::string str(pANTLR3_COMMON_TOKEN tok);
 
 bool isBitwiseOpName(const std::string& op);
 
-
 class ExprAST;
 class ModuleAST;
 
@@ -32,6 +31,9 @@ class APInt;
 }
 
 namespace foster {
+
+bool wasExplicitlyParenthesized(ExprAST* ast);
+
 
 class SourceRange;
 llvm::APInt* parseAPIntFromClean(const std::string& clean, int base,

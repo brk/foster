@@ -22,6 +22,11 @@ using std::string;
 struct PrettyPrintPass : public ExprASTVisitor {
   #include "parse/ExprASTVisitor.decls.inc.h"
   
+  // This can be used in lieu of ast->accept(ppp)
+  // to ensure proper outer parens,
+  // mainly useful for unit tests.
+  void emit(ExprAST*, bool forceOuterParens = false);
+  
   virtual void visitChildren(ExprAST* ast) {
    // Only visit children manually!
   }

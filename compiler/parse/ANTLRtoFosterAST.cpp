@@ -226,7 +226,11 @@ foster::SourceRange rangeFrom(ExprAST* a, ExprAST* b) {
 Exprs getExprs(pTree tree, bool fnMeansClosure);
 
 // expressions wrapped in () are marked here
-std::map<ExprAST*, bool> overridePrecedence;
+std::map<ExprAST*, bool> gWasWrappedInExplicitParens;
+
+bool foster::wasExplicitlyParenthesized(ExprAST* ast) {
+  return gWasWrappedInExplicitParens[ast];
+}
 
 std::map<string, bool> keywords;
 std::map<string, bool> reserved_keywords;
@@ -529,8 +533,7 @@ ExprAST* parseBinaryOpExpr(
     // ExprAST_from strips parens from expressions; instead of recording their
     // presence in the original source in the ExprAST, we store parenthesized
     // AST nodes in a separate table.
-    bool wasExplicitlyParenthesized = overridePrecedence[rhs];
-    if (wasExplicitlyParenthesized) {
+    if (wasExplicitlyParenthesized(rhs)) {
       // Can't split the RHS up; no choice but to return op(a, (b...c))
       goto done;
     }
@@ -975,7 +978,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
 
   if (token == PARENEXPR) {
     ExprAST* rv = ExprAST_from(child(tree, 0), fnMeansClosure);
-    overridePrecedence[rv] = true;
+    gWasWrappedInExplicitParens[rv] = true;
     return rv;
   }
 

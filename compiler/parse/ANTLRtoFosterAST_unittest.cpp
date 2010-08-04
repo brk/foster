@@ -22,7 +22,7 @@ ExprAST* parse(const string& s) {
 
 string pr(ExprAST* ast) {
   std::stringstream out;
-  { PrettyPrintPass p(out, 55); ast->accept(&p); }
+  { PrettyPrintPass p(out, 55); p.emit(ast); }
   return out.str();
 }
 
@@ -36,18 +36,26 @@ TEST(ANTLRtoFosterAST, basics) {
   EXPECT_EQ("1234", pr(parse("1234")));
 }
 
+TEST(ANTLRtoFosterAST, respectsExplictParens) {
+  EXPECT_EQ("(true)",
+    pr(parse("(true)")));
+}
+
 
 TEST(ANTLRtoFosterAST, arithPrecedence) {
-  EXPECT_EQ("(2 + (3 * 4))",
+  EXPECT_EQ("2 + (3 * 4)",
     pr(parse("2 + 3 * 4")));
+
+  EXPECT_EQ("(2 + 3) * 4",
+    pr(parse("(2 + 3) * 4")));
   
-  EXPECT_EQ("(((1 + (2 * 3)) + (4 * 5)) + 6)",
+  EXPECT_EQ("((1 + (2 * 3)) + (4 * 5)) + 6",
     pr(parse("1 + 2 * 3 + 4 * 5 + 6")));
   
-  EXPECT_EQ("((1 + (2 * 3)) + ((4 * 5) * 6))",
+  EXPECT_EQ("(1 + (2 * 3)) + ((4 * 5) * 6)",
     pr(parse("1 + 2 * 3 + 4 * 5 * 6")));
   
-  EXPECT_EQ("(((0 + 1) + (2 * 3)) + ((4 * 5) * 6))",
+  EXPECT_EQ("((0 + 1) + (2 * 3)) + ((4 * 5) * 6)",
     pr(parse("0 + 1 + 2 * 3 + 4 * 5 * 6")));
 }
 

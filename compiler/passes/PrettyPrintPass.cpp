@@ -4,16 +4,64 @@
 
 #include "passes/PrettyPrintPass.h"
 #include "parse/FosterAST.h"
+#include "parse/ANTLRtoFosterAST.h" // for reconstructing explicit parens
 
 ////////////////////////////////////////////////////////////////////
 
-inline void recurse(PrettyPrintPass* p, ExprAST* ast) {
+class ScopedParens {
+  PrettyPrintPass* p;
+  bool enable;
+public:
+  ScopedParens(PrettyPrintPass* p, bool enable = true)
+    : p(p), enable(enable) {
+    if (enable) {
+      p->scan(PrettyPrintPass::PPToken("("));
+    }
+  }
+  
+  ~ScopedParens() {
+    if (enable) {
+      p->scan(PrettyPrintPass::PPToken(")"));
+    }
+  }
+};
+
+// Note: to get explicit parenthesization, recurse() should be called
+// instead of ast->accept(); in pretty printing bodies.
+inline void recurse(PrettyPrintPass* p, ExprAST* ast, bool wrapInParens) {
   if (!ast) {
     p->scan(PrettyPrintPass::PPToken("<nil>"));
   } else {
+    ScopedParens sp(p, wrapInParens);
     ast->accept(p);
   }
 }
+
+bool isAtom(ExprAST* ast) {
+  if (dynamic_cast<BoolAST*>(ast)) return true;
+  if (dynamic_cast<IntAST*>(ast)) return true;
+  if (dynamic_cast<VariableAST*>(ast)) return true;
+  if (dynamic_cast<NilExprAST*>(ast)) return true;
+  return false;
+}
+
+bool isDelimited(ExprAST* ast) {
+  if (isAtom(ast)) return true;
+  if (dynamic_cast<DerefExprAST*>(ast)) return true;
+  return false;
+}
+
+bool needsParens(BinaryOpExprAST* ast, ExprAST* child) {
+  return !isDelimited(child);
+}
+
+////////////////////////////////////////////////////////////////////
+
+void PrettyPrintPass::emit(ExprAST* ast, bool forceParens) {
+  recurse(this, ast, forceParens || foster::wasExplicitlyParenthesized(ast));
+}
+
+////////////////////////////////////////////////////////////////////
 
 void PrettyPrintPass::visit(BoolAST* ast) {
   scan(PPToken( (ast->boolValue) ? "true" : "false" ));
@@ -43,19 +91,19 @@ void PrettyPrintPass::visit(VariableAST* ast) {
 void PrettyPrintPass::visit(UnaryOpExprAST* ast) {
   scan(PPToken(ast->op));
   scan(PPToken(" "));
-  recurse(this, ast->parts[0]);
+  emit(ast->parts[0]);
 }
 
 // $0 op $1
 void PrettyPrintPass::visit(BinaryOpExprAST* ast) {
   scan(tBlockOpen);
-  scan(PPToken("("));
-  recurse(this, ast->parts[0]);
-  scan(PPToken(" "));
-  scan(PPToken(ast->op));
-  scan(PPToken(" "));
-  recurse(this, ast->parts[1]);
-  scan(PPToken(")"));
+  {
+    emit(ast->parts[0], needsParens(ast, ast->parts[0]));
+    scan(PPToken(" "));
+    scan(PPToken(ast->op));
+    scan(PPToken(" "));
+    emit(ast->parts[1], needsParens(ast, ast->parts[1]));
+  }
   scan(tBlockClose);
 }
 
@@ -73,7 +121,7 @@ void PrettyPrintPass::visit(PrototypeAST* ast) {
   for (size_t i = 0; i < ast->inArgs.size(); ++i) {
     scan(PPToken(" "));
     this->printVarTypes = true;
-    recurse(this, ast->inArgs[i]);
+    emit(ast->inArgs[i]);
     this->printVarTypes = false;
   }
   if (ast->resultTy != NULL) {
@@ -91,12 +139,12 @@ void PrettyPrintPass::visit(FnAST* ast) {
   bool isTopLevelFn = ast->parent == NULL;
   if (isTopLevelFn) { scan(tNewline); }
 
-  recurse(this, ast->proto);
+  emit(ast->proto);
 
   if (!isTopLevelFn) { scan(tNewline); }
 
   if (ast->body) {
-    ast->body->accept(this);
+    emit(ast->body);
 
     if (isTopLevelFn) { scan(tNewline); }
   }
@@ -104,7 +152,7 @@ void PrettyPrintPass::visit(FnAST* ast) {
 
 void PrettyPrintPass::visit(ModuleAST* ast) {
   for (size_t i = 0; i < ast->parts.size(); ++i) {
-    ast->parts[i]->accept(this);
+    emit(ast->parts[i]);
     scan(tNewline);
   }
 }
@@ -123,18 +171,18 @@ void PrettyPrintPass::visit(ClosureAST* ast) {
 void PrettyPrintPass::visit(IfExprAST* ast) {
   //scan(tBlockOpen);
   scan(PPToken("if "));
-  recurse(this, ast->testExpr);
+  emit(ast->testExpr);
   //scan(tBlockClose);
 
   scan(PPToken(" "));
   scan(tOptNewline);
 
-  recurse(this, ast->thenExpr);
+  emit(ast->thenExpr);
 
   scan(PPToken(" else "));
   scan(tOptNewline);
 
-  recurse(this, ast->elseExpr);
+  emit(ast->elseExpr);
 }
 
 // for $0 in $1 to $2 do $3
@@ -145,19 +193,19 @@ void PrettyPrintPass::visit(ForRangeExprAST* ast) {
   //scan(tBlockClose);
 
   scan(PPToken(" in "));
-  recurse(this, ast->startExpr);
+  emit(ast->startExpr);
   scan(PPToken(" to "));
-  recurse(this, ast->endExpr);
+  emit(ast->endExpr);
 
   if (ast->incrExpr) {
 	scan(PPToken(" by "));
-	recurse(this, ast->incrExpr);
+	emit(ast->incrExpr);
   }
 
   scan(PPToken(" do "));
   scan(tOptNewline);
 
-  recurse(this, ast->bodyExpr);
+  emit(ast->bodyExpr);
 }
 
 void PrettyPrintPass::visit(NilExprAST* ast) {
@@ -171,29 +219,29 @@ void PrettyPrintPass::visit(RefExprAST* ast) {
 	scan(PPToken("ref "));
   }
 
-  recurse(this, ast->parts[0]);
+  emit(ast->parts[0]);
 }
 
 void PrettyPrintPass::visit(DerefExprAST* ast) {
   scan(PPToken("deref("));
-  recurse(this, ast->parts[0]);
+  emit(ast->parts[0]);
   scan(PPToken(")"));
 }
 
 void PrettyPrintPass::visit(AssignExprAST* ast) {
   scan(PPToken("set "));
-  recurse(this, ast->parts[0]);
+  emit(ast->parts[0]);
   scan(PPToken(" = "));
-  recurse(this, ast->parts[1]);
+  emit(ast->parts[1]);
 }
 
 // $0 [ $1 ]
 void PrettyPrintPass::visit(SubscriptAST* ast) {
   //scan(tBlockOpen);
-  recurse(this, ast->parts[0]);
+  emit(ast->parts[0]);
 
   scan(PPToken("["));
-  recurse(this, ast->parts[1]);
+  emit(ast->parts[1]);
   scan(PPToken("]"));
   //scan(tBlockClose);
 }
@@ -212,7 +260,7 @@ void PrettyPrintPass::visit(SeqAST* ast) {
 
   for (size_t i = 0; i < ast->parts.size(); ++i) {
     scan(tBlockOpen);
-    recurse(this, ast->parts[i]);
+    emit(ast->parts[i]);
     scan(tBlockClose);
 
     if (i != ast->parts.size() - 1) {
@@ -240,7 +288,7 @@ void PrettyPrintPass::visit(SeqAST* ast) {
 void PrettyPrintPass::visit(CallAST* ast) {
   scan(tBlockOpen);
   scan(tBlockOpen);
-  recurse(this, ast->parts[0]);
+  emit(ast->parts[0]);
   scan(tBlockClose);
   scan(tBlockOpen);
   scan(PPToken("("));
@@ -264,7 +312,7 @@ void PrettyPrintPass::visit(CallAST* ast) {
     }
 
     scan(tBlockOpen);
-    recurse(this, ast->parts[i]);
+    emit(ast->parts[i]);
     scan(tBlockClose);
   }
 
@@ -276,14 +324,14 @@ void PrettyPrintPass::visit(CallAST* ast) {
 void PrettyPrintPass::visit(ArrayExprAST* ast) {
   scan(PPToken("array"));
   scan(PPToken(" "));
-  recurse(this, ast->parts[0]);
+  emit(ast->parts[0]);
 }
 
 // tuple $0
 void PrettyPrintPass::visit(TupleExprAST* ast) {
   scan(PPToken("tuple"));
   scan(PPToken(" "));
-  recurse(this, ast->parts[0]);
+  emit(ast->parts[0]);
 }
 
 
@@ -291,7 +339,7 @@ void PrettyPrintPass::visit(TupleExprAST* ast) {
 void PrettyPrintPass::visit(SimdVectorAST* ast) {
   scan(PPToken("simd-vector"));
   scan(PPToken(" "));
-  recurse(this, ast->parts[0]);
+  emit(ast->parts[0]);
 }
 
 // __COMPILES__ $0
@@ -299,7 +347,7 @@ void PrettyPrintPass::visit(BuiltinCompilesExprAST* ast) {
   //scan(tBlockClose);
   scan(PPToken("__COMPILES__"));
   scan(PPToken(" "));
-  recurse(this, ast->parts[0]);
+  emit(ast->parts[0]);
   //scan(tBlockClose);
 }
 
