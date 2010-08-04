@@ -823,7 +823,7 @@ int main(int argc, char** argv) {
     llvm::outs() << "Pretty printing to " << outfile << "\n";
     std::ofstream out(dumpdirFile(outfile).c_str());
     ScopedTimer pptimer("io.prettyprint");
-    PrettyPrintPass ppPass(out); exprAST->accept(&ppPass); ppPass.flush();
+    PrettyPrintPass ppPass(out); exprAST->accept(&ppPass);
   }
 
   {
@@ -842,7 +842,7 @@ int main(int argc, char** argv) {
     llvm::outs() << "Pretty printing to " << outfile << "\n";
     std::ofstream out(dumpdirFile(outfile).c_str());
     ScopedTimer pptimer("io.prettyprint");
-    PrettyPrintPass ppPass(out); exprAST->accept(&ppPass); ppPass.flush();
+    PrettyPrintPass ppPass(out); exprAST->accept(&ppPass);
   }
 
   llvm::outs() << "=========================" << "\n";

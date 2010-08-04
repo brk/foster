@@ -8,6 +8,8 @@
 
 ////////////////////////////////////////////////////////////////////
 
+typedef PrettyPrintPass::PrettyPrinter::PPToken PPToken;
+
 class ScopedParens {
   PrettyPrintPass* p;
   bool enable;
@@ -15,13 +17,13 @@ public:
   ScopedParens(PrettyPrintPass* p, bool enable = true)
     : p(p), enable(enable) {
     if (enable) {
-      p->scan(PrettyPrintPass::PPToken("("));
+      p->scan(PPToken("("));
     }
   }
   
   ~ScopedParens() {
     if (enable) {
-      p->scan(PrettyPrintPass::PPToken(")"));
+      p->scan(PPToken(")"));
     }
   }
 };
@@ -30,7 +32,7 @@ public:
 // instead of ast->accept(); in pretty printing bodies.
 inline void recurse(PrettyPrintPass* p, ExprAST* ast, bool wrapInParens) {
   if (!ast) {
-    p->scan(PrettyPrintPass::PPToken("<nil>"));
+    p->scan(PPToken("<nil>"));
   } else {
     ScopedParens sp(p, wrapInParens);
     ast->accept(p);
@@ -73,7 +75,7 @@ void PrettyPrintPass::visit(IntAST* ast) {
 
 // name (: type)
 void PrettyPrintPass::visit(VariableAST* ast) {
-  scan(tBlockOpen);
+  scan(pp.tBlockOpen);
   scan(PPToken(ast->name));
   if (this->printVarTypes) {
     scan(PPToken(":"));
@@ -85,7 +87,7 @@ void PrettyPrintPass::visit(VariableAST* ast) {
       scan(PPToken(str(ast->type->getLLVMType())));
     }
   }
-  scan(tBlockClose);
+  scan(pp.tBlockClose);
 }
 
 void PrettyPrintPass::visit(UnaryOpExprAST* ast) {
@@ -96,7 +98,7 @@ void PrettyPrintPass::visit(UnaryOpExprAST* ast) {
 
 // $0 op $1
 void PrettyPrintPass::visit(BinaryOpExprAST* ast) {
-  scan(tBlockOpen);
+  scan(pp.tBlockOpen);
   {
     emit(ast->parts[0], needsParens(ast, ast->parts[0]));
     scan(PPToken(" "));
@@ -104,19 +106,19 @@ void PrettyPrintPass::visit(BinaryOpExprAST* ast) {
     scan(PPToken(" "));
     emit(ast->parts[1], needsParens(ast, ast->parts[1]));
   }
-  scan(tBlockClose);
+  scan(pp.tBlockClose);
 }
 
 // fn Name (inArgs to outArgs)
 void PrettyPrintPass::visit(PrototypeAST* ast) {
-  scan(tBlockOpen);
-  //scan(tBlockOpen);
+  scan(pp.tBlockOpen);
+  //scan(pp.tBlockOpen);
   scan(PPToken("fn"));
   scan(PPToken(" "));
   scan(PPToken(ast->name));
   scan(PPToken(" "));
-  //scan(tBlockClose);
-  //scan(tBlockOpen);
+  //scan(pp.tBlockClose);
+  //scan(pp.tBlockOpen);
   scan(PPToken("("));
   for (size_t i = 0; i < ast->inArgs.size(); ++i) {
     scan(PPToken(" "));
@@ -130,67 +132,67 @@ void PrettyPrintPass::visit(PrototypeAST* ast) {
   }
   scan(PPToken(" "));
   scan(PPToken(")"));
-  //scan(tBlockClose);
-  scan(tBlockClose);
+  //scan(pp.tBlockClose);
+  scan(pp.tBlockClose);
 }
 
 // fnProto fnBody
 void PrettyPrintPass::visit(FnAST* ast) {
   bool isTopLevelFn = ast->parent == NULL;
-  if (isTopLevelFn) { scan(tNewline); }
+  if (isTopLevelFn) { scan(pp.tNewline); }
 
   emit(ast->proto);
 
-  if (!isTopLevelFn) { scan(tNewline); }
+  if (!isTopLevelFn) { scan(pp.tNewline); }
 
   if (ast->body) {
     emit(ast->body);
 
-    if (isTopLevelFn) { scan(tNewline); }
+    if (isTopLevelFn) { scan(pp.tNewline); }
   }
 }
 
 void PrettyPrintPass::visit(ModuleAST* ast) {
   for (size_t i = 0; i < ast->parts.size(); ++i) {
     emit(ast->parts[i]);
-    scan(tNewline);
+    scan(pp.tNewline);
   }
 }
 
 void PrettyPrintPass::visit(ClosureAST* ast) {
-  scan(tBlockOpen);
+  scan(pp.tBlockOpen);
   scan(PPToken("<closure "));
   if (ast->fn) {
     scan(PPToken(str(ast->fn->proto->type)));
   }
   scan(PPToken(">"));
-  scan(tBlockClose);
+  scan(pp.tBlockClose);
 }
 
 // if $0 { $1 } else { $2 }
 void PrettyPrintPass::visit(IfExprAST* ast) {
-  //scan(tBlockOpen);
+  //scan(pp.tBlockOpen);
   scan(PPToken("if "));
   emit(ast->testExpr);
-  //scan(tBlockClose);
+  //scan(pp.tBlockClose);
 
   scan(PPToken(" "));
-  scan(tOptNewline);
+  scan(pp.tOptNewline);
 
   emit(ast->thenExpr);
 
   scan(PPToken(" else "));
-  scan(tOptNewline);
+  scan(pp.tOptNewline);
 
   emit(ast->elseExpr);
 }
 
 // for $0 in $1 to $2 do $3
 void PrettyPrintPass::visit(ForRangeExprAST* ast) {
-  //scan(tBlockOpen);
+  //scan(pp.tBlockOpen);
   scan(PPToken("for "));
   scan(PPToken(ast->var->name));
-  //scan(tBlockClose);
+  //scan(pp.tBlockClose);
 
   scan(PPToken(" in "));
   emit(ast->startExpr);
@@ -203,7 +205,7 @@ void PrettyPrintPass::visit(ForRangeExprAST* ast) {
   }
 
   scan(PPToken(" do "));
-  scan(tOptNewline);
+  scan(pp.tOptNewline);
 
   emit(ast->bodyExpr);
 }
@@ -237,64 +239,64 @@ void PrettyPrintPass::visit(AssignExprAST* ast) {
 
 // $0 [ $1 ]
 void PrettyPrintPass::visit(SubscriptAST* ast) {
-  //scan(tBlockOpen);
+  //scan(pp.tBlockOpen);
   emit(ast->parts[0]);
 
   scan(PPToken("["));
   emit(ast->parts[1]);
   scan(PPToken("]"));
-  //scan(tBlockClose);
+  //scan(pp.tBlockClose);
 }
 
 // { $0 ; $1 ; ... ; $n }
 void PrettyPrintPass::visit(SeqAST* ast) {
-  scan(tBlockOpen);
-  scan(tIndent);
+  scan(pp.tBlockOpen);
+  scan(pp.tIndent);
   FnAST* followingFn = dynamic_cast<FnAST*>(ast->parent);
   if (followingFn) {
     scan(PPToken(" {"));
-    scan(tNewline);
+    scan(pp.tNewline);
   } else {
     scan(PPToken("{ "));
   }
 
   for (size_t i = 0; i < ast->parts.size(); ++i) {
-    scan(tBlockOpen);
+    scan(pp.tBlockOpen);
     emit(ast->parts[i]);
-    scan(tBlockClose);
+    scan(pp.tBlockClose);
 
     if (i != ast->parts.size() - 1) {
       if (CallAST* wasCall = dynamic_cast<CallAST*>(ast->parts[i])) {
-        scan(tNewline);
+        scan(pp.tNewline);
       } else {
         scan(PPToken("; "));
       }
     }
   }
 
-  scan(tDedent);
+  scan(pp.tDedent);
 
   if (followingFn) {
-    scan(tNewline);
+    scan(pp.tNewline);
     scan(PPToken("}"));
   } else {
     scan(PPToken(" }"));
   }
 
-  scan(tBlockClose);
+  scan(pp.tBlockClose);
 }
 
 // $0 ( $1, $2, ... , $n )
 void PrettyPrintPass::visit(CallAST* ast) {
-  scan(tBlockOpen);
-  scan(tBlockOpen);
+  scan(pp.tBlockOpen);
+  scan(pp.tBlockOpen);
   emit(ast->parts[0]);
-  scan(tBlockClose);
-  scan(tBlockOpen);
+  scan(pp.tBlockClose);
+  scan(pp.tBlockOpen);
   scan(PPToken("("));
 
   if (ast->parts.size() > 1) {
-    scan(tIndent);
+    scan(pp.tIndent);
   }
 
   bool first = true;
@@ -308,17 +310,17 @@ void PrettyPrintPass::visit(CallAST* ast) {
     if (i == ast->parts.size() -1) {
       // dedent "early" because a dedent followed directly
       // by a close-paren doesn't do much for us...
-      scan(tDedent);
+      scan(pp.tDedent);
     }
 
-    scan(tBlockOpen);
+    scan(pp.tBlockOpen);
     emit(ast->parts[i]);
-    scan(tBlockClose);
+    scan(pp.tBlockClose);
   }
 
   scan(PPToken(")"));
-  scan(tBlockClose);
-  scan(tBlockClose);
+  scan(pp.tBlockClose);
+  scan(pp.tBlockClose);
 }
 // array $0
 void PrettyPrintPass::visit(ArrayExprAST* ast) {
@@ -344,10 +346,10 @@ void PrettyPrintPass::visit(SimdVectorAST* ast) {
 
 // __COMPILES__ $0
 void PrettyPrintPass::visit(BuiltinCompilesExprAST* ast) {
-  //scan(tBlockClose);
+  //scan(pp.tBlockClose);
   scan(PPToken("__COMPILES__"));
   scan(PPToken(" "));
   emit(ast->parts[0]);
-  //scan(tBlockClose);
+  //scan(pp.tBlockClose);
 }
 
