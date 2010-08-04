@@ -247,6 +247,7 @@ add_executable(fosterc
   compiler/passes/AddParentLinksPass.cpp
   compiler/passes/ReplaceExprTransform.cpp
   compiler/passes/ClosureConversionPass.cpp
+  compiler/passes/PughSinofskyPrettyPrinter.cpp
   #  compiler/llvm/passes/LLVMCallGraphDotPrinter.cpp
   third_party/pystring/pystring.cpp
   ${GENERATED}/FosterAST.pb.cc
@@ -276,6 +277,8 @@ target_link_libraries(unittest_fosterc_base
 
 add_executable(unittest_fosterc_parse
   ${PROJECT_SOURCE_DIR}/compiler/parse/ANTLRtoFosterAST_unittest.cpp
+  ${PROJECT_SOURCE_DIR}/compiler/passes/PughSinofskyPrettyPrinter_unittest.cpp
+  ${PROJECT_SOURCE_DIR}/compiler/passes/PughSinofskyPrettyPrinter.cpp
   ${PROJECT_SOURCE_DIR}/compiler/passes/TypecheckPass.cpp
   ${PROJECT_SOURCE_DIR}/compiler/passes/PrettyPrintPass.cpp
   ${PROJECT_SOURCE_DIR}/third_party/pystring/pystring.cpp

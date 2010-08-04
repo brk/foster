@@ -8,14 +8,6 @@
 #include "parse/ExprASTVisitor.h"
 #include "passes/PughSinofskyPrettyPrinter.h"
 
-#include <string>
-#include <deque>
-#include <vector>
-#include <sstream>
-#include <cassert>
-
-using std::string;
-
 struct PrettyPrintPass : public ExprASTVisitor {
   #include "parse/ExprASTVisitor.decls.inc.h"
   
