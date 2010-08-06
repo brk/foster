@@ -49,8 +49,8 @@ ExprAST* ReplaceExprTransform::rewrite(ExprAST* ast) {
 void ReplaceExprTransform::visit(BoolAST* ast)                { this->newChild = ast; }
 void ReplaceExprTransform::visit(IntAST* ast)                 { this->newChild = ast; }
 void ReplaceExprTransform::visit(VariableAST* ast)            { this->newChild = rewrite(ast); }
-void ReplaceExprTransform::visit(UnaryOpExprAST* ast)         { this->newChild = rewrite(ast); }
-void ReplaceExprTransform::visit(BinaryOpExprAST* ast)        { this->newChild = rewrite(ast); }
+void ReplaceExprTransform::visit(UnaryOpExprAST* ast)         { visitChildren(ast); this->newChild = rewrite(ast); }
+void ReplaceExprTransform::visit(BinaryOpExprAST* ast)        { visitChildren(ast); this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(PrototypeAST* ast)           {
   for (size_t i = 0; i < ast->inArgs.size(); ++i) {
     // Manually add variance, blah.
@@ -97,17 +97,22 @@ void ReplaceExprTransform::visit(ForRangeExprAST* ast)              {
   this->newChild = rewrite(ast);
 }
 void ReplaceExprTransform::visit(NilExprAST* ast)             { this->newChild = rewrite(ast); }
-void ReplaceExprTransform::visit(RefExprAST* ast)             { this->newChild = rewrite(ast); }
-void ReplaceExprTransform::visit(DerefExprAST* ast)           { this->newChild = rewrite(ast); }
-void ReplaceExprTransform::visit(AssignExprAST* ast)          { this->newChild = rewrite(ast); }
-void ReplaceExprTransform::visit(SubscriptAST* ast)           { this->newChild = rewrite(ast); }
-void ReplaceExprTransform::visit(SimdVectorAST* ast)          { this->newChild = rewrite(ast); }
-void ReplaceExprTransform::visit(SeqAST* ast)                 { this->newChild = rewrite(ast); }
+void ReplaceExprTransform::visit(RefExprAST* ast)             { visitChildren(ast); this->newChild = rewrite(ast); }
+void ReplaceExprTransform::visit(DerefExprAST* ast)           { visitChildren(ast); this->newChild = rewrite(ast); }
+void ReplaceExprTransform::visit(AssignExprAST* ast)          {
+  std::cout << "assign expr before: " << str(ast) << std::endl;
+  visitChildren(ast);
+  this->newChild = rewrite(ast);
+  std::cout << "assign expr after: " << str(newChild) << std::endl;
+}
+void ReplaceExprTransform::visit(SubscriptAST* ast)           { visitChildren(ast); this->newChild = rewrite(ast); }
+void ReplaceExprTransform::visit(SimdVectorAST* ast)          { visitChildren(ast); this->newChild = rewrite(ast); }
+void ReplaceExprTransform::visit(SeqAST* ast)                 { visitChildren(ast); this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(CallAST* ast)                {
   // Must manually visit children because CallAST::accept() doesn't do it, due to UnpackExpr...
   visitChildren(ast);
   this->newChild = rewrite(ast);
 }
-void ReplaceExprTransform::visit(ArrayExprAST* ast)           { this->newChild = rewrite(ast); }
-void ReplaceExprTransform::visit(TupleExprAST* ast)           { this->newChild = rewrite(ast); }
-void ReplaceExprTransform::visit(BuiltinCompilesExprAST* ast) { this->newChild = rewrite(ast); }
+void ReplaceExprTransform::visit(ArrayExprAST* ast)           { visitChildren(ast); this->newChild = rewrite(ast); }
+void ReplaceExprTransform::visit(TupleExprAST* ast)           { visitChildren(ast); this->newChild = rewrite(ast); }
+void ReplaceExprTransform::visit(BuiltinCompilesExprAST* ast) { visitChildren(ast); this->newChild = rewrite(ast); }

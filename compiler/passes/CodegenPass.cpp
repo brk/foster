@@ -770,8 +770,7 @@ void CodegenPass::visit(ClosureAST* ast) {
     std::cout << "Generic closure type: " << *genericCloTy << std::endl;
 #endif
 
-    addClosureTypeName(module, llvm::cast<llvm::StructType>(
-                                                  genericCloTy->getLLVMType()));
+    addClosureTypeName(module, genericCloTy);
 
     // { code*, env* }*
     llvm::AllocaInst* clo = CreateEntryAlloca(specificCloTy, "closure");
