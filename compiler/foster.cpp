@@ -746,9 +746,10 @@ int main(int argc, char** argv) {
   unsigned numParseErrors = 0;
   ModuleAST* exprAST = NULL;
 
+  foster::CompilationContext cc;
 
   { ScopedTimer timer("io.parse");
-    exprAST = foster::parseModule(infile, parseTree, ctx, numParseErrors);
+    exprAST = foster::parseModule(infile, parseTree, ctx, numParseErrors, &cc);
   }
   
   if (optDumpASTs) {
@@ -908,5 +909,4 @@ int main(int argc, char** argv) {
   }
   return 0;
 }
-
 

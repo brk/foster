@@ -55,14 +55,29 @@ TEST(ANTLRtoFosterAST, arithPrecedenceInParens) {
 TEST(ANTLRtoFosterAST, arithCmpPrecedence) {
   EXPECT_EQ("2 <= (3 * 4)",
     pr(parse("2 <= 3 * 4")));
+
+  EXPECT_EQ("(3 * 4) <= 2",
+    pr(parse("3 * 4  <= 2")));
 }
 
 TEST(ANTLRtoFosterAST, arithPrecedence) {
   EXPECT_EQ("2 + (3 * 4)",
     pr(parse("2 + 3 * 4")));
 
+  EXPECT_EQ("(2 * 3) + 4",
+    pr(parse("(2 * 3) + 4")));
+
   EXPECT_EQ("(2 + 3) * 4",
     pr(parse("(2 + 3) * 4")));
+
+  EXPECT_EQ("2 + (3 / 4)",
+    pr(parse("2 + 3 / 4")));
+
+  EXPECT_EQ("(2 / 3) + 4",
+    pr(parse("(2 / 3) + 4")));
+
+  EXPECT_EQ("2 + (3 / 4)",
+    pr(parse("2 + 3 / 4")));
   
   EXPECT_EQ("((1 + (2 * 3)) + (4 * 5)) + 6",
     pr(parse("1 + 2 * 3 + 4 * 5 + 6")));

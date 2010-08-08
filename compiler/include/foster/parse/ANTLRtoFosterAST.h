@@ -44,14 +44,17 @@ class ANTLRContext;
 void deleteANTLRContext(ANTLRContext* ctx);
 
 struct InputFile;
+struct CompilationContext;
 
 ExprAST* parseExpr(const std::string& source,
-                   unsigned& outNumANTLRErrors);
+                   unsigned& outNumANTLRErrors,
+                   CompilationContext* cc);
 
 ModuleAST* parseModule(const InputFile& file,
                        pTree& outTree,
                        ANTLRContext*& outContext,
-                       unsigned& outNumANTLRErrors);
+                       unsigned& outNumANTLRErrors,
+                       CompilationContext* cc);
 
 } // namespace foster
 

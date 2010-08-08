@@ -18,7 +18,16 @@ using llvm::getGlobalContext;
 using std::map;
 using std::string;
 
+// Defined in ANTLRtoFosterAST.cpp, not #included due to ANTLR macro conflicts.
+void initMaps();
+
 namespace foster {
+
+std::stack<CompilationContext*> gCompilationContexts;
+
+CompilationContext::CompilationContext() {
+  initMaps();
+}
 
 llvm::ExecutionEngine* ee;
 llvm::IRBuilder<> builder(llvm::getGlobalContext());

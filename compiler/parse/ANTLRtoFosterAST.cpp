@@ -235,32 +235,6 @@ bool foster::wasExplicitlyParenthesized(ExprAST* ast) {
 std::map<string, bool> keywords;
 std::map<string, bool> reserved_keywords;
 
-enum OperatorAssociativity {
-  eLeftAssociative,
-  eRightAssociative,
-  eNotAssociative };
-struct OpSpec { const char* name; int precedence; OperatorAssociativity assoc; };
-
-std::map<string, OpSpec> binaryOps;
-bool isBinaryOp(const std::string& name) {
-  initMaps(); // Hack to ensure that initMaps is called from unit tests.
-  return binaryOps[name].precedence > 0;
-}
-// TODO: enforce associativity
-// TODO: exponentiation operator?
-OpSpec c_binaryOps[] = {
-    { "/",  20, eLeftAssociative },
-    { "*",  20, eLeftAssociative },
-    { "-",  25, eLeftAssociative },
-    { "+",  25, eLeftAssociative },
-    { "<=", 50, eLeftAssociative },
-    { "<",  50, eLeftAssociative },
-    { ">=", 50, eLeftAssociative },
-    { ">",  50, eLeftAssociative },
-    { "==", 60, eLeftAssociative },
-    { "!=", 60, eLeftAssociative },
-    { "=",  70, eNotAssociative  }
-}; // ".."
 const char* c_keywords[] = {
   "as" , "at" , "def" , "id", "in", "is", "it", "to",
   "given" , "false" , "if" , "match" , "do" , "new" , "nil",
@@ -295,10 +269,6 @@ void initMaps() {
   if (didInit) return;
   didInit = true;
   
-  for (size_t i = 0; i < ARRAY_SIZE(c_binaryOps); ++i) {
-    binaryOps[c_binaryOps[i].name] = OpSpec(c_binaryOps[i]);
-  }
-
   for (size_t i = 0; i < ARRAY_SIZE(c_keywords); ++i) {
     keywords[c_keywords[i]] = true;
   }
@@ -543,7 +513,9 @@ ExprAST* parseBinaryOpExpr(
     std::string rop = rhs->op;
 
     // a opname b rop c
-    if (binaryOps[opname].precedence <= binaryOps[rop].precedence) {
+    foster::OperatorPrecedenceTable::OperatorRelation rel =
+	    foster::gCompilationContexts.top()->prec.get(opname, rop);
+    if (rel == foster::OperatorPrecedenceTable::kOpBindsTighter) {
       delete rhs; // return ((a opname b) rop c)
       ExprAST* ab = parseBinaryOpExpr(opname, a, b);
       return new BinaryOpExprAST(rop, ab, c, rangeFrom(ab, c));
@@ -552,10 +524,6 @@ ExprAST* parseBinaryOpExpr(
 
   done:
   return new BinaryOpExprAST(opname, a, bc, rangeFrom(a, bc));
-}
-
-std::ostream& operator<<(std::ostream& out, const OpSpec& op) {
-  return out << "(opr " << op.name << " : " << op.precedence << ")";
 }
 
 // defaultSymbolTemplate can include "%d" to embed a unique number; otherwise,
@@ -984,9 +952,11 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
 
   if (token == COMPILES) {
      return new BuiltinCompilesExprAST(
-                  ExprAST_from(child(tree, 0), fnMeansClosure), sourceRange); }
+                  ExprAST_from(child(tree, 0), fnMeansClosure), sourceRange);
+  }
 
-  if (isBinaryOp(text)) {
+  // Implicitly, every entry in the precedence table is a binary operator.
+  if (foster::gCompilationContexts.top()->prec.isKnownOperatorName(text)) {
     ExprAST* lhs = ExprAST_from(child(tree, 0), fnMeansClosure);
     ExprAST* rhs = ExprAST_from(child(tree, 1), fnMeansClosure);
     return parseBinaryOpExpr(text, lhs, rhs);
@@ -1193,7 +1163,8 @@ void createParser(foster::ANTLRContext& ctx,
 void deleteANTLRContext(ANTLRContext* ctx) { delete ctx; }
 
 ExprAST* parseExpr(const std::string& source,
-                   unsigned& outNumANTLRErrors) {
+                   unsigned& outNumANTLRErrors,
+                   CompilationContext* cc) {
   ANTLRContext* ctx = new ANTLRContext();
   const char* s = source.c_str();
   llvm::MemoryBuffer* membuf = llvm::MemoryBuffer::getMemBuffer(
@@ -1207,7 +1178,9 @@ ExprAST* parseExpr(const std::string& source,
 
   outNumANTLRErrors = ctx->psr->pParser->rec->state->errorCount;
 
+  gCompilationContexts.push(cc);
   ExprAST* rv = ExprAST_from(langAST.tree, false);
+  gCompilationContexts.pop();
   delete ctx;
   delete membuf;
   
@@ -1217,7 +1190,8 @@ ExprAST* parseExpr(const std::string& source,
 ModuleAST* parseModule(const InputFile& file,
                        pTree& outTree,
                        ANTLRContext*& ctx,
-                       unsigned& outNumANTLRErrors) {
+                       unsigned& outNumANTLRErrors,
+                       CompilationContext* cc) {
   ctx = new ANTLRContext();
   createParser(*ctx, file);
 
@@ -1228,7 +1202,11 @@ ModuleAST* parseModule(const InputFile& file,
   outTree = langAST.tree;
   outNumANTLRErrors = ctx->psr->pParser->rec->state->errorCount;
 
-  return parseTopLevel(outTree);
+  gCompilationContexts.push(cc);
+  ModuleAST* m = parseTopLevel(outTree);
+  gCompilationContexts.pop();
+
+  return m;
 }
 
 } // namespace foster

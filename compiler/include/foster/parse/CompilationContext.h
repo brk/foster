@@ -9,9 +9,22 @@
 #include "llvm/Support/IRBuilder.h"
 #include "llvm/Module.h"
 
+#include "parse/OperatorPrecedence.h"
+
+#include <stack>
+
 namespace foster {
 
 void initializeLLVM();
+
+class CompilationContext;
+extern std::stack<CompilationContext*> gCompilationContexts;
+
+class CompilationContext {
+public:
+  CompilationContext();
+  OperatorPrecedenceTable prec;
+};
 
 extern llvm::ExecutionEngine* ee;
 extern llvm::IRBuilder<> builder;

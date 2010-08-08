@@ -214,7 +214,9 @@ add_library(fosterc_parse STATIC
   compiler/parse/ANTLRtoFosterAST.cpp
   compiler/parse/ANTLRtoFosterErrorHandling.cpp
   compiler/parse/CompilationContext.cpp
+  compiler/parse/OperatorPrecedence.cpp
   compiler/parse/FosterUtils.cpp
+  third_party/pystring/pystring.cpp
   ${GENERATED}/fosterParser.c
   ${GENERATED}/fosterLexer.c
 )
@@ -249,7 +251,6 @@ add_executable(fosterc
   compiler/passes/ClosureConversionPass.cpp
   compiler/passes/PughSinofskyPrettyPrinter.cpp
   #  compiler/llvm/passes/LLVMCallGraphDotPrinter.cpp
-  third_party/pystring/pystring.cpp
   ${GENERATED}/FosterAST.pb.cc
 )
 
