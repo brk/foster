@@ -12,11 +12,13 @@
 
 using std::string;
 
+foster::CompilationContext cc;
+
 namespace {
   
 ExprAST* parse(const string& s) {
   unsigned errs = 0;
-  ExprAST* rv = foster::parseExpr(s, errs);
+  ExprAST* rv = foster::parseExpr(s, errs, &cc);
   return errs == 0 ? rv : NULL;
 }
 
@@ -41,6 +43,19 @@ TEST(ANTLRtoFosterAST, respectsExplictParens) {
     pr(parse("(true)")));
 }
 
+TEST(ANTLRtoFosterAST, arithPrecedenceInParens) {
+  EXPECT_EQ("(3 + ((2 + (3 * 4)) * 1)) + 2",
+    pr(parse("3 + (2 + 3 * 4) * 1 + 2")));
+
+  EXPECT_EQ("(3 + (((3 * 4) + 2) * 1)) + 2",
+    pr(parse("3 + (3 * 4 + 2) * 1 + 2")));
+}
+
+
+TEST(ANTLRtoFosterAST, arithCmpPrecedence) {
+  EXPECT_EQ("2 <= (3 * 4)",
+    pr(parse("2 <= 3 * 4")));
+}
 
 TEST(ANTLRtoFosterAST, arithPrecedence) {
   EXPECT_EQ("2 + (3 * 4)",
