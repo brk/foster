@@ -283,8 +283,24 @@ TEST(ProtobufToAST, lg_int_literal_fancy_base16) {
   ASSERT_EQ(ie->getBase(), ire->getBase());
   ASSERT_EQ(16,            ire->getBase());
 
-  ASSERT_EQ(0xFEEDFACE, ie->getAPInt().getZExtValue());
-  ASSERT_EQ(0xFEEDFACE, ire->getAPInt().getZExtValue());
+  ASSERT_EQ(0xFEEDFACEuLL, ie->getAPInt().getZExtValue());
+  ASSERT_EQ(0xFEEDFACEuLL, ire->getAPInt().getZExtValue());
+}
+
+// TODO: check "DEAD`FEED`FACE_16 when literals can have > 32 bits
+
+TEST(ProtobufToAST, bool_literal_true) {
+  ExprAST* e = parse("true");
+  ExprAST* re = roundtrip(e);
+
+  BoolAST* ie = dynamic_cast<BoolAST*>(e);
+  BoolAST* ire = dynamic_cast<BoolAST*>(re);
+
+  ASSERT_TRUE(ie);
+  ASSERT_TRUE(ire);
+
+  EXPECT_TRUE(ie->boolValue);
+  EXPECT_TRUE(ire->boolValue);
 }
 
 } // unnamed namespace
