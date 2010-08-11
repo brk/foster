@@ -13,6 +13,12 @@
 
 #include <stack>
 
+struct TypeAST;
+
+// Defined in ANTLRtoFosterAST.cpp; the header
+// is not #included due to ANTLR macro conflicts.
+void initMaps();
+
 namespace foster {
 
 void initializeLLVM();
@@ -30,7 +36,7 @@ extern llvm::ExecutionEngine* ee;
 extern llvm::IRBuilder<> builder;
 extern llvm::Module* module;
 
-TypeAST* TypeASTFor(const string& name);
+TypeAST* TypeASTFor(const std::string& name);
 const llvm::Type* LLVMTypeFor(const std::string& name);
 
 } // namespace foster

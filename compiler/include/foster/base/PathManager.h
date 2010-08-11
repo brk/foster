@@ -25,7 +25,10 @@ class PathManager {
 public:
   PathManager() {}
 
+  // Only registered paths are considered when
+  // determining shortest unambiguous suffixes.
   void registerPath(const llvm::sys::Path& path);
+
   std::string getShortestUnambiguousSuffix(const llvm::sys::Path& path);
 };
 

@@ -363,6 +363,18 @@ APInt* parseAPIntFromClean(const std::string& clean, int base,
   
   return apint;
 }
+
+
+IntAST* parseInt(const string& clean, const string& alltext, int base,
+                 const SourceRange& sourceRange) {
+  const APInt* apint = foster::parseAPIntFromClean(clean, base, sourceRange);
+  if (!apint) {
+    return NULL;
+  }
+
+  return new IntAST(apint->getActiveBits(), alltext, clean, base, sourceRange);
+}
+
 } // namespace foster
 
 IntAST* parseIntFrom(pTree t) {
@@ -402,15 +414,7 @@ IntAST* parseIntFrom(pTree t) {
   }
   
   SourceRange sourceRange = rangeOf(t);
-  const APInt* apint = foster::parseAPIntFromClean(
-                                              clean.str(), base, sourceRange);
-  if (!apint) {
-    return NULL;
-  }
-
-  return new IntAST(apint->getActiveBits(),
-                    alltext.str(), clean.str(),
-                    base, sourceRange);
+  return foster::parseInt(clean.str(), alltext.str(), base, sourceRange);
 }
 
 /// Returns ast if ast may be valid as the LHS of an assign expr, else NULL.

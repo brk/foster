@@ -154,6 +154,8 @@ class FnTypeAST : public TypeAST {
       callingConvention(callingConvention) {}
 
 public:
+  virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
+
   static FnTypeAST* get(TypeAST* retTy,
                         const std::vector<TypeAST*>& argTypes,
                         const std::string& callingConvName);
@@ -181,6 +183,8 @@ class TupleTypeAST : public IndexableTypeAST {
   typedef std::vector<TypeAST*> Args;
   static std::map<Args, TupleTypeAST*> tupleTypeCache;
 public:
+  virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
+
   virtual int getNumContainedTypes() const { return parts.size(); }
   virtual int64_t getNumElements()   const { return parts.size(); }
   virtual TypeAST* getContainedType(size_t i) const;
@@ -221,6 +225,8 @@ protected:
       intAST(NULL), value(value) { }
 
 public:
+  virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
+
   uint64_t getNumericalValue() const;
   
   static LiteralIntValueTypeAST* get(IntAST* intAST);
@@ -240,6 +246,8 @@ class SimdVectorTypeAST : public IndexableTypeAST {
        size(size), elementType(elementType) {}
 
 public:
+  virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
+
   virtual TypeAST* getContainedType(size_t i) const { return elementType; }
   virtual int64_t  getNumElements() const { return size->getNumericalValue(); }
   

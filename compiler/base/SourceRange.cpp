@@ -77,6 +77,12 @@ void displaySourceLine(llvm::raw_ostream& out,
 
 void SourceRange::highlightWithCaret(llvm::raw_ostream& out,
                                      SourceLocation caret) const {
+  if (!source) {
+    out << "SourceRange(<memory>, (" << begin.line << ", " << begin.column << "), ("
+                        << end.line << ", " << end.column << "))";
+    return;
+  }
+
   if (isEmpty()) {
     out << "<" << source->getShortSuffixPath()
         << ":" << begin.line << "::" << begin.column

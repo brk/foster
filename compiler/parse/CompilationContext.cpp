@@ -18,9 +18,6 @@ using llvm::getGlobalContext;
 using std::map;
 using std::string;
 
-// Defined in ANTLRtoFosterAST.cpp, not #included due to ANTLR macro conflicts.
-void initMaps();
-
 namespace foster {
 
 std::stack<CompilationContext*> gCompilationContexts;
@@ -29,9 +26,9 @@ CompilationContext::CompilationContext() {
   initMaps();
 }
 
-llvm::ExecutionEngine* ee;
+llvm::ExecutionEngine* ee = NULL;
 llvm::IRBuilder<> builder(llvm::getGlobalContext());
-llvm::Module* module;
+llvm::Module* module = NULL;
 
 map<string, const llvm::Type*> gCachedLLVMTypes;
 
@@ -52,8 +49,10 @@ TypeAST*    TypeASTFor(const string& name) {
 const llvm::Type* LLVMTypeFor(const string& name) {
   if (gCachedLLVMTypes.count(name) == 1) {
     return gCachedLLVMTypes[name];
-  } else {
+  } else if (foster::module) {
     return foster::module->getTypeByName(name);
+  } else {
+    return NULL;
   }
 }
 

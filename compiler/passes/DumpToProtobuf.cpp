@@ -288,7 +288,8 @@ void DumpTypeToProtobufPass::visit(SimdVectorTypeAST* ast) {
 }
 
 void DumpTypeToProtobufPass::visit(LiteralIntValueTypeAST* ast) {
-  current->set_tag(foster::pb::Type::LITERAL_INT_VALUE);
+  setTagAndRange(current, ast, foster::pb::Type::LITERAL_INT_VALUE);
   current->set_literal_int_value(ast->getNumericalValue());
 }
+
 

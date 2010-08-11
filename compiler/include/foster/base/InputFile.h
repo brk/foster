@@ -33,6 +33,17 @@ public:
   llvm::StringRef getLine(int n) const;
 };
 
+class InputFileRegistry {
+public:
+  InputFileRegistry();
+  InputFile* getOrCreateInputFileForAbsolutePath(const llvm::sys::Path& path);
+
+private:
+  struct Impl; Impl* impl;
+};
+
+extern InputFileRegistry gInputFileRegistry;
+
 }
 
 #endif

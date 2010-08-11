@@ -1,0 +1,253 @@
+// Copyright (c) 2010 Ben Karel. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
+
+#include "gtest/gtest.h"
+
+#include "parse/ANTLRtoFosterAST.h"
+#include "parse/ProtobufToAST.h"
+#include "passes/DumpToProtobuf.h"
+
+#include <map>
+
+// terrible hack!
+namespace foster {
+extern std::map<std::string, const llvm::Type*> gCachedLLVMTypes;
+}
+
+namespace {
+
+struct UnitTestBeginEnd {
+  UnitTestBeginEnd() {
+    foster::gCachedLLVMTypes["i32"] = TypeAST::i(32)->getLLVMType();
+    foster::gCachedLLVMTypes["i64"] = TypeAST::i(64)->getLLVMType();
+    foster::gCachedLLVMTypes["void"] = TypeAST::getVoid()->getLLVMType();
+  }
+  ~UnitTestBeginEnd() {
+
+  }
+} _ube;
+
+foster::SourceRange testRange(NULL,
+                              foster::SourceLocation(1, 2),
+                              foster::SourceLocation(3, 4));
+
+////////////////////////////////////////////////////////////////////
+
+TypeAST* roundtrip(TypeAST* ty) {
+  foster::pb::Type t;
+  DumpTypeToProtobufPass dp(&t);
+  ty->accept(&dp);
+
+  return foster::TypeAST_from_pb(&t);
+}
+
+//
+//
+// Test that simple non-compound types like i32 and void roundtrip properly.
+//
+
+TEST(ProtobufToAST, i32_type) {
+  TypeAST* i32 = TypeAST::i(32);
+  TypeAST* ri32 = roundtrip(i32);
+
+  ASSERT_TRUE(i32);
+  ASSERT_TRUE(ri32);
+
+  ASSERT_EQ(i32->getLLVMType(), ri32->getLLVMType());
+}
+
+TEST(ProtobufToAST, void_type) {
+  TypeAST* t = TypeAST::getVoid();
+  TypeAST* rt = roundtrip(t);
+
+  ASSERT_TRUE(t);
+  ASSERT_TRUE(rt);
+
+  ASSERT_EQ(t->getLLVMType(), rt->getLLVMType());
+}
+
+//
+//
+// Test that simple function types preserve their parts
+// and their calling convention when roundtripping.
+//
+
+TEST(ProtobufToAST, fn_i32_to_i32_ccc_type) {
+  TypeAST* i32 = TypeAST::i(32);
+  std::vector<TypeAST*> args; args.push_back(i32);
+  FnTypeAST* t = FnTypeAST::get(i32, args, "ccc");
+  TypeAST* rt = roundtrip(t);
+
+  ASSERT_TRUE(t);
+  ASSERT_TRUE(rt);
+
+  ASSERT_EQ(str(t->getLLVMType()), str(rt->getLLVMType()));
+
+  FnTypeAST* rft = dynamic_cast<FnTypeAST*>(rt);
+  ASSERT_TRUE(rft != NULL);
+
+  EXPECT_EQ(t->getCallingConventionID(), rft->getCallingConventionID());
+}
+
+TEST(ProtobufToAST, fn_i32_to_i32_fastcc) {
+  TypeAST* i32 = TypeAST::i(32);
+  std::vector<TypeAST*> args; args.push_back(i32);
+  FnTypeAST* t = FnTypeAST::get(i32, args, "fastcc");
+  TypeAST* rt = roundtrip(t);
+
+  ASSERT_TRUE(t);
+  ASSERT_TRUE(rt);
+
+  ASSERT_EQ(str(t->getLLVMType()), str(rt->getLLVMType()));
+
+  FnTypeAST* rft = dynamic_cast<FnTypeAST*>(rt);
+  ASSERT_TRUE(rft != NULL);
+
+  EXPECT_EQ(t->getCallingConventionID(), rft->getCallingConventionID());
+}
+
+//
+//
+// Test that tuple types preserve their parts when roundtripping.
+//
+
+TEST(ProtobufToAST, tuple_i32_i32_type) {
+  TypeAST* i32 = TypeAST::i(32);
+  std::vector<TypeAST*> args;
+  args.push_back(i32); args.push_back(TypeAST::i(64));
+  TupleTypeAST* t = TupleTypeAST::get(args);
+  TypeAST* rt = roundtrip(t);
+
+  ASSERT_TRUE(t);
+  ASSERT_TRUE(rt);
+
+  ASSERT_EQ(str(t->getLLVMType()), str(rt->getLLVMType()));
+
+  TupleTypeAST* rst = dynamic_cast<TupleTypeAST*>(rt);
+  ASSERT_TRUE(rst != NULL);
+}
+
+//
+//
+// Test small and large int type literals (needing 32..64 bits).
+//
+
+TEST(ProtobufToAST, literal_int_type_small) {
+  LiteralIntValueTypeAST* t = LiteralIntValueTypeAST::get(42, testRange);
+
+  TypeAST* rt = roundtrip(t);
+
+  ASSERT_TRUE(t);
+  ASSERT_TRUE(rt);
+
+  ASSERT_EQ(str(t->getLLVMType()), str(rt->getLLVMType()));
+  EXPECT_EQ(TypeAST::i(64)->getLLVMType(), t->getLLVMType());
+
+  LiteralIntValueTypeAST* rst = dynamic_cast<LiteralIntValueTypeAST*>(rt);
+  ASSERT_TRUE(rst != NULL);
+
+  ASSERT_EQ(testRange, t->getSourceRange());
+  ASSERT_EQ(t->getSourceRange(), rst->getSourceRange());
+
+
+  ASSERT_EQ(t->getNumericalValue(), rst->getNumericalValue());
+}
+
+TEST(ProtobufToAST, literal_int_large) {
+  LiteralIntValueTypeAST* t = LiteralIntValueTypeAST::get((1ULL << 42), testRange);
+  TypeAST* rt = roundtrip(t);
+
+  ASSERT_TRUE(t);
+  ASSERT_TRUE(rt);
+
+  ASSERT_EQ(str(t->getLLVMType()), str(rt->getLLVMType()));
+  EXPECT_EQ(TypeAST::i(64)->getLLVMType(), t->getLLVMType());
+
+
+  ASSERT_EQ(testRange, t->getSourceRange());
+  ASSERT_EQ(t->getSourceRange(), rt->getSourceRange());
+
+
+  LiteralIntValueTypeAST* rst = dynamic_cast<LiteralIntValueTypeAST*>(rt);
+  ASSERT_TRUE(rst != NULL);
+
+  ASSERT_EQ(t->getNumericalValue(), rst->getNumericalValue());
+}
+
+//
+//
+// Test simd vectors.
+//
+
+TEST(ProtobufToAST, simd_vector_type) {
+  TypeAST* i32 = TypeAST::i(32);
+  LiteralIntValueTypeAST* sz = LiteralIntValueTypeAST::get(4, testRange);
+  SimdVectorTypeAST* t = SimdVectorTypeAST::get(sz, i32, testRange);
+  TypeAST* rt = roundtrip(t);
+
+  ASSERT_TRUE(t);
+  ASSERT_TRUE(rt);
+  ASSERT_EQ(str(t->getLLVMType()), str(rt->getLLVMType()));
+  SimdVectorTypeAST* rst = dynamic_cast<SimdVectorTypeAST*>(rt);
+  ASSERT_TRUE(rst != NULL);
+
+  ASSERT_EQ(testRange, t->getSourceRange());
+  ASSERT_EQ(t->getSourceRange(), rst->getSourceRange());
+
+  ASSERT_EQ(t->getNumElements(), rst->getNumElements());
+  ASSERT_EQ(t->getContainedType(0), rst->getContainedType(0));
+}
+
+//
+//
+// TODO Test closure types.
+//
+#if 0
+TEST(ProtobufToAST, closure_type) {
+  TypeAST* i32 = TypeAST::i(32);
+  ClosureTypeAST* clty = new ClosureTypeAST(proto, unfuntype, testRange);
+}
+#endif
+
+////////////////////////////////////////////////////////////////////
+
+ExprAST* roundtrip(ExprAST* ast) {
+  foster::pb::Expr e;
+  DumpToProtobufPass dp(&e);
+  ast->accept(&dp);
+
+  return foster::ExprAST_from_pb(&e);
+}
+
+foster::CompilationContext cc;
+
+ExprAST* parse(const string& s) {
+  unsigned errs = 0;
+  ExprAST* rv = foster::parseExpr(s, errs, &cc);
+  return errs == 0 ? rv : NULL;
+}
+
+//
+//
+// Test simple literals -- ints, bools.
+//
+
+TEST(ProtobufToAST, sm_int_literal) {
+  ExprAST* e = parse("123");
+  ExprAST* re = roundtrip(e);
+
+  IntAST* ie = dynamic_cast<IntAST*>(e);
+  IntAST* ire = dynamic_cast<IntAST*>(re);
+
+  ASSERT_TRUE(ie);
+  ASSERT_TRUE(ire); // ?
+
+  ASSERT_EQ(ie->getOriginalText(), ire->getOriginalText());
+  ASSERT_EQ(ie->getBase(), ire->getBase());
+}
+
+
+} // unnamed namespace
+
+

@@ -8,6 +8,8 @@
 #include "llvm/System/Path.h"
 #include "llvm/Support/MemoryBuffer.h"
 
+#include <map>
+
 namespace foster {
 
 InputFile::InputFile(const llvm::sys::Path& path) : path(path) {
@@ -46,6 +48,29 @@ llvm::StringRef InputFile::getLine(int n) const {
 
 std::string InputFile::getShortSuffixPath() const {
   return gPathManager.getShortestUnambiguousSuffix(path);
+}
+
+////////////////////////////////////////////////////////////////////
+
+struct InputFileRegistry::Impl {
+  std::map<std::string, InputFile*> inputFileFor;
+};
+
+
+InputFileRegistry gInputFileRegistry;
+
+
+InputFile* InputFileRegistry::getOrCreateInputFileForAbsolutePath(
+                                                const llvm::sys::Path& path) {
+  InputFile* rv = impl->inputFileFor[path.str()];
+  if (!rv) {
+    impl->inputFileFor[path.str()] = rv = new InputFile(path);
+  }
+  return rv;
+}
+
+InputFileRegistry::InputFileRegistry() {
+  impl = new InputFileRegistry::Impl();
 }
 
 } // namespace foster

@@ -19,17 +19,17 @@ TEST(SourceRange, emptyRangeIsNotValid) {
 }
 
 TEST(SourceRange, rangeOperators) {
-  EXPECT_TRUE(SourceRange(NULL, SourceLocation(-1, -1), SourceLocation(-1, -1))
-           == SourceRange::getEmptyRange());
+  EXPECT_EQ(SourceRange(NULL, SourceLocation(-1, -1), SourceLocation(-1, -1))
+           , SourceRange::getEmptyRange());
 
-  EXPECT_TRUE(SourceRange::getEmptyRange()
-           == SourceRange(NULL, SourceLocation(-1, -1), SourceLocation(-1, -1)));
+  EXPECT_EQ(SourceRange::getEmptyRange()
+           , SourceRange(NULL, SourceLocation(-1, -1), SourceLocation(-1, -1)));
 
   EXPECT_FALSE(SourceRange(NULL, SourceLocation(-1, -1), SourceLocation(-1, -1))
-            != SourceRange::getEmptyRange());
-
-  EXPECT_TRUE(SourceRange(NULL, SourceLocation(99, -1), SourceLocation(-1, -1))
            != SourceRange::getEmptyRange());
+
+  EXPECT_NE(SourceRange(NULL, SourceLocation(99, -1), SourceLocation(-1, -1))
+           , SourceRange::getEmptyRange());
 
   EXPECT_FALSE(SourceRange(NULL, SourceLocation(99, -1), SourceLocation(-1, -1))
             == SourceRange::getEmptyRange());
