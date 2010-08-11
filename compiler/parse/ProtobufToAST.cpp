@@ -83,11 +83,13 @@ ExprAST* ExprAST_from_pb(pb::Expr* pe) {
     string text = i->text();
     string clean = pystring::replace(text, "`", "");
     vector<string> parts;
-    pystring::split(text, parts, "_");
+    pystring::split(clean, parts, "_");
     int base = 10;
     if (parts.size() == 2) {
+      clean = parts[0];
       std::stringstream ss; ss << parts[1]; ss >> base;
     }
+
     return foster::parseInt(clean, i->text(), base, range);
   }
 

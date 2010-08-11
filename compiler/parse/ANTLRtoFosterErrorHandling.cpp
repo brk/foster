@@ -145,6 +145,10 @@ int getFirstNonWhitespacePosition(llvm::StringRef line) {
 }
 
 const char* describeApproximateStartPosition(const SourceRange& r) {
+  if (!r.source) {
+    return "???";
+  }
+
   llvm::StringRef line = r.source->getLine(r.begin.line);
   int lineStart = getFirstNonWhitespacePosition(line);
   float lineLength = (std::min)(1.0f, float(line.size()    - lineStart));

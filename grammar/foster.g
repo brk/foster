@@ -113,7 +113,12 @@ nl : NEWLINE;
 // TODO: sema should error if hex_clump contains non_hex chars
 int_num			:	num_start                                ('_' hex_clump)?;
 rat_num			:	num_start '.' hex_clump ('`' hex_clump)* ('_' hex_clump)?;
-num_start		:	DIGIT_HEX_CLUMP         ('`' hex_clump)*;
+//num_start		:	DIGIT_HEX_CLUMP         ('`' hex_clump)*;
+
+// feedface_16 is an ident
+// feed`face_16 is a number
+// 0feedface_16 is a number
+num_start	:	(IDENT '`' hex_clump  | DIGIT_HEX_CLUMP)        ('`' hex_clump)*;
 hex_clump		:	DIGIT_HEX_CLUMP | IDENT;
 DIGIT_HEX_CLUMP		:	('0'..'9') HEX_DIGIT*;
 

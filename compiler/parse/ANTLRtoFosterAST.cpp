@@ -10,6 +10,8 @@
 #include "_generated_/fosterLexer.h"
 #include "_generated_/fosterParser.h"
 
+#include "pystring/pystring.h"
+
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/ADT/APInt.h"
 
@@ -340,7 +342,8 @@ APInt* parseAPIntFromClean(const std::string& clean, int base,
     char c = tolower(clean[i]);
     ptrdiff_t pos = std::find(digits, digits + 16, c) - digits;
     if (pos >= base) {
-      EDiag() << "int literal contained invalid digit '" << digits[pos] << "'"
+      EDiag() << "int literal contained invalid digit '" << (std::string(1, clean[i]))
+                  << "' @ " << pos << "/" << base << ", " << i << " : " << clean
               << show(sourceRange);
       return NULL;
     }
@@ -378,9 +381,11 @@ IntAST* parseInt(const string& clean, const string& alltext, int base,
 } // namespace foster
 
 IntAST* parseIntFrom(pTree t) {
+  SourceRange sourceRange = rangeOf(t);
+
   if (textOf(t) != "INT") {
     EDiag() << "parseIntFrom() called on non-INT token " << textOf(t)
-            << show(rangeOf(t));
+            << show(sourceRange);
     return NULL;
   }
 
@@ -391,11 +396,10 @@ IntAST* parseIntFrom(pTree t) {
   int nchildren = getChildCount(t);
   for (int i = 0; i < nchildren; ++i) {
     string text = textOf(child(t, i));
-
     if (text == "_") {
       if (i != nchildren - 2) {
         EDiag() << "number can have only one underscore,"
-                << "in 2nd-to-last position!" << show(rangeOf(t));
+                << "in 2nd-to-last position!" << show(sourceRange);
         return NULL;
       } else {
         string baseText = textOf(child(t, i+1));
@@ -405,6 +409,18 @@ IntAST* parseIntFrom(pTree t) {
         ss_base >> base;
         break;
       }
+    } else if (pystring::count(text, "_") >= 1) {
+      // An identifier like feed`face_16  is parsed as   feed ` face_16
+      // not as  feed ` face _ 16, so we have to split the base off manually.
+      std::vector<std::string> parts;
+      pystring::split(text, parts, "_");
+      if (parts.size() > 2) {
+        EDiag() << "Number can have only one underscore! " << show(sourceRange);
+        return NULL;
+      }
+      clean << parts[0];
+      std::stringstream ss_base(parts[1]); ss_base >> base;
+      alltext << text;
     } else if (text != "`") {
       clean << text;
       alltext << text;
@@ -413,7 +429,6 @@ IntAST* parseIntFrom(pTree t) {
     }
   }
   
-  SourceRange sourceRange = rangeOf(t);
   return foster::parseInt(clean.str(), alltext.str(), base, sourceRange);
 }
 

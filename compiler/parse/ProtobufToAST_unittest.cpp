@@ -233,7 +233,7 @@ ExprAST* parse(const string& s) {
 // Test simple literals -- ints, bools.
 //
 
-TEST(ProtobufToAST, sm_int_literal) {
+TEST(ProtobufToAST, sm_int_literal_plain) {
   ExprAST* e = parse("123");
   ExprAST* re = roundtrip(e);
 
@@ -241,12 +241,51 @@ TEST(ProtobufToAST, sm_int_literal) {
   IntAST* ire = dynamic_cast<IntAST*>(re);
 
   ASSERT_TRUE(ie);
-  ASSERT_TRUE(ire); // ?
+  ASSERT_TRUE(ire);
 
   ASSERT_EQ(ie->getOriginalText(), ire->getOriginalText());
   ASSERT_EQ(ie->getBase(), ire->getBase());
+
+  ASSERT_EQ(123, ie->getAPInt().getZExtValue());
+  ASSERT_EQ(123, ire->getAPInt().getZExtValue());
 }
 
+TEST(ProtobufToAST, sm_int_literal_fancy_base2) {
+  //                 0x  3  5
+  ExprAST* e = parse("0011`0101_2");
+  ExprAST* re = roundtrip(e);
+
+  IntAST* ie = dynamic_cast<IntAST*>(e);
+  IntAST* ire = dynamic_cast<IntAST*>(re);
+
+  ASSERT_TRUE(ie);
+  ASSERT_TRUE(ire);
+
+  ASSERT_EQ(ie->getOriginalText(), ire->getOriginalText());
+  ASSERT_EQ(ie->getBase(), ire->getBase());
+  ASSERT_EQ(2,             ire->getBase());
+
+  ASSERT_EQ(0x35, ie->getAPInt().getZExtValue());
+  ASSERT_EQ(0x35, ire->getAPInt().getZExtValue());
+}
+
+TEST(ProtobufToAST, lg_int_literal_fancy_base16) {
+  ExprAST* e = parse("FEED`fAcE_16");
+  ExprAST* re = roundtrip(e);
+
+  IntAST* ie = dynamic_cast<IntAST*>(e);
+  IntAST* ire = dynamic_cast<IntAST*>(re);
+
+  ASSERT_TRUE(ie);
+  ASSERT_TRUE(ire);
+
+  ASSERT_EQ(ie->getOriginalText(), ire->getOriginalText());
+  ASSERT_EQ(ie->getBase(), ire->getBase());
+  ASSERT_EQ(16,            ire->getBase());
+
+  ASSERT_EQ(0xFEEDFACE, ie->getAPInt().getZExtValue());
+  ASSERT_EQ(0xFEEDFACE, ire->getAPInt().getZExtValue());
+}
 
 } // unnamed namespace
 

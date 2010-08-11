@@ -47,6 +47,10 @@ llvm::StringRef InputFile::getLine(int n) const {
 }
 
 std::string InputFile::getShortSuffixPath() const {
+  if (!this) {
+    return "<unknown file>";
+  }
+
   return gPathManager.getShortestUnambiguousSuffix(path);
 }
 
