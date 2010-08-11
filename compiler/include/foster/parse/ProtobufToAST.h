@@ -18,9 +18,9 @@ namespace pb {
 
 //ModuleAST* ModuleAST_from_pb(pb::ExprAST);
 
-ExprAST* ExprAST_from_pb(pb::Expr* e);
+ExprAST* ExprAST_from_pb(const pb::Expr* e);
 
-TypeAST* TypeAST_from_pb(pb::Type* t);
+TypeAST* TypeAST_from_pb(const pb::Type* t);
 
 }
 

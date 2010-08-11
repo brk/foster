@@ -7,6 +7,7 @@
 #include "parse/ANTLRtoFosterAST.h"
 #include "parse/ProtobufToAST.h"
 #include "passes/DumpToProtobuf.h"
+#include "passes/PrettyPrintPass.h"
 
 #include <map>
 
@@ -301,6 +302,53 @@ TEST(ProtobufToAST, bool_literal_true) {
 
   EXPECT_TRUE(ie->boolValue);
   EXPECT_TRUE(ire->boolValue);
+}
+
+//
+//
+// Test variables.
+//
+
+TEST(ProtobufToAST, unbound_variable) {
+  ExprAST* e = new VariableAST("x", TypeAST::i(32), testRange);
+  ExprAST* re = roundtrip(e);
+
+  VariableAST* ie = dynamic_cast<VariableAST*>(e);
+  VariableAST* ire = dynamic_cast<VariableAST*>(re);
+
+  ASSERT_TRUE(ie);
+  ASSERT_TRUE(ire);
+
+  EXPECT_EQ("x", ie->name);
+  EXPECT_EQ(ie->name, ire->name);
+
+  EXPECT_EQ(testRange, ie->sourceRange);
+  EXPECT_EQ(ie->sourceRange, ire->sourceRange);
+}
+
+//
+//
+// Test binary expression.
+//
+
+string pr(ExprAST* ast) {
+  std::stringstream out;
+  { PrettyPrintPass p(out, 55); p.emit(ast); }
+  return out.str();
+}
+
+TEST(ProtobufToAST, binop_plus) {
+  ExprAST* e = parse("1 + 2");
+  ExprAST* re = roundtrip(e);
+
+  BinaryOpExprAST* ie = dynamic_cast<BinaryOpExprAST*>(e);
+  BinaryOpExprAST* ire = dynamic_cast<BinaryOpExprAST*>(re);
+
+  ASSERT_TRUE(ie);
+  ASSERT_TRUE(ire);
+
+  EXPECT_EQ(ie->op, ire->op);
+  EXPECT_EQ(pr(ie), pr(ire));
 }
 
 } // unnamed namespace
