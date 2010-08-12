@@ -11,7 +11,10 @@
 
 #include "parse/OperatorPrecedence.h"
 
+#include "antlr3interfaces.h"
+
 #include <stack>
+#include <map>
 
 struct TypeAST;
 
@@ -29,7 +32,11 @@ extern std::stack<CompilationContext*> gCompilationContexts;
 class CompilationContext {
 public:
   CompilationContext();
+
   OperatorPrecedenceTable prec;
+
+  std::map<pANTLR3_BASE_TREE, pANTLR3_COMMON_TOKEN> startTokens;
+  std::map<pANTLR3_BASE_TREE, pANTLR3_COMMON_TOKEN>   endTokens;
 };
 
 extern llvm::ExecutionEngine* ee;

@@ -74,16 +74,14 @@ typedef void                  (*setTokenBoundariesFunc)
 
 static setTokenBoundariesFunc sgDefaultSTB;
 
-std::map<pTree, pANTLR3_COMMON_TOKEN> startTokens;
-std::map<pTree, pANTLR3_COMMON_TOKEN>   endTokens;
-
 static void customSetTokenBoundariesFunc
 (struct ANTLR3_BASE_TREE_ADAPTOR_struct * adaptor, void * t,
  pANTLR3_COMMON_TOKEN startToken, pANTLR3_COMMON_TOKEN stopToken) {
   sgDefaultSTB(adaptor, t, startToken, stopToken);
 
-  startTokens[(pTree)t] = startToken;
-    endTokens[(pTree)t] =  stopToken;
+  foster::CompilationContext* cc = foster::gCompilationContexts.top();
+  cc->startTokens[(pTree)t] = startToken;
+  cc->  endTokens[(pTree)t] =  stopToken;
 }
 
 // This is a vaguely unpleasant (but terrifically accurate) hack
@@ -123,7 +121,8 @@ int typeOf(pTree tree) { return tree->getType(tree); }
 
 pANTLR3_COMMON_TOKEN getStartToken(pTree tree) {
   if (!tree) return NULL;
-  pANTLR3_COMMON_TOKEN tok = startTokens[tree];
+  pANTLR3_COMMON_TOKEN tok = foster::gCompilationContexts.top()->
+                                startTokens[tree];
   if (tok) return tok;
 
   // Some nodes we're okay with having no token info for...
@@ -142,7 +141,7 @@ pANTLR3_COMMON_TOKEN getStartToken(pTree tree) {
   pTree node = tree;
   while (!tok && getChildCount(node) > 0) {
     node = child(node, 0);
-    tok = startTokens[node];
+    tok = foster::gCompilationContexts.top()->startTokens[node];
   }
   if (!tok) {
     cout << "Warning: unable to find start token for ANTLR parse tree"
@@ -154,7 +153,8 @@ pANTLR3_COMMON_TOKEN getStartToken(pTree tree) {
 
 pANTLR3_COMMON_TOKEN getEndToken(pTree tree) {
   if (!tree) return NULL;
-  pANTLR3_COMMON_TOKEN tok = endTokens[tree];
+  pANTLR3_COMMON_TOKEN tok = foster::gCompilationContexts.top()->
+                                endTokens[tree];
   if (tok) return tok;
 
   if (getChildCount(tree) == 0) {
@@ -168,7 +168,7 @@ pANTLR3_COMMON_TOKEN getEndToken(pTree tree) {
   pTree node = tree;
   while (!tok && getChildCount(node) > 0) {
     node = child(node, getChildCount(node) - 1);
-    tok = endTokens[node];
+    tok = foster::gCompilationContexts.top()->endTokens[node];
   }
   if (!tok) {
     cout << "Warning: unable to find end token for ANTLR parse tree"
@@ -296,8 +296,8 @@ void display_pTree(pTree t, int nspaces) {
   cout << ss.str() << spaces(70 - ss.str().size())
             << token << " @ " << t;
   cout << " (";
-  cout << (startTokens[t] ? '+' : '-');
-  cout << (  endTokens[t] ? '+' : '-');
+  cout << (foster::gCompilationContexts.top()->startTokens[t] ? '+' : '-');
+  cout << (foster::gCompilationContexts.top()->  endTokens[t] ? '+' : '-');
   cout << ")" << endl;
   for (int i = 0; i < nchildren; ++i) {
     display_pTree(child(t, i), nspaces+2);
@@ -506,8 +506,9 @@ PrototypeAST* getFnProto(string name,
 }
 
 FnAST* buildFn(PrototypeAST* proto, pTree bodyTree) {
+  ExprAST* body = NULL;
   gScope.pushExistingScope(proto->scope);
-    ExprAST* body = ExprAST_from(bodyTree, true);
+    body = ExprAST_from(bodyTree, true);
   gScope.popExistingScope(proto->scope);
 
   // TODO make source range more accurate
@@ -996,7 +997,8 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     // for now, this "<anon_fn" prefix is used for closure conversion later on
     FnAST* fn = parseFn("<anon_fn_%d>", tree, fnMeansClosure);
     if (!fn->body) {
-      foster::EDiag() << "NO BODY FOR PROTO "
+      foster::EDiag() << "Found bare proto (with no body)"
+                      << " when expecting full fn literal."
                       << foster::show(fn);
       return NULL;
     }
@@ -1072,7 +1074,6 @@ TypeAST* TypeAST_from(pTree tree) {
   }
 
   if (token == FN) {
-    display_pTree(tree, 0);
     FnAST* fn = parseFn("<anon_fn_%d>", tree, true);
     if (!fn) {
       EDiag() << "no fn expr when parsing fn type!" << show(sourceRange);
@@ -1193,13 +1194,22 @@ ExprAST* parseExpr(const std::string& source,
 
   installTreeTokenBoundaryTracker(ctx->psr->adaptor);
   foster::installRecognitionErrorFilter(ctx->psr->pParser->rec);
+
+  gCompilationContexts.push(cc);
   fosterParser_expr_return langAST = ctx->psr->expr(ctx->psr);
 
   outNumANTLRErrors = ctx->psr->pParser->rec->state->errorCount;
 
-  gCompilationContexts.push(cc);
   ExprAST* rv = ExprAST_from(langAST.tree, false);
+
+  // If we reuse the same compilation context again later,
+  // we do not want to accidentally pick up an incorrect
+  // token boundary if we happen to randomly get the same
+  // tree pointer values! Doing so can make ANTLR crash.
+  gCompilationContexts.top()->startTokens.clear();
+  gCompilationContexts.top()->  endTokens.clear();
   gCompilationContexts.pop();
+
   delete ctx;
   delete membuf;
   
@@ -1216,13 +1226,17 @@ ModuleAST* parseModule(const InputFile& file,
 
   installTreeTokenBoundaryTracker(ctx->psr->adaptor);
   foster::installRecognitionErrorFilter(ctx->psr->pParser->rec);
+
+  gCompilationContexts.push(cc);
   fosterParser_program_return langAST = ctx->psr->program(ctx->psr);
 
   outTree = langAST.tree;
   outNumANTLRErrors = ctx->psr->pParser->rec->state->errorCount;
 
-  gCompilationContexts.push(cc);
   ModuleAST* m = parseTopLevel(outTree);
+
+  gCompilationContexts.top()->startTokens.clear();
+  gCompilationContexts.top()->  endTokens.clear();
   gCompilationContexts.pop();
 
   return m;
