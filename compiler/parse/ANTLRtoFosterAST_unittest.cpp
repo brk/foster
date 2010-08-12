@@ -6,6 +6,8 @@
 #include "parse/FosterAST.h"
 #include "passes/PrettyPrintPass.h"
 
+#include "pystring/pystring.h"
+
 #include "gtest/gtest.h"
 
 #include <sstream>
@@ -27,6 +29,7 @@ string pr(ExprAST* ast) {
   { PrettyPrintPass p(out, 55); p.emit(ast); }
   return out.str();
 }
+
 
 TEST(ANTLRtoFosterAST, basics) {
   EXPECT_TRUE(parse("true") != NULL);
@@ -89,6 +92,27 @@ TEST(ANTLRtoFosterAST, arithPrecedence) {
     pr(parse("0 + 1 + 2 * 3 + 4 * 5 * 6")));
 }
 
+
+TEST(ANTLRtoFosterAST, first_order_types_simple_correct) {
+  EXPECT_EQ(0,
+      pystring::count("<NULL ty>",
+                      pr(parse("fn (x : i32)")))
+  );
+}
+
+TEST(ANTLRtoFosterAST, higher_order_types_simple_correct) {
+  EXPECT_EQ(0,
+      pystring::count(pr(parse("fn (x : fn (z:i64)) { 0 }")),
+                      "<NULL ty>")
+  );
+}
+
+TEST(ANTLRtoFosterAST, higher_order_types_simple_incorrect) {
+  EXPECT_EQ(1,
+      pystring::count(pr(parse("fn (x : fn (i64)) { 0 }")),
+                      "<NULL ty>")
+  );
+}
 
 } // unnamed namespace
 

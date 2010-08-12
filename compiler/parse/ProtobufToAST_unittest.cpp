@@ -328,13 +328,27 @@ TEST(ProtobufToAST, unbound_variable) {
 
 //
 //
-// Test binary expression.
+// Test unary and binary expressions.
 //
 
 string pr(ExprAST* ast) {
   std::stringstream out;
   { PrettyPrintPass p(out, 55); p.emit(ast); }
   return out.str();
+}
+
+TEST(ProtobufToAST, unop_negate) {
+  ExprAST* e = parse("-2");
+  ExprAST* re = roundtrip(e);
+
+  UnaryOpExprAST* ie = dynamic_cast<UnaryOpExprAST*>(e);
+  UnaryOpExprAST* ire = dynamic_cast<UnaryOpExprAST*>(re);
+
+  ASSERT_TRUE(ie);
+  ASSERT_TRUE(ire);
+
+  EXPECT_EQ(ie->op, ire->op);
+  EXPECT_EQ(pr(ie), pr(ire));
 }
 
 TEST(ProtobufToAST, binop_plus) {
@@ -349,6 +363,41 @@ TEST(ProtobufToAST, binop_plus) {
 
   EXPECT_EQ(ie->op, ire->op);
   EXPECT_EQ(pr(ie), pr(ire));
+}
+
+//
+//
+// Test fuller examples.
+//
+
+TEST(ProtobufToAST, let_simple_arith) {
+  ExprAST* e = parse("let x : i32 = 3 in { x + x * x }");
+
+  ASSERT_TRUE(e);
+  ExprAST* re = roundtrip(e);
+  ASSERT_TRUE(re);
+
+  EXPECT_EQ(pr(e), pr(re));
+}
+
+TEST(ProtobufToAST, let_lambda_call) {
+  ExprAST* e = parse("let x : i32 = 3 \n"
+                     "let f : fn (z:i32) = fn (z:i32) { z + 1 } in {\n"
+                     "  f(x) }");
+  ASSERT_TRUE(e);
+  ExprAST* re = roundtrip(e);
+  ASSERT_TRUE(re);
+
+  EXPECT_EQ(pr(e), pr(re));
+}
+
+TEST(ProtobufToAST, fnlit_higher_order) {
+  ExprAST* e = parse("fn (x : fn (i64) ) { 0 }");
+  ASSERT_TRUE(e);
+  ExprAST* re = roundtrip(e);
+  ASSERT_TRUE(re);
+
+  EXPECT_EQ(pr(e), pr(re));
 }
 
 } // unnamed namespace

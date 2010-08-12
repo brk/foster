@@ -227,8 +227,9 @@ void setTagAndRange(foster::pb::Type* target,
 
 void DumpTypeToProtobufPass::visit(TypeAST* ast) {
   setTagAndRange(current, ast, foster::pb::Type::LLVM_NAMED);
-
-  current->set_llvm_type_name(str(ast->getLLVMType()));
+  string tyname = str(ast->getLLVMType());
+  ASSERT(!tyname.empty());
+  current->set_llvm_type_name(tyname);
 }
 
 void DumpTypeToProtobufPass::visit(FnTypeAST* ast) {
@@ -258,6 +259,8 @@ void DumpTypeToProtobufPass::visit(RefTypeAST* ast) {
 void DumpTypeToProtobufPass::visit(TupleTypeAST* ast) {
   setTagAndRange(current, ast, foster::pb::Type::TUPLE);
 
+  std::cout << "saw tuple: " << str(ast->getLLVMType()) << std::endl;
+
   current->mutable_tuple_parts()->Reserve(ast->getNumContainedTypes());
   for (int i = 0; i < ast->getNumContainedTypes(); ++i) {
     dumpChild(this, current->add_tuple_parts(), ast->getContainedType(i));
@@ -276,6 +279,8 @@ void DumpTypeToProtobufPass::visit(ClosureTypeAST* ast) {
     dumpChild(this, cloty->mutable_fntype(), ast->getFnType());
   }
 
+  //std::cout << "dumping closure type ast with underlying type "
+  //    << str(ast->getLLVMType()) << std::endl;
   // TODO clo tuple type?
 }
 

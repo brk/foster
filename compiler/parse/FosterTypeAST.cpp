@@ -255,7 +255,15 @@ FnTypeAST* ClosureTypeAST::getFnType() const {
 
 const llvm::Type* ClosureTypeAST::getLLVMType() const {
   if (!repr) {
-    clotype = genericClosureTypeFor(getFnType());
+    FnTypeAST* fnty = getFnType();
+    if (!fnty) { return NULL; }
+    //ASSERT(fnty) << "Can't get the type of this closure without a fn type";
+
+    clotype = genericClosureTypeFor(fnty);
+    ASSERT(clotype) << "Closure had fnty but no closure type: "
+        << str(fnty->getLLVMType())
+        << foster::show(getSourceRange());
+
     const_cast<ClosureTypeAST*>(this)->repr = clotype->getLLVMType();
   }
   return repr;

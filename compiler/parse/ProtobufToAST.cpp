@@ -58,6 +58,201 @@ ModuleAST* ModuleAST_from_pb() {
 }
 #endif
 
+namespace {
+
+
+ExprAST* parseAssign(const pb::Expr& e, const foster::SourceRange& range) {
+  return new AssignExprAST(
+      ExprAST_from_pb(& e.parts(0)),
+      ExprAST_from_pb(& e.parts(1)),
+      range);
+}
+
+ExprAST* parseBool(const pb::Expr& e, const foster::SourceRange& range) {
+  return new BoolAST(e.bool_value() ? "true" : "false", range);
+}
+
+ExprAST* parseCall(const pb::Expr& e, const foster::SourceRange& range) {
+  ExprAST* base = ExprAST_from_pb(&e.parts(0));
+  Exprs args;
+  for (size_t i = 1; i < e.parts_size(); ++i) {
+    args.push_back(ExprAST_from_pb(&e.parts(i)));
+  }
+  return new CallAST(base, args, range);
+}
+
+ExprAST* parseClosure(const pb::Expr& e, const foster::SourceRange& range) {
+  if (!e.has_closure()) return NULL;
+
+  const pb::Closure& c = e.closure();
+
+  ClosureAST* clo = new ClosureAST(
+      dynamic_cast<FnAST*>(ExprAST_from_pb(& c.fn())),
+      range);
+
+  clo->isTrampolineVersion = c.has_is_trampoline_version()
+                          && c.is_trampoline_version();
+  return clo;
+}
+
+ExprAST* parseCompiles(const pb::Expr& e, const foster::SourceRange& range) {
+  BuiltinCompilesExprAST* rv = new BuiltinCompilesExprAST(
+                                          ExprAST_from_pb(& e.parts(0)), range);
+  if (e.has_compiles()) {
+    rv->status = (e.compiles()) ? BuiltinCompilesExprAST::kWouldCompile
+                                : BuiltinCompilesExprAST::kWouldNotCompile;
+  } else {
+    rv->status = BuiltinCompilesExprAST::kNotChecked;
+  }
+  return rv;
+}
+
+ExprAST* parseDeref(const pb::Expr& e, const foster::SourceRange& range) {
+  return new DerefExprAST(ExprAST_from_pb(& e.parts(0)), range);
+}
+
+ExprAST* parseFn(const pb::Expr& e, const foster::SourceRange& range) {
+  if (!e.has_fn()) return NULL;
+
+  const pb::Fn& f = e.fn();
+
+  FnAST* fn = new FnAST(
+      dynamic_cast<PrototypeAST*>(ExprAST_from_pb(& f.proto())),
+      ExprAST_from_pb(& f.body()),
+      range);
+
+  fn->wasNested = f.has_was_nested() && f.was_nested();
+  fn->lambdaLiftOnly = f.has_lambda_lift_only() && f.lambda_lift_only();
+  return fn;
+}
+
+ExprAST* parseForrange(const pb::Expr& e, const foster::SourceRange& range) {
+  if (!e.has_for_range()) return NULL;
+
+  const pb::ForRange& fr = e.for_range();
+  return new ForRangeExprAST(
+      dynamic_cast<VariableAST*>(ExprAST_from_pb(& fr.var())),
+      ExprAST_from_pb(& fr.start()),
+      ExprAST_from_pb(& fr.end()),
+      ExprAST_from_pb(& fr.body()),
+      ExprAST_from_pb(& fr.incr()),
+      range);
+}
+
+ExprAST* parseIf(const pb::Expr& e, const foster::SourceRange& range) {
+  if (!e.has_if_()) return NULL;
+
+  const pb::If& i = e.if_();
+
+  return new IfExprAST(
+      ExprAST_from_pb(& i.test_expr()),
+      ExprAST_from_pb(& i.then_expr()),
+      ExprAST_from_pb(& i.else_expr()), range);
+}
+
+ExprAST* parseInt(const pb::Expr& e, const foster::SourceRange& range) {
+  if (!e.has_int_()) return NULL;
+
+  const pb::Int& i = e.int_();
+  string text = i.text();
+  string clean = pystring::replace(text, "`", "");
+  vector<string> parts;
+  pystring::split(clean, parts, "_");
+  int base = 10;
+  if (parts.size() == 2) {
+    clean = parts[0];
+    std::stringstream ss; ss << parts[1]; ss >> base;
+  }
+
+  return foster::parseInt(clean, text, base, range);
+}
+
+ExprAST* parseModule(const pb::Expr& e, const foster::SourceRange& range) {
+  // parts
+  // name
+  // parent scope
+  return NULL;
+}
+
+ExprAST* parseNil(const pb::Expr& e, const foster::SourceRange& range) {
+  return new NilExprAST(range);
+}
+
+ExprAST* parseOp(const pb::Expr& e, const foster::SourceRange& range) {
+  if (e.parts_size() == 1) {
+    return new UnaryOpExprAST(e.name(),
+                          ExprAST_from_pb(&e.parts(0)), range);
+  } else if (e.parts_size() == 2) {
+    return new BinaryOpExprAST(e.name(),
+                           ExprAST_from_pb(&e.parts(0)),
+                           ExprAST_from_pb(&e.parts(1)), range);
+  } else {
+    EDiag() << "protobuf Expr tagged OP (" << e.name() << ") with too many parts "
+        << "(" << e.parts_size() << "): "
+               << e.DebugString();
+  }
+  return NULL;
+}
+
+ExprAST* parseProto(const pb::Expr& e, const foster::SourceRange& range) {
+  if (!e.has_proto()) return NULL;
+
+  const pb::Proto& proto = e.proto();
+  std::vector<VariableAST*> args;
+  for (size_t i = 0; i < proto.in_args_size(); ++i) {
+    ExprAST* arg = ExprAST_from_pb(& proto.in_args(i));
+    args.push_back(dynamic_cast<VariableAST*>(arg));
+  }
+
+  TypeAST* retTy = NULL;
+  if (proto.has_result()) {
+    retTy = TypeAST_from_pb(& proto.result());
+  }
+
+  const std::string& name = proto.name();
+
+  // TODO lexical scope?
+  return new PrototypeAST(retTy, name, args, range);
+}
+
+ExprAST* parseRef(const pb::Expr& e, const foster::SourceRange& range) {
+  bool isNullable = false;
+  bool isIndirect = false;
+  return new RefExprAST(ExprAST_from_pb(&e.parts(0)),
+                        isNullable, isIndirect, range);
+}
+
+ExprAST* parseSeq(const pb::Expr& e, const foster::SourceRange& range) {
+  Exprs args;
+  for (size_t i = 0; i < e.parts_size(); ++i) {
+    args.push_back(ExprAST_from_pb(&e.parts(i)));
+  }
+  return new SeqAST(args, range);
+}
+
+ExprAST* parseSimd(const pb::Expr& e, const foster::SourceRange& range) {
+  return new SimdVectorAST(ExprAST_from_pb(& e.parts(0)), range);
+}
+
+ExprAST* parseSubscript(const pb::Expr& e, const foster::SourceRange& range) {
+  return new SubscriptAST(
+      ExprAST_from_pb(& e.parts(0)),
+      ExprAST_from_pb(& e.parts(1)), range);
+}
+
+ExprAST* parseTuple(const pb::Expr& e, const foster::SourceRange& range) {
+  TupleExprAST* rv = new TupleExprAST(ExprAST_from_pb(&e.parts(0)), range);
+  rv->isClosureEnvironment = e.is_closure_environment();
+  return rv;
+}
+
+ExprAST* parseVar(const pb::Expr& e, const foster::SourceRange& range) {
+  TypeAST* ty = e.has_type() ? TypeAST_from_pb(&e.type()) : NULL;
+  return new VariableAST(e.name(), ty, range);
+}
+
+} // unnamed namespace
+
 ExprAST* ExprAST_from_pb(const pb::Expr* pe) {
   if (!pe) return NULL;
   const pb::Expr& e = *pe;
@@ -67,53 +262,42 @@ ExprAST* ExprAST_from_pb(const pb::Expr* pe) {
     parseRangeFrom(range, e);
   }
 
-  /*
+  ExprAST* rv = NULL;
+
   switch (e.tag()) {
-  case pb::Expr::ASSIGN:
-    break;
+  case pb::Expr::ASSIGN:    rv = parseAssign(e, range); break;
+  case pb::Expr::BOOL:      rv = parseBool(e, range); break;
+  case pb::Expr::CALL:      rv = parseCall(e, range); break;
+  case pb::Expr::CLOSURE:   rv = parseClosure(e, range); break;
+  case pb::Expr::COMPILES:  rv = parseCompiles(e, range); break;
+  case pb::Expr::DEREF:     rv = parseDeref(e, range); break;
+  case pb::Expr::FN:        rv = parseFn(e, range); break;
+  case pb::Expr::FORRANGE:  rv = parseForrange(e, range); break;
+  case pb::Expr::IF:        rv = parseIf(e, range); break;
+  case pb::Expr::INT:       rv = parseInt(e, range); break;
+  case pb::Expr::MODULE:    rv = parseModule(e, range); break;
+  case pb::Expr::NIL:       rv = parseNil(e, range); break;
+  case pb::Expr::OP:        rv = parseOp(e, range); break;
+  case pb::Expr::PROTO:     rv = parseProto(e, range); break;
+  case pb::Expr::REF:       rv = parseRef(e, range); break;
+  case pb::Expr::SEQ:       rv = parseSeq(e, range); break;
+  case pb::Expr::SIMD:      rv = parseSimd(e, range); break;
+  case pb::Expr::SUBSCRIPT: rv = parseSubscript(e, range); break;
+  case pb::Expr::TUPLE:     rv = parseTuple(e, range); break;
+  case pb::Expr::VAR:       rv = parseVar(e, range); break;
+
   default:
     break;
   }
-  */
 
-  if (e.has_bool_value()) {
-    return new BoolAST(e.bool_value() ? "true" : "false", range);
+  if (!rv) {
+    EDiag() << "Unable to reconstruct ExprAST from protobuf Expr:"
+            << e.DebugString();
+  } else if (e.has_type()) {
+    rv->type = TypeAST_from_pb(& e.type());
   }
 
-  if (e.has_int_()) {
-    const pb::Int& i = e.int_();
-    string text = i.text();
-    string clean = pystring::replace(text, "`", "");
-    vector<string> parts;
-    pystring::split(clean, parts, "_");
-    int base = 10;
-    if (parts.size() == 2) {
-      clean = parts[0];
-      std::stringstream ss; ss << parts[1]; ss >> base;
-    }
-
-    return foster::parseInt(clean, text, base, range);
-  }
-
-  if (e.tag() == pb::Expr::VAR) {
-    return new VariableAST(e.name(), TypeAST_from_pb(&e.type()), range);
-  }
-
-  if (e.tag() == pb::Expr::OP) {
-    if (e.parts_size() == 1) {
-      return new UnaryOpExprAST(e.name(),
-                            ExprAST_from_pb(&e.parts(0)), range);
-    } else if (e.parts_size() == 2) {
-      return new BinaryOpExprAST(e.name(),
-                             ExprAST_from_pb(&e.parts(0)),
-                             ExprAST_from_pb(&e.parts(1)), range);
-    } else {
-      EDiag() << "protobuf Expr tagged OP with too many parts: "
-              << e.DebugString();
-    }
-  }
-
-  return NULL;
+  return rv;
 }
 
 TypeAST* TypeAST_from_pb(const pb::Type* pt) {
@@ -159,17 +343,30 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
 
   if (t.has_closurety()) {
     const pb::ClosureType& cty = t.closurety();
-    const pb::Expr& eproto = cty.proto();
-    const pb::Type& fntype = cty.fntype();
-    const pb::Type& clo_tuple_type = cty.clo_tuple_type();
 
-    return NULL;
-#if 0
-    return new ClosureTypeAST(
-        dynamic_cast<PrototypeAST*>(ExprAST_from_pb(eproto)),
-        ,
-        range);
-#endif
+    PrototypeAST* proto = NULL;
+    TupleTypeAST* cloTupleType = NULL;
+    FnTypeAST* cloFnType = NULL;
+    const llvm::Type* underlyingType = NULL;
+
+    if (cty.has_proto()) {
+      proto = dynamic_cast<PrototypeAST*>(ExprAST_from_pb(&cty.proto()));
+    }
+
+    if (cty.has_fntype()) {
+      cloFnType = dynamic_cast<FnTypeAST*>(TypeAST_from_pb(&cty.fntype()));
+    }
+
+    if (cty.has_clo_tuple_type()) {
+      cloTupleType = dynamic_cast<TupleTypeAST*>(
+                                     TypeAST_from_pb(&cty.clo_tuple_type()));
+    }
+
+    ASSERT(proto) << "Need a proto to reconstruct a closure type." << show(range);
+    ClosureTypeAST* ct = new ClosureTypeAST(proto, underlyingType, range);
+    ct->fntype = cloFnType;
+    ct->clotype = cloTupleType;
+    return ct;
   }
 
   if (t.has_literal_int_value()) {
@@ -186,9 +383,17 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
   }
 
   if (t.tag() == pb::Type::LLVM_NAMED) {
-    std::cerr << "PB trying to reconstruct named type: " << t.llvm_type_name() << std::endl;
-    TypeAST* rv = foster::TypeASTFor(t.llvm_type_name());
-    std::cerr << "..." << std::endl;
+    const string& tyname = t.llvm_type_name();
+    std::cerr << "PB trying to reconstruct named type: '" << tyname << "'" << std::endl;
+
+    ASSERT(!tyname.empty()) << "empty type name, probably implies a\n"
+                  << "missing pb.if_X() check before pb.X().\n"
+                  << "Use gdb to find the culprit.";
+
+    TypeAST* rv = NULL;
+    if (!tyname.empty() && tyname != "<NULL Ty>") {
+      rv = foster::TypeASTFor(tyname);
+    }
     return rv;
   }
 
