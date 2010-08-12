@@ -126,6 +126,8 @@ class RefTypeAST : public TypeAST {
   typedef std::pair<TypeAST*, bool> RefTypeArgs;
   static std::map<RefTypeArgs, RefTypeAST*> refCache;
 public:
+  virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
+
   bool isNullable() const { return nullable; }
   virtual bool canConvertTo(TypeAST* otherType);
   TypeAST* getElementType() { return underlyingType; }
@@ -203,6 +205,8 @@ public:
                           const SourceRange& sourceRange)
      : TypeAST(underlyingType, sourceRange),
        proto(proto), fntype(NULL), clotype(NULL) {}
+
+  virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
 
   virtual const llvm::Type* getLLVMType() const;
   FnTypeAST* getFnType() const;
