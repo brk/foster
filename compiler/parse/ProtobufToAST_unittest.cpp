@@ -400,6 +400,31 @@ TEST(ProtobufToAST, fnlit_higher_order) {
   EXPECT_EQ(pr(e), pr(re));
 }
 
+#define STR(x) #x
+
+TEST(ProtobufToAST, big_example_1) {
+  ExprAST* e = parse(STR(
+let x : i32 = 3 in {
+  let f : fn (k:i32, h:i32, r:i32, m:i32) = fn (k:i32, h:i32, r:i32, m:i32) {
+    let km : i32 = k * m in {
+    let kx : i32 = bitxor(km, bitashr(km, r)) in {
+      bitxor(h * m, kx * m)
+    } }
+  } in {
+    f(x, x, x, x) ;  f(x, x, x, x)
+  }
+}
+));
+  ASSERT_TRUE(e);
+  ExprAST* re = roundtrip(e);
+  ASSERT_TRUE(re);
+
+  EXPECT_EQ(pr(e), pr(re));
+}
+
+#undef STR
+
+
 } // unnamed namespace
 
 
