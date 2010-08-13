@@ -204,6 +204,7 @@ add_library(fosterc_base STATIC
   compiler/base/InputFile.cpp
   compiler/base/PathManager.cpp
   compiler/base/SourceRange.cpp
+  compiler/base/TimingsRepository.cpp
 )
 add_dependencies(fosterc_base fosterc_config_h)
 

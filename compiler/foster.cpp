@@ -50,6 +50,8 @@
 
 #include "base/Assert.h"
 #include "base/InputFile.h"
+#include "base/TimingsRepository.h"
+
 #include "parse/FosterAST.h"
 #include "parse/ANTLRtoFosterAST.h"
 #include "parse/CompilationContext.h"
@@ -64,7 +66,6 @@
 
 #include "pystring/pystring.h"
 
-#include <cassert>
 #include <memory>
 #include <fstream>
 #include <sstream>
@@ -84,63 +85,10 @@ namespace foster {
 
 using std::string;
 
-#define FOSTER_VERSION_STR "0.0.4"
+#define FOSTER_VERSION_STR "0.0.5"
 extern const char* ANTLR_VERSION_STR;
 
-class TimingsRepository {
-  std::map<string, uint64_t> totals;
-  std::map<string, uint64_t> locals;
-  std::map<string, string> descriptions;
-
-public:
-  void describe(string path, string desc) {
-    descriptions[path] += desc;
-  }
-
-  void incr(const char* dottedpath, uint64_t n) {
-    std::vector<string> parts;
-    pystring::split(dottedpath, parts, ".");
-
-    locals[dottedpath] += n;
-
-    string prefix;
-    for (size_t i = 0; i < parts.size(); ++i) {
-      if (i > 0) prefix += ".";
-      prefix += parts[i];
-      totals[prefix] += n;
-    }
-  }
-
-  void print() {
-    typedef std::map<string, uint64_t>::iterator Iter;
-    size_t maxTotalLength = 0;
-    for (Iter it = totals.begin(); it != totals.end(); ++it) {
-      const string& s = (*it).first;
-      maxTotalLength = (std::max)(maxTotalLength, s.size());
-    }
-    string pathFormatString;
-    llvm::raw_string_ostream pfs(pathFormatString);
-    pfs << "%-" << (maxTotalLength) << "s";
-    pfs.flush();
-
-    llvm::outs() << llvm::format(pathFormatString.c_str(), (const char*) "Category name")
-        << "    Total" << "  " << "Local" << "\n";
-
-    for (Iter it = totals.begin(); it != totals.end(); ++it) {
-      const string& s = (*it).first;
-      llvm::outs() << llvm::format(pathFormatString.c_str(), s.c_str())
-                  << "  " << llvm::format("%5u", (unsigned) totals[s])
-                  << "  "  << llvm::format("%5u", (unsigned) locals[s]);
-      const string& d = descriptions[s];
-      if (!d.empty()) {
-        llvm::outs() << " -- " << d;
-      }
-      llvm::outs() << "\n";
-    }
-  }
-};
-
-TimingsRepository gTimings;
+foster::TimingsRepository gTimings;
 
 struct ScopedTimer {
   ScopedTimer(const char* stat)
