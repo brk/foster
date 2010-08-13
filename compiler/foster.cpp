@@ -293,6 +293,12 @@ static cl::opt<bool>
 optCompileSeparately("c",
   cl::desc("[foster] Compile separately, don't automatically link imported modules"));
 
+static cl::list<std::string>
+optIncludeRoots("I",
+  cl::desc("Seach directories for imported modules"),
+  cl::Prefix,
+  cl::ZeroOrMore);
+
 #ifdef FOSTERC_DEBUG_INFO_NOT_YET_GENERATED
 static cl::opt<bool>
 optEmitDebugInfo("g",
@@ -666,6 +672,12 @@ int main(int argc, char** argv) {
 
   cl::SetVersionPrinter(&printVersionInfo);
   cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster compiler\n");
+
+  typedef cl::list<std::string>::iterator IncRootsIter;
+  for (IncRootsIter it = optIncludeRoots.begin();
+                   it != optIncludeRoots.end(); ++it) {
+    //std::cout << *it << std::endl;
+  }
 
   validateInputFile(optInputPath);
 
