@@ -484,6 +484,20 @@ void dumpModuleToBitcode(Module* mod, const string& filename) {
   WriteBitcodeToFile(mod, out);
 }
 
+void dumpModuleToProtobuf(ModuleAST* mod, const string& filename) {
+  foster::pb::Expr pbModuleExpr;
+
+  { ScopedTimer timer("protobuf");
+    DumpToProtobufPass p(&pbModuleExpr); mod->accept(&p);
+  }
+
+  { ScopedTimer timer("protobuf.io");
+    std::ofstream out(filename.c_str(),
+                      std::ios::trunc | std::ios::binary);
+    pbModuleExpr.SerializeToOstream(&out);
+  }
+}
+
 TargetData* getTargetDataForModule(Module* mod) {
   const string& layout = mod->getDataLayout();
   if (layout.empty()) return NULL;
@@ -688,7 +702,10 @@ int main(int argc, char** argv) {
   using foster::ee;
 
   foster::initializeLLVM();
-  module = new Module("foster", getGlobalContext());
+
+  llvm::sys::Path mainModulePath(optInputPath);
+  mainModulePath.makeAbsolute();
+  module = new Module(mainModulePath.str().c_str(), getGlobalContext());
   ee = EngineBuilder(module).create();
   initMaps();
 
@@ -720,16 +737,7 @@ int main(int argc, char** argv) {
     }
 
     if (1) {
-      foster::pb::Expr pbModuleExpr;
-
-      { ScopedTimer timer("protobuf");
-        DumpToProtobufPass p(&pbModuleExpr); exprAST->accept(&p);
-      }
-      { ScopedTimer timer("protobuf.io");
-        std::ofstream out(dumpdirFile("ast.postparse.pb").c_str(),
-                              std::ios::trunc | std::ios::binary);
-        pbModuleExpr.SerializeToOstream(&out);
-      }
+      dumpModuleToProtobuf(exprAST, dumpdirFile("ast.postparse.pb"));
     }
   }
 
@@ -838,8 +846,12 @@ int main(int argc, char** argv) {
     }
     
     compileToNativeAssembly(module, dumpdirFile("out.s"));
-  } else { // -c, compile to bitcode instead of native assembly
-    dumpModuleToBitcode(module, dumpdirFile("out.bc"));
+  } else { // -c, compile to module instead of native assembly
+    std::string outBcFilename(mainModulePath.getLast().str() + ".out.bc");
+    dumpModuleToBitcode(module, dumpdirFile(outBcFilename));
+
+    std::string outPbFilename(mainModulePath.getLast().str() + ".pb");
+    dumpModuleToProtobuf(exprAST, dumpdirFile(outPbFilename));
   }
   // TODO invoke g++ .s -> exe
 
