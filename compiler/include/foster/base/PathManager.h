@@ -22,12 +22,22 @@ class PathManager {
   typedef std::set<std::string> MatchingPaths;
   std::map<Filename, MatchingPaths> candidates;
 
+  typedef std::set<llvm::sys::Path> PathSet;
+  PathSet moduleRootPaths;
+
 public:
   PathManager() {}
 
   // Only registered paths are considered when
   // determining shortest unambiguous suffixes.
   void registerPath(const llvm::sys::Path& path);
+
+
+  void registerModuleSearchPath(const llvm::sys::Path& path);
+
+  // Returns a set of directories which *might* contain either interface or
+  // implementation, in compiled or uncompiled form, of the given module name.
+  std::set<llvm::sys::Path> searchForModuleHomes(const std::string& fooDotBar);
 
   std::string getShortestUnambiguousSuffix(const llvm::sys::Path& path);
 };

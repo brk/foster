@@ -4,6 +4,8 @@
 
 #include "base/PathManager.h"
 
+#include "pystring/pystring.h"
+
 #include <algorithm>
 #include <iostream>
 #include <iterator>
@@ -94,6 +96,60 @@ static std::string disamb(const std::set<std::string>& candidates,
 
 std::string PathManager::getShortestUnambiguousSuffix(const Path& path) {
   return disamb(candidates[path.getLast()], path);
+}
+
+////////////////////////////////////////////////////////////////////
+
+void PathManager::registerModuleSearchPath(const Path& path) {
+  moduleRootPaths.insert(path);
+}
+
+static bool isValidDirectory(const Path& path) {
+  return path.isValid() && path.isDirectory();
+}
+
+// Returns true if the given path has the chain of subdirectories specified
+// by parts. On return, outRoot will be the deepest valid subdirectory of path.
+static bool hasSubdirectories(const Path& path,
+                              const std::vector<std::string>& parts,
+                              Path& outRoot) {
+  outRoot = path;
+  for (size_t i = 0; i < parts.size(); ++i) {
+    outRoot.appendComponent(parts[i]);
+    if (!isValidDirectory(outRoot)) {
+      outRoot.eraseComponent();
+      return false;
+    }
+  }
+  return true;
+}
+
+std::set<Path>
+PathManager::searchForModuleHomes(const std::string& fooDotBar) {
+  PathSet rv;
+  PathSet toDiscard;
+
+  std::vector<std::string> parts;
+  pystring::split(fooDotBar, parts, ".");
+
+  for (PathSet::iterator it = moduleRootPaths.begin();
+                        it != moduleRootPaths.end(); ++it) {
+    const llvm::sys::Path& path = *it;
+    llvm::sys::Path moduleRoot = path; // for now, hasSubdirs will modify
+
+    if (!isValidDirectory(path)) {
+      toDiscard.insert(path);
+    } else if (hasSubdirectories(path, parts, moduleRoot)) {
+      rv.insert(path);
+    }
+  }
+
+  for (PathSet::iterator it = toDiscard.begin();
+                          it != toDiscard.end(); ++it) {
+    moduleRootPaths.erase(*it);
+  }
+
+  return rv;
 }
 
 } // namespace foster

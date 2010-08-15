@@ -51,6 +51,7 @@
 #include "base/Assert.h"
 #include "base/InputFile.h"
 #include "base/TimingsRepository.h"
+#include "base/PathManager.h"
 
 #include "parse/FosterAST.h"
 #include "parse/ANTLRtoFosterAST.h"
@@ -371,7 +372,7 @@ void ensureDirectoryExists(const string& pathstr) {
   }
 }
 
-Module* readModuleFromPath(string path) {
+Module* readLLVMModuleFromPath(string path) {
   ScopedTimer timer("io.file.readmodule");
   SMDiagnostic diag;
   return llvm::ParseIRFile(path, diag, llvm::getGlobalContext());
@@ -659,6 +660,23 @@ void validateInputFile(const string& pathstr) {
   }
 }
 
+// Validates and registers all the -I<path> flags from the command line.
+void collectIncludeRoots() {
+  typedef cl::list<std::string>::iterator IncRootsIter;
+  for (IncRootsIter it = optIncludeRoots.begin();
+                   it != optIncludeRoots.end(); ++it) {
+    llvm::sys::Path path(*it);
+    if (path.isValid() && path.isDirectory()) {
+      foster::gPathManager.registerModuleSearchPath(path);
+    } else {
+      llvm::sys::Path abspath(*it);
+      abspath.makeAbsolute();
+      std::cerr << "warning: ignoring input path \"" << path.str() << "\""
+          << " because directory '" << abspath.str() << "' does not exist.\n";
+    }
+  }
+}
+
 void setDefaultCommandLineOptions() {
   if (string(LLVM_HOSTTRIPLE).find("darwin") != string::npos) {
     // Applications on Mac OS X must be compiled with relocatable symbols, which
@@ -687,12 +705,7 @@ int main(int argc, char** argv) {
   cl::SetVersionPrinter(&printVersionInfo);
   cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster compiler\n");
 
-  typedef cl::list<std::string>::iterator IncRootsIter;
-  for (IncRootsIter it = optIncludeRoots.begin();
-                   it != optIncludeRoots.end(); ++it) {
-    //std::cout << *it << std::endl;
-  }
-
+  collectIncludeRoots();
   validateInputFile(optInputPath);
 
   ensureDirectoryExists(dumpdirFile(""));
@@ -709,7 +722,7 @@ int main(int argc, char** argv) {
   ee = EngineBuilder(module).create();
   initMaps();
 
-  Module* m = readModuleFromPath("libfoster.bc");
+  Module* m = readLLVMModuleFromPath("libfoster.bc");
   putModuleMembersInScope(m, module);
   
   createLLVMBitIntrinsics();
