@@ -219,6 +219,7 @@ add_library(fosterc_parse STATIC
   compiler/parse/ProtobufToAST.cpp
   compiler/parse/FosterUtils.cpp
   third_party/pystring/pystring.cpp
+  ${GENERATED}/FosterAST.pb.cc
   ${GENERATED}/fosterParser.c
   ${GENERATED}/fosterLexer.c
 )
@@ -253,7 +254,6 @@ add_executable(fosterc
   compiler/passes/ClosureConversionPass.cpp
   compiler/passes/PughSinofskyPrettyPrinter.cpp
   #  compiler/llvm/passes/LLVMCallGraphDotPrinter.cpp
-  ${GENERATED}/FosterAST.pb.cc
 )
 
 target_link_libraries(fosterc
@@ -264,6 +264,18 @@ add_dependencies(fosterc libfoster_bc)
 
 add_dependencies(libfoster_bc chromium_base)
 add_dependencies(libfoster_bc cpuid)
+
+add_executable(pbfosterview
+  tools/pbfosterview/pbfosterview.cpp
+  compiler/passes/PrettyPrintPass.cpp
+  compiler/passes/PughSinofskyPrettyPrinter.cpp
+  ${GENERATED}/FosterAST.pb.cc
+  # Purely for ClosureTypeAST::getFnType, remove ASAP...
+  compiler/passes/TypecheckPass.cpp
+)
+target_link_libraries(pbfosterview
+  fosterc_base fosterc_parse antlr3c
+  ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
 
 #####################################################################
 
