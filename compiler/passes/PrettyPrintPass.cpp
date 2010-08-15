@@ -143,13 +143,15 @@ void PrettyPrintPass::visit(FnAST* ast) {
 
   emit(ast->proto);
 
-  if (!isTopLevelFn) { scan(pp.tNewline); }
+  if (!this->printSignaturesOnly) {
+    if (!isTopLevelFn) { scan(pp.tNewline); }
 
-  if (ast->body) {
-    emit(ast->body);
-
-    if (isTopLevelFn) { scan(pp.tNewline); }
+    if (ast->body) {
+      emit(ast->body);
+    }
   }
+
+  if (isTopLevelFn) { scan(pp.tNewline); }
 }
 
 void PrettyPrintPass::visit(NamedTypeDeclAST* ast) {

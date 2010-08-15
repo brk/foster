@@ -22,12 +22,20 @@ struct PrettyPrintPass : public ExprASTVisitor {
   
   typedef foster::PughSinofskyPrettyPrinter PrettyPrinter;
   
-  bool printVarTypes;
+private:
   PrettyPrinter pp;
+  // Controls whether type ascriptions on variable names are printed.
+  // Used to print ascriptions on fn formals but not let bindings.
+  bool printVarTypes;
+  bool printSignaturesOnly;
   
+public:
   PrettyPrintPass(std::ostream& out, int width = 80, int indent_width = 2)
-    : printVarTypes(false), pp(out, width, indent_width) {}
-    
+    : pp(out, width, indent_width),
+      printVarTypes(false),
+      printSignaturesOnly(false) {}
+
+  void setPrintSignaturesOnly(bool newval) { printSignaturesOnly = newval; }
   void scan(const PrettyPrinter::PPToken& token) { pp.scan(token); }
   
   ~PrettyPrintPass() {}

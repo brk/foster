@@ -47,6 +47,9 @@ using std::string;
 static cl::opt<string>
 optInputPath(cl::Positional, cl::desc("<input file>"));
 
+static cl::opt<bool>
+optSignaturesOnly("sigs-only", cl::desc("Print signatures only"));
+
 ExprAST* readExprFromProtobuf(const string& pathstr) {
   foster::pb::Expr pbe;
   std::fstream input(pathstr.c_str(), std::ios::in | std::ios::binary);
@@ -107,6 +110,8 @@ int main(int argc, char** argv) {
   }
 
   PrettyPrintPass pp(std::cout, 80);
+  pp.setPrintSignaturesOnly(optSignaturesOnly);
+
   mod->accept(&pp);
 
   return 0;
