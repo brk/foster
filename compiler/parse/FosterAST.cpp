@@ -7,7 +7,6 @@
 #include "parse/FosterAST.h"
 #include "parse/CompilationContext.h"
 #include "parse/ANTLRtoFosterAST.h" // just for parseAPIntFromClean()
-#include "passes/TypecheckPass.h"
 #include "parse/FosterUtils.h"
 
 #include <map>
@@ -117,9 +116,6 @@ IntAST* literalIntAST(int lit) {
                           text, 10, foster::SourceRange::getEmptyRange());
   IntAST* rv = new IntAST(p->getActiveBits(), text,
                           text, 10, foster::SourceRange::getEmptyRange());
-  
-  // Assign the proper (smallest) int type to the literal
-  { TypecheckPass tc; rv->accept(&tc); }
   return rv;
 }
 
