@@ -7,8 +7,9 @@
 #include "llvm/System/Path.h"
 
 // Protobufs do not easily allow mirroring of existing object
-// graph structures, because repeated (pointer) fields only allow
-// adding child nodes by requesting new nodes from the parent,
+// graph structures in the depth-first style preorder style usually
+// associated with visitors, because repeated (pointer) fields only
+// allow adding child nodes by requesting new nodes from the parent,
 // and do not directly support adopting existing nodes as children.
 //
 // Thus, the way we'll transcribe our existing AST tree to protobufs
@@ -112,6 +113,7 @@ void DumpToProtobufPass::visit(PrototypeAST* ast)           {
     dumpChild(this, proto->add_in_args(), ast->inArgs[i]);
   }
 }
+
 void DumpToProtobufPass::visit(FnAST* ast)                  {
   processExprAST(current, ast, foster::pb::Expr::FN);
   foster::pb::Fn* fn = current->mutable_fn();
@@ -120,6 +122,7 @@ void DumpToProtobufPass::visit(FnAST* ast)                  {
   fn->set_lambda_lift_only(ast->lambdaLiftOnly);
   fn->set_was_nested(ast->wasNested);
 }
+
 void DumpToProtobufPass::visit(ClosureAST* ast) {
   processExprAST(current, ast, foster::pb::Expr::CLOSURE);
   foster::pb::Closure* clo = current->mutable_closure();
@@ -128,10 +131,18 @@ void DumpToProtobufPass::visit(ClosureAST* ast) {
   }
   clo->set_is_trampoline_version(ast->isTrampolineVersion);
 }
+
 void DumpToProtobufPass::visit(ModuleAST* ast)              {
   processExprAST(current, ast, foster::pb::Expr::MODULE);
+  current->set_name(ast->scope->getName());
   dumpChildren(this, ast);
 }
+
+void DumpToProtobufPass::visit(NamedTypeDeclAST* ast) {
+  processExprAST(current, ast, foster::pb::Expr::NAMED_TYPE_DECL);
+  current->set_name(ast->name);
+}
+
 void DumpToProtobufPass::visit(IfExprAST* ast)              {
   processExprAST(current, ast, foster::pb::Expr::IF);
   foster::pb::If* if_ = current->mutable_if_();
@@ -139,6 +150,7 @@ void DumpToProtobufPass::visit(IfExprAST* ast)              {
   dumpChild(this, if_->mutable_then_expr(), ast->thenExpr);
   dumpChild(this, if_->mutable_else_expr(), ast->elseExpr);
 }
+
 void DumpToProtobufPass::visit(ForRangeExprAST* ast)              {
   processExprAST(current, ast, foster::pb::Expr::FORRANGE);
   foster::pb::ForRange* fr = current->mutable_for_range();
@@ -150,37 +162,46 @@ void DumpToProtobufPass::visit(ForRangeExprAST* ast)              {
     dumpChild(this, fr->mutable_incr(), ast->incrExpr);
   }
 }
+
 void DumpToProtobufPass::visit(NilExprAST* ast)             {
   processExprAST(current, ast, foster::pb::Expr::NIL);
 }
+
 void DumpToProtobufPass::visit(RefExprAST* ast)             {
   processExprAST(current, ast, foster::pb::Expr::REF);
   dumpChildren(this, ast);
 }
+
 void DumpToProtobufPass::visit(DerefExprAST* ast)           {
   processExprAST(current, ast, foster::pb::Expr::DEREF);
   dumpChildren(this, ast);
 }
+
 void DumpToProtobufPass::visit(AssignExprAST* ast)          {
   processExprAST(current, ast, foster::pb::Expr::ASSIGN);
   dumpChildren(this, ast);
 }
+
 void DumpToProtobufPass::visit(SubscriptAST* ast)           {
   processExprAST(current, ast, foster::pb::Expr::SUBSCRIPT);
   dumpChildren(this, ast);
 }
+
 void DumpToProtobufPass::visit(SimdVectorAST* ast)          {
   processExprAST(current, ast, foster::pb::Expr::SIMD);
   dumpChildren(this, ast);
 }
+
 void DumpToProtobufPass::visit(SeqAST* ast)                 {
   processExprAST(current, ast, foster::pb::Expr::SEQ);
   dumpChildren(this, ast);
 }
+
 void DumpToProtobufPass::visit(CallAST* ast)                {
   processExprAST(current, ast, foster::pb::Expr::CALL);
   dumpChildren(this, ast);
 }
+
 void DumpToProtobufPass::visit(ArrayExprAST* ast)           {
   llvm::errs() << "no support for dumping arrays to protobufs!\n";
 }
@@ -190,6 +211,7 @@ void DumpToProtobufPass::visit(TupleExprAST* ast)           {
   current->set_is_closure_environment(ast->isClosureEnvironment);
   dumpChildren(this, ast);
 }
+
 void DumpToProtobufPass::visit(BuiltinCompilesExprAST* ast) {
   processExprAST(current, ast, foster::pb::Expr::COMPILES);
   switch (ast->status) {

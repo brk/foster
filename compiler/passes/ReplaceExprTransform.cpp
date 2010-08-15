@@ -77,6 +77,9 @@ void ReplaceExprTransform::visit(ClosureAST* ast) {
   visitChildren(ast);
   this->newChild = rewrite(ast);
 }
+void ReplaceExprTransform::visit(NamedTypeDeclAST* ast) {
+  return;
+}
 void ReplaceExprTransform::visit(ModuleAST* ast) {
   for (size_t i = 0; i < ast->parts.size(); ++i) {
     onVisitChild(ast, &ast->parts[i]);

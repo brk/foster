@@ -119,6 +119,9 @@ void ClosureConversionPass::visit(ModuleAST* ast)              {
     (*it)->accept(this);
   }
 }
+void ClosureConversionPass::visit(NamedTypeDeclAST* ast) {
+  return;
+}
 void ClosureConversionPass::visit(IfExprAST* ast)              {
   onVisitChild(ast, ast->testExpr);
   onVisitChild(ast, ast->thenExpr);

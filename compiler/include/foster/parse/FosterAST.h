@@ -264,6 +264,23 @@ struct CallAST : public ExprAST {
   }
 };
 
+// In some sense, this is a type abstraction that's forced to be a redex
+// (in exactly the same way that 'let' is). Only, unlike 'let', we don't
+// (yet) have a standalone type abstraction. Also, in contrast to 'let',
+// the scope of the name bound to this AST node is implicit, not explicit.
+// The name is visible in all subsequent sibling AST nodes under the same
+// parent.
+struct NamedTypeDeclAST : public ExprAST {
+  std::string name;
+  explicit NamedTypeDeclAST(std::string boundName, TypeAST* namedType,
+                            foster::SourceRange sourceRange)
+    : ExprAST(sourceRange), name(name) { this->type = namedType; }
+  virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
+  virtual std::ostream& operator<<(std::ostream& out) const {
+    out << "type " << name << " = " << str(type) << "\n";
+  }
+};
+
 struct SeqAST : public ExprAST {
   explicit SeqAST(Exprs exprs, foster::SourceRange sourceRange)
     : ExprAST(sourceRange) { this->parts = exprs; }

@@ -820,6 +820,10 @@ void CodegenPass::visit(ClosureAST* ast) {
   }
 }
 
+void CodegenPass::visit(NamedTypeDeclAST* ast) {
+  return;
+}
+
 void CodegenPass::visit(ModuleAST* ast) {
   for (size_t i = 0; i < ast->parts.size(); ++i) {
     ast->parts[i]->accept(this);

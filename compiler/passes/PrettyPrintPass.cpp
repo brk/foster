@@ -152,6 +152,13 @@ void PrettyPrintPass::visit(FnAST* ast) {
   }
 }
 
+void PrettyPrintPass::visit(NamedTypeDeclAST* ast) {
+  scan(PPToken("type = "));
+  // TODO have PrettyPrintExprPass and PrettyPrintTypePass
+  scan(PPToken(str(ast->type)));
+  scan(pp.tNewline);
+}
+
 void PrettyPrintPass::visit(ModuleAST* ast) {
   for (size_t i = 0; i < ast->parts.size(); ++i) {
     emit(ast->parts[i]);

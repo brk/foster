@@ -37,7 +37,7 @@ message Type {
 
 message FnType {
   repeated Type arg_types = 1;
-  optional Type ret_type  = 2;
+  required Type ret_type  = 2;
   optional string calling_convention = 3;
 }
 
@@ -74,23 +74,24 @@ message Expr {
     FORRANGE = 33;
     CLOSURE = 34;
     MODULE = 35;
+    NAMED_TYPE_DECL = 36;
   }
-  repeated Expr   parts = 1;
-  required Tag     tag = 2;
-  optional Type   type = 3;
+  repeated Expr        parts = 1;
+  required Tag           tag = 2;
+  optional Type         type = 3;
   optional SourceRange range = 4;
 
-  optional Int   int   = 17;
-  optional Proto proto = 18;
-  optional Fn    fn    = 19;
-  optional Closure closure = 20;
-  optional If    if    = 21;
-  optional ForRange for_range = 22;
+  optional Int        int        = 17;
+  optional Proto      proto      = 18;
+  optional Fn         fn         = 19;
+  optional Closure    closure    = 20;
+  optional If         if         = 21;
+  optional ForRange   for_range  = 22;
 
   // Bool
   optional bool   bool_value = 23;
 
-  // Var, Op
+  // Var, Op, Module, named type decl
   optional string name  = 24;
 
   // Tuple
@@ -135,3 +136,4 @@ message ForRange {
   required Expr  body = 5;
   optional Expr  incr = 6;
 }
+

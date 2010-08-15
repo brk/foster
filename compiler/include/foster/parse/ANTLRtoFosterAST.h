@@ -33,6 +33,8 @@ class APInt;
 
 namespace foster {
 
+extern std::string gPendingModuleName;
+
 bool wasExplicitlyParenthesized(ExprAST* ast);
 
 class SourceRange;

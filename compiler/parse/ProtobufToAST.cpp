@@ -168,10 +168,22 @@ ExprAST* parseInt(const pb::Expr& e, const foster::SourceRange& range) {
 }
 
 ExprAST* parseModule(const pb::Expr& e, const foster::SourceRange& range) {
-  // parts
-  // name
-  // parent scope
-  return NULL;
+  string moduleName = e.name();
+  Exprs args;
+  for (size_t i = 0; i < e.parts_size(); ++i) {
+    args.push_back(ExprAST_from_pb(&e.parts(i)));
+  }
+  return new ModuleAST(args,
+                       moduleName,
+                       gScope.getRootScope(),
+                       range);
+}
+
+ExprAST* parseNamedTypeDecl(const pb::Expr& e, const foster::SourceRange& range) {
+  ASSERT(e.has_name()) << "cannot reconstruct a named type without a name";
+  // We pass NULL for the bound type, assuming that ExprAST_from_pb() will
+  // assign the type field directly.
+  return new NamedTypeDeclAST(e.name(), NULL, range);
 }
 
 ExprAST* parseNil(const pb::Expr& e, const foster::SourceRange& range) {
@@ -276,6 +288,7 @@ ExprAST* ExprAST_from_pb(const pb::Expr* pe) {
   case pb::Expr::IF:        rv = parseIf(e, range); break;
   case pb::Expr::INT:       rv = parseInt(e, range); break;
   case pb::Expr::MODULE:    rv = parseModule(e, range); break;
+  case pb::Expr::NAMED_TYPE_DECL: rv = parseNamedTypeDecl(e, range); break;
   case pb::Expr::NIL:       rv = parseNil(e, range); break;
   case pb::Expr::OP:        rv = parseOp(e, range); break;
   case pb::Expr::PROTO:     rv = parseProto(e, range); break;
@@ -317,7 +330,11 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
   if (t.has_fnty()) {
     const foster::pb::FnType& fnty = t.fnty();
 
+    ASSERT(fnty.has_ret_type()) << "\n\tCannot build FnTypeAST without a return type in the protobuf";
     TypeAST* retTy = TypeAST_from_pb(&fnty.ret_type());
+    ASSERT(retTy) << "\n\tCannot build FnTypeAST if the protobuf's"
+       << " return type can't be reconstructed:\n"
+       << fnty.ret_type().DebugString();
 
     std::vector<TypeAST*> argTypes(fnty.arg_types_size());
     for (int i = 0; i < argTypes.size(); ++i) {
@@ -327,7 +344,7 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
     std::string callingConvention = "fastcc";
     if (fnty.has_calling_convention()) {
       callingConvention = fnty.calling_convention();
-      std::cout << "setting calling convention to " << callingConvention << std::endl;
+      //std::cout << "setting calling convention to " << callingConvention << std::endl;
     }
 
     return FnTypeAST::get(retTy, argTypes, callingConvention);
@@ -384,7 +401,7 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
 
   if (t.tag() == pb::Type::LLVM_NAMED) {
     const string& tyname = t.llvm_type_name();
-    std::cerr << "PB trying to reconstruct named type: '" << tyname << "'" << std::endl;
+    //std::cerr << "PB trying to reconstruct named type: '" << tyname << "'" << std::endl;
 
     ASSERT(!tyname.empty()) << "empty type name, probably implies a\n"
                   << "missing pb.if_X() check before pb.X().\n"

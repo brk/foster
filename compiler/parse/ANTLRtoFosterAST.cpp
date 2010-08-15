@@ -32,6 +32,10 @@ using foster::LLVMTypeFor;
 using foster::EDiag;
 using foster::show;
 
+namespace foster {
+std::string gPendingModuleName;
+}
+
 // {{{ ANTLR stuff
 std::string str(pANTLR3_STRING pstr) {
   return string((const char*)pstr->chars);
@@ -584,12 +588,9 @@ ModuleAST* parseTopLevel(pTree tree) {
   //        type node = tuple { ?ref node, i32 }
   // * Function definitions, such as
   //        f = fn () { 0 }
-  //
-  // For now, only the functions are explicitly listed in the module;
-  // types are present in symbol tables and the underlying llvm::Module.
 
   std::vector<pTree> pendingParseTrees(getChildCount(tree));
-  std::vector<FnAST*> parsedFunctions;
+  std::vector<ExprAST*> parsedExprs(getChildCount(tree));
   // forall i, exprs[i] == pendingParseTrees[i] == NULL
 
   for (size_t i = 0; i < getChildCount(tree); ++i) {
@@ -606,7 +607,7 @@ ModuleAST* parseTopLevel(pTree tree) {
 
     if (token == TYPEDEFN) {
       ExprAST* typeDefn = ExprAST_from(c, false);
-      ASSERT(!typeDefn) << "expected type definition to return NULL";
+      parsedExprs[i] = typeDefn;
     } else if (token == FNDEF) {
       ASSERT(getChildCount(c) == 2);
       // x = fn { blah }   ===   x = fn "x" { blah }
@@ -617,19 +618,21 @@ ModuleAST* parseTopLevel(pTree tree) {
         string name = parseFnName(textOf(child(lval, 0)), rval);
         protos[c] = getFnProto(name, true, child(rval, 1), child(rval, 2));
       } else {
-        cerr << "Not assigning top-level function to a name?" << endl;
+        EDiag() << "not assigning top-level function to a name?"
+                << show(rangeOf(c));
       }
+      // parsedExprs[i] remains NULL
     } else if (token == FN) {
       // (FN 0:NAME 1:IN 2:OUT 3:BODY)
       string name = parseFnName(textOf(child(c, 0)), c);
       protos[c] = getFnProto(name, true, child(c, 1), child(c, 2));
+      // parsedExprs[i] remains NULL
     } else {
       ExprAST* otherExpr = ExprAST_from(c, false);
       if (FnAST* explicitlyNamedFn = dynamic_cast<FnAST*>(otherExpr)) {
-        parsedFunctions.push_back(explicitlyNamedFn);
+        parsedExprs[i] = explicitlyNamedFn;
       } else {
-        EDiag() << "expected function or type";
-        display_pTree(c, 2);
+        EDiag() << "expected function or type" << show(rangeOf(c));
       }
     }
   }
@@ -637,22 +640,25 @@ ModuleAST* parseTopLevel(pTree tree) {
   // forall i, either parsedExprs[i] == NULL && protos[i] != NULL
   //              or  parsedExprs[i] != NULL
 
-  for (ProtoMap::iterator it = protos.begin(); it != protos.end(); ++it) {
-    pTree c = it->first;
-    PrototypeAST* proto = it->second;
+  for (size_t i = 0; i < parsedExprs.size(); ++i) {
+    if (parsedExprs[i]) continue;
+    pTree c = pendingParseTrees[i];
+    ASSERT(c) << "no parsed expr and no pending parse tree?!?";
+    PrototypeAST* proto = protos[c];
+    ASSERT(proto) << "no parsed expr and no proto?!?" << show(rangeOf(c));
     pTree fntree =   (typeOf(c) == FNDEF)   ?   child(c, 1)
-                   : (typeOf(c) == FN   )   ?   c
-                   :                            NULL;
-    parsedFunctions.push_back(buildFn(proto, child(fntree, 3)));
+                       : (typeOf(c) == FN   )   ?   c
+                       :                            NULL;
+    parsedExprs[i] = buildFn(proto, child(fntree, 3));
   }
 
-  std::vector<ExprAST*> exprs;
-  for (size_t i = 0; i < parsedFunctions.size(); ++i) {
-    exprs.push_back(parsedFunctions[i]);
+  std::string moduleName(foster::gPendingModuleName);
+  if (moduleName.empty()) {
+    moduleName = "<default_foster_module>";
   }
 
-  return new ModuleAST(exprs,
-                       "TODOprovideRealModuleName",
+  return new ModuleAST(parsedExprs,
+                       moduleName,
                        gScope.getRootScope(),
                        rangeOf(tree));
 }
@@ -673,9 +679,9 @@ ExprAST* parseTypeDefinition(pTree tree, bool fnMeansClosure) {
   gTypeScope.popScope();
 
   gTypeScope.insert(name, tyExpr);
+
   cout << "Associated " << name << " with type " << str(tyExpr) << endl;
-  //module->addTypeName(name, tyExpr->getLLVMType());
-  return NULL;
+  return new NamedTypeDeclAST(name, tyExpr, rangeOf(tree));
 }
 
 ExprAST* parseForRange(pTree tree, bool fnMeansClosure,

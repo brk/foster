@@ -191,6 +191,8 @@ bool RefTypeAST::canConvertTo(TypeAST* otherType) {
 FnTypeAST* FnTypeAST::get(TypeAST* returnType,
                           const vector<TypeAST*>& argTypes,
                           const std::string& callingConvName) {
+  ASSERT(returnType) << "FnTypeAST::get() needs non-NULL return type";
+
   vector<const llvm::Type*> loweredArgTypes;
   for (size_t i = 0; i < argTypes.size(); ++i) {
     loweredArgTypes.push_back(argTypes[i]->getLLVMType());
@@ -283,10 +285,6 @@ LiteralIntValueTypeAST* LiteralIntValueTypeAST::get(uint64_t value,
 
 uint64_t LiteralIntValueTypeAST::getNumericalValue() const {
   if (intAST) {
-    { TypecheckPass tp; intAST->accept(&tp);
-      llvm::outs() << intAST->getOriginalText() << " ; "
-                  << str(intAST->type) << "\n";
-    }
     return getSaturating<uint64_t>(intAST->getConstantValue());
   } else {
     return value;

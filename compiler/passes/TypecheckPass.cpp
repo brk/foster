@@ -140,6 +140,9 @@ const char* getCallingConvention(PrototypeAST* ast) {
   }
 }
 
+// * Ensures names of function parameters are disjoint
+// * Ensures that all args exist and (for now) have explicit types.
+// * Gives the prototype a FnTypeAST type.
 void TypecheckPass::visit(PrototypeAST* ast) {
   if (!areNamesDisjoint(ast->inArgs)) {
     EDiag d; d << "formal argument names for function "
@@ -233,6 +236,10 @@ void TypecheckPass::visit(ClosureAST* ast) {
               << "does not have function type!" << show(ast);
     }
   }
+}
+
+void TypecheckPass::visit(NamedTypeDeclAST* ast) {
+  return;
 }
 
 void TypecheckPass::visit(ModuleAST* ast) {
