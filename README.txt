@@ -32,6 +32,9 @@ Ubuntu:
                 libprotobuf5    protobuf-compiler       libprotobuf-dev
                 python-protobuf libprotobuf-java
 
+        For Ott:
+                coq             texlive-latex-base
+
 	If you need Java on Ubuntu 9.10,
 	sudo apt-get install sun-java6-jdk
 
