@@ -243,6 +243,7 @@ endif (${LLVM_ORIGINAL_CFLAGS} MATCHES ${NO_RTTI_FLAG})
 
 add_executable(fosterc
   compiler/foster.cpp
+  compiler/StandardPrelude.cpp
   compiler/cfg/CFG.cpp
   compiler/passes/BuildCFG.cpp
   compiler/passes/CodegenPass.cpp
