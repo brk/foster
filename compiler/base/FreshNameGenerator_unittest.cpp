@@ -15,6 +15,19 @@ TEST(FreshNameGenerator, expectedSequenceAlone) {
   ASSERT_EQ("n2", names.fresh("n"));
 }
 
+TEST(FreshNameGenerator, templateHandlingBasic) {
+  foster::FreshNameGenerator names;
+  ASSERT_EQ("n_0_x", names.fresh("n_%d_x"));
+  ASSERT_EQ("n_1_x", names.fresh("n_%d_x"));
+  ASSERT_EQ("n_2_x", names.fresh("n_%d_x"));
+}
+
+TEST(FreshNameGenerator, templateHandlingMultipleSlots) {
+  foster::FreshNameGenerator names;
+  ASSERT_EQ("n_0_%d_x", names.fresh("n_%d_%d_x"));
+  ASSERT_EQ("n_1_%d_x", names.fresh("n_%d_%d_x"));
+}
+
 TEST(FreshNameGenerator, noCrossSourceInterference) {
   foster::FreshNameGenerator namesA;
   foster::FreshNameGenerator namesB;
