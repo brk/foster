@@ -18,11 +18,17 @@
 #include "llvm/Function.h"
 #include "llvm/Module.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/ADT/Statistic.h"
 
 using llvm::GCFunctionInfo;
 
 #include <set>
 #include <map>
+
+#define DEBUG_TYPE "foster"
+STATISTIC(sNumStackMapsEmitted,     "Number of stack maps emitted");
+STATISTIC(sNumStackMapBytesEmitted, "Number of stack map bytes emitted");
+#undef DEBUG_TYPE
 
 namespace foster {
   void linkFosterGC() { }
@@ -139,6 +145,8 @@ public:
 
     // For each function...
     for (iterator FI = begin(), FE = end(); FI != FE; ++FI) {
+      sNumStackMapsEmitted++;
+
       GCFunctionInfo &MD = **FI;
 
       // Emit this data structure:
@@ -171,6 +179,9 @@ public:
       AP.OutStreamer.AddComment("safe point cluster count");
       AP.EmitInt32(clusters.size());
 
+      size_t i32sForThisFunction = 1; // above
+      size_t voidPtrsForThisFunction = 0;
+
       for (ClusterMap::iterator it = clusters.begin();
                                 it != clusters.end(); ++it) {
         const FrameInfo& fi = (*it).first;
@@ -185,17 +196,21 @@ public:
         // Emit the stack frame size.
         AP.OutStreamer.AddComment("stack frame size");
         AP.EmitInt32(MD.getFrameSize());
+        i32sForThisFunction++;
 
         // Emit the count of addresses in the cluster.
         AP.OutStreamer.AddComment("count of addresses");
         AP.EmitInt32(labels.size());
+        i32sForThisFunction++;
 
         // Emit the count of live roots in the cluster.
         AP.OutStreamer.AddComment("count of live roots with metadata");
         AP.EmitInt32(offsetsWithMetadata.size());
+        i32sForThisFunction++;
 
         AP.OutStreamer.AddComment("count of live roots w/o metadata");
         AP.EmitInt32(offsets.size());
+        i32sForThisFunction++;
 
         // Emit the stack offsets for the metadata-less roots in the cluster.
         for (RootOffsetsWithMetadata::iterator
@@ -203,9 +218,11 @@ public:
                                    rit != offsetsWithMetadata.end(); ++rit) {
           AP.OutStreamer.AddComment("metadata");
           AP.EmitGlobalConstant((*rit).second);
+          voidPtrsForThisFunction++;
 
           AP.OutStreamer.AddComment("stack offset for root");
           AP.EmitInt32((*rit).first);
+          i32sForThisFunction++;
         }
 
         // Emit the stack offsets for the metadata-less roots in the cluster.
@@ -213,17 +230,21 @@ public:
                                    rit != offsets.end(); ++rit) {
           AP.OutStreamer.AddComment("stack offset for root");
           AP.EmitInt32(*rit);
+          i32sForThisFunction++;
         }
 
         // Emit the addresses of the safe points in the cluster.
         for (Labels::iterator lit = labels.begin();
                               lit != labels.end(); ++lit) {
-	  OS << AddressDirective
-	     << MAI.getPrivateGlobalPrefix() << "label" << (*lit);
-	  AP.OutStreamer.AddComment("safe point address");
-	  AP.OutStreamer.AddBlankLine();
+          OS << AddressDirective
+             << MAI.getPrivateGlobalPrefix() << "label" << (*lit);
+          AP.OutStreamer.AddComment("safe point address");
+          AP.OutStreamer.AddBlankLine();
+          voidPtrsForThisFunction++;
         }
       }
+      sNumStackMapBytesEmitted += i32sForThisFunction * sizeof(int32_t)
+                                + voidPtrsForThisFunction * sizeof(void*);
     }
   }
 };
