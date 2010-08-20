@@ -1612,6 +1612,7 @@ bool isComposedOfIntLiterals(ExprAST* ast) {
   return true;
 }
 
+#if 0
 llvm::GlobalVariable* getGlobalArrayVariable(SeqAST* body,
                                              const llvm::ArrayType* arrayType) {
   using llvm::GlobalVariable;
@@ -1684,6 +1685,7 @@ void CodegenPass::visit(ArrayExprAST* ast) {
     }
   }
 }
+#endif
 
 void CodegenPass::visit(SimdVectorAST* ast) {
   if (ast->value) return;

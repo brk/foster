@@ -331,13 +331,14 @@ void PrettyPrintPass::visit(CallAST* ast) {
   scan(pp.tBlockClose);
   scan(pp.tBlockClose);
 }
+#if 0
 // array $0
 void PrettyPrintPass::visit(ArrayExprAST* ast) {
   scan(PPToken("array"));
   scan(PPToken(" "));
   emit(ast->parts[0]);
 }
-
+#endif
 // tuple $0
 void PrettyPrintPass::visit(TupleExprAST* ast) {
   scan(PPToken("tuple"));

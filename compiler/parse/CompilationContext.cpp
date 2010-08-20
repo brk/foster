@@ -6,6 +6,7 @@
 #include "llvm/Target/TargetSelect.h"
 
 #include "base/Assert.h"
+#include "base/FreshNameGenerator.h"
 #include "parse/FosterTypeAST.h"
 #include "parse/FosterSymbolTable.h"
 #include "parse/CompilationContext.h"
@@ -32,9 +33,11 @@ llvm::Module* module = NULL;
 
 map<string, const llvm::Type*> gCachedLLVMTypes;
 
+FreshNameGenerator gFreshNames;
+
 TypeAST*    TypeASTFor(const string& name) {
   if (gCachedLLVMTypes.count(name) == 1) {
-    return TypeAST::get(gCachedLLVMTypes[name]);
+    return NamedTypeAST::get(name, gCachedLLVMTypes[name]);
   } else if (TypeAST* ty = gTypeScope.lookup(name, "")) {
     return ty;
   } else {
@@ -85,3 +88,8 @@ void initializeLLVM() {
 }
 
 } // namespace foster
+
+string freshName(string like) {
+  return foster::gFreshNames.fresh(like);
+}
+

@@ -718,9 +718,11 @@ ExprAST* parseCtorExpr(pTree tree, bool fnMeansClosure,
   if (name == "simd-vector") {
     return new SimdVectorAST(ExprAST_from(seqArgs, fnMeansClosure), sourceRange);
   }
+#if 0
   if (name == "array") {
     return new ArrayExprAST(ExprAST_from(seqArgs, fnMeansClosure), sourceRange);
   }
+#endif
   if (name == "tuple") {
     return new TupleExprAST(ExprAST_from(seqArgs, fnMeansClosure), sourceRange);
   }

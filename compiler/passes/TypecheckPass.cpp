@@ -187,12 +187,12 @@ void TypecheckPass::visit(PrototypeAST* ast) {
 
 void TypecheckPass::visit(FnAST* ast) {
   ASSERT(ast->proto != NULL);
-  ast->proto->accept(this); bool p = ast->proto->type != NULL;
+  ast->proto->accept(this);
 
   if (ast->body != NULL) {
-    ast->body->accept(this);  bool b = ast->body->type  != NULL;
+    ast->body->accept(this);
 
-    if (p && b) {
+    if (ast->proto->type && ast->body->type) {
       ast->type = ast->proto->type;
     }
   } else {
@@ -689,9 +689,12 @@ void TypecheckPass::visit(SubscriptAST* ast) {
 
   if (compositeTy) {
     ast->type = compositeTy->getContainedType(vidx.getSExtValue());
-  } else {
+  }
+#if 0
+  else {
     ast->type = TypeAST::get(arrayTy->getElementType());
   }
+#endif
 
   if (this->inAssignLHS) {
     ast->type = RefTypeAST::get(ast->type, /*nullable*/ false);
@@ -889,6 +892,7 @@ int extractNumElementsAndElementType(unsigned int maxSize, ExprAST* ast,
   return 0;
 }
 
+#if 0
 void TypecheckPass::visit(ArrayExprAST* ast) {
   bool success = true;
   std::map<const Type*, bool> fieldTypes;
@@ -949,6 +953,7 @@ void TypecheckPass::visit(ArrayExprAST* ast) {
     ast->type = TypeAST::get(llvm::ArrayType::get(elementType, numElements));
   }
 }
+#endif
 
 bool isPrimitiveNumericType(const Type* ty) {
   return ty->isFloatingPointTy() || ty->isIntegerTy();

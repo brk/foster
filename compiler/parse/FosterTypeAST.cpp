@@ -55,35 +55,15 @@ bool arePhysicallyCompatible(const llvm::Type* src,
 //virtual
 TypeAST::~TypeAST() {}
 
-map<const llvm::Type*, TypeAST*> TypeAST::thinWrappers;
-
 static map<const llvm::Type*, TypeAST*> seen;
 
-TypeAST* TypeAST::i(int n) { return TypeAST::get(llvmIntType(n)); }
-
-TypeAST* TypeAST::getVoid() {
-  return TypeAST::get(llvm::Type::getVoidTy(llvm::getGlobalContext()));
+TypeAST* TypeAST::i(int n) {
+  std::stringstream ss; ss << "i" << n;
+  return NamedTypeAST::get(ss.str(), llvmIntType(n));
 }
 
-TypeAST* TypeAST::get(const llvm::Type* loweredType) {
-  if (!loweredType) return NULL;
-  if (const llvm::DerivedType* derived
-                       = llvm::dyn_cast<const llvm::DerivedType>(loweredType)) {
-    if (llvm::dyn_cast<const llvm::IntegerType>(loweredType)) {
-      // fall through to non-derived case
-    } else {
-      std::cerr << "TypeAST::get() warning: derived types should "
-                   " not be passed to TypeAST::get()! Got: "
-                << str(loweredType) << std::endl;
-      return TypeAST::reconstruct(derived);
-    }
-  }
-  
-  TypeAST* tyast = thinWrappers[loweredType];
-  if (tyast) { return tyast; }
-  tyast = new TypeAST(loweredType, SourceRange::getEmptyRange()); 
-  thinWrappers[loweredType] = tyast;
-  return tyast;
+TypeAST* TypeAST::getVoid() {
+  return NamedTypeAST::get("void", llvm::Type::getVoidTy(llvm::getGlobalContext()));
 }
 
 TypeAST* TypeAST::reconstruct(const llvm::Type* loweredType) {
@@ -91,8 +71,7 @@ TypeAST* TypeAST::reconstruct(const llvm::Type* loweredType) {
     const llvm::Type* pointee = loweredType->getContainedType(0);
     if (TypeAST* s = seen[pointee]) {
       if (s == (TypeAST*) 1) {
-        return RefTypeAST::get(new TypeAST(pointee,
-                                   SourceRange::getEmptyRange()));
+        return RefTypeAST::get(NamedTypeAST::get("bogus/opaque!", pointee));
       } else {
         return s;
       }
@@ -120,20 +99,14 @@ TypeAST* TypeAST::reconstruct(const llvm::Type* loweredType) {
     return TupleTypeAST::get(args);
   }
   
-  if (const llvm::ArrayType* aty =
-    llvm::dyn_cast<const llvm::ArrayType>(loweredType)) {
-    // TODO add ArrayTypeAST...
-    return new TypeAST(loweredType, SourceRange::getEmptyRange());
-  }
-  
   if (const llvm::OpaqueType* ty =
             llvm::dyn_cast<const llvm::OpaqueType>(loweredType)) {
-    return new TypeAST(loweredType, SourceRange::getEmptyRange());
+    return NamedTypeAST::get("opaque", loweredType);
   }
   
-  llvm::outs() << "TypeAST::reconstruct() deferring to TypeAST::get() for " << str(loweredType) << "\n";
+  llvm::outs() << "TypeAST::reconstruct() unable to reconstruct " << str(loweredType) << "\n";
 
-  return TypeAST::get(loweredType);
+  return NULL;
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -148,6 +121,40 @@ bool TypeAST::canConvertTo(TypeAST* otherType) {
               << str(otherType) << std::endl;
   }
   return rv;
+}
+
+
+////////////////////////////////////////////////////////////////////
+
+map<const llvm::Type*, TypeAST*> NamedTypeAST::thinWrappers;
+
+TypeAST* NamedTypeAST::get(const std::string& name,
+                           const llvm::Type* loweredType) {
+  if (!loweredType) return NULL;
+  if (const llvm::DerivedType* derived
+                       = llvm::dyn_cast<const llvm::DerivedType>(loweredType)) {
+    if (llvm::dyn_cast<const llvm::IntegerType>(loweredType)) {
+      // fall through to non-derived case
+    } else {
+      std::cerr << "TypeAST::get() warning: derived types should "
+                   " not be passed to TypeAST::get()! Got: "
+                << str(loweredType) << std::endl;
+      return TypeAST::reconstruct(derived);
+    }
+  }
+
+  TypeAST* tyast = thinWrappers[loweredType];
+  if (tyast) { return tyast; }
+  tyast = new NamedTypeAST(name, loweredType, SourceRange::getEmptyRange());
+  thinWrappers[loweredType] = tyast;
+  return tyast;
+}
+
+////////////////////////////////////////////////////////////////////
+
+TypeVariableAST* TypeVariableAST::get(const std::string& name,
+                                      const SourceRange& sourceRange) {
+  return new TypeVariableAST(freshName(name), sourceRange);
 }
 
 ////////////////////////////////////////////////////////////////////

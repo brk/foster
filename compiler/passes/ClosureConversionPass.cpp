@@ -160,7 +160,7 @@ void ClosureConversionPass::visit(CallAST* ast)                {
   }
   visitChildren(ast); return;
 }
-void ClosureConversionPass::visit(ArrayExprAST* ast)           { return; }
+//void ClosureConversionPass::visit(ArrayExprAST* ast)           { return; }
 void ClosureConversionPass::visit(TupleExprAST* ast)           { return; }
 void ClosureConversionPass::visit(BuiltinCompilesExprAST* ast) { return; }
 

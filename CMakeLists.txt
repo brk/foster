@@ -205,6 +205,8 @@ add_library(fosterc_base STATIC
   compiler/base/PathManager.cpp
   compiler/base/SourceRange.cpp
   compiler/base/TimingsRepository.cpp
+  compiler/base/FreshNameGenerator.cpp
+  third_party/pystring/pystring.cpp
 )
 add_dependencies(fosterc_base fosterc_config_h)
 
@@ -218,7 +220,6 @@ add_library(fosterc_parse STATIC
   compiler/parse/OperatorPrecedence.cpp
   compiler/parse/ProtobufToAST.cpp
   compiler/parse/FosterUtils.cpp
-  third_party/pystring/pystring.cpp
   ${GENERATED}/FosterAST.pb.cc
   ${GENERATED}/fosterParser.c
   ${GENERATED}/fosterLexer.c
@@ -258,8 +259,9 @@ add_executable(fosterc
 )
 
 target_link_libraries(fosterc
-  fosterc_base fosterc_parse fosterc_llvm
-  ${PROTOBUF_LIBRARY} antlr3c ${LLVM_LDFLAGS})
+  fosterc_parse fosterc_base
+  fosterc_llvm
+  antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
 
 add_dependencies(fosterc libfoster_bc)
 
@@ -275,8 +277,8 @@ add_executable(pbfosterview
   compiler/passes/TypecheckPass.cpp
 )
 target_link_libraries(pbfosterview
-  fosterc_base fosterc_parse antlr3c
-  ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
+  fosterc_parse fosterc_base
+  antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
 
 #####################################################################
 
@@ -285,9 +287,12 @@ add_executable(unittest_fosterc_base
   ${PROJECT_SOURCE_DIR}/compiler/base/PathManager_unittest.cpp
   ${PROJECT_SOURCE_DIR}/compiler/base/SourceRange_unittest.cpp
   ${PROJECT_SOURCE_DIR}/compiler/base/FilteringIterator_unittest.cpp
+  ${PROJECT_SOURCE_DIR}/compiler/base/FreshNameGenerator_unittest.cpp
 )
 target_link_libraries(unittest_fosterc_base
-  fosterc_base fosterc_parse antlr3c gtest_main ${LLVM_LDFLAGS})
+  fosterc_parse fosterc_base
+  gtest_main
+  antlr3c ${LLVM_LDFLAGS})
 
 #######
 
@@ -301,12 +306,12 @@ add_executable(unittest_fosterc_parse
   ${PROJECT_SOURCE_DIR}/compiler/passes/TypecheckPass.cpp
   ${PROJECT_SOURCE_DIR}/compiler/passes/DumpToProtobuf.cpp
   ${PROJECT_SOURCE_DIR}/compiler/passes/PrettyPrintPass.cpp
-  ${PROJECT_SOURCE_DIR}/third_party/pystring/pystring.cpp
   ${GENERATED}/FosterAST.pb.cc
 )
 target_link_libraries(unittest_fosterc_parse
-  fosterc_base fosterc_parse
-  ${PROTOBUF_LIBRARY} antlr3c gtest_main ${LLVM_LDFLAGS})
+  fosterc_parse fosterc_base
+  gtest_main
+  antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
 
 #####################################################################
 

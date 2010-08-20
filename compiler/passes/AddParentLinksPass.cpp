@@ -59,7 +59,7 @@ void AddParentLinksPass::visit(SubscriptAST* ast)           { return; }
 void AddParentLinksPass::visit(SimdVectorAST* ast)          { return; }
 void AddParentLinksPass::visit(SeqAST* ast)                 { return; }
 void AddParentLinksPass::visit(CallAST* ast)                { visitChildren(ast); }
-void AddParentLinksPass::visit(ArrayExprAST* ast)           { return; }
+//void AddParentLinksPass::visit(ArrayExprAST* ast)           { return; }
 void AddParentLinksPass::visit(TupleExprAST* ast)           { return; }
 void AddParentLinksPass::visit(BuiltinCompilesExprAST* ast) { visitChildren(ast); }
 

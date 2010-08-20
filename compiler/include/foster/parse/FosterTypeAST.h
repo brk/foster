@@ -63,8 +63,6 @@ protected:
   const llvm::Type* repr;
   const SourceRange sourceRange;
 
-  static std::map<const llvm::Type*, TypeAST*> thinWrappers;
-
   explicit TypeAST(const llvm::Type* underlyingType,
                    const SourceRange& sourceRange)
     : repr(underlyingType), sourceRange(sourceRange) {}
@@ -73,15 +71,12 @@ public:
   const SourceRange& getSourceRange() const { return sourceRange; }
   virtual const llvm::Type* getLLVMType() const { return repr; }
 
-  virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
+  virtual void accept(TypeASTVisitor* visitor) = 0;
 
   virtual bool canConvertTo(TypeAST* otherType);
 
   static TypeAST* i(int n);
   static TypeAST* getVoid();
-  // get() should be used for primitive LLVM types;
-  // reconstruct() should be used for derived llvm types.
-  static TypeAST* get(const llvm::Type* loweredType);
   
   // In some situations, such as (for now)
   // when a llvm::Module gives us a function type, we need
@@ -94,6 +89,37 @@ public:
   static TypeAST* reconstruct(const llvm::Type* loweredType);
 };
 
+class TypeVariableAST : public TypeAST {
+  explicit TypeVariableAST(const std::string& typeName,
+                           const SourceRange& sourceRange)
+    : TypeAST(NULL, sourceRange) {}
+
+public:
+  virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
+
+  static TypeVariableAST* get(const std::string& name, const SourceRange& sourceRange);
+};
+
+class NamedTypeAST : public TypeAST {
+  const std::string name;
+  explicit NamedTypeAST(const std::string& typeName, TypeAST* underlyingType,
+                        const SourceRange& sourceRange)
+     : TypeAST(underlyingType->getLLVMType(), sourceRange), name(typeName) {}
+
+  explicit NamedTypeAST(const std::string& typeName, const llvm::Type* underlyingType,
+                          const SourceRange& sourceRange)
+       : TypeAST(underlyingType, sourceRange), name(typeName) {}
+
+  static std::map<const llvm::Type*, TypeAST*> thinWrappers;
+
+public:
+  virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
+
+  // get() should be used for primitive LLVM types;
+  // reconstruct() should be used for derived llvm types.
+  static TypeAST* get(const std::string& name, const llvm::Type* loweredType);
+};
+
 class IndexableTypeAST : public TypeAST {
 protected:
   explicit IndexableTypeAST(const llvm::Type* underlyingType,
@@ -102,7 +128,7 @@ protected:
   virtual ~IndexableTypeAST() {}
   
 public:
-  virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
+  virtual void accept(TypeASTVisitor* visitor) = 0;
 
   virtual TypeAST* getContainedType(size_t idx) const = 0;
   virtual int64_t  getNumElements() const = 0; 

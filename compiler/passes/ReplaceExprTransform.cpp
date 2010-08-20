@@ -116,6 +116,6 @@ void ReplaceExprTransform::visit(CallAST* ast)                {
   visitChildren(ast);
   this->newChild = rewrite(ast);
 }
-void ReplaceExprTransform::visit(ArrayExprAST* ast)           { visitChildren(ast); this->newChild = rewrite(ast); }
+//void ReplaceExprTransform::visit(ArrayExprAST* ast)           { visitChildren(ast); this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(TupleExprAST* ast)           { visitChildren(ast); this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(BuiltinCompilesExprAST* ast) { visitChildren(ast); this->newChild = rewrite(ast); }

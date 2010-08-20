@@ -13,6 +13,7 @@
 
 #include "antlr3interfaces.h"
 
+#include <string>
 #include <stack>
 #include <map>
 
@@ -21,6 +22,8 @@ struct TypeAST;
 // Defined in ANTLRtoFosterAST.cpp; the header
 // is not #included due to ANTLR macro conflicts.
 void initMaps();
+
+std::string freshName(std::string like);
 
 namespace foster {
 

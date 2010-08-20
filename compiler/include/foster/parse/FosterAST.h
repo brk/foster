@@ -43,8 +43,6 @@ class TypeAST; // fwd decl
 typedef std::vector<ExprAST*> Exprs;
 std::ostream& operator<<(std::ostream& out, ExprAST& expr);
 
-string freshName(string like);
-
 string str(ExprAST* expr);
 string str(TypeAST* type);
 string str(Value* value);
@@ -314,6 +312,7 @@ struct TupleExprAST : public UnaryExprAST {
   }
 };
 
+#if 0
 struct ArrayExprAST : public UnaryExprAST {
   explicit ArrayExprAST(ExprAST* expr, foster::SourceRange sourceRange)
     : UnaryExprAST(expr, sourceRange) {}
@@ -322,6 +321,7 @@ struct ArrayExprAST : public UnaryExprAST {
     return out << "ArrayExpr(" << str(this->parts[0]) << ")";
   }
 };
+#endif
 
 struct SimdVectorAST : public UnaryExprAST {
   // Implicitly, a SeqAST

@@ -4,6 +4,7 @@
 
 #include "base/Assert.h"
 #include "base/Diagnostics.h"
+#include "base/FreshNameGenerator.h"
 #include "parse/FosterAST.h"
 #include "parse/CompilationContext.h"
 #include "parse/ANTLRtoFosterAST.h" // just for parseAPIntFromClean()
@@ -39,29 +40,6 @@ std::ostream& operator<<(std::ostream& out, ExprAST& expr) {
   return expr.operator<<(out);
 }
 
-
-/// Generates a unique name given a template; each template gets a separate
-/// sequence of uniquifying numbers either embedded or appended.
-string freshName(string like) {
-  static std::map<string, int> counts;
-  std::stringstream ss;
-  size_t pos = like.find("%d", 0);
-  int curr = counts[like]++;
-  if (string::npos == pos) { // append uniquifier, if any
-    if (curr == 0) {
-      ss << like; // Only append integer when we see second copy of symbol
-    } else {
-      ss << like << curr;
-    }
-  } else { // If it's a template, make the substitution, even the first time
-    ss << curr; // int>string
-    like.replace(pos, 2, ss.str());
-    ss.str("");
-    ss.clear(); // reset
-    ss << like;
-  }
-  return ss.str();
-}
 
 string str(ExprAST* expr) {
   if (expr) {

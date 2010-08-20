@@ -201,10 +201,11 @@ void DumpToProtobufPass::visit(CallAST* ast)                {
   processExprAST(current, ast, foster::pb::Expr::CALL);
   dumpChildren(this, ast);
 }
-
+#if 0
 void DumpToProtobufPass::visit(ArrayExprAST* ast)           {
   llvm::errs() << "no support for dumping arrays to protobufs!\n";
 }
+#endif
 
 void DumpToProtobufPass::visit(TupleExprAST* ast)           {
   processExprAST(current, ast, foster::pb::Expr::TUPLE);
@@ -247,11 +248,15 @@ void setTagAndRange(foster::pb::Type* target,
 }
 
 
-void DumpTypeToProtobufPass::visit(TypeAST* ast) {
+void DumpTypeToProtobufPass::visit(NamedTypeAST* ast) {
   setTagAndRange(current, ast, foster::pb::Type::LLVM_NAMED);
   string tyname = str(ast->getLLVMType());
   ASSERT(!tyname.empty());
   current->set_llvm_type_name(tyname);
+}
+
+void DumpTypeToProtobufPass::visit(TypeVariableAST* ast) {
+  ASSERT(false) << "no dumping type variables yet!";
 }
 
 void DumpTypeToProtobufPass::visit(FnTypeAST* ast) {
