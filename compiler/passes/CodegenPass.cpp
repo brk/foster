@@ -733,14 +733,12 @@ void CodegenPass::visit(ClosureAST* ast) {
                                        SourceRange::getEmptyRange());
   ExprAST* fnPtr = new VariableAST(ast->fn->proto->name,
                    RefTypeAST::get(ast->fn->type), SourceRange::getEmptyRange());
-  { TypecheckPass tp;
-    fnPtr->accept(&tp);
-    fnPtr->accept(this);
-
-    env->isClosureEnvironment = true;
-    env->accept(&tp);
-    env->accept(this);
-  }
+  typecheck(fnPtr);
+  fnPtr->accept(this);
+  
+  env->isClosureEnvironment = true;
+  typecheck(env);
+  env->accept(this);
 
   if (ast->isTrampolineVersion) {
     if (Function* func = dyn_cast<Function>(fnPtr->value)) {
@@ -1227,7 +1225,8 @@ FnAST* getVoidReturningVersionOf(ExprAST* arg, FnTypeAST* fnty) {
                                 SourceRange::getEmptyRange());
     ExprAST* body = new CallAST(arg, callArgs, SourceRange::getEmptyRange());
     FnAST* fn = new FnAST(proto, body, SourceRange::getEmptyRange());
-    { TypecheckPass tp; CodegenPass cp; fn->accept(&tp); fn->accept(&cp); }
+    typecheck(fn);
+    { CodegenPass cp; fn->accept(&cp); }
     voidReturningVersions[fnName] = fn;
     return fn;
   } else {
@@ -1291,8 +1290,8 @@ llvm::Value* getTrampolineForClosure(ClosureAST* cloAST) {
   ExprAST* fnPtr = new VariableAST(cloAST->fn->proto->name,
                                RefTypeAST::get(cloAST->fn->type),
                                SourceRange::getEmptyRange());
-  { TypecheckPass tp; CodegenPass cp;
-    fnPtr->accept(&tp);
+  { typecheck(fnPtr);
+    CodegenPass cp;
     fnPtr->accept(&cp);
   }
   Value* codePtr = fnPtr->value;
@@ -1346,7 +1345,7 @@ FnAST* getClosureVersionOf(ExprAST* arg, FnTypeAST* fnty) {
                                                SourceRange::getEmptyRange());
     ExprAST* body = new CallAST(arg, callArgs, SourceRange::getEmptyRange());
     FnAST* fn = new FnAST(proto, body, SourceRange::getEmptyRange());
-    { TypecheckPass tp; CodegenPass cp; fn->accept(&tp); fn->accept(&cp); }
+    { typecheck(fn); CodegenPass cp; fn->accept(&cp); }
     closureVersions[fnName] = fn;
     return fn;
   } else {
@@ -1472,7 +1471,7 @@ void CodegenPass::visit(CallAST* ast) {
         std::cout << "clo 1347 = " << clo << std::endl;
         clo->hasKnownEnvironment = true; // Empty by definition!
         arg = clo;
-        { TypecheckPass tp; arg->accept(&tp); }
+        typecheck(arg);
       //
       // One slightly more clever approach could use a trampoline to reduce
       // code bloat. Instead of one "closure version" per function, we'd

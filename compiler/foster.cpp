@@ -512,6 +512,8 @@ int main(int argc, char** argv) {
     exprAST = foster::parseModule(infile, parseTree, ctx, numParseErrors, &cc);
   }
   
+  foster::gCompilationContexts.push(&cc);
+
   if (optDumpASTs) {
     llvm::outs() << "dumping parse trees" << "\n";
     if (1) {
@@ -562,7 +564,7 @@ int main(int argc, char** argv) {
   }
 
   { ScopedTimer timer("foster.typecheck");
-    TypecheckPass tyPass; exprAST->accept(&tyPass);
+    typecheck(exprAST);
   }
 
   bool sema = exprAST->type != NULL;
@@ -655,6 +657,7 @@ int main(int argc, char** argv) {
     llvm::errs().flush();
   }
 
+  foster::gCompilationContexts.pop();
   foster::deleteANTLRContext(ctx);
   delete wholeProgramTimer;
 

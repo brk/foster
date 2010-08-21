@@ -185,7 +185,7 @@ public:
   }
 };
 
-IntAST* literalIntAST(int lit);
+IntAST* literalIntAST(int lit, const foster::SourceRange& sourceRange);
 
 struct BoolAST : public ExprAST {
   bool boolValue;

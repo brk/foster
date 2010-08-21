@@ -41,5 +41,14 @@ public:
   ~PrettyPrintPass() {}
 };
 
+class TypeAST;
+
+namespace foster {
+
+void prettyPrintType(TypeAST* t,
+                     std::ostream& out, int width = 80, int indent_width = 2);
+
+} // namespace foster
+
 #endif // header guard
 

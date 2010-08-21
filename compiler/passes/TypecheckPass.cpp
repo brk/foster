@@ -5,6 +5,7 @@
 #include "base/Assert.h"
 #include "base/Diagnostics.h"
 #include "passes/TypecheckPass.h"
+#include "passes/PrettyPrintPass.h"
 #include "parse/FosterAST.h"
 #include "parse/CompilationContext.h"
 
@@ -30,42 +31,183 @@ using llvm::ConstantInt;
 
 #include <vector>
 #include <map>
+#include <string>
 
 using std::vector;
 
+#include "parse/ExprASTVisitor.h"
+
+bool isPrintRef(const ExprAST* base) {
+  if (const VariableAST* var = dynamic_cast<const VariableAST*>(base)) {
+    if (var->name == "print_ref") {
+      return true;
+    }
+  }
+  return false;
+}
+
+
+struct TypeASTSet {
+  virtual bool contains(TypeAST* ty) = 0;
+};
+
+struct IntOrIntVectorTypePredicate : public TypeASTSet {
+  virtual bool contains(TypeAST* ty) { return false; }
+};
+
+struct TypecheckPass : public ExprASTVisitor {
+
+  struct Constraints {
+    bool conservativeEqualTypeFilter(TypeAST* t1, TypeAST* t2) {
+      // we mainly want to avoid accumulating a large number
+      // of trivial i32 = i32 etc constraints...
+      if (t1->tag != t2->tag) return false;
+
+      if (NamedTypeAST* nt1 = dynamic_cast<NamedTypeAST*>(t1)) {
+        if (NamedTypeAST* nt2 = dynamic_cast<NamedTypeAST*>(t2)) {
+          return nt1->getName() == nt2->getName();
+        } else { return false; }
+      }
+
+      return false; // conservative approximation
+    }
+
+    struct TypeTypeConstraint { ExprAST* context; TypeAST* t1; TypeAST* t2;
+           TypeTypeConstraint(ExprAST* c, TypeAST* t1, TypeAST* t2) : context(c), t1(t1), t2(t2) {}
+    };
+    struct TypeInSetConstraint { ExprAST* context; TypeAST* ty; TypeASTSet* tyset;
+           TypeInSetConstraint(ExprAST* c, TypeAST* t1, TypeASTSet* ts) : context(c), ty(t1), tyset(ts) {}
+    };
+
+
+    // This constraint type is restricted to only allow sets of concrete types.
+    // The upshot is that checking these constraints can be delayed until
+    // all other constraints have been collected and solved for, and these
+    // constraints don't interfere with resolving type variables.
+    vector<TypeInSetConstraint> tysets;
+    bool addTypeInSet(ExprAST* context, TypeAST* ty, TypeASTSet* tyset) {
+      tysets.push_back(TypeInSetConstraint(context, ty, tyset));
+      return true;
+    }
+
+    vector<TypeTypeConstraint> convs;
+    bool addCanConvertFromTo(ExprAST* context, TypeAST* tyfrom, TypeAST* tyto) {
+      if (conservativeEqualTypeFilter(tyfrom, tyto)) return true;
+
+      convs.push_back(TypeTypeConstraint(context, tyfrom, tyto));
+      return true;
+    }
+
+    vector<TypeTypeConstraint> eqs;
+    bool addEq(ExprAST* context, TypeAST* t1, TypeAST* t2) {
+      if (conservativeEqualTypeFilter(t1, t2)) return true;
+
+      eqs.push_back(TypeTypeConstraint(context, t1, t2));
+      return true;
+    }
+
+    bool empty() {
+      return eqs.empty() && convs.empty() && tysets.empty();
+    }
+
+    void show(llvm::raw_ostream& out) {
+      out << "==============================\n";
+      out << "-------- type equality constraints ---------\n";
+      for (size_t i = 0; i < eqs.size(); ++i) {
+        out << "\t" << str(eqs[i].t1) << " == " << str(eqs[i].t2) << "\n";
+      }
+      out << "-------- type conversion constraints ---------\n";
+      for (size_t i = 0; i < convs.size(); ++i) {
+        out << "\t" << str(convs[i].t1) << " to " << str(convs[i].t2) << "\n";
+      }
+      out << "-------- type subset constraints ---------\n";
+      for (size_t i = 0; i < tysets.size(); ++i) {
+        out << "\t" << str(tysets[i].ty) << "\n";
+      }
+      out << "==============================\n";
+    }
+  };
+  Constraints constraints;
+
+
+  explicit TypecheckPass() {}
+  ~TypecheckPass() {
+    if (!constraints.empty()) {
+      constraints.show(llvm::outs());
+    }
+  }
+
+  #include "parse/ExprASTVisitor.decls.inc.h"
+};
+
+namespace foster {
+
+bool typecheck(ExprAST* e) {
+  TypecheckPass tp; e->accept(&tp);
+  return true;
+}
+
+} // namespace foster
+
 ////////////////////////////////////////////////////////////////////
 
+// A bool is a bit, which is a one-bit integer.
 void TypecheckPass::visit(BoolAST* ast) { ast->type = TypeAST::i(1); }
 
+// Integer literals have a "tightest-possible" bit width assigned to them
+// during parsing, based on how many bits it takes to represent the literal.
+// So we just make sure that we have a type, and that it's an int type.
 void TypecheckPass::visit(IntAST* ast) {
-  ASSERT(ast->type);
+  ASSERT(ast->type
+      && ast->type->getLLVMType()
+      && ast->type->getLLVMType()->isIntegerTy());
 }
+
 
 void TypecheckPass::visit(VariableAST* ast) {
   if (ast->type) { return; }
   
-  EDiag() << "variable " << ast->name << " has no type!" << show(ast);
+  //EDiag() << "variable " << ast->name << " has no type!" << show(ast);
+  ast->type = TypeVariableAST::get(ast->name, ast->sourceRange);
 }
+
+// unary negate :: (int -> int) | (intvector -> intvector)
+// unary not    :: i1 -> i1
 
 void TypecheckPass::visit(UnaryOpExprAST* ast) {
   TypeAST* innerType = ast->parts[0]->type;
-  const llvm::Type* opTy = innerType->getLLVMType();
+  if (!innerType) {
+    return;
+  }
+
   const std::string& op = ast->op;
 
   if (op == "-") {
-    if (opTy == LLVMTypeFor("i1")) {
-      EDiag() << "unary '-' used on a boolean; use 'not' instead" << show(ast);
-      return;
-    }
+    if (innerType->isTypeVariable()) { // hack for now, until we get type classes
+      constraints.addTypeInSet(ast, innerType, new IntOrIntVectorTypePredicate());
+    } else {
+      const llvm::Type* opTy = innerType->getLLVMType();
+      ASSERT(opTy);
 
-    if (!(opTy->isIntOrIntVectorTy())) {
-      EDiag() << "operand to unary '-' had non-inty type " << str(opTy) << show(ast);
-      return;
+      if (opTy == LLVMTypeFor("i1")) {
+        EDiag() << "unary '-' used on a boolean; use 'not' instead" << show(ast);
+        return;
+      }
+
+      if (!(opTy->isIntOrIntVectorTy())) {
+        EDiag() << "operand to unary '-' had non-inty type " << str(opTy) << show(ast);
+        return;
+      }
     }
   } else if (op == "not") {
-    if (opTy != LLVMTypeFor("i1")) {
-      EDiag() << "operand to unary 'not had non-bool type " << str(opTy) << show(ast);
-      return;
+    if (innerType->isTypeVariable()) { // hack for now, until we get type classes
+      constraints.addTypeInSet(ast, innerType, new IntOrIntVectorTypePredicate());
+    } else {
+      if (innerType != TypeAST::i(1)) {
+        const llvm::Type* opTy = innerType->getLLVMType();
+        EDiag() << "operand to unary 'not had non-bool type " << str(opTy) << show(ast);
+        return;
+      }
     }
   }
 
@@ -77,42 +219,27 @@ bool isBitwiseOp(const std::string& op) {
       || op == "shl" || op == "lshr" || op == "ashr";
 }
 
+// requires Lty convertible to Rty
+// arith ops   :: ((int, int) -> int) | ((intvector, intvector) -> intvector)
+// bitwise ops :: ((int, int) -> int) | ((intvector, intvector) -> intvector)
+// cmp ops     :: ((int, int) -> i1 ) | ((intvector, intvector) -> i1       )
+
 void TypecheckPass::visit(BinaryOpExprAST* ast) {
   TypeAST* Lty = ast->parts[ast->kLHS]->type;
   TypeAST* Rty = ast->parts[ast->kRHS]->type;
-  const llvm::Type* TL = Lty->getLLVMType();
+
+  if (!Lty || !Rty) { return; }
 
   const std::string& op = ast->op;
 
-  if (! Lty->canConvertTo(Rty)) {
-    // TODO handle conversions more systematically, and symmetrically
-    EDiag() << "binary op '" << op << "' had differently typed sides"
-            << show(ast);
-  } else if (!TL) {
-    EDiag() << "binary op '" << op << "' failed to typecheck subexprs"
-            << show(ast);
+  constraints.addCanConvertFromTo(ast, Lty, Rty);
+  constraints.addTypeInSet(ast, Lty, new IntOrIntVectorTypePredicate());
+  constraints.addTypeInSet(ast, Rty, new IntOrIntVectorTypePredicate());
+
+  if (isCmpOp(op)) {
+    ast->type = TypeAST::i(1);
   } else {
-    if (op == "+" || op == "-" || op == "*" || op == "/") {
-      if (!TL->isIntOrIntVectorTy()) {
-        EDiag() << "opr '" << op << "' used with non-inty type " << str(TL)
-                << show (ast);
-        return;
-      }
-    }
-
-    if (isBitwiseOp(op)) {
-      if (!TL->isIntOrIntVectorTy()) {
-        EDiag() << "bitwise op '" << op << "' used with non-inty type "
-                << str(TL) << show(ast);
-        return;
-      }
-    }
-
-    if (isCmpOp(op)) {
-      ast->type = TypeAST::i(1);
-    } else {
-      ast->type = Lty;
-    }
+    ast->type = Rty;
   }
 }
 
@@ -157,16 +284,21 @@ void TypecheckPass::visit(PrototypeAST* ast) {
   vector<TypeAST*> argTypes;
   for (size_t i = 0; i < ast->inArgs.size(); ++i) {
     ASSERT(ast->inArgs[i] != NULL);
+    VariableAST* arg = (ast->inArgs[i]);
 
-    if (ast->inArgs[i]->noFixedType()) {
-      // Wait until type inference to resolve the arg's declared type.
-      return;
+    arg->accept(this);
+    /*
+    if (!arg->type) {
+      arg->type = TypeVariableAST::get(arg->name, arg->sourceRange);
+      std::cout << "Adding type annotation to arg " << arg->name << ": " << arg->type << std::endl;
+    } else {
+
     }
-    ast->inArgs[i]->accept(this);
-    TypeAST* ty =  ast->inArgs[i]->type;
+*/
+    TypeAST* ty =  arg->type;
     if (ty == NULL) {
       std::cerr << "Error: proto " << ast->name << " had "
-        << "null type for arg '" << ast->inArgs[i]->name << "'" << std::endl;
+        << "null type for arg '" << arg->name << "'" << std::endl;
       return;
     }
 
@@ -186,6 +318,7 @@ void TypecheckPass::visit(PrototypeAST* ast) {
 }
 
 void TypecheckPass::visit(FnAST* ast) {
+  std::cout << "type checking FnAST" << std::endl;
   ASSERT(ast->proto != NULL);
   ast->proto->accept(this);
 
@@ -202,9 +335,12 @@ void TypecheckPass::visit(FnAST* ast) {
 }
 
 void TypecheckPass::visit(ClosureAST* ast) {
-  std::cout << "Type Checking closure AST node " << (*ast) << std::endl;
+  std::cout << "Type Checking closure AST node " << (*ast) << " ;; " << ast->fn << "; "
+            << ast->hasKnownEnvironment << std::endl;
+
+  ast->fn->accept(this);
+
   if (ast->hasKnownEnvironment) {
-    ast->fn->accept(this);
     visitChildren(ast);
 
     if (!ast->fn || !ast->fn->type) { return; }
@@ -226,7 +362,6 @@ void TypecheckPass::visit(ClosureAST* ast) {
               << " does not have function type!" << show(ast);
     }
   } else {
-    ast->fn->accept(this);
     if (FnTypeAST* ft = tryExtractCallableType(ast->fn->type)) {
       ast->type = genericClosureTypeFor(ft);
       EDiag() << "ClosureTypeAST fn typechecking converted "
@@ -236,6 +371,11 @@ void TypecheckPass::visit(ClosureAST* ast) {
               << "does not have function type!" << show(ast);
     }
   }
+
+  std::cout << "After type checking closure, have: \n";
+  PrettyPrintPass pp(std::cout, 55);
+  ast->accept(&pp);
+  std::cout << "\n";
 }
 
 void TypecheckPass::visit(NamedTypeDeclAST* ast) {
@@ -251,10 +391,21 @@ void TypecheckPass::visit(ModuleAST* ast) {
   }
 }
 
+// type(testExpr) == i1
+// type(thenExpr) == type(elseExpr)
+// type(ifExpr) == type(thenExpr)
 void TypecheckPass::visit(IfExprAST* ast) {
   ASSERT(ast->testExpr != NULL);
 
   ast->testExpr->accept(this);
+  ast->thenExpr->accept(this);
+  ast->elseExpr->accept(this);
+
+  constraints.addEq(ast, ast->testExpr->type, TypeAST::i(1));
+  constraints.addEq(ast, ast->thenExpr->type, ast->elseExpr->type);
+  ast->type = ast->thenExpr->type;
+
+#if 0
   const Type* ifType = ast->testExpr->type->getLLVMType();
   if (!ifType) {
     EDiag() << "if condition had null type" << show(ast->testExpr);
@@ -287,13 +438,37 @@ void TypecheckPass::visit(IfExprAST* ast) {
   } else {
     ast->type = thenType;
   }
+#endif
 }
 
+// ast = for VAR in START to END by INCR do BODY
+// type(start) == i32
+// type(start) == type(var)
+// type(start) == type(end)
+// type(start) == type(incr)
 void TypecheckPass::visit(ForRangeExprAST* ast) {
   ASSERT(ast->startExpr != NULL);
+  ASSERT(ast->bodyExpr != NULL);
+  ASSERT(ast->endExpr != NULL);
+  ASSERT(ast->var != NULL);
 
-  // ast = for VAR in START to END by INCR do BODY
+  // If not present in source, should be set in BuildCFG.
+  ASSERT(ast->incrExpr != NULL);
 
+  ast->startExpr->accept(this);
+  ast->bodyExpr->accept(this);
+  ast->incrExpr->accept(this);
+  ast->endExpr->accept(this);
+  ast->var->accept(this);
+
+  constraints.addEq(ast, ast->startExpr->type, TypeAST::i(32));
+  // note: this "should" be a test for assignment compatibility, not strict equality.
+  constraints.addEq(ast, ast->startExpr->type, ast->var->type);
+  constraints.addEq(ast, ast->startExpr->type, ast->endExpr->type);
+  constraints.addEq(ast, ast->startExpr->type, ast->incrExpr->type);
+  ast->type = TypeAST::i(32);
+
+#if 0
   // Check type of START
   ast->startExpr->accept(this);
   TypeAST* startType = ast->startExpr->type;
@@ -354,6 +529,7 @@ void TypecheckPass::visit(ForRangeExprAST* ast) {
   }
 
   ast->type = TypeAST::i(32);
+#endif
 }
 
 int indexInParent(ExprAST* child, int startingIndex) {
@@ -368,7 +544,8 @@ int indexInParent(ExprAST* child, int startingIndex) {
 
 void TypecheckPass::visit(NilExprAST* ast) {
   if (ast->type) return;
-
+  ast->type = RefTypeAST::get(TypeVariableAST::get("nil", ast->sourceRange), true);
+#if 0
   // TODO this will eventually be superceded by real type inference
   if (ast->parent && ast->parent->parent) {
     if (ast->parent->parent->type) {
@@ -454,6 +631,7 @@ void TypecheckPass::visit(NilExprAST* ast) {
     }
     ////std::cout << "nil given type: " << str(ast->type) << std::endl;
   }
+#endif
 }
 
 bool exprBindsName(ExprAST* ast, const std::string& name) {
@@ -541,20 +719,31 @@ bool isOkayToDeref(VariableAST* ast, ExprAST* parent) {
 // the root must be stored on the stack; thus, new T is implemented
 // so that it evaluates to a T** (a stack slot containing a T*)
 // instead of a simple T*, which would not be modifiable by the GC.
+// In effect, *every* pointer has a mutable concrete representation
+// at the implementation level, but not all pointers expose that
+// mutability to the source language.
 void TypecheckPass::visit(RefExprAST* ast) {
-  if (ast->parts[0] && ast->parts[0]->type) {
-    ast->type = RefTypeAST::get(
-                      ast->parts[0]->type,
-                      ast->isNullable);
-  } else {
-    ast->type = NULL;
-  }
+  ASSERT(ast->parts[0] && ast->parts[0]->type);
+
+  ast->type = RefTypeAST::get(
+                    ast->parts[0]->type,
+                    ast->isNullable);
 }
 
+// G |- e : ref(T)
+// ---------------
+// deref(e) : T
+//
 void TypecheckPass::visit(DerefExprAST* ast) {
   ASSERT(ast->parts[0]->type) << "Need arg to typecheck deref!";
+  ExprAST* e = ast->parts[0];
 
-  TypeAST* derefType = ast->parts[0]->type;
+  TypeAST* refT = e->type;
+  TypeAST* T = TypeVariableAST::get("deref", ast->sourceRange);
+
+  constraints.addEq(ast, RefTypeAST::get(T, false), refT);
+  ast->type = T;
+#if 0
   if (RefTypeAST* ptrTy = dynamic_cast<RefTypeAST*>(derefType)) {
     ast->type = ptrTy->getElementType();
 
@@ -575,12 +764,23 @@ void TypecheckPass::visit(DerefExprAST* ast) {
     std::cerr << "base: " << *(ast->parts[0]) << std::endl;
     ast->type = NULL;
   }
+#endif
 }
 
+// G |- v : T
+// G |- x : ref(T)
+// ---------------
+// (set x = v) : i32
+//
 void TypecheckPass::visit(AssignExprAST* ast) {
   TypeAST* lhsTy = ast->parts[0]->type;
   TypeAST* rhsTy = ast->parts[1]->type;
 
+  constraints.addEq(ast, RefTypeAST::get(lhsTy, false), rhsTy);
+
+  ast->type = TypeAST::i(32);
+
+#if 0
   if (RefTypeAST* plhsTy = dynamic_cast<RefTypeAST*>(lhsTy)) {
     lhsTy = plhsTy->getElementType();
     if (rhsTy->canConvertTo(lhsTy)) {
@@ -597,6 +797,7 @@ void TypecheckPass::visit(AssignExprAST* ast) {
             << show(ast);
     ast->type = NULL;
   }
+#endif
 }
 
 // Returns aggregate (struct, array, union) and vector types directly,
@@ -610,6 +811,11 @@ IndexableTypeAST* tryGetIndexableType(TypeAST* ty) {
   return dynamic_cast<IndexableTypeAST*>(ty);
 }
 
+// base[index]
+//
+// For now, we require explicit annotations to ensure typeability
+// of subscript indexing without needing type classes or other
+// overloading mechanisms.
 void TypecheckPass::visit(SubscriptAST* ast) {
   if (!ast->parts[1]) {
     EDiag() << "subscript index was null" << show(ast);
@@ -647,8 +853,8 @@ void TypecheckPass::visit(SubscriptAST* ast) {
 
   
   IndexableTypeAST* compositeTy = tryGetIndexableType(baseType);
-  const llvm::ArrayType* arrayTy =
-              llvm::dyn_cast<llvm::ArrayType>(baseType->getLLVMType());
+  const llvm::ArrayType* arrayTy = NULL;
+              //llvm::dyn_cast<llvm::ArrayType>(baseType->getLLVMType());
   if (!compositeTy && !arrayTy) {
     EDiag() << "attempt to index into a non-indexable type "
             << str(baseType) << show(ast);
@@ -708,36 +914,56 @@ void TypecheckPass::visit(SeqAST* ast) {
       if (!ast->parts[i]->type) { success = false; }
     } else {
       std::cerr << "Null expr in SeqAST" << std::endl;
+      ast->type = TypeAST::i(32);
       return;
     }
   }
 
-  if (!success || ast->parts.empty()) {
-    EDiag() << "expression block must not be empty" << show(ast);
-    return;
-  }
+  //ASSERT(success) << "found ast nodes with null types in SeqAST";
 
-  ast->type = ast->parts.back()->type;
+  if (ast->parts.empty()) {
+    EDiag() << "expression block must not be empty" << show(ast);
+    ast->type = TypeAST::i(32);
+  } else if (ast->parts.back() && ast->parts.back()->type) {
+    ast->type = ast->parts.back()->type;
+  } else {
+    EDiag() << "non-empty expression block with no usable type!" << show(ast);
+    ast->type = TypeAST::i(32);
+  }
 }
 
 // HACK HACK HACK - give print_ref special polymorphic type (with hardcoded ret ty)
+//
+// G |- e : ref(T)
+// ----------
+// G |- (print_ref(e)) : i32
 void givePrintRefPseudoPolymorphicType(CallAST* ast, TypecheckPass* pass) {
+  ast->type = TypeAST::i(32);
+
  if (ast->parts.size() < 2) {
-    EDiag() << "arity mismatch, required one argument but got none"
+    EDiag() << "arity mismatch, required one argument for print_ref() but got none"
             << show(ast);
     return;
   }
 
   ExprAST* arg = ast->parts[1];
   arg->accept(pass);
+  
   if (!arg->type) {
     EDiag() << "print_ref() given arg of no discernable type" << show(arg);
-  } else if (!arg->type->getLLVMType()->isPointerTy()) {
+    return;
+  }
+
+  TypeAST* refT = RefTypeAST::get(TypeVariableAST::get("printref", arg->sourceRange));
+  
+  pass->constraints.addEq(ast, arg->type, refT);
+
+#if 0
+  if (!arg->type->getLLVMType()->isPointerTy()) {
     EDiag() << "print_ref() given arg of non-ref type " << str(arg->type)
             << show(arg);
-  } else {
-    ast->type = TypeAST::i(32);
   }
+#endif
 }
 
 const FunctionType* getFunctionTypeFromClosureStructType(const Type* ty) {
@@ -754,21 +980,71 @@ const FunctionType* getFunctionTypeFromClosureStructType(const Type* ty) {
 }
 
 void TypecheckPass::visit(CallAST* ast) {
+  std::cout << "type checking CallAST" << std::endl;
+
   ExprAST* base = ast->parts[0];
   if (!base) {
     EDiag() << "called expression was null" << show(ast);
     return;
   }
 
-  base->accept(this);
-  TypeAST* baseType = base->type;
-  if (baseType == NULL) {
-    EDiag() << "called expression had indeterminate type" << show(base);
+  if (isPrintRef(base)) {
+    givePrintRefPseudoPolymorphicType(ast, this);
     return;
   }
 
-  if (isPrintRef(base)) {
-    givePrintRefPseudoPolymorphicType(ast, this);
+  // Collect args in separate zero-based array for easier counting and indexing
+  vector<ExprAST*> args;
+  for (size_t i = 1; i < ast->parts.size(); ++i) {
+    ExprAST* arg = ast->parts[i];
+    if (!arg) {
+      EDiag() << "invalid call, arg " << i << " was null" << show(ast);
+      return;
+    }
+    args.push_back(arg);
+  }
+
+
+  FnAST* literalFnBase = dynamic_cast<FnAST*>(base);
+  std::cout << "literal fn base: " << literalFnBase << std::endl;
+  if (literalFnBase) {
+    // If this is an encoded let-expression   fn (formals) { body }(args)
+    // we should synthesize the args first, then use the synthesized types
+    // as the annotations on the formals.
+    for (size_t i = 0; i < args.size(); ++i) {
+      ExprAST* arg = args[i];
+      arg->accept(this);
+      if (!arg->type) {
+        EDiag() << "call parameter " << i << " had null type" << show(arg);
+        return;
+      }
+    }
+
+    size_t maxSafeIndex = (std::min)(args.size(), literalFnBase->proto->inArgs.size());
+    std::cout << "max safe index: " << maxSafeIndex << "\n";
+    for (size_t i = 0; i < maxSafeIndex; ++i) {
+      dynamic_cast<VariableAST*>(literalFnBase->proto->inArgs[i])->type = args[i]->type;
+    }
+
+    base->accept(this);
+  } else {
+    // Otherwise, we should synthesize the base, then check the args.
+    base->accept(this);
+
+    for (size_t i = 0; i < args.size(); ++i) {
+      ExprAST* arg = args[i];
+      arg->accept(this);
+      if (!arg->type) {
+        EDiag() << "call parameter " << i << " had null type" << show(arg);
+        return;
+      }
+    }
+  }
+
+
+  TypeAST* baseType = base->type;
+  if (baseType == NULL) {
+    EDiag() << "called expression had indeterminate type" << show(base);
     return;
   }
 
@@ -783,25 +1059,6 @@ void TypecheckPass::visit(CallAST* ast) {
     return;
   }
 
-  // Collect args in separate zero-based array for easier counting and indexing
-  vector<ExprAST*> args;
-  for (size_t i = 1; i < ast->parts.size(); ++i) {
-    ExprAST* arg = ast->parts[i];
-    if (!arg) {
-      EDiag() << "invalid call, arg " << i << " was null" << show(ast);
-      return;
-    }
-
-    arg->accept(this);
-    TypeAST* argTy = arg->type;
-    if (!argTy) {
-      EDiag() << "call parameter " << i << " had null type" << show(arg);
-      return;
-    }
-
-    args.push_back(arg);
-  }
-
   size_t numParams = baseFT->getNumParams();
   if (numParams != args.size()) {
     EDiag() << "arity mismatch, " << args.size()
@@ -811,7 +1068,12 @@ void TypecheckPass::visit(CallAST* ast) {
     return;
   }
 
-  bool success = true;
+  for (size_t i = 0; i < numParams; ++i) {
+    TypeAST* formalType = baseFT->getParamType(i);
+    TypeAST* actualType = args[i]->type;
+    constraints.addCanConvertFromTo(ast, actualType, formalType);
+  }
+
   for (size_t i = 0; i < numParams; ++i) {
     TypeAST* formalType = baseFT->getParamType(i);
     TypeAST* actualType = args[i]->type;
@@ -855,20 +1117,9 @@ void TypecheckPass::visit(CallAST* ast) {
         }
       }
     }
-
-    if (!actualType->canConvertTo(formalType)) {
-      success = false;
-      EDiag() << "type mismatch, expected " << str(formalType)
-              << " but got " << str(actualType)
-              << show(args[i]);
-    }
   }
 
-  if (success) {
-    ast->type = baseFT->getReturnType();
-  } else {
-    EDiag() << "unable to typecheck call " << show(ast);
-  }
+  ast->type = baseFT->getReturnType();
 }
 
 /// For now, as a special case, simd-vector and array will interpret { 4;i32 }

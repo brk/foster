@@ -6,6 +6,8 @@
 #include "parse/FosterAST.h"
 #include "parse/ANTLRtoFosterAST.h" // for reconstructing explicit parens
 
+#include <sstream>
+
 ////////////////////////////////////////////////////////////////////
 
 typedef PrettyPrintPass::PrettyPrinter::PPToken PPToken;
@@ -363,3 +365,124 @@ void PrettyPrintPass::visit(BuiltinCompilesExprAST* ast) {
   //scan(pp.tBlockClose);
 }
 
+////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////
+
+#include "parse/TypeASTVisitor.h"
+
+namespace {
+
+struct PrettyPrintTypePass;
+inline void recurse(PrettyPrintTypePass* p, TypeAST* ast);
+
+struct PrettyPrintTypePass : public TypeASTVisitor {
+  #include "parse/TypeASTVisitor.decls.inc.h"
+
+  virtual void visitChildren(ExprAST* ast) {
+   // Only visit children manually!
+  }
+  inline void emit(TypeAST* t) { recurse(this, t); }
+
+  typedef foster::PughSinofskyPrettyPrinter PrettyPrinter;
+
+private:
+  PrettyPrinter pp;
+
+public:
+  PrettyPrintTypePass(std::ostream& out, int width, int indent_width)
+    : pp(out, width, indent_width) {}
+
+  void scan(const PrettyPrinter::PPToken& token) { pp.scan(token); }
+
+  ~PrettyPrintTypePass() {}
+};
+
+inline void recurse(PrettyPrintTypePass* p, TypeAST* ast) {
+  if (!ast) {
+    p->scan(PPToken("<nil>"));
+  } else {
+    ast->accept(p);
+  }
+}
+
+typedef PrettyPrintTypePass::PrettyPrinter::PPToken PPToken;
+
+////////////////////////////////////////////////////////////////////
+
+void PrettyPrintTypePass::visit(NamedTypeAST* ast) {
+  scan(PPToken(ast->getName()));
+}
+
+void PrettyPrintTypePass::visit(TypeVariableAST* ast) {
+  scan(PPToken("TypeVar("));
+  scan(PPToken(ast->getTypeVariableName()));
+  scan(PPToken(")"));
+}
+
+void PrettyPrintTypePass::visit(FnTypeAST* ast) {
+  int np = ast->getNumParams();
+  scan(PPToken("("));
+  if (np > 1) { scan(PPToken("(")); }
+  for (int i = 0; i < np; ++i) {
+    if (i > 0) {
+      scan(PPToken(", "));
+    }
+    emit(ast->getParamType(i));
+  }
+  if (np > 1) { scan(PPToken(")")); }
+  scan(PPToken(" "));
+  scan(PPToken("=>"));
+  scan(PPToken(" "));
+  emit(ast->getReturnType());
+  scan(PPToken(")"));
+}
+
+void PrettyPrintTypePass::visit(RefTypeAST* ast) {
+  scan(PPToken("ref("));
+  emit(ast->getElementType());
+  scan(PPToken(")"));
+}
+
+void PrettyPrintTypePass::visit(TupleTypeAST* ast) {
+  scan(PPToken(" { "));
+  for (int i = 0; i < ast->getNumContainedTypes(); ++i) {
+    if (i > 0) {
+      scan(PPToken(", "));
+    }
+    emit(ast->getContainedType(i));
+  }
+  scan(PPToken(" } "));
+}
+
+void PrettyPrintTypePass::visit(ClosureTypeAST* ast) {
+  scan(PPToken("closure("));
+  emit(ast->getFnType());
+  scan(PPToken(")"));
+}
+
+void PrettyPrintTypePass::visit(SimdVectorTypeAST* ast) {
+  scan(PPToken("simd-vector("));
+  std::stringstream ss; ss << ast->getNumElements();
+  scan(PPToken(ss.str()));
+  scan(PPToken(", "));
+  emit(ast->getContainedType(0));
+  scan(PPToken(")"));
+}
+
+void PrettyPrintTypePass::visit(LiteralIntValueTypeAST* ast) {
+  std::stringstream ss; ss << ast->getNumericalValue();
+  scan(PPToken(ss.str()));
+}
+
+} // unnamed namespace
+
+namespace foster {
+
+void prettyPrintType(TypeAST* t,
+                     std::ostream& out, int width, int indent_width) {
+  PrettyPrintTypePass pp(out, width, indent_width);
+  t->accept(&pp);
+}
+
+} // namespace foster

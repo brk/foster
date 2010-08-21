@@ -252,9 +252,10 @@ void performClosureConversion(ClosureAST* closure,
     for (it = freeVars.begin(); it != freeVars.end(); ++it) {
       std::cout << "Rewriting " << *(*it) << " to go through env" << std::endl;
       rex.staticReplacements[*it] = new SubscriptAST(
-                                          envVar,
-                                          literalIntAST(envOffset),
-                                          foster::SourceRange::getEmptyRange());
+                                        envVar,
+                                        literalIntAST(envOffset,
+                                          foster::SourceRange::getEmptyRange()),
+                                        foster::SourceRange::getEmptyRange());
       ++envOffset;
     }
     ast->body->accept(&rex);
@@ -267,11 +268,11 @@ void performClosureConversion(ClosureAST* closure,
     // and updates the types of the prototype and function itself,
     // if they already have types.
     {
-       TypecheckPass p; ast->proto->accept(&p);
-       std::cout << "ClosureConversionPass: updating type from "
-                  << str(ast->type->getLLVMType())
-                  << " to\n\t" << str(ast->proto->type->getLLVMType()) << std::endl;
-       ast->type = ast->proto->type;
+      typecheck(ast->proto);
+      std::cout << "ClosureConversionPass: updating type from "
+                 << str(ast->type->getLLVMType())
+                 << " to\n\t" << str(ast->proto->type->getLLVMType()) << std::endl;
+      ast->type = ast->proto->type;
     }
   }
 
@@ -316,11 +317,12 @@ void lambdaLiftAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) {
     // and updates the types of the prototype and function itself,
     // if they already have types
     {
-       TypecheckPass p; ast->proto->accept(&p);
-       // We just typecheck the prototype and not the function
-       // to avoid re-typechecking the function body, which should not
-       // have been affected by this change.
-       ast->type = ast->proto->type;
+      typecheck(ast->proto);
+
+      // We just typecheck the prototype and not the function
+      // to avoid re-typechecking the function body, which should not
+      // have been affected by this change.
+      ast->type = ast->proto->type;
     }
   }
 

@@ -9,6 +9,7 @@
 #include "llvm/Support/IRBuilder.h"
 #include "llvm/Module.h"
 
+#include "base/FreshNameGenerator.h"
 #include "parse/OperatorPrecedence.h"
 
 #include "antlr3interfaces.h"
@@ -37,6 +38,8 @@ public:
   CompilationContext();
 
   OperatorPrecedenceTable prec;
+
+  FreshNameGenerator freshNames;
 
   std::map<pANTLR3_BASE_TREE, pANTLR3_COMMON_TOKEN> startTokens;
   std::map<pANTLR3_BASE_TREE, pANTLR3_COMMON_TOKEN>   endTokens;

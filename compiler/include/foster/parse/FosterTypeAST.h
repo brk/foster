@@ -60,19 +60,21 @@ protected:
   // types to be compatible. For example, nullable and non-
   // nullable reference to T are both represented by type
   // T*, but they are not always compatible.
-  const llvm::Type* repr;
+  mutable const llvm::Type* repr;
   const SourceRange sourceRange;
 
-  explicit TypeAST(const llvm::Type* underlyingType,
+  explicit TypeAST(const char* tag,
+                   const llvm::Type* underlyingType,
                    const SourceRange& sourceRange)
-    : repr(underlyingType), sourceRange(sourceRange) {}
+    : repr(underlyingType), sourceRange(sourceRange), tag(tag) {}
   virtual ~TypeAST();
 public:
+  const char* const tag;
   const SourceRange& getSourceRange() const { return sourceRange; }
   virtual const llvm::Type* getLLVMType() const { return repr; }
 
   virtual void accept(TypeASTVisitor* visitor) = 0;
-
+  virtual bool isTypeVariable() { return false; }
   virtual bool canConvertTo(TypeAST* otherType);
 
   static TypeAST* i(int n);
@@ -90,30 +92,43 @@ public:
 };
 
 class TypeVariableAST : public TypeAST {
-  explicit TypeVariableAST(const std::string& typeName,
+  std::string typeVarName;
+  llvm::PATypeHolder opaqueType;
+  explicit TypeVariableAST(const llvm::OpaqueType* opaqueType,
+                           const std::string& typeVarName,
                            const SourceRange& sourceRange)
-    : TypeAST(NULL, sourceRange) {}
+    : TypeAST("TyVar", opaqueType, sourceRange),
+      typeVarName(typeVarName), opaqueType(opaqueType) {}
 
 public:
   virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
+  virtual bool isTypeVariable() { return true; }
+
+  const std::string& getTypeVariableName() { return typeVarName; }
 
   static TypeVariableAST* get(const std::string& name, const SourceRange& sourceRange);
 };
 
 class NamedTypeAST : public TypeAST {
   const std::string name;
+  TypeAST* nonLLVMType;
+
   explicit NamedTypeAST(const std::string& typeName, TypeAST* underlyingType,
                         const SourceRange& sourceRange)
-     : TypeAST(underlyingType->getLLVMType(), sourceRange), name(typeName) {}
+     : TypeAST("NamedType", NULL, sourceRange),
+       name(typeName), nonLLVMType(underlyingType) {}
 
   explicit NamedTypeAST(const std::string& typeName, const llvm::Type* underlyingType,
                           const SourceRange& sourceRange)
-       : TypeAST(underlyingType, sourceRange), name(typeName) {}
+       : TypeAST("NamedType", underlyingType, sourceRange),
+         name(typeName), nonLLVMType(NULL) {}
 
   static std::map<const llvm::Type*, TypeAST*> thinWrappers;
 
 public:
   virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
+  virtual const llvm::Type* getLLVMType() const;
+  const std::string getName() { return name; }
 
   // get() should be used for primitive LLVM types;
   // reconstruct() should be used for derived llvm types.
@@ -122,9 +137,10 @@ public:
 
 class IndexableTypeAST : public TypeAST {
 protected:
-  explicit IndexableTypeAST(const llvm::Type* underlyingType,
-                   const SourceRange& sourceRange)
-    : TypeAST(underlyingType, sourceRange) {}
+  explicit IndexableTypeAST(const char* tag,
+                            const llvm::Type* underlyingType,
+                            const SourceRange& sourceRange)
+    : TypeAST(tag, underlyingType, sourceRange) {}
   virtual ~IndexableTypeAST() {}
   
 public:
@@ -142,17 +158,15 @@ class RefTypeAST : public TypeAST {
 
   explicit RefTypeAST(TypeAST* underlyingType, bool nullable,
                       const SourceRange& sourceRange)
-    : TypeAST(llvm::PointerType::getUnqual(underlyingType->getLLVMType()),
-              sourceRange),
+    : TypeAST("RefType", NULL, sourceRange),
       nullable(nullable),
-      underlyingType(underlyingType) {
-    ASSERT(getLLVMType()->isPointerTy());
-  }
+      underlyingType(underlyingType) {}
 
   typedef std::pair<TypeAST*, bool> RefTypeArgs;
   static std::map<RefTypeArgs, RefTypeAST*> refCache;
 public:
   virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
+  virtual const llvm::Type* getLLVMType() const;
 
   bool isNullable() const { return nullable; }
   virtual bool canConvertTo(TypeAST* otherType);
@@ -171,18 +185,18 @@ class FnTypeAST : public TypeAST {
   std::vector<TypeAST*> argTypes;
   std::string callingConvention;
 
-  explicit FnTypeAST(const llvm::FunctionType* fnty,
-                    TypeAST* returnType,
-                    const std::vector<TypeAST*>& argTypes,
-                    const std::string& callingConvention,
-                    const SourceRange& sourceRange)
-    : TypeAST(fnty, sourceRange),
+  explicit FnTypeAST(TypeAST* returnType,
+                     const std::vector<TypeAST*>& argTypes,
+                     const std::string& callingConvention,
+                     const SourceRange& sourceRange)
+    : TypeAST("FnType", NULL, sourceRange),
       returnType(returnType),
       argTypes(argTypes),
       callingConvention(callingConvention) {}
 
 public:
   virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
+  virtual const llvm::Type* getLLVMType() const;
 
   static FnTypeAST* get(TypeAST* retTy,
                         const std::vector<TypeAST*>& argTypes,
@@ -202,16 +216,16 @@ public:
 class TupleTypeAST : public IndexableTypeAST {
   std::vector<TypeAST*> parts;
 
-  explicit TupleTypeAST(const llvm::StructType* sty,
-                    const std::vector<TypeAST*>& parts,
-                    const SourceRange& sourceRange)
-    : IndexableTypeAST(sty, sourceRange),
+  explicit TupleTypeAST(const std::vector<TypeAST*>& parts,
+                        const SourceRange& sourceRange)
+    : IndexableTypeAST("TupleType", NULL, sourceRange),
       parts(parts) {}
 
   typedef std::vector<TypeAST*> Args;
   static std::map<Args, TupleTypeAST*> tupleTypeCache;
 public:
   virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
+  virtual const llvm::Type* getLLVMType() const;
 
   virtual int getNumContainedTypes() const { return parts.size(); }
   virtual int64_t getNumElements()   const { return parts.size(); }
@@ -227,9 +241,10 @@ public:
   PrototypeAST* proto;
   mutable FnTypeAST* fntype;
   mutable TupleTypeAST* clotype;
-  explicit ClosureTypeAST(PrototypeAST* proto, const llvm::Type* underlyingType,
+  explicit ClosureTypeAST(PrototypeAST* proto,
+                          const llvm::Type* underlyingType,
                           const SourceRange& sourceRange)
-     : TypeAST(underlyingType, sourceRange),
+     : TypeAST("ClosureType", underlyingType, sourceRange),
        proto(proto), fntype(NULL), clotype(NULL) {}
 
   virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
@@ -245,12 +260,14 @@ class LiteralIntValueTypeAST : public TypeAST {
 protected:
   explicit LiteralIntValueTypeAST(IntAST* intAST,
                       const SourceRange& sourceRange)
-    : TypeAST(llvm::IntegerType::get(llvm::getGlobalContext(), 64),
+    : TypeAST("LiteralIntValueType",
+              llvm::IntegerType::get(llvm::getGlobalContext(), 64),
               sourceRange),
       intAST(intAST), value(0) { }
   explicit LiteralIntValueTypeAST(uint64_t value,
                       const SourceRange& sourceRange)
-    : TypeAST(llvm::IntegerType::get(llvm::getGlobalContext(), 64),
+    : TypeAST("LiteralIntValueType",
+              llvm::IntegerType::get(llvm::getGlobalContext(), 64),
               sourceRange),
       intAST(NULL), value(value) { }
 
@@ -272,7 +289,7 @@ class SimdVectorTypeAST : public IndexableTypeAST {
                              LiteralIntValueTypeAST* size,
                              TypeAST*                elementType,
                              const SourceRange& sourceRange)
-     : IndexableTypeAST(simdVectorTy, sourceRange),
+     : IndexableTypeAST("SimdVectorType", simdVectorTy, sourceRange),
        size(size), elementType(elementType) {}
 
 public:

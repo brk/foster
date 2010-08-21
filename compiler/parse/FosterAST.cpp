@@ -9,6 +9,7 @@
 #include "parse/CompilationContext.h"
 #include "parse/ANTLRtoFosterAST.h" // just for parseAPIntFromClean()
 #include "parse/FosterUtils.h"
+#include "passes/PrettyPrintPass.h"
 
 #include <map>
 #include <vector>
@@ -33,7 +34,8 @@ using std::vector;
 using std::string;
 
 std::ostream& operator<<(std::ostream& out, TypeAST& type) {
-  return out << str(type.getLLVMType());
+  foster::prettyPrintType(&type, out, 40);
+  return out;
 }
 
 std::ostream& operator<<(std::ostream& out, ExprAST& expr) {
@@ -86,14 +88,12 @@ void ExprASTVisitor::onVisitChild(ExprAST* ast, ExprAST* child) {
   child->accept(this);
 }
 
-IntAST* literalIntAST(int lit) {
+IntAST* literalIntAST(int lit, const foster::SourceRange& sourceRange) {
   std::stringstream ss; ss << lit;
   string text = ss.str();
   
-  APInt* p = foster::parseAPIntFromClean(
-                          text, 10, foster::SourceRange::getEmptyRange());
-  IntAST* rv = new IntAST(p->getActiveBits(), text,
-                          text, 10, foster::SourceRange::getEmptyRange());
+  APInt* p = foster::parseAPIntFromClean(text, 10, sourceRange);
+  IntAST* rv = new IntAST(p->getActiveBits(), text, text, 10, sourceRange);
   return rv;
 }
 

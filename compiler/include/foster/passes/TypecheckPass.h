@@ -5,23 +5,17 @@
 #ifndef FOSTER_PASSES_TYPECHECK
 #define FOSTER_PASSES_TYPECHECK
 
-#include "parse/ExprASTVisitor.h"
 #include <string>
 
-struct TypecheckPass : public ExprASTVisitor {
-  explicit TypecheckPass() {}
-  
-  #include "parse/ExprASTVisitor.decls.inc.h"
-};
+struct ExprAST;
 
-inline bool isPrintRef(const ExprAST* base) {
-  if (const VariableAST* var = dynamic_cast<const VariableAST*>(base)) {
-    if (var->name == "print_ref") {
-      return true;
-    }
-  }
-  return false;
-}
+namespace foster {
+
+bool typecheck(ExprAST*);
+
+} // namespace foster
+
+bool isPrintRef(const ExprAST* base);
 
 inline bool isArithOp(const std::string& op) {
   return op == "+" || op == "-" || op == "/" || op == "*";

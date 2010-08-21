@@ -41,7 +41,7 @@ bool voidCompatibleReturnTypes(const llvm::FunctionType* expected,
                                const llvm::FunctionType* actual);
 
 bool isVoid(const llvm::Type* ty);
-bool isVoid(const TypeAST* ty);
+bool isVoid(TypeAST* ty);
 
 bool isValidClosureType(const llvm::Type* ty);
 

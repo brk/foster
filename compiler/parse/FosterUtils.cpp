@@ -56,7 +56,6 @@ void addClosureTypeName(llvm::Module* mod, TupleTypeAST* cty) {
 // converts      t1 (t2, t3) to { t1 (i8* nest, t2, t3)*, i8* }
 // or    t1 (envty* nest, t2, t3) to { t1 (i8* nest, t2, t3)*, i8* }
 static TupleTypeAST* genericClosureTypeFor(TypeAST* ty, bool skipFirstArg) {
-  std::cout << "59: " << str(ty) << std::endl;
 #if 0
   if (ClosureTypeAST* cloty = dynamic_cast<ClosureTypeAST*>(ty)) {
     ty = cloty->getFnType();
@@ -195,8 +194,9 @@ bool isVoid(const llvm::Type* ty) {
   return ty == ty->getVoidTy(llvm::getGlobalContext());
 }
 
-bool isVoid(const TypeAST* ty) {
-  return isVoid(ty->getLLVMType());
+bool isVoid(TypeAST* ty) {
+  NamedTypeAST* namedTy = dynamic_cast<NamedTypeAST*>(ty);
+  return namedTy && namedTy->getName() == "void";
 }
 
 bool voidCompatibleReturnTypes(const llvm::FunctionType* expected,

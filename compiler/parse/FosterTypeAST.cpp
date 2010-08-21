@@ -67,6 +67,10 @@ TypeAST* TypeAST::getVoid() {
 }
 
 TypeAST* TypeAST::reconstruct(const llvm::Type* loweredType) {
+  if (loweredType->isVoidTy()) {
+    return TypeAST::getVoid();
+  }
+
   if (loweredType->isPointerTy()) {
     const llvm::Type* pointee = loweredType->getContainedType(0);
     if (TypeAST* s = seen[pointee]) {
@@ -104,9 +108,13 @@ TypeAST* TypeAST::reconstruct(const llvm::Type* loweredType) {
     return NamedTypeAST::get("opaque", loweredType);
   }
   
-  llvm::outs() << "TypeAST::reconstruct() unable to reconstruct " << str(loweredType) << "\n";
+  if (loweredType->isIntegerTy()) {
+    return NamedTypeAST::get(str(loweredType), loweredType);
+  }
 
-  return NULL;
+  llvm::outs() << "TypeAST::reconstruct() did not recognize " << str(loweredType) << "\n";
+
+  return NamedTypeAST::get(str(loweredType), loweredType);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -150,14 +158,30 @@ TypeAST* NamedTypeAST::get(const std::string& name,
   return tyast;
 }
 
+const llvm::Type* NamedTypeAST::getLLVMType() const {
+  ASSERT(nonLLVMType || repr);
+  if (!repr) {
+    repr = nonLLVMType->getLLVMType(); 
+  }
+  return repr;
+}
+
 ////////////////////////////////////////////////////////////////////
 
 TypeVariableAST* TypeVariableAST::get(const std::string& name,
                                       const SourceRange& sourceRange) {
-  return new TypeVariableAST(freshName(name), sourceRange);
+  return new TypeVariableAST(llvm::OpaqueType::get(llvm::getGlobalContext()),
+                             freshName(name), sourceRange);
 }
 
 ////////////////////////////////////////////////////////////////////
+
+const llvm::Type* RefTypeAST::getLLVMType() const {
+  if (!repr) {
+    repr = llvm::PointerType::getUnqual(underlyingType->getLLVMType());
+  }
+  return repr;
+}
 
 map<RefTypeAST::RefTypeArgs, RefTypeAST*> RefTypeAST::refCache;
 
@@ -200,18 +224,24 @@ FnTypeAST* FnTypeAST::get(TypeAST* returnType,
                           const std::string& callingConvName) {
   ASSERT(returnType) << "FnTypeAST::get() needs non-NULL return type";
 
-  vector<const llvm::Type*> loweredArgTypes;
-  for (size_t i = 0; i < argTypes.size(); ++i) {
-    loweredArgTypes.push_back(argTypes[i]->getLLVMType());
-  }
-
-  return new FnTypeAST(
-	    llvm::FunctionType::get(returnType->getLLVMType(),
-                                    loweredArgTypes, /*isVarArg=*/ false),
-                       returnType,
+  return new FnTypeAST(returnType,
                        argTypes,
                        callingConvName,
                        SourceRange::getEmptyRange());
+}
+
+const llvm::Type* FnTypeAST::getLLVMType() const {
+  if (!repr) {
+    vector<const llvm::Type*> loweredArgTypes;
+    for (size_t i = 0; i < argTypes.size(); ++i) {
+      loweredArgTypes.push_back(argTypes[i]->getLLVMType());
+    }
+    
+    repr = llvm::FunctionType::get(returnType->getLLVMType(),
+                                   loweredArgTypes,
+                                   /*isVarArg=*/ false);
+  }
+  return repr;
 }
 
 llvm::CallingConv::ID FnTypeAST::getCallingConventionID() {
@@ -227,6 +257,19 @@ llvm::CallingConv::ID FnTypeAST::getCallingConventionID() {
 
 /////////////////////////////////////////////////////////////////////
 
+const llvm::Type* TupleTypeAST::getLLVMType() const {
+  if (!repr) {
+    vector<const llvm::Type*> loweredTypes;
+    for (size_t i = 0; i < parts.size(); ++i) {
+      loweredTypes.push_back(parts[i]->getLLVMType());
+    }
+
+    repr = llvm::StructType::get(
+            llvm::getGlobalContext(), loweredTypes, /*isPacked=*/false);
+  }
+  return repr;
+}
+
 TypeAST* TupleTypeAST::getContainedType(size_t i) const {
   if (!indexValid(i)) return NULL;
   return parts[i];
@@ -236,16 +279,10 @@ map<TupleTypeAST::Args, TupleTypeAST*> TupleTypeAST::tupleTypeCache;
 
 TupleTypeAST* TupleTypeAST::get(const vector<TypeAST*>& argTypes) {
   TupleTypeAST* tup = tupleTypeCache[argTypes];
-  if (tup) return tup;
-
-  vector<const llvm::Type*> loweredTypes;
-  for (size_t i = 0; i < argTypes.size(); ++i) {
-    loweredTypes.push_back(argTypes[i]->getLLVMType());
+  if (!tup) {
+    tup = new TupleTypeAST(argTypes, SourceRange::getEmptyRange());
+    tupleTypeCache[argTypes] = tup;
   }
-  const llvm::StructType* sty = llvm::StructType::get(
-            llvm::getGlobalContext(), loweredTypes, /*isPacked=*/false);
-  tup = new TupleTypeAST(sty, argTypes, SourceRange::getEmptyRange());
-  tupleTypeCache[argTypes] = tup;
   return tup;
 }
 
@@ -253,7 +290,7 @@ TupleTypeAST* TupleTypeAST::get(const vector<TypeAST*>& argTypes) {
 
 FnTypeAST* ClosureTypeAST::getFnType() const {
   if (!fntype) {
-    TypecheckPass tp; proto->accept(&tp);
+    foster::typecheck(proto);
     if (FnTypeAST* fnty = tryExtractCallableType(proto->type)) {
       fntype = fnty;
     }
