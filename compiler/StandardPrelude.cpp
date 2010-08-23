@@ -3,6 +3,7 @@
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
 #include "llvm/DerivedTypes.h"
+#include "llvm/Module.h"
 
 #include "parse/FosterSymbolTable.h"
 #include "parse/FosterAST.h"
@@ -10,6 +11,8 @@
 #include "passes/TypecheckPass.h"
 
 #include "pystring/pystring.h"
+
+using llvm::Module;
 
 namespace foster {
 

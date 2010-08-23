@@ -4,6 +4,7 @@
 
 #include "parse/FosterTypeAST.h"
 #include "parse/FosterAST.h"
+#include "parse/CompilationContext.h"
 #include "base/Diagnostics.h"
 #include "base/Assert.h"
 

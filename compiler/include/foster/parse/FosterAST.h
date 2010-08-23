@@ -6,25 +6,16 @@
 #define FOSTER_AST_H
 
 #include "llvm/DerivedTypes.h"
-#include "llvm/ExecutionEngine/ExecutionEngine.h"
 #include "llvm/Constants.h"
-#include "llvm/Support/IRBuilder.h"
-#include "llvm/Support/raw_ostream.h"
 
 #include "base/Assert.h"
-#include "base/InputFile.h"
-#include "base/Diagnostics.h"
 #include "base/FilteringIterator.h"
 #include "parse/ExprASTVisitor.h"
 #include "parse/FosterTypeAST.h"
 #include "parse/FosterSymbolTable.h"
 
-#include "CompilationContext.h"
-
 #include <vector>
 #include <string>
-#include <map>
-#include <sstream>
 
 using std::string;
 using std::endl;

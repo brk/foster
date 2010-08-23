@@ -3,6 +3,7 @@
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
 #include "parse/ANTLRtoFosterAST.h"
+#include "parse/CompilationContext.h"
 #include "parse/FosterAST.h"
 #include "passes/PrettyPrintPass.h"
 

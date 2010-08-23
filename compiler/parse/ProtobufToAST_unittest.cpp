@@ -6,6 +6,7 @@
 
 #include "parse/ANTLRtoFosterAST.h"
 #include "parse/ProtobufToAST.h"
+#include "parse/CompilationContext.h"
 #include "passes/DumpToProtobuf.h"
 #include "passes/PrettyPrintPass.h"
 

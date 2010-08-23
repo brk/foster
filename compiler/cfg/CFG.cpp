@@ -4,12 +4,14 @@
 
 #include "base/Diagnostics.h"
 #include "base/Assert.h"
-#include "llvm/Support/raw_ostream.h"
 #include "parse/FosterAST.h"
 #include "passes/CodegenPass.h"
 #include "cfg/CFG.h"
 #include "parse/FosterUtils.h"
 #include "passes/PrettyPrintPass.h"
+
+#include "llvm/Instructions.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include "pystring/pystring.h"
 
