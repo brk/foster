@@ -8,7 +8,15 @@
 #include "passes/TypecheckPass.h"
 #include "passes/PrettyPrintPass.h"
 
+#include "parse/FosterTypeAST.h"
+#include "parse/CompilationContext.h"
+
+#include "llvm/Support/raw_ostream.h"
+
 #include <map>
+#include <string>
+
+using std::string;
 
 // terrible hack!
 namespace foster {
@@ -41,15 +49,15 @@ ExprAST* parse(foster::CompilationContext& cc, const string& s) {
 ExprAST* elaborate(foster::CompilationContext& cc, ExprAST* e) {
   if (e) {
     foster::gCompilationContexts.push(&cc);
-    typecheck(e);
+    foster::typecheck(e);
     foster::gCompilationContexts.pop();
   }
   return e;
 }
 
 string pr(ExprAST* ast) {
-  std::stringstream out;
-  { PrettyPrintPass p(out, 55); p.emit(ast); }
+  std::string s; llvm::raw_string_ostream out(s);
+  foster::prettyPrintExpr(ast, out, 55);
   return out.str();
 }
 

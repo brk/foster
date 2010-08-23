@@ -362,10 +362,9 @@ void TypecheckPass::visit(ClosureAST* ast) {
     }
   }
 
-  std::cout << "After type checking closure, have: \n";
-  PrettyPrintPass pp(std::cout, 55);
-  ast->accept(&pp);
-  std::cout << "\n";
+  llvm::outs() << "After type checking closure, have: \n";
+  foster::prettyPrintExpr(ast, llvm::outs(), 55);
+  llvm::outs() << "\n";
 }
 
 void TypecheckPass::visit(NamedTypeDeclAST* ast) {

@@ -37,6 +37,7 @@
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/raw_os_ostream.h"
 #include "llvm/System/Host.h"
 #include "llvm/System/Signals.h"
 #include "llvm/System/TimeValue.h"
@@ -578,7 +579,7 @@ int main(int argc, char** argv) {
     llvm::outs() << "Pretty printing to " << outfile << "\n";
     std::ofstream out(dumpdirFile(outfile).c_str());
     ScopedTimer pptimer("io.prettyprint");
-    PrettyPrintPass ppPass(out); exprAST->accept(&ppPass);
+    foster::prettyPrintExpr(exprAST, llvm::outs());
   }
 
   if (optCompileSeparately) {
@@ -605,7 +606,9 @@ int main(int argc, char** argv) {
     llvm::outs() << "Pretty printing to " << outfile << "\n";
     std::ofstream out(dumpdirFile(outfile).c_str());
     ScopedTimer pptimer("io.prettyprint");
-    PrettyPrintPass ppPass(out); exprAST->accept(&ppPass);
+
+    llvm::raw_os_ostream rout(out);
+    foster::prettyPrintExpr(exprAST, rout);
   }
 
   llvm::outs() << "=========================" << "\n";

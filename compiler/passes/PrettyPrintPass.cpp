@@ -8,6 +8,53 @@
 
 #include <sstream>
 
+#include "base/PughSinofskyPrettyPrinter.h"
+#include "parse/ExprASTVisitor.h"
+
+struct PrettyPrintPass : public ExprASTVisitor {
+  #include "parse/ExprASTVisitor.decls.inc.h"
+  
+  // This can be used in lieu of ast->accept(ppp)
+  // to ensure proper outer parens,
+  // mainly useful for unit tests.
+  void emit(ExprAST*, bool forceOuterParens = false);
+  
+  virtual void visitChildren(ExprAST* ast) {
+   // Only visit children manually!
+  }
+  
+  typedef foster::PughSinofskyPrettyPrinter PrettyPrinter;
+  
+private:
+  PrettyPrinter pp;
+  // Controls whether type ascriptions on variable names are printed.
+  // Used to print ascriptions on fn formals but not let bindings.
+  bool printVarTypes;
+  bool printSignaturesOnly;
+  
+public:
+  PrettyPrintPass(llvm::raw_ostream& out, int width, int indent_width)
+    : pp(out, width, indent_width),
+      printVarTypes(false),
+      printSignaturesOnly(false) {}
+
+  void setPrintSignaturesOnly(bool newval) { printSignaturesOnly = newval; }
+  void scan(const PrettyPrinter::PPToken& token) { pp.scan(token); }
+  
+  ~PrettyPrintPass() {}
+};
+
+namespace foster {
+  void prettyPrintExpr(ExprAST* t,
+		 llvm::raw_ostream& out, int width, int indent_width,
+                 bool printSignaturesOnly) {
+    PrettyPrintPass pp(out, width, indent_width);
+    pp.setPrintSignaturesOnly(printSignaturesOnly);
+    pp.emit(t);
+  }
+}
+
+
 ////////////////////////////////////////////////////////////////////
 
 typedef PrettyPrintPass::PrettyPrinter::PPToken PPToken;
@@ -385,7 +432,7 @@ private:
   PrettyPrinter pp;
 
 public:
-  PrettyPrintTypePass(std::ostream& out, int width, int indent_width)
+  PrettyPrintTypePass(llvm::raw_ostream& out, int width, int indent_width)
     : pp(out, width, indent_width) {}
 
   void scan(const PrettyPrinter::PPToken& token) { pp.scan(token); }
@@ -475,7 +522,7 @@ void PrettyPrintTypePass::visit(LiteralIntValueTypeAST* ast) {
 namespace foster {
 
 void prettyPrintType(TypeAST* t,
-                     std::ostream& out, int width, int indent_width) {
+                     llvm::raw_ostream& out, int width, int indent_width) {
   PrettyPrintTypePass pp(out, width, indent_width);
   t->accept(&pp);
 }

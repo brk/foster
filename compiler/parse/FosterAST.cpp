@@ -9,7 +9,9 @@
 #include "parse/CompilationContext.h"
 #include "parse/ANTLRtoFosterAST.h" // just for parseAPIntFromClean()
 #include "parse/FosterUtils.h"
+
 #include "passes/PrettyPrintPass.h"
+#include "llvm/Support/raw_os_ostream.h"
 
 #include <map>
 #include <vector>
@@ -34,7 +36,8 @@ using std::vector;
 using std::string;
 
 std::ostream& operator<<(std::ostream& out, TypeAST& type) {
-  foster::prettyPrintType(&type, out, 40);
+  llvm::raw_os_ostream rout(out);
+  foster::prettyPrintType(&type, rout, 40);
   return out;
 }
 

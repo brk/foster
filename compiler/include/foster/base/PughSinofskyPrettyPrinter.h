@@ -2,22 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#ifndef FOSTER_PUGH_SINOFSKY_PRETTYPRINTER
-#define FOSTER_PUGH_SINOFSKY_PRETTYPRINTER
+#ifndef FOSTER_PUGH_SINOFSKY_PRETTYPRINTER_H
+#define FOSTER_PUGH_SINOFSKY_PRETTYPRINTER_H
+
+#include "llvm/Support/raw_ostream.h"
 
 #include <string>
 #include <deque>
 #include <vector>
-#include <sstream>
-
-using std::string;
 
 namespace foster {
 
 // Straightforward implementation of Pugh & Sinofsky's prettyprinting algorithm
 // from    http://ecommons.library.cornell.edu/bitstream/1813/6648/1/87-808.pdf
 
-// TODO opt linebreaks don't seem to be working as expected...
 struct PughSinofskyPrettyPrinter {
   struct PPToken {
     enum Kind { kString,
@@ -31,13 +29,13 @@ struct PughSinofskyPrettyPrinter {
     explicit PPToken(const std::string& str) : kind(kString),       str(str) {}
   };
   
-  std::ostream& out;
+  llvm::raw_ostream& out;
   
   PPToken tBlockOpen, tBlockClose;
   PPToken tIndent, tDedent;
   PPToken tNewline, tOptNewline, tConnNewline;
   
-  PughSinofskyPrettyPrinter(std::ostream& out,
+  PughSinofskyPrettyPrinter(llvm::raw_ostream& out,
                             int width = 80,
                             int indent_width = 2)
       : out(out), INDENT_WIDTH(indent_width) {

@@ -109,10 +109,8 @@ int main(int argc, char** argv) {
     exit(1);
   }
 
-  PrettyPrintPass pp(std::cout, 80);
-  pp.setPrintSignaturesOnly(optSignaturesOnly);
-
-  mod->accept(&pp);
+  foster::prettyPrintExpr(mod, llvm::outs(), 80, 2,
+                          optSignaturesOnly);
 
   return 0;
 }

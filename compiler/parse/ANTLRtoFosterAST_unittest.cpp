@@ -6,6 +6,8 @@
 #include "parse/FosterAST.h"
 #include "passes/PrettyPrintPass.h"
 
+#include "llvm/Support/raw_ostream.h"
+
 #include "pystring/pystring.h"
 
 #include "gtest/gtest.h"
@@ -25,8 +27,8 @@ ExprAST* parse(const string& s) {
 }
 
 string pr(ExprAST* ast) {
-  std::stringstream out;
-  { PrettyPrintPass p(out, 55); p.emit(ast); }
+  std::string s; llvm::raw_string_ostream out(s);
+  foster::prettyPrintExpr(ast, out, 55);
   return out.str();
 }
 

@@ -8,11 +8,8 @@
 struct ExprAST;
 
 namespace foster {
-
-bool typecheck(ExprAST*);
-
+  bool typecheck(ExprAST*);
 } // namespace foster
-
 
 #endif // header guard
 

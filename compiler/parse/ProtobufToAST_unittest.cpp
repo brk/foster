@@ -9,6 +9,8 @@
 #include "passes/DumpToProtobuf.h"
 #include "passes/PrettyPrintPass.h"
 
+#include "llvm/Support/raw_ostream.h"
+
 #include <map>
 
 // terrible hack!
@@ -229,6 +231,13 @@ ExprAST* parse(const string& s) {
   return errs == 0 ? rv : NULL;
 }
 
+string pr(ExprAST* ast) {
+  std::string s; llvm::raw_string_ostream out(s);
+  foster::prettyPrintExpr(ast, out, 55);
+  return out.str();
+}
+
+
 //
 //
 // Test simple literals -- ints, bools.
@@ -330,12 +339,6 @@ TEST(ProtobufToAST, unbound_variable) {
 //
 // Test unary and binary expressions.
 //
-
-string pr(ExprAST* ast) {
-  std::stringstream out;
-  { PrettyPrintPass p(out, 55); p.emit(ast); }
-  return out.str();
-}
 
 TEST(ProtobufToAST, unop_negate) {
   ExprAST* e = parse("-2");

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#include "passes/PughSinofskyPrettyPrinter.h"
+#include "base/PughSinofskyPrettyPrinter.h"
 
 // Straightforward implementation of Pugh & Sinofsky's prettyprinting algorithm
 // from    http://ecommons.library.cornell.edu/bitstream/1813/6648/1/87-808.pdf
@@ -113,7 +113,7 @@ void PrettyPrinter::scan(PPToken t) {
 }
 
 void foster::PughSinofskyPrettyPrinter::emit_newline() {
-  out << '\n' << string(device_left_margin, ' ');
+  out << '\n' << std::string(device_left_margin, ' ');
 }
 
 void foster::PughSinofskyPrettyPrinter::print_buffer(int k) {

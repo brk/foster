@@ -206,6 +206,7 @@ add_library(fosterc_base STATIC
   compiler/base/SourceRange.cpp
   compiler/base/TimingsRepository.cpp
   compiler/base/FreshNameGenerator.cpp
+  compiler/base/PughSinofskyPrettyPrinter.cpp
   third_party/pystring/pystring.cpp
 )
 add_dependencies(fosterc_base fosterc_config_h)
@@ -254,7 +255,6 @@ add_executable(fosterc
   compiler/passes/AddParentLinksPass.cpp
   compiler/passes/ReplaceExprTransform.cpp
   compiler/passes/ClosureConversionPass.cpp
-  compiler/passes/PughSinofskyPrettyPrinter.cpp
   #  compiler/llvm/passes/LLVMCallGraphDotPrinter.cpp
 )
 
@@ -271,7 +271,6 @@ add_dependencies(libfoster_bc cpuid)
 add_executable(pbfosterview
   tools/pbfosterview/pbfosterview.cpp
   compiler/passes/PrettyPrintPass.cpp
-  compiler/passes/PughSinofskyPrettyPrinter.cpp
   ${GENERATED}/FosterAST.pb.cc
   # Purely for ClosureTypeAST::getFnType, remove ASAP...
   compiler/passes/TypecheckPass.cpp
@@ -300,10 +299,9 @@ add_executable(unittest_fosterc_parse
   ${PROJECT_SOURCE_DIR}/compiler/parse/ANTLRtoFosterAST_unittest.cpp
   ${PROJECT_SOURCE_DIR}/compiler/parse/ProtobufToAST_unittest.cpp
   ${PROJECT_SOURCE_DIR}/compiler/parse/TypeInference_unittest.cpp
-  ${PROJECT_SOURCE_DIR}/compiler/passes/PughSinofskyPrettyPrinter_unittest.cpp
+  ${PROJECT_SOURCE_DIR}/compiler/base/PughSinofskyPrettyPrinter_unittest.cpp
   #
   # The files below contain symbols the above code depends on.
-  ${PROJECT_SOURCE_DIR}/compiler/passes/PughSinofskyPrettyPrinter.cpp
   ${PROJECT_SOURCE_DIR}/compiler/passes/TypecheckPass.cpp
   ${PROJECT_SOURCE_DIR}/compiler/passes/DumpToProtobuf.cpp
   ${PROJECT_SOURCE_DIR}/compiler/passes/PrettyPrintPass.cpp

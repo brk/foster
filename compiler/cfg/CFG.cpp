@@ -4,6 +4,7 @@
 
 #include "base/Diagnostics.h"
 #include "base/Assert.h"
+#include "llvm/Support/raw_ostream.h"
 #include "parse/FosterAST.h"
 #include "passes/CodegenPass.h"
 #include "cfg/CFG.h"
@@ -137,10 +138,9 @@ std::string getCFGEdgeSourceLabel(const CFG *cnode,
     size_t n = I - succ_begin(node);
     ExprAST* cond = cb->getEdgeCond(n);
     if (cond) {
-      std::stringstream ss;
-      {
-        PrettyPrintPass pp(ss, 20); cond->accept(&pp);
-      }
+      std::string s; llvm::raw_string_ostream ss(s);
+      foster::prettyPrintExpr(cond, ss, 20);
+
       std::string condstr = pystring::replace(ss.str(), "\n", " ");
       condstr = pystring::replace(condstr, " < ", " LT ");
       condstr = pystring::replace(condstr, " > ", " GT ");
