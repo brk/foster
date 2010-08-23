@@ -123,9 +123,7 @@ void ClosureConversionPass::visit(NamedTypeDeclAST* ast) {
   return;
 }
 void ClosureConversionPass::visit(IfExprAST* ast)              {
-  onVisitChild(ast, ast->testExpr);
-  onVisitChild(ast, ast->thenExpr);
-  onVisitChild(ast, ast->elseExpr);
+  visitChildren(ast);
 }
 void ClosureConversionPass::visit(ForRangeExprAST* ast) {
   onVisitChild(ast, ast->startExpr);
@@ -158,7 +156,7 @@ void ClosureConversionPass::visit(CallAST* ast)                {
     fnBase->lambdaLiftOnly = true;
     callsOf[fnBase].insert(ast);
   }
-  visitChildren(ast); return;
+  visitChildren(ast);
 }
 //void ClosureConversionPass::visit(ArrayExprAST* ast)           { return; }
 void ClosureConversionPass::visit(TupleExprAST* ast)           { return; }

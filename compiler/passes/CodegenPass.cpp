@@ -832,8 +832,8 @@ void CodegenPass::visit(IfExprAST* ast) {
   //EDiag() << "Codegen for IfExprASTs should (eventually) be subsumed by CFG building!";
   if (ast->value) return;
 
-  (ast->testExpr)->accept(this);
-  Value* cond = ast->testExpr->value;
+  (ast->getTestExpr())->accept(this);
+  Value* cond = ast->getTestExpr()->value;
   if (!cond) return;
 
   Function *F = builder.GetInsertBlock()->getParent();
@@ -848,8 +848,8 @@ void CodegenPass::visit(IfExprAST* ast) {
 
   { // Codegen the then-branch of the if expression
     builder.SetInsertPoint(thenBB);
-    ast->thenExpr->accept(this);
-    then = ast->thenExpr->value;
+    ast->getThenExpr()->accept(this);
+    then = ast->getThenExpr()->value;
     if (!then) {
       EDiag() << "codegen for if expr failed due to missing 'then' branch";
       return;
@@ -861,8 +861,8 @@ void CodegenPass::visit(IfExprAST* ast) {
   { // Codegen the else-branch of the if expression
     F->getBasicBlockList().push_back(elseBB);
     builder.SetInsertPoint(elseBB);
-    ast->elseExpr->accept(this);
-    else_ = ast->elseExpr->value;
+    ast->getElseExpr()->accept(this);
+    else_ = ast->getElseExpr()->value;
     if (!else_) {
       EDiag() << "codegen for if expr failed due to missing 'else' branch";
       return;

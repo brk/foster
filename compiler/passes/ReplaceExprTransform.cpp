@@ -87,10 +87,7 @@ void ReplaceExprTransform::visit(ModuleAST* ast) {
   // No replacing entire modules...
 }
 void ReplaceExprTransform::visit(IfExprAST* ast)              {
-  onVisitChild(ast, &ast->testExpr);
-  onVisitChild(ast, &ast->thenExpr);
-  onVisitChild(ast, &ast->elseExpr);
-  this->newChild = rewrite(ast);
+  visitChildren(ast); this->newChild = rewrite(ast);
 }
 void ReplaceExprTransform::visit(ForRangeExprAST* ast)              {
   onVisitChild(ast, &ast->startExpr);

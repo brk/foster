@@ -146,9 +146,9 @@ void DumpToProtobufPass::visit(NamedTypeDeclAST* ast) {
 void DumpToProtobufPass::visit(IfExprAST* ast)              {
   processExprAST(current, ast, foster::pb::Expr::IF);
   foster::pb::If* if_ = current->mutable_if_();
-  dumpChild(this, if_->mutable_test_expr(), ast->testExpr);
-  dumpChild(this, if_->mutable_then_expr(), ast->thenExpr);
-  dumpChild(this, if_->mutable_else_expr(), ast->elseExpr);
+  dumpChild(this, if_->mutable_test_expr(), ast->getTestExpr());
+  dumpChild(this, if_->mutable_then_expr(), ast->getThenExpr());
+  dumpChild(this, if_->mutable_else_expr(), ast->getElseExpr());
 }
 
 void DumpToProtobufPass::visit(ForRangeExprAST* ast)              {

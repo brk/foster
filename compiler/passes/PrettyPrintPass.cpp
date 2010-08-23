@@ -183,19 +183,19 @@ void PrettyPrintPass::visit(ClosureAST* ast) {
 // if $0 { $1 } else { $2 }
 void PrettyPrintPass::visit(IfExprAST* ast) {
   //scan(pp.tBlockOpen);
-  scan(PPToken("if "));
-  emit(ast->testExpr);
+  scan(PPToken("if ("));
+  emit(ast->getTestExpr());
   //scan(pp.tBlockClose);
 
-  scan(PPToken(" "));
+  scan(PPToken(") "));
   scan(pp.tOptNewline);
 
-  emit(ast->thenExpr);
+  emit(ast->getThenExpr());
 
   scan(PPToken(" else "));
   scan(pp.tOptNewline);
 
-  emit(ast->elseExpr);
+  emit(ast->getElseExpr());
 }
 
 // for $0 in $1 to $2 do $3

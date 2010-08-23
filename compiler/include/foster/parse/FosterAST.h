@@ -486,16 +486,22 @@ struct ModuleAST : public NamespaceAST {
 };
 
 struct IfExprAST : public ExprAST {
-  ExprAST* testExpr, *thenExpr, *elseExpr;
   IfExprAST(ExprAST* testExpr, ExprAST* thenExpr, ExprAST* elseExpr,
             foster::SourceRange sourceRange)
-    : ExprAST("IfExprAST", sourceRange),
-      testExpr(testExpr), thenExpr(thenExpr), elseExpr(elseExpr) {}
+    : ExprAST("IfExprAST", sourceRange) {
+    parts.push_back(testExpr); 
+    parts.push_back(thenExpr); 
+    parts.push_back(elseExpr); 
+  }
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "if (" << str(testExpr) << ")" <<
-        " then " << str(thenExpr) << " else " << str(elseExpr);
+    return out << "if (" << str(parts[0]) << ")" <<
+        " then " << str(parts[1]) << " else " << str(parts[2]);
   }
+
+  ExprAST*& getTestExpr() { ASSERT(parts.size() == 3); return parts[0]; }
+  ExprAST*& getThenExpr() { ASSERT(parts.size() == 3); return parts[1]; }
+  ExprAST*& getElseExpr() { ASSERT(parts.size() == 3); return parts[2]; }
 };
 
 // for var in start to end { body }
@@ -549,7 +555,7 @@ struct RefExprAST : public UnaryExprAST {
 
   // Returns true if the physical representation of this reference
   // is T** instead of a simple T*.
-  virtual bool isIndirect();
+  virtual bool isIndirect(); // TODO remove, along with inAssignLHS?
 };
 
 struct DerefExprAST : public UnaryExprAST {

@@ -83,24 +83,24 @@ void BuildCFG::visit(IfExprAST* ast) {
   //                                     +            +
    */
 
-  ast->testExpr->accept(this);
+  ast->getTestExpr()->accept(this);
   CFG* root = currentRoot;
 
-  CFG* thenCFGroot = new CFG("if.then", ast->thenExpr, currentFn);
-  CFG* elseCFGroot = new CFG("if.else", ast->elseExpr, currentFn);
+  CFG* thenCFGroot = new CFG("if.then", ast->getThenExpr(), currentFn);
+  CFG* elseCFGroot = new CFG("if.else", ast->getElseExpr(), currentFn);
 
   this->currentRoot = thenCFGroot;
-  ast->thenExpr->accept(this);
+  ast->getThenExpr()->accept(this);
   CFG* thenCFGtail = this->currentRoot;
 
   this->currentRoot = elseCFGroot;
-  ast->elseExpr->accept(this);
+  ast->getElseExpr()->accept(this);
   CFG* elseCFGtail = this->currentRoot;
 
   this->currentRoot = new CFG("if.cont", ast->parent, currentFn);
 
   // Connect the CFGs
-  root->branchCond(ast->testExpr, thenCFGroot, elseCFGroot);
+  root->branchCond(ast->getTestExpr(), thenCFGroot, elseCFGroot);
 
   thenCFGtail->branchTo(currentRoot);
   elseCFGtail->branchTo(currentRoot);

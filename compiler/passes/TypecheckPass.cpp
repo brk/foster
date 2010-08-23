@@ -395,15 +395,18 @@ void TypecheckPass::visit(ModuleAST* ast) {
 // type(thenExpr) == type(elseExpr)
 // type(ifExpr) == type(thenExpr)
 void TypecheckPass::visit(IfExprAST* ast) {
-  ASSERT(ast->testExpr != NULL);
+  ExprAST* testExpr = ast->getTestExpr();
+  ExprAST* thenExpr = ast->getThenExpr();
+  ExprAST* elseExpr = ast->getElseExpr();
+  ASSERT(testExpr != NULL);
 
-  ast->testExpr->accept(this);
-  ast->thenExpr->accept(this);
-  ast->elseExpr->accept(this);
+  testExpr->accept(this);
+  thenExpr->accept(this);
+  elseExpr->accept(this);
 
-  constraints.addEq(ast, ast->testExpr->type, TypeAST::i(1));
-  constraints.addEq(ast, ast->thenExpr->type, ast->elseExpr->type);
-  ast->type = ast->thenExpr->type;
+  constraints.addEq(ast, testExpr->type, TypeAST::i(1));
+  constraints.addEq(ast, thenExpr->type, elseExpr->type);
+  ast->type = thenExpr->type;
 
 #if 0
   const Type* ifType = ast->testExpr->type->getLLVMType();
