@@ -539,7 +539,8 @@ int main(int argc, char** argv) {
   {
     llvm::outs() << "=========================" << "\n";
     llvm::outs() << "building CFGs" << "\n";
-    { BuildCFG p; exprAST->accept(&p); }
+    foster::buildCFG(exprAST);
+
     for (ModuleAST::FnAST_iterator it = exprAST->fn_begin();
            it != exprAST->fn_end(); ++it) {
       FnAST* fnast = *it;

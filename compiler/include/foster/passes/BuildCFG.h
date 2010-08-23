@@ -5,19 +5,12 @@
 #ifndef FOSTER_PASSES_BUILD_CFG
 #define FOSTER_PASSES_BUILD_CFG
 
-#include "parse/ExprASTVisitor.h"
+struct ModuleAST;
 
 #include "cfg/CFG.h"
 
-struct BuildCFG : public ExprASTVisitor {
-  #include "parse/ExprASTVisitor.decls.inc.h"
-
-  virtual void visitChildren(ExprAST* ast) {
-    // Only visit children manually!
-  }
-
-  foster::CFG* currentRoot;
-  FnAST* currentFn;
-};
+namespace foster {
+  void buildCFG(ModuleAST* ast);
+}
 
 #endif // header guard

@@ -8,6 +8,26 @@
 
 #include "passes/BuildCFG.h"
 
+#include "parse/ExprASTVisitor.h"
+
+struct BuildCFG : public ExprASTVisitor {
+  #include "parse/ExprASTVisitor.decls.inc.h"
+
+  virtual void visitChildren(ExprAST* ast) {
+    // Only visit children manually!
+  }
+
+  foster::CFG* currentRoot;
+  FnAST* currentFn;
+};
+
+namespace foster {
+  void buildCFG(ModuleAST* ast) {
+    BuildCFG b; ast->accept(&b);
+  }
+}
+
+
 using foster::SourceRange;
 using foster::EDiag;
 using foster::show;
