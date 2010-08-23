@@ -37,16 +37,6 @@ using std::vector;
 
 #include "parse/ExprASTVisitor.h"
 
-bool isPrintRef(const ExprAST* base) {
-  if (const VariableAST* var = dynamic_cast<const VariableAST*>(base)) {
-    if (var->name == "print_ref") {
-      return true;
-    }
-  }
-  return false;
-}
-
-
 struct TypeASTSet {
   virtual bool contains(TypeAST* ty) = 0;
 };

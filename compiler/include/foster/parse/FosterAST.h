@@ -68,6 +68,18 @@ T getSaturating(llvm::Value* v) {
   }
 }
 
+bool isPrintRef(const ExprAST* base);
+
+inline bool isArithOp(const std::string& op) {
+  return op == "+" || op == "-" || op == "/" || op == "*";
+}
+
+inline bool isCmpOp(const std::string& op) {
+  return op == "<" || op == "<=" || op == ">" || op == ">="
+      || op == "==" || op == "!=";
+}
+
+
 ///////////////////////////////////////////////////////////
 
 struct ExprAST : public foster::NameResolver<ExprAST> {

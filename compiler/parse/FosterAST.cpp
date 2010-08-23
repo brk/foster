@@ -62,6 +62,15 @@ string str(Value* value) {
   } else { return "<nil>"; }
 }
 
+bool isPrintRef(const ExprAST* base) {
+  if (const VariableAST* var = dynamic_cast<const VariableAST*>(base)) {
+    if (var->name == "print_ref") {
+      return true;
+    }
+  }
+  return false;
+}
+
 namespace foster {
 
 SourceRangeHighlighter show(ExprAST* ast) {
