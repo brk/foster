@@ -249,7 +249,6 @@ add_executable(fosterc
   compiler/passes/BuildCFG.cpp
   compiler/passes/CodegenPass.cpp
   compiler/passes/TypecheckPass.cpp
-  compiler/passes/TypeInference.cpp
   compiler/passes/DumpToProtobuf.cpp
   compiler/passes/PrettyPrintPass.cpp
   compiler/passes/AddParentLinksPass.cpp
@@ -306,7 +305,6 @@ add_executable(unittest_fosterc_parse
   # The files below contain symbols the above code depends on.
   ${PROJECT_SOURCE_DIR}/compiler/passes/PughSinofskyPrettyPrinter.cpp
   ${PROJECT_SOURCE_DIR}/compiler/passes/TypecheckPass.cpp
-  ${PROJECT_SOURCE_DIR}/compiler/passes/TypeInference.cpp
   ${PROJECT_SOURCE_DIR}/compiler/passes/DumpToProtobuf.cpp
   ${PROJECT_SOURCE_DIR}/compiler/passes/PrettyPrintPass.cpp
   ${GENERATED}/FosterAST.pb.cc

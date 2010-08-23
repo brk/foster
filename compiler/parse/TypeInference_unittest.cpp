@@ -6,7 +6,6 @@
 
 #include "parse/ANTLRtoFosterAST.h"
 #include "passes/TypecheckPass.h"
-#include "passes/TypeInference.h"
 #include "passes/PrettyPrintPass.h"
 
 #include <map>
