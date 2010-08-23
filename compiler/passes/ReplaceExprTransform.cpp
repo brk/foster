@@ -103,10 +103,8 @@ void ReplaceExprTransform::visit(NilExprAST* ast)             { this->newChild =
 void ReplaceExprTransform::visit(RefExprAST* ast)             { visitChildren(ast); this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(DerefExprAST* ast)           { visitChildren(ast); this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(AssignExprAST* ast)          {
-  std::cout << "assign expr before: " << str(ast) << std::endl;
   visitChildren(ast);
   this->newChild = rewrite(ast);
-  std::cout << "assign expr after: " << str(newChild) << std::endl;
 }
 void ReplaceExprTransform::visit(SubscriptAST* ast)           { visitChildren(ast); this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(SimdVectorAST* ast)          { visitChildren(ast); this->newChild = rewrite(ast); }
