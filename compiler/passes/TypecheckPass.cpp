@@ -543,97 +543,10 @@ int indexInParent(ExprAST* child, int startingIndex) {
 }
 
 void TypecheckPass::visit(NilExprAST* ast) {
-  if (ast->type) return;
-  ast->type = RefTypeAST::get(TypeVariableAST::get("nil", ast->sourceRange), true);
-#if 0
-  // TODO this will eventually be superceded by real type inference
-  if (ast->parent && ast->parent->parent) {
-    if (ast->parent->parent->type) {
-	  // If we have a type for the parent already, it's probably because
-	  // it's a   new _type_ { ... nil ... }  -like expr.
-      if (TupleTypeAST* tupleTy =
-                      dynamic_cast<TupleTypeAST*>(ast->parent->parent->type)) {
-        std::vector<ExprAST*>::iterator nilPos
-                    = std::find(ast->parent->parts.begin(),
-                                ast->parent->parts.end(),   ast);
-        if (nilPos != ast->parent->parts.end()) {
-          int nilOffset = std::distance(ast->parent->parts.begin(), nilPos);
-          ast->type = tupleTy->getContainedType(nilOffset);
-          std::cout << "\tmunging gave nil type " << *(ast->type->getLLVMType()) << std::endl;
-        }
-      }
-    }
-
-    // 'if (typed-expr ==/!= nil)'  --> nil should have type of other side
-    if (dynamic_cast<IfExprAST*>(ast->parent->parent)) {
-      if (BinaryOpExprAST* cmpast = dynamic_cast<BinaryOpExprAST*>(ast->parent)) {
-        if (cmpast->parts[0]->type) {
-          ast->type = cmpast->parts[0]->type;
-        } else if (cmpast->parts[1]->type) {
-          ast->type = cmpast->parts[1]->type;
-        }
-      }
-    }
-
-    // callee(... nil ...)
-    if (CallAST* callast = dynamic_cast<CallAST*>(ast->parent)) {
-      // find the arg position of our nil
-      ExprAST* callee = callast->parts[0];
-      TypeAST* baseType = callee->type;
-
-      // First, try converting closures to their underlying fn type
-      if (isValidClosureType(baseType->getLLVMType())) {
-        baseType = originalFunctionTypeForClosureStructType(baseType);
-      }
-      if (baseType) {
-      if (FnTypeAST* fnty = dynamic_cast<FnTypeAST*>(baseType)) {
-        // callast.parts[0] is callee; args start at 1
-        int i = indexInParent(ast, 1);
-        if (i >= 0) {
-          ast->type = fnty->getParamType(i - 1);
-        }
-      } else {
-        std::cout << "\t\tCALLEE HAS TYPE " << *(callee->type->getLLVMType()) << std::endl;
-      }
-      }
-    }
-
-    if (TupleExprAST* tupleast = dynamic_cast<TupleExprAST*>(ast->parent->parent)) {
-      if (!tupleast->typeName.empty()) {
-        TypeAST* ty = gTypeScope.lookup(tupleast->typeName, "");
-        if (TupleTypeAST* tuplety = dynamic_cast<TupleTypeAST*>(ty)) {
-          int i = indexInParent(ast, 0);
-          if (i >= 0) {
-            TypeAST* targetType = tuplety->getContainedType(i);
-            ast->type = RefTypeAST::getNullableVersionOf(targetType);
-          }
-        } else {
-          std::cerr << "Warning: expected type " << tupleast->typeName
-              << " to have TupleTypeAST; has type " << str(ty) << std::endl;
-        }
-      }
-    }
-  }
-
-  if (!ast->type) {
-	std::cerr << "TODO: munge around to extract expected (pointer) type of nil exprs" << std::endl;
-	std::cout << "nil parent: " << *(ast->parent) << std::endl;
-	std::cout << "nil parent parent: " << *(ast->parent->parent) << std::endl;
-	std::cout << "nil parent parent ty: " << ast->parent->parent->type << std::endl;
-
-	ast->type = RefTypeAST::get(TypeAST::i(8), true);
-  } else {
-    // make sure it's a nullable type, since this is nil...
-    if (RefTypeAST* ref = dynamic_cast<RefTypeAST*>(ast->type)) {
-      if (!ref->isNullable()) {
-        ast->type = RefTypeAST::getNullableVersionOf(ast->type); 
-      }
-    }
-    ////std::cout << "nil given type: " << str(ast->type) << std::endl;
-  }
-#endif
+  return;
 }
 
+// TODO currently unused
 bool exprBindsName(ExprAST* ast, const std::string& name) {
   // TODO test for-range exprs
   if (FnAST* fn = dynamic_cast<FnAST*>(ast)) {
@@ -653,68 +566,6 @@ bool exprBindsName(ExprAST* ast, const std::string& name) {
   return false;
 }
 
-enum NullTestStatus {
-  eNoTest,
-  eThenBranch,
-  eElseBranch
-};
-
-bool isNil(ExprAST* ast) {
-  if (dynamic_cast<NilExprAST*>(ast)) {
-    return true;
-  } else {
-    return false;
-  }
-}
-
-// var == nil, nil == var ==> elsebranch
-// var != nil, nil != var ==> thenbranch
-// else: notest
-NullTestStatus examineForNullTest(ExprAST* test, VariableAST* var) {
-  ////std::cout << "TEsT: " << str(test) << std::endl;
-  if (BinaryOpExprAST* binopExpr = dynamic_cast<BinaryOpExprAST*>(test)) {
-    ExprAST* lhs = binopExpr->parts[0];
-    ExprAST* rhs = binopExpr->parts[1];
-    bool lhsnil = isNil(lhs);
-    bool rhsnil = isNil(rhs);
-    bool lhsvar = (lhs == var);
-    bool rhsvar = (rhs == var);
-
-    if (lhsnil && rhsvar || lhsvar && rhsnil) {
-      return (binopExpr->op == "==") ? eElseBranch : eThenBranch;
-    }
-  }
-  return eNoTest;
-}
-
-// A nullable pointer is okay to deref if it has been tested
-// for nullness, successfully.
-// There should exist some parent, P, with parent(P) = P_if,
-// such that P_if is an IfExpr testing ast for nullity
-// and P is the appropriate branch of P_if (such that ast
-// will be non-nil).
-// Note that the search terminates at the closest lexical
-// binding of ast.
-bool isOkayToDeref(VariableAST* ast, ExprAST* parent) {
-  std::cout << "\t\tAST = " << str(ast) << std::endl;
-  while (parent) {
-    if (exprBindsName(parent, ast->name)) {
-      std::cout << "Found the closest lexical binding for " << ast->name
-		<< ", so ending search (not okay to deref)" << std::endl;
-      break;
-    }
-    ExprAST* pp = parent->parent;
-    if (!pp) break;
-    if (IfExprAST* Pif = dynamic_cast<IfExprAST*>(pp)) {
-      NullTestStatus status = examineForNullTest(Pif->testExpr, ast);
-      if (status == eElseBranch && Pif->elseExpr == parent) return true;
-      if (status == eThenBranch && Pif->thenExpr == parent) return true;
-    }
-    parent = parent->parent;
-  }
-  return false;
-}
-
 // In order for copying GC to be able to move GC roots,
 // the root must be stored on the stack; thus, new T is implemented
 // so that it evaluates to a T** (a stack slot containing a T*)
@@ -725,9 +576,7 @@ bool isOkayToDeref(VariableAST* ast, ExprAST* parent) {
 void TypecheckPass::visit(RefExprAST* ast) {
   ASSERT(ast->parts[0] && ast->parts[0]->type);
 
-  ast->type = RefTypeAST::get(
-                    ast->parts[0]->type,
-                    ast->isNullable);
+  ast->type = RefTypeAST::get(ast->parts[0]->type);
 }
 
 // G |- e : ref(T)
@@ -743,28 +592,6 @@ void TypecheckPass::visit(DerefExprAST* ast) {
 
   constraints.addEq(ast, RefTypeAST::get(T, false), refT);
   ast->type = T;
-#if 0
-  if (RefTypeAST* ptrTy = dynamic_cast<RefTypeAST*>(derefType)) {
-    ast->type = ptrTy->getElementType();
-
-    if (ptrTy->isNullable()) {
-      if (VariableAST* var = dynamic_cast<VariableAST*>(ast->parts[0])) {
-	if (!isOkayToDeref(var, ast->parent)) {
-	  ast->type = NULL;
-	}
-      } else {
-        // If it's not a variable, we'll suppose (for the sake of
-        //  simplification) that it hasn't been tested for nullity.
-        ast->type = NULL;
-      }
-    }
-  } else {
-    std::cerr << "Deref() called on a non-pointer type "
-              << str(derefType->getLLVMType()) << "!\n";
-    std::cerr << "base: " << *(ast->parts[0]) << std::endl;
-    ast->type = NULL;
-  }
-#endif
 }
 
 // G |- v : T

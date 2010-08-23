@@ -186,10 +186,6 @@ ExprAST* parseNamedTypeDecl(const pb::Expr& e, const foster::SourceRange& range)
   return new NamedTypeDeclAST(e.name(), NULL, range);
 }
 
-ExprAST* parseNil(const pb::Expr& e, const foster::SourceRange& range) {
-  return new NilExprAST(range);
-}
-
 ExprAST* parseOp(const pb::Expr& e, const foster::SourceRange& range) {
   if (e.parts_size() == 1) {
     return new UnaryOpExprAST(e.name(),
@@ -228,10 +224,8 @@ ExprAST* parseProto(const pb::Expr& e, const foster::SourceRange& range) {
 }
 
 ExprAST* parseRef(const pb::Expr& e, const foster::SourceRange& range) {
-  bool isNullable = false;
   bool isIndirect = false;
-  return new RefExprAST(ExprAST_from_pb(&e.parts(0)),
-                        isNullable, isIndirect, range);
+  return new RefExprAST(ExprAST_from_pb(&e.parts(0)), isIndirect, range);
 }
 
 ExprAST* parseSeq(const pb::Expr& e, const foster::SourceRange& range) {
@@ -289,7 +283,6 @@ ExprAST* ExprAST_from_pb(const pb::Expr* pe) {
   case pb::Expr::INT:       rv = parseInt(e, range); break;
   case pb::Expr::MODULE:    rv = parseModule(e, range); break;
   case pb::Expr::NAMED_TYPE_DECL: rv = parseNamedTypeDecl(e, range); break;
-  case pb::Expr::NIL:       rv = parseNil(e, range); break;
   case pb::Expr::OP:        rv = parseOp(e, range); break;
   case pb::Expr::PROTO:     rv = parseProto(e, range); break;
   case pb::Expr::REF:       rv = parseRef(e, range); break;

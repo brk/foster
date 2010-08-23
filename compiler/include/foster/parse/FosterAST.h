@@ -522,6 +522,10 @@ struct ForRangeExprAST : public ExprAST {
   }
 };
 
+// This class exists only as a placeholder for the env ptr in a closure struct,
+// for LLVM to generate a null pointer. 
+// For all intents and purposes, it does not exist before the closure
+// conversion pass runs
 struct NilExprAST : public ExprAST {
   explicit NilExprAST(foster::SourceRange sourceRange)
      : ExprAST("NilExprAST", sourceRange) {}
@@ -531,16 +535,16 @@ struct NilExprAST : public ExprAST {
   }
 };
 
+
 struct RefExprAST : public UnaryExprAST {
-  bool isNullable;
   bool isIndirect_;
-  explicit RefExprAST(ExprAST* expr, bool isNullable, bool isIndirect,
+  explicit RefExprAST(ExprAST* expr, bool isIndirect,
                       foster::SourceRange sourceRange)
     : UnaryExprAST("RefExprAST", expr, sourceRange),
-      isNullable(isNullable), isIndirect_(isIndirect) {}
+      isIndirect_(isIndirect) {}
   virtual void accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "RefExprAST(nullable?=" << isNullable << ", " << str(this->parts[0]) << ")";
+    return out << "RefExprAST(" << str(this->parts[0]) << ")";
   }
 
   // Returns true if the physical representation of this reference

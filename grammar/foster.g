@@ -102,7 +102,7 @@ binop			:	'+' | '-' | '*' | '/' | '..'
 			|	'<' | '<=' | '>=' | '>' | '==' | '!='
 			|	AND | OR | '+=' | '-=' | '*=' | '/=';
 
-REF	:	'ref' | '?ref';
+REF	:	'ref';
 prefix_unop		:	'-' | 'not' | 'new' | REF | COMPILES;
 
 nl : NEWLINE;

@@ -580,6 +580,14 @@ int main(int argc, char** argv) {
     PrettyPrintPass ppPass(out); exprAST->accept(&ppPass);
   }
 
+  if (optCompileSeparately) {
+    // Need to emit before closure conversion, which alters
+    // the set of top-level function definitions, but not
+    // in a way that's relevant to importing modules.
+    std::string outPbFilename(mainModulePath.getLast().str() + ".pb");
+    dumpModuleToProtobuf(exprAST, dumpdirFile(outPbFilename));
+  }
+
   {
     llvm::outs() << "=========================" << "\n";
     llvm::outs() << "Performing closure conversion..." << "\n";
@@ -634,9 +642,6 @@ int main(int argc, char** argv) {
   } else { // -c, compile to module instead of native assembly
     std::string outBcFilename(mainModulePath.getLast().str() + ".out.bc");
     dumpModuleToBitcode(module, dumpdirFile(outBcFilename));
-
-    std::string outPbFilename(mainModulePath.getLast().str() + ".pb");
-    dumpModuleToProtobuf(exprAST, dumpdirFile(outPbFilename));
   }
   // TODO invoke g++ .s -> exe
 

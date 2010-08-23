@@ -65,7 +65,7 @@ message Expr {
     SEQ = 24;
     SIMD = 25;
     SUBSCRIPT = 26;
-    NIL = 27;
+
     REF = 28;
     DEREF = 29;
     ASSIGN = 30;

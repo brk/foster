@@ -164,7 +164,7 @@ void DumpToProtobufPass::visit(ForRangeExprAST* ast)              {
 }
 
 void DumpToProtobufPass::visit(NilExprAST* ast)             {
-  processExprAST(current, ast, foster::pb::Expr::NIL);
+  ASSERT(false) << "We shouldn't be dumping a NilExprAST to pb!";
 }
 
 void DumpToProtobufPass::visit(RefExprAST* ast)             {

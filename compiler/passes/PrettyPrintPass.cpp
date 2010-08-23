@@ -226,12 +226,7 @@ void PrettyPrintPass::visit(NilExprAST* ast) {
 }
 
 void PrettyPrintPass::visit(RefExprAST* ast) {
-  if (ast->isNullable) {
-	scan(PPToken("?ref "));
-  } else {
-	scan(PPToken("ref "));
-  }
-
+  scan(PPToken("ref "));
   emit(ast->parts[0]);
 }
 
