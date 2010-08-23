@@ -152,7 +152,7 @@ void createLLVMBitIntrinsics() {
   // Make the module hierarchy available to code referencing llvm.blah.blah.
   // (The NamespaceAST name is mostly a convenience for examining the AST).
   gScope.insert("llvm", new foster::SymbolInfo(
-                           new NamespaceAST("llvm intrinsics",
+                           new NamespaceAST("NamespaceAST", "llvm intrinsics",
                                             gScope.getRootScope(),
                                        foster::SourceRange::getEmptyRange())));
 

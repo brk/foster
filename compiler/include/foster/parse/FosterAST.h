@@ -81,9 +81,12 @@ struct ExprAST : public foster::NameResolver<ExprAST> {
   llvm::Value* value;
   TypeAST* type;
   foster::SourceRange sourceRange;
+  const char* const tag;
 
-  explicit ExprAST(foster::SourceRange sourceRange, ExprAST* parent = NULL)
-    : parent(parent), value(NULL), type(NULL), sourceRange(sourceRange) {}
+  explicit ExprAST(const char* const tag,
+                   foster::SourceRange sourceRange, ExprAST* parent = NULL)
+    : parent(parent), value(NULL), type(NULL),
+      sourceRange(sourceRange), tag(tag) {}
   virtual ~ExprAST() {}
   virtual std::ostream& operator<<(std::ostream& out) const = 0;
   virtual void accept(ExprASTVisitor* visitor) = 0;
@@ -94,13 +97,16 @@ struct ExprAST : public foster::NameResolver<ExprAST> {
 };
 
 struct UnaryExprAST : public ExprAST {
-  explicit UnaryExprAST(ExprAST* e1, foster::SourceRange sourceRange)
-    : ExprAST(sourceRange) { this->parts.push_back(e1); }
+  explicit UnaryExprAST(const char* const tag,
+                        ExprAST* e1, foster::SourceRange sourceRange)
+    : ExprAST(tag, sourceRange) { this->parts.push_back(e1); }
 };
 
 struct BinaryExprAST : public ExprAST {
-  explicit BinaryExprAST(ExprAST* e1, ExprAST* e2,
-      foster::SourceRange sourceRange) : ExprAST(sourceRange) {
+  explicit BinaryExprAST(const char* const tag,
+                         ExprAST* e1, ExprAST* e2,
+                         foster::SourceRange sourceRange)
+      : ExprAST(tag, sourceRange) {
     this->parts.push_back(e1);
     this->parts.push_back(e2);
   }
@@ -110,10 +116,11 @@ struct BinaryExprAST : public ExprAST {
 struct NamespaceAST : public ExprAST {
   ExprAST::ScopeType* scope;
 
-  explicit NamespaceAST(const std::string& name,
-                           ExprAST::ScopeType* parentScope,
-                           foster::SourceRange sourceRange)
-      : ExprAST(sourceRange),
+  explicit NamespaceAST(const char* const tag,
+                        const std::string& name,
+                        ExprAST::ScopeType* parentScope,
+                        foster::SourceRange sourceRange)
+      : ExprAST(tag, sourceRange),
         scope(parentScope->newNestedScope(name)) {
   }
   virtual ~NamespaceAST() { }
@@ -125,7 +132,7 @@ struct NamespaceAST : public ExprAST {
   }
 
   NamespaceAST* newNamespace(const std::string& name) {
-    NamespaceAST* nu = new NamespaceAST(name, scope,
+    NamespaceAST* nu = new NamespaceAST("NamespaceAST", name, scope,
         foster::SourceRange::getEmptyRange());
     scope->insert(name, new foster::SymbolInfo(nu));
     return nu;
@@ -154,7 +161,7 @@ public:
                   const string& originalText,
                   const string& cleanText, int base,
                   foster::SourceRange sourceRange)
-        : ExprAST(sourceRange), text(originalText), base(base) {
+        : ExprAST("IntAST", sourceRange), text(originalText), base(base) {
     // Debug builds of LLVM don't ignore leading zeroes when considering
     // needed bit widths.
     int bitsLLVMneeds = (std::max)(intSizeForNBits(activeBits),
@@ -190,7 +197,7 @@ IntAST* literalIntAST(int lit, const foster::SourceRange& sourceRange);
 struct BoolAST : public ExprAST {
   bool boolValue;
   explicit BoolAST(string val, foster::SourceRange sourceRange)
-    : ExprAST(sourceRange), boolValue(val == "true") {}
+    : ExprAST("BoolAST", sourceRange), boolValue(val == "true") {}
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
     return out << "BoolAST(" << string(boolValue ? "true" : "false") << ")";
@@ -206,7 +213,8 @@ struct VariableAST : public ExprAST {
   // TODO need to figure out how/where/when to assign type info to nil
   explicit VariableAST(const string& name, TypeAST* aType,
                        foster::SourceRange sourceRange)
-      : ExprAST(sourceRange), name(name), lazilyInsertedPrototype(NULL) {
+      : ExprAST("VariableAST", sourceRange),
+        name(name), lazilyInsertedPrototype(NULL) {
     this->type = aType;
     noInitialType = (aType == NULL);
   }
@@ -224,7 +232,7 @@ struct VariableAST : public ExprAST {
 struct UnaryOpExprAST : public UnaryExprAST {
   string op;
   explicit UnaryOpExprAST(string op, ExprAST* body, foster::SourceRange sourceRange)
-     : UnaryExprAST(body, sourceRange), op(op) {}
+     : UnaryExprAST("UnaryOp", body, sourceRange), op(op) {}
   virtual void accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
     return out << "UnaryOp(" << op << ' ' << str(this->parts[0]) << ")";
@@ -236,7 +244,7 @@ struct BinaryOpExprAST : public BinaryExprAST {
   enum { kLHS, kRHS };
   explicit BinaryOpExprAST(string op, ExprAST* lhs, ExprAST* rhs,
                            foster::SourceRange sourceRange)
-     : BinaryExprAST(lhs, rhs, sourceRange), op(op) {}
+     : BinaryExprAST("BinaryOp", lhs, rhs, sourceRange), op(op) {}
   virtual void accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
     ExprAST* LHS = this->parts[kLHS];
@@ -248,7 +256,7 @@ struct BinaryOpExprAST : public BinaryExprAST {
 // base(args)
 struct CallAST : public ExprAST {
   CallAST(ExprAST* base, Exprs args, foster::SourceRange sourceRange)
-      : ExprAST(sourceRange) {
+      : ExprAST("CallAST", sourceRange) {
     parts.push_back(base);
     for (size_t i = 0; i < args.size(); ++i) parts.push_back(args[i]);
   }
@@ -272,7 +280,8 @@ struct NamedTypeDeclAST : public ExprAST {
   std::string name;
   explicit NamedTypeDeclAST(std::string boundName, TypeAST* namedType,
                             foster::SourceRange sourceRange)
-    : ExprAST(sourceRange), name(name) { this->type = namedType; }
+    : ExprAST("NamedTypeDeclAST", sourceRange),
+      name(name) { this->type = namedType; }
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
     out << "type " << name << " = " << str(type) << "\n";
@@ -281,7 +290,7 @@ struct NamedTypeDeclAST : public ExprAST {
 
 struct SeqAST : public ExprAST {
   explicit SeqAST(Exprs exprs, foster::SourceRange sourceRange)
-    : ExprAST(sourceRange) { this->parts = exprs; }
+    : ExprAST("SeqAST", sourceRange) { this->parts = exprs; }
   virtual void accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
     out << "SeqAST { ";
@@ -299,11 +308,11 @@ struct TupleExprAST : public UnaryExprAST {
 
   explicit TupleExprAST(ExprAST* expr, const std::string& typeName,
                         foster::SourceRange sourceRange)
-    : UnaryExprAST(expr, sourceRange),
+    : UnaryExprAST("TupleExprAST", expr, sourceRange),
       isClosureEnvironment(false), typeName(typeName) { }
 
   explicit TupleExprAST(ExprAST* expr, foster::SourceRange sourceRange)
-    : UnaryExprAST(expr, sourceRange) {
+    : UnaryExprAST("TupleExprAST", expr, sourceRange) {
     std::cout << "\t\t\tTupleExprAST " << expr << " ; " << this->parts[0] << std::endl;
   }
   virtual void accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
@@ -326,7 +335,7 @@ struct ArrayExprAST : public UnaryExprAST {
 struct SimdVectorAST : public UnaryExprAST {
   // Implicitly, a SeqAST
   explicit SimdVectorAST(ExprAST* expr, foster::SourceRange sourceRange)
-    : UnaryExprAST(expr, sourceRange) {}
+    : UnaryExprAST("SimdVectorAST", expr, sourceRange) {}
   virtual void accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
     return out << "SimdVector(" << str(this->parts[0]) << ")";
@@ -337,7 +346,7 @@ struct SimdVectorAST : public UnaryExprAST {
 struct SubscriptAST : public BinaryExprAST {
   explicit SubscriptAST(ExprAST* base, ExprAST* index,
                         foster::SourceRange sourceRange)
-    : BinaryExprAST(base, index, sourceRange) {}
+    : BinaryExprAST("SubscriptAST", base, index, sourceRange) {}
   virtual void accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
     return out << "SubscriptAST(base = " << str(this->parts[0]) << ", index = " << str(this->parts[1]) << ")";
@@ -354,13 +363,14 @@ struct PrototypeAST : public ExprAST {
 
   PrototypeAST(TypeAST* retTy, const string& name,
                foster::SourceRange sourceRange)
-      : ExprAST(sourceRange), name(name), resultTy(retTy), scope(NULL) {
+      : ExprAST("PrototypeAST", sourceRange),
+        name(name), resultTy(retTy), scope(NULL) {
   }
 
   PrototypeAST(TypeAST* retTy, const string& name,
                const std::vector<VariableAST*>& inArgs,
                foster::SourceRange sourceRange)
-      : ExprAST(sourceRange),
+      : ExprAST("PrototypeAST", sourceRange),
         name(name), inArgs(inArgs), resultTy(retTy), scope(NULL) {
     if (resultTy == NULL) {
       this->resultTy = TypeAST::i(32);
@@ -373,7 +383,7 @@ struct PrototypeAST : public ExprAST {
                const std::vector<VariableAST*>& inArgs,
                foster::SymbolTable<foster::SymbolInfo>::LexicalScope* ascope,
                foster::SourceRange sourceRange)
-      : ExprAST(sourceRange),
+      : ExprAST("PrototypeAST", sourceRange),
         name(name), inArgs(inArgs), resultTy(retTy), scope(ascope) {
     ASSERT(scope != NULL);
 
@@ -408,7 +418,7 @@ struct FnAST : public ExprAST {
 
   explicit FnAST(PrototypeAST* proto, ExprAST* body,
                  foster::SourceRange sourceRange)
-    : ExprAST(sourceRange),
+    : ExprAST("FnAST", sourceRange),
       proto(proto), body(body),
       wasNested(false), lambdaLiftOnly(false) {}
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
@@ -443,7 +453,7 @@ struct ClosureAST : public ExprAST {
   bool isTrampolineVersion;
 
   explicit ClosureAST(FnAST* fn, foster::SourceRange sourceRange)
-    : ExprAST(sourceRange), fn(fn),
+    : ExprAST("ClosureAST", sourceRange), fn(fn),
       hasKnownEnvironment(false), isTrampolineVersion(false) { }
 
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
@@ -476,7 +486,7 @@ struct ModuleAST : public NamespaceAST {
                      const std::string& name,
                      ExprAST::ScopeType* parentScope,
                      foster::SourceRange sourceRange)
-      : NamespaceAST(name, parentScope, sourceRange) {
+      : NamespaceAST("ModuleAST", name, parentScope, sourceRange) {
     this->parts = _parts;
   }
 
@@ -490,7 +500,7 @@ struct IfExprAST : public ExprAST {
   ExprAST* testExpr, *thenExpr, *elseExpr;
   IfExprAST(ExprAST* testExpr, ExprAST* thenExpr, ExprAST* elseExpr,
             foster::SourceRange sourceRange)
-    : ExprAST(sourceRange),
+    : ExprAST("IfExprAST", sourceRange),
       testExpr(testExpr), thenExpr(thenExpr), elseExpr(elseExpr) {}
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
@@ -511,7 +521,7 @@ struct ForRangeExprAST : public ExprAST {
 		  ExprAST* start, ExprAST* end,
                   ExprAST* body, ExprAST* incr,
                   foster::SourceRange sourceRange)
-    : ExprAST(sourceRange),
+    : ExprAST("ForRangeExprAST", sourceRange),
       var(var), startExpr(start), endExpr(end),
       bodyExpr(body), incrExpr(incr) {}
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
@@ -525,7 +535,7 @@ struct ForRangeExprAST : public ExprAST {
 
 struct NilExprAST : public ExprAST {
   explicit NilExprAST(foster::SourceRange sourceRange)
-     : ExprAST(sourceRange) {}
+     : ExprAST("NilExprAST", sourceRange) {}
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
     return out << "NilExprAST()";
@@ -537,7 +547,7 @@ struct RefExprAST : public UnaryExprAST {
   bool isIndirect_;
   explicit RefExprAST(ExprAST* expr, bool isNullable, bool isIndirect,
                       foster::SourceRange sourceRange)
-    : UnaryExprAST(expr, sourceRange),
+    : UnaryExprAST("RefExprAST", expr, sourceRange),
       isNullable(isNullable), isIndirect_(isIndirect) {}
   virtual void accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
@@ -551,7 +561,7 @@ struct RefExprAST : public UnaryExprAST {
 
 struct DerefExprAST : public UnaryExprAST {
   explicit DerefExprAST(ExprAST* expr, foster::SourceRange sourceRange)
-     : UnaryExprAST(expr, sourceRange) {}
+     : UnaryExprAST("DerefExprAST", expr, sourceRange) {}
   virtual void accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
     return out << "DerefExprAST(" << str(this->parts[0]) << ")";
@@ -560,7 +570,7 @@ struct DerefExprAST : public UnaryExprAST {
 
 struct AssignExprAST : public BinaryExprAST {
   explicit AssignExprAST(ExprAST* lhs, ExprAST* rhs, foster::SourceRange sourceRange)
-     : BinaryExprAST(lhs, rhs, sourceRange) {}
+     : BinaryExprAST("AssignExprAST", lhs, rhs, sourceRange) {}
   virtual void accept(ExprASTVisitor* visitor) {
     visitor->inAssignLHS = true;
     parts[0]->accept(visitor);
@@ -578,7 +588,7 @@ struct AssignExprAST : public BinaryExprAST {
 struct BuiltinCompilesExprAST : public UnaryExprAST {
   enum Status { kWouldCompile, kWouldNotCompile, kNotChecked } status;
   explicit BuiltinCompilesExprAST(ExprAST* expr, foster::SourceRange sourceRange)
-     : UnaryExprAST(expr, sourceRange), status(kNotChecked) {}
+     : UnaryExprAST("CompilesExprAST", expr, sourceRange), status(kNotChecked) {}
   // Must manually visit children (for typechecking) because we don't want to codegen our children!
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
