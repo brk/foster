@@ -21,10 +21,8 @@ using std::string;
 using std::endl;
 
 using llvm::Type;
-using llvm::Module;
 using llvm::Value;
 using llvm::APInt;
-using llvm::Function;
 
 class ExprAST; // fwd decl
 class TypeAST; // fwd decl

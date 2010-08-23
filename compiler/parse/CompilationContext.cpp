@@ -4,14 +4,13 @@
 
 #include "llvm/LLVMContext.h"
 #include "llvm/Target/TargetSelect.h"
+#include "llvm/ExecutionEngine/ExecutionEngine.h"
+#include "llvm/Module.h"
 
 #include "base/Assert.h"
 #include "parse/FosterTypeAST.h"
 #include "parse/FosterSymbolTable.h"
 #include "parse/CompilationContext.h"
-
-#include <map>
-#include <string>
 
 using llvm::getGlobalContext;
 

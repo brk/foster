@@ -13,6 +13,7 @@
 #include "pystring/pystring.h"
 
 using llvm::Module;
+using llvm::Function;
 
 namespace foster {
 

@@ -5,9 +5,7 @@
 #ifndef FOSTER_COMPILATION_CONTEXT_H
 #define FOSTER_COMPILATION_CONTEXT_H
 
-#include "llvm/ExecutionEngine/ExecutionEngine.h"
 #include "llvm/Support/IRBuilder.h"
-#include "llvm/Module.h"
 
 #include "base/FreshNameGenerator.h"
 #include "parse/OperatorPrecedence.h"
@@ -17,6 +15,11 @@
 #include <string>
 #include <stack>
 #include <map>
+
+namespace llvm {
+  class Module;
+  class ExecutionEngine;
+}
 
 struct TypeAST;
 

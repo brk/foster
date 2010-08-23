@@ -11,6 +11,7 @@
 #include "_generated_/FosterConfig.h"
 
 #include "llvm/Attributes.h"
+#include "llvm/ExecutionEngine/ExecutionEngine.h"
 #include "llvm/CallingConv.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/LLVMContext.h"
