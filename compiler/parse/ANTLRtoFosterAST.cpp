@@ -727,11 +727,13 @@ ExprAST* parseCtorExpr(pTree tree, bool fnMeansClosure,
     return new TupleExprAST(ExprAST_from(seqArgs, fnMeansClosure), sourceRange);
   }
 
+#if 0
   if (TypeAST* ty = gTypeScope.lookup(name, "")) {
     ASSERT(ty->getLLVMType() && ty->getLLVMType()->isStructTy());
     return new TupleExprAST(ExprAST_from(seqArgs, fnMeansClosure),
                             name, sourceRange);
   }
+#endif
 
   foster::EDiag() << "CTOR token parsing found unknown"
                   << " type name '" << name << "'"

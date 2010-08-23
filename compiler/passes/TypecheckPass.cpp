@@ -1289,22 +1289,6 @@ void TypecheckPass::visit(TupleExprAST* ast) {
     return;
   }
 
-  TupleTypeAST* expectedTupleType = NULL;
-  if (!ast->typeName.empty()) {
-    expectedTupleType
-            = dynamic_cast<TupleTypeAST*>(gTypeScope.lookup(ast->typeName, ""));
-  }
-
-  if (expectedTupleType) {
-    size_t expectedSize = expectedTupleType->getNumContainedTypes();
-    if (expectedSize != body->parts.size()) {
-      EDiag() << "mismatch between size of tuple type (" << expectedSize << ")"
-              << " and number of expressions in tuple (" << body->parts.size()
-              << ")" << show(ast);
-      return;
-    }
-  }
-
   bool success = true;
   std::vector<TypeAST*> tupleFieldTypes;
   for (size_t i = 0; i < body->parts.size(); ++i) {
@@ -1319,17 +1303,6 @@ void TypecheckPass::visit(TupleExprAST* ast) {
               << show(expr);
       success = false;
       break;
-    }
-
-    if (expectedTupleType) {
-      TypeAST* expectedType = expectedTupleType->getContainedType(i);
-      if (!ty->canConvertTo(expectedType)) {
-        EDiag() << "type mismatch at parameter " << i << ", expected "
-                << str(expectedType) << " but got " << str(ty)
-                << show(expr);
-        success = false;
-        break;
-      }
     }
 
     tupleFieldTypes.push_back(ty);

@@ -21,11 +21,9 @@
 
 #include "CompilationContext.h"
 
-#include <iostream>
 #include <vector>
 #include <string>
 #include <map>
-#include <cstdio>
 #include <sstream>
 
 using std::string;
@@ -304,16 +302,9 @@ struct SeqAST : public ExprAST {
 
 struct TupleExprAST : public UnaryExprAST {
   bool isClosureEnvironment;
-  std::string typeName;
-
-  explicit TupleExprAST(ExprAST* expr, const std::string& typeName,
-                        foster::SourceRange sourceRange)
-    : UnaryExprAST("TupleExprAST", expr, sourceRange),
-      isClosureEnvironment(false), typeName(typeName) { }
 
   explicit TupleExprAST(ExprAST* expr, foster::SourceRange sourceRange)
     : UnaryExprAST("TupleExprAST", expr, sourceRange) {
-    std::cout << "\t\t\tTupleExprAST " << expr << " ; " << this->parts[0] << std::endl;
   }
   virtual void accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
@@ -375,7 +366,6 @@ struct PrototypeAST : public ExprAST {
     if (resultTy == NULL) {
       this->resultTy = TypeAST::i(32);
     } else {
-      //std::cout << "\n\tProtoAST " << name << " ascribed result type of " << *(retTy) << std::endl;
     }
   }
 
@@ -390,7 +380,6 @@ struct PrototypeAST : public ExprAST {
     if (resultTy == NULL) {
       this->resultTy = TypeAST::i(32);
     } else {
-      std::cout << "\n\tProtoAST " << name << " ascribed result type expr of " << str(retTy) << std::endl;
     }
   }
 
