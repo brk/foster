@@ -1008,20 +1008,20 @@ void CodegenPass::visit(RefExprAST* ast) {
   // a malloc for an alloca; others, like int literals or such, must be
   // manually copied out to a newly-malloc'ed cell.
   ast->value = ast->parts[0]->value;
+  const llvm::Type* llType = ast->value->getType();
 
   if (ast->isIndirect()) {
-    if (getLLVMType(ast->type) == ast->value->getType()) {
+    if (getLLVMType(ast->type) == llType) {
       // e.g. ast type is i32* but value type is i32* instead of i32**
-      llvm::Value* stackslot = CreateEntryAlloca(ast->value->getType(),
-                                                 "stackslot");
+      llvm::Value* stackslot = CreateEntryAlloca(llType, "stackslot");
       builder.CreateStore(ast->value, stackslot, /*isVolatile=*/ false);
       ast->value = stackslot;
-    } else if (isPointerToType(getLLVMType(ast->type), ast->value->getType())) {
+    } else if (isPointerToType(getLLVMType(ast->type), llType)) {
       // If we're given a T when we want a T**, malloc a new T to get a T*
       // stored in a T** on the stack, then copy our T into the T*.
-      const llvm::Type* T = ast->value->getType();
+
       // stackslot has type T**
-      llvm::Value* stackslot = emitMalloc(T);
+      llvm::Value* stackslot = emitMalloc(llType);
       // mem has type T*
       llvm::Value* mem = builder.CreateLoad(stackslot,
                                             /*isVolatile=*/false,
@@ -1031,10 +1031,10 @@ void CodegenPass::visit(RefExprAST* ast) {
       ast->value = stackslot;
     }
   } else {
-    if (isPointerToType(getLLVMType(ast->type), ast->value->getType())) {
+    if (isPointerToType(getLLVMType(ast->type), llType)) {
       // e.g. ast type is i32* but value type is i32
       // stackslot has type i32* (not i32**)
-      llvm::Value* stackslot = CreateEntryAlloca(ast->value->getType(),
+      llvm::Value* stackslot = CreateEntryAlloca(llType,
                                                  "stackslot");
       builder.CreateStore(ast->value, stackslot, /*isVolatile=*/ false);
       ast->value = stackslot;
