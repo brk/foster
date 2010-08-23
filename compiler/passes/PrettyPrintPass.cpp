@@ -206,19 +206,19 @@ void PrettyPrintPass::visit(ForRangeExprAST* ast) {
   //scan(pp.tBlockClose);
 
   scan(PPToken(" in "));
-  emit(ast->startExpr);
+  emit(ast->getStartExpr());
   scan(PPToken(" to "));
-  emit(ast->endExpr);
+  emit(ast->getEndExpr());
 
-  if (ast->incrExpr) {
-	scan(PPToken(" by "));
-	emit(ast->incrExpr);
+  if (ast->hadExplicitIncrExpr()) {
+    scan(PPToken(" by "));
+    emit(ast->getIncrExpr());
   }
 
   scan(PPToken(" do "));
   scan(pp.tOptNewline);
 
-  emit(ast->bodyExpr);
+  emit(ast->getBodyExpr());
 }
 
 void PrettyPrintPass::visit(NilExprAST* ast) {

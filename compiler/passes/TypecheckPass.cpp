@@ -450,25 +450,14 @@ void TypecheckPass::visit(IfExprAST* ast) {
 // type(start) == type(end)
 // type(start) == type(incr)
 void TypecheckPass::visit(ForRangeExprAST* ast) {
-  ASSERT(ast->startExpr != NULL);
-  ASSERT(ast->bodyExpr != NULL);
-  ASSERT(ast->endExpr != NULL);
-  ASSERT(ast->var != NULL);
-
-  // If not present in source, should be set in BuildCFG.
-  ASSERT(ast->incrExpr != NULL);
-
-  ast->startExpr->accept(this);
-  ast->bodyExpr->accept(this);
-  ast->incrExpr->accept(this);
-  ast->endExpr->accept(this);
+  visitChildren(ast);
   ast->var->accept(this);
 
-  constraints.addEq(ast, ast->startExpr->type, TypeAST::i(32));
+  constraints.addEq(ast, ast->getStartExpr()->type, TypeAST::i(32));
   // note: this "should" be a test for assignment compatibility, not strict equality.
-  constraints.addEq(ast, ast->startExpr->type, ast->var->type);
-  constraints.addEq(ast, ast->startExpr->type, ast->endExpr->type);
-  constraints.addEq(ast, ast->startExpr->type, ast->incrExpr->type);
+  constraints.addEq(ast, ast->getStartExpr()->type, ast->var->type);
+  constraints.addEq(ast, ast->getStartExpr()->type, ast->getEndExpr()->type);
+  constraints.addEq(ast, ast->getStartExpr()->type, ast->getIncrExpr()->type);
   ast->type = TypeAST::i(32);
 
 #if 0

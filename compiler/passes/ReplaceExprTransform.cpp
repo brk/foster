@@ -89,14 +89,8 @@ void ReplaceExprTransform::visit(ModuleAST* ast) {
 void ReplaceExprTransform::visit(IfExprAST* ast)              {
   visitChildren(ast); this->newChild = rewrite(ast);
 }
-void ReplaceExprTransform::visit(ForRangeExprAST* ast)              {
-  onVisitChild(ast, &ast->startExpr);
-  onVisitChild(ast, &ast->endExpr);
-  if (ast->incrExpr) { onVisitChild(ast, &ast->incrExpr); }
-  onVisitChild(ast, &ast->bodyExpr);
-  this->newChild = rewrite(ast);
-}
-void ReplaceExprTransform::visit(NilExprAST* ast)             { this->newChild = rewrite(ast); }
+void ReplaceExprTransform::visit(ForRangeExprAST* ast)        { visitChildren(ast); this->newChild = rewrite(ast); }
+void ReplaceExprTransform::visit(NilExprAST* ast)             { visitChildren(ast); this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(RefExprAST* ast)             { visitChildren(ast); this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(DerefExprAST* ast)           { visitChildren(ast); this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(AssignExprAST* ast)          {

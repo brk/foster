@@ -906,20 +906,22 @@ void CodegenPass::visit(ForRangeExprAST* ast) {
 
 
   builder.SetInsertPoint(loopHdrBB);
-  Value* incr;
-  if (ast->incrExpr) {
-    (ast->incrExpr)->accept(this);
-    if (!ast->incrExpr->value) { return; }
-    incr = ast->incrExpr->value;
+  Value* incrValue;
+
+  ExprAST* incr = ast->getIncrExpr();
+  if (incr) {
+    incr->accept(this);
+    if (!incr->value) { return; }
+    incrValue = incr->value;
   } else {
-    incr = ConstantInt::get(LLVMTypeFor("i32"), 1);
+    incrValue = ConstantInt::get(LLVMTypeFor("i32"), 1);
   }
 
-  (ast->startExpr)->accept(this);
-  if (!ast->startExpr->value) { return; }
+  ast->getStartExpr()->accept(this);
+  if (!ast->getStartExpr()->value) { return; }
 
-  (ast->endExpr)->accept(this);
-  if (!ast->endExpr->value) { return; }
+  ast->getEndExpr()->accept(this);
+  if (!ast->getEndExpr()->value) { return; }
 
 
 
@@ -959,8 +961,8 @@ afterBB:
     gScope.pushScope("for-range " + ast->var->name);
     gScopeInsert(ast->var->name, (pickvar));
 
-    (ast->bodyExpr)->accept(this);
-    if (!ast->bodyExpr->value) { return; }
+    ast->getBodyExpr()->accept(this);
+    if (!ast->getBodyExpr()->value) { return; }
     gScope.popScope();
 
 
@@ -968,8 +970,8 @@ afterBB:
 
   builder.SetInsertPoint(loopEndBB);
 
-    Value* next = builder.CreateAdd(pickvar, incr, "next");
-    Value* endCond = builder.CreateICmpSLT(next, ast->endExpr->value,
+    Value* next = builder.CreateAdd(pickvar, incrValue, "next");
+    Value* endCond = builder.CreateICmpSLT(next, ast->getEndExpr()->value,
                                            "loopcond");
     builder.CreateCondBr(endCond, loopBB, afterBB);
 
@@ -978,13 +980,13 @@ afterBB:
   // and skip the loop if we shouldn't execute it.
   builder.SetInsertPoint(loopHdrBB);
   {
-    Value* startCond = builder.CreateICmpSLT(ast->startExpr->value,
-                                             ast->endExpr->value,
+    Value* startCond = builder.CreateICmpSLT(ast->getStartExpr()->value,
+                                             ast->getEndExpr()->value,
                                              "preloopcond");
     builder.CreateCondBr(startCond, loopBB, afterBB);
   }
 
-  pickvar->addIncoming(ast->startExpr->value, loopHdrBB);
+  pickvar->addIncoming(ast->getStartExpr()->value, loopHdrBB);
   pickvar->addIncoming(next, loopEndBB);
 
   // Leave the insert point after the loop for later codegenning.

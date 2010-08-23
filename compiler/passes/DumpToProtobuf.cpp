@@ -155,11 +155,11 @@ void DumpToProtobufPass::visit(ForRangeExprAST* ast)              {
   processExprAST(current, ast, foster::pb::Expr::FORRANGE);
   foster::pb::ForRange* fr = current->mutable_for_range();
   dumpChild(this, fr->mutable_var(), ast->var);
-  dumpChild(this, fr->mutable_start(), ast->startExpr);
-  dumpChild(this, fr->mutable_end(), ast->endExpr);
-  dumpChild(this, fr->mutable_body(), ast->bodyExpr);
-  if (ast->incrExpr) {
-    dumpChild(this, fr->mutable_incr(), ast->incrExpr);
+  dumpChild(this, fr->mutable_start(), ast->getStartExpr());
+  dumpChild(this, fr->mutable_end(),   ast->getEndExpr());
+  dumpChild(this, fr->mutable_body(),  ast->getBodyExpr());
+  if (ast->hadExplicitIncrExpr()) {
+    dumpChild(this, fr->mutable_incr(), ast->getIncrExpr());
   }
 }
 

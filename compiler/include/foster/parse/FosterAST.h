@@ -507,25 +507,37 @@ struct IfExprAST : public ExprAST {
 // for var in start to end { body }
 struct ForRangeExprAST : public ExprAST {
   VariableAST* var;
-  ExprAST* startExpr;
-  ExprAST* endExpr;
-  ExprAST* bodyExpr;
-  ExprAST* incrExpr;
+  bool _hadExplicitIncrExpr;
 
   explicit ForRangeExprAST(VariableAST* var,
 		  ExprAST* start, ExprAST* end,
                   ExprAST* body, ExprAST* incr,
                   foster::SourceRange sourceRange)
-    : ExprAST("ForRangeExprAST", sourceRange),
-      var(var), startExpr(start), endExpr(end),
-      bodyExpr(body), incrExpr(incr) {}
+    : ExprAST("ForRangeExprAST", sourceRange), var(var) {
+    ASSERT(var);
+    _hadExplicitIncrExpr = (incr != NULL);
+    if (!_hadExplicitIncrExpr) {
+      incr = literalIntAST(1, var->sourceRange);
+    }
+
+    ASSERT(start); parts.push_back(start);
+    ASSERT(incr ); parts.push_back(incr);
+    ASSERT(end  ); parts.push_back(end);
+    ASSERT(body ); parts.push_back(body);
+  }
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    out << "for " << var->name << " in " << str(startExpr) << " to " << str(endExpr);
-    if (incrExpr) out  << " by " << str(incrExpr);
-    out << " do " << str(bodyExpr);
+    out << "for " << var->name << " in " << str(parts[0]) << " to " << str(parts[2]);
+    if (_hadExplicitIncrExpr) out  << " by " << str(parts[1]);
+    out << " do " << str(parts[3]);
     return out;
   }
+  
+  bool hadExplicitIncrExpr() { return _hadExplicitIncrExpr; }
+  ExprAST*& getStartExpr() { ASSERT(parts.size() == 4); return parts[0]; }
+  ExprAST*& getIncrExpr()  { ASSERT(parts.size() == 4); return parts[1]; }
+  ExprAST*& getEndExpr()   { ASSERT(parts.size() == 4); return parts[2]; }
+  ExprAST*& getBodyExpr()  { ASSERT(parts.size() == 4); return parts[3]; }
 };
 
 // This class exists only as a placeholder for the env ptr in a closure struct,

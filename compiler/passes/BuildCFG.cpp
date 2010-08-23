@@ -146,18 +146,15 @@ void BuildCFG::visit(ForRangeExprAST* ast) {
 
   CFG* preLoop = currentRoot;
 
-  if (!ast->incrExpr) {
-    ast->incrExpr = literalIntAST(1, ast->var->sourceRange);
-  }
-  ast->incrExpr->accept(this);
+  ast->getIncrExpr()->accept(this);
 
   currentRoot = loopHdr;
-  ast->endExpr->accept(this);
-  ast->startExpr->accept(this);
+  ast->getEndExpr()->accept(this);
+  ast->getStartExpr()->accept(this);
   CFG* endStart = currentRoot;
 
   currentRoot = loop;
-  ast->bodyExpr->accept(this);
+  ast->getBodyExpr()->accept(this);
   CFG* endBody = currentRoot;
 
   currentRoot = after;
