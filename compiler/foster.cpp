@@ -533,7 +533,7 @@ int main(int argc, char** argv) {
   {
     llvm::outs() << "=========================" << "\n";
     llvm::outs() << "Adding parent links..." << "\n";
-    AddParentLinksPass aplPass; exprAST->accept(&aplPass);
+    foster::addParentLinks(exprAST);
   }
  
   {

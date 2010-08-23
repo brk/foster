@@ -2,8 +2,26 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#include "parse/FosterAST.h"
 #include "passes/AddParentLinksPass.h"
+
+#include "parse/FosterAST.h"
+#include "parse/ExprASTVisitor.h"
+
+struct AddParentLinksPass : public ExprASTVisitor {
+  #include "parse/ExprASTVisitor.decls.inc.h"
+  
+  virtual void onVisitChild(ExprAST* ast, ExprAST* child) {
+    child->parent = ast;
+    child->accept(this);
+  }
+};
+
+namespace foster {
+  void addParentLinks(ExprAST* ast) {
+    AddParentLinksPass p; ast->accept(&p);
+  }
+}
+
 
 void includeParentNameInAnonFunctions(FnAST* ast);
 
