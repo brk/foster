@@ -4,16 +4,13 @@
 
 #include "base/Diagnostics.h"
 #include "base/Assert.h"
-#include "parse/FosterAST.h"
 #include "passes/CodegenPass.h"
-#include "cfg/CFG.h"
 #include "parse/FosterUtils.h"
-#include "passes/PrettyPrintPass.h"
+
+#include "dot/CFGGraphTraits.h"
 
 #include "llvm/Instructions.h"
 #include "llvm/Support/raw_ostream.h"
-
-#include "pystring/pystring.h"
 
 using foster::EDiag;
 using foster::show;
@@ -128,8 +125,13 @@ llvm::BasicBlock* CFG::codegen(CodegenPass* p, llvm::Function* parentFunction) {
 
 } // namespace foster
 
+
+#include "passes/PrettyPrintPass.h"
+
+#include "pystring/pystring.h"
+
 std::string getCFGEdgeSourceLabel(const CFG *cnode,
-                                      CFG_succ_iterator I) {
+                                  CFG_succ_iterator I) {
   CFG* node = (CFG*) cnode;
   if (!node || !node->getTerminator()) { return ""; }
 

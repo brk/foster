@@ -5,14 +5,12 @@
 #ifndef FOSTER_CFG_H
 #define FOSTER_CFG_H
 
-#include "llvm/Support/CFG.h"
-#include "llvm/Support/GraphWriter.h"
+#include "parse/FosterAST.h"
 
 #include <vector>
 #include <utility>
 #include <sstream>
 
-struct ExprAST;
 struct CodegenPass;
 
 namespace llvm {
@@ -27,7 +25,7 @@ class CFG {
 public:
   CFG(const std::string& suggestedName,
       ExprAST* parentAST,
-      FnAST* parentFn)
+        FnAST* parentFn)
       : suggestedName(suggestedName),
         parentAST(parentAST),
         ourBB(NULL),
@@ -79,73 +77,5 @@ private:
 };
 
 } // namespace foster
-
-using foster::CFG;
-
-typedef llvm::SuccIterator<CFG::Terminator*, CFG> CFG_succ_iterator;
-
-inline CFG_succ_iterator succ_begin(CFG* cfg) {
-  return CFG_succ_iterator(cfg->getTerminator());
-}
-
-inline CFG_succ_iterator succ_end(CFG* cfg) {
-  return CFG_succ_iterator(cfg->getTerminator(), true);
-}
-
-std::string getCFGEdgeSourceLabel(const CFG *node,
-                               CFG_succ_iterator I);
-
-namespace llvm {
-
-template <> struct GraphTraits<CFG*> {
-  typedef CFG                  NodeType;
-  typedef CFG_succ_iterator    ChildIteratorType;
-
-  static NodeType* getEntryNode(CFG* cfg) { return cfg; }
-  static inline ChildIteratorType child_begin(NodeType* n) {
-    return ::succ_begin(n);
-  }
-  static inline ChildIteratorType child_end(NodeType* n) {
-    return ::succ_end(n);
-  }
-};
-
-template <> struct GraphTraits<FnAST*>
-          : public GraphTraits<CFG*> {
-  static NodeType* getEntryNode(FnAST* f) { return f->cfgs[0]; }
-
-  typedef std::vector<CFG*>::iterator    nodes_iterator;
-  static nodes_iterator nodes_begin(FnAST* f) { return f->cfgs.begin(); }
-  static nodes_iterator nodes_end  (FnAST* f) { return f->cfgs.end(); }
-};
-
-
-template <> struct DOTGraphTraits<FnAST*> : public DefaultDOTGraphTraits {
-
-  DOTGraphTraits(bool isSimple=true) : DefaultDOTGraphTraits(isSimple) {}
-
-  static std::string getGraphName(const FnAST* fnast) {
-    return string("CFG for ") + fnast->proto->name;
-  }
-
-  static std::string getSimpleNodeLabel(const CFG* node,
-                                        const FnAST* graph) {
-    std::stringstream ss;
-    ss << node->getBlockName() << "(@ " << node << ")";
-    return ss.str();
-  }
-
-  std::string getNodeLabel(const CFG* node, const FnAST* graph) {
-    return getSimpleNodeLabel(node, graph);
-  }
-
-
-  static std::string getEdgeSourceLabel(const CFG *node,
-                                        CFG_succ_iterator I) {
-    return getCFGEdgeSourceLabel(node, I);
-  }
-};
-
-} // namespace llvm
 
 #endif

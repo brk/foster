@@ -66,6 +66,7 @@
 #include "passes/ClosureConversionPass.h"
 #include "passes/DumpToProtobuf.h"
 
+#include "dot/CFGGraphTraits.h"
 #include "StandardPrelude.h"
 
 #include <memory>
