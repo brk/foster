@@ -146,9 +146,9 @@ protected:
 public:
   virtual void accept(TypeASTVisitor* visitor) = 0;
 
-  virtual TypeAST* getContainedType(size_t idx) const = 0;
-  virtual int64_t  getNumElements() const = 0; 
-  virtual bool     indexValid(int idx) const { return idx < getNumElements(); } 
+  virtual TypeAST*& getContainedType(size_t idx) = 0;
+  virtual int64_t   getNumElements() const = 0; 
+  virtual bool      indexValid(int idx) const { return idx < getNumElements(); } 
 };
 
 
@@ -170,7 +170,7 @@ public:
 
   bool isNullable() const { return nullable; }
   virtual bool canConvertTo(TypeAST* otherType);
-  TypeAST* getElementType() { return underlyingType; }
+  TypeAST*& getElementType() { return underlyingType; }
 
   // given (T), returns (ref T)
   static RefTypeAST* get(TypeAST* baseType, bool nullable = false);
@@ -202,9 +202,9 @@ public:
                         const std::vector<TypeAST*>& argTypes,
                         const std::string& callingConvName);
 
-  TypeAST* getParamType(int i) const { return argTypes[i]; }
+  TypeAST*& getParamType(int i) { return argTypes[i]; }
 
-  TypeAST* getReturnType() const { return returnType; }
+  TypeAST*& getReturnType() { return returnType; }
 
   int getNumParams() const { return argTypes.size(); }
 
@@ -229,7 +229,7 @@ public:
 
   virtual int getNumContainedTypes() const { return parts.size(); }
   virtual int64_t getNumElements()   const { return parts.size(); }
-  virtual TypeAST* getContainedType(size_t i) const;
+  virtual TypeAST*& getContainedType(size_t i);
   
   static TupleTypeAST* get(const std::vector<TypeAST*>& parts);
 };
@@ -250,7 +250,7 @@ public:
   virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
 
   virtual const llvm::Type* getLLVMType() const;
-  FnTypeAST* getFnType() const;
+  FnTypeAST*& getFnType();
 };
 
 
@@ -295,8 +295,8 @@ class SimdVectorTypeAST : public IndexableTypeAST {
 public:
   virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
 
-  virtual TypeAST* getContainedType(size_t i) const { return elementType; }
-  virtual int64_t  getNumElements() const { return size->getNumericalValue(); }
+  virtual TypeAST*& getContainedType(size_t i) { return elementType; }
+  virtual int64_t   getNumElements() const { return size->getNumericalValue(); }
   
   static SimdVectorTypeAST* get(LiteralIntValueTypeAST* size, TypeAST* type,
                                 const SourceRange& sourceRange);

@@ -254,6 +254,7 @@ add_executable(fosterc
   compiler/passes/PrettyPrintPass.cpp
   compiler/passes/AddParentLinksPass.cpp
   compiler/passes/ReplaceExprTransform.cpp
+  compiler/passes/ReplaceTypeTransform.cpp
   compiler/passes/ClosureConversionPass.cpp
   #  compiler/llvm/passes/LLVMCallGraphDotPrinter.cpp
 )
@@ -274,6 +275,7 @@ add_executable(pbfosterview
   ${GENERATED}/FosterAST.pb.cc
   # Purely for ClosureTypeAST::getFnType, remove ASAP...
   compiler/passes/TypecheckPass.cpp
+  compiler/passes/ReplaceTypeTransform.cpp
 )
 target_link_libraries(pbfosterview
   fosterc_parse fosterc_base
@@ -303,6 +305,7 @@ add_executable(unittest_fosterc_parse
   #
   # The files below contain symbols the above code depends on.
   ${PROJECT_SOURCE_DIR}/compiler/passes/TypecheckPass.cpp
+  ${PROJECT_SOURCE_DIR}/compiler/passes/ReplaceTypeTransform.cpp
   ${PROJECT_SOURCE_DIR}/compiler/passes/DumpToProtobuf.cpp
   ${PROJECT_SOURCE_DIR}/compiler/passes/PrettyPrintPass.cpp
   ${GENERATED}/FosterAST.pb.cc

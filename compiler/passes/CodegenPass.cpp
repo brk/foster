@@ -1056,8 +1056,18 @@ void CodegenPass::visit(DerefExprAST* ast) {
 
   ASSERT(isPointerToType(src->getType(), getLLVMType(ast->type)))
       << "deref needs a T* to produce a T, given src type "
-      << str(src->getType()) << " and ast type " << str(getLLVMType(ast->type));
+      << str(src->getType()) << " and ast type " << str(getLLVMType(ast->type))
+      << "\n\t" << ast->tag << " ; " << ast->type->tag
+      << show(ast);
   ast->value = builder.CreateLoad(src, /*isVolatile=*/ false, "deref");
+}
+
+bool isPointerChainToType(const llvm::Type* pppt, const llvm::Type* t) {
+  while (true) {
+    if (!pppt->isPointerTy()) { return false; }
+    if (isPointerToType(pppt, t)) { return true; }
+    pppt = pppt->getContainedType(0);
+  }  
 }
 
 void CodegenPass::visit(AssignExprAST* ast) {
@@ -1069,13 +1079,24 @@ void CodegenPass::visit(AssignExprAST* ast) {
   std::cout << "assign " << *(srcty) << " to " << *(dst->getType()) << std::endl;
 #endif
 
+  // If we have         set (T**) = T,
+  // the destination is (presumably) a mutable T*, that is,
+  // a T* stored on the stack. Thus, we emit a load to get the
+  // T* from the stack, so that we may then store the T into the
+  // cell pointed to by the T*.
   if (isPointerToPointerToType(dst->getType(), srcty)) {
     dst = builder.CreateLoad(dst, /*isVolatile=*/ false, "unstack");
   }
 
+  // The usual case is set (T*) = T.
+  // With implicit dereferencing, we also wish to accept
+  //                   set (T*) = (T*)
   ASSERT(isPointerToType(dst->getType(), srcty))
-    << "assignment must store T in a T*, given dst type "
-    << str(dst->getType()) << " and srcty " << str(srcty);
+    << "assignment must store T in a T*, given extrapolated dst type "
+    << str(ast->parts[0]->value->getType())
+    << "\n\tand original dst type" << str(dst->getType())
+    << " and srcty " << str(srcty) << "\n\t"
+    << "dest HL type: " << str(ast->parts[0]->type);
 
   builder.CreateStore(ast->parts[1]->value, dst);
 
@@ -1516,7 +1537,7 @@ void CodegenPass::visit(CallAST* ast) {
     // ContainedType[0] is the return type; args start at 1
     const llvm::Type* expectedType = FT->getContainedType(i + 1);
     
-    std::cout <<" FT: " << str(FT) << std::endl;
+    //std::cout <<" FT: " << str(FT) << std::endl;
 
     // If we're given a T** when we expect a T*,
     // automatically load the reference from the stack.

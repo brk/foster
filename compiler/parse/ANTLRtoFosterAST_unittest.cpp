@@ -95,6 +95,12 @@ TEST(ANTLRtoFosterAST, arithPrecedence) {
     pr(parse("0 + 1 + 2 * 3 + 4 * 5 * 6")));
 }
 
+TEST(ANTLRtoFosterAST, colonCommaArrow) {
+/*
+  EXPECT_EQ("(k : v), (k : (x -> y))",
+    pr(parse("k : v, k : x -> y")));
+*/
+}
 
 TEST(ANTLRtoFosterAST, first_order_types_simple_correct) {
   EXPECT_EQ(0,

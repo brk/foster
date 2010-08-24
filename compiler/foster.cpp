@@ -565,13 +565,12 @@ int main(int argc, char** argv) {
   llvm::outs() << "Type checking... " << "\n";
   }
 
+  bool typechecked = false;
   { ScopedTimer timer("foster.typecheck");
-    typecheck(exprAST);
+    typechecked = typecheck(exprAST);
   }
 
-  bool sema = exprAST->type != NULL;
-  llvm::outs() << "Semantic checking: " << sema << "\n";
-  if (!sema) { return 1; }
+  if (!typechecked) { return 1; }
   
   if (optDumpASTs) { ScopedTimer timer("io.file");
     string outfile = "pp-precc.txt";

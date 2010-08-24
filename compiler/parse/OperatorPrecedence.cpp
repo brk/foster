@@ -253,6 +253,24 @@ struct OperatorPrecedenceTable::Impl {
     //parseAs("a ** b ** c", "a ** (b ** c)");
     //tighter("**", "* + < and ==");
 
+/*
+    // k : v, k : v   === (k : v), (k : v)
+    //tighter(":", ",");
+
+
+    // k : v, k : a -> b   === (k : v), (k : (a -> b))
+    //tighter("->", ":"); tighter(":", ",");
+
+
+    // k : v, k : a, b -> c     =/=     (k : v), (k : ((a, b) -> c))
+    //        because it implies a cyclic precedence relation:
+    // bad: tighter("->", ":"); tighter(":", ","); tighter(",", "->");
+
+    // Therefore
+    // k : v, k : a, b -> c     ===     (k : v), (k : a), (b -> c)
+    //tighter("->", ":"); tighter(":", ","); tighter("->", ",");
+*/
+
     // a b + c == (a b) + c
     //tighter("juxtaposition", "+ * ** == < and");
 

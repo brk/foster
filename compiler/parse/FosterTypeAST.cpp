@@ -271,8 +271,8 @@ const llvm::Type* TupleTypeAST::getLLVMType() const {
   return repr;
 }
 
-TypeAST* TupleTypeAST::getContainedType(size_t i) const {
-  if (!indexValid(i)) return NULL;
+TypeAST*& TupleTypeAST::getContainedType(size_t i) {
+  ASSERT(indexValid(i));
   return parts[i];
 }
 
@@ -289,7 +289,7 @@ TupleTypeAST* TupleTypeAST::get(const vector<TypeAST*>& argTypes) {
 
 /////////////////////////////////////////////////////////////////////
 
-FnTypeAST* ClosureTypeAST::getFnType() const {
+FnTypeAST*& ClosureTypeAST::getFnType() {
   if (!fntype) {
     foster::typecheck(proto);
     if (FnTypeAST* fnty = tryExtractCallableType(proto->type)) {
@@ -302,7 +302,7 @@ FnTypeAST* ClosureTypeAST::getFnType() const {
 
 const llvm::Type* ClosureTypeAST::getLLVMType() const {
   if (!repr) {
-    FnTypeAST* fnty = getFnType();
+    FnTypeAST* fnty = const_cast<ClosureTypeAST*>(this)->getFnType();
     if (!fnty) { return NULL; }
     //ASSERT(fnty) << "Can't get the type of this closure without a fn type";
 

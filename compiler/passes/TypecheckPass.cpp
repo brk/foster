@@ -4,12 +4,14 @@
 
 #include "base/Assert.h"
 #include "base/Diagnostics.h"
-#include "passes/TypecheckPass.h"
-#include "passes/PrettyPrintPass.h"
+
 #include "parse/FosterAST.h"
 #include "parse/CompilationContext.h"
-
 #include "parse/FosterUtils.h"
+
+#include "passes/TypecheckPass.h"
+#include "passes/PrettyPrintPass.h"
+#include "passes/ReplaceTypeTransform.h"
 
 using foster::EDiag;
 using foster::show;
@@ -48,6 +50,13 @@ struct IntOrIntVectorTypePredicate : public TypeASTSet {
 struct TypecheckPass : public ExprASTVisitor {
 
   struct Constraints {
+    enum ConstraintType { eConstraintEq };
+    void extractTypeConstraints(ConstraintType ct,
+                                ExprAST* context,
+                                TypeAST* t1,
+                                TypeAST* t2,
+                                Constraints& constraints);
+
     bool conservativeEqualTypeFilter(TypeAST* t1, TypeAST* t2) {
       // we mainly want to avoid accumulating a large number
       // of trivial i32 = i32 etc constraints...
@@ -88,53 +97,328 @@ struct TypecheckPass : public ExprASTVisitor {
       return true;
     }
 
-    vector<TypeTypeConstraint> eqs;
-    bool addEq(ExprAST* context, TypeAST* t1, TypeAST* t2) {
-      if (conservativeEqualTypeFilter(t1, t2)) return true;
+    vector<TypeTypeConstraint> collectedEqualityConstraints;
+    void collectEqualityConstraint(ExprAST* context, TypeAST* t1, TypeAST* t2) {
+      collectedEqualityConstraints.push_back(TypeTypeConstraint(context, t1, t2));
+    }
 
-      eqs.push_back(TypeTypeConstraint(context, t1, t2));
+    bool addEqUnchecked(ExprAST* context, TypeAST* t1, TypeAST* t2) {
+      collectEqualityConstraint(context, t1, t2);
+      return addEqConstraintToSubstitution(collectedEqualityConstraints.back());
+    }
+
+    bool addEq(ExprAST* context, TypeAST* t1, TypeAST* t2) {
+      if (conservativeEqualTypeFilter(t1, t2)) {
+        return true;
+      }
+
+      bool t1abstract = t1->isTypeVariable();
+      bool t2abstract = t2->isTypeVariable();
+      if (t1abstract || t2abstract) {
+        // Can't extract any juice, so just add constraint as usual
+        if (t2abstract && !t1abstract) {
+          std::swap(t1, t2); // ensure that t1 is always abstract.
+        }
+        addEqUnchecked(context, t1, t2);
+      } else {
+	if (t1->tag == t2->tag) {
+          // If the two types have equal tags, extract whatever juice
+          // we can. From e.g. (ta, tb) = (tc, td) we'll recursively
+          // extract            ta = tc ,  tb = td.
+          //
+          // From i32 = i32, we'll treat the constraint as trivial,
+          // and discard it.
+	  extractTypeConstraints(eConstraintEq, context, t1, t2, *this);
+	} else {
+	  // If tags aren't equal, then (since neither one is a type var)
+	  // the equality is immediately false. For now, we'll simply
+          // record the purported equality, and complain about it later.
+          addEqUnchecked(context, t1, t2);
+	}
+      }
       return true;
     }
 
+    size_t trivialConstraintsDiscarded;
+    void discard(ExprAST* context, TypeAST* t1, TypeAST* t2) {
+      ++trivialConstraintsDiscarded;
+    }
+
     bool empty() {
-      return eqs.empty() && convs.empty() && tysets.empty();
+      return collectedEqualityConstraints.empty()
+          && convs.empty() && tysets.empty();
     }
 
     void show(llvm::raw_ostream& out) {
       out << "==============================\n";
       out << "-------- type equality constraints ---------\n";
-      for (size_t i = 0; i < eqs.size(); ++i) {
-        out << "\t" << str(eqs[i].t1) << " == " << str(eqs[i].t2) << "\n";
+      for (size_t i = 0; i < collectedEqualityConstraints.size(); ++i) {
+        out << "\t" << collectedEqualityConstraints[i].context->tag
+            << "\t" << str(collectedEqualityConstraints[i].t1)
+          << " == " << str(collectedEqualityConstraints[i].t2) << "\n";
       }
       out << "-------- type conversion constraints ---------\n";
       for (size_t i = 0; i < convs.size(); ++i) {
-        out << "\t" << str(convs[i].t1) << " to " << str(convs[i].t2) << "\n";
+        out  << "\t" << convs[i].context->tag
+            << "\t" << str(convs[i].t1) << " to " << str(convs[i].t2) << "\n";
       }
       out << "-------- type subset constraints ---------\n";
       for (size_t i = 0; i < tysets.size(); ++i) {
-        out << "\t" << str(tysets[i].ty) << "\n";
+        out << "\t" << tysets[i].context->tag
+            << "\t" << str(tysets[i].ty) << "\n";
       }
       out << "==============================\n";
     }
+
+    explicit Constraints() : trivialConstraintsDiscarded(0) {
+    }
+
+    typedef std::string TypeVariableName;
+    typedef std::map<TypeVariableName, TypeAST*> TypeSubstitution;
+    TypeSubstitution subst;
+    TypeAST* substFind(TypeVariableAST* tv);
+
+    bool addEqConstraintToSubstitution(const Constraints::TypeTypeConstraint& ttc);
+
+
+    vector<foster::EDiag*> errors;
+    void logError(foster::EDiag* err) { errors.push_back(err); }
   };
   Constraints constraints;
+
+  void solveConstraints();
+  void applyTypeSubstitution(ExprAST* e);
 
 
   explicit TypecheckPass() {}
   ~TypecheckPass() {
-    if (!constraints.empty()) {
-      constraints.show(llvm::outs());
-    }
   }
 
   #include "parse/ExprASTVisitor.decls.inc.h"
 };
 
+
+////////////////////////////////////////////////////////////////////
+
+#include "parse/TypeASTVisitor.h"
+
+struct TypeConstraintExtractor : public TypeASTVisitor {
+  TypecheckPass::Constraints::ConstraintType ct;
+  ExprAST* context;
+  TypecheckPass::Constraints& constraints;
+
+  TypeAST* t1_pre;
+
+  TypeConstraintExtractor(
+           TypecheckPass::Constraints& constraints,
+           TypecheckPass::Constraints::ConstraintType ct,
+                          ExprAST* context
+                          )
+    : ct(ct), context(context), constraints(constraints) {}
+
+  void discard(TypeAST* ta, TypeAST* tb) {
+    constraints.discard(context, ta, tb);
+  }
+
+  void addConstraint(TypeAST* ta, TypeAST* tb) {
+    if (ct == TypecheckPass::Constraints::eConstraintEq) {
+      constraints.addEq(context, ta, tb);
+    } else {
+      ASSERT(false) << "Unknown constraint type while typechecking";
+    }
+  }
+
+  void addConstraintUnchecked(TypeAST* ta, TypeAST* tb) {
+    if (ct == TypecheckPass::Constraints::eConstraintEq) {
+      constraints.addEqUnchecked(context, ta, tb);
+    } else {
+      ASSERT(false) << "Unknown constraint type while typechecking";
+    }
+  }
+
+  #include "parse/TypeASTVisitor.decls.inc.h"
+};
+
+void TypeConstraintExtractor::visit(NamedTypeAST* t2) {
+  NamedTypeAST* t1 = dynamic_cast<NamedTypeAST*>(t1_pre);
+  if (t1->getName() == t2->getName()) {
+    discard(t1, t2); // trivially true!
+  } else {
+    // The constraint is unsatisfiable...
+    EDiag* err = new EDiag();
+    (*err) << "Expression cannot have types "
+           << t1->getName() << " and " << t2->getName()
+           << show(context);
+    constraints.logError(err);
+  }
+}
+
+void TypeConstraintExtractor::visit(TypeVariableAST* t2) {
+  addConstraint(t1_pre, t2);
+}
+
+void TypeConstraintExtractor::visit(FnTypeAST* t2) {
+  FnTypeAST* t1 = dynamic_cast<FnTypeAST*>(t1_pre);
+  addConstraintUnchecked(t1, t2); // TODO
+}
+
+void TypeConstraintExtractor::visit(RefTypeAST* t2) {
+  RefTypeAST* t1 = dynamic_cast<RefTypeAST*>(t1_pre);
+  addConstraint(t1->getElementType(), t2->getElementType());
+}
+
+void TypeConstraintExtractor::visit(TupleTypeAST* t2) {
+  TupleTypeAST* t1 = dynamic_cast<TupleTypeAST*>(t1_pre);
+  addConstraintUnchecked(t1, t2); // TODO
+}
+
+void TypeConstraintExtractor::visit(ClosureTypeAST* t2) {
+  ClosureTypeAST* t1 = dynamic_cast<ClosureTypeAST*>(t1_pre);
+  addConstraintUnchecked(t1, t2); // TODO
+}
+
+void TypeConstraintExtractor::visit(SimdVectorTypeAST* t2) {
+  SimdVectorTypeAST* t1 = dynamic_cast<SimdVectorTypeAST*>(t1_pre);
+  addConstraintUnchecked(t1, t2); // TODO
+}
+
+void TypeConstraintExtractor::visit(LiteralIntValueTypeAST* t2) {
+  LiteralIntValueTypeAST* t1 = dynamic_cast<LiteralIntValueTypeAST*>(t1_pre);
+  addConstraintUnchecked(t1, t2); // TODO
+}
+
+void TypecheckPass::Constraints::extractTypeConstraints(
+     TypecheckPass::Constraints::ConstraintType ct,
+				 ExprAST* context,
+				 TypeAST* t1,
+				 TypeAST* t2,
+				 Constraints& constraints) {
+  TypeConstraintExtractor tce(constraints, ct, context);
+  tce.t1_pre = t1; t2->accept(&tce);
+}
+
+////////////////////////////////////////////////////////////////////
+
+void TypecheckPass::solveConstraints() {
+  // Equality constraints have already been solved incrementally.
+  // TODO process deferred constraints
+}
+
+// A set of equality constraints forms an undirected graph,
+// where the nodes are type variables, types, and type schemas,
+// and the edges are the constraints collected during typechecking.
+//
+// From this graph, we wish to derive a substitution mapping
+// type variables to types and type schemas.
+//
+// One nifty way of efficiently doing so, incrementally, is to
+// treat the problem as a variation of union-find, where connected
+// nodes form an equivalence class. The variation is that when
+// selecting representative elements, concrete types always take
+// precedence over abstract types. This makes it trivial to detect
+// when a type conflict exists: two concrete types will be unioned.
+// If that occurs, we can search the graph to find the minimum-length
+// path between the concrete types.
+bool TypecheckPass::Constraints::addEqConstraintToSubstitution(
+         const TypecheckPass::Constraints::TypeTypeConstraint& ttc) {
+
+  TypeVariableAST* tv = dynamic_cast<TypeVariableAST*>(ttc.t1);
+  ASSERT(tv) << "equality constraints must begin with a type variable!";
+  const std::string& tvName = tv->getTypeVariableName();
+  
+  TypeAST* tvs = substFind(tv);
+  // Because substFind does path compression, we know
+  // that tvs is not a type variable.
+  ASSERT(!(tvs && tvs->isTypeVariable()))
+    << "substFind should do path compression and not"
+    << " return type variables! Saw " << str(tv) << " to " << str(tvs);
+
+  if (!tvs) {
+    this->subst[tvName] = ttc.t2;
+  } else if (tvs == ttc.t2)  {
+    // Das fine... 
+  } else {
+    llvm::errs() << "Conflict detected during equality constraint solving!\n"
+	<< "\t" << tvName << " cannot be both "
+	<< "\n\t\t" << str(tvs) << " and " << str(ttc.t2) << ".";
+    return false;
+  }
+//  llvm::outs() << ttc.context->tag << "\t" << str(ttc.t1) << " == " << str(ttc.t2) << "\n";
+  return true;
+}
+
+// One small difference from "regular" union/find is that
+// because type schemas might need to be updated, we back off one
+// layer of indirection when doing path compression.
+TypeAST* TypecheckPass::Constraints::substFind(TypeVariableAST* tv) {
+  TypeVariableAST* leader = tv;
+  while (true) {
+    const std::string& tvName = leader->getTypeVariableName();
+    TypeAST* next = this->subst[tvName];
+    if (!next || next == leader) { break; }
+
+    if (TypeVariableAST* nextTv = dynamic_cast<TypeVariableAST*>(next)) {
+      leader = nextTv;
+    } else { break; }
+  }
+
+  // Path compression
+  while (true) {
+    const std::string& tvName = tv->getTypeVariableName();
+    TypeAST* next = this->subst[tvName];
+    if (!next) { break; }
+    if (next == leader) {
+      // We'd like to maintain the invariant that we never
+      // return a type variable, so we break self-loops.
+      this->subst[tvName] = NULL;
+      break;
+    }
+    if (TypeVariableAST* nextTv = dynamic_cast<TypeVariableAST*>(next)) {
+      tv = nextTv;
+      this->subst[tvName] = leader;
+      llvm::outs() << "\t" << tvName << " -> " << str(leader)
+                 << " instead of " << str(next) << "\n";
+    } else { break; }
+  }
+
+  return subst[leader->getTypeVariableName()];
+}
+
+void TypecheckPass::applyTypeSubstitution(ExprAST* e) {
+  ReplaceTypeTransform rtt(constraints.subst);
+  foster::replaceTypesIn(e, rtt);
+}
+
 namespace foster {
 
+// returns true if typechecking succeeded
 bool typecheck(ExprAST* e) {
   TypecheckPass tp; e->accept(&tp);
-  return true;
+  if (tp.constraints.empty()) {
+    return true;
+  }
+
+  if (!tp.constraints.empty()) {
+    llvm::outs() << "Constraints before solving:\n";
+    tp.constraints.show(llvm::outs());
+  }
+  tp.solveConstraints();
+#if 0
+    if (!constraints.empty()) {
+      llvm::outs() << "Constraints after solving:\n";
+      constraints.show(llvm::outs());
+    }
+#endif
+  tp.applyTypeSubstitution(e);
+  
+  bool noProblemsTypechecking = tp.constraints.errors.empty();
+  for (size_t i = 0; i < tp.constraints.errors.size(); ++i) {
+    EDiag* e = tp.constraints.errors[i];
+    tp.constraints.errors[i] = NULL;
+    delete e; // dtor triggers emission of stored error message.
+  }
+
+  return noProblemsTypechecking;
 }
 
 } // namespace foster
@@ -168,6 +452,8 @@ void TypecheckPass::visit(UnaryOpExprAST* ast) {
   TypeAST* innerType = ast->parts[0]->type;
   if (!innerType) {
     return;
+  } else {
+    ast->type = innerType;
   }
 
   const std::string& op = ast->op;
@@ -180,13 +466,13 @@ void TypecheckPass::visit(UnaryOpExprAST* ast) {
       ASSERT(opTy);
 
       if (opTy == LLVMTypeFor("i1")) {
-        EDiag() << "unary '-' used on a boolean; use 'not' instead" << show(ast);
-        return;
-      }
-
-      if (!(opTy->isIntOrIntVectorTy())) {
-        EDiag() << "operand to unary '-' had non-inty type " << str(opTy) << show(ast);
-        return;
+	EDiag* err = new EDiag();
+	(*err) << "unary '-' used on a boolean; use 'not' instead" << show(ast);
+	constraints.logError(err);
+      } else if (!(opTy->isIntOrIntVectorTy())) {
+	EDiag* err = new EDiag();
+	(*err) << "operand to unary '-' had non-inty type " << str(opTy) << show(ast);
+	constraints.logError(err);
       }
     }
   } else if (op == "not") {
@@ -195,13 +481,12 @@ void TypecheckPass::visit(UnaryOpExprAST* ast) {
     } else {
       if (innerType != TypeAST::i(1)) {
         const llvm::Type* opTy = innerType->getLLVMType();
-        EDiag() << "operand to unary 'not had non-bool type " << str(opTy) << show(ast);
-        return;
+	EDiag* err = new EDiag();
+	(*err) << "operand to unary 'not had non-bool type " << str(opTy) << show(ast);
+	constraints.logError(err);
       }
     }
   }
-
-  ast->type = innerType;
 }
 
 bool isBitwiseOp(const std::string& op) {
@@ -393,8 +678,8 @@ void TypecheckPass::visit(IfExprAST* ast) {
   thenExpr->accept(this);
   elseExpr->accept(this);
 
-  constraints.addEq(ast, testExpr->type, TypeAST::i(1));
-  constraints.addEq(ast, thenExpr->type, elseExpr->type);
+  constraints.addEq(testExpr, testExpr->type, TypeAST::i(1));
+  constraints.addEq(ast,      thenExpr->type, elseExpr->type);
   ast->type = thenExpr->type;
 
 #if 0
@@ -584,7 +869,7 @@ void TypecheckPass::visit(AssignExprAST* ast) {
   TypeAST* lhsTy = ast->parts[0]->type;
   TypeAST* rhsTy = ast->parts[1]->type;
 
-  constraints.addEq(ast, RefTypeAST::get(lhsTy, false), rhsTy);
+  constraints.addEq(ast, lhsTy, RefTypeAST::get(rhsTy, false));
 
   ast->type = TypeAST::i(32);
 
@@ -649,6 +934,19 @@ void TypecheckPass::visit(SubscriptAST* ast) {
     return; 
   }
 
+  if (TypeVariableAST* tv = dynamic_cast<TypeVariableAST*>(baseType)) {
+    TypeAST* sub = constraints.substFind(tv);
+    if (sub && !sub->isTypeVariable()) {
+      llvm::outs() << "Subscript AST peeking through " << str(tv)
+		   << " and replacing it with " << str(sub) << "\n";
+      ast->parts[0]->type = baseType = sub;
+    } else {
+      EDiag() << "SubscriptAST's base type was a type variable that"
+              << " it couldn't make concrete!" << show(ast);
+      ASSERT(false);
+    }
+  }
+
   // Check to see that the given index is valid for this type
   ConstantInt* cidx = llvm::dyn_cast<ConstantInt>(idx->getConstantValue());
   const APInt& vidx = cidx->getValue();
@@ -701,14 +999,14 @@ void TypecheckPass::visit(SubscriptAST* ast) {
     }
   }
 
-  if (compositeTy) {
-    ast->type = compositeTy->getContainedType(vidx.getSExtValue());
+  int64_t literalIndexValue = vidx.getSExtValue();
+  if (!compositeTy->indexValid(literalIndexValue)) {
+    EDiag() << "attmpt to index composite with invalid index " << literalIndexValue
+            << show(ast);
+    return;
   }
-#if 0
-  else {
-    ast->type = TypeAST::get(arrayTy->getElementType());
-  }
-#endif
+
+  ast->type = compositeTy->getContainedType(literalIndexValue);
 
   if (this->inAssignLHS) {
     ast->type = RefTypeAST::get(ast->type, /*nullable*/ false);
@@ -788,8 +1086,6 @@ const FunctionType* getFunctionTypeFromClosureStructType(const Type* ty) {
 }
 
 void TypecheckPass::visit(CallAST* ast) {
-  std::cout << "type checking CallAST" << std::endl;
-
   ExprAST* base = ast->parts[0];
   if (!base) {
     EDiag() << "called expression was null" << show(ast);
@@ -814,7 +1110,6 @@ void TypecheckPass::visit(CallAST* ast) {
 
 
   FnAST* literalFnBase = dynamic_cast<FnAST*>(base);
-  std::cout << "literal fn base: " << literalFnBase << std::endl;
   if (literalFnBase) {
     // If this is an encoded let-expression   fn (formals) { body }(args)
     // we should synthesize the args first, then use the synthesized types

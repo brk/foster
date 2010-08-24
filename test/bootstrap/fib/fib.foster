@@ -27,6 +27,28 @@ fib-loop = fn (x : i32) {
     set tmp = deref(first) + deref(second)
     set first = deref(second)
     set second = deref(tmp)
+
+    //set tmp = (first) + (second)
+    //set first = (second)
+    //set second = (tmp)
+
+    // let refT : ref i32 = new 0
+    // let refrefT : ref (ref i32) = new (new 0)
+    // let refrefrefT : ref (ref (ref i32)) = new (new (new 0))
+    // set refT = 0		// store T	in T*	OK by definition
+    // set refT = refT		// store T*	in T*	load to above case?
+    // set refT = refrefT	// store T**	in T*
+    // set refT = refrefrefT	// store T***	in T*
+    //
+    // set refrefT = 0		// store T	in T**	hmmm
+    // set refrefT = refT	// store T*	in T**	problematic
+    // set refrefT = refrefT	// store T**	in T**
+    // set refrefT = refrefrefT	// store T***	in T**
+
+    // For this case:
+    // set refrefT = refT	// store T*	in T**	problematic
+    // do we wish to deref both sides and treat this as T in T*,
+    // or not, and treat this as (T*) in (T*)*		?
   };
   deref(first)
   }
