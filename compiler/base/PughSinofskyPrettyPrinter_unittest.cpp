@@ -25,7 +25,8 @@ typedef PrettyPrinter::PPToken PPToken;
 //    _o    optional conditional line break (aka inconsistent)
 //    _c    connected conditional line break (aka consistent)
 string parse(const std::string& s, int width, int indent) {
-  string str; llvm::raw_string_ostream ss(str);
+  string str;
+  llvm::raw_string_ostream ss(str);
   PrettyPrinter pp(ss, width, indent);
 
   size_t e = s.size();
@@ -57,6 +58,7 @@ string parse(const std::string& s, int width, int indent) {
       }
     }
   }
+  pp.flush();
   return ss.str();
 }
 
@@ -70,6 +72,11 @@ TEST(PughSinofskyPrettyPrinter, optNewlines) {
   {
     string s = parse("1234_o1234", 7, 2);
     EXPECT_EQ("1234\n1234", s);
+  }
+  
+  {
+    string s = parse("1234_o1234_o1234", 7, 2);
+    EXPECT_EQ("1234\n1234\n1234", s);
   }
 }
 
@@ -101,7 +108,7 @@ TEST(PughSinofskyPrettyPrinter, singleTokenBasic) {
 // tNewline produces hard linebreak that would otherwise not appear.
 TEST(PughSinofskyPrettyPrinter, reqNewlines) {
   {
-    string s =parse("1234_n1234", 15, 2);
+    string s = parse("1234_n1234", 15, 2);
     EXPECT_EQ("1234\n"
               "1234", s);
   }
