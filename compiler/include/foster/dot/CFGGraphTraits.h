@@ -55,7 +55,8 @@ template <> struct DOTGraphTraits<FnAST*> : public DefaultDOTGraphTraits {
   DOTGraphTraits(bool isSimple=true) : DefaultDOTGraphTraits(isSimple) {}
 
   static std::string getGraphName(const FnAST* fnast) {
-    return std::string("CFG for ") + fnast->proto->name;
+    return std::string("CFG for ") +
+           const_cast<FnAST*>(fnast)->getProto()->name;
   }
 
   static std::string getSimpleNodeLabel(const CFG* node,

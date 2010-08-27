@@ -354,33 +354,13 @@ struct PrototypeAST : public ExprAST {
   foster::SymbolTable<foster::SymbolInfo>::LexicalScope* scope;
 
   PrototypeAST(TypeAST* retTy, const string& name,
-               foster::SourceRange sourceRange)
-      : ExprAST("PrototypeAST", sourceRange),
-        name(name), resultTy(retTy), scope(NULL) {
-  }
-
-  PrototypeAST(TypeAST* retTy, const string& name,
                const std::vector<VariableAST*>& inArgs,
-               foster::SourceRange sourceRange)
-      : ExprAST("PrototypeAST", sourceRange),
-        name(name), inArgs(inArgs), resultTy(retTy), scope(NULL) {
-    if (resultTy == NULL) {
-      this->resultTy = TypeAST::i(32);
-    } else {
-    }
-  }
-
-  PrototypeAST(TypeAST* retTy, const string& name,
-               const std::vector<VariableAST*>& inArgs,
-               foster::SymbolTable<foster::SymbolInfo>::LexicalScope* ascope,
-               foster::SourceRange sourceRange)
+               foster::SourceRange sourceRange,
+               foster::SymbolTable<foster::SymbolInfo>::LexicalScope* ascope = NULL)
       : ExprAST("PrototypeAST", sourceRange),
         name(name), inArgs(inArgs), resultTy(retTy), scope(ascope) {
-    ASSERT(scope != NULL);
-
     if (resultTy == NULL) {
       this->resultTy = TypeAST::i(32);
-    } else {
     }
   }
 
@@ -398,27 +378,28 @@ struct PrototypeAST : public ExprAST {
   }
 };
 
-struct FnAST : public ExprAST {
-  PrototypeAST* proto;
-  ExprAST* body;
-  bool wasNested;
-  bool lambdaLiftOnly;
 
+struct FnAST : public ExprAST {
   std::vector<foster::CFG*> cfgs;
 
   explicit FnAST(PrototypeAST* proto, ExprAST* body,
                  foster::SourceRange sourceRange)
-    : ExprAST("FnAST", sourceRange),
-      proto(proto), body(body),
-      wasNested(false), lambdaLiftOnly(false) {}
+    : ExprAST("FnAST", sourceRange) {
+    parts.push_back(proto);
+    parts.push_back(body);
+  }
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "FnAST(proto = " << str(proto) << ", body = " << str(body) << endl;
+    return out << "FnAST(proto = " << str(parts[0]) << ", body = " << str(parts[1]) << endl;
   }
+
+  PrototypeAST* getProto() { return dynamic_cast<PrototypeAST*>(parts[0]); }
+  ExprAST*& getBody() { return parts[1]; }
 };
 
 // A closure stores a typed function pointer and a typed environment pointer.
-// Its "external" type is a struct of function-taking-generic-env-ptr and
+// At the typechecking level, its type is a function type, but at the codegen level,
+// its "external" LLVM type is a struct of function-taking-generic-env-ptr and
 // generic-env-ptr. This allows type checking to be agnostic of the types stored
 // in the env, while still allowing codegen to insert the appropriate bitcasts.
 struct ClosureAST : public ExprAST {
@@ -449,13 +430,13 @@ struct ClosureAST : public ExprAST {
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
     if (hasKnownEnvironment && fn) {
-      out << "(closure " << str(fn->proto);
+      out << "(closure " << str(fn->getProto());
       for (size_t i = 0; i < parts.size(); ++i) {
         out << "\t" << str(parts[i]);
       }
       return out << ")";
     } else if (fn) {
-      return out << "(unrefined closure " << str(fn->proto) << ")";
+      return out << "(unrefined closure " << str(fn->getProto()) << ")";
     } else {
       return out << "(malformed closure)";
     }

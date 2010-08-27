@@ -505,8 +505,7 @@ PrototypeAST* getFnProto(string name,
 
   pTree sourceEndTree = (retTyExprTree != NULL) ? retTyExprTree : formalsTree;
   foster::SourceRange sourceRange = rangeFrom(formalsTree, sourceEndTree);
-  PrototypeAST* proto = new PrototypeAST(retTy, name, in, protoScope,
-                              sourceRange);
+  PrototypeAST* proto = new PrototypeAST(retTy, name, in, sourceRange, protoScope);
 
   gScope.getRootScope()->insert(name, new foster::SymbolInfo(proto));
 
@@ -888,7 +887,6 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
                                      child(tree, 0),
                                      tyExprTree);
     FnAST* fn = buildFn(proto, child(tree, 2));
-    fn->lambdaLiftOnly = true;
 
     ExprAST* a = ExprAST_from(child(tree, 1), fnMeansClosure);
     Exprs args; args.push_back(a);
@@ -1007,15 +1005,13 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
   if (token == FN) {
     // for now, this "<anon_fn" prefix is used for closure conversion later on
     FnAST* fn = parseFn("<anon_fn_%d>", tree, fnMeansClosure);
-    if (!fn->body) {
+    if (!fn->getBody()) {
       foster::EDiag() << "Found bare proto (with no body)"
                       << " when expecting full fn literal."
                       << foster::show(fn);
       return NULL;
     }
 
-    if (0) cout << "Parsed fn " << *(fn->proto) << ", fnMeansClosure? "
-              << fnMeansClosure << endl;
     if (fnMeansClosure) {
       ClosureAST* cloast = new ClosureAST(fn, sourceRange);
       if (1) EDiag() << "\t\t\tFN MEANS CLOSURE: " << str(fn)
@@ -1090,10 +1086,10 @@ TypeAST* TypeAST_from(pTree tree) {
       EDiag() << "no fn expr when parsing fn type!" << show(sourceRange);
       return NULL;
     }
-    if (fn->body) {
+    if (fn->getBody()) {
       EDiag() << "had unexpected fn body when parsing fn type!" << show(fn);
     }
-    return new ClosureTypeAST(fn->proto, NULL, sourceRange);
+    return new ClosureTypeAST(fn->getProto(), NULL, sourceRange);
   }
 
   if (text == "ref") {

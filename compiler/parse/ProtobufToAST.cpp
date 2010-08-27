@@ -112,18 +112,10 @@ ExprAST* parseDeref(const pb::Expr& e, const foster::SourceRange& range) {
 }
 
 ExprAST* parseFn(const pb::Expr& e, const foster::SourceRange& range) {
-  if (!e.has_fn()) return NULL;
-
-  const pb::Fn& f = e.fn();
-
-  FnAST* fn = new FnAST(
-      dynamic_cast<PrototypeAST*>(ExprAST_from_pb(& f.proto())),
-      ExprAST_from_pb(& f.body()),
+  return new FnAST(
+      dynamic_cast<PrototypeAST*>(ExprAST_from_pb(& e.parts(0))),
+      ExprAST_from_pb(& e.parts(1)),
       range);
-
-  fn->wasNested = f.has_was_nested() && f.was_nested();
-  fn->lambdaLiftOnly = f.has_lambda_lift_only() && f.lambda_lift_only();
-  return fn;
 }
 
 ExprAST* parseForrange(const pb::Expr& e, const foster::SourceRange& range) {

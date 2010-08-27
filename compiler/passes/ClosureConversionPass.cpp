@@ -21,12 +21,51 @@ using foster::EDiag;
 
 using namespace std;
 
+
+#include "parse/ExprASTVisitor.h"
+
+#include <set>
+#include <string>
+
+struct ClosureConversionPass : public ExprASTVisitor {
+  #include "parse/ExprASTVisitor.decls.inc.h"
+  std::set<std::string> globalNames;
+  ModuleAST* toplevel;
+
+  std::vector<FnAST*> newlyHoistedFunctions;
+  ClosureConversionPass(const std::set<std::string>& globalNames,
+                        ModuleAST* toplevel)
+     : globalNames(globalNames), toplevel(toplevel) {}
+
+  ~ClosureConversionPass() {
+    // Hoist newly-closed function definitions to the top level
+    for (size_t i = 0; i < newlyHoistedFunctions.size(); ++i) {
+      toplevel->parts.push_back( newlyHoistedFunctions[i] );
+    }
+  }
+  
+  // If an anonymous function is in a closure, we don't want to
+  // perform lambda-lifting, because closure conversion subsumes
+  // the non-hoisting part of the lifting conversion.
+  set<FnAST*> fnInClosure;
+};
+
+namespace foster {
+  void performClosureConversion(const std::set<std::string>& globalNames,
+                                ModuleAST* mod) {
+    ClosureConversionPass p(globalNames, mod);
+    mod->accept(&p); 
+  }
+}
+
 // Which function are we currently examining?
 vector<FnAST*> callStack;
 map<FnAST*, set<VariableAST*> > boundVariables;
 map<FnAST*, set<VariableAST*> > freeVariables;
 typedef set<CallAST*> CallSet;
 map<FnAST*, CallSet> callsOf;
+
+
 
 void replaceOldWithNew(ExprAST* inExpr, ExprAST* oldExpr, ExprAST* newExpr) {
   ReplaceExprTransform rex;
@@ -82,24 +121,23 @@ void ClosureConversionPass::visit(PrototypeAST* ast)           {
 
 void ClosureConversionPass::visit(FnAST* ast)                  {
   callStack.push_back(ast);
-    onVisitChild(ast, ast->proto);
+    onVisitChild(ast, ast->getProto());
     // Ensure that this function is not a free variable in its own body
-    this->globalNames.insert(ast->proto->name);
-    onVisitChild(ast, ast->body);
+    this->globalNames.insert(ast->getProto()->name);
+    onVisitChild(ast, ast->getBody());
   callStack.pop_back();
 
   if (isAnonymousFunction(ast)) {
     // Rename anonymous functions to reflect their lexical scoping
     FnAST* parentFn = dynamic_cast<FnAST*>(ast->parent);
     if (parentFn != NULL) {
-      ast->proto->name.replace(0, 1, "<" + parentFn->proto->name + ".");
+      ast->getProto()->name.replace(0, 1, "<" + parentFn->getProto()->name + ".");
     }
 
-    if (ast->lambdaLiftOnly) {
-      lambdaLiftAnonymousFunction(ast, this);
+    if (fnInClosure.count(ast) > 0) {
+      // don't lambda lift if we're doing closure conversion!
     } else {
-      std::cout << "Anon function not wanting lambda lifting: "
-                << ast->proto->name << std::endl;
+      lambdaLiftAnonymousFunction(ast, this);
     }
   }
 }
@@ -108,6 +146,7 @@ void ClosureConversionPass::visit(ClosureAST* ast) {
   if (ast->hasKnownEnvironment) {
     visitChildren(ast);
   } else {
+    fnInClosure.insert(ast->fn);
     ast->fn->accept(this);
     performClosureConversion(ast, this);
   }
@@ -151,9 +190,7 @@ void ClosureConversionPass::visit(CallAST* ast)                {
     base = ast->parts[0] = cloBase->fn;
   }
   if (FnAST* fnBase = dynamic_cast<FnAST*>(base)) {
-    std::cout << "visited direct call of fn " << fnBase->proto->name
-              << ", nested? " << fnBase->wasNested << std::endl;
-    fnBase->lambdaLiftOnly = true;
+    std::cout << "visited direct call of fn " << fnBase->getProto()->name << std::endl;
     callsOf[fnBase].insert(ast);
   }
   visitChildren(ast);
@@ -180,10 +217,8 @@ void appendParameter(CallAST* call, VariableAST* var) {
 }
 
 bool isAnonymousFunction(FnAST* ast) {
-  string& name = ast->proto->name;
+  string& name = ast->getProto()->name;
   if (name.find("<anon_fn") == 0) {
-    std::cout << "\t\tClosure conversion found an anonymous function: " << name << "\n\n";
-    ast->wasNested = true;
     return true;
   } else { return false; }
 }
@@ -197,13 +232,13 @@ void hoistAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) {
   {
     // Alter the symbol table structure to reflect the fact that we're
     // hoisting the function to the root scope.
-    ast->proto->scope->parent = gScope.getRootScope();
+    ast->getProto()->scope->parent = gScope.getRootScope();
 
     // Ensure that the fn proto gets added to the module, so that it can
     // be referenced from other functions.
-    CodegenPass cp; ast->proto->accept(&cp);
+    CodegenPass cp; ast->getProto()->accept(&cp);
 
-    gScopeInsert(ast->proto->name, ast->proto->value);
+    gScopeInsert(ast->getProto()->name, ast->getProto()->value);
   }
 }
 
@@ -240,7 +275,7 @@ void performClosureConversion(ClosureAST* closure,
   VariableAST* envVar = new VariableAST("env",
                               RefTypeAST::get(envTy),
                               foster::SourceRange::getEmptyRange());
-  prependParameter(ast->proto, envVar);
+  prependParameter(ast->getProto(), envVar);
 
   // Rewrite the function body to make all references to free vars
   // instead go through the passed env pointer.
@@ -256,21 +291,21 @@ void performClosureConversion(ClosureAST* closure,
                                         foster::SourceRange::getEmptyRange());
       ++envOffset;
     }
-    ast->body->accept(&rex);
+    ast->getBody()->accept(&rex);
   }
 
   // Rewrite all calls to indirect through the code pointer
   // ... is handled directly at CallAST nodes during codegen
 
-  if (ast->proto->type) {
+  if (ast->getProto()->type) {
     // and updates the types of the prototype and function itself,
     // if they already have types.
     {
-      typecheck(ast->proto);
+      typecheck(ast->getProto());
       std::cout << "ClosureConversionPass: updating type from "
                  << str(ast->type->getLLVMType())
-                 << " to\n\t" << str(ast->proto->type->getLLVMType()) << std::endl;
-      ast->type = ast->proto->type;
+                 << " to\n\t" << str(ast->getProto()->type->getLLVMType()) << std::endl;
+      ast->type = ast->getProto()->type;
     }
   }
 
@@ -293,13 +328,13 @@ void lambdaLiftAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) {
                              foster::SourceRange::getEmptyRange());
 
     // add a parameter to the function prototype
-    appendParameter(ast->proto, var);
+    appendParameter(ast->getProto(), var);
 
     // and rewrite all usages inside the function
     {
       ReplaceExprTransform rex;
       rex.staticReplacements[parentScopeVar] = var;
-      ast->body->accept(&rex);
+      ast->getBody()->accept(&rex);
       // This rewriting must be done even if the variable maintains
       // the same name so that llvm::Values from the inner function
       // don't leak out via the 'scope' table to calling functions.
@@ -311,22 +346,22 @@ void lambdaLiftAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) {
     }
   }
 
-  if (ast->proto->type) {
+  if (ast->getProto()->type) {
     // and updates the types of the prototype and function itself,
     // if they already have types
     {
-      typecheck(ast->proto);
+      typecheck(ast->getProto());
 
       // We just typecheck the prototype and not the function
       // to avoid re-typechecking the function body, which should not
       // have been affected by this change.
-      ast->type = ast->proto->type;
+      ast->type = ast->getProto()->type;
     }
   }
 
   VariableAST* varReferringToFunction = new VariableAST(
-                                    ast->proto->name,
-                                    ast->proto->type,
+                                    ast->getProto()->name,
+                                    ast->getProto()->type,
                                     foster::SourceRange::getEmptyRange());
 
   // Rewrite external calls to refer to the function by name.

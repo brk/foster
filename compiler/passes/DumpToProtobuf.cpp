@@ -117,11 +117,7 @@ void DumpToProtobufPass::visit(PrototypeAST* ast)           {
 
 void DumpToProtobufPass::visit(FnAST* ast)                  {
   processExprAST(current, ast, foster::pb::Expr::FN);
-  foster::pb::Fn* fn = current->mutable_fn();
-  dumpChild(this, fn->mutable_proto(), ast->proto);
-  dumpChild(this, fn->mutable_body(), ast->body);
-  fn->set_lambda_lift_only(ast->lambdaLiftOnly);
-  fn->set_was_nested(ast->wasNested);
+  dumpChildren(this, ast);
 }
 
 void DumpToProtobufPass::visit(ClosureAST* ast) {

@@ -5,28 +5,15 @@
 #ifndef FOSTER_PASSES_CLOSURECONVERSION
 #define FOSTER_PASSES_CLOSURECONVERSION
 
-#include "parse/ExprASTVisitor.h"
-
 #include <set>
 #include <string>
 
-struct ClosureConversionPass : public ExprASTVisitor {
-  #include "parse/ExprASTVisitor.decls.inc.h"
-  std::set<std::string> globalNames;
-  ModuleAST* toplevel;
+struct ModuleAST;
 
-  std::vector<FnAST*> newlyHoistedFunctions;
-  ClosureConversionPass(const std::set<std::string>& globalNames,
-                        ModuleAST* toplevel)
-     : globalNames(globalNames), toplevel(toplevel) {}
-
-  ~ClosureConversionPass() {
-    // Hoist newly-closed function definitions to the top level
-    for (size_t i = 0; i < newlyHoistedFunctions.size(); ++i) {
-      toplevel->parts.push_back( newlyHoistedFunctions[i] );
-    }
-  }
-};
+namespace foster {
+  void performClosureConversion(const std::set<std::string>& globalNames,
+                                ModuleAST* mod);
+}
 
 #endif // header guard
 

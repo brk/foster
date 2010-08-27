@@ -76,7 +76,8 @@ VariableAST* checkAndGetLazyRefTo(PrototypeAST* p) {
 }
 
 VariableAST* proto(TypeAST* retTy, const string& fqName) {
-  return checkAndGetLazyRefTo(new PrototypeAST(retTy, fqName,
+  std::vector<VariableAST*> inArgs;
+  return checkAndGetLazyRefTo(new PrototypeAST(retTy, fqName, inArgs,
                                     SourceRange::getEmptyRange()));
 }
 

@@ -612,11 +612,13 @@ void CodegenPass::visit(SeqAST* ast) {
 void CodegenPass::visit(FnAST* ast) {
   if (ast->value) return;
 
-  ASSERT(ast->body != NULL);
-  ASSERT(ast->proto->scope) << " no scope for " << ast->proto->name;
+  std::cout << "codegenning " << ast->getProto()->name << ":\n\t" << *ast << std::endl;
 
-  (ast->proto)->accept(this);
-  Function* F = dyn_cast<Function>(ast->proto->value);
+  ASSERT(ast->getBody() != NULL);
+  ASSERT(ast->getProto()->scope) << " no scope for " << ast->getProto()->name;
+
+  (ast->getProto())->accept(this);
+  Function* F = dyn_cast<Function>(ast->getProto()->value);
   if (!F) { return; }
 
 #if USE_FOSTER_GC_PLUGIN
@@ -629,46 +631,46 @@ void CodegenPass::visit(FnAST* ast) {
   BasicBlock* BB = BasicBlock::Create(getGlobalContext(), "entry", F);
   builder.SetInsertPoint(BB);
 
-  gScopeInsert(ast->proto->name, F);
-  gScope.pushExistingScope(ast->proto->scope);
+  gScopeInsert(ast->getProto()->name, F);
+  gScope.pushExistingScope(ast->getProto()->scope);
 
   // If the body of the function might allocate memory, the first thing
   // the function should do is create stack slots/GC roots to hold
   // dynamically-allocated pointer parameters.
   if (true) { // conservative approximation to MightAlloc
     Function::arg_iterator AI = F->arg_begin();
-    for (size_t i = 0; i != ast->proto->inArgs.size(); ++i, ++AI) {
+    for (size_t i = 0; i != ast->getProto()->inArgs.size(); ++i, ++AI) {
       if (mightContainHeapPointers(AI->getType())) {
 #if 0
-        std::cout << "marking root for var " << ast->proto->inArgs[i]->name
-            << " of ast type " << *(ast->proto->inArgs[i]->type)
+        std::cout << "marking root for var " << ast->getProto()->inArgs[i]->name
+            << " of ast type " << *(ast->getProto()->inArgs[i]->type)
             << " and value type " << *(AI->getType()) << std::endl;
 #endif
-        gScopeInsert(ast->proto->inArgs[i]->name,
+        gScopeInsert(ast->getProto()->inArgs[i]->name,
             storeAndMarkPointerAsGCRoot(AI));
       }
     }
   }
 
-  (ast->body)->accept(this);
-  Value* RetVal = ast->body->value;
+  (ast->getBody())->accept(this);
+  Value* RetVal = ast->getBody()->value;
   if (RetVal == NULL) {
-    EDiag() << "null body value when codegenning function " << ast->proto->name
+    EDiag() << "null body value when codegenning function " << ast->getProto()->name
             << show(ast);
     return;
   }
   ASSERT(RetVal != NULL);
 
-  bool returningVoid = isVoid(ast->proto->resultTy);
+  bool returningVoid = isVoid(ast->getProto()->resultTy);
 
   // If we try to return a tuple* when the fn specifies a tuple, manually insert a load
   if (RetVal->getType()->isDerivedType()
       && !returningVoid
-      && isPointerToType(RetVal->getType(), ast->proto->resultTy->getLLVMType())) {
+      && isPointerToType(RetVal->getType(), ast->getProto()->resultTy->getLLVMType())) {
     RetVal = builder.CreateLoad(RetVal, false, "structPtrToStruct");
   }
 
-  gScope.popExistingScope(ast->proto->scope);
+  gScope.popExistingScope(ast->getProto()->scope);
 
   if (RetVal) {
     if (returningVoid) {
@@ -682,7 +684,7 @@ void CodegenPass::visit(FnAST* ast) {
     ast->value = F;
   } else {
     F->eraseFromParent();
-    EDiag() << "function '" << ast->proto->name
+    EDiag() << "function '" << ast->getProto()->name
               << "' retval creation failed" << show(ast);
   }
 
@@ -732,7 +734,7 @@ void CodegenPass::visit(ClosureAST* ast) {
   TupleExprAST* env = new TupleExprAST(new SeqAST(ast->parts,
                                           SourceRange::getEmptyRange()),
                                        SourceRange::getEmptyRange());
-  ExprAST* fnPtr = new VariableAST(ast->fn->proto->name,
+  ExprAST* fnPtr = new VariableAST(ast->fn->getProto()->name,
                    RefTypeAST::get(ast->fn->type), SourceRange::getEmptyRange());
   typecheck(fnPtr);
   fnPtr->accept(this);
@@ -1245,10 +1247,9 @@ FnAST* getVoidReturningVersionOf(ExprAST* arg, FnTypeAST* fnty) {
     gScope.popExistingScope(protoScope);
     PrototypeAST* proto = new PrototypeAST(
                                 TypeAST::getVoid(),
-                                fnName, inArgs, protoScope,
-                                SourceRange::getEmptyRange());
-    ExprAST* body = new CallAST(arg, callArgs, SourceRange::getEmptyRange());
-    FnAST* fn = new FnAST(proto, body, SourceRange::getEmptyRange());
+                                fnName, inArgs, arg->sourceRange, protoScope);
+    ExprAST* body = new CallAST(arg, callArgs, arg->sourceRange);
+    FnAST* fn = new FnAST(proto, body, arg->sourceRange);
     typecheck(fn);
     { CodegenPass cp; fn->accept(&cp); }
     voidReturningVersions[fnName] = fn;
@@ -1311,7 +1312,7 @@ llvm::Value* getTrampolineForClosure(ClosureAST* cloAST) {
   // It would be nice and easy to extract the code pointer from the closure,
   // but LLVM requires that pointers passed to trampolines be "obvious" function
   // pointers. Thus, we need direct access to the closure's underlying fn.
-  ExprAST* fnPtr = new VariableAST(cloAST->fn->proto->name,
+  ExprAST* fnPtr = new VariableAST(cloAST->fn->getProto()->name,
                                RefTypeAST::get(cloAST->fn->type),
                                SourceRange::getEmptyRange());
   { typecheck(fnPtr);
@@ -1365,8 +1366,7 @@ FnAST* getClosureVersionOf(ExprAST* arg, FnTypeAST* fnty) {
                                     gScope.newScope("fn proto " + fnName);
     gScope.popExistingScope(protoScope);
     PrototypeAST* proto = new PrototypeAST(fnty->getReturnType(),
-                               fnName, inArgs, protoScope,
-                                               SourceRange::getEmptyRange());
+                               fnName, inArgs, arg->sourceRange, protoScope);
     ExprAST* body = new CallAST(arg, callArgs, SourceRange::getEmptyRange());
     FnAST* fn = new FnAST(proto, body, SourceRange::getEmptyRange());
     { typecheck(fn); CodegenPass cp; fn->accept(&cp); }

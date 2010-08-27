@@ -187,13 +187,13 @@ void PrettyPrintPass::visit(FnAST* ast) {
   bool isTopLevelFn = ast->parent == NULL;
   if (isTopLevelFn) { scan(pp.tNewline); }
 
-  emit(ast->proto);
+  emit(ast->getProto());
 
   if (!this->printSignaturesOnly) {
     if (!isTopLevelFn) { scan(pp.tNewline); }
 
-    if (ast->body) {
-      emit(ast->body);
+    if (ast->getBody()) {
+      emit(ast->getBody());
     }
   }
 

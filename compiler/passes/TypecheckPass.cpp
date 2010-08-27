@@ -665,18 +665,18 @@ void TypecheckPass::visit(PrototypeAST* ast) {
 
 void TypecheckPass::visit(FnAST* ast) {
   //std::cout << "type checking FnAST" << std::endl;
-  ASSERT(ast->proto != NULL);
-  ast->proto->accept(this);
+  ASSERT(ast->getProto() != NULL);
+  ast->getProto()->accept(this);
 
-  if (ast->body != NULL) {
-    ast->body->accept(this);
+  if (ast->getBody() != NULL) {
+    ast->getBody()->accept(this);
 
-    if (ast->proto->type && ast->body->type) {
-      ast->type = ast->proto->type;
+    if (ast->getProto()->type && ast->getBody()->type) {
+      ast->type = ast->getProto()->type;
     }
   } else {
     // Probably looking at a function type expr. TODO trust but verify
-    ast->type = ast->proto->type;
+    ast->type = ast->getProto()->type;
   }
 }
 
@@ -697,9 +697,9 @@ void TypecheckPass::visit(ClosureAST* ast) {
       if (ft && ast->type) {
         EDiag() << "ClosureAST fnRef typechecking converted "
                  << str(ft) << " to " << str(ast->type) << show(ast);
-        if (false && ast->fn && ast->fn->proto) {
+        if (false && ast->fn && ast->fn->getProto()) {
           std::cout << "Just for kicks, fn has type "
-                    << *(ast->fn->proto) << std::endl;
+                    << *(ast->fn->getProto()) << std::endl;
         }
       }
 
@@ -859,10 +859,10 @@ void TypecheckPass::visit(ForRangeExprAST* ast) {
 	}
   }
 
-  ast->bodyExpr->accept(this);
-  TypeAST* bodyType = ast->bodyExpr->type;
+  ast->getBody()Expr->accept(this);
+  TypeAST* bodyType = ast->getBody()Expr->type;
   if (!bodyType) {
-    EDiag() << "for range body expression had null type" << show(ast->bodyExpr);
+    EDiag() << "for range body expression had null type" << show(ast->getBody()Expr);
     return;
   }
 
@@ -888,7 +888,7 @@ void TypecheckPass::visit(NilExprAST* ast) {
 bool exprBindsName(ExprAST* ast, const std::string& name) {
   // TODO test for-range exprs
   if (FnAST* fn = dynamic_cast<FnAST*>(ast)) {
-    PrototypeAST* proto = fn->proto;
+    PrototypeAST* proto = fn->getProto();
     for (size_t i = 0; i < proto->inArgs.size(); ++i) {
       if (proto->inArgs[i]->name == name) {
         return true;
@@ -1204,9 +1204,9 @@ void TypecheckPass::visit(CallAST* ast) {
     }
 
     size_t maxSafeIndex = (std::min)(args.size(),
-                                     literalFnBase->proto->inArgs.size());
+                                     literalFnBase->getProto()->inArgs.size());
     for (size_t i = 0; i < maxSafeIndex; ++i) {
-      dynamic_cast<VariableAST*>(literalFnBase->proto->inArgs[i])->type =
+      dynamic_cast<VariableAST*>(literalFnBase->getProto()->inArgs[i])->type =
                                                           args[i]->type;
     }
 

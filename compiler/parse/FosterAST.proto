@@ -84,7 +84,7 @@ message Expr {
 
   optional Int        int        = 17;
   optional Proto      proto      = 18;
-  optional Fn         fn         = 19;
+
   optional Closure    closure    = 20;
   optional If         if         = 21;
   optional ForRange   for_range  = 22;
@@ -110,13 +110,6 @@ message Proto {
   repeated Expr   in_args = 2; // really Var nodes
   optional Type   result  = 3;
   required string name    = 4;
-}
-
-message Fn {
-  required Expr  proto = 2;
-  required Expr  body  = 3;
-  optional bool  was_nested = 4;
-  optional bool  lambda_lift_only = 5;
 }
 
 message Closure {

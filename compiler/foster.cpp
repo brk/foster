@@ -546,7 +546,7 @@ int main(int argc, char** argv) {
     for (ModuleAST::FnAST_iterator it = exprAST->fn_begin();
            it != exprAST->fn_end(); ++it) {
       FnAST* fnast = *it;
-      const string& name = fnast->proto->name;
+      const string& name = fnast->getProto()->name;
       string filename(dotdirFile(name + ".dot"));
       if (!fnast->cfgs.empty()) {
         llvm::outs() << "Writing " << filename << "\n";
@@ -578,8 +578,10 @@ int main(int argc, char** argv) {
     llvm::outs() << "=========================" << "\n";
     llvm::outs() << "Pretty printing to " << outfile << "\n";
     std::ofstream out(dumpdirFile(outfile).c_str());
+    llvm::raw_os_ostream rout(out);
+    
     ScopedTimer pptimer("io.prettyprint");
-    foster::prettyPrintExpr(exprAST, llvm::outs());
+    foster::prettyPrintExpr(exprAST, rout);
   }
 
   if (optCompileSeparately) {
@@ -590,14 +592,15 @@ int main(int argc, char** argv) {
     dumpModuleToProtobuf(exprAST, dumpdirFile(outPbFilename));
   }
 
-  {
-    llvm::outs() << "=========================" << "\n";
+  { llvm::outs() << "=========================" << "\n";
     llvm::outs() << "Performing closure conversion..." << "\n";
+    
+    ScopedTimer timer("foster.closureconv");
+    foster::performClosureConversion(foster::globalNames, exprAST);
   }
-
-  { ScopedTimer timer("foster.closureconv");
-    ClosureConversionPass p(foster::globalNames, exprAST);
-    exprAST->accept(&p);
+  
+  if (optDumpASTs) {
+    dumpModuleToProtobuf(exprAST, dumpdirFile("ast.postcc.pb"));
   }
 
   { ScopedTimer timer("io.file");

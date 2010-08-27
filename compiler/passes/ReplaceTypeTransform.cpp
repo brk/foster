@@ -117,8 +117,7 @@ void ReplaceTypeInExprTransform::visit(PrototypeAST* ast)           {
   replaceTypeTransform.subst(ast->resultTy);
 }
 void ReplaceTypeInExprTransform::visit(FnAST* ast)                  {
-  (ast->proto)->accept(this);
-  (ast->body)->accept(this);
+  visitChildren(ast);
   applyTypeSubst(ast);  
 }
  

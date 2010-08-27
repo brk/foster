@@ -41,8 +41,7 @@ void AddParentLinksPass::visit(PrototypeAST* ast)           {
   }
 }
 void AddParentLinksPass::visit(FnAST* ast)                  {
-  onVisitChild(ast, ast->proto);
-  onVisitChild(ast, ast->body);
+  visitChildren(ast);
   includeParentNameInAnonFunctions(ast);
 }
 void AddParentLinksPass::visit(ClosureAST* ast) {
@@ -78,7 +77,7 @@ void AddParentLinksPass::visit(TupleExprAST* ast)           { return; }
 void AddParentLinksPass::visit(BuiltinCompilesExprAST* ast) { visitChildren(ast); }
 
 void includeParentNameInAnonFunctions(FnAST* ast) {
-  string& name = ast->proto->name;
+  string& name = ast->getProto()->name;
 
   // Not an anonymous function, nothing to do here.
   if (name.find("<anon_fn") != 0) {
@@ -101,7 +100,7 @@ void includeParentNameInAnonFunctions(FnAST* ast) {
 
   if (!parent) {
     std::cerr << "Odd, couldn't find parent fn ast for anonymous function "
-              << ast->proto->name << std::endl;
+              << ast->getProto()->name << std::endl;
     return;
   }
 

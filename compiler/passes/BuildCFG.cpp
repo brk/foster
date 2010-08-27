@@ -158,7 +158,7 @@ void BuildCFG::visit(ForRangeExprAST* ast) {
 
   CFG* loopHdr = new CFG("forToHdr", ast, currentFn);
 
-  std::cout << "current fn is " << this->currentFn->proto->name
+  std::cout << "current fn is " << this->currentFn->getProto()->name
       << ", forToHdr: " << loopHdr << ", for range:" << ast << " => " << str(ast) << std::endl;
   CFG* loop    = new CFG("forTo",    ast, currentFn);
   CFG* loopEnd = new CFG("forToEnd", ast, currentFn);
@@ -187,9 +187,9 @@ void BuildCFG::visit(ForRangeExprAST* ast) {
 
 void BuildCFG::visit(FnAST* ast) {
   currentFn   = ast;
-  currentRoot = new CFG(ast->proto->name + std::string(".entry"),
+  currentRoot = new CFG(ast->getProto()->name + std::string(".entry"),
                         ast, currentFn);
-  ast->body->accept(this);
+  ast->getBody()->accept(this);
 }
 
 
