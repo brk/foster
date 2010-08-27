@@ -202,6 +202,7 @@ add_library(fosterc_base STATIC
   compiler/base/Assert.cpp
   compiler/base/Diagnostics.cpp
   compiler/base/InputFile.cpp
+  compiler/base/InputTextBuffer.cpp
   compiler/base/PathManager.cpp
   compiler/base/SourceRange.cpp
   compiler/base/TimingsRepository.cpp

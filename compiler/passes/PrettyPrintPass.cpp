@@ -128,12 +128,9 @@ void PrettyPrintPass::visit(VariableAST* ast) {
   scan(PPToken(ast->name));
   if (this->printVarTypes) {
     scan(PPToken(":"));
-    /*if (ast->tyExpr) {
-      ast->tyExpr->accept(this);
-    } else*/ if (ast->type) {
-      // TODO this isn't kosher for round-tripping, need to write a
-      // pretty-printer for types...
-      scan(PPToken(str(ast->type->getLLVMType())));
+    if (ast->type) {
+      // TODO eventually this should scan tokens, not a full string.
+      scan(PPToken(str(ast->type)));
     }
   }
   scan(pp.tBlockClose);
@@ -221,7 +218,7 @@ void PrettyPrintPass::visit(ClosureAST* ast) {
   scan(pp.tBlockOpen);
   scan(PPToken("<closure "));
   if (ast->fn) {
-    scan(PPToken(str(ast->fn->proto->type)));
+    scan(PPToken(str(ast->fn->type)));
   }
   scan(PPToken(">"));
   scan(pp.tBlockClose);

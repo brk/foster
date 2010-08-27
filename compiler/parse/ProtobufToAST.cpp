@@ -393,7 +393,7 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
   }
 
   if (t.tag() == pb::Type::LLVM_NAMED) {
-    const string& tyname = t.llvm_type_name();
+    const string& tyname = t.name();
     //std::cerr << "PB trying to reconstruct named type: '" << tyname << "'" << std::endl;
 
     ASSERT(!tyname.empty()) << "empty type name, probably implies a\n"
@@ -405,6 +405,11 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
       rv = foster::TypeASTFor(tyname);
     }
     return rv;
+  }
+  
+  if (t.tag() == pb::Type::TYPE_VARIABLE) {
+    const string& tyname = t.name();
+    return TypeVariableAST::get(tyname, range);
   }
 
   std::cerr << "Error: found unexpected type in protobuf!\n" << t.DebugString() << std::endl;

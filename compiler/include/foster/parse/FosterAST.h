@@ -280,7 +280,7 @@ struct NamedTypeDeclAST : public ExprAST {
   explicit NamedTypeDeclAST(std::string boundName, TypeAST* namedType,
                             foster::SourceRange sourceRange)
     : ExprAST("NamedTypeDeclAST", sourceRange),
-      name(name) { this->type = namedType; }
+      name(boundName) { this->type = namedType; }
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
     out << "type " << name << " = " << str(type) << "\n";
@@ -565,6 +565,8 @@ struct RefExprAST : public UnaryExprAST {
   virtual std::ostream& operator<<(std::ostream& out) const {
     return out << "RefExprAST(" << str(this->parts[0]) << ")";
   }
+  
+  
 
   // Returns true if the physical representation of this reference
   // is T** instead of a simple T*.

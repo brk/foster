@@ -14,7 +14,10 @@
 #include "base/SourceRange.h"
 #include "parse/TypeASTVisitor.h"
 
+#include "parse/FosterASTKinds-inl.h"
+
 #include <map>
+#include <list>
 #include <string>
 #include <vector>
 #include <ostream>
@@ -93,6 +96,8 @@ public:
 
 class TypeVariableAST : public TypeAST {
   std::string typeVarName;
+  foster::Kind* kind;
+  
   llvm::PATypeHolder opaqueType;
   explicit TypeVariableAST(const llvm::OpaqueType* opaqueType,
                            const std::string& typeVarName,
@@ -153,30 +158,24 @@ public:
 
 
 class RefTypeAST : public TypeAST {
-  bool nullable;
   TypeAST* underlyingType;
 
-  explicit RefTypeAST(TypeAST* underlyingType, bool nullable,
+  explicit RefTypeAST(TypeAST* underlyingType,
                       const SourceRange& sourceRange)
     : TypeAST("RefType", NULL, sourceRange),
-      nullable(nullable),
       underlyingType(underlyingType) {}
 
-  typedef std::pair<TypeAST*, bool> RefTypeArgs;
+  typedef TypeAST* RefTypeArgs;
   static std::map<RefTypeArgs, RefTypeAST*> refCache;
 public:
   virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
   virtual const llvm::Type* getLLVMType() const;
 
-  bool isNullable() const { return nullable; }
   virtual bool canConvertTo(TypeAST* otherType);
   TypeAST*& getElementType() { return underlyingType; }
 
   // given (T), returns (ref T)
-  static RefTypeAST* get(TypeAST* baseType, bool nullable = false);
-
-  // given (T*), returns (?ref T)
-  static RefTypeAST* getNullableVersionOf(TypeAST* ptrType); 
+  static RefTypeAST* get(TypeAST* baseType);
 };
 
 
@@ -184,6 +183,9 @@ class FnTypeAST : public TypeAST {
   TypeAST* returnType;
   std::vector<TypeAST*> argTypes;
   std::string callingConvention;
+  
+  std::list<foster::Effect>       * effects;
+  std::list<foster::ClosureDatum> * closedOverVars;
 
   explicit FnTypeAST(TypeAST* returnType,
                      const std::vector<TypeAST*>& argTypes,
@@ -192,7 +194,9 @@ class FnTypeAST : public TypeAST {
     : TypeAST("FnType", NULL, sourceRange),
       returnType(returnType),
       argTypes(argTypes),
-      callingConvention(callingConvention) {}
+      callingConvention(callingConvention),
+      effects(NULL),
+      closedOverVars(NULL) {}
 
 public:
   virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }

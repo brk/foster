@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
+#include "base/InputFile.h"
 #include "parse/FosterAST.h"
 #include "passes/DumpToProtobuf.h"
 #include "llvm/System/Path.h"
@@ -252,11 +253,12 @@ void DumpTypeToProtobufPass::visit(NamedTypeAST* ast) {
   setTagAndRange(current, ast, foster::pb::Type::LLVM_NAMED);
   string tyname = str(ast->getLLVMType());
   ASSERT(!tyname.empty());
-  current->set_llvm_type_name(tyname);
+  current->set_name(tyname);
 }
 
 void DumpTypeToProtobufPass::visit(TypeVariableAST* ast) {
-  ASSERT(false) << "no dumping type variables yet!";
+  setTagAndRange(current, ast, foster::pb::Type::TYPE_VARIABLE);
+  current->set_name(ast->getTypeVariableName());
 }
 
 void DumpTypeToProtobufPass::visit(FnTypeAST* ast) {

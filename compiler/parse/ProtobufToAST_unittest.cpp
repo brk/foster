@@ -216,15 +216,19 @@ TEST(ProtobufToAST, closure_type) {
 
 ////////////////////////////////////////////////////////////////////
 
+foster::CompilationContext cc;
+
 ExprAST* roundtrip(ExprAST* ast) {
+  foster::gCompilationContexts.push(&cc);
+  
   foster::pb::Expr e;
   DumpToProtobufPass dp(&e);
   ast->accept(&dp);
 
-  return foster::ExprAST_from_pb(&e);
+  ExprAST* rv = foster::ExprAST_from_pb(&e);
+  foster::gCompilationContexts.pop();
+  return rv;
 }
-
-foster::CompilationContext cc;
 
 ExprAST* parse(const string& s) {
   unsigned errs = 0;
@@ -396,7 +400,7 @@ TEST(ProtobufToAST, let_lambda_call) {
 }
 
 TEST(ProtobufToAST, fnlit_higher_order) {
-  ExprAST* e = parse("fn (x : fn (i64) ) { 0 }");
+  ExprAST* e = parse("fn (x : fn (z:i32) ) { 0 }");
   ASSERT_TRUE(e);
   ExprAST* re = roundtrip(e);
   ASSERT_TRUE(re);

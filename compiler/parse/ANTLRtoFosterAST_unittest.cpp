@@ -29,7 +29,9 @@ ExprAST* parse(const string& s) {
 
 string pr(ExprAST* ast) {
   std::string s; llvm::raw_string_ostream out(s);
+  foster::gCompilationContexts.push(&cc);
   foster::prettyPrintExpr(ast, out, 55);
+  foster::gCompilationContexts.pop();
   return out.str();
 }
 
@@ -104,7 +106,7 @@ TEST(ANTLRtoFosterAST, colonCommaArrow) {
 
 TEST(ANTLRtoFosterAST, first_order_types_simple_correct) {
   EXPECT_EQ(0,
-      pystring::count("<NULL ty>",
+      pystring::count("opaque",
                       pr(parse("fn (x : i32)")))
   );
 }
@@ -112,15 +114,14 @@ TEST(ANTLRtoFosterAST, first_order_types_simple_correct) {
 TEST(ANTLRtoFosterAST, higher_order_types_simple_correct) {
   EXPECT_EQ(0,
       pystring::count(pr(parse("fn (x : fn (z:i64)) { 0 }")),
-                      "<NULL ty>")
+                      "opaque")
   );
 }
 
 TEST(ANTLRtoFosterAST, higher_order_types_simple_incorrect) {
-  EXPECT_EQ(1,
-      pystring::count(pr(parse("fn (x : fn (i64)) { 0 }")),
-                      "<NULL ty>")
-  );
+  // equivalent to "fn (x : fn (i64:i32)) { 0 }"
+  string s = pr(parse("fn (x : fn (i64)) { 0 }"));
+  EXPECT_EQ(0, pystring::count(s, "opaque"));
 }
 
 } // unnamed namespace

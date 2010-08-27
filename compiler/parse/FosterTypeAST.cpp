@@ -144,9 +144,11 @@ TypeAST* NamedTypeAST::get(const std::string& name,
                        = llvm::dyn_cast<const llvm::DerivedType>(loweredType)) {
     if (llvm::dyn_cast<const llvm::IntegerType>(loweredType)) {
       // fall through to non-derived case
+    } else if (name == "opaque") {
+      // fall through to non-derived case
     } else {
-      std::cerr << "TypeAST::get() warning: derived types should "
-                   " not be passed to TypeAST::get()! Got: "
+      std::cerr << "NamedTypeAST::get() warning: derived types should "
+                   " not be passed to NamedTypeAST::get()! Got: "
                 << str(loweredType) << std::endl;
       return TypeAST::reconstruct(derived);
     }
@@ -186,35 +188,26 @@ const llvm::Type* RefTypeAST::getLLVMType() const {
 
 map<RefTypeAST::RefTypeArgs, RefTypeAST*> RefTypeAST::refCache;
 
-RefTypeAST* RefTypeAST::get(TypeAST* baseType, bool nullable /* = false */) {
+RefTypeAST* RefTypeAST::get(TypeAST* baseType) {
   ASSERT(baseType);
 
-  RefTypeArgs args = std::make_pair(baseType, nullable);
+  RefTypeArgs args = baseType;
   RefTypeAST* ref = refCache[args];
   if (ref) return ref;
-  ref = new RefTypeAST(baseType, nullable, SourceRange::getEmptyRange());
+  ref = new RefTypeAST(baseType, SourceRange::getEmptyRange());
   refCache[args] = ref;
   return ref;
 }
 
-// Assuming T is a non-pointer type, convert both
-// (T*) and (T ) to (nullable T*).
-RefTypeAST* RefTypeAST::getNullableVersionOf(TypeAST* ty) {
-  ASSERT(ty) << "Can't get nullable version of NULL!";
-  if (RefTypeAST* ref = dynamic_cast<RefTypeAST*>(ty)) {
-    return RefTypeAST::get(ref->getElementType(), true);
-  } else {
-    return RefTypeAST::get(ty, true);
-  }
-}
-
 // virtual
 bool RefTypeAST::canConvertTo(TypeAST* otherType) {
+#if 0
   if (RefTypeAST* other = dynamic_cast<RefTypeAST*>(otherType)) {
     if (isNullable() && !other->isNullable()) {
       return false;
     }
   }
+#endif
   return TypeAST::canConvertTo(otherType);
 }
 

@@ -8,6 +8,7 @@
 #include "passes/TypecheckPass.h"
 #include "passes/PrettyPrintPass.h"
 
+#include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
 #include "parse/CompilationContext.h"
 
@@ -63,6 +64,8 @@ string pr(ExprAST* ast) {
 
 #define STR(x) #x
 
+////////////////////////////////////////////////////////////////////
+
 TEST(TypeInference, parallel_compilation_contexts) {
   ExprAST* e1a = parse(cc1, STR(
 let x : i32 = 3 in {
@@ -86,6 +89,8 @@ let x : i32 = 3 in {
   ASSERT_NE(pr(e1a), pr(e1b));
   EXPECT_EQ(pr(e1a), pr(e2a));
 }
+
+////////////////////////////////////////////////////////////////////
 
 TEST(TypeInference, i32_handling_simple) {
   foster::CompilationContext cc1;
@@ -112,6 +117,7 @@ let x = 3 in {
   EXPECT_EQ(pr(ae), pr(ee));
 }
 
+////////////////////////////////////////////////////////////////////
 
 TEST(TypeInference, i32_handling_simple_closure1) {
   foster::CompilationContext cc1;
@@ -142,6 +148,8 @@ let x = 3 in {
 
   EXPECT_EQ(pr(eae), pr(ee));
 }
+
+////////////////////////////////////////////////////////////////////
 
 // as above, but without the annotation on the inner function
 TEST(TypeInference, i32_handling_simple_closure2) {

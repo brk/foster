@@ -22,6 +22,8 @@ void PathManager::registerPath(const Path& path) {
 }
 
 static char getDirectorySeparator(const Path& p) {
+  if (p.str().empty()) return '\0';
+  
   size_t dirSepOffsetFromBack = p.getLast().size();
   if (dirSepOffsetFromBack == p.size()) return '\0';
   return p.str()[p.size() - dirSepOffsetFromBack - 1];

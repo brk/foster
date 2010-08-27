@@ -79,7 +79,7 @@ namespace foster {
 SourceRangeHighlighter show(ExprAST* ast) {
   if (!ast) {
     SourceLocation empty = SourceLocation::getInvalidLocation();
-    return SourceRangeHighlighter(SourceRange(NULL, empty, empty), empty);
+    return SourceRangeHighlighter(SourceRange(NULL, empty, empty, NULL), empty);
   }
   return show(ast->sourceRange);
 }

@@ -4,6 +4,8 @@
 
 #include "base/Assert.h"
 #include "base/SourceRange.h"
+#include "base/InputFile.h"
+#include "base/InputTextBuffer.h"
 #include "parse/ANTLRtoFosterErrorHandling.h"
 
 #include <antlr3.h>
@@ -145,11 +147,11 @@ int getFirstNonWhitespacePosition(llvm::StringRef line) {
 }
 
 const char* describeApproximateStartPosition(const SourceRange& r) {
-  if (!r.source) {
+  if (!r.source || !r.source->getBuffer()) {
     return "???";
   }
 
-  llvm::StringRef line = r.source->getLine(r.begin.line);
+  llvm::StringRef line = r.source->getBuffer()->getLine(r.begin.line);
   int lineStart = getFirstNonWhitespacePosition(line);
   float lineLength = (std::min)(1.0f, float(line.size()    - lineStart));
   float percentThroughLine = 100.0f * float(r.begin.column - lineStart)

@@ -28,7 +28,7 @@ FnTypeAST* tryExtractCallableType(TypeAST* ty) {
     ty = r->getElementType();
   }
   if (FnTypeAST* f = dynamic_cast<FnTypeAST*>(ty)) { return f; }
-  std::cerr << "RETURNING NULL for extracting function type from " << str(ty) << std::endl;
+  //std::cerr << "RETURNING NULL for extracting function type from " << str(ty) << std::endl;
   return NULL;
 }
 

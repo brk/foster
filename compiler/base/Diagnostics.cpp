@@ -3,14 +3,16 @@
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
 #include "base/Diagnostics.h"
+#include "base/InputFile.h"
 
 namespace foster {
 
 //virtual
 DiagBase::~DiagBase() {
-  const InputFile* source = (sourceFile ? sourceFile : gInputFile);
-  if (source) {
-    out << source->getShortSuffixPath();
+  if (sourceFile) {
+    out << sourceFile->getShortSuffixPath();
+  } else if (sourceBuffer) {
+    out << "{-memory-}";
   } else {
     out << "<unknown source file>";
   }

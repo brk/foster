@@ -16,15 +16,19 @@
 
 using namespace std;
 
-void ReplaceTypeTransform::subst(TypeAST*& ty) {
+bool ReplaceTypeTransform::subst(TypeAST*& ty) {
+  if (!ty) return false;
+  
   TypeAST* oldResultType = resultType;
   resultType = ty;
   ty->accept(this);
-  if (resultType != ty) {
+  bool changingType = resultType != ty; 
+  if (changingType) {
     llvm::outs() << "replacing " << str(ty) << " with " << str(resultType) << "\n";
   }
   ty = resultType;
   resultType = oldResultType;
+  return changingType;
 }
 
 void ReplaceTypeTransform::visit(NamedTypeAST* ast) {
@@ -115,10 +119,13 @@ void ReplaceTypeInExprTransform::visit(PrototypeAST* ast)           {
 void ReplaceTypeInExprTransform::visit(FnAST* ast)                  {
   (ast->proto)->accept(this);
   (ast->body)->accept(this);
-  applyTypeSubst(ast);
+  applyTypeSubst(ast);  
 }
  
-void ReplaceTypeInExprTransform::visit(ClosureAST* ast) { visitChildren(ast); }
+void ReplaceTypeInExprTransform::visit(ClosureAST* ast) {  
+  ast->fn->accept(this);
+  visitChildren(ast);
+}
 void ReplaceTypeInExprTransform::visit(NamedTypeDeclAST* ast) { applyTypeSubst(ast); }
 void ReplaceTypeInExprTransform::visit(ModuleAST* ast) { visitChildren(ast); }
 void ReplaceTypeInExprTransform::visit(IfExprAST* ast)              {

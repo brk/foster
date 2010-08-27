@@ -99,8 +99,9 @@ TEST(PughSinofskyPrettyPrinter, simpleParsingGroupingNoBreaks) {
 TEST(PughSinofskyPrettyPrinter, singleTokenBasic) {
   {
     string s; llvm::raw_string_ostream ss(s);
-    PrettyPrinter pp(ss, 40, 2);
-    pp.scan(PPToken("1234"));
+    { PrettyPrinter pp(ss, 40, 2);
+      pp.scan(PPToken("1234"));
+    }
     EXPECT_EQ("1234", ss.str());
   }
 }

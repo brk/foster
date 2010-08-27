@@ -233,11 +233,11 @@ void createLLVMBitIntrinsics() {
           if (spec->intrinsicName == string("atomic.cmp.swap")) {
             // e.g. for declaring i32 @llvm.atomic.cmp.swap.i32.p0i32(i32*, i32, i32)
             addToProperNamespace( proto(ty, ss.str(),
-                RefTypeAST::get(ty, false), ty, ty) );
+                RefTypeAST::get(ty), ty, ty) );
           } else {
             // e.g. for declaring i32 @llvm.atomic.load.xor.i32.p0i32(i32*, i32)
             addToProperNamespace( proto(ty, ss.str(),
-                RefTypeAST::get(ty, false), ty) );
+                RefTypeAST::get(ty), ty) );
           }
         }
       }

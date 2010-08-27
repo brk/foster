@@ -5,15 +5,18 @@
 #ifndef FOSTER_SOURCERANGE_H
 #define FOSTER_SOURCERANGE_H
 
-#include "base/InputFile.h"
 #include "llvm/Support/raw_os_ostream.h"
 
 namespace foster {
 
+struct InputFile;
+struct InputTextBuffer;
+  
 // Maintaining a global pointer to the current input file is a convenient
 // alternative to threading the current input file through ExprAST_from()
 // call graph in ANTLRtoFosterAST.cpp.
-extern const InputFile* gInputFile;
+extern const foster::InputFile* gInputFile;
+extern const foster::InputTextBuffer* gInputTextBuffer;
 
 struct SourceLocation {
   int line, column;
@@ -41,10 +44,12 @@ public:
   const foster::InputFile* source;
   const foster::SourceLocation begin;
   const foster::SourceLocation end;
+  const foster::InputTextBuffer* buf;
 
   SourceRange(const foster::InputFile* source,
               foster::SourceLocation begin,
-              foster::SourceLocation end);
+              foster::SourceLocation end,
+              const foster::InputTextBuffer* buf = NULL);
 
   bool isValid() const;
   bool isJustStartLocation() const;
@@ -56,7 +61,7 @@ public:
   static SourceRange getEmptyRange() {
     return SourceRange(gInputFile,
               SourceLocation::getInvalidLocation(),
-              SourceLocation::getInvalidLocation());
+              SourceLocation::getInvalidLocation(), gInputTextBuffer);
   }
   bool operator==(const SourceRange& o) const {
     return ((void*)source == (void*)o.source) && end == o.end && begin == o.begin;

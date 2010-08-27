@@ -51,6 +51,7 @@
 
 #include "base/Assert.h"
 #include "base/InputFile.h"
+#include "base/InputTextBuffer.h"
 #include "base/TimingsRepository.h"
 #include "base/PathManager.h"
 
@@ -501,7 +502,6 @@ int main(int argc, char** argv) {
   
   llvm::sys::Path inPath(optInputPath);
   const foster::InputFile infile(inPath);
-  foster::gInputFile = &infile;
 
   pANTLR3_BASE_TREE parseTree = NULL;
   foster::ANTLRContext* ctx = NULL;

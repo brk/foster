@@ -30,19 +30,22 @@ class DiagBase {
 protected:
   llvm::raw_string_ostream msg;
   llvm::raw_ostream& out;
-  const InputFile* sourceFile;
+  const InputFile*       sourceFile;
+  const InputTextBuffer* sourceBuffer;
   SourceLocation sourceLoc;
 
   explicit DiagBase(llvm::raw_ostream& out, const char* levelstr)
-    : levelstr(levelstr), msg(msgstr), out(out), sourceFile(NULL), sourceLoc(-1, -1) {}
+    : levelstr(levelstr), msg(msgstr), out(out),
+      sourceFile(NULL), sourceBuffer(NULL), sourceLoc(-1, -1) {}
   virtual ~DiagBase();
 
   virtual void add(int64_t i) { msg << i; }
   virtual void add(const char* str) { msg << str; }
   virtual void add(const std::string& str) { msg << str; }
   virtual void add(const SourceRangeHighlighter& h) {
-    if (h.r.source) {
-      sourceFile = h.r.source;
+    sourceFile   = h.r.source;
+    sourceBuffer = h.r.buf;
+    if (sourceFile || sourceBuffer) {
       sourceLoc  = h.caret;
       msg << '\n';
       h.r.highlightWithCaret(msg, h.caret);
@@ -58,6 +61,8 @@ private:
   DiagBase(const DiagBase&);
 };
 
+// TODO allow top-level code to re-route diagnostics info to other streams
+
 // Error diagnostic builder
 class EDiag : public DiagBase {
 public:
@@ -65,6 +70,15 @@ public:
   virtual ~EDiag();
 private:
   EDiag(const EDiag&);
+};
+
+// Debug diagnostic builder
+class DDiag : public DiagBase {
+public:
+  explicit DDiag() : DiagBase(llvm::outs(), "debug") {}
+  virtual ~DDiag();
+private:
+  DDiag(const DDiag&);
 };
 
 } // namespace

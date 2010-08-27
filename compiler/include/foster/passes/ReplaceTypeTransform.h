@@ -26,7 +26,7 @@ struct ReplaceTypeTransform : public TypeASTVisitor {
   ReplaceTypeTransform(TypeVarSubstitution& tvs)
     :  resultType(NULL), alteredType(false), typeVarSubst(tvs) {}
 
-  void subst(TypeAST*& ty);
+  bool subst(TypeAST*& ty);
   virtual void visitChildren(TypeAST* ast) {
     // Only visit children manually!
   }

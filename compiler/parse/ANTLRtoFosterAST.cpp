@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
+#include "base/InputFile.h"
+#include "base/InputTextBuffer.h"
+
 #include "parse/ANTLRtoFosterAST.h"
 #include "parse/FosterAST.h"
 #include "parse/ANTLRtoFosterErrorHandling.h"
@@ -207,7 +210,8 @@ foster::SourceRange rangeFrom(pTree start, pTree end) {
   }
   return foster::SourceRange(foster::gInputFile,
       getStartLocation(stok),
-      getEndLocation(etok));
+      getEndLocation(etok),
+      foster::gInputTextBuffer);
 }
 
 foster::SourceRange rangeOf(pTree tree) {
@@ -570,7 +574,7 @@ FnAST* parseFn(string defaultSymbolTemplate, pTree tree, bool fnMeansClosure) {
   PrototypeAST* proto = getFnProto(name, fnMeansClosure,
                                    child(tree, 1),
                                    child(tree, 2));
-  cout << "parseFn proto = " << str(proto) << endl;
+  //cout << "parseFn proto = " << str(proto) << endl;
   return buildFn(proto, child(tree, 3));
 }
 
@@ -1010,12 +1014,12 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
       return NULL;
     }
 
-    cout << "Parsed fn " << *(fn->proto) << ", fnMeansClosure? "
+    if (0) cout << "Parsed fn " << *(fn->proto) << ", fnMeansClosure? "
               << fnMeansClosure << endl;
     if (fnMeansClosure) {
       ClosureAST* cloast = new ClosureAST(fn, sourceRange);
-      cout << "\t\t\tFN MEANS CLOSURE: " << *fn
-                << "; cloast = " << cloast << endl;
+      if (1) EDiag() << "\t\t\tFN MEANS CLOSURE: " << str(fn)
+        << "; cloast = " << foster::show(cloast);
       return cloast;
     } else {
       return fn;
@@ -1092,12 +1096,9 @@ TypeAST* TypeAST_from(pTree tree) {
     return new ClosureTypeAST(fn->proto, NULL, sourceRange);
   }
 
-  if (text == "ref" || text == "?ref") {
-    bool isNullableTypeDecl = text == "?ref";
+  if (text == "ref") {
     // TODO add sourcerange or make ctor public
-    return RefTypeAST::get(
-                 TypeAST_from(child(tree, 0)),
-    		 isNullableTypeDecl);
+    return RefTypeAST::get(TypeAST_from(child(tree, 0)));
   }
 
   if (token == OUT) {
@@ -1151,7 +1152,8 @@ namespace {
 
 void createParser(foster::ANTLRContext& ctx,
                   const string& filepath,
-                  llvm::MemoryBuffer* buf) {
+                  foster::InputTextBuffer* textbuf) {
+  llvm::MemoryBuffer* buf = textbuf->getMemoryBuffer();
   ASSERT(buf->getBufferSize() <= ((ANTLR3_UINT32)-1)
          && "Trying to parse files larger than 4GB makes me cry.");
   ctx.filename = filepath;
@@ -1182,7 +1184,9 @@ void createParser(foster::ANTLRContext& ctx,
 
 void createParser(foster::ANTLRContext& ctx,
                   const foster::InputFile& infile) {
-  createParser(ctx, infile.getPath().str(), infile.getBuffer());
+  createParser(ctx,
+               infile.getPath().str(),
+               infile.getBuffer());
 }
 
 } // unnamed namespace
@@ -1194,15 +1198,17 @@ ExprAST* parseExpr(const std::string& source,
                    CompilationContext* cc) {
   ANTLRContext* ctx = new ANTLRContext();
   const char* s = source.c_str();
-  llvm::MemoryBuffer* membuf = llvm::MemoryBuffer::getMemBuffer(
-                                  s, s + source.size());
-  //                               llvm::StringRef(source)); // for LLVM 2.8
+  
+  foster::InputTextBuffer* membuf = new InputTextBuffer(s, source.size());
   createParser(*ctx, "", membuf);
 
   installTreeTokenBoundaryTracker(ctx->psr->adaptor);
   foster::installRecognitionErrorFilter(ctx->psr->pParser->rec);
 
   gCompilationContexts.push(cc);
+  gInputFile = NULL;
+  gInputTextBuffer = membuf;
+  
   fosterParser_expr_return langAST = ctx->psr->expr(ctx->psr);
 
   outNumANTLRErrors = ctx->psr->pParser->rec->state->errorCount;
@@ -1218,7 +1224,6 @@ ExprAST* parseExpr(const std::string& source,
   gCompilationContexts.pop();
 
   delete ctx;
-  delete membuf;
   
   return rv;
 }
@@ -1235,6 +1240,9 @@ ModuleAST* parseModule(const InputFile& file,
   foster::installRecognitionErrorFilter(ctx->psr->pParser->rec);
 
   gCompilationContexts.push(cc);
+  gInputFile = &file;
+  gInputTextBuffer = file.getBuffer();
+  
   fosterParser_program_return langAST = ctx->psr->program(ctx->psr);
 
   outTree = langAST.tree;

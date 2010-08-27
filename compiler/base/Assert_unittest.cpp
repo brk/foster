@@ -10,7 +10,7 @@ namespace {
 
 TEST(FosterAssert, dies) {
   ::testing::FLAGS_gtest_death_test_style = "threadsafe";
-  ASSERT_DEATH( { ASSERT(false) << "blah"; }  ,  "blah" );
+  ASSERT_DEATH( { ASSERT(false) << "blah\n"; }  ,  "blah\n" );
 }
 
 } // unnamed namespace

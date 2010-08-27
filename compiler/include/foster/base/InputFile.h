@@ -4,12 +4,12 @@
 
 #include "llvm/ADT/StringRef.h"
 #include <vector>
+#include <string>
 
 #ifndef FOSTER_INPUT_FILE_H
 #define FOSTER_INPUT_FILE_H
 
 namespace llvm {
-  class MemoryBuffer;
   namespace sys {
     class Path;
   }
@@ -17,20 +17,19 @@ namespace llvm {
 
 namespace foster {
 
+class InputTextBuffer;
+  
 class InputFile {
   const llvm::sys::Path& path;
-  llvm::MemoryBuffer* buf;
-  std::vector<llvm::StringRef> lineCache;
-  void initializeLineCache();
+  InputTextBuffer* buf;
 
 public:
   // precondition: file specified by filePath exists, and is readable
   InputFile(const llvm::sys::Path& path);
 
-  llvm::MemoryBuffer* getBuffer() const { return buf; }
+  InputTextBuffer* getBuffer() const { return buf; }
   const llvm::sys::Path& getPath() const { return path; }
   std::string getShortSuffixPath() const;
-  llvm::StringRef getLine(int n) const;
 };
 
 class InputFileRegistry {
@@ -44,6 +43,6 @@ private:
 
 extern InputFileRegistry gInputFileRegistry;
 
-}
+} // namespace foster
 
 #endif

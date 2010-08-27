@@ -69,7 +69,7 @@ public:
     T* insert(const string& ident, T* V) {
       T* old = val_of[ident];
       if (old) {
-        std::cerr << "Unexpectedly overwriting old value of " << ident << std::endl;
+        //std::cerr << "Unexpectedly overwriting old value of " << ident << std::endl;
       }
       val_of[ident] = V;
       return V;

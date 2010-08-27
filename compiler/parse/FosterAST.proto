@@ -20,13 +20,14 @@ message Type {
     TUPLE = 5;
     LITERAL_INT_VALUE = 6;
     SIMD = 7;
+    TYPE_VARIABLE = 8;
   }
 
   optional SourceRange range = 1;
   required Tag         tag   = 2;
 
-
-  optional string llvm_type_name = 3;
+  // LLVM_NAMED, TYPE_VARIABLE
+  optional string name = 3;
   optional Type ref_underlying_type = 16;
   optional FnType fnty = 17;
   repeated Type tuple_parts = 18;
