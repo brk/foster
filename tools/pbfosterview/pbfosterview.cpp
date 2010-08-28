@@ -50,6 +50,11 @@ optInputPath(cl::Positional, cl::desc("<input file>"));
 static cl::opt<bool>
 optSignaturesOnly("sigs-only", cl::desc("Print signatures only"));
 
+static cl::opt<bool>
+optRawAST("rawast", cl::desc("View raw AST dump"));
+
+////////////////////////////////////////////////////////////////////
+
 ExprAST* readExprFromProtobuf(const string& pathstr) {
   foster::pb::Expr pbe;
   std::fstream input(pathstr.c_str(), std::ios::in | std::ios::binary);
@@ -109,8 +114,16 @@ int main(int argc, char** argv) {
     exit(1);
   }
 
-  foster::prettyPrintExpr(mod, llvm::outs(), 80, 2,
-                          optSignaturesOnly);
+  if (optRawAST) {
+    llvm::outs() << mod->scope->getName() << "\n";
+    for (int i = 0; i < mod->parts.size(); ++i) {
+      llvm::outs() << str(mod->parts[i]) << "\n"; 
+    }
+  } else {
+    foster::prettyPrintExpr(mod, llvm::outs(), 80, 2,
+                            optSignaturesOnly);
+  }
+  
 
   return 0;
 }

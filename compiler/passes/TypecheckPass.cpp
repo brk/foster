@@ -43,6 +43,29 @@ bool isIntTypeName(const std::string& s) {
   return s == "i1" || s == "i8" || s == "i16" || s == "i32" || s == "i64";
 }
 
+// Restriction is that each arg type must match,
+// and return types must either match or be */void.
+bool canConvertWithVoidWrapper(TypeAST* t1, TypeAST* t2) {
+  if (FnTypeAST* ft1 = dynamic_cast<FnTypeAST*>(t1)) {
+    if (FnTypeAST* ft2 = dynamic_cast<FnTypeAST*>(t2)) {
+      if (ft1->getNumParams() != ft2->getNumParams()) return false;
+      
+      if (str(ft1->getReturnType()) != str(ft2->getReturnType())) {
+        if (! isVoid(ft2->getReturnType())) return false;
+      }
+      
+      for (int i = 0; i < ft1->getNumParams(); ++i) {
+        if (str(ft1->getParamType(i)) != str(ft2->getParamType(i))) {
+          return false;
+        }
+      }
+      
+      return true;
+    }
+  }
+  return false;
+}
+
 struct TypecheckPass : public ExprASTVisitor {
 
   struct Constraints {
@@ -148,18 +171,106 @@ struct TypecheckPass : public ExprASTVisitor {
         addEqUnchecked(context, t1, t2);
       } else {
         if (t1->tag == t2->tag) {
-                // If the two types have equal tags, extract whatever juice
-                // we can. From e.g. (ta, tb) = (tc, td) we'll recursively
-                // extract            ta = tc ,  tb = td.
-                //
-                // From i32 = i32, we'll treat the constraint as trivial,
-                // and discard it.
+          // If the two types have equal tags, extract whatever juice
+          // we can. From e.g. (ta, tb) = (tc, td) we'll recursively
+          // extract            ta = tc ,  tb = td.
+          //
+          // From i32 = i32, we'll treat the constraint as trivial,
+          // and discard it.
           extractTypeConstraints(eConstraintEq, context, t1, t2, *this);
         } else {
-          // If tags aren't equal, then (since neither one is a type var)
-          // the equality is immediately false. For now, we'll simply
-                // record the purported equality, and complain about it later.
-                addEqUnchecked(context, t1, t2);
+          // If one is a closure type and the other a simple fn type,
+          // try matching the closure's fn type with the fn type.
+          if (t1->tag == "ClosureType" && t2->tag == "FnType") {
+            ClosureTypeAST* ct1 = dynamic_cast<ClosureTypeAST*>(t1);
+            TypeAST* ft1 = ct1->getFnType();
+            extractTypeConstraints(eConstraintEq, context, ft1, t2, *this);
+          } else if (t2->tag == "ClosureType" && t1->tag == "FnType") {
+            ClosureTypeAST* ct2 = dynamic_cast<ClosureTypeAST*>(t2);
+            TypeAST* ft2 = ct2->getFnType();
+            extractTypeConstraints(eConstraintEq, context, t1, ft2, *this);
+          } else if (t1->tag == "FnType" && t2->tag == "RefType") {
+            // Converting a top-level function to a function pointer
+            // is trivial, so long as the underlying types match up.
+            TypeAST* ft1 = t1;
+            
+            RefTypeAST* rt2 = dynamic_cast<RefTypeAST*>(t2);
+            // referent type must be concrete/monomorphic (e.g. a C function type)
+            TypeAST* ft2 = rt2->getElementType();
+            
+            if (string(ft1->tag) == string(ft2->tag)
+                && canConvertWithVoidWrapper(ft1, ft2)) {
+              // OK!
+            } else {
+              EDiag* err = new EDiag();
+              (*err) << "Unable to unify fn/ref types " << str(ft1) << " and " << str(ft2)
+                     << " [" << ft1->tag << " != " << ft2->tag << "]"
+                     << " from " << context->tag
+                     << foster::show(context);
+              logError(err);
+              // Record the constraint without applying it to the substitution.
+              collectEqualityConstraint(context, t1, t2);
+            }
+            
+          } else if (t1->tag == "ClosureType" && t2->tag == "RefType") {
+            
+            // Converting a closure to a ref of the exact same type is permissible,
+            // since it will be handled by codegen as creating a trampoline.
+            ClosureTypeAST* ct1 = dynamic_cast<ClosureTypeAST*>(t1);
+            TypeAST* ft1 = ct1->getFnType();
+            
+            RefTypeAST* rt2 = dynamic_cast<RefTypeAST*>(t2);
+            // referent type must be concrete/monomorphic (e.g. a C function type)
+            TypeAST* ft2 = rt2->getElementType();
+
+            if (string(ft1->tag) == string(ft2->tag) && str(ft1) == str(ft2)) {
+              llvm::outs() << context->tag << " :: " << str(context) << "\n";
+              
+              
+              
+              // One additional rule beyond basic prototype matching:
+              // LLVM requires that we provide a literal function at
+              // trampoline creation sites.
+              ClosureAST* literalClosure = NULL;
+              
+              if (CallAST* call = dynamic_cast<CallAST*>(context)) {
+                literalClosure = dynamic_cast<ClosureAST*>(call->parts[1]);
+              }
+              
+              if (!literalClosure) {
+                EDiag* err = new EDiag();
+                (*err) << "LLVM requires that trampoline creation be given\n"
+                       << "a literal function body, not a variable referring\n"
+                       << "to a function object."
+                       << foster::show(context);
+                logError(err);
+                // Record the constraint without applying it to the substitution.
+                collectEqualityConstraint(context, t1, t2);
+              } else {
+                literalClosure->isTrampolineVersion = true;
+              }
+            } else {
+              EDiag* err = new EDiag();
+              (*err) << "Unable to unify clo/ref types " << str(ft1) << " and " << str(ft2)
+                     << " [" << ft1->tag << " != " << ft2->tag << "]"
+                     << " from " << context->tag
+                     << foster::show(context);
+              logError(err);
+              // Record the constraint without applying it to the substitution.
+              collectEqualityConstraint(context, t1, t2);
+            }
+          } else {
+            // If tags aren't equal, then (since neither one is a type var)
+            // the equality is immediately false.
+            EDiag* err = new EDiag();
+            (*err) << "Unable to unify " << str(t1) << " with " << str(t2)
+                   << " [" << t1->tag << " != " << t2->tag << "]"
+                   << " from " << context->tag
+                   << foster::show(context);
+            logError(err);
+            // Record the constraint without applying it to the substitution.
+            collectEqualityConstraint(context, t1, t2);
+          }
         }
       }
       return true;
@@ -290,7 +401,20 @@ void TypeConstraintExtractor::visit(TypeVariableAST* t2) {
 
 void TypeConstraintExtractor::visit(FnTypeAST* t2) {
   FnTypeAST* t1 = dynamic_cast<FnTypeAST*>(t1_pre);
-  addConstraintUnchecked(t1, t2); // TODO
+  int numArgs = t1->getNumParams();
+  if (numArgs == t2->getNumParams()) {
+    for (int i = 0; i < numArgs; ++i) {
+      addConstraint(t1->getParamType(i), t2->getParamType(i));
+    }
+    addConstraint(t1->getReturnType(), t2->getReturnType()); 
+  } else {
+    EDiag* err = new EDiag();
+    (*err) << "Unable to match function types taking different numbers of params: "
+           << str(t1) << " (" << t1->getNumParams() << ")"
+           << "and " << str(t2) << " (" << t2->getNumParams() << ")" 
+           << show(context);
+    constraints.logError(err);
+  }
 }
 
 void TypeConstraintExtractor::visit(RefTypeAST* t2) {
@@ -300,22 +424,45 @@ void TypeConstraintExtractor::visit(RefTypeAST* t2) {
 
 void TypeConstraintExtractor::visit(TupleTypeAST* t2) {
   TupleTypeAST* t1 = dynamic_cast<TupleTypeAST*>(t1_pre);
-  addConstraintUnchecked(t1, t2); // TODO
+  int numTypes = t1->getNumContainedTypes();
+  if (numTypes == t2->getNumContainedTypes()) {
+    for (int i = 0; i < numTypes; ++i) {
+      addConstraint(t1->getContainedType(i), t2->getContainedType(i));
+    }
+  } else {
+    EDiag* err = new EDiag();
+    (*err) << "Unable to match tuple types of different sizes: "
+           << str(t1) << " (" << t1->getNumContainedTypes() << ")"
+           << "and " << str(t2) << " (" << t2->getNumContainedTypes() << ")" 
+           << show(context);
+    constraints.logError(err);
+  }
 }
 
 void TypeConstraintExtractor::visit(ClosureTypeAST* t2) {
   ClosureTypeAST* t1 = dynamic_cast<ClosureTypeAST*>(t1_pre);
-  addConstraintUnchecked(t1, t2); // TODO
+  std::cout << "closure constraint extracting "
+  << str(t1->getFnType()) << " == " << str(t2->getFnType()) << std::endl;
+  addConstraint(t1->getFnType(), t2->getFnType());
 }
 
 void TypeConstraintExtractor::visit(SimdVectorTypeAST* t2) {
   SimdVectorTypeAST* t1 = dynamic_cast<SimdVectorTypeAST*>(t1_pre);
-  addConstraintUnchecked(t1, t2); // TODO
+  if (t1->getNumElements() == t2->getNumElements()) {
+    addConstraint(t1->getContainedType(0), t2->getContainedType(0));  
+  } else {
+    EDiag* err = new EDiag();
+    (*err) << "Unable to match simd-vector types of different sizes "
+           << str(t1) << " (" << t1->getNumElements() << ")"
+           << "and " << str(t2) << " (" << t2->getNumElements() << ")" 
+           << show(context);
+    constraints.logError(err);
+  }
 }
 
 void TypeConstraintExtractor::visit(LiteralIntValueTypeAST* t2) {
   LiteralIntValueTypeAST* t1 = dynamic_cast<LiteralIntValueTypeAST*>(t1_pre);
-  addConstraintUnchecked(t1, t2); // TODO
+  ASSERT(false) << "type extraction from type int literals not yet implemented.";
 }
 
 void TypecheckPass::Constraints::extractTypeConstraints(
@@ -392,26 +539,33 @@ bool TypecheckPass::Constraints::addEqConstraintToSubstitution(
          const TypecheckPass::Constraints::TypeTypeConstraint& ttc) {
 
   TypeVariableAST* tv = dynamic_cast<TypeVariableAST*>(ttc.t1);
-  ASSERT(tv) << "equality constraints must begin with a type variable!";
+  ASSERT(tv) << "equality constraints must begin with a type variable! "
+             << str(ttc.t1) << "; other: " << str(ttc.t2)
+             << foster::show(ttc.context);
   const std::string& tvName = tv->getTypeVariableName();
   
+  if (tvName == "deref") {
+     llvm::outs() << "deref maps to " << str(subst[tvName]) << "\n";
+  }
+  
   TypeAST* tvs = substFind(tv);
-  // Because substFind does path compression, we know
-  // that tvs is not a type variable.
-  ASSERT(!(tvs && tvs->isTypeVariable()))
-    << "substFind should do path compression and not"
-    << " return type variables! Saw " << str(tv) << " to " << str(tvs);
 
+  llvm::outs() << str(tv) << " => ... => tvs: " << str(tvs) << " ;; " << str(ttc.t2) << "...";
+  // Have    TypeVar(t1) => ... => non-type-var tvs
+  // ttc is  TypeVar(t1) => ttc.t2
   if (!tvs) {
+    // t1 doesn't map to anything yet, so enforce the given constraint.
     this->subst[tvName] = ttc.t2;
   } else if (tvs == ttc.t2)  {
-    // Das fine... 
+    // Das fine, the chain was short and we have learned nothing.
   } else {
     llvm::errs() << "Conflict detected during equality constraint solving!\n"
-	<< "\t" << tvName << " cannot be both "
-	<< "\n\t\t" << str(tvs) << " and " << str(ttc.t2) << ".";
+                  << "\t" << tvName << " cannot be both "
+                  << "\n\t\t" << str(tvs) << " and " << str(ttc.t2) << ".";
     return false;
   }
+  llvm::outs() << "\n";
+  //llvm::outs() << " ====> " << str(subst[tvName]) << "\n";
 //  llvm::outs() << ttc.context->tag << "\t" << str(ttc.t1) << " == " << str(ttc.t2) << "\n";
   return true;
 }
@@ -419,6 +573,31 @@ bool TypecheckPass::Constraints::addEqConstraintToSubstitution(
 // One small difference from "regular" union/find is that
 // because type schemas might need to be updated, we back off one
 // layer of indirection when doing path compression.
+//
+// substFind(TypeVar(a)) takes an incremental substitution like this:
+//    TypeVar(a)  =>  TypeVar(b)
+//    TypeVar(b)  =>  TypeVar(c)
+//    TypeVar(c)  =>  TypeVar(d)
+//    TypeVar(d)  =>  sometype
+// and updates it to this:
+//    TypeVar(a)  =>  TypeVar(d)
+//    TypeVar(b)  =>  TypeVar(d)
+//    TypeVar(c)  =>  TypeVar(d)
+//    TypeVar(d)  =>  sometype
+//
+// If the chain ends in a type variable, substFind takes this:
+//    TypeVar(a)  =>  TypeVar(b)
+//    TypeVar(b)  =>  TypeVar(c)
+//    TypeVar(c)  =>  TypeVar(d)
+//    TypeVar(d)  =>  NULL
+// and updates it to this:
+//    TypeVar(a)  =>  TypeVar(d)
+//    TypeVar(b)  =>  TypeVar(d)
+//    TypeVar(c)  =>  TypeVar(d)
+//    TypeVar(d)  =>  NULL
+//
+// The return value is the end of the chain. In the first example,
+// that would be sometype ; in the second, NULL.
 TypeAST* TypecheckPass::Constraints::substFind(TypeVariableAST* tv) {
   TypeVariableAST* leader = tv;
   while (true) {
@@ -436,12 +615,7 @@ TypeAST* TypecheckPass::Constraints::substFind(TypeVariableAST* tv) {
     const std::string& tvName = tv->getTypeVariableName();
     TypeAST* next = this->subst[tvName];
     if (!next) { break; }
-    if (next == leader) {
-      // We'd like to maintain the invariant that we never
-      // return a type variable, so we break self-loops.
-      this->subst[tvName] = NULL;
-      break;
-    }
+    if (next == leader) { break; }
     if (TypeVariableAST* nextTv = dynamic_cast<TypeVariableAST*>(next)) {
       tv = nextTv;
       this->subst[tvName] = leader;
@@ -510,8 +684,16 @@ void TypecheckPass::visit(IntAST* ast) {
 void TypecheckPass::visit(VariableAST* ast) {
   if (ast->type) { return; }
   
-  //EDiag() << "variable " << ast->name << " has no type!" << show(ast);
-  ast->type = TypeVariableAST::get(ast->name, ast->sourceRange);
+  ExprAST* varOrProto = gScopeLookupAST(ast->name);
+  // If this variable names a bound top-level function,
+  // the scope contains the appropriate prototype.
+  if (varOrProto) {
+    ast->type = varOrProto->type;
+  }
+
+  if (!ast->type) {
+    ast->type = TypeVariableAST::get(ast->name, ast->sourceRange);
+  }
 }
 
 // unary negate :: (int -> int) | (intvector -> intvector)
@@ -618,12 +800,15 @@ const char* getCallingConvention(PrototypeAST* ast) {
 // * Gives the prototype a FnTypeAST type.
 void TypecheckPass::visit(PrototypeAST* ast) {
   if (!areNamesDisjoint(ast->inArgs)) {
-    EDiag d; d << "formal argument names for function "
-              << ast->name << " are not disjoint";
+    
+    EDiag* err = new EDiag();
+    (*err) << "formal argument names for function "
+           << ast->name << " are not disjoint";
     for (size_t i = 0; i < ast->inArgs.size(); ++i) {
-      d << "\n\t" << ast->inArgs[i]->name;
+      (*err) << "\n\t" << ast->inArgs[i]->name;
     }
-      d       << show(ast);
+    (*err) << show(ast);
+    constraints.logError(err);
     return;
   }
 
@@ -681,47 +866,13 @@ void TypecheckPass::visit(FnAST* ast) {
 }
 
 void TypecheckPass::visit(ClosureAST* ast) {
-  std::cout << "Type Checking closure AST node " << (*ast) << " ;; " << ast->fn << "; "
-            << ast->hasKnownEnvironment << std::endl;
-
   ast->fn->accept(this);
 
   if (ast->hasKnownEnvironment) {
     visitChildren(ast);
-
-    if (!ast->fn || !ast->fn->type) { return; }
-
-    if (FnTypeAST* ft
-          = tryExtractCallableType(ast->fn->type)) {
-      ast->type = genericVersionOfClosureType(ft);
-      if (ft && ast->type) {
-        EDiag() << "ClosureAST fnRef typechecking converted "
-                 << str(ft) << " to " << str(ast->type) << show(ast);
-        if (false && ast->fn && ast->fn->getProto()) {
-          std::cout << "Just for kicks, fn has type "
-                    << *(ast->fn->getProto()) << std::endl;
-        }
-      }
-
-    } else {
-      EDiag() << "Error! 274 Function passed to closure"
-              << " does not have function type!" << show(ast);
-    }
-  } else {
-    if (FnTypeAST* ft = tryExtractCallableType(ast->fn->type)) {
-      ast->type = genericClosureTypeFor(ft);
-      std::cout << __LINE__ << std::endl;
-      EDiag() << "ClosureTypeAST fn typechecking converted "
-              << str(ft) << " to " << str(ast->type) << show(ast);
-    } else {
-      EDiag() << "Error! 282 Function passed to closure"
-              << "does not have function type!" << show(ast);
-    }
   }
 
-  llvm::outs() << "After type checking closure, have: \n";
-  foster::prettyPrintExpr(ast, llvm::outs(), 55);
-  llvm::outs() << "\n";
+  ast->type = new ClosureTypeAST(ast->fn->getProto(), NULL, ast->sourceRange);
 }
 
 void TypecheckPass::visit(NamedTypeDeclAST* ast) {
@@ -1188,6 +1339,7 @@ void TypecheckPass::visit(CallAST* ast) {
     args.push_back(arg);
   }
 
+  vector<TypeAST*> argTypes;
 
   FnAST* literalFnBase = dynamic_cast<FnAST*>(base);
   if (literalFnBase) {
@@ -1200,7 +1352,7 @@ void TypecheckPass::visit(CallAST* ast) {
       if (!arg->type) {
         EDiag() << "call parameter " << i << " had null type" << show(arg);
         return;
-      }
+      } else { argTypes.push_back(arg->type); }
     }
 
     size_t maxSafeIndex = (std::min)(args.size(),
@@ -1224,7 +1376,7 @@ void TypecheckPass::visit(CallAST* ast) {
       if (!arg->type) {
         EDiag() << "call parameter " << i << " had null type" << show(arg);
         return;
-      }
+      } else { argTypes.push_back(arg->type); }
     }
   }
 
@@ -1234,7 +1386,14 @@ void TypecheckPass::visit(CallAST* ast) {
     EDiag() << "called expression had indeterminate type" << show(base);
     return;
   }
-
+  
+  TypeAST* retTy = TypeVariableAST::get("callret", ast->sourceRange);
+  FnTypeAST* actualFnType = FnTypeAST::get(retTy, argTypes, "*");
+  constraints.addEq(ast, actualFnType, baseType);
+  
+  ast->type = retTy;
+  
+  #if 0
   FnTypeAST* baseFT = tryExtractCallableType(baseType);
   if (baseFT == NULL) {
     baseFT = originalFunctionTypeForClosureStructType(baseType);
@@ -1254,12 +1413,13 @@ void TypecheckPass::visit(CallAST* ast) {
             << show(ast);
     return;
   }
-
+  
   for (size_t i = 0; i < numParams; ++i) {
     TypeAST* formalType = baseFT->getParamType(i);
     TypeAST* actualType = args[i]->type;
     constraints.addCanConvertFromTo(ast, actualType, formalType);
   }
+ 
 
   for (size_t i = 0; i < numParams; ++i) {
     TypeAST* formalType = baseFT->getParamType(i);
@@ -1308,6 +1468,7 @@ void TypecheckPass::visit(CallAST* ast) {
   }
 
   ast->type = baseFT->getReturnType();
+  #endif
 }
 
 /// For now, as a special case, simd-vector and array will interpret { 4;i32 }
@@ -1513,6 +1674,16 @@ void TypecheckPass::visit(BuiltinCompilesExprAST* ast) {
     bool wouldCompileOK = ast->parts[0]->type != NULL
                        && constraints.errors.size() == start.errors.size();
     
+#if 0
+    llvm::outs() << "BUILTIN COMPILES RESOLUTION: " <<  str(ast->parts[0]->type) << "; " 
+                 << constraints.errors.size()
+                 << " vs " << start.errors.size() << "\n";
+     for (size_t i = start.errors.size(); i < constraints.errors.size(); ++i) {
+       delete constraints.errors[i];
+       constraints.errors[i] = NULL;
+     }
+#endif
+                       
     // Drop errors and constraints generated from within the __compiles__ expr.
     constraints = start;
     

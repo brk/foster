@@ -284,8 +284,6 @@ void DumpTypeToProtobufPass::visit(RefTypeAST* ast) {
 void DumpTypeToProtobufPass::visit(TupleTypeAST* ast) {
   setTagAndRange(current, ast, foster::pb::Type::TUPLE);
 
-  std::cout << "saw tuple: " << str(ast->getLLVMType()) << std::endl;
-
   current->mutable_tuple_parts()->Reserve(ast->getNumContainedTypes());
   for (int i = 0; i < ast->getNumContainedTypes(); ++i) {
     dumpChild(this, current->add_tuple_parts(), ast->getContainedType(i));

@@ -18,6 +18,7 @@
 #include "llvm/Module.h"
 #include "llvm/Analysis/Verifier.h"
 #include "llvm/Target/TargetData.h"
+#include "llvm/Support/Format.h"
 
 #include "pystring/pystring.h"
 
@@ -442,7 +443,7 @@ void CodegenPass::visit(VariableAST* ast) {
     ast->value = gScopeLookupValue(ast->name);
     if (!ast->value) {
       EDiag() << "looking up variable " << ast->name << ", got "
-              << str(ast->value) << show(ast);
+              << str(ast) << show(ast);
       gScope.dump(std::cout);
     }
   }
@@ -612,7 +613,7 @@ void CodegenPass::visit(SeqAST* ast) {
 void CodegenPass::visit(FnAST* ast) {
   if (ast->value) return;
 
-  std::cout << "codegenning " << ast->getProto()->name << ":\n\t" << *ast << std::endl;
+  //std::cout << "codegenning " << ast->getProto()->name << ":\n\t" << *ast << std::endl;
 
   ASSERT(ast->getBody() != NULL);
   ASSERT(ast->getProto()->scope) << " no scope for " << ast->getProto()->name;
@@ -631,7 +632,6 @@ void CodegenPass::visit(FnAST* ast) {
   BasicBlock* BB = BasicBlock::Create(getGlobalContext(), "entry", F);
   builder.SetInsertPoint(BB);
 
-  gScopeInsert(ast->getProto()->name, F);
   gScope.pushExistingScope(ast->getProto()->scope);
 
   // If the body of the function might allocate memory, the first thing
@@ -826,6 +826,19 @@ void CodegenPass::visit(NamedTypeDeclAST* ast) {
 }
 
 void CodegenPass::visit(ModuleAST* ast) {
+  // Ensure that the llvm::Function*s are created for all the function
+  // prototypes, so that mutually recursive function references resolve.
+  for (size_t i = 0; i < ast->parts.size(); ++i) {
+    if (FnAST* f = dynamic_cast<FnAST*>(ast->parts[i])) {
+      f->getProto()->accept(this);
+      // Ensure that the value is in the SymbolInfo entry in the symbol table,
+      // and not just in the ->value field of the prototype AST node.
+      gScopeInsert(f->getProto()->name, f->getProto()->value);
+    }
+  }
+  
+  // Codegen all the function bodies, now that we can resolve mutually-recursive
+  // function references without needing to store prototypes in call nodes.
   for (size_t i = 0; i < ast->parts.size(); ++i) {
     ast->parts[i]->accept(this);
   }
@@ -1059,8 +1072,8 @@ void CodegenPass::visit(DerefExprAST* ast) {
   ASSERT(isPointerToType(src->getType(), getLLVMType(ast->type)))
       << "deref needs a T* to produce a T, given src type "
       << str(src->getType()) << " and ast type " << str(getLLVMType(ast->type))
-      << "\n\t" << ast->tag << " ; " << ast->type->tag
-      << show(ast);
+      << "\n\t" << ast->tag << " ; " << ast->type->tag;
+      //<< show(ast);
   ast->value = builder.CreateLoad(src, /*isVolatile=*/ false, "deref");
 }
 
@@ -1252,6 +1265,11 @@ FnAST* getVoidReturningVersionOf(ExprAST* arg, FnTypeAST* fnty) {
     FnAST* fn = new FnAST(proto, body, arg->sourceRange);
     typecheck(fn);
     { CodegenPass cp; fn->accept(&cp); }
+    
+    // Regular functions get their proto values added when the module
+    // starts codegenning, but we need to do it ourselves here.
+    gScopeInsert(fn->getProto()->name, fn->getProto()->value);
+    
     voidReturningVersions[fnName] = fn;
     return fn;
   } else {
@@ -1329,9 +1347,15 @@ llvm::Value* getTrampolineForClosure(ClosureAST* cloAST) {
   return tramp;
 }
 
+// Create function    fnName(i8* env, arg-args) { arg(arg-args) }
+// that hard-codes call to fn referenced by arg,
+// and is suitable for embedding as the code ptr in a closure pair,
+// unlike the given function, which doesn't want the env ptr.
 FnAST* getClosureVersionOf(ExprAST* arg, FnTypeAST* fnty) {
   static std::map<string, FnAST*> closureVersions;
+  
   string protoName;
+  
   if (VariableAST* var = dynamic_cast<VariableAST*>(arg)) {
     protoName = var->name;
   } else if (PrototypeAST* proto = dynamic_cast<PrototypeAST*>(arg)) {
@@ -1344,37 +1368,41 @@ FnAST* getClosureVersionOf(ExprAST* arg, FnTypeAST* fnty) {
       return exists;
     }
 
-    // Create function    fnName(i8* env, arg-args) { arg(arg-args) }
-    // that hard-codes call to fn referenced by arg
-
     std::vector<VariableAST*> inArgs;
     std::vector<ExprAST*> callArgs;
-    inArgs.push_back(new VariableAST("__ignored_env__",
+    inArgs.push_back(new VariableAST(freshName("__ignored_env__"),
         RefTypeAST::get(TypeAST::i(8)),
         SourceRange::getEmptyRange()));
 
     for (size_t i = 0; i < fnty->getNumParams(); ++i) {
-      std::stringstream ss; ss << "a" << i;
-      VariableAST* a = new VariableAST(ss.str(),
+      VariableAST* a = new VariableAST(freshName("_cv_a"),
                              fnty->getParamType(i),
                              SourceRange::getEmptyRange());
       inArgs.push_back(a);
       callArgs.push_back(a);
     }
 
+    // Create a scope for the new proto.
     foster::SymbolTable<foster::SymbolInfo>::LexicalScope* protoScope =
                                     gScope.newScope("fn proto " + fnName);
+    // But don't use it for doing codegen outside the proto.
     gScope.popExistingScope(protoScope);
+    
     PrototypeAST* proto = new PrototypeAST(fnty->getReturnType(),
                                fnName, inArgs, arg->sourceRange, protoScope);
     ExprAST* body = new CallAST(arg, callArgs, SourceRange::getEmptyRange());
     FnAST* fn = new FnAST(proto, body, SourceRange::getEmptyRange());
     { typecheck(fn); CodegenPass cp; fn->accept(&cp); }
+
+    // Regular functions get their proto values added when the module
+    // starts codegenning, but we need to do it ourselves here.
+    gScopeInsert(fn->getProto()->name, fn->getProto()->value);
+      
     closureVersions[fnName] = fn;
+    
     return fn;
   } else {
-    EDiag() << "getClosureVersionOf() expected a variable or prototype of a fn, "
-            << "but got" << str(arg) << show(arg);
+    EDiag() << "getClosureVersionOf() was given unxpected arg " << str(arg) << show(arg);
     exit(1);
   }
   return NULL;
@@ -1395,11 +1423,6 @@ void CodegenPass::visit(CallAST* ast) {
 
   ExprAST* base = ast->parts[0];
   ASSERT(base != NULL);
-
-  //std::cout << "\t" << "Codegen CallAST "  << (base) << std::endl;
-  //std::cout << "\t\t\tbase ast: "  << *(base) << std::endl;
-
-  // TODO if base has closure type, it should be a ClosureAST node
 
   base->accept(this);
   Value* FV = base->value;
@@ -1449,8 +1472,10 @@ void CodegenPass::visit(CallAST* ast) {
 
     const llvm::Type* expectedType = FT->getContainedType(i);
 
-    // Codegenning   callee( arg )  where arg has raw function type, not closure type!
-    if (FnTypeAST* fnty = dynamic_cast<FnTypeAST*>(arg->type)) {
+    if (clo = dynamic_cast<ClosureAST*>(arg)) {
+      // continue...
+    } else if (FnTypeAST* fnty = dynamic_cast<FnTypeAST*>(arg->type)) {
+      // Codegenning   callee( arg )  where arg has raw function type, not closure type!
       const llvm::FunctionType* llvmFnTy =
 	    llvm::dyn_cast<const llvm::FunctionType>(fnty->getLLVMType());
       // If we still have a bare function type at codegen time, it means
@@ -1491,8 +1516,7 @@ void CodegenPass::visit(CallAST* ast) {
       // functions we see being passed directly by name; it would forward
       // all parameters to the regular function, except for the env ptr.
         ClosureAST* clo = new ClosureAST(getClosureVersionOf(arg, fnty),
-                                        SourceRange::getEmptyRange());
-        std::cout << "clo 1347 = " << clo << std::endl;
+                                         SourceRange::getEmptyRange());
         clo->hasKnownEnvironment = true; // Empty by definition!
         arg = clo;
         typecheck(arg);
@@ -1508,8 +1532,6 @@ void CodegenPass::visit(CallAST* ast) {
       // This would have the additional benefit of working with anonymous
       // function pointer values e.g. from a lookup table.
       }
-    } else {
-      clo = dynamic_cast<ClosureAST*>(arg);
     }
 
     arg->accept(this);
@@ -1549,8 +1571,14 @@ void CodegenPass::visit(CallAST* ast) {
 
     bool needsAdjusting = V->getType() != expectedType;
     if (needsAdjusting) {
+      ExprAST* arg = ast->parts[i + 1];
+      TypeAST* argty = ast->parts[i + 1]->type;
+      std::stringstream ss; ss << arg;
       EDiag() << str(V) << "->getType() is " << str(V->getType())
-              << "; expecting " << str(expectedType) << show(ast->parts[i + 1]);
+              << "; expecting " << str(expectedType) 
+              << "\n\targ is " << ss.str() << " :: " << arg->tag << " :: " << str(arg)
+              << "\n\targty is " << argty->tag << "\t" << str(argty)
+              << show(arg);
     }
 
     // If we're given a clo** when we expect a clo,
@@ -1591,7 +1619,8 @@ void CodegenPass::visit(CallAST* ast) {
   size_t expectedNumArgs = FT->getNumParams();
   if (expectedNumArgs != valArgs.size()) {
     EDiag() << "function arity mismatch, got " << valArgs.size()
-            << " but expected " << expectedNumArgs
+            << " args but expected " << expectedNumArgs
+            << str(base) << "\n"
             << show(base);
     return;
   }

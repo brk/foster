@@ -257,6 +257,7 @@ add_executable(fosterc
   compiler/passes/ReplaceExprTransform.cpp
   compiler/passes/ReplaceTypeTransform.cpp
   compiler/passes/ClosureConversionPass.cpp
+  compiler/passes/CaptureAvoidingSubstitution.cpp
   #  compiler/llvm/passes/LLVMCallGraphDotPrinter.cpp
 )
 

@@ -1,4 +1,5 @@
-g_inner = fn () { 0 }
+g_inner = fn (to i32) { 0 }
+
 g = fn () {
   c_invoke_fnptr_void(g_inner)
   3

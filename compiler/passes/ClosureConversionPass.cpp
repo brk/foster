@@ -4,13 +4,17 @@
 
 #include "base/Diagnostics.h"
 
+#include "passes/CaptureAvoidingSubstitution.h"
 #include "passes/ClosureConversionPass.h"
 #include "passes/ReplaceExprTransform.h"
+#include "passes/PrettyPrintPass.h"
 #include "passes/TypecheckPass.h"
 #include "passes/CodegenPass.h"
-#include "parse/FosterAST.h"
 
+#include "parse/FosterAST.h"
 #include "parse/CompilationContext.h"
+
+#include "parse/FosterUtils.h"
 
 using foster::show;
 using foster::EDiag;
@@ -18,14 +22,12 @@ using foster::EDiag;
 #include <vector>
 #include <map>
 #include <set>
+#include <string>
 
 using namespace std;
 
 
 #include "parse/ExprASTVisitor.h"
-
-#include <set>
-#include <string>
 
 struct ClosureConversionPass : public ExprASTVisitor {
   #include "parse/ExprASTVisitor.decls.inc.h"
@@ -60,8 +62,8 @@ namespace foster {
 
 // Which function are we currently examining?
 vector<FnAST*> callStack;
-map<FnAST*, set<VariableAST*> > boundVariables;
-map<FnAST*, set<VariableAST*> > freeVariables;
+map<FnAST*, set<string> > boundVariables;
+map<FnAST*, set<string> > freeVariables;
 typedef set<CallAST*> CallSet;
 map<FnAST*, CallSet> callsOf;
 
@@ -87,10 +89,10 @@ void foundFreeVariableIn(VariableAST* var, FnAST* scope) {
   // variable has not been marked as bound. This handles the case in which
   // a variable is free in a parent scope but only appears in a nested scope.
   do {
-    freeVariables[scope].insert(var);
+    freeVariables[scope].insert(var->getName());
 
     scope = parentFnOf(scope);
-  } while (scope != NULL && boundVariables[scope].count(var) == 0);
+  } while (scope != NULL && boundVariables[scope].count(var->getName()) == 0);
 }
 
 void performClosureConversion(ClosureAST* ast, ClosureConversionPass* ccp);
@@ -104,17 +106,18 @@ void ClosureConversionPass::visit(VariableAST* ast)            {
     return;
   }
 
-  if (boundVariables[callStack.back()].count(ast) == 0
-    && this->globalNames.count(ast->name) == 0) {
+  if (boundVariables[callStack.back()].count(ast->getName()) == 0
+    && this->globalNames.count(ast->getName()) == 0) {
     foundFreeVariableIn(ast, callStack.back());
   }
+  
   return;
 }
 void ClosureConversionPass::visit(UnaryOpExprAST* ast)         { return; }
 void ClosureConversionPass::visit(BinaryOpExprAST* ast)        { return; }
 void ClosureConversionPass::visit(PrototypeAST* ast)           {
   for (size_t i = 0; i < ast->inArgs.size(); ++i) {
-    boundVariables[callStack.back()].insert(ast->inArgs[i]);
+    boundVariables[callStack.back()].insert(ast->inArgs[i]->getName());
     onVisitChild(ast, ast->inArgs[i]);
   }
 }
@@ -169,9 +172,14 @@ void ClosureConversionPass::visit(ForRangeExprAST* ast) {
   onVisitChild(ast, ast->getEndExpr());
   onVisitChild(ast, ast->getIncrExpr());
 
-  boundVariables[callStack.back()].insert(ast->var);
+  // TODO this isn't very elegant...
+  const string& varName = ast->var->getName();
+  bool wasAlreadyBound = 1 == boundVariables[callStack.back()].count(varName);
+  boundVariables[callStack.back()].insert(varName);
   onVisitChild(ast, ast->getBodyExpr());
-  boundVariables[callStack.back()].erase(ast->var);
+  if (!wasAlreadyBound) {
+    boundVariables[callStack.back()].erase(varName);
+  }
 }
 void ClosureConversionPass::visit(NilExprAST* ast)             { return; }
 void ClosureConversionPass::visit(RefExprAST* ast)             { return; }
@@ -223,12 +231,27 @@ bool isAnonymousFunction(FnAST* ast) {
   } else { return false; }
 }
 
+// Looks up the bindings for the free variable names in the given function.
+set<VariableAST*> freeVariablesOf(FnAST* ast) {
+  set<VariableAST*> rv;
+  const set<string>& freeVars = freeVariables[ast];
+  for (set<string>::iterator it = freeVars.begin(); it != freeVars.end(); ++it) {
+    const string& varName = *it;
+    foster::SymbolInfo* info = ast->getProto()->scope->lookup(varName, "");
+    VariableAST* var = dynamic_cast<VariableAST*>(info->ast);
+    ASSERT(var) << "free variables must be variables! But " << varName
+                 << " was " << show(info->ast);
+    rv.insert(var);
+  }
+  return rv;
+}
+
 void hoistAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) {
   // TODO support mutually recursive function...
   ccp->newlyHoistedFunctions.push_back(ast);
 
   ast->parent = NULL;
-
+  
   {
     // Alter the symbol table structure to reflect the fact that we're
     // hoisting the function to the root scope.
@@ -245,10 +268,11 @@ void hoistAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) {
 void performClosureConversion(ClosureAST* closure,
                               ClosureConversionPass* ccp) {
   FnAST* ast = closure->fn;
-  std::cout << "Closure converting function" << *ast << std::endl;
+  //llvm::outs() << "Closure converting function" << ast->getProto()->name
+  //             << " @ " << ast << "\n";
 
   // Find the set of free variables for the function
-  set<VariableAST*>& freeVars = freeVariables[ast];
+  set<VariableAST*> freeVars = freeVariablesOf(ast);
 
   // Create a record to contain the free variables
   std::vector<TypeAST*> envTypes;
@@ -272,10 +296,14 @@ void performClosureConversion(ClosureAST* closure,
   TupleTypeAST* envTy = TupleTypeAST::get(envTypes);
 
   // Make (a pointer to) this record be the function's first parameter.
-  VariableAST* envVar = new VariableAST("env",
+  VariableAST* envVar = new VariableAST(freshName("env"),
                               RefTypeAST::get(envTy),
-                              foster::SourceRange::getEmptyRange());
+                              ast->sourceRange);
+
   prependParameter(ast->getProto(), envVar);
+  
+  ExprAST* derefedEnvPtr = new DerefExprAST(envVar, envVar->sourceRange);
+  derefedEnvPtr->type = envTy;
 
   // Rewrite the function body to make all references to free vars
   // instead go through the passed env pointer.
@@ -284,14 +312,15 @@ void performClosureConversion(ClosureAST* closure,
     int envOffset = 1; // offset 0 is reserved for typemamp
     for (it = freeVars.begin(); it != freeVars.end(); ++it) {
       std::cout << "Rewriting " << *(*it) << " to go through env" << std::endl;
-      rex.staticReplacements[*it] = new SubscriptAST(
-                                        envVar,
-                                        literalIntAST(envOffset,
-                                          foster::SourceRange::getEmptyRange()),
-                                        foster::SourceRange::getEmptyRange());
+      captureAvoidingSubstitution(ast->getBody(),
+                                  (*it)->name,
+                                  new SubscriptAST(
+                                        derefedEnvPtr,
+                                        literalIntAST(envOffset, (*it)->sourceRange),
+                                        (*it)->sourceRange),
+                                  boundVariables);
       ++envOffset;
     }
-    ast->getBody()->accept(&rex);
   }
 
   // Rewrite all calls to indirect through the code pointer
@@ -314,8 +343,11 @@ void performClosureConversion(ClosureAST* closure,
   hoistAnonymousFunction(ast, ccp);
 }
 
-void lambdaLiftAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) {
-  set<VariableAST*>& freeVars = freeVariables[ast];
+void lambdaLiftAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) { 
+  //llvm::outs() << "Lambda lifting function" << ast->getProto()->name
+  //             << " @ " << ast << "\n";
+             
+  set<VariableAST*> freeVars = freeVariablesOf(ast);
   CallSet& calls = callsOf[ast];
 
   set<VariableAST*>::iterator it;

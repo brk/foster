@@ -924,15 +924,16 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     // Don't bother trying to look up special variable names,
     // since we'll end up discarding this variable soon anyways.
     if (isSpecialName(varName)) {
-      // Give a bogus type until type inference is implemented.
-      return new VariableAST(varName, TypeAST::i(32), sourceRange);
+      return new VariableAST(varName, NULL, sourceRange);
     }
 
-    ExprAST* var = gScopeLookupAST(varName);
-    if (!var) {
+    ExprAST* varOrProto = gScopeLookupAST(varName);
+    if (!varOrProto) {
       EDiag() << "unknown var name: " << varName << show(sourceRange);
+      return NULL;
+    } else {
+      return new VariableAST(varName, varOrProto->type, sourceRange);
     }
-    return var;
   }
 
   if (token == OUT) {

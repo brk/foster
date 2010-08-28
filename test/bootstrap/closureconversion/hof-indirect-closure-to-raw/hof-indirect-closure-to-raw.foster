@@ -8,4 +8,7 @@ fn "main" () {
   // LLVM requires that it be able to directly see the function body going into the trampoline;
   // it's fine if it's a closure, and also fine if it's a top-level function name.
   expect_i1(true)  ;  print_i1(__COMPILES__ fn (f:fn()) { c_invoke_fnptr_i32( fn() { f() ; 0 } ) ; 0 })
+  
+  // Can't pass a function with mismatched prototype...
+  expect_i1(false)  ;  print_i1(__COMPILES__ fn (f:fn()) { c_invoke_fnptr_i32( fn(x:i32) { f() ; 0 } ) ; 0 })
 }

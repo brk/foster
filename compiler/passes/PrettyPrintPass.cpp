@@ -42,6 +42,9 @@ public:
   void scan(const PrettyPrinter::PPToken& token) { pp.scan(token); }
   
   ~PrettyPrintPass() {}
+  
+  friend class ScopedBlock;
+  friend class ScopedIndent;
 };
 
 namespace foster {
@@ -74,6 +77,31 @@ public:
     if (enable) {
       p->scan(PPToken(")"));
     }
+  }
+};
+
+class ScopedBlock {
+  PrettyPrintPass* p;
+public:
+  ScopedBlock(PrettyPrintPass* p) : p(p) {
+    p->scan(p->pp.tBlockOpen);
+  }
+  
+  ~ScopedBlock() {
+    p->scan(p->pp.tBlockClose);
+  }
+};
+
+
+class ScopedIndent {
+  PrettyPrintPass* p;
+public:
+  ScopedIndent(PrettyPrintPass* p) : p(p) {
+    p->scan(p->pp.tIndent);
+  }
+  
+  ~ScopedIndent() {
+    p->scan(p->pp.tDedent);
   }
 };
 
@@ -124,7 +152,7 @@ void PrettyPrintPass::visit(IntAST* ast) {
 
 // name (: type)
 void PrettyPrintPass::visit(VariableAST* ast) {
-  scan(pp.tBlockOpen);
+  ScopedBlock sb(this);
   scan(PPToken(ast->name));
   if (this->printVarTypes) {
     scan(PPToken(":"));
@@ -133,38 +161,40 @@ void PrettyPrintPass::visit(VariableAST* ast) {
       scan(PPToken(str(ast->type)));
     }
   }
-  scan(pp.tBlockClose);
 }
 
+// op arg
 void PrettyPrintPass::visit(UnaryOpExprAST* ast) {
+  ScopedBlock sb(this);
   scan(PPToken(ast->op));
+  scan(pp.tOptNewline);
   scan(PPToken(" "));
   emit(ast->parts[0]);
 }
 
 // $0 op $1
 void PrettyPrintPass::visit(BinaryOpExprAST* ast) {
-  scan(pp.tBlockOpen);
-  {
-    emit(ast->parts[0], needsParens(ast, ast->parts[0]));
-    scan(PPToken(" "));
-    scan(PPToken(ast->op));
-    scan(PPToken(" "));
-    emit(ast->parts[1], needsParens(ast, ast->parts[1]));
-  }
-  scan(pp.tBlockClose);
+  ScopedBlock sb(this);
+  
+  emit(ast->parts[0], needsParens(ast, ast->parts[0]));
+  scan(PPToken(" "));
+  scan(PPToken(ast->op));
+  scan(pp.tOptNewline);
+  scan(PPToken(" "));
+  emit(ast->parts[1], needsParens(ast, ast->parts[1]));
 }
 
 // fn Name (inArgs to outArgs)
 void PrettyPrintPass::visit(PrototypeAST* ast) {
-  scan(pp.tBlockOpen);
-  //scan(pp.tBlockOpen);
+  ScopedBlock sb(this);
+  { ScopedBlock sb(this);
   scan(PPToken("fn"));
   scan(PPToken(" "));
   scan(PPToken(ast->name));
+  }
+  
+  { ScopedBlock sb(this);
   scan(PPToken(" "));
-  //scan(pp.tBlockClose);
-  //scan(pp.tBlockOpen);
   scan(PPToken("("));
   for (size_t i = 0; i < ast->inArgs.size(); ++i) {
     scan(PPToken(" "));
@@ -178,8 +208,7 @@ void PrettyPrintPass::visit(PrototypeAST* ast) {
   }
   scan(PPToken(" "));
   scan(PPToken(")"));
-  //scan(pp.tBlockClose);
-  scan(pp.tBlockClose);
+  } // block for params
 }
 
 // fnProto fnBody
@@ -196,14 +225,12 @@ void PrettyPrintPass::visit(FnAST* ast) {
       emit(ast->getBody());
     }
   }
-
-  if (isTopLevelFn) { scan(pp.tNewline); }
 }
 
 void PrettyPrintPass::visit(NamedTypeDeclAST* ast) {
   scan(PPToken("type = "));
-  // TODO have PrettyPrintExprPass and PrettyPrintTypePass
-  scan(PPToken(str(ast->type)));
+  ScopedBlock sb(this);
+  scan(PPToken(str(ast->type))); // TODO avoid str(type)
   scan(pp.tNewline);
 }
 
@@ -215,53 +242,59 @@ void PrettyPrintPass::visit(ModuleAST* ast) {
 }
 
 void PrettyPrintPass::visit(ClosureAST* ast) {
-  scan(pp.tBlockOpen);
+  ScopedBlock sb(this);
   scan(PPToken("<closure "));
   if (ast->fn) {
     scan(PPToken(str(ast->fn->type)));
   }
   scan(PPToken(">"));
-  scan(pp.tBlockClose);
 }
 
-// if $0 { $1 } else { $2 }
+// if $0 then $1 else $2
 void PrettyPrintPass::visit(IfExprAST* ast) {
-  //scan(pp.tBlockOpen);
-  scan(PPToken("if ("));
+  ScopedBlock sb(this);
+  
+  { ScopedBlock sb(this);
+  scan(PPToken("if "));
   emit(ast->getTestExpr());
-  //scan(pp.tBlockClose);
-
-  scan(PPToken(") "));
-  scan(pp.tOptNewline);
-
+  }
+  
+  scan(pp.tConnNewline);
+  
+  { ScopedBlock sb(this);
+  scan(PPToken(" then "));
   emit(ast->getThenExpr());
+  }
 
+  scan(pp.tConnNewline);
+  
+  { ScopedBlock sb(this);
   scan(PPToken(" else "));
-  scan(pp.tOptNewline);
-
   emit(ast->getElseExpr());
+  }
 }
 
 // for $0 in $1 to $2 do $3
 void PrettyPrintPass::visit(ForRangeExprAST* ast) {
-  //scan(pp.tBlockOpen);
-  scan(PPToken("for "));
-  scan(PPToken(ast->var->name));
-  //scan(pp.tBlockClose);
-
-  scan(PPToken(" in "));
-  emit(ast->getStartExpr());
-  scan(PPToken(" to "));
-  emit(ast->getEndExpr());
-
-  if (ast->hadExplicitIncrExpr()) {
-    scan(PPToken(" by "));
-    emit(ast->getIncrExpr());
+  { ScopedBlock sb(this);
+    scan(PPToken("for "));
+    scan(PPToken(ast->var->name));
+  
+    scan(PPToken(" in "));
+    emit(ast->getStartExpr());
+    scan(PPToken(" to "));
+    emit(ast->getEndExpr());
+  
+    if (ast->hadExplicitIncrExpr()) {
+      scan(PPToken(" by "));
+      emit(ast->getIncrExpr());
+    }
+    
+    scan(PPToken(" do "));
   }
-
-  scan(PPToken(" do "));
+  
   scan(pp.tOptNewline);
-
+  
   emit(ast->getBodyExpr());
 }
 
@@ -270,39 +303,44 @@ void PrettyPrintPass::visit(NilExprAST* ast) {
 }
 
 void PrettyPrintPass::visit(RefExprAST* ast) {
+  ScopedBlock sb(this);
   scan(PPToken("ref "));
   emit(ast->parts[0]);
 }
 
 void PrettyPrintPass::visit(DerefExprAST* ast) {
+  ScopedBlock sb(this);
   scan(PPToken("deref("));
   emit(ast->parts[0]);
   scan(PPToken(")"));
 }
 
 void PrettyPrintPass::visit(AssignExprAST* ast) {
+  ScopedBlock sb(this);
   scan(PPToken("set "));
   emit(ast->parts[0]);
   scan(PPToken(" = "));
+  scan(pp.tOptNewline);
   emit(ast->parts[1]);
 }
 
 // $0 [ $1 ]
 void PrettyPrintPass::visit(SubscriptAST* ast) {
-  //scan(pp.tBlockOpen);
+  ScopedBlock sb(this);
   emit(ast->parts[0]);
 
   scan(PPToken("["));
   emit(ast->parts[1]);
   scan(PPToken("]"));
-  //scan(pp.tBlockClose);
 }
 
 // { $0 ; $1 ; ... ; $n }
 void PrettyPrintPass::visit(SeqAST* ast) {
-  scan(pp.tBlockOpen);
-  scan(pp.tIndent);
-  FnAST* followingFn = dynamic_cast<FnAST*>(ast->parent);
+  ScopedBlock sb(this);
+  FnAST* followingFn = NULL;
+  {
+  ScopedIndent si(this);
+  followingFn = dynamic_cast<FnAST*>(ast->parent);
   if (followingFn) {
     scan(PPToken(" {"));
     scan(pp.tNewline);
@@ -311,9 +349,9 @@ void PrettyPrintPass::visit(SeqAST* ast) {
   }
 
   for (size_t i = 0; i < ast->parts.size(); ++i) {
-    scan(pp.tBlockOpen);
+    { ScopedBlock sb(this);
     emit(ast->parts[i]);
-    scan(pp.tBlockClose);
+    }
 
     if (i != ast->parts.size() - 1) {
       if (CallAST* wasCall = dynamic_cast<CallAST*>(ast->parts[i])) {
@@ -324,7 +362,7 @@ void PrettyPrintPass::visit(SeqAST* ast) {
     }
   }
 
-  scan(pp.tDedent);
+  } // indent/dedent
 
   if (followingFn) {
     scan(pp.tNewline);
@@ -332,17 +370,16 @@ void PrettyPrintPass::visit(SeqAST* ast) {
   } else {
     scan(PPToken(" }"));
   }
-
-  scan(pp.tBlockClose);
 }
 
 // $0 ( $1, $2, ... , $n )
 void PrettyPrintPass::visit(CallAST* ast) {
-  scan(pp.tBlockOpen);
-  scan(pp.tBlockOpen);
+  ScopedBlock sb(this);
+  
+  { ScopedBlock sb(this);
   emit(ast->parts[0]);
-  scan(pp.tBlockClose);
-  scan(pp.tBlockOpen);
+  }
+  { ScopedBlock sb(this);
   scan(PPToken("("));
 
   if (ast->parts.size() > 1) {
@@ -363,14 +400,11 @@ void PrettyPrintPass::visit(CallAST* ast) {
       scan(pp.tDedent);
     }
 
-    scan(pp.tBlockOpen);
     emit(ast->parts[i]);
-    scan(pp.tBlockClose);
   }
 
   scan(PPToken(")"));
-  scan(pp.tBlockClose);
-  scan(pp.tBlockClose);
+  } // scoped block
 }
 #if 0
 // array $0
@@ -382,6 +416,7 @@ void PrettyPrintPass::visit(ArrayExprAST* ast) {
 #endif
 // tuple $0
 void PrettyPrintPass::visit(TupleExprAST* ast) {
+  ScopedBlock sb(this);
   scan(PPToken("tuple"));
   scan(PPToken(" "));
   emit(ast->parts[0]);
@@ -390,6 +425,7 @@ void PrettyPrintPass::visit(TupleExprAST* ast) {
 
 // simd-vector $0
 void PrettyPrintPass::visit(SimdVectorAST* ast) {
+  ScopedBlock sb(this);
   scan(PPToken("simd-vector"));
   scan(PPToken(" "));
   emit(ast->parts[0]);
@@ -397,11 +433,10 @@ void PrettyPrintPass::visit(SimdVectorAST* ast) {
 
 // __COMPILES__ $0
 void PrettyPrintPass::visit(BuiltinCompilesExprAST* ast) {
-  //scan(pp.tBlockClose);
+  ScopedBlock sb(this);
   scan(PPToken("__COMPILES__"));
   scan(PPToken(" "));
   emit(ast->parts[0]);
-  //scan(pp.tBlockClose);
 }
 
 ////////////////////////////////////////////////////////////////////

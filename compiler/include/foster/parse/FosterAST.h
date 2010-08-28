@@ -218,6 +218,8 @@ struct VariableAST : public ExprAST {
     noInitialType = (aType == NULL);
   }
 
+  virtual ExprAST* lookup(const string& name, const string& meta);
+
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const {
     if (type) {
@@ -226,6 +228,8 @@ struct VariableAST : public ExprAST {
       return out << "VarAST( " << name << " : " << ")";
     }
   }
+  
+  const string& getName() { return name; }
 };
 
 struct UnaryOpExprAST : public UnaryExprAST {
