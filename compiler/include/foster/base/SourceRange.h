@@ -5,7 +5,11 @@
 #ifndef FOSTER_SOURCERANGE_H
 #define FOSTER_SOURCERANGE_H
 
-#include "llvm/Support/raw_os_ostream.h"
+namespace llvm {
+  class raw_ostream; 
+}
+
+#include <iosfwd>
 
 namespace foster {
 
@@ -72,11 +76,7 @@ public:
 };
 } // namespace foster
 
-inline std::ostream& operator <<(std::ostream& out, const foster::SourceRange& r) {
-  llvm::raw_os_ostream raw(out);
-  r.highlightWithCaret(raw, r.begin);
-  return out;
-}
+std::ostream& operator <<(std::ostream& out, const foster::SourceRange& r);
 
 #endif // header guard
 

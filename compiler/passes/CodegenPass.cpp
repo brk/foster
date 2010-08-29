@@ -4,10 +4,12 @@
 
 #include "base/Diagnostics.h"
 #include "parse/FosterAST.h"
+#include "parse/FosterUtils.h"
 #include "parse/CompilationContext.h"
+
 #include "passes/CodegenPass.h"
 #include "passes/TypecheckPass.h"
-#include "parse/FosterUtils.h"
+
 #include "_generated_/FosterConfig.h"
 
 #include "llvm/Attributes.h"

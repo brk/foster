@@ -4,13 +4,13 @@
 
 #include "base/Assert.h"
 #include "base/Diagnostics.h"
-#include "base/FreshNameGenerator.h"
 #include "parse/FosterAST.h"
 #include "parse/CompilationContext.h"
 #include "parse/ANTLRtoFosterAST.h" // just for parseAPIntFromClean()
 #include "parse/FosterUtils.h"
 
 #include "passes/PrettyPrintPass.h"
+
 #include "llvm/Support/raw_os_ostream.h"
 
 #include <map>

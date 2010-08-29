@@ -7,6 +7,10 @@
 
 #include "base/SourceRange.h"
 
+#include "llvm/Support/raw_ostream.h"
+
+#include <string>
+
 // Foster's diagnostics subsystem is inspired by Clang's,
 // though with less emphasis on configurability and more
 // emphasis on making it easy to mark and display errors.

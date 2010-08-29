@@ -7,6 +7,7 @@
 #include "base/InputFile.h"
 #include "base/InputTextBuffer.h"
 
+#include "llvm/Support/raw_os_ostream.h"
 #include "llvm/Support/Format.h"
 
 namespace foster {
@@ -114,4 +115,11 @@ void SourceRange::highlightWithCaret(llvm::raw_ostream& out,
 }
 
 } // namespace foster
+
+std::ostream& operator <<(std::ostream& out, const foster::SourceRange& r) {
+  llvm::raw_os_ostream raw(out);
+  r.highlightWithCaret(raw, r.begin);
+  return out;
+}
+
 
