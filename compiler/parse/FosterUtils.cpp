@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-
 #include "base/Diagnostics.h"
 #include "parse/FosterAST.h"
+#include "parse/FosterTypeAST.h"
 #include "parse/FosterUtils.h"
 #include "parse/CompilationContext.h"
 
@@ -14,6 +14,15 @@
 
 using llvm::Type;
 using llvm::FunctionType;
+
+bool isPointerToType(const llvm::Type* p, const llvm::Type* t) {
+  return p->isPointerTy() && p->getContainedType(0) == t;
+}
+
+// returns true if p == t**
+bool isPointerToPointerToType(const llvm::Type* p, const llvm::Type* t) {
+  return p->isPointerTy() && isPointerToType(p->getContainedType(0), t);
+}
 
 bool canAssignType(TypeAST* from, TypeAST* to) {
   // TODO refine this!

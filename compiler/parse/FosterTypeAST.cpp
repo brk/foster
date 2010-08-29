@@ -325,7 +325,7 @@ LiteralIntValueTypeAST* LiteralIntValueTypeAST::get(uint64_t value,
 
 uint64_t LiteralIntValueTypeAST::getNumericalValue() const {
   if (intAST) {
-    return getSaturating<uint64_t>(intAST->getConstantValue());
+    return getSaturating(intAST->getConstantValue());
   } else {
     return value;
   }

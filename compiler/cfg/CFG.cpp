@@ -9,6 +9,7 @@
 
 #include "dot/CFGGraphTraits.h"
 
+#include "llvm/LLVMContext.h"
 #include "llvm/Instructions.h"
 #include "llvm/Support/raw_ostream.h"
 

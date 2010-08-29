@@ -5,20 +5,21 @@
 #ifndef FOSTER_UTILS_H
 #define FOSTER_UTILS_H
 
-#include "llvm/DerivedTypes.h"
+namespace llvm {
+  class Type;
+  class Module;
+  class FunctionType;
+}
 
 class TypeAST;
+class FnTypeAST;
 class TupleTypeAST;
 
 // returns true if p == t*
-inline bool isPointerToType(const llvm::Type* p, const llvm::Type* t) {
-  return p->isPointerTy() && p->getContainedType(0) == t;
-}
+bool isPointerToType(const llvm::Type* p, const llvm::Type* t);
 
 // returns true if p == t**
-inline bool isPointerToPointerToType(const llvm::Type* p, const llvm::Type* t) {
-  return p->isPointerTy() && isPointerToType(p->getContainedType(0), t);
-}
+bool isPointerToPointerToType(const llvm::Type* p, const llvm::Type* t);
 
 bool canAssignType(TypeAST* from, TypeAST* to);
 

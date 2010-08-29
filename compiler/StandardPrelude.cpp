@@ -6,6 +6,7 @@
 #include "llvm/Module.h"
 
 #include "parse/FosterAST.h"
+#include "parse/FosterTypeAST.h"
 
 #include "passes/TypecheckPass.h"
 

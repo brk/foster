@@ -4,6 +4,9 @@
 
 #include "parse/FosterSymbolTable.h"
 #include "parse/FosterAST.h"
+#include "parse/FosterTypeAST.h"
+
+#include "llvm/Value.h"
 
 #include <sstream>
 

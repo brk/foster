@@ -4,6 +4,7 @@
 
 #include "base/Diagnostics.h"
 #include "parse/FosterAST.h"
+#include "parse/FosterTypeAST.h"
 #include "parse/FosterUtils.h"
 #include "parse/CompilationContext.h"
 
@@ -1153,7 +1154,7 @@ Value* getElementFromComposite(Value* compositeValue, Value* idxValue) {
   } else if (llvm::isa<llvm::StructType>(compositeType)
           && llvm::isa<llvm::Constant>(idxValue)) {
     // Struct values may be indexed only by constant expressions
-    unsigned uidx = getSaturating<unsigned>(idxValue);
+    unsigned uidx = unsigned(getSaturating(idxValue));
     return builder.CreateExtractValue(compositeValue, uidx, "subexv");
   } else if (llvm::isa<llvm::VectorType>(compositeType)) {
     if (llvm::isa<llvm::Constant>(idxValue)) {

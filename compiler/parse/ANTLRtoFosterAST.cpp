@@ -7,6 +7,7 @@
 
 #include "parse/ANTLRtoFosterAST.h"
 #include "parse/FosterAST.h"
+#include "parse/FosterTypeAST.h"
 #include "parse/ANTLRtoFosterErrorHandling.h"
 #include "parse/CompilationContext.h"
 

@@ -12,6 +12,7 @@
 #include "passes/CodegenPass.h"
 
 #include "parse/FosterAST.h"
+#include "parse/FosterTypeAST.h"
 #include "parse/CompilationContext.h"
 
 #include "parse/FosterUtils.h"

@@ -5,13 +5,10 @@
 #ifndef FOSTER_AST_H
 #define FOSTER_AST_H
 
-#include "llvm/DerivedTypes.h"
-#include "llvm/Constants.h"
-
 #include "base/Assert.h"
 #include "base/FilteringIterator.h"
 #include "parse/ExprASTVisitor.h"
-#include "parse/FosterTypeAST.h"
+//#include "parse/FosterTypeAST.h"
 #include "parse/FosterSymbolTable.h"
 
 #include <vector>
@@ -19,6 +16,13 @@
 
 using std::string;
 using std::endl;
+
+namespace llvm {
+  class Type;
+  class Value;
+  class APInt;
+  class Constant;
+}
 
 using llvm::Type;
 using llvm::Value;
@@ -39,23 +43,8 @@ namespace foster {
   struct CFG;
 }
 
-template <typename T>
-T getSaturating(llvm::Value* v) {
-  // If the value requires more bits than T can represent, we want
-  // to return ~0, not 0. Otherwise, we should leave the value alone.
-  T allOnes = ~T(0);
-  if (!v) {
-    std::cerr << "numericOf() got a null value, returning " << allOnes << std::endl;
-    return allOnes;
-  }
-
-  if (llvm::ConstantInt* ci = llvm::dyn_cast<llvm::ConstantInt>(v)) {
-    return static_cast<T>(ci->getLimitedValue(allOnes));
-  } else {
-    llvm::errs() << "numericOf() got a non-constant-int value " << *v << ", returning " << allOnes << "\n";
-    return allOnes;
-  }
-}
+// Returns the closest 
+uint64_t getSaturating(llvm::Value* v);
 
 bool isPrintRef(const ExprAST* base);
 
@@ -159,36 +148,17 @@ public:
   explicit IntAST(int activeBits,
                   const string& originalText,
                   const string& cleanText, int base,
-                  foster::SourceRange sourceRange)
-        : ExprAST("IntAST", sourceRange), text(originalText), base(base) {
-    // Debug builds of LLVM don't ignore leading zeroes when considering
-    // needed bit widths.
-    int bitsLLVMneeds = (std::max)(intSizeForNBits(activeBits),
-                                   (unsigned) cleanText.size());
-    int ourSize = intSizeForNBits(bitsLLVMneeds);
-    apint = new APInt(ourSize, cleanText, base);
-    type = TypeAST::i(ourSize);
-  }
+                  foster::SourceRange sourceRange);
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
 
   llvm::Constant* getConstantValue() const;
-  llvm::APInt getAPInt() const;
+  const llvm::APInt& getAPInt() const;
   std::string getOriginalText() const;
   int getBase() const { return base; }
   
-  unsigned intSizeForNBits(unsigned n) {
-    // Disabled until we get better inferred literal types
-    //if (n <= 1) return LLVMTypeFor("i1");
-    //if (n <= 8) return LLVMTypeFor("i8");
-    //if (n <= 16) return LLVMTypeFor("i16");
-    if (n <= 32) return 32;
-    if (n <= 64) return 64;
-    return NULL;
-  }
+  unsigned intSizeForNBits(unsigned n) const;
 
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "IntAST(" << getOriginalText() << ")";
-  }
+  virtual std::ostream& operator<<(std::ostream& out) const;
 };
 
 IntAST* literalIntAST(int lit, const foster::SourceRange& sourceRange);
@@ -198,9 +168,7 @@ struct BoolAST : public ExprAST {
   explicit BoolAST(string val, foster::SourceRange sourceRange)
     : ExprAST("BoolAST", sourceRange), boolValue(val == "true") {}
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "BoolAST(" << string(boolValue ? "true" : "false") << ")";
-  }
+  virtual std::ostream& operator<<(std::ostream& out) const;
 };
 
 struct VariableAST : public ExprAST {
@@ -221,13 +189,7 @@ struct VariableAST : public ExprAST {
   virtual ExprAST* lookup(const string& name, const string& meta);
 
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    if (type) {
-      return out << "VarAST( " << name << " : " << str(type) << ")";
-    } else {
-      return out << "VarAST( " << name << " : " << ")";
-    }
-  }
+  virtual std::ostream& operator<<(std::ostream& out) const;
   
   const string& getName() { return name; }
 };
@@ -237,9 +199,7 @@ struct UnaryOpExprAST : public UnaryExprAST {
   explicit UnaryOpExprAST(string op, ExprAST* body, foster::SourceRange sourceRange)
      : UnaryExprAST("UnaryOp", body, sourceRange), op(op) {}
   virtual void accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "UnaryOp(" << op << ' ' << str(this->parts[0]) << ")";
-  }
+  virtual std::ostream& operator<<(std::ostream& out) const;
 };
 
 struct BinaryOpExprAST : public BinaryExprAST {
@@ -249,11 +209,7 @@ struct BinaryOpExprAST : public BinaryExprAST {
                            foster::SourceRange sourceRange)
      : BinaryExprAST("BinaryOp", lhs, rhs, sourceRange), op(op) {}
   virtual void accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    ExprAST* LHS = this->parts[kLHS];
-    ExprAST* RHS = this->parts[kRHS];
-    return out << "BinaryOp(lhs=" << str(LHS) << ", op=" << op << ", rhs="  << str(RHS) << ")";
-  }
+  virtual std::ostream& operator<<(std::ostream& out) const;
 };
 
 // base(args)
@@ -264,13 +220,7 @@ struct CallAST : public ExprAST {
     for (size_t i = 0; i < args.size(); ++i) parts.push_back(args[i]);
   }
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    out << "CallAST(base = " << str(this->parts[0]) << ", args = ";
-    for (size_t i = 1; i < this->parts.size(); ++i) {
-      out << " " << str(this->parts[i]) << ", ";
-    }
-    return out << ")";
-  }
+  virtual std::ostream& operator<<(std::ostream& out) const;
 };
 
 // In some sense, this is a type abstraction that's forced to be a redex
@@ -286,23 +236,14 @@ struct NamedTypeDeclAST : public ExprAST {
     : ExprAST("NamedTypeDeclAST", sourceRange),
       name(boundName) { this->type = namedType; }
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    out << "type " << name << " = " << str(type) << "\n";
-  }
+  virtual std::ostream& operator<<(std::ostream& out) const;
 };
 
 struct SeqAST : public ExprAST {
   explicit SeqAST(Exprs exprs, foster::SourceRange sourceRange)
     : ExprAST("SeqAST", sourceRange) { this->parts = exprs; }
   virtual void accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    out << "SeqAST { ";
-    for (size_t i = 0; i < this->parts.size(); ++i) {
-      if (i > 0) out << " ;\n";
-      out << str(this->parts[i]);
-    }
-    return out << " }";
-  }
+  virtual std::ostream& operator<<(std::ostream& out) const;
 };
 
 struct TupleExprAST : public UnaryExprAST {
@@ -312,9 +253,7 @@ struct TupleExprAST : public UnaryExprAST {
     : UnaryExprAST("TupleExprAST", expr, sourceRange) {
   }
   virtual void accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "TupleExpr(" << str(this->parts[0]) << ")";
-  }
+  virtual std::ostream& operator<<(std::ostream& out) const;
 };
 
 #if 0
@@ -333,9 +272,7 @@ struct SimdVectorAST : public UnaryExprAST {
   explicit SimdVectorAST(ExprAST* expr, foster::SourceRange sourceRange)
     : UnaryExprAST("SimdVectorAST", expr, sourceRange) {}
   virtual void accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "SimdVector(" << str(this->parts[0]) << ")";
-  }
+  virtual std::ostream& operator<<(std::ostream& out) const;
 };
 
 // base[index]
@@ -344,9 +281,7 @@ struct SubscriptAST : public BinaryExprAST {
                         foster::SourceRange sourceRange)
     : BinaryExprAST("SubscriptAST", base, index, sourceRange) {}
   virtual void accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "SubscriptAST(base = " << str(this->parts[0]) << ", index = " << str(this->parts[1]) << ")";
-  }
+  virtual std::ostream& operator<<(std::ostream& out) const;
 };
 
 // The ->value for a PrototypeAST node is a llvm::Function*
@@ -358,28 +293,12 @@ struct PrototypeAST : public ExprAST {
   foster::SymbolTable<foster::SymbolInfo>::LexicalScope* scope;
 
   PrototypeAST(TypeAST* retTy, const string& name,
-               const std::vector<VariableAST*>& inArgs,
-               foster::SourceRange sourceRange,
-               foster::SymbolTable<foster::SymbolInfo>::LexicalScope* ascope = NULL)
-      : ExprAST("PrototypeAST", sourceRange),
-        name(name), inArgs(inArgs), resultTy(retTy), scope(ascope) {
-    if (resultTy == NULL) {
-      this->resultTy = TypeAST::i(32);
-    }
-  }
+         const std::vector<VariableAST*>& inArgs,
+         foster::SourceRange sourceRange,
+         foster::SymbolTable<foster::SymbolInfo>::LexicalScope* ascope = NULL);
 
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    out << "PrototypeAST(name = " << name;
-    for (size_t i = 0; i < inArgs.size(); ++i) {
-      out << ", arg["<<i<<"] = " << str(inArgs[i]);
-    }
-    if (resultTy != NULL) {
-      out << ", resultTy=" << str(resultTy);
-    }
-    out << ")";
-    return out;
-  }
+  virtual std::ostream& operator<<(std::ostream& out) const;
 };
 
 
@@ -393,9 +312,7 @@ struct FnAST : public ExprAST {
     parts.push_back(body);
   }
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "FnAST(proto = " << str(parts[0]) << ", body = " << str(parts[1]) << endl;
-  }
+  virtual std::ostream& operator<<(std::ostream& out) const;
 
   PrototypeAST* getProto() { return dynamic_cast<PrototypeAST*>(parts[0]); }
   ExprAST*& getBody() { return parts[1]; }
@@ -432,19 +349,7 @@ struct ClosureAST : public ExprAST {
       hasKnownEnvironment(false), isTrampolineVersion(false) { }
 
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    if (hasKnownEnvironment && fn) {
-      out << "(closure " << str(fn->getProto());
-      for (size_t i = 0; i < parts.size(); ++i) {
-        out << "\t" << str(parts[i]);
-      }
-      return out << ")";
-    } else if (fn) {
-      return out << "(unrefined closure " << str(fn->getProto()) << ")";
-    } else {
-      return out << "(malformed closure)";
-    }
-  }
+  virtual std::ostream& operator<<(std::ostream& out) const;
 };
 
 struct ModuleAST : public NamespaceAST {
@@ -480,10 +385,7 @@ struct IfExprAST : public ExprAST {
     parts.push_back(elseExpr); 
   }
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "if (" << str(parts[0]) << ")" <<
-        " then " << str(parts[1]) << " else " << str(parts[2]);
-  }
+  virtual std::ostream& operator<<(std::ostream& out) const;
 
   ExprAST*& getTestExpr() { ASSERT(parts.size() == 3); return parts[0]; }
   ExprAST*& getThenExpr() { ASSERT(parts.size() == 3); return parts[1]; }
@@ -512,12 +414,7 @@ struct ForRangeExprAST : public ExprAST {
     ASSERT(body ); parts.push_back(body);
   }
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    out << "for " << var->name << " in " << str(parts[0]) << " to " << str(parts[2]);
-    if (_hadExplicitIncrExpr) out  << " by " << str(parts[1]);
-    out << " do " << str(parts[3]);
-    return out;
-  }
+  virtual std::ostream& operator<<(std::ostream& out) const;
   
   bool hadExplicitIncrExpr() { return _hadExplicitIncrExpr; }
   ExprAST*& getStartExpr() { ASSERT(parts.size() == 4); return parts[0]; }
@@ -534,9 +431,7 @@ struct NilExprAST : public ExprAST {
   explicit NilExprAST(foster::SourceRange sourceRange)
      : ExprAST("NilExprAST", sourceRange) {}
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "NilExprAST()";
-  }
+  virtual std::ostream& operator<<(std::ostream& out) const;
 };
 
 
@@ -547,11 +442,7 @@ struct RefExprAST : public UnaryExprAST {
     : UnaryExprAST("RefExprAST", expr, sourceRange),
       isIndirect_(isIndirect) {}
   virtual void accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "RefExprAST(" << str(this->parts[0]) << ")";
-  }
-  
-  
+  virtual std::ostream& operator<<(std::ostream& out) const;
 
   // Returns true if the physical representation of this reference
   // is T** instead of a simple T*.
@@ -562,9 +453,7 @@ struct DerefExprAST : public UnaryExprAST {
   explicit DerefExprAST(ExprAST* expr, foster::SourceRange sourceRange)
      : UnaryExprAST("DerefExprAST", expr, sourceRange) {}
   virtual void accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "DerefExprAST(" << str(this->parts[0]) << ")";
-  }
+  virtual std::ostream& operator<<(std::ostream& out) const;
 };
 
 struct AssignExprAST : public BinaryExprAST {
@@ -578,10 +467,7 @@ struct AssignExprAST : public BinaryExprAST {
     parts[1]->accept(visitor);
     visitor->visit(this);
   }
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "AssignExprAST(lhs=" << str(this->parts[0])
-        << ", rhs=" << str(parts[1]) << ")" << std::endl;
-  }
+  virtual std::ostream& operator<<(std::ostream& out) const;
 };
 
 struct BuiltinCompilesExprAST : public UnaryExprAST {
@@ -590,9 +476,7 @@ struct BuiltinCompilesExprAST : public UnaryExprAST {
      : UnaryExprAST("CompilesExprAST", expr, sourceRange), status(kNotChecked) {}
   // Must manually visit children (for typechecking) because we don't want to codegen our children!
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "(__COMPILES__ " << str(this->parts[0]) << ")";
-  }
+  virtual std::ostream& operator<<(std::ostream& out) const;
 };
 
 

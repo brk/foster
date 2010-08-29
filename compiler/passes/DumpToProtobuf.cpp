@@ -4,6 +4,7 @@
 
 #include "base/InputFile.h"
 #include "parse/FosterAST.h"
+#include "parse/FosterTypeAST.h"
 #include "passes/DumpToProtobuf.h"
 #include "llvm/System/Path.h"
 
