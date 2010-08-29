@@ -2,15 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#ifndef FOSTER_PASSES_CODEGEN
-#define FOSTER_PASSES_CODEGEN
+#ifndef FOSTER_PASSES_CODEGEN_H     
+#define FOSTER_PASSES_CODEGEN_H
 
-#include "parse/ExprASTVisitor.h"
-#include <stack>
+struct ExprAST;
+struct CodegenPass; // for CFG.cpp
 
-struct CodegenPass : public ExprASTVisitor {
-  #include "parse/ExprASTVisitor.decls.inc.h"
-};
+namespace foster {
+  void codegen(ExprAST* ast);
+  void codegen(ExprAST* ast, CodegenPass*);
+}
 
 #endif // header guard
 

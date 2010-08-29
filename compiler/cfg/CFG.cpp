@@ -105,7 +105,7 @@ llvm::BasicBlock* CFG::codegen(CodegenPass* p, llvm::Function* parentFunction) {
     ExprAST* ast = exprs[i];
     ASSERT(ast != NULL);
 
-    ast->accept(p);
+    foster::codegen(ast, p);
     if (!isVoid(ast->value->getType())) {
       lastNonVoidValue = ast->value;
     }

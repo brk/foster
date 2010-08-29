@@ -260,7 +260,7 @@ void hoistAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) {
 
     // Ensure that the fn proto gets added to the module, so that it can
     // be referenced from other functions.
-    CodegenPass cp; ast->getProto()->accept(&cp);
+    foster::codegen(ast->getProto());
 
     gScopeInsert(ast->getProto()->name, ast->getProto()->value);
   }

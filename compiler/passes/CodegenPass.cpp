@@ -2,11 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
+#include "base/Assert.h"
 #include "base/Diagnostics.h"
+
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
 #include "parse/FosterUtils.h"
 #include "parse/CompilationContext.h"
+#include "parse/ExprASTVisitor.h"
 
 #include "passes/CodegenPass.h"
 #include "passes/TypecheckPass.h"
@@ -47,6 +50,20 @@ using foster::builder;
 using foster::SourceRange;
 using foster::EDiag;
 using foster::show;
+
+struct CodegenPass : public ExprASTVisitor {
+  #include "parse/ExprASTVisitor.decls.inc.h"
+};
+
+namespace foster {
+  void codegen(ExprAST* ast) {
+    CodegenPass cp; ast->accept(&cp);
+  }
+  
+  void codegen(ExprAST* ast, CodegenPass* cp) {
+    ast->accept(cp);
+  }
+}
 
 typedef std::pair<const llvm::Type*, int> OffsetInfo;
 typedef std::set<OffsetInfo> OffsetSet;
@@ -1268,7 +1285,7 @@ FnAST* getVoidReturningVersionOf(ExprAST* arg, FnTypeAST* fnty) {
     ExprAST* body = new CallAST(arg, callArgs, arg->sourceRange);
     FnAST* fn = new FnAST(proto, body, arg->sourceRange);
     typecheck(fn);
-    { CodegenPass cp; fn->accept(&cp); }
+    codegen(fn);
     
     // Regular functions get their proto values added when the module
     // starts codegenning, but we need to do it ourselves here.
@@ -1337,10 +1354,8 @@ llvm::Value* getTrampolineForClosure(ClosureAST* cloAST) {
   ExprAST* fnPtr = new VariableAST(cloAST->fn->getProto()->name,
                                RefTypeAST::get(cloAST->fn->type),
                                SourceRange::getEmptyRange());
-  { typecheck(fnPtr);
-    CodegenPass cp;
-    fnPtr->accept(&cp);
-  }
+  { typecheck(fnPtr); codegen(fnPtr); }
+
   Value* codePtr = fnPtr->value;
   Value* envPtr = builder.CreateExtractValue(cloAST->value, 1, "getEnvPtr");
 
@@ -1396,7 +1411,7 @@ FnAST* getClosureVersionOf(ExprAST* arg, FnTypeAST* fnty) {
                                fnName, inArgs, arg->sourceRange, protoScope);
     ExprAST* body = new CallAST(arg, callArgs, SourceRange::getEmptyRange());
     FnAST* fn = new FnAST(proto, body, SourceRange::getEmptyRange());
-    { typecheck(fn); CodegenPass cp; fn->accept(&cp); }
+    { typecheck(fn); codegen(fn); }
 
     // Regular functions get their proto values added when the module
     // starts codegenning, but we need to do it ourselves here.

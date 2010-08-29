@@ -619,7 +619,7 @@ int main(int argc, char** argv) {
 
   {
     ScopedTimer timer("foster.codegen");
-    CodegenPass cgPass; exprAST->accept(&cgPass);
+    foster::codegen(exprAST);
   }
   
   if (optDumpPreLinkedIR) {
