@@ -140,13 +140,6 @@ struct TypecheckPass : public ExprASTVisitor {
       return true;
     }
 
-    vector<TypeTypeConstraint> convs;
-    bool addCanConvertFromTo(ExprAST* context, TypeAST* tyfrom, TypeAST* tyto) {
-      if (conservativeEqualTypeFilter(tyfrom, tyto)) return true;
-      convs.push_back(TypeTypeConstraint(context, tyfrom, tyto));
-      return true;
-    }
-
     vector<TypeTypeConstraint> collectedEqualityConstraints;
     void collectEqualityConstraint(ExprAST* context, TypeAST* t1, TypeAST* t2) {
       collectedEqualityConstraints.push_back(TypeTypeConstraint(context, t1, t2));
@@ -283,8 +276,7 @@ struct TypecheckPass : public ExprASTVisitor {
     }
 
     bool empty() {
-      return collectedEqualityConstraints.empty()
-          && convs.empty() && tysets.empty();
+      return collectedEqualityConstraints.empty() && tysets.empty();
     }
 
     void show(llvm::raw_ostream& out) {
@@ -294,11 +286,6 @@ struct TypecheckPass : public ExprASTVisitor {
         out << "\t" << collectedEqualityConstraints[i].context->tag
             << "\t" << str(collectedEqualityConstraints[i].t1)
           << " == " << str(collectedEqualityConstraints[i].t2) << "\n";
-      }
-      out << "-------- type conversion constraints ---------\n";
-      for (size_t i = 0; i < convs.size(); ++i) {
-        out  << "\t" << convs[i].context->tag
-            << "\t" << str(convs[i].t1) << " to " << str(convs[i].t2) << "\n";
       }
       out << "-------- type subset constraints ---------\n";
       for (size_t i = 0; i < tysets.size(); ++i) {
@@ -320,6 +307,14 @@ struct TypecheckPass : public ExprASTVisitor {
     typedef std::map<TypeVariableName, TypeAST*> TypeSubstitution;
     TypeSubstitution subst;
     TypeAST* substFind(TypeVariableAST* tv);
+    TypeAST* substFind(const TypeVariableName&);
+    TypeVariableAST* findLeader(const std::string& name);
+    
+    TypeAST* applySubst(TypeAST* t) {
+      ReplaceTypeTransform rtt(subst);
+      rtt.subst(t);
+      return t;
+    }
 
     bool addEqConstraintToSubstitution(const Constraints::TypeTypeConstraint& ttc);
 
@@ -386,6 +381,9 @@ void TypeConstraintExtractor::visit(NamedTypeAST* t2) {
   NamedTypeAST* t1 = dynamic_cast<NamedTypeAST*>(t1_pre);
   if (t1->getName() == t2->getName()) {
     discard(t1, t2); // trivially true!
+  } else if (t1->getName() == "i32" && t2->getName() == "i64") {
+    discard(t1, t2);
+    // OK, can convert.
   } else {
     // The constraint is unsatisfiable...
     EDiag* err = new EDiag();
@@ -478,42 +476,34 @@ void TypecheckPass::Constraints::extractTypeConstraints(
 
 ////////////////////////////////////////////////////////////////////
 
+template <typename K, typename V>
+std::vector<K> keysOf(const std::map<K, V>& m) {
+  std::vector<K> v;
+  for (typename std::map<K, V>::const_iterator it = m.begin(); it != m.end(); ++it) {
+    v.push_back(it->first);
+  }
+  return v;
+}
+
 void TypecheckPass::solveConstraints() {
-  // Equality constraints have already been solved incrementally.
-  
-  for (size_t i = 0; i < constraints.convs.size(); ++i) {
-    Constraints::TypeTypeConstraint ttc = constraints.convs[i];
-    TypeAST* t1 = ttc.t1;
-    TypeAST* t2 = ttc.t2;
-    // Need to be able to convert from t1 to t2.
-    // For now, the only non-trivial conversions are sext/zext.
-    if (TypeVariableAST* tv1 = dynamic_cast<TypeVariableAST*>(t1)) {
-      TypeAST* t1s = constraints.substFind(tv1);
-      if (!t1s) {
-        // No other constraints on type var means equality is sufficient.
-        constraints.addEq(ttc.context, t1, t2);
-      }
-
-      // TODO other cases
+  // Equality constraints have already been solved incrementally,
+  // but we might have some stragglers left because we backed off.
+  // Push through any stragglers.
+  std::vector<std::string> keys(keysOf(constraints.subst));
+  for (size_t i = 0; i < keys.size(); ++i) {
+    TypeAST* tvs = constraints.substFind(keys[i]);
+    if (tvs != NULL) {
+      constraints.subst[keys[i]] = tvs;
     }
-    
-    if (TypeVariableAST* tv2 = dynamic_cast<TypeVariableAST*>(t2)) {
-      TypeAST* t2s = constraints.substFind(tv2);
-      if (!t2s) {
-        // No other constraints on type var means equality is sufficient.
-        constraints.addEq(ttc.context, t1, t2);
-      }
-
-      // TODO other cases
-    }  
   }
   
   // Check type subset constraints
   for (size_t i = 0; i < constraints.tysets.size(); ++i) {
     Constraints::TypeInSetConstraint tsc = constraints.tysets[i];
-    if (!tsc.tyset->contains(tsc.ty, constraints)) {
+    TypeAST* ty = constraints.applySubst(tsc.ty);
+    if (!tsc.tyset->contains(ty, constraints)) {
       EDiag* err = new EDiag();
-      (*err) << "Unsatisfied subset constraint on " << str(tsc.ty)
+      (*err) << "Unsatisfied subset constraint on " << str(ty)
              << ": " << tsc.tyset->describe()
              << show(tsc.context);
       constraints.logError(err);
@@ -545,26 +535,28 @@ bool TypecheckPass::Constraints::addEqConstraintToSubstitution(
              << foster::show(ttc.context);
   const std::string& tvName = tv->getTypeVariableName();
   
-  if (tvName == "deref") {
+  if (tvName == "callret") {
      llvm::outs() << "deref maps to " << str(subst[tvName]) << "\n";
   }
   
   TypeAST* tvs = substFind(tv);
-
-  llvm::outs() << str(tv) << " => ... => tvs: " << str(tvs) << " ;; " << str(ttc.t2) << "...";
+  TypeAST* t2 = applySubst(ttc.t2);
+  
+  llvm::outs() << str(tv) << " => ... => tvs: " << str(tvs) << " ;; " << str(t2) << "...";
   // Have    TypeVar(t1) => ... => non-type-var tvs
   // ttc is  TypeVar(t1) => ttc.t2
   if (!tvs) {
     // t1 doesn't map to anything yet, so enforce the given constraint.
-    this->subst[tvName] = ttc.t2;
-  } else if (tvs == ttc.t2)  {
+    this->subst[tvName] = t2;
+  } else if (tvs == t2)  {
     // Das fine, the chain was short and we have learned nothing.
   } else {
     llvm::errs() << "Conflict detected during equality constraint solving!\n"
                   << "\t" << tvName << " cannot be both "
-                  << "\n\t\t" << str(tvs) << " and " << str(ttc.t2) << ".";
+                  << "\n\t\t" << str(tvs) << " and " << str(t2) << ".";
     return false;
   }
+ 
   llvm::outs() << "\n";
   //llvm::outs() << " ====> " << str(subst[tvName]) << "\n";
 //  llvm::outs() << ttc.context->tag << "\t" << str(ttc.t1) << " == " << str(ttc.t2) << "\n";
@@ -599,33 +591,47 @@ bool TypecheckPass::Constraints::addEqConstraintToSubstitution(
 //
 // The return value is the end of the chain. In the first example,
 // that would be sometype ; in the second, NULL.
-TypeAST* TypecheckPass::Constraints::substFind(TypeVariableAST* tv) {
-  TypeVariableAST* leader = tv;
-  while (true) {
-    const std::string& tvName = leader->getTypeVariableName();
-    TypeAST* next = this->subst[tvName];
-    if (!next || next == leader) { break; }
 
+TypeAST* TypecheckPass::Constraints::substFind(const std::string& name) {
+  TypeVariableAST* leader = findLeader(name);
+  if (!leader) return NULL;
+  
+  TypeAST* next = this->subst[name];
+  this->subst[name] = leader;
+  while (next) {
+    if (TypeVariableAST* nextTv = dynamic_cast<TypeVariableAST*>(next)) {
+      if (nextTv == leader) break;
+      next = this->subst[nextTv->getTypeVariableName()];
+             this->subst[nextTv->getTypeVariableName()] = leader;
+    } else break;
+  }
+  return subst[leader->getTypeVariableName()];
+}
+
+TypeAST* TypecheckPass::Constraints::substFind(TypeVariableAST* tv) {
+  return substFind(tv->getTypeVariableName());
+}
+
+// Given
+//    TypeVar(a)  =>  TypeVar(b)
+//    TypeVar(b)  =>  TypeVar(x)
+//    TypeVar(x)  =>  sometype
+//    TypeVar(c)  =>  TypeVar(d)
+//    TypeVar(d)  =>  NULL
+// the leader of "a" is TypeVar(x), and the leader of "c" is TypeVar(d),
+// and the leader of "d" is NULL.
+TypeVariableAST* TypecheckPass::Constraints::findLeader(const std::string& name) {
+  TypeAST* next = this->subst[name];
+  TypeVariableAST* leader = NULL;
+  
+  while (next && next != leader) {
     if (TypeVariableAST* nextTv = dynamic_cast<TypeVariableAST*>(next)) {
       leader = nextTv;
-    } else { break; }
+    } else break;
+    next = this->subst[leader->getTypeVariableName()];
   }
-
-  // Path compression
-  while (true) {
-    const std::string& tvName = tv->getTypeVariableName();
-    TypeAST* next = this->subst[tvName];
-    if (!next) { break; }
-    if (next == leader) { break; }
-    if (TypeVariableAST* nextTv = dynamic_cast<TypeVariableAST*>(next)) {
-      tv = nextTv;
-      this->subst[tvName] = leader;
-      llvm::outs() << "\t" << tvName << " -> " << str(leader)
-                 << " instead of " << str(next) << "\n";
-    } else { break; }
-  }
-
-  return subst[leader->getTypeVariableName()];
+  
+  return leader;
 }
 
 void TypecheckPass::applyTypeSubstitution(ExprAST* e) {
@@ -748,7 +754,7 @@ bool isBitwiseOp(const std::string& op) {
       || op == "shl" || op == "lshr" || op == "ashr";
 }
 
-// requires Lty convertible to Rty
+// requires Lty == Rty
 // arith ops   :: ((int, int) -> int) | ((intvector, intvector) -> intvector)
 // bitwise ops :: ((int, int) -> int) | ((intvector, intvector) -> intvector)
 // cmp ops     :: ((int, int) -> i1 ) | ((intvector, intvector) -> i1       )
@@ -761,7 +767,7 @@ void TypecheckPass::visit(BinaryOpExprAST* ast) {
 
   const std::string& op = ast->op;
 
-  constraints.addCanConvertFromTo(ast, Lty, Rty);
+  constraints.addEq(ast, Lty, Rty);
   constraints.addTypeInSet(ast, Lty, new Constraints::IntOrIntVectorTypePredicate());
   constraints.addTypeInSet(ast, Rty, new Constraints::IntOrIntVectorTypePredicate());
 
@@ -1167,14 +1173,15 @@ void TypecheckPass::visit(SubscriptAST* ast) {
   }
 
   if (TypeVariableAST* tv = dynamic_cast<TypeVariableAST*>(baseType)) {
-    TypeAST* sub = constraints.substFind(tv);
+    TypeAST* sub = constraints.applySubst(tv);
     if (sub && !sub->isTypeVariable()) {
       llvm::outs() << "Subscript AST peeking through " << str(tv)
 		   << " and replacing it with " << str(sub) << "\n";
       ast->parts[0]->type = baseType = sub;
     } else {
-      EDiag() << "SubscriptAST's base type was a type variable that"
+      EDiag() << "SubscriptAST's base type was a type variable (" << str(sub) << " :: " << str(baseType) << ") that"
               << " it couldn't make concrete!" << show(ast);
+      constraints.show(llvm::outs());
       ASSERT(false);
     }
   }
@@ -1418,9 +1425,8 @@ void TypecheckPass::visit(CallAST* ast) {
   for (size_t i = 0; i < numParams; ++i) {
     TypeAST* formalType = baseFT->getParamType(i);
     TypeAST* actualType = args[i]->type;
-    constraints.addCanConvertFromTo(ast, actualType, formalType);
+    constraints.addEq(ast, actualType, formalType);
   }
- 
 
   for (size_t i = 0; i < numParams; ++i) {
     TypeAST* formalType = baseFT->getParamType(i);
