@@ -1,0 +1,19 @@
+// IN: 2 3 4
+
+prim-and = fn(a : i1, b: i1 to i1) {
+  if a then b else false
+}
+
+hof-and = fn (a : fn(to i1), b: fn(to i1) to i1) {
+  if a() then b() else false
+}
+
+main = fn () {
+  let x : i32 = read_i32()
+  let y : i32 = read_i32()
+  let z : i32 = read_i32() in {
+    print_i1( prim-and( x < y, y < z) )
+    expect_i1( hof-and( fn (to i1) { x < y },
+                        fn (to i1) { y < z }) )
+  }
+}
