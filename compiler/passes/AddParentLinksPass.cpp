@@ -4,16 +4,16 @@
 
 #include "passes/AddParentLinksPass.h"
 
-#include "parse/FosterAST.h"
-#include "parse/ExprASTVisitor.h"
+#include "parse/DefaultExprASTVisitor.h"
 
-struct AddParentLinksPass : public ExprASTVisitor {
-  #include "parse/ExprASTVisitor.decls.inc.h"
-  
+struct AddParentLinksPass : public DefaultExprASTVisitor {
   virtual void onVisitChild(ExprAST* ast, ExprAST* child) {
     child->parent = ast;
     child->accept(this);
   }
+  
+  virtual void visit(FnAST* ast);
+  virtual void visit(ModuleAST* ast);
 };
 
 namespace foster {
@@ -25,56 +25,24 @@ namespace foster {
 
 void includeParentNameInAnonFunctions(FnAST* ast);
 
+////////////////////////////////////////////////////////////////////
+
 // The work of adding parent links is done in the onVisitChild()
 // function defined in AddParentLinksPass.h
 // Thus, the visit() implementations for simple AST nodes and
 // AST nodes that store children in their |parts| are trivial.
 
-void AddParentLinksPass::visit(BoolAST* ast)                { return; }
-void AddParentLinksPass::visit(IntAST* ast)                 { return; }
-void AddParentLinksPass::visit(VariableAST* ast)            { return; }
-void AddParentLinksPass::visit(UnaryOpExprAST* ast)         { return; }
-void AddParentLinksPass::visit(BinaryOpExprAST* ast)        { return; }
-void AddParentLinksPass::visit(PrototypeAST* ast)           {
-  for (size_t i = 0; i < ast->inArgs.size(); ++i) {
-    onVisitChild(ast, ast->inArgs[i]);
-  }
-}
 void AddParentLinksPass::visit(FnAST* ast)                  {
   visitChildren(ast);
   includeParentNameInAnonFunctions(ast);
-}
-void AddParentLinksPass::visit(ClosureAST* ast) {
-  if (ast->fn) {
-    onVisitChild(ast, ast->fn);
-  }
 }
 void AddParentLinksPass::visit(ModuleAST* ast)              {
   for (size_t i = 0; i < ast->parts.size(); ++i) {
     onVisitChild(NULL, ast->parts[i]);
   }
 }
-void AddParentLinksPass::visit(NamedTypeDeclAST* ast) {
-  return;
-}
-void AddParentLinksPass::visit(IfExprAST* ast)              {
-  visitChildren(ast);
-}
-void AddParentLinksPass::visit(ForRangeExprAST* ast)              {
-  onVisitChild(ast, ast->var);
-  visitChildren(ast);
-}
-void AddParentLinksPass::visit(NilExprAST* ast)             { return; }
-void AddParentLinksPass::visit(RefExprAST* ast)             { return; }
-void AddParentLinksPass::visit(DerefExprAST* ast)           { return; }
-void AddParentLinksPass::visit(AssignExprAST* ast)          { return; }
-void AddParentLinksPass::visit(SubscriptAST* ast)           { return; }
-void AddParentLinksPass::visit(SimdVectorAST* ast)          { return; }
-void AddParentLinksPass::visit(SeqAST* ast)                 { return; }
-void AddParentLinksPass::visit(CallAST* ast)                { visitChildren(ast); }
-//void AddParentLinksPass::visit(ArrayExprAST* ast)           { return; }
-void AddParentLinksPass::visit(TupleExprAST* ast)           { return; }
-void AddParentLinksPass::visit(BuiltinCompilesExprAST* ast) { visitChildren(ast); }
+
+////////////////////////////////////////////////////////////////////
 
 void includeParentNameInAnonFunctions(FnAST* ast) {
   string& name = ast->getProto()->name;

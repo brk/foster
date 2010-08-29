@@ -70,9 +70,9 @@ void ReplaceTypeTransform::visit(LiteralIntValueTypeAST* ast) {
 
 ////////////////////////////////////////////////////////////////////
 
-#include "parse/ExprASTVisitor.h"
+#include "parse/DefaultExprASTVisitor.h"
  
-struct ReplaceTypeInExprTransform : public ExprASTVisitor {
+struct ReplaceTypeInExprTransform : public DefaultExprASTVisitor {
   ReplaceTypeTransform& replaceTypeTransform;
 
   void applyTypeSubst(ExprAST* ast);
@@ -81,7 +81,14 @@ struct ReplaceTypeInExprTransform : public ExprASTVisitor {
 
   virtual void visitChildren(ExprAST* ast);
 
-# include "parse/ExprASTVisitor.decls.inc.h"
+  virtual void visit(FnAST*);
+  virtual void visit(IfExprAST*);
+  virtual void visit(ModuleAST*);
+  virtual void visit(ClosureAST*);
+  virtual void visit(VariableAST*);
+  virtual void visit(PrototypeAST*);
+  virtual void visit(ForRangeExprAST*);
+  virtual void visit(NamedTypeDeclAST*);
 };
 
 void ReplaceTypeInExprTransform::visitChildren(ExprAST* ast) {
@@ -103,46 +110,45 @@ void ReplaceTypeInExprTransform::applyTypeSubst(ExprAST* ast) {
                  << ast->tag << " expr with a NULL type!\n";
   }
 }
- 
- // NOTE: For now, ints and bools may not be rewritten.
-void ReplaceTypeInExprTransform::visit(BoolAST* ast)                { }
-void ReplaceTypeInExprTransform::visit(IntAST* ast)                 { }
-void ReplaceTypeInExprTransform::visit(VariableAST* ast)            { applyTypeSubst(ast); }
-void ReplaceTypeInExprTransform::visit(UnaryOpExprAST* ast)         { visitChildren(ast); }
-void ReplaceTypeInExprTransform::visit(BinaryOpExprAST* ast)        { visitChildren(ast); }
-void ReplaceTypeInExprTransform::visit(PrototypeAST* ast)           {
+
+////////////////////////////////////////////////////////////////////
+
+void ReplaceTypeInExprTransform::visit(VariableAST* ast) {
+  applyTypeSubst(ast);
+}
+                                                          
+void ReplaceTypeInExprTransform::visit(PrototypeAST* ast) {
   for (size_t i = 0; i < ast->inArgs.size(); ++i) {
     (ast->inArgs[i])->accept(this);
   }
   replaceTypeTransform.subst(ast->resultTy);
 }
-void ReplaceTypeInExprTransform::visit(FnAST* ast)                  {
-  visitChildren(ast);
-  applyTypeSubst(ast);  
+
+void ReplaceTypeInExprTransform::visit(FnAST* ast) {
+  visitChildren(ast); applyTypeSubst(ast); 
 }
- 
-void ReplaceTypeInExprTransform::visit(ClosureAST* ast) {  
-  ast->fn->accept(this);
-  visitChildren(ast);
+
+void ReplaceTypeInExprTransform::visit(ClosureAST* ast) {
+  ASSERT(ast->fn);
+  ast->fn->accept(this); visitChildren(ast); applyTypeSubst(ast);
 }
-void ReplaceTypeInExprTransform::visit(NamedTypeDeclAST* ast) { applyTypeSubst(ast); }
-void ReplaceTypeInExprTransform::visit(ModuleAST* ast) { visitChildren(ast); }
-void ReplaceTypeInExprTransform::visit(IfExprAST* ast)              {
+
+void ReplaceTypeInExprTransform::visit(NamedTypeDeclAST* ast) {
+  applyTypeSubst(ast);
+}
+
+void ReplaceTypeInExprTransform::visit(ModuleAST* ast) {
   visitChildren(ast); applyTypeSubst(ast);
 }
-void ReplaceTypeInExprTransform::visit(ForRangeExprAST* ast)              {
+
+void ReplaceTypeInExprTransform::visit(IfExprAST* ast) {
   visitChildren(ast); applyTypeSubst(ast);
 }
-void ReplaceTypeInExprTransform::visit(NilExprAST* ast)             { visitChildren(ast); }
-void ReplaceTypeInExprTransform::visit(RefExprAST* ast)             { visitChildren(ast); }
-void ReplaceTypeInExprTransform::visit(DerefExprAST* ast)           { visitChildren(ast); }
-void ReplaceTypeInExprTransform::visit(AssignExprAST* ast)          { visitChildren(ast); }
-void ReplaceTypeInExprTransform::visit(SubscriptAST* ast)           { visitChildren(ast); }
-void ReplaceTypeInExprTransform::visit(SimdVectorAST* ast)          { visitChildren(ast); }
-void ReplaceTypeInExprTransform::visit(SeqAST* ast)                 { visitChildren(ast); }
-void ReplaceTypeInExprTransform::visit(CallAST* ast)                { visitChildren(ast); }
-void ReplaceTypeInExprTransform::visit(TupleExprAST* ast)           { visitChildren(ast); }
-void ReplaceTypeInExprTransform::visit(BuiltinCompilesExprAST* ast) { visitChildren(ast); }
+
+void ReplaceTypeInExprTransform::visit(ForRangeExprAST* ast) {
+  visitChildren(ast); applyTypeSubst(ast);
+}
+
 
 namespace foster {
   void replaceTypesIn(ExprAST* ast, ReplaceTypeTransform& rtt) {

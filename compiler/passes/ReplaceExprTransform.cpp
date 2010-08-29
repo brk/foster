@@ -51,6 +51,22 @@ void ReplaceExprTransform::visit(IntAST* ast)                 { this->newChild =
 void ReplaceExprTransform::visit(VariableAST* ast)            { this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(UnaryOpExprAST* ast)         { visitChildren(ast); this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(BinaryOpExprAST* ast)        { visitChildren(ast); this->newChild = rewrite(ast); }
+void ReplaceExprTransform::visit(IfExprAST* ast)              { visitChildren(ast); this->newChild = rewrite(ast); }
+void ReplaceExprTransform::visit(ForRangeExprAST* ast)        { visitChildren(ast); this->newChild = rewrite(ast); }
+void ReplaceExprTransform::visit(ClosureAST* ast)             { visitChildren(ast); this->newChild = rewrite(ast); }
+void ReplaceExprTransform::visit(NilExprAST* ast)             { visitChildren(ast); this->newChild = rewrite(ast); }
+void ReplaceExprTransform::visit(RefExprAST* ast)             { visitChildren(ast); this->newChild = rewrite(ast); }
+void ReplaceExprTransform::visit(DerefExprAST* ast)           { visitChildren(ast); this->newChild = rewrite(ast); }
+void ReplaceExprTransform::visit(AssignExprAST* ast)          { visitChildren(ast); this->newChild = rewrite(ast); }
+void ReplaceExprTransform::visit(SubscriptAST* ast)           { visitChildren(ast); this->newChild = rewrite(ast); }
+void ReplaceExprTransform::visit(SimdVectorAST* ast)          { visitChildren(ast); this->newChild = rewrite(ast); }
+void ReplaceExprTransform::visit(SeqAST* ast)                 { visitChildren(ast); this->newChild = rewrite(ast); }
+void ReplaceExprTransform::visit(CallAST* ast)                { visitChildren(ast); this->newChild = rewrite(ast); }
+//void ReplaceExprTransform::visit(ArrayExprAST* ast)           { visitChildren(ast); this->newChild = rewrite(ast); }
+void ReplaceExprTransform::visit(TupleExprAST* ast)           { visitChildren(ast); this->newChild = rewrite(ast); }
+void ReplaceExprTransform::visit(BuiltinCompilesExprAST* ast) { visitChildren(ast); this->newChild = rewrite(ast); }
+void ReplaceExprTransform::visit(NamedTypeDeclAST* ast)       { return; }
+
 void ReplaceExprTransform::visit(PrototypeAST* ast)           {
   for (size_t i = 0; i < ast->inArgs.size(); ++i) {
     // Manually add variance, blah.
@@ -67,44 +83,16 @@ void ReplaceExprTransform::visit(PrototypeAST* ast)           {
   }
   this->newChild = ast; // Prototypes can't be rewritten to anything else...
 }
+
 void ReplaceExprTransform::visit(FnAST* ast)                  {
   ast->getProto()->accept(this); // No chance of rewriting to proto to a different node type!
   onVisitChild(ast, &ast->getBody());
   this->newChild = rewrite(ast);
 }
 
-void ReplaceExprTransform::visit(ClosureAST* ast) {
-  visitChildren(ast);
-  this->newChild = rewrite(ast);
-}
-void ReplaceExprTransform::visit(NamedTypeDeclAST* ast) {
-  return;
-}
 void ReplaceExprTransform::visit(ModuleAST* ast) {
   for (size_t i = 0; i < ast->parts.size(); ++i) {
     onVisitChild(ast, &ast->parts[i]);
   }
   // No replacing entire modules...
 }
-void ReplaceExprTransform::visit(IfExprAST* ast)              {
-  visitChildren(ast); this->newChild = rewrite(ast);
-}
-void ReplaceExprTransform::visit(ForRangeExprAST* ast)        { visitChildren(ast); this->newChild = rewrite(ast); }
-void ReplaceExprTransform::visit(NilExprAST* ast)             { visitChildren(ast); this->newChild = rewrite(ast); }
-void ReplaceExprTransform::visit(RefExprAST* ast)             { visitChildren(ast); this->newChild = rewrite(ast); }
-void ReplaceExprTransform::visit(DerefExprAST* ast)           { visitChildren(ast); this->newChild = rewrite(ast); }
-void ReplaceExprTransform::visit(AssignExprAST* ast)          {
-  visitChildren(ast);
-  this->newChild = rewrite(ast);
-}
-void ReplaceExprTransform::visit(SubscriptAST* ast)           { visitChildren(ast); this->newChild = rewrite(ast); }
-void ReplaceExprTransform::visit(SimdVectorAST* ast)          { visitChildren(ast); this->newChild = rewrite(ast); }
-void ReplaceExprTransform::visit(SeqAST* ast)                 { visitChildren(ast); this->newChild = rewrite(ast); }
-void ReplaceExprTransform::visit(CallAST* ast)                {
-  // Must manually visit children because CallAST::accept() doesn't do it, due to UnpackExpr...
-  visitChildren(ast);
-  this->newChild = rewrite(ast);
-}
-//void ReplaceExprTransform::visit(ArrayExprAST* ast)           { visitChildren(ast); this->newChild = rewrite(ast); }
-void ReplaceExprTransform::visit(TupleExprAST* ast)           { visitChildren(ast); this->newChild = rewrite(ast); }
-void ReplaceExprTransform::visit(BuiltinCompilesExprAST* ast) { visitChildren(ast); this->newChild = rewrite(ast); }
