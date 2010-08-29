@@ -254,6 +254,7 @@ add_executable(fosterc
   compiler/passes/TypecheckPass.cpp
   compiler/passes/DumpToProtobuf.cpp
   compiler/passes/PrettyPrintPass.cpp
+  compiler/passes/ComputeFreeNames.cpp
   compiler/passes/AddParentLinksPass.cpp
   compiler/passes/ReplaceExprTransform.cpp
   compiler/passes/ReplaceTypeTransform.cpp
@@ -305,12 +306,14 @@ add_executable(unittest_fosterc_parse
   ${PROJECT_SOURCE_DIR}/compiler/parse/ProtobufToAST_unittest.cpp
   ${PROJECT_SOURCE_DIR}/compiler/parse/TypeInference_unittest.cpp
   ${PROJECT_SOURCE_DIR}/compiler/base/PughSinofskyPrettyPrinter_unittest.cpp
+  ${PROJECT_SOURCE_DIR}/compiler/passes/ComputeFreeNames_unittest.cpp
   #
   # The files below contain symbols the above code depends on.
   ${PROJECT_SOURCE_DIR}/compiler/passes/TypecheckPass.cpp
   ${PROJECT_SOURCE_DIR}/compiler/passes/ReplaceTypeTransform.cpp
   ${PROJECT_SOURCE_DIR}/compiler/passes/DumpToProtobuf.cpp
   ${PROJECT_SOURCE_DIR}/compiler/passes/PrettyPrintPass.cpp
+  ${PROJECT_SOURCE_DIR}/compiler/passes/ComputeFreeNames.cpp
   ${GENERATED}/FosterAST.pb.cc
 )
 target_link_libraries(unittest_fosterc_parse

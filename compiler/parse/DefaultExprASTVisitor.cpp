@@ -12,19 +12,19 @@ void DefaultExprASTVisitor::visit(NilExprAST* ast)             { return; }
 void DefaultExprASTVisitor::visit(NamedTypeDeclAST* ast)       { return; }
 
 // Just recurse...
-void DefaultExprASTVisitor::visit(UnaryOpExprAST* ast)         { this->visitChildren(ast); }
-void DefaultExprASTVisitor::visit(BinaryOpExprAST* ast)        { this->visitChildren(ast); }
+void DefaultExprASTVisitor::visit(UnaryOpExprAST* ast)         { if (0) this->visitChildren(ast); }
+void DefaultExprASTVisitor::visit(BinaryOpExprAST* ast)        { if (0) this->visitChildren(ast); }
 void DefaultExprASTVisitor::visit(FnAST* ast)                  { this->visitChildren(ast); }
 void DefaultExprASTVisitor::visit(ModuleAST* ast)              { this->visitChildren(ast); }
 void DefaultExprASTVisitor::visit(IfExprAST* ast)              { this->visitChildren(ast); }
-void DefaultExprASTVisitor::visit(RefExprAST* ast)             { this->visitChildren(ast); }
-void DefaultExprASTVisitor::visit(DerefExprAST* ast)           { this->visitChildren(ast); }
-void DefaultExprASTVisitor::visit(AssignExprAST* ast)          { this->visitChildren(ast); }
-void DefaultExprASTVisitor::visit(SubscriptAST* ast)           { this->visitChildren(ast); }
-void DefaultExprASTVisitor::visit(SimdVectorAST* ast)          { this->visitChildren(ast); }
-void DefaultExprASTVisitor::visit(SeqAST* ast)                 { this->visitChildren(ast); }
+void DefaultExprASTVisitor::visit(RefExprAST* ast)             { if (0) this->visitChildren(ast); }
+void DefaultExprASTVisitor::visit(DerefExprAST* ast)           { if (0) this->visitChildren(ast); }
+void DefaultExprASTVisitor::visit(AssignExprAST* ast)          { if (0) this->visitChildren(ast); }
+void DefaultExprASTVisitor::visit(SubscriptAST* ast)           { if (0) this->visitChildren(ast); }
+void DefaultExprASTVisitor::visit(SimdVectorAST* ast)          { if (0) this->visitChildren(ast); }
+void DefaultExprASTVisitor::visit(SeqAST* ast)                 { if (0) this->visitChildren(ast); }
 void DefaultExprASTVisitor::visit(CallAST* ast)                { this->visitChildren(ast); }
-void DefaultExprASTVisitor::visit(TupleExprAST* ast)           { this->visitChildren(ast); }
+void DefaultExprASTVisitor::visit(TupleExprAST* ast)           { if (0) this->visitChildren(ast); }
 void DefaultExprASTVisitor::visit(BuiltinCompilesExprAST* ast) { this->visitChildren(ast); }
 //void DefaultExprASTVisitor::visit(ArrayExprAST* ast)           { this->visitChildren(ast); }
 

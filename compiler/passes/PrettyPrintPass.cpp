@@ -154,6 +154,7 @@ void PrettyPrintPass::visit(IntAST* ast) {
 void PrettyPrintPass::visit(VariableAST* ast) {
   ScopedBlock sb(this);
   scan(PPToken(ast->name));
+  //std::stringstream ss; ss << "@" << ast; scan(PPToken(ss.str()));
   if (this->printVarTypes) {
     scan(PPToken(":"));
     if (ast->type) {
@@ -245,7 +246,7 @@ void PrettyPrintPass::visit(ClosureAST* ast) {
   ScopedBlock sb(this);
   scan(PPToken("<closure "));
   if (ast->fn) {
-    scan(PPToken(str(ast->fn->type)));
+    emit(ast->fn);
   }
   scan(PPToken(">"));
 }

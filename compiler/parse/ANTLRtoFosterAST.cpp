@@ -1017,7 +1017,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
 
     if (fnMeansClosure) {
       ClosureAST* cloast = new ClosureAST(fn, sourceRange);
-      if (1) EDiag() << "\t\t\tFN MEANS CLOSURE: " << str(fn)
+      if (0) EDiag() << "\t\t\tFN MEANS CLOSURE: " << str(fn)
         << "; cloast = " << foster::show(cloast);
       return cloast;
     } else {
