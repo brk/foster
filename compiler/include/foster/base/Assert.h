@@ -6,7 +6,7 @@
 #define FOSTER_CHECK_H
 
 #include "base/Diagnostics.h"
-#include <cstdlib>
+#include <cstdlib> // for abort()
 
 #define ASSERT(cond) \
   (cond) \

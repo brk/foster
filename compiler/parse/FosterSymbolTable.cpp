@@ -5,6 +5,8 @@
 #include "parse/FosterSymbolTable.h"
 #include "parse/FosterAST.h"
 
+#include <sstream>
+
 namespace std {
   ostream& operator<<(ostream& out, foster::SymbolInfo* info) {
     if (info) {

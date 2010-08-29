@@ -11,6 +11,8 @@
 #include "parse/FosterUtils.h"
 #include "passes/TypecheckPass.h"
 
+#include <sstream>
+
 using std::vector;
 using std::map;
 

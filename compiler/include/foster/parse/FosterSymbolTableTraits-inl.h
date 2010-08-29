@@ -2,7 +2,10 @@
 
 #include <sstream>
 #include <iostream>
+
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/CFG.h"
+#include "llvm/Support/GraphWriter.h"
 
 namespace foster {
 std::string

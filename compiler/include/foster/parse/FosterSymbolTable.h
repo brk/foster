@@ -5,10 +5,6 @@
 #ifndef FOSTER_SYMBOL_TABLE_H
 #define FOSTER_SYMBOL_TABLE_H
 
-#include "llvm/Value.h"
-#include "llvm/Support/CFG.h"
-#include "llvm/Support/GraphWriter.h"
-
 #include <string>
 #include <map>
 #include <set>
@@ -19,6 +15,10 @@ using std::string;
 
 struct TypeAST;
 struct ExprAST;
+
+namespace llvm {
+  class Value;
+}
 
 namespace foster {
 
@@ -202,8 +202,6 @@ namespace std {
 
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
-
-#include "FosterSymbolTableTraits-inl.h"
 
 using foster::gScope;
 using foster::gScopeLookupValue;

@@ -17,6 +17,7 @@
 
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/ADT/APInt.h"
+#include "llvm/System/Path.h"
 
 #include <iostream>
 #include <string>

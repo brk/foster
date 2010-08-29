@@ -24,6 +24,7 @@
 
 #include "pystring/pystring.h"
 
+#include <sstream>
 #include <map>
 #include <set>
 

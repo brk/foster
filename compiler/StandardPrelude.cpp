@@ -5,12 +5,13 @@
 #include "llvm/DerivedTypes.h"
 #include "llvm/Module.h"
 
-#include "parse/FosterSymbolTable.h"
 #include "parse/FosterAST.h"
 
 #include "passes/TypecheckPass.h"
 
 #include "pystring/pystring.h"
+
+#include <sstream>
 
 using llvm::Module;
 using llvm::Function;

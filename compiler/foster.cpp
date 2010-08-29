@@ -68,6 +68,7 @@
 #include "passes/DumpToProtobuf.h"
 
 #include "dot/CFGGraphTraits.h"
+#include "parse/FosterSymbolTableTraits-inl.h"
 #include "StandardPrelude.h"
 
 #include <memory>
