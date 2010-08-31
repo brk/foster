@@ -16,6 +16,7 @@
 namespace llvm {
   class Module;
   class ExecutionEngine;
+  class raw_ostream;
 }
 
 struct TypeAST;
@@ -74,6 +75,14 @@ public:
   static bool
   isKnownOperatorName(const std::string& op);
   
+  ///////////////////
+  
+  // Seeing if it's useful for individual unit tests to redirect all output
+  // to a string, so it can be (A) hidden from the console unless needed, and
+  // (B) inspected to verify the presence/absence of specific errors.
+  //llvm::raw_ostream& currentErrs();
+  //llvm::raw_ostream& currentOuts();
+  //void redirectErrsAndOutsTo(llvm::raw_ostream&);
   
 private:
   struct Impl;

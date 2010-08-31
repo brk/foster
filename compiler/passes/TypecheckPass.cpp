@@ -196,12 +196,11 @@ struct TypecheckPass : public ExprASTVisitor {
                 && canConvertWithVoidWrapper(ft1, ft2)) {
               // OK!
             } else {
-              EDiag* err = new EDiag();
-              (*err) << "Unable to unify fn/ref types " << str(ft1) << " and " << str(ft2)
+              newLoggedError()
+                     << "Unable to unify fn/ref types " << str(ft1) << " and " << str(ft2)
                      << " [" << ft1->tag << " != " << ft2->tag << "]"
                      << " from " << context->tag
                      << foster::show(context);
-              logError(err);
               // Record the constraint without applying it to the substitution.
               collectEqualityConstraint(context, t1, t2);
             }
@@ -232,36 +231,33 @@ struct TypecheckPass : public ExprASTVisitor {
               }
               
               if (!literalClosure) {
-                EDiag* err = new EDiag();
-                (*err) << "LLVM requires that trampoline creation be given\n"
+                newLoggedError()
+                       << "LLVM requires that trampoline creation be given\n"
                        << "a literal function body, not a variable referring\n"
                        << "to a function object."
                        << foster::show(context);
-                logError(err);
                 // Record the constraint without applying it to the substitution.
                 collectEqualityConstraint(context, t1, t2);
               } else {
                 literalClosure->isTrampolineVersion = true;
               }
             } else {
-              EDiag* err = new EDiag();
-              (*err) << "Unable to unify clo/ref types " << str(ft1) << " and " << str(ft2)
+              newLoggedError()
+                     << "Unable to unify clo/ref types " << str(ft1) << " and " << str(ft2)
                      << " [" << ft1->tag << " != " << ft2->tag << "]"
                      << " from " << context->tag
                      << foster::show(context);
-              logError(err);
               // Record the constraint without applying it to the substitution.
               collectEqualityConstraint(context, t1, t2);
             }
           } else {
             // If tags aren't equal, then (since neither one is a type var)
             // the equality is immediately false.
-            EDiag* err = new EDiag();
-            (*err) << "Unable to unify " << str(t1) << " with " << str(t2)
+            newLoggedError()
+                   << "Unable to unify " << str(t1) << " with " << str(t2)
                    << " [" << t1->tag << " != " << t2->tag << "]"
                    << " from " << context->tag
                    << foster::show(context);
-            logError(err);
             // Record the constraint without applying it to the substitution.
             collectEqualityConstraint(context, t1, t2);
           }
@@ -320,7 +316,11 @@ struct TypecheckPass : public ExprASTVisitor {
 
 
     vector<foster::EDiag*> errors;
-    void logError(foster::EDiag* err) { errors.push_back(err); }
+    foster::EDiag& newLoggedError() {
+      foster::EDiag* err = new foster::EDiag();
+      errors.push_back(err);
+      return *err;
+    }
   };
   Constraints constraints;
 
@@ -386,11 +386,10 @@ void TypeConstraintExtractor::visit(NamedTypeAST* t2) {
     // OK, can convert.
   } else {
     // The constraint is unsatisfiable...
-    EDiag* err = new EDiag();
-    (*err) << "Expression cannot have types "
+    constraints.newLoggedError()
+           << "Expression cannot have types "
            << t1->getName() << " and " << t2->getName()
            << show(context);
-    constraints.logError(err);
   }
 }
 
@@ -407,12 +406,11 @@ void TypeConstraintExtractor::visit(FnTypeAST* t2) {
     }
     addConstraint(t1->getReturnType(), t2->getReturnType()); 
   } else {
-    EDiag* err = new EDiag();
-    (*err) << "Unable to match function types taking different numbers of params: "
-           << str(t1) << " (" << t1->getNumParams() << ")"
-           << "and " << str(t2) << " (" << t2->getNumParams() << ")" 
-           << show(context);
-    constraints.logError(err);
+    constraints.newLoggedError()
+       << "Unable to match function types taking different numbers of params: "
+       << str(t1) << " (" << t1->getNumParams() << ")"
+       << "and " << str(t2) << " (" << t2->getNumParams() << ")" 
+       << show(context);
   }
 }
 
@@ -429,12 +427,11 @@ void TypeConstraintExtractor::visit(TupleTypeAST* t2) {
       addConstraint(t1->getContainedType(i), t2->getContainedType(i));
     }
   } else {
-    EDiag* err = new EDiag();
-    (*err) << "Unable to match tuple types of different sizes: "
+    constraints.newLoggedError()
+           << "Unable to match tuple types of different sizes: "
            << str(t1) << " (" << t1->getNumContainedTypes() << ")"
            << "and " << str(t2) << " (" << t2->getNumContainedTypes() << ")" 
            << show(context);
-    constraints.logError(err);
   }
 }
 
@@ -450,12 +447,11 @@ void TypeConstraintExtractor::visit(SimdVectorTypeAST* t2) {
   if (t1->getNumElements() == t2->getNumElements()) {
     addConstraint(t1->getContainedType(0), t2->getContainedType(0));  
   } else {
-    EDiag* err = new EDiag();
-    (*err) << "Unable to match simd-vector types of different sizes "
+    constraints.newLoggedError()
+           << "Unable to match simd-vector types of different sizes "
            << str(t1) << " (" << t1->getNumElements() << ")"
            << "and " << str(t2) << " (" << t2->getNumElements() << ")" 
            << show(context);
-    constraints.logError(err);
   }
 }
 
@@ -502,11 +498,10 @@ void TypecheckPass::solveConstraints() {
     Constraints::TypeInSetConstraint tsc = constraints.tysets[i];
     TypeAST* ty = constraints.applySubst(tsc.ty);
     if (!tsc.tyset->contains(ty, constraints)) {
-      EDiag* err = new EDiag();
-      (*err) << "Unsatisfied subset constraint on " << str(ty)
+      constraints.newLoggedError()
+             << "Unsatisfied subset constraint on " << str(ty)
              << ": " << tsc.tyset->describe()
              << show(tsc.context);
-      constraints.logError(err);
     }
   }
 }
@@ -725,13 +720,11 @@ void TypecheckPass::visit(UnaryOpExprAST* ast) {
       ASSERT(opTy);
 
       if (opTy == LLVMTypeFor("i1")) {
-        EDiag* err = new EDiag();
-        (*err) << "unary '-' used on a boolean; use 'not' instead" << show(ast);
-        constraints.logError(err);
+        constraints.newLoggedError()
+               << "unary '-' used on a boolean; use 'not' instead" << show(ast);
       } else if (!(opTy->isIntOrIntVectorTy())) {
-        EDiag* err = new EDiag();
-        (*err) << "operand to unary '-' had non-inty type " << str(opTy) << show(ast);
-        constraints.logError(err);
+        constraints.newLoggedError()
+               << "operand to unary '-' had non-inty type " << str(opTy) << show(ast);
       }
     }
   } else if (op == "not") {
@@ -741,9 +734,8 @@ void TypecheckPass::visit(UnaryOpExprAST* ast) {
     } else {
       if (innerType != TypeAST::i(1)) {
         const llvm::Type* opTy = innerType->getLLVMType();
-        EDiag* err = new EDiag();
-        (*err) << "operand to unary 'not had non-bool type " << str(opTy) << show(ast);
-        constraints.logError(err);
+        constraints.newLoggedError()
+               << "operand to unary 'not had non-bool type " << str(opTy) << show(ast);
       }
     }
   }
@@ -808,14 +800,13 @@ const char* getCallingConvention(PrototypeAST* ast) {
 void TypecheckPass::visit(PrototypeAST* ast) {
   if (!areNamesDisjoint(ast->inArgs)) {
     
-    EDiag* err = new EDiag();
-    (*err) << "formal argument names for function "
+    EDiag& err = constraints.newLoggedError();
+    err    << "formal argument names for function "
            << ast->name << " are not disjoint";
     for (size_t i = 0; i < ast->inArgs.size(); ++i) {
-      (*err) << "\n\t" << ast->inArgs[i]->name;
+      err  << "\n\t" << ast->inArgs[i]->name;
     }
-    (*err) << show(ast);
-    constraints.logError(err);
+    err    << show(ast);
     return;
   }
 
@@ -1074,10 +1065,9 @@ void TypecheckPass::visit(RefExprAST* ast) {
     ast->type = RefTypeAST::get(ast->parts[0]->type);
   } else {
     const char* problem = ast->parts[0] ? "subexpr with no type" : "no subexpr"; 
-    EDiag* err = new EDiag();
-    (*err) << "ref expr had  " << std::string(problem)
+    constraints.newLoggedError()
+           << "ref expr had  " << std::string(problem)
            << show(ast);
-    constraints.logError(err);
     ast->type = RefTypeAST::get(TypeVariableAST::get("badref", ast->sourceRange));
     
   }
@@ -1462,8 +1452,8 @@ void TypecheckPass::visit(CallAST* ast) {
              if (ClosureAST* clo = dynamic_cast<ClosureAST*>(arg)) {
                clo->isTrampolineVersion = true;
              } else {
-               EDiag* err = new EDiag();
-               (*err) << "LLVM requires literal closure definitions"
+               constraints.newLoggedError()
+                      << "LLVM requires literal closure definitions"
                       << " to be given at trampoline creation sites"
                       << show(ast);
                constraints.logError(err);

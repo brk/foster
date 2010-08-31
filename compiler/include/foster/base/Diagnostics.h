@@ -85,7 +85,7 @@ private:
   DDiag(const DDiag&);
 };
 
-} // namespace
+} // namespace foster
 
 #endif
 
