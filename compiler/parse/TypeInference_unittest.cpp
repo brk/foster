@@ -208,8 +208,6 @@ let vx = 3 in {
   ASSERT_TRUE(ue);
   ExprAST* ee = elaborate(cc2, ue);
   ASSERT_TRUE(ee);
-  
-  EXPECT_EQ(cc1.collectAccumulatedOutput(), cc2.collectAccumulatedOutput());
 
   EXPECT_EQ(pr(eae), pr(ee));
 }
