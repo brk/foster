@@ -17,7 +17,7 @@
 
 using std::string;
 
-CompilationContext cc;
+foster::CompilationContext cc;
 
 namespace {
   
@@ -31,7 +31,7 @@ string pr(ExprAST* ast) {
   std::string s; llvm::raw_string_ostream out(s);
   foster::CompilationContext::pushContext(&cc);
   foster::prettyPrintExpr(ast, out, 55);
-  foster::CompilationContext.pop();
+  foster::CompilationContext::popCurrentContext();
   return out.str();
 }
 

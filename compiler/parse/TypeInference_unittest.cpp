@@ -49,9 +49,9 @@ ExprAST* parse(foster::CompilationContext& cc, const string& s) {
 
 ExprAST* elaborate(foster::CompilationContext& cc, ExprAST* e) {
   if (e) {
-    foster::gCompilationContexts.push(&cc);
+    foster::CompilationContext::pushContext(&cc);
     foster::typecheck(e);
-    foster::gCompilationContexts.pop();
+    foster::CompilationContext::popCurrentContext();
   }
   return e;
 }

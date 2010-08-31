@@ -219,14 +219,14 @@ TEST(ProtobufToAST, closure_type) {
 foster::CompilationContext cc;
 
 ExprAST* roundtrip(ExprAST* ast) {
-  foster::gCompilationContexts.push(&cc);
+  foster::CompilationContext::pushContext(&cc);
   
   foster::pb::Expr e;
   DumpToProtobufPass dp(&e);
   ast->accept(&dp);
 
   ExprAST* rv = foster::ExprAST_from_pb(&e);
-  foster::gCompilationContexts.pop();
+  foster::CompilationContext::popCurrentContext();
   return rv;
 }
 
