@@ -17,7 +17,7 @@
 
 using std::string;
 
-foster::CompilationContext cc;
+CompilationContext cc;
 
 namespace {
   
@@ -29,9 +29,9 @@ ExprAST* parse(const string& s) {
 
 string pr(ExprAST* ast) {
   std::string s; llvm::raw_string_ostream out(s);
-  foster::gCompilationContexts.push(&cc);
+  foster::CompilationContext::pushContext(&cc);
   foster::prettyPrintExpr(ast, out, 55);
-  foster::gCompilationContexts.pop();
+  foster::CompilationContext.pop();
   return out.str();
 }
 

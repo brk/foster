@@ -88,9 +88,7 @@ static void customSetTokenBoundariesFunc
  pANTLR3_COMMON_TOKEN startToken, pANTLR3_COMMON_TOKEN stopToken) {
   sgDefaultSTB(adaptor, t, startToken, stopToken);
 
-  foster::CompilationContext* cc = foster::gCompilationContexts.top();
-  cc->startTokens[(pTree)t] = startToken;
-  cc->  endTokens[(pTree)t] =  stopToken;
+  foster::CompilationContext::setTokenRange((pTree) t, startToken, stopToken);
 }
 
 // This is a vaguely unpleasant (but terrifically accurate) hack
@@ -130,8 +128,7 @@ int typeOf(pTree tree) { return tree->getType(tree); }
 
 pANTLR3_COMMON_TOKEN getStartToken(pTree tree) {
   if (!tree) return NULL;
-  pANTLR3_COMMON_TOKEN tok = foster::gCompilationContexts.top()->
-                                startTokens[tree];
+  pANTLR3_COMMON_TOKEN tok = foster::CompilationContext::getStartToken(tree); 
   if (tok) return tok;
 
   // Some nodes we're okay with having no token info for...
@@ -150,7 +147,7 @@ pANTLR3_COMMON_TOKEN getStartToken(pTree tree) {
   pTree node = tree;
   while (!tok && getChildCount(node) > 0) {
     node = child(node, 0);
-    tok = foster::gCompilationContexts.top()->startTokens[node];
+    tok = foster::CompilationContext::getStartToken(node);
   }
   if (!tok) {
     cout << "Warning: unable to find start token for ANTLR parse tree"
@@ -162,8 +159,7 @@ pANTLR3_COMMON_TOKEN getStartToken(pTree tree) {
 
 pANTLR3_COMMON_TOKEN getEndToken(pTree tree) {
   if (!tree) return NULL;
-  pANTLR3_COMMON_TOKEN tok = foster::gCompilationContexts.top()->
-                                endTokens[tree];
+  pANTLR3_COMMON_TOKEN tok = foster::CompilationContext::getEndToken(tree);
   if (tok) return tok;
 
   if (getChildCount(tree) == 0) {
@@ -177,7 +173,7 @@ pANTLR3_COMMON_TOKEN getEndToken(pTree tree) {
   pTree node = tree;
   while (!tok && getChildCount(node) > 0) {
     node = child(node, getChildCount(node) - 1);
-    tok = foster::gCompilationContexts.top()->endTokens[node];
+    tok = foster::CompilationContext::getEndToken(tree);
   }
   if (!tok) {
     cout << "Warning: unable to find end token for ANTLR parse tree"
@@ -306,8 +302,8 @@ void display_pTree(pTree t, int nspaces) {
   cout << ss.str() << spaces(70 - ss.str().size())
             << token << " @ " << t;
   cout << " (";
-  cout << (foster::gCompilationContexts.top()->startTokens[t] ? '+' : '-');
-  cout << (foster::gCompilationContexts.top()->  endTokens[t] ? '+' : '-');
+  cout << (foster::CompilationContext::getStartToken(t) ? '+' : '-');
+  cout << (foster::CompilationContext::getEndToken(t)   ? '+' : '-');
   cout << ")" << endl;
   for (int i = 0; i < nchildren; ++i) {
     display_pTree(child(t, i), nspaces+2);
@@ -543,7 +539,8 @@ ExprAST* parseBinaryOpExpr(
 
     // a opname b rop c
     foster::OperatorPrecedenceTable::OperatorRelation rel =
-	    foster::gCompilationContexts.top()->prec.get(opname, rop);
+      foster::CompilationContext::getOperatorRelation(opname, rop);
+	    ////foster::gCompilationContexts.top()->prec.get(opname, rop);
     if (rel == foster::OperatorPrecedenceTable::kOpBindsTighter) {
       delete rhs; // return ((a opname b) rop c)
       ExprAST* ab = parseBinaryOpExpr(opname, a, b);
@@ -988,7 +985,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
   }
 
   // Implicitly, every entry in the precedence table is a binary operator.
-  if (foster::gCompilationContexts.top()->prec.isKnownOperatorName(text)) {
+  if (foster::CompilationContext::isKnownOperatorName(text)) {
     ExprAST* lhs = ExprAST_from(child(tree, 0), fnMeansClosure);
     ExprAST* rhs = ExprAST_from(child(tree, 1), fnMeansClosure);
     return parseBinaryOpExpr(text, lhs, rhs);
@@ -1204,7 +1201,8 @@ ExprAST* parseExpr(const std::string& source,
   installTreeTokenBoundaryTracker(ctx->psr->adaptor);
   foster::installRecognitionErrorFilter(ctx->psr->pParser->rec);
 
-  gCompilationContexts.push(cc);
+  foster::CompilationContext::pushContext(cc);
+  
   gInputFile = NULL;
   gInputTextBuffer = membuf;
   
@@ -1218,9 +1216,8 @@ ExprAST* parseExpr(const std::string& source,
   // we do not want to accidentally pick up an incorrect
   // token boundary if we happen to randomly get the same
   // tree pointer values! Doing so can make ANTLR crash.
-  gCompilationContexts.top()->startTokens.clear();
-  gCompilationContexts.top()->  endTokens.clear();
-  gCompilationContexts.pop();
+  foster::CompilationContext::clearTokenBoundaries();
+  foster::CompilationContext::popCurrentContext();
 
   delete ctx;
   
@@ -1230,15 +1227,13 @@ ExprAST* parseExpr(const std::string& source,
 ModuleAST* parseModule(const InputFile& file,
                        pTree& outTree,
                        ANTLRContext*& ctx,
-                       unsigned& outNumANTLRErrors,
-                       CompilationContext* cc) {
+                       unsigned& outNumANTLRErrors) {
   ctx = new ANTLRContext();
   createParser(*ctx, file);
 
   installTreeTokenBoundaryTracker(ctx->psr->adaptor);
   foster::installRecognitionErrorFilter(ctx->psr->pParser->rec);
 
-  gCompilationContexts.push(cc);
   gInputFile = &file;
   gInputTextBuffer = file.getBuffer();
   
@@ -1248,11 +1243,7 @@ ModuleAST* parseModule(const InputFile& file,
   outNumANTLRErrors = ctx->psr->pParser->rec->state->errorCount;
 
   ModuleAST* m = parseTopLevel(outTree);
-
-  gCompilationContexts.top()->startTokens.clear();
-  gCompilationContexts.top()->  endTokens.clear();
-  gCompilationContexts.pop();
-
+  
   return m;
 }
 

@@ -61,8 +61,7 @@ ExprAST* parseExpr(const std::string& source,
 ModuleAST* parseModule(const InputFile& file,
                        pTree& outTree,
                        ANTLRContext*& outContext,
-                       unsigned& outNumANTLRErrors,
-                       CompilationContext* cc);
+                       unsigned& outNumANTLRErrors);
 
 } // namespace foster
 

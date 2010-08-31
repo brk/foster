@@ -7,14 +7,11 @@
 
 #include "llvm/Support/IRBuilder.h"
 
-#include "base/FreshNameGenerator.h"
 #include "parse/OperatorPrecedence.h"
 
 #include "antlr3interfaces.h"
 
 #include <string>
-#include <stack>
-#include <map>
 
 namespace llvm {
   class Module;
@@ -33,20 +30,56 @@ namespace foster {
 
 void initializeLLVM();
 
-class CompilationContext;
-extern std::stack<CompilationContext*> gCompilationContexts;
 
 class CompilationContext {
 public:
   CompilationContext();
 
-  OperatorPrecedenceTable prec;
+public:
+  static CompilationContext*
+  pushNewContext();
+  
+  static void
+  pushContext(CompilationContext*);
+  
+  static CompilationContext*
+  popCurrentContext();
+  
+  /////////////////////
+  
+  static std::string
+  freshName(std::string likeThisOne);
+  
+  /////////////////////
 
-  FreshNameGenerator freshNames;
-
-  std::map<pANTLR3_BASE_TREE, pANTLR3_COMMON_TOKEN> startTokens;
-  std::map<pANTLR3_BASE_TREE, pANTLR3_COMMON_TOKEN>   endTokens;
+  static void
+  setTokenRange(pANTLR3_BASE_TREE t,
+                pANTLR3_COMMON_TOKEN s,
+                pANTLR3_COMMON_TOKEN e);
+  
+  static pANTLR3_COMMON_TOKEN
+  getStartToken(pANTLR3_BASE_TREE t);
+  
+  static pANTLR3_COMMON_TOKEN
+  getEndToken(pANTLR3_BASE_TREE t);
+  
+  static void
+  clearTokenBoundaries();
+  
+  ///////////////////
+  
+  static foster::OperatorPrecedenceTable::OperatorRelation
+  getOperatorRelation(const std::string& op1, const std::string& op2);
+  
+  static bool
+  isKnownOperatorName(const std::string& op);
+  
+  
+private:
+  struct Impl;
+  Impl* impl;
 };
+
 
 extern llvm::ExecutionEngine* ee;
 extern llvm::IRBuilder<> builder;

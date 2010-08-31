@@ -8,9 +8,14 @@
 #include "llvm/Module.h"
 
 #include "base/Assert.h"
+#include "base/FreshNameGenerator.h"
+
 #include "parse/FosterTypeAST.h"
 #include "parse/FosterSymbolTable.h"
 #include "parse/CompilationContext.h"
+
+#include <stack>
+#include <map>
 
 using llvm::getGlobalContext;
 
@@ -21,8 +26,100 @@ namespace foster {
 
 std::stack<CompilationContext*> gCompilationContexts;
 
+
+struct CompilationContext::Impl {
+  OperatorPrecedenceTable prec;
+  FreshNameGenerator freshNames;
+
+  std::map<pANTLR3_BASE_TREE, pANTLR3_COMMON_TOKEN> startTokens;
+  std::map<pANTLR3_BASE_TREE, pANTLR3_COMMON_TOKEN>   endTokens; 
+};
+
+
+CompilationContext* // static
+CompilationContext::pushNewContext() {
+  CompilationContext* cc = new CompilationContext();
+  gCompilationContexts.push(cc);
+  return cc;
+}
+
+void // static
+CompilationContext::pushContext(CompilationContext* cc) {
+  gCompilationContexts.push(cc);
+}
+
+CompilationContext* // static
+CompilationContext::popCurrentContext() {
+  ASSERT(!gCompilationContexts.empty());
+  CompilationContext* cc = gCompilationContexts.top();
+  gCompilationContexts.pop();
+  return cc;
+}
+
+/////////////////////
+
+std::string // static
+CompilationContext::freshName(std::string like) {
+  ASSERT(!foster::gCompilationContexts.empty());
+
+  return foster::gCompilationContexts.top()->impl->freshNames.fresh(like);
+}
+
+/////////////////////
+
+void // static
+CompilationContext::setTokenRange(pANTLR3_BASE_TREE t,
+              pANTLR3_COMMON_TOKEN s,
+              pANTLR3_COMMON_TOKEN e) {
+  ASSERT(!gCompilationContexts.empty());
+
+  gCompilationContexts.top()->impl->startTokens[t] = s;
+  gCompilationContexts.top()->impl->  endTokens[t] = e;
+}
+
+pANTLR3_COMMON_TOKEN // static
+CompilationContext::getStartToken(pANTLR3_BASE_TREE t) {
+  ASSERT(!gCompilationContexts.empty());
+  
+  return gCompilationContexts.top()->impl->startTokens[t];
+}
+
+pANTLR3_COMMON_TOKEN // static
+CompilationContext::getEndToken(pANTLR3_BASE_TREE t) {
+  ASSERT(!gCompilationContexts.empty());
+
+  return gCompilationContexts.top()->impl->endTokens[t];
+}
+
+
+void // static
+CompilationContext::clearTokenBoundaries() {
+  ASSERT(!gCompilationContexts.empty());
+  
+  gCompilationContexts.top()->impl->startTokens.clear();
+  gCompilationContexts.top()->impl->  endTokens.clear();
+}
+
+///////////////////
+
+foster::OperatorPrecedenceTable::OperatorRelation // static
+CompilationContext::getOperatorRelation(const std::string& op1,
+                                        const std::string& op2) {
+  ASSERT(!gCompilationContexts.empty());
+  
+  return gCompilationContexts.top()->impl->prec.get(op1, op2);
+}
+
+bool // static
+CompilationContext::isKnownOperatorName(const string& op) {
+  ASSERT(!gCompilationContexts.empty());
+  
+  return gCompilationContexts.top()->impl->prec.isKnownOperatorName(op);
+}
+
 CompilationContext::CompilationContext() {
   initMaps();
+  impl = new Impl();
 }
 
 llvm::ExecutionEngine* ee = NULL;
@@ -86,7 +183,6 @@ void initializeLLVM() {
 } // namespace foster
 
 string freshName(string like) {
-  ASSERT(!foster::gCompilationContexts.empty());
-  return foster::gCompilationContexts.top()->freshNames.fresh(like);
+  return foster::CompilationContext::freshName(like);
 }
 

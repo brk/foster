@@ -509,13 +509,12 @@ int main(int argc, char** argv) {
   unsigned numParseErrors = 0;
   ModuleAST* exprAST = NULL;
 
-  foster::CompilationContext cc;
+  //foster::CompilationContext cc;
+  foster::CompilationContext::pushNewContext();
 
   { ScopedTimer timer("io.parse");
-    exprAST = foster::parseModule(infile, parseTree, ctx, numParseErrors, &cc);
+    exprAST = foster::parseModule(infile, parseTree, ctx, numParseErrors);
   }
-  
-  foster::gCompilationContexts.push(&cc);
 
   if (optDumpASTs) {
     llvm::outs() << "dumping parse trees" << "\n";
@@ -670,7 +669,7 @@ int main(int argc, char** argv) {
     llvm::errs().flush();
   }
 
-  foster::gCompilationContexts.pop();
+  foster::CompilationContext::popCurrentContext();
   foster::deleteANTLRContext(ctx);
   delete wholeProgramTimer;
 
