@@ -3,6 +3,7 @@
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
 #include "base/Assert.h"
+#include "base/Diagnostics.h"
 #include "parse/OperatorPrecedence.h"
 
 #include "pystring/pystring.h"

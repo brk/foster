@@ -65,24 +65,13 @@ private:
   DiagBase(const DiagBase&);
 };
 
-// TODO allow top-level code to re-route diagnostics info to other streams
-
-// Error diagnostic builder
-class EDiag : public DiagBase {
+// Error diagnostic builder that always outputs to stderr.
+class SimpleEDiag : public DiagBase {
 public:
-  explicit EDiag() : DiagBase(llvm::errs(), "error") {}
-  virtual ~EDiag();
+  explicit SimpleEDiag() : DiagBase(llvm::errs(), "error") {}
+  ~SimpleEDiag() {}
 private:
-  EDiag(const EDiag&);
-};
-
-// Debug diagnostic builder
-class DDiag : public DiagBase {
-public:
-  explicit DDiag() : DiagBase(llvm::outs(), "debug") {}
-  virtual ~DDiag();
-private:
-  DDiag(const DDiag&);
+  SimpleEDiag(const SimpleEDiag&);
 };
 
 } // namespace foster

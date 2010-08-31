@@ -24,7 +24,5 @@ DiagBase::~DiagBase() {
       << ": " << msg.str() << '\n';
 }
 
-EDiag::~EDiag() {}
-
 } // namespace foster
 

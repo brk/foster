@@ -17,9 +17,6 @@
 
 #include "parse/FosterUtils.h"
 
-using foster::show;
-using foster::EDiag;
-
 #include <vector>
 #include <map>
 #include <set>

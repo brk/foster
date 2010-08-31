@@ -17,6 +17,8 @@
 using foster::EDiag;
 using foster::show;
 using foster::LLVMTypeFor;
+using foster::currentErrs;
+using foster::currentOuts;
 
 #include "pystring/pystring.h"
 
@@ -217,7 +219,7 @@ struct TypecheckPass : public ExprASTVisitor {
             TypeAST* ft2 = rt2->getElementType();
 
             if (string(ft1->tag) == string(ft2->tag) && str(ft1) == str(ft2)) {
-              llvm::outs() << context->tag << " :: " << str(context) << "\n";
+              currentOuts() << context->tag << " :: " << str(context) << "\n";
               
               
               
@@ -437,8 +439,6 @@ void TypeConstraintExtractor::visit(TupleTypeAST* t2) {
 
 void TypeConstraintExtractor::visit(ClosureTypeAST* t2) {
   ClosureTypeAST* t1 = dynamic_cast<ClosureTypeAST*>(t1_pre);
-  std::cout << "closure constraint extracting "
-  << str(t1->getFnType()) << " == " << str(t2->getFnType()) << std::endl;
   addConstraint(t1->getFnType(), t2->getFnType());
 }
 
@@ -531,13 +531,13 @@ bool TypecheckPass::Constraints::addEqConstraintToSubstitution(
   const std::string& tvName = tv->getTypeVariableName();
   
   if (tvName == "callret") {
-     llvm::outs() << "deref maps to " << str(subst[tvName]) << "\n";
+     currentOuts() << "deref maps to " << str(subst[tvName]) << "\n";
   }
   
   TypeAST* tvs = substFind(tv);
   TypeAST* t2 = applySubst(ttc.t2);
   
-  llvm::outs() << str(tv) << " => ... => tvs: " << str(tvs) << " ;; " << str(t2) << "...";
+  currentOuts() << str(tv) << " => ... => tvs: " << str(tvs) << " ;; " << str(t2) << "...";
   // Have    TypeVar(t1) => ... => non-type-var tvs
   // ttc is  TypeVar(t1) => ttc.t2
   if (!tvs) {
@@ -546,15 +546,15 @@ bool TypecheckPass::Constraints::addEqConstraintToSubstitution(
   } else if (tvs == t2)  {
     // Das fine, the chain was short and we have learned nothing.
   } else {
-    llvm::errs() << "Conflict detected during equality constraint solving!\n"
+    currentErrs() << "Conflict detected during equality constraint solving!\n"
                   << "\t" << tvName << " cannot be both "
                   << "\n\t\t" << str(tvs) << " and " << str(t2) << ".";
     return false;
   }
  
-  llvm::outs() << "\n";
-  //llvm::outs() << " ====> " << str(subst[tvName]) << "\n";
-//  llvm::outs() << ttc.context->tag << "\t" << str(ttc.t1) << " == " << str(ttc.t2) << "\n";
+  currentOuts() << "\n";
+  //currentOuts() << " ====> " << str(subst[tvName]) << "\n";
+//  currentOuts() << ttc.context->tag << "\t" << str(ttc.t1) << " == " << str(ttc.t2) << "\n";
   return true;
 }
 
@@ -644,14 +644,14 @@ bool typecheck(ExprAST* e) {
   }
 
   if (!tp.constraints.empty()) {
-    llvm::outs() << "Constraints before solving:\n";
-    tp.constraints.show(llvm::outs());
+    currentOuts() << "Constraints before solving:\n";
+    tp.constraints.show(currentOuts());
   }
   tp.solveConstraints();
 #if 0
     if (!constraints.empty()) {
-      llvm::outs() << "Constraints after solving:\n";
-      constraints.show(llvm::outs());
+      currentOuts() << "Constraints after solving:\n";
+      constraints.show(currentOuts());
     }
 #endif
   tp.applyTypeSubstitution(e);
@@ -780,7 +780,7 @@ bool areNamesDisjoint(const std::vector<VariableAST*>& vars) {
 
 bool isTopLevel(PrototypeAST* ast) {
   bool rv = ast && ast->parent && !ast->parent->parent;
-  std::cout << "isTopLevel " << ast->name << ": " << rv << std::endl;
+  currentOuts() << "isTopLevel " << ast->name << ": " << rv << "\n";
   return rv;
 }
 
@@ -816,18 +816,11 @@ void TypecheckPass::visit(PrototypeAST* ast) {
     VariableAST* arg = (ast->inArgs[i]);
 
     arg->accept(this);
-    /*
-    if (!arg->type) {
-      arg->type = TypeVariableAST::get(arg->name, arg->sourceRange);
-      std::cout << "Adding type annotation to arg " << arg->name << ": " << arg->type << std::endl;
-    } else {
 
-    }
-*/
     TypeAST* ty =  arg->type;
     if (ty == NULL) {
       std::cerr << "Error: proto " << ast->name << " had "
-        << "null type for arg '" << arg->name << "'" << std::endl;
+        << "null type for arg '" << arg->name << "'" << "\n";
       return;
     }
 
@@ -841,18 +834,20 @@ void TypecheckPass::visit(PrototypeAST* ast) {
   if (!ast->resultTy) {
     EDiag() << "NULL return type for PrototypeAST " << ast->name << show(ast);
   } else {
+    
     ast->type = FnTypeAST::get(ast->resultTy, argTypes,
                                getCallingConvention(ast));
   }
 }
 
 void TypecheckPass::visit(FnAST* ast) {
-  //std::cout << "type checking FnAST" << std::endl;
   ASSERT(ast->getProto() != NULL);
   ast->getProto()->accept(this);
 
   if (ast->getBody() != NULL) {
+    gScope.pushExistingScope(ast->getProto()->scope);
     ast->getBody()->accept(this);
+    gScope.popExistingScope(ast->getProto()->scope);
 
     if (ast->getProto()->type && ast->getBody()->type) {
       ast->type = ast->getProto()->type;
@@ -1033,26 +1028,6 @@ void TypecheckPass::visit(NilExprAST* ast) {
   return;
 }
 
-// TODO currently unused
-bool exprBindsName(ExprAST* ast, const std::string& name) {
-  // TODO test for-range exprs
-  if (FnAST* fn = dynamic_cast<FnAST*>(ast)) {
-    PrototypeAST* proto = fn->getProto();
-    for (size_t i = 0; i < proto->inArgs.size(); ++i) {
-      if (proto->inArgs[i]->name == name) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  if (ClosureAST* clo = dynamic_cast<ClosureAST*>(ast)) {
-    std::cout << "TODO: does " << str(clo)
-              << " bind variable " << name << "???" << std::endl;
-  }
-  return false;
-}
-
 // In order for copying GC to be able to move GC roots,
 // the root must be stored on the stack; thus, new T is implemented
 // so that it evaluates to a T** (a stack slot containing a T*)
@@ -1165,13 +1140,13 @@ void TypecheckPass::visit(SubscriptAST* ast) {
   if (TypeVariableAST* tv = dynamic_cast<TypeVariableAST*>(baseType)) {
     TypeAST* sub = constraints.applySubst(tv);
     if (sub && !sub->isTypeVariable()) {
-      llvm::outs() << "Subscript AST peeking through " << str(tv)
+      currentOuts() << "Subscript AST peeking through " << str(tv)
 		   << " and replacing it with " << str(sub) << "\n";
       ast->parts[0]->type = baseType = sub;
     } else {
       EDiag() << "SubscriptAST's base type was a type variable (" << str(sub) << " :: " << str(baseType) << ") that"
               << " it couldn't make concrete!" << show(ast);
-      constraints.show(llvm::outs());
+      constraints.show(currentOuts());
       ASSERT(false);
     }
   }
@@ -1248,7 +1223,7 @@ void TypecheckPass::visit(SeqAST* ast) {
     if (ast->parts[i]) {
       if (!ast->parts[i]->type) { success = false; }
     } else {
-      std::cerr << "Null expr in SeqAST" << std::endl;
+      std::cerr << "Null expr in SeqAST" << "\n";
       ast->type = TypeAST::i(32);
       return;
     }
@@ -1309,7 +1284,7 @@ const FunctionType* getFunctionTypeFromClosureStructType(const Type* ty) {
     }
   }
   std::cerr << "ERROR: failed to get function type from closure struct type: "
-            << *ty << std::endl;
+            << *ty << "\n";
   exit(1);
   return NULL;
 }
@@ -1341,9 +1316,19 @@ void TypecheckPass::visit(CallAST* ast) {
 
   FnAST* literalFnBase = dynamic_cast<FnAST*>(base);
   if (literalFnBase) {
-    // If this is an encoded let-expression   fn (formals) { body }(args)
-    // we should synthesize the args first, then use the synthesized types
-    // as the annotations on the formals.
+    // This is an encoded let-expression   fn (formals) { body }(args).
+    
+    // First, inspect just the prototype of the function, to ensure
+    // that any un-annotated formals get type variables.
+    literalFnBase->getProto()->accept(this);
+
+    // Next, synthesize the args, and constrain the formal and actual
+    // parameter types.
+    // Finally, use the synthesized types as the annotations on the formals,
+    // before inspecting the function body.
+    // This is the intuitive way of typechecking a let-binding, which matches
+    // both the way a human typechecker would try assigning types, and
+    // which also corresponds to "checking" mode of a bidirectional typechecker.
     for (size_t i = 0; i < args.size(); ++i) {
       ExprAST* arg = args[i];
       arg->accept(this);
@@ -1356,11 +1341,18 @@ void TypecheckPass::visit(CallAST* ast) {
     size_t maxSafeIndex = (std::min)(args.size(),
                                      literalFnBase->getProto()->inArgs.size());
     for (size_t i = 0; i < maxSafeIndex; ++i) {
+      // Ensure that we don't forget the constraint that existed before
+      // we overwrote the base function's formal parameter types.
+      if (literalFnBase->getProto()->inArgs[i]->type) {
+        constraints.addEq(ast, literalFnBase->getProto()->inArgs[i]->type,
+                               args[i]->type);
+      }
       dynamic_cast<VariableAST*>(literalFnBase->getProto()->inArgs[i])->type =
                                                           args[i]->type;
     }
 
-    base->accept(this);
+    literalFnBase->accept(this);
+    literalFnBase->type = literalFnBase->getProto()->type; // TODO terrible hack :(
   } else {
     if (ClosureAST* literalClo = dynamic_cast<ClosureAST*>(base)) {
       EDiag() << "\t\tCALL WITH LITERAL CLOSURE BASE: " << show(ast); 
@@ -1431,13 +1423,13 @@ void TypecheckPass::visit(CallAST* ast) {
       } else {
         // Temporarily view a function type as its specific closure type,
         // since the formal arguments will have undergone the same conversion.
-        std::cout << "actualtype = " << str(actualType) << std::endl;
+        currentOuts() << "actualtype = " << str(actualType) << "\n";
         actualType = genericClosureTypeFor(actualType);
-        std::cout << "TYPECHECK CallAST converting " << *fnty
-                  << " to " << str(actualType->getLLVMType()) << std::endl;
-        std::cout << "\t for formal type:\t" << str(formalType->getLLVMType())
-                  << std::endl;
-        std::cout << "\t base :: " << *base << std::endl;
+        currentOuts() << "TYPECHECK CallAST converting " << *fnty
+                  << " to " << str(actualType->getLLVMType()) << "\n";
+        currentOuts() << "\t for formal type:\t" << str(formalType->getLLVMType())
+                  << "\n";
+        currentOuts() << "\t base :: " << *base << "\n";
       }
     } else if (const llvm::StructType* sty = llvm::dyn_cast<llvm::StructType>(actualType->getLLVMType())) {
       if (isValidClosureType(sty)) {
@@ -1497,7 +1489,7 @@ void TypecheckPass::visit(ArrayExprAST* ast) {
   SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
   if (!body) {
     std::cerr << "Typecheck of array expr failed because ast.parts[0] = "
-              << ast->parts[0] << " was not a Seq!" << std::endl;
+              << ast->parts[0] << " was not a Seq!" << "\n";
     return;
   }
 
@@ -1531,17 +1523,17 @@ void TypecheckPass::visit(ArrayExprAST* ast) {
     // an array of "small" and "large" int literals should silently be accepted
     // as an array of "large" ints.
     if (success && fieldTypes.size() > 1) {
-      std::cerr << "Array expression had multiple types! Found:" << std::endl;
+      std::cerr << "Array expression had multiple types! Found:" << "\n";
       std::map<const Type*, bool>::const_iterator it;;
       for (it = fieldTypes.begin(); it != fieldTypes.end(); ++it) {
-        std::cerr << "\t" << *((*it).first) << std::endl;
+        std::cerr << "\t" << *((*it).first) << "\n";
       }
       success = false;
     }
   }
 
   if (!elementType) {
-    std::cerr << "Error: Array had no discernable element type?!?" << std::endl;
+    std::cerr << "Error: Array had no discernable element type?!?" << "\n";
     return;
   }
 
@@ -1672,7 +1664,7 @@ void TypecheckPass::visit(BuiltinCompilesExprAST* ast) {
                        && constraints.errors.size() == start.errors.size();
     
 #if 0
-    llvm::outs() << "BUILTIN COMPILES RESOLUTION: " <<  str(ast->parts[0]->type) << "; " 
+    currentOuts() << "BUILTIN COMPILES RESOLUTION: " <<  str(ast->parts[0]->type) << "; " 
                  << constraints.errors.size()
                  << " vs " << start.errors.size() << "\n";
      for (size_t i = start.errors.size(); i < constraints.errors.size(); ++i) {

@@ -37,9 +37,6 @@ struct UnitTestBeginEnd {
   }
 } _ube;
 
-foster::CompilationContext cc1;
-foster::CompilationContext cc2;
-
 ExprAST* parse(foster::CompilationContext& cc, const string& s) {
   unsigned errs = 0;
   ExprAST* rv = foster::parseExpr(s, errs, &cc);
@@ -67,6 +64,9 @@ string pr(ExprAST* ast) {
 ////////////////////////////////////////////////////////////////////
 
 TEST(TypeInference, parallel_compilation_contexts) {
+  foster::CompilationContext cc1; cc1.startAccumulatingOutputToString();
+  foster::CompilationContext cc2; cc2.startAccumulatingOutputToString();
+  
   ExprAST* e1a = parse(cc1, STR(
 let x : i32 = 3 in {
   x
@@ -93,8 +93,8 @@ let x : i32 = 3 in {
 ////////////////////////////////////////////////////////////////////
 
 TEST(TypeInference, i32_handling_simple) {
-  foster::CompilationContext cc1;
-  foster::CompilationContext cc2;
+  foster::CompilationContext cc1; cc1.startAccumulatingOutputToString();
+  foster::CompilationContext cc2; cc2.startAccumulatingOutputToString();
 
   ExprAST* ae = parse(cc1, STR(
 let x : i32 = 3 in {
@@ -119,9 +119,9 @@ let x = 3 in {
 
 ////////////////////////////////////////////////////////////////////
 
-TEST(TypeInference, i32_handling_simple_closure1) {
-  foster::CompilationContext cc1;
-  foster::CompilationContext cc2;
+TEST(TypeInference, i32_handling_simple_closure0) {
+  foster::CompilationContext cc1; cc1.startAccumulatingOutputToString();
+  foster::CompilationContext cc2; cc2.startAccumulatingOutputToString();
 
   ExprAST* ae = parse(cc1, STR(
 let x : i32 = 3 in {
@@ -132,8 +132,38 @@ let x : i32 = 3 in {
 ));
   ASSERT_TRUE(ae);
   ExprAST* eae = elaborate(cc1, ae);
+  
 
-  std::cout << "================ parse boundary ==============\n";
+  ExprAST* ue = parse(cc2, STR(
+let x = 3 in {
+  let f : fn (m:i32) = fn (m : i32) { m } in {
+    f(x)
+  }
+}
+));
+  ASSERT_TRUE(ue);
+  ExprAST* ee = elaborate(cc2, ue);
+  ASSERT_TRUE(ee);
+
+  EXPECT_EQ(pr(eae), pr(ee));
+}
+
+////////////////////////////////////////////////////////////////////
+
+TEST(TypeInference, i32_handling_simple_closure1) {
+  foster::CompilationContext cc1; cc1.startAccumulatingOutputToString();
+  foster::CompilationContext cc2; cc2.startAccumulatingOutputToString();
+
+  ExprAST* ae = parse(cc1, STR(
+let x : i32 = 3 in {
+  let f : fn (m:i32) = fn (m:i32 to i32) { m } in {
+    f(x)
+  }
+}
+));
+  ASSERT_TRUE(ae);
+  ExprAST* eae = elaborate(cc1, ae);
+  
 
   ExprAST* ue = parse(cc2, STR(
 let x = 3 in {
@@ -153,31 +183,33 @@ let x = 3 in {
 
 // as above, but without the annotation on the inner function
 TEST(TypeInference, i32_handling_simple_closure2) {
-  foster::CompilationContext cc1;
-  foster::CompilationContext cc2;
+  foster::CompilationContext cc1; cc1.startAccumulatingOutputToString();
+  foster::CompilationContext cc2; cc2.startAccumulatingOutputToString();
 
   ExprAST* ae = parse(cc1, STR(
-let x : i32 = 3 in {
-  let f : fn (m:i32) = fn (m:i32 to i32) { m } in {
-    f(x)
+let vx : i32 = 3 in {
+  let vf : fn (vm:i32) = fn (vm:i32 to i32) { vm } in {
+    vf(vx)
   }
 }
 ));
   ASSERT_TRUE(ae);
   ExprAST* eae = elaborate(cc1, ae);
 
-  std::cout << "================ parse boundary ==============\n";
-
+  foster::currentOuts() << "================ parse boundary ================\n";
+  
   ExprAST* ue = parse(cc2, STR(
-let x = 3 in {
-  let f = fn (m) { m } in {
-    f(x)
+let vx = 3 in {
+  let vf = fn (vm) { vm } in {
+    vf(vx)
   }
 }
 ));
   ASSERT_TRUE(ue);
   ExprAST* ee = elaborate(cc2, ue);
   ASSERT_TRUE(ee);
+  
+  EXPECT_EQ(cc1.collectAccumulatedOutput(), cc2.collectAccumulatedOutput());
 
   EXPECT_EQ(pr(eae), pr(ee));
 }

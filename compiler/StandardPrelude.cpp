@@ -119,7 +119,8 @@ ExprAST* lookupOrCreateNamespace(ExprAST* ns, const string& part) {
   if (NamespaceAST* nr = dynamic_cast<NamespaceAST*>(ns)) {
     return nr->newNamespace(part);
   } else {
-    EDiag() << "Error: lookupOrCreateNamespace failed because "
+    foster::SimpleEDiag()
+            << "Error: lookupOrCreateNamespace failed because "
             << " ns did not contain an entry for '" << part << "'"
             << " and ns was not a NamespaceAST*";
   }
@@ -150,8 +151,8 @@ void addToProperNamespace(VariableAST* var) {
   if (NamespaceAST* parentNS = dynamic_cast<NamespaceAST*>(ns)) {
     parentNS->insert(parts.back(), var);
   } else {
-    llvm::errs() << "Error: final parent namespace for fqName '"
-              << fqName << "' was not a NamespaceAST" << "\n";
+    foster::SimpleEDiag() << "final parent namespace for fqName '"
+                          << fqName << "' was not a NamespaceAST";
   }
 }
 

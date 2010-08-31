@@ -64,11 +64,15 @@ void gScopeInsert(const std::string& name, ExprAST* ast) {
     gScope.insert(name, new SymbolInfo(ast));
   } else {
     SymbolInfo* info = gScope._private_getCurrentScope()->lookup(name, "");
-    if (info->ast) {
-      std::cerr << "gScopeInsert(ExprAST " << name << ") had unexpected collision"
-          << std::endl;
-    } else {
+    if (!info->ast) {
       info->ast = ast;
+    } else if (info->ast == ast) {
+      std::cerr << "gScopeInsert(ExprAST " << name << ") was redundant!" << std::endl;
+    } else {
+      std::cerr << "gScopeInsert(ExprAST " << name << ") had unexpected collision"
+        << "\n\told: " << info->ast << " :: " << str(info->ast)
+        << "\n\tnew: " <<       ast << " :: " << str(      ast)
+        << std::endl;
     }
   }
 }

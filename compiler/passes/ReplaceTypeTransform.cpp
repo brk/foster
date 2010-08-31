@@ -3,7 +3,7 @@
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
 #include "base/Assert.h"
-#include "base/Diagnostics.h"
+#include "parse/CompilationContext.h"
 
 #include "passes/ReplaceTypeTransform.h"
 #include "parse/FosterAST.h"
@@ -16,6 +16,9 @@
 
 using namespace std;
 
+using foster::currentOuts;
+using foster::currentErrs;
+
 bool ReplaceTypeTransform::subst(TypeAST*& ty) {
   if (!ty) return false;
   
@@ -23,10 +26,10 @@ bool ReplaceTypeTransform::subst(TypeAST*& ty) {
   resultType = ty;
   ty->accept(this);
   bool changingType = resultType != ty; 
-  if (changingType) {
-    llvm::outs() << "replacing " << str(ty) << " with " << str(resultType) << "\n";
+  if (changingType && resultType) {
+    currentOuts() << "replacing " << str(ty) << " with " << str(resultType) << "\n";
+    ty = resultType;
   }
-  ty = resultType;
   resultType = oldResultType;
   return changingType;
 }
@@ -57,7 +60,8 @@ void ReplaceTypeTransform::visit(TupleTypeAST* ast) {
 }
 
 void ReplaceTypeTransform::visit(ClosureTypeAST* ast) {
-  llvm::outs() << "ignoring closure type ast while substituting types...\n";
+  if (ast->fntype) { ast->getFnType()->accept(this); }
+  if (ast->clotype) { ast->clotype->accept(this); }
 }
 
 void ReplaceTypeTransform::visit(SimdVectorTypeAST* ast) {

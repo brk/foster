@@ -2,17 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#include "llvm/LLVMContext.h"
-#include "llvm/Target/TargetSelect.h"
-#include "llvm/ExecutionEngine/ExecutionEngine.h"
-#include "llvm/Module.h"
-
 #include "base/Assert.h"
 #include "base/FreshNameGenerator.h"
 
 #include "parse/FosterTypeAST.h"
 #include "parse/FosterSymbolTable.h"
 #include "parse/CompilationContext.h"
+
+#include "llvm/LLVMContext.h"
+#include "llvm/Target/TargetSelect.h"
+#include "llvm/ExecutionEngine/ExecutionEngine.h"
+#include "llvm/Module.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <stack>
 #include <map>
@@ -32,7 +33,14 @@ struct CompilationContext::Impl {
   FreshNameGenerator freshNames;
 
   std::map<pANTLR3_BASE_TREE, pANTLR3_COMMON_TOKEN> startTokens;
-  std::map<pANTLR3_BASE_TREE, pANTLR3_COMMON_TOKEN>   endTokens; 
+  std::map<pANTLR3_BASE_TREE, pANTLR3_COMMON_TOKEN>   endTokens;
+  
+  std::string accumulated_output;
+  llvm::raw_string_ostream os;
+  llvm::raw_ostream* outs;
+  llvm::raw_ostream* errs;
+  
+  Impl() : outs(NULL), errs(NULL), os(accumulated_output) {}
 };
 
 
@@ -117,10 +125,58 @@ CompilationContext::isKnownOperatorName(const string& op) {
   return gCompilationContexts.top()->impl->prec.isKnownOperatorName(op);
 }
 
+////////////////////////////////////////////////////////////////////
+
+llvm::raw_ostream& CompilationContext::currentErrs() {
+  if (impl->errs) { return *(impl->errs); }
+  else { return llvm::errs(); }
+}
+
+llvm::raw_ostream& CompilationContext::currentOuts() {
+  if (impl->outs) { return *(impl->outs); }
+  else { return llvm::errs(); }
+}
+
+void CompilationContext::startAccumulatingOutputToString() {
+  impl->outs = &impl->os;
+  impl->errs = &impl->os;
+}
+
+std::string CompilationContext::collectAccumulatedOutput() {
+  std::string rv = impl->os.str();
+  impl->accumulated_output.clear();
+  return rv;
+}
+  
+
 CompilationContext::CompilationContext() {
   initMaps();
   impl = new Impl();
 }
+
+////////////////////////////////////////////////////////////////////
+
+llvm::raw_ostream& currentErrs() {
+  if (gCompilationContexts.empty()) {
+    return llvm::errs();
+  } else {
+    return gCompilationContexts.top()->currentErrs();
+  }
+}
+
+llvm::raw_ostream& currentOuts() {
+  if (gCompilationContexts.empty()) {
+    return llvm::outs();
+  } else {
+    return gCompilationContexts.top()->currentOuts();
+  }  
+}
+
+////////////////////////////////////////////////////////////////////
+
+EDiag::~EDiag() {}
+
+////////////////////////////////////////////////////////////////////
 
 llvm::ExecutionEngine* ee = NULL;
 llvm::IRBuilder<> builder(llvm::getGlobalContext());

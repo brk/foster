@@ -6,9 +6,9 @@
 #define FOSTER_AST_H
 
 #include "base/Assert.h"
+#include "base/Diagnostics.h"
 #include "base/FilteringIterator.h"
 #include "parse/ExprASTVisitor.h"
-//#include "parse/FosterTypeAST.h"
 #include "parse/FosterSymbolTable.h"
 
 #include <vector>

@@ -7,6 +7,8 @@
 
 #include "llvm/Support/IRBuilder.h"
 
+#include "base/Diagnostics.h"
+
 #include "parse/OperatorPrecedence.h"
 
 #include "antlr3interfaces.h"
@@ -80,9 +82,10 @@ public:
   // Seeing if it's useful for individual unit tests to redirect all output
   // to a string, so it can be (A) hidden from the console unless needed, and
   // (B) inspected to verify the presence/absence of specific errors.
-  //llvm::raw_ostream& currentErrs();
-  //llvm::raw_ostream& currentOuts();
-  //void redirectErrsAndOutsTo(llvm::raw_ostream&);
+  llvm::raw_ostream& currentErrs();
+  llvm::raw_ostream& currentOuts();
+  void startAccumulatingOutputToString();
+  std::string collectAccumulatedOutput();
   
 private:
   struct Impl;
@@ -96,6 +99,35 @@ extern llvm::Module* module;
 
 TypeAST* TypeASTFor(const std::string& name);
 const llvm::Type* LLVMTypeFor(const std::string& name);
+
+////////////////////////////////////////////////////////////////////
+
+// Global version of above methods on CompilationContext, for use by
+// the diagnostic builders.
+// These functions default to llvm::*() if there's no current context. 
+
+llvm::raw_ostream& currentErrs();
+llvm::raw_ostream& currentOuts();
+
+////////////////////////////////////////////////////////////////////
+
+// Error diagnostic builder; unlike foster::SimpleEDiag, can be re-routed.
+class EDiag : public DiagBase {
+public:
+  explicit EDiag() : DiagBase(foster::currentErrs(), "error") {}
+  virtual ~EDiag();
+private:
+  EDiag(const EDiag&);
+};
+
+// Debug diagnostic builder
+class DDiag : public DiagBase {
+public:
+  explicit DDiag() : DiagBase(foster::currentErrs(), "debug") {}
+  virtual ~DDiag();
+private:
+  DDiag(const DDiag&);
+};
 
 } // namespace foster
 

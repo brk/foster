@@ -286,7 +286,7 @@ TupleTypeAST* TupleTypeAST::get(const vector<TypeAST*>& argTypes) {
 
 FnTypeAST*& ClosureTypeAST::getFnType() {
   if (!fntype) {
-    foster::typecheck(proto);
+    foster::typecheck(this->proto);
     if (FnTypeAST* fnty = tryExtractCallableType(proto->type)) {
       fntype = fnty;
     }

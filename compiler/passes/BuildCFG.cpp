@@ -3,7 +3,6 @@
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
 #include "base/Assert.h"
-#include "base/Diagnostics.h"
 #include "parse/FosterAST.h"
 
 #include "passes/BuildCFG.h"
@@ -29,8 +28,6 @@ namespace foster {
 
 
 using foster::SourceRange;
-using foster::EDiag;
-using foster::show;
 using foster::CFG;
 
 void absorb(BuildCFG* pass, Exprs& exprs) {
