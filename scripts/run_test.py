@@ -72,11 +72,11 @@ def run_one_test(testpath, paths, tmpdir):
         fosterc_cmdline = [ paths['fosterc'], testpath, '-O0' ]
 
         #print ' '.join(fosterc_cmdline)
-        fc_elapsed = run_command(fosterc_cmdline, paths, testpath, stdout=compilelog, stderr=compilelog)
+        rv, fc_elapsed = run_command(fosterc_cmdline, paths, testpath, stdout=compilelog, stderr=compilelog)
 
-        cc_elapsed = run_command('g++ out.s %s %s -o a.out' % (get_static_libs(), get_link_flags()),
+        rv, cc_elapsed = run_command('g++ out.s %s %s -o a.out' % (get_static_libs(), get_link_flags()),
                                     paths, testpath)
-        rn_elapsed = run_command('a.out',  paths, testpath, stdout=actual, stderr=expected, stdin=infile, strictrv=False)
+        rv, rn_elapsed = run_command('a.out',  paths, testpath, stdout=actual, stderr=expected, stdin=infile, strictrv=False)
 
         df_rv = subprocess.call(['diff', '-u', exp_filename, act_filename])
         if df_rv == 0:

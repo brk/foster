@@ -12,7 +12,9 @@ import tempfile
 
 from run_cmd import *
 
-# Runs the given Google Test-based unittest, only printing failing lines.
+# Runs the given Google Test-based unittest, only printing
+# failing lines, and helpful status message lines
+# (such as "Running X tests from N test cases").
 
 if __name__ == "__main__":
   if not len(sys.argv) in [2, 3]:
@@ -20,16 +22,21 @@ if __name__ == "__main__":
     sys.exit(1)
 
   binary = sys.argv[1]
-  
+  rv = 0
+
   with tempfile.TemporaryFile() as tmp:
-    run_command(binary, {}, binary, tmp, None, None, False)
-    
+    rv, elapsed = run_command(binary, {}, binary, tmp, None, None, False)
+
     tmp.seek(0)
-    
+
     for line in tmp:
       if (line.startswith('[---') or
-	  line.startswith('[ RUN') or
-	  line.startswith('[    ') or
-	  re.match(r"^\s*$", line)):
-        continue
+        line.startswith('[ RUN') or
+        line.startswith('[    ') or
+        line.startswith("Running main() from gtest_main.cc") or
+        re.match(r"^\s*$", line)):
+       continue
+    else:
       print line.rstrip()
+
+  sys.exit(rv)

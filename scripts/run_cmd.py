@@ -48,5 +48,5 @@ def run_command(cmd, paths, testpath, stdout=None, stderr=None, stdin=None, stri
 
   if strictrv and rv != 0:
     raise TestFailed(arglist, testpath)
-  return elapsed(start, end)
+  return (rv, elapsed(start, end))
 
