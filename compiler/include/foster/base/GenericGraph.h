@@ -7,6 +7,7 @@
 
 #include "llvm/ADT/UniqueVector.h"
 
+#include <set>
 #include <utility>
 
 namespace foster {
@@ -37,6 +38,8 @@ public:
     
     iterator succ_begin() { return g->adjList[getIndex()].begin(); }
     iterator succ_end() {   return g->adjList[getIndex()].end(); }
+    
+    bool operator<(const Node& other) { return id < other.id; }
   };
   
   typedef typename std::vector< Node >::iterator nodes_iterator;
@@ -54,7 +57,10 @@ public:
       nodes.push_back(node);
       std::vector<Node*> v;
       adjList.push_back(v);
-      adjList[0].push_back(node);
+      
+      // Until we see an edge to this node, we'll assume
+      // it could be a source.
+      possibleSources.insert(node);
     }
     return node;
   }
@@ -62,6 +68,10 @@ public:
   void addDirectedEdge(NodePtr a, NodePtr b, EdgeLabel label) {
     adjList[a->getIndex()].push_back(b);
     edgeLabels[ std::make_pair(a, b) ]  = label;
+    
+    // If we have an edge from a to b, then we know
+    // that b cannot be a source in the graph.
+    possibleSources.erase(b);
   }
   
   // Setting to NULL restores the virtual root node.
@@ -77,7 +87,9 @@ public:
     } else if (entryNode) {
       return entryNode;
     } else {
-      return nodes[0];
+      resetVirtualRootEdges();
+      entryNode = nodes[0];
+      return entryNode;
     }
   }
   
@@ -93,6 +105,15 @@ private:
   std::vector< NodePtr > nodes;
   std::map< std::pair<NodePtr, NodePtr>, EdgeLabel > edgeLabels;
   std::vector< std::vector< NodePtr > > adjList;
+
+  void resetVirtualRootEdges() {
+    adjList[0].clear();
+    for (typename std::set< NodePtr >::iterator it = possibleSources.begin();
+                                            it != possibleSources.end(); ++it) {
+      adjList[0].push_back(*it);
+    }
+  }
+  std::set< NodePtr > possibleSources;
 };
 
 } // namespace foster

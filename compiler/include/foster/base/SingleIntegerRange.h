@@ -52,6 +52,9 @@ namespace foster {
   SingleIntegerRange* getMaxRange(int x);
   SingleIntegerRange* getTopRange();
   
+  const SingleIntegerRange* computeMeet(const SingleIntegerRange* a, const SingleIntegerRange *b);
+  const SingleIntegerRange* computeJoin(const SingleIntegerRange* a, const SingleIntegerRange *b);
+  
   const llvm::APInt* getNewAPInt(int n);
   SingleIntegerRangeExpr* mult(const llvm::APInt* n,
                                SingleIntegerRangeVariable* v);

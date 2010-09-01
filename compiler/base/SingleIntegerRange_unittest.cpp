@@ -74,6 +74,14 @@ TEST(SingleIntegerRangeConstraints, constraint_printing) {
   EXPECT_EQ("[0, 0] meet [-1, 0] <= X", pr(c2));
 }
 
+TEST(SingleIntegerRangeConstraints, simple_meet_join) {
+  const SingleIntegerRange* _01_34 = computeJoin(getConstantRange(0,1),
+                                                 getConstantRange(3,4));
+  EXPECT_EQ("[0, 4]", pr(_01_34));
+  const SingleIntegerRange* _22 = computeMeet(_01_34, getConstantRange(2));
+  EXPECT_EQ("[2, 2]", pr(_22));
+}
+
 /*
 TEST(SingleIntegerRangeConstraints, ex1) {
   SingleIntegerRangeConstraintSet cs;
@@ -113,6 +121,27 @@ TEST(SingleIntegerRangeConstraints, simple_loop) {
   cs.insert(getConstraint(plus(mult(getNewAPInt(7), getVariable("X")),
                                expr(getConstantRange(11))),
                           getConstantRange(13, 17),
+                          getVariable("X")));
+  
+  SingleIntegerRange* sol = cs.solve();
+  EXPECTED_FAIL_EQ("[0, 10]", pr(sol));
+}
+
+///////////////////////////////////
+
+TEST(SingleIntegerRangeConstraints, multi_loop) {
+  SingleIntegerRangeConstraintSet cs;
+  // [3,5] <= X
+  cs.insert(getConstraint(expr(getConstantRange(3, 5)), getVariable("X")));
+  // (7X + 11) /\ (13, 17) <= X
+  cs.insert(getConstraint(plus(mult(getNewAPInt(7), getVariable("X")),
+                               expr(getConstantRange(11))),
+                          getConstantRange(13, 17),
+                          getVariable("X")));
+  // (23X + 31) /\ (37, 41) <= X
+  cs.insert(getConstraint(plus(mult(getNewAPInt(23), getVariable("X")),
+                               expr(getConstantRange(31))),
+                          getConstantRange(37, 41),
                           getVariable("X")));
   
   SingleIntegerRange* sol = cs.solve();

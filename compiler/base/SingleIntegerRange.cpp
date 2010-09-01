@@ -344,7 +344,13 @@ const SingleIntegerRange* join(const SingleIntegerRange* x, const SingleIntegerR
   return SingleIntegerRange::get(inf(x->lo, y->lo), sup(x->hi, y->hi));
 }
 
-
+const SingleIntegerRange* computeMeet(const SingleIntegerRange* a, const SingleIntegerRange *b) {
+  return meet(a, b);
+}
+const SingleIntegerRange* computeJoin(const SingleIntegerRange* a, const SingleIntegerRange *b) {
+  return join(a, b);
+}
+  
 
 
 SingleIntegerRangeVariable* // static 
