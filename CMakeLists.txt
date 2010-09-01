@@ -292,6 +292,7 @@ add_executable(unittest_fosterc_base
   ${PROJECT_SOURCE_DIR}/compiler/base/Assert_unittest.cpp
   ${PROJECT_SOURCE_DIR}/compiler/base/PathManager_unittest.cpp
   ${PROJECT_SOURCE_DIR}/compiler/base/SourceRange_unittest.cpp
+  ${PROJECT_SOURCE_DIR}/compiler/base/GenericGraph_unittest.cpp
   ${PROJECT_SOURCE_DIR}/compiler/base/FilteringIterator_unittest.cpp
   ${PROJECT_SOURCE_DIR}/compiler/base/FreshNameGenerator_unittest.cpp
   ${PROJECT_SOURCE_DIR}/compiler/base/SingleIntegerRange_unittest.cpp
