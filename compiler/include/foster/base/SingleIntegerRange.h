@@ -16,9 +16,11 @@
 // http://www.eecs.berkeley.edu/~daw/papers/range-tacas04.pdf
 
 #include <string>
+#include <set>
 
 namespace llvm {
   class raw_ostream;
+  class APInt;
 }
 
 namespace foster {
@@ -30,21 +32,40 @@ namespace foster {
   
   struct SingleIntegerRangeExpr {
     virtual SingleIntegerRange* evaluate(Valuation* p) = 0;
+    virtual SingleIntegerRangeExpr* negate() = 0;
     virtual llvm::raw_ostream& dump(llvm::raw_ostream&) const = 0;
+    virtual void variablesUsed(std::set<SingleIntegerRangeVariable*>& vars) = 0;
+  };
+  
+  struct SingleIntegerRangeConstraintSet {
+    void insert(SingleIntegerRangeConstraint*);
+    SingleIntegerRange* solve();
+    SingleIntegerRangeConstraintSet();
+  private:
+    struct Impl; Impl* impl;
   };
 
   bool isEmpty(SingleIntegerRange*);
+  SingleIntegerRange* getConstantRange(int x);
   SingleIntegerRange* getConstantRange(int x, int y);
   SingleIntegerRange* getMinRange(int x);
   SingleIntegerRange* getMaxRange(int x);
   SingleIntegerRange* getTopRange();
+  
+  const llvm::APInt* getNewAPInt(int n);
+  SingleIntegerRangeExpr* mult(const llvm::APInt* n,
+                               SingleIntegerRangeVariable* v);
+  
   SingleIntegerRangeExpr* expr(SingleIntegerRange*);
+  SingleIntegerRangeExpr* expr(SingleIntegerRangeVariable*);
+  SingleIntegerRangeExpr* plus(SingleIntegerRangeExpr*, SingleIntegerRangeExpr*);
   SingleIntegerRangeVariable* getVariable(const std::string& name);
   SingleIntegerRangeConstraint* getConstraint(SingleIntegerRangeExpr* e,
-                                              const std::string& var);
+                                              SingleIntegerRangeVariable*);
   SingleIntegerRangeConstraint* getConstraint(SingleIntegerRangeExpr* e,
                                               SingleIntegerRange* r,
-                                              const std::string& var);
+                                              SingleIntegerRangeVariable*);
+  bool satisfies(Valuation*, SingleIntegerRangeConstraint*);
 
   llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const SingleIntegerRange& e);
   llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const SingleIntegerRangeConstraint& e);

@@ -27,11 +27,9 @@ TEST(SingleIntegerRange, simple_printing) {
   EXPECT_EQ("[0, 1]", pr(zo));
   
   SingleIntegerRange* oz = getConstantRange(1, 0);
-  EXPECT_EQ("[1, 0]", pr(oz));
+  EXPECT_EQ("[empty]", pr(oz));
   
   SingleIntegerRange* nz = getConstantRange(-1, 0);
-  EXPECT_EQ("[-1, 0]", pr(nz));
-  
   EXPECT_EQ("[-1, 0]", pr(nz));
 }
 
@@ -67,18 +65,58 @@ TEST(SingleIntegerRange, emptiness) {
 
 TEST(SingleIntegerRangeConstraints, constraint_printing) {
   SingleIntegerRange* zz = getConstantRange(0, 0);
-  SingleIntegerRangeConstraint* c = getConstraint(expr(zz), "X");
+  SingleIntegerRangeConstraint* c = getConstraint(expr(zz), getVariable("X"));
   EXPECT_EQ("[0, 0] <= X", pr(c));
   
   SingleIntegerRange* nz = getConstantRange(-1, 0);
   
-  SingleIntegerRangeConstraint* c2 = getConstraint(expr(zz), nz, "X");
+  SingleIntegerRangeConstraint* c2 = getConstraint(expr(zz), nz, getVariable("X"));
   EXPECT_EQ("[0, 0] meet [-1, 0] <= X", pr(c2));
 }
 
+/*
 TEST(SingleIntegerRangeConstraints, ex1) {
-  //SingleIntegerRangeConstraintSet cs;
-  //cs.insert();
+  SingleIntegerRangeConstraintSet cs;
+  // [0,0] <= X
+  cs.insert(getConstraint(expr(getConstantRange(0, 0)), getVariable("X")));
+  // X + 1 <= X
+  cs.insert(getConstraint(plus(expr(getVariable("X")),
+                               expr(getConstantRange(1))),
+                          getVariable("X")));
+  
+  SingleIntegerRange* sol = cs.solve();
+  EXPECT_EQ("[0, +inf]", pr(sol));
+}
+
+TEST(SingleIntegerRangeConstraints, ex2) {
+  SingleIntegerRangeConstraintSet cs;
+  // [0,0] <= X
+  cs.insert(getConstraint(expr(getConstantRange(0, 0)), getVariable("X")));
+  // X + 1 /\ (-inf, 10) <= X
+  cs.insert(getConstraint(plus(expr(getVariable("X")),
+                               expr(getConstantRange(1))),
+                          getMaxRange(10),
+                          getVariable("X")));
+  
+  SingleIntegerRange* sol = cs.solve();
+  EXPECT_EQ("[0, 10]", pr(sol));
+}
+*/
+
+#define EXPECTED_FAIL_EQ EXPECT_NE
+
+TEST(SingleIntegerRangeConstraints, simple_loop) {
+  SingleIntegerRangeConstraintSet cs;
+  // [3,5] <= X
+  cs.insert(getConstraint(expr(getConstantRange(3, 5)), getVariable("X")));
+  // (7X + 11) /\ (13, 17) <= X
+  cs.insert(getConstraint(plus(mult(getNewAPInt(7), getVariable("X")),
+                               expr(getConstantRange(11))),
+                          getConstantRange(13, 17),
+                          getVariable("X")));
+  
+  SingleIntegerRange* sol = cs.solve();
+  EXPECTED_FAIL_EQ("[0, 10]", pr(sol));
 }
 
 /////////////////////////////////
