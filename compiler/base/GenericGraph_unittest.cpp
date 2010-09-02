@@ -3,13 +3,14 @@
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
 #include "base/GenericGraph.h"
-#include "dot/GenericGraphTraits.h"
 #include "gtest/gtest.h"
 
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/DepthFirstIterator.h"
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/SCCIterator.h"
+
+#include "pystring/pystring.h"
 
 #include <string>
 
@@ -62,8 +63,8 @@ std::string sccNodes(GenericGraph<T>& g) {
   std::string s;
   llvm::raw_string_ostream ss(s);
   
-  for (SCI it = llvm::scc_begin(&g),
-           e  = llvm::scc_end(&g); it != e; ++it) {
+  SCI it = llvm::scc_begin(&g);
+  for (SCI e = llvm::scc_end(&g); it != e; ++it) {
     SCC& scc = *it;
     bool didOutput = false;
     for (size_t i = 0; i < scc.size(); ++i) {
@@ -163,6 +164,112 @@ TEST(GenericGraphTest, postorder_iteration) {
 }
 
 /////////////////////////////////
+
+TEST(GenericGraphTest, add_node_idempotent) {
+  typedef GenericGraph<std::string> Graph;
+  Graph gr;
+  typedef Graph::NodePtr NodePtr;
+  
+  EXPECT_EQ(0, gr.getNodeCount());
+  
+  NodePtr a1 = gr.addNode("a");
+  
+  EXPECT_EQ(1, gr.getNodeCount());
+  
+  NodePtr a2 = gr.addNode("a");
+  
+  EXPECT_EQ(1, gr.getNodeCount());
+  
+  ASSERT_EQ(a1, a2);
+}
+
+/////////////////////////////////
+
+// spec is like "0-1   4-2  3-4     7-8 ; 11-12"
+// semicolons are converted to whitespace, string is split on whitespace,
+// then edges are extracted and added to the graph.
+void parseGraph(GenericGraph<std::string>& gr, std::string spec) {
+  typedef GenericGraph<std::string>::NodePtr NodePtr;
+  
+  std::map<std::string, NodePtr> nodes;
+  
+  std::vector<std::string> edgeStrings;
+  std::vector< std::pair<NodePtr, NodePtr> > edges;
+  
+  pystring::split(pystring::replace(spec, ";", " "), edgeStrings);
+  std::vector<std::string> headtail;
+  for (size_t i = 0; i < edgeStrings.size(); ++i) {
+    headtail.clear();
+    if (edgeStrings[i].empty()) continue;
+    pystring::split(edgeStrings[i], headtail, "-");
+    
+    if (headtail.size() != 2) {
+      llvm::errs() << "Error! Unable to parse edge " << edgeStrings[i] << "\n";
+    }
+    ASSERT_EQ(2, headtail.size());
+    
+    nodes[headtail[0]] = gr.addNode(headtail[0]);
+    nodes[headtail[1]] = gr.addNode(headtail[1]);
+    
+    edges.push_back( std::make_pair(nodes[headtail[0]], nodes[headtail[1]]) );
+  }
+  
+  for (size_t i = 0; i < edges.size(); ++i) {
+    gr.addDirectedEdge(edges[i].first, edges[i].second, NULL);
+  }
+}
+
+
+TEST(GenericGraphTest, dot_graph_writing) {
+  typedef GenericGraph<std::string> Graph;
+  Graph gr;
+  typedef Graph::Node Node; 
+
+  parseGraph(gr,
+    " a-b   b-e  e-a   b-f   e-f   b-c"
+    " f-g   g-f"
+    " c-g   h-g  c-d   d-c   d-h   h-d"
+  );
+  
+  gr.computeSCCs();
+  
+  std::string err;
+  llvm::raw_fd_ostream dotfile("scc1.dot", err);
+  if (err.empty()) {
+    llvm::WriteGraph(dotfile, &gr);
+  }
+}
+
+/////////////////////////////////
+
+TEST(GenericGraphTest, dot_graph_writing2) {
+  typedef GenericGraph<std::string> Graph;
+  Graph gr;
+  typedef Graph::Node Node; 
+
+  parseGraph(gr,
+    " 4-2 11-12 4-11 5-4  9-10 "
+    " 2-3 12-9 4-3 0-5 3-2 9-12"
+    " 3-5 6-4 0-6 9-11 7-8 6-9 "
+    " 0-1 8-9 8-7 7-6 2-0 10-12"
+  );
+  
+  bool wasDAG = gr.classifyEdgesDFSFrom(gr.addNode("0"));
+  EXPECT_FALSE(wasDAG);
+  
+  std::vector<Graph::SCCSubgraph> subgraphs;
+  GenericGraph<unsigned> dagOfSCCs;
+  gr.decomposeIntoStronglyConnectedSubgraphs(subgraphs, dagOfSCCs);
+  
+  std::string err;
+  llvm::raw_fd_ostream dotfile("scc2.dot", err);
+  if (err.empty()) {
+    llvm::WriteGraph(dotfile, &gr);
+  }
+}
+
+/////////////////////////////////
+
 
 } // unnamed namespace
 

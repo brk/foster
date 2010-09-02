@@ -4,6 +4,7 @@
 
 #include "base/Assert.h"
 #include "base/SingleIntegerRange.h"
+#include "base/GenericGraph.h"
 
 #include <map>
 #include <set>
@@ -91,10 +92,10 @@ IntOrInf operator-(const IntOrInf& x) {
 
 IntOrInf operator+(const IntOrInf& x, const IntOrInf& y) {
   if (x.inf == y.inf) {
-    IntOrInf(x.inf, x.n + y.n);
+    return IntOrInf(x.inf, x.n + y.n);
   } else if (x.inf < y.inf) {
     return y;
-  } else if (x.inf > y.inf) {
+  } else { // (x.inf > y.inf) {
     return x;
   }  
 }
@@ -420,6 +421,13 @@ struct SingleIntegerRangeConstraintSet::Impl {
 
   void transformToRemoveNegativeConstraints();
   void variablesUsed(std::set<SingleIntegerRangeVariable*>&);
+
+
+  //typedef foster::GenericGraph<SingleIntegerRangeExpr> Graph;
+  typedef foster::GenericGraph<char> Graph;
+  void buildConstraintGraph(Graph& g);
+  
+  void solveStronglyConnectedComponent(Graph& g, Graph::SCCSubgraph& scc);
 };
 
 SingleIntegerRangeConstraintSet::SingleIntegerRangeConstraintSet() {
@@ -433,6 +441,32 @@ void SingleIntegerRangeConstraintSet::insert(SingleIntegerRangeConstraint* c) {
 
 SingleIntegerRange* SingleIntegerRangeConstraintSet::solve() {
   impl->transformToRemoveNegativeConstraints();
+  
+  Impl::Graph g;
+  impl->buildConstraintGraph(g);
+
+  // decompose into SCCs
+  std::vector<Impl::Graph::SCCSubgraph> subgraphs;
+  foster::GenericGraph<unsigned> dagOfSCCs;
+  g.decomposeIntoStronglyConnectedSubgraphs(subgraphs, dagOfSCCs);
+
+  // traverse SSCs in topologically sorted order
+  std::vector<foster::GenericGraph<unsigned>::Node*>
+                  sccTopo = dagOfSCCs.getTopologicalSort();
+  
+  for (size_t i = 0; i < sccTopo.size(); ++i) {
+    unsigned sccNum = sccTopo[i]->getValue();
+    Impl::Graph::SCCSubgraph& scc = subgraphs[sccNum];
+    impl->solveStronglyConnectedComponent(g, scc);
+  }
+
+  // Use algorithm from Fig. 6 of the paper: 
+  // for each component C:
+  //    transform to remove multiple constraints, yielding X*
+  //    unroll C from X*
+  //    compute least valuation rho for induced subgraph
+  //    update through back edges as necessary
+  
   typedef std::set<SingleIntegerRangeVariable*>  VarSet;
   VarSet vars;
   impl->variablesUsed(vars);
@@ -531,6 +565,18 @@ void SingleIntegerRangeConstraintSet::Impl::variablesUsed(
     constraints[i]->e->variablesUsed(vars);
     vars.insert(constraints[i]->x);
   }
+}
+
+
+void SingleIntegerRangeConstraintSet::Impl::buildConstraintGraph(
+  SingleIntegerRangeConstraintSet::Impl::Graph& g) {
+  // TODO
+}
+  
+void SingleIntegerRangeConstraintSet::Impl::solveStronglyConnectedComponent(
+    SingleIntegerRangeConstraintSet::Impl::Graph& g,
+    SingleIntegerRangeConstraintSet::Impl::Graph::SCCSubgraph& scc) {
+  // TODO
 }
 
 } // namespace foster

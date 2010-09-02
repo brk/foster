@@ -8,7 +8,7 @@
 #include "llvm/Support/CFG.h"
 #include "llvm/Support/GraphWriter.h"
 
-#include "base/GenericGraph.h"
+// Implicitly included by base/GenericGraph.h
 
 namespace llvm {
 
@@ -28,21 +28,49 @@ struct GraphTraits<foster::GenericGraph<NodePayload> *> {
 
 ////////////////////////////////////////////////////////////////////
 
+namespace {
+  static const char* staticGraphvizColors[] = {
+    "black",
+    "blue",
+    "gold",
+    "cornflowerblue",
+    "forestgreen",
+    "darkorchid1",
+    "firebrick4"
+  };
+}
+
+#define ARRAY_SIZE(a) (sizeof(a)/sizeof(a[0]))
+
 template <typename NodePayload>
 struct DOTGraphTraits< foster::GenericGraph<NodePayload>* > : public DefaultDOTGraphTraits {
-
+                                                                   
   DOTGraphTraits(bool isSimple=true) : DefaultDOTGraphTraits(isSimple) {}
 
-  static std::string getGraphName(const foster::GenericGraph<NodePayload>* g) {
-    return std::string("Generic Graph");
-  }
-
-  std::string getNodeLabel(const typename foster::GenericGraph<NodePayload>::Node* node,
-                           const foster::GenericGraph<NodePayload>* g) {
+  static std::string getGraphName(foster::GenericGraph<NodePayload>* g) {
     std::string s;
     llvm::raw_string_ostream ss(s);
-    ss << *node;
+    ss << "Generic Graph (" << g->getNodeCount() << " nodes)";
     return ss.str();
+  }
+
+  std::string getNodeLabel(typename foster::GenericGraph<NodePayload>::Node* node,
+                           foster::GenericGraph<NodePayload>* g) {                
+    std::string s;
+    llvm::raw_string_ostream ss(s);
+    ss << node->getValue();
+    if (node->getSCCId() != 0) {
+      ss << " (:" << node->getSCCId() << ")";
+    }
+    return ss.str();
+  }
+  
+  static std::string getNodeAttributes(
+            typename foster::GenericGraph<NodePayload>::Node* node,
+            foster::GenericGraph<NodePayload>* g) {
+    return "color=" + std::string(staticGraphvizColors[
+                          node->getSCCId() % ARRAY_SIZE(staticGraphvizColors)
+                              ]);
   }
 };
 
