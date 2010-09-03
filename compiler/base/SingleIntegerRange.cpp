@@ -28,12 +28,18 @@ struct Valuation {
     return e->evaluate(this);
   }
   
+  void update(SingleIntegerRangeVariable* v, SingleIntegerRange* r) {
+    p[v] = r;
+  }
+  
   bool satisfies(SingleIntegerRangeConstraint* c); 
 };
 
 
 SingleIntegerRangeExpr* mult(const llvm::APInt& n,
                              SingleIntegerRangeVariable* v);
+SingleIntegerRange* doMeet(SingleIntegerRange* x, SingleIntegerRange* y);
+SingleIntegerRange* doJoin(SingleIntegerRange* x, SingleIntegerRange* y);
 const llvm::APInt getAPInt(int n);
 
 ////////////////////////////////////////////////////////////////////
@@ -287,22 +293,40 @@ struct SingleIntegerRangeScalarMult : public SingleIntegerRangeExpr {
 
 ////////////////////////////////////////////////////////////////////
 
-struct SingleIntegerRangeConstraint {
+struct SingleIntegerRangeMeet : public SingleIntegerRangeExpr {
   SingleIntegerRangeExpr* e;
-  // implied meet; if r = top = [-inf, +inf], it may be elided.
+  // implied meet; if r = top = [-inf, +inf], it may be elided when printed.
   SingleIntegerRange* r;
-  
-  // implied <=
-  
-  SingleIntegerRangeVariable* x;
   
   raw_ostream& dump(raw_ostream& out) const {
     out << (*e);
     if (r != SingleIntegerRange::getTop()) {
       out << " meet " << *r;
     }
-    out << " <= " << *x;
     return out;
+  }
+  
+  virtual SingleIntegerRange* evaluate(Valuation* p) {
+    SingleIntegerRange* ev = e->evaluate(p);
+    return doMeet(ev, r);
+  }
+  
+  virtual SingleIntegerRangeExpr* negate() {
+    ASSERT(false) << "not sure how to negate a meet yet.";
+  }
+  
+  virtual void variablesUsed(std::set<SingleIntegerRangeVariable*>& vars) {
+    e->variablesUsed(vars);
+  }
+};
+
+struct SingleIntegerRangeConstraint {
+  SingleIntegerRangeMeet* m;
+  // implied <=
+  SingleIntegerRangeVariable* x;
+  
+  raw_ostream& dump(raw_ostream& out) const {
+    return out << *m << " <= " << *x;
   }
   
   void addNonNegativeVersionsTo(std::vector<SingleIntegerRangeConstraint*>&);
@@ -311,9 +335,12 @@ struct SingleIntegerRangeConstraint {
 SingleIntegerRangeConstraint* getConstraint(SingleIntegerRangeExpr* e,
                                             SingleIntegerRange* r,
                                             SingleIntegerRangeVariable* x) {
+  SingleIntegerRangeMeet* m = new SingleIntegerRangeMeet();
+  m->e = e;
+  m->r = r;
+  
   SingleIntegerRangeConstraint* c = new SingleIntegerRangeConstraint();
-  c->e = e;
-  c->r = r;
+  c->m = m;
   c->x = x;
   return c;
 }
@@ -335,21 +362,21 @@ bool operator<=(const SingleIntegerRange& x, const SingleIntegerRange& y) {
                        && x.hi <= y.hi);
 }
 
-const SingleIntegerRange* meet(const SingleIntegerRange* x, const SingleIntegerRange* y) {
+SingleIntegerRange* doMeet(SingleIntegerRange* x, SingleIntegerRange* y) {
   if (x->isEmpty()) return x;
   return SingleIntegerRange::get(sup(x->lo, y->lo), inf(x->hi, y->hi));
 }
 
-const SingleIntegerRange* join(const SingleIntegerRange* x, const SingleIntegerRange* y) {
-  if (x->isEmpty()) return y;
+SingleIntegerRange* doJoin(SingleIntegerRange* x, SingleIntegerRange* y) {
+  if (x->isEmpty()) y;
   return SingleIntegerRange::get(inf(x->lo, y->lo), sup(x->hi, y->hi));
 }
 
 const SingleIntegerRange* computeMeet(const SingleIntegerRange* a, const SingleIntegerRange *b) {
-  return meet(a, b);
+  return doMeet( (SingleIntegerRange*) a, (SingleIntegerRange*) b);
 }
 const SingleIntegerRange* computeJoin(const SingleIntegerRange* a, const SingleIntegerRange *b) {
-  return join(a, b);
+  return doJoin( (SingleIntegerRange*) a, (SingleIntegerRange*) b);
 }
   
 
@@ -406,9 +433,9 @@ const llvm::APInt getAPInt(int n) {
 }
 
 bool Valuation::satisfies(SingleIntegerRangeConstraint* c) {
-  SingleIntegerRange* er = evaluate(c->e);
+  SingleIntegerRange* er = evaluate(c->m->e);
   SingleIntegerRange* ex = evaluate(c->x);
-  return *meet(er, c->r) <= *ex;
+  return *doMeet(er, c->m->r) <= *ex;
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -422,7 +449,11 @@ struct SingleIntegerRangeConstraintSet::Impl {
   void transformToRemoveNegativeConstraints();
   void variablesUsed(std::set<SingleIntegerRangeVariable*>&);
 
-
+  SingleIntegerRange* solveSimpleLoop(
+                  SingleIntegerRangeVariable* var,
+                  SingleIntegerRangeConstraint* constraint,
+                  SingleIntegerRange* initial);
+  
   //typedef foster::GenericGraph<SingleIntegerRangeExpr> Graph;
   typedef foster::GenericGraph<char> Graph;
   void buildConstraintGraph(Graph& g);
@@ -504,8 +535,8 @@ void SingleIntegerRangeConstraint::addNonNegativeVersionsTo(
   bool replaced = false;
   
   // c == [l, u] /\ TOP  <=  X
-  if (r == getTopRange() && x->isNeutral()) {
-    if (SingleIntegerRange* er = dynamic_cast<SingleIntegerRange*>(e)) {
+  if (m->r == getTopRange() && x->isNeutral()) {
+    if (SingleIntegerRange* er = dynamic_cast<SingleIntegerRange*>(m->e)) {
       constraints.push_back(getConstraint(er,          x->getPositiveVersion()));
       constraints.push_back(getConstraint(inverse(er), x->getNegativeVersion()));
       replaced = true;
@@ -515,10 +546,10 @@ void SingleIntegerRangeConstraint::addNonNegativeVersionsTo(
   
   SingleIntegerRangeVariable* Y = x;
   
-  if (SingleIntegerRangeAddition* add = dynamic_cast<SingleIntegerRangeAddition*>(e)) {
-    if (SingleIntegerRangeScalarMult* m = dynamic_cast<SingleIntegerRangeScalarMult*>(add->l)) {
-      const llvm::APInt& a = m->n;
-      SingleIntegerRangeVariable* X = m->x;
+  if (SingleIntegerRangeAddition* add = dynamic_cast<SingleIntegerRangeAddition*>(m->e)) {
+    if (SingleIntegerRangeScalarMult* mul = dynamic_cast<SingleIntegerRangeScalarMult*>(add->l)) {
+      const llvm::APInt& a = mul->n;
+      SingleIntegerRangeVariable* X = mul->x;
       SingleIntegerRangeExpr* b = add->r;
 
       if (X->isNeutral()) {
@@ -531,11 +562,11 @@ void SingleIntegerRangeConstraint::addNonNegativeVersionsTo(
           //      (-a X+ + -b) /\ [-u, -l] <= Y-
           constraints.push_back(getConstraint(
             plus(mult(-a, X->getNegativeVersion()), b),
-                                                r,  Y->getPositiveVersion()));
-          
+                                                m->r,  Y->getPositiveVersion()));
+
           constraints.push_back(getConstraint(
             plus(mult(-a, X->getPositiveVersion()), b->negate()),
-                                        inverse(r), Y->getNegativeVersion()));
+                                     inverse(m->r), Y->getNegativeVersion()));
         } else {
           // c == (aX + b) /\ [l,u]  <= Y  (a > 0)
           //
@@ -544,11 +575,11 @@ void SingleIntegerRangeConstraint::addNonNegativeVersionsTo(
           //      ( a X- + -b) /\ [-u, -l] <= Y-
           constraints.push_back(getConstraint(
             plus(mult( a, X->getPositiveVersion()), b),
-                                                r,  Y->getPositiveVersion()));
-          
+                                                m->r,  Y->getPositiveVersion()));
+
           constraints.push_back(getConstraint(
             plus(mult( a, X->getNegativeVersion()), b->negate()),
-                                        inverse(r), Y->getNegativeVersion()));
+                                     inverse(m->r), Y->getNegativeVersion()));
         }
       }
     }
@@ -562,7 +593,7 @@ void SingleIntegerRangeConstraint::addNonNegativeVersionsTo(
 void SingleIntegerRangeConstraintSet::Impl::variablesUsed(
                                std::set<SingleIntegerRangeVariable*>& vars) {
   for (size_t i = 0; i < constraints.size(); ++i) {
-    constraints[i]->e->variablesUsed(vars);
+    constraints[i]->m->variablesUsed(vars);
     vars.insert(constraints[i]->x);
   }
 }
@@ -577,6 +608,29 @@ void SingleIntegerRangeConstraintSet::Impl::solveStronglyConnectedComponent(
     SingleIntegerRangeConstraintSet::Impl::Graph& g,
     SingleIntegerRangeConstraintSet::Impl::Graph::SCCSubgraph& scc) {
   // TODO
+}
+
+SingleIntegerRange* SingleIntegerRangeConstraintSet::Impl::solveSimpleLoop(
+                SingleIntegerRangeVariable* var,
+                SingleIntegerRangeConstraint* constraint,
+                SingleIntegerRange* initial) {
+  rho.update(var, initial);
+  SingleIntegerRange* next = rho.evaluate(constraint->m);
+  if (*next <= *initial) {
+    return next;
+  }
+  
+  SingleIntegerRange* cd = constraint->m->r;
+
+  if (next->lo < initial->lo) {
+    if (initial->hi < next->hi) {
+      return SingleIntegerRange::get(cd->lo, cd->hi);
+    } else {
+      return SingleIntegerRange::get(cd->lo, initial->hi);
+    }
+  } else { // next->hi > initial->hi
+    return SingleIntegerRange::get(initial->lo, cd->hi);
+  }
 }
 
 } // namespace foster
