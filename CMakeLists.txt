@@ -197,6 +197,7 @@ add_custom_target(fosterc_config_h DEPENDS ${GENERATED}/FosterConfig.h)
 include(${PROJECT_SOURCE_DIR}/third_party/chromium_base/CMakeLists.txt)
 include(${PROJECT_SOURCE_DIR}/third_party/cpuid/CMakeLists.txt)
 include(${PROJECT_SOURCE_DIR}/third_party/gtest/CMakeLists.txt)
+include(${PROJECT_SOURCE_DIR}/third_party/imath/CMakeLists.txt)
 
 add_library(fosterc_base STATIC
   compiler/base/Assert.cpp
