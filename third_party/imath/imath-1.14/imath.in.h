@@ -41,13 +41,7 @@ typedef unsigned int       mp_size;
 typedef int                mp_result;
 typedef long               mp_small;  /* must be a signed type */
 typedef unsigned long      mp_usmall; /* must be an unsigned type */
-#ifdef USE_LONG_LONG
-typedef unsigned int       mp_digit;
-typedef unsigned long long mp_word;
-#else
-typedef unsigned short     mp_digit;
-typedef unsigned int       mp_word;
-#endif
+${MP_DIGIT_MP_WORD_TYPEDEFS}
 
 typedef struct mpz {
   mp_digit    single;
