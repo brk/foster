@@ -79,10 +79,29 @@ std::string sccNodes(GenericGraph<T>& g) {
   }
   return ss.str();
 }
+  
+  
+TEST(GenericGraphTest, topo_sort_empty_graph_is_empty) {
+  GenericGraph<std::string> g;
+  typedef GenericGraph<std::string>::Node* NodePtr;
+  
+  std::vector<NodePtr> tsort = g.getTopologicalSort();
+  ASSERT_EQ(g.getNodeCount(), tsort.size());
+}
+  
+TEST(GenericGraphTest, topo_sort_size_eq_graph_size) {
+  GenericGraph<std::string> g;
+  typedef GenericGraph<std::string>::Node* NodePtr;
+  
+  g.addNode("a");
+  
+  std::vector<NodePtr> tsort = g.getTopologicalSort();
+  ASSERT_EQ(g.getNodeCount(), tsort.size());
+}
 
 TEST(GenericGraphTest, depth_first_iteration) {
   GenericGraph<std::string> g;
-  typedef GenericGraph<std::string>::Node Node; 
+  typedef GenericGraph<std::string>::Node Node;
 
   Node* b = g.addNode("b");
   Node* a = g.addNode("a");

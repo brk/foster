@@ -313,6 +313,7 @@ struct SingleIntegerRangeMeet : public SingleIntegerRangeExpr {
   
   virtual SingleIntegerRangeExpr* negate() {
     ASSERT(false) << "not sure how to negate a meet yet.";
+    return NULL;
   }
   
   virtual void variablesUsed(std::set<SingleIntegerRangeVariable*>& vars) {
@@ -368,7 +369,7 @@ SingleIntegerRange* doMeet(SingleIntegerRange* x, SingleIntegerRange* y) {
 }
 
 SingleIntegerRange* doJoin(SingleIntegerRange* x, SingleIntegerRange* y) {
-  if (x->isEmpty()) y;
+  if (x->isEmpty()) return y;
   return SingleIntegerRange::get(inf(x->lo, y->lo), sup(x->hi, y->hi));
 }
 
@@ -490,7 +491,7 @@ SingleIntegerRange* SingleIntegerRangeConstraintSet::solve() {
     Impl::Graph::SCCSubgraph& scc = subgraphs[sccNum];
     impl->solveStronglyConnectedComponent(g, scc);
   }
-
+  
   // Use algorithm from Fig. 6 of the paper: 
   // for each component C:
   //    transform to remove multiple constraints, yielding X*
@@ -502,7 +503,7 @@ SingleIntegerRange* SingleIntegerRangeConstraintSet::solve() {
   VarSet vars;
   impl->variablesUsed(vars);
   for (VarSet::iterator it = vars.begin(); it != vars.end(); ++it) {
-    SingleIntegerRangeVariable* var = *it;
+    //SingleIntegerRangeVariable* var = *it;
     //llvm::outs() << "var: " << *var << "\n";
     //impl->rho.p[var] = getConstantRange(1, 2);
   }

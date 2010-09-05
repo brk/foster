@@ -30,50 +30,55 @@ namespace foster {
 //
 template <typename NodePayload>
 class GenericGraph {
-public:  
+public:
   typedef void* EdgeLabel;
-  
+
   class Node {
     GenericGraph* g;
     unsigned id;
-    
+
     unsigned getPayloadIndex() { return id; }
   public:
     Node(GenericGraph* g, unsigned i) : g(g), id(i) {}
-    
+
     unsigned getIndex() { return id; }
     bool isVirtualRoot() { return id == 0; }
-    const NodePayload& getValue() { return g->payloads[getPayloadIndex()]; }
-    
+    const NodePayload& getValue() {
+      ASSERT(!isVirtualRoot());
+      return g->payloads[getPayloadIndex()];
+    }
+
     typedef typename std::vector< Node* >::iterator iterator;
-    
+
     iterator succ_begin() { return g->adjList[getIndex()].begin(); }
     iterator succ_end() {   return g->adjList[getIndex()].end(); }
-    
+
     // Computed SCC ids start at 1, while 0 means an uncomputed id.
     unsigned getSCCId() { return g->sccIds[getIndex()]; }
-    
+
     bool operator<(const Node& other) { return id < other.id; }
   };
-  
+
   typedef typename std::vector< Node* >::iterator nodes_iterator;
   // Note that we return an iterator that ignores the virtual root...
   nodes_iterator nodes_begin() { nodes_iterator it = nodes.begin(); return ++it; }
   nodes_iterator nodes_end()   { return nodes.end(); }
-  
+
   typedef Node* NodePtr;
   typedef std::pair< NodePtr, NodePtr > Edge;
-  
+
   std::vector< NodePtr > getSources() {
     resetVirtualRootEdges();
     return adjList[0];
   }
-  
+
   std::vector< NodePtr > getTopologicalSort() {
     std::vector< NodePtr > rv;
     typedef llvm::po_iterator< GenericGraph* > POI;
     for (POI it = llvm::po_begin(this), e = llvm::po_end(this); it != e; ++it) {
-      rv.push_back(*it);
+      if (!(*it)->isVirtualRoot()) {
+        rv.push_back(*it);
+      }
     }
     std::reverse(rv.begin(), rv.end());
     return rv;
@@ -91,11 +96,11 @@ public:
       nodes.push_back(node);
       std::vector<Node*> v;
       adjList.push_back(v);
-      
+
       // Until we see an edge to this node, we'll assume
       // it could be a source.
       possibleSources.insert(node);
-      
+
       // We only compute SCC information as requested
       sccIds.push_back(0);
     } else {
@@ -103,44 +108,42 @@ public:
     }
     return node;
   }
-  
+
   void addDirectedEdge(NodePtr a, NodePtr b, EdgeLabel label) {
     adjList[a->getIndex()].push_back(b);
     edgeLabels[ std::make_pair(a, b) ]  = label;
-    
+
     // If we have an edge from a to b, then we know
     // that b cannot be a source in the graph.
     possibleSources.erase(b);
   }
-  
+
   // Setting to NULL restores the virtual root node.
   NodePtr setEntryNode(NodePtr nu) {
     NodePtr old = entryNode;
     entryNode = nu;
     return old;
   }
-  
+
   NodePtr getEntryNode() {
-    if (payloads.empty()) {
-      return NULL;
-    } else if (entryNode) {
-      return entryNode;
-    } else {
+    NodePtr rv = NULL;
+    if (!entryNode) {
       resetVirtualRootEdges();
-      return nodes[0];
+      ASSERT(!nodes.empty());
+      entryNode = nodes[0];
     }
+    return entryNode;
   }
-  
+
   // Returns the number of components identified.
   unsigned computeSCCs() {
     typedef llvm::scc_iterator<GenericGraph*> SCI;
     typedef std::vector<NodePtr> SCC;
-    
+
     // Note: by starting actual SCC ids at 1 (and initializing to zero
     // before computing SCCs) it's easy for graphviz to tell whether we've
     // computed SCCs without needing to query the graph.
     unsigned sccId = 1;
-    
     for (SCI it = llvm::scc_begin(this), e = llvm::scc_end(this); it != e; ++it) {
       SCC& scc = *it;
       for (typename SCC::iterator cit = scc.begin(); cit != scc.end(); ++cit) {
@@ -188,7 +191,7 @@ public:
         subgraphs[node->getSCCId() - 1].nodes.push_back(node);
       }
     }
-    
+
     typedef std::set< std::pair<unsigned, unsigned> > DagEdgeSet;
     DagEdgeSet dagEdges;
 
@@ -209,7 +212,7 @@ public:
         dagEdges.insert( std::make_pair(tailComponent, headComponent) );
       }
     }
-    
+
     dagOfSCCs.reset();
     // Add edges to the SCC-DAG graph corresponding to the edges
     // beween SCCs in the original graph.
@@ -220,7 +223,7 @@ public:
       DagNode h = dagOfSCCs.addNode((*it).second);
       dagOfSCCs.addDirectedEdge(t, h, NULL);
     }
-    
+
     bool dagOfSCCsWasActualDAG = dagOfSCCs.classifyEdgesDFSFrom(
                                           dagOfSCCs.getEntryNode());
     ASSERT(dagOfSCCsWasActualDAG) << "numSCCs identified: " << numSCCs;
@@ -229,7 +232,7 @@ public:
   GenericGraph() {
     init_();
   }
-  
+
   void reset() {
     nodes.clear();
     sccIds.clear();
@@ -237,26 +240,27 @@ public:
     payloads.reset();
     edgeLabels.clear();
     possibleSources.clear();
-    edgeClassifications.clear(); 
-    
+    edgeClassifications.clear();
+
     init_();
   }
 private:
   void init_() {
     entryNode = NULL;
     nodes.push_back(new Node(this, 0)); // virtual "root"
+
     std::vector<NodePtr> v;
     adjList.push_back(v);
     sccIds.push_back(0);
   }
 public:
-  
+
   unsigned getNodeCount() const {
     return nodes.size() - 1; // Don't include the virtual root node.
   }
-  
+
   enum EdgeKind { eUnknowneEdge, eTreeEdge, eBackEdge, eCrossEdge, eDownEdge };
-  
+
   // Should be called after calling classifyEdgesFrom(somenode)
   EdgeKind getEdgeClassification(NodePtr head, NodePtr tail) {
     return edgeClassifications[Edge(head, tail)];
@@ -268,7 +272,7 @@ public:
   // Graph Algorithms with C, "DFS of a digraph".
   bool classifyEdgesDFSFrom(NodePtr start) {
     std::vector<Edge> worklist;
-    
+
     // The nodes in a subgraph are sparsely numbered, so we use
     // maps instead of vectors and index by node pointers instead of node ids.
     std::map<NodePtr, int> pre;
@@ -297,7 +301,7 @@ public:
                                  it != start->succ_end(); ++it) {
       worklist.push_back(Edge(start, *it));
     }
-    
+
     while (!worklist.empty()) {
       Edge ht = worklist.back(); worklist.pop_back();
       NodePtr from = ht.first;
@@ -306,13 +310,13 @@ public:
         post[node] = cntPost++; // Finished visiting children of the given node.
         continue;
       }
-      
+
       // Add marker to stack before visiting children.
       worklist.push_back(Edge(NULL, node));
-      
+
       if (pre[node] == -1) {
         pre[node] = cntPre++; // Starting to visit children of the given node.
-        
+
         for (typename Node::iterator it = node->succ_begin();
                                      it != node->succ_end(); ++it) {
           worklist.push_back(Edge(node, *it));
@@ -336,12 +340,12 @@ private:
   std::map<Edge, EdgeLabel>           edgeLabels;
   std::vector< std::vector<NodePtr> > adjList;
 
-  std::map<Edge, EdgeKind> edgeClassifications; 
-  
+  std::map<Edge, EdgeKind> edgeClassifications;
+
   std::vector<unsigned>    sccIds;
-  
+
   std::set<NodePtr>        possibleSources;
-  
+
   void resetVirtualRootEdges() {
     adjList[0].clear();
     if (possibleSources.empty()) {
