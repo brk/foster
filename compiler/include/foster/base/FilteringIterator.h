@@ -37,7 +37,7 @@ struct dynamic_cast_filtering_iterator
 
   // preincrement
   Self& operator++() { // advance to next valid position
-     do { ++it; } while (it != end && operator*() == NULL); }
+    do { ++it; } while (it != end && operator*() == NULL); return *this; }
 
   // postincrement
   Self operator++(int) { Self tmp = *this; ++*this; return tmp; }

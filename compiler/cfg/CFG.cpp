@@ -123,6 +123,7 @@ llvm::BasicBlock* CFG::codegen(CodegenPass* p, llvm::Function* parentFunction) {
       phiNode->addIncoming(pred->lastNonVoidValue, pred->ourBB);
     }
   }
+  return ourBB;
 }
 
 } // namespace foster

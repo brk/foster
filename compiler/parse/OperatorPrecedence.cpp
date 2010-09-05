@@ -176,10 +176,10 @@ struct OperatorPrecedenceTable::Impl {
     vector<string> vlops;
     pystring::split(lops, vlops);
 
-    for (int i = 0; i < vtops.size(); ++i) {
-      for (int j = 0; j < vlops.size(); ++j) {
-	const string& z = vtops[i];
-	const string& q = vlops[j];
+    for (size_t i = 0; i < vtops.size(); ++i) {
+      for (size_t j = 0; j < vlops.size(); ++j) {
+	    const string& z = vtops[i];
+        const string& q = vlops[j];
         // If Z binds tighter than Q,
         // parse   a Z b Q c   as (a Z b) Q c
         parseAsTighter(z, q);
@@ -294,6 +294,8 @@ struct OperatorPrecedenceTable::Impl {
       case kOpBindsTighter: return "tighter";
       case kOpBindsLooser:  return "looser";
     }
+    ASSERT(false) << "unknown operator relation with numerical value " << int(r);
+    return NULL;
   }
 
   void dump() {

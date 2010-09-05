@@ -177,15 +177,18 @@ struct TypecheckPass : public ExprASTVisitor {
         } else {
           // If one is a closure type and the other a simple fn type,
           // try matching the closure's fn type with the fn type.
-          if (t1->tag == "ClosureType" && t2->tag == "FnType") {
+          if (t1->tag == std::string("ClosureType")
+           && t2->tag == std::string("FnType")) {
             ClosureTypeAST* ct1 = dynamic_cast<ClosureTypeAST*>(t1);
             TypeAST* ft1 = ct1->getFnType();
             extractTypeConstraints(eConstraintEq, context, ft1, t2, *this);
-          } else if (t2->tag == "ClosureType" && t1->tag == "FnType") {
+          } else if (t2->tag == std::string("ClosureType")
+                  && t1->tag == std::string("FnType")) {
             ClosureTypeAST* ct2 = dynamic_cast<ClosureTypeAST*>(t2);
             TypeAST* ft2 = ct2->getFnType();
             extractTypeConstraints(eConstraintEq, context, t1, ft2, *this);
-          } else if (t1->tag == "FnType" && t2->tag == "RefType") {
+          } else if (t1->tag == std::string("FnType")
+                  && t2->tag == std::string("RefType")) {
             // Converting a top-level function to a function pointer
             // is trivial, so long as the underlying types match up.
             TypeAST* ft1 = t1;
@@ -207,7 +210,8 @@ struct TypecheckPass : public ExprASTVisitor {
               collectEqualityConstraint(context, t1, t2);
             }
             
-          } else if (t1->tag == "ClosureType" && t2->tag == "RefType") {
+          } else if (t1->tag == std::string("ClosureType")
+                  && t2->tag == std::string("RefType")) {
             
             // Converting a closure to a ref of the exact same type is permissible,
             // since it will be handled by codegen as creating a trampoline.
@@ -1194,7 +1198,6 @@ void TypecheckPass::visit(SubscriptAST* ast) {
   uint64_t idx_u64 = vidx.getZExtValue();
   
   if (numElements >= 0) {
-    uint64_t idx_u64 = vidx.getZExtValue();
     if (idx_u64 >= numElements) {
       EDiag() << "attempt to index array[" << numElements << "]"
               << " with invalid index"

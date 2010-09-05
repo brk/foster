@@ -444,8 +444,8 @@ IntAST* parseIntFrom(pTree t) {
 /// * Subscripts
 /// * Lookups (eventually)
 ExprAST* validateAssignLHS(ExprAST* ast) {
-  if (VariableAST* var = dynamic_cast<VariableAST*>(ast)) { return ast; }
-  if (SubscriptAST* var = dynamic_cast<SubscriptAST*>(ast)) { return ast; }
+  if (dynamic_cast<VariableAST*>(ast)) { return ast; }
+  if (dynamic_cast<SubscriptAST*>(ast)) { return ast; }
   return NULL;
 }
 

@@ -98,18 +98,19 @@ FILE* gclog = NULL;
 
 class copying_gc {
   class semispace {
+  public:
 	  semispace(int64_t size, copying_gc* parent) : parent(parent) {
-		  start = (char*) malloc(size);
-		  end   = start + size;
-		  bump  = start;
+        start = (char*) malloc(size);
+        end   = start + size;
+        bump  = start;
 
-		  genericClosureMarker = NULL;
+        genericClosureMarker = NULL;
 	  }
 
 	  ~semispace() {
 		free(start);
 	  }
-
+  private:
 	  char* start;
 	  char* end;
 	  char* bump;
@@ -118,6 +119,7 @@ class copying_gc {
 	  char* genericClosureMarker;
 
   public:
+      void reset_bump() { bump = start; }
 	  bool contains(void* ptr) {
 	    return (ptr >= start) && (ptr < end);
 	  }
@@ -274,7 +276,7 @@ class copying_gc {
   // precondition: all active cells from curr have been copied to next
   void flip() {
 	// curr is the old semispace, so we reset its bump ptr
-	curr->bump = curr->start;
+	curr->reset_bump();
 	std::swap(curr, next);
   }
 
@@ -450,8 +452,9 @@ void initialize() {
 
 void cleanup() {
   base::TimeDelta elapsed = base::TimeTicks::HighResNow() - start;
-  fprintf(gclog, "Elapsed runtime: %lld.%lld s\n",
-		  elapsed.InSeconds(), elapsed.InMilliseconds() - (elapsed.InSeconds() * 1000));
+  fprintf(gclog, "Elapsed runtime: %ld.%ld s\n",
+		  long(elapsed.InSeconds()),
+          long(elapsed.InMilliseconds() - (elapsed.InSeconds() * 1000)));
 
   delete allocator;
 }
@@ -467,7 +470,7 @@ extern "C" void* memalloc(int64_t sz) {
   return allocator->allocate(sz);
 }
 
-extern "C" void force_gc_for_debugging_purposes() {
+void force_gc_for_debugging_purposes() {
   allocator->force_gc_for_debugging_purposes();
 }
 

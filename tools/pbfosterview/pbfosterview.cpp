@@ -116,7 +116,7 @@ int main(int argc, char** argv) {
 
   if (optRawAST) {
     llvm::outs() << mod->scope->getName() << "\n";
-    for (int i = 0; i < mod->parts.size(); ++i) {
+    for (size_t i = 0; i < mod->parts.size(); ++i) {
       llvm::outs() << str(mod->parts[i]) << "\n"; 
     }
   } else {

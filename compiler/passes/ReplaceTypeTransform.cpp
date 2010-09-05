@@ -43,7 +43,7 @@ void ReplaceTypeTransform::visit(TypeVariableAST* ast) {
 }
 
 void ReplaceTypeTransform::visit(FnTypeAST* ast) {
-  for (size_t i = 0; i < ast->getNumParams(); ++i) {
+  for (int i = 0; i < ast->getNumParams(); ++i) {
     subst(ast->getParamType(i));
   }
   subst(ast->getReturnType());

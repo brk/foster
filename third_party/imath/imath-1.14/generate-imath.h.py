@@ -29,7 +29,7 @@ def main(args):
         sys.exit(1)
 
     CC = "g++"
-    CFLAGS = ""
+    CFLAGS = [""]
 
     for opt, arg in opts:
         if opt in ('-L', '--nolonglong'):

@@ -77,7 +77,7 @@ ExprAST* parseBool(const pb::Expr& e, const foster::SourceRange& range) {
 ExprAST* parseCall(const pb::Expr& e, const foster::SourceRange& range) {
   ExprAST* base = ExprAST_from_pb(&e.parts(0));
   Exprs args;
-  for (size_t i = 1; i < e.parts_size(); ++i) {
+  for (int i = 1; i < e.parts_size(); ++i) {
     args.push_back(ExprAST_from_pb(&e.parts(i)));
   }
   return new CallAST(base, args, range);
@@ -164,7 +164,7 @@ ExprAST* parseInt(const pb::Expr& e, const foster::SourceRange& range) {
 ExprAST* parseModule(const pb::Expr& e, const foster::SourceRange& range) {
   string moduleName = e.name();
   Exprs args;
-  for (size_t i = 0; i < e.parts_size(); ++i) {
+  for (int i = 0; i < e.parts_size(); ++i) {
     args.push_back(ExprAST_from_pb(&e.parts(i)));
   }
   return new ModuleAST(args,
@@ -201,7 +201,7 @@ ExprAST* parseProto(const pb::Expr& e, const foster::SourceRange& range) {
 
   const pb::Proto& proto = e.proto();
   std::vector<VariableAST*> args;
-  for (size_t i = 0; i < proto.in_args_size(); ++i) {
+  for (int i = 0; i < proto.in_args_size(); ++i) {
     ExprAST* arg = ExprAST_from_pb(& proto.in_args(i));
     args.push_back(dynamic_cast<VariableAST*>(arg));
   }
@@ -224,7 +224,7 @@ ExprAST* parseRef(const pb::Expr& e, const foster::SourceRange& range) {
 
 ExprAST* parseSeq(const pb::Expr& e, const foster::SourceRange& range) {
   Exprs args;
-  for (size_t i = 0; i < e.parts_size(); ++i) {
+  for (int i = 0; i < e.parts_size(); ++i) {
     args.push_back(ExprAST_from_pb(&e.parts(i)));
   }
   return new SeqAST(args, range);
@@ -324,7 +324,7 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
        << fnty.ret_type().DebugString();
 
     std::vector<TypeAST*> argTypes(fnty.arg_types_size());
-    for (int i = 0; i < argTypes.size(); ++i) {
+    for (size_t i = 0; i < argTypes.size(); ++i) {
       argTypes[i] = TypeAST_from_pb(&fnty.arg_types(i));
     }
 
@@ -339,7 +339,7 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
 
   if (t.tuple_parts_size() > 0) {
     std::vector<TypeAST*> parts(t.tuple_parts_size());
-    for (int i = 0; i < parts.size(); ++i) {
+    for (size_t i = 0; i < parts.size(); ++i) {
       parts[i] = TypeAST_from_pb(&t.tuple_parts(i));
     }
     return TupleTypeAST::get(parts);

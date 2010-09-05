@@ -355,7 +355,7 @@ void PrettyPrintPass::visit(SeqAST* ast) {
     }
 
     if (i != ast->parts.size() - 1) {
-      if (CallAST* wasCall = dynamic_cast<CallAST*>(ast->parts[i])) {
+      if (dynamic_cast<CallAST*>(ast->parts[i])) {
         scan(pp.tNewline);
       } else {
         scan(PPToken("; "));

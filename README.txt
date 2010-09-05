@@ -57,7 +57,7 @@ ANTLR on Linux and OS X:
 		wget http://antlr.org/download/C/libantlr3c-${ANTLR_VERSION}.tar.gz
 		tar xzvf libantlr3c-${ANTLR_VERSION}.tar.gz
                 cd libantlr3c-${ANTLR_VERSION}
-		./configure --prefix=${ANTLR_DIR} && make && make install
+		./configure --prefix=${ANTLR_DIR} --enable-64bit && make && make install
                 cd ..
 	cd ..
 	rm -rf ./tmp

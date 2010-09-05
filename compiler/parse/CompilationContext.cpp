@@ -40,7 +40,7 @@ struct CompilationContext::Impl {
   llvm::raw_ostream* outs;
   llvm::raw_ostream* errs;
   
-  Impl() : outs(NULL), errs(NULL), os(accumulated_output) {}
+  Impl() : os(accumulated_output), outs(NULL), errs(NULL) {}
 };
 
 
@@ -193,6 +193,7 @@ TypeAST*    TypeASTFor(const string& name) {
     if (const llvm::Type* ty = LLVMTypeFor(name)) {
       ASSERT(false) << "WARNING: have LLVMTypeFor("<<name<<")"
                     << " but no TypeASTFor(...)";
+      ty = NULL; // avoid unused variable warning
     }
     return NULL;
   }

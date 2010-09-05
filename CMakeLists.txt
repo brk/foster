@@ -1,6 +1,9 @@
 cmake_minimum_required (VERSION 2.6)
 project (foster)
 
+cmake_policy(VERSION 2.8.0)
+cmake_policy(SET CMP0015 OLD)
+
 ####################### Configuration Rules ########################
 
 # This isn't cached since CMake doesn't seem to have any way of
@@ -36,7 +39,9 @@ find_package(Protobuf REQUIRED)
 include_directories(${PROTOBUF_INCLUDE_DIRS})
 
 find_program(LLVM_CONFIG NAMES llvm-config
-  PATHS $ENV{HOME}/llvm/${LLVM_VERSION}/bin
+  PATHS
+    $ENV{HOME}/llvm/${LLVM_VERSION}/bin
+    $ENV{HOME}/sw/local/llvm-${LLVM_VERSION}/bin
   DOC "llvm-config")
 
 # Get flags for LLVM
@@ -178,8 +183,13 @@ include_directories(
   ${PROJECT_SOURCE_DIR}/third_party/chromium_base
 )
 
-# Assumes path to LLVM lib dir has no spaces in it!
-string(REGEX MATCH "-L[^ ]+" LLVM_LD_PATH "${LLVM_LDFLAGS}")
+# Takes ldflags, which looks like
+# "... -L/path/to/llvm/lib ..." and puts
+# "-L/path/to/llvm/lib" in LLVM_LD_PATH.
+string(REGEX MATCH "-L[ ]?[^ ]+" LLVM_LD_PATH "${LLVM_LDFLAGS}")
+
+# Strip off leading -L to give the path alone.
+string(REGEX REPLACE "^-L[ ]?" "" LLVM_LD_PATH "${LLVM_LD_PATH}")
 
 link_directories(${LLVM_LD_PATH} ${ANTLR_LIBDIR})
 

@@ -76,7 +76,7 @@ void filterVarNames(std::vector<std::string>& v, const std::string& s) {
  
   std::vector<std::string> chunks;
   pystring::split(s_no_parens, chunks);
-  for (int i = 0; i < chunks.size(); ++i) {
+  for (size_t i = 0; i < chunks.size(); ++i) {
     std::vector<std::string> parts;
     pystring::split(chunks[i], parts, ":");
     if (!parts[0].empty()) {

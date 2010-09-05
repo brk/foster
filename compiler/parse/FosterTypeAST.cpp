@@ -106,8 +106,7 @@ TypeAST* TypeAST::reconstruct(const llvm::Type* loweredType) {
     return TupleTypeAST::get(args);
   }
   
-  if (const llvm::OpaqueType* ty =
-            llvm::dyn_cast<const llvm::OpaqueType>(loweredType)) {
+  if (llvm::dyn_cast<const llvm::OpaqueType>(loweredType)) {
     return NamedTypeAST::get("opaque", loweredType);
   }
   

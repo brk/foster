@@ -244,7 +244,7 @@ std::ostream& CallAST::operator<<(std::ostream& out) const {
 }
 
 std::ostream& NamedTypeDeclAST::operator<<(std::ostream& out) const {
-  out << "type " << name << " = " << str(type) << "\n";
+  return out << "type " << name << " = " << str(type) << "\n";
 }
 
 std::ostream& SeqAST::operator<<(std::ostream& out) const {

@@ -195,7 +195,7 @@ public:
 
         // Emit the stack frame size.
         AP.OutStreamer.AddComment("stack frame size");
-        AP.EmitInt32(MD.getFrameSize());
+        AP.EmitInt32(frameSize);
         i32sForThisFunction++;
 
         // Emit the count of addresses in the cluster.
