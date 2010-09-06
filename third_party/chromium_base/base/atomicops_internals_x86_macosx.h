@@ -110,7 +110,7 @@ inline Atomic64 NoBarrier_CompareAndSwap(volatile Atomic64 *ptr,
   Atomic64 prev_value;
   do {
     if (OSAtomicCompareAndSwap64(old_value, new_value,
-                                 (volatile int64_t*)(ptr))) {
+                                 reinterpret_cast<volatile int64_t*>(ptr))) {
       return old_value;
     }
     prev_value = *ptr;
@@ -124,18 +124,18 @@ inline Atomic64 NoBarrier_AtomicExchange(volatile Atomic64 *ptr,
   do {
     old_value = *ptr;
   } while (!OSAtomicCompareAndSwap64(old_value, new_value,
-                                     (volatile int64_t*)(ptr)));
+                                     reinterpret_cast<volatile int64_t*>(ptr)));
   return old_value;
 }
 
 inline Atomic64 NoBarrier_AtomicIncrement(volatile Atomic64 *ptr,
                                           Atomic64 increment) {
-  return OSAtomicAdd64(increment, (volatile int64_t*)(ptr));
+  return OSAtomicAdd64(increment, reinterpret_cast<volatile int64_t*>(ptr));
 }
 
 inline Atomic64 Barrier_AtomicIncrement(volatile Atomic64 *ptr,
                                         Atomic64 increment) {
-  return OSAtomicAdd64Barrier(increment, (volatile int64_t*)(ptr));
+  return OSAtomicAdd64Barrier(increment, reinterpret_cast<volatile int64_t*>(ptr));
 }
 
 inline Atomic64 Acquire_CompareAndSwap(volatile Atomic64 *ptr,
@@ -144,7 +144,7 @@ inline Atomic64 Acquire_CompareAndSwap(volatile Atomic64 *ptr,
   Atomic64 prev_value;
   do {
     if (OSAtomicCompareAndSwap64Barrier(old_value, new_value,
-                                        (volatile int64_t*)(ptr))) {
+                                        reinterpret_cast<volatile int64_t*>(ptr))) {
       return old_value;
     }
     prev_value = *ptr;
