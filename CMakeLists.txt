@@ -157,22 +157,35 @@ set(LIBFOSTER_CPP_SOURCES
         ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc.cpp
 )
 
-# Use llvm-g++ to build libfoster.bc
+# Use clang or llvm-g++ to build libfoster.bc
 add_custom_command(
   OUTPUT ${PROJECT_BINARY_DIR}/libfoster.bc
-  COMMAND python ${PROJECT_SOURCE_DIR}/scripts/build_libfoster.py
+  COMMAND
+    python ${PROJECT_SOURCE_DIR}/scripts/build_libfoster.py
         "${LLVM_G++}"
         ${PROJECT_SOURCE_DIR}
         ${PROJECT_BINARY_DIR}
         "${CMAKE_STATIC_LIBRARY_SUFFIX}"
         "${LLVM_BINDIR}"
         ${LIBFOSTER_CPP_SOURCES}
-  DEPENDS ${LIBFOSTER_CPP_SOURCES} ${PROJECT_SOURCE_DIR}/scripts/build_libfoster.py
+  DEPENDS
+    ${LIBFOSTER_CPP_SOURCES}
+    ${PROJECT_SOURCE_DIR}/scripts/build_libfoster.py
 )
+# We could attach the command to build libfoster.bc directly
+# to the libfoster_bc target, but the effect of doing that would
+# be that libfoster.bc would always be considered out of date,
+# and would be rebuilt on every single invocation of make.
 add_custom_target(libfoster_bc DEPENDS
         ${PROJECT_BINARY_DIR}/libfoster.bc
         ${PROJECT_BINARY_DIR}/libfoster_main.o)
 
+# Attaching commands to add_custom_target basically means
+# "run these commands whenver the target is mentioned."
+add_custom_target(unittests COMMAND ctest -V -R unittest
+  DEPENDS
+    unittest_fosterc_base
+    unittest_fosterc_parse)
 
 # Look for ANTLR-generated lexer and parser, and ANTLR library files
 include_directories(${ANTLR_DIR}/include ${PROJECT_BINARY_DIR})
