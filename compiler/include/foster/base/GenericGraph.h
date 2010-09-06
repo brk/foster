@@ -126,7 +126,6 @@ public:
   }
 
   NodePtr getEntryNode() {
-    NodePtr rv = NULL;
     if (!entryNode) {
       resetVirtualRootEdges();
       ASSERT(!nodes.empty());
