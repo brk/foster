@@ -30,16 +30,14 @@ extern std::map<std::string, const llvm::Type*> gCachedLLVMTypes;
 
 namespace {
 
-struct UnitTestBeginEnd {
-  UnitTestBeginEnd() {
-    foster::gCachedLLVMTypes["i32"] = TypeAST::i(32)->getLLVMType();
-    foster::gCachedLLVMTypes["i64"] = TypeAST::i(64)->getLLVMType();
-    foster::gCachedLLVMTypes["void"] = TypeAST::getVoid()->getLLVMType();
-  }
-  ~UnitTestBeginEnd() {
-
-  }
-} _ube;
+void initCachedLLVMTypes() {
+  static bool done = false;
+  if (done) return;
+  done = true;
+  foster::gCachedLLVMTypes["i32"] = TypeAST::i(32)->getLLVMType();
+  foster::gCachedLLVMTypes["i64"] = TypeAST::i(64)->getLLVMType();
+  foster::gCachedLLVMTypes["void"] = TypeAST::getVoid()->getLLVMType();
+}
 
 foster::CompilationContext cc1;
 foster::CompilationContext cc2;
@@ -89,6 +87,7 @@ void filterVarNames(std::vector<std::string>& v, const std::string& s) {
 }
 
 TEST(ComputeFreeNames, annotate_names) {
+  initCachedLLVMTypes();
   ExprAST* e = parse(cc1, STR(
     fn (x : i32, z: i32, y : i32) {
     fn (x : i32) { x + y + z +

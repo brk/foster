@@ -6,6 +6,7 @@
 #include "parse/CompilationContext.h"
 #include "parse/FosterAST.h"
 #include "passes/PrettyPrintPass.h"
+#include "parse/FosterTypeAST.h"
 
 #include "llvm/Support/raw_ostream.h"
 
@@ -19,7 +20,21 @@ using std::string;
 
 foster::CompilationContext cc;
 
+namespace foster {
+  extern std::map<std::string, const llvm::Type*> gCachedLLVMTypes;
+}
+
 namespace {
+  
+void initCachedLLVMTypes() {
+  static bool done = false;
+  if (done) return;
+  done = true;
+  foster::gCachedLLVMTypes["i32"] = TypeAST::i(32)->getLLVMType();
+  foster::gCachedLLVMTypes["i64"] = TypeAST::i(64)->getLLVMType();
+  foster::gCachedLLVMTypes["void"] = TypeAST::getVoid()->getLLVMType();
+}
+  
   
 ExprAST* parse(const string& s) {
   unsigned errs = 0;
@@ -34,7 +49,6 @@ string pr(ExprAST* ast) {
   foster::CompilationContext::popCurrentContext();
   return out.str();
 }
-
 
 TEST(ANTLRtoFosterAST, basics) {
   EXPECT_TRUE(parse("true") != NULL);
@@ -105,13 +119,15 @@ TEST(ANTLRtoFosterAST, colonCommaArrow) {
 }
 
 TEST(ANTLRtoFosterAST, first_order_types_simple_correct) {
+  initCachedLLVMTypes();
   EXPECT_EQ(0,
       pystring::count("opaque",
-                      pr(parse("fn (x : i32)")))
+                      pr(parse("fn (x : i32) { 0 }")))
   );
 }
 
 TEST(ANTLRtoFosterAST, higher_order_types_simple_correct) {
+  initCachedLLVMTypes();
   EXPECT_EQ(0,
       pystring::count(pr(parse("fn (x : fn (z:i64)) { 0 }")),
                       "opaque")
@@ -119,6 +135,7 @@ TEST(ANTLRtoFosterAST, higher_order_types_simple_correct) {
 }
 
 TEST(ANTLRtoFosterAST, higher_order_types_simple_incorrect) {
+  initCachedLLVMTypes();
   // equivalent to "fn (x : fn (i64:i32)) { 0 }"
   string s = pr(parse("fn (x : fn (i64)) { 0 }"));
   EXPECT_EQ(0, pystring::count(s, "opaque"));

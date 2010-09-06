@@ -33,6 +33,7 @@ using foster::TypeASTFor;
 using foster::LLVMTypeFor;
 using foster::EDiag;
 using foster::show;
+using foster::CompilationContext;
 
 using foster::currentErrs;
 using foster::currentOuts;
@@ -88,7 +89,7 @@ static void customSetTokenBoundariesFunc
  pANTLR3_COMMON_TOKEN startToken, pANTLR3_COMMON_TOKEN stopToken) {
   sgDefaultSTB(adaptor, t, startToken, stopToken);
 
-  foster::CompilationContext::setTokenRange((pTree) t, startToken, stopToken);
+  CompilationContext::setTokenRange((pTree) t, startToken, stopToken);
 }
 
 // This is a vaguely unpleasant (but terrifically accurate) hack
@@ -128,7 +129,7 @@ int typeOf(pTree tree) { return tree->getType(tree); }
 
 pANTLR3_COMMON_TOKEN getStartToken(pTree tree) {
   if (!tree) return NULL;
-  pANTLR3_COMMON_TOKEN tok = foster::CompilationContext::getStartToken(tree); 
+  pANTLR3_COMMON_TOKEN tok = CompilationContext::getStartToken(tree); 
   if (tok) return tok;
 
   // Some nodes we're okay with having no token info for...
@@ -147,7 +148,7 @@ pANTLR3_COMMON_TOKEN getStartToken(pTree tree) {
   pTree node = tree;
   while (!tok && getChildCount(node) > 0) {
     node = child(node, 0);
-    tok = foster::CompilationContext::getStartToken(node);
+    tok = CompilationContext::getStartToken(node);
   }
   if (!tok) {
     currentOuts() << "Warning: unable to find start token for ANTLR parse tree"
@@ -159,7 +160,7 @@ pANTLR3_COMMON_TOKEN getStartToken(pTree tree) {
 
 pANTLR3_COMMON_TOKEN getEndToken(pTree tree) {
   if (!tree) return NULL;
-  pANTLR3_COMMON_TOKEN tok = foster::CompilationContext::getEndToken(tree);
+  pANTLR3_COMMON_TOKEN tok = CompilationContext::getEndToken(tree);
   if (tok) return tok;
 
   if (getChildCount(tree) == 0) {
@@ -173,7 +174,7 @@ pANTLR3_COMMON_TOKEN getEndToken(pTree tree) {
   pTree node = tree;
   while (!tok && getChildCount(node) > 0) {
     node = child(node, getChildCount(node) - 1);
-    tok = foster::CompilationContext::getEndToken(tree);
+    tok = CompilationContext::getEndToken(node);
   }
   if (!tok) {
     currentOuts() << "Warning: unable to find end token for ANTLR parse tree"
@@ -240,28 +241,9 @@ bool foster::wasExplicitlyParenthesized(ExprAST* ast) {
   return gWasWrappedInExplicitParens[ast];
 }
 
-std::map<string, bool> keywords;
-std::map<string, bool> reserved_keywords;
-
-const char* c_keywords[] = {
-  "as" , "at" , "def" , "id", "in", "is", "it", "to",
-  "given" , "false" , "if" , "match" , "do" , "new" , "nil",
-  "gives" , "and" , "or" , "true" , "var" , "while",
-  "for", "ref", "?ref"
-};
-const char* c_reserved_keywords[] = {
-  "def", "catch", "lazy", "object", "package", "private",
-  "protected", "return", "throw", "trait", "try", "type",
-  "val", "with", "yield", "except"
-};
-
 bool isUnaryOp(const string& op) {
   return op == "-" || op == "not";
 }
-
-#ifndef ARRAY_SIZE
-#define ARRAY_SIZE(a) (sizeof(a)/sizeof(((a)[0])))
-#endif
 
 bool isSpecialName(const string& op) {
   return op == "deref" || isBitwiseOpName(op);
@@ -270,20 +252,6 @@ bool isSpecialName(const string& op) {
 bool isBitwiseOpName(const string& op) {
   return op == "bitand" || op == "bitor" || op == "bitxor" ||
          op == "bitshl" || op == "bitlshr" || op == "bitashr";
-}
-
-void initMaps() {
-  static bool didInit = false;
-  if (didInit) return;
-  didInit = true;
-  
-  for (size_t i = 0; i < ARRAY_SIZE(c_keywords); ++i) {
-    keywords[c_keywords[i]] = true;
-  }
-
-  for (size_t i = 0; i < ARRAY_SIZE(c_reserved_keywords); ++i) {
-    reserved_keywords[c_reserved_keywords[i]] = true;
-  }
 }
 
 string spaces(int n) { return string(n, ' '); }
@@ -302,8 +270,8 @@ void display_pTree(pTree t, int nspaces) {
   currentOuts() << ss.str() << spaces(70 - ss.str().size())
             << token << " @ " << t;
   currentOuts() << " (";
-  currentOuts() << (foster::CompilationContext::getStartToken(t) ? '+' : '-');
-  currentOuts() << (foster::CompilationContext::getEndToken(t)   ? '+' : '-');
+  currentOuts() << (CompilationContext::getStartToken(t) ? '+' : '-');
+  currentOuts() << (CompilationContext::getEndToken(t)   ? '+' : '-');
   currentOuts() << ")" << "\n";
   for (int i = 0; i < nchildren; ++i) {
     display_pTree(child(t, i), nspaces+2);
@@ -539,7 +507,7 @@ ExprAST* parseBinaryOpExpr(
 
     // a opname b rop c
     foster::OperatorPrecedenceTable::OperatorRelation rel =
-      foster::CompilationContext::getOperatorRelation(opname, rop);
+      CompilationContext::getOperatorRelation(opname, rop);
 	    ////foster::gCompilationContexts.top()->prec.get(opname, rop);
     if (rel == foster::OperatorPrecedenceTable::kOpBindsTighter) {
       delete rhs; // return ((a opname b) rop c)
@@ -985,7 +953,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
   }
 
   // Implicitly, every entry in the precedence table is a binary operator.
-  if (foster::CompilationContext::isKnownOperatorName(text)) {
+  if (CompilationContext::isKnownOperatorName(text)) {
     ExprAST* lhs = ExprAST_from(child(tree, 0), fnMeansClosure);
     ExprAST* rhs = ExprAST_from(child(tree, 1), fnMeansClosure);
     return parseBinaryOpExpr(text, lhs, rhs);
@@ -1027,12 +995,12 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
   }
 
   // Should have handled all keywords by now...
-  if (keywords[text]) {
+  if (CompilationContext::isKeyword(text)) {
     EDiag() << "illegal use of keyword '" << text << "'" << show(sourceRange);
     return NULL;
   }
 
-  if (reserved_keywords[text]) {
+  if (CompilationContext::isReservedKeyword(text)) {
     EDiag() << "cannot use reserved keyword '" << text << "'"
             << show(sourceRange);
     return NULL;
@@ -1201,7 +1169,7 @@ ExprAST* parseExpr(const std::string& source,
   installTreeTokenBoundaryTracker(ctx->psr->adaptor);
   foster::installRecognitionErrorFilter(ctx->psr->pParser->rec);
 
-  foster::CompilationContext::pushContext(cc);
+  CompilationContext::pushContext(cc);
   
   gInputFile = NULL;
   gInputTextBuffer = membuf;
@@ -1216,8 +1184,8 @@ ExprAST* parseExpr(const std::string& source,
   // we do not want to accidentally pick up an incorrect
   // token boundary if we happen to randomly get the same
   // tree pointer values! Doing so can make ANTLR crash.
-  foster::CompilationContext::clearTokenBoundaries();
-  foster::CompilationContext::popCurrentContext();
+  CompilationContext::clearTokenBoundaries();
+  CompilationContext::popCurrentContext();
 
   delete ctx;
   

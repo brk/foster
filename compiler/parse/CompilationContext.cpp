@@ -34,14 +34,52 @@ struct CompilationContext::Impl {
 
   std::map<pANTLR3_BASE_TREE, pANTLR3_COMMON_TOKEN> startTokens;
   std::map<pANTLR3_BASE_TREE, pANTLR3_COMMON_TOKEN>   endTokens;
-  
+
   std::string accumulated_output;
   llvm::raw_string_ostream os;
   llvm::raw_ostream* outs;
   llvm::raw_ostream* errs;
-  
-  Impl() : os(accumulated_output), outs(NULL), errs(NULL) {}
+
+  std::map<string, bool> keywords;
+  std::map<string, bool> reserved_keywords;
+
+  Impl() : os(accumulated_output), outs(NULL), errs(NULL) {
+    initMaps();
+  }
+
+private:
+  void initMaps();
 };
+
+
+#ifndef ARRAY_SIZE
+#define ARRAY_SIZE(a) (sizeof(a)/sizeof(((a)[0])))
+#endif
+
+namespace {
+  const char* c_keywords[] = {
+    "as" , "at" , "def" , "id", "in", "is", "it", "to",
+    "given" , "false" , "if" , "match" , "do" , "new" , "nil",
+    "gives" , "and" , "or" , "true" , "var" , "while",
+    "for", "ref", "?ref"
+  };
+  const char* c_reserved_keywords[] = {
+    "def", "catch", "lazy", "object", "package", "private",
+    "protected", "return", "throw", "trait", "try", "type",
+    "val", "with", "yield", "except"
+  };
+} // unnamed namespace
+
+void
+CompilationContext::Impl::initMaps() {
+  for (size_t i = 0; i < ARRAY_SIZE(c_keywords); ++i) {
+    keywords[c_keywords[i]] = true;
+  }
+
+  for (size_t i = 0; i < ARRAY_SIZE(c_reserved_keywords); ++i) {
+    reserved_keywords[c_reserved_keywords[i]] = true;
+  }
+}
 
 
 CompilationContext* // static
@@ -88,7 +126,7 @@ CompilationContext::setTokenRange(pANTLR3_BASE_TREE t,
 pANTLR3_COMMON_TOKEN // static
 CompilationContext::getStartToken(pANTLR3_BASE_TREE t) {
   ASSERT(!gCompilationContexts.empty());
-  
+
   return gCompilationContexts.top()->impl->startTokens[t];
 }
 
@@ -103,7 +141,7 @@ CompilationContext::getEndToken(pANTLR3_BASE_TREE t) {
 void // static
 CompilationContext::clearTokenBoundaries() {
   ASSERT(!gCompilationContexts.empty());
-  
+
   gCompilationContexts.top()->impl->startTokens.clear();
   gCompilationContexts.top()->impl->  endTokens.clear();
 }
@@ -114,15 +152,29 @@ foster::OperatorPrecedenceTable::OperatorRelation // static
 CompilationContext::getOperatorRelation(const std::string& op1,
                                         const std::string& op2) {
   ASSERT(!gCompilationContexts.empty());
-  
+
   return gCompilationContexts.top()->impl->prec.get(op1, op2);
 }
 
 bool // static
 CompilationContext::isKnownOperatorName(const string& op) {
   ASSERT(!gCompilationContexts.empty());
-  
+
   return gCompilationContexts.top()->impl->prec.isKnownOperatorName(op);
+}
+
+bool // static
+CompilationContext::isKeyword(const string& op) {
+  ASSERT(!gCompilationContexts.empty());
+
+  return gCompilationContexts.top()->impl->keywords[op];
+}
+
+bool // static
+CompilationContext::isReservedKeyword(const string& op) {
+  ASSERT(!gCompilationContexts.empty());
+
+  return gCompilationContexts.top()->impl->reserved_keywords[op];
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -147,10 +199,9 @@ std::string CompilationContext::collectAccumulatedOutput() {
   impl->accumulated_output.clear();
   return rv;
 }
-  
+
 
 CompilationContext::CompilationContext() {
-  initMaps();
   impl = new Impl();
 }
 

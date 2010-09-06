@@ -26,16 +26,15 @@ extern std::map<std::string, const llvm::Type*> gCachedLLVMTypes;
 
 namespace {
 
-struct UnitTestBeginEnd {
-  UnitTestBeginEnd() {
-    foster::gCachedLLVMTypes["i32"] = TypeAST::i(32)->getLLVMType();
-    foster::gCachedLLVMTypes["i64"] = TypeAST::i(64)->getLLVMType();
-    foster::gCachedLLVMTypes["void"] = TypeAST::getVoid()->getLLVMType();
-  }
-  ~UnitTestBeginEnd() {
-
-  }
-} _ube;
+void initCachedLLVMTypes() {
+  static bool done = false;
+  if (done) return;
+  done = true;
+  foster::gCachedLLVMTypes["i32"] = TypeAST::i(32)->getLLVMType();
+  foster::gCachedLLVMTypes["i64"] = TypeAST::i(64)->getLLVMType();
+  foster::gCachedLLVMTypes["void"] = TypeAST::getVoid()->getLLVMType();
+}
+  
 
 ExprAST* parse(foster::CompilationContext& cc, const string& s) {
   unsigned errs = 0;
@@ -64,6 +63,7 @@ string pr(ExprAST* ast) {
 ////////////////////////////////////////////////////////////////////
 
 TEST(TypeInference, parallel_compilation_contexts) {
+  initCachedLLVMTypes();
   foster::CompilationContext cc1; cc1.startAccumulatingOutputToString();
   foster::CompilationContext cc2; cc2.startAccumulatingOutputToString();
   
@@ -93,6 +93,7 @@ let x : i32 = 3 in {
 ////////////////////////////////////////////////////////////////////
 
 TEST(TypeInference, i32_handling_simple) {
+  initCachedLLVMTypes();
   foster::CompilationContext cc1; cc1.startAccumulatingOutputToString();
   foster::CompilationContext cc2; cc2.startAccumulatingOutputToString();
 
@@ -120,6 +121,7 @@ let x = 3 in {
 ////////////////////////////////////////////////////////////////////
 
 TEST(TypeInference, i32_handling_simple_closure0) {
+  initCachedLLVMTypes();
   foster::CompilationContext cc1; cc1.startAccumulatingOutputToString();
   foster::CompilationContext cc2; cc2.startAccumulatingOutputToString();
 
@@ -151,6 +153,7 @@ let x = 3 in {
 ////////////////////////////////////////////////////////////////////
 
 TEST(TypeInference, i32_handling_simple_closure1) {
+  initCachedLLVMTypes();
   foster::CompilationContext cc1; cc1.startAccumulatingOutputToString();
   foster::CompilationContext cc2; cc2.startAccumulatingOutputToString();
 
@@ -183,6 +186,7 @@ let x = 3 in {
 
 // as above, but without the annotation on the inner function
 TEST(TypeInference, i32_handling_simple_closure2) {
+  initCachedLLVMTypes();
   foster::CompilationContext cc1; cc1.startAccumulatingOutputToString();
   foster::CompilationContext cc2; cc2.startAccumulatingOutputToString();
 

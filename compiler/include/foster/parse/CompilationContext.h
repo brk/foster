@@ -76,6 +76,12 @@ public:
   
   static bool
   isKnownOperatorName(const std::string& op);
+
+  static bool
+  isKeyword(const std::string& op);
+  
+  static bool
+  isReservedKeyword(const std::string& op);
   
   ///////////////////
   

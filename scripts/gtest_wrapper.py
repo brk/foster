@@ -28,7 +28,7 @@ if __name__ == "__main__":
     rv, elapsed = run_command(binary, {}, binary, tmp, None, None, False)
 
     tmp.seek(0)
-
+    line = None
     for line in tmp:
       if (line.startswith('[---') or
         line.startswith('[ RUN') or
@@ -37,6 +37,10 @@ if __name__ == "__main__":
         re.match(r"^\s*$", line)):
        continue
     else:
-      print line.rstrip()
+      if line == None:
+        print "Execution of %s failed!" % binary
+        rv = 1
+      else:
+        print line.rstrip()
 
   sys.exit(rv)

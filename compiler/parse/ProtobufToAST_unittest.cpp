@@ -21,16 +21,14 @@ extern std::map<std::string, const llvm::Type*> gCachedLLVMTypes;
 
 namespace {
 
-struct UnitTestBeginEnd {
-  UnitTestBeginEnd() {
-    foster::gCachedLLVMTypes["i32"] = TypeAST::i(32)->getLLVMType();
-    foster::gCachedLLVMTypes["i64"] = TypeAST::i(64)->getLLVMType();
-    foster::gCachedLLVMTypes["void"] = TypeAST::getVoid()->getLLVMType();
-  }
-  ~UnitTestBeginEnd() {
-
-  }
-} _ube;
+void initCachedLLVMTypes() {
+  static bool done = false;
+  if (done) return;
+  done = true;
+  foster::gCachedLLVMTypes["i32"] = TypeAST::i(32)->getLLVMType();
+  foster::gCachedLLVMTypes["i64"] = TypeAST::i(64)->getLLVMType();
+  foster::gCachedLLVMTypes["void"] = TypeAST::getVoid()->getLLVMType();
+}
 
 foster::SourceRange testRange(NULL,
                               foster::SourceLocation(1, 2),
@@ -52,6 +50,7 @@ TypeAST* roundtrip(TypeAST* ty) {
 //
 
 TEST(ProtobufToAST, i32_type) {
+  initCachedLLVMTypes();
   TypeAST* i32 = TypeAST::i(32);
   TypeAST* ri32 = roundtrip(i32);
 
@@ -62,6 +61,7 @@ TEST(ProtobufToAST, i32_type) {
 }
 
 TEST(ProtobufToAST, void_type) {
+  initCachedLLVMTypes();
   TypeAST* t = TypeAST::getVoid();
   TypeAST* rt = roundtrip(t);
 
@@ -78,6 +78,7 @@ TEST(ProtobufToAST, void_type) {
 //
 
 TEST(ProtobufToAST, fn_i32_to_i32_ccc_type) {
+  initCachedLLVMTypes();
   TypeAST* i32 = TypeAST::i(32);
   std::vector<TypeAST*> args; args.push_back(i32);
   FnTypeAST* t = FnTypeAST::get(i32, args, "ccc");
@@ -95,6 +96,7 @@ TEST(ProtobufToAST, fn_i32_to_i32_ccc_type) {
 }
 
 TEST(ProtobufToAST, fn_i32_to_i32_fastcc) {
+  initCachedLLVMTypes();
   TypeAST* i32 = TypeAST::i(32);
   std::vector<TypeAST*> args; args.push_back(i32);
   FnTypeAST* t = FnTypeAST::get(i32, args, "fastcc");
@@ -117,6 +119,7 @@ TEST(ProtobufToAST, fn_i32_to_i32_fastcc) {
 //
 
 TEST(ProtobufToAST, tuple_i32_i32_type) {
+  initCachedLLVMTypes();
   TypeAST* i32 = TypeAST::i(32);
   std::vector<TypeAST*> args;
   args.push_back(i32); args.push_back(TypeAST::i(64));
@@ -138,6 +141,7 @@ TEST(ProtobufToAST, tuple_i32_i32_type) {
 //
 
 TEST(ProtobufToAST, literal_int_type_small) {
+  initCachedLLVMTypes();
   LiteralIntValueTypeAST* t = LiteralIntValueTypeAST::get(42, testRange);
 
   TypeAST* rt = roundtrip(t);
@@ -159,6 +163,7 @@ TEST(ProtobufToAST, literal_int_type_small) {
 }
 
 TEST(ProtobufToAST, literal_int_large) {
+  initCachedLLVMTypes();
   LiteralIntValueTypeAST* t = LiteralIntValueTypeAST::get((1ULL << 42), testRange);
   TypeAST* rt = roundtrip(t);
 
@@ -185,6 +190,7 @@ TEST(ProtobufToAST, literal_int_large) {
 //
 
 TEST(ProtobufToAST, simd_vector_type) {
+  initCachedLLVMTypes();
   TypeAST* i32 = TypeAST::i(32);
   LiteralIntValueTypeAST* sz = LiteralIntValueTypeAST::get(4, testRange);
   SimdVectorTypeAST* t = SimdVectorTypeAST::get(sz, i32, testRange);
@@ -209,6 +215,7 @@ TEST(ProtobufToAST, simd_vector_type) {
 //
 #if 0
 TEST(ProtobufToAST, closure_type) {
+  initCachedLLVMTypes();
   TypeAST* i32 = TypeAST::i(32);
   ClosureTypeAST* clty = new ClosureTypeAST(proto, unfuntype, testRange);
 }
@@ -249,6 +256,7 @@ string pr(ExprAST* ast) {
 //
 
 TEST(ProtobufToAST, sm_int_literal_plain) {
+  initCachedLLVMTypes();
   ExprAST* e = parse("123");
   ExprAST* re = roundtrip(e);
 
@@ -266,6 +274,7 @@ TEST(ProtobufToAST, sm_int_literal_plain) {
 }
 
 TEST(ProtobufToAST, sm_int_literal_fancy_base2) {
+  initCachedLLVMTypes();
   //                 0x  3  5
   ExprAST* e = parse("0011`0101_2");
   ExprAST* re = roundtrip(e);
@@ -285,6 +294,7 @@ TEST(ProtobufToAST, sm_int_literal_fancy_base2) {
 }
 
 TEST(ProtobufToAST, lg_int_literal_fancy_base16) {
+  initCachedLLVMTypes();
   ExprAST* e = parse("FEED`fAcE_16");
   ExprAST* re = roundtrip(e);
 
@@ -305,6 +315,7 @@ TEST(ProtobufToAST, lg_int_literal_fancy_base16) {
 // TODO: check "DEAD`FEED`FACE_16 when literals can have > 32 bits
 
 TEST(ProtobufToAST, bool_literal_true) {
+  initCachedLLVMTypes();
   ExprAST* e = parse("true");
   ExprAST* re = roundtrip(e);
 
@@ -324,6 +335,7 @@ TEST(ProtobufToAST, bool_literal_true) {
 //
 
 TEST(ProtobufToAST, unbound_variable) {
+  initCachedLLVMTypes();
   ExprAST* e = new VariableAST("x", TypeAST::i(32), testRange);
   ExprAST* re = roundtrip(e);
 
@@ -346,6 +358,7 @@ TEST(ProtobufToAST, unbound_variable) {
 //
 
 TEST(ProtobufToAST, unop_negate) {
+  initCachedLLVMTypes();
   ExprAST* e = parse("-2");
   ExprAST* re = roundtrip(e);
 
@@ -360,6 +373,7 @@ TEST(ProtobufToAST, unop_negate) {
 }
 
 TEST(ProtobufToAST, binop_plus) {
+  initCachedLLVMTypes();
   ExprAST* e = parse("1 + 2");
   ExprAST* re = roundtrip(e);
 
@@ -379,6 +393,7 @@ TEST(ProtobufToAST, binop_plus) {
 //
 
 TEST(ProtobufToAST, let_simple_arith) {
+  initCachedLLVMTypes();
   ExprAST* e = parse("let x : i32 = 3 in { x + x * x }");
 
   ASSERT_TRUE(e);
@@ -389,6 +404,7 @@ TEST(ProtobufToAST, let_simple_arith) {
 }
 
 TEST(ProtobufToAST, let_lambda_call) {
+  initCachedLLVMTypes();
   ExprAST* e = parse("let x : i32 = 3 \n"
                      "let f : fn (z:i32) = fn (z:i32) { z + 1 } in {\n"
                      "  f(x) }");
@@ -400,6 +416,7 @@ TEST(ProtobufToAST, let_lambda_call) {
 }
 
 TEST(ProtobufToAST, fnlit_higher_order) {
+  initCachedLLVMTypes();
   ExprAST* e = parse("fn (x : fn (z:i32) ) { 0 }");
   ASSERT_TRUE(e);
   ExprAST* re = roundtrip(e);
@@ -411,6 +428,7 @@ TEST(ProtobufToAST, fnlit_higher_order) {
 #define STR(x) #x
 
 TEST(ProtobufToAST, big_example_1) {
+  initCachedLLVMTypes();
   ExprAST* e = parse(STR(
 let x : i32 = 3 in {
   let f : fn (k:i32, h:i32, r:i32, m:i32) = fn (k:i32, h:i32, r:i32, m:i32) {
