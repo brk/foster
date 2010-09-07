@@ -495,7 +495,6 @@ int main(int argc, char** argv) {
   mainModulePath.makeAbsolute();
   module = new Module(mainModulePath.str().c_str(), getGlobalContext());
   ee = EngineBuilder(module).create();
-  initMaps();
 
   Module* m = readLLVMModuleFromPath("libfoster.bc");
   foster::putModuleMembersInScope(m, module);
