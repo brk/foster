@@ -22,13 +22,15 @@ def main(args):
     line option disables the use of the "long long" type, which is not
     standard ANSI C90; by default, "long long" is considered.
     """
+    # getopt stops processing args after the first non-option arg.
+    args = args[2:]
     try:
-        opts, args = getopt.getopt(args, 'LFC', ('nolonglong','',''))
+      opts, args = getopt.getopt(args, 'LF:C:', ('nolonglong','cflags','compiler'))
     except getopt.GetoptError, e:
-        print >> sys.stderr, "Usage: generate-imath.h.py <path/to/imath.in.h> <path/to/imath.h> -F 'cflags' -C 'compiler' [-L/--nolonglong]"
-        sys.exit(1)
+      print >> sys.stderr, "Usage: generate-imath.h.py <path/to/imath.in.h> <path/to/imath.h> -F 'cflags' -C 'compiler' [-L/--nolonglong]"
+      sys.exit(1)
 
-    CC = "g++"
+    CC = "clang"
     CFLAGS = [""]
 
     for opt, arg in opts:
@@ -79,9 +81,11 @@ def get_type_sizes(types, cc, cflags = ()):
     print >> sys.stderr, \
           "Compiler:  %s\n" \
           "Flags:     %s\n" \
-          "Source:    %s\n" % (cc, ' '.join(cflags), tpath)
+          "Source:    %s\n" % (cc, cflags, tpath)
 
-    cmd = [cc] + list(cflags) + [tpath]
+    cmd = [cc] + [cflags] + [tpath]
+    # Don't want to include empty strings in cmd array.
+    cmd = [c for c in cmd if c != '']
     if subprocess.call(cmd) <> 0:
         raise ValueError("Error while running '%s'" % ' '.join(cmd))
 
@@ -130,8 +134,8 @@ if __name__ == "__main__":
           (info['word_type'], info['word_size'],
            info['digit_type'], info['digit_size'])
     subst = {'MP_DIGIT_MP_WORD_TYPEDEFS': typedefs}
-    imath_in_h = info['args'][0]
-    imath_h = info['args'][1]
+    imath_in_h = sys.argv[1]
+    imath_h =    sys.argv[2]
     print typedefs
     file_substitute(subst, imath_in_h, imath_h)
 

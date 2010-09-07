@@ -5,8 +5,11 @@ add_custom_command(
   OUTPUT ${PROJECT_BINARY_DIR}/imath.h
   COMMAND
     python ${imath_ROOT}/generate-imath.h.py
-           ${imath_ROOT}/imath.in.h ${PROJECT_BINARY_DIR}/imath.h
-           -C ${CMAKE_CXX_COMPILER} -F ${CMAKE_CXX_CFLAGS}
+           ${imath_ROOT}/imath.in.h
+           ${PROJECT_BINARY_DIR}/imath.h
+           -C ${CMAKE_CXX_COMPILER}
+           -F "${CMAKE_CXX_CFLAGS}"
+  VERBATIM
   DEPENDS
     ${imath_ROOT}/imath.in.h
     ${imath_ROOT}/generate-imath.h.py
