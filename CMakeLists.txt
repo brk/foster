@@ -2,7 +2,6 @@ cmake_minimum_required (VERSION 2.6)
 project (foster)
 
 cmake_policy(VERSION 2.8.0)
-cmake_policy(SET CMP0015 OLD)
 
 ####################### Configuration Rules ########################
 
