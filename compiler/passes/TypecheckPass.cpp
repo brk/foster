@@ -652,12 +652,6 @@ bool typecheck(ExprAST* e) {
     tp.constraints.show(currentOuts());
   }
   tp.solveConstraints();
-#if 0
-    if (!constraints.empty()) {
-      currentOuts() << "Constraints after solving:\n";
-      constraints.show(currentOuts());
-    }
-#endif
   tp.applyTypeSubstitution(e);
   
   bool noProblemsTypechecking = tp.constraints.errors.empty();
@@ -901,41 +895,6 @@ void TypecheckPass::visit(IfExprAST* ast) {
   constraints.addEq(testExpr, testExpr->type, TypeAST::i(1));
   constraints.addEq(ast,      thenExpr->type, elseExpr->type);
   ast->type = thenExpr->type;
-
-#if 0
-  const Type* ifType = ast->testExpr->type->getLLVMType();
-  if (!ifType) {
-    EDiag() << "if condition had null type" << show(ast->testExpr);
-    return;
-  }
-
-  if (ifType != LLVMTypeFor("i1")) {
-    EDiag() << "if condition had non-bool type " << str(ifType)
-            << show(ast->testExpr);
-    return;
-  }
-
-  ast->thenExpr->accept(this); TypeAST* thenType = ast->thenExpr->type;
-  ast->elseExpr->accept(this); TypeAST* elseType = ast->elseExpr->type;
-
-  if (thenType == NULL) {
-    EDiag() << "null type for 'then' branch of if expression"
-            << show(ast->thenExpr);
-    return;
-  } else if (elseType == NULL) {
-    EDiag() << "null type for 'else' branch of if expression"
-            << show(ast->elseExpr);
-    return;
-  } else if (thenType->getLLVMType() != elseType->getLLVMType()) {
-    EDiag() << "if expression had different types for then/else branches: "
-            << "then: " << str(thenType->getLLVMType())
-            << "vs else: " << str(elseType->getLLVMType())
-            << show(ast);
-    return;
-  } else {
-    ast->type = thenType;
-  }
-#endif
 }
 
 // ast = for VAR in START to END by INCR do BODY
@@ -953,69 +912,6 @@ void TypecheckPass::visit(ForRangeExprAST* ast) {
   constraints.addEq(ast, ast->getStartExpr()->type, ast->getEndExpr()->type);
   constraints.addEq(ast, ast->getStartExpr()->type, ast->getIncrExpr()->type);
   ast->type = TypeAST::i(32);
-
-#if 0
-  // Check type of START
-  ast->startExpr->accept(this);
-  TypeAST* startType = ast->startExpr->type;
-  if (!startType) {
-    EDiag() << "for range start expression had null type"
-            << show(ast->startExpr);
-    return;
-  } else if (startType->getLLVMType() != LLVMTypeFor("i32")) {
-    EDiag() << "expected for range start expression to have type i32,"
-            << " but got type " << str(startType) << show(ast->startExpr);
-    return;
-  }
-
-  // Check that we can bind START to VAR
-  ast->var->accept(this);
-  if (!canAssignType(startType, ast->var->type)) {
-	EDiag() << "could not bind for range start expr to declared variable!"
-            << show(ast);
-	return;
-  }
-
-  // Check that END has same type as START
-  ASSERT(ast->endExpr != NULL);
-  ast->endExpr->accept(this);
-  TypeAST* endType = ast->endExpr->type;
-  if (!endType) {
-    EDiag() << "for range end expression had null type"
-            << show(ast->endExpr);
-    return;
-  } else if (!hasEqualRepr(startType, endType)) {
-	EDiag() << "for range start and end expressions had different types\n"
-	        << "for range start: " << str(startType) << "\n"
-	        << "for range end  : " << str(endType) << show(ast->endExpr);
-	return;
-  }
-
-  // Check that incrExpr, if it exists, has same type as START
-  if (ast->incrExpr) {
-	ast->incrExpr->accept(this);
-	TypeAST* incrType = ast->incrExpr->type;
-	if (!incrType) {
-      EDiag() << "for range incr expression had null type"
-              << show(ast->endExpr);
-	  return;
-	} else if (!hasEqualRepr(startType, incrType)) {
-      EDiag() << "for range start and incr expressions had different types\n"
-              << "for range start: " << str(startType) << "\n"
-              << "for range incr : " << str(incrType) << show(ast->incrExpr);
-	    return;
-	}
-  }
-
-  ast->getBody()Expr->accept(this);
-  TypeAST* bodyType = ast->getBody()Expr->type;
-  if (!bodyType) {
-    EDiag() << "for range body expression had null type" << show(ast->getBody()Expr);
-    return;
-  }
-
-  ast->type = TypeAST::i(32);
-#endif
 }
 
 int indexInParent(ExprAST* child, int startingIndex) {
@@ -1079,25 +975,6 @@ void TypecheckPass::visit(AssignExprAST* ast) {
   constraints.addEq(ast, lhsTy, RefTypeAST::get(rhsTy));
 
   ast->type = TypeAST::i(32);
-
-#if 0
-  if (RefTypeAST* plhsTy = dynamic_cast<RefTypeAST*>(lhsTy)) {
-    lhsTy = plhsTy->getElementType();
-    if (rhsTy->canConvertTo(lhsTy)) {
-      ast->type = TypeAST::i(32);
-    } else {
-      EDiag() << "types in assignment not copy-compatible"
-              << "\n\tLHS (deref'd): " << str(lhsTy)
-              << "\n\tRHS          : " << str(rhsTy)
-              << show(ast);
-      ast->type = NULL;
-    }
-  } else {
-    EDiag() << "attempted to assign to a non-pointer type " << str(lhsTy)
-            << show(ast);
-    ast->type = NULL;
-  }
-#endif
 }
 
 // Returns aggregate (struct, array, union) and vector types directly,
@@ -1270,13 +1147,6 @@ void givePrintRefPseudoPolymorphicType(CallAST* ast, TypecheckPass* pass) {
   TypeAST* refT = RefTypeAST::get(TypeVariableAST::get("printref", arg->sourceRange));
   
   pass->constraints.addEq(ast, arg->type, refT);
-
-#if 0
-  if (!arg->type->getLLVMType()->isPointerTy()) {
-    EDiag() << "print_ref() given arg of non-ref type " << str(arg->type)
-            << show(arg);
-  }
-#endif
 }
 
 const FunctionType* getFunctionTypeFromClosureStructType(const Type* ty) {
@@ -1385,82 +1255,6 @@ void TypecheckPass::visit(CallAST* ast) {
   constraints.addEq(ast, actualFnType, baseType);
   
   ast->type = retTy;
-  
-  #if 0
-  FnTypeAST* baseFT = tryExtractCallableType(baseType);
-  if (baseFT == NULL) {
-    baseFT = originalFunctionTypeForClosureStructType(baseType);
-  }
-
-  if (baseFT == NULL) {
-    EDiag() << "called expression had non-callable type "
-            << str(baseType) << show(base);
-    return;
-  }
-
-  size_t numParams = baseFT->getNumParams();
-  if (numParams != args.size()) {
-    EDiag() << "arity mismatch, " << args.size()
-            << " args provided for function of type " << str(baseFT)
-            << " taking " << numParams << " args"
-            << show(ast);
-    return;
-  }
-  
-  for (size_t i = 0; i < numParams; ++i) {
-    TypeAST* formalType = baseFT->getParamType(i);
-    TypeAST* actualType = args[i]->type;
-    constraints.addEq(ast, actualType, formalType);
-  }
-
-  for (size_t i = 0; i < numParams; ++i) {
-    TypeAST* formalType = baseFT->getParamType(i);
-    TypeAST* actualType = args[i]->type;
-
-    if (const FunctionType* fnty
-              = llvm::dyn_cast<const FunctionType>(actualType->getLLVMType())) {
-      // If we try to use  fa: i32 () in place of ff: void ()*,
-      // temporarily give the function fa the type of ff.
-      if (isPointerToCompatibleFnTy(formalType->getLLVMType(), fnty)) {
-        actualType = formalType;
-      } else {
-        // Temporarily view a function type as its specific closure type,
-        // since the formal arguments will have undergone the same conversion.
-        currentOuts() << "actualtype = " << str(actualType) << "\n";
-        actualType = genericClosureTypeFor(actualType);
-        currentOuts() << "TYPECHECK CallAST converting " << *fnty
-                  << " to " << str(actualType->getLLVMType()) << "\n";
-        currentOuts() << "\t for formal type:\t" << str(formalType->getLLVMType())
-                  << "\n";
-        currentOuts() << "\t base :: " << *base << "\n";
-      }
-    } else if (const llvm::StructType* sty = llvm::dyn_cast<llvm::StructType>(actualType->getLLVMType())) {
-      if (isValidClosureType(sty)) {
-        FnTypeAST* fnty = originalFunctionTypeForClosureStructType(actualType);
-        if (isPointerToCompatibleFnTy(formalType->getLLVMType(),
-             llvm::cast<FunctionType>(fnty->getLLVMType()))) {
-          // We have a closure and will convert it to a bare
-          // trampoline function pointer at codegen time.
-          actualType = formalType;
-
-          if (ExprAST* arg = args[i]) {
-             if (ClosureAST* clo = dynamic_cast<ClosureAST*>(arg)) {
-               clo->isTrampolineVersion = true;
-             } else {
-               constraints.newLoggedError()
-                      << "LLVM requires literal closure definitions"
-                      << " to be given at trampoline creation sites"
-                      << show(ast);
-               constraints.logError(err);
-             }
-          }
-        }
-      }
-    }
-  }
-
-  ast->type = baseFT->getReturnType();
-  #endif
 }
 
 /// For now, as a special case, simd-vector and array will interpret { 4;i32 }
@@ -1483,69 +1277,6 @@ int extractNumElementsAndElementType(unsigned int maxSize, ExprAST* ast,
   }
   return 0;
 }
-
-#if 0
-void TypecheckPass::visit(ArrayExprAST* ast) {
-  bool success = true;
-  std::map<const Type*, bool> fieldTypes;
-
-  SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
-  if (!body) {
-    std::cerr << "Typecheck of array expr failed because ast.parts[0] = "
-              << ast->parts[0] << " was not a Seq!" << "\n";
-    return;
-  }
-
-  size_t numElements = body->parts.size();
-  const Type* elementType = NULL;
-
-  if (numElements == 2) {
-    numElements = extractNumElementsAndElementType(256, ast, elementType);
-    if (numElements != 0) {
-      // Don't try to interpret the size + type as initializers!
-      body->parts.clear();
-    } else {
-      numElements = 2;
-    }
-  }
-
-  if (!elementType) {
-    for (size_t i = 0; i < numElements; ++i) {
-      const Type* ty =  body->parts[i]->type->getLLVMType();
-      if (!ty) {
-        EDiag() << "array expr had null constituent type for subexpr " << i
-                << show(body->parts[i]);
-        success = false;
-        break;
-      }
-      fieldTypes[ty] = true;
-      elementType = ty;
-    }
-
-    // TODO This should probably be relaxed eventually; for example,
-    // an array of "small" and "large" int literals should silently be accepted
-    // as an array of "large" ints.
-    if (success && fieldTypes.size() > 1) {
-      std::cerr << "Array expression had multiple types! Found:" << "\n";
-      std::map<const Type*, bool>::const_iterator it;;
-      for (it = fieldTypes.begin(); it != fieldTypes.end(); ++it) {
-        std::cerr << "\t" << *((*it).first) << "\n";
-      }
-      success = false;
-    }
-  }
-
-  if (!elementType) {
-    std::cerr << "Error: Array had no discernable element type?!?" << "\n";
-    return;
-  }
-
-
-  if (success) {
-    ast->type = TypeAST::get(llvm::ArrayType::get(elementType, numElements));
-  }
-}
-#endif
 
 bool isPrimitiveNumericType(const Type* ty) {
   return ty->isFloatingPointTy() || ty->isIntegerTy();
