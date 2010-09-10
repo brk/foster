@@ -4,8 +4,12 @@ fn "main" () {
 
   // This only starts one thread in order to remain deterministic...
   
-  expect_i32(832040)
-  thread_create_i32(fn () { print_i32(fib(30)) })
+  //expect_i32(832040)
   
-  thread_waitall()
+  // Temporarily disabled due to removal of closure->trampoline
+  // creation, until we start mirroring Clang++ and passing structs
+  // as byval pointers instead of regular values.
+  //
+  //thread_create_i32(fn () { print_i32(fib(30)) })
+  //thread_waitall()
 }

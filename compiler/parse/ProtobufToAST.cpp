@@ -91,9 +91,6 @@ ExprAST* parseClosure(const pb::Expr& e, const foster::SourceRange& range) {
   ClosureAST* clo = new ClosureAST(
       dynamic_cast<FnAST*>(ExprAST_from_pb(& c.fn())),
       range);
-
-  clo->isTrampolineVersion = c.has_is_trampoline_version()
-                          && c.is_trampoline_version();
   return clo;
 }
 

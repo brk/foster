@@ -236,3 +236,4 @@ bool isPointerToCompatibleFnTy(const llvm::Type* ty,
  }
  return false;
 }
+

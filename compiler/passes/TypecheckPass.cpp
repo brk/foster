@@ -212,45 +212,27 @@ struct TypecheckPass : public ExprASTVisitor {
             
           } else if (t1->tag == std::string("ClosureType")
                   && t2->tag == std::string("RefType")) {
-            
-            // Converting a closure to a ref of the exact same type is permissible,
-            // since it will be handled by codegen as creating a trampoline.
+            // A closure is compatible with the struct-level
+            // representation of the closure.
             ClosureTypeAST* ct1 = dynamic_cast<ClosureTypeAST*>(t1);
-            TypeAST* ft1 = ct1->getFnType();
-            
+            FnTypeAST* ft1 = dynamic_cast<FnTypeAST*>(ct1->getFnType());
+          
             RefTypeAST* rt2 = dynamic_cast<RefTypeAST*>(t2);
-            // referent type must be concrete/monomorphic (e.g. a C function type)
-            TypeAST* ft2 = rt2->getElementType();
+            TypeAST* t2 = rt2->getElementType();
+            
+            FnTypeAST* ft2 = NULL;
+            if (t2->tag == std::string("TupleType")) {
+              ft2 = originalFunctionTypeForClosureStructType(t2);
+            }
 
-            if (string(ft1->tag) == string(ft2->tag) && str(ft1) == str(ft2)) {
-              currentOuts() << context->tag << " :: " << str(context) << "\n";
-              
-              
-              
-              // One additional rule beyond basic prototype matching:
-              // LLVM requires that we provide a literal function at
-              // trampoline creation sites.
-              ClosureAST* literalClosure = NULL;
-              
-              if (CallAST* call = dynamic_cast<CallAST*>(context)) {
-                literalClosure = dynamic_cast<ClosureAST*>(call->parts[1]);
-              }
-              
-              if (!literalClosure) {
-                newLoggedError()
-                       << "LLVM requires that trampoline creation be given\n"
-                       << "a literal function body, not a variable referring\n"
-                       << "to a function object."
-                       << foster::show(context);
-                // Record the constraint without applying it to the substitution.
-                collectEqualityConstraint(context, t1, t2);
-              } else {
-                literalClosure->isTrampolineVersion = true;
-              }
+            if (ft1 && ft2) {
+              // Ensure that the relative function parameter types match up
+              // between R(X, Y) and { R(i8*, X, Y), i8* }.
+              extractTypeConstraints(eConstraintEq, context, ft1, ft2, *this);
             } else {
               newLoggedError()
-                     << "Unable to unify clo/ref types " << str(ft1) << " and " << str(ft2)
-                     << " [" << ft1->tag << " != " << ft2->tag << "]"
+                     << "Unable to unify clo/ref types " << str(t1) << " and " << str(t2)
+                     << " [" << t1->tag << " != " << t2->tag << "]"
                      << " from " << context->tag
                      << foster::show(context);
               // Record the constraint without applying it to the substitution.

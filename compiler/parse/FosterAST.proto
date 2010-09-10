@@ -114,7 +114,6 @@ message Proto {
 
 message Closure {
   required Expr  fn = 2;
-  required bool  is_trampoline_version = 3 [default = false];
 }
 
 message If {

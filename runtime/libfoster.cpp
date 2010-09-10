@@ -78,11 +78,6 @@ void cleanup() {
 #define PRId64 "lld"
 #endif
 
-struct FosterClosurei32 {
-  int32_t (*code)(void* env);
-  void* env;
-};
-
 int fprint_i64(FILE* f, int64_t x) { return fprintf(f, "%" PRId64 "\n", x) - 1; }
 int fprint_i32(FILE* f, int32_t x) { return fprintf(f, "%d\n", x) - 1; }
 int fprint_i32x(FILE* f, int32_t x) { return fprintf(f, "%X_16\n", x) - 1; }
@@ -95,15 +90,18 @@ int fprint_i32b(FILE* f, int32_t x) {
   return fprintf(f, "%s_2\n", buf);
 }
 
-std::vector<pthread_t> threadinfo;
-
-typedef void (*GenericCallback)();
-typedef int32_t (*i32Callback)();
-
-void* i32_callback_invoker(void* arg) {
-  int32_t rv = ((i32Callback) arg)();
-  return NULL;
-}
+//struct FosterClosurei32 {
+//  int32_t (*code)(void* env);
+//  void* env;
+//};
+//
+//std::vector<pthread_t> threadinfo;
+//
+//void* i32_closure_invoker(void* arg) {
+//  FosterClosurei32* c = (FosterClosurei32*) arg;
+//  int32_t rv = c->code(c->env);
+//  return NULL;
+//}
 
 } } // namespace foster::runtime
 
@@ -115,7 +113,9 @@ extern "C" {
   //    which foster doesn't yet do, and
   // 2) llvm-g++ lowers the closure struct type given above, so foster sees
   //    a function of two pointer parameters instead of one struct type param.
-  //    Thus, in order to pass a closure struct to a C function, we must either:
+  //    (Clang++ lowers to a byval pointer, which is better for us.)
+  //    Thus, in order to pass a closure struct to a C function lowered by
+  //    llvm-g++, we can:
   //      a) Special-case this function in the typecheck and codegen passes (ew!)
   //      b) Add a generalized automatic-unpacking pass
   //         that applies to all functions (ew!)
@@ -123,33 +123,39 @@ extern "C" {
   //         if we're calling a C function, and the LLVM types only match with
   //         the unpacking applied. (ugh!)
   //
-  // Thus, the easiest route is to (implicitly) require that closures
+  // The easiest route would to (implicitly) require that closures
   // be converted to standalone trampolines before being passed in.
+  // Unfortunately, trampolines are not universally available on all platforms,
+  // for security reasons (they require mutable + executable memory).
   //
   // TODO: The C wrapper may end up being necessary anyways, in order
   // to pass thread id information (as well as the env) back to the callback.
   // Need to decide if and how thread ids and such should be handled.
   //
-int32_t thread_create_i32(i32Callback f) {
-  int32_t id = threadinfo.size();
-  threadinfo.push_back(pthread_t());
-  return pthread_create(&threadinfo[id], NULL, i32_callback_invoker, (void*) f);
-}
+//int32_t thread_create_i32(FosterClosurei32 c) {
+//  int32_t id = threadinfo.size();
+//  threadinfo.push_back(pthread_t());
+//  return pthread_create(&threadinfo[id], NULL, i32_closure_invoker, (void*) &c);
+//}
+//
+//int32_t thread_waitall() {
+//  int nthreads = threadinfo.size();
+//  for (int i = 0; i < nthreads; ++i) {
+//    pthread_join(threadinfo[i], NULL);
+//  }
+//  threadinfo.clear();
+//  return nthreads;
+//}
 
-int32_t thread_waitall() {
-  int nthreads = threadinfo.size();
-  for (int i = 0; i < nthreads; ++i) {
-    pthread_join(threadinfo[i], NULL);
-  }
-  threadinfo.clear();
-  return nthreads;
-}
+//int32_t c_invoke_closure_i32(FosterClosurei32 clo) { return clo.code(clo.env); }
 
-int32_t c_invoke_closure_i32(FosterClosurei32 clo) { return clo.code(clo.env); }
-//void c_invoke_closure_void(FosterClosureVoid clo) { clo.code(clo.env); }
-
-void c_invoke_fnptr_void(void (*f)()) { f(); }
-int32_t c_invoke_fnptr_i32(int32_t (*f)()) { return f(); }
+// The main complication with supporting a function such as this,
+// which allows top-level Foster functions to be passed to C as raw
+// function pointers, is that the compiler must duplicate the function
+// body and give the duplicate C callconv, instead of fastcc (or whatever).
+// Currently, the compiler does not create safely callable duplicates
+// for use by C, but we should eventually.
+//int32_t c_invoke_fnptr_to_i32(int32_t (*f)()) { return f(); }
 
 // Interface to foster's memory allocator; see gc/foster_gc_allocate.cpp
 void* memalloc(int64_t sz);

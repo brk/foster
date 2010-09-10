@@ -335,18 +335,9 @@ struct ClosureAST : public ExprAST {
   // during closure conversion of the above fn AST node.
   bool hasKnownEnvironment;
 
-  // LLVM supports generation of trampoline code, which allows us to pass
-  // closure values to C code expecting a raw function pointer -- very cool.
-  // LLVM generates different code for the trampoline and non-trampoline
-  // versions of a given function. Due to a separate restriction in LLVM,
-  // we must write closures "directly" at trampoline creation sites, which
-  // implies we don't need to worry about generating both the trampoline
-  // and non-trampoline versions of the closed fn.
-  bool isTrampolineVersion;
-
   explicit ClosureAST(FnAST* fn, foster::SourceRange sourceRange)
     : ExprAST("ClosureAST", sourceRange), fn(fn),
-      hasKnownEnvironment(false), isTrampolineVersion(false) { }
+      hasKnownEnvironment(false) { }
 
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const;

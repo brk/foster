@@ -127,7 +127,6 @@ void DumpToProtobufPass::visit(ClosureAST* ast) {
   if (ast->fn) {
     dumpChild(this, clo->mutable_fn(), ast->fn);
   }
-  clo->set_is_trampoline_version(ast->isTrampolineVersion);
 }
 
 void DumpToProtobufPass::visit(ModuleAST* ast)              {

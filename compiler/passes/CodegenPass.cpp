@@ -764,16 +764,6 @@ void CodegenPass::visit(ClosureAST* ast) {
   typecheck(env);
   env->accept(this);
 
-  if (ast->isTrampolineVersion) {
-    if (Function* func = dyn_cast<Function>(fnPtr->value)) {
-      func->addAttribute(1, llvm::Attribute::Nest);
-      // If we're creating a trampoline, it must be to get a value
-      // callable from C; thus, we must ensure that the underlying
-      // function itself gets a standard C calling convention.
-      func->setCallingConv(llvm::CallingConv::C);
-    }
-  }
-
 #if 0
   llvm::errs() << "Closure conversion " << ast->fn->proto->name << "\n\tfnPtr value: "
       << *fnPtr->value << "\n\tFunction? " << llvm::isa<Function>(fnPtr->value) << "\n";
@@ -1301,71 +1291,6 @@ FnAST* getVoidReturningVersionOf(ExprAST* arg, FnTypeAST* fnty) {
   return NULL;
 }
 
-Function* getLLVMInitTrampoline() {
-  // This isn't added along with the other intrinsics because
-  // it's not supposed to be directly callable from foster code.
-
-  const llvm::Type* pi8 = llvm::PointerType::getUnqual(LLVMTypeFor("i8"));
-
-  std::vector<const Type*> llvm_init_trampoline_fnty_args;
-  llvm_init_trampoline_fnty_args.push_back(pi8);
-  llvm_init_trampoline_fnty_args.push_back(pi8);
-  llvm_init_trampoline_fnty_args.push_back(pi8);
-  FunctionType* llvm_init_trampoline_fnty = FunctionType::get(
-      pi8, llvm_init_trampoline_fnty_args, /*isVarArg=*/false);
-
-  Function* llvm_init_trampoline = Function::Create(
-      /*Type=*/    llvm_init_trampoline_fnty,
-      /*Linkage=*/ llvm::GlobalValue::ExternalLinkage,
-      /*Name=*/    "llvm.init.trampoline", module); // (external, no body)
-  llvm_init_trampoline->setCallingConv(llvm::CallingConv::C);
-  return llvm_init_trampoline;
-}
-
-llvm::Value* getTrampolineForClosure(ClosureAST* cloAST) {
-  static Function* llvm_init_trampoline = getLLVMInitTrampoline();
-
-  const llvm::Type* i8 = LLVMTypeFor("i8");
-  const llvm::Type* pi8 = llvm::PointerType::getUnqual(i8);
-
-  // We have a closure { code*, env* } and must convert it to a bare
-  // trampoline function pointer.
-
-  // TODO need to call a runtime library function to get mprotect()ed pages
-  // on Mac OS X; 10.5 marks stack as NX, and 10.6 marks stack and heap pages
-  // as NX by default.
-  //
-  // TODO also need to think about if/how trampolines, external C code, and GC
-  // might play nice. Trampolines effectively serve as (very likely) GC roots
-  // that we don't control and cannot directly track, and which (probably) must
-  // pin whatever memory they can access, to avoid possible data races with
-  // C code when updating pointers in the trampoline env after copying GC.
-  const llvm::Type* trampolineArrayType = llvm::ArrayType::get(i8, 32); // Sufficient for x86 and x86_64
-  llvm::AllocaInst* trampolineBuf = CreateEntryAlloca(trampolineArrayType, "trampBuf");
-
-  trampolineBuf->setAlignment(32); // sufficient for x86 and x86_64
-  Value* trampi8 = builder.CreateBitCast(trampolineBuf, pi8, "trampi8");
-
-  //markGCRoot(trampolineBuf, NULL);
-
-  // It would be nice and easy to extract the code pointer from the closure,
-  // but LLVM requires that pointers passed to trampolines be "obvious" function
-  // pointers. Thus, we need direct access to the closure's underlying fn.
-  ExprAST* fnPtr = new VariableAST(cloAST->fn->getProto()->name,
-                               RefTypeAST::get(cloAST->fn->type),
-                               SourceRange::getEmptyRange());
-  { typecheck(fnPtr); codegen(fnPtr); }
-
-  Value* codePtr = fnPtr->value;
-  Value* envPtr = builder.CreateExtractValue(cloAST->value, 1, "getEnvPtr");
-
-  Value* tramp = builder.CreateCall3(llvm_init_trampoline,
-                      trampi8,
-                      builder.CreateBitCast(codePtr, pi8),
-                      builder.CreateBitCast(envPtr,  pi8), "tramp");
-  return tramp;
-}
-
 // Create function    fnName(i8* env, arg-args) { arg(arg-args) }
 // that hard-codes call to fn referenced by arg,
 // and is suitable for embedding as the code ptr in a closure pair,
@@ -1539,17 +1464,6 @@ void CodegenPass::visit(CallAST* ast) {
         clo->hasKnownEnvironment = true; // Empty by definition!
         arg = clo;
         typecheck(arg);
-      //
-      // One slightly more clever approach could use a trampoline to reduce
-      // code bloat. Instead of one "closure version" per function, we'd
-      // generate one "generic closure forwarder" per function type
-      // signature. The forwarder for a function G of type R (X, Y) would be
-      // of type R (R (X, Y)* nest, i8* env, X, Y). The body of the forwarder
-      // would simply call the nest function pointer with the provided params.
-      // The trampoline would embed the pointer to G, yielding a callable
-      // function of the desired type, R (i8* env, X, Y).
-      // This would have the additional benefit of working with anonymous
-      // function pointer values e.g. from a lookup table.
       }
     }
 
@@ -1561,12 +1475,7 @@ void CodegenPass::visit(CallAST* ast) {
       return;
     }
 
-    if (clo && clo->isTrampolineVersion) {
-      std::cout << "Creating trampoline for closure; bitcasting to " << *expectedType << std::endl;
-      V = builder.CreateBitCast(getTrampolineForClosure(clo), expectedType, "trampfn");
-    }
-
-    appendArg(valArgs, V, FT); // Don't unpack non 'unpack'-marked structs
+    appendArg(valArgs, V, FT);
   }
 
   // Stack slot loads must be done after codegen for all arguments

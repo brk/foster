@@ -37,24 +37,24 @@ void absorb(BuildCFG* pass, Exprs& exprs) {
   }
 }
 
-void BuildCFG::visit(IntAST* ast) { currentRoot->append(ast); }
-void BuildCFG::visit(BoolAST* ast) { currentRoot->append(ast); }
-void BuildCFG::visit(VariableAST* ast) { currentRoot->append(ast); }
-void BuildCFG::visit(UnaryOpExprAST* ast) { currentRoot->append(ast); }
+void BuildCFG::visit(IntAST* ast)          { currentRoot->append(ast); }
+void BuildCFG::visit(BoolAST* ast)         { currentRoot->append(ast); }
+void BuildCFG::visit(VariableAST* ast)     { currentRoot->append(ast); }
+void BuildCFG::visit(UnaryOpExprAST* ast)  { currentRoot->append(ast); }
 void BuildCFG::visit(BinaryOpExprAST* ast) { currentRoot->append(ast); }
-void BuildCFG::visit(NilExprAST* ast) { currentRoot->append(ast); }
-void BuildCFG::visit(RefExprAST* ast) { currentRoot->append(ast); }
-void BuildCFG::visit(DerefExprAST* ast) { currentRoot->append(ast); }
-void BuildCFG::visit(AssignExprAST* ast) { currentRoot->append(ast); }
-void BuildCFG::visit(SubscriptAST* ast) { currentRoot->append(ast); }
-void BuildCFG::visit(ClosureAST* ast) { currentRoot->append(ast); }
+void BuildCFG::visit(NilExprAST* ast)      { currentRoot->append(ast); }
+void BuildCFG::visit(RefExprAST* ast)      { currentRoot->append(ast); }
+void BuildCFG::visit(DerefExprAST* ast)    { currentRoot->append(ast); }
+void BuildCFG::visit(AssignExprAST* ast)   { currentRoot->append(ast); }
+void BuildCFG::visit(SubscriptAST* ast)    { currentRoot->append(ast); }
+void BuildCFG::visit(ClosureAST* ast)      { currentRoot->append(ast); }
 ///void BuildCFG::visit(ArrayExprAST* ast) { currentRoot->append(ast); }
-void BuildCFG::visit(SimdVectorAST* ast) { currentRoot->append(ast); } 
-void BuildCFG::visit(TupleExprAST* ast) { currentRoot->append(ast); } 
+void BuildCFG::visit(SimdVectorAST* ast)   { currentRoot->append(ast); } 
+void BuildCFG::visit(TupleExprAST* ast)    { currentRoot->append(ast); } 
 void BuildCFG::visit(BuiltinCompilesExprAST* ast) { currentRoot->append(ast); }
 void BuildCFG::visit(NamedTypeDeclAST* ast) { currentRoot->append(ast); }
 
-void BuildCFG::visit(SeqAST* ast) { absorb(this, ast->parts); }
+void BuildCFG::visit(SeqAST* ast)  { absorb(this, ast->parts); }
 void BuildCFG::visit(CallAST* ast) { absorb(this, ast->parts); }
 
 void BuildCFG::visit(PrototypeAST* ast) {
