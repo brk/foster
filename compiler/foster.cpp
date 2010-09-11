@@ -165,7 +165,7 @@ void printVersionInfo() {
   llvm::outs() << "Foster version: " << FOSTER_VERSION_STR;
   llvm::outs() << ", compiled: " << __DATE__ << " at " << __TIME__ << "\n";
   llvm::outs() << "ANTLR version " << ANTLR_VERSION_STR << "\n";
-  cl::PrintVersionMessage(); 
+  cl::PrintVersionMessage();
 }
 
 void setTimingDescriptions() {
@@ -496,10 +496,13 @@ int main(int argc, char** argv) {
   module = new Module(mainModulePath.str().c_str(), getGlobalContext());
   ee = EngineBuilder(module).create();
 
-  Module* m = readLLVMModuleFromPath("libfoster.bc");
-  foster::putModuleMembersInScope(m, module);
+  Module* libfoster_bc = readLLVMModuleFromPath("libfoster.bc");
+  Module* imath_bc = readLLVMModuleFromPath("imath-wrapper.bc");
+
+  foster::putModuleMembersInScope(libfoster_bc, module);
+  foster::putModuleMembersInInternalScope("imath", imath_bc, module);
   foster::createLLVMBitIntrinsics();
-  
+
   llvm::sys::Path inPath(optInputPath);
   const foster::InputFile infile(inPath);
 
@@ -508,7 +511,6 @@ int main(int argc, char** argv) {
   unsigned numParseErrors = 0;
   ModuleAST* exprAST = NULL;
 
-  //foster::CompilationContext cc;
   foster::CompilationContext::pushNewContext();
 
   { ScopedTimer timer("io.parse");
@@ -536,7 +538,7 @@ int main(int argc, char** argv) {
     llvm::outs() << "Adding parent links..." << "\n";
     foster::addParentLinks(exprAST);
   }
- 
+
   {
     llvm::outs() << "=========================" << "\n";
     llvm::outs() << "building CFGs" << "\n";
@@ -571,14 +573,14 @@ int main(int argc, char** argv) {
   }
 
   if (!typechecked) { return 1; }
-  
+
   if (optDumpASTs) { ScopedTimer timer("io.file");
     string outfile = "pp-precc.txt";
     llvm::outs() << "=========================" << "\n";
     llvm::outs() << "Pretty printing to " << outfile << "\n";
     std::ofstream out(dumpdirFile(outfile).c_str());
     llvm::raw_os_ostream rout(out);
-    
+
     ScopedTimer pptimer("io.prettyprint");
     foster::prettyPrintExpr(exprAST, rout);
   }
@@ -593,11 +595,11 @@ int main(int argc, char** argv) {
 
   { llvm::outs() << "=========================" << "\n";
     llvm::outs() << "Performing closure conversion..." << "\n";
-    
+
     ScopedTimer timer("foster.closureconv");
     foster::performClosureConversion(foster::globalNames, exprAST);
   }
-  
+
   if (optDumpASTs) {
     dumpModuleToProtobuf(exprAST, dumpdirFile("ast.postcc.pb"));
   }
@@ -619,7 +621,7 @@ int main(int argc, char** argv) {
     ScopedTimer timer("foster.codegen");
     foster::codegen(exprAST);
   }
-  
+
   if (optDumpPreLinkedIR) {
     dumpModuleToFile(module, dumpdirFile("out.prelink.ll").c_str());
   }
@@ -629,8 +631,12 @@ int main(int argc, char** argv) {
   if (!optCompileSeparately) {
     string errMsg;
     { ScopedTimer timer("llvm.link");
-    if (Linker::LinkModules(module, m, &errMsg)) {
-      llvm::errs() << "Error when linking modules: " << errMsg << "\n";
+    if (Linker::LinkModules(module, libfoster_bc, &errMsg)) {
+      llvm::errs() << "Error when linking in libfoster.bc: " << errMsg << "\n";
+    }
+
+    if (Linker::LinkModules(module, imath_bc, &errMsg)) {
+      llvm::errs() << "Error when linking in imath.bc: " << errMsg << "\n";
     }
     }
 
@@ -639,11 +645,11 @@ int main(int argc, char** argv) {
     }
 
     optimizeModuleAndRunPasses(module);
-    
+
     if (optDumpPostOptIR) {
       dumpModuleToFile(module, dumpdirFile("out.postopt.ll"));
     }
-    
+
     compileToNativeAssembly(module, dumpdirFile("out.s"));
   } else { // -c, compile to module instead of native assembly
     std::string outBcFilename(mainModulePath.getLast().str() + ".out.bc");

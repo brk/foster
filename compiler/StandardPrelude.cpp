@@ -4,6 +4,7 @@
 
 #include "llvm/DerivedTypes.h"
 #include "llvm/Module.h"
+#include "llvm/TypeSymbolTable.h"
 
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
@@ -20,6 +21,94 @@ using llvm::Function;
 namespace foster {
 
 std::set<string> globalNames;
+
+
+// Add module m's C-linkage functions in the global scopes,
+// and also add prototypes to the linkee module.
+void putModuleMembersInInternalScope(const std::string& scopeName,
+                                     Module* m, Module* linkee) {
+  if (!m) return;
+
+  foster::SymbolTable<foster::SymbolInfo>::LexicalScope* scope = NULL;
+  scope = gScope.newScope(string("$") + scopeName);
+  gScope.popExistingScope(scope);
+
+  /*
+  const llvm::TypeSymbolTable & typeSymTab = m->getTypeSymbolTable();
+  for (llvm::TypeSymbolTable::const_iterator it = typeSymTab.begin();
+                                           it != typeSymTab.end(); ++it) {
+    std::string name = (*it).first;
+    const llvm::Type* ty   = (*it).second;
+
+    //llvm::outs() << "type " << name << " = " << str(ty) << "\n";
+
+    linkee->addTypeName(name, ty);
+  }
+  */
+
+  for (Module::global_iterator it = m->global_begin();
+                              it != m->global_end(); ++it) {
+    const llvm::GlobalVariable& gv = *it;
+    if (!gv.isConstant()) continue;
+
+    const string& name = gv.getNameStr();
+    //llvm::outs() << "<internal>\tglobal\t" << name << "\n";
+
+    // TODO add global variables
+  }
+
+  std::set<string> functionsToRemove;
+
+  for (Module::iterator it = m->begin(); it != m->end(); ++it) {
+    const Function& f = *it;
+
+    const string& name = f.getNameStr();
+    bool isCxxLinkage = pystring::startswith(name, "_Z", 0)
+                     || pystring::startswith(name, "__cxx_", 0);
+    if (isCxxLinkage) continue;
+
+    bool hasDef = !f.isDeclaration();
+    if (hasDef) {
+      if (!pystring::startswith(name, "foster_")) {
+        // drop from original module
+        functionsToRemove.insert(name);
+      } else {
+        continue;
+      }
+    }
+
+    const Type* ty = f.getType();
+    // We get a pointer-to-whatever-function type, because f is a global
+    // value (therefore ptr), but we want just the function type.
+    if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
+      ty = pty->getElementType();
+    }
+
+    if (const llvm::FunctionType* fnty =
+                                      llvm::dyn_cast<llvm::FunctionType>(ty)) {
+      Value* decl = linkee->getOrInsertFunction(
+          llvm::StringRef(name),
+          fnty,
+          f.getAttributes());
+
+      //llvm::outs() << "<internal>\t" << hasDef << "\t" << name << "\n";
+
+      scope->insert(name, new foster::SymbolInfo(
+                          new VariableAST(name, TypeAST::reconstruct(fnty),
+                                          SourceRange::getEmptyRange()),
+                          decl));
+    } else {
+      ASSERT(false) << "how could a function not have function type?!?";
+    }
+  }
+
+  // Don't link in functions that were just included to force
+  // LLVM to include declarations in the module in the first place.
+  for (std::set<std::string>::iterator it = functionsToRemove.begin();
+                         it != functionsToRemove.end(); ++it) {
+    m->getFunctionList().erase(m->getFunction(*it));
+  }
+}
 
 // Add module m's C-linkage functions in the global scopes,
 // and also add prototypes to the linkee module.

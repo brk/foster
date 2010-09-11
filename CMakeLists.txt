@@ -179,6 +179,25 @@ add_custom_target(libfoster_bc DEPENDS
         ${PROJECT_BINARY_DIR}/libfoster.bc
         ${PROJECT_BINARY_DIR}/libfoster_main.o)
 
+
+add_custom_command(
+  OUTPUT
+        ${PROJECT_BINARY_DIR}/imath-wrapper.bc
+  COMMAND
+        ${LLVM_G++} -x c
+          ${PROJECT_SOURCE_DIR}/third_party/imath/imath-wrapper.c
+          -I ${PROJECT_BINARY_DIR}
+          -c -emit-llvm
+          -o ${PROJECT_BINARY_DIR}/imath-wrapper.bc
+  DEPENDS
+          ${PROJECT_SOURCE_DIR}/third_party/imath/imath-wrapper.c
+)
+
+add_custom_target(imath_wrapper_bc DEPENDS
+        ${PROJECT_BINARY_DIR}/imath.h
+        ${PROJECT_BINARY_DIR}/imath-wrapper.bc
+        imath)
+
 # Attaching commands to add_custom_target basically means
 # "run these commands whenver the target is mentioned."
 add_custom_target(unittests COMMAND ctest -V -R unittest
@@ -292,7 +311,7 @@ target_link_libraries(fosterc
   fosterc_llvm
   antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
 
-add_dependencies(fosterc libfoster_bc)
+add_dependencies(fosterc libfoster_bc imath_wrapper_bc)
 
 add_dependencies(libfoster_bc chromium_base)
 add_dependencies(libfoster_bc cpuid)

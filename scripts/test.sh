@@ -2,7 +2,7 @@
 
 OUTPUT=fc-output
 
-STATIC_LIBS="libfoster_main.o libchromium_base.a libcpuid.a"
+STATIC_LIBS="libfoster_main.o libchromium_base.a libcpuid.a libimath.a"
 case `uname -s` in
   Darwin)
     RUNTIME_LIBS="-lpthread -framework CoreFoundation"

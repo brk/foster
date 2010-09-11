@@ -58,8 +58,6 @@ bool arePhysicallyCompatible(const llvm::Type* src,
 //virtual
 TypeAST::~TypeAST() {}
 
-static map<const llvm::Type*, TypeAST*> seen;
-
 TypeAST* TypeAST::i(int n) {
   std::stringstream ss; ss << "i" << n;
   return NamedTypeAST::get(ss.str(), llvmIntType(n));
@@ -69,54 +67,62 @@ TypeAST* TypeAST::getVoid() {
   return NamedTypeAST::get("void", llvm::Type::getVoidTy(llvm::getGlobalContext()));
 }
 
-TypeAST* TypeAST::reconstruct(const llvm::Type* loweredType) {
-  if (loweredType->isVoidTy()) {
-    return TypeAST::getVoid();
-  }
-
-  if (loweredType->isPointerTy()) {
-    const llvm::Type* pointee = loweredType->getContainedType(0);
-    if (TypeAST* s = seen[pointee]) {
-      if (s == (TypeAST*) 1) {
-        return RefTypeAST::get(NamedTypeAST::get("bogus/opaque!", pointee));
-      } else {
-        return s;
+struct TypeReconstructor {
+  TypeAST* recon(const llvm::Type* loweredType) {
+    if (loweredType->isVoidTy()) { return TypeAST::getVoid(); }
+  
+    if (loweredType->isPointerTy()) {
+      const llvm::Type* pointee = loweredType->getContainedType(0);
+      if (TypeAST* s = seen[pointee]) {
+        if (s == (TypeAST*) 1) {
+          llvm::outs() << "Recursive type: " << str(loweredType) << "\n";
+          return RefTypeAST::get(NamedTypeAST::get("bogus/opaque!", pointee));
+        } else {
+          return s;
+        }
       }
+      return RefTypeAST::get(recon(pointee)); 
     }
-    return RefTypeAST::get(TypeAST::reconstruct(pointee)); 
-  }
-
-  if (const llvm::FunctionType* fnty
-         = llvm::dyn_cast<const llvm::FunctionType>(loweredType)) {
-    TypeAST* ret = TypeAST::reconstruct(fnty->getReturnType());
-    vector<TypeAST*> args;
-    for (size_t i = 0; i < fnty->getNumParams(); ++i) {
-       args.push_back(TypeAST::reconstruct(fnty->getParamType(i))); 
-    }
-    return FnTypeAST::get(ret, args, "fastcc");
-  }
-
-  if (const llvm::StructType* sty
-         = llvm::dyn_cast<const llvm::StructType>(loweredType)) {
-    seen[sty] = (TypeAST*) 1;
-    vector<TypeAST*> args;
-    for (size_t i = 0; i < sty->getNumElements(); ++i) {
-       args.push_back(TypeAST::reconstruct(sty->getContainedType(i))); 
-    }
-    return TupleTypeAST::get(args);
-  }
   
-  if (llvm::dyn_cast<const llvm::OpaqueType>(loweredType)) {
-    return NamedTypeAST::get("opaque", loweredType);
-  }
+    if (const llvm::FunctionType* fnty
+           = llvm::dyn_cast<const llvm::FunctionType>(loweredType)) {
+      TypeAST* ret = recon(fnty->getReturnType());
+      vector<TypeAST*> args;
+      for (size_t i = 0; i < fnty->getNumParams(); ++i) {
+         args.push_back(recon(fnty->getParamType(i))); 
+      }
+      return FnTypeAST::get(ret, args, "fastcc");
+    }
   
-  if (loweredType->isIntegerTy()) {
+    if (const llvm::StructType* sty
+           = llvm::dyn_cast<const llvm::StructType>(loweredType)) {
+      seen[sty] = (TypeAST*) 1;
+      vector<TypeAST*> args;
+      for (size_t i = 0; i < sty->getNumElements(); ++i) {
+         args.push_back(recon(sty->getContainedType(i))); 
+      }
+      seen[sty] = (TypeAST*) 0;
+      return TupleTypeAST::get(args);
+    }
+    
+    if (llvm::dyn_cast<const llvm::OpaqueType>(loweredType)) {
+      return NamedTypeAST::get("opaque", loweredType);
+    }
+    
+    if (loweredType->isIntegerTy()) {
+      return NamedTypeAST::get(str(loweredType), loweredType);
+    }
+  
+    llvm::outs() << "TypeReconstructor::reconstruct() did not recognize " << str(loweredType) << "\n";
+  
     return NamedTypeAST::get(str(loweredType), loweredType);
   }
+  
+  map<const llvm::Type*, TypeAST*> seen;
+};
 
-  llvm::outs() << "TypeAST::reconstruct() did not recognize " << str(loweredType) << "\n";
-
-  return NamedTypeAST::get(str(loweredType), loweredType);
+TypeAST* TypeAST::reconstruct(const llvm::Type* loweredType) {
+  TypeReconstructor tr; return tr.recon(loweredType);
 }
 
 ////////////////////////////////////////////////////////////////////

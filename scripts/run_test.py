@@ -46,7 +46,7 @@ def extract_expected_input(path):
   return open(tmpname, 'r')
 
 def get_static_libs():
-  return "libfoster_main.o libchromium_base.a libcpuid.a"
+  return "libfoster_main.o libchromium_base.a libcpuid.a libimath.a"
 
 def get_link_flags():
   import platform
