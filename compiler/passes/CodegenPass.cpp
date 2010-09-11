@@ -502,6 +502,46 @@ void CodegenPass::visit(UnaryOpExprAST* ast) {
   }
 }
 
+llvm::Value* emitPrimitiveLLVMOperation(const std::string& op,
+                                        llvm::Value* VL, llvm::Value* VR) {
+       if (op == "+") { return builder.CreateAdd(VL, VR, "addtmp"); }
+  else if (op == "-") { return builder.CreateSub(VL, VR, "subtmp"); }
+  else if (op == "/") { return builder.CreateSDiv(VL, VR, "divtmp"); }
+  else if (op == "*") { return builder.CreateMul(VL, VR, "multmp"); }
+
+  else if (op == "<")  { return builder.CreateICmpSLT(VL, VR, "slttmp"); }
+  else if (op == "<=") { return builder.CreateICmpSLE(VL, VR, "sletmp"); }
+  else if (op == ">")  { return builder.CreateICmpSGT(VL, VR, "sgttmp"); }
+  else if (op == ">=") { return builder.CreateICmpSGE(VL, VR, "sgetmp"); }
+  else if (op == "==") { return builder.CreateICmpEQ(VL, VR, "eqtmp"); }
+  else if (op == "!=") { return builder.CreateICmpNE(VL, VR, "netmp"); }
+
+  else if (op == "bitand") { return builder.CreateAnd(VL, VR, "bitandtmp"); }
+  else if (op == "bitor") {  return builder.CreateOr( VL, VR, "bitortmp"); }
+  else if (op == "bitxor") { return builder.CreateXor(VL, VR, "bitxortmp"); }
+
+  else if (op == "bitshl") { return builder.CreateShl(VL, VR, "shltmp"); }
+  else if (op == "bitlshr") { return builder.CreateLShr(VL, VR, "lshrtmp"); }
+  else if (op == "bitashr") { return builder.CreateAShr(VL, VR, "ashrtmp"); }
+}
+
+bool isPrimitiveLLVMNumericType(const llvm::Type* ty) {
+  return ty->isIntOrIntVectorTy() || ty->isFloatingPointTy();
+}
+
+bool isRuntimeArbitraryPrecisionNumericType(const llvm::Type* ty) {
+  EDiag() << "\t isRuntimeArbitraryPrecisionNumericType() not yet implemented!";
+  exit(1);
+  return false; 
+}
+
+llvm::Value* emitRuntimeArbitraryPrecisionOperation(const std::string& op,
+                                        llvm::Value* VL, llvm::Value* VR) {
+  EDiag() << "\t emitRuntimeArbitraryPrecisionOperation() not yet implemented!";
+  exit(1);
+  return NULL;
+}
+
 bool leftTypeBiggerInt(const Type* left, const Type* right) {
   return left->getScalarSizeInBits() > right->getScalarSizeInBits();
 }
@@ -527,27 +567,16 @@ void CodegenPass::visit(BinaryOpExprAST* ast) {
     }
   }
 
-       if (op == "+") { ast->value = builder.CreateAdd(VL, VR, "addtmp"); }
-  else if (op == "-") { ast->value = builder.CreateSub(VL, VR, "subtmp"); }
-  else if (op == "/") { ast->value = builder.CreateSDiv(VL, VR, "divtmp"); }
-  else if (op == "*") { ast->value = builder.CreateMul(VL, VR, "multmp"); }
-
-  else if (op == "<")  { ast->value = builder.CreateICmpSLT(VL, VR, "slttmp"); }
-  else if (op == "<=") { ast->value = builder.CreateICmpSLE(VL, VR, "sletmp"); }
-  else if (op == ">")  { ast->value = builder.CreateICmpSGT(VL, VR, "sgttmp"); }
-  else if (op == ">=") { ast->value = builder.CreateICmpSGE(VL, VR, "sgetmp"); }
-  else if (op == "==") { ast->value = builder.CreateICmpEQ(VL, VR, "eqtmp"); }
-  else if (op == "!=") { ast->value = builder.CreateICmpNE(VL, VR, "netmp"); }
-
-  else if (op == "bitand") { ast->value = builder.CreateAnd(VL, VR, "bitandtmp"); }
-  else if (op == "bitor") {  ast->value = builder.CreateOr( VL, VR, "bitortmp"); }
-  else if (op == "bitxor") { ast->value = builder.CreateXor(VL, VR, "bitxortmp"); }
-
-  else if (op == "bitshl") { ast->value = builder.CreateShl(VL, VR, "shltmp"); }
-  else if (op == "bitlshr") { ast->value = builder.CreateLShr(VL, VR, "lshrtmp"); }
-  else if (op == "bitashr") { ast->value = builder.CreateAShr(VL, VR, "ashrtmp"); }
-  else {
-    EDiag() << "unable to codegen binary '" << op << "'" << show(ast);
+  if (isPrimitiveLLVMNumericType(VL->getType())) {
+    ast->value = emitPrimitiveLLVMOperation(op, VL, VR);
+  } else if (isRuntimeArbitraryPrecisionNumericType(VL->getType())) {
+    ast->value = emitRuntimeArbitraryPrecisionOperation(op, VL, VR);
+  }
+  
+  if (!ast->value) {
+    EDiag() << "Unable to codegen binary operator " << op << " : "
+            << str(VL->getType()) << show(ast);
+    return;
   }
 }
 
@@ -1430,9 +1459,6 @@ void CodegenPass::visit(CallAST* ast) {
       // 1) A C-linkage function which expects a bare function pointer.
       // 2) A Foster function which expects a closure value.
       bool passFunctionPointer = isPointerToCompatibleFnTy(expectedType, llvmFnTy);
-
-      std::cout << "Passing function to " << (passFunctionPointer ? "fn ptr" : "closure") << "\n";
-
       if (passFunctionPointer) {
       // Case 1 is simple; we just change the arg type to "function pointer"
       // instead of "function value" and LLVM takes care of the rest.
