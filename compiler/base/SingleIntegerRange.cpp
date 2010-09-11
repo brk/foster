@@ -460,6 +460,11 @@ struct SingleIntegerRangeConstraintSet::Impl {
   void buildConstraintGraph(Graph& g);
   
   void solveStronglyConnectedComponent(Graph& g, Graph::SCCSubgraph& scc);
+  
+  void unrollSubgraphFrom(Graph::SCCSubgraph& scc, SingleIntegerRangeVariable* Xstar);
+  
+  SingleIntegerRangeVariable*
+    transformToRemoveMultipleConstraints(Graph& g, Graph::SCCSubgraph& scc);
 };
 
 SingleIntegerRangeConstraintSet::SingleIntegerRangeConstraintSet() {
@@ -492,12 +497,7 @@ SingleIntegerRange* SingleIntegerRangeConstraintSet::solve() {
     impl->solveStronglyConnectedComponent(g, scc);
   }
   
-  // Use algorithm from Fig. 6 of the paper: 
-  // for each component C:
-  //    transform to remove multiple constraints, yielding X*
-  //    unroll C from X*
-  //    compute least valuation rho for induced subgraph
-  //    update through back edges as necessary
+  // propagate constraints through SCC DAG
   
   typedef std::set<SingleIntegerRangeVariable*>  VarSet;
   VarSet vars;
@@ -608,6 +608,34 @@ void SingleIntegerRangeConstraintSet::Impl::buildConstraintGraph(
 void SingleIntegerRangeConstraintSet::Impl::solveStronglyConnectedComponent(
     SingleIntegerRangeConstraintSet::Impl::Graph& g,
     SingleIntegerRangeConstraintSet::Impl::Graph::SCCSubgraph& scc) {
+
+  // Use algorithm from Fig. 6 of the paper:
+  SingleIntegerRangeVariable* Xstar =
+    transformToRemoveMultipleConstraints(g, scc);
+  unrollSubgraphFrom(scc, Xstar);
+  
+  //   compute least valuation rho for induced subgraph
+  //   update through back edges as necessary  
+}
+
+SingleIntegerRangeVariable*
+SingleIntegerRangeConstraintSet::Impl::transformToRemoveMultipleConstraints(
+    SingleIntegerRangeConstraintSet::Impl::Graph& g,
+    SingleIntegerRangeConstraintSet::Impl::Graph::SCCSubgraph& scc) {
+
+  SingleIntegerRangeVariable* Xstar = getVariable("X!*");
+/*  
+  typedef SingleIntegerRangeConstraintSet::Impl::Graph::Node* NodePtr;
+  NodePtr Xnode = g.addNode(Xstar);
+  NodePtr node1 = g.addNode(getConstantRange(1));
+  
+  */
+  return Xstar;
+}
+
+void SingleIntegerRangeConstraintSet::Impl::unrollSubgraphFrom(
+    SingleIntegerRangeConstraintSet::Impl::Graph::SCCSubgraph& scc,
+    SingleIntegerRangeVariable* Xstar) {
   // TODO
 }
 
