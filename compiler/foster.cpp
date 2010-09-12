@@ -24,6 +24,8 @@
 #include "llvm/Target/TargetRegistry.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/Target/SubtargetFeature.h"
+#include "llvm/Target/TargetSelect.h"
+
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Support/StandardPasses.h"
 #include "llvm/Support/PassNameParser.h"
@@ -144,11 +146,9 @@ static cl::opt<bool>
 optDumpASTs("dump-asts",
   cl::desc("[foster] Dump intermediate ASTs (and ANLTR parse tree)"));
 
-#ifdef LLVM_GE_2_8
 static cl::opt<bool>
 optDumpStats("dump-stats",
   cl::desc("[foster] Dump timing and other statistics from compilation"));
-#endif
 
 static cl::opt<bool>
 optPrintTimings("fosterc-time",
@@ -371,8 +371,7 @@ void compileToNativeAssembly(Module* mod, const string& filename) {
 
   tm->setAsmVerbosityDefault(true);
 
-  // TODO replace TargetData from ee (in Codegen) with this TargetData
-  FunctionPassManager passes(mod);
+  PassManager passes;
   if (const TargetData* td = tm->getTargetData()) {
     passes.add(new TargetData(*td));
   } else {
@@ -399,12 +398,16 @@ void compileToNativeAssembly(Module* mod, const string& filename) {
     exit(1);
   }
 
-  passes.doInitialization();
-  for (Module::iterator it = mod->begin(); it != mod->end(); ++it) {
-    if (it->isDeclaration()) continue;
-    passes.run(*it);
+  passes.run(*mod);
+}
+
+void linkTo(llvm::Module*& transient,
+            const std::string& name,
+            llvm::Module* module) {
+  string errMsg;
+  if (Linker::LinkModules(module, transient, &errMsg)) {
+    llvm::errs() << "Error when linking in " << name << ": " << errMsg << "\n";
   }
-  passes.doFinalization();
 }
 
 /// Ensures that the given path exists and is a file, not a directory.
@@ -454,8 +457,8 @@ void collectIncludeRoots() {
 
 void setDefaultCommandLineOptions() {
   if (string(LLVM_HOSTTRIPLE).find("darwin") != string::npos) {
-    // Applications on Mac OS X must be compiled with relocatable symbols, which
-    // is -mdynamic-no-pic (GCC) or -relocation-model=dynamic-no-pic (llc).
+    // Applications on Mac OS X (x86) must be compiled with relocatable symbols,
+    // which is -mdynamic-no-pic (GCC) or -relocation-model=dynamic-no-pic (llc).
     // Setting the flag here gives us the proper default, while still allowing
     // the user to override via command line options if need be.
     llvm::TargetMachine::setRelocationModel(llvm::Reloc::DynamicNoPIC);
@@ -487,14 +490,12 @@ int main(int argc, char** argv) {
   ensureDirectoryExists( dotdirFile(""));
 
   using foster::module;
-  using foster::ee;
 
   foster::initializeLLVM();
 
   llvm::sys::Path mainModulePath(optInputPath);
   mainModulePath.makeAbsolute();
   module = new Module(mainModulePath.str().c_str(), getGlobalContext());
-  ee = EngineBuilder(module).create();
 
   Module* libfoster_bc = readLLVMModuleFromPath("libfoster.bc");
   Module* imath_bc = readLLVMModuleFromPath("imath-wrapper.bc");
@@ -629,15 +630,9 @@ int main(int argc, char** argv) {
   dumpScopesToDotGraphs();
 
   if (!optCompileSeparately) {
-    string errMsg;
     { ScopedTimer timer("llvm.link");
-    if (Linker::LinkModules(module, libfoster_bc, &errMsg)) {
-      llvm::errs() << "Error when linking in libfoster.bc: " << errMsg << "\n";
-    }
-
-    if (Linker::LinkModules(module, imath_bc, &errMsg)) {
-      llvm::errs() << "Error when linking in imath.bc: " << errMsg << "\n";
-    }
+      linkTo(libfoster_bc, "libfoster.bc", module);
+      linkTo(imath_bc, "imath.bc", module);
     }
 
     if (optDumpPostLinkedIR) {
@@ -657,13 +652,11 @@ int main(int argc, char** argv) {
   }
   // TODO invoke g++ .s -> exe
 
-#ifdef LLVM_GE_2_8
   if (optDumpStats) {
     string err;
     llvm::raw_fd_ostream out(dumpdirFile("stats.txt").c_str(), err);
     llvm::PrintStatistics(out);
   }
-#endif
 
   { ScopedTimer timer("protobuf.shutdown");
     google::protobuf::ShutdownProtobufLibrary();
@@ -677,6 +670,10 @@ int main(int argc, char** argv) {
   foster::CompilationContext::popCurrentContext();
   foster::deleteANTLRContext(ctx);
   delete wholeProgramTimer;
+
+  delete libfoster_bc; libfoster_bc = NULL;
+  delete imath_bc; imath_bc = NULL;
+  delete module; module = NULL;
 
   if (optPrintTimings) {
     setTimingDescriptions();

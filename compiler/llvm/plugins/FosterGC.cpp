@@ -12,14 +12,23 @@
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCStreamer.h"
+#include "llvm/MC/MCContext.h"
+#include "llvm/MC/MCSymbol.h"
+
 #include "llvm/Target/Mangler.h"
 #include "llvm/Target/TargetData.h"
+#include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetLoweringObjectFile.h"
 #include "llvm/Function.h"
 #include "llvm/Module.h"
 #include "llvm/Support/raw_ostream.h"
+
+#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/Statistic.h"
 
+#include "llvm/MC/MCSymbol.h"
+
+using llvm::MCSymbol;
 using llvm::GCFunctionInfo;
 
 #include <set>
@@ -31,7 +40,7 @@ STATISTIC(sNumStackMapBytesEmitted, "Number of stack map bytes emitted");
 #undef DEBUG_TYPE
 
 namespace foster {
-  void linkFosterGC() { }
+  void linkFosterGC() {}
 }
 
 namespace {
@@ -52,30 +61,21 @@ X1("fostergc", "Foster GC");
 const char kFosterGCMapsSymbolName[]      = "foster__gcmaps";
 const char kFosterGCMapSymbolNamePrefix[] = "fos\"ter__gcmap>";
 
-void EmitSymbol(const llvm::Twine& sym,
-                llvm::raw_ostream& OS,
+void EmitSymbol(const llvm::Twine& symStr,
                 llvm::AsmPrinter& AP,
                 const llvm::MCAsmInfo& MAI) {
 
-  llvm::SmallVectorImpl<char> mangledName(sym.str().size());
-  AP.Mang->getNameWithPrefix(mangledName, sym);
-  std::string symbol(mangledName.begin(), mangledName.end());
+  llvm::SmallString<128> mangledName;
+  AP.Mang->getNameWithPrefix(mangledName, symStr);
 
-  if (MAI.doesAllowQuotesInName()) {
-    // The mangler doesn't tell us whether it expects us to quote
-    // the symbol ourselves, so we'll assume we need to if we can.
-    symbol = '"' + symbol + '"';
-  }
-
-  if (const char *GlobalDirective = MAI.getGlobalDirective()) {
-    OS << GlobalDirective << symbol << "\n";
-  }
-  OS << symbol << ":\n";
+  MCSymbol* sym = AP.OutContext.GetOrCreateSymbol(mangledName);
+  AP.OutStreamer.EmitSymbolAttribute(sym, llvm::MCSA_Global);
+  AP.OutStreamer.EmitLabel(sym);
 }
 
-typedef std::set<unsigned> Labels;
+typedef std::set<MCSymbol*> Labels;
 typedef std::set<int> RootOffsets;
-typedef std::pair<int, llvm::Constant*> OffsetWithMetadata;
+typedef std::pair<int,const llvm::Constant*> OffsetWithMetadata;
 typedef std::set<OffsetWithMetadata> RootOffsetsWithMetadata;
 typedef std::pair<RootOffsets, RootOffsetsWithMetadata> Roots;
 typedef std::pair<int, Roots> FrameInfo; // .first=frame size
@@ -85,7 +85,7 @@ void collectLiveOffsets(GCFunctionInfo& MD,
                         RootOffsets& offsets,
                         RootOffsetsWithMetadata& offsetsWithMetadata) {
   for (GCFunctionInfo::live_iterator LI = MD.live_begin(PI),
-			             LE = MD.live_end(PI); LI != LE; ++LI) {
+                                     LE = MD.live_end(PI); LI != LE; ++LI) {
     if (LI->Metadata) {
       offsetsWithMetadata.insert(
               OffsetWithMetadata(LI->StackOffset, LI->Metadata));
@@ -101,13 +101,13 @@ ClusterMap computeClusters(GCFunctionInfo& MD) {
   ClusterMap clusters;
 
   for (GCFunctionInfo::iterator PI = MD.begin(),
-			        PE = MD.end(); PI != PE; ++PI) {
+                                PE = MD.end(); PI != PE; ++PI) {
     RootOffsets offsets;
     RootOffsetsWithMetadata offsetsWithMetadata;
     collectLiveOffsets(MD, PI, offsets, offsetsWithMetadata);
     FrameInfo fi(MD.getFrameSize(),
                  std::make_pair(offsets, offsetsWithMetadata));
-    clusters[fi].insert(PI->Num);
+    clusters[fi].insert(PI->Label);
   }
 
   return clusters;
@@ -115,14 +115,12 @@ ClusterMap computeClusters(GCFunctionInfo& MD) {
 
 class FosterGCPrinter : public llvm::GCMetadataPrinter {
 public:
-  virtual void beginAssembly(llvm::raw_ostream &OS,
-                             llvm::AsmPrinter &AP,
-                             const llvm::MCAsmInfo &MAI) {
+  void beginAssembly(llvm::AsmPrinter &AP) {
   }
 
-  virtual void finishAssembly(llvm::raw_ostream &OS,
-                              llvm::AsmPrinter &AP,
-                              const llvm::MCAsmInfo &MAI) {
+  void finishAssembly(llvm::AsmPrinter &AP) {
+    const llvm::MCAsmInfo &MAI = *(AP.MAI);
+
     // Set up for emitting addresses.
     const char *AddressDirective;
     int AddressAlignLog;
@@ -139,9 +137,9 @@ public:
 
     // Emit a label and count of function maps
     AP.EmitAlignment(AddressAlignLog);
-    EmitSymbol(kFosterGCMapsSymbolName, OS, AP, MAI);
+    EmitSymbol(kFosterGCMapsSymbolName, AP, MAI);
     AP.OutStreamer.AddComment("number of function gc maps");
-    AP.EmitInt32(end() - begin()); 
+    AP.EmitInt32(end() - begin());
 
     // For each function...
     for (iterator FI = begin(), FE = end(); FI != FE; ++FI) {
@@ -170,7 +168,7 @@ public:
 
       // Emit the symbol by which the stack map entry can be found.
       EmitSymbol(kFosterGCMapSymbolNamePrefix + MD.getFunction().getName(),
-                 OS, AP, MAI);
+                 AP, MAI);
 
       // Compute the safe point clusters for this function.
       ClusterMap clusters = computeClusters(MD);
@@ -220,7 +218,7 @@ public:
           AP.EmitGlobalConstant((*rit).second);
           voidPtrsForThisFunction++;
 
-          AP.OutStreamer.AddComment("stack offset for root");
+          AP.OutStreamer.AddComment("stack offset for metadata-imbued root");
           AP.EmitInt32((*rit).first);
           i32sForThisFunction++;
         }
@@ -228,18 +226,19 @@ public:
         // Emit the stack offsets for the metadata-less roots in the cluster.
         for (RootOffsets::iterator rit = offsets.begin();
                                    rit != offsets.end(); ++rit) {
-          AP.OutStreamer.AddComment("stack offset for root");
+          AP.OutStreamer.AddComment("stack offset for no-metadata root");
           AP.EmitInt32(*rit);
           i32sForThisFunction++;
         }
 
+        unsigned IntPtrSize = AP.TM.getTargetData()->getPointerSize();
+
         // Emit the addresses of the safe points in the cluster.
         for (Labels::iterator lit = labels.begin();
                               lit != labels.end(); ++lit) {
-          OS << AddressDirective
-             << MAI.getPrivateGlobalPrefix() << "label" << (*lit);
           AP.OutStreamer.AddComment("safe point address");
-          AP.OutStreamer.AddBlankLine();
+          const unsigned addrSpace = 0;
+          AP.OutStreamer.EmitSymbolValue(*lit, IntPtrSize, addrSpace);
           voidPtrsForThisFunction++;
         }
       }
@@ -251,6 +250,6 @@ public:
 
 llvm::GCMetadataPrinterRegistry::Add<FosterGCPrinter>
 X2("fostergc", "Foster GC printer");
-  
+
 } // unnamed namespace
 

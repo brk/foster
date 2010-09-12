@@ -59,7 +59,7 @@ namespace foster {
   void codegen(ExprAST* ast) {
     CodegenPass cp; ast->accept(&cp);
   }
-  
+
   void codegen(ExprAST* ast, CodegenPass* cp) {
     ast->accept(cp);
   }
@@ -70,11 +70,11 @@ typedef std::set<OffsetInfo> OffsetSet;
 
 // TODO replace with ConstantExpr::getOffsetOf(ty, slot) ?
 int getOffsetOfStructSlot(const llvm::StructType* ty, int slot) {
-  const llvm::TargetData* td = foster::ee->getTargetData();
+  const llvm::TargetData* td = new llvm::TargetData(foster::module);
   ASSERT(td) << "Need TargetData to compute struct offsets!";
   int offset = 0;
   for (int i = 0; i < slot; ++i) {
-        offset += td->getTypeStoreSize(ty->getContainedType(i));
+    offset += td->getTypeStoreSize(ty->getContainedType(i));
   }
   return offset;
 }
@@ -112,9 +112,9 @@ OffsetSet countPointersInType(const llvm::Type* ty) {
 
   // TODO Also need to decide how to represent type maps for unions
   // in such a way that the GC can safely collect unions.
-  else if (dyn_cast<const llvm::UnionType>(ty)) {
-    //return 0;
-  }
+  // Note! Now that LLVM has removed IR support for unions, codegen
+  // will require a Foster TypeAST*, not just a llvm::Type*,
+  // in order to properly codegen unions.
 
   // all other types do not contain pointers
   return rv;
@@ -192,7 +192,7 @@ llvm::GlobalVariable* emitTypeMap(const llvm::Type* ty, std::string name,
   using llvm::StructType;
 
   OffsetSet pointerOffsets = countPointersInType(ty);
-  //std::cout << "emitting type map for type " << *ty 
+  //std::cout << "emitting type map for type " << *ty
   // << " ; skipping offset zero? " << skipOffsetZero << std::endl;
 
   if (skipOffsetZero) {
@@ -532,7 +532,7 @@ bool isPrimitiveLLVMNumericType(const llvm::Type* ty) {
 bool isRuntimeArbitraryPrecisionNumericType(const llvm::Type* ty) {
   EDiag() << "\t isRuntimeArbitraryPrecisionNumericType() not yet implemented!";
   exit(1);
-  return false; 
+  return false;
 }
 
 llvm::Value* emitRuntimeArbitraryPrecisionOperation(const std::string& op,
@@ -572,7 +572,7 @@ void CodegenPass::visit(BinaryOpExprAST* ast) {
   } else if (isRuntimeArbitraryPrecisionNumericType(VL->getType())) {
     ast->value = emitRuntimeArbitraryPrecisionOperation(op, VL, VR);
   }
-  
+
   if (!ast->value) {
     EDiag() << "Unable to codegen binary operator " << op << " : "
             << str(VL->getType()) << show(ast);
@@ -788,7 +788,7 @@ void CodegenPass::visit(ClosureAST* ast) {
                    RefTypeAST::get(ast->fn->type), SourceRange::getEmptyRange());
   typecheck(fnPtr);
   fnPtr->accept(this);
-  
+
   env->isClosureEnvironment = true;
   typecheck(env);
   env->accept(this);
@@ -876,7 +876,7 @@ void CodegenPass::visit(ModuleAST* ast) {
       gScopeInsert(f->getProto()->name, f->getProto()->value);
     }
   }
-  
+
   // Codegen all the function bodies, now that we can resolve mutually-recursive
   // function references without needing to store prototypes in call nodes.
   for (size_t i = 0; i < ast->parts.size(); ++i) {
@@ -1122,7 +1122,7 @@ bool isPointerChainToType(const llvm::Type* pppt, const llvm::Type* t) {
     if (!pppt->isPointerTy()) { return false; }
     if (isPointerToType(pppt, t)) { return true; }
     pppt = pppt->getContainedType(0);
-  }  
+  }
 }
 
 void CodegenPass::visit(AssignExprAST* ast) {
@@ -1305,11 +1305,11 @@ FnAST* getVoidReturningVersionOf(ExprAST* arg, FnTypeAST* fnty) {
     FnAST* fn = new FnAST(proto, body, arg->sourceRange);
     typecheck(fn);
     codegen(fn);
-    
+
     // Regular functions get their proto values added when the module
     // starts codegenning, but we need to do it ourselves here.
     gScopeInsert(fn->getProto()->name, fn->getProto()->value);
-    
+
     voidReturningVersions[fnName] = fn;
     return fn;
   } else {
@@ -1326,9 +1326,9 @@ FnAST* getVoidReturningVersionOf(ExprAST* arg, FnTypeAST* fnty) {
 // unlike the given function, which doesn't want the env ptr.
 FnAST* getClosureVersionOf(ExprAST* arg, FnTypeAST* fnty) {
   static std::map<string, FnAST*> closureVersions;
-  
+
   string protoName;
-  
+
   if (VariableAST* var = dynamic_cast<VariableAST*>(arg)) {
     protoName = var->name;
   } else if (PrototypeAST* proto = dynamic_cast<PrototypeAST*>(arg)) {
@@ -1360,7 +1360,7 @@ FnAST* getClosureVersionOf(ExprAST* arg, FnTypeAST* fnty) {
                                     gScope.newScope("fn proto " + fnName);
     // But don't use it for doing codegen outside the proto.
     gScope.popExistingScope(protoScope);
-    
+
     PrototypeAST* proto = new PrototypeAST(fnty->getReturnType(),
                                fnName, inArgs, arg->sourceRange, protoScope);
     ExprAST* body = new CallAST(arg, callArgs, SourceRange::getEmptyRange());
@@ -1370,9 +1370,9 @@ FnAST* getClosureVersionOf(ExprAST* arg, FnTypeAST* fnty) {
     // Regular functions get their proto values added when the module
     // starts codegenning, but we need to do it ourselves here.
     gScopeInsert(fn->getProto()->name, fn->getProto()->value);
-      
+
     closureVersions[fnName] = fn;
-    
+
     return fn;
   } else {
     EDiag() << "getClosureVersionOf() was given unxpected arg " << str(arg) << show(arg);
@@ -1418,7 +1418,7 @@ void CodegenPass::visit(CallAST* ast) {
     FnTypeAST* fty = tryExtractCallableType(cty->clotype->getContainedType(0));
     std::cout << "closure fntype is " << fty << std::endl;
     ASSERT(fty) << "closure must have function type at codegen time!";
-    
+
     FT = dyn_cast<const FunctionType>(fty->getLLVMType());
     llvm::Value* clo = getClosureStructValue(FV);
 
@@ -1450,7 +1450,7 @@ void CodegenPass::visit(CallAST* ast) {
     } else if (FnTypeAST* fnty = dynamic_cast<FnTypeAST*>(arg->type)) {
       // Codegenning   callee( arg )  where arg has raw function type, not closure type!
       const llvm::FunctionType* llvmFnTy =
-	    llvm::dyn_cast<const llvm::FunctionType>(fnty->getLLVMType());
+            llvm::dyn_cast<const llvm::FunctionType>(fnty->getLLVMType());
       // If we still have a bare function type at codegen time, it means
       // the code specified a (top-level) function name.
       // Since we made it past type checking, we should have only two
@@ -1512,7 +1512,7 @@ void CodegenPass::visit(CallAST* ast) {
 
     // ContainedType[0] is the return type; args start at 1
     const llvm::Type* expectedType = FT->getContainedType(i + 1);
-    
+
     //std::cout <<" FT: " << str(FT) << std::endl;
 
     // If we're given a T** when we expect a T*,
@@ -1529,7 +1529,7 @@ void CodegenPass::visit(CallAST* ast) {
       TypeAST* argty = ast->parts[i + 1]->type;
       std::stringstream ss; ss << arg;
       EDiag() << str(V) << "->getType() is " << str(V->getType())
-              << "; expecting " << str(expectedType) 
+              << "; expecting " << str(expectedType)
               << "\n\targ is " << ss.str() << " :: " << arg->tag << " :: " << str(arg)
               << "\n\targty is " << argty->tag << "\t" << str(argty)
               << show(arg);

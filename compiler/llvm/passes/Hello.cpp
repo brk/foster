@@ -10,7 +10,7 @@ using namespace llvm;
 namespace {
 struct Hello : public FunctionPass {
   static char ID;
-  Hello() : FunctionPass(&ID) {}
+  Hello() : FunctionPass(ID) {}
 
   virtual bool runOnFunction(Function& F) {
     outs() << "Hello: " << F.getName() << "\n";
