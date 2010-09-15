@@ -35,7 +35,7 @@ mp_result foster_mp_int_mod_value(mp_int a, mp_small v, mp_small* r) {
 
 mp_result foster_mp_int_sqrt(mp_int a, mp_int c) { return mp_int_sqrt(a, c); }
 
-static void force_inclusion_in_module() {
+void force_inclusion_in_module() {
   mp_int a  = mp_int_alloc();
   mp_int b  = mp_int_alloc();
   mp_int c  = mp_int_alloc();
@@ -86,6 +86,16 @@ static void force_inclusion_in_module() {
   mp_int_divisible_value(a, 3);
   mp_int_is_pow2(a);
 
+  mp_result res;
+  res = MP_OK;
+  res = MP_FALSE;
+  res = MP_TRUE;
+  res = MP_MEMORY;
+  res = MP_RANGE;
+  res = MP_TRUNC;
+  res = MP_UNDEF;
+  res = MP_BADARG;
+  res = MP_MINERR;
 }
 
 // TODO: these should be translated into functions with signatures like
@@ -98,14 +108,14 @@ static void force_inclusion_in_module() {
 //mp_result mp_int_init_size(mp_int z, mp_size prec);
 //mp_result mp_int_exptmod(mp_int a, mp_int b, mp_int m,
 //			 mp_int c);                    /* c = a^b (mod m) */
-//mp_result mp_int_exptmod_evalue(mp_int a, mp_small value, 
+//mp_result mp_int_exptmod_evalue(mp_int a, mp_small value,
 //				mp_int m, mp_int c);   /* c = a^v (mod m) */
 //mp_result mp_int_exptmod_bvalue(mp_small value, mp_int b,
 //				mp_int m, mp_int c);   /* c = v^b (mod m) */
 //mp_result mp_int_exptmod_known(mp_int a, mp_int b,
 //			       mp_int m, mp_int mu,
 //			       mp_int c);              /* c = a^b (mod m) */
-//mp_result mp_int_redux_const(mp_int m, mp_int c); 
+//mp_result mp_int_redux_const(mp_int m, mp_int c);
 //
 //mp_result mp_int_invmod(mp_int a, mp_int m, mp_int c); /* c = 1/a (mod m) */
 //
@@ -123,16 +133,16 @@ static void force_inclusion_in_module() {
 
 ///* Convert to nul-terminated string with the specified radix, writing at
 //   most limit characters including the nul terminator  */
-//mp_result mp_int_to_string(mp_int z, mp_size radix, 
+//mp_result mp_int_to_string(mp_int z, mp_size radix,
 //			   char *str, int limit);
 //
-///* Return the number of characters required to represent 
+///* Return the number of characters required to represent
 //   z in the given radix.  May over-estimate. */
 //mp_result mp_int_string_len(mp_int z, mp_size radix);
 //
 ///* Read zero-terminated string into z */
 //mp_result mp_int_read_string(mp_int z, mp_size radix, const char *str);
-//mp_result mp_int_read_cstring(mp_int z, mp_size radix, const char *str, 
+//mp_result mp_int_read_cstring(mp_int z, mp_size radix, const char *str,
 //			      char **end);
 //
 ///* Return the number of significant bits in z */

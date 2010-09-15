@@ -25,40 +25,51 @@ std::set<string> globalNames;
 
 // Add module m's C-linkage functions in the global scopes,
 // and also add prototypes to the linkee module.
-void putModuleMembersInInternalScope(const std::string& scopeName,
+foster::SymbolTable<foster::SymbolInfo>::LexicalScope*
+putModuleMembersInInternalScope(const std::string& scopeName,
                                      Module* m, Module* linkee) {
-  if (!m) return;
+  if (!m) return NULL;
 
   foster::SymbolTable<foster::SymbolInfo>::LexicalScope* scope = NULL;
   scope = gScope.newScope(string("$") + scopeName);
   gScope.popExistingScope(scope);
 
-  /*
+
+  // Collect type names from the module.
   const llvm::TypeSymbolTable & typeSymTab = m->getTypeSymbolTable();
   for (llvm::TypeSymbolTable::const_iterator it = typeSymTab.begin();
                                            it != typeSymTab.end(); ++it) {
     std::string name = (*it).first;
     const llvm::Type* ty   = (*it).second;
 
-    //llvm::outs() << "type " << name << " = " << str(ty) << "\n";
+    llvm::outs() << "type " << name << " = " << str(ty) << "\n";
 
-    linkee->addTypeName(name, ty);
+    //linkee->addTypeName(name, ty);
   }
-  */
 
+  // Collect global variables from the module.
   for (Module::global_iterator it = m->global_begin();
                               it != m->global_end(); ++it) {
     const llvm::GlobalVariable& gv = *it;
     if (!gv.isConstant()) continue;
 
     const string& name = gv.getNameStr();
-    //llvm::outs() << "<internal>\tglobal\t" << name << "\n";
+    llvm::outs() << "<internal>\tglobal\t" << name << "\n";
 
     // TODO add global variables
   }
 
   std::set<string> functionsToRemove;
 
+  // Collect C-linkage function declarations from the module.
+  // Functions with C++ linkage are not included.
+  // Functions with definitions are only included if they are explicitly
+  // marked (via a foster_ prefix) as being intended for inclusion.
+  //
+  // This allows a library wrapper to define functions that should be
+  // included (such as those that concreteize macro definitions), and
+  // also those which should not be included (such as
+  // force_these_symbols_to_be_included()).
   for (Module::iterator it = m->begin(); it != m->end(); ++it) {
     const Function& f = *it;
 
@@ -72,7 +83,6 @@ void putModuleMembersInInternalScope(const std::string& scopeName,
       if (!pystring::startswith(name, "foster_")) {
         // drop from original module
         functionsToRemove.insert(name);
-      } else {
         continue;
       }
     }
@@ -91,7 +101,7 @@ void putModuleMembersInInternalScope(const std::string& scopeName,
           fnty,
           f.getAttributes());
 
-      //llvm::outs() << "<internal>\t" << hasDef << "\t" << name << "\n";
+      llvm::outs() << "<internal>\t" << hasDef << "\t" << name << " \n";
 
       scope->insert(name, new foster::SymbolInfo(
                           new VariableAST(name, TypeAST::reconstruct(fnty),
@@ -106,8 +116,11 @@ void putModuleMembersInInternalScope(const std::string& scopeName,
   // LLVM to include declarations in the module in the first place.
   for (std::set<std::string>::iterator it = functionsToRemove.begin();
                          it != functionsToRemove.end(); ++it) {
+    llvm::outs() << "not including function " << *it << "\n";
     m->getFunctionList().erase(m->getFunction(*it));
   }
+
+  return scope;
 }
 
 // Add module m's C-linkage functions in the global scopes,
