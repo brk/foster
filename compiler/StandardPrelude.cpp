@@ -44,21 +44,25 @@ putModuleMembersInInternalScope(const std::string& scopeName,
 
     llvm::outs() << "type " << name << " = " << str(ty) << "\n";
 
-    //linkee->addTypeName(name, ty);
+    // TODO do we need to explicitly copy the type to the linkee?
+    linkee->addTypeName(name, ty);
   }
 
   // Collect global variables from the module.
   for (Module::global_iterator it = m->global_begin();
                               it != m->global_end(); ++it) {
     const llvm::GlobalVariable& gv = *it;
-    if (!gv.isConstant()) continue;
+    if (!gv.isConstant()) {
+      continue;
+    }
 
-    const string& name = gv.getNameStr();
-    llvm::outs() << "<internal>\tglobal\t" << name << "\n";
+    llvm::outs() << "<internal>\tglobal\t" << gv.getName() << "\n";
 
-    // TODO add global variables
+    linkee->getOrInsertGlobal(gv.getName(), gv.getType());
   }
 
+  // These functions will not be linked in, to keep the postlinked
+  // Module as clean as possible.
   std::set<string> functionsToRemove;
 
   // Collect C-linkage function declarations from the module.

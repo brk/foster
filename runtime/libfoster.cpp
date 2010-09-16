@@ -10,6 +10,7 @@
 
 #include <pthread.h>
 
+#include "imath.h"
 #include "foster_gc.h"
 #include "cpuid.h"
 
@@ -78,16 +79,49 @@ void cleanup() {
 #define PRId64 "lld"
 #endif
 
+#ifndef PRIX64
+#define PRIX64 "llX"
+#endif
+
 int fprint_i64(FILE* f, int64_t x) { return fprintf(f, "%" PRId64 "\n", x) - 1; }
+int fprint_i64x(FILE* f, int64_t x) { return fprintf(f, "%" PRIX64 "_16\n", x) - 1; }
+int fprint_i64b(FILE* f, int64_t x) {
+  static char buf[64+1];
+  buf[64] = '\0';
+  for (int i = 0; i < 64; ++i) {
+    buf[63 - i] = (x & (1<<i)) ? '1' : '0';
+  }
+  return fprintf(f, "%s_2\n", buf);
+}
+
 int fprint_i32(FILE* f, int32_t x) { return fprintf(f, "%d\n", x) - 1; }
 int fprint_i32x(FILE* f, int32_t x) { return fprintf(f, "%X_16\n", x) - 1; }
 int fprint_i32b(FILE* f, int32_t x) {
-  static char buf[33];
+  static char buf[32+1];
   buf[32] = '\0';
   for (int i = 0; i < 32; ++i) {
     buf[31 - i] = (x & (1<<i)) ? '1' : '0';
   }
   return fprintf(f, "%s_2\n", buf);
+}
+
+int fprint_mp_int(FILE* f, mp_int m, int radix) {
+  mp_small small;
+  mp_result conv = mp_int_to_int(m, &small);
+  if (conv != MP_RANGE) {
+    switch (radix) {
+    case 10: return fprint_i64(f, int64_t(small));
+    case 16: return fprint_i64x(f, int64_t(small));
+    default: return fprint_i64b(f, int64_t(small));
+    }
+  }
+
+  mp_result len = mp_int_string_len(m, radix);
+  char* buf = (char*) malloc(len);
+  mp_result res0 = mp_int_to_string(m, radix, buf, len);
+  int rv = fprintf(f, "%s", buf);
+  free(buf);
+  return rv;
 }
 
 //struct FosterClosurei32 {
@@ -170,6 +204,13 @@ int print_ref(void* x) {
   std::string fmt = gc::format_ref(x);
   return fprintf(stdout, "%s\n", fmt.c_str());
 }
+
+int  print_int(mp_int m) { return fprint_mp_int(stdout, m, 10); }
+int expect_int(mp_int m) { return fprint_mp_int(stderr, m, 10); }
+int  print_intx(mp_int m) { return fprint_mp_int(stdout, m, 16); }
+int expect_intx(mp_int m) { return fprint_mp_int(stderr, m, 16); }
+int  print_intb(mp_int m) { return fprint_mp_int(stdout, m, 2); }
+int expect_intb(mp_int m) { return fprint_mp_int(stderr, m, 2); }
 
 int  print_i32(int32_t x) { return fprint_i32(stdout, x); }
 int expect_i32(int32_t x) { return fprint_i32(stderr, x); }
