@@ -34,13 +34,15 @@ class DiagBase {
 protected:
   llvm::raw_string_ostream msg;
   llvm::raw_ostream& out;
+  llvm::raw_ostream::Colors color;
   const InputFile*       sourceFile;
   const InputTextBuffer* sourceBuffer;
   SourceLocation sourceLoc;
 
   explicit DiagBase(llvm::raw_ostream& out, const char* levelstr)
-    : levelstr(levelstr), msg(msgstr), out(out),
-      sourceFile(NULL), sourceBuffer(NULL), sourceLoc(-1, -1) {}
+  : levelstr(levelstr), msg(msgstr), out(out),
+    color(llvm::raw_ostream::SAVEDCOLOR),
+    sourceFile(NULL), sourceBuffer(NULL), sourceLoc(-1, -1) {}
   virtual ~DiagBase();
 
   virtual void add(int64_t i) { msg << i; }
@@ -65,6 +67,8 @@ private:
   DiagBase(const DiagBase&);
 };
 
+////////////////////////////////////////////////////////////////////
+
 // Error diagnostic builder that always outputs to stderr.
 class SimpleEDiag : public DiagBase {
 public:
@@ -73,6 +77,8 @@ public:
 private:
   SimpleEDiag(const SimpleEDiag&);
 };
+
+////////////////////////////////////////////////////////////////////
 
 } // namespace foster
 

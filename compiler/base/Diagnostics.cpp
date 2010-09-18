@@ -9,6 +9,10 @@ namespace foster {
 
 //virtual
 DiagBase::~DiagBase() {
+  if (color != llvm::raw_ostream::SAVEDCOLOR) {
+    out.changeColor(color, true);
+  }
+  
   if (sourceFile) {
     out << sourceFile->getShortSuffixPath();
   } else if (sourceBuffer) {
@@ -20,8 +24,14 @@ DiagBase::~DiagBase() {
   if (sourceLoc.isValid()) {
     out << ":" << sourceLoc.line << ":" << sourceLoc.column;
   }
-  out << ": " << levelstr
-      << ": " << msg.str() << '\n';
+  
+  out << ": " << levelstr;
+     
+  if (color != llvm::raw_ostream::SAVEDCOLOR) {
+    out.resetColor();
+  }
+  
+  out << ": " << msg.str() << '\n';
 }
 
 } // namespace foster

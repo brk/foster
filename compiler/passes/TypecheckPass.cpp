@@ -52,17 +52,17 @@ bool canConvertWithVoidWrapper(TypeAST* t1, TypeAST* t2) {
   if (FnTypeAST* ft1 = dynamic_cast<FnTypeAST*>(t1)) {
     if (FnTypeAST* ft2 = dynamic_cast<FnTypeAST*>(t2)) {
       if (ft1->getNumParams() != ft2->getNumParams()) return false;
-      
+
       if (str(ft1->getReturnType()) != str(ft2->getReturnType())) {
         if (! isVoid(ft2->getReturnType())) return false;
       }
-      
+
       for (int i = 0; i < ft1->getNumParams(); ++i) {
         if (str(ft1->getParamType(i)) != str(ft2->getParamType(i))) {
           return false;
         }
       }
-      
+
       return true;
     }
   }
@@ -83,22 +83,22 @@ struct TypecheckPass : public ExprASTVisitor {
         if (TypeVariableAST* tv =  dynamic_cast<TypeVariableAST*>(ty)) {
           ty = constraints.substFind(tv);
         }
-        
+
         /*if (SimdVectorTypeAST* st = dynamic_cast<SimdVectorTypeAST*>(ty)) {
           ty = st->getContainedType(0);
         }*/
-        
+
         if (NamedTypeAST* nt = dynamic_cast<NamedTypeAST*>(ty)) {
           return isIntTypeName(nt->getName());
         }
-        
+
         return false;
       }
       virtual std::string describe() {
-        return "int or int vector"; 
+        return "int or int vector";
       }
     };
-    
+
     enum ConstraintType { eConstraintEq };
     void extractTypeConstraints(ConstraintType ct,
                                 ExprAST* context,
@@ -192,11 +192,11 @@ struct TypecheckPass : public ExprASTVisitor {
             // Converting a top-level function to a function pointer
             // is trivial, so long as the underlying types match up.
             TypeAST* ft1 = t1;
-            
+
             RefTypeAST* rt2 = dynamic_cast<RefTypeAST*>(t2);
             // referent type must be concrete/monomorphic (e.g. a C function type)
             TypeAST* ft2 = rt2->getElementType();
-            
+
             if (string(ft1->tag) == string(ft2->tag)
                 && canConvertWithVoidWrapper(ft1, ft2)) {
               // OK!
@@ -209,17 +209,17 @@ struct TypecheckPass : public ExprASTVisitor {
               // Record the constraint without applying it to the substitution.
               collectEqualityConstraint(context, t1, t2);
             }
-            
+
           } else if (t1->tag == std::string("ClosureType")
                   && t2->tag == std::string("RefType")) {
             // A closure is compatible with the struct-level
             // representation of the closure.
             ClosureTypeAST* ct1 = dynamic_cast<ClosureTypeAST*>(t1);
             FnTypeAST* ft1 = dynamic_cast<FnTypeAST*>(ct1->getFnType());
-          
+
             RefTypeAST* rt2 = dynamic_cast<RefTypeAST*>(t2);
             TypeAST* t2 = rt2->getElementType();
-            
+
             FnTypeAST* ft2 = NULL;
             if (t2->tag == std::string("TupleType")) {
               ft2 = originalFunctionTypeForClosureStructType(t2);
@@ -293,7 +293,7 @@ struct TypecheckPass : public ExprASTVisitor {
     TypeAST* substFind(TypeVariableAST* tv);
     TypeAST* substFind(const TypeVariableName&);
     TypeVariableAST* findLeader(const std::string& name);
-    
+
     TypeAST* applySubst(TypeAST* t) {
       ReplaceTypeTransform rtt(subst);
       rtt.subst(t);
@@ -308,6 +308,11 @@ struct TypecheckPass : public ExprASTVisitor {
       foster::EDiag* err = new foster::EDiag();
       errors.push_back(err);
       return *err;
+    }
+
+
+    ~Constraints() {
+      //for (
     }
   };
   Constraints constraints;
@@ -392,12 +397,12 @@ void TypeConstraintExtractor::visit(FnTypeAST* t2) {
     for (int i = 0; i < numArgs; ++i) {
       addConstraint(t1->getParamType(i), t2->getParamType(i));
     }
-    addConstraint(t1->getReturnType(), t2->getReturnType()); 
+    addConstraint(t1->getReturnType(), t2->getReturnType());
   } else {
     constraints.newLoggedError()
        << "Unable to match function types taking different numbers of params: "
        << str(t1) << " (" << t1->getNumParams() << ")"
-       << "and " << str(t2) << " (" << t2->getNumParams() << ")" 
+       << "and " << str(t2) << " (" << t2->getNumParams() << ")"
        << show(context);
   }
 }
@@ -418,7 +423,7 @@ void TypeConstraintExtractor::visit(TupleTypeAST* t2) {
     constraints.newLoggedError()
            << "Unable to match tuple types of different sizes: "
            << str(t1) << " (" << t1->getNumContainedTypes() << ")"
-           << "and " << str(t2) << " (" << t2->getNumContainedTypes() << ")" 
+           << "and " << str(t2) << " (" << t2->getNumContainedTypes() << ")"
            << show(context);
   }
 }
@@ -432,12 +437,12 @@ void TypeConstraintExtractor::visit(ClosureTypeAST* t2) {
 void TypeConstraintExtractor::visit(SimdVectorTypeAST* t2) {
   SimdVectorTypeAST* t1 = dynamic_cast<SimdVectorTypeAST*>(t1_pre);
   if (t1->getNumElements() == t2->getNumElements()) {
-    addConstraint(t1->getContainedType(0), t2->getContainedType(0));  
+    addConstraint(t1->getContainedType(0), t2->getContainedType(0));
   } else {
     constraints.newLoggedError()
            << "Unable to match simd-vector types of different sizes "
            << str(t1) << " (" << t1->getNumElements() << ")"
-           << "and " << str(t2) << " (" << t2->getNumElements() << ")" 
+           << "and " << str(t2) << " (" << t2->getNumElements() << ")"
            << show(context);
   }
 }
@@ -480,7 +485,7 @@ void TypecheckPass::solveConstraints() {
       constraints.subst[keys[i]] = tvs;
     }
   }
-  
+
   // Check type subset constraints
   for (size_t i = 0; i < constraints.tysets.size(); ++i) {
     Constraints::TypeInSetConstraint tsc = constraints.tysets[i];
@@ -517,14 +522,14 @@ bool TypecheckPass::Constraints::addEqConstraintToSubstitution(
              << str(ttc.t1) << "; other: " << str(ttc.t2)
              << foster::show(ttc.context);
   const std::string& tvName = tv->getTypeVariableName();
-  
+
   if (tvName == "callret") {
      currentOuts() << "deref maps to " << str(subst[tvName]) << "\n";
   }
-  
+
   TypeAST* tvs = substFind(tv);
   TypeAST* t2 = applySubst(ttc.t2);
-  
+
   currentOuts() << str(tv) << " => ... => tvs: " << str(tvs) << " ;; " << str(t2) << "...";
   // Have    TypeVar(t1) => ... => non-type-var tvs
   // ttc is  TypeVar(t1) => ttc.t2
@@ -539,7 +544,7 @@ bool TypecheckPass::Constraints::addEqConstraintToSubstitution(
                   << "\n\t\t" << str(tvs) << " and " << str(t2) << ".";
     return false;
   }
- 
+
   currentOuts() << "\n";
   //currentOuts() << " ====> " << str(subst[tvName]) << "\n";
 //  currentOuts() << ttc.context->tag << "\t" << str(ttc.t1) << " == " << str(ttc.t2) << "\n";
@@ -578,7 +583,7 @@ bool TypecheckPass::Constraints::addEqConstraintToSubstitution(
 TypeAST* TypecheckPass::Constraints::substFind(const std::string& name) {
   TypeVariableAST* leader = findLeader(name);
   if (!leader) return NULL;
-  
+
   TypeAST* next = this->subst[name];
   this->subst[name] = leader;
   while (next) {
@@ -606,14 +611,14 @@ TypeAST* TypecheckPass::Constraints::substFind(TypeVariableAST* tv) {
 TypeVariableAST* TypecheckPass::Constraints::findLeader(const std::string& name) {
   TypeAST* next = this->subst[name];
   TypeVariableAST* leader = NULL;
-  
+
   while (next && next != leader) {
     if (TypeVariableAST* nextTv = dynamic_cast<TypeVariableAST*>(next)) {
       leader = nextTv;
     } else break;
     next = this->subst[leader->getTypeVariableName()];
   }
-  
+
   return leader;
 }
 
@@ -637,7 +642,7 @@ bool typecheck(ExprAST* e) {
   }
   tp.solveConstraints();
   tp.applyTypeSubstitution(e);
-  
+
   bool noProblemsTypechecking = tp.constraints.errors.empty();
   for (size_t i = 0; i < tp.constraints.errors.size(); ++i) {
     EDiag* e = tp.constraints.errors[i];
@@ -667,7 +672,7 @@ void TypecheckPass::visit(IntAST* ast) {
 
 void TypecheckPass::visit(VariableAST* ast) {
   if (ast->type) { return; }
-  
+
   ExprAST* varOrProto = gScopeLookupAST(ast->name);
   // If this variable names a bound top-level function,
   // the scope contains the appropriate prototype.
@@ -781,7 +786,7 @@ const char* getCallingConvention(PrototypeAST* ast) {
 // * Gives the prototype a FnTypeAST type.
 void TypecheckPass::visit(PrototypeAST* ast) {
   if (!areNamesDisjoint(ast->inArgs)) {
-    
+
     EDiag& err = constraints.newLoggedError();
     err    << "formal argument names for function "
            << ast->name << " are not disjoint";
@@ -816,7 +821,7 @@ void TypecheckPass::visit(PrototypeAST* ast) {
   if (!ast->resultTy) {
     EDiag() << "NULL return type for PrototypeAST " << ast->name << show(ast);
   } else {
-    
+
     ast->type = FnTypeAST::get(ast->resultTy, argTypes,
                                getCallingConvention(ast));
   }
@@ -923,12 +928,12 @@ void TypecheckPass::visit(RefExprAST* ast) {
   if (ast->parts[0] && ast->parts[0]->type) {
     ast->type = RefTypeAST::get(ast->parts[0]->type);
   } else {
-    const char* problem = ast->parts[0] ? "subexpr with no type" : "no subexpr"; 
+    const char* problem = ast->parts[0] ? "subexpr with no type" : "no subexpr";
     constraints.newLoggedError()
            << "ref expr had  " << std::string(problem)
            << show(ast);
     ast->type = RefTypeAST::get(TypeVariableAST::get("badref", ast->sourceRange));
-    
+
   }
 }
 
@@ -996,10 +1001,10 @@ void TypecheckPass::visit(SubscriptAST* ast) {
     EDiag() << "cannot index into object of null type" << show(ast);
     return;
   }
-  
+
   if (dynamic_cast<RefTypeAST*>(baseType)) {
     EDiag() << "cannot index into ref types" << show(ast);
-    return; 
+    return;
   }
 
   if (TypeVariableAST* tv = dynamic_cast<TypeVariableAST*>(baseType)) {
@@ -1026,7 +1031,7 @@ void TypecheckPass::visit(SubscriptAST* ast) {
     return;
   }
 
-  
+
   IndexableTypeAST* compositeTy = tryGetIndexableType(baseType);
   const llvm::ArrayType* arrayTy = NULL;
               //llvm::dyn_cast<llvm::ArrayType>(baseType->getLLVMType());
@@ -1045,19 +1050,19 @@ void TypecheckPass::visit(SubscriptAST* ast) {
   } else {
     isNonArrayWithLargeIndex = !vidx.isIntN(32);
   }
-  
+
   if (vidx.isNegative() || isNonArrayWithLargeIndex) {
     EDiag() << "attempt to index composite with invalid index:"
             << show(index);
     return;
   }
-  
+
   /*if (SimdVectorTypeAST* ty = dynamic_cast<SimdVectorTypeAST*>(baseType)) {
     numElements = ty->getNumElements();
   }*/
 
   uint64_t idx_u64 = vidx.getZExtValue();
-  
+
   if (numElements >= 0) {
     if (idx_u64 >= numElements) {
       EDiag() << "attempt to index array[" << numElements << "]"
@@ -1122,14 +1127,14 @@ void givePrintRefPseudoPolymorphicType(CallAST* ast, TypecheckPass* pass) {
 
   ExprAST* arg = ast->parts[1];
   arg->accept(pass);
-  
+
   if (!arg->type) {
     EDiag() << "print_ref() given arg of no discernable type" << show(arg);
     return;
   }
 
   TypeAST* refT = RefTypeAST::get(TypeVariableAST::get("printref", arg->sourceRange));
-  
+
   pass->constraints.addEq(ast, arg->type, refT);
 }
 
@@ -1174,7 +1179,7 @@ void TypecheckPass::visit(CallAST* ast) {
   FnAST* literalFnBase = dynamic_cast<FnAST*>(base);
   if (literalFnBase) {
     // This is an encoded let-expression   fn (formals) { body }(args).
-    
+
     // First, inspect just the prototype of the function, to ensure
     // that any un-annotated formals get type variables.
     literalFnBase->getProto()->accept(this);
@@ -1212,7 +1217,7 @@ void TypecheckPass::visit(CallAST* ast) {
     literalFnBase->type = literalFnBase->getProto()->type; // TODO terrible hack :(
   } else {
     if (ClosureAST* literalClo = dynamic_cast<ClosureAST*>(base)) {
-      EDiag() << "\t\tCALL WITH LITERAL CLOSURE BASE: " << show(ast); 
+      EDiag() << "\t\tCALL WITH LITERAL CLOSURE BASE: " << show(ast);
     }
     // Otherwise, we should synthesize the base, then check the args.
     base->accept(this);
@@ -1233,11 +1238,11 @@ void TypecheckPass::visit(CallAST* ast) {
     EDiag() << "called expression had indeterminate type" << show(base);
     return;
   }
-  
+
   TypeAST* retTy = TypeVariableAST::get("callret", ast->sourceRange);
   FnTypeAST* actualFnType = FnTypeAST::get(retTy, argTypes, "*");
   constraints.addEq(ast, actualFnType, baseType);
-  
+
   ast->type = retTy;
 }
 
@@ -1376,15 +1381,15 @@ void TypecheckPass::visit(TupleExprAST* ast) {
 void TypecheckPass::visit(BuiltinCompilesExprAST* ast) {
   if (ast->parts[0]) {
     Constraints start(constraints);
-    
+
     ast->parts[0]->accept(this);
     solveConstraints();
-    
+
     bool wouldCompileOK = ast->parts[0]->type != NULL
                        && constraints.errors.size() == start.errors.size();
-    
+
 #if 0
-    currentOuts() << "BUILTIN COMPILES RESOLUTION: " <<  str(ast->parts[0]->type) << "; " 
+    currentOuts() << "BUILTIN COMPILES RESOLUTION: " <<  str(ast->parts[0]->type) << "; "
                  << constraints.errors.size()
                  << " vs " << start.errors.size() << "\n";
      for (size_t i = start.errors.size(); i < constraints.errors.size(); ++i) {
@@ -1392,10 +1397,10 @@ void TypecheckPass::visit(BuiltinCompilesExprAST* ast) {
        constraints.errors[i] = NULL;
      }
 #endif
-                       
+
     // Drop errors and constraints generated from within the __compiles__ expr.
     constraints = start;
-    
+
     ast->status = (wouldCompileOK)
                       ? ast->kWouldCompile
                       : ast->kWouldNotCompile;

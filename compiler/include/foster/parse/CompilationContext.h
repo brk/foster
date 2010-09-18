@@ -116,7 +116,7 @@ llvm::raw_ostream& currentOuts();
 // Error diagnostic builder; unlike foster::SimpleEDiag, can be re-routed.
 class EDiag : public DiagBase {
 public:
-  explicit EDiag() : DiagBase(foster::currentErrs(), "error") {}
+  explicit EDiag();
   virtual ~EDiag();
 private:
   EDiag(const EDiag&);
@@ -125,6 +125,10 @@ private:
 // Debug diagnostic builder
 class DDiag : public DiagBase {
 public:
+  explicit DDiag(llvm::raw_ostream::Colors _color)
+                   : DiagBase(foster::currentErrs(), "debug") {
+    this->color = _color;
+  }
   explicit DDiag() : DiagBase(foster::currentErrs(), "debug") {}
   virtual ~DDiag();
 private:

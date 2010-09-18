@@ -225,7 +225,13 @@ llvm::raw_ostream& currentOuts() {
 
 ////////////////////////////////////////////////////////////////////
 
-EDiag::~EDiag() {}
+EDiag::EDiag() : DiagBase(foster::currentErrs(), "error") {
+  color = llvm::raw_ostream::RED;
+}
+
+EDiag::~EDiag() {
+  // Note: error diagnostics from __COMPILES__ will be discarded, not deleted!
+}
 
 ////////////////////////////////////////////////////////////////////
 
