@@ -16,7 +16,6 @@ TypeAST* TypeAST_from(pTree tree);
 
 void dumpANTLRTree(std::ostream& out, pTree tree, int depth);
 
-std::string stringTreeFrom(pTree tree);
 std::string str(pANTLR3_COMMON_TOKEN tok);
 
 bool isBitwiseOpName(const std::string& op);
@@ -44,7 +43,7 @@ IntAST* parseInt(const std::string& clean,
 
 llvm::APInt* parseAPIntFromClean(const std::string& clean, int base,
                                  const SourceRange& sourceRange);
-  
+
 class ANTLRContext;
 
 void deleteANTLRContext(ANTLRContext* ctx);

@@ -520,14 +520,7 @@ int main(int argc, char** argv) {
 
   if (optDumpASTs) {
     llvm::outs() << "dumping parse trees" << "\n";
-    if (1) {
-      std::ofstream out(dumpdirFile("stringtree.dump.txt").c_str());
-      out << stringTreeFrom(parseTree) << "\n";
-    }
-
-    if (1) {
-      dumpModuleToProtobuf(exprAST, dumpdirFile("ast.postparse.pb"));
-    }
+    dumpModuleToProtobuf(exprAST, dumpdirFile("ast.postparse.pb"));
   }
 
   if (numParseErrors > 0) {

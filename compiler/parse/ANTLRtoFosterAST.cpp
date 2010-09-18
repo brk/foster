@@ -38,201 +38,11 @@ using foster::CompilationContext;
 using foster::currentErrs;
 using foster::currentOuts;
 
-namespace foster {
-std::string gPendingModuleName;
-}
+namespace foster { std::string gPendingModuleName; }
 
-// {{{ ANTLR stuff
-std::string str(pANTLR3_STRING pstr) {
-  return string((const char*)pstr->chars);
-}
+#include "parse/ANTLRtoFosterAST-inl.h"
 
-std::string stringTreeFrom(pTree parseTree) {
-  return str(parseTree->toStringTree(parseTree));
-}
-
-string str(pANTLR3_COMMON_TOKEN tok) {
-  if (!tok) return "<nil tok>";
-
-  switch (tok->type) {
-    case ANTLR3_TEXT_NONE: return "none";
-    case ANTLR3_TEXT_CHARP: return string((const char*)tok->tokText.chars);
-    case ANTLR3_TEXT_STRING: return str(tok->tokText.text);
-  }
-
-  pANTLR3_STRING pstr = tok->toString(tok);
-  if (pstr) {
-    return str(pstr);
-  } else {
-    char buf[80];
-    sprintf(buf, "<str(tok) failed, type = %d>", tok->type);
-    return string(buf);
-  }
-}
-
-/////////////////////////////////////////////////////////////////////
-
-void display_pTree(pTree t, int nspaces);
-ExprAST* ExprAST_from(pTree tree, bool infn);
-// }}}
-
-namespace {
-
-typedef void                  (*setTokenBoundariesFunc)
-(struct ANTLR3_BASE_TREE_ADAPTOR_struct * adaptor, void * t,
- pANTLR3_COMMON_TOKEN startToken, pANTLR3_COMMON_TOKEN stopToken);
-
-static setTokenBoundariesFunc sgDefaultSTB;
-
-static void customSetTokenBoundariesFunc
-(struct ANTLR3_BASE_TREE_ADAPTOR_struct * adaptor, void * t,
- pANTLR3_COMMON_TOKEN startToken, pANTLR3_COMMON_TOKEN stopToken) {
-  sgDefaultSTB(adaptor, t, startToken, stopToken);
-
-  CompilationContext::setTokenRange((pTree) t, startToken, stopToken);
-}
-
-// This is a vaguely unpleasant (but terrifically accurate) hack
-// to monitor the token boundaries computed for tree nodes, which
-// are unfortunately (and strangely) not actually stored in the nodes
-// themselves, but rather in shadow parent nodes inaccessible from
-// the tree nodes themselves. Anyways, we just replace the function pointer
-// in the virtual table with a thin shim, above.
-void installTreeTokenBoundaryTracker(pANTLR3_BASE_TREE_ADAPTOR adaptor) {
-  sgDefaultSTB = adaptor->setTokenBoundaries;
-  adaptor->setTokenBoundaries = customSetTokenBoundariesFunc;
-}
-
-} // unnamed namespace
-
-size_t getChildCount(pTree tree) {
-  return static_cast<size_t>(tree->getChildCount(tree));
-}
-
-string textOf(pTree tree) {
-  if (!tree) {
-    currentErrs() << "Error! Can't get text of a null node!" << "\n";
-    return "<NULL pTree>";
-  }
-  return str(tree->getText(tree));
-}
-
-pTree child(pTree tree, int i) {
-  if (!tree) {
-    currentErrs() << "Error! Can't take child of null pTree!" << "\n";
-    return NULL;
-  }
-  return (pTree) tree->getChild(tree, i);
-}
-
-int typeOf(pTree tree) { return tree->getType(tree); }
-
-pANTLR3_COMMON_TOKEN getStartToken(pTree tree) {
-  if (!tree) return NULL;
-  pANTLR3_COMMON_TOKEN tok = CompilationContext::getStartToken(tree); 
-  if (tok) return tok;
-
-  // Some nodes we're okay with having no token info for...
-  if (getChildCount(tree) == 0) {
-    int tag = typeOf(tree);
-    if (tag == OUT || tag == IN || tag == BODY
-     || tag == ANTLR3_TOKEN_INVALID) {
-      return NULL;
-    }
-  }
-
-  // Usually, ANTLR will have annotated the tree directly;
-  // however, in some cases, only subtrees will have token
-  // information. In such cases, we search along the edge of the
-  // parse tree to find the first edge child with token info.
-  pTree node = tree;
-  while (!tok && getChildCount(node) > 0) {
-    node = child(node, 0);
-    tok = CompilationContext::getStartToken(node);
-  }
-  if (!tok) {
-    currentOuts() << "Warning: unable to find start token for ANTLR parse tree"
-              << " node " << textOf(tree) << " @ " << tree
-              << " , " << typeOf(tree) << "\n";
-  }
-  return tok;
-}
-
-pANTLR3_COMMON_TOKEN getEndToken(pTree tree) {
-  if (!tree) return NULL;
-  pANTLR3_COMMON_TOKEN tok = CompilationContext::getEndToken(tree);
-  if (tok) return tok;
-
-  if (getChildCount(tree) == 0) {
-    int tag = typeOf(tree);
-    if (tag == OUT || tag == IN || tag == BODY
-     || tag == ANTLR3_TOKEN_INVALID) {
-      return NULL;
-    }
-  }
-
-  pTree node = tree;
-  while (!tok && getChildCount(node) > 0) {
-    node = child(node, getChildCount(node) - 1);
-    tok = CompilationContext::getEndToken(node);
-  }
-  if (!tok) {
-    currentOuts() << "Warning: unable to find end token for ANTLR parse tree"
-              << " node " << textOf(tree) << " @ " << tree << "\n";
-  }
-  return tok;
-}
-
-foster::SourceLocation getStartLocation(pANTLR3_COMMON_TOKEN tok) {
-  if (!tok) { return foster::SourceLocation::getInvalidLocation(); }
-  // ANTLR gives source locations starting from 1; we want them from 0
-  return foster::SourceLocation(tok->getLine(tok) - 1,
-                                tok->getCharPositionInLine(tok));
-}
-
-foster::SourceLocation getEndLocation(pANTLR3_COMMON_TOKEN tok) {
-  if (!tok) {
-    return foster::SourceLocation::getInvalidLocation();
-  }
-  return foster::SourceLocation(tok->getLine(tok) - 1,
-      tok->getCharPositionInLine(tok) + tok->getText(tok)->len);
-}
-
-foster::SourceRange rangeFrom(pTree start, pTree end) {
-  pANTLR3_COMMON_TOKEN stok = getStartToken(start);
-  pANTLR3_COMMON_TOKEN etok = getEndToken(end);
-  if (false && (!stok || !etok)) {
-    currentOuts() << "rangeFrom " << start << " => " << stok << " ;; "
-              << end << " => " << etok << "\n";
-    if (!stok) { display_pTree(start, 2); }
-    if (!etok) { display_pTree(  end, 2); }
-  }
-  return foster::SourceRange(foster::gInputFile,
-      getStartLocation(stok),
-      getEndLocation(etok),
-      foster::gInputTextBuffer);
-}
-
-foster::SourceRange rangeOf(pTree tree) {
-  return rangeFrom(tree, tree);
-}
-
-foster::SourceRange rangeFrom(ExprAST* a, ExprAST* b) {
-  if (a && b) {
-    foster::SourceRange ar = a->sourceRange;
-    foster::SourceRange br = b->sourceRange;
-    ASSERT(ar.source == br.source);
-    return foster::SourceRange(ar.source, ar.begin, br.end);
-  } else if (a) {
-    foster::SourceRange ar = a->sourceRange;
-    return foster::SourceRange(ar.source, ar.begin,
-                   foster::SourceLocation::getInvalidLocation());
-  } else {
-    return foster::SourceRange::getEmptyRange();
-  }
-}
-
-Exprs getExprs(pTree tree, bool fnMeansClosure);
+Exprs getExprs(pTree tree);
 
 // expressions wrapped in () are marked here
 std::map<ExprAST*, bool> gWasWrappedInExplicitParens;
@@ -254,49 +64,13 @@ bool isBitwiseOpName(const string& op) {
          op == "bitshl" || op == "bitlshr" || op == "bitashr";
 }
 
-string spaces(int n) { return string(n, ' '); }
-
-void display_pTree(pTree t, int nspaces) {
-  if (!t) {
-    currentOuts() << spaces(nspaces) << "<NULL tree>" << "\n";
-    return;
-  }
-
-  int token = t->getType(t);
-  string text = textOf(t);
-  int nchildren = getChildCount(t);
-  std::stringstream ss;
-  ss << spaces(nspaces) << "<" << text << "; ";
-  currentOuts() << ss.str() << spaces(70 - ss.str().size())
-            << token << " @ " << t;
-  currentOuts() << " (";
-  currentOuts() << (CompilationContext::getStartToken(t) ? '+' : '-');
-  currentOuts() << (CompilationContext::getEndToken(t)   ? '+' : '-');
-  currentOuts() << ")" << "\n";
-  for (int i = 0; i < nchildren; ++i) {
-    display_pTree(child(t, i), nspaces+2);
-  }
-  currentOuts() << spaces(nspaces) << "/" << text << ">" << "\n";
-}
-
-void dumpANTLRTreeNode(std::ostream& out, pTree tree, int depth) {
-  out << string(depth, ' ');
-  out << "text:"<< str(tree->getText(tree)) << " ";
-  out << "line:"<< tree->getLine(tree) << " ";
-  out << "charpos:"<< tree->getCharPositionInLine(tree) << " ";
-  out << "\n";
-}
-
-void dumpANTLRTree(std::ostream& out, pTree tree, int depth) {
-  int nchildren = tree->getChildCount(tree);
-  out << "nchildren:" << nchildren << "\n";
-  for (int i = 0; i < nchildren; ++i) {
-    dumpANTLRTree(out, (pTree) tree->getChild(tree, i), depth + 1);
-  }
-  dumpANTLRTreeNode(out, tree, depth);
-}
+////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////
 
 namespace foster {
+// "Clean" refers to integer literal text consisting
+// only of (possibly hex) digits, no trailer or infix ticks.
 APInt* parseAPIntFromClean(const std::string& clean, int base,
                            const SourceRange& sourceRange) {
   // Make sure the base is a reasonable one.
@@ -308,7 +82,7 @@ APInt* parseAPIntFromClean(const std::string& clean, int base,
   }
 
   // Now, clean is a string of only (possibly hex) digits.
-  
+
   // Make sure the literal only contains
   // valid digits for the chosen base.
   const char* digits = "0123456789abcdef";
@@ -327,9 +101,9 @@ APInt* parseAPIntFromClean(const std::string& clean, int base,
   // many bits we need to represent this integer
   int bitsPerDigit = int(ceil(log(base)/log(2)));
   int conservativeBitsNeeded = bitsPerDigit * clean.size() + 2;
-  
+
   llvm::APInt* apint = new llvm::APInt(conservativeBitsNeeded, clean, base);
-  
+
   // This is just a temporary safety measure/sanity check.
   unsigned activeBits = apint->getActiveBits();
   if (activeBits > 32) {
@@ -337,7 +111,7 @@ APInt* parseAPIntFromClean(const std::string& clean, int base,
             << " bits to represent." << show(sourceRange);
     return NULL;
   }
-  
+
   return apint;
 }
 
@@ -402,9 +176,15 @@ IntAST* parseIntFrom(pTree t) {
       alltext << text;
     }
   }
-  
+
   return foster::parseInt(clean.str(), alltext.str(), base, sourceRange);
 }
+
+////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////
+
+ExprAST* ExprAST_from(pTree tree);
 
 /// Returns ast if ast may be valid as the LHS of an assign expr, else NULL.
 /// Valid forms for the LHS of an assign expr are:
@@ -417,7 +197,7 @@ ExprAST* validateAssignLHS(ExprAST* ast) {
   return NULL;
 }
 
-VariableAST* parseFormal(pTree tree, bool fnMeansClosure) {
+VariableAST* parseFormal(pTree tree) {
   // ^(FORMAL ^(NAME varName) ^(... type ... ))
   pTree varNameTree = child(tree, 0);
   if (!varNameTree) {
@@ -428,13 +208,6 @@ VariableAST* parseFormal(pTree tree, bool fnMeansClosure) {
   string varName = textOf(child(varNameTree, 0));
   if (getChildCount(tree) == 2) {
     TypeAST* tyExpr = TypeAST_from(child(tree, 1));
-    if (tyExpr) {
-      if (0) currentOuts() << "\tParsed formal " << varName
-                << " with type expr " << str(tyExpr) << "\n";
-    } else {
-      if (0) currentOuts() << "\tParsed formal " << varName
-                       << " with null type expr " << "\n";
-    }
     VariableAST* var = new VariableAST(varName, tyExpr, rangeOf(tree));
     gScopeInsert(varName, var);
     return var;
@@ -446,26 +219,25 @@ VariableAST* parseFormal(pTree tree, bool fnMeansClosure) {
   }
 }
 
-std::vector<VariableAST*> getFormals(pTree tree, bool fnMeansClosure) {
+std::vector<VariableAST*> getFormals(pTree tree) {
   std::vector<VariableAST*> args;
   if (textOf(tree) == "FORMAL") {
-    args.push_back(parseFormal(tree, fnMeansClosure));
+    args.push_back(parseFormal(tree));
   } else {
     for (size_t i = 0; i < getChildCount(tree); ++i) {
-       args.push_back(parseFormal(child(tree, i), fnMeansClosure));
+       args.push_back(parseFormal(child(tree, i)));
     }
   }
   return args;
 }
 
 PrototypeAST* getFnProto(string name,
-                         bool fnMeansClosure,
                          pTree formalsTree,
                          pTree retTyExprTree)
 {
   foster::SymbolTable<foster::SymbolInfo>::LexicalScope* protoScope =
                                     gScope.pushScope("fn proto " + name);
-    std::vector<VariableAST*> in = getFormals(formalsTree, fnMeansClosure);
+    std::vector<VariableAST*> in = getFormals(formalsTree);
     TypeAST* retTy = TypeAST_from(retTyExprTree);
   gScope.popScope();
 
@@ -481,7 +253,7 @@ PrototypeAST* getFnProto(string name,
 FnAST* buildFn(PrototypeAST* proto, pTree bodyTree) {
   ExprAST* body = NULL;
   gScope.pushExistingScope(proto->scope);
-    body = ExprAST_from(bodyTree, true);
+    body = ExprAST_from(bodyTree);
   gScope.popExistingScope(proto->scope);
 
   // TODO make source range more accurate
@@ -534,14 +306,23 @@ string parseFnName(string defaultSymbolTemplate, pTree tree) {
   return name;
 }
 
-FnAST* parseFn(string defaultSymbolTemplate, pTree tree, bool fnMeansClosure) {
+FnAST* parseFn(string defaultSymbolTemplate, pTree tree) {
   // (FN 0:NAME 1:IN 2:OUT 3:BODY)
   string name = parseFnName(defaultSymbolTemplate, tree);
-  PrototypeAST* proto = getFnProto(name, fnMeansClosure,
+  PrototypeAST* proto = getFnProto(name,
                                    child(tree, 1),
                                    child(tree, 2));
   //currentOuts() << "parseFn proto = " << str(proto) << "\n";
   return buildFn(proto, child(tree, 3));
+}
+
+// Function literals by default parse into ClosureASTs,
+// but the top-level wants only bare functions, no closures.
+FnAST* extractFnForTopLevel(ExprAST* maybeClo) {
+  if (ClosureAST* clo = dynamic_cast<ClosureAST*>(maybeClo)) {
+    return clo->fn;
+  }
+  return dynamic_cast<FnAST*>(maybeClo);
 }
 
 // ExprAST_from() is straight-up recursive, and uses gScope and gTypeScope
@@ -576,7 +357,7 @@ ModuleAST* parseTopLevel(pTree tree) {
     int token = typeOf(c);
 
     if (token == TYPEDEFN) {
-      ExprAST* typeDefn = ExprAST_from(c, false);
+      ExprAST* typeDefn = ExprAST_from(c);
       parsedExprs[i] = typeDefn;
     } else if (token == FNDEF) {
       ASSERT(getChildCount(c) == 2);
@@ -586,7 +367,7 @@ ModuleAST* parseTopLevel(pTree tree) {
       if (typeOf(lval) == NAME && typeOf(rval) == FN) {
         // (FN 0:NAME 1:IN 2:OUT 3:BODY)
         string name = parseFnName(textOf(child(lval, 0)), rval);
-        protos[c] = getFnProto(name, true, child(rval, 1), child(rval, 2));
+        protos[c] = getFnProto(name, child(rval, 1), child(rval, 2));
       } else {
         EDiag() << "not assigning top-level function to a name?"
                 << show(rangeOf(c));
@@ -595,11 +376,11 @@ ModuleAST* parseTopLevel(pTree tree) {
     } else if (token == FN) {
       // (FN 0:NAME 1:IN 2:OUT 3:BODY)
       string name = parseFnName(textOf(child(c, 0)), c);
-      protos[c] = getFnProto(name, true, child(c, 1), child(c, 2));
+      protos[c] = getFnProto(name, child(c, 1), child(c, 2));
       // parsedExprs[i] remains NULL
     } else {
-      ExprAST* otherExpr = ExprAST_from(c, false);
-      if (FnAST* explicitlyNamedFn = dynamic_cast<FnAST*>(otherExpr)) {
+      ExprAST* otherExpr = ExprAST_from(c);
+      if (FnAST* explicitlyNamedFn = extractFnForTopLevel(otherExpr)) {
         parsedExprs[i] = explicitlyNamedFn;
       } else {
         EDiag() << "expected function or type" << show(rangeOf(c));
@@ -633,7 +414,7 @@ ModuleAST* parseTopLevel(pTree tree) {
                        rangeOf(tree));
 }
 
-ExprAST* parseTypeDefinition(pTree tree, bool fnMeansClosure) {
+ExprAST* parseTypeDefinition(pTree tree) {
   pTree nameTree = child(tree, 0);
   string name = textOf(child(nameTree, 0));
 
@@ -654,24 +435,24 @@ ExprAST* parseTypeDefinition(pTree tree, bool fnMeansClosure) {
   return new NamedTypeDeclAST(name, tyExpr, rangeOf(tree));
 }
 
-ExprAST* parseForRange(pTree tree, bool fnMeansClosure,
+ExprAST* parseForRange(pTree tree,
                        const SourceRange& sourceRange) {
   pTree varNameTree = child(tree, 0);
   string varName = textOf(child(varNameTree, 0));
   VariableAST* var = new VariableAST(varName,
                                      TypeAST::i(32),
 			                         rangeOf(varNameTree));
-  ExprAST* start = ExprAST_from(child(tree, 1), fnMeansClosure);
-  ExprAST* end   = ExprAST_from(child(tree, 2), fnMeansClosure);
+  ExprAST* start = ExprAST_from(child(tree, 1));
+  ExprAST* end   = ExprAST_from(child(tree, 2));
   ExprAST* incr  = NULL;
 
   if (getChildCount(tree) >= 5) {
-    incr = ExprAST_from(child(tree, 4), fnMeansClosure);
+    incr = ExprAST_from(child(tree, 4));
   }
 
   gScope.pushScope("for-range " + varName);
   gScopeInsert(varName, var);
-  ExprAST* body  = ExprAST_from(child(tree, 3), fnMeansClosure);
+  ExprAST* body  = ExprAST_from(child(tree, 3));
   gScope.popScope();
 
   currentOuts() << "for (" << varName <<" in _ to _ ...)" << "\n";
@@ -679,7 +460,7 @@ ExprAST* parseForRange(pTree tree, bool fnMeansClosure,
 }
 
 // ^(CTOR ^(NAME blah) ^(SEQ ...))
-ExprAST* parseCtorExpr(pTree tree, bool fnMeansClosure,
+ExprAST* parseCtorExpr(pTree tree,
                        const foster::SourceRange& sourceRange) {
   pTree nameNode = child(tree, 0);
   pTree seqArgs = child(tree, 1);
@@ -687,21 +468,21 @@ ExprAST* parseCtorExpr(pTree tree, bool fnMeansClosure,
   string name = textOf(child(nameNode, 0));
   #if 0
   if (name == "simd-vector") {
-    return new SimdVectorAST(ExprAST_from(seqArgs, fnMeansClosure), sourceRange);
+    return new SimdVectorAST(ExprAST_from(seqArgs), sourceRange);
   }
 
   if (name == "array") {
-    return new ArrayExprAST(ExprAST_from(seqArgs, fnMeansClosure), sourceRange);
+    return new ArrayExprAST(ExprAST_from(seqArgs), sourceRange);
   }
 #endif
   if (name == "tuple") {
-    return new TupleExprAST(ExprAST_from(seqArgs, fnMeansClosure), sourceRange);
+    return new TupleExprAST(ExprAST_from(seqArgs), sourceRange);
   }
 
 #if 0
   if (TypeAST* ty = gTypeScope.lookup(name, "")) {
     ASSERT(ty->getLLVMType() && ty->getLLVMType()->isStructTy());
-    return new TupleExprAST(ExprAST_from(seqArgs, fnMeansClosure),
+    return new TupleExprAST(ExprAST_from(seqArgs),
                             name, sourceRange);
   }
 #endif
@@ -757,7 +538,63 @@ TypeAST* parseCtorType(pTree tree,
   return NULL;
 }
 
-ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
+ExprAST* parseTrailers(pTree tree,
+                       const foster::SourceRange& sourceRange) {
+  ASSERT(getChildCount(tree) >= 2);
+  // name (args) ... (args)
+  ExprAST* prefix = ExprAST_from(child(tree, 0));
+  for (size_t i = 1; i < getChildCount(tree); ++i) {
+    int trailerType = typeOf(child(tree, i));
+    if (trailerType == CALL) {
+      Exprs args = getExprs(child(tree, i));
+
+      // Two different things can parse as function calls: normal function
+      // calls, and function-call syntax for built-in bitwise operators.
+      VariableAST* varPrefix = dynamic_cast<VariableAST*>(prefix);
+      if (varPrefix) {
+        if (varPrefix->name == "deref") {
+          if (args.size() != 1) {
+            currentErrs() << "Error! Deref operator called with "
+                      << " bad number of args: " << args.size() << "\n";
+            return NULL;
+          }
+          prefix = new DerefExprAST(args[0], sourceRange);
+          continue;
+        }
+
+        if (isBitwiseOpName(varPrefix->name)) {
+          if (args.size() != 2) {
+            currentErrs() << "Error! Bitwise operator " << varPrefix->name
+                      << " with bad number of arguments: " << args.size()
+                      << "\n";
+            return NULL;
+          }
+          prefix = new BinaryOpExprAST(varPrefix->name, args[0], args[1],
+                                       sourceRange);
+          continue;
+        }
+        // Else fall through to general case below
+      }
+      prefix = new CallAST(prefix, args, sourceRange);
+    } else if (trailerType == LOOKUP) {
+      pTree nameNode = child(child(tree, i), 0);
+      const string& name = textOf(child(nameNode, 0));
+      prefix = prefix->lookup(name, "");
+      if (!prefix) {
+        currentErrs() << "Lookup of name '" << name << "' failed." << "\n";
+      }
+    } else if (trailerType == SUBSCRIPT) {
+      prefix = new SubscriptAST(prefix,
+                                ExprAST_from(child(child(tree, i), 0)),
+                                sourceRange);
+    } else {
+      currentErrs() << "Unknown trailer type " << textOf(child(tree, i)) << "\n";
+    }
+  }
+  return prefix;
+}
+
+ExprAST* ExprAST_from(pTree tree) {
   if (!tree) return NULL;
 
   int token = typeOf(tree);
@@ -765,84 +602,32 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
   foster::SourceRange sourceRange = rangeOf(tree);
 
   if (token == TYPEDEFN) {
-    return parseTypeDefinition(tree, fnMeansClosure);
+    return parseTypeDefinition(tree);
   }
 
   if (token == TRAILERS) {
-    ASSERT(getChildCount(tree) >= 2);
-    // name (args) ... (args)
-    ExprAST* prefix = ExprAST_from(child(tree, 0), fnMeansClosure);
-    for (size_t i = 1; i < getChildCount(tree); ++i) {
-      int trailerType = typeOf(child(tree, i));
-      if (trailerType == CALL) {
-        Exprs args = getExprs(child(tree, i), fnMeansClosure);
-
-        // Two different things can parse as function calls: normal function
-        // calls, and function-call syntax for built-in bitwise operators.
-        VariableAST* varPrefix = dynamic_cast<VariableAST*>(prefix);
-        if (varPrefix) {
-          if (varPrefix->name == "deref") {
-            if (args.size() != 1) {
-              currentErrs() << "Error! Deref operator called with "
-                        << " bad number of args: " << args.size() << "\n";
-              return NULL;
-            }
-            prefix = new DerefExprAST(args[0], sourceRange);
-            continue;
-          }
-
-          if (isBitwiseOpName(varPrefix->name)) {
-            if (args.size() != 2) {
-              currentErrs() << "Error! Bitwise operator " << varPrefix->name
-                        << " with bad number of arguments: " << args.size()
-                        << "\n";
-              return NULL;
-            }
-            prefix = new BinaryOpExprAST(varPrefix->name, args[0], args[1],
-                                         sourceRange);
-            continue;
-          }
-          // Else fall through to general case below
-        }
-        prefix = new CallAST(prefix, args, sourceRange);
-      } else if (trailerType == LOOKUP) {
-        pTree nameNode = child(child(tree, i), 0);
-        const string& name = textOf(child(nameNode, 0));
-        prefix = prefix->lookup(name, "");
-        if (!prefix) {
-          currentErrs() << "Lookup of name '" << name << "' failed." << "\n";
-        }
-      } else if (trailerType == SUBSCRIPT) {
-        prefix = new SubscriptAST(prefix,
-                                  ExprAST_from(child(child(tree, i), 0),
-                                               fnMeansClosure),
-                                  sourceRange);
-      } else {
-        currentErrs() << "Unknown trailer type " << textOf(child(tree, i)) << "\n";
-      }
-    }
-    return prefix;
+    return parseTrailers(tree, sourceRange);
   }
 
   if (token == BODY) { // usually contains SEQ
-    return ExprAST_from(child(tree, 0), fnMeansClosure);
+    return ExprAST_from(child(tree, 0));
   }
 
   // <var start end body incr?>
   if (token == FORRANGE) {
-    return parseForRange(tree, fnMeansClosure, sourceRange);
+    return parseForRange(tree, sourceRange);
   }
 
   // <LHS RHS>
   if (token == SETEXPR) {
     ExprAST* lhs = validateAssignLHS(
-                       ExprAST_from(child(tree, 0), fnMeansClosure));
+                       ExprAST_from(child(tree, 0)));
     if (!lhs) {
       currentErrs() << "Error! Invalid syntactic form on LHS of assignment;" <<
           " must be variable or subscript expr" << "\n";
       return NULL;
     }
-    ExprAST* rhs = ExprAST_from(child(tree, 1), fnMeansClosure);
+    ExprAST* rhs = ExprAST_from(child(tree, 1));
     return new AssignExprAST(lhs, rhs, sourceRange);
   }
 
@@ -854,12 +639,11 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     }
 
     PrototypeAST* proto = getFnProto(freshName("<anon_fnlet_%d>"),
-                                     fnMeansClosure,
                                      child(tree, 0),
                                      tyExprTree);
     FnAST* fn = buildFn(proto, child(tree, 2));
 
-    ExprAST* a = ExprAST_from(child(tree, 1), fnMeansClosure);
+    ExprAST* a = ExprAST_from(child(tree, 1));
     Exprs args; args.push_back(a);
     return new CallAST(fn, args, sourceRange);
   }
@@ -867,7 +651,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
   if (token == EXPRS || token == SEQ) {
     Exprs exprs;
     for (size_t i = 0; i < getChildCount(tree); ++i) {
-      ExprAST* ast = ExprAST_from(child(tree, i), fnMeansClosure);
+      ExprAST* ast = ExprAST_from(child(tree, i));
       if (ast != NULL) {
         exprs.push_back(ast);
       }
@@ -877,16 +661,14 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
 
   if (token == INT) {
     IntAST* ast = parseIntFrom(tree);
-    if (ast) {
-      return ast;
-    } else {
+    if (!ast) {
       currentOuts() << "Could not parse int!"; // TODO improve error message
-      return NULL;
     }
+    return ast;
   }
 
   if (token == CTOR) {
-    return parseCtorExpr(tree, fnMeansClosure, sourceRange);
+    return parseCtorExpr(tree, sourceRange);
   }
 
   if (token == NAME) {
@@ -910,7 +692,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
   if (token == OUT) {
     return (getChildCount(tree) == 0)
               ? NULL
-              : ExprAST_from(child(tree, 0), fnMeansClosure);
+              : ExprAST_from(child(tree, 0));
   }
 
   if (token == FNDEF) {
@@ -920,11 +702,41 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     pTree rval = (child(tree, 1));
 
     if (typeOf(lval) == NAME && typeOf(rval) == FN) {
-      return parseFn(textOf(child(lval, 0)), rval, fnMeansClosure);
+      return parseFn(textOf(child(lval, 0)), rval);
     } else {
       currentErrs() << "Not assigning function to a name?" << "\n";
       return NULL;
     }
+  }
+
+  if (token == PARENEXPR) {
+    ExprAST* rv = ExprAST_from(child(tree, 0));
+    gWasWrappedInExplicitParens[rv] = true;
+    return rv;
+  }
+
+  if (token == COMPILES) {
+     return new BuiltinCompilesExprAST(
+                  ExprAST_from(child(tree, 0)), sourceRange);
+  }
+
+  if (token == IF) {
+    return new IfExprAST(ExprAST_from(child(tree, 0)),
+                         ExprAST_from(child(tree, 1)),
+                         ExprAST_from(child(tree, 2)),
+                         sourceRange);
+  }
+
+  if (token == FN) {
+    // for now, this "<anon_fn" prefix is used for closure conversion later on
+    FnAST* fn = parseFn("<anon_fn_%d>", tree);
+    if (!fn->getBody()) {
+      foster::EDiag() << "Found bare proto (with no body)"
+                      << " when expecting full fn literal."
+                      << foster::show(fn);
+      return NULL;
+    }
+    return new ClosureAST(fn, sourceRange);
   }
 
   if (text == "new" || text == "ref") {
@@ -933,7 +745,7 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
     // Currently 'new' and 'ref' are interchangeable, though the intended
     // convention is that 'new' is for value-exprs and 'ref' is for type-exprs
     return new RefExprAST(
-                 ExprAST_from(child(tree, 0), fnMeansClosure),
+                 ExprAST_from(child(tree, 0)),
     		 isKnownIndirect,
                  sourceRange);
   }
@@ -941,57 +753,15 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
   // Handle unary negation explicitly, before the binary op handler
   if (getChildCount(tree) == 1 && isUnaryOp(text)) {
     return new UnaryOpExprAST(text,
-                  ExprAST_from(child(tree, 0), fnMeansClosure),
+                  ExprAST_from(child(tree, 0)),
                   sourceRange);
-  }
-
-  if (token == PARENEXPR) {
-    ExprAST* rv = ExprAST_from(child(tree, 0), fnMeansClosure);
-    gWasWrappedInExplicitParens[rv] = true;
-    return rv;
-  }
-
-  if (token == COMPILES) {
-     return new BuiltinCompilesExprAST(
-                  ExprAST_from(child(tree, 0), fnMeansClosure), sourceRange);
   }
 
   // Implicitly, every entry in the precedence table is a binary operator.
   if (CompilationContext::isKnownOperatorName(text)) {
-    ExprAST* lhs = ExprAST_from(child(tree, 0), fnMeansClosure);
-    ExprAST* rhs = ExprAST_from(child(tree, 1), fnMeansClosure);
+    ExprAST* lhs = ExprAST_from(child(tree, 0));
+    ExprAST* rhs = ExprAST_from(child(tree, 1));
     return parseBinaryOpExpr(text, lhs, rhs);
-  }
-
-  if (token == IF) {
-    return new IfExprAST(ExprAST_from(child(tree, 0), fnMeansClosure),
-                         ExprAST_from(child(tree, 1), fnMeansClosure),
-                         ExprAST_from(child(tree, 2), fnMeansClosure),
-                         sourceRange);
-  }
-
-  // This could be either an anonymous function, in which case
-  // fnMeansClosure will be true, or it could be a function with
-  // an embedded name like fn "main" () { blah }, and fnMeansClosure
-  // will be false.
-  if (token == FN) {
-    // for now, this "<anon_fn" prefix is used for closure conversion later on
-    FnAST* fn = parseFn("<anon_fn_%d>", tree, fnMeansClosure);
-    if (!fn->getBody()) {
-      foster::EDiag() << "Found bare proto (with no body)"
-                      << " when expecting full fn literal."
-                      << foster::show(fn);
-      return NULL;
-    }
-
-    if (fnMeansClosure) {
-      ClosureAST* cloast = new ClosureAST(fn, sourceRange);
-      if (0) EDiag() << "\t\t\tFN MEANS CLOSURE: " << str(fn)
-        << "; cloast = " << foster::show(cloast);
-      return cloast;
-    } else {
-      return fn;
-    }
   }
 
   if (text == "false" || text == "true") {
@@ -1017,10 +787,10 @@ ExprAST* ExprAST_from(pTree tree, bool fnMeansClosure) {
   return NULL;
 }
 
-Exprs getExprs(pTree tree, bool fnMeansClosure) {
+Exprs getExprs(pTree tree) {
   Exprs f;
   for (size_t i = 0; i < getChildCount(tree); ++i) {
-    f.push_back(ExprAST_from(child(tree, i), fnMeansClosure));
+    f.push_back(ExprAST_from(child(tree, i)));
   }
   return f;
 }
@@ -1053,7 +823,7 @@ TypeAST* TypeAST_from(pTree tree) {
   }
 
   if (token == FN) {
-    FnAST* fn = parseFn("<anon_fn_type_%d>", tree, true);
+    FnAST* fn = parseFn("<anon_fn_type_%d>", tree);
     if (!fn) {
       EDiag() << "no fn expr when parsing fn type!" << show(sourceRange);
       return NULL;
@@ -1100,125 +870,152 @@ std::vector<TypeAST*> getTypes(pTree tree) {
 
 namespace foster {
 
-struct ANTLRContext {
-  string filename;
-  pANTLR3_INPUT_STREAM input;
-  pfosterLexer lxr;
-  pANTLR3_COMMON_TOKEN_STREAM tstream;
-  pfosterParser psr;
+  struct ANTLRContext {
+    string filename;
+    pANTLR3_INPUT_STREAM input;
+    pfosterLexer lxr;
+    pANTLR3_COMMON_TOKEN_STREAM tstream;
+    pfosterParser psr;
 
-  ~ANTLRContext() {
-    psr     ->free  (psr);      psr     = NULL;
-    tstream ->free  (tstream);  tstream = NULL;
-    lxr     ->free  (lxr);      lxr     = NULL;
-    input   ->close (input);    input   = NULL;
+    ~ANTLRContext() {
+      psr     ->free  (psr);      psr     = NULL;
+      tstream ->free  (tstream);  tstream = NULL;
+      lxr     ->free  (lxr);      lxr     = NULL;
+      input   ->close (input);    input   = NULL;
+    }
+  };
+
+  namespace {
+    void createParser(foster::ANTLRContext& ctx,
+                      const string& filepath,
+                      foster::InputTextBuffer* textbuf) {
+      llvm::MemoryBuffer* buf = textbuf->getMemoryBuffer();
+      ASSERT(buf->getBufferSize() <= ((ANTLR3_UINT32)-1)
+             && "Trying to parse files larger than 4GB makes me cry.");
+      ctx.filename = filepath;
+      ctx.input = antlr3NewAsciiStringInPlaceStream(
+                                    (pANTLR3_UINT8) buf->getBufferStart(),
+                                    (ANTLR3_UINT32) buf->getBufferSize(),
+                                    NULL);
+      ctx.lxr = fosterLexerNew(ctx.input);
+      if (ctx.lxr == NULL) {
+        ANTLR3_FPRINTF(stderr, "Unable to create lexer\n");
+        exit(ANTLR3_ERR_NOMEM);
+      }
+
+      ctx.tstream = antlr3CommonTokenStreamSourceNew(ANTLR3_SIZE_HINT,
+                                                     TOKENSOURCE(ctx.lxr));
+
+      if (ctx.tstream == NULL) {
+        ANTLR3_FPRINTF(stderr, "Out of memory trying to allocate token stream.\n");
+        exit(ANTLR3_ERR_NOMEM);
+      }
+
+      ctx.psr = fosterParserNew(ctx.tstream);
+      if (ctx.psr == NULL) {
+        ANTLR3_FPRINTF(stderr, "Out of memory trying to allocate parser.\n");
+        exit(ANTLR3_ERR_NOMEM);
+      }
+    }
+
+    void createParser(foster::ANTLRContext& ctx,
+                      const foster::InputFile& infile) {
+      createParser(ctx,
+                   infile.getPath().str(),
+                   infile.getBuffer());
+    }
+
+    void installTreeTokenBoundaryTracker(pANTLR3_BASE_TREE_ADAPTOR adaptor);
+  } // unnamed namespace
+
+  void deleteANTLRContext(ANTLRContext* ctx) { delete ctx; }
+
+  ExprAST* parseExpr(const std::string& source,
+                     unsigned& outNumANTLRErrors,
+                     CompilationContext* cc) {
+    ANTLRContext* ctx = new ANTLRContext();
+    const char* s = source.c_str();
+
+    foster::InputTextBuffer* membuf = new InputTextBuffer(s, source.size());
+    createParser(*ctx, "", membuf);
+
+    installTreeTokenBoundaryTracker(ctx->psr->adaptor);
+    foster::installRecognitionErrorFilter(ctx->psr->pParser->rec);
+
+    CompilationContext::pushContext(cc);
+
+    gInputFile = NULL;
+    gInputTextBuffer = membuf;
+
+    fosterParser_expr_return langAST = ctx->psr->expr(ctx->psr);
+
+    outNumANTLRErrors = ctx->psr->pParser->rec->state->errorCount;
+
+    ExprAST* rv = ExprAST_from(langAST.tree);
+
+    // If we reuse the same compilation context again later,
+    // we do not want to accidentally pick up an incorrect
+    // token boundary if we happen to randomly get the same
+    // tree pointer values! Doing so can make ANTLR crash.
+    CompilationContext::clearTokenBoundaries();
+    CompilationContext::popCurrentContext();
+
+    delete ctx;
+
+    return rv;
   }
-};
 
-
-namespace {
-
-void createParser(foster::ANTLRContext& ctx,
-                  const string& filepath,
-                  foster::InputTextBuffer* textbuf) {
-  llvm::MemoryBuffer* buf = textbuf->getMemoryBuffer();
-  ASSERT(buf->getBufferSize() <= ((ANTLR3_UINT32)-1)
-         && "Trying to parse files larger than 4GB makes me cry.");
-  ctx.filename = filepath;
-  ctx.input = antlr3NewAsciiStringInPlaceStream(
-                                (pANTLR3_UINT8) buf->getBufferStart(),
-                                (ANTLR3_UINT32) buf->getBufferSize(),
-                                NULL);
-  ctx.lxr = fosterLexerNew(ctx.input);
-  if (ctx.lxr == NULL) {
-    ANTLR3_FPRINTF(stderr, "Unable to create lexer\n");
-    exit(ANTLR3_ERR_NOMEM);
-  }
-
-  ctx.tstream = antlr3CommonTokenStreamSourceNew(ANTLR3_SIZE_HINT,
-                                                 TOKENSOURCE(ctx.lxr));
-
-  if (ctx.tstream == NULL) {
-    ANTLR3_FPRINTF(stderr, "Out of memory trying to allocate token stream.\n");
-    exit(ANTLR3_ERR_NOMEM);
-  }
-
-  ctx.psr = fosterParserNew(ctx.tstream);
-  if (ctx.psr == NULL) {
-    ANTLR3_FPRINTF(stderr, "Out of memory trying to allocate parser.\n");
-    exit(ANTLR3_ERR_NOMEM);
-  }
-}
-
-void createParser(foster::ANTLRContext& ctx,
-                  const foster::InputFile& infile) {
-  createParser(ctx,
-               infile.getPath().str(),
-               infile.getBuffer());
-}
-
-} // unnamed namespace
-
-void deleteANTLRContext(ANTLRContext* ctx) { delete ctx; }
-
-ExprAST* parseExpr(const std::string& source,
-                   unsigned& outNumANTLRErrors,
-                   CompilationContext* cc) {
-  ANTLRContext* ctx = new ANTLRContext();
-  const char* s = source.c_str();
-  
-  foster::InputTextBuffer* membuf = new InputTextBuffer(s, source.size());
-  createParser(*ctx, "", membuf);
-
-  installTreeTokenBoundaryTracker(ctx->psr->adaptor);
-  foster::installRecognitionErrorFilter(ctx->psr->pParser->rec);
-
-  CompilationContext::pushContext(cc);
-  
-  gInputFile = NULL;
-  gInputTextBuffer = membuf;
-  
-  fosterParser_expr_return langAST = ctx->psr->expr(ctx->psr);
-
-  outNumANTLRErrors = ctx->psr->pParser->rec->state->errorCount;
-
-  ExprAST* rv = ExprAST_from(langAST.tree, false);
-
-  // If we reuse the same compilation context again later,
-  // we do not want to accidentally pick up an incorrect
-  // token boundary if we happen to randomly get the same
-  // tree pointer values! Doing so can make ANTLR crash.
-  CompilationContext::clearTokenBoundaries();
-  CompilationContext::popCurrentContext();
-
-  delete ctx;
-  
-  return rv;
-}
-
-ModuleAST* parseModule(const InputFile& file,
+  ModuleAST* parseModule(const InputFile& file,
                        pTree& outTree,
                        ANTLRContext*& ctx,
                        unsigned& outNumANTLRErrors) {
-  ctx = new ANTLRContext();
-  createParser(*ctx, file);
+    ctx = new ANTLRContext();
+    createParser(*ctx, file);
 
-  installTreeTokenBoundaryTracker(ctx->psr->adaptor);
-  foster::installRecognitionErrorFilter(ctx->psr->pParser->rec);
+    installTreeTokenBoundaryTracker(ctx->psr->adaptor);
+    foster::installRecognitionErrorFilter(ctx->psr->pParser->rec);
 
-  gInputFile = &file;
-  gInputTextBuffer = file.getBuffer();
-  
-  fosterParser_program_return langAST = ctx->psr->program(ctx->psr);
+    gInputFile = &file;
+    gInputTextBuffer = file.getBuffer();
 
-  outTree = langAST.tree;
-  outNumANTLRErrors = ctx->psr->pParser->rec->state->errorCount;
+    fosterParser_program_return langAST = ctx->psr->program(ctx->psr);
 
-  ModuleAST* m = parseTopLevel(outTree);
-  
-  return m;
-}
+    outTree = langAST.tree;
+    outNumANTLRErrors = ctx->psr->pParser->rec->state->errorCount;
+
+    ModuleAST* m = parseTopLevel(outTree);
+
+    return m;
+  }
+
+  ////////////////////////////////////////////////////////////////////
+
+  // Ugly ANTLR-C token boundary customization.
+  namespace {
+    typedef void                  (*setTokenBoundariesFunc)
+    (struct ANTLR3_BASE_TREE_ADAPTOR_struct * adaptor, void * t,
+     pANTLR3_COMMON_TOKEN startToken, pANTLR3_COMMON_TOKEN stopToken);
+
+    static setTokenBoundariesFunc sgDefaultSTB;
+
+    static void customSetTokenBoundariesFunc
+    (struct ANTLR3_BASE_TREE_ADAPTOR_struct * adaptor, void * t,
+     pANTLR3_COMMON_TOKEN startToken, pANTLR3_COMMON_TOKEN stopToken) {
+      sgDefaultSTB(adaptor, t, startToken, stopToken);
+      CompilationContext::setTokenRange((pTree) t, startToken, stopToken);
+    }
+
+    // This is a vaguely unpleasant (but terrifically accurate) hack
+    // to monitor the token boundaries computed for tree nodes, which
+    // are unfortunately (and strangely) not actually stored in the nodes
+    // themselves, but rather in shadow parent nodes inaccessible from
+    // the tree nodes themselves. Anyways, we just replace the function pointer
+    // in the virtual table with a thin shim, above.
+    void installTreeTokenBoundaryTracker(pANTLR3_BASE_TREE_ADAPTOR adaptor) {
+      sgDefaultSTB = adaptor->setTokenBoundaries;
+      adaptor->setTokenBoundaries = customSetTokenBoundariesFunc;
+    }
+  } // unnamed namespace
 
 } // namespace foster
-
 const char* ANTLR_VERSION_STR = PACKAGE_VERSION;
