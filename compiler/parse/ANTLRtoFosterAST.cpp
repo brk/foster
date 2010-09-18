@@ -32,6 +32,7 @@ using std::string;
 using foster::TypeASTFor;
 using foster::LLVMTypeFor;
 using foster::EDiag;
+using foster::DDiag;
 using foster::show;
 using foster::CompilationContext;
 
@@ -431,7 +432,7 @@ ExprAST* parseTypeDefinition(pTree tree) {
 
   gTypeScope.insert(name, tyExpr);
 
-  currentOuts() << "Associated " << name << " with type " << str(tyExpr) << "\n";
+  DDiag() << "Associated " << name << " with type " << str(tyExpr) << "\n";
   return new NamedTypeDeclAST(name, tyExpr, rangeOf(tree));
 }
 

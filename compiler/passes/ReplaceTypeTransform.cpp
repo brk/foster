@@ -18,16 +18,17 @@ using namespace std;
 
 using foster::currentOuts;
 using foster::currentErrs;
+using foster::dbg;
 
 bool ReplaceTypeTransform::subst(TypeAST*& ty) {
   if (!ty) return false;
-  
+
   TypeAST* oldResultType = resultType;
   resultType = ty;
   ty->accept(this);
-  bool changingType = resultType != ty; 
+  bool changingType = resultType != ty;
   if (changingType && resultType) {
-    currentOuts() << "replacing " << str(ty) << " with " << str(resultType) << "\n";
+    dbg("replacetypes") << str(ty) << " with\t" << str(resultType) << "\n";
     ty = resultType;
   }
   resultType = oldResultType;
@@ -77,7 +78,7 @@ void ReplaceTypeTransform::visit(LiteralIntValueTypeAST* ast) {
 ////////////////////////////////////////////////////////////////////
 
 #include "parse/DefaultExprASTVisitor.h"
- 
+
 struct ReplaceTypeInExprTransform : public DefaultExprASTVisitor {
   ReplaceTypeTransform& replaceTypeTransform;
 
@@ -112,7 +113,7 @@ void ReplaceTypeInExprTransform::applyTypeSubst(ExprAST* ast) {
   if (ast->type) {
     replaceTypeTransform.subst(ast->type);
   } else {
-    llvm::errs() << "Ack! ReplaceTypeInExprTransform saw " 
+    llvm::errs() << "Ack! ReplaceTypeInExprTransform saw "
                  << ast->tag << " expr with a NULL type!\n";
   }
 }
@@ -122,7 +123,7 @@ void ReplaceTypeInExprTransform::applyTypeSubst(ExprAST* ast) {
 void ReplaceTypeInExprTransform::visit(VariableAST* ast) {
   applyTypeSubst(ast);
 }
-                                                          
+
 void ReplaceTypeInExprTransform::visit(PrototypeAST* ast) {
   for (size_t i = 0; i < ast->inArgs.size(); ++i) {
     (ast->inArgs[i])->accept(this);
@@ -131,7 +132,7 @@ void ReplaceTypeInExprTransform::visit(PrototypeAST* ast) {
 }
 
 void ReplaceTypeInExprTransform::visit(FnAST* ast) {
-  visitChildren(ast); applyTypeSubst(ast); 
+  visitChildren(ast); applyTypeSubst(ast);
 }
 
 void ReplaceTypeInExprTransform::visit(ClosureAST* ast) {

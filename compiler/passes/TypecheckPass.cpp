@@ -263,25 +263,25 @@ struct TypecheckPass : public ExprASTVisitor {
       return collectedEqualityConstraints.empty() && tysets.empty();
     }
 
-    void show(llvm::raw_ostream& out) {
-      out << "==============================\n";
-      out << "-------- collected type equality constraints ---------\n";
+    void show(llvm::raw_ostream& out, const std::string& lineprefix) {
+      out << lineprefix << "==============================\n";
+      out << lineprefix << "-------- collected type equality constraints ---------\n";
       for (size_t i = 0; i < collectedEqualityConstraints.size(); ++i) {
-        out << "\t" << collectedEqualityConstraints[i].context->tag
+        out << lineprefix << collectedEqualityConstraints[i].context->tag
             << "\t" << str(collectedEqualityConstraints[i].t1)
           << " == " << str(collectedEqualityConstraints[i].t2) << "\n";
       }
-      out << "-------- type subset constraints ---------\n";
+      out << lineprefix << "-------- type subset constraints ---------\n";
       for (size_t i = 0; i < tysets.size(); ++i) {
-        out << "\t" << tysets[i].context->tag
+        out << lineprefix << tysets[i].context->tag
             << "\t" << str(tysets[i].ty) << "\n";
       }
-      out << "-------- current type substitution ---------\n";
+      out << lineprefix << "-------- current type substitution ---------\n";
       for (TypeSubstitution::iterator it = subst.begin();
                                       it != subst.end(); ++it) {
-        out << "\t" << it->first << "\t" << str(it->second) << "\n";
+        out << lineprefix << it->first << "\t" << str(it->second) << "\n";
       }
-      out << "==============================\n";
+      out << lineprefix << "==============================\n";
     }
 
     explicit Constraints() : trivialConstraintsDiscarded(0) {
@@ -530,7 +530,9 @@ bool TypecheckPass::Constraints::addEqConstraintToSubstitution(
   TypeAST* tvs = substFind(tv);
   TypeAST* t2 = applySubst(ttc.t2);
 
-  currentOuts() << str(tv) << " => ... => tvs: " << str(tvs) << " ;; " << str(t2) << "...";
+  foster::dbg("inference") << str(tv) << " => ... => tvs: "
+                           << str(tvs) << " ;; " << str(t2) << "...\n";
+
   // Have    TypeVar(t1) => ... => non-type-var tvs
   // ttc is  TypeVar(t1) => ttc.t2
   if (!tvs) {
@@ -545,9 +547,6 @@ bool TypecheckPass::Constraints::addEqConstraintToSubstitution(
     return false;
   }
 
-  currentOuts() << "\n";
-  //currentOuts() << " ====> " << str(subst[tvName]) << "\n";
-//  currentOuts() << ttc.context->tag << "\t" << str(ttc.t1) << " == " << str(ttc.t2) << "\n";
   return true;
 }
 
@@ -638,7 +637,7 @@ bool typecheck(ExprAST* e) {
 
   if (!tp.constraints.empty()) {
     currentOuts() << "Constraints before solving:\n";
-    tp.constraints.show(currentOuts());
+    tp.constraints.show(currentOuts(), "\tconstraints:\t");
   }
   tp.solveConstraints();
   tp.applyTypeSubstitution(e);
@@ -1016,7 +1015,7 @@ void TypecheckPass::visit(SubscriptAST* ast) {
     } else {
       EDiag() << "SubscriptAST's base type was a type variable (" << str(sub) << " :: " << str(baseType) << ") that"
               << " it couldn't make concrete!" << show(ast);
-      constraints.show(currentOuts());
+      constraints.show(currentOuts(), "\tconstraints:\t");
       ASSERT(false);
     }
   }

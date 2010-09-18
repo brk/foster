@@ -14,6 +14,7 @@
 #include "antlr3interfaces.h"
 
 #include <string>
+#include <set>
 
 namespace llvm {
   class Module;
@@ -37,50 +38,50 @@ public:
 public:
   static CompilationContext*
   pushNewContext();
-  
+
   static void
   pushContext(CompilationContext*);
-  
+
   static CompilationContext*
   popCurrentContext();
-  
+
   /////////////////////
-  
+
   static std::string
   freshName(std::string likeThisOne);
-  
+
   /////////////////////
 
   static void
   setTokenRange(pANTLR3_BASE_TREE t,
                 pANTLR3_COMMON_TOKEN s,
                 pANTLR3_COMMON_TOKEN e);
-  
+
   static pANTLR3_COMMON_TOKEN
   getStartToken(pANTLR3_BASE_TREE t);
-  
+
   static pANTLR3_COMMON_TOKEN
   getEndToken(pANTLR3_BASE_TREE t);
-  
+
   static void
   clearTokenBoundaries();
-  
+
   ///////////////////
-  
+
   static foster::OperatorPrecedenceTable::OperatorRelation
   getOperatorRelation(const std::string& op1, const std::string& op2);
-  
+
   static bool
   isKnownOperatorName(const std::string& op);
 
   static bool
   isKeyword(const std::string& op);
-  
+
   static bool
   isReservedKeyword(const std::string& op);
-  
+
   ///////////////////
-  
+
   // Seeing if it's useful for individual unit tests to redirect all output
   // to a string, so it can be (A) hidden from the console unless needed, and
   // (B) inspected to verify the presence/absence of specific errors.
@@ -88,7 +89,7 @@ public:
   llvm::raw_ostream& currentOuts();
   void startAccumulatingOutputToString();
   std::string collectAccumulatedOutput();
-  
+
 private:
   struct Impl;
   Impl* impl;
@@ -106,10 +107,16 @@ const llvm::Type* LLVMTypeFor(const std::string& name);
 
 // Global version of above methods on CompilationContext, for use by
 // the diagnostic builders.
-// These functions default to llvm::*() if there's no current context. 
+// These functions default to llvm::*() if there's no current context.
 
 llvm::raw_ostream& currentErrs();
 llvm::raw_ostream& currentOuts();
+
+// For want of a better place to put them...
+extern bool gDebugLoggingEnabled;
+extern std::set<std::string> gEnabledDebuggingTags;
+
+llvm::raw_ostream& dbg(const std::string& tag);
 
 ////////////////////////////////////////////////////////////////////
 
