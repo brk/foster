@@ -163,12 +163,12 @@ unsigned IntAST::intSizeForNBits(unsigned n) const {
   ASSERT(false) << "Support for arbitrary-precision ints not yet implemented.";
   return 0;
 }
-  
+
 
 IntAST* literalIntAST(int lit, const foster::SourceRange& sourceRange) {
   std::stringstream ss; ss << lit;
   string text = ss.str();
-  
+
   APInt* p = foster::parseAPIntFromClean(text, 10, sourceRange);
   IntAST* rv = new IntAST(p->getActiveBits(), text, text, 10, sourceRange);
   return rv;
@@ -259,11 +259,11 @@ std::ostream& SeqAST::operator<<(std::ostream& out) const {
 std::ostream& TupleExprAST::operator<<(std::ostream& out) const {
   return out << "TupleExpr(" << str(this->parts[0]) << ")";
 }
-
+/*
 std::ostream& SimdVectorAST::operator<<(std::ostream& out) const {
   return out << "SimdVector(" << str(this->parts[0]) << ")";
 }
-
+*/
 std::ostream& SubscriptAST::operator<<(std::ostream& out) const {
   return out << "SubscriptAST(base = " << str(this->parts[0]) << ", index = " << str(this->parts[1]) << ")";
 }

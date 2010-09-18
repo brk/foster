@@ -188,7 +188,7 @@ TEST(ProtobufToAST, literal_int_large) {
 //
 // Test simd vectors.
 //
-
+/*
 TEST(ProtobufToAST, simd_vector_type) {
   initCachedLLVMTypes();
   TypeAST* i32 = TypeAST::i(32);
@@ -208,6 +208,7 @@ TEST(ProtobufToAST, simd_vector_type) {
   ASSERT_EQ(t->getNumElements(), rst->getNumElements());
   ASSERT_EQ(t->getContainedType(0), rst->getContainedType(0));
 }
+*/
 
 //
 //

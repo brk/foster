@@ -685,10 +685,11 @@ ExprAST* parseCtorExpr(pTree tree, bool fnMeansClosure,
   pTree seqArgs = child(tree, 1);
 
   string name = textOf(child(nameNode, 0));
+  #if 0
   if (name == "simd-vector") {
     return new SimdVectorAST(ExprAST_from(seqArgs, fnMeansClosure), sourceRange);
   }
-#if 0
+
   if (name == "array") {
     return new ArrayExprAST(ExprAST_from(seqArgs, fnMeansClosure), sourceRange);
   }
@@ -721,7 +722,9 @@ TypeAST* parseCtorType(pTree tree,
 
   string name = textOf(child(nameNode, 0));
   if (name == "simd-vector") {
+    ASSERT(false) << "simd-vectors temporarily disabled";
     // e.g. simd-vector of 4 i32
+    /*
     TypeAST* size = TypeAST_from(child(seqArgs, 0));
     TypeAST* type = TypeAST_from(child(seqArgs, 1));
     if (LiteralIntValueTypeAST* litsize =
@@ -732,6 +735,7 @@ TypeAST* parseCtorType(pTree tree,
               << show(rangeOf(child(seqArgs, 0)));
       return NULL;
     }
+    */
   }
   if (name == "array") {
     foster::EDiag() << "array types not yet supported!"

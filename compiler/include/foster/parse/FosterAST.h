@@ -267,6 +267,7 @@ struct ArrayExprAST : public UnaryExprAST {
 };
 #endif
 
+/*
 struct SimdVectorAST : public UnaryExprAST {
   // Implicitly, a SeqAST
   explicit SimdVectorAST(ExprAST* expr, foster::SourceRange sourceRange)
@@ -274,6 +275,7 @@ struct SimdVectorAST : public UnaryExprAST {
   virtual void accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const;
 };
+*/
 
 // base[index]
 struct SubscriptAST : public BinaryExprAST {

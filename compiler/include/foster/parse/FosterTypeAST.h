@@ -284,7 +284,7 @@ public:
   static LiteralIntValueTypeAST* get(uint64_t value, const SourceRange& range);
 };
 
-
+/*
 class SimdVectorTypeAST : public IndexableTypeAST {
   LiteralIntValueTypeAST* size;
   TypeAST*                elementType;
@@ -306,6 +306,6 @@ public:
                                 const SourceRange& sourceRange);
   friend class DumpTypeToProtobufPass;
 };
-
+*/
 #endif // header guard
 

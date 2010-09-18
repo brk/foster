@@ -84,9 +84,9 @@ struct TypecheckPass : public ExprASTVisitor {
           ty = constraints.substFind(tv);
         }
         
-        if (SimdVectorTypeAST* st = dynamic_cast<SimdVectorTypeAST*>(ty)) {
+        /*if (SimdVectorTypeAST* st = dynamic_cast<SimdVectorTypeAST*>(ty)) {
           ty = st->getContainedType(0);
-        }
+        }*/
         
         if (NamedTypeAST* nt = dynamic_cast<NamedTypeAST*>(ty)) {
           return isIntTypeName(nt->getName());
@@ -428,6 +428,7 @@ void TypeConstraintExtractor::visit(ClosureTypeAST* t2) {
   addConstraint(t1->getFnType(), t2->getFnType());
 }
 
+/*
 void TypeConstraintExtractor::visit(SimdVectorTypeAST* t2) {
   SimdVectorTypeAST* t1 = dynamic_cast<SimdVectorTypeAST*>(t1_pre);
   if (t1->getNumElements() == t2->getNumElements()) {
@@ -440,6 +441,7 @@ void TypeConstraintExtractor::visit(SimdVectorTypeAST* t2) {
            << show(context);
   }
 }
+*/
 
 void TypeConstraintExtractor::visit(LiteralIntValueTypeAST* t2) {
   LiteralIntValueTypeAST* t1 = dynamic_cast<LiteralIntValueTypeAST*>(t1_pre);
@@ -1050,9 +1052,9 @@ void TypecheckPass::visit(SubscriptAST* ast) {
     return;
   }
   
-  if (SimdVectorTypeAST* ty = dynamic_cast<SimdVectorTypeAST*>(baseType)) {
+  /*if (SimdVectorTypeAST* ty = dynamic_cast<SimdVectorTypeAST*>(baseType)) {
     numElements = ty->getNumElements();
-  }
+  }*/
 
   uint64_t idx_u64 = vidx.getZExtValue();
   
@@ -1267,6 +1269,7 @@ bool isSmallPowerOfTwo(int x) {
   return (x == 2) || (x == 4) || (x == 8) || (x == 16);
 }
 
+#if 0
 SimdVectorTypeAST* synthesizeSimdVectorType(SimdVectorAST* ast) {
   SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
   if (!body) {
@@ -1335,6 +1338,7 @@ void TypecheckPass::visit(SimdVectorAST* ast) {
 
   ast->type = synthesizeSimdVectorType(ast);
 }
+#endif
 
 void TypecheckPass::visit(TupleExprAST* ast) {
   SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);

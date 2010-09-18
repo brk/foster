@@ -1691,7 +1691,6 @@ void CodegenPass::visit(ArrayExprAST* ast) {
     }
   }
 }
-#endif
 
 void CodegenPass::visit(SimdVectorAST* ast) {
   if (ast->value) return;
@@ -1732,6 +1731,7 @@ void CodegenPass::visit(SimdVectorAST* ast) {
     ast->value = pt;
   }
 }
+#endif
 
 // pt should be an alloca, either of type tuple* or tuple**,
 // where tuple is the type of the TupleExprAST

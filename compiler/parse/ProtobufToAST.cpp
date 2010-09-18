@@ -227,9 +227,11 @@ ExprAST* parseSeq(const pb::Expr& e, const foster::SourceRange& range) {
   return new SeqAST(args, range);
 }
 
+/*
 ExprAST* parseSimd(const pb::Expr& e, const foster::SourceRange& range) {
   return new SimdVectorAST(ExprAST_from_pb(& e.parts(0)), range);
 }
+*/
 
 ExprAST* parseSubscript(const pb::Expr& e, const foster::SourceRange& range) {
   return new SubscriptAST(
@@ -278,7 +280,7 @@ ExprAST* ExprAST_from_pb(const pb::Expr* pe) {
   case pb::Expr::PROTO:     rv = parseProto(e, range); break;
   case pb::Expr::REF:       rv = parseRef(e, range); break;
   case pb::Expr::SEQ:       rv = parseSeq(e, range); break;
-  case pb::Expr::SIMD:      rv = parseSimd(e, range); break;
+//  case pb::Expr::SIMD:      rv = parseSimd(e, range); break;
   case pb::Expr::SUBSCRIPT: rv = parseSubscript(e, range); break;
   case pb::Expr::TUPLE:     rv = parseTuple(e, range); break;
   case pb::Expr::VAR:       rv = parseVar(e, range); break;
@@ -374,6 +376,7 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
     return LiteralIntValueTypeAST::get(t.literal_int_value(), range);
   }
 
+  /*
   if (t.has_simd_vector()) {
     const pb::SimdVectorType& st = t.simd_vector();
     TypeAST* literalIntSize = TypeAST_from_pb(&st.literal_int_size());
@@ -382,6 +385,7 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
         dynamic_cast<LiteralIntValueTypeAST*>(literalIntSize),
         elementType, range);
   }
+  */
 
   if (t.tag() == pb::Type::LLVM_NAMED) {
     const string& tyname = t.name();

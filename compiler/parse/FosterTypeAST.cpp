@@ -338,6 +338,7 @@ uint64_t LiteralIntValueTypeAST::getNumericalValue() const {
 
 /////////////////////////////////////////////////////////////////////
 
+/*
 // static
 SimdVectorTypeAST* SimdVectorTypeAST::get(LiteralIntValueTypeAST* size,
                                           TypeAST* type,
@@ -346,3 +347,4 @@ SimdVectorTypeAST* SimdVectorTypeAST::get(LiteralIntValueTypeAST* size,
                                                   size->getNumericalValue());
   return new SimdVectorTypeAST(vecTy, size, type, sourceRange);
 }
+*/

@@ -19,9 +19,9 @@ struct CaptureAvoidingSubstitution : public ExprASTVisitor {
   const std::string& varName;
   ExprAST* replacement;
   const std::map<FnAST*, std::set<std::string> >& boundVarsPerFn;
-    
+
   CaptureAvoidingSubstitution(const std::string& varName, ExprAST* replacement,
-    const std::map<FnAST*, std::set<std::string> >& boundVarsPerFn) 
+    const std::map<FnAST*, std::set<std::string> >& boundVarsPerFn)
   : varName(varName), replacement(replacement), boundVarsPerFn(boundVarsPerFn) {}
 
   virtual void visitChildren(ExprAST* ast);
@@ -83,7 +83,7 @@ void CaptureAvoidingSubstitution::visit(RefExprAST* ast)             { visitChil
 void CaptureAvoidingSubstitution::visit(DerefExprAST* ast)           { visitChildren(ast); }
 void CaptureAvoidingSubstitution::visit(AssignExprAST* ast)          { visitChildren(ast); }
 void CaptureAvoidingSubstitution::visit(SubscriptAST* ast)           { visitChildren(ast); }
-void CaptureAvoidingSubstitution::visit(SimdVectorAST* ast)          { visitChildren(ast); }
+//void CaptureAvoidingSubstitution::visit(SimdVectorAST* ast)          { visitChildren(ast); }
 void CaptureAvoidingSubstitution::visit(SeqAST* ast)                 { visitChildren(ast); }
 void CaptureAvoidingSubstitution::visit(CallAST* ast)                { visitChildren(ast); }
 //void CaptureAvoidingSubstitution::visit(ArrayExprAST* ast)           { visitChildren(ast); }

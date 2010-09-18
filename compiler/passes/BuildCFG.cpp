@@ -49,7 +49,7 @@ void BuildCFG::visit(AssignExprAST* ast)   { currentRoot->append(ast); }
 void BuildCFG::visit(SubscriptAST* ast)    { currentRoot->append(ast); }
 void BuildCFG::visit(ClosureAST* ast)      { currentRoot->append(ast); }
 ///void BuildCFG::visit(ArrayExprAST* ast) { currentRoot->append(ast); }
-void BuildCFG::visit(SimdVectorAST* ast)   { currentRoot->append(ast); } 
+///void BuildCFG::visit(SimdVectorAST* ast)   { currentRoot->append(ast); } 
 void BuildCFG::visit(TupleExprAST* ast)    { currentRoot->append(ast); } 
 void BuildCFG::visit(BuiltinCompilesExprAST* ast) { currentRoot->append(ast); }
 void BuildCFG::visit(NamedTypeDeclAST* ast) { currentRoot->append(ast); }

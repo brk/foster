@@ -64,9 +64,11 @@ void ReplaceTypeTransform::visit(ClosureTypeAST* ast) {
   if (ast->clotype) { ast->clotype->accept(this); }
 }
 
+/*
 void ReplaceTypeTransform::visit(SimdVectorTypeAST* ast) {
   subst(ast->getContainedType(0));
 }
+*/
 
 void ReplaceTypeTransform::visit(LiteralIntValueTypeAST* ast) {
   // ignore?

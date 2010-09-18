@@ -423,7 +423,7 @@ void PrettyPrintPass::visit(TupleExprAST* ast) {
   emit(ast->parts[0]);
 }
 
-
+/*
 // simd-vector $0
 void PrettyPrintPass::visit(SimdVectorAST* ast) {
   ScopedBlock sb(this);
@@ -431,6 +431,7 @@ void PrettyPrintPass::visit(SimdVectorAST* ast) {
   scan(PPToken(" "));
   emit(ast->parts[0]);
 }
+*/
 
 // __COMPILES__ $0
 void PrettyPrintPass::visit(BuiltinCompilesExprAST* ast) {
@@ -536,6 +537,7 @@ void PrettyPrintTypePass::visit(ClosureTypeAST* ast) {
   scan(PPToken(")"));
 }
 
+/*
 void PrettyPrintTypePass::visit(SimdVectorTypeAST* ast) {
   scan(PPToken("simd-vector("));
   std::stringstream ss; ss << ast->getNumElements();
@@ -544,6 +546,7 @@ void PrettyPrintTypePass::visit(SimdVectorTypeAST* ast) {
   emit(ast->getContainedType(0));
   scan(PPToken(")"));
 }
+*/
 
 void PrettyPrintTypePass::visit(LiteralIntValueTypeAST* ast) {
   std::stringstream ss; ss << ast->getNumericalValue();

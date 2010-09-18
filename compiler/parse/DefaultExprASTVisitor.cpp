@@ -22,7 +22,7 @@ void DefaultExprASTVisitor::visit(RefExprAST* ast)             { if (0) this->vi
 void DefaultExprASTVisitor::visit(DerefExprAST* ast)           { if (0) this->visitChildren(ast); }
 void DefaultExprASTVisitor::visit(AssignExprAST* ast)          { if (0) this->visitChildren(ast); }
 void DefaultExprASTVisitor::visit(SubscriptAST* ast)           { if (0) this->visitChildren(ast); }
-void DefaultExprASTVisitor::visit(SimdVectorAST* ast)          { if (0) this->visitChildren(ast); }
+//void DefaultExprASTVisitor::visit(SimdVectorAST* ast)          { if (0) this->visitChildren(ast); }
 void DefaultExprASTVisitor::visit(SeqAST* ast)                 { if (0) this->visitChildren(ast); }
 void DefaultExprASTVisitor::visit(CallAST* ast)                { this->visitChildren(ast); }
 void DefaultExprASTVisitor::visit(TupleExprAST* ast)           { if (0) this->visitChildren(ast); }

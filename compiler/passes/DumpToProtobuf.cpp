@@ -183,12 +183,12 @@ void DumpToProtobufPass::visit(SubscriptAST* ast)           {
   processExprAST(current, ast, foster::pb::Expr::SUBSCRIPT);
   dumpChildren(this, ast);
 }
-
+/*
 void DumpToProtobufPass::visit(SimdVectorAST* ast)          {
   processExprAST(current, ast, foster::pb::Expr::SIMD);
   dumpChildren(this, ast);
 }
-
+*/
 void DumpToProtobufPass::visit(SeqAST* ast)                 {
   processExprAST(current, ast, foster::pb::Expr::SEQ);
   dumpChildren(this, ast);
@@ -306,7 +306,7 @@ void DumpTypeToProtobufPass::visit(ClosureTypeAST* ast) {
   //    << str(ast->getLLVMType()) << std::endl;
   // TODO clo tuple type?
 }
-
+/*
 void DumpTypeToProtobufPass::visit(SimdVectorTypeAST* ast) {
   setTagAndRange(current, ast, foster::pb::Type::SIMD);
 
@@ -314,7 +314,7 @@ void DumpTypeToProtobufPass::visit(SimdVectorTypeAST* ast) {
   dumpChild(this, simd->mutable_literal_int_size(), ast->size);
   dumpChild(this, simd->mutable_element_type(), ast->getContainedType(0));
 }
-
+*/
 void DumpTypeToProtobufPass::visit(LiteralIntValueTypeAST* ast) {
   setTagAndRange(current, ast, foster::pb::Type::LITERAL_INT_VALUE);
   current->set_literal_int_value(ast->getNumericalValue());
