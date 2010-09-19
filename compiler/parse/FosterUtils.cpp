@@ -13,9 +13,18 @@
 #include <sstream>
 
 using llvm::Type;
+using llvm::getGlobalContext;
 using llvm::FunctionType;
 
 using foster::LLVMTypeFor;
+
+llvm::ConstantInt* getConstantInt64For(int64_t val) {
+  return llvm::ConstantInt::get(Type::getInt64Ty(getGlobalContext()), val);
+}
+
+llvm::ConstantInt* getConstantInt32For(int val) {
+  return llvm::ConstantInt::get(Type::getInt32Ty(getGlobalContext()), val);
+}
 
 bool isPointerToType(const llvm::Type* p, const llvm::Type* t) {
   return p->isPointerTy() && p->getContainedType(0) == t;
@@ -114,7 +123,7 @@ bool isValidClosureType(const llvm::Type* ty) {
   if (const llvm::StructType* sty =
          llvm::dyn_cast_or_null<const llvm::StructType>(ty)) {
     if (sty->getNumElements() != 2) return false;
-    
+
     const llvm::Type* maybeEnvTy = sty->getElementType(1);
     const llvm::Type* maybePtrFn = sty->getElementType(0);
     if (const llvm::PointerType* ptrMaybeFn
@@ -163,7 +172,7 @@ FnTypeAST* originalFunctionTypeForClosureStructType(TypeAST* ty) {
                                      "fastcc");
 #if 0
       ft->dumpParams();
-      std::cout << "originalFunc...() " << str(ty) << " => " << str(ft) 
+      std::cout << "originalFunc...() " << str(ty) << " => " << str(ft)
 	<< ";;; " << ft->getNumParams() << " ;; to " << str(rv) << std::endl;
 #endif
       return rv;

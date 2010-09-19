@@ -17,18 +17,15 @@
 #include "_generated_/FosterConfig.h"
 
 #include "llvm/Attributes.h"
-#include "llvm/ExecutionEngine/ExecutionEngine.h"
 #include "llvm/CallingConv.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Module.h"
-#include "llvm/Analysis/Verifier.h"
-#include "llvm/Target/TargetData.h"
+//#include "llvm/Analysis/Verifier.h"
 #include "llvm/Support/Format.h"
 
 #include "pystring/pystring.h"
 
-#include <sstream>
 #include <map>
 #include <set>
 
@@ -58,6 +55,7 @@ struct CodegenPass : public ExprASTVisitor {
   #include "parse/ExprASTVisitor.decls.inc.h"
 };
 
+
 namespace foster {
   void codegen(ExprAST* ast) {
     CodegenPass cp; ast->accept(&cp);
@@ -68,226 +66,16 @@ namespace foster {
   }
 }
 
-typedef std::pair<const llvm::Type*, llvm::Constant*> OffsetInfo;
-typedef std::set<OffsetInfo> OffsetSet;
+// Declarations for Codegen-typemaps.cpp
+llvm::GlobalVariable*
+emitTypeMap(const Type* ty, std::string name, bool skipOffsetZero = false);
 
-llvm::ConstantInt* getConstantInt64For(int64_t val) {
-  return ConstantInt::get(Type::getInt64Ty(getGlobalContext()), val);
-}
+void registerType(const Type* ty, std::string desiredName,
+                  bool isClosureEnvironment = false);
 
-llvm::ConstantInt* getConstantInt32For(int val) {
-  return ConstantInt::get(Type::getInt32Ty(getGlobalContext()), val);
-}
+llvm::GlobalVariable* getTypeMapForType(const llvm::Type*);
 
-OffsetSet countPointersInType(const llvm::Type* ty) {
-  ASSERT(ty) << "Can't count pointers in a NULL type!";
-
-  OffsetSet rv;
-  if (ty->isPointerTy()) {
-    rv.insert(OffsetInfo(ty->getContainedType(0),
-                         getConstantInt64For(0)));
-  }
-
-  // array, struct, union
-  else if (dyn_cast<const llvm::ArrayType>(ty)) {
-    // TODO need to decide how Foster semantics will map to LLVM IR for arrays.
-    // Will EVERY (C++), SOME (Factor, C#?), or NO (Java) types be unboxed?
-    // Also need to figure out how the gc will collect arrays.
-    //return aty->getNumElements() * countPointersInType(aty->getElementType());
-  }
-
-  // if we have a struct { T1; T2 } then our offset set will be the set for T1,
-  // plus the set for T2 with offsets incremented by the size of T1.
-  else if (const llvm::StructType* sty
-                            = dyn_cast<const llvm::StructType>(ty)) {
-    for (size_t i = 0; i < sty->getNumElements(); ++i) {
-      llvm::Constant* slotOffset = ConstantExpr::getOffsetOf(sty, i);
-      OffsetSet sub = countPointersInType(sty->getTypeAtIndex(i));
-      for (OffsetSet::iterator si = sub.begin(); si != sub.end(); ++si) {
-        const llvm::Type* subty = si->first;
-        llvm::Constant* suboffset = si->second;
-        rv.insert(OffsetInfo(subty,
-            ConstantExpr::getAdd(suboffset, slotOffset)));
-      }
-    }
-  }
-
-  // TODO Also need to decide how to represent type maps for unions
-  // in such a way that the GC can safely collect unions.
-
-  // Note! Now that LLVM has removed IR support for unions, codegen
-  // will require a Foster TypeAST*, not just a llvm::Type*,
-  // in order to properly codegen unions.
-
-  // all other types do not contain pointers
-  return rv;
-}
-
-std::map<const llvm::Type*, llvm::GlobalVariable*> typeMapForType;
-
-// A type map entry is a pair:
-//  struct { i8* typeinfo; i32 offset }
-//
-// The second field is the offset of a slot in the parent type.
-// The first field is either a pointer to a typemap describing
-// the slot, or (for atomic types) the size of the type.
-//
-// We can distinguish the two cases at runtime since only arrays
-// can lead to objects of any significant (multi-KB) size.
-llvm::Constant* getTypeMapEntryFor(
-                const llvm::StructType* typeMapEntryTy,
-                const llvm::Type* entryTy,
-                llvm::Constant* offset) {
-  std::vector<llvm::Constant*> fields;
-
-  llvm::GlobalVariable* typeMapVar = typeMapForType[entryTy];
-  if (typeMapVar) {
-        fields.push_back(ConstantExpr::getCast(llvm::Instruction::BitCast,
-                        typeMapVar, LLVMTypeFor("i8*")));
-  } else {
-        // If we can't tell the garbage collector how to collect a type by
-        // giving it a pointer to a type map, it's probably because the type
-        // doesn't have a type map, i.e. the type is atomic. Instead, tell
-        // the garbage collector how large the type is.
-        llvm::outs() << "entry ty: " << str(entryTy) << "\n";
-        fields.push_back(
-            ConstantExpr::getCast(llvm::Instruction::IntToPtr,
-                                  ConstantExpr::getSizeOf(entryTy),
-                                  LLVMTypeFor("i8*")));
-  }
-
-  fields.push_back(ConstantExpr::getTruncOrBitCast(
-                   offset, LLVMTypeFor("i32")));
-
-  return llvm::ConstantStruct::get(typeMapEntryTy, fields);
-}
-
-llvm::Constant* arrayVariableToPointer(llvm::GlobalVariable* arr) {
-  std::vector<llvm::Constant*> idx;
-  idx.push_back(getConstantInt64For(0));
-  idx.push_back(getConstantInt64For(0));
-  return ConstantExpr::getGetElementPtr(arr, &idx[0], idx.size());
-}
-
-void removeEntryWithOffset(OffsetSet& os, llvm::Constant* offset) {
-  OffsetSet::iterator toRemove = os.end();
-  for (OffsetSet::iterator it = os.begin(); it != os.end(); ++it) {
-    if (it->second == offset) {
-      toRemove = it;
-      break;
-    }
-  }
-
-  if (toRemove != os.end()) {
-    os.erase(toRemove);
-  }
-}
-
-// Return a global corresponding to the following layout:
-// struct {
-//   const char* typeName;
-//   i32 numPtrEntries;
-//   struct { i8* typeinfo; i32 offset }[numPtrEntries];
-// }
-// The returned global is also stored in the typeMapForType[] map.
-llvm::GlobalVariable* emitTypeMap(const llvm::Type* ty, std::string name,
-    bool skipOffsetZero = false) {
-  using llvm::StructType;
-
-  OffsetSet pointerOffsets = countPointersInType(ty);
-  //currentOuts() << "emitting type map for type " << str(ty)
-  // << " ; skipping offset zero? " << skipOffsetZero << "\n";
-
-  if (skipOffsetZero) {
-    // Remove entry for first pointer, which corresponds
-    // to the type map for the environment.
-    removeEntryWithOffset(pointerOffsets,
-                          getConstantInt64For(0));
-  }
-  int numPointers = pointerOffsets.size();
-
-  // Construct the type map's LLVM type
-  std::vector<const Type*> entryty_types;
-  entryty_types.push_back(LLVMTypeFor("i8*"));
-  entryty_types.push_back(LLVMTypeFor("i32"));
-  StructType* entryty = StructType::get(getGlobalContext(),
-                                        entryty_types,
-                                        /*isPacked=*/false);
-  module->addTypeName("typemap_entry", entryty);
-
-  std::vector<const Type*> typeMapTyFields;
-  llvm::ArrayType* entriesty = llvm::ArrayType::get(entryty, numPointers);
-
-  typeMapTyFields.push_back(LLVMTypeFor("i8*"));
-  typeMapTyFields.push_back(LLVMTypeFor("i32"));
-  typeMapTyFields.push_back(entriesty);
-
-  const StructType* typeMapTy = StructType::get(getGlobalContext(),
-                                                typeMapTyFields);
-
-  llvm::GlobalVariable* typeMapVar = new llvm::GlobalVariable(
-    /*Module=*/     *module,
-    /*Type=*/       typeMapTy,
-    /*isConstant=*/ false,
-    /*Linkage=*/    llvm::GlobalValue::ExternalLinkage,
-    /*Initializer=*/ 0,
-    /*Name=*/        "__foster_typemap_" + name,
-    /*ThreadLocal=*/ false);
-  typeMapVar->setAlignment(16);
-
-  // Register the (as-yet uninitialized) variable to avoid problems
-  // with recursive types.
-  typeMapForType[ty] = typeMapVar;
-
-  // Construct the type map itself
-  std::stringstream ss; ss << name << " = " << *ty;
-  std::vector<llvm::Constant*> typeMapFields;
-  llvm::Constant* cname = llvm::ConstantArray::get(getGlobalContext(),
-                                                   ss.str().c_str(),
-                                                   true);
-  llvm::GlobalVariable* typeNameVar = new llvm::GlobalVariable(
-      /*Module=*/      *module,
-      /*Type=*/        cname->getType(),
-      /*isConstant=*/  true,
-      /*Linkage=*/     llvm::GlobalValue::PrivateLinkage,
-      /*Initializer=*/ cname,
-      /*Name=*/        ".typename." + name);
-  typeNameVar->setAlignment(1);
-
-  llvm::Constant* cnameptr = arrayVariableToPointer(typeNameVar);
-  typeMapFields.push_back(cnameptr);
-  typeMapFields.push_back(getConstantInt32For(numPointers));
-
-  std::vector<llvm::Constant*> typeMapEntries;
-  for (OffsetSet::iterator si =  pointerOffsets.begin();
-                                   si != pointerOffsets.end(); ++si) {
-        const llvm::Type* subty = si->first;
-        llvm::Constant* suboffset = si->second;
-        typeMapEntries.push_back(
-          getTypeMapEntryFor(entryty, subty, suboffset));
-  }
-
-
-  typeMapFields.push_back(llvm::ConstantArray::get(entriesty, typeMapEntries));
-
-  llvm::Constant* typeMap = llvm::ConstantStruct::get(typeMapTy, typeMapFields);
-
-  typeMapVar->setInitializer(typeMap);
-  return typeMapVar;
-}
-
-void registerType(const llvm::Type* ty, std::string desiredName,
-    bool isClosureEnvironment = false) {
-  static std::map<const llvm::Type*, bool> registeredTypes;
-
-  if (registeredTypes[ty]) return;
-
-  registeredTypes[ty] = true;
-
-  std::string name = freshName(desiredName);
-  module->addTypeName(name, ty);
-  emitTypeMap(ty, name, isClosureEnvironment);
-}
+bool mightContainHeapPointers(const llvm::Type* ty);
 
 // Returns type  void (i8**, i8*).
 const FunctionType* get_llvm_gcroot_ty() {
@@ -311,7 +99,7 @@ void markGCRoot(llvm::Value* root, llvm::Constant* meta) {
   }
 
   if (!meta) {
-    meta = typeMapForType[root->getType()];
+    meta = getTypeMapForType(root->getType());
   }
 
 #if 0
@@ -342,25 +130,6 @@ llvm::AllocaInst* CreateEntryAlloca(const llvm::Type* ty, const char* name) {
   return tmpBuilder.CreateAlloca(ty, /*ArraySize=*/ 0, name);
 }
 
-llvm::GlobalVariable* getTypeMapForType(const llvm::Type* ty) {
-  llvm::GlobalVariable* gv = typeMapForType[ty];
-  if (gv) return gv;
-
-  if (!ty->isAbstract() && !ty->isAggregateType()) {
-    gv = emitTypeMap(ty, freshName("gcatom"));
-    // emitTypeMap also sticks gv in typeMapForType
-  } else if (isGenericClosureType(ty)) {
-    gv = emitTypeMap(ty, freshName("genericClosure"),
-                     /*skipOffsetZero*/ true);
-  }
-
-  if (!gv) {
-    currentOuts() << "No type map for type " << *(ty) << "\n";
-  }
-
-  return gv;
-}
-
 // Unlike markGCRoot, this does not require the root be an AllocaInst
 // (though it should still be a pointer).
 // This function is intended for marking intermediate values. It stores
@@ -387,26 +156,21 @@ llvm::Value* storeAndMarkPointerAsGCRoot(llvm::Value* val) {
   return stackslot;
 }
 
-// returns ty**, the stack slot containing a ty*
+// Returns ty**, the stack slot containing a ty*.
 llvm::Value* emitMalloc(const llvm::Type* ty) {
   llvm::Value* memalloc = gScopeLookupValue("memalloc");
   if (!memalloc) {
     currentErrs() << "NO MEMALLOC IN MODULE! :(" << "\n";
     return NULL;
   }
+
+  // TODO we should statically determine
+  // the proper allocation size.
   llvm::Value* mem = builder.CreateCall(memalloc,
                                         getConstantInt64For(32),
                                         "mem");
   return storeAndMarkPointerAsGCRoot(
       builder.CreateBitCast(mem, llvm::PointerType::getUnqual(ty), "ptr"));
-}
-
-
-bool mightContainHeapPointers(const llvm::Type* ty) {
-  // For now, we don't distinguish between different kinds of pointer;
-  // we consider any pointer to be a possible heap pointer.
-  OffsetSet offsets = countPointersInType(ty);
-  return !offsets.empty();
 }
 
 Value* tempHackExtendInt(Value* val, const Type* toTy) {
@@ -1457,7 +1221,9 @@ void CodegenPass::visit(CallAST* ast) {
     if (needsAdjusting) {
       ExprAST* arg = ast->parts[i + 1];
       TypeAST* argty = ast->parts[i + 1]->type;
-      std::stringstream ss; ss << arg;
+
+      std::string wrapped;
+      llvm::raw_string_ostream ss(wrapped); ss << arg;
       EDiag() << str(V) << "->getType() is " << str(V->getType())
               << "; expecting " << str(expectedType)
               << "\n\targ is " << ss.str() << " :: " << arg->tag << " :: " << str(arg)

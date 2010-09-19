@@ -9,6 +9,7 @@ namespace llvm {
   class Type;
   class Module;
   class FunctionType;
+  class ConstantInt;
 }
 
 class TypeAST;
@@ -51,6 +52,9 @@ bool isGenericClosureType(const llvm::Type* ty);
 
 // converts { T (env*, Y, Z)*, env* }   to   T (Y, Z)
 FnTypeAST* originalFunctionTypeForClosureStructType(TypeAST*);
+
+llvm::ConstantInt* getConstantInt64For(int64_t val);
+llvm::ConstantInt* getConstantInt32For(int val);
 
 #endif
 
