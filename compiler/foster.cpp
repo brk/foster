@@ -514,6 +514,10 @@ int main(int argc, char** argv) {
 
   Module* libfoster_bc = readLLVMModuleFromPath("libfoster.bc");
   Module* imath_bc = readLLVMModuleFromPath("imath-wrapper.bc");
+  const llvm::Type* mp_int =
+    llvm::PointerType::getUnqual(imath_bc->getTypeByName("struct.mpz"));
+  module->addTypeName("mp_int", mp_int);
+  gTypeScope.insert("int", NamedTypeAST::get("int", mp_int));
 
   foster::putModuleMembersInScope(libfoster_bc, module);
   foster::putModuleMembersInInternalScope("imath", imath_bc, module);
