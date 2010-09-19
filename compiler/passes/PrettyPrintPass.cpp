@@ -13,25 +13,25 @@
 
 struct PrettyPrintPass : public ExprASTVisitor {
   #include "parse/ExprASTVisitor.decls.inc.h"
-  
+
   // This can be used in lieu of ast->accept(ppp)
   // to ensure proper outer parens,
   // mainly useful for unit tests.
   void emit(ExprAST*, bool forceOuterParens = false);
-  
+
   virtual void visitChildren(ExprAST* ast) {
    // Only visit children manually!
   }
-  
+
   typedef foster::PughSinofskyPrettyPrinter PrettyPrinter;
-  
+
 private:
   PrettyPrinter pp;
   // Controls whether type ascriptions on variable names are printed.
   // Used to print ascriptions on fn formals but not let bindings.
   bool printVarTypes;
   bool printSignaturesOnly;
-  
+
 public:
   PrettyPrintPass(llvm::raw_ostream& out, int width, int indent_width)
     : pp(out, width, indent_width),
@@ -40,9 +40,9 @@ public:
 
   void setPrintSignaturesOnly(bool newval) { printSignaturesOnly = newval; }
   void scan(const PrettyPrinter::PPToken& token) { pp.scan(token); }
-  
+
   ~PrettyPrintPass() {}
-  
+
   friend class ScopedBlock;
   friend class ScopedIndent;
 };
@@ -72,7 +72,7 @@ public:
       p->scan(PPToken("("));
     }
   }
-  
+
   ~ScopedParens() {
     if (enable) {
       p->scan(PPToken(")"));
@@ -86,7 +86,7 @@ public:
   ScopedBlock(PrettyPrintPass* p) : p(p) {
     p->scan(p->pp.tBlockOpen);
   }
-  
+
   ~ScopedBlock() {
     p->scan(p->pp.tBlockClose);
   }
@@ -99,7 +99,7 @@ public:
   ScopedIndent(PrettyPrintPass* p) : p(p) {
     p->scan(p->pp.tIndent);
   }
-  
+
   ~ScopedIndent() {
     p->scan(p->pp.tDedent);
   }
@@ -176,7 +176,7 @@ void PrettyPrintPass::visit(UnaryOpExprAST* ast) {
 // $0 op $1
 void PrettyPrintPass::visit(BinaryOpExprAST* ast) {
   ScopedBlock sb(this);
-  
+
   emit(ast->parts[0], needsParens(ast, ast->parts[0]));
   scan(PPToken(" "));
   scan(PPToken(ast->op));
@@ -193,7 +193,7 @@ void PrettyPrintPass::visit(PrototypeAST* ast) {
   scan(PPToken(" "));
   scan(PPToken(ast->name));
   }
-  
+
   { ScopedBlock sb(this);
   scan(PPToken(" "));
   scan(PPToken("("));
@@ -254,21 +254,21 @@ void PrettyPrintPass::visit(ClosureAST* ast) {
 // if $0 then $1 else $2
 void PrettyPrintPass::visit(IfExprAST* ast) {
   ScopedBlock sb(this);
-  
+
   { ScopedBlock sb(this);
   scan(PPToken("if "));
   emit(ast->getTestExpr());
   }
-  
+
   scan(pp.tConnNewline);
-  
+
   { ScopedBlock sb(this);
   scan(PPToken(" then "));
   emit(ast->getThenExpr());
   }
 
   scan(pp.tConnNewline);
-  
+
   { ScopedBlock sb(this);
   scan(PPToken(" else "));
   emit(ast->getElseExpr());
@@ -280,22 +280,22 @@ void PrettyPrintPass::visit(ForRangeExprAST* ast) {
   { ScopedBlock sb(this);
     scan(PPToken("for "));
     scan(PPToken(ast->var->name));
-  
+
     scan(PPToken(" in "));
     emit(ast->getStartExpr());
     scan(PPToken(" to "));
     emit(ast->getEndExpr());
-  
+
     if (ast->hadExplicitIncrExpr()) {
       scan(PPToken(" by "));
       emit(ast->getIncrExpr());
     }
-    
+
     scan(PPToken(" do "));
   }
-  
+
   scan(pp.tOptNewline);
-  
+
   emit(ast->getBodyExpr());
 }
 
@@ -359,6 +359,7 @@ void PrettyPrintPass::visit(SeqAST* ast) {
         scan(pp.tNewline);
       } else {
         scan(PPToken("; "));
+        scan(pp.tConnNewline);
       }
     }
   }
@@ -376,7 +377,7 @@ void PrettyPrintPass::visit(SeqAST* ast) {
 // $0 ( $1, $2, ... , $n )
 void PrettyPrintPass::visit(CallAST* ast) {
   ScopedBlock sb(this);
-  
+
   { ScopedBlock sb(this);
   emit(ast->parts[0]);
   }
