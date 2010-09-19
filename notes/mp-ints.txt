@@ -1,0 +1,31 @@
+Under a naive compilation strategy, which doesn't treat small constant integers
+differently from integers of unknown size, an expression like
+
+  (2+2)*(4+4)
+
+results in the allocation of 4 ints for the constants,
+and 3 ints for intermediate results.
+
+Ideally, arithmetic involving small constant integers would be constant-folded
+at compile time. LLVM will do such folding when native integer types are used,
+but cannot, by default, do anything to assist unknown library calls.
+
+Possible options to reduce t3h p4in:
+
+  1) Add a pass over LLVM IR that would identify which mp_int values
+     are initialized with constant values, and perform constant folding,
+     also removing newly-unnecessary allocations of mp_int temporaries.
+     Could also perform other optimizations, such as using _value variants
+     of imath functionality, or transforming _mul into _sqr, etc.
+
+  2) Do constant folding in the front-end. Gross at some level, but
+     it's just a special case of abstract interepretation, which we'll probably
+     want to adopt to some degree anyways.
+
+  3) Use computed integer ranges to generate fixnum values when possible,
+     and (during codegen) lazily convert fixnums to mp_ints as needed.
+
+I think the best approach will be (3), possibly with a LLVM IR pass that would
+improve usage of the imath API.
+
+For now, we have a prototype version of option (1) implemented.
