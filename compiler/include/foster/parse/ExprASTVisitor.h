@@ -20,13 +20,8 @@ struct ExprASTVisitor {
 
   // By default, merely recursively accepts the visitor at the child node.
   virtual void onVisitChild(ExprAST* ast, ExprAST* child);
-  
-  // Usually, subscripting a ref-to-array-of-T results in a value of type T,
-  // but in the LHS of an assignment, it remains of type ref T instead.
-  // TODO? Something similar would need to be done for member lookups
-  bool inAssignLHS;
 
-  explicit ExprASTVisitor() : inAssignLHS(false) {}
+  explicit ExprASTVisitor() {}
   virtual ~ExprASTVisitor() {}
 
   // Declare the individual (pure virtual) visit function for the AST node types

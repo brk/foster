@@ -1079,10 +1079,6 @@ void TypecheckPass::visit(SubscriptAST* ast) {
   }
 
   ast->type = compositeTy->getContainedType(literalIndexValue);
-
-  if (this->inAssignLHS) {
-    ast->type = RefTypeAST::get(ast->type);
-  }
 }
 
 void TypecheckPass::visit(SeqAST* ast) {

@@ -473,7 +473,7 @@ void CodegenPass::visit(IntAST* ast) {
 
 void CodegenPass::visit(BoolAST* ast) {
   if (ast->value) return;
- ast->value = (ast->boolValue)
+  ast->value = (ast->boolValue)
       ? ConstantInt::getTrue(getGlobalContext())
       : ConstantInt::getFalse(getGlobalContext());
 }
@@ -497,14 +497,6 @@ void CodegenPass::visit(VariableAST* ast) {
       gScope.dump(std::cout);
     }
   }
-
-#if 0
-  if (isPointerToType(ast->value->getType(), ast->type) &&
-      !ast->type->isFunctionTy()) {
-    std::cout << "\tfound indirect variable of type "
-        << *(ast->type) << ": " << ast->name << std::endl;
-  }
-#endif
 
   if (!ast->value) {
     EDiag() << "Unknown variable name " << ast->name << " in CodegenPass"
@@ -1156,7 +1148,7 @@ void CodegenPass::visit(RefExprAST* ast) {
       // mem has type T*
       llvm::Value* mem = builder.CreateLoad(stackslot,
                                             /*isVolatile=*/false,
-                                            "destack");
+                                            "unstack");
       // write our T into the T* given by malloc
       builder.CreateStore(ast->value, mem, /*isVolatile=*/ false);
       ast->value = stackslot;
@@ -1193,31 +1185,17 @@ void CodegenPass::visit(DerefExprAST* ast) {
   ast->value = builder.CreateLoad(src, /*isVolatile=*/ false, "deref");
 }
 
-bool isPointerChainToType(const llvm::Type* pppt, const llvm::Type* t) {
-  while (true) {
-    if (!pppt->isPointerTy()) { return false; }
-    if (isPointerToType(pppt, t)) { return true; }
-    pppt = pppt->getContainedType(0);
-  }
-}
-
 void CodegenPass::visit(AssignExprAST* ast) {
   if (ast->value) return;
 
+  //ASSERT(false) << show(ast);
+
   const llvm::Type* srcty = ast->parts[1]->value->getType();
   llvm::Value* dst = ast->parts[0]->value;
-#if 0
-  std::cout << "assign " << *(srcty) << " to " << *(dst->getType()) << std::endl;
+#if 1
+  foster::DDiag(llvm::raw_ostream::BLUE)
+    << "assign" << str(srcty) << " to " << str(dst->getType()) << show(ast);
 #endif
-
-  // If we have         set (T**) = T,
-  // the destination is (presumably) a mutable T*, that is,
-  // a T* stored on the stack. Thus, we emit a load to get the
-  // T* from the stack, so that we may then store the T into the
-  // cell pointed to by the T*.
-  if (isPointerToPointerToType(dst->getType(), srcty)) {
-    dst = builder.CreateLoad(dst, /*isVolatile=*/ false, "unstack");
-  }
 
   // The usual case is set (T*) = T.
   // With implicit dereferencing, we also wish to accept
@@ -1288,13 +1266,6 @@ void CodegenPass::visit(SubscriptAST* ast) {
   Value* base = ast->parts[0]->value;
   Value* idx  = ast->parts[1]->value;
 
-#if 0
-  llvm::errs() << "subscriptast base: " << *base
-      << "\n\tof type " << *(base->getType())
-      << "\n\twith ast type: " << *(ast->type) << "\n";
-#endif
-
-  // TODO why does ast have no type here...?
   const llvm::Type* baseTy = base->getType();
   if (getLLVMType(ast->type) && isPointerToType(baseTy, getLLVMType(ast->type))
       || (baseTy->isPointerTy()
@@ -1302,11 +1273,7 @@ void CodegenPass::visit(SubscriptAST* ast) {
     base = builder.CreateLoad(base, /*isVolatile*/ false, "subload");
   }
 
-  if (this->inAssignLHS) {
-    ast->value = getPointerToIndex(base, idx, "assignLHS");
-  } else {
-    ast->value = getElementFromComposite(base, idx);
-  }
+  ast->value = getElementFromComposite(base, idx);
 }
 
 ////////////////////////////////////////////////////////////////////

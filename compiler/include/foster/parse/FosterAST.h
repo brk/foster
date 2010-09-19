@@ -43,7 +43,7 @@ namespace foster {
   struct CFG;
 }
 
-// Returns the closest 
+// Returns the closest
 uint64_t getSaturating(llvm::Value* v);
 
 bool isPrintRef(const ExprAST* base);
@@ -155,7 +155,7 @@ public:
   const llvm::APInt& getAPInt() const;
   std::string getOriginalText() const;
   int getBase() const { return base; }
-  
+
   unsigned intSizeForNBits(unsigned n) const;
 
   virtual std::ostream& operator<<(std::ostream& out) const;
@@ -190,7 +190,7 @@ struct VariableAST : public ExprAST {
 
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const;
-  
+
   const string& getName() { return name; }
 };
 
@@ -373,9 +373,9 @@ struct IfExprAST : public ExprAST {
   IfExprAST(ExprAST* testExpr, ExprAST* thenExpr, ExprAST* elseExpr,
             foster::SourceRange sourceRange)
     : ExprAST("IfExprAST", sourceRange) {
-    parts.push_back(testExpr); 
-    parts.push_back(thenExpr); 
-    parts.push_back(elseExpr); 
+    parts.push_back(testExpr);
+    parts.push_back(thenExpr);
+    parts.push_back(elseExpr);
   }
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const;
@@ -408,7 +408,7 @@ struct ForRangeExprAST : public ExprAST {
   }
   virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const;
-  
+
   bool hadExplicitIncrExpr() { return _hadExplicitIncrExpr; }
   ExprAST*& getStartExpr() { ASSERT(parts.size() == 4); return parts[0]; }
   ExprAST*& getIncrExpr()  { ASSERT(parts.size() == 4); return parts[1]; }
@@ -417,7 +417,7 @@ struct ForRangeExprAST : public ExprAST {
 };
 
 // This class exists only as a placeholder for the env ptr in a closure struct,
-// for LLVM to generate a null pointer. 
+// for LLVM to generate a null pointer.
 // For all intents and purposes, it does not exist before the closure
 // conversion pass runs
 struct NilExprAST : public ExprAST {
@@ -452,14 +452,7 @@ struct DerefExprAST : public UnaryExprAST {
 struct AssignExprAST : public BinaryExprAST {
   explicit AssignExprAST(ExprAST* lhs, ExprAST* rhs, foster::SourceRange sourceRange)
      : BinaryExprAST("AssignExprAST", lhs, rhs, sourceRange) {}
-  virtual void accept(ExprASTVisitor* visitor) {
-    visitor->inAssignLHS = true;
-    parts[0]->accept(visitor);
-    visitor->inAssignLHS = false;
-
-    parts[1]->accept(visitor);
-    visitor->visit(this);
-  }
+  virtual void accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
   virtual std::ostream& operator<<(std::ostream& out) const;
 };
 
