@@ -294,7 +294,7 @@ add_executable(fosterc
   compiler/StandardPrelude.cpp
   compiler/cfg/CFG.cpp
   compiler/passes/BuildCFG.cpp
-  compiler/passes/CodegenPass.cpp
+  compiler/passes/Codegen/CodegenPass.cpp
   compiler/passes/TypecheckPass.cpp
   compiler/passes/DumpToProtobuf.cpp
   compiler/passes/PrettyPrintPass.cpp

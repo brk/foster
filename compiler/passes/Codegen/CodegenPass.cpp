@@ -40,6 +40,7 @@ using llvm::IntegerType;
 using llvm::getGlobalContext;
 using llvm::Value;
 using llvm::ConstantInt;
+using llvm::ConstantExpr;
 using llvm::APInt;
 using llvm::PHINode;
 using llvm::dyn_cast;
@@ -67,18 +68,15 @@ namespace foster {
   }
 }
 
-typedef std::pair<const llvm::Type*, int> OffsetInfo;
+typedef std::pair<const llvm::Type*, llvm::Constant*> OffsetInfo;
 typedef std::set<OffsetInfo> OffsetSet;
 
-// TODO replace with ConstantExpr::getOffsetOf(ty, slot) ?
-int getOffsetOfStructSlot(const llvm::StructType* ty, int slot) {
-  const llvm::TargetData* td = new llvm::TargetData(foster::module);
-  ASSERT(td) << "Need TargetData to compute struct offsets!";
-  int offset = 0;
-  for (int i = 0; i < slot; ++i) {
-    offset += td->getTypeStoreSize(ty->getContainedType(i));
-  }
-  return offset;
+llvm::ConstantInt* getConstantInt64For(int64_t val) {
+  return ConstantInt::get(Type::getInt64Ty(getGlobalContext()), val);
+}
+
+llvm::ConstantInt* getConstantInt32For(int val) {
+  return ConstantInt::get(Type::getInt32Ty(getGlobalContext()), val);
 }
 
 OffsetSet countPointersInType(const llvm::Type* ty) {
@@ -86,7 +84,8 @@ OffsetSet countPointersInType(const llvm::Type* ty) {
 
   OffsetSet rv;
   if (ty->isPointerTy()) {
-        rv.insert(OffsetInfo(ty->getContainedType(0), 0));
+    rv.insert(OffsetInfo(ty->getContainedType(0),
+                         getConstantInt64For(0)));
   }
 
   // array, struct, union
@@ -102,18 +101,20 @@ OffsetSet countPointersInType(const llvm::Type* ty) {
   else if (const llvm::StructType* sty
                             = dyn_cast<const llvm::StructType>(ty)) {
     for (size_t i = 0; i < sty->getNumElements(); ++i) {
-      int slotOffset = getOffsetOfStructSlot(sty, i);
+      llvm::Constant* slotOffset = ConstantExpr::getOffsetOf(sty, i);
       OffsetSet sub = countPointersInType(sty->getTypeAtIndex(i));
       for (OffsetSet::iterator si = sub.begin(); si != sub.end(); ++si) {
         const llvm::Type* subty = si->first;
-        int suboffset = si->second;
-        rv.insert(OffsetInfo(subty, suboffset + slotOffset));
+        llvm::Constant* suboffset = si->second;
+        rv.insert(OffsetInfo(subty,
+            ConstantExpr::getAdd(suboffset, slotOffset)));
       }
     }
   }
 
   // TODO Also need to decide how to represent type maps for unions
   // in such a way that the GC can safely collect unions.
+
   // Note! Now that LLVM has removed IR support for unions, codegen
   // will require a Foster TypeAST*, not just a llvm::Type*,
   // in order to properly codegen unions.
@@ -122,36 +123,42 @@ OffsetSet countPointersInType(const llvm::Type* ty) {
   return rv;
 }
 
-llvm::ConstantInt* getConstantInt64For(int64_t val) {
-  return ConstantInt::get(Type::getInt64Ty(getGlobalContext()), val);
-}
-
-llvm::ConstantInt* getConstantInt32For(int val) {
-  return ConstantInt::get(Type::getInt32Ty(getGlobalContext()), val);
-}
-
 std::map<const llvm::Type*, llvm::GlobalVariable*> typeMapForType;
 
+// A type map entry is a pair:
+//  struct { i8* typeinfo; i32 offset }
+//
+// The second field is the offset of a slot in the parent type.
+// The first field is either a pointer to a typemap describing
+// the slot, or (for atomic types) the size of the type.
+//
+// We can distinguish the two cases at runtime since only arrays
+// can lead to objects of any significant (multi-KB) size.
 llvm::Constant* getTypeMapEntryFor(
                 const llvm::StructType* typeMapEntryTy,
-                const llvm::Type* entryTy, int v2) {
+                const llvm::Type* entryTy,
+                llvm::Constant* offset) {
   std::vector<llvm::Constant*> fields;
 
   llvm::GlobalVariable* typeMapVar = typeMapForType[entryTy];
   if (typeMapVar) {
-        fields.push_back(llvm::ConstantExpr::getCast(llvm::Instruction::BitCast,
+        fields.push_back(ConstantExpr::getCast(llvm::Instruction::BitCast,
                         typeMapVar, LLVMTypeFor("i8*")));
   } else {
         // If we can't tell the garbage collector how to collect a type by
         // giving it a pointer to a type map, it's probably because the type
         // doesn't have a type map, i.e. the type is atomic. Instead, tell
         // the garbage collector how large the type is.
+        llvm::outs() << "entry ty: " << str(entryTy) << "\n";
         fields.push_back(
-            llvm::ConstantExpr::getCast(llvm::Instruction::IntToPtr,
-                                        llvm::ConstantExpr::getSizeOf(entryTy),
-                                        LLVMTypeFor("i8*")));
+            ConstantExpr::getCast(llvm::Instruction::IntToPtr,
+                                  ConstantExpr::getSizeOf(entryTy),
+                                  LLVMTypeFor("i8*")));
   }
-  fields.push_back(getConstantInt32For(v2));
+
+  fields.push_back(ConstantExpr::getTruncOrBitCast(
+                   offset, LLVMTypeFor("i32")));
+
   return llvm::ConstantStruct::get(typeMapEntryTy, fields);
 }
 
@@ -159,16 +166,10 @@ llvm::Constant* arrayVariableToPointer(llvm::GlobalVariable* arr) {
   std::vector<llvm::Constant*> idx;
   idx.push_back(getConstantInt64For(0));
   idx.push_back(getConstantInt64For(0));
-  return llvm::ConstantExpr::getGetElementPtr(arr, &idx[0], idx.size());
+  return ConstantExpr::getGetElementPtr(arr, &idx[0], idx.size());
 }
 
-void printOffsets(std::ostream& out, const OffsetSet& os) {
-  for (OffsetSet::iterator it = os.begin(); it != os.end(); ++it) {
-    out << "\t{ " << it->second << " : " << *(it->first) << " }\n";
-  }
-}
-
-void removeEntryWithOffset(OffsetSet& os, int offset) {
+void removeEntryWithOffset(OffsetSet& os, llvm::Constant* offset) {
   OffsetSet::iterator toRemove = os.end();
   for (OffsetSet::iterator it = os.begin(); it != os.end(); ++it) {
     if (it->second == offset) {
@@ -182,7 +183,7 @@ void removeEntryWithOffset(OffsetSet& os, int offset) {
   }
 }
 
-// return a global corresponding to the following layout:
+// Return a global corresponding to the following layout:
 // struct {
 //   const char* typeName;
 //   i32 numPtrEntries;
@@ -200,7 +201,8 @@ llvm::GlobalVariable* emitTypeMap(const llvm::Type* ty, std::string name,
   if (skipOffsetZero) {
     // Remove entry for first pointer, which corresponds
     // to the type map for the environment.
-    removeEntryWithOffset(pointerOffsets, 0);
+    removeEntryWithOffset(pointerOffsets,
+                          getConstantInt64For(0));
   }
   int numPointers = pointerOffsets.size();
 
@@ -260,7 +262,7 @@ llvm::GlobalVariable* emitTypeMap(const llvm::Type* ty, std::string name,
   for (OffsetSet::iterator si =  pointerOffsets.begin();
                                    si != pointerOffsets.end(); ++si) {
         const llvm::Type* subty = si->first;
-        int suboffset = si->second;
+        llvm::Constant* suboffset = si->second;
         typeMapEntries.push_back(
           getTypeMapEntryFor(entryty, subty, suboffset));
   }
@@ -287,7 +289,7 @@ void registerType(const llvm::Type* ty, std::string desiredName,
   emitTypeMap(ty, name, isClosureEnvironment);
 }
 
-// returns type  void (i8**, i8*)
+// Returns type  void (i8**, i8*).
 const FunctionType* get_llvm_gcroot_ty() {
   const Type* i8ty = LLVMTypeFor("i8");
   const Type* pi8ty = llvm::PointerType::getUnqual(i8ty);
@@ -323,7 +325,7 @@ void markGCRoot(llvm::Value* root, llvm::Constant* meta) {
     meta = llvm::ConstantPointerNull::get(
                                llvm::PointerType::getUnqual(LLVMTypeFor("i8")));
   } else if (meta->getType() != LLVMTypeFor("i8*")) {
-    meta = llvm::ConstantExpr::getBitCast(meta, LLVMTypeFor("i8*"));
+    meta = ConstantExpr::getBitCast(meta, LLVMTypeFor("i8*"));
   }
 
   builder.CreateCall2(llvm_gcroot, root, meta);
@@ -857,7 +859,7 @@ void CodegenPass::visit(ClosureAST* ast) {
 
     Value* clo_env_typemap_slot = builder.CreateConstGEP2_32(env->value, 0, 0,
                                                       "clo_env_typemap_slot");
-    builder.CreateStore(llvm::ConstantExpr::getBitCast(
+    builder.CreateStore(ConstantExpr::getBitCast(
         clo_env_typemap, clo_env_typemap_slot->getType()->getContainedType(0)),
         clo_env_typemap_slot, /*isVolatile=*/ false);
 
