@@ -40,7 +40,9 @@ void ReplaceTypeTransform::visit(NamedTypeAST* ast) {
 
 void ReplaceTypeTransform::visit(TypeVariableAST* ast) {
   TypeAST* newType = typeVarSubst[ast->getTypeVariableName()];
-  setResultType(newType);
+  if (newType) {
+    setResultType(newType);
+  }
 }
 
 void ReplaceTypeTransform::visit(FnTypeAST* ast) {
@@ -89,6 +91,7 @@ struct ReplaceTypeInExprTransform : public DefaultExprASTVisitor {
   virtual void visitChildren(ExprAST* ast);
 
   virtual void visit(FnAST*);
+  virtual void visit(IntAST*);
   virtual void visit(IfExprAST*);
   virtual void visit(ModuleAST*);
   virtual void visit(ClosureAST*);
@@ -120,6 +123,10 @@ void ReplaceTypeInExprTransform::applyTypeSubst(ExprAST* ast) {
 
 ////////////////////////////////////////////////////////////////////
 
+void ReplaceTypeInExprTransform::visit(IntAST* ast) {
+  applyTypeSubst(ast);
+}
+
 void ReplaceTypeInExprTransform::visit(VariableAST* ast) {
   applyTypeSubst(ast);
 }
@@ -129,6 +136,7 @@ void ReplaceTypeInExprTransform::visit(PrototypeAST* ast) {
     (ast->inArgs[i])->accept(this);
   }
   replaceTypeTransform.subst(ast->resultTy);
+  applyTypeSubst(ast);
 }
 
 void ReplaceTypeInExprTransform::visit(FnAST* ast) {

@@ -92,34 +92,6 @@ let x : i32 = 3 in {
 
 ////////////////////////////////////////////////////////////////////
 
-TEST(TypeInference, i32_handling_simple) {
-  initCachedLLVMTypes();
-  foster::CompilationContext cc1; cc1.startAccumulatingOutputToString();
-  foster::CompilationContext cc2; cc2.startAccumulatingOutputToString();
-
-  ExprAST* ae = parse(cc1, STR(
-let x : i32 = 3 in {
-  x
-}
-));
-  ASSERT_TRUE(ae);
-
-  ExprAST* ue = parse(cc2, STR(
-let x = 3 in {
-  x
-}
-));
-  ASSERT_TRUE(ue);
-
-
-  ExprAST* ee = elaborate(cc2, ue);
-  ASSERT_TRUE(ee);
-
-  EXPECT_EQ(pr(ae), pr(ee));
-}
-
-////////////////////////////////////////////////////////////////////
-
 TEST(TypeInference, i32_handling_simple_closure0) {
   initCachedLLVMTypes();
   foster::CompilationContext cc1; cc1.startAccumulatingOutputToString();

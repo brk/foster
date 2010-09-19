@@ -56,8 +56,7 @@ putModuleMembersInInternalScope(const std::string& scopeName,
       continue;
     }
 
-    llvm::outs() << "<internal>\tglobal\t" << gv.getName() << "\n";
-
+    //llvm::outs() << "<internal>\tglobal\t" << gv.getName() << "\n";
     linkee->getOrInsertGlobal(gv.getName(), gv.getType());
   }
 

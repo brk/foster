@@ -274,6 +274,7 @@ add_dependencies(fosterc_parse fosterc_base)
 
 add_library(fosterc_llvm STATIC
   compiler/llvm/passes/Hello.cpp
+  compiler/llvm/passes/ImathImprover.cpp
   compiler/llvm/plugins/FosterGC.cpp
 )
 

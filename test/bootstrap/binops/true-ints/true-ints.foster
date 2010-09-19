@@ -1,0 +1,14 @@
+main = fn () {
+  //expect_int(32)
+  // print_int(32)
+  //
+  //// 64 bit signed max is 9233372036854775807
+  //expect_int(2`123`456`789 * 1000000000)
+  // print_int(2`123`456`789 * 1000000000)
+  //
+
+  //expect_int(32)
+  //print_int((2+2)*(4+4))
+
+  0
+}

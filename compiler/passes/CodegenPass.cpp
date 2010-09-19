@@ -437,9 +437,38 @@ const llvm::Type* getLLVMType(TypeAST* type) {
   return type->getLLVMType();
 }
 
+llvm::Value* allocateMPInt() {
+  llvm::Value* mp_int_alloc = foster::module->getFunction("mp_int_alloc");
+  ASSERT(mp_int_alloc);
+  llvm::Value* mpint = builder.CreateCall(mp_int_alloc);
+  return mpint;
+}
+
 void CodegenPass::visit(IntAST* ast) {
   if (ast->value) return;
-  ast->value = ast->getConstantValue();
+
+  llvm::Value* small = ast->getConstantValue();
+
+  ASSERT(ast->type && ast->type->getLLVMType());
+
+  if (ast->type->getLLVMType()->isIntegerTy()) {
+    ast->value = small;
+  } else if (false) {
+    // MP integer constants that do not fit in 64 bits
+    // must be initialized from string data.
+    ASSERT(false) << "codegen for int values that don't fit"
+                  << " in 64 bits not yet implemented";
+  } else {
+    // Small integers may be initialized immediately.
+    llvm::Value* mpint = allocateMPInt();
+
+    // Call mp_int_init_value() (ignore rv for now)
+    llvm::Value* mp_int_init_value = foster::module->getFunction("mp_int_init_value");
+    ASSERT(mp_int_init_value);
+
+    builder.CreateCall2(mp_int_init_value, mpint, small);
+    ast->value = mpint;
+  }
 }
 
 void CodegenPass::visit(BoolAST* ast) {
@@ -530,14 +559,56 @@ bool isPrimitiveLLVMNumericType(const llvm::Type* ty) {
 }
 
 bool isRuntimeArbitraryPrecisionNumericType(const llvm::Type* ty) {
-  EDiag() << "\t isRuntimeArbitraryPrecisionNumericType() not yet implemented!";
-  exit(1);
-  return false;
+  TypeAST* intType = foster::TypeASTFor("int");
+  return intType && ty == intType->getLLVMType();
+}
+
+llvm::Value* emitRuntimeMPInt_Add(llvm::Value* VL, llvm::Value* VR) {
+  // TODO If we have ASTs, we would be able to use the _value
+  // variants for small constants.
+
+  llvm::Value* result = allocateMPInt();
+  builder.CreateCall(foster::module->getFunction("mp_int_init"), result);
+  builder.CreateCall3(foster::module->getFunction("mp_int_add"),
+                      VL, VR, result);
+  return result;
+}
+
+llvm::Value* emitRuntimeMPInt_Mul(llvm::Value* VL, llvm::Value* VR) {
+  // TODO If we have ASTs, we would be able to use the _value
+  // variants for small constants.
+
+  llvm::Value* result = allocateMPInt();
+  builder.CreateCall(foster::module->getFunction("mp_int_init"), result);
+  builder.CreateCall3(foster::module->getFunction("mp_int_mul"),
+                      VL, VR, result);
+  return result;
 }
 
 llvm::Value* emitRuntimeArbitraryPrecisionOperation(const std::string& op,
                                         llvm::Value* VL, llvm::Value* VR) {
-  EDiag() << "\t emitRuntimeArbitraryPrecisionOperation() not yet implemented!";
+       if (op == "+") { return emitRuntimeMPInt_Add(VL, VR); }
+  //else if (op == "-") { return builder.CreateSub(VL, VR, "subtmp"); }
+  //else if (op == "/") { return builder.CreateSDiv(VL, VR, "divtmp"); }
+  else if (op == "*") { return emitRuntimeMPInt_Mul(VL, VR);; }
+
+  //else if (op == "<")  { return builder.CreateICmpSLT(VL, VR, "slttmp"); }
+  //else if (op == "<=") { return builder.CreateICmpSLE(VL, VR, "sletmp"); }
+  //else if (op == ">")  { return builder.CreateICmpSGT(VL, VR, "sgttmp"); }
+  //else if (op == ">=") { return builder.CreateICmpSGE(VL, VR, "sgetmp"); }
+  //else if (op == "==") { return builder.CreateICmpEQ(VL, VR, "eqtmp"); }
+  //else if (op == "!=") { return builder.CreateICmpNE(VL, VR, "netmp"); }
+  //
+  //else if (op == "bitand") { return builder.CreateAnd(VL, VR, "bitandtmp"); }
+  //else if (op == "bitor") {  return builder.CreateOr( VL, VR, "bitortmp"); }
+  //else if (op == "bitxor") { return builder.CreateXor(VL, VR, "bitxortmp"); }
+  //
+  //else if (op == "bitshl") { return builder.CreateShl(VL, VR, "shltmp"); }
+  //else if (op == "bitlshr") { return builder.CreateLShr(VL, VR, "lshrtmp"); }
+  //else if (op == "bitashr") { return builder.CreateAShr(VL, VR, "ashrtmp");
+
+  EDiag() << "\t emitRuntimeArbitraryPrecisionOperation() not yet implemented"
+          << " for operation " << op << "!";
   exit(1);
   return NULL;
 }
@@ -603,6 +674,9 @@ void CodegenPass::visit(PrototypeAST* ast) {
     gScope.pushScope(ast->name);
   }
 
+  // Give function literals internal linkage, since we know that
+  // they can only be referenced from the function in which they
+  // are defined.
   llvm::GlobalValue::LinkageTypes functionLinkage =
       (ast->name.find("anon_fnlet_") != string::npos)
         ? Function::InternalLinkage
@@ -610,6 +684,8 @@ void CodegenPass::visit(PrototypeAST* ast) {
 
   const llvm::FunctionType* FT = dyn_cast<FunctionType>(getLLVMType(ast->type));
   Function* F = Function::Create(FT, functionLinkage, symbolName, module);
+
+  ASSERT(ast->inArgs.size() == F->arg_size());
 
   if (!F) {
     EDiag() << "function creation failed" << show(ast);

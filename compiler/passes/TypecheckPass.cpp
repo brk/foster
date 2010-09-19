@@ -15,6 +15,7 @@
 #include "passes/ReplaceTypeTransform.h"
 
 using foster::EDiag;
+using foster::dbg;
 using foster::show;
 using foster::LLVMTypeFor;
 using foster::currentErrs;
@@ -43,7 +44,8 @@ using std::vector;
 #include "parse/ExprASTVisitor.h"
 
 bool isIntTypeName(const std::string& s) {
-  return s == "i1" || s == "i8" || s == "i16" || s == "i32" || s == "i64";
+  return s == "int" || s == "i1" || s == "i8"
+      || s == "i16" || s == "i32" || s == "i64";
 }
 
 // Restriction is that each arg type must match,
@@ -483,6 +485,14 @@ void TypecheckPass::solveConstraints() {
     TypeAST* tvs = constraints.substFind(keys[i]);
     if (tvs != NULL) {
       constraints.subst[keys[i]] = tvs;
+    } else if (pystring::startswith(keys[i], "intlit")) {
+      // Integer literals that are otherwise unconstrained
+      // should default to the arbitrary-precision integer type.
+      //
+      // This comes up in examples such as the following:
+      //   __COMPILES if true then { 123 } else { 456 }
+      llvm::outs() << "Giving default int type to " << keys[i] << "\n";
+      constraints.subst[keys[i]] = foster::TypeASTFor("int");
     }
   }
 
@@ -522,10 +532,6 @@ bool TypecheckPass::Constraints::addEqConstraintToSubstitution(
              << str(ttc.t1) << "; other: " << str(ttc.t2)
              << foster::show(ttc.context);
   const std::string& tvName = tv->getTypeVariableName();
-
-  if (tvName == "callret") {
-     currentOuts() << "deref maps to " << str(subst[tvName]) << "\n";
-  }
 
   TypeAST* tvs = substFind(tv);
   TypeAST* t2 = applySubst(ttc.t2);
@@ -762,12 +768,6 @@ bool areNamesDisjoint(const std::vector<VariableAST*>& vars) {
     seen[vars[i]->name] = true;
   }
   return seen.size() == vars.size();
-}
-
-bool isTopLevel(PrototypeAST* ast) {
-  bool rv = ast && ast->parent && !ast->parent->parent;
-  currentOuts() << "isTopLevel " << ast->name << ": " << rv << "\n";
-  return rv;
 }
 
 const char* getCallingConvention(PrototypeAST* ast) {

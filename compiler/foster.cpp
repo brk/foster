@@ -15,6 +15,7 @@
 #include "llvm/PassManager.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/Triple.h"
+#include "llvm/Assembly/AssemblyAnnotationWriter.h"
 #include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/Config/config.h"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
@@ -88,6 +89,8 @@ using foster::EDiag;
 namespace foster {
   struct ScopeInfo;
   void linkFosterGC(); // defined in llmv/plugins/FosterGC.cpp
+  // Defined in foster/compiler/llvm/passes/ImathImprover.cpp
+  llvm::Pass* createImathImproverPass();
 }
 
 using std::string;
@@ -232,12 +235,21 @@ void dumpScopesToDotGraphs() {
   }
 }
 
+struct CommentWriter : public AssemblyAnnotationWriter {
+  void printInfoComment(const Value& v, formatted_raw_ostream& os) {
+    if (v.getType()->isVoidTy()) return;
+    os.PadToColumn(62);
+    os << "; #uses = " << v.getNumUses();
+  }
+};
+
 void dumpModuleToFile(Module* mod, const string& filename) {
   ScopedTimer timer("io.file.dumpmodule.ir");
   string errInfo;
   llvm::raw_fd_ostream LLpreASM(filename.c_str(), errInfo);
   if (errInfo.empty()) {
-    LLpreASM << *mod;
+    CommentWriter cw;
+    mod->print(LLpreASM, &cw);
   } else {
     llvm::errs() << "Error dumping module to " << filename << "\n";
     llvm::errs() << errInfo << "\n";
@@ -278,6 +290,14 @@ TargetData* getTargetDataForModule(Module* mod) {
   const string& layout = mod->getDataLayout();
   if (layout.empty()) return NULL;
   return new TargetData(layout);
+}
+
+void runFunctionPassesOverModule(FunctionPassManager& fpasses, Module* mod) {
+  fpasses.doInitialization();
+  for (Module::iterator it = mod->begin(); it != mod->end(); ++it) {
+    fpasses.run(*it);
+  }
+  fpasses.doFinalization();
 }
 
 void optimizeModuleAndRunPasses(Module* mod) {
@@ -336,12 +356,7 @@ void optimizeModuleAndRunPasses(Module* mod) {
     llvm::createStandardFunctionPasses(&fpasses, 3);
   }
 
-  fpasses.doInitialization();
-  for (Module::iterator it = mod->begin(); it != mod->end(); ++it) {
-    fpasses.run(*it);
-  }
-  fpasses.doFinalization();
-
+  runFunctionPassesOverModule(fpasses, mod);
   passes.run(*mod);
 }
 
@@ -614,6 +629,12 @@ int main(int argc, char** argv) {
   {
     ScopedTimer timer("foster.codegen");
     foster::codegen(exprAST);
+
+    // Run cleanup passes on newly-generated code,
+    // rather than wastefully on post-linked code.
+    llvm::FunctionPassManager fpasses(module);
+    fpasses.add(foster::createImathImproverPass());
+    runFunctionPassesOverModule(fpasses, module);
   }
 
   if (optDumpPreLinkedIR) {

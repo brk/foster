@@ -119,7 +119,7 @@ int fprint_mp_int(FILE* f, mp_int m, int radix) {
   mp_result len = mp_int_string_len(m, radix);
   char* buf = (char*) malloc(len);
   mp_result res0 = mp_int_to_string(m, radix, buf, len);
-  int rv = fprintf(f, "%s", buf);
+  int rv = fprintf(f, "%s\n", buf);
   free(buf);
   return rv;
 }
