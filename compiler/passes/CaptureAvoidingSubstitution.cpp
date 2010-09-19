@@ -51,7 +51,8 @@ void CaptureAvoidingSubstitution::visitChildren(ExprAST* ast) {
     if (ast->parts[i]) {
       this->cavsVisitChild(ast, &ast->parts[i]);
     } else {
-      std::cerr << "visitChildren saw null part " << i << " for ast node " << (*ast) << std::endl;
+      llvm::errs() << "visitChildren saw null part " << i << " for ast node "
+                  << str(ast) << "\n";
     }
   }
   this->newChild = ast;

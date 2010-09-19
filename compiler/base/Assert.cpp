@@ -16,12 +16,14 @@ struct DiagWrapper::Impl {
 };
 
 foster::DiagBase& DiagWrapper::getDiag() { return *(impl->diag); }
-  
+
 DiagWrapper::DiagWrapper(const char* file, int line,
                          const char* func, const char* cond) {
   impl = new Impl();
   impl->diag = new foster::SimpleEDiag();
+  //getDiag().changeColor(llvm::raw_ostream::RED);
   getDiag() << file << ":" << line << ": ASSERT(" << cond << ") failed. ";
+  //getDiag().resetColor();
 }
 
 DiagWrapper::~DiagWrapper() {
@@ -45,7 +47,7 @@ protected:
   virtual void add(const char* str) {}
   virtual void add(const std::string& str) {}
   virtual void add(const SourceRangeHighlighter& h) {}
-  
+
   friend foster::DiagBase& getNullDiag();
 };
 

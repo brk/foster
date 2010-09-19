@@ -7,11 +7,12 @@
 #include "parse/FosterTypeAST.h"
 
 #include "llvm/Value.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <sstream>
 
-namespace std {
-  ostream& operator<<(ostream& out, foster::SymbolInfo* info) {
+namespace llvm {
+  raw_ostream& operator<<(raw_ostream& out, foster::SymbolInfo* info) {
     if (info) {
       out << "<ast: " << info->ast;
       if (info->ast) out << ";\tast->type: " << info->ast->type;
@@ -19,7 +20,7 @@ namespace std {
       out << ";\tvalue: " << info->value << "> ";
       return out;
     } else {
-      return out << "<no info!> " << std::endl;
+      return out << "<no info!> " << "\n";
     }
   }
 }
@@ -46,12 +47,12 @@ void gScopeInsert(const std::string& name, llvm::Value* val) {
   } else {
     SymbolInfo* info = gScope._private_getCurrentScope()->lookup(name, "");
     if (info->value && info->value != val) {
-      std::cerr << "gScopeInsert(Value " << name << ") had unexpected collision "
+      llvm::outs() << "gScopeInsert(Value " << name << ") had unexpected collision "
           << "old: " << str(info->value)
           << "new: " << str(val)
-          << std::endl;
+          << "\n";
     } else if (info->value && info->value == val) {
-      std::cerr << "gScopeInsert(Value " << name << ") was redundant" << std::endl;
+      llvm::outs() << "gScopeInsert(Value " << name << ") was redundant" << "\n";
     } else {
       info->value = val;
     }
@@ -67,12 +68,12 @@ void gScopeInsert(const std::string& name, ExprAST* ast) {
     if (!info->ast) {
       info->ast = ast;
     } else if (info->ast == ast) {
-      std::cerr << "gScopeInsert(ExprAST " << name << ") was redundant!" << std::endl;
+      llvm::outs() << "gScopeInsert(ExprAST " << name << ") was redundant!" << "\n";
     } else {
-      std::cerr << "gScopeInsert(ExprAST " << name << ") had unexpected collision"
+      llvm::outs() << "gScopeInsert(ExprAST " << name << ") had unexpected collision"
         << "\n\told: " << info->ast << " :: " << str(info->ast)
         << "\n\tnew: " <<       ast << " :: " << str(      ast)
-        << std::endl;
+        << "\n";
     }
   }
 }
@@ -92,9 +93,8 @@ getFullSymbolInfoNodeLabel(
     const llvm::Value* v = p.second->value;
 
     if (false) {
-      std::cout << p.first << " : " << v << " : " << "; ast: " << ast;
-      std::flush(std::cout);
-      if (v) {std::cout << v->getRawType()->getDescription() << std::endl;}
+      llvm::outs() << p.first << " : " << v << " : " << "; ast: " << ast;
+      if (v) {llvm::outs() << v->getRawType()->getDescription() << "\n";}
     }
 
     ss << newline << p.first << ":" << newline

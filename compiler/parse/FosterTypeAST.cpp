@@ -70,7 +70,7 @@ TypeAST* TypeAST::getVoid() {
 struct TypeReconstructor {
   TypeAST* recon(const llvm::Type* loweredType) {
     if (loweredType->isVoidTy()) { return TypeAST::getVoid(); }
-  
+
     if (loweredType->isPointerTy()) {
       const llvm::Type* pointee = loweredType->getContainedType(0);
       if (TypeAST* s = seen[pointee]) {
@@ -81,43 +81,43 @@ struct TypeReconstructor {
           return s;
         }
       }
-      return RefTypeAST::get(recon(pointee)); 
+      return RefTypeAST::get(recon(pointee));
     }
-  
+
     if (const llvm::FunctionType* fnty
            = llvm::dyn_cast<const llvm::FunctionType>(loweredType)) {
       TypeAST* ret = recon(fnty->getReturnType());
       vector<TypeAST*> args;
       for (size_t i = 0; i < fnty->getNumParams(); ++i) {
-         args.push_back(recon(fnty->getParamType(i))); 
+         args.push_back(recon(fnty->getParamType(i)));
       }
       return FnTypeAST::get(ret, args, "fastcc");
     }
-  
+
     if (const llvm::StructType* sty
            = llvm::dyn_cast<const llvm::StructType>(loweredType)) {
       seen[sty] = (TypeAST*) 1;
       vector<TypeAST*> args;
       for (size_t i = 0; i < sty->getNumElements(); ++i) {
-         args.push_back(recon(sty->getContainedType(i))); 
+         args.push_back(recon(sty->getContainedType(i)));
       }
       seen[sty] = (TypeAST*) 0;
       return TupleTypeAST::get(args);
     }
-    
+
     if (llvm::dyn_cast<const llvm::OpaqueType>(loweredType)) {
       return NamedTypeAST::get("opaque", loweredType);
     }
-    
+
     if (loweredType->isIntegerTy()) {
       return NamedTypeAST::get(str(loweredType), loweredType);
     }
-  
+
     llvm::outs() << "TypeReconstructor::reconstruct() did not recognize " << str(loweredType) << "\n";
-  
+
     return NamedTypeAST::get(str(loweredType), loweredType);
   }
-  
+
   map<const llvm::Type*, TypeAST*> seen;
 };
 
@@ -133,8 +133,8 @@ bool TypeAST::canConvertTo(TypeAST* otherType) {
                                     otherType->getLLVMType());
   if (!rv) {
     // TODO want source range from ExprAST asking for conversion
-    std::cout << str(this) << "  [cannot convert to]  "
-              << str(otherType) << std::endl;
+    llvm::outs() << str(this) << "  [cannot convert to]  "
+              << str(otherType) << "\n";
   }
   return rv;
 }
@@ -154,9 +154,9 @@ TypeAST* NamedTypeAST::get(const std::string& name,
     } else if (name == "opaque") {
       // fall through to non-derived case
     } else {
-      std::cerr << "NamedTypeAST::get() warning: derived types should "
+      llvm::errs() << "NamedTypeAST::get() warning: derived types should "
                    " not be passed to NamedTypeAST::get()! Got: "
-                << str(loweredType) << std::endl;
+                << str(loweredType) << "\n";
       return TypeAST::reconstruct(derived);
     }
   }
@@ -171,7 +171,7 @@ TypeAST* NamedTypeAST::get(const std::string& name,
 const llvm::Type* NamedTypeAST::getLLVMType() const {
   ASSERT(nonLLVMType || repr);
   if (!repr) {
-    repr = nonLLVMType->getLLVMType(); 
+    repr = nonLLVMType->getLLVMType();
   }
   return repr;
 }
@@ -237,7 +237,7 @@ const llvm::Type* FnTypeAST::getLLVMType() const {
     for (size_t i = 0; i < argTypes.size(); ++i) {
       loweredArgTypes.push_back(argTypes[i]->getLLVMType());
     }
-    
+
     repr = llvm::FunctionType::get(returnType->getLLVMType(),
                                    loweredArgTypes,
                                    /*isVarArg=*/ false);
@@ -320,12 +320,12 @@ const llvm::Type* ClosureTypeAST::getLLVMType() const {
 
 LiteralIntValueTypeAST* LiteralIntValueTypeAST::get(IntAST* intAST) {
   ASSERT(intAST) << "can't have an int with no int";
-  return new LiteralIntValueTypeAST(intAST, intAST->sourceRange); 
+  return new LiteralIntValueTypeAST(intAST, intAST->sourceRange);
 }
 
 LiteralIntValueTypeAST* LiteralIntValueTypeAST::get(uint64_t value,
                                             const SourceRange& sourceRange) {
-  return new LiteralIntValueTypeAST(value, sourceRange); 
+  return new LiteralIntValueTypeAST(value, sourceRange);
 }
 
 uint64_t LiteralIntValueTypeAST::getNumericalValue() const {

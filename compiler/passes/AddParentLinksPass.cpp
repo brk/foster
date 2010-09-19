@@ -11,7 +11,7 @@ struct AddParentLinksPass : public DefaultExprASTVisitor {
     child->parent = ast;
     child->accept(this);
   }
-  
+
   virtual void visit(FnAST* ast);
   virtual void visit(ModuleAST* ast);
 };
@@ -49,10 +49,10 @@ void includeParentNameInAnonFunctions(FnAST* ast) {
 
   // Not an anonymous function, nothing to do here.
   if (name.find("<anon_fn") != 0) {
-    std::cout << "\t\tNot an anonymous function: " << name << std::endl;
+    llvm::outs() << "\t\tNot an anonymous function: " << name << "\n";
     return;
   } else {
-    std::cout << "\t\tFound an anonymous function: " << name << std::endl;
+    llvm::outs() << "\t\tFound an anonymous function: " << name << "\n";
   }
 
   FnAST* parentFn = NULL;
@@ -67,8 +67,8 @@ void includeParentNameInAnonFunctions(FnAST* ast) {
   }
 
   if (!parent) {
-    std::cerr << "Odd, couldn't find parent fn ast for anonymous function "
-              << ast->getProto()->name << std::endl;
+    llvm::errs() << "Odd, couldn't find parent fn ast for anonymous function "
+              << ast->getProto()->name << "\n";
     return;
   }
 

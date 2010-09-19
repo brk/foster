@@ -24,6 +24,8 @@
 
 using namespace std;
 
+using foster::currentOuts;
+using foster::currentErrs;
 
 #include "parse/ExprASTVisitor.h"
 
@@ -43,7 +45,7 @@ struct ClosureConversionPass : public ExprASTVisitor {
       toplevel->parts.push_back( newlyHoistedFunctions[i] );
     }
   }
-  
+
   // If an anonymous function is in a closure, we don't want to
   // perform lambda-lifting, because closure conversion subsumes
   // the non-hoisting part of the lifting conversion.
@@ -54,7 +56,7 @@ namespace foster {
   void performClosureConversion(const std::set<std::string>& globalNames,
                                 ModuleAST* mod) {
     ClosureConversionPass p(globalNames, mod);
-    mod->accept(&p); 
+    mod->accept(&p);
   }
 }
 
@@ -108,7 +110,7 @@ void ClosureConversionPass::visit(VariableAST* ast)            {
     && this->globalNames.count(ast->getName()) == 0) {
     foundFreeVariableIn(ast, callStack.back());
   }
-  
+
   return;
 }
 void ClosureConversionPass::visit(UnaryOpExprAST* ast)         { return; }
@@ -189,14 +191,14 @@ void ClosureConversionPass::visit(SeqAST* ast)                 { return; }
 void ClosureConversionPass::visit(CallAST* ast)                {
   ExprAST* base = ast->parts[0];
   if (ClosureAST* cloBase = dynamic_cast<ClosureAST*>(base)) {
-    std::cout << "visited direct call of closure, replacing with fn... "
-              << *base << std::endl;
+    currentOuts() << "visited direct call of closure, replacing with fn... "
+              << str(base) << "\n";
     replaceOldWithNew(cloBase->parent, cloBase, cloBase->fn);
-    std::cout << *(cloBase->parent) << std::endl;
+    currentOuts() << str(cloBase->parent) << "\n";
     base = ast->parts[0] = cloBase->fn;
   }
   if (FnAST* fnBase = dynamic_cast<FnAST*>(base)) {
-    std::cout << "visited direct call of fn " << fnBase->getProto()->name << std::endl;
+    currentOuts() << "visited direct call of fn " << fnBase->getProto()->name << "\n";
     callsOf[fnBase].insert(ast);
   }
   visitChildren(ast);
@@ -249,7 +251,7 @@ void hoistAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) {
   ccp->newlyHoistedFunctions.push_back(ast);
 
   ast->parent = NULL;
-  
+
   {
     // Alter the symbol table structure to reflect the fact that we're
     // hoisting the function to the root scope.
@@ -299,7 +301,7 @@ void performClosureConversion(ClosureAST* closure,
                               ast->sourceRange);
 
   prependParameter(ast->getProto(), envVar);
-  
+
   ExprAST* derefedEnvPtr = new DerefExprAST(envVar, envVar->sourceRange);
   derefedEnvPtr->type = envTy;
 
@@ -309,7 +311,7 @@ void performClosureConversion(ClosureAST* closure,
     ReplaceExprTransform rex;
     int envOffset = 1; // offset 0 is reserved for typemamp
     for (it = freeVars.begin(); it != freeVars.end(); ++it) {
-      std::cout << "Rewriting " << *(*it) << " to go through env" << std::endl;
+      currentOuts() << "Rewriting " << str(*it) << " to go through env" << "\n";
       captureAvoidingSubstitution(ast->getBody(),
                                   (*it)->name,
                                   new SubscriptAST(
@@ -329,9 +331,9 @@ void performClosureConversion(ClosureAST* closure,
     // if they already have types.
     {
       typecheck(ast->getProto());
-      std::cout << "ClosureConversionPass: updating type from "
+      currentOuts() << "ClosureConversionPass: updating type from "
                  << str(ast->type->getLLVMType())
-                 << " to\n\t" << str(ast->getProto()->type->getLLVMType()) << std::endl;
+                 << " to\n\t" << str(ast->getProto()->type->getLLVMType()) << "\n";
       ast->type = ast->getProto()->type;
     }
   }
@@ -341,10 +343,10 @@ void performClosureConversion(ClosureAST* closure,
   hoistAnonymousFunction(ast, ccp);
 }
 
-void lambdaLiftAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) { 
+void lambdaLiftAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) {
   //llvm::outs() << "Lambda lifting function" << ast->getProto()->name
   //             << " @ " << ast << "\n";
-             
+
   set<VariableAST*> freeVars = freeVariablesOf(ast);
   CallSet& calls = callsOf[ast];
 

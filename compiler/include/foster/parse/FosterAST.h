@@ -116,7 +116,7 @@ struct NamespaceAST : public ExprAST {
     return out << "(NamespaceAST " << scope->getName() << ")";
   }
   virtual void accept(ExprASTVisitor* visitor) {
-    std::cerr << "Visitor called on NamespaceAST! This is probably not desired..." << std::endl;
+    llvm::errs() << "Visitor called on NamespaceAST! This is probably not desired...\n";
   }
 
   NamespaceAST* newNamespace(const std::string& name) {

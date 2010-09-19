@@ -21,7 +21,8 @@ void ReplaceExprTransform::visitChildren(ExprAST* ast) {
     if (ast->parts[i]) {
       this->onVisitChild(ast, &ast->parts[i]);
     } else {
-      std::cerr << "visitChildren saw null part " << i << " for ast node " << (*ast) << std::endl;
+      llvm::errs() << "visitChildren saw null part " << i << " for ast node "
+                  << str(ast) << "\n";
     }
   }
 }
@@ -76,8 +77,8 @@ void ReplaceExprTransform::visit(PrototypeAST* ast)           {
       if (VariableAST* varvar = dynamic_cast<VariableAST*>(var)) {
         ast->inArgs[i] = varvar;
       } else {
-        std::cerr << "Error in ReplaceExprTransform: can't replace "
-            << *(ast->inArgs[i]) << " with " << *var << std::endl;
+        llvm::errs() << "Error in ReplaceExprTransform: can't replace "
+            << str(ast->inArgs[i]) << " with " << str(var) << "\n";
       }
     }
   }

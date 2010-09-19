@@ -49,8 +49,8 @@ void BuildCFG::visit(AssignExprAST* ast)   { currentRoot->append(ast); }
 void BuildCFG::visit(SubscriptAST* ast)    { currentRoot->append(ast); }
 void BuildCFG::visit(ClosureAST* ast)      { currentRoot->append(ast); }
 ///void BuildCFG::visit(ArrayExprAST* ast) { currentRoot->append(ast); }
-///void BuildCFG::visit(SimdVectorAST* ast)   { currentRoot->append(ast); } 
-void BuildCFG::visit(TupleExprAST* ast)    { currentRoot->append(ast); } 
+///void BuildCFG::visit(SimdVectorAST* ast)   { currentRoot->append(ast); }
+void BuildCFG::visit(TupleExprAST* ast)    { currentRoot->append(ast); }
 void BuildCFG::visit(BuiltinCompilesExprAST* ast) { currentRoot->append(ast); }
 void BuildCFG::visit(NamedTypeDeclAST* ast) { currentRoot->append(ast); }
 
@@ -155,8 +155,10 @@ void BuildCFG::visit(ForRangeExprAST* ast) {
 
   CFG* loopHdr = new CFG("forToHdr", ast, currentFn);
 
-  std::cout << "current fn is " << this->currentFn->getProto()->name
-      << ", forToHdr: " << loopHdr << ", for range:" << ast << " => " << str(ast) << std::endl;
+  #if 0
+  llvm::outs() << "current fn is " << this->currentFn->getProto()->name
+      << ", forToHdr: " << loopHdr << ", for range:" << ast << " => " << str(ast) << "\n";
+  #endif
   CFG* loop    = new CFG("forTo",    ast, currentFn);
   CFG* loopEnd = new CFG("forToEnd", ast, currentFn);
   CFG* after   = new CFG("postloop", ast, currentFn);

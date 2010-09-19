@@ -15,6 +15,8 @@
 using llvm::Type;
 using llvm::FunctionType;
 
+using foster::LLVMTypeFor;
+
 bool isPointerToType(const llvm::Type* p, const llvm::Type* t) {
   return p->isPointerTy() && p->getContainedType(0) == t;
 }
@@ -130,6 +132,23 @@ bool isValidClosureType(const llvm::Type* ty) {
   return false;
 }
 
+// Checks that ty == { i32 (i8*, ...)*, i8* }
+bool isGenericClosureType(const llvm::Type* ty) {
+  if (const llvm::StructType* sty= llvm::dyn_cast<const llvm::StructType>(ty)) {
+    if (!isValidClosureType(sty)) return false;
+    if (sty->getContainedType(1) != LLVMTypeFor("i8*")) return false;
+    if (!sty->getContainedType(0)->isPointerTy()) return false;
+
+    const llvm::Type* fnty = sty->getContainedType(0)->getContainedType(0);
+    if (!fnty->isFunctionTy()) return false;
+    if (!fnty->getNumContainedTypes() >= 2) return false;
+    if (fnty->getContainedType(0) != LLVMTypeFor("i32")) return false;
+    if (fnty->getContainedType(1) != LLVMTypeFor("i8*")) return false;
+    return true;
+  }
+  return false;
+}
+
 // converts { T (env*, Y, Z)*, env* }   to   T (Y, Z)
 FnTypeAST* originalFunctionTypeForClosureStructType(TypeAST* ty) {
   if (TupleTypeAST* tty = dynamic_cast<TupleTypeAST*>(ty)) {
@@ -154,51 +173,6 @@ FnTypeAST* originalFunctionTypeForClosureStructType(TypeAST* ty) {
   }
   return NULL;
 }
-
-#if 0
-const llvm::Type* recursivelySubstituteGenericClosureTypes(
-                                    const llvm::Type* ty,
-                                    bool isInClosureType) {
-  if (llvm::isa<llvm::IntegerType>(ty)) { return ty; }
-  
-  if (const FunctionType* fnty = llvm::dyn_cast<FunctionType>(ty)) {
-    TupleTypeAST* sty = NULL;
-    if (isInClosureType) {
-      sty = genericVersionOfClosureType(fnty); 
-      std::cout << "Converted closure fnty " << *fnty << "\n\t"
-                    << "to closure type " << *sty << std::endl;
-    } else {
-      sty = genericClosureTypeFor(fnty); 
-      std::cout << "Converted fnty " << *fnty << "\n\t"
-                    << "to closure type " << *sty << std::endl;
-    }
-    return sty;
-  }
-  
-  if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
-    return llvm::PointerType::get(
-      recursivelySubstituteGenericClosureTypes(pty->getElementType(),
-                                               isInClosureType),
-      pty->getAddressSpace());
-  }
-  
-  if (const llvm::StructType* sty = llvm::dyn_cast<llvm::StructType>(ty)) {
-    std::vector<const llvm::Type*> argTypes;
-    bool isClosureType = isValidClosureType(sty);
-    for (int i = 0; i < sty->getNumElements(); ++i) {
-      argTypes.push_back(recursivelySubstituteGenericClosureTypes(
-                              sty->getElementType(i), isInClosureType));
-    }
-    return llvm::StructType::get(getGlobalContext(), argTypes, sty->isPacked());
-  }
-  
-  // vectors and opqaue types fall through unmodified
-  return ty;
-  
-  // TODO: unions
-  // TODO: arrays
-}
-#endif
 
 bool isVoid(const llvm::Type* ty) {
   return ty == ty->getVoidTy(llvm::getGlobalContext());

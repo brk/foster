@@ -805,7 +805,7 @@ void TypecheckPass::visit(PrototypeAST* ast) {
 
     TypeAST* ty =  arg->type;
     if (ty == NULL) {
-      std::cerr << "Error: proto " << ast->name << " had "
+      currentErrs() << "Error: proto " << ast->name << " had "
         << "null type for arg '" << arg->name << "'" << "\n";
       return;
     }
@@ -1087,7 +1087,7 @@ void TypecheckPass::visit(SeqAST* ast) {
     if (ast->parts[i]) {
       if (!ast->parts[i]->type) { success = false; }
     } else {
-      std::cerr << "Null expr in SeqAST" << "\n";
+      currentErrs() << "Null expr in SeqAST" << "\n";
       ast->type = TypeAST::i(32);
       return;
     }
@@ -1140,7 +1140,7 @@ const FunctionType* getFunctionTypeFromClosureStructType(const Type* ty) {
       return llvm::dyn_cast<llvm::FunctionType>(pty->getElementType());
     }
   }
-  std::cerr << "ERROR: failed to get function type from closure struct type: "
+  currentErrs() << "ERROR: failed to get function type from closure struct type: "
             << *ty << "\n";
   exit(1);
   return NULL;

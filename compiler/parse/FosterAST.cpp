@@ -22,6 +22,7 @@
 
 using foster::EDiag;
 using foster::show;
+using foster::currentErrs;
 using foster::SourceRange;
 using foster::SourceRangeHighlighter;
 using foster::SourceLocation;
@@ -44,14 +45,14 @@ uint64_t getSaturating(llvm::Value* v) {
   // to return ~0, not 0. Otherwise, we should leave the value alone.
   T allOnes = ~T(0);
   if (!v) {
-    std::cerr << "numericOf() got a null value, returning " << allOnes << std::endl;
+    currentErrs() << "numericOf() got a null value, returning " << allOnes << "\n";
     return allOnes;
   }
 
   if (llvm::ConstantInt* ci = llvm::dyn_cast<llvm::ConstantInt>(v)) {
     return static_cast<T>(ci->getLimitedValue(allOnes));
   } else {
-    llvm::errs() << "getSaturating() was given a non-constant-int value " << *v;
+    currentErrs() << "getSaturating() was given a non-constant-int value " << *v;
     ASSERT(false);
     return allOnes;
   }
@@ -324,7 +325,7 @@ std::ostream& DerefExprAST::operator<<(std::ostream& out) const {
 
 std::ostream& AssignExprAST::operator<<(std::ostream& out) const {
   return out << "AssignExprAST(lhs=" << str(this->parts[0])
-      << ", rhs=" << str(parts[1]) << ")" << std::endl;
+      << ", rhs=" << str(parts[1]) << ")" << "\n";
 }
 
 std::ostream& BuiltinCompilesExprAST::operator<<(std::ostream& out) const {

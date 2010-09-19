@@ -46,6 +46,9 @@ bool isVoid(TypeAST* ty);
 
 bool isValidClosureType(const llvm::Type* ty);
 
+// Checks that ty == { i32 (i8*, ...)*, i8* }
+bool isGenericClosureType(const llvm::Type* ty);
+
 // converts { T (env*, Y, Z)*, env* }   to   T (Y, Z)
 FnTypeAST* originalFunctionTypeForClosureStructType(TypeAST*);
 

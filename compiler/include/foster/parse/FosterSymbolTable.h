@@ -5,11 +5,12 @@
 #ifndef FOSTER_SYMBOL_TABLE_H
 #define FOSTER_SYMBOL_TABLE_H
 
+#include "llvm/Support/raw_ostream.h"
+
 #include <string>
 #include <map>
 #include <set>
 #include <vector>
-#include <iostream>
 
 using std::string;
 
@@ -18,6 +19,7 @@ struct ExprAST;
 
 namespace llvm {
   class Value;
+  class raw_ostream;
 }
 
 namespace foster {
@@ -63,13 +65,13 @@ public:
     }
 
     LexicalScope* parent;
-    
+
     virtual ~LexicalScope() {}
 
     T* insert(const string& ident, T* V) {
       T* old = val_of[ident];
       if (old) {
-        //std::cerr << "Unexpectedly overwriting old value of " << ident << std::endl;
+        //llvm::errs() << "Unexpectedly overwriting old value of " << ident << "\n";
       }
       val_of[ident] = V;
       return V;
@@ -94,10 +96,10 @@ public:
       }
     }
 
-    void dump(std::ostream& out) {
-      out << "\t" << name << "(@ " << this << ")" << std::endl;
+    void dump(llvm::raw_ostream& out) {
+      out << "\t" << name << "(@ " << this << ")" << "\n";
       for (const_iterator it = begin(); it != end(); ++it) {
-        out << "\t\t" << (*it).first << ": " << (*it).second << std::endl;
+        out << "\t\t" << (*it).first << ": " << (*it).second << "\n";
       }
       if (parent) { parent->dump(out); }
     }
@@ -160,7 +162,7 @@ public:
 
   LexicalScope* getRootScope() { return scopeStack[0]; }
 
-  void dump(std::ostream& out) { currentScope()->dump(out); }
+  void dump(llvm::raw_ostream& out) { currentScope()->dump(out); }
 
   // need to expose these as public for GraphTraits and friends
   LexicalScope* _private_getCurrentScope() { return currentScope(); }
@@ -196,8 +198,8 @@ void gScopeInsert(const std::string& str, ExprAST* ast);
 } // namespace foster
 
 
-namespace std {
-  ostream& operator<<(ostream& out, foster::SymbolInfo* info);
+namespace llvm {
+  raw_ostream& operator<<(raw_ostream& out, foster::SymbolInfo* info);
 }
 
 ////////////////////////////////////////////////////////////////////

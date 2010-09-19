@@ -21,6 +21,8 @@
 
 #include <vector>
 
+using foster::currentErrs;
+
 using std::string;
 using std::vector;
 
@@ -330,7 +332,7 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
     std::string callingConvention = "fastcc";
     if (fnty.has_calling_convention()) {
       callingConvention = fnty.calling_convention();
-      //std::cout << "setting calling convention to " << callingConvention << std::endl;
+      //std::cout << "setting calling convention to " << callingConvention << "\n";
     }
 
     return FnTypeAST::get(retTy, argTypes, callingConvention);
@@ -389,7 +391,7 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
 
   if (t.tag() == pb::Type::LLVM_NAMED) {
     const string& tyname = t.name();
-    //std::cerr << "PB trying to reconstruct named type: '" << tyname << "'" << std::endl;
+    //currentErrs() << "PB trying to reconstruct named type: '" << tyname << "'" << "\n";
 
     ASSERT(!tyname.empty()) << "empty type name, probably implies a\n"
                   << "missing pb.if_X() check before pb.X().\n"
@@ -401,13 +403,13 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
     }
     return rv;
   }
-  
+
   if (t.tag() == pb::Type::TYPE_VARIABLE) {
     const string& tyname = t.name();
     return TypeVariableAST::get(tyname, range);
   }
 
-  std::cerr << "Error: found unexpected type in protobuf!\n" << t.DebugString() << std::endl;
+  currentErrs() << "Error: found unexpected type in protobuf!\n" << t.DebugString() << "\n";
 
   return NULL;
 }
