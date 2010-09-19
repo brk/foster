@@ -283,6 +283,9 @@ void dumpModuleToProtobuf(ModuleAST* mod, const string& filename) {
     std::ofstream out(filename.c_str(),
                       std::ios::trunc | std::ios::binary);
     pbModuleExpr.SerializeToOstream(&out);
+
+    std::ofstream txtout((filename + ".txt").c_str(), std::ios::trunc);
+    txtout << pbModuleExpr.DebugString();
   }
 }
 
@@ -615,9 +618,8 @@ int main(int argc, char** argv) {
 
   if (optDumpASTs) {
     dumpModuleToProtobuf(exprAST, dumpdirFile("ast.postcc.pb"));
-  }
 
-  { ScopedTimer timer("io.file");
+    ScopedTimer timer("io.file");
     string outfile = "pp-postcc.txt";
     llvm::outs() << "=========================" << "\n";
     llvm::outs() << "Pretty printing to " << outfile << "\n";
