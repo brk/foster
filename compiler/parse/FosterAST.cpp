@@ -282,7 +282,7 @@ std::ostream& PrototypeAST::operator<<(std::ostream& out) const {
 }
 
 std::ostream& FnAST::operator<<(std::ostream& out) const {
-  return out << "FnAST(proto = " << str(parts[0]) << ", body = " << str(parts[1]) << endl;
+  return out << "FnAST(proto = " << str(parts[0]) << ", body = " << str(parts[1]) << "\n";
 }
 
 std::ostream& ClosureAST::operator<<(std::ostream& out) const {

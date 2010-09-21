@@ -8,6 +8,11 @@
 #include <iterator>
 #include <vector>
 
+// A filtering_iterator<Base, Derived> is created with a pair of
+// std::vector<Base*> iterators. Converting the iterator to a pointer
+// invokes dynamic_cast<Derived*>, and advancing the iterator skips
+// any Base* entries which are not also valid Derived*s.
+
 namespace foster {
 
 template <typename Base, typename Derived>

@@ -9,7 +9,6 @@
 #include "passes/ReplaceExprTransform.h"
 #include "passes/PrettyPrintPass.h"
 #include "passes/TypecheckPass.h"
-#include "passes/CodegenPass.h"
 
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
@@ -247,22 +246,13 @@ set<VariableAST*> freeVariablesOf(FnAST* ast) {
 }
 
 void hoistAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) {
-  // TODO support mutually recursive function...
   ccp->newlyHoistedFunctions.push_back(ast);
-
   ast->parent = NULL;
 
-  {
-    // Alter the symbol table structure to reflect the fact that we're
-    // hoisting the function to the root scope.
-    ast->getProto()->scope->parent = gScope.getRootScope();
-
-    // Ensure that the fn proto gets added to the module, so that it can
-    // be referenced from other functions.
-    foster::codegen(ast->getProto());
-
-    gScopeInsert(ast->getProto()->name, ast->getProto()->value);
-  }
+  // Alter the symbol table structure to reflect the fact that we're
+  // hoisting the function to the root scope.
+  ast->getProto()->scope->parent = gScope.getRootScope();
+  gScopeInsert(ast->getProto()->name, ast->getProto()->value);
 }
 
 void performClosureConversion(ClosureAST* closure,

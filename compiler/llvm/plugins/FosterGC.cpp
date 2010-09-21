@@ -188,8 +188,10 @@ public:
         const RootOffsetsWithMetadata& offsetsWithMetadata = fi.second.second;
         const Labels& labels = (*it).second;
 
-        // Align to address width.
-        AP.EmitAlignment(AddressAlignLog);
+        // TODO on x86_64 this makes the generated binary crash while
+        // registering stackmaps, but the testing infrastructure currently
+        // doesn't detect the crash as abnormal termination.
+        //AP.EmitAlignment(AddressAlignLog);
 
         // Emit the stack frame size.
         AP.OutStreamer.AddComment("stack frame size");

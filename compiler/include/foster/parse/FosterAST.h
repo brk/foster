@@ -15,7 +15,6 @@
 #include <string>
 
 using std::string;
-using std::endl;
 
 namespace llvm {
   class Type;
@@ -391,7 +390,7 @@ struct ForRangeExprAST : public ExprAST {
   bool _hadExplicitIncrExpr;
 
   explicit ForRangeExprAST(VariableAST* var,
-		  ExprAST* start, ExprAST* end,
+                  ExprAST* start, ExprAST* end,
                   ExprAST* body, ExprAST* incr,
                   foster::SourceRange sourceRange)
     : ExprAST("ForRangeExprAST", sourceRange), var(var) {

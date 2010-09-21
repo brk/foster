@@ -14,19 +14,8 @@
 namespace foster {
 
 class PathManager {
-  // Our assumption is that few paths end with the same
-  // filename, so we map ending filenames to sets of paths,
-  // which with then do a more-or-less brute-force manipulation
-  // to find the shortest unambiguous path from the set.
-  typedef llvm::StringRef       Filename;
-  typedef std::set<std::string> MatchingPaths;
-  std::map<Filename, MatchingPaths> candidates;
-
-  typedef std::set<llvm::sys::Path> PathSet;
-  PathSet moduleRootPaths;
-
 public:
-  PathManager() {}
+  PathManager();
 
   // Only registered paths are considered when
   // determining shortest unambiguous suffixes.
@@ -40,6 +29,10 @@ public:
   std::set<llvm::sys::Path> searchForModuleHomes(const std::string& fooDotBar);
 
   std::string getShortestUnambiguousSuffix(const llvm::sys::Path& path);
+
+private:
+  struct Impl;
+  Impl* impl;
 };
 
 extern PathManager gPathManager;

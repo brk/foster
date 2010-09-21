@@ -37,6 +37,10 @@ struct typemap {
 #if USE_FOSTER_GC_PLUGIN
 struct stackmap {
   struct OffsetWithMetadata { void* metadata; int32_t offset; };
+  // GC maps emit structures without alignment, so we can't simply
+  // use sizeof(stackmap::OffsetWithMetadata), because that value
+  // includes padding.
+  #define OFFSET_WITH_METADATA_SIZE (sizeof(void*) + sizeof(int32_t))
 
   int32_t pointClusterCount;
   struct PointCluster {
@@ -99,59 +103,59 @@ FILE* gclog = NULL;
 class copying_gc {
   class semispace {
   public:
-	  semispace(int64_t size, copying_gc* parent) : parent(parent) {
+          semispace(int64_t size, copying_gc* parent) : parent(parent) {
         start = (char*) malloc(size);
         end   = start + size;
         bump  = start;
 
         genericClosureMarker = NULL;
-	  }
+          }
 
-	  ~semispace() {
-		free(start);
-	  }
+          ~semispace() {
+                free(start);
+          }
   private:
-	  char* start;
-	  char* end;
-	  char* bump;
-	  copying_gc* parent;
+          char* start;
+          char* end;
+          char* bump;
+          copying_gc* parent;
 
-	  char* genericClosureMarker;
+          char* genericClosureMarker;
 
   public:
       void reset_bump() { bump = start; }
-	  bool contains(void* ptr) {
-	    return (ptr >= start) && (ptr < end);
-	  }
+          bool contains(void* ptr) {
+            return (ptr >= start) && (ptr < end);
+          }
 
-	  void clear() {
-	    fprintf(gclog, "clearing mem from %p to %p\n", start, end);
-	    memset(start, 255, end - start);
-	  }
+          void clear() {
+            fprintf(gclog, "clearing mem from %p to %p\n", start, end);
+            memset(start, 255, end - start);
+          }
 
-	  int64_t free_size() { return end - bump; }
+          int64_t free_size() { return end - bump; }
 
-	  bool can_allocate(int64_t size) {
+          bool can_allocate(int64_t size) {
         return bump + size < end;
-	  }
+          }
 
-	  void* allocate_prechecked(int64_t size) {
-		heap_cell* allot = (heap_cell*) bump;
-		bump += size;
-		allot->set_size(size);
-		return allot->body();
-	  }
+          void* allocate_prechecked(int64_t size) {
+                heap_cell* allot = (heap_cell*) bump;
+                bump += size;
+                allot->set_size(size);
+                return allot->body();
+          }
 
-	  // Prerequisite: body is a stack pointer.
-	  // Behavior:
-	  // * Any slots containing stack pointers should be recursively update()ed.
-	  // * Any slots containing heap pointers should be overwritten
-	  // with copy()'d values.
-	  void update(void* body, const void* meta) {
-	    if (!meta) {
-	      fprintf(gclog, "can't update body %p with no type map!\n", body);
-	      return;
-	    }
+          // Prerequisite: body is a stack pointer.
+          // Behavior:
+          // * Any slots containing stack pointers should be recursively update()ed.
+          // * Any slots containing heap pointers should be overwritten
+          // with copy()'d values.
+          void update(void* body, const void* meta) {
+            if (!meta) {
+              fprintf(gclog, "can't update body %p with no type map!\n", body);
+              return;
+            }
 
         const typemap* map = (const typemap*) meta;
 
@@ -195,12 +199,12 @@ class copying_gc {
             }
           }
         }
-	  }
+          }
 
-	  // returns body of newly allocated cell
-	  void* copy(void* body, const void* meta) {
-	    if (!meta) {
-	      void** bp4 = (void**)offset(body,4);
+          // returns body of newly allocated cell
+          void* copy(void* body, const void* meta) {
+            if (!meta) {
+              void** bp4 = (void**)offset(body,4);
           fprintf(gclog, "called copy with null metadata\n");
           fprintf(gclog, "body   is %p -> %p\n", body, *(void**)body);
           fprintf(gclog, "body+4 is %p -> %p\n", offset(body,4), *bp4);
@@ -212,57 +216,57 @@ class copying_gc {
           return NULL;
         }
 
-	    heap_cell* cell = HEAP_CELL_FOR_BODY(body);
+            heap_cell* cell = HEAP_CELL_FOR_BODY(body);
 
-	    if (cell->is_forwarded()) {
-	      void* fwd = cell->get_forwarded_body();
-	      fprintf(gclog, "cell %p(->0x%x) considered forwarded to %p for body %p(->0x%x)\n",
-	          cell, *(unsigned int*)cell, fwd, body, *(unsigned int*)body);
-	      return fwd;
-	    }
+            if (cell->is_forwarded()) {
+              void* fwd = cell->get_forwarded_body();
+              fprintf(gclog, "cell %p(->0x%x) considered forwarded to %p for body %p(->0x%x)\n",
+                  cell, *(unsigned int*)cell, fwd, body, *(unsigned int*)body);
+              return fwd;
+            }
 
-	    int64_t size = cell->size();
+            int64_t size = cell->size();
 
-	    if (can_allocate(size)) {
-	      memcpy(bump, cell, size);
-	      heap_cell* new_addr = (heap_cell*) bump;
-	      bump += size;
+            if (can_allocate(size)) {
+              memcpy(bump, cell, size);
+              heap_cell* new_addr = (heap_cell*) bump;
+              bump += size;
 
-	      cell->set_forwarded_body(new_addr->body());
+              cell->set_forwarded_body(new_addr->body());
 
-	      if (meta) {
-	        const typemap* map = (const typemap*) meta;
-	        // for each pointer field in the cell
-	        for (int i = 0; i < map->numPointers; ++i) {
-	          const typemap::entry& e = map->entries[i];
-	          void** oldslot = (void**) offset(body, e.offset);
+              if (meta) {
+                const typemap* map = (const typemap*) meta;
+                // for each pointer field in the cell
+                for (int i = 0; i < map->numPointers; ++i) {
+                  const typemap::entry& e = map->entries[i];
+                  void** oldslot = (void**) offset(body, e.offset);
 
-	          //fprintf(gclog, "body is %p, offset is %d, typeinfo is %p, addr_of_ptr_slot is %p, ptr_slot_val is %p\n",
-	          //    body, e.offset, e.typeinfo, oldslot, *oldslot);
-	          // recursively copy the field from cell, yielding subfwdaddr
-	          // set the copied cell field to subfwdaddr
-	          if (*oldslot != NULL) {
-	            void** newslot = (void**) offset(new_addr->body(), e.offset);
-	            *newslot = copy(*oldslot, e.typeinfo);
-	          }
-	        }
+                  //fprintf(gclog, "body is %p, offset is %d, typeinfo is %p, addr_of_ptr_slot is %p, ptr_slot_val is %p\n",
+                  //    body, e.offset, e.typeinfo, oldslot, *oldslot);
+                  // recursively copy the field from cell, yielding subfwdaddr
+                  // set the copied cell field to subfwdaddr
+                  if (*oldslot != NULL) {
+                    void** newslot = (void**) offset(new_addr->body(), e.offset);
+                    *newslot = copy(*oldslot, e.typeinfo);
+                  }
+                }
 
-	        {
-	          struct tuple_t { void* l, *r; int s; };
-	          tuple_t& t1 = * (tuple_t*)body;
+                {
+                  struct tuple_t { void* l, *r; int s; };
+                  tuple_t& t1 = * (tuple_t*)body;
               tuple_t& t2 = * (tuple_t*)new_addr->body();
               fprintf(gclog, "%p : {%p, %p, %d} -> %p: { %p , %p, %d }\n", body,
                   t1.l, t1.r, t1.s, new_addr->body(), t2.l, t2.r, t2.s);
-	        }
-	      }
+                }
+              }
 
-	      return cell->get_forwarded_body();
-	    } else {
-	      printf("not enough space to copy! have %lld, need %lld\n", free_size(), size);
-	      //exit(255);
-	      return NULL;
-	    }
-	  }
+              return cell->get_forwarded_body();
+            } else {
+              printf("not enough space to copy! have %lld, need %lld\n", free_size(), size);
+              //exit(255);
+              return NULL;
+            }
+          }
   };
 
   semispace* curr;
@@ -275,33 +279,33 @@ class copying_gc {
 
   // precondition: all active cells from curr have been copied to next
   void flip() {
-	// curr is the old semispace, so we reset its bump ptr
-	curr->reset_bump();
-	std::swap(curr, next);
+        // curr is the old semispace, so we reset its bump ptr
+        curr->reset_bump();
+        std::swap(curr, next);
   }
 
 public:
   copying_gc(int64_t size) {
-	curr = new semispace(size, this);
+        curr = new semispace(size, this);
 
-	// Allocate some temporary memory to force curr and next
-	// to have visually distinct address ranges.
-	std::vector<semispace*> stretches;
-	for (int i = (4 * 1000 * 1000) / size; i >= 0; --i) {
-	  stretches.push_back(new semispace(size, this));
-	}
-	next = new semispace(size, this);
-	for (int i = 0; i < stretches.size(); --i) {
+        // Allocate some temporary memory to force curr and next
+        // to have visually distinct address ranges.
+        std::vector<semispace*> stretches;
+        for (int i = (4 * 1000 * 1000) / size; i >= 0; --i) {
+          stretches.push_back(new semispace(size, this));
+        }
+        next = new semispace(size, this);
+        for (int i = 0; i < stretches.size(); --i) {
       delete stretches[i]; stretches[i] = NULL;
     }
 
-	num_allocations = 0;
-	num_collections = 0;
+        num_allocations = 0;
+        num_collections = 0;
   }
 
   ~copying_gc() {
-	fprintf(gclog, "num allocations: %d, num collections: %d\n",
-			num_allocations, num_collections);
+        fprintf(gclog, "num allocations: %d, num collections: %d\n",
+                        num_allocations, num_collections);
   }
 
   void force_gc_for_debugging_purposes() { this->gc(); }
@@ -328,21 +332,21 @@ public:
   }
 
   void* allocate(int64_t size) {
-	++num_allocations;
+        ++num_allocations;
 
-	if (curr->can_allocate(size)) {
-	  return curr->allocate_prechecked(size);
-	} else {
-	  gc();
-	  if (curr->can_allocate(size)) {
-	    printf("gc collection freed space, now have %lld\n", curr->free_size());
-		return curr->allocate_prechecked(size);
-	  } else {
-	    printf("working set exceeded heap size! aborting...\n");
-	    exit(255);
-	    return NULL;
-	  }
-	}
+        if (curr->can_allocate(size)) {
+          return curr->allocate_prechecked(size);
+        } else {
+          gc();
+          if (curr->can_allocate(size)) {
+            printf("gc collection freed space, now have %lld\n", curr->free_size());
+                return curr->allocate_prechecked(size);
+          } else {
+            printf("working set exceeded heap size! aborting...\n");
+            exit(255);
+            return NULL;
+          }
+        }
   }
 };
 
@@ -398,28 +402,37 @@ std::map<void*, const stackmap::PointCluster*> clusterForAddress;
 
 void register_stackmaps() {
   int32_t numStackMaps = foster__gcmaps.numStackMaps;
-  fprintf(gclog, "num stack maps: %d\n", numStackMaps);
+  fprintf(gclog, "num stack maps: %d\n", numStackMaps); fflush(gclog);
 
   void* ps = (void*) foster__gcmaps.stackmaps;
-  size_t totalOffset = 0; // 
+  size_t totalOffset = 0;
 
   for (int32_t m = 0; m < numStackMaps; ++m) {
-    const stackmap& s = *(const stackmap*) offset(ps, totalOffset);
-    int32_t numClusters = s.pointClusterCount; 
-    fprintf(gclog, "  num clusters: %d\n", numClusters);
+    const stackmap* stackmap_ptr = (const stackmap*) offset(ps, totalOffset);
+    fprintf(gclog, "  stackmap_ptr: %p\n", stackmap_ptr); fflush(gclog);
+    const stackmap& s = *stackmap_ptr;
+    int32_t numClusters = s.pointClusterCount;
+    fprintf(gclog, "  num clusters: %d\n", numClusters); fflush(gclog);
 
     totalOffset += sizeof(s.pointClusterCount);
 
     for (int32_t i = 0; i < numClusters; ++i) {
       const stackmap::PointCluster* pc =
         (const stackmap::PointCluster*) offset(ps, totalOffset);
+      fprintf(gclog, "  pointcluster*: %p\n", pc); fflush(gclog);
+
       const stackmap::PointCluster& c = *pc;
       totalOffset += sizeof(int32_t) * 4 // sizes + counts
                    + sizeof(int32_t) * c.liveCountWithoutMetadata
-                   + sizeof(stackmap::OffsetWithMetadata)
-                                     * c.liveCountWithMetadata;
+                   + OFFSET_WITH_METADATA_SIZE * c.liveCountWithMetadata;
+
       void** safePointAddresses = (void**) offset(ps, totalOffset);
       totalOffset += sizeof(void*)   * c.addressCount;
+
+      fprintf(gclog, "  safePointAddrs: %p * %d\n", safePointAddresses, c.addressCount); fflush(gclog);
+      fprintf(gclog, "  sizeof(stackmap::OffsetWithMetadata): %u\n", sizeof(stackmap::OffsetWithMetadata));
+      fprintf(gclog, "  OFFSET_WITH_METADATA_SIZE: %u\n", OFFSET_WITH_METADATA_SIZE);
+      fprintf(gclog, "  c.liveCountWithMetadata: %d\n", c.liveCountWithMetadata);
 
       for (int32_t i = 0; i < c.addressCount; ++i) {
         void* safePointAddress = safePointAddresses[i];
@@ -427,8 +440,8 @@ void register_stackmaps() {
       }
 
       fprintf(gclog, "    cluster fsize %d, & %d, live: %d + %d\n",
-		     c.frameSize, c.addressCount,
-		     c.liveCountWithMetadata, c.liveCountWithoutMetadata);
+                     c.frameSize, c.addressCount,
+                     c.liveCountWithMetadata, c.liveCountWithoutMetadata);
     }
   }
 }
@@ -444,7 +457,7 @@ void initialize() {
   allocator = new copying_gc(1 * KB);
 
 #if USE_FOSTER_GC_PLUGIN
-  register_stackmaps(); 
+  register_stackmaps();
 #endif
 
   start = base::TimeTicks::HighResNow();
@@ -453,7 +466,7 @@ void initialize() {
 void cleanup() {
   base::TimeDelta elapsed = base::TimeTicks::HighResNow() - start;
   fprintf(gclog, "Elapsed runtime: %ld.%ld s\n",
-		  long(elapsed.InSeconds()),
+                  long(elapsed.InSeconds()),
           long(elapsed.InMilliseconds() - (elapsed.InSeconds() * 1000)));
 
   delete allocator;
@@ -539,7 +552,7 @@ void visitGCRootsWithStackMaps(void (*visitor)(void **root, const void *meta)) {
   for (int i = 0; i < nFrames; ++i) {
     void* safePointAddr = frames[i].retaddr;
     void* frameptr = (void*) frames[i].frameptr;
-    
+
     const stackmap::PointCluster* pc = clusterForAddress[safePointAddr];
     if (!pc) continue;
 
@@ -576,7 +589,7 @@ void mark();
 void* lazy_sweep();
 
 void gcPrintVisitor(void** root, const void *meta) {
-	fprintf(gclog, "root: %p -> %p, meta: %p\n", root, *root, meta);
+        fprintf(gclog, "root: %p -> %p, meta: %p\n", root, *root, meta);
 }
 
 int64_t heap_size = 0;
@@ -586,25 +599,25 @@ int lazy_sweep_remaining = 0;
 const int64_t MAX_HEAP_SIZE = 4 * 1024;
 
 extern "C" void* memalloc_lazy_sweep(int64_t sz) {
-	if (heap_size + sz > MAX_HEAP_SIZE) {
-		if (!marked) { mark(); marked = true; lazy_sweep_remaining = allocated_blocks.size(); }
-		void* addr = lazy_sweep();
-		if (addr) return addr;
-	}
+        if (heap_size + sz > MAX_HEAP_SIZE) {
+                if (!marked) { mark(); marked = true; lazy_sweep_remaining = allocated_blocks.size(); }
+                void* addr = lazy_sweep();
+                if (addr) return addr;
+        }
 
-	heap_size += sz;
-	void* addr = malloc(sz);
-	allocated_blocks.push_back(addr);
+        heap_size += sz;
+        void* addr = malloc(sz);
+        allocated_blocks.push_back(addr);
 #if 0
-	if (memalloc_call_num % 10 == 0) {
-		fprintf(gclog, "after %lld calls, sz = +%lld, memalloced size: %lld\n",
-			memalloc_call_num, sz, memalloced_size);
-		fprintf(gclog, "have %d blocks; allocated block at address: %p\n",
-			allocated_blocks.size(), addr);
-		visitGCRoots(gcPrintVisitor);
-	}
+        if (memalloc_call_num % 10 == 0) {
+                fprintf(gclog, "after %lld calls, sz = +%lld, memalloced size: %lld\n",
+                        memalloc_call_num, sz, memalloced_size);
+                fprintf(gclog, "have %d blocks; allocated block at address: %p\n",
+                        allocated_blocks.size(), addr);
+                visitGCRoots(gcPrintVisitor);
+        }
 #endif
-	return addr;
+        return addr;
 }
 
 /////////////////////////////////////////////////////////////////
@@ -613,34 +626,34 @@ std::map<void*, bool> mark_bitmap;
 
 // root is the stack address; *root is the heap address
 void gcMarkingVisitor(void** root, const void *meta) {
-	//printf("MARKING root: %p -> %p, meta: %p\n", root, *root, meta);
-	// for now, we assume all allocations are atomic
-	mark_bitmap[*root] = true;
+        //printf("MARKING root: %p -> %p, meta: %p\n", root, *root, meta);
+        // for now, we assume all allocations are atomic
+        mark_bitmap[*root] = true;
 }
 
 void mark() {
-	mark_bitmap.clear();
-	visitGCRoots(gcMarkingVisitor);
+        mark_bitmap.clear();
+        visitGCRoots(gcMarkingVisitor);
 }
 
 void* lazy_sweep() {
-	std::list<void*>::iterator iter;
-	for (iter = allocated_blocks.begin();
-	    iter != allocated_blocks.end() && --lazy_sweep_remaining >= 0; /* ... */ ) {
-		// advance iter before possibly erasing it
-		std::list<void*>::iterator it = iter++;
-		void* addr = *it;
-		if (!mark_bitmap[addr]) {
-			// move reused block to the end of the list
-			mark_bitmap[addr] = true;
-			allocated_blocks.splice(allocated_blocks.end(), allocated_blocks, it);
-			return addr;
-		}
-	}
+        std::list<void*>::iterator iter;
+        for (iter = allocated_blocks.begin();
+            iter != allocated_blocks.end() && --lazy_sweep_remaining >= 0; /* ... */ ) {
+                // advance iter before possibly erasing it
+                std::list<void*>::iterator it = iter++;
+                void* addr = *it;
+                if (!mark_bitmap[addr]) {
+                        // move reused block to the end of the list
+                        mark_bitmap[addr] = true;
+                        allocated_blocks.splice(allocated_blocks.end(), allocated_blocks, it);
+                        return addr;
+                }
+        }
 
-	mark_bitmap.clear();
-	marked = false;
-	return NULL;
+        mark_bitmap.clear();
+        marked = false;
+        return NULL;
 }
 #endif
 /////////////////////////////////////////////////////////////////

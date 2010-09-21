@@ -18,7 +18,6 @@
 
 namespace llvm {
   class Module;
-  class ExecutionEngine;
   class raw_ostream;
 }
 
@@ -96,7 +95,6 @@ private:
 };
 
 
-extern llvm::ExecutionEngine* ee;
 extern llvm::IRBuilder<> builder;
 extern llvm::Module* module;
 

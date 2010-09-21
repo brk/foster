@@ -3,8 +3,6 @@
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
 #include "llvm/ADT/StringRef.h"
-#include <vector>
-#include <string>
 
 #ifndef FOSTER_INPUT_FILE_H
 #define FOSTER_INPUT_FILE_H
@@ -18,7 +16,7 @@ namespace llvm {
 namespace foster {
 
 class InputTextBuffer;
-  
+
 class InputFile {
   const llvm::sys::Path& path;
   InputTextBuffer* buf;

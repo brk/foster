@@ -12,8 +12,9 @@
 
 #include <cassert>
 #include <string>
-#include <sstream>
-#include <iostream>
+
+using llvm::errs;
+using llvm::outs;
 
 using std::string;
 
@@ -50,20 +51,22 @@ bool computeTokenText(string& outTokenText,
   if (ex->expecting == ANTLR3_TOKEN_EOF) {
     outTokenText = "<EOF>";
   } else if (!tokenNames) {
-    std::stringstream ss; ss << "<token ID " << ex->expecting << ">";
+    string str;
+    llvm::raw_string_ostream ss(str);
+    ss << "<token ID " << ex->expecting << ">";
     outTokenText = ss.str();
   } else if (tok && ex->type != ANTLR3_MISSING_TOKEN_EXCEPTION) {
     // The text for the physical token in the case of missing tokens
     // is "missing 'TOKEN'" but we just want "TOKEN".
     outTokenText = string((const char*)tok->getText(tok)->chars);
-    std::cout << "tok : " << outTokenText << "; tokenNames: "
-              << (const char*) tokenNames[ex->expecting] << std::endl;
+    outs() << "tok : " << outTokenText << "; tokenNames: "
+                 << (const char*) tokenNames[ex->expecting] << "\n";
     isPhysicalToken = true;
   } else {
     // TODO names are e.g. ')' instead of ),
     // which messes up highlighting
     outTokenText = string((const char*)tokenNames[ex->expecting]);
-    std::cout << "tokenNames: " << outTokenText << std::endl;
+    outs() << "tokenNames: " << outTokenText << "\n";
     isPhysicalToken = true;
   }
 
@@ -73,8 +76,8 @@ bool computeTokenText(string& outTokenText,
 SourceRange computeSourceRange(pANTLR3_EXCEPTION ex,
                                const string& tokenText,
                                bool isPhysicalToken) {
-  //std::cout << "token text is " << tokenText
-  //            << ", start col is " << ex->charPositionInLine << std::endl;
+  //outs() << "token text is " << tokenText
+  //             << ", start col is " << ex->charPositionInLine << "\n";
   SourceLocation errStart(ex->line - 1, ex->charPositionInLine);
   SourceLocation errEnd
      = advanceColumn(errStart, isPhysicalToken ? tokenText.size() : 1);
@@ -133,8 +136,8 @@ void installRecognitionErrorFilter(pANTLR3_BASE_RECOGNIZER recognizer) {
 bool handleMissingToken(pANTLR3_EXCEPTION ex,
                         const string& tokenText,
                         const SourceRange& r) {
-  std::cerr << "Warning: inserted missing " << tokenText << ":\n\n"
-            << r << std::endl;
+  errs() << "Warning: inserted missing " << tokenText << ":\n\n"
+         << r << "\n";
   return false;
 }
 
@@ -169,10 +172,10 @@ bool handleNoViableAlt(pANTLR3_EXCEPTION ex,
                         const string& tokenText,
                         const SourceRange& r) {
   const char* approxPosition = describeApproximateStartPosition(r);
-  std::cerr << r.source->getShortSuffixPath() << ":"
-            << "error: got stuck parsing near the " << approxPosition
-            << " of line " << (r.begin.line + 1) << ":\n\n"
-            << r << std::endl;
+  errs() << r.source->getShortSuffixPath() << ":"
+         << "error: got stuck parsing near the " << approxPosition
+         << " of line " << (r.begin.line + 1) << ":\n\n"
+         << r << "\n";
   return false;
 }
 
@@ -182,10 +185,10 @@ bool handleMismatchedToken(pANTLR3_EXCEPTION ex,
                         const string& tokenText,
                         const SourceRange& r) {
   const char* approxPosition = describeApproximateStartPosition(r);
-  std::cerr << r.source->getShortSuffixPath() << ":"
-            << "error: unexpected token near the " << approxPosition
-            << " of line " << (r.begin.line + 1) << ":\n\n"
-            << r << std::endl;
+  errs() << r.source->getShortSuffixPath() << ":"
+         << "error: unexpected token near the " << approxPosition
+         << " of line " << (r.begin.line + 1) << ":\n\n"
+         << r << "\n";
   return false;
 }
 
@@ -195,11 +198,11 @@ bool handleGenericError(pANTLR3_EXCEPTION ex,
                         const string& tokenText,
                         const SourceRange& r) {
   const char* approxPosition = describeApproximateStartPosition(r);
-  std::cerr << r.source->getShortSuffixPath() << ":"
-            << "generic error: " << ((const char*) ex->message)
-            << " near the " << approxPosition
-            << " of line " << (r.begin.line + 1) << ":\n\n"
-            << r << std::endl;
+  errs() << r.source->getShortSuffixPath() << ":"
+         << "generic error: " << ((const char*) ex->message)
+         << " near the " << approxPosition
+         << " of line " << (r.begin.line + 1) << ":\n\n"
+         << r << "\n";
   return false;
 }
 
@@ -209,14 +212,15 @@ bool handleUnwantedToken(pANTLR3_EXCEPTION ex,
                         const string& tokenText,
                         const SourceRange& r) {
   const char* approxPosition = describeApproximateStartPosition(r);
-  std::cerr << r.source->getShortSuffixPath() << ":"
-            << "error: " << ((const char*) ex->message)
-            << " " << tokenText 
-            << " near the " << approxPosition
-            << " of line " << (r.begin.line + 1) << ":\n\n"
-            << r << std::endl;
+  errs() << r.source->getShortSuffixPath() << ":"
+         << "error: " << ((const char*) ex->message)
+         << " " << tokenText
+         << " near the " << approxPosition
+         << " of line " << (r.begin.line + 1) << ":\n\n"
+         << r << "\n";
   return false;
 }
+
 } // namespace foster
 
 

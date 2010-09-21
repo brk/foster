@@ -12,26 +12,54 @@
 #include <queue>
 
 using llvm::sys::Path;
+using llvm::StringRef;
+
+using std::map;
+using std::set;
+using std::string;
+
+namespace {
+typedef set<Path> PathSet;
+}
 
 namespace foster {
 
 PathManager gPathManager;
 
-void PathManager::registerPath(const Path& path) {
-  candidates[path.getLast()].insert( path.str() );
+struct PathManager::Impl {
+  // Our assumption is that few paths end with the same
+  // filename, so we map ending filenames to sets of paths,
+  // which with then do a more-or-less brute-force manipulation
+  // to find the shortest unambiguous path from the set.
+  typedef StringRef            Filename;
+  typedef set<string>          MatchingPaths;
+  map<Filename, MatchingPaths> candidates;
+
+  PathSet moduleRootPaths;
+};
+
+PathManager::PathManager() {
+  impl = new Impl();
 }
 
-static char getDirectorySeparator(const Path& p) {
+void
+PathManager::registerPath(const Path& path) {
+  impl->candidates[path.getLast()].insert( path.str() );
+}
+
+static char
+getDirectorySeparator(const Path& p) {
   if (p.str().empty()) return '\0';
-  
+
   size_t dirSepOffsetFromBack = p.getLast().size();
   if (dirSepOffsetFromBack == p.size()) return '\0';
   return p.str()[p.size() - dirSepOffsetFromBack - 1];
 }
 
-static std::string wellFormedSuffixIncluding(
-	const Path& inputPath, size_t offsetFromBack) {
-  const std::string& s(inputPath.str());
+static string
+wellFormedSuffixIncluding(
+        const Path& inputPath, size_t offsetFromBack) {
+  const string& s(inputPath.str());
   char dirSep = getDirectorySeparator(inputPath);
   if (!dirSep) return s;
 
@@ -51,10 +79,11 @@ static std::string wellFormedSuffixIncluding(
   return s.substr(completeSuffixOffset);
 }
 
-static std::string disamb(const std::set<std::string>& candidates,
+static string
+disamb(const set<string>& candidates,
                           const Path& inputPath) {
-  
-  std::string pathstr = inputPath.str();
+
+  string pathstr = inputPath.str();
   if (candidates.empty()) { return pathstr; }
 
   // Our input path is ..../d/c/b.a
@@ -62,11 +91,11 @@ static std::string disamb(const std::set<std::string>& candidates,
   // they may or may not match c/b.a.
   //
   // We'll choose the candidate with the longest matching suffix.
-  typedef std::set<std::string> CandSet;
-  typedef std::string::reverse_iterator rit;
-  typedef std::pair<int, const std::string*> MatchedLengthSuffix;
+  typedef set<string> CandSet;
+  typedef string::reverse_iterator rit;
+  typedef std::pair<int, const string*> MatchedLengthSuffix;
   std::priority_queue<MatchedLengthSuffix> pq;
-  
+
   // Given no alternatives, the shortest unambiguous suffix
   // for the input path is the last component of the input path.
   pq.push(MatchedLengthSuffix(inputPath.getLast().size(), &pathstr));
@@ -74,46 +103,50 @@ static std::string disamb(const std::set<std::string>& candidates,
   for (CandSet::iterator it = candidates.begin();
                          it != candidates.end();
                        ++it) {
-    std::string s = *it;
-    
+    string s = *it;
+
     // We've already created an entry for the input path, so skip it.
     if (s == pathstr) continue;
-    
+
     // Make sure we don't inspect more characters than either string's length.
     size_t commonLength = (std::min)(pathstr.size(), s.size());
-    
+
     // Find the first mismatched character from the backs of each string.
     std::pair<rit, rit> mm = std::mismatch(
           s.rbegin(),
           s.rbegin() + commonLength,
           pathstr.rbegin());
-    
+
     // Store a pointer to the string, along with the matched length.
     size_t offsetFromBack = std::distance(s.rbegin(), mm.first);
     pq.push(MatchedLengthSuffix(offsetFromBack, &(*it)));
   }
-  
+
   return wellFormedSuffixIncluding(inputPath, pq.top().first);
 }
 
-std::string PathManager::getShortestUnambiguousSuffix(const Path& path) {
-  return disamb(candidates[path.getLast()], path);
+string
+PathManager::getShortestUnambiguousSuffix(const Path& path) {
+  return disamb(impl->candidates[path.getLast()], path);
 }
 
 ////////////////////////////////////////////////////////////////////
 
-void PathManager::registerModuleSearchPath(const Path& path) {
-  moduleRootPaths.insert(path);
+void
+PathManager::registerModuleSearchPath(const Path& path) {
+  impl->moduleRootPaths.insert(path);
 }
 
-static bool isValidDirectory(const Path& path) {
+static bool
+isValidDirectory(const Path& path) {
   return path.isValid() && path.isDirectory();
 }
 
 // Returns true if the given path has the chain of subdirectories specified
 // by parts. On return, outRoot will be the deepest valid subdirectory of path.
-static bool hasSubdirectories(const Path& path,
-                              const std::vector<std::string>& parts,
+static bool
+hasSubdirectories(const Path& path,
+                              const std::vector<string>& parts,
                               Path& outRoot) {
   outRoot = path;
   for (size_t i = 0; i < parts.size(); ++i) {
@@ -126,16 +159,16 @@ static bool hasSubdirectories(const Path& path,
   return true;
 }
 
-std::set<Path>
-PathManager::searchForModuleHomes(const std::string& fooDotBar) {
+set<Path>
+PathManager::searchForModuleHomes(const string& fooDotBar) {
   PathSet rv;
   PathSet toDiscard;
 
-  std::vector<std::string> parts;
+  std::vector<string> parts;
   pystring::split(fooDotBar, parts, ".");
 
-  for (PathSet::iterator it = moduleRootPaths.begin();
-                        it != moduleRootPaths.end(); ++it) {
+  for (PathSet::iterator it = impl->moduleRootPaths.begin();
+                        it != impl->moduleRootPaths.end(); ++it) {
     const llvm::sys::Path& path = *it;
     llvm::sys::Path moduleRoot = path; // for now, hasSubdirs will modify
 
@@ -147,8 +180,8 @@ PathManager::searchForModuleHomes(const std::string& fooDotBar) {
   }
 
   for (PathSet::iterator it = toDiscard.begin();
-                          it != toDiscard.end(); ++it) {
-    moduleRootPaths.erase(*it);
+                         it != toDiscard.end(); ++it) {
+    impl->moduleRootPaths.erase(*it);
   }
 
   return rv;

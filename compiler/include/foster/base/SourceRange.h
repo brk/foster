@@ -5,17 +5,17 @@
 #ifndef FOSTER_SOURCERANGE_H
 #define FOSTER_SOURCERANGE_H
 
-namespace llvm {
-  class raw_ostream; 
-}
-
 #include <iosfwd>
+
+namespace llvm {
+  class raw_ostream;
+}
 
 namespace foster {
 
 struct InputFile;
 struct InputTextBuffer;
-  
+
 // Maintaining a global pointer to the current input file is a convenient
 // alternative to threading the current input file through ExprAST_from()
 // call graph in ANTLRtoFosterAST.cpp.
@@ -53,7 +53,7 @@ public:
   SourceRange(const foster::InputFile* source,
               foster::SourceLocation begin,
               foster::SourceLocation end,
-              const foster::InputTextBuffer* buf = NULL);
+              const foster::InputTextBuffer* buf = 0);
 
   bool isValid() const;
   bool isJustStartLocation() const;
@@ -74,7 +74,11 @@ public:
     return !(o == *this);
   }
 };
+
 } // namespace foster
+
+llvm::raw_ostream& operator <<(llvm::raw_ostream& out,
+                               const foster::SourceRange& r);
 
 std::ostream& operator <<(std::ostream& out, const foster::SourceRange& r);
 

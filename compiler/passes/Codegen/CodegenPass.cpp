@@ -196,7 +196,7 @@ llvm::Value* allocateMPInt() {
 }
 
 void CodegenPass::visit(IntAST* ast) {
-  if (ast->value) return;
+  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
 
   llvm::Value* small = ast->getConstantValue();
 
@@ -223,7 +223,7 @@ void CodegenPass::visit(IntAST* ast) {
 }
 
 void CodegenPass::visit(BoolAST* ast) {
-  if (ast->value) return;
+  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
   ast->value = (ast->boolValue)
       ? ConstantInt::getTrue(getGlobalContext())
       : ConstantInt::getFalse(getGlobalContext());
@@ -257,7 +257,7 @@ void CodegenPass::visit(VariableAST* ast) {
 }
 
 void CodegenPass::visit(UnaryOpExprAST* ast) {
-  if (ast->value) return;
+  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
 
   Value* V = ast->parts[0]->value;
   const std::string& op = ast->op;
@@ -351,7 +351,7 @@ bool leftTypeBiggerInt(const Type* left, const Type* right) {
 }
 
 void CodegenPass::visit(BinaryOpExprAST* ast) {
-  if (ast->value) return;
+  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
 
   Value* VL = ast->parts[ast->kLHS]->value;
   Value* VR = ast->parts[ast->kRHS]->value;
@@ -397,7 +397,7 @@ std::string getSymbolName(const std::string& sourceName) {
 }
 
 void CodegenPass::visit(PrototypeAST* ast) {
-  if (ast->value) return;
+  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
 
   std::string symbolName = getSymbolName(ast->name);
 
@@ -449,7 +449,7 @@ void CodegenPass::visit(PrototypeAST* ast) {
 
 void CodegenPass::visit(SeqAST* ast) {
   //EDiag() << "Codegen for SeqASTs should (eventually) be subsumed by CFG building!";
-  if (ast->value) return;
+  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
 
   if (!ast->parts.empty()) {
     // Find last non-void value
@@ -470,12 +470,12 @@ void CodegenPass::visit(SeqAST* ast) {
 }
 
 void CodegenPass::visit(FnAST* ast) {
-  if (ast->value) return;
+  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
 
   ASSERT(ast->getBody() != NULL);
-  ASSERT(ast->getProto()->scope) << " no scope for " << ast->getProto()->name;
+  ASSERT(ast->getProto()->scope) << "no scope for " << ast->getProto()->name;
+  ASSERT(ast->getProto()->value) << "ModuleAST should codegen function protos.";
 
-  (ast->getProto())->accept(this);
   Function* F = dyn_cast<Function>(ast->getProto()->value);
   if (!F) { return; }
 
@@ -566,7 +566,7 @@ const llvm::StructType* closureTypeFromClosedFnType(const FunctionType* fnty) {
 }
 
 void CodegenPass::visit(ClosureAST* ast) {
-  if (ast->value) return;
+  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
 
   ASSERT(ast->hasKnownEnvironment) <<
       "closure made it to codegen with no environment type" << show(ast);
@@ -668,7 +668,7 @@ void CodegenPass::visit(ModuleAST* ast) {
 
 void CodegenPass::visit(IfExprAST* ast) {
   //EDiag() << "Codegen for IfExprASTs should (eventually) be subsumed by CFG building!";
-  if (ast->value) return;
+  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
 
   (ast->getTestExpr())->accept(this);
   Value* cond = ast->getTestExpr()->value;
@@ -730,7 +730,7 @@ void CodegenPass::visit(IfExprAST* ast) {
 }
 
 void CodegenPass::visit(ForRangeExprAST* ast) {
-  if (ast->value) return;
+  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
   //EDiag() << "Codegen for ForRangeExprASTs should (eventually) be subsumed by CFG building!";
 
   Function* parentFn = builder.GetInsertBlock()->getParent();
@@ -834,7 +834,7 @@ afterBB:
 }
 
 void CodegenPass::visit(NilExprAST* ast) {
-  if (ast->value) return;
+  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
   ast->value = llvm::ConstantPointerNull::getNullValue(getLLVMType(ast->type));
 }
 
@@ -842,7 +842,7 @@ void CodegenPass::visit(NilExprAST* ast) {
 // (which is generally a LLVM type Tl*)
 // is a T(*)* stack slot holding the actual pointer value.
 void CodegenPass::visit(RefExprAST* ast) {
-  if (ast->value) return;
+  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
 
   // Some values will see that they're a child of a RefExpr and substitute
   // a malloc for an alloca; others, like int literals or such, must be
@@ -880,7 +880,12 @@ void CodegenPass::visit(RefExprAST* ast) {
 }
 
 void CodegenPass::visit(DerefExprAST* ast) {
-  if (ast->value) return;
+  // Note: unlike the other AST nodes, DerefExprASTs may be codegenned
+  // multiple times. The reason is that closure conversion replaces distinct
+  // AST nodes with references to a single DerefAST node.
+
+  // TODO is it problematic to cache the Value in the presence of copying
+  // collection?
 
   llvm::Value* src = ast->parts[0]->value;
 
@@ -897,7 +902,7 @@ void CodegenPass::visit(DerefExprAST* ast) {
 }
 
 void CodegenPass::visit(AssignExprAST* ast) {
-  if (ast->value) return;
+  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
 
   const llvm::Type* srcty = ast->parts[1]->value->getType();
   llvm::Value* dst = ast->parts[0]->value;
@@ -970,10 +975,12 @@ Value* getElementFromComposite(Value* compositeValue, Value* idxValue) {
 }
 
 void CodegenPass::visit(SubscriptAST* ast) {
-  if (ast->value) return;
+  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
 
   Value* base = ast->parts[0]->value;
   Value* idx  = ast->parts[1]->value;
+
+  ASSERT(base); ASSERT(idx);
 
   const llvm::Type* baseTy = base->getType();
   if (getLLVMType(ast->type) && isPointerToType(baseTy, getLLVMType(ast->type))
@@ -1049,7 +1056,13 @@ FnAST* getClosureVersionOf(ExprAST* arg, FnTypeAST* fnty) {
                                fnName, inArgs, arg->sourceRange, protoScope);
     ExprAST* body = new CallAST(arg, callArgs, SourceRange::getEmptyRange());
     FnAST* fn = new FnAST(proto, body, SourceRange::getEmptyRange());
-    { typecheck(fn); codegen(fn); }
+
+    typecheck(fn);
+    // We must manually codegen the proto because functions expect
+    // their protos to be codegenned, and we've created this function
+    // after the other prototpyes have already been codegenned.
+    codegen(fn->getProto());
+    codegen(fn);
 
     // Regular functions get their proto values added when the module
     // starts codegenning, but we need to do it ourselves here.
@@ -1077,7 +1090,7 @@ llvm::Value* getClosureStructValue(llvm::Value* maybePtrToClo) {
 }
 
 void CodegenPass::visit(CallAST* ast) {
-  if (ast->value) return;
+  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
 
   ExprAST* base = ast->parts[0];
   ASSERT(base != NULL);
@@ -1342,7 +1355,7 @@ llvm::GlobalVariable* getGlobalArrayVariable(SeqAST* body,
 }
 
 void CodegenPass::visit(ArrayExprAST* ast) {
-  if (ast->value) return;
+  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
 
   const llvm::ArrayType* arrayType
                             = dyn_cast<llvm::ArrayType>(getLLVMType(ast->type));
@@ -1382,7 +1395,7 @@ void CodegenPass::visit(ArrayExprAST* ast) {
 }
 
 void CodegenPass::visit(SimdVectorAST* ast) {
-  if (ast->value) return;
+  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
 
   const llvm::VectorType* simdType
                      = dyn_cast<const llvm::VectorType>(getLLVMType(ast->type));
@@ -1424,7 +1437,7 @@ void CodegenPass::visit(SimdVectorAST* ast) {
 
 // pt should be an alloca, either of type tuple* or tuple**,
 // where tuple is the type of the TupleExprAST
-void copyTupleTo(CodegenPass* pass, Value* pt, TupleExprAST* ast) {
+void copyTupleTo(Value* pt, TupleExprAST* ast) {
   if (isPointerToPointerToType(pt->getType(), getLLVMType(ast->type))) {
     pt = builder.CreateLoad(pt, false, "stackload");
   }
@@ -1436,10 +1449,10 @@ void copyTupleTo(CodegenPass* pass, Value* pt, TupleExprAST* ast) {
   for (size_t i = 0; i < body->parts.size(); ++i) {
     Value* dst = builder.CreateConstGEP2_32(pt, 0, i, "gep");
     ExprAST* part = body->parts[i];
-    part->accept(pass);
+    ASSERT(part->value) << "codegen should have been run on the tuple!";
 
     if (TupleExprAST* tu = dynamic_cast<TupleExprAST*>(part)) {
-      copyTupleTo(pass, dst, tu);
+      copyTupleTo(dst, tu);
     } else {
       if (part->value->getType() == dst->getType()) {
         // Storing a T* in a T* -- need to load to store a T in the T*
@@ -1467,7 +1480,7 @@ bool structTypeContainsPointers(const llvm::StructType* ty) {
 }
 
 void CodegenPass::visit(TupleExprAST* ast) {
-  if (ast->value) return;
+  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
 
   ASSERT(ast->type != NULL);
 
@@ -1494,7 +1507,7 @@ void CodegenPass::visit(TupleExprAST* ast) {
   }
 #endif
 
-  copyTupleTo(this, pt, ast);
+  copyTupleTo(pt, ast);
   ast->value = pt;
 }
 

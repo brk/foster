@@ -10,6 +10,8 @@
 #include "llvm/Support/raw_os_ostream.h"
 #include "llvm/Support/Format.h"
 
+using llvm::raw_ostream;
+
 namespace foster {
 
 const InputFile*               gInputFile = NULL;
@@ -76,7 +78,7 @@ void displaySourceLine(llvm::raw_ostream& out,
   endcol = (std::min)(endcol, (int) line.size());
 
   out << std::string(6, ' '); // alignment for line numbers
-  
+
   for (int i = 0; i < endcol; ++i) {
     if (i < begincol) {
       out << ' ';
@@ -89,7 +91,7 @@ void displaySourceLine(llvm::raw_ostream& out,
   out << "\n";
 }
 
-void SourceRange::highlightWithCaret(llvm::raw_ostream& out,
+void SourceRange::highlightWithCaret(raw_ostream& out,
                                      SourceLocation caret) const {
   if (!buf) {
     out << "SourceRange(<memory>, (" << begin.line << ", " << begin.column << "), ("
@@ -116,10 +118,13 @@ void SourceRange::highlightWithCaret(llvm::raw_ostream& out,
 
 } // namespace foster
 
-std::ostream& operator <<(std::ostream& out, const foster::SourceRange& r) {
-  llvm::raw_os_ostream raw(out);
-  r.highlightWithCaret(raw, r.begin);
+raw_ostream& operator <<(raw_ostream& out, const foster::SourceRange& r) {
+  r.highlightWithCaret(out, r.begin);
   return out;
+}
+
+std::ostream& operator <<(std::ostream& out, const foster::SourceRange& r) {
+  llvm::raw_os_ostream raw(out); raw << r; return out;
 }
 
 

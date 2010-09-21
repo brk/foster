@@ -201,7 +201,7 @@ struct TypecheckPass : public ExprASTVisitor {
 
             if (string(ft1->tag) == string(ft2->tag)
                 && canConvertWithVoidWrapper(ft1, ft2)) {
-              // OK!
+                ASSERT(false) << "no void wrappers?";
             } else {
               newLoggedError()
                      << "Unable to unify fn/ref types " << str(ft1) << " and " << str(ft2)
@@ -313,9 +313,7 @@ struct TypecheckPass : public ExprASTVisitor {
     }
 
 
-    ~Constraints() {
-      //for (
-    }
+    ~Constraints() {}
   };
   Constraints constraints;
 
@@ -457,10 +455,10 @@ void TypeConstraintExtractor::visit(LiteralIntValueTypeAST* t2) {
 
 void TypecheckPass::Constraints::extractTypeConstraints(
      TypecheckPass::Constraints::ConstraintType ct,
-				 ExprAST* context,
-				 TypeAST* t1,
-				 TypeAST* t2,
-				 Constraints& constraints) {
+                                 ExprAST* context,
+                                 TypeAST* t1,
+                                 TypeAST* t2,
+                                 Constraints& constraints) {
   TypeConstraintExtractor tce(constraints, ct, context);
   tce.t1_pre = t1; t2->accept(&tce);
 }
@@ -1010,7 +1008,7 @@ void TypecheckPass::visit(SubscriptAST* ast) {
     TypeAST* sub = constraints.applySubst(tv);
     if (sub && !sub->isTypeVariable()) {
       currentOuts() << "Subscript AST peeking through " << str(tv)
-		   << " and replacing it with " << str(sub) << "\n";
+                   << " and replacing it with " << str(sub) << "\n";
       ast->parts[0]->type = baseType = sub;
     } else {
       EDiag() << "SubscriptAST's base type was a type variable (" << str(sub) << " :: " << str(baseType) << ") that"
