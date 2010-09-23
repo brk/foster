@@ -304,13 +304,6 @@ std::ostream& IfExprAST::operator<<(std::ostream& out) const {
       " then " << str(parts[1]) << " else " << str(parts[2]);
 }
 
-std::ostream& ForRangeExprAST::operator<<(std::ostream& out) const {
-  out << "for " << var->name << " in " << str(parts[0]) << " to " << str(parts[2]);
-  if (_hadExplicitIncrExpr) out  << " by " << str(parts[1]);
-  out << " do " << str(parts[3]);
-  return out;
-}
-
 std::ostream& NilExprAST::operator<<(std::ostream& out) const {
   return out << "NilExprAST()";
 }

@@ -53,7 +53,6 @@ void ReplaceExprTransform::visit(VariableAST* ast)            { this->newChild =
 void ReplaceExprTransform::visit(UnaryOpExprAST* ast)         { visitChildren(ast); this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(BinaryOpExprAST* ast)        { visitChildren(ast); this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(IfExprAST* ast)              { visitChildren(ast); this->newChild = rewrite(ast); }
-void ReplaceExprTransform::visit(ForRangeExprAST* ast)        { visitChildren(ast); this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(ClosureAST* ast)             { visitChildren(ast); this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(NilExprAST* ast)             { visitChildren(ast); this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(RefExprAST* ast)             { visitChildren(ast); this->newChild = rewrite(ast); }

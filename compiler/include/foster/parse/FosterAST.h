@@ -384,37 +384,6 @@ struct IfExprAST : public ExprAST {
   ExprAST*& getElseExpr() { ASSERT(parts.size() == 3); return parts[2]; }
 };
 
-// for var in start to end { body }
-struct ForRangeExprAST : public ExprAST {
-  VariableAST* var;
-  bool _hadExplicitIncrExpr;
-
-  explicit ForRangeExprAST(VariableAST* var,
-                  ExprAST* start, ExprAST* end,
-                  ExprAST* body, ExprAST* incr,
-                  foster::SourceRange sourceRange)
-    : ExprAST("ForRangeExprAST", sourceRange), var(var) {
-    ASSERT(var);
-    _hadExplicitIncrExpr = (incr != NULL);
-    if (!_hadExplicitIncrExpr) {
-      incr = literalIntAST(1, var->sourceRange);
-    }
-
-    ASSERT(start); parts.push_back(start);
-    ASSERT(incr ); parts.push_back(incr);
-    ASSERT(end  ); parts.push_back(end);
-    ASSERT(body ); parts.push_back(body);
-  }
-  virtual void accept(ExprASTVisitor* visitor) { visitor->visit(this); }
-  virtual std::ostream& operator<<(std::ostream& out) const;
-
-  bool hadExplicitIncrExpr() { return _hadExplicitIncrExpr; }
-  ExprAST*& getStartExpr() { ASSERT(parts.size() == 4); return parts[0]; }
-  ExprAST*& getIncrExpr()  { ASSERT(parts.size() == 4); return parts[1]; }
-  ExprAST*& getEndExpr()   { ASSERT(parts.size() == 4); return parts[2]; }
-  ExprAST*& getBodyExpr()  { ASSERT(parts.size() == 4); return parts[3]; }
-};
-
 // This class exists only as a placeholder for the env ptr in a closure struct,
 // for LLVM to generate a null pointer.
 // For all intents and purposes, it does not exist before the closure

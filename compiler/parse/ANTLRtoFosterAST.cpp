@@ -436,30 +436,6 @@ ExprAST* parseTypeDefinition(pTree tree) {
   return new NamedTypeDeclAST(name, tyExpr, rangeOf(tree));
 }
 
-ExprAST* parseForRange(pTree tree,
-                       const SourceRange& sourceRange) {
-  pTree varNameTree = child(tree, 0);
-  string varName = textOf(child(varNameTree, 0));
-  VariableAST* var = new VariableAST(varName,
-                                     TypeAST::i(32),
-			                         rangeOf(varNameTree));
-  ExprAST* start = ExprAST_from(child(tree, 1));
-  ExprAST* end   = ExprAST_from(child(tree, 2));
-  ExprAST* incr  = NULL;
-
-  if (getChildCount(tree) >= 5) {
-    incr = ExprAST_from(child(tree, 4));
-  }
-
-  gScope.pushScope("for-range " + varName);
-  gScopeInsert(varName, var);
-  ExprAST* body  = ExprAST_from(child(tree, 3));
-  gScope.popScope();
-
-  currentOuts() << "for (" << varName <<" in _ to _ ...)" << "\n";
-  return new ForRangeExprAST(var, start, end, body, incr, sourceRange);
-}
-
 // ^(CTOR ^(NAME blah) ^(SEQ ...))
 ExprAST* parseCtorExpr(pTree tree,
                        const foster::SourceRange& sourceRange) {
@@ -612,11 +588,6 @@ ExprAST* ExprAST_from(pTree tree) {
 
   if (token == BODY) { // usually contains SEQ
     return ExprAST_from(child(tree, 0));
-  }
-
-  // <var start end body incr?>
-  if (token == FORRANGE) {
-    return parseForRange(tree, sourceRange);
   }
 
   // <LHS RHS>

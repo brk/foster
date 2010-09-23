@@ -123,67 +123,6 @@ void BuildCFG::visit(IfExprAST* ast) {
   elseCFGtail->branchTo(currentRoot);
 }
 
-void BuildCFG::visit(ForRangeExprAST* ast) {
-
-  /* Generate the following CFG structure:
-  preLoopBB:
-        ...
-        br loopHdrBB
-
-  loopHdrBB:
-        incr = incrExpr
-        end = endExpr
-        sv = startExpr
-        precond = sv < end
-        br precond? loopBB afterBB
-
-  loopBB:
-        loopvar = phi...
-        body
-        ...
-
-  loopEndBB:
-        ...
-        next = loopvar + 1
-
-        cond = next < end
-        br cond? loopBB afterBB
-
-  afterBB:
-        ...
-   */
-
-  CFG* loopHdr = new CFG("forToHdr", ast, currentFn);
-
-  #if 0
-  llvm::outs() << "current fn is " << this->currentFn->getProto()->name
-      << ", forToHdr: " << loopHdr << ", for range:" << ast << " => " << str(ast) << "\n";
-  #endif
-  CFG* loop    = new CFG("forTo",    ast, currentFn);
-  CFG* loopEnd = new CFG("forToEnd", ast, currentFn);
-  CFG* after   = new CFG("postloop", ast, currentFn);
-
-  CFG* preLoop = currentRoot;
-
-  ast->getIncrExpr()->accept(this);
-
-  currentRoot = loopHdr;
-  ast->getEndExpr()->accept(this);
-  ast->getStartExpr()->accept(this);
-  CFG* endStart = currentRoot;
-
-  currentRoot = loop;
-  ast->getBodyExpr()->accept(this);
-  CFG* endBody = currentRoot;
-
-  currentRoot = after;
-
-  preLoop->branchTo(loopHdr);
-  endBody->branchTo(loopEnd);
-  endStart->branchCond(NULL, loop, after);
-  loopEnd->branchCond(NULL, loop, after);
-}
-
 void BuildCFG::visit(FnAST* ast) {
   currentFn   = ast;
   currentRoot = new CFG(ast->getProto()->name + std::string(".entry"),

@@ -166,20 +166,6 @@ void ClosureConversionPass::visit(NamedTypeDeclAST* ast) {
 void ClosureConversionPass::visit(IfExprAST* ast)              {
   visitChildren(ast);
 }
-void ClosureConversionPass::visit(ForRangeExprAST* ast) {
-  onVisitChild(ast, ast->getStartExpr());
-  onVisitChild(ast, ast->getEndExpr());
-  onVisitChild(ast, ast->getIncrExpr());
-
-  // TODO this isn't very elegant...
-  const string& varName = ast->var->getName();
-  bool wasAlreadyBound = 1 == boundVariables[callStack.back()].count(varName);
-  boundVariables[callStack.back()].insert(varName);
-  onVisitChild(ast, ast->getBodyExpr());
-  if (!wasAlreadyBound) {
-    boundVariables[callStack.back()].erase(varName);
-  }
-}
 void ClosureConversionPass::visit(NilExprAST* ast)             { return; }
 void ClosureConversionPass::visit(RefExprAST* ast)             { return; }
 void ClosureConversionPass::visit(DerefExprAST* ast)           { return; }

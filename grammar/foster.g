@@ -26,13 +26,13 @@ ensures		:	nl? 'gives' nl? seq;
 
 //names			:	name (',' name)* -> name+;
 formals			:	formal (',' formal)* -> formal+;
-formal                		:	i=name t=typeinscription? -> ^(FORMAL $i $t); 	
+formal                		:	i=name t=typeinscription? -> ^(FORMAL $i $t);
 typeinscription		:	':' typeexpr -> typeexpr;
 
 
 num			:	( int_num -> ^(INT int_num)
 				| rat_num -> ^(RAT rat_num));
-				
+
 literal			:	TRUE | FALSE | num;
 name			:	n=IDENT -> ^(NAME $n);
 str	                :       STR;
@@ -43,17 +43,15 @@ nil	:	NIL;
 name_or_ctor		:	name (seq -> ^(CTOR name seq)
 				        |   -> name);
 
-forrange	:	FOR var=name IN start=expr TO end=expr ('by' incr=expr)? DO body=expr nl? -> ^(FORRANGE $var $start $end $body $incr);
-
 // lhs = ident or LOOKUP or SUBSCRIPT but not CALL
 setexpr	:	'set' lhs=compound '=' rhs=expr -> ^(SETEXPR $lhs $rhs);
 
-letexpr	:	'let' formal '=' arg=expr 
-			( ((nl | ';') next=letexpr) 
+letexpr	:	'let' formal '=' arg=expr
+			( ((nl | ';') next=letexpr)
 			| ('in') body=seq typeinscription?) -> ^(LETEXPR formal $arg $body $next typeinscription);
 ifexpr                  :       'if' cond=expr 'then' thenpart=expr 'else' elsepart=expr
 					-> ^(IF $cond $thenpart $elsepart);
-					
+
 custom_terms		:	parenexpr
                                 | prefix_unop nl? expr -> ^(prefix_unop expr);
 parenexpr	:	'(' expr ')' -> ^(PARENEXPR expr);
@@ -66,7 +64,6 @@ term			:	( literal
 				| seq
 				| ifexpr
 				| setexpr
-				| forrange
 				| sugarterm
 				| name_or_ctor
 				| custom_terms
@@ -74,7 +71,7 @@ term			:	( literal
 
 compound                :       (term) ( trailer+ -> ^(TRAILERS term trailer+)
                                       |        -> ^(term)
-                                );	
+                                );
 
 subexpr			:	compound (  binop nl? subexpr	-> ^(binop compound subexpr)
 					  |		-> ^(compound)

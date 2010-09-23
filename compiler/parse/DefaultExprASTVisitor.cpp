@@ -29,13 +29,8 @@ void DefaultExprASTVisitor::visit(TupleExprAST* ast)           { if (0) this->vi
 void DefaultExprASTVisitor::visit(BuiltinCompilesExprAST* ast) { this->visitChildren(ast); }
 //void DefaultExprASTVisitor::visit(ArrayExprAST* ast)           { this->visitChildren(ast); }
 
-// These three require special handling, since they don't store
+// These two require special handling, since they don't store
 // (all of) their subcomponents in their parts array.
-
-void DefaultExprASTVisitor::visit(ForRangeExprAST* ast)              {
-  onVisitChild(ast, ast->var);
-  visitChildren(ast);
-}
 
 void DefaultExprASTVisitor::visit(ClosureAST* ast) {
   if (ast->fn) {

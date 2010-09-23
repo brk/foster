@@ -119,19 +119,6 @@ ExprAST* parseFn(const pb::Expr& e, const foster::SourceRange& range) {
       range);
 }
 
-ExprAST* parseForrange(const pb::Expr& e, const foster::SourceRange& range) {
-  if (!e.has_for_range()) return NULL;
-
-  const pb::ForRange& fr = e.for_range();
-  return new ForRangeExprAST(
-      dynamic_cast<VariableAST*>(ExprAST_from_pb(& fr.var())),
-      ExprAST_from_pb(& fr.start()),
-      ExprAST_from_pb(& fr.end()),
-      ExprAST_from_pb(& fr.body()),
-      ExprAST_from_pb(& fr.incr()),
-      range);
-}
-
 ExprAST* parseIf(const pb::Expr& e, const foster::SourceRange& range) {
   if (!e.has_pb_if()) return NULL;
 
@@ -273,7 +260,6 @@ ExprAST* ExprAST_from_pb(const pb::Expr* pe) {
   case pb::Expr::COMPILES:  rv = parseCompiles(e, range); break;
   case pb::Expr::DEREF:     rv = parseDeref(e, range); break;
   case pb::Expr::FN:        rv = parseFn(e, range); break;
-  case pb::Expr::FORRANGE:  rv = parseForrange(e, range); break;
   case pb::Expr::IF:        rv = parseIf(e, range); break;
   case pb::Expr::PB_INT:    rv = parseInt(e, range); break;
   case pb::Expr::MODULE:    rv = parseModule(e, range); break;

@@ -15,19 +15,18 @@ using std::stringstream;
 struct ComputeFreeVariableNames : public DefaultExprASTVisitor {
   VariableBindingInfo& names;
   bool annotateVarsWithBindingScopeInfo;
-  
+
   ComputeFreeVariableNames(VariableBindingInfo& names, bool annotateVars)
     : names(names), annotateVarsWithBindingScopeInfo(annotateVars) { }
-    
+
   virtual void visit(VariableAST*);
   virtual void visit(FnAST*);
-  virtual void visit(ForRangeExprAST*);
   virtual void visit(ClosureAST*);
   virtual void visit(PrototypeAST*);
 };
 
 namespace foster {
-  
+
   // Updates the given maps with information about which variables are
   // free and which are not free in any given expression.
   void computeFreeVariableNames(ExprAST* ast,
@@ -52,16 +51,6 @@ void ComputeFreeVariableNames::visit(VariableAST* ast) {
   names.markNameAsMentioned(name);
 }
 
-void ComputeFreeVariableNames::visit(ForRangeExprAST* ast) {
-  names.pushBinder(ast);
-  visitChildren(ast);
-  
-  names.markAsBound(ast->var->getName());
-  this->onVisitChild(ast, ast->var);
-  
-  names.popBinder(ast);
-}
-
 void ComputeFreeVariableNames::visit(ClosureAST* ast) {
   if (ast->fn) {
     onVisitChild(ast, ast->fn);
@@ -72,7 +61,7 @@ void ComputeFreeVariableNames::visit(ClosureAST* ast) {
 void ComputeFreeVariableNames::visit(FnAST* ast) {
   names.pushBinder(ast);
   this->onVisitChild(ast, ast->getProto()); // Mark formals as bound.
-  
+
   names.markAsBound(ast->getProto()->name); // Ensure the function name is
                                             // not free in its own body.
   this->onVisitChild(ast, ast->getBody());

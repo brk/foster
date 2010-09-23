@@ -883,23 +883,6 @@ void TypecheckPass::visit(IfExprAST* ast) {
   ast->type = thenExpr->type;
 }
 
-// ast = for VAR in START to END by INCR do BODY
-// type(start) == i32
-// type(start) == type(var)
-// type(start) == type(end)
-// type(start) == type(incr)
-void TypecheckPass::visit(ForRangeExprAST* ast) {
-  visitChildren(ast);
-  ast->var->accept(this);
-
-  constraints.addEq(ast, ast->getStartExpr()->type, TypeAST::i(32));
-  // note: this "should" be a test for assignment compatibility, not strict equality.
-  constraints.addEq(ast, ast->getStartExpr()->type, ast->var->type);
-  constraints.addEq(ast, ast->getStartExpr()->type, ast->getEndExpr()->type);
-  constraints.addEq(ast, ast->getStartExpr()->type, ast->getIncrExpr()->type);
-  ast->type = TypeAST::i(32);
-}
-
 int indexInParent(ExprAST* child, int startingIndex) {
   std::vector<ExprAST*>& parts = child->parent->parts;
   for (size_t i = startingIndex; i < parts.size(); ++i) {

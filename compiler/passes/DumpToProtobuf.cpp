@@ -148,18 +148,6 @@ void DumpToProtobufPass::visit(IfExprAST* ast)              {
   dumpChild(this, if_->mutable_else_expr(), ast->getElseExpr());
 }
 
-void DumpToProtobufPass::visit(ForRangeExprAST* ast)              {
-  processExprAST(current, ast, foster::pb::Expr::FORRANGE);
-  foster::pb::ForRange* fr = current->mutable_for_range();
-  dumpChild(this, fr->mutable_var(), ast->var);
-  dumpChild(this, fr->mutable_start(), ast->getStartExpr());
-  dumpChild(this, fr->mutable_end(),   ast->getEndExpr());
-  dumpChild(this, fr->mutable_body(),  ast->getBodyExpr());
-  if (ast->hadExplicitIncrExpr()) {
-    dumpChild(this, fr->mutable_incr(), ast->getIncrExpr());
-  }
-}
-
 void DumpToProtobufPass::visit(NilExprAST* ast)             {
   ASSERT(false) << "We shouldn't be dumping a NilExprAST to pb!";
 }

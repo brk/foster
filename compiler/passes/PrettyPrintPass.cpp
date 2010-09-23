@@ -275,30 +275,6 @@ void PrettyPrintPass::visit(IfExprAST* ast) {
   }
 }
 
-// for $0 in $1 to $2 do $3
-void PrettyPrintPass::visit(ForRangeExprAST* ast) {
-  { ScopedBlock sb(this);
-    scan(PPToken("for "));
-    scan(PPToken(ast->var->name));
-
-    scan(PPToken(" in "));
-    emit(ast->getStartExpr());
-    scan(PPToken(" to "));
-    emit(ast->getEndExpr());
-
-    if (ast->hadExplicitIncrExpr()) {
-      scan(PPToken(" by "));
-      emit(ast->getIncrExpr());
-    }
-
-    scan(PPToken(" do "));
-  }
-
-  scan(pp.tOptNewline);
-
-  emit(ast->getBodyExpr());
-}
-
 void PrettyPrintPass::visit(NilExprAST* ast) {
   scan(PPToken("nil"));
 }

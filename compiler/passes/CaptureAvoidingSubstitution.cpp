@@ -78,7 +78,6 @@ void CaptureAvoidingSubstitution::visit(BinaryOpExprAST* ast)        { visitChil
 void CaptureAvoidingSubstitution::visit(NamedTypeDeclAST* ast) { return; }
 void CaptureAvoidingSubstitution::visit(ModuleAST* ast)              { visitChildren(ast); }
 void CaptureAvoidingSubstitution::visit(IfExprAST* ast)              { visitChildren(ast); }
-void CaptureAvoidingSubstitution::visit(ForRangeExprAST* ast)        { visitChildren(ast); }
 void CaptureAvoidingSubstitution::visit(NilExprAST* ast)             { visitChildren(ast); }
 void CaptureAvoidingSubstitution::visit(RefExprAST* ast)             { visitChildren(ast); }
 void CaptureAvoidingSubstitution::visit(DerefExprAST* ast)           { visitChildren(ast); }
