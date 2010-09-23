@@ -83,8 +83,8 @@ void DumpToProtobufPass::visit(BoolAST* ast)                {
 }
 
 void DumpToProtobufPass::visit(IntAST* ast)                 {
-  processExprAST(current, ast, foster::pb::Expr::INT);
-  foster::pb::Int* int_ = current->mutable_int_();
+  processExprAST(current, ast, foster::pb::Expr::PB_INT);
+  foster::pb::PBInt* int_ = current->mutable_pb_int();
   int_->set_text(ast->getOriginalText());
 }
 
@@ -142,7 +142,7 @@ void DumpToProtobufPass::visit(NamedTypeDeclAST* ast) {
 
 void DumpToProtobufPass::visit(IfExprAST* ast)              {
   processExprAST(current, ast, foster::pb::Expr::IF);
-  foster::pb::If* if_ = current->mutable_if_();
+  foster::pb::PBIf* if_ = current->mutable_pb_if();
   dumpChild(this, if_->mutable_test_expr(), ast->getTestExpr());
   dumpChild(this, if_->mutable_then_expr(), ast->getThenExpr());
   dumpChild(this, if_->mutable_else_expr(), ast->getElseExpr());

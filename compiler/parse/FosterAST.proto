@@ -55,7 +55,7 @@ message SimdVectorType {
 
 message Expr {
   enum Tag {
-    INT = 16;
+    PB_INT = 16;
     BOOL = 17;
     VAR = 18;
     OP = 19;
@@ -82,11 +82,11 @@ message Expr {
   optional Type         type = 3;
   optional SourceRange range = 4;
 
-  optional Int        int        = 17;
+  optional PBInt      pb_int     = 17;
   optional Proto      proto      = 18;
 
   optional Closure    closure    = 20;
-  optional If         if         = 21;
+  optional PBIf       pb_if      = 21;
   optional ForRange   for_range  = 22;
 
   // Bool
@@ -102,7 +102,7 @@ message Expr {
   optional bool compiles = 26;
 }
 
-message Int {
+message PBInt {
   required string text =  2;
 }
 
@@ -116,7 +116,7 @@ message Closure {
   required Expr  fn = 2;
 }
 
-message If {
+message PBIf {
   required Expr test_expr = 2;
   required Expr then_expr = 3;
   required Expr else_expr = 4;

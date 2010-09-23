@@ -133,9 +133,9 @@ ExprAST* parseForrange(const pb::Expr& e, const foster::SourceRange& range) {
 }
 
 ExprAST* parseIf(const pb::Expr& e, const foster::SourceRange& range) {
-  if (!e.has_if_()) return NULL;
+  if (!e.has_pb_if()) return NULL;
 
-  const pb::If& i = e.if_();
+  const pb::PBIf& i = e.pb_if();
 
   return new IfExprAST(
       ExprAST_from_pb(& i.test_expr()),
@@ -144,9 +144,9 @@ ExprAST* parseIf(const pb::Expr& e, const foster::SourceRange& range) {
 }
 
 ExprAST* parseInt(const pb::Expr& e, const foster::SourceRange& range) {
-  if (!e.has_int_()) return NULL;
+  if (!e.has_pb_int()) return NULL;
 
-  const pb::Int& i = e.int_();
+  const pb::PBInt& i = e.pb_int();
   string text = i.text();
   string clean = pystring::replace(text, "`", "");
   vector<string> parts;
@@ -275,7 +275,7 @@ ExprAST* ExprAST_from_pb(const pb::Expr* pe) {
   case pb::Expr::FN:        rv = parseFn(e, range); break;
   case pb::Expr::FORRANGE:  rv = parseForrange(e, range); break;
   case pb::Expr::IF:        rv = parseIf(e, range); break;
-  case pb::Expr::INT:       rv = parseInt(e, range); break;
+  case pb::Expr::PB_INT:    rv = parseInt(e, range); break;
   case pb::Expr::MODULE:    rv = parseModule(e, range); break;
   case pb::Expr::NAMED_TYPE_DECL: rv = parseNamedTypeDecl(e, range); break;
   case pb::Expr::OP:        rv = parseOp(e, range); break;
