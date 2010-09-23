@@ -3,10 +3,12 @@
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
 #include "base/Assert.h"
+
+#include "parse/FosterAST.h"
+#include "parse/FosterTypeAST.h"
 #include "parse/CompilationContext.h"
 
 #include "passes/ReplaceTypeTransform.h"
-#include "parse/FosterAST.h"
 
 #include "llvm/Support/Debug.h"
 

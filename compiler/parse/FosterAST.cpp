@@ -4,8 +4,10 @@
 
 #include "base/Assert.h"
 #include "base/Diagnostics.h"
+
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
+#include "parse/ExprASTVisitor.h"
 #include "parse/CompilationContext.h"
 #include "parse/ANTLRtoFosterAST.h" // just for parseAPIntFromClean()
 #include "parse/FosterUtils.h"
@@ -179,10 +181,11 @@ const llvm::APInt& IntAST::getAPInt() const { return *apint; }
 std::string IntAST::getOriginalText() const { return text; }
 
 
-llvm::Constant* IntAST::getConstantValue() const {
-  ASSERT(this->type && this->type->getLLVMType());
+llvm::ConstantInt* getConstantInt(IntAST* n) {
+  ASSERT(n->type && n->type->getLLVMType());
 
-  return ConstantInt::get(this->type->getLLVMType(), this->getAPInt());
+  llvm::Constant* c = ConstantInt::get(n->type->getLLVMType(), n->getAPInt());
+  return llvm::dyn_cast<ConstantInt>(c);
 }
 
 bool RefExprAST::isIndirect() {
@@ -323,4 +326,35 @@ std::ostream& AssignExprAST::operator<<(std::ostream& out) const {
 
 std::ostream& BuiltinCompilesExprAST::operator<<(std::ostream& out) const {
   return out << "(__COMPILES__ " << str(this->parts[0]) << ")";
+}
+
+//////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////
+
+void          BoolAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
+void           IntAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
+void            FnAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
+void       ClosureAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
+void      VariableAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
+void        IfExprAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
+void       NilExprAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
+void     PrototypeAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
+void        ModuleAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
+void          CallAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
+void NamedTypeDeclAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
+void BuiltinCompilesExprAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
+
+void          SeqAST::accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
+void      RefExprAST::accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
+void    DerefExprAST::accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
+void   AssignExprAST::accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
+void    SubscriptAST::accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
+void    TupleExprAST::accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
+
+void  UnaryOpExprAST::accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
+void BinaryOpExprAST::accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
+
+
+void NamespaceAST::accept(ExprASTVisitor* visitor) {
+  llvm::errs() << "Visitor called on NamespaceAST! This is probably not desired...\n";
 }

@@ -1002,7 +1002,7 @@ void TypecheckPass::visit(SubscriptAST* ast) {
   }
 
   // Check to see that the given index is valid for this type
-  ConstantInt* cidx = llvm::dyn_cast<ConstantInt>(idx->getConstantValue());
+  ConstantInt* cidx = llvm::dyn_cast<ConstantInt>(getConstantInt(idx));
   const APInt& vidx = cidx->getValue();
 
   if (!vidx.isSignedIntN(64)) {

@@ -59,6 +59,7 @@
 #include "base/PathManager.h"
 
 #include "parse/FosterAST.h"
+#include "parse/FosterTypeAST.h"
 #include "parse/ANTLRtoFosterAST.h"
 #include "parse/CompilationContext.h"
 

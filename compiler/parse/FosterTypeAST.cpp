@@ -18,6 +18,20 @@ using std::map;
 
 using foster::SourceRange;
 
+std::ostream& operator<<(std::ostream& out, const llvm::Type& ty) {
+  std::string s;
+  llvm::raw_string_ostream ss(s);
+  ss << ty;
+  return out << ss.str();
+}
+
+std::string str(const llvm::Type* ty) {
+  std::string s;
+  llvm::raw_string_ostream ss(s);
+  if (ty) { ss << *ty; } else { ss << "<NULL ty>"; }
+  return ss.str();
+}
+
 bool hasEqualRepr(TypeAST* src, TypeAST* dst) {
   return src->getLLVMType() == dst->getLLVMType();
 }
@@ -330,7 +344,7 @@ LiteralIntValueTypeAST* LiteralIntValueTypeAST::get(uint64_t value,
 
 uint64_t LiteralIntValueTypeAST::getNumericalValue() const {
   if (intAST) {
-    return getSaturating(intAST->getConstantValue());
+    return getSaturating(getConstantInt(intAST));
   } else {
     return value;
   }

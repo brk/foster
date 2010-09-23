@@ -249,7 +249,7 @@ llvm::Value* allocateMPInt() {
 void CodegenPass::visit(IntAST* ast) {
   ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
 
-  llvm::Value* small = ast->getConstantValue();
+  llvm::Value* small = getConstantInt(ast);
 
   ASSERT(ast->type && ast->type->getLLVMType());
 
@@ -1288,7 +1288,7 @@ llvm::GlobalVariable* getGlobalArrayVariable(SeqAST* body,
       return NULL;
     }
 
-    ConstantInt* ci = dyn_cast<ConstantInt>(v->getConstantValue());
+    ConstantInt* ci = dyn_cast<ConstantInt>(getConstantInt(v));
     if (!ci) {
       EDiag() << "array initializer was not a constant" << show(body->parts[i]);
       return NULL;
@@ -1362,7 +1362,7 @@ void CodegenPass::visit(SimdVectorAST* ast) {
     std::vector<llvm::Constant*> elements;
     for (size_t i = 0; i < body->parts.size(); ++i) {
       IntAST* intlit = dynamic_cast<IntAST*>(body->parts[i]);
-      llvm::Constant* ci = intlit->getConstantValue();
+      llvm::Constant* ci = getConstantInt(intlit);
       elements.push_back(dyn_cast<llvm::Constant>(ci));
     }
 

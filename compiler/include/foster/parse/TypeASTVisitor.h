@@ -22,10 +22,10 @@ struct TypeASTVisitor {
   #undef  FOSTER_AST_VISITOR_PURE_VIRTUAL
 };
 
-// This has to be included after the declaration for FosterASTVisitor
-// because the classes in FosterAST depend on these declarations for
+// This has to be included after the declaration for TypeASTVisitor
+// because the classes in FosterTypeAST depend on these declarations for
 // the double-dispatch portion of the Visitor pattern.
-#include "FosterTypeAST.h"
+//#include "FosterTypeAST.h"
 
 #endif // header guard
 

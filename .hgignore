@@ -9,3 +9,4 @@ glob:output
 glob:third_party/chromium_base/base/*
 diff.txt
 tools/c-viewer/
+dox/

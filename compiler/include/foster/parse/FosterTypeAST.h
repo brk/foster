@@ -5,22 +5,24 @@
 #ifndef FOSTER_TYPE_AST_H
 #define FOSTER_TYPE_AST_H
 
-#include "llvm/CallingConv.h"
-#include "llvm/DerivedTypes.h"
-#include "llvm/LLVMContext.h"
-#include "llvm/Support/raw_ostream.h"
-
 #include "base/Assert.h"
-#include "base/SourceRange.h"
 #include "parse/TypeASTVisitor.h"
 
 #include "parse/FosterASTKinds-inl.h"
 
+#include "llvm/CallingConv.h"
+#include "llvm/DerivedTypes.h"
+#include "llvm/LLVMContext.h"
+
+// implicit includes
+//#include "base/SourceRange.h"
+//#include "llvm/Support/raw_ostream.h"
+//#include <string>
+//#include <iosfwd>
+
 #include <map>
 #include <list>
-#include <string>
 #include <vector>
-#include <ostream>
 
 using std::string;
 
@@ -36,19 +38,9 @@ class ClosureTypeAST;
 
 class DumpTypeToProtobufPass;
 
-inline std::ostream& operator<<(std::ostream& out, const llvm::Type& ty) {
-  std::string s;
-  llvm::raw_string_ostream ss(s);
-  ss << ty;
-  return out << ss.str();
-}
+std::ostream& operator<<(std::ostream& out, const llvm::Type& ty);
 
-inline std::string str(const llvm::Type* ty) {
-  std::string s;
-  llvm::raw_string_ostream ss(s);
-  if (ty) { ss << *ty; } else { ss << "<NULL ty>"; }
-  return ss.str();
-}
+std::string str(const llvm::Type* ty);
 
 bool hasEqualRepr(TypeAST* src, TypeAST* dst);
 bool arePhysicallyCompatible(const llvm::Type* src,
@@ -82,7 +74,7 @@ public:
 
   static TypeAST* i(int n);
   static TypeAST* getVoid();
-  
+
   // In some situations, such as (for now)
   // when a llvm::Module gives us a function type, we need
   // to make a best effort at reconstruting a specific
@@ -97,7 +89,7 @@ public:
 class TypeVariableAST : public TypeAST {
   std::string typeVarName;
   foster::Kind* kind;
-  
+
   llvm::PATypeHolder opaqueType;
   explicit TypeVariableAST(const llvm::OpaqueType* opaqueType,
                            const std::string& typeVarName,
@@ -147,13 +139,13 @@ protected:
                             const SourceRange& sourceRange)
     : TypeAST(tag, underlyingType, sourceRange) {}
   virtual ~IndexableTypeAST() {}
-  
+
 public:
   virtual void accept(TypeASTVisitor* visitor) = 0;
 
   virtual TypeAST*& getContainedType(size_t idx) = 0;
-  virtual int64_t   getNumElements() const = 0; 
-  virtual bool      indexValid(int idx) const { return idx < getNumElements(); } 
+  virtual int64_t   getNumElements() const = 0;
+  virtual bool      indexValid(int idx) const { return idx < getNumElements(); }
 };
 
 
@@ -183,7 +175,7 @@ class FnTypeAST : public TypeAST {
   TypeAST* returnType;
   std::vector<TypeAST*> argTypes;
   std::string callingConvention;
-  
+
   std::list<foster::Effect>       * effects;
   std::list<foster::ClosureDatum> * closedOverVars;
 
@@ -234,7 +226,7 @@ public:
   virtual int getNumContainedTypes() const { return parts.size(); }
   virtual int64_t getNumElements()   const { return parts.size(); }
   virtual TypeAST*& getContainedType(size_t i);
-  
+
   static TupleTypeAST* get(const std::vector<TypeAST*>& parts);
 };
 
@@ -279,7 +271,7 @@ public:
   virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
 
   uint64_t getNumericalValue() const;
-  
+
   static LiteralIntValueTypeAST* get(IntAST* intAST);
   static LiteralIntValueTypeAST* get(uint64_t value, const SourceRange& range);
 };
@@ -301,7 +293,7 @@ public:
 
   virtual TypeAST*& getContainedType(size_t i) { return elementType; }
   virtual int64_t   getNumElements() const { return size->getNumericalValue(); }
-  
+
   static SimdVectorTypeAST* get(LiteralIntValueTypeAST* size, TypeAST* type,
                                 const SourceRange& sourceRange);
   friend class DumpTypeToProtobufPass;

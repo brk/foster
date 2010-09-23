@@ -10,6 +10,8 @@
 #include "passes/DumpToProtobuf.h"
 #include "passes/PrettyPrintPass.h"
 
+#include "parse/FosterTypeAST.h"
+
 #include "llvm/Support/raw_ostream.h"
 
 #include <map>
@@ -228,7 +230,7 @@ foster::CompilationContext cc;
 
 ExprAST* roundtrip(ExprAST* ast) {
   foster::CompilationContext::pushContext(&cc);
-  
+
   foster::pb::Expr e;
   DumpToProtobufPass dp(&e);
   ast->accept(&dp);

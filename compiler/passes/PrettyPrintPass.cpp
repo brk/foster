@@ -4,6 +4,7 @@
 
 #include "passes/PrettyPrintPass.h"
 #include "parse/FosterAST.h"
+#include "parse/FosterTypeAST.h"
 #include "parse/ANTLRtoFosterAST.h" // for reconstructing explicit parens
 
 #include <sstream>
