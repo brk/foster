@@ -129,9 +129,7 @@ IntAST* parseInt(const string& clean, const string& alltext, int base,
 
 } // namespace foster
 
-IntAST* parseIntFrom(pTree t) {
-  SourceRange sourceRange = rangeOf(t);
-
+IntAST* parseIntFrom(pTree t, const SourceRange& sourceRange) {
   if (textOf(t) != "INT") {
     EDiag() << "parseIntFrom() called on non-INT token " << textOf(t)
             << show(sourceRange);
@@ -443,26 +441,10 @@ ExprAST* parseCtorExpr(pTree tree,
   pTree seqArgs = child(tree, 1);
 
   string name = textOf(child(nameNode, 0));
-  #if 0
-  if (name == "simd-vector") {
-    return new SimdVectorAST(ExprAST_from(seqArgs), sourceRange);
-  }
 
-  if (name == "array") {
-    return new ArrayExprAST(ExprAST_from(seqArgs), sourceRange);
-  }
-#endif
   if (name == "tuple") {
     return new TupleExprAST(ExprAST_from(seqArgs), sourceRange);
   }
-
-#if 0
-  if (TypeAST* ty = gTypeScope.lookup(name, "")) {
-    ASSERT(ty->getLLVMType() && ty->getLLVMType()->isStructTy());
-    return new TupleExprAST(ExprAST_from(seqArgs),
-                            name, sourceRange);
-  }
-#endif
 
   foster::EDiag() << "CTOR token parsing found unknown"
                   << " type name '" << name << "'"
@@ -479,28 +461,6 @@ TypeAST* parseCtorType(pTree tree,
   pTree seqArgs = child(tree, 1);
 
   string name = textOf(child(nameNode, 0));
-  if (name == "simd-vector") {
-    ASSERT(false) << "simd-vectors temporarily disabled";
-    // e.g. simd-vector of 4 i32
-    /*
-    TypeAST* size = TypeAST_from(child(seqArgs, 0));
-    TypeAST* type = TypeAST_from(child(seqArgs, 1));
-    if (LiteralIntValueTypeAST* litsize =
-                                 dynamic_cast<LiteralIntValueTypeAST*>(size)) {
-      return SimdVectorTypeAST::get(litsize, type, sourceRange);
-    } else {
-      EDiag() << "simd-vector type must be parameterized by a literal int size"
-              << show(rangeOf(child(seqArgs, 0)));
-      return NULL;
-    }
-    */
-  }
-  if (name == "array") {
-    foster::EDiag() << "array types not yet supported!"
-                    << foster::show(sourceRange);
-    //return new ArrayTypeAST(TypeAST_from(seqArgs), sourceRange);
-    return NULL;
-  }
   if (name == "tuple") {
     return TupleTypeAST::get(getTypes(seqArgs)); //, sourceRange);
   }
@@ -571,6 +531,34 @@ ExprAST* parseTrailers(pTree tree,
   return prefix;
 }
 
+ExprAST* parseIf(pTree tree, const SourceRange& sourceRange) {
+  return new IfExprAST(ExprAST_from(child(tree, 0)),
+                       ExprAST_from(child(tree, 1)),
+                       ExprAST_from(child(tree, 2)),
+                       sourceRange);
+}
+
+ExprAST* parseSeq(pTree tree, const SourceRange& sourceRange) {
+  Exprs exprs;
+  for (size_t i = 0; i < getChildCount(tree); ++i) {
+    ExprAST* ast = ExprAST_from(child(tree, i));
+    if (ast != NULL) {
+      exprs.push_back(ast);
+    }
+  }
+  return new SeqAST(exprs, sourceRange);
+}
+
+ExprAST* parseParenExpr(pTree tree) {
+  ExprAST* rv = ExprAST_from(child(tree, 0));
+  gWasWrappedInExplicitParens[rv] = true;
+  return rv;
+}
+
+ExprAST* parseBuiltinCompiles(pTree tree, const SourceRange& sourceRange) {
+ return new BuiltinCompilesExprAST(ExprAST_from(child(tree, 0)), sourceRange);
+}
+
 ExprAST* ExprAST_from(pTree tree) {
   if (!tree) return NULL;
 
@@ -578,13 +566,14 @@ ExprAST* ExprAST_from(pTree tree) {
   string text = textOf(tree);
   foster::SourceRange sourceRange = rangeOf(tree);
 
-  if (token == TYPEDEFN) {
-    return parseTypeDefinition(tree);
-  }
-
-  if (token == TRAILERS) {
-    return parseTrailers(tree, sourceRange);
-  }
+  if (token == TYPEDEFN) { return parseTypeDefinition(tree); }
+  if (token == TRAILERS) { return parseTrailers(tree, sourceRange); }
+  if (token == CTOR) { return parseCtorExpr(tree, sourceRange); }
+  if (token == IF) { return parseIf(tree, sourceRange); }
+  if (token == EXPRS || token == SEQ) { return parseSeq(tree, sourceRange); }
+  if (token == INT) { return parseIntFrom(tree, sourceRange); }
+  if (token == PARENEXPR) { return parseParenExpr(tree); }
+  if (token == COMPILES) { return parseBuiltinCompiles(tree, sourceRange); }
 
   if (token == BODY) { // usually contains SEQ
     return ExprAST_from(child(tree, 0));
@@ -592,8 +581,7 @@ ExprAST* ExprAST_from(pTree tree) {
 
   // <LHS RHS>
   if (token == SETEXPR) {
-    ExprAST* lhs = validateAssignLHS(
-                       ExprAST_from(child(tree, 0)));
+    ExprAST* lhs = validateAssignLHS(ExprAST_from(child(tree, 0)));
     if (!lhs) {
       currentErrs() << "Error! Invalid syntactic form on LHS of assignment;" <<
           " must be variable or subscript expr" << "\n";
@@ -620,29 +608,6 @@ ExprAST* ExprAST_from(pTree tree) {
     return new CallAST(fn, args, sourceRange);
   }
 
-  if (token == EXPRS || token == SEQ) {
-    Exprs exprs;
-    for (size_t i = 0; i < getChildCount(tree); ++i) {
-      ExprAST* ast = ExprAST_from(child(tree, i));
-      if (ast != NULL) {
-        exprs.push_back(ast);
-      }
-    }
-    return new SeqAST(exprs, sourceRange);
-  }
-
-  if (token == INT) {
-    IntAST* ast = parseIntFrom(tree);
-    if (!ast) {
-      currentOuts() << "Could not parse int!"; // TODO improve error message
-    }
-    return ast;
-  }
-
-  if (token == CTOR) {
-    return parseCtorExpr(tree, sourceRange);
-  }
-
   if (token == NAME) {
     string varName = textOf(child(tree, 0));
 
@@ -661,12 +626,6 @@ ExprAST* ExprAST_from(pTree tree) {
     }
   }
 
-  if (token == OUT) {
-    return (getChildCount(tree) == 0)
-              ? NULL
-              : ExprAST_from(child(tree, 0));
-  }
-
   if (token == FNDEF) {
     ASSERT(getChildCount(tree) == 2);
     // x = fn { blah }   ===   x = fn "x" { blah }
@@ -681,22 +640,10 @@ ExprAST* ExprAST_from(pTree tree) {
     }
   }
 
-  if (token == PARENEXPR) {
-    ExprAST* rv = ExprAST_from(child(tree, 0));
-    gWasWrappedInExplicitParens[rv] = true;
-    return rv;
-  }
-
-  if (token == COMPILES) {
-     return new BuiltinCompilesExprAST(
-                  ExprAST_from(child(tree, 0)), sourceRange);
-  }
-
-  if (token == IF) {
-    return new IfExprAST(ExprAST_from(child(tree, 0)),
-                         ExprAST_from(child(tree, 1)),
-                         ExprAST_from(child(tree, 2)),
-                         sourceRange);
+  if (token == OUT) {
+    return (getChildCount(tree) == 0)
+              ? NULL
+              : ExprAST_from(child(tree, 0));
   }
 
   if (token == FN) {
@@ -712,28 +659,28 @@ ExprAST* ExprAST_from(pTree tree) {
   }
 
   if (text == "new" || text == "ref") {
-    bool isKnownIndirect    = text == "new";
+    bool isKnownIndirect = text == "new";
 
     // Currently 'new' and 'ref' are interchangeable, though the intended
     // convention is that 'new' is for value-exprs and 'ref' is for type-exprs
     return new RefExprAST(
                  ExprAST_from(child(tree, 0)),
-    		 isKnownIndirect,
+                 isKnownIndirect,
                  sourceRange);
   }
 
   // Handle unary negation explicitly, before the binary op handler
   if (getChildCount(tree) == 1 && isUnaryOp(text)) {
     return new UnaryOpExprAST(text,
-                  ExprAST_from(child(tree, 0)),
-                  sourceRange);
+                              ExprAST_from(child(tree, 0)),
+                              sourceRange);
   }
 
   // Implicitly, every entry in the precedence table is a binary operator.
   if (CompilationContext::isKnownOperatorName(text)) {
-    ExprAST* lhs = ExprAST_from(child(tree, 0));
-    ExprAST* rhs = ExprAST_from(child(tree, 1));
-    return parseBinaryOpExpr(text, lhs, rhs);
+    return parseBinaryOpExpr(text,
+                             ExprAST_from(child(tree, 0)),
+                             ExprAST_from(child(tree, 1)));
   }
 
   if (text == "false" || text == "true") {
@@ -778,10 +725,12 @@ TypeAST* TypeAST_from(pTree tree) {
   if (token == CTOR) { return parseCtorType(tree, sourceRange);  }
 
   if (token == INT) {
-    IntAST* ast = parseIntFrom(tree);
-    if (ast) {
-      return LiteralIntValueTypeAST::get(ast);
+    IntAST* intAST = parseIntFrom(tree, sourceRange);
+    if (intAST) {
+      return LiteralIntValueTypeAST::get(intAST);
     }
+    EDiag() << "Unable to parse integer in type";
+    return NULL;
   }
 
   if (token == NAME) {
@@ -812,7 +761,8 @@ TypeAST* TypeAST_from(pTree tree) {
   }
 
   if (token == OUT) {
-    return (getChildCount(tree) == 0) ? NULL : TypeAST_from(child(tree, 0));
+    bool noChildren = (getChildCount(tree) == 0);
+    return noChildren ? NULL : TypeAST_from(child(tree, 0));
   }
 
   string name = str(tree->getToken(tree));
