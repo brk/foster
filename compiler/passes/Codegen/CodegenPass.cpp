@@ -21,7 +21,6 @@
 #include "llvm/DerivedTypes.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Module.h"
-//#include "llvm/Analysis/Verifier.h"
 #include "llvm/Support/Format.h"
 
 #include "pystring/pystring.h"
@@ -65,6 +64,58 @@ namespace foster {
     ast->accept(cp);
   }
 }
+
+const char* llvmValueTag(const llvm::Value* v) {
+  using llvm::isa;
+  if (isa<llvm::AllocaInst>(v))         return "AllocaInst";
+  if (isa<llvm::LoadInst>(v))           return "LoadInst";
+  if (isa<llvm::CallInst>(v))           return "CallInst";
+  if (isa<llvm::StoreInst>(v))          return "StoreInst";
+  if (isa<llvm::BinaryOperator>(v))     return "BinaryOperator";
+
+  if (isa<llvm::Constant>(v))     return "Constant";
+  if (isa<llvm::Argument>(v))     return "Argument";
+  if (isa<llvm::GlobalValue>(v))  return "GlobalValue";
+  if (isa<llvm::CastInst>(v))     return "CastInst";
+
+  if (isa<llvm::GetElementPtrInst>(v))  return "GetElementPtrInst";
+  if (isa<llvm::ICmpInst>(v))           return "ICmpInst";
+  if (isa<llvm::FCmpInst>(v))           return "FCmpInst";
+  if (isa<llvm::SelectInst>(v))         return "SelectInst";
+  if (isa<llvm::ExtractElementInst>(v)) return "ExtractElementInst";
+  if (isa<llvm::ExtractValueInst>(v))   return "ExtractValueInst";
+  if (isa<llvm::SelectInst>(v))         return "SelectInst";
+  if (isa<llvm::SwitchInst>(v))         return "SwitchInst";
+  if (isa<llvm::InsertElementInst>(v))  return "InsertElementInst";
+  if (isa<llvm::InsertValueInst>(v))    return "InsertValueInst";
+  if (isa<llvm::PHINode>(v))            return "PHINode";
+  if (isa<llvm::ReturnInst>(v))         return "ReturnInst";
+  if (isa<llvm::BranchInst>(v))         return "BranchInst";
+  if (isa<llvm::IndirectBrInst>(v))     return "IndirectBrInst";
+  if (isa<llvm::InvokeInst>(v))         return "InvokeInst";
+  if (isa<llvm::UnwindInst>(v))         return "UnwindInst";
+  if (isa<llvm::TruncInst>(v))          return "TruncInst";
+  if (isa<llvm::BitCastInst>(v))        return "BitCastInst";
+
+
+  return "Unknown Value";
+}
+
+void setValue(ExprAST* ast, llvm::Value* V) {
+  foster::dbg("setValue") << "ast@" << ast << " :tag: " << std::string(ast->tag)
+        << "\t; value tag: " << llvmValueTag(V) << "\t; value " << *V << "\n";
+  ast->value = V;
+}
+
+llvm::Value* getValue(ExprAST* ast) {
+  if (false && ast->value) {
+  foster::dbg("getValue") << "ast@" << ast << " :tag: " << std::string(ast->tag)
+      << "\t; value: " << *(ast->value) << "\n";
+  }
+  return ast->value;
+}
+
+
 
 // Declarations for Codegen-typemaps.cpp
 llvm::GlobalVariable*
@@ -196,14 +247,14 @@ llvm::Value* allocateMPInt() {
 }
 
 void CodegenPass::visit(IntAST* ast) {
-  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
 
   llvm::Value* small = ast->getConstantValue();
 
   ASSERT(ast->type && ast->type->getLLVMType());
 
   if (ast->type->getLLVMType()->isIntegerTy()) {
-    ast->value = small;
+    setValue(ast, small);
   } else if (false) {
     // MP integer constants that do not fit in 64 bits
     // must be initialized from string data.
@@ -218,38 +269,38 @@ void CodegenPass::visit(IntAST* ast) {
     ASSERT(mp_int_init_value);
 
     builder.CreateCall2(mp_int_init_value, mpint, small);
-    ast->value = mpint;
+    setValue(ast, mpint);
   }
 }
 
 void CodegenPass::visit(BoolAST* ast) {
-  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
-  ast->value = (ast->boolValue)
+  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
+  setValue(ast, (ast->boolValue)
       ? ConstantInt::getTrue(getGlobalContext())
-      : ConstantInt::getFalse(getGlobalContext());
+      : ConstantInt::getFalse(getGlobalContext()));
 }
 
 void CodegenPass::visit(VariableAST* ast) {
   // This looks up the lexically closest definition for the given variable
   // name, as provided by a function parameter or some such binding construct.
-  // Note that ast->value is NOT used to cache the result; this ensures
+  // Note that getValue(ast) is NOT used to cache the result; this ensures
   // that closure conversion is free to duplicate AST nodes and still get
   // properly scoped argument values inside converted functions.
   if (ast->lazilyInsertedPrototype) {
     if (!ast->lazilyInsertedPrototype->value) {
       ast->lazilyInsertedPrototype->accept(this);
     }
-    ast->value = ast->lazilyInsertedPrototype->value;
+    setValue(ast, ast->lazilyInsertedPrototype->value);
   } else {
-    ast->value = gScopeLookupValue(ast->name);
-    if (!ast->value) {
+    setValue(ast, gScopeLookupValue(ast->name));
+    if (!getValue(ast)) {
       EDiag() << "looking up variable " << ast->name << ", got "
               << str(ast) << show(ast);
       gScope.dump(currentOuts());
     }
   }
 
-  if (!ast->value) {
+  if (!getValue(ast)) {
     EDiag() << "Unknown variable name " << ast->name << " in CodegenPass"
             << show(ast);
     exit(2);
@@ -257,7 +308,7 @@ void CodegenPass::visit(VariableAST* ast) {
 }
 
 void CodegenPass::visit(UnaryOpExprAST* ast) {
-  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
 
   Value* V = ast->parts[0]->value;
   const std::string& op = ast->op;
@@ -267,8 +318,8 @@ void CodegenPass::visit(UnaryOpExprAST* ast) {
     return;
   }
 
-       if (op == "-")   { ast->value = builder.CreateNeg(V, "negtmp"); }
-  else if (op == "not") { ast->value = builder.CreateNot(V, "nottmp"); }
+       if (op == "-")   { setValue(ast, builder.CreateNeg(V, "negtmp")); }
+  else if (op == "not") { setValue(ast, builder.CreateNot(V, "nottmp")); }
   else {
     EDiag() << "unknown unary op '" << op << "' during codegen" << show(ast);
   }
@@ -351,7 +402,7 @@ bool leftTypeBiggerInt(const Type* left, const Type* right) {
 }
 
 void CodegenPass::visit(BinaryOpExprAST* ast) {
-  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
 
   Value* VL = ast->parts[ast->kLHS]->value;
   Value* VR = ast->parts[ast->kRHS]->value;
@@ -372,12 +423,12 @@ void CodegenPass::visit(BinaryOpExprAST* ast) {
   }
 
   if (isPrimitiveLLVMNumericType(VL->getType())) {
-    ast->value = emitPrimitiveLLVMOperation(op, VL, VR);
+    setValue(ast, emitPrimitiveLLVMOperation(op, VL, VR));
   } else if (isRuntimeArbitraryPrecisionNumericType(VL->getType())) {
-    ast->value = emitRuntimeArbitraryPrecisionOperation(op, VL, VR);
+    setValue(ast, emitRuntimeArbitraryPrecisionOperation(op, VL, VR));
   }
 
-  if (!ast->value) {
+  if (!getValue(ast)) {
     EDiag() << "Unable to codegen binary operator " << op << " : "
             << str(VL->getType()) << show(ast);
     return;
@@ -397,7 +448,7 @@ std::string getSymbolName(const std::string& sourceName) {
 }
 
 void CodegenPass::visit(PrototypeAST* ast) {
-  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
 
   std::string symbolName = getSymbolName(ast->name);
 
@@ -444,33 +495,33 @@ void CodegenPass::visit(PrototypeAST* ast) {
     F->setCallingConv(fnty->getCallingConventionID());
   }
 
-  ast->value = F;
+  setValue(ast, F);
 }
 
 void CodegenPass::visit(SeqAST* ast) {
   //EDiag() << "Codegen for SeqASTs should (eventually) be subsumed by CFG building!";
-  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
 
   if (!ast->parts.empty()) {
     // Find last non-void value
     for (size_t n = ast->parts.size() - 1; n >= 0; --n) {
-      ast->value = ast->parts[n]->value;
-      if (!isVoid(ast->value->getType())) {
+      setValue(ast, ast->parts[n]->value);
+      if (!isVoid(getValue(ast)->getType())) {
         break;
       }
     }
   }
 
-  if (!ast->value) {
+  if (!getValue(ast)) {
     // Give the sequence a default value for now; eventually, this
     // should probably be assigned a value of unit.
     foster::DDiag() << "warning: empty sequence" << show(ast);
-    ast->value = llvm::ConstantInt::get(LLVMTypeFor("i32"), 0);
+    setValue(ast, llvm::ConstantInt::get(LLVMTypeFor("i32"), 0));
   }
 }
 
 void CodegenPass::visit(FnAST* ast) {
-  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
 
   ASSERT(ast->getBody() != NULL);
   ASSERT(ast->getProto()->scope) << "no scope for " << ast->getProto()->name;
@@ -538,7 +589,7 @@ void CodegenPass::visit(FnAST* ast) {
       builder.CreateRet(RetVal);
     }
     //llvm::verifyFunction(*F);
-    ast->value = F;
+    setValue(ast, F);
   } else {
     F->eraseFromParent();
     EDiag() << "function '" << ast->getProto()->name
@@ -566,7 +617,7 @@ const llvm::StructType* closureTypeFromClosedFnType(const FunctionType* fnty) {
 }
 
 void CodegenPass::visit(ClosureAST* ast) {
-  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
 
   ASSERT(ast->hasKnownEnvironment) <<
       "closure made it to codegen with no environment type" << show(ast);
@@ -640,7 +691,7 @@ void CodegenPass::visit(ClosureAST* ast) {
 
   Value* genericClo = builder.CreateBitCast(clo,
       llvm::PointerType::getUnqual(genericCloTy->getLLVMType()), "hideCloTy");
-  ast->value = builder.CreateLoad(genericClo, /*isVolatile=*/ false, "loadClosure");
+  setValue(ast, builder.CreateLoad(genericClo, /*isVolatile=*/ false, "loadClosure"));
 }
 
 void CodegenPass::visit(NamedTypeDeclAST* ast) {
@@ -668,7 +719,7 @@ void CodegenPass::visit(ModuleAST* ast) {
 
 void CodegenPass::visit(IfExprAST* ast) {
   //EDiag() << "Codegen for IfExprASTs should (eventually) be subsumed by CFG building!";
-  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
 
   (ast->getTestExpr())->accept(this);
   Value* cond = ast->getTestExpr()->value;
@@ -725,12 +776,12 @@ void CodegenPass::visit(IfExprAST* ast) {
     PHINode *PN = builder.CreatePHI(valTy, "iftmp");
     PN->addIncoming(then, thenBB);
     PN->addIncoming(else_, elseBB);
-    ast->value = PN;
+    setValue(ast, PN);
   }
 }
 
 void CodegenPass::visit(ForRangeExprAST* ast) {
-  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
   //EDiag() << "Codegen for ForRangeExprASTs should (eventually) be subsumed by CFG building!";
 
   Function* parentFn = builder.GetInsertBlock()->getParent();
@@ -830,31 +881,31 @@ afterBB:
   // Leave the insert point after the loop for later codegenning.
   builder.SetInsertPoint(afterBB);
 
-  ast->value = ConstantInt::get(LLVMTypeFor("i32"), 0);
+  setValue(ast, ConstantInt::get(LLVMTypeFor("i32"), 0));
 }
 
 void CodegenPass::visit(NilExprAST* ast) {
-  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
-  ast->value = llvm::ConstantPointerNull::getNullValue(getLLVMType(ast->type));
+  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
+  setValue(ast, llvm::ConstantPointerNull::getNullValue(getLLVMType(ast->type)));
 }
 
-// The ast->value for a RefExpr of Foster type Tf
+// The getValue(ast) for a RefExpr of Foster type Tf
 // (which is generally a LLVM type Tl*)
 // is a T(*)* stack slot holding the actual pointer value.
 void CodegenPass::visit(RefExprAST* ast) {
-  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
 
   // Some values will see that they're a child of a RefExpr and substitute
   // a malloc for an alloca; others, like int literals or such, must be
   // manually copied out to a newly-malloc'ed cell.
-  ast->value = ast->parts[0]->value;
-  const llvm::Type* llType = ast->value->getType();
+  setValue(ast, ast->parts[0]->value);
+  const llvm::Type* llType = getValue(ast)->getType();
 
   if (getLLVMType(ast->type) == llType) {
     // e.g. ast type is i32* but value type is i32* instead of i32**
     llvm::Value* stackslot = CreateEntryAlloca(llType, "stackslot");
-    builder.CreateStore(ast->value, stackslot, /*isVolatile=*/ false);
-    ast->value = stackslot;
+    builder.CreateStore(getValue(ast), stackslot, /*isVolatile=*/ false);
+    setValue(ast, stackslot);
   } else if (isPointerToType(getLLVMType(ast->type), llType)) {
     // If we're given a T when we want a T**, malloc a new T to get a T*
     // stored in a T** on the stack, then copy our T into the T*.
@@ -866,8 +917,8 @@ void CodegenPass::visit(RefExprAST* ast) {
                                           /*isVolatile=*/false,
                                           "unstack");
     // write our T into the T* given by malloc
-    builder.CreateStore(ast->value, mem, /*isVolatile=*/ false);
-    ast->value = stackslot;
+    builder.CreateStore(getValue(ast), mem, /*isVolatile=*/ false);
+    setValue(ast, stackslot);
   } else if (isPointerToType(llType, getLLVMType(ast->type))) {
     // Given a T**, and we want a T**. Great!
   } else {
@@ -898,11 +949,11 @@ void CodegenPass::visit(DerefExprAST* ast) {
       << str(src->getType()) << " and ast type " << str(getLLVMType(ast->type))
       << "\n\t" << ast->tag << " ; " << ast->type->tag;
       //<< show(ast);
-  ast->value = builder.CreateLoad(src, /*isVolatile=*/ false, "deref");
+  setValue(ast, builder.CreateLoad(src, /*isVolatile=*/ false, "deref"));
 }
 
 void CodegenPass::visit(AssignExprAST* ast) {
-  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
 
   const llvm::Type* srcty = ast->parts[1]->value->getType();
   llvm::Value* dst = ast->parts[0]->value;
@@ -926,7 +977,7 @@ void CodegenPass::visit(AssignExprAST* ast) {
   // Mark the assignment as having been codegenned; for now, assignment
   // expressions evaluate to constant zero (annotated for clarity).
   ConstantInt* zero = ConstantInt::get(Type::getInt32Ty(getGlobalContext()), 0);
-  ast->value = builder.CreateBitCast(zero, zero->getType(), "assignval");
+  setValue(ast, builder.CreateBitCast(zero, zero->getType(), "assignval"));
 }
 
 Value* getPointerToIndex(Value* compositeValue,
@@ -975,7 +1026,7 @@ Value* getElementFromComposite(Value* compositeValue, Value* idxValue) {
 }
 
 void CodegenPass::visit(SubscriptAST* ast) {
-  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
 
   Value* base = ast->parts[0]->value;
   Value* idx  = ast->parts[1]->value;
@@ -989,7 +1040,7 @@ void CodegenPass::visit(SubscriptAST* ast) {
     base = builder.CreateLoad(base, /*isVolatile*/ false, "subload");
   }
 
-  ast->value = getElementFromComposite(base, idx);
+  setValue(ast, getElementFromComposite(base, idx));
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -1090,7 +1141,7 @@ llvm::Value* getClosureStructValue(llvm::Value* maybePtrToClo) {
 }
 
 void CodegenPass::visit(CallAST* ast) {
-  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
 
   ExprAST* base = ast->parts[0];
   ASSERT(base != NULL);
@@ -1293,7 +1344,7 @@ void CodegenPass::visit(CallAST* ast) {
 
   callInst->setCallingConv(callingConv);
 
-  ast->value = callInst;
+  setValue(ast, callInst);
 
   // If we have e.g. a function like mk-tree(... to ref node)
   // that returns a pointer, we assume that the pointer refers to
@@ -1301,14 +1352,14 @@ void CodegenPass::visit(CallAST* ast) {
   // as a GC root. In order that updates from the GC take effect,
   // we use the stack slot (of type T**) instead of the pointer (T*) itself
   // as the return value of the call.
-  if (ast->value->getType()->isPointerTy()) {
-    const llvm::Type* retty = ast->value->getType();
+  if (getValue(ast)->getType()->isPointerTy()) {
+    const llvm::Type* retty = getValue(ast)->getType();
     if (retty->getContainedType(0)->isPointerTy()) {
       // have T**; load T* value so it can be stored in a gcroot slot
-      ast->value = builder.CreateLoad(ast->value, /*isVolatile=*/ false, "destack");
+      setValue(ast, builder.CreateLoad(getValue(ast), /*isVolatile=*/ false, "destack"));
     }
 
-    ast->value = storeAndMarkPointerAsGCRoot(ast->value);
+    setValue(ast, storeAndMarkPointerAsGCRoot(getValue(ast)));
   }
 }
 
@@ -1355,7 +1406,7 @@ llvm::GlobalVariable* getGlobalArrayVariable(SeqAST* body,
 }
 
 void CodegenPass::visit(ArrayExprAST* ast) {
-  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
 
   const llvm::ArrayType* arrayType
                             = dyn_cast<llvm::ArrayType>(getLLVMType(ast->type));
@@ -1364,38 +1415,38 @@ void CodegenPass::visit(ArrayExprAST* ast) {
   SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
   if (body->parts.empty()) {
     // No initializer
-    ast->value = CreateEntryAlloca(arrayType, "noInitArr");
+    setValue(ast, CreateEntryAlloca(arrayType, "noInitArr"));
 
     // We only need to mark arrays of non-atomic objects as GC roots
     // TODO handle rooting arrays of non-atomic objects
     //if (containsPointers(arrayType->getElementType())) {
-    //  markGCRoot(ast->value, NULL);
+    //  markGCRoot(getValue(ast), NULL);
     //}
 
     // TODO add call to memset
   } else {
     // Have initializers; are they constants?
     if (isComposedOfIntLiterals(body)) {
-      ast->value = getGlobalArrayVariable(body, arrayType);
+      setValue(ast, getGlobalArrayVariable(body, arrayType));
     } else {
-      ast->value = CreateEntryAlloca(arrayType, "initArr");
+      setValue(ast, CreateEntryAlloca(arrayType, "initArr"));
 
       // We only need to mark arrays of non-atomic objects as GC roots
           // TODO handle rooting arrays of non-atomic objects
           //if (containsPointers(arrayType->getElementType())) {
-          //  markGCRoot(ast->value, NULL);
+          //  markGCRoot(getValue(ast), NULL);
           //}
 
       for (size_t i = 0; i < body->parts.size(); ++i) {
         builder.CreateStore(body->parts[i]->value,
-                            getPointerToIndex(ast->value, i, "arrInit"));
+                            getPointerToIndex(getValue(ast), i, "arrInit"));
       }
     }
   }
 }
 
 void CodegenPass::visit(SimdVectorAST* ast) {
-  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
 
   const llvm::VectorType* simdType
                      = dyn_cast<const llvm::VectorType>(getLLVMType(ast->type));
@@ -1421,7 +1472,7 @@ void CodegenPass::visit(SimdVectorAST* ast) {
 
     llvm::Constant* constVector = llvm::ConstantVector::get(simdType, elements);
     gvar->setInitializer(constVector);
-    ast->value = builder.CreateLoad(gvar, /*isVolatile*/ false, "simdLoad");
+    setValue(ast, builder.CreateLoad(gvar, /*isVolatile*/ false, "simdLoad"));
   } else {
     llvm::AllocaInst* pt = CreateEntryAlloca(simdType, "s");
     // simd vectors are never gc roots
@@ -1430,7 +1481,7 @@ void CodegenPass::visit(SimdVectorAST* ast) {
       body->parts[i]->accept(this);
       builder.CreateStore(body->parts[i]->value, dst, /*isVolatile=*/ false);
     }
-    ast->value = pt;
+    setValue(ast, pt);
   }
 }
 #endif
@@ -1480,7 +1531,7 @@ bool structTypeContainsPointers(const llvm::StructType* ty) {
 }
 
 void CodegenPass::visit(TupleExprAST* ast) {
-  ASSERT(!ast->value) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
 
   ASSERT(ast->type != NULL);
 
@@ -1508,16 +1559,16 @@ void CodegenPass::visit(TupleExprAST* ast) {
 #endif
 
   copyTupleTo(pt, ast);
-  ast->value = pt;
+  setValue(ast, pt);
 }
 
 void CodegenPass::visit(BuiltinCompilesExprAST* ast) {
   if (ast->status == ast->kWouldCompile) {
-    ast->value = ConstantInt::getTrue(getGlobalContext());
+    setValue(ast, ConstantInt::getTrue(getGlobalContext()));
   } else if (ast->status == ast->kWouldNotCompile) {
-    ast->value = ConstantInt::getFalse(getGlobalContext());
+    setValue(ast, ConstantInt::getFalse(getGlobalContext()));
   } else {
     EDiag() << "__COMPILES__ expression not checked" << show(ast);
-    ast->value = ConstantInt::getFalse(getGlobalContext());
+    setValue(ast, ConstantInt::getFalse(getGlobalContext()));
   }
 }
