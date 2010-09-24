@@ -35,6 +35,13 @@ Ubuntu:
         For Ott:
                 coq             texlive-latex-base
 
+        For Sphinx:
+          # If you don't have easy_install available already:
+          curl -O http://peak.telecommunity.com/dist/ez_setup.py
+          sudo python ez_setup.py -U setuptools
+
+          easy_install -U sphinx
+
 	If you need Java on Ubuntu 9.10,
 	sudo apt-get install sun-java6-jdk
 
