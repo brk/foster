@@ -6,7 +6,7 @@ differently from integers of unknown size, an expression like
 results in the allocation of 4 ints for the constants,
 and 3 ints for intermediate results.
 
-Ideally, arithmetic involving small constant integers would be constant-folded
+Arithmetic involving small constant integers should be constant-folded
 at compile time. LLVM will do such folding when native integer types are used,
 but cannot, by default, do anything to assist unknown library calls.
 
