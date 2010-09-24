@@ -238,6 +238,9 @@ PrototypeAST* getFnProto(string name,
                                     gScope.pushScope("fn proto " + name);
     std::vector<VariableAST*> in = getFormals(formalsTree);
     TypeAST* retTy = TypeAST_from(retTyExprTree);
+    if (!retTy) {
+      retTy = TypeAST::i(32);
+    }
   gScope.popScope();
 
   pTree sourceEndTree = (retTyExprTree != NULL) ? retTyExprTree : formalsTree;

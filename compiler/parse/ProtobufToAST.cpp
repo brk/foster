@@ -195,6 +195,8 @@ ExprAST* parseProto(const pb::Expr& e, const foster::SourceRange& range) {
   TypeAST* retTy = NULL;
   if (proto.has_result()) {
     retTy = TypeAST_from_pb(& proto.result());
+  } else {
+    retTy = TypeAST::i(32);
   }
 
   const std::string& name = proto.name();

@@ -203,9 +203,7 @@ PrototypeAST::PrototypeAST(TypeAST* retTy, const string& name,
              foster::SymbolTable<foster::SymbolInfo>::LexicalScope* ascope)
     : ExprAST("PrototypeAST", sourceRange),
       name(name), inArgs(inArgs), resultTy(retTy), scope(ascope) {
-  if (resultTy == NULL) {
-    this->resultTy = TypeAST::i(32);
-  }
+        ASSERT(resultTy != NULL) << "proto: " << name << foster::show(sourceRange);
 }
 
 
