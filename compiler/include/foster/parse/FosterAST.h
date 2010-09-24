@@ -284,9 +284,16 @@ struct SubscriptAST : public BinaryExprAST {
   virtual std::ostream& operator<<(std::ostream& out) const;
 };
 
+class FnAST;
+
 // The ->value for a PrototypeAST node is a llvm::Function*
 struct PrototypeAST : public ExprAST {
+private:
   string name;
+  friend class FnAST;
+public:
+  string getName() { return name; }
+
   std::vector<VariableAST*> inArgs;
   TypeAST* resultTy;
 
@@ -314,6 +321,7 @@ struct FnAST : public ExprAST {
   virtual void accept(ExprASTVisitor* visitor);
   virtual std::ostream& operator<<(std::ostream& out) const;
 
+  std::string& getName() { return getProto()->name; }
   PrototypeAST* getProto() { return dynamic_cast<PrototypeAST*>(parts[0]); }
   ExprAST*& getBody() { return parts[1]; }
 };

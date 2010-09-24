@@ -192,7 +192,7 @@ void PrettyPrintPass::visit(PrototypeAST* ast) {
   { ScopedBlock sb(this);
   scan(PPToken("fn"));
   scan(PPToken(" "));
-  scan(PPToken(ast->name));
+  scan(PPToken(ast->getName()));
   }
 
   { ScopedBlock sb(this);

@@ -125,7 +125,7 @@ void ClosureConversionPass::visit(FnAST* ast)                  {
   callStack.push_back(ast);
     onVisitChild(ast, ast->getProto());
     // Ensure that this function is not a free variable in its own body
-    this->globalNames.insert(ast->getProto()->name);
+    this->globalNames.insert(ast->getName());
     onVisitChild(ast, ast->getBody());
   callStack.pop_back();
 
@@ -133,7 +133,7 @@ void ClosureConversionPass::visit(FnAST* ast)                  {
     // Rename anonymous functions to reflect their lexical scoping
     FnAST* parentFn = dynamic_cast<FnAST*>(ast->parent);
     if (parentFn != NULL) {
-      ast->getProto()->name.replace(0, 1, "<" + parentFn->getProto()->name + ".");
+      ast->getName().replace(0, 1, "<" + parentFn->getName() + ".");
     }
 
     if (fnInClosure.count(ast) > 0) {
@@ -181,7 +181,7 @@ void ClosureConversionPass::visit(CallAST* ast)                {
     base = ast->parts[0] = cloBase->fn;
   }
   if (FnAST* fnBase = dynamic_cast<FnAST*>(base)) {
-    currentOuts() << "visited direct call of fn " << fnBase->getProto()->name << "\n";
+    currentOuts() << "visited direct call of fn " << fnBase->getName() << "\n";
     callsOf[fnBase].insert(ast);
   }
   visitChildren(ast);
@@ -208,7 +208,7 @@ void appendParameter(CallAST* call, VariableAST* var) {
 }
 
 bool isAnonymousFunction(FnAST* ast) {
-  string& name = ast->getProto()->name;
+  string& name = ast->getName();
   if (name.find("<anon_fn") == 0) {
     return true;
   } else { return false; }
@@ -236,13 +236,13 @@ void hoistAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) {
   // Alter the symbol table structure to reflect the fact that we're
   // hoisting the function to the root scope.
   ast->getProto()->scope->parent = gScope.getRootScope();
-  gScopeInsert(ast->getProto()->name, ast->getProto()->value);
+  gScopeInsert(ast->getName(), ast->getProto()->value);
 }
 
 void performClosureConversion(ClosureAST* closure,
                               ClosureConversionPass* ccp) {
   FnAST* ast = closure->fn;
-  //llvm::outs() << "Closure converting function" << ast->getProto()->name
+  //llvm::outs() << "Closure converting function" << ast->getName()
   //             << " @ " << ast << "\n";
 
   // Find the set of free variables for the function
@@ -318,7 +318,7 @@ void performClosureConversion(ClosureAST* closure,
 }
 
 void lambdaLiftAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) {
-  //llvm::outs() << "Lambda lifting function" << ast->getProto()->name
+  //llvm::outs() << "Lambda lifting function" << ast->getName()
   //             << " @ " << ast << "\n";
 
   set<VariableAST*> freeVars = freeVariablesOf(ast);
@@ -366,7 +366,7 @@ void lambdaLiftAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) {
   }
 
   VariableAST* varReferringToFunction = new VariableAST(
-                                    ast->getProto()->name,
+                                    ast->getName(),
                                     ast->getProto()->type,
                                     foster::SourceRange::getEmptyRange());
 

@@ -125,7 +125,7 @@ void BuildCFG::visit(IfExprAST* ast) {
 
 void BuildCFG::visit(FnAST* ast) {
   currentFn   = ast;
-  currentRoot = new CFG(ast->getProto()->name + std::string(".entry"),
+  currentRoot = new CFG(ast->getName() + std::string(".entry"),
                         ast, currentFn);
   ast->getBody()->accept(this);
 }

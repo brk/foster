@@ -564,7 +564,7 @@ int main(int argc, char** argv) {
     for (ModuleAST::FnAST_iterator it = exprAST->fn_begin();
            it != exprAST->fn_end(); ++it) {
       FnAST* fnast = *it;
-      const string& name = fnast->getProto()->name;
+      const string& name = fnast->getName();
       string filename(dotdirFile(name + ".dot"));
       if (!fnast->cfgs.empty()) {
         llvm::outs() << "Writing " << filename << "\n";

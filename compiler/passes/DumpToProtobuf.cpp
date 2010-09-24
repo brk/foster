@@ -108,7 +108,7 @@ void DumpToProtobufPass::visit(BinaryOpExprAST* ast)        {
 void DumpToProtobufPass::visit(PrototypeAST* ast)           {
   processExprAST(current, ast, foster::pb::Expr::PROTO);
   foster::pb::Proto* proto = current->mutable_proto();
-  proto->set_name(ast->name);
+  proto->set_name(ast->getName());
 
   proto->mutable_in_args()->Reserve(ast->parts.size());
   for (size_t i = 0; i < ast->inArgs.size(); ++i) {

@@ -175,7 +175,7 @@ void putModuleMembersInScope(Module* m, Module* linkee) {
 
 VariableAST* checkAndGetLazyRefTo(PrototypeAST* p) {
   typecheck(p);
-  VariableAST* fnRef = new VariableAST(p->name, p->type,
+  VariableAST* fnRef = new VariableAST(p->getName(), p->type,
                               SourceRange::getEmptyRange());
   fnRef->lazilyInsertedPrototype = p;
 

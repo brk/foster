@@ -450,19 +450,19 @@ std::string getSymbolName(const std::string& sourceName) {
 void CodegenPass::visit(PrototypeAST* ast) {
   ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
 
-  std::string symbolName = getSymbolName(ast->name);
+  std::string symbolName = getSymbolName(ast->getName());
 
   if (ast->scope) {
     gScope.pushExistingScope(ast->scope);
   } else {
-    gScope.pushScope(ast->name);
+    gScope.pushScope(ast->getName());
   }
 
   // Give function literals internal linkage, since we know that
   // they can only be referenced from the function in which they
   // are defined.
   llvm::GlobalValue::LinkageTypes functionLinkage =
-      (ast->name.find("anon_fnlet_") != string::npos)
+      (ast->getName().find("anon_fnlet_") != string::npos)
         ? Function::InternalLinkage
         : Function::ExternalLinkage;
 
@@ -524,7 +524,7 @@ void CodegenPass::visit(FnAST* ast) {
   ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
 
   ASSERT(ast->getBody() != NULL);
-  ASSERT(ast->getProto()->scope) << "no scope for " << ast->getProto()->name;
+  ASSERT(ast->getProto()->scope) << "no scope for " << ast->getName();
   ASSERT(ast->getProto()->value) << "ModuleAST should codegen function protos.";
 
   Function* F = dyn_cast<Function>(ast->getProto()->value);
@@ -563,7 +563,7 @@ void CodegenPass::visit(FnAST* ast) {
   (ast->getBody())->accept(this);
   Value* RetVal = ast->getBody()->value;
   if (RetVal == NULL) {
-    EDiag() << "null body value when codegenning function " << ast->getProto()->name
+    EDiag() << "null body value when codegenning function " << ast->getName()
             << show(ast);
     return;
   }
@@ -592,7 +592,7 @@ void CodegenPass::visit(FnAST* ast) {
     setValue(ast, F);
   } else {
     F->eraseFromParent();
-    EDiag() << "function '" << ast->getProto()->name
+    EDiag() << "function '" << ast->getName()
               << "' retval creation failed" << show(ast);
   }
 
@@ -625,7 +625,7 @@ void CodegenPass::visit(ClosureAST* ast) {
   TupleExprAST* env = new TupleExprAST(new SeqAST(ast->parts,
                                           SourceRange::getEmptyRange()),
                                        SourceRange::getEmptyRange());
-  ExprAST* fnPtr = new VariableAST(ast->fn->getProto()->name,
+  ExprAST* fnPtr = new VariableAST(ast->fn->getName(),
                    RefTypeAST::get(ast->fn->type), SourceRange::getEmptyRange());
   typecheck(fnPtr);
   fnPtr->accept(this);
@@ -706,7 +706,7 @@ void CodegenPass::visit(ModuleAST* ast) {
       f->getProto()->accept(this);
       // Ensure that the value is in the SymbolInfo entry in the symbol table,
       // and not just in the ->value field of the prototype AST node.
-      gScopeInsert(f->getProto()->name, f->getProto()->value);
+      gScopeInsert(f->getName(), f->getProto()->value);
     }
   }
 
@@ -970,7 +970,7 @@ FnAST* getClosureVersionOf(ExprAST* arg, FnTypeAST* fnty) {
   if (VariableAST* var = dynamic_cast<VariableAST*>(arg)) {
     protoName = var->name;
   } else if (PrototypeAST* proto = dynamic_cast<PrototypeAST*>(arg)) {
-    protoName = proto->name;
+    protoName = proto->getName();
   }
 
   if (!protoName.empty()) {
@@ -1013,7 +1013,7 @@ FnAST* getClosureVersionOf(ExprAST* arg, FnTypeAST* fnty) {
 
     // Regular functions get their proto values added when the module
     // starts codegenning, but we need to do it ourselves here.
-    gScopeInsert(fn->getProto()->name, fn->getProto()->value);
+    gScopeInsert(fn->getName(), fn->getProto()->value);
 
     closureVersions[fnName] = fn;
 

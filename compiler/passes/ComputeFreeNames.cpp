@@ -62,7 +62,7 @@ void ComputeFreeVariableNames::visit(FnAST* ast) {
   names.pushBinder(ast);
   this->onVisitChild(ast, ast->getProto()); // Mark formals as bound.
 
-  names.markAsBound(ast->getProto()->name); // Ensure the function name is
+  names.markAsBound(ast->getName()); // Ensure the function name is
                                             // not free in its own body.
   this->onVisitChild(ast, ast->getBody());
   names.popBinder(ast);

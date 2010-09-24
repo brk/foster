@@ -769,9 +769,9 @@ bool areNamesDisjoint(const std::vector<VariableAST*>& vars) {
 }
 
 const char* getCallingConvention(PrototypeAST* ast) {
-  if (ast->name == "main"
-  ||  pystring::startswith(ast->name, "llvm.")
-  ||  pystring::startswith(ast->name, "__voidReturningVersionOf__")) {
+  if (ast->getName() == "main"
+  ||  pystring::startswith(ast->getName(), "llvm.")
+  ||  pystring::startswith(ast->getName(), "__voidReturningVersionOf__")) {
     return "ccc";
   } else {
     return "fastcc";
@@ -786,7 +786,7 @@ void TypecheckPass::visit(PrototypeAST* ast) {
 
     EDiag& err = constraints.newLoggedError();
     err    << "formal argument names for function "
-           << ast->name << " are not disjoint";
+           << ast->getName() << " are not disjoint";
     for (size_t i = 0; i < ast->inArgs.size(); ++i) {
       err  << "\n\t" << ast->inArgs[i]->name;
     }
@@ -803,7 +803,7 @@ void TypecheckPass::visit(PrototypeAST* ast) {
 
     TypeAST* ty =  arg->type;
     if (ty == NULL) {
-      currentErrs() << "Error: proto " << ast->name << " had "
+      currentErrs() << "Error: proto " << ast->getName() << " had "
         << "null type for arg '" << arg->name << "'" << "\n";
       return;
     }
@@ -816,7 +816,7 @@ void TypecheckPass::visit(PrototypeAST* ast) {
   }
 
   if (!ast->resultTy) {
-    EDiag() << "NULL return type for PrototypeAST " << ast->name << show(ast);
+    EDiag() << "NULL return type for PrototypeAST " << ast->getName() << show(ast);
   } else {
 
     ast->type = FnTypeAST::get(ast->resultTy, argTypes,

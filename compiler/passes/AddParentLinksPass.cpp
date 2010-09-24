@@ -45,7 +45,7 @@ void AddParentLinksPass::visit(ModuleAST* ast)              {
 ////////////////////////////////////////////////////////////////////
 
 void includeParentNameInAnonFunctions(FnAST* ast) {
-  string& name = ast->getProto()->name;
+  string& name = ast->getName();
 
   // Not an anonymous function, nothing to do here.
   if (name.find("<anon_fn") != 0) {
@@ -68,7 +68,7 @@ void includeParentNameInAnonFunctions(FnAST* ast) {
 
   if (!parent) {
     llvm::errs() << "Odd, couldn't find parent fn ast for anonymous function "
-              << ast->getProto()->name << "\n";
+              << ast->getName() << "\n";
     return;
   }
 
