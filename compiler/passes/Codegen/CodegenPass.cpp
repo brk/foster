@@ -21,6 +21,7 @@
 #include "llvm/DerivedTypes.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Module.h"
+#include "llvm/Metadata.h"
 #include "llvm/Support/Format.h"
 
 #include "pystring/pystring.h"
@@ -140,6 +141,20 @@ const FunctionType* get_llvm_gcroot_ty() {
   return llvm::FunctionType::get(voidty, params, /*isvararg=*/ false);
 }
 
+llvm::AllocaInst* getAllocaForRoot(llvm::Instruction* root) {
+  if (llvm::AllocaInst* ai = llvm::dyn_cast<llvm::AllocaInst>(root)) {
+    return ai;
+  }
+
+  if (llvm::BitCastInst* bi = llvm::dyn_cast<llvm::BitCastInst>(root)) {
+    llvm::Value* op = *(bi->op_begin());
+    return llvm::cast<llvm::AllocaInst>(op);
+  }
+
+  ASSERT(false) << "root must be alloca or bitcast of alloca!";
+  return NULL;
+}
+
 // root should be an AllocaInst or a bitcast of such
 void markGCRoot(llvm::Value* root, llvm::Constant* meta) {
   llvm::Constant* llvm_gcroot = module->getOrInsertFunction("llvm.gcroot",
@@ -166,6 +181,17 @@ void markGCRoot(llvm::Value* root, llvm::Constant* meta) {
   } else if (meta->getType() != LLVMTypeFor("i8*")) {
     meta = ConstantExpr::getBitCast(meta, LLVMTypeFor("i8*"));
   }
+
+  llvm::Value* const vmeta = meta;
+  llvm::MDNode* metamdnode =
+            llvm::MDNode::get(llvm::getGlobalContext(), &vmeta, 1);
+  llvm::Instruction* rootinst = llvm::dyn_cast<llvm::Instruction>(root);
+  llvm::AllocaInst* allocainst = getAllocaForRoot(rootinst);
+  if (!rootinst) {
+    llvm::outs() << "root kind is " << llvmValueTag(root) << "\n";
+    ASSERT(false) << "need inst!";
+  }
+  rootinst->setMetadata("fostergcroot", metamdnode);
 
   builder.CreateCall2(llvm_gcroot, root, meta);
 }
@@ -207,6 +233,12 @@ llvm::Value* storeAndMarkPointerAsGCRoot(llvm::Value* val) {
   return stackslot;
 }
 
+void markAsNonAllocating(llvm::CallInst* callInst) {
+  llvm::Value* tru = llvm::ConstantInt::getTrue(llvm::getGlobalContext());
+  llvm::MDNode* mdnode = llvm::MDNode::get(llvm::getGlobalContext(), &tru, 1);
+  callInst->setMetadata("willnotgc", mdnode);
+}
+
 // Returns ty**, the stack slot containing a ty*.
 llvm::Value* emitMalloc(const llvm::Type* ty) {
   llvm::Value* memalloc = gScopeLookupValue("memalloc");
@@ -217,7 +249,7 @@ llvm::Value* emitMalloc(const llvm::Type* ty) {
 
   // TODO we should statically determine
   // the proper allocation size.
-  llvm::Value* mem = builder.CreateCall(memalloc,
+  llvm::CallInst* mem = builder.CreateCall(memalloc,
                                         getConstantInt64For(32),
                                         "mem");
   return storeAndMarkPointerAsGCRoot(
@@ -1036,6 +1068,18 @@ llvm::Value* getClosureStructValue(llvm::Value* maybePtrToClo) {
   return maybePtrToClo;
 }
 
+bool
+isKnownNonAllocating(ExprAST* ast) {
+  if (VariableAST* varast = dynamic_cast<VariableAST*>(ast)) {
+    // silly hack for now...
+    if (pystring::startswith(varast->getName(), "expect_")) return true;
+    if (pystring::startswith(varast->getName(), "print_")) return true;
+    return false;
+  }
+  llvm::outs() << "isKnownNonAllocating: " << str(ast) << "\n";
+  return false;
+}
+
 void CodegenPass::visit(CallAST* ast) {
   ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
 
@@ -1239,6 +1283,10 @@ void CodegenPass::visit(CallAST* ast) {
   }
 
   callInst->setCallingConv(callingConv);
+
+  if (isKnownNonAllocating(base)) {
+    markAsNonAllocating(callInst);
+  }
 
   setValue(ast, callInst);
 

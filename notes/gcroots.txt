@@ -1,6 +1,11 @@
 Object pointers from the new operator must usually be stored
 in a gcroot-marked stack slot.
 
+.. note::
+        The LLVM Value marked as a gcroot is a bitcast
+        of the actual alloca stack slot itself.
+
+
 The rule for efficient marking of root slots is:
 ============================================================
   * If an existing pointer is live after a (possible) GC point,
@@ -25,6 +30,7 @@ Every mutable pointer must exist in memory (usually a stack slot),
 but only not every mutable pointer's stack slot need be marked
 as a GC root.
 
+
 Because LLVM does not compute register maps for GC use,
 the stack slots containing pointers might be mutated by a
 copying GC at any GC point. Therefore, the rule is that
@@ -32,6 +38,11 @@ copying GC at any GC point. Therefore, the rule is that
   * After each GC point, all live root pointers must be
     reloaded from their stack slots.
 ============================================================
+
+If all pointers are stored in stack slots and reloaded before use,
+then nothing special need be done about reloading roots.
+
+
 
 Note that both of the above rules are defined in terms of liveness
 information. In theory, there are two routes to implementing
@@ -49,11 +60,11 @@ With the LLVM pass approach, the front-end marks every alloca-ed ptr
 slot as a GC root, and reloads every local pointer variable from its
 stack slot after every potential GC point. (Potential GC points
 are, conservatively, expressions containing 'new' or function calls.
-A CallGraphSCCPass can later determine that many function calls 
+A CallGraphSCCPass can later determine that many function calls
 do not constitute GC points.)
 
 The LLVM pass then cleans up the code:
-  * Reloads after falsely-assumeed GC points may be removed.
+  * Reloads after falsely-assumed GC points may be removed.
 
   * For each possible GC point, a pointer that is not live after the
     GC point (ignoring the existing reload) need not be reloaded,
