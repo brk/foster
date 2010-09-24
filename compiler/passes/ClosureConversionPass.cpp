@@ -145,14 +145,12 @@ void ClosureConversionPass::visit(FnAST* ast)                  {
 }
 
 void ClosureConversionPass::visit(ClosureAST* ast) {
-  if (ast->hasKnownEnvironment) {
-    visitChildren(ast);
-  } else {
-    fnInClosure.insert(ast->fn);
-    ast->fn->accept(this);
-    performClosureConversion(ast, this);
-  }
+  ASSERT(!ast->hasKnownEnvironment);
+  fnInClosure.insert(ast->fn);
+  ast->fn->accept(this);
+  performClosureConversion(ast, this);
 }
+
 void ClosureConversionPass::visit(ModuleAST* ast)              {
   for (ModuleAST::FnAST_iterator
        it  = ast->fn_begin();
