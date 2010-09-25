@@ -1,0 +1,82 @@
+// Copyright (c) 2010 Ben Karel. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
+
+#include "passes/DumpStructure.h"
+
+#include "parse/FosterAST.h"
+
+#include "llvm/Support/raw_ostream.h"
+
+/*
+Produce output like this:
+http://blogs.msdn.com/b/ericlippert/archive/2010/09/09/old-school-tree-display.aspx
+
+a
+├─b
+│ ├─c
+│ │ └─d
+│ └─e
+│   └─f
+└─g
+  ├─h
+  │ └─i
+  └─j
+*/
+
+struct DumpExpr {
+  llvm::raw_ostream& out;
+  enum status { eFirstChild, eMiddleChild, eLastChild, eAfterChild };
+
+  std::vector<status> stages;
+  DumpExpr(llvm::raw_ostream& out) : out(out) {}
+
+  status statusFor(int i, int n) {
+    if (i == n - 1) return eLastChild;
+    if (i == 0) return eFirstChild;
+    return eMiddleChild;
+  }
+
+  void dump(ExprAST* ast) {
+    dumpLine(ast);
+    stages.push_back(eFirstChild);
+    for (unsigned i = 0; i < ast->parts.size(); ++i) {
+      stages.back() = statusFor(i, ast->parts.size());
+      dump(ast->parts[i]);
+    }
+    stages.pop_back();
+  }
+
+  void dumpLine(ExprAST* ast) {
+    for (unsigned i = 0; i < stages.size(); ++i) {
+      printStage(stages[i]);
+    }
+    int prefixLength = stages.size() * 2;
+    std::string msg = getMessage(ast);
+    std::string spaces(std::max(8u, 60 - prefixLength - msg.size()), ' ');
+    out << msg << spaces << ast << "\n";
+  }
+
+  std::string getMessage(ExprAST* ast) {
+    if (VariableAST* e = dynamic_cast<VariableAST*>(ast)) {
+      return std::string(e->tag) + " " + e->getName();
+    }
+    if (FnAST* e = dynamic_cast<FnAST*>(ast)) {
+      return std::string(e->tag) + " " + e->getName();
+    }
+    return std::string(ast->tag);
+  }
+
+  void printStage(status& s) {
+    switch (s) {
+      case eFirstChild:  out << "├─"; s = eMiddleChild; break;
+      case eMiddleChild: out << "│ "; s = eMiddleChild; break;
+      case eLastChild:   out << "└─"; s = eAfterChild; break;
+      case eAfterChild:  out << "  "; s = eAfterChild; break;
+    }
+  }
+};
+
+void dumpExprStructure(llvm::raw_ostream& out, ExprAST* ast) {
+  DumpExpr dumper(out); dumper.dump(ast); out << "\n";
+}
