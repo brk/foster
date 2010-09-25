@@ -41,10 +41,24 @@ struct DumpExpr {
   void dump(CONST(ExprAST) ast) {
     dumpLine(ast);
     stages.push_back(eFirstChild);
+
     for (unsigned i = 0; i < ast->parts.size(); ++i) {
       stages.back() = statusFor(i, ast->parts.size());
       dump(ast->parts[i]);
     }
+
+    if (CONST(PrototypeAST) e = dynamic_cast<CONST(PrototypeAST)>(ast)) {
+      for (unsigned i = 0; i < e->inArgs.size(); ++i) {
+        stages.back() = statusFor(i, e->inArgs.size());
+        dump(e->inArgs[i]);
+      }
+    }
+
+    if (CONST(ClosureAST) e = dynamic_cast<CONST(ClosureAST)>(ast)) {
+      stages.back() = eLastChild;
+      dump(e->fn);
+    }
+
     stages.pop_back();
   }
 
@@ -54,16 +68,19 @@ struct DumpExpr {
     }
     int prefixLength = stages.size() * 2;
     std::string msg = getMessage(ast);
-    std::string spaces(std::max(8u, 60 - prefixLength - msg.size()), ' ');
+    std::string spaces(std::max(4, int(80 - prefixLength - msg.size())), ' ');
     out << msg << spaces << ast << "\n";
   }
 
   std::string getMessage(CONST(ExprAST) ast) {
     if (CONST(VariableAST) e = dynamic_cast<CONST(VariableAST)>(ast)) {
-      return std::string(e->tag) + " " + e->getName();
+      return std::string(e->tag) + " " + e->getName() + " :: " + str(ast->type);
     }
     if (CONST(FnAST) e = dynamic_cast<CONST(FnAST)>(ast)) {
       return std::string(e->tag) + " " + e->getName();
+    }
+    if (CONST(PrototypeAST) e = dynamic_cast<CONST(PrototypeAST)>(ast)) {
+      return std::string(e->tag) + " " + e->getName() + " " + str(ast->type);
     }
     return std::string(ast->tag);
   }

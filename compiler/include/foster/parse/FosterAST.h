@@ -294,7 +294,6 @@ public:
          foster::SymbolTable<foster::SymbolInfo>::LexicalScope* ascope = NULL);
 
   virtual void accept(ExprASTVisitor* visitor);
-  virtual std::ostream& operator<<(std::ostream& out) const;
 };
 
 
@@ -308,7 +307,6 @@ struct FnAST : public ExprAST {
     parts.push_back(body);
   }
   virtual void accept(ExprASTVisitor* visitor);
-  virtual std::ostream& operator<<(std::ostream& out) const;
 
   std::string& getName() { return getProto()->name; }
   std::string getName() const { return getProto()->getName(); }
@@ -359,9 +357,6 @@ struct ModuleAST : public NamespaceAST {
     this->parts = _parts;
   }
 
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "(Module " << scope->getName() << ")";
-  }
   virtual void accept(ExprASTVisitor* visitor);
 };
 

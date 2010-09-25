@@ -1226,11 +1226,9 @@ void CodegenPass::visit(CallAST* ast) {
       ExprAST* arg = ast->parts[i + 1];
       TypeAST* argty = ast->parts[i + 1]->type;
 
-      std::string wrapped;
-      llvm::raw_string_ostream ss(wrapped); ss << arg;
       EDiag() << str(V) << "->getType() is " << str(V->getType())
               << "; expecting " << str(expectedType)
-              << "\n\targ is " << ss.str() << " :: " << arg->tag << " :: " << str(arg)
+              << "\n\targ is " << str(arg)
               << "\n\targty is " << argty->tag << "\t" << str(argty)
               << show(arg);
     }
