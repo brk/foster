@@ -10,7 +10,7 @@ namespace llvm { class raw_ostream; }
 class ExprAST;
 
 namespace foster {
-  void dumpExprStructure(llvm::raw_ostream& out, ExprAST* t);
+  void dumpExprStructure(llvm::raw_ostream& out, const ExprAST* const t);
 } // namespace foster
 
 #endif // header guard

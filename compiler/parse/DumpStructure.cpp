@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#include "passes/DumpStructure.h"
-
+#include "parse/DumpStructure.h"
 #include "parse/FosterAST.h"
 
 #include "llvm/Support/raw_ostream.h"
@@ -24,6 +23,8 @@ a
   └─j
 */
 
+#define CONST(Type) const Type* const
+
 struct DumpExpr {
   llvm::raw_ostream& out;
   enum status { eFirstChild, eMiddleChild, eLastChild, eAfterChild };
@@ -37,7 +38,7 @@ struct DumpExpr {
     return eMiddleChild;
   }
 
-  void dump(ExprAST* ast) {
+  void dump(CONST(ExprAST) ast) {
     dumpLine(ast);
     stages.push_back(eFirstChild);
     for (unsigned i = 0; i < ast->parts.size(); ++i) {
@@ -47,7 +48,7 @@ struct DumpExpr {
     stages.pop_back();
   }
 
-  void dumpLine(ExprAST* ast) {
+  void dumpLine(CONST(ExprAST) ast) {
     for (unsigned i = 0; i < stages.size(); ++i) {
       printStage(stages[i]);
     }
@@ -57,11 +58,11 @@ struct DumpExpr {
     out << msg << spaces << ast << "\n";
   }
 
-  std::string getMessage(ExprAST* ast) {
-    if (VariableAST* e = dynamic_cast<VariableAST*>(ast)) {
+  std::string getMessage(CONST(ExprAST) ast) {
+    if (CONST(VariableAST) e = dynamic_cast<CONST(VariableAST)>(ast)) {
       return std::string(e->tag) + " " + e->getName();
     }
-    if (FnAST* e = dynamic_cast<FnAST*>(ast)) {
+    if (CONST(FnAST) e = dynamic_cast<CONST(FnAST)>(ast)) {
       return std::string(e->tag) + " " + e->getName();
     }
     return std::string(ast->tag);
@@ -77,6 +78,12 @@ struct DumpExpr {
   }
 };
 
-void dumpExprStructure(llvm::raw_ostream& out, ExprAST* ast) {
-  DumpExpr dumper(out); dumper.dump(ast); out << "\n";
+namespace foster {
+
+  void dumpExprStructure(llvm::raw_ostream& out, CONST(ExprAST) ast) {
+    out << "\n";
+    DumpExpr dumper(out); dumper.dump(ast);
+    out << "\n";
+  }
+
 }

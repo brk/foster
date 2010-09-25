@@ -11,6 +11,7 @@
 #include "parse/CompilationContext.h"
 #include "parse/ANTLRtoFosterAST.h" // just for parseAPIntFromClean()
 #include "parse/FosterUtils.h"
+#include "parse/DumpStructure.h"
 
 #include "passes/PrettyPrintPass.h"
 
@@ -211,63 +212,13 @@ PrototypeAST::PrototypeAST(TypeAST* retTy, const string& name,
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
 
-std::ostream& IntAST::operator<<(std::ostream& out) const {
-  return out << "IntAST(" << getOriginalText() << ")";
-}
-
-std::ostream& BoolAST::operator<<(std::ostream& out) const {
-  return out << "BoolAST(" << string(boolValue ? "true" : "false") << ")";
-}
-
-std::ostream& VariableAST::operator<<(std::ostream& out) const {
-  if (type) {
-    return out << "VarAST( " << name << " : " << str(type) << ")";
-  } else {
-    return out << "VarAST( " << name << " : " << ")";
-  }
-}
-
-std::ostream& UnaryOpExprAST::operator<<(std::ostream& out) const {
-  return out << "UnaryOp(" << op << ' ' << str(this->parts[0]) << ")";
-}
-
-std::ostream& BinaryOpExprAST::operator<<(std::ostream& out) const {
-  ExprAST* LHS = this->parts[kLHS];
-  ExprAST* RHS = this->parts[kRHS];
-  return out << "BinaryOp(lhs=" << str(LHS) << ", op=" << op << ", rhs="  << str(RHS) << ")";
-}
-
-std::ostream& CallAST::operator<<(std::ostream& out) const {
-  out << "CallAST(base = " << str(this->parts[0]) << ", args = ";
-  for (size_t i = 1; i < this->parts.size(); ++i) {
-    out << " " << str(this->parts[i]) << ", ";
-  }
-  return out << ")";
+std::ostream& ExprAST::operator<<(std::ostream& out) const {
+  llvm::raw_os_ostream raw(out);
+  foster::dumpExprStructure(raw, this);
 }
 
 std::ostream& NamedTypeDeclAST::operator<<(std::ostream& out) const {
   return out << "type " << name << " = " << str(type) << "\n";
-}
-
-std::ostream& SeqAST::operator<<(std::ostream& out) const {
-  out << "SeqAST { ";
-  for (size_t i = 0; i < this->parts.size(); ++i) {
-    if (i > 0) out << " ;\n";
-    out << str(this->parts[i]);
-  }
-  return out << " }";
-}
-
-std::ostream& TupleExprAST::operator<<(std::ostream& out) const {
-  return out << "TupleExpr(" << str(this->parts[0]) << ")";
-}
-/*
-std::ostream& SimdVectorAST::operator<<(std::ostream& out) const {
-  return out << "SimdVector(" << str(this->parts[0]) << ")";
-}
-*/
-std::ostream& SubscriptAST::operator<<(std::ostream& out) const {
-  return out << "SubscriptAST(base = " << str(this->parts[0]) << ", index = " << str(this->parts[1]) << ")";
 }
 
 std::ostream& PrototypeAST::operator<<(std::ostream& out) const {
@@ -284,46 +235,6 @@ std::ostream& PrototypeAST::operator<<(std::ostream& out) const {
 
 std::ostream& FnAST::operator<<(std::ostream& out) const {
   return out << "FnAST(proto = " << str(parts[0]) << ", body = " << str(parts[1]) << "\n";
-}
-
-std::ostream& ClosureAST::operator<<(std::ostream& out) const {
-  if (hasKnownEnvironment && fn) {
-    out << "(closure " << str(fn->getProto());
-    for (size_t i = 0; i < parts.size(); ++i) {
-      out << "\t" << str(parts[i]);
-    }
-    return out << ")";
-  } else if (fn) {
-    return out << "(unrefined closure " << str(fn->getProto()) << ")";
-  } else {
-    return out << "(malformed closure)";
-  }
-}
-
-std::ostream& IfExprAST::operator<<(std::ostream& out) const {
-  return out << "if (" << str(parts[0]) << ")" <<
-      " then " << str(parts[1]) << " else " << str(parts[2]);
-}
-
-std::ostream& NilExprAST::operator<<(std::ostream& out) const {
-  return out << "NilExprAST()";
-}
-
-std::ostream& RefExprAST::operator<<(std::ostream& out) const {
-  return out << "RefExprAST(" << str(this->parts[0]) << ")";
-}
-
-std::ostream& DerefExprAST::operator<<(std::ostream& out) const {
-  return out << "DerefExprAST(" << str(this->parts[0]) << ")";
-}
-
-std::ostream& AssignExprAST::operator<<(std::ostream& out) const {
-  return out << "AssignExprAST(lhs=" << str(this->parts[0])
-      << ", rhs=" << str(parts[1]) << ")" << "\n";
-}
-
-std::ostream& BuiltinCompilesExprAST::operator<<(std::ostream& out) const {
-  return out << "(__COMPILES__ " << str(this->parts[0]) << ")";
 }
 
 //////////////////////////////////////////////////////////////////////

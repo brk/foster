@@ -264,6 +264,7 @@ add_library(fosterc_parse STATIC
   compiler/parse/DefaultExprASTVisitor.cpp
   compiler/parse/CompilationContext.cpp
   compiler/parse/OperatorPrecedence.cpp
+  compiler/parse/DumpStructure.cpp
   compiler/parse/ProtobufToAST.cpp
   compiler/parse/FosterUtils.cpp
   ${GENERATED}/FosterAST.pb.cc
@@ -297,7 +298,6 @@ add_executable(fosterc
   compiler/passes/Codegen/CodegenPass.cpp
   compiler/passes/Codegen/Codegen-typemaps.cpp
   compiler/passes/TypecheckPass.cpp
-  compiler/passes/DumpStructure.cpp
   compiler/passes/DumpToProtobuf.cpp
   compiler/passes/PrettyPrintPass.cpp
   compiler/passes/ComputeFreeNames.cpp
