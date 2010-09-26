@@ -100,6 +100,8 @@ struct ReplaceTypeInExprTransform : public DefaultExprASTVisitor {
   virtual void visit(VariableAST*);
   virtual void visit(PrototypeAST*);
   virtual void visit(NamedTypeDeclAST*);
+
+  using DefaultExprASTVisitor::visit;
 };
 
 void ReplaceTypeInExprTransform::visitChildren(ExprAST* ast) {

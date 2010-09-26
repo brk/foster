@@ -14,6 +14,8 @@ struct AddParentLinksPass : public DefaultExprASTVisitor {
 
   virtual void visit(FnAST* ast);
   virtual void visit(ModuleAST* ast);
+
+  using DefaultExprASTVisitor::visit;
 };
 
 namespace foster {

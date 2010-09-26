@@ -56,10 +56,6 @@ execute_process(COMMAND ${LLVM_CONFIG} --cxxflags
 #
 string(REPLACE "-g"                   "" LLVM_CFLAGS "${LLVM_ORIGINAL_CFLAGS}")
 
-# This flag is C++ only, and the generated ANTLR files are in plain C.
-#
-string(REPLACE "-Woverloaded-virtual" "" LLVM_CFLAGS "${LLVM_CFLAGS}")
-
 # LLVM libraries may also be compiled with -fno-rtti.
 # We are free to compile almost all of our code with RTTI,
 # except for LLVM plugins, which inherit from LLVM classes and
@@ -272,6 +268,13 @@ add_library(fosterc_parse STATIC
   ${GENERATED}/fosterLexer.c
 )
 add_dependencies(fosterc_parse fosterc_base)
+
+# Avoid GCC complaints that -Woverloaded-virtual
+# only applies to C++ code, not regular C code.
+set_source_files_properties(
+      ${GENERATED}/fosterParser.c
+      ${GENERATED}/fosterLexer.c
+      PROPERTIES LANGUAGE CXX)
 
 add_library(fosterc_llvm STATIC
   compiler/llvm/passes/Hello.cpp

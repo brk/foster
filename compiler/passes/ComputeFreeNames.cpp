@@ -23,6 +23,8 @@ struct ComputeFreeVariableNames : public DefaultExprASTVisitor {
   virtual void visit(FnAST*);
   virtual void visit(ClosureAST*);
   virtual void visit(PrototypeAST*);
+
+  using DefaultExprASTVisitor::visit;
 };
 
 namespace foster {
@@ -40,8 +42,6 @@ namespace foster {
 
 
 ////////////////////////////////////////////////////////////////////
-
-//void ComputeFreeVariableNames::visit(ArrayExprAST* ast)           { this->visitChildren(ast); }
 
 void ComputeFreeVariableNames::visit(VariableAST* ast) {
   string name = ast->getName();
