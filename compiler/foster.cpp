@@ -60,6 +60,7 @@
 
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
+#include "parse/DumpStructure.h"
 #include "parse/ANTLRtoFosterAST.h"
 #include "parse/CompilationContext.h"
 
@@ -272,6 +273,13 @@ void dumpModuleToBitcode(Module* mod, const string& filename) {
   }
 
   WriteBitcodeToFile(mod, out);
+}
+
+void dumpExprStructureToFile(ExprAST* ast, const string& filename) {
+  ScopedTimer timer("io.file.dumpexpr");
+  string errInfo;
+  llvm::raw_fd_ostream out(filename.c_str(), errInfo);
+  foster::dumpExprStructure(out, ast);
 }
 
 void dumpModuleToProtobuf(ModuleAST* mod, const string& filename) {
@@ -611,11 +619,16 @@ int main(int argc, char** argv) {
     dumpModuleToProtobuf(exprAST, dumpdirFile(outPbFilename));
   }
 
-  { llvm::outs() << "=========================" << "\n";
+  {
+    dumpExprStructureToFile(exprAST, dumpdirFile("structure.beforecc.txt"));
+
+    llvm::outs() << "=========================" << "\n";
     llvm::outs() << "Performing closure conversion..." << "\n";
 
     ScopedTimer timer("foster.closureconv");
     foster::performClosureConversion(foster::globalNames, exprAST);
+
+    dumpExprStructureToFile(exprAST, dumpdirFile("structure.aftercc.txt"));
   }
 
   if (optDumpASTs) {

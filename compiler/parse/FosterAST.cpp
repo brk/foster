@@ -221,22 +221,6 @@ std::ostream& NamedTypeDeclAST::operator<<(std::ostream& out) const {
   return out << "type " << name << " = " << str(type) << "\n";
 }
 
-std::ostream& PrototypeAST::operator<<(std::ostream& out) const {
-  out << "PrototypeAST(name = " << name;
-  for (size_t i = 0; i < inArgs.size(); ++i) {
-    out << ", arg["<<i<<"] = " << str(inArgs[i]);
-  }
-  if (resultTy != NULL) {
-    out << ", resultTy=" << str(resultTy);
-  }
-  out << ")";
-  return out;
-}
-
-std::ostream& FnAST::operator<<(std::ostream& out) const {
-  return out << "FnAST(proto = " << str(parts[0]) << ", body = " << str(parts[1]) << "\n";
-}
-
 //////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////
 
