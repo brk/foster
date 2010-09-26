@@ -66,42 +66,6 @@ namespace foster {
   }
 }
 
-const char* llvmValueTag(const llvm::Value* v) {
-  using llvm::isa;
-  if (isa<llvm::AllocaInst>(v))         return "AllocaInst";
-  if (isa<llvm::LoadInst>(v))           return "LoadInst";
-  if (isa<llvm::CallInst>(v))           return "CallInst";
-  if (isa<llvm::StoreInst>(v))          return "StoreInst";
-  if (isa<llvm::BinaryOperator>(v))     return "BinaryOperator";
-
-  if (isa<llvm::Constant>(v))     return "Constant";
-  if (isa<llvm::Argument>(v))     return "Argument";
-  if (isa<llvm::GlobalValue>(v))  return "GlobalValue";
-  if (isa<llvm::CastInst>(v))     return "CastInst";
-
-  if (isa<llvm::GetElementPtrInst>(v))  return "GetElementPtrInst";
-  if (isa<llvm::ICmpInst>(v))           return "ICmpInst";
-  if (isa<llvm::FCmpInst>(v))           return "FCmpInst";
-  if (isa<llvm::SelectInst>(v))         return "SelectInst";
-  if (isa<llvm::ExtractElementInst>(v)) return "ExtractElementInst";
-  if (isa<llvm::ExtractValueInst>(v))   return "ExtractValueInst";
-  if (isa<llvm::SelectInst>(v))         return "SelectInst";
-  if (isa<llvm::SwitchInst>(v))         return "SwitchInst";
-  if (isa<llvm::InsertElementInst>(v))  return "InsertElementInst";
-  if (isa<llvm::InsertValueInst>(v))    return "InsertValueInst";
-  if (isa<llvm::PHINode>(v))            return "PHINode";
-  if (isa<llvm::ReturnInst>(v))         return "ReturnInst";
-  if (isa<llvm::BranchInst>(v))         return "BranchInst";
-  if (isa<llvm::IndirectBrInst>(v))     return "IndirectBrInst";
-  if (isa<llvm::InvokeInst>(v))         return "InvokeInst";
-  if (isa<llvm::UnwindInst>(v))         return "UnwindInst";
-  if (isa<llvm::TruncInst>(v))          return "TruncInst";
-  if (isa<llvm::BitCastInst>(v))        return "BitCastInst";
-
-
-  return "Unknown Value";
-}
-
 void setValue(ExprAST* ast, llvm::Value* V) {
   foster::dbg("setValue") << "ast@" << ast << " :tag: " << std::string(ast->tag)
         << "\t; value tag: " << llvmValueTag(V) << "\t; value " << *V << "\n";
@@ -231,12 +195,6 @@ llvm::Value* storeAndMarkPointerAsGCRoot(llvm::Value* val) {
   // we return the stack slot (of type T**) so that copying GC will be able to
   // modify the stack slot effectively.
   return stackslot;
-}
-
-void markAsNonAllocating(llvm::CallInst* callInst) {
-  llvm::Value* tru = llvm::ConstantInt::getTrue(llvm::getGlobalContext());
-  llvm::MDNode* mdnode = llvm::MDNode::get(llvm::getGlobalContext(), &tru, 1);
-  callInst->setMetadata("willnotgc", mdnode);
 }
 
 // Returns ty**, the stack slot containing a ty*.

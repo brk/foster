@@ -92,6 +92,7 @@ namespace foster {
   void linkFosterGC(); // defined in llmv/plugins/FosterGC.cpp
   // Defined in foster/compiler/llvm/passes/ImathImprover.cpp
   llvm::Pass* createImathImproverPass();
+  llvm::Pass* createGCMallocFinderPass();
 }
 
 using std::string;
@@ -642,6 +643,10 @@ int main(int argc, char** argv) {
     llvm::FunctionPassManager fpasses(module);
     fpasses.add(foster::createImathImproverPass());
     runFunctionPassesOverModule(fpasses, module);
+
+    PassManager passes;
+    passes.add(foster::createGCMallocFinderPass());
+    passes.run(*module);
   }
 
   if (optDumpPreLinkedIR) {

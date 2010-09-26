@@ -9,6 +9,8 @@
 #include "parse/CompilationContext.h"
 
 #include "llvm/Module.h"
+#include "llvm/Instructions.h"
+#include "llvm/Metadata.h"
 
 #include <sstream>
 
@@ -17,6 +19,49 @@ using llvm::getGlobalContext;
 using llvm::FunctionType;
 
 using foster::LLVMTypeFor;
+
+const char* llvmValueTag(const llvm::Value* v) {
+  using llvm::isa;
+  if (!v) return "<NULL Value>";
+
+  if (isa<llvm::AllocaInst>(v))         return "AllocaInst";
+  if (isa<llvm::LoadInst>(v))           return "LoadInst";
+  if (isa<llvm::CallInst>(v))           return "CallInst";
+  if (isa<llvm::StoreInst>(v))          return "StoreInst";
+  if (isa<llvm::BinaryOperator>(v))     return "BinaryOperator";
+
+  if (isa<llvm::Constant>(v))     return "Constant";
+  if (isa<llvm::Argument>(v))     return "Argument";
+  if (isa<llvm::GlobalValue>(v))  return "GlobalValue";
+  if (isa<llvm::CastInst>(v))     return "CastInst";
+
+  if (isa<llvm::GetElementPtrInst>(v))  return "GetElementPtrInst";
+  if (isa<llvm::ICmpInst>(v))           return "ICmpInst";
+  if (isa<llvm::FCmpInst>(v))           return "FCmpInst";
+  if (isa<llvm::SelectInst>(v))         return "SelectInst";
+  if (isa<llvm::ExtractElementInst>(v)) return "ExtractElementInst";
+  if (isa<llvm::ExtractValueInst>(v))   return "ExtractValueInst";
+  if (isa<llvm::SelectInst>(v))         return "SelectInst";
+  if (isa<llvm::SwitchInst>(v))         return "SwitchInst";
+  if (isa<llvm::InsertElementInst>(v))  return "InsertElementInst";
+  if (isa<llvm::InsertValueInst>(v))    return "InsertValueInst";
+  if (isa<llvm::PHINode>(v))            return "PHINode";
+  if (isa<llvm::ReturnInst>(v))         return "ReturnInst";
+  if (isa<llvm::BranchInst>(v))         return "BranchInst";
+  if (isa<llvm::IndirectBrInst>(v))     return "IndirectBrInst";
+  if (isa<llvm::InvokeInst>(v))         return "InvokeInst";
+  if (isa<llvm::UnwindInst>(v))         return "UnwindInst";
+  if (isa<llvm::TruncInst>(v))          return "TruncInst";
+  if (isa<llvm::BitCastInst>(v))        return "BitCastInst";
+
+  return "Unknown Value";
+}
+
+void markAsNonAllocating(llvm::CallInst* callInst) {
+  llvm::Value* tru = llvm::ConstantInt::getTrue(llvm::getGlobalContext());
+  llvm::MDNode* mdnode = llvm::MDNode::get(llvm::getGlobalContext(), &tru, 1);
+  callInst->setMetadata("willnotgc", mdnode);
+}
 
 llvm::ConstantInt* getConstantInt64For(int64_t val) {
   return llvm::ConstantInt::get(Type::getInt64Ty(getGlobalContext()), val);
@@ -130,11 +175,11 @@ bool isValidClosureType(const llvm::Type* ty) {
             = llvm::dyn_cast<llvm::PointerType>(maybePtrFn)) {
       if (const llvm::FunctionType* fnty
             = llvm::dyn_cast<llvm::FunctionType>(ptrMaybeFn->getElementType())) {
-	if (fnty->getNumParams() == 0) return false;
-	if (fnty->isVarArg()) return false;
-	if (maybeEnvTy == fnty->getParamType(0)) {
-	  return true;
-	}
+        if (fnty->getNumParams() == 0) return false;
+        if (fnty->isVarArg()) return false;
+        if (maybeEnvTy == fnty->getParamType(0)) {
+          return true;
+        }
       }
     }
   }
@@ -165,7 +210,7 @@ FnTypeAST* originalFunctionTypeForClosureStructType(TypeAST* ty) {
       // Create a new function type without the env ptr
       std::vector<TypeAST*> originalArgTypes;
       for (int i = 1; i < ft->getNumParams(); ++i) {
-	originalArgTypes.push_back(ft->getParamType(i));
+        originalArgTypes.push_back(ft->getParamType(i));
       }
       FnTypeAST* rv = FnTypeAST::get(ft->getReturnType(),
                                      originalArgTypes,
@@ -173,7 +218,7 @@ FnTypeAST* originalFunctionTypeForClosureStructType(TypeAST* ty) {
 #if 0
       ft->dumpParams();
       std::cout << "originalFunc...() " << str(ty) << " => " << str(ft)
-	<< ";;; " << ft->getNumParams() << " ;; to " << str(rv) << std::endl;
+        << ";;; " << ft->getNumParams() << " ;; to " << str(rv) << std::endl;
 #endif
       return rv;
     }

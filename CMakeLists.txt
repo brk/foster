@@ -276,8 +276,10 @@ add_dependencies(fosterc_parse fosterc_base)
 add_library(fosterc_llvm STATIC
   compiler/llvm/passes/Hello.cpp
   compiler/llvm/passes/ImathImprover.cpp
+  compiler/llvm/passes/GCMallocFinder.cpp
   compiler/llvm/plugins/FosterGC.cpp
 )
+add_dependencies(fosterc_llvm fosterc_parse)
 
 # We've already set most of llvm-config's flags above via LLVM_CFLAGS;
 # here, we just want to set the flags we removed from LLVM_CFLAGS.

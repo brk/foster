@@ -54,7 +54,7 @@ struct DumpExpr {
     }
     int prefixLength = stages.size() * 2;
     std::string msg = getMessage(ast);
-    std::string spaces(std::max(8u, 60 - prefixLength - msg.size()), ' ');
+    std::string spaces(std::max(8, int(80 - prefixLength - msg.size())), ' ');
     out << msg << spaces << ast << "\n";
   }
 

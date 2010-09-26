@@ -10,7 +10,12 @@ namespace llvm {
   class Module;
   class FunctionType;
   class ConstantInt;
+  class Value;
+  class CallInst;
 }
+
+const char* llvmValueTag(const llvm::Value* v);
+void markAsNonAllocating(llvm::CallInst* callInst);
 
 class TypeAST;
 class FnTypeAST;
