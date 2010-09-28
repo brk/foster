@@ -126,6 +126,55 @@ almost never semantically relevant.
 Coroutines
 ----------
 
+One issue that I haven't yet come to any conclusion about is stack overflow.
+An obvious baseline is that stack overflow cannot compromise safety.
+
+But does every function call have to check for stack overflow?
+Can such checks be elided in common cases?
+What can static analysis do to eliminate stack bounds checks?
+
+The temptation of including coroutines in the language means that
+we cannot ignore the issue for long.
+
+Ideally, coroutines would be "pay-as-you-go" in terms of stack cost.
+That is, the space allocated for a coroutine should be at most a
+constant factor greater than the space the coroutine has needed.
+The alternative is to preallocate, for each coroutine, a stack large enough
+to hold the coroutine's activation frames.
+
+The problem is that allocating small initial stacks for coroutines
+forces the issue of stack overflow.
+
+In order to avoid stack overflow, functions must check their stack pointer
+relative to the allocated bounds. In a CPS-based system, this check implicitly
+occurs when allocating a new activation frame on the heap, and functions
+only begin executing once they have been guaranteed sufficient space.
+Otherwise, function prologues must explicitly check for stack overflow.
+
+Go is not CPS, but it does use heap-allocated stacks, organized as
+a linked list. Every function prologue spends ~3 instructions comparing
+the stack pointer to the bounds of the function's stack allocation, and
+calls ``morestack()`` (which, eventually, calls ``gcmalloc()``) if it needs
+more stack.
+
+See http://golang.org/src/pkg/runtime/proc.c
+and http://golang.org/src/pkg/runtime/386/asm.s
+
+Possible techniques for coroutine stack handling:
+
+* Non-resizable stacks
+* Resizable stacks
+ * Stack chaining with non-contiguous stacks
+ * Stack slicing with contiguous stacks
+ * Reallocation with contiguous stacks
+
+One subtle consequence of using a straightforward implementation of stack
+chaining is that the effective stack depth becomes limited by the size of
+the heap, which is presumably much larger than the limits imposed by a
+regularly-sized stack. The net effect (in a language that already has
+loops and/or TCO) is that unexpected non-tail recursion manifests as
+slowdown from virtual memory thrashing rather than a simple SO exception.
+
 Impredicative Polymorphism
 --------------------------
 
@@ -170,7 +219,7 @@ choices or via tool support (e.g. Haskell gives warnings, with inferred
 types, for top-level declarations without explicit annotations).
 
 .. todo::
-	Think and write more about syntax for type annotations.
+        Think and write more about syntax for type annotations.
 
 Within a function, meanwhile, we could use either standard HM inference
 a bidirectional approach for inferring the structure of types.
@@ -189,6 +238,32 @@ Records
 
 Named Parameters
 ----------------
+
+Garbage Collection
+------------------
+
+GC Maps
+^^^^^^^
+
+A standard object GC map specifies the offset of all pointers within an
+object (and possibly their types, if statically known).
+
+The GC must know how large an object is in order to
+
+1. copy it
+2. advance to the next object
+
+For arrays, only the used portion must be copied, though the entire portion
+may be copied. Advancing to the next object requires knowing the allocated size.
+
+Objects which are not allocated in a moving heap are not subject to the
+copying restriction, and may or may not be subject to the total-size
+restriction.
+
+If an array containing pointers is mutated, the mutated segment should be
+marked (with a scheme such as card marking) to ensure that no
+inter-generational pointers are lost, and also that writes have
+bounded cost, never O(n) cost.
 
 
 .. An interactive code sample::
