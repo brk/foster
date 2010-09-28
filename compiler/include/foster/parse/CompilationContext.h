@@ -21,6 +21,7 @@ namespace llvm {
   class raw_ostream;
 }
 
+struct ExprAST;
 struct TypeAST;
 
 std::string freshName(std::string like);
@@ -81,6 +82,15 @@ public:
 
   ///////////////////
 
+  static void
+  setParent(ExprAST* child, ExprAST* parent);
+
+  static ExprAST*
+  getParent(ExprAST* child);
+
+  /////////////////////
+
+
   // Seeing if it's useful for individual unit tests to redirect all output
   // to a string, so it can be (A) hidden from the console unless needed, and
   // (B) inspected to verify the presence/absence of specific errors.
@@ -88,6 +98,8 @@ public:
   llvm::raw_ostream& currentOuts();
   void startAccumulatingOutputToString();
   std::string collectAccumulatedOutput();
+
+  /////////////////////
 
 private:
   struct Impl;

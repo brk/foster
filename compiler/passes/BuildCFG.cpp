@@ -3,6 +3,8 @@
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
 #include "base/Assert.h"
+
+#include "parse/CompilationContext.h"
 #include "parse/FosterAST.h"
 
 #include "passes/BuildCFG.h"
@@ -113,7 +115,8 @@ void BuildCFG::visit(IfExprAST* ast) {
   ast->getElseExpr()->accept(this);
   CFG* elseCFGtail = this->currentRoot;
 
-  this->currentRoot = new CFG("if.cont", ast->parent, currentFn);
+  this->currentRoot = new CFG("if.cont",
+    foster::CompilationContext::getParent(ast), currentFn);
 
   // Connect the CFGs
   root->branchCond(ast->getTestExpr(), thenCFGroot, elseCFGroot);

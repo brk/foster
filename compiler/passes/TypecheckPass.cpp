@@ -845,7 +845,10 @@ void TypecheckPass::visit(IfExprAST* ast) {
 }
 
 int indexInParent(ExprAST* child, int startingIndex) {
-  std::vector<ExprAST*>& parts = child->parent->parts;
+  ExprAST* parent = foster::CompilationContext::getParent(child);
+  ASSERT(parent != NULL);
+
+  std::vector<ExprAST*>& parts = parent->parts;
   for (size_t i = startingIndex; i < parts.size(); ++i) {
     if (parts[i] == child) {
       return i;

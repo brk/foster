@@ -63,7 +63,6 @@ inline bool isCmpOp(const std::string& op) {
 struct ExprAST : public foster::NameResolver<ExprAST> {
   typedef foster::SymbolTable<foster::SymbolInfo>::LexicalScope ScopeType;
 
-  ExprAST* parent;
   std::vector<ExprAST*> parts;
 
   llvm::Value* value;
@@ -72,8 +71,8 @@ struct ExprAST : public foster::NameResolver<ExprAST> {
   const char* const tag;
 
   explicit ExprAST(const char* const tag,
-                   foster::SourceRange sourceRange, ExprAST* parent = NULL)
-    : parent(parent), value(NULL), type(NULL),
+                   foster::SourceRange sourceRange)
+    : value(NULL), type(NULL),
       sourceRange(sourceRange), tag(tag) {}
   virtual ~ExprAST() {}
   virtual std::ostream& operator<<(std::ostream& out) const;

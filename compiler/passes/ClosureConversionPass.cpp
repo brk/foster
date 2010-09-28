@@ -25,6 +25,7 @@ using namespace std;
 
 using foster::currentOuts;
 using foster::currentErrs;
+using foster::CompilationContext;
 
 #include "parse/ExprASTVisitor.h"
 
@@ -75,10 +76,10 @@ void replaceOldWithNew(ExprAST* inExpr, ExprAST* oldExpr, ExprAST* newExpr) {
 }
 
 FnAST* parentFnOf(FnAST* fn) {
-  ExprAST* parent = fn->parent;
+  ExprAST* parent = CompilationContext::getParent(fn);
   while (parent) {
     if (FnAST* fp = dynamic_cast<FnAST*>(parent)) { return fp; }
-    parent = parent->parent;
+    parent = CompilationContext::getParent(parent);
   }
   return NULL;
 }
@@ -134,7 +135,7 @@ void ClosureConversionPass::visit(FnAST* ast)                  {
 
   if (isAnonymousFunction(ast)) {
     // Rename anonymous functions to reflect their lexical scoping
-    FnAST* parentFn = dynamic_cast<FnAST*>(ast->parent);
+    FnAST* parentFn = dynamic_cast<FnAST*>(CompilationContext::getParent(ast));
     if (parentFn != NULL) {
       ast->getName().replace(0, 1, "<" + parentFn->getName() + ".");
     }
@@ -229,7 +230,7 @@ set<VariableAST*> freeVariablesOf(FnAST* ast) {
 
 void hoistAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) {
   ccp->newlyHoistedFunctions.push_back(ast);
-  ast->parent = NULL;
+  CompilationContext::setParent(ast, NULL);
 
   // Alter the symbol table structure to reflect the fact that we're
   // hoisting the function to the root scope.

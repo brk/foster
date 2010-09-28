@@ -43,6 +43,8 @@ struct CompilationContext::Impl {
   std::map<string, bool> keywords;
   std::map<string, bool> reserved_keywords;
 
+  std::map<ExprAST*, ExprAST*> parents;
+
   Impl() : os(accumulated_output), outs(NULL), errs(NULL) {
     initMaps();
   }
@@ -175,6 +177,22 @@ CompilationContext::isReservedKeyword(const string& op) {
   ASSERT(!gCompilationContexts.empty());
 
   return gCompilationContexts.top()->impl->reserved_keywords[op];
+}
+
+////////////////////////////////////////////////////////////////////
+
+void // static
+CompilationContext::setParent(ExprAST* child, ExprAST* parent) {
+  ASSERT(!gCompilationContexts.empty());
+
+  gCompilationContexts.top()->impl->parents[child] = parent;
+}
+
+ExprAST* // static
+CompilationContext::getParent(ExprAST* child) {
+  ASSERT(!gCompilationContexts.empty());
+
+  return gCompilationContexts.top()->impl->parents[child];
 }
 
 ////////////////////////////////////////////////////////////////////

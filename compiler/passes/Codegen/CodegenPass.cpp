@@ -1136,7 +1136,7 @@ void CodegenPass::visit(CallAST* ast) {
       // functions we see being passed directly by name; it would forward
       // all parameters to the regular function, except for the env ptr.
         FnAST* wrapper = getClosureVersionOf(arg, fnty);
-        wrapper->parent = ast;
+        foster::CompilationContext::setParent(wrapper, ast);
         arg = wrapper;
       }
     }
@@ -1443,7 +1443,7 @@ void CodegenPass::visit(TupleExprAST* ast) {
   llvm::Value* pt = NULL;
 
   // Allocate tuple space
-  if (dynamic_cast<RefExprAST*>(ast->parent)) {
+  if (dynamic_cast<RefExprAST*>(foster::CompilationContext::getParent(ast))) {
     // pt has type tuple**
     pt = emitMalloc(tupleType);
   } else {

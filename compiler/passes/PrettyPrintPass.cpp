@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
+#include "parse/CompilationContext.h"
 #include "passes/PrettyPrintPass.h"
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
@@ -215,7 +216,7 @@ void PrettyPrintPass::visit(PrototypeAST* ast) {
 
 // fnProto fnBody
 void PrettyPrintPass::visit(FnAST* ast) {
-  bool isTopLevelFn = ast->parent == NULL;
+  bool isTopLevelFn = foster::CompilationContext::getParent(ast) == NULL;
   if (isTopLevelFn) { scan(pp.tNewline); }
 
   emit(ast->getProto());
@@ -309,7 +310,7 @@ void PrettyPrintPass::visit(SeqAST* ast) {
   FnAST* followingFn = NULL;
   {
   ScopedIndent si(this);
-  followingFn = dynamic_cast<FnAST*>(ast->parent);
+  followingFn = dynamic_cast<FnAST*>(foster::CompilationContext::getParent(ast));
   if (followingFn) {
     scan(PPToken(" {"));
     scan(pp.tNewline);
