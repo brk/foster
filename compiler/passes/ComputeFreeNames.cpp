@@ -21,7 +21,6 @@ struct ComputeFreeVariableNames : public DefaultExprASTVisitor {
 
   virtual void visit(VariableAST*);
   virtual void visit(FnAST*);
-  virtual void visit(ClosureAST*);
   virtual void visit(PrototypeAST*);
 
   using DefaultExprASTVisitor::visit;
@@ -51,20 +50,15 @@ void ComputeFreeVariableNames::visit(VariableAST* ast) {
   names.markNameAsMentioned(name);
 }
 
-void ComputeFreeVariableNames::visit(ClosureAST* ast) {
-  if (ast->fn) {
-    onVisitChild(ast, ast->fn);
-  }
-  visitChildren(ast);
-}
-
 void ComputeFreeVariableNames::visit(FnAST* ast) {
   names.pushBinder(ast);
+  // If have env variables, mark them as bound too, though it shouldn't matter.
   this->onVisitChild(ast, ast->getProto()); // Mark formals as bound.
 
   names.markAsBound(ast->getName()); // Ensure the function name is
                                             // not free in its own body.
   this->onVisitChild(ast, ast->getBody());
+
   names.popBinder(ast);
 }
 

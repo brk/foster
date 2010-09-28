@@ -243,15 +243,6 @@ void PrettyPrintPass::visit(ModuleAST* ast) {
   }
 }
 
-void PrettyPrintPass::visit(ClosureAST* ast) {
-  ScopedBlock sb(this);
-  scan(PPToken("<closure "));
-  if (ast->fn) {
-    emit(ast->fn);
-  }
-  scan(PPToken(">"));
-}
-
 // if $0 then $1 else $2
 void PrettyPrintPass::visit(IfExprAST* ast) {
   ScopedBlock sb(this);

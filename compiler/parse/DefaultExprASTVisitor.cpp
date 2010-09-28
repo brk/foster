@@ -15,7 +15,6 @@ void DefaultExprASTVisitor::visit(NamedTypeDeclAST* ast)       { return; }
 // (the |if (0)|s are because some types visit children in their ->accept() implementations.
 void DefaultExprASTVisitor::visit(UnaryOpExprAST* ast)         { if (0) this->visitChildren(ast); }
 void DefaultExprASTVisitor::visit(BinaryOpExprAST* ast)        { if (0) this->visitChildren(ast); }
-void DefaultExprASTVisitor::visit(FnAST* ast)                  { this->visitChildren(ast); }
 void DefaultExprASTVisitor::visit(ModuleAST* ast)              { this->visitChildren(ast); }
 void DefaultExprASTVisitor::visit(IfExprAST* ast)              { this->visitChildren(ast); }
 void DefaultExprASTVisitor::visit(RefExprAST* ast)             { if (0) this->visitChildren(ast); }
@@ -32,11 +31,14 @@ void DefaultExprASTVisitor::visit(BuiltinCompilesExprAST* ast) { this->visitChil
 // These two require special handling, since they don't store
 // (all of) their subcomponents in their parts array.
 
-void DefaultExprASTVisitor::visit(ClosureAST* ast) {
-  if (ast->fn) {
-    onVisitChild(ast, ast->fn);
+void DefaultExprASTVisitor::visit(FnAST* ast) {
+  if (ast->isClosure()) {
+    for (size_t i = 0; i < ast->environmentParts->size(); ++i) {
+      onVisitChild(ast, (*(ast->environmentParts))[i]);
+    }
   }
-  visitChildren(ast);
+  onVisitChild(ast, ast->proto);
+  onVisitChild(ast, ast->getBody());
 }
 
 void DefaultExprASTVisitor::visit(PrototypeAST* ast)           {

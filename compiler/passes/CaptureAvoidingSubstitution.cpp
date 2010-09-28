@@ -90,11 +90,6 @@ void CaptureAvoidingSubstitution::visit(CallAST* ast)                { visitChil
 void CaptureAvoidingSubstitution::visit(TupleExprAST* ast)           { visitChildren(ast); }
 void CaptureAvoidingSubstitution::visit(BuiltinCompilesExprAST* ast) { visitChildren(ast); }
 
-void CaptureAvoidingSubstitution::visit(ClosureAST* ast)             {
-  visitChildren(ast);
-  cavsVisitChild(ast, (ExprAST**) &ast->fn);
-}
-
 void CaptureAvoidingSubstitution::visit(VariableAST* ast)            {
   if (varName == ast->name) {
     llvm::outs() << "varast setting replacmeent for var " << varName << "\n";
@@ -106,6 +101,8 @@ void CaptureAvoidingSubstitution::visit(PrototypeAST* ast)           {
   // Prototypes can't be rewritten.
 }
 void CaptureAvoidingSubstitution::visit(FnAST* ast)                  {
+  // Ignore closure environment.
+
   // Only replace variable in functions which don't bind it. E.g. with
   //   f = (x, y) => { (x + y +  z ) + ((y, z) => { x + y + z })() }
   // substituting SSS for z in f would yield

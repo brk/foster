@@ -246,17 +246,21 @@ FnTypeAST* FnTypeAST::get(TypeAST* returnType,
 }
 
 const llvm::Type* FnTypeAST::getLLVMType() const {
-  if (!repr) {
-    vector<const llvm::Type*> loweredArgTypes;
-    for (size_t i = 0; i < argTypes.size(); ++i) {
-      loweredArgTypes.push_back(argTypes[i]->getLLVMType());
-    }
-
-    repr = llvm::FunctionType::get(returnType->getLLVMType(),
-                                   loweredArgTypes,
-                                   /*isVarArg=*/ false);
-  }
+  //if (!repr) { repr = genericClosureTypeFor(this)->getLLVMType(); }
+  if (!repr) { repr = getLLVMFnType(); }
   return repr;
+}
+
+const llvm::FunctionType* FnTypeAST::getLLVMFnType() const {
+  vector<const llvm::Type*> loweredArgTypes;
+  for (size_t i = 0; i < argTypes.size(); ++i) {
+    loweredArgTypes.push_back(argTypes[i]->getLLVMType());
+    llvm::outs() << "\t fn arg " << i << " : " << str(argTypes[i]->getLLVMType()) << "\n";
+  }
+
+  return llvm::FunctionType::get(returnType->getLLVMType(),
+                                 loweredArgTypes,
+                                 /*isVarArg=*/ false);
 }
 
 llvm::CallingConv::ID FnTypeAST::getCallingConventionID() {
@@ -305,6 +309,7 @@ TupleTypeAST* TupleTypeAST::get(const vector<TypeAST*>& argTypes) {
 
 FnTypeAST*& ClosureTypeAST::getFnType() {
   if (!fntype) {
+    ASSERT(this->proto);
     foster::typecheck(this->proto);
     if (FnTypeAST* fnty = tryExtractCallableType(proto->type)) {
       fntype = fnty;
@@ -312,7 +317,6 @@ FnTypeAST*& ClosureTypeAST::getFnType() {
   }
   return fntype;
 }
-
 
 const llvm::Type* ClosureTypeAST::getLLVMType() const {
   if (!repr) {

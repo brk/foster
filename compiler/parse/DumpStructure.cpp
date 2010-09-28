@@ -50,18 +50,18 @@ struct DumpExpr {
       dump(ast->parts[i]);
     }
 
+    if (CONST(FnAST) e = dynamic_cast<CONST(FnAST)>(ast)) {
+      if (e->isClosure()) {
+        dump(e->getProto());
+      }
+    }
+
     if (CONST(PrototypeAST) e = dynamic_cast<CONST(PrototypeAST)>(ast)) {
       for (unsigned i = 0; i < e->inArgs.size(); ++i) {
         stages.back() = statusFor(i, e->inArgs.size());
         dump(e->inArgs[i]);
       }
     }
-
-    if (CONST(ClosureAST) e = dynamic_cast<CONST(ClosureAST)>(ast)) {
-      stages.back() = eLastChild;
-      dump(e->fn);
-    }
-
     stages.pop_back();
   }
 
@@ -85,7 +85,8 @@ struct DumpExpr {
       return std::string(e->tag) + " " + e->getOriginalText();
     }
     if (CONST(FnAST) e = dynamic_cast<CONST(FnAST)>(ast)) {
-      return std::string(e->tag) + " " + e->getName();
+      return std::string(e->tag) + " " + e->getName()
+              + " clo: " + std::string(e->isClosure() ? "yes" : "no");
     }
     if (CONST(PrototypeAST) e = dynamic_cast<CONST(PrototypeAST)>(ast)) {
       return std::string(e->tag) + " " + e->getName() + " " + str(ast->type);

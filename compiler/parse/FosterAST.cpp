@@ -227,7 +227,6 @@ std::ostream& NamedTypeDeclAST::operator<<(std::ostream& out) const {
 void          BoolAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
 void           IntAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
 void            FnAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
-void       ClosureAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
 void      VariableAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
 void        IfExprAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
 void       NilExprAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }

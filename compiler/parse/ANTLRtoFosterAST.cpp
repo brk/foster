@@ -318,15 +318,6 @@ FnAST* parseFn(string defaultSymbolTemplate, pTree tree) {
   return buildFn(proto, child(tree, 3));
 }
 
-// Function literals by default parse into ClosureASTs,
-// but the top-level wants only bare functions, no closures.
-FnAST* extractFnForTopLevel(ExprAST* maybeClo) {
-  if (ClosureAST* clo = dynamic_cast<ClosureAST*>(maybeClo)) {
-    return clo->fn;
-  }
-  return dynamic_cast<FnAST*>(maybeClo);
-}
-
 // ExprAST_from() is straight-up recursive, and uses gScope and gTypeScope
 // to keep track of lexical scoping for variables and types, respectively.
 // This works wonderfully for function bodies, where variables must appear
@@ -382,7 +373,8 @@ ModuleAST* parseTopLevel(pTree tree) {
       // parsedExprs[i] remains NULL
     } else {
       ExprAST* otherExpr = ExprAST_from(c);
-      if (FnAST* explicitlyNamedFn = extractFnForTopLevel(otherExpr)) {
+      if (FnAST* explicitlyNamedFn = dynamic_cast<FnAST*>(otherExpr)) {
+        explicitlyNamedFn->removeClosureEnvironment();
         parsedExprs[i] = explicitlyNamedFn;
       } else {
         EDiag() << "expected function or type" << show(rangeOf(c));
@@ -402,7 +394,9 @@ ModuleAST* parseTopLevel(pTree tree) {
     pTree fntree =   (typeOf(c) == FNDEF)   ?   child(c, 1)
                        : (typeOf(c) == FN   )   ?   c
                        :                            NULL;
-    parsedExprs[i] = buildFn(proto, child(fntree, 3));
+    FnAST* fn = buildFn(proto, child(fntree, 3));
+    fn->removeClosureEnvironment();
+    parsedExprs[i] = fn;
   }
 
   std::string moduleName(foster::gPendingModuleName);
@@ -658,7 +652,8 @@ ExprAST* ExprAST_from(pTree tree) {
                       << foster::show(fn);
       return NULL;
     }
-    return new ClosureAST(fn, sourceRange);
+    fn->markAsClosure();
+    return fn;
   }
 
   if (text == "new" || text == "ref") {
@@ -755,7 +750,7 @@ TypeAST* TypeAST_from(pTree tree) {
     if (fn->getBody()) {
       EDiag() << "had unexpected fn body when parsing fn type!" << show(fn);
     }
-    return new ClosureTypeAST(fn->getProto(), NULL, sourceRange);
+    return new ClosureTypeAST(NULL, fn->getProto(), sourceRange);
   }
 
   if (text == "ref") {
@@ -782,7 +777,7 @@ std::vector<TypeAST*> getTypes(pTree tree) {
     for (size_t i = 0; i < getChildCount(tree); ++i) {
       TypeAST* ast = TypeAST_from(child(tree, i));
       if (ast != NULL) {
-	types.push_back(ast);
+        types.push_back(ast);
       }
     }
   } else {

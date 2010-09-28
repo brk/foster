@@ -85,17 +85,6 @@ ExprAST* parseCall(const pb::Expr& e, const foster::SourceRange& range) {
   return new CallAST(base, args, range);
 }
 
-ExprAST* parseClosure(const pb::Expr& e, const foster::SourceRange& range) {
-  if (!e.has_closure()) return NULL;
-
-  const pb::Closure& c = e.closure();
-
-  ClosureAST* clo = new ClosureAST(
-      dynamic_cast<FnAST*>(ExprAST_from_pb(& c.fn())),
-      range);
-  return clo;
-}
-
 ExprAST* parseCompiles(const pb::Expr& e, const foster::SourceRange& range) {
   BuiltinCompilesExprAST* rv = new BuiltinCompilesExprAST(
                                           ExprAST_from_pb(& e.parts(0)), range);
@@ -113,10 +102,12 @@ ExprAST* parseDeref(const pb::Expr& e, const foster::SourceRange& range) {
 }
 
 ExprAST* parseFn(const pb::Expr& e, const foster::SourceRange& range) {
-  return new FnAST(
+  FnAST* fn = new FnAST(
       dynamic_cast<PrototypeAST*>(ExprAST_from_pb(& e.parts(0))),
       ExprAST_from_pb(& e.parts(1)),
       range);
+  // TODO mark as closure?
+  return fn;
 }
 
 ExprAST* parseIf(const pb::Expr& e, const foster::SourceRange& range) {
@@ -258,7 +249,6 @@ ExprAST* ExprAST_from_pb(const pb::Expr* pe) {
   case pb::Expr::ASSIGN:    rv = parseAssign(e, range); break;
   case pb::Expr::BOOL:      rv = parseBool(e, range); break;
   case pb::Expr::CALL:      rv = parseCall(e, range); break;
-  case pb::Expr::CLOSURE:   rv = parseClosure(e, range); break;
   case pb::Expr::COMPILES:  rv = parseCompiles(e, range); break;
   case pb::Expr::DEREF:     rv = parseDeref(e, range); break;
   case pb::Expr::FN:        rv = parseFn(e, range); break;
@@ -356,8 +346,7 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
     }
 
     ASSERT(proto) << "Need a proto to reconstruct a closure type." << show(range);
-    ClosureTypeAST* ct = new ClosureTypeAST(proto, underlyingType, range);
-    ct->fntype = cloFnType;
+    ClosureTypeAST* ct = new ClosureTypeAST(cloFnType, proto, range);
     ct->clotype = cloTupleType;
     return ct;
   }

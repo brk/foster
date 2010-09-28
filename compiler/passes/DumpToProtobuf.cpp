@@ -121,14 +121,6 @@ void DumpToProtobufPass::visit(FnAST* ast)                  {
   dumpChildren(this, ast);
 }
 
-void DumpToProtobufPass::visit(ClosureAST* ast) {
-  processExprAST(current, ast, foster::pb::Expr::CLOSURE);
-  foster::pb::Closure* clo = current->mutable_closure();
-  if (ast->fn) {
-    dumpChild(this, clo->mutable_fn(), ast->fn);
-  }
-}
-
 void DumpToProtobufPass::visit(ModuleAST* ast)              {
   processExprAST(current, ast, foster::pb::Expr::MODULE);
   current->set_name(ast->scope->getName());

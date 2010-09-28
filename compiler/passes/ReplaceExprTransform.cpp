@@ -53,7 +53,6 @@ void ReplaceExprTransform::visit(VariableAST* ast)            { this->newChild =
 void ReplaceExprTransform::visit(UnaryOpExprAST* ast)         { visitChildren(ast); this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(BinaryOpExprAST* ast)        { visitChildren(ast); this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(IfExprAST* ast)              { visitChildren(ast); this->newChild = rewrite(ast); }
-void ReplaceExprTransform::visit(ClosureAST* ast)             { visitChildren(ast); this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(NilExprAST* ast)             { visitChildren(ast); this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(RefExprAST* ast)             { visitChildren(ast); this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(DerefExprAST* ast)           { visitChildren(ast); this->newChild = rewrite(ast); }
@@ -84,7 +83,9 @@ void ReplaceExprTransform::visit(PrototypeAST* ast)           {
   this->newChild = ast; // Prototypes can't be rewritten to anything else...
 }
 
-void ReplaceExprTransform::visit(FnAST* ast)                  {
+void ReplaceExprTransform::visit(FnAST* ast) {
+  // TODO need anything special for closures?
+
   ast->getProto()->accept(this); // No chance of rewriting to proto to a different node type!
   onVisitChild(ast, &ast->getBody());
   this->newChild = rewrite(ast);

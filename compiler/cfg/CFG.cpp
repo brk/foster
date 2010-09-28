@@ -135,7 +135,7 @@ llvm::BasicBlock* CFG::codegen(CodegenPass* p, llvm::Function* parentFunction) {
 
 std::string getCFGEdgeSourceLabel(const CFG *cnode,
                                   CFG_succ_iterator I) {
-  CFG* node = (CFG*) cnode;
+  CFG* node = const_cast<CFG*>(cnode);
   if (!node || !node->getTerminator()) { return ""; }
 
   // Label source of conditional branches with "T" or "F"

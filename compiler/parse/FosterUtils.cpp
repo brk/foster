@@ -119,48 +119,52 @@ void addClosureTypeName(llvm::Module* mod, TupleTypeAST* cty) {
   }
 }
 
+// Converts t1 (t2, t3)   to  t1 (i8*, t2, t3)
+FnTypeAST* genericClosureVersionOf(const FnTypeAST* fnty, bool skipFirstArg) {
+  TypeAST* envType = RefTypeAST::get(TypeAST::i(8));
+
+  std::vector<TypeAST*> fnParams;
+  fnParams.push_back(envType);
+
+  int firstArg = skipFirstArg ? 1 : 0;
+  for (int i = firstArg; i < fnty->getNumParams(); ++i) {
+    fnParams.push_back(fnty->getParamType(i));
+  }
+
+  return FnTypeAST::get(fnty->getReturnType(), fnParams, "fastcc");
+}
+
+FnTypeAST* genericClosureVersionOf(const FnTypeAST* fnty) {
+  return genericClosureVersionOf(fnty, /*skipFirstArg*/ false);
+}
+
 // converts      t1 (t2, t3) to { t1 (i8* nest, t2, t3)*, i8* }
 // or    t1 (envty* nest, t2, t3) to { t1 (i8* nest, t2, t3)*, i8* }
-static TupleTypeAST* genericClosureTypeFor(TypeAST* ty, bool skipFirstArg) {
-#if 0
-  if (ClosureTypeAST* cloty = dynamic_cast<ClosureTypeAST*>(ty)) {
-    ty = cloty->getFnType();
-  }
-#endif
-
-  if (FnTypeAST* fnty = dynamic_cast<FnTypeAST*>(ty)) {
+static TupleTypeAST* genericClosureTypeFor(const TypeAST* ty, bool skipFirstArg) {
+  if (const FnTypeAST* fnty = dynamic_cast<const FnTypeAST*>(ty)) {
     TypeAST* envType = RefTypeAST::get(TypeAST::i(8));
-
-    std::vector<TypeAST*> fnParams;
-    fnParams.push_back(envType);
-
-    int firstArg = skipFirstArg ? 1 : 0;
-    for (int i = firstArg; i < fnty->getNumParams(); ++i) {
-      fnParams.push_back(fnty->getParamType(i));
-    }
 
     // We can mark closures with whatever calling convention we want,
     // since closures are internal by definition.
-    FnTypeAST* newFnTy = FnTypeAST::get(fnty->getReturnType(), fnParams, "fastcc");
+    FnTypeAST* newFnTy = genericClosureVersionOf(fnty, skipFirstArg);
     std::vector<TypeAST*> cloTypes;
     cloTypes.push_back(RefTypeAST::get(newFnTy));
     cloTypes.push_back(envType);
     TupleTypeAST* cloTy = TupleTypeAST::get(cloTypes);
-    //std::cout << "GENERIC CLOSURE TYPE for " << *fnty << " is " << *cloTy << std::endl;
     return cloTy;
   } else {
-    foster::EDiag() << "unable to extract fn type from " << str(ty) << "\n";
+    foster::EDiag() << "unable to extract fn type from " << str(const_cast<TypeAST*>(ty)) << "\n";
     return NULL;
   }
 }
 
 // converts t1 (t2, t3) to { t1 (i8*, t2, t3)*, i8* }
-TupleTypeAST* genericClosureTypeFor(TypeAST* ty) {
+TupleTypeAST* genericClosureTypeFor(const TypeAST* ty) {
   return genericClosureTypeFor(ty, false);
 }
 
 // converts t1 (envty*, t2, t3) to { t1 (i8*, t2, t3)*, i8* }
-TupleTypeAST* genericVersionOfClosureType(TypeAST* ty) {
+TupleTypeAST* genericVersionOfClosureType(const TypeAST* ty) {
   return genericClosureTypeFor(ty, true);
 }
 

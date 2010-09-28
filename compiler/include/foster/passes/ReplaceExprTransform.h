@@ -36,6 +36,9 @@ struct ReplaceExprTransform : public ExprASTVisitor {
 
   ExprAST* rewrite(ExprAST* ast);
 
+
+  using ExprASTVisitor::onVisitChild;
+
 # include "parse/ExprASTVisitor.decls.inc.h"
 };
 

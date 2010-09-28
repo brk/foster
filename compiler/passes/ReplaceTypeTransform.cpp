@@ -96,7 +96,6 @@ struct ReplaceTypeInExprTransform : public DefaultExprASTVisitor {
   virtual void visit(IntAST*);
   virtual void visit(IfExprAST*);
   virtual void visit(ModuleAST*);
-  virtual void visit(ClosureAST*);
   virtual void visit(VariableAST*);
   virtual void visit(PrototypeAST*);
   virtual void visit(NamedTypeDeclAST*);
@@ -143,12 +142,14 @@ void ReplaceTypeInExprTransform::visit(PrototypeAST* ast) {
 }
 
 void ReplaceTypeInExprTransform::visit(FnAST* ast) {
-  visitChildren(ast); applyTypeSubst(ast);
-}
-
-void ReplaceTypeInExprTransform::visit(ClosureAST* ast) {
-  ASSERT(ast->fn);
-  ast->fn->accept(this); visitChildren(ast); applyTypeSubst(ast);
+  if (ast->isClosure()) {
+    for (size_t i = 0; i < ast->environmentParts->size(); ++i) {
+      (*(ast->environmentParts))[i]->accept(this);
+    }
+  }
+  ast->getProto()->accept(this);
+  ast->getBody()->accept(this);
+  applyTypeSubst(ast);
 }
 
 void ReplaceTypeInExprTransform::visit(NamedTypeDeclAST* ast) {

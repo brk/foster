@@ -94,7 +94,7 @@ void foundFreeVariableIn(VariableAST* var, FnAST* scope) {
   } while (scope != NULL && boundVariables[scope].count(var->getName()) == 0);
 }
 
-void performClosureConversion(ClosureAST* ast, ClosureConversionPass* ccp);
+void performClosureConversion(FnAST* ast, ClosureConversionPass* ccp);
 void lambdaLiftAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp);
 bool isAnonymousFunction(FnAST* ast);
 
@@ -129,6 +129,9 @@ void ClosureConversionPass::visit(FnAST* ast)                  {
     onVisitChild(ast, ast->getBody());
   callStack.pop_back();
 
+  llvm::outs() << "isAnonymousFunction " << ast->getName() << " : " << isAnonymousFunction(ast) << "\n";
+  llvm::outs() << "isClosure " << ast->getName() << " : " << ast->isClosure() << "\n";
+
   if (isAnonymousFunction(ast)) {
     // Rename anonymous functions to reflect their lexical scoping
     FnAST* parentFn = dynamic_cast<FnAST*>(ast->parent);
@@ -136,19 +139,12 @@ void ClosureConversionPass::visit(FnAST* ast)                  {
       ast->getName().replace(0, 1, "<" + parentFn->getName() + ".");
     }
 
-    if (fnInClosure.count(ast) > 0) {
-      // don't lambda lift if we're doing closure conversion!
+    if (ast->isClosure()) {
+      performClosureConversion(ast, this);
     } else {
       lambdaLiftAnonymousFunction(ast, this);
     }
   }
-}
-
-void ClosureConversionPass::visit(ClosureAST* ast) {
-  ASSERT(!ast->hasKnownEnvironment);
-  fnInClosure.insert(ast->fn);
-  ast->fn->accept(this);
-  performClosureConversion(ast, this);
 }
 
 void ClosureConversionPass::visit(ModuleAST* ast)              {
@@ -173,15 +169,17 @@ void ClosureConversionPass::visit(SubscriptAST* ast)           { return; }
 void ClosureConversionPass::visit(SeqAST* ast)                 { return; }
 void ClosureConversionPass::visit(CallAST* ast)                {
   ExprAST* base = ast->parts[0];
-  if (ClosureAST* cloBase = dynamic_cast<ClosureAST*>(base)) {
-    currentOuts() << "visited direct call of closure, replacing with fn... "
-              << str(base) << "\n";
-    replaceOldWithNew(cloBase->parent, cloBase, cloBase->fn);
-    currentOuts() << str(cloBase->parent) << "\n";
-    base = ast->parts[0] = cloBase->fn;
-  }
   if (FnAST* fnBase = dynamic_cast<FnAST*>(base)) {
     currentOuts() << "visited direct call of fn " << fnBase->getName() << "\n";
+    // If we have a direct call of a function, then we know
+    // for sure that we don't need to form a closure for it,
+    // because all of the variables that it might capture are
+    // variables that we have access to, and can add as parameters
+    // (which is OK, because we know that the function can't be
+    //  called from anywhere else).
+    // So, we force closure conversion to lambda-lift and hoist it,
+    // rather than closure converting it.
+    fnBase->removeClosureEnvironment();
     callsOf[fnBase].insert(ast);
   }
   visitChildren(ast);
@@ -239,11 +237,9 @@ void hoistAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) {
   gScopeInsert(ast->getName(), ast->getProto()->value);
 }
 
-void performClosureConversion(ClosureAST* closure,
+void performClosureConversion(FnAST* ast,
                               ClosureConversionPass* ccp) {
-  FnAST* ast = closure->fn;
-  //llvm::outs() << "Closure converting function" << ast->getName()
-  //             << " @ " << ast << "\n";
+  llvm::outs() << "Closure converting function" << str(ast);
 
   // Find the set of free variables for the function
   set<VariableAST*> freeVars = freeVariablesOf(ast);
@@ -303,23 +299,19 @@ void performClosureConversion(ClosureAST* closure,
   if (ast->getProto()->type) {
     // and updates the types of the prototype and function itself,
     // if they already have types.
-    {
-      typecheck(ast->getProto());
-      currentOuts() << "ClosureConversionPass: updating type from "
-                 << str(ast->type->getLLVMType())
-                 << " to\n\t" << str(ast->getProto()->type->getLLVMType()) << "\n";
-      ast->type = ast->getProto()->type;
-    }
+    typecheck(ast->getProto());
+    currentOuts() << "ClosureConversionPass: updating type from "
+               << str(ast->type->getLLVMType())
+               << " to\n\t" << str(ast->getProto()->type->getLLVMType()) << "\n";
+    ast->type = ast->getProto()->type;
   }
 
-  closure->parts = envExprs;
-  closure->hasKnownEnvironment = true;
-  hoistAnonymousFunction(ast, ccp);
+  *(ast->environmentParts) = envExprs;
+  //hoistAnonymousFunction(ast, ccp);
 }
 
 void lambdaLiftAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) {
-  //llvm::outs() << "Lambda lifting function" << ast->getName()
-  //             << " @ " << ast << "\n";
+  llvm::outs() << "Lambda lifting function" << str(ast);
 
   set<VariableAST*> freeVars = freeVariablesOf(ast);
   CallSet& calls = callsOf[ast];
@@ -378,5 +370,6 @@ void lambdaLiftAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) {
   }
 
   // And move the now-rootless function to the top level, where it belongs.
+  ast->removeClosureEnvironment();
   hoistAnonymousFunction(ast, ccp);
 }

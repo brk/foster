@@ -832,29 +832,12 @@ void TypecheckPass::visit(FnAST* ast) {
   ASSERT(ast->getProto() != NULL);
   ast->getProto()->accept(this);
 
-  if (ast->getBody() != NULL) {
-    gScope.pushExistingScope(ast->getProto()->scope);
-    ast->getBody()->accept(this);
-    gScope.popExistingScope(ast->getProto()->scope);
+  ASSERT(ast->getBody() != NULL);
+  gScope.pushExistingScope(ast->getProto()->scope);
+  ast->getBody()->accept(this);
+  gScope.popExistingScope(ast->getProto()->scope);
 
-    if (ast->getProto()->type && ast->getBody()->type) {
-      ast->type = ast->getProto()->type;
-      llvm::outs() << "typecheck pass FnAST, computed type " << str(ast->type) << "\n";
-    }
-  } else {
-    // Probably looking at a function type expr. TODO trust but verify
-    ast->type = ast->getProto()->type;
-  }
-}
-
-void TypecheckPass::visit(ClosureAST* ast) {
-  ast->fn->accept(this);
-
-  if (ast->hasKnownEnvironment) {
-    visitChildren(ast);
-  }
-
-  ast->type = new ClosureTypeAST(ast->fn->getProto(), NULL, ast->sourceRange);
+  ast->type = ast->getProto()->type;
 }
 
 void TypecheckPass::visit(NamedTypeDeclAST* ast) {
@@ -1157,13 +1140,13 @@ void TypecheckPass::visit(CallAST* ast) {
 
   vector<TypeAST*> argTypes;
 
-  FnAST* literalFnBase = dynamic_cast<FnAST*>(base);
-  if (literalFnBase) {
+  FnAST* fnbase = dynamic_cast<FnAST*>(base);
+  if (fnbase && fnbase->isClosure()) {
     // This is an encoded let-expression   fn (formals) { body }(args).
 
     // First, inspect just the prototype of the function, to ensure
     // that any un-annotated formals get type variables.
-    literalFnBase->getProto()->accept(this);
+    fnbase->getProto()->accept(this);
 
     // Next, synthesize the args, and constrain the formal and actual
     // parameter types.
@@ -1182,24 +1165,21 @@ void TypecheckPass::visit(CallAST* ast) {
     }
 
     size_t maxSafeIndex = (std::min)(args.size(),
-                                     literalFnBase->getProto()->inArgs.size());
+                                     fnbase->getProto()->inArgs.size());
     for (size_t i = 0; i < maxSafeIndex; ++i) {
       // Ensure that we don't forget the constraint that existed before
       // we overwrote the base function's formal parameter types.
-      if (literalFnBase->getProto()->inArgs[i]->type) {
-        constraints.addEq(ast, literalFnBase->getProto()->inArgs[i]->type,
+      if (fnbase->getProto()->inArgs[i]->type) {
+        constraints.addEq(ast, fnbase->getProto()->inArgs[i]->type,
                                args[i]->type);
       }
-      dynamic_cast<VariableAST*>(literalFnBase->getProto()->inArgs[i])->type =
+      dynamic_cast<VariableAST*>(fnbase->getProto()->inArgs[i])->type =
                                                           args[i]->type;
     }
 
-    literalFnBase->accept(this);
-    literalFnBase->type = literalFnBase->getProto()->type; // TODO terrible hack :(
+    fnbase->accept(this);
+    fnbase->type = fnbase->getProto()->type; // TODO terrible hack :(
   } else {
-    if (ClosureAST* literalClo = dynamic_cast<ClosureAST*>(base)) {
-      EDiag() << "\t\tCALL WITH LITERAL CLOSURE BASE: " << show(ast);
-    }
     // Otherwise, we should synthesize the base, then check the args.
     base->accept(this);
 

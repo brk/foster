@@ -296,47 +296,48 @@ public:
   virtual void accept(ExprASTVisitor* visitor);
 };
 
-
-struct FnAST : public ExprAST {
-  std::vector<foster::CFG*> cfgs;
-
-  explicit FnAST(PrototypeAST* proto, ExprAST* body,
-                 foster::SourceRange sourceRange)
-    : ExprAST("FnAST", sourceRange) {
-    parts.push_back(proto);
-    parts.push_back(body);
-  }
-  virtual void accept(ExprASTVisitor* visitor);
-
-  std::string& getName() { return getProto()->name; }
-  std::string getName() const { return getProto()->getName(); }
-  PrototypeAST* getProto() { return dynamic_cast<PrototypeAST*>(parts[0]); }
-  PrototypeAST* getProto() const { return dynamic_cast<PrototypeAST*>(parts[0]); }
-  ExprAST*& getBody() { return parts[1]; }
-};
-
+// Closures are an implementation strategy for language feature
+// of first-class function values.
+//
 // A closure stores a typed function pointer and a typed environment pointer.
 // At the typechecking level, its type is a function type, but at the codegen level,
 // its "external" LLVM type is a struct of function-taking-generic-env-ptr and
 // generic-env-ptr. This allows type checking to be agnostic of the types stored
 // in the env, while still allowing codegen to insert the appropriate bitcasts.
-struct ClosureAST : public ExprAST {
-  // Closures created for fn AST nodes during AST parsing will
-  // wrap the function AST node, and will not initially have
-  // known environment type exprs (which requires calculation of
-  // free variables) in this->parts.
-  FnAST* fn;
+ struct FnAST : public ExprAST {
+   std::vector<foster::CFG*> cfgs;
 
-  // Closures created during closure conversion will get this flag
-  // set at creation time; existing closures will set this flag
-  // during closure conversion of the above fn AST node.
-  bool hasKnownEnvironment;
+  PrototypeAST* proto;
 
-  explicit ClosureAST(FnAST* fn, foster::SourceRange sourceRange)
-    : ExprAST("ClosureAST", sourceRange), fn(fn),
-      hasKnownEnvironment(false) { }
+  // For closures; requires calcualation of free variables.
+  // Top-level functions (which are, by definition, not closures)
+  // have this field unset either in ANTLRtoFosterAST or
+  // during lambda lifting.
+  Exprs* environmentParts;
+  bool isClosure() const { return environmentParts != NULL; }
+  void markAsClosure() {
+    ASSERT(!environmentParts);
+    environmentParts = new Exprs();
+  }
+  void removeClosureEnvironment() {
+    delete environmentParts;
+    environmentParts = NULL;
+  }
 
-  virtual void accept(ExprASTVisitor* visitor);
+   explicit FnAST(PrototypeAST* proto, ExprAST* body,
+                  foster::SourceRange sourceRange)
+      : ExprAST("FnAST", sourceRange),
+        proto(proto), environmentParts(NULL) {
+     parts.push_back(body);
+   }
+
+   virtual void accept(ExprASTVisitor* visitor);
+
+  std::string& getName() { return getProto()->name; }
+  std::string getName() const { return getProto()->getName(); }
+  PrototypeAST* getProto() { return proto; }
+  PrototypeAST* getProto() const { return proto; }
+  ExprAST*& getBody() { return parts[0]; }
 };
 
 struct ModuleAST : public NamespaceAST {

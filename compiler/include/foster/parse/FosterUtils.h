@@ -34,11 +34,14 @@ void addClosureTypeName(llvm::Module* mod, TupleTypeAST* ty);
 // Converts T (X, Y) and T (X, Y)* to T (X, Y)
 FnTypeAST* tryExtractCallableType(TypeAST* ty);
 
+// Converts t1 (t2, t3)   to  t1 (i8*, t2, t3)
+FnTypeAST* genericClosureVersionOf(const FnTypeAST* fn);
+
 // converts t1 (t2, t3) to { t1 (i8*, t2, t3)*, i8* }
-TupleTypeAST* genericClosureTypeFor(TypeAST* ty);
+TupleTypeAST* genericClosureTypeFor(const TypeAST* ty);
 
 // converts t1 (envptrty*, t2, t3) to { t1 (i8*, t2, t3)*, i8* }
-TupleTypeAST* genericVersionOfClosureType(TypeAST* ty);
+TupleTypeAST* genericVersionOfClosureType(const TypeAST* ty);
 
 // A compatible function type matches at all arguments, except that the return type
 // for the first may be void, and the return type for the second need not be.

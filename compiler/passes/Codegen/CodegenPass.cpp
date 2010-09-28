@@ -10,6 +10,7 @@
 #include "parse/FosterUtils.h"
 #include "parse/CompilationContext.h"
 #include "parse/ExprASTVisitor.h"
+#include "parse/DumpStructure.h"
 
 #include "passes/CodegenPass.h"
 #include "passes/TypecheckPass.h"
@@ -55,6 +56,12 @@ struct CodegenPass : public ExprASTVisitor {
   #include "parse/ExprASTVisitor.decls.inc.h"
 };
 
+std::string hex(ExprAST* ast) {
+  std::string s;
+  llvm::raw_string_ostream ss(s);
+  ss << ast;
+  return ss.str();
+}
 
 namespace foster {
   void codegen(ExprAST* ast) {
@@ -67,8 +74,10 @@ namespace foster {
 }
 
 void setValue(ExprAST* ast, llvm::Value* V) {
-  foster::dbg("setValue") << "ast@" << ast << " :tag: " << std::string(ast->tag)
+  if (0) {
+    foster::dbg("setValue") << "ast@" << ast << " :tag: " << std::string(ast->tag)
         << "\t; value tag: " << llvmValueTag(V) << "\t; value " << *V << "\n";
+  }
   ast->value = V;
 }
 
@@ -237,7 +246,7 @@ llvm::Value* allocateMPInt() {
 }
 
 void CodegenPass::visit(IntAST* ast) {
-  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned " << ast->tag << " @ " << hex(ast) << " twice?!?" << show(ast);
 
   llvm::Value* small = getConstantInt(ast);
 
@@ -264,7 +273,7 @@ void CodegenPass::visit(IntAST* ast) {
 }
 
 void CodegenPass::visit(BoolAST* ast) {
-  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned " << ast->tag << " @ " << hex(ast) << " twice?!?" << show(ast);
   setValue(ast, (ast->boolValue)
       ? ConstantInt::getTrue(getGlobalContext())
       : ConstantInt::getFalse(getGlobalContext()));
@@ -290,15 +299,13 @@ void CodegenPass::visit(VariableAST* ast) {
     }
   }
 
-  if (!getValue(ast)) {
-    EDiag() << "Unknown variable name " << ast->name << " in CodegenPass"
-            << show(ast);
-    exit(2);
-  }
+  ASSERT(getValue(ast))
+     << "Unknown variable name " << ast->name << " in CodegenPass"
+     << str(ast) << show(ast);
 }
 
 void CodegenPass::visit(UnaryOpExprAST* ast) {
-  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned " << ast->tag << " @ " << hex(ast) << " twice?!?" << show(ast);
 
   Value* V = ast->parts[0]->value;
   const std::string& op = ast->op;
@@ -392,7 +399,7 @@ bool leftTypeBiggerInt(const Type* left, const Type* right) {
 }
 
 void CodegenPass::visit(BinaryOpExprAST* ast) {
-  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned " << ast->tag << " @ " << hex(ast) << " twice?!?" << show(ast);
 
   Value* VL = ast->parts[ast->kLHS]->value;
   Value* VR = ast->parts[ast->kRHS]->value;
@@ -438,7 +445,7 @@ std::string getSymbolName(const std::string& sourceName) {
 }
 
 void CodegenPass::visit(PrototypeAST* ast) {
-  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned " << ast->tag << " @ " << hex(ast) << " twice?!?" << show(ast);
 
   std::string symbolName = getSymbolName(ast->getName());
 
@@ -490,7 +497,7 @@ void CodegenPass::visit(PrototypeAST* ast) {
 
 void CodegenPass::visit(SeqAST* ast) {
   //EDiag() << "Codegen for SeqASTs should (eventually) be subsumed by CFG building!";
-  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned " << ast->tag << " @ " << hex(ast) << " twice?!?" << show(ast);
 
   if (!ast->parts.empty()) {
     // Find last non-void value
@@ -510,88 +517,6 @@ void CodegenPass::visit(SeqAST* ast) {
   }
 }
 
-void CodegenPass::visit(FnAST* ast) {
-  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
-
-  ASSERT(ast->getBody() != NULL);
-  ASSERT(ast->getProto()->scope) << "no scope for " << ast->getName();
-  ASSERT(ast->getProto()->value) << "ModuleAST should codegen function protos.";
-
-  Function* F = dyn_cast<Function>(ast->getProto()->value);
-  if (!F) { return; }
-
-#if USE_FOSTER_GC_PLUGIN
-  F->setGC("fostergc");
-#else
-  F->setGC("shadow-stack");
-#endif
-
-  BasicBlock* prevBB = builder.GetInsertBlock();
-  BasicBlock* BB = BasicBlock::Create(getGlobalContext(), "entry", F);
-  builder.SetInsertPoint(BB);
-
-  gScope.pushExistingScope(ast->getProto()->scope);
-
-  // If the body of the function might allocate memory, the first thing
-  // the function should do is create stack slots/GC roots to hold
-  // dynamically-allocated pointer parameters.
-  if (true) { // conservative approximation to MightAlloc
-    Function::arg_iterator AI = F->arg_begin();
-    for (size_t i = 0; i != ast->getProto()->inArgs.size(); ++i, ++AI) {
-      if (mightContainHeapPointers(AI->getType())) {
-#if 0
-        std::cout << "marking root for var " << ast->getProto()->inArgs[i]->name
-            << " of ast type " << *(ast->getProto()->inArgs[i]->type)
-            << " and value type " << *(AI->getType()) << "\n";
-#endif
-        gScopeInsert(ast->getProto()->inArgs[i]->name,
-            storeAndMarkPointerAsGCRoot(AI));
-      }
-    }
-  }
-
-  (ast->getBody())->accept(this);
-  Value* RetVal = ast->getBody()->value;
-  if (RetVal == NULL) {
-    EDiag() << "null body value when codegenning function " << ast->getName()
-            << show(ast);
-    return;
-  }
-  ASSERT(RetVal != NULL);
-
-  bool returningVoid = isVoid(ast->getProto()->resultTy);
-
-  // If we try to return a tuple* when the fn specifies a tuple, manually insert a load
-  if (RetVal->getType()->isDerivedType()
-      && !returningVoid
-      && isPointerToType(RetVal->getType(), ast->getProto()->resultTy->getLLVMType())) {
-    RetVal = builder.CreateLoad(RetVal, false, "structPtrToStruct");
-  }
-
-  gScope.popExistingScope(ast->getProto()->scope);
-
-  if (RetVal) {
-    if (returningVoid) {
-      builder.CreateRetVoid();
-    } else if (isVoid(RetVal->getType())) {
-      EDiag() << "unable to return non-void value given only void" << show(ast);
-    } else {
-      builder.CreateRet(RetVal);
-    }
-    //llvm::verifyFunction(*F);
-    setValue(ast, F);
-  } else {
-    F->eraseFromParent();
-    EDiag() << "function '" << ast->getName()
-              << "' retval creation failed" << show(ast);
-  }
-
-  // Restore the insertion point, if there was one.
-  if (prevBB) {
-    builder.SetInsertPoint(prevBB);
-  }
-}
-
 // converts   t1, (envptrty, t2, t3)   to   { rt (envptrty, t2, t3)*, envptrty }
 // TODO handle functions of native arity >= 1
 const llvm::StructType* closureTypeFromClosedFnType(const FunctionType* fnty) {
@@ -606,32 +531,23 @@ const llvm::StructType* closureTypeFromClosedFnType(const FunctionType* fnty) {
   return cloTy;
 }
 
-void CodegenPass::visit(ClosureAST* ast) {
-  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
+void codegenClosure(FnAST* ast, CodegenPass* self) {
+  ASSERT(ast->isClosure() && ast->environmentParts != NULL)
+      << "closure made it to codegen with no environment " << show(ast);
 
-  ASSERT(ast->hasKnownEnvironment) <<
-      "closure made it to codegen with no environment type" << show(ast);
-
-  TupleExprAST* env = new TupleExprAST(new SeqAST(ast->parts,
-                                          SourceRange::getEmptyRange()),
-                                       SourceRange::getEmptyRange());
-  ExprAST* fnPtr = new VariableAST(ast->fn->getName(),
-                   RefTypeAST::get(ast->fn->type), SourceRange::getEmptyRange());
-  typecheck(fnPtr);
-  fnPtr->accept(this);
+  Exprs envParts = *(ast->environmentParts);
+  llvm::outs() << "envparts: " << envParts.size() << "\n";
+  llvm::outs().flush();
+  SeqAST* seq = new SeqAST(envParts, SourceRange::getEmptyRange());
+  TupleExprAST* env = new TupleExprAST(seq, SourceRange::getEmptyRange());
 
   env->isClosureEnvironment = true;
   typecheck(env);
-  env->accept(this);
+  env->accept(self);
 
-#if 0
-  llvm::errs() << "Closure conversion " << ast->fn->proto->name << "\n\tfnPtr value: "
-      << *fnPtr->value << "\n\tFunction? " << llvm::isa<Function>(fnPtr->value) << "\n";
-#endif
-
-  FnTypeAST* fnTy = dynamic_cast<FnTypeAST*>(ast->fn->type);
+  FnTypeAST* fnTy = dynamic_cast<FnTypeAST*>(ast->type);
   ASSERT(fnTy != NULL) << "closure fn ref had non-function pointer type?!? "
-      << str(ast->fn->type) << show(ast);
+      << str(ast->type) << show(ast);
 
 
   // Manually build struct for now, since we don't have PtrAST nodes
@@ -649,12 +565,12 @@ void CodegenPass::visit(ClosureAST* ast) {
 
   // (code*)*
   Value* clo_code_slot = builder.CreateConstGEP2_32(clo, 0, 0, "clo_code");
-  builder.CreateStore(fnPtr->value, clo_code_slot, /*isVolatile=*/ false);
+  builder.CreateStore(ast->value, clo_code_slot, /*isVolatile=*/ false);
 
   // (env*)*
   Value* clo_env_slot = builder.CreateConstGEP2_32(clo, 0, 1, "clo_env");
 
-  if (!ast->parts.empty()) {
+  if (!ast->environmentParts->empty()) {
     // Store the typemap in the environment's typemap slot.
     const llvm::Type* specificEnvTyPtr = specificCloTy->getContainedType(1);
     const llvm::Type* specificEnvTy = specificEnvTyPtr->getContainedType(0);
@@ -684,6 +600,92 @@ void CodegenPass::visit(ClosureAST* ast) {
   setValue(ast, builder.CreateLoad(genericClo, /*isVolatile=*/ false, "loadClosure"));
 }
 
+void CodegenPass::visit(FnAST* ast) {
+  ASSERT(!getValue(ast)) << "codegenned " << ast->tag << " " << ast->getName()
+                          << " @ " << hex(ast) << " twice?!?" << show(ast);
+
+  ASSERT(ast->getBody() != NULL);
+  ASSERT(ast->getProto()->scope) << "no scope for " << ast->getName();
+  if (ast->isClosure()) {
+    ASSERT(!ast->getProto()->value)
+      << "Functions for closures shouldn't be lifted, so they"
+      << " shouldn't have their prototypes generated yet."
+      << "\n\t" << ast->getProto()->getName();
+    ast->getProto()->accept(this);
+  }
+
+  ASSERT(ast->getProto()->value) << "ModuleAST should codegen function protos.";
+
+  Function* F = dyn_cast<Function>(ast->getProto()->value);
+  if (!F) { return; }
+
+  #if USE_FOSTER_GC_PLUGIN
+    F->setGC("fostergc");
+  #else
+    F->setGC("shadow-stack");
+  #endif
+
+  BasicBlock* prevBB = builder.GetInsertBlock();
+  BasicBlock* BB = BasicBlock::Create(getGlobalContext(), "entry", F);
+  builder.SetInsertPoint(BB);
+
+  gScope.pushExistingScope(ast->getProto()->scope);
+
+  // If the body of the function might allocate memory, the first thing
+  // the function should do is create stack slots/GC roots to hold
+  // dynamically-allocated pointer parameters.
+  if (true) { // conservative approximation to MightAlloc
+    Function::arg_iterator AI = F->arg_begin();
+    for (size_t i = 0; i != ast->getProto()->inArgs.size(); ++i, ++AI) {
+      if (mightContainHeapPointers(AI->getType())) {
+#if 0
+        std::cout << "marking root for var " << ast->getProto()->inArgs[i]->name
+            << " of ast type " << *(ast->getProto()->inArgs[i]->type)
+            << " and value type " << *(AI->getType()) << "\n";
+#endif
+        gScopeInsert(ast->getProto()->inArgs[i]->name,
+            storeAndMarkPointerAsGCRoot(AI));
+      }
+    }
+  }
+
+  ast->getBody()->accept(this);
+
+  Value* rv = ast->getBody()->value;
+  ASSERT(rv) << "null body value when codegenning function " << ast->getName()
+             << show(ast);
+
+  bool returningVoid = isVoid(ast->getProto()->resultTy);
+
+  // If we try to return a tuple* when the fn specifies a tuple, manually insert a load
+  if (rv->getType()->isDerivedType()
+      && !returningVoid
+      && isPointerToType(rv->getType(), ast->getProto()->resultTy->getLLVMType())) {
+    rv = builder.CreateLoad(rv, false, "structPtrToStruct");
+  }
+
+  gScope.popExistingScope(ast->getProto()->scope);
+
+  if (returningVoid) {
+    builder.CreateRetVoid();
+  } else if (isVoid(rv->getType())) {
+    EDiag() << "unable to return non-void value given only void" << show(ast);
+  } else {
+    builder.CreateRet(rv);
+  }
+  //llvm::verifyFunction(*F);
+  setValue(ast, F);
+
+  // Restore the insertion point, if there was one.
+  if (prevBB) {
+    builder.SetInsertPoint(prevBB);
+  }
+
+  if (ast->isClosure()) {
+    codegenClosure(ast, this);
+  }
+}
+
 void CodegenPass::visit(NamedTypeDeclAST* ast) {
   return;
 }
@@ -709,7 +711,7 @@ void CodegenPass::visit(ModuleAST* ast) {
 
 void CodegenPass::visit(IfExprAST* ast) {
   //EDiag() << "Codegen for IfExprASTs should (eventually) be subsumed by CFG building!";
-  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned " << ast->tag << " @ " << hex(ast) << " twice?!?" << show(ast);
 
   (ast->getTestExpr())->accept(this);
   Value* cond = ast->getTestExpr()->value;
@@ -771,7 +773,7 @@ void CodegenPass::visit(IfExprAST* ast) {
 }
 
 void CodegenPass::visit(NilExprAST* ast) {
-  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned " << ast->tag << " @ " << hex(ast) << " twice?!?" << show(ast);
   setValue(ast, llvm::ConstantPointerNull::getNullValue(getLLVMType(ast->type)));
 }
 
@@ -779,7 +781,7 @@ void CodegenPass::visit(NilExprAST* ast) {
 // (which is generally a LLVM type Tl*)
 // is a T(*)* stack slot holding the actual pointer value.
 void CodegenPass::visit(RefExprAST* ast) {
-  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned " << ast->tag << " @ " << hex(ast) << " twice?!?" << show(ast);
 
   // Some values will see that they're a child of a RefExpr and substitute
   // a malloc for an alloca; others, like int literals or such, must be
@@ -839,7 +841,7 @@ void CodegenPass::visit(DerefExprAST* ast) {
 }
 
 void CodegenPass::visit(AssignExprAST* ast) {
-  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned " << ast->tag << " @ " << hex(ast) << " twice?!?" << show(ast);
 
   const llvm::Type* srcty = ast->parts[1]->value->getType();
   llvm::Value* dst = ast->parts[0]->value;
@@ -912,7 +914,7 @@ Value* getElementFromComposite(Value* compositeValue, Value* idxValue) {
 }
 
 void CodegenPass::visit(SubscriptAST* ast) {
-  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned " << ast->tag << " @ " << hex(ast) << " twice?!?" << show(ast);
 
   Value* base = ast->parts[0]->value;
   Value* idx  = ast->parts[1]->value;
@@ -963,60 +965,54 @@ FnAST* getClosureVersionOf(ExprAST* arg, FnTypeAST* fnty) {
     protoName = proto->getName();
   }
 
-  if (!protoName.empty()) {
-    string fnName = "__closureVersionOf__" + protoName;
-    if (FnAST* exists = closureVersions[fnName]) {
-      return exists;
-    }
+  ASSERT(!protoName.empty()) << "getClosureVersionOf() was given unxpected arg "
+          << str(arg) << "\n\tshould be variable or prototype" << show(arg);
 
-    std::vector<VariableAST*> inArgs;
-    std::vector<ExprAST*> callArgs;
-    inArgs.push_back(new VariableAST(freshName("__ignored_env__"),
-        RefTypeAST::get(TypeAST::i(8)),
-        SourceRange::getEmptyRange()));
-
-    for (size_t i = 0; i < fnty->getNumParams(); ++i) {
-      VariableAST* a = new VariableAST(freshName("_cv_a"),
-                             fnty->getParamType(i),
-                             SourceRange::getEmptyRange());
-      inArgs.push_back(a);
-      callArgs.push_back(a);
-    }
-
-    // Create a scope for the new proto.
-    foster::SymbolTable<foster::SymbolInfo>::LexicalScope* protoScope =
-                                    gScope.newScope("fn proto " + fnName);
-    // But don't use it for doing codegen outside the proto.
-    gScope.popExistingScope(protoScope);
-
-    PrototypeAST* proto = new PrototypeAST(fnty->getReturnType(),
-                               fnName, inArgs, arg->sourceRange, protoScope);
-    ExprAST* body = new CallAST(arg, callArgs, SourceRange::getEmptyRange());
-    FnAST* fn = new FnAST(proto, body, SourceRange::getEmptyRange());
-
-    typecheck(fn);
-    // We must manually codegen the proto because functions expect
-    // their protos to be codegenned, and we've created this function
-    // after the other prototpyes have already been codegenned.
-    codegen(fn->getProto());
-    codegen(fn);
-
-    // Regular functions get their proto values added when the module
-    // starts codegenning, but we need to do it ourselves here.
-    gScopeInsert(fn->getName(), fn->getProto()->value);
-
-    closureVersions[fnName] = fn;
-
-    return fn;
-  } else {
-    EDiag() << "getClosureVersionOf() was given unxpected arg " << str(arg) << show(arg);
-    exit(1);
+  string fnName = "__closureVersionOf__" + protoName;
+  if (FnAST* exists = closureVersions[fnName]) {
+    return exists;
   }
-  return NULL;
+
+  std::vector<VariableAST*> inArgs;
+  std::vector<ExprAST*> callArgs;
+  inArgs.push_back(new VariableAST(freshName("__ignored_env__"),
+      RefTypeAST::get(TypeAST::i(8)),
+      SourceRange::getEmptyRange()));
+
+  for (size_t i = 0; i < fnty->getNumParams(); ++i) {
+    VariableAST* a = new VariableAST(freshName("_cv_a"),
+                           fnty->getParamType(i),
+                           SourceRange::getEmptyRange());
+    inArgs.push_back(a);
+    callArgs.push_back(a);
+  }
+
+  // Create a scope for the new proto.
+  foster::SymbolTable<foster::SymbolInfo>::LexicalScope* protoScope =
+                                  gScope.newScope("fn proto " + fnName);
+  // But don't use it for doing codegen outside the proto.
+  gScope.popExistingScope(protoScope);
+
+  PrototypeAST* proto = new PrototypeAST(fnty->getReturnType(),
+                             fnName, inArgs, arg->sourceRange, protoScope);
+  ExprAST* body = new CallAST(arg, callArgs, SourceRange::getEmptyRange());
+  FnAST* fn = new FnAST(proto, body, SourceRange::getEmptyRange());
+  fn->markAsClosure();
+
+  proto->type = fn->type = genericClosureVersionOf(fnty);
+
+  // Regular functions get their proto values added when the module
+  // starts codegenning, but we need to do it ourselves here.
+  gScopeInsert(fn->getName(), fn->getProto()->value);
+
+  closureVersions[fnName] = fn;
+
+  return fn;
 }
 
 // Follows up to two (type-based) pointer indirections for the given value.
 llvm::Value* getClosureStructValue(llvm::Value* maybePtrToClo) {
+  llvm::outs() << "maybePtrToClo: " << str(maybePtrToClo) << "\n";
   if (maybePtrToClo->getType()->isPointerTy()) {
     maybePtrToClo = builder.CreateLoad(maybePtrToClo, /*isVolatile=*/ false, "derefCloPtr");
   }
@@ -1039,7 +1035,7 @@ isKnownNonAllocating(ExprAST* ast) {
 }
 
 void CodegenPass::visit(CallAST* ast) {
-  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned " << ast->tag << " @ " << hex(ast) << " twice?!?" << show(ast);
 
   ExprAST* base = ast->parts[0];
   ASSERT(base != NULL);
@@ -1053,6 +1049,8 @@ void CodegenPass::visit(CallAST* ast) {
   // TODO extract directly from FnTypeAST
   llvm::CallingConv::ID callingConv = llvm::CallingConv::C;
 
+  FnTypeAST* fty = dynamic_cast<FnTypeAST*>(base->type);
+
   if (Function* F = llvm::dyn_cast_or_null<Function>(FV)) {
     // Call to top level function
     FT = F->getFunctionType();
@@ -1062,9 +1060,11 @@ void CodegenPass::visit(CallAST* ast) {
     ASSERT(false) << "don't know what calling convention to use for ptrs";
   } else if (ClosureTypeAST* cty = dynamic_cast<ClosureTypeAST*>(base->type)) {
     // Call to closure struct
-    FnTypeAST* fty = tryExtractCallableType(cty->clotype->getContainedType(0));
+    fty = tryExtractCallableType(cty->clotype->getContainedType(0));
     ASSERT(fty) << "closure must have function type at codegen time!";
+  }
 
+  if (fty && !FT) {
     FT = dyn_cast<const FunctionType>(fty->getLLVMType());
     llvm::Value* clo = getClosureStructValue(FV);
 
@@ -1077,8 +1077,11 @@ void CodegenPass::visit(CallAST* ast) {
 
     FV = builder.CreateExtractValue(clo, 0, "getCloCode");
     callingConv = llvm::CallingConv::Fast;
-  } else {
-    EDiag() << "call to uncallable something" << show(base)
+  }
+
+  if (!FT) {
+    EDiag() << "call to uncallable something " << base->tag << "\t" << base->type->tag
+            << show(base)
             << "\nFV: " << str(FV);
     return;
   }
@@ -1087,11 +1090,9 @@ void CodegenPass::visit(CallAST* ast) {
     // Args checked for nulls during typechecking
     ExprAST* arg = ast->parts[i];
 
-    ClosureAST* clo = NULL;
-
+    FnAST* fn = dynamic_cast<FnAST*>(arg);
     const llvm::Type* expectedType = FT->getContainedType(i);
-
-    if (clo = dynamic_cast<ClosureAST*>(arg)) {
+    if (fn && fn->isClosure()) {
       // continue...
     } else if (FnTypeAST* fnty = dynamic_cast<FnTypeAST*>(arg->type)) {
       // Codegenning   callee( arg )  where arg has raw function type, not closure type!
@@ -1133,11 +1134,9 @@ void CodegenPass::visit(CallAST* ast) {
       // The simplest approach is to lazily generate a "closure version" of any
       // functions we see being passed directly by name; it would forward
       // all parameters to the regular function, except for the env ptr.
-        ClosureAST* clo = new ClosureAST(getClosureVersionOf(arg, fnty),
-                                         SourceRange::getEmptyRange());
-        clo->hasKnownEnvironment = true; // Empty by definition!
-        arg = clo;
-        typecheck(arg);
+        FnAST* wrapper = getClosureVersionOf(arg, fnty);
+        wrapper->parent = ast;
+        arg = wrapper;
       }
     }
 
@@ -1306,7 +1305,7 @@ llvm::GlobalVariable* getGlobalArrayVariable(SeqAST* body,
 }
 
 void CodegenPass::visit(ArrayExprAST* ast) {
-  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned " << ast->tag << " @ " << hex(ast) << " twice?!?" << show(ast);
 
   const llvm::ArrayType* arrayType
                             = dyn_cast<llvm::ArrayType>(getLLVMType(ast->type));
@@ -1346,7 +1345,7 @@ void CodegenPass::visit(ArrayExprAST* ast) {
 }
 
 void CodegenPass::visit(SimdVectorAST* ast) {
-  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned " << ast->tag << " @ " << hex(ast) << " twice?!?" << show(ast);
 
   const llvm::VectorType* simdType
                      = dyn_cast<const llvm::VectorType>(getLLVMType(ast->type));
@@ -1431,7 +1430,7 @@ bool structTypeContainsPointers(const llvm::StructType* ty) {
 }
 
 void CodegenPass::visit(TupleExprAST* ast) {
-  ASSERT(!getValue(ast)) << "codegenned twice?!?" << show(ast);
+  ASSERT(!getValue(ast)) << "codegenned " << ast->tag << " @ " << hex(ast) << " twice?!?" << show(ast);
 
   ASSERT(ast->type != NULL);
 

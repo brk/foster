@@ -199,10 +199,12 @@ public:
                         const std::string& callingConvName);
 
   TypeAST*& getParamType(int i) { return argTypes[i]; }
-
+  TypeAST* getParamType(int i) const { return argTypes[i]; }
   TypeAST*& getReturnType() { return returnType; }
-
+  TypeAST* getReturnType() const { return returnType; }
   int getNumParams() const { return argTypes.size(); }
+
+  const llvm::FunctionType* getLLVMFnType() const;
 
   llvm::CallingConv::ID getCallingConventionID();
   friend class DumpTypeToProtobufPass;
@@ -237,11 +239,10 @@ public:
   PrototypeAST* proto;
   mutable FnTypeAST* fntype;
   mutable TupleTypeAST* clotype;
-  explicit ClosureTypeAST(PrototypeAST* proto,
-                          const llvm::Type* underlyingType,
+  explicit ClosureTypeAST(FnTypeAST* ft, PrototypeAST* proto,
                           const SourceRange& sourceRange)
-     : TypeAST("ClosureType", underlyingType, sourceRange),
-       proto(proto), fntype(NULL), clotype(NULL) {}
+     : TypeAST("ClosureType", NULL, sourceRange),
+       proto(proto), fntype(ft), clotype(NULL) {}
 
   virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
 
