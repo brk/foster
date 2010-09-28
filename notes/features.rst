@@ -141,6 +141,43 @@ Regions
 Types
 -----
 
+Type Inference
+--------------
+
+Type inference is great for "small" examples,
+where types are obvious by inspection.
+
+At the same time, explicitly documenting the types of top-level functions
+is (almost?) universally considered good style in Haskell, Doing so
+has a number of benefits:
+
+* Explicit type annotations aid human readers follow what a function does.
+* Explicit type annotations let the compiler give much better error
+  messages for a category of problems which are not caught by
+  type inference alone, namely, well-typed definitions that
+  happen to have a type other than what the author expected.
+
+Damas-Milner style type inference (that is to say, complete type inference
+of un-annotated programs) breaks down in the presence of
+fancier type systems than Hindley-Milner. Impredicative polymorphism,
+subtyping, and higher-rank types tend to lead to intractable and/or
+undecidable reconstruction problems.
+
+
+Therefore, we would like to strongly encourage explicit annotations
+on top-level function definitions. This could be done via syntactic
+choices or via tool support (e.g. Haskell gives warnings, with inferred
+types, for top-level declarations without explicit annotations).
+
+.. todo::
+	Think and write more about syntax for type annotations.
+
+Within a function, meanwhile, we could use either standard HM inference
+a bidirectional approach for inferring the structure of types.
+Inferring effects requires global propagation, because effects are constrained
+by inequalities, not equalities.
+
+
 Dependent Types
 ---------------
 
