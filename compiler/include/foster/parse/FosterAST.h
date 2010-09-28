@@ -169,15 +169,12 @@ struct BoolAST : public ExprAST {
 struct VariableAST : public ExprAST {
   string name;
   PrototypeAST* lazilyInsertedPrototype;
-  bool noInitialType;
-  bool noFixedType() { return noInitialType && !type; }
 
   explicit VariableAST(const string& name, TypeAST* aType,
                        foster::SourceRange sourceRange)
       : ExprAST("VariableAST", sourceRange),
         name(name), lazilyInsertedPrototype(NULL) {
     this->type = aType;
-    noInitialType = (aType == NULL);
   }
 
   virtual ExprAST* lookup(const string& name, const string& meta);
