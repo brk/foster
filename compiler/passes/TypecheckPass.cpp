@@ -50,29 +50,6 @@ bool isIntTypeName(const std::string& s) {
       || s == "i16" || s == "i32" || s == "i64";
 }
 
-// Restriction is that each arg type must match,
-// and return types must either match or be */void.
-bool canConvertWithVoidWrapper(TypeAST* t1, TypeAST* t2) {
-  if (FnTypeAST* ft1 = dynamic_cast<FnTypeAST*>(t1)) {
-    if (FnTypeAST* ft2 = dynamic_cast<FnTypeAST*>(t2)) {
-      if (ft1->getNumParams() != ft2->getNumParams()) return false;
-
-      if (str(ft1->getReturnType()) != str(ft2->getReturnType())) {
-        if (! isVoid(ft2->getReturnType())) return false;
-      }
-
-      for (int i = 0; i < ft1->getNumParams(); ++i) {
-        if (str(ft1->getParamType(i)) != str(ft2->getParamType(i))) {
-          return false;
-        }
-      }
-
-      return true;
-    }
-  }
-  return false;
-}
-
 struct TypecheckPass : public ExprASTVisitor {
 
   struct Constraints {
@@ -201,18 +178,13 @@ struct TypecheckPass : public ExprASTVisitor {
             // referent type must be concrete/monomorphic (e.g. a C function type)
             TypeAST* ft2 = rt2->getElementType();
 
-            if (string(ft1->tag) == string(ft2->tag)
-                && canConvertWithVoidWrapper(ft1, ft2)) {
-                ASSERT(false) << "no void wrappers?";
-            } else {
-              newLoggedError()
-                     << "Unable to unify fn/ref types " << str(ft1) << " and " << str(ft2)
-                     << " [" << ft1->tag << " != " << ft2->tag << "]"
-                     << " from " << context->tag
-                     << foster::show(context);
-              // Record the constraint without applying it to the substitution.
-              collectEqualityConstraint(context, t1, t2);
-            }
+            newLoggedError()
+                   << "Unable to unify fn/ref types " << str(ft1) << " and " << str(ft2)
+                   << " [" << ft1->tag << " != " << ft2->tag << "]"
+                   << " from " << context->tag
+                   << foster::show(context);
+            // Record the constraint without applying it to the substitution.
+            collectEqualityConstraint(context, t1, t2);
 
           } else if (t1->tag == std::string("ClosureType")
                   && t2->tag == std::string("RefType")) {
