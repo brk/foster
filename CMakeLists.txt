@@ -284,6 +284,25 @@ add_library(fosterc_llvm STATIC
 )
 add_dependencies(fosterc_llvm fosterc_parse)
 
+
+add_library(fosterc_passes STATIC
+  compiler/cfg/CFG.cpp
+  compiler/passes/BuildCFG.cpp
+  compiler/passes/PassUtils.cpp
+  compiler/passes/Codegen/CodegenPass.cpp
+  compiler/passes/Codegen/Codegen-typemaps.cpp
+  compiler/passes/TypecheckPass.cpp
+  compiler/passes/DumpToProtobuf.cpp
+  compiler/passes/PrettyPrintPass.cpp
+  compiler/passes/ComputeFreeNames.cpp
+  compiler/passes/AddParentLinksPass.cpp
+  compiler/passes/ReplaceExprTransform.cpp
+  compiler/passes/ReplaceTypeTransform.cpp
+  compiler/passes/ClosureConversionPass.cpp
+  compiler/passes/CaptureAvoidingSubstitution.cpp
+)
+add_dependencies(fosterc_passes fosterc_parse)
+
 # We've already set most of llvm-config's flags above via LLVM_CFLAGS;
 # here, we just want to set the flags we removed from LLVM_CFLAGS.
 #
@@ -298,24 +317,10 @@ endif (${LLVM_ORIGINAL_CFLAGS} MATCHES ${NO_RTTI_FLAG})
 add_executable(fosterc
   compiler/foster.cpp
   compiler/StandardPrelude.cpp
-  compiler/cfg/CFG.cpp
-  compiler/passes/BuildCFG.cpp
-  compiler/passes/Codegen/CodegenPass.cpp
-  compiler/passes/Codegen/Codegen-typemaps.cpp
-  compiler/passes/TypecheckPass.cpp
-  compiler/passes/DumpToProtobuf.cpp
-  compiler/passes/PrettyPrintPass.cpp
-  compiler/passes/ComputeFreeNames.cpp
-  compiler/passes/AddParentLinksPass.cpp
-  compiler/passes/ReplaceExprTransform.cpp
-  compiler/passes/ReplaceTypeTransform.cpp
-  compiler/passes/ClosureConversionPass.cpp
-  compiler/passes/CaptureAvoidingSubstitution.cpp
-  #  compiler/llvm/passes/LLVMCallGraphDotPrinter.cpp
 )
 
 target_link_libraries(fosterc
-  fosterc_parse fosterc_base
+  fosterc_passes fosterc_parse fosterc_base
   fosterc_llvm
   antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
 
@@ -328,12 +333,10 @@ add_executable(pbfosterview
   tools/pbfosterview/pbfosterview.cpp
   compiler/passes/PrettyPrintPass.cpp
   ${GENERATED}/FosterAST.pb.cc
-  # Purely for ClosureTypeAST::getFnType, remove ASAP...
   compiler/passes/TypecheckPass.cpp
-  compiler/passes/ReplaceTypeTransform.cpp
 )
 target_link_libraries(pbfosterview
-  fosterc_parse fosterc_base
+  fosterc_passes fosterc_parse fosterc_base
   antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
 
 #####################################################################
@@ -360,17 +363,10 @@ add_executable(unittest_fosterc_parse
   ${PROJECT_SOURCE_DIR}/compiler/parse/TypeInference_unittest.cpp
   ${PROJECT_SOURCE_DIR}/compiler/base/PughSinofskyPrettyPrinter_unittest.cpp
   ${PROJECT_SOURCE_DIR}/compiler/passes/ComputeFreeNames_unittest.cpp
-  #
-  # The files below contain symbols the above code depends on.
-  ${PROJECT_SOURCE_DIR}/compiler/passes/TypecheckPass.cpp
-  ${PROJECT_SOURCE_DIR}/compiler/passes/ReplaceTypeTransform.cpp
-  ${PROJECT_SOURCE_DIR}/compiler/passes/DumpToProtobuf.cpp
-  ${PROJECT_SOURCE_DIR}/compiler/passes/PrettyPrintPass.cpp
-  ${PROJECT_SOURCE_DIR}/compiler/passes/ComputeFreeNames.cpp
   ${GENERATED}/FosterAST.pb.cc
 )
 target_link_libraries(unittest_fosterc_parse
-  fosterc_parse fosterc_base
+  fosterc_passes fosterc_parse fosterc_base
   gtest_main
   antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
 

@@ -12,8 +12,8 @@
 #include "parse/ExprASTVisitor.h"
 #include "parse/DumpStructure.h"
 
+#include "passes/PassUtils.h"
 #include "passes/CodegenPass.h"
-#include "passes/TypecheckPass.h"
 
 #include "_generated_/FosterConfig.h"
 
@@ -536,13 +536,14 @@ void codegenClosure(FnAST* ast, CodegenPass* self) {
       << "closure made it to codegen with no environment " << show(ast);
 
   Exprs envParts = *(ast->environmentParts);
-  llvm::outs() << "envparts: " << envParts.size() << "\n";
-  llvm::outs().flush();
+
   SeqAST* seq = new SeqAST(envParts, SourceRange::getEmptyRange());
   TupleExprAST* env = new TupleExprAST(seq, SourceRange::getEmptyRange());
 
   env->isClosureEnvironment = true;
-  typecheck(env);
+  foster::typecheckTuple(env, envParts);
+  ASSERT(env->type);
+
   env->accept(self);
 
   FnTypeAST* fnTy = dynamic_cast<FnTypeAST*>(ast->type);

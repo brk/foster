@@ -11,6 +11,7 @@
 #include "parse/FosterUtils.h"
 #include "parse/DumpStructure.h"
 
+#include "passes/PassUtils.h"
 #include "passes/TypecheckPass.h"
 #include "passes/PrettyPrintPass.h"
 #include "passes/ReplaceTypeTransform.h"
@@ -1313,30 +1314,7 @@ void TypecheckPass::visit(TupleExprAST* ast) {
     return;
   }
 
-  bool success = true;
-  std::vector<TypeAST*> tupleFieldTypes;
-  for (size_t i = 0; i < body->parts.size(); ++i) {
-    ExprAST* expr = body->parts[i];
-    if (!expr) {
-      EDiag() << "tuple expr had null component " << i << show(ast);
-      break;
-    }
-    TypeAST* ty = expr->type;
-    if (!ty) {
-      EDiag() << "tuple had null constituent type for subexpression"
-              << show(expr);
-      success = false;
-      break;
-    }
-
-    tupleFieldTypes.push_back(ty);
-  }
-
-  if (success) {
-    ast->type = TupleTypeAST::get(tupleFieldTypes);
-  }
-
-  return;
+  foster::typecheckTuple(ast,  body->parts);
 }
 
 void TypecheckPass::visit(BuiltinCompilesExprAST* ast) {
