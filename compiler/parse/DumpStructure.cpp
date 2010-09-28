@@ -81,6 +81,9 @@ struct DumpExpr {
     if (CONST(VariableAST) e = dynamic_cast<CONST(VariableAST)>(ast)) {
       return std::string(e->tag) + " " + e->getName() + " :: " + str(ast->type);
     }
+    if (CONST(IntAST) e = dynamic_cast<CONST(IntAST)>(ast)) {
+      return std::string(e->tag) + " " + e->getOriginalText();
+    }
     if (CONST(FnAST) e = dynamic_cast<CONST(FnAST)>(ast)) {
       return std::string(e->tag) + " " + e->getName();
     }
