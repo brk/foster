@@ -82,9 +82,6 @@ void CaptureAvoidingSubstitution::visit(NamedTypeDeclAST* ast) { return; }
 void CaptureAvoidingSubstitution::visit(ModuleAST* ast)              { visitChildren(ast); }
 void CaptureAvoidingSubstitution::visit(IfExprAST* ast)              { visitChildren(ast); }
 void CaptureAvoidingSubstitution::visit(NilExprAST* ast)             { visitChildren(ast); }
-void CaptureAvoidingSubstitution::visit(RefExprAST* ast)             { visitChildren(ast); }
-void CaptureAvoidingSubstitution::visit(DerefExprAST* ast)           { visitChildren(ast); }
-void CaptureAvoidingSubstitution::visit(AssignExprAST* ast)          { visitChildren(ast); }
 void CaptureAvoidingSubstitution::visit(SubscriptAST* ast)           { visitChildren(ast); }
 //void CaptureAvoidingSubstitution::visit(SimdVectorAST* ast)          { visitChildren(ast); }
 void CaptureAvoidingSubstitution::visit(SeqAST* ast)                 { visitChildren(ast); }

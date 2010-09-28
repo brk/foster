@@ -189,12 +189,6 @@ llvm::ConstantInt* getConstantInt(IntAST* n) {
   return llvm::dyn_cast<ConstantInt>(c);
 }
 
-bool RefExprAST::isIndirect() {
-  if (isIndirect_) return true;
-  return (type && value &&
-          isPointerToType(value->getType(), type->getLLVMType()));
-}
-
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
 
@@ -237,9 +231,6 @@ void NamedTypeDeclAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
 void BuiltinCompilesExprAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
 
 void          SeqAST::accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
-void      RefExprAST::accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
-void    DerefExprAST::accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
-void   AssignExprAST::accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
 void    SubscriptAST::accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
 void    TupleExprAST::accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
 

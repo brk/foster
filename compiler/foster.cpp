@@ -242,7 +242,7 @@ struct CommentWriter : public AssemblyAnnotationWriter {
   void printInfoComment(const Value& v, formatted_raw_ostream& os) {
     if (v.getType()->isVoidTy()) return;
     os.PadToColumn(62);
-    os << "; #uses = " << v.getNumUses();
+    os << "; #uses = " << v.getNumUses() << "\t; " << str(v.getType()) ;
   }
 };
 

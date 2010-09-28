@@ -51,7 +51,7 @@ public:
 
 namespace foster {
   void prettyPrintExpr(ExprAST* t,
-		 llvm::raw_ostream& out, int width, int indent_width,
+                 llvm::raw_ostream& out, int width, int indent_width,
                  bool printSignaturesOnly) {
     PrettyPrintPass pp(out, width, indent_width);
     pp.setPrintSignaturesOnly(printSignaturesOnly);
@@ -128,7 +128,6 @@ bool isAtom(ExprAST* ast) {
 
 bool isDelimited(ExprAST* ast) {
   if (isAtom(ast)) return true;
-  if (dynamic_cast<DerefExprAST*>(ast)) return true;
   return false;
 }
 
@@ -270,28 +269,6 @@ void PrettyPrintPass::visit(IfExprAST* ast) {
 
 void PrettyPrintPass::visit(NilExprAST* ast) {
   scan(PPToken("nil"));
-}
-
-void PrettyPrintPass::visit(RefExprAST* ast) {
-  ScopedBlock sb(this);
-  scan(PPToken("ref "));
-  emit(ast->parts[0]);
-}
-
-void PrettyPrintPass::visit(DerefExprAST* ast) {
-  ScopedBlock sb(this);
-  scan(PPToken("deref("));
-  emit(ast->parts[0]);
-  scan(PPToken(")"));
-}
-
-void PrettyPrintPass::visit(AssignExprAST* ast) {
-  ScopedBlock sb(this);
-  scan(PPToken("set "));
-  emit(ast->parts[0]);
-  scan(PPToken(" = "));
-  scan(pp.tOptNewline);
-  emit(ast->parts[1]);
 }
 
 // $0 [ $1 ]

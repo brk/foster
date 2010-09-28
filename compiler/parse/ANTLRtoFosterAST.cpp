@@ -196,6 +196,8 @@ ExprAST* validateAssignLHS(ExprAST* ast) {
   return NULL;
 }
 
+/// Extract a name and (possibly) a type, and insert
+/// a new VariableAST for the name in the symbol table.
 VariableAST* parseFormal(pTree tree) {
   // ^(FORMAL ^(NAME varName) ^(... type ... ))
   pTree varNameTree = child(tree, 0);
@@ -282,7 +284,7 @@ ExprAST* parseBinaryOpExpr(
     // a opname b rop c
     foster::OperatorPrecedenceTable::OperatorRelation rel =
       CompilationContext::getOperatorRelation(opname, rop);
-	    ////foster::gCompilationContexts.top()->prec.get(opname, rop);
+            ////foster::gCompilationContexts.top()->prec.get(opname, rop);
     if (rel == foster::OperatorPrecedenceTable::kOpBindsTighter) {
       delete rhs; // return ((a opname b) rop c)
       ExprAST* ab = parseBinaryOpExpr(opname, a, b);
@@ -486,16 +488,6 @@ ExprAST* parseTrailers(pTree tree,
       // calls, and function-call syntax for built-in bitwise operators.
       VariableAST* varPrefix = dynamic_cast<VariableAST*>(prefix);
       if (varPrefix) {
-        if (varPrefix->name == "deref") {
-          if (args.size() != 1) {
-            currentErrs() << "Error! Deref operator called with "
-                      << " bad number of args: " << args.size() << "\n";
-            return NULL;
-          }
-          prefix = new DerefExprAST(args[0], sourceRange);
-          continue;
-        }
-
         if (isBitwiseOpName(varPrefix->name)) {
           if (args.size() != 2) {
             currentErrs() << "Error! Bitwise operator " << varPrefix->name
@@ -571,22 +563,7 @@ ExprAST* ExprAST_from(pTree tree) {
   if (token == INT) { return parseIntFrom(tree, sourceRange); }
   if (token == PARENEXPR) { return parseParenExpr(tree); }
   if (token == COMPILES) { return parseBuiltinCompiles(tree, sourceRange); }
-
-  if (token == BODY) { // usually contains SEQ
-    return ExprAST_from(child(tree, 0));
-  }
-
-  // <LHS RHS>
-  if (token == SETEXPR) {
-    ExprAST* lhs = validateAssignLHS(ExprAST_from(child(tree, 0)));
-    if (!lhs) {
-      currentErrs() << "Error! Invalid syntactic form on LHS of assignment;" <<
-          " must be variable or subscript expr" << "\n";
-      return NULL;
-    }
-    ExprAST* rhs = ExprAST_from(child(tree, 1));
-    return new AssignExprAST(lhs, rhs, sourceRange);
-  }
+  if (token == BODY) { return ExprAST_from(child(tree, 0)); }
 
   // <formal arg (body | next) [type]>
   if (token == LETEXPR) {
@@ -654,17 +631,6 @@ ExprAST* ExprAST_from(pTree tree) {
     }
     fn->markAsClosure();
     return fn;
-  }
-
-  if (text == "new" || text == "ref") {
-    bool isKnownIndirect = text == "new";
-
-    // Currently 'new' and 'ref' are interchangeable, though the intended
-    // convention is that 'new' is for value-exprs and 'ref' is for type-exprs
-    return new RefExprAST(
-                 ExprAST_from(child(tree, 0)),
-                 isKnownIndirect,
-                 sourceRange);
   }
 
   // Handle unary negation explicitly, before the binary op handler

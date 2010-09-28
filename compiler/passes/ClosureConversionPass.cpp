@@ -162,9 +162,6 @@ void ClosureConversionPass::visit(IfExprAST* ast)              {
   visitChildren(ast);
 }
 void ClosureConversionPass::visit(NilExprAST* ast)             { return; }
-void ClosureConversionPass::visit(RefExprAST* ast)             { return; }
-void ClosureConversionPass::visit(DerefExprAST* ast)           { return; }
-void ClosureConversionPass::visit(AssignExprAST* ast)          { return; }
 void ClosureConversionPass::visit(SubscriptAST* ast)           { return; }
 //void ClosureConversionPass::visit(SimdVectorAST* ast)          { return; }
 void ClosureConversionPass::visit(SeqAST* ast)                 { return; }
@@ -273,20 +270,20 @@ void performClosureConversion(FnAST* ast,
 
   prependParameter(ast->getProto(), envVar);
 
-  ExprAST* derefedEnvPtr = new DerefExprAST(envVar, envVar->sourceRange);
-  derefedEnvPtr->type = envTy;
+  //ExprAST* derefedEnvPtr = new DerefExprAST(envVar, envVar->sourceRange);
+  //derefedEnvPtr->type = envTy;
 
   // Rewrite the function body to make all references to free vars
   // instead go through the passed env pointer.
   {
     ReplaceExprTransform rex;
-    int envOffset = 1; // offset 0 is reserved for typemamp
+    int envOffset = 1; // offset 0 is reserved for typemap
     for (it = freeVars.begin(); it != freeVars.end(); ++it) {
       currentOuts() << "Rewriting " << str(*it) << " to go through env" << "\n";
       captureAvoidingSubstitution(ast->getBody(),
                                   (*it)->name,
                                   new SubscriptAST(
-                                        derefedEnvPtr,
+                                        envVar, //derefedEnvPtr,
                                         literalIntAST(envOffset, (*it)->sourceRange),
                                         (*it)->sourceRange),
                                   boundVariables);

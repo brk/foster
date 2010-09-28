@@ -67,9 +67,9 @@ message Expr {
     SIMD = 25;
     SUBSCRIPT = 26;
 
-    REF = 28;
-    DEREF = 29;
-    ASSIGN = 30;
+
+
+
     COMPILES = 31;
     IF = 32;
     FORRANGE = 33;

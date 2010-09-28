@@ -45,9 +45,6 @@ void BuildCFG::visit(VariableAST* ast)     { currentRoot->append(ast); }
 void BuildCFG::visit(UnaryOpExprAST* ast)  { currentRoot->append(ast); }
 void BuildCFG::visit(BinaryOpExprAST* ast) { currentRoot->append(ast); }
 void BuildCFG::visit(NilExprAST* ast)      { currentRoot->append(ast); }
-void BuildCFG::visit(RefExprAST* ast)      { currentRoot->append(ast); }
-void BuildCFG::visit(DerefExprAST* ast)    { currentRoot->append(ast); }
-void BuildCFG::visit(AssignExprAST* ast)   { currentRoot->append(ast); }
 void BuildCFG::visit(SubscriptAST* ast)    { currentRoot->append(ast); }
 ///void BuildCFG::visit(ArrayExprAST* ast) { currentRoot->append(ast); }
 ///void BuildCFG::visit(SimdVectorAST* ast)   { currentRoot->append(ast); }

@@ -861,55 +861,6 @@ void TypecheckPass::visit(NilExprAST* ast) {
   return;
 }
 
-// In order for copying GC to be able to move GC roots,
-// the root must be stored on the stack; thus, new T is implemented
-// so that it evaluates to a T** (a stack slot containing a T*)
-// instead of a simple T*, which would not be modifiable by the GC.
-// In effect, *every* pointer has a mutable concrete representation
-// at the implementation level, but not all pointers expose that
-// mutability to the source language.
-void TypecheckPass::visit(RefExprAST* ast) {
-  if (ast->parts[0] && ast->parts[0]->type) {
-    ast->type = RefTypeAST::get(ast->parts[0]->type);
-  } else {
-    const char* problem = ast->parts[0] ? "subexpr with no type" : "no subexpr";
-    constraints.newLoggedError()
-           << "ref expr had  " << std::string(problem)
-           << show(ast);
-    ast->type = RefTypeAST::get(TypeVariableAST::get("badref", ast->sourceRange));
-
-  }
-}
-
-// G |- e : ref(T)
-// ---------------
-// deref(e) : T
-//
-void TypecheckPass::visit(DerefExprAST* ast) {
-  ASSERT(ast->parts[0]->type) << "Need arg to typecheck deref!";
-  ExprAST* e = ast->parts[0];
-
-  TypeAST* refT = e->type;
-  TypeAST* T = TypeVariableAST::get("deref", ast->sourceRange);
-
-  constraints.addEq(ast, RefTypeAST::get(T), refT);
-  ast->type = T;
-}
-
-// G |- v : T
-// G |- x : ref(T)
-// ---------------
-// (set x = v) : i32
-//
-void TypecheckPass::visit(AssignExprAST* ast) {
-  TypeAST* lhsTy = ast->parts[0]->type;
-  TypeAST* rhsTy = ast->parts[1]->type;
-
-  constraints.addEq(ast, lhsTy, RefTypeAST::get(rhsTy));
-
-  ast->type = TypeAST::i(32);
-}
-
 // Returns aggregate (struct, array, union) and vector types directly,
 // and returns the underlying aggregate type for pointer-to-aggregate.
 // Returns NULL in other cases.

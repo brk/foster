@@ -778,97 +778,6 @@ void CodegenPass::visit(NilExprAST* ast) {
   setValue(ast, llvm::ConstantPointerNull::getNullValue(getLLVMType(ast->type)));
 }
 
-// The getValue(ast) for a RefExpr of Foster type Tf
-// (which is generally a LLVM type Tl*)
-// is a T(*)* stack slot holding the actual pointer value.
-void CodegenPass::visit(RefExprAST* ast) {
-  ASSERT(!getValue(ast)) << "codegenned " << ast->tag << " @ " << hex(ast) << " twice?!?" << show(ast);
-
-  // Some values will see that they're a child of a RefExpr and substitute
-  // a malloc for an alloca; others, like int literals or such, must be
-  // manually copied out to a newly-malloc'ed cell.
-  setValue(ast, ast->parts[0]->value);
-  const llvm::Type* llType = getValue(ast)->getType();
-
-  if (getLLVMType(ast->type) == llType) {
-    // e.g. ast type is i32* but value type is i32* instead of i32**
-    llvm::Value* stackslot = CreateEntryAlloca(llType, "stackslot");
-    builder.CreateStore(getValue(ast), stackslot, /*isVolatile=*/ false);
-    setValue(ast, stackslot);
-  } else if (isPointerToType(getLLVMType(ast->type), llType)) {
-    // If we're given a T when we want a T**, malloc a new T to get a T*
-    // stored in a T** on the stack, then copy our T into the T*.
-
-    // stackslot has type T**
-    llvm::Value* stackslot = emitMalloc(llType);
-    // mem has type T*
-    llvm::Value* mem = builder.CreateLoad(stackslot,
-                                          /*isVolatile=*/false,
-                                          "unstack");
-    // write our T into the T* given by malloc
-    builder.CreateStore(getValue(ast), mem, /*isVolatile=*/ false);
-    setValue(ast, stackslot);
-  } else if (isPointerToType(llType, getLLVMType(ast->type))) {
-    // Given a T**, and we want a T**. Great!
-  } else {
-    ASSERT(false) << "unexpected fall-through when codegenning RefExprAST: "
-        << "\n\t value Type : " << str(llType)
-        << "\n\t ast Type   : " << str(getLLVMType(ast->type))
-        << "\n\t ast type   : " << str(ast->type)
-        << show(ast);
-  }
-}
-
-void CodegenPass::visit(DerefExprAST* ast) {
-  // Note: unlike the other AST nodes, DerefExprASTs may be codegenned
-  // multiple times. The reason is that closure conversion replaces distinct
-  // AST nodes with references to a single DerefAST node.
-
-  // TODO is it problematic to cache the Value in the presence of copying
-  // collection?
-
-  llvm::Value* src = ast->parts[0]->value;
-
-  if (isPointerToPointerToType(src->getType(), getLLVMType(ast->type))) {
-    src = builder.CreateLoad(src, /*isVolatile=*/ false, "prederef");
-  }
-
-  ASSERT(isPointerToType(src->getType(), getLLVMType(ast->type)))
-      << "deref needs a T* to produce a T, given src type "
-      << str(src->getType()) << " and ast type " << str(getLLVMType(ast->type))
-      << "\n\t" << ast->tag << " ; " << ast->type->tag;
-      //<< show(ast);
-  setValue(ast, builder.CreateLoad(src, /*isVolatile=*/ false, "deref"));
-}
-
-void CodegenPass::visit(AssignExprAST* ast) {
-  ASSERT(!getValue(ast)) << "codegenned " << ast->tag << " @ " << hex(ast) << " twice?!?" << show(ast);
-
-  const llvm::Type* srcty = ast->parts[1]->value->getType();
-  llvm::Value* dst = ast->parts[0]->value;
-#if 0
-  foster::DDiag(llvm::raw_ostream::BLUE)
-    << "assign" << str(srcty) << " to " << str(dst->getType()) << show(ast);
-#endif
-
-  // The usual case is set (T*) = T.
-  // With implicit dereferencing, we also wish to accept
-  //                   set (T*) = (T*)
-  ASSERT(isPointerToType(dst->getType(), srcty))
-    << "assignment must store T in a T*, given extrapolated dst type "
-    << str(ast->parts[0]->value->getType())
-    << "\n\tand original dst type" << str(dst->getType())
-    << " and srcty " << str(srcty) << "\n\t"
-    << "dest HL type: " << str(ast->parts[0]->type);
-
-  builder.CreateStore(ast->parts[1]->value, dst);
-
-  // Mark the assignment as having been codegenned; for now, assignment
-  // expressions evaluate to constant zero (annotated for clarity).
-  ConstantInt* zero = ConstantInt::get(Type::getInt32Ty(getGlobalContext()), 0);
-  setValue(ast, builder.CreateBitCast(zero, zero->getType(), "assignval"));
-}
-
 Value* getPointerToIndex(Value* compositeValue,
                          unsigned idxValue,
                          const std::string& name) {
@@ -1430,6 +1339,10 @@ bool structTypeContainsPointers(const llvm::StructType* ty) {
   return false;
 }
 
+bool isSafeToStackAllocate(TupleExprAST* ast) {
+  return true;
+}
+
 void CodegenPass::visit(TupleExprAST* ast) {
   ASSERT(!getValue(ast)) << "codegenned " << ast->tag << " @ " << hex(ast) << " twice?!?" << show(ast);
 
@@ -1443,7 +1356,7 @@ void CodegenPass::visit(TupleExprAST* ast) {
   llvm::Value* pt = NULL;
 
   // Allocate tuple space
-  if (dynamic_cast<RefExprAST*>(foster::CompilationContext::getParent(ast))) {
+  if (!isSafeToStackAllocate(ast)) {
     // pt has type tuple**
     pt = emitMalloc(tupleType);
   } else {

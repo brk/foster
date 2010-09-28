@@ -64,14 +64,6 @@ ModuleAST* ModuleAST_from_pb() {
 
 namespace {
 
-
-ExprAST* parseAssign(const pb::Expr& e, const foster::SourceRange& range) {
-  return new AssignExprAST(
-      ExprAST_from_pb(& e.parts(0)),
-      ExprAST_from_pb(& e.parts(1)),
-      range);
-}
-
 ExprAST* parseBool(const pb::Expr& e, const foster::SourceRange& range) {
   return new BoolAST(e.bool_value() ? "true" : "false", range);
 }
@@ -95,10 +87,6 @@ ExprAST* parseCompiles(const pb::Expr& e, const foster::SourceRange& range) {
     rv->status = BuiltinCompilesExprAST::kNotChecked;
   }
   return rv;
-}
-
-ExprAST* parseDeref(const pb::Expr& e, const foster::SourceRange& range) {
-  return new DerefExprAST(ExprAST_from_pb(& e.parts(0)), range);
 }
 
 ExprAST* parseFn(const pb::Expr& e, const foster::SourceRange& range) {
@@ -196,11 +184,6 @@ ExprAST* parseProto(const pb::Expr& e, const foster::SourceRange& range) {
   return new PrototypeAST(retTy, name, args, range);
 }
 
-ExprAST* parseRef(const pb::Expr& e, const foster::SourceRange& range) {
-  bool isIndirect = false;
-  return new RefExprAST(ExprAST_from_pb(&e.parts(0)), isIndirect, range);
-}
-
 ExprAST* parseSeq(const pb::Expr& e, const foster::SourceRange& range) {
   Exprs args;
   for (int i = 0; i < e.parts_size(); ++i) {
@@ -246,11 +229,9 @@ ExprAST* ExprAST_from_pb(const pb::Expr* pe) {
   ExprAST* rv = NULL;
 
   switch (e.tag()) {
-  case pb::Expr::ASSIGN:    rv = parseAssign(e, range); break;
   case pb::Expr::BOOL:      rv = parseBool(e, range); break;
   case pb::Expr::CALL:      rv = parseCall(e, range); break;
   case pb::Expr::COMPILES:  rv = parseCompiles(e, range); break;
-  case pb::Expr::DEREF:     rv = parseDeref(e, range); break;
   case pb::Expr::FN:        rv = parseFn(e, range); break;
   case pb::Expr::IF:        rv = parseIf(e, range); break;
   case pb::Expr::PB_INT:    rv = parseInt(e, range); break;
@@ -258,7 +239,6 @@ ExprAST* ExprAST_from_pb(const pb::Expr* pe) {
   case pb::Expr::NAMED_TYPE_DECL: rv = parseNamedTypeDecl(e, range); break;
   case pb::Expr::OP:        rv = parseOp(e, range); break;
   case pb::Expr::PROTO:     rv = parseProto(e, range); break;
-  case pb::Expr::REF:       rv = parseRef(e, range); break;
   case pb::Expr::SEQ:       rv = parseSeq(e, range); break;
 //  case pb::Expr::SIMD:      rv = parseSimd(e, range); break;
   case pb::Expr::SUBSCRIPT: rv = parseSubscript(e, range); break;

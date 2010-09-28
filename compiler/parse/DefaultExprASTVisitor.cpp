@@ -17,9 +17,6 @@ void DefaultExprASTVisitor::visit(UnaryOpExprAST* ast)         { if (0) this->vi
 void DefaultExprASTVisitor::visit(BinaryOpExprAST* ast)        { if (0) this->visitChildren(ast); }
 void DefaultExprASTVisitor::visit(ModuleAST* ast)              { this->visitChildren(ast); }
 void DefaultExprASTVisitor::visit(IfExprAST* ast)              { this->visitChildren(ast); }
-void DefaultExprASTVisitor::visit(RefExprAST* ast)             { if (0) this->visitChildren(ast); }
-void DefaultExprASTVisitor::visit(DerefExprAST* ast)           { if (0) this->visitChildren(ast); }
-void DefaultExprASTVisitor::visit(AssignExprAST* ast)          { if (0) this->visitChildren(ast); }
 void DefaultExprASTVisitor::visit(SubscriptAST* ast)           { if (0) this->visitChildren(ast); }
 //void DefaultExprASTVisitor::visit(SimdVectorAST* ast)          { if (0) this->visitChildren(ast); }
 void DefaultExprASTVisitor::visit(SeqAST* ast)                 { if (0) this->visitChildren(ast); }

@@ -245,24 +245,6 @@ struct TupleExprAST : public UnaryExprAST {
   virtual void accept(ExprASTVisitor* visitor);
 };
 
-#if 0
-struct ArrayExprAST : public UnaryExprAST {
-  explicit ArrayExprAST(ExprAST* expr, foster::SourceRange sourceRange)
-    : UnaryExprAST(expr, sourceRange) {}
-  virtual void accept(ExprASTVisitor* visitor);
-};
-#endif
-
-/*
-struct SimdVectorAST : public UnaryExprAST {
-  // Implicitly, a SeqAST
-  explicit SimdVectorAST(ExprAST* expr, foster::SourceRange sourceRange)
-    : UnaryExprAST("SimdVectorAST", expr, sourceRange) {}
-  virtual void accept(ExprASTVisitor* visitor);
-  virtual std::ostream& operator<<(std::ostream& out) const;
-};
-*/
-
 // base[index]
 struct SubscriptAST : public BinaryExprAST {
   explicit SubscriptAST(ExprAST* base, ExprAST* index,
@@ -382,32 +364,6 @@ struct IfExprAST : public ExprAST {
 struct NilExprAST : public ExprAST {
   explicit NilExprAST(foster::SourceRange sourceRange)
      : ExprAST("NilExprAST", sourceRange) {}
-  virtual void accept(ExprASTVisitor* visitor);
-};
-
-
-struct RefExprAST : public UnaryExprAST {
-  bool isIndirect_;
-  explicit RefExprAST(ExprAST* expr, bool isIndirect,
-                      foster::SourceRange sourceRange)
-    : UnaryExprAST("RefExprAST", expr, sourceRange),
-      isIndirect_(isIndirect) {}
-  virtual void accept(ExprASTVisitor* visitor);
-
-  // Returns true if the physical representation of this reference
-  // is T** instead of a simple T*.
-  virtual bool isIndirect(); // TODO remove, along with inAssignLHS?
-};
-
-struct DerefExprAST : public UnaryExprAST {
-  explicit DerefExprAST(ExprAST* expr, foster::SourceRange sourceRange)
-     : UnaryExprAST("DerefExprAST", expr, sourceRange) {}
-  virtual void accept(ExprASTVisitor* visitor);
-};
-
-struct AssignExprAST : public BinaryExprAST {
-  explicit AssignExprAST(ExprAST* lhs, ExprAST* rhs, foster::SourceRange sourceRange)
-     : BinaryExprAST("AssignExprAST", lhs, rhs, sourceRange) {}
   virtual void accept(ExprASTVisitor* visitor);
 };
 

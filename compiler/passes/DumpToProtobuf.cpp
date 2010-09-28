@@ -144,21 +144,6 @@ void DumpToProtobufPass::visit(NilExprAST* ast)             {
   ASSERT(false) << "We shouldn't be dumping a NilExprAST to pb!";
 }
 
-void DumpToProtobufPass::visit(RefExprAST* ast)             {
-  processExprAST(current, ast, foster::pb::Expr::REF);
-  dumpChildren(this, ast);
-}
-
-void DumpToProtobufPass::visit(DerefExprAST* ast)           {
-  processExprAST(current, ast, foster::pb::Expr::DEREF);
-  dumpChildren(this, ast);
-}
-
-void DumpToProtobufPass::visit(AssignExprAST* ast)          {
-  processExprAST(current, ast, foster::pb::Expr::ASSIGN);
-  dumpChildren(this, ast);
-}
-
 void DumpToProtobufPass::visit(SubscriptAST* ast)           {
   processExprAST(current, ast, foster::pb::Expr::SUBSCRIPT);
   dumpChildren(this, ast);
