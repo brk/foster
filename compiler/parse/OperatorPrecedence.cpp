@@ -4,7 +4,9 @@
 
 #include "base/Assert.h"
 #include "base/Diagnostics.h"
+
 #include "parse/OperatorPrecedence.h"
+#include "parse/CompilationContext.h"
 
 #include "pystring/pystring.h"
 
@@ -12,8 +14,6 @@
 #include <string>
 #include <map>
 #include <set>
-
-#include <iostream>
 
 // Rather than encode operator precedence into the ANTLR grammar,
 // we use operator precedence parsing to build correct trees
@@ -48,20 +48,15 @@
 // but also for modules to import and export operator definitions, and
 // for operator definitions to be locally scoped, like other bindings.
 
-using namespace std;
+using std::pair;
+using std::map;
+using std::set;
+using std::string;
+using std::vector;
+
+using foster::currentOuts;
 
 namespace foster {
-
-#if 0
-OperatorPrecedenceTable::OperatorRelation inverse(OperatorRelation r) {
-  switch (r) {
-    case kNoRelationSpecified:              return r;
-    case kOpInvalidTogetherUnparenthesized: return r;
-    case kOpBindsTighter: return kOpBindsLooser;
-    case kOpBindsLooser:  return kOpBindsTighter;
-  }
-}
-#endif
 
 struct OperatorPrecedenceTable::Impl {
 
@@ -82,15 +77,15 @@ struct OperatorPrecedenceTable::Impl {
   bool check() {
     bool tableComplete = true;
     for (OpSet::iterator it = knownOperators.begin();
-			 it != knownOperators.end(); ++it) {
+	                  		 it != knownOperators.end(); ++it) {
       for (OpSet::iterator it2 = knownOperators.begin();
-			   it2 != knownOperators.end(); ++it2) {
-	OperatorRelation rel = table[ OpPair(*it, *it2) ];
-	if (rel == kNoRelationSpecified) {
-	  std::cout << "No relation specified between \t" << *it
-		    << " and " << *it2 << std::endl;
-	  tableComplete = false;
-	}
+			                     it2 != knownOperators.end(); ++it2) {
+        OperatorRelation rel = table[ OpPair(*it, *it2) ];
+        if (rel == kNoRelationSpecified) {
+          currentOuts() << "No relation specified between \t" << *it
+              << " and " << *it2 << "\n";
+          tableComplete = false;
+        }
       }
     }
     return tableComplete;
@@ -276,7 +271,7 @@ struct OperatorPrecedenceTable::Impl {
     //tighter("juxtaposition", "+ * ** == < and");
 
     // e.g. (a + b + c) == ((a + b) + c)
-    // and  (a b c)     == ((a b) c) 
+    // and  (a b c)     == ((a b) c)
     leftAssociativeSet("* /");
     leftAssociativeSet("+ -");
     leftAssociativeSet("and or");
@@ -304,7 +299,7 @@ struct OperatorPrecedenceTable::Impl {
       for (OpSet::iterator it2 = knownOperators.begin();
 			   it2 != knownOperators.end(); ++it2) {
         const char* relstr = str(table[ OpPair(*it, *it2) ]);
-        std::cout << *it << "\t" << relstr << "\t" << *it2 << "\n";
+        currentOuts() << *it << "\t" << relstr << "\t" << *it2 << "\n";
       }
     }
   }
