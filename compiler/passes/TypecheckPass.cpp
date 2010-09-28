@@ -9,6 +9,7 @@
 #include "parse/FosterTypeAST.h"
 #include "parse/CompilationContext.h"
 #include "parse/FosterUtils.h"
+#include "parse/DumpStructure.h"
 
 #include "passes/TypecheckPass.h"
 #include "passes/PrettyPrintPass.h"
@@ -537,17 +538,19 @@ bool TypecheckPass::Constraints::addEqConstraintToSubstitution(
   foster::dbg("inference") << str(tv) << " => ... => tvs: "
                            << str(tvs) << " ;; " << str(t2) << "...\n";
 
-  // Have    TypeVar(t1) => ... => non-type-var tvs
-  // ttc is  TypeVar(t1) => ttc.t2
-  if (!tvs) {
+  if (!tvs || tvs == tv) {
     // t1 doesn't map to anything yet, so enforce the given constraint.
     this->subst[tvName] = t2;
   } else if (tvs == t2)  {
     // Das fine, the chain was short and we have learned nothing.
+  } else if (TypeVariableAST* tv_tvs = dynamic_cast<TypeVariableAST*>(tvs)) {
+    // t1 maps to another type var (which doesn't map to anything),
+    // so update the leader var.
+    this->subst[tv_tvs->getTypeVariableName()] = t2;
   } else {
-    currentErrs() << "Conflict detected during equality constraint solving!\n"
+    newLoggedError() << "Conflict detected during equality constraint solving!\n"
                   << "\t" << tvName << " cannot be both "
-                  << "\n\t\t" << str(tvs) << " and " << str(t2) << ".";
+                  << str(tvs) << " and " << str(t2) << ".";
     return false;
   }
 
@@ -581,11 +584,11 @@ bool TypecheckPass::Constraints::addEqConstraintToSubstitution(
 //    TypeVar(d)  =>  NULL
 //
 // The return value is the end of the chain. In the first example,
-// that would be sometype ; in the second, NULL.
+// that would be sometype ; in the second, TypeVar(d).
 
 TypeAST* TypecheckPass::Constraints::substFind(const std::string& name) {
   TypeVariableAST* leader = findLeader(name);
-  if (!leader) return NULL;
+  if (!leader) return subst[name];
 
   TypeAST* next = this->subst[name];
   this->subst[name] = leader;
@@ -600,7 +603,8 @@ TypeAST* TypecheckPass::Constraints::substFind(const std::string& name) {
 }
 
 TypeAST* TypecheckPass::Constraints::substFind(TypeVariableAST* tv) {
-  return substFind(tv->getTypeVariableName());
+  TypeAST* t = substFind(tv->getTypeVariableName());
+  return (t ? t : tv);
 }
 
 // Given
@@ -835,6 +839,7 @@ void TypecheckPass::visit(FnAST* ast) {
 
     if (ast->getProto()->type && ast->getBody()->type) {
       ast->type = ast->getProto()->type;
+      llvm::outs() << "typecheck pass FnAST, computed type " << str(ast->type) << "\n";
     }
   } else {
     // Probably looking at a function type expr. TODO trust but verify
@@ -1359,13 +1364,27 @@ void TypecheckPass::visit(BuiltinCompilesExprAST* ast) {
     Constraints start(constraints);
 
     ast->parts[0]->accept(this);
+
+    if (!constraints.empty()) {
+      currentOuts() << "Constraints before __COMPILES__ solving:\n";
+      constraints.show(currentOuts(), "\t__COMPILES__:\t");
+    }
+
     solveConstraints();
 
-    bool wouldCompileOK = ast->parts[0]->type != NULL
+    if (!constraints.empty()) {
+      currentOuts() << "Constraints after __COMPILES__ solving:\n";
+      constraints.show(currentOuts(), "\t__COMPILES__:\t");
+    }
+
+    foster::dumpExprStructure(currentOuts(), ast->parts[0]);
+
+    TypeAST* computedType = constraints.applySubst(ast->parts[0]->type);
+    bool wouldCompileOK = computedType != NULL
                        && constraints.errors.size() == start.errors.size();
 
-#if 0
-    currentOuts() << "BUILTIN COMPILES RESOLUTION: " <<  str(ast->parts[0]->type) << "; "
+#if 1
+    currentOuts() << "BUILTIN COMPILES RESOLUTION: " <<  str(computedType) << "; "
                  << constraints.errors.size()
                  << " vs " << start.errors.size() << "\n";
      for (size_t i = start.errors.size(); i < constraints.errors.size(); ++i) {
