@@ -40,6 +40,9 @@ struct DumpExpr {
 
   void dump(CONST(ExprAST) ast) {
     dumpLine(ast);
+
+    if (!ast) return;
+
     stages.push_back(eFirstChild);
 
     for (unsigned i = 0; i < ast->parts.size(); ++i) {
@@ -73,6 +76,8 @@ struct DumpExpr {
   }
 
   std::string getMessage(CONST(ExprAST) ast) {
+    if (!ast) return "<NULL>";
+
     if (CONST(VariableAST) e = dynamic_cast<CONST(VariableAST)>(ast)) {
       return std::string(e->tag) + " " + e->getName() + " :: " + str(ast->type);
     }
