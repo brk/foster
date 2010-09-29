@@ -190,7 +190,7 @@ CompilationContext::setParent(ExprAST* child, ExprAST* parent) {
 
 ExprAST* // static
 CompilationContext::getParent(ExprAST* child) {
-  ASSERT(!gCompilationContexts.empty());
+  if (gCompilationContexts.empty()) { return NULL; }
 
   return gCompilationContexts.top()->impl->parents[child];
 }

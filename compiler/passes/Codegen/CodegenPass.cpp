@@ -306,8 +306,8 @@ void CodegenPass::visit(VariableAST* ast) {
   } else {
     // The variable for an environment can be looked up multiple times...
     llvm::Value* v = gScopeLookupValue(ast->name);
-    llvm::AllocaInst* ai = llvm::dyn_cast_or_null<llvm::AllocaInst>(v);
-    if (ai) {
+
+    if (llvm::AllocaInst* ai = llvm::dyn_cast_or_null<llvm::AllocaInst>(v)) {
       setValue(ast, builder.CreateLoad(ai, /*isVolatile=*/ false, "autoload"));
     } else {
       setValue(ast, v);
@@ -1122,6 +1122,7 @@ void CodegenPass::visit(CallAST* ast) {
 
     if (needsAdjusting) {
       currentOuts() << V << "->getType() is " << str(V->getType())
+          << "; expected type is " << str(expectedType)
           << "; expect clo? " << isGenericClosureType(expectedType) << "\n";
     }
 
@@ -1133,6 +1134,19 @@ void CodegenPass::visit(CallAST* ast) {
         V = builder.CreateLoad(V, false, "strip-all-indirection");
       }
       V = builder.CreateBitCast(V, expectedType, "polyptr");
+    }
+
+    // LLVM intrinsics and C functions can take pointer-to-X args,
+    // but codegen for variables will have already emitted a load
+    // from the variable's implicit address.
+    // So, if our expected type is pointer-to-our-value-type, and
+    // our value is a load, we'll pull the pointer from the load.
+    if (expectedType->isPointerTy()
+      && expectedType->getContainedType(0) == V->getType()) {
+      if (llvm::LoadInst* load = dyn_cast<llvm::LoadInst>(V)) {
+        V = load->getPointerOperand();
+        load->eraseFromParent();
+      }
     }
 
     if (V->getType() != expectedType) {

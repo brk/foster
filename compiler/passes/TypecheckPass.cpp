@@ -50,6 +50,12 @@ bool isIntTypeName(const std::string& s) {
       || s == "i16" || s == "i32" || s == "i64";
 }
 
+bool typesEqual(TypeAST* t1, TypeAST* t2) {
+  bool eq = str(t1) == str(t2);
+  llvm::outs() << "types eq? " << str(t1) << " =?= " << str(t2) << "\t" << eq << "\n";
+  return eq;
+}
+
 struct TypecheckPass : public ExprASTVisitor {
 
   struct Constraints {
@@ -215,6 +221,11 @@ struct TypecheckPass : public ExprASTVisitor {
               collectEqualityConstraint(context, t1, t2);
             }
           } else {
+            if (RefTypeAST* refty = dynamic_cast<RefTypeAST*>(t2)) {
+              if (typesEqual(refty->getElementType(), t1)) {
+                return true;
+              }
+            }
             // If tags aren't equal, then (since neither one is a type var)
             // the equality is immediately false.
             newLoggedError()

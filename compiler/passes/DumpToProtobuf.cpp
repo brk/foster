@@ -110,9 +110,10 @@ void DumpToProtobufPass::visit(PrototypeAST* ast)           {
   }
 }
 
-void DumpToProtobufPass::visit(FnAST* ast)                  {
+void DumpToProtobufPass::visit(FnAST* ast) {
   processExprAST(current, ast, foster::pb::Expr::FN);
-  dumpChildren(this, ast);
+  dumpChild(this, this->current->add_parts(), ast->parts[0]);
+  dumpChild(this, this->current->add_parts(), ast->getProto());
 }
 
 void DumpToProtobufPass::visit(ModuleAST* ast)              {
