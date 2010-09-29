@@ -173,23 +173,36 @@ void markGCRoot(llvm::Value* root, llvm::Constant* meta) {
 // so that mem2reg will be able to optimize loads and stores from the alloca.
 // Code from the Kaleidoscope tutorial on mutable variables,
 // http://llvm.org/docs/tutorial/LangImpl7.html
-llvm::AllocaInst* CreateEntryAlloca(const llvm::Type* ty, const char* name) {
+llvm::AllocaInst* CreateEntryAlloca(const llvm::Type* ty, const std::string& name) {
   llvm::BasicBlock& entryBlock =
       builder.GetInsertBlock()->getParent()->getEntryBlock();
   llvm::IRBuilder<> tmpBuilder(&entryBlock, entryBlock.begin());
   return tmpBuilder.CreateAlloca(ty, /*ArraySize=*/ 0, name);
 }
 
+llvm::AllocaInst* stackSlotWithValue(llvm::Value* val, const std::string& name) {
+  llvm::AllocaInst* valptr = CreateEntryAlloca(val->getType(), name);
+  builder.CreateStore(val, valptr, /*isVolatile=*/ false);
+  return valptr;
+}
+
 // Unlike markGCRoot, this does not require the root be an AllocaInst
 // (though it should still be a pointer).
 // This function is intended for marking intermediate values. It stores
 // the value into a new stack slot, and marks the stack slot as a root.
+//
+//      TODO need to guarantee that the val passed to us is either
+//      a pointer to memalloc-ed memory, or a value that does not escape.
 llvm::Value* storeAndMarkPointerAsGCRoot(llvm::Value* val) {
   if (!val->getType()->isPointerTy()) {
-     llvm::Value* valptr = CreateEntryAlloca(val->getType(), "ptrfromnonptr");
-     builder.CreateStore(val, valptr, /*isVolatile=*/ false);
+     llvm::AllocaInst* valptr = stackSlotWithValue(val, "ptrfromnonptr");
      val = valptr;
+     // We end up with a stack slot pointing to a stack slot, rather than
+     // a stack slot pointing to a heap-allocated block.
+     // The garbage collector detects this and skips collection.
   }
+
+  // val now has pointer type.
 
   // allocate a slot for a T* on the stack
   llvm::AllocaInst* stackslot = CreateEntryAlloca(val->getType(), "stackref");
@@ -280,8 +293,6 @@ void CodegenPass::visit(BoolAST* ast) {
 }
 
 void CodegenPass::visit(VariableAST* ast) {
-  if (ast->value) return;
-
   // This looks up the lexically closest definition for the given variable
   // name, as provided by a function parameter or some such binding construct.
   // Note that getValue(ast) is NOT used to cache the result; this ensures
@@ -293,43 +304,26 @@ void CodegenPass::visit(VariableAST* ast) {
     }
     setValue(ast, ast->lazilyInsertedPrototype->value);
   } else {
-    setValue(ast, gScopeLookupValue(ast->name));
+    // The variable for an environment can be looked up multiple times...
+    llvm::Value* v = gScopeLookupValue(ast->name);
+    llvm::AllocaInst* ai = llvm::dyn_cast_or_null<llvm::AllocaInst>(v);
+    if (ai) {
+      setValue(ast, builder.CreateLoad(ai, /*isVolatile=*/ false, "autoload"));
+    } else {
+      setValue(ast, v);
+    }
+
     if (!getValue(ast)) {
       EDiag() << "looking up variable " << ast->name << ", got "
               << str(ast) << show(ast);
       gScope.dump(currentOuts());
     }
+    llvm::outs() << "=========== VarAST " << ast->getName() << " @ " << hex(ast)<< " returned value: " << str(ast->value) << "\n";
   }
 
   ASSERT(getValue(ast))
      << "Unknown variable name " << ast->name << " in CodegenPass"
      << str(ast) << show(ast);
-}
-
-bool isNameOfPrimitiveOperation(const std::string& name) {
-  return name == "prim_not";
-}
-
-llvm::Value* tryCodegenCallPrimitive(CallAST* ast, CodegenPass* pass) {
-  ExprAST* ebase = ast->parts[0];
-  if (!ebase) return NULL;
-  VariableAST* base = dynamic_cast<VariableAST*>(ebase);
-  if (!base) return NULL;
-
-  const std::string& name = base->getName();
-
-  if (!isNameOfPrimitiveOperation(name)) return NULL;
-
-  for (size_t i = 1; i < ast->parts.size(); ++i) {
-    ast->parts[i]->accept(pass);
-  }
-
-  if (base->getName() == "prim_not") {
-    return builder.CreateNot(ast->parts[1]->value, "nottmp");
-  }
-
-  ASSERT(false) << "unhandled primitive operation: " << name;
-  return NULL;
 }
 
 llvm::Value* emitPrimitiveLLVMOperation(const std::string& op,
@@ -486,9 +480,9 @@ void CodegenPass::visit(PrototypeAST* ast) {
   } else {
     // Set names for all arguments
     Function::arg_iterator AI = F->arg_begin();
+    ASSERT(ast->inArgs.size() == F->arg_size());
     for (size_t i = 0; i != ast->inArgs.size(); ++i, ++AI) {
       AI->setName(ast->inArgs[i]->name);
-      gScopeInsert(ast->inArgs[i]->name, (AI));
     }
   }
 
@@ -647,15 +641,23 @@ void CodegenPass::visit(FnAST* ast) {
   // dynamically-allocated pointer parameters.
   if (true) { // conservative approximation to MightAlloc
     Function::arg_iterator AI = F->arg_begin();
-    for (size_t i = 0; i != ast->getProto()->inArgs.size(); ++i, ++AI) {
+    ASSERT(F->arg_size() == ast->getProto()->inArgs.size());
+    for (size_t i = 0; i != F->arg_size(); ++i, ++AI) {
       if (mightContainHeapPointers(AI->getType())) {
 #if 0
         std::cout << "marking root for var " << ast->getProto()->inArgs[i]->name
             << " of ast type " << *(ast->getProto()->inArgs[i]->type)
             << " and value type " << *(AI->getType()) << "\n";
 #endif
-        gScopeInsert(ast->getProto()->inArgs[i]->name,
-            storeAndMarkPointerAsGCRoot(AI));
+        // Type could be like i32*, like {i32}* or like {i32*}.
+        // arg_addr would be i32**,    {i32}**,  or {i32*}*.
+        gScopeInsert(AI->getNameStr(),  storeAndMarkPointerAsGCRoot(AI));
+      } else {
+        llvm::AllocaInst* arg_addr = CreateEntryAlloca(
+                                                AI->getType(),
+                                                AI->getNameStr() + "_addr");
+        builder.CreateStore(AI, arg_addr, /*isVolatile*/ false);
+        gScopeInsert(AI->getNameStr(), arg_addr);
       }
     }
   }
@@ -958,10 +960,11 @@ void CodegenPass::visit(CallAST* ast) {
   ASSERT(!getValue(ast)) << "codegenned " << ast->tag << " @ " << hex(ast) << " twice?!?" << show(ast);
 
   ExprAST* base = ast->parts[0];
-  ASSERT(base != NULL);
+  ASSERT(base != NULL) << str(ast);
 
   base->accept(this);
   Value* FV = base->value;
+  ASSERT(FV) << str(ast);
 
   const FunctionType* FT = NULL;
   std::vector<Value*> valArgs;
@@ -971,7 +974,7 @@ void CodegenPass::visit(CallAST* ast) {
 
   FnTypeAST* fty = dynamic_cast<FnTypeAST*>(base->type);
 
-  if (Function* F = llvm::dyn_cast_or_null<Function>(FV)) {
+  if (Function* F = llvm::dyn_cast<Function>(FV)) {
     // Call to top level function
     FT = F->getFunctionType();
     callingConv = F->getCallingConv();

@@ -1,7 +1,7 @@
 check_tuples = fn (x : tuple { i32, i1 }, y : tuple { i32, i1 }) {
   expect_i32(x[0])
   print_i32(y[0])
-  
+
   expect_i1(x[1])
   print_i1(y[1])
 }
@@ -9,10 +9,10 @@ check_tuples = fn (x : tuple { i32, i1 }, y : tuple { i32, i1 }) {
 fn "main" () {
   check_tuples( llvm.uadd.with.overflow.i32(bitshl(1, 30), bitshl(1, 30)),
                 tuple { bitshl(1, 31), false } );
-                
+
   check_tuples( llvm.uadd.with.overflow.i32(bitshl(1, 31), bitshl(1, 31)),
                 tuple { 0, true } );
-                
+
   check_tuples( llvm.sadd.with.overflow.i32(bitshl(1, 30), bitshl(1, 30)),
-                tuple { -2147483648, true } );
+                tuple { primitive_negate_i32(2147483648), true } );
 }

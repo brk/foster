@@ -42,7 +42,7 @@ murmurhash2-step-let = fn (k:i32, h:i32, r:i32, m:i32 to i32) {
 
 test-manually-lifted = fn ( to i32) {
   expect_i32(1040811149)
-  print_i32( murmurhash2-step-manually-lifted(1, -1, 24, 5bd1e995_16) )
+  print_i32( murmurhash2-step-manually-lifted(1, primitive_negate_i32(1), 24, 5bd1e995_16) )
 
   expect_i32(640067440)
   print_i32( murmurhash2-step-manually-lifted(2, 1040811149, 24, 5bd1e995_16) )
@@ -50,13 +50,13 @@ test-manually-lifted = fn ( to i32) {
   expect_i32(1308571692)
   print_i32( murmurhash2-step-manually-lifted(3, 640067440, 24, 5bd1e995_16) )
 
-  expect_i32(-2051158325)
+  expect_i32(primitive_negate_i32(2051158325))
   print_i32( murmurhash2-step-manually-lifted(4, 1308571692, 24, 5bd1e995_16) )
 }
 
 test-let-transformed = fn ( to i32) {
   expect_i32(1040811149)
-  print_i32( murmurhash2-step-let-transformed(1, -1, 24, 5bd1e995_16) )
+  print_i32( murmurhash2-step-let-transformed(1, primitive_negate_i32(1), 24, 5bd1e995_16) )
 
   expect_i32(640067440)
   print_i32( murmurhash2-step-let-transformed(2, 1040811149, 24, 5bd1e995_16) )
@@ -64,13 +64,13 @@ test-let-transformed = fn ( to i32) {
   expect_i32(1308571692)
   print_i32( murmurhash2-step-let-transformed(3, 640067440, 24, 5bd1e995_16) )
 
-  expect_i32(-2051158325)
+  expect_i32(primitive_negate_i32(2051158325))
   print_i32( murmurhash2-step-let-transformed(4, 1308571692, 24, 5bd1e995_16) )
 }
 
 test-let = fn ( to i32) {
   expect_i32(1040811149)
-  print_i32( murmurhash2-step-let(1, -1, 24, 5bd1e995_16) )
+  print_i32( murmurhash2-step-let(1, primitive_negate_i32(1), 24, 5bd1e995_16) )
 
   expect_i32(640067440)
   print_i32( murmurhash2-step-let(2, 1040811149, 24, 5bd1e995_16) )
@@ -78,7 +78,7 @@ test-let = fn ( to i32) {
   expect_i32(1308571692)
   print_i32( murmurhash2-step-let(3, 640067440, 24, 5bd1e995_16) )
 
-  expect_i32(-2051158325)
+  expect_i32(primitive_negate_i32(2051158325))
   print_i32( murmurhash2-step-let(4, 1308571692, 24, 5bd1e995_16) )
 }
 

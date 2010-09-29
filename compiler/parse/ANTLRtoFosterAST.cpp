@@ -52,10 +52,6 @@ bool foster::wasExplicitlyParenthesized(ExprAST* ast) {
   return gWasWrappedInExplicitParens[ast];
 }
 
-bool isSpecialName(const string& op) {
-  return op == "prim_not" || isBitwiseOpName(op);
-}
-
 bool isBitwiseOpName(const string& op) {
   return op == "bitand" || op == "bitor" || op == "bitxor" ||
          op == "bitshl" || op == "bitlshr" || op == "bitashr";
@@ -587,7 +583,7 @@ ExprAST* ExprAST_from(pTree tree) {
 
     // Don't bother trying to look up special variable names,
     // since we'll end up discarding this variable soon anyways.
-    if (isSpecialName(varName)) {
+    if (isBitwiseOpName(varName)) {
       return new VariableAST(varName, NULL, sourceRange);
     }
 

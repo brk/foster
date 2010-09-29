@@ -24,10 +24,9 @@ namespace foster {
 std::set<string> globalNames;
 
 static const char* sOps[] = {
-  "+",
-  "-",
-  "/",
-  "*",
+  "negate", "bitnot",
+
+  "+", "-", "/", "*",
 
   "<" ,
   "<=",
@@ -134,6 +133,22 @@ addConcretePrimitiveFunctionTo(Module* m, const char* op, const Type* ty) {
   llvm::Value* rv = codegenPrimitiveOperation(op, fBuilder, args);
   fBuilder.CreateRet(rv);
 
+  const std::string& name = f->getNameStr();
+  const llvm::Type* fty = f->getType();
+  // We get a pointer-to-whatever-function type, because f is a global
+  // value (therefore ptr), but we want just the function type.
+  if (const PointerType* pty = dyn_cast<PointerType>(fty)) {
+    fty = pty->getElementType();
+  }
+
+  llvm::outs() << "\t" << name << "\n";
+
+  gScope.insert(name, new foster::SymbolInfo(
+                            new VariableAST(name,
+                                            TypeAST::reconstruct(fty),
+                                            SourceRange::getEmptyRange()),
+                            f));
+
   return f;
 }
 
@@ -148,6 +163,8 @@ addConcretePrimitiveFunctionsTo(Module* m) {
       addConcretePrimitiveFunctionTo(m, sOps[i], types[j]);
     }
   }
+
+  addConcretePrimitiveFunctionTo(m, "bitnot", Type::getInt1Ty(getGlobalContext()));
 }
 
 // Add module m's C-linkage functions in the global scopes,
