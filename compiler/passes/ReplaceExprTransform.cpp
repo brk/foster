@@ -52,7 +52,6 @@ ExprAST* ReplaceExprTransform::rewrite(ExprAST* ast) {
 void ReplaceExprTransform::visit(BoolAST* ast)                { this->newChild = ast; }
 void ReplaceExprTransform::visit(IntAST* ast)                 { this->newChild = ast; }
 void ReplaceExprTransform::visit(VariableAST* ast)            { this->newChild = rewrite(ast); }
-void ReplaceExprTransform::visit(UnaryOpExprAST* ast)         { visitChildren(ast); this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(BinaryOpExprAST* ast)        { visitChildren(ast); this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(IfExprAST* ast)              { visitChildren(ast); this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(NilExprAST* ast)             { visitChildren(ast); this->newChild = rewrite(ast); }

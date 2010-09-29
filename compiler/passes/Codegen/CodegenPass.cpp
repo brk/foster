@@ -280,6 +280,8 @@ void CodegenPass::visit(BoolAST* ast) {
 }
 
 void CodegenPass::visit(VariableAST* ast) {
+  if (ast->value) return;
+
   // This looks up the lexically closest definition for the given variable
   // name, as provided by a function parameter or some such binding construct.
   // Note that getValue(ast) is NOT used to cache the result; this ensures
@@ -304,22 +306,30 @@ void CodegenPass::visit(VariableAST* ast) {
      << str(ast) << show(ast);
 }
 
-void CodegenPass::visit(UnaryOpExprAST* ast) {
-  ASSERT(!getValue(ast)) << "codegenned " << ast->tag << " @ " << hex(ast) << " twice?!?" << show(ast);
+bool isNameOfPrimitiveOperation(const std::string& name) {
+  return name == "prim_not";
+}
 
-  Value* V = ast->parts[0]->value;
-  const std::string& op = ast->op;
+llvm::Value* tryCodegenCallPrimitive(CallAST* ast, CodegenPass* pass) {
+  ExprAST* ebase = ast->parts[0];
+  if (!ebase) return NULL;
+  VariableAST* base = dynamic_cast<VariableAST*>(ebase);
+  if (!base) return NULL;
 
-  if (!V) {
-    EDiag() << "unary op " << op << " had null operand" << show(ast);
-    return;
+  const std::string& name = base->getName();
+
+  if (!isNameOfPrimitiveOperation(name)) return NULL;
+
+  for (size_t i = 1; i < ast->parts.size(); ++i) {
+    ast->parts[i]->accept(pass);
   }
 
-       if (op == "-")   { setValue(ast, builder.CreateNeg(V, "negtmp")); }
-  else if (op == "not") { setValue(ast, builder.CreateNot(V, "nottmp")); }
-  else {
-    EDiag() << "unknown unary op '" << op << "' during codegen" << show(ast);
+  if (base->getName() == "prim_not") {
+    return builder.CreateNot(ast->parts[1]->value, "nottmp");
   }
+
+  ASSERT(false) << "unhandled primitive operation: " << name;
+  return NULL;
 }
 
 llvm::Value* emitPrimitiveLLVMOperation(const std::string& op,

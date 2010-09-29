@@ -29,7 +29,6 @@ using llvm::APInt;
 class ExprAST;
 class TypeAST;
 class VariableAST;
-class PrototypeAST;
 class ExprASTVisitor;
 
 typedef std::vector<ExprAST*> Exprs;
@@ -135,6 +134,21 @@ struct NamespaceAST : public ExprAST {
     return info ? info->ast : NULL;
   }
 };
+
+class IntAST;
+class BoolAST;
+class SeqAST;
+class TupleExprAST;
+class SubscriptAST;
+class FnAST;
+class IfExprAST;
+class PrototypeAST;
+class VariableAST;
+
+class BinaryOpExprAST; // *
+class UnaryOpExprAST;  // *
+
+class ModuleAST;
 
 struct IntAST : public ExprAST {
 private:
@@ -274,33 +288,44 @@ public:
   virtual void accept(ExprASTVisitor* visitor);
 };
 
-// Closures are an implementation strategy for language feature
-// of first-class function values.
+// As noted by the designers of Lua, closures are an implementation strategy
+// for the language feature of first-class function values.
 //
-// A closure stores a typed function pointer and a typed environment pointer.
-// At the typechecking level, its type is a function type, but at the codegen level,
+// Some functions in Foster (such as those defined at the top level) are
+// codegenned as plain C-like procedures, with signatures just as given.
+//
+// Others, like function literals that are immediately called, can be
+// transformed to a C-like procedures with an augmented argument list
+// (for the calling context to provide the variables that the called
+//  function closes over).
+//
+// Other function literals are implemented as closures: a pair of
+// pointer-to-procedure and generically-typed pointer-to-environment.
+// The procedure's first argument is a pointer to its captured environment.
+//
+// At the typechecking level, a closure has function type, but at codegen time,
 // its "external" LLVM type is a struct of function-taking-generic-env-ptr and
 // generic-env-ptr. This allows type checking to be agnostic of the types stored
 // in the env, while still allowing codegen to insert the appropriate bitcasts.
  struct FnAST : public ExprAST {
    std::vector<foster::CFG*> cfgs;
 
-  PrototypeAST* proto;
+   PrototypeAST* proto;
 
-  // For closures; requires calcualation of free variables.
-  // Top-level functions (which are, by definition, not closures)
-  // have this field unset either in ANTLRtoFosterAST or
-  // during lambda lifting.
-  Exprs* environmentParts;
-  bool isClosure() const { return environmentParts != NULL; }
-  void markAsClosure() {
-    ASSERT(!environmentParts);
-    environmentParts = new Exprs();
-  }
-  void removeClosureEnvironment() {
-    delete environmentParts;
-    environmentParts = NULL;
-  }
+   // For closures; requires calcualation of free variables.
+   // Top-level functions (which are, by definition, not closures)
+   // have this field unset either in ANTLRtoFosterAST or
+   // during lambda lifting.
+   Exprs* environmentParts;
+   bool isClosure() const { return environmentParts != NULL; }
+   void markAsClosure() {
+     ASSERT(!environmentParts);
+     environmentParts = new Exprs();
+   }
+   void removeClosureEnvironment() {
+     delete environmentParts;
+     environmentParts = NULL;
+   }
 
    explicit FnAST(PrototypeAST* proto, ExprAST* body,
                   foster::SourceRange sourceRange)

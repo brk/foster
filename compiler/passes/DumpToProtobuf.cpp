@@ -93,12 +93,6 @@ void DumpToProtobufPass::visit(VariableAST* ast)            {
   current->set_name(ast->name);
 }
 
-void DumpToProtobufPass::visit(UnaryOpExprAST* ast)         {
-  processExprAST(current, ast, foster::pb::Expr::OP);
-  current->set_name(ast->op);
-  dumpChildren(this, ast);
-}
-
 void DumpToProtobufPass::visit(BinaryOpExprAST* ast)        {
   processExprAST(current, ast, foster::pb::Expr::OP);
   current->set_name(ast->op);

@@ -52,12 +52,8 @@ bool foster::wasExplicitlyParenthesized(ExprAST* ast) {
   return gWasWrappedInExplicitParens[ast];
 }
 
-bool isUnaryOp(const string& op) {
-  return op == "-" || op == "not";
-}
-
 bool isSpecialName(const string& op) {
-  return op == "deref" || isBitwiseOpName(op);
+  return op == "prim_not" || isBitwiseOpName(op);
 }
 
 bool isBitwiseOpName(const string& op) {
@@ -565,6 +561,10 @@ ExprAST* ExprAST_from(pTree tree) {
   if (token == COMPILES) { return parseBuiltinCompiles(tree, sourceRange); }
   if (token == BODY) { return ExprAST_from(child(tree, 0)); }
 
+  if (text == "false" || text == "true") {
+    return new BoolAST(text, sourceRange);
+  }
+
   // <formal arg (body | next) [type]>
   if (token == LETEXPR) {
     pTree tyExprTree = NULL;
@@ -633,22 +633,11 @@ ExprAST* ExprAST_from(pTree tree) {
     return fn;
   }
 
-  // Handle unary negation explicitly, before the binary op handler
-  if (getChildCount(tree) == 1 && isUnaryOp(text)) {
-    return new UnaryOpExprAST(text,
-                              ExprAST_from(child(tree, 0)),
-                              sourceRange);
-  }
-
   // Implicitly, every entry in the precedence table is a binary operator.
   if (CompilationContext::isKnownOperatorName(text)) {
     return parseBinaryOpExpr(text,
                              ExprAST_from(child(tree, 0)),
                              ExprAST_from(child(tree, 1)));
-  }
-
-  if (text == "false" || text == "true") {
-    return new BoolAST(text, sourceRange);
   }
 
   // Should have handled all keywords by now...

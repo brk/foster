@@ -535,6 +535,7 @@ int main(int argc, char** argv) {
   foster::putModuleMembersInScope(libfoster_bc, module);
   foster::putModuleMembersInInternalScope("imath", imath_bc, module);
   foster::createLLVMBitIntrinsics();
+  foster::addConcretePrimitiveFunctionsTo(module);
 
   llvm::sys::Path inPath(optInputPath);
   const foster::InputFile infile(inPath);

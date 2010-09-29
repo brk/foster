@@ -32,28 +32,30 @@ namespace foster {
 using foster::SourceRange;
 using foster::CFG;
 
-void absorb(BuildCFG* pass, Exprs& exprs) {
+void absorb(BuildCFG* pass, ExprAST* ast) {
+  Exprs& exprs = ast->parts;
   for (Exprs::iterator it = exprs.begin(); it != exprs.end(); ++it) {
     ExprAST* ast = (*it);
-    ast->accept(pass);
+    if (ast) {
+      ast->accept(pass);
+    } else {
+      llvm::outs() << "null child in: " << str(ast) << "\n";
+    }
   }
 }
 
 void BuildCFG::visit(IntAST* ast)          { currentRoot->append(ast); }
 void BuildCFG::visit(BoolAST* ast)         { currentRoot->append(ast); }
 void BuildCFG::visit(VariableAST* ast)     { currentRoot->append(ast); }
-void BuildCFG::visit(UnaryOpExprAST* ast)  { currentRoot->append(ast); }
 void BuildCFG::visit(BinaryOpExprAST* ast) { currentRoot->append(ast); }
 void BuildCFG::visit(NilExprAST* ast)      { currentRoot->append(ast); }
 void BuildCFG::visit(SubscriptAST* ast)    { currentRoot->append(ast); }
-///void BuildCFG::visit(ArrayExprAST* ast) { currentRoot->append(ast); }
-///void BuildCFG::visit(SimdVectorAST* ast)   { currentRoot->append(ast); }
 void BuildCFG::visit(TupleExprAST* ast)    { currentRoot->append(ast); }
 void BuildCFG::visit(BuiltinCompilesExprAST* ast) { currentRoot->append(ast); }
 void BuildCFG::visit(NamedTypeDeclAST* ast) { currentRoot->append(ast); }
 
-void BuildCFG::visit(SeqAST* ast)  { absorb(this, ast->parts); }
-void BuildCFG::visit(CallAST* ast) { absorb(this, ast->parts); }
+void BuildCFG::visit(SeqAST* ast)  { absorb(this, ast); }
+void BuildCFG::visit(CallAST* ast) { absorb(this, ast); }
 
 void BuildCFG::visit(PrototypeAST* ast) {
   // skip

@@ -13,7 +13,6 @@ void DefaultExprASTVisitor::visit(NamedTypeDeclAST* ast)       { return; }
 
 // Just recurse...
 // (the |if (0)|s are because some types visit children in their ->accept() implementations.
-void DefaultExprASTVisitor::visit(UnaryOpExprAST* ast)         { if (0) this->visitChildren(ast); }
 void DefaultExprASTVisitor::visit(BinaryOpExprAST* ast)        { if (0) this->visitChildren(ast); }
 void DefaultExprASTVisitor::visit(ModuleAST* ast)              { this->visitChildren(ast); }
 void DefaultExprASTVisitor::visit(IfExprAST* ast)              { this->visitChildren(ast); }

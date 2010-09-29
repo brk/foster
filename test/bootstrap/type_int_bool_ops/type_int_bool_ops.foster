@@ -1,38 +1,38 @@
 fn "main" () {
-  expect_i32(222)
-  print_i32(if true then { 222 } else { 111 })
+ // expect_i32(222)
+ // print_i32(if true then { 222 } else { 111 })
+ //
+ // expect_i32(111)
+ // print_i32(if false then { 222 } else { 111 })
+ //
+ // expect_i1(false)
+ // print_i1(false + false)
+ //
+ // expect_i1(true)
+ // print_i1(false + true)
+ //
+ // expect_i1(true)
+ // print_i1(true + false)
+ //
+ // expect_i1(false)
+ // print_i1(true + true)
+ //
+ // expect_i1(false) // no operator overloading, yet
+ // print_i1(__COMPILES__ tuple { 1 } + tuple { 2 })
 
-  expect_i32(111)
-  print_i32(if false then { 222 } else { 111 })
-
-  expect_i1(false)
-  print_i1(false + false)
+  //expect_i1(false)
+  //print_i1(__COMPILES__ -true)
 
   expect_i1(true)
-  print_i1(false + true)
+  print_i1(prim_not(false))
 
-  expect_i1(true)
-  print_i1(true + false)
-
-  expect_i1(false)
-  print_i1(true + true)
-
-  expect_i1(false) // no operator overloading, yet
-  print_i1(__COMPILES__ tuple { 1 } + tuple { 2 })
-
-  expect_i1(false)
-  print_i1(__COMPILES__ -true)
-
-  expect_i1(true)
-  print_i1(not false)
-
-  expect_i1(false) // 2 is not of type i1
-  print_i1(__COMPILES__ if 2 then { 222 } else { 111 })
-
-  //expect_i1(false) // nested fn not yet supported -- for now, fails while parsing
-  //print_i1(__COMPILES__ fn {} )
-
-  expect_i1(false) // tuple should typecheck elements
-  print_i1(__COMPILES__ tuple { if 2 then { 222 } else { 111 } } )
+ // expect_i1(false) // 2 is not of type i1
+ // print_i1(__COMPILES__ if 2 then { 222 } else { 111 })
+ //
+ // //expect_i1(false) // nested fn not yet supported -- for now, fails while parsing
+ // //print_i1(__COMPILES__ fn {} )
+ //
+ // expect_i1(false) // tuple should typecheck elements
+ // print_i1(__COMPILES__ tuple { if 2 then { 222 } else { 111 } } )
 }
 

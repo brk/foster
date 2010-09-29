@@ -25,6 +25,8 @@ void putModuleMembersInInternalScope(const std::string& scopeName,
 
 void createLLVMBitIntrinsics();
 
+void addConcretePrimitiveFunctionsTo(llvm::Module* m);
+
 } // namespace foster
 
 #endif

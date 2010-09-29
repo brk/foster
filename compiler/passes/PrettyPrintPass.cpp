@@ -165,15 +165,6 @@ void PrettyPrintPass::visit(VariableAST* ast) {
   }
 }
 
-// op arg
-void PrettyPrintPass::visit(UnaryOpExprAST* ast) {
-  ScopedBlock sb(this);
-  scan(PPToken(ast->op));
-  scan(pp.tOptNewline);
-  scan(PPToken(" "));
-  emit(ast->parts[0]);
-}
-
 // $0 op $1
 void PrettyPrintPass::visit(BinaryOpExprAST* ast) {
   ScopedBlock sb(this);

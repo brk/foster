@@ -665,49 +665,6 @@ void TypecheckPass::visit(VariableAST* ast) {
   }
 }
 
-// unary negate :: (int -> int) | (intvector -> intvector)
-// unary not    :: i1 -> i1
-
-void TypecheckPass::visit(UnaryOpExprAST* ast) {
-  TypeAST* innerType = ast->parts[0]->type;
-  if (!innerType) {
-    return;
-  } else {
-    ast->type = innerType;
-  }
-
-  const std::string& op = ast->op;
-
-  if (op == "-") {
-    if (innerType->isTypeVariable()) { // hack for now, until we get type classes
-      constraints.addTypeInSet(ast, innerType,
-        new Constraints::IntOrIntVectorTypePredicate());
-    } else {
-      const llvm::Type* opTy = innerType->getLLVMType();
-      ASSERT(opTy);
-
-      if (opTy == LLVMTypeFor("i1")) {
-        constraints.newLoggedError()
-               << "unary '-' used on a boolean; use 'not' instead" << show(ast);
-      } else if (!(opTy->isIntOrIntVectorTy())) {
-        constraints.newLoggedError()
-               << "operand to unary '-' had non-inty type " << str(opTy) << show(ast);
-      }
-    }
-  } else if (op == "not") {
-    if (innerType->isTypeVariable()) { // hack for now, until we get type classes
-      constraints.addTypeInSet(ast, innerType,
-              new Constraints::IntOrIntVectorTypePredicate());
-    } else {
-      if (innerType != TypeAST::i(1)) {
-        const llvm::Type* opTy = innerType->getLLVMType();
-        constraints.newLoggedError()
-               << "operand to unary 'not had non-bool type " << str(opTy) << show(ast);
-      }
-    }
-  }
-}
-
 bool isBitwiseOp(const std::string& op) {
   return op == "bitand" || op == "bitor" || op == "bitxor"
       || op == "shl" || op == "lshr" || op == "ashr";

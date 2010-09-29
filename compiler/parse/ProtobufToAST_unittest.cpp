@@ -357,23 +357,8 @@ TEST(ProtobufToAST, unbound_variable) {
 
 //
 //
-// Test unary and binary expressions.
+// Test binary expressions.
 //
-
-TEST(ProtobufToAST, unop_negate) {
-  initCachedLLVMTypes();
-  ExprAST* e = parse("-2");
-  ExprAST* re = roundtrip(e);
-
-  UnaryOpExprAST* ie = dynamic_cast<UnaryOpExprAST*>(e);
-  UnaryOpExprAST* ire = dynamic_cast<UnaryOpExprAST*>(re);
-
-  ASSERT_TRUE(ie);
-  ASSERT_TRUE(ire);
-
-  EXPECT_EQ(ie->op, ire->op);
-  EXPECT_EQ(pr(ie), pr(ire));
-}
 
 TEST(ProtobufToAST, binop_plus) {
   initCachedLLVMTypes();

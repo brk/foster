@@ -113,7 +113,6 @@ void ClosureConversionPass::visit(VariableAST* ast)            {
 
   return;
 }
-void ClosureConversionPass::visit(UnaryOpExprAST* ast)         { return; }
 void ClosureConversionPass::visit(BinaryOpExprAST* ast)        { return; }
 void ClosureConversionPass::visit(PrototypeAST* ast)           {
   for (size_t i = 0; i < ast->inArgs.size(); ++i) {

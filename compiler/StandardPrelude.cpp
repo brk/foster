@@ -5,6 +5,7 @@
 #include "llvm/DerivedTypes.h"
 #include "llvm/Module.h"
 #include "llvm/TypeSymbolTable.h"
+#include "llvm/Support/IRBuilder.h"
 
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
@@ -13,15 +14,141 @@
 
 #include "pystring/pystring.h"
 
+#include <vector>
 #include <sstream>
 
-using llvm::Module;
-using llvm::Function;
+using namespace llvm;
 
 namespace foster {
 
 std::set<string> globalNames;
 
+static const char* sOps[] = {
+  "+",
+  "-",
+  "/",
+  "*",
+
+  "<" ,
+  "<=",
+  ">" ,
+  ">=",
+  "==",
+  "!=",
+
+  "bitand" ,
+  "bitor"  ,
+  "bitxor" ,
+  "bitshl" ,
+  "bitlshr",
+  "bitashr",
+  NULL
+};
+
+static bool
+isUnaryOp(const std::string& op) {
+  return op == "negate" || op == "bitnot";
+}
+
+static bool
+isCmpOp(const std::string& op) {
+  return op == "!=" || op == "==" || op[0] == '<' || op[0] == '>';
+}
+
+static Value*
+codegenPrimitiveOperation(const std::string& op, IRBuilder<>& b,
+                          const std::vector<Value*>& args) {
+  Value* VL = args[0];
+       if (op == "negate") { return b.CreateNeg(VL, "negtmp"); }
+  else if (op == "bitnot") { return b.CreateNot(VL, "nottmp"); }
+
+  Value* VR = args[1];
+  // Other variants: F (float), NSW (no signed wrap), NUW,
+  // UDiv, ExactSDiv, URem, SRem,
+       if (op == "+") { return b.CreateAdd(VL, VR, "addtmp"); }
+  else if (op == "-") { return b.CreateSub(VL, VR, "subtmp"); }
+  else if (op == "/") { return b.CreateSDiv(VL, VR, "divtmp"); }
+  else if (op == "*") { return b.CreateMul(VL, VR, "multmp"); }
+
+  // Also have unsigned variants
+  else if (op == "<")  { return b.CreateICmpSLT(VL, VR, "slttmp"); }
+  else if (op == "<=") { return b.CreateICmpSLE(VL, VR, "sletmp"); }
+  else if (op == ">")  { return b.CreateICmpSGT(VL, VR, "sgttmp"); }
+  else if (op == ">=") { return b.CreateICmpSGE(VL, VR, "sgetmp"); }
+  else if (op == "==") { return b.CreateICmpEQ(VL, VR, "eqtmp"); }
+  else if (op == "!=") { return b.CreateICmpNE(VL, VR, "netmp"); }
+
+  else if (op == "bitand") { return b.CreateAnd(VL, VR, "bitandtmp"); }
+  else if (op == "bitor") {  return b.CreateOr( VL, VR, "bitortmp"); }
+  else if (op == "bitxor") { return b.CreateXor(VL, VR, "bitxortmp"); }
+
+  else if (op == "bitshl") { return b.CreateShl(VL, VR, "shltmp"); }
+  else if (op == "bitlshr") { return b.CreateLShr(VL, VR, "lshrtmp"); }
+  else if (op == "bitashr") { return b.CreateAShr(VL, VR, "ashrtmp"); }
+
+  ASSERT(false) << "unhandled op " << op;
+}
+
+static Function*
+getConcretePrimitiveFunction(Module* m, const char* op, const Type* ty) {
+  std::vector<const Type*> argtypes;
+  const Type* returnType = NULL;
+
+  if (isUnaryOp(op)) { // ty -> ty
+    argtypes.push_back(ty); returnType = ty;
+  } else if (isCmpOp(op)) { // ty -> ty -> i1
+    argtypes.push_back(ty);
+    argtypes.push_back(ty); returnType = Type::getInt1Ty(getGlobalContext());
+  } else { // ty -> ty -> ty
+    argtypes.push_back(ty);
+    argtypes.push_back(ty); returnType = ty;
+  }
+
+  ASSERT(returnType != NULL);
+
+  std::string funcName = "primitive_" + std::string(op) + "_" + str(ty);
+
+  FunctionType* ft = FunctionType::get(returnType, argtypes, false);
+  Function* f = Function::Create(ft, Function::PrivateLinkage, funcName, m);
+  f->setCallingConv(llvm::CallingConv::Fast);
+  f->addFnAttr(Attribute::AlwaysInline);
+  return f;
+}
+
+// Add a function       primitive_<op>_<type>
+// with the appropriate signature
+static Function*
+addConcretePrimitiveFunctionTo(Module* m, const char* op, const Type* ty) {
+  Function* f = getConcretePrimitiveFunction(m, op, ty);
+
+  std::vector<Value*> args;
+  for (Function::arg_iterator it = f->arg_begin();
+                             it != f->arg_end(); ++it) {
+    llvm::Value& v = *it;
+    args.push_back(&v);
+  }
+
+  BasicBlock* bb = BasicBlock::Create(getGlobalContext(), "entry", f);
+  IRBuilder<> fBuilder(getGlobalContext());
+  fBuilder.SetInsertPoint(bb);
+  llvm::Value* rv = codegenPrimitiveOperation(op, fBuilder, args);
+  fBuilder.CreateRet(rv);
+
+  return f;
+}
+
+void
+addConcretePrimitiveFunctionsTo(Module* m) {
+  std::vector<const Type*> types;
+  types.push_back(Type::getInt32Ty(getGlobalContext()));
+  types.push_back(Type::getInt64Ty(getGlobalContext()));
+
+  for (int i = 0; sOps[i] != NULL; ++i) {
+    for (size_t j = 0; j < types.size(); ++j) {
+      addConcretePrimitiveFunctionTo(m, sOps[i], types[j]);
+    }
+  }
+}
 
 // Add module m's C-linkage functions in the global scopes,
 // and also add prototypes to the linkee module.
@@ -36,13 +163,13 @@ putModuleMembersInInternalScope(const std::string& scopeName,
 
 
   // Collect type names from the module.
-  const llvm::TypeSymbolTable & typeSymTab = m->getTypeSymbolTable();
-  for (llvm::TypeSymbolTable::const_iterator it = typeSymTab.begin();
+  const TypeSymbolTable & typeSymTab = m->getTypeSymbolTable();
+  for (TypeSymbolTable::const_iterator it = typeSymTab.begin();
                                            it != typeSymTab.end(); ++it) {
     std::string name = (*it).first;
-    const llvm::Type* ty   = (*it).second;
+    const Type* ty   = (*it).second;
 
-    llvm::outs() << "type " << name << " = " << str(ty) << "\n";
+    outs() << "type " << name << " = " << str(ty) << "\n";
 
     // TODO do we need to explicitly copy the type to the linkee?
     linkee->addTypeName(name, ty);
@@ -51,12 +178,12 @@ putModuleMembersInInternalScope(const std::string& scopeName,
   // Collect global variables from the module.
   for (Module::global_iterator it = m->global_begin();
                               it != m->global_end(); ++it) {
-    const llvm::GlobalVariable& gv = *it;
+    const GlobalVariable& gv = *it;
     if (!gv.isConstant()) {
       continue;
     }
 
-    //llvm::outs() << "<internal>\tglobal\t" << gv.getName() << "\n";
+    //outs() << "<internal>\tglobal\t" << gv.getName() << "\n";
     linkee->getOrInsertGlobal(gv.getName(), gv.getType());
   }
 
@@ -93,18 +220,18 @@ putModuleMembersInInternalScope(const std::string& scopeName,
     const Type* ty = f.getType();
     // We get a pointer-to-whatever-function type, because f is a global
     // value (therefore ptr), but we want just the function type.
-    if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
+    if (const PointerType* pty = dyn_cast<PointerType>(ty)) {
       ty = pty->getElementType();
     }
 
-    if (const llvm::FunctionType* fnty =
-                                      llvm::dyn_cast<llvm::FunctionType>(ty)) {
+    if (const FunctionType* fnty =
+                                      dyn_cast<FunctionType>(ty)) {
       Value* decl = linkee->getOrInsertFunction(
-          llvm::StringRef(name),
+          StringRef(name),
           fnty,
           f.getAttributes());
 
-      llvm::outs() << "<internal>\t" << hasDef << "\t" << name << " \n";
+      //outs() << "<internal>\t" << hasDef << "\t" << name << " \n";
 
       scope->insert(name, new foster::SymbolInfo(
                           new VariableAST(name, TypeAST::reconstruct(fnty),
@@ -119,7 +246,7 @@ putModuleMembersInInternalScope(const std::string& scopeName,
   // LLVM to include declarations in the module in the first place.
   for (std::set<std::string>::iterator it = functionsToRemove.begin();
                          it != functionsToRemove.end(); ++it) {
-    llvm::outs() << "not including function " << *it << "\n";
+    outs() << "not including function " << *it << "\n";
     m->getFunctionList().erase(m->getFunction(*it));
   }
 
@@ -146,20 +273,20 @@ void putModuleMembersInScope(Module* m, Module* linkee) {
       const Type* ty = f.getType();
       // We get a pointer-to-whatever-function type, because f is a global
       // value (therefore ptr), but we want just the function type.
-      if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
+      if (const PointerType* pty = dyn_cast<PointerType>(ty)) {
         ty = pty->getElementType();
       }
 
-      if (const llvm::FunctionType* fnty =
-                                      llvm::dyn_cast<llvm::FunctionType>(ty)) {
+      if (const FunctionType* fnty =
+                                      dyn_cast<FunctionType>(ty)) {
         // Ensure that codegen for the given function finds the 'declare'
         // TODO make lazy prototype?
         Value* decl = linkee->getOrInsertFunction(
-            llvm::StringRef(name),
+            StringRef(name),
             fnty,
             f.getAttributes());
         /*
-        llvm::outs() << "inserting variable in global scope: " << name << " : "
+        outs() << "inserting variable in global scope: " << name << " : "
                   << str(fnty) << "\n";
         */
         gScope.insert(name, new foster::SymbolInfo(
@@ -241,7 +368,7 @@ void addToProperNamespace(VariableAST* var) {
 
   ExprAST* ns = gScopeLookupAST(parts[0]);
   if (!ns) {
-    llvm::errs() << "Error: could not find root namespace for fqName "
+    errs() << "Error: could not find root namespace for fqName "
               << fqName << "\n";
     return;
   }

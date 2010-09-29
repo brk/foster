@@ -146,10 +146,7 @@ ExprAST* parseNamedTypeDecl(const pb::Expr& e, const foster::SourceRange& range)
 }
 
 ExprAST* parseOp(const pb::Expr& e, const foster::SourceRange& range) {
-  if (e.parts_size() == 1) {
-    return new UnaryOpExprAST(e.name(),
-                          ExprAST_from_pb(&e.parts(0)), range);
-  } else if (e.parts_size() == 2) {
+  if (e.parts_size() == 2) {
     return new BinaryOpExprAST(e.name(),
                            ExprAST_from_pb(&e.parts(0)),
                            ExprAST_from_pb(&e.parts(1)), range);

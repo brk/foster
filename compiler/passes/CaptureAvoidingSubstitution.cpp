@@ -76,7 +76,6 @@ void CaptureAvoidingSubstitution::cavsVisitChild(ExprAST*, ExprAST** child) {
 // NOTE: For now, ints and bools may not be rewritten.
 void CaptureAvoidingSubstitution::visit(BoolAST* ast)                { }
 void CaptureAvoidingSubstitution::visit(IntAST* ast)                 { }
-void CaptureAvoidingSubstitution::visit(UnaryOpExprAST* ast)         { visitChildren(ast); }
 void CaptureAvoidingSubstitution::visit(BinaryOpExprAST* ast)        { visitChildren(ast); }
 void CaptureAvoidingSubstitution::visit(NamedTypeDeclAST* ast) { return; }
 void CaptureAvoidingSubstitution::visit(ModuleAST* ast)              { visitChildren(ast); }
