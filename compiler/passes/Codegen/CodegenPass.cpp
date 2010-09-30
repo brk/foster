@@ -453,12 +453,6 @@ void CodegenPass::visit(PrototypeAST* ast) {
 
   std::string symbolName = getSymbolName(ast->getName());
 
-  if (ast->scope) {
-    gScope.pushExistingScope(ast->scope);
-  } else {
-    gScope.pushScope(ast->getName());
-  }
-
   // Give function literals internal linkage, since we know that
   // they can only be referenced from the function in which they
   // are defined.
@@ -484,12 +478,6 @@ void CodegenPass::visit(PrototypeAST* ast) {
     for (size_t i = 0; i != ast->inArgs.size(); ++i, ++AI) {
       AI->setName(ast->inArgs[i]->name);
     }
-  }
-
-  if (ast->scope) {
-    gScope.popExistingScope(ast->scope);
-  } else {
-    gScope.popScope();
   }
 
   if (FnTypeAST* fnty = dynamic_cast<FnTypeAST*>(ast->type)) {
