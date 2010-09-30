@@ -26,7 +26,7 @@ namespace foster {
 
 template <typename T>
 struct NameResolver {
-  virtual T* lookup(const string& name, const string& meta) = 0;
+  virtual T* lookup(const string& name) = 0;
   virtual ~NameResolver() {}
 };
 
@@ -81,16 +81,14 @@ public:
       return val_of.find(ident) != val_of.end();
     }
 
-    virtual T* lookup(const string& ident, const string& wantedScopeName) {
-      if (name == "*" || wantedScopeName == "" || name == wantedScopeName) {
-        typename Map::iterator it = val_of.find(ident);
-        if (it != val_of.end()) {
-          return ((*it).second);
-        }
+    virtual T* lookup(const string& ident) {
+      typename Map::iterator it = val_of.find(ident);
+      if (it != val_of.end()) {
+        return ((*it).second);
       }
 
       if (parent) {
-        return parent->lookup(ident, wantedScopeName);
+        return parent->lookup(ident);
       } else {
         return NULL;
       }
@@ -122,8 +120,8 @@ public:
 
   virtual ~SymbolTable() {}
 
-  virtual T* lookup(const string& ident, const string& wantedScopeName) {
-    return currentScope()->lookup(ident, wantedScopeName);
+  virtual T* lookup(const string& ident) {
+    return currentScope()->lookup(ident);
   }
 
   /// Inserts the given value into the current scope.
@@ -173,24 +171,9 @@ public:
   std::vector<LexicalScope*> scopeStack;
 };
 
-struct SymbolInfo {
-  ExprAST*           ast;
-  llvm::Value* value;
-
-  SymbolInfo(ExprAST* aast) : ast(aast), value(NULL) {}
-  SymbolInfo(llvm::Value* aval) : ast(NULL), value(aval) {}
-  SymbolInfo(ExprAST* aast, llvm::Value* aval)
-    : ast(aast), value(aval) {}
-};
-
-// {{{ |scope| maps names (var/fn) to llvm::Value*/llvm::Function*
-extern SymbolTable<SymbolInfo> gScope;
+extern SymbolTable<ExprAST> gScope;
 extern SymbolTable<TypeAST> gTypeScope;
 
-llvm::Value* gScopeLookupValue(const std::string& str);
-ExprAST*     gScopeLookupAST(const std::string& str);
-
-void gScopeInsert(const std::string& str, llvm::Value* val);
 void gScopeInsert(const std::string& str, ExprAST* ast);
 
 // }}}
@@ -198,16 +181,10 @@ void gScopeInsert(const std::string& str, ExprAST* ast);
 } // namespace foster
 
 
-namespace llvm {
-  raw_ostream& operator<<(raw_ostream& out, foster::SymbolInfo* info);
-}
-
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
 
 using foster::gScope;
-using foster::gScopeLookupValue;
-using foster::gScopeLookupAST;
 using foster::gScopeInsert;
 using foster::gTypeScope;
 

@@ -277,7 +277,7 @@ map<string, const llvm::Type*> gCachedLLVMTypes;
 TypeAST*    TypeASTFor(const string& name) {
   if (gCachedLLVMTypes.count(name) == 1) {
     return NamedTypeAST::get(name, gCachedLLVMTypes[name]);
-  } else if (TypeAST* ty = gTypeScope.lookup(name, "")) {
+  } else if (TypeAST* ty = gTypeScope.lookup(name)) {
     return ty;
   } else {
     if (const llvm::Type* ty = LLVMTypeFor(name)) {

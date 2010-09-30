@@ -61,7 +61,7 @@ struct CodegenPass : public ExprASTVisitor {
   ValueTable valueSymTab;
 
   llvm::Value* lookup(const std::string& fullyQualifiedSymbol) {
-    llvm::Value* v =  valueSymTab.lookup(fullyQualifiedSymbol, "");
+    llvm::Value* v =  valueSymTab.lookup(fullyQualifiedSymbol);
     if (v) return v;
 
     // Otherwise, it should be a function name.

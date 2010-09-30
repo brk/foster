@@ -143,11 +143,9 @@ addConcretePrimitiveFunctionTo(Module* m, const char* op, const Type* ty) {
 
   llvm::outs() << "\t" << name << "\n";
 
-  gScope.insert(name, new foster::SymbolInfo(
-                            new VariableAST(name,
-                                            TypeAST::reconstruct(fty),
-                                            SourceRange::getEmptyRange()),
-                            f));
+  gScope.insert(name, new VariableAST(name,
+                                      TypeAST::reconstruct(fty),
+                                      SourceRange::getEmptyRange()));
 
   return f;
 }
@@ -169,12 +167,12 @@ addConcretePrimitiveFunctionsTo(Module* m) {
 
 // Add module m's C-linkage functions in the global scopes,
 // and also add prototypes to the linkee module.
-foster::SymbolTable<foster::SymbolInfo>::LexicalScope*
+foster::SymbolTable<ExprAST>::LexicalScope*
 putModuleMembersInInternalScope(const std::string& scopeName,
                                      Module* m, Module* linkee) {
   if (!m) return NULL;
 
-  foster::SymbolTable<foster::SymbolInfo>::LexicalScope* scope = NULL;
+  foster::SymbolTable<ExprAST>::LexicalScope* scope = NULL;
   scope = gScope.newScope(string("$") + scopeName);
   gScope.popExistingScope(scope);
 
@@ -250,10 +248,9 @@ putModuleMembersInInternalScope(const std::string& scopeName,
 
       //outs() << "<internal>\t" << hasDef << "\t" << name << " \n";
 
-      scope->insert(name, new foster::SymbolInfo(
-                          new VariableAST(name, TypeAST::reconstruct(fnty),
-                                          SourceRange::getEmptyRange()),
-                          decl));
+      scope->insert(name, new VariableAST(name,
+                                          TypeAST::reconstruct(fnty),
+                                          SourceRange::getEmptyRange()));
     } else {
       ASSERT(false) << "how could a function not have function type?!?";
     }
@@ -306,10 +303,9 @@ void putModuleMembersInScope(Module* m, Module* linkee) {
         outs() << "inserting variable in global scope: " << name << " : "
                   << str(fnty) << "\n";
         */
-        gScope.insert(name, new foster::SymbolInfo(
-                              new VariableAST(name, TypeAST::reconstruct(fnty),
-                                              SourceRange::getEmptyRange()),
-                              decl));
+        gScope.insert(name, new VariableAST(name,
+                                            TypeAST::reconstruct(fnty),
+                                            SourceRange::getEmptyRange()));
       } else {
         ASSERT(false) << "how could a function not have function type?!?";
       }
@@ -360,7 +356,7 @@ VariableAST* proto(TypeAST* retTy, const string& fqName,
 }
 
 ExprAST* lookupOrCreateNamespace(ExprAST* ns, const string& part) {
-  ExprAST* nsPart = ns->lookup(part, "");
+  ExprAST* nsPart = ns->lookup(part);
   if (nsPart) {
     return nsPart;
   }
@@ -383,7 +379,7 @@ void addToProperNamespace(VariableAST* var) {
   std::vector<string> parts;
   pystring::split(fqName, parts, ".");
 
-  ExprAST* ns = gScopeLookupAST(parts[0]);
+  ExprAST* ns = gScope.lookup(parts[0]);
   if (!ns) {
     errs() << "Error: could not find root namespace for fqName "
               << fqName << "\n";
@@ -408,10 +404,9 @@ void addToProperNamespace(VariableAST* var) {
 void createLLVMBitIntrinsics() {
   // Make the module hierarchy available to code referencing llvm.blah.blah.
   // (The NamespaceAST name is mostly a convenience for examining the AST).
-  gScope.insert("llvm", new foster::SymbolInfo(
-                           new NamespaceAST("NamespaceAST", "llvm intrinsics",
+  gScope.insert("llvm", new NamespaceAST("NamespaceAST", "llvm intrinsics",
                                             gScope.getRootScope(),
-                                       foster::SourceRange::getEmptyRange())));
+                                       foster::SourceRange::getEmptyRange()));
 
   const unsigned i16_to_i64 = ((1<<4)|(1<<5)|(1<<6));
   const unsigned i8_to_i64 = ((1<<3)|i16_to_i64);

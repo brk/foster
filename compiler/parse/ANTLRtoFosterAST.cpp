@@ -226,8 +226,7 @@ PrototypeAST* getFnProto(string name,
                          pTree formalsTree,
                          pTree retTyExprTree)
 {
-  foster::SymbolTable<foster::SymbolInfo>::LexicalScope* protoScope =
-                                    gScope.pushScope("fn proto " + name);
+    ExprAST::ScopeType* protoScope = gScope.pushScope("fn proto " + name);
     std::vector<VariableAST*> in = getFormals(formalsTree);
     TypeAST* retTy = TypeAST_from(retTyExprTree);
     if (!retTy) {
@@ -239,7 +238,7 @@ PrototypeAST* getFnProto(string name,
   foster::SourceRange sourceRange = rangeFrom(formalsTree, sourceEndTree);
   PrototypeAST* proto = new PrototypeAST(retTy, name, in, sourceRange, protoScope);
 
-  gScope.getRootScope()->insert(name, new foster::SymbolInfo(proto));
+  gScope.getRootScope()->insert(name, proto);
 
   return proto;
 }
@@ -449,7 +448,7 @@ TypeAST* parseCtorType(pTree tree,
     return TupleTypeAST::get(getTypes(seqArgs)); //, sourceRange);
   }
 
-  if (TypeAST* ty = gTypeScope.lookup(name, "")) {
+  if (TypeAST* ty = gTypeScope.lookup(name)) {
     return ty; // TODO fix
   }
 
@@ -490,7 +489,7 @@ ExprAST* parseTrailers(pTree tree,
     } else if (trailerType == LOOKUP) {
       pTree nameNode = child(child(tree, i), 0);
       const string& name = textOf(child(nameNode, 0));
-      prefix = prefix->lookup(name, "");
+      prefix = prefix->lookup(name);
       if (!prefix) {
         currentErrs() << "Lookup of name '" << name << "' failed." << "\n";
       }
@@ -580,7 +579,7 @@ ExprAST* ExprAST_from(pTree tree) {
       return new VariableAST(varName, NULL, sourceRange);
     }
 
-    ExprAST* varOrProto = gScopeLookupAST(varName);
+    ExprAST* varOrProto = gScope.lookup(varName);
     if (!varOrProto) {
       EDiag() << "unknown var name: " << varName << show(sourceRange);
       return NULL;

@@ -11,68 +11,23 @@
 
 #include <sstream>
 
-namespace llvm {
-  raw_ostream& operator<<(raw_ostream& out, foster::SymbolInfo* info) {
-    if (info) {
-      out << "<ast: " << info->ast;
-      if (info->ast) out << ";\tast->type: " << info->ast->type;
-      if (info->ast) out << ";\tast->value: " << info->ast->value;
-      out << ";\tvalue: " << info->value << "> ";
-      return out;
-    } else {
-      return out << "<no info!> " << "\n";
-    }
-  }
-}
-
 namespace foster {
 
 SymbolTable<TypeAST> gTypeScope;
-SymbolTable<SymbolInfo> gScope;
-
-llvm::Value* gScopeLookupValue(const std::string& str) {
-  SymbolInfo* info = gScope.lookup(str, "");
-  return info ? info->value : NULL;
-}
-
-ExprAST* gScopeLookupAST(const std::string& str) {
-  SymbolInfo* info = gScope.lookup(str, "");
-  return info ? info->ast : NULL;
-}
-
-void gScopeInsert(const std::string& name, llvm::Value* val) {
-  bool currentScopeHas = gScope._private_getCurrentScope()->thisLevelContains(name);
-  if (!currentScopeHas) {
-    gScope.insert(name, new SymbolInfo(val));
-  } else {
-    SymbolInfo* info = gScope._private_getCurrentScope()->lookup(name, "");
-    if (info->value && info->value != val) {
-      llvm::outs() << "gScopeInsert(Value " << name << ") had unexpected collision "
-          << "old: " << str(info->value)
-          << "new: " << str(val)
-          << "\n";
-    } else if (info->value && info->value == val) {
-      llvm::outs() << "gScopeInsert(Value " << name << ") was redundant" << "\n";
-    } else {
-      info->value = val;
-    }
-  }
-}
+SymbolTable<ExprAST> gScope;
 
 void gScopeInsert(const std::string& name, ExprAST* ast) {
   bool currentScopeHas = gScope._private_getCurrentScope()->thisLevelContains(name);
   if (!currentScopeHas) {
-    gScope.insert(name, new SymbolInfo(ast));
+    gScope.insert(name, ast);
   } else {
-    SymbolInfo* info = gScope._private_getCurrentScope()->lookup(name, "");
-    if (!info->ast) {
-      info->ast = ast;
-    } else if (info->ast == ast) {
+    ExprAST* existing = gScope._private_getCurrentScope()->lookup(name);
+    if (existing == ast) {
       llvm::outs() << "gScopeInsert(ExprAST " << name << ") was redundant!" << "\n";
     } else {
       llvm::outs() << "gScopeInsert(ExprAST " << name << ") had unexpected collision"
-        << "\n\told: " << info->ast << " :: " << str(info->ast)
-        << "\n\tnew: " <<       ast << " :: " << str(      ast)
+        << "\n\told: " << existing << " :: " << str(existing)
+        << "\n\tnew: " <<      ast << " :: " << str(     ast)
         << "\n";
     }
   }
@@ -81,32 +36,19 @@ void gScopeInsert(const std::string& name, ExprAST* ast) {
 
 std::string
 getFullSymbolInfoNodeLabel(
-    const foster::SymbolTable<foster::SymbolInfo>::LexicalScope* node,
-    const foster::SymbolTable<foster::SymbolInfo>* graph) {
+    const foster::SymbolTable<ExprAST>::LexicalScope* node,
+    const foster::SymbolTable<ExprAST>* graph) {
   const char* newline = "\\l";
   std::stringstream ss;
   ss << node->getName() << "(@ " << node << ")";
-  for (foster::SymbolTable<foster::SymbolInfo>::LexicalScope::const_iterator
+  for (foster::SymbolTable<ExprAST>::LexicalScope::const_iterator
         it = node->begin(); it != node->end(); ++it) {
-    std::pair<std::string, foster::SymbolInfo*> p = *it;
-    ExprAST* ast = p.second->ast;
-    const llvm::Value* v = p.second->value;
+    std::pair<std::string, ExprAST*> p = *it;
+    ExprAST* ast = p.second;
 
-    if (false) {
-      llvm::outs() << p.first << " : " << v << " : " << "; ast: " << ast;
-      if (v) {llvm::outs() << v->getRawType()->getDescription() << "\n";}
-    }
-
-    ss << newline << p.first << ":" << newline
-        << "    ast:       " << ast
-          << "; ast->value: ";
-
+    ss << newline << p.first << ":" << ast;
     if (ast) { ss << ast->value; } else { ss << "NO value"; }
-
     ss << newline;
-
-    ss << "     v: " << v << "; LLVM type: " <<
-       std::string(v ? v->getRawType()->getDescription() : "<no llvm::Value>");
   }
   return ss.str();
 }

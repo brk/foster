@@ -10,8 +10,8 @@
 namespace foster {
 std::string
 getFullSymbolInfoNodeLabel(
-    const foster::SymbolTable<foster::SymbolInfo>::LexicalScope* node,
-    const foster::SymbolTable<foster::SymbolInfo>* graph);
+    const foster::SymbolTable<ExprAST>::LexicalScope* node,
+    const foster::SymbolTable<ExprAST>* graph);
 }
 namespace foster {
 std::string
@@ -21,7 +21,7 @@ getFullTypeASTNodeLabel(
 }
 
 
-#define FOSTER_SYMTAB foster::SymbolTable<foster::SymbolInfo>
+#define FOSTER_SYMTAB foster::SymbolTable<ExprAST>
 
 namespace llvm {
 

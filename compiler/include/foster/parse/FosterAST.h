@@ -60,7 +60,7 @@ inline bool isCmpOp(const std::string& op) {
 ///////////////////////////////////////////////////////////
 
 struct ExprAST : public foster::NameResolver<ExprAST> {
-  typedef foster::SymbolTable<foster::SymbolInfo>::LexicalScope ScopeType;
+  typedef foster::SymbolTable<ExprAST>::LexicalScope ScopeType;
 
   std::vector<ExprAST*> parts;
 
@@ -76,7 +76,7 @@ struct ExprAST : public foster::NameResolver<ExprAST> {
   virtual ~ExprAST() {}
   virtual std::ostream& operator<<(std::ostream& out) const;
   virtual void accept(ExprASTVisitor* visitor) = 0;
-  virtual ExprAST* lookup(const string& name, const string& meta) {
+  virtual ExprAST* lookup(const string& name) {
     ASSERT(false) << "ExprAST.lookup() called!";
     return NULL;
   }
@@ -118,20 +118,19 @@ struct NamespaceAST : public ExprAST {
   NamespaceAST* newNamespace(const std::string& name) {
     NamespaceAST* nu = new NamespaceAST("NamespaceAST", name, scope,
         foster::SourceRange::getEmptyRange());
-    scope->insert(name, new foster::SymbolInfo(nu));
+    scope->insert(name, nu);
     return nu;
   }
 
-  virtual ExprAST* lookup(const string& name, const string& meta) {
-    foster::SymbolInfo* info = scope->lookup(name, meta);
-    return info ? info->ast : NULL;
+  virtual ExprAST* lookup(const string& name) {
+    ExprAST* ast = scope->lookup(name);
+    return ast ? ast : NULL;
   }
 
   // TODO add wrapper to distinguish qualified from unqualified strings
   virtual ExprAST* insert(const string& fullyQualifiedName, VariableAST* var) {
-    foster::SymbolInfo* info = scope->insert(fullyQualifiedName,
-                                 new foster::SymbolInfo((ExprAST*)var));
-    return info ? info->ast : NULL;
+    ExprAST* ast = scope->insert(fullyQualifiedName, (ExprAST*)var);
+    return ast ? ast : NULL;
   }
 };
 
@@ -191,7 +190,7 @@ struct VariableAST : public ExprAST {
     this->type = aType;
   }
 
-  virtual ExprAST* lookup(const string& name, const string& meta);
+  virtual ExprAST* lookup(const string& name);
 
   virtual void accept(ExprASTVisitor* visitor);
 
@@ -278,12 +277,12 @@ public:
   std::vector<VariableAST*> inArgs;
   TypeAST* resultTy;
 
-  foster::SymbolTable<foster::SymbolInfo>::LexicalScope* scope;
+  ScopeType* scope;
 
   PrototypeAST(TypeAST* retTy, const string& name,
          const std::vector<VariableAST*>& inArgs,
          foster::SourceRange sourceRange,
-         foster::SymbolTable<foster::SymbolInfo>::LexicalScope* ascope = NULL);
+         ScopeType* ascope = NULL);
 
   virtual void accept(ExprASTVisitor* visitor);
 };

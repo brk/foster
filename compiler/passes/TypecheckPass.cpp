@@ -664,7 +664,7 @@ void TypecheckPass::visit(IntAST* ast) {
 void TypecheckPass::visit(VariableAST* ast) {
   if (ast->type) { return; }
 
-  ExprAST* varOrProto = gScopeLookupAST(ast->name);
+  ExprAST* varOrProto = gScope.lookup(ast->name);
   // If this variable names a bound top-level function,
   // the scope contains the appropriate prototype.
   if (varOrProto) {
