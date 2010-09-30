@@ -30,8 +30,6 @@ class APInt;
 
 namespace foster {
 
-extern std::string gPendingModuleName;
-
 bool wasExplicitlyParenthesized(ExprAST* ast);
 
 class SourceRange;
@@ -55,7 +53,7 @@ ExprAST* parseExpr(const std::string& source,
                    unsigned& outNumANTLRErrors,
                    CompilationContext* cc);
 
-ModuleAST* parseModule(const InputFile& file,
+ModuleAST* parseModule(const InputFile& file, const std::string& moduleName,
                        pTree& outTree,
                        ANTLRContext*& outContext,
                        unsigned& outNumANTLRErrors);

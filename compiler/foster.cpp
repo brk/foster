@@ -548,7 +548,8 @@ int main(int argc, char** argv) {
   foster::CompilationContext::pushNewContext();
 
   { ScopedTimer timer("io.parse");
-    exprAST = foster::parseModule(infile, parseTree, ctx, numParseErrors);
+    exprAST = foster::parseModule(infile, optInputPath,
+                                  parseTree, ctx, numParseErrors);
   }
 
   if (optDumpASTs) {

@@ -11,7 +11,6 @@
 
 #include "llvm/LLVMContext.h"
 #include "llvm/Target/TargetSelect.h"
-#include "llvm/ExecutionEngine/ExecutionEngine.h"
 #include "llvm/Module.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -270,7 +269,6 @@ DDiag::~DDiag() {}
 
 ////////////////////////////////////////////////////////////////////
 
-llvm::ExecutionEngine* ee = NULL;
 llvm::IRBuilder<> builder(llvm::getGlobalContext());
 llvm::Module* module = NULL;
 

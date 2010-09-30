@@ -39,8 +39,6 @@ using foster::CompilationContext;
 using foster::currentErrs;
 using foster::currentOuts;
 
-namespace foster { std::string gPendingModuleName; }
-
 #include "parse/ANTLRtoFosterAST-inl.h"
 
 Exprs getExprs(pTree tree);
@@ -319,7 +317,7 @@ FnAST* parseFn(string defaultSymbolTemplate, pTree tree) {
 // to appear in unsorted order, we have to separate the extraction of function
 // prototypes (and insertion of said name/proto pair into the gScope symbol
 // table) from the actual parsing of the function body.
-ModuleAST* parseTopLevel(pTree tree) {
+ModuleAST* parseTopLevel(pTree tree, std::string moduleName) {
   // The top level is composed of:
   //
   // * Type definitions, such as
@@ -391,11 +389,6 @@ ModuleAST* parseTopLevel(pTree tree) {
     FnAST* fn = buildFn(proto, child(fntree, 3));
     fn->removeClosureEnvironment();
     parsedExprs[i] = fn;
-  }
-
-  std::string moduleName(foster::gPendingModuleName);
-  if (moduleName.empty()) {
-    moduleName = "<default_foster_module>";
   }
 
   return new ModuleAST(parsedExprs,
@@ -836,7 +829,7 @@ namespace foster {
     return rv;
   }
 
-  ModuleAST* parseModule(const InputFile& file,
+  ModuleAST* parseModule(const InputFile& file, const std::string& moduleName,
                        pTree& outTree,
                        ANTLRContext*& ctx,
                        unsigned& outNumANTLRErrors) {
@@ -854,7 +847,7 @@ namespace foster {
     outTree = langAST.tree;
     outNumANTLRErrors = ctx->psr->pParser->rec->state->errorCount;
 
-    ModuleAST* m = parseTopLevel(outTree);
+    ModuleAST* m = parseTopLevel(outTree, moduleName);
 
     return m;
   }
