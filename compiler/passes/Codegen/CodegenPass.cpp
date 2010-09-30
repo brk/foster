@@ -11,6 +11,7 @@
 #include "parse/CompilationContext.h"
 #include "parse/ExprASTVisitor.h"
 #include "parse/DumpStructure.h"
+#include "parse/FosterSymbolTable.h"
 
 #include "passes/PassUtils.h"
 #include "passes/CodegenPass.h"
@@ -54,6 +55,21 @@ using foster::show;
 
 struct CodegenPass : public ExprASTVisitor {
   #include "parse/ExprASTVisitor.decls.inc.h"
+
+  typedef foster::SymbolTable<llvm::Value> ValueTable;
+  typedef ValueTable::LexicalScope         ValueScope;
+  ValueTable valueSymTab;
+
+  llvm::Value* lookup(const std::string& fullyQualifiedSymbol) {
+    llvm::Value* v =  valueSymTab.lookup(fullyQualifiedSymbol, "");
+    if (v) return v;
+
+    // Otherwise, it should be a function name.
+    v = foster::module->getFunction(fullyQualifiedSymbol);
+    ASSERT(v) << "name was neither fn arg nor fn name: "
+                << fullyQualifiedSymbol << "\n";
+    return v;
+  }
 };
 
 std::string hex(ExprAST* ast) {
@@ -221,7 +237,7 @@ llvm::Value* storeAndMarkPointerAsGCRoot(llvm::Value* val) {
 
 // Returns ty**, the stack slot containing a ty*.
 llvm::Value* emitMalloc(const llvm::Type* ty) {
-  llvm::Value* memalloc = gScopeLookupValue("memalloc");
+  llvm::Value* memalloc = foster::module->getFunction("memalloc");
   if (!memalloc) {
     currentErrs() << "NO MEMALLOC IN MODULE! :(" << "\n";
     return NULL;
@@ -305,7 +321,7 @@ void CodegenPass::visit(VariableAST* ast) {
     setValue(ast, ast->lazilyInsertedPrototype->value);
   } else {
     // The variable for an environment can be looked up multiple times...
-    llvm::Value* v = gScopeLookupValue(ast->name);
+    llvm::Value* v = this->lookup(ast->name);
 
     if (llvm::AllocaInst* ai = llvm::dyn_cast_or_null<llvm::AllocaInst>(v)) {
       setValue(ast, builder.CreateLoad(ai, /*isVolatile=*/ false, "autoload"));
@@ -316,7 +332,7 @@ void CodegenPass::visit(VariableAST* ast) {
     if (!getValue(ast)) {
       EDiag() << "looking up variable " << ast->name << ", got "
               << str(ast) << show(ast);
-      gScope.dump(currentOuts());
+      valueSymTab.dump(currentOuts());
     }
     llvm::outs() << "=========== VarAST " << ast->getName() << " @ " << hex(ast)<< " returned value: " << str(ast->value) << "\n";
   }
@@ -598,7 +614,6 @@ void CodegenPass::visit(FnAST* ast) {
                           << " @ " << hex(ast) << " twice?!?" << show(ast);
 
   ASSERT(ast->getBody() != NULL);
-  ASSERT(ast->getProto()->scope) << "no scope for " << ast->getName();
   if (ast->isClosure()) {
     ASSERT(!ast->getProto()->value)
       << "Functions for closures shouldn't be lifted, so they"
@@ -622,7 +637,7 @@ void CodegenPass::visit(FnAST* ast) {
   BasicBlock* BB = BasicBlock::Create(getGlobalContext(), "entry", F);
   builder.SetInsertPoint(BB);
 
-  gScope.pushExistingScope(ast->getProto()->scope);
+  ValueScope* scope = valueSymTab.newScope(ast->getName());
 
   // If the body of the function might allocate memory, the first thing
   // the function should do is create stack slots/GC roots to hold
@@ -639,13 +654,13 @@ void CodegenPass::visit(FnAST* ast) {
 #endif
         // Type could be like i32*, like {i32}* or like {i32*}.
         // arg_addr would be i32**,    {i32}**,  or {i32*}*.
-        gScopeInsert(AI->getNameStr(),  storeAndMarkPointerAsGCRoot(AI));
+        scope->insert(AI->getNameStr(),  storeAndMarkPointerAsGCRoot(AI));
       } else {
         llvm::AllocaInst* arg_addr = CreateEntryAlloca(
                                                 AI->getType(),
                                                 AI->getNameStr() + "_addr");
         builder.CreateStore(AI, arg_addr, /*isVolatile*/ false);
-        gScopeInsert(AI->getNameStr(), arg_addr);
+        scope->insert(AI->getNameStr(), arg_addr);
       }
     }
   }
@@ -665,7 +680,7 @@ void CodegenPass::visit(FnAST* ast) {
     rv = builder.CreateLoad(rv, false, "structPtrToStruct");
   }
 
-  gScope.popExistingScope(ast->getProto()->scope);
+  valueSymTab.popExistingScope(scope);
 
   if (returningVoid) {
     builder.CreateRetVoid();
@@ -699,7 +714,7 @@ void CodegenPass::visit(ModuleAST* ast) {
       f->getProto()->accept(this);
       // Ensure that the value is in the SymbolInfo entry in the symbol table,
       // and not just in the ->value field of the prototype AST node.
-      gScopeInsert(f->getName(), f->getProto()->value);
+      valueSymTab.insert(f->getName(), f->getProto()->value);
     }
   }
 
@@ -864,7 +879,9 @@ const FunctionType* tryExtractFunctionPointerType(Value* FV) {
 // that hard-codes call to fn referenced by arg,
 // and is suitable for embedding as the code ptr in a closure pair,
 // unlike the given function, which doesn't want the env ptr.
-FnAST* getClosureVersionOf(ExprAST* arg, FnTypeAST* fnty) {
+FnAST* getClosureVersionOf(ExprAST* arg,
+                           FnTypeAST* fnty,
+                           CodegenPass::ValueTable& valueSymTab) {
   static std::map<string, FnAST*> closureVersions;
 
   string protoName;
@@ -898,13 +915,12 @@ FnAST* getClosureVersionOf(ExprAST* arg, FnTypeAST* fnty) {
   }
 
   // Create a scope for the new proto.
-  foster::SymbolTable<foster::SymbolInfo>::LexicalScope* protoScope =
-                                  gScope.newScope("fn proto " + fnName);
+  CodegenPass::ValueScope* protoScope = valueSymTab.newScope(fnName);
   // But don't use it for doing codegen outside the proto.
-  gScope.popExistingScope(protoScope);
+  valueSymTab.popExistingScope(protoScope);
 
   PrototypeAST* proto = new PrototypeAST(fnty->getReturnType(),
-                             fnName, inArgs, arg->sourceRange, protoScope);
+                                         fnName, inArgs, arg->sourceRange);
   ExprAST* body = new CallAST(arg, callArgs, SourceRange::getEmptyRange());
   FnAST* fn = new FnAST(proto, body, SourceRange::getEmptyRange());
   fn->markAsClosure();
@@ -913,7 +929,7 @@ FnAST* getClosureVersionOf(ExprAST* arg, FnTypeAST* fnty) {
 
   // Regular functions get their proto values added when the module
   // starts codegenning, but we need to do it ourselves here.
-  gScopeInsert(fn->getName(), fn->getProto()->value);
+  valueSymTab.insert(fn->getName(), fn->getProto()->value);
 
   closureVersions[fnName] = fn;
 
@@ -1045,7 +1061,7 @@ void CodegenPass::visit(CallAST* ast) {
       // The simplest approach is to lazily generate a "closure version" of any
       // functions we see being passed directly by name; it would forward
       // all parameters to the regular function, except for the env ptr.
-        FnAST* wrapper = getClosureVersionOf(arg, fnty);
+        FnAST* wrapper = getClosureVersionOf(arg, fnty, valueSymTab);
         foster::CompilationContext::setParent(wrapper, ast);
         arg = wrapper;
       }
