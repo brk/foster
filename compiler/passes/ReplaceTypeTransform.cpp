@@ -64,11 +64,6 @@ void ReplaceTypeTransform::visit(TupleTypeAST* ast) {
   }
 }
 
-void ReplaceTypeTransform::visit(ClosureTypeAST* ast) {
-  if (ast->fntype) { ast->getFnType()->accept(this); }
-  if (ast->clotype) { ast->clotype->accept(this); }
-}
-
 /*
 void ReplaceTypeTransform::visit(SimdVectorTypeAST* ast) {
   subst(ast->getContainedType(0));

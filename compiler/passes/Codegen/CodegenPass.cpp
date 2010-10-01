@@ -61,18 +61,26 @@ struct CodegenPass : public ExprASTVisitor {
   ValueTable valueSymTab;
 
   llvm::Value* lookup(const std::string& fullyQualifiedSymbol) {
+    if (fullyQualifiedSymbol == "c") {
+      llvm::outs() << "saw a 'c'\n";
+    }
     llvm::Value* v =  valueSymTab.lookup(fullyQualifiedSymbol);
     if (v) return v;
 
     // Otherwise, it should be a function name.
     v = foster::module->getFunction(fullyQualifiedSymbol);
-    ASSERT(v) << "name was neither fn arg nor fn name: "
+    if (!v) {
+     currentErrs() << "name was neither fn arg nor fn name: "
                 << fullyQualifiedSymbol << "\n";
+     valueSymTab.dump(currentErrs());
+     ASSERT(false);
+    }
     return v;
   }
 };
 
-std::string hex(ExprAST* ast) {
+template<typename T>
+std::string hex(T* ast) {
   std::string s;
   llvm::raw_string_ostream ss(s);
   ss << ast;
@@ -976,8 +984,6 @@ void CodegenPass::visit(CallAST* ast) {
   // TODO extract directly from FnTypeAST
   llvm::CallingConv::ID callingConv = llvm::CallingConv::C;
 
-  FnTypeAST* closureFnType = NULL;
-
   if (Function* F = llvm::dyn_cast<Function>(FV)) {
     // Call to top level function
     FT = F->getFunctionType();
@@ -985,21 +991,14 @@ void CodegenPass::visit(CallAST* ast) {
   } else if (FT = tryExtractFunctionPointerType(FV)) {
     // Call to function pointer
     ASSERT(false) << "don't know what calling convention to use for ptrs";
-  } else if (ClosureTypeAST* cty = dynamic_cast<ClosureTypeAST*>(base->type)) {
-    // Call to closure struct
-    closureFnType = tryExtractCallableType(cty->clotype->getContainedType(0));
-    ASSERT(closureFnType) << "closure must have function type at codegen time!";
-  } else {
-    ASSERT(false);
-  }
-
-  if (closureFnType && !FT) {
+  } else if (FnTypeAST* closureFnType = dynamic_cast<FnTypeAST*>(base->type)) {
     // If our base has a Foster-level function type but not a
     // LLVM-level function type, it must mean we're calling a closure.
     // The function type here includes a parameter for the
     // generic environment type, e.g. (i32 => i32) becomes
     // i32 (i8*, i32).
-    FT = dyn_cast<const FunctionType>(closureFnType->getLLVMType());
+    FT = dyn_cast<const FunctionType>(
+          genericClosureVersionOf(closureFnType)->getLLVMFnType());
     llvm::Value* clo = getClosureStructValue(FV);
 
     ASSERT(!clo->getType()->isPointerTy())
@@ -1012,6 +1011,8 @@ void CodegenPass::visit(CallAST* ast) {
 
     FV = builder.CreateExtractValue(clo, 0, "getCloCode");
     callingConv = llvm::CallingConv::Fast;
+  } else {
+    ASSERT(false);
   }
 
   if (!FT) {
@@ -1030,48 +1031,52 @@ void CodegenPass::visit(CallAST* ast) {
     if (fn && fn->isClosure()) {
       // continue...
     } else if (FnTypeAST* fnty = dynamic_cast<FnTypeAST*>(arg->type)) {
-      // Codegenning   callee( arg )  where arg has raw function type, not closure type!
+      // FnTypeAST could mean a closure or a raw function...
       const llvm::FunctionType* llvmFnTy =
             llvm::dyn_cast<const llvm::FunctionType>(fnty->getLLVMType());
-      // If we still have a bare function type at codegen time, it means
-      // the code specified a (top-level) function name.
-      // Since we made it past type checking, we should have only two
-      // possibilities for what kind of function is doing the invoking:
-      //
-      // 1) A C-linkage function which expects a bare function pointer.
-      // 2) A Foster function which expects a closure value.
-      bool passFunctionPointer = isPointerToCompatibleFnTy(expectedType, llvmFnTy);
-      if (passFunctionPointer) {
-      // Case 1 is simple; we just change the arg type to "function pointer"
-      // instead of "function value" and LLVM takes care of the rest.
-      //
-      // The only wrinkle is return value compatibility: we'd like to
-      // automatically generate a return-value-eating wrapper if we try
-      // to pass a function returning a value to a function expecting
-      // a procedure returning void.
-        if (FnTypeAST* expectedFnTy =
-              tryExtractCallableType(TypeAST::reconstruct(
-                  llvm::dyn_cast<const llvm::DerivedType>(expectedType)))) {
-          if (isVoid(expectedFnTy->getReturnType()) && !isVoid(llvmFnTy)) {
-            ASSERT(false) << "No support at the moment for "
-                << "auto-generating void-returning wrappers.";
-            //arg = getVoidReturningVersionOf(arg, fnty);
+      // Codegenning   callee( arg )  where arg has raw function type, not closure type!
+      if (llvmFnTy) {
+        // If we still have a bare function type at codegen time, it means
+        // the code specified a (top-level) function name.
+        // Since we made it past type checking, we should have only two
+        // possibilities for what kind of function is doing the invoking:
+        //
+        // 1) A C-linkage function which expects a bare function pointer.
+        // 2) A Foster function which expects a closure value.
+        bool passFunctionPointer = isPointerToCompatibleFnTy(
+                                      expectedType, llvmFnTy);
+        if (passFunctionPointer) {
+        // Case 1 is simple; we just change the arg type to "function pointer"
+        // instead of "function value" and LLVM takes care of the rest.
+        //
+        // The only wrinkle is return value compatibility: we'd like to
+        // automatically generate a return-value-eating wrapper if we try
+        // to pass a function returning a value to a function expecting
+        // a procedure returning void.
+          if (FnTypeAST* expectedFnTy =
+                tryExtractCallableType(TypeAST::reconstruct(
+                    llvm::dyn_cast<const llvm::DerivedType>(expectedType)))) {
+            if (isVoid(expectedFnTy->getReturnType()) && !isVoid(llvmFnTy)) {
+              ASSERT(false) << "No support at the moment for "
+                  << "auto-generating void-returning wrappers.";
+              //arg = getVoidReturningVersionOf(arg, fnty);
+            }
           }
+        } else {
+        // Case 2 is not so simple, since a closure code pointer must take the
+        // environment pointer as its first argument, and presumably the fn
+        // we want to invoke does not take an env pointer. Thus we need a pointer
+        // to a forwarding function, which acts as the opposite of a trampoline:
+        // instead of excising one (implicitly-added) parameter from a function
+        // signature, we add one (implicitly-ignored) parameter to the signature.
+        //
+        // The simplest approach is to lazily generate a "closure version" of any
+        // functions we see being passed directly by name; it would forward
+        // all parameters to the regular function, except for the env ptr.
+          FnAST* wrapper = getClosureVersionOf(arg, fnty, valueSymTab);
+          foster::CompilationContext::setParent(wrapper, ast);
+          arg = wrapper;
         }
-      } else {
-      // Case 2 is not so simple, since a closure code pointer must take the
-      // environment pointer as its first argument, and presumably the fn
-      // we want to invoke does not take an env pointer. Thus we need a pointer
-      // to a forwarding function, which acts as the opposite of a trampoline:
-      // instead of excising one (implicitly-added) parameter from a function
-      // signature, we add one (implicitly-ignored) parameter to the signature.
-      //
-      // The simplest approach is to lazily generate a "closure version" of any
-      // functions we see being passed directly by name; it would forward
-      // all parameters to the regular function, except for the env ptr.
-        FnAST* wrapper = getClosureVersionOf(arg, fnty, valueSymTab);
-        foster::CompilationContext::setParent(wrapper, ast);
-        arg = wrapper;
       }
     }
 

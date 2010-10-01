@@ -9,7 +9,6 @@
 #include "base/Assert.h"
 
 #include "parse/FosterUtils.h"
-#include "passes/TypecheckPass.h"
 
 #include <sstream>
 
@@ -246,16 +245,21 @@ FnTypeAST* FnTypeAST::get(TypeAST* returnType,
 }
 
 const llvm::Type* FnTypeAST::getLLVMType() const {
-  //if (!repr) { repr = genericClosureTypeFor(this)->getLLVMType(); }
-  if (!repr) { repr = getLLVMFnType(); }
+  if (!repr) {
+    if (closedOverVars) {
+      repr = genericClosureTypeFor(this)->getLLVMType();
+    } else {
+      repr = getLLVMFnType();
+    }
+  }
   return repr;
 }
 
 const llvm::FunctionType* FnTypeAST::getLLVMFnType() const {
   vector<const llvm::Type*> loweredArgTypes;
   for (size_t i = 0; i < argTypes.size(); ++i) {
-    loweredArgTypes.push_back(argTypes[i]->getLLVMType());
-    llvm::outs() << "\t fn arg " << i << " : " << str(argTypes[i]->getLLVMType()) << "\n";
+    const llvm::Type* ty = argTypes[i]->getLLVMType();
+    loweredArgTypes.push_back(ty);
   }
 
   return llvm::FunctionType::get(returnType->getLLVMType(),
@@ -303,35 +307,6 @@ TupleTypeAST* TupleTypeAST::get(const vector<TypeAST*>& argTypes) {
     tupleTypeCache[argTypes] = tup;
   }
   return tup;
-}
-
-/////////////////////////////////////////////////////////////////////
-
-FnTypeAST*& ClosureTypeAST::getFnType() {
-  if (!fntype) {
-    ASSERT(this->proto);
-    foster::typecheck(this->proto);
-    if (FnTypeAST* fnty = tryExtractCallableType(proto->type)) {
-      fntype = fnty;
-    }
-  }
-  return fntype;
-}
-
-const llvm::Type* ClosureTypeAST::getLLVMType() const {
-  if (!repr) {
-    FnTypeAST* fnty = const_cast<ClosureTypeAST*>(this)->getFnType();
-    if (!fnty) { return NULL; }
-    //ASSERT(fnty) << "Can't get the type of this closure without a fn type";
-
-    clotype = genericClosureTypeFor(fnty);
-    ASSERT(clotype) << "Closure had fnty but no closure type: "
-        << str(fnty->getLLVMType())
-        << foster::show(getSourceRange());
-
-    const_cast<ClosureTypeAST*>(this)->repr = clotype->getLLVMType();
-  }
-  return repr;
 }
 
 /////////////////////////////////////////////////////////////////////

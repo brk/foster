@@ -250,22 +250,6 @@ void DumpTypeToProtobufPass::visit(TupleTypeAST* ast) {
   }
 }
 
-void DumpTypeToProtobufPass::visit(ClosureTypeAST* ast) {
-  setTagAndRange(current, ast, foster::pb::Type::CLOSURE);
-
-  foster::pb::ClosureType* cloty = current->mutable_closurety();
-  { DumpToProtobufPass p(cloty->mutable_proto());
-    ast->proto->accept(&p);
-  }
-
-  if (ast->getFnType()) {
-    dumpChild(this, cloty->mutable_fntype(), ast->getFnType());
-  }
-
-  //std::cout << "dumping closure type ast with underlying type "
-  //    << str(ast->getLLVMType()) << std::endl;
-  // TODO clo tuple type?
-}
 /*
 void DumpTypeToProtobufPass::visit(SimdVectorTypeAST* ast) {
   setTagAndRange(current, ast, foster::pb::Type::SIMD);

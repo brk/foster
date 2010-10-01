@@ -138,8 +138,8 @@ FnTypeAST* genericClosureVersionOf(const FnTypeAST* fnty) {
   return genericClosureVersionOf(fnty, /*skipFirstArg*/ false);
 }
 
-// converts      t1 (t2, t3) to { t1 (i8* nest, t2, t3)*, i8* }
-// or    t1 (envty* nest, t2, t3) to { t1 (i8* nest, t2, t3)*, i8* }
+// converts      t1 (t2, t3)      to { t1 (i8*, t2, t3)*, i8* }
+// or    t1 (envty* nest, t2, t3) to { t1 (i8*, t2, t3)*, i8* }
 static TupleTypeAST* genericClosureTypeFor(const TypeAST* ty, bool skipFirstArg) {
   if (const FnTypeAST* fnty = dynamic_cast<const FnTypeAST*>(ty)) {
     TypeAST* envType = RefTypeAST::get(TypeAST::i(8));
@@ -226,8 +226,6 @@ FnTypeAST* originalFunctionTypeForClosureStructType(TypeAST* ty) {
 #endif
       return rv;
     }
-  } else if (ClosureTypeAST* cloty = dynamic_cast<ClosureTypeAST*>(ty)) {
-    return cloty->getFnType();
   }
   return NULL;
 }

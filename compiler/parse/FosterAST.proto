@@ -85,7 +85,6 @@ message Expr {
   optional PBInt      pb_int     = 17;
   optional Proto      proto      = 18;
 
-  optional Closure    closure    = 20;
   optional PBIf       pb_if      = 21;
   optional ForRange   for_range  = 22;
 
@@ -110,10 +109,6 @@ message Proto {
   repeated Expr   in_args = 2; // really Var nodes
   optional Type   result  = 3;
   required string name    = 4;
-}
-
-message Closure {
-  required Expr  fn = 2;
 }
 
 message PBIf {

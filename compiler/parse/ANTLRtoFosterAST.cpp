@@ -11,6 +11,9 @@
 #include "parse/ANTLRtoFosterErrorHandling.h"
 #include "parse/CompilationContext.h"
 
+#include "parse/DumpStructure.h"
+#include "passes/PrettyPrintPass.h"
+
 #include "_generated_/fosterLexer.h"
 #include "_generated_/fosterParser.h"
 
@@ -693,7 +696,25 @@ TypeAST* TypeAST_from(pTree tree) {
     if (fn->getBody()) {
       EDiag() << "had unexpected fn body when parsing fn type!" << show(fn);
     }
-    return new ClosureTypeAST(NULL, fn->getProto(), sourceRange);
+
+    llvm::outs() << "fn type node:\n";
+    foster::prettyPrintExpr(fn, llvm::outs(), 40);
+    foster::dumpExprStructure(llvm::outs(), fn);
+    llvm::outs() << "\n\n";
+
+    std::vector<TypeAST*> argTypes;
+
+    for (int i = 0; i < fn->getProto()->inArgs.size(); ++i) {
+      llvm::outs() << "fn arg type " << i << " : " << fn->getProto()->inArgs[i]->type << "\n";
+      argTypes.push_back(fn->getProto()->inArgs[i]->type);
+    }
+
+    TypeAST* returnType = fn->getProto()->resultTy;
+    FnTypeAST* fty =  FnTypeAST::get(returnType, argTypes, "fastcc");
+    // Mark the function type as a known closure type,
+    // rather than a top-level procedure type.
+    fty->markAsClosure();
+    return fty;
   }
 
   if (text == "ref") {

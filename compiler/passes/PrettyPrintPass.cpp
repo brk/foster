@@ -469,12 +469,6 @@ void PrettyPrintTypePass::visit(TupleTypeAST* ast) {
   scan(PPToken(" } "));
 }
 
-void PrettyPrintTypePass::visit(ClosureTypeAST* ast) {
-  scan(PPToken("closure("));
-  emit(ast->getFnType());
-  scan(PPToken(")"));
-}
-
 /*
 void PrettyPrintTypePass::visit(SimdVectorTypeAST* ast) {
   scan(PPToken("simd-vector("));

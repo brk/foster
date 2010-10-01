@@ -34,7 +34,6 @@ class TypeAST;
 class FnTypeAST;
 class RefTypeAST;
 class TupleTypeAST;
-class ClosureTypeAST;
 
 class DumpTypeToProtobufPass;
 
@@ -206,6 +205,10 @@ public:
 
   const llvm::FunctionType* getLLVMFnType() const;
 
+  void markAsClosure() {
+    closedOverVars = new std::list<foster::ClosureDatum>();
+  }
+
   llvm::CallingConv::ID getCallingConventionID();
   friend class DumpTypeToProtobufPass;
 };
@@ -231,25 +234,6 @@ public:
 
   static TupleTypeAST* get(const std::vector<TypeAST*>& parts);
 };
-
-class PrototypeAST;
-
-class ClosureTypeAST : public TypeAST {
-public:
-  PrototypeAST* proto;
-  mutable FnTypeAST* fntype;
-  mutable TupleTypeAST* clotype;
-  explicit ClosureTypeAST(FnTypeAST* ft, PrototypeAST* proto,
-                          const SourceRange& sourceRange)
-     : TypeAST("ClosureType", NULL, sourceRange),
-       proto(proto), fntype(ft), clotype(NULL) {}
-
-  virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
-
-  virtual const llvm::Type* getLLVMType() const;
-  FnTypeAST*& getFnType();
-};
-
 
 class LiteralIntValueTypeAST : public TypeAST {
   IntAST* intAST;

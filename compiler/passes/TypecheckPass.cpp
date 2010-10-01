@@ -162,20 +162,8 @@ struct TypecheckPass : public ExprASTVisitor {
           // and discard it.
           extractTypeConstraints(eConstraintEq, context, t1, t2, *this);
         } else {
-          // If one is a closure type and the other a simple fn type,
-          // try matching the closure's fn type with the fn type.
-          if (t1->tag == std::string("ClosureType")
-           && t2->tag == std::string("FnType")) {
-            ClosureTypeAST* ct1 = dynamic_cast<ClosureTypeAST*>(t1);
-            TypeAST* ft1 = ct1->getFnType();
-            extractTypeConstraints(eConstraintEq, context, ft1, t2, *this);
-          } else if (t2->tag == std::string("ClosureType")
-                  && t1->tag == std::string("FnType")) {
-            ClosureTypeAST* ct2 = dynamic_cast<ClosureTypeAST*>(t2);
-            TypeAST* ft2 = ct2->getFnType();
-            extractTypeConstraints(eConstraintEq, context, t1, ft2, *this);
-          } else if (t1->tag == std::string("FnType")
-                  && t2->tag == std::string("RefType")) {
+          if (t1->tag == std::string("FnType")
+           && t2->tag == std::string("RefType")) {
             // Converting a top-level function to a function pointer
             // is trivial, so long as the underlying types match up.
             TypeAST* ft1 = t1;
@@ -383,11 +371,6 @@ void TypeConstraintExtractor::visit(TupleTypeAST* t2) {
            << "and " << str(t2) << " (" << t2->getNumContainedTypes() << ")"
            << show(context);
   }
-}
-
-void TypeConstraintExtractor::visit(ClosureTypeAST* t2) {
-  ClosureTypeAST* t1 = dynamic_cast<ClosureTypeAST*>(t1_pre);
-  addConstraint(t1->getFnType(), t2->getFnType());
 }
 
 /*

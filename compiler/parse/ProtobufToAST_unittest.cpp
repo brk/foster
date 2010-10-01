@@ -212,17 +212,6 @@ TEST(ProtobufToAST, simd_vector_type) {
 }
 */
 
-//
-//
-// TODO Test closure types.
-//
-#if 0
-TEST(ProtobufToAST, closure_type) {
-  initCachedLLVMTypes();
-  TypeAST* i32 = TypeAST::i(32);
-  ClosureTypeAST* clty = new ClosureTypeAST(proto, unfuntype, testRange);
-}
-#endif
 
 ////////////////////////////////////////////////////////////////////
 

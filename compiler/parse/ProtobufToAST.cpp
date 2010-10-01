@@ -299,33 +299,6 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
     return TupleTypeAST::get(parts);
   }
 
-  if (t.has_closurety()) {
-    const pb::ClosureType& cty = t.closurety();
-
-    PrototypeAST* proto = NULL;
-    TupleTypeAST* cloTupleType = NULL;
-    FnTypeAST* cloFnType = NULL;
-    const llvm::Type* underlyingType = NULL;
-
-    if (cty.has_proto()) {
-      proto = dynamic_cast<PrototypeAST*>(ExprAST_from_pb(&cty.proto()));
-    }
-
-    if (cty.has_fntype()) {
-      cloFnType = dynamic_cast<FnTypeAST*>(TypeAST_from_pb(&cty.fntype()));
-    }
-
-    if (cty.has_clo_tuple_type()) {
-      cloTupleType = dynamic_cast<TupleTypeAST*>(
-                                     TypeAST_from_pb(&cty.clo_tuple_type()));
-    }
-
-    ASSERT(proto) << "Need a proto to reconstruct a closure type." << show(range);
-    ClosureTypeAST* ct = new ClosureTypeAST(cloFnType, proto, range);
-    ct->clotype = cloTupleType;
-    return ct;
-  }
-
   if (t.has_literal_int_value()) {
     return LiteralIntValueTypeAST::get(t.literal_int_value(), range);
   }
