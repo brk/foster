@@ -988,12 +988,12 @@ void CodegenPass::visit(CallAST* ast) {
   } else if (ClosureTypeAST* cty = dynamic_cast<ClosureTypeAST*>(base->type)) {
     // Call to closure struct
     closureFnType = tryExtractCallableType(cty->clotype->getContainedType(0));
-    ASSERT(fty) << "closure must have function type at codegen time!";
+    ASSERT(closureFnType) << "closure must have function type at codegen time!";
   } else {
     ASSERT(false);
   }
 
-  if (fty && !FT) {
+  if (closureFnType && !FT) {
     // If our base has a Foster-level function type but not a
     // LLVM-level function type, it must mean we're calling a closure.
     // The function type here includes a parameter for the
