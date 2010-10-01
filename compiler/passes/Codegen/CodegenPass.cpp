@@ -989,6 +989,8 @@ void CodegenPass::visit(CallAST* ast) {
     // Call to closure struct
     fty = tryExtractCallableType(cty->clotype->getContainedType(0));
     ASSERT(fty) << "closure must have function type at codegen time!";
+  } else {
+    ASSERT(false);
   }
 
   if (fty && !FT) {
