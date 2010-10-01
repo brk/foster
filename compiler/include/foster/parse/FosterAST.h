@@ -59,7 +59,7 @@ inline bool isCmpOp(const std::string& op) {
 
 ///////////////////////////////////////////////////////////
 
-struct ExprAST : public foster::NameResolver<ExprAST> {
+struct ExprAST {
   typedef foster::SymbolTable<ExprAST>::LexicalScope ScopeType;
 
   std::vector<ExprAST*> parts;

@@ -23,6 +23,7 @@
 
 using namespace std;
 
+using foster::show;
 using foster::currentOuts;
 using foster::currentErrs;
 using foster::CompilationContext;
@@ -293,9 +294,10 @@ void performClosureConversion(FnAST* ast,
   // ... is handled directly at CallAST nodes during codegen
 
   if (ast->getProto()->type) {
+
     // and updates the types of the prototype and function itself,
     // if they already have types.
-    typecheck(ast->getProto());
+    foster::typecheck(ast->getProto());
     currentOuts() << "ClosureConversionPass: updating type from "
                << str(ast->type->getLLVMType())
                << " to\n\t" << str(ast->getProto()->type->getLLVMType()) << "\n";
@@ -344,7 +346,7 @@ void lambdaLiftAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) {
     // and updates the types of the prototype and function itself,
     // if they already have types
     {
-      typecheck(ast->getProto());
+      foster::typecheck(ast->getProto());
 
       // We just typecheck the prototype and not the function
       // to avoid re-typechecking the function body, which should not

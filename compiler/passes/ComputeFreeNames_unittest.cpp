@@ -71,7 +71,7 @@ string pr(ExprAST* ast) {
 void filterVarNames(std::vector<std::string>& v, const std::string& s) {
   std::string s_no_parens = pystring::replace(s,           "(", " ");
   s_no_parens = pystring::replace(s_no_parens, ")", " ");
- 
+
   std::vector<std::string> chunks;
   pystring::split(s_no_parens, chunks);
   for (size_t i = 0; i < chunks.size(); ++i) {
@@ -93,27 +93,27 @@ TEST(ComputeFreeNames, annotate_names) {
     fn (x : i32) { x + y + z +
     fn (y : i32) { x + y + z } } }
 ));
-  
+
   string unann = pr(e);
-  
-  
+
+
   std::set<std::string> globalNames;
   VariableBindingInfo vbi(globalNames);
-  computeFreeVariableNames(e, vbi, true);
-  
+  foster::computeFreeVariableNames(e, vbi, true);
+
   string ann = pr(e);
-  
+
   EXPECT_NE(unann, ann);
-  
+
   std::vector<std::string> ann_varnames;
   std::vector<std::string> unann_varnames;
   std::vector<std::string> exp_varnames;
-  
+
   filterVarNames(ann_varnames, ann);
   filterVarNames(unann_varnames, unann);
-  
+
   EXPECT_EQ("x z y x x y z y x y z", pystring::join(" ", unann_varnames));
-  
+
   // Names are annotated with inner-to-outer scoping info, with inner scopes
   // getting higher numbers.
   string expected = "\n"

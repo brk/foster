@@ -261,7 +261,7 @@ ExprAST* parseBinaryOpExpr(
     // ExprAST_from strips parens from expressions; instead of recording their
     // presence in the original source in the ExprAST, we store parenthesized
     // AST nodes in a separate table.
-    if (wasExplicitlyParenthesized(rhs)) {
+    if (foster::wasExplicitlyParenthesized(rhs)) {
       // Can't split the RHS up; no choice but to return op(a, (b...c))
       goto done;
     }

@@ -597,7 +597,7 @@ int main(int argc, char** argv) {
 
   bool typechecked = false;
   { ScopedTimer timer("foster.typecheck");
-    typechecked = typecheck(exprAST);
+    typechecked = foster::typecheck(exprAST);
   }
 
   if (!typechecked) { return 1; }

@@ -24,17 +24,11 @@ namespace llvm {
 
 namespace foster {
 
-template <typename T>
-struct NameResolver {
-  virtual T* lookup(const string& name) = 0;
-  virtual ~NameResolver() {}
-};
-
 // Implements persistent lexical scopes using a cactus stack arrangement
 template <typename T>
-class SymbolTable : public NameResolver<T> {
+class SymbolTable {
 public:
-  class LexicalScope : public NameResolver<T> {
+  class LexicalScope {
     string name;
     // This reference is threaded through all newly-created scopes.
     std::set<LexicalScope*>& parentSymbolTableScopes;
