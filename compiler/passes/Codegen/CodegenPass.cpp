@@ -976,7 +976,7 @@ void CodegenPass::visit(CallAST* ast) {
   // TODO extract directly from FnTypeAST
   llvm::CallingConv::ID callingConv = llvm::CallingConv::C;
 
-  FnTypeAST* fty = dynamic_cast<FnTypeAST*>(base->type);
+  FnTypeAST* closureFnType = NULL;
 
   if (Function* F = llvm::dyn_cast<Function>(FV)) {
     // Call to top level function
@@ -987,14 +987,19 @@ void CodegenPass::visit(CallAST* ast) {
     ASSERT(false) << "don't know what calling convention to use for ptrs";
   } else if (ClosureTypeAST* cty = dynamic_cast<ClosureTypeAST*>(base->type)) {
     // Call to closure struct
-    fty = tryExtractCallableType(cty->clotype->getContainedType(0));
+    closureFnType = tryExtractCallableType(cty->clotype->getContainedType(0));
     ASSERT(fty) << "closure must have function type at codegen time!";
   } else {
     ASSERT(false);
   }
 
   if (fty && !FT) {
-    FT = dyn_cast<const FunctionType>(fty->getLLVMType());
+    // If our base has a Foster-level function type but not a
+    // LLVM-level function type, it must mean we're calling a closure.
+    // The function type here includes a parameter for the
+    // generic environment type, e.g. (i32 => i32) becomes
+    // i32 (i8*, i32).
+    FT = dyn_cast<const FunctionType>(closureFnType->getLLVMType());
     llvm::Value* clo = getClosureStructValue(FV);
 
     ASSERT(!clo->getType()->isPointerTy())
@@ -1002,6 +1007,7 @@ void CodegenPass::visit(CallAST* ast) {
     llvm::Value* envPtr = builder.CreateExtractValue(clo, 1, "getCloEnv");
 
     // Pass env pointer as first parameter to function.
+    ASSERT(valArgs.empty());
     valArgs.push_back(envPtr);
 
     FV = builder.CreateExtractValue(clo, 0, "getCloCode");
