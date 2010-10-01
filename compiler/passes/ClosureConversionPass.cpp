@@ -216,7 +216,7 @@ set<VariableAST*> freeVariablesOf(FnAST* ast) {
   const set<string>& freeVars = freeVariables[ast];
   for (set<string>::iterator it = freeVars.begin(); it != freeVars.end(); ++it) {
     const string& varName = *it;
-    ExprAST* evar = ast->getProto()->scope->lookup(varName);
+    ExprAST* evar = ast->scope->lookup(varName);
     VariableAST* var = dynamic_cast<VariableAST*>(evar);
     ASSERT(var) << "free variables must be variables! But " << varName
                  << " was " << show(evar);
@@ -231,7 +231,7 @@ void hoistAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) {
 
   // Alter the symbol table structure to reflect the fact that we're
   // hoisting the function to the root scope.
-  ast->getProto()->scope->parent = gScope.getRootScope();
+  ast->scope->parent = gScope.getRootScope();
 }
 
 void performClosureConversion(FnAST* ast,

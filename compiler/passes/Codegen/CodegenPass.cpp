@@ -922,15 +922,15 @@ FnAST* getClosureVersionOf(ExprAST* arg,
     callArgs.push_back(a);
   }
 
-  // Create a scope for the new proto.
-  CodegenPass::ValueScope* protoScope = valueSymTab.newScope(fnName);
+  // Create a scope for the new function's values.
+  CodegenPass::ValueScope* scope = valueSymTab.newScope(fnName);
   // But don't use it for doing codegen outside the proto.
-  valueSymTab.popExistingScope(protoScope);
+  valueSymTab.popExistingScope(scope);
 
   PrototypeAST* proto = new PrototypeAST(fnty->getReturnType(),
                                          fnName, inArgs, arg->sourceRange);
   ExprAST* body = new CallAST(arg, callArgs, SourceRange::getEmptyRange());
-  FnAST* fn = new FnAST(proto, body, SourceRange::getEmptyRange());
+  FnAST* fn = new FnAST(proto, body, NULL, SourceRange::getEmptyRange());
   fn->markAsClosure();
 
   proto->type = fn->type = genericClosureVersionOf(fnty);

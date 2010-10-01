@@ -277,12 +277,9 @@ public:
   std::vector<VariableAST*> inArgs;
   TypeAST* resultTy;
 
-  ScopeType* scope;
-
   PrototypeAST(TypeAST* retTy, const string& name,
          const std::vector<VariableAST*>& inArgs,
-         foster::SourceRange sourceRange,
-         ScopeType* ascope = NULL);
+         foster::SourceRange sourceRange);
 
   virtual void accept(ExprASTVisitor* visitor);
 };
@@ -310,6 +307,7 @@ public:
    std::vector<foster::CFG*> cfgs;
 
    PrototypeAST* proto;
+   ScopeType* scope;
 
    // For closures; requires calcualation of free variables.
    // Top-level functions (which are, by definition, not closures)
@@ -327,9 +325,11 @@ public:
    }
 
    explicit FnAST(PrototypeAST* proto, ExprAST* body,
+                  ExprAST::ScopeType* ascope,
                   foster::SourceRange sourceRange)
       : ExprAST("FnAST", sourceRange),
-        proto(proto), environmentParts(NULL) {
+        proto(proto), scope(ascope),
+        environmentParts(NULL) {
      parts.push_back(body);
    }
 

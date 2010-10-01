@@ -194,10 +194,9 @@ llvm::ConstantInt* getConstantInt(IntAST* n) {
 
 PrototypeAST::PrototypeAST(TypeAST* retTy, const string& name,
              const std::vector<VariableAST*>& inArgs,
-             foster::SourceRange sourceRange,
-             ExprAST::ScopeType* ascope)
+             foster::SourceRange sourceRange)
     : ExprAST("PrototypeAST", sourceRange),
-      name(name), inArgs(inArgs), resultTy(retTy), scope(ascope) {
+      name(name), inArgs(inArgs), resultTy(retTy) {
         ASSERT(resultTy != NULL) << "proto: " << name << foster::show(sourceRange);
 }
 

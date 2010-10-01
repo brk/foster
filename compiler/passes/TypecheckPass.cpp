@@ -705,9 +705,9 @@ void TypecheckPass::visit(FnAST* ast) {
   ast->getProto()->accept(this);
 
   ASSERT(ast->getBody() != NULL);
-  gScope.pushExistingScope(ast->getProto()->scope);
+  gScope.pushExistingScope(ast->scope);
   ast->getBody()->accept(this);
-  gScope.popExistingScope(ast->getProto()->scope);
+  gScope.popExistingScope(ast->scope);
 
   ast->type = ast->getProto()->type;
 }

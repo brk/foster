@@ -202,14 +202,10 @@ VariableAST* parseFormal(pTree tree) {
   string varName = textOf(child(varNameTree, 0));
   if (getChildCount(tree) == 2) {
     TypeAST* tyExpr = TypeAST_from(child(tree, 1));
-    VariableAST* var = new VariableAST(varName, tyExpr, rangeOf(tree));
-    gScopeInsert(varName, var);
-    return var;
+    return new VariableAST(varName, tyExpr, rangeOf(tree));
   } else {
     // no fixed type, infer later
-    VariableAST* var = new VariableAST(varName, NULL, rangeOf(tree));
-    gScopeInsert(varName, var);
-    return var;
+    return new VariableAST(varName, NULL, rangeOf(tree));
   }
 }
 
@@ -229,17 +225,15 @@ PrototypeAST* getFnProto(string name,
                          pTree formalsTree,
                          pTree retTyExprTree)
 {
-    ExprAST::ScopeType* protoScope = gScope.pushScope("fn proto " + name);
-    std::vector<VariableAST*> in = getFormals(formalsTree);
-    TypeAST* retTy = TypeAST_from(retTyExprTree);
-    if (!retTy) {
-      retTy = TypeAST::i(32);
-    }
-  gScope.popScope();
+  std::vector<VariableAST*> in = getFormals(formalsTree);
+  TypeAST* retTy = TypeAST_from(retTyExprTree);
+  if (!retTy) {
+    retTy = TypeAST::i(32);
+  }
 
   pTree sourceEndTree = (retTyExprTree != NULL) ? retTyExprTree : formalsTree;
   foster::SourceRange sourceRange = rangeFrom(formalsTree, sourceEndTree);
-  PrototypeAST* proto = new PrototypeAST(retTy, name, in, sourceRange, protoScope);
+  PrototypeAST* proto = new PrototypeAST(retTy, name, in, sourceRange);
 
   gScope.getRootScope()->insert(name, proto);
 
@@ -248,12 +242,16 @@ PrototypeAST* getFnProto(string name,
 
 FnAST* buildFn(PrototypeAST* proto, pTree bodyTree) {
   ExprAST* body = NULL;
-  gScope.pushExistingScope(proto->scope);
+  ExprAST::ScopeType* scope = gScope.pushScope(proto->getName());
+    // Ensure all the function parameters are available in the function body.
+    for (unsigned i = 0; i < proto->inArgs.size(); ++i) {
+      scope->insert(proto->inArgs[i]->name, proto->inArgs[i]);
+    }
     body = ExprAST_from(bodyTree);
-  gScope.popExistingScope(proto->scope);
+  gScope.popScope();
 
   // TODO make source range more accurate
-  return new FnAST(proto, body, rangeOf(bodyTree));
+  return new FnAST(proto, body, scope, rangeOf(bodyTree));
 }
 
 // parses    a  op  b...c

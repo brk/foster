@@ -91,7 +91,7 @@ ExprAST* parseCompiles(const pb::Expr& e, const foster::SourceRange& range) {
 
 ExprAST* parseFn(const pb::Expr& e, const foster::SourceRange& range) {
   PrototypeAST* proto = dynamic_cast<PrototypeAST*>(ExprAST_from_pb(& e.parts(0)));
-  FnAST* fn = new FnAST(proto, ExprAST_from_pb(& e.parts(1)), range);
+  FnAST* fn = new FnAST(proto, ExprAST_from_pb(& e.parts(1)), NULL, range);
   // TODO mark as closure?
   return fn;
 }
