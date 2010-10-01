@@ -11,6 +11,10 @@
 
 #include "passes/PassUtils.h"
 
+#include <vector>
+
+#include "pystring/pystring.h"
+
 namespace foster {
 
 
@@ -42,6 +46,35 @@ bool typesOf(const std::vector<ExprAST*>& parts,
     types.push_back(ty);
   }
   return true;
+}
+
+const char* getCallingConvention(PrototypeAST* ast) {
+  if (ast->getName() == "main"
+  ||  pystring::startswith(ast->getName(), "llvm.")
+  ||  pystring::startswith(ast->getName(), "__voidReturningVersionOf__")) {
+    return "ccc";
+  } else {
+    return "fastcc";
+  }
+}
+
+FnTypeAST* getFunctionTypeForProto(PrototypeAST* ast) {
+  std::vector<TypeAST*> argTypes;
+  for (size_t i = 0; i < ast->inArgs.size(); ++i) {
+    ASSERT(ast->inArgs[i] != NULL);
+    VariableAST* arg = ast->inArgs[i];
+    TypeAST* ty = arg->type;
+    if (ty == NULL) {
+      currentErrs() << "Error: proto " << ast->getName() << " had "
+        << "null type for arg '" << arg->name << "'" << "\n";
+      return NULL;
+    }
+
+    argTypes.push_back(ty);
+  }
+
+  return FnTypeAST::get(ast->resultTy, argTypes,
+                        getCallingConvention(ast));
 }
 
 } // namespace foster

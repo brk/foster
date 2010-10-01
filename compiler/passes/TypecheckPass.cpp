@@ -713,22 +713,11 @@ bool areNamesDisjoint(const std::vector<VariableAST*>& vars) {
   return seen.size() == vars.size();
 }
 
-const char* getCallingConvention(PrototypeAST* ast) {
-  if (ast->getName() == "main"
-  ||  pystring::startswith(ast->getName(), "llvm.")
-  ||  pystring::startswith(ast->getName(), "__voidReturningVersionOf__")) {
-    return "ccc";
-  } else {
-    return "fastcc";
-  }
-}
-
 // * Ensures names of function parameters are disjoint
 // * Ensures that all args exist and (for now) have explicit types.
 // * Gives the prototype a FnTypeAST type.
 void TypecheckPass::visit(PrototypeAST* ast) {
   if (!areNamesDisjoint(ast->inArgs)) {
-
     EDiag& err = constraints.newLoggedError();
     err    << "formal argument names for function "
            << ast->getName() << " are not disjoint";
@@ -739,33 +728,20 @@ void TypecheckPass::visit(PrototypeAST* ast) {
     return;
   }
 
-  vector<TypeAST*> argTypes;
-  for (size_t i = 0; i < ast->inArgs.size(); ++i) {
-    ASSERT(ast->inArgs[i] != NULL);
-    VariableAST* arg = (ast->inArgs[i]);
-
-    arg->accept(this);
-
-    TypeAST* ty =  arg->type;
-    if (ty == NULL) {
-      currentErrs() << "Error: proto " << ast->getName() << " had "
-        << "null type for arg '" << arg->name << "'" << "\n";
-      return;
-    }
-
-    argTypes.push_back(ty);
-  }
-
   if (!ast->resultTy && ast->type != NULL) {
-    EDiag() << "TYPE BU NO RESULT TYPE FOR PROTO" << show(ast);
+    EDiag() << "had type but no result type for prototype??? " << show(ast);
   }
 
   if (!ast->resultTy) {
     EDiag() << "NULL return type for PrototypeAST " << ast->getName() << show(ast);
   } else {
+    for (size_t i = 0; i < ast->inArgs.size(); ++i) {
+      ASSERT(ast->inArgs[i] != NULL);
+      VariableAST* arg = ast->inArgs[i];
+      arg->accept(this);
+    }
 
-    ast->type = FnTypeAST::get(ast->resultTy, argTypes,
-                               getCallingConvention(ast));
+    ast->type = foster::getFunctionTypeForProto(ast);
   }
 }
 

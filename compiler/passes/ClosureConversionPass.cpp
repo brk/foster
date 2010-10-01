@@ -8,7 +8,7 @@
 #include "passes/ClosureConversionPass.h"
 #include "passes/ReplaceExprTransform.h"
 #include "passes/PrettyPrintPass.h"
-#include "passes/TypecheckPass.h"
+#include "passes/PassUtils.h"
 
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
@@ -236,7 +236,7 @@ void hoistAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) {
 
 void performClosureConversion(FnAST* ast,
                               ClosureConversionPass* ccp) {
-  llvm::outs() << "Closure converting function" << str(ast);
+  //llvm::outs() << "Closure converting function" << str(ast);
 
   // Find the set of free variables for the function
   set<VariableAST*> freeVars = freeVariablesOf(ast);
@@ -293,23 +293,19 @@ void performClosureConversion(FnAST* ast,
   // Rewrite all calls to indirect through the code pointer
   // ... is handled directly at CallAST nodes during codegen
 
-  if (ast->getProto()->type) {
 
-    // and updates the types of the prototype and function itself,
-    // if they already have types.
-    foster::typecheck(ast->getProto());
-    currentOuts() << "ClosureConversionPass: updating type from "
-               << str(ast->type->getLLVMType())
-               << " to\n\t" << str(ast->getProto()->type->getLLVMType()) << "\n";
-    ast->type = ast->getProto()->type;
-  }
+  ASSERT(ast->getProto()->type);
+  // The type of the function has changed, but the type
+  // of the body hasn't. So, we only need to update the function
+  // node's type, and we don't need to do a full typecheck pass.
+  ast->type = ast->getProto()->type =
+      foster::getFunctionTypeForProto(ast->getProto());
 
   *(ast->environmentParts) = envExprs;
-  //hoistAnonymousFunction(ast, ccp);
 }
 
 void lambdaLiftAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) {
-  llvm::outs() << "Lambda lifting function" << str(ast);
+  //llvm::outs() << "Lambda lifting function" << str(ast);
 
   set<VariableAST*> freeVars = freeVariablesOf(ast);
   CallSet& calls = callsOf[ast];
@@ -342,18 +338,12 @@ void lambdaLiftAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) {
     }
   }
 
-  if (ast->getProto()->type) {
-    // and updates the types of the prototype and function itself,
-    // if they already have types
-    {
-      foster::typecheck(ast->getProto());
-
-      // We just typecheck the prototype and not the function
-      // to avoid re-typechecking the function body, which should not
-      // have been affected by this change.
-      ast->type = ast->getProto()->type;
-    }
-  }
+  ASSERT(ast->getProto()->type);
+  // The type of the function has probably changed, but the type
+  // of the body hasn't. So, we only need to update the function
+  // node's type, and we don't need to do a full typecheck pass.
+  ast->type = ast->getProto()->type =
+      foster::getFunctionTypeForProto(ast->getProto());
 
   VariableAST* varReferringToFunction = new VariableAST(
                                     ast->getName(),
