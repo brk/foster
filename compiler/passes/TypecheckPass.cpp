@@ -192,34 +192,6 @@ struct TypecheckPass : public ExprASTVisitor {
             // Record the constraint without applying it to the substitution.
             collectEqualityConstraint(context, t1, t2);
 
-          } else if (t1->tag == std::string("ClosureType")
-                  && t2->tag == std::string("RefType")) {
-            // A closure is compatible with the struct-level
-            // representation of the closure.
-            ClosureTypeAST* ct1 = dynamic_cast<ClosureTypeAST*>(t1);
-            FnTypeAST* ft1 = dynamic_cast<FnTypeAST*>(ct1->getFnType());
-
-            RefTypeAST* rt2 = dynamic_cast<RefTypeAST*>(t2);
-            TypeAST* t2 = rt2->getElementType();
-
-            FnTypeAST* ft2 = NULL;
-            if (t2->tag == std::string("TupleType")) {
-              ft2 = originalFunctionTypeForClosureStructType(t2);
-            }
-
-            if (ft1 && ft2) {
-              // Ensure that the relative function parameter types match up
-              // between R(X, Y) and { R(i8*, X, Y), i8* }.
-              extractTypeConstraints(eConstraintEq, context, ft1, ft2, *this);
-            } else {
-              newLoggedError()
-                     << "Unable to unify clo/ref types " << str(t1) << " and " << str(t2)
-                     << " [" << t1->tag << " != " << t2->tag << "]"
-                     << " from " << context->tag
-                     << foster::show(context);
-              // Record the constraint without applying it to the substitution.
-              collectEqualityConstraint(context, t1, t2);
-            }
           } else {
             if (RefTypeAST* refty = dynamic_cast<RefTypeAST*>(t2)) {
               if (typesEqual(refty->getElementType(), t1)) {
