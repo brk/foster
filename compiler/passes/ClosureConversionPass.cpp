@@ -228,10 +228,6 @@ set<VariableAST*> freeVariablesOf(FnAST* ast) {
 void hoistAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) {
   ccp->newlyHoistedFunctions.push_back(ast);
   CompilationContext::setParent(ast, NULL);
-
-  // Alter the symbol table structure to reflect the fact that we're
-  // hoisting the function to the root scope.
-  ast->scope->parent = gScope.getRootScope();
 }
 
 void performClosureConversion(FnAST* ast,
