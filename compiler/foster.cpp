@@ -64,7 +64,6 @@
 #include "parse/ANTLRtoFosterAST.h"
 #include "parse/CompilationContext.h"
 
-#include "passes/BuildCFG.h"
 #include "passes/TypecheckPass.h"
 #include "passes/CodegenPass.h"
 #include "passes/AddParentLinksPass.h"
@@ -72,7 +71,6 @@
 #include "passes/ClosureConversionPass.h"
 #include "passes/DumpToProtobuf.h"
 
-#include "dot/CFGGraphTraits.h"
 #include "parse/FosterSymbolTableTraits-inl.h"
 #include "StandardPrelude.h"
 
@@ -564,29 +562,6 @@ int main(int argc, char** argv) {
     llvm::outs() << "=========================" << "\n";
     llvm::outs() << "Adding parent links..." << "\n";
     foster::addParentLinks(exprAST);
-  }
-
-  {
-    llvm::outs() << "=========================" << "\n";
-    llvm::outs() << "building CFGs" << "\n";
-    foster::buildCFG(exprAST);
-
-    for (ModuleAST::FnAST_iterator it = exprAST->fn_begin();
-           it != exprAST->fn_end(); ++it) {
-      FnAST* fnast = *it;
-      const string& name = fnast->getName();
-      string filename(dotdirFile(name + ".dot"));
-      if (!fnast->cfgs.empty()) {
-        llvm::outs() << "Writing " << filename << "\n";
-        std::string err;
-        llvm::raw_fd_ostream f(filename.c_str(), err);
-        if (err.empty()) { ScopedTimer timer("io.dot");
-          llvm::WriteGraph(f, fnast);
-        }
-      } else {
-        foster::EDiag() << "no CFG for " << name;
-      }
-    }
   }
 
   {

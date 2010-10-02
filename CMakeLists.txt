@@ -286,8 +286,6 @@ add_dependencies(fosterc_llvm fosterc_parse)
 
 
 add_library(fosterc_passes STATIC
-  compiler/cfg/CFG.cpp
-  compiler/passes/BuildCFG.cpp
   compiler/passes/PassUtils.cpp
   compiler/passes/Codegen/CodegenPass.cpp
   compiler/passes/Codegen/Codegen-typemaps.cpp
