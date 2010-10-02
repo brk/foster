@@ -6,6 +6,7 @@
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
 #include "parse/FosterUtils.h"
+#include "parse/ParsingContext.h"
 #include "parse/CompilationContext.h"
 
 #include "llvm/Module.h"
@@ -17,8 +18,6 @@
 using llvm::Type;
 using llvm::getGlobalContext;
 using llvm::FunctionType;
-
-using foster::builder;
 
 const char* llvmValueTag(const llvm::Value* v) {
   using llvm::isa;
@@ -192,6 +191,7 @@ bool isValidClosureType(const llvm::Type* ty) {
 
 // Checks that ty == { i32 (i8*, ...)*, i8* }
 bool isGenericClosureType(const llvm::Type* ty) {
+  using foster::builder;
   if (const llvm::StructType* sty= llvm::dyn_cast<const llvm::StructType>(ty)) {
     if (!isValidClosureType(sty)) return false;
     if (sty->getContainedType(1) != builder.getInt8PtrTy()) return false;

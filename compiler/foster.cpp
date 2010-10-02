@@ -62,6 +62,7 @@
 #include "parse/FosterTypeAST.h"
 #include "parse/DumpStructure.h"
 #include "parse/ANTLRtoFosterAST.h"
+#include "parse/ParsingContext.h"
 #include "parse/CompilationContext.h"
 
 #include "passes/TypecheckPass.h"
@@ -542,7 +543,7 @@ int main(int argc, char** argv) {
   unsigned numParseErrors = 0;
   ModuleAST* exprAST = NULL;
 
-  foster::CompilationContext::pushNewContext();
+  foster::ParsingContext::pushNewContext();
 
   { ScopedTimer timer("io.parse");
     exprAST = foster::parseModule(infile, optInputPath,
@@ -682,7 +683,7 @@ int main(int argc, char** argv) {
     llvm::errs().flush();
   }
 
-  foster::CompilationContext::popCurrentContext();
+  foster::ParsingContext::popCurrentContext();
   foster::deleteANTLRContext(ctx);
   delete wholeProgramTimer;
 

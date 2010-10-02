@@ -5,6 +5,7 @@
 #include "base/Assert.h"
 #include "base/Diagnostics.h"
 #include "parse/FosterUtils.h"
+#include "parse/ParsingContext.h"
 #include "parse/CompilationContext.h"
 
 #include "llvm/DerivedTypes.h"

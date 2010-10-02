@@ -19,6 +19,7 @@
 #include "base/PathManager.h"
 
 #include "parse/FosterAST.h"
+#include "parse/ParsingContext.h"
 #include "parse/CompilationContext.h"
 #include "parse/ProtobufToAST.h"
 

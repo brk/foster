@@ -8,7 +8,7 @@
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
 #include "parse/ExprASTVisitor.h"
-#include "parse/CompilationContext.h"
+#include "parse/ParsingContext.h"
 #include "parse/ANTLRtoFosterAST.h" // just for parseAPIntFromClean()
 #include "parse/FosterUtils.h"
 #include "parse/DumpStructure.h"

@@ -6,13 +6,14 @@
 
 #include "parse/ANTLRtoFosterAST.h"
 #include "parse/ProtobufToAST.h"
-#include "parse/CompilationContext.h"
+#include "parse/ParsingContext.h"
 #include "passes/DumpToProtobuf.h"
 #include "passes/PrettyPrintPass.h"
 
 #include "parse/FosterTypeAST.h"
 
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Constants.h"
 
 #include <map>
 
@@ -215,17 +216,17 @@ TEST(ProtobufToAST, simd_vector_type) {
 
 ////////////////////////////////////////////////////////////////////
 
-foster::CompilationContext cc;
+foster::ParsingContext cc;
 
 ExprAST* roundtrip(ExprAST* ast) {
-  foster::CompilationContext::pushContext(&cc);
+  foster::ParsingContext::pushContext(&cc);
 
   foster::pb::Expr e;
   DumpToProtobufPass dp(&e);
   ast->accept(&dp);
 
   ExprAST* rv = foster::ExprAST_from_pb(&e);
-  foster::CompilationContext::popCurrentContext();
+  foster::ParsingContext::popCurrentContext();
   return rv;
 }
 

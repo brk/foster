@@ -10,7 +10,7 @@
 
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
-#include "parse/CompilationContext.h"
+#include "parse/ParsingContext.h"
 
 #include "llvm/Support/raw_ostream.h"
 
@@ -36,18 +36,18 @@ void initCachedLLVMTypes() {
 }
 
 
-ExprAST* parse(foster::CompilationContext& cc, const string& s) {
+ExprAST* parse(foster::ParsingContext& cc, const string& s) {
   unsigned errs = 0;
   ExprAST* rv = foster::parseExpr(s, errs, &cc);
   return errs == 0 ? rv : NULL;
 }
 
 
-ExprAST* elaborate(foster::CompilationContext& cc, ExprAST* e) {
+ExprAST* elaborate(foster::ParsingContext& cc, ExprAST* e) {
   if (e) {
-    foster::CompilationContext::pushContext(&cc);
+    foster::ParsingContext::pushContext(&cc);
     foster::typecheck(e);
-    foster::CompilationContext::popCurrentContext();
+    foster::ParsingContext::popCurrentContext();
   }
   return e;
 }
@@ -64,8 +64,8 @@ string pr(ExprAST* ast) {
 
 TEST(TypeInference, parallel_compilation_contexts) {
   initCachedLLVMTypes();
-  foster::CompilationContext cc1; cc1.startAccumulatingOutputToString();
-  foster::CompilationContext cc2; cc2.startAccumulatingOutputToString();
+  foster::ParsingContext cc1; cc1.startAccumulatingOutputToString();
+  foster::ParsingContext cc2; cc2.startAccumulatingOutputToString();
 
   ExprAST* e1a = parse(cc1, STR(
 let x : i32 = 3 in {
@@ -94,8 +94,8 @@ let x : i32 = 3 in {
 
 TEST(TypeInference, i32_handling_simple_closure0) {
   initCachedLLVMTypes();
-  foster::CompilationContext cc1; cc1.startAccumulatingOutputToString();
-  foster::CompilationContext cc2; cc2.startAccumulatingOutputToString();
+  foster::ParsingContext cc1; cc1.startAccumulatingOutputToString();
+  foster::ParsingContext cc2; cc2.startAccumulatingOutputToString();
 
   ExprAST* ae = parse(cc1, STR(
 let x : i32 = 3 in {
@@ -126,8 +126,8 @@ let x = 3 in {
 /** temporarily disabled
 TEST(TypeInference, i32_handling_simple_closure1) {
   initCachedLLVMTypes();
-  foster::CompilationContext cc1; cc1.startAccumulatingOutputToString();
-  foster::CompilationContext cc2; cc2.startAccumulatingOutputToString();
+  foster::ParsingContext cc1; cc1.startAccumulatingOutputToString();
+  foster::ParsingContext cc2; cc2.startAccumulatingOutputToString();
 
   ExprAST* ae = parse(cc1, STR(
 let x : i32 = 3 in {
@@ -159,8 +159,8 @@ let x = 3 in {
 // as above, but without the annotation on the inner function
 TEST(TypeInference, i32_handling_simple_closure2) {
   initCachedLLVMTypes();
-  foster::CompilationContext cc1; cc1.startAccumulatingOutputToString();
-  foster::CompilationContext cc2; cc2.startAccumulatingOutputToString();
+  foster::ParsingContext cc1; cc1.startAccumulatingOutputToString();
+  foster::ParsingContext cc2; cc2.startAccumulatingOutputToString();
 
   ExprAST* ae = parse(cc1, STR(
 let vx : i32 = 3 in {

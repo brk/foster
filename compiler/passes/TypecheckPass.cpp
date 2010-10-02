@@ -7,7 +7,7 @@
 
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
-#include "parse/CompilationContext.h"
+#include "parse/ParsingContext.h"
 #include "parse/FosterUtils.h"
 #include "parse/DumpStructure.h"
 
@@ -26,6 +26,8 @@ using foster::currentOuts;
 
 #include "llvm/DerivedTypes.h"
 #include "llvm/LLVMContext.h"
+#include "llvm/Constants.h"
+#include "llvm/Function.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/Support/MathExtras.h"
 
@@ -743,7 +745,7 @@ void TypecheckPass::visit(IfExprAST* ast) {
 }
 
 int indexInParent(ExprAST* child, int startingIndex) {
-  ExprAST* parent = foster::CompilationContext::getParent(child);
+  ExprAST* parent = foster::ParsingContext::getParent(child);
   ASSERT(parent != NULL);
 
   std::vector<ExprAST*>& parts = parent->parts;

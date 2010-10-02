@@ -8,10 +8,11 @@
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
 #include "parse/FosterUtils.h"
-#include "parse/CompilationContext.h"
+#include "parse/ParsingContext.h"
 #include "parse/ExprASTVisitor.h"
 #include "parse/DumpStructure.h"
 #include "parse/FosterSymbolTable.h"
+#include "parse/CompilationContext.h"
 
 #include "passes/PassUtils.h"
 #include "passes/CodegenPass.h"
@@ -1073,7 +1074,7 @@ void CodegenPass::visit(CallAST* ast) {
         // functions we see being passed directly by name; it would forward
         // all parameters to the regular function, except for the env ptr.
           FnAST* wrapper = getClosureVersionOf(arg, fnty, valueSymTab);
-          foster::CompilationContext::setParent(wrapper, ast);
+          foster::ParsingContext::setParent(wrapper, ast);
           arg = wrapper;
         }
       }

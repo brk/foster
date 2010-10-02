@@ -4,14 +4,14 @@
 
 #include "passes/AddParentLinksPass.h"
 
-#include "parse/CompilationContext.h"
+#include "parse/ParsingContext.h"
 #include "parse/DefaultExprASTVisitor.h"
 
-using foster::CompilationContext;
+using foster::ParsingContext;
 
 struct AddParentLinksPass : public DefaultExprASTVisitor {
   virtual void onVisitChild(ExprAST* ast, ExprAST* child) {
-    CompilationContext::setParent(child, ast);
+    ParsingContext::setParent(child, ast);
     child->accept(this);
   }
 
@@ -61,13 +61,13 @@ void includeParentNameInAnonFunctions(FnAST* ast) {
   }
 
   FnAST* parentFn = NULL;
-  ExprAST* parent = CompilationContext::getParent(ast);
+  ExprAST* parent = ParsingContext::getParent(ast);
   while (parent != NULL) {
     parentFn = dynamic_cast<FnAST*>(parent);
     if (parentFn) {
       break;
     } else {
-      parent = CompilationContext::getParent(parent);
+      parent = ParsingContext::getParent(parent);
     }
   }
 
@@ -77,5 +77,5 @@ void includeParentNameInAnonFunctions(FnAST* ast) {
     return;
   }
 
-  CompilationContext::setParent(ast, parent);
+  ParsingContext::setParent(ast, parent);
 }

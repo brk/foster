@@ -9,7 +9,7 @@
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
 #include "parse/ANTLRtoFosterErrorHandling.h"
-#include "parse/CompilationContext.h"
+#include "parse/ParsingContext.h"
 
 #include "parse/DumpStructure.h"
 #include "passes/PrettyPrintPass.h"
@@ -29,6 +29,7 @@
 #include <vector>
 #include <sstream>
 #include <cassert>
+#include <algorithm>
 
 using std::string;
 
@@ -36,7 +37,7 @@ using foster::TypeASTFor;
 using foster::EDiag;
 using foster::DDiag;
 using foster::show;
-using foster::CompilationContext;
+using foster::ParsingContext;
 
 using foster::currentErrs;
 using foster::currentOuts;
@@ -272,8 +273,8 @@ ExprAST* parseBinaryOpExpr(
 
     // a opname b rop c
     foster::OperatorPrecedenceTable::OperatorRelation rel =
-      CompilationContext::getOperatorRelation(opname, rop);
-            ////foster::gCompilationContexts.top()->prec.get(opname, rop);
+      ParsingContext::getOperatorRelation(opname, rop);
+            ////foster::gParsingContexts.top()->prec.get(opname, rop);
     if (rel == foster::OperatorPrecedenceTable::kOpBindsTighter) {
       delete rhs; // return ((a opname b) rop c)
       ExprAST* ab = parseBinaryOpExpr(opname, a, b);
@@ -622,19 +623,19 @@ ExprAST* ExprAST_from(pTree tree) {
   }
 
   // Implicitly, every entry in the precedence table is a binary operator.
-  if (CompilationContext::isKnownOperatorName(text)) {
+  if (ParsingContext::isKnownOperatorName(text)) {
     return parseBinaryOpExpr(text,
                              ExprAST_from(child(tree, 0)),
                              ExprAST_from(child(tree, 1)));
   }
 
   // Should have handled all keywords by now...
-  if (CompilationContext::isKeyword(text)) {
+  if (ParsingContext::isKeyword(text)) {
     EDiag() << "illegal use of keyword '" << text << "'" << show(sourceRange);
     return NULL;
   }
 
-  if (CompilationContext::isReservedKeyword(text)) {
+  if (ParsingContext::isReservedKeyword(text)) {
     EDiag() << "cannot use reserved keyword '" << text << "'"
             << show(sourceRange);
     return NULL;
@@ -807,7 +808,7 @@ namespace foster {
 
   ExprAST* parseExpr(const std::string& source,
                      unsigned& outNumANTLRErrors,
-                     CompilationContext* cc) {
+                     ParsingContext* cc) {
     ANTLRContext* ctx = new ANTLRContext();
     const char* s = source.c_str();
 
@@ -817,7 +818,7 @@ namespace foster {
     installTreeTokenBoundaryTracker(ctx->psr->adaptor);
     foster::installRecognitionErrorFilter(ctx->psr->pParser->rec);
 
-    CompilationContext::pushContext(cc);
+    ParsingContext::pushContext(cc);
 
     gInputFile = NULL;
     gInputTextBuffer = membuf;
@@ -832,8 +833,8 @@ namespace foster {
     // we do not want to accidentally pick up an incorrect
     // token boundary if we happen to randomly get the same
     // tree pointer values! Doing so can make ANTLR crash.
-    CompilationContext::clearTokenBoundaries();
-    CompilationContext::popCurrentContext();
+    ParsingContext::clearTokenBoundaries();
+    ParsingContext::popCurrentContext();
 
     delete ctx;
 
@@ -878,7 +879,7 @@ namespace foster {
     (struct ANTLR3_BASE_TREE_ADAPTOR_struct * adaptor, void * t,
      pANTLR3_COMMON_TOKEN startToken, pANTLR3_COMMON_TOKEN stopToken) {
       sgDefaultSTB(adaptor, t, startToken, stopToken);
-      CompilationContext::setTokenRange((pTree) t, startToken, stopToken);
+      ParsingContext::setTokenRange((pTree) t, startToken, stopToken);
     }
 
     // This is a vaguely unpleasant (but terrifically accurate) hack

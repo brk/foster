@@ -3,7 +3,7 @@
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
 #include "parse/ANTLRtoFosterAST.h"
-#include "parse/CompilationContext.h"
+#include "parse/ParsingContext.h"
 #include "parse/FosterAST.h"
 #include "passes/PrettyPrintPass.h"
 #include "parse/FosterTypeAST.h"
@@ -18,14 +18,14 @@
 
 using std::string;
 
-foster::CompilationContext cc;
+foster::ParsingContext cc;
 
 namespace foster {
   extern std::map<std::string, const llvm::Type*> gCachedLLVMTypes;
 }
 
 namespace {
-  
+
 void initCachedLLVMTypes() {
   static bool done = false;
   if (done) return;
@@ -34,8 +34,8 @@ void initCachedLLVMTypes() {
   foster::gCachedLLVMTypes["i64"] = TypeAST::i(64)->getLLVMType();
   foster::gCachedLLVMTypes["void"] = TypeAST::getVoid()->getLLVMType();
 }
-  
-  
+
+
 ExprAST* parse(const string& s) {
   unsigned errs = 0;
   ExprAST* rv = foster::parseExpr(s, errs, &cc);
@@ -44,9 +44,9 @@ ExprAST* parse(const string& s) {
 
 string pr(ExprAST* ast) {
   std::string s; llvm::raw_string_ostream out(s);
-  foster::CompilationContext::pushContext(&cc);
+  foster::ParsingContext::pushContext(&cc);
   foster::prettyPrintExpr(ast, out, 55);
-  foster::CompilationContext::popCurrentContext();
+  foster::ParsingContext::popCurrentContext();
   return out.str();
 }
 
@@ -54,7 +54,7 @@ TEST(ANTLRtoFosterAST, basics) {
   EXPECT_TRUE(parse("true") != NULL);
   EXPECT_TRUE(dynamic_cast<BoolAST*>(parse("true")));
   EXPECT_EQ("true", pr(parse("true")));
-  
+
   EXPECT_TRUE(parse("123") != NULL);
   EXPECT_TRUE(dynamic_cast<IntAST*>(parse("123")));
   EXPECT_EQ("1234", pr(parse("1234")));
@@ -100,13 +100,13 @@ TEST(ANTLRtoFosterAST, arithPrecedence) {
 
   EXPECT_EQ("2 + (3 / 4)",
     pr(parse("2 + 3 / 4")));
-  
+
   EXPECT_EQ("((1 + (2 * 3)) + (4 * 5)) + 6",
     pr(parse("1 + 2 * 3 + 4 * 5 + 6")));
-  
+
   EXPECT_EQ("(1 + (2 * 3)) + ((4 * 5) * 6)",
     pr(parse("1 + 2 * 3 + 4 * 5 * 6")));
-  
+
   EXPECT_EQ("((0 + 1) + (2 * 3)) + ((4 * 5) * 6)",
     pr(parse("0 + 1 + 2 * 3 + 4 * 5 * 6")));
 }

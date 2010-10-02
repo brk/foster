@@ -7,7 +7,7 @@
 
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
-#include "parse/CompilationContext.h"
+#include "parse/ParsingContext.h"
 
 #include "passes/PassUtils.h"
 

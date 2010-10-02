@@ -2,10 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#ifndef FOSTER_COMPILATION_CONTEXT_H
-#define FOSTER_COMPILATION_CONTEXT_H
-
-#include "llvm/Support/IRBuilder.h"
+#ifndef FOSTER_PARSING_CONTEXT_H
+#define FOSTER_PARSING_CONTEXT_H
 
 #include "base/Diagnostics.h"
 
@@ -28,21 +26,18 @@ std::string freshName(std::string like);
 
 namespace foster {
 
-void initializeLLVM();
-
-
-class CompilationContext {
+class ParsingContext {
 public:
-  CompilationContext();
+  ParsingContext();
 
 public:
-  static CompilationContext*
+  static ParsingContext*
   pushNewContext();
 
   static void
-  pushContext(CompilationContext*);
+  pushContext(ParsingContext*);
 
-  static CompilationContext*
+  static ParsingContext*
   popCurrentContext();
 
   /////////////////////
@@ -106,14 +101,13 @@ private:
   Impl* impl;
 };
 
-extern llvm::IRBuilder<> builder;
 extern llvm::Module* module;
 
 TypeAST* TypeASTFor(const std::string& name);
 
 ////////////////////////////////////////////////////////////////////
 
-// Global version of above methods on CompilationContext, for use by
+// Global version of above methods on ParsingContext, for use by
 // the diagnostic builders.
 // These functions default to llvm::*() if there's no current context.
 

@@ -54,7 +54,7 @@ int typeOf(pTree tree) { return tree->getType(tree); }
 
 pANTLR3_COMMON_TOKEN getStartToken(pTree tree) {
   if (!tree) return NULL;
-  pANTLR3_COMMON_TOKEN tok = CompilationContext::getStartToken(tree);
+  pANTLR3_COMMON_TOKEN tok = ParsingContext::getStartToken(tree);
   if (tok) return tok;
 
   // Some nodes we're okay with having no token info for...
@@ -73,7 +73,7 @@ pANTLR3_COMMON_TOKEN getStartToken(pTree tree) {
   pTree node = tree;
   while (!tok && getChildCount(node) > 0) {
     node = child(node, 0);
-    tok = CompilationContext::getStartToken(node);
+    tok = ParsingContext::getStartToken(node);
   }
   if (!tok) {
     currentOuts() << "Warning: unable to find start token for ANTLR parse tree"
@@ -85,7 +85,7 @@ pANTLR3_COMMON_TOKEN getStartToken(pTree tree) {
 
 pANTLR3_COMMON_TOKEN getEndToken(pTree tree) {
   if (!tree) return NULL;
-  pANTLR3_COMMON_TOKEN tok = CompilationContext::getEndToken(tree);
+  pANTLR3_COMMON_TOKEN tok = ParsingContext::getEndToken(tree);
   if (tok) return tok;
 
   if (getChildCount(tree) == 0) {
@@ -99,7 +99,7 @@ pANTLR3_COMMON_TOKEN getEndToken(pTree tree) {
   pTree node = tree;
   while (!tok && getChildCount(node) > 0) {
     node = child(node, getChildCount(node) - 1);
-    tok = CompilationContext::getEndToken(node);
+    tok = ParsingContext::getEndToken(node);
   }
   if (!tok) {
     currentOuts() << "Warning: unable to find end token for ANTLR parse tree"
@@ -174,8 +174,8 @@ void display_pTree(pTree t, int nspaces) {
   currentOuts() << ss.str() << spaces(70 - ss.str().size())
             << token << " @ " << t;
   currentOuts() << " (";
-  currentOuts() << (CompilationContext::getStartToken(t) ? '+' : '-');
-  currentOuts() << (CompilationContext::getEndToken(t)   ? '+' : '-');
+  currentOuts() << (ParsingContext::getStartToken(t) ? '+' : '-');
+  currentOuts() << (ParsingContext::getEndToken(t)   ? '+' : '-');
   currentOuts() << ")" << "\n";
   for (int i = 0; i < nchildren; ++i) {
     display_pTree(child(t, i), nspaces+2);

@@ -11,7 +11,7 @@
 
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
-#include "parse/CompilationContext.h"
+#include "parse/ParsingContext.h"
 
 #include "llvm/Support/raw_ostream.h"
 
@@ -39,21 +39,21 @@ void initCachedLLVMTypes() {
   foster::gCachedLLVMTypes["void"] = TypeAST::getVoid()->getLLVMType();
 }
 
-foster::CompilationContext cc1;
-foster::CompilationContext cc2;
+foster::ParsingContext cc1;
+foster::ParsingContext cc2;
 
-ExprAST* parse(foster::CompilationContext& cc, const string& s) {
+ExprAST* parse(foster::ParsingContext& cc, const string& s) {
   unsigned errs = 0;
   ExprAST* rv = foster::parseExpr(s, errs, &cc);
   return errs == 0 ? rv : NULL;
 }
 
 
-ExprAST* elaborate(foster::CompilationContext& cc, ExprAST* e) {
+ExprAST* elaborate(foster::ParsingContext& cc, ExprAST* e) {
   if (e) {
-    foster::CompilationContext::pushContext(&cc);
+    foster::ParsingContext::pushContext(&cc);
     foster::typecheck(e);
-    foster::CompilationContext::popCurrentContext();
+    foster::ParsingContext::popCurrentContext();
   }
   return e;
 }

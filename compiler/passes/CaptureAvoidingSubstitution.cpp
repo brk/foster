@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#include "parse/CompilationContext.h"
+#include "parse/ParsingContext.h"
 #include "passes/CaptureAvoidingSubstitution.h"
 #include "parse/FosterAST.h"
 #include "base/Assert.h"
@@ -12,7 +12,7 @@
 
 using namespace std;
 
-using foster::CompilationContext;
+using foster::ParsingContext;
 
 #include "parse/ExprASTVisitor.h"
 
@@ -66,8 +66,8 @@ void CaptureAvoidingSubstitution::cavsVisitChild(ExprAST*, ExprAST** child) {
   originalChild->accept(this); // may write to newChild...
   ASSERT(this->newChild != NULL);
   if (originalChild != this->newChild) {
-    CompilationContext::setParent(this->newChild,
-      CompilationContext::getParent(originalChild));
+    ParsingContext::setParent(this->newChild,
+      ParsingContext::getParent(originalChild));
     llvm::outs() << "onVisitChild replacing " << str(originalChild) << " with " << str(newChild) << "\n";
     (*child) = this->newChild;
   }

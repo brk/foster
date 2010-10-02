@@ -12,7 +12,7 @@
 
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
-#include "parse/CompilationContext.h"
+#include "parse/ParsingContext.h"
 
 #include "parse/FosterUtils.h"
 
@@ -26,7 +26,7 @@ using namespace std;
 using foster::show;
 using foster::currentOuts;
 using foster::currentErrs;
-using foster::CompilationContext;
+using foster::ParsingContext;
 
 #include "parse/ExprASTVisitor.h"
 
@@ -77,10 +77,10 @@ void replaceOldWithNew(ExprAST* inExpr, ExprAST* oldExpr, ExprAST* newExpr) {
 }
 
 FnAST* parentFnOf(FnAST* fn) {
-  ExprAST* parent = CompilationContext::getParent(fn);
+  ExprAST* parent = ParsingContext::getParent(fn);
   while (parent) {
     if (FnAST* fp = dynamic_cast<FnAST*>(parent)) { return fp; }
-    parent = CompilationContext::getParent(parent);
+    parent = ParsingContext::getParent(parent);
   }
   return NULL;
 }
@@ -135,7 +135,7 @@ void ClosureConversionPass::visit(FnAST* ast)                  {
 
   if (isAnonymousFunction(ast)) {
     // Rename anonymous functions to reflect their lexical scoping
-    FnAST* parentFn = dynamic_cast<FnAST*>(CompilationContext::getParent(ast));
+    FnAST* parentFn = dynamic_cast<FnAST*>(ParsingContext::getParent(ast));
     if (parentFn != NULL) {
       ast->getName().replace(0, 1, "<" + parentFn->getName() + ".");
     }
@@ -227,7 +227,7 @@ set<VariableAST*> freeVariablesOf(FnAST* ast) {
 
 void hoistAnonymousFunction(FnAST* ast, ClosureConversionPass* ccp) {
   ccp->newlyHoistedFunctions.push_back(ast);
-  CompilationContext::setParent(ast, NULL);
+  ParsingContext::setParent(ast, NULL);
 }
 
 void performClosureConversion(FnAST* ast,

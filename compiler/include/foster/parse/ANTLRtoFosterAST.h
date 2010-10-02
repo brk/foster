@@ -47,11 +47,11 @@ class ANTLRContext;
 void deleteANTLRContext(ANTLRContext* ctx);
 
 struct InputFile;
-struct CompilationContext;
+struct ParsingContext;
 
 ExprAST* parseExpr(const std::string& source,
                    unsigned& outNumANTLRErrors,
-                   CompilationContext* cc);
+                   ParsingContext* cc);
 
 ModuleAST* parseModule(const InputFile& file, const std::string& moduleName,
                        pTree& outTree,

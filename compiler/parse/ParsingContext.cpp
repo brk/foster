@@ -7,10 +7,8 @@
 
 #include "parse/FosterTypeAST.h"
 #include "parse/FosterSymbolTable.h"
-#include "parse/CompilationContext.h"
+#include "parse/ParsingContext.h"
 
-#include "llvm/LLVMContext.h"
-#include "llvm/Target/TargetSelect.h"
 #include "llvm/Module.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -24,10 +22,10 @@ using std::string;
 
 namespace foster {
 
-std::stack<CompilationContext*> gCompilationContexts;
+std::stack<ParsingContext*> gParsingContexts;
 
 
-struct CompilationContext::Impl {
+struct ParsingContext::Impl {
   OperatorPrecedenceTable prec;
   FreshNameGenerator freshNames;
 
@@ -72,7 +70,7 @@ namespace {
 } // unnamed namespace
 
 void
-CompilationContext::Impl::initMaps() {
+ParsingContext::Impl::initMaps() {
   for (size_t i = 0; i < ARRAY_SIZE(c_keywords); ++i) {
     keywords[c_keywords[i]] = true;
   }
@@ -83,160 +81,160 @@ CompilationContext::Impl::initMaps() {
 }
 
 
-CompilationContext* // static
-CompilationContext::pushNewContext() {
-  CompilationContext* cc = new CompilationContext();
-  gCompilationContexts.push(cc);
+ParsingContext* // static
+ParsingContext::pushNewContext() {
+  ParsingContext* cc = new ParsingContext();
+  gParsingContexts.push(cc);
   return cc;
 }
 
 void // static
-CompilationContext::pushContext(CompilationContext* cc) {
-  gCompilationContexts.push(cc);
+ParsingContext::pushContext(ParsingContext* cc) {
+  gParsingContexts.push(cc);
 }
 
-CompilationContext* // static
-CompilationContext::popCurrentContext() {
-  ASSERT(!gCompilationContexts.empty());
-  CompilationContext* cc = gCompilationContexts.top();
-  gCompilationContexts.pop();
+ParsingContext* // static
+ParsingContext::popCurrentContext() {
+  ASSERT(!gParsingContexts.empty());
+  ParsingContext* cc = gParsingContexts.top();
+  gParsingContexts.pop();
   return cc;
 }
 
 /////////////////////
 
 std::string // static
-CompilationContext::freshName(std::string like) {
-  ASSERT(!foster::gCompilationContexts.empty());
+ParsingContext::freshName(std::string like) {
+  ASSERT(!foster::gParsingContexts.empty());
 
-  return foster::gCompilationContexts.top()->impl->freshNames.fresh(like);
+  return foster::gParsingContexts.top()->impl->freshNames.fresh(like);
 }
 
 /////////////////////
 
 void // static
-CompilationContext::setTokenRange(pANTLR3_BASE_TREE t,
+ParsingContext::setTokenRange(pANTLR3_BASE_TREE t,
               pANTLR3_COMMON_TOKEN s,
               pANTLR3_COMMON_TOKEN e) {
-  ASSERT(!gCompilationContexts.empty());
+  ASSERT(!gParsingContexts.empty());
 
-  gCompilationContexts.top()->impl->startTokens[t] = s;
-  gCompilationContexts.top()->impl->  endTokens[t] = e;
+  gParsingContexts.top()->impl->startTokens[t] = s;
+  gParsingContexts.top()->impl->  endTokens[t] = e;
 }
 
 pANTLR3_COMMON_TOKEN // static
-CompilationContext::getStartToken(pANTLR3_BASE_TREE t) {
-  ASSERT(!gCompilationContexts.empty());
+ParsingContext::getStartToken(pANTLR3_BASE_TREE t) {
+  ASSERT(!gParsingContexts.empty());
 
-  return gCompilationContexts.top()->impl->startTokens[t];
+  return gParsingContexts.top()->impl->startTokens[t];
 }
 
 pANTLR3_COMMON_TOKEN // static
-CompilationContext::getEndToken(pANTLR3_BASE_TREE t) {
-  ASSERT(!gCompilationContexts.empty());
+ParsingContext::getEndToken(pANTLR3_BASE_TREE t) {
+  ASSERT(!gParsingContexts.empty());
 
-  return gCompilationContexts.top()->impl->endTokens[t];
+  return gParsingContexts.top()->impl->endTokens[t];
 }
 
 
 void // static
-CompilationContext::clearTokenBoundaries() {
-  ASSERT(!gCompilationContexts.empty());
+ParsingContext::clearTokenBoundaries() {
+  ASSERT(!gParsingContexts.empty());
 
-  gCompilationContexts.top()->impl->startTokens.clear();
-  gCompilationContexts.top()->impl->  endTokens.clear();
+  gParsingContexts.top()->impl->startTokens.clear();
+  gParsingContexts.top()->impl->  endTokens.clear();
 }
 
 ///////////////////
 
 foster::OperatorPrecedenceTable::OperatorRelation // static
-CompilationContext::getOperatorRelation(const std::string& op1,
+ParsingContext::getOperatorRelation(const std::string& op1,
                                         const std::string& op2) {
-  ASSERT(!gCompilationContexts.empty());
+  ASSERT(!gParsingContexts.empty());
 
-  return gCompilationContexts.top()->impl->prec.get(op1, op2);
+  return gParsingContexts.top()->impl->prec.get(op1, op2);
 }
 
 bool // static
-CompilationContext::isKnownOperatorName(const string& op) {
-  ASSERT(!gCompilationContexts.empty());
+ParsingContext::isKnownOperatorName(const string& op) {
+  ASSERT(!gParsingContexts.empty());
 
-  return gCompilationContexts.top()->impl->prec.isKnownOperatorName(op);
+  return gParsingContexts.top()->impl->prec.isKnownOperatorName(op);
 }
 
 bool // static
-CompilationContext::isKeyword(const string& op) {
-  ASSERT(!gCompilationContexts.empty());
+ParsingContext::isKeyword(const string& op) {
+  ASSERT(!gParsingContexts.empty());
 
-  return gCompilationContexts.top()->impl->keywords[op];
+  return gParsingContexts.top()->impl->keywords[op];
 }
 
 bool // static
-CompilationContext::isReservedKeyword(const string& op) {
-  ASSERT(!gCompilationContexts.empty());
+ParsingContext::isReservedKeyword(const string& op) {
+  ASSERT(!gParsingContexts.empty());
 
-  return gCompilationContexts.top()->impl->reserved_keywords[op];
+  return gParsingContexts.top()->impl->reserved_keywords[op];
 }
 
 ////////////////////////////////////////////////////////////////////
 
 void // static
-CompilationContext::setParent(ExprAST* child, ExprAST* parent) {
-  ASSERT(!gCompilationContexts.empty());
+ParsingContext::setParent(ExprAST* child, ExprAST* parent) {
+  ASSERT(!gParsingContexts.empty());
 
-  gCompilationContexts.top()->impl->parents[child] = parent;
+  gParsingContexts.top()->impl->parents[child] = parent;
 }
 
 ExprAST* // static
-CompilationContext::getParent(ExprAST* child) {
-  if (gCompilationContexts.empty()) { return NULL; }
+ParsingContext::getParent(ExprAST* child) {
+  if (gParsingContexts.empty()) { return NULL; }
 
-  return gCompilationContexts.top()->impl->parents[child];
+  return gParsingContexts.top()->impl->parents[child];
 }
 
 ////////////////////////////////////////////////////////////////////
 
-llvm::raw_ostream& CompilationContext::currentErrs() {
+llvm::raw_ostream& ParsingContext::currentErrs() {
   if (impl->errs) { return *(impl->errs); }
   else { return llvm::errs(); }
 }
 
-llvm::raw_ostream& CompilationContext::currentOuts() {
+llvm::raw_ostream& ParsingContext::currentOuts() {
   if (impl->outs) { return *(impl->outs); }
   else { return llvm::errs(); }
 }
 
-void CompilationContext::startAccumulatingOutputToString() {
+void ParsingContext::startAccumulatingOutputToString() {
   impl->outs = &impl->os;
   impl->errs = &impl->os;
 }
 
-std::string CompilationContext::collectAccumulatedOutput() {
+std::string ParsingContext::collectAccumulatedOutput() {
   std::string rv = impl->os.str();
   impl->accumulated_output.clear();
   return rv;
 }
 
 
-CompilationContext::CompilationContext() {
+ParsingContext::ParsingContext() {
   impl = new Impl();
 }
 
 ////////////////////////////////////////////////////////////////////
 
 llvm::raw_ostream& currentErrs() {
-  if (gCompilationContexts.empty()) {
+  if (gParsingContexts.empty()) {
     return llvm::errs();
   } else {
-    return gCompilationContexts.top()->currentErrs();
+    return gParsingContexts.top()->currentErrs();
   }
 }
 
 llvm::raw_ostream& currentOuts() {
-  if (gCompilationContexts.empty()) {
+  if (gParsingContexts.empty()) {
     return llvm::outs();
   } else {
-    return gCompilationContexts.top()->currentOuts();
+    return gParsingContexts.top()->currentOuts();
   }
 }
 
@@ -269,7 +267,6 @@ DDiag::~DDiag() {}
 
 ////////////////////////////////////////////////////////////////////
 
-llvm::IRBuilder<> builder(llvm::getGlobalContext());
 llvm::Module* module = NULL;
 
 map<string, const llvm::Type*> gCachedLLVMTypes;
@@ -295,26 +292,9 @@ void initCachedLLVMTypeNames() {
   gCachedLLVMTypes["i8**"] = llvm::PointerType::getUnqual(gCachedLLVMTypes["i8*"]);
 }
 
-
-/// Macros in TargetSelect.h conflict with those from ANTLR, so this code
-/// must be in a source file that does not include any ANTLR files.
-void initializeLLVM() {
-  llvm::InitializeNativeTarget();
-
-  // Initializing the native target doesn't initialize the native
-  // target's ASM printer, so we have to do it ourselves.
-#if LLVM_NATIVE_ARCH == X86Target
-  LLVMInitializeX86AsmPrinter();
-#else
-  std::cerr << "Warning: not initializing any asm printer!" << std::endl;
-#endif
-
-  initCachedLLVMTypeNames();
-}
-
 } // namespace foster
 
 string freshName(string like) {
-  return foster::CompilationContext::freshName(like);
+  return foster::ParsingContext::freshName(like);
 }
 

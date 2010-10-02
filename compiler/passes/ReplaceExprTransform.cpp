@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#include "parse/CompilationContext.h"
+#include "parse/ParsingContext.h"
 #include "passes/ReplaceExprTransform.h"
 #include "parse/FosterAST.h"
 #include "base/Assert.h"
@@ -34,8 +34,8 @@ void ReplaceExprTransform::onVisitChild(ExprAST*, ExprAST** child) {
   (*child)->accept(this); // Should write to newChild...
   ASSERT(this->newChild != NULL);
   if (*child != this->newChild) {
-    foster::CompilationContext::setParent(this->newChild,
-      foster::CompilationContext::getParent(*child));
+    foster::ParsingContext::setParent(this->newChild,
+      foster::ParsingContext::getParent(*child));
     (*child) = this->newChild;
   }
 }
