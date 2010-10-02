@@ -106,12 +106,10 @@ private:
   Impl* impl;
 };
 
-
 extern llvm::IRBuilder<> builder;
 extern llvm::Module* module;
 
 TypeAST* TypeASTFor(const std::string& name);
-const llvm::Type* LLVMTypeFor(const std::string& name);
 
 ////////////////////////////////////////////////////////////////////
 

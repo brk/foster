@@ -19,7 +19,6 @@
 using foster::EDiag;
 using foster::dbg;
 using foster::show;
-using foster::LLVMTypeFor;
 using foster::currentErrs;
 using foster::currentOuts;
 

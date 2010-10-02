@@ -15,9 +15,9 @@
 #include <set>
 #include <vector>
 
-using foster::LLVMTypeFor;
-
 using namespace llvm;
+
+using foster::builder;
 
 llvm::GlobalVariable* getTypeMapForType(const llvm::Type*);
 
@@ -104,7 +104,7 @@ Constant* getTypeMapEntryFor(
   GlobalVariable* typeMapVar = getTypeMapForType(entryTy);
   if (typeMapVar) {
         fields.push_back(ConstantExpr::getCast(Instruction::BitCast,
-                        typeMapVar, LLVMTypeFor("i8*")));
+                        typeMapVar, builder.getInt8PtrTy()));
   } else {
         // If we can't tell the garbage collector how to collect a type by
         // giving it a pointer to a type map, it's probably because the type
@@ -113,11 +113,11 @@ Constant* getTypeMapEntryFor(
         fields.push_back(
             ConstantExpr::getCast(Instruction::IntToPtr,
                                   ConstantExpr::getSizeOf(entryTy),
-                                  LLVMTypeFor("i8*")));
+                                  builder.getInt8PtrTy()));
   }
 
   fields.push_back(ConstantExpr::getTruncOrBitCast(
-                   offset, LLVMTypeFor("i32")));
+                   offset, builder.getInt32Ty()));
 
   return ConstantStruct::get(typeMapEntryTy, fields);
 }
@@ -159,8 +159,8 @@ GlobalVariable* emitTypeMap(const Type* ty, std::string name,
 
   // Construct the type map's LLVM type
   std::vector<const Type*> entryty_types;
-  entryty_types.push_back(LLVMTypeFor("i8*"));
-  entryty_types.push_back(LLVMTypeFor("i32"));
+  entryty_types.push_back(builder.getInt8PtrTy());
+  entryty_types.push_back(builder.getInt32Ty());
   StructType* entryty = StructType::get(getGlobalContext(),
                                         entryty_types,
                                         /*isPacked=*/false);
@@ -169,8 +169,8 @@ GlobalVariable* emitTypeMap(const Type* ty, std::string name,
   std::vector<const Type*> typeMapTyFields;
   ArrayType* entriesty = ArrayType::get(entryty, numPointers);
 
-  typeMapTyFields.push_back(LLVMTypeFor("i8*"));
-  typeMapTyFields.push_back(LLVMTypeFor("i32"));
+  typeMapTyFields.push_back(builder.getInt8PtrTy());
+  typeMapTyFields.push_back(builder.getInt32Ty());
   typeMapTyFields.push_back(entriesty);
 
   const StructType* typeMapTy = StructType::get(getGlobalContext(),

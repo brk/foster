@@ -274,26 +274,11 @@ llvm::Module* module = NULL;
 
 map<string, const llvm::Type*> gCachedLLVMTypes;
 
-TypeAST*    TypeASTFor(const string& name) {
+TypeAST* TypeASTFor(const string& name) {
   if (gCachedLLVMTypes.count(name) == 1) {
     return NamedTypeAST::get(name, gCachedLLVMTypes[name]);
   } else if (TypeAST* ty = gTypeScope.lookup(name)) {
     return ty;
-  } else {
-    if (const llvm::Type* ty = LLVMTypeFor(name)) {
-      ASSERT(false) << "WARNING: have LLVMTypeFor("<<name<<")"
-                    << " but no TypeASTFor(...)";
-      ty = NULL; // avoid unused variable warning
-    }
-    return NULL;
-  }
-}
-
-const llvm::Type* LLVMTypeFor(const string& name) {
-  if (gCachedLLVMTypes.count(name) == 1) {
-    return gCachedLLVMTypes[name];
-  } else if (foster::module) {
-    return foster::module->getTypeByName(name);
   } else {
     return NULL;
   }

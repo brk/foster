@@ -33,7 +33,6 @@
 using std::string;
 
 using foster::TypeASTFor;
-using foster::LLVMTypeFor;
 using foster::EDiag;
 using foster::DDiag;
 using foster::show;
@@ -665,7 +664,6 @@ TypeAST* TypeAST_from(pTree tree) {
 
   if (token == PARENEXPR) { return TypeAST_from(child(tree, 0));  }
   if (token == CTOR) { return parseCtorType(tree, sourceRange);  }
-
   if (token == INT) {
     IntAST* intAST = parseIntFrom(tree, sourceRange);
     if (intAST) {
@@ -713,11 +711,6 @@ TypeAST* TypeAST_from(pTree tree) {
     // rather than a top-level procedure type.
     fty->markAsClosure();
     return fty;
-  }
-
-  if (text == "ref") {
-    // TODO add sourcerange or make ctor public
-    return RefTypeAST::get(TypeAST_from(child(tree, 0)));
   }
 
   if (token == OUT) {
@@ -847,7 +840,8 @@ namespace foster {
     return rv;
   }
 
-  ModuleAST* parseModule(const InputFile& file, const std::string& moduleName,
+  ModuleAST* parseModule(const InputFile& file,
+                       const std::string& moduleName,
                        pTree& outTree,
                        ANTLRContext*& ctx,
                        unsigned& outNumANTLRErrors) {

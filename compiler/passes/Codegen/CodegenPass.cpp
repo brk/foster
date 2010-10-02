@@ -22,6 +22,7 @@
 #include "llvm/CallingConv.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/LLVMContext.h"
+#include "llvm/Intrinsics.h"
 #include "llvm/Module.h"
 #include "llvm/Metadata.h"
 #include "llvm/Support/Format.h"
@@ -44,7 +45,6 @@ using llvm::APInt;
 using llvm::PHINode;
 using llvm::dyn_cast;
 
-using foster::LLVMTypeFor;
 using foster::module;
 using foster::builder;
 using foster::currentOuts;
@@ -110,7 +110,9 @@ llvm::Value* getValue(ExprAST* ast) {
   return ast->value;
 }
 
-
+const llvm::Type* ty_i8_ptr_ptr() {
+  return llvm::PointerType::getUnqual(builder.getInt8PtrTy());
+}
 
 // Declarations for Codegen-typemaps.cpp
 llvm::GlobalVariable*
@@ -123,18 +125,9 @@ llvm::GlobalVariable* getTypeMapForType(const llvm::Type*);
 
 bool mightContainHeapPointers(const llvm::Type* ty);
 
-// Returns type  void (i8**, i8*).
-const FunctionType* get_llvm_gcroot_ty() {
-  const Type* i8ty = LLVMTypeFor("i8");
-  const Type* pi8ty = llvm::PointerType::getUnqual(i8ty);
-  const Type* ppi8ty = llvm::PointerType::getUnqual(pi8ty);
-  const Type* voidty = llvm::Type::getVoidTy(llvm::getGlobalContext());
-  std::vector<const Type*> params;
-  params.push_back(ppi8ty);
-  params.push_back(pi8ty);
-  return llvm::FunctionType::get(voidty, params, /*isvararg=*/ false);
-}
-
+// If the provided root is an alloca, return it directly;
+// if it's a bitcast, return the first arg bitcast to alloca (or NULL);
+// otherwise, die.
 llvm::AllocaInst* getAllocaForRoot(llvm::Instruction* root) {
   if (llvm::AllocaInst* ai = llvm::dyn_cast<llvm::AllocaInst>(root)) {
     return ai;
@@ -151,8 +144,9 @@ llvm::AllocaInst* getAllocaForRoot(llvm::Instruction* root) {
 
 // root should be an AllocaInst or a bitcast of such
 void markGCRoot(llvm::Value* root, llvm::Constant* meta) {
-  llvm::Constant* llvm_gcroot = module->getOrInsertFunction("llvm.gcroot",
-                                                          get_llvm_gcroot_ty());
+  llvm::Constant* llvm_gcroot = llvm::Intrinsic::getDeclaration(module,
+                                               llvm::Intrinsic::gcroot);
+
   ASSERT(llvm_gcroot) << "unable to mark GC root, llvm.gcroot not found";
 
   // If we don't have something more specific, try using
@@ -164,10 +158,10 @@ void markGCRoot(llvm::Value* root, llvm::Constant* meta) {
   if (!meta) {
     // If we don't have a type map, use a NULL pointer.
     meta = llvm::ConstantPointerNull::get(
-                               llvm::PointerType::getUnqual(LLVMTypeFor("i8")));
-  } else if (meta->getType() != LLVMTypeFor("i8*")) {
+                               llvm::PointerType::getUnqual(builder.getInt8Ty()));
+  } else if (meta->getType() != builder.getInt8PtrTy()) {
     // If we do have a type map, make sure it's of type i8*.
-    meta = ConstantExpr::getBitCast(meta, LLVMTypeFor("i8*"));
+    meta = ConstantExpr::getBitCast(meta, builder.getInt8PtrTy());
   }
 
   llvm::Value* const vmeta = meta;
@@ -222,8 +216,7 @@ llvm::Value* storeAndMarkPointerAsGCRoot(llvm::Value* val) {
   // allocate a slot for a T* on the stack
   llvm::AllocaInst* stackslot = CreateEntryAlloca(val->getType(), "stackref");
   llvm::Value* root = builder.CreateBitCast(stackslot,
-                                            LLVMTypeFor("i8**"),
-                                            "gcroot");
+                                            ty_i8_ptr_ptr(), "gcroot");
 
   markGCRoot(root, getTypeMapForType(val->getType()->getContainedType(0)));
   builder.CreateStore(val, stackslot, /*isVolatile=*/ false);
@@ -535,7 +528,7 @@ void CodegenPass::visit(SeqAST* ast) {
     // Give the sequence a default value for now; eventually, this
     // should probably be assigned a value of unit.
     foster::DDiag() << "warning: empty sequence" << show(ast);
-    setValue(ast, llvm::ConstantInt::get(LLVMTypeFor("i32"), 0));
+    setValue(ast, llvm::ConstantInt::get(builder.getInt32Ty(), 0));
   }
 }
 

@@ -18,7 +18,7 @@ using llvm::Type;
 using llvm::getGlobalContext;
 using llvm::FunctionType;
 
-using foster::LLVMTypeFor;
+using foster::builder;
 
 const char* llvmValueTag(const llvm::Value* v) {
   using llvm::isa;
@@ -194,14 +194,14 @@ bool isValidClosureType(const llvm::Type* ty) {
 bool isGenericClosureType(const llvm::Type* ty) {
   if (const llvm::StructType* sty= llvm::dyn_cast<const llvm::StructType>(ty)) {
     if (!isValidClosureType(sty)) return false;
-    if (sty->getContainedType(1) != LLVMTypeFor("i8*")) return false;
+    if (sty->getContainedType(1) != builder.getInt8PtrTy()) return false;
     if (!sty->getContainedType(0)->isPointerTy()) return false;
 
     const llvm::Type* fnty = sty->getContainedType(0)->getContainedType(0);
     if (!fnty->isFunctionTy()) return false;
     if (!fnty->getNumContainedTypes() >= 2) return false;
-    if (fnty->getContainedType(0) != LLVMTypeFor("i32")) return false;
-    if (fnty->getContainedType(1) != LLVMTypeFor("i8*")) return false;
+    if (fnty->getContainedType(0) != builder.getInt32Ty()) return false;
+    if (fnty->getContainedType(1) != builder.getInt8PtrTy()) return false;
     return true;
   }
   return false;

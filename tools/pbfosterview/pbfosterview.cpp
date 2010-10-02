@@ -36,7 +36,6 @@
 
 using namespace llvm;
 
-using foster::LLVMTypeFor;
 using foster::SourceRange;
 using foster::EDiag;
 
@@ -117,13 +116,13 @@ int main(int argc, char** argv) {
   if (optRawAST) {
     llvm::outs() << mod->scope->getName() << "\n";
     for (size_t i = 0; i < mod->parts.size(); ++i) {
-      llvm::outs() << str(mod->parts[i]) << "\n"; 
+      llvm::outs() << str(mod->parts[i]) << "\n";
     }
   } else {
     foster::prettyPrintExpr(mod, llvm::outs(), 80, 2,
                             optSignaturesOnly);
   }
-  
+
 
   return 0;
 }

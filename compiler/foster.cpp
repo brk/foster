@@ -84,7 +84,6 @@
 
 using namespace llvm;
 
-using foster::LLVMTypeFor;
 using foster::SourceRange;
 using foster::EDiag;
 
