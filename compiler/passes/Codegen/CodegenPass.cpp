@@ -61,9 +61,6 @@ struct CodegenPass : public ExprASTVisitor {
   ValueTable valueSymTab;
 
   llvm::Value* lookup(const std::string& fullyQualifiedSymbol) {
-    if (fullyQualifiedSymbol == "c") {
-      llvm::outs() << "saw a 'c'\n";
-    }
     llvm::Value* v =  valueSymTab.lookup(fullyQualifiedSymbol);
     if (v) return v;
 
@@ -98,7 +95,7 @@ namespace foster {
 }
 
 void setValue(ExprAST* ast, llvm::Value* V) {
-  if (0) {
+  if (false) {
     foster::dbg("setValue") << "ast@" << ast << " :tag: " << std::string(ast->tag)
         << "\t; value tag: " << llvmValueTag(V) << "\t; value " << *V << "\n";
   }
@@ -156,26 +153,20 @@ llvm::AllocaInst* getAllocaForRoot(llvm::Instruction* root) {
 void markGCRoot(llvm::Value* root, llvm::Constant* meta) {
   llvm::Constant* llvm_gcroot = module->getOrInsertFunction("llvm.gcroot",
                                                           get_llvm_gcroot_ty());
-  if (!llvm_gcroot) {
-    currentErrs() << "Error! Could not mark GC root!" << "\n";
-    exit(1);
-  }
+  ASSERT(llvm_gcroot) << "unable to mark GC root, llvm.gcroot not found";
 
+  // If we don't have something more specific, try using
+  // the lowered type's type map.
   if (!meta) {
     meta = getTypeMapForType(root->getType());
   }
 
-#if 0
-  llvm::outs() << "Marking gc root " << *root << " with ";
-  if (meta) llvm::outs() << *meta;
-  else      llvm::outs() << " null metadata pointer";
-  llvm::outs() << "\n";
-#endif
-
   if (!meta) {
+    // If we don't have a type map, use a NULL pointer.
     meta = llvm::ConstantPointerNull::get(
                                llvm::PointerType::getUnqual(LLVMTypeFor("i8")));
   } else if (meta->getType() != LLVMTypeFor("i8*")) {
+    // If we do have a type map, make sure it's of type i8*.
     meta = ConstantExpr::getBitCast(meta, LLVMTypeFor("i8*"));
   }
 
@@ -274,6 +265,21 @@ const llvm::Type* getLLVMType(TypeAST* type) {
   if (!type) return NULL;
   return type->getLLVMType();
 }
+
+
+bool structTypeContainsPointers(const llvm::StructType* ty) {
+  for (unsigned i = 0; i < ty->getNumElements(); ++i) {
+    if (ty->getTypeAtIndex(i)->isPointerTy()) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool isSafeToStackAllocate(TupleExprAST* ast) {
+  return true;
+}
+
 
 llvm::Value* allocateMPInt() {
   llvm::Value* mp_int_alloc = foster::module->getFunction("mp_int_alloc");
@@ -1216,129 +1222,6 @@ void CodegenPass::visit(CallAST* ast) {
   }
 }
 
-#if 0
-bool isComposedOfIntLiterals(ExprAST* ast) {
-  for (size_t i = 0; i < ast->parts.size(); ++i) {
-    IntAST* v = dynamic_cast<IntAST*>(ast->parts[i]);
-    if (!v) { return false; }
-  }
-  return true;
-}
-
-llvm::GlobalVariable* getGlobalArrayVariable(SeqAST* body,
-                                             const llvm::ArrayType* arrayType) {
-  using llvm::GlobalVariable;
-  GlobalVariable* gvar = new GlobalVariable(*module,
-    /*Type=*/         arrayType,
-    /*isConstant=*/   true,
-    /*Linkage=*/      llvm::GlobalValue::PrivateLinkage,
-    /*Initializer=*/  0, // has initializer, specified below
-    /*Name=*/         freshName("arrayGv"));
-
-  // Constant Definitions
-  std::vector<llvm::Constant*> arrayElements;
-
-  for (size_t i = 0; i < body->parts.size(); ++i) {
-    IntAST* v = dynamic_cast<IntAST*>(body->parts[i]);
-    if (!v) {
-      EDiag() << "array initializer was not IntAST" << show(body->parts[i]);
-      return NULL;
-    }
-
-    ConstantInt* ci = dyn_cast<ConstantInt>(getConstantInt(v));
-    if (!ci) {
-      EDiag() << "array initializer was not a constant" << show(body->parts[i]);
-      return NULL;
-    }
-    arrayElements.push_back(ci);
-  }
-
-  llvm::Constant* constArray = llvm::ConstantArray::get(arrayType, arrayElements);
-  gvar->setInitializer(constArray);
-  return gvar;
-}
-
-void CodegenPass::visit(ArrayExprAST* ast) {
-  ASSERT(!getValue(ast)) << "codegenned " << ast->tag << " @ " << hex(ast) << " twice?!?" << show(ast);
-
-  const llvm::ArrayType* arrayType
-                            = dyn_cast<llvm::ArrayType>(getLLVMType(ast->type));
-  module->addTypeName(freshName("arrayTy"), arrayType);
-
-  SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
-  if (body->parts.empty()) {
-    // No initializer
-    setValue(ast, CreateEntryAlloca(arrayType, "noInitArr"));
-
-    // We only need to mark arrays of non-atomic objects as GC roots
-    // TODO handle rooting arrays of non-atomic objects
-    //if (containsPointers(arrayType->getElementType())) {
-    //  markGCRoot(getValue(ast), NULL);
-    //}
-
-    // TODO add call to memset
-  } else {
-    // Have initializers; are they constants?
-    if (isComposedOfIntLiterals(body)) {
-      setValue(ast, getGlobalArrayVariable(body, arrayType));
-    } else {
-      setValue(ast, CreateEntryAlloca(arrayType, "initArr"));
-
-      // We only need to mark arrays of non-atomic objects as GC roots
-          // TODO handle rooting arrays of non-atomic objects
-          //if (containsPointers(arrayType->getElementType())) {
-          //  markGCRoot(getValue(ast), NULL);
-          //}
-
-      for (size_t i = 0; i < body->parts.size(); ++i) {
-        builder.CreateStore(body->parts[i]->value,
-                            getPointerToIndex(getValue(ast), i, "arrInit"));
-      }
-    }
-  }
-}
-
-void CodegenPass::visit(SimdVectorAST* ast) {
-  ASSERT(!getValue(ast)) << "codegenned " << ast->tag << " @ " << hex(ast) << " twice?!?" << show(ast);
-
-  const llvm::VectorType* simdType
-                     = dyn_cast<const llvm::VectorType>(getLLVMType(ast->type));
-
-  SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
-  bool isConstant = isComposedOfIntLiterals(body);
-
-  using llvm::GlobalVariable;
-  GlobalVariable* gvar = new GlobalVariable(*module,
-    /*Type=*/         simdType,
-    /*isConstant=*/   isConstant,
-    /*Linkage=*/      llvm::GlobalValue::PrivateLinkage,
-    /*Initializer=*/  0, // has initializer, specified below
-    /*Name=*/         freshName("simdGv"));
-
-  if (isConstant) {
-    std::vector<llvm::Constant*> elements;
-    for (size_t i = 0; i < body->parts.size(); ++i) {
-      IntAST* intlit = dynamic_cast<IntAST*>(body->parts[i]);
-      llvm::Constant* ci = getConstantInt(intlit);
-      elements.push_back(dyn_cast<llvm::Constant>(ci));
-    }
-
-    llvm::Constant* constVector = llvm::ConstantVector::get(simdType, elements);
-    gvar->setInitializer(constVector);
-    setValue(ast, builder.CreateLoad(gvar, /*isVolatile*/ false, "simdLoad"));
-  } else {
-    llvm::AllocaInst* pt = CreateEntryAlloca(simdType, "s");
-    // simd vectors are never gc roots
-    for (size_t i = 0; i < body->parts.size(); ++i) {
-      Value* dst = builder.CreateConstGEP2_32(pt, 0, i, "simd-gep");
-      body->parts[i]->accept(this);
-      builder.CreateStore(body->parts[i]->value, dst, /*isVolatile=*/ false);
-    }
-    setValue(ast, pt);
-  }
-}
-#endif
-
 // pt should be an alloca, either of type tuple* or tuple**,
 // where tuple is the type of the TupleExprAST
 void copyTupleTo(Value* pt, TupleExprAST* ast) {
@@ -1374,19 +1257,6 @@ void copyTupleTo(Value* pt, TupleExprAST* ast) {
   }
 }
 
-bool structTypeContainsPointers(const llvm::StructType* ty) {
-  for (unsigned i = 0; i < ty->getNumElements(); ++i) {
-    if (ty->getTypeAtIndex(i)->isPointerTy()) {
-      return true;
-    }
-  }
-  return false;
-}
-
-bool isSafeToStackAllocate(TupleExprAST* ast) {
-  return true;
-}
-
 void CodegenPass::visit(TupleExprAST* ast) {
   ASSERT(!getValue(ast)) << "codegenned " << ast->tag << " @ " << hex(ast) << " twice?!?" << show(ast);
 
@@ -1407,13 +1277,6 @@ void CodegenPass::visit(TupleExprAST* ast) {
     // pt has type tuple*
     pt = CreateEntryAlloca(tupleType, "s");
   }
-
-#if 0
-  // We only need to mark tuples containing pointers as GC roots
-  if (structTypeContainsPointers(dyn_cast<llvm::StructType>(tupleType))) {
-    storeAndMarkValueAsGCRoot(pt);
-  }
-#endif
 
   copyTupleTo(pt, ast);
   setValue(ast, pt);
