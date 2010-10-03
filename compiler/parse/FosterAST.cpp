@@ -42,23 +42,17 @@ using llvm::ConstantInt;
 using std::vector;
 using std::string;
 
-uint64_t getSaturating(llvm::Value* v) {
+uint64_t getSaturating(const llvm::ConstantInt* ci) {
   typedef uint64_t T;
   // If the value requires more bits than T can represent, we want
   // to return ~0, not 0. Otherwise, we should leave the value alone.
   T allOnes = ~T(0);
-  if (!v) {
-    currentErrs() << "numericOf() got a null value, returning " << allOnes << "\n";
+  if (!ci) {
+    currentErrs() << "getSaturating() given a null value, returning " << allOnes << "\n";
     return allOnes;
   }
 
-  if (llvm::ConstantInt* ci = llvm::dyn_cast<llvm::ConstantInt>(v)) {
-    return static_cast<T>(ci->getLimitedValue(allOnes));
-  } else {
-    currentErrs() << "getSaturating() was given a non-constant-int value " << *v;
-    ASSERT(false);
-    return allOnes;
-  }
+  return static_cast<T>(ci->getLimitedValue(allOnes));
 }
 
 

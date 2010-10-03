@@ -194,71 +194,8 @@ ParsingContext::getParent(ExprAST* child) {
 
 ////////////////////////////////////////////////////////////////////
 
-llvm::raw_ostream& ParsingContext::currentErrs() {
-  if (impl->errs) { return *(impl->errs); }
-  else { return llvm::errs(); }
-}
-
-llvm::raw_ostream& ParsingContext::currentOuts() {
-  if (impl->outs) { return *(impl->outs); }
-  else { return llvm::errs(); }
-}
-
-void ParsingContext::startAccumulatingOutputToString() {
-  impl->outs = &impl->os;
-  impl->errs = &impl->os;
-}
-
-std::string ParsingContext::collectAccumulatedOutput() {
-  std::string rv = impl->os.str();
-  impl->accumulated_output.clear();
-  return rv;
-}
-
-
 ParsingContext::ParsingContext() {
   impl = new Impl();
-}
-
-////////////////////////////////////////////////////////////////////
-
-llvm::raw_ostream& currentErrs() {
-  if (gParsingContexts.empty()) {
-    return llvm::errs();
-  } else {
-    return gParsingContexts.top()->currentErrs();
-  }
-}
-
-llvm::raw_ostream& currentOuts() {
-  if (gParsingContexts.empty()) {
-    return llvm::outs();
-  } else {
-    return gParsingContexts.top()->currentOuts();
-  }
-}
-
-bool gDebugLoggingEnabled = true;
-std::set<std::string> gEnabledDebuggingTags;
-
-llvm::raw_ostream& dbg(const std::string& tag) {
-  const bool debuggingEnabled = true;
-  if (foster::gDebugLoggingEnabled
-    && (gEnabledDebuggingTags.empty()
-     || gEnabledDebuggingTags.count(tag) == 1)) {
-  return currentOuts() << "\t" << tag << ":\t";
-  }
-  return llvm::nulls();
-}
-
-////////////////////////////////////////////////////////////////////
-
-EDiag::EDiag() : DiagBase(foster::currentErrs(), "error") {
-  color = llvm::raw_ostream::RED;
-}
-
-EDiag::~EDiag() {
-  // Note: error diagnostics from __COMPILES__ will be discarded, not deleted!
 }
 
 ////////////////////////////////////////////////////////////////////

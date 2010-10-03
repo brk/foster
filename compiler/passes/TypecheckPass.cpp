@@ -7,7 +7,6 @@
 
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
-#include "parse/ParsingContext.h"
 #include "parse/FosterUtils.h"
 #include "parse/DumpStructure.h"
 
@@ -43,6 +42,11 @@ using llvm::ConstantInt;
 #include <string>
 
 using std::vector;
+
+namespace foster {
+  // This is the only bit we need from ParsingContext.h
+  extern TypeAST* TypeASTFor(const std::string&);
+}
 
 #include "parse/ExprASTVisitor.h"
 
@@ -742,19 +746,6 @@ void TypecheckPass::visit(IfExprAST* ast) {
   constraints.addEq(testExpr, testExpr->type, TypeAST::i(1));
   constraints.addEq(ast,      thenExpr->type, elseExpr->type);
   ast->type = thenExpr->type;
-}
-
-int indexInParent(ExprAST* child, int startingIndex) {
-  ExprAST* parent = foster::ParsingContext::getParent(child);
-  ASSERT(parent != NULL);
-
-  std::vector<ExprAST*>& parts = parent->parts;
-  for (size_t i = startingIndex; i < parts.size(); ++i) {
-    if (parts[i] == child) {
-      return i;
-    }
-  }
-  return -1;
 }
 
 void TypecheckPass::visit(NilExprAST* ast) {

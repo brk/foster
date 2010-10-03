@@ -64,8 +64,10 @@ string pr(ExprAST* ast) {
 
 TEST(TypeInference, parallel_compilation_contexts) {
   initCachedLLVMTypes();
-  foster::ParsingContext cc1; cc1.startAccumulatingOutputToString();
-  foster::ParsingContext cc2; cc2.startAccumulatingOutputToString();
+  foster::ParsingContext cc1;
+  foster::ParsingContext cc2;
+
+  foster::startAccumulatingOutputToString();
 
   ExprAST* e1a = parse(cc1, STR(
 let x : i32 = 3 in {
@@ -94,8 +96,10 @@ let x : i32 = 3 in {
 
 TEST(TypeInference, i32_handling_simple_closure0) {
   initCachedLLVMTypes();
-  foster::ParsingContext cc1; cc1.startAccumulatingOutputToString();
-  foster::ParsingContext cc2; cc2.startAccumulatingOutputToString();
+  foster::ParsingContext cc1;
+  foster::ParsingContext cc2;
+
+  foster::startAccumulatingOutputToString();
 
   ExprAST* ae = parse(cc1, STR(
 let x : i32 = 3 in {

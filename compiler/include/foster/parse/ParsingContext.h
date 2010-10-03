@@ -85,17 +85,6 @@ public:
 
   /////////////////////
 
-
-  // Seeing if it's useful for individual unit tests to redirect all output
-  // to a string, so it can be (A) hidden from the console unless needed, and
-  // (B) inspected to verify the presence/absence of specific errors.
-  llvm::raw_ostream& currentErrs();
-  llvm::raw_ostream& currentOuts();
-  void startAccumulatingOutputToString();
-  std::string collectAccumulatedOutput();
-
-  /////////////////////
-
 private:
   struct Impl;
   Impl* impl;
@@ -104,45 +93,6 @@ private:
 extern llvm::Module* module;
 
 TypeAST* TypeASTFor(const std::string& name);
-
-////////////////////////////////////////////////////////////////////
-
-// Global version of above methods on ParsingContext, for use by
-// the diagnostic builders.
-// These functions default to llvm::*() if there's no current context.
-
-llvm::raw_ostream& currentErrs();
-llvm::raw_ostream& currentOuts();
-
-// For want of a better place to put them...
-extern bool gDebugLoggingEnabled;
-extern std::set<std::string> gEnabledDebuggingTags;
-
-llvm::raw_ostream& dbg(const std::string& tag);
-
-////////////////////////////////////////////////////////////////////
-
-// Error diagnostic builder; unlike foster::SimpleEDiag, can be re-routed.
-class EDiag : public DiagBase {
-public:
-  explicit EDiag();
-  virtual ~EDiag();
-private:
-  EDiag(const EDiag&);
-};
-
-// Debug diagnostic builder
-class DDiag : public DiagBase {
-public:
-  explicit DDiag(llvm::raw_ostream::Colors _color)
-                   : DiagBase(foster::currentErrs(), "debug") {
-    this->color = _color;
-  }
-  explicit DDiag() : DiagBase(foster::currentErrs(), "debug") {}
-  virtual ~DDiag();
-private:
-  DDiag(const DDiag&);
-};
 
 } // namespace foster
 

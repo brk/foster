@@ -9,6 +9,7 @@
 
 #include "llvm/Support/raw_ostream.h"
 
+#include <set>
 #include <string>
 
 // Foster's diagnostics subsystem is inspired by Clang's,
@@ -16,6 +17,21 @@
 // emphasis on making it easy to mark and display errors.
 
 namespace foster {
+
+  // Seeing if it's useful for individual unit tests to redirect all output
+  // to a string, so it can be (A) hidden from the console unless needed, and
+  // (B) inspected to verify the presence/absence of specific errors.
+  llvm::raw_ostream& currentErrs();
+  llvm::raw_ostream& currentOuts();
+  void startAccumulatingOutputToString();
+  std::string collectAccumulatedOutput();
+
+  // For want of a better place to put them...
+  extern bool gDebugLoggingEnabled;
+  extern std::set<std::string> gEnabledDebuggingTags;
+
+  llvm::raw_ostream& dbg(const std::string& tag);
+
 
 struct SourceRangeHighlighter {
   SourceRangeHighlighter(SourceRange r, SourceLocation c) : r(r), caret(c) {}
@@ -79,6 +95,28 @@ private:
 };
 
 ////////////////////////////////////////////////////////////////////
+
+// Error diagnostic builder; unlike foster::SimpleEDiag, can be re-routed.
+class EDiag : public DiagBase {
+public:
+  explicit EDiag();
+  virtual ~EDiag();
+private:
+  EDiag(const EDiag&);
+};
+
+// Debug diagnostic builder
+class DDiag : public DiagBase {
+public:
+  explicit DDiag(llvm::raw_ostream::Colors _color)
+                   : DiagBase(foster::currentErrs(), "debug") {
+    this->color = _color;
+  }
+  explicit DDiag() : DiagBase(foster::currentErrs(), "debug") {}
+  virtual ~DDiag();
+private:
+  DDiag(const DDiag&);
+};
 
 } // namespace foster
 

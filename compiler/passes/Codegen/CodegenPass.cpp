@@ -311,9 +311,7 @@ void CodegenPass::visit(IntAST* ast) {
 
 void CodegenPass::visit(BoolAST* ast) {
   ASSERT(!getValue(ast)) << "codegenned " << ast->tag << " @ " << hex(ast) << " twice?!?" << show(ast);
-  setValue(ast, (ast->boolValue)
-      ? ConstantInt::getTrue(getGlobalContext())
-      : ConstantInt::getFalse(getGlobalContext()));
+  setValue(ast, builder.getInt1(ast->boolValue));
 }
 
 void CodegenPass::visit(VariableAST* ast) {
@@ -830,7 +828,8 @@ Value* getElementFromComposite(Value* compositeValue, Value* idxValue) {
   } else if (llvm::isa<llvm::StructType>(compositeType)
           && llvm::isa<llvm::Constant>(idxValue)) {
     // Struct values may be indexed only by constant expressions
-    unsigned uidx = unsigned(getSaturating(idxValue));
+    ASSERT(llvm::isa<llvm::ConstantInt>(idxValue));
+    unsigned uidx = unsigned(getSaturating(dyn_cast<ConstantInt>(idxValue)));
     return builder.CreateExtractValue(compositeValue, uidx, "subexv");
   } else if (llvm::isa<llvm::VectorType>(compositeType)) {
     if (llvm::isa<llvm::Constant>(idxValue)) {

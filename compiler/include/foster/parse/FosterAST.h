@@ -44,7 +44,7 @@ namespace foster {
 }
 
 // Returns the closest
-uint64_t getSaturating(llvm::Value* v);
+uint64_t getSaturating(const llvm::ConstantInt* v);
 
 bool isPrintRef(const ExprAST* base);
 
