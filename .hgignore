@@ -11,3 +11,6 @@ diff.txt
 tools/c-viewer/
 dox/
 notes/_build/
+me/dist/
+glob:*.lkshw
+glob:*\#
