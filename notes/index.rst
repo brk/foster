@@ -11,10 +11,12 @@ Foster Notes
 
    test
    features
+   compiler
+   syntax
 
 .. Indices and tables
 .. ==================
-.. 
+..
 .. * :ref:`genindex`
 
 .. * :ref:`modindex`
@@ -22,19 +24,19 @@ Foster Notes
 
 .. TODO Items
 .. ==========
-.. 
+..
 .. Well, now what?
-.. 
+..
 .. .. note::
 ..   This function is not suitable for sending spam e-mails.
-.. 
+..
 .. .. todo:: A single-line todo.
-.. 
+..
 .. .. todo::
 ..   A test multi-line
 ..   todo item.
-.. 
+..
 .. TODO List
 .. =========
-.. 
+..
 .. .. todolist::

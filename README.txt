@@ -71,3 +71,7 @@ ANTLR on Linux and OS X:
 	pushd ${ANTLR_DIR}
 	wget http://antlr.org/download/antlr-${ANTLR_VERSION}.jar
 	popd
+
+
+Haskell
+      cabal install text protocol-buffers filepath

@@ -28,7 +28,8 @@ def try_get_mtime(path):
     try:
       buf = os.stat(path)
     except OSError:
-      print "%(watch)s: %(file)s: file not found"
+      print "%(watch)s: %(file)s: file not found" % {
+          'watch': sys.argv[0], 'file': path }
       sys.exit(1)
   return buf.st_mtime
 
@@ -36,7 +37,11 @@ def execute_commands(commands, filename):
   for command in commands:
     cmd = string.Template(command).safe_substitute(file=filename)
     cmd_pieces = re.split('\s+', cmd)
-    subprocess.Popen(cmd_pieces)
+    try:
+      subprocess.Popen(cmd_pieces)
+    except Exception, e:
+      print "Command failed: ", cmd
+      print e
 
 def main():
   files = []
@@ -55,17 +60,26 @@ def main():
     sys.exit(1)
 
   if len(files) > maxfiles:
-    print "%(watch)s: too many files to watch" % sys.argv[0]
+    print "%(watch)s: too many files to watch" % { 'watch' : sys.argv[0] }
+    sys.exit(1)
+
+  print "Watching files: ", files
 
   mtimes = dict([(f, try_get_mtime(f)) for f in files])
   done = False
   while not done:
+    mod_files = []
     for f in files:
       old_mtime = mtimes[f]
       new_mtime = try_get_mtime(f)
       if new_mtime != old_mtime:
         mtimes[f] = new_mtime
+        mod_files.append(f)
+    if len(mod_files) > 0:
+      print "Modified files:", mod_files
+      for f in mod_files:
         execute_commands(commands, f)
+      print "---------------------------------------------------"
     time.sleep(2)
 
 if __name__ == '__main__':
