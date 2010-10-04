@@ -13,8 +13,7 @@
 -----------------------------------------------------------------------------
 
 module Main (
-
-
+main
 ) where
 
 import Control.Monad(when)
@@ -140,6 +139,9 @@ textOf e width =
         TupleAST      e b    -> "TupleAST     "
         VarAST        s      -> "VarAST       " ++ s
 
+-- Builds trees like this:
+--
+--
 showStructure :: ExprAST -> String
 showStructure e = showStructureP e "" False where
     showStructureP e prefix isLast =

@@ -74,4 +74,5 @@ ANTLR on Linux and OS X:
 
 
 Haskell
-      cabal install text protocol-buffers filepath
+      cabal install text protocol-buffers filepath hprotoc
+
