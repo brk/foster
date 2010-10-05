@@ -31,6 +31,7 @@ import Data.Sequence
 import Data.Maybe
 import Data.Foldable
 import Data.Char
+import qualified Data.HashTable as HashTable
 
 import Control.Exception(assert)
 
@@ -50,19 +51,19 @@ import Foster.Pb.Type as PbType
 
 outLn = U.putStrLn . U.toString . utf8
 
-exprTagString :: Tag -> [Char]
+exprTagString :: Tag -> String
 exprTagString tag =
         case tag of
-                PB_INT  -> "PB_INT"
-                BOOL    -> "BOOL"
-                VAR     -> "VAR"
-                OP      -> "OP"
-                TUPLE   -> "TUPLE"
-                FN      -> "FN"
-                PROTO   -> "PROTO"
-                CALL    -> "CALL"
-                SEQ     -> "SEQ"
-                SIMD    -> "SIMD"
+                PB_INT    -> "PB_INT"
+                BOOL      -> "BOOL"
+                VAR       -> "VAR"
+                OP        -> "OP"
+                TUPLE     -> "TUPLE"
+                FN        -> "FN"
+                PROTO     -> "PROTO"
+                CALL      -> "CALL"
+                SEQ       -> "SEQ"
+                SIMD      -> "SIMD"
                 SUBSCRIPT -> "SUBSCRIPT"
 --
 
@@ -85,7 +86,7 @@ data ExprAST =
         | IfAST         ExprAST ExprAST ExprAST
                         -- active text clean base
         | IntAST        Integer String String Int
-        | FnAST         ExprAST ExprAST
+        | E_FnAST       FnAST
         | RefAST        ExprAST
         | SeqAST        [ExprAST]
         | SubscriptAST  ExprAST ExprAST
@@ -97,6 +98,65 @@ data ExprAST =
 data TypeAST =
          MissingTypeAST
          deriving (Show)
+
+                -- proto    body
+data FnAST = FnAST ExprAST ExprAST deriving (Show)
+
+-----------------------------------------------------------------------
+
+data SymbolTable = SymbolTable [ExprScope]
+data ExprScope = ExprScope (IO ExprMap)
+
+type ExprMap = HashTable.HashTable String ExprAST
+
+newSymbolTable () = SymbolTable [newEmptyScope ()]
+newEmptyScope () = ExprScope (HashTable.new (==) HashTable.hashString)
+
+getRootTable :: SymbolTable -> SymbolTable
+getRootTable (SymbolTable [scope]) = (SymbolTable [scope])
+getRootTable (SymbolTable (scope:scopes)) = getRootTable $ SymbolTable scopes
+
+currentScope :: SymbolTable -> ExprScope
+currentScope (SymbolTable (scope:scopes)) = scope
+
+pushScope :: SymbolTable -> SymbolTable
+pushScope (SymbolTable scopes) = SymbolTable (newEmptyScope () : scopes)
+
+popScope :: SymbolTable -> SymbolTable
+popScope (SymbolTable (scope:scopes)) = SymbolTable scopes
+
+scopeMap :: ExprScope -> IO ExprMap
+scopeMap (ExprScope map) = map
+
+symTabUpdate :: SymbolTable -> String -> ExprAST -> IO ()
+symTabUpdate (SymbolTable (scope:scopes)) name expr = do
+        map       <- scopeMap scope
+        HashTable.update map name expr
+        return ()
+
+symTabLookup :: SymbolTable -> String -> IO (Maybe ExprAST)
+symTabLookup (SymbolTable []) name = return Nothing
+symTabLookup (SymbolTable (scope:scopes)) name = do
+        map       <- scopeMap scope
+        maybeExpr <- HashTable.lookup map name
+        case maybeExpr of
+            (Just expr) -> return maybeExpr
+            Nothing     -> symTabLookup (SymbolTable scopes) name
+
+-----------------------------------------------------------------------
+
+buildSymbolTable :: SymbolTable -> ExprAST -> IO ()
+buildSymbolTable symtab expr = do
+    case expr of
+        E_FnAST (FnAST proto body)  ->
+            let newScope = pushScope symtab in
+            -- add bindings from proto to new scope
+            -- buildSymbolTable newScope body
+            error "not yet implemented"
+        _ -> F.forM_  (childrenOf expr) $ \child -> do
+                buildSymbolTable symtab child
+    return ()
+
 
 -----------------------------------------------------------------------
 
@@ -111,7 +171,7 @@ childrenOf e =
         DerefAST      e      -> [e]
         IfAST         a b c  -> [a, b, c]
         IntAST i s1 s2 i2    -> []
-        FnAST         a b    -> [a, b]
+        E_FnAST (FnAST a b)  -> [a, b]
         RefAST        a      -> [a]
         SeqAST        es     -> es
         SubscriptAST  a b    -> [a, b]
@@ -131,7 +191,7 @@ textOf e width =
         DerefAST      e      -> "DerefAST     "
         IfAST         a b c  -> "IfAST        "
         IntAST i t c base    -> "IntAST       " ++ t
-        FnAST         a b    -> "FnAST        "
+        E_FnAST (FnAST a b)  -> "FnAST        "
         RefAST        a      -> "RefAST       "
         SeqAST        es     -> "SeqAST       "
         SubscriptAST  a b    -> "SubscriptAST "
@@ -213,7 +273,7 @@ parseCompiles pbexpr =  CompilesAST (part 0 $ PbExpr.parts pbexpr)
 parseDeref pbexpr =     DerefAST $ part 0 (PbExpr.parts pbexpr)
 
 parseFn pbexpr =        let parts = PbExpr.parts pbexpr in
-                        let fn = FnAST (part 0 parts) (part 1 parts) in
+                        let fn = E_FnAST $ FnAST (part 0 parts) (part 1 parts) in
                         assert ((Data.Sequence.length parts) == 2) $
                         fn
 
@@ -244,17 +304,22 @@ onlyHexDigitsIn str =
 parseFromPBInt :: PBInt -> ExprAST
 parseFromPBInt pbint =
         let text = uToString $ PBInt.text pbint in
-        let clean2 = Prelude.filter (/= '`') text in
-        let (clean, base) = case splitString "_" clean2 of
-                [main, base] -> (main, read base)
-                otherwise    -> (clean2, 10) in
-        let i = parseIntFromClean clean text base in
+        let (clean, base) = extractCleanBase text in
         assert (base `Prelude.elem` [2, 8, 10, 16]) $
         assert (onlyHexDigitsIn clean) $
-        i
+        mkIntASTFromClean clean text base
 
-parseIntFromClean :: String -> String -> Int -> ExprAST
-parseIntFromClean clean text base =
+-- Given "raw" integer text like "123`456_10",
+-- return ("123456", 10)
+extractCleanBase :: String -> (String, Int)
+extractCleanBase text =
+        let noticks = Prelude.filter (/= '`') text in
+        case splitString "_" noticks of
+            [first, base] -> (first, read base)
+            otherwise     -> (noticks, 10)
+
+mkIntASTFromClean :: String -> String -> Int -> ExprAST
+mkIntASTFromClean clean text base =
         let bitsPerDigit = ceiling $ (log $ fromIntegral base) / (log 2) in
         let conservativeBitsNeeded = bitsPerDigit * (Prelude.length clean) + 2 in
         let activeBits = toInteger conservativeBitsNeeded in
@@ -339,7 +404,7 @@ main = do
   args <- getArgs
   f <- case args of
          [file] -> L.readFile file
-         _ -> getProgName >>= \self -> error $ "Usage "++self++" path/to/file.foster"
+         _ -> getProgName >>= \self -> error $ "Usage: " ++ self ++ " path/to/file.foster"
 
   case messageGet f of
     Left msg -> error ("Failed to parse protocol buffer.\n"++msg)
