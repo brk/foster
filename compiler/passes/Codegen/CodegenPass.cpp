@@ -1142,16 +1142,6 @@ void CodegenPass::visit(CallAST* ast) {
           << "; expect clo? " << isGenericClosureType(expectedType) << "\n";
     }
 
-    // Give print_ref() "polymorphic" behavior by converting a pointer argument
-    // of any type to the expected type (i8*, probably).
-    if (V->getType() != expectedType
-     && V->getType()->isPointerTy() && isPrintRef(base)) {
-      while (V->getType()->getContainedType(0)->isPointerTy()) {
-        V = builder.CreateLoad(V, false, "strip-all-indirection");
-      }
-      V = builder.CreateBitCast(V, expectedType, "polyptr");
-    }
-
     // LLVM intrinsics and C functions can take pointer-to-X args,
     // but codegen for variables will have already emitted a load
     // from the variable's implicit address.

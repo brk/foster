@@ -893,33 +893,6 @@ void TypecheckPass::visit(SeqAST* ast) {
   }
 }
 
-// HACK HACK HACK - give print_ref special polymorphic type (with hardcoded ret ty)
-//
-// G |- e : ref(T)
-// ----------
-// G |- (print_ref(e)) : i32
-void givePrintRefPseudoPolymorphicType(CallAST* ast, TypecheckPass* pass) {
-  ast->type = TypeAST::i(32);
-
- if (ast->parts.size() < 2) {
-    EDiag() << "arity mismatch, required one argument for print_ref() but got none"
-            << show(ast);
-    return;
-  }
-
-  ExprAST* arg = ast->parts[1];
-  arg->accept(pass);
-
-  if (!arg->type) {
-    EDiag() << "print_ref() given arg of no discernable type" << show(arg);
-    return;
-  }
-
-  TypeAST* refT = RefTypeAST::get(TypeVariableAST::get("printref", arg->sourceRange));
-
-  pass->constraints.addEq(ast, arg->type, refT);
-}
-
 const FunctionType* getFunctionTypeFromClosureStructType(const Type* ty) {
   if (const llvm::StructType* sty = llvm::dyn_cast<llvm::StructType>(ty)) {
     if (const llvm::PointerType* pty
@@ -937,11 +910,6 @@ void TypecheckPass::visit(CallAST* ast) {
   ExprAST* base = ast->parts[0];
   if (!base) {
     EDiag() << "called expression was null" << show(ast);
-    return;
-  }
-
-  if (isPrintRef(base)) {
-    givePrintRefPseudoPolymorphicType(ast, this);
     return;
   }
 

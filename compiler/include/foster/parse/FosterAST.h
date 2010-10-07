@@ -46,8 +46,6 @@ namespace foster {
 // Returns the closest
 uint64_t getSaturating(const llvm::ConstantInt* v);
 
-bool isPrintRef(const ExprAST* base);
-
 inline bool isArithOp(const std::string& op) {
   return op == "+" || op == "-" || op == "/" || op == "*";
 }
