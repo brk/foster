@@ -130,7 +130,7 @@ ExprAST* VariableAST::lookup(const string& nameInNS) {
     ExprAST* nsast = gScope.lookup(this->name);
     NamespaceAST* ns = dynamic_cast<NamespaceAST*>(nsast);
     ASSERT(ns) << "namespace lookup failed" << foster::show(this) << str(nsast);
-    //llvm::outs() << "var " << this->name << " looking up " << nameInNS << "\n";
+    //ASSERT(false) << "var " << this->name << " looking up " << nameInNS << "\n";
     return ns->lookup(nameInNS);
   }
 

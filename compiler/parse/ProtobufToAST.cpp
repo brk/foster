@@ -111,7 +111,7 @@ ExprAST* parseInt(const pb::Expr& e, const foster::SourceRange& range) {
   if (!e.has_pb_int()) return NULL;
 
   const pb::PBInt& i = e.pb_int();
-  string text = i.text();
+  string text = i.originaltext();
   string clean = pystring::replace(text, "`", "");
   vector<string> parts;
   pystring::split(clean, parts, "_");
@@ -303,20 +303,8 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
     return LiteralIntValueTypeAST::get(t.literal_int_value(), range);
   }
 
-  /*
-  if (t.has_simd_vector()) {
-    const pb::SimdVectorType& st = t.simd_vector();
-    TypeAST* literalIntSize = TypeAST_from_pb(&st.literal_int_size());
-    TypeAST* elementType    = TypeAST_from_pb(&st.element_type());
-    return SimdVectorTypeAST::get(
-        dynamic_cast<LiteralIntValueTypeAST*>(literalIntSize),
-        elementType, range);
-  }
-  */
-
   if (t.tag() == pb::Type::LLVM_NAMED) {
     const string& tyname = t.name();
-    //currentErrs() << "PB trying to reconstruct named type: '" << tyname << "'" << "\n";
 
     ASSERT(!tyname.empty()) << "empty type name, probably implies a\n"
                   << "missing pb.if_X() check before pb.X().\n"

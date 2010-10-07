@@ -85,7 +85,7 @@ void DumpToProtobufPass::visit(BoolAST* ast)                {
 void DumpToProtobufPass::visit(IntAST* ast)                 {
   processExprAST(current, ast, foster::pb::Expr::PB_INT);
   foster::pb::PBInt* int_ = current->mutable_pb_int();
-  int_->set_text(ast->getOriginalText());
+  int_->set_originaltext(ast->getOriginalText());
 }
 
 void DumpToProtobufPass::visit(VariableAST* ast)            {

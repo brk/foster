@@ -102,7 +102,19 @@ message Expr {
 }
 
 message PBInt {
-  required string text =  2;
+  // The middle-end is responsible for verifying that the originalText
+  // constitutes a syntactically valid literal. For example, FEEDFACE_10
+  // is syntactically invalid.
+  //
+  // The parser is NOT responsible for verifying that the originalText
+  // constitutes a syntactically valid literal, because doing so precludes
+  // having __COMPILES__ in the language, which requires transmitting
+  // possibly-invalid literals to the middle-end.
+  //
+  // The middle-end is also responsible for checking that the literal is
+  // used appropriately (e.g. no passing 64-bit literal to 32-bit func).
+  //
+  required string originalText =  2;
 }
 
 message Proto {

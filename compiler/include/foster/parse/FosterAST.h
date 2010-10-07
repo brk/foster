@@ -82,12 +82,6 @@ struct ExprAST {
   }
 };
 
-struct UnaryExprAST : public ExprAST {
-  explicit UnaryExprAST(const char* const tag,
-                        ExprAST* e1, foster::SourceRange sourceRange)
-    : ExprAST(tag, sourceRange) { this->parts.push_back(e1); }
-};
-
 struct BinaryExprAST : public ExprAST {
   explicit BinaryExprAST(const char* const tag,
                          ExprAST* e1, ExprAST* e2,
@@ -198,13 +192,6 @@ struct VariableAST : public ExprAST {
   const string getName() const { return name; }
 };
 
-struct UnaryOpExprAST : public UnaryExprAST {
-  string op;
-  explicit UnaryOpExprAST(string op, ExprAST* body, foster::SourceRange sourceRange)
-     : UnaryExprAST("UnaryOp", body, sourceRange), op(op) {}
-  virtual void accept(ExprASTVisitor* visitor);
-};
-
 struct BinaryOpExprAST : public BinaryExprAST {
   string op;
   enum { kLHS, kRHS };
@@ -246,11 +233,12 @@ struct SeqAST : public ExprAST {
   virtual void accept(ExprASTVisitor* visitor);
 };
 
-struct TupleExprAST : public UnaryExprAST {
+struct TupleExprAST : public ExprAST {
   bool isClosureEnvironment;
 
   explicit TupleExprAST(ExprAST* expr, foster::SourceRange sourceRange)
-    : UnaryExprAST("TupleExprAST", expr, sourceRange) {
+    : ExprAST("TupleExprAST", sourceRange) {
+      parts.push_back(expr);
   }
   virtual void accept(ExprASTVisitor* visitor);
 };
@@ -388,10 +376,12 @@ struct NilExprAST : public ExprAST {
   virtual void accept(ExprASTVisitor* visitor);
 };
 
-struct BuiltinCompilesExprAST : public UnaryExprAST {
+struct BuiltinCompilesExprAST : public ExprAST {
   enum Status { kWouldCompile, kWouldNotCompile, kNotChecked } status;
   explicit BuiltinCompilesExprAST(ExprAST* expr, foster::SourceRange sourceRange)
-     : UnaryExprAST("CompilesExprAST", expr, sourceRange), status(kNotChecked) {}
+     : ExprAST("CompilesExprAST", sourceRange), status(kNotChecked) {
+       parts.push_back(expr);
+   }
   // Must manually visit children (for typechecking) because we don't want to codegen our children!
   virtual void accept(ExprASTVisitor* visitor);
 };

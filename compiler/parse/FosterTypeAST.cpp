@@ -221,13 +221,6 @@ RefTypeAST* RefTypeAST::get(TypeAST* baseType) {
 
 // virtual
 bool RefTypeAST::canConvertTo(TypeAST* otherType) {
-#if 0
-  if (RefTypeAST* other = dynamic_cast<RefTypeAST*>(otherType)) {
-    if (isNullable() && !other->isNullable()) {
-      return false;
-    }
-  }
-#endif
   return TypeAST::canConvertTo(otherType);
 }
 
@@ -329,15 +322,3 @@ uint64_t LiteralIntValueTypeAST::getNumericalValue() const {
   }
 }
 
-/////////////////////////////////////////////////////////////////////
-
-/*
-// static
-SimdVectorTypeAST* SimdVectorTypeAST::get(LiteralIntValueTypeAST* size,
-                                          TypeAST* type,
-                                          const SourceRange& sourceRange) {
-  llvm::VectorType* vecTy = llvm::VectorType::get(type->getLLVMType(),
-                                                  size->getNumericalValue());
-  return new SimdVectorTypeAST(vecTy, size, type, sourceRange);
-}
-*/
