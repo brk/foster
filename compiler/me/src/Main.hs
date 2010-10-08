@@ -16,7 +16,7 @@ module Main (
 main
 ) where
 
-import Control.Monad(when)
+import Control.Monad(when,sequence)
 import System.Environment(getArgs,getProgName)
 
 import qualified Data.ByteString.Lazy as L(readFile)
@@ -31,6 +31,8 @@ import Data.Sequence
 import Data.Maybe
 import Data.Foldable
 import Data.Char
+import Monad(join,liftM)
+import Data.IORef(IORef,newIORef,readIORef,writeIORef)
 import qualified Data.HashTable as HashTable
 
 import Control.Exception(assert)
@@ -78,87 +80,39 @@ data ESourceRange = ESourceRange ESourceLocation ESourceLocation String
 
 data ExprAST =
           AssignAST     ExprAST ExprAST
+        | RefAST        ExprAST
+        | DerefAST      ExprAST
+
         | BoolAST       Bool
+                        -- active text clean base
+        | IntAST        Integer String String Int
+        | TupleAST      [ExprAST] Bool
+        | E_FnAST       FnAST
+
         | BinaryOpAST   String ExprAST ExprAST
         | CallAST       ExprAST [ExprAST]
         | CompilesAST   ExprAST CompilesStatus
-        | DerefAST      ExprAST
         | IfAST         ExprAST ExprAST ExprAST
-                        -- active text clean base
-        | IntAST        Integer String String Int
-        | E_FnAST       FnAST
-        | RefAST        ExprAST
         | SeqAST        [ExprAST]
         | SubscriptAST  ExprAST ExprAST
-        | PrototypeAST  TypeAST String [ExprAST]
-        | TupleAST      ExprAST Bool
-        | VarAST        String
+        | E_PrototypeAST    PrototypeAST
+        | E_VarAST      VarAST
         deriving Show
 
 data TypeAST =
-         MissingTypeAST
-         deriving (Show)
+           MissingTypeAST
+         | TypeBoolAST
+         | TypeIntAST
+         | FnTypeAST        [TypeAST] TypeAST
+         deriving (Eq,Show)
 
                 -- proto    body
-data FnAST = FnAST ExprAST ExprAST deriving (Show)
+data FnAST  = FnAST     PrototypeAST ExprAST deriving (Show)
+data VarAST = VarAST    String          deriving (Show)
+data PrototypeAST = PrototypeAST TypeAST String [VarAST] deriving (Show)
 
 -----------------------------------------------------------------------
 
-data SymbolTable = SymbolTable [ExprScope]
-data ExprScope = ExprScope (IO ExprMap)
-
-type ExprMap = HashTable.HashTable String ExprAST
-
-newSymbolTable () = SymbolTable [newEmptyScope ()]
-newEmptyScope () = ExprScope (HashTable.new (==) HashTable.hashString)
-
-getRootTable :: SymbolTable -> SymbolTable
-getRootTable (SymbolTable [scope]) = (SymbolTable [scope])
-getRootTable (SymbolTable (scope:scopes)) = getRootTable $ SymbolTable scopes
-
-currentScope :: SymbolTable -> ExprScope
-currentScope (SymbolTable (scope:scopes)) = scope
-
-pushScope :: SymbolTable -> SymbolTable
-pushScope (SymbolTable scopes) = SymbolTable (newEmptyScope () : scopes)
-
-popScope :: SymbolTable -> SymbolTable
-popScope (SymbolTable (scope:scopes)) = SymbolTable scopes
-
-scopeMap :: ExprScope -> IO ExprMap
-scopeMap (ExprScope map) = map
-
-symTabUpdate :: SymbolTable -> String -> ExprAST -> IO ()
-symTabUpdate (SymbolTable (scope:scopes)) name expr = do
-        map       <- scopeMap scope
-        HashTable.update map name expr
-        return ()
-
-symTabLookup :: SymbolTable -> String -> IO (Maybe ExprAST)
-symTabLookup (SymbolTable []) name = return Nothing
-symTabLookup (SymbolTable (scope:scopes)) name = do
-        map       <- scopeMap scope
-        maybeExpr <- HashTable.lookup map name
-        case maybeExpr of
-            (Just expr) -> return maybeExpr
-            Nothing     -> symTabLookup (SymbolTable scopes) name
-
------------------------------------------------------------------------
-
-buildSymbolTable :: SymbolTable -> ExprAST -> IO ()
-buildSymbolTable symtab expr = do
-    case expr of
-        E_FnAST (FnAST proto body)  ->
-            let newScope = pushScope symtab in
-            -- add bindings from proto to new scope
-            -- buildSymbolTable newScope body
-            error "not yet implemented"
-        _ -> F.forM_  (childrenOf expr) $ \child -> do
-                buildSymbolTable symtab child
-    return ()
-
-
------------------------------------------------------------------------
 
 childrenOf :: ExprAST -> [ExprAST]
 childrenOf e =
@@ -171,13 +125,13 @@ childrenOf e =
         DerefAST      e      -> [e]
         IfAST         a b c  -> [a, b, c]
         IntAST i s1 s2 i2    -> []
-        E_FnAST (FnAST a b)  -> [a, b]
+        E_FnAST (FnAST a b)  -> [E_PrototypeAST a, b]
         RefAST        a      -> [a]
         SeqAST        es     -> es
         SubscriptAST  a b    -> [a, b]
-        PrototypeAST  t s es -> es
-        TupleAST      e b    -> [e]
-        VarAST        s      -> []
+        E_PrototypeAST (PrototypeAST t s es) -> (map (\x -> E_VarAST x) es)
+        TupleAST     es b    -> es
+        E_VarAST (VarAST s)  -> []
 
 textOf :: ExprAST -> Int -> String
 textOf e width =
@@ -195,9 +149,13 @@ textOf e width =
         RefAST        a      -> "RefAST       "
         SeqAST        es     -> "SeqAST       "
         SubscriptAST  a b    -> "SubscriptAST "
-        PrototypeAST  t s es -> "PrototypeAST " ++ s
-        TupleAST      e b    -> "TupleAST     "
-        VarAST        s      -> "VarAST       " ++ s
+        E_PrototypeAST (PrototypeAST t s es)     -> "PrototypeAST " ++ s
+        TupleAST     es b    -> "TupleAST     "
+        E_VarAST (VarAST s)  -> "VarAST       " ++ s
+
+-----------------------------------------------------------------------
+varName (VarAST name) = name
+getBindings (PrototypeAST t s vars) = vars
 
 -- Builds trees like this:
 --
@@ -218,7 +176,58 @@ showStructure e = showStructureP e "" False where
         thisIndent ++ (textOf e padding ++ "\n") ++ Prelude.foldl (++) "" childlines
 
 
+-----------------------------------------------------------------------
 
+typesEqual :: TypeAST -> TypeAST -> Bool
+typesEqual ta tb = ta == tb
+
+typecheck :: ExprAST -> Maybe TypeAST
+typecheck expr =
+    case expr of
+        E_FnAST (FnAST proto body)  ->
+            -- let bindings = getBindings proto in
+            typecheck body
+        AssignAST     a b    -> let ta = typecheck a in
+                                let tb = typecheck b in
+                                Nothing
+        BoolAST         b    -> Just TypeBoolAST
+        BinaryOpAST s a b    -> let ta = typecheck a in
+                                let tb = typecheck b in
+                                Nothing
+        CallAST     b es     -> let tbs = map typecheck es in
+                                let tb = typecheck b in
+                                case tb of
+                                    Just (FnTypeAST argtypes restype) ->
+                                        if Prelude.all (\(x,y) -> typesEqual x y)
+                                                (Prelude.zip (map fromJust (tb:tbs))
+                                                        (restype:argtypes))
+                                            then Just restype
+                                            else Nothing
+                                    otherwise -> Nothing
+        CompilesAST   e c    -> Just TypeBoolAST
+        DerefAST      e      -> let te = typecheck e in
+                                Nothing
+        IfAST         a b c  -> case (typecheck a, typecheck b, typecheck c) of
+                                    (Just ta, Just tb, Just tc) ->
+                                        if typesEqual ta TypeBoolAST then
+                                            if typesEqual tb tc
+                                                then Just tb
+                                                else Nothing
+                                            else Nothing
+                                    otherwise -> Nothing
+        IntAST i s1 s2 i2    -> Just TypeIntAST
+        RefAST        a      -> let ta = typecheck a in
+                                Nothing
+        SeqAST        es     -> let tes = map typecheck es in
+                                Nothing
+        SubscriptAST  a b    -> let ta = typecheck a in
+                                let tb = typecheck b in
+                                Nothing
+        E_PrototypeAST (PrototypeAST t s es) ->
+                                Nothing
+        TupleAST      es b   -> let tes = map typecheck es in
+                                Nothing
+        E_VarAST (VarAST s)  -> Nothing
 -----------------------------------------------------------------------
 
 listExprs :: Expr -> IO ()
@@ -232,7 +241,12 @@ listExprs pb_exprs = do
       then do putStr "  name: " >> outLn (getVal expr PbExpr.name)
       else do putStr "  no name\n"
 
-    putStrLn $ showStructure $ parseExpr expr
+    ast <- return $ parseExpr expr
+
+    putStrLn "ast:"
+    putStrLn $ showStructure ast
+    let typechecked = typecheck ast
+    return ()
 
 printProtoName :: Maybe Proto -> IO ()
 printProtoName Nothing = do
@@ -273,7 +287,8 @@ parseCompiles pbexpr =  CompilesAST (part 0 $ PbExpr.parts pbexpr)
 parseDeref pbexpr =     DerefAST $ part 0 (PbExpr.parts pbexpr)
 
 parseFn pbexpr =        let parts = PbExpr.parts pbexpr in
-                        let fn = E_FnAST $ FnAST (part 0 parts) (part 1 parts) in
+                        let fn = E_FnAST $ FnAST (parseProtoP $ index parts 0)
+                                                 (part 1 parts) in
                         assert ((Data.Sequence.length parts) == 2) $
                         fn
 
@@ -333,32 +348,35 @@ parseSubscript pbexpr = let parts = PbExpr.parts pbexpr in
                         SubscriptAST (part 0 parts) (part 1 parts)
 
 parseTuple pbexpr =
-        TupleAST (part 0 $ PbExpr.parts pbexpr)
+        TupleAST (map parseExpr $ toList (PbExpr.parts pbexpr))
                  (fromMaybe False $ PbExpr.is_closure_environment pbexpr)
 
+parseVar :: Expr -> VarAST
 parseVar pbexpr = VarAST $ uToString (fromJust $ PbExpr.name pbexpr)
 
 emptyRange :: ESourceRange
 emptyRange = ESourceRange e e "<no file>"
                     where e = (ESourceLocation (-1::Int) (-1::Int))
 
-parseProto :: Expr -> ExprAST
-parseProto pbexpr =
+parseProtoP :: Expr -> PrototypeAST
+parseProtoP pbexpr =
     case PbExpr.proto pbexpr of
-                Nothing -> error "Need a proto to parse a proto!"
-                Just x  -> parseProtoP x
+                Nothing  -> error "Need a proto to parse a proto!"
+                Just proto  -> parseProtoPP proto
 
-getVarName :: ExprAST -> String
+parseProto :: Expr -> ExprAST
+parseProto pbexpr = E_PrototypeAST (parseProtoP pbexpr)
+
+getVarName :: VarAST -> String
 getVarName (VarAST s) = s
-getVarName x = error "getVarName must be given a var!" ++ show x
 
-getVar :: Expr -> ExprAST
+getVar :: Expr -> VarAST
 getVar e = case PbExpr.tag e of
             VAR -> parseVar e
-            _   ->  error "getVar must be given a var!"
+            _   -> error "getVar must be given a var!"
 
-parseProtoP :: Proto -> ExprAST
-parseProtoP proto =
+parseProtoPP :: Proto -> PrototypeAST
+parseProtoPP proto =
     let args = Proto.in_args proto in
     let vars = map getVar $ toList args in
     let retTy = MissingTypeAST in
@@ -384,7 +402,7 @@ parseExpr pbexpr =
     let fn = case PbExpr.tag pbexpr of
                 PB_INT  -> parseInt
                 BOOL    -> parseBool
-                VAR     -> parseVar
+                VAR     -> (\x -> E_VarAST $ parseVar x)
                 OP      -> parseOp
                 TUPLE   -> parseTuple
                 FN      -> parseFn
