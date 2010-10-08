@@ -12,6 +12,8 @@ tokens {
 	FOR='for'; NIL='nil'; TRUE='true'; FALSE='false'; AND='and'; OR='or';
 	COMPILES='__COMPILES__'; STRUCTURE='struct';
 
+	BINOP_CHAIN; BINOPS; COMPOUNDS;
+
 	FN; OUT; BODY; GIVEN; GIVES; SEQ; INT; RAT; EXPRS; NAME; CTOR;
 	TRAILERS; CALL; TUPLE; SUBSCRIPT; LOOKUP; FORMAL; ARRAY; SIMD;
 	LETEXPR; SETEXPR; PARENEXPR; TYPEDEFN; FNDEF; FORRANGE;
@@ -73,7 +75,7 @@ compound                :       (term) ( trailer+ -> ^(TRAILERS term trailer+)
                                       |        -> ^(term)
                                 );
 
-subexpr			:	compound (  binop nl? subexpr	-> ^(binop compound subexpr)
+subexpr			:	compound ( (binop nl? compound)+	-> ^(BINOP_CHAIN ^(BINOPS binop+) ^(COMPOUNDS compound+))
 					  |		-> ^(compound)
 				);
 expr	:	subexpr;

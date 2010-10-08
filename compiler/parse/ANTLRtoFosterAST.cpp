@@ -254,38 +254,6 @@ FnAST* buildFn(PrototypeAST* proto, pTree bodyTree) {
   return new FnAST(proto, body, scope, rangeOf(bodyTree));
 }
 
-// parses    a  op  b...c
-ExprAST* parseBinaryOpExpr(
-    const std::string& opname, ExprAST* a, ExprAST* bc) {
-
-  if (BinaryOpExprAST* rhs = dynamic_cast<BinaryOpExprAST*>(bc)) {
-    // ExprAST_from strips parens from expressions; instead of recording their
-    // presence in the original source in the ExprAST, we store parenthesized
-    // AST nodes in a separate table.
-    if (foster::wasExplicitlyParenthesized(rhs)) {
-      // Can't split the RHS up; no choice but to return op(a, (b...c))
-      goto done;
-    }
-
-    ExprAST* b = rhs->parts[rhs->kLHS];
-    ExprAST* c = rhs->parts[rhs->kRHS];
-    std::string rop = rhs->op;
-
-    // a opname b rop c
-    foster::OperatorPrecedenceTable::OperatorRelation rel =
-      ParsingContext::getOperatorRelation(opname, rop);
-            ////foster::gParsingContexts.top()->prec.get(opname, rop);
-    if (rel == foster::OperatorPrecedenceTable::kOpBindsTighter) {
-      delete rhs; // return ((a opname b) rop c)
-      ExprAST* ab = parseBinaryOpExpr(opname, a, b);
-      return new BinaryOpExprAST(rop, ab, c, rangeFrom(ab, c));
-    }
-  }
-
-  done:
-  return new BinaryOpExprAST(opname, a, bc, rangeFrom(a, bc));
-}
-
 // defaultSymbolTemplate can include "%d" to embed a unique number; otherwise,
 // a unique int will be appended to the template.
 string parseFnName(string defaultSymbolTemplate, pTree tree) {
@@ -533,6 +501,66 @@ ExprAST* parseBuiltinCompiles(pTree tree, const SourceRange& sourceRange) {
  return new BuiltinCompilesExprAST(ExprAST_from(child(tree, 0)), sourceRange);
 }
 
+
+
+ExprAST* extractBinopChain(pTree tree,
+           std::vector< std::pair<std::string, ExprAST*> >& pairs) {
+  pTree binops = child(tree, 0);
+  pTree compounds = child(tree, 1);
+
+  ASSERT(getChildCount(binops) == getChildCount(compounds) - 1);
+
+  for (int i = 0; i < getChildCount(binops); ++i) {
+    pairs.push_back(std::make_pair(
+                        textOf(child(binops, i)),
+                        ExprAST_from(child(compounds, i + 1))));
+  }
+
+  return ExprAST_from(child(compounds, 0));
+}
+
+void leftAssoc(std::vector<std::string>& opstack,
+               std::vector<ExprAST*>& argstack) {
+  ExprAST*           y = argstack.back(); argstack.pop_back();
+  ExprAST*           x = argstack.back(); argstack.pop_back();
+  const std::string& o =  opstack.back();  opstack.pop_back();
+  argstack.push_back(new BinaryOpExprAST(o, x, y, rangeFrom(x, y)));
+}
+
+ExprAST* parseBinopChain(pTree tree) {
+  std::vector< std::pair<std::string, ExprAST*> > pairs;
+  ExprAST* first = extractBinopChain(tree, pairs);
+
+  std::vector<std::string> opstack;
+  std::vector<ExprAST*> argstack;
+  argstack.push_back(first);
+  argstack.push_back(pairs[0].second);
+  opstack.push_back(pairs[0].first);
+
+  for (int i = 1; i < pairs.size(); ++i) {
+    const std::string& opd = pairs[i].first;
+    ExprAST* e = pairs[i].second;
+    while (!opstack.empty()) {
+      const std::string& top = opstack.back();
+      foster::OperatorPrecedenceTable::OperatorRelation rel =
+                           ParsingContext::getOperatorRelation(top, opd);
+      if (rel != foster::OperatorPrecedenceTable::kOpBindsTighter) {
+        break;
+      }
+      leftAssoc(opstack, argstack);
+    }
+    argstack.push_back(e);
+    opstack.push_back(opd);
+  }
+
+  while (!opstack.empty()) {
+    leftAssoc(opstack, argstack);
+  }
+
+  ASSERT(argstack.size() == 1);
+  return argstack[0];
+}
+
 ExprAST* ExprAST_from(pTree tree) {
   if (!tree) return NULL;
 
@@ -549,6 +577,7 @@ ExprAST* ExprAST_from(pTree tree) {
   if (token == PARENEXPR) { return parseParenExpr(tree); }
   if (token == COMPILES) { return parseBuiltinCompiles(tree, sourceRange); }
   if (token == BODY) { return ExprAST_from(child(tree, 0)); }
+  if (token == BINOP_CHAIN) { return parseBinopChain(tree); }
 
   if (text == "false" || text == "true") {
     return new BoolAST(text, sourceRange);
@@ -620,13 +649,6 @@ ExprAST* ExprAST_from(pTree tree) {
     }
     fn->markAsClosure();
     return fn;
-  }
-
-  // Implicitly, every entry in the precedence table is a binary operator.
-  if (ParsingContext::isKnownOperatorName(text)) {
-    return parseBinaryOpExpr(text,
-                             ExprAST_from(child(tree, 0)),
-                             ExprAST_from(child(tree, 1)));
   }
 
   // Should have handled all keywords by now...
