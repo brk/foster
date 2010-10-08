@@ -7,7 +7,7 @@ license-file: ""
 copyright:
 maintainer:
 build-depends: base -any, bytestring -any, containers -any,
-               filepath >=1.1.0.3, protocol-buffers -any,
+               filepath >=1.1.0.3, haskell98 -any, protocol-buffers -any,
                protocol-buffers-descriptor -any, text -any, utf8-string -any
 stability:
 homepage:
