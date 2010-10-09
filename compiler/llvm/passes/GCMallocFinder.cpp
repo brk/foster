@@ -12,8 +12,7 @@
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/System/TimeValue.h"
 
-#include "base/GenericGraph.h"
-#include "parse/FosterUtils.h"
+#include "base/LLVMUtils.h"
 
 #include <set>
 #include <map>

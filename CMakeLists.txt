@@ -239,6 +239,7 @@ include(${PROJECT_SOURCE_DIR}/third_party/imath/CMakeLists.txt)
 add_library(fosterc_base STATIC
   compiler/base/Assert.cpp
   compiler/base/Diagnostics.cpp
+  compiler/base/LLVMUtils.cpp
   compiler/base/InputFile.cpp
   compiler/base/InputTextBuffer.cpp
   compiler/base/PathManager.cpp
@@ -282,7 +283,7 @@ add_library(fosterc_llvm STATIC
   compiler/llvm/passes/GCMallocFinder.cpp
   compiler/llvm/plugins/FosterGC.cpp
 )
-add_dependencies(fosterc_llvm fosterc_parse)
+add_dependencies(fosterc_llvm fosterc_base)
 
 
 add_library(fosterc_passes STATIC
