@@ -278,7 +278,6 @@ set_source_files_properties(
       PROPERTIES LANGUAGE CXX)
 
 add_library(fosterc_llvm STATIC
-  compiler/llvm/passes/Hello.cpp
   compiler/llvm/passes/ImathImprover.cpp
   compiler/llvm/passes/GCMallocFinder.cpp
   compiler/llvm/plugins/FosterGC.cpp
