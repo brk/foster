@@ -340,7 +340,7 @@ void CodegenPass::visit(VariableAST* ast) {
               << str(ast) << show(ast);
       valueSymTab.dump(currentOuts());
     }
-    llvm::outs() << "=========== VarAST " << ast->getName() << " @ " << hex(ast)<< " returned value: " << str(ast->value) << "\n";
+    //llvm::outs() << "=========== VarAST " << ast->getName() << " @ " << hex(ast)<< " returned value: " << str(ast->value) << "\n";
   }
 
   ASSERT(getValue(ast))
@@ -348,37 +348,11 @@ void CodegenPass::visit(VariableAST* ast) {
      << str(ast) << show(ast);
 }
 
-llvm::Value* emitPrimitiveLLVMOperation(const std::string& op,
-                                        llvm::Value* VL, llvm::Value* VR) {
-       if (op == "+") { return builder.CreateAdd(VL, VR, "addtmp"); }
-  else if (op == "-") { return builder.CreateSub(VL, VR, "subtmp"); }
-  else if (op == "/") { return builder.CreateSDiv(VL, VR, "divtmp"); }
-  else if (op == "*") { return builder.CreateMul(VL, VR, "multmp"); }
-
-  else if (op == "<")  { return builder.CreateICmpSLT(VL, VR, "slttmp"); }
-  else if (op == "<=") { return builder.CreateICmpSLE(VL, VR, "sletmp"); }
-  else if (op == ">")  { return builder.CreateICmpSGT(VL, VR, "sgttmp"); }
-  else if (op == ">=") { return builder.CreateICmpSGE(VL, VR, "sgetmp"); }
-  else if (op == "==") { return builder.CreateICmpEQ(VL, VR, "eqtmp"); }
-  else if (op == "!=") { return builder.CreateICmpNE(VL, VR, "netmp"); }
-
-  else if (op == "bitand") { return builder.CreateAnd(VL, VR, "bitandtmp"); }
-  else if (op == "bitor") {  return builder.CreateOr( VL, VR, "bitortmp"); }
-  else if (op == "bitxor") { return builder.CreateXor(VL, VR, "bitxortmp"); }
-
-  else if (op == "bitshl") { return builder.CreateShl(VL, VR, "shltmp"); }
-  else if (op == "bitlshr") { return builder.CreateLShr(VL, VR, "lshrtmp"); }
-  else if (op == "bitashr") { return builder.CreateAShr(VL, VR, "ashrtmp"); }
-}
-
-bool isPrimitiveLLVMNumericType(const llvm::Type* ty) {
-  return ty->isIntOrIntVectorTy() || ty->isFloatingPointTy();
-}
-
-bool isRuntimeArbitraryPrecisionNumericType(const llvm::Type* ty) {
-  TypeAST* intType = foster::TypeASTFor("int");
-  return intType && ty == intType->getLLVMType();
-}
+/**
+// Note: the logical signature of addition on multi-precision ints (Int)
+// is (+Int) :: Int -> Int -> Int
+// but the C-level signature for mp_int_add is
+// mp_result mp_int_add(mp_int, mp_int, mp_int);
 
 llvm::Value* emitRuntimeMPInt_Op(llvm::Value* VL, llvm::Value* VR,
                                  const char* mp_int_op_name) {
@@ -395,68 +369,14 @@ llvm::Value* emitRuntimeMPInt_Op(llvm::Value* VL, llvm::Value* VR,
 llvm::Value* emitRuntimeArbitraryPrecisionOperation(const std::string& op,
                                         llvm::Value* VL, llvm::Value* VR) {
        if (op == "+") { return emitRuntimeMPInt_Op(VL, VR, "mp_int_add"); }
-  //else if (op == "-") { return builder.CreateSub(VL, VR, "subtmp"); }
-  //else if (op == "/") { return builder.CreateSDiv(VL, VR, "divtmp"); }
   else if (op == "*") { return emitRuntimeMPInt_Op(VL, VR, "mp_int_mul"); }
-
-  //else if (op == "<")  { return builder.CreateICmpSLT(VL, VR, "slttmp"); }
-  //else if (op == "<=") { return builder.CreateICmpSLE(VL, VR, "sletmp"); }
-  //else if (op == ">")  { return builder.CreateICmpSGT(VL, VR, "sgttmp"); }
-  //else if (op == ">=") { return builder.CreateICmpSGE(VL, VR, "sgetmp"); }
-  //else if (op == "==") { return builder.CreateICmpEQ(VL, VR, "eqtmp"); }
-  //else if (op == "!=") { return builder.CreateICmpNE(VL, VR, "netmp"); }
-  //
-  //else if (op == "bitand") { return builder.CreateAnd(VL, VR, "bitandtmp"); }
-  //else if (op == "bitor") {  return builder.CreateOr( VL, VR, "bitortmp"); }
-  //else if (op == "bitxor") { return builder.CreateXor(VL, VR, "bitxortmp"); }
-  //
-  //else if (op == "bitshl") { return builder.CreateShl(VL, VR, "shltmp"); }
-  //else if (op == "bitlshr") { return builder.CreateLShr(VL, VR, "lshrtmp"); }
-  //else if (op == "bitashr") { return builder.CreateAShr(VL, VR, "ashrtmp");
 
   EDiag() << "\t emitRuntimeArbitraryPrecisionOperation() not yet implemented"
           << " for operation " << op << "!";
   exit(1);
   return NULL;
 }
-
-bool leftTypeBiggerInt(const Type* left, const Type* right) {
-  return left->getScalarSizeInBits() > right->getScalarSizeInBits();
-}
-
-void CodegenPass::visit(BinaryOpExprAST* ast) {
-  ASSERT(!getValue(ast)) << "codegenned " << ast->tag << " @ " << hex(ast) << " twice?!?" << show(ast);
-
-  Value* VL = ast->parts[ast->kLHS]->value;
-  Value* VR = ast->parts[ast->kRHS]->value;
-
-  const std::string& op = ast->op;
-
-  if (!VL || !VR) {
-    EDiag() << "binary '" << op << "' had null operand " << show(ast);
-    return;
-  }
-
-  if (VL->getType() != VR->getType() && (isArithOp(op) || isCmpOp(op))) {
-    if (leftTypeBiggerInt(VL->getType(), VR->getType())) {
-      VR = tempHackExtendInt(VR, VL->getType());
-    } else {
-      VL = tempHackExtendInt(VL, VR->getType());
-    }
-  }
-
-  if (isPrimitiveLLVMNumericType(VL->getType())) {
-    setValue(ast, emitPrimitiveLLVMOperation(op, VL, VR));
-  } else if (isRuntimeArbitraryPrecisionNumericType(VL->getType())) {
-    setValue(ast, emitRuntimeArbitraryPrecisionOperation(op, VL, VR));
-  }
-
-  if (!getValue(ast)) {
-    EDiag() << "Unable to codegen binary operator " << op << " : "
-            << str(VL->getType()) << show(ast);
-    return;
-  }
-}
+*/
 
 std::string getSymbolName(const std::string& sourceName) {
   // TODO this substitution should probably be explicitly restricted
@@ -865,16 +785,6 @@ void CodegenPass::visit(SubscriptAST* ast) {
 
 ////////////////////////////////////////////////////////////////////
 
-void tempHackExtendIntTypes(const FunctionType* FT, std::vector<Value*>& valArgs) {
-  for (size_t i = 0; i < valArgs.size(); ++i) {
-    valArgs[i] = tempHackExtendInt(valArgs[i], FT->getParamType(i));
-  }
-
-  // TODO better long-term solution is probably make the libfoster
-  // function expect_i8 instead of expect_i1, and add a Foster-impl
-  // expect_i1 wrapper. And, eventually, implement libfoster in foster ;-)
-}
-
 const FunctionType* tryExtractFunctionPointerType(Value* FV) {
   const llvm::PointerType* fp =
                        llvm::dyn_cast_or_null<llvm::PointerType>(FV->getType());
@@ -1117,6 +1027,7 @@ void CodegenPass::visit(CallAST* ast) {
       V = builder.CreateLoad(V, /*isVolatile=*/ false, "unstackref");
     }
 
+    V = tempHackExtendInt(V, expectedType);
     bool needsAdjusting = V->getType() != expectedType;
     if (needsAdjusting) {
       ExprAST* arg = ast->parts[i + 1];
@@ -1169,9 +1080,6 @@ void CodegenPass::visit(CallAST* ast) {
             << show(base);
     return;
   }
-
-  // Temporary hack: if a function expects i8 and we have i1, manually convert
-  tempHackExtendIntTypes(FT, valArgs);
 
   llvm::CallInst* callInst = NULL;
   if (isVoid(FT->getReturnType())) {

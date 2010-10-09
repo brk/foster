@@ -227,9 +227,6 @@ void          SeqAST::accept(ExprASTVisitor* visitor) { visitor->visitChildren(t
 void    SubscriptAST::accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
 void    TupleExprAST::accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
 
-void BinaryOpExprAST::accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
-
-
 void NamespaceAST::accept(ExprASTVisitor* visitor) {
   llvm::errs() << "Visitor called on NamespaceAST! This is probably not desired...\n";
 }

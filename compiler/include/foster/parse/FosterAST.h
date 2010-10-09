@@ -190,15 +190,6 @@ struct VariableAST : public ExprAST {
   const string getName() const { return name; }
 };
 
-struct BinaryOpExprAST : public BinaryExprAST {
-  string op;
-  enum { kLHS, kRHS };
-  explicit BinaryOpExprAST(string op, ExprAST* lhs, ExprAST* rhs,
-                           foster::SourceRange sourceRange)
-     : BinaryExprAST("BinaryOp", lhs, rhs, sourceRange), op(op) {}
-  virtual void accept(ExprASTVisitor* visitor);
-};
-
 // base(args)
 struct CallAST : public ExprAST {
   CallAST(ExprAST* base, Exprs args, foster::SourceRange sourceRange)

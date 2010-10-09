@@ -355,14 +355,7 @@ TEST(ProtobufToAST, binop_plus) {
   ExprAST* e = parse("1 + 2");
   ExprAST* re = roundtrip(e);
 
-  BinaryOpExprAST* ie = dynamic_cast<BinaryOpExprAST*>(e);
-  BinaryOpExprAST* ire = dynamic_cast<BinaryOpExprAST*>(re);
-
-  ASSERT_TRUE(ie);
-  ASSERT_TRUE(ire);
-
-  EXPECT_EQ(ie->op, ire->op);
-  EXPECT_EQ(pr(ie), pr(ire));
+  EXPECT_EQ(pr(e), pr(re));
 }
 
 //

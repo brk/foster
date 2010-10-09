@@ -13,6 +13,9 @@
 #include "base/PughSinofskyPrettyPrinter.h"
 #include "parse/ExprASTVisitor.h"
 
+#include "pystring/pystring.h"
+
+
 struct PrettyPrintPass : public ExprASTVisitor {
   #include "parse/ExprASTVisitor.decls.inc.h"
 
@@ -131,7 +134,7 @@ bool isDelimited(ExprAST* ast) {
   return false;
 }
 
-bool needsParens(BinaryOpExprAST* ast, ExprAST* child) {
+bool needsParens(ExprAST* child) {
   return !isDelimited(child);
 }
 
@@ -165,16 +168,31 @@ void PrettyPrintPass::visit(VariableAST* ast) {
   }
 }
 
-// $0 op $1
-void PrettyPrintPass::visit(BinaryOpExprAST* ast) {
-  ScopedBlock sb(this);
+std::string getPrimitiveOpName(const std::string& varname) {
+  if (!pystring::startswith(varname, "primitive_")) {
+    return "";
+  }
+  std::vector<std::string> parts;
+  pystring::split(varname, parts, "_");
+  return parts[1];
+}
 
-  emit(ast->parts[0], needsParens(ast, ast->parts[0]));
-  scan(PPToken(" "));
-  scan(PPToken(ast->op));
-  scan(pp.tOptNewline);
-  scan(PPToken(" "));
-  emit(ast->parts[1], needsParens(ast, ast->parts[1]));
+// $0 op $1
+void prettyPrintBinaryExpr(PrettyPrintPass* pass,
+                           CallAST* call) {
+  ExprAST* e1 = call->parts[1];
+  ExprAST* e2 = call->parts[2];
+  VariableAST* var = dynamic_cast<VariableAST*>(call->parts[0]);
+  std::string op = getPrimitiveOpName(var->getName());
+
+  ScopedBlock sb(pass);
+
+  pass->emit(e1, needsParens(e1));
+  pass->scan(PPToken(" "));
+  pass->scan(PPToken(op));
+  //pass->scan(pass->pp.tOptNewline);
+  pass->scan(PPToken(" "));
+  pass->emit(e2, needsParens(e2));
 }
 
 // fn Name (inArgs to outArgs)
@@ -311,8 +329,23 @@ void PrettyPrintPass::visit(SeqAST* ast) {
   }
 }
 
+bool isPrimitiveBinopCall(CallAST* call) {
+  ExprAST* base = call->parts[0];
+  if (VariableAST* var = dynamic_cast<VariableAST*>(base)) {
+    const std::string& opName = getPrimitiveOpName(var->getName());
+    return !opName.empty();
+  } else {
+    return false;
+  }
+}
+
 // $0 ( $1, $2, ... , $n )
 void PrettyPrintPass::visit(CallAST* ast) {
+  if (isPrimitiveBinopCall(ast)) {
+    prettyPrintBinaryExpr(this, ast);
+    return;
+  }
+
   ScopedBlock sb(this);
 
   { ScopedBlock sb(this);

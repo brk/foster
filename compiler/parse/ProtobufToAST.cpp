@@ -143,19 +143,6 @@ ExprAST* parseNamedTypeDecl(const pb::Expr& e, const foster::SourceRange& range)
   return new NamedTypeDeclAST(e.name(), NULL, range);
 }
 
-ExprAST* parseOp(const pb::Expr& e, const foster::SourceRange& range) {
-  if (e.parts_size() == 2) {
-    return new BinaryOpExprAST(e.name(),
-                           ExprAST_from_pb(&e.parts(0)),
-                           ExprAST_from_pb(&e.parts(1)), range);
-  } else {
-    EDiag() << "protobuf Expr tagged OP (" << e.name() << ") with too many parts "
-        << "(" << e.parts_size() << "): "
-               << e.DebugString();
-  }
-  return NULL;
-}
-
 ExprAST* parseProto(const pb::Expr& e, const foster::SourceRange& range) {
   if (!e.has_proto()) return NULL;
 
@@ -232,7 +219,6 @@ ExprAST* ExprAST_from_pb(const pb::Expr* pe) {
   case pb::Expr::PB_INT:    rv = parseInt(e, range); break;
   case pb::Expr::MODULE:    rv = parseModule(e, range); break;
   case pb::Expr::NAMED_TYPE_DECL: rv = parseNamedTypeDecl(e, range); break;
-  case pb::Expr::OP:        rv = parseOp(e, range); break;
   case pb::Expr::PROTO:     rv = parseProto(e, range); break;
   case pb::Expr::SEQ:       rv = parseSeq(e, range); break;
 //  case pb::Expr::SIMD:      rv = parseSimd(e, range); break;

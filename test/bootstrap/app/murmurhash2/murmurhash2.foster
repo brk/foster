@@ -1,5 +1,5 @@
-mrmr-step2 = fn (km:i32, r:i32) { bitxor(km, bitashr(km, r)) }
-mrmr-step5 = fn (h:i32, kx:i32, m:i32) { bitxor(h * m, kx * m)  }
+mrmr-step2 = fn (km:i32, r:i32) { primitive_bitxor_i32(km, primitive_bitashr_i32(km, r)) }
+mrmr-step5 = fn (h:i32, kx:i32, m:i32) { primitive_bitxor_i32(h * m, kx * m)  }
 murmurhash2-step-manually-lifted = fn (k:i32, h:i32, r:i32, m:i32) {
   mrmr-step5(h, mrmr-step2(k * m, r), m)
 }
@@ -7,21 +7,21 @@ murmurhash2-step-manually-lifted = fn (k:i32, h:i32, r:i32, m:i32) {
 murmurhash2-step-let-transformed = fn (k:i32, h:i32, r:i32, m:i32 to i32) {
   fn    (km:i32) { // step 2
     fn  (kx:i32) { // step 5
-      bitxor(h * m, kx * m)
-    } (bitxor(km, bitashr(km, r)))
+      primitive_bitxor_i32(h * m, kx * m)
+    } (primitive_bitxor_i32(km, primitive_bitashr_i32(km, r)))
   }   (k * m)
 }
 
 murmurhash2-step-let = fn (k:i32, h:i32, r:i32, m:i32 to i32) {
   let km:i32 = k * m
-  let kx:i32 = bitxor(km, bitashr(km, r)) in {
-    bitxor(h * m, kx * m)
+  let kx:i32 = primitive_bitxor_i32(km, primitive_bitashr_i32(km, r)) in {
+    primitive_bitxor_i32(h * m, kx * m)
   }
 }
 
 //murmurhash2-step = fn (k:i32, h:i32, r:i32, m:i32 to i32) {
 //  bitxor(h * m, kx * m) where
-//  kx = bitxor(km, bitashr(km, r)) where
+//  kx = primitive_bitxor_i32(km, primitive_bitashr_i32(km, r)) where
 //  km = k * m
 //}
 
@@ -35,7 +35,7 @@ murmurhash2-step-let = fn (k:i32, h:i32, r:i32, m:i32 to i32) {
 
 // foster?
 // let km = k * m
-// let kx = bitxor(km, bitashr(km, r))
+// let kx = primitive_bitxor_i32(km, primitive_bitashr_i32(km, r))
 // bitxor(h * m, kx * m)
 
 // let v = a in e -> fn (v) { e }(a)

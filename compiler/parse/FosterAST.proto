@@ -58,7 +58,7 @@ message Expr {
     PB_INT = 16;
     BOOL = 17;
     VAR = 18;
-    OP = 19;
+
     TUPLE = 20;
     FN = 21;
     PROTO = 22;
@@ -72,7 +72,7 @@ message Expr {
 
     COMPILES = 31;
     IF = 32;
-    FORRANGE = 33;
+
     CLOSURE = 34;
     MODULE = 35;
     NAMED_TYPE_DECL = 36;
@@ -86,12 +86,12 @@ message Expr {
   optional Proto      proto      = 18;
 
   optional PBIf       pb_if      = 21;
-  optional ForRange   for_range  = 22;
+
 
   // Bool
   optional bool   bool_value = 23;
 
-  // Var, Op, Module, named type decl
+  // Var, Module, named type decl
   optional string name  = 24;
 
   // Tuple
@@ -127,13 +127,5 @@ message PBIf {
   required Expr test_expr = 2;
   required Expr then_expr = 3;
   required Expr else_expr = 4;
-}
-
-message ForRange {
-  required Expr   var = 2;
-  required Expr start = 3;
-  required Expr   end = 4;
-  required Expr  body = 5;
-  optional Expr  incr = 6;
 }
 

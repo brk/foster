@@ -623,35 +623,6 @@ void TypecheckPass::visit(VariableAST* ast) {
   }
 }
 
-bool isBitwiseOp(const std::string& op) {
-  return op == "bitand" || op == "bitor" || op == "bitxor"
-      || op == "shl" || op == "lshr" || op == "ashr";
-}
-
-// requires Lty == Rty
-// arith ops   :: ((int, int) -> int) | ((intvector, intvector) -> intvector)
-// bitwise ops :: ((int, int) -> int) | ((intvector, intvector) -> intvector)
-// cmp ops     :: ((int, int) -> i1 ) | ((intvector, intvector) -> i1       )
-
-void TypecheckPass::visit(BinaryOpExprAST* ast) {
-  TypeAST* Lty = ast->parts[ast->kLHS]->type;
-  TypeAST* Rty = ast->parts[ast->kRHS]->type;
-
-  if (!Lty || !Rty) { return; }
-
-  const std::string& op = ast->op;
-
-  constraints.addEq(ast, Lty, Rty);
-  constraints.addTypeInSet(ast, Lty, new Constraints::IntOrIntVectorTypePredicate());
-  constraints.addTypeInSet(ast, Rty, new Constraints::IntOrIntVectorTypePredicate());
-
-  if (isCmpOp(op)) {
-    ast->type = TypeAST::i(1);
-  } else {
-    ast->type = Rty;
-  }
-}
-
 bool areNamesDisjoint(const std::vector<VariableAST*>& vars) {
   std::map<std::string, bool> seen;
   for (size_t i = 0; i < vars.size(); ++i) {

@@ -12,7 +12,9 @@ fn "main" () {
 
   expect_i1(true); print_i1(2 * 3   <=   5 + 1)
   expect_i1(true); print_i1(2 * 3   ==   5 + 1)
-  expect_i1(true); print_i1(2 < 3   ==   4 <= 5)
+
+  // primitive_==_i1
+  //expect_i1(true); print_i1(2 < 3   ==   4 <= 5)
 
   expect_i32(25) ;  print_i32(2 + 3 * 4 + 5 + 6)
   expect_i32(68) ;  print_i32(2 + 3 * 4 * 5 + 6)

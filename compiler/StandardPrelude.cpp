@@ -51,7 +51,8 @@ isUnaryOp(const std::string& op) {
 
 static bool
 isCmpOp(const std::string& op) {
-  return op == "!=" || op == "==" || op[0] == '<' || op[0] == '>';
+  return op == "!=" || op == "==" || op =="<" || op == ">"
+      || op == "<=" || op == ">=";
 }
 
 static Value*
@@ -106,6 +107,7 @@ getConcretePrimitiveFunction(Module* m, const char* op, const Type* ty) {
   ASSERT(returnType != NULL);
 
   std::string funcName = "primitive_" + std::string(op) + "_" + str(ty);
+  globalNames.insert(funcName);
 
   FunctionType* ft = FunctionType::get(returnType, argtypes, false);
   Function* f = Function::Create(ft, Function::PrivateLinkage, funcName, m);

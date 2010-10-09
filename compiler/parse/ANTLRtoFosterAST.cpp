@@ -53,11 +53,6 @@ bool foster::wasExplicitlyParenthesized(ExprAST* ast) {
   return gWasWrappedInExplicitParens[ast];
 }
 
-bool isBitwiseOpName(const string& op) {
-  return op == "bitand" || op == "bitor" || op == "bitxor" ||
-         op == "bitshl" || op == "bitlshr" || op == "bitashr";
-}
-
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
@@ -436,24 +431,6 @@ ExprAST* parseTrailers(pTree tree,
     int trailerType = typeOf(child(tree, i));
     if (trailerType == CALL) {
       Exprs args = getExprs(child(tree, i));
-
-      // Two different things can parse as function calls: normal function
-      // calls, and function-call syntax for built-in bitwise operators.
-      VariableAST* varPrefix = dynamic_cast<VariableAST*>(prefix);
-      if (varPrefix) {
-        if (isBitwiseOpName(varPrefix->name)) {
-          if (args.size() != 2) {
-            currentErrs() << "Error! Bitwise operator " << varPrefix->name
-                      << " with bad number of arguments: " << args.size()
-                      << "\n";
-            return NULL;
-          }
-          prefix = new BinaryOpExprAST(varPrefix->name, args[0], args[1],
-                                       sourceRange);
-          continue;
-        }
-        // Else fall through to general case below
-      }
       prefix = new CallAST(prefix, args, sourceRange);
     } else if (trailerType == LOOKUP) {
       pTree nameNode = child(child(tree, i), 0);
@@ -524,7 +501,12 @@ void leftAssoc(std::vector<std::string>& opstack,
   ExprAST*           y = argstack.back(); argstack.pop_back();
   ExprAST*           x = argstack.back(); argstack.pop_back();
   const std::string& o =  opstack.back();  opstack.pop_back();
-  argstack.push_back(new BinaryOpExprAST(o, x, y, rangeFrom(x, y)));
+
+  ExprAST* opr = new VariableAST("primitive_"+o+"_i32", NULL, rangeFrom(x, y));
+  Exprs exprs;
+  exprs.push_back(x);
+  exprs.push_back(y);
+  argstack.push_back(new CallAST(opr, exprs, rangeFrom(x, y)));
 }
 
 ExprAST* parseBinopChain(pTree tree) {
