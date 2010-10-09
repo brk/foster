@@ -21,19 +21,16 @@ tokens {
 
 program			:	nl* toplevelexpr (nl+ toplevelexpr)* nl* EOF -> ^(EXPRS toplevelexpr+);
 
-fn			:	'fn' n=str? '(' in=formals? ('to' out=typeexpr)? ')' seq? requires? ensures?
-					-> ^(FN ^(NAME $n) ^(IN $in) ^(OUT $out) ^(BODY seq) ^(GIVEN requires?) ^(GIVES ensures?));
-requires		:	nl? 'given' nl? seq;
-ensures		:	nl? 'gives' nl? seq;
+fn			:	'fn' n=str? '(' in=formals? ('to' out=typeexpr)? ')' seq?
+					-> ^(FN ^(NAME $n) ^(IN $in) ^(OUT $out) ^(BODY seq));
 
-//names			:	name (',' name)* -> name+;
+
 formals			:	formal (',' formal)* -> formal+;
 formal                		:	i=name t=typeinscription? -> ^(FORMAL $i $t);
 typeinscription		:	':' typeexpr -> typeexpr;
 
 
-num			:	( int_num -> ^(INT int_num)
-				| rat_num -> ^(RAT rat_num));
+num			:	int_num -> ^(INT int_num);
 
 literal			:	TRUE | FALSE | num;
 name			:	n=IDENT -> ^(NAME $n);
