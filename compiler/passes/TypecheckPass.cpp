@@ -50,11 +50,6 @@ namespace foster {
 
 #include "parse/ExprASTVisitor.h"
 
-bool isIntTypeName(const std::string& s) {
-  return s == "int" || s == "i1" || s == "i8"
-      || s == "i16" || s == "i32" || s == "i64";
-}
-
 bool typesEqual(TypeAST* t1, TypeAST* t2) {
   bool eq = str(t1) == str(t2);
   llvm::outs() << "types eq? " << str(t1) << " =?= " << str(t2) << "\t" << eq << "\n";
@@ -64,32 +59,6 @@ bool typesEqual(TypeAST* t1, TypeAST* t2) {
 struct TypecheckPass : public ExprASTVisitor {
 
   struct Constraints {
-
-    struct TypeASTSet {
-      virtual bool contains(TypeAST* ty, Constraints&) = 0;
-      virtual std::string describe() = 0;
-    };
-
-    struct IntOrIntVectorTypePredicate : public TypeASTSet {
-      virtual bool contains(TypeAST* ty, Constraints& constraints) {
-        if (TypeVariableAST* tv =  dynamic_cast<TypeVariableAST*>(ty)) {
-          ty = constraints.substFind(tv);
-        }
-
-        /*if (SimdVectorTypeAST* st = dynamic_cast<SimdVectorTypeAST*>(ty)) {
-          ty = st->getContainedType(0);
-        }*/
-
-        if (NamedTypeAST* nt = dynamic_cast<NamedTypeAST*>(ty)) {
-          return isIntTypeName(nt->getName());
-        }
-
-        return false;
-      }
-      virtual std::string describe() {
-        return "int or int vector";
-      }
-    };
 
     enum ConstraintType { eConstraintEq };
     void extractTypeConstraints(ConstraintType ct,
@@ -115,24 +84,6 @@ struct TypecheckPass : public ExprASTVisitor {
     struct TypeTypeConstraint { ExprAST* context; TypeAST* t1; TypeAST* t2;
            TypeTypeConstraint(ExprAST* c, TypeAST* t1, TypeAST* t2) : context(c), t1(t1), t2(t2) {}
     };
-    struct TypeInSetConstraint { ExprAST* context; TypeAST* ty; TypeASTSet* tyset;
-           TypeInSetConstraint(ExprAST* c, TypeAST* t1, TypeASTSet* ts) : context(c), ty(t1), tyset(ts) {}
-    };
-
-
-    // This constraint type is restricted to only allow sets of concrete types.
-    // The upshot is that checking these constraints can be delayed until
-    // all other constraints have been collected and solved for, and these
-    // constraints don't interfere with resolving type variables.
-    vector<TypeInSetConstraint> tysets;
-    bool addTypeInSet(ExprAST* context, TypeAST* ty, TypeASTSet* tyset) {
-      if (tyset->contains(ty, *this)) {
-        // don't bother adding it to the set, eagerly ignore it.
-      } else {
-        tysets.push_back(TypeInSetConstraint(context, ty, tyset));
-      }
-      return true;
-    }
 
     vector<TypeTypeConstraint> collectedEqualityConstraints;
     void collectEqualityConstraint(ExprAST* context, TypeAST* t1, TypeAST* t2) {
@@ -212,7 +163,7 @@ struct TypecheckPass : public ExprASTVisitor {
     }
 
     bool empty() {
-      return collectedEqualityConstraints.empty() && tysets.empty();
+      return collectedEqualityConstraints.empty();
     }
 
     void show(llvm::raw_ostream& out, const std::string& lineprefix) {
@@ -222,11 +173,6 @@ struct TypecheckPass : public ExprASTVisitor {
         out << lineprefix << collectedEqualityConstraints[i].context->tag
             << "\t" << str(collectedEqualityConstraints[i].t1)
           << " == " << str(collectedEqualityConstraints[i].t2) << "\n";
-      }
-      out << lineprefix << "-------- type subset constraints ---------\n";
-      for (size_t i = 0; i < tysets.size(); ++i) {
-        out << lineprefix << tysets[i].context->tag
-            << "\t" << str(tysets[i].ty) << "\n";
       }
       out << lineprefix << "-------- current type substitution ---------\n";
       for (TypeSubstitution::iterator it = subst.begin();
@@ -421,18 +367,6 @@ void TypecheckPass::solveConstraints() {
       //   __COMPILES if true then { 123 } else { 456 }
       llvm::outs() << "Giving default int type to " << keys[i] << "\n";
       constraints.subst[keys[i]] = foster::TypeASTFor("int");
-    }
-  }
-
-  // Check type subset constraints
-  for (size_t i = 0; i < constraints.tysets.size(); ++i) {
-    Constraints::TypeInSetConstraint tsc = constraints.tysets[i];
-    TypeAST* ty = constraints.applySubst(tsc.ty);
-    if (!tsc.tyset->contains(ty, constraints)) {
-      constraints.newLoggedError()
-             << "Unsatisfied subset constraint on " << str(ty)
-             << ": " << tsc.tyset->describe()
-             << show(tsc.context);
     }
   }
 }

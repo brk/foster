@@ -720,12 +720,6 @@ void CodegenPass::visit(NilExprAST* ast) {
 }
 
 Value* getPointerToIndex(Value* compositeValue,
-                         unsigned idxValue,
-                         const std::string& name) {
-  return builder.CreateConstGEP2_32(compositeValue, 0, idxValue, name.c_str());
-}
-
-Value* getPointerToIndex(Value* compositeValue,
                          Value* idxValue,
                          const std::string& name) {
   std::vector<Value*> idx;
