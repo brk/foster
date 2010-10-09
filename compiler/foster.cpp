@@ -515,25 +515,10 @@ int main(int argc, char** argv) {
   ensureDirectoryExists(dumpdirFile(""));
   ensureDirectoryExists( dotdirFile(""));
 
-  using foster::module;
-
   foster::initializeLLVM();
 
   llvm::sys::Path mainModulePath(optInputPath);
   mainModulePath.makeAbsolute();
-  module = new Module(mainModulePath.str().c_str(), getGlobalContext());
-
-  Module* libfoster_bc = readLLVMModuleFromPath("libfoster.bc");
-  Module* imath_bc = readLLVMModuleFromPath("imath-wrapper.bc");
-  const llvm::Type* mp_int =
-    llvm::PointerType::getUnqual(imath_bc->getTypeByName("struct.mpz"));
-  module->addTypeName("mp_int", mp_int);
-  gTypeScope.insert("int", NamedTypeAST::get("int", mp_int));
-
-  foster::putModuleMembersInScope(libfoster_bc, module);
-  foster::putModuleMembersInInternalScope("imath", imath_bc, module);
-  foster::createLLVMBitIntrinsics();
-  foster::addConcretePrimitiveFunctionsTo(module);
 
   llvm::sys::Path inPath(optInputPath);
   const foster::InputFile infile(inPath);
@@ -549,6 +534,20 @@ int main(int argc, char** argv) {
     exprAST = foster::parseModule(infile, optInputPath,
                                   parseTree, ctx, numParseErrors);
   }
+
+  using foster::module;
+  module = new Module(mainModulePath.str().c_str(), getGlobalContext());
+
+  Module* libfoster_bc = readLLVMModuleFromPath("libfoster.bc");
+  Module* imath_bc = readLLVMModuleFromPath("imath-wrapper.bc");
+  const llvm::Type* mp_int =
+    llvm::PointerType::getUnqual(imath_bc->getTypeByName("struct.mpz"));
+  module->addTypeName("mp_int", mp_int);
+  gTypeScope.insert("int", NamedTypeAST::get("int", mp_int));
+
+  foster::putModuleMembersInScope(libfoster_bc, module);
+  foster::putModuleMembersInInternalScope("imath", imath_bc, module);
+  foster::addConcretePrimitiveFunctionsTo(module);
 
   if (optDumpASTs) {
     llvm::outs() << "dumping parse trees" << "\n";

@@ -123,19 +123,6 @@ void ExprASTVisitor::onVisitChild(ExprAST* ast, ExprAST* child) {
 
 ////////////////////////////////////////////////////////////////////
 
-// In an identifier chain such as llvm.atomic.load.xor,
-// the "llvm" part parses as a variable. In the AST, subsequent components
-// are not variables; they are extracted to namespace nodes during parsing.
-ExprAST* VariableAST::lookup(const string& nameInNS) {
-    ExprAST* nsast = gScope.lookup(this->name);
-    NamespaceAST* ns = dynamic_cast<NamespaceAST*>(nsast);
-    ASSERT(ns) << "namespace lookup failed" << foster::show(this) << str(nsast);
-    //ASSERT(false) << "var " << this->name << " looking up " << nameInNS << "\n";
-    return ns->lookup(nameInNS);
-  }
-
-////////////////////////////////////////////////////////////////////
-
 
 IntAST::IntAST(int activeBits,
                 const string& originalText,
@@ -226,7 +213,3 @@ void BuiltinCompilesExprAST::accept(ExprASTVisitor* visitor) { visitor->visit(th
 void          SeqAST::accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
 void    SubscriptAST::accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
 void    TupleExprAST::accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
-
-void NamespaceAST::accept(ExprASTVisitor* visitor) {
-  llvm::errs() << "Visitor called on NamespaceAST! This is probably not desired...\n";
-}

@@ -433,12 +433,15 @@ ExprAST* parseTrailers(pTree tree,
       Exprs args = getExprs(child(tree, i));
       prefix = new CallAST(prefix, args, sourceRange);
     } else if (trailerType == LOOKUP) {
+      ASSERT("lookups temporarily not supported");
+      /*
       pTree nameNode = child(child(tree, i), 0);
       const string& name = textOf(child(nameNode, 0));
       prefix = prefix->lookup(name);
       if (!prefix) {
         currentErrs() << "Lookup of name '" << name << "' failed." << "\n";
       }
+      */
     } else if (trailerType == SUBSCRIPT) {
       prefix = new SubscriptAST(prefix,
                                 ExprAST_from(child(child(tree, i), 0)),

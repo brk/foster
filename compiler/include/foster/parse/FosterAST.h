@@ -74,10 +74,6 @@ struct ExprAST {
   virtual ~ExprAST() {}
   virtual std::ostream& operator<<(std::ostream& out) const;
   virtual void accept(ExprASTVisitor* visitor) = 0;
-  virtual ExprAST* lookup(const string& name) {
-    ASSERT(false) << "ExprAST.lookup() called!";
-    return NULL;
-  }
 };
 
 struct BinaryExprAST : public ExprAST {
@@ -87,42 +83,6 @@ struct BinaryExprAST : public ExprAST {
       : ExprAST(tag, sourceRange) {
     this->parts.push_back(e1);
     this->parts.push_back(e2);
-  }
-};
-
-// "Fake" AST node for doing iterative lookup.
-struct NamespaceAST : public ExprAST {
-  ExprAST::ScopeType* scope;
-
-  explicit NamespaceAST(const char* const tag,
-                        const std::string& name,
-                        ExprAST::ScopeType* parentScope,
-                        foster::SourceRange sourceRange)
-      : ExprAST(tag, sourceRange),
-        scope(parentScope->newNestedScope(name)) {
-  }
-  virtual ~NamespaceAST() { }
-  virtual std::ostream& operator<<(std::ostream& out) const {
-    return out << "(NamespaceAST " << scope->getName() << ")";
-  }
-  virtual void accept(ExprASTVisitor* visitor);
-
-  NamespaceAST* newNamespace(const std::string& name) {
-    NamespaceAST* nu = new NamespaceAST("NamespaceAST", name, scope,
-        foster::SourceRange::getEmptyRange());
-    scope->insert(name, nu);
-    return nu;
-  }
-
-  virtual ExprAST* lookup(const string& name) {
-    ExprAST* ast = scope->lookup(name);
-    return ast ? ast : NULL;
-  }
-
-  // TODO add wrapper to distinguish qualified from unqualified strings
-  virtual ExprAST* insert(const string& fullyQualifiedName, VariableAST* var) {
-    ExprAST* ast = scope->insert(fullyQualifiedName, (ExprAST*)var);
-    return ast ? ast : NULL;
   }
 };
 
@@ -181,8 +141,6 @@ struct VariableAST : public ExprAST {
         name(name), lazilyInsertedPrototype(NULL) {
     this->type = aType;
   }
-
-  virtual ExprAST* lookup(const string& name);
 
   virtual void accept(ExprASTVisitor* visitor);
 
@@ -319,7 +277,9 @@ public:
   ExprAST*& getBody() { return parts[0]; }
 };
 
-struct ModuleAST : public NamespaceAST {
+struct ModuleAST : public ExprAST {
+  ExprAST::ScopeType* scope;
+
   typedef foster::dynamic_cast_filtering_iterator<ExprAST, FnAST>
           FnAST_iterator;
   FnAST_iterator fn_begin() {
@@ -333,7 +293,8 @@ struct ModuleAST : public NamespaceAST {
                      const std::string& name,
                      ExprAST::ScopeType* parentScope,
                      foster::SourceRange sourceRange)
-      : NamespaceAST("ModuleAST", name, parentScope, sourceRange) {
+    : ExprAST("ModuleAST", sourceRange)
+    , scope(parentScope->newNestedScope(name)) {
     this->parts = _parts;
   }
 
