@@ -22,6 +22,7 @@
 #include "parse/ParsingContext.h"
 #include "parse/CompilationContext.h"
 #include "parse/ProtobufToAST.h"
+#include "parse/DumpStructure.h"
 
 #include "passes/PrettyPrintPass.h"
 
@@ -49,6 +50,9 @@ optInputPath(cl::Positional, cl::desc("<input file>"));
 
 static cl::opt<bool>
 optSignaturesOnly("sigs-only", cl::desc("Print signatures only"));
+
+static cl::opt<bool>
+optTreeView("treeview", cl::desc("Print AST in tree format"));
 
 static cl::opt<bool>
 optRawAST("rawast", cl::desc("View raw AST dump"));
@@ -119,6 +123,8 @@ int main(int argc, char** argv) {
     for (size_t i = 0; i < mod->parts.size(); ++i) {
       llvm::outs() << str(mod->parts[i]) << "\n";
     }
+  } else if (optTreeView) {
+    foster::dumpExprStructure(llvm::outs(), mod);
   } else {
     foster::prettyPrintExpr(mod, llvm::outs(), 80, 2,
                             optSignaturesOnly);
