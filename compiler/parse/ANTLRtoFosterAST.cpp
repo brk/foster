@@ -583,6 +583,11 @@ ExprAST* ExprAST_from(pTree tree) {
     return new BoolAST(text, sourceRange);
   }
 
+  if (token == NAME) {
+    string varName = textOf(child(tree, 0));
+    return new VariableAST(varName, NULL, sourceRange);
+  }
+
   // <formal arg (body | next) [type]>
   if (token == LETEXPR) {
     pTree tyExprTree = NULL;
@@ -598,24 +603,6 @@ ExprAST* ExprAST_from(pTree tree) {
     ExprAST* a = ExprAST_from(child(tree, 1));
     Exprs args; args.push_back(a);
     return new CallAST(fn, args, sourceRange);
-  }
-
-  if (token == NAME) {
-    string varName = textOf(child(tree, 0));
-
-    // Don't bother trying to look up special variable names,
-    // since we'll end up discarding this variable soon anyways.
-    if (isBitwiseOpName(varName)) {
-      return new VariableAST(varName, NULL, sourceRange);
-    }
-
-    ExprAST* varOrProto = gScope.lookup(varName);
-    if (!varOrProto) {
-      EDiag() << "unknown var name: " << varName << show(sourceRange);
-      return NULL;
-    } else {
-      return new VariableAST(varName, varOrProto->type, sourceRange);
-    }
   }
 
   if (token == FNDEF) {

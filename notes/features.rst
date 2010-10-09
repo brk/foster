@@ -21,10 +21,11 @@ i32, which generalizes to any type T:
 
 =======  ==========   =========  ==============================
 
-Used As  Stack Slot   Passed As  Comments
+Used As  Storage/     Passed As  Comments
+         Stack Slot
 
 =======  ==========   =========  ==============================
-i32      N/A          i32        SSA immutable val
+i32      (i32)/N/A    i32        SSA immutable val
 i32      i32*         i32        locally-mutable vars
 i32      i32**        i32*       C++-style non-const reference
 =======  ==========   =========  ==============================
@@ -47,10 +48,67 @@ obviously useful. A few items of note:
 .. note::
 
   The simplest approach for now is to use Java semantics
-  and have variables of type T live in stack slots of type T*.
+  and have variables of type ``T`` live in stack slots of type ``T*``.
   Since most variables will refer to (lowered) pointer types,
-  the net effect is to have a type U map to a L(U)* stored
-  in a stack slot of type L(U)**.
+  the net effect is to have a type U map to a ``L(U)*`` stored
+  in a stack slot of type ``L(U)**``.
+
+Pointers and References
+-----------------------
+
+Given parameters
+  * ``int x`` with a stack slot of type ``i32*``
+  * ``int* p`` with a stack slot of type ``i32**``, and
+  * ``int& r`` with a stack slot of type ``i32**``
+
+The following snippets of C correspond to the following loads and stores:
+
+``x = 1;``
+    ``store 1 in x_addr``
+``p = &x;``
+    ``store x_addr in p_addr``
+``r = x + 2;``
+    ``store deref(x_addr) + 2 in deref(r_addr)``
+``x = r + 1;``
+    ``store deref(deref(r_addr)) = 1 in x_addr``
+``*p = 3;``
+    ``store 3 in deref(p_addr)``
+``p = &r``
+    ``store deref(r_addr) in p_addr``
+
+.. store :: T -> T* -> ()
+.. load  :: T* -> T
+
+======  =============  ====================
+
+Expr    LHS            RHS
+
+======  =============  ====================
+``x``   x_addr         deref(x_addr)
+``p``   p_addr         deref(p_addr)
+``r``   deref(r_addr)  deref(deref(r_addr))
+``*p``  deref(p_addr)  deref(deref(p_addr))
+``&x``  N/A            x_addr
+``&p``  N/A            p_addr
+``&r``  N/A            deref(r_addr)
+======  =============  ====================
+
+Note that the expression ``r`` is equivalent to ``*p``.
+
+A variable ``x`` denotes the contents of a
+location in memory. It is represented as an address,
+implicitly dereferenced when used in an expression,
+except in the LHS of an assignment.
+
+``&x`` yields the address value of a variable.
+
+A mutable pointer ``p`` is a variable that happens to
+contain a location value. On the RHS, ``*p`` yields the
+value pointed to by the contents of the ``p`` variable.
+On the LHS, ``p`` refers to location value stored in ``p``.
+
+A reference is equivalent to a pointer that is
+dereferenced at every mention, with one exception
 
 Parameter Passing
 -----------------

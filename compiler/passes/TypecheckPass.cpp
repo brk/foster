@@ -378,21 +378,6 @@ void TypeConstraintExtractor::visit(TupleTypeAST* t2) {
   }
 }
 
-/*
-void TypeConstraintExtractor::visit(SimdVectorTypeAST* t2) {
-  SimdVectorTypeAST* t1 = dynamic_cast<SimdVectorTypeAST*>(t1_pre);
-  if (t1->getNumElements() == t2->getNumElements()) {
-    addConstraint(t1->getContainedType(0), t2->getContainedType(0));
-  } else {
-    constraints.newLoggedError()
-           << "Unable to match simd-vector types of different sizes "
-           << str(t1) << " (" << t1->getNumElements() << ")"
-           << "and " << str(t2) << " (" << t2->getNumElements() << ")"
-           << show(context);
-  }
-}
-*/
-
 void TypeConstraintExtractor::visit(LiteralIntValueTypeAST* t2) {
   LiteralIntValueTypeAST* t1 = dynamic_cast<LiteralIntValueTypeAST*>(t1_pre);
   ASSERT(false) << "type extraction from type int literals not yet implemented.";
@@ -620,7 +605,6 @@ void TypecheckPass::visit(IntAST* ast) {
       && ast->type->getLLVMType()->isIntegerTy());
 }
 
-
 void TypecheckPass::visit(VariableAST* ast) {
   if (ast->type) { return; }
 
@@ -629,6 +613,9 @@ void TypecheckPass::visit(VariableAST* ast) {
   // the scope contains the appropriate prototype.
   if (varOrProto) {
     ast->type = varOrProto->type;
+  } else {
+    constraints.newLoggedError()
+       << "Variable out of scope: " << show(ast);
   }
 
   if (!ast->type) {
@@ -696,8 +683,9 @@ void TypecheckPass::visit(PrototypeAST* ast) {
     EDiag() << "NULL return type for PrototypeAST " << ast->getName() << show(ast);
   } else {
     for (size_t i = 0; i < ast->inArgs.size(); ++i) {
-      ASSERT(ast->inArgs[i] != NULL);
       VariableAST* arg = ast->inArgs[i];
+      ASSERT(arg != NULL);
+      gScope.insert(arg->getName(), arg);
       arg->accept(this);
     }
 
@@ -707,10 +695,10 @@ void TypecheckPass::visit(PrototypeAST* ast) {
 
 void TypecheckPass::visit(FnAST* ast) {
   ASSERT(ast->getProto() != NULL);
-  ast->getProto()->accept(this);
-
   ASSERT(ast->getBody() != NULL);
+
   gScope.pushExistingScope(ast->scope);
+  ast->getProto()->accept(this);
   ast->getBody()->accept(this);
   gScope.popExistingScope(ast->scope);
 
@@ -932,7 +920,9 @@ void TypecheckPass::visit(CallAST* ast) {
 
     // First, inspect just the prototype of the function, to ensure
     // that any un-annotated formals get type variables.
+    gScope.pushExistingScope(fnbase->scope);
     fnbase->getProto()->accept(this);
+    gScope.popExistingScope(fnbase->scope);
 
     // Next, synthesize the args, and constrain the formal and actual
     // parameter types.
@@ -958,9 +948,9 @@ void TypecheckPass::visit(CallAST* ast) {
       if (fnbase->getProto()->inArgs[i]->type) {
         constraints.addEq(ast, fnbase->getProto()->inArgs[i]->type,
                                args[i]->type);
+      } else {
+        fnbase->getProto()->inArgs[i]->type = args[i]->type;
       }
-      dynamic_cast<VariableAST*>(fnbase->getProto()->inArgs[i])->type =
-                                                          args[i]->type;
     }
 
     fnbase->accept(this);
@@ -1021,77 +1011,6 @@ bool isSmallPowerOfTwo(int x) {
   return (x == 2) || (x == 4) || (x == 8) || (x == 16);
 }
 
-#if 0
-SimdVectorTypeAST* synthesizeSimdVectorType(SimdVectorAST* ast) {
-  SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
-  if (!body) {
-    EDiag() << "simd-vector ast.parts[0] = " << str(ast->parts[0])
-            << " was not a seq!" << show(ast);
-    return NULL;
-  }
-
-  size_t numElements = body->parts.size();
-
-  if (!isSmallPowerOfTwo(numElements)) {
-    EDiag() << "simd-vector must contain a small power of two"
-            << " of elements; got " << numElements
-            << show(ast);
-    return NULL;
-  }
-
-  TypeAST* elementType = NULL;
-  std::map<const Type*, TypeAST*> fieldTypes;
-
-  for (size_t i = 0; i < numElements; ++i) {
-    TypeAST* ty =  body->parts[i]->type;
-    const Type* lty = (ty) ? ty->getLLVMType() : NULL;
-    if (!ty || !lty) {
-      EDiag() << "simd-vector expr had null constituent type for subexpr " << i
-              << show(body->parts[i]);
-      return NULL;
-    }
-    fieldTypes[lty] = ty;
-    elementType = ty;
-  }
-
-  // TODO This should probably be relaxed eventually; for example,
-  // a simd-vector of "small" and "large" int literals should silently be
-  // accepted as a simd-vector of "large" ints.
-  if (fieldTypes.size() == 0) {
-    EDiag() << "simd-vector cannot be empty" << show(ast);
-    return NULL;
-  }
-
-  if (fieldTypes.size() > 1) {
-    std::string s; llvm::raw_string_ostream ss(s);
-    std::map<const Type*, TypeAST*>::const_iterator it;;
-    for (it = fieldTypes.begin(); it != fieldTypes.end(); ++it) {
-      ss << "\n\t" << str((*it).first);
-    }
-    EDiag() << "simd-vector expression had multiple types, found"
-            << ss.str() << show(ast);
-    return NULL;
-  }
-
-  if (!isPrimitiveNumericType(elementType->getLLVMType())) {
-    EDiag() << "simd-vector must be composed of primitive numeric types"
-            << show(ast);
-    return NULL;
-  }
-
-  return SimdVectorTypeAST::get(
-      LiteralIntValueTypeAST::get(numElements, SourceRange::getEmptyRange()),
-      elementType,
-      ast->sourceRange);
-}
-
-void TypecheckPass::visit(SimdVectorAST* ast) {
-  if (ast->type) return;
-
-  ast->type = synthesizeSimdVectorType(ast);
-}
-#endif
-
 void TypecheckPass::visit(TupleExprAST* ast) {
   SeqAST* body = dynamic_cast<SeqAST*>(ast->parts[0]);
   if (!body) {
@@ -1120,6 +1039,7 @@ void TypecheckPass::visit(BuiltinCompilesExprAST* ast) {
       constraints.show(currentOuts(), "\t__COMPILES__:\t");
     }
 
+    currentOuts() << "COMPILES scrutinee:\n";
     foster::dumpExprStructure(currentOuts(), ast->parts[0]);
 
     TypeAST* computedType = constraints.applySubst(ast->parts[0]->type);

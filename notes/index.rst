@@ -13,6 +13,7 @@ Foster Notes
    features
    compiler
    syntax
+   llvm
 
 .. Indices and tables
 .. ==================
