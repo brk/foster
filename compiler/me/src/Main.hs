@@ -59,14 +59,13 @@ exprTagString tag =
                 PB_INT    -> "PB_INT"
                 BOOL      -> "BOOL"
                 VAR       -> "VAR"
-                OP        -> "OP"
                 TUPLE     -> "TUPLE"
                 FN        -> "FN"
                 PROTO     -> "PROTO"
                 CALL      -> "CALL"
                 SEQ       -> "SEQ"
-                SIMD      -> "SIMD"
                 SUBSCRIPT -> "SUBSCRIPT"
+                otherwise -> "<unknown>"
 --
 
 data CompilesStatus = CS_WouldCompile | CS_WouldNotCompile | CS_NotChecked
@@ -79,17 +78,12 @@ data ESourceRange = ESourceRange ESourceLocation ESourceLocation String
     deriving (Show)
 
 data ExprAST =
-          AssignAST     ExprAST ExprAST
-        | RefAST        ExprAST
-        | DerefAST      ExprAST
-
-        | BoolAST       Bool
+          BoolAST       Bool
                         -- active text clean base
         | IntAST        Integer String String Int
         | TupleAST      [ExprAST] Bool
         | E_FnAST       FnAST
 
-        | BinaryOpAST   String ExprAST ExprAST
         | CallAST       ExprAST [ExprAST]
         | CompilesAST   ExprAST CompilesStatus
         | IfAST         ExprAST ExprAST ExprAST
@@ -117,16 +111,12 @@ data PrototypeAST = PrototypeAST TypeAST String [VarAST] deriving (Show)
 childrenOf :: ExprAST -> [ExprAST]
 childrenOf e =
     case e of
-        AssignAST     a b    -> [a, b]
         BoolAST         b    -> []
-        BinaryOpAST s a b    -> [a, b]
         CallAST     b es     -> [b] ++ es
         CompilesAST   e c    -> [e]
-        DerefAST      e      -> [e]
         IfAST         a b c  -> [a, b, c]
         IntAST i s1 s2 i2    -> []
         E_FnAST (FnAST a b)  -> [E_PrototypeAST a, b]
-        RefAST        a      -> [a]
         SeqAST        es     -> es
         SubscriptAST  a b    -> [a, b]
         E_PrototypeAST (PrototypeAST t s es) -> (map (\x -> E_VarAST x) es)
@@ -137,16 +127,12 @@ textOf :: ExprAST -> Int -> String
 textOf e width =
     let spaces = Prelude.replicate width '\SP'  in
     case e of
-        AssignAST     a b    -> "AssignAST    "
         BoolAST         b    -> "BoolAST      " ++ (show b)
-        BinaryOpAST s a b    -> "BinaryOpAST  " ++ s
         CallAST     b es     -> "CallAST      "
         CompilesAST   e c    -> "CompilesAST  "
-        DerefAST      e      -> "DerefAST     "
         IfAST         a b c  -> "IfAST        "
         IntAST i t c base    -> "IntAST       " ++ t
         E_FnAST (FnAST a b)  -> "FnAST        "
-        RefAST        a      -> "RefAST       "
         SeqAST        es     -> "SeqAST       "
         SubscriptAST  a b    -> "SubscriptAST "
         E_PrototypeAST (PrototypeAST t s es)     -> "PrototypeAST " ++ s
@@ -187,13 +173,7 @@ typecheck expr =
         E_FnAST (FnAST proto body)  ->
             -- let bindings = getBindings proto in
             typecheck body
-        AssignAST     a b    -> let ta = typecheck a in
-                                let tb = typecheck b in
-                                Nothing
         BoolAST         b    -> Just TypeBoolAST
-        BinaryOpAST s a b    -> let ta = typecheck a in
-                                let tb = typecheck b in
-                                Nothing
         CallAST     b es     -> let tbs = map typecheck es in
                                 let tb = typecheck b in
                                 case tb of
@@ -205,8 +185,6 @@ typecheck expr =
                                             else Nothing
                                     otherwise -> Nothing
         CompilesAST   e c    -> Just TypeBoolAST
-        DerefAST      e      -> let te = typecheck e in
-                                Nothing
         IfAST         a b c  -> case (typecheck a, typecheck b, typecheck c) of
                                     (Just ta, Just tb, Just tc) ->
                                         if typesEqual ta TypeBoolAST then
@@ -216,8 +194,6 @@ typecheck expr =
                                             else Nothing
                                     otherwise -> Nothing
         IntAST i s1 s2 i2    -> Just TypeIntAST
-        RefAST        a      -> let ta = typecheck a in
-                                Nothing
         SeqAST        es     -> let tes = map typecheck es in
                                 Nothing
         SubscriptAST  a b    -> let ta = typecheck a in
@@ -266,9 +242,6 @@ printProtoName (Just p) = do
 part :: Int -> Seq Expr -> ExprAST
 part i parts = parseExpr $ index parts i
 
-parseAssign pbexpr =    let parts = PbExpr.parts pbexpr in
-                        AssignAST (part 0 parts) (part 1 parts)
-
 parseBool pbexpr = BoolAST $ fromMaybe False (PbExpr.bool_value pbexpr)
 
 parseCall pbexpr =
@@ -283,8 +256,6 @@ compileStatus (Just False) = CS_WouldNotCompile
 
 parseCompiles pbexpr =  CompilesAST (part 0 $ PbExpr.parts pbexpr)
                                     (compileStatus $ PbExpr.compiles pbexpr)
-
-parseDeref pbexpr =     DerefAST $ part 0 (PbExpr.parts pbexpr)
 
 parseFn pbexpr =        let parts = PbExpr.parts pbexpr in
                         let fn = E_FnAST $ FnAST (parseProtoP $ index parts 0)
@@ -340,8 +311,6 @@ mkIntASTFromClean clean text base =
         let activeBits = toInteger conservativeBitsNeeded in
         IntAST activeBits text clean base
 
-parseRef pbexpr = RefAST $ part 0 (PbExpr.parts pbexpr)
-
 parseSeq pbexpr = SeqAST (map parseExpr $ toList (PbExpr.parts pbexpr))
 
 parseSubscript pbexpr = let parts = PbExpr.parts pbexpr in
@@ -383,14 +352,6 @@ parseProtoPP proto =
     let name = uToString $ Proto.name proto in
     PrototypeAST retTy name vars
 
-parseOp :: Expr -> ExprAST
-parseOp pbexpr =
-    let parts = PbExpr.parts pbexpr in
-        case Data.Sequence.length $ parts   of
-            2 -> BinaryOpAST (uToString $ fromJust $ PbExpr.name pbexpr)
-                             (part 0 parts) (part 1 parts)
-            _ -> error "Protobuf Expr tagged OP with too many parts"
-
 sourceRangeFromPBRange :: Pb.SourceRange -> ESourceRange
 sourceRangeFromPBRange pbrange = error "no"
 
@@ -403,13 +364,11 @@ parseExpr pbexpr =
                 PB_INT  -> parseInt
                 BOOL    -> parseBool
                 VAR     -> (\x -> E_VarAST $ parseVar x)
-                OP      -> parseOp
                 TUPLE   -> parseTuple
                 FN      -> parseFn
                 PROTO   -> parseProto
                 CALL    -> parseCall
                 SEQ     -> parseSeq
-                --SIMD    -> "SIMD"
                 SUBSCRIPT -> parseSubscript
         in
    fn pbexpr

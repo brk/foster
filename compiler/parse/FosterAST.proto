@@ -16,10 +16,10 @@ message Type {
     LLVM_NAMED = 1; // i32, void, etc
     REF = 2;
     FN  = 3;
-    CLOSURE = 4;
+
     TUPLE = 5;
     LITERAL_INT_VALUE = 6;
-    SIMD = 7;
+
     TYPE_VARIABLE = 8;
   }
 
@@ -31,7 +31,7 @@ message Type {
   optional Type ref_underlying_type = 16;
   optional FnType fnty = 17;
   repeated Type tuple_parts = 18;
-  optional ClosureType closurety = 19;
+
   optional uint64 literal_int_value = 20;
   optional SimdVectorType simd_vector = 21;
 }
@@ -64,7 +64,7 @@ message Expr {
     PROTO = 22;
     CALL = 23;
     SEQ = 24;
-    SIMD = 25;
+
     SUBSCRIPT = 26;
 
 
@@ -73,7 +73,7 @@ message Expr {
     COMPILES = 31;
     IF = 32;
 
-    CLOSURE = 34;
+
     MODULE = 35;
     NAMED_TYPE_DECL = 36;
   }
