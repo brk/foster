@@ -502,22 +502,6 @@ void PrettyPrintTypePass::visit(TupleTypeAST* ast) {
   scan(PPToken(" } "));
 }
 
-/*
-void PrettyPrintTypePass::visit(SimdVectorTypeAST* ast) {
-  scan(PPToken("simd-vector("));
-  std::stringstream ss; ss << ast->getNumElements();
-  scan(PPToken(ss.str()));
-  scan(PPToken(", "));
-  emit(ast->getContainedType(0));
-  scan(PPToken(")"));
-}
-*/
-
-void PrettyPrintTypePass::visit(LiteralIntValueTypeAST* ast) {
-  std::stringstream ss; ss << ast->getNumericalValue();
-  scan(PPToken(ss.str()));
-}
-
 } // unnamed namespace
 
 namespace foster {

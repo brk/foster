@@ -302,23 +302,3 @@ TupleTypeAST* TupleTypeAST::get(const vector<TypeAST*>& argTypes) {
   return tup;
 }
 
-/////////////////////////////////////////////////////////////////////
-
-LiteralIntValueTypeAST* LiteralIntValueTypeAST::get(IntAST* intAST) {
-  ASSERT(intAST) << "can't have an int with no int";
-  return new LiteralIntValueTypeAST(intAST, intAST->sourceRange);
-}
-
-LiteralIntValueTypeAST* LiteralIntValueTypeAST::get(uint64_t value,
-                                            const SourceRange& sourceRange) {
-  return new LiteralIntValueTypeAST(value, sourceRange);
-}
-
-uint64_t LiteralIntValueTypeAST::getNumericalValue() const {
-  if (intAST) {
-    return getSaturating(getConstantInt(intAST));
-  } else {
-    return value;
-  }
-}
-

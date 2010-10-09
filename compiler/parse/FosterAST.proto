@@ -16,10 +16,7 @@ message Type {
     LLVM_NAMED = 1; // i32, void, etc
     REF = 2;
     FN  = 3;
-
     TUPLE = 5;
-    LITERAL_INT_VALUE = 6;
-
     TYPE_VARIABLE = 8;
   }
 
@@ -31,9 +28,6 @@ message Type {
   optional Type ref_underlying_type = 16;
   optional FnType fnty = 17;
   repeated Type tuple_parts = 18;
-
-  optional uint64 literal_int_value = 20;
-  optional SimdVectorType simd_vector = 21;
 }
 
 message FnType {
@@ -42,16 +36,6 @@ message FnType {
   optional string calling_convention = 3;
 }
 
-message ClosureType {
-  optional Expr proto = 1;
-  optional Type   fntype = 2;
-  optional Type clo_tuple_type = 3;
-}
-
-message SimdVectorType {
-  required Type literal_int_size = 1;
-  required Type element_type     = 2;
-}
 
 message Expr {
   enum Tag {

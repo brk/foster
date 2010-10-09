@@ -659,14 +659,6 @@ TypeAST* TypeAST_from(pTree tree) {
 
   if (token == PARENEXPR) { return TypeAST_from(child(tree, 0));  }
   if (token == CTOR) { return parseCtorType(tree, sourceRange);  }
-  if (token == INT) {
-    IntAST* intAST = parseIntFrom(tree, sourceRange);
-    if (intAST) {
-      return LiteralIntValueTypeAST::get(intAST);
-    }
-    EDiag() << "Unable to parse integer in type";
-    return NULL;
-  }
 
   if (token == NAME) {
     string name = textOf(child(tree, 0));

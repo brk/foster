@@ -235,54 +235,5 @@ public:
   static TupleTypeAST* get(const std::vector<TypeAST*>& parts);
 };
 
-class LiteralIntValueTypeAST : public TypeAST {
-  IntAST* intAST;
-  uint64_t value;
-protected:
-  explicit LiteralIntValueTypeAST(IntAST* intAST,
-                      const SourceRange& sourceRange)
-    : TypeAST("LiteralIntValueType",
-              llvm::IntegerType::get(llvm::getGlobalContext(), 64),
-              sourceRange),
-      intAST(intAST), value(0) { }
-  explicit LiteralIntValueTypeAST(uint64_t value,
-                      const SourceRange& sourceRange)
-    : TypeAST("LiteralIntValueType",
-              llvm::IntegerType::get(llvm::getGlobalContext(), 64),
-              sourceRange),
-      intAST(NULL), value(value) { }
-
-public:
-  virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
-
-  uint64_t getNumericalValue() const;
-
-  static LiteralIntValueTypeAST* get(IntAST* intAST);
-  static LiteralIntValueTypeAST* get(uint64_t value, const SourceRange& range);
-};
-
-/*
-class SimdVectorTypeAST : public IndexableTypeAST {
-  LiteralIntValueTypeAST* size;
-  TypeAST*                elementType;
-
-  explicit SimdVectorTypeAST(const llvm::Type* simdVectorTy,
-                             LiteralIntValueTypeAST* size,
-                             TypeAST*                elementType,
-                             const SourceRange& sourceRange)
-     : IndexableTypeAST("SimdVectorType", simdVectorTy, sourceRange),
-       size(size), elementType(elementType) {}
-
-public:
-  virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
-
-  virtual TypeAST*& getContainedType(size_t i) { return elementType; }
-  virtual int64_t   getNumElements() const { return size->getNumericalValue(); }
-
-  static SimdVectorTypeAST* get(LiteralIntValueTypeAST* size, TypeAST* type,
-                                const SourceRange& sourceRange);
-  friend class DumpTypeToProtobufPass;
-};
-*/
 #endif // header guard
 

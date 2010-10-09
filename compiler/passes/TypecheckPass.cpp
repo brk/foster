@@ -324,10 +324,6 @@ void TypeConstraintExtractor::visit(TupleTypeAST* t2) {
   }
 }
 
-void TypeConstraintExtractor::visit(LiteralIntValueTypeAST* t2) {
-  LiteralIntValueTypeAST* t1 = dynamic_cast<LiteralIntValueTypeAST*>(t1_pre);
-  ASSERT(false) << "type extraction from type int literals not yet implemented.";
-}
 
 void TypecheckPass::Constraints::extractTypeConstraints(
      TypecheckPass::Constraints::ConstraintType ct,

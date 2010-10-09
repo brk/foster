@@ -244,18 +244,3 @@ void DumpTypeToProtobufPass::visit(TupleTypeAST* ast) {
   }
 }
 
-/*
-void DumpTypeToProtobufPass::visit(SimdVectorTypeAST* ast) {
-  setTagAndRange(current, ast, foster::pb::Type::SIMD);
-
-  foster::pb::SimdVectorType* simd = current->mutable_simd_vector();
-  dumpChild(this, simd->mutable_literal_int_size(), ast->size);
-  dumpChild(this, simd->mutable_element_type(), ast->getContainedType(0));
-}
-*/
-void DumpTypeToProtobufPass::visit(LiteralIntValueTypeAST* ast) {
-  setTagAndRange(current, ast, foster::pb::Type::LITERAL_INT_VALUE);
-  current->set_literal_int_value(ast->getNumericalValue());
-}
-
-

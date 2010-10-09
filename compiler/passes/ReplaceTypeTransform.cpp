@@ -64,16 +64,6 @@ void ReplaceTypeTransform::visit(TupleTypeAST* ast) {
   }
 }
 
-/*
-void ReplaceTypeTransform::visit(SimdVectorTypeAST* ast) {
-  subst(ast->getContainedType(0));
-}
-*/
-
-void ReplaceTypeTransform::visit(LiteralIntValueTypeAST* ast) {
-  // ignore?
-}
-
 ////////////////////////////////////////////////////////////////////
 
 #include "parse/DefaultExprASTVisitor.h"

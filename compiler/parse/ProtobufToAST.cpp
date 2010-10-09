@@ -285,10 +285,6 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
     return TupleTypeAST::get(parts);
   }
 
-  if (t.has_literal_int_value()) {
-    return LiteralIntValueTypeAST::get(t.literal_int_value(), range);
-  }
-
   if (t.tag() == pb::Type::LLVM_NAMED) {
     const string& tyname = t.name();
 
