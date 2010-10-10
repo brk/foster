@@ -17,7 +17,6 @@
 
 namespace foster {
 
-
 void typecheckTuple(TupleExprAST* ast, const Exprs& parts) {
   std::vector<TypeAST*> tupleFieldTypes;
   if (foster::typesOf(parts, "tuple", tupleFieldTypes)) {
@@ -27,6 +26,8 @@ void typecheckTuple(TupleExprAST* ast, const Exprs& parts) {
   }
 }
 
+/// Return true if each expression has a valid type scheme, false otherwise.
+///
 bool typesOf(const std::vector<ExprAST*>& parts,
              const std::string& contextStr,
              std::vector<TypeAST*>& types) {

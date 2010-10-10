@@ -41,7 +41,7 @@ import Text.ProtocolBuffers(messageGet,utf8,isSet,getVal)
 import Text.ProtocolBuffers.Basic(uToString)
 
 import Foster.Pb.Expr as PbExpr
-import Foster.Pb.Expr.Tag(Tag(PB_INT, BOOL, VAR, OP, TUPLE, FN, PROTO, CALL, SEQ, SIMD, SUBSCRIPT))
+import Foster.Pb.Expr.Tag(Tag(PB_INT, BOOL, VAR, TUPLE, FN, PROTO, CALL, SEQ, SUBSCRIPT))
 import Foster.Pb.Proto as Proto
 import Foster.Pb.PBIf as PBIf
 import Foster.Pb.PBInt as PBInt
@@ -289,7 +289,7 @@ onlyHexDigitsIn str =
 
 parseFromPBInt :: PBInt -> ExprAST
 parseFromPBInt pbint =
-        let text = uToString $ PBInt.text pbint in
+        let text = uToString $ PBInt.originalText pbint in
         let (clean, base) = extractCleanBase text in
         assert (base `Prelude.elem` [2, 8, 10, 16]) $
         assert (onlyHexDigitsIn clean) $

@@ -96,9 +96,6 @@ class IfExprAST;
 class PrototypeAST;
 class VariableAST;
 
-class BinaryOpExprAST; // *
-class UnaryOpExprAST;  // *
-
 class ModuleAST;
 
 struct IntAST : public ExprAST {
