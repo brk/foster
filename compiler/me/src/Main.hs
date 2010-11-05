@@ -84,7 +84,7 @@ data ExprAST =
         | TupleAST      [ExprAST] Bool
         | E_FnAST       FnAST
 
-        | CallAST       ExprAST [ExprAST]
+        | CallAST       ExprAST ExprAST
         | CompilesAST   ExprAST CompilesStatus
         | IfAST         ExprAST ExprAST ExprAST
         | SeqAST        [ExprAST]
@@ -95,116 +95,106 @@ data ExprAST =
 
 data TypeAST =
            MissingTypeAST
+         | TypeUnitAST
          | TypeBoolAST
-         | TypeIntAST
-         | FnTypeAST        [TypeAST] TypeAST
+         | TypeInt32AST
+         | TypeInt64AST
+         | TupleTypeAST     [TypeAST]
+         | FnTypeAST        TypeAST TypeAST
          deriving (Eq,Show)
 
                 -- proto    body
 data FnAST  = FnAST     PrototypeAST ExprAST deriving (Show)
-data VarAST = VarAST    String          deriving (Show)
+data VarAST = VarAST    String               deriving (Show)
 data PrototypeAST = PrototypeAST TypeAST String [VarAST] deriving (Show)
 
 -----------------------------------------------------------------------
 
 
-childrenOf :: ExprAST -> [ExprAST]
-childrenOf e =
-    case e of
-        BoolAST         b    -> []
-        CallAST     b es     -> [b] ++ es
-        CompilesAST   e c    -> [e]
-        IfAST         a b c  -> [a, b, c]
-        IntAST i s1 s2 i2    -> []
-        E_FnAST (FnAST a b)  -> [E_PrototypeAST a, b]
-        SeqAST        es     -> es
-        SubscriptAST  a b    -> [a, b]
-        E_PrototypeAST (PrototypeAST t s es) -> (map (\x -> E_VarAST x) es)
-        TupleAST     es b    -> es
-        E_VarAST (VarAST s)  -> []
-
-textOf :: ExprAST -> Int -> String
-textOf e width =
-    let spaces = Prelude.replicate width '\SP'  in
-    case e of
-        BoolAST         b    -> "BoolAST      " ++ (show b)
-        CallAST     b es     -> "CallAST      "
-        CompilesAST   e c    -> "CompilesAST  "
-        IfAST         a b c  -> "IfAST        "
-        IntAST i t c base    -> "IntAST       " ++ t
-        E_FnAST (FnAST a b)  -> "FnAST        "
-        SeqAST        es     -> "SeqAST       "
-        SubscriptAST  a b    -> "SubscriptAST "
-        E_PrototypeAST (PrototypeAST t s es)     -> "PrototypeAST " ++ s
-        TupleAST     es b    -> "TupleAST     "
-        E_VarAST (VarAST s)  -> "VarAST       " ++ s
-
------------------------------------------------------------------------
-varName (VarAST name) = name
-getBindings (PrototypeAST t s vars) = vars
-
--- Builds trees like this:
---
---
-showStructure :: ExprAST -> String
-showStructure e = showStructureP e "" False where
-    showStructureP e prefix isLast =
-        let children = childrenOf e in
-        let thisIndent = prefix ++ if isLast then "└─" else "├─" in
-        let nextIndent = prefix ++ if isLast then "  " else "│ " in
-        let padding = max 6 (60 - Prelude.length thisIndent) in
-        -- [ (child, index, numchildren) ]
-        let childpairs = Prelude.zip3 children [1..]
-                               (Prelude.repeat (Prelude.length children)) in
-        let childlines = map (\(c, n, l) ->
-                                showStructureP c nextIndent (n == l))
-                             childpairs in
-        thisIndent ++ (textOf e padding ++ "\n") ++ Prelude.foldl (++) "" childlines
-
-
------------------------------------------------------------------------
-
 typesEqual :: TypeAST -> TypeAST -> Bool
+typesEqual TypeUnitAST (TupleTypeAST []) = True
 typesEqual ta tb = ta == tb
 
-typecheck :: ExprAST -> Maybe TypeAST
-typecheck expr =
+type Context = [(String, TypeAST)]
+
+ctxLookup :: Context -> String -> Maybe TypeAST
+ctxLookup []         s = Nothing
+ctxLookup ((v,t):xs) s =
+    if s == v then Just t
+              else ctxLookup xs s
+
+extendContext :: Context -> PrototypeAST -> Context
+extendContext ctx proto =
+    let vars = getBindings proto in
+    vars ++ ctx
+
+data TypecheckResult
+    = JustType        TypeAST
+    | TypecheckErrors [String]
+    deriving (Show)
+
+getTypeCheckedType (JustType t) = t
+getTypeCheckedType (TypecheckErrors _) = MissingTypeAST
+
+typecheck :: Context -> ExprAST -> TypecheckResult
+typecheck ctx expr =
     case expr of
         E_FnAST (FnAST proto body)  ->
-            -- let bindings = getBindings proto in
-            typecheck body
-        BoolAST         b    -> Just TypeBoolAST
-        CallAST     b es     -> let tbs = map typecheck es in
-                                let tb = typecheck b in
-                                case tb of
-                                    Just (FnTypeAST argtypes restype) ->
-                                        if Prelude.all (\(x,y) -> typesEqual x y)
-                                                (Prelude.zip (map fromJust (tb:tbs))
-                                                        (restype:argtypes))
-                                            then Just restype
-                                            else Nothing
-                                    otherwise -> Nothing
-        CompilesAST   e c    -> Just TypeBoolAST
-        IfAST         a b c  -> case (typecheck a, typecheck b, typecheck c) of
-                                    (Just ta, Just tb, Just tc) ->
+            let extCtx = extendContext ctx proto in
+            typecheck extCtx body
+        BoolAST         b    -> JustType TypeBoolAST
+        CallAST     b es     -> let tbs = typecheck ctx es in
+                                let tb = typecheck ctx b in
+                                case (tb, tbs) of
+                                    (JustType _, TypecheckErrors e) ->
+                                        TypecheckErrors ("call args had errors: ":e)
+                                    (TypecheckErrors e, JustType _) ->
+                                        TypecheckErrors ("call base had errors: ":e)
+                                    (JustType (FnTypeAST argtype restype), JustType tbs_ty) ->
+                                        if typesEqual argtype tbs_ty
+                                            then JustType restype
+                                            else TypecheckErrors ["CallAST mismatches: "
+                                                                   ++ show argtype ++ " vs " ++ show tbs_ty]
+                                    otherwise -> TypecheckErrors ["CallAST w/o FnAST type: " ++ (show b) ++ " :: " ++ (show tb)]
+        IfAST         a b c  -> case (typecheck ctx a, typecheck ctx b, typecheck ctx c) of
+                                    (JustType ta, JustType tb, JustType tc) ->
                                         if typesEqual ta TypeBoolAST then
                                             if typesEqual tb tc
-                                                then Just tb
-                                                else Nothing
-                                            else Nothing
-                                    otherwise -> Nothing
-        IntAST i s1 s2 i2    -> Just TypeIntAST
-        SeqAST        es     -> let tes = map typecheck es in
-                                Nothing
-        SubscriptAST  a b    -> let ta = typecheck a in
-                                let tb = typecheck b in
-                                Nothing
+                                                then JustType tb
+                                                else TypecheckErrors ["IfAST"]
+                                            else TypecheckErrors ["IfAST"]
+                                    otherwise -> TypecheckErrors ["IfAST"]
+        IntAST i s1 s2 i2    -> JustType TypeInt32AST
+        SeqAST        es     -> let tes = map (typecheck ctx) es in
+                                head tes
+        SubscriptAST  a b    -> let ta = typecheck ctx a in
+                                let tb = typecheck ctx b in
+                                TypecheckErrors ["SubscriptAST"]
         E_PrototypeAST (PrototypeAST t s es) ->
-                                Nothing
-        TupleAST      es b   -> let tes = map typecheck es in
-                                Nothing
-        E_VarAST (VarAST s)  -> Nothing
+                                TypecheckErrors ["PrototypeAST"]
+        TupleAST      es b   -> let tes = map (typecheck ctx) es in
+                                let typs = map (\x -> case x of
+                                                        JustType t  -> t
+                                                        TypecheckErrors _ -> MissingTypeAST) tes in
+                                JustType (TupleTypeAST typs)
+        E_VarAST (VarAST s) -> case ctxLookup ctx s of
+                                    Just t -> JustType t
+                                    Nothing -> TypecheckErrors ["Missing var"]
+        CompilesAST   e c    -> JustType TypeBoolAST
 -----------------------------------------------------------------------
+
+getRootContext :: () -> Context
+getRootContext () =
+    [("llvm_readcyclecounter", FnTypeAST TypeUnitAST TypeInt64AST)
+    ,("expect_i32", FnTypeAST TypeInt32AST TypeUnitAST)
+    ,( "print_i32", FnTypeAST TypeInt32AST TypeUnitAST)
+    ,(  "read_i32", FnTypeAST TypeUnitAST TypeInt32AST)
+    ,("expect_Bool", FnTypeAST TypeBoolAST TypeUnitAST)
+    ,( "print_Bool", FnTypeAST TypeBoolAST TypeUnitAST)
+
+    ,("primitive_<_i64", FnTypeAST (TupleTypeAST [TypeInt64AST, TypeInt64AST]) TypeBoolAST)
+    ,("primitive_-_i64", FnTypeAST (TupleTypeAST [TypeInt64AST, TypeInt64AST]) TypeInt64AST)
+    ]
 
 listExprs :: Expr -> IO ()
 listExprs pb_exprs = do
@@ -217,18 +207,20 @@ listExprs pb_exprs = do
       then do putStr "  name: " >> outLn (getVal expr PbExpr.name)
       else do putStr "  no name\n"
 
-    ast <- return $ parseExpr expr
-
+    let ast = parseExpr expr
     putStrLn "ast:"
     putStrLn $ showStructure ast
-    let typechecked = typecheck ast
+    putStrLn "typechecking..."
+    let typechecked = typecheck (getRootContext ()) ast
+    putStrLn "typechecked:"
+    putStrLn $ show typechecked
     return ()
 
 printProtoName :: Maybe Proto -> IO ()
 printProtoName Nothing = do
-        putStr "No proto\n"
+        putStrLn "No proto"
 printProtoName (Just p) = do
-        putStr "Proto: " >> outLn (Proto.name p)
+        putStr "Proto: "  >> outLn (Proto.name p)
 
 
 -- hprotoc cheat sheet:
@@ -246,7 +238,8 @@ parseBool pbexpr = BoolAST $ fromMaybe False (PbExpr.bool_value pbexpr)
 
 parseCall pbexpr =
         case map parseExpr $ toList (PbExpr.parts pbexpr) of
-                (hd:tl) -> CallAST hd tl
+                [base, arg] -> CallAST base arg
+                (base:args) -> CallAST base (TupleAST args False)
                 _ -> error "call needs a base!"
 
 compileStatus :: Maybe Bool -> CompilesStatus
@@ -390,3 +383,66 @@ main = do
   return ()
 
 
+
+
+
+childrenOf :: ExprAST -> [ExprAST]
+childrenOf e =
+    case e of
+        BoolAST         b    -> []
+        CallAST     b es     -> [b, es]
+        CompilesAST   e c    -> [e]
+        IfAST         a b c  -> [a, b, c]
+        IntAST i s1 s2 i2    -> []
+        E_FnAST (FnAST a b)  -> [E_PrototypeAST a, b]
+        SeqAST        es     -> es
+        SubscriptAST  a b    -> [a, b]
+        E_PrototypeAST (PrototypeAST t s es) -> (map (\x -> E_VarAST x) es)
+        TupleAST     es b    -> es
+        E_VarAST     v       -> []
+
+-- Formats a single-line tag for the given ExprAST node.
+-- Example:  textOf (VarAST "x")      ===     "VarAST x"
+textOf :: ExprAST -> Int -> String
+textOf e width =
+    let spaces = Prelude.replicate width '\SP'  in
+    case e of
+        BoolAST         b    -> "BoolAST      " ++ (show b)
+        CallAST     b es     -> "CallAST      "
+        CompilesAST   e c    -> "CompilesAST  "
+        IfAST         a b c  -> "IfAST        "
+        IntAST i t c base    -> "IntAST       " ++ t
+        E_FnAST (FnAST a b)  -> "FnAST        "
+        SeqAST        es     -> "SeqAST       "
+        SubscriptAST  a b    -> "SubscriptAST "
+        E_PrototypeAST (PrototypeAST t s es)     -> "PrototypeAST " ++ s
+        TupleAST     es b    -> "TupleAST     "
+        E_VarAST v           -> "VarAST       " ++ varName v
+
+-----------------------------------------------------------------------
+varName (VarAST name) = name
+
+getBindings :: PrototypeAST -> [(String, TypeAST)]
+getBindings (PrototypeAST t s vars) =
+    map (\v -> (varName v, MissingTypeAST)) vars
+
+-- Builds trees like this:
+--
+--
+showStructure :: ExprAST -> String
+showStructure e = showStructureP e "" False where
+    showStructureP e prefix isLast =
+        let children = childrenOf e in
+        let thisIndent = prefix ++ if isLast then "└─" else "├─" in
+        let nextIndent = prefix ++ if isLast then "  " else "│ " in
+        let padding = max 6 (60 - Prelude.length thisIndent) in
+        -- [ (child, index, numchildren) ]
+        let childpairs = Prelude.zip3 children [1..]
+                               (Prelude.repeat (Prelude.length children)) in
+        let childlines = map (\(c, n, l) ->
+                                showStructureP c nextIndent (n == l))
+                             childpairs in
+        thisIndent ++ (textOf e padding ++ "\n") ++ Prelude.foldl (++) "" childlines
+
+
+-----------------------------------------------------------------------

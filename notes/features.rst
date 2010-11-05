@@ -44,6 +44,10 @@ obviously useful. A few items of note:
 * C# or C++-style reference semantics could be implemented using
   the third technique; it remains to be seen whether
   reference semantics are actually needed or not.
+* Actually, the double-pointer stack slot is only for consistency
+  in Clang's generated code. There is no operator available to
+  mutate the pointer in the stack slot independently of the object
+  it points to.
 
 .. note::
 
@@ -52,6 +56,20 @@ obviously useful. A few items of note:
   Since most variables will refer to (lowered) pointer types,
   the net effect is to have a type U map to a ``L(U)*`` stored
   in a stack slot of type ``L(U)**``.
+
+Just to be explicit, here are the possibilities
+for a pointer to some structure S:
+
+=======  ==========   =========  ==============================
+
+Used As  Storage/     Passed As  Comments
+         Stack Slot
+
+=======  ==========   =========  ==============================
+ S*       (S* )/N/A     S*        SSA immutable val
+ S*       S**          S*        locally-mutable vars
+ S*       S***         S**       C++-style non-const reference
+=======  ==========   =========  ==============================
 
 Pointers and References
 -----------------------
