@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
+#include "base/Assert.h"
 #include "base/Diagnostics.h"
 #include "base/SourceRange.h"
 #include "base/PathManager.h"
@@ -56,12 +57,6 @@ void parseRangeFrom(foster::SourceRange& r, const PB& p) {
 
 namespace foster {
 
-#if 0
-ModuleAST* ModuleAST_from_pb() {
-
-}
-#endif
-
 namespace {
 
 ExprAST* parseBool(const pb::Expr& e, const foster::SourceRange& range) {
@@ -69,6 +64,8 @@ ExprAST* parseBool(const pb::Expr& e, const foster::SourceRange& range) {
 }
 
 ExprAST* parseCall(const pb::Expr& e, const foster::SourceRange& range) {
+  ASSERT(e.parts_size() >= 1);
+
   ExprAST* base = ExprAST_from_pb(&e.parts(0));
   Exprs args;
   for (int i = 1; i < e.parts_size(); ++i) {
@@ -78,21 +75,47 @@ ExprAST* parseCall(const pb::Expr& e, const foster::SourceRange& range) {
 }
 
 ExprAST* parseCompiles(const pb::Expr& e, const foster::SourceRange& range) {
+  ASSERT(e.parts_size() == 1) << "CompilesExpr parts size: "
+                              << e.parts_size();
+
   BuiltinCompilesExprAST* rv = new BuiltinCompilesExprAST(
                                           ExprAST_from_pb(& e.parts(0)), range);
-  if (e.has_compiles()) {
-    rv->status = (e.compiles()) ? BuiltinCompilesExprAST::kWouldCompile
-                                : BuiltinCompilesExprAST::kWouldNotCompile;
-  } else {
+  if (!e.has_compiles_status()) {
+    llvm::outs() << "Warning: CompilesExpr had no status, using kNotChecked."
+                 << "\n";
     rv->status = BuiltinCompilesExprAST::kNotChecked;
+  } else if (e.compiles_status() == "kNotChecked") {
+    rv->status = BuiltinCompilesExprAST::kNotChecked;
+  } else if (e.compiles_status() == "kWouldCompile") {
+    rv->status = BuiltinCompilesExprAST::kWouldCompile;
+  } else if (e.compiles_status() == "kWouldNotCompile") {
+    rv->status = BuiltinCompilesExprAST::kWouldNotCompile;
+  } else {
+    ASSERT(false) << "Unknown CompilesExpr status: "
+                  << e.compiles_status() << "\n";
   }
   return rv;
 }
 
 ExprAST* parseFn(const pb::Expr& e, const foster::SourceRange& range) {
+  ASSERT(e.parts_size() == 2);
+
   PrototypeAST* proto = dynamic_cast<PrototypeAST*>(ExprAST_from_pb(& e.parts(0)));
-  FnAST* fn = new FnAST(proto, ExprAST_from_pb(& e.parts(1)), NULL, range);
-  // TODO mark as closure?
+  ExprAST* body = NULL;
+
+  ExprAST::ScopeType* scope = gScope.pushScope(proto->getName());
+    // Ensure all the function parameters are available in the function body.
+    for (unsigned i = 0; i < proto->inArgs.size(); ++i) {
+      scope->insert(proto->inArgs[i]->name, proto->inArgs[i]);
+    }
+    body = ExprAST_from_pb(& e.parts(1));
+  gScope.popScope();
+
+  FnAST* fn = new FnAST(proto, body, scope, range);
+  if (e.has_is_closure() && e.is_closure()) {
+    fn->markAsClosure();
+  }
+
   return fn;
 }
 
@@ -157,6 +180,7 @@ ExprAST* parseProto(const pb::Expr& e, const foster::SourceRange& range) {
   if (proto.has_result()) {
     retTy = TypeAST_from_pb(& proto.result());
   } else {
+    EDiag() << "protobuf PrototypeAST missing ret type, using i32";
     retTy = TypeAST::i(32);
   }
 
@@ -181,6 +205,7 @@ ExprAST* parseSimd(const pb::Expr& e, const foster::SourceRange& range) {
 */
 
 ExprAST* parseSubscript(const pb::Expr& e, const foster::SourceRange& range) {
+  ASSERT(e.parts_size() == 2);
   return new SubscriptAST(
       ExprAST_from_pb(& e.parts(0)),
       ExprAST_from_pb(& e.parts(1)), range);
@@ -227,12 +252,14 @@ ExprAST* ExprAST_from_pb(const pb::Expr* pe) {
   case pb::Expr::VAR:       rv = parseVar(e, range); break;
 
   default:
+    EDiag() << "Unknown protobuf tag: " << e.tag();
     break;
   }
 
   if (!rv) {
-    EDiag() << "Unable to reconstruct ExprAST from protobuf Expr:"
-            << e.DebugString();
+    EDiag() << "Unable to reconstruct ExprAST from protobuf Expr"
+            << " with tag # " << e.tag() << ":"
+            << "'" << e.DebugString() << "'";
   } else if (e.has_type()) {
     rv->type = TypeAST_from_pb(& e.type());
   }
@@ -271,10 +298,13 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
     std::string callingConvention = "fastcc";
     if (fnty.has_calling_convention()) {
       callingConvention = fnty.calling_convention();
-      //std::cout << "setting calling convention to " << callingConvention << "\n";
     }
 
-    return FnTypeAST::get(retTy, argTypes, callingConvention);
+    FnTypeAST* fty = FnTypeAST::get(retTy, argTypes, callingConvention);
+    if (fnty.has_is_closure() && fnty.is_closure()) {
+      fty->markAsClosure();
+    }
+    return fty;
   }
 
   if (t.tuple_parts_size() > 0) {

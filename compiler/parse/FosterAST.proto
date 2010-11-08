@@ -34,6 +34,7 @@ message FnType {
   repeated Type arg_types = 1;
   required Type ret_type  = 2;
   optional string calling_convention = 3;
+  optional bool   is_closure = 4;
 }
 
 
@@ -82,7 +83,10 @@ message Expr {
   optional bool   is_closure_environment = 25;
 
   // Compiles
-  optional bool compiles = 26;
+  optional string compiles_status = 28;
+
+  // Fn
+  optional bool is_closure = 27;
 }
 
 message PBInt {

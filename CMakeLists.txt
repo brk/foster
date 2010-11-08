@@ -288,6 +288,7 @@ add_dependencies(fosterc_llvm fosterc_base)
 
 add_library(fosterc_passes STATIC
   compiler/passes/PassUtils.cpp
+  compiler/passes/ExprASTDiff.cpp
   compiler/passes/Codegen/CodegenPass.cpp
   compiler/passes/Codegen/Codegen-typemaps.cpp
   compiler/passes/TypecheckPass.cpp
@@ -324,6 +325,16 @@ target_link_libraries(fosterc
   antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
 
 add_dependencies(fosterc libfoster_bc imath_wrapper_bc)
+
+############
+
+add_executable(fosterparse compiler/fosterparse.cpp)
+add_dependencies(fosterparse fosterc) # quick hack
+target_link_libraries(fosterparse
+  fosterc_parse fosterc_passes fosterc_base
+  antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
+
+############
 
 add_dependencies(libfoster_bc chromium_base)
 add_dependencies(libfoster_bc cpuid)

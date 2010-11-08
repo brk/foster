@@ -25,7 +25,6 @@
 #include "parse/DumpStructure.h"
 
 #include "passes/PrettyPrintPass.h"
-
 #include "_generated_/FosterAST.pb.h"
 
 #include "pystring/pystring.h"
@@ -63,9 +62,9 @@ ExprAST* readExprFromProtobuf(const string& pathstr) {
   foster::pb::Expr pbe;
   std::fstream input(pathstr.c_str(), std::ios::in | std::ios::binary);
   if (!pbe.ParseFromIstream(&input)) {
+    llvm::errs() << "Protobuf library unable to strictly parse input stream.\n";
     return NULL;
   }
-
   return foster::ExprAST_from_pb(&pbe);
 }
 

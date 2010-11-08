@@ -545,7 +545,8 @@ void TypecheckPass::visit(VariableAST* ast) {
     ast->type = varOrProto->type;
   } else {
     constraints.newLoggedError()
-       << "Variable out of scope: " << show(ast);
+       << "Variable out of scope: " << "'"
+       << ast->name << "':" << show(ast);
   }
 
   if (!ast->type) {
@@ -590,6 +591,7 @@ void TypecheckPass::visit(PrototypeAST* ast) {
       arg->accept(this);
     }
 
+
     ast->type = foster::getFunctionTypeForProto(ast);
   }
 }
@@ -602,7 +604,6 @@ void TypecheckPass::visit(FnAST* ast) {
   ast->getProto()->accept(this);
   ast->getBody()->accept(this);
   gScope.popExistingScope(ast->scope);
-
   ast->type = ast->getProto()->type;
 }
 

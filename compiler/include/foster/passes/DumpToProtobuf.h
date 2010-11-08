@@ -7,8 +7,8 @@
 
 #include "parse/ExprASTVisitor.h"
 #include "parse/TypeASTVisitor.h"
-#include "_generated_/FosterAST.pb.h"
 
+#include "_generated_/FosterAST.pb.h"
 
 struct DumpToProtobufPass : public ExprASTVisitor {
   foster::pb::Expr* current;

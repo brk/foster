@@ -44,6 +44,7 @@
 #include "llvm/System/Host.h"
 #include "llvm/System/Signals.h"
 #include "llvm/System/TimeValue.h"
+#include "llvm/System/Program.h"
 
 // These macros are conflicted between llvm/Config/config.h and antlr3config.h
 #undef PACKAGE_BUGREPORT
@@ -61,6 +62,7 @@
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
 #include "parse/DumpStructure.h"
+#include "parse/ProtobufToAST.h"
 #include "parse/ANTLRtoFosterAST.h"
 #include "parse/ParsingContext.h"
 #include "parse/CompilationContext.h"
@@ -297,6 +299,16 @@ void dumpModuleToProtobuf(ModuleAST* mod, const string& filename) {
   }
 }
 
+ExprAST* readExprFromProtobuf(const string& pathstr) {
+  foster::pb::Expr pbe;
+  std::fstream input(pathstr.c_str(), std::ios::in | std::ios::binary);
+  if (!pbe.ParseFromIstream(&input)) {
+    return NULL;
+  }
+
+  return foster::ExprAST_from_pb(&pbe);
+}
+
 TargetData* getTargetDataForModule(Module* mod) {
   const string& layout = mod->getDataLayout();
   if (layout.empty()) return NULL;
@@ -495,7 +507,12 @@ void setDefaultCommandLineOptions() {
   llvm::NoFramePointerElim = true;
 }
 
+namespace foster {
+bool compareExprASTs(ExprAST* good, ExprAST* bad);
+}
+
 int main(int argc, char** argv) {
+  int program_status = 0;
   GOOGLE_PROTOBUF_VERIFY_VERSION;
   foster::linkFosterGC(); // statically, not dynamically
   sys::PrintStackTraceOnErrorSignal();
@@ -521,19 +538,97 @@ int main(int argc, char** argv) {
   mainModulePath.makeAbsolute();
 
   llvm::sys::Path inPath(optInputPath);
-  const foster::InputFile infile(inPath);
 
-  pANTLR3_BASE_TREE parseTree = NULL;
-  foster::ANTLRContext* ctx = NULL;
-  unsigned numParseErrors = 0;
-  ModuleAST* exprAST = NULL;
+  std::string tmpProtobufFile("_tmpast.foster.pb");
 
-  foster::ParsingContext::pushNewContext();
+  std::vector<const char*> nullTerminatedArgs;
+  nullTerminatedArgs.push_back("fosterparse");
+  nullTerminatedArgs.push_back(optInputPath.c_str());
+  nullTerminatedArgs.push_back(tmpProtobufFile.c_str());
+  nullTerminatedArgs.push_back(NULL);
 
-  { ScopedTimer timer("io.parse");
-    exprAST = foster::parseModule(infile, optInputPath,
-                                  parseTree, ctx, numParseErrors);
+  const llvm::sys::Path* redirects[] = { NULL, NULL, NULL };
+
+  llvm::sys::Path path_to_fosterparse(
+            llvm::sys::Program::FindProgramByName("fosterparse"));
+  if (path_to_fosterparse.str().empty()) {
+    path_to_fosterparse = "fosterparse";
   }
+
+  // TOOD verify that path_to_fosterparse exists, etc
+
+  int parse_status = 0;
+  { ScopedTimer timer("io.parse");
+    parse_status = llvm::sys::Program::ExecuteAndWait(
+        path_to_fosterparse,
+        &nullTerminatedArgs[0],
+        0, // env
+        &redirects[0],
+        2 //secondsToWait
+        );
+  }
+
+  if (parse_status != 0) {
+    llvm::errs() << llvm::sys::Program::FindProgramByName("fosterparse").str() << "\n";
+    llvm::errs() << "Error (" << parse_status << ") invoking";
+    for (int i = 0; i < nullTerminatedArgs.size(); ++i) {
+      llvm::errs() << " " << nullTerminatedArgs[i];
+    }
+    llvm::errs() << " :: " << parse_status << "\n";
+    llvm::errs().flush();
+    llvm::outs() << "\n";
+    llvm::outs().flush();
+    return parse_status;
+  }
+
+  ModuleAST* exprAST = NULL;
+  foster::ParsingContext::pushNewContext();
+  foster::ANTLRContext* ctx = NULL;
+
+  ExprAST* pbExprAST = readExprFromProtobuf(tmpProtobufFile);
+  if (!pbExprAST) {
+    foster::EDiag() << "unable to parse module from protobuf";
+    exit(1);
+  }
+
+  exprAST = dynamic_cast<ModuleAST*>(pbExprAST);
+  if (!exprAST) {
+    foster::EDiag() << "expression parsed from protobuf was not a ModuleAST";
+    exit(1);
+  }
+
+  // for each fn in module
+  for (ModuleAST::FnAST_iterator it = exprAST->fn_begin();
+                                it != exprAST->fn_end();
+                                ++it) {
+     gScope.getRootScope()->insert((*it)->getName(),
+                                  (*it)->getProto());
+  }
+
+/*
+    const foster::InputFile infile(inPath);
+
+    pANTLR3_BASE_TREE parseTree = NULL;
+    unsigned numParseErrors = 0;
+
+    ModuleAST* knownGoodAST = NULL;
+    { ScopedTimer timer("io.parse");
+      knownGoodAST = foster::parseModule(infile, optInputPath,
+                                    parseTree, ctx, numParseErrors);
+    }
+    //exprAST = knownGoodAST;
+
+  if (true) {
+    llvm::outs() << "Comparing known good vs expr ASTs:\n";
+    foster::compareExprASTs(knownGoodAST, exprAST);
+    llvm::outs() << "Finished comparing known good vs expr ASTs\n";
+
+    dumpExprStructureToFile(knownGoodAST, "_good.ast.txt");
+    dumpExprStructureToFile(knownGoodAST, "_bad.ast.txt");
+
+    std::swap(knownGoodAST, exprAST);
+  }
+*/
 
   using foster::module;
   module = new Module(mainModulePath.str().c_str(), getGlobalContext());
@@ -548,15 +643,6 @@ int main(int argc, char** argv) {
   foster::putModuleMembersInScope(libfoster_bc, module);
   foster::putModuleMembersInInternalScope("imath", imath_bc, module);
   foster::addConcretePrimitiveFunctionsTo(module);
-
-  if (optDumpASTs) {
-    llvm::outs() << "dumping parse trees" << "\n";
-    dumpModuleToProtobuf(exprAST, dumpdirFile("ast.postparse.pb"));
-  }
-
-  if (numParseErrors > 0) {
-    exit(2);
-  }
 
   {
     llvm::outs() << "=========================" << "\n";
@@ -574,7 +660,10 @@ int main(int argc, char** argv) {
     typechecked = foster::typecheck(exprAST);
   }
 
-  if (!typechecked) { return 1; }
+  if (!typechecked) {
+    program_status = 1;
+    goto cleanup;
+  }
 
   if (optDumpASTs) { ScopedTimer timer("io.file");
     string outfile = "pp-precc.txt";
@@ -684,6 +773,8 @@ int main(int argc, char** argv) {
 
   foster::ParsingContext::popCurrentContext();
   foster::deleteANTLRContext(ctx);
+
+cleanup:
   delete wholeProgramTimer;
 
   delete libfoster_bc; libfoster_bc = NULL;
@@ -694,6 +785,6 @@ int main(int argc, char** argv) {
     setTimingDescriptions();
     gTimings.print();
   }
-  return 0;
+  return program_status;
 }
 

@@ -208,6 +208,7 @@ public:
   void markAsClosure() {
     closedOverVars = new std::list<foster::ClosureDatum>();
   }
+  bool isMarkedAsClosure() { return closedOverVars != NULL; }
 
   llvm::CallingConv::ID getCallingConventionID();
   friend class DumpTypeToProtobufPass;

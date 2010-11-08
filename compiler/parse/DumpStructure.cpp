@@ -86,12 +86,12 @@ struct DumpExpr {
     }
     if (CONST(FnAST) e = dynamic_cast<CONST(FnAST)>(ast)) {
       return std::string(e->tag) + " " + e->getName()
-              + " clo: " + std::string(e->isClosure() ? "yes" : "no");
+      + " clo: " + std::string(e->isClosure() ? "yes" : "no") + " :: " + str(ast->type);
     }
     if (CONST(PrototypeAST) e = dynamic_cast<CONST(PrototypeAST)>(ast)) {
       return std::string(e->tag) + " " + e->getName() + " " + str(ast->type);
     }
-    return std::string(ast->tag);
+    return std::string(ast->tag) + " :: " + str(ast->type);
   }
 
   void printStage(status& s) {

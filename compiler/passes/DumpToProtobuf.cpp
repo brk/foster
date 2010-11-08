@@ -24,6 +24,7 @@
 void dumpChild(DumpToProtobufPass* pass,
                foster::pb::Expr* target,
                ExprAST* child) {
+  ASSERT(child != NULL);
   foster::pb::Expr* saved = pass->current;
   pass->current = target;
   child->accept(pass);
@@ -102,12 +103,18 @@ void DumpToProtobufPass::visit(PrototypeAST* ast)           {
   for (size_t i = 0; i < ast->inArgs.size(); ++i) {
     dumpChild(this, proto->add_in_args(), ast->inArgs[i]);
   }
+
+  if (ast->resultTy) {
+    DumpTypeToProtobufPass dt(proto->mutable_result());
+    ast->resultTy->accept(&dt);
+  }
 }
 
 void DumpToProtobufPass::visit(FnAST* ast) {
   processExprAST(current, ast, foster::pb::Expr::FN);
   dumpChild(this, this->current->add_parts(), ast->getProto());
   dumpChild(this, this->current->add_parts(), ast->parts[0]);
+  this->current->set_is_closure(ast->isClosure());
 }
 
 void DumpToProtobufPass::visit(ModuleAST* ast)              {
@@ -137,12 +144,7 @@ void DumpToProtobufPass::visit(SubscriptAST* ast)           {
   processExprAST(current, ast, foster::pb::Expr::SUBSCRIPT);
   dumpChildren(this, ast);
 }
-/*
-void DumpToProtobufPass::visit(SimdVectorAST* ast)          {
-  processExprAST(current, ast, foster::pb::Expr::SIMD);
-  dumpChildren(this, ast);
-}
-*/
+
 void DumpToProtobufPass::visit(SeqAST* ast)                 {
   processExprAST(current, ast, foster::pb::Expr::SEQ);
   dumpChildren(this, ast);
@@ -152,11 +154,6 @@ void DumpToProtobufPass::visit(CallAST* ast)                {
   processExprAST(current, ast, foster::pb::Expr::CALL);
   dumpChildren(this, ast);
 }
-#if 0
-void DumpToProtobufPass::visit(ArrayExprAST* ast)           {
-  llvm::errs() << "no support for dumping arrays to protobufs!\n";
-}
-#endif
 
 void DumpToProtobufPass::visit(TupleExprAST* ast)           {
   processExprAST(current, ast, foster::pb::Expr::TUPLE);
@@ -166,14 +163,28 @@ void DumpToProtobufPass::visit(TupleExprAST* ast)           {
 
 void DumpToProtobufPass::visit(BuiltinCompilesExprAST* ast) {
   processExprAST(current, ast, foster::pb::Expr::COMPILES);
+
+  bool hadParsingError = ast->parts.empty() || ast->parts[0] == NULL;
+  if (hadParsingError) {
+    ast->status = BuiltinCompilesExprAST::kWouldNotCompile;
+  }
+
   switch (ast->status) {
     case BuiltinCompilesExprAST::kNotChecked:
-      break;
+      current->set_compiles_status("kNotChecked"); break;
     case BuiltinCompilesExprAST::kWouldCompile:
-      current->set_compiles(true); break;
+      current->set_compiles_status("kWouldCompile"); break;
     case BuiltinCompilesExprAST::kWouldNotCompile:
-      current->set_compiles(false); break;
+      current->set_compiles_status("kWouldNotCompile"); break;
   }
+
+  if (hadParsingError) {
+    // Hackety hack, give a fake AST node for now...
+    ast->parts.clear();
+    ast->parts.push_back(new VariableAST("fake_error_node", NULL,
+                                  foster::SourceRange::getEmptyRange()));
+  }
+  dumpChildren(this, ast);
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -225,6 +236,8 @@ void DumpTypeToProtobufPass::visit(FnTypeAST* ast) {
   for (int i = 0; i < ast->getNumParams(); ++i) {
     dumpChild(this, fnty->add_arg_types(), ast->getParamType(i));
   }
+
+  fnty->set_is_closure(ast->isMarkedAsClosure());
 }
 
 void DumpTypeToProtobufPass::visit(RefTypeAST* ast) {
