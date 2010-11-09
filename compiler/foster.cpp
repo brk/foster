@@ -39,12 +39,7 @@
 #include "llvm/System/TimeValue.h"
 #include "llvm/System/Program.h"
 
-// These macros are conflicted between llvm/Config/config.h and antlr3config.h
-#undef PACKAGE_BUGREPORT
-#undef PACKAGE_NAME
-#undef PACKAGE_STRING
-#undef PACKAGE_TARNAME
-#undef PACKAGE_VERSION
+////////////////////////////////////////////////////////////////////
 
 #include "base/Assert.h"
 #include "base/TimingsRepository.h"
@@ -53,7 +48,6 @@
 #include "parse/FosterTypeAST.h"
 #include "parse/DumpStructure.h"
 #include "parse/ProtobufToAST.h"
-#include "parse/ANTLRtoFosterAST.h"
 #include "parse/ParsingContext.h"
 #include "parse/CompilationContext.h"
 
@@ -195,33 +189,6 @@ string dumpdirFile(const string& filename) {
   return dumpdir + filename;
 }
 
-string dotdirFile(const string& filename) {
-  return dumpdirFile("dot/" + filename);
-}
-
-void dumpScopesToDotGraphs() {
-  ScopedTimer timer("io.dot");
-  {
-    std::string err;
-    llvm::raw_fd_ostream f(dumpdirFile("gScope.dot").c_str(), err);
-    if (err.empty()) {
-      llvm::WriteGraph(f, &gScope);
-    } else {
-      foster::EDiag() << "no file to write gScope.dot";
-    }
-  }
-
-  {
-    std::string err;
-    llvm::raw_fd_ostream f(dumpdirFile("gTypeScope.dot").c_str(), err);
-    if (err.empty()) {
-      llvm::WriteGraph(f, &gTypeScope);
-    } else {
-      foster::EDiag() << "no file to write gTypeScope.dot";
-    }
-  }
-}
-
 struct CommentWriter : public AssemblyAnnotationWriter {
   void printInfoComment(const Value& v, formatted_raw_ostream& os) {
     if (v.getType()->isVoidTy()) return;
@@ -238,8 +205,8 @@ void dumpModuleToFile(Module* mod, const string& filename) {
     CommentWriter cw;
     mod->print(LLpreASM, &cw);
   } else {
-    llvm::errs() << "Error dumping module to " << filename << "\n";
-    llvm::errs() << errInfo << "\n";
+    foster::EDiag() << "Error dumping module to " << filename << "\n"
+                    << errInfo << "\n";
     exit(1);
   }
 }
@@ -251,8 +218,8 @@ void dumpModuleToBitcode(Module* mod, const string& filename) {
 
   raw_fd_ostream out(filename.c_str(), errInfo, raw_fd_ostream::F_Binary);
   if (!errInfo.empty()) {
-    llvm::errs() << "Error when preparing to write bitcode to " << filename
-        << "\n" << errInfo << "\n";
+    foster::EDiag() << "Error when preparing to write bitcode to " << filename
+        << "\n" << errInfo;
     exit(1);
   }
 
@@ -474,8 +441,8 @@ void setDefaultCommandLineOptions() {
   llvm::NoFramePointerElim = true;
 }
 
-namespace foster {
-bool compareExprASTs(ExprAST* good, ExprAST* bad);
+ModuleAST* parseModuleFromSourceFile(const llvm::sys::Path& sourceFilePath) {
+
 }
 
 int main(int argc, char** argv) {
@@ -496,12 +463,13 @@ int main(int argc, char** argv) {
   validateInputFile(optInputPath);
 
   ensureDirectoryExists(dumpdirFile(""));
-  ensureDirectoryExists( dotdirFile(""));
 
   foster::initializeLLVM();
 
   llvm::sys::Path mainModulePath(optInputPath);
   mainModulePath.makeAbsolute();
+
+
 
   std::string tmpProtobufFile("_tmpast.foster.pb");
 
@@ -519,16 +487,25 @@ int main(int argc, char** argv) {
     path_to_fosterparse = "fosterparse";
   }
 
-  // TOOD verify that path_to_fosterparse exists, etc
+  if (path_to_fosterparse.exists() &&
+      path_to_fosterparse.canRead() &&
+      path_to_fosterparse.canExecute()) {
+    // great!
+  } else {
+    foster::EDiag() << "unable to find or execute "
+                    << path_to_fosterparse.str();
+    exit(1);
+  }
 
   int parse_status = 0;
+  int max_seconds_to_wait = 2;
   { ScopedTimer timer("io.parse");
     parse_status = llvm::sys::Program::ExecuteAndWait(
         path_to_fosterparse,
         &nullTerminatedArgs[0],
         0, // env
         &redirects[0],
-        2 //secondsToWait
+        max_seconds_to_wait
         );
   }
 
@@ -547,7 +524,6 @@ int main(int argc, char** argv) {
 
   ModuleAST* exprAST = NULL;
   foster::ParsingContext::pushNewContext();
-  foster::ANTLRContext* ctx = NULL;
 
   ExprAST* pbExprAST = readExprFromProtobuf(tmpProtobufFile);
   if (!pbExprAST) {
@@ -670,8 +646,6 @@ int main(int argc, char** argv) {
     dumpModuleToFile(module, dumpdirFile("out.prelink.ll").c_str());
   }
 
-  dumpScopesToDotGraphs();
-
   if (!optCompileSeparately) {
     { ScopedTimer timer("llvm.link");
       linkTo(libfoster_bc, "libfoster.bc", module);
@@ -712,7 +686,6 @@ int main(int argc, char** argv) {
   }
 
   foster::ParsingContext::popCurrentContext();
-  foster::deleteANTLRContext(ctx);
 
 cleanup:
   delete wholeProgramTimer;
