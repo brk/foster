@@ -24,21 +24,14 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetRegistry.h"
 #include "llvm/Target/TargetOptions.h"
-#include "llvm/Target/SubtargetFeature.h"
-#include "llvm/Target/TargetSelect.h"
 
-#include "llvm/Transforms/Scalar.h"
 #include "llvm/Support/StandardPasses.h"
 #include "llvm/Support/PassNameParser.h"
-#include "llvm/Support/IRBuilder.h"
 #include "llvm/Support/IRReader.h"
-#include "llvm/Support/PluginLoader.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ManagedStatic.h"
-#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/FormattedStream.h"
-#include "llvm/Support/Format.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/raw_os_ostream.h"
 #include "llvm/System/Host.h"
@@ -54,10 +47,7 @@
 #undef PACKAGE_VERSION
 
 #include "base/Assert.h"
-#include "base/InputFile.h"
-#include "base/InputTextBuffer.h"
 #include "base/TimingsRepository.h"
-#include "base/PathManager.h"
 
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
@@ -123,12 +113,6 @@ optInputPath(cl::Positional, cl::desc("<input file>"));
 static cl::opt<bool>
 optCompileSeparately("c",
   cl::desc("[foster] Compile separately, don't automatically link imported modules"));
-
-static cl::list<std::string>
-optIncludeRoots("I",
-  cl::desc("Seach directories for imported modules"),
-  cl::Prefix,
-  cl::ZeroOrMore);
 
 #ifdef FOSTERC_DEBUG_INFO_NOT_YET_GENERATED
 static cl::opt<bool>
@@ -476,23 +460,6 @@ void validateInputFile(const string& pathstr) {
   }
 }
 
-// Validates and registers all the -I<path> flags from the command line.
-void collectIncludeRoots() {
-  typedef cl::list<std::string>::iterator IncRootsIter;
-  for (IncRootsIter it = optIncludeRoots.begin();
-                   it != optIncludeRoots.end(); ++it) {
-    llvm::sys::Path path(*it);
-    if (path.isValid() && path.isDirectory()) {
-      foster::gPathManager.registerModuleSearchPath(path);
-    } else {
-      llvm::sys::Path abspath(*it);
-      abspath.makeAbsolute();
-      std::cerr << "warning: ignoring input path \"" << path.str() << "\""
-          << " because directory '" << abspath.str() << "' does not exist.\n";
-    }
-  }
-}
-
 void setDefaultCommandLineOptions() {
   if (string(LLVM_HOSTTRIPLE).find("darwin") != string::npos) {
     // Applications on Mac OS X (x86) must be compiled with relocatable symbols,
@@ -526,7 +493,6 @@ int main(int argc, char** argv) {
   cl::SetVersionPrinter(&printVersionInfo);
   cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster compiler\n");
 
-  collectIncludeRoots();
   validateInputFile(optInputPath);
 
   ensureDirectoryExists(dumpdirFile(""));
@@ -536,8 +502,6 @@ int main(int argc, char** argv) {
 
   llvm::sys::Path mainModulePath(optInputPath);
   mainModulePath.makeAbsolute();
-
-  llvm::sys::Path inPath(optInputPath);
 
   std::string tmpProtobufFile("_tmpast.foster.pb");
 
@@ -604,31 +568,6 @@ int main(int argc, char** argv) {
      gScope.getRootScope()->insert((*it)->getName(),
                                   (*it)->getProto());
   }
-
-/*
-    const foster::InputFile infile(inPath);
-
-    pANTLR3_BASE_TREE parseTree = NULL;
-    unsigned numParseErrors = 0;
-
-    ModuleAST* knownGoodAST = NULL;
-    { ScopedTimer timer("io.parse");
-      knownGoodAST = foster::parseModule(infile, optInputPath,
-                                    parseTree, ctx, numParseErrors);
-    }
-    //exprAST = knownGoodAST;
-
-  if (true) {
-    llvm::outs() << "Comparing known good vs expr ASTs:\n";
-    foster::compareExprASTs(knownGoodAST, exprAST);
-    llvm::outs() << "Finished comparing known good vs expr ASTs\n";
-
-    dumpExprStructureToFile(knownGoodAST, "_good.ast.txt");
-    dumpExprStructureToFile(knownGoodAST, "_bad.ast.txt");
-
-    std::swap(knownGoodAST, exprAST);
-  }
-*/
 
   using foster::module;
   module = new Module(mainModulePath.str().c_str(), getGlobalContext());
@@ -765,6 +704,7 @@ int main(int argc, char** argv) {
   { ScopedTimer timer("protobuf.shutdown");
     google::protobuf::ShutdownProtobufLibrary();
   }
+
   foster::gInputFile = NULL;
   { ScopedTimer timer("io.file.flush");
     llvm::outs().flush();
