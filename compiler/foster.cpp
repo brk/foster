@@ -441,8 +441,89 @@ void setDefaultCommandLineOptions() {
   llvm::NoFramePointerElim = true;
 }
 
-ModuleAST* parseModuleFromSourceFile(const llvm::sys::Path& sourceFilePath) {
+ModuleAST* parseModuleFromSourceFile(
+              const llvm::sys::Path& sourceFilePath,
+              int& err_status) {
+  err_status = 0;
 
+  std::string tmpProtobufFile("_tmpast.foster.pb");
+
+  std::vector<const char*> nullTerminatedArgs;
+  nullTerminatedArgs.push_back("fosterparse");
+  nullTerminatedArgs.push_back(optInputPath.c_str());
+  nullTerminatedArgs.push_back(tmpProtobufFile.c_str());
+  nullTerminatedArgs.push_back(NULL);
+
+  const llvm::sys::Path* redirects[] = { NULL, NULL, NULL };
+
+  llvm::sys::Path path_to_fosterparse(
+            llvm::sys::Program::FindProgramByName("fosterparse"));
+
+  if (path_to_fosterparse.str().empty()) {
+    path_to_fosterparse = "fosterparse";
+  }
+
+  if (path_to_fosterparse.exists() &&
+      path_to_fosterparse.canRead() &&
+      path_to_fosterparse.canExecute()) {
+    // great!
+  } else {
+    foster::EDiag() << "unable to find or execute "
+                    << path_to_fosterparse.str();
+    err_status = 1;
+    return NULL;
+  }
+
+  int parse_status = 0;
+  int max_seconds_to_wait = 2;
+  { ScopedTimer timer("io.parse");
+    parse_status = llvm::sys::Program::ExecuteAndWait(
+        path_to_fosterparse,
+        &nullTerminatedArgs[0],
+        0, // env
+        &redirects[0],
+        max_seconds_to_wait);
+  }
+
+  if (parse_status != 0) {
+    llvm::errs() << llvm::sys::Program::FindProgramByName("fosterparse").str() << "\n";
+    llvm::errs() << "Error (" << parse_status << ") invoking";
+    for (int i = 0; i < nullTerminatedArgs.size(); ++i) {
+      llvm::errs() << " " << nullTerminatedArgs[i];
+    }
+    llvm::errs() << " :: " << parse_status << "\n";
+    llvm::errs().flush();
+    llvm::outs() << "\n";
+    llvm::outs().flush();
+    err_status = parse_status;
+    return NULL;
+  }
+
+  ModuleAST* exprAST = NULL;
+
+  ExprAST* pbExprAST = readExprFromProtobuf(tmpProtobufFile);
+  if (!pbExprAST) {
+    foster::EDiag() << "unable to parse module from protobuf";
+    err_status = 1;
+    return NULL;
+  }
+
+  exprAST = dynamic_cast<ModuleAST*>(pbExprAST);
+  if (!exprAST) {
+    foster::EDiag() << "expression parsed from protobuf was not a ModuleAST";
+    err_status = 1;
+    return NULL;
+  }
+
+  // for each fn in module
+  for (ModuleAST::FnAST_iterator it = exprAST->fn_begin();
+                                it != exprAST->fn_end();
+                                ++it) {
+     gScope.getRootScope()->insert((*it)->getName(),
+                                  (*it)->getProto());
+  }
+
+  return exprAST;
 }
 
 int main(int argc, char** argv) {
@@ -452,8 +533,11 @@ int main(int argc, char** argv) {
   sys::PrintStackTraceOnErrorSignal();
   PrettyStackTraceProgram X(argc, argv);
   llvm_shutdown_obj Y;
-
+  bool typechecked = false;
   ScopedTimer* wholeProgramTimer = new ScopedTimer("total");
+  Module* libfoster_bc = NULL;
+  Module* imath_bc = NULL;
+  const llvm::Type* mp_int = NULL;
 
   setDefaultCommandLineOptions();
 
@@ -469,88 +553,22 @@ int main(int argc, char** argv) {
   llvm::sys::Path mainModulePath(optInputPath);
   mainModulePath.makeAbsolute();
 
-
-
-  std::string tmpProtobufFile("_tmpast.foster.pb");
-
-  std::vector<const char*> nullTerminatedArgs;
-  nullTerminatedArgs.push_back("fosterparse");
-  nullTerminatedArgs.push_back(optInputPath.c_str());
-  nullTerminatedArgs.push_back(tmpProtobufFile.c_str());
-  nullTerminatedArgs.push_back(NULL);
-
-  const llvm::sys::Path* redirects[] = { NULL, NULL, NULL };
-
-  llvm::sys::Path path_to_fosterparse(
-            llvm::sys::Program::FindProgramByName("fosterparse"));
-  if (path_to_fosterparse.str().empty()) {
-    path_to_fosterparse = "fosterparse";
-  }
-
-  if (path_to_fosterparse.exists() &&
-      path_to_fosterparse.canRead() &&
-      path_to_fosterparse.canExecute()) {
-    // great!
-  } else {
-    foster::EDiag() << "unable to find or execute "
-                    << path_to_fosterparse.str();
-    exit(1);
-  }
-
-  int parse_status = 0;
-  int max_seconds_to_wait = 2;
-  { ScopedTimer timer("io.parse");
-    parse_status = llvm::sys::Program::ExecuteAndWait(
-        path_to_fosterparse,
-        &nullTerminatedArgs[0],
-        0, // env
-        &redirects[0],
-        max_seconds_to_wait
-        );
-  }
-
-  if (parse_status != 0) {
-    llvm::errs() << llvm::sys::Program::FindProgramByName("fosterparse").str() << "\n";
-    llvm::errs() << "Error (" << parse_status << ") invoking";
-    for (int i = 0; i < nullTerminatedArgs.size(); ++i) {
-      llvm::errs() << " " << nullTerminatedArgs[i];
-    }
-    llvm::errs() << " :: " << parse_status << "\n";
-    llvm::errs().flush();
-    llvm::outs() << "\n";
-    llvm::outs().flush();
-    return parse_status;
-  }
-
-  ModuleAST* exprAST = NULL;
   foster::ParsingContext::pushNewContext();
 
-  ExprAST* pbExprAST = readExprFromProtobuf(tmpProtobufFile);
-  if (!pbExprAST) {
-    foster::EDiag() << "unable to parse module from protobuf";
-    exit(1);
-  }
+  ModuleAST* exprAST =
+      parseModuleFromSourceFile(mainModulePath, program_status);
 
-  exprAST = dynamic_cast<ModuleAST*>(pbExprAST);
   if (!exprAST) {
-    foster::EDiag() << "expression parsed from protobuf was not a ModuleAST";
-    exit(1);
-  }
-
-  // for each fn in module
-  for (ModuleAST::FnAST_iterator it = exprAST->fn_begin();
-                                it != exprAST->fn_end();
-                                ++it) {
-     gScope.getRootScope()->insert((*it)->getName(),
-                                  (*it)->getProto());
+    if (program_status == 0) { program_status = 2; }
+    goto cleanup;
   }
 
   using foster::module;
   module = new Module(mainModulePath.str().c_str(), getGlobalContext());
 
-  Module* libfoster_bc = readLLVMModuleFromPath("libfoster.bc");
-  Module* imath_bc = readLLVMModuleFromPath("imath-wrapper.bc");
-  const llvm::Type* mp_int =
+  libfoster_bc = readLLVMModuleFromPath("libfoster.bc");
+  imath_bc = readLLVMModuleFromPath("imath-wrapper.bc");
+  mp_int =
     llvm::PointerType::getUnqual(imath_bc->getTypeByName("struct.mpz"));
   module->addTypeName("mp_int", mp_int);
   gTypeScope.insert("int", NamedTypeAST::get("int", mp_int));
@@ -568,11 +586,8 @@ int main(int argc, char** argv) {
   {
   llvm::outs() << "=========================" << "\n";
   llvm::outs() << "Type checking... " << "\n";
-  }
-
-  bool typechecked = false;
-  { ScopedTimer timer("foster.typecheck");
-    typechecked = foster::typecheck(exprAST);
+  ScopedTimer timer("foster.typecheck");
+  typechecked = foster::typecheck(exprAST);
   }
 
   if (!typechecked) {
@@ -629,6 +644,7 @@ int main(int argc, char** argv) {
 
   {
     ScopedTimer timer("foster.codegen");
+    // Implicitly outputs to foster::module, via foster::builder.
     foster::codegen(exprAST);
 
     // Run cleanup passes on newly-generated code,
@@ -685,9 +701,9 @@ int main(int argc, char** argv) {
     llvm::errs().flush();
   }
 
+cleanup:
   foster::ParsingContext::popCurrentContext();
 
-cleanup:
   delete wholeProgramTimer;
 
   delete libfoster_bc; libfoster_bc = NULL;
