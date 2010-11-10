@@ -133,16 +133,13 @@ int main(int argc, char** argv) {
   foster::initCachedLLVMTypeNames();
 
   foster::ParsingContext::pushNewContext();
-  llvm::errs() << "136" << "\n";
   ModuleAST* exprAST = foster::parseModule(infile, optInputPath,
                                 parseTree, ctx, numParseErrors);
-  llvm::errs() << "139" << "\n";
   if (numParseErrors > 0) {
     return 3;
   } else if (!exprAST) {
     return 4;
   }
-  llvm::errs() << "145" << "\n";
   dumpModuleToProtobuf(exprAST, optOutputPath);
   return 0;
 }
