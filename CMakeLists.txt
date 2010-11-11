@@ -5,6 +5,14 @@ cmake_policy(VERSION 2.8.0)
 
 ####################### Configuration Rules ########################
 
+set(LLVM_VERSION 2.7)
+
+option(USE_FOSTER_GC_PLUGIN
+       "Use compiled stackmaps for garbage collection"
+       true)
+
+# ~~~~~~~~~~~~~~~~~~~~ ANTLR ~~~~~~~~~~~~~~~~~~~~~
+
 # This isn't cached since CMake doesn't seem to have any way of
 # specifying that some cached variables depend on others, and it's
 # sort of annoying to see the option to change it AFTER the paths
@@ -18,22 +26,16 @@ set(ANTLR_JAR ${ANTLR_DIR}/antlr-${ANTLR_VERSION}.jar
     CACHE FILEPATH "ANTLR jarfile")
 set(ANTLR_LIBDIR ${ANTLR_DIR}/lib)
 
-set(LLVM_VERSION 2.7)
-
-option(USE_FOSTER_GC_PLUGIN
-       "Use compiled stackmaps for garbage collection"
-       true)
-
 if (${ANTLR_DIR} STREQUAL "ANTLR_DIR-NOTFOUND")
     message("ANTLR not found! Please configure with ccmake or a CMake GUI")
     return()
 endif (${ANTLR_DIR} STREQUAL "ANTLR_DIR-NOTFOUND")
 
 set(GENERATED ${PROJECT_BINARY_DIR}/_generated_)
-
 configure_file(${PROJECT_SOURCE_DIR}/FosterConfig.in.h
                ${GENERATED}/FosterConfig.h)
 
+# ~~~~~~~~~~~~~~~~~~~~ Protocol Buffers ~~~~~~~~~~~~~~~~~~~~~~
 find_package(Protobuf REQUIRED)
 include_directories(${PROTOBUF_INCLUDE_DIRS})
 
