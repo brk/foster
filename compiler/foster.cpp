@@ -545,6 +545,7 @@ int main(int argc, char** argv) {
   Module* libfoster_bc = NULL;
   Module* imath_bc = NULL;
   const llvm::Type* mp_int = NULL;
+  std::string outPbFilename(dumpdirFile("tmp.precloconv.pb"));
 
   setDefaultCommandLineOptions();
 
@@ -623,18 +624,14 @@ int main(int argc, char** argv) {
 
   // Round-trip typechecked module through protocol buffers
   // before codegenning. (precursor to separate-process codegen).
-  std::string outPbFilename(dumpdirFile("tmp.precloconv.pb"));
   dumpModuleToProtobuf(exprAST, outPbFilename);
-  ModuleAST* ccExprAST = NULL;
-  ExprAST* pbccExprAST = readExprFromProtobuf(outPbFilename);
-  ccExprAST = dynamic_cast<ModuleAST*>(pbccExprAST);
-  if (!ccExprAST) {
+  exprAST = dynamic_cast<ModuleAST*>(readExprFromProtobuf(outPbFilename));
+  if (!exprAST) {
     EDiag() << "parsing tmp.precloconv.pb failed!";
     program_status = 5; goto cleanup;
   } else {
-    foster::addParentLinks(ccExprAST);
+    foster::addParentLinks(exprAST);
   }
-  std::swap(exprAST, ccExprAST);
 
   {
     dumpExprStructureToFile(exprAST, dumpdirFile("structure.beforecc.txt"));

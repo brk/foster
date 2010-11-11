@@ -16,7 +16,7 @@ tokens {
 
 	FN; OUT; BODY; GIVEN; GIVES; SEQ; INT; RAT; EXPRS; NAME; CTOR;
 	TRAILERS; CALL; TUPLE; SUBSCRIPT; LOOKUP; FORMAL; ARRAY; SIMD;
-	LETEXPR; SETEXPR; PARENEXPR; TYPEDEFN; FNDEF; FORRANGE;
+	LETEXPR; SETEXPR; PARENEXPR; FNDEF; FORRANGE;
 	}
 
 program			:	nl* toplevelexpr (nl+ toplevelexpr)* nl* EOF -> ^(EXPRS toplevelexpr+);
@@ -78,8 +78,7 @@ subexpr			:	compound ( (binop nl? compound)+	-> ^(BINOP_CHAIN ^(BINOPS binop+) ^
 expr	:	subexpr;
 
 fndef 	:	 name '=' fn -> ^(FNDEF name fn);
-toplevelexpr : fndef | typedefn | fn;
-typedefn : 'type' name '=' typeexpr -> ^(TYPEDEFN name typeexpr);
+toplevelexpr : fndef | fn;
 
 type_of_type	:	name 'of' typeexpr 'to'? typeexpr  -> ^(CTOR name ^(SEQ typeexpr+));
 typeexpr	:	literal | name_or_ctor | custom_terms | type_of_type | fn;

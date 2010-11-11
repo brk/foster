@@ -304,10 +304,7 @@ ModuleAST* parseTopLevel(pTree tree, std::string moduleName) {
     pTree c = pendingParseTrees[i];
     int token = typeOf(c);
 
-    if (token == TYPEDEFN) {
-      ExprAST* typeDefn = ExprAST_from(c);
-      parsedExprs[i] = typeDefn;
-    } else if (token == FNDEF) {
+    if (token == FNDEF) {
       ASSERT(getChildCount(c) == 2);
       // x = fn { blah }   ===   x = fn "x" { blah }
       pTree lval = (child(c, 0));
@@ -358,27 +355,6 @@ ModuleAST* parseTopLevel(pTree tree, std::string moduleName) {
                        moduleName,
                        gScope.getRootScope(),
                        rangeOf(tree));
-}
-
-ExprAST* parseTypeDefinition(pTree tree) {
-  pTree nameTree = child(tree, 0);
-  string name = textOf(child(nameTree, 0));
-
-  llvm::PATypeHolder namedType = llvm::OpaqueType::get(llvm::getGlobalContext());
-  gTypeScope.pushScope("opaque");
-    // namedType.get() is an OpaqueType at this point, so we cannot yet do
-    // anything but wrap it directly.
-    gTypeScope.insert(name, TypeAST::reconstruct(
-          llvm::dyn_cast<const llvm::OpaqueType>(namedType.get())));
-    TypeAST* tyExpr = TypeAST_from(child(tree, 1));
-    llvm::cast<llvm::OpaqueType>(namedType.get())->
-               refineAbstractTypeTo(tyExpr->getLLVMType());
-  gTypeScope.popScope();
-
-  gTypeScope.insert(name, tyExpr);
-
-  DDiag() << "Associated " << name << " with type " << str(tyExpr) << "\n";
-  return new NamedTypeDeclAST(name, tyExpr, rangeOf(tree));
 }
 
 // ^(CTOR ^(NAME blah) ^(SEQ ...))
@@ -553,7 +529,6 @@ ExprAST* ExprAST_from(pTree tree) {
   string text = textOf(tree);
   foster::SourceRange sourceRange = rangeOf(tree);
 
-  if (token == TYPEDEFN) { return parseTypeDefinition(tree); }
   if (token == TRAILERS) { return parseTrailers(tree, sourceRange); }
   if (token == CTOR) { return parseCtorExpr(tree, sourceRange); }
   if (token == IF) { return parseIf(tree, sourceRange); }
