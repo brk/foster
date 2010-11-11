@@ -243,7 +243,9 @@ void dumpModuleToProtobuf(ModuleAST* mod, const string& filename) {
   { ScopedTimer timer("protobuf.io");
     std::ofstream out(filename.c_str(),
                       std::ios::trunc | std::ios::binary);
-    pbModuleExpr.SerializeToOstream(&out);
+    if (!pbModuleExpr.SerializeToOstream(&out)) {
+      EDiag() << "dumping module to protobuf " << filename << " failed.";
+    }
 
     std::ofstream txtout((filename + ".txt").c_str(), std::ios::trunc);
     txtout << pbModuleExpr.DebugString();
@@ -488,7 +490,8 @@ ModuleAST* parseModuleFromSourceFile(
   if (parse_status != 0) {
     llvm::errs() << llvm::sys::Program::FindProgramByName("fosterparse").str() << "\n";
     llvm::errs() << "Error (" << parse_status << ") invoking";
-    for (int i = 0; i < nullTerminatedArgs.size(); ++i) {
+    int numActualArgs = nullTerminatedArgs.size() - 1;
+    for (int i = 0; i < numActualArgs; ++i) {
       llvm::errs() << " " << nullTerminatedArgs[i];
     }
     llvm::errs() << " :: " << parse_status << "\n";
@@ -524,6 +527,10 @@ ModuleAST* parseModuleFromSourceFile(
   }
 
   return exprAST;
+}
+
+namespace foster {
+  bool compareExprASTs(ExprAST*, ExprAST*);
 }
 
 int main(int argc, char** argv) {
@@ -563,6 +570,12 @@ int main(int argc, char** argv) {
     goto cleanup;
   }
 
+  {
+    llvm::outs() << "=========================" << "\n";
+    llvm::outs() << "Adding parent links..." << "\n";
+    foster::addParentLinks(exprAST);
+  }
+
   using foster::module;
   module = new Module(mainModulePath.str().c_str(), getGlobalContext());
 
@@ -576,12 +589,6 @@ int main(int argc, char** argv) {
   foster::putModuleMembersInScope(libfoster_bc, module);
   foster::putModuleMembersInInternalScope("imath", imath_bc, module);
   foster::addConcretePrimitiveFunctionsTo(module);
-
-  {
-    llvm::outs() << "=========================" << "\n";
-    llvm::outs() << "Adding parent links..." << "\n";
-    foster::addParentLinks(exprAST);
-  }
 
   {
   llvm::outs() << "=========================" << "\n";
@@ -613,6 +620,21 @@ int main(int argc, char** argv) {
     std::string outPbFilename(mainModulePath.getLast().str() + ".pb");
     dumpModuleToProtobuf(exprAST, dumpdirFile(outPbFilename));
   }
+
+  // Round-trip typechecked module through protocol buffers
+  // before codegenning. (precursor to separate-process codegen).
+  std::string outPbFilename(dumpdirFile("tmp.precloconv.pb"));
+  dumpModuleToProtobuf(exprAST, outPbFilename);
+  ModuleAST* ccExprAST = NULL;
+  ExprAST* pbccExprAST = readExprFromProtobuf(outPbFilename);
+  ccExprAST = dynamic_cast<ModuleAST*>(pbccExprAST);
+  if (!ccExprAST) {
+    EDiag() << "parsing tmp.precloconv.pb failed!";
+    program_status = 5; goto cleanup;
+  } else {
+    foster::addParentLinks(ccExprAST);
+  }
+  std::swap(exprAST, ccExprAST);
 
   {
     dumpExprStructureToFile(exprAST, dumpdirFile("structure.beforecc.txt"));
