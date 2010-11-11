@@ -796,6 +796,15 @@ const FunctionType* getFunctionTypeFromClosureStructType(const Type* ty) {
   return NULL;
 }
 
+std::string str(llvm::CallingConv::ID id) {
+  switch (id) {
+  case llvm::CallingConv::Fast: return "fastcc";
+  case llvm::CallingConv::C:    return "ccc";
+  default: EDiag() << "unknown LLVM calling convention id: " << int(id);
+  }
+  return "fosterTypecheckUnknownCallingConv";
+}
+
 void TypecheckPass::visit(CallAST* ast) {
   ExprAST* base = ast->parts[0];
   if (!base) {
@@ -878,8 +887,12 @@ void TypecheckPass::visit(CallAST* ast) {
     return;
   }
 
+  std::string callingConvention = "fastcc";
+  if (FnTypeAST* baseFnType = dynamic_cast<FnTypeAST*>(baseType)) {
+    callingConvention = str(baseFnType->getCallingConventionID());
+  }
   TypeAST* retTy = TypeVariableAST::get("callret", ast->sourceRange);
-  FnTypeAST* actualFnType = FnTypeAST::get(retTy, argTypes, "*");
+  FnTypeAST* actualFnType = FnTypeAST::get(retTy, argTypes, callingConvention);
   constraints.addEq(ast, actualFnType, baseType);
 
   ast->type = retTy;
