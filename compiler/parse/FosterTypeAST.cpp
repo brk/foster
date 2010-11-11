@@ -231,10 +231,12 @@ FnTypeAST* FnTypeAST::get(TypeAST* returnType,
                           const std::string& callingConvName) {
   ASSERT(returnType) << "FnTypeAST::get() needs non-NULL return type";
 
-  return new FnTypeAST(returnType,
+  FnTypeAST* fty = new FnTypeAST(returnType,
                        argTypes,
                        callingConvName,
                        SourceRange::getEmptyRange());
+  fty->getCallingConventionID(); // ensure we have a valid calling convention...
+  return fty;
 }
 
 const llvm::Type* FnTypeAST::getLLVMType() const {
@@ -297,6 +299,9 @@ map<TupleTypeAST::Args, TupleTypeAST*> TupleTypeAST::tupleTypeCache;
 TupleTypeAST* TupleTypeAST::get(const vector<TypeAST*>& argTypes) {
   TupleTypeAST* tup = tupleTypeCache[argTypes];
   if (!tup) {
+    if (!argTypes.empty() && !argTypes.back()) {
+      ASSERT(argTypes.back()) << "Tuple type must not contain NULL members.";
+    }
     tup = new TupleTypeAST(argTypes, SourceRange::getEmptyRange());
     tupleTypeCache[argTypes] = tup;
   }
