@@ -250,9 +250,9 @@ void DumpTypeToProtobufPass::visit(RefTypeAST* ast) {
 
 void DumpTypeToProtobufPass::visit(TupleTypeAST* ast) {
   setTagAndRange(current, ast, foster::pb::Type::TUPLE);
-
   current->mutable_tuple_parts()->Reserve(ast->getNumContainedTypes());
   for (int i = 0; i < ast->getNumContainedTypes(); ++i) {
+    ASSERT(ast->getContainedType(i)) << "Unexpected NULL type when dumping TupleTypeAST " << str(ast);
     dumpChild(this, current->add_tuple_parts(), ast->getContainedType(i));
   }
 }
