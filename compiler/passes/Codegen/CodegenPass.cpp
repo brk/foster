@@ -72,7 +72,7 @@ struct CodegenPass : public ExprASTVisitor {
      currentErrs() << "name was neither fn arg nor fn name: "
                 << fullyQualifiedSymbol << "\n";
      valueSymTab.dump(currentErrs());
-     ASSERT(false);
+     ASSERT(false) << "unable to find value for symbol " << fullyQualifiedSymbol;
     }
     return v;
   }
