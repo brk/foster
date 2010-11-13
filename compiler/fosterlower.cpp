@@ -51,7 +51,6 @@
 #include "parse/ParsingContext.h"
 #include "parse/CompilationContext.h"
 
-#include "passes/TypecheckPass.h"
 #include "passes/CodegenPass.h"
 #include "passes/AddParentLinksPass.h"
 #include "passes/PrettyPrintPass.h"

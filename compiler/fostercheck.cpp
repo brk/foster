@@ -51,10 +51,8 @@
 #include "parse/CompilationContext.h"
 
 #include "passes/TypecheckPass.h"
-#include "passes/CodegenPass.h"
 #include "passes/AddParentLinksPass.h"
 #include "passes/PrettyPrintPass.h"
-#include "passes/ClosureConversionPass.h"
 #include "passes/DumpToProtobuf.h"
 
 #include "parse/FosterSymbolTableTraits-inl.h"
