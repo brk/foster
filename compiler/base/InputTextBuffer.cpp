@@ -35,7 +35,7 @@ struct InputTextBuffer::Impl {
     }
 
     if (data[i-1] != '\n') {
-      int len = (i - 1) - currentLineStart;
+      int len = i - currentLineStart;
       this->lineCache.push_back(StringRef(&data[currentLineStart], len));
     }
   }

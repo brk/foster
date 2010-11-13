@@ -338,6 +338,24 @@ target_link_libraries(fosterparse
 
 ############
 
+add_executable(fosterlower compiler/fosterlower.cpp compiler/StandardPrelude.cpp)
+add_dependencies(fosterlower fosterc) # quick hack
+target_link_libraries(fosterlower
+  fosterc_passes fosterc_parse fosterc_base
+  fosterc_llvm
+  antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
+
+############
+
+add_executable(fostercheck compiler/fostercheck.cpp compiler/StandardPrelude.cpp)
+add_dependencies(fostercheck fosterc) # quick hack
+target_link_libraries(fostercheck
+  fosterc_passes fosterc_parse fosterc_passes fosterc_base
+  fosterc_llvm
+  antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
+
+############
+
 add_dependencies(libfoster_bc chromium_base)
 add_dependencies(libfoster_bc cpuid)
 

@@ -88,11 +88,14 @@ void filterVarNames(std::vector<std::string>& v, const std::string& s) {
 
 TEST(ComputeFreeNames, annotate_names) {
   initCachedLLVMTypes();
-  ExprAST* e = parse(cc1, STR(
+  string str(STR(
     fn (x : i32, z: i32, y : i32) {
     fn (x : i32) { x + y + z +
-    fn (y : i32) { x + y + z } } }
-));
+    fn (y : i32) { x + y + z } } }));
+  llvm::outs() << "parsing: '" << str << "'\n";
+  ExprAST* e = parse(cc1, str);
+
+  EXPECT_TRUE(e != NULL);
 
   string unann = pr(e);
 

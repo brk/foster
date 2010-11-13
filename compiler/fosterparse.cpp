@@ -27,22 +27,13 @@ static cl::opt<string>
 optInputPath(cl::Positional, cl::desc("<input file>"));
 
 static cl::opt<string>
-optOutputPath(cl::Positional, cl::Optional, cl::desc("<output file>"), cl::init("-"));
+optOutputPath(cl::Positional, cl::desc("<output file>"));
 
 static cl::list<std::string>
 optIncludeRoots("I",
   cl::desc("Seach directories for imported modules"),
   cl::Prefix,
   cl::ZeroOrMore);
-
-#if 0
-void printVersionInfo() {
-  llvm::outs() << "Foster version: " << FOSTER_VERSION_STR;
-  llvm::outs() << ", compiled: " << __DATE__ << " at " << __TIME__ << "\n";
-  llvm::outs() << "ANTLR version " << ANTLR_VERSION_STR << "\n";
-  cl::PrintVersionMessage();
-}
-#endif
 
 /// Ensures that the given path exists and is a file, not a directory.
 void validateInputFile(const string& pathstr) {
@@ -102,13 +93,15 @@ void dumpModuleToProtobuf(ModuleAST* mod, const string& filename) {
   }
 
   if (pbModuleExpr.SerializeToOstream(out)) {
-    llvm::outs() << "serialization returned true\n";
+    // ok!
   } else {
     llvm::outs() << "serialization returned false\n";
   }
 
   if (out != &std::cout) {
     delete out;
+  } else {
+    std::cout.flush();
   }
 }
 
