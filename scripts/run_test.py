@@ -38,7 +38,7 @@ def extract_expected_input(path):
       label = m.group(1)
       value = m.group(2)
       if label == "IN":
-        inlines.append(value) 
+        inlines.append(value)
 
   tmpname = 'tmp.input.txt'
   with open(tmpname, 'w') as f:
@@ -60,6 +60,29 @@ def testname(testpath):
   """Given '/path/to/some/test.foster', returns 'test'"""
   return os.path.basename(testpath).replace('.foster', '')
 
+def compile_test_to_bitcode(paths, testpath, compilelog):
+    old_style = False
+
+    if old_style:
+        fosterc_cmdline = [ paths['fosterc'], testpath, '-O0' ]
+        print ' '.join(fosterc_cmdline)
+        rv, fc_elapsed = run_command(fosterc_cmdline, paths, testpath, stdout=compilelog, stderr=compilelog)
+        return (rv, fc_elapsed)
+    else:
+        # running fosterparse on a source file produces a ParsedAST
+        (s1, e1) = run_command(['fosterparse', testpath, 'out.pb'], paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
+
+        # running fostercheck on a ParsedAST produces an ElaboratedAST
+        (s2, e2) = run_command(['fostercheck', 'out.pb', 'out2.pb'], paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
+
+        # running fosterlower on a ParsedAST produces a bitcode Module
+        # linking a bunch of Modules produces a Module
+        # Running opt on a Module produces a Module
+        # Running llc on a Module produces an assembly file
+        (s3, e3) = run_command(['fosterlower', 'out2.pb'], paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
+
+        return (s3, e1 + e2 + e3)
+
 def run_one_test(testpath, paths, tmpdir):
   start = walltime()
   exp_filename = os.path.join(tmpdir, "expected.txt")
@@ -69,10 +92,7 @@ def run_one_test(testpath, paths, tmpdir):
       with open(os.path.join(tmpdir, "compile.log.txt"), 'w') as compilelog:
         infile = extract_expected_input(testpath)
 
-        fosterc_cmdline = [ paths['fosterc'], testpath, '-O0' ]
-
-        #print ' '.join(fosterc_cmdline)
-        rv, fc_elapsed = run_command(fosterc_cmdline, paths, testpath, stdout=compilelog, stderr=compilelog)
+        rv, fc_elapsed = compile_test_to_bitcode(paths, testpath, compilelog)
 
         rv, cc_elapsed = run_command('g++ out.s %s %s -o a.out' % (get_static_libs(), get_link_flags()),
                                     paths, testpath)
@@ -96,13 +116,14 @@ def main(testpath, paths, tmpdir):
 def get_paths(bindir):
   join = os.path.join
   paths = {
-      'fosterc': join(bindir, 'fosterc'),
       'out.s':     join(bindir, 'fc-output', 'out.s'),
       'a.out':     join(bindir, 'fc-output', 'a.out'),
-      'libfoster.bc': join(bindir, 'libfoster.bc'),
-      'libcpuid.o':   join(bindir, 'libcpuid.o'),
-      'libfoster_main.o': join(bindir, 'libfoster_main.o'),
   }
+  for bin in ['fosterc', 'fosterparse', 'fosterlower', 'fostercheck']:
+      paths[bin] = join(bindir, bin)
+  for lib in ['libfoster.bc', 'libcpuid.o', 'libfoster_main.o']:
+      paths[bin] = join(bindir, bin)
+
   # compiler spits out foster.ll in current directory
   paths['foster.ll'] = join(os.path.dirname(paths['fosterc']), 'foster.ll')
   return paths

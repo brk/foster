@@ -100,7 +100,6 @@ private:
 };
 
 
-
 static cl::opt<string>
 optInputPath(cl::Positional, cl::desc("<input file>"));
 
@@ -142,6 +141,11 @@ static cl::opt<bool>
 optOptimizeZero("O0",
   cl::desc("[foster] Disable optimization passes after linking with standard library"));
 
+static cl::opt<bool>
+optMake("make",
+  cl::desc("[foster] Link and assemble"),
+  cl::init(true));
+
 static cl::list<const PassInfo*, bool, PassNameParser>
 cmdLinePassList(cl::desc("Optimizations available:"));
 
@@ -165,10 +169,6 @@ void setTimingDescriptions() {
   gTimings.describe("llvm.llc",  "Time spent doing llc's job (IR->asm) (ms)");
 
   gTimings.describe("protobuf", "Time spent snogging protocol buffers (ms)");
-
-  gTimings.describe("foster.typecheck", "Time spent doing type checking (ms)");
-  gTimings.describe("foster.codegen",   "Time spent doing Foster AST -> LLVM IR lowering (ms)");
-  gTimings.describe("foster.closureconv", "Time spent performing closure conversion (ms)");
 }
 
 void ensureDirectoryExists(const string& pathstr) {
@@ -243,9 +243,7 @@ void dumpModuleToProtobuf(ModuleAST* mod, const string& filename) {
   { ScopedTimer timer("protobuf.io");
     std::ofstream out(filename.c_str(),
                       std::ios::trunc | std::ios::binary);
-    if (!pbModuleExpr.SerializeToOstream(&out)) {
-      EDiag() << "dumping module to protobuf " << filename << " failed.";
-    }
+    pbModuleExpr.SerializeToOstream(&out);
 
     std::ofstream txtout((filename + ".txt").c_str(), std::ios::trunc);
     txtout << pbModuleExpr.DebugString();
@@ -443,98 +441,6 @@ void setDefaultCommandLineOptions() {
   llvm::NoFramePointerElim = true;
 }
 
-ModuleAST* parseModuleFromSourceFile(
-              const llvm::sys::Path& sourceFilePath,
-              int& err_status) {
-  err_status = 0;
-
-  std::string tmpProtobufFile("_tmpast.foster.pb");
-
-  std::vector<const char*> nullTerminatedArgs;
-  nullTerminatedArgs.push_back("fosterparse");
-  nullTerminatedArgs.push_back(optInputPath.c_str());
-  nullTerminatedArgs.push_back(tmpProtobufFile.c_str());
-  nullTerminatedArgs.push_back(NULL);
-
-  const llvm::sys::Path* redirects[] = { NULL, NULL, NULL };
-
-  llvm::sys::Path path_to_fosterparse(
-            llvm::sys::Program::FindProgramByName("fosterparse"));
-
-  if (path_to_fosterparse.str().empty()) {
-    path_to_fosterparse = "fosterparse";
-  }
-
-  if (path_to_fosterparse.exists() &&
-      path_to_fosterparse.canRead() &&
-      path_to_fosterparse.canExecute()) {
-    // great!
-  } else {
-    foster::EDiag() << "unable to find or execute "
-                    << path_to_fosterparse.str();
-    err_status = 1;
-    return NULL;
-  }
-
-  int parse_status = 0;
-  int max_seconds_to_wait = 2;
-  { ScopedTimer timer("io.parse");
-    parse_status = llvm::sys::Program::ExecuteAndWait(
-        path_to_fosterparse,
-        &nullTerminatedArgs[0],
-        0, // env
-        &redirects[0],
-        max_seconds_to_wait);
-  }
-
-  if (parse_status != 0) {
-    llvm::errs() << llvm::sys::Program::FindProgramByName("fosterparse").str() << "\n";
-    llvm::errs() << "Error (" << parse_status << ") invoking";
-    int numActualArgs = nullTerminatedArgs.size() - 1;
-    for (int i = 0; i < numActualArgs; ++i) {
-      llvm::errs() << " " << nullTerminatedArgs[i];
-    }
-    llvm::errs() << " :: " << parse_status << "\n";
-    llvm::errs().flush();
-    llvm::outs() << "\n";
-    llvm::outs().flush();
-    err_status = parse_status;
-    return NULL;
-  }
-
-  ModuleAST* exprAST = NULL;
-
-  ExprAST* pbExprAST = readExprFromProtobuf(tmpProtobufFile);
-  if (!pbExprAST) {
-    foster::EDiag() << "unable to parse module from protobuf";
-    err_status = 1;
-    return NULL;
-  }
-
-  exprAST = dynamic_cast<ModuleAST*>(pbExprAST);
-  if (!exprAST) {
-    foster::EDiag() << "expression parsed from protobuf was not a ModuleAST";
-    err_status = 1;
-    return NULL;
-  }
-
-  // for each fn in module
-  for (ModuleAST::FnAST_iterator it = exprAST->fn_begin();
-                                it != exprAST->fn_end();
-                                ++it) {
-     gScope.getRootScope()->insert((*it)->getName(),
-                                  (*it)->getProto());
-  }
-
-  foster::addParentLinks(exprAST);
-
-  return exprAST;
-}
-
-namespace foster {
-  bool compareExprASTs(ExprAST*, ExprAST*);
-}
-
 int main(int argc, char** argv) {
   int program_status = 0;
   GOOGLE_PROTOBUF_VERIFY_VERSION;
@@ -542,17 +448,16 @@ int main(int argc, char** argv) {
   sys::PrintStackTraceOnErrorSignal();
   PrettyStackTraceProgram X(argc, argv);
   llvm_shutdown_obj Y;
-  bool typechecked = false;
   ScopedTimer* wholeProgramTimer = new ScopedTimer("total");
   Module* libfoster_bc = NULL;
   Module* imath_bc = NULL;
   const llvm::Type* mp_int = NULL;
-  std::string outPbFilename(dumpdirFile("tmp.precloconv.pb"));
+  ModuleAST* exprAST = NULL;
 
   setDefaultCommandLineOptions();
 
   cl::SetVersionPrinter(&printVersionInfo);
-  cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster compiler\n");
+  cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster compiler backend\n");
 
   validateInputFile(optInputPath);
 
@@ -565,21 +470,28 @@ int main(int argc, char** argv) {
 
   foster::ParsingContext::pushNewContext();
 
-  ModuleAST* exprAST =
-      parseModuleFromSourceFile(mainModulePath, program_status);
-
-  if (!exprAST) {
-    if (program_status == 0) { program_status = 2; }
-    goto cleanup;
-  }
-
   using foster::module;
   module = new Module(mainModulePath.str().c_str(), getGlobalContext());
 
+  validateInputFile("libfoster.bc");
+  validateInputFile("imath-wrapper.bc");
+
   libfoster_bc = readLLVMModuleFromPath("libfoster.bc");
   imath_bc = readLLVMModuleFromPath("imath-wrapper.bc");
+  const llvm::Type* mpz_struct_ty = imath_bc->getTypeByName("struct.mpz");
+  if (!mpz_struct_ty) {
+    EDiag() << "Unable to find imath bitcode library";
+    program_status = 1; goto cleanup;
+  }
+
+  exprAST = dynamic_cast<ModuleAST*>(readExprFromProtobuf(optInputPath));
+  if (!exprAST) {
+    EDiag() << "Unable to parse module from protocol buffer!";
+    program_status = 1; goto cleanup;
+  }
+
   mp_int =
-    llvm::PointerType::getUnqual(imath_bc->getTypeByName("struct.mpz"));
+    llvm::PointerType::getUnqual(mpz_struct_ty);
   module->addTypeName("mp_int", mp_int);
   gTypeScope.insert("int", NamedTypeAST::get("int", mp_int));
 
@@ -587,17 +499,12 @@ int main(int argc, char** argv) {
   foster::putModuleMembersInInternalScope("imath", imath_bc, module);
   foster::addConcretePrimitiveFunctionsTo(module);
 
-  {
-  llvm::outs() << "=========================" << "\n";
-  llvm::outs() << "Type checking... " << "\n";
-  ScopedTimer timer("foster.typecheck");
-  typechecked = foster::typecheck(exprAST);
+  if (!exprAST) {
+    EDiag() << "Unable to parse module from protocol buffer!";
+    program_status = 1; goto cleanup;
   }
 
-  if (!typechecked) {
-    program_status = 1;
-    goto cleanup;
-  }
+  foster::addParentLinks(exprAST);
 
   if (optDumpASTs) { ScopedTimer timer("io.file");
     string outfile = "pp-precc.txt";
@@ -618,24 +525,12 @@ int main(int argc, char** argv) {
     dumpModuleToProtobuf(exprAST, dumpdirFile(outPbFilename));
   }
 
-  // Round-trip typechecked module through protocol buffers
-  // before codegenning. (precursor to separate-process codegen).
-  dumpModuleToProtobuf(exprAST, outPbFilename);
-  exprAST = dynamic_cast<ModuleAST*>(readExprFromProtobuf(outPbFilename));
-  if (!exprAST) {
-    EDiag() << "parsing tmp.precloconv.pb failed!";
-    program_status = 5; goto cleanup;
-  } else {
-    foster::addParentLinks(exprAST);
-  }
-
   {
     dumpExprStructureToFile(exprAST, dumpdirFile("structure.beforecc.txt"));
 
     llvm::outs() << "=========================" << "\n";
     llvm::outs() << "Performing closure conversion..." << "\n";
 
-    ScopedTimer timer("foster.closureconv");
     foster::performClosureConversion(foster::globalNames, exprAST);
 
     dumpExprStructureToFile(exprAST, dumpdirFile("structure.aftercc.txt"));
@@ -658,7 +553,6 @@ int main(int argc, char** argv) {
   llvm::outs() << "=========================" << "\n";
 
   {
-    ScopedTimer timer("foster.codegen");
     // Implicitly outputs to foster::module, via foster::builder.
     foster::codegen(exprAST);
 
@@ -677,7 +571,7 @@ int main(int argc, char** argv) {
     dumpModuleToFile(module, dumpdirFile("out.prelink.ll").c_str());
   }
 
-  if (!optCompileSeparately) {
+  if (optMake) {
     { ScopedTimer timer("llvm.link");
       linkTo(libfoster_bc, "libfoster.bc", module);
       linkTo(imath_bc, "imath.bc", module);
@@ -711,7 +605,7 @@ int main(int argc, char** argv) {
   }
 
   foster::gInputFile = NULL;
-  { ScopedTimer timer("io.file.flush");
+  {
     llvm::outs().flush();
     llvm::errs().flush();
   }
