@@ -27,6 +27,11 @@ namespace foster {
 namespace runtime {
 namespace gc {
 
+// Performs byte-wise addition on void pointer base
+void* offset(void* base, int off) {
+  return (void*) (((char*) base) + off);
+}
+
 struct typemap {
   const char* name;
   int32_t numPointers;
@@ -55,7 +60,9 @@ struct stackmap {
     // Use manual pointer arithmetic to avoid C's padding rules.
     const OffsetWithMetadata* offsetWithMetadata(int i) const {
       #define OFFSET_WITH_METADATA_SIZE (sizeof(void*) + sizeof(int32_t))
-      return liveOffsetsWithMetadata + (i * OFFSET_WITH_METADATA_SIZE);
+      return (const OffsetWithMetadata*)
+                  offset((void*) liveOffsetsWithMetadata,
+                         i * OFFSET_WITH_METADATA_SIZE);
     }
 
     // TODO provide similar methods to find actual
@@ -94,11 +101,6 @@ struct heap_cell { int64_t _size; unsigned char _body[0];
     return (void*) (((uint64_t) size()) & ~FORWARDED_BIT);
   }
 };
-
-// Performs byte-wise addition on void pointer base
-void* offset(void* base, int off) {
-  return (void*) (((char*) base) + off);
-}
 
 #if USE_FOSTER_GC_PLUGIN
 void visitGCRootsWithStackMaps(void (*visitor)(void **root, const void *meta));
