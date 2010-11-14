@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#include "llvm/ADT/StringRef.h"
-
 #ifndef FOSTER_INPUT_TEXT_BUFFER_H
 #define FOSTER_INPUT_TEXT_BUFFER_H
+
+#include "llvm/ADT/StringRef.h"
 
 // InputTextBuffer is a wrapper around a llvm::MemoryBuffer
 // with a cache of line offsets and lengths, thus providing
@@ -29,6 +29,7 @@ public:
 
   llvm::MemoryBuffer* getMemoryBuffer() const;
   llvm::StringRef getLine(int n) const;
+  int getLineCount() const;
 
 private:
   struct Impl;

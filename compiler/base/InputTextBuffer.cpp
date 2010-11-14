@@ -60,8 +60,13 @@ InputTextBuffer::getMemoryBuffer() const {
 
 StringRef
 InputTextBuffer::getLine(int n) const {
-  ASSERT(n >= 0 && static_cast<size_t>(n) < impl->lineCache.size());
+  ASSERT(n >= 0 && static_cast<size_t>(n) < this->getLineCount());
   return impl->lineCache[n];
+}
+
+int
+InputTextBuffer::getLineCount() const {
+  return impl->lineCache.size();
 }
 
 } // namespace foster
