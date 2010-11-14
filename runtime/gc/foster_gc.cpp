@@ -40,7 +40,6 @@ struct stackmap {
   // GC maps emit structures without alignment, so we can't simply
   // use sizeof(stackmap::OffsetWithMetadata), because that value
   // includes padding.
-  #define OFFSET_WITH_METADATA_SIZE (sizeof(void*) + sizeof(int32_t))
 
   int32_t pointClusterCount;
   struct PointCluster {
@@ -52,6 +51,15 @@ struct stackmap {
             liveOffsetsWithMetadata[0];
     int32_t liveOffsetsWithoutMetadata[0];
     void*   safePointAddresses[0];
+
+    // Use manual pointer arithmetic to avoid C's padding rules.
+    const OffsetWithMetadata* offsetWithMetadata(int i) const {
+      #define OFFSET_WITH_METADATA_SIZE (sizeof(void*) + sizeof(int32_t))
+      return liveOffsetsWithMetadata + (i * OFFSET_WITH_METADATA_SIZE);
+    }
+
+    // TODO provide similar methods to find actual
+    // addresses of the other flexible arrays.
   };
   PointCluster pointClusters[0];
 };
@@ -168,7 +176,7 @@ class copying_gc {
           // but we don't want to use the (i8*) typemap entry for the env ptr.
           // Instead, we manually fetch the correct typemap from the
           // environment itself, and use it instead of e.typeinfo
-          void** envptr_slot = (void**) offset(body, 4);
+          void** envptr_slot = (void**) offset(body, sizeof(void*));
           void** envptr = *(void***) envptr_slot;
           if (!envptr) return;
           typemap* envmap = (typemap*) *envptr;
@@ -445,6 +453,7 @@ void register_stackmaps() {
     }
   }
   fprintf(gclog, "--------- gclog stackmap registration complete ----------\n");
+  fflush(gclog);
 }
 #endif
 
@@ -560,8 +569,8 @@ void visitGCRootsWithStackMaps(void (*visitor)(void **root, const void *meta)) {
     int32_t frameSize = pc->frameSize;
 
     for (int a = 0; a < pc->liveCountWithMetadata; ++a) {
-      int32_t off = pc->liveOffsetsWithMetadata[a].offset;
-      const void* meta = pc->liveOffsetsWithMetadata[a].metadata;
+      int32_t     off  = pc->offsetWithMetadata(a)->offset;
+      const void* meta = pc->offsetWithMetadata(a)->metadata;
       void* rootaddr = offset(frameptr, off);
       visitor((void**) rootaddr, meta);
     }
