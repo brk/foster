@@ -70,16 +70,16 @@ def compile_test_to_bitcode(paths, testpath, compilelog):
         return (rv, fc_elapsed)
     else:
         # running fosterparse on a source file produces a ParsedAST
-        (s1, e1) = run_command(['fosterparse', testpath, 'out.pb'], paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
+        (s1, e1) = run_command(['fosterparse', testpath, '_out.parsed.pb'], paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
 
         # running fostercheck on a ParsedAST produces an ElaboratedAST
-        (s2, e2) = run_command(['fostercheck', 'out.pb', 'out2.pb'], paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
+        (s2, e2) = run_command(['fostercheck', '_out.parsed.pb', '_out.checked.pb'], paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
 
         # running fosterlower on a ParsedAST produces a bitcode Module
         # linking a bunch of Modules produces a Module
         # Running opt on a Module produces a Module
         # Running llc on a Module produces an assembly file
-        (s3, e3) = run_command(['fosterlower', 'out2.pb'], paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
+        (s3, e3) = run_command(['fosterlower', '_out.checked.pb', '-O0'], paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
 
         return (s3, e1 + e2 + e3)
 
@@ -106,7 +106,7 @@ def run_one_test(testpath, paths, tmpdir):
 
         total_elapsed = elapsed_since(start)
         print "foc:%4d | gcc:%4d | run:%4d | py:%3d | tot:%5d | %s" % (fc_elapsed,
-			cc_elapsed, rn_elapsed, (total_elapsed - (fc_elapsed + cc_elapsed + rn_elapsed)),
+                        cc_elapsed, rn_elapsed, (total_elapsed - (fc_elapsed + cc_elapsed + rn_elapsed)),
                         total_elapsed, testname(testpath))
         infile.close()
 

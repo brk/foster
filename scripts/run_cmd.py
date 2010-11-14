@@ -42,7 +42,11 @@ def run_command(cmd, paths, testpath, stdout=None, stderr=None, stdin=None, stri
 
   start = walltime()
   rv = subprocess.call( arglist, stdout=stdout, stderr=stderr, stdin=stdin)
-  #print ' '.join(arglist) , ' returned rv = ' , rv
+
+  cmdline = ' '.join(arglist)
+  if not stdin is None:
+    cmdline += " < " + stdin.name
+  #print cmdline, ' returned rv = ' , rv
 
   end = walltime()
 
