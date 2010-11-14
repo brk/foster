@@ -11,4 +11,5 @@ main = fn ( to i32) {
       print_i1( primitive_<_i64(128, primitive_-_i64(e, s)) )
     }
   }
+  0
 }

@@ -266,6 +266,7 @@ add_library(fosterc_parse STATIC
   compiler/parse/OperatorPrecedence.cpp
   compiler/parse/DumpStructure.cpp
   compiler/parse/ProtobufToAST.cpp
+  compiler/parse/ProtobufUtils.cpp
   compiler/parse/FosterUtils.cpp
   ${GENERATED}/FosterAST.pb.cc
   ${GENERATED}/fosterParser.c

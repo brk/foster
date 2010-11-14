@@ -117,3 +117,7 @@ message PBIf {
   required Expr else_expr = 4;
 }
 
+message SourceModule {
+  repeated string line = 2;
+  required Expr   expr = 3;
+}

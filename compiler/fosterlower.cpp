@@ -47,7 +47,7 @@
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
 #include "parse/DumpStructure.h"
-#include "parse/ProtobufToAST.h"
+#include "parse/ProtobufUtils.h"
 #include "parse/ParsingContext.h"
 #include "parse/CompilationContext.h"
 
@@ -55,7 +55,7 @@
 #include "passes/AddParentLinksPass.h"
 #include "passes/PrettyPrintPass.h"
 #include "passes/ClosureConversionPass.h"
-#include "passes/DumpToProtobuf.h"
+#include "_generated_/FosterAST.pb.h"
 
 #include "parse/FosterSymbolTableTraits-inl.h"
 #include "StandardPrelude.h"
@@ -166,8 +166,6 @@ void setTimingDescriptions() {
   gTimings.describe("llvm.opt",  "Time spent in LLVM IR optimization (ms)");
   gTimings.describe("llvm.link", "Time spent linking LLVM modules (ms)");
   gTimings.describe("llvm.llc",  "Time spent doing llc's job (IR->asm) (ms)");
-
-  gTimings.describe("protobuf", "Time spent snogging protocol buffers (ms)");
 }
 
 void ensureDirectoryExists(const string& pathstr) {
@@ -232,32 +230,6 @@ void dumpExprStructureToFile(ExprAST* ast, const string& filename) {
   foster::dumpExprStructure(out, ast);
 }
 
-void dumpModuleToProtobuf(ModuleAST* mod, const string& filename) {
-  foster::pb::Expr pbModuleExpr;
-
-  { ScopedTimer timer("protobuf");
-    DumpToProtobufPass p(&pbModuleExpr); mod->accept(&p);
-  }
-
-  { ScopedTimer timer("protobuf.io");
-    std::ofstream out(filename.c_str(),
-                      std::ios::trunc | std::ios::binary);
-    pbModuleExpr.SerializeToOstream(&out);
-
-    std::ofstream txtout((filename + ".txt").c_str(), std::ios::trunc);
-    txtout << pbModuleExpr.DebugString();
-  }
-}
-
-ExprAST* readExprFromProtobuf(const string& pathstr) {
-  foster::pb::Expr pbe;
-  std::fstream input(pathstr.c_str(), std::ios::in | std::ios::binary);
-  if (!pbe.ParseFromIstream(&input)) {
-    return NULL;
-  }
-
-  return foster::ExprAST_from_pb(&pbe);
-}
 
 TargetData* getTargetDataForModule(Module* mod) {
   const string& layout = mod->getDataLayout();
@@ -398,34 +370,6 @@ void linkTo(llvm::Module*& transient,
   }
 }
 
-/// Ensures that the given path exists and is a file, not a directory.
-void validateInputFile(const string& pathstr) {
-  llvm::sys::PathWithStatus path(pathstr);
-
-  if (path.empty()) {
-    llvm::errs() << "Error: need an input filename!" << "\n";
-    exit(1);
-  }
-
-  string err;
-  const llvm::sys::FileStatus* status
-         = path.getFileStatus(/*forceUpdate=*/ false, &err);
-  if (!status) {
-    if (err.empty()) {
-      llvm::errs() << "Error occurred when reading input path '"
-                << pathstr << "'" << "\n";
-    } else {
-      llvm::errs() << err << "\n";
-    }
-    exit(1);
-  }
-
-  if (status->isDir) {
-    llvm::errs() << "Error: input must be a file, not a directory!" << "\n";
-    exit(1);
-  }
-}
-
 void setDefaultCommandLineOptions() {
   if (string(LLVM_HOSTTRIPLE).find("darwin") != string::npos) {
     // Applications on Mac OS X (x86) must be compiled with relocatable symbols,
@@ -452,6 +396,7 @@ int main(int argc, char** argv) {
   Module* imath_bc = NULL;
   const llvm::Type* mp_int = NULL;
   ModuleAST* exprAST = NULL;
+  foster::pb::SourceModule sm;
 
   setDefaultCommandLineOptions();
 
@@ -483,7 +428,7 @@ int main(int argc, char** argv) {
     program_status = 1; goto cleanup;
   }
 
-  exprAST = dynamic_cast<ModuleAST*>(readExprFromProtobuf(optInputPath));
+  exprAST = readSourceModuleFromProtobuf(optInputPath, sm);
   if (!exprAST) {
     EDiag() << "Unable to parse module from protocol buffer!";
     program_status = 1; goto cleanup;
@@ -599,10 +544,7 @@ int main(int argc, char** argv) {
     llvm::PrintStatistics(out);
   }
 
-  { ScopedTimer timer("protobuf.shutdown");
-    google::protobuf::ShutdownProtobufLibrary();
-  }
-
+  google::protobuf::ShutdownProtobufLibrary();
   foster::gInputFile = NULL;
   {
     llvm::outs().flush();

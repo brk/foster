@@ -46,14 +46,14 @@
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
 #include "parse/DumpStructure.h"
-#include "parse/ProtobufToAST.h"
+#include "parse/ProtobufUtils.h"
 #include "parse/ParsingContext.h"
 #include "parse/CompilationContext.h"
 
 #include "passes/TypecheckPass.h"
 #include "passes/AddParentLinksPass.h"
 #include "passes/PrettyPrintPass.h"
-#include "passes/DumpToProtobuf.h"
+#include "_generated_/FosterAST.pb.h"
 
 #include "parse/FosterSymbolTableTraits-inl.h"
 #include "StandardPrelude.h"
@@ -112,57 +112,6 @@ void dumpExprStructureToFile(ExprAST* ast, const string& filename) {
   foster::dumpExprStructure(out, ast);
 }
 
-void dumpModuleToProtobuf(ModuleAST* mod, const string& filename) {
-  foster::pb::Expr pbModuleExpr;
-
-  DumpToProtobufPass p(&pbModuleExpr); mod->accept(&p);
-
-  std::ofstream out(filename.c_str(),
-                    std::ios::trunc | std::ios::binary);
-  pbModuleExpr.SerializeToOstream(&out);
-
-  std::ofstream txtout((filename + ".txt").c_str(), std::ios::trunc);
-  txtout << pbModuleExpr.DebugString();
-}
-
-ExprAST* readExprFromProtobuf(const string& pathstr) {
-  foster::pb::Expr pbe;
-  std::fstream input(pathstr.c_str(), std::ios::in | std::ios::binary);
-  if (!pbe.ParseFromIstream(&input)) {
-    return NULL;
-  }
-
-  return foster::ExprAST_from_pb(&pbe);
-}
-
-/// Ensures that the given path exists and is a file, not a directory.
-void validateInputFile(const string& pathstr) {
-  llvm::sys::PathWithStatus path(pathstr);
-
-  if (path.empty()) {
-    llvm::errs() << "Error: need an input filename!" << "\n";
-    exit(1);
-  }
-
-  string err;
-  const llvm::sys::FileStatus* status
-         = path.getFileStatus(/*forceUpdate=*/ false, &err);
-  if (!status) {
-    if (err.empty()) {
-      llvm::errs() << "Error occurred when reading input path '"
-                << pathstr << "'" << "\n";
-    } else {
-      llvm::errs() << err << "\n";
-    }
-    exit(1);
-  }
-
-  if (status->isDir) {
-    llvm::errs() << "Error: input must be a file, not a directory!" << "\n";
-    exit(1);
-  }
-}
-
 int main(int argc, char** argv) {
   int program_status = 0;
   GOOGLE_PROTOBUF_VERIFY_VERSION;
@@ -188,8 +137,8 @@ int main(int argc, char** argv) {
 
   foster::ParsingContext::pushNewContext();
 
-  ModuleAST* exprAST =
-      dynamic_cast<ModuleAST*>(readExprFromProtobuf(mainModulePath.str()));
+  foster::pb::SourceModule sm;
+  ModuleAST* exprAST = readSourceModuleFromProtobuf(mainModulePath.str(), sm);
 
   if (!exprAST) {
     if (program_status == 0) { program_status = 2; }

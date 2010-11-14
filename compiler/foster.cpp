@@ -47,7 +47,7 @@
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
 #include "parse/DumpStructure.h"
-#include "parse/ProtobufToAST.h"
+#include "parse/ProtobufUtils.h"
 #include "parse/ParsingContext.h"
 #include "parse/CompilationContext.h"
 
@@ -233,35 +233,6 @@ void dumpExprStructureToFile(ExprAST* ast, const string& filename) {
   foster::dumpExprStructure(out, ast);
 }
 
-void dumpModuleToProtobuf(ModuleAST* mod, const string& filename) {
-  foster::pb::Expr pbModuleExpr;
-
-  { ScopedTimer timer("protobuf");
-    DumpToProtobufPass p(&pbModuleExpr); mod->accept(&p);
-  }
-
-  { ScopedTimer timer("protobuf.io");
-    std::ofstream out(filename.c_str(),
-                      std::ios::trunc | std::ios::binary);
-    if (!pbModuleExpr.SerializeToOstream(&out)) {
-      EDiag() << "dumping module to protobuf " << filename << " failed.";
-    }
-
-    std::ofstream txtout((filename + ".txt").c_str(), std::ios::trunc);
-    txtout << pbModuleExpr.DebugString();
-  }
-}
-
-ExprAST* readExprFromProtobuf(const string& pathstr) {
-  foster::pb::Expr pbe;
-  std::fstream input(pathstr.c_str(), std::ios::in | std::ios::binary);
-  if (!pbe.ParseFromIstream(&input)) {
-    return NULL;
-  }
-
-  return foster::ExprAST_from_pb(&pbe);
-}
-
 TargetData* getTargetDataForModule(Module* mod) {
   const string& layout = mod->getDataLayout();
   if (layout.empty()) return NULL;
@@ -401,34 +372,6 @@ void linkTo(llvm::Module*& transient,
   }
 }
 
-/// Ensures that the given path exists and is a file, not a directory.
-void validateInputFile(const string& pathstr) {
-  llvm::sys::PathWithStatus path(pathstr);
-
-  if (path.empty()) {
-    llvm::errs() << "Error: need an input filename!" << "\n";
-    exit(1);
-  }
-
-  string err;
-  const llvm::sys::FileStatus* status
-         = path.getFileStatus(/*forceUpdate=*/ false, &err);
-  if (!status) {
-    if (err.empty()) {
-      llvm::errs() << "Error occurred when reading input path '"
-                << pathstr << "'" << "\n";
-    } else {
-      llvm::errs() << err << "\n";
-    }
-    exit(1);
-  }
-
-  if (status->isDir) {
-    llvm::errs() << "Error: input must be a file, not a directory!" << "\n";
-    exit(1);
-  }
-}
-
 void setDefaultCommandLineOptions() {
   if (string(LLVM_HOSTTRIPLE).find("darwin") != string::npos) {
     // Applications on Mac OS X (x86) must be compiled with relocatable symbols,
@@ -445,6 +388,7 @@ void setDefaultCommandLineOptions() {
 
 ModuleAST* parseModuleFromSourceFile(
               const llvm::sys::Path& sourceFilePath,
+              foster::pb::SourceModule& sm,
               int& err_status) {
   err_status = 0;
 
@@ -502,18 +446,9 @@ ModuleAST* parseModuleFromSourceFile(
     return NULL;
   }
 
-  ModuleAST* exprAST = NULL;
-
-  ExprAST* pbExprAST = readExprFromProtobuf(tmpProtobufFile);
-  if (!pbExprAST) {
-    foster::EDiag() << "unable to parse module from protobuf";
-    err_status = 1;
-    return NULL;
-  }
-
-  exprAST = dynamic_cast<ModuleAST*>(pbExprAST);
+  ModuleAST* exprAST = readSourceModuleFromProtobuf(tmpProtobufFile, sm);
   if (!exprAST) {
-    foster::EDiag() << "expression parsed from protobuf was not a ModuleAST";
+    foster::EDiag() << "unable to parse module from protobuf";
     err_status = 1;
     return NULL;
   }
@@ -548,6 +483,8 @@ int main(int argc, char** argv) {
   Module* imath_bc = NULL;
   const llvm::Type* mp_int = NULL;
   std::string outPbFilename(dumpdirFile("tmp.precloconv.pb"));
+  foster::pb::SourceModule sm;
+  foster::pb::SourceModule sm2;
 
   setDefaultCommandLineOptions();
 
@@ -566,7 +503,7 @@ int main(int argc, char** argv) {
   foster::ParsingContext::pushNewContext();
 
   ModuleAST* exprAST =
-      parseModuleFromSourceFile(mainModulePath, program_status);
+      parseModuleFromSourceFile(mainModulePath, sm, program_status);
 
   if (!exprAST) {
     if (program_status == 0) { program_status = 2; }
@@ -621,7 +558,7 @@ int main(int argc, char** argv) {
   // Round-trip typechecked module through protocol buffers
   // before codegenning. (precursor to separate-process codegen).
   dumpModuleToProtobuf(exprAST, outPbFilename);
-  exprAST = dynamic_cast<ModuleAST*>(readExprFromProtobuf(outPbFilename));
+  exprAST = readSourceModuleFromProtobuf(outPbFilename, sm2);
   if (!exprAST) {
     EDiag() << "parsing tmp.precloconv.pb failed!";
     program_status = 5; goto cleanup;

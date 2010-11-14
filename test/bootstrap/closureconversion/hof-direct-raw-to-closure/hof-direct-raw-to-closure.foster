@@ -11,7 +11,7 @@ fn "main" () {
   expect_i32(48) ;  print_i32(run-it(read_i32)) // C fn
 
   force_gc_for_debugging_purposes()
-
+  0
 }
 
 run-it = fn (f:fn()) {  f()  }
