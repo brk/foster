@@ -430,8 +430,8 @@ void register_stackmaps() {
       totalOffset += sizeof(void*)   * c.addressCount;
 
       fprintf(gclog, "  safePointAddrs: %p * %d\n", safePointAddresses, c.addressCount); fflush(gclog);
-      fprintf(gclog, "  sizeof(stackmap::OffsetWithMetadata): %u\n", sizeof(stackmap::OffsetWithMetadata));
-      fprintf(gclog, "  OFFSET_WITH_METADATA_SIZE: %u\n", OFFSET_WITH_METADATA_SIZE);
+      fprintf(gclog, "  sizeof(stackmap::OffsetWithMetadata): %lu\n", sizeof(stackmap::OffsetWithMetadata));
+      fprintf(gclog, "  OFFSET_WITH_METADATA_SIZE: %lu\n", OFFSET_WITH_METADATA_SIZE);
       fprintf(gclog, "  c.liveCountWithMetadata: %d\n", c.liveCountWithMetadata);
 
       for (int32_t i = 0; i < c.addressCount; ++i) {
@@ -444,6 +444,7 @@ void register_stackmaps() {
                      c.liveCountWithMetadata, c.liveCountWithoutMetadata);
     }
   }
+  fprintf(gclog, "--------- gclog stackmap registration complete ----------\n");
 }
 #endif
 
