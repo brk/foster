@@ -111,7 +111,10 @@ def run_one_test(testpath, paths, tmpdir):
         infile.close()
 
 def main(testpath, paths, tmpdir):
-  run_one_test(testpath, paths, os.path.join(tmpdir, testname(testpath)))
+  testdir = os.path.join(tmpdir, testname(testpath))
+  if not os.path.isdir(testdir):
+    os.makedirs(testdir)
+  run_one_test(testpath, paths, testdir)
 
 def get_paths(bindir):
   join = os.path.join
