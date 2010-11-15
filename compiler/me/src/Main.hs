@@ -100,8 +100,10 @@ data ExprAST =
 
                           -- proto    body
 data FnAST  = FnAST     PrototypeAST ExprAST deriving (Show)
---                                  ret ty  name   arg names
-data PrototypeAST = PrototypeAST    TypeAST String [AnnVar] deriving (Show)
+data PrototypeAST = PrototypeAST {
+                          prototypeASTretType :: TypeAST
+                        , prototypeASTname    :: String
+                        , prototypeASTformals :: [AnnVar] } deriving (Show)
 
 
 data AnnExpr =
@@ -128,12 +130,17 @@ data AnnVar       = AnnVar          TypeAST String deriving (Show)
 data AnnFn        = AnnFn           AnnPrototype AnnExpr deriving (Show)
 data AnnPrototype = AnnPrototype    TypeAST String [AnnVar] deriving (Show)
 
+normalize :: TypeAST -> TypeAST
+normalize (TupleTypeAST [t]) = t
+normalize x = x
+
 typeAST :: AnnExpr -> TypeAST
 -- {{{
 typeAST (AnnBool _)          = NamedTypeAST "i1"
 typeAST (AnnInt t _ _ _ _)   = t
 typeAST (AnnTuple es b)      = TupleTypeAST [typeAST e | e <- es]
-typeAST (E_AnnFn (AnnFn (AnnPrototype t s vs) e)) = t
+typeAST (E_AnnFn (AnnFn (AnnPrototype rt s vs) e))
+                             = FnTypeAST (normalize $ TupleTypeAST [t | (AnnVar t v) <- vs]) rt
 typeAST (AnnCall t b a)      = t
 typeAST (AnnCompiles c)    = NamedTypeAST "i1"
 typeAST (AnnIf t a b c)      = t
@@ -198,16 +205,28 @@ getTypeCheckedType :: TypecheckResult AnnExpr -> TypeAST
 getTypeCheckedType (Annotated e) = typeAST e
 getTypeCheckedType (TypecheckErrors _) = MissingTypeAST "getTypeCheckedType"
 
+typeJoin :: TypeAST -> TypeAST -> Maybe TypeAST
+typeJoin (MissingTypeAST _) x = Just x
+typeJoin x (MissingTypeAST _) = Just x
+typeJoin x y = if typesEqual x y then Just x else Nothing
+
 typecheck :: Context -> ExprAST -> TypecheckResult AnnExpr
 typecheck ctx expr =
     case expr of
         E_FnAST (FnAST proto body)  ->
             let extCtx = extendContext ctx proto in
-            let annproto = case proto of
-                              (PrototypeAST t s vars) -> (AnnPrototype t s vars)
-                           in
             do annbody <- typecheck extCtx body
-               return (E_AnnFn (AnnFn annproto annbody))
+               let j = typeJoin (prototypeASTretType proto) (typeAST annbody)
+               if isJust j
+                 then
+                   let annproto = case proto of
+                                   (PrototypeAST t s vars) ->
+                                    (AnnPrototype (fromJust j) s vars) in
+                   return (E_AnnFn (AnnFn annproto annbody))
+                 else TypecheckErrors ["FnAST: proto ret type did not match body: "
+                                            ++ show (prototypeASTretType proto)
+                                            ++ " vs " ++ show (typeAST annbody)]
+
         BoolAST         b    -> do return (AnnBool b)
         IfAST         a b c  -> do ea <- typecheck ctx a
                                    eb <- typecheck ctx b
@@ -310,7 +329,7 @@ listExprs pb_exprs = do
 inspect :: TypecheckResult AnnExpr -> IO ()
 inspect typechecked =
     case typechecked of
-        Annotated e -> do putStrLn $ show e
+        Annotated e -> do putStrLn $ "Successful typecheck! " ++  showStructureA e
         TypecheckErrors errs ->
             F.forM_ errs $ \err -> do putStrLn $ "Typecheck error: " ++ err
 
@@ -582,7 +601,7 @@ textOfA e width =
         E_AnnFn (AnnFn a b)  -> "AnnFn        "
         AnnSeq     t  es     -> "AnnSeq       " ++ " :: " ++ show t
         AnnSubscript  t a b    -> "AnnSubscript " ++ " :: " ++ show t
-        E_AnnPrototype t' (AnnPrototype t s es)     -> "PrototypeAST " ++ s ++ " :: " ++ show t ++ " :/: " ++ show t'
+        E_AnnPrototype t (AnnPrototype rt s es)     -> "PrototypeAST " ++ s ++ " :: " ++ show t
         AnnTuple     es b    -> "AnnTuple     "
         E_AnnVar (AnnVar t v) -> "AnnVar       " ++ v ++ " :: " ++ show t
 
