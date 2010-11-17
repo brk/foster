@@ -68,6 +68,7 @@ exprTagString tag =
                 CALL      -> "CALL"
                 SEQ       -> "SEQ"
                 SUBSCRIPT -> "SUBSCRIPT"
+                MODULE    -> "MODULE"
                 otherwise -> "<unknown>"
 --
 
@@ -133,11 +134,15 @@ data AnnExpr =
 
 data AnnVar       = AnnVar          TypeAST String deriving (Show)
 data AnnFn        = AnnFn           AnnPrototype AnnExpr deriving (Show)
-data AnnPrototype = AnnPrototype    TypeAST String [AnnVar] deriving (Show)
+data AnnPrototype = AnnPrototype    { annProtoReturnType :: TypeAST
+                                    , annProtoName       :: String
+                                    , annProtoVars       :: [AnnVar]
+                                    } deriving (Show)
 
-normalize :: TypeAST -> TypeAST
-normalize (TupleTypeAST [t]) = t
-normalize x = x
+normalizeTypes :: [TypeAST] -> TypeAST
+normalizeTypes []  = TypeUnitAST
+normalizeTypes [t] = t
+normalizeTypes xs  = TupleTypeAST xs
 
 typeAST :: AnnExpr -> TypeAST
 -- {{{
@@ -145,7 +150,7 @@ typeAST (AnnBool _)          = NamedTypeAST "i1"
 typeAST (AnnInt t _ _ _ _)   = t
 typeAST (AnnTuple es b)      = TupleTypeAST [typeAST e | e <- es]
 typeAST (E_AnnFn (AnnFn (AnnPrototype rt s vs) e))
-                             = FnTypeAST (normalize $ TupleTypeAST [t | (AnnVar t v) <- vs]) rt
+                             = FnTypeAST (normalizeTypes [t | (AnnVar t v) <- vs]) rt
 typeAST (AnnCall t b a)      = t
 typeAST (AnnCompiles c)    = NamedTypeAST "i1"
 typeAST (AnnIf t a b c)      = t
@@ -575,6 +580,12 @@ textOf e width =
 
 -----------------------------------------------------------------------
 
+fnTypeFrom :: AnnPrototype -> AnnExpr -> TypeAST
+fnTypeFrom p b =
+    let intype = normalizeTypes [avarType v | v <- annProtoVars p] in
+    let outtype = typeAST b in
+    FnTypeAST intype outtype
+
 childrenOfA :: AnnExpr -> [AnnExpr]
 childrenOfA e =
     case e of
@@ -583,7 +594,7 @@ childrenOfA e =
         AnnCompiles   c                      -> []
         AnnIf      t  a b c                  -> [a, b, c]
         AnnInt t i s1 s2 i2                  -> []
-        E_AnnFn (AnnFn p b)                  -> [E_AnnPrototype (MissingTypeAST "childrenOfA") p, b]
+        E_AnnFn (AnnFn p b)                  -> [E_AnnPrototype t p, b] where t = fnTypeFrom p b
         AnnSeq      t es                     -> es
         AnnSubscript t a b                   -> [a, b]
         E_AnnPrototype t' (AnnPrototype t s es) -> [E_AnnVar v | v <- es]
