@@ -323,7 +323,7 @@ add_executable(fosterc
 )
 
 target_link_libraries(fosterc
-  fosterc_passes fosterc_parse fosterc_base
+  fosterc_parse fosterc_passes fosterc_parse fosterc_base
   fosterc_llvm
   antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
 
@@ -342,7 +342,7 @@ target_link_libraries(fosterparse
 add_executable(fosterlower compiler/fosterlower.cpp compiler/StandardPrelude.cpp)
 add_dependencies(fosterlower fosterc) # quick hack
 target_link_libraries(fosterlower
-  fosterc_passes fosterc_parse fosterc_base
+  fosterc_parse fosterc_passes fosterc_parse fosterc_base
   fosterc_llvm
   antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
 
@@ -365,6 +365,7 @@ add_executable(pbfosterview
   compiler/passes/PrettyPrintPass.cpp
   ${GENERATED}/FosterAST.pb.cc
   compiler/passes/TypecheckPass.cpp
+  compiler/passes/DumpToProtobuf.cpp
 )
 target_link_libraries(pbfosterview
   fosterc_passes fosterc_parse fosterc_base

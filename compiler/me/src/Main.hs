@@ -41,8 +41,9 @@ import Control.Exception(assert)
 import Text.ProtocolBuffers(messageGet,utf8,isSet,getVal)
 import Text.ProtocolBuffers.Basic(uToString)
 
+import Foster.Pb.SourceModule as SourceModule
 import Foster.Pb.Expr as PbExpr
-import Foster.Pb.Expr.Tag(Tag(PB_INT, BOOL, VAR, TUPLE, FN, PROTO, CALL, SEQ, SUBSCRIPT))
+import Foster.Pb.Expr.Tag(Tag(PB_INT, BOOL, VAR, TUPLE, MODULE, FN, PROTO, CALL, SEQ, SUBSCRIPT))
 import Foster.Pb.Proto as Proto
 import Foster.Pb.PBIf as PBIf
 import Foster.Pb.PBInt as PBInt
@@ -78,6 +79,10 @@ data ESourceLocation = ESourceLocation Int Int
 
 data ESourceRange = ESourceRange ESourceLocation ESourceLocation String
     deriving (Show)
+
+data ModuleAST = ModuleAST {
+        moduleASTFunctions :: [FnAST]
+     }
 
 data ExprAST =
           BoolAST       Bool
@@ -306,24 +311,15 @@ getRootContext () =
     ,("primitive_-_i64", FnTypeAST (TupleTypeAST [(NamedTypeAST "i64"), (NamedTypeAST "i64")]) (NamedTypeAST "i64"))
     ]
 
-listExprs :: Expr -> IO ()
-listExprs pb_exprs = do
-  F.forM_ (PbExpr.parts pb_exprs) $ \expr -> do
-    putStr "Expr tag: " >> print (PbExpr.tag expr)
-
-    printProtoName (PbExpr.proto expr)
-
-    if (isSet expr PbExpr.name)
-      then do putStr "  name: " >> outLn (getVal expr PbExpr.name)
-      else do putStr "  no name\n"
-
-    let ast = parseExpr expr
-    putStrLn "ast:"
-    putStrLn $ showStructure ast
-    putStrLn "typechecking..."
-    let typechecked = typecheck (getRootContext ()) ast
-    putStrLn "typechecked:"
-    inspect typechecked
+listModule :: ModuleAST -> IO ()
+listModule mod = do
+    F.forM_ (moduleASTFunctions mod) $ \ast -> do
+        putStrLn "ast:"
+        putStrLn $ showStructure (E_FnAST ast)
+        putStrLn "typechecking..."
+        let typechecked = typecheck (getRootContext ()) (E_FnAST ast)
+        putStrLn "typechecked:"
+        inspect typechecked
     return ()
 
 inspect :: TypecheckResult AnnExpr -> IO ()
@@ -368,11 +364,12 @@ compileStatus (Just x                 ) = error $ "Unable to interpret compiles 
 parseCompiles pbexpr =  CompilesAST (part 0 $ PbExpr.parts pbexpr)
                                     (compileStatus $ fmap uToString $ PbExpr.compiles_status pbexpr)
 
-parseFn pbexpr =        let parts = PbExpr.parts pbexpr in
-                        let fn = E_FnAST $ FnAST (parseProtoP $ index parts 0)
-                                                 (part 1 parts) in
-                        assert ((Data.Sequence.length parts) == 2) $
-                        fn
+parseFn pbexpr = let parts = PbExpr.parts pbexpr in
+                 assert ((Data.Sequence.length parts) == 2) $
+                 FnAST (parseProtoP $ index parts 0)
+                                     (part 1 parts)
+
+parseFnAST pbexpr = E_FnAST $ parseFn pbexpr
 
 parseIf pbexpr =
         if (isSet pbexpr PbExpr.pb_if)
@@ -435,6 +432,9 @@ parseVar :: Expr -> ExprAST
 parseVar pbexpr = VarAST (fmap parseType (PbExpr.type' pbexpr))
                        $ uToString (fromJust $ PbExpr.name pbexpr)
 
+parseModule :: Expr -> ModuleAST
+parseModule pbexpr = ModuleAST [parseFn e | e <- toList $ PbExpr.parts pbexpr]
+
 emptyRange :: ESourceRange
 emptyRange = ESourceRange e e "<no file>"
                     where e = (ESourceLocation (-1::Int) (-1::Int))
@@ -491,15 +491,18 @@ parseExpr pbexpr =
                 BOOL    -> parseBool
                 VAR     -> parseVar
                 Foster.Pb.Expr.Tag.TUPLE   -> parseTuple
-                Foster.Pb.Expr.Tag.FN      -> parseFn
-                PROTO   -> parseProto
-                CALL    -> parseCall
-                SEQ     -> parseSeq
+                Foster.Pb.Expr.Tag.FN      -> parseFnAST
+                PROTO     -> parseProto
+                CALL      -> parseCall
+                SEQ       -> parseSeq
                 SUBSCRIPT -> parseSubscript
+                otherwise -> error $ "Unknown tag: " ++ (show $ PbExpr.tag pbexpr) ++ "\n"
         in
    fn pbexpr
 
-
+parseSourceModule :: SourceModule -> ModuleAST
+parseSourceModule sm =
+    parseModule (SourceModule.expr sm)
 
 
 parseType :: Type -> TypeAST
@@ -529,7 +532,7 @@ main = do
 
   case messageGet f of
     Left msg -> error ("Failed to parse protocol buffer.\n"++msg)
-    Right (pb_exprs,_) -> listExprs pb_exprs
+    Right (pb_exprs,_) -> listModule $ parseSourceModule pb_exprs
 
   return ()
 
