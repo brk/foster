@@ -172,6 +172,9 @@ data TypeAST =
 instance Show TypeAST where
     show = showTypeAST
 
+fosBoolType :: TypeAST
+fosBoolType = NamedTypeAST "i1"
+
 showTypeAST :: TypeAST -> String
 showTypeAST (MissingTypeAST s) = "(MissingTypeAST " ++ s ++ ")"
 showTypeAST (TypeUnitAST) = "()"
@@ -220,12 +223,12 @@ typeJoin (MissingTypeAST _) x = Just x
 typeJoin x (MissingTypeAST _) = Just x
 typeJoin x y = if typesEqual x y then Just x else Nothing
 
-typecheck :: Context -> ExprAST -> TypecheckResult AnnExpr
-typecheck ctx expr =
+typecheck :: Context -> ExprAST -> Maybe TypeAST -> TypecheckResult AnnExpr
+typecheck ctx expr maybeTy =
     case expr of
         E_FnAST (FnAST proto body)  ->
             let extCtx = extendContext ctx proto in
-            do annbody <- typecheck extCtx body
+            do annbody <- typecheck extCtx body Nothing
                let j = typeJoin (prototypeASTretType proto) (typeAST annbody)
                if isJust j
                  then
@@ -238,9 +241,9 @@ typecheck ctx expr =
                                             ++ " vs " ++ show (typeAST annbody)]
 
         BoolAST         b    -> do return (AnnBool b)
-        IfAST         a b c  -> do ea <- typecheck ctx a
-                                   eb <- typecheck ctx b
-                                   ec <- typecheck ctx c
+        IfAST         a b c  -> do ea <- typecheck ctx a (Just fosBoolType)
+                                   eb <- typecheck ctx b Nothing
+                                   ec <- typecheck ctx c Nothing
                                    if typesEqual (typeAST ea) (NamedTypeAST "i1") then
                                     if typesEqual (typeAST eb) (typeAST ec)
                                         then return (AnnIf (typeAST eb) ea eb ec)
@@ -248,8 +251,8 @@ typecheck ctx expr =
                                     else TypecheckErrors ["IfAST: type of conditional wasn't BoolAST"]
 
         CallAST     b a ->
-           do ea <- typecheck ctx a
-              eb <- typecheck ctx b
+           do ea <- typecheck ctx a Nothing
+              eb <- typecheck ctx b Nothing
               case (typeAST eb, typeAST ea) of
                  (FnTypeAST formaltype restype, argtype) ->
                     if typesEqual formaltype argtype
@@ -259,32 +262,33 @@ typecheck ctx expr =
                  otherwise -> TypecheckErrors ["CallAST w/o FnAST type: " ++ (showStructureA eb) ++ " :: " ++ (show $ typeAST eb)]
 
         IntAST i s1 s2 i2    -> do return (AnnInt (NamedTypeAST "i32") i s1 s2 i2)
-        SeqAST        es     -> let subparts = map (typecheck ctx) es in
+        SeqAST        es     -> let subparts = map (\e -> typecheck ctx e Nothing) es in
                                 if Prelude.and (map isAnnotated subparts)
                                     then return (AnnSeq (typeAST . annotated $ Prelude.last subparts)
                                                         [annotated part | part <- subparts])
                                     else TypecheckErrors $ collectErrors subparts
-        SubscriptAST  a b    -> do ta <- typecheck ctx a
-                                   tb <- typecheck ctx b
+        SubscriptAST  a b    -> do ta <- typecheck ctx a Nothing
+                                   tb <- typecheck ctx b Nothing
                                    TypecheckErrors ["SubscriptAST"]
         E_PrototypeAST (PrototypeAST t s es) ->
                                 TypecheckErrors ["PrototypeAST"]
         TupleAST      es b   ->
         -- We want to examine  every part of the tuple, and
         -- collect all the errors that we find in the subparts, not just the first.
-            let subparts = map (typecheck ctx) es in
+            let subparts = map (\e -> typecheck ctx e Nothing) es in
             if Prelude.and (map isAnnotated subparts)
                 then return (AnnTuple [annotated part | part <- subparts] b)
                 else TypecheckErrors $ collectErrors subparts
         VarAST mt s -> case lookup s ctx of
                         Just t ->  Annotated $ E_AnnVar (AnnVar t s)
                         Nothing -> TypecheckErrors ["Missing var " ++ s]
-        CompilesAST   e c    -> case c of
-                                    CS_NotChecked ->
-                                      return $ AnnCompiles $ case typecheck ctx e of
-                                        Annotated ae -> CS_WouldCompile
-                                        otherwise    -> CS_WouldNotCompile
-                                    otherwise -> return $ AnnCompiles c
+        CompilesAST   e c  ->
+            case c of
+            CS_NotChecked ->
+              return $ AnnCompiles $ case typecheck ctx e Nothing of
+                Annotated ae -> CS_WouldCompile
+                otherwise    -> CS_WouldNotCompile
+            otherwise -> return $ AnnCompiles c
 annotated :: TypecheckResult AnnExpr -> AnnExpr
 annotated (Annotated x) = x
 annotated _ = error "Can't extract annotated part from typecheck error!"
@@ -322,7 +326,7 @@ listModule mod = do
         putStrLn "ast:"
         putStrLn $ showStructure (E_FnAST ast)
         putStrLn "typechecking..."
-        let typechecked = typecheck (getRootContext ()) (E_FnAST ast)
+        let typechecked = typecheck (getRootContext ()) (E_FnAST ast) Nothing
         putStrLn "typechecked:"
         inspect typechecked
     return ()
