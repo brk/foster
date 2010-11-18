@@ -98,7 +98,7 @@ data ExprAST =
         | CallAST       ExprAST ExprAST
         | CompilesAST   ExprAST CompilesStatus
         | IfAST         ExprAST ExprAST ExprAST
-        | SeqAST        [ExprAST]
+        | SeqAST        ExprAST ExprAST
         | SubscriptAST  ExprAST ExprAST
         | E_PrototypeAST    PrototypeAST
         | VarAST        (Maybe TypeAST) String
@@ -126,7 +126,7 @@ data AnnExpr =
         | AnnCall       TypeAST AnnExpr AnnExpr
         | AnnCompiles   CompilesStatus
         | AnnIf         TypeAST AnnExpr AnnExpr AnnExpr
-        | AnnSeq        TypeAST [AnnExpr]
+        | AnnSeq        AnnExpr AnnExpr
         | AnnSubscript  TypeAST AnnExpr AnnExpr
         | E_AnnPrototype  TypeAST AnnPrototype
         | E_AnnVar       AnnVar
@@ -154,7 +154,7 @@ typeAST (E_AnnFn (AnnFn (AnnPrototype rt s vs) e))
 typeAST (AnnCall t b a)      = t
 typeAST (AnnCompiles c)      = fosBoolType
 typeAST (AnnIf t a b c)      = t
-typeAST (AnnSeq t es)        = t
+typeAST (AnnSeq a b)         = typeAST b
 typeAST (AnnSubscript t _ _) = t
 typeAST (E_AnnPrototype t p) = t
 typeAST (E_AnnVar (AnnVar t s)) = t
@@ -224,7 +224,7 @@ typeJoin x (MissingTypeAST _) = Just x
 typeJoin x y = if typesEqual x y then Just x else Nothing
 
 typecheck :: Context -> ExprAST -> Maybe TypeAST -> TypecheckResult AnnExpr
-typecheck ctx expr maybeTy =
+typecheck ctx expr maybeExpTy =
     case expr of
         E_FnAST (FnAST proto body)  ->
             let extCtx = extendContext ctx proto in
@@ -262,11 +262,10 @@ typecheck ctx expr maybeTy =
                  otherwise -> TypecheckErrors ["CallAST w/o FnAST type: " ++ (showStructureA eb) ++ " :: " ++ (show $ typeAST eb)]
 
         IntAST i s1 s2 i2    -> do return (AnnInt (NamedTypeAST "i32") i s1 s2 i2)
-        SeqAST        es     -> let subparts = map (\e -> typecheck ctx e Nothing) es in
-                                if Prelude.and (map isAnnotated subparts)
-                                    then return (AnnSeq (typeAST . annotated $ Prelude.last subparts)
-                                                        [annotated part | part <- subparts])
-                                    else TypecheckErrors $ collectErrors subparts
+        SeqAST a b -> do
+            ea <- typecheck ctx a (Just TypeUnitAST)
+            eb <- typecheck ctx b maybeExpTy
+            return (AnnSeq ea eb)
         SubscriptAST  a b    -> do ta <- typecheck ctx a Nothing
                                    tb <- typecheck ctx b Nothing
                                    TypecheckErrors ["SubscriptAST"]
@@ -428,7 +427,22 @@ mkIntASTFromClean clean text base =
         let activeBits = toInteger conservativeBitsNeeded in
         IntAST activeBits text clean base
 
-parseSeq pbexpr = SeqAST (map parseExpr $ toList (PbExpr.parts pbexpr))
+parseSeq pbexpr = let exprs = map parseExpr $ toList (PbExpr.parts pbexpr) in
+                  buildSeqs exprs
+
+buildSeqs :: [ExprAST] -> ExprAST
+buildSeqs []    = error "(buildSeqs []): no skip yet, so no expr to return!"
+buildSeqs [a]   = a
+buildSeqs [a,b] = SeqAST a b
+buildSeqs (a:b) = SeqAST a (buildSeqs b)
+
+unbuildSeqs :: ExprAST -> [ExprAST]
+unbuildSeqs (SeqAST a b) = a : unbuildSeqs b
+unbuildSeqs expr = [expr]
+
+unbuildSeqsA :: AnnExpr -> [AnnExpr]
+unbuildSeqsA (AnnSeq a b) = a : unbuildSeqsA b
+unbuildSeqsA expr = [expr]
 
 parseSubscript pbexpr = let parts = PbExpr.parts pbexpr in
                         SubscriptAST (part 0 parts) (part 1 parts)
@@ -558,7 +572,7 @@ childrenOf e =
         IfAST         a b c  -> [a, b, c]
         IntAST i s1 s2 i2    -> []
         E_FnAST (FnAST a b)  -> [E_PrototypeAST a, b]
-        SeqAST        es     -> es
+        SeqAST      a b      -> unbuildSeqs e
         SubscriptAST  a b    -> [a, b]
         E_PrototypeAST (PrototypeAST t s es) -> (map (\(AnnVar t s) -> VarAST (Just t) s) es)
         TupleAST     es b    -> es
@@ -576,7 +590,7 @@ textOf e width =
         IfAST         a b c  -> "IfAST        "
         IntAST i t c base    -> "IntAST       " ++ t
         E_FnAST (FnAST a b)  -> "FnAST        "
-        SeqAST        es     -> "SeqAST       "
+        SeqAST     a b       -> "SeqAST       "
         SubscriptAST  a b    -> "SubscriptAST "
         E_PrototypeAST (PrototypeAST t s es)     -> "PrototypeAST " ++ s
         TupleAST     es b    -> "TupleAST     "
@@ -599,7 +613,7 @@ childrenOfA e =
         AnnIf      t  a b c                  -> [a, b, c]
         AnnInt t i s1 s2 i2                  -> []
         E_AnnFn (AnnFn p b)                  -> [E_AnnPrototype t p, b] where t = fnTypeFrom p b
-        AnnSeq      t es                     -> es
+        AnnSeq      a b                      -> unbuildSeqsA e
         AnnSubscript t a b                   -> [a, b]
         E_AnnPrototype t' (AnnPrototype t s es) -> [E_AnnVar v | v <- es]
         AnnTuple     es b                    -> es
@@ -617,7 +631,7 @@ textOfA e width =
         AnnIf      t  a b c  -> "AnnIf        " ++ " :: " ++ show t
         AnnInt ty i t c base -> "AnnInt       " ++ t ++ " :: " ++ show ty
         E_AnnFn (AnnFn a b)  -> "AnnFn        "
-        AnnSeq     t  es     -> "AnnSeq       " ++ " :: " ++ show t
+        AnnSeq          a b  -> "AnnSeq       " ++ " :: " ++ show (typeAST b)
         AnnSubscript  t a b    -> "AnnSubscript " ++ " :: " ++ show t
         E_AnnPrototype t (AnnPrototype rt s es)     -> "PrototypeAST " ++ s ++ " :: " ++ show t
         AnnTuple     es b    -> "AnnTuple     "
