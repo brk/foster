@@ -223,6 +223,9 @@ typeJoin (MissingTypeAST _) x = Just x
 typeJoin x (MissingTypeAST _) = Just x
 typeJoin x y = if typesEqual x y then Just x else Nothing
 
+throwError :: String -> TypecheckResult AnnExpr
+throwError s = TypecheckErrors [s]
+
 typecheck :: Context -> ExprAST -> Maybe TypeAST -> TypecheckResult AnnExpr
 typecheck ctx expr maybeExpTy =
     case expr of
@@ -236,9 +239,9 @@ typecheck ctx expr maybeExpTy =
                                    (PrototypeAST t s vars) ->
                                     (AnnPrototype (fromJust j) s vars) in
                    return (E_AnnFn (AnnFn annproto annbody))
-                 else TypecheckErrors ["FnAST: proto ret type did not match body: "
+                 else throwError $ "FnAST: proto ret type did not match body: "
                                             ++ show (prototypeASTretType proto)
-                                            ++ " vs " ++ show (typeAST annbody)]
+                                            ++ " vs " ++ show (typeAST annbody)
 
         BoolAST         b    -> do return (AnnBool b)
         IfAST         a b c  -> do ea <- typecheck ctx a (Just fosBoolType)
@@ -247,8 +250,8 @@ typecheck ctx expr maybeExpTy =
                                    if typesEqual (typeAST ea) (NamedTypeAST "i1") then
                                     if typesEqual (typeAST eb) (typeAST ec)
                                         then return (AnnIf (typeAST eb) ea eb ec)
-                                        else TypecheckErrors ["IfAST: types of branches didn't match"]
-                                    else TypecheckErrors ["IfAST: type of conditional wasn't BoolAST"]
+                                        else throwError $ "IfAST: types of branches didn't match"
+                                    else throwError $ "IfAST: type of conditional wasn't BoolAST"
 
         CallAST     b a ->
            do ea <- typecheck ctx a Nothing
@@ -257,9 +260,10 @@ typecheck ctx expr maybeExpTy =
                  (FnTypeAST formaltype restype, argtype) ->
                     if typesEqual formaltype argtype
                         then return $ AnnCall restype eb ea
-                        else TypecheckErrors ["CallAST mismatches:\n"
-                                               ++ show formaltype ++ "\nvs\n" ++ show argtype]
-                 otherwise -> TypecheckErrors ["CallAST w/o FnAST type: " ++ (showStructureA eb) ++ " :: " ++ (show $ typeAST eb)]
+                        else throwError $ "CallAST mismatches:\n"
+                                               ++ show formaltype ++ "\nvs\n" ++ show argtype
+                 otherwise -> throwError $ "CallAST w/o FnAST type: " ++ (showStructureA eb)
+                                               ++ " :: " ++ (show $ typeAST eb)
 
         IntAST i s1 s2 i2    -> do return (AnnInt (NamedTypeAST "i32") i s1 s2 i2)
         SeqAST a b -> do
@@ -268,9 +272,9 @@ typecheck ctx expr maybeExpTy =
             return (AnnSeq ea eb)
         SubscriptAST  a b    -> do ta <- typecheck ctx a Nothing
                                    tb <- typecheck ctx b Nothing
-                                   TypecheckErrors ["SubscriptAST"]
+                                   throwError $ "SubscriptAST"
         E_PrototypeAST (PrototypeAST t s es) ->
-                                TypecheckErrors ["PrototypeAST"]
+                                throwError "PrototypeAST"
         TupleAST      es b   ->
         -- We want to examine  every part of the tuple, and
         -- collect all the errors that we find in the subparts, not just the first.
@@ -280,7 +284,7 @@ typecheck ctx expr maybeExpTy =
                 else TypecheckErrors $ collectErrors subparts
         VarAST mt s -> case lookup s ctx of
                         Just t ->  Annotated $ E_AnnVar (AnnVar t s)
-                        Nothing -> TypecheckErrors ["Missing var " ++ s]
+                        Nothing -> throwError $ "Missing var " ++ s
         CompilesAST   e c  ->
             case c of
             CS_NotChecked ->
