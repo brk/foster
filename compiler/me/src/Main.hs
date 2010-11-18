@@ -146,13 +146,13 @@ normalizeTypes xs  = TupleTypeAST xs
 
 typeAST :: AnnExpr -> TypeAST
 -- {{{
-typeAST (AnnBool _)          = NamedTypeAST "i1"
+typeAST (AnnBool _)          = fosBoolType
 typeAST (AnnInt t _ _ _ _)   = t
 typeAST (AnnTuple es b)      = TupleTypeAST [typeAST e | e <- es]
 typeAST (E_AnnFn (AnnFn (AnnPrototype rt s vs) e))
                              = FnTypeAST (normalizeTypes [t | (AnnVar t v) <- vs]) rt
 typeAST (AnnCall t b a)      = t
-typeAST (AnnCompiles c)    = NamedTypeAST "i1"
+typeAST (AnnCompiles c)      = fosBoolType
 typeAST (AnnIf t a b c)      = t
 typeAST (AnnSeq t es)        = t
 typeAST (AnnSubscript t _ _) = t
