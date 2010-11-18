@@ -1,116 +1,33 @@
 -----------------------------------------------------------------------------
---
--- Module      :  Main
--- Copyright   :
--- License     :  BSD3
---
--- Maintainer  :
--- Stability   :
--- Portability :
---
--- |
---
+-- Copyright (c) 2010 Ben Karel. All rights reserved.
+-- Use of this source code is governed by a BSD-style license that can be
+-- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
 module Main (
 main
 ) where
 
-import Control.Monad(when,sequence)
 import System.Environment(getArgs,getProgName)
 
 import qualified Data.ByteString.Lazy as L(readFile)
 import qualified Data.ByteString.Lazy.UTF8 as U(toString)
 import qualified System.IO.UTF8 as U(putStrLn)
-import qualified Data.Foldable as F(forM_)
 
-import qualified Data.ByteString as B
-import qualified Data.Text as T
-
-import List
-import Data.Sequence
-import Data.Maybe
-import Data.Foldable
-import Data.Char
+import Data.Maybe(isJust, fromJust)
+import Data.Foldable(forM_)
 import Monad(join,liftM)
-import Data.IORef(IORef,newIORef,readIORef,writeIORef)
-import qualified Data.HashTable as HashTable
+--import Data.IORef(IORef,newIORef,readIORef,writeIORef)
 
-import Control.Exception(assert)
+import Text.ProtocolBuffers(messageGet)
 
-import Text.ProtocolBuffers(messageGet,utf8,isSet,getVal)
-import Text.ProtocolBuffers.Basic(uToString)
-
-import Foster.Pb.SourceModule as SourceModule
-import Foster.Pb.Expr as PbExpr
-import Foster.Pb.Expr.Tag(Tag(PB_INT, BOOL, VAR, TUPLE, MODULE, FN, PROTO, CALL, SEQ, SUBSCRIPT))
-import Foster.Pb.Proto as Proto
-import Foster.Pb.PBIf as PBIf
-import Foster.Pb.PBInt as PBInt
-import qualified Foster.Pb.SourceRange as Pb
-import Foster.Pb.FnType as PbFnType
-import Foster.Pb.Type.Tag as PbTypeTag
-import Foster.Pb.Type as PbType
+import Foster.ProtobufUtils
+import Foster.ExprAST
+import Foster.TypeAST
 
 -----------------------------------------------------------------------
 
-outLn = U.putStrLn . U.toString . utf8
-
-exprTagString :: Foster.Pb.Expr.Tag.Tag -> String
-exprTagString tag =
-        case tag of
-                PB_INT    -> "PB_INT"
-                BOOL      -> "BOOL"
-                VAR       -> "VAR"
-                Foster.Pb.Expr.Tag.TUPLE -> "TUPLE"
-                Foster.Pb.Expr.Tag.FN    -> "FN"
-                PROTO     -> "PROTO"
-                CALL      -> "CALL"
-                SEQ       -> "SEQ"
-                SUBSCRIPT -> "SUBSCRIPT"
-                MODULE    -> "MODULE"
-                otherwise -> "<unknown>"
---
-
-data CompilesStatus = CS_WouldCompile | CS_WouldNotCompile | CS_NotChecked
-    deriving Show
-
-data ESourceLocation = ESourceLocation Int Int
-    deriving (Show)
-
-data ESourceRange = ESourceRange ESourceLocation ESourceLocation String
-    deriving (Show)
-
-data ModuleAST = ModuleAST {
-        moduleASTFunctions :: [FnAST]
-     }
-
-data ExprAST =
-          BoolAST       Bool
-        | IntAST        { eintActive :: Integer
-                        , eintText   :: String
-                        , eintClean  :: String
-                        , eintBase   :: Int }
-                        -- parts  is_env_tuple
-        | TupleAST      [ExprAST] Bool
-        | E_FnAST       FnAST
-
-        | CallAST       ExprAST ExprAST
-        | CompilesAST   ExprAST CompilesStatus
-        | IfAST         ExprAST ExprAST ExprAST
-        | SeqAST        ExprAST ExprAST
-        | SubscriptAST  ExprAST ExprAST
-        | E_PrototypeAST    PrototypeAST
-        | VarAST        (Maybe TypeAST) String
-        deriving Show
-
-                          -- proto    body
-data FnAST  = FnAST     PrototypeAST ExprAST deriving (Show)
-data PrototypeAST = PrototypeAST {
-                          prototypeASTretType :: TypeAST
-                        , prototypeASTname    :: String
-                        , prototypeASTformals :: [AnnVar] } deriving (Show)
-
+--outLn = U.putStrLn . U.toString . utf8
 
 data AnnExpr =
           AnnBool       Bool
@@ -132,17 +49,11 @@ data AnnExpr =
         | E_AnnVar       AnnVar
         deriving Show
 
-data AnnVar       = AnnVar          TypeAST String deriving (Show)
 data AnnFn        = AnnFn           AnnPrototype AnnExpr deriving (Show)
 data AnnPrototype = AnnPrototype    { annProtoReturnType :: TypeAST
                                     , annProtoName       :: String
                                     , annProtoVars       :: [AnnVar]
                                     } deriving (Show)
-
-normalizeTypes :: [TypeAST] -> TypeAST
-normalizeTypes []  = TypeUnitAST
-normalizeTypes [t] = t
-normalizeTypes xs  = TupleTypeAST xs
 
 typeAST :: AnnExpr -> TypeAST
 -- {{{
@@ -160,30 +71,9 @@ typeAST (E_AnnPrototype t p) = t
 typeAST (E_AnnVar (AnnVar t s)) = t
 -- }}}
 
-data TypeAST =
-           MissingTypeAST String
-         | TypeUnitAST
-         -- | TypeBoolAST
-         | NamedTypeAST     String
-         | TupleTypeAST     [TypeAST]
-         | FnTypeAST        TypeAST TypeAST
-         deriving (Eq)
-
-instance Show TypeAST where
-    show = showTypeAST
-
-fosBoolType :: TypeAST
-fosBoolType = NamedTypeAST "i1"
-
-showTypeAST :: TypeAST -> String
-showTypeAST (MissingTypeAST s) = "(MissingTypeAST " ++ s ++ ")"
-showTypeAST (TypeUnitAST) = "()"
-showTypeAST (NamedTypeAST s) = s
-showTypeAST (TupleTypeAST types) = "(" ++ commas [showTypeAST t | t <- types] ++ ")"
-showTypeAST (FnTypeAST s t) = "(" ++ show s ++ " -> " ++ show t ++ ")"
-
-commas :: [String] -> String
-commas strings = List.foldr1 (++) (List.intersperse ", " strings)
+unbuildSeqsA :: AnnExpr -> [AnnExpr]
+unbuildSeqsA (AnnSeq a b) = a : unbuildSeqsA b
+unbuildSeqsA expr = [expr]
 
 -----------------------------------------------------------------------
 
@@ -192,12 +82,14 @@ typesEqual TypeUnitAST (TupleTypeAST []) = True
 typesEqual (TupleTypeAST as) (TupleTypeAST bs) = Prelude.and [typesEqual a b | (a, b) <- Prelude.zip as bs]
 typesEqual ta tb = ta == tb
 
+getBindings :: PrototypeAST -> [(String, TypeAST)]
+getBindings (PrototypeAST t s vars) =
+    map (\v -> (avarName v, avarType v)) vars
+
 type Context = [(String, TypeAST)]
 
 extendContext :: Context -> PrototypeAST -> Context
-extendContext ctx proto =
-    let vars = getBindings proto in
-    vars ++ ctx
+extendContext ctx proto = (getBindings proto) ++ ctx
 
 data TypecheckResult expr
     = Annotated        expr
@@ -280,7 +172,7 @@ typecheck ctx expr maybeExpTy =
         -- collect all the errors that we find in the subparts, not just the first.
             let subparts = map (\e -> typecheck ctx e Nothing) es in
             if Prelude.and (map isAnnotated subparts)
-                then return (AnnTuple [annotated part | part <- subparts] b)
+                then return (AnnTuple [part | (Annotated part) <- subparts] b)
                 else TypecheckErrors $ collectErrors subparts
         VarAST mt s -> case lookup s ctx of
                         Just t ->  Annotated $ E_AnnVar (AnnVar t s)
@@ -292,9 +184,7 @@ typecheck ctx expr maybeExpTy =
                 Annotated ae -> CS_WouldCompile
                 otherwise    -> CS_WouldNotCompile
             otherwise -> return $ AnnCompiles c
-annotated :: TypecheckResult AnnExpr -> AnnExpr
-annotated (Annotated x) = x
-annotated _ = error "Can't extract annotated part from typecheck error!"
+
 
 isAnnotated :: TypecheckResult AnnExpr -> Bool
 isAnnotated (Annotated _) = True
@@ -325,7 +215,7 @@ getRootContext () =
 
 listModule :: ModuleAST -> IO ()
 listModule mod = do
-    F.forM_ (moduleASTFunctions mod) $ \ast -> do
+    forM_ (moduleASTFunctions mod) $ \ast -> do
         putStrLn "ast:"
         putStrLn $ showStructure (E_FnAST ast)
         putStrLn "typechecking..."
@@ -334,215 +224,16 @@ listModule mod = do
         inspect typechecked
     return ()
 
-inspect :: TypecheckResult AnnExpr -> IO ()
+inspect :: TypecheckResult AnnExpr -> IO Bool
 inspect typechecked =
     case typechecked of
-        Annotated e -> do putStrLn $ "Successful typecheck! " ++  showStructureA e
-        TypecheckErrors errs ->
-            F.forM_ errs $ \err -> do putStrLn $ "Typecheck error: " ++ err
+        Annotated e -> do
+            putStrLn $ "Successful typecheck! " ++ showStructureA e
+            return True
+        TypecheckErrors errs -> do
+            forM_ errs $ \err -> do putStrLn $ "Typecheck error: " ++ err
+            return False
 
-printProtoName :: Maybe Proto -> IO ()
-printProtoName Nothing = do
-        putStrLn "No proto"
-printProtoName (Just p) = do
-        putStr "Proto: "  >> outLn (Proto.name p)
-
-
--- hprotoc cheat sheet:
---
--- required string name         => (name person)
--- required int32 id            => (Person.id person)
--- optional string email        => (getVal person email)
--- optional PhoneType type      => (getVal phone_number type')
------------------------------------------------------------------------
-
-part :: Int -> Seq Expr -> ExprAST
-part i parts = parseExpr $ index parts i
-
-parseBool pbexpr = BoolAST $ fromMaybe False (PbExpr.bool_value pbexpr)
-
-parseCall pbexpr =
-        case map parseExpr $ toList (PbExpr.parts pbexpr) of
-                [base, arg] -> CallAST base arg
-                (base:args) -> CallAST base (TupleAST args False)
-                _ -> error "call needs a base!"
-
-compileStatus :: Maybe String -> CompilesStatus
-compileStatus Nothing                   = CS_NotChecked
-compileStatus (Just "kWouldCompile")    = CS_WouldCompile
-compileStatus (Just "kWouldNotCompile") = CS_WouldNotCompile
-compileStatus (Just x                 ) = error $ "Unable to interpret compiles status " ++ x
-
-parseCompiles pbexpr =  CompilesAST (part 0 $ PbExpr.parts pbexpr)
-                                    (compileStatus $ fmap uToString $ PbExpr.compiles_status pbexpr)
-
-parseFn pbexpr = let parts = PbExpr.parts pbexpr in
-                 assert ((Data.Sequence.length parts) == 2) $
-                 FnAST (parseProtoP $ index parts 0)
-                                     (part 1 parts)
-
-parseFnAST pbexpr = E_FnAST $ parseFn pbexpr
-
-parseIf pbexpr =
-        if (isSet pbexpr PbExpr.pb_if)
-                then parseFromPBIf (getVal pbexpr PbExpr.pb_if)
-                else error "must have if to parse from if!"
-        where parseFromPBIf pbif =
-                IfAST (parseExpr $ PBIf.test_expr pbif)
-                      (parseExpr $ PBIf.then_expr pbif)
-                      (parseExpr $ PBIf.else_expr pbif)
-
-parseInt :: Expr -> ExprAST
-parseInt pbexpr =
-        if (isSet pbexpr PbExpr.pb_int)
-                then parseFromPBInt (getVal pbexpr PbExpr.pb_int)
-                else error "must have int to parse from int!"
-
-splitString :: String -> String -> [String]
-splitString needle haystack =
-        let textParts = T.split (T.pack needle) (T.pack haystack) in
-        map T.unpack textParts
-
-onlyHexDigitsIn :: String -> Bool
-onlyHexDigitsIn str =
-        Prelude.all (\x -> (toLower x) `Prelude.elem` "0123456789abcdef") str
-
-parseFromPBInt :: PBInt -> ExprAST
-parseFromPBInt pbint =
-        let text = uToString $ PBInt.originalText pbint in
-        let (clean, base) = extractCleanBase text in
-        assert (base `Prelude.elem` [2, 8, 10, 16]) $
-        assert (onlyHexDigitsIn clean) $
-        mkIntASTFromClean clean text base
-
--- Given "raw" integer text like "123`456_10",
--- return ("123456", 10)
-extractCleanBase :: String -> (String, Int)
-extractCleanBase text =
-        let noticks = Prelude.filter (/= '`') text in
-        case splitString "_" noticks of
-            [first, base] -> (first, read base)
-            otherwise     -> (noticks, 10)
-
-mkIntASTFromClean :: String -> String -> Int -> ExprAST
-mkIntASTFromClean clean text base =
-        let bitsPerDigit = ceiling $ (log $ fromIntegral base) / (log 2) in
-        let conservativeBitsNeeded = bitsPerDigit * (Prelude.length clean) + 2 in
-        let activeBits = toInteger conservativeBitsNeeded in
-        IntAST activeBits text clean base
-
-parseSeq pbexpr = let exprs = map parseExpr $ toList (PbExpr.parts pbexpr) in
-                  buildSeqs exprs
-
-buildSeqs :: [ExprAST] -> ExprAST
-buildSeqs []    = error "(buildSeqs []): no skip yet, so no expr to return!"
-buildSeqs [a]   = a
-buildSeqs [a,b] = SeqAST a b
-buildSeqs (a:b) = SeqAST a (buildSeqs b)
-
-unbuildSeqs :: ExprAST -> [ExprAST]
-unbuildSeqs (SeqAST a b) = a : unbuildSeqs b
-unbuildSeqs expr = [expr]
-
-unbuildSeqsA :: AnnExpr -> [AnnExpr]
-unbuildSeqsA (AnnSeq a b) = a : unbuildSeqsA b
-unbuildSeqsA expr = [expr]
-
-parseSubscript pbexpr = let parts = PbExpr.parts pbexpr in
-                        SubscriptAST (part 0 parts) (part 1 parts)
-
-parseTuple pbexpr =
-        TupleAST (map parseExpr $ toList (PbExpr.parts pbexpr))
-                 (fromMaybe False $ PbExpr.is_closure_environment pbexpr)
-
-parseVar :: Expr -> ExprAST
-parseVar pbexpr = VarAST (fmap parseType (PbExpr.type' pbexpr))
-                       $ uToString (fromJust $ PbExpr.name pbexpr)
-
-parseModule :: Expr -> ModuleAST
-parseModule pbexpr = ModuleAST [parseFn e | e <- toList $ PbExpr.parts pbexpr]
-
-emptyRange :: ESourceRange
-emptyRange = ESourceRange e e "<no file>"
-                    where e = (ESourceLocation (-1::Int) (-1::Int))
-
-parseProtoP :: Expr -> PrototypeAST
-parseProtoP pbexpr =
-    case PbExpr.proto pbexpr of
-                Nothing  -> error "Need a proto to parse a proto!"
-                Just proto  -> parseProtoPP proto (getType pbexpr)
-
-parseProto :: Expr -> ExprAST
-parseProto pbexpr = E_PrototypeAST (parseProtoP pbexpr)
-
-getVarName :: ExprAST -> String
-getVarName (VarAST mt s) = s
-
--- used?
-getVar :: Expr -> ExprAST
-getVar e = case PbExpr.tag e of
-            VAR -> parseVar e
-            _   -> error "getVar must be given a var!"
-
-getType :: Expr -> TypeAST
-getType e = case PbExpr.type' e of
-                Just t -> parseType t
-                Nothing -> MissingTypeAST "getType"
-
-getFormal :: Expr -> AnnVar
-getFormal e = case PbExpr.tag e of
-            VAR -> case parseVar e of
-                    (VarAST mt v) ->
-                        case mt of
-                            Just t  -> (AnnVar t v)
-                            Nothing -> (AnnVar (MissingTypeAST "getFormal") v)
-            _   -> error "getVar must be given a var!"
-
-parseProtoPP :: Proto -> TypeAST ->  PrototypeAST
-parseProtoPP proto retTy =
-    let args = Proto.in_args proto in
-    let vars = map getFormal $ toList args in
-    let name = uToString $ Proto.name proto in
-    PrototypeAST retTy name vars
-
-sourceRangeFromPBRange :: Pb.SourceRange -> ESourceRange
-sourceRangeFromPBRange pbrange = error "no"
-
-parseExpr :: Expr -> ExprAST
-parseExpr pbexpr =
-    let range = case PbExpr.range pbexpr of
-                    Nothing   -> emptyRange
-                    (Just r)  -> sourceRangeFromPBRange r in
-    let fn = case PbExpr.tag pbexpr of
-                PB_INT  -> parseInt
-                BOOL    -> parseBool
-                VAR     -> parseVar
-                Foster.Pb.Expr.Tag.TUPLE   -> parseTuple
-                Foster.Pb.Expr.Tag.FN      -> parseFnAST
-                PROTO     -> parseProto
-                CALL      -> parseCall
-                SEQ       -> parseSeq
-                SUBSCRIPT -> parseSubscript
-                otherwise -> error $ "Unknown tag: " ++ (show $ PbExpr.tag pbexpr) ++ "\n"
-        in
-   fn pbexpr
-
-parseSourceModule :: SourceModule -> ModuleAST
-parseSourceModule sm =
-    parseModule (SourceModule.expr sm)
-
-
-parseType :: Type -> TypeAST
-parseType t = case PbType.tag t of
-                PbTypeTag.LLVM_NAMED -> NamedTypeAST $ uToString (fromJust $ PbType.name t)
-                PbTypeTag.REF -> error "Ref types not yet implemented"
-                PbTypeTag.FN -> parseFnTy . fromJust $ PbType.fnty t
-                PbTypeTag.TUPLE -> TupleTypeAST [parseType p | p <- toList $ PbType.tuple_parts t]
-                PbTypeTag.TYPE_VARIABLE -> error "Type variable parsing not yet implemented."
-
-parseFnTy :: FnType -> TypeAST
-parseFnTy fty = FnTypeAST (parseType $ PbFnType.ret_type fty)
-                          (TupleTypeAST [parseType x | x <- toList $ PbFnType.arg_types fty])
 -----------------------------------------------------------------------
 
 
@@ -563,42 +254,6 @@ main = do
 
   return ()
 
-
-
-
-
-childrenOf :: ExprAST -> [ExprAST]
-childrenOf e =
-    case e of
-        BoolAST         b    -> []
-        CallAST     b es     -> [b, es]
-        CompilesAST   e c    -> [e]
-        IfAST         a b c  -> [a, b, c]
-        IntAST i s1 s2 i2    -> []
-        E_FnAST (FnAST a b)  -> [E_PrototypeAST a, b]
-        SeqAST      a b      -> unbuildSeqs e
-        SubscriptAST  a b    -> [a, b]
-        E_PrototypeAST (PrototypeAST t s es) -> (map (\(AnnVar t s) -> VarAST (Just t) s) es)
-        TupleAST     es b    -> es
-        VarAST       mt v    -> []
-
--- Formats a single-line tag for the given ExprAST node.
--- Example:  textOf (VarAST "x")      ===     "VarAST x"
-textOf :: ExprAST -> Int -> String
-textOf e width =
-    let spaces = Prelude.replicate width '\SP'  in
-    case e of
-        BoolAST         b    -> "BoolAST      " ++ (show b)
-        CallAST     b es     -> "CallAST      "
-        CompilesAST   e c    -> "CompilesAST  "
-        IfAST         a b c  -> "IfAST        "
-        IntAST i t c base    -> "IntAST       " ++ t
-        E_FnAST (FnAST a b)  -> "FnAST        "
-        SeqAST     a b       -> "SeqAST       "
-        SubscriptAST  a b    -> "SubscriptAST "
-        E_PrototypeAST (PrototypeAST t s es)     -> "PrototypeAST " ++ s
-        TupleAST     es b    -> "TupleAST     "
-        VarAST mt v          -> "VarAST       " ++ v ++ " :: " ++ show mt
 
 -----------------------------------------------------------------------
 
@@ -645,28 +300,6 @@ textOfA e width =
 varName (VarAST mt name) = name
 avarName (AnnVar _ s) = s
 avarType (AnnVar t _) = t
-
-getBindings :: PrototypeAST -> [(String, TypeAST)]
-getBindings (PrototypeAST t s vars) =
-    map (\v -> (avarName v, avarType v)) vars
-
--- Builds trees like this:
---
---
-showStructure :: ExprAST -> String
-showStructure e = showStructureP e "" False where
-    showStructureP e prefix isLast =
-        let children = childrenOf e in
-        let thisIndent = prefix ++ if isLast then "└─" else "├─" in
-        let nextIndent = prefix ++ if isLast then "  " else "│ " in
-        let padding = max 6 (60 - Prelude.length thisIndent) in
-        -- [ (child, index, numchildren) ]
-        let childpairs = Prelude.zip3 children [1..]
-                               (Prelude.repeat (Prelude.length children)) in
-        let childlines = map (\(c, n, l) ->
-                                showStructureP c nextIndent (n == l))
-                             childpairs in
-        thisIndent ++ (textOf e padding ++ "\n") ++ Prelude.foldl (++) "" childlines
 
 showStructureA :: AnnExpr -> String
 showStructureA e = showStructureP e "" False where
