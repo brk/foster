@@ -14,7 +14,7 @@ import qualified Data.ByteString.Lazy as L(readFile)
 import qualified Data.ByteString.Lazy.UTF8 as U(toString)
 import qualified System.IO.UTF8 as U(putStrLn)
 
-import List(length, zip)
+import List(length, zip, all)
 import Data.Maybe(isJust, fromJust, fromMaybe)
 import Data.Foldable(forM_)
 import Control.Monad(forM)
@@ -26,54 +26,6 @@ import Text.ProtocolBuffers(messageGet)
 import Foster.ProtobufUtils
 import Foster.ExprAST
 import Foster.TypeAST
-
------------------------------------------------------------------------
-
-data AnnExpr =
-          AnnBool       Bool
-        | AnnInt        { aintType   :: TypeAST
-                        , aintActive :: Integer
-                        , aintText   :: String
-                        , aintClean  :: String
-                        , aintBase   :: Int }
-                        -- parts  is_env_tuple
-        | AnnTuple      [AnnExpr] Bool
-        | E_AnnFn       AnnFn
-
-        | AnnCall       TypeAST AnnExpr AnnExpr
-        | AnnCompiles   CompilesStatus
-        | AnnIf         TypeAST AnnExpr AnnExpr AnnExpr
-        | AnnSeq        AnnExpr AnnExpr
-        | AnnSubscript  TypeAST AnnExpr AnnExpr
-        | E_AnnPrototype  TypeAST AnnPrototype
-        | E_AnnVar       AnnVar
-        deriving Show
-
-data AnnFn        = AnnFn           AnnPrototype AnnExpr deriving (Show)
-data AnnPrototype = AnnPrototype    { annProtoReturnType :: TypeAST
-                                    , annProtoName       :: String
-                                    , annProtoVars       :: [AnnVar]
-                                    } deriving (Show)
-
-typeAST :: AnnExpr -> TypeAST
--- {{{
-typeAST (AnnBool _)          = fosBoolType
-typeAST (AnnInt t _ _ _ _)   = t
-typeAST (AnnTuple es b)      = TupleTypeAST [typeAST e | e <- es]
-typeAST (E_AnnFn (AnnFn (AnnPrototype rt s vs) e))
-                             = FnTypeAST (normalizeTypes [t | (AnnVar t v) <- vs]) rt
-typeAST (AnnCall t b a)      = t
-typeAST (AnnCompiles c)      = fosBoolType
-typeAST (AnnIf t a b c)      = t
-typeAST (AnnSeq a b)         = typeAST b
-typeAST (AnnSubscript t _ _) = t
-typeAST (E_AnnPrototype t p) = t
-typeAST (E_AnnVar (AnnVar t s)) = t
--- }}}
-
-unbuildSeqsA :: AnnExpr -> [AnnExpr]
-unbuildSeqsA (AnnSeq a b) = a : unbuildSeqsA b
-unbuildSeqsA expr = [expr]
 
 -----------------------------------------------------------------------
 
@@ -241,21 +193,26 @@ getRootContext () =
     ,("primitive_-_i64", FnTypeAST (TupleTypeAST [(NamedTypeAST "i64"), (NamedTypeAST "i64")]) (NamedTypeAST "i64"))
     ]
 
-listModule :: ModuleAST -> IO ()
-listModule mod = do
+typecheckModule :: ModuleAST FnAST -> IO (Maybe (ModuleAST AnnFn))
+typecheckModule mod = do
     annFns <- forM (moduleASTFunctions mod) $ \ast -> do
         let typechecked = typecheck (getRootContext ()) (E_FnAST ast) Nothing
         putStrLn "typechecked:"
         inspect typechecked (E_FnAST ast)
         return typechecked
     -- annFns :: [TypecheckResult AnnExpr]
-    return ()
+    if allAnnotated annFns
+        then return $ Just (ModuleAST [f | (Annotated (E_AnnFn f)) <- annFns])
+        else return $ Nothing
+
+allAnnotated :: [TypecheckResult AnnExpr] -> Bool
+allAnnotated results = List.all isAnnotated results
 
 inspect :: TypecheckResult AnnExpr -> ExprAST -> IO Bool
 inspect typechecked ast =
     case typechecked of
         Annotated e -> do
-            putStrLn $ "Successful typecheck! " ++ showStructureA e
+            putStrLn $ "Successful typecheck!\n" ++ showStructureA e
             return True
         TypecheckErrors errs -> do
             forM_ errs $ \err -> do putStrLn $ "Typecheck error: " ++ err
@@ -278,35 +235,14 @@ main = do
 
   case messageGet f of
     Left msg -> error ("Failed to parse protocol buffer.\n"++msg)
-    Right (pb_exprs,_) ->
-        let sm = parseSourceModule pb_exprs in
-        listModule $ sm
-
-  return ()
-
+    Right (pb_exprs,_) -> do
+        let sm = parseSourceModule pb_exprs
+        elabModule <- typecheckModule sm
+        case elabModule of
+            (Just mod) -> dumpModuleToProtobuf mod outfile
+            Nothing    -> error $ "Unable to type check input module!"
 
 -----------------------------------------------------------------------
-
-fnTypeFrom :: AnnPrototype -> AnnExpr -> TypeAST
-fnTypeFrom p b =
-    let intype = normalizeTypes [avarType v | v <- annProtoVars p] in
-    let outtype = typeAST b in
-    FnTypeAST intype outtype
-
-childrenOfA :: AnnExpr -> [AnnExpr]
-childrenOfA e =
-    case e of
-        AnnBool         b                    -> []
-        AnnCall    t b a                     -> [b, a]
-        AnnCompiles   c                      -> []
-        AnnIf      t  a b c                  -> [a, b, c]
-        AnnInt t i s1 s2 i2                  -> []
-        E_AnnFn (AnnFn p b)                  -> [E_AnnPrototype t p, b] where t = fnTypeFrom p b
-        AnnSeq      a b                      -> unbuildSeqsA e
-        AnnSubscript t a b                   -> [a, b]
-        E_AnnPrototype t' (AnnPrototype t s es) -> [E_AnnVar v | v <- es]
-        AnnTuple     es b                    -> es
-        E_AnnVar      v                      -> []
 
 -- Formats a single-line tag for the given ExprAST node.
 -- Example:  textOf (VarAST "x")      ===     "VarAST x"
@@ -328,8 +264,6 @@ textOfA e width =
 
 -----------------------------------------------------------------------
 varName (VarAST mt name) = name
-avarName (AnnVar _ s) = s
-avarType (AnnVar t _) = t
 
 showStructureA :: AnnExpr -> String
 showStructureA e = showStructureP e "" False where

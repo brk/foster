@@ -5,21 +5,27 @@
 -----------------------------------------------------------------------------
 
 module Foster.ProtobufUtils (
-  parseSourceModule
+    parseSourceModule
+  , dumpModuleToProtobuf
+  , typeAST
+  , unbuildSeqsA
+  , childrenOfA
 ) where
 
 import Foster.ExprAST
 import Foster.TypeAST
 
-import Data.Sequence(length, index, Seq)
+import Data.Sequence(length, index, Seq, empty, fromList)
 import Data.Maybe(fromMaybe, fromJust)
 import Data.Foldable(toList)
 import Data.Char(toLower)
 
 import Control.Exception(assert)
 import qualified Data.Text as T
+import qualified Data.ByteString.Lazy as L(writeFile)
+import Data.ByteString.Lazy.UTF8 as UTF8
 
-import Text.ProtocolBuffers(isSet,getVal)
+import Text.ProtocolBuffers(isSet,getVal,messagePut)
 import Text.ProtocolBuffers.Basic(uToString)
 
 import Foster.Pb.FnType   as PbFnType
@@ -30,8 +36,10 @@ import Foster.Pb.PBIf     as PBIf
 import Foster.Pb.PBInt    as PBInt
 import Foster.Pb.Expr     as PbExpr
 import Foster.Pb.SourceModule as SourceModule
-import Foster.Pb.Expr.Tag(Tag(PB_INT, BOOL, VAR, TUPLE, MODULE, FN, PROTO, CALL, SEQ, SUBSCRIPT))
+import Foster.Pb.Expr.Tag(Tag(PB_INT, BOOL, VAR, TUPLE, MODULE, IF, FN, PROTO, CALL, SEQ, SUBSCRIPT))
 import qualified Foster.Pb.SourceRange as Pb
+
+import qualified Text.ProtocolBuffers.Header as P'
 
 -- hprotoc cheat sheet:
 --
@@ -137,7 +145,7 @@ parseVar :: Expr -> ExprAST
 parseVar pbexpr = VarAST (fmap parseType (PbExpr.type' pbexpr))
                        $ uToString (fromJust $ PbExpr.name pbexpr)
 
-parseModule :: Expr -> ModuleAST
+parseModule :: Expr -> ModuleAST FnAST
 parseModule pbexpr = ModuleAST [parseFn e | e <- toList $ PbExpr.parts pbexpr]
 
 emptyRange :: ESourceRange
@@ -205,7 +213,7 @@ parseExpr pbexpr =
         in
    fn pbexpr
 
-parseSourceModule :: SourceModule -> ModuleAST
+parseSourceModule :: SourceModule -> ModuleAST FnAST
 parseSourceModule sm =
     parseModule (SourceModule.expr sm)
 
@@ -221,3 +229,170 @@ parseType t = case PbType.tag t of
 parseFnTy :: FnType -> TypeAST
 parseFnTy fty = FnTypeAST (parseType $ PbFnType.ret_type fty)
                           (TupleTypeAST [parseType x | x <- toList $ PbFnType.arg_types fty])
+
+-----------------------------------------------------------------------
+
+typeAST :: AnnExpr -> TypeAST
+typeAST (AnnBool _)          = fosBoolType
+typeAST (AnnInt t _ _ _ _)   = t
+typeAST (AnnTuple es b)      = TupleTypeAST [typeAST e | e <- es]
+typeAST (E_AnnFn (AnnFn (AnnPrototype rt s vs) e))
+                             = FnTypeAST (normalizeTypes [t | (AnnVar t v) <- vs]) rt
+typeAST (AnnCall t b a)      = t
+typeAST (AnnCompiles c)      = fosBoolType
+typeAST (AnnIf t a b c)      = t
+typeAST (AnnSeq a b)         = typeAST b
+typeAST (AnnSubscript t _ _) = t
+typeAST (E_AnnPrototype t p) = t
+typeAST (E_AnnVar (AnnVar t s)) = t
+
+-----------------------------------------------------------------------
+
+childrenOfA :: AnnExpr -> [AnnExpr]
+childrenOfA e =
+    case e of
+        AnnBool         b                    -> []
+        AnnCall    t b a                     -> [b, a]
+        AnnCompiles   c                      -> []
+        AnnIf      t  a b c                  -> [a, b, c]
+        AnnInt t i s1 s2 i2                  -> []
+        E_AnnFn (AnnFn p b)                  -> [E_AnnPrototype t p, b] where t = fnTypeFrom p b
+        AnnSeq      a b                      -> unbuildSeqsA e
+        AnnSubscript t a b                   -> [a, b]
+        E_AnnPrototype t' (AnnPrototype t s es) -> [E_AnnVar v | v <- es]
+        AnnTuple     es b                    -> es
+        E_AnnVar      v                      -> []
+
+
+fnTypeFrom :: AnnPrototype -> AnnExpr -> TypeAST
+fnTypeFrom p b =
+    let intype = normalizeTypes [avarType v | v <- annProtoVars p] in
+    let outtype = typeAST b in
+    FnTypeAST intype outtype
+
+-----------------------------------------------------------------------
+
+u8fromString :: String -> P'.Utf8
+u8fromString s = P'.Utf8 (UTF8.fromString s)
+
+-----------------------------------------------------------------------
+
+dumpType :: TypeAST -> PbType.Type
+dumpType (MissingTypeAST s)   = error $ "dumpType MissingTypeAST " ++ s
+dumpType (TypeUnitAST)        = dumpType (NamedTypeAST "i32")
+dumpType (NamedTypeAST s)     = P'.defaultValue { PbType.tag  = PbTypeTag.LLVM_NAMED
+                                                , PbType.name = Just $ u8fromString s }
+dumpType (TupleTypeAST types) = P'.defaultValue { PbType.tag  = PbTypeTag.TUPLE
+                                                , tuple_parts = fromList $ fmap dumpType types }
+dumpType x@(FnTypeAST s t)    = P'.defaultValue { PbType.tag  = PbTypeTag.FN
+                                                , PbType.fnty = Just $ dumpFnTy x}
+
+dumpFnTy (FnTypeAST s t) =
+    let args = case s of
+                TypeUnitAST        -> []
+                TupleTypeAST types -> [dumpType x | x <- types]
+                otherwise          -> [dumpType s]
+    in
+    PbFnType.FnType {
+          arg_types = fromList args
+        , ret_type  = dumpType t
+        , PbFnType.is_closure = Just False -- TODO fix!
+        , calling_convention = Just $ u8fromString "fastcc" -- TODO fix
+    }
+
+-----------------------------------------------------------------------
+-----------------------------------------------------------------------
+
+dumpExpr :: AnnExpr -> Expr
+
+dumpExpr x@(E_AnnFn (AnnFn p b)) =
+    P'.defaultValue { -- PbExpr.is_closure = Just b
+                      PbExpr.parts = fromList $ fmap dumpExpr (childrenOfA x)
+                    , PbExpr.tag   = Foster.Pb.Expr.Tag.FN
+                    , PbExpr.type' = Just $ dumpType (typeAST x)  }
+
+dumpExpr (AnnCall t base (AnnTuple args _)) = dumpCall t base args
+dumpExpr (AnnCall t base arg)               = dumpCall t base [arg]
+
+dumpExpr x@(E_AnnPrototype t' proto@(AnnPrototype t s es)) =
+    P'.defaultValue { PbExpr.proto = Just $ dumpProto proto
+                    , PbExpr.tag   = PROTO
+                    , PbExpr.type' = Just $ dumpType (typeAST x)  }
+
+dumpExpr x@(AnnBool b) =
+    P'.defaultValue { bool_value   = Just b
+                    , PbExpr.tag   = BOOL
+                    , PbExpr.type' = Just $ dumpType (typeAST x)  }
+
+dumpExpr (E_AnnVar var@(AnnVar t v)) = dumpVar var
+
+dumpExpr x@(AnnSeq a b) =
+    P'.defaultValue { PbExpr.parts = fromList [dumpExpr e | e <- unbuildSeqsA x]
+                    , PbExpr.tag   = SEQ
+                    , PbExpr.type' = Just $ dumpType (typeAST x)  }
+
+--dumpExpr x@(AnnTuple [] False) = dumpExpr (AnnInt (NamedTypeAST "i32") 0 "0" "0" 10)
+--dumpExpr x@(AnnTuple [e] False) = dumpExpr e
+dumpExpr x@(AnnTuple es b) =
+    P'.defaultValue { PbExpr.parts = fromList [dumpExpr e | e <- es]
+                    , is_closure_environment = Just b
+                    , PbExpr.tag   = Foster.Pb.Expr.Tag.TUPLE
+                    , PbExpr.type' = Just $ dumpType (typeAST x)  }
+
+dumpExpr x@(AnnSubscript t a b ) =
+    P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [a,b])
+                    , PbExpr.tag   = SUBSCRIPT
+                    , PbExpr.type' = Just $ dumpType (typeAST x)  }
+
+dumpExpr (AnnCompiles CS_WouldCompile)    = dumpExpr (AnnBool True)
+dumpExpr (AnnCompiles CS_WouldNotCompile) = dumpExpr (AnnBool False)
+dumpExpr (AnnCompiles CS_NotChecked) = error "dumpExpr (AnnCompiles CS_NotChecked)"
+
+dumpExpr x@(AnnInt ty i t c base) =
+    P'.defaultValue { PbExpr.pb_int = Just $ dumpInt (aintText x)
+                    , PbExpr.tag   = PB_INT
+                    , PbExpr.type' = Just $ dumpType (typeAST x)  }
+
+dumpExpr x@(AnnIf t a b c) =
+    P'.defaultValue { pb_if        = Just (dumpIf $ x)
+                    , PbExpr.tag   = IF
+                    , PbExpr.type' = Just $ dumpType (typeAST x) }
+
+-----------------------------------------------------------------------
+
+dumpCall t base args =
+    P'.defaultValue { PbExpr.parts = fromList $ fmap dumpExpr (base : args)
+                    , PbExpr.tag   = CALL
+                    , PbExpr.type' = Just $ dumpType t }
+
+dumpIf x@(AnnIf t a b c) =
+        PBIf { test_expr = dumpExpr a, then_expr = dumpExpr b, else_expr = dumpExpr c }
+
+dumpInt origText = PBInt.PBInt { originalText = u8fromString origText }
+
+dumpProto (AnnPrototype t s es) =
+    Proto { Proto.name = u8fromString s
+          , in_args    = fromList $ [dumpVar e | e <- es]
+          , result     = Just (dumpType t) }
+
+dumpVar (AnnVar t v) =
+    P'.defaultValue { PbExpr.name  = Just $ u8fromString v
+                    , PbExpr.tag   = VAR
+                    , PbExpr.type' = Just $ dumpType t  }
+
+dumpModule :: ModuleAST AnnFn -> Expr
+dumpModule mod = P'.defaultValue {
+      parts = fromList [dumpExpr (E_AnnFn f) | f <- moduleASTFunctions mod]
+    , PbExpr.tag   = MODULE }
+
+-----------------------------------------------------------------------
+
+dumpSourceModule :: ModuleAST AnnFn -> SourceModule
+dumpSourceModule mod = SourceModule { line = Data.Sequence.empty , expr = (dumpModule mod) }
+
+dumpModuleToProtobuf :: ModuleAST AnnFn -> FilePath -> IO ()
+dumpModuleToProtobuf mod outpath = do
+    let expr = dumpSourceModule mod
+    L.writeFile outpath (messagePut expr)
+    return ()
+

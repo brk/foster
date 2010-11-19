@@ -19,8 +19,8 @@ data ESourceRange = ESourceRange ESourceLocation ESourceLocation String
     deriving (Show)
 
 
-data ModuleAST = ModuleAST {
-        moduleASTFunctions :: [FnAST]
+data ModuleAST fnType = ModuleAST {
+        moduleASTFunctions :: [fnType]
      }
 
 data ExprAST =
@@ -48,10 +48,6 @@ data PrototypeAST = PrototypeAST {
                           prototypeASTretType :: TypeAST
                         , prototypeASTname    :: String
                         , prototypeASTformals :: [AnnVar] } deriving (Show)
-
-data AnnVar       = AnnVar          TypeAST String deriving (Show)
-
-
 
 -- Builds trees like this:
 --
@@ -110,3 +106,40 @@ textOf e width =
         E_PrototypeAST (PrototypeAST t s es)     -> "PrototypeAST " ++ s
         TupleAST     es b    -> "TupleAST     "
         VarAST mt v          -> "VarAST       " ++ v ++ " :: " ++ show mt
+
+
+-----------------------------------------------------------------------
+
+data AnnExpr =
+          AnnBool       Bool
+        | AnnInt        { aintType   :: TypeAST
+                        , aintActive :: Integer
+                        , aintText   :: String
+                        , aintClean  :: String
+                        , aintBase   :: Int }
+                        -- parts  is_env_tuple
+        | AnnTuple      [AnnExpr] Bool
+        | E_AnnFn       AnnFn
+
+        | AnnCall       TypeAST AnnExpr AnnExpr
+        | AnnCompiles   CompilesStatus
+        | AnnIf         TypeAST AnnExpr AnnExpr AnnExpr
+        | AnnSeq        AnnExpr AnnExpr
+        | AnnSubscript  TypeAST AnnExpr AnnExpr
+        | E_AnnPrototype  TypeAST AnnPrototype
+        | E_AnnVar       AnnVar
+        deriving Show
+
+data AnnVar       = AnnVar { avarType :: TypeAST, avarName :: String } deriving (Show)
+data AnnFn        = AnnFn           AnnPrototype AnnExpr deriving (Show)
+data AnnPrototype = AnnPrototype    { annProtoReturnType :: TypeAST
+                                    , annProtoName       :: String
+                                    , annProtoVars       :: [AnnVar]
+                                    } deriving (Show)
+
+-----------------------------------------------------------------------
+
+unbuildSeqsA :: AnnExpr -> [AnnExpr]
+unbuildSeqsA (AnnSeq a b) = a : unbuildSeqsA b
+unbuildSeqsA expr = [expr]
+
