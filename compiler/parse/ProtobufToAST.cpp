@@ -212,6 +212,7 @@ ExprAST* parseSubscript(const pb::Expr& e, const foster::SourceRange& range) {
 }
 
 ExprAST* parseTuple(const pb::Expr& e, const foster::SourceRange& range) {
+  ASSERT(e.parts_size() >= 1);
   TupleExprAST* rv = new TupleExprAST(ExprAST_from_pb(&e.parts(0)), range);
   rv->isClosureEnvironment = e.is_closure_environment();
   return rv;
@@ -307,7 +308,7 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
     return fty;
   }
 
-  if (t.tuple_parts_size() > 0) {
+  if (t.tag() == pb::Type::TUPLE) {
     std::vector<TypeAST*> parts(t.tuple_parts_size());
     for (size_t i = 0; i < parts.size(); ++i) {
       parts[i] = TypeAST_from_pb(&t.tuple_parts(i));
