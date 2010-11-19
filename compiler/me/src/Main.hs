@@ -14,8 +14,10 @@ import qualified Data.ByteString.Lazy as L(readFile)
 import qualified Data.ByteString.Lazy.UTF8 as U(toString)
 import qualified System.IO.UTF8 as U(putStrLn)
 
-import Data.Maybe(isJust, fromJust)
+import List(length, zip)
+import Data.Maybe(isJust, fromJust, fromMaybe)
 import Data.Foldable(forM_)
+import Control.Monad(forM)
 import Monad(join,liftM)
 --import Data.IORef(IORef,newIORef,readIORef,writeIORef)
 
@@ -26,8 +28,6 @@ import Foster.ExprAST
 import Foster.TypeAST
 
 -----------------------------------------------------------------------
-
---outLn = U.putStrLn . U.toString . utf8
 
 data AnnExpr =
           AnnBool       Bool
@@ -77,10 +77,10 @@ unbuildSeqsA expr = [expr]
 
 -----------------------------------------------------------------------
 
-typesEqual :: TypeAST -> TypeAST -> Bool
-typesEqual TypeUnitAST (TupleTypeAST []) = True
-typesEqual (TupleTypeAST as) (TupleTypeAST bs) = Prelude.and [typesEqual a b | (a, b) <- Prelude.zip as bs]
-typesEqual ta tb = ta == tb
+_typesEqual :: TypeAST -> TypeAST -> Bool
+_typesEqual TypeUnitAST (TupleTypeAST []) = True
+_typesEqual (TupleTypeAST as) (TupleTypeAST bs) = Prelude.and [_typesEqual a b | (a, b) <- Prelude.zip as bs]
+_typesEqual ta tb = ta == tb
 
 getBindings :: PrototypeAST -> [(String, TypeAST)]
 getBindings (PrototypeAST t s vars) =
@@ -113,7 +113,7 @@ getTypeCheckedType (TypecheckErrors _) = MissingTypeAST "getTypeCheckedType"
 typeJoin :: TypeAST -> TypeAST -> Maybe TypeAST
 typeJoin (MissingTypeAST _) x = Just x
 typeJoin x (MissingTypeAST _) = Just x
-typeJoin x y = if typesEqual x y then Just x else Nothing
+typeJoin x y = if _typesEqual x y then Just x else Nothing
 
 throwError :: String -> TypecheckResult AnnExpr
 throwError s = TypecheckErrors [s]
@@ -121,42 +121,17 @@ throwError s = TypecheckErrors [s]
 typecheck :: Context -> ExprAST -> Maybe TypeAST -> TypecheckResult AnnExpr
 typecheck ctx expr maybeExpTy =
     case expr of
-        E_FnAST (FnAST proto body)  ->
-            let extCtx = extendContext ctx proto in
-            do annbody <- typecheck extCtx body Nothing
-               let j = typeJoin (prototypeASTretType proto) (typeAST annbody)
-               if isJust j
-                 then
-                   let annproto = case proto of
-                                   (PrototypeAST t s vars) ->
-                                    (AnnPrototype (fromJust j) s vars) in
-                   return (E_AnnFn (AnnFn annproto annbody))
-                 else throwError $ "FnAST: proto ret type did not match body: "
-                                            ++ show (prototypeASTretType proto)
-                                            ++ " vs " ++ show (typeAST annbody)
-
-        BoolAST         b    -> do return (AnnBool b)
-        IfAST         a b c  -> do ea <- typecheck ctx a (Just fosBoolType)
-                                   eb <- typecheck ctx b Nothing
-                                   ec <- typecheck ctx c Nothing
-                                   if typesEqual (typeAST ea) (NamedTypeAST "i1") then
-                                    if typesEqual (typeAST eb) (typeAST ec)
-                                        then return (AnnIf (typeAST eb) ea eb ec)
-                                        else throwError $ "IfAST: types of branches didn't match"
-                                    else throwError $ "IfAST: type of conditional wasn't BoolAST"
-
-        CallAST     b a ->
-           do ea <- typecheck ctx a Nothing
-              eb <- typecheck ctx b Nothing
-              case (typeAST eb, typeAST ea) of
-                 (FnTypeAST formaltype restype, argtype) ->
-                    if typesEqual formaltype argtype
-                        then return $ AnnCall restype eb ea
-                        else throwError $ "CallAST mismatches:\n"
-                                               ++ show formaltype ++ "\nvs\n" ++ show argtype
-                 otherwise -> throwError $ "CallAST w/o FnAST type: " ++ (showStructureA eb)
-                                               ++ " :: " ++ (show $ typeAST eb)
-
+        BoolAST b    -> do return (AnnBool b)
+        IfAST a b c  -> do ea <- typecheck ctx a (Just fosBoolType)
+                           eb <- typecheck ctx b maybeExpTy
+                           ec <- typecheck ctx c maybeExpTy
+                           if isJust $ typeJoin (typeAST ea) fosBoolType then
+                            if isJust $ typeJoin (typeAST eb) (typeAST ec)
+                                then return (AnnIf (typeAST eb) ea eb ec)
+                                else throwError $ "IfAST: types of branches didn't match"
+                            else throwError $ "IfAST: type of conditional wasn't boolean"
+        E_FnAST (FnAST proto body) -> typecheckFn ctx proto body maybeExpTy
+        CallAST b a -> typecheckCall ctx b a maybeExpTy
         IntAST i s1 s2 i2    -> do return (AnnInt (NamedTypeAST "i32") i s1 s2 i2)
         SeqAST a b -> do
             ea <- typecheck ctx a (Just TypeUnitAST)
@@ -165,26 +140,79 @@ typecheck ctx expr maybeExpTy =
         SubscriptAST  a b    -> do ta <- typecheck ctx a Nothing
                                    tb <- typecheck ctx b Nothing
                                    throwError $ "SubscriptAST"
-        E_PrototypeAST (PrototypeAST t s es) ->
-                                throwError "PrototypeAST"
-        TupleAST      es b   ->
-        -- We want to examine  every part of the tuple, and
-        -- collect all the errors that we find in the subparts, not just the first.
-            let subparts = map (\e -> typecheck ctx e Nothing) es in
-            if Prelude.and (map isAnnotated subparts)
-                then return (AnnTuple [part | (Annotated part) <- subparts] b)
-                else TypecheckErrors $ collectErrors subparts
+        E_PrototypeAST (PrototypeAST t s es) -> throwError "PrototypeAST"
+        TupleAST      es b   -> typecheckTuple ctx es b maybeExpTy
         VarAST mt s -> case lookup s ctx of
-                        Just t ->  Annotated $ E_AnnVar (AnnVar t s)
-                        Nothing -> throwError $ "Missing var " ++ s
-        CompilesAST   e c  ->
-            case c of
+            Just t  -> Annotated $ E_AnnVar (AnnVar t s)
+            Nothing -> throwError $ "Unknown variable " ++ s
+        CompilesAST e c -> case c of
             CS_NotChecked ->
               return $ AnnCompiles $ case typecheck ctx e Nothing of
                 Annotated ae -> CS_WouldCompile
                 otherwise    -> CS_WouldNotCompile
             otherwise -> return $ AnnCompiles c
+-----------------------------------------------------------------------
+argType :: TypeAST -> TypeAST
+argType (FnTypeAST a r) = a
+argType x = error $ "Called argType on non-FnTypeAST: " ++ show x
 
+typecheckCall ctx base arg maybeExpTy =
+   let expectedLambdaType = case maybeExpTy of
+        Nothing  -> Nothing
+        (Just t) -> (Just (FnTypeAST (MissingTypeAST "typecheckCall") t)) in
+        -- If we have (e1 e2) :: T, we infer that e1 :: (? -> T) and e2 :: ?
+   do eb <- typecheck ctx base expectedLambdaType
+      ea <- typecheck ctx arg (Just $ argType (typeAST eb))
+      case (typeAST eb, typeAST ea) of
+         (FnTypeAST formaltype restype, argtype) ->
+            if isJust $ typeJoin formaltype argtype
+                then return $ AnnCall restype eb ea
+                else throwError $ "CallAST mismatches:\n"
+                                       ++ show formaltype ++ "\nvs\n" ++ show argtype
+         otherwise -> throwError $ "CallAST w/o FnAST type: " ++ (showStructureA eb)
+                                       ++ " :: " ++ (show $ typeAST eb)
+--typecheckCall ctx base arg maybeExpTy = error $ "TODO make use of maybeExpTy (" ++ (show maybeExpTy) ++ ") in typecheckCall"
+-----------------------------------------------------------------------
+typecheckFn ctx proto body Nothing = typecheckFn' ctx proto body Nothing
+typecheckFn ctx proto body (Just (FnTypeAST s t)) =
+    if isJust $ typeJoin (prototypeASTretType proto) t
+      then typecheckFn' ctx proto body (Just t)
+      else throwError  $ "typecheck fn: proto return type did not match fn expected return type: "
+                                        ++ show (prototypeASTretType proto)
+                                        ++ " vs " ++ show t
+typecheckFn' ctx proto body expBodyType =
+    let extCtx = extendContext ctx proto in
+    do annbody <- typecheck extCtx body expBodyType
+       case typeJoin (prototypeASTretType proto) (typeAST annbody) of
+        (Just x) ->
+           let annproto = case proto of
+                            (PrototypeAST t s vars) -> (AnnPrototype x s vars) in
+           return (E_AnnFn (AnnFn annproto annbody))
+        otherwise ->
+             throwError $ "typecheck fn: proto ret type did not match body: "
+                                    ++ show (prototypeASTretType proto)
+                                    ++ " vs " ++ show (typeAST annbody)
+-----------------------------------------------------------------------
+typecheckTuple ctx es b Nothing = typecheckTuple' ctx es b [Nothing | e <- es]
+
+typecheckTuple ctx es b (Just (TupleTypeAST ts)) =
+    if length es /= length ts
+      then throwError $ "typecheck: length of tuple and expected tuple type did not agree: "
+                            ++ show es ++ " versus " ++ show ts
+      else typecheckTuple' ctx es b [Just t | t <- ts]
+
+typecheckTuple ctx [] b (Just TypeUnitAST) = do return (AnnTuple [] b)
+
+typecheckTuple ctx es b (Just ty)
+    = throwError $ "typecheck: tuple (" ++ show es ++ ") cannot check against non-tuple type " ++ show ty
+
+typecheckTuple' ctx es b ts = do
+        let ets = List.zip es ts
+        let subparts = map (\(e,t) -> typecheck ctx e t) ets
+        if Prelude.and (map isAnnotated subparts)
+            then return (AnnTuple [part | (Annotated part) <- subparts] b)
+            else TypecheckErrors $ collectErrors subparts
+-----------------------------------------------------------------------
 
 isAnnotated :: TypecheckResult AnnExpr -> Bool
 isAnnotated (Annotated _) = True
@@ -215,23 +243,23 @@ getRootContext () =
 
 listModule :: ModuleAST -> IO ()
 listModule mod = do
-    forM_ (moduleASTFunctions mod) $ \ast -> do
-        putStrLn "ast:"
-        putStrLn $ showStructure (E_FnAST ast)
-        putStrLn "typechecking..."
+    annFns <- forM (moduleASTFunctions mod) $ \ast -> do
         let typechecked = typecheck (getRootContext ()) (E_FnAST ast) Nothing
         putStrLn "typechecked:"
-        inspect typechecked
+        inspect typechecked (E_FnAST ast)
+        return typechecked
+    -- annFns :: [TypecheckResult AnnExpr]
     return ()
 
-inspect :: TypecheckResult AnnExpr -> IO Bool
-inspect typechecked =
+inspect :: TypecheckResult AnnExpr -> ExprAST -> IO Bool
+inspect typechecked ast =
     case typechecked of
         Annotated e -> do
             putStrLn $ "Successful typecheck! " ++ showStructureA e
             return True
         TypecheckErrors errs -> do
             forM_ errs $ \err -> do putStrLn $ "Typecheck error: " ++ err
+            putStrLn $ showStructure ast
             return False
 
 -----------------------------------------------------------------------
@@ -250,7 +278,9 @@ main = do
 
   case messageGet f of
     Left msg -> error ("Failed to parse protocol buffer.\n"++msg)
-    Right (pb_exprs,_) -> listModule $ parseSourceModule pb_exprs
+    Right (pb_exprs,_) ->
+        let sm = parseSourceModule pb_exprs in
+        listModule $ sm
 
   return ()
 

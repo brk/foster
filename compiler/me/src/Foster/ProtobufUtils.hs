@@ -165,7 +165,7 @@ getVar e = case PbExpr.tag e of
 getType :: Expr -> TypeAST
 getType e = case PbExpr.type' e of
                 Just t -> parseType t
-                Nothing -> MissingTypeAST "getType"
+                Nothing -> MissingTypeAST "ProtobufUtils.getType"
 
 getFormal :: Expr -> AnnVar
 getFormal e = case PbExpr.tag e of
@@ -173,7 +173,7 @@ getFormal e = case PbExpr.tag e of
                     (VarAST mt v) ->
                         case mt of
                             Just t  -> (AnnVar t v)
-                            Nothing -> (AnnVar (MissingTypeAST "getFormal") v)
+                            Nothing -> (AnnVar (MissingTypeAST "ProtobufUtils.getFormal") v)
             _   -> error "getVar must be given a var!"
 
 parseProtoPP :: Proto -> TypeAST ->  PrototypeAST
