@@ -70,6 +70,10 @@ typeJoin x y = if _typesEqual x y then Just x else Nothing
 throwError :: String -> TypecheckResult AnnExpr
 throwError s = TypecheckErrors [s]
 
+sanityCheck :: Bool -> String -> TypecheckResult AnnExpr
+sanityCheck cond msg = if cond then do return (AnnBool True)
+                               else throwError msg
+
 typecheck :: Context -> ExprAST -> Maybe TypeAST -> TypecheckResult AnnExpr
 typecheck ctx expr maybeExpTy =
     case expr of
@@ -77,11 +81,11 @@ typecheck ctx expr maybeExpTy =
         IfAST a b c  -> do ea <- typecheck ctx a (Just fosBoolType)
                            eb <- typecheck ctx b maybeExpTy
                            ec <- typecheck ctx c maybeExpTy
-                           if isJust $ typeJoin (typeAST ea) fosBoolType then
-                            if isJust $ typeJoin (typeAST eb) (typeAST ec)
-                                then return (AnnIf (typeAST eb) ea eb ec)
-                                else throwError $ "IfAST: types of branches didn't match"
-                            else throwError $ "IfAST: type of conditional wasn't boolean"
+                           _  <- sanityCheck (isJust $ typeJoin (typeAST ea) fosBoolType)
+                                             "IfAST: type of conditional wasn't boolean"
+                           _  <- sanityCheck (isJust $ typeJoin (typeAST eb) (typeAST ec))
+                                             "IfAST: types of branches didn't match"
+                           return (AnnIf (typeAST eb) ea eb ec)
         E_FnAST (FnAST proto body) -> typecheckFn ctx proto body maybeExpTy
         CallAST b a -> typecheckCall ctx b a maybeExpTy
         IntAST i s1 s2 i2    -> do return (AnnInt (NamedTypeAST "i32") i s1 s2 i2)
