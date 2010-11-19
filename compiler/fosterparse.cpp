@@ -40,6 +40,7 @@ int main(int argc, char** argv) {
   cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster parser\n");
 
   validateInputFile(optInputPath);
+  validateOutputFile(optOutputPath);
   llvm::sys::Path inPath(optInputPath);
   const foster::InputFile infile(inPath);
 

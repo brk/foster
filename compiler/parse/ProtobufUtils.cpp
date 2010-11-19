@@ -86,7 +86,7 @@ void validateInputFile(const string& pathstr) {
       EDiag() << "Error occurred when reading input path '"
               << pathstr << "'";
     } else {
-      EDiag() << err;
+      EDiag() << "Error validating input path: " << err;
     }
     exit(1);
   }
@@ -96,3 +96,32 @@ void validateInputFile(const string& pathstr) {
     exit(1);
   }
 }
+
+void validateOutputFile(const string& pathstr) {
+  llvm::sys::Path outputPath(pathstr);
+  llvm::sys::PathWithStatus path(outputPath.getDirname());
+
+  if (pathstr.empty()) {
+    EDiag() << "Error: need an output filename!";
+    exit(1);
+  }
+
+  string err;
+  const llvm::sys::FileStatus* status
+         = path.getFileStatus(/*forceUpdate=*/ false, &err);
+  if (!status) {
+    if (err.empty()) {
+      EDiag() << "Error occurred when reading output path '"
+              << pathstr << "'";
+    } else {
+      EDiag() << "Error validating output path: " << err;
+    }
+    exit(1);
+  }
+
+  if (!status->isDir) {
+    EDiag() << "Error: output directory must exist!";
+    exit(1);
+  }
+}
+
