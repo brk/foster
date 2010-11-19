@@ -22,6 +22,7 @@
 #include "parse/ParsingContext.h"
 #include "parse/CompilationContext.h"
 #include "parse/ProtobufToAST.h"
+#include "parse/ProtobufUtils.h"
 #include "parse/DumpStructure.h"
 
 #include "passes/PrettyPrintPass.h"
@@ -58,44 +59,6 @@ optRawAST("rawast", cl::desc("View raw AST dump"));
 
 ////////////////////////////////////////////////////////////////////
 
-ExprAST* readExprFromProtobuf(const string& pathstr) {
-  foster::pb::Expr pbe;
-  std::fstream input(pathstr.c_str(), std::ios::in | std::ios::binary);
-  if (!pbe.ParseFromIstream(&input)) {
-    llvm::errs() << "Protobuf library unable to strictly parse input stream.\n";
-    return NULL;
-  }
-  return foster::ExprAST_from_pb(&pbe);
-}
-
-/// Ensures that the given path exists and is a file, not a directory.
-void validateInputFile(const string& pathstr) {
-  llvm::sys::PathWithStatus path(pathstr);
-
-  if (path.empty()) {
-    llvm::errs() << "Error: need an input filename!" << "\n";
-    exit(1);
-  }
-
-  string err;
-  const llvm::sys::FileStatus* status
-         = path.getFileStatus(/*forceUpdate=*/ false, &err);
-  if (!status) {
-    if (err.empty()) {
-      llvm::errs() << "Error occurred when reading input path '"
-                << pathstr << "'" << "\n";
-    } else {
-      llvm::errs() << err << "\n";
-    }
-    exit(1);
-  }
-
-  if (status->isDir) {
-    llvm::errs() << "Error: input must be a file, not a directory!" << "\n";
-    exit(1);
-  }
-}
-
 int main(int argc, char** argv) {
   GOOGLE_PROTOBUF_VERIFY_VERSION;
 
@@ -105,13 +68,8 @@ int main(int argc, char** argv) {
 
   validateInputFile(optInputPath);
 
-  ExprAST* exprAST = readExprFromProtobuf(optInputPath);
-  if (!exprAST) {
-    foster::EDiag() << "unable to parse module from protobuf";
-    exit(1);
-  }
-
-  ModuleAST* mod = dynamic_cast<ModuleAST*>(exprAST);
+  foster::pb::SourceModule sm;
+  ModuleAST* mod = readSourceModuleFromProtobuf(optInputPath, sm);
   if (!mod) {
     foster::EDiag() << "expression parsed from protobuf was not a ModuleAST";
     exit(1);
@@ -128,7 +86,6 @@ int main(int argc, char** argv) {
     foster::prettyPrintExpr(mod, llvm::outs(), 80, 2,
                             optSignaturesOnly);
   }
-
 
   return 0;
 }
