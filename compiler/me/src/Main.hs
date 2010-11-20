@@ -267,7 +267,6 @@ textOfA e width =
         E_AnnVar (AnnVar t v) -> "AnnVar       " ++ v ++ " :: " ++ show t
 
 -----------------------------------------------------------------------
-varName (VarAST mt name) = name
 
 showStructureA :: AnnExpr -> String
 showStructureA e = showStructureP e "" False where
