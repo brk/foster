@@ -7,6 +7,11 @@
 module Foster.ExprAST where
 
 import Foster.TypeAST
+import Data.Int
+import Data.Sequence as Seq
+import Data.Maybe(fromJust)
+import Data.List(replicate)
+import qualified Data.Text as T
 
 
 data CompilesStatus = CS_WouldCompile | CS_WouldNotCompile | CS_NotChecked
@@ -15,12 +20,33 @@ data CompilesStatus = CS_WouldCompile | CS_WouldNotCompile | CS_NotChecked
 data ESourceLocation = ESourceLocation Int Int
     deriving (Show)
 
-data ESourceRange = ESourceRange ESourceLocation ESourceLocation String
-    deriving (Show)
+data ESourceRange = ESourceRange ESourceLocation ESourceLocation SourceLines
+                  | EMissingSourceRange
 
+instance Show ESourceRange where
+    show = showSourceRange
+
+showSourceRange :: ESourceRange -> String
+showSourceRange EMissingSourceRange = ""
+showSourceRange (ESourceRange begin end lines) = showSourceLines begin end lines
+
+showSourceLines (ESourceLocation bline bcol) (ESourceLocation eline ecol) lines =
+    if bline == eline
+        then joinWith "\n" [fromJust $ sourceLine lines bline, highlightLineRange bcol ecol]
+        else joinWith "\n" [fromJust $ sourceLine lines n | n <- [bline..eline]]
+
+highlightLineRange :: Int -> Int -> String
+highlightLineRange bcol ecol =
+    let len = ecol - bcol in
+    if len <= 0
+        then ""
+        else (Data.List.replicate bcol ' ') ++ (Data.List.replicate len '~')
+
+data SourceLines = SourceLines (Seq T.Text)
 
 data ModuleAST fnType = ModuleAST {
-        moduleASTFunctions :: [fnType]
+          moduleASTfunctions   :: [fnType]
+        , moduleASTsourceLines :: SourceLines
      }
 
 data ExprAST =
@@ -33,7 +59,7 @@ data ExprAST =
         | TupleAST      [ExprAST] Bool
         | E_FnAST       FnAST
 
-        | CallAST       ExprAST ExprAST
+        | CallAST       ESourceRange ExprAST ExprAST
         | CompilesAST   ExprAST CompilesStatus
         | IfAST         ExprAST ExprAST ExprAST
         | SeqAST        ExprAST ExprAST
@@ -48,6 +74,14 @@ data PrototypeAST = PrototypeAST {
                           prototypeASTretType :: TypeAST
                         , prototypeASTname    :: String
                         , prototypeASTformals :: [AnnVar] } deriving (Show)
+
+
+sourceLine :: SourceLines -> Int -> Maybe String
+sourceLine (SourceLines seq) n =
+    if n < 0 || Seq.length seq < n
+        then Nothing
+        else Just (T.unpack $ Seq.index seq n)
+
 
 -- Builds trees like this:
 --
@@ -72,7 +106,7 @@ childrenOf :: ExprAST -> [ExprAST]
 childrenOf e =
     case e of
         BoolAST         b    -> []
-        CallAST     b es     -> [b, es]
+        CallAST   r b es     -> [b, es]
         CompilesAST   e c    -> [e]
         IfAST         a b c  -> [a, b, c]
         IntAST i s1 s2 i2    -> []
@@ -96,7 +130,7 @@ textOf e width =
     let spaces = Prelude.replicate width '\SP'  in
     case e of
         BoolAST         b    -> "BoolAST      " ++ (show b)
-        CallAST     b es     -> "CallAST      "
+        CallAST   r b es     -> "CallAST      "
         CompilesAST   e c    -> "CompilesAST  "
         IfAST         a b c  -> "IfAST        "
         IntAST i t c base    -> "IntAST       " ++ t
@@ -121,7 +155,7 @@ data AnnExpr =
         | AnnTuple      [AnnExpr] Bool
         | E_AnnFn       AnnFn
 
-        | AnnCall       TypeAST AnnExpr AnnExpr
+        | AnnCall       ESourceRange TypeAST AnnExpr AnnExpr
         | AnnCompiles   CompilesStatus
         | AnnIf         TypeAST AnnExpr AnnExpr AnnExpr
         | AnnSeq        AnnExpr AnnExpr

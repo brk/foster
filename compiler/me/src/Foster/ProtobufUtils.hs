@@ -15,6 +15,7 @@ module Foster.ProtobufUtils (
 import Foster.ExprAST
 import Foster.TypeAST
 
+import Data.Traversable(fmapDefault)
 import Data.Sequence(length, index, Seq, empty, fromList)
 import Data.Maybe(fromMaybe, fromJust)
 import Data.Foldable(toList)
@@ -24,6 +25,7 @@ import Control.Exception(assert)
 import qualified Data.Text as T
 import qualified Data.ByteString.Lazy as L(writeFile)
 import Data.ByteString.Lazy.UTF8 as UTF8
+import Data.Sequence as Seq
 
 import Text.ProtocolBuffers(isSet,getVal,messagePut)
 import Text.ProtocolBuffers.Basic(uToString)
@@ -38,6 +40,7 @@ import Foster.Pb.Expr     as PbExpr
 import Foster.Pb.SourceModule as SourceModule
 import Foster.Pb.Expr.Tag(Tag(PB_INT, BOOL, VAR, TUPLE, MODULE, IF, FN, PROTO, CALL, SEQ, SUBSCRIPT))
 import qualified Foster.Pb.SourceRange as Pb
+import qualified Foster.Pb.SourceLocation as Pb
 
 import qualified Text.ProtocolBuffers.Header as P'
 
@@ -49,15 +52,16 @@ import qualified Text.ProtocolBuffers.Header as P'
 -- optional PhoneType type      => (getVal phone_number type')
 -----------------------------------------------------------------------
 
-part :: Int -> Seq Expr -> ExprAST
-part i parts = parseExpr $ index parts i
+part :: Int -> Seq Expr -> SourceLines -> ExprAST
+part i parts lines = parseExpr (index parts i) lines
 
-parseBool pbexpr = BoolAST $ fromMaybe False (PbExpr.bool_value pbexpr)
+parseBool pbexpr lines = BoolAST $ fromMaybe False (PbExpr.bool_value pbexpr)
 
-parseCall pbexpr =
-        case map parseExpr $ toList (PbExpr.parts pbexpr) of
-                [base, arg] -> CallAST base arg
-                (base:args) -> CallAST base (TupleAST args False)
+parseCall pbexpr lines =
+        let range = parseRange pbexpr lines in
+        case map (\x -> parseExpr x lines) $ toList (PbExpr.parts pbexpr) of
+                [base, arg] -> CallAST range base arg
+                (base:args) -> CallAST range base (TupleAST args False)
                 _ -> error "call needs a base!"
 
 compileStatus :: Maybe String -> CompilesStatus
@@ -66,29 +70,29 @@ compileStatus (Just "kWouldCompile")    = CS_WouldCompile
 compileStatus (Just "kWouldNotCompile") = CS_WouldNotCompile
 compileStatus (Just x                 ) = error $ "Unable to interpret compiles status " ++ x
 
-parseCompiles pbexpr =  CompilesAST (part 0 $ PbExpr.parts pbexpr)
+parseCompiles pbexpr lines =  CompilesAST (part 0 (PbExpr.parts pbexpr) lines)
                                     (compileStatus $ fmap uToString $ PbExpr.compiles_status pbexpr)
 
-parseFn pbexpr = let parts = PbExpr.parts pbexpr in
-                 assert ((Data.Sequence.length parts) == 2) $
-                 FnAST (parseProtoP $ index parts 0)
-                                     (part 1 parts)
+parseFn pbexpr lines = let parts = PbExpr.parts pbexpr in
+                       assert ((Data.Sequence.length parts) == 2) $
+                       FnAST (parseProtoP (index parts 0) lines)
+                             (part 1 parts lines)
 
-parseFnAST pbexpr = E_FnAST $ parseFn pbexpr
+parseFnAST pbexpr lines = E_FnAST $ parseFn pbexpr lines
 
-parseIf pbexpr =
+parseIf pbexpr lines =
         if (isSet pbexpr PbExpr.pb_if)
                 then parseFromPBIf (getVal pbexpr PbExpr.pb_if)
                 else error "must have if to parse from if!"
         where parseFromPBIf pbif =
-                IfAST (parseExpr $ PBIf.test_expr pbif)
-                      (parseExpr $ PBIf.then_expr pbif)
-                      (parseExpr $ PBIf.else_expr pbif)
+                IfAST (parseExpr (PBIf.test_expr pbif) lines)
+                      (parseExpr (PBIf.then_expr pbif) lines)
+                      (parseExpr (PBIf.else_expr pbif) lines)
 
-parseInt :: Expr -> ExprAST
-parseInt pbexpr =
+parseInt :: Expr -> SourceLines -> ExprAST
+parseInt pbexpr lines =
         if (isSet pbexpr PbExpr.pb_int)
-                then parseFromPBInt (getVal pbexpr PbExpr.pb_int)
+                then (parseFromPBInt (getVal pbexpr PbExpr.pb_int) lines)
                 else error "must have int to parse from int!"
 
 splitString :: String -> String -> [String]
@@ -100,13 +104,13 @@ onlyHexDigitsIn :: String -> Bool
 onlyHexDigitsIn str =
         Prelude.all (\x -> (toLower x) `Prelude.elem` "0123456789abcdef") str
 
-parseFromPBInt :: PBInt -> ExprAST
-parseFromPBInt pbint =
+parseFromPBInt :: PBInt -> SourceLines -> ExprAST
+parseFromPBInt pbint lines =
         let text = uToString $ PBInt.originalText pbint in
         let (clean, base) = extractCleanBase text in
         assert (base `Prelude.elem` [2, 8, 10, 16]) $
         assert (onlyHexDigitsIn clean) $
-        mkIntASTFromClean clean text base
+        mkIntASTFromClean clean text base lines
 
 -- Given "raw" integer text like "123`456_10",
 -- return ("123456", 10)
@@ -117,15 +121,16 @@ extractCleanBase text =
             [first, base] -> (first, read base)
             otherwise     -> (noticks, 10)
 
-mkIntASTFromClean :: String -> String -> Int -> ExprAST
-mkIntASTFromClean clean text base =
+mkIntASTFromClean :: String -> String -> Int -> SourceLines -> ExprAST
+mkIntASTFromClean clean text base lines =
         let bitsPerDigit = ceiling $ (log $ fromIntegral base) / (log 2) in
         let conservativeBitsNeeded = bitsPerDigit * (Prelude.length clean) + 2 in
         let activeBits = toInteger conservativeBitsNeeded in
         IntAST activeBits text clean base
 
-parseSeq pbexpr = let exprs = map parseExpr $ toList (PbExpr.parts pbexpr) in
-                  buildSeqs exprs
+parseSeq pbexpr lines =
+    let exprs = map (\x -> parseExpr x lines) $ toList (PbExpr.parts pbexpr) in
+    buildSeqs exprs
 
 -- | Convert a list of ExprASTs to a right-leaning "list" of SeqAST nodes.
 buildSeqs :: [ExprAST] -> ExprAST
@@ -134,71 +139,80 @@ buildSeqs [a]   = a
 buildSeqs [a,b] = SeqAST a b
 buildSeqs (a:b) = SeqAST a (buildSeqs b)
 
-parseSubscript pbexpr = let parts = PbExpr.parts pbexpr in
-                        SubscriptAST (part 0 parts) (part 1 parts)
+parseSubscript pbexpr lines =
+    let parts = PbExpr.parts pbexpr in
+    SubscriptAST (part 0 parts lines) (part 1 parts lines)
 
-parseTuple pbexpr =
-        TupleAST (map parseExpr $ toList (PbExpr.parts pbexpr))
+parseTuple pbexpr lines =
+        TupleAST (map (\x -> parseExpr x lines) $ toList (PbExpr.parts pbexpr))
                  (fromMaybe False $ PbExpr.is_closure_environment pbexpr)
 
-parseVar :: Expr -> ExprAST
-parseVar pbexpr = VarAST (fmap parseType (PbExpr.type' pbexpr))
-                       $ uToString (fromJust $ PbExpr.name pbexpr)
+parseVar pbexpr lines = VarAST (fmap parseType (PbExpr.type' pbexpr))
+                               (uToString (fromJust $ PbExpr.name pbexpr))
 
-parseModule :: Expr -> ModuleAST FnAST
-parseModule pbexpr = ModuleAST [parseFn e | e <- toList $ PbExpr.parts pbexpr]
+parseModule :: Expr -> SourceLines -> ModuleAST FnAST
+parseModule pbexpr lines = ModuleAST [parseFn e lines | e <- toList $ PbExpr.parts pbexpr] lines
 
-emptyRange :: ESourceRange
-emptyRange = ESourceRange e e "<no file>"
-                    where e = (ESourceLocation (-1::Int) (-1::Int))
+--emptyRange :: ESourceRange
+--emptyRange = ESourceRange e e "<no file>"
+--                    where e = (ESourceLocation (-1::Int) (-1::Int))
 
-parseProtoP :: Expr -> PrototypeAST
-parseProtoP pbexpr =
+parseProtoP :: Expr -> SourceLines -> PrototypeAST
+parseProtoP pbexpr lines =
     case PbExpr.proto pbexpr of
                 Nothing  -> error "Need a proto to parse a proto!"
-                Just proto  -> parseProtoPP proto (getType pbexpr)
+                Just proto  -> parseProtoPP proto (getType pbexpr) lines
 
-parseProto :: Expr -> ExprAST
-parseProto pbexpr = E_PrototypeAST (parseProtoP pbexpr)
+parseProto :: Expr -> SourceLines -> ExprAST
+parseProto pbexpr lines = E_PrototypeAST (parseProtoP pbexpr lines)
 
 getVarName :: ExprAST -> String
 getVarName (VarAST mt s) = s
-
--- used?
-getVar :: Expr -> ExprAST
-getVar e = case PbExpr.tag e of
-            VAR -> parseVar e
-            _   -> error "getVar must be given a var!"
 
 getType :: Expr -> TypeAST
 getType e = case PbExpr.type' e of
                 Just t -> parseType t
                 Nothing -> MissingTypeAST "ProtobufUtils.getType"
 
-getFormal :: Expr -> AnnVar
-getFormal e = case PbExpr.tag e of
-            VAR -> case parseVar e of
+getFormal :: Expr -> SourceLines ->  AnnVar
+getFormal e lines = case PbExpr.tag e of
+            VAR -> case parseVar e lines of
                     (VarAST mt v) ->
                         case mt of
                             Just t  -> (AnnVar t v)
                             Nothing -> (AnnVar (MissingTypeAST "ProtobufUtils.getFormal") v)
             _   -> error "getVar must be given a var!"
 
-parseProtoPP :: Proto -> TypeAST ->  PrototypeAST
-parseProtoPP proto retTy =
+parseProtoPP :: Proto -> TypeAST -> SourceLines -> PrototypeAST
+parseProtoPP proto retTy lines =
     let args = Proto.in_args proto in
-    let vars = map getFormal $ toList args in
+    let vars = map (\x -> getFormal x lines) $ toList args in
     let name = uToString $ Proto.name proto in
     PrototypeAST retTy name vars
 
-sourceRangeFromPBRange :: Pb.SourceRange -> ESourceRange
-sourceRangeFromPBRange pbrange = error "no"
+sourceRangeFromPBRange :: Pb.SourceRange -> SourceLines -> ESourceRange
+sourceRangeFromPBRange pbrange lines =
+    ESourceRange
+        (parseSourceLocation (Pb.begin pbrange))
+        (parseSourceLocation (fromJust $ Pb.end   pbrange))
+        lines
 
-parseExpr :: Expr -> ExprAST
-parseExpr pbexpr =
-    let range = case PbExpr.range pbexpr of
-                    Nothing   -> emptyRange
-                    (Just r)  -> sourceRangeFromPBRange r in
+getString :: Maybe P'.Utf8 -> String
+getString Nothing  = ""
+getString (Just u) = uToString u
+
+parseSourceLocation :: Pb.SourceLocation -> ESourceLocation
+parseSourceLocation sr = -- This may fail for files of more than 2^29 lines...
+    ESourceLocation (fromIntegral $ Pb.line sr) (fromIntegral $ Pb.column sr)
+
+parseRange :: Expr -> SourceLines ->  ESourceRange
+parseRange pbexpr lines = case PbExpr.range pbexpr of
+                        Nothing   -> EMissingSourceRange
+                        (Just r)  -> sourceRangeFromPBRange r lines
+
+parseExpr :: Expr -> SourceLines -> ExprAST
+parseExpr pbexpr lines =
+    let range = parseRange pbexpr in
     let fn = case PbExpr.tag pbexpr of
                 PB_INT  -> parseInt
                 BOOL    -> parseBool
@@ -211,12 +225,14 @@ parseExpr pbexpr =
                 SUBSCRIPT -> parseSubscript
                 otherwise -> error $ "Unknown tag: " ++ (show $ PbExpr.tag pbexpr) ++ "\n"
         in
-   fn pbexpr
+   fn pbexpr lines
 
 parseSourceModule :: SourceModule -> ModuleAST FnAST
 parseSourceModule sm =
-    parseModule (SourceModule.expr sm)
+    parseModule (SourceModule.expr sm) (sourceLines sm)
 
+sourceLines :: SourceModule -> SourceLines
+sourceLines sm = SourceLines (fmapDefault (\x -> T.pack (uToString x)) (SourceModule.line sm))
 
 parseType :: Type -> TypeAST
 parseType t = case PbType.tag t of
@@ -238,7 +254,7 @@ typeAST (AnnInt t _ _ _ _)   = t
 typeAST (AnnTuple es b)      = TupleTypeAST [typeAST e | e <- es]
 typeAST (E_AnnFn (AnnFn (AnnPrototype rt s vs) e))
                              = FnTypeAST (normalizeTypes [t | (AnnVar t v) <- vs]) rt
-typeAST (AnnCall t b a)      = t
+typeAST (AnnCall r t b a)    = t
 typeAST (AnnCompiles c)      = fosBoolType
 typeAST (AnnIf t a b c)      = t
 typeAST (AnnSeq a b)         = typeAST b
@@ -252,7 +268,7 @@ childrenOfA :: AnnExpr -> [AnnExpr]
 childrenOfA e =
     case e of
         AnnBool         b                    -> []
-        AnnCall    t b a                     -> [b, a]
+        AnnCall  r t b a                     -> [b, a]
         AnnCompiles   c                      -> []
         AnnIf      t  a b c                  -> [a, b, c]
         AnnInt t i s1 s2 i2                  -> []
@@ -311,8 +327,8 @@ dumpExpr x@(E_AnnFn (AnnFn p b)) =
                     , PbExpr.tag   = Foster.Pb.Expr.Tag.FN
                     , PbExpr.type' = Just $ dumpType (typeAST x)  }
 
-dumpExpr (AnnCall t base (AnnTuple args _)) = dumpCall t base args
-dumpExpr (AnnCall t base arg)               = dumpCall t base [arg]
+dumpExpr (AnnCall r t base (AnnTuple args _)) = dumpCall t base args
+dumpExpr (AnnCall r t base arg)               = dumpCall t base [arg]
 
 dumpExpr x@(E_AnnPrototype t' proto@(AnnPrototype t s es)) =
     P'.defaultValue { PbExpr.proto = Just $ dumpProto proto
@@ -382,7 +398,7 @@ dumpVar (AnnVar t v) =
 
 dumpModule :: ModuleAST AnnFn -> Expr
 dumpModule mod = P'.defaultValue {
-      parts = fromList [dumpExpr (E_AnnFn f) | f <- moduleASTFunctions mod]
+      parts = fromList [dumpExpr (E_AnnFn f) | f <- moduleASTfunctions mod]
     , PbExpr.tag   = MODULE }
 
 -----------------------------------------------------------------------

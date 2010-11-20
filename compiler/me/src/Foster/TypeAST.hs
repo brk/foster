@@ -32,9 +32,9 @@ showTypeAST :: TypeAST -> String
 showTypeAST (MissingTypeAST s)   = "(MissingTypeAST " ++ s ++ ")"
 showTypeAST (TypeUnitAST)        = "()"
 showTypeAST (NamedTypeAST s)     = s
-showTypeAST (TupleTypeAST types) = "(" ++ commas [showTypeAST t | t <- types] ++ ")"
+showTypeAST (TupleTypeAST types) = "(" ++ joinWith ", " [showTypeAST t | t <- types] ++ ")"
 showTypeAST (FnTypeAST s t)      = "(" ++ show s ++ " -> " ++ show t ++ ")"
 
-commas :: [String] -> String
-commas strings = foldr1 (++) (intersperse ", " strings)
+joinWith :: String -> [String] -> String
+joinWith s ss = foldr1 (++) (intersperse s ss)
 

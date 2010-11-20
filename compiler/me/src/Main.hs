@@ -87,7 +87,7 @@ typecheck ctx expr maybeExpTy =
                                              "IfAST: types of branches didn't match"
                            return (AnnIf (typeAST eb) ea eb ec)
         E_FnAST (FnAST proto body) -> typecheckFn ctx proto body maybeExpTy
-        CallAST b a -> typecheckCall ctx b a maybeExpTy
+        CallAST r b a -> typecheckCall ctx r b a maybeExpTy
         IntAST i s1 s2 i2    -> do return (AnnInt (NamedTypeAST "i32") i s1 s2 i2)
         SeqAST a b -> do
             ea <- typecheck ctx a (Just TypeUnitAST)
@@ -112,7 +112,7 @@ argType :: TypeAST -> TypeAST
 argType (FnTypeAST a r) = a
 argType x = error $ "Called argType on non-FnTypeAST: " ++ show x
 
-typecheckCall ctx base arg maybeExpTy =
+typecheckCall ctx range base arg maybeExpTy =
    let expectedLambdaType = case maybeExpTy of
         Nothing  -> Nothing
         (Just t) -> (Just (FnTypeAST (MissingTypeAST "typecheckCall") t)) in
@@ -122,9 +122,9 @@ typecheckCall ctx base arg maybeExpTy =
       case (typeAST eb, typeAST ea) of
          (FnTypeAST formaltype restype, argtype) ->
             if isJust $ typeJoin formaltype argtype
-                then return $ AnnCall restype eb ea
+                then return $ AnnCall range restype eb ea
                 else throwError $ "CallAST mismatches:\n"
-                                       ++ show formaltype ++ "\nvs\n" ++ show argtype
+                                       ++ show formaltype ++ "\nvs\n" ++ show argtype ++ "\nrange:\n" ++ show range
          otherwise -> throwError $ "CallAST w/o FnAST type: " ++ (showStructureA eb)
                                        ++ " :: " ++ (show $ typeAST eb)
 --typecheckCall ctx base arg maybeExpTy = error $ "TODO make use of maybeExpTy (" ++ (show maybeExpTy) ++ ") in typecheckCall"
@@ -192,21 +192,21 @@ getRootContext () =
     ,("expect_i1", FnTypeAST (NamedTypeAST "i1") TypeUnitAST)
     ,( "print_i1", FnTypeAST (NamedTypeAST "i1") TypeUnitAST)
 
-    --,("primitive_<_i64", FnTypeAST (TupleTypeAST [(NamedTypeAST "i64"), (NamedTypeAST "i64")]) (NamedTypeAST "i1"))
-    ,("primitive_<_i64", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i64")]) (NamedTypeAST "i1"))
+    ,("primitive_<_i64", FnTypeAST (TupleTypeAST [(NamedTypeAST "i64"), (NamedTypeAST "i64")]) (NamedTypeAST "i1"))
+    --,("primitive_<_i64", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i64")]) (NamedTypeAST "i1"))
     ,("primitive_-_i64", FnTypeAST (TupleTypeAST [(NamedTypeAST "i64"), (NamedTypeAST "i64")]) (NamedTypeAST "i64"))
     ]
 
 typecheckModule :: ModuleAST FnAST -> IO (Maybe (ModuleAST AnnFn))
 typecheckModule mod = do
-    annFns <- forM (moduleASTFunctions mod) $ \ast -> do
+    annFns <- forM (moduleASTfunctions mod) $ \ast -> do
         let typechecked = typecheck (getRootContext ()) (E_FnAST ast) Nothing
         putStrLn "typechecked:"
         inspect typechecked (E_FnAST ast)
         return typechecked
     -- annFns :: [TypecheckResult AnnExpr]
     if allAnnotated annFns
-        then return $ Just (ModuleAST [f | (Annotated (E_AnnFn f)) <- annFns])
+        then return $ Just (ModuleAST [f | (Annotated (E_AnnFn f)) <- annFns] (moduleASTsourceLines mod))
         else return $ Nothing
 
 allAnnotated :: [TypecheckResult AnnExpr] -> Bool
@@ -255,14 +255,14 @@ textOfA e width =
     let spaces = Prelude.replicate width '\SP'  in
     case e of
         AnnBool         b    -> "AnnBool      " ++ (show b)
-        AnnCall    t b a     -> "AnnCall      " ++ " :: " ++ show t
+        AnnCall  r t b a     -> "AnnCall      " ++ " :: " ++ show t
         AnnCompiles     c    -> "AnnCompiles  "
         AnnIf      t  a b c  -> "AnnIf        " ++ " :: " ++ show t
         AnnInt ty i t c base -> "AnnInt       " ++ t ++ " :: " ++ show ty
         E_AnnFn (AnnFn a b)  -> "AnnFn        "
         AnnSeq          a b  -> "AnnSeq       " ++ " :: " ++ show (typeAST b)
-        AnnSubscript  t a b    -> "AnnSubscript " ++ " :: " ++ show t
-        E_AnnPrototype t (AnnPrototype rt s es)     -> "PrototypeAST " ++ s ++ " :: " ++ show t
+        AnnSubscript  t a b  -> "AnnSubscript " ++ " :: " ++ show t
+        E_AnnPrototype t (AnnPrototype rt s es) -> "PrototypeAST " ++ s ++ " :: " ++ show t
         AnnTuple     es b    -> "AnnTuple     "
         E_AnnVar (AnnVar t v) -> "AnnVar       " ++ v ++ " :: " ++ show t
 
