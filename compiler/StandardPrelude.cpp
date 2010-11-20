@@ -47,7 +47,7 @@ static const char* sOps[] = {
 
 static bool
 isUnaryOp(const std::string& op) {
-  return op == "negate" || op == "bitnot";
+  return op == "negate" || op == "bitnot" || op == "sext_i64";
 }
 
 static bool
@@ -57,11 +57,13 @@ isCmpOp(const std::string& op) {
 }
 
 static Value*
-codegenPrimitiveOperation(const std::string& op, IRBuilder<>& b,
+codegenPrimitiveOperation(const std::string& op,
+                          IRBuilder<>& b,
                           const std::vector<Value*>& args) {
   Value* VL = args[0];
        if (op == "negate") { return b.CreateNeg(VL, "negtmp"); }
   else if (op == "bitnot") { return b.CreateNot(VL, "nottmp"); }
+  else if (op == "sext_i64") { return b.CreateSExt(VL, b.getInt64Ty(), "sexti64tmp"); }
 
   Value* VR = args[1];
   // Other variants: F (float), NSW (no signed wrap), NUW,
@@ -87,7 +89,7 @@ codegenPrimitiveOperation(const std::string& op, IRBuilder<>& b,
   else if (op == "bitlshr") { return b.CreateLShr(VL, VR, "lshrtmp"); }
   else if (op == "bitashr") { return b.CreateAShr(VL, VR, "ashrtmp"); }
 
-  ASSERT(false) << "unhandled op " << op;
+  ASSERT(false) << "unhandled op '" << op << "'";
 }
 
 static Function*
@@ -97,6 +99,7 @@ getConcretePrimitiveFunction(Module* m, const char* op, const Type* ty) {
 
   if (isUnaryOp(op)) { // ty -> ty
     argtypes.push_back(ty); returnType = ty;
+    if (std::string(op) == "sext_i64") { returnType = Type::getInt64Ty(getGlobalContext()); }
   } else if (isCmpOp(op)) { // ty -> ty -> i1
     argtypes.push_back(ty);
     argtypes.push_back(ty); returnType = Type::getInt1Ty(getGlobalContext());
@@ -144,7 +147,8 @@ addConcretePrimitiveFunctionTo(Module* m, const char* op, const Type* ty) {
     fty = pty->getElementType();
   }
 
-  llvm::outs() << "\t" << name << "\n";
+
+  llvm::outs() << "\t" << name << " :: " << str(fty) << "\n";
 
   gScope.insert(name, new VariableAST(name,
                                       TypeAST::reconstruct(fty),
@@ -188,6 +192,7 @@ addConcretePrimitiveFunctionsTo(Module* m) {
   }
 
   addConcretePrimitiveFunctionTo(m, "bitnot", Type::getInt1Ty(getGlobalContext()));
+  addConcretePrimitiveFunctionTo(m, "sext_i64", Type::getInt32Ty(getGlobalContext()));
   addLLVMIntrinsic(m, llvm::Intrinsic::readcyclecounter);
 }
 

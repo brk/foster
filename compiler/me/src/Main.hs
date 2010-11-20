@@ -191,6 +191,7 @@ getRootContext () =
     ,(  "read_i32", FnTypeAST TypeUnitAST (NamedTypeAST "i32"))
     ,("expect_i1", FnTypeAST (NamedTypeAST "i1") TypeUnitAST)
     ,( "print_i1", FnTypeAST (NamedTypeAST "i1") TypeUnitAST)
+    ,( "primitive_sext_i64_i32", FnTypeAST (NamedTypeAST "i32") (NamedTypeAST "i64"))
 
     ,("primitive_<_i64", FnTypeAST (TupleTypeAST [(NamedTypeAST "i64"), (NamedTypeAST "i64")]) (NamedTypeAST "i1"))
     --,("primitive_<_i64", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i64")]) (NamedTypeAST "i1"))

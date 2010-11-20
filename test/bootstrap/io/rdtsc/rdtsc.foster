@@ -8,7 +8,8 @@ main = fn ( to i32) {
     print_i32(read_i32())
     let e:i64 = llvm_readcyclecounter() in {
       expect_i1(true)
-      print_i1( primitive_<_i64(128, primitive_-_i64(e, s)) )
+      print_i1( primitive_<_i64(primitive_sext_i64_i32(128),
+                primitive_-_i64(e, s)) )
     }
   }
   0
