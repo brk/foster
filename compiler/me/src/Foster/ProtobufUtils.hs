@@ -39,7 +39,7 @@ import Foster.Pb.PBIf     as PBIf
 import Foster.Pb.PBInt    as PBInt
 import Foster.Pb.Expr     as PbExpr
 import Foster.Pb.SourceModule as SourceModule
-import Foster.Pb.Expr.Tag(Tag(PB_INT, BOOL, VAR, TUPLE, MODULE, IF, FN, PROTO, CALL, SEQ, SUBSCRIPT))
+import Foster.Pb.Expr.Tag(Tag(PB_INT, BOOL, VAR, TUPLE, COMPILES, MODULE, IF, FN, PROTO, CALL, SEQ, SUBSCRIPT))
 import qualified Foster.Pb.SourceRange as Pb
 import qualified Foster.Pb.SourceLocation as Pb
 
@@ -67,6 +67,7 @@ parseCall pbexpr lines =
 
 compileStatus :: Maybe String -> CompilesStatus
 compileStatus Nothing                   = CS_NotChecked
+compileStatus (Just "kNotChecked")      = CS_NotChecked
 compileStatus (Just "kWouldCompile")    = CS_WouldCompile
 compileStatus (Just "kWouldNotCompile") = CS_WouldNotCompile
 compileStatus (Just x                 ) = error $ "Unable to interpret compiles status " ++ x
@@ -227,8 +228,9 @@ parseExpr pbexpr lines =
                 PROTO     -> parseProto
                 CALL      -> parseCall
                 SEQ       -> parseSeq
+                COMPILES  -> parseCompiles
                 SUBSCRIPT -> parseSubscript
-                otherwise -> error $ "Unknown tag: " ++ (show $ PbExpr.tag pbexpr) ++ "\n"
+                otherwise -> error $ "parseExpr saw unknown tag: " ++ (show $ PbExpr.tag pbexpr) ++ "\n"
         in
    fn pbexpr lines
 
