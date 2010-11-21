@@ -165,8 +165,6 @@ if __name__ == "__main__":
 
   testpath = args[0]
   bindir = options.bindir
-  if len(sys.argv) == 3:
-    bindir = sys.argv[2]
 
   tmpdir = os.path.join(bindir, 'test-tmpdir')
   ensure_dir_exists(tmpdir)
