@@ -10,6 +10,7 @@ module Foster.ProtobufUtils (
   , typeAST
   , unbuildSeqsA
   , childrenOfA
+  , fnTypeFromA
 ) where
 
 import Foster.ExprAST
@@ -161,7 +162,7 @@ parseProtoP :: Expr -> SourceLines -> PrototypeAST
 parseProtoP pbexpr lines =
     case PbExpr.proto pbexpr of
                 Nothing  -> error "Need a proto to parse a proto!"
-                Just proto  -> parseProtoPP proto (getType pbexpr) lines
+                Just proto  -> parseProtoPP proto lines
 
 parseProto :: Expr -> SourceLines -> ExprAST
 parseProto pbexpr lines = E_PrototypeAST (parseProtoP pbexpr lines)
@@ -172,7 +173,7 @@ getVarName (VarAST mt s) = s
 getType :: Expr -> TypeAST
 getType e = case PbExpr.type' e of
                 Just t -> parseType t
-                Nothing -> MissingTypeAST "ProtobufUtils.getType"
+                Nothing -> MissingTypeAST $ "ProtobufUtils.getType " ++ show (PbExpr.tag e)
 
 getFormal :: Expr -> SourceLines ->  AnnVar
 getFormal e lines = case PbExpr.tag e of
@@ -183,11 +184,14 @@ getFormal e lines = case PbExpr.tag e of
                             Nothing -> (AnnVar (MissingTypeAST "ProtobufUtils.getFormal") v)
             _   -> error "getVar must be given a var!"
 
-parseProtoPP :: Proto -> TypeAST -> SourceLines -> PrototypeAST
-parseProtoPP proto retTy lines =
+parseProtoPP :: Proto -> SourceLines -> PrototypeAST
+parseProtoPP proto lines =
     let args = Proto.in_args proto in
     let vars = map (\x -> getFormal x lines) $ toList args in
     let name = uToString $ Proto.name proto in
+    let retTy = case Proto.result proto of
+                    Just t  -> parseType t
+                    Nothing -> MissingTypeAST $ "ProtobufUtils.parseProtoPP " ++ name in
     PrototypeAST retTy name vars
 
 sourceRangeFromPBRange :: Pb.SourceRange -> SourceLines -> ESourceRange
@@ -215,6 +219,7 @@ parseExpr pbexpr lines =
     let range = parseRange pbexpr in
     let fn = case PbExpr.tag pbexpr of
                 PB_INT  -> parseInt
+                IF      -> parseIf
                 BOOL    -> parseBool
                 VAR     -> parseVar
                 Foster.Pb.Expr.Tag.TUPLE   -> parseTuple
@@ -272,7 +277,7 @@ childrenOfA e =
         AnnCompiles   c                      -> []
         AnnIf      t  a b c                  -> [a, b, c]
         AnnInt t i s1 s2 i2                  -> []
-        E_AnnFn (AnnFn p b)                  -> [E_AnnPrototype t p, b] where t = fnTypeFrom p b
+        E_AnnFn (AnnFn p b)                  -> [E_AnnPrototype t p, b] where t = fnTypeFromA p b
         AnnSeq      a b                      -> unbuildSeqsA e
         AnnSubscript t a b                   -> [a, b]
         E_AnnPrototype t' (AnnPrototype t s es) -> [E_AnnVar v | v <- es]
@@ -280,8 +285,8 @@ childrenOfA e =
         E_AnnVar      v                      -> []
 
 
-fnTypeFrom :: AnnPrototype -> AnnExpr -> TypeAST
-fnTypeFrom p b =
+fnTypeFromA :: AnnPrototype -> AnnExpr -> TypeAST
+fnTypeFromA p b =
     let intype = normalizeTypes [avarType v | v <- annProtoVars p] in
     let outtype = typeAST b in
     FnTypeAST intype outtype

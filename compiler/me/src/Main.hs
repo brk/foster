@@ -15,6 +15,10 @@ import qualified Data.ByteString.Lazy.UTF8 as U(toString)
 import qualified System.IO.UTF8 as U(putStrLn)
 
 import List(length, zip, all)
+import Data.Set(Set)
+import qualified Data.Set as Set
+import Data.Graph(Graph)
+import qualified Data.Graph as Graph
 import Data.Maybe(isJust, fromJust, fromMaybe)
 import Data.Foldable(forM_)
 import Control.Monad(forM)
@@ -42,6 +46,18 @@ type Context = [(String, TypeAST)]
 
 extendContext :: Context -> PrototypeAST -> Context
 extendContext ctx proto = (getBindings proto) ++ ctx
+
+
+--
+--extendContextA :: Context -> AnnPrototype -> Context
+--extendContextA ctx proto = (getBindingsA proto) ++ ctx
+--
+--getBindingsA :: AnnPrototype -> [(String, TypeAST)]
+--getBindingsA (AnnPrototype t s vars) =
+--    map (\v -> (avarName v, avarType v)) vars
+--
+--extendContextWithFn :: AnnFn -> Context -> Context
+--extendContextWithFn (AnnFn proto body) ctx = extendContextA ctx proto
 
 data TypecheckResult expr
     = Annotated        expr
@@ -90,7 +106,7 @@ typecheck ctx expr maybeExpTy =
         CallAST r b a -> typecheckCall ctx r b a maybeExpTy
         IntAST i s1 s2 i2    -> do return (AnnInt (NamedTypeAST "i32") i s1 s2 i2)
         SeqAST a b -> do
-            ea <- typecheck ctx a (Just TypeUnitAST)
+            ea <- typecheck ctx a Nothing --(Just TypeUnitAST)
             eb <- typecheck ctx b maybeExpTy
             return (AnnSeq ea eb)
         SubscriptAST  a b    -> do ta <- typecheck ctx a Nothing
@@ -133,9 +149,9 @@ typecheckFn ctx proto body Nothing = typecheckFn' ctx proto body Nothing
 typecheckFn ctx proto body (Just (FnTypeAST s t)) =
     if isJust $ typeJoin (prototypeASTretType proto) t
       then typecheckFn' ctx proto body (Just t)
-      else throwError  $ "typecheck fn: proto return type did not match fn expected return type: "
-                                        ++ show (prototypeASTretType proto)
-                                        ++ " vs " ++ show t
+      else throwError  $ "typecheck fn '" ++ prototypeASTname proto
+                        ++ "': proto return type, " ++ show (prototypeASTretType proto)
+                        ++ ", did not match return type of expected fn type " ++ show (FnTypeAST s t)
 typecheckFn' ctx proto body expBodyType =
     let extCtx = extendContext ctx proto in
     do annbody <- typecheck extCtx body expBodyType
@@ -145,9 +161,9 @@ typecheckFn' ctx proto body expBodyType =
                             (PrototypeAST t s vars) -> (AnnPrototype x s vars) in
            return (E_AnnFn (AnnFn annproto annbody))
         otherwise ->
-             throwError $ "typecheck fn: proto ret type did not match body: "
-                                    ++ show (prototypeASTretType proto)
-                                    ++ " vs " ++ show (typeAST annbody)
+             throwError $ "typecheck '" ++ prototypeASTname proto
+                        ++ "': proto ret type " ++ show (prototypeASTretType proto)
+                        ++ " did not match body type " ++ show (typeAST annbody)
 -----------------------------------------------------------------------
 typecheckTuple ctx es b Nothing = typecheckTuple' ctx es b [Nothing | e <- es]
 
@@ -183,8 +199,8 @@ collectErrors results =
     [e | r <- results, e <- errsTypecheckResult r, e /= ""]
 -----------------------------------------------------------------------
 
-getRootContext :: () -> Context
-getRootContext () =
+rootContext :: Context
+rootContext =
     [("llvm_readcyclecounter", FnTypeAST TypeUnitAST (NamedTypeAST "i64"))
     ,("expect_i32", FnTypeAST (NamedTypeAST "i32") (NamedTypeAST "i32"))
     ,( "print_i32", FnTypeAST (NamedTypeAST "i32") (NamedTypeAST "i32"))
@@ -195,15 +211,73 @@ getRootContext () =
 
     ,("primitive_<_i64", FnTypeAST (TupleTypeAST [(NamedTypeAST "i64"), (NamedTypeAST "i64")]) (NamedTypeAST "i1"))
     ,("primitive_-_i64", FnTypeAST (TupleTypeAST [(NamedTypeAST "i64"), (NamedTypeAST "i64")]) (NamedTypeAST "i64"))
+    ,("primitive_-_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32"))
+    ,("primitive_+_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32"))
+    ,("primitive_<_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i1"))
+    ,("primitive_==_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i1"))
     ]
+
+fnName :: FnAST -> String
+fnName (FnAST proto body) = prototypeASTname proto
+
+fnCalledNames :: FnAST -> Context -> [String]
+fnCalledNames (FnAST proto body) ctx =
+    let allCalledFns = Set.fromList $ calledNames body in
+    let nonPrimitives = Set.filter (\f -> not (isJust $ lookup f ctx)) allCalledFns in
+    Set.toList $ Set.filter (\f -> prototypeASTname proto /= f) nonPrimitives
+
+buildCallGraph :: [FnAST] -> Context -> [Graph.SCC FnAST]
+buildCallGraph asts ctx =
+    let nodeList = (map (\ast -> (ast, fnName ast, fnCalledNames ast ctx)) asts) in
+    Graph.stronglyConnComp nodeList
+
+extendContextWithFnA :: AnnFn -> Context -> Context
+extendContextWithFnA (AnnFn proto body) ctx = (annProtoName proto, fnTypeFromA proto body):ctx
+
+fnTypeFrom :: PrototypeAST -> TypeAST
+fnTypeFrom p =
+    let intype = normalizeTypes [avarType v | v <- prototypeASTformals p] in
+    let outtype = prototypeASTretType p in
+    FnTypeAST intype outtype
+
+extendContextWithFn :: FnAST -> Context -> Context
+extendContextWithFn f@(FnAST proto body) ctx = (fnName f, fnTypeFrom proto):ctx
+
+-- Every function in the SCC should typecheck against the input context,
+-- and the resulting context should include the computed types of each
+-- function in the SCC.
+typecheckFnSCC :: Graph.SCC FnAST -> Context -> IO ([TypecheckResult AnnExpr], Context)
+typecheckFnSCC scc ctx = do
+    let fns = Graph.flattenSCC scc
+    annfns <- forM fns $ \ast -> do
+        let name = fnName ast
+        let extctx = extendContextWithFn ast ctx
+        let typechecked = typecheck extctx (E_FnAST ast) Nothing
+        putStrLn $ "typechecking " ++ name
+        inspect typechecked (E_FnAST ast)
+        return typechecked
+    return $ if allAnnotated annfns
+        then (annfns, foldr extendContextWithFnA ctx [f | (Annotated (E_AnnFn f)) <- annfns])
+        else ([TypecheckErrors [ "not all functions type checked correctly in SCC: "
+                                ++ show [fnName f | f <- fns]]], ctx)
+
+--foldMap :: [Graph.SCC FnAST] -> Context -> (Graph.SCC FnAST -> Context -> IO ([TypecheckResult AnnExpr], Context)) -> ...
+--foldMap :: [[FnAST]] -> Context -> ([FnAST] -> Context -> IO ([TypecheckResult AnnExpr], Context)) -> IO ([TypecheckResult AnnExpr], Context)
+
+mapFoldM :: (Monad m) => [a] -> b -> (a -> b -> m ([c], b)) -> m ([c], b)
+mapFoldM []  b  f    = fail "mapFoldM must be given a non-empty list"
+mapFoldM [a] b1 f    = f a b1
+mapFoldM (a:as) b1 f = do
+    (cs1, b2) <- f a b1
+    (cs2, b3) <- mapFoldM as b2 f
+    return (cs1 ++ cs2, b3)
 
 typecheckModule :: ModuleAST FnAST -> IO (Maybe (ModuleAST AnnFn))
 typecheckModule mod = do
-    annFns <- forM (moduleASTfunctions mod) $ \ast -> do
-        let typechecked = typecheck (getRootContext ()) (E_FnAST ast) Nothing
-        putStrLn "typechecked:"
-        inspect typechecked (E_FnAST ast)
-        return typechecked
+    let fns = moduleASTfunctions mod
+    let ctx = rootContext
+    let sortedFns = buildCallGraph fns ctx -- :: [SCC FnAST]
+    (annFns, _ctx) <- mapFoldM sortedFns ctx typecheckFnSCC
     -- annFns :: [TypecheckResult AnnExpr]
     if allAnnotated annFns
         then return $ Just (ModuleAST [f | (Annotated (E_AnnFn f)) <- annFns] (moduleASTsourceLines mod))

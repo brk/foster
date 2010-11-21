@@ -130,17 +130,34 @@ textOf e width =
     let spaces = Prelude.replicate width '\SP'  in
     case e of
         BoolAST         b    -> "BoolAST      " ++ (show b)
-        CallAST   r b es     -> "CallAST      "
+        CallAST   r b a      -> "CallAST      "
         CompilesAST   e c    -> "CompilesAST  "
         IfAST         a b c  -> "IfAST        "
         IntAST i t c base    -> "IntAST       " ++ t
-        E_FnAST (FnAST a b)  -> "FnAST        "
+        E_FnAST (FnAST p b)  -> "FnAST        "
         SeqAST     a b       -> "SeqAST       "
         SubscriptAST  a b    -> "SubscriptAST "
         E_PrototypeAST (PrototypeAST t s es)     -> "PrototypeAST " ++ s
         TupleAST     es b    -> "TupleAST     "
         VarAST mt v          -> "VarAST       " ++ v ++ " :: " ++ show mt
 
+
+
+calledNames :: ExprAST -> [String]
+calledNames e = case e of
+    BoolAST         b    -> []
+    CallAST   r b a      -> case b of
+                                (VarAST _ v) -> [v] ++ calledNames a
+                                otherwise    ->       calledNames a
+    CompilesAST   e c    -> calledNames e
+    IfAST         a b c  -> calledNames a ++ calledNames b ++ calledNames c
+    IntAST i t c base    -> []
+    E_FnAST (FnAST p b)  -> calledNames b
+    SeqAST     a b       -> calledNames a ++ calledNames b
+    SubscriptAST  a b    -> calledNames a ++ calledNames b
+    E_PrototypeAST (PrototypeAST t s es)     -> []
+    TupleAST     es b    -> concatMap calledNames es
+    VarAST mt v          -> []
 
 -----------------------------------------------------------------------
 
