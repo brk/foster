@@ -16,6 +16,8 @@ import traceback
 
 from run_cmd import *
 
+from optparse import OptionParser
+
 tests_passed = set()
 tests_failed = set()
 
@@ -116,32 +118,52 @@ def main(testpath, paths, tmpdir):
     os.makedirs(testdir)
   run_one_test(testpath, paths, testdir)
 
-def get_paths(bindir):
+def binpath(bindir, prog):
+  if os.path.isabs(prog):
+    return prog
+  else:
+    return os.path.join(bindir, prog)
+
+def get_paths(bindir, options):
   join = os.path.join
   paths = {
       'out.s':     join(bindir, 'fc-output', 'out.s'),
       'a.out':     join(bindir, 'fc-output', 'a.out'),
   }
-  for bin in ['fosterc', 'fosterparse', 'fosterlower', 'fostercheck']:
-      paths[bin] = join(bindir, bin)
+  for prog in ['fosterc', 'fosterparse', 'fosterlower', 'fostercheck']:
+      paths[prog] = binpath(bindir, prog)
   for lib in ['libfoster.bc', 'libcpuid.o', 'libfoster_main.o']:
-      paths[bin] = join(bindir, bin)
+      paths[lib] = binpath(bindir, lib)
+
+  if options.me != 'fostercheck':
+    paths['fostercheck'] = binpath(bindir, options.me)
 
   # compiler spits out foster.ll in current directory
   paths['foster.ll'] = join(os.path.dirname(paths['fosterc']), 'foster.ll')
   return paths
 
+def get_test_parser(usage):
+  parser = OptionParser(usage=usage)
+  parser.add_option("--bindir", dest="bindir", action="store", default=os.getcwd(),
+                    help="Use bindir as default place to find binaries; defaults to current directory")
+  parser.add_option("--me", dest="me", action="store", default="fostercheck",
+                    help="Relative (from bindir) or absolute path to binary to use for type checking.")
+  return parser
+
 if __name__ == "__main__":
-  if not len(sys.argv) in [2, 3]:
-    print "Usage: %s <test_path> [project_bin_dir = .]"
+  parser = get_test_parser("usage: %prog [options] <test_path>")
+  (options, args) = parser.parse_args()
+
+  if len(args) != 1:
+    print parser.print_help()
     sys.exit(1)
 
-  testpath = sys.argv[1]
-  bindir = os.getcwd()
+  testpath = args[0]
+  bindir = options.bindir
   if len(sys.argv) == 3:
     bindir = sys.argv[2]
 
   tmpdir = os.path.join(bindir, 'test-tmpdir')
   ensure_dir_exists(tmpdir)
 
-  main(testpath, get_paths(bindir), tmpdir)
+  main(testpath, get_paths(bindir, options), tmpdir)

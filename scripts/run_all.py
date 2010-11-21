@@ -8,8 +8,6 @@ import sys
 import shutil
 import traceback
 
-from optparse import OptionParser
-
 from list_all import collect_all_tests
 from run_test import *
 
@@ -41,10 +39,7 @@ def main(bootstrap_dir, paths, tmpdir):
   sys.exit(len(tests_failed))
 
 if __name__ == "__main__":
-  parser = OptionParser(usage="usage: %prog [options] <bootstrap_test_dir>")
-  parser.add_option("--bindir", dest="bindir", action="store", default=os.getcwd(),
-                    help="Use bindir as default place to find binaries; defaults to current directory")
-
+  parser = get_test_parser("usage: %prog [options] <bootstrap_test_dir>")
   (options, args) = parser.parse_args()
 
   if len(args) == 0:
@@ -58,4 +53,8 @@ if __name__ == "__main__":
   tmpdir = os.path.join(bindir, 'test-tmpdir')
   ensure_dir_exists(tmpdir)
 
-  main(bootstrap_dir, get_paths(bindir), tmpdir)
+
+  print options
+  print args
+
+  main(bootstrap_dir, get_paths(bindir, options), tmpdir)
