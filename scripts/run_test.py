@@ -96,7 +96,8 @@ def run_one_test(testpath, paths, tmpdir):
 
         rv, fp_elapsed, fc_elapsed, fl_elapsed = compile_test_to_bitcode(paths, testpath, compilelog)
 
-        rv, cc_elapsed = run_command('g++ out.s %s %s -o a.out' % (get_static_libs(), get_link_flags()),
+        rv, as_elapsed = run_command('g++ out.s -c -o out.o', paths, testpath)
+        rv, ld_elapsed = run_command('g++ out.o %s %s -o a.out' % (get_static_libs(), get_link_flags()),
                                     paths, testpath)
         rv, rn_elapsed = run_command('a.out',  paths, testpath, stdout=actual, stderr=expected, stdin=infile, strictrv=False)
 
@@ -107,9 +108,13 @@ def run_one_test(testpath, paths, tmpdir):
           tests_failed.add(testpath)
 
         total_elapsed = elapsed_since(start)
-        print "fpr:%4d | foc:%4d | flo:%4d | gcc:%4d | run:%4d | py:%3d | tot:%5d | %s" % (fp_elapsed, fc_elapsed, fl_elapsed,
-                        cc_elapsed, rn_elapsed, (total_elapsed - (cc_elapsed + rn_elapsed + fp_elapsed + fc_elapsed + fl_elapsed)),
-                        total_elapsed, testname(testpath))
+        compile_elapsed = (as_elapsed + ld_elapsed + fp_elapsed + fc_elapsed + fl_elapsed)
+        overhead = total_elapsed - (compile_elapsed + rn_elapsed)
+        print "fpr:%4d | foc:%4d | flo:%4d | as:%4d | ld:%4d | run:%4d | py:%3d | tot:%5d | %s" % (fp_elapsed, fc_elapsed, fl_elapsed,
+                        as_elapsed, ld_elapsed, rn_elapsed, overhead, total_elapsed, testname(testpath))
+
+        print "fpr:%3.0f%% | foc:%3.0f%% | flo:%3.0f%% | as:%3.0f%% | ld:%3.0f%%" % tuple(100.0*x/float(compile_elapsed) for x in list((fp_elapsed, fc_elapsed, fl_elapsed, as_elapsed, ld_elapsed)))
+        print "".join("-" for x in range(60))
         infile.close()
 
 def main(testpath, paths, tmpdir):
