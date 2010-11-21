@@ -67,7 +67,7 @@ def compile_test_to_bitcode(paths, testpath, compilelog):
         fosterc_cmdline = [ paths['fosterc'], testpath, '-O0' ]
         print ' '.join(fosterc_cmdline)
         rv, fc_elapsed = run_command(fosterc_cmdline, paths, testpath, stdout=compilelog, stderr=compilelog)
-        return (rv, fc_elapsed)
+        return (rv, 0, fc_elapsed, 0)
     else:
         # running fosterparse on a source file produces a ParsedAST
         (s1, e1) = run_command(['fosterparse', testpath, '_out.parsed.pb'], paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
@@ -81,7 +81,7 @@ def compile_test_to_bitcode(paths, testpath, compilelog):
         # Running llc on a Module produces an assembly file
         (s3, e3) = run_command(['fosterlower', '_out.checked.pb', '-O0'], paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
 
-        return (s3, e1 + e2 + e3)
+        return (s3, e1, e2, e3)
 
 def run_one_test(testpath, paths, tmpdir):
   start = walltime()
@@ -92,7 +92,7 @@ def run_one_test(testpath, paths, tmpdir):
       with open(os.path.join(tmpdir, "compile.log.txt"), 'w') as compilelog:
         infile = extract_expected_input(testpath)
 
-        rv, fc_elapsed = compile_test_to_bitcode(paths, testpath, compilelog)
+        rv, fp_elapsed, fc_elapsed, fl_elapsed = compile_test_to_bitcode(paths, testpath, compilelog)
 
         rv, cc_elapsed = run_command('g++ out.s %s %s -o a.out' % (get_static_libs(), get_link_flags()),
                                     paths, testpath)
@@ -105,8 +105,8 @@ def run_one_test(testpath, paths, tmpdir):
           tests_failed.add(testpath)
 
         total_elapsed = elapsed_since(start)
-        print "foc:%4d | gcc:%4d | run:%4d | py:%3d | tot:%5d | %s" % (fc_elapsed,
-                        cc_elapsed, rn_elapsed, (total_elapsed - (fc_elapsed + cc_elapsed + rn_elapsed)),
+        print "fpr:%4d | foc:%4d | flo:%4d | gcc:%4d | run:%4d | py:%3d | tot:%5d | %s" % (fp_elapsed, fc_elapsed, fl_elapsed,
+                        cc_elapsed, rn_elapsed, (total_elapsed - (cc_elapsed + rn_elapsed + fp_elapsed + fc_elapsed + fl_elapsed)),
                         total_elapsed, testname(testpath))
         infile.close()
 
