@@ -530,13 +530,13 @@ ExprAST* ExprAST_from(pTree tree) {
   foster::SourceRange sourceRange = rangeOf(tree);
 
   if (token == TRAILERS) { return parseTrailers(tree, sourceRange); }
-  if (token == CTOR) { return parseCtorExpr(tree, sourceRange); }
-  if (token == IF) { return parseIf(tree, sourceRange); }
+  if (token == CTOR) {     return parseCtorExpr(tree, sourceRange); }
+  if (token == IF) {       return parseIf(tree, sourceRange); }
   if (token == EXPRS || token == SEQ) { return parseSeq(tree, sourceRange); }
-  if (token == INT) { return parseIntFrom(tree, sourceRange); }
-  if (token == PARENEXPR) { return parseParenExpr(tree); }
-  if (token == COMPILES) { return parseBuiltinCompiles(tree, sourceRange); }
-  if (token == BODY) { return ExprAST_from(child(tree, 0)); }
+  if (token == INT) {         return parseIntFrom(tree, sourceRange); }
+  if (token == PARENEXPR) {   return parseParenExpr(tree); }
+  if (token == COMPILES) {    return parseBuiltinCompiles(tree, sourceRange); }
+  if (token == BODY) {        return ExprAST_from(child(tree, 0)); }
   if (token == BINOP_CHAIN) { return parseBinopChain(tree); }
 
   if (text == "false" || text == "true") {
