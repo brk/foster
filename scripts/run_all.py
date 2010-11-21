@@ -8,6 +8,8 @@ import sys
 import shutil
 import traceback
 
+from optparse import OptionParser
+
 from list_all import collect_all_tests
 from run_test import *
 
@@ -39,14 +41,19 @@ def main(bootstrap_dir, paths, tmpdir):
   sys.exit(len(tests_failed))
 
 if __name__ == "__main__":
-  if not len(sys.argv) in [2, 3]:
-    print "Usage: %s <bootstrap_test_dir> [project_bin_dir = .]"
+  parser = OptionParser(usage="usage: %prog [options] <bootstrap_test_dir>")
+  parser.add_option("--bindir", dest="bindir", action="store", default=os.getcwd(),
+                    help="Use bindir as default place to find binaries; defaults to current directory")
+
+  (options, args) = parser.parse_args()
+
+  if len(args) == 0:
+    print "Missing <bootstrap_test_dir>!"
+    parser.print_help()
     sys.exit(1)
 
-  bootstrap_dir = sys.argv[1]
-  bindir = os.getcwd()
-  if len(sys.argv) == 3:
-    bindir = sys.argv[2]
+  bootstrap_dir = args[0]
+  bindir = options.bindir
 
   tmpdir = os.path.join(bindir, 'test-tmpdir')
   ensure_dir_exists(tmpdir)
