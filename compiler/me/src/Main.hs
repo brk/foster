@@ -186,15 +186,14 @@ collectErrors results =
 getRootContext :: () -> Context
 getRootContext () =
     [("llvm_readcyclecounter", FnTypeAST TypeUnitAST (NamedTypeAST "i64"))
-    ,("expect_i32", FnTypeAST (NamedTypeAST "i32") TypeUnitAST)
-    ,( "print_i32", FnTypeAST (NamedTypeAST "i32") TypeUnitAST)
+    ,("expect_i32", FnTypeAST (NamedTypeAST "i32") (NamedTypeAST "i32"))
+    ,( "print_i32", FnTypeAST (NamedTypeAST "i32") (NamedTypeAST "i32"))
     ,(  "read_i32", FnTypeAST TypeUnitAST (NamedTypeAST "i32"))
-    ,("expect_i1", FnTypeAST (NamedTypeAST "i1") TypeUnitAST)
-    ,( "print_i1", FnTypeAST (NamedTypeAST "i1") TypeUnitAST)
-    ,( "primitive_sext_i64_i32", FnTypeAST (NamedTypeAST "i32") (NamedTypeAST "i64"))
+    ,("expect_i1", FnTypeAST (NamedTypeAST "i1") (NamedTypeAST "i32"))
+    ,( "print_i1", FnTypeAST (NamedTypeAST "i1") (NamedTypeAST "i32"))
+    ,("primitive_sext_i64_i32", FnTypeAST (NamedTypeAST "i32") (NamedTypeAST "i64"))
 
     ,("primitive_<_i64", FnTypeAST (TupleTypeAST [(NamedTypeAST "i64"), (NamedTypeAST "i64")]) (NamedTypeAST "i1"))
-    --,("primitive_<_i64", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i64")]) (NamedTypeAST "i1"))
     ,("primitive_-_i64", FnTypeAST (TupleTypeAST [(NamedTypeAST "i64"), (NamedTypeAST "i64")]) (NamedTypeAST "i64"))
     ]
 
