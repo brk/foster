@@ -28,7 +28,7 @@ instance Show ESourceRange where
 
 showSourceRange :: ESourceRange -> String
 showSourceRange EMissingSourceRange = ""
-showSourceRange (ESourceRange begin end lines) = showSourceLines begin end lines
+showSourceRange (ESourceRange begin end lines) = "\n" ++ showSourceLines begin end lines
 
 showSourceLines (ESourceLocation bline bcol) (ESourceLocation eline ecol) lines =
     if bline == eline
@@ -51,10 +51,10 @@ data ModuleAST fnType = ModuleAST {
 
 data ExprAST =
           BoolAST       Bool
-        | IntAST        { eintActive :: Integer
-                        , eintText   :: String
-                        , eintClean  :: String
-                        , eintBase   :: Int }
+        | IntAST        { eintMinBits :: Integer
+                        , eintText    :: String
+                        , eintClean   :: String
+                        , eintBase    :: Int }
                         -- parts  is_env_tuple
         | TupleAST      [ExprAST] Bool
         | E_FnAST       FnAST

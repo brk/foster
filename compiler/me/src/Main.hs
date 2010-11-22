@@ -111,9 +111,9 @@ typecheck ctx expr maybeExpTy =
             return (AnnSeq ea eb)
         SubscriptAST  a b    -> do ta <- typecheck ctx a Nothing
                                    tb <- typecheck ctx b Nothing
-                                   throwError $ "SubscriptAST"
+                                   typecheckSubscript ta (typeAST ta) tb maybeExpTy
         E_PrototypeAST (PrototypeAST t s es) -> throwError "PrototypeAST"
-        TupleAST      es b   -> typecheckTuple ctx es b maybeExpTy
+        TupleAST  exprs b   -> typecheckTuple ctx exprs b maybeExpTy
         VarAST mt s -> case lookup s ctx of
             Just t  -> Annotated $ E_AnnVar (AnnVar t s)
             Nothing -> throwError $ "Unknown variable " ++ s
@@ -124,6 +124,21 @@ typecheck ctx expr maybeExpTy =
                 otherwise    -> CS_WouldNotCompile
             otherwise -> return $ AnnCompiles c
 -----------------------------------------------------------------------
+safeListIndex :: [a] -> Int -> Maybe a
+safeListIndex lst idx =
+    if List.length lst <= idx
+        then Nothing
+        else Just $ lst !! idx
+
+typecheckSubscript base (TupleTypeAST types) i@(AnnInt _ _ _ _ _) maybeExpTy =
+    let literalValue = read (aintText i) :: Integer in
+    case safeListIndex types (fromInteger literalValue) of
+        Nothing -> throwError $ "Literal index " ++ aintText i ++ " to subscript was out of bounds"
+        Just t  -> return (AnnSubscript t base i)
+
+typecheckSubscript base baseType index maybeExpTy =
+       throwError $ "SubscriptAST " ++ show baseType ++ "[" ++ show index ++ "]" ++ " (:: " ++ show maybeExpTy ++ ")"
+
 argType :: TypeAST -> TypeAST
 argType (FnTypeAST a r) = a
 argType x = error $ "Called argType on non-FnTypeAST: " ++ show x
@@ -145,6 +160,8 @@ typecheckCall ctx range base arg maybeExpTy =
                                        ++ " :: " ++ (show $ typeAST eb)
 --typecheckCall ctx base arg maybeExpTy = error $ "TODO make use of maybeExpTy (" ++ (show maybeExpTy) ++ ") in typecheckCall"
 -----------------------------------------------------------------------
+
+
 typecheckFn ctx proto body Nothing = typecheckFn' ctx proto body Nothing
 typecheckFn ctx proto body (Just (FnTypeAST s t)) =
     if isJust $ typeJoin (prototypeASTretType proto) t
@@ -177,13 +194,13 @@ verifyNonOverlappingVariableNames proto = do
                                     ++ ": had duplicated formal parameter names: " ++ show duplicates
 
 -----------------------------------------------------------------------
-typecheckTuple ctx es b Nothing = typecheckTuple' ctx es b [Nothing | e <- es]
+typecheckTuple ctx exprs b Nothing = typecheckTuple' ctx exprs b [Nothing | e <- exprs]
 
-typecheckTuple ctx es b (Just (TupleTypeAST ts)) =
-    if length es /= length ts
-      then throwError $ "typecheck: length of tuple and expected tuple type did not agree: "
-                            ++ show es ++ " versus " ++ show ts
-      else typecheckTuple' ctx es b [Just t | t <- ts]
+typecheckTuple ctx exprs b (Just (TupleTypeAST ts)) =
+    if length exprs /= length ts
+      then throwError $ "typecheckTuple: length of tuple and expected tuple type did not agree: "
+                            ++ show exprs ++ " versus " ++ show ts
+      else typecheckTuple' ctx exprs b [Just t | t <- ts]
 
 typecheckTuple ctx [] b (Just TypeUnitAST) = do return (AnnTuple [] b)
 
@@ -250,7 +267,9 @@ fnName (FnAST proto body) = prototypeASTname proto
 fnCalledNames :: FnAST -> Context -> [String]
 fnCalledNames (FnAST proto body) ctx =
     let allCalledFns = Set.fromList $ calledNames body in
+    -- remove names of primitive functions
     let nonPrimitives = Set.filter (\f -> not (isJust $ lookup f ctx)) allCalledFns in
+    -- remove recursive function name calls
     Set.toList $ Set.filter (\f -> prototypeASTname proto /= f) nonPrimitives
 
 buildCallGraph :: [FnAST] -> Context -> [Graph.SCC FnAST]
@@ -263,7 +282,7 @@ extendContextWithFnA (AnnFn proto body) ctx = (annProtoName proto, fnTypeFromA p
 
 fnTypeFrom :: PrototypeAST -> TypeAST
 fnTypeFrom p =
-    let intype = normalizeTypes [avarType v | v <- prototypeASTformals p] in
+    let intype = TupleTypeAST [avarType v | v <- prototypeASTformals p] in
     let outtype = prototypeASTretType p in
     FnTypeAST intype outtype
 
@@ -304,6 +323,7 @@ typecheckModule mod = do
     let fns = moduleASTfunctions mod
     let ctx = rootContext
     let sortedFns = buildCallGraph fns ctx -- :: [SCC FnAST]
+
     (annFns, _ctx) <- mapFoldM sortedFns ctx typecheckFnSCC
     -- annFns :: [TypecheckResult AnnExpr]
     if allAnnotated annFns
@@ -385,3 +405,4 @@ showStructureA e = showStructureP e "" False where
         thisIndent ++ (textOfA e padding ++ "\n") ++ Prelude.foldl (++) "" childlines
 
 -----------------------------------------------------------------------
+

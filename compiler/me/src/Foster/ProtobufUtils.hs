@@ -61,7 +61,7 @@ parseBool pbexpr lines = BoolAST $ fromMaybe False (PbExpr.bool_value pbexpr)
 parseCall pbexpr lines =
         let range = parseRange pbexpr lines in
         case map (\x -> parseExpr x lines) $ toList (PbExpr.parts pbexpr) of
-                [base, arg] -> CallAST range base arg
+                --[base, arg] -> CallAST range base arg
                 (base:args) -> CallAST range base (TupleAST args False)
                 _ -> error "call needs a base!"
 
@@ -136,7 +136,7 @@ parseSeq pbexpr lines =
 
 -- | Convert a list of ExprASTs to a right-leaning "list" of SeqAST nodes.
 buildSeqs :: [ExprAST] -> ExprAST
-buildSeqs []    = error "(buildSeqs []): no skip yet, so no expr to return!"
+buildSeqs []    = IntAST 1 "0" "0" 10 --error "(buildSeqs []): no skip yet, so no expr to return!"
 buildSeqs [a]   = a
 buildSeqs [a,b] = SeqAST a b
 buildSeqs (a:b) = SeqAST a (buildSeqs b)
@@ -146,8 +146,8 @@ parseSubscript pbexpr lines =
     SubscriptAST (part 0 parts lines) (part 1 parts lines)
 
 parseTuple pbexpr lines =
-        TupleAST (map (\x -> parseExpr x lines) $ toList (PbExpr.parts pbexpr))
-                 (fromMaybe False $ PbExpr.is_closure_environment pbexpr)
+    let exprs = map (\x -> parseExpr x lines) $ toList $ PbExpr.parts pbexpr in
+    TupleAST exprs (fromMaybe False $ PbExpr.is_closure_environment pbexpr)
 
 parseVar pbexpr lines = VarAST (fmap parseType (PbExpr.type' pbexpr))
                                (uToString (fromJust $ PbExpr.name pbexpr))
@@ -155,18 +155,24 @@ parseVar pbexpr lines = VarAST (fmap parseType (PbExpr.type' pbexpr))
 parseModule :: Expr -> SourceLines -> ModuleAST FnAST
 parseModule pbexpr lines = ModuleAST [parseFn e lines | e <- toList $ PbExpr.parts pbexpr] lines
 
---emptyRange :: ESourceRange
---emptyRange = ESourceRange e e "<no file>"
---                    where e = (ESourceLocation (-1::Int) (-1::Int))
+parseProto :: Expr -> SourceLines -> ExprAST
+parseProto pbexpr lines = E_PrototypeAST (parseProtoP pbexpr lines)
 
 parseProtoP :: Expr -> SourceLines -> PrototypeAST
 parseProtoP pbexpr lines =
     case PbExpr.proto pbexpr of
-                Nothing  -> error "Need a proto to parse a proto!"
+                Nothing     -> error "Need a Proto in the protocol buffer to parse a PrototypeAST!"
                 Just proto  -> parseProtoPP proto lines
 
-parseProto :: Expr -> SourceLines -> ExprAST
-parseProto pbexpr lines = E_PrototypeAST (parseProtoP pbexpr lines)
+parseProtoPP :: Proto -> SourceLines -> PrototypeAST
+parseProtoPP proto lines =
+    let args = Proto.in_args proto in
+    let vars = map (\x -> getFormal x lines) $ toList args in
+    let name = uToString $ Proto.name proto in
+    let retTy = case Proto.result proto of
+                    Just t  -> parseType t
+                    Nothing -> MissingTypeAST $ "ProtobufUtils.parseProtoPP " ++ name in
+    PrototypeAST retTy name vars
 
 getVarName :: ExprAST -> String
 getVarName (VarAST mt s) = s
@@ -184,16 +190,6 @@ getFormal e lines = case PbExpr.tag e of
                             Just t  -> (AnnVar t v)
                             Nothing -> (AnnVar (MissingTypeAST "ProtobufUtils.getFormal") v)
             _   -> error "getVar must be given a var!"
-
-parseProtoPP :: Proto -> SourceLines -> PrototypeAST
-parseProtoPP proto lines =
-    let args = Proto.in_args proto in
-    let vars = map (\x -> getFormal x lines) $ toList args in
-    let name = uToString $ Proto.name proto in
-    let retTy = case Proto.result proto of
-                    Just t  -> parseType t
-                    Nothing -> MissingTypeAST $ "ProtobufUtils.parseProtoPP " ++ name in
-    PrototypeAST retTy name vars
 
 sourceRangeFromPBRange :: Pb.SourceRange -> SourceLines -> ESourceRange
 sourceRangeFromPBRange pbrange lines =
@@ -250,8 +246,12 @@ parseType t = case PbType.tag t of
                 PbTypeTag.TYPE_VARIABLE -> error "Type variable parsing not yet implemented."
 
 parseFnTy :: FnType -> TypeAST
-parseFnTy fty = FnTypeAST (parseType $ PbFnType.ret_type fty)
-                          (TupleTypeAST [parseType x | x <- toList $ PbFnType.arg_types fty])
+parseFnTy fty = FnTypeAST (TupleTypeAST [parseType x | x <- toList $ PbFnType.arg_types fty])
+                          (parseType $ PbFnType.ret_type fty)
+--                          (case PbFnType.is_closure fty of
+--                            Nothing  -> False
+--                            (Just b) -> b)
+--
 
 -----------------------------------------------------------------------
 
@@ -260,7 +260,7 @@ typeAST (AnnBool _)          = fosBoolType
 typeAST (AnnInt t _ _ _ _)   = t
 typeAST (AnnTuple es b)      = TupleTypeAST [typeAST e | e <- es]
 typeAST (E_AnnFn (AnnFn (AnnPrototype rt s vs) e))
-                             = FnTypeAST (normalizeTypes [t | (AnnVar t v) <- vs]) rt
+                             = FnTypeAST (TupleTypeAST [t | (AnnVar t v) <- vs]) rt
 typeAST (AnnCall r t b a)    = t
 typeAST (AnnCompiles c)      = fosBoolType
 typeAST (AnnIf t a b c)      = t
@@ -289,7 +289,7 @@ childrenOfA e =
 
 fnTypeFromA :: AnnPrototype -> AnnExpr -> TypeAST
 fnTypeFromA p b =
-    let intype = normalizeTypes [avarType v | v <- annProtoVars p] in
+    let intype = TupleTypeAST [avarType v | v <- annProtoVars p] in
     let outtype = typeAST b in
     FnTypeAST intype outtype
 
@@ -349,10 +349,7 @@ dumpExpr x@(AnnBool b) =
 
 dumpExpr (E_AnnVar var@(AnnVar t v)) = dumpVar var
 
-dumpExpr x@(AnnSeq a b) =
-    P'.defaultValue { PbExpr.parts = fromList [dumpExpr e | e <- unbuildSeqsA x]
-                    , PbExpr.tag   = SEQ
-                    , PbExpr.type' = Just $ dumpType (typeAST x)  }
+dumpExpr x@(AnnSeq a b) = dumpSeqOf (unbuildSeqsA x) (typeAST x)
 
 --dumpExpr x@(AnnTuple [] False) = dumpExpr (AnnInt (NamedTypeAST "i32") 0 "0" "0" 10)
 --dumpExpr x@(AnnTuple [e] False) = dumpExpr e
@@ -382,6 +379,10 @@ dumpExpr x@(AnnIf t a b c) =
                     , PbExpr.type' = Just $ dumpType (typeAST x) }
 
 -----------------------------------------------------------------------
+dumpSeqOf exprs ty =
+    P'.defaultValue { PbExpr.parts = fromList [dumpExpr e | e <- exprs]
+                    , PbExpr.tag   = SEQ
+                    , PbExpr.type' = Just $ dumpType ty  }
 
 dumpCall t base args =
     P'.defaultValue { PbExpr.parts = fromList $ fmap dumpExpr (base : args)

@@ -8,13 +8,6 @@ module Foster.TypeAST where
 
 import List(foldr1, intersperse)
 
-
-normalizeTypes :: [TypeAST] -> TypeAST
-normalizeTypes ts = case ts of
-                        []  -> TypeUnitAST
-                        [t] -> t
-                        xs  -> TupleTypeAST xs
-
 data TypeAST =
            MissingTypeAST { missingTypeProgAnnotation :: String }
          | TypeUnitAST
@@ -36,5 +29,6 @@ showTypeAST (TupleTypeAST types) = "(" ++ joinWith ", " [showTypeAST t | t <- ty
 showTypeAST (FnTypeAST s t)      = "(" ++ show s ++ " -> " ++ show t ++ ")"
 
 joinWith :: String -> [String] -> String
+joinWith s [] = ""
 joinWith s ss = foldr1 (++) (intersperse s ss)
 
