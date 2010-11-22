@@ -158,7 +158,8 @@ void DumpToProtobufPass::visit(CallAST* ast)                {
 void DumpToProtobufPass::visit(TupleExprAST* ast)           {
   processExprAST(current, ast, foster::pb::Expr::TUPLE);
   current->set_is_closure_environment(ast->isClosureEnvironment);
-  dumpChildren(this, ast);
+  ASSERT(ast->parts.size() == 1); // have a SeqAST wrapper...
+  dumpChildren(this, ast->parts[0]);
 }
 
 void DumpToProtobufPass::visit(BuiltinCompilesExprAST* ast) {

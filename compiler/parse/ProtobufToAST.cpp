@@ -212,8 +212,7 @@ ExprAST* parseSubscript(const pb::Expr& e, const foster::SourceRange& range) {
 }
 
 ExprAST* parseTuple(const pb::Expr& e, const foster::SourceRange& range) {
-  ASSERT(e.parts_size() >= 1);
-  TupleExprAST* rv = new TupleExprAST(ExprAST_from_pb(&e.parts(0)), range);
+  TupleExprAST* rv = new TupleExprAST(parseSeq(e, range), range);
   rv->isClosureEnvironment = e.is_closure_environment();
   return rv;
 }
