@@ -12,5 +12,8 @@ tools/c-viewer/
 dox/
 notes/_build/
 me/dist/
+glob:compiler/me/**.hi
+glob:compiler/me/**.o
+glob:compiler/me/**.*-boot
 glob:*.lkshw
 glob:*\#
