@@ -81,7 +81,7 @@ def compile_test_to_bitcode(paths, testpath, compilelog):
         # linking a bunch of Modules produces a Module
         # Running opt on a Module produces a Module
         # Running llc on a Module produces an assembly file
-        (s3, e3) = run_command(['fosterlower', '_out.checked.pb', '-O0'], paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
+        (s3, e3) = run_command(['fosterlower', '_out.checked.pb', '-O0', '-dump-prelinked'], paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
 
         return (s3, e1, e2, e3)
 
