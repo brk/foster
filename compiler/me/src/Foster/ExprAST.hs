@@ -147,8 +147,8 @@ calledNames :: ExprAST -> [String]
 calledNames e = case e of
     BoolAST         b    -> []
     CallAST   r b a      -> case b of
-                                (VarAST _ v) -> [v] ++ calledNames a
-                                otherwise    ->       calledNames a
+                                (VarAST _ v) -> [v]           ++ calledNames a
+                                otherwise    -> calledNames b ++ calledNames a
     CompilesAST   e c    -> calledNames e
     IfAST         a b c  -> calledNames a ++ calledNames b ++ calledNames c
     IntAST i t c base    -> []
