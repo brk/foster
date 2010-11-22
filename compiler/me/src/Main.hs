@@ -211,21 +211,36 @@ collectErrors results =
     [e | r <- results, e <- errsTypecheckResult r, e /= ""]
 -----------------------------------------------------------------------
 
+fosi32toi32 = FnTypeAST (TupleTypeAST [(NamedTypeAST "i32")]) (NamedTypeAST "i32")
+fosi64toi64 = FnTypeAST (TupleTypeAST [(NamedTypeAST "i64")]) (NamedTypeAST "i64")
+fosi1toi32 = FnTypeAST (TupleTypeAST [(NamedTypeAST "i1")]) (NamedTypeAST "i32")
+fosi64i64toi1 = FnTypeAST (TupleTypeAST [(NamedTypeAST "i64"), (NamedTypeAST "i64")]) (NamedTypeAST "i1")
+fosi32i32toi1 = FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i1")
+
 rootContext :: Context
 rootContext =
-    [("llvm_readcyclecounter", FnTypeAST TypeUnitAST (NamedTypeAST "i64"))
-    ,("expect_i32", FnTypeAST (NamedTypeAST "i32") (NamedTypeAST "i32"))
-    ,( "print_i32", FnTypeAST (NamedTypeAST "i32") (NamedTypeAST "i32"))
-    ,(  "read_i32", FnTypeAST TypeUnitAST (NamedTypeAST "i32"))
-    ,("expect_i1", FnTypeAST (NamedTypeAST "i1") (NamedTypeAST "i32"))
-    ,( "print_i1", FnTypeAST (NamedTypeAST "i1") (NamedTypeAST "i32"))
-    ,("primitive_sext_i64_i32", FnTypeAST (NamedTypeAST "i32") (NamedTypeAST "i64"))
+    [("llvm_readcyclecounter", FnTypeAST (TupleTypeAST []) (NamedTypeAST "i64"))
+    ,("expect_i32", fosi32toi32)
+    ,( "print_i32", fosi32toi32)
+    ,("expect_i32b", fosi32toi32)
+    ,( "print_i32b", fosi32toi32)
+    ,(  "read_i32", FnTypeAST (TupleTypeAST []) (NamedTypeAST "i32"))
+    ,("expect_i1", fosi1toi32)
+    ,( "print_i1", fosi1toi32)
+    ,("primitive_sext_i64_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32")]) (NamedTypeAST "i64"))
+    ,("primitive_bitnot_i1", FnTypeAST (TupleTypeAST [(NamedTypeAST "i1")]) (NamedTypeAST "i1"))
+    ,("primitive_bitshl_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32"))
+    ,("primitive_bitor_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32"))
+    ,("primitive_bitand_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32"))
+    ,("primitive_bitxor_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32"))
 
     ,("primitive_<_i64", FnTypeAST (TupleTypeAST [(NamedTypeAST "i64"), (NamedTypeAST "i64")]) (NamedTypeAST "i1"))
     ,("primitive_-_i64", FnTypeAST (TupleTypeAST [(NamedTypeAST "i64"), (NamedTypeAST "i64")]) (NamedTypeAST "i64"))
     ,("primitive_-_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32"))
+    ,("primitive_*_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32"))
     ,("primitive_+_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32"))
     ,("primitive_<_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i1"))
+    ,("primitive_<=_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i1"))
     ,("primitive_==_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i1"))
     ]
 
