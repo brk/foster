@@ -14,7 +14,7 @@ import qualified Data.ByteString.Lazy as L(readFile)
 import qualified Data.ByteString.Lazy.UTF8 as U(toString)
 import qualified System.IO.UTF8 as U(putStrLn)
 
-import List(length, zip, all)
+import List(length, zip, all, sort, group, head)
 import Data.Set(Set)
 import qualified Data.Set as Set
 import Data.Graph(Graph)
@@ -152,18 +152,30 @@ typecheckFn ctx proto body (Just (FnTypeAST s t)) =
       else throwError  $ "typecheck fn '" ++ prototypeASTname proto
                         ++ "': proto return type, " ++ show (prototypeASTretType proto)
                         ++ ", did not match return type of expected fn type " ++ show (FnTypeAST s t)
-typecheckFn' ctx proto body expBodyType =
-    let extCtx = extendContext ctx proto in
-    do annbody <- typecheck extCtx body expBodyType
-       case typeJoin (prototypeASTretType proto) (typeAST annbody) of
+
+typecheckFn' ctx proto body expBodyType = do
+    _ <- verifyNonOverlappingVariableNames proto
+    let extCtx = extendContext ctx proto
+    annbody <- typecheck extCtx body expBodyType
+    case typeJoin (prototypeASTretType proto) (typeAST annbody) of
         (Just x) ->
-           let annproto = case proto of
+            let annproto = case proto of
                             (PrototypeAST t s vars) -> (AnnPrototype x s vars) in
-           return (E_AnnFn (AnnFn annproto annbody))
+            return (E_AnnFn (AnnFn annproto annbody))
         otherwise ->
-             throwError $ "typecheck '" ++ prototypeASTname proto
-                        ++ "': proto ret type " ++ show (prototypeASTretType proto)
-                        ++ " did not match body type " ++ show (typeAST annbody)
+         throwError $ "typecheck '" ++ prototypeASTname proto
+                    ++ "': proto ret type " ++ show (prototypeASTretType proto)
+                    ++ " did not match body type " ++ show (typeAST annbody)
+
+verifyNonOverlappingVariableNames :: PrototypeAST -> TypecheckResult AnnExpr
+verifyNonOverlappingVariableNames proto = do
+    let varNames = [avarName v | v <- prototypeASTformals proto]
+    let duplicates = [List.head dups | dups <- List.group (List.sort varNames), List.length dups > 1]
+    case duplicates of
+        []        -> return (AnnBool True)
+        otherwise -> throwError $ "Error when checking " ++ prototypeASTname proto
+                                    ++ ": had duplicated formal parameter names: " ++ show duplicates
+
 -----------------------------------------------------------------------
 typecheckTuple ctx es b Nothing = typecheckTuple' ctx es b [Nothing | e <- es]
 
