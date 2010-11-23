@@ -18,7 +18,7 @@ import Foster.TypeAST
 
 import Data.Traversable(fmapDefault)
 import Data.Sequence(length, index, Seq, empty, fromList)
-import Data.Maybe(fromMaybe, fromJust)
+import Data.Maybe(fromMaybe, fromJust, isJust)
 import Data.Foldable(toList)
 import Data.Char(toLower)
 
@@ -77,8 +77,13 @@ parseCompiles pbexpr lines =  CompilesAST (part 0 (PbExpr.parts pbexpr) lines)
 
 parseFn pbexpr lines = let parts = PbExpr.parts pbexpr in
                        assert ((Data.Sequence.length parts) == 2) $
-                       FnAST (parseProtoP (index parts 0) lines)
+                       FnAST (parseProtoP (index parts 0)
+                                          lines)
                              (part 1 parts lines)
+                             (case PbExpr.is_closure pbexpr of
+                                            Nothing    -> Nothing
+                                            Just False -> Nothing
+                                            Just True  -> Just [])
 
 parseFnAST pbexpr lines = E_FnAST $ parseFn pbexpr lines
 
@@ -248,10 +253,9 @@ parseType t = case PbType.tag t of
 parseFnTy :: FnType -> TypeAST
 parseFnTy fty = FnTypeAST (TupleTypeAST [parseType x | x <- toList $ PbFnType.arg_types fty])
                           (parseType $ PbFnType.ret_type fty)
---                          (case PbFnType.is_closure fty of
---                            Nothing  -> False
---                            (Just b) -> b)
---
+                          (case PbFnType.is_closure fty of
+                            Nothing  -> Nothing
+                            (Just b) -> Just [])
 
 -----------------------------------------------------------------------
 
@@ -259,8 +263,12 @@ typeAST :: AnnExpr -> TypeAST
 typeAST (AnnBool _)          = fosBoolType
 typeAST (AnnInt t _ _ _ _)   = t
 typeAST (AnnTuple es b)      = TupleTypeAST [typeAST e | e <- es]
-typeAST (E_AnnFn (AnnFn (AnnPrototype rt s vs) e))
-                             = FnTypeAST (TupleTypeAST [t | (AnnVar t v) <- vs]) rt
+typeAST (E_AnnFn (AnnFn (AnnPrototype rt s vs) e cs))
+                             = FnTypeAST (TupleTypeAST [t | (AnnVar t v) <- vs])
+                                         rt
+                                         (case cs of
+                                            Nothing  -> Nothing
+                                            Just jcs -> (Just [varname | (AnnVar t varname) <- jcs]))
 typeAST (AnnCall r t b a)    = t
 typeAST (AnnCompiles c)      = fosBoolType
 typeAST (AnnIf t a b c)      = t
@@ -279,7 +287,7 @@ childrenOfA e =
         AnnCompiles   c                      -> []
         AnnIf      t  a b c                  -> [a, b, c]
         AnnInt t i s1 s2 i2                  -> []
-        E_AnnFn (AnnFn p b)                  -> [E_AnnPrototype t p, b] where t = fnTypeFromA p b
+        E_AnnFn f@(AnnFn p b cs)             -> [E_AnnPrototype t p, b] where t = fnTypeFromA f
         AnnSeq      a b                      -> unbuildSeqsA e
         AnnSubscript t a b                   -> [a, b]
         E_AnnPrototype t' (AnnPrototype t s es) -> [E_AnnVar v | v <- es]
@@ -287,11 +295,12 @@ childrenOfA e =
         E_AnnVar      v                      -> []
 
 
-fnTypeFromA :: AnnPrototype -> AnnExpr -> TypeAST
-fnTypeFromA p b =
+fnTypeFromA :: AnnFn -> TypeAST
+fnTypeFromA (AnnFn p b cs) =
     let intype = TupleTypeAST [avarType v | v <- annProtoVars p] in
     let outtype = typeAST b in
-    FnTypeAST intype outtype
+    FnTypeAST intype outtype (fmap (map avarName) cs)
+
 
 -----------------------------------------------------------------------
 
@@ -307,10 +316,11 @@ dumpType (NamedTypeAST s)     = P'.defaultValue { PbType.tag  = PbTypeTag.LLVM_N
                                                 , PbType.name = Just $ u8fromString s }
 dumpType (TupleTypeAST types) = P'.defaultValue { PbType.tag  = PbTypeTag.TUPLE
                                                 , tuple_parts = fromList $ fmap dumpType types }
-dumpType x@(FnTypeAST s t)    = P'.defaultValue { PbType.tag  = PbTypeTag.FN
-                                                , PbType.fnty = Just $ dumpFnTy x}
+dumpType x@(FnTypeAST s t cs) = P'.defaultValue { PbType.tag  = PbTypeTag.FN
+                                                , PbType.fnty = Just $ dumpFnTy x
+                                                }
 
-dumpFnTy (FnTypeAST s t) =
+dumpFnTy (FnTypeAST s t cs) =
     let args = case s of
                 TypeUnitAST        -> []
                 TupleTypeAST types -> [dumpType x | x <- types]
@@ -319,7 +329,7 @@ dumpFnTy (FnTypeAST s t) =
     PbFnType.FnType {
           arg_types = fromList args
         , ret_type  = dumpType t
-        , PbFnType.is_closure = Just False -- TODO fix!
+        , PbFnType.is_closure = Just $ isJust cs
         , calling_convention = Just $ u8fromString "fastcc" -- TODO fix
     }
 
@@ -328,9 +338,9 @@ dumpFnTy (FnTypeAST s t) =
 
 dumpExpr :: AnnExpr -> Expr
 
-dumpExpr x@(E_AnnFn (AnnFn p b)) =
-    P'.defaultValue { -- PbExpr.is_closure = Just b
-                      PbExpr.parts = fromList $ fmap dumpExpr (childrenOfA x)
+dumpExpr x@(E_AnnFn (AnnFn p b cs)) =
+    P'.defaultValue { PbExpr.is_closure = Just (isJust cs)
+                    , PbExpr.parts = fromList $ fmap dumpExpr (childrenOfA x)
                     , PbExpr.tag   = Foster.Pb.Expr.Tag.FN
                     , PbExpr.type' = Just $ dumpType (typeAST x)  }
 

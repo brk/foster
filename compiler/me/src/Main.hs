@@ -35,7 +35,10 @@ import Foster.TypeAST
 
 _typesEqual :: TypeAST -> TypeAST -> Bool
 _typesEqual TypeUnitAST (TupleTypeAST []) = True
-_typesEqual (TupleTypeAST as) (TupleTypeAST bs) = Prelude.and [_typesEqual a b | (a, b) <- Prelude.zip as bs]
+_typesEqual (TupleTypeAST as) (TupleTypeAST bs) =
+    List.length as == List.length bs && Prelude.and [_typesEqual a b | (a, b) <- Prelude.zip as bs]
+_typesEqual (FnTypeAST s1 t1 c1) (FnTypeAST s2 t2 c2) =
+    _typesEqual s1 s2 && _typesEqual t1 t2 -- ignore c1 and c2 for now...
 _typesEqual ta tb = ta == tb
 
 getBindings :: PrototypeAST -> [(String, TypeAST)]
@@ -102,7 +105,7 @@ typecheck ctx expr maybeExpTy =
                            _  <- sanityCheck (isJust $ typeJoin (typeAST eb) (typeAST ec))
                                              "IfAST: types of branches didn't match"
                            return (AnnIf (typeAST eb) ea eb ec)
-        E_FnAST (FnAST proto body) -> typecheckFn ctx proto body maybeExpTy
+        E_FnAST (FnAST proto body cs) -> typecheckFn ctx proto body cs maybeExpTy
         CallAST r b a -> typecheckCall ctx r b a maybeExpTy
         IntAST i s1 s2 i2    -> do return (AnnInt (NamedTypeAST "i32") i s1 s2 i2)
         SeqAST a b -> do
@@ -140,18 +143,20 @@ typecheckSubscript base baseType index maybeExpTy =
        throwError $ "SubscriptAST " ++ show baseType ++ "[" ++ show index ++ "]" ++ " (:: " ++ show maybeExpTy ++ ")"
 
 argType :: TypeAST -> TypeAST
-argType (FnTypeAST a r) = a
+argType (FnTypeAST a r cs) = a
 argType x = error $ "Called argType on non-FnTypeAST: " ++ show x
+
+irrelevantClosedOverVars = Nothing
 
 typecheckCall ctx range base arg maybeExpTy =
    let expectedLambdaType = case maybeExpTy of
         Nothing  -> Nothing
-        (Just t) -> (Just (FnTypeAST (MissingTypeAST "typecheckCall") t)) in
+        (Just t) -> (Just (FnTypeAST (MissingTypeAST "typecheckCall") t irrelevantClosedOverVars)) in
         -- If we have (e1 e2) :: T, we infer that e1 :: (? -> T) and e2 :: ?
    do eb <- typecheck ctx base expectedLambdaType
       ea <- typecheck ctx arg (Just $ argType (typeAST eb))
       case (typeAST eb, typeAST ea) of
-         (FnTypeAST formaltype restype, argtype) ->
+         (FnTypeAST formaltype restype cs, argtype) ->
             if isJust $ typeJoin formaltype argtype
                 then return $ AnnCall range restype eb ea
                 else throwError $ "CallAST mismatches:\n"
@@ -162,15 +167,15 @@ typecheckCall ctx range base arg maybeExpTy =
 -----------------------------------------------------------------------
 
 
-typecheckFn ctx proto body Nothing = typecheckFn' ctx proto body Nothing
-typecheckFn ctx proto body (Just (FnTypeAST s t)) =
+typecheckFn ctx proto body cs Nothing = typecheckFn' ctx proto body cs Nothing
+typecheckFn ctx proto body cs (Just (FnTypeAST s t cs')) =
     if isJust $ typeJoin (prototypeASTretType proto) t
-      then typecheckFn' ctx proto body (Just t)
+      then typecheckFn' ctx proto body cs (Just t)
       else throwError  $ "typecheck fn '" ++ prototypeASTname proto
                         ++ "': proto return type, " ++ show (prototypeASTretType proto)
-                        ++ ", did not match return type of expected fn type " ++ show (FnTypeAST s t)
+                        ++ ", did not match return type of expected fn type " ++ show (FnTypeAST s t cs')
 
-typecheckFn' ctx proto body expBodyType = do
+typecheckFn' ctx proto body cs expBodyType = do
     _ <- verifyNonOverlappingVariableNames proto
     let extCtx = extendContext ctx proto
     annbody <- typecheck extCtx body expBodyType
@@ -178,7 +183,7 @@ typecheckFn' ctx proto body expBodyType = do
         (Just x) ->
             let annproto = case proto of
                             (PrototypeAST t s vars) -> (AnnPrototype x s vars) in
-            return (E_AnnFn (AnnFn annproto annbody))
+            return (E_AnnFn (AnnFn annproto annbody cs))
         otherwise ->
          throwError $ "typecheck '" ++ prototypeASTname proto
                     ++ "': proto ret type " ++ show (prototypeASTretType proto)
@@ -228,45 +233,46 @@ collectErrors results =
     [e | r <- results, e <- errsTypecheckResult r, e /= ""]
 -----------------------------------------------------------------------
 
-fosi32toi32 = FnTypeAST (TupleTypeAST [(NamedTypeAST "i32")]) (NamedTypeAST "i32")
-fosi64toi64 = FnTypeAST (TupleTypeAST [(NamedTypeAST "i64")]) (NamedTypeAST "i64")
-fosi1toi32 = FnTypeAST (TupleTypeAST [(NamedTypeAST "i1")]) (NamedTypeAST "i32")
-fosi64i64toi1 = FnTypeAST (TupleTypeAST [(NamedTypeAST "i64"), (NamedTypeAST "i64")]) (NamedTypeAST "i1")
-fosi32i32toi1 = FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i1")
+fosi32toi32 = FnTypeAST (TupleTypeAST [(NamedTypeAST "i32")]) (NamedTypeAST "i32") Nothing
+fosi64toi64 = FnTypeAST (TupleTypeAST [(NamedTypeAST "i64")]) (NamedTypeAST "i64") Nothing
+fosi1toi32 = FnTypeAST (TupleTypeAST [(NamedTypeAST "i1")]) (NamedTypeAST "i32") Nothing
+fosi64i64toi1 = FnTypeAST (TupleTypeAST [(NamedTypeAST "i64"), (NamedTypeAST "i64")]) (NamedTypeAST "i1") Nothing
+fosi32i32toi1 = FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i1") Nothing
 
 rootContext :: Context
 rootContext =
-    [("llvm_readcyclecounter", FnTypeAST (TupleTypeAST []) (NamedTypeAST "i64"))
+    [("llvm_readcyclecounter", FnTypeAST (TupleTypeAST []) (NamedTypeAST "i64") Nothing)
     ,("expect_i32", fosi32toi32)
     ,( "print_i32", fosi32toi32)
     ,("expect_i32b", fosi32toi32)
     ,( "print_i32b", fosi32toi32)
-    ,(  "read_i32", FnTypeAST (TupleTypeAST []) (NamedTypeAST "i32"))
+    ,(  "read_i32", FnTypeAST (TupleTypeAST []) (NamedTypeAST "i32") Nothing)
     ,("expect_i1", fosi1toi32)
     ,( "print_i1", fosi1toi32)
-    ,("primitive_sext_i64_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32")]) (NamedTypeAST "i64"))
-    ,("primitive_bitnot_i1", FnTypeAST (TupleTypeAST [(NamedTypeAST "i1")]) (NamedTypeAST "i1"))
-    ,("primitive_bitshl_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32"))
-    ,("primitive_bitor_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32"))
-    ,("primitive_bitand_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32"))
-    ,("primitive_bitxor_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32"))
+    ,("primitive_sext_i64_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32")]) (NamedTypeAST "i64") Nothing)
+    ,("primitive_bitnot_i1", FnTypeAST (TupleTypeAST [(NamedTypeAST "i1")]) (NamedTypeAST "i1") Nothing)
+    ,("primitive_bitshl_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32") Nothing)
+    ,("primitive_bitor_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32") Nothing)
+    ,("primitive_bitand_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32") Nothing)
+    ,("primitive_bitxor_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32") Nothing )
+    ,("force_gc_for_debugging_purposes", FnTypeAST (TupleTypeAST []) (TupleTypeAST []) Nothing)
 
-    ,("primitive_<_i64", FnTypeAST (TupleTypeAST [(NamedTypeAST "i64"), (NamedTypeAST "i64")]) (NamedTypeAST "i1"))
-    ,("primitive_-_i64", FnTypeAST (TupleTypeAST [(NamedTypeAST "i64"), (NamedTypeAST "i64")]) (NamedTypeAST "i64"))
-    ,("primitive_-_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32"))
-    ,("primitive_*_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32"))
-    ,("primitive_+_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32"))
-    ,("primitive_<_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i1"))
-    ,("primitive_<=_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i1"))
-    ,("primitive_==_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i1"))
+    ,("primitive_<_i64", FnTypeAST (TupleTypeAST [(NamedTypeAST "i64"), (NamedTypeAST "i64")]) (NamedTypeAST "i1")  Nothing)
+    ,("primitive_-_i64", FnTypeAST (TupleTypeAST [(NamedTypeAST "i64"), (NamedTypeAST "i64")]) (NamedTypeAST "i64") Nothing)
+    ,("primitive_-_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32") Nothing)
+    ,("primitive_*_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32") Nothing)
+    ,("primitive_+_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32") Nothing)
+    ,("primitive_<_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i1")  Nothing)
+    ,("primitive_<=_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i1") Nothing )
+    ,("primitive_==_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i1") Nothing )
     ]
 
 fnName :: FnAST -> String
-fnName (FnAST proto body) = prototypeASTname proto
+fnName (FnAST proto body cs) = prototypeASTname proto
 
-fnCalledNames :: FnAST -> Context -> [String]
-fnCalledNames (FnAST proto body) ctx =
-    let allCalledFns = Set.fromList $ calledNames body in
+fnFreeVariables :: FnAST -> Context -> [String]
+fnFreeVariables (FnAST proto body cs) ctx =
+    let allCalledFns = Set.fromList $ freeVariables body in
     -- remove names of primitive functions
     let nonPrimitives = Set.filter (\f -> not (isJust $ lookup f ctx)) allCalledFns in
     -- remove recursive function name calls
@@ -274,20 +280,20 @@ fnCalledNames (FnAST proto body) ctx =
 
 buildCallGraph :: [FnAST] -> Context -> [Graph.SCC FnAST]
 buildCallGraph asts ctx =
-    let nodeList = (map (\ast -> (ast, fnName ast, fnCalledNames ast ctx)) asts) in
+    let nodeList = (map (\ast -> (ast, fnName ast, fnFreeVariables ast ctx)) asts) in
     Graph.stronglyConnComp nodeList
 
 extendContextWithFnA :: AnnFn -> Context -> Context
-extendContextWithFnA (AnnFn proto body) ctx = (annProtoName proto, fnTypeFromA proto body):ctx
+extendContextWithFnA f@(AnnFn proto body cs) ctx = (annProtoName proto, fnTypeFromA f):ctx
 
-fnTypeFrom :: PrototypeAST -> TypeAST
-fnTypeFrom p =
+fnTypeFrom :: FnAST -> TypeAST
+fnTypeFrom (FnAST p b cs) =
     let intype = TupleTypeAST [avarType v | v <- prototypeASTformals p] in
     let outtype = prototypeASTretType p in
-    FnTypeAST intype outtype
+    FnTypeAST intype outtype (fmap (map avarName) cs)
 
 extendContextWithFn :: FnAST -> Context -> Context
-extendContextWithFn f@(FnAST proto body) ctx = (fnName f, fnTypeFrom proto):ctx
+extendContextWithFn f ctx = (fnName f, fnTypeFrom f):ctx
 
 -- Every function in the SCC should typecheck against the input context,
 -- and the resulting context should include the computed types of each
@@ -323,7 +329,7 @@ typecheckModule mod = do
     let fns = moduleASTfunctions mod
     let ctx = rootContext
     let sortedFns = buildCallGraph fns ctx -- :: [SCC FnAST]
-
+    putStrLn $ "Function SCC list : " ++ show [(fnName f, fnFreeVariables f ctx) | fns <- sortedFns, f <- Graph.flattenSCC fns]
     (annFns, _ctx) <- mapFoldM sortedFns ctx typecheckFnSCC
     -- annFns :: [TypecheckResult AnnExpr]
     if allAnnotated annFns
@@ -380,7 +386,7 @@ textOfA e width =
         AnnCompiles     c    -> "AnnCompiles  "
         AnnIf      t  a b c  -> "AnnIf        " ++ " :: " ++ show t
         AnnInt ty i t c base -> "AnnInt       " ++ t ++ " :: " ++ show ty
-        E_AnnFn (AnnFn a b)  -> "AnnFn        "
+        E_AnnFn (AnnFn a b cs)  -> "AnnFn        "
         AnnSeq          a b  -> "AnnSeq       " ++ " :: " ++ show (typeAST b)
         AnnSubscript  t a b  -> "AnnSubscript " ++ " :: " ++ show t
         E_AnnPrototype t (AnnPrototype rt s es) -> "PrototypeAST " ++ s ++ " :: " ++ show t

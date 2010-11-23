@@ -8,6 +8,7 @@ module Foster.ExprAST where
 
 import Foster.TypeAST
 import Data.Int
+import Data.Set as Set(fromList, toList, difference)
 import Data.Sequence as Seq
 import Data.Maybe(fromJust)
 import Data.List(replicate)
@@ -69,11 +70,12 @@ data ExprAST =
         deriving Show
 
                           -- proto    body
-data FnAST  = FnAST     PrototypeAST ExprAST deriving (Show)
+data FnAST  = FnAST     PrototypeAST ExprAST  (Maybe [AnnVar]) deriving (Show)
 data PrototypeAST = PrototypeAST {
                           prototypeASTretType :: TypeAST
                         , prototypeASTname    :: String
-                        , prototypeASTformals :: [AnnVar] } deriving (Show)
+                        , prototypeASTformals :: [AnnVar]
+                    } deriving (Show)
 
 
 sourceLine :: SourceLines -> Int -> Maybe String
@@ -110,7 +112,7 @@ childrenOf e =
         CompilesAST   e c    -> [e]
         IfAST         a b c  -> [a, b, c]
         IntAST i s1 s2 i2    -> []
-        E_FnAST (FnAST a b)  -> [E_PrototypeAST a, b]
+        E_FnAST (FnAST a b cs)  -> [E_PrototypeAST a, b]
         SeqAST      a b      -> unbuildSeqs e
         SubscriptAST  a b    -> [a, b]
         E_PrototypeAST (PrototypeAST t s es) -> (map (\(AnnVar t s) -> VarAST (Just t) s) es)
@@ -134,7 +136,7 @@ textOf e width =
         CompilesAST   e c    -> "CompilesAST  "
         IfAST         a b c  -> "IfAST        "
         IntAST i t c base    -> "IntAST       " ++ t
-        E_FnAST (FnAST p b)  -> "FnAST        "
+        E_FnAST (FnAST p b cs)  -> "FnAST        "
         SeqAST     a b       -> "SeqAST       "
         SubscriptAST  a b    -> "SubscriptAST "
         E_PrototypeAST (PrototypeAST t s es)     -> "PrototypeAST " ++ s
@@ -143,21 +145,22 @@ textOf e width =
 
 
 
-calledNames :: ExprAST -> [String]
-calledNames e = case e of
+freeVariables :: ExprAST -> [String]
+freeVariables e = case e of
     BoolAST         b    -> []
-    CallAST   r b a      -> case b of
-                                (VarAST _ v) -> [v]           ++ calledNames a
-                                otherwise    -> calledNames b ++ calledNames a
-    CompilesAST   e c    -> calledNames e
-    IfAST         a b c  -> calledNames a ++ calledNames b ++ calledNames c
+    CallAST   r b a      -> freeVariables b ++ freeVariables a
+    CompilesAST   e c    -> freeVariables e
+    IfAST         a b c  -> freeVariables a ++ freeVariables b ++ freeVariables c
     IntAST i t c base    -> []
-    E_FnAST (FnAST p b)  -> calledNames b
-    SeqAST     a b       -> calledNames a ++ calledNames b
-    SubscriptAST  a b    -> calledNames a ++ calledNames b
+    E_FnAST (FnAST p b cs)  -> let bodyvars =  Set.fromList (freeVariables b) in
+                               let boundvars = Set.fromList (map avarName (prototypeASTformals p)) in
+                               Set.toList (Set.difference bodyvars boundvars)
+
+    SeqAST     a b       -> freeVariables a ++ freeVariables b
+    SubscriptAST  a b    -> freeVariables a ++ freeVariables b
     E_PrototypeAST (PrototypeAST t s es)     -> []
-    TupleAST     es b    -> concatMap calledNames es
-    VarAST mt v          -> []
+    TupleAST     es b    -> concatMap freeVariables es
+    VarAST mt v          -> [v]
 
 -----------------------------------------------------------------------
 
@@ -182,7 +185,7 @@ data AnnExpr =
         deriving Show
 
 data AnnVar       = AnnVar { avarType :: TypeAST, avarName :: String } deriving (Show)
-data AnnFn        = AnnFn           AnnPrototype AnnExpr deriving (Show)
+data AnnFn        = AnnFn           AnnPrototype AnnExpr (Maybe [AnnVar]) deriving (Show)
 data AnnPrototype = AnnPrototype    { annProtoReturnType :: TypeAST
                                     , annProtoName       :: String
                                     , annProtoVars       :: [AnnVar]

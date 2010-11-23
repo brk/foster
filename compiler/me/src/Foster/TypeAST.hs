@@ -13,7 +13,7 @@ data TypeAST =
          | TypeUnitAST
          | NamedTypeAST     String
          | TupleTypeAST     [TypeAST]
-         | FnTypeAST        TypeAST TypeAST
+         | FnTypeAST        TypeAST TypeAST (Maybe [String])
          deriving (Eq)
 
 instance Show TypeAST where
@@ -26,7 +26,7 @@ showTypeAST (MissingTypeAST s)   = "(MissingTypeAST " ++ s ++ ")"
 showTypeAST (TypeUnitAST)        = "()"
 showTypeAST (NamedTypeAST s)     = s
 showTypeAST (TupleTypeAST types) = "(" ++ joinWith ", " [showTypeAST t | t <- types] ++ ")"
-showTypeAST (FnTypeAST s t)      = "(" ++ show s ++ " -> " ++ show t ++ ")"
+showTypeAST (FnTypeAST s t cs)   = "(" ++ show s ++ " -> " ++ show t ++ ")"
 
 joinWith :: String -> [String] -> String
 joinWith s [] = ""
