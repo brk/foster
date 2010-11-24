@@ -11,8 +11,10 @@ diff.txt
 tools/c-viewer/
 dox/
 notes/_build/
-me/dist/
-me/src/Foster/Pb/
+compiler/me/dist/
+compiler/me/src/Foster/Pb/
+compiler/me/src/Foster/Pb.hs
+compiler/me/src/Main.hsext
 glob:compiler/me/**.hi
 glob:compiler/me/**.o
 glob:compiler/me/**.*-boot
