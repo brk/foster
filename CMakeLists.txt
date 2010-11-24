@@ -410,6 +410,7 @@ add_test(bootstrap
   python ${PROJECT_SOURCE_DIR}/scripts/run_all.py
          ${PROJECT_SOURCE_DIR}/test/bootstrap
          --bindir ${PROJECT_BINARY_DIR}
+         --me=me
   )
 
 # Look for non-silent diff -u output
