@@ -31,6 +31,8 @@ if (${ANTLR_DIR} STREQUAL "ANTLR_DIR-NOTFOUND")
     return()
 endif (${ANTLR_DIR} STREQUAL "ANTLR_DIR-NOTFOUND")
 
+set(HPROTOC hprotoc DOC "Path to Haskell protocol buffer compiler")
+
 set(GENERATED ${PROJECT_BINARY_DIR}/_generated_)
 configure_file(${PROJECT_SOURCE_DIR}/FosterConfig.in.h
                ${GENERATED}/FosterConfig.h)
@@ -137,6 +139,32 @@ add_custom_command(
   DEPENDS
           ${PROJECT_SOURCE_DIR}/compiler/parse/FosterAST.proto
   )
+
+#-------------------------------------------------------------------
+
+# Generate Haskell code to manipulate AST protobuf files.
+add_custom_command(
+  OUTPUT ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Pb.hs
+  COMMAND cp ${PROJECT_SOURCE_DIR}/compiler/parse/FosterAST.proto
+             ${PROJECT_SOURCE_DIR}/compiler/me/FosterAST.proto#
+  COMMAND ${HPROTOC}
+          --haskell_out=${PROJECT_SOURCE_DIR}/compiler/me/src
+          ${PROJECT_SOURCE_DIR}/compiler/me/FosterAST.proto#
+  WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/compiler/me
+  DEPENDS
+          ${PROJECT_SOURCE_DIR}/compiler/parse/FosterAST.proto
+  )
+
+# Generate middle-end from Haskell source files, once
+# Haskell protobuf module sources have been generated.
+add_custom_target(hs_me
+  DEPENDS ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Pb.hs
+  COMMAND python ${PROJECT_SOURCE_DIR}/scripts/mk_me.py
+          --srcroot ${PROJECT_SOURCE_DIR}
+          --bindir ${PROJECT_BINARY_DIR}
+  )
+
+#-------------------------------------------------------------------
 
 add_custom_command(
   OUTPUT ${PROJECT_BINARY_DIR}/libfoster_main.o
@@ -327,7 +355,7 @@ target_link_libraries(fosterc
   fosterc_llvm
   antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
 
-add_dependencies(fosterc libfoster_bc imath_wrapper_bc)
+add_dependencies(fosterc libfoster_bc imath_wrapper_bc hs_me)
 
 ############
 
