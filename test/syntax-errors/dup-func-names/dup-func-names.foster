@@ -1,0 +1,6 @@
+foo = fn (x:i32 to i32) { x }
+
+foo = fn (x:i32 to i32) { x }
+
+main = fn ( to i32) { foo(0) }
+
