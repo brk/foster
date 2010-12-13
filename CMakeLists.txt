@@ -265,6 +265,7 @@ include(${PROJECT_SOURCE_DIR}/third_party/chromium_base/CMakeLists.txt)
 include(${PROJECT_SOURCE_DIR}/third_party/cpuid/CMakeLists.txt)
 include(${PROJECT_SOURCE_DIR}/third_party/gtest/CMakeLists.txt)
 include(${PROJECT_SOURCE_DIR}/third_party/imath/CMakeLists.txt)
+include(${PROJECT_SOURCE_DIR}/third_party/libcoro/CMakeLists.txt)
 
 add_library(fosterc_base STATIC
   compiler/base/Assert.cpp
@@ -387,6 +388,7 @@ target_link_libraries(fostercheck
 
 add_dependencies(libfoster_bc chromium_base)
 add_dependencies(libfoster_bc cpuid)
+add_dependencies(libfoster_bc coro)
 
 add_executable(pbfosterview
   tools/pbfosterview/pbfosterview.cpp
