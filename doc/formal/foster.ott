@@ -1,0 +1,328 @@
+% vim: foldmethod=marker
+
+metavar variable, x ::=
+  {{ isa string }} {{ coq nat }} {{ coq-equality }} {{ hol string }} {{ ocaml int }}
+  {{ lex alphanum }}
+metavar integer_literal ::=
+  {{ isa int }} {{ coq nat }} {{ hol num }} {{ ocaml int }}
+indexvar index, i, j, n, m ::=
+  {{ isa nat }} {{ coq nat }}  {{ hol num }} {{ ocaml int }}
+  {{ lex numeral }}
+
+grammar
+
+% {{{ Expressions
+
+expr, e :: E_ ::=                                       {{ com term }}
+  | variable                           ::   :: variable
+  | value                              ::   :: value
+  | expr expr'                         ::   :: apply    {{ com call }}
+  | { e1 , e2 }                        ::   :: pair     {{ com pair }}
+  | e1 . 1                             ::   :: proj1    {{ com projection }}
+  | e1 . 2                             ::   :: proj2
+  | if e1 then e2 else e3              ::   :: if
+  | ( expr )                           :: S :: paren
+  | { v / x } e                        :: M :: subst
+
+% }}}
+
+% {{{ Values
+
+value, v :: V_ ::=
+  | constant                                     ::   :: constant
+  | { v1 , v2 }                                  ::   :: pair
+  | function variable : typexpr -> expr          ::   :: function
+
+% }}}
+
+
+% {{{ Constants
+
+constant, c :: CONST_ ::=
+  | integer_literal                    ::   :: int
+  | false                              ::   :: false
+  | true                               ::   :: true
+  | ()                                 ::   :: unit
+  | not                                ::   :: not
+  | coro_create                        ::   :: coro_create
+  | coro_invoke                        ::   :: coro_invoke
+
+% }}}
+
+
+% {{{ Types
+
+typeconstr :: TC_ ::=
+  | unit                               ::   :: unit
+  | bool                               ::   :: bool
+  | int                                ::   :: int
+  | coro t1 t2                         ::   :: coro
+
+typvar, tv :: TV_ ::= {{ coq-equality decide equality. apply eq_value_name. }}
+  | ' variable                            ::   :: variable
+
+typexpr, t :: TE_ ::=
+  | typvar                               ::   :: var
+  | t -> t'                              ::   :: arrow
+  | typeconstr                           ::   :: constr0
+  | { t1 , t2 }                          ::   :: pairty
+  | ( t )                                :: S :: paren
+  | forall ( typvar1 , .. , typvarn ) t ::    :: ts  (+ bind typvar1 .. typvarn in t +)
+
+% }}}
+
+
+G {{ tex \Gamma }} :: G_ ::=
+  | empty                            ::   :: em
+  | G , variable : typexpr           ::   :: vn
+
+
+
+
+formula :: formula_ ::=
+  | judgement                          ::   :: judgement
+  | not ( formula )                    ::   :: not
+        {{ coq not([[formula]]) }}
+  | t = t'                             ::   :: eqt
+  | x = x'                             ::   :: eqv
+
+% {{{ Terminals
+
+terminals :: terminals_ ::=
+  |  ->                                ::   :: arrow      {{ tex \rightarrow }}
+  |  function                          ::   :: function   {{ tex \lambda }}
+  |  forall                            ::   :: forall     {{ tex \textbf{forall} }}
+  | |-                                 ::   :: turnstile  {{ tex \vdash }}
+  | -->                                ::   :: red        {{ tex \longrightarrow }}
+  | '{'                                ::   :: leftbrace  {{ tex \{ }}
+  | '\'{'                                ::   :: lefttbrace {{ tex \{ }}
+  | '\'}'                                ::   :: righttbrace {{ tex \} }}
+
+%  |  function                          ::   :: function   {{ tex \textbf{function} }}
+% }}}
+
+
+embed {{ tex
+The evaluation rules given below somewhat overspecifies
+the order of evaluation for pairs. In particular, we might
+reasonably wish to say that
+}}
+
+defns
+Jop :: JO_ ::=
+
+defn
+e --> e' :: :: reduce :: reduce_ {{ com [[e1]] reduces to [[e2]] }} by
+
+%%%%%%%%%%%%%%%%%% Evaluation Rules %%%%%%%%%%%%%%%%%%%%%
+
+% {{{ Evaluation rules for pairs
+
+----------------------- :: PairBeta1
+{ v1 , v2 } . 1  --> v1
+
+
+----------------------- :: PairBeta2
+{ v1 , v2 } . 2  --> v2
+
+
+e1 --> e1'
+-------------- :: Proj1
+e1.1 --> e1'.1
+
+
+e1 --> e1'
+-------------- :: Proj2
+e1.2 --> e1'.2
+
+e1 --> e1'
+---------------------------- :: Pair1
+{ e1 , e2 } --> { e1' , e2 }
+
+e2 --> e2'
+---------------------------- :: Pair2
+{ v1 , e2 } --> { v1 , e2' }
+
+% }}}
+
+% {{{ Evaluation rules for if
+
+------------------------------- :: IfTrue
+if true  then e2 else e3 --> e2
+
+------------------------------- :: IfFalse
+if false then e2 else e3 --> e3
+
+e1 --> e1'
+------------------------------ :: If
+if e1 then e2 else e3 --> if e1' then e2 else e3
+
+
+% }}}
+
+% {{{ Evaluation rules for functions and applications
+
+e --> e'
+--------------  :: context_app1
+e e1 --> e' e1
+
+e --> e'
+------------  :: context_app2
+v e --> v e'
+
+
+------------------------------------- :: app
+(function x : t -> e)  v --> {v/x}  e
+
+% }}}
+
+%%%%%%%%%%%%%%%%%% Typing Rules %%%%%%%%%%%%%%%%%%%%%
+
+defns
+Jtype :: '' ::=
+
+defn
+x : t in G  :: :: VTSin :: VTSin_ {{ com Structure of contexts }} by
+
+----------------- :: vn1
+x : t in G, x : t
+
+x : t in G
+not ( x = x' )
+----------------- :: vn2
+x : t in G,  x' : t'
+
+
+
+defn
+G |- constant : t :: :: G_constant :: constant_ {{ com Types of constants }} by
+
+-------------------------- :: int
+G |- integer_literal : int
+
+----------------- :: false
+G |- false : bool
+
+---------------- :: true
+G |- true : bool
+
+-------------- :: unit
+G |- () : unit
+
+%------------------------------------ :: and
+%G |- (&&) : bool -> ( bool -> bool )
+%
+
+----------------------- :: not
+G |- not : bool -> bool
+
+----------------------------------------------------------------------- :: coro_create
+G |- coro_create : forall (tv1, tv2) (tv1 -> tv2) -> coro tv1 tv2
+
+----------------------------------------------------------------------------- :: coro_invoke
+G |- coro_invoke : forall (tv1, tv2) { tv1 , coro tv1 tv2 } -> { tv2 , bool }
+
+%forall (ty1, ty2) ((ty1 -> ty2) -> coro ty1 ty2)
+
+
+defn
+G |- e : t :: :: G_expr :: T_ {{ com Types of expressions }} by
+
+% {{{ Types for pairs and projections
+
+G |- e : { t1 , t2 }
+---------------------- :: proj1
+G |- e . 1 : t1
+
+
+G |- e : { t1 , t2 }
+-------------------- :: proj2
+G |- e . 2 : t2
+
+
+G |- e1 : t1
+G |- e2 : t2
+------------------------------ :: cons
+G |- { e1 , e2 } : { t1 , t2 }
+
+% }}}
+
+% {{{ Types for bools
+
+G |- e1 : bool
+G |- e2 : t
+G |- e3 : t
+------------------------------ :: if
+G |- if e1 then e2 else e3 : t
+
+% }}}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
