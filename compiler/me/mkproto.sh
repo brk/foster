@@ -1,2 +1,3 @@
+# hprotoc really wants to be given a proto file in its working directory...
 cp ../../compiler/parse/FosterAST.proto FosterAST.proto#
 hprotoc --haskell_out=src FosterAST.proto#
