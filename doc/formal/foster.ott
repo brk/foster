@@ -20,6 +20,7 @@ expr, e :: E_ ::=                                       {{ com term }}
   | { e1 , e2 }                        ::   :: pair     {{ com pair }}
   | e1 . 1                             ::   :: proj1    {{ com projection }}
   | e1 . 2                             ::   :: proj2
+  | compiles e                         ::   :: compiles
   | if e1 then e2 else e3              ::   :: if
   | ( expr )                           :: S :: paren
   | { v / x } e                        :: M :: subst
@@ -30,6 +31,7 @@ expr, e :: E_ ::=                                       {{ com term }}
 
 value, v :: V_ ::=
   | constant                                     ::   :: constant
+  | loc                                          ::   :: loc
   | { v1 , v2 }                                  ::   :: pair
   | function variable : typexpr -> expr          ::   :: function
 
@@ -56,6 +58,7 @@ typeconstr :: TC_ ::=
   | unit                               ::   :: unit
   | bool                               ::   :: bool
   | int                                ::   :: int
+  | ptr t                              ::   :: ptr
   | coro t1 t2                         ::   :: coro
 
 typvar, tv :: TV_ ::= {{ coq-equality decide equality. apply eq_value_name. }}
@@ -77,12 +80,16 @@ G {{ tex \Gamma }} :: G_ ::=
   | G , variable : typexpr           ::   :: vn
 
 
+STG {{ tex \Sigma_\Gamma }} :: STG_ ::= {{ com store typings }}
+  | empty                            ::   :: em
+  | STG , loc : t                    ::   :: ln
 
 
 formula :: formula_ ::=
   | judgement                          ::   :: judgement
   | not ( formula )                    ::   :: not
         {{ coq not([[formula]]) }}
+  | STG ( loc ) = t                    ::   :: stgloc {{ com type of loc in store }}
   | t = t'                             ::   :: eqt
   | x = x'                             ::   :: eqv
 
@@ -92,21 +99,21 @@ terminals :: terminals_ ::=
   |  ->                                ::   :: arrow      {{ tex \rightarrow }}
   |  function                          ::   :: function   {{ tex \lambda }}
   |  forall                            ::   :: forall     {{ tex \textbf{forall} }}
+  |  loc                               ::   :: loc        {{ tex \textit{loc} }}
   | |-                                 ::   :: turnstile  {{ tex \vdash }}
   | -->                                ::   :: red        {{ tex \longrightarrow }}
   | '{'                                ::   :: leftbrace  {{ tex \{ }}
-  | '\'{'                                ::   :: lefttbrace {{ tex \{ }}
-  | '\'}'                                ::   :: righttbrace {{ tex \} }}
+  | '}'                                ::   :: righttbrace {{ tex \} }}
 
 %  |  function                          ::   :: function   {{ tex \textbf{function} }}
 % }}}
 
 
-embed {{ tex
-The evaluation rules given below somewhat overspecifies
-the order of evaluation for pairs. In particular, we might
-reasonably wish to say that
-}}
+%embed {{ tex
+%The evaluation rules given below somewhat overspecifies
+%the order of evaluation for pairs. In particular, we might
+%reasonably wish to say that
+%}}
 
 defns
 Jop :: JO_ ::=
@@ -255,74 +262,22 @@ G |- e3 : t
 ------------------------------ :: if
 G |- if e1 then e2 else e3 : t
 
+% Note: no requirement that e be well typed!
+---------------------- :: compiles
+G |- compiles e : bool
+
+
 % }}}
 
+% {{{ Types for refs
 
+STG ( loc ) = t
+---------------- :: loc
+G |- loc : ptr t
 
+% No new/ref, deref, or assign yet.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+% }}}
 
 
 
