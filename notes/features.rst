@@ -342,6 +342,13 @@ inter-generational pointers are lost, and also that writes have
 bounded cost, never O(n) cost.
 
 
+Robustness
+----------
+
+    Because of [Modula-3]'s requirements on name qualification and method overriding, it is impossible to break a working program simply by adding new declarations to an interface (any interface).
+    - http://en.wikipedia.org/wiki/Modula-3
+
+
 .. An interactive code sample::
 ..
 ..   >>> 1 + 1
