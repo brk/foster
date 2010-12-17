@@ -14,6 +14,7 @@ Foster Notes
    compiler
    syntax
    llvm
+   todo
 
 .. Indices and tables
 .. ==================

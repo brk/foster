@@ -254,8 +254,51 @@ slowdown from virtual memory thrashing rather than a simple SO exception.
 Impredicative Polymorphism
 --------------------------
 
+The value restriction in ML arises (in part?) because predicative polymorphism
+cannot assign the correct type to a reference to the identity function.
+The correct type is ``(ref (forall a (-> a a)))`` but with stratified
+polymorphism, the closest approximation is ``(forall a (ref (-> a a)))``
+which allows the writer and reader of such a mutable reference to disagree.
+
+Impredicative polymorphism is also neeeded for encoding existentials, as well
+as functions like Haskell's ``runST``.
+
 Overloading
 -----------
+
+In the C family, when the type checker sees a variable being mentioned,
+the variable's type is known with as much precision as it will "ever" be.
+Therefore, the type checker can use the specific known type to permit'
+overloading. Furthermore, trivial instances of overloading (such as using ``+``
+for int and float addition) can be statically resolved to distinct code
+sequences.
+
+With inferred types, however, overloading is not so simple, since the use
+of a variable with as as-yet-not-fixed type can only generate a constraint
+to be later resolved. Thus OCaml has both ``+`` and ``+.`` for int and float
+addition, so that generated constraints can be for a specific type, rather
+than a more-difficult-to-handle set of types. Haskell, meanwhile, requires
+that each overloaded symbol be present in at most one globally-unique
+type class. Thus, given an overloaded symbol like ``+``, a Haskell type checker
+can look up **the** type class associated with ``+`` (that is, ``Num``), and
+generate a constraint that the args to ``+`` are instances of ``Num``.
+
+Overall, the Haskell approach to overloading seems superior to OCaml's approach,
+but the restriction to a single global type class instance for each overloaded
+symbol seems troubling to me.  C++ was going in a similar direction with
+concepts, though I'm not sure how the Indiana and Texas proposals handled
+the C++ equivalent of the global instance restriction.
+
+Another reflection of the differing philosophies lies with record field names.
+What does the type checker do when it sees a record field lookup ``v.f``?
+In Haskell, record fields are functions from the record type to the field type.
+In order to support type inference, field names must be unique across all
+record types in a module. In practice, this means that the name of the record
+type is usually encoded in the name of the field. In contrast, in the C
+family, a field lookup ``v.f`` is always checked in an environment
+where the type of ``v`` is known, and thus the type of ``v.f`` can be
+synthesized by inspecting the type of ``v``.
+
 
 Effects
 -------
