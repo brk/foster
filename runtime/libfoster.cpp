@@ -13,6 +13,7 @@
 #include "imath.h"
 #include "foster_gc.h"
 #include "cpuid.h"
+#include "libcoro/coro.h"
 
 // This file provides the bootstrap "standard library" of utility functions for
 // programs compiled (to LLVM IR) with foster. Making these functions available
@@ -57,6 +58,7 @@
 
 ////////////////////////////////////////////////////////////////
 
+std::vector<coro_context> coro_initial_contexts;
 
 namespace foster {
 namespace runtime {
@@ -67,6 +69,10 @@ void initialize() {
 
   int cachesmall = cpuid_small_cache_size(info);
   int cachelarge = cpuid_large_cache_size(info);
+
+  // TODO Initialize one default coro context per thread.
+  coro_initial_contexts.push_back(coro_context());
+  coro_create(&coro_initial_contexts[0], 0, 0, 0, 0);
 
   gc::initialize();
 }
@@ -191,8 +197,35 @@ extern "C" {
 // for use by C, but we should eventually.
 //int32_t c_invoke_fnptr_to_i32(int32_t (*f)()) { return f(); }
 
+//////////////////////////////////////////////////////////////////
+
 // Interface to foster's memory allocator; see gc/foster_gc_allocate.cpp
 void* memalloc(int64_t sz);
+
+//////////////////////////////////////////////////////////////////
+
+// coro_func :: void* -> void
+coro_context* foster_coro_create(coro_func coro, void *arg) {
+  // TODO add a mutex to make this all threadsafe.
+  long ssize = 1024*1024;
+  // TODO allocate small stacks that grow on demand
+  void* sptr = memalloc(ssize);
+  coro_context* ctx = (coro_context*) memalloc(sizeof(coro_context));
+  coro_create(ctx, coro, arg, sptr, ssize);
+  return ctx;
+}
+
+// coro_transfer may be defined as a macro or assembly-
+// language "function." The purpose of foster_coro_transfer
+// is to get a symbol with regular C linkage.
+void foster_coro_transfer(coro_context* prev, coro_context* next) {
+  coro_transfer(prev, next);
+}
+
+void foster_coro_destroy(coro_context* ctx) {
+  (void) coro_destroy(ctx);
+}
+
 
 //////////////////////////////////////////////////////////////////
 

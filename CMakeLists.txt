@@ -33,6 +33,10 @@ endif (${ANTLR_DIR} STREQUAL "ANTLR_DIR-NOTFOUND")
 
 set(HPROTOC hprotoc DOC "Path to Haskell protocol buffer compiler")
 
+set(CORO_METHOD CORO_ASM
+    CACHE
+    DOC "libcoro implementation: CORO_{ASM,SJLJ,LOSER,PTHREAD}")
+
 set(GENERATED ${PROJECT_BINARY_DIR}/_generated_)
 configure_file(${PROJECT_SOURCE_DIR}/FosterConfig.in.h
                ${GENERATED}/FosterConfig.h)
@@ -192,6 +196,7 @@ add_custom_command(
         ${PROJECT_BINARY_DIR}
         "${CMAKE_STATIC_LIBRARY_SUFFIX}"
         "${LLVM_BINDIR}"
+        ${CORO_METHOD}
         ${LIBFOSTER_CPP_SOURCES}
   DEPENDS
     ${LIBFOSTER_CPP_SOURCES}
@@ -205,6 +210,8 @@ add_custom_target(libfoster_bc DEPENDS
         ${PROJECT_BINARY_DIR}/libfoster.bc
         ${PROJECT_BINARY_DIR}/libfoster_main.o)
 
+
+#-----------------------------------------------------------
 
 add_custom_command(
   OUTPUT
@@ -223,6 +230,8 @@ add_custom_target(imath_wrapper_bc DEPENDS
         ${PROJECT_BINARY_DIR}/imath.h
         ${PROJECT_BINARY_DIR}/imath-wrapper.bc
         imath)
+
+#-----------------------------------------------------------
 
 # Attaching commands to add_custom_target basically means
 # "run these commands whenver the target is mentioned."
@@ -356,7 +365,8 @@ target_link_libraries(fosterc
   fosterc_llvm
   antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
 
-add_dependencies(fosterc libfoster_bc imath_wrapper_bc hs_me)
+add_dependencies(fosterc
+    libfoster_bc coro_wrapper_bc imath_wrapper_bc hs_me)
 
 ############
 

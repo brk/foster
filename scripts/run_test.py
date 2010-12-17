@@ -48,13 +48,16 @@ def extract_expected_input(path):
   return open(tmpname, 'r')
 
 def get_static_libs():
-  return "libfoster_main.o libchromium_base.a libcpuid.a libimath.a"
+    return ' '.join(
+        ["libfoster_main.o libchromium_base.a",
+         "libcpuid.a libimath.a libcoro.a"])
 
 def get_link_flags():
+  common = ['-lpthread']
   import platform
   flags = {
-    'Darwin': lambda: ['-lpthread', '-framework', 'CoreFoundation'],
-    'Linux': lambda: ['-lrt', '-lpthread']
+    'Darwin': lambda: common + ['-framework', 'CoreFoundation'],
+    'Linux': lambda: common + ['-lrt']
   }[platform.system()]()
   return ' '.join(flags)
 

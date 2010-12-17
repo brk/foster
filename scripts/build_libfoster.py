@@ -15,6 +15,7 @@ import shutil
 clang = "<llvm compiler not set>"
 bindir = "<bindir not set>"
 outdir = "<outdir not set>"
+coro_method = "<coro_method not set>"
 
 def ensure_dir_exists(output):
   """Creates the given directory if it doesn't exist;
@@ -36,9 +37,11 @@ def compile_source(src):
   runtime_gc = os.path.join(srcdir, 'runtime', 'gc')
   basedir    = os.path.join(srcdir, 'third_party', 'chromium_base')
   cpuiddir   = os.path.join(srcdir, 'third_party', 'cpuid')
-  include_dirs = [bindir, runtime_gc, basedir, cpuiddir]
+  corodir    = os.path.join(srcdir, 'third_party', 'libcoro')
+  include_dirs = [bindir, runtime_gc, basedir, cpuiddir, corodir]
   includes = ' '.join(['-I ' + path for path in include_dirs])
-  cmd = "%s %s %s -emit-llvm -c -o %s" % (clang, src, includes, outbc)
+  defines = ' -D'.join(['', coro_method])
+  cmd = "%s %s %s %s -emit-llvm -c -o %s" % (clang, src, includes, defines, outbc)
   print cmd
   subprocess.call(cmd.split(" "))
   return outbc
@@ -58,7 +61,8 @@ if __name__ == '__main__':
   outdir = os.path.join(bindir, "gc_bc")
   ensure_dir_exists(outdir)
 
-  sources = sys.argv[6:]
+  coro_method = sys.argv[6]
+  sources = sys.argv[7:]
 
   bitcodes = [compile_source(source) for source in sources]
 

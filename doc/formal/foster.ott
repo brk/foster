@@ -229,6 +229,9 @@ G |- coro_create : forall (tv1, tv2) (tv1 -> tv2) -> coro tv1 tv2
 ----------------------------------------------------------------------------- :: coro_invoke
 G |- coro_invoke : forall (tv1, tv2) { tv1 , coro tv1 tv2 } -> { tv2 , bool }
 
+%--------------------------------------------------------------------------- :: coro_wrap
+%G |- coro_wrap : forall (tv1, tv2) (tv1 -> tv2) -> (tv1 -> { tv2 ,  bool })
+
 %forall (ty1, ty2) ((ty1 -> ty2) -> coro ty1 ty2)
 
 
