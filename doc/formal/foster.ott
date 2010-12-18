@@ -241,7 +241,7 @@ G |- e : t :: :: G_expr :: T_ {{ com Types of expressions }} by
 % {{{ Types for pairs and projections
 
 G |- e : { t1 , t2 }
----------------------- :: proj1
+-------------------- :: proj1
 G |- e . 1 : t1
 
 

@@ -251,6 +251,77 @@ regularly-sized stack. The net effect (in a language that already has
 loops and/or TCO) is that unexpected non-tail recursion manifests as
 slowdown from virtual memory thrashing rather than a simple SO exception.
 
+Coroutines via libcoro
+++++++++++++++++++++++
+
+libcoro provides the following interface::
+
+    coro_create :: { env, (env -> void) } -> coro
+    coro_transfer :: { coro, coro } -> void
+
+The semantics of ``coro_create(e, f)`` is that, when a coroutine is
+first transferred to via ``coro_transfer``, the coroutine will
+begin evaluating ``f(e)``.
+
+Taking inspiration from Lua (but using symmetric coroutines, to
+keep the translation simpler), we'd like to expose this functionality
+at the Foster level via two primitives::
+
+    Coro :: Type -> Type -> Type
+    Coro.create :: forall a r, (a -> r) -> Coro a r
+    Coro.invoke :: forall a r, { a , Coro a r } -> { r, bool }
+
+The extra boolean flag from Coro.invoke indicates whether the coroutine
+is dead. It will probably be better to use maybe types instead, but anyways...
+
+The function provided to ``coro_create`` cannot be the LLVM lowering of
+the function passed to ``Coro.create``. If we pass a closure
+``h :: int -> int``, the lowering will be ``h :: {env, int} -> int``,
+which has an extra unwanted parameter (and the wrong return type).
+For consistency, we'll use the closure version of non-closure functions, too.
+So, instead, we'll have a lowered wrapper function for each (set of) argument
+type(s) ``a`` and return types ``r``:
+``foster_coro_wrapper_[[a]]_[[r]] :: void* -> void``.
+That function will, from the ``void*``, extract the lowered function
+pointer and closure env, as well as the argument(s),
+and call the function with the env and whatever arguments.
+
+We'll also have a family of coroutine structs, which the ``void*`` arg
+will be cast to::
+
+    struct foster_coro_[[a]]_[[r]] {
+        coro_context ctx;
+        ?? coro_context caller; ??
+        closure_func f;
+        closure_env  e;
+        [[a]] args;
+        [[r]] retval;
+    }
+
+Then the wrapper implementation will be like::
+
+   void foster_coro_wrapper_[[a]]_[[r]](void* f_c) {
+     foster_coro_[[a]]_[[r]]* foster_coro = (foster_coro_[[a]]_[[r]]*) f_c;
+     foster_coro->f(foster_coro->e, foster_coro->args ...);
+   }
+
+One unresolved question is whether the args will be represented in the
+``foster_coro_...`` struct as an unpacked series of fields, or as a single
+boxed value.
+The implementation of ``Coro.create [a] [r] closure_struct``
+will be something like::
+
+    foster_coro_[[a]]_[[r]]* fcoro = memalloc(...);
+    fcoro->ctx = coro_create(fcoro, foster_coro_wrapper_[[a]]_[[r]);
+    fcoro->f = closure_struct.func;
+    fcoro->e = closure_struct.env;
+    return fcoro;
+
+.. note ::
+    TODO describe the interaction with impredicative polymorphism -- when will
+    an n-arg Foster function be lowered to a LLVM function with one parameter,
+    and when will it be lowered to something with n parameters?
+
 Impredicative Polymorphism
 --------------------------
 
