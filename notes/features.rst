@@ -292,8 +292,8 @@ will be cast to::
     struct foster_coro_[[a]]_[[r]] {
         coro_context ctx;
         ?? coro_context caller; ??
-        closure_func f;
-        closure_env  e;
+        closure_func fn;
+        closure_env env;
         [[a]] args;
         [[r]] retval;
     }
@@ -302,20 +302,37 @@ Then the wrapper implementation will be like::
 
    void foster_coro_wrapper_[[a]]_[[r]](void* f_c) {
      foster_coro_[[a]]_[[r]]* foster_coro = (foster_coro_[[a]]_[[r]]*) f_c;
-     foster_coro->f(foster_coro->e, foster_coro->args ...);
+     foster_coro->retval = foster_coro->fn(foster_coro->env, foster_coro->args ...);
    }
 
 One unresolved question is whether the args will be represented in the
 ``foster_coro_...`` struct as an unpacked series of fields, or as a single
 boxed value.
+
 The implementation of ``Coro.create [a] [r] closure_struct``
 will be something like::
 
     foster_coro_[[a]]_[[r]]* fcoro = memalloc(...);
     fcoro->ctx = coro_create(fcoro, foster_coro_wrapper_[[a]]_[[r]);
-    fcoro->f = closure_struct.func;
-    fcoro->e = closure_struct.env;
+    fcoro->fn  = closure_struct.func;
+    fcoro->env = closure_struct.env;
     return fcoro;
+
+and the C implementation of ``Coro.invoke [a] [r] arg coro`` would be roughly::
+
+    coro->args = arg;
+    coro_transfer(_this_coro's_context, coro->ctx);
+    return coro->retval;
+
+The main piece missing is: when does ``coro->retval`` get written?
+As sketched, only when the coroutine target fn returns, but it ought to
+happen when "yield" is called as well. With symmetric coroutines, that
+means that when a coroutine ``x`` of type ``Coro a r`` is invoked, ``x``
+should be (implicitly?) given a coroutine, representing the caller,
+of type ``Coro r a``. The caller's coroutine can be given "return values,"
+and will provide additional "arguments" in response. This setup makes
+coroutines look an awful lot like unbuffered channels,
+which of course makes sense...
 
 .. note ::
     TODO describe the interaction with impredicative polymorphism -- when will
