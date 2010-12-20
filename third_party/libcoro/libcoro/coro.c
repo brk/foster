@@ -111,12 +111,16 @@ trampoline (int sig)
 # endif
 
 # if CORO_ASM
-
   asm (
        ".text\n"
+      #if defined(__APPLE__)
+       ".globl _coro_transfer\n"
+       "_coro_transfer:\n"
+      #else
        ".globl coro_transfer\n"
        ".type coro_transfer, @function\n"
        "coro_transfer:\n"
+      #endif
        /* windows, of course, gives a shit on the amd64 ABI and uses different registers */
        /* http://blogs.msdn.com/freik/archive/2005/03/17/398200.aspx */
        #if __amd64
