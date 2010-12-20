@@ -175,8 +175,9 @@ struct ImathImprover : public BasicBlockPass {
 };
 
 char ImathImprover::ID = 0;
-RegisterPass<ImathImprover> X("imath-improver",
-                              "Peephole optimization of imath API calls");
+INITIALIZE_PASS(ImathImprover, "foster-imath-improver",
+                "Peephole optimization of imath API calls",
+                false, false);
 } // unnamed namespace
 
 namespace foster {
