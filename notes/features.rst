@@ -291,18 +291,18 @@ will be cast to::
 
     struct foster_coro_[[a]]_[[r]] {
         coro_context ctx;
-        ?? coro_context caller; ??
+        foster_coro_[[r]]_[[a]] sibling;
+        [[a]] args;
         closure_func fn;
         closure_env env;
-        [[a]] args;
-        [[r]] retval;
     }
 
-Then the wrapper implementation will be like::
+Note the reversal of types in the sibling coroutine!
+The wrapper implementation will be like::
 
    void foster_coro_wrapper_[[a]]_[[r]](void* f_c) {
-     foster_coro_[[a]]_[[r]]* foster_coro = (foster_coro_[[a]]_[[r]]*) f_c;
-     foster_coro->retval = foster_coro->fn(foster_coro->env, foster_coro->args ...);
+     foster_coro_[[a]]_[[r]]* fc = (foster_coro_[[a]]_[[r]]*) f_c;
+     fc->sibling->args ...  = fc->fn(fc->env, fc->args ...);
    }
 
 One unresolved question is whether the args will be represented in the
@@ -313,7 +313,10 @@ The implementation of ``Coro.create [a] [r] closure_struct``
 will be something like::
 
     foster_coro_[[a]]_[[r]]* fcoro = memalloc(...);
+    foster_coro_[[r]]_[[a]]* ccoro = memalloc(...);
     fcoro->ctx = coro_create(fcoro, foster_coro_wrapper_[[a]]_[[r]);
+    fcoro->sibling = ccoro;
+    ccoro->sibling = fcoro;
     fcoro->fn  = closure_struct.func;
     fcoro->env = closure_struct.env;
     return fcoro;
@@ -321,18 +324,35 @@ will be something like::
 and the C implementation of ``Coro.invoke [a] [r] arg coro`` would be roughly::
 
     coro->args = arg;
-    coro_transfer(_this_coro's_context, coro->ctx);
-    return coro->retval;
+    coro->sibling->ctx = [[current coro]]->ctx;
+    coro_transfer(/*from*/ coro->sibling->ctx, coro->ctx);
+    return coro->sibling->args;
 
-The main piece missing is: when does ``coro->retval`` get written?
-As sketched, only when the coroutine target fn returns, but it ought to
-happen when "yield" is called as well. With symmetric coroutines, that
-means that when a coroutine ``x`` of type ``Coro a r`` is invoked, ``x``
-should be (implicitly?) given a coroutine, representing the caller,
-of type ``Coro r a``. The caller's coroutine can be given "return values,"
-and will provide additional "arguments" in response. This setup makes
-coroutines look an awful lot like unbuffered channels,
-which of course makes sense...
+``Coro.yield [a] [r] rarg`` would become
+``Coro.invoke [r] [a] rarg ((current coro))->caller``.
+
+It would be semantically somewhat cleaner to make the caller coro explicit,
+perhaps by requiring coro functions to take an explicit (wrapped) coro,
+which could be called ``yield`` by convention.
+That is, make the typing rule something like::
+
+   ---------------------------------------------------
+   G |- Coro.create : ({a, Coro b a} -> b) -> Coro a b
+
+Incidentally, this formulation makes the types involved with
+coroutines look vaguely like hyperfunctions.
+
+Anyways, the main downsides of the more explicit
+scheme would probably be (1) decreased flexibility for changing invokers
+while yielding, and (2) increased type annotation burden, since this would
+be a function-typed parameter with a silly type annotation (equal to
+the other arg/ret types of the function itself).
+
+We also need checks as made by Lua:
+
+* Can't resume running coroutine
+* Can't invoke dead coroutine
+* Can't call yield when there's no coroutine to yield to
 
 .. note ::
     TODO describe the interaction with impredicative polymorphism -- when will
