@@ -193,7 +193,7 @@ getFormal e lines = case PbExpr.tag e of
                     (VarAST mt v) ->
                         case mt of
                             Just t  -> (AnnVar t v)
-                            Nothing -> (AnnVar (MissingTypeAST "ProtobufUtils.getFormal") v)
+                            Nothing -> (AnnVar (MissingTypeAST $ "ProtobufUtils.getFormal " ++ v) v)
             _   -> error "getVar must be given a var!"
 
 sourceRangeFromPBRange :: Pb.SourceRange -> SourceLines -> ESourceRange
@@ -319,6 +319,11 @@ dumpType (TupleTypeAST types) = P'.defaultValue { PbType.tag  = PbTypeTag.TUPLE
 dumpType x@(FnTypeAST s t cs) = P'.defaultValue { PbType.tag  = PbTypeTag.FN
                                                 , PbType.fnty = Just $ dumpFnTy x
                                                 }
+dumpType x@(CoroType a b)     = error "Dumping " ++ (show x) ++ " to protobuf not yet implemented!"
+                             {- P'.defaultValue { PbType.tag  = PbTypeTag.LLVM_NAMED
+                                                , PbType.name = Just $ u8fromString "Foster.Coro"
+                                                , tuple_parts = fromList $ fmap dumpType [a,b] } -}
+
 
 dumpFnTy (FnTypeAST s t cs) =
     let args = case s of

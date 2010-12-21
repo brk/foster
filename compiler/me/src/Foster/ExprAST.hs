@@ -16,10 +16,10 @@ import qualified Data.Text as T
 
 
 data CompilesStatus = CS_WouldCompile | CS_WouldNotCompile | CS_NotChecked
-    deriving Show
+    deriving (Eq, Show)
 
 data ESourceLocation = ESourceLocation Int Int
-    deriving (Show)
+    deriving (Eq, Show)
 
 data ESourceRange = ESourceRange ESourceLocation ESourceLocation SourceLines
                   | EMissingSourceRange
@@ -29,7 +29,7 @@ instance Show ESourceRange where
 
 showSourceRange :: ESourceRange -> String
 showSourceRange EMissingSourceRange = ""
-showSourceRange (ESourceRange begin end lines) = "\n" ++ showSourceLines begin end lines
+showSourceRange (ESourceRange begin end lines) = "\n" ++ showSourceLines begin end lines ++ "\n"
 
 showSourceLines (ESourceLocation bline bcol) (ESourceLocation eline ecol) lines =
     if bline == eline
@@ -182,14 +182,15 @@ data AnnExpr =
         | AnnSubscript  TypeAST AnnExpr AnnExpr
         | E_AnnPrototype  TypeAST AnnPrototype
         | E_AnnVar       AnnVar
-        deriving Show
+        deriving (Show)
 
-data AnnVar       = AnnVar { avarType :: TypeAST, avarName :: String } deriving (Show)
+data AnnVar       = AnnVar { avarType :: TypeAST, avarName :: String } deriving (Eq, Show)
 data AnnFn        = AnnFn           AnnPrototype AnnExpr (Maybe [AnnVar]) deriving (Show)
 data AnnPrototype = AnnPrototype    { annProtoReturnType :: TypeAST
                                     , annProtoName       :: String
                                     , annProtoVars       :: [AnnVar]
-                                    } deriving (Show)
+                                    } deriving (Eq, Show)
+
 
 -----------------------------------------------------------------------
 

@@ -14,6 +14,7 @@ data TypeAST =
          | NamedTypeAST     String
          | TupleTypeAST     [TypeAST]
          | FnTypeAST        TypeAST TypeAST (Maybe [String])
+         | CoroType         TypeAST TypeAST
          deriving (Eq)
 
 instance Show TypeAST where
@@ -27,6 +28,7 @@ showTypeAST (TypeUnitAST)        = "()"
 showTypeAST (NamedTypeAST s)     = s
 showTypeAST (TupleTypeAST types) = "(" ++ joinWith ", " [showTypeAST t | t <- types] ++ ")"
 showTypeAST (FnTypeAST s t cs)   = "(" ++ show s ++ " -> " ++ show t ++ ")"
+showTypeAST (CoroType s t)   = "(Coro " ++ show s ++ " " ++ show t ++ ")"
 
 joinWith :: String -> [String] -> String
 joinWith s [] = ""
