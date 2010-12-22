@@ -5,7 +5,6 @@
 #include "gtest/gtest.h"
 
 #include "parse/ANTLRtoFosterAST.h"
-#include "passes/TypecheckPass.h"
 #include "passes/PrettyPrintPass.h"
 #include "passes/ComputeFreeNames.h"
 
@@ -46,16 +45,6 @@ ExprAST* parse(foster::ParsingContext& cc, const string& s) {
   unsigned errs = 0;
   ExprAST* rv = foster::parseExpr(s, errs, &cc);
   return errs == 0 ? rv : NULL;
-}
-
-
-ExprAST* elaborate(foster::ParsingContext& cc, ExprAST* e) {
-  if (e) {
-    foster::ParsingContext::pushContext(&cc);
-    foster::typecheck(e);
-    foster::ParsingContext::popCurrentContext();
-  }
-  return e;
 }
 
 string pr(ExprAST* ast) {

@@ -335,7 +335,6 @@ add_library(fosterc_passes STATIC
   compiler/passes/ExprASTDiff.cpp
   compiler/passes/Codegen/CodegenPass.cpp
   compiler/passes/Codegen/Codegen-typemaps.cpp
-  compiler/passes/TypecheckPass.cpp
   compiler/passes/DumpToProtobuf.cpp
   compiler/passes/PrettyPrintPass.cpp
   compiler/passes/ComputeFreeNames.cpp
@@ -358,19 +357,6 @@ set_target_properties(fosterc_llvm
 )
 endif (${LLVM_ORIGINAL_CFLAGS} MATCHES ${NO_RTTI_FLAG})
 
-add_executable(fosterc
-  compiler/foster.cpp
-  compiler/StandardPrelude.cpp
-)
-
-target_link_libraries(fosterc
-  fosterc_parse fosterc_passes fosterc_parse fosterc_base
-  fosterc_llvm
-  antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
-
-add_dependencies(fosterc
-    libfoster_bc coro_wrapper_bc imath_wrapper_bc hs_me)
-
 ############
 
 add_executable(fosterparse compiler/fosterparse.cpp)
@@ -388,14 +374,8 @@ target_link_libraries(fosterlower
   fosterc_llvm
   antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
 
-############
-
-add_executable(fostercheck compiler/fostercheck.cpp compiler/StandardPrelude.cpp)
-add_dependencies(fostercheck fosterc) # quick hack
-target_link_libraries(fostercheck
-  fosterc_passes fosterc_parse fosterc_passes fosterc_base
-  fosterc_llvm
-  antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
+add_dependencies(fosterlower
+    libfoster_bc coro_wrapper_bc imath_wrapper_bc hs_me)
 
 ############
 
@@ -407,7 +387,6 @@ add_executable(pbfosterview
   tools/pbfosterview/pbfosterview.cpp
   compiler/passes/PrettyPrintPass.cpp
   ${GENERATED}/FosterAST.pb.cc
-  compiler/passes/TypecheckPass.cpp
   compiler/passes/DumpToProtobuf.cpp
 )
 target_link_libraries(pbfosterview
@@ -435,7 +414,6 @@ target_link_libraries(unittest_fosterc_base
 add_executable(unittest_fosterc_parse
   ${PROJECT_SOURCE_DIR}/compiler/parse/ANTLRtoFosterAST_unittest.cpp
   ${PROJECT_SOURCE_DIR}/compiler/parse/ProtobufToAST_unittest.cpp
-  ${PROJECT_SOURCE_DIR}/compiler/parse/TypeInference_unittest.cpp
   ${PROJECT_SOURCE_DIR}/compiler/base/PughSinofskyPrettyPrinter_unittest.cpp
   ${PROJECT_SOURCE_DIR}/compiler/passes/ComputeFreeNames_unittest.cpp
   ${GENERATED}/FosterAST.pb.cc

@@ -11,8 +11,6 @@
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
 
-#include "passes/TypecheckPass.h"
-
 #include "pystring/pystring.h"
 
 #include <vector>
