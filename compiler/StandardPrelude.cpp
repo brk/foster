@@ -192,6 +192,10 @@ addConcretePrimitiveFunctionsTo(Module* m) {
   addConcretePrimitiveFunctionTo(m, "bitnot", Type::getInt1Ty(getGlobalContext()));
   addConcretePrimitiveFunctionTo(m, "sext_i64", Type::getInt32Ty(getGlobalContext()));
   addLLVMIntrinsic(m, llvm::Intrinsic::readcyclecounter);
+
+ // globalNames.insert("coro_create_i32_i32");
+ // globalNames.insert("coro_invoke_i32_i32");
+  //globalNames.insert("coro_yield_i32_i32");
 }
 
 // Add module m's C-linkage functions in the global scopes,
@@ -275,7 +279,7 @@ putModuleMembersInInternalScope(const std::string& scopeName,
           fnty,
           f.getAttributes());
 
-      //outs() << "<internal>\t" << hasDef << "\t" << name << " \n";
+      outs() << "<internal>\t" << hasDef << "\t" << name << " \n";
 
       scope->insert(name, new VariableAST(name,
                                           TypeAST::reconstruct(fnty),
@@ -328,10 +332,10 @@ void putModuleMembersInScope(Module* m, Module* linkee) {
             StringRef(name),
             fnty,
             f.getAttributes());
-        /*
+
         outs() << "inserting variable in global scope: " << name << " : "
                   << str(fnty) << "\n";
-        */
+
         gScope.insert(name, new VariableAST(name,
                                             TypeAST::reconstruct(fnty),
                                             SourceRange::getEmptyRange()));

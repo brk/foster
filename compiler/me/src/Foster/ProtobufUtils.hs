@@ -247,7 +247,7 @@ parseType t = case PbType.tag t of
                 PbTypeTag.LLVM_NAMED -> NamedTypeAST $ uToString (fromJust $ PbType.name t)
                 PbTypeTag.REF -> error "Ref types not yet implemented"
                 PbTypeTag.FN -> parseFnTy . fromJust $ PbType.fnty t
-                PbTypeTag.TUPLE -> TupleTypeAST [parseType p | p <- toList $ PbType.tuple_parts t]
+                PbTypeTag.TUPLE -> TupleTypeAST [parseType p | p <- toList $ PbType.type_parts t]
                 PbTypeTag.TYPE_VARIABLE -> error "Type variable parsing not yet implemented."
 
 parseFnTy :: FnType -> TypeAST
@@ -315,14 +315,12 @@ dumpType (TypeUnitAST)        = dumpType (NamedTypeAST "i32")
 dumpType (NamedTypeAST s)     = P'.defaultValue { PbType.tag  = PbTypeTag.LLVM_NAMED
                                                 , PbType.name = Just $ u8fromString s }
 dumpType (TupleTypeAST types) = P'.defaultValue { PbType.tag  = PbTypeTag.TUPLE
-                                                , tuple_parts = fromList $ fmap dumpType types }
+                                                ,  type_parts = fromList $ fmap dumpType types }
 dumpType x@(FnTypeAST s t cs) = P'.defaultValue { PbType.tag  = PbTypeTag.FN
                                                 , PbType.fnty = Just $ dumpFnTy x
                                                 }
-dumpType x@(CoroType a b)     = error "Dumping " ++ (show x) ++ " to protobuf not yet implemented!"
-                             {- P'.defaultValue { PbType.tag  = PbTypeTag.LLVM_NAMED
-                                                , PbType.name = Just $ u8fromString "Foster.Coro"
-                                                , tuple_parts = fromList $ fmap dumpType [a,b] } -}
+dumpType x@(CoroType a b)     = P'.defaultValue { PbType.tag  = PbTypeTag.CORO
+                                                ,  type_parts = fromList $ fmap dumpType [a,b] }
 
 
 dumpFnTy (FnTypeAST s t cs) =

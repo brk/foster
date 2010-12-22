@@ -1022,6 +1022,25 @@ void CodegenPass::visit(CallAST* ast) {
       V = builder.CreateLoad(V, /*isVolatile=*/ false, "unstackref");
     }
 
+    // If we're given a T** when we expect a T,
+    // automatically load the reference from the stack.
+    //if (V->getType() != expectedType
+    // && isPointerToPointerToType(V->getType(), expectedType)) {
+    //  V = builder.CreateLoad(V, /*isVolatile=*/ false, "unstackref1/2");
+    //  V = builder.CreateLoad(V, /*isVolatile=*/ false, "unstackref2/2");
+    //}
+
+    // If we have a T loaded from a T*, and we expect a T*,
+    // use the T* (TODO: make sure the T* isn't stack allocated!)
+    if (V->getType() != expectedType &&
+      isPointerToType(expectedType, V->getType())) {
+      if (llvm::LoadInst* load = llvm::dyn_cast<llvm::LoadInst>(V)) {
+        EDiag() << "Have a T = " << str(V->getType())
+                << ", expecting a T* = " << str(expectedType);
+        V = load->getPointerOperand();
+      }
+    }
+
     V = tempHackExtendInt(V, expectedType);
     bool needsAdjusting = V->getType() != expectedType;
     if (needsAdjusting) {
@@ -1033,6 +1052,13 @@ void CodegenPass::visit(CallAST* ast) {
               << "\n\targ is " << str(arg)
               << "\n\targty is " << argty->tag << "\t" << str(argty)
               << show(arg);
+
+      //if (isPointerToType(expectedType, V->getType())) {
+      //  EDiag() << "That is: have T, expected T*";
+      //}
+      //if (isPointerToType(V->getType(), expectedType)) {
+      //  EDiag() << "That is: have T*, expected T";
+      //}
     }
 
     // If we're given a clo** when we expect a clo,
@@ -1043,7 +1069,7 @@ void CodegenPass::visit(CallAST* ast) {
     }
 
     if (needsAdjusting) {
-      currentOuts() << V << "->getType() is " << str(V->getType())
+      currentOuts() << str(V) << "->getType() is " << str(V->getType())
           << "; expected type is " << str(expectedType)
           << "; expect clo? " << isGenericClosureType(expectedType) << "\n";
     }

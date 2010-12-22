@@ -469,7 +469,7 @@ void initialize() {
   fprintf(gclog, "----------- gclog ------------\n");
 
   const int KB = 1024;
-  allocator = new copying_gc(1 * KB);
+  allocator = new copying_gc(1024 * KB);
 
 #if USE_FOSTER_GC_PLUGIN
   register_stackmaps();

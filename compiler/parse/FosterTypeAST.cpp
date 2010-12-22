@@ -87,7 +87,7 @@ struct TypeReconstructor {
     if (loweredType->isPointerTy()) {
       const llvm::Type* pointee = loweredType->getContainedType(0);
       if (TypeAST* s = seen[pointee]) {
-        if (s == (TypeAST*) 1) {
+        if (s == (TypeAST*) 1 && !llvm::isa<llvm::StructType>(pointee)) {
           llvm::outs() << "Recursive type: " << str(loweredType) << "\n";
           return RefTypeAST::get(NamedTypeAST::get("bogus/opaque!", pointee));
         } else {
@@ -168,7 +168,7 @@ TypeAST* NamedTypeAST::get(const std::string& name,
       // fall through to non-derived case
     } else {
       llvm::errs() << "NamedTypeAST::get() warning: derived types should "
-                   " not be passed to NamedTypeAST::get()! Got: "
+                   " not be passed to NamedTypeAST::get(" << name << ")! Got: "
                 << str(loweredType) << "\n";
       return TypeAST::reconstruct(derived);
     }
@@ -307,4 +307,53 @@ TupleTypeAST* TupleTypeAST::get(const vector<TypeAST*>& argTypes) {
   }
   return tup;
 }
+
+/////////////////////////////////////////////////////////////////////
+
+const llvm::Type* CoroTypeAST::getLLVMType() const {
+  if (!repr) {
+    std::vector<const llvm::Type*> fieldTypes;
+    llvm::Type* pi8 = llvm::PointerType::getUnqual(
+                      llvm::IntegerType::get(llvm::getGlobalContext(), 8));
+
+    std::vector<const llvm::Type*> fnty_args;
+    fnty_args.push_back(pi8);
+    llvm::FunctionType* fnty = llvm::FunctionType::get(
+      /*Result=*/ llvm::Type::getVoidTy(llvm::getGlobalContext()),
+      /*Params=*/ fnty_args,
+      /*isVarArg=*/false);
+
+    fieldTypes.push_back(pi8);
+    fieldTypes.push_back(pi8);
+    fieldTypes.push_back(llvm::PointerType::getUnqual(fnty));
+    fieldTypes.push_back(pi8);
+    fieldTypes.push_back(llvm::IntegerType::get(llvm::getGlobalContext(), 32));
+    fieldTypes.push_back(this->a->getLLVMType());
+    //type { i8*, i8*, void (i8*)*, i8*, i32, <<A>> }
+
+    repr = llvm::PointerType::getUnqual(
+                llvm::StructType::get(llvm::getGlobalContext(),
+                                 fieldTypes, /*isPacked=*/false));
+  }
+  return repr;
+}
+
+// virtual
+bool CoroTypeAST::canConvertTo(TypeAST* otherType) {
+  ASSERT(false) << "CoroTypeAST :: canConvertTo " << str(otherType);
+  return false;
+}
+
+TypeAST*& CoroTypeAST::getContainedType(size_t i) {
+  ASSERT(i >= 0 && i < 2);
+  return (i == 0) ? a : b;
+}
+
+CoroTypeAST* CoroTypeAST::get(TypeAST* targ, TypeAST* tret) {
+  ASSERT(targ);
+  ASSERT(tret);
+  return new CoroTypeAST(targ, tret, SourceRange::getEmptyRange());
+}
+
+/////////////////////////////////////////////////////////////////////
 

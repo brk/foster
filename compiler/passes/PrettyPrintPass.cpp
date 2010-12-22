@@ -491,6 +491,14 @@ void PrettyPrintTypePass::visit(RefTypeAST* ast) {
   scan(PPToken(")"));
 }
 
+void PrettyPrintTypePass::visit(CoroTypeAST* ast) {
+  scan(PPToken("Coro("));
+  emit(ast->getContainedType(0));
+  scan(PPToken(", "));
+  emit(ast->getContainedType(1));
+  scan(PPToken(")"));
+}
+
 void PrettyPrintTypePass::visit(TupleTypeAST* ast) {
   scan(PPToken(" { "));
   for (int i = 0; i < ast->getNumContainedTypes(); ++i) {

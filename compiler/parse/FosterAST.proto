@@ -16,6 +16,7 @@ message Type {
     LLVM_NAMED = 1; // i32, void, etc
     REF = 2;
     FN  = 3;
+    CORO = 4;
     TUPLE = 5;
     TYPE_VARIABLE = 8;
   }
@@ -27,7 +28,7 @@ message Type {
   optional string name = 3;
   optional Type ref_underlying_type = 16;
   optional FnType fnty = 17;
-  repeated Type tuple_parts = 18;
+  repeated Type type_parts = 18; // for tuple, coro
 }
 
 message FnType {

@@ -308,11 +308,20 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
   }
 
   if (t.tag() == pb::Type::TUPLE) {
-    std::vector<TypeAST*> parts(t.tuple_parts_size());
+    std::vector<TypeAST*> parts(t.type_parts_size());
     for (size_t i = 0; i < parts.size(); ++i) {
-      parts[i] = TypeAST_from_pb(&t.tuple_parts(i));
+      parts[i] = TypeAST_from_pb(&t.type_parts(i));
     }
     return TupleTypeAST::get(parts);
+  }
+
+  if (t.tag() == pb::Type::CORO) {
+    TypeAST* targ = NULL;
+    TypeAST* tret = NULL;
+    ASSERT(t.type_parts_size() == 2);
+    targ = TypeAST_from_pb(&t.type_parts(0));
+    tret = TypeAST_from_pb(&t.type_parts(1));
+    return CoroTypeAST::get(targ, tret);
   }
 
   if (t.tag() == pb::Type::LLVM_NAMED) {

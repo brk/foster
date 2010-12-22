@@ -236,5 +236,25 @@ public:
   static TupleTypeAST* get(const std::vector<TypeAST*>& parts);
 };
 
+
+class CoroTypeAST : public TypeAST {
+  TypeAST* a;
+  TypeAST* b;
+
+  explicit CoroTypeAST(TypeAST* targ, TypeAST* tret, const SourceRange& sr)
+    : TypeAST("CoroType", NULL, sr),
+      a(targ), b(tret) {}
+
+public:
+  virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
+  virtual const llvm::Type* getLLVMType() const;
+
+  virtual bool canConvertTo(TypeAST* otherType);
+  virtual int getNumContainedTypes() const { return 2; }
+  virtual TypeAST*& getContainedType(size_t i);
+
+  static CoroTypeAST* get(TypeAST* targ, TypeAST* tret);
+};
+
 #endif // header guard
 

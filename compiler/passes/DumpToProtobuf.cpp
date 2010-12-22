@@ -249,12 +249,18 @@ void DumpTypeToProtobufPass::visit(RefTypeAST* ast) {
   }
 }
 
+void DumpTypeToProtobufPass::visit(CoroTypeAST* ast) {
+  setTagAndRange(current, ast, foster::pb::Type::CORO);
+  dumpChild(this, current->add_type_parts(), ast->getContainedType(0));
+  dumpChild(this, current->add_type_parts(), ast->getContainedType(1));
+}
+
 void DumpTypeToProtobufPass::visit(TupleTypeAST* ast) {
   setTagAndRange(current, ast, foster::pb::Type::TUPLE);
-  current->mutable_tuple_parts()->Reserve(ast->getNumContainedTypes());
+  current->mutable_type_parts()->Reserve(ast->getNumContainedTypes());
   for (int i = 0; i < ast->getNumContainedTypes(); ++i) {
     ASSERT(ast->getContainedType(i)) << "Unexpected NULL type when dumping TupleTypeAST " << str(ast);
-    dumpChild(this, current->add_tuple_parts(), ast->getContainedType(i));
+    dumpChild(this, current->add_type_parts(), ast->getContainedType(i));
   }
 }
 

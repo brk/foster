@@ -286,13 +286,13 @@ rootContext =
     ,(  "read_i32", FnTypeAST (TupleTypeAST []) (NamedTypeAST "i32") Nothing)
     ,("expect_i1", fosi1toi32)
     ,( "print_i1", fosi1toi32)
-    ,("coro_create_i32", FnTypeAST (TupleTypeAST [
+    ,("coro_create_i32_i32", FnTypeAST (TupleTypeAST [
                                     (FnTypeAST (TupleTypeAST [(NamedTypeAST "i32")]) (NamedTypeAST "i32") Nothing)])
                                     (CoroType (NamedTypeAST "i32") (NamedTypeAST "i32")) Nothing)
-    ,("coro_invoke_i32", (FnTypeAST
+    ,("coro_invoke_i32_i32", (FnTypeAST
         (TupleTypeAST [(CoroType (NamedTypeAST "i32") (NamedTypeAST "i32")), (NamedTypeAST "i32")])
         (NamedTypeAST "i32") Nothing))
-    ,("coro_yield_i32", (FnTypeAST (TupleTypeAST [(NamedTypeAST "i32")]) (NamedTypeAST "i32") Nothing))
+    ,("coro_yield_i32_i32", (FnTypeAST (TupleTypeAST [(NamedTypeAST "i32")]) (NamedTypeAST "i32") Nothing))
     ,("primitive_sext_i64_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32")]) (NamedTypeAST "i64") Nothing)
     ,("primitive_negate_i32", fosi32toi32)
     ,("primitive_bitnot_i1", FnTypeAST (TupleTypeAST [(NamedTypeAST "i1")]) (NamedTypeAST "i1") Nothing)
