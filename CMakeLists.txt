@@ -31,8 +31,6 @@ if (${ANTLR_DIR} STREQUAL "ANTLR_DIR-NOTFOUND")
     return()
 endif (${ANTLR_DIR} STREQUAL "ANTLR_DIR-NOTFOUND")
 
-set(HPROTOC hprotoc DOC "Path to Haskell protocol buffer compiler")
-
 set(CORO_METHOD CORO_ASM
     CACHE
     DOC "libcoro implementation: CORO_{ASM,SJLJ,LOSER,PTHREAD}")
@@ -44,6 +42,11 @@ configure_file(${PROJECT_SOURCE_DIR}/FosterConfig.in.h
 # ~~~~~~~~~~~~~~~~~~~~ Protocol Buffers ~~~~~~~~~~~~~~~~~~~~~~
 find_package(Protobuf REQUIRED)
 include_directories(${PROTOBUF_INCLUDE_DIRS})
+
+find_program(HPROTOC NAMES hprotoc
+  PATHS
+    $ENV{HOME}/.cabal/bin
+  DOC "hprotoc: Protobuf compiler for Haskell")
 
 find_program(LLVM_CONFIG NAMES llvm-config
   PATHS
