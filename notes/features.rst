@@ -324,7 +324,6 @@ will be something like::
 and the C implementation of ``Coro.invoke [a] [r] arg coro`` would be roughly::
 
     coro->args = arg;
-    coro->sibling->ctx = [[current coro]]->ctx;
     coro_transfer(/*from*/ coro->sibling->ctx, coro->ctx);
     return coro->sibling->args;
 
@@ -358,6 +357,58 @@ We also need checks as made by Lua:
     TODO describe the interaction with impredicative polymorphism -- when will
     an n-arg Foster function be lowered to a LLVM function with one parameter,
     and when will it be lowered to something with n parameters?
+
+Representing Control in the Presence of One-Shot Continuations
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+Provides details on the implementation of a segmented stack model.
+Much of the complexity of their system seems to come from the need
+to support multi-shot continuations. For example, underflow handlers
+are only required for multi-shot continuations. It may be simpler to grow
+a coroutine's stack by copying to a larger stack buffer, rather than
+maintaining a linked list of stack segments and requiring hysteresis
+to prevent bouncing between segments. On the other hand,
+coroutine chains already require a linked list of stacks; having
+the same basic mechanism for each coroutine's stack has a certain
+appeal to it.
+
+The paper notes that stack overflow can (and should!)
+be viewed as an implicit ``call/1cc`` -- that is, as a call to a
+new coroutine. The main issue here is that to avoid bouncing,
+some frames should be copied to the new coro's stack, but that
+(like simply growing the stack) requires gcroot fixup under the
+assumption that we do stack allocation of non-escaping objects,
+meaning that gcroots may point to stack segments.  Assuming we
+define any pointer passed between coros as "escaping," both forms
+of stack frame copying are restricted to fixing up gcroots in the
+copied frames.
+
+Coroutines, Composability, and Exception Handling
++++++++++++++++++++++++++++++++++++++++++++++++++
+
+de Moura and Ierusalimschy give an overview of using the program
+control embodied by coroutines to implement control structures like
+iterators and excpetions. They note that if multiple control structures
+are nested, asymmetric coroutines may end up ``yield``ing to the wrong
+invoker.
+
+They propose adding a required ``tag`` argument to ``yield`` and
+``invoke``. This makes the coroutine system look rather like a
+symmetric coroutine system, which has only ``invoke`` and not ``yield``.
+There are two important differences, though. First, the tag checking
+proposed in the Revisiting Coroutines paper essentially unwinds the
+coroutine "stack," in exactly the same was as an exception handler
+would unwind a regular call stack. The intermediate coroutines would,
+as a result of yielding, be left in a dormant rather than suspended state.
+In contrast, yielding directly to the landing pad would leave the
+intermediate coroutines in a suspended (rather than dormant) state.
+
+The second difference is in how a compiler might transform a program
+to implement higher-level control structures in terms of coroutines.
+A compiler can easily introduce fixed tags at each ``yield``/
+``invoke``, whereas propagating distinct return coroutines involves
+much more invasive global program changes in order to thread the
+coroutine references through the code. Lambda lifitng at minimum...
 
 Impredicative Polymorphism
 --------------------------
