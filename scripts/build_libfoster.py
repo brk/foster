@@ -41,7 +41,7 @@ def compile_source(src):
   include_dirs = [bindir, runtime_gc, basedir, cpuiddir, corodir]
   includes = ' '.join(['-I ' + path for path in include_dirs])
   defines = ' -D'.join(['', coro_method])
-  cmd = "%s %s %s %s -emit-llvm -c -o %s" % (clang, src, includes, defines, outbc)
+  cmd = "%s %s %s %s -g -emit-llvm -c -o %s" % (clang, src, includes, defines, outbc)
   print cmd
   subprocess.call(cmd.split(" "))
   return outbc
