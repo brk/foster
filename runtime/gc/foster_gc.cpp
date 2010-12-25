@@ -12,9 +12,9 @@
 
 #include "base/time.h"
 
-#if USE_FOSTER_GC_PLUGIN
 #include "execinfo.h"
-#endif
+
+#define TRACE do { fprintf(gclog, "%s::%d\n", __FILE__, __LINE__); fflush(gclog); } while (0)
 
 /////////////////////////////////////////////////////////////////
 
@@ -32,22 +32,39 @@ void* offset(void* base, int off) {
   return (void*) (((char*) base) + off);
 }
 
+// This structure describes the layout of a particular type,
+// giving offsets and type descriptors for the pointer slots.
 struct typemap {
   const char* name;
   int32_t numPointers;
-  struct entry { const void* typeinfo; int32_t offset; };
+  struct entry {
+    const void* typeinfo;
+    int32_t offset;
+  };
   entry entries[0];
 };
 
-#if USE_FOSTER_GC_PLUGIN
 struct stackmap {
-  struct OffsetWithMetadata { void* metadata; int32_t offset; };
+  struct OffsetWithMetadata {
+    void* metadata;
+    int32_t offset;
+  };
   // GC maps emit structures without alignment, so we can't simply
   // use sizeof(stackmap::OffsetWithMetadata), because that value
   // includes padding.
 
+  // A safe point is a location in the code stream where it is
+  // safe for garbage collection to happen (that is, where the
+  // code generator guarantees that any registers which might
+  // hold references to live objects have been stored on the stack).
+  //
+  // A point cluster is a collection of safe points which share
+  // the same layout of live pointers. Because LLVM does not (as of
+  // this writing) calculate liveness information, all safe points
+  // in the same function wind up with the same "live" variables.
   int32_t pointClusterCount;
   struct PointCluster {
+    // register_stackmaps() assumes it knows the layout of this struct!
     int32_t frameSize;
     int32_t addressCount;
     int32_t liveCountWithMetadata;
@@ -81,12 +98,15 @@ struct stackmap_table {
 extern "C" {
   extern stackmap_table foster__gcmaps;
 }
-#endif
 
-#define HEAP_CELL_FOR_BODY(ptr) ((heap_cell*) &((int64_t*)(ptr))[-1])
-const uint64_t FORWARDED_BIT = 0x02;
+////////////////////////////////////////////////////////////////////
+const uint64_t FORWARDED_BIT = 0x02; // 0b000..00010
+#define HEAP_CELL_HEADER_SIZE (sizeof(int64_t))
 
-struct heap_cell { int64_t _size; unsigned char _body[0];
+struct heap_cell {
+  int64_t       _size;
+  unsigned char _body[0];
+  //======================================
   void* body() { return (void*) &_body; }
   int64_t size() { return _size; }
   void set_size(int64_t size) { _size = size; }
@@ -100,13 +120,13 @@ struct heap_cell { int64_t _size; unsigned char _body[0];
   void* get_forwarded_body() {
     return (void*) (((uint64_t) size()) & ~FORWARDED_BIT);
   }
+
+  static heap_cell* for_body(void* ptr) {
+    return (heap_cell*) offset(ptr, -HEAP_CELL_HEADER_SIZE);
+  }
 };
 
-#if USE_FOSTER_GC_PLUGIN
 void visitGCRootsWithStackMaps(void (*visitor)(void **root, const void *meta));
-#else
-void visitGCRoots(void (*visitor)(void **root, const void *meta));
-#endif
 
 FILE* gclog = NULL;
 
@@ -146,22 +166,22 @@ class copying_gc {
 
       int64_t free_size() { return end - bump; }
 
-      bool can_allocate(int64_t size) {
-        return bump + size < end;
+      bool can_allocate(int64_t body_size) {
+        return end > bump + body_size + HEAP_CELL_HEADER_SIZE;
       }
 
-      void* allocate_prechecked(int64_t size) {
+      void* allocate_prechecked(int64_t body_size) {
         heap_cell* allot = (heap_cell*) bump;
-        bump += size;
-        allot->set_size(size);
+        bump += body_size + HEAP_CELL_HEADER_SIZE;
+        allot->set_size(body_size);
         return allot->body();
       }
 
       // Prerequisite: body is a stack pointer.
       // Behavior:
       // * Any slots containing stack pointers should be recursively update()ed.
-      // * Any slots containing heap pointers should be overwritten
-      // with copy()'d values.
+      // * Any slots containing heap pointers should be
+      //   overwritten with copy()'d values.
       void update(void* body, const void* meta) {
         if (!meta) {
           fprintf(gclog, "can't update body %p with no type map!\n", body);
@@ -229,7 +249,7 @@ class copying_gc {
           return NULL;
         }
 
-        heap_cell* cell = HEAP_CELL_FOR_BODY(body);
+        heap_cell* cell = heap_cell::for_body(body);
 
         if (cell->is_forwarded()) {
           void* fwd = cell->get_forwarded_body();
@@ -275,7 +295,9 @@ class copying_gc {
 
           return cell->get_forwarded_body();
         } else {
-          printf("not enough space to copy! have %lld, need %lld\n", free_size(), size);
+          printf("not enough space to copy!\n");
+          printf("have %llu = 0x%llx\n", free_size(), (unsigned long long) free_size());
+          printf("need %llu = 0x%llx\n", size,        (unsigned long long) size);
           //exit(255);
           return NULL;
         }
@@ -329,6 +351,8 @@ public:
     return "unknown";
   }
 
+  // TODO this is just wrong in the presence of heap-allocated
+  // stack frames for coroutines! :(
   bool is_probable_stack_pointer(void* suspect, void* knownstackaddr) {
     if (curr->contains(suspect) || next->contains(suspect)) return false;
     return (labs(((char*)suspect) - (char*)knownstackaddr) < (1<<20));
@@ -356,7 +380,7 @@ public:
             return curr->allocate_prechecked(size);
       } else {
         printf("working set exceeded heap size! aborting...\n");
-        exit(255);
+        exit(255); // TODO be more careful if we're allocating from a coro...
         return NULL;
       }
     }
@@ -371,6 +395,13 @@ void copying_gc_root_visitor(void **root, const void *meta) {
     fprintf(gclog, "gc root@%p visited, body: %p, meta: %p\n", root, body, meta);
 
     if (allocator->is_probable_stack_pointer(body, root)) {
+      //       |------------|
+      // root: |    body    |---\
+      //       |------------|   |
+      // body: |            |<--/
+      //       |            |
+      //       |            |
+      //       |------------|
       fprintf(gclog, "found stack pointer\n");
       if (meta) {
         typemap* map = (typemap*) meta;
@@ -379,6 +410,13 @@ void copying_gc_root_visitor(void **root, const void *meta) {
 
       allocator->update(body, meta);
     } else {
+      //       |------------|            |------------|
+      // root: |    body    |---\        |    _size   |
+      //       |------------|   |        |------------|
+      //                        \------> |            |
+      //                                 |            |
+      //                                 |            |
+      //                                 |------------|
       void* newaddr = allocator->copy(body, meta);
       if (meta) {
         typemap* map = (typemap*) meta;
@@ -394,25 +432,17 @@ void copying_gc_root_visitor(void **root, const void *meta) {
 
 void copying_gc::gc() {
   ++num_collections;
-
-#if USE_FOSTER_GC_PLUGIN
   visitGCRootsWithStackMaps(copying_gc_root_visitor);
-#else
-  // copy all used blocks to the next semispace
-  visitGCRoots(copying_gc_root_visitor);
-#endif
-
   flip();
-
   next->clear(); // for debugging purposes
-
   fprintf(gclog, "\t/gc\n");
   fflush(gclog);
 }
 
-#if USE_FOSTER_GC_PLUGIN
 std::map<void*, const stackmap::PointCluster*> clusterForAddress;
 
+// Stack map registration walks through the stack maps emitted
+// by the Foster LLVM GC plugin
 void register_stackmaps() {
   int32_t numStackMaps = foster__gcmaps.numStackMaps;
   fprintf(gclog, "num stack maps: %d\n", numStackMaps); fflush(gclog);
@@ -460,7 +490,6 @@ void register_stackmaps() {
   fprintf(gclog, "--------- gclog stackmap registration complete ----------\n");
   fflush(gclog);
 }
-#endif
 
 base::TimeTicks start;
 
@@ -471,9 +500,7 @@ void initialize() {
   const int KB = 1024;
   allocator = new copying_gc(1024 * KB);
 
-#if USE_FOSTER_GC_PLUGIN
   register_stackmaps();
-#endif
 
   start = base::TimeTicks::HighResNow();
 }
@@ -502,10 +529,31 @@ void force_gc_for_debugging_purposes() {
   allocator->force_gc_for_debugging_purposes();
 }
 
-#if USE_FOSTER_GC_PLUGIN
+// Refresher: on x86, stack frames look like this,
+// provided we've told LLVM to disable frame pointer elimination:
+// 0x0
+//      ........
+//    |-----------|
+//    |local vars | <- top of stack
+//    |saved regs |
+//    |   etc     |
+//    |-----------|
+// +--| prev ebp  | <-- %ebp
+// |  |-----------|
+// |  | ret addr  | (PUSHed by call insn)
+// |  |-----------|
+// |  | fn params |
+// v  | ......... |
+//
+// 0x7f..ff (kernel starts at 0x80....)
+//
+// Each frame pointer stores the address of the previous
+// frame pointer.
 struct frameinfo { frameinfo* frameptr; void* retaddr; };
+
 int backtrace_x86_32(frameinfo* frames, size_t sz) {
   frameinfo* frame = (frameinfo*) __builtin_frame_address(0);
+
   int i = 0;
   while (frame && sz --> 0) {
     frames[i] = (*frame);
@@ -520,10 +568,12 @@ void visitGCRootsWithStackMaps(void (*visitor)(void **root, const void *meta)) {
   static void* retaddrs[MAX_NUM_RET_ADDRS];
   static frameinfo frames[MAX_NUM_RET_ADDRS];
 
+  // Collect frame pointers and return addresses
+  // for the current call stack.
   int nFrames = backtrace_x86_32(frames, MAX_NUM_RET_ADDRS);
-
-  const bool SANITY_CHECK_CUSTOM_BACKTRACE = true;
+  const bool SANITY_CHECK_CUSTOM_BACKTRACE = false;
   if (SANITY_CHECK_CUSTOM_BACKTRACE) {
+    // backtrace() seems to fail when called from a coroutine's stack...
     int numRetAddrs = backtrace((void**)&retaddrs, MAX_NUM_RET_ADDRS);
 #if 0
     for (int i = 0; i < numRetAddrs; ++i) {
@@ -542,6 +592,10 @@ void visitGCRootsWithStackMaps(void (*visitor)(void **root, const void *meta)) {
       }
     }
   }
+
+  // Use the collected return addresses to look up a safe point
+  // cluster map, which gives offsets from the corresponding
+  // frame pointer at which we will find pointers to be scanned.
 
   // For now, we must disable frame pointer elimination
   // to ensure that we can calculate the stack pointer
@@ -579,97 +633,8 @@ void visitGCRootsWithStackMaps(void (*visitor)(void **root, const void *meta)) {
       visitor((void**) rootaddr, meta);
     }
   }
-
-}
-#endif
-
-#if 0
-/////////////////////////////////////////////////////////////////
-// This implements a mark-sweep heap by doing the
-// Simplest Thing That Could Possibly Work:
-//
-// We keep an explicit list of every allocation made, in order
-// to make the sweep phase as simple as possible. The mark phase
-// is simplified by storing mark bits in a STL map.
-//
-// This is, needless to say, hilariously inefficient, but it
-// provides a baseline to measure improvements from.
-
-std::list<void*> allocated_blocks;
-
-/////////////////////////////////////////////////////////////////
-
-void mark();
-void* lazy_sweep();
-
-void gcPrintVisitor(void** root, const void *meta) {
-        fprintf(gclog, "root: %p -> %p, meta: %p\n", root, *root, meta);
 }
 
-int64_t heap_size = 0;
-bool visited = false;
-bool marked = false;
-int lazy_sweep_remaining = 0;
-const int64_t MAX_HEAP_SIZE = 4 * 1024;
-
-extern "C" void* memalloc_lazy_sweep(int64_t sz) {
-        if (heap_size + sz > MAX_HEAP_SIZE) {
-                if (!marked) { mark(); marked = true; lazy_sweep_remaining = allocated_blocks.size(); }
-                void* addr = lazy_sweep();
-                if (addr) return addr;
-        }
-
-        heap_size += sz;
-        void* addr = malloc(sz);
-        allocated_blocks.push_back(addr);
-#if 0
-        if (memalloc_call_num % 10 == 0) {
-                fprintf(gclog, "after %lld calls, sz = +%lld, memalloced size: %lld\n",
-                        memalloc_call_num, sz, memalloced_size);
-                fprintf(gclog, "have %d blocks; allocated block at address: %p\n",
-                        allocated_blocks.size(), addr);
-                visitGCRoots(gcPrintVisitor);
-        }
-#endif
-        return addr;
-}
-
-/////////////////////////////////////////////////////////////////
-
-std::map<void*, bool> mark_bitmap;
-
-// root is the stack address; *root is the heap address
-void gcMarkingVisitor(void** root, const void *meta) {
-        //printf("MARKING root: %p -> %p, meta: %p\n", root, *root, meta);
-        // for now, we assume all allocations are atomic
-        mark_bitmap[*root] = true;
-}
-
-void mark() {
-        mark_bitmap.clear();
-        visitGCRoots(gcMarkingVisitor);
-}
-
-void* lazy_sweep() {
-        std::list<void*>::iterator iter;
-        for (iter = allocated_blocks.begin();
-            iter != allocated_blocks.end() && --lazy_sweep_remaining >= 0; /* ... */ ) {
-                // advance iter before possibly erasing it
-                std::list<void*>::iterator it = iter++;
-                void* addr = *it;
-                if (!mark_bitmap[addr]) {
-                        // move reused block to the end of the list
-                        mark_bitmap[addr] = true;
-                        allocated_blocks.splice(allocated_blocks.end(), allocated_blocks, it);
-                        return addr;
-                }
-        }
-
-        mark_bitmap.clear();
-        marked = false;
-        return NULL;
-}
-#endif
 /////////////////////////////////////////////////////////////////
 
 } } } // namespace foster::runtime::gc
