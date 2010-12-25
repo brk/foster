@@ -114,3 +114,69 @@ of exports: http://ogi.altocumulus.org/~hallgren/hsmod/Description.pdf
 In this case, rather than compiling one module at a time, the compiler
 would process one SCC at a time.
 
+Future Plans
+~~~~~~~~~~~~
+
+A sketch of my current thoughts on how to structure the compilation
+system, especially with regards to separate compilation of modules:
+
+Four components: driver, parser (front-end), middle-end (type checker),
+and back-end (LLVM codegen).
+
+The driver gets a command to compile some file ``Foo.foster``.
+If the driver cannot find an up-to-date AST for the given file,
+a request is sent to the front-end, which must parse
+from a string to a parse tree, and then
+post-process the parse tree to get an abstract syntax tree.
+The front-end returns to the driver an abstract syntax tree.
+This AST contains a list of the modules that Foo imports (recursively?).
+The driver can then (in parallel) obtain ASTs for ``Foo``'s
+dependencies, transitively.
+
+Some of the imported modules may have already been compiled, in which case
+their ASTs can be used directly; other modules will not have been
+compiled, in which case they must be compiled before the module(s) that
+import them may undergo codegen.
+
+Because the parser does not "peek" at imported modules, the ASTs produced
+by the parser do not contain resolved symbols.
+
+So, at this point, the driver has module Foo's dependency graph on other
+modules. The driver can process the SCCs of the graph in topologically sorted
+order. Note, though, that a SCC of N modules produces N compiled modules as
+output, not one "supermodule." The SCC is needed to compute the fixed-point
+of the import/export signatures of each module. Once those have been computed,
+compilation proceeds independently for each module in the SCC.
+
+Once a module has been typechecked, it proceeds to the backend, which generates
+a LLVM ``Module``. The ``Module`` can be immediately cleaned up with custom LLVM passes,
+before being written to disk.
+
+In order to reduce recompilation burden, ``Module``\s are not immediately linked
+with the ``Module``\s they import. Instead, they simply use LLVM declarations to
+reference the symbols they import.
+
+Once LLVM ``Module``\s have been generated for each module imported by Foo, the
+final stages of the driver pipeline take over:
+  * The entire collection of ``Module``\s are linked and (re-)optimized
+  * then spit out to a ``.s`` and/or a ``.o``
+  * and finally linked to any native libraries (``.a``/``.o``/``.lib``/``.so``)
+  * producing a native executable
+
+
+.. Who is responsible for searching the file system to find module impls?
+.. etc
+
+-----
+
+It remains to be seen whether the middle-end and back-end should be strongly
+separated or not. My current thought is that there's no inherent benefit to
+separation, except that the middle-end seems easiest to implement in Haskell
+whereas the back-end seems easiest to implement in C++.
+
+The back-end may actually be several distinct pieces:
+  * AST or CFG to LLVM ``Module`` (may require some custom LLVM passes)
+  * ``Module`` to asm/obj (requires GC plugin)
+  * Linker + optimizer: could be separate binary or could reuse ``llvm-ld``
+    and ``opt``.
+

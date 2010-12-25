@@ -3,6 +3,7 @@ TODO
 
   * Arrays
     * Type constructors
+    * Card marking?
   * Records
   * Strings
   * References
