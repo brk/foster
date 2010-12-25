@@ -223,21 +223,21 @@ void* memalloc(int64_t sz);
 
 //////////////////////////////////////////////////////////////////
 
+pthread_mutex_t coro_create_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 // corofn :: void* -> void
 coro_context* foster_coro_create(coro_func corofn, void *arg) {
-  // TODO add a mutex to make this all threadsafe.
+  pthread_mutex_lock(&coro_create_mutex);
+
   long ssize = 16*1024;
   // TODO allocate small stacks that grow on demand
   // (via reallocation or stack segment chaining).
-  // TODO implement garbage collection for coro stacks.
-  // We don't allocate coro stacks on the (semispace) GC heap
-  // because doing so requires moving the stack pointer
-  // after fixing references on the copied stack (but only
-  // when running gc from a coroutine...).
+  // TODO use mark-sweep GC for coro stacks.
   void* sptr = malloc(ssize);
   coro_context* ctx = (coro_context*) memalloc(sizeof(coro_context));
   coro_create(ctx, corofn, arg, sptr, ssize);
 
+  pthread_mutex_unlock(&coro_create_mutex);
   return ctx;
 }
 
@@ -332,6 +332,8 @@ int32_t coro_invoke_i32_i32(foster_generic_coro_i32_i32* gcoro, int32_t arg) {
    }
 
    coro->arg = arg;
+   // TODO once we have multiple threads, this will need to
+   // be done atomically (and error handling added).
    coro->status = is_yielding ? FOSTER_CORO_INVALID
                               : FOSTER_CORO_RUNNING;
    coro->sibling->status = (is_yielding) ? FOSTER_CORO_SUSPENDED_INACTIVE
