@@ -5,4 +5,5 @@ License: BSD2
 License File: libcoro/LICENSE
 Local Modifications:
   Custom CMakeLists.txt
+  New coro stacks get capped with NULL in last frame pointer slot
 
