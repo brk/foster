@@ -227,7 +227,13 @@ coro_context* foster_coro_create(coro_func coro, void *arg) {
   // TODO add a mutex to make this all threadsafe.
   long ssize = 16*1024;
   // TODO allocate small stacks that grow on demand
-  void* sptr = memalloc(ssize);
+  // (via reallocation or stack segment chaining).
+  // TODO implement garbage collection for coro stacks.
+  // We don't allocate coro stacks on the (semispace) GC heap
+  // because doing so requires moving the stack pointer
+  // after fixing references on the copied stack (but only
+  // when running gc from a coroutine...).
+  void* sptr = malloc(ssize);
   coro_context* ctx = (coro_context*) memalloc(sizeof(coro_context));
   coro_create(ctx, coro, arg, sptr, ssize);
   return ctx;
