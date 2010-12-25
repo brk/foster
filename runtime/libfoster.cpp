@@ -69,14 +69,15 @@ struct foster_generic_coro_i32_i32 {
   void* sibling;
   void (*fn)(void*);
   void* env;
+  void* invoker;
   int32_t status;
   int32_t arg;
 };
 
-// (eventually, per-thread data structure)
-// Maintained by coro_invoke_... (which pushes new entries)
-// and coro_yield_... (which pops the stack).
-std::vector<foster_generic_coro_i32_i32*> current_coro;
+// (eventually, per-thread variable)
+// coro_invoke(c) sets this to c.
+// coro_yield() resets this to current_coro->invoker.
+foster_generic_coro_i32_i32* current_coro;
 
 namespace foster {
 namespace runtime {
@@ -222,8 +223,8 @@ void* memalloc(int64_t sz);
 
 //////////////////////////////////////////////////////////////////
 
-// coro_func :: void* -> void
-coro_context* foster_coro_create(coro_func coro, void *arg) {
+// corofn :: void* -> void
+coro_context* foster_coro_create(coro_func corofn, void *arg) {
   // TODO add a mutex to make this all threadsafe.
   long ssize = 16*1024;
   // TODO allocate small stacks that grow on demand
@@ -235,7 +236,8 @@ coro_context* foster_coro_create(coro_func coro, void *arg) {
   // when running gc from a coroutine...).
   void* sptr = malloc(ssize);
   coro_context* ctx = (coro_context*) memalloc(sizeof(coro_context));
-  coro_create(ctx, coro, arg, sptr, ssize);
+  coro_create(ctx, corofn, arg, sptr, ssize);
+
   return ctx;
 }
 
@@ -255,6 +257,7 @@ struct foster_coro_i32_i32 {
   foster_coro_i32_i32* sibling;
   int32_t (*fn)(void*, int32_t);
   void* env;
+  foster_coro_i32_i32* invoker;
   int32_t status;
   int32_t arg;
 };
@@ -281,6 +284,20 @@ void coro_assert(bool ok, const char* msg) {
     fprintf(stderr, "%s\n", msg);
     exit(1);
   }
+}
+
+void* topmost_frame_pointer(foster_generic_coro_i32_i32* coro) {
+  coro_assert(coro->status == FOSTER_CORO_SUSPENDED_ACTIVE
+           || coro->status == FOSTER_CORO_SUSPENDED_INACTIVE,
+           "can only get topmost frame pointer from suspended coro!");
+  void** sp = (void**) *((void**)coro->pctx);
+  #if __amd64
+  const int NUM_SAVED = 6;
+  #else // CORO_WIN_TIB : += 3
+  const int NUM_SAVED = 4;
+  #endif
+
+  return sp[NUM_SAVED - 1];
 }
 
 void foster_coro_wrapper_i32_i32(void* f_c) {
@@ -323,11 +340,17 @@ int32_t coro_invoke_i32_i32(foster_generic_coro_i32_i32* gcoro, int32_t arg) {
    // If there's no fn, it must mean we're yielding rather than invoking,
    // and we'll pop the stack when we reappear on the other side of the
    // call to foster_coro_transfer.
-   if (!is_yielding) { current_coro.push_back(gcoro); }
+   if (!is_yielding) { // push gcoro on the coro "stack"
+     gcoro->invoker = (foster_generic_coro_i32_i32*) current_coro;
+     current_coro = gcoro;
+   }
    foster_coro_transfer(coro->sibling->pctx, coro->pctx);
    // Returning from a invoke means we're acting as a yield now,
-   // and vice-versa.
-   if (!is_yielding) { current_coro.pop_back(); }
+   // and vice-versa. Yes, this means that, until the end of the
+   // function, "!is_yielding" means we're acting as a yield...
+   if (!is_yielding) { // likewise, pop the "stack"
+     current_coro = (foster_generic_coro_i32_i32*) current_coro->invoker;
+   }
    // So if we were originally yielding, then we are
    // now being re-invoked, possibly by a different
    // coro and/or a different thread!
@@ -343,8 +366,8 @@ int32_t coro_invoke_i32_i32(foster_generic_coro_i32_i32* gcoro, int32_t arg) {
 // Transfer control from currently executing coroutine to its sibling,
 // and mark the previous as being the new current.
 int32_t coro_yield_i32_i32(int32_t arg) {
-  coro_assert(!current_coro.empty(), "cannot yield before invoking a coroutine!");
-  foster_generic_coro_i32_i32* coro = (foster_generic_coro_i32_i32*) current_coro.back();
+  coro_assert(current_coro != NULL, "cannot yield before invoking a coroutine!");
+  foster_generic_coro_i32_i32* coro = (foster_generic_coro_i32_i32*) current_coro;
 
   // The sibling we yield to should be suspended+active
   return coro_invoke_i32_i32((foster_generic_coro_i32_i32*) coro->sibling, arg);

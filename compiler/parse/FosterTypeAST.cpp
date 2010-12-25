@@ -327,9 +327,10 @@ const llvm::Type* CoroTypeAST::getLLVMType() const {
     fieldTypes.push_back(pi8);
     fieldTypes.push_back(llvm::PointerType::getUnqual(fnty));
     fieldTypes.push_back(pi8);
+    fieldTypes.push_back(pi8);
     fieldTypes.push_back(llvm::IntegerType::get(llvm::getGlobalContext(), 32));
     fieldTypes.push_back(this->a->getLLVMType());
-    //type { i8*, i8*, void (i8*)*, i8*, i32, <<A>> }
+    //type { i8*, i8*, void (i8*)*, i8*, i8*, i32, <<A>> }
 
     repr = llvm::PointerType::getUnqual(
                 llvm::StructType::get(llvm::getGlobalContext(),
