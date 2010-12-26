@@ -4,6 +4,7 @@
 
 #ifndef BASE_STRING16_H_
 #define BASE_STRING16_H_
+#pragma once
 
 // WHAT:
 // A version of std::basic_string that provides 2-byte characters even when
@@ -166,7 +167,9 @@ extern template class std::basic_string<char16, base::string16_char_traits>;
 
 typedef std::basic_string<char16, base::string16_char_traits> string16;
 
+namespace base {
 extern std::ostream& operator<<(std::ostream& out, const string16& str);
+}
 
 #endif  // WCHAR_T_IS_UTF32
 

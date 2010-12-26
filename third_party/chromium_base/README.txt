@@ -1,5 +1,5 @@
 URL: http://src.chromium.org/cgi-bin/gitweb.cgi?p=chromium.git;a=tree;f=base
-Version: svn rev 49012
+Version: svn rev 70178
 Description: Chromium base platform library
 License: New BSD
 License File: LICENSE.txt

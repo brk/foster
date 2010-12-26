@@ -4,11 +4,13 @@
 
 #ifndef BASE_SINGLETON_H_
 #define BASE_SINGLETON_H_
+#pragma once
 
 #include "base/at_exit.h"
 #include "base/atomicops.h"
 #include "base/platform_thread.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
+#include "base/thread_restrictions.h"
 
 // Default traits for Singleton<Type>. Calls operator new and operator delete on
 // the object. Registers automatic deletion at process exit.
@@ -30,6 +32,11 @@ struct DefaultSingletonTraits {
   // Set to true to automatically register deletion of the object on process
   // exit. See below for the required call that makes this happen.
   static const bool kRegisterAtExit = true;
+
+  // Set to false to disallow access on a non-joinable thread.  This is
+  // different from kRegisterAtExit because StaticMemorySingletonTraits allows
+  // access on non-joinable threads, and gracefully handles this.
+  static const bool kAllowedToAccessOnNonjoinableThread = false;
 };
 
 
@@ -39,6 +46,7 @@ struct DefaultSingletonTraits {
 template<typename Type>
 struct LeakySingletonTraits : public DefaultSingletonTraits<Type> {
   static const bool kRegisterAtExit = false;
+  static const bool kAllowedToAccessOnNonjoinableThread = true;
 };
 
 
@@ -85,6 +93,7 @@ struct StaticMemorySingletonTraits {
   }
 
   static const bool kRegisterAtExit = true;
+  static const bool kAllowedToAccessOnNonjoinableThread = true;
 
   // Exposed for unittesting.
   static void Resurrect() {
@@ -105,7 +114,6 @@ template <typename Type> intptr_t
 template <typename Type> base::subtle::Atomic32
     StaticMemorySingletonTraits<Type>::dead_ = 0;
 
-
 // The Singleton<Type, Traits, DifferentiatingType> class manages a single
 // instance of Type which will be created on first use and will be destroyed at
 // normal process exit). The Trait::Delete function will not be called on
@@ -115,15 +123,37 @@ template <typename Type> base::subtle::Atomic32
 // singletons having the same memory allocation functions but serving a
 // different purpose. This is mainly used for Locks serving different purposes.
 //
-// Example usages: (none are preferred, they all result in the same code)
-//   1. FooClass* ptr = Singleton<FooClass>::get();
-//      ptr->Bar();
-//   2. Singleton<FooClass>()->Bar();
-//   3. Singleton<FooClass>::get()->Bar();
+// Example usage:
+//
+// In your header:
+//   #include "base/singleton.h"
+//   class FooClass {
+//    public:
+//     static FooClass* GetInstance();  <-- See comment below on this.
+//     void Bar() { ... }
+//    private:
+//     FooClass() { ... }
+//     friend struct DefaultSingletonTraits<FooClass>;
+//
+//     DISALLOW_COPY_AND_ASSIGN(FooClass);
+//   };
+//
+// In your source file:
+//  FooClass* FooClass::GetInstance() {
+//    return Singleton<FooClass>::get();
+//  }
+//
+// And to call methods on FooClass:
+//   FooClass::GetInstance()->Bar();
+//
+// NOTE: The method accessing Singleton<T>::get() has to be named as GetInstance
+// and it is important that FooClass::GetInstance() is not inlined in the
+// header. This makes sure that when source files from multiple targets include
+// this header they don't end up with different copies of the inlined code
+// creating multiple copies of the singleton.
 //
 // Singleton<> has no non-static members and doesn't need to actually be
-// instantiated. It does no harm to instantiate it and use it as a class member
-// or at global level since it is acting as a POD type.
+// instantiated.
 //
 // This class is itself thread-safe. The underlying Type must of course be
 // thread-safe if you want to use it concurrently. Two parameters may be tuned
@@ -143,20 +173,6 @@ template <typename Type> base::subtle::Atomic32
 // shouldn't be false unless absolutely necessary. Remember that the heap where
 // the object is allocated may be destroyed by the CRT anyway.
 //
-// If you want to ensure that your class can only exist as a singleton, make
-// its constructors private, and make DefaultSingletonTraits<> a friend:
-//
-//   #include "base/singleton.h"
-//   class FooClass {
-//    public:
-//     void Bar() { ... }
-//    private:
-//     FooClass() { ... }
-//     friend struct DefaultSingletonTraits<FooClass>;
-//
-//     DISALLOW_COPY_AND_ASSIGN(FooClass);
-//   };
-//
 // Caveats:
 // (a) Every call to get(), operator->() and operator*() incurs some overhead
 //     (16ns on my P4/2.8GHz) to check whether the object has already been
@@ -170,12 +186,19 @@ template <typename Type,
           typename Traits = DefaultSingletonTraits<Type>,
           typename DifferentiatingType = Type>
 class Singleton {
- public:
+ private:
+  // Classes using the Singleton<T> pattern should declare a GetInstance()
+  // method and call Singleton::get() from within that.
+  friend Type* Type::GetInstance();
+
   // This class is safe to be constructed and copy-constructed since it has no
   // member.
 
   // Return a pointer to the one true instance of the class.
   static Type* get() {
+    if (!Traits::kAllowedToAccessOnNonjoinableThread)
+      base::ThreadRestrictions::AssertSingletonAllowed();
+
     // Our AtomicWord doubles as a spinlock, where a value of
     // kBeingCreatedMarker means the spinlock is being held for creation.
     static const base::subtle::AtomicWord kBeingCreatedMarker = 1;
@@ -228,23 +251,15 @@ class Singleton {
     return reinterpret_cast<Type*>(value);
   }
 
-  // Shortcuts.
-  Type& operator*() {
-    return *get();
-  }
-
-  Type* operator->() {
-    return get();
-  }
-
- private:
   // Adapter function for use with AtExit().  This should be called single
-  // threaded, but we might as well take the precautions anyway.
+  // threaded, so don't use atomic operations.
+  // Calling OnExit while singleton is in use by other threads is a mistake.
   static void OnExit(void* unused) {
     // AtExit should only ever be register after the singleton instance was
     // created.  We should only ever get here with a valid instance_ pointer.
-    Traits::Delete(reinterpret_cast<Type*>(
-        base::subtle::NoBarrier_AtomicExchange(&instance_, 0)));
+    Traits::Delete(
+        reinterpret_cast<Type*>(base::subtle::NoBarrier_Load(&instance_)));
+    instance_ = 0;
   }
   static base::subtle::AtomicWord instance_;
 };

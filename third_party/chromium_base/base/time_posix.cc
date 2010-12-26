@@ -8,11 +8,9 @@
 #include <time.h>
 
 #include <limits>
-#include <string> // for _POSIX_MONOTONIC_CLOCK
 
 #include "base/basictypes.h"
-#include "build/build_config.h"
-//#include "base/logging.h"
+#include "base/logging.h"
 
 namespace base {
 
@@ -46,13 +44,9 @@ const int64 Time::kTimeTToMicrosecondsOffset = kWindowsEpochDeltaMicroseconds;
 Time Time::Now() {
   struct timeval tv;
   struct timezone tz = { 0, 0 };  // UTC
-
   if (gettimeofday(&tv, &tz) != 0) {
-#if 0
     DCHECK(0) << "Could not determine time of day";
-#endif
   }
-
   // Combine seconds and microseconds in a 64-bit field containing microseconds
   // since the epoch.  That's enough for nearly 600 centuries.  Adjust from
   // Unix (1970) to Windows (1601) epoch.
@@ -161,7 +155,7 @@ TimeTicks TimeTicks::Now() {
 
   struct timespec ts;
   if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
-    //NOTREACHED() << "clock_gettime(CLOCK_MONOTONIC) failed.";
+    NOTREACHED() << "clock_gettime(CLOCK_MONOTONIC) failed.";
     return TimeTicks();
   }
 

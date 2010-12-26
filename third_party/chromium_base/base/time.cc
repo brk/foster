@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include "base/time.h"
-#include "base/string_util.h"
 #include "base/sys_string_conversions.h"
 #include "base/third_party/nspr/prtime.h"
 
@@ -67,6 +66,8 @@ time_t Time::ToTimeT() const {
 
 // static
 Time Time::FromDoubleT(double dt) {
+  if (dt == 0)
+    return Time();  // Preserve 0 so we can tell it doesn't exist.
   return Time(static_cast<int64>((dt *
                                   static_cast<double>(kMicrosecondsPerSecond)) +
                                  kTimeTToMicrosecondsOffset));
@@ -79,6 +80,13 @@ double Time::ToDoubleT() const {
           static_cast<double>(kMicrosecondsPerSecond));
 }
 
+// static
+Time Time::UnixEpoch() {
+  Time time;
+  time.us_ = kTimeTToMicrosecondsOffset;
+  return time;
+}
+
 Time Time::LocalMidnight() const {
   Exploded exploded;
   LocalExplode(&exploded);
@@ -89,10 +97,10 @@ Time Time::LocalMidnight() const {
   return FromLocalExploded(exploded);
 }
 
+#if 0
+/////
 // static
 bool Time::FromString(const wchar_t* time_string, Time* parsed_time) {
-  return false;
-#if 0
   DCHECK((time_string != NULL) && (parsed_time != NULL));
   std::string ascii_time_string = SysWideToUTF8(time_string);
   if (ascii_time_string.length() == 0)
@@ -105,7 +113,23 @@ bool Time::FromString(const wchar_t* time_string, Time* parsed_time) {
   result_time += kTimeTToMicrosecondsOffset;
   *parsed_time = Time(result_time);
   return true;
+}
 #endif
+
+// Time::Exploded -------------------------------------------------------------
+
+inline bool is_in_range(int value, int lo, int hi) {
+  return lo <= value && value <= hi;
+}
+
+bool Time::Exploded::HasValidValues() const {
+  return is_in_range(month, 1, 12) &&
+         is_in_range(day_of_week, 0, 6) &&
+         is_in_range(day_of_month, 1, 31) &&
+         is_in_range(hour, 0, 23) &&
+         is_in_range(minute, 0, 59) &&
+         is_in_range(second, 0, 60) &&
+         is_in_range(millisecond, 0, 999);
 }
 
 }  // namespace base

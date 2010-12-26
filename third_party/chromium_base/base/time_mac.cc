@@ -11,8 +11,8 @@
 #include <time.h>
 
 #include "base/basictypes.h"
-////#include "base/logging.h"
-#include "base/scoped_cftyperef.h"
+//#include "base/logging.h"
+#include "base/mac/scoped_cftyperef.h"
 
 namespace base {
 
@@ -70,7 +70,7 @@ Time Time::FromExploded(bool is_local, const Exploded& exploded) {
   date.month = exploded.month;
   date.year = exploded.year;
 
-  scoped_cftyperef<CFTimeZoneRef>
+  base::mac::ScopedCFTypeRef<CFTimeZoneRef>
       time_zone(is_local ? CFTimeZoneCopySystem() : NULL);
   CFAbsoluteTime seconds = CFGregorianDateGetAbsoluteTime(date, time_zone) +
       kCFAbsoluteTimeIntervalSince1970;
@@ -80,10 +80,10 @@ Time Time::FromExploded(bool is_local, const Exploded& exploded) {
 
 void Time::Explode(bool is_local, Exploded* exploded) const {
   CFAbsoluteTime seconds =
-      (static_cast<double>((us_ - kWindowsEpochDeltaMicroseconds) /
-      kMicrosecondsPerSecond) - kCFAbsoluteTimeIntervalSince1970);
+      ((static_cast<double>(us_) - kWindowsEpochDeltaMicroseconds) /
+      kMicrosecondsPerSecond) - kCFAbsoluteTimeIntervalSince1970;
 
-  scoped_cftyperef<CFTimeZoneRef>
+  base::mac::ScopedCFTypeRef<CFTimeZoneRef>
       time_zone(is_local ? CFTimeZoneCopySystem() : NULL);
   CFGregorianDate date = CFAbsoluteTimeGetGregorianDate(seconds, time_zone);
 
@@ -112,7 +112,7 @@ TimeTicks TimeTicks::Now() {
     // whether mach_timebase_info has already been called.  This is
     // recommended by Apple's QA1398.
     kern_return_t kr = mach_timebase_info(&timebase_info);
-    ////DCHECK(kr == KERN_SUCCESS);
+    /////DCHECK(kr == KERN_SUCCESS);
   }
 
   // mach_absolute_time is it when it comes to ticks on the Mac.  Other calls
