@@ -63,7 +63,7 @@ int cpuid_large_cache_size(cpuid_info& info) {
 
 #define ARRAY_SIZE(a) (sizeof((a))/sizeof((a)[0]))
 
-#define MERGE_HI_LO(a, b) ((((uint64)a) << 32) | ((uint64)b))
+#define MERGE_HI_LO(a, b) ((((uint64_t)a) << 32) | ((uint64_t)b))
 
 #define D(expr) (#expr) << " = " << (expr)
 
@@ -332,16 +332,16 @@ inline void cpuid_with_eax_and_ecx(uint in_eax, uint in_ecx) {
           );
 }
 
-uint64 rdtsc_unserialized() {
-  uint a, d;
+uint64_t rdtsc_unserialized() {
+  uint64_t a, d;
   __asm__ __volatile__("rdtsc": "=a"(a), "=d"(d));
   return MERGE_HI_LO(d, a);
 }
 #endif
 
-uint64 rdtsc_serialized() {
+uint64_t rdtsc_serialized() {
   cpuid_with_eax(0);
-  uint64 ticks;
+  uint64_t ticks;
   __asm__ __volatile__("rdtsc": "=A" (ticks));
   return ticks;
 }
@@ -591,7 +591,7 @@ void cpuid_fill_brand_string(cpuid_info& info) {
 }
 
 void estimate_rdtsc_overhead(cpuid_info& info) {
-  uint64 a, b;
+  uint64_t a, b;
   a = rdtsc_serialized();
   b = rdtsc_serialized();
   info.rdtsc_serialized_overhead_cycles = double(b - a);

@@ -11,10 +11,9 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <stdint.h>
 
-typedef unsigned int       uint;
-typedef unsigned long long uint64;
-typedef          long long  int64;
+typedef unsigned int uint;
 
 struct cpuid_info;
 
