@@ -187,6 +187,7 @@ add_custom_command(
 set(LIBFOSTER_CPP_SOURCES
         ${PROJECT_SOURCE_DIR}/runtime/libfoster.cpp
         ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc.cpp
+        ${PROJECT_SOURCE_DIR}/runtime/libfoster_gc_roots.cpp
 )
 
 # Use clang or llvm-g++ to build libfoster.bc

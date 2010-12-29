@@ -8,16 +8,17 @@
 
 #include <cassert>
 #include <cstdio>
-#include <inttypes.h>
 #include <cstdlib>
 #include <vector>
 
-#include <pthread.h>
+#include "base/lock.h"
+
+#include "foster_gc.h"
+#include "libfoster_gc_roots.h"
 
 #include "imath.h"
-#include "foster_gc.h"
-#include "cpuid.h"
 #include "libcoro/coro.h"
+#include "cpuid.h"
 
 // This file provides the bootstrap "standard library" of utility functions for
 // programs compiled (to LLVM IR) with foster. Making these functions available
@@ -64,21 +65,6 @@
 
 std::vector<coro_context> coro_initial_contexts;
 
-struct foster_generic_coro_i32_i32 {
-  void* pctx;
-  void* sibling;
-  void (*fn)(void*);
-  void* env;
-  void* invoker;
-  int32_t status;
-  int32_t arg;
-};
-
-// (eventually, per-thread variable)
-// coro_invoke(c) sets this to c.
-// coro_yield() resets this to current_coro->invoker.
-foster_generic_coro_i32_i32* current_coro;
-
 namespace foster {
 namespace runtime {
 
@@ -92,6 +78,8 @@ void initialize() {
   // TODO Initialize one default coro context per thread.
   coro_initial_contexts.push_back(coro_context());
   coro_create(&coro_initial_contexts[0], 0, 0, 0, 0);
+
+  current_coro = NULL;
 
   gc::initialize();
 }
@@ -153,14 +141,6 @@ struct FosterClosurei32i32 {
   int32_t (*code)(void* env, int32_t);
   void* env;
 };
-//
-//std::vector<pthread_t> threadinfo;
-//
-//void* i32_closure_invoker(void* arg) {
-//  FosterClosurei32* c = (FosterClosurei32*) arg;
-//  int32_t rv = c->code(c->env);
-//  return NULL;
-//}
 
 } } // namespace foster::runtime
 
@@ -223,11 +203,11 @@ void* memalloc(int64_t sz);
 
 //////////////////////////////////////////////////////////////////
 
-pthread_mutex_t coro_create_mutex = PTHREAD_MUTEX_INITIALIZER;
+Lock coro_create_mutex;
 
 // corofn :: void* -> void
 coro_context* foster_coro_create(coro_func corofn, void *arg) {
-  pthread_mutex_lock(&coro_create_mutex);
+  AutoLock locker(coro_create_mutex);
 
   long ssize = 16*1024;
   // TODO allocate small stacks that grow on demand
@@ -236,8 +216,6 @@ coro_context* foster_coro_create(coro_func corofn, void *arg) {
   void* sptr = malloc(ssize);
   coro_context* ctx = (coro_context*) memalloc(sizeof(coro_context));
   coro_create(ctx, corofn, arg, sptr, ssize);
-
-  pthread_mutex_unlock(&coro_create_mutex);
   return ctx;
 }
 
@@ -262,21 +240,6 @@ struct foster_coro_i32_i32 {
   int32_t arg;
 };
 
-// Thanks to its single-threaded semantics,
-// Lua gets by without needing to distinguish between
-// suspended+active and suspended+inactive coroutines.
-enum {
-  FOSTER_CORO_INVALID,
-  /// coro which has been invoked from but not yet yielded back to.
-  /// Not safe for another thread to steal!
-  FOSTER_CORO_SUSPENDED_ACTIVE,
-  /// coro which has no subcoroutines: no action yet, or last
-  /// action was a yield.
-  FOSTER_CORO_SUSPENDED_INACTIVE,
-  FOSTER_CORO_RUNNING,
-  FOSTER_CORO_DEAD
-};
-
 // We can't rely on assert() to print messages for us when we're
 // not on the main thread's stack.
 void coro_assert(bool ok, const char* msg) {
@@ -287,8 +250,8 @@ void coro_assert(bool ok, const char* msg) {
 }
 
 void* topmost_frame_pointer(foster_generic_coro_i32_i32* coro) {
-  coro_assert(coro->status == FOSTER_CORO_SUSPENDED_ACTIVE
-           || coro->status == FOSTER_CORO_SUSPENDED_INACTIVE,
+  coro_assert(coro->status == FOSTER_CORO_SUSPENDED
+           || coro->status == FOSTER_CORO_DORMANT,
            "can only get topmost frame pointer from suspended coro!");
   void** sp = (void**) *((void**)coro->pctx);
   #if __amd64
@@ -317,13 +280,16 @@ void foster_coro_wrapper_i32_i32(void* f_c) {
 // and mark target as being the current coroutine while remembering the prev.
 int32_t coro_invoke_i32_i32(foster_generic_coro_i32_i32* gcoro, int32_t arg) {
    foster_coro_i32_i32* coro = (foster_coro_i32_i32*) gcoro;
+   fprintf(stdout, "coro @%p\n", coro);
+   fprintf(stdout, "    fn=%p, status=%d, sibling->status=%d\n",
+     coro->fn, coro->status, coro->sibling->status);
    bool is_yielding = gcoro->fn == NULL;
    if (is_yielding) {
-     coro_assert(coro->status = FOSTER_CORO_SUSPENDED_ACTIVE,
-                 "can only yield to a suspended+active coroutine");
+     coro_assert(coro->status = FOSTER_CORO_SUSPENDED,
+                 "can only yield to a suspended coroutine");
    } else {
-     coro_assert(coro->status = FOSTER_CORO_SUSPENDED_INACTIVE,
-                 "can only resume a suspended+inactive coroutine");
+     coro_assert(coro->status = FOSTER_CORO_DORMANT,
+                 "can only resume a dormant coroutine");
    }
 
    if (coro->sibling->pctx == NULL) {
@@ -336,8 +302,8 @@ int32_t coro_invoke_i32_i32(foster_generic_coro_i32_i32* gcoro, int32_t arg) {
    // be done atomically (and error handling added).
    coro->status = is_yielding ? FOSTER_CORO_INVALID
                               : FOSTER_CORO_RUNNING;
-   coro->sibling->status = (is_yielding) ? FOSTER_CORO_SUSPENDED_INACTIVE
-                                         : FOSTER_CORO_SUSPENDED_ACTIVE;
+   coro->sibling->status = (is_yielding) ? FOSTER_CORO_DORMANT
+                                         : FOSTER_CORO_SUSPENDED;
 
    // If there's no fn, it must mean we're yielding rather than invoking,
    // and we'll pop the stack when we reappear on the other side of the
@@ -358,8 +324,8 @@ int32_t coro_invoke_i32_i32(foster_generic_coro_i32_i32* gcoro, int32_t arg) {
    // coro and/or a different thread!
    // But our sibling coro remains the same, it's just the
    // stack that it refers to that might have changed.
-   coro->status = (is_yielding) ? FOSTER_CORO_SUSPENDED_ACTIVE
-                                : FOSTER_CORO_SUSPENDED_INACTIVE;
+   coro->status = (is_yielding) ? FOSTER_CORO_SUSPENDED
+                                : FOSTER_CORO_DORMANT;
    coro->sibling->status = (is_yielding) ? FOSTER_CORO_RUNNING
                                          : FOSTER_CORO_INVALID;
    return coro->sibling->arg;
@@ -391,7 +357,7 @@ coro_create_i32_i32(FosterClosurei32i32* pclo) {
   ccoro->fn  = NULL;
   ccoro->env = NULL;
   ccoro->status = FOSTER_CORO_INVALID;
-  fcoro->status = FOSTER_CORO_SUSPENDED_INACTIVE;
+  fcoro->status = FOSTER_CORO_DORMANT;
   fcoro->arg = 555;
   ccoro->arg = 666;
   return (foster_generic_coro_i32_i32*) fcoro;

@@ -35,10 +35,11 @@ def transplant(path, newdir):
 def compile_source(src):
   outbc = re.sub('\.cpp$', '.bc', transplant(src, outdir))
   runtime_gc = os.path.join(srcdir, 'runtime', 'gc')
+  runtime    = os.path.join(srcdir, 'runtime')
   basedir    = os.path.join(srcdir, 'third_party', 'chromium_base')
   cpuiddir   = os.path.join(srcdir, 'third_party', 'cpuid')
   corodir    = os.path.join(srcdir, 'third_party', 'libcoro')
-  include_dirs = [bindir, runtime_gc, basedir, cpuiddir, corodir]
+  include_dirs = [bindir, runtime, runtime_gc, basedir, cpuiddir, corodir]
   includes = ' '.join(['-I ' + path for path in include_dirs])
   defines = ' -D'.join(['', coro_method])
   cmd = "%s %s %s %s -g -emit-llvm -c -o %s" % (clang, src, includes, defines, outbc)

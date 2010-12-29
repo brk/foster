@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#include <inttypes.h>
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
 
 #include "foster_gc.h"
+#include "libfoster_gc_roots.h"
 #include "_generated_/FosterConfig.h"
 
 #include "base/time.h"
@@ -161,6 +161,7 @@ class copying_gc {
 
       void clear() {
         fprintf(gclog, "clearing mem from %p to %p\n", start, end);
+        fflush(gclog);
         memset(start, 255, end - start);
       }
 
@@ -389,6 +390,9 @@ public:
 
 copying_gc* allocator = NULL;
 
+// This function statically references the global allocator.
+// Eventually we'll want a generational GC with thread-specific
+// allocators and (perhaps) type-specific allocators.
 void copying_gc_root_visitor(void **root, const void *meta) {
   void* body = *root;
   if (body) {
@@ -556,12 +560,22 @@ int backtrace_x86_32(frameinfo* frames, size_t sz) {
 
   int i = 0;
   while (frame && sz --> 0) {
+    if (0) {
+      fprintf(gclog, "frame: %p\n", frame);
+      if (frame) {
+        fprintf(gclog, "frameptr: %p, retaddr: %p\n", frame->frameptr, frame->retaddr);
+      }
+      fflush(gclog);
+    }
     frames[i] = (*frame);
     frame     = (*frame).frameptr;
     ++i;
   }
   return i;
 }
+
+void visitCoro(foster_generic_coro_i32_i32** coro,
+               void (*visitor)(void **root, const void *meta));
 
 void visitGCRootsWithStackMaps(void (*visitor)(void **root, const void *meta)) {
   enum { MAX_NUM_RET_ADDRS = 1024 };
@@ -575,7 +589,7 @@ void visitGCRootsWithStackMaps(void (*visitor)(void **root, const void *meta)) {
   if (SANITY_CHECK_CUSTOM_BACKTRACE) {
     // backtrace() seems to fail when called from a coroutine's stack...
     int numRetAddrs = backtrace((void**)&retaddrs, MAX_NUM_RET_ADDRS);
-#if 0
+#if 1
     for (int i = 0; i < numRetAddrs; ++i) {
       fprintf(gclog, "backtrace: %p\n", retaddrs[i]);
     }
@@ -583,7 +597,6 @@ void visitGCRootsWithStackMaps(void (*visitor)(void **root, const void *meta)) {
       fprintf(gclog, "           %p\n", frames[i].retaddr);
     }
 #endif
-
     int diff = numRetAddrs - nFrames;
     for (int i = 0; i < numRetAddrs; ++i) {
       if (frames[i].retaddr != retaddrs[diff + i]) {
@@ -632,7 +645,46 @@ void visitGCRootsWithStackMaps(void (*visitor)(void **root, const void *meta)) {
       void* rootaddr = offset(frameptr, off);
       visitor((void**) rootaddr, meta);
     }
+    // TODO also scan pointers without metadata
   }
+
+  visitCoro(&current_coro, visitor);
+  // TODO update current_coro to point to the newspace copy.
+}
+
+void visitCoro(foster_generic_coro_i32_i32** coro_addr,
+               void (*visitor)(void **root, const void *meta)) {
+  foster_generic_coro_i32_i32* coro = *coro_addr;
+  if (!coro) return;
+
+  heap_cell* cell = heap_cell::for_body(coro);
+  if (cell->is_forwarded()) {
+    // if coro has fwding ptr, update coro addr
+    *coro_addr = (foster_generic_coro_i32_i32*) cell->get_forwarded_body();
+  } else {
+    // otherwise, copy the coro to the newspace,
+    // set the forwarding pointer, and scan the
+    // coro.
+    // TODO don't assume there's a single global allocator
+    void* coro_metadata = NULL;
+    //void* newbody = allocator->copy(body, coro_metadata);
+  }
+
+  fprintf(gclog, "coro %p, status: %d\n", coro, coro->status);
+  if (coro->status == FOSTER_CORO_INVALID
+   || coro->status == FOSTER_CORO_DEAD) {
+    return;
+  }
+TRACE;
+  // TODO mark stack so it won't be swept away
+
+  //visitCoro((foster_generic_coro_i32_i32**) &coro->sibling, visitor);
+
+  // extract frame pointer from pctx
+  // backtrace using frame pointer
+
+  // scan coro->invoker
+  //visitCoro((foster_generic_coro_i32_i32**) &coro->invoker, visitor);
 }
 
 /////////////////////////////////////////////////////////////////
