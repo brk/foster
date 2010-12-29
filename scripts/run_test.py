@@ -56,7 +56,9 @@ def get_link_flags():
   common = ['-lpthread']
   import platform
   flags = {
-    'Darwin': lambda: common + ['-framework', 'CoreFoundation'],
+    'Darwin': lambda: common + ['-framework', 'CoreFoundation',
+                                '-framework', 'Cocoa',
+                                '-lobjc'],
     'Linux': lambda: common + ['-lrt']
   }[platform.system()]()
   return ' '.join(flags)

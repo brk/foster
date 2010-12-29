@@ -1,20 +1,77 @@
 set (CHROMIUM_BASE ${PROJECT_SOURCE_DIR}/third_party/chromium_base)
 
-set (BASE_COMMON_SOURCES
-	${CHROMIUM_BASE}/base/time.cc
-	${CHROMIUM_BASE}/base/time_posix.cc
-
+set (BASE_SOURCES
+	${CHROMIUM_BASE}/base/at_exit.cc
+	${CHROMIUM_BASE}/base/lazy_instance.cc
+	${CHROMIUM_BASE}/base/lock.cc
+	${CHROMIUM_BASE}/base/logging.cc
+	${CHROMIUM_BASE}/base/debug/debugger.cc
 	${CHROMIUM_BASE}/base/string_util.cc
 	${CHROMIUM_BASE}/base/string16.cc
+	${CHROMIUM_BASE}/base/string_number_conversions.cc
+	${CHROMIUM_BASE}/base/string_split.cc
 	${CHROMIUM_BASE}/base/string_piece.cc
+	${CHROMIUM_BASE}/base/stringprintf.cc
+	${CHROMIUM_BASE}/base/time.cc
+	${CHROMIUM_BASE}/base/thread_restrictions.cc
 	${CHROMIUM_BASE}/base/utf_string_conversions.cc
+	${CHROMIUM_BASE}/base/utf_string_conversion_utils.cc
+	${CHROMIUM_BASE}/base/vlog.cc
+	${CHROMIUM_BASE}/base/third_party/icu/icu_utf.cc
+	${CHROMIUM_BASE}/base/third_party/dmg_fp/g_fmt.cc
+	${CHROMIUM_BASE}/base/third_party/dmg_fp/dtoa.cc
 )
 
-set(BASE_SOURCES_Darwin
+#####################################################################
+
+if (${APPLE})
+set(BASE_SOURCES
+    ${BASE_SOURCES}
 	${CHROMIUM_BASE}/base/time_mac.cc
+	${CHROMIUM_BASE}/base/platform_thread_mac.mm
+	${CHROMIUM_BASE}/base/sys_string_conversions_mac.mm
 )
+endif (${APPLE})
+
+#####################################################################
+
+if (${UNIX} AND NOT ${APPLE})
+  set (BASE_SOURCES
+    ${BASE_SOURCES}
+	${CHROMIUM_BASE}/base/sys_string_conversions_linux.cc
+	${CHROMIUM_BASE}/base/time_posix.cc
+  )
+endif (${UNIX} AND NOT ${APPLE})
+
+#####################################################################
+
+if (${UNIX})
+  set (BASE_SOURCES
+    ${BASE_SOURCES}
+	${CHROMIUM_BASE}/base/lock_impl_posix.cc
+	${CHROMIUM_BASE}/base/safe_strerror_posix.cc
+	${CHROMIUM_BASE}/base/platform_thread_posix.cc
+	${CHROMIUM_BASE}/base/thread_local_posix.cc
+	${CHROMIUM_BASE}/base/debug/debugger_posix.cc
+  )
+endif (${UNIX})
+
+#####################################################################
+
+if (${WIN32})
+  set (BASE_SOURCES
+    ${BASE_SOURCES}
+	${CHROMIUM_BASE}/base/time_win.cc
+	${CHROMIUM_BASE}/base/lock_impl_win.cc
+	${CHROMIUM_BASE}/base/logging_win.cc
+	${CHROMIUM_BASE}/base/platform_thread_win.cc
+	${CHROMIUM_BASE}/base/debug/debugger_win.cc
+	${CHROMIUM_BASE}/base/thread_local_win.cc
+	${CHROMIUM_BASE}/base/sys_string_conversions_win.cc
+  )
+endif (${WIN32})
+
 
 add_library(chromium_base STATIC
-  ${BASE_COMMON_SOURCES}
-  ${BASE_SOURCES_${CMAKE_SYSTEM_NAME}}
+  ${BASE_SOURCES}
 )

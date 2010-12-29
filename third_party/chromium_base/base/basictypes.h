@@ -52,7 +52,10 @@ typedef unsigned int       uint32;
 
 // See the comment above about NSPR and 64-bit.
 #if __LP64__
+#ifndef _UINT64 // Avoid conflicts with cssmconfig.h from Security.framework.
+#define _UINT64
 typedef unsigned long uint64;
+#endif
 #else
 typedef unsigned long long uint64;
 #endif

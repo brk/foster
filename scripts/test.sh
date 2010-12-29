@@ -2,10 +2,10 @@
 
 OUTPUT=fc-output
 
-STATIC_LIBS="libfoster_main.o libchromium_base.a libcpuid.a libimath.a"
+STATIC_LIBS="libfoster_main.o libchromium_base.a libcpuid.a libimath.a libcoro.a"
 case `uname -s` in
   Darwin)
-    RUNTIME_LIBS="-lpthread -framework CoreFoundation"
+    RUNTIME_LIBS="-lpthread -framework CoreFoundation -framework Cocoa -lobjc"
     ;;
   Linux)
     RUNTIME_LIBS="-lrt -lpthread"
@@ -77,9 +77,29 @@ speedtest () {
   cat recorded-input.txt | ./$OPT
 }
 
+runfosterparse() {
+  echo ./fosterparse $TESTPATH $OUTPUT/out.parsed.pb
+  ./fosterparse $TESTPATH $OUTPUT/out.parsed.pb
+}
+runme() {
+  echo ./me $OUTPUT/out.parsed.pb $OUTPUT/out.checked.pb
+  ./me $OUTPUT/out.parsed.pb $OUTPUT/out.checked.pb
+}
+runfosterlower() {
+  echo ./fosterlower $OUTPUT/out.checked.pb -dump-prelinked
+  ./fosterlower $OUTPUT/out.checked.pb -dump-prelinked
+}
+
 runfosterc () {
   TIMESTART
-  ./fosterc $TESTPATH $@
+  #echo ./fosterc $TESTPATH $@
+  #./fosterc $TESTPATH $@
+
+  runfosterparse && runme && runfosterlower
+
+  #echo ./fostercheck $OUTPUT/out.parsed.pb $OUTPUT/out.checked.pb
+  #./fostercheck $OUTPUT/out.parsed.pb $OUTPUT/out.checked.pb
+
   TIMEEND "fosterc $@"
 }
 
