@@ -118,6 +118,14 @@ struct TypeReconstructor {
       return TupleTypeAST::get(args);
     }
 
+    if (loweredType->isArrayTy()) {
+      const llvm::ArrayType* arr =
+          llvm::dyn_cast<llvm::ArrayType>(loweredType);
+      return CArrayTypeAST::get(
+          recon(arr->getElementType()),
+          arr->getNumElements());
+    }
+
     if (llvm::dyn_cast<const llvm::OpaqueType>(loweredType)) {
       return NamedTypeAST::get("opaque", loweredType);
     }
@@ -313,24 +321,8 @@ TupleTypeAST* TupleTypeAST::get(const vector<TypeAST*>& argTypes) {
 const llvm::Type* CoroTypeAST::getLLVMType() const {
   if (!repr) {
     std::vector<const llvm::Type*> fieldTypes;
-    llvm::Type* pi8 = llvm::PointerType::getUnqual(
-                      llvm::IntegerType::get(llvm::getGlobalContext(), 8));
-
-    std::vector<const llvm::Type*> fnty_args;
-    fnty_args.push_back(pi8);
-    llvm::FunctionType* fnty = llvm::FunctionType::get(
-      /*Result=*/ llvm::Type::getVoidTy(llvm::getGlobalContext()),
-      /*Params=*/ fnty_args,
-      /*isVarArg=*/false);
-
-    fieldTypes.push_back(pi8);
-    fieldTypes.push_back(pi8);
-    fieldTypes.push_back(llvm::PointerType::getUnqual(fnty));
-    fieldTypes.push_back(pi8);
-    fieldTypes.push_back(pi8);
-    fieldTypes.push_back(llvm::IntegerType::get(llvm::getGlobalContext(), 32));
+    fieldTypes.push_back(foster_generic_coro_t);
     fieldTypes.push_back(this->a->getLLVMType());
-    //type { i8*, i8*, void (i8*)*, i8*, i8*, i32, <<A>> }
 
     repr = llvm::PointerType::getUnqual(
                 llvm::StructType::get(llvm::getGlobalContext(),
@@ -346,7 +338,7 @@ bool CoroTypeAST::canConvertTo(TypeAST* otherType) {
 }
 
 TypeAST*& CoroTypeAST::getContainedType(size_t i) {
-  ASSERT(i >= 0 && i < 2);
+  ASSERT(i >= 0 && i < getNumContainedTypes());
   return (i == 0) ? a : b;
 }
 
@@ -355,6 +347,36 @@ CoroTypeAST* CoroTypeAST::get(TypeAST* targ, TypeAST* tret) {
   ASSERT(tret);
   return new CoroTypeAST(targ, tret, SourceRange::getEmptyRange());
 }
+
+/////////////////////////////////////////////////////////////////////
+
+
+const llvm::Type* CArrayTypeAST::getLLVMType() const {
+  if (!repr) {
+  }
+  return repr;
+}
+
+// virtual
+bool CArrayTypeAST::canConvertTo(TypeAST* otherType) {
+  ASSERT(false) << "CArrayTypeAST :: canConvertTo " << str(otherType);
+  return false;
+}
+
+TypeAST*& CArrayTypeAST::getContainedType(size_t i) {
+  ASSERT(i >= 0 && i < getNumContainedTypes());
+  return cell;
+}
+
+CArrayTypeAST* CArrayTypeAST::get(TypeAST* tcell, uint64_t size) {
+  ASSERT(tcell);
+  ASSERT(int64_t(size) >= 0LL)
+    << "either you tried creating a buffer of "
+    << "more than 16 million terabytes, or the size "
+    << "that reached CArrayTypeAST::get() was negative.";
+  return new CArrayTypeAST(tcell, size, SourceRange::getEmptyRange());
+}
+
 
 /////////////////////////////////////////////////////////////////////
 

@@ -17,6 +17,8 @@ using llvm::Type;
 using llvm::getGlobalContext;
 using llvm::FunctionType;
 
+const llvm::Type* foster_generic_coro_t;
+
 bool canAssignType(TypeAST* from, TypeAST* to) {
   // TODO refine this!
   return from == to;

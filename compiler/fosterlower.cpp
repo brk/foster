@@ -46,6 +46,7 @@
 
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
+#include "parse/FosterUtils.h"
 #include "parse/DumpStructure.h"
 #include "parse/ProtobufUtils.h"
 #include "parse/ParsingContext.h"
@@ -438,6 +439,11 @@ int main(int argc, char** argv) {
     llvm::PointerType::getUnqual(mpz_struct_ty);
   module->addTypeName("mp_int", mp_int);
   gTypeScope.insert("int", NamedTypeAST::get("int", mp_int));
+
+  foster_generic_coro_t = libfoster_bc->getTypeByName("struct.foster_generic_coro");
+  ASSERT(foster_generic_coro_t != NULL);
+  module->addTypeName("pfoster_coro",
+    llvm::PointerType::getUnqual(foster_generic_coro_t));
 
   foster::putModuleMembersInScope(libfoster_bc, module);
   foster::putModuleMembersInInternalScope("imath", imath_bc, module);

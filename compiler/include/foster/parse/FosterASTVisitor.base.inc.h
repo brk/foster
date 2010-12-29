@@ -90,6 +90,7 @@ FOSTER_AST_VISITOR_GEN(RefTypeAST);
 FOSTER_AST_VISITOR_GEN(CoroTypeAST);
 FOSTER_AST_VISITOR_GEN(NamedTypeAST);
 FOSTER_AST_VISITOR_GEN(TupleTypeAST);
+FOSTER_AST_VISITOR_GEN(CArrayTypeAST);
 #endif
 
 // ----------------------------------------------------------------------------

@@ -255,6 +255,12 @@ void DumpTypeToProtobufPass::visit(CoroTypeAST* ast) {
   dumpChild(this, current->add_type_parts(), ast->getContainedType(1));
 }
 
+void DumpTypeToProtobufPass::visit(CArrayTypeAST* ast) {
+  setTagAndRange(current, ast, foster::pb::Type::CARRAY);
+  current->set_carray_size(ast->getSize());
+  dumpChild(this, current->add_type_parts(), ast->getContainedType(0));
+}
+
 void DumpTypeToProtobufPass::visit(TupleTypeAST* ast) {
   setTagAndRange(current, ast, foster::pb::Type::TUPLE);
   current->mutable_type_parts()->Reserve(ast->getNumContainedTypes());

@@ -499,6 +499,15 @@ void PrettyPrintTypePass::visit(CoroTypeAST* ast) {
   scan(PPToken(")"));
 }
 
+void PrettyPrintTypePass::visit(CArrayTypeAST* ast) {
+  std::stringstream ss; ss << ast->getSize();
+  scan(PPToken("CArray["));
+  emit(ast->getContainedType(0));
+  scan(PPToken("]("));
+  scan(PPToken(ss.str()));
+  scan(PPToken(")"));
+}
+
 void PrettyPrintTypePass::visit(TupleTypeAST* ast) {
   scan(PPToken(" { "));
   for (int i = 0; i < ast->getNumContainedTypes(); ++i) {

@@ -256,5 +256,25 @@ public:
   static CoroTypeAST* get(TypeAST* targ, TypeAST* tret);
 };
 
+class CArrayTypeAST : public TypeAST {
+  TypeAST* cell;
+  uint64_t size;
+
+  explicit CArrayTypeAST(TypeAST* tcell, int64_t size, const SourceRange& sr)
+    : TypeAST("CArrayType", NULL, sr),
+      cell(tcell), size(size) {}
+
+public:
+  virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
+  virtual const llvm::Type* getLLVMType() const;
+
+  uint64_t getSize() { return size; }
+  virtual bool canConvertTo(TypeAST* otherType);
+  virtual int getNumContainedTypes() const { return 1; }
+  virtual TypeAST*& getContainedType(size_t i);
+
+  static CArrayTypeAST* get(TypeAST* tcell, uint64_t size);
+};
+
 #endif // header guard
 

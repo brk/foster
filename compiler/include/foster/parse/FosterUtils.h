@@ -10,6 +10,8 @@ namespace llvm {
   class Module;
 }
 
+extern const llvm::Type* foster_generic_coro_t;
+
 class TypeAST;
 class FnTypeAST;
 class TupleTypeAST;
