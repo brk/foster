@@ -6,17 +6,16 @@
 #define LIBFOSTER_GC_ROOTS_H
 
 #include <inttypes.h>
+#include "libcoro/coro.h"
 
-struct foster_generic_coro_i32_i32 {
-  void* pctx;
-  void* sibling;
+struct foster_generic_coro {
+  coro_context ctx;
+  foster_generic_coro* sibling;
   void (*fn)(void*);
   void* env;
-  void* invoker;
+  foster_generic_coro* invoker;
   int32_t status;
-  int32_t arg;
 };
-
 
 // Thanks to its single-threaded semantics,
 // Lua gets by without needing to distinguish between
@@ -36,7 +35,7 @@ enum {
 // (eventually, per-thread variable)
 // coro_invoke(c) sets this to c.
 // coro_yield() resets this to current_coro->invoker.
-extern foster_generic_coro_i32_i32* current_coro;
+extern foster_generic_coro* current_coro;
 
 namespace foster {
 namespace runtime {

@@ -574,7 +574,7 @@ int backtrace_x86_32(frameinfo* frames, size_t sz) {
   return i;
 }
 
-void visitCoro(foster_generic_coro_i32_i32** coro,
+void visitCoro(foster_generic_coro** coro,
                void (*visitor)(void **root, const void *meta));
 
 void visitGCRootsWithStackMaps(void (*visitor)(void **root, const void *meta)) {
@@ -652,15 +652,15 @@ void visitGCRootsWithStackMaps(void (*visitor)(void **root, const void *meta)) {
   // TODO update current_coro to point to the newspace copy.
 }
 
-void visitCoro(foster_generic_coro_i32_i32** coro_addr,
+void visitCoro(foster_generic_coro** coro_addr,
                void (*visitor)(void **root, const void *meta)) {
-  foster_generic_coro_i32_i32* coro = *coro_addr;
+  foster_generic_coro* coro = *coro_addr;
   if (!coro) return;
 
   heap_cell* cell = heap_cell::for_body(coro);
   if (cell->is_forwarded()) {
     // if coro has fwding ptr, update coro addr
-    *coro_addr = (foster_generic_coro_i32_i32*) cell->get_forwarded_body();
+    *coro_addr = (foster_generic_coro*) cell->get_forwarded_body();
   } else {
     // otherwise, copy the coro to the newspace,
     // set the forwarding pointer, and scan the
@@ -685,6 +685,8 @@ TRACE;
 
   // scan coro->invoker
   //visitCoro((foster_generic_coro_i32_i32**) &coro->invoker, visitor);
+
+  // TODO handle arg
 }
 
 /////////////////////////////////////////////////////////////////
