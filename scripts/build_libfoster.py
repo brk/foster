@@ -51,7 +51,7 @@ def link_all(bcs):
   outbc = os.path.join(bindir, "libfoster.bc")
   cmd = "%s %s -link-as-library -o %s" % (llvmld, " ".join(bcs), outbc)
   print cmd
-  subprocess.call(cmd.split(" "))
+  return subprocess.call(cmd.split(" "))
 
 if __name__ == '__main__':
   clang  = sys.argv[1]
@@ -67,4 +67,5 @@ if __name__ == '__main__':
 
   bitcodes = [compile_source(source) for source in sources]
 
-  link_all(bitcodes)
+  status = link_all(bitcodes)
+  sys.exit(status)
