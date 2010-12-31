@@ -11,6 +11,6 @@ TODO
   * Effects
   * Coroutines
     * On-demand stack growth/detection of impending overflow
-    * make foster_coro struct be generic in arg type
     * tracing stack roots up the coro invocation chain
-
+  * Test that recursive closures work as expected
+  * Record notes/thoughts on Blelloch's Collection-Oriented Languages
