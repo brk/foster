@@ -14,6 +14,21 @@ namespace runtime {
 void initialize();
 void cleanup();
 
-} }
+struct FosterClosurei32i32 {
+  int32_t (*code)(void* env, int32_t);
+  void* env;
+};
+
+} // namespace foster::runtime
+} // namespace foster
+
+//////////////////////////////////////////////////////////////////
+
+extern "C" {
+
+// Interface to foster's memory allocator; see gc/foster_gc_allocate.cpp
+void* memalloc(int64_t sz);
+
+}
 
 #endif

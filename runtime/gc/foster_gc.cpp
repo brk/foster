@@ -5,12 +5,14 @@
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
+#include <cstddef> // for offsetof
 
 #include "foster_gc.h"
 #include "libfoster_gc_roots.h"
 #include "_generated_/FosterConfig.h"
 
 #include "base/time.h"
+#include "base/platform_thread.h"
 
 #include "execinfo.h"
 
@@ -126,7 +128,11 @@ struct heap_cell {
   }
 };
 
-void visitGCRootsWithStackMaps(void (*visitor)(void **root, const void *meta));
+
+typedef void (*gc_visitor_fn)(void** root, const void* meta);
+
+void visitGCRootsWithStackMaps(void* start_frame,
+                               gc_visitor_fn visitor);
 
 FILE* gclog = NULL;
 
@@ -434,9 +440,17 @@ void copying_gc_root_visitor(void **root, const void *meta) {
   }
 }
 
+void visitCoro(foster_generic_coro** coro, gc_visitor_fn visitor);
+
 void copying_gc::gc() {
   ++num_collections;
-  visitGCRootsWithStackMaps(copying_gc_root_visitor);
+
+  visitGCRootsWithStackMaps(__builtin_frame_address(0),
+                            copying_gc_root_visitor);
+
+  visitCoro(&current_coro, copying_gc_root_visitor);
+  // TODO update current_coro to point to the newspace copy.
+
   flip();
   next->clear(); // for debugging purposes
   fprintf(gclog, "\t/gc\n");
@@ -555,11 +569,10 @@ void force_gc_for_debugging_purposes() {
 // frame pointer.
 struct frameinfo { frameinfo* frameptr; void* retaddr; };
 
-int backtrace_x86_32(frameinfo* frames, size_t sz) {
-  frameinfo* frame = (frameinfo*) __builtin_frame_address(0);
-
+// obtain frame via (frameinfo*) __builtin_frame_address(0)
+int backtrace_x86(frameinfo* frame, frameinfo* frames, size_t frames_sz) {
   int i = 0;
-  while (frame && sz --> 0) {
+  while (frame && frames_sz --> 0) {
     if (0) {
       fprintf(gclog, "frame: %p\n", frame);
       if (frame) {
@@ -574,17 +587,15 @@ int backtrace_x86_32(frameinfo* frames, size_t sz) {
   return i;
 }
 
-void visitCoro(foster_generic_coro** coro,
-               void (*visitor)(void **root, const void *meta));
-
-void visitGCRootsWithStackMaps(void (*visitor)(void **root, const void *meta)) {
+void visitGCRootsWithStackMaps(void* start_frame,
+                               gc_visitor_fn visitor) {
   enum { MAX_NUM_RET_ADDRS = 1024 };
   static void* retaddrs[MAX_NUM_RET_ADDRS];
   static frameinfo frames[MAX_NUM_RET_ADDRS];
 
   // Collect frame pointers and return addresses
   // for the current call stack.
-  int nFrames = backtrace_x86_32(frames, MAX_NUM_RET_ADDRS);
+  int nFrames = backtrace_x86((frameinfo*) start_frame, frames, MAX_NUM_RET_ADDRS);
   const bool SANITY_CHECK_CUSTOM_BACKTRACE = false;
   if (SANITY_CHECK_CUSTOM_BACKTRACE) {
     // backtrace() seems to fail when called from a coroutine's stack...
@@ -647,15 +658,62 @@ void visitGCRootsWithStackMaps(void (*visitor)(void **root, const void *meta)) {
     }
     // TODO also scan pointers without metadata
   }
+}
 
-  visitCoro(&current_coro, visitor);
-  // TODO update current_coro to point to the newspace copy.
+void* topmost_frame_pointer(foster_generic_coro* coro) {
+  // If the coro status is "running", we should scan the coro
+  // but not its stack (since the stack will be examined from ::gc()).
+  // TODO when multithreading, running coros should be stamed with
+  // the id of the thread running them, so that other threads will
+  // know not to scan underneath another running thread.
+  foster_assert(coro->status == FOSTER_CORO_SUSPENDED
+             || coro->status == FOSTER_CORO_DORMANT,
+           "can only get topmost frame pointer from "
+           "suspended or dormant coro!");
+  void** sp = coro->ctx.sp;
+  #if __amd64
+  const int NUM_SAVED = 6;
+  #else // CORO_WIN_TIB : += 3
+  const int NUM_SAVED = 4;
+  #endif
+
+  return sp[NUM_SAVED - 1];
 }
 
 void visitCoro(foster_generic_coro** coro_addr,
-               void (*visitor)(void **root, const void *meta)) {
+               gc_visitor_fn visitor) {
   foster_generic_coro* coro = *coro_addr;
-  if (!coro) return;
+
+  if (!coro) {
+    return;
+  }
+
+  #ifdef FOSTER_MULTITHREADED
+  if (coro->status == FOSTER_CORO_RUNNING) {
+    // Don't scan a coroutine if it's being run by another thread!
+    if (coro->owner_thread != PlatformThread::CurrentId()) {
+      return;
+    }
+  }
+  #endif
+
+  if (coro->status == FOSTER_CORO_INVALID
+   || coro->status == FOSTER_CORO_DEAD) {
+    // No need to scan the coro or its stack...
+    return;
+  }
+
+  // If we've made it this far, then the coroutine is owned by us,
+  // and is either dormant, suspended, or running. We won't scan
+  // the stack of a running coro, since we should already have done so.
+  // But we will trace back the coro invocation chain and scan other stacks.
+
+  // Another point worth mentioning is that two generic_coros
+  // may point to the same stack but have different statuses:
+  // an fcoro may say "RUNNING" while a ccoro may say "SUSPENDED",
+  // because we don't bother updating the status for the current coro
+  // when we invoke away from it. But since fcoros are the only ones
+  // referenced directly by the program, it's all OK.
 
   heap_cell* cell = heap_cell::for_body(coro);
   if (cell->is_forwarded()) {
@@ -671,22 +729,32 @@ void visitCoro(foster_generic_coro** coro_addr,
   }
 
   fprintf(gclog, "coro %p, status: %d\n", coro, coro->status);
-  if (coro->status == FOSTER_CORO_INVALID
-   || coro->status == FOSTER_CORO_DEAD) {
-    return;
-  }
-TRACE;
-  // TODO mark stack so it won't be swept away
-
-  //visitCoro((foster_generic_coro_i32_i32**) &coro->sibling, visitor);
-
-  // extract frame pointer from pctx
-  // backtrace using frame pointer
-
-  // scan coro->invoker
-  //visitCoro((foster_generic_coro_i32_i32**) &coro->invoker, visitor);
 
   // TODO handle arg
+
+TRACE;
+
+  // Note! We scan stacks from ccoros (yielded to),
+  // not fcoros (invokable). A suspended stack will have
+  // pointers into the stack from both types of coro, but
+  // the ccoro pointer will point higher up the stack!
+  if (coro->fn) {
+    // Scan the sibling, which will also end up scanning
+    // the suspended stack which we invoked from.
+    visitCoro((foster_generic_coro**) &coro->sibling,
+              visitor);
+
+    // Once that's done, proceed up the invocation chain.
+    visitCoro((foster_generic_coro**) &coro->invoker,
+              visitor);
+  } else {
+    // TODO mark stack so it won't be swept away
+
+    // extract frame pointer from ctx, and visit its stack.
+    void* frameptr = topmost_frame_pointer(coro);
+    foster_assert(frameptr != NULL, "(c)coro frame ptr shouldn't be NULL!");
+    visitGCRootsWithStackMaps(frameptr, visitor);
+  }
 }
 
 /////////////////////////////////////////////////////////////////

@@ -5,6 +5,8 @@
 #ifndef LIBFOSTER_GC_ROOTS_H
 #define LIBFOSTER_GC_ROOTS_H
 
+#include <cstdio>
+#include <cstdlib>
 #include <inttypes.h>
 #include "libcoro/coro.h"
 
@@ -17,9 +19,8 @@ struct foster_generic_coro {
   int32_t status;
 };
 
-// Thanks to its single-threaded semantics,
-// Lua gets by without needing to distinguish between
-// suspended+active and suspended+inactive coroutines.
+// Thanks to its single-threaded semantics, Lua gets by without
+// needing to distinguish between suspended and dormant coroutines.
 enum {
   FOSTER_CORO_INVALID,
   /// coro which has been invoked from but not yet yielded back to.
@@ -39,6 +40,15 @@ extern foster_generic_coro* current_coro;
 
 namespace foster {
 namespace runtime {
+
+// We can't rely on assert() to print messages for us when we're
+// not on the main thread's stack.
+inline void foster_assert(bool ok, const char* msg) {
+  if (!ok) {
+    fprintf(stderr, "%s\n", msg);
+    exit(1);
+  }
+}
 
 } // namespace foster::runtime
 } // namespace foster
