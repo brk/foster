@@ -231,16 +231,16 @@ llvm::Value* storeAndMarkPointerAsGCRoot(llvm::Value* val) {
 
 // Returns ty**, the stack slot containing a ty*.
 llvm::Value* emitMalloc(const llvm::Type* ty) {
-  llvm::Value* memalloc = foster::module->getFunction("memalloc");
-  if (!memalloc) {
-    currentErrs() << "NO MEMALLOC IN MODULE! :(" << "\n";
+  llvm::Value* memalloc_cell = foster::module->getFunction("memalloc_cell");
+  if (!memalloc_cell) {
+    currentErrs() << "NO memalloc_cell IN MODULE! :(" << "\n";
     return NULL;
   }
 
-  // TODO we should statically determine
-  // the proper allocation size.
-  llvm::CallInst* mem = builder.CreateCall(memalloc,
-                                        getConstantInt64For(32),
+  llvm::GlobalVariable* ti = getTypeMapForType(ty);
+
+  llvm::CallInst* mem = builder.CreateCall(memalloc_cell,
+                                        ti,
                                         "mem");
   return storeAndMarkPointerAsGCRoot(
       builder.CreateBitCast(mem, llvm::PointerType::getUnqual(ty), "ptr"));

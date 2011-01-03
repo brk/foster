@@ -29,21 +29,45 @@ namespace foster {
 namespace runtime {
 namespace gc {
 
-// Performs byte-wise addition on void pointer base
-void* offset(void* base, int off) {
-  return (void*) (((char*) base) + off);
-}
+FILE* gclog = NULL;
 
 // This structure describes the layout of a particular type,
 // giving offsets and type descriptors for the pointer slots.
+// Note that the GC plugin emits unpadded elements!
 struct typemap {
+  int64_t cell_size;
   const char* name;
-  int32_t numPointers;
+  int32_t numEntries;
   struct entry {
     const void* typeinfo;
     int32_t offset;
   };
   entry entries[0];
+};
+
+void inspect_typemap(typemap* ti) {
+  fprintf(gclog, "typemap: %p\n", ti); fflush(gclog);
+  if (!ti) return;
+
+  fprintf(gclog, "\tsize: %lld\n", ti->cell_size); fflush(gclog);
+  fprintf(gclog, "\tname: %s\n", ti->name); fflush(gclog);
+  fprintf(gclog, "\tnumE: %d\n", ti->numEntries); fflush(gclog);
+  for (int i = 0; i < ti->numEntries; ++i) {
+    fprintf(gclog, "\t\t@%d: %p\n", ti->entries[i].offset,
+                                 ti->entries[i].typeinfo); fflush(gclog);
+  }
+}
+
+foster_typemap_2
+foster_coro_i32_i32_typemap = {
+  128,
+  "foster_coro_i32_i32", 2,
+  {
+  { &foster_coro_i32_i32_typemap,
+    offsetof(foster_generic_coro, sibling) },
+  { &foster_coro_i32_i32_typemap,
+    offsetof(foster_generic_coro, invoker) },
+  }
 };
 
 struct stackmap {
@@ -102,39 +126,15 @@ extern "C" {
 }
 
 ////////////////////////////////////////////////////////////////////
-const uint64_t FORWARDED_BIT = 0x02; // 0b000..00010
-#define HEAP_CELL_HEADER_SIZE (sizeof(int64_t))
-
-struct heap_cell {
-  int64_t       _size;
-  unsigned char _body[0];
-  //======================================
-  void* body() { return (void*) &_body; }
-  int64_t size() { return _size; }
-  void set_size(int64_t size) { _size = size; }
-
-  bool is_forwarded() {
-    return (((uint64_t) size()) & FORWARDED_BIT) != 0;
-  }
-  void set_forwarded_body(void* body) {
-    _size = ((uint64_t) body) | FORWARDED_BIT;
-  }
-  void* get_forwarded_body() {
-    return (void*) (((uint64_t) size()) & ~FORWARDED_BIT);
-  }
-
-  static heap_cell* for_body(void* ptr) {
-    return (heap_cell*) offset(ptr, -HEAP_CELL_HEADER_SIZE);
-  }
-};
-
 
 typedef void (*gc_visitor_fn)(void** root, const void* meta);
 
 void visitGCRootsWithStackMaps(void* start_frame,
                                gc_visitor_fn visitor);
 
-FILE* gclog = NULL;
+bool isMetadataPointer(const void* meta) {
+ return uint64_t(meta) > uint64_t(1<<16);
+}
 
 class copying_gc {
   class semispace {
@@ -173,15 +173,15 @@ class copying_gc {
 
       int64_t free_size() { return end - bump; }
 
-      bool can_allocate(int64_t body_size) {
-        return end > bump + body_size + HEAP_CELL_HEADER_SIZE;
+      bool can_allocate_cell(int64_t cell_size) {
+        return end > bump + cell_size;
       }
 
-      void* allocate_prechecked(int64_t body_size) {
+      void* allocate_cell_prechecked(typemap* typeinfo) {
         heap_cell* allot = (heap_cell*) bump;
-        bump += body_size + HEAP_CELL_HEADER_SIZE;
-        allot->set_size(body_size);
-        return allot->body();
+        bump += typeinfo->cell_size;
+        allot->set_meta(typeinfo);
+        return allot->body_addr();
       }
 
       // Prerequisite: body is a stack pointer.
@@ -219,7 +219,7 @@ class copying_gc {
         }
 
         // for each pointer field in the cell
-        for (int i = 0; i < map->numPointers; ++i) {
+        for (int i = 0; i < map->numEntries; ++i) {
           const typemap::entry& e = map->entries[i];
           void** oldslot = (void**) offset(body, e.offset);
           #if 0
@@ -242,7 +242,7 @@ class copying_gc {
       // returns body of newly allocated cell
       void* copy(void* body, const void* meta) {
         const int ptrsize = sizeof(void*);
-        if (!meta) {
+        if (!(meta)) {
           void** bp4 = (void**) offset(body, ptrsize);
           fprintf(gclog, "called copy with null metadata\n"); fflush(gclog);
           fprintf(gclog, "body   is %p -> %p\n", body, *(void**)body); fflush(gclog);
@@ -252,12 +252,13 @@ class copying_gc {
           void** envptr = (void**)*bp4;
           fprintf(gclog, "envptr: %p -> %p\n", envptr, *envptr); fflush(gclog);
           typemap* envtm = (typemap*) *envptr;
-          fprintf(gclog, "env tm name is %s, # ptrs = %d\n", envtm->name, envtm->numPointers); fflush(gclog);
+          fprintf(gclog, "env tm name is %s, # ptrs = %d\n", envtm->name, envtm->numEntries); fflush(gclog);
           return NULL;
         }
 
         heap_cell* cell = heap_cell::for_body(body);
-
+        fprintf(gclog, "copying cell %p, meta %p\n", cell, meta); fflush(gclog);
+        fprintf(gclog, "copying cell %p, is fwded? %d\n", cell, cell->is_forwarded()); fflush(gclog);
         if (cell->is_forwarded()) {
           void* fwd = cell->get_forwarded_body();
           fprintf(gclog, "cell %p(->0x%x) considered forwarded to %p for body %p(->0x%x)\n",
@@ -265,19 +266,41 @@ class copying_gc {
           return fwd;
         }
 
-        int64_t size = cell->size();
+        int64_t cell_size;
+        if (!meta) {
+          meta = (void*) cell->cell_size();
+        }
 
-        if (can_allocate(size)) {
-          memcpy(bump, cell, size);
+        if (isMetadataPointer(meta)) {
+         fprintf(gclog, "derefing meta = %p\n",meta); fflush(gclog);
+          // probably an actual pointer
+          cell_size = ((typemap*) meta)->cell_size;
+          fprintf(gclog, "derefed meta = %p\n",meta); fflush(gclog);
+        } else {
+          cell_size = int64_t(meta);
+        }
+        foster_assert(cell_size > 16, "cell size must be at least 16!");
+
+        fprintf(gclog, "copying cell %p, cell size %llu\n", cell, cell_size); fflush(gclog);
+
+
+        if (can_allocate_cell(cell_size)) {
+          TRACE;
+          memcpy(bump, cell, cell_size);
           heap_cell* new_addr = (heap_cell*) bump;
-          bump += size;
-
-          cell->set_forwarded_body(new_addr->body());
-
-          if (meta) {
+          bump += cell_size;
+          TRACE;
+          cell->set_forwarded_body(new_addr->body_addr());
+          TRACE;
+          if (isMetadataPointer(meta)) {
             const typemap* map = (const typemap*) meta;
+            TRACE;
+            fprintf(gclog, "copying cell %p, map %p\n", cell, map); fflush(gclog);
+            fprintf(gclog, "copying cell %p, map np %d, name %s\n", cell,\
+              map->numEntries, map->name); fflush(gclog);
+
             // for each pointer field in the cell
-            for (int i = 0; i < map->numPointers; ++i) {
+            for (int i = 0; i < map->numEntries; ++i) {
               const typemap::entry& e = map->entries[i];
               void** oldslot = (void**) offset(body, e.offset);
 
@@ -286,17 +309,22 @@ class copying_gc {
               // recursively copy the field from cell, yielding subfwdaddr
               // set the copied cell field to subfwdaddr
               if (*oldslot != NULL) {
-                void** newslot = (void**) offset(new_addr->body(), e.offset);
+                void** newslot = (void**) offset(new_addr->body_addr(), e.offset);
+                fprintf(gclog, "recursively copying of cell %p slot %p with ti %p to %p\n",
+                  cell, oldslot, e.typeinfo, newslot); fflush(gclog);
                 *newslot = copy(*oldslot, e.typeinfo);
+                fprintf(gclog, "recursively copied  of cell %p slot %p with ti %p to %p\n",
+                  cell, oldslot, e.typeinfo, newslot); fflush(gclog);
+
               }
             }
-
-            {
+            TRACE;
+            if (0) {
               struct tuple_t { void* l, *r; int s; };
               tuple_t& t1 = * (tuple_t*)body;
-              tuple_t& t2 = * (tuple_t*)new_addr->body();
+              tuple_t& t2 = * (tuple_t*)new_addr->body_addr();
               fprintf(gclog, "%p : {%p, %p, %d} -> %p: { %p , %p, %d }\n", body,
-                t1.l, t1.r, t1.s, new_addr->body(), t2.l, t2.r, t2.s);
+                t1.l, t1.r, t1.s, new_addr->body_addr(), t2.l, t2.r, t2.s);
             }
           }
 
@@ -304,7 +332,7 @@ class copying_gc {
         } else {
           printf("not enough space to copy!\n");
           printf("have %llu = 0x%llx\n", free_size(), (unsigned long long) free_size());
-          printf("need %llu = 0x%llx\n", size,        (unsigned long long) size);
+          printf("need %llu = 0x%llx\n", cell_size,   (unsigned long long) cell_size);
           //exit(255);
           return NULL;
         }
@@ -375,18 +403,19 @@ public:
     next->update(body, meta);
   }
 
-  void* allocate(int64_t size) {
+  void* allocate_cell(typemap* typeinfo) {
     ++num_allocations;
+    int64_t cell_size = typeinfo->cell_size;
 
-    if (curr->can_allocate(size)) {
-      return curr->allocate_prechecked(size);
+    if (curr->can_allocate_cell(cell_size)) {
+      return curr->allocate_cell_prechecked(typeinfo);
     } else {
       gc();
-      if (curr->can_allocate(size)) {
-        printf("gc collection freed space, now have %lld\n", curr->free_size());
-            return curr->allocate_prechecked(size);
+      if (curr->can_allocate_cell(cell_size)) {
+        fprintf(gclog, "gc collection freed space, now have %lld\n", curr->free_size());
+            return curr->allocate_cell_prechecked(typeinfo);
       } else {
-        printf("working set exceeded heap size! aborting...\n");
+        fprintf(gclog, "working set exceeded heap size! aborting...\n"); fflush(gclog);
         exit(255); // TODO be more careful if we're allocating from a coro...
         return NULL;
       }
@@ -400,7 +429,10 @@ copying_gc* allocator = NULL;
 // Eventually we'll want a generational GC with thread-specific
 // allocators and (perhaps) type-specific allocators.
 void copying_gc_root_visitor(void **root, const void *meta) {
+  foster_assert(root != NULL, "someone passed a NULL root addr!");
   void* body = *root;
+  fprintf(gclog, "copying_gc_root_visitor(%p -> %p)\n", root, body); fflush(gclog);
+
   if (body) {
     fprintf(gclog, "gc root@%p visited, body: %p, meta: %p\n", root, body, meta);
 
@@ -415,7 +447,7 @@ void copying_gc_root_visitor(void **root, const void *meta) {
       fprintf(gclog, "found stack pointer\n");
       if (meta) {
         typemap* map = (typemap*) meta;
-        fprintf(gclog, "name is %s, # ptrs is %d\n", map->name, map->numPointers);
+        fprintf(gclog, "name is %s, # ptrs is %d\n", map->name, map->numEntries);
       }
 
       allocator->update(body, meta);
@@ -427,7 +459,11 @@ void copying_gc_root_visitor(void **root, const void *meta) {
       //                                 |            |
       //                                 |            |
       //                                 |------------|
+      fprintf(gclog, "copying_gc_root_visitor(%p -> %p): copying body\n", root, body); fflush(gclog);
+      fprintf(gclog, "copying_gc_root_visitor(%p -> %p): meta map is %p\n", root, body, meta); fflush(gclog);
+
       void* newaddr = allocator->copy(body, meta);
+      fprintf(gclog, "copying_gc_root_visitor(%p -> %p): copied  body\n", root, body); fflush(gclog);
       if (meta) {
         typemap* map = (typemap*) meta;
         fprintf(gclog, "\tname: %s", map->name);
@@ -445,11 +481,16 @@ void visitCoro(foster_generic_coro** coro, gc_visitor_fn visitor);
 void copying_gc::gc() {
   ++num_collections;
 
+  fprintf(gclog, "visiting gc roots on current stack\n"); fflush(gclog);
   visitGCRootsWithStackMaps(__builtin_frame_address(0),
                             copying_gc_root_visitor);
 
+  fprintf(gclog, "visiting current fcoro: %p\n", current_coro); fflush(gclog);
+
   visitCoro(&current_coro, copying_gc_root_visitor);
   // TODO update current_coro to point to the newspace copy.
+
+  fprintf(gclog, "visited current fcoro: %p\n", current_coro); fflush(gclog);
 
   flip();
   next->clear(); // for debugging purposes
@@ -539,8 +580,8 @@ std::string format_ref(void* ptr) {
   return std::string(buf);
 }
 
-extern "C" void* memalloc(int64_t sz) {
-  return allocator->allocate(sz);
+extern "C" void* memalloc_cell(typemap* typeinfo) {
+  return allocator->allocate_cell(typeinfo);
 }
 
 void force_gc_for_debugging_purposes() {
@@ -573,7 +614,7 @@ struct frameinfo { frameinfo* frameptr; void* retaddr; };
 int backtrace_x86(frameinfo* frame, frameinfo* frames, size_t frames_sz) {
   int i = 0;
   while (frame && frames_sz --> 0) {
-    if (0) {
+    if (1) {
       fprintf(gclog, "frame: %p\n", frame);
       if (frame) {
         fprintf(gclog, "frameptr: %p, retaddr: %p\n", frame->frameptr, frame->retaddr);
@@ -584,6 +625,7 @@ int backtrace_x86(frameinfo* frame, frameinfo* frames, size_t frames_sz) {
     frame     = (*frame).frameptr;
     ++i;
   }
+  TRACE;
   return i;
 }
 
@@ -598,7 +640,7 @@ void visitGCRootsWithStackMaps(void* start_frame,
   int nFrames = backtrace_x86((frameinfo*) start_frame, frames, MAX_NUM_RET_ADDRS);
   const bool SANITY_CHECK_CUSTOM_BACKTRACE = false;
   if (SANITY_CHECK_CUSTOM_BACKTRACE) {
-    // backtrace() seems to fail when called from a coroutine's stack...
+    // backtrace() fails when called from a coroutine's stack...
     int numRetAddrs = backtrace((void**)&retaddrs, MAX_NUM_RET_ADDRS);
 #if 1
     for (int i = 0; i < numRetAddrs; ++i) {
@@ -616,6 +658,8 @@ void visitGCRootsWithStackMaps(void* start_frame,
       }
     }
   }
+
+  TRACE;
 
   // Use the collected return addresses to look up a safe point
   // cluster map, which gives offsets from the corresponding
@@ -643,21 +687,27 @@ void visitGCRootsWithStackMaps(void* start_frame,
   // stack frame sizes to crawl the rest of the stack.
 
   for (int i = 0; i < nFrames; ++i) {
+    TRACE;
     void* safePointAddr = frames[i].retaddr;
     void* frameptr = (void*) frames[i].frameptr;
-
+TRACE;
     const stackmap::PointCluster* pc = clusterForAddress[safePointAddr];
     if (!pc) continue;
-
+TRACE;
     int32_t frameSize = pc->frameSize;
     for (int a = 0; a < pc->liveCountWithMetadata; ++a) {
       int32_t     off  = pc->offsetWithMetadata(a)->offset;
       const void* meta = pc->offsetWithMetadata(a)->metadata;
       void* rootaddr = offset(frameptr, off);
+      TRACE;
+      fprintf(gclog, "visiting (%p) root %p with meta %p\n", visitor, rootaddr, meta); fflush(gclog);
+      inspect_typemap((typemap*)meta);
       visitor((void**) rootaddr, meta);
+      TRACE;
     }
     // TODO also scan pointers without metadata
   }
+  TRACE;
 }
 
 void* topmost_frame_pointer(foster_generic_coro* coro) {
@@ -715,18 +765,8 @@ void visitCoro(foster_generic_coro** coro_addr,
   // when we invoke away from it. But since fcoros are the only ones
   // referenced directly by the program, it's all OK.
 
-  heap_cell* cell = heap_cell::for_body(coro);
-  if (cell->is_forwarded()) {
-    // if coro has fwding ptr, update coro addr
-    *coro_addr = (foster_generic_coro*) cell->get_forwarded_body();
-  } else {
-    // otherwise, copy the coro to the newspace,
-    // set the forwarding pointer, and scan the
-    // coro.
-    // TODO don't assume there's a single global allocator
-    void* coro_metadata = NULL;
-    //void* newbody = allocator->copy(body, coro_metadata);
-  }
+  *coro_addr = (foster_generic_coro*) allocator->copy(coro, NULL);
+  coro = *coro_addr;
 
   fprintf(gclog, "coro %p, status: %d\n", coro, coro->status);
 
@@ -739,10 +779,12 @@ TRACE;
   // pointers into the stack from both types of coro, but
   // the ccoro pointer will point higher up the stack!
   if (coro->fn) {
+    fprintf(gclog, "scanning fcoro sibling %p\n", coro->sibling);
     // Scan the sibling, which will also end up scanning
     // the suspended stack which we invoked from.
     visitCoro((foster_generic_coro**) &coro->sibling,
               visitor);
+    fprintf(gclog, "scanned fcoro sibling %p, scanning invoker: %p\n", coro->sibling, coro->invoker);
 
     // Once that's done, proceed up the invocation chain.
     visitCoro((foster_generic_coro**) &coro->invoker,
@@ -753,8 +795,14 @@ TRACE;
     // extract frame pointer from ctx, and visit its stack.
     void* frameptr = topmost_frame_pointer(coro);
     foster_assert(frameptr != NULL, "(c)coro frame ptr shouldn't be NULL!");
+    // TODO currently, we don't allocate/initialize the header
+    // of foster_coro objects, so the GC sees a bogus size when
+    // scanning the stack that invoked a coro...
+    fprintf(gclog, "scanning ccoro stack\n");
     visitGCRootsWithStackMaps(frameptr, visitor);
+    fprintf(gclog, "scanned ccoro sibling\n");
   }
+  fflush(gclog);
 }
 
 /////////////////////////////////////////////////////////////////

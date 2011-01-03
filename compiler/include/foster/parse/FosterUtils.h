@@ -10,6 +10,7 @@ namespace llvm {
   class Module;
 }
 
+// This is the (prefix) struct type for a foster coro.
 extern const llvm::Type* foster_generic_coro_t;
 
 class TypeAST;
