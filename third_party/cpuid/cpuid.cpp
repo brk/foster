@@ -303,8 +303,8 @@ inline void cpuid_with_eax_and_ecx(uint in_eax, uint in_ecx) {
           );
 }
 
-uint64 rdtsc_unserialized() {
-  uint64 ticks;
+uint64_t rdtsc_unserialized() {
+  uint64_t ticks;
   __asm__ __volatile__("rdtsc": "=A" (ticks));
   return ticks;
 }
