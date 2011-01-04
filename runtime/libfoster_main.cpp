@@ -13,33 +13,6 @@
 extern "C" int foster__main();
 
 #include "libfoster.h"
-#include "foster_gc.h"
-
-// This goes in the separately-compiled libfoster_main .o file,
-// instead of the fosterc-compiled bitcode file, because having the
-// llvm_gc_root_chain variable in the .bc can interfere with llc.
-foster::runtime::gc::StackEntry *llvm_gc_root_chain;
-
-namespace foster {
-namespace runtime {
-namespace gc {
-
-void visitGCRoots(void (*Visitor)(void **Root, const void *Meta)) {
-  for (StackEntry *R = llvm_gc_root_chain; R; R = R->Next) {
-    unsigned i = 0;
-
-    // For roots [0, NumMeta), the metadata pointer is in the FrameMap.
-    for (unsigned e = R->Map->NumMeta; i != e; ++i)
-      Visitor(&R->Roots[i], R->Map->Meta[i]);
-
-    // For roots [NumMeta, NumRoots), the metadata pointer is null.
-    for (unsigned e = R->Map->NumRoots; i != e; ++i) {
-      Visitor(&R->Roots[i], NULL);
-    }
-  }
-}
-
-} } }
 
 int main(int argc, char** argv) {
   foster::runtime::initialize();

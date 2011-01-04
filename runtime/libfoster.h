@@ -5,6 +5,8 @@
 #ifndef LIBFOSTER_H
 #define LIBFOSTER_H
 
+#include <stdint.h>
+
 // This file exists to provide symbols to link
 // libfoster_main.cpp::main() to libfoster
 
