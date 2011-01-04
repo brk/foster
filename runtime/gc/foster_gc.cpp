@@ -52,7 +52,8 @@ void inspect_typemap(typemap* ti) {
   fprintf(gclog, "\tsize: %lld\n", ti->cell_size); fflush(gclog);
   fprintf(gclog, "\tname: %s\n", ti->name); fflush(gclog);
   fprintf(gclog, "\tnumE: %d\n", ti->numEntries); fflush(gclog);
-  for (int i = 0; i < ti->numEntries; ++i) {
+  int iters = ti->numEntries > 128 ? 0 : ti->numEntries;
+  for (int i = 0; i < iters; ++i) {
     fprintf(gclog, "\t\t@%d: %p\n", ti->entries[i].offset,
                                  ti->entries[i].typeinfo); fflush(gclog);
   }
@@ -242,8 +243,16 @@ class copying_gc {
       // returns body of newly allocated cell
       void* copy(void* body, const void* meta) {
         const int ptrsize = sizeof(void*);
+        heap_cell* cell = heap_cell::for_body(body);
+
+        if (!meta) {
+          meta = cell->get_meta();
+        }
+
         if (!(meta)) {
           void** bp4 = (void**) offset(body, ptrsize);
+          const void* meta2 = *(const void**) offset(body, -ptrsize);
+          inspect_typemap((typemap*) meta2);
           fprintf(gclog, "called copy with null metadata\n"); fflush(gclog);
           fprintf(gclog, "body   is %p -> %p\n", body, *(void**)body); fflush(gclog);
           fprintf(gclog, "body+%d is %p -> %p\n", ptrsize, offset(body, ptrsize), *bp4); fflush(gclog);
@@ -256,7 +265,6 @@ class copying_gc {
           return NULL;
         }
 
-        heap_cell* cell = heap_cell::for_body(body);
         fprintf(gclog, "copying cell %p, meta %p\n", cell, meta); fflush(gclog);
         fprintf(gclog, "copying cell %p, is fwded? %d\n", cell, cell->is_forwarded()); fflush(gclog);
         if (cell->is_forwarded()) {

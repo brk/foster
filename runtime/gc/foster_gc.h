@@ -40,6 +40,8 @@ struct heap_cell {
   //======================================
   void* body_addr() { return (void*) &body; }
   int64_t cell_size() { return size; }
+  void* get_meta() { return (void*) size; }
+
   void set_meta(void* meta) { size = (int64_t) meta; }
   void set_cell_size(int64_t sz) { size = sz; }
 
