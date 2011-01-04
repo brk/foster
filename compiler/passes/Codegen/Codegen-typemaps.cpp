@@ -91,19 +91,26 @@ const Type* getHeapCellHeaderTy() {
   return builder.getInt64Ty();
 }
 
-Constant* i64max(Constant* a, Constant* b) {
-  Constant* cmp = ConstantExpr::getICmp(llvm::CmpInst::ICMP_SLE, a, b);
-  // (a <= b) ? b : a
-  return ConstantExpr::getSelect(cmp, b, a);
+// Rounds up to nearest multiple of the given power of two.
+Constant* roundUpToNearestMultiple(Constant* v, Constant* powerOf2) {
+  Constant* mask = ConstantExpr::getSub(powerOf2, getConstantInt64For(1));
+  // Compute the value of      let m = p - 1 in ((v + m) & ~m)
+  return ConstantExpr::getAnd(
+           ConstantExpr::getAdd(v, mask),
+           ConstantExpr::getNot(mask));
 }
 
+Constant* defaultHeapAlignment() {
+  return getConstantInt64For(16);
+}
+
+// Returns the smallest multiple of the default heap alignment
+// which is larger than the size of the given type plus the heap header size.
 Constant* cellSizeOf(const Type* ty) {
-  const llvm::Type* i64 = llvm::IntegerType::get(llvm::getGlobalContext(), 64);
   Constant* sz = ConstantExpr::getSizeOf(ty);
-  Constant* mn = llvm::ConstantInt::getSigned(i64, 16);
   Constant* hs = ConstantExpr::getSizeOf(getHeapCellHeaderTy());
   Constant* cs = ConstantExpr::getAdd(sz, cs);
-  return i64max(cs, mn);
+  return roundUpToNearestMultiple(cs, defaultHeapAlignment());
 }
 
 std::map<const Type*, GlobalVariable*> typeMapForType;
