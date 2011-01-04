@@ -66,3 +66,11 @@ TODO
 
 * Interfacing with C libraries:
 
+
+* chromium-base
+ * Use format_macros.h
+ * stringprintf.h ?
+ * Keep statistics of GC/mutator run times?
+  * metrics/stats_counter.h
+  * metrics/histogram.h
+  * perftimer.h (would need modification)
