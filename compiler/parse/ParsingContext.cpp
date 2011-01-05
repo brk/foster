@@ -204,8 +204,6 @@ DDiag::~DDiag() {}
 
 ////////////////////////////////////////////////////////////////////
 
-llvm::Module* module = NULL;
-
 map<string, const llvm::Type*> gCachedLLVMTypes;
 
 TypeAST* TypeASTFor(const string& name) {

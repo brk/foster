@@ -27,6 +27,8 @@
 #include "llvm/Intrinsics.h"
 #include "llvm/Module.h"
 #include "llvm/Metadata.h"
+//#include "llvm/Analysis/DIBuilder.h"
+#include "llvm/Support/Dwarf.h"
 #include "llvm/Support/Format.h"
 
 #include "pystring/pystring.h"
@@ -47,7 +49,6 @@ using llvm::APInt;
 using llvm::PHINode;
 using llvm::dyn_cast;
 
-using foster::module;
 using foster::builder;
 using foster::currentOuts;
 using foster::currentErrs;
@@ -55,77 +56,22 @@ using foster::SourceRange;
 using foster::EDiag;
 using foster::show;
 
-struct CodegenPass : public ExprASTVisitor {
-  #include "parse/ExprASTVisitor.decls.inc.h"
-
-  typedef foster::SymbolTable<llvm::Value> ValueTable;
-  typedef ValueTable::LexicalScope         ValueScope;
-  ValueTable valueSymTab;
-
-  llvm::Value* lookup(const std::string& fullyQualifiedSymbol) {
-    llvm::Value* v =  valueSymTab.lookup(fullyQualifiedSymbol);
-    if (v) return v;
-
-    // Otherwise, it should be a function name.
-    v = foster::module->getFunction(fullyQualifiedSymbol);
-    if (!v) {
-     currentErrs() << "name was neither fn arg nor fn name: "
-                << fullyQualifiedSymbol << "\n";
-     valueSymTab.dump(currentErrs());
-     ASSERT(false) << "unable to find value for symbol " << fullyQualifiedSymbol;
-    }
-    return v;
-  }
-};
-
-template<typename T>
-std::string hex(T* ast) {
-  std::string s;
-  llvm::raw_string_ostream ss(s);
-  ss << ast;
-  return ss.str();
-}
-
-namespace foster {
-  void codegen(ExprAST* ast) {
-    CodegenPass cp; ast->accept(&cp);
-  }
-
-  void codegen(ExprAST* ast, CodegenPass* cp) {
-    ast->accept(cp);
-  }
-}
-
-void setValue(ExprAST* ast, llvm::Value* V) {
-  if (false) {
-    foster::dbg("setValue") << "ast@" << ast << " :tag: " << std::string(ast->tag)
-        << "\t; value tag: " << llvmValueTag(V) << "\t; value " << *V << "\n";
-  }
-  ast->value = V;
-}
-
-llvm::Value* getValue(ExprAST* ast) {
-  if (false && ast->value) {
-  foster::dbg("getValue") << "ast@" << ast << " :tag: " << std::string(ast->tag)
-      << "\t; value: " << *(ast->value) << "\n";
-  }
-  return ast->value;
-}
-
-const llvm::Type* ty_i8_ptr_ptr() {
-  return llvm::PointerType::getUnqual(builder.getInt8PtrTy());
-}
 
 // Declarations for Codegen-typemaps.cpp
 llvm::GlobalVariable*
 emitTypeMap(const Type* ty, std::string name, bool skipOffsetZero = false);
 
 void registerType(const Type* ty, std::string desiredName,
+                  llvm::Module* mod,
                   bool isClosureEnvironment = false);
 
-llvm::GlobalVariable* getTypeMapForType(const llvm::Type*);
+llvm::GlobalVariable* getTypeMapForType(const llvm::Type*, llvm::Module* mod);
 
 bool mightContainHeapPointers(const llvm::Type* ty);
+
+////////////////////////////////////////////////////////////////////
+
+
 
 // If the provided root is an alloca, return it directly;
 // if it's a bitcast, return the first arg bitcast to alloca (or NULL);
@@ -144,9 +90,12 @@ llvm::AllocaInst* getAllocaForRoot(llvm::Instruction* root) {
   return NULL;
 }
 
+
 // root should be an AllocaInst or a bitcast of such
-void markGCRoot(llvm::Value* root, llvm::Constant* meta) {
-  llvm::Constant* llvm_gcroot = llvm::Intrinsic::getDeclaration(module,
+void markGCRoot(llvm::Value* root,
+                llvm::Constant* meta,
+                llvm::Module* mod) {
+  llvm::Constant* llvm_gcroot = llvm::Intrinsic::getDeclaration(mod,
                                                llvm::Intrinsic::gcroot);
 
   ASSERT(llvm_gcroot) << "unable to mark GC root, llvm.gcroot not found";
@@ -154,7 +103,7 @@ void markGCRoot(llvm::Value* root, llvm::Constant* meta) {
   // If we don't have something more specific, try using
   // the lowered type's type map.
   if (!meta) {
-    meta = getTypeMapForType(root->getType());
+    meta = getTypeMapForType(root->getType(), mod);
   }
 
   if (!meta) {
@@ -204,7 +153,8 @@ llvm::AllocaInst* stackSlotWithValue(llvm::Value* val, const std::string& name) 
 //
 //      TODO need to guarantee that the val passed to us is either
 //      a pointer to memalloc-ed memory, or a value that does not escape.
-llvm::Value* storeAndMarkPointerAsGCRoot(llvm::Value* val) {
+llvm::Value* storeAndMarkPointerAsGCRoot(llvm::Value* val,
+                                         llvm::Module* mod) {
   if (!val->getType()->isPointerTy()) {
      llvm::AllocaInst* valptr = stackSlotWithValue(val, "ptrfromnonptr");
      val = valptr;
@@ -218,9 +168,10 @@ llvm::Value* storeAndMarkPointerAsGCRoot(llvm::Value* val) {
   // allocate a slot for a T* on the stack
   llvm::AllocaInst* stackslot = CreateEntryAlloca(val->getType(), "stackref");
   llvm::Value* root = builder.CreateBitCast(stackslot,
-                                            ty_i8_ptr_ptr(), "gcroot");
+             llvm::PointerType::getUnqual(builder.getInt8PtrTy()), "gcroot");
 
-  markGCRoot(root, getTypeMapForType(val->getType()->getContainedType(0)));
+  markGCRoot(root, getTypeMapForType(val->getType()->getContainedType(0), mod),
+             mod);
   builder.CreateStore(val, stackslot, /*isVolatile=*/ false);
 
   // Instead of returning the pointer (of type T*),
@@ -229,21 +180,101 @@ llvm::Value* storeAndMarkPointerAsGCRoot(llvm::Value* val) {
   return stackslot;
 }
 
-// Returns ty**, the stack slot containing a ty*.
-llvm::Value* emitMalloc(const llvm::Type* ty) {
-  llvm::Value* memalloc_cell = foster::module->getFunction("memalloc_cell");
-  if (!memalloc_cell) {
-    currentErrs() << "NO memalloc_cell IN MODULE! :(" << "\n";
-    return NULL;
+////////////////////////////////////////////////////////////////////
+
+struct CodegenPass : public ExprASTVisitor {
+  #include "parse/ExprASTVisitor.decls.inc.h"
+
+  typedef foster::SymbolTable<llvm::Value> ValueTable;
+  typedef ValueTable::LexicalScope         ValueScope;
+  ValueTable valueSymTab;
+
+  llvm::Module* mod;
+  //llvm::DIBuilder* dib;
+
+  explicit CodegenPass(llvm::Module* mod) : mod(mod) {
+    //dib = new DIBuilder(*mod);
   }
 
-  llvm::GlobalVariable* ti = getTypeMapForType(ty);
+  ~CodegenPass() {
+    //delete dib;
+  }
 
-  llvm::CallInst* mem = builder.CreateCall(memalloc_cell,
-                                        ti,
-                                        "mem");
-  return storeAndMarkPointerAsGCRoot(
-      builder.CreateBitCast(mem, llvm::PointerType::getUnqual(ty), "ptr"));
+  llvm::Value* lookup(const std::string& fullyQualifiedSymbol) {
+    llvm::Value* v =  valueSymTab.lookup(fullyQualifiedSymbol);
+    if (v) return v;
+
+    // Otherwise, it should be a function name.
+    v = mod->getFunction(fullyQualifiedSymbol);
+    if (!v) {
+     currentErrs() << "name was neither fn arg nor fn name: "
+                << fullyQualifiedSymbol << "\n";
+     valueSymTab.dump(currentErrs());
+     ASSERT(false) << "unable to find value for symbol " << fullyQualifiedSymbol;
+    }
+    return v;
+  }
+
+  // Returns ty**, the stack slot containing a ty*.
+  llvm::Value* emitMalloc(const llvm::Type* ty) {
+    llvm::Value* memalloc_cell = mod->getFunction("memalloc_cell");
+    if (!memalloc_cell) {
+      currentErrs() << "NO memalloc_cell IN MODULE! :(" << "\n";
+      return NULL;
+    }
+
+    llvm::GlobalVariable* ti = getTypeMapForType(ty, mod);
+
+    llvm::CallInst* mem = builder.CreateCall(memalloc_cell,
+                                          ti,
+                                          "mem");
+    return storeAndMarkPointerAsGCRoot(
+        builder.CreateBitCast(mem, llvm::PointerType::getUnqual(ty), "ptr"),
+        mod);
+  }
+
+  llvm::Value* allocateMPInt() {
+    llvm::Value* mp_int_alloc = mod->getFunction("mp_int_alloc");
+    ASSERT(mp_int_alloc);
+    llvm::Value* mpint = builder.CreateCall(mp_int_alloc);
+    return mpint;
+  }
+
+};
+
+template<typename T>
+std::string hex(T* ast) {
+  std::string s;
+  llvm::raw_string_ostream ss(s);
+  ss << ast;
+  return ss.str();
+}
+
+namespace foster {
+  void codegen(ExprAST* ast, CodegenPass* cp) {
+    ast->accept(cp);
+  }
+
+  void codegen(ExprAST* ast, llvm::Module* mod) {
+    CodegenPass cp(mod);
+    codegen(ast, &cp);
+  }
+}
+
+void setValue(ExprAST* ast, llvm::Value* V) {
+  if (false) {
+    foster::dbg("setValue") << "ast@" << ast << " :tag: " << std::string(ast->tag)
+        << "\t; value tag: " << llvmValueTag(V) << "\t; value " << *V << "\n";
+  }
+  ast->value = V;
+}
+
+llvm::Value* getValue(ExprAST* ast) {
+  if (false && ast->value) {
+  foster::dbg("getValue") << "ast@" << ast << " :tag: " << std::string(ast->tag)
+      << "\t; value: " << *(ast->value) << "\n";
+  }
+  return ast->value;
 }
 
 Value* tempHackExtendInt(Value* val, const Type* toTy) {
@@ -276,13 +307,6 @@ bool isSafeToStackAllocate(TupleExprAST* ast) {
 }
 
 
-llvm::Value* allocateMPInt() {
-  llvm::Value* mp_int_alloc = foster::module->getFunction("mp_int_alloc");
-  ASSERT(mp_int_alloc);
-  llvm::Value* mpint = builder.CreateCall(mp_int_alloc);
-  return mpint;
-}
-
 void CodegenPass::visit(IntAST* ast) {
   ASSERT(!getValue(ast)) << "codegenned " << ast->tag << " @ " << hex(ast) << " twice?!?" << show(ast);
 
@@ -302,7 +326,7 @@ void CodegenPass::visit(IntAST* ast) {
     llvm::Value* mpint = allocateMPInt();
 
     // Call mp_int_init_value() (ignore rv for now)
-    llvm::Value* mp_int_init_value = foster::module->getFunction("mp_int_init_value");
+    llvm::Value* mp_int_init_value = mod->getFunction("mp_int_init_value");
     ASSERT(mp_int_init_value);
 
     builder.CreateCall2(mp_int_init_value, mpint, small);
@@ -405,7 +429,7 @@ void CodegenPass::visit(PrototypeAST* ast) {
         : Function::ExternalLinkage;
 
   const llvm::FunctionType* FT = dyn_cast<FunctionType>(getLLVMType(ast->type));
-  Function* F = Function::Create(FT, functionLinkage, symbolName, module);
+  Function* F = Function::Create(FT, functionLinkage, symbolName, this->mod);
 
   ASSERT(ast->inArgs.size() == F->arg_size());
 
@@ -491,7 +515,7 @@ void codegenClosure(FnAST* ast, CodegenPass* self) {
       llvm::cast<FunctionType>(fnTy->getLLVMType()));
   TupleTypeAST* genericCloTy = genericVersionOfClosureType(fnTy);
 
-  addClosureTypeName(module, genericCloTy);
+  addClosureTypeName(self->mod, genericCloTy);
 
   // { code*, env* }*
   llvm::AllocaInst* clo = CreateEntryAlloca(specificCloTy, "closure");
@@ -512,7 +536,7 @@ void codegenClosure(FnAST* ast, CodegenPass* self) {
     const llvm::Type* specificEnvTy = specificEnvTyPtr->getContainedType(0);
 
     llvm::GlobalVariable* clo_env_typemap
-        = getTypeMapForType(specificEnvTy);
+        = getTypeMapForType(specificEnvTy, self->mod);
 
     Value* clo_env_typemap_slot = builder.CreateConstGEP2_32(env->value, 0, 0,
                                                       "clo_env_typemap_slot");
@@ -581,7 +605,8 @@ void CodegenPass::visit(FnAST* ast) {
 #endif
         // Type could be like i32*, like {i32}* or like {i32*}.
         // arg_addr would be i32**,    {i32}**,  or {i32*}*.
-        scope->insert(AI->getNameStr(),  storeAndMarkPointerAsGCRoot(AI));
+        scope->insert(AI->getNameStr(),
+                      storeAndMarkPointerAsGCRoot(AI, mod));
       } else {
         llvm::AllocaInst* arg_addr = CreateEntryAlloca(
                                                 AI->getType(),
@@ -1130,7 +1155,7 @@ void CodegenPass::visit(CallAST* ast) {
       setValue(ast, builder.CreateLoad(getValue(ast), /*isVolatile=*/ false, "destack"));
     }
 
-    setValue(ast, storeAndMarkPointerAsGCRoot(getValue(ast)));
+    setValue(ast, storeAndMarkPointerAsGCRoot(getValue(ast), mod));
   }
 }
 
@@ -1177,7 +1202,7 @@ void CodegenPass::visit(TupleExprAST* ast) {
   // Create struct type underlying tuple
   const Type* tupleType = getLLVMType(ast->type);
   const char* typeName = (ast->isClosureEnvironment) ? "env" : "tuple";
-  registerType(tupleType, typeName, ast->isClosureEnvironment);
+  registerType(tupleType, typeName, mod, ast->isClosureEnvironment);
 
   llvm::Value* pt = NULL;
 

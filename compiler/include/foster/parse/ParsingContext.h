@@ -90,8 +90,6 @@ private:
   Impl* impl;
 };
 
-extern llvm::Module* module;
-
 TypeAST* TypeASTFor(const std::string& name);
 
 } // namespace foster

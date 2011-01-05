@@ -107,11 +107,9 @@ static cl::opt<bool>
 optCompileSeparately("c",
   cl::desc("[foster] Compile separately, don't automatically link imported modules"));
 
-#ifdef FOSTERC_DEBUG_INFO_NOT_YET_GENERATED
 static cl::opt<bool>
 optEmitDebugInfo("g",
-  cl::desc("[foster] Emit debug information in generated code"));
-#endif
+  cl::desc("[foster] Emit debug information in generated LLVM IR"));
 
 static cl::opt<bool>
 optDumpPreLinkedIR("dump-prelinked",
@@ -415,8 +413,7 @@ int main(int argc, char** argv) {
 
   foster::ParsingContext::pushNewContext();
 
-  using foster::module;
-  module = new Module(mainModulePath.str().c_str(), getGlobalContext());
+  llvm::Module* module = new Module(mainModulePath.str().c_str(), getGlobalContext());
 
   validateInputFile("libfoster.bc");
   validateInputFile("imath-wrapper.bc");
@@ -503,8 +500,7 @@ int main(int argc, char** argv) {
   llvm::outs() << "=========================" << "\n";
 
   {
-    // Implicitly outputs to foster::module, via foster::builder.
-    foster::codegen(exprAST);
+    foster::codegen(exprAST, module);
 
     // Run cleanup passes on newly-generated code,
     // rather than wastefully on post-linked code.
