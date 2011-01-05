@@ -109,7 +109,7 @@ Constant* defaultHeapAlignment() {
 Constant* cellSizeOf(const Type* ty) {
   Constant* sz = ConstantExpr::getSizeOf(ty);
   Constant* hs = ConstantExpr::getSizeOf(getHeapCellHeaderTy());
-  Constant* cs = ConstantExpr::getAdd(sz, cs);
+  Constant* cs = ConstantExpr::getAdd(sz, hs);
   return roundUpToNearestMultiple(cs, defaultHeapAlignment());
 }
 
