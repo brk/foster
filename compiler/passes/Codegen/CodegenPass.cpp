@@ -578,11 +578,7 @@ void CodegenPass::visit(FnAST* ast) {
   Function* F = dyn_cast<Function>(ast->getProto()->value);
   if (!F) { return; }
 
-  #if USE_FOSTER_GC_PLUGIN
-    F->setGC("fostergc");
-  #else
-    F->setGC("shadow-stack");
-  #endif
+  F->setGC("fostergc");
 
   BasicBlock* prevBB = builder.GetInsertBlock();
   BasicBlock* BB = BasicBlock::Create(getGlobalContext(), "entry", F);
