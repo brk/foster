@@ -71,7 +71,13 @@ bool mightContainHeapPointers(const llvm::Type* ty);
 
 ////////////////////////////////////////////////////////////////////
 
+llvm::Value* getUnitValue() {
+  std::vector<llvm::Constant*> noArgs;
+  return llvm::ConstantStruct::get(
+            llvm::StructType::get(getGlobalContext()), noArgs);
+}
 
+////////////////////////////////////////////////////////////////////
 
 // If the provided root is an alloca, return it directly;
 // if it's a bitcast, return the first arg bitcast to alloca (or NULL);
@@ -128,6 +134,7 @@ void markGCRoot(llvm::Value* root,
 
   builder.CreateCall2(llvm_gcroot, root, meta);
 }
+
 
 // Creates an AllocaInst in the entry block of the current function,
 // so that mem2reg will be able to optimize loads and stores from the alloca.
@@ -462,17 +469,20 @@ void CodegenPass::visit(SeqAST* ast) {
     // Find last non-void value
     for (size_t n = ast->parts.size() - 1; n >= 0; --n) {
       setValue(ast, ast->parts[n]->value);
-      if (!isVoid(getValue(ast)->getType())) {
+      if (getValue(ast) && !isVoid(getValue(ast)->getType())) {
         break;
       }
     }
   }
 
   if (!getValue(ast)) {
-    // Give the sequence a default value for now; eventually, this
-    // should probably be assigned a value of unit.
-    foster::DDiag() << "warning: empty sequence" << show(ast);
-    setValue(ast, llvm::ConstantInt::get(builder.getInt32Ty(), 0));
+    if (ast->parts.empty()) {
+      // Empty sequences become unit values, silently.
+    } else {
+      foster::DDiag() << "warning: value-less sequence of length "
+                      << ast->parts.size() << show(ast);
+    }
+    setValue(ast, getUnitValue());
   }
 }
 
@@ -616,10 +626,11 @@ void CodegenPass::visit(FnAST* ast) {
   ast->getBody()->accept(this);
 
   Value* rv = ast->getBody()->value;
+
   ASSERT(rv) << "null body value when codegenning function " << ast->getName()
              << show(ast);
 
-  bool returningVoid = isVoid(ast->getProto()->resultTy);
+  bool returningVoid = isVoidOrUnit(ast->getProto()->resultTy);
 
   // If we try to return a tuple* when the fn specifies a tuple, manually insert a load
   if (rv->getType()->isDerivedType()
@@ -981,7 +992,8 @@ void CodegenPass::visit(CallAST* ast) {
           if (FnTypeAST* expectedFnTy =
                 tryExtractCallableType(TypeAST::reconstruct(
                     llvm::dyn_cast<const llvm::DerivedType>(expectedType)))) {
-            if (isVoid(expectedFnTy->getReturnType()) && !isVoid(llvmFnTy)) {
+            if (isVoidOrUnit(expectedFnTy->getReturnType())
+                              && !isVoid(llvmFnTy)) {
               ASSERT(false) << "No support at the moment for "
                   << "auto-generating void-returning wrappers.";
               //arg = getVoidReturningVersionOf(arg, fnty);
@@ -1197,6 +1209,13 @@ void CodegenPass::visit(TupleExprAST* ast) {
 
   // Create struct type underlying tuple
   const Type* tupleType = getLLVMType(ast->type);
+
+  if (isUnit(tupleType)) {
+    // It's silly to allocate a unit value!
+    setValue(ast, getUnitValue());
+    return;
+  }
+
   const char* typeName = (ast->isClosureEnvironment) ? "env" : "tuple";
   registerType(tupleType, typeName, mod, ast->isClosureEnvironment);
 

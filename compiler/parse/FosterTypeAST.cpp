@@ -266,7 +266,12 @@ const llvm::FunctionType* FnTypeAST::getLLVMFnType() const {
     loweredArgTypes.push_back(ty);
   }
 
-  return llvm::FunctionType::get(returnType->getLLVMType(),
+  const llvm::Type* retTy = returnType->getLLVMType();
+  if (isUnit(retTy)) {
+    retTy = llvm::Type::getVoidTy(llvm::getGlobalContext());
+  }
+
+  return llvm::FunctionType::get(retTy,
                                  loweredArgTypes,
                                  /*isVarArg=*/ false);
 }

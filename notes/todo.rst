@@ -74,3 +74,5 @@ TODO
   * metrics/stats_counter.h
   * metrics/histogram.h
   * perftimer.h (would need modification)
+
+* Implement debug info once we get access to DIBuilder

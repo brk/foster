@@ -33,7 +33,7 @@ TupleTypeAST* genericClosureTypeFor(const TypeAST* ty);
 // converts t1 (envptrty*, t2, t3) to { t1 (i8*, t2, t3)*, i8* }
 TupleTypeAST* genericVersionOfClosureType(const TypeAST* ty);
 
-bool isVoid(TypeAST* ty);
+bool isVoidOrUnit(TypeAST* ty);
 
 bool isValidClosureType(const llvm::Type* ty);
 
@@ -42,6 +42,8 @@ bool isGenericClosureType(const llvm::Type* ty);
 
 // converts { T (env*, Y, Z)*, env* }   to   T (Y, Z)
 FnTypeAST* originalFunctionTypeForClosureStructType(TypeAST*);
+
+bool isUnit(const llvm::Type* ty);
 
 #endif
 

@@ -442,6 +442,9 @@ int main(int argc, char** argv) {
   module->addTypeName("pfoster_coro",
     llvm::PointerType::getUnqual(foster_generic_coro_t));
 
+  module->addTypeName("unit",
+    llvm::StructType::get(getGlobalContext(), false));
+
   foster::putModuleMembersInScope(libfoster_bc, module);
   foster::putModuleMembersInInternalScope("imath", imath_bc, module);
   foster::addConcretePrimitiveFunctionsTo(module);
