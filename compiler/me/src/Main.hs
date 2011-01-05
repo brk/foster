@@ -38,7 +38,6 @@ import Foster.TypeAST
 -----------------------------------------------------------------------
 
 _typesEqual :: TypeAST -> TypeAST -> Bool
-_typesEqual TypeUnitAST (TupleTypeAST []) = True
 _typesEqual (TupleTypeAST as) (TupleTypeAST bs) =
     List.length as == List.length bs && Prelude.and [_typesEqual a b | (a, b) <- Prelude.zip as bs]
 _typesEqual (FnTypeAST s1 t1 c1) (FnTypeAST s2 t2 c2) =
@@ -243,8 +242,6 @@ typecheckTuple ctx exprs b (Just (TupleTypeAST ts)) =
       then throwError $ "typecheckTuple: length of tuple and expected tuple type did not agree: "
                             ++ show exprs ++ " versus " ++ show ts
       else typecheckTuple' ctx exprs b [Just t | t <- ts]
-
-typecheckTuple ctx [] b (Just TypeUnitAST) = do return (AnnTuple [] b)
 
 typecheckTuple ctx es b (Just ty)
     = throwError $ "typecheck: tuple (" ++ show es ++ ") cannot check against non-tuple type " ++ show ty

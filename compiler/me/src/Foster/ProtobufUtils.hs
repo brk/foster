@@ -311,7 +311,6 @@ u8fromString s = P'.Utf8 (UTF8.fromString s)
 
 dumpType :: TypeAST -> PbType.Type
 dumpType (MissingTypeAST s)   = error $ "dumpType MissingTypeAST " ++ s
-dumpType (TypeUnitAST)        = dumpType (NamedTypeAST "i32")
 dumpType (NamedTypeAST s)     = P'.defaultValue { PbType.tag  = PbTypeTag.LLVM_NAMED
                                                 , PbType.name = Just $ u8fromString s }
 dumpType (TupleTypeAST types) = P'.defaultValue { PbType.tag  = PbTypeTag.TUPLE
@@ -325,7 +324,6 @@ dumpType x@(CoroType a b)     = P'.defaultValue { PbType.tag  = PbTypeTag.CORO
 
 dumpFnTy (FnTypeAST s t cs) =
     let args = case s of
-                TypeUnitAST        -> []
                 TupleTypeAST types -> [dumpType x | x <- types]
                 otherwise          -> [dumpType s]
     in

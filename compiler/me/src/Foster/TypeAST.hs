@@ -10,7 +10,6 @@ import List(foldr1, intersperse)
 
 data TypeAST =
            MissingTypeAST { missingTypeProgAnnotation :: String }
-         | TypeUnitAST
          | NamedTypeAST     String
          | TupleTypeAST     [TypeAST]
          | FnTypeAST        TypeAST TypeAST (Maybe [String])
@@ -24,7 +23,6 @@ fosBoolType = NamedTypeAST "i1"
 
 showTypeAST :: TypeAST -> String
 showTypeAST (MissingTypeAST s)   = "(MissingTypeAST " ++ s ++ ")"
-showTypeAST (TypeUnitAST)        = "()"
 showTypeAST (NamedTypeAST s)     = s
 showTypeAST (TupleTypeAST types) = "(" ++ joinWith ", " [showTypeAST t | t <- types] ++ ")"
 showTypeAST (FnTypeAST s t cs)   = "(" ++ show s ++ " -> " ++ show t ++ ")"
