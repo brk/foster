@@ -1,5 +1,7 @@
 set (CHROMIUM_BASE ${PROJECT_SOURCE_DIR}/third_party/chromium_base)
 
+set (CHROMIUM_BASE_ARCH x86)
+
 set (BASE_SOURCES
 	${CHROMIUM_BASE}/base/at_exit.cc
 	${CHROMIUM_BASE}/base/lazy_instance.cc
@@ -35,13 +37,22 @@ endif (${APPLE})
 
 #####################################################################
 
-if (${UNIX} AND NOT ${APPLE})
+if ("${UNIX}" AND NOT "${APPLE}")
   set (BASE_SOURCES
     ${BASE_SOURCES}
 	${CHROMIUM_BASE}/base/sys_string_conversions_linux.cc
 	${CHROMIUM_BASE}/base/time_posix.cc
   )
-endif (${UNIX} AND NOT ${APPLE})
+endif ("${UNIX}" AND NOT "${APPLE}")
+
+#####################################################################
+
+if (${CHROMIUM_BASE_ARCH} STREQUAL "x86")
+  set (BASE_SOURCES
+    ${BASE_SOURCES}
+	${CHROMIUM_BASE}/base/atomicops_internals_x86_gcc.cc
+  )
+endif (${CHROMIUM_BASE_ARCH} STREQUAL "x86")
 
 #####################################################################
 
@@ -70,7 +81,6 @@ if (${WIN32})
 	${CHROMIUM_BASE}/base/sys_string_conversions_win.cc
   )
 endif (${WIN32})
-
 
 add_library(chromium_base STATIC
   ${BASE_SOURCES}
