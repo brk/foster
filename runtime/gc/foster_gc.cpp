@@ -137,13 +137,27 @@ bool isMetadataPointer(const void* meta) {
  return uint64_t(meta) > uint64_t(1<<16);
 }
 
+const unsigned int FOSTER_GC_DEFAULT_ALIGNMENT = 16;      // 0b0..010000
+const unsigned int FOSTER_GC_DEFAULT_ALIGNMENT_MASK = 15; // 0b0..001111
+
+
+// E.g. if powerOf2 is 4, performs the following mapping:
+// 0 -> 0      1 -> 4
+// 2 -> 4      3 -> 4
+// 4 -> 4      5 -> 8
+inline uintptr_t
+roundUpToNearestMultipleWeak(uintptr_t v, uintptr_t powerOf2) {
+  uintptr_t mask = powerOf2 - 1;
+  return (v + mask) & ~mask;
+}
+
 class copying_gc {
   class semispace {
   public:
       semispace(int64_t size, copying_gc* parent) : parent(parent) {
         start = (char*) malloc(size);
         end   = start + size;
-        bump  = start;
+        reset_bump();
 
         genericClosureMarker = NULL;
       }
@@ -160,7 +174,15 @@ class copying_gc {
       char* genericClosureMarker;
 
   public:
-      void reset_bump() { bump = start; }
+      void reset_bump() {
+        // We want to position the bump pointer far enough into the buffer
+        // so that after accounting for the heap cell header, the body pointer
+        // resulting from allocation will be properly aligned.
+        bump = (char*) roundUpToNearestMultipleWeak(
+                          uintptr_t(start + HEAP_CELL_HEADER_SIZE),
+                          FOSTER_GC_DEFAULT_ALIGNMENT)
+                                          - HEAP_CELL_HEADER_SIZE;
+      }
 
       bool contains(void* ptr) {
         return (ptr >= start) && (ptr < end);
