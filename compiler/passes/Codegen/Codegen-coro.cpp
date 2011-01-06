@@ -35,6 +35,14 @@ using foster::SourceRange;
 using foster::EDiag;
 using foster::show;
 
+// Keep synchronized with libfoster_gc_roots.h
+enum {
+  FOSTER_CORO_INVALID,
+  FOSTER_CORO_SUSPENDED,
+  FOSTER_CORO_DORMANT,
+  FOSTER_CORO_RUNNING,
+  FOSTER_CORO_DEAD
+};
 
 void addCoroArgs(std::vector<const Type*>& fnTyArgs,
                  const llvm::Type* argTypes) {
@@ -320,12 +328,10 @@ Value* CodegenPass::emitCoroCreateFn(
   builder.CreateStore(null_invoker, fcoro_invoker);
   builder.CreateStore(null_invoker, ccoro_invoker);
 
-  // fcoro->g.status = FOSTER_CORO_DORMANT;
-  // ccoro->g.status = FOSTER_CORO_INVALID;
   Value* fcoro_status = builder.CreateConstInBoundsGEP2_32(gfcoro, 0, coroField_Status(), "fcoro_status");
   Value* ccoro_status = builder.CreateConstInBoundsGEP2_32(gccoro, 0, coroField_Status(), "ccoro_status");
-  builder.CreateStore(getConstantInt32For(2), fcoro_status);
-  builder.CreateStore(getConstantInt32For(0), ccoro_status);
+  builder.CreateStore(getConstantInt32For(FOSTER_CORO_DORMANT), fcoro_status);
+  builder.CreateStore(getConstantInt32For(FOSTER_CORO_INVALID), ccoro_status);
 
   // return (foster_coro_i32_i32*) fcoro;
   builder.CreateRet(fcoro);
@@ -337,16 +343,6 @@ Value* CodegenPass::emitCoroCreateFn(
   return create;
 }
 
-
-// Keep synchronized with libfoster_gc_roots.h
-enum {
-  FOSTER_CORO_INVALID,
-  FOSTER_CORO_SUSPENDED,
-  FOSTER_CORO_DORMANT,
-  FOSTER_CORO_RUNNING,
-  FOSTER_CORO_DEAD
-};
-
 void emitFosterAssert(llvm::Module* mod, llvm::Value* cond, const char* cstr) {
   Value* fosterAssert = mod->getFunction("foster__assert");
   ASSERT(fosterAssert != NULL);
@@ -355,6 +351,10 @@ void emitFosterAssert(llvm::Module* mod, llvm::Value* cond, const char* cstr) {
   Value* msg = builder.CreateBitCast(msg_array, builder.getInt8PtrTy());
   builder.CreateCall2(fosterAssert, cond, msg);
 }
+
+////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////
 
 void generateInvokeYield(bool isYield,
                          llvm::Module* mod,
