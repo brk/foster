@@ -93,27 +93,25 @@ void cleanup() {
 #define PRIX64 "llX"
 #endif
 
-int fprint_i64(FILE* f, int64_t x) { return fprintf(f, "%" PRId64 "\n", x) - 1; }
-int fprint_i64x(FILE* f, int64_t x) { return fprintf(f, "%" PRIX64 "_16\n", x) - 1; }
-int fprint_i64b(FILE* f, int64_t x) {
-  static char buf[64+1];
-  buf[64] = '\0';
-  for (int i = 0; i < 64; ++i) {
-    buf[63 - i] = (x & (1<<i)) ? '1' : '0';
+template <int N, typename Int>
+int fprint_b2(FILE* f, Int x) {
+  char* buf = new char[N+1];
+  buf[N] = '\0';
+  for (int i = 0; i < N; ++i) {
+    buf[(N-1) - i] = (x & (1<<i)) ? '1' : '0';
   }
-  return fprintf(f, "%s_2\n", buf);
+  int n = fprintf(f, "%s_2\n", buf);
+  delete [] buf;
+  return n;
 }
 
-int fprint_i32(FILE* f, int32_t x) { fprintf(f, "%d\n", x) - 1; fflush(f); return 0; }
+int fprint_i64(FILE* f, int64_t x) { return fprintf(f, "%" PRId64 "\n", x) - 1; }
+int fprint_i64x(FILE* f, int64_t x) { return fprintf(f, "%" PRIX64 "_16\n", x) - 1; }
+int fprint_i64b(FILE* f, int64_t x) { return fprint_b2<64>(f, x); }
+
+int fprint_i32(FILE* f, int32_t x) { int n = fprintf(f, "%d\n", x) - 1; fflush(f); return n; }
 int fprint_i32x(FILE* f, int32_t x) { return fprintf(f, "%X_16\n", x) - 1; }
-int fprint_i32b(FILE* f, int32_t x) {
-  static char buf[32+1];
-  buf[32] = '\0';
-  for (int i = 0; i < 32; ++i) {
-    buf[31 - i] = (x & (1<<i)) ? '1' : '0';
-  }
-  return fprintf(f, "%s_2\n", buf);
-}
+int fprint_i32b(FILE* f, int32_t x) { return fprint_b2<32>(f, x); }
 
 int fprint_mp_int(FILE* f, mp_int m, int radix) {
   mp_small small;
@@ -230,6 +228,8 @@ int read_i32() { int32_t n; scanf(" %d", &n); return n; }
 
 int  print_i64(int64_t x) { return fprint_i64(stdout, x); }
 int expect_i64(int64_t x) { return fprint_i64(stderr, x); }
+int expect_i64x(int64_t x) { return fprint_i64x(stderr, x); }
+int expect_i64b(int64_t x) { return fprint_i64b(stderr, x); }
 
 //int  print_i8(char x) { return fprint_i8(stdout, x); }
 //int expect_i8(char x) { return fprint_i8(stderr, x); }

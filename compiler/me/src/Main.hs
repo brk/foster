@@ -275,6 +275,7 @@ minimalTuple args  = TupleTypeAST args
 
 i32 = (NamedTypeAST "i32")
 i64 = (NamedTypeAST "i64")
+fosi64toi32 = FnTypeAST (TupleTypeAST [i64]) i32 Nothing
 fosi32toi32 = FnTypeAST (TupleTypeAST [i32]) i32 Nothing
 fosi64toi64 = FnTypeAST (TupleTypeAST [i64]) i64 Nothing
 fosi1toi32  = FnTypeAST (TupleTypeAST [(NamedTypeAST "i1")]) i32 Nothing
@@ -299,12 +300,12 @@ rootContext =
     ,( "print_i32", fosi32toi32)
     ,("expect_i32b", fosi32toi32)
     ,( "print_i32b", fosi32toi32)
+    ,("expect_i64b", fosi64toi32)
+    ,( "print_i64b", fosi64toi32)
     ,(  "read_i32", FnTypeAST (TupleTypeAST []) (NamedTypeAST "i32") Nothing)
     ,("expect_i1", fosi1toi32)
     ,( "print_i1", fosi1toi32)
-    ---,("coro_create", FnTypeAST (TupleTypeAST [
-    ---                                (FnTypeAST (TupleTypeAST [(NamedTypeAST "i32")]) (NamedTypeAST "i32") Nothing)])
-    ---                               (CoroType (NamedTypeAST "i32") (NamedTypeAST "i32")) Nothing)
+
     ,("coro_create_i32_i32", coroCreateType [i32] i32)
     ,("coro_invoke_i32_i32", coroInvokeType [i32] i32)
     ,("coro_yield_i32_i32",  coroYieldType  [i32] i32)
