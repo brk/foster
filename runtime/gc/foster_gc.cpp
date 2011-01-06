@@ -733,6 +733,12 @@ TRACE;
   TRACE;
 }
 
+
+// coro_transfer (using CORO_ASM) pushes a fixed number
+// of registers on the stack before switching stacks and jumping.
+// Because coro_transfer is marked noinline, the first register
+// implicitly pushed is the old %eip, and the first register
+// explicitly pushed is %ebp /  %rbp, thus forming an x86 stack frame.
 void* topmost_frame_pointer(foster_generic_coro* coro) {
   // If the coro status is "running", we should scan the coro
   // but not its stack (since the stack will be examined from ::gc()).
@@ -750,7 +756,7 @@ void* topmost_frame_pointer(foster_generic_coro* coro) {
   const int NUM_SAVED = 4;
   #endif
 
-  return sp[NUM_SAVED - 1];
+  return &sp[NUM_SAVED - 1];
 }
 
 void visitCoro(foster_generic_coro** coro_addr,
