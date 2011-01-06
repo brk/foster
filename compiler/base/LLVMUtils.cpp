@@ -58,8 +58,12 @@ llvm::ConstantInt* getConstantInt64For(int64_t val) {
   return llvm::ConstantInt::get(Type::getInt64Ty(getGlobalContext()), val);
 }
 
-llvm::ConstantInt* getConstantInt32For(int val) {
+llvm::ConstantInt* getConstantInt32For(int32_t val) {
   return llvm::ConstantInt::get(Type::getInt32Ty(getGlobalContext()), val);
+}
+
+llvm::ConstantInt* getConstantInt8For(int8_t val) {
+  return llvm::ConstantInt::get(Type::getInt8Ty(getGlobalContext()), val);
 }
 
 bool isPointerToType(const llvm::Type* p, const llvm::Type* t) {

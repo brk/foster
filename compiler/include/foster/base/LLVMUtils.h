@@ -35,6 +35,7 @@ bool voidCompatibleReturnTypes(const llvm::FunctionType* expected,
 bool isVoid(const llvm::Type* ty);
 
 llvm::ConstantInt* getConstantInt64For(int64_t val);
-llvm::ConstantInt* getConstantInt32For(int val);
+llvm::ConstantInt* getConstantInt32For(int32_t val);
+llvm::ConstantInt* getConstantInt8For(int8_t val);
 
 #endif
