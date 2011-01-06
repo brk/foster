@@ -369,8 +369,6 @@ void generateInvokeYield(bool isYield,
 
   /// TODO: call coro_dump(coro)
 
-  emitPrintRef(mod, current_coro);
-
   // Call foster_assert to verify that
   // the target coro is in the expected state.
   llvm::Value* expectedStatus = NULL;
@@ -433,20 +431,12 @@ void generateInvokeYield(bool isYield,
   Value*     ctx_addr = builder.CreateConstInBoundsGEP2_32(coro,            0, coroField_Context());
   Value* sib_ctx_addr = builder.CreateConstInBoundsGEP2_32(sibling_ptr_gen, 0, coroField_Context());
 
-  emitPrintI32(mod, __LINE__);
-  emitPrintRef(mod, ctx_addr);
-  emitPrintRef(mod, sib_ctx_addr);
-
   llvm::CallInst* transfer = builder.CreateCall2(coroTransfer, sib_ctx_addr, ctx_addr);
   transfer->addAttribute(1, llvm::Attribute::InReg);
   transfer->addAttribute(2, llvm::Attribute::InReg);
 
   //=================================================================
   //=================================================================
-  emitPrintI32(mod, __LINE__);
-  emitPrintRef(mod, coro_slot);
-  emitPrintRef(mod, coro);
-  emitPrintRef(mod, status_addr);
 
   // A GC may have been triggered, so re-load locals from the stack.
   coro = builder.CreateLoad(coro_slot);
@@ -455,15 +445,6 @@ void generateInvokeYield(bool isYield,
   sibling_ptr_gen = builder.CreateLoad(sibling_slot);
 
   sib_status_addr = builder.CreateConstInBoundsGEP2_32(sibling_ptr_gen, 0, coroField_Status(), "sibstatusaddr");
-
-
-
-  emitPrintRef(mod, coro);
-  emitPrintRef(mod, status_addr);
-
-
-  emitPrintRef(mod, coro);
-
 
   if (!isYield) { // likewise, pop the "stack" when we return from
     ///   current_coro = coro->invoker;
