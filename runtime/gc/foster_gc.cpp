@@ -7,6 +7,7 @@
 #include <cstring>
 #include <cstddef> // for offsetof
 
+#include "libfoster.h"
 #include "foster_gc.h"
 #include "libfoster_gc_roots.h"
 #include "_generated_/FosterConfig.h"
@@ -38,6 +39,7 @@ struct typemap {
   int64_t cell_size;
   const char* name;
   int32_t numEntries;
+  char isCoro;
   struct entry {
     const void* typeinfo;
     int32_t offset;
@@ -45,17 +47,27 @@ struct typemap {
   entry entries[0];
 };
 
+int print_ref(void* x) {
+  std::string fmt = format_ref(x);
+  fprintf(gclog, "%s\n", fmt.c_str());
+  fflush(gclog);
+  return 0;
+}
+
 void inspect_typemap(typemap* ti) {
   fprintf(gclog, "typemap: %p\n", ti); fflush(gclog);
   if (!ti) return;
 
-  fprintf(gclog, "\tsize: %lld\n", ti->cell_size); fflush(gclog);
-  fprintf(gclog, "\tname: %s\n", ti->name); fflush(gclog);
-  fprintf(gclog, "\tnumE: %d\n", ti->numEntries); fflush(gclog);
+  fprintf(gclog, "\tsize: %lld\n", ti->cell_size);
+  fprintf(gclog, "\tname: %s\n", ti->name);
+  fprintf(gclog, "\tisCoro: %d\n", ti->isCoro);
+  fprintf(gclog, "\tnumE: %d\n", ti->numEntries);
+  fflush(gclog);
   int iters = ti->numEntries > 128 ? 0 : ti->numEntries;
   for (int i = 0; i < iters; ++i) {
     fprintf(gclog, "\t\t@%d: %p\n", ti->entries[i].offset,
-                                 ti->entries[i].typeinfo); fflush(gclog);
+                                 ti->entries[i].typeinfo);
+    fflush(gclog);
   }
 }
 
@@ -121,6 +133,10 @@ typedef void (*gc_visitor_fn)(void** root, const void* meta);
 void visitGCRootsWithStackMaps(void* start_frame,
                                gc_visitor_fn visitor);
 
+void copying_gc_root_visitor(void **root, const void *meta);
+
+void scanCoroStack(foster_generic_coro* coro, gc_visitor_fn visitor);
+
 bool isMetadataPointer(const void* meta) {
  return uint64_t(meta) > uint64_t(1<<16);
 }
@@ -137,6 +153,23 @@ inline uintptr_t
 roundUpToNearestMultipleWeak(uintptr_t v, uintptr_t powerOf2) {
   uintptr_t mask = powerOf2 - 1;
   return (v + mask) & ~mask;
+}
+
+inline bool
+isCoroBelongingToOtherThread(const typemap* map, void* body) {
+  #ifdef FOSTER_MULTITHREADED
+  if (map->isCoro) {
+    foster_generic_coro* coro = (foster_generic_coro*) body;
+    if (coro->status == FOSTER_CORO_RUNNING) {
+      // Don't scan a coroutine if it's being run by another thread!
+      if (coro->owner_thread != PlatformThread::CurrentId()) {
+        return true;
+      }
+    }
+  }
+  #endif
+
+  return false;
 }
 
 class copying_gc {
@@ -275,12 +308,12 @@ class copying_gc {
           return NULL;
         }
 
-        fprintf(gclog, "copying cell %p, meta %p\n", cell, meta); fflush(gclog);
-        fprintf(gclog, "copying cell %p, is fwded? %d\n", cell, cell->is_forwarded()); fflush(gclog);
+        //fprintf(gclog, "copying cell %p, meta %p\n", cell, meta); fflush(gclog);
+        //fprintf(gclog, "copying cell %p, is fwded? %d\n", cell, cell->is_forwarded()); fflush(gclog);
         if (cell->is_forwarded()) {
           void* fwd = cell->get_forwarded_body();
-          fprintf(gclog, "cell %p(->0x%x) considered forwarded to %p for body %p(->0x%x)\n",
-            cell, *(unsigned int*)cell, fwd, body, *(unsigned int*)body);
+          //fprintf(gclog, "cell %p(->0x%x) considered forwarded to %p for body %p(->0x%x)\n",
+          //  cell, *(unsigned int*)cell, fwd, body, *(unsigned int*)body);
           return fwd;
         }
 
@@ -289,33 +322,32 @@ class copying_gc {
           meta = (void*) cell->cell_size();
         }
 
-        if (isMetadataPointer(meta)) {
-         fprintf(gclog, "derefing meta = %p\n",meta); fflush(gclog);
-          // probably an actual pointer
-          cell_size = ((typemap*) meta)->cell_size;
-          fprintf(gclog, "derefed meta = %p\n",meta); fflush(gclog);
-        } else {
+        if (!isMetadataPointer(meta)) {
           cell_size = int64_t(meta);
+        } else {
+          const typemap* map = (const typemap*) meta;
+          if (isCoroBelongingToOtherThread(map, body)) {
+            // Don't copy or scan a coroutine if
+            // it belongs to a different thread!
+            return body;
+          }
+
+          // probably an actual pointer
+          cell_size = map->cell_size;
         }
         foster_assert(cell_size > 16, "cell size must be at least 16!");
 
-        fprintf(gclog, "copying cell %p, cell size %llu\n", cell, cell_size); fflush(gclog);
-
+        //fprintf(gclog, "copying cell %p, cell size %llu\n", cell, cell_size); fflush(gclog);
 
         if (can_allocate_cell(cell_size)) {
-          TRACE;
           memcpy(bump, cell, cell_size);
           heap_cell* new_addr = (heap_cell*) bump;
           bump += cell_size;
-          TRACE;
           cell->set_forwarded_body(new_addr->body_addr());
-          TRACE;
           if (isMetadataPointer(meta)) {
             const typemap* map = (const typemap*) meta;
-            TRACE;
-            fprintf(gclog, "copying cell %p, map %p\n", cell, map); fflush(gclog);
-            fprintf(gclog, "copying cell %p, map np %d, name %s\n", cell,\
-              map->numEntries, map->name); fflush(gclog);
+
+            fprintf(gclog, "copying cell %p, map np %d, name %s\n", cell, map->numEntries, map->name); fflush(gclog);
 
             // for each pointer field in the cell
             for (int i = 0; i < map->numEntries; ++i) {
@@ -328,21 +360,18 @@ class copying_gc {
               // set the copied cell field to subfwdaddr
               if (*oldslot != NULL) {
                 void** newslot = (void**) offset(new_addr->body_addr(), e.offset);
-                fprintf(gclog, "recursively copying of cell %p slot %p with ti %p to %p\n",
-                  cell, oldslot, e.typeinfo, newslot); fflush(gclog);
+                //fprintf(gclog, "recursively copying of cell %p slot %p with ti %p to %p\n",
+                 // cell, oldslot, e.typeinfo, newslot); fflush(gclog);
                 *newslot = copy(*oldslot, e.typeinfo);
-                fprintf(gclog, "recursively copied  of cell %p slot %p with ti %p to %p\n",
-                  cell, oldslot, e.typeinfo, newslot); fflush(gclog);
+                //fprintf(gclog, "recursively copied  of cell %p slot %p with ti %p to %p\n",
+                 // cell, oldslot, e.typeinfo, newslot); fflush(gclog);
 
               }
             }
-            TRACE;
-            if (0) {
-              struct tuple_t { void* l, *r; int s; };
-              tuple_t& t1 = * (tuple_t*)body;
-              tuple_t& t2 = * (tuple_t*)new_addr->body_addr();
-              fprintf(gclog, "%p : {%p, %p, %d} -> %p: { %p , %p, %d }\n", body,
-                t1.l, t1.r, t1.s, new_addr->body_addr(), t2.l, t2.r, t2.s);
+
+            if (map->isCoro) {
+              foster_generic_coro* coro = (foster_generic_coro*) cell->get_forwarded_body();
+              scanCoroStack(coro, copying_gc_root_visitor);
             }
           }
 
@@ -404,8 +433,7 @@ public:
     return "unknown";
   }
 
-  // TODO this is just wrong in the presence of heap-allocated
-  // stack frames for coroutines! :(
+  // TODO this is just wrong ... :(
   bool is_probable_stack_pointer(void* suspect, void* knownstackaddr) {
     if (curr->contains(suspect) || next->contains(suspect)) return false;
     return (labs(((char*)suspect) - (char*)knownstackaddr) < (1<<20));
@@ -450,6 +478,9 @@ void copying_gc_root_visitor(void **root, const void *meta) {
   foster_assert(root != NULL, "someone passed a NULL root addr!");
   void* body = *root;
   fprintf(gclog, "copying_gc_root_visitor(root %p -> body %p, meta %p)\n", root, body, meta); fflush(gclog);
+  if (isMetadataPointer(meta)) {
+    inspect_typemap((typemap*)meta);
+  }
 
   if (body) {
     if (allocator->is_probable_stack_pointer(body, root)) {
@@ -475,11 +506,8 @@ void copying_gc_root_visitor(void **root, const void *meta) {
       //                                 |            |
       //                                 |            |
       //                                 |------------|
-      fprintf(gclog, "copying_gc_root_visitor(%p -> %p): copying body\n", root, body); fflush(gclog);
-      fprintf(gclog, "copying_gc_root_visitor(%p -> %p): meta map is %p\n", root, body, meta); fflush(gclog);
-
       void* newaddr = allocator->copy(body, meta);
-      fprintf(gclog, "copying_gc_root_visitor(%p -> %p): copied  body\n", root, body); fflush(gclog);
+      //fprintf(gclog, "copying_gc_root_visitor(%p -> %p): copied  body\n", root, body); fflush(gclog);
       if (meta) {
         typemap* map = (typemap*) meta;
         fprintf(gclog, "\tname: %s", map->name);
@@ -492,8 +520,6 @@ void copying_gc_root_visitor(void **root, const void *meta) {
   }
 }
 
-void visitCoro(foster_generic_coro** coro, gc_visitor_fn visitor);
-
 void copying_gc::gc() {
   ++num_collections;
 
@@ -501,12 +527,11 @@ void copying_gc::gc() {
   visitGCRootsWithStackMaps(__builtin_frame_address(0),
                             copying_gc_root_visitor);
 
-  fprintf(gclog, "visiting current fcoro: %p\n", current_coro); fflush(gclog);
-
-  visitCoro(&current_coro, copying_gc_root_visitor);
-  // TODO update current_coro to point to the newspace copy.
-
-  fprintf(gclog, "visited current fcoro: %p\n", current_coro); fflush(gclog);
+  if (current_coro) {
+    fprintf(gclog, "==========visiting current ccoro: %p\n", current_coro); fflush(gclog);
+    copying_gc_root_visitor((void**)&current_coro, NULL);
+    fprintf(gclog, "==========visited current ccoro: %p\n", current_coro); fflush(gclog);
+  }
 
   flip();
   next->clear(); // for debugging purposes
@@ -537,7 +562,7 @@ void register_stackmaps() {
     for (int32_t i = 0; i < numClusters; ++i) {
       const stackmap::PointCluster* pc =
         (const stackmap::PointCluster*) offset(ps, totalOffset);
-      fprintf(gclog, "  pointcluster*: %p\n", pc); fflush(gclog);
+      //fprintf(gclog, "  pointcluster*: %p\n", pc); fflush(gclog);
 
       const stackmap::PointCluster& c = *pc;
       totalOffset += sizeof(int32_t) * 4 // sizes + counts
@@ -547,10 +572,15 @@ void register_stackmaps() {
       void** safePointAddresses = (void**) offset(ps, totalOffset);
       totalOffset += sizeof(void*)   * c.addressCount;
 
-      fprintf(gclog, "  safePointAddrs: %p * %d\n", safePointAddresses, c.addressCount); fflush(gclog);
-      fprintf(gclog, "  sizeof(stackmap::OffsetWithMetadata): %lu\n", sizeof(stackmap::OffsetWithMetadata));
-      fprintf(gclog, "  OFFSET_WITH_METADATA_SIZE: %lu\n", OFFSET_WITH_METADATA_SIZE);
-      fprintf(gclog, "  c.liveCountWithMetadata: %d\n", c.liveCountWithMetadata);
+      fprintf(gclog, "  safePointAddrs:", safePointAddresses); fflush(gclog);
+      for (int i = 0; i < c.addressCount; ++i) {
+        fprintf(gclog, " %p ,", safePointAddresses[i]);
+      }
+      fprintf(gclog, "\n");
+      //fprintf(gclog, "  sizeof(stackmap::OffsetWithMetadata): %lu\n", sizeof(stackmap::OffsetWithMetadata));
+      //fprintf(gclog, "  OFFSET_WITH_METADATA_SIZE: %lu\n", OFFSET_WITH_METADATA_SIZE);
+      //fprintf(gclog, "  c.liveCountWithMetadata: %d\n", c.liveCountWithMetadata);
+      //fprintf(gclog, "  c.liveCountWithoutMetadata: %d\n", c.liveCountWithoutMetadata);
 
       for (int32_t i = 0; i < c.addressCount; ++i) {
         void* safePointAddress = safePointAddresses[i];
@@ -630,18 +660,14 @@ struct frameinfo { frameinfo* frameptr; void* retaddr; };
 int backtrace_x86(frameinfo* frame, frameinfo* frames, size_t frames_sz) {
   int i = 0;
   while (frame && frames_sz --> 0) {
-    if (1) {
-      fprintf(gclog, "frame: %p\n", frame);
-      if (frame) {
-        fprintf(gclog, "frameptr: %p, retaddr: %p\n", frame->frameptr, frame->retaddr);
-      }
+    if (1 && frame) {
+      fprintf(gclog, "...... frame: %p, frameptr: %p, retaddr: %p\n", frame, frame->frameptr, frame->retaddr);
       fflush(gclog);
     }
     frames[i] = (*frame);
     frame     = (*frame).frameptr;
     ++i;
   }
-  TRACE;
   return i;
 }
 
@@ -675,8 +701,6 @@ void visitGCRootsWithStackMaps(void* start_frame,
     }
   }
 
-  TRACE;
-
   // Use the collected return addresses to look up a safe point
   // cluster map, which gives offsets from the corresponding
   // frame pointer at which we will find pointers to be scanned.
@@ -703,10 +727,9 @@ void visitGCRootsWithStackMaps(void* start_frame,
   // stack frame sizes to crawl the rest of the stack.
 
   for (int i = 0; i < nFrames; ++i) {
-    TRACE;
     void* safePointAddr = frames[i].retaddr;
     void* frameptr = (void*) frames[i].frameptr;
-TRACE;
+
     const stackmap::PointCluster* pc = clusterForAddress[safePointAddr];
     if (!pc) {
       fprintf(gclog, "no point cluster for address %p with frame ptr%p\n", safePointAddr, frameptr);
@@ -722,15 +745,11 @@ TRACE;
       int32_t     off  = pc->offsetWithMetadata(a)->offset;
       const void* meta = pc->offsetWithMetadata(a)->metadata;
       void* rootaddr = offset(frameptr, off);
-      TRACE;
-      fprintf(gclog, "visiting (%p) root %p with meta %p\n", visitor, rootaddr, meta); fflush(gclog);
-      inspect_typemap((typemap*)meta);
+
       visitor((void**) rootaddr, meta);
-      TRACE;
     }
     // TODO also scan pointers without metadata
   }
-  TRACE;
 }
 
 
@@ -759,33 +778,55 @@ void* topmost_frame_pointer(foster_generic_coro* coro) {
   return &sp[NUM_SAVED - 1];
 }
 
-void visitCoro(foster_generic_coro** coro_addr,
-               gc_visitor_fn visitor) {
-  foster_generic_coro* coro = *coro_addr;
+const char* coro_status(int status) {
+  switch (status) {
+  case FOSTER_CORO_INVALID: return "invalid";
+  case FOSTER_CORO_SUSPENDED: return "suspended";
+  case FOSTER_CORO_DORMANT: return "dormant";
+  case FOSTER_CORO_RUNNING: return "running";
+  case FOSTER_CORO_DEAD: return "dead";
+  default: return "unknown";
+  }
+}
 
+void coro_print(foster_generic_coro* coro) {
+  if (!coro) return;
+  fprintf(gclog, "coro %p: ", coro); fflush(stdout);
+  fprintf(gclog, "sibling %p, invoker %p, status %s, fn %p\n",
+      coro->sibling, coro->invoker, coro_status(coro->status), coro->fn);
+}
+
+void coro_dump(foster_generic_coro* coro) {
   if (!coro) {
-    return;
+    fprintf(gclog, "cannot dump NULL coro ptr!\n");
+  } else {
+    coro_print(coro);
+    fprintf(gclog, " "); coro_print(coro->sibling);
   }
+}
 
-  #ifdef FOSTER_MULTITHREADED
-  if (coro->status == FOSTER_CORO_RUNNING) {
-    // Don't scan a coroutine if it's being run by another thread!
-    if (coro->owner_thread != PlatformThread::CurrentId()) {
-      return;
-    }
-  }
-  #endif
 
+void scanCoroStack(foster_generic_coro* coro,
+                   gc_visitor_fn visitor) {
+  coro_dump(coro);
+  if (!coro) return;
   if (coro->status == FOSTER_CORO_INVALID
-   || coro->status == FOSTER_CORO_DEAD) {
-    // No need to scan the coro or its stack...
+   || coro->status == FOSTER_CORO_DEAD
+   || coro->status == FOSTER_CORO_RUNNING) {
+    // No need to scan the coro's stack...
     return;
   }
 
   // If we've made it this far, then the coroutine is owned by us,
-  // and is either dormant, suspended, or running. We won't scan
+  // and is either dormant or suspended. We don't scan
   // the stack of a running coro, since we should already have done so.
   // But we will trace back the coro invocation chain and scan other stacks.
+
+  //bool isCCoro = coro->fn == NULL;
+  //bool shouldScanStack = (coro->status == FOSTER_CORO_DORMANT && !isCCoro);
+  //if (!shouldScanStack) {
+    //return;
+  //}
 
   // Another point worth mentioning is that two generic_coros
   // may point to the same stack but have different statuses:
@@ -794,43 +835,24 @@ void visitCoro(foster_generic_coro** coro_addr,
   // when we invoke away from it. But since fcoros are the only ones
   // referenced directly by the program, it's all OK.
 
-  *coro_addr = (foster_generic_coro*) allocator->copy(coro, NULL);
-  coro = *coro_addr;
-
-  fprintf(gclog, "coro %p, status: %d\n", coro, coro->status);
-
-  // TODO handle arg
-
-TRACE;
-
   // Note! We scan stacks from ccoros (yielded to),
   // not fcoros (invokable). A suspended stack will have
   // pointers into the stack from both types of coro, but
   // the ccoro pointer will point higher up the stack!
-  if (coro->fn) {
-    fprintf(gclog, "scanning fcoro sibling %p\n", coro->sibling);
-    // Scan the sibling, which will also end up scanning
-    // the suspended stack which we invoked from.
-    visitCoro((foster_generic_coro**) &coro->sibling,
-              visitor);
-    fprintf(gclog, "scanned fcoro sibling %p, scanning invoker: %p\n", coro->sibling, coro->invoker);
 
-    // Once that's done, proceed up the invocation chain.
-    visitCoro((foster_generic_coro**) &coro->invoker,
-              visitor);
-  } else {
-    // TODO mark stack so it won't be swept away
+  // TODO mark stack so it won't be swept away
 
-    // extract frame pointer from ctx, and visit its stack.
-    void* frameptr = topmost_frame_pointer(coro);
-    foster_assert(frameptr != NULL, "(c)coro frame ptr shouldn't be NULL!");
-    // TODO currently, we don't allocate/initialize the header
-    // of foster_coro objects, so the GC sees a bogus size when
-    // scanning the stack that invoked a coro...
-    fprintf(gclog, "scanning ccoro stack\n");
-    visitGCRootsWithStackMaps(frameptr, visitor);
-    fprintf(gclog, "scanned ccoro sibling\n");
-  }
+  // extract frame pointer from ctx, and visit its stack.
+  void* frameptr = topmost_frame_pointer(coro);
+  foster_assert(frameptr != NULL, "(c)coro frame ptr shouldn't be NULL!");
+
+  fprintf(gclog, "========= scanning coro (%p, fn=%p, %s) stack from %p\n",
+      coro, coro->fn, coro_status(coro->status), frameptr);
+  print_ref(coro);
+
+  visitGCRootsWithStackMaps(frameptr, visitor);
+
+  fprintf(gclog, "scanned ccoro stack from %p\n", frameptr);
   fflush(gclog);
 }
 

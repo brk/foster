@@ -19,10 +19,13 @@
 #include <set>
 #include <vector>
 
+#include "pystring/pystring.h"
+
 #include "passes/CodegenPass-impl.h"
 
 using namespace llvm;
 
+using foster::EDiag;
 using foster::builder;
 
 llvm::GlobalVariable* getTypeMapForType(const llvm::Type*, llvm::Module* mod);
@@ -171,10 +174,12 @@ Constant* getTypeMapEntryFor(const Type* entryTy,
   return ConstantStruct::get(getTypeMapEntryType(mod), fields);
 }
 
+// Keep synchronized with runtime/gc/foster_gc.cpp
 // struct {
 //   i64         cellSize;
-//   const char* typeName;
+//   i8*         typeName;
 //   i32         numPtrEntries;
+//   i8          isCoro;
 //   struct { i8* typeinfo; i32 offset }[numPtrEntries];
 // }
 const StructType* getTypeMapType(int numPointers, llvm::Module* mod) {
@@ -184,6 +189,7 @@ const StructType* getTypeMapType(int numPointers, llvm::Module* mod) {
   typeMapTyFields.push_back(builder.getInt64Ty()); // cellSize
   typeMapTyFields.push_back(builder.getInt8PtrTy()); // typeName
   typeMapTyFields.push_back(builder.getInt32Ty()); // numPtrEntries
+  typeMapTyFields.push_back(builder.getInt8Ty()); // isCoro
   typeMapTyFields.push_back(entriesty); // { i8*, i32 }[n]
 
   return StructType::get(getGlobalContext(), typeMapTyFields);
@@ -231,10 +237,13 @@ GlobalVariable* constructTypeMap(const llvm::Type* ty,
       /*Name=*/        ".typename." + name);
   typeNameVar->setAlignment(1);
 
+  bool isCoro = pystring::startswith(name, "coro_");
+
   Constant* cnameptr = arrayVariableToPointer(typeNameVar);
   typeMapFields.push_back(cellSizeOf(ty));
   typeMapFields.push_back(cnameptr);
   typeMapFields.push_back(getConstantInt32For(numPointers));
+  typeMapFields.push_back(getConstantInt8For(isCoro ? 1 : 0));
 
   std::vector<Constant*> typeMapEntries;
   for (OffsetSet::iterator si =  pointerOffsets.begin();
@@ -303,7 +312,14 @@ GlobalVariable* emitTypeMap(
 // }
 GlobalVariable* emitCoroTypeMap(const StructType* sty, llvm::Module* mod) {
   std::string sname;
-  llvm::raw_string_ostream ss(sname); ss << "coro_" << *(sty->getTypeAtIndex(1));
+  llvm::raw_string_ostream ss(sname); ss << "coro_";
+  bool hasKnownTypes = sty->getNumElements() == 2;
+  if (hasKnownTypes) {
+    ss << *(sty->getTypeAtIndex(1));
+  } else {
+    ss << "gen";
+  }
+
   // We skip the first entry, which is the stack pointer in the coro_context.
   // The pointer-to-function will be automatically skipped, and the remaining
   // pointers are precisely those which we want the GC to notice.

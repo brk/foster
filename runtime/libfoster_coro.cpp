@@ -17,33 +17,6 @@ Lock coro_create_mutex;
 namespace foster {
 namespace runtime {
 
-  const char* coro_status(int status) {
-    switch (status) {
-    case FOSTER_CORO_INVALID: return "invalid";
-    case FOSTER_CORO_SUSPENDED: return "suspended";
-    case FOSTER_CORO_DORMANT: return "dormant";
-    case FOSTER_CORO_RUNNING: return "running";
-    case FOSTER_CORO_DEAD: return "dead";
-    default: return "unknown";
-    }
-  }
-
-  void coro_print(foster_generic_coro* coro) {
-    if (!coro) return;
-    printf("coro %p: ", coro); fflush(stdout);
-    printf("sibling %p, invoker %p, status %s, fn %p\n",
-        coro->sibling, coro->invoker, coro_status(coro->status), coro->fn);
-  }
-
-  void coro_dump(foster_generic_coro* coro) {
-    if (!coro) {
-      printf("cannot dump NULL coro ptr!\n");
-    } else if (0) {
-      foster::runtime::coro_print(coro);
-      foster::runtime::coro_print(coro->sibling);
-    }
-  }
-
   // coro_transfer may be defined as a macro or assembly-
   // language "function." The purpose of foster_coro_transfer
   // is to get a symbol with regular C linkage, and to ensure
