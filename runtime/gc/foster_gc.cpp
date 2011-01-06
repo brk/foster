@@ -59,18 +59,6 @@ void inspect_typemap(typemap* ti) {
   }
 }
 
-foster_typemap_2
-foster_coro_i32_i32_typemap = {
-  128,
-  "foster_coro_i32_i32", 2,
-  {
-  { &foster_coro_i32_i32_typemap,
-    offsetof(foster_generic_coro, sibling) },
-  { &foster_coro_i32_i32_typemap,
-    offsetof(foster_generic_coro, invoker) },
-  }
-};
-
 struct stackmap {
   struct OffsetWithMetadata {
     void* metadata;
