@@ -41,6 +41,7 @@ string str(Value* value);
 namespace foster {
   SourceRangeHighlighter show(ExprAST* ast);
   struct CFG;
+  extern char kDefaultFnLiteralCallingConvention[];
 }
 
 // Returns the closest

@@ -104,7 +104,7 @@ int fprint_i64b(FILE* f, int64_t x) {
   return fprintf(f, "%s_2\n", buf);
 }
 
-int fprint_i32(FILE* f, int32_t x) { return fprintf(f, "%d\n", x) - 1; }
+int fprint_i32(FILE* f, int32_t x) { fprintf(f, "%d\n", x) - 1; fflush(f); return 0; }
 int fprint_i32x(FILE* f, int32_t x) { return fprintf(f, "%X_16\n", x) - 1; }
 int fprint_i32b(FILE* f, int32_t x) {
   static char buf[32+1];
@@ -191,13 +191,23 @@ extern "C" {
 
 //////////////////////////////////////////////////////////////////
 
+void foster__assert(bool ok, const char* msg) {
+  if (!ok) {
+    fprintf(stderr, "%s\n", msg);
+    fflush(stderr);
+    exit(1);
+  }
+}
+
 int force_gc_for_debugging_purposes() {
   gc::force_gc_for_debugging_purposes(); return 0;
 }
 
 int print_ref(void* x) {
   std::string fmt = gc::format_ref(x);
-  return fprintf(stdout, "%s\n", fmt.c_str());
+  fprintf(stdout, "%s\n", fmt.c_str());
+  fflush(stdout);
+  return 0;
 }
 
 int  print_int(mp_int m) { return fprint_mp_int(stdout, m, 10); }

@@ -30,6 +30,11 @@ using std::vector;
 void initSourceLocation(foster::SourceLocation& loc,
                         const foster::pb::SourceLocation* pbloc);
 
+const char* getDefaultCallingConvProtoRecon() {
+ // foster::EDiag() << "getDefaultCallingConvProtoRecon()";
+  return foster::kDefaultFnLiteralCallingConvention;
+}
+
 template <typename PB>
 void parseRangeFrom(foster::SourceRange& r, const PB& p) {
   foster::pb::SourceRange sr = p.range();
@@ -295,7 +300,7 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
       argTypes[i] = TypeAST_from_pb(&fnty.arg_types(i));
     }
 
-    std::string callingConvention = "fastcc";
+    std::string callingConvention = getDefaultCallingConvProtoRecon();
     if (fnty.has_calling_convention()) {
       callingConvention = fnty.calling_convention();
     }

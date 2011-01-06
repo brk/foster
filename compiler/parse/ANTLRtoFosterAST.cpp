@@ -53,6 +53,11 @@ bool foster::wasExplicitlyParenthesized(ExprAST* ast) {
   return gWasWrappedInExplicitParens[ast];
 }
 
+const char* getDefaultCallingConvParse() {
+  //foster::EDiag() << "getDefaultCallingConvParse()";
+  return foster::kDefaultFnLiteralCallingConvention;
+}
+
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
@@ -668,7 +673,8 @@ TypeAST* TypeAST_from(pTree tree) {
     }
 
     TypeAST* returnType = fn->getProto()->resultTy;
-    FnTypeAST* fty =  FnTypeAST::get(returnType, argTypes, "fastcc");
+    FnTypeAST* fty =  FnTypeAST::get(returnType, argTypes,
+                                     getDefaultCallingConvParse());
     // Mark the function type as a known closure type,
     // rather than a top-level procedure type.
     fty->markAsClosure();

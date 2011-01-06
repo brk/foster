@@ -1,0 +1,32 @@
+// IN: 2 3 5 8 13
+
+// coro_wrap = forall a b,
+//             fn (f : fn(arg : a to b)) {
+//               let c = coro_create(f) in {
+//                 fn (arg : a) { coro_invoke(c, a) }
+//               }
+//             }
+
+
+main = fn () {
+  expect_i32(999999)
+  expect_i32(10)
+  expect_i32(120)
+
+  print_i32(999999)
+  let co = coro_create_i32_i32( fn(x : i32) {
+                           let a : i32 = coro_yield_i32_i32(x)
+                           let b : i32 = coro_yield_i32_i32(a + 20) in {
+                             0
+                           }
+                         }) in {
+     let x : i32 = coro_invoke_i32_i32(co, 10) in {
+         let y : i32 = coro_invoke_i32_i32(co, 100) in {
+           print_i32(x)
+           print_i32(y)
+           0
+         }
+     }
+  }
+  0
+}

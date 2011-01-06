@@ -31,6 +31,11 @@ std::string str(const llvm::Type* ty) {
   return ss.str();
 }
 
+const char* getDefaultCallingConvRecon() {
+  ///foster::EDiag() << "getDefaultCallingConvRecon()";
+  return foster::kDefaultFnLiteralCallingConvention;
+}
+
 bool hasEqualRepr(TypeAST* src, TypeAST* dst) {
   return src->getLLVMType() == dst->getLLVMType();
 }
@@ -104,7 +109,7 @@ struct TypeReconstructor {
       for (size_t i = 0; i < fnty->getNumParams(); ++i) {
          args.push_back(recon(fnty->getParamType(i)));
       }
-      return FnTypeAST::get(ret, args, "fastcc");
+      return FnTypeAST::get(ret, args, getDefaultCallingConvRecon());
     }
 
     if (const llvm::StructType* sty

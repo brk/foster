@@ -19,6 +19,8 @@
 #include <set>
 #include <vector>
 
+#include "passes/CodegenPass-impl.h"
+
 using namespace llvm;
 
 using foster::builder;
@@ -305,13 +307,13 @@ GlobalVariable* emitCoroTypeMap(const StructType* sty, llvm::Module* mod) {
   // We skip the first entry, which is the stack pointer in the coro_context.
   // The pointer-to-function will be automatically skipped, and the remaining
   // pointers are precisely those which we want the GC to notice.
-  return emitTypeMap(sty, ss.str(), mod, true);
+  return emitTypeMap(sty, ss.str(), mod, /*skipOffsetZero*/ true);
 }
 
 void registerType(const Type* ty,
                   std::string desiredName,
                   llvm::Module* mod,
-                  bool isClosureEnvironment = false) {
+                  bool isClosureEnvironment) {
   static std::map<const Type*, bool> registeredTypes;
 
   if (registeredTypes[ty]) return;

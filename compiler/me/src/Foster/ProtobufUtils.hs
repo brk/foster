@@ -331,7 +331,7 @@ dumpFnTy (FnTypeAST s t cs) =
           arg_types = fromList args
         , ret_type  = dumpType t
         , PbFnType.is_closure = Just $ isJust cs
-        , calling_convention = Just $ u8fromString "fastcc" -- TODO fix
+        , calling_convention = Just $ u8fromString "ccc" -- TODO fix
     }
 
 -----------------------------------------------------------------------

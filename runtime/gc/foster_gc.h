@@ -16,19 +16,6 @@ inline void* offset(void* base, int off) {
   return (void*) (((char*) base) + off);
 }
 
-struct foster_typemap_2 {
-  int64_t cell_size;
-  const char* name;
-  int32_t numPointers;
-  struct entry {
-    const void* typeinfo;
-    int32_t offset;
-  };
-  entry entries[2];
-};
-
-extern foster_typemap_2 foster_coro_i32_i32_typemap;
-
 const uint64_t FORWARDED_BIT = 0x02; // 0b000..00010
 // This should remain synchronized with getHeapCellHeaderTy()
 // in Codegen-typemaps.cpp

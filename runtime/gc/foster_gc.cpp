@@ -461,11 +461,9 @@ copying_gc* allocator = NULL;
 void copying_gc_root_visitor(void **root, const void *meta) {
   foster_assert(root != NULL, "someone passed a NULL root addr!");
   void* body = *root;
-  fprintf(gclog, "copying_gc_root_visitor(%p -> %p)\n", root, body); fflush(gclog);
+  fprintf(gclog, "copying_gc_root_visitor(root %p -> body %p, meta %p)\n", root, body, meta); fflush(gclog);
 
   if (body) {
-    fprintf(gclog, "gc root@%p visited, body: %p, meta: %p\n", root, body, meta);
-
     if (allocator->is_probable_stack_pointer(body, root)) {
       //       |------------|
       // root: |    body    |---\
@@ -722,8 +720,15 @@ void visitGCRootsWithStackMaps(void* start_frame,
     void* frameptr = (void*) frames[i].frameptr;
 TRACE;
     const stackmap::PointCluster* pc = clusterForAddress[safePointAddr];
-    if (!pc) continue;
-TRACE;
+    if (!pc) {
+      fprintf(gclog, "no point cluster for address %p with frame ptr%p\n", safePointAddr, frameptr);
+      continue;
+    }
+
+    fprintf(gclog, "retaddr %p, frame ptr %p: live count w/meta %d, w/o %d\n",
+      safePointAddr, frameptr,
+      pc->liveCountWithMetadata, pc->liveCountWithoutMetadata);
+
     int32_t frameSize = pc->frameSize;
     for (int a = 0; a < pc->liveCountWithMetadata; ++a) {
       int32_t     off  = pc->offsetWithMetadata(a)->offset;

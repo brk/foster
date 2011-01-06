@@ -105,6 +105,8 @@ SourceRangeHighlighter show(ExprAST* ast) {
   return show(ast->sourceRange);
 }
 
+char kDefaultFnLiteralCallingConvention[] = "fastcc";
+
 } // namespace foster
 
 void ExprASTVisitor::visitChildren(ExprAST* ast) {

@@ -193,9 +193,12 @@ addConcretePrimitiveFunctionsTo(Module* m) {
   addConcretePrimitiveFunctionTo(m, "sext_i64", Type::getInt32Ty(getGlobalContext()));
   addLLVMIntrinsic(m, llvm::Intrinsic::readcyclecounter);
 
- // globalNames.insert("coro_create_i32_i32");
- // globalNames.insert("coro_invoke_i32_i32");
-  //globalNames.insert("coro_yield_i32_i32");
+  globalNames.insert("coro_create_i32x2_i32");
+  globalNames.insert("coro_invoke_i32x2_i32");
+  globalNames.insert("coro_yield_i32x2_i32");
+  globalNames.insert("coro_create_i32_i32");
+  globalNames.insert("coro_invoke_i32_i32");
+  globalNames.insert("coro_yield_i32_i32");
 }
 
 // Add module m's C-linkage functions in the global scopes,
@@ -228,10 +231,11 @@ putModuleMembersInInternalScope(const std::string& scopeName,
                               it != m->global_end(); ++it) {
     const GlobalVariable& gv = *it;
     if (!gv.isConstant()) {
+      outs() << "<internal>\tskipping non-const global\t" << gv.getName() << "\n";
       continue;
     }
 
-    //outs() << "<internal>\tglobal\t" << gv.getName() << "\n";
+    outs() << "<internal>\tglobal\t" << gv.getName() << "\n";
     linkee->getOrInsertGlobal(gv.getName(), gv.getType());
   }
 

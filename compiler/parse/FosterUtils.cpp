@@ -24,6 +24,11 @@ bool canAssignType(TypeAST* from, TypeAST* to) {
   return from == to;
 }
 
+const char* getDefaultCallingConvGenericClosure() {
+  foster::EDiag() << "getDefaultCallingConvGenericClosure()";
+  return foster::kDefaultFnLiteralCallingConvention;
+}
+
 // Converts T (X, Y) and T (X, Y)* to T (X, Y)
 FnTypeAST* tryExtractCallableType(TypeAST* ty) {
   if (RefTypeAST* r = dynamic_cast<RefTypeAST*>(ty)) {
@@ -70,7 +75,8 @@ FnTypeAST* genericClosureVersionOf(const FnTypeAST* fnty, bool skipFirstArg) {
     fnParams.push_back(fnty->getParamType(i));
   }
 
-  return FnTypeAST::get(fnty->getReturnType(), fnParams, "fastcc");
+  return FnTypeAST::get(fnty->getReturnType(), fnParams,
+                        getDefaultCallingConvGenericClosure());
 }
 
 FnTypeAST* genericClosureVersionOf(const FnTypeAST* fnty) {

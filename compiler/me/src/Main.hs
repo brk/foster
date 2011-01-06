@@ -239,8 +239,10 @@ typecheckTuple ctx exprs b Nothing = typecheckTuple' ctx exprs b [Nothing | e <-
 
 typecheckTuple ctx exprs b (Just (TupleTypeAST ts)) =
     if length exprs /= length ts
-      then throwError $ "typecheckTuple: length of tuple and expected tuple type did not agree: "
-                            ++ show exprs ++ " versus " ++ show ts
+      then throwError $ "typecheckTuple: length of tuple (" ++ (show $ length exprs) ++
+                        ") and expected tuple (" ++ (show $ length ts) ++
+                        ") types did not agree:\n"
+                            ++ show exprs ++ " versus \n" ++ show ts
       else typecheckTuple' ctx exprs b [Just t | t <- ts]
 
 typecheckTuple ctx es b (Just ty)
@@ -267,11 +269,28 @@ collectErrors results =
     [e | r <- results, e <- errsTypecheckResult r, e /= ""]
 -----------------------------------------------------------------------
 
-fosi32toi32 = FnTypeAST (TupleTypeAST [(NamedTypeAST "i32")]) (NamedTypeAST "i32") Nothing
-fosi64toi64 = FnTypeAST (TupleTypeAST [(NamedTypeAST "i64")]) (NamedTypeAST "i64") Nothing
-fosi1toi32 = FnTypeAST (TupleTypeAST [(NamedTypeAST "i1")]) (NamedTypeAST "i32") Nothing
-fosi64i64toi1 = FnTypeAST (TupleTypeAST [(NamedTypeAST "i64"), (NamedTypeAST "i64")]) (NamedTypeAST "i1") Nothing
-fosi32i32toi1 = FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i1") Nothing
+minimalTuple []    = TupleTypeAST []
+minimalTuple [arg] = arg
+minimalTuple args  = TupleTypeAST args
+
+i32 = (NamedTypeAST "i32")
+i64 = (NamedTypeAST "i64")
+fosi32toi32 = FnTypeAST (TupleTypeAST [i32]) i32 Nothing
+fosi64toi64 = FnTypeAST (TupleTypeAST [i64]) i64 Nothing
+fosi1toi32  = FnTypeAST (TupleTypeAST [(NamedTypeAST "i1")]) i32 Nothing
+fosi64i64toi1 = FnTypeAST (TupleTypeAST [i64, i64]) (NamedTypeAST "i1") Nothing
+fosi32i32toi1 = FnTypeAST (TupleTypeAST [i32, i32]) (NamedTypeAST "i1") Nothing
+
+coroInvokeType args ret =
+    (FnTypeAST   (TupleTypeAST ([(CoroType (minimalTuple args)   ret)] ++ args)
+                 )                                               ret Nothing)
+
+coroYieldType args ret = (FnTypeAST (TupleTypeAST [ret])
+                                    (minimalTuple args) Nothing)
+
+coroCreateType args ret =
+    (FnTypeAST (TupleTypeAST [(FnTypeAST (TupleTypeAST args) ret  Nothing)])
+                               (CoroType (minimalTuple args) ret) Nothing)
 
 rootContext :: Context
 rootContext =
@@ -283,13 +302,17 @@ rootContext =
     ,(  "read_i32", FnTypeAST (TupleTypeAST []) (NamedTypeAST "i32") Nothing)
     ,("expect_i1", fosi1toi32)
     ,( "print_i1", fosi1toi32)
-    ,("coro_create_i32_i32", FnTypeAST (TupleTypeAST [
-                                    (FnTypeAST (TupleTypeAST [(NamedTypeAST "i32")]) (NamedTypeAST "i32") Nothing)])
-                                    (CoroType (NamedTypeAST "i32") (NamedTypeAST "i32")) Nothing)
-    ,("coro_invoke_i32_i32", (FnTypeAST
-        (TupleTypeAST [(CoroType (NamedTypeAST "i32") (NamedTypeAST "i32")), (NamedTypeAST "i32")])
-        (NamedTypeAST "i32") Nothing))
-    ,("coro_yield_i32_i32", (FnTypeAST (TupleTypeAST [(NamedTypeAST "i32")]) (NamedTypeAST "i32") Nothing))
+    ---,("coro_create", FnTypeAST (TupleTypeAST [
+    ---                                (FnTypeAST (TupleTypeAST [(NamedTypeAST "i32")]) (NamedTypeAST "i32") Nothing)])
+    ---                               (CoroType (NamedTypeAST "i32") (NamedTypeAST "i32")) Nothing)
+    ,("coro_create_i32_i32", coroCreateType [i32] i32)
+    ,("coro_invoke_i32_i32", coroInvokeType [i32] i32)
+    ,("coro_yield_i32_i32",  coroYieldType  [i32] i32)
+
+
+    ,("coro_create_i32x2_i32", coroCreateType [i32, i32] i32)
+    ,("coro_invoke_i32x2_i32", coroInvokeType [i32, i32] i32)
+    ,("coro_yield_i32x2_i32",  coroYieldType  [i32, i32] i32)
     ,("primitive_sext_i64_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32")]) (NamedTypeAST "i64") Nothing)
     ,("primitive_negate_i32", fosi32toi32)
     ,("primitive_bitnot_i1", FnTypeAST (TupleTypeAST [(NamedTypeAST "i1")]) (NamedTypeAST "i1") Nothing)

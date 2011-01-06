@@ -16,17 +16,6 @@ namespace runtime {
 void initialize();
 void cleanup();
 
-template <typename T>
-inline bool notstale(T* p) {
-  return *((uintptr_t*) p) != ~0;
-}
-
-
-struct FosterClosurei32i32 {
-  int32_t (*code)(void* env, int32_t);
-  void* env;
-};
-
 } // namespace foster::runtime
 } // namespace foster
 
@@ -36,6 +25,7 @@ extern "C" {
 
 // Interface to foster's memory allocator; see gc/foster_gc_allocate.cpp
 void* memalloc_cell(void* typeinfo);
+void foster__assert(bool, const char*);
 
 }
 

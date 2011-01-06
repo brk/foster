@@ -396,6 +396,8 @@ int main(int argc, char** argv) {
   const llvm::Type* mp_int = NULL;
   ModuleAST* exprAST = NULL;
   foster::pb::SourceModule sm;
+  llvm::GlobalVariable* current_coro = NULL;
+  llvm::Function* coro_transfer = NULL;
 
   setDefaultCommandLineOptions();
 
@@ -444,6 +446,22 @@ int main(int argc, char** argv) {
 
   module->addTypeName("unit",
     llvm::StructType::get(getGlobalContext(), false));
+
+  current_coro = libfoster_bc->getNamedGlobal("current_coro");
+  module->getOrInsertGlobal("current_coro",
+    current_coro->getType()->getContainedType(0));
+
+  // coro_transfer isn't automatically added because it's
+  // only a declaration, not a definition.
+  coro_transfer = llvm::dyn_cast<llvm::Function>(
+                  module->getOrInsertFunction("coro_transfer",
+    llvm::dyn_cast<llvm::FunctionType>(
+                    libfoster_bc->getFunction("coro_transfer")
+                                ->getType()->getContainedType(0))));
+  coro_transfer->addAttribute(1, llvm::Attribute::InReg);
+  coro_transfer->addAttribute(2, llvm::Attribute::InReg);
+
+  // TODO mark foster__assert as alwaysinline
 
   foster::putModuleMembersInScope(libfoster_bc, module);
   foster::putModuleMembersInInternalScope("imath", imath_bc, module);

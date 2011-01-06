@@ -10,31 +10,24 @@
 #include "parse/FosterTypeAST.h"
 #include "parse/FosterUtils.h"
 #include "parse/ParsingContext.h"
-#include "parse/ExprASTVisitor.h"
 #include "parse/DumpStructure.h"
-#include "parse/FosterSymbolTable.h"
 #include "parse/CompilationContext.h"
 
 #include "passes/PassUtils.h"
-#include "passes/CodegenPass.h"
-
-#include "_generated_/FosterConfig.h"
+#include "passes/CodegenPass-impl.h"
 
 #include "llvm/Attributes.h"
 #include "llvm/CallingConv.h"
-#include "llvm/DerivedTypes.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Intrinsics.h"
-#include "llvm/Module.h"
+
 #include "llvm/Metadata.h"
 //#include "llvm/Analysis/DIBuilder.h"
 #include "llvm/Support/Dwarf.h"
-#include "llvm/Support/Format.h"
 
 #include "pystring/pystring.h"
 
 #include <map>
-#include <set>
 
 using llvm::Type;
 using llvm::BasicBlock;
@@ -57,17 +50,7 @@ using foster::EDiag;
 using foster::show;
 
 
-// Declarations for Codegen-typemaps.cpp
-llvm::GlobalVariable*
-emitTypeMap(const Type* ty, std::string name, bool skipOffsetZero = false);
 
-void registerType(const Type* ty, std::string desiredName,
-                  llvm::Module* mod,
-                  bool isClosureEnvironment = false);
-
-llvm::GlobalVariable* getTypeMapForType(const llvm::Type*, llvm::Module* mod);
-
-bool mightContainHeapPointers(const llvm::Type* ty);
 
 ////////////////////////////////////////////////////////////////////
 
@@ -75,6 +58,46 @@ llvm::Value* getUnitValue() {
   std::vector<llvm::Constant*> noArgs;
   return llvm::ConstantStruct::get(
             llvm::StructType::get(getGlobalContext()), noArgs);
+}
+
+Value* getPointerToIndex(Value* compositeValue,
+                         Value* idxValue,
+                         const std::string& name) {
+  std::vector<Value*> idx;
+  idx.push_back(ConstantInt::get(Type::getInt32Ty(getGlobalContext()), 0));
+  idx.push_back(idxValue);
+  return builder.CreateGEP(compositeValue, idx.begin(), idx.end(), name.c_str());
+}
+
+Value* getElementFromComposite(Value* compositeValue, Value* idxValue) {
+  const Type* compositeType = compositeValue->getType();
+  if (llvm::isa<llvm::PointerType>(compositeType)) {
+    // Pointers to composites are indexed via getelementptr
+    // TODO: "When indexing into a (optionally packed) structure,
+    //        only i32 integer constants are allowed. When indexing
+    //        into an array, pointer or vector, integers of any width
+    //        are allowed, and they are not required to be constant."
+    //   -- http://llvm.org/docs/LangRef.html#i_getelementptr
+    Value* gep = getPointerToIndex(compositeValue, idxValue, "subgep");
+    return builder.CreateLoad(gep, "subgep_ld");
+  } else if (llvm::isa<llvm::StructType>(compositeType)
+          && llvm::isa<llvm::Constant>(idxValue)) {
+    // Struct values may be indexed only by constant expressions
+    ASSERT(llvm::isa<llvm::ConstantInt>(idxValue));
+    unsigned uidx = unsigned(getSaturating(dyn_cast<ConstantInt>(idxValue)));
+    return builder.CreateExtractValue(compositeValue, uidx, "subexv");
+  } else if (llvm::isa<llvm::VectorType>(compositeType)) {
+    if (llvm::isa<llvm::Constant>(idxValue)) {
+      return builder.CreateExtractElement(compositeValue, idxValue, "simdexv");
+    } else {
+      EDiag() << "TODO: codegen for indexing vectors by non-constants"
+              << __FILE__ << ":" << __LINE__ << "\n";
+    }
+  } else {
+    llvm::errs() << "Cannot index into value type " << *compositeType
+                 << " with non-constant index " << *idxValue << "\n";
+  }
+  return NULL;
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -114,8 +137,7 @@ void markGCRoot(llvm::Value* root,
 
   if (!meta) {
     // If we don't have a type map, use a NULL pointer.
-    meta = llvm::ConstantPointerNull::get(
-                               llvm::PointerType::getUnqual(builder.getInt8Ty()));
+    meta = llvm::ConstantPointerNull::get(builder.getInt8PtrTy());
   } else if (meta->getType() != builder.getInt8PtrTy()) {
     // If we do have a type map, make sure it's of type i8*.
     meta = ConstantExpr::getBitCast(meta, builder.getInt8PtrTy());
@@ -175,7 +197,7 @@ llvm::Value* storeAndMarkPointerAsGCRoot(llvm::Value* val,
   // allocate a slot for a T* on the stack
   llvm::AllocaInst* stackslot = CreateEntryAlloca(val->getType(), "stackref");
   llvm::Value* root = builder.CreateBitCast(stackslot,
-             llvm::PointerType::getUnqual(builder.getInt8PtrTy()), "gcroot");
+                                      ptrTo(builder.getInt8PtrTy()), "gcroot");
 
   markGCRoot(root, getTypeMapForType(val->getType()->getContainedType(0), mod),
              mod);
@@ -188,66 +210,6 @@ llvm::Value* storeAndMarkPointerAsGCRoot(llvm::Value* val,
 }
 
 ////////////////////////////////////////////////////////////////////
-
-struct CodegenPass : public ExprASTVisitor {
-  #include "parse/ExprASTVisitor.decls.inc.h"
-
-  typedef foster::SymbolTable<llvm::Value> ValueTable;
-  typedef ValueTable::LexicalScope         ValueScope;
-  ValueTable valueSymTab;
-
-  llvm::Module* mod;
-  //llvm::DIBuilder* dib;
-
-  explicit CodegenPass(llvm::Module* mod) : mod(mod) {
-    //dib = new DIBuilder(*mod);
-  }
-
-  ~CodegenPass() {
-    //delete dib;
-  }
-
-  llvm::Value* lookup(const std::string& fullyQualifiedSymbol) {
-    llvm::Value* v =  valueSymTab.lookup(fullyQualifiedSymbol);
-    if (v) return v;
-
-    // Otherwise, it should be a function name.
-    v = mod->getFunction(fullyQualifiedSymbol);
-    if (!v) {
-     currentErrs() << "name was neither fn arg nor fn name: "
-                << fullyQualifiedSymbol << "\n";
-     valueSymTab.dump(currentErrs());
-     ASSERT(false) << "unable to find value for symbol " << fullyQualifiedSymbol;
-    }
-    return v;
-  }
-
-  // Returns ty**, the stack slot containing a ty*.
-  llvm::Value* emitMalloc(const llvm::Type* ty) {
-    llvm::Value* memalloc_cell = mod->getFunction("memalloc_cell");
-    if (!memalloc_cell) {
-      currentErrs() << "NO memalloc_cell IN MODULE! :(" << "\n";
-      return NULL;
-    }
-
-    llvm::GlobalVariable* ti = getTypeMapForType(ty, mod);
-
-    llvm::CallInst* mem = builder.CreateCall(memalloc_cell,
-                                          ti,
-                                          "mem");
-    return storeAndMarkPointerAsGCRoot(
-        builder.CreateBitCast(mem, llvm::PointerType::getUnqual(ty), "ptr"),
-        mod);
-  }
-
-  llvm::Value* allocateMPInt() {
-    llvm::Value* mp_int_alloc = mod->getFunction("mp_int_alloc");
-    ASSERT(mp_int_alloc);
-    llvm::Value* mpint = builder.CreateCall(mp_int_alloc);
-    return mpint;
-  }
-
-};
 
 template<typename T>
 std::string hex(T* ast) {
@@ -313,6 +275,80 @@ bool isSafeToStackAllocate(TupleExprAST* ast) {
   return true;
 }
 
+////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////
+
+llvm::Value* CodegenPass::lookup(const std::string& fullyQualifiedSymbol) {
+  llvm::Value* v =  valueSymTab.lookup(fullyQualifiedSymbol);
+  if (v) return v;
+
+  // Otherwise, it should be a function name.
+  v = mod->getFunction(fullyQualifiedSymbol);
+
+  if (!v) {
+    if (fullyQualifiedSymbol == "coro_create_i32_i32") {
+      v = emitCoroCreateFn(builder.getInt32Ty(), builder.getInt32Ty());
+    } else if (fullyQualifiedSymbol == "coro_create_i32x2_i32") {
+      std::vector<const Type*> argTypes;
+      argTypes.push_back(builder.getInt32Ty());
+      argTypes.push_back(builder.getInt32Ty());
+      v = emitCoroCreateFn(builder.getInt32Ty(),
+        llvm::StructType::get(mod->getContext(), argTypes));
+    } else if (fullyQualifiedSymbol == "coro_invoke_i32_i32") {
+      v = emitCoroInvokeFn(builder.getInt32Ty(), builder.getInt32Ty());
+    } else if (fullyQualifiedSymbol == "coro_invoke_i32x2_i32") {
+      std::vector<const Type*> argTypes;
+      argTypes.push_back(builder.getInt32Ty());
+      argTypes.push_back(builder.getInt32Ty());
+      v = emitCoroInvokeFn(builder.getInt32Ty(),
+        llvm::StructType::get(mod->getContext(), argTypes));
+    } else if (fullyQualifiedSymbol == "coro_yield_i32_i32") {
+      v = emitCoroYieldFn(builder.getInt32Ty(), builder.getInt32Ty());
+    } else if (fullyQualifiedSymbol == "coro_yield_i32x2_i32") {
+      std::vector<const Type*> argTypes;
+      argTypes.push_back(builder.getInt32Ty());
+      argTypes.push_back(builder.getInt32Ty());
+      v = emitCoroYieldFn(builder.getInt32Ty(),
+        llvm::StructType::get(mod->getContext(), argTypes));
+    }
+  }
+
+  if (!v) {
+   currentErrs() << "name was neither fn arg nor fn name: "
+              << fullyQualifiedSymbol << "\n";
+   valueSymTab.dump(currentErrs());
+   ASSERT(false) << "unable to find value for symbol " << fullyQualifiedSymbol;
+  }
+  return v;
+}
+
+llvm::Value* CodegenPass::emitMalloc(const llvm::Type* ty) {
+  llvm::Value* memalloc_cell = mod->getFunction("memalloc_cell");
+  ASSERT(memalloc_cell != NULL) << "NO memalloc_cell IN MODULE! :(";
+
+  llvm::GlobalVariable* ti = getTypeMapForType(ty, mod);
+  ASSERT(ti != NULL);
+  const llvm::Type* typemap_type = memalloc_cell->getType()
+                                            ->getContainedType(0)
+                                            ->getContainedType(1);
+  llvm::Value* typemap = builder.CreateBitCast(ti, typemap_type);
+  llvm::CallInst* mem = builder.CreateCall(memalloc_cell, typemap, "mem");
+
+  return storeAndMarkPointerAsGCRoot(
+                       builder.CreateBitCast(mem, ptrTo(ty), "ptr"),
+                       mod);
+}
+
+
+llvm::Value* CodegenPass::allocateMPInt() {
+  llvm::Value* mp_int_alloc = mod->getFunction("mp_int_alloc");
+  ASSERT(mp_int_alloc);
+  llvm::Value* mpint = builder.CreateCall(mp_int_alloc);
+  return mpint;
+}
+
+////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////
 
 void CodegenPass::visit(IntAST* ast) {
   ASSERT(!getValue(ast)) << "codegenned " << ast->tag << " @ " << hex(ast) << " twice?!?" << show(ast);
@@ -566,7 +602,7 @@ void codegenClosure(FnAST* ast, CodegenPass* self) {
   }
 
   Value* genericClo = builder.CreateBitCast(clo,
-      llvm::PointerType::getUnqual(genericCloTy->getLLVMType()), "hideCloTy");
+                             ptrTo(genericCloTy->getLLVMType()), "hideCloTy");
   setValue(ast, builder.CreateLoad(genericClo, /*isVolatile=*/ false, "loadClosure"));
 }
 
@@ -750,46 +786,6 @@ void CodegenPass::visit(IfExprAST* ast) {
 void CodegenPass::visit(NilExprAST* ast) {
   ASSERT(!getValue(ast)) << "codegenned " << ast->tag << " @ " << hex(ast) << " twice?!?" << show(ast);
   setValue(ast, llvm::ConstantPointerNull::getNullValue(getLLVMType(ast->type)));
-}
-
-Value* getPointerToIndex(Value* compositeValue,
-                         Value* idxValue,
-                         const std::string& name) {
-  std::vector<Value*> idx;
-  idx.push_back(ConstantInt::get(Type::getInt32Ty(getGlobalContext()), 0));
-  idx.push_back(idxValue);
-  return builder.CreateGEP(compositeValue, idx.begin(), idx.end(), name.c_str());
-}
-
-Value* getElementFromComposite(Value* compositeValue, Value* idxValue) {
-  const Type* compositeType = compositeValue->getType();
-  if (llvm::isa<llvm::PointerType>(compositeType)) {
-    // Pointers to composites are indexed via getelementptr
-    // TODO: "When indexing into a (optionally packed) structure,
-    //        only i32 integer constants are allowed. When indexing
-    //        into an array, pointer or vector, integers of any width
-    //        are allowed, and they are not required to be constant."
-    //   -- http://llvm.org/docs/LangRef.html#i_getelementptr
-    Value* gep = getPointerToIndex(compositeValue, idxValue, "subgep");
-    return builder.CreateLoad(gep, "subgep_ld");
-  } else if (llvm::isa<llvm::StructType>(compositeType)
-          && llvm::isa<llvm::Constant>(idxValue)) {
-    // Struct values may be indexed only by constant expressions
-    ASSERT(llvm::isa<llvm::ConstantInt>(idxValue));
-    unsigned uidx = unsigned(getSaturating(dyn_cast<ConstantInt>(idxValue)));
-    return builder.CreateExtractValue(compositeValue, uidx, "subexv");
-  } else if (llvm::isa<llvm::VectorType>(compositeType)) {
-    if (llvm::isa<llvm::Constant>(idxValue)) {
-      return builder.CreateExtractElement(compositeValue, idxValue, "simdexv");
-    } else {
-      EDiag() << "TODO: codegen for indexing vectors by non-constants"
-              << __FILE__ << ":" << __LINE__ << "\n";
-    }
-  } else {
-    llvm::errs() << "Cannot index into value type " << *compositeType
-                 << " with non-constant index " << *idxValue << "\n";
-  }
-  return NULL;
 }
 
 void CodegenPass::visit(SubscriptAST* ast) {
@@ -1122,7 +1118,10 @@ void CodegenPass::visit(CallAST* ast) {
 
     if (V->getType() != expectedType) {
       EDiag() << "type mismatch, " << str(V->getType())
-              << " vs expected type " << str(expectedType) << show(ast->parts[i + 1]);
+              << " vs expected type " << str(expectedType)
+              << "\nbase is " << str(FV)
+              << "\nwith base type " << str(FV->getType())
+              << show(ast->parts[i + 1]);
     }
   }
 

@@ -19,16 +19,6 @@ struct foster_generic_coro {
   int32_t status;
 };
 
-struct foster_coro {
-  coro_context ctx;
-  foster_coro* sibling;
-  void (*fn)(void*);
-  void* env;
-  foster_coro* invoker;
-  int32_t status;
-  void* arg;
-};
-
 // Thanks to its single-threaded semantics, Lua gets by without
 // needing to distinguish between suspended and dormant coroutines.
 enum {
@@ -46,7 +36,7 @@ enum {
 // (eventually, per-thread variable)
 // coro_invoke(c) sets this to c.
 // coro_yield() resets this to current_coro->invoker.
-extern foster_generic_coro* current_coro;
+extern "C" foster_generic_coro* current_coro;
 
 namespace foster {
 namespace runtime {
@@ -56,6 +46,7 @@ namespace runtime {
 inline void foster_assert(bool ok, const char* msg) {
   if (!ok) {
     fprintf(stderr, "%s\n", msg);
+    fflush(stderr);
     exit(1);
   }
 }
