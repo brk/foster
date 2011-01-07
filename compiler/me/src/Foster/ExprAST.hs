@@ -90,7 +90,6 @@ data ExprAST =
         | SubscriptAST  { subscriptBase  :: ExprAST
                         , subscriptIndex :: ExprAST
                         }
-        | E_PrototypeAST    PrototypeAST
         | VarAST        (Maybe TypeAST) String
         deriving Show
 
@@ -136,10 +135,9 @@ childrenOf e =
         CompilesAST   e c    -> [e]
         IfAST         a b c  -> [a, b, c]
         IntAST litInt        -> []
-        E_FnAST f            -> [E_PrototypeAST (fnProto f), (fnBody f)]
+        E_FnAST f            -> [fnBody f]
         SeqAST      a b      -> unbuildSeqs e
         SubscriptAST  a b    -> [a, b]
-        E_PrototypeAST (PrototypeAST t s es) -> (map (\(AnnVar t s) -> VarAST (Just t) s) es)
         TupleAST     es b    -> es
         VarAST       mt v    -> []
 
@@ -163,7 +161,6 @@ textOf e width =
         E_FnAST f            -> "FnAST        "
         SeqAST     a b       -> "SeqAST       "
         SubscriptAST  a b    -> "SubscriptAST "
-        E_PrototypeAST (PrototypeAST t s es)     -> "PrototypeAST " ++ s
         TupleAST     es b    -> "TupleAST     "
         VarAST mt v          -> "VarAST       " ++ v ++ " :: " ++ show mt
 
@@ -182,7 +179,6 @@ freeVariables e = case e of
 
     SeqAST     a b       -> freeVariables a ++ freeVariables b
     SubscriptAST  a b    -> freeVariables a ++ freeVariables b
-    E_PrototypeAST (PrototypeAST t s es)     -> []
     TupleAST     es b    -> concatMap freeVariables es
     VarAST mt v          -> [v]
 

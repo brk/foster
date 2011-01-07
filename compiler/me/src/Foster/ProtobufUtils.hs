@@ -161,8 +161,6 @@ parseVar pbexpr lines = VarAST (fmap parseType (PbExpr.type' pbexpr))
 parseModule :: Expr -> SourceLines -> ModuleAST FnAST
 parseModule pbexpr lines = ModuleAST [parseFn e lines | e <- toList $ PbExpr.parts pbexpr] lines
 
-parseProto :: Expr -> SourceLines -> ExprAST
-parseProto pbexpr lines = E_PrototypeAST (parseProtoP pbexpr lines)
 
 parseProtoP :: Expr -> SourceLines -> PrototypeAST
 parseProtoP pbexpr lines =
@@ -227,7 +225,7 @@ parseExpr pbexpr lines =
                 VAR     -> parseVar
                 Foster.Pb.Expr.Tag.TUPLE   -> parseTuple
                 Foster.Pb.Expr.Tag.FN      -> parseFnAST
-                PROTO     -> parseProto
+                PROTO   -> error $ "parseExpr cannot parse a standalone proto!" ++ (show $ PbExpr.tag pbexpr) ++ "\n"
                 CALL      -> parseCall
                 SEQ       -> parseSeq
                 COMPILES  -> parseCompiles

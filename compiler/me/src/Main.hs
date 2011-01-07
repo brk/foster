@@ -130,7 +130,6 @@ typecheck ctx expr maybeExpTy =
         SubscriptAST  a b    -> do ta <- typecheck ctx a Nothing
                                    tb <- typecheck ctx b Nothing
                                    typecheckSubscript ta (typeAST ta) tb maybeExpTy
-        E_PrototypeAST (PrototypeAST t s es) -> throwError "PrototypeAST"
         TupleAST  exprs b   -> typecheckTuple ctx exprs b maybeExpTy
         VarAST mt s -> case lookup s ctx of
             Just t  -> Annotated $ E_AnnVar (AnnVar t s)
