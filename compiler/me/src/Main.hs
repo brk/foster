@@ -120,7 +120,7 @@ typecheck ctx expr maybeExpTy =
                            _  <- sanityCheck (isJust $ typeJoin (typeAST eb) (typeAST ec))
                                              "IfAST: types of branches didn't match"
                            return (AnnIf (typeAST eb) ea eb ec)
-        E_FnAST (FnAST proto body cs) -> typecheckFn ctx proto body cs maybeExpTy
+        E_FnAST f -> typecheckFn ctx (fnProto f) (fnBody f) (fnClosedVars f) maybeExpTy
         CallAST r b a -> typecheckCall ctx r b a maybeExpTy
         IntAST (LiteralInt i s1 s2 i2) -> do return (AnnInt (NamedTypeAST "i32") i s1 s2 i2)
         SeqAST a b -> do
@@ -179,7 +179,7 @@ typecheckCall ctx range base arg maybeExpTy =
       -- If we have an explicit redex (call to a literal function),
       -- we can determine the types of the formals based on the actuals.
       case base of
-        (E_FnAST (FnAST p b mv)) -> do
+        (E_FnAST f) -> do
            ea <- typecheck ctx arg Nothing
            let expectedLambdaType = case maybeExpTy of
                 Nothing  -> (Just (FnTypeAST (typeAST ea) (MissingTypeAST "typecheckCall-3")  irrelevantClosedOverVars))
@@ -338,15 +338,15 @@ rootContext =
 isPrimitiveName name = isJust $ lookup name rootContext
 
 fnName :: FnAST -> String
-fnName (FnAST proto body cs) = prototypeASTname proto
+fnName f = prototypeASTname (fnProto f)
 
 fnFreeVariables :: FnAST -> Context -> [String]
-fnFreeVariables (FnAST proto body cs) ctx =
-    let allCalledFns = Set.fromList $ freeVariables body in
+fnFreeVariables f ctx =
+    let allCalledFns = Set.fromList $ freeVariables (fnBody f) in
     -- remove names of primitive functions
-    let nonPrimitives = Set.filter (\f -> not (isJust $ lookup f ctx)) allCalledFns in
+    let nonPrimitives = Set.filter (\var -> not (isJust $ lookup var ctx)) allCalledFns in
     -- remove recursive function name calls
-    Set.toList $ Set.filter (\f -> prototypeASTname proto /= f) nonPrimitives
+    Set.toList $ Set.filter (\name -> prototypeASTname (fnProto f) /= name) nonPrimitives
 
 buildCallGraph :: [FnAST] -> Context -> [Graph.SCC FnAST]
 buildCallGraph asts ctx =
@@ -357,10 +357,10 @@ extendContextWithFnA :: AnnFn -> Context -> Context
 extendContextWithFnA f@(AnnFn proto body cs) ctx = (annProtoName proto, fnTypeFromA f):ctx
 
 fnTypeFrom :: FnAST -> TypeAST
-fnTypeFrom (FnAST p b cs) =
-    let intype = TupleTypeAST [avarType v | v <- prototypeASTformals p] in
-    let outtype = prototypeASTretType p in
-    FnTypeAST intype outtype (fmap (map avarName) cs)
+fnTypeFrom f =
+    let intype = TupleTypeAST [avarType v | v <- prototypeASTformals (fnProto f)] in
+    let outtype = prototypeASTretType (fnProto f) in
+    FnTypeAST intype outtype (fmap (map avarName) (fnClosedVars f))
 
 extendContextWithFn :: FnAST -> Context -> Context
 extendContextWithFn f ctx = (fnName f, fnTypeFrom f):ctx

@@ -94,8 +94,10 @@ data ExprAST =
         | VarAST        (Maybe TypeAST) String
         deriving Show
 
-                          -- proto    body
-data FnAST  = FnAST     PrototypeAST ExprAST  (Maybe [AnnVar]) deriving (Show)
+data FnAST  = FnAST { fnProto :: PrototypeAST
+                    , fnBody  :: ExprAST
+                    , fnClosedVars :: (Maybe [AnnVar])
+                    } deriving (Show)
 data PrototypeAST = PrototypeAST {
                           prototypeASTretType :: TypeAST
                         , prototypeASTname    :: String
@@ -134,7 +136,7 @@ childrenOf e =
         CompilesAST   e c    -> [e]
         IfAST         a b c  -> [a, b, c]
         IntAST litInt        -> []
-        E_FnAST (FnAST a b cs)  -> [E_PrototypeAST a, b]
+        E_FnAST f            -> [E_PrototypeAST (fnProto f), (fnBody f)]
         SeqAST      a b      -> unbuildSeqs e
         SubscriptAST  a b    -> [a, b]
         E_PrototypeAST (PrototypeAST t s es) -> (map (\(AnnVar t s) -> VarAST (Just t) s) es)
@@ -158,7 +160,7 @@ textOf e width =
         CompilesAST   e c    -> "CompilesAST  "
         IfAST         a b c  -> "IfAST        "
         IntAST litInt        -> "IntAST       " ++ (litIntText litInt)
-        E_FnAST (FnAST p b cs)  -> "FnAST        "
+        E_FnAST f            -> "FnAST        "
         SeqAST     a b       -> "SeqAST       "
         SubscriptAST  a b    -> "SubscriptAST "
         E_PrototypeAST (PrototypeAST t s es)     -> "PrototypeAST " ++ s
@@ -174,8 +176,8 @@ freeVariables e = case e of
     CompilesAST   e c    -> freeVariables e
     IfAST         a b c  -> freeVariables a ++ freeVariables b ++ freeVariables c
     IntAST litInt        -> []
-    E_FnAST (FnAST p b cs)  -> let bodyvars =  Set.fromList (freeVariables b) in
-                               let boundvars = Set.fromList (map avarName (prototypeASTformals p)) in
+    E_FnAST f           -> let bodyvars =  Set.fromList (freeVariables (fnBody f)) in
+                               let boundvars = Set.fromList (map avarName (prototypeASTformals (fnProto f))) in
                                Set.toList (Set.difference bodyvars boundvars)
 
     SeqAST     a b       -> freeVariables a ++ freeVariables b
