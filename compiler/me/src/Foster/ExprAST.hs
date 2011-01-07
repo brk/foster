@@ -87,7 +87,9 @@ data ExprAST =
         | CompilesAST   ExprAST CompilesStatus
         | IfAST         ExprAST ExprAST ExprAST
         | SeqAST        ExprAST ExprAST
-        | SubscriptAST  ExprAST ExprAST
+        | SubscriptAST  { subscriptBase  :: ExprAST
+                        , subscriptIndex :: ExprAST
+                        }
         | E_PrototypeAST    PrototypeAST
         | VarAST        (Maybe TypeAST) String
         deriving Show
@@ -102,8 +104,12 @@ data PrototypeAST = PrototypeAST {
 
 
 -- Builds trees like this:
---
---
+-- AnnSeq        :: i32
+-- ├─AnnCall       :: i32
+-- │ ├─AnnVar       expect_i32 :: ((i32) -> i32)
+-- │ └─AnnTuple
+-- │   └─AnnInt       999999 :: i32
+
 showStructure :: ExprAST -> String
 showStructure e = showStructureP e "" False where
     showStructureP e prefix isLast =
