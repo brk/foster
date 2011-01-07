@@ -133,7 +133,7 @@ mkIntASTFromClean clean text base lines =
         let bitsPerDigit = ceiling $ (log $ fromIntegral base) / (log 2) in
         let conservativeBitsNeeded = bitsPerDigit * (Prelude.length clean) + 2 in
         let activeBits = toInteger conservativeBitsNeeded in
-        IntAST activeBits text clean base
+        IntAST (LiteralInt activeBits text clean base)
 
 parseSeq pbexpr lines =
     let exprs = map (\x -> parseExpr x lines) $ toList (PbExpr.parts pbexpr) in
@@ -141,7 +141,8 @@ parseSeq pbexpr lines =
 
 -- | Convert a list of ExprASTs to a right-leaning "list" of SeqAST nodes.
 buildSeqs :: [ExprAST] -> ExprAST
-buildSeqs []    = IntAST 1 "0" "0" 10 --error "(buildSeqs []): no skip yet, so no expr to return!"
+buildSeqs []    = IntAST (LiteralInt 1 "0" "0" 10)
+                  --error "(buildSeqs []): no skip yet, so no expr to return!"
 buildSeqs [a]   = a
 buildSeqs [a,b] = SeqAST a b
 buildSeqs (a:b) = SeqAST a (buildSeqs b)

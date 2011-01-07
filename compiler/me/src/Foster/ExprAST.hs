@@ -18,10 +18,14 @@ import qualified Data.Text as T
 data CompilesStatus = CS_WouldCompile | CS_WouldNotCompile | CS_NotChecked
     deriving (Eq, Show)
 
-data ESourceLocation = ESourceLocation Int Int
-    deriving (Eq, Show)
+data ESourceLocation = ESourceLocation { sourceLocationLine :: Int
+                                       , sourceLocationCol  :: Int
+                                       } deriving (Eq, Show)
 
-data ESourceRange = ESourceRange ESourceLocation ESourceLocation SourceLines
+data ESourceRange = ESourceRange { sourceRangeBegin :: ESourceLocation
+                                 , sourceRangeEnd   :: ESourceLocation
+                                 , sourceRangeLines :: SourceLines
+                                 }
                   | EMissingSourceRange
 
 instance Show ESourceRange where
@@ -31,11 +35,15 @@ showSourceRange :: ESourceRange -> String
 showSourceRange EMissingSourceRange = ""
 showSourceRange (ESourceRange begin end lines) = "\n" ++ showSourceLines begin end lines ++ "\n"
 
+-- If a single line is specified, show it with highlighting;
+-- otherwise, show the lines spanning the two locations (inclusive).
 showSourceLines (ESourceLocation bline bcol) (ESourceLocation eline ecol) lines =
     if bline == eline
         then joinWith "\n" [fromJust $ sourceLine lines bline, highlightLineRange bcol ecol]
         else joinWith "\n" [fromJust $ sourceLine lines n | n <- [bline..eline]]
 
+-- Generates a string of spaces and twiddles which underlines
+-- a given range of characters.
 highlightLineRange :: Int -> Int -> String
 highlightLineRange bcol ecol =
     let len = ecol - bcol in
@@ -45,19 +53,34 @@ highlightLineRange bcol ecol =
 
 data SourceLines = SourceLines (Seq T.Text)
 
+sourceLine :: SourceLines -> Int -> Maybe String
+sourceLine (SourceLines seq) n =
+    if n < 0 || Seq.length seq < n
+        then Nothing
+        else Just (T.unpack $ Seq.index seq n)
+
+-- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
 data ModuleAST fnType = ModuleAST {
           moduleASTfunctions   :: [fnType]
         , moduleASTsourceLines :: SourceLines
      }
 
+data Literal = LitInt LiteralInt
+
+data LiteralInt = LiteralInt { litIntMinBits :: Integer
+                             , litIntText    :: String
+                             , litIntClean   :: String
+                             , litIntBase    :: Int
+                             } deriving (Show)
+
 data ExprAST =
           BoolAST       Bool
-        | IntAST        { eintMinBits :: Integer
-                        , eintText    :: String
-                        , eintClean   :: String
-                        , eintBase    :: Int }
+        | IntAST        LiteralInt
                         -- parts  is_env_tuple
-        | TupleAST      [ExprAST] Bool
+        | TupleAST      { tupleParts :: [ExprAST]
+                        , tupleIsEnv :: Bool
+                        }
         | E_FnAST       FnAST
 
         | CallAST       ESourceRange ExprAST ExprAST
@@ -76,13 +99,6 @@ data PrototypeAST = PrototypeAST {
                         , prototypeASTname    :: String
                         , prototypeASTformals :: [AnnVar]
                     } deriving (Show)
-
-
-sourceLine :: SourceLines -> Int -> Maybe String
-sourceLine (SourceLines seq) n =
-    if n < 0 || Seq.length seq < n
-        then Nothing
-        else Just (T.unpack $ Seq.index seq n)
 
 
 -- Builds trees like this:
@@ -111,7 +127,7 @@ childrenOf e =
         CallAST   r b es     -> [b, es]
         CompilesAST   e c    -> [e]
         IfAST         a b c  -> [a, b, c]
-        IntAST i s1 s2 i2    -> []
+        IntAST litInt        -> []
         E_FnAST (FnAST a b cs)  -> [E_PrototypeAST a, b]
         SeqAST      a b      -> unbuildSeqs e
         SubscriptAST  a b    -> [a, b]
@@ -135,7 +151,7 @@ textOf e width =
         CallAST   r b a      -> "CallAST      "
         CompilesAST   e c    -> "CompilesAST  "
         IfAST         a b c  -> "IfAST        "
-        IntAST i t c base    -> "IntAST       " ++ t
+        IntAST litInt        -> "IntAST       " ++ (litIntText litInt)
         E_FnAST (FnAST p b cs)  -> "FnAST        "
         SeqAST     a b       -> "SeqAST       "
         SubscriptAST  a b    -> "SubscriptAST "
@@ -151,7 +167,7 @@ freeVariables e = case e of
     CallAST   r b a      -> freeVariables b ++ freeVariables a
     CompilesAST   e c    -> freeVariables e
     IfAST         a b c  -> freeVariables a ++ freeVariables b ++ freeVariables c
-    IntAST i t c base    -> []
+    IntAST litInt        -> []
     E_FnAST (FnAST p b cs)  -> let bodyvars =  Set.fromList (freeVariables b) in
                                let boundvars = Set.fromList (map avarName (prototypeASTformals p)) in
                                Set.toList (Set.difference bodyvars boundvars)

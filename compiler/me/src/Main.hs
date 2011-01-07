@@ -122,7 +122,7 @@ typecheck ctx expr maybeExpTy =
                            return (AnnIf (typeAST eb) ea eb ec)
         E_FnAST (FnAST proto body cs) -> typecheckFn ctx proto body cs maybeExpTy
         CallAST r b a -> typecheckCall ctx r b a maybeExpTy
-        IntAST i s1 s2 i2    -> do return (AnnInt (NamedTypeAST "i32") i s1 s2 i2)
+        IntAST (LiteralInt i s1 s2 i2) -> do return (AnnInt (NamedTypeAST "i32") i s1 s2 i2)
         SeqAST a b -> do
             ea <- typecheck ctx a Nothing --(Just TypeUnitAST)
             eb <- typecheck ctx b maybeExpTy

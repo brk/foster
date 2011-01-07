@@ -8,19 +8,21 @@
 //             }
 
 main = fn () {
-  expect_i32(1111111)
-  expect_i32(2222222)
-  expect_i32(4444444)
-  expect_i32(10)
-  expect_i32(6666)
-  expect_i32(1234)
-  expect_i32(5678)
-  expect_i32(20)
-  expect_i32(5555555)
-  expect_i32(6666666)
-  expect_i32(7777)
-  expect_i32(3333333)
-  expect_i32(9999999)
+  expect_i64(0)
+
+ //expect_i32(1111111)
+ //expect_i32(2222222)
+ //expect_i32(4444444)
+ //expect_i32(10)
+ //expect_i32(6666)
+ //expect_i32(1234)
+ //expect_i32(5678)
+ //expect_i32(20)
+ //expect_i32(5555555)
+ //expect_i32(6666666)
+ //expect_i32(7777)
+ //expect_i32(3333333)
+ //expect_i32(9999999)
 
 
   print_i32(1111111)
