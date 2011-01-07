@@ -30,9 +30,9 @@ main = fn () {
                                         print_i32(x) // 10
                                         let y : i32 = coro_yield_i32_i32(6666) in {
                                             coro_yield_i32_i32(y)
-                                            print_i32(55555555)
+                                            print_i32(5555555)
                                         //force_gc_for_debugging_purposes()
-                                            print_i32(66666666)
+                                            print_i32(6666666)
                                             coro_yield_i32_i32(7777)
                                             9999
                                         }
