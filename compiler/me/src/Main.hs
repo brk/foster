@@ -106,7 +106,7 @@ typecheck ctx expr maybeExpTy =
                            _  <- sanityCheck (isJust $ typeJoin (typeAST eb) (typeAST ec))
                                              "IfAST: types of branches didn't match"
                            return (AnnIf (typeAST eb) ea eb ec)
-        E_FnAST f -> typecheckFn ctx (fnProto f) (fnBody f) (fnClosedVars f) maybeExpTy
+        E_FnAST f -> typecheckFn ctx f maybeExpTy
         CallAST r b a -> typecheckCall ctx r b a maybeExpTy
         IntAST litInt -> do return (AnnInt (NamedTypeAST "i32") litInt)
         SeqAST a b -> do
@@ -184,22 +184,25 @@ typecheckCall ctx range base arg maybeExpTy =
            ea <- typecheck ctx arg (Just $ argType (typeAST eb))
            typecheckCall' ea eb range base arg
 
---typecheckCall ctx base arg maybeExpTy = error $ "TODO make use of maybeExpTy (" ++ (show maybeExpTy) ++ ") in typecheckCall"
 -----------------------------------------------------------------------
 
-typecheckFn ctx proto body cs Nothing = typecheckFn' ctx proto body cs Nothing Nothing
-typecheckFn ctx proto body cs (Just (FnTypeAST s t cs')) =
-    if isJust $ typeJoin (prototypeASTretType proto) t
-      then typecheckFn' ctx proto body cs (Just s) (Just t)
+typecheckFn ctx f Nothing = typecheckFn' ctx f Nothing Nothing
+typecheckFn ctx f (Just (FnTypeAST s t cs')) =
+    let proto = fnProto f in
+    if isJust $ typeJoin (prototypeASTretType proto)   t
+      then typecheckFn' ctx f (Just s) (Just t)
       else throwError  $ "typecheck fn '" ++ prototypeASTname proto
                         ++ "': proto return type, " ++ show (prototypeASTretType proto)
                         ++ ", did not match return type of expected fn type " ++ show (FnTypeAST s t cs')
 
-typecheckFn' :: Context -> PrototypeAST -> ExprAST -> Maybe [AnnVar] -> Maybe TypeAST -> Maybe TypeAST -> TypecheckResult AnnExpr
-typecheckFn' ctx proto body cs expArgType expBodyType = do
-    _ <- verifyNonOverlappingVariableNames proto
+typecheckFn' :: Context -> FnAST -> Maybe TypeAST -> Maybe TypeAST -> TypecheckResult AnnExpr
+typecheckFn' ctx f expArgType expBodyType = do
+    let proto = fnProto f
+    let cs = fnClosedVars f
+    _ <- verifyNonOverlappingVariableNames (prototypeASTname proto)
+                                           (map avarName (prototypeASTformals proto))
     let extCtx = extendContext ctx proto expArgType
-    annbody <- typecheck extCtx body expBodyType
+    annbody <- typecheck extCtx (fnBody f) expBodyType
     case typeJoin (prototypeASTretType proto) (typeAST annbody) of
         (Just someReturnType) ->
             let annproto = case proto of
@@ -213,13 +216,14 @@ typecheckFn' ctx proto body cs expArgType expBodyType = do
                     ++ "': proto ret type " ++ show (prototypeASTretType proto)
                     ++ " did not match body type " ++ show (typeAST annbody)
 
-verifyNonOverlappingVariableNames :: PrototypeAST -> TypecheckResult AnnExpr
-verifyNonOverlappingVariableNames proto = do
-    let varNames = [avarName v | v <- prototypeASTformals proto]
-    let duplicates = [List.head dups | dups <- List.group (List.sort varNames), List.length dups > 1]
+verifyNonOverlappingVariableNames :: String -> [String] -> TypecheckResult AnnExpr
+verifyNonOverlappingVariableNames fnName varNames = do
+    let duplicates = [List.head dups
+                     | dups <- List.group (List.sort varNames)
+                     , List.length dups > 1]
     case duplicates of
         []        -> return (AnnBool True)
-        otherwise -> throwError $ "Error when checking " ++ prototypeASTname proto
+        otherwise -> throwError $ "Error when checking " ++ fnName
                                     ++ ": had duplicated formal parameter names: " ++ show duplicates
 
 -----------------------------------------------------------------------

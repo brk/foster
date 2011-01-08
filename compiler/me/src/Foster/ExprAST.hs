@@ -88,8 +88,7 @@ data ExprAST =
         | IfAST         ExprAST ExprAST ExprAST
         | SeqAST        ExprAST ExprAST
         | SubscriptAST  { subscriptBase  :: ExprAST
-                        , subscriptIndex :: ExprAST
-                        }
+                        , subscriptIndex :: ExprAST }
         | VarAST        (Maybe TypeAST) String
         deriving Show
 
