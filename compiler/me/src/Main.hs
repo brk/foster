@@ -122,7 +122,7 @@ typecheck ctx expr maybeExpTy =
                            return (AnnIf (typeAST eb) ea eb ec)
         E_FnAST f -> typecheckFn ctx (fnProto f) (fnBody f) (fnClosedVars f) maybeExpTy
         CallAST r b a -> typecheckCall ctx r b a maybeExpTy
-        IntAST (LiteralInt i s1 s2 i2) -> do return (AnnInt (NamedTypeAST "i32") i s1 s2 i2)
+        IntAST litInt -> do return (AnnInt (NamedTypeAST "i32") litInt)
         SeqAST a b -> do
             ea <- typecheck ctx a Nothing --(Just TypeUnitAST)
             eb <- typecheck ctx b maybeExpTy
@@ -147,10 +147,10 @@ safeListIndex lst idx =
         then Nothing
         else Just $ lst !! idx
 
-typecheckSubscript base (TupleTypeAST types) i@(AnnInt _ _ _ _ _) maybeExpTy =
-    let literalValue = read (aintText i) :: Integer in
+typecheckSubscript base (TupleTypeAST types) i@(AnnInt ty int) maybeExpTy =
+    let literalValue = read (litIntText int) :: Integer in
     case safeListIndex types (fromInteger literalValue) of
-        Nothing -> throwError $ "Literal index " ++ aintText i ++ " to subscript was out of bounds"
+        Nothing -> throwError $ "Literal index " ++ litIntText int ++ " to subscript was out of bounds"
         Just t  -> return (AnnSubscript t base i)
 
 typecheckSubscript base baseType index maybeExpTy =
@@ -457,11 +457,11 @@ textOfA e width =
         AnnCall  r t b a     -> "AnnCall      " ++ " :: " ++ show t
         AnnCompiles     c    -> "AnnCompiles  "
         AnnIf      t  a b c  -> "AnnIf        " ++ " :: " ++ show t
-        AnnInt ty i t c base -> "AnnInt       " ++ t ++ " :: " ++ show ty
-        E_AnnFn (AnnFn a b cs)  -> "AnnFn        "
+        AnnInt ty int        -> "AnnInt       " ++ (litIntText int) ++ " :: " ++ show ty
+        E_AnnFn annFn        -> "AnnFn        "
         AnnSeq          a b  -> "AnnSeq       " ++ " :: " ++ show (typeAST b)
         AnnSubscript  t a b  -> "AnnSubscript " ++ " :: " ++ show t
-        E_AnnPrototype t (AnnPrototype rt s es) -> "PrototypeAST " ++ s ++ " :: " ++ show t
+        E_AnnPrototype t p   -> "PrototypeAST " ++ (annProtoName p) ++ " :: " ++ show t
         AnnTuple     es b    -> "AnnTuple     "
         E_AnnVar (AnnVar t v) -> "AnnVar       " ++ v ++ " :: " ++ show t
 

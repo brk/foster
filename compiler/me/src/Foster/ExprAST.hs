@@ -187,25 +187,41 @@ freeVariables e = case e of
 data AnnExpr =
           AnnBool       Bool
         | AnnInt        { aintType   :: TypeAST
-                        , aintActive :: Integer
-                        , aintText   :: String
-                        , aintClean  :: String
-                        , aintBase   :: Int }
-                        -- parts  is_env_tuple
-        | AnnTuple      [AnnExpr] Bool
+                        , aintLitInt :: LiteralInt }
+
+        -- No need for an explicit type, so long as subexprs are typed.
+        | AnnTuple      { annTupleParts :: [AnnExpr]
+                        , annTupleIsEnv :: Bool }
+
         | E_AnnFn       AnnFn
 
+        -- Add an overall type for the application
         | AnnCall       ESourceRange TypeAST AnnExpr AnnExpr
-        | AnnCompiles   CompilesStatus
+
+        -- Add an overall type for the if branch
         | AnnIf         TypeAST AnnExpr AnnExpr AnnExpr
+
+        -- The type of a sequence is the type of its second part
         | AnnSeq        AnnExpr AnnExpr
+
+        -- Subscripts get an overall type
         | AnnSubscript  TypeAST AnnExpr AnnExpr
+
+        -- Protos get a required overall type
         | E_AnnPrototype  TypeAST AnnPrototype
+
+        --Vars go from a Maybe TypeAST to a required TypeAST
         | E_AnnVar       AnnVar
+
+        -- This one's a bit odd, in that we can't include an AnnExpr
+        -- because the subterm doesn't need to be well-typed...
+        | AnnCompiles   CompilesStatus
         deriving (Show)
 
 data AnnVar       = AnnVar { avarType :: TypeAST, avarName :: String } deriving (Eq, Show)
+-- Body becomes annotated
 data AnnFn        = AnnFn           AnnPrototype AnnExpr (Maybe [AnnVar]) deriving (Show)
+-- No difference from PrototypeAST (!)
 data AnnPrototype = AnnPrototype    { annProtoReturnType :: TypeAST
                                     , annProtoName       :: String
                                     , annProtoVars       :: [AnnVar]

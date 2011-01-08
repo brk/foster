@@ -260,7 +260,7 @@ parseFnTy fty = FnTypeAST (TupleTypeAST [parseType x | x <- toList $ PbFnType.ar
 
 typeAST :: AnnExpr -> TypeAST
 typeAST (AnnBool _)          = fosBoolType
-typeAST (AnnInt t _ _ _ _)   = t
+typeAST (AnnInt t _)         = t
 typeAST (AnnTuple es b)      = TupleTypeAST [typeAST e | e <- es]
 typeAST (E_AnnFn (AnnFn (AnnPrototype rt s vs) e cs))
                              = FnTypeAST (TupleTypeAST [t | (AnnVar t v) <- vs])
@@ -285,7 +285,7 @@ childrenOfA e =
         AnnCall  r t b a                     -> [b, a]
         AnnCompiles   c                      -> []
         AnnIf      t  a b c                  -> [a, b, c]
-        AnnInt t i s1 s2 i2                  -> []
+        AnnInt t _                           -> []
         E_AnnFn f@(AnnFn p b cs)             -> [E_AnnPrototype t p, b] where t = fnTypeFromA f
         AnnSeq      a b                      -> unbuildSeqsA e
         AnnSubscript t a b                   -> [a, b]
@@ -378,8 +378,8 @@ dumpExpr (AnnCompiles CS_WouldCompile)    = dumpExpr (AnnBool True)
 dumpExpr (AnnCompiles CS_WouldNotCompile) = dumpExpr (AnnBool False)
 dumpExpr (AnnCompiles CS_NotChecked) = error "dumpExpr (AnnCompiles CS_NotChecked)"
 
-dumpExpr x@(AnnInt ty i t c base) =
-    P'.defaultValue { PbExpr.pb_int = Just $ dumpInt (aintText x)
+dumpExpr x@(AnnInt ty int) =
+    P'.defaultValue { PbExpr.pb_int = Just $ dumpInt (litIntText int)
                     , PbExpr.tag   = PB_INT
                     , PbExpr.type' = Just $ dumpType (typeAST x)  }
 
