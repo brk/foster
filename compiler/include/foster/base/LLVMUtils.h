@@ -6,6 +6,7 @@
 #define FOSTER_LLVM_UTILS_H
 
 #include "llvm/System/DataTypes.h"
+#include "llvm/System/Path.h"
 
 namespace llvm {
   class Type;
@@ -14,7 +15,10 @@ namespace llvm {
   class ConstantInt;
   class Value;
   class CallInst;
+  namespace sys { class Path; }
 }
+
+void makePathAbsolute(llvm::sys::Path& path);
 
 const char* llvmValueTag(const llvm::Value* v);
 void markAsNonAllocating(llvm::CallInst* callInst);

@@ -13,6 +13,7 @@
 #include "parse/ProtobufToAST.h"
 #include "parse/FosterTypeAST.h"
 #include "parse/FosterAST.h"
+#include "base/LLVMUtils.h"
 
 #include <sstream>
 
@@ -45,13 +46,13 @@ void parseRangeFrom(foster::SourceRange& r, const PB& p) {
 
   if (sr.has_file_path()) {
     const std::string& pathstr = sr.file_path();
-    llvm::sys::Path* path = new llvm::sys::Path(pathstr);
+    llvm::sys::Path path = llvm::sys::Path(pathstr);
 
-    if (path->isValid()) {
-      path->makeAbsolute();
-      if (path->canRead()) {
+    if (path.isValid()) {
+      makePathAbsolute(path);
+      if (path.canRead()) {
         r.source = foster::gInputFileRegistry
-                              .getOrCreateInputFileForAbsolutePath(*path);
+                              .getOrCreateInputFileForAbsolutePath(path);
       }
     }
   } else {

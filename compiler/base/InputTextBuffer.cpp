@@ -6,19 +6,26 @@
 #include "base/InputTextBuffer.h"
 
 #include "llvm/System/Path.h"
+#include "llvm/ADT/OwningPtr.h"
 #include "llvm/Support/MemoryBuffer.h"
 
 using llvm::MemoryBuffer;
 using llvm::StringRef;
 
+#if LLVM_29
+#include "llvm/Support/system_error.h"
+using llvm::error_code;
+#endif
+
 namespace foster {
 
 struct InputTextBuffer::Impl {
-  MemoryBuffer* buf;
+  llvm::OwningPtr<MemoryBuffer> buf;
   std::vector<StringRef> lineCache;
 
   void initializeLineCache() {
     const char* data = buf->getBufferStart();
+    ASSERT(data != NULL);
     int currentLineStart = 0;
     int currentLineNumber = 0;
     int i = 0, e = buf->getBufferSize();
@@ -41,12 +48,20 @@ struct InputTextBuffer::Impl {
   }
 
   Impl(MemoryBuffer* buf) : buf(buf) {
+    ASSERT(buf != NULL);
     initializeLineCache();
   }
 };
 
 InputTextBuffer::InputTextBuffer(const llvm::sys::Path& path) {
+  #if LLVM_29
+  llvm::OwningPtr<MemoryBuffer> membuf;
+  error_code err = MemoryBuffer::getFile(path.str(), membuf);
+  ASSERT(!err) << "error message is: " << err.message();
+  impl = new Impl(membuf.take());
+  #else
   impl = new Impl(MemoryBuffer::getFile(path.str()));
+  #endif
 }
 
 InputTextBuffer::InputTextBuffer(const char* data, size_t length) {
@@ -55,7 +70,7 @@ InputTextBuffer::InputTextBuffer(const char* data, size_t length) {
 
 MemoryBuffer*
 InputTextBuffer::getMemoryBuffer() const {
-  return impl->buf;
+  return impl->buf.get();
 }
 
 StringRef

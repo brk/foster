@@ -42,6 +42,7 @@
 ////////////////////////////////////////////////////////////////////
 
 #include "base/Assert.h"
+#include "base/LLVMUtils.h"
 #include "base/TimingsRepository.h"
 
 #include "parse/FosterAST.h"
@@ -411,7 +412,7 @@ int main(int argc, char** argv) {
   foster::initializeLLVM();
 
   llvm::sys::Path mainModulePath(optInputPath);
-  mainModulePath.makeAbsolute();
+  makePathAbsolute(mainModulePath);
 
   foster::ParsingContext::pushNewContext();
 

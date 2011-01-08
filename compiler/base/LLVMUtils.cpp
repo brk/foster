@@ -2,14 +2,31 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
+#include "base/Assert.h"
 #include "base/LLVMUtils.h"
 
 #include "llvm/Instructions.h"
 #include "llvm/Metadata.h"
 #include "llvm/LLVMContext.h"
 
+#ifdef LLVM_29
+#include "llvm/Support/FileSystem.h"
+#include "llvm/ADT/SmallString.h"
+#endif
+
 using llvm::Type;
 using llvm::getGlobalContext;
+
+
+void makePathAbsolute(llvm::sys::Path& path) {
+  path.makeAbsolute();
+#ifdef LLVM_29
+  llvm::SmallString<128> pathstr(path.str());
+  llvm::error_code err = llvm::sys::fs::make_absolute(pathstr);
+  ASSERT(err == llvm::errc::success) << err.message();
+  path.set(pathstr);
+#endif
+}
 
 const char* llvmValueTag(const llvm::Value* v) {
   using llvm::isa;

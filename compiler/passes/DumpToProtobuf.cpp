@@ -3,6 +3,7 @@
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
 #include "base/InputFile.h"
+#include "base/LLVMUtils.h"
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
 #include "passes/DumpToProtobuf.h"
@@ -49,7 +50,7 @@ void setSourceRange(foster::pb::SourceRange* pbr,
                     const foster::SourceRange& r) {
   if (r.source) {
     llvm::sys::Path p(r.source->getPath());
-    p.makeAbsolute(); // TODO perhaps all paths should be stored absolute...?
+    makePathAbsolute(p); // TODO perhaps all paths should be stored absolute...?
     //pbr->set_file_path(p.str());
   }
 

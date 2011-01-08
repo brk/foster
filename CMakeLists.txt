@@ -65,7 +65,8 @@ execute_process(COMMAND ${LLVM_CONFIG} --cxxflags
 # so we simply leave it and use a custom ASSERT() instead of the
 # standard <cassert> macro.
 #
-string(REPLACE "-g"                   "" LLVM_CFLAGS "${LLVM_ORIGINAL_CFLAGS}")
+string(REPLACE "-g"          "" LLVM_CFLAGS "${LLVM_ORIGINAL_CFLAGS}")
+string(REPLACE "-ggdb"       "" LLVM_CFLAGS "${LLVM_CFLAGS}")
 
 # LLVM libraries may also be compiled with -fno-rtti.
 # We are free to compile almost all of our code with RTTI,
