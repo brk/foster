@@ -61,7 +61,7 @@ parseCall pbexpr lines =
         let range = parseRange pbexpr lines in
         case map (\x -> parseExpr x lines) $ toList (PbExpr.parts pbexpr) of
                 --[base, arg] -> CallAST range base arg
-                (base:args) -> E_CallAST range (CallAST base (TupleAST args False))
+                (base:args) -> E_CallAST range (CallAST base (E_TupleAST args False))
                 _ -> error "call needs a base!"
 
 compileStatus :: Maybe String -> CompilesStatus
@@ -71,7 +71,7 @@ compileStatus (Just "kWouldCompile")    = CS_WouldCompile
 compileStatus (Just "kWouldNotCompile") = CS_WouldNotCompile
 compileStatus (Just x                 ) = error $ "Unable to interpret compiles status " ++ x
 
-parseCompiles pbexpr lines =  CompilesAST (part 0 (PbExpr.parts pbexpr) lines)
+parseCompiles pbexpr lines =  E_CompilesAST (part 0 (PbExpr.parts pbexpr) lines)
                                     (compileStatus $ fmap uToString $ PbExpr.compiles_status pbexpr)
 
 parseFn pbexpr lines = let parts = PbExpr.parts pbexpr in
@@ -132,7 +132,7 @@ mkIntASTFromClean clean text base lines =
         let bitsPerDigit = ceiling $ (log $ fromIntegral base) / (log 2) in
         let conservativeBitsNeeded = bitsPerDigit * (Prelude.length clean) + 2 in
         let activeBits = toInteger conservativeBitsNeeded in
-        IntAST (LiteralInt activeBits text clean base)
+        E_IntAST (LiteralInt activeBits text clean base)
 
 parseSeq pbexpr lines =
     let exprs = map (\x -> parseExpr x lines) $ toList (PbExpr.parts pbexpr) in
@@ -140,22 +140,22 @@ parseSeq pbexpr lines =
 
 -- | Convert a list of ExprASTs to a right-leaning "list" of SeqAST nodes.
 buildSeqs :: [ExprAST] -> ExprAST
-buildSeqs []    = IntAST (LiteralInt 1 "0" "0" 10)
+buildSeqs []    = E_IntAST (LiteralInt 1 "0" "0" 10)
                   --error "(buildSeqs []): no skip yet, so no expr to return!"
 buildSeqs [a]   = a
-buildSeqs [a,b] = SeqAST a b
-buildSeqs (a:b) = SeqAST a (buildSeqs b)
+buildSeqs [a,b] = E_SeqAST a b
+buildSeqs (a:b) = E_SeqAST a (buildSeqs b)
 
 parseSubscript pbexpr lines =
     let parts = PbExpr.parts pbexpr in
-    SubscriptAST (part 0 parts lines) (part 1 parts lines)
+    E_SubscriptAST (part 0 parts lines) (part 1 parts lines)
 
 parseTuple pbexpr lines =
     let exprs = map (\x -> parseExpr x lines) $ toList $ PbExpr.parts pbexpr in
-    TupleAST exprs (fromMaybe False $ PbExpr.is_closure_environment pbexpr)
+    E_TupleAST exprs (fromMaybe False $ PbExpr.is_closure_environment pbexpr)
 
-parseVar pbexpr lines = VarAST (fmap parseType (PbExpr.type' pbexpr))
-                               (uToString (fromJust $ PbExpr.name pbexpr))
+parseVar pbexpr lines = E_VarAST (fmap parseType (PbExpr.type' pbexpr))
+                                 (uToString (fromJust $ PbExpr.name pbexpr))
 
 parseModule :: Expr -> SourceLines -> ModuleAST FnAST
 parseModule pbexpr lines = ModuleAST [parseFn e lines | e <- toList $ PbExpr.parts pbexpr] lines
@@ -178,7 +178,7 @@ parseProtoPP proto lines =
     PrototypeAST retTy name vars
 
 getVarName :: ExprAST -> String
-getVarName (VarAST mt s) = s
+getVarName (E_VarAST mt s) = s
 
 getType :: Expr -> TypeAST
 getType e = case PbExpr.type' e of
@@ -188,7 +188,7 @@ getType e = case PbExpr.type' e of
 getFormal :: Expr -> SourceLines ->  AnnVar
 getFormal e lines = case PbExpr.tag e of
             VAR -> case parseVar e lines of
-                    (VarAST mt v) ->
+                    (E_VarAST mt v) ->
                         case mt of
                             Just t  -> (AnnVar t v)
                             Nothing -> (AnnVar (MissingTypeAST $ "ProtobufUtils.getFormal " ++ v) v)

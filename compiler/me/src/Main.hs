@@ -108,19 +108,19 @@ typecheck ctx expr maybeExpTy =
                             return (AnnIf (typeAST eb) ea eb ec)
         E_FnAST f -> typecheckFn ctx f maybeExpTy
         E_CallAST rng call -> typecheckCall ctx rng call maybeExpTy
-        IntAST litInt -> do return (AnnInt (NamedTypeAST "i32") litInt)
-        SeqAST a b -> do
+        E_IntAST litInt -> do return (AnnInt (NamedTypeAST "i32") litInt)
+        E_SeqAST a b -> do
             ea <- typecheck ctx a Nothing --(Just TypeUnitAST)
             eb <- typecheck ctx b maybeExpTy
             return (AnnSeq ea eb)
-        SubscriptAST  a b    -> do ta <- typecheck ctx a Nothing
-                                   tb <- typecheck ctx b Nothing
-                                   typecheckSubscript ta (typeAST ta) tb maybeExpTy
-        TupleAST  exprs b   -> typecheckTuple ctx exprs b maybeExpTy
-        VarAST mt s -> case lookup s ctx of
+        E_SubscriptAST  a b    -> do ta <- typecheck ctx a Nothing
+                                     tb <- typecheck ctx b Nothing
+                                     typecheckSubscript ta (typeAST ta) tb maybeExpTy
+        E_TupleAST  exprs b   -> typecheckTuple ctx exprs b maybeExpTy
+        E_VarAST mt s -> case lookup s ctx of
             Just t  -> Annotated $ E_AnnVar (AnnVar t s)
             Nothing -> throwError $ "Unknown variable " ++ s
-        CompilesAST e c -> case c of
+        E_CompilesAST e c -> case c of
             CS_NotChecked ->
               return $ AnnCompiles $ case typecheck ctx e Nothing of
                 Annotated ae -> CS_WouldCompile

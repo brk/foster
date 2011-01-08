@@ -79,21 +79,19 @@ data CallAST = CallAST { callASTbase :: ExprAST
                        } deriving (Show)
 
 data ExprAST =
-          E_BoolAST     Bool
-        | IntAST        LiteralInt
-                        -- parts  is_env_tuple
-        | TupleAST      { tupleParts :: [ExprAST]
-                        , tupleIsEnv :: Bool
-                        }
-        | E_FnAST       FnAST
-
-        | E_CallAST     ESourceRange CallAST
-        | CompilesAST   ExprAST CompilesStatus
-        | E_IfAST       ExprAST ExprAST ExprAST
-        | SeqAST        ExprAST ExprAST
-        | SubscriptAST  { subscriptBase  :: ExprAST
-                        , subscriptIndex :: ExprAST }
-        | VarAST        (Maybe TypeAST) String
+          E_BoolAST       Bool
+        | E_IntAST        LiteralInt
+        | E_TupleAST      { tupleParts :: [ExprAST]
+                          , tupleIsEnv :: Bool }
+        | E_FnAST         FnAST
+        | E_CallAST       ESourceRange CallAST
+        | E_CompilesAST   ExprAST CompilesStatus
+        | E_IfAST         ExprAST ExprAST ExprAST
+        | E_SeqAST        ExprAST ExprAST
+        | E_SubscriptAST  { subscriptBase  :: ExprAST
+                          , subscriptIndex :: ExprAST }
+        | E_VarAST       { evarMaybeType :: Maybe TypeAST
+                         , evarName      :: String }
         deriving Show
 
 data FnAST  = FnAST { fnProto :: PrototypeAST
@@ -135,18 +133,18 @@ childrenOf e =
     case e of
         E_BoolAST b          -> []
         E_CallAST rng call   -> [callASTbase call, callASTargs call]
-        CompilesAST   e c    -> [e]
+        E_CompilesAST   e c  -> [e]
         E_IfAST       a b c  -> [a, b, c]
-        IntAST litInt        -> []
+        E_IntAST litInt      -> []
         E_FnAST f            -> [fnBody f]
-        SeqAST      a b      -> unbuildSeqs e
-        SubscriptAST  a b    -> [a, b]
-        TupleAST     es b    -> es
-        VarAST       mt v    -> []
+        E_SeqAST        a b  -> unbuildSeqs e
+        E_SubscriptAST  a b  -> [a, b]
+        E_TupleAST     es b  -> es
+        E_VarAST       mt v  -> []
 
 -- | Converts a right-leaning "list" of SeqAST nodes to a List
 unbuildSeqs :: ExprAST -> [ExprAST]
-unbuildSeqs (SeqAST a b) = a : unbuildSeqs b
+unbuildSeqs (E_SeqAST a b) = a : unbuildSeqs b
 unbuildSeqs expr = [expr]
 
 
@@ -158,20 +156,20 @@ textOf e width =
     case e of
         E_BoolAST       b    -> "BoolAST      " ++ (show b)
         E_CallAST rng call   -> "CallAST      "
-        CompilesAST   e c    -> "CompilesAST  "
+        E_CompilesAST e c    -> "CompilesAST  "
         E_IfAST       a b c  -> "IfAST        "
-        IntAST litInt        -> "IntAST       " ++ (litIntText litInt)
+        E_IntAST litInt      -> "IntAST       " ++ (litIntText litInt)
         E_FnAST f            -> "FnAST        "
-        SeqAST     a b       -> "SeqAST       "
-        SubscriptAST  a b    -> "SubscriptAST "
-        TupleAST     es b    -> "TupleAST     "
-        VarAST mt v          -> "VarAST       " ++ v ++ " :: " ++ show mt
+        E_SeqAST   a b       -> "SeqAST       "
+        E_SubscriptAST  a b  -> "SubscriptAST "
+        E_TupleAST     es b  -> "TupleAST     "
+        E_VarAST mt v        -> "VarAST       " ++ v ++ " :: " ++ show mt
 
 
 
 freeVariables :: ExprAST -> [String]
 freeVariables e = case e of
-    VarAST mt nm        -> [nm]
+    E_VarAST mt nm      -> [nm]
     E_FnAST f           -> let bodyvars =  Set.fromList (freeVariables (fnBody f)) in
                            let boundvars = Set.fromList (map avarName (prototypeASTformals (fnProto f))) in
                            Set.toList (Set.difference bodyvars boundvars)
