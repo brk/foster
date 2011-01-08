@@ -78,6 +78,10 @@ data CallAST = CallAST { callASTbase :: ExprAST
                        , callASTargs :: ExprAST
                        } deriving (Show)
 
+data IfAST = IfAST { ifASTcond :: ExprAST
+                   , ifASTthen :: ExprAST
+                   , ifASTelse :: ExprAST } deriving (Show)
+
 data ExprAST =
           E_BoolAST       Bool
         | E_IntAST        LiteralInt
@@ -86,7 +90,7 @@ data ExprAST =
         | E_FnAST         FnAST
         | E_CallAST       ESourceRange CallAST
         | E_CompilesAST   ExprAST CompilesStatus
-        | E_IfAST         ExprAST ExprAST ExprAST
+        | E_IfAST         IfAST
         | E_SeqAST        ExprAST ExprAST
         | E_SubscriptAST  { subscriptBase  :: ExprAST
                           , subscriptIndex :: ExprAST }
@@ -134,7 +138,7 @@ childrenOf e =
         E_BoolAST b          -> []
         E_CallAST rng call   -> [callASTbase call, callASTargs call]
         E_CompilesAST   e c  -> [e]
-        E_IfAST       a b c  -> [a, b, c]
+        E_IfAST (IfAST a b c)-> [a, b, c]
         E_IntAST litInt      -> []
         E_FnAST f            -> [fnBody f]
         E_SeqAST        a b  -> unbuildSeqs e
@@ -157,7 +161,7 @@ textOf e width =
         E_BoolAST       b    -> "BoolAST      " ++ (show b)
         E_CallAST rng call   -> "CallAST      "
         E_CompilesAST e c    -> "CompilesAST  "
-        E_IfAST       a b c  -> "IfAST        "
+        E_IfAST _            -> "IfAST        "
         E_IntAST litInt      -> "IntAST       " ++ (litIntText litInt)
         E_FnAST f            -> "FnAST        "
         E_SeqAST   a b       -> "SeqAST       "

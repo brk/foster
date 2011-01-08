@@ -98,14 +98,7 @@ typecheck :: Context -> ExprAST -> Maybe TypeAST -> TypecheckResult AnnExpr
 typecheck ctx expr maybeExpTy =
     case expr of
         E_BoolAST b   -> do return (AnnBool b)
-        E_IfAST a b c -> do ea <- typecheck ctx a (Just fosBoolType)
-                            eb <- typecheck ctx b maybeExpTy
-                            ec <- typecheck ctx c maybeExpTy
-                            _  <- sanityCheck (isJust $ typeJoin (typeAST ea) fosBoolType)
-                                              "IfAST: type of conditional wasn't boolean"
-                            _  <- sanityCheck (isJust $ typeJoin (typeAST eb) (typeAST ec))
-                                              "IfAST: types of branches didn't match"
-                            return (AnnIf (typeAST eb) ea eb ec)
+        E_IfAST ifast -> typecheckIf ctx ifast maybeExpTy
         E_FnAST f -> typecheckFn ctx f maybeExpTy
         E_CallAST rng call -> typecheckCall ctx rng call maybeExpTy
         E_IntAST litInt -> do return (AnnInt (NamedTypeAST "i32") litInt)
@@ -127,6 +120,16 @@ typecheck ctx expr maybeExpTy =
                 otherwise    -> CS_WouldNotCompile
             otherwise -> return $ AnnCompiles c
 -----------------------------------------------------------------------
+typecheckIf ctx (IfAST a b c) maybeExpTy = do
+    ea <- typecheck ctx a (Just fosBoolType)
+    eb <- typecheck ctx b maybeExpTy
+    ec <- typecheck ctx c maybeExpTy
+    _  <- sanityCheck (isJust $ typeJoin (typeAST ea) fosBoolType)
+                      "IfAST: type of conditional wasn't boolean"
+    _  <- sanityCheck (isJust $ typeJoin (typeAST eb) (typeAST ec))
+                      "IfAST: types of branches didn't match"
+    return (AnnIf (typeAST eb) ea eb ec)
+
 safeListIndex :: [a] -> Int -> Maybe a
 safeListIndex lst idx =
     if List.length lst <= idx
