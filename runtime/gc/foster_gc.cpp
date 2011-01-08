@@ -572,7 +572,7 @@ void register_stackmaps() {
       void** safePointAddresses = (void**) offset(ps, totalOffset);
       totalOffset += sizeof(void*)   * c.addressCount;
 
-      fprintf(gclog, "  safePointAddrs:", safePointAddresses); fflush(gclog);
+      fprintf(gclog, "  safePointAddrs: "); fflush(gclog);
       for (int i = 0; i < c.addressCount; ++i) {
         fprintf(gclog, " %p ,", safePointAddresses[i]);
       }
