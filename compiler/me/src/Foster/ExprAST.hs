@@ -171,19 +171,11 @@ textOf e width =
 
 freeVariables :: ExprAST -> [String]
 freeVariables e = case e of
-    BoolAST         b    -> []
-    E_CallAST rng call   -> concatMap freeVariables [callASTbase call, callASTargs call]
-    CompilesAST   e c    -> freeVariables e
-    IfAST         a b c  -> freeVariables a ++ freeVariables b ++ freeVariables c
-    IntAST litInt        -> []
+    VarAST mt nm        -> [nm]
     E_FnAST f           -> let bodyvars =  Set.fromList (freeVariables (fnBody f)) in
-                               let boundvars = Set.fromList (map avarName (prototypeASTformals (fnProto f))) in
-                               Set.toList (Set.difference bodyvars boundvars)
-
-    SeqAST     a b       -> freeVariables a ++ freeVariables b
-    SubscriptAST  a b    -> freeVariables a ++ freeVariables b
-    TupleAST     es b    -> concatMap freeVariables es
-    VarAST mt v          -> [v]
+                           let boundvars = Set.fromList (map avarName (prototypeASTformals (fnProto f))) in
+                           Set.toList (Set.difference bodyvars boundvars)
+    _                   -> concatMap freeVariables (childrenOf e)
 
 -----------------------------------------------------------------------
 
