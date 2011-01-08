@@ -97,7 +97,7 @@ sanityCheck cond msg = if cond then do return (AnnBool True)
 typecheck :: Context -> ExprAST -> Maybe TypeAST -> TypecheckResult AnnExpr
 typecheck ctx expr maybeExpTy =
     case expr of
-        BoolAST b    -> do return (AnnBool b)
+        E_BoolAST b  -> do return (AnnBool b)
         IfAST a b c  -> do ea <- typecheck ctx a (Just fosBoolType)
                            eb <- typecheck ctx b maybeExpTy
                            ec <- typecheck ctx c maybeExpTy
@@ -484,7 +484,7 @@ trMaybe :: TypecheckResult AnnExpr -> Maybe AnnExpr
 trMaybe (TypecheckErrors _) = Nothing
 trMaybe (Annotated ae) = Just $ ae
 
-test1 = let term = (BoolAST True) in
+test1 = let term = (E_BoolAST True) in
         let expectedType = Nothing in
         let anticipated = (AnnBool True) in
         TestCase (do let taa = trMaybe $ typecheck rootContext term expectedType

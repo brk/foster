@@ -79,7 +79,7 @@ data CallAST = CallAST { callASTbase :: ExprAST
                        } deriving (Show)
 
 data ExprAST =
-          BoolAST       Bool
+          E_BoolAST     Bool
         | IntAST        LiteralInt
                         -- parts  is_env_tuple
         | TupleAST      { tupleParts :: [ExprAST]
@@ -133,7 +133,7 @@ showStructure e = showStructureP e "" False where
 childrenOf :: ExprAST -> [ExprAST]
 childrenOf e =
     case e of
-        BoolAST         b    -> []
+        E_BoolAST b          -> []
         E_CallAST rng call   -> [callASTbase call, callASTargs call]
         CompilesAST   e c    -> [e]
         IfAST         a b c  -> [a, b, c]
@@ -156,7 +156,7 @@ textOf :: ExprAST -> Int -> String
 textOf e width =
     let spaces = Prelude.replicate width '\SP'  in
     case e of
-        BoolAST         b    -> "BoolAST      " ++ (show b)
+        E_BoolAST       b    -> "BoolAST      " ++ (show b)
         E_CallAST rng call   -> "CallAST      "
         CompilesAST   e c    -> "CompilesAST  "
         IfAST         a b c  -> "IfAST        "
