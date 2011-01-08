@@ -269,66 +269,56 @@ minimalTuple []    = TupleTypeAST []
 minimalTuple [arg] = arg
 minimalTuple args  = TupleTypeAST args
 
+mkFnType   args rets = FnTypeAST (TupleTypeAST args) (minimalTuple rets) Nothing
+mkCoroType args rets =  CoroType (minimalTuple args) (minimalTuple rets)
 i32 = (NamedTypeAST "i32")
 i64 = (NamedTypeAST "i64")
-fosi64toi32 = FnTypeAST (TupleTypeAST [i64]) i32 Nothing
-fosi32toi32 = FnTypeAST (TupleTypeAST [i32]) i32 Nothing
-fosi64toi64 = FnTypeAST (TupleTypeAST [i64]) i64 Nothing
-fosi1toi32  = FnTypeAST (TupleTypeAST [(NamedTypeAST "i1")]) i32 Nothing
-fosi64i64toi1 = FnTypeAST (TupleTypeAST [i64, i64]) (NamedTypeAST "i1") Nothing
-fosi32i32toi1 = FnTypeAST (TupleTypeAST [i32, i32]) (NamedTypeAST "i1") Nothing
+i1  = (NamedTypeAST "i1")
 
-coroInvokeType args ret =
-    (FnTypeAST   (TupleTypeAST ([(CoroType (minimalTuple args)   ret)] ++ args)
-                 )                                               ret Nothing)
-
-coroYieldType args ret = (FnTypeAST (TupleTypeAST [ret])
-                                    (minimalTuple args) Nothing)
-
-coroCreateType args ret =
-    (FnTypeAST (TupleTypeAST [(FnTypeAST (TupleTypeAST args) ret  Nothing)])
-                               (CoroType (minimalTuple args) ret) Nothing)
+coroInvokeType args rets = mkFnType ((mkCoroType args rets) : args) rets
+coroYieldType  args rets = mkFnType rets args
+coroCreateType args rets = mkFnType [mkFnType args rets] [mkCoroType args rets]
 
 rootContext :: Context
 rootContext =
-    [("llvm_readcyclecounter", FnTypeAST (TupleTypeAST []) (NamedTypeAST "i64") Nothing)
-    ,("expect_i32", fosi32toi32)
-    ,( "print_i32", fosi32toi32)
-    ,("expect_i32b", fosi32toi32)
-    ,( "print_i32b", fosi32toi32)
-    ,("expect_i64b", fosi64toi32)
-    ,( "print_i64b", fosi64toi32)
-    ,(  "read_i32", FnTypeAST (TupleTypeAST []) (NamedTypeAST "i32") Nothing)
-    ,("expect_i1", fosi1toi32)
-    ,( "print_i1", fosi1toi32)
+    [("llvm_readcyclecounter", mkFnType [] [i64])
+    ,("expect_i32",  mkFnType [i32] [i32])
+    ,( "print_i32",  mkFnType [i32] [i32])
+    ,("expect_i32b", mkFnType [i32] [i32])
+    ,( "print_i32b", mkFnType [i32] [i32])
+    ,("expect_i64b", mkFnType [i64] [i32])
+    ,( "print_i64b", mkFnType [i64] [i32])
+    ,(  "read_i32", mkFnType  []    [i32])
+    ,("expect_i1", mkFnType [i1] [i32])
+    ,( "print_i1", mkFnType [i1] [i32])
 
-    ,("coro_create_i32_i32", coroCreateType [i32] i32)
-    ,("coro_invoke_i32_i32", coroInvokeType [i32] i32)
-    ,("coro_yield_i32_i32",  coroYieldType  [i32] i32)
+    ,("coro_create_i32_i32", coroCreateType [i32] [i32])
+    ,("coro_invoke_i32_i32", coroInvokeType [i32] [i32])
+    ,("coro_yield_i32_i32",  coroYieldType  [i32] [i32])
 
 
-    ,("coro_create_i32x2_i32", coroCreateType [i32, i32] i32)
-    ,("coro_invoke_i32x2_i32", coroInvokeType [i32, i32] i32)
-    ,("coro_yield_i32x2_i32",  coroYieldType  [i32, i32] i32)
-    ,("primitive_sext_i64_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32")]) (NamedTypeAST "i64") Nothing)
-    ,("primitive_negate_i32", fosi32toi32)
-    ,("primitive_bitnot_i1", FnTypeAST (TupleTypeAST [(NamedTypeAST "i1")]) (NamedTypeAST "i1") Nothing)
-    ,("primitive_bitshl_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32") Nothing)
-    ,("primitive_bitashr_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32") Nothing)
-    ,("primitive_bitlshr_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32") Nothing)
-    ,("primitive_bitor_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32") Nothing)
-    ,("primitive_bitand_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32") Nothing)
-    ,("primitive_bitxor_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32") Nothing )
-    ,("force_gc_for_debugging_purposes", FnTypeAST (TupleTypeAST []) (TupleTypeAST []) Nothing)
+    ,("coro_create_i32x2_i32", coroCreateType [i32, i32] [i32])
+    ,("coro_invoke_i32x2_i32", coroInvokeType [i32, i32] [i32])
+    ,("coro_yield_i32x2_i32",  coroYieldType  [i32, i32] [i32])
+    ,("primitive_sext_i64_i32", mkFnType [i32] [i64])
+    ,("primitive_negate_i32",   mkFnType [i32] [i32])
+    ,("primitive_bitnot_i1",    mkFnType [i1] [i1])
+    ,("primitive_bitshl_i32",   mkFnType [i32, i32] [i32])
+    ,("primitive_bitashr_i32",  mkFnType [i32, i32] [i32])
+    ,("primitive_bitlshr_i32",  mkFnType [i32, i32] [i32])
+    ,("primitive_bitor_i32",    mkFnType [i32, i32] [i32])
+    ,("primitive_bitand_i32",   mkFnType [i32, i32] [i32])
+    ,("primitive_bitxor_i32",   mkFnType [i32, i32] [i32])
+    ,("force_gc_for_debugging_purposes", mkFnType [] [])
 
-    ,("primitive_<_i64", FnTypeAST (TupleTypeAST [(NamedTypeAST "i64"), (NamedTypeAST "i64")]) (NamedTypeAST "i1")  Nothing)
-    ,("primitive_-_i64", FnTypeAST (TupleTypeAST [(NamedTypeAST "i64"), (NamedTypeAST "i64")]) (NamedTypeAST "i64") Nothing)
-    ,("primitive_-_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32") Nothing)
-    ,("primitive_*_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32") Nothing)
-    ,("primitive_+_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i32") Nothing)
-    ,("primitive_<_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i1")  Nothing)
-    ,("primitive_<=_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i1") Nothing )
-    ,("primitive_==_i32", FnTypeAST (TupleTypeAST [(NamedTypeAST "i32"), (NamedTypeAST "i32")]) (NamedTypeAST "i1") Nothing )
+    ,("primitive_<_i64", mkFnType [i64, i64] [i1])
+    ,("primitive_-_i64", mkFnType [i64, i64] [i64])
+    ,("primitive_-_i32", mkFnType [i32, i32] [i32])
+    ,("primitive_*_i32", mkFnType [i32, i32] [i32])
+    ,("primitive_+_i32", mkFnType [i32, i32] [i32])
+    ,("primitive_<_i32", mkFnType [i32, i32] [i1])
+    ,("primitive_<=_i32",  mkFnType [i32, i32] [i1])
+    ,("primitive_==_i32",  mkFnType [i32, i32] [i1])
     ]
 
 isPrimitiveName name = isJust $ lookup name rootContext
