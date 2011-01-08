@@ -7,9 +7,6 @@
 module Foster.ProtobufUtils (
     parseSourceModule
   , dumpModuleToProtobuf
-  , typeAST
-  , unbuildSeqsA
-  , childrenOfA
 ) where
 
 import Foster.ExprAST
@@ -52,7 +49,7 @@ import qualified Text.ProtocolBuffers.Header as P'
 -- optional PhoneType type      => (getVal phone_number type')
 -----------------------------------------------------------------------
 
-part :: Int -> Seq Expr -> SourceLines -> ExprAST
+part :: Int -> Seq PbExpr.Expr -> SourceLines -> ExprAST
 part i parts lines = parseExpr (index parts i) lines
 
 parseBool pbexpr lines =
@@ -97,7 +94,7 @@ parseIf pbexpr lines =
                        (parseExpr (PBIf.then_expr pbif) lines)
                        (parseExpr (PBIf.else_expr pbif) lines)
 
-parseInt :: Expr -> SourceLines -> ExprAST
+parseInt :: PbExpr.Expr -> SourceLines -> ExprAST
 parseInt pbexpr lines =
         if (isSet pbexpr PbExpr.pb_int)
                 then (parseFromPBInt (getVal pbexpr PbExpr.pb_int) lines)
@@ -159,11 +156,11 @@ parseTuple pbexpr lines =
 parseVar pbexpr lines = E_VarAST (fmap parseType (PbExpr.type' pbexpr))
                                  (uToString (fromJust $ PbExpr.name pbexpr))
 
-parseModule :: Expr -> SourceLines -> ModuleAST FnAST
+parseModule :: PbExpr.Expr -> SourceLines -> ModuleAST FnAST
 parseModule pbexpr lines = ModuleAST [parseFn e lines | e <- toList $ PbExpr.parts pbexpr] lines
 
 
-parseProtoP :: Expr -> SourceLines -> PrototypeAST
+parseProtoP :: PbExpr.Expr -> SourceLines -> PrototypeAST
 parseProtoP pbexpr lines =
     case PbExpr.proto pbexpr of
                 Nothing     -> error "Need a Proto in the protocol buffer to parse a PrototypeAST!"
@@ -182,12 +179,12 @@ parseProtoPP proto lines =
 getVarName :: ExprAST -> String
 getVarName (E_VarAST mt s) = s
 
-getType :: Expr -> TypeAST
+getType :: PbExpr.Expr -> TypeAST
 getType e = case PbExpr.type' e of
                 Just t -> parseType t
                 Nothing -> MissingTypeAST $ "ProtobufUtils.getType " ++ show (PbExpr.tag e)
 
-getFormal :: Expr -> SourceLines ->  AnnVar
+getFormal :: PbExpr.Expr -> SourceLines ->  AnnVar
 getFormal e lines = case PbExpr.tag e of
             VAR -> case parseVar e lines of
                     (E_VarAST mt v) ->
@@ -211,12 +208,12 @@ parseSourceLocation :: Pb.SourceLocation -> ESourceLocation
 parseSourceLocation sr = -- This may fail for files of more than 2^29 lines...
     ESourceLocation (fromIntegral $ Pb.line sr) (fromIntegral $ Pb.column sr)
 
-parseRange :: Expr -> SourceLines ->  ESourceRange
+parseRange :: PbExpr.Expr -> SourceLines ->  ESourceRange
 parseRange pbexpr lines = case PbExpr.range pbexpr of
                         Nothing   -> EMissingSourceRange
                         (Just r)  -> sourceRangeFromPBRange r lines
 
-parseExpr :: Expr -> SourceLines -> ExprAST
+parseExpr :: PbExpr.Expr -> SourceLines -> ExprAST
 parseExpr pbexpr lines =
     let range = parseRange pbexpr in
     let fn = case PbExpr.tag pbexpr of
@@ -257,35 +254,6 @@ parseFnTy fty = FnTypeAST (TupleTypeAST [parseType x | x <- toList $ PbFnType.ar
                             Nothing  -> Nothing
                             (Just b) -> Just [])
 
------------------------------------------------------------------------
-
-typeAST :: AnnExpr -> TypeAST
-typeAST (AnnBool _)          = fosBoolType
-typeAST (AnnInt t _)         = t
-typeAST (AnnTuple es b)      = TupleTypeAST [typeAST e | e <- es]
-typeAST (E_AnnFn annFn)      = annFnType annFn
-typeAST (AnnCall r t b a)    = t
-typeAST (AnnCompiles c)      = fosBoolType
-typeAST (AnnIf t a b c)      = t
-typeAST (AnnSeq a b)         = typeAST b
-typeAST (AnnSubscript t _ _) = t
-typeAST (E_AnnVar (AnnVar t s)) = t
-
------------------------------------------------------------------------
-
-childrenOfA :: AnnExpr -> [AnnExpr]
-childrenOfA e =
-    case e of
-        AnnBool         b                    -> []
-        AnnCall  r t b a                     -> [b, a]
-        AnnCompiles   c                      -> []
-        AnnIf      t  a b c                  -> [a, b, c]
-        AnnInt t _                           -> []
-        E_AnnFn annFn                        -> [annFnBody annFn]
-        AnnSeq      a b                      -> unbuildSeqsA e
-        AnnSubscript t a b                   -> [a, b]
-        AnnTuple     es b                    -> es
-        E_AnnVar      v                      -> []
 
 -----------------------------------------------------------------------
 
@@ -328,7 +296,7 @@ dumpExprProto fnTy proto@(AnnPrototype t s es) =
                     , PbExpr.type' = Just $ dumpType fnTy }
 
 
-dumpExpr :: AnnExpr -> Expr
+dumpExpr :: AnnExpr -> PbExpr.Expr
 
 dumpExpr x@(E_AnnFn (AnnFn fnTy p b cs)) =
     P'.defaultValue { PbExpr.is_closure = Just (isJust cs)
@@ -399,7 +367,7 @@ dumpVar (AnnVar t v) =
                     , PbExpr.tag   = VAR
                     , PbExpr.type' = Just $ dumpType t  }
 
-dumpModule :: ModuleAST AnnFn -> Expr
+dumpModule :: ModuleAST AnnFn -> PbExpr.Expr
 dumpModule mod = P'.defaultValue {
       parts = fromList [dumpExpr (E_AnnFn f) | f <- moduleASTfunctions mod]
     , PbExpr.tag   = MODULE }

@@ -157,10 +157,10 @@ typecheckCall' ea eb range call =
             if isJust $ typeJoin formaltype argtype
                 then Annotated (AnnCall range restype eb ea)
                 else throwError $ "CallAST mismatches:\n"
-                                       ++ "base: " ++ (showStructureA eb) ++ "\n"
-                                       ++ "arg : " ++ (showStructureA ea) ++ "\n"
+                                       ++ "base: " ++ (showStructure eb) ++ "\n"
+                                       ++ "arg : " ++ (showStructure ea) ++ "\n"
                                        ++ show formaltype ++ "\nvs\n" ++ show argtype ++ "\nrange:\n" ++ show range
-         otherwise -> throwError $ "CallAST w/o FnAST type: " ++ (showStructureA eb)
+         otherwise -> throwError $ "CallAST w/o FnAST type: " ++ (showStructure eb)
                                        ++ " :: " ++ (show $ typeAST eb)
 
 typecheckCall ctx range call maybeExpTy =
@@ -402,7 +402,7 @@ inspect :: TypecheckResult AnnExpr -> ExprAST -> IO Bool
 inspect typechecked ast =
     case typechecked of
         Annotated e -> do
-            putStrLn $ "Successful typecheck!\n" ++ showStructureA e
+            putStrLn $ "Successful typecheck!\n" ++ showStructure e
             return True
         TypecheckErrors errs -> do
             forM_ errs $ \err -> do putStrLn $ "Typecheck error: " ++ err
@@ -435,41 +435,6 @@ main = do
             (Just mod) -> dumpModuleToProtobuf mod outfile
             Nothing    -> error $ "Unable to type check input module!"
 
------------------------------------------------------------------------
-
--- Formats a single-line tag for the given ExprAST node.
--- Example:  textOf (VarAST "x")      ===     "VarAST x"
-textOfA :: AnnExpr -> Int -> String
-textOfA e width =
-    let spaces = Prelude.replicate width '\SP'  in
-    case e of
-        AnnBool         b    -> "AnnBool      " ++ (show b)
-        AnnCall  r t b a     -> "AnnCall      " ++ " :: " ++ show t
-        AnnCompiles     c    -> "AnnCompiles  "
-        AnnIf      t  a b c  -> "AnnIf        " ++ " :: " ++ show t
-        AnnInt ty int        -> "AnnInt       " ++ (litIntText int) ++ " :: " ++ show ty
-        E_AnnFn annFn        -> "AnnFn        "
-        AnnSeq          a b  -> "AnnSeq       " ++ " :: " ++ show (typeAST b)
-        AnnSubscript  t a b  -> "AnnSubscript " ++ " :: " ++ show t
-        AnnTuple     es b    -> "AnnTuple     "
-        E_AnnVar (AnnVar t v) -> "AnnVar       " ++ v ++ " :: " ++ show t
-
------------------------------------------------------------------------
-
-showStructureA :: AnnExpr -> String
-showStructureA e = showStructureP e "" False where
-    showStructureP e prefix isLast =
-        let children = childrenOfA e in
-        let thisIndent = prefix ++ if isLast then "└─" else "├─" in
-        let nextIndent = prefix ++ if isLast then "  " else "│ " in
-        let padding = max 6 (60 - Prelude.length thisIndent) in
-        -- [ (child, index, numchildren) ]
-        let childpairs = Prelude.zip3 children [1..]
-                               (Prelude.repeat (Prelude.length children)) in
-        let childlines = map (\(c, n, l) ->
-                                showStructureP c nextIndent (n == l))
-                             childpairs in
-        thisIndent ++ (textOfA e padding ++ "\n") ++ Prelude.foldl (++) "" childlines
 
 -----------------------------------------------------------------------
 
@@ -482,8 +447,8 @@ test1 = let term = (E_BoolAST EMissingSourceRange True) in
         let anticipated = (AnnBool True) in
         TestCase (do let taa = trMaybe $ typecheck rootContext term expectedType
                      assertEqual ("for " ++ show term ++ ", ")
-                             (fmap showStructureA (Just anticipated))
-                             (fmap showStructureA taa))
+                             (fmap showStructure (Just anticipated))
+                             (fmap showStructure taa))
 
 -- |- (\x.e) (coro_create_i32(...))  ==> (\x:Coro i32 i32.e)
 --test2 = let proto = (PrototypeAST protoRetTy "f" [(VarAST "v" )] ) in

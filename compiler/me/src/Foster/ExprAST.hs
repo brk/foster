@@ -61,6 +61,64 @@ sourceLine (SourceLines seq) n =
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+class Expr a where
+    textOf :: a -> Int -> String
+    childrenOf :: a -> [a]
+
+instance Expr ExprAST where
+    textOf e width =
+        let spaces = Prelude.replicate width '\SP'  in
+        case e of
+            E_BoolAST rng  b     -> "BoolAST      " ++ (show b)
+            E_CallAST rng call   -> "CallAST      "
+            E_CompilesAST e c    -> "CompilesAST  "
+            E_IfAST _            -> "IfAST        "
+            E_IntAST litInt      -> "IntAST       " ++ (litIntText litInt)
+            E_FnAST f            -> "FnAST        "
+            E_SeqAST   a b       -> "SeqAST       "
+            E_SubscriptAST  a b  -> "SubscriptAST "
+            E_TupleAST     es b  -> "TupleAST     "
+            E_VarAST mt v        -> "VarAST       " ++ v ++ " :: " ++ show mt
+    childrenOf e =
+        case e of
+            E_BoolAST rng b      -> []
+            E_CallAST rng call   -> [callASTbase call, callASTargs call]
+            E_CompilesAST   e c  -> [e]
+            E_IfAST (IfAST a b c)-> [a, b, c]
+            E_IntAST litInt      -> []
+            E_FnAST f            -> [fnBody f]
+            E_SeqAST        a b  -> unbuildSeqs e
+            E_SubscriptAST  a b  -> [a, b]
+            E_TupleAST     es b  -> es
+            E_VarAST       mt v  -> []
+
+instance Expr AnnExpr where
+    textOf e width =
+        let spaces = Prelude.replicate width '\SP'  in
+        case e of
+            AnnBool         b    -> "AnnBool      " ++ (show b)
+            AnnCall  r t b a     -> "AnnCall      " ++ " :: " ++ show t
+            AnnCompiles     c    -> "AnnCompiles  "
+            AnnIf      t  a b c  -> "AnnIf        " ++ " :: " ++ show t
+            AnnInt ty int        -> "AnnInt       " ++ (litIntText int) ++ " :: " ++ show ty
+            E_AnnFn annFn        -> "AnnFn        "
+            AnnSeq          a b  -> "AnnSeq       " ++ " :: " ++ show (typeAST b)
+            AnnSubscript  t a b  -> "AnnSubscript " ++ " :: " ++ show t
+            AnnTuple     es b    -> "AnnTuple     "
+            E_AnnVar (AnnVar t v) -> "AnnVar       " ++ v ++ " :: " ++ show t
+    childrenOf e =
+        case e of
+            AnnBool         b                    -> []
+            AnnCall  r t b a                     -> [b, a]
+            AnnCompiles   c                      -> []
+            AnnIf      t  a b c                  -> [a, b, c]
+            AnnInt t _                           -> []
+            E_AnnFn annFn                        -> [annFnBody annFn]
+            AnnSeq      a b                      -> unbuildSeqsA e
+            AnnSubscript t a b                   -> [a, b]
+            AnnTuple     es b                    -> es
+            E_AnnVar      v                      -> []
+
 data ModuleAST fnType = ModuleAST {
           moduleASTfunctions   :: [fnType]
         , moduleASTsourceLines :: SourceLines
@@ -116,7 +174,7 @@ data PrototypeAST = PrototypeAST {
 -- │ └─AnnTuple
 -- │   └─AnnInt       999999 :: i32
 
-showStructure :: ExprAST -> String
+showStructure :: (Expr a) => a -> String
 showStructure e = showStructureP e "" False where
     showStructureP e prefix isLast =
         let children = childrenOf e in
@@ -131,44 +189,10 @@ showStructure e = showStructureP e "" False where
                              childpairs in
         thisIndent ++ (textOf e padding ++ "\n") ++ Prelude.foldl (++) "" childlines
 
-
-childrenOf :: ExprAST -> [ExprAST]
-childrenOf e =
-    case e of
-        E_BoolAST rng b      -> []
-        E_CallAST rng call   -> [callASTbase call, callASTargs call]
-        E_CompilesAST   e c  -> [e]
-        E_IfAST (IfAST a b c)-> [a, b, c]
-        E_IntAST litInt      -> []
-        E_FnAST f            -> [fnBody f]
-        E_SeqAST        a b  -> unbuildSeqs e
-        E_SubscriptAST  a b  -> [a, b]
-        E_TupleAST     es b  -> es
-        E_VarAST       mt v  -> []
-
 -- | Converts a right-leaning "list" of SeqAST nodes to a List
 unbuildSeqs :: ExprAST -> [ExprAST]
 unbuildSeqs (E_SeqAST a b) = a : unbuildSeqs b
 unbuildSeqs expr = [expr]
-
-
--- Formats a single-line tag for the given ExprAST node.
--- Example:  textOf (VarAST "x")      ===     "VarAST x"
-textOf :: ExprAST -> Int -> String
-textOf e width =
-    let spaces = Prelude.replicate width '\SP'  in
-    case e of
-        E_BoolAST rng  b     -> "BoolAST      " ++ (show b)
-        E_CallAST rng call   -> "CallAST      "
-        E_CompilesAST e c    -> "CompilesAST  "
-        E_IfAST _            -> "IfAST        "
-        E_IntAST litInt      -> "IntAST       " ++ (litIntText litInt)
-        E_FnAST f            -> "FnAST        "
-        E_SeqAST   a b       -> "SeqAST       "
-        E_SubscriptAST  a b  -> "SubscriptAST "
-        E_TupleAST     es b  -> "TupleAST     "
-        E_VarAST mt v        -> "VarAST       " ++ v ++ " :: " ++ show mt
-
 
 
 freeVariables :: ExprAST -> [String]
@@ -235,3 +259,18 @@ unbuildSeqsA :: AnnExpr -> [AnnExpr]
 unbuildSeqsA (AnnSeq a b) = a : unbuildSeqsA b
 unbuildSeqsA expr = [expr]
 
+-----------------------------------------------------------------------
+
+typeAST :: AnnExpr -> TypeAST
+typeAST (AnnBool _)          = fosBoolType
+typeAST (AnnInt t _)         = t
+typeAST (AnnTuple es b)      = TupleTypeAST [typeAST e | e <- es]
+typeAST (E_AnnFn annFn)      = annFnType annFn
+typeAST (AnnCall r t b a)    = t
+typeAST (AnnCompiles c)      = fosBoolType
+typeAST (AnnIf t a b c)      = t
+typeAST (AnnSeq a b)         = typeAST b
+typeAST (AnnSubscript t _ _) = t
+typeAST (E_AnnVar (AnnVar t s)) = t
+
+-----------------------------------------------------------------------

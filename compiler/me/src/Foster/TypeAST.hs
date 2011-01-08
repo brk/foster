@@ -17,16 +17,14 @@ data TypeAST =
          deriving (Eq)
 
 instance Show TypeAST where
-    show = showTypeAST
+    show x = case x of
+        (MissingTypeAST s)   -> "(MissingTypeAST " ++ s ++ ")"
+        (NamedTypeAST s)     -> s
+        (TupleTypeAST types) -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
+        (FnTypeAST s t cs)   -> "(" ++ show s ++ " -> " ++ show t ++ ")"
+        (CoroType s t)   -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
 
 fosBoolType = NamedTypeAST "i1"
-
-showTypeAST :: TypeAST -> String
-showTypeAST (MissingTypeAST s)   = "(MissingTypeAST " ++ s ++ ")"
-showTypeAST (NamedTypeAST s)     = s
-showTypeAST (TupleTypeAST types) = "(" ++ joinWith ", " [showTypeAST t | t <- types] ++ ")"
-showTypeAST (FnTypeAST s t cs)   = "(" ++ show s ++ " -> " ++ show t ++ ")"
-showTypeAST (CoroType s t)   = "(Coro " ++ show s ++ " " ++ show t ++ ")"
 
 joinWith :: String -> [String] -> String
 joinWith s [] = ""
