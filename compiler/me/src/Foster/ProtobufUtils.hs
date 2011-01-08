@@ -91,9 +91,9 @@ parseIf pbexpr lines =
                 then parseFromPBIf (getVal pbexpr PbExpr.pb_if)
                 else error "must have if to parse from if!"
         where parseFromPBIf pbif =
-                IfAST (parseExpr (PBIf.test_expr pbif) lines)
-                      (parseExpr (PBIf.then_expr pbif) lines)
-                      (parseExpr (PBIf.else_expr pbif) lines)
+               E_IfAST (parseExpr (PBIf.test_expr pbif) lines)
+                       (parseExpr (PBIf.then_expr pbif) lines)
+                       (parseExpr (PBIf.else_expr pbif) lines)
 
 parseInt :: Expr -> SourceLines -> ExprAST
 parseInt pbexpr lines =
