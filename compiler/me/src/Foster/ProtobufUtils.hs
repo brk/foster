@@ -373,9 +373,13 @@ dumpModule mod = P'.defaultValue {
     , PbExpr.tag   = MODULE }
 
 -----------------------------------------------------------------------
+textToPUtf8 :: T.Text -> P'.Utf8
+textToPUtf8 t = P'.Utf8 (UTF8.fromString $ T.unpack t)
 
 dumpSourceModule :: ModuleAST AnnFn -> SourceModule
-dumpSourceModule mod = SourceModule { line = Data.Sequence.empty , expr = (dumpModule mod) }
+dumpSourceModule mod =
+    let (SourceLines seq) = moduleASTsourceLines mod in -- seq :: Seq T.Text
+    SourceModule { line = fmap textToPUtf8 seq , expr = (dumpModule mod) }
 
 dumpModuleToProtobuf :: ModuleAST AnnFn -> FilePath -> IO ()
 dumpModuleToProtobuf mod outpath = do
