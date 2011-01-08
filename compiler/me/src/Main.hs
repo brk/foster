@@ -107,7 +107,7 @@ typecheck ctx expr maybeExpTy =
                                              "IfAST: types of branches didn't match"
                            return (AnnIf (typeAST eb) ea eb ec)
         E_FnAST f -> typecheckFn ctx f maybeExpTy
-        CallAST r b a -> typecheckCall ctx r b a maybeExpTy
+        E_CallAST rng call -> typecheckCall ctx rng call maybeExpTy
         IntAST litInt -> do return (AnnInt (NamedTypeAST "i32") litInt)
         SeqAST a b -> do
             ea <- typecheck ctx a Nothing --(Just TypeUnitAST)
@@ -148,7 +148,7 @@ argType x = error $ "Called argType on non-FnTypeAST: " ++ show x
 
 irrelevantClosedOverVars = Nothing
 
-typecheckCall' ea eb range base arg =
+typecheckCall' ea eb range call =
     case (typeAST eb, typeAST ea) of
          (FnTypeAST formaltype restype cs, argtype) ->
             if isJust $ typeJoin formaltype argtype
@@ -160,19 +160,20 @@ typecheckCall' ea eb range base arg =
          otherwise -> throwError $ "CallAST w/o FnAST type: " ++ (showStructureA eb)
                                        ++ " :: " ++ (show $ typeAST eb)
 
-typecheckCall ctx range base arg maybeExpTy =
+typecheckCall ctx range call maybeExpTy =
       -- If we have an explicit redex (call to a literal function),
       -- we can determine the types of the formals based on the actuals.
+      let (base, args) = (callASTbase call, callASTargs call) in
       case base of
         (E_FnAST f) -> do
-           ea <- typecheck ctx arg Nothing
+           ea <- typecheck ctx args Nothing
            let expectedLambdaType = case maybeExpTy of
                 Nothing  -> (Just (FnTypeAST (typeAST ea) (MissingTypeAST "typecheckCall-3")  irrelevantClosedOverVars))
                 (Just t) -> (Just (FnTypeAST (MissingTypeAST "typecheckCall-2") t irrelevantClosedOverVars))
 
            eb <- typecheck ctx base expectedLambdaType
            trace ("typecheckCall with literal fn base, exp ty " ++ (show expectedLambdaType)) $
-            typecheckCall' ea eb range base arg
+            typecheckCall' ea eb range call
 
         -- Otherwise, typecheck the function first, then the args.
         _ -> do
@@ -181,8 +182,8 @@ typecheckCall ctx range base arg maybeExpTy =
                 (Just t) -> (Just (FnTypeAST (MissingTypeAST "typecheckCall-1") t irrelevantClosedOverVars))
                 -- If we have (e1 e2) :: T, we infer that e1 :: (? -> T) and e2 :: ?
            eb <- typecheck ctx base expectedLambdaType
-           ea <- typecheck ctx arg (Just $ argType (typeAST eb))
-           typecheckCall' ea eb range base arg
+           ea <- typecheck ctx args (Just $ argType (typeAST eb))
+           typecheckCall' ea eb range call
 
 -----------------------------------------------------------------------
 

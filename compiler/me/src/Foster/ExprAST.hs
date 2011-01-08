@@ -74,6 +74,10 @@ data LiteralInt = LiteralInt { litIntMinBits :: Integer
                              , litIntBase    :: Int
                              } deriving (Show)
 
+data CallAST = CallAST { callASTbase :: ExprAST
+                       , callASTargs :: ExprAST
+                       } deriving (Show)
+
 data ExprAST =
           BoolAST       Bool
         | IntAST        LiteralInt
@@ -83,7 +87,7 @@ data ExprAST =
                         }
         | E_FnAST       FnAST
 
-        | CallAST       ESourceRange ExprAST ExprAST
+        | E_CallAST     ESourceRange CallAST
         | CompilesAST   ExprAST CompilesStatus
         | IfAST         ExprAST ExprAST ExprAST
         | SeqAST        ExprAST ExprAST
@@ -130,7 +134,7 @@ childrenOf :: ExprAST -> [ExprAST]
 childrenOf e =
     case e of
         BoolAST         b    -> []
-        CallAST   r b es     -> [b, es]
+        E_CallAST rng call   -> [callASTbase call, callASTargs call]
         CompilesAST   e c    -> [e]
         IfAST         a b c  -> [a, b, c]
         IntAST litInt        -> []
@@ -153,7 +157,7 @@ textOf e width =
     let spaces = Prelude.replicate width '\SP'  in
     case e of
         BoolAST         b    -> "BoolAST      " ++ (show b)
-        CallAST   r b a      -> "CallAST      "
+        E_CallAST rng call   -> "CallAST      "
         CompilesAST   e c    -> "CompilesAST  "
         IfAST         a b c  -> "IfAST        "
         IntAST litInt        -> "IntAST       " ++ (litIntText litInt)
@@ -168,7 +172,7 @@ textOf e width =
 freeVariables :: ExprAST -> [String]
 freeVariables e = case e of
     BoolAST         b    -> []
-    CallAST   r b a      -> freeVariables b ++ freeVariables a
+    E_CallAST rng call   -> concatMap freeVariables [callASTbase call, callASTargs call]
     CompilesAST   e c    -> freeVariables e
     IfAST         a b c  -> freeVariables a ++ freeVariables b ++ freeVariables c
     IntAST litInt        -> []
