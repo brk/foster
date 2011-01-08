@@ -55,7 +55,7 @@ const char* getCallingConvention(PrototypeAST* ast) {
   ||  pystring::startswith(ast->getName(), "__voidReturningVersionOf__")) {
     return "ccc";
   } else {
-    EDiag() << "passUtils::getCallingConvention(" << ast->getName() << ") returning fastcc";
+    //EDiag() << "passUtils::getCallingConvention(" << ast->getName() << ") returning fastcc";
     return "fastcc";
   }
 }

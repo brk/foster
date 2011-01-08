@@ -103,7 +103,7 @@ ExprAST* parseCompiles(const pb::Expr& e, const foster::SourceRange& range) {
 }
 
 ExprAST* parseFn(const pb::Expr& e, const foster::SourceRange& range) {
-  ASSERT(e.parts_size() == 2);
+  ASSERT(e.parts_size() == 2) << "fn must have body and proto";
 
   PrototypeAST* proto = dynamic_cast<PrototypeAST*>(ExprAST_from_pb(& e.parts(0)));
   ExprAST* body = NULL;
@@ -210,7 +210,7 @@ ExprAST* parseSimd(const pb::Expr& e, const foster::SourceRange& range) {
 */
 
 ExprAST* parseSubscript(const pb::Expr& e, const foster::SourceRange& range) {
-  ASSERT(e.parts_size() == 2);
+  ASSERT(e.parts_size() == 2) << "subscript must have base and index";
   return new SubscriptAST(
       ExprAST_from_pb(& e.parts(0)),
       ExprAST_from_pb(& e.parts(1)), range);
@@ -323,7 +323,9 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
   if (t.tag() == pb::Type::CORO) {
     TypeAST* targ = NULL;
     TypeAST* tret = NULL;
-    ASSERT(t.type_parts_size() == 2);
+    ASSERT(t.type_parts_size() == 2)
+        << "coro must have base and arg types,"
+        << " but #type parts is " << t.type_parts_size();
     targ = TypeAST_from_pb(&t.type_parts(0));
     tret = TypeAST_from_pb(&t.type_parts(1));
     return CoroTypeAST::get(targ, tret);
