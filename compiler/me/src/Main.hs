@@ -97,9 +97,9 @@ sanityCheck cond msg = if cond then do return (AnnBool True)
 typecheck :: Context -> ExprAST -> Maybe TypeAST -> TypecheckResult AnnExpr
 typecheck ctx expr maybeExpTy =
     case expr of
-        E_BoolAST b   -> do return (AnnBool b)
-        E_IfAST ifast -> typecheckIf ctx ifast maybeExpTy
-        E_FnAST f -> typecheckFn ctx f maybeExpTy
+        E_BoolAST rng b -> do return (AnnBool b)
+        E_IfAST ifast   -> typecheckIf ctx ifast maybeExpTy
+        E_FnAST f       -> typecheckFn ctx  f    maybeExpTy
         E_CallAST rng call -> typecheckCall ctx rng call maybeExpTy
         E_IntAST litInt -> do return (AnnInt (NamedTypeAST "i32") litInt)
         E_SeqAST a b -> do
@@ -487,7 +487,7 @@ trMaybe :: TypecheckResult AnnExpr -> Maybe AnnExpr
 trMaybe (TypecheckErrors _) = Nothing
 trMaybe (Annotated ae) = Just $ ae
 
-test1 = let term = (E_BoolAST True) in
+test1 = let term = (E_BoolAST EMissingSourceRange True) in
         let expectedType = Nothing in
         let anticipated = (AnnBool True) in
         TestCase (do let taa = trMaybe $ typecheck rootContext term expectedType

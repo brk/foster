@@ -55,7 +55,9 @@ import qualified Text.ProtocolBuffers.Header as P'
 part :: Int -> Seq Expr -> SourceLines -> ExprAST
 part i parts lines = parseExpr (index parts i) lines
 
-parseBool pbexpr lines = E_BoolAST $ fromMaybe False (PbExpr.bool_value pbexpr)
+parseBool pbexpr lines =
+        let range = parseRange pbexpr lines in
+        E_BoolAST range $ fromMaybe False (PbExpr.bool_value pbexpr)
 
 parseCall pbexpr lines =
         let range = parseRange pbexpr lines in
