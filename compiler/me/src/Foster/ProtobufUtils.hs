@@ -10,7 +10,6 @@ module Foster.ProtobufUtils (
   , typeAST
   , unbuildSeqsA
   , childrenOfA
-  , fnTypeFromA
 ) where
 
 import Foster.ExprAST
@@ -262,18 +261,12 @@ typeAST :: AnnExpr -> TypeAST
 typeAST (AnnBool _)          = fosBoolType
 typeAST (AnnInt t _)         = t
 typeAST (AnnTuple es b)      = TupleTypeAST [typeAST e | e <- es]
-typeAST (E_AnnFn (AnnFn (AnnPrototype rt s vs) e cs))
-                             = FnTypeAST (TupleTypeAST [t | (AnnVar t v) <- vs])
-                                         rt
-                                         (case cs of
-                                            Nothing  -> Nothing
-                                            Just jcs -> (Just [varname | (AnnVar t varname) <- jcs]))
+typeAST (E_AnnFn annFn)      = annFnType annFn
 typeAST (AnnCall r t b a)    = t
 typeAST (AnnCompiles c)      = fosBoolType
 typeAST (AnnIf t a b c)      = t
 typeAST (AnnSeq a b)         = typeAST b
 typeAST (AnnSubscript t _ _) = t
-typeAST (E_AnnPrototype t p) = t
 typeAST (E_AnnVar (AnnVar t s)) = t
 
 -----------------------------------------------------------------------
@@ -286,20 +279,11 @@ childrenOfA e =
         AnnCompiles   c                      -> []
         AnnIf      t  a b c                  -> [a, b, c]
         AnnInt t _                           -> []
-        E_AnnFn f@(AnnFn p b cs)             -> [E_AnnPrototype t p, b] where t = fnTypeFromA f
+        E_AnnFn annFn                        -> [annFnBody annFn]
         AnnSeq      a b                      -> unbuildSeqsA e
         AnnSubscript t a b                   -> [a, b]
-        E_AnnPrototype t' (AnnPrototype t s es) -> [E_AnnVar v | v <- es]
         AnnTuple     es b                    -> es
         E_AnnVar      v                      -> []
-
-
-fnTypeFromA :: AnnFn -> TypeAST
-fnTypeFromA (AnnFn p b cs) =
-    let intype = TupleTypeAST [avarType v | v <- annProtoVars p] in
-    let outtype = typeAST b in
-    FnTypeAST intype outtype (fmap (map avarName) cs)
-
 
 -----------------------------------------------------------------------
 
@@ -336,21 +320,22 @@ dumpFnTy (FnTypeAST s t cs) =
 -----------------------------------------------------------------------
 -----------------------------------------------------------------------
 
+dumpExprProto fnTy proto@(AnnPrototype t s es) =
+    P'.defaultValue { PbExpr.proto = Just $ dumpProto proto
+                    , PbExpr.tag   = PROTO
+                    , PbExpr.type' = Just $ dumpType fnTy }
+
+
 dumpExpr :: AnnExpr -> Expr
 
-dumpExpr x@(E_AnnFn (AnnFn p b cs)) =
+dumpExpr x@(E_AnnFn (AnnFn fnTy p b cs)) =
     P'.defaultValue { PbExpr.is_closure = Just (isJust cs)
-                    , PbExpr.parts = fromList $ fmap dumpExpr (childrenOfA x)
+                    , PbExpr.parts = fromList $ [dumpExprProto fnTy p, dumpExpr b]
                     , PbExpr.tag   = Foster.Pb.Expr.Tag.FN
-                    , PbExpr.type' = Just $ dumpType (typeAST x)  }
+                    , PbExpr.type' = Just $ dumpType fnTy }
 
 dumpExpr (AnnCall r t base (AnnTuple args _)) = dumpCall t base args
 dumpExpr (AnnCall r t base arg)               = dumpCall t base [arg]
-
-dumpExpr x@(E_AnnPrototype t' proto@(AnnPrototype t s es)) =
-    P'.defaultValue { PbExpr.proto = Just $ dumpProto proto
-                    , PbExpr.tag   = PROTO
-                    , PbExpr.type' = Just $ dumpType (typeAST x)  }
 
 dumpExpr x@(AnnBool b) =
     P'.defaultValue { bool_value   = Just b
@@ -361,8 +346,6 @@ dumpExpr (E_AnnVar var@(AnnVar t v)) = dumpVar var
 
 dumpExpr x@(AnnSeq a b) = dumpSeqOf (unbuildSeqsA x) (typeAST x)
 
---dumpExpr x@(AnnTuple [] False) = dumpExpr (AnnInt (NamedTypeAST "i32") 0 "0" "0" 10)
---dumpExpr x@(AnnTuple [e] False) = dumpExpr e
 dumpExpr x@(AnnTuple es b) =
     P'.defaultValue { PbExpr.parts = fromList [dumpExpr e | e <- es]
                     , is_closure_environment = Just b

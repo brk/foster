@@ -207,9 +207,6 @@ data AnnExpr =
         -- Subscripts get an overall type
         | AnnSubscript  TypeAST AnnExpr AnnExpr
 
-        -- Protos get a required overall type
-        | E_AnnPrototype  TypeAST AnnPrototype
-
         --Vars go from a Maybe TypeAST to a required TypeAST
         | E_AnnVar       AnnVar
 
@@ -219,8 +216,15 @@ data AnnExpr =
         deriving (Show)
 
 data AnnVar       = AnnVar { avarType :: TypeAST, avarName :: String } deriving (Eq, Show)
--- Body becomes annotated
-data AnnFn        = AnnFn           AnnPrototype AnnExpr (Maybe [AnnVar]) deriving (Show)
+
+-- Body annotated, and overall type added
+data AnnFn        = AnnFn  { annFnType :: TypeAST
+                           , annFnProto :: AnnPrototype
+                           , annFnBody :: AnnExpr
+                           , annFnClosedVars :: (Maybe [AnnVar])
+                           } deriving (Show)
+
+
 -- No difference from PrototypeAST (!)
 data AnnPrototype = AnnPrototype    { annProtoReturnType :: TypeAST
                                     , annProtoName       :: String

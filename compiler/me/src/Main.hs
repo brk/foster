@@ -209,16 +209,19 @@ typecheckFn ctx proto body cs (Just (FnTypeAST s t cs')) =
                         ++ "': proto return type, " ++ show (prototypeASTretType proto)
                         ++ ", did not match return type of expected fn type " ++ show (FnTypeAST s t cs')
 
+typecheckFn' :: Context -> PrototypeAST -> ExprAST -> Maybe [AnnVar] -> Maybe TypeAST -> Maybe TypeAST -> TypecheckResult AnnExpr
 typecheckFn' ctx proto body cs expArgType expBodyType = do
     _ <- verifyNonOverlappingVariableNames proto
     let extCtx = extendContext ctx proto expArgType
     annbody <- typecheck extCtx body expBodyType
     case typeJoin (prototypeASTretType proto) (typeAST annbody) of
-        (Just x) ->
+        (Just someReturnType) ->
             let annproto = case proto of
                             (PrototypeAST t s vars) ->
-                              (AnnPrototype x s (typeJoinVars vars expArgType)) in
-            return (E_AnnFn (AnnFn annproto annbody cs))
+                              (AnnPrototype someReturnType s (typeJoinVars vars expArgType)) in
+            let argtypes = TupleTypeAST [avarType v | v <- (annProtoVars annproto)] in
+            let fnty = FnTypeAST argtypes someReturnType (fmap (fmap avarName) cs) in
+            return (E_AnnFn (AnnFn fnty annproto annbody cs))
         otherwise ->
          throwError $ "typecheck '" ++ prototypeASTname proto
                     ++ "': proto ret type " ++ show (prototypeASTretType proto)
@@ -353,7 +356,7 @@ buildCallGraph asts ctx =
     Graph.stronglyConnComp nodeList
 
 extendContextWithFnA :: AnnFn -> Context -> Context
-extendContextWithFnA f@(AnnFn proto body cs) ctx = (annProtoName proto, fnTypeFromA f):ctx
+extendContextWithFnA (AnnFn fnTy proto body cs) ctx = (annProtoName proto, fnTy):ctx
 
 fnTypeFrom :: FnAST -> TypeAST
 fnTypeFrom f =
@@ -461,7 +464,6 @@ textOfA e width =
         E_AnnFn annFn        -> "AnnFn        "
         AnnSeq          a b  -> "AnnSeq       " ++ " :: " ++ show (typeAST b)
         AnnSubscript  t a b  -> "AnnSubscript " ++ " :: " ++ show t
-        E_AnnPrototype t p   -> "PrototypeAST " ++ (annProtoName p) ++ " :: " ++ show t
         AnnTuple     es b    -> "AnnTuple     "
         E_AnnVar (AnnVar t v) -> "AnnVar       " ++ v ++ " :: " ++ show t
 
