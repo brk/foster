@@ -66,16 +66,6 @@ type Context = [(String, TypeAST)]
 extendContext :: Context -> PrototypeAST -> Maybe TypeAST -> Context
 extendContext ctx proto expFormals = (getBindings proto expFormals) ++ ctx
 
---
---extendContextA :: Context -> AnnPrototype -> Context
---extendContextA ctx proto = (getBindingsA proto) ++ ctx
---
---getBindingsA :: AnnPrototype -> [(String, TypeAST)]
---getBindingsA (AnnPrototype t s vars) =
---    map (\v -> (avarName v, avarType v)) vars
---
---extendContextWithFn :: AnnFn -> Context -> Context
---extendContextWithFn (AnnFn proto body) ctx = extendContextA ctx proto
 
 data TypecheckResult expr
     = Annotated        expr
@@ -91,10 +81,6 @@ instance Monad TypecheckResult where
     (TypecheckErrors ss) >>= _ = (TypecheckErrors ss)
     (Annotated e)        >>= f = f e
     fail msg                 = TypecheckErrors [msg]
-
-getTypeCheckedType :: TypecheckResult AnnExpr -> TypeAST
-getTypeCheckedType (Annotated e) = typeAST e
-getTypeCheckedType (TypecheckErrors _) = MissingTypeAST "getTypeCheckedType"
 
 typeJoin :: TypeAST -> TypeAST -> Maybe TypeAST
 typeJoin (MissingTypeAST _) x = Just x
@@ -355,8 +341,11 @@ buildCallGraph asts ctx =
     let nodeList = (map (\ast -> (ast, fnName ast, fnFreeVariables ast ctx)) asts) in
     Graph.stronglyConnComp nodeList
 
+fnNameA :: AnnFn -> String
+fnNameA f = annProtoName (annFnProto f)
+
 extendContextWithFnA :: AnnFn -> Context -> Context
-extendContextWithFnA (AnnFn fnTy proto body cs) ctx = (annProtoName proto, fnTy):ctx
+extendContextWithFnA f ctx = (fnNameA f, annFnType f):ctx
 
 fnTypeFrom :: FnAST -> TypeAST
 fnTypeFrom f =
