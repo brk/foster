@@ -183,11 +183,16 @@ struct GCMallocFinder : public CallGraphSCCPass {
 };
 
 char GCMallocFinder::ID = 0;
+
+} // unnamed namespace
+
+namespace llvm {
+  void initializeGCMallocFinderPass(llvm::PassRegistry&);
+}
 INITIALIZE_PASS(GCMallocFinder, "foster-gcmallocfinder",
                 "Identifies (non-)allocating functions.",
                 false,
                 false);
-} // unnamed namespace
 
 namespace foster {
 

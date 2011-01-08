@@ -175,10 +175,16 @@ struct ImathImprover : public BasicBlockPass {
 };
 
 char ImathImprover::ID = 0;
+
+} // unnamed namespace
+
+namespace llvm {
+  void initializeImathImproverPass(llvm::PassRegistry&);
+}
+
 INITIALIZE_PASS(ImathImprover, "foster-imath-improver",
                 "Peephole optimization of imath API calls",
                 false, false);
-} // unnamed namespace
 
 namespace foster {
 
