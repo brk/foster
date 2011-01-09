@@ -25,6 +25,7 @@ public:
   // precondition: file specified by filePath exists, and is readable
   InputTextBuffer(const llvm::sys::Path& path);
 
+  // Copies the data in the given buffer.
   InputTextBuffer(const char* data, size_t length);
 
   llvm::MemoryBuffer* getMemoryBuffer() const;

@@ -17,6 +17,25 @@
 #include <fstream>
 
 using foster::EDiag;
+using foster::gInputTextBuffer;
+
+foster::InputTextBuffer*
+newInputBufferFromSourceModule(const foster::pb::SourceModule& sm) {
+  int expectedLineCount = sm.line_size();
+  std::string lines;
+  for (int i = 0; i < expectedLineCount; ++i) {
+    lines += sm.line(i) + "\n";
+  }
+
+  foster::InputTextBuffer* buf =
+      new foster::InputTextBuffer(lines.c_str(), lines.size());
+
+  ASSERT(buf->getLineCount() == expectedLineCount)
+      << "expected line count: " << expectedLineCount
+      << "actual   line count: " << buf->getLineCount();
+
+  return buf;
+}
 
 ModuleAST* readSourceModuleFromProtobuf(const string& pathstr,
                                         foster::pb::SourceModule& out_sm) {
@@ -25,7 +44,11 @@ ModuleAST* readSourceModuleFromProtobuf(const string& pathstr,
     return NULL;
   }
 
+  const foster::InputTextBuffer* inputBuffer = gInputTextBuffer;
+  gInputTextBuffer = newInputBufferFromSourceModule(out_sm);
   ExprAST* expr = foster::ExprAST_from_pb(out_sm.mutable_expr());
+  gInputTextBuffer = inputBuffer;
+
   if (!expr) {
     EDiag() << "unable to parse expression from source module protobuf";
     return NULL;
