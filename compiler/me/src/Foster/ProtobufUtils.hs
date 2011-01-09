@@ -41,6 +41,21 @@ import qualified Foster.Pb.SourceLocation as Pb
 
 import qualified Text.ProtocolBuffers.Header as P'
 
+-- String conversions
+
+textToPUtf8 :: T.Text -> P'.Utf8
+textToPUtf8 t = u8fromString $ T.unpack t
+
+-- uToString :: P'.Utf8 -> String
+
+u8fromString :: String -> P'.Utf8
+u8fromString s = P'.Utf8 (UTF8.fromString s)
+
+-----------------------------------------------------------------------
+
+
+---------
+
 -- hprotoc cheat sheet:
 --
 -- required string name         => (name person)
@@ -157,7 +172,9 @@ parseVar pbexpr lines = E_VarAST (fmap parseType (PbExpr.type' pbexpr))
                                  (uToString (fromJust $ PbExpr.name pbexpr))
 
 parseModule :: PbExpr.Expr -> SourceLines -> ModuleAST FnAST
-parseModule pbexpr lines = ModuleAST [parseFn e lines | e <- toList $ PbExpr.parts pbexpr] lines
+parseModule pbexpr lines =
+    ModuleAST [parseFn e lines| e <- toList $ PbExpr.parts pbexpr]
+              (parseRange pbexpr lines)
 
 
 parseProtoP :: PbExpr.Expr -> SourceLines -> PrototypeAST
@@ -199,6 +216,7 @@ sourceRangeFromPBRange pbrange lines =
         (parseSourceLocation (Pb.begin pbrange))
         (parseSourceLocation (fromJust $ Pb.end   pbrange))
         lines
+        (fmap uToString (Pb.file_path pbrange))
 
 getString :: Maybe P'.Utf8 -> String
 getString Nothing  = ""
@@ -234,7 +252,8 @@ parseExpr pbexpr lines =
 
 parseSourceModule :: SourceModule -> ModuleAST FnAST
 parseSourceModule sm =
-    parseModule (SourceModule.expr sm) (sourceLines sm)
+    let lines = sourceLines sm in
+    parseModule (SourceModule.expr sm) lines
 
 sourceLines :: SourceModule -> SourceLines
 sourceLines sm = SourceLines (fmapDefault (\x -> T.pack (uToString x)) (SourceModule.line sm))
@@ -254,11 +273,6 @@ parseFnTy fty = FnTypeAST (TupleTypeAST [parseType x | x <- toList $ PbFnType.ar
                             Nothing  -> Nothing
                             (Just b) -> Just [])
 
-
------------------------------------------------------------------------
-
-u8fromString :: String -> P'.Utf8
-u8fromString s = P'.Utf8 (UTF8.fromString s)
 
 -----------------------------------------------------------------------
 
@@ -304,8 +318,8 @@ dumpExpr x@(E_AnnFn (AnnFn fnTy p b cs)) =
                     , PbExpr.tag   = Foster.Pb.Expr.Tag.FN
                     , PbExpr.type' = Just $ dumpType fnTy }
 
-dumpExpr (AnnCall r t base (AnnTuple args _)) = dumpCall t base args
-dumpExpr (AnnCall r t base arg)               = dumpCall t base [arg]
+dumpExpr (AnnCall r t base (AnnTuple args _)) = dumpCall r t base args
+dumpExpr (AnnCall r t base arg)               = dumpCall r t base [arg]
 
 dumpExpr x@(AnnBool b) =
     P'.defaultValue { bool_value   = Just b
@@ -342,15 +356,30 @@ dumpExpr x@(AnnIf t a b c) =
                     , PbExpr.type' = Just $ dumpType (typeAST x) }
 
 -----------------------------------------------------------------------
+intToInt32 :: Int -> P'.Int32
+intToInt32 i = (fromInteger (toInteger i))
+
+dumpSourceLocation (ESourceLocation line col) =
+    Pb.SourceLocation (intToInt32 line) (intToInt32 col)
+
+dumpRange :: ESourceRange -> Maybe Pb.SourceRange
+dumpRange EMissingSourceRange = Nothing
+dumpRange range =
+    Just (Pb.SourceRange (fmap u8fromString $ sourceRangeFile  range)
+                        (dumpSourceLocation $ sourceRangeBegin range)
+                  (Just (dumpSourceLocation $ sourceRangeEnd   range)))
+-----------------------------------------------------------------------
+
 dumpSeqOf exprs ty =
     P'.defaultValue { PbExpr.parts = fromList [dumpExpr e | e <- exprs]
                     , PbExpr.tag   = SEQ
                     , PbExpr.type' = Just $ dumpType ty  }
 
-dumpCall t base args =
+dumpCall range t base args =
     P'.defaultValue { PbExpr.parts = fromList $ fmap dumpExpr (base : args)
                     , PbExpr.tag   = CALL
-                    , PbExpr.type' = Just $ dumpType t }
+                    , PbExpr.type' = Just $ dumpType t
+                    , PbExpr.range = dumpRange range }
 
 dumpIf x@(AnnIf t a b c) =
         PBIf { test_expr = dumpExpr a, then_expr = dumpExpr b, else_expr = dumpExpr c }
@@ -370,15 +399,15 @@ dumpVar (AnnVar t v) =
 dumpModule :: ModuleAST AnnFn -> PbExpr.Expr
 dumpModule mod = P'.defaultValue {
       parts = fromList [dumpExpr (E_AnnFn f) | f <- moduleASTfunctions mod]
+    , PbExpr.range = dumpRange (moduleASTsourceRange mod)
     , PbExpr.tag   = MODULE }
 
 -----------------------------------------------------------------------
-textToPUtf8 :: T.Text -> P'.Utf8
-textToPUtf8 t = P'.Utf8 (UTF8.fromString $ T.unpack t)
 
 dumpSourceModule :: ModuleAST AnnFn -> SourceModule
 dumpSourceModule mod =
-    let (SourceLines seq) = moduleASTsourceLines mod in -- seq :: Seq T.Text
+    let range = moduleASTsourceRange mod in
+    let (SourceLines seq) = sourceRangeLines range in -- seq :: Seq T.Text
     SourceModule { line = fmap textToPUtf8 seq , expr = (dumpModule mod) }
 
 dumpModuleToProtobuf :: ModuleAST AnnFn -> FilePath -> IO ()

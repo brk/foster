@@ -25,6 +25,7 @@ data ESourceLocation = ESourceLocation { sourceLocationLine :: Int
 data ESourceRange = ESourceRange { sourceRangeBegin :: ESourceLocation
                                  , sourceRangeEnd   :: ESourceLocation
                                  , sourceRangeLines :: SourceLines
+                                 , sourceRangeFile  :: Maybe String
                                  }
                   | EMissingSourceRange
 
@@ -33,7 +34,7 @@ instance Show ESourceRange where
 
 showSourceRange :: ESourceRange -> String
 showSourceRange EMissingSourceRange = ""
-showSourceRange (ESourceRange begin end lines) = "\n" ++ showSourceLines begin end lines ++ "\n"
+showSourceRange (ESourceRange begin end lines filepath) = "\n" ++ showSourceLines begin end lines ++ "\n"
 
 -- If a single line is specified, show it with highlighting;
 -- otherwise, show the lines spanning the two locations (inclusive).
@@ -121,7 +122,7 @@ instance Expr AnnExpr where
 
 data ModuleAST fnType = ModuleAST {
           moduleASTfunctions   :: [fnType]
-        , moduleASTsourceLines :: SourceLines
+        , moduleASTsourceRange :: ESourceRange
      }
 
 data Literal = LitInt LiteralInt

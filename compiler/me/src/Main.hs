@@ -392,7 +392,7 @@ typecheckModule mod = do
     (annFns, _ctx) <- mapFoldM sortedFns ctx typecheckFnSCC
     -- annFns :: [TypecheckResult AnnExpr]
     if allAnnotated annFns
-        then return $ Just (ModuleAST [f | (Annotated (E_AnnFn f)) <- annFns] (moduleASTsourceLines mod))
+        then return $ Just (ModuleAST [f | (Annotated (E_AnnFn f)) <- annFns] (moduleASTsourceRange mod))
         else return $ Nothing
 
 allAnnotated :: [TypecheckResult AnnExpr] -> Bool
