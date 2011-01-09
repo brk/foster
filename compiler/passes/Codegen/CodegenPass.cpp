@@ -294,7 +294,16 @@ llvm::Value* CodegenPass::lookup(const std::string& fullyQualifiedSymbol) {
       argTypes.push_back(builder.getInt32Ty());
       v = emitCoroCreateFn(builder.getInt32Ty(),
         llvm::StructType::get(mod->getContext(), argTypes));
-    } else if (fullyQualifiedSymbol == "coro_invoke_i32_i32") {
+    } else if (fullyQualifiedSymbol == "coro_create_i32_i32x2") {
+      std::vector<const Type*> argTypes;
+      argTypes.push_back(builder.getInt32Ty());
+      argTypes.push_back(builder.getInt32Ty());
+      v = emitCoroCreateFn(
+        llvm::StructType::get(mod->getContext(), argTypes),
+        builder.getInt32Ty());
+    }
+
+      else if (fullyQualifiedSymbol == "coro_invoke_i32_i32") {
       v = emitCoroInvokeFn(builder.getInt32Ty(), builder.getInt32Ty());
     } else if (fullyQualifiedSymbol == "coro_invoke_i32x2_i32") {
       std::vector<const Type*> argTypes;
@@ -302,7 +311,16 @@ llvm::Value* CodegenPass::lookup(const std::string& fullyQualifiedSymbol) {
       argTypes.push_back(builder.getInt32Ty());
       v = emitCoroInvokeFn(builder.getInt32Ty(),
         llvm::StructType::get(mod->getContext(), argTypes));
-    } else if (fullyQualifiedSymbol == "coro_yield_i32_i32") {
+    } else if (fullyQualifiedSymbol == "coro_invoke_i32_i32x2") {
+      std::vector<const Type*> argTypes;
+      argTypes.push_back(builder.getInt32Ty());
+      argTypes.push_back(builder.getInt32Ty());
+      v = emitCoroInvokeFn(
+        llvm::StructType::get(mod->getContext(), argTypes),
+        builder.getInt32Ty());
+    }
+
+      else if (fullyQualifiedSymbol == "coro_yield_i32_i32") {
       v = emitCoroYieldFn(builder.getInt32Ty(), builder.getInt32Ty());
     } else if (fullyQualifiedSymbol == "coro_yield_i32x2_i32") {
       std::vector<const Type*> argTypes;
@@ -310,6 +328,13 @@ llvm::Value* CodegenPass::lookup(const std::string& fullyQualifiedSymbol) {
       argTypes.push_back(builder.getInt32Ty());
       v = emitCoroYieldFn(builder.getInt32Ty(),
         llvm::StructType::get(mod->getContext(), argTypes));
+    }  else if (fullyQualifiedSymbol == "coro_yield_i32_i32x2") {
+      std::vector<const Type*> argTypes;
+      argTypes.push_back(builder.getInt32Ty());
+      argTypes.push_back(builder.getInt32Ty());
+      v = emitCoroYieldFn(
+        llvm::StructType::get(mod->getContext(), argTypes),
+        builder.getInt32Ty());
     }
   }
 
@@ -959,6 +984,12 @@ void CodegenPass::visit(CallAST* ast) {
     ExprAST* arg = ast->parts[i];
 
     FnAST* fn = dynamic_cast<FnAST*>(arg);
+
+    if (!(i < FT->getNumContainedTypes())) {
+      foster::dumpExprStructure(llvm::errs(), ast);
+    }
+
+    ASSERT(i < FT->getNumContainedTypes()) << "i = " << i << "; FT = " << str(FT) << show(ast);
     const llvm::Type* expectedType = FT->getContainedType(i);
     if (fn && fn->isClosure()) {
       // continue...
@@ -1040,6 +1071,15 @@ void CodegenPass::visit(CallAST* ast) {
   for (size_t i = 0; i < valArgs.size(); ++i) {
     llvm::Value*& V = valArgs[i];
 
+    llvm::errs() << "::FT = " << *FT << "; " << i
+        << "; " << FT->getNumContainedTypes()
+        << "; " << valArgs.size() << "\n";
+
+    ASSERT(FT->getNumContainedTypes() > (i+1)) << "i = " << i
+        << "; FT->getNumContainedTypes() = " << FT->getNumContainedTypes()
+        << "; valArgs.size() = " << valArgs.size()
+        << "; FT = " << str(FT) << "::" << show(ast) << "\n";
+
     // ContainedType[0] is the return type; args start at 1
     const llvm::Type* expectedType = FT->getContainedType(i + 1);
 
@@ -1108,11 +1148,12 @@ void CodegenPass::visit(CallAST* ast) {
     // from the variable's implicit address.
     // So, if our expected type is pointer-to-our-value-type, and
     // our value is a load, we'll pull the pointer from the load.
-    if (expectedType->isPointerTy()
-      && expectedType->getContainedType(0) == V->getType()) {
-      if (llvm::LoadInst* load = dyn_cast<llvm::LoadInst>(V)) {
-        V = load->getPointerOperand();
-        load->eraseFromParent();
+    if (expectedType->isPointerTy()) {
+      if (expectedType->getContainedType(0) == V->getType()) {
+        if (llvm::LoadInst* load = dyn_cast<llvm::LoadInst>(V)) {
+          V = load->getPointerOperand();
+          load->eraseFromParent();
+        }
       }
     }
 

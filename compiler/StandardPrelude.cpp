@@ -199,6 +199,9 @@ addConcretePrimitiveFunctionsTo(Module* m) {
   globalNames.insert("coro_create_i32_i32");
   globalNames.insert("coro_invoke_i32_i32");
   globalNames.insert("coro_yield_i32_i32");
+  globalNames.insert("coro_create_i32_i32x2");
+  globalNames.insert("coro_invoke_i32_i32x2");
+  globalNames.insert("coro_yield_i32_i32x2");
 }
 
 // Add module m's C-linkage functions in the global scopes,

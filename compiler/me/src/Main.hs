@@ -296,10 +296,15 @@ rootContext =
     ,("coro_invoke_i32_i32", coroInvokeType [i32] [i32])
     ,("coro_yield_i32_i32",  coroYieldType  [i32] [i32])
 
-
     ,("coro_create_i32x2_i32", coroCreateType [i32, i32] [i32])
     ,("coro_invoke_i32x2_i32", coroInvokeType [i32, i32] [i32])
     ,("coro_yield_i32x2_i32",  coroYieldType  [i32, i32] [i32])
+
+    ,("coro_create_i32_i32x2", coroCreateType [i32] [i32,i32])
+    ,("coro_invoke_i32_i32x2", coroInvokeType [i32] [i32,i32])
+    ,("coro_yield_i32_i32x2",  coroYieldType  [i32] [i32,i32])
+
+
     ,("primitive_sext_i64_i32", mkFnType [i32] [i64])
     ,("primitive_negate_i32",   mkFnType [i32] [i32])
     ,("primitive_bitnot_i1",    mkFnType [i1] [i1])
