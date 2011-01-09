@@ -21,6 +21,7 @@ using namespace llvm;
 namespace foster {
 
 std::set<string> globalNames;
+bool gPrintLLVMImports = false;
 
 static const char* sOps[] = {
   "negate", "bitnot",
@@ -145,8 +146,9 @@ addConcretePrimitiveFunctionTo(Module* m, const char* op, const Type* ty) {
     fty = pty->getElementType();
   }
 
-
-  llvm::outs() << "\t" << name << " :: " << str(fty) << "\n";
+  if (gPrintLLVMImports) {
+    llvm::outs() << "\t" << name << " :: " << str(fty) << "\n";
+  }
 
   gScope.insert(name, new VariableAST(name,
                                       TypeAST::reconstruct(fty),
@@ -223,7 +225,9 @@ putModuleMembersInInternalScope(const std::string& scopeName,
     std::string name = (*it).first;
     const Type* ty   = (*it).second;
 
-    outs() << "type " << name << " = " << str(ty) << "\n";
+    if (gPrintLLVMImports) {
+      outs() << "type " << name << " = " << str(ty) << "\n";
+    }
 
     // TODO do we need to explicitly copy the type to the linkee?
     linkee->addTypeName(name, ty);
@@ -238,7 +242,9 @@ putModuleMembersInInternalScope(const std::string& scopeName,
       continue;
     }
 
-    outs() << "<internal>\tglobal\t" << gv.getName() << "\n";
+    if (gPrintLLVMImports) {
+      outs() << "<internal>\tglobal\t" << gv.getName() << "\n";
+    }
     linkee->getOrInsertGlobal(gv.getName(), gv.getType());
   }
 
@@ -286,7 +292,9 @@ putModuleMembersInInternalScope(const std::string& scopeName,
           fnty,
           f.getAttributes());
 
-      outs() << "<internal>\t" << hasDef << "\t" << name << " \n";
+      if (gPrintLLVMImports) {
+        outs() << "<internal>\t" << hasDef << "\t" << name << " \n";
+      }
 
       scope->insert(name, new VariableAST(name,
                                           TypeAST::reconstruct(fnty),
@@ -300,7 +308,9 @@ putModuleMembersInInternalScope(const std::string& scopeName,
   // LLVM to include declarations in the module in the first place.
   for (std::set<std::string>::iterator it = functionsToRemove.begin();
                          it != functionsToRemove.end(); ++it) {
-    outs() << "not including function " << *it << "\n";
+    if (gPrintLLVMImports) {
+      outs() << "not including function " << *it << "\n";
+    }
     m->getFunctionList().erase(m->getFunction(*it));
   }
 
@@ -340,8 +350,10 @@ void putModuleMembersInScope(Module* m, Module* linkee) {
             fnty,
             f.getAttributes());
 
-        outs() << "inserting variable in global scope: " << name << " : "
-                  << str(fnty) << "\n";
+        if (gPrintLLVMImports) {
+          outs() << "inserting variable in global scope: " << name << " : "
+                 << str(fnty) << "\n";
+        }
 
         gScope.insert(name, new VariableAST(name,
                                             TypeAST::reconstruct(fnty),
