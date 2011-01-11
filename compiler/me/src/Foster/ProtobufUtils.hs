@@ -174,7 +174,7 @@ parseVar pbexpr lines = E_VarAST (fmap parseType (PbExpr.type' pbexpr))
 parseModule :: PbExpr.Expr -> SourceLines -> ModuleAST FnAST
 parseModule pbexpr lines =
     ModuleAST [parseFn e lines| e <- toList $ PbExpr.parts pbexpr]
-              (parseRange pbexpr lines)
+              lines
 
 
 parseProtoP :: PbExpr.Expr -> SourceLines -> PrototypeAST
@@ -228,7 +228,7 @@ parseSourceLocation sr = -- This may fail for files of more than 2^29 lines...
 
 parseRange :: PbExpr.Expr -> SourceLines ->  ESourceRange
 parseRange pbexpr lines = case PbExpr.range pbexpr of
-                        Nothing   -> EMissingSourceRange
+                        Nothing   -> EMissingSourceRange (show $ PbExpr.tag pbexpr)
                         (Just r)  -> sourceRangeFromPBRange r lines
 
 parseExpr :: PbExpr.Expr -> SourceLines -> ExprAST
@@ -363,7 +363,7 @@ dumpSourceLocation (ESourceLocation line col) =
     Pb.SourceLocation (intToInt32 line) (intToInt32 col)
 
 dumpRange :: ESourceRange -> Maybe Pb.SourceRange
-dumpRange EMissingSourceRange = Nothing
+dumpRange (EMissingSourceRange s) = Nothing
 dumpRange range =
     Just (Pb.SourceRange (fmap u8fromString $ sourceRangeFile  range)
                         (dumpSourceLocation $ sourceRangeBegin range)
@@ -399,15 +399,13 @@ dumpVar (AnnVar t v) =
 dumpModule :: ModuleAST AnnFn -> PbExpr.Expr
 dumpModule mod = P'.defaultValue {
       parts = fromList [dumpExpr (E_AnnFn f) | f <- moduleASTfunctions mod]
-    , PbExpr.range = dumpRange (moduleASTsourceRange mod)
     , PbExpr.tag   = MODULE }
 
 -----------------------------------------------------------------------
 
 dumpSourceModule :: ModuleAST AnnFn -> SourceModule
 dumpSourceModule mod =
-    let range = moduleASTsourceRange mod in
-    let (SourceLines seq) = sourceRangeLines range in -- seq :: Seq T.Text
+    let (SourceLines seq) = moduleASTsourceLines mod in -- seq :: Seq T.Text
     SourceModule { line = fmap textToPUtf8 seq , expr = (dumpModule mod) }
 
 dumpModuleToProtobuf :: ModuleAST AnnFn -> FilePath -> IO ()

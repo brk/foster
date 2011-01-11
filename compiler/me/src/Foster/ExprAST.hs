@@ -27,13 +27,13 @@ data ESourceRange = ESourceRange { sourceRangeBegin :: ESourceLocation
                                  , sourceRangeLines :: SourceLines
                                  , sourceRangeFile  :: Maybe String
                                  }
-                  | EMissingSourceRange
+                  | EMissingSourceRange String
 
 instance Show ESourceRange where
     show = showSourceRange
 
 showSourceRange :: ESourceRange -> String
-showSourceRange EMissingSourceRange = ""
+showSourceRange (EMissingSourceRange s) = "<missing range: " ++ s ++ ">"
 showSourceRange (ESourceRange begin end lines filepath) = "\n" ++ showSourceLines begin end lines ++ "\n"
 
 -- If a single line is specified, show it with highlighting;
@@ -122,7 +122,7 @@ instance Expr AnnExpr where
 
 data ModuleAST fnType = ModuleAST {
           moduleASTfunctions   :: [fnType]
-        , moduleASTsourceRange :: ESourceRange
+        , moduleASTsourceLines :: SourceLines
      }
 
 data Literal = LitInt LiteralInt

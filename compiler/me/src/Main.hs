@@ -53,18 +53,27 @@ typeJoinVars vars (Just (TupleTypeAST expTys)) =
     [(AnnVar (fromJust (typeJoin t e)) v) | ((AnnVar t v), e) <- (List.zip vars expTys)]
 
 
-getBindings :: PrototypeAST -> Maybe TypeAST -> [(String, TypeAST)]
+getBindings :: PrototypeAST -> Maybe TypeAST -> Context
 getBindings (PrototypeAST t s vars) maybeExpTy =
-    let bindings = map (\v -> (avarName v, avarType v)) (typeJoinVars vars maybeExpTy) in
+    let bindingForVar v = TermVarBinding (avarName v) (avarType v) in
+    let bindings = map bindingForVar (typeJoinVars vars maybeExpTy) in
     trace ("getBindings: " ++ show bindings) $
       bindings
 
+data ContextBinding = TermVarBinding String TypeAST
+type Context = [ContextBinding]
 
 
-type Context = [(String, TypeAST)]
+instance Show ContextBinding where
+    show (TermVarBinding s ty) = "(termvar " ++ s ++ " :: " ++ show ty
 
 extendContext :: Context -> PrototypeAST -> Maybe TypeAST -> Context
 extendContext ctx proto expFormals = (getBindings proto expFormals) ++ ctx
+
+termVarLookup :: String -> Context -> Maybe TypeAST
+termVarLookup name (bindings) =
+    let termbindings = [(nm, ty) | (TermVarBinding nm ty) <- bindings] in
+    lookup name termbindings
 
 
 data TypecheckResult expr
@@ -110,7 +119,7 @@ typecheck ctx expr maybeExpTy =
                                      tb <- typecheck ctx b Nothing
                                      typecheckSubscript ta (typeAST ta) tb maybeExpTy
         E_TupleAST  exprs b   -> typecheckTuple ctx exprs b maybeExpTy
-        E_VarAST mt s -> case lookup s ctx of
+        E_VarAST mt s -> case termVarLookup s ctx of
             Just t  -> Annotated $ E_AnnVar (AnnVar t s)
             Nothing -> throwError $ "Unknown variable " ++ s
         E_CompilesAST e c -> case c of
@@ -281,52 +290,52 @@ coroCreateType args rets = mkFnType [mkFnType args rets] [mkCoroType args rets]
 
 rootContext :: Context
 rootContext =
-    [("llvm_readcyclecounter", mkFnType [] [i64])
-    ,("expect_i32",  mkFnType [i32] [i32])
-    ,( "print_i32",  mkFnType [i32] [i32])
-    ,("expect_i32b", mkFnType [i32] [i32])
-    ,( "print_i32b", mkFnType [i32] [i32])
-    ,("expect_i64b", mkFnType [i64] [i32])
-    ,( "print_i64b", mkFnType [i64] [i32])
-    ,(  "read_i32", mkFnType  []    [i32])
-    ,("expect_i1", mkFnType [i1] [i32])
-    ,( "print_i1", mkFnType [i1] [i32])
+    [TermVarBinding "llvm_readcyclecounter" $ mkFnType [] [i64]
+    ,TermVarBinding "expect_i32"  $ mkFnType [i32] [i32]
+    ,TermVarBinding  "print_i32"  $ mkFnType [i32] [i32]
+    ,TermVarBinding "expect_i32b" $ mkFnType [i32] [i32]
+    ,TermVarBinding  "print_i32b" $ mkFnType [i32] [i32]
+    ,TermVarBinding "expect_i64b" $ mkFnType [i64] [i32]
+    ,TermVarBinding  "print_i64b" $ mkFnType [i64] [i32]
+    ,TermVarBinding   "read_i32"  $ mkFnType  []   [i32]
+    ,TermVarBinding "expect_i1"   $ mkFnType [i1] [i32]
+    ,TermVarBinding  "print_i1"   $ mkFnType [i1] [i32]
 
-    ,("coro_create_i32_i32", coroCreateType [i32] [i32])
-    ,("coro_invoke_i32_i32", coroInvokeType [i32] [i32])
-    ,("coro_yield_i32_i32",  coroYieldType  [i32] [i32])
+    ,TermVarBinding "coro_create_i32_i32" $ coroCreateType [i32] [i32]
+    ,TermVarBinding "coro_invoke_i32_i32" $ coroInvokeType [i32] [i32]
+    ,TermVarBinding "coro_yield_i32_i32"  $ coroYieldType  [i32] [i32]
 
-    ,("coro_create_i32x2_i32", coroCreateType [i32, i32] [i32])
-    ,("coro_invoke_i32x2_i32", coroInvokeType [i32, i32] [i32])
-    ,("coro_yield_i32x2_i32",  coroYieldType  [i32, i32] [i32])
+    ,TermVarBinding "coro_create_i32x2_i32" $ coroCreateType [i32, i32] [i32]
+    ,TermVarBinding "coro_invoke_i32x2_i32" $ coroInvokeType [i32, i32] [i32]
+    ,TermVarBinding "coro_yield_i32x2_i32"  $ coroYieldType  [i32, i32] [i32]
 
-    ,("coro_create_i32_i32x2", coroCreateType [i32] [i32,i32])
-    ,("coro_invoke_i32_i32x2", coroInvokeType [i32] [i32,i32])
-    ,("coro_yield_i32_i32x2",  coroYieldType  [i32] [i32,i32])
+    ,TermVarBinding "coro_create_i32_i32x2" $ coroCreateType [i32] [i32,i32]
+    ,TermVarBinding "coro_invoke_i32_i32x2" $ coroInvokeType [i32] [i32,i32]
+    ,TermVarBinding "coro_yield_i32_i32x2"  $ coroYieldType  [i32] [i32,i32]
 
 
-    ,("primitive_sext_i64_i32", mkFnType [i32] [i64])
-    ,("primitive_negate_i32",   mkFnType [i32] [i32])
-    ,("primitive_bitnot_i1",    mkFnType [i1] [i1])
-    ,("primitive_bitshl_i32",   mkFnType [i32, i32] [i32])
-    ,("primitive_bitashr_i32",  mkFnType [i32, i32] [i32])
-    ,("primitive_bitlshr_i32",  mkFnType [i32, i32] [i32])
-    ,("primitive_bitor_i32",    mkFnType [i32, i32] [i32])
-    ,("primitive_bitand_i32",   mkFnType [i32, i32] [i32])
-    ,("primitive_bitxor_i32",   mkFnType [i32, i32] [i32])
-    ,("force_gc_for_debugging_purposes", mkFnType [] [])
+    ,TermVarBinding "primitive_sext_i64_i32" $ mkFnType [i32] [i64]
+    ,TermVarBinding "primitive_negate_i32"   $ mkFnType [i32] [i32]
+    ,TermVarBinding "primitive_bitnot_i1"    $ mkFnType [i1] [i1]
+    ,TermVarBinding "primitive_bitshl_i32"   $ mkFnType [i32, i32] [i32]
+    ,TermVarBinding "primitive_bitashr_i32"  $ mkFnType [i32, i32] [i32]
+    ,TermVarBinding "primitive_bitlshr_i32"  $ mkFnType [i32, i32] [i32]
+    ,TermVarBinding "primitive_bitor_i32"    $ mkFnType [i32, i32] [i32]
+    ,TermVarBinding "primitive_bitand_i32"   $ mkFnType [i32, i32] [i32]
+    ,TermVarBinding "primitive_bitxor_i32"   $ mkFnType [i32, i32] [i32]
+    ,TermVarBinding "force_gc_for_debugging_purposes" $ mkFnType [] []
 
-    ,("primitive_<_i64", mkFnType [i64, i64] [i1])
-    ,("primitive_-_i64", mkFnType [i64, i64] [i64])
-    ,("primitive_-_i32", mkFnType [i32, i32] [i32])
-    ,("primitive_*_i32", mkFnType [i32, i32] [i32])
-    ,("primitive_+_i32", mkFnType [i32, i32] [i32])
-    ,("primitive_<_i32", mkFnType [i32, i32] [i1])
-    ,("primitive_<=_i32",  mkFnType [i32, i32] [i1])
-    ,("primitive_==_i32",  mkFnType [i32, i32] [i1])
+    ,TermVarBinding "primitive_<_i64"  $ mkFnType [i64, i64] [i1]
+    ,TermVarBinding "primitive_-_i64"  $ mkFnType [i64, i64] [i64]
+    ,TermVarBinding "primitive_-_i32"  $ mkFnType [i32, i32] [i32]
+    ,TermVarBinding "primitive_*_i32"  $ mkFnType [i32, i32] [i32]
+    ,TermVarBinding "primitive_+_i32"  $ mkFnType [i32, i32] [i32]
+    ,TermVarBinding "primitive_<_i32"  $ mkFnType [i32, i32] [i1]
+    ,TermVarBinding "primitive_<=_i32" $ mkFnType [i32, i32] [i1]
+    ,TermVarBinding "primitive_==_i32" $ mkFnType [i32, i32] [i1]
     ]
 
-isPrimitiveName name = isJust $ lookup name rootContext
+isPrimitiveName name = isJust $ termVarLookup name rootContext
 
 fnName :: FnAST -> String
 fnName f = prototypeASTname (fnProto f)
@@ -335,7 +344,7 @@ fnFreeVariables :: FnAST -> Context -> [String]
 fnFreeVariables f ctx =
     let allCalledFns = Set.fromList $ freeVariables (fnBody f) in
     -- remove names of primitive functions
-    let nonPrimitives = Set.filter (\var -> not (isJust $ lookup var ctx)) allCalledFns in
+    let nonPrimitives = Set.filter (\var -> not (isJust $ termVarLookup var ctx)) allCalledFns in
     -- remove recursive function name calls
     Set.toList $ Set.filter (\name -> prototypeASTname (fnProto f) /= name) nonPrimitives
 
@@ -348,7 +357,7 @@ fnNameA :: AnnFn -> String
 fnNameA f = annProtoName (annFnProto f)
 
 extendContextWithFnA :: AnnFn -> Context -> Context
-extendContextWithFnA f ctx = (fnNameA f, annFnType f):ctx
+extendContextWithFnA f ctx = (TermVarBinding (fnNameA f) (annFnType f)):ctx
 
 fnTypeFrom :: FnAST -> TypeAST
 fnTypeFrom f =
@@ -357,7 +366,7 @@ fnTypeFrom f =
     FnTypeAST intype outtype (fmap (map avarName) (fnClosedVars f))
 
 extendContextWithFn :: FnAST -> Context -> Context
-extendContextWithFn f ctx = (fnName f, fnTypeFrom f):ctx
+extendContextWithFn f ctx = (TermVarBinding (fnName f) (fnTypeFrom f)):ctx
 
 -- Every function in the SCC should typecheck against the input context,
 -- and the resulting context should include the computed types of each
@@ -397,7 +406,7 @@ typecheckModule mod = do
     (annFns, _ctx) <- mapFoldM sortedFns ctx typecheckFnSCC
     -- annFns :: [TypecheckResult AnnExpr]
     if allAnnotated annFns
-        then return $ Just (ModuleAST [f | (Annotated (E_AnnFn f)) <- annFns] (moduleASTsourceRange mod))
+        then return $ Just (ModuleAST [f | (Annotated (E_AnnFn f)) <- annFns] (moduleASTsourceLines mod))
         else return $ Nothing
 
 allAnnotated :: [TypecheckResult AnnExpr] -> Bool
@@ -447,7 +456,7 @@ trMaybe :: TypecheckResult AnnExpr -> Maybe AnnExpr
 trMaybe (TypecheckErrors _) = Nothing
 trMaybe (Annotated ae) = Just $ ae
 
-test1 = let term = (E_BoolAST EMissingSourceRange True) in
+test1 = let term = (E_BoolAST (EMissingSourceRange "") True) in
         let expectedType = Nothing in
         let anticipated = (AnnBool True) in
         TestCase (do let taa = trMaybe $ typecheck rootContext term expectedType
