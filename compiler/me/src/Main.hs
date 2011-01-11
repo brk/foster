@@ -419,8 +419,8 @@ inspect typechecked ast =
             putStrLn $ "Successful typecheck!\n" ++ showStructure e
             return True
         TypecheckErrors errs -> do
-            forM_ errs $ \err -> do putStrLn $ "Typecheck error: " ++ err
             putStrLn $ showStructure ast
+            forM_ errs $ \err -> do putStrLn $ "Typecheck error: " ++ err
             return False
 
 -----------------------------------------------------------------------
