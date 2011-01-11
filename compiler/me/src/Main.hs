@@ -295,6 +295,8 @@ rootContext =
     ,TermVarBinding  "print_i32"  $ mkFnType [i32] [i32]
     ,TermVarBinding "expect_i32b" $ mkFnType [i32] [i32]
     ,TermVarBinding  "print_i32b" $ mkFnType [i32] [i32]
+    ,TermVarBinding "expect_i64"  $ mkFnType [i64] [i32]
+    ,TermVarBinding  "print_i64"  $ mkFnType [i64] [i32]
     ,TermVarBinding "expect_i64b" $ mkFnType [i64] [i32]
     ,TermVarBinding  "print_i64b" $ mkFnType [i64] [i32]
     ,TermVarBinding   "read_i32"  $ mkFnType  []   [i32]
