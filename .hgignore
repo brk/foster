@@ -10,6 +10,7 @@ diff.txt
 tools/c-viewer/
 dox/
 notes/_build/
+compiler/me/FosterAST.proto
 compiler/me/dist/
 compiler/me/src/Foster/Pb/
 compiler/me/src/Foster/Pb.hs
