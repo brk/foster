@@ -67,31 +67,23 @@ def testname(testpath):
   """Given '/path/to/some/test.foster', returns 'test'"""
   return os.path.basename(testpath).replace('.foster', '')
 
-def compile_test_to_bitcode(paths, testpath, compilelog):
-    old_style = False
+def compile_test_to_bitcode(paths, testpath, compilelog, finalname):
+    # running fosterparse on a source file produces a ParsedAST
+    (s1, e1) = run_command(['fosterparse', testpath, '_out.parsed.pb'], paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
 
-    if old_style:
-        fosterc_cmdline = [ paths['fosterc'], testpath, '-O0' ]
-        print ' '.join(fosterc_cmdline)
-        rv, fc_elapsed = run_command(fosterc_cmdline, paths, testpath, stdout=compilelog, stderr=compilelog)
-        return (rv, 0, fc_elapsed, 0)
-    else:
-        # running fosterparse on a source file produces a ParsedAST
-        (s1, e1) = run_command(['fosterparse', testpath, '_out.parsed.pb'], paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
+    # running fostercheck on a ParsedAST produces an ElaboratedAST
+    (s2, e2) = run_command(['fostercheck', '_out.parsed.pb', '_out.checked.pb'], paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
 
-        # running fostercheck on a ParsedAST produces an ElaboratedAST
-        (s2, e2) = run_command(['fostercheck', '_out.parsed.pb', '_out.checked.pb'], paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
+    # running fosterlower on a ParsedAST produces a bitcode Module
+    # linking a bunch of Modules produces a Module
+    (s3, e3) = run_command(['fosterlower', '_out.checked.pb', '-o', finalname, '-O0', '-dump-prelinked'], paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
 
-        # running fosterlower on a ParsedAST produces a bitcode Module
-        # linking a bunch of Modules produces a Module
-        (s3, e3) = run_command(['fosterlower', '_out.checked.pb', '-O0', '-dump-prelinked'], paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
+    # Running opt on a Module produces a Module
+    # Running llc on a Module produces an assembly file
+    #(s4, e4) = run_command(['fosteroptc', '_out.checked.pb', '-O0'], paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
 
-        # Running opt on a Module produces a Module
-        # Running llc on a Module produces an assembly file
-        #(s4, e4) = run_command(['fosteroptc', '_out.checked.pb', '-O0'], paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
-
-        #return (s4, e1, e2, e3, e4)
-        return (s3, e1, e2, e3, 0)
+    #return (s4, e1, e2, e3, e4)
+    return (s3, e1, e2, e3, 0)
 
 def run_one_test(testpath, paths, tmpdir):
   start = walltime()
@@ -101,11 +93,11 @@ def run_one_test(testpath, paths, tmpdir):
     with open(act_filename, 'w') as actual:
       with open(os.path.join(tmpdir, "compile.log.txt"), 'w') as compilelog:
         infile = extract_expected_input(testpath)
+        finalname = 'out'
+        rv, fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed = compile_test_to_bitcode(paths, testpath, compilelog, finalname)
 
-        rv, fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed = compile_test_to_bitcode(paths, testpath, compilelog)
-
-        rv, as_elapsed = run_command('g++ out.s -c -o out.o', paths, testpath)
-        rv, ld_elapsed = run_command('g++ out.o %s %s -o a.out' % (get_static_libs(), get_link_flags()),
+        rv, as_elapsed = run_command('g++ %s.s -c -o %s.o' % (finalname, finalname), paths, testpath)
+        rv, ld_elapsed = run_command('g++ %s.o %s %s -o a.out' % (finalname, get_static_libs(), get_link_flags()),
                                     paths, testpath)
         rv, rn_elapsed = run_command('a.out',  paths, testpath, stdout=actual, stderr=expected, stdin=infile, strictrv=False)
 

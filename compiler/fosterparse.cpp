@@ -20,6 +20,8 @@
 #include <iostream>
 #include <fstream>
 
+// Usage:
+//        fosterparse <inputfile.foster> <outputfile.pb>
 // Input: a path to a Foster source file.
 // Output: an AST corresponding to the input source,
 //         serialized in Protobuf format.

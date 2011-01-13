@@ -104,6 +104,11 @@ private:
 static cl::opt<string>
 optInputPath(cl::Positional, cl::desc("<input file>"));
 
+static cl::opt<string>
+optOutputName("o",
+  cl::desc("[foster] Base name of output file"),
+  cl::init("out"));
+
 static cl::opt<bool>
 optCompileSeparately("c",
   cl::desc("[foster] Compile separately, don't automatically link imported modules"));
@@ -542,7 +547,7 @@ int main(int argc, char** argv) {
   }
 
   if (optDumpPreLinkedIR) {
-    dumpModuleToFile(module, dumpdirFile("out.prelink.ll").c_str());
+    dumpModuleToFile(module, dumpdirFile(optOutputName + ".prelink.ll").c_str());
   }
 
   if (optMake) {
@@ -552,16 +557,16 @@ int main(int argc, char** argv) {
     }
 
     if (optDumpPostLinkedIR) {
-      dumpModuleToFile(module, dumpdirFile("out.preopt.ll"));
+      dumpModuleToFile(module, dumpdirFile(optOutputName + ".preopt.ll"));
     }
 
     optimizeModuleAndRunPasses(module);
 
     if (optDumpPostOptIR) {
-      dumpModuleToFile(module, dumpdirFile("out.postopt.ll"));
+      dumpModuleToFile(module, dumpdirFile(optOutputName + ".postopt.ll"));
     }
 
-    compileToNativeAssembly(module, dumpdirFile("out.s"));
+    compileToNativeAssembly(module, dumpdirFile(optOutputName + ".s"));
   } else { // -c, compile to module instead of native assembly
     std::string outBcFilename(mainModulePath.getLast().str() + ".out.bc");
     dumpModuleToBitcode(module, dumpdirFile(outBcFilename));

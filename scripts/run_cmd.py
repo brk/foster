@@ -28,11 +28,11 @@ def elapsed_since(start):
 
 
 class TestFailed(Exception):
-  def __init__(self, arglist, path):
-    self.arglist = arglist
+  def __init__(self, cmdline, path):
+    self.cmdline = cmdline
     self.path = path
   def __str__(self):
-    return "Failed to run " + ' '.join(self.arglist) + "\n\tfor test " + self.path
+    return "Failed to run " + self.cmdline + "\n\tfor test " + self.path
 
 # returns (status, elapsed-time-ms)
 def run_command(cmd, paths, testpath, stdout=None, stderr=None, stdin=None, strictrv=True):
@@ -42,15 +42,13 @@ def run_command(cmd, paths, testpath, stdout=None, stderr=None, stdin=None, stri
 
   start = walltime()
   rv = subprocess.call( arglist, stdout=stdout, stderr=stderr, stdin=stdin)
+  end = walltime()
 
   cmdline = ' '.join(arglist)
   if not stdin is None:
     cmdline += " < " + stdin.name
-  #print cmdline, ' returned rv = ' , rv
-
-  end = walltime()
 
   if strictrv and rv != 0:
-    raise TestFailed(arglist, testpath)
+    raise TestFailed(cmdline, testpath)
   return (rv, elapsed(start, end))
 
