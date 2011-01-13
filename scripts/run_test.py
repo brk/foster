@@ -84,11 +84,14 @@ def compile_test_to_bitcode(paths, testpath, compilelog):
 
         # running fosterlower on a ParsedAST produces a bitcode Module
         # linking a bunch of Modules produces a Module
-        # Running opt on a Module produces a Module
-        # Running llc on a Module produces an assembly file
         (s3, e3) = run_command(['fosterlower', '_out.checked.pb', '-O0', '-dump-prelinked'], paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
 
-        return (s3, e1, e2, e3)
+        # Running opt on a Module produces a Module
+        # Running llc on a Module produces an assembly file
+        #(s4, e4) = run_command(['fosteroptc', '_out.checked.pb', '-O0'], paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
+
+        #return (s4, e1, e2, e3, e4)
+        return (s3, e1, e2, e3, 0)
 
 def run_one_test(testpath, paths, tmpdir):
   start = walltime()
@@ -99,7 +102,7 @@ def run_one_test(testpath, paths, tmpdir):
       with open(os.path.join(tmpdir, "compile.log.txt"), 'w') as compilelog:
         infile = extract_expected_input(testpath)
 
-        rv, fp_elapsed, fc_elapsed, fl_elapsed = compile_test_to_bitcode(paths, testpath, compilelog)
+        rv, fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed = compile_test_to_bitcode(paths, testpath, compilelog)
 
         rv, as_elapsed = run_command('g++ out.s -c -o out.o', paths, testpath)
         rv, ld_elapsed = run_command('g++ out.o %s %s -o a.out' % (get_static_libs(), get_link_flags()),
@@ -113,12 +116,12 @@ def run_one_test(testpath, paths, tmpdir):
           tests_failed.add(testpath)
 
         total_elapsed = elapsed_since(start)
-        compile_elapsed = (as_elapsed + ld_elapsed + fp_elapsed + fc_elapsed + fl_elapsed)
+        compile_elapsed = (as_elapsed + ld_elapsed + fp_elapsed + fm_elapsed + fl_elapsed + fc_elapsed)
         overhead = total_elapsed - (compile_elapsed + rn_elapsed)
-        print "fpr:%4d | foc:%4d | flo:%4d | as:%4d | ld:%4d | run:%4d | py:%3d | tot:%5d | %s" % (fp_elapsed, fc_elapsed, fl_elapsed,
+        print "fpr:%4d | fme:%4d | flo:%4d | foc:%4d | as:%4d | ld:%4d | run:%4d | py:%3d | tot:%5d | %s" % (fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed,
                         as_elapsed, ld_elapsed, rn_elapsed, overhead, total_elapsed, testname(testpath))
 
-        print "fpr:%3.0f%% | foc:%3.0f%% | flo:%3.0f%% | as:%3.0f%% | ld:%3.0f%%" % tuple(100.0*x/float(compile_elapsed) for x in list((fp_elapsed, fc_elapsed, fl_elapsed, as_elapsed, ld_elapsed)))
+        print "fpr:%3.0f%% | fme:%3.0f%% | flo:%3.0f%% | foc:%3.0f%% |as:%3.0f%% | ld:%3.0f%%" % tuple(100.0*x/float(compile_elapsed) for x in list((fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed, as_elapsed, ld_elapsed)))
         print "".join("-" for x in range(60))
         infile.close()
 
