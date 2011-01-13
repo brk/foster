@@ -5,6 +5,7 @@
 #include "base/Assert.h"
 #include "base/LLVMUtils.h"
 
+#include "llvm/Target/TargetSelect.h"
 #include "llvm/Instructions.h"
 #include "llvm/Metadata.h"
 #include "llvm/LLVMContext.h"
@@ -17,6 +18,83 @@
 using llvm::Type;
 using llvm::getGlobalContext;
 
+
+namespace foster {
+
+llvm::IRBuilder<> builder(llvm::getGlobalContext());
+
+/// Macros in TargetSelect.h conflict with those from ANTLR, so this code
+/// must be in a source file that does not include any ANTLR files.
+void
+initializeLLVM() {
+  llvm::InitializeNativeTarget();
+
+  // Initializing the native target doesn't initialize the native
+  // target's ASM printer, so we have to do it ourselves.
+  #if LLVM_NATIVE_ARCH == X86Target
+    LLVMInitializeX86AsmPrinter();
+  #else
+    llvm::errs() << "Warning: not initializing any asm printer!\n";
+  #endif
+}
+
+void
+validateInputFile(const std::string& pathstr) {
+  llvm::sys::PathWithStatus path(pathstr);
+
+  if (path.empty()) {
+    EDiag() << "Error: need an input filename!";
+    exit(1);
+  }
+
+  std::string err;
+  const llvm::sys::FileStatus* status
+         = path.getFileStatus(/*forceUpdate=*/ false, &err);
+  if (!status) {
+    if (err.empty()) {
+      EDiag() << "Error occurred when reading input path '"
+              << pathstr << "'";
+    } else {
+      EDiag() << "Error validating input path: " << err;
+    }
+    exit(1);
+  }
+
+  if (status->isDir) {
+    EDiag() << "Error: input must be a file, not a directory!";
+    exit(1);
+  }
+}
+
+void validateOutputFile(const std::string& pathstr) {
+  llvm::sys::Path outputPath(pathstr);
+  llvm::sys::PathWithStatus path(outputPath.getDirname());
+
+  if (pathstr.empty()) {
+    EDiag() << "Error: need an output filename!";
+    exit(1);
+  }
+
+  std::string err;
+  const llvm::sys::FileStatus* status
+         = path.getFileStatus(/*forceUpdate=*/ false, &err);
+  if (!status) {
+    if (err.empty()) {
+      EDiag() << "Error occurred when reading output path '"
+              << pathstr << "'";
+    } else {
+      EDiag() << "Error validating output path: " << err;
+    }
+    exit(1);
+  }
+
+  if (!status->isDir) {
+    EDiag() << "Error: output directory must exist!";
+    exit(1);
+  }
+}
+
+} // namespace foster
 
 void makePathAbsolute(llvm::sys::Path& path) {
   path.makeAbsolute();
@@ -123,4 +201,5 @@ bool isPointerToCompatibleFnTy(const llvm::Type* ty,
  }
  return false;
 }
+
 

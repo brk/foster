@@ -5,12 +5,11 @@
 
 #include "base/Assert.h"
 #include "base/Diagnostics.h"
-#include "base/LLVMUtils.h" // getConstantInt32
+#include "base/LLVMUtils.h" // getConstantInt32, builder
 
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h" // for str()
 #include "parse/FosterUtils.h" // generic_coro_t
-#include "parse/CompilationContext.h" // builder
 
 #include "passes/CodegenPass-impl.h"
 

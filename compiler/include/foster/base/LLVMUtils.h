@@ -7,6 +7,7 @@
 
 #include "llvm/System/DataTypes.h"
 #include "llvm/System/Path.h"
+#include "llvm/Support/IRBuilder.h"
 
 namespace llvm {
   class Type;
@@ -15,8 +16,22 @@ namespace llvm {
   class ConstantInt;
   class Value;
   class CallInst;
+  class raw_ostream;
   namespace sys { class Path; }
 }
+
+namespace foster {
+
+void initializeLLVM();
+
+/// Ensures that the given path exists and is a file, not a directory.
+/// Calls exit() if file is not a readable file.
+void validateInputFile(const std::string& pathstr);
+void validateOutputFile(const std::string& pathstr);
+
+extern llvm::IRBuilder<> builder;
+
+} // namespace foster
 
 void makePathAbsolute(llvm::sys::Path& path);
 

@@ -6,7 +6,6 @@
 #include "base/Diagnostics.h"
 
 #include "parse/OperatorPrecedence.h"
-#include "parse/CompilationContext.h"
 
 #include "pystring/pystring.h"
 

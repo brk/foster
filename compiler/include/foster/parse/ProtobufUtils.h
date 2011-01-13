@@ -20,9 +20,4 @@ ModuleAST* readSourceModuleFromProtobuf(const std::string& pathstr,
 
 void dumpModuleToProtobuf(ModuleAST* mod, const std::string& filename);
 
-/// Ensures that the given path exists and is a file, not a directory.
-/// Calls exit() if file is not a readable file.
-void validateInputFile(const std::string& pathstr);
-void validateOutputFile(const std::string& pathstr);
-
 #endif

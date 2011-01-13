@@ -9,6 +9,7 @@
 #include "llvm/System/Process.h"
 
 #include "base/InputFile.h"
+#include "base/LLVMUtils.h"
 #include "base/InputTextBuffer.h"
 #include "passes/DumpToProtobuf.h"
 #include "parse/ProtobufUtils.h"
@@ -31,16 +32,12 @@ optInputPath(cl::Positional, cl::desc("<input file>"));
 static cl::opt<string>
 optOutputPath(cl::Positional, cl::desc("<output file>"));
 
-namespace foster {
-void initCachedLLVMTypeNames();
-} // namespace foster
-
 int main(int argc, char** argv) {
   ///cl::SetVersionPrinter(&printVersionInfo);
   cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster parser\n");
 
-  validateInputFile(optInputPath);
-  validateOutputFile(optOutputPath);
+  foster::validateInputFile(optInputPath);
+  foster::validateOutputFile(optOutputPath);
   llvm::sys::Path inPath(optInputPath);
   const foster::InputFile infile(inPath);
 
@@ -48,7 +45,7 @@ int main(int argc, char** argv) {
   foster::ANTLRContext* ctx = NULL;
   unsigned numParseErrors = 0;
 
-  foster::initCachedLLVMTypeNames();
+  foster::ParsingContext::initCachedLLVMTypeNames();
 
   foster::ParsingContext::pushNewContext();
   ModuleAST* exprAST = foster::parseModule(infile, optInputPath,

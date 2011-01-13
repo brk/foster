@@ -216,7 +216,7 @@ TypeAST* TypeASTFor(const string& name) {
   }
 }
 
-void initCachedLLVMTypeNames() {
+void ParsingContext::initCachedLLVMTypeNames() {
   gCachedLLVMTypes["i1"] = llvm::IntegerType::get(getGlobalContext(), 1);
   gCachedLLVMTypes["i8"] = llvm::IntegerType::get(getGlobalContext(), 8);
   gCachedLLVMTypes["i16"] = llvm::IntegerType::get(getGlobalContext(), 16);

@@ -3,11 +3,12 @@
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
 #include "base/Diagnostics.h"
+#include "base/LLVMUtils.h"
+
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
 #include "parse/FosterUtils.h"
 #include "parse/ParsingContext.h"
-#include "parse/CompilationContext.h"
 
 #include <sstream>
 

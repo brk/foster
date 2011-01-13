@@ -307,7 +307,6 @@ add_library(fosterc_parse STATIC
   compiler/parse/ANTLRtoFosterAST.cpp
   compiler/parse/ANTLRtoFosterErrorHandling.cpp
   compiler/parse/DefaultExprASTVisitor.cpp
-  compiler/parse/CompilationContext.cpp
   compiler/parse/OperatorPrecedence.cpp
   compiler/parse/DumpStructure.cpp
   compiler/parse/ProtobufToAST.cpp
@@ -365,7 +364,6 @@ endif (${LLVM_ORIGINAL_CFLAGS} MATCHES ${NO_RTTI_FLAG})
 ############
 
 add_executable(fosterparse compiler/fosterparse.cpp)
-add_dependencies(fosterparse fosterc) # quick hack
 target_link_libraries(fosterparse
   fosterc_parse fosterc_passes fosterc_base
   antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
@@ -373,7 +371,6 @@ target_link_libraries(fosterparse
 ############
 
 add_executable(fosterlower compiler/fosterlower.cpp compiler/StandardPrelude.cpp)
-add_dependencies(fosterlower fosterc) # quick hack
 target_link_libraries(fosterlower
   fosterc_parse fosterc_passes fosterc_parse fosterc_base
   fosterc_llvm

@@ -51,7 +51,6 @@
 #include "parse/DumpStructure.h"
 #include "parse/ProtobufUtils.h"
 #include "parse/ParsingContext.h"
-#include "parse/CompilationContext.h"
 
 #include "passes/CodegenPass.h"
 #include "passes/AddParentLinksPass.h"
@@ -411,11 +410,12 @@ int main(int argc, char** argv) {
   cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster compiler backend\n");
 
   foster::gPrintLLVMImports = optPrintLLVMImports;
-  validateInputFile(optInputPath);
+  foster::validateInputFile(optInputPath);
 
   ensureDirectoryExists(dumpdirFile(""));
 
   foster::initializeLLVM();
+  foster::ParsingContext::initCachedLLVMTypeNames();
 
   llvm::sys::Path mainModulePath(optInputPath);
   makePathAbsolute(mainModulePath);
@@ -424,8 +424,8 @@ int main(int argc, char** argv) {
 
   llvm::Module* module = new Module(mainModulePath.str().c_str(), getGlobalContext());
 
-  validateInputFile("libfoster.bc");
-  validateInputFile("imath-wrapper.bc");
+  foster::validateInputFile("libfoster.bc");
+  foster::validateInputFile("imath-wrapper.bc");
 
   libfoster_bc = readLLVMModuleFromPath("libfoster.bc");
   imath_bc = readLLVMModuleFromPath("imath-wrapper.bc");

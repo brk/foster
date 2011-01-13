@@ -17,10 +17,10 @@
 #include "base/Assert.h"
 #include "base/InputFile.h"
 #include "base/PathManager.h"
+#include "base/LLVMUtils.h"
 
 #include "parse/FosterAST.h"
 #include "parse/ParsingContext.h"
-#include "parse/CompilationContext.h"
 #include "parse/ProtobufToAST.h"
 #include "parse/ProtobufUtils.h"
 #include "parse/DumpStructure.h"
@@ -65,8 +65,9 @@ int main(int argc, char** argv) {
   cl::ParseCommandLineOptions(argc, argv, "Foster Protobuf Viewer\n");
 
   foster::initializeLLVM();
+  foster::ParsingContext::initCachedLLVMTypeNames();
 
-  validateInputFile(optInputPath);
+  foster::validateInputFile(optInputPath);
 
   foster::pb::SourceModule sm;
   ModuleAST* mod = readSourceModuleFromProtobuf(optInputPath, sm);

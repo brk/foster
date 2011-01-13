@@ -85,6 +85,9 @@ public:
 
   /////////////////////
 
+  static void
+  initCachedLLVMTypeNames();
+
 private:
   struct Impl;
   Impl* impl;

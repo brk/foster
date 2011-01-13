@@ -11,7 +11,6 @@
 #include "parse/FosterUtils.h"
 #include "parse/ParsingContext.h"
 #include "parse/DumpStructure.h"
-#include "parse/CompilationContext.h"
 
 #include "passes/PassUtils.h"
 #include "passes/CodegenPass-impl.h"
