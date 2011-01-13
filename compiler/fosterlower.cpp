@@ -79,6 +79,7 @@ namespace foster {
   // Defined in foster/compiler/llvm/passes/ImathImprover.cpp
   llvm::Pass* createImathImproverPass();
   llvm::Pass* createGCMallocFinderPass();
+  extern bool gPrintLLVMImports; // in StandardPrelude.cpp
 }
 
 using std::string;
@@ -139,6 +140,10 @@ optPrintTimings("fosterc-time",
 static cl::opt<bool>
 optOptimizeZero("O0",
   cl::desc("[foster] Disable optimization passes after linking with standard library"));
+
+static cl::opt<bool>
+optPrintLLVMImports("foster-print-llvm-imports",
+  cl::desc("[foster] Print imported symbols from imported LLVM modules"));
 
 static cl::opt<bool>
 optMake("make",
@@ -405,6 +410,7 @@ int main(int argc, char** argv) {
   cl::SetVersionPrinter(&printVersionInfo);
   cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster compiler backend\n");
 
+  foster::gPrintLLVMImports = optPrintLLVMImports;
   validateInputFile(optInputPath);
 
   ensureDirectoryExists(dumpdirFile(""));
