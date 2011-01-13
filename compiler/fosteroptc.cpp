@@ -15,8 +15,6 @@
 #include "llvm/PassManager.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/Triple.h"
-#include "llvm/Assembly/AssemblyAnnotationWriter.h"
-#include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/Config/config.h"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
 #include "llvm/CodeGen/LinkAllAsmWriterComponents.h"
@@ -27,7 +25,6 @@
 
 #include "llvm/Support/StandardPasses.h"
 #include "llvm/Support/PassNameParser.h"
-#include "llvm/Support/IRReader.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/PrettyStackTrace.h"
@@ -37,7 +34,6 @@
 #include "llvm/System/Host.h"
 #include "llvm/System/Signals.h"
 #include "llvm/System/TimeValue.h"
-#include "llvm/System/Program.h"
 
 ////////////////////////////////////////////////////////////////////
 
@@ -45,10 +41,7 @@
 #include "base/LLVMUtils.h"
 #include "base/TimingsRepository.h"
 
-#include <memory>
 #include <fstream>
-#include <sstream>
-#include <map>
 #include <vector>
 
 using namespace llvm;
@@ -59,15 +52,9 @@ using foster::EDiag;
 namespace foster {
   struct ScopeInfo;
   void linkFosterGC(); // defined in llmv/plugins/FosterGC.cpp
-  // Defined in foster/compiler/llvm/passes/ImathImprover.cpp
-  llvm::Pass* createImathImproverPass();
-  llvm::Pass* createGCMallocFinderPass();
 }
 
 using std::string;
-
-#define FOSTER_VERSION_STR "0.0.5"
-extern const char* ANTLR_VERSION_STR;
 
 foster::TimingsRepository gTimings;
 
@@ -114,7 +101,6 @@ cmdLinePassList(cl::desc("Optimizations available:"));
 void printVersionInfo() {
   llvm::outs() << "Foster version: " << FOSTER_VERSION_STR;
   llvm::outs() << ", compiled: " << __DATE__ << " at " << __TIME__ << "\n";
-  llvm::outs() << "ANTLR version " << ANTLR_VERSION_STR << "\n";
   cl::PrintVersionMessage();
 }
 
@@ -131,17 +117,9 @@ void setTimingDescriptions() {
   gTimings.describe("llvm.llc",  "Time spent doing llc's job (IR->asm) (ms)");
 }
 
-void ensureDirectoryExists(const string& pathstr) {
-  llvm::sys::Path p(pathstr);
-  if (!p.isDirectory()) {
-    p.createDirectoryOnDisk(true, NULL);
-  }
-}
-
 Module* readLLVMModuleFromPath(string path) {
   ScopedTimer timer("io.file.readmodule");
-  SMDiagnostic diag;
-  return llvm::ParseIRFile(path, diag, llvm::getGlobalContext());
+  foster::readLLVMModuleFromPath(path);
 }
 
 string dumpdirFile(const string& filename) {
@@ -149,55 +127,20 @@ string dumpdirFile(const string& filename) {
   return dumpdir + filename;
 }
 
-struct CommentWriter : public AssemblyAnnotationWriter {
-  void printInfoComment(const Value& v, formatted_raw_ostream& os) {
-    if (v.getType()->isVoidTy()) return;
-    os.PadToColumn(62);
-    os << "; #uses = " << v.getNumUses() << "\t; ";// << str(v.getType()) ;
-  }
-};
-
 void dumpModuleToFile(Module* mod, const string& filename) {
   ScopedTimer timer("io.file.dumpmodule.ir");
-  string errInfo;
-  llvm::raw_fd_ostream LLpreASM(filename.c_str(), errInfo);
-  if (errInfo.empty()) {
-    CommentWriter cw;
-    mod->print(LLpreASM, &cw);
-  } else {
-    foster::EDiag() << "Error dumping module to " << filename << "\n"
-                    << errInfo << "\n";
-    exit(1);
-  }
+  foster::dumpModuleToFile(mod, filename);
 }
 
 void dumpModuleToBitcode(Module* mod, const string& filename) {
   ScopedTimer timer("io.file.dumpmodule.bitcode");
-  string errInfo;
-  sys::RemoveFileOnSignal(sys::Path(filename), &errInfo);
-
-  raw_fd_ostream out(filename.c_str(), errInfo, raw_fd_ostream::F_Binary);
-  if (!errInfo.empty()) {
-    foster::EDiag() << "Error when preparing to write bitcode to " << filename
-        << "\n" << errInfo;
-    exit(1);
-  }
-
-  WriteBitcodeToFile(mod, out);
+  foster::dumpModuleToBitcode(mod, filename);
 }
 
 TargetData* getTargetDataForModule(Module* mod) {
   const string& layout = mod->getDataLayout();
   if (layout.empty()) return NULL;
   return new TargetData(layout);
-}
-
-void runFunctionPassesOverModule(FunctionPassManager& fpasses, Module* mod) {
-  fpasses.doInitialization();
-  for (Module::iterator it = mod->begin(); it != mod->end(); ++it) {
-    fpasses.run(*it);
-  }
-  fpasses.doFinalization();
 }
 
 void optimizeModuleAndRunPasses(Module* mod) {
@@ -256,7 +199,7 @@ void optimizeModuleAndRunPasses(Module* mod) {
     llvm::createStandardFunctionPasses(&fpasses, 3);
   }
 
-  runFunctionPassesOverModule(fpasses, mod);
+  foster::runFunctionPassesOverModule(fpasses, mod);
   passes.run(*mod);
 }
 
@@ -354,7 +297,7 @@ int main(int argc, char** argv) {
 
   foster::validateInputFile(optInputPath);
 
-  ensureDirectoryExists(dumpdirFile(""));
+  foster::ensureDirectoryExists(dumpdirFile(""));
 
   foster::initializeLLVM();
 

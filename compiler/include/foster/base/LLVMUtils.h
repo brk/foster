@@ -17,8 +17,11 @@ namespace llvm {
   class Value;
   class CallInst;
   class raw_ostream;
+  class FunctionPassManager;
   namespace sys { class Path; }
 }
+
+#define FOSTER_VERSION_STR "0.0.5"
 
 namespace foster {
 
@@ -28,6 +31,16 @@ void initializeLLVM();
 /// Calls exit() if file is not a readable file.
 void validateInputFile(const std::string& pathstr);
 void validateOutputFile(const std::string& pathstr);
+
+void runFunctionPassesOverModule(llvm::FunctionPassManager& fpasses,
+                                 llvm::Module* mod);
+
+void ensureDirectoryExists(const std::string& pathstr);
+
+
+llvm::Module* readLLVMModuleFromPath(const std::string& path);
+void dumpModuleToBitcode(llvm::Module* mod, const std::string& filename);
+void dumpModuleToFile(llvm::Module* mod, const std::string& filename);
 
 extern llvm::IRBuilder<> builder;
 

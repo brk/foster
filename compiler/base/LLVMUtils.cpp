@@ -8,16 +8,20 @@
 #include "llvm/Target/TargetSelect.h"
 #include "llvm/Instructions.h"
 #include "llvm/Metadata.h"
+#include "llvm/Module.h"
 #include "llvm/LLVMContext.h"
+#include "llvm/PassManager.h"
+#include "llvm/Assembly/AssemblyAnnotationWriter.h"
+#include "llvm/System/Signals.h"
+#include "llvm/Support/IRReader.h"
+#include "llvm/Support/FormattedStream.h"
 
 #ifdef LLVM_29
 #include "llvm/Support/FileSystem.h"
 #include "llvm/ADT/SmallString.h"
 #endif
 
-using llvm::Type;
-using llvm::getGlobalContext;
-
+using namespace llvm;
 
 namespace foster {
 
@@ -92,6 +96,62 @@ void validateOutputFile(const std::string& pathstr) {
     EDiag() << "Error: output directory must exist!";
     exit(1);
   }
+}
+
+void runFunctionPassesOverModule(llvm::FunctionPassManager& fpasses,
+                                 Module* mod) {
+  fpasses.doInitialization();
+  for (Module::iterator it = mod->begin(); it != mod->end(); ++it) {
+    fpasses.run(*it);
+  }
+  fpasses.doFinalization();
+}
+
+void ensureDirectoryExists(const std::string& pathstr) {
+  llvm::sys::Path p(pathstr);
+  if (!p.isDirectory()) {
+    p.createDirectoryOnDisk(true, NULL);
+  }
+}
+
+Module* readLLVMModuleFromPath(const std::string& path) {
+  llvm::SMDiagnostic diag;
+  return llvm::ParseIRFile(path, diag, llvm::getGlobalContext());
+}
+
+struct CommentWriter : public llvm::AssemblyAnnotationWriter {
+  void printInfoComment(const Value& v, formatted_raw_ostream& os) {
+    if (v.getType()->isVoidTy()) return;
+    os.PadToColumn(62);
+    os << "; #uses = " << v.getNumUses() << "\t; " << *(v.getType());
+  }
+};
+
+void dumpModuleToFile(llvm::Module* mod, const std::string& filename) {
+  std::string errInfo;
+  llvm::raw_fd_ostream LLpreASM(filename.c_str(), errInfo);
+  if (errInfo.empty()) {
+    CommentWriter cw;
+    mod->print(LLpreASM, &cw);
+  } else {
+    foster::EDiag() << "Error dumping module to " << filename << "\n"
+                    << errInfo << "\n";
+    exit(1);
+  }
+}
+
+void dumpModuleToBitcode(llvm::Module* mod, const std::string& filename) {
+  std::string errInfo;
+  sys::RemoveFileOnSignal(sys::Path(filename), &errInfo);
+
+  raw_fd_ostream out(filename.c_str(), errInfo, raw_fd_ostream::F_Binary);
+  if (!errInfo.empty()) {
+    foster::EDiag() << "Error when preparing to write bitcode to " << filename
+        << "\n" << errInfo;
+    exit(1);
+  }
+
+  WriteBitcodeToFile(mod, out);
 }
 
 } // namespace foster

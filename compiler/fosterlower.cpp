@@ -3,35 +3,17 @@
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
 #include "llvm/DerivedTypes.h"
-#include "llvm/ExecutionEngine/ExecutionEngine.h"
-// We don't actually use the JIT, but we need this header for
-// the TargetData member of the ExecutionEngine to be properly
-// initialized to the host machine's native target.
-#include "llvm/ExecutionEngine/JIT.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Module.h"
 #include "llvm/Linker.h"
-#include "llvm/LinkAllPasses.h"
 #include "llvm/PassManager.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/Triple.h"
-#include "llvm/Assembly/AssemblyAnnotationWriter.h"
-#include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/Config/config.h"
-#include "llvm/CodeGen/LinkAllCodegenComponents.h"
-#include "llvm/CodeGen/LinkAllAsmWriterComponents.h"
-#include "llvm/Target/TargetData.h"
-#include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetRegistry.h"
-#include "llvm/Target/TargetOptions.h"
 
-#include "llvm/Support/StandardPasses.h"
-#include "llvm/Support/PassNameParser.h"
-#include "llvm/Support/IRReader.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/PrettyStackTrace.h"
-#include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/raw_os_ostream.h"
 #include "llvm/System/Host.h"
@@ -61,10 +43,7 @@
 #include "parse/FosterSymbolTableTraits-inl.h"
 #include "StandardPrelude.h"
 
-#include <memory>
 #include <fstream>
-#include <sstream>
-#include <map>
 #include <vector>
 
 using namespace llvm;
@@ -74,7 +53,6 @@ using foster::EDiag;
 
 namespace foster {
   struct ScopeInfo;
-  void linkFosterGC(); // defined in llmv/plugins/FosterGC.cpp
   // Defined in foster/compiler/llvm/passes/ImathImprover.cpp
   llvm::Pass* createImathImproverPass();
   llvm::Pass* createGCMallocFinderPass();
@@ -82,9 +60,6 @@ namespace foster {
 }
 
 using std::string;
-
-#define FOSTER_VERSION_STR "0.0.5"
-extern const char* ANTLR_VERSION_STR;
 
 foster::TimingsRepository gTimings;
 
@@ -142,18 +117,9 @@ static cl::opt<bool>
 optPrintLLVMImports("foster-print-llvm-imports",
   cl::desc("[foster] Print imported symbols from imported LLVM modules"));
 
-static cl::opt<bool>
-optMake("make",
-  cl::desc("[foster] Link and assemble"),
-  cl::init(true));
-
-static cl::list<const PassInfo*, bool, PassNameParser>
-cmdLinePassList(cl::desc("Optimizations available:"));
-
 void printVersionInfo() {
   llvm::outs() << "Foster version: " << FOSTER_VERSION_STR;
   llvm::outs() << ", compiled: " << __DATE__ << " at " << __TIME__ << "\n";
-  llvm::outs() << "ANTLR version " << ANTLR_VERSION_STR << "\n";
   cl::PrintVersionMessage();
 }
 
@@ -170,17 +136,9 @@ void setTimingDescriptions() {
   gTimings.describe("llvm.llc",  "Time spent doing llc's job (IR->asm) (ms)");
 }
 
-void ensureDirectoryExists(const string& pathstr) {
-  llvm::sys::Path p(pathstr);
-  if (!p.isDirectory()) {
-    p.createDirectoryOnDisk(true, NULL);
-  }
-}
-
 Module* readLLVMModuleFromPath(string path) {
   ScopedTimer timer("io.file.readmodule");
-  SMDiagnostic diag;
-  return llvm::ParseIRFile(path, diag, llvm::getGlobalContext());
+  foster::readLLVMModuleFromPath(path);
 }
 
 string dumpdirFile(const string& filename) {
@@ -188,41 +146,14 @@ string dumpdirFile(const string& filename) {
   return dumpdir + filename;
 }
 
-struct CommentWriter : public AssemblyAnnotationWriter {
-  void printInfoComment(const Value& v, formatted_raw_ostream& os) {
-    if (v.getType()->isVoidTy()) return;
-    os.PadToColumn(62);
-    os << "; #uses = " << v.getNumUses() << "\t; " << str(v.getType()) ;
-  }
-};
-
 void dumpModuleToFile(Module* mod, const string& filename) {
   ScopedTimer timer("io.file.dumpmodule.ir");
-  string errInfo;
-  llvm::raw_fd_ostream LLpreASM(filename.c_str(), errInfo);
-  if (errInfo.empty()) {
-    CommentWriter cw;
-    mod->print(LLpreASM, &cw);
-  } else {
-    foster::EDiag() << "Error dumping module to " << filename << "\n"
-                    << errInfo << "\n";
-    exit(1);
-  }
+  foster::dumpModuleToFile(mod, filename);
 }
 
 void dumpModuleToBitcode(Module* mod, const string& filename) {
   ScopedTimer timer("io.file.dumpmodule.bitcode");
-  string errInfo;
-  sys::RemoveFileOnSignal(sys::Path(filename), &errInfo);
-
-  raw_fd_ostream out(filename.c_str(), errInfo, raw_fd_ostream::F_Binary);
-  if (!errInfo.empty()) {
-    foster::EDiag() << "Error when preparing to write bitcode to " << filename
-        << "\n" << errInfo;
-    exit(1);
-  }
-
-  WriteBitcodeToFile(mod, out);
+  foster::dumpModuleToBitcode(mod, filename);
 }
 
 void dumpExprStructureToFile(ExprAST* ast, const string& filename) {
@@ -230,14 +161,6 @@ void dumpExprStructureToFile(ExprAST* ast, const string& filename) {
   string errInfo;
   llvm::raw_fd_ostream out(filename.c_str(), errInfo);
   foster::dumpExprStructure(out, ast);
-}
-
-void runFunctionPassesOverModule(FunctionPassManager& fpasses, Module* mod) {
-  fpasses.doInitialization();
-  for (Module::iterator it = mod->begin(); it != mod->end(); ++it) {
-    fpasses.run(*it);
-  }
-  fpasses.doFinalization();
 }
 
 void linkTo(llvm::Module*& transient,
@@ -249,24 +172,9 @@ void linkTo(llvm::Module*& transient,
   }
 }
 
-void setDefaultCommandLineOptions() {
-  if (string(LLVM_HOSTTRIPLE).find("darwin") != string::npos) {
-    // Applications on Mac OS X (x86) must be compiled with relocatable symbols,
-    // which is -mdynamic-no-pic (GCC) or -relocation-model=dynamic-no-pic (llc).
-    // Setting the flag here gives us the proper default, while still allowing
-    // the user to override via command line options if need be.
-    llvm::TargetMachine::setRelocationModel(llvm::Reloc::DynamicNoPIC);
-  }
-
-  // Ensure we always compile with -disable-fp-elim
-  // to enable simple stack walking for the GC.
-  llvm::NoFramePointerElim = true;
-}
-
 int main(int argc, char** argv) {
   int program_status = 0;
   GOOGLE_PROTOBUF_VERIFY_VERSION;
-  foster::linkFosterGC(); // statically, not dynamically
   sys::PrintStackTraceOnErrorSignal();
   PrettyStackTraceProgram X(argc, argv);
   llvm_shutdown_obj Y;
@@ -279,15 +187,13 @@ int main(int argc, char** argv) {
   llvm::GlobalVariable* current_coro = NULL;
   llvm::Function* coro_transfer = NULL;
 
-  setDefaultCommandLineOptions();
-
   cl::SetVersionPrinter(&printVersionInfo);
   cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster compiler backend\n");
 
   foster::gPrintLLVMImports = optPrintLLVMImports;
   foster::validateInputFile(optInputPath);
 
-  ensureDirectoryExists(dumpdirFile(""));
+  foster::ensureDirectoryExists(dumpdirFile(""));
 
   foster::initializeLLVM();
   foster::ParsingContext::initCachedLLVMTypeNames();
@@ -409,7 +315,7 @@ int main(int argc, char** argv) {
     // rather than wastefully on post-linked code.
     llvm::FunctionPassManager fpasses(module);
     fpasses.add(foster::createImathImproverPass());
-    runFunctionPassesOverModule(fpasses, module);
+    foster::runFunctionPassesOverModule(fpasses, module);
 
     PassManager passes;
     passes.add(foster::createGCMallocFinderPass());
@@ -420,21 +326,16 @@ int main(int argc, char** argv) {
     dumpModuleToFile(module, dumpdirFile(optOutputName + ".prelink.ll").c_str());
   }
 
-  if (optMake) {
-    { ScopedTimer timer("llvm.link");
-      linkTo(libfoster_bc, "libfoster.bc", module);
-      linkTo(imath_bc, "imath.bc", module);
-    }
-
-    if (optDumpPostLinkedIR) {
-      dumpModuleToFile(module, dumpdirFile(optOutputName + ".preopt.ll"));
-    }
-
-    dumpModuleToFile(module, dumpdirFile(optOutputName + ".preopt.bc"));
-  } else { // -c, compile to module instead of native assembly
-    std::string outBcFilename(mainModulePath.getLast().str() + ".out.bc");
-    dumpModuleToBitcode(module, dumpdirFile(outBcFilename));
+  { ScopedTimer timer("llvm.link");
+    linkTo(libfoster_bc, "libfoster.bc", module);
+    linkTo(imath_bc, "imath.bc", module);
   }
+
+  if (optDumpPostLinkedIR) {
+    dumpModuleToFile(module, dumpdirFile(optOutputName + ".preopt.ll"));
+  }
+
+  dumpModuleToFile(module, dumpdirFile(optOutputName + ".preopt.bc"));
 
   if (optDumpStats) {
     string err;
