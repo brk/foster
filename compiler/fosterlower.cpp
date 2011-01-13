@@ -6,7 +6,6 @@
 #include "llvm/LLVMContext.h"
 #include "llvm/Module.h"
 #include "llvm/Linker.h"
-#include "llvm/PassManager.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/Config/config.h"
@@ -26,6 +25,8 @@
 #include "base/Assert.h"
 #include "base/LLVMUtils.h"
 #include "base/TimingsRepository.h"
+
+#include "passes/FosterPasses.h"
 
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
@@ -53,9 +54,6 @@ using foster::EDiag;
 
 namespace foster {
   struct ScopeInfo;
-  // Defined in foster/compiler/llvm/passes/ImathImprover.cpp
-  llvm::Pass* createImathImproverPass();
-  llvm::Pass* createGCMallocFinderPass();
   extern bool gPrintLLVMImports; // in StandardPrelude.cpp
 }
 
@@ -313,13 +311,7 @@ int main(int argc, char** argv) {
 
     // Run cleanup passes on newly-generated code,
     // rather than wastefully on post-linked code.
-    llvm::FunctionPassManager fpasses(module);
-    fpasses.add(foster::createImathImproverPass());
-    foster::runFunctionPassesOverModule(fpasses, module);
-
-    PassManager passes;
-    passes.add(foster::createGCMallocFinderPass());
-    passes.run(*module);
+    foster::runCleanupPasses(*module);
   }
 
   if (optDumpPreLinkedIR) {

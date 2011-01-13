@@ -41,6 +41,8 @@
 #include "base/LLVMUtils.h"
 #include "base/TimingsRepository.h"
 
+#include "passes/FosterPasses.h"
+
 #include <fstream>
 #include <vector>
 
@@ -82,6 +84,10 @@ optOutputName("o",
 static cl::opt<bool>
 optDumpPostOptIR("dump-postopt",
   cl::desc("[foster] Dump LLVM IR after linking and optimization passes"));
+
+static cl::opt<bool>
+optCleanupOnly("cleanup-only",
+  cl::desc("[foster] Run cleanup passes only"));
 
 static cl::opt<bool>
 optDumpStats("dump-stats",
@@ -306,13 +312,18 @@ int main(int argc, char** argv) {
 
   llvm::Module* module = readLLVMModuleFromPath(mainModulePath.str());
 
-  optimizeModuleAndRunPasses(module);
+  if (optCleanupOnly) {
+    optimizeModuleAndRunPasses(module);
 
-  if (optDumpPostOptIR) {
-    dumpModuleToFile(module, dumpdirFile(optOutputName + ".postopt.ll"));
+    if (optDumpPostOptIR) {
+      dumpModuleToFile(module, dumpdirFile(optOutputName + ".postopt.ll"));
+    }
+
+    compileToNativeAssembly(module, dumpdirFile(optOutputName + ".s"));
+  } else {
+    foster::runCleanupPasses(*module);
+    dumpModuleToBitcode(module, dumpdirFile(optOutputName + ".cleaned.bc"));
   }
-
-  compileToNativeAssembly(module, dumpdirFile(optOutputName + ".s"));
 
   if (optDumpStats) {
     string err;

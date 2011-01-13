@@ -252,6 +252,7 @@ include_directories(${ANTLR_DIR}/include ${PROJECT_BINARY_DIR})
 
 include_directories(
   ${PROJECT_SOURCE_DIR}/compiler/include/foster
+  ${PROJECT_SOURCE_DIR}/compiler/llvm
   ${PROJECT_SOURCE_DIR}/third_party
   ${PROJECT_SOURCE_DIR}/third_party/chromium_base
 )
@@ -328,6 +329,7 @@ set_source_files_properties(
 add_library(fosterc_llvm STATIC
   compiler/llvm/passes/ImathImprover.cpp
   compiler/llvm/passes/GCMallocFinder.cpp
+  compiler/llvm/passes/FosterPasses.cpp
   compiler/llvm/plugins/FosterGC.cpp
 )
 add_dependencies(fosterc_llvm fosterc_base)
