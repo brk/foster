@@ -45,22 +45,6 @@
 #include "base/LLVMUtils.h"
 #include "base/TimingsRepository.h"
 
-#include "parse/FosterAST.h"
-#include "parse/FosterTypeAST.h"
-#include "parse/FosterUtils.h"
-#include "parse/DumpStructure.h"
-#include "parse/ProtobufUtils.h"
-#include "parse/ParsingContext.h"
-
-#include "passes/CodegenPass.h"
-#include "passes/AddParentLinksPass.h"
-#include "passes/PrettyPrintPass.h"
-#include "passes/ClosureConversionPass.h"
-#include "_generated_/FosterAST.pb.h"
-
-#include "parse/FosterSymbolTableTraits-inl.h"
-#include "StandardPrelude.h"
-
 #include <memory>
 #include <fstream>
 #include <sstream>
@@ -78,7 +62,6 @@ namespace foster {
   // Defined in foster/compiler/llvm/passes/ImathImprover.cpp
   llvm::Pass* createImathImproverPass();
   llvm::Pass* createGCMallocFinderPass();
-  extern bool gPrintLLVMImports; // in StandardPrelude.cpp
 }
 
 using std::string;
@@ -102,33 +85,16 @@ private:
 
 
 static cl::opt<string>
-optInputPath(cl::Positional, cl::desc("<input file>"));
+optInputPath(cl::Positional, cl::desc("<input file.bc/ll>"));
 
-// Given -o foo, fosterlower will write foo.preopt.bc
 static cl::opt<string>
 optOutputName("o",
-  cl::desc("[foster] Base name of output file"),
+  cl::desc("[foster] Base name of output file (writes <out>.s)"),
   cl::init("out"));
 
 static cl::opt<bool>
-optCompileSeparately("c",
-  cl::desc("[foster] Compile separately, don't automatically link imported modules"));
-
-static cl::opt<bool>
-optEmitDebugInfo("g",
-  cl::desc("[foster] Emit debug information in generated LLVM IR"));
-
-static cl::opt<bool>
-optDumpPreLinkedIR("dump-prelinked",
-  cl::desc("[foster] Dump LLVM IR before linking with standard library"));
-
-static cl::opt<bool>
-optDumpPostLinkedIR("dump-postlinked",
-  cl::desc("[foster] Dump LLVM IR after linking with standard library"));
-
-static cl::opt<bool>
-optDumpASTs("dump-asts",
-  cl::desc("[foster] Dump intermediate ASTs (and ANLTR parse tree)"));
+optDumpPostOptIR("dump-postopt",
+  cl::desc("[foster] Dump LLVM IR after linking and optimization passes"));
 
 static cl::opt<bool>
 optDumpStats("dump-stats",
@@ -139,13 +105,8 @@ optPrintTimings("fosterc-time",
   cl::desc("[foster] Print timing measurements of compiler passes"));
 
 static cl::opt<bool>
-optPrintLLVMImports("foster-print-llvm-imports",
-  cl::desc("[foster] Print imported symbols from imported LLVM modules"));
-
-static cl::opt<bool>
-optMake("make",
-  cl::desc("[foster] Link and assemble"),
-  cl::init(true));
+optOptimizeZero("O0",
+  cl::desc("[foster] Disable optimization passes after linking with standard library"));
 
 static cl::list<const PassInfo*, bool, PassNameParser>
 cmdLinePassList(cl::desc("Optimizations available:"));
@@ -192,7 +153,7 @@ struct CommentWriter : public AssemblyAnnotationWriter {
   void printInfoComment(const Value& v, formatted_raw_ostream& os) {
     if (v.getType()->isVoidTy()) return;
     os.PadToColumn(62);
-    os << "; #uses = " << v.getNumUses() << "\t; " << str(v.getType()) ;
+    os << "; #uses = " << v.getNumUses() << "\t; ";// << str(v.getType()) ;
   }
 };
 
@@ -225,11 +186,10 @@ void dumpModuleToBitcode(Module* mod, const string& filename) {
   WriteBitcodeToFile(mod, out);
 }
 
-void dumpExprStructureToFile(ExprAST* ast, const string& filename) {
-  ScopedTimer timer("io.file.dumpexpr");
-  string errInfo;
-  llvm::raw_fd_ostream out(filename.c_str(), errInfo);
-  foster::dumpExprStructure(out, ast);
+TargetData* getTargetDataForModule(Module* mod) {
+  const string& layout = mod->getDataLayout();
+  if (layout.empty()) return NULL;
+  return new TargetData(layout);
 }
 
 void runFunctionPassesOverModule(FunctionPassManager& fpasses, Module* mod) {
@@ -238,6 +198,122 @@ void runFunctionPassesOverModule(FunctionPassManager& fpasses, Module* mod) {
     fpasses.run(*it);
   }
   fpasses.doFinalization();
+}
+
+void optimizeModuleAndRunPasses(Module* mod) {
+  ScopedTimer timer("llvm.opt");
+  PassManager passes;
+  FunctionPassManager fpasses(mod);
+
+  TargetData* td = getTargetDataForModule(mod);
+  if (td) {
+    passes.add(td);
+    fpasses.add(new TargetData(*td));
+  } else {
+    llvm::outs() << "Warning: no target data for module!" << "\n";
+  }
+
+  passes.add(llvm::createVerifierPass());
+
+  if (!optOptimizeZero) {
+    llvm::createStandardModulePasses(&passes, 2,
+        /*OptimizeSize*/ false,
+        /*UnitAtATime*/ true,
+        /*UnrollLoops*/ true,
+        /*SimplifyLibCalls*/ true,
+        /*HaveExceptions*/ false,
+        llvm::createFunctionInliningPass());
+    llvm::createStandardLTOPasses(&passes,
+        /*Internalize*/ true,
+        /*RunInliner*/ true,
+        /*VerifyEach*/ true);
+  }
+
+  // Add command line passes
+  for (size_t i = 0; i < cmdLinePassList.size(); ++i) {
+    const PassInfo* pi = cmdLinePassList[i];
+    llvm::Pass* p = (pi->getNormalCtor()) ? pi->getNormalCtor()() : NULL;
+    if (p) {
+      passes.add(p);
+    } else {
+      llvm::errs() << "Error: unable to create LLMV pass "
+                << "'" << pi->getPassName() << "'" << "\n";
+    }
+  }
+
+  if (!optOptimizeZero) {
+    llvm::createStandardModulePasses(&passes, 3,
+        /*OptimizeSize*/ false,
+        /*UnitAtATime*/ true,
+        /*UnrollLoops*/ true,
+        /*SimplifyLibCalls*/ true,
+        /*HaveExceptions*/ false,
+        llvm::createFunctionInliningPass());
+
+    passes.add(llvm::createVerifierPass());
+
+    llvm::createStandardFunctionPasses(&fpasses, 2);
+    llvm::createStandardFunctionPasses(&fpasses, 3);
+  }
+
+  runFunctionPassesOverModule(fpasses, mod);
+  passes.run(*mod);
+}
+
+void compileToNativeAssembly(Module* mod, const string& filename) {
+  ScopedTimer timer("llvm.llc");
+
+  llvm::Triple triple(mod->getTargetTriple());
+  if (triple.getTriple().empty()) {
+    triple.setTriple(llvm::sys::getHostTriple());
+  }
+
+  const Target* target = NULL;
+  string err;
+  target = llvm::TargetRegistry::lookupTarget(triple.getTriple(), err);
+  if (!target) {
+    llvm::errs() << "Error: unable to pick a target for compiling to assembly"
+              << "\n";
+    exit(1);
+  }
+
+  TargetMachine* tm = target->createTargetMachine(triple.getTriple(), "");
+  if (!tm) {
+    llvm::errs() << "Error! Creation of target machine"
+        " failed for triple " << triple.getTriple() << "\n";
+    exit(1);
+  }
+
+  tm->setAsmVerbosityDefault(true);
+
+  PassManager passes;
+  if (const TargetData* td = tm->getTargetData()) {
+    passes.add(new TargetData(*td));
+  } else {
+    passes.add(new TargetData(mod));
+  }
+
+  bool disableVerify = true;
+
+  llvm::raw_fd_ostream raw_out(filename.c_str(), err, 0);
+  if (!err.empty()) {
+    llvm::errs() << "Error when opening file to print assembly to:\n\t"
+        << err << "\n";
+    exit(1);
+  }
+
+  llvm::formatted_raw_ostream out(raw_out,
+      llvm::formatted_raw_ostream::PRESERVE_STREAM);
+
+  if (tm->addPassesToEmitFile(passes, out,
+      TargetMachine::CGFT_AssemblyFile,
+      CodeGenOpt::Aggressive,
+      disableVerify)) {
+    llvm::errs() << "Unable to emit assembly file! " << "\n";
+    exit(1);
+  }
+
+  passes.run(*mod);
 }
 
 void linkTo(llvm::Module*& transient,
@@ -265,197 +341,50 @@ void setDefaultCommandLineOptions() {
 
 int main(int argc, char** argv) {
   int program_status = 0;
-  GOOGLE_PROTOBUF_VERIFY_VERSION;
   foster::linkFosterGC(); // statically, not dynamically
   sys::PrintStackTraceOnErrorSignal();
   PrettyStackTraceProgram X(argc, argv);
   llvm_shutdown_obj Y;
   ScopedTimer* wholeProgramTimer = new ScopedTimer("total");
-  Module* libfoster_bc = NULL;
-  Module* imath_bc = NULL;
-  const llvm::Type* mp_int = NULL;
-  ModuleAST* exprAST = NULL;
-  foster::pb::SourceModule sm;
-  llvm::GlobalVariable* current_coro = NULL;
-  llvm::Function* coro_transfer = NULL;
 
   setDefaultCommandLineOptions();
 
   cl::SetVersionPrinter(&printVersionInfo);
-  cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster compiler backend\n");
+  cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster compiler backend (LLVM optimization)\n");
 
-  foster::gPrintLLVMImports = optPrintLLVMImports;
   foster::validateInputFile(optInputPath);
 
   ensureDirectoryExists(dumpdirFile(""));
 
   foster::initializeLLVM();
-  foster::ParsingContext::initCachedLLVMTypeNames();
 
   llvm::sys::Path mainModulePath(optInputPath);
   makePathAbsolute(mainModulePath);
 
-  foster::ParsingContext::pushNewContext();
+  llvm::Module* module = readLLVMModuleFromPath(mainModulePath.str());
 
-  llvm::Module* module = new Module(mainModulePath.str().c_str(), getGlobalContext());
+  optimizeModuleAndRunPasses(module);
 
-  foster::validateInputFile("libfoster.bc");
-  foster::validateInputFile("imath-wrapper.bc");
-
-  libfoster_bc = readLLVMModuleFromPath("libfoster.bc");
-  imath_bc = readLLVMModuleFromPath("imath-wrapper.bc");
-  const llvm::Type* mpz_struct_ty = imath_bc->getTypeByName("struct.mpz");
-  if (!mpz_struct_ty) {
-    EDiag() << "Unable to find imath bitcode library";
-    program_status = 1; goto cleanup;
+  if (optDumpPostOptIR) {
+    dumpModuleToFile(module, dumpdirFile(optOutputName + ".postopt.ll"));
   }
 
-  exprAST = readSourceModuleFromProtobuf(optInputPath, sm);
-  if (!exprAST) {
-    EDiag() << "Unable to parse module from protocol buffer!";
-    program_status = 1; goto cleanup;
-  }
-
-  mp_int =
-    llvm::PointerType::getUnqual(mpz_struct_ty);
-  module->addTypeName("mp_int", mp_int);
-  gTypeScope.insert("int", NamedTypeAST::get("int", mp_int));
-
-  foster_generic_coro_t = libfoster_bc->getTypeByName("struct.foster_generic_coro");
-  ASSERT(foster_generic_coro_t != NULL);
-  module->addTypeName("pfoster_coro",
-    llvm::PointerType::getUnqual(foster_generic_coro_t));
-
-  module->addTypeName("unit",
-    llvm::StructType::get(getGlobalContext(), false));
-
-  current_coro = libfoster_bc->getNamedGlobal("current_coro");
-  module->getOrInsertGlobal("current_coro",
-    current_coro->getType()->getContainedType(0));
-
-  // coro_transfer isn't automatically added because it's
-  // only a declaration, not a definition.
-  coro_transfer = llvm::dyn_cast<llvm::Function>(
-                  module->getOrInsertFunction("coro_transfer",
-    llvm::dyn_cast<llvm::FunctionType>(
-                    libfoster_bc->getFunction("coro_transfer")
-                                ->getType()->getContainedType(0))));
-  coro_transfer->addAttribute(1, llvm::Attribute::InReg);
-  coro_transfer->addAttribute(2, llvm::Attribute::InReg);
-
-  // TODO mark foster__assert as alwaysinline
-
-  foster::putModuleMembersInScope(libfoster_bc, module);
-  foster::putModuleMembersInInternalScope("imath", imath_bc, module);
-  foster::addConcretePrimitiveFunctionsTo(module);
-
-  if (!exprAST) {
-    EDiag() << "Unable to parse module from protocol buffer!";
-    program_status = 1; goto cleanup;
-  }
-
-  foster::addParentLinks(exprAST);
-
-  if (optDumpASTs) { ScopedTimer timer("io.file");
-    string outfile = "pp-precc.txt";
-    llvm::outs() << "=========================" << "\n";
-    llvm::outs() << "Pretty printing to " << outfile << "\n";
-    std::ofstream out(dumpdirFile(outfile).c_str());
-    llvm::raw_os_ostream rout(out);
-
-    ScopedTimer pptimer("io.prettyprint");
-    foster::prettyPrintExpr(exprAST, rout);
-  }
-
-  if (optCompileSeparately) {
-    // Need to emit before closure conversion, which alters
-    // the set of top-level function definitions, but not
-    // in a way that's relevant to importing modules.
-    std::string outPbFilename(mainModulePath.getLast().str() + ".pb");
-    dumpModuleToProtobuf(exprAST, dumpdirFile(outPbFilename));
-  }
-
-  {
-    dumpExprStructureToFile(exprAST, dumpdirFile("structure.beforecc.txt"));
-
-    llvm::outs() << "=========================" << "\n";
-    llvm::outs() << "Performing closure conversion..." << "\n";
-
-    foster::performClosureConversion(foster::globalNames, exprAST);
-
-    dumpExprStructureToFile(exprAST, dumpdirFile("structure.aftercc.txt"));
-  }
-
-  if (optDumpASTs) {
-    dumpModuleToProtobuf(exprAST, dumpdirFile("ast.postcc.pb"));
-
-    ScopedTimer timer("io.file");
-    string outfile = "pp-postcc.txt";
-    llvm::outs() << "=========================" << "\n";
-    llvm::outs() << "Pretty printing to " << outfile << "\n";
-    std::ofstream out(dumpdirFile(outfile).c_str());
-    ScopedTimer pptimer("io.prettyprint");
-
-    llvm::raw_os_ostream rout(out);
-    foster::prettyPrintExpr(exprAST, rout);
-  }
-
-  llvm::outs() << "=========================" << "\n";
-
-  {
-    foster::codegen(exprAST, module);
-
-    // Run cleanup passes on newly-generated code,
-    // rather than wastefully on post-linked code.
-    llvm::FunctionPassManager fpasses(module);
-    fpasses.add(foster::createImathImproverPass());
-    runFunctionPassesOverModule(fpasses, module);
-
-    PassManager passes;
-    passes.add(foster::createGCMallocFinderPass());
-    passes.run(*module);
-  }
-
-  if (optDumpPreLinkedIR) {
-    dumpModuleToFile(module, dumpdirFile(optOutputName + ".prelink.ll").c_str());
-  }
-
-  if (optMake) {
-    { ScopedTimer timer("llvm.link");
-      linkTo(libfoster_bc, "libfoster.bc", module);
-      linkTo(imath_bc, "imath.bc", module);
-    }
-
-    if (optDumpPostLinkedIR) {
-      dumpModuleToFile(module, dumpdirFile(optOutputName + ".preopt.ll"));
-    }
-
-    dumpModuleToFile(module, dumpdirFile(optOutputName + ".preopt.bc"));
-  } else { // -c, compile to module instead of native assembly
-    std::string outBcFilename(mainModulePath.getLast().str() + ".out.bc");
-    dumpModuleToBitcode(module, dumpdirFile(outBcFilename));
-  }
+  compileToNativeAssembly(module, dumpdirFile(optOutputName + ".s"));
 
   if (optDumpStats) {
     string err;
-    llvm::raw_fd_ostream out(dumpdirFile(optOutputName + "lower.stats.txt").c_str(), err);
+    llvm::raw_fd_ostream out(dumpdirFile(optOutputName + ".optc.stats.txt").c_str(), err);
     llvm::PrintStatistics(out);
   }
 
-  google::protobuf::ShutdownProtobufLibrary();
-  foster::gInputFile = NULL;
   {
     llvm::outs().flush();
     llvm::errs().flush();
   }
 
 cleanup:
-  foster::ParsingContext::popCurrentContext();
-
   delete wholeProgramTimer;
 
-  delete libfoster_bc; libfoster_bc = NULL;
-  delete imath_bc; imath_bc = NULL;
   delete module; module = NULL;
 
   if (optPrintTimings) {

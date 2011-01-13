@@ -381,6 +381,17 @@ add_dependencies(fosterlower
 
 ############
 
+add_executable(fosteroptc compiler/fosteroptc.cpp)
+target_link_libraries(fosteroptc
+  fosterc_parse fosterc_passes fosterc_parse fosterc_base
+  fosterc_llvm
+  antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
+
+add_dependencies(fosteroptc
+    libfoster_bc coro_wrapper_bc imath_wrapper_bc hs_me)
+
+############
+
 add_dependencies(libfoster_bc chromium_base)
 add_dependencies(libfoster_bc cpuid)
 add_dependencies(libfoster_bc coro)

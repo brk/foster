@@ -67,23 +67,28 @@ def testname(testpath):
   """Given '/path/to/some/test.foster', returns 'test'"""
   return os.path.basename(testpath).replace('.foster', '')
 
-def compile_test_to_bitcode(paths, testpath, compilelog, finalname):
+def compile_test_to_bitcode(paths, testpath, compilelog, finalpath):
+    finalname = os.path.basename(finalpath)
+
     # running fosterparse on a source file produces a ParsedAST
-    (s1, e1) = run_command(['fosterparse', testpath, '_out.parsed.pb'], paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
+    (s1, e1) = run_command(['fosterparse', testpath, '_out.parsed.pb'],
+                paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
 
     # running fostercheck on a ParsedAST produces an ElaboratedAST
-    (s2, e2) = run_command(['fostercheck', '_out.parsed.pb', '_out.checked.pb'], paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
+    (s2, e2) = run_command(['fostercheck', '_out.parsed.pb', '_out.checked.pb'],
+                paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
 
     # running fosterlower on a ParsedAST produces a bitcode Module
     # linking a bunch of Modules produces a Module
-    (s3, e3) = run_command(['fosterlower', '_out.checked.pb', '-o', finalname, '-O0', '-dump-prelinked'], paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
+    (s3, e3) = run_command(['fosterlower', '_out.checked.pb', '-o', finalname, '-dump-prelinked'],
+                paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
 
     # Running opt on a Module produces a Module
     # Running llc on a Module produces an assembly file
-    #(s4, e4) = run_command(['fosteroptc', '_out.checked.pb', '-O0'], paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
+    (s4, e4) = run_command(['fosteroptc', finalpath + '.preopt.bc', '-O0'],
+                paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
 
-    #return (s4, e1, e2, e3, e4)
-    return (s3, e1, e2, e3, 0)
+    return (s4, e1, e2, e3, e4)
 
 def run_one_test(testpath, paths, tmpdir):
   start = walltime()
@@ -93,13 +98,16 @@ def run_one_test(testpath, paths, tmpdir):
     with open(act_filename, 'w') as actual:
       with open(os.path.join(tmpdir, "compile.log.txt"), 'w') as compilelog:
         infile = extract_expected_input(testpath)
-        finalname = 'out'
-        rv, fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed = compile_test_to_bitcode(paths, testpath, compilelog, finalname)
 
-        rv, as_elapsed = run_command('g++ %s.s -c -o %s.o' % (finalname, finalname), paths, testpath)
-        rv, ld_elapsed = run_command('g++ %s.o %s %s -o a.out' % (finalname, get_static_libs(), get_link_flags()),
+        finalpath = os.path.join('fc-output', 'out')
+        exepath   = os.path.join('fc-output', 'a.out')
+
+        rv, fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed = compile_test_to_bitcode(paths, testpath, compilelog, finalpath)
+
+        rv, as_elapsed = run_command('g++ %s.s -c -o %s.o' % (finalpath, finalpath), paths, testpath)
+        rv, ld_elapsed = run_command('g++ %s.o %s %s -o %s' % (finalpath, get_static_libs(), get_link_flags(), exepath),
                                     paths, testpath)
-        rv, rn_elapsed = run_command('a.out',  paths, testpath, stdout=actual, stderr=expected, stdin=infile, strictrv=False)
+        rv, rn_elapsed = run_command(exepath,  paths, testpath, stdout=actual, stderr=expected, stdin=infile, strictrv=False)
 
         df_rv = subprocess.call(['diff', '-u', exp_filename, act_filename])
         if df_rv == 0:
@@ -113,7 +121,7 @@ def run_one_test(testpath, paths, tmpdir):
         print "fpr:%4d | fme:%4d | flo:%4d | foc:%4d | as:%4d | ld:%4d | run:%4d | py:%3d | tot:%5d | %s" % (fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed,
                         as_elapsed, ld_elapsed, rn_elapsed, overhead, total_elapsed, testname(testpath))
 
-        print "fpr:%3.0f%% | fme:%3.0f%% | flo:%3.0f%% | foc:%3.0f%% |as:%3.0f%% | ld:%3.0f%%" % tuple(100.0*x/float(compile_elapsed) for x in list((fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed, as_elapsed, ld_elapsed)))
+        print "fpr:%3.0f%% | fme:%3.0f%% | flo:%3.0f%% | foc:%3.0f%% | as:%3.0f%% | ld:%3.0f%%" % tuple(100.0*x/float(compile_elapsed) for x in list((fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed, as_elapsed, ld_elapsed)))
         print "".join("-" for x in range(60))
         infile.close()
 
@@ -129,13 +137,18 @@ def binpath(bindir, prog):
   else:
     return os.path.join(bindir, prog)
 
+def tmppath(prog):
+  if os.path.isabs(prog):
+    return prog
+  else:
+    return os.path.join(bindir, prog)
+
 def get_paths(bindir, options):
   join = os.path.join
   paths = {
-      'out.s':     join(bindir, 'fc-output', 'out.s'),
-      'a.out':     join(bindir, 'fc-output', 'a.out'),
+      'bindir':    bindir
   }
-  for prog in ['fosterc', 'fosterparse', 'fosterlower', 'fostercheck']:
+  for prog in ['fosterc', 'fosterparse', 'fosterlower', 'fostercheck', 'fosteroptc']:
       paths[prog] = binpath(bindir, prog)
   for lib in ['libfoster.bc', 'libcpuid.o', 'libfoster_main.o']:
       paths[lib] = binpath(bindir, lib)

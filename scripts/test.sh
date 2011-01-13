@@ -1,6 +1,6 @@
 #!/bin/bash
 
-OUTPUT=fc-output
+OUTPUT=`pwd`/fc-output
 
 STATIC_LIBS="libfoster_main.o libchromium_base.a libcpuid.a libimath.a libcoro.a"
 case `uname -s` in
@@ -40,11 +40,6 @@ TIMEEND () {
   echo "$1 took $ELS.$ELM s"
 }
 
-#linking explicit
-#make && ./foster -c $1 && echo "-------" && cat foster.ll && echo "-----" && llvm-as foster.ll -f && llvm-ld foster.bc libfoster.bc -o ll-foster && ./ll-foster ; echo $?
-
-
-#linking implicit
 extractinput () {
   grep '// IN:' $1 | sed 's/.. IN: //' > recorded-input.txt
 }
@@ -55,13 +50,14 @@ run () {
   if [ "z$TIMED_CMD_STATUS" != "z0" ]; then return; fi
   TIMESTART
   #`llvm-config --libdir`/libprofile_rt.so 
-  echo "g++ $OPT.s ${STATIC_LIBS} ${RUNTIME_LIBS} -o $OPT"
+  #echo "g++ $OPT.s ${STATIC_LIBS} ${RUNTIME_LIBS} -o $OPT"
   g++ $OPT.s ${STATIC_LIBS} ${RUNTIME_LIBS} -o $OPT
   TIMEEND "gcc"
 
   if [ "z$TIMED_CMD_STATUS" != "z0" ]; then return; fi
   TIMESTART
-  cat recorded-input.txt | ./$OPT
+  <recorded-input.txt $OPT 2>_stderr.txt 1>_stdout.txt
+  paste _stderr.txt _stdout.txt
   TIMEEND "run"
 }
 
@@ -77,37 +73,34 @@ speedtest () {
   cat recorded-input.txt | ./$OPT
 }
 
-runfosterparse() {
-  echo ./fosterparse $TESTPATH $OUTPUT/out.parsed.pb
-  ./fosterparse $TESTPATH $OUTPUT/out.parsed.pb
-}
-runme() {
-  echo ./me $OUTPUT/out.parsed.pb $OUTPUT/out.checked.pb
-  ./me $OUTPUT/out.parsed.pb $OUTPUT/out.checked.pb
-}
-runfosterlower() {
-  echo ./fosterlower $OUTPUT/out.checked.pb -dump-prelinked
-  ./fosterlower $OUTPUT/out.checked.pb -dump-prelinked
+runfosterme () {
+  echo ./me $OUTPUT/_tmp.pb $OUTPUT/_tmp2.pb
+  ./me $OUTPUT/_tmp.pb $OUTPUT/_tmp2.pb
 }
 
 runfosterc () {
   TIMESTART
-  #echo ./fosterc $TESTPATH $@
   #./fosterc $TESTPATH $@
+  echo ./fosterparse $TESTPATH $OUTPUT/_tmp.pb
+  ./fosterparse $TESTPATH $OUTPUT/_tmp.pb
 
-  runfosterparse && runme && runfosterlower
+  runfosterme
 
-  #echo ./fostercheck $OUTPUT/out.parsed.pb $OUTPUT/out.checked.pb
-  #./fostercheck $OUTPUT/out.parsed.pb $OUTPUT/out.checked.pb
+  echo ./fosterlower $OUTPUT/_tmp2.pb
+  ./fosterlower $OUTPUT/_tmp2.pb -o _tmp3 -dump-prelinked -dump-postlinked
+
+  echo ./fosteroptc $OUTPUT/_tmp3.preopt.bc -dump-postopt
+  ./fosteroptc $OUTPUT/_tmp3.preopt.bc -dump-postopt
+
 
   TIMEEND "fosterc $@"
 }
 
 cleanout () {
-  rm -f $OUTPUT/fstrprog.O2.bc foster.bc a.out foster.ll gclog.txt
+  rm -f $OUTPUT/fstrprog.O2.bc foster.bc $OUTPUT/out* $OUTPUT/_tmp* foster.ll gclog.txt
 }
 
 TESTPATH=$1
 shift
 
-make && cleanout && runfosterc $@ && extractinput $TESTPATH && run ; echo $?
+make fosteroptc fosterparse fosterlower me && cleanout && runfosterc $@ && extractinput $TESTPATH && run ; echo $?
