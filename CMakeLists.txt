@@ -128,7 +128,7 @@ add_custom_command(
                     ${GENERATED}
                     ${PROJECT_SOURCE_DIR}/grammar/foster.g
   DEPENDS
-        grammar/foster.g
+        ${PROJECT_SOURCE_DIR}/grammar/foster.g
         ${PROJECT_SOURCE_DIR}/scripts/run_antlr.py
 )
 
@@ -206,6 +206,7 @@ add_custom_command(
         ${LIBFOSTER_CPP_SOURCES}
   DEPENDS
     ${LIBFOSTER_CPP_SOURCES}
+    ${PROJECT_BINARY_DIR}/imath.h
     ${PROJECT_SOURCE_DIR}/scripts/build_libfoster.py
 )
 # We could attach the command to build libfoster.bc directly
