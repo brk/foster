@@ -136,7 +136,7 @@ void setTimingDescriptions() {
 
 Module* readLLVMModuleFromPath(string path) {
   ScopedTimer timer("io.file.readmodule");
-  foster::readLLVMModuleFromPath(path);
+  return foster::readLLVMModuleFromPath(path);
 }
 
 string dumpdirFile(const string& filename) {

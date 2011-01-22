@@ -125,7 +125,7 @@ void setTimingDescriptions() {
 
 Module* readLLVMModuleFromPath(string path) {
   ScopedTimer timer("io.file.readmodule");
-  foster::readLLVMModuleFromPath(path);
+  return foster::readLLVMModuleFromPath(path);
 }
 
 string dumpdirFile(const string& filename) {
@@ -313,6 +313,9 @@ int main(int argc, char** argv) {
   llvm::Module* module = readLLVMModuleFromPath(mainModulePath.str());
 
   if (optCleanupOnly) {
+    foster::runCleanupPasses(*module);
+    dumpModuleToBitcode(module, dumpdirFile(optOutputName + ".cleaned.bc"));
+  } else {
     optimizeModuleAndRunPasses(module);
 
     if (optDumpPostOptIR) {
@@ -320,9 +323,6 @@ int main(int argc, char** argv) {
     }
 
     compileToNativeAssembly(module, dumpdirFile(optOutputName + ".s"));
-  } else {
-    foster::runCleanupPasses(*module);
-    dumpModuleToBitcode(module, dumpdirFile(optOutputName + ".cleaned.bc"));
   }
 
   if (optDumpStats) {
