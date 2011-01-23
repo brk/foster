@@ -6,6 +6,7 @@
 
 module Foster.ExprAST where
 
+import Foster.Base
 import Foster.TypeAST
 import Data.Int
 import Data.Set as Set(fromList, toList, difference)
@@ -106,7 +107,7 @@ instance Expr AnnExpr where
             AnnSeq          a b  -> "AnnSeq       " ++ " :: " ++ show (typeAST b)
             AnnSubscript  t a b  -> "AnnSubscript " ++ " :: " ++ show t
             AnnTuple     es b    -> "AnnTuple     "
-            E_AnnVar (AnnVar t v) -> "AnnVar       " ++ v ++ " :: " ++ show t
+            E_AnnVar (AnnVar t v) -> "AnnVar       " ++ show v ++ " :: " ++ show t
     childrenOf e =
         case e of
             AnnBool         b                    -> []
@@ -200,7 +201,7 @@ freeVariables :: ExprAST -> [String]
 freeVariables e = case e of
     E_VarAST mt nm      -> [nm]
     E_FnAST f           -> let bodyvars =  Set.fromList (freeVariables (fnBody f)) in
-                           let boundvars = Set.fromList (map avarName (prototypeASTformals (fnProto f))) in
+                           let boundvars = Set.fromList (map (identPrefix.avarIdent) (prototypeASTformals (fnProto f))) in
                            Set.toList (Set.difference bodyvars boundvars)
     _                   -> concatMap freeVariables (childrenOf e)
 
@@ -237,7 +238,7 @@ data AnnExpr =
         | AnnCompiles   CompilesStatus
         deriving (Show)
 
-data AnnVar       = AnnVar { avarType :: TypeAST, avarName :: String } deriving (Eq, Show)
+data AnnVar       = AnnVar { avarType :: TypeAST, avarIdent :: Ident } deriving (Eq, Show)
 
 -- Body annotated, and overall type added
 data AnnFn        = AnnFn  { annFnType :: TypeAST
@@ -247,9 +248,8 @@ data AnnFn        = AnnFn  { annFnType :: TypeAST
                            } deriving (Show)
 
 
--- No difference from PrototypeAST (!)
 data AnnPrototype = AnnPrototype    { annProtoReturnType :: TypeAST
-                                    , annProtoName       :: String
+                                    , annProtoIdent      :: Ident
                                     , annProtoVars       :: [AnnVar]
                                     } deriving (Eq, Show)
 

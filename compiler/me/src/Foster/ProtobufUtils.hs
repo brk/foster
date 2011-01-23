@@ -9,6 +9,7 @@ module Foster.ProtobufUtils (
   , dumpModuleToProtobuf
 ) where
 
+import Foster.Base
 import Foster.ExprAST
 import Foster.TypeAST
 
@@ -53,6 +54,15 @@ u8fromString s = P'.Utf8 (UTF8.fromString s)
 
 -----------------------------------------------------------------------
 
+identFullString :: Ident -> String
+identFullString = show
+
+-- Primitive values have minimal C-level name mangling, at the moment...
+dumpIdent :: Ident -> String
+dumpIdent i = let p = identPrefix i in
+              if (isJust $ lookup p rootContextPairs) || identNum i < 0
+                then identPrefix i
+                else identFullString i
 
 ---------
 
@@ -205,9 +215,10 @@ getFormal :: PbExpr.Expr -> SourceLines ->  AnnVar
 getFormal e lines = case PbExpr.tag e of
             VAR -> case parseVar e lines of
                     (E_VarAST mt v) ->
+                        let i = (Ident v (54321)) in
                         case mt of
-                            Just t  -> (AnnVar t v)
-                            Nothing -> (AnnVar (MissingTypeAST $ "ProtobufUtils.getFormal " ++ v) v)
+                            Just t  -> (AnnVar t i)
+                            Nothing -> (AnnVar (MissingTypeAST $ "ProtobufUtils.getFormal " ++ v) i)
             _   -> error "getVar must be given a var!"
 
 sourceRangeFromPBRange :: Pb.SourceRange -> SourceLines -> ESourceRange
@@ -386,13 +397,13 @@ dumpIf x@(AnnIf t a b c) =
 
 dumpInt origText = PBInt.PBInt { originalText = u8fromString origText }
 
-dumpProto (AnnPrototype t s es) =
-    Proto { Proto.name = u8fromString s
+dumpProto (AnnPrototype t ident es) =
+    Proto { Proto.name = u8fromString (dumpIdent ident)
           , in_args    = fromList $ [dumpVar e | e <- es]
           , result     = Just (dumpType t) }
 
-dumpVar (AnnVar t v) =
-    P'.defaultValue { PbExpr.name  = Just $ u8fromString v
+dumpVar (AnnVar t ident) =
+    P'.defaultValue { PbExpr.name  = Just $ u8fromString (dumpIdent ident)
                     , PbExpr.tag   = VAR
                     , PbExpr.type' = Just $ dumpType t  }
 
