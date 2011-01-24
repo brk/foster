@@ -208,6 +208,8 @@ int main(int argc, char** argv) {
 
   libfoster_bc = readLLVMModuleFromPath("libfoster.bc");
   imath_bc = readLLVMModuleFromPath("imath-wrapper.bc");
+  ASSERT(imath_bc) << "must have imath library!";
+
   const llvm::Type* mpz_struct_ty = imath_bc->getTypeByName("struct.mpz");
   if (!mpz_struct_ty) {
     EDiag() << "Unable to find imath bitcode library";

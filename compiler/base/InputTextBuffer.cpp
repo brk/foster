@@ -12,6 +12,8 @@
 using llvm::MemoryBuffer;
 using llvm::StringRef;
 
+#define LLVM_29 0
+
 #if LLVM_29
 #include "llvm/Support/system_error.h"
 using llvm::error_code;

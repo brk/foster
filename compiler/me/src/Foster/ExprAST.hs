@@ -233,6 +233,8 @@ data AnnExpr =
         --Vars go from a Maybe TypeAST to a required TypeAST
         | E_AnnVar       AnnVar
 
+        | E_AnnTyApp    AnnExpr TypeAST
+
         -- This one's a bit odd, in that we can't include an AnnExpr
         -- because the subterm doesn't need to be well-typed...
         | AnnCompiles   CompilesStatus
@@ -273,5 +275,7 @@ typeAST (AnnIf t a b c)      = t
 typeAST (AnnSeq a b)         = typeAST b
 typeAST (AnnSubscript t _ _) = t
 typeAST (E_AnnVar (AnnVar t s)) = t
+typeAST (E_AnnTyApp tm ty) = let tyscheme = typeAST tm in
+                          error $ "subst ty <<< " ++ show ty ++ " >>> in scheme " ++ show tyscheme
 
 -----------------------------------------------------------------------

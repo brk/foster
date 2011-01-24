@@ -8,6 +8,11 @@ module Foster.TypeAST where
 
 import Foster.Base
 import List(foldr1, intersperse)
+import Data.IORef(IORef)
+
+type Sigma = TypeAST
+type Rho   = TypeAST -- No top-level ForAll
+type Tau   = TypeAST -- No ForAlls anywhere
 
 data TypeAST =
            MissingTypeAST { missingTypeProgAnnotation :: String }
@@ -15,7 +20,23 @@ data TypeAST =
          | TupleTypeAST     [TypeAST]
          | FnTypeAST        TypeAST TypeAST (Maybe [String])
          | CoroType         TypeAST TypeAST
+         | ForAll           [TyVar] Rho
+         | T_TyVar          TyVar
+         | MetaTyVar        MetaTyVar
          deriving (Eq)
+
+data TyVar = BoundTyVar String
+           | SkolemTyVar String Uniq deriving (Eq)
+
+data MetaTyVar = Meta Uniq TyRef deriving (Eq)
+
+type TyRef = IORef (Maybe Tau)
+    -- Nothing: type variable not substituted
+    -- Just ty: ty var has been substituted by ty
+
+instance Show TyVar where
+    show (BoundTyVar x) = "'" ++ x
+    show (SkolemTyVar x u) = "~(" ++ x ++ "/" ++ show u ++ ")"
 
 instance Show TypeAST where
     show x = case x of
@@ -24,6 +45,9 @@ instance Show TypeAST where
         (TupleTypeAST types) -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
         (FnTypeAST s t cs)   -> "(" ++ show s ++ " -> " ++ show t ++ ")"
         (CoroType s t)   -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
+        (ForAll tvs rho) -> "(ForAll " ++ show tvs ++ ". " ++ show rho ++ ")"
+        (T_TyVar tv)     -> show tv
+        (MetaTyVar mtv)  -> "(~!)"
 
 fosBoolType = NamedTypeAST "i1"
 
@@ -72,6 +96,24 @@ rootContextPairs =
     ,(,) "coro_invoke_i32_i32x2" $ coroInvokeType [i32] [i32,i32]
     ,(,) "coro_yield_i32_i32x2"  $ coroYieldType  [i32] [i32,i32]
 
+
+    -- forall a b, (a -> b) -> Coro a b
+    ,(,) "coro_create" $ let a = BoundTyVar "a" in
+                         let b = BoundTyVar "b" in
+                         (ForAll [a, b]
+                           (FnTypeAST (FnTypeAST (T_TyVar a) (T_TyVar b) Nothing)
+                                      (CoroType  (T_TyVar a) (T_TyVar b))
+                                       Nothing))
+    -- forall a b, (a, Coro a b) -> b
+    ,(,) "coro_invoke" $ let a = BoundTyVar "a" in
+                         let b = BoundTyVar "b" in
+                         (ForAll [a, b]
+                            (FnTypeAST (TupleTypeAST [(CoroType (T_TyVar a) (T_TyVar b)), (T_TyVar a)])
+                                       (T_TyVar b) Nothing))
+    -- forall a b, (b -> a)
+    ,(,) "coro_yield"  $ let a = BoundTyVar "a" in
+                         let b = BoundTyVar "b" in
+                         (ForAll [a, b] (FnTypeAST (T_TyVar b) (T_TyVar a) Nothing))
 
     ,(,) "primitive_sext_i64_i32" $ mkFnType [i32] [i64]
     ,(,) "primitive_negate_i32"   $ mkFnType [i32] [i32]
