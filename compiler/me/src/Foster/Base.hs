@@ -6,7 +6,7 @@ data Ident = Ident { identPrefix :: String
                    , identNum    :: Uniq }
 
 instance Eq Ident where
-    (Ident _ n) == (Ident _ m) = n == m
+    i@(Ident _ _) == j@(Ident _ _) = (show i) == (show j)
 
 instance Show Ident where
     show i = (identPrefix i) ++ "!" ++ (show $ identNum i)
