@@ -80,8 +80,8 @@ termVarLookup name (bindings) =
 -- Either, with better names for the cases...
 data TypecheckResult expr
     = Annotated        expr
-    | TypecheckErrors [String]
-    deriving (Show, Eq)
+    | TypecheckErrors  Output
+    deriving (Eq)
 
 -- Based on "Practical type inference for arbitrary rank types."
 -- One significant difference is that we do not include the Gamma context
@@ -99,7 +99,7 @@ unTc   (Tc a) = a
 
 instance Monad Tc where
     return x = Tc (\_env -> return (Annotated x))
-    fail err = Tc (\_env -> return (TypecheckErrors [err]))
+    fail err = Tc (\_env -> return (TypecheckErrors (outLn err)))
     m >>= k = Tc (\env -> do { result <- unTc m env
                           ; case result of
                               Annotated expr -> unTc (k expr) env
@@ -113,6 +113,7 @@ newUniq = Tc (\tcenv -> do { let ref = tcEnvUniqs tcenv
                           ; return (Annotated uniq)
                           })
 
+tcFails :: Output -> Tc a
 tcFails errs = Tc (\_env -> return (TypecheckErrors errs))
 
 wasSuccessful :: Tc a -> Tc Bool
@@ -128,12 +129,9 @@ typeJoin (MissingTypeAST _) x = Just x
 typeJoin x (MissingTypeAST _) = Just x
 typeJoin x y = if _typesEqual x y then Just x else Nothing
 
-throwError :: String -> Tc AnnExpr
-throwError s = do fail s
-
 sanityCheck :: Bool -> String -> Tc AnnExpr
 sanityCheck cond msg = if cond then do return (AnnBool True)
-                               else throwError msg
+                               else tcFails (outCSLn Red msg)
 
 typecheck :: Context -> ExprAST -> Maybe TypeAST -> Tc AnnExpr
 typecheck ctx expr maybeExpTy =
@@ -153,7 +151,7 @@ typecheck ctx expr maybeExpTy =
         E_TupleAST  exprs b   -> typecheckTuple ctx exprs b maybeExpTy
         E_VarAST mt s -> case termVarLookup s ctx of
             Just avar  -> return $ E_AnnVar avar
-            Nothing    -> throwError $ "Unknown variable " ++ s
+            Nothing    -> tcFails $ out $ "Unknown variable " ++ s
         E_CompilesAST e c -> case c of
             CS_NotChecked -> do
                 success <- wasSuccessful (typecheck ctx e Nothing)
@@ -182,11 +180,11 @@ safeListIndex lst idx =
 typecheckSubscript base (TupleTypeAST types) i@(AnnInt ty int) maybeExpTy =
     let literalValue = read (litIntText int) :: Integer in
     case safeListIndex types (fromInteger literalValue) of
-        Nothing -> throwError $ "Literal index " ++ litIntText int ++ " to subscript was out of bounds"
+        Nothing -> tcFails $ out $ "Literal index " ++ litIntText int ++ " to subscript was out of bounds"
         Just t  -> return (AnnSubscript t base i)
 
 typecheckSubscript base baseType index maybeExpTy =
-       throwError $ "SubscriptAST " ++ show baseType ++ "[" ++ show index ++ "]" ++ " (:: " ++ show maybeExpTy ++ ")"
+       tcFails $ out $ "SubscriptAST " ++ show baseType ++ "[" ++ show index ++ "]" ++ " (:: " ++ show maybeExpTy ++ ")"
 
 getFnArgType :: TypeAST -> TypeAST
 getFnArgType (FnTypeAST a r cs) = a
@@ -217,12 +215,12 @@ typecheckCall' ea eb range call =
          (FnTypeAST formaltype restype cs, argtype) ->
             if isJust $ typeJoin formaltype argtype
                 then return (AnnCall range restype eb ea)
-                else throwError $ "CallAST mismatches:\n"
-                                       ++ "base: " ++ (showStructure eb) ++ "\n"
-                                       ++ "arg : " ++ (showStructure ea) ++ "\n"
-                                       ++ show formaltype ++ "\nvs\n" ++ show argtype ++ "\nrange:\n" ++ show range
-         otherwise -> throwError $ "CallAST w/o FnAST type: " ++ (showStructure eb)
-                                       ++ " :: " ++ (show $ typeAST eb)
+                else tcFails $ (out $ "CallAST mismatches:\n"
+                                       ++ "base: ") ++ (showStructure eb) ++ (out $ "\n"
+                                       ++ "arg : ") ++ (showStructure ea) ++ (out $ "\n"
+                                       ++ show formaltype ++ "\nvs\n" ++ show argtype ++ "\nrange:\n" ++ show range)
+         otherwise -> tcFails $ (out $ "CallAST w/o FnAST type: ") ++ (showStructure eb)
+                                       ++ (out $ " :: " ++ (show $ typeAST eb))
 
 typecheckCall ctx range call maybeExpTy =
       -- If we have an explicit redex (call to a literal function),
@@ -256,7 +254,7 @@ typecheckFn ctx f (Just (FnTypeAST s t cs')) =
     let proto = fnProto f in
     if isJust $ typeJoin (prototypeASTretType proto)   t
       then typecheckFn' ctx f (Just s) (Just t)
-      else throwError  $ "typecheck fn '" ++ prototypeASTname proto
+      else tcFails $ out $ "typecheck fn '" ++ prototypeASTname proto
                         ++ "': proto return type, " ++ show (prototypeASTretType proto)
                         ++ ", did not match return type of expected fn type " ++ show (FnTypeAST s t cs')
 
@@ -286,7 +284,7 @@ typecheckFn' ctx f expArgType expBodyType = do
             let fnty = FnTypeAST argtypes someReturnType (fmap (fmap (show.avarIdent)) cs) in
             return (E_AnnFn (AnnFn fnty annproto annbody cs))
         otherwise ->
-         throwError $ "typecheck '" ++ fnProtoName
+         tcFails $ out $ "typecheck '" ++ fnProtoName
                     ++ "': proto ret type " ++ show fnProtoRetTy
                     ++ " did not match body type " ++ show (typeAST annbody)
 
@@ -297,7 +295,7 @@ verifyNonOverlappingVariableNames fnName varNames = do
                      , List.length dups > 1]
     case duplicates of
         []        -> return (AnnBool True)
-        otherwise -> throwError $ "Error when checking " ++ fnName
+        otherwise -> tcFails $ out $ "Error when checking " ++ fnName
                                     ++ ": had duplicated formal parameter names: " ++ show duplicates
 
 -----------------------------------------------------------------------
@@ -305,14 +303,14 @@ typecheckTuple ctx exprs b Nothing = typecheckTuple' ctx exprs b [Nothing | e <-
 
 typecheckTuple ctx exprs b (Just (TupleTypeAST ts)) =
     if length exprs /= length ts
-      then throwError $ "typecheckTuple: length of tuple (" ++ (show $ length exprs) ++
+      then tcFails $ out $ "typecheckTuple: length of tuple (" ++ (show $ length exprs) ++
                         ") and expected tuple (" ++ (show $ length ts) ++
                         ") types did not agree:\n"
                             ++ show exprs ++ " versus \n" ++ show ts
       else typecheckTuple' ctx exprs b [Just t | t <- ts]
 
 typecheckTuple ctx es b (Just ty)
-    = throwError $ "typecheck: tuple (" ++ show es ++ ") cannot check against non-tuple type " ++ show ty
+    = tcFails $ out $ "typecheck: tuple (" ++ show es ++ ") cannot check against non-tuple type " ++ show ty
 
 typecheckTuple' ctx es b ts = do
         let ets = List.zip es ts -- :: [(ExprAST, TypeAST)]
@@ -331,7 +329,7 @@ typecheckTuple' ctx es b ts = do
 -- have : cE :: m a -> m b
 --              [m a]
 -----------------------------------------------------------------------
-collectErrors :: Tc a -> Tc [String]
+collectErrors :: Tc a -> Tc Output
 collectErrors tce =
     Tc (\env -> do { result <- unTc tce env
                    ; case result of
@@ -421,8 +419,9 @@ typecheckFnSCC scc (ctx, tcenv) = do
         then let fns = [f | (Annotated (E_AnnFn f)) <- annfns] in
              let newcontext = foldr extendContextWithFnA ctx fns in
              (annfns, (newcontext, tcenv))
-        else ([TypecheckErrors [ "not all functions type checked correctly in SCC: "
-                                ++ show [fnName f | f <- fns]]], (ctx, tcenv))
+        else ([TypecheckErrors (out $ "not all functions type checked correctly in SCC: "
+                                ++ show [fnName f | f <- fns])
+              ],(ctx, tcenv))
 
 --foldMap :: [Graph.SCC FnAST] -> Context -> (Graph.SCC FnAST -> Context -> IO ([TypecheckResult AnnExpr], Context)) -> ...
 --foldMap :: [[FnAST]] -> Context -> ([FnAST] -> Context -> IO ([TypecheckResult AnnExpr], Context)) -> IO ([TypecheckResult AnnExpr], Context)
@@ -454,11 +453,12 @@ inspect :: TypecheckResult AnnExpr -> ExprAST -> IO Bool
 inspect typechecked ast =
     case typechecked of
         Annotated e -> do
-            putStrLn $ "Successful typecheck!\n" ++ showStructure e
+            putStrLn $ "Successful typecheck!"
+            runOutput $ showStructure e
             return True
         TypecheckErrors errs -> do
-            putStrLn $ showStructure ast
-            forM_ errs $ \err -> do putStrLn $ "Typecheck error: " ++ err
+            runOutput $ showStructure ast
+            forM_ errs $ \err -> do runOutput $ (outCSLn Red "Typecheck error: ") ++ [err]
             return False
 
 -----------------------------------------------------------------------

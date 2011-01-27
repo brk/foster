@@ -64,23 +64,23 @@ sourceLine (SourceLines seq) n =
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 class Expr a where
-    textOf :: a -> Int -> String
+    textOf :: a -> Int -> Output
     childrenOf :: a -> [a]
 
 instance Expr ExprAST where
     textOf e width =
         let spaces = Prelude.replicate width '\SP'  in
         case e of
-            E_BoolAST rng  b     -> "BoolAST      " ++ (show b)
-            E_CallAST rng call   -> "CallAST      "
-            E_CompilesAST e c    -> "CompilesAST  "
-            E_IfAST _            -> "IfAST        "
-            E_IntAST litInt      -> "IntAST       " ++ (litIntText litInt)
-            E_FnAST f            -> "FnAST        "
-            E_SeqAST   a b       -> "SeqAST       "
-            E_SubscriptAST  a b  -> "SubscriptAST "
-            E_TupleAST     es b  -> "TupleAST     "
-            E_VarAST mt v        -> "VarAST       " ++ v ++ " :: " ++ show mt
+            E_BoolAST rng  b     -> out $ "BoolAST      " ++ (show b)
+            E_CallAST rng call   -> out $ "CallAST      "
+            E_CompilesAST e c    -> out $ "CompilesAST  "
+            E_IfAST _            -> out $ "IfAST        "
+            E_IntAST litInt      -> out $ "IntAST       " ++ (litIntText litInt)
+            E_FnAST f            -> out $ "FnAST        "
+            E_SeqAST   a b       -> out $ "SeqAST       "
+            E_SubscriptAST  a b  -> out $ "SubscriptAST "
+            E_TupleAST     es b  -> out $ "TupleAST     "
+            E_VarAST mt v        -> out $ "VarAST       " ++ v ++ " :: " ++ show mt
     childrenOf e =
         case e of
             E_BoolAST rng b      -> []
@@ -98,16 +98,16 @@ instance Expr AnnExpr where
     textOf e width =
         let spaces = Prelude.replicate width '\SP'  in
         case e of
-            AnnBool         b    -> "AnnBool      " ++ (show b)
-            AnnCall  r t b a     -> "AnnCall      " ++ " :: " ++ show t
-            AnnCompiles     c    -> "AnnCompiles  "
-            AnnIf      t  a b c  -> "AnnIf        " ++ " :: " ++ show t
-            AnnInt ty int        -> "AnnInt       " ++ (litIntText int) ++ " :: " ++ show ty
-            E_AnnFn annFn        -> "AnnFn        "
-            AnnSeq          a b  -> "AnnSeq       " ++ " :: " ++ show (typeAST b)
-            AnnSubscript  t a b  -> "AnnSubscript " ++ " :: " ++ show t
-            AnnTuple     es b    -> "AnnTuple     "
-            E_AnnVar (AnnVar t v) -> "AnnVar       " ++ show v ++ " :: " ++ show t
+            AnnBool         b    -> out $ "AnnBool      " ++ (show b)
+            AnnCall  r t b a     -> out $ "AnnCall      " ++ " :: " ++ show t
+            AnnCompiles     c    -> out $ "AnnCompiles  "
+            AnnIf      t  a b c  -> out $ "AnnIf        " ++ " :: " ++ show t
+            AnnInt ty int        -> out $ "AnnInt       " ++ (litIntText int) ++ " :: " ++ show ty
+            E_AnnFn annFn        -> out $ "AnnFn        "
+            AnnSeq          a b  -> out $ "AnnSeq       " ++ " :: " ++ show (typeAST b)
+            AnnSubscript  t a b  -> out $ "AnnSubscript " ++ " :: " ++ show t
+            AnnTuple     es b    -> out $ "AnnTuple     "
+            E_AnnVar (AnnVar t v) ->out $ "AnnVar       " ++ show v ++ " :: " ++ show t
     childrenOf e =
         case e of
             AnnBool         b                    -> []
@@ -176,12 +176,12 @@ data PrototypeAST = PrototypeAST {
 -- │ └─AnnTuple
 -- │   └─AnnInt       999999 :: i32
 
-showStructure :: (Expr a) => a -> String
-showStructure e = showStructureP e "" False where
+showStructure :: (Expr a) => a -> Output
+showStructure e = showStructureP e (out "") False where
     showStructureP e prefix isLast =
         let children = childrenOf e in
-        let thisIndent = prefix ++ if isLast then "└─" else "├─" in
-        let nextIndent = prefix ++ if isLast then "  " else "│ " in
+        let thisIndent = prefix ++ out (if isLast then "└─" else "├─") in
+        let nextIndent = prefix ++ out (if isLast then "  " else "│ ") in
         let padding = max 6 (60 - Prelude.length thisIndent) in
         -- [ (child, index, numchildren) ]
         let childpairs = Prelude.zip3 children [1..]
@@ -189,7 +189,7 @@ showStructure e = showStructureP e "" False where
         let childlines = map (\(c, n, l) ->
                                 showStructureP c nextIndent (n == l))
                              childpairs in
-        thisIndent ++ (textOf e padding ++ "\n") ++ Prelude.foldl (++) "" childlines
+        (thisIndent :: Output) ++ (textOf e padding) ++ (out "\n") ++ (Prelude.foldl (++) (out "") childlines)
 
 -- | Converts a right-leaning "list" of SeqAST nodes to a List
 unbuildSeqs :: ExprAST -> [ExprAST]
