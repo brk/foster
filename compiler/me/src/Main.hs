@@ -31,6 +31,7 @@ import Data.IORef(IORef,newIORef,readIORef,writeIORef)
 
 import Text.ProtocolBuffers(messageGet)
 
+import System.Console.ANSI
 import Foster.Base
 import Foster.ProtobufUtils
 import Foster.ExprAST

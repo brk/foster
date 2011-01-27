@@ -1,5 +1,29 @@
 module Foster.Base where
 
+import System.Console.ANSI
+import Control.Monad
+
+data Outputs = Outputs [SGR] String
+type Output = [Outputs]
+
+out :: String -> Output
+out s = [(Outputs ([] :: [SGR]) s)]
+
+outLn s = out (s ++ "\n")
+
+outCS :: Color -> String -> Output
+outCS c s = [Outputs [SetColor Foreground Dull c] s]
+
+outCSLn c s = outCS c (s ++ "\n")
+
+runOutput :: Output -> IO ()
+runOutput outs = do
+    forM_ outs $ (\(Outputs sgrs str) -> do
+                _ <- setSGR sgrs
+                putStr str
+                setSGR []
+            )
+
 type Uniq = Int
 
 data Ident = Ident { identPrefix :: String
