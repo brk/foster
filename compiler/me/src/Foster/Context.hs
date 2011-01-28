@@ -4,6 +4,7 @@ import Data.IORef(IORef,newIORef,readIORef,writeIORef)
 
 import Foster.Base
 import Foster.ExprAST
+import Foster.TypeAST
 
 data ContextBinding = TermVarBinding String AnnVar
 data Context = Context { contextBindings :: [ContextBinding]
@@ -64,19 +65,28 @@ instance Monad Tc where
                               Annotated expr -> unTc (k expr) env
                               TypecheckErrors ss -> return (TypecheckErrors ss)
                            })
+
 tcLift :: IO a -> Tc a
 tcLift action = Tc (\_env -> do { r <- action; return (Annotated r) })
+
+newTcRef v = tcLift $ newIORef v
+
+newTcUnificationVar :: Tc MetaTyVar
+newTcUnificationVar = do
+    u   <- newTcUniq
+    ref <- newTcRef Nothing
+    return $ Meta u ref
 
 tcWithScope :: ExprAST -> Tc a -> Tc a
 tcWithScope expr (Tc f)
     = Tc (\env -> f (env { tcParents = expr:(tcParents env) }))
 
-newUniq :: Tc Uniq
-newUniq = Tc (\tcenv -> do { let ref = tcEnvUniqs tcenv
-                           ; uniq <- readIORef ref
-                           ; writeIORef ref (uniq + 1)
-                           ; return (Annotated uniq)
-                           })
+newTcUniq :: Tc Uniq
+newTcUniq = Tc (\tcenv -> do { let ref = tcEnvUniqs tcenv
+                             ; uniq <- readIORef ref
+                             ; writeIORef ref (uniq + 1)
+                             ; return (Annotated uniq)
+                             })
 
 tcGetCurrentHistory :: Tc [ExprAST]
 tcGetCurrentHistory = Tc (\tcenv -> do { return (Annotated $

@@ -111,9 +111,33 @@ getFnArgType x = error $ "Called argType on non-FnTypeAST: " ++ show x
 
 irrelevantClosedOverVars = Nothing
 
+-- Example: argtype:             ((Coro i32 i32), i32)
+--          eb:
+--  typeAST eb: (ForAll ['a,'b]. (((Coro 'a 'b), 'a) -> 'b))
+--  getFnArgType $ typeAST eb:    ((Coro 'a 'b), 'a)
+-- So we unify the type of the actual argument
+-- with the arg type under the forall, and the
+-- resulting substitution tells us what type application to produce.
+-- Much of the complexity here comes from the fact that we distinguish between
+-- forall-bound tyvars and meta type variables (aka unification variables).
+implicitTypeProjection :: [TyVar] -> TypeAST -> AnnExpr -> TypeAST -> ESourceRange -> Tc AnnExpr
+implicitTypeProjection tyvars rho eb argtype range = do
+    unificationVars <- sequence [newTcUnificationVar | _ <- tyvars]
+    let (FnTypeAST rhoArgType _ _) = rho
+    let t_tyvars = [T_TyVar tv | tv <- tyvars]
+    let unifiableArgType = parSubstTy (List.zip t_tyvars [MetaTyVar u | u <- unificationVars]) rhoArgType
+    case unifyTypes unifiableArgType argtype of
+        Nothing -> error $ "Failed to determine type arguments to apply!" ++ show range
+        (Just tysub) ->
+            let tyProjTypes = extractSubstTypes unificationVars tysub in
+            let unifiableRhoType = parSubstTy (List.zip t_tyvars [MetaTyVar u | u <- unificationVars]) rho in
+            let substRho = tySubst unifiableRhoType tysub in
+            return $ E_AnnTyApp substRho eb (minimalTuple tyProjTypes)
+
+
 typecheckCall' ea eb range call =
     case (typeAST eb, typeAST ea) of
-         ((ForAll tvs rho), argtype) ->
+         ((ForAll tvs rho), argtype) -> do
             -- Example: argtype:             ((Coro i32 i32), i32)
             --          eb:
             --  typeAST eb: (ForAll ['a,'b]. (((Coro 'a 'b), 'a) -> 'b))
@@ -122,14 +146,16 @@ typecheckCall' ea eb range call =
             -- with the arg type under the forall, and the
             -- resulting substitution tells us what type application to produce.
             --typecheckCall' ea (E_AnnTyApp eb argtype) range call
-
+            annTyApp <- implicitTypeProjection tvs rho eb argtype range
+            typecheckCall' ea annTyApp range call
+            {-
             do ebStruct <- tcShowStructure eb
                tcFails $ ebStruct ++ (out $ "CallAST against non-instantiated ForAll type: " ++ show (ForAll tvs rho)
                                 ++ "\n :: " ++ (show $ typeAST eb)
                                 ++ "\n" ++ "argType: " ++ show argtype
                                 ++ "\n" ++ show range
                                 ++ "\n" ++ "====================")
-
+            -}
          (FnTypeAST formaltype restype cs, argtype) ->
             if isJust $ typeJoin formaltype argtype
                 then return (AnnCall range restype eb ea)
@@ -185,7 +211,7 @@ rename (Ident p i) u = (Ident p u)
 
 uniquelyName :: AnnVar -> Tc AnnVar
 uniquelyName (AnnVar ty id) = do
-    uniq <- newUniq
+    uniq <- newTcUniq
     return (AnnVar ty (rename id uniq))
 
 typecheckFn' :: Context -> FnAST -> Maybe TypeAST -> Maybe TypeAST -> Tc AnnExpr
