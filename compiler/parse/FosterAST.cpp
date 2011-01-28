@@ -209,6 +209,7 @@ void       NilExprAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
 void     PrototypeAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
 void        ModuleAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
 void          CallAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
+void      ETypeAppAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
 void NamedTypeDeclAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
 void BuiltinCompilesExprAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
 

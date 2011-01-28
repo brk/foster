@@ -65,6 +65,7 @@ struct ExprASTDiff : public ExprASTVisitor {
   void visit(BuiltinCompilesExprAST* ast);
   void visit(IfExprAST* ast);
   void visit(TupleExprAST* ast);
+  void visit(ETypeAppAST* ast);
   void visit(ModuleAST* ast);
   void visit(SeqAST* ast);
   void visit(NilExprAST* ast);
@@ -188,6 +189,18 @@ void ExprASTDiff::visit(PrototypeAST* ast)           {
     }
   }
   llvm::outs() << "ExprASTDiff::PrototypeAST ok" << "\n";
+}
+
+
+void ExprASTDiff::visit(ETypeAppAST* ast)           {
+  if (ETypeAppAST* ibad = sanityCheck(ast)) {
+    if (compareTypeASTs(ast->type, ibad->type)) {
+    } else if (compareTypeASTs(ast->typeArg, ibad->typeArg)) {
+    } else {
+      this->visitChildren(ast);
+    }
+  }
+  llvm::outs() << "ExprASTDiff::ETypeAppAST ok" << "\n";
 }
 
 /////////////////////////////////////////////

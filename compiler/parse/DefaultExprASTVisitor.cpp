@@ -19,6 +19,7 @@ void DefaultExprASTVisitor::visit(SubscriptAST* ast)           { if (0) this->vi
 //void DefaultExprASTVisitor::visit(SimdVectorAST* ast)          { if (0) this->visitChildren(ast); }
 void DefaultExprASTVisitor::visit(SeqAST* ast)                 { if (0) this->visitChildren(ast); }
 void DefaultExprASTVisitor::visit(CallAST* ast)                { this->visitChildren(ast); }
+void DefaultExprASTVisitor::visit(ETypeAppAST* ast)            { this->visitChildren(ast); }
 void DefaultExprASTVisitor::visit(TupleExprAST* ast)           { if (0) this->visitChildren(ast); }
 void DefaultExprASTVisitor::visit(BuiltinCompilesExprAST* ast) { this->visitChildren(ast); }
 //void DefaultExprASTVisitor::visit(ArrayExprAST* ast)           { this->visitChildren(ast); }

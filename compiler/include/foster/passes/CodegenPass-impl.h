@@ -56,6 +56,8 @@ struct CodegenPass : public ExprASTVisitor {
     //delete dib;
   }
 
+  void codegen(ExprAST*);
+
   llvm::Value* lookup(const std::string& fullyQualifiedSymbol);
 
   // Returns ty**, the stack slot containing a ty*.

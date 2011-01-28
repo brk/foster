@@ -100,14 +100,14 @@ instance Expr AnnExpr where
         case e of
             AnnBool         b    -> out $ "AnnBool      " ++ (show b)
             AnnCall  r t b a     -> out $ "AnnCall      " ++ " :: " ++ show t
-            AnnCompiles     c    -> out $ "AnnCompiles  "
+            AnnCompiles     c    -> out $ "AnnCompiles  " ++ show c
             AnnIf      t  a b c  -> out $ "AnnIf        " ++ " :: " ++ show t
             AnnInt ty int        -> out $ "AnnInt       " ++ (litIntText int) ++ " :: " ++ show ty
             E_AnnFn annFn        -> out $ "AnnFn        "
             AnnSeq          a b  -> out $ "AnnSeq       " ++ " :: " ++ show (typeAST b)
             AnnSubscript  t a b  -> out $ "AnnSubscript " ++ " :: " ++ show t
             AnnTuple     es b    -> out $ "AnnTuple     "
-            E_AnnVar (AnnVar t v) ->out $ "AnnVar       " ++ show v ++ " :: " ++ show t
+            E_AnnVar (AnnVar t v) -> out $ "AnnVar       " ++ show v ++ " :: " ++ show t
     childrenOf e =
         case e of
             AnnBool         b                    -> []

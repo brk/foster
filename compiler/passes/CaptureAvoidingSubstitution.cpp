@@ -84,6 +84,7 @@ void CaptureAvoidingSubstitution::visit(SubscriptAST* ast)           { visitChil
 //void CaptureAvoidingSubstitution::visit(SimdVectorAST* ast)          { visitChildren(ast); }
 void CaptureAvoidingSubstitution::visit(SeqAST* ast)                 { visitChildren(ast); }
 void CaptureAvoidingSubstitution::visit(CallAST* ast)                { visitChildren(ast); }
+void CaptureAvoidingSubstitution::visit(ETypeAppAST* ast)            { visitChildren(ast); }
 //void CaptureAvoidingSubstitution::visit(ArrayExprAST* ast)           { visitChildren(ast); }
 void CaptureAvoidingSubstitution::visit(TupleExprAST* ast)           { visitChildren(ast); }
 void CaptureAvoidingSubstitution::visit(BuiltinCompilesExprAST* ast) { visitChildren(ast); }

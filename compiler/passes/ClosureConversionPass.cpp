@@ -160,6 +160,9 @@ void ClosureConversionPass::visit(NamedTypeDeclAST* ast) {
 void ClosureConversionPass::visit(IfExprAST* ast)              {
   visitChildren(ast);
 }
+void ClosureConversionPass::visit(ETypeAppAST* ast)            {
+  visitChildren(ast);
+}
 void ClosureConversionPass::visit(NilExprAST* ast)             { return; }
 void ClosureConversionPass::visit(SubscriptAST* ast)           { return; }
 //void ClosureConversionPass::visit(SimdVectorAST* ast)          { return; }

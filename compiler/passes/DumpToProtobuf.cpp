@@ -156,6 +156,13 @@ void DumpToProtobufPass::visit(CallAST* ast)                {
   dumpChildren(this, ast);
 }
 
+void DumpToProtobufPass::visit(ETypeAppAST* ast)                {
+  processExprAST(current, ast, foster::pb::Expr::TY_APP);
+  dumpChildren(this, ast);
+  DumpTypeToProtobufPass dt(current->mutable_ty_app_arg_type());
+  ast->typeArg->accept(&dt);
+}
+
 void DumpToProtobufPass::visit(TupleExprAST* ast)           {
   processExprAST(current, ast, foster::pb::Expr::TUPLE);
   current->set_is_closure_environment(ast->isClosureEnvironment);

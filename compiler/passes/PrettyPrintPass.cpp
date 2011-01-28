@@ -45,6 +45,7 @@ public:
 
   void setPrintSignaturesOnly(bool newval) { printSignaturesOnly = newval; }
   void scan(const PrettyPrinter::PPToken& token) { pp.scan(token); }
+  void emitType(TypeAST* ty);
 
   ~PrettyPrintPass() {}
 
@@ -140,6 +141,10 @@ bool needsParens(ExprAST* child) {
 
 ////////////////////////////////////////////////////////////////////
 
+void PrettyPrintPass::emitType(TypeAST* ty) {
+  scan(PPToken(str(ty)));
+}
+
 void PrettyPrintPass::emit(ExprAST* ast, bool forceParens) {
   recurse(this, ast, forceParens || foster::wasExplicitlyParenthesized(ast));
 }
@@ -162,8 +167,7 @@ void PrettyPrintPass::visit(VariableAST* ast) {
   if (this->printVarTypes) {
     scan(PPToken(":"));
     if (ast->type) {
-      // TODO eventually this should scan tokens, not a full string.
-      scan(PPToken(str(ast->type)));
+      emitType(ast->type);
     }
   }
 }
@@ -378,6 +382,15 @@ void PrettyPrintPass::visit(CallAST* ast) {
   scan(PPToken(")"));
   } // scoped block
 }
+
+// $0.[$ty]
+void PrettyPrintPass::visit(ETypeAppAST* ast) {
+  emit(ast->parts[0]);
+  scan(PPToken(".["));
+  emitType(ast->typeArg);
+  scan(PPToken("]"));
+}
+
 #if 0
 // array $0
 void PrettyPrintPass::visit(ArrayExprAST* ast) {

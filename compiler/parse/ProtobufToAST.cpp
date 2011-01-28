@@ -223,6 +223,19 @@ ExprAST* parseTuple(const pb::Expr& e, const foster::SourceRange& range) {
   return rv;
 }
 
+ExprAST* parseE_TyApp(const pb::Expr& e, const foster::SourceRange& range) {
+  ASSERT(e.has_type()) << "TY_APP must have overall type";
+  ASSERT(e.has_ty_app_arg_type()) << "TY_APP must have arg type";
+  ASSERT(e.parts_size() == 1) << "TY_APP must have base";
+
+  TypeAST* overallType = TypeAST_from_pb(&e.type());
+  ExprAST* tyapp = new ETypeAppAST(
+      overallType,
+      ExprAST_from_pb(& e.parts(0)),
+      TypeAST_from_pb(& e.ty_app_arg_type()), range);
+  return tyapp;
+}
+
 ExprAST* parseVar(const pb::Expr& e, const foster::SourceRange& range) {
   TypeAST* ty = e.has_type() ? TypeAST_from_pb(&e.type()) : NULL;
   return new VariableAST(e.name(), ty, range);
@@ -253,6 +266,7 @@ ExprAST* ExprAST_from_pb(const pb::Expr* pe) {
   case pb::Expr::PROTO:     rv = parseProto(e, range); break;
   case pb::Expr::SEQ:       rv = parseSeq(e, range); break;
 //  case pb::Expr::SIMD:      rv = parseSimd(e, range); break;
+  case pb::Expr::TY_APP:    rv = parseE_TyApp(e, range); break;
   case pb::Expr::SUBSCRIPT: rv = parseSubscript(e, range); break;
   case pb::Expr::TUPLE:     rv = parseTuple(e, range); break;
   case pb::Expr::VAR:       rv = parseVar(e, range); break;

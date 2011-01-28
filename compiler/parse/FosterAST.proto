@@ -19,6 +19,7 @@ message Type {
     CORO = 4;
     TUPLE = 5;
     CARRAY = 6;
+    FORALL_TY = 7;
     TYPE_VARIABLE = 8;
   }
 
@@ -32,6 +33,8 @@ message Type {
   // for tuple, coro, carray
   repeated Type type_parts = 18;
   optional uint64 carray_size = 19;
+
+  repeated string tyvar_names = 20; // for FORALL_TY
 }
 
 message FnType {
@@ -53,7 +56,7 @@ message Expr {
     PROTO = 22;
     CALL = 23;
     SEQ = 24;
-
+    TY_APP = 25;
     SUBSCRIPT = 26;
 
 
@@ -91,6 +94,9 @@ message Expr {
 
   // Fn
   optional bool is_closure = 27;
+
+  // AnnTyApp
+  optional Type ty_app_arg_type = 29;
 }
 
 message PBInt {

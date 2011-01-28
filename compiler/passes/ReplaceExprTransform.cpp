@@ -58,6 +58,7 @@ void ReplaceExprTransform::visit(SubscriptAST* ast)           { visitChildren(as
 //void ReplaceExprTransform::visit(SimdVectorAST* ast)          { visitChildren(ast); this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(SeqAST* ast)                 { visitChildren(ast); this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(CallAST* ast)                { visitChildren(ast); this->newChild = rewrite(ast); }
+void ReplaceExprTransform::visit(ETypeAppAST* ast)            { visitChildren(ast); this->newChild = rewrite(ast); }
 //void ReplaceExprTransform::visit(ArrayExprAST* ast)           { visitChildren(ast); this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(TupleExprAST* ast)           { visitChildren(ast); this->newChild = rewrite(ast); }
 void ReplaceExprTransform::visit(BuiltinCompilesExprAST* ast) { visitChildren(ast); this->newChild = rewrite(ast); }

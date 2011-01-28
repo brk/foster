@@ -156,6 +156,17 @@ struct CallAST : public ExprAST {
   virtual void accept(ExprASTVisitor* visitor);
 };
 
+// e[ty]
+struct ETypeAppAST : public ExprAST {
+  TypeAST* typeArg;
+  explicit ETypeAppAST(TypeAST* overallType, ExprAST* base, TypeAST* arg,
+                    foster::SourceRange sourceRange)
+      : ExprAST("ETypeAppAST", sourceRange), typeArg(arg) {
+    parts.push_back(base);
+  }
+  virtual void accept(ExprASTVisitor* visitor);
+};
+
 // In some sense, this is a type abstraction that's forced to be a redex
 // (in exactly the same way that 'let' is). Only, unlike 'let', we don't
 // (yet) have a standalone type abstraction. Also, in contrast to 'let',
