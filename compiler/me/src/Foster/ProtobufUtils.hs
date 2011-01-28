@@ -36,7 +36,8 @@ import Foster.Pb.PBIf     as PBIf
 import Foster.Pb.PBInt    as PBInt
 import Foster.Pb.Expr     as PbExpr
 import Foster.Pb.SourceModule as SourceModule
-import Foster.Pb.Expr.Tag(Tag(PB_INT, BOOL, VAR, TUPLE, COMPILES, MODULE, IF, FN, PROTO, CALL, SEQ, SUBSCRIPT))
+import Foster.Pb.Expr.Tag(Tag(PB_INT, BOOL, VAR, TUPLE, COMPILES, MODULE,
+                              TY_APP, IF, FN, PROTO, CALL, SEQ, SUBSCRIPT))
 import qualified Foster.Pb.SourceRange as Pb
 import qualified Foster.Pb.SourceLocation as Pb
 
@@ -299,6 +300,18 @@ dumpType x@(FnTypeAST s t cs) = P'.defaultValue { PbType.tag  = PbTypeTag.FN
 dumpType x@(CoroType a b)     = P'.defaultValue { PbType.tag  = PbTypeTag.CORO
                                                 ,  type_parts = fromList $ fmap dumpType [a,b] }
 
+dumpType x@(ForAll tyvars ty) = let tyVarName tv = case tv of
+                                                    BoundTyVar nm -> u8fromString nm
+                                                    SkolemTyVar s u -> error $ "dumpType (Forall ...) saw skolem var " ++ s
+                                in
+                                P'.defaultValue { PbType.tag  = PbTypeTag.FORALL_TY
+                                                ,  type_parts = fromList $ fmap dumpType [ty]
+                                                , tyvar_names = fromList $ fmap tyVarName tyvars }
+dumpType x@(T_TyVar (BoundTyVar s)) =
+                                P'.defaultValue { PbType.tag  = PbTypeTag.TYPE_VARIABLE
+                                                , PbType.name = Just $ u8fromString s
+                                                }
+dumpType other = error $ "dumpType saw unknown type " ++ show other
 
 dumpFnTy (FnTypeAST s t cs) =
     let args = case s of
@@ -365,6 +378,12 @@ dumpExpr x@(AnnIf t a b c) =
     P'.defaultValue { pb_if        = Just (dumpIf $ x)
                     , PbExpr.tag   = IF
                     , PbExpr.type' = Just $ dumpType (typeAST x) }
+
+dumpExpr x@(E_AnnTyApp overallTy baseExpr argType) =
+    P'.defaultValue { PbExpr.ty_app_arg_type = Just $ dumpType argType
+                    , PbExpr.parts = fromList (fmap dumpExpr [baseExpr])
+                    , PbExpr.tag   = TY_APP
+                    , PbExpr.type' = Just $ dumpType overallTy }
 
 -----------------------------------------------------------------------
 intToInt32 :: Int -> P'.Int32

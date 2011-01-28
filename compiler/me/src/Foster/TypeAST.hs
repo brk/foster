@@ -7,7 +7,7 @@
 module Foster.TypeAST where
 
 import Foster.Base
-import List(foldr1, intersperse)
+import List(foldr1, intersperse, length)
 import Data.IORef(IORef)
 
 type Sigma = TypeAST
@@ -25,7 +25,7 @@ data TypeAST =
          | MetaTyVar        MetaTyVar
          deriving (Eq)
 
-data TyVar = BoundTyVar String
+data TyVar = BoundTyVar String -- bound by a ForAll, that is
            | SkolemTyVar String Uniq deriving (Eq)
 
 data MetaTyVar = Meta Uniq TyRef deriving (Eq)
