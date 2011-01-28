@@ -384,7 +384,7 @@ buildCallGraph asts ctx =
     Graph.stronglyConnComp nodeList
 
 fnNameA :: AnnFn -> String
-fnNameA f = show $ annProtoIdent (annFnProto f)
+fnNameA f = identPrefix $ annProtoIdent (annFnProto f)
 
 annFnVar f = AnnVar (annFnType f) (annProtoIdent $ annFnProto f)
 
