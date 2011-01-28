@@ -39,14 +39,6 @@ import Foster.TypeAST
 
 -----------------------------------------------------------------------
 
-_typesEqual :: TypeAST -> TypeAST -> Bool
-_typesEqual (TupleTypeAST as) (TupleTypeAST bs) =
-    List.length as == List.length bs && Prelude.and [_typesEqual a b | (a, b) <- Prelude.zip as bs]
-_typesEqual (FnTypeAST s1 t1 c1) (FnTypeAST s2 t2 c2) =
-    _typesEqual s1 s2 && _typesEqual t1 t2 -- ignore c1 and c2 for now...
-_typesEqual ta tb = ta == tb
-
-
 typeJoinVars :: [AnnVar] -> (Maybe TypeAST) -> [AnnVar]
 typeJoinVars vars (Nothing) = vars
 typeJoinVars vars (Just (MissingTypeAST _)) = vars
@@ -127,7 +119,7 @@ wasSuccessful tce =
 typeJoin :: TypeAST -> TypeAST -> Maybe TypeAST
 typeJoin (MissingTypeAST _) x = Just x
 typeJoin x (MissingTypeAST _) = Just x
-typeJoin x y = if _typesEqual x y then Just x else Nothing
+typeJoin x y = if x == y then Just x else Nothing
 
 sanityCheck :: Bool -> String -> Tc AnnExpr
 sanityCheck cond msg = if cond then do return (AnnBool True)

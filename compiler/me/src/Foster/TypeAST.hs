@@ -23,12 +23,11 @@ data TypeAST =
          | ForAll           [TyVar] Rho
          | T_TyVar          TyVar
          | MetaTyVar        MetaTyVar
-         deriving (Eq)
 
 data TyVar = BoundTyVar String -- bound by a ForAll, that is
            | SkolemTyVar String Uniq deriving (Eq)
 
-data MetaTyVar = Meta Uniq TyRef deriving (Eq)
+data MetaTyVar = Meta Uniq TyRef
 
 type TyRef = IORef (Maybe Tau)
     -- Nothing: type variable not substituted
@@ -48,6 +47,28 @@ instance Show TypeAST where
         (ForAll tvs rho) -> "(ForAll " ++ show tvs ++ ". " ++ show rho ++ ")"
         (T_TyVar tv)     -> show tv
         (MetaTyVar mtv)  -> "(~!)"
+
+instance Eq TypeAST where
+    t1 == t2 = typesEqual t1 t2
+
+instance Eq MetaTyVar where
+    (Meta u1 _) == (Meta u2 _) = u1 == u2
+
+typesEqual :: TypeAST -> TypeAST -> Bool
+
+typesEqual (MissingTypeAST x) (MissingTypeAST y) = x == y
+typesEqual (NamedTypeAST x) (NamedTypeAST y) = x == y
+typesEqual (TupleTypeAST as) (TupleTypeAST bs) =
+    List.length as == List.length bs && Prelude.and [typesEqual a b | (a, b) <- Prelude.zip as bs]
+typesEqual (FnTypeAST a1 b1 c1) (FnTypeAST a2 b2 c2) =
+    typesEqual a1 a2 && typesEqual b1 b2 -- ignore c1 and c2 for now...
+typesEqual (CoroType a1 b1) (CoroType a2 b2) = typesEqual a1 a2 && typesEqual b1 b2
+typesEqual (ForAll vars1 ty1) (ForAll vars2 ty2) =
+    vars1 == vars2 && typesEqual ty1 ty2
+typesEqual (T_TyVar tv1) (T_TyVar tv2) = tv1 == tv2
+typesEqual (MetaTyVar mtv1) (MetaTyVar mtv2) = mtv1 == mtv2
+typesEqual _ _ = False
+
 
 fosBoolType = NamedTypeAST "i1"
 
