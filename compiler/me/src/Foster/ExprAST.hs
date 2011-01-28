@@ -67,16 +67,20 @@ class Expr a where
     textOf :: a -> Int -> Output
     childrenOf :: a -> [a]
 
+tryGetCallNameE :: ExprAST -> String
+tryGetCallNameE (E_VarAST mt v) = v
+tryGetCallNameE _ = ""
+
 instance Expr ExprAST where
     textOf e width =
         let spaces = Prelude.replicate width '\SP'  in
         case e of
             E_BoolAST rng  b     -> out $ "BoolAST      " ++ (show b)
-            E_CallAST rng call   -> out $ "CallAST      "
+            E_CallAST rng call   -> out $ "CallAST      " ++ tryGetCallNameE (callASTbase call)
             E_CompilesAST e c    -> out $ "CompilesAST  "
             E_IfAST _            -> out $ "IfAST        "
             E_IntAST litInt      -> out $ "IntAST       " ++ (litIntText litInt)
-            E_FnAST f            -> out $ "FnAST        "
+            E_FnAST f            -> out $ "FnAST        " ++ (prototypeASTname $ fnProto f)
             E_SeqAST   a b       -> out $ "SeqAST       "
             E_SubscriptAST  a b  -> out $ "SubscriptAST "
             E_TupleAST     es b  -> out $ "TupleAST     "
@@ -94,6 +98,7 @@ instance Expr ExprAST where
             E_TupleAST     es b  -> es
             E_VarAST       mt v  -> []
 
+
 instance Expr AnnExpr where
     textOf e width =
         let spaces = Prelude.replicate width '\SP'  in
@@ -108,6 +113,7 @@ instance Expr AnnExpr where
             AnnSubscript  t a b  -> out $ "AnnSubscript " ++ " :: " ++ show t
             AnnTuple     es b    -> out $ "AnnTuple     "
             E_AnnVar (AnnVar t v) -> out $ "AnnVar       " ++ show v ++ " :: " ++ show t
+            E_AnnTyApp t e argty -> out $ "AnnTyApp     [" ++ show argty ++ "] :: " ++ show t
     childrenOf e =
         case e of
             AnnBool         b                    -> []
@@ -120,6 +126,7 @@ instance Expr AnnExpr where
             AnnSubscript t a b                   -> [a, b]
             AnnTuple     es b                    -> es
             E_AnnVar      v                      -> []
+            E_AnnTyApp t e argty                 -> [e]
 
 data ModuleAST fnType = ModuleAST {
           moduleASTfunctions   :: [fnType]
@@ -233,7 +240,9 @@ data AnnExpr =
         --Vars go from a Maybe TypeAST to a required TypeAST
         | E_AnnVar       AnnVar
 
-        | E_AnnTyApp    AnnExpr TypeAST
+        | E_AnnTyApp {  annTyAppOverallType :: TypeAST
+                     ,  annTyAppExpr        :: AnnExpr
+                     ,  annTyAppArgTypes    :: TypeAST }
 
         -- This one's a bit odd, in that we can't include an AnnExpr
         -- because the subterm doesn't need to be well-typed...
@@ -275,7 +284,6 @@ typeAST (AnnIf t a b c)      = t
 typeAST (AnnSeq a b)         = typeAST b
 typeAST (AnnSubscript t _ _) = t
 typeAST (E_AnnVar (AnnVar t s)) = t
-typeAST (E_AnnTyApp tm ty) = let tyscheme = typeAST tm in
-                          error $ "subst ty <<< " ++ show ty ++ " >>> in scheme " ++ show tyscheme
+typeAST (E_AnnTyApp substitutedTy tm tyArgs) = substitutedTy
 
 -----------------------------------------------------------------------

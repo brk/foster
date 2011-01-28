@@ -205,13 +205,13 @@ typecheckCall' ea eb range call =
             -- So we unify the type of the actual argument
             -- with the arg type under the forall, and the
             -- resulting substitution tells us what type application to produce.
-            typecheckCall' ea (E_AnnTyApp eb argtype) range call
-            {-
-            throwError $ "CallAST against non-instantiated ForAll type: " ++ show (ForAll tvs rho)
-                                ++ "\n" ++ (showStructure eb) ++ " :: " ++ (show $ typeAST eb)
+            --typecheckCall' ea (E_AnnTyApp eb argtype) range call
+
+            tcFails $ (out $ "CallAST against non-instantiated ForAll type: " ++ show (ForAll tvs rho)
+                                ++ "\n") ++ (showStructure eb) ++ (out $ " :: " ++ (show $ typeAST eb)
                                 ++ "\n" ++ "argType: " ++ show argtype
-                                ++ "\n" ++ show range
-           -}
+                                ++ "\n" ++ show range)
+
          (FnTypeAST formaltype restype cs, argtype) ->
             if isJust $ typeJoin formaltype argtype
                 then return (AnnCall range restype eb ea)

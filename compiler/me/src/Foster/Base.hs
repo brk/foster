@@ -20,7 +20,8 @@ outCS c s = [OutputData [SetColor Foreground Dull c] s]
 
 outCSLn c s = outCS c (s ++ "\n")
 
-outToString o = fmap outputDataString o
+outToString :: Output -> String
+outToString o = concat $ map outputDataString o
 
 runOutput :: Output -> IO ()
 runOutput outs = do
