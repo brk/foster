@@ -27,7 +27,7 @@ typeJoinVars vars (Just (TupleTypeAST expTys)) =
     [(AnnVar (fromJust (typeJoin t e)) v) | ((AnnVar t v), e) <- (List.zip vars expTys)]
 
 
-extractBindings :: [AnnVar] -> Maybe TypeAST -> Context
+extractBindings :: [AnnVar] -> Maybe TypeAST -> [ContextBinding]
 extractBindings fnProtoFormals maybeExpTy =
     let bindingForVar v = TermVarBinding (identPrefix $ avarIdent v) v in
     let bindings = map bindingForVar (typeJoinVars fnProtoFormals maybeExpTy) in
@@ -35,7 +35,8 @@ extractBindings fnProtoFormals maybeExpTy =
       bindings
 
 extendContext :: Context -> [AnnVar] -> Maybe TypeAST -> Context
-extendContext ctx protoFormals expFormals = (extractBindings protoFormals expFormals) ++ ctx
+extendContext ctx protoFormals expFormals =
+    prependContextBindings ctx (extractBindings protoFormals expFormals)
 
 
 typeJoin :: TypeAST -> TypeAST -> Maybe TypeAST
@@ -63,7 +64,7 @@ typecheck ctx expr maybeExpTy =
                                      tb <- typecheck ctx b Nothing
                                      typecheckSubscript ta (typeAST ta) tb maybeExpTy
         E_TupleAST  exprs b   -> typecheckTuple ctx exprs b maybeExpTy
-        E_VarAST mt s -> case termVarLookup s ctx of
+        E_VarAST mt s -> case termVarLookup s (contextBindings ctx) of
             Just avar  -> return $ E_AnnVar avar
             Nothing    -> tcFails $ out $ "Unknown variable " ++ s
         E_CompilesAST e c -> case c of

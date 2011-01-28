@@ -6,15 +6,34 @@ import Foster.Base
 import Foster.ExprAST
 
 data ContextBinding = TermVarBinding String AnnVar
-type Context = [ContextBinding]
+data Context = Context { contextBindings :: [ContextBinding]
+                       --, contextTcHistory :: ContextHistory
+                       }
+
+--inExpr :: Context -> ExprAST -> Context
+--inExpr c e = c { contextTcHistory = e : (contextTcHistory c) }
+
+prependContextBinding :: Context -> ContextBinding -> Context
+prependContextBinding ctx prefix =
+    ctx { contextBindings = prefix : (contextBindings ctx) }
+
+prependContextBindings :: Context -> [ContextBinding] -> Context
+prependContextBindings ctx prefix =
+    ctx { contextBindings = prefix ++ (contextBindings ctx) }
 
 instance Show ContextBinding where
-    show (TermVarBinding s ty) = "(termvar " ++ s ++ " :: " ++ show ty
+    show (TermVarBinding s annvar) = "(termvar " ++ s ++ " :: " ++ show annvar
 
-termVarLookup :: String -> Context -> Maybe AnnVar
-termVarLookup name (bindings) =
+
+termVarLookup :: String -> [ContextBinding] -> Maybe AnnVar
+termVarLookup name bindings =
     let termbindings = [(nm, annvar) | (TermVarBinding nm annvar) <- bindings] in
     lookup name termbindings
+
+
+
+--typecheckError ctx output = (contextTcHistory ctx, output)
+typecheckError ctx output = output
 
 -- Either, with better names for the cases...
 data TypecheckResult expr

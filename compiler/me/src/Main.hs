@@ -41,12 +41,12 @@ import Foster.Context
 
 -----------------------------------------------------------------------
 
-computeRootContext :: Uniq -> (Context, Uniq)
-computeRootContext u =
+computeRootContextBindings :: Uniq -> ([ContextBinding], Uniq)
+computeRootContextBindings u =
     let pair2binding (nm, ty) uniq = (tvb, uniq + 1)
             where tvb = TermVarBinding nm (AnnVar ty (Ident nm (- uniq)))
-    in
-    stFold pair2binding rootContextPairs u
+   in
+   stFold pair2binding rootContextPairs u
 
 stFold :: (a -> s -> (b, s)) -> [a] -> s -> ([b], s)
 stFold f [] u = ([], u)
@@ -56,29 +56,25 @@ stFold f (a:as) u = let (b,u') = f a u in
 
 isPrimitiveName name rootContext = isJust $ termVarLookup name rootContext
 
-fnName :: FnAST -> String
-fnName f = prototypeASTname (fnProto f)
-
-fnFreeVariables :: FnAST -> Context -> [String]
-fnFreeVariables f ctx =
+fnFreeVariables f bindings =
     let allCalledFns = Set.fromList $ freeVariables (fnBody f) in
     -- remove names of primitive functions
-    let nonPrimitives = Set.filter (\var -> not (isJust $ termVarLookup var ctx)) allCalledFns in
+    let nonPrimitives = Set.filter (\var -> not (isJust $ termVarLookup var bindings)) allCalledFns in
     -- remove recursive function name calls
     Set.toList $ Set.filter (\name -> prototypeASTname (fnProto f) /= name) nonPrimitives
 
-buildCallGraph :: [FnAST] -> Context -> [Graph.SCC FnAST]
-buildCallGraph asts ctx =
-    let nodeList = (map (\ast -> (ast, fnName ast, fnFreeVariables ast ctx)) asts) in
+buildCallGraph :: [FnAST] -> [ContextBinding] -> [Graph.SCC FnAST]
+buildCallGraph asts bindings =
+    let nodeList = (map (\ast -> (ast, fnName ast, fnFreeVariables ast bindings)) asts) in
     Graph.stronglyConnComp nodeList
 
 fnNameA :: AnnFn -> String
 fnNameA f = identPrefix $ annProtoIdent (annFnProto f)
 
-annFnVar f = AnnVar (annFnType f) (annProtoIdent $ annFnProto f)
+fnName :: FnAST -> String
+fnName f = prototypeASTname (fnProto f)
 
-extendContextWithFnA :: AnnFn -> Context -> Context
-extendContextWithFnA f ctx = (TermVarBinding (fnNameA f) (annFnVar f)):ctx
+annFnVar f = AnnVar (annFnType f) (annProtoIdent $ annFnProto f)
 
 fnTypeFrom :: FnAST -> TypeAST
 fnTypeFrom f =
@@ -86,10 +82,16 @@ fnTypeFrom f =
     let outtype = prototypeASTretType (fnProto f) in
     FnTypeAST intype outtype (fmap (map $ show.avarIdent) (fnClosedVars f))
 
+bindingForAnnFn :: AnnFn -> ContextBinding
+bindingForAnnFn f = TermVarBinding (fnNameA f) (annFnVar f)
+
+bindingForFnAST :: FnAST -> ContextBinding
+bindingForFnAST f = TermVarBinding (fnName f) (fnVar f)
+
 fnVar f = AnnVar (fnTypeFrom f) (Ident (fnName f) (-12345))
 
-extendContextWithFn :: FnAST -> Context -> Context
-extendContextWithFn f ctx = (TermVarBinding (fnName f) (fnVar f)):ctx
+--extendContextWithFn :: FnAST -> Context -> Context
+--extendContextWithFn f ctx = (TermVarBinding (fnName f) (fnVar f)):ctx
 
 -- Every function in the SCC should typecheck against the input context,
 -- and the resulting context should include the computed types of each
@@ -99,17 +101,17 @@ typecheckFnSCC scc (ctx, tcenv) = do
     let fns = Graph.flattenSCC scc
     annfns <- forM fns $ \ast -> do
         let name = fnName ast
-        putStrLn $ "typechecking " ++ name
-        let extctx = extendContextWithFn ast ctx
+        putStrLn $ "typechecking " ++ name ++ show (contextBindings ctx)
+        let extctx = prependContextBinding ctx (bindingForFnAST ast)
         typechecked <- unTc (typecheck extctx (E_FnAST ast) Nothing) tcenv
-        inspect typechecked (E_FnAST ast)
+        inspect extctx typechecked (E_FnAST ast)
         return typechecked
     return $ if allAnnotated annfns
         then let fns = [f | (Annotated (E_AnnFn f)) <- annfns] in
-             let newcontext = foldr extendContextWithFnA ctx fns in
-             (annfns, (newcontext, tcenv))
-        else ([TypecheckErrors (out $ "not all functions type checked correctly in SCC: "
-                                ++ show [fnName f | f <- fns])
+             let newbindings = foldr (\f b -> (bindingForAnnFn f):b) [] fns in
+             (annfns, (prependContextBindings ctx newbindings, tcenv))
+        else ([TypecheckErrors (typecheckError ctx (out $ "not all functions type checked correctly in SCC: "
+                                ++ show [fnName f | f <- fns]))
               ],(ctx, tcenv))
 
 --foldMap :: [Graph.SCC FnAST] -> Context -> (Graph.SCC FnAST -> Context -> IO ([TypecheckResult AnnExpr], Context)) -> ...
@@ -126,9 +128,10 @@ mapFoldM (a:as) b1 f = do
 typecheckModule :: ModuleAST FnAST -> TcEnv -> IO (Maybe (ModuleAST AnnFn))
 typecheckModule mod tcenv = do
     let fns = moduleASTfunctions mod
-    let (ctx, u) = computeRootContext 1
-    let sortedFns = buildCallGraph fns ctx -- :: [SCC FnAST]
-    putStrLn $ "Function SCC list : " ++ show [(fnName f, fnFreeVariables f ctx) | fns <- sortedFns, f <- Graph.flattenSCC fns]
+    let (bindings, u) = computeRootContextBindings 1
+    let sortedFns = buildCallGraph fns bindings -- :: [SCC FnAST]
+    putStrLn $ "Function SCC list : " ++ show [(fnName f, fnFreeVariables f bindings) | fns <- sortedFns, f <- Graph.flattenSCC fns]
+    let ctx = Context bindings
     (annFns, _ctx) <- mapFoldM sortedFns (ctx, tcenv) typecheckFnSCC
     -- annFns :: [TypecheckResult AnnExpr]
     if allAnnotated annFns
@@ -138,8 +141,8 @@ typecheckModule mod tcenv = do
 allAnnotated :: [TypecheckResult AnnExpr] -> Bool
 allAnnotated results = List.all isAnnotated results
 
-inspect :: TypecheckResult AnnExpr -> ExprAST -> IO Bool
-inspect typechecked ast =
+inspect :: Context -> TypecheckResult AnnExpr -> ExprAST -> IO Bool
+inspect ctx typechecked ast =
     case typechecked of
         Annotated e -> do
             putStrLn $ "Successful typecheck!"
@@ -147,7 +150,16 @@ inspect typechecked ast =
             return True
         TypecheckErrors errs -> do
             runOutput $ showStructure ast
-            forM_ errs $ \err -> do runOutput $ (outCSLn Red "Typecheck error: ") ++ [err]
+            runOutput $ (outCSLn Red "Typecheck error: ")
+            forM_ errs $ \(output) ->
+                do {-runOutput $ (outLn $ "hist len: " ++ (show $ Prelude.length hist))
+                   forM_ (Prelude.reverse hist) $ \expr ->
+                        do runOutput $ textOf expr 60
+                           runOutput $ outLn ""
+                    -}
+                   runOutput $ [output]
+
+            do runOutput $ (outLn "")
             return False
 
 -----------------------------------------------------------------------

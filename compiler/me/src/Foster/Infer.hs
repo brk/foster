@@ -67,8 +67,8 @@ tyEnvSubst ctx tysub =
                   case bind of
                     TermVarBinding str (AnnVar ty id) ->
                         TermVarBinding str (AnnVar (tySubst ty tysub) id))
-                  ctx in
-    ctx-- { contextBindings = newBindings }
+                  (contextBindings ctx) in
+    ctx { contextBindings = newBindings }
 
 tySubstConstraints constraints tysub =
     [TypeConstrEq (tySubst t1 tysub) (tySubst t2 tysub) | TypeConstrEq t1 t2 <- constraints]
