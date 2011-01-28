@@ -181,7 +181,7 @@ main = do
     Right (pb_exprs,_) -> do
         let sm = parseSourceModule pb_exprs
         uniqref <- newIORef 1
-        let tcenv = TcEnv { tcEnvUniqs = uniqref }
+        let tcenv = TcEnv { tcEnvUniqs = uniqref, tcParents = [] }
         elabModule <- typecheckModule sm tcenv
         case elabModule of
             (Just mod) -> dumpModuleToProtobuf mod outfile

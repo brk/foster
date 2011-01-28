@@ -49,27 +49,38 @@ data TypecheckResult expr
 --   of functions to be type checked in the same Gamma context. But
 --   we do need to thread the supply of unique variables through...
 data TcEnv = TcEnv { tcEnvUniqs :: IORef Uniq
+                   , tcParents  :: [ExprAST]
                    }
 
 newtype Tc a = Tc (TcEnv -> IO (TypecheckResult a))
 unTc :: Tc a ->   (TcEnv -> IO (TypecheckResult a))
-unTc   (Tc a) = a
+unTc   (Tc f) =   f
 
 instance Monad Tc where
     return x = Tc (\_env -> return (Annotated x))
     fail err = Tc (\_env -> return (TypecheckErrors (outLn err)))
     m >>= k = Tc (\env -> do { result <- unTc m env
-                          ; case result of
+                           ; case result of
                               Annotated expr -> unTc (k expr) env
                               TypecheckErrors ss -> return (TypecheckErrors ss)
-                          })
+                           })
+tcLift :: IO a -> Tc a
+tcLift action = Tc (\_env -> do { r <- action; return (Annotated r) })
+
+tcWithScope :: ExprAST -> Tc a -> Tc a
+tcWithScope expr (Tc f)
+    = Tc (\env -> f (env { tcParents = expr:(tcParents env) }))
 
 newUniq :: Tc Uniq
 newUniq = Tc (\tcenv -> do { let ref = tcEnvUniqs tcenv
-                          ; uniq <- readIORef ref
-                          ; writeIORef ref (uniq + 1)
-                          ; return (Annotated uniq)
-                          })
+                           ; uniq <- readIORef ref
+                           ; writeIORef ref (uniq + 1)
+                           ; return (Annotated uniq)
+                           })
+
+tcGetCurrentHistory :: Tc [ExprAST]
+tcGetCurrentHistory = Tc (\tcenv -> do { return (Annotated $
+                                          Prelude.reverse $ tcParents tcenv) })
 
 tcFails :: Output -> Tc a
 tcFails errs = Tc (\_env -> return (TypecheckErrors errs))
@@ -113,3 +124,24 @@ showStructure e = showStructureP e (out "") False where
         (thisIndent :: Output) ++ (textOf e padding) ++ (out "\n") ++ (Prelude.foldl (++) (out "") childlines)
 
 -----------------------------------------------------------------------
+
+getStructureContextMessage :: Tc Output
+getStructureContextMessage = do
+    hist <- tcGetCurrentHistory
+    let outputs = map (\e -> (out "\t\t") ++ textOf e 40 ++ outLn "") hist
+    let output = case outputs of
+                    [] ->        (outLn $ "\tTop-level definition:")
+                    otherwise -> (outLn $ "\tContext for AST below is:") ++ concat outputs
+    return output
+
+-- Builds trees like this:
+-- AnnSeq        :: i32
+-- ├─AnnCall       :: i32
+-- │ ├─AnnVar       expect_i32 :: ((i32) -> i32)
+-- │ └─AnnTuple
+-- │   └─AnnInt       999999 :: i32
+
+tcShowStructure :: (Expr a) => a -> Tc Output
+tcShowStructure e = do
+    header <- getStructureContextMessage
+    return $ header ++ showStructure e

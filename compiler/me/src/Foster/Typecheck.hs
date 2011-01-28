@@ -50,7 +50,8 @@ sanityCheck cond msg = if cond then do return (AnnBool True)
 
 typecheck :: Context -> ExprAST -> Maybe TypeAST -> Tc AnnExpr
 typecheck ctx expr maybeExpTy =
-    case expr of
+  tcWithScope expr $
+    do case expr of
         E_BoolAST rng b -> do return (AnnBool b)
         E_IfAST ifast   -> typecheckIf ctx ifast maybeExpTy
         E_FnAST f       -> typecheckFn ctx  f    maybeExpTy
@@ -122,19 +123,25 @@ typecheckCall' ea eb range call =
             -- resulting substitution tells us what type application to produce.
             --typecheckCall' ea (E_AnnTyApp eb argtype) range call
 
-            tcFails $ (out $ "CallAST against non-instantiated ForAll type: " ++ show (ForAll tvs rho)
-                                ++ "\n") ++ (showStructure eb) ++ (out $ " :: " ++ (show $ typeAST eb)
+            do ebStruct <- tcShowStructure eb
+               tcFails $ ebStruct ++ (out $ "CallAST against non-instantiated ForAll type: " ++ show (ForAll tvs rho)
+                                ++ "\n :: " ++ (show $ typeAST eb)
                                 ++ "\n" ++ "argType: " ++ show argtype
-                                ++ "\n" ++ show range)
+                                ++ "\n" ++ show range
+                                ++ "\n" ++ "====================")
 
          (FnTypeAST formaltype restype cs, argtype) ->
             if isJust $ typeJoin formaltype argtype
                 then return (AnnCall range restype eb ea)
-                else tcFails $ (out $ "CallAST mismatches:\n"
-                                       ++ "base: ") ++ (showStructure eb) ++ (out $ "\n"
-                                       ++ "arg : ") ++ (showStructure ea) ++ (out $ "\n"
+                else do ebStruct <- tcShowStructure eb
+                        eaStruct <- tcShowStructure ea
+                        tcFails $ (out $ "CallAST mismatches:\n"
+                                       ++ "base: ") ++ (ebStruct) ++ (out $ "\n"
+                                       ++ "arg : ") ++ (eaStruct) ++ (out $ "\n"
                                        ++ show formaltype ++ "\nvs\n" ++ show argtype ++ "\nrange:\n" ++ show range)
-         otherwise -> tcFails $ (out $ "CallAST w/o FnAST type: ") ++ (showStructure eb)
+         otherwise -> do
+            ebStruct <- tcShowStructure eb
+            tcFails $ (out $ "CallAST w/o FnAST type: ") ++ ebStruct
                                        ++ (out $ " :: " ++ (show $ typeAST eb))
 
 typecheckCall ctx range call maybeExpTy =
