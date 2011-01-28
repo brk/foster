@@ -6,8 +6,6 @@
 
 module Foster.ExprAST where
 
-import Foster.Base
-import Foster.TypeAST
 import Data.Int
 import Data.Set as Set(fromList, toList, difference)
 import Data.Sequence as Seq
@@ -15,6 +13,8 @@ import Data.Maybe(fromJust)
 import Data.List(replicate)
 import qualified Data.Text as T
 
+import Foster.Base
+import Foster.TypeAST
 
 data CompilesStatus = CS_WouldCompile | CS_WouldNotCompile | CS_NotChecked
     deriving (Eq, Show)
@@ -174,29 +174,6 @@ data PrototypeAST = PrototypeAST {
                         , prototypeASTname    :: String
                         , prototypeASTformals :: [AnnVar]
                     } deriving (Show)
-
-
--- Builds trees like this:
--- AnnSeq        :: i32
--- ├─AnnCall       :: i32
--- │ ├─AnnVar       expect_i32 :: ((i32) -> i32)
--- │ └─AnnTuple
--- │   └─AnnInt       999999 :: i32
-
-showStructure :: (Expr a) => a -> Output
-showStructure e = showStructureP e (out "") False where
-    showStructureP e prefix isLast =
-        let children = childrenOf e in
-        let thisIndent = prefix ++ out (if isLast then "└─" else "├─") in
-        let nextIndent = prefix ++ out (if isLast then "  " else "│ ") in
-        let padding = max 6 (60 - Prelude.length thisIndent) in
-        -- [ (child, index, numchildren) ]
-        let childpairs = Prelude.zip3 children [1..]
-                               (Prelude.repeat (Prelude.length children)) in
-        let childlines = map (\(c, n, l) ->
-                                showStructureP c nextIndent (n == l))
-                             childpairs in
-        (thisIndent :: Output) ++ (textOf e padding) ++ (out "\n") ++ (Prelude.foldl (++) (out "") childlines)
 
 -- | Converts a right-leaning "list" of SeqAST nodes to a List
 unbuildSeqs :: ExprAST -> [ExprAST]
