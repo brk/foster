@@ -135,27 +135,8 @@ implicitTypeProjection tyvars rho eb argtype range = do
             return $ E_AnnTyApp substRho eb (minimalTuple tyProjTypes)
 
 
-typecheckCall' ea eb range call =
+typecheckCallWithBaseFnType ea eb range call =
     case (typeAST eb, typeAST ea) of
-         ((ForAll tvs rho), argtype) -> do
-            -- Example: argtype:             ((Coro i32 i32), i32)
-            --          eb:
-            --  typeAST eb: (ForAll ['a,'b]. (((Coro 'a 'b), 'a) -> 'b))
-            --  getFnArgType $ typeAST eb:    ((Coro 'a 'b), 'a)
-            -- So we unify the type of the actual argument
-            -- with the arg type under the forall, and the
-            -- resulting substitution tells us what type application to produce.
-            --typecheckCall' ea (E_AnnTyApp eb argtype) range call
-            annTyApp <- implicitTypeProjection tvs rho eb argtype range
-            typecheckCall' ea annTyApp range call
-            {-
-            do ebStruct <- tcShowStructure eb
-               tcFails $ ebStruct ++ (out $ "CallAST against non-instantiated ForAll type: " ++ show (ForAll tvs rho)
-                                ++ "\n :: " ++ (show $ typeAST eb)
-                                ++ "\n" ++ "argType: " ++ show argtype
-                                ++ "\n" ++ show range
-                                ++ "\n" ++ "====================")
-            -}
          (FnTypeAST formaltype restype cs, argtype) ->
             if isJust $ typeJoin formaltype argtype
                 then return (AnnCall range restype eb ea)
@@ -183,7 +164,7 @@ typecheckCall ctx range call maybeExpTy =
 
            eb <- typecheck ctx base expectedLambdaType
            trace ("typecheckCall with literal fn base, exp ty " ++ (show expectedLambdaType)) $
-            typecheckCall' ea eb range call
+            typecheckCallWithBaseFnType ea eb range call
 
         -- Otherwise, typecheck the function first, then the args.
         _ -> do
@@ -191,9 +172,46 @@ typecheckCall ctx range call maybeExpTy =
                 Nothing  -> Nothing
                 (Just t) -> (Just (FnTypeAST (MissingTypeAST "typecheckCall-1") t irrelevantClosedOverVars))
                 -- If we have (e1 e2) :: T, we infer that e1 :: (? -> T) and e2 :: ?
+
            eb <- typecheck ctx base expectedLambdaType
-           ea <- typecheck ctx args (Just $ getFnArgType (typeAST eb))
-           typecheckCall' ea eb range call
+           case (typeAST eb) of
+              (ForAll tyvars rho) -> do
+                    let (FnTypeAST rhoArgType _ _) = rho
+                    --                  rhoargtype =   ('a -> 'b)
+                    -- base has type ForAll ['a 'b]   (('a -> 'b) -> (Coro 'a 'b))
+                    -- The forall-bound vars won't unify with concrete types in the term arg,
+                    -- so we replace the forall-bound vars with unification variables
+                    -- when computing the type of the term argument.
+
+                    -- That is, instead of checking the args against ('a -> 'b),
+                    -- we must use unification variables instead:    (?a -> ?b)
+                    -- and then extract the types from unification
+                    -- to use as type arguments.
+
+                    -- Generate unification vars corresponding to the bound type variables
+                    unificationVars <- sequence [newTcUnificationVar | _ <- tyvars]
+                    let tyvarsAndMetavars = (List.zip [T_TyVar tv | tv <- tyvars]
+                                                     [MetaTyVar u | u <- unificationVars])
+
+                    -- (?a -> ?b)
+                    let unifiableArgType = parSubstTy tyvarsAndMetavars rhoArgType
+
+                    -- Type check the args, unifying them
+                    -- with the expected arg type
+                    ea <- typecheck ctx args (Just $ unifiableArgType)
+
+                    case unifyTypes unifiableArgType (typeAST ea) of
+                      Nothing -> tcFails $ out $ "Failed to determine type arguments to apply!" ++ show range
+                      Just tysub ->
+                        let tyProjTypes = extractSubstTypes unificationVars tysub in
+                        let unifiableRhoType = parSubstTy tyvarsAndMetavars rho in
+                        let substitutedFnType = tySubst unifiableRhoType tysub in
+                        let annTyApp = E_AnnTyApp substitutedFnType eb (minimalTuple tyProjTypes) in
+                        typecheckCallWithBaseFnType ea annTyApp range call
+
+              (FnTypeAST formaltype restype cs) -> do
+                    ea <- typecheck ctx args (Just $ getFnArgType (typeAST eb))
+                    typecheckCallWithBaseFnType ea eb range call
 
 -----------------------------------------------------------------------
 
