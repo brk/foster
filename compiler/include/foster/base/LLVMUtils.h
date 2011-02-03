@@ -70,4 +70,15 @@ llvm::ConstantInt* getConstantInt64For(int64_t val);
 llvm::ConstantInt* getConstantInt32For(int32_t val);
 llvm::ConstantInt* getConstantInt8For(int8_t val);
 
+
+class Nominalizer {
+public:
+  llvm::StructType* nominalize(const llvm::Type*);
+  llvm::Type* denominalize(const llvm::StructType*);
+  bool isNominalized(const llvm::StructType*);
+private:
+  struct Impl;
+   Impl* impl;
+};
+
 #endif

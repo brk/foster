@@ -5,6 +5,8 @@
 #include "base/Assert.h"
 #include "base/LLVMUtils.h"
 
+#include <map>
+
 #include "llvm/Target/TargetSelect.h"
 #include "llvm/Instructions.h"
 #include "llvm/Metadata.h"
@@ -262,4 +264,52 @@ bool isPointerToCompatibleFnTy(const llvm::Type* ty,
  return false;
 }
 
+
+
+struct Nominalizer::Impl {
+  std::map<const llvm::Type*, int> nomCount;
+  std::map<const llvm::Type*, bool> isNomTag;
+  std::map<int,const llvm::StructType*> tagCache;
+
+  const llvm::StructType* nominalize(const llvm::Type* ty) {
+    int n = nomCount[ty];
+    ++nomCount[ty];
+    return makeNominal(ty, n);
+  }
+
+  const llvm::StructType* nomTag(int n) {
+    if (n == -1) {
+      return StructType::get(getGlobalContext(), false);
+    }
+
+    if (!tagCache[n]) {
+      std::vector<const Type*> arg;
+      arg.push_back(nomTag(n - 1));
+      tagCache[n] = llvm::StructType::get(getGlobalContext(), arg, false);
+      isNomTag[tagCache[n]] = true;
+    }
+    return tagCache[n];
+  }
+
+  const llvm::StructType* makeNominal(const llvm::Type* ty, int n) {
+    std::vector<const Type*> arg;
+    arg.push_back(ty);
+    arg.push_back(nomTag(n));
+    return StructType::get(getGlobalContext(), arg, false);
+  }
+
+  const llvm::Type* denominalize(const llvm::StructType* sty) {
+    ASSERT(isNominalized(sty));
+    return sty->getContainedType(0);
+  }
+
+  bool isNominalized(const llvm::StructType* sty) {
+    ASSERT(sty->getNumContainedTypes() == 2);
+    ASSERT(isNomTag[sty->getContainedType(1)]);
+  }
+};
+
+llvm::StructType* Nominalizer::nominalize(const llvm::Type* t ) { impl->nominalize(t); }
+llvm::Type* Nominalizer::denominalize(const llvm::StructType* t) { impl->denominalize(t); }
+bool Nominalizer::isNominalized(const llvm::StructType* t) { impl->isNominalized(t); }
 
