@@ -19,19 +19,25 @@ $ ctest -V    # Run tests in verbose mode; output from tests will be printed.
 $ ctest -V -R unittest      # Run only unit tests ("unittest" can be any regex)
 
 ============================= Installation =================================
-Ubuntu:
+Ubuntu 10.10:
 	Dependencies: CMake, ANTLR3 C runtime, Java, LLVM, Google protobuf
+   
+   You can install llvm by executing   bash scripts/install-llvm.sh
+   
 	Assuming you already have LLVM installed, in $PATH and $PKG_CONFIG_PATH...
 
 	Interesting packages:
-		cmake		llvm-dev	llvm-doc	libgmp3c2
+		cmake		libgmp3c2
 	(universe)
 		binutils-gold	cmake-curses-gui	mercurial
-		clang		g++			libffi-dev
+					libffi-dev
 		ccache		ack-grep
-                libprotobuf5    protobuf-compiler       libprotobuf-dev
+      ghc6    cabal-install  libghc6-zlib-dev   leksah
+                libprotobuf6    protobuf-compiler       libprotobuf-dev
                 python-protobuf libprotobuf-java
-
+      subversion    vim     curl  ctags
+      
+      
         For Ott:
                 coq             texlive-latex-base
 
@@ -40,7 +46,7 @@ Ubuntu:
           curl -O http://peak.telecommunity.com/dist/ez_setup.py
           sudo python ez_setup.py -U setuptools
 
-          easy_install -U sphinx
+          sudo easy_install -U sphinx
 
 	If you need Java on Ubuntu 9.10,
 	sudo apt-get install sun-java6-jdk
@@ -72,7 +78,17 @@ ANTLR on Linux and OS X:
 	wget http://antlr.org/download/antlr-${ANTLR_VERSION}.jar
 	popd
 
+On Ubuntu 10.10:
+      sudo apt-get install libglib2.0-{bin,dev} libpng12-dev
+                           libcairo2-dev libpango1.0-dev libgtk2.0-dev
+                           libgtksourceview2.0-{0,dev}
 
 Haskell
-      cabal install text protocol-buffers filepath hprotoc ansi-terminal
+      cabal update
+      cabal install cabal-install
+      cabal install happy alex
+      export PATH=$PATH:~/.cabal/bin
+      cabal install haskell-src
+      cabal install gtk2hs-buildtools
+      cabal install text protocol-buffers filepath hprotoc ansi-terminal leksah
 
