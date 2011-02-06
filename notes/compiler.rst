@@ -180,3 +180,26 @@ The back-end may actually be several distinct pieces:
   * Linker + optimizer: could be separate binary or could reuse ``llvm-ld``
     and ``opt``.
 
+
+
+LLVM Bindings
+-------------
+
+LLVM has bindings for Haskell. However, there are a few separate problems
+with using non-native LLVM bindings.
+
+First, those bindings are not nearly
+as rich as the native C++ API. This makes it more difficult to generate
+e.g. debug information.
+
+Second, the Haskell LLVM bindings link against the system version of LLVM,
+whereas Foster generally builds with a separate LLVM install.
+
+Third, lowering protobufs to LLVM IR currently requires loading some
+standard library bitcode files. Ensuring that the type checker can operate
+independently is important for modularity.
+
+The design of the backend does anticipate self-hosting, however:
+Foster-specific LLVM passes are encapsulated in a LLVM-to-LLVM binary
+called ``fosteroptc``, which is distinct from the ``fosterlower`` binary
+that converts typechecked protobufs to LLVM IR.
