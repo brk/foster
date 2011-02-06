@@ -128,7 +128,7 @@ parseInt pbexpr lines =
 
 splitString :: String -> String -> [String]
 splitString needle haystack =
-        let textParts = T.split (T.pack needle) (T.pack haystack) in
+        let textParts = T.splitOn (T.pack needle) (T.pack haystack) in
         map T.unpack textParts
 
 onlyHexDigitsIn :: String -> Bool
