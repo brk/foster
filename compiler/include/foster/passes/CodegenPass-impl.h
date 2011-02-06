@@ -27,12 +27,24 @@ llvm::GlobalVariable* getTypeMapForType(const llvm::Type*, llvm::Module* mod);
 
 bool mightContainHeapPointers(const llvm::Type* ty);
 
-Value* getElementFromComposite(Value* compositeValue, Value* idxValue);
-
 const inline llvm::PointerType* ptrTo(const llvm::Type* t) {
   return llvm::PointerType::getUnqual(t);
 }
 
+// From CodegenUtils.cpp
+Value* getUnitValue();
+Value* getElementFromComposite(Value* compositeValue, Value* idxValue);
+Value* getPointerToIndex(Value* compositeValue,
+                         Value* idxValue,
+                         const std::string& name);
+void markGCRoot(llvm::Value* root,
+                llvm::Constant* meta,
+                llvm::Module* mod);
+llvm::AllocaInst* getAllocaForRoot(llvm::Instruction* root);
+llvm::AllocaInst* CreateEntryAlloca(const llvm::Type* ty,
+                                    const std::string& name);
+llvm::AllocaInst* stackSlotWithValue(llvm::Value* val,
+                                     const std::string& name);
 llvm::Value* storeAndMarkPointerAsGCRoot(llvm::Value* val,
                                          llvm::Module* mod);
 

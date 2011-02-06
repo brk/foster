@@ -339,6 +339,7 @@ add_library(fosterc_passes STATIC
   compiler/passes/PassUtils.cpp
   compiler/passes/ExprASTDiff.cpp
   compiler/passes/Codegen/CodegenPass.cpp
+  compiler/passes/Codegen/CodegenUtils.cpp
   compiler/passes/Codegen/Codegen-coro.cpp
   compiler/passes/Codegen/Codegen-typemaps.cpp
   compiler/passes/DumpToProtobuf.cpp
