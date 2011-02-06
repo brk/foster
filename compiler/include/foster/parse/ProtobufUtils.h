@@ -10,13 +10,13 @@
 class ModuleAST;
 
 namespace foster {
-  namespace pb {
+  namespace fepb {
     class SourceModule;
   }
 }
 
 ModuleAST* readSourceModuleFromProtobuf(const std::string& pathstr,
-                                        foster::pb::SourceModule& out_sm);
+                                        foster::fepb::SourceModule& out_sm);
 
 void dumpModuleToProtobuf(ModuleAST* mod, const std::string& filename);
 

@@ -1,4 +1,4 @@
-package foster.pb;
+package foster.fepb;
 
 message SourceLocation {
   required int32 line   = 1;

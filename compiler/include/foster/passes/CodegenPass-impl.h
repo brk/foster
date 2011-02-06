@@ -33,6 +33,8 @@ const inline llvm::PointerType* ptrTo(const llvm::Type* t) {
 
 // From CodegenUtils.cpp
 Value* getUnitValue();
+llvm::Value* emitMalloc(const llvm::Type* ty);
+llvm::Value* allocateMPInt();
 Value* getElementFromComposite(Value* compositeValue, Value* idxValue);
 Value* getPointerToIndex(Value* compositeValue,
                          Value* idxValue,
@@ -49,6 +51,9 @@ llvm::Value* storeAndMarkPointerAsGCRoot(llvm::Value* val,
                                          llvm::Module* mod);
 
 ////////////////////////////////////////////////////////////////////
+
+struct LLModule;
+struct LLExpr;
 
 struct CodegenPass : public ExprASTVisitor {
   #include "parse/ExprASTVisitor.decls.inc.h"
@@ -68,6 +73,8 @@ struct CodegenPass : public ExprASTVisitor {
     //delete dib;
   }
 
+  void codegen(LLModule*);
+  void codegen(LLExpr*);
   void codegen(ExprAST*);
 
   llvm::Value* lookup(const std::string& fullyQualifiedSymbol);

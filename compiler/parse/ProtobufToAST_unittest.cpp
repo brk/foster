@@ -40,7 +40,7 @@ foster::SourceRange testRange(NULL,
 ////////////////////////////////////////////////////////////////////
 
 TypeAST* roundtrip(TypeAST* ty) {
-  foster::pb::Type t;
+  foster::fepb::Type t;
   DumpTypeToProtobufPass dp(&t);
   ty->accept(&dp);
 
@@ -146,7 +146,7 @@ foster::ParsingContext cc;
 ExprAST* roundtrip(ExprAST* ast) {
   foster::ParsingContext::pushContext(&cc);
 
-  foster::pb::Expr e;
+  foster::fepb::Expr e;
   DumpToProtobufPass dp(&e);
   ast->accept(&dp);
 

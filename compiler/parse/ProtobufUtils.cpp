@@ -20,7 +20,7 @@ using foster::EDiag;
 using foster::gInputTextBuffer;
 
 foster::InputTextBuffer*
-newInputBufferFromSourceModule(const foster::pb::SourceModule& sm) {
+newInputBufferFromSourceModule(const foster::fepb::SourceModule& sm) {
   int expectedLineCount = sm.line_size();
   std::string lines;
   for (int i = 0; i < expectedLineCount; ++i) {
@@ -38,7 +38,7 @@ newInputBufferFromSourceModule(const foster::pb::SourceModule& sm) {
 }
 
 ModuleAST* readSourceModuleFromProtobuf(const string& pathstr,
-                                        foster::pb::SourceModule& out_sm) {
+                                        foster::fepb::SourceModule& out_sm) {
   std::fstream input(pathstr.c_str(), std::ios::in | std::ios::binary);
   if (!out_sm.ParseFromIstream(&input)) {
     return NULL;
@@ -60,7 +60,7 @@ ModuleAST* readSourceModuleFromProtobuf(const string& pathstr,
 void dumpModuleToProtobuf(ModuleAST* mod, const string& filename) {
   ASSERT(mod != NULL);
 
-  foster::pb::SourceModule sm;
+  foster::fepb::SourceModule sm;
   const foster::InputTextBuffer* buf = mod->sourceRange.buf;
   if (buf) {
     for (int i = 0; i < buf->getLineCount(); ++i) {
@@ -68,7 +68,7 @@ void dumpModuleToProtobuf(ModuleAST* mod, const string& filename) {
     }
   }
 
-  foster::pb::Expr* pbModuleExpr = sm.mutable_expr();
+  foster::fepb::Expr* pbModuleExpr = sm.mutable_expr();
   DumpToProtobufPass p(pbModuleExpr); mod->accept(&p);
 
   if (!pbModuleExpr->IsInitialized()) {

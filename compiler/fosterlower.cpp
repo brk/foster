@@ -181,7 +181,7 @@ int main(int argc, char** argv) {
   Module* imath_bc = NULL;
   const llvm::Type* mp_int = NULL;
   ModuleAST* exprAST = NULL;
-  foster::pb::SourceModule sm;
+  foster::fepb::SourceModule sm;
   llvm::GlobalVariable* current_coro = NULL;
   llvm::Function* coro_transfer = NULL;
 

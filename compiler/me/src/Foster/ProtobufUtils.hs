@@ -28,18 +28,18 @@ import Data.Sequence as Seq
 import Text.ProtocolBuffers(isSet,getVal,messagePut)
 import Text.ProtocolBuffers.Basic(uToString)
 
-import Foster.Pb.FnType   as PbFnType
-import Foster.Pb.Type.Tag as PbTypeTag
-import Foster.Pb.Type     as PbType
-import Foster.Pb.Proto    as Proto
-import Foster.Pb.PBIf     as PBIf
-import Foster.Pb.PBInt    as PBInt
-import Foster.Pb.Expr     as PbExpr
-import Foster.Pb.SourceModule as SourceModule
-import Foster.Pb.Expr.Tag(Tag(PB_INT, BOOL, VAR, TUPLE, COMPILES, MODULE,
+import Foster.Fepb.FnType   as PbFnType
+import Foster.Fepb.Type.Tag as PbTypeTag
+import Foster.Fepb.Type     as PbType
+import Foster.Fepb.Proto    as Proto
+import Foster.Fepb.PBIf     as PBIf
+import Foster.Fepb.PBInt    as PBInt
+import Foster.Fepb.Expr     as PbExpr
+import Foster.Fepb.SourceModule as SourceModule
+import Foster.Fepb.Expr.Tag(Tag(PB_INT, BOOL, VAR, TUPLE, COMPILES, MODULE,
                               TY_APP, IF, FN, PROTO, CALL, SEQ, SUBSCRIPT))
-import qualified Foster.Pb.SourceRange as Pb
-import qualified Foster.Pb.SourceLocation as Pb
+import qualified Foster.Fepb.SourceRange as Pb
+import qualified Foster.Fepb.SourceLocation as Pb
 
 import qualified Text.ProtocolBuffers.Header as P'
 
@@ -251,8 +251,8 @@ parseExpr pbexpr lines =
                 IF      -> parseIf
                 BOOL    -> parseBool
                 VAR     -> parseVar
-                Foster.Pb.Expr.Tag.TUPLE   -> parseTuple
-                Foster.Pb.Expr.Tag.FN      -> parseFnAST
+                Foster.Fepb.Expr.Tag.TUPLE   -> parseTuple
+                Foster.Fepb.Expr.Tag.FN      -> parseFnAST
                 PROTO   -> error $ "parseExpr cannot parse a standalone proto!" ++ (show $ PbExpr.tag pbexpr) ++ "\n"
                 CALL      -> parseCall
                 SEQ       -> parseSeq
@@ -339,7 +339,7 @@ dumpExpr :: AnnExpr -> PbExpr.Expr
 dumpExpr x@(E_AnnFn (AnnFn fnTy p b cs)) =
     P'.defaultValue { PbExpr.is_closure = Just (isJust cs)
                     , PbExpr.parts = fromList $ [dumpExprProto fnTy p, dumpExpr b]
-                    , PbExpr.tag   = Foster.Pb.Expr.Tag.FN
+                    , PbExpr.tag   = Foster.Fepb.Expr.Tag.FN
                     , PbExpr.type' = Just $ dumpType fnTy }
 
 dumpExpr (AnnCall r t base (AnnTuple args _)) = dumpCall r t base args
@@ -357,7 +357,7 @@ dumpExpr x@(AnnSeq a b) = dumpSeqOf (unbuildSeqsA x) (typeAST x)
 dumpExpr x@(AnnTuple es b) =
     P'.defaultValue { PbExpr.parts = fromList [dumpExpr e | e <- es]
                     , is_closure_environment = Just b
-                    , PbExpr.tag   = Foster.Pb.Expr.Tag.TUPLE
+                    , PbExpr.tag   = Foster.Fepb.Expr.Tag.TUPLE
                     , PbExpr.type' = Just $ dumpType (typeAST x)  }
 
 dumpExpr x@(AnnSubscript t a b ) =

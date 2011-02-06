@@ -28,8 +28,10 @@ using foster::currentErrs;
 using std::string;
 using std::vector;
 
+namespace pb = foster::fepb;
+
 void initSourceLocation(foster::SourceLocation& loc,
-                        const foster::pb::SourceLocation* pbloc);
+                        const pb::SourceLocation* pbloc);
 
 const char* getDefaultCallingConvProtoRecon() {
  // foster::EDiag() << "getDefaultCallingConvProtoRecon()";
@@ -38,7 +40,7 @@ const char* getDefaultCallingConvProtoRecon() {
 
 template <typename PB>
 void parseRangeFrom(foster::SourceRange& r, const PB& p) {
-  foster::pb::SourceRange sr = p.range();
+  pb::SourceRange sr = p.range();
   initSourceLocation(const_cast<foster::SourceLocation&>(r.begin), sr.mutable_begin());
   initSourceLocation(const_cast<foster::SourceLocation&>(r.end  ), sr.mutable_end());
 
@@ -302,7 +304,7 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
   }
 
   if (t.has_fnty()) {
-    const foster::pb::FnType& fnty = t.fnty();
+    const pb::FnType& fnty = t.fnty();
 
     ASSERT(fnty.has_ret_type()) << "\n\tCannot build FnTypeAST without a return type in the protobuf";
     TypeAST* retTy = TypeAST_from_pb(&fnty.ret_type());
@@ -374,7 +376,7 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
 
 
 void initSourceLocation(foster::SourceLocation& loc,
-                        const foster::pb::SourceLocation* pbloc) {
+                        const pb::SourceLocation* pbloc) {
   if (!pbloc) {
     loc = foster::SourceLocation::getInvalidLocation();
   } else {

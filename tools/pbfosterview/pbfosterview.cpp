@@ -69,7 +69,7 @@ int main(int argc, char** argv) {
 
   foster::validateInputFile(optInputPath);
 
-  foster::pb::SourceModule sm;
+  foster::fepb::SourceModule sm;
   ModuleAST* mod = readSourceModuleFromProtobuf(optInputPath, sm);
   if (!mod) {
     foster::EDiag() << "expression parsed from protobuf was not a ModuleAST";

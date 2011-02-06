@@ -11,16 +11,16 @@ struct ModuleAST;
 
 namespace foster {
 
-namespace pb {
+namespace fepb {
   struct Expr;
   struct Type;
 } // namespace foster::pb
 
 //ModuleAST* ModuleAST_from_pb(pb::ExprAST);
 
-ExprAST* ExprAST_from_pb(const pb::Expr* e);
+ExprAST* ExprAST_from_pb(const fepb::Expr* e);
 
-TypeAST* TypeAST_from_pb(const pb::Type* t);
+TypeAST* TypeAST_from_pb(const fepb::Type* t);
 
 }
 

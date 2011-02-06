@@ -11,9 +11,9 @@
 #include "_generated_/FosterAST.pb.h"
 
 struct DumpToProtobufPass : public ExprASTVisitor {
-  foster::pb::Expr* current;
+  foster::fepb::Expr* current;
 
-  DumpToProtobufPass(foster::pb::Expr* current) : current(current) {}
+  DumpToProtobufPass(foster::fepb::Expr* current) : current(current) {}
 
   virtual void visitChildren(ExprAST* ast) {
     // Only visit children manually!
@@ -24,9 +24,9 @@ struct DumpToProtobufPass : public ExprASTVisitor {
 
 
 struct DumpTypeToProtobufPass : public TypeASTVisitor {
-  foster::pb::Type* current;
+  foster::fepb::Type* current;
 
-  DumpTypeToProtobufPass(foster::pb::Type* current) : current(current) {}
+  DumpTypeToProtobufPass(foster::fepb::Type* current) : current(current) {}
 
   virtual void visitChildren(TypeAST* ast) {
     // Only visit children manually!

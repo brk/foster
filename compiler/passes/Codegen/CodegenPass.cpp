@@ -190,30 +190,6 @@ llvm::Value* CodegenPass::lookup(const std::string& fullyQualifiedSymbol) {
   return v;
 }
 
-llvm::Value* CodegenPass::emitMalloc(const llvm::Type* ty) {
-  llvm::Value* memalloc_cell = mod->getFunction("memalloc_cell");
-  ASSERT(memalloc_cell != NULL) << "NO memalloc_cell IN MODULE! :(";
-
-  llvm::GlobalVariable* ti = getTypeMapForType(ty, mod);
-  ASSERT(ti != NULL);
-  const llvm::Type* typemap_type = memalloc_cell->getType()
-                                            ->getContainedType(0)
-                                            ->getContainedType(1);
-  llvm::Value* typemap = builder.CreateBitCast(ti, typemap_type);
-  llvm::CallInst* mem = builder.CreateCall(memalloc_cell, typemap, "mem");
-
-  return storeAndMarkPointerAsGCRoot(
-                       builder.CreateBitCast(mem, ptrTo(ty), "ptr"),
-                       mod);
-}
-
-
-llvm::Value* CodegenPass::allocateMPInt() {
-  llvm::Value* mp_int_alloc = mod->getFunction("mp_int_alloc");
-  ASSERT(mp_int_alloc);
-  llvm::Value* mpint = builder.CreateCall(mp_int_alloc);
-  return mpint;
-}
 
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////

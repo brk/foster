@@ -12,6 +12,7 @@ struct ExprAST;
 struct TypeAST;
 struct PrototypeAST;
 struct FnTypeAST;
+struct TupleExprAST;
 
 namespace foster {
 
