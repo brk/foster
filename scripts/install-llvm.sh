@@ -4,7 +4,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-LLVM_VERSION=2.7
+LLVM_VERSION=2.8
 LLVM_ROOT=${HOME}/llvm
 
 # invoke from LLVM_ROOT
@@ -37,7 +37,7 @@ pushd src/llvm-${LLVM_VERSION}
 popd
 }
 
-	
+
 mkdir -p ${LLVM_ROOT}
 cd ${LLVM_ROOT}
 
