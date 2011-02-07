@@ -29,7 +29,7 @@ popd
 # invoke from LLVM_ROOT
 build_source () {
 pushd src/llvm-${LLVM_VERSION}
-	./configure --prefix=${LLVM_ROOT}/${LLVM_VERSION} --enable-targets=host --enable-debug-symbols
+	./configure --prefix=${LLVM_ROOT}/${LLVM_VERSION} --enable-targets=host,cpp --enable-debug-symbols --enable-assertions --enable-optimized
 
 	make
 
