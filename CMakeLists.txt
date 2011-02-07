@@ -5,7 +5,7 @@ cmake_policy(VERSION 2.8.0)
 
 ####################### Configuration Rules ########################
 
-set(LLVM_VERSION 2.7)
+set(LLVM_VERSION 2.8)
 
 option(USE_FOSTER_GC_PLUGIN
        "Use compiled stackmaps for garbage collection"
@@ -152,7 +152,7 @@ add_custom_command(
 
 # Generate Haskell code to manipulate AST protobuf files.
 add_custom_command(
-  OUTPUT ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Pb.hs
+  OUTPUT ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Fepb.hs
   COMMAND cp ${PROJECT_SOURCE_DIR}/compiler/parse/FosterAST.proto
              ${PROJECT_SOURCE_DIR}/compiler/me/FosterAST.proto#
   COMMAND ${HPROTOC}
@@ -166,7 +166,7 @@ add_custom_command(
 # Generate middle-end from Haskell source files, once
 # Haskell protobuf module sources have been generated.
 add_custom_target(hs_me
-  DEPENDS ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Pb.hs
+  DEPENDS ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Fepb.hs
   COMMAND python ${PROJECT_SOURCE_DIR}/scripts/mk_me.py
           --srcroot ${PROJECT_SOURCE_DIR}
           --bindir ${PROJECT_BINARY_DIR}
