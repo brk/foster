@@ -294,7 +294,6 @@ add_library(fosterc_base STATIC
   compiler/base/SourceRange.cpp
   compiler/base/TimingsRepository.cpp
   compiler/base/FreshNameGenerator.cpp
-  compiler/base/SingleIntegerRange.cpp
   compiler/base/PughSinofskyPrettyPrinter.cpp
   third_party/pystring/pystring.cpp
 )
@@ -413,7 +412,6 @@ add_executable(unittest_fosterc_base
   ${PROJECT_SOURCE_DIR}/compiler/base/GenericGraph_unittest.cpp
   ${PROJECT_SOURCE_DIR}/compiler/base/FilteringIterator_unittest.cpp
   ${PROJECT_SOURCE_DIR}/compiler/base/FreshNameGenerator_unittest.cpp
-  ${PROJECT_SOURCE_DIR}/compiler/base/SingleIntegerRange_unittest.cpp
 )
 target_link_libraries(unittest_fosterc_base
   fosterc_parse fosterc_base
