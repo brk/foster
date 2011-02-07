@@ -337,17 +337,14 @@ add_dependencies(fosterc_llvm fosterc_base)
 
 add_library(fosterc_passes STATIC
   compiler/passes/PassUtils.cpp
-  compiler/passes/ExprASTDiff.cpp
   compiler/passes/Codegen/CodegenPass.cpp
   compiler/passes/Codegen/CodegenUtils.cpp
   compiler/passes/Codegen/Codegen-coro.cpp
   compiler/passes/Codegen/Codegen-typemaps.cpp
   compiler/passes/DumpToProtobuf.cpp
   compiler/passes/PrettyPrintPass.cpp
-  compiler/passes/ComputeFreeNames.cpp
   compiler/passes/AddParentLinksPass.cpp
   compiler/passes/ReplaceExprTransform.cpp
-  compiler/passes/ReplaceTypeTransform.cpp
   compiler/passes/ClosureConversionPass.cpp
   compiler/passes/CaptureAvoidingSubstitution.cpp
 )
@@ -429,7 +426,6 @@ add_executable(unittest_fosterc_parse
   ${PROJECT_SOURCE_DIR}/compiler/parse/ANTLRtoFosterAST_unittest.cpp
   ${PROJECT_SOURCE_DIR}/compiler/parse/ProtobufToAST_unittest.cpp
   ${PROJECT_SOURCE_DIR}/compiler/base/PughSinofskyPrettyPrinter_unittest.cpp
-  ${PROJECT_SOURCE_DIR}/compiler/passes/ComputeFreeNames_unittest.cpp
   ${GENERATED}/FosterAST.pb.cc
 )
 target_link_libraries(unittest_fosterc_parse
