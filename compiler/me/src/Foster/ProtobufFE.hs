@@ -4,7 +4,7 @@
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
-module Foster.ProtobufUtils (
+module Foster.ProtobufFE (
     parseSourceModule
   , dumpModuleToProtobuf
 ) where

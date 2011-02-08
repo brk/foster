@@ -33,7 +33,7 @@ import Text.ProtocolBuffers(messageGet)
 
 import System.Console.ANSI
 import Foster.Base
-import Foster.ProtobufUtils
+import Foster.ProtobufFE
 import Foster.ExprAST
 import Foster.TypeAST
 import Foster.Typecheck
