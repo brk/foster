@@ -273,6 +273,8 @@ llvm::CallingConv::ID FnTypeAST::getCallingConventionID() {
     return llvm::CallingConv::Fast;
   } else if (callingConvention == "ccc") {
     return llvm::CallingConv::C;
+  } else if (callingConvention == "coldcc") {
+    return llvm::CallingConv::Cold;
   } else {
     ASSERT(false) << "Unknown calling convention: " << callingConvention;
     return llvm::CallingConv::C;
