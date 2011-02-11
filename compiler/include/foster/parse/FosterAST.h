@@ -7,7 +7,6 @@
 
 #include "base/Assert.h"
 #include "base/Diagnostics.h"
-#include "base/FilteringIterator.h"
 #include "parse/FosterSymbolTable.h"
 
 #include <vector>
@@ -289,15 +288,10 @@ public:
 
 struct ModuleAST : public ExprAST {
   ExprAST::ScopeType* scope;
-
-  typedef foster::dynamic_cast_filtering_iterator<ExprAST, FnAST>
-          FnAST_iterator;
-  FnAST_iterator fn_begin() {
-    return FnAST_iterator(parts.begin(), parts.end());
-  }
-  FnAST_iterator fn_end() {
-    return FnAST_iterator(parts.end()  , parts.end());
-  }
+  std::vector<FnAST*> fn_parts;
+  typedef std::vector<FnAST*>::iterator FnAST_iterator;
+  FnAST_iterator fn_begin() { return fn_parts.begin();}
+  FnAST_iterator fn_end() { return fn_parts.end(); }
 
   explicit ModuleAST(const std::vector<ExprAST*>& _parts,
                      const std::string& name,
@@ -305,7 +299,15 @@ struct ModuleAST : public ExprAST {
                      foster::SourceRange sourceRange)
     : ExprAST("ModuleAST", sourceRange)
     , scope(parentScope->newNestedScope(name)) {
-    this->parts = _parts;
+
+      for (int i = 0; i < _parts.size(); ++i) {
+        if (FnAST* f = dynamic_cast<FnAST*>(_parts[i])) {
+          fn_parts.push_back(f);
+        }
+        // parts contains all subexprs,
+        // some of which are copied in fn_parts.
+        parts.push_back(_parts[i]);
+      }
   }
 
   virtual void accept(ExprASTVisitor* visitor);
