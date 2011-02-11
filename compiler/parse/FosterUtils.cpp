@@ -20,11 +20,6 @@ using llvm::FunctionType;
 
 const llvm::Type* foster_generic_coro_t;
 
-const char* getDefaultCallingConvGenericClosure() {
-  foster::EDiag() << "getDefaultCallingConvGenericClosure()";
-  return foster::kDefaultFnLiteralCallingConvention;
-}
-
 // Converts T (X, Y) and T (X, Y)* to T (X, Y)
 FnTypeAST* tryExtractCallableType(TypeAST* ty) {
   if (RefTypeAST* r = dynamic_cast<RefTypeAST*>(ty)) {
@@ -72,7 +67,7 @@ FnTypeAST* genericClosureVersionOf(const FnTypeAST* fnty, bool skipFirstArg) {
   }
 
   return FnTypeAST::get(fnty->getReturnType(), fnParams,
-                        getDefaultCallingConvGenericClosure());
+                        fnty->getCallingConventionName());
 }
 
 FnTypeAST* genericClosureVersionOf(const FnTypeAST* fnty) {

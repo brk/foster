@@ -19,7 +19,7 @@ using std::map;
 using foster::SourceRange;
 
 const char* getDefaultCallingConvRecon() {
-  ///foster::EDiag() << "getDefaultCallingConvRecon()";
+  foster::EDiag() << "getDefaultCallingConvRecon()";
   return foster::kDefaultFnLiteralCallingConvention;
 }
 
@@ -268,7 +268,11 @@ const llvm::FunctionType* FnTypeAST::getLLVMFnType() const {
                                  /*isVarArg=*/ false);
 }
 
-llvm::CallingConv::ID FnTypeAST::getCallingConventionID() {
+std::string FnTypeAST::getCallingConventionName() const {
+  return callingConvention;
+}
+
+llvm::CallingConv::ID FnTypeAST::getCallingConventionID() const {
   if (callingConvention == "fastcc") {
     return llvm::CallingConv::Fast;
   } else if (callingConvention == "ccc") {

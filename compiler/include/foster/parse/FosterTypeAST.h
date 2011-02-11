@@ -201,7 +201,8 @@ public:
   void markAsClosure() { markedAsClosure = true; }
   bool isMarkedAsClosure() const { return markedAsClosure; }
 
-  llvm::CallingConv::ID getCallingConventionID();
+  llvm::CallingConv::ID getCallingConventionID() const;
+  std::string           getCallingConventionName() const;
   friend class DumpTypeToProtobufPass;
 };
 
