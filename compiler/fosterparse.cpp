@@ -3,10 +3,7 @@
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/System/Path.h"
-#include "llvm/System/Process.h"
 
 #include "base/InputFile.h"
 #include "base/LLVMUtils.h"
@@ -17,8 +14,6 @@
 #include "parse/ParsingContext.h"
 
 #include <string>
-#include <iostream>
-#include <fstream>
 
 // Usage:
 //        fosterparse <inputfile.foster> <outputfile.pb>
