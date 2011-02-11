@@ -16,6 +16,8 @@
 
 #include "parse/FosterUtils.h"
 
+#include "pystring/pystring.h"
+
 #include <vector>
 #include <map>
 #include <set>
@@ -54,6 +56,37 @@ struct ClosureConversionPass : public ExprASTVisitor {
 };
 
 namespace foster {
+  
+const char* getCallingConvention(PrototypeAST* ast) {
+  if (ast->getName() == "main"
+  ||  pystring::startswith(ast->getName(), "llvm.")
+  ||  pystring::startswith(ast->getName(), "__voidReturningVersionOf__")) {
+    return "ccc";
+  } else {
+    //EDiag() << "passUtils::getCallingConvention(" << ast->getName() << ") returning fastcc";
+    return "fastcc";
+  }
+}
+
+FnTypeAST* getFunctionTypeForProto(PrototypeAST* ast) {
+  std::vector<TypeAST*> argTypes;
+  for (size_t i = 0; i < ast->inArgs.size(); ++i) {
+    ASSERT(ast->inArgs[i] != NULL);
+    VariableAST* arg = ast->inArgs[i];
+    TypeAST* ty = arg->type;
+    if (ty == NULL) {
+      currentErrs() << "Error: proto " << ast->getName() << " had "
+        << "null type for arg '" << arg->name << "'" << "\n";
+      return NULL;
+    }
+
+    argTypes.push_back(ty);
+  }
+
+  return FnTypeAST::get(ast->resultTy, argTypes,
+                        getCallingConvention(ast));
+}
+  
   void performClosureConversion(const std::set<std::string>& globalNames,
                                 ModuleAST* mod) {
     ClosureConversionPass p(globalNames, mod);

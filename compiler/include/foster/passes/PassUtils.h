@@ -22,10 +22,6 @@ bool typesOf(const std::vector<ExprAST*>& exprs,
              const std::string& contextStr,
              std::vector<TypeAST*>& types);
 
-const char* getCallingConvention(PrototypeAST* ast);
-
-FnTypeAST* getFunctionTypeForProto(PrototypeAST* ast);
-
 } // namespace foster
 
 #endif
