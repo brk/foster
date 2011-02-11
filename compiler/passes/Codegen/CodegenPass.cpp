@@ -730,13 +730,6 @@ void CodegenPass::visit(SubscriptAST* ast) {
 
 ////////////////////////////////////////////////////////////////////
 
-const FunctionType* tryExtractFunctionPointerType(Value* FV) {
-  const llvm::PointerType* fp =
-                       llvm::dyn_cast_or_null<llvm::PointerType>(FV->getType());
-  if (fp == NULL) return NULL;
-  return dyn_cast<FunctionType>(fp->getElementType());
-}
-
 // Create function    fnName(i8* env, arg-args) { arg(arg-args) }
 // that hard-codes call to fn referenced by arg,
 // and is suitable for embedding as the code ptr in a closure pair,
@@ -842,9 +835,6 @@ void CodegenPass::visit(CallAST* ast) {
     // Call to top level function
     FT = F->getFunctionType();
     callingConv = F->getCallingConv();
-  } else if (FT = tryExtractFunctionPointerType(FV)) {
-    // Call to function pointer
-    ASSERT(false) << "don't know what calling convention to use for ptrs";
   } else if (FnTypeAST* closureFnType = dynamic_cast<FnTypeAST*>(base->type)) {
     // If our base has a Foster-level function type but not a
     // LLVM-level function type, it must mean we're calling a closure.
@@ -866,7 +856,10 @@ void CodegenPass::visit(CallAST* ast) {
     FV = builder.CreateExtractValue(clo, 0, "getCloCode");
     callingConv = llvm::CallingConv::Fast;
   } else {
-    ASSERT(false);
+    ASSERT(false)
+        << "don't know how to handle a call to value of type "
+        << str(FV->getType())
+        << "\n" << str(FV);
   }
 
   if (!FT) {
