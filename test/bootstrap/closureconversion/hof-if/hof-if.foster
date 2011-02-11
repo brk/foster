@@ -12,8 +12,14 @@ main = fn () {
   let x : i32 = read_i32()
   let y : i32 = read_i32()
   let z : i32 = read_i32() in {
+    expect_i1(true)
     print_i1( prim-and( x < y, y < z) )
-    expect_i1( hof-and( fn (to i1) { x < y },
+    
+    expect_i1(false)
+    print_i1( prim-and( x < y, z < y) )
+    
+    expect_i1(true)
+    print_i1(  hof-and( fn (to i1) { x < y },
                         fn (to i1) { y < z }) )
   }
 }
