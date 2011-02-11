@@ -254,7 +254,7 @@ FnTypeAST* FnTypeAST::get(TypeAST* returnType,
 
 const llvm::Type* FnTypeAST::getLLVMType() const {
   if (!repr) {
-    if (closedOverVars) {
+    if (isMarkedAsClosure()) {
       repr = genericClosureTypeFor(this)->getLLVMType();
     } else {
       repr = getLLVMFnType();

@@ -174,9 +174,7 @@ class FnTypeAST : public TypeAST {
   TypeAST* returnType;
   std::vector<TypeAST*> argTypes;
   std::string callingConvention;
-
-  std::list<foster::Effect>       * effects;
-  std::list<foster::ClosureDatum> * closedOverVars;
+  bool markedAsClosure;
 
   explicit FnTypeAST(TypeAST* returnType,
                      const std::vector<TypeAST*>& argTypes,
@@ -186,8 +184,7 @@ class FnTypeAST : public TypeAST {
       returnType(returnType),
       argTypes(argTypes),
       callingConvention(callingConvention),
-      effects(NULL),
-      closedOverVars(NULL) {}
+      markedAsClosure(false) {}
 
 public:
   virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
@@ -205,10 +202,8 @@ public:
 
   const llvm::FunctionType* getLLVMFnType() const;
 
-  void markAsClosure() {
-    closedOverVars = new std::list<foster::ClosureDatum>();
-  }
-  bool isMarkedAsClosure() { return closedOverVars != NULL; }
+  void markAsClosure() { markedAsClosure = true; }
+  bool isMarkedAsClosure() const { return markedAsClosure; }
 
   llvm::CallingConv::ID getCallingConventionID();
   friend class DumpTypeToProtobufPass;
