@@ -154,29 +154,6 @@ bool isGenericClosureType(const llvm::Type* ty) {
   return false;
 }
 
-// converts { T (env*, Y, Z)*, env* }   to   T (Y, Z)
-FnTypeAST* originalFunctionTypeForClosureStructType(TypeAST* ty) {
-  if (TupleTypeAST* tty = dynamic_cast<TupleTypeAST*>(ty)) {
-    if (FnTypeAST* ft = tryExtractCallableType(tty->getContainedType(0))) {
-      // Create a new function type without the env ptr
-      std::vector<TypeAST*> originalArgTypes;
-      for (int i = 1; i < ft->getNumParams(); ++i) {
-        originalArgTypes.push_back(ft->getParamType(i));
-      }
-      FnTypeAST* rv = FnTypeAST::get(ft->getReturnType(),
-                                     originalArgTypes,
-                                     "fastcc");
-#if 0
-      ft->dumpParams();
-      std::cout << "originalFunc...() " << str(ty) << " => " << str(ft)
-        << ";;; " << ft->getNumParams() << " ;; to " << str(rv) << std::endl;
-#endif
-      return rv;
-    }
-  }
-  return NULL;
-}
-
 bool isUnit(TypeAST* ty) {
   TupleTypeAST* t = dynamic_cast<TupleTypeAST*>(ty);
   return t && t->getNumElements() == 0;
