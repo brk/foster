@@ -26,13 +26,35 @@ llvm::Value* getUnitValue() {
             llvm::StructType::get(builder.getContext()), noArgs);
 }
 
-Value* getPointerToIndex(Value* compositeValue,
+void checkPointerToIndex(Value* ptrToCompositeValue,
                          Value* idxValue,
                          const std::string& name) {
+  ASSERT(ptrToCompositeValue->getType()->isPointerTy());
+  const llvm::Type* underlyingTy = ptrToCompositeValue->getType()->getContainedType(0);
+  if (const llvm::CompositeType* cty
+      = llvm::dyn_cast<llvm::CompositeType>(underlyingTy)) {
+    ASSERT(cty->indexValid(idxValue))
+      << "Attempt to use index " << str(idxValue)
+      << "\non val of type "     << str(ptrToCompositeValue->getType())
+      << "\nwith value "         << str(ptrToCompositeValue);
+      llvm::outs() << "gep " << str(ptrToCompositeValue->getType())
+                    << "  of type " << str(idxValue) << "\n";
+  } else {
+    ASSERT(false) << "Pointer to non-composite type "
+                  <<  str(ptrToCompositeValue->getType())
+                  << "passed to getPointerToIndex(... " << name << ")";
+  }
+}
+
+Value* getPointerToIndex(Value* ptrToCompositeValue,
+                         Value* idxValue,
+                         const std::string& name) {
+  checkPointerToIndex(ptrToCompositeValue, idxValue, name);
   std::vector<Value*> idx;
-  idx.push_back(ConstantInt::get(Type::getInt32Ty(builder.getContext()), 0));
+  idx.push_back(getConstantInt32For(0));
   idx.push_back(idxValue);
-  return builder.CreateGEP(compositeValue, idx.begin(), idx.end(), name.c_str());
+  return builder.CreateGEP(ptrToCompositeValue,
+                           idx.begin(), idx.end(), name.c_str());
 }
 
 Value* getElementFromComposite(Value* compositeValue, Value* idxValue) {
