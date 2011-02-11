@@ -17,8 +17,6 @@ class TypeAST;
 class FnTypeAST;
 class TupleTypeAST;
 
-bool canAssignType(TypeAST* from, TypeAST* to);
-
 void addClosureTypeName(llvm::Module* mod, TupleTypeAST* ty);
 
 // Converts T (X, Y) and T (X, Y)* to T (X, Y)

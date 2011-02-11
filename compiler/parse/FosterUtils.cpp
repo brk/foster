@@ -20,11 +20,6 @@ using llvm::FunctionType;
 
 const llvm::Type* foster_generic_coro_t;
 
-bool canAssignType(TypeAST* from, TypeAST* to) {
-  // TODO refine this!
-  return from == to;
-}
-
 const char* getDefaultCallingConvGenericClosure() {
   foster::EDiag() << "getDefaultCallingConvGenericClosure()";
   return foster::kDefaultFnLiteralCallingConvention;
