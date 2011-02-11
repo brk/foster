@@ -25,6 +25,20 @@
 
 using namespace llvm;
 
+std::ostream& operator<<(std::ostream& out, const llvm::Type& ty) {
+  std::string s;
+  llvm::raw_string_ostream ss(s);
+  ss << ty;
+  return out << ss.str();
+}
+
+std::string str(const llvm::Type* ty) {
+  std::string s;
+  llvm::raw_string_ostream ss(s);
+  if (ty) { ss << *ty; } else { ss << "<NULL ty>"; }
+  return ss.str();
+}
+
 namespace foster {
 
 llvm::IRBuilder<> builder(llvm::getGlobalContext());

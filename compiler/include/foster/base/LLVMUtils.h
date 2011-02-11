@@ -9,6 +9,8 @@
 #include "llvm/System/Path.h"
 #include "llvm/Support/IRBuilder.h"
 
+#include <iosfwd>
+
 namespace llvm {
   class Type;
   class Module;
@@ -22,6 +24,10 @@ namespace llvm {
 }
 
 #define FOSTER_VERSION_STR "0.0.5"
+
+std::ostream& operator<<(std::ostream& out, const llvm::Type& ty);
+
+std::string str(const llvm::Type* ty);
 
 namespace foster {
 

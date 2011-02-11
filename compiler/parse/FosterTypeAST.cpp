@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
+#include "base/Diagnostics.h"
+#include "base/Assert.h"
+#include "base/LLVMUtils.h"
+
 #include "parse/FosterTypeAST.h"
 #include "parse/FosterAST.h"
 #include "parse/ParsingContext.h"
-#include "base/Diagnostics.h"
-#include "base/Assert.h"
-
 #include "parse/FosterUtils.h"
 
 #include <sstream>
@@ -16,20 +17,6 @@ using std::vector;
 using std::map;
 
 using foster::SourceRange;
-
-std::ostream& operator<<(std::ostream& out, const llvm::Type& ty) {
-  std::string s;
-  llvm::raw_string_ostream ss(s);
-  ss << ty;
-  return out << ss.str();
-}
-
-std::string str(const llvm::Type* ty) {
-  std::string s;
-  llvm::raw_string_ostream ss(s);
-  if (ty) { ss << *ty; } else { ss << "<NULL ty>"; }
-  return ss.str();
-}
 
 const char* getDefaultCallingConvRecon() {
   ///foster::EDiag() << "getDefaultCallingConvRecon()";

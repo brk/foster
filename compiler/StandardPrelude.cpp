@@ -8,6 +8,8 @@
 #include "llvm/Support/IRBuilder.h"
 #include "llvm/Intrinsics.h"
 
+#include "base/LLVMUtils.h"
+
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
 

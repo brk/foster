@@ -37,10 +37,6 @@ class TupleTypeAST;
 
 class DumpTypeToProtobufPass;
 
-std::ostream& operator<<(std::ostream& out, const llvm::Type& ty);
-
-std::string str(const llvm::Type* ty);
-
 bool hasEqualRepr(TypeAST* src, TypeAST* dst);
 bool arePhysicallyCompatible(const llvm::Type* src,
                              const llvm::Type* dst);

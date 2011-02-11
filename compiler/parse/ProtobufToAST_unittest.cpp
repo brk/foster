@@ -10,6 +10,7 @@
 #include "passes/DumpToProtobuf.h"
 #include "passes/PrettyPrintPass.h"
 
+#include "base/LLVMUtils.h"
 #include "parse/FosterTypeAST.h"
 
 #include "llvm/Support/raw_ostream.h"
