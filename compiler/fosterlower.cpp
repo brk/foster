@@ -49,6 +49,7 @@
 
 using namespace llvm;
 
+using foster::ScopedTimer;
 using foster::SourceRange;
 using foster::EDiag;
 
@@ -58,21 +59,6 @@ namespace foster {
 }
 
 using std::string;
-
-foster::TimingsRepository gTimings;
-
-struct ScopedTimer {
-  ScopedTimer(const char* stat)
-     : stat(stat), start(llvm::sys::TimeValue::now()) {}
-  ~ScopedTimer() {
-    llvm::sys::TimeValue end = llvm::sys::TimeValue::now();
-    gTimings.incr(stat, (end - start).msec());
-  }
-private:
-  const char* stat;
-  llvm::sys::TimeValue start;
-};
-
 
 static cl::opt<string>
 optInputPath(cl::Positional, cl::desc("<input file>"));
@@ -122,6 +108,7 @@ void printVersionInfo() {
 }
 
 void setTimingDescriptions() {
+  using foster::gTimings;
   gTimings.describe("total", "Overall compiler runtime (ms)");
 
   gTimings.describe("io.parse", "Time spent parsing input file (ms)");
@@ -355,7 +342,7 @@ cleanup:
 
   if (optPrintTimings) {
     setTimingDescriptions();
-    gTimings.print();
+    foster::gTimings.print();
   }
   return program_status;
 }

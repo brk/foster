@@ -6,6 +6,7 @@
 #define FOSTER_BASE_TIMINGS_REPOSITORY
 
 #include "llvm/System/DataTypes.h"
+#include "llvm/System/TimeValue.h"
 
 #include <map>
 #include <string>
@@ -26,6 +27,20 @@ public:
 
   void incr(const char* dottedpath, uint64_t n);
   void print();
+};
+
+extern TimingsRepository gTimings;
+
+struct ScopedTimer {
+  ScopedTimer(const char* stat)
+     : stat(stat), start(llvm::sys::TimeValue::now()) {}
+  ~ScopedTimer() {
+    llvm::sys::TimeValue end = llvm::sys::TimeValue::now();
+    gTimings.incr(stat, (end - start).msec());
+  }
+private:
+  const char* stat;
+  llvm::sys::TimeValue start;
 };
 
 } // namespace foster

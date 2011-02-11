@@ -10,6 +10,8 @@
 
 namespace foster {
 
+TimingsRepository gTimings;
+
 void TimingsRepository::incr(const char* dottedpath, uint64_t n) {
   std::vector<string> parts;
   pystring::split(dottedpath, parts, ".");
@@ -42,8 +44,8 @@ void TimingsRepository::print() {
   for (Iter it = totals.begin(); it != totals.end(); ++it) {
     const string& s = (*it).first;
     llvm::outs() << llvm::format(pathFormatString.c_str(), s.c_str())
-		<< "  " << llvm::format("%5u", (unsigned) totals[s])
-		<< "  "  << llvm::format("%5u", (unsigned) locals[s]);
+                << "  " << llvm::format("%5u", (unsigned) totals[s])
+                << "  "  << llvm::format("%5u", (unsigned) locals[s]);
     const string& d = descriptions[s];
     if (!d.empty()) {
       llvm::outs() << " -- " << d;
