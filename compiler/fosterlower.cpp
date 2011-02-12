@@ -161,7 +161,7 @@ void addCoroTransferDeclaration(llvm::Module* dst,
                                 llvm::Module* src) {
   // coro_transfer isn't automatically added
   // because it's only a declaration, not a definition.
-  coro_transfer =
+  llvm::Function* coro_transfer =
     llvm::dyn_cast<llvm::Function>(
       dst->getOrInsertFunction("coro_transfer",
       llvm::dyn_cast<llvm::FunctionType>(
@@ -185,7 +185,6 @@ int main(int argc, char** argv) {
   ModuleAST* exprAST = NULL;
   foster::fepb::SourceModule sm;
   llvm::GlobalVariable* current_coro = NULL;
-  llvm::Function* coro_transfer = NULL;
 
   cl::SetVersionPrinter(&printVersionInfo);
   cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster compiler backend\n");
