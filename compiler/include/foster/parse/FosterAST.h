@@ -43,9 +43,6 @@ namespace foster {
   extern char kDefaultFnLiteralCallingConvention[];
 }
 
-// Returns the closest
-uint64_t getSaturating(const llvm::ConstantInt* v);
-
 inline bool isArithOp(const std::string& op) {
   return op == "+" || op == "-" || op == "/" || op == "*";
 }

@@ -57,6 +57,19 @@ Value* getPointerToIndex(Value* ptrToCompositeValue,
                            idx.begin(), idx.end(), name.c_str());
 }
 
+uint64_t getSaturating(const llvm::ConstantInt* ci) {
+  typedef uint64_t T;
+  // If the value requires more bits than T can represent, we want
+  // to return ~0, not 0. Otherwise, we should leave the value alone.
+  T allOnes = ~T(0);
+  if (!ci) {
+    EDiag() << "getSaturating() given a null value, returning " << allOnes;
+    return allOnes;
+  }
+
+  return static_cast<T>(ci->getLimitedValue(allOnes));
+}
+
 Value* getElementFromComposite(Value* compositeValue, Value* idxValue) {
   const Type* compositeType = compositeValue->getType();
   if (llvm::isa<llvm::PointerType>(compositeType)) {

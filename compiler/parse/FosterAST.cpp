@@ -43,20 +43,6 @@ using llvm::ConstantInt;
 using std::vector;
 using std::string;
 
-uint64_t getSaturating(const llvm::ConstantInt* ci) {
-  typedef uint64_t T;
-  // If the value requires more bits than T can represent, we want
-  // to return ~0, not 0. Otherwise, we should leave the value alone.
-  T allOnes = ~T(0);
-  if (!ci) {
-    currentErrs() << "getSaturating() given a null value, returning " << allOnes << "\n";
-    return allOnes;
-  }
-
-  return static_cast<T>(ci->getLimitedValue(allOnes));
-}
-
-
 std::ostream& operator<<(std::ostream& out, TypeAST& type) {
   llvm::raw_os_ostream rout(out);
   foster::prettyPrintType(&type, rout, 40);
