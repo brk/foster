@@ -28,6 +28,7 @@ namespace llvm {
 std::ostream& operator<<(std::ostream& out, const llvm::Type& ty);
 
 std::string str(const llvm::Type* ty);
+std::string str(const llvm::Value* value);
 
 namespace foster {
 

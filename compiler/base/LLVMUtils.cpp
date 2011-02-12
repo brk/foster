@@ -33,9 +33,16 @@ std::ostream& operator<<(std::ostream& out, const llvm::Type& ty) {
 }
 
 std::string str(const llvm::Type* ty) {
+  if (!ty) return "<NULL ty>";
   std::string s;
-  llvm::raw_string_ostream ss(s);
-  if (ty) { ss << *ty; } else { ss << "<NULL ty>"; }
+  llvm::raw_string_ostream ss(s); ss << *ty;
+  return ss.str();
+}
+
+std::string str(const llvm::Value* value) {
+  if (!value) return "<nil>";
+  std::string s;
+  llvm::raw_string_ostream ss(s); ss << *value;
   return ss.str();
 }
 

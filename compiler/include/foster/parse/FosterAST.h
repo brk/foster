@@ -22,7 +22,6 @@ namespace llvm {
 }
 
 using llvm::Type;
-using llvm::Value;
 using llvm::APInt;
 
 class ExprAST;
@@ -35,7 +34,6 @@ std::ostream& operator<<(std::ostream& out, ExprAST& expr);
 
 string str(const ExprAST* expr);
 string str(const TypeAST* type);
-string str(const Value* value);
 
 namespace foster {
   SourceRangeHighlighter show(ExprAST* ast);

@@ -67,13 +67,6 @@ string str(const TypeAST* expr) {
   } else { return "<nil>"; }
 }
 
-string str(const Value* value) {
-  if (value) {
-    std::string s;
-    llvm::raw_string_ostream ss(s); ss << *value; return ss.str();
-  } else { return "<nil>"; }
-}
-
 bool isPrintRef(const ExprAST* base) {
   if (const VariableAST* var = dynamic_cast<const VariableAST*>(base)) {
     if (var->name == "print_ref") {
