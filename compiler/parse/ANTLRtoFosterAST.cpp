@@ -47,9 +47,9 @@ using foster::currentOuts;
 Exprs getExprs(pTree tree);
 
 // expressions wrapped in () are marked here
-std::map<ExprAST*, bool> gWasWrappedInExplicitParens;
+std::map<const ExprAST*, bool> gWasWrappedInExplicitParens;
 
-bool foster::wasExplicitlyParenthesized(ExprAST* ast) {
+bool foster::wasExplicitlyParenthesized(const ExprAST* ast) {
   return gWasWrappedInExplicitParens[ast];
 }
 

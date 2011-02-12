@@ -43,30 +43,31 @@ using llvm::ConstantInt;
 using std::vector;
 using std::string;
 
-std::ostream& operator<<(std::ostream& out, TypeAST& type) {
+
+std::ostream& operator<<(std::ostream& out, const TypeAST& type) {
   llvm::raw_os_ostream rout(out);
   foster::prettyPrintType(&type, rout, 40);
   return out;
 }
 
-std::ostream& operator<<(std::ostream& out, ExprAST& expr) {
+std::ostream& operator<<(std::ostream& out, const ExprAST& expr) {
   return expr.operator<<(out);
 }
 
 
-string str(ExprAST* expr) {
+string str(const ExprAST* expr) {
   if (expr) {
     std::stringstream ss; ss << (*expr); return ss.str();
   } else { return "<nil>"; }
 }
 
-string str(TypeAST* expr) {
+string str(const TypeAST* expr) {
   if (expr) {
     std::stringstream ss; ss << (*expr); return ss.str();
   } else { return "<nil>"; }
 }
 
-string str(Value* value) {
+string str(const Value* value) {
   if (value) {
     std::string s;
     llvm::raw_string_ostream ss(s); ss << *value; return ss.str();

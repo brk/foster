@@ -33,9 +33,9 @@ class ExprASTVisitor;
 typedef std::vector<ExprAST*> Exprs;
 std::ostream& operator<<(std::ostream& out, ExprAST& expr);
 
-string str(ExprAST* expr);
-string str(TypeAST* type);
-string str(Value* value);
+string str(const ExprAST* expr);
+string str(const TypeAST* type);
+string str(const Value* value);
 
 namespace foster {
   SourceRangeHighlighter show(ExprAST* ast);
