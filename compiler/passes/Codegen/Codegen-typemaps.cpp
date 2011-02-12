@@ -344,7 +344,8 @@ const llvm::StructType*
 isCoroStruct(const llvm::Type* ty) {
   if (const llvm::StructType* sty = llvm::dyn_cast<llvm::StructType>(ty)) {
     if (sty == foster_generic_coro_t
-     || sty->getTypeAtIndex(0U) == foster_generic_coro_t) {
+     ||  ( sty->getNumContainedTypes() > 0
+        && sty->getTypeAtIndex(0U) == foster_generic_coro_t)) {
       return sty;
     }
   }
