@@ -251,15 +251,6 @@ void compileToNativeAssembly(Module* mod, const string& filename) {
   passes.run(*mod);
 }
 
-void linkTo(llvm::Module*& transient,
-            const std::string& name,
-            llvm::Module* module) {
-  string errMsg;
-  if (Linker::LinkModules(module, transient, &errMsg)) {
-    llvm::errs() << "Error when linking in " << name << ": " << errMsg << "\n";
-  }
-}
-
 void setDefaultCommandLineOptions() {
   if (string(LLVM_HOSTTRIPLE).find("darwin") != string::npos) {
     // Applications on Mac OS X (x86) must be compiled with relocatable symbols,
@@ -317,10 +308,8 @@ int main(int argc, char** argv) {
     llvm::PrintStatistics(out);
   }
 
-  {
-    llvm::outs().flush();
-    llvm::errs().flush();
-  }
+  llvm::outs().flush();
+  llvm::errs().flush();
 
 cleanup:
   delete wholeProgramTimer;
