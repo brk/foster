@@ -11,10 +11,13 @@ _obj/
 tools/c-viewer/
 dox/
 notes/_build/
-compiler/me/FosterAST.proto
+compiler/me/FosterAST.protox
+compiler/me/FosterLL.protox
 compiler/me/dist/
 compiler/me/src/Foster/Fepb/
 compiler/me/src/Foster/Fepb.hs
+compiler/me/src/Foster/Bepb/
+compiler/me/src/Foster/Bepb.hs
 compiler/me/src/Main.hsext
 glob:compiler/me/**.hi
 glob:compiler/me/**.o

@@ -7,7 +7,7 @@
 module Foster.TypeAST where
 
 import Foster.Base
-import List(foldr1, intersperse, length)
+import List(foldr1, length)
 import Data.IORef(IORef)
 
 type Sigma = TypeAST
@@ -18,11 +18,14 @@ data TypeAST =
            MissingTypeAST { missingTypeProgAnnotation :: String }
          | NamedTypeAST     String
          | TupleTypeAST     [TypeAST]
-         | FnTypeAST        TypeAST TypeAST (Maybe [String])
+         | FnTypeAST        { fnTypeDomain :: TypeAST
+                            , fnTypeRange  :: TypeAST
+                            , fnTypeCloses :: (Maybe [(Ident, TypeAST)]) }
          | CoroType         TypeAST TypeAST
          | ForAll           [TyVar] Rho
          | T_TyVar          TyVar
          | MetaTyVar        MetaTyVar
+         | PtrTypeAST       TypeAST
 
 data TyVar = BoundTyVar String -- bound by a ForAll, that is
            | SkolemTyVar String Uniq deriving (Eq)
@@ -42,11 +45,12 @@ instance Show TypeAST where
         (MissingTypeAST s)   -> "(MissingTypeAST " ++ s ++ ")"
         (NamedTypeAST s)     -> s
         (TupleTypeAST types) -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
-        (FnTypeAST s t cs)   -> "(" ++ show s ++ " -> " ++ show t ++ ")"
+        (FnTypeAST s t cs)   -> "(" ++ show s ++ " -> " ++ show t ++ " @{" ++ show cs ++ "})"
         (CoroType s t)   -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
         (ForAll tvs rho) -> "(ForAll " ++ show tvs ++ ". " ++ show rho ++ ")"
         (T_TyVar tv)     -> show tv
         (MetaTyVar mtv)  -> "(~!)"
+        (PtrTypeAST ty)  -> "(Ptr " ++ show ty ++ ")"
 
 instance Eq TypeAST where
     t1 == t2 = typesEqual t1 t2
@@ -67,14 +71,12 @@ typesEqual (ForAll vars1 ty1) (ForAll vars2 ty2) =
     vars1 == vars2 && typesEqual ty1 ty2
 typesEqual (T_TyVar tv1) (T_TyVar tv2) = tv1 == tv2
 typesEqual (MetaTyVar mtv1) (MetaTyVar mtv2) = mtv1 == mtv2
+typesEqual (PtrTypeAST ty1) (PtrTypeAST ty2) = ty1 == ty2
 typesEqual _ _ = False
 
 
-fosBoolType = NamedTypeAST "i1"
 
-joinWith :: String -> [String] -> String
-joinWith s [] = ""
-joinWith s ss = foldr1 (++) (intersperse s ss)
+fosBoolType = NamedTypeAST "i1"
 
 
 minimalTuple []    = TupleTypeAST []

@@ -14,7 +14,7 @@ namespace foster {
 namespace fepb {
   struct Expr;
   struct Type;
-} // namespace foster::pb
+} // namespace foster::fepb
 
 //ModuleAST* ModuleAST_from_pb(pb::ExprAST);
 

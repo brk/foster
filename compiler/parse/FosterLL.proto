@@ -1,0 +1,122 @@
+package foster.bepb;
+
+message SourceLocation {
+  required int32 line   = 1;
+  required int32 column = 2;
+}
+
+message SourceRange {
+  optional string         file_path = 1;
+  required SourceLocation begin     = 2;
+  optional SourceLocation end       = 3;
+}
+
+message Type {
+  enum Tag {
+    LLVM_NAMED = 1; // i32, void, etc
+    PTR = 2;
+    PROC = 3;
+    CORO = 4;
+    TUPLE = 5;
+    CARRAY = 6;
+    CLOSURE = 7;
+    FORALL_TY = 8;
+    TYPE_VARIABLE = 9;
+  }
+
+  optional SourceRange range = 1;
+  required Tag         tag   = 2;
+
+  // LLVM_NAMED, TYPE_VARIABLE
+  optional string name = 3;
+  optional ProcType procty = 17;
+  repeated Type type_parts = 18;   // for tuple, coro, carray
+  optional uint64 carray_size = 19;
+  repeated string tyvar_names = 20; // for FORALL_TY
+}
+
+message ProcType {
+  repeated Type arg_types = 1;
+  required Type ret_type  = 2;
+  optional string calling_convention = 3;
+}
+
+
+message Expr {
+  enum Tag {
+    LL_INT = 16;
+    LL_BOOL = 17;
+    LL_VAR = 18;
+    LL_CLOSURES = 19;
+    LL_TUPLE = 20;
+    LL_LETVAL = 21;
+    LL_CALL = 23;
+    LL_SEQ = 24;
+    LL_TY_APP = 25;
+    LL_SUBSCRIPT = 26;
+
+    LL_IF = 32;
+    LL_NAMED_TYPE_DECL = 36;
+  }
+  repeated Expr        parts = 1;
+  required Tag           tag = 2;
+  optional Type         type = 3;
+  optional SourceRange range = 4;
+  repeated Closure  closures = 5;
+  optional PBInt      pb_int = 17;
+  optional PBIf       pb_if  = 21;
+
+  optional bool   bool_value = 23;   // Bool
+
+  optional string name  = 24;  // Var, LETVAL named type decl
+
+  optional bool   is_closure_environment = 25;   // Tuple
+
+  optional Type ty_app_arg_type = 29;   // AnnTyApp
+}
+
+message Proc {
+  required Proto proto = 1;
+  required Expr  body  = 2;
+}
+
+message Closure {
+  required string varname  = 1;
+  required string procid   = 2;
+  repeated string varnames = 3;
+}
+
+message PBInt {
+  // The middle-end is responsible for verifying that the originalText
+  // constitutes a syntactically valid literal. For example, FEEDFACE_10
+  // is syntactically invalid.
+  //
+  // The parser is NOT responsible for verifying that the originalText
+  // constitutes a syntactically valid literal, because doing so precludes
+  // having __COMPILES__ in the language, which requires transmitting
+  // possibly-invalid literals to the middle-end.
+  //
+  // The middle-end is also responsible for checking that the literal is
+  // used appropriately (e.g. no passing 64-bit literal to 32-bit func).
+  //
+  required string originalText =  2;
+}
+
+message Proto {
+  required ProcType proctype      = 1;
+  repeated Expr   in_args         = 2; // really Var nodes: name + type
+  required string name            = 3;
+  optional SourceRange range      = 5;
+}
+
+message PBIf {
+  required Expr test_expr = 2;
+  required Expr then_expr = 3;
+  required Expr else_expr = 4;
+}
+
+message Module {
+  required string modulename = 1;
+  repeated Proto  protos     = 2;
+  repeated Proc   procs      = 3;
+}

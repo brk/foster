@@ -19,7 +19,7 @@ using std::map;
 using foster::SourceRange;
 
 const char* getDefaultCallingConvRecon() {
-  foster::EDiag() << "getDefaultCallingConvRecon()";
+  //foster::EDiag() << "getDefaultCallingConvRecon()";
   return foster::kDefaultFnLiteralCallingConvention;
 }
 
@@ -252,11 +252,14 @@ const llvm::Type* FnTypeAST::getLLVMType() const {
 
 const llvm::FunctionType* FnTypeAST::getLLVMFnType() const {
   vector<const llvm::Type*> loweredArgTypes;
+
+  llvm::outs() << "FnTypeAST: " << str(this) << "\n";
   for (size_t i = 0; i < argTypes.size(); ++i) {
     const llvm::Type* ty = argTypes[i]->getLLVMType();
-    //llvm::outs() << "\tfn arg " << i << " :: " << str(ty) << "\n";
+    llvm::outs() << "\tfn arg " << i << " :: " << str(ty) << "\n";
     loweredArgTypes.push_back(ty);
   }
+
 
   const llvm::Type* retTy = returnType->getLLVMType();
   if (isUnit(retTy)) {

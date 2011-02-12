@@ -25,6 +25,8 @@ prependContextBindings ctx prefix =
 instance Show ContextBinding where
     show (TermVarBinding s annvar) = "(termvar " ++ s ++ " :: " ++ show annvar
 
+ctxBoundIdents :: Context -> [Ident]
+ctxBoundIdents ctx = [avarIdent v | TermVarBinding _ v <- (contextBindings ctx)]
 
 termVarLookup :: String -> [ContextBinding] -> Maybe AnnVar
 termVarLookup name bindings =
@@ -109,8 +111,6 @@ isAnnotated (Annotated _) = True
 isAnnotated _ = False
 
 
-
-
 -- Builds trees like this:
 -- AnnSeq        :: i32
 -- ├─AnnCall       :: i32
@@ -135,15 +135,6 @@ showStructure e = showStructureP e (out "") False where
 
 -----------------------------------------------------------------------
 
-getStructureContextMessage :: Tc Output
-getStructureContextMessage = do
-    hist <- tcGetCurrentHistory
-    let outputs = map (\e -> (out "\t\t") ++ textOf e 40 ++ outLn "") hist
-    let output = case outputs of
-                    [] ->        (outLn $ "\tTop-level definition:")
-                    otherwise -> (outLn $ "\tContext for AST below is:") ++ concat outputs
-    return output
-
 -- Builds trees like this:
 -- AnnSeq        :: i32
 -- ├─AnnCall       :: i32
@@ -155,3 +146,13 @@ tcShowStructure :: (Expr a) => a -> Tc Output
 tcShowStructure e = do
     header <- getStructureContextMessage
     return $ header ++ showStructure e
+
+
+getStructureContextMessage :: Tc Output
+getStructureContextMessage = do
+    hist <- tcGetCurrentHistory
+    let outputs = map (\e -> (out "\t\t") ++ textOf e 40 ++ outLn "") hist
+    let output = case outputs of
+                    [] ->        (outLn $ "\tTop-level definition:")
+                    otherwise -> (outLn $ "\tContext for AST below is:") ++ concat outputs
+    return output

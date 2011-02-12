@@ -4,6 +4,7 @@
 
 #include "parse/DumpStructure.h"
 #include "parse/FosterAST.h"
+#include "parse/FosterTypeAST.h"
 
 #include "llvm/Support/raw_ostream.h"
 

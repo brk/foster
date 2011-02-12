@@ -236,7 +236,7 @@ void DumpTypeToProtobufPass::visit(FnTypeAST* ast) {
   setTagAndRange(current, ast, pb::Type::FN);
 
   pb::FnType* fnty = current->mutable_fnty();
-  fnty->set_calling_convention(ast->callingConvention);
+  fnty->set_calling_convention(ast->getCallingConventionName());
 
   if (ast->getReturnType()) {
     dumpChild(this, fnty->mutable_ret_type(), ast->getReturnType());

@@ -2,14 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#ifndef FOSTER_PASSES_ADDPARENTLINKS
-#define FOSTER_PASSES_ADDPARENTLINKS
+#ifndef FOSTER_PROTOBUF_TO_LLEXPR_H
+#define FOSTER_PROTOBUF_TO_LLEXPR_H
 
-struct ExprAST;
+struct LLModule;
 
 namespace foster {
-  void addParentLinks(ExprAST*);
+
+namespace bepb {
+  struct Module;
+} // namespace foster::bepb
+
+LLModule* LLModule_from_pb(const bepb::Module&);
+
 }
 
-#endif // header guard
-
+#endif

@@ -235,7 +235,6 @@ uniquelyName (AnnVar ty id) = do
 typecheckFn' :: Context -> FnAST -> Maybe TypeAST -> Maybe TypeAST -> Tc AnnExpr
 typecheckFn' ctx f expArgType expBodyType = do
     let (PrototypeAST fnProtoRetTy fnProtoName fnProtoRawFormals) = fnProto f
-    let cs = fnClosedVars f
     _ <- verifyNonOverlappingVariableNames fnProtoName
                                            (map (identPrefix.avarIdent) fnProtoRawFormals)
     uniquelyNamedFormals <- mapM uniquelyName fnProtoRawFormals
@@ -247,8 +246,8 @@ typecheckFn' ctx f expArgType expBodyType = do
                                          (Ident fnProtoName irrelevantIdentNum)
                                          (typeJoinVars uniquelyNamedFormals expArgType)) in
             let argtypes = TupleTypeAST [avarType v | v <- (annProtoVars annproto)] in
-            let fnty = FnTypeAST argtypes someReturnType (fmap (fmap (show.avarIdent)) cs) in
-            return (E_AnnFn (AnnFn fnty annproto annbody cs))
+            let fnty = FnTypeAST argtypes someReturnType (fnTypeCloses' f) in
+            return (E_AnnFn (AnnFn fnty annproto annbody (fnClosedVars f)))
         otherwise ->
          tcFails $ out $ "typecheck '" ++ fnProtoName
                     ++ "': proto ret type " ++ show fnProtoRetTy

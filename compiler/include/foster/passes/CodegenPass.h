@@ -6,7 +6,6 @@
 #define FOSTER_PASSES_CODEGEN_H
 
 struct ExprAST;
-struct CodegenPass; // for CFG.cpp
 
 namespace llvm {
   struct Module;
@@ -14,7 +13,6 @@ namespace llvm {
 
 namespace foster {
   void codegen(ExprAST* ast, llvm::Module*);
-  void codegen(ExprAST* ast, CodegenPass*);
 }
 
 #endif // header guard

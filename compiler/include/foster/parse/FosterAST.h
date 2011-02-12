@@ -33,7 +33,6 @@ typedef std::vector<ExprAST*> Exprs;
 std::ostream& operator<<(std::ostream& out, ExprAST& expr);
 
 string str(const ExprAST* expr);
-string str(const TypeAST* type);
 
 namespace foster {
   SourceRangeHighlighter show(ExprAST* ast);
@@ -111,8 +110,6 @@ public:
 
   unsigned intSizeForNBits(unsigned n) const;
 };
-
-llvm::ConstantInt* getConstantInt(IntAST* n);
 
 IntAST* literalIntAST(int lit, const foster::SourceRange& sourceRange);
 

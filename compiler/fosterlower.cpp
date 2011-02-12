@@ -1,24 +1,17 @@
-// Copyright (c) 2009 Ben Karel. All rights reserved.
+// Copyright (c) 2009-2011 Ben Karel. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#include "llvm/DerivedTypes.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Module.h"
 #include "llvm/Linker.h"
 #include "llvm/ADT/Statistic.h"
-#include "llvm/ADT/Triple.h"
-#include "llvm/Config/config.h"
 
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/raw_os_ostream.h"
-#include "llvm/System/Host.h"
 #include "llvm/System/Signals.h"
-#include "llvm/System/TimeValue.h"
-#include "llvm/System/Program.h"
 
 ////////////////////////////////////////////////////////////////////
 
@@ -28,29 +21,22 @@
 
 #include "passes/FosterPasses.h"
 
-#include "parse/FosterAST.h"
+#include "parse/FosterLL.h"
 #include "parse/FosterTypeAST.h"
-#include "parse/FosterUtils.h"
-#include "parse/DumpStructure.h"
-#include "parse/ProtobufUtils.h"
-#include "parse/ParsingContext.h"
+#include "parse/FosterUtils.h" // for foster_generic_coro_t
+#include "parse/ProtobufToLLExpr.h"
+#include "parse/ParsingContext.h" // for LLVM type names
 
-#include "passes/CodegenPass.h"
-#include "passes/AddParentLinksPass.h"
-#include "passes/PrettyPrintPass.h"
-#include "passes/ClosureConversionPass.h"
-#include "_generated_/FosterAST.pb.h"
+#include "_generated_/FosterLL.pb.h"
 
-#include "parse/FosterSymbolTableTraits-inl.h"
 #include "StandardPrelude.h"
 
 #include <fstream>
 #include <vector>
 
-using namespace llvm;
+using std::string;
 
 using foster::ScopedTimer;
-using foster::SourceRange;
 using foster::EDiag;
 
 namespace foster {
@@ -58,7 +44,7 @@ namespace foster {
   extern bool gPrintLLVMImports; // in StandardPrelude.cpp
 }
 
-using std::string;
+using namespace llvm;
 
 static cl::opt<string>
 optInputPath(cl::Positional, cl::desc("<input file>"));
@@ -68,10 +54,6 @@ static cl::opt<string>
 optOutputName("o",
   cl::desc("[foster] Base name of output file"),
   cl::init("out"));
-
-static cl::opt<bool>
-optCompileSeparately("c",
-  cl::desc("[foster] Compile separately, don't automatically link imported modules"));
 
 static cl::opt<bool>
 optEmitDebugInfo("g",
@@ -84,10 +66,6 @@ optDumpPreLinkedIR("dump-prelinked",
 static cl::opt<bool>
 optDumpPostLinkedIR("dump-postlinked",
   cl::desc("[foster] Dump LLVM IR after linking with standard library"));
-
-static cl::opt<bool>
-optDumpASTs("dump-asts",
-  cl::desc("[foster] Dump intermediate ASTs (and ANLTR parse tree)"));
 
 static cl::opt<bool>
 optDumpStats("dump-stats",
@@ -141,13 +119,6 @@ void dumpModuleToBitcode(Module* mod, const string& filename) {
   foster::dumpModuleToBitcode(mod, filename);
 }
 
-void dumpExprStructureToFile(ExprAST* ast, const string& filename) {
-  ScopedTimer timer("io.file.dumpexpr");
-  string errInfo;
-  llvm::raw_fd_ostream out(filename.c_str(), errInfo);
-  foster::dumpExprStructure(out, ast);
-}
-
 void linkTo(llvm::Module*& transient,
             const std::string& name,
             llvm::Module* module) {
@@ -172,6 +143,30 @@ void addCoroTransferDeclaration(llvm::Module* dst,
   coro_transfer->addAttribute(2, llvm::Attribute::InReg);
 }
 
+LLModule* readLLProgramFromProtobuf(const string& pathstr,
+                                        foster::bepb::Module& out_sm) {
+  std::fstream input(pathstr.c_str(), std::ios::in | std::ios::binary);
+  if (!out_sm.ParseFromIstream(&input)) {
+    return NULL;
+  }
+
+  //const foster::InputTextBuffer* inputBuffer = gInputTextBuffer;
+  //gInputTextBuffer = newInputBufferFromSourceModule(out_sm);
+
+  LLModule* prog = foster::LLModule_from_pb(out_sm);
+  //gInputTextBuffer = inputBuffer;
+
+  if (!prog) {
+    EDiag() << "unable to parse program from LL module protobuf";
+    return NULL;
+  }
+  return prog;
+}
+
+namespace foster {
+void codegenLL(LLModule* package, llvm::Module* mod);
+}
+
 int main(int argc, char** argv) {
   int program_status = 0;
   GOOGLE_PROTOBUF_VERIFY_VERSION;
@@ -182,8 +177,7 @@ int main(int argc, char** argv) {
   Module* libfoster_bc = NULL;
   Module* imath_bc = NULL;
   const llvm::Type* mp_int = NULL;
-  ModuleAST* exprAST = NULL;
-  foster::fepb::SourceModule sm;
+  foster::bepb::Module pbin;
   llvm::GlobalVariable* current_coro = NULL;
 
   cl::SetVersionPrinter(&printVersionInfo);
@@ -217,12 +211,6 @@ int main(int argc, char** argv) {
     program_status = 1; goto cleanup;
   }
 
-  exprAST = readSourceModuleFromProtobuf(optInputPath, sm);
-  if (!exprAST) {
-    EDiag() << "Unable to parse module from protocol buffer!";
-    program_status = 1; goto cleanup;
-  }
-
   mp_int =
     llvm::PointerType::getUnqual(mpz_struct_ty);
   module->addTypeName("mp_int", mp_int);
@@ -247,66 +235,19 @@ int main(int argc, char** argv) {
   foster::putModuleMembersInInternalScope("imath", imath_bc, module);
   foster::addConcretePrimitiveFunctionsTo(module);
 
-  if (!exprAST) {
-    EDiag() << "Unable to parse module from protocol buffer!";
-    program_status = 1; goto cleanup;
-  }
-
-  foster::addParentLinks(exprAST);
-
-  if (optDumpASTs) { ScopedTimer timer("io.file");
-    string outfile = "pp-precc.txt";
-    llvm::outs() << "=========================" << "\n";
-    llvm::outs() << "Pretty printing to " << outfile << "\n";
-    std::ofstream out(dumpdirFile(outfile).c_str());
-    llvm::raw_os_ostream rout(out);
-
-    ScopedTimer pptimer("io.prettyprint");
-    foster::prettyPrintExpr(exprAST, rout);
-  }
-
-  if (optCompileSeparately) {
-    // Need to emit before closure conversion, which alters
-    // the set of top-level function definitions, but not
-    // in a way that's relevant to importing modules.
-    std::string outPbFilename(mainModulePath.getLast().str() + ".pb");
-    dumpModuleToProtobuf(exprAST, dumpdirFile(outPbFilename));
-  }
+  //================================================================
+  //================================================================
 
   {
-    dumpExprStructureToFile(exprAST, dumpdirFile("structure.beforecc.txt"));
+    LLModule* prog = readLLProgramFromProtobuf(optInputPath + ".ll.pb", pbin);
 
-    llvm::outs() << "=========================" << "\n";
-    llvm::outs() << "Performing closure conversion..." << "\n";
-
-    foster::performClosureConversion(foster::globalNames, exprAST);
-
-    dumpExprStructureToFile(exprAST, dumpdirFile("structure.aftercc.txt"));
-  }
-
-  if (optDumpASTs) {
-    dumpModuleToProtobuf(exprAST, dumpdirFile("ast.postcc.pb"));
-
-    ScopedTimer timer("io.file");
-    string outfile = "pp-postcc.txt";
-    llvm::outs() << "=========================" << "\n";
-    llvm::outs() << "Pretty printing to " << outfile << "\n";
-    std::ofstream out(dumpdirFile(outfile).c_str());
-    ScopedTimer pptimer("io.prettyprint");
-
-    llvm::raw_os_ostream rout(out);
-    foster::prettyPrintExpr(exprAST, rout);
-  }
-
-  llvm::outs() << "=========================" << "\n";
-
-  {
-    foster::codegen(exprAST, module);
+    foster::codegenLL(prog, module);
 
     // Run cleanup passes on newly-generated code,
     // rather than wastefully on post-linked code.
     foster::runCleanupPasses(*module);
   }
+
 
   if (optDumpPreLinkedIR) {
     dumpModuleToFile(module, dumpdirFile(optOutputName + ".prelink.ll").c_str());
@@ -331,10 +272,8 @@ int main(int argc, char** argv) {
 
   google::protobuf::ShutdownProtobufLibrary();
   foster::gInputFile = NULL;
-  {
-    llvm::outs().flush();
-    llvm::errs().flush();
-  }
+  llvm::outs().flush();
+  llvm::errs().flush();
 
 cleanup:
   foster::ParsingContext::popCurrentContext();

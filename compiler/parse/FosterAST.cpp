@@ -145,7 +145,6 @@ IntAST* literalIntAST(int lit, const foster::SourceRange& sourceRange) {
 const llvm::APInt& IntAST::getAPInt() const { return *apint; }
 std::string IntAST::getOriginalText() const { return text; }
 
-
 llvm::ConstantInt* getConstantInt(IntAST* n) {
   ASSERT(n->type && n->type->getLLVMType());
 

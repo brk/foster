@@ -211,7 +211,8 @@ llvm::Value* storeAndMarkPointerAsGCRoot(llvm::Value* val,
 }
 
 
-llvm::Value* CodegenPass::emitMalloc(const llvm::Type* ty) {
+llvm::Value*
+CodegenPass::emitMalloc(const llvm::Type* ty) {
   llvm::Value* memalloc_cell = mod->getFunction("memalloc_cell");
   ASSERT(memalloc_cell != NULL) << "NO memalloc_cell IN MODULE! :(";
 
@@ -229,7 +230,8 @@ llvm::Value* CodegenPass::emitMalloc(const llvm::Type* ty) {
 }
 
 
-llvm::Value* CodegenPass::allocateMPInt() {
+llvm::Value*
+CodegenPass::allocateMPInt() {
   llvm::Value* mp_int_alloc = mod->getFunction("mp_int_alloc");
   ASSERT(mp_int_alloc);
   llvm::Value* mpint = builder.CreateCall(mp_int_alloc);

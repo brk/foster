@@ -132,20 +132,27 @@ add_custom_command(
         ${PROJECT_SOURCE_DIR}/scripts/run_antlr.py
 )
 
-# Generate C++, Java, and Python code to manipulate AST protobuf files.
+# Generate C++ and Python code to manipulate AST protobuf files.
 add_custom_command(
   OUTPUT
           ${GENERATED}/FosterAST.pb.h
           ${GENERATED}/FosterAST.pb.cc
           ${GENERATED}/FosterAST_pb2.py
+          ${GENERATED}/FosterLL.pb.h
+          ${GENERATED}/FosterLL.pb.cc
   COMMAND ${PROTOBUF_PROTOC_EXECUTABLE}
           -I ${PROJECT_SOURCE_DIR}/compiler/parse/
           ${PROJECT_SOURCE_DIR}/compiler/parse/FosterAST.proto
           --cpp_out=${GENERATED}
-          --java_out=${GENERATED}
+          --python_out=${GENERATED}
+  COMMAND ${PROTOBUF_PROTOC_EXECUTABLE}
+          -I ${PROJECT_SOURCE_DIR}/compiler/parse/
+          ${PROJECT_SOURCE_DIR}/compiler/parse/FosterLL.proto
+          --cpp_out=${GENERATED}
           --python_out=${GENERATED}
   DEPENDS
           ${PROJECT_SOURCE_DIR}/compiler/parse/FosterAST.proto
+          ${PROJECT_SOURCE_DIR}/compiler/parse/FosterLL.proto
   )
 
 #-------------------------------------------------------------------
@@ -153,20 +160,28 @@ add_custom_command(
 # Generate Haskell code to manipulate AST protobuf files.
 add_custom_command(
   OUTPUT ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Fepb.hs
+         ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Bepb.hs
   COMMAND cp ${PROJECT_SOURCE_DIR}/compiler/parse/FosterAST.proto
-             ${PROJECT_SOURCE_DIR}/compiler/me/FosterAST.proto#
+             ${PROJECT_SOURCE_DIR}/compiler/me/FosterAST.protox
+  COMMAND cp ${PROJECT_SOURCE_DIR}/compiler/parse/FosterLL.proto
+             ${PROJECT_SOURCE_DIR}/compiler/me/FosterLL.protox
   COMMAND ${HPROTOC}
           --haskell_out=${PROJECT_SOURCE_DIR}/compiler/me/src
-          ${PROJECT_SOURCE_DIR}/compiler/me/FosterAST.proto#
+          ${PROJECT_SOURCE_DIR}/compiler/me/FosterAST.protox
+  COMMAND ${HPROTOC}
+          --haskell_out=${PROJECT_SOURCE_DIR}/compiler/me/src
+          ${PROJECT_SOURCE_DIR}/compiler/me/FosterLL.protox
   WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/compiler/me
   DEPENDS
           ${PROJECT_SOURCE_DIR}/compiler/parse/FosterAST.proto
+          ${PROJECT_SOURCE_DIR}/compiler/parse/FosterLL.proto
   )
 
 # Generate middle-end from Haskell source files, once
 # Haskell protobuf module sources have been generated.
 add_custom_target(hs_me
   DEPENDS ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Fepb.hs
+          ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Bepb.hs
   COMMAND python ${PROJECT_SOURCE_DIR}/scripts/mk_me.py
           --srcroot ${PROJECT_SOURCE_DIR}
           --bindir ${PROJECT_BINARY_DIR}
@@ -306,7 +321,6 @@ add_library(fosterc_parse STATIC
   compiler/parse/ParsingContext.cpp
   compiler/parse/ANTLRtoFosterAST.cpp
   compiler/parse/ANTLRtoFosterErrorHandling.cpp
-  compiler/parse/DefaultExprASTVisitor.cpp
   compiler/parse/OperatorPrecedence.cpp
   compiler/parse/DumpStructure.cpp
   compiler/parse/ProtobufToAST.cpp
@@ -336,18 +350,19 @@ add_dependencies(fosterc_llvm fosterc_base)
 
 add_library(fosterc_passes STATIC
   compiler/passes/PassUtils.cpp
-  compiler/passes/Codegen/CodegenPass.cpp
+  # compiler/passes/Codegen/CodegenPass.cpp
   compiler/passes/Codegen/CodegenUtils.cpp
   compiler/passes/Codegen/Codegen-coro.cpp
   compiler/passes/Codegen/Codegen-typemaps.cpp
   compiler/passes/DumpToProtobuf.cpp
   compiler/passes/PrettyPrintPass.cpp
-  compiler/passes/AddParentLinksPass.cpp
-  compiler/passes/ReplaceExprTransform.cpp
-  compiler/passes/ClosureConversionPass.cpp
-  compiler/passes/CaptureAvoidingSubstitution.cpp
 )
+
 add_dependencies(fosterc_passes fosterc_parse)
+set_target_properties(fosterc_llvm
+  PROPERTIES
+  COMPILE_FLAGS -Wall
+)
 
 # We've already set most of llvm-config's flags above via LLVM_CFLAGS;
 # here, we just want to set the flags we removed from LLVM_CFLAGS.
@@ -369,7 +384,13 @@ target_link_libraries(fosterparse
 
 ############
 
-add_executable(fosterlower compiler/fosterlower.cpp compiler/StandardPrelude.cpp)
+add_executable(fosterlower
+    compiler/fosterlower.cpp
+    compiler/StandardPrelude.cpp
+    compiler/parse/ProtobufToLLExpr.cpp
+    compiler/passes/LLCodegen.cpp
+    ${GENERATED}/FosterLL.pb.cc
+  )
 target_link_libraries(fosterlower
   fosterc_parse fosterc_passes fosterc_parse fosterc_base
   fosterc_llvm

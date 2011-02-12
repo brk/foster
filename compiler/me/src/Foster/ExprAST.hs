@@ -8,6 +8,7 @@ module Foster.ExprAST where
 
 import Data.Int
 import Data.Set as Set(fromList, toList, difference)
+
 import Data.Sequence as Seq
 import Data.Maybe(fromJust)
 import Data.List(replicate)
@@ -19,53 +20,10 @@ import Foster.TypeAST
 data CompilesStatus = CS_WouldCompile | CS_WouldNotCompile | CS_NotChecked
     deriving (Eq, Show)
 
-data ESourceLocation = ESourceLocation { sourceLocationLine :: Int
-                                       , sourceLocationCol  :: Int
-                                       } deriving (Eq, Show)
-
-data ESourceRange = ESourceRange { sourceRangeBegin :: ESourceLocation
-                                 , sourceRangeEnd   :: ESourceLocation
-                                 , sourceRangeLines :: SourceLines
-                                 , sourceRangeFile  :: Maybe String
-                                 }
-                  | EMissingSourceRange String
-
-instance Show ESourceRange where
-    show = showSourceRange
-
-showSourceRange :: ESourceRange -> String
-showSourceRange (EMissingSourceRange s) = "<missing range: " ++ s ++ ">"
-showSourceRange (ESourceRange begin end lines filepath) = "\n" ++ showSourceLines begin end lines ++ "\n"
-
--- If a single line is specified, show it with highlighting;
--- otherwise, show the lines spanning the two locations (inclusive).
-showSourceLines (ESourceLocation bline bcol) (ESourceLocation eline ecol) lines =
-    if bline == eline
-        then joinWith "\n" [fromJust $ sourceLine lines bline, highlightLineRange bcol ecol]
-        else joinWith "\n" [fromJust $ sourceLine lines n | n <- [bline..eline]]
-
--- Generates a string of spaces and twiddles which underlines
--- a given range of characters.
-highlightLineRange :: Int -> Int -> String
-highlightLineRange bcol ecol =
-    let len = ecol - bcol in
-    if len <= 0
-        then ""
-        else (Data.List.replicate bcol ' ') ++ (Data.List.replicate len '~')
-
-data SourceLines = SourceLines (Seq T.Text)
-
-sourceLine :: SourceLines -> Int -> Maybe String
-sourceLine (SourceLines seq) n =
-    if n < 0 || Seq.length seq < n
-        then Nothing
-        else Just (T.unpack $ Seq.index seq n)
-
--- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
 class Expr a where
-    textOf :: a -> Int -> Output
+    textOf     :: a -> Int -> Output
     childrenOf :: a -> [a]
+    freeVars   :: a -> [String]
 
 tryGetCallNameE :: ExprAST -> String
 tryGetCallNameE (E_VarAST mt v) = v
@@ -97,6 +55,12 @@ instance Expr ExprAST where
             E_SubscriptAST  a b  -> [a, b]
             E_TupleAST     es b  -> es
             E_VarAST       mt v  -> []
+    freeVars e = case e of
+        E_VarAST mt nm      -> [nm]
+        E_FnAST f           -> let bodyvars =  Set.fromList (freeVars (fnBody f)) in
+                               let boundvars = Set.fromList (map (identPrefix.avarIdent) (prototypeASTformals (fnProto f))) in
+                               Set.toList (Set.difference bodyvars boundvars)
+        _                   -> concatMap freeVars (childrenOf e)
 
 
 instance Expr AnnExpr where
@@ -108,7 +72,7 @@ instance Expr AnnExpr where
             AnnCompiles     c    -> out $ "AnnCompiles  " ++ show c
             AnnIf      t  a b c  -> out $ "AnnIf        " ++ " :: " ++ show t
             AnnInt ty int        -> out $ "AnnInt       " ++ (litIntText int) ++ " :: " ++ show ty
-            E_AnnFn annFn        -> out $ "AnnFn        "
+            E_AnnFn annFn        -> out $ "AnnFn " ++ fnNameA annFn ++ " // " ++ (show $ annFnBoundNames annFn)
             AnnSeq          a b  -> out $ "AnnSeq       " ++ " :: " ++ show (typeAST b)
             AnnSubscript  t a b  -> out $ "AnnSubscript " ++ " :: " ++ show t
             AnnTuple     es b    -> out $ "AnnTuple     "
@@ -127,19 +91,31 @@ instance Expr AnnExpr where
             AnnTuple     es b                    -> es
             E_AnnVar      v                      -> []
             E_AnnTyApp t e argty                 -> [e]
+    freeVars e = [identPrefix i | i <- freeIdentsA e]
+
+butnot :: Ord a => [a] -> [a] -> [a]
+butnot bs zs =
+    let sbs = Set.fromList bs in
+    let szs = Set.fromList zs in
+    Set.toList (Set.difference sbs szs)
+
+freeIdentsA e = case e of
+        E_AnnVar v      -> [avarIdent v]
+        E_AnnFn f       -> let bodyvars =  freeIdentsA (annFnBody f) in
+                           let boundvars = map avarIdent (annProtoVars (annFnProto f)) in
+                           bodyvars `butnot` boundvars
+        _               -> concatMap freeIdentsA (childrenOf e)
+
+
+annFnBoundNames :: AnnFn -> [String]
+annFnBoundNames fn =
+    let vars = annProtoVars (annFnProto fn) in
+    map show vars
 
 data ModuleAST fnType = ModuleAST {
           moduleASTfunctions   :: [fnType]
         , moduleASTsourceLines :: SourceLines
      }
-
-data Literal = LitInt LiteralInt
-
-data LiteralInt = LiteralInt { litIntMinBits :: Integer
-                             , litIntText    :: String
-                             , litIntClean   :: String
-                             , litIntBase    :: Int
-                             } deriving (Show)
 
 data CallAST = CallAST { callASTbase :: ExprAST
                        , callASTargs :: ExprAST
@@ -181,13 +157,10 @@ unbuildSeqs (E_SeqAST a b) = a : unbuildSeqs b
 unbuildSeqs expr = [expr]
 
 
-freeVariables :: ExprAST -> [String]
-freeVariables e = case e of
-    E_VarAST mt nm      -> [nm]
-    E_FnAST f           -> let bodyvars =  Set.fromList (freeVariables (fnBody f)) in
-                           let boundvars = Set.fromList (map (identPrefix.avarIdent) (prototypeASTformals (fnProto f))) in
-                           Set.toList (Set.difference bodyvars boundvars)
-    _                   -> concatMap freeVariables (childrenOf e)
+fnTypeCloses' :: FnAST -> Maybe [(Ident, TypeAST)]
+fnTypeCloses' f =
+    let devar (AnnVar ty id) = (id, ty) in
+    fmap (map devar) (fnClosedVars f)
 
 -----------------------------------------------------------------------
 
@@ -241,6 +214,7 @@ data AnnPrototype = AnnPrototype    { annProtoReturnType :: TypeAST
                                     , annProtoVars       :: [AnnVar]
                                     } deriving (Eq, Show)
 
+fnNameA f = identPrefix $ annProtoIdent (annFnProto f)
 
 -----------------------------------------------------------------------
 
@@ -264,3 +238,5 @@ typeAST (E_AnnVar (AnnVar t s)) = t
 typeAST (E_AnnTyApp substitutedTy tm tyArgs) = substitutedTy
 
 -----------------------------------------------------------------------
+
+

@@ -34,12 +34,35 @@ import Text.ProtocolBuffers(messageGet)
 import System.Console.ANSI
 import Foster.Base
 import Foster.ProtobufFE
+import Foster.ProtobufLL
 import Foster.ExprAST
 import Foster.TypeAST
+import Foster.LLExpr
 import Foster.Typecheck
 import Foster.Context
 
 -----------------------------------------------------------------------
+class FnLike f where
+    fnName :: f -> String
+    fnFreeVariables :: f -> [ContextBinding] -> [String]
+
+instance FnLike FnAST where
+    fnName f = prototypeASTname (fnProto f)
+    fnFreeVariables f bindings =
+        let allCalledFns = Set.fromList $ freeVars (fnBody f) in
+        -- remove names of primitive functions
+        let nonPrimitives = Set.filter (\var -> not (isJust $ termVarLookup var bindings)) allCalledFns in
+        -- remove recursive function name calls
+        Set.toList $ Set.filter (\name -> fnName f /= name) nonPrimitives
+
+instance FnLike AnnFn where
+    fnName = fnNameA
+    fnFreeVariables f bindings =
+        let allCalledFns = Set.fromList $ freeVars (annFnBody f) in
+        -- remove names of primitive functions
+        let nonPrimitives = Set.filter (\var -> not (isJust $ termVarLookup var bindings)) allCalledFns in
+        -- remove recursive function name calls
+        Set.toList $ Set.filter (\name -> fnName f /= name) nonPrimitives
 
 computeRootContextBindings :: Uniq -> ([ContextBinding], Uniq)
 computeRootContextBindings u =
@@ -56,23 +79,10 @@ stFold f (a:as) u = let (b,u') = f a u in
 
 isPrimitiveName name rootContext = isJust $ termVarLookup name rootContext
 
-fnFreeVariables f bindings =
-    let allCalledFns = Set.fromList $ freeVariables (fnBody f) in
-    -- remove names of primitive functions
-    let nonPrimitives = Set.filter (\var -> not (isJust $ termVarLookup var bindings)) allCalledFns in
-    -- remove recursive function name calls
-    Set.toList $ Set.filter (\name -> prototypeASTname (fnProto f) /= name) nonPrimitives
-
-buildCallGraph :: [FnAST] -> [ContextBinding] -> [Graph.SCC FnAST]
+buildCallGraph :: FnLike f => [f] -> [ContextBinding] -> [Graph.SCC f]
 buildCallGraph asts bindings =
     let nodeList = (map (\ast -> (ast, fnName ast, fnFreeVariables ast bindings)) asts) in
     Graph.stronglyConnComp nodeList
-
-fnNameA :: AnnFn -> String
-fnNameA f = identPrefix $ annProtoIdent (annFnProto f)
-
-fnName :: FnAST -> String
-fnName f = prototypeASTname (fnProto f)
 
 annFnVar f = AnnVar (annFnType f) (annProtoIdent $ annFnProto f)
 
@@ -80,7 +90,8 @@ fnTypeFrom :: FnAST -> TypeAST
 fnTypeFrom f =
     let intype = TupleTypeAST [avarType v | v <- prototypeASTformals (fnProto f)] in
     let outtype = prototypeASTretType (fnProto f) in
-    FnTypeAST intype outtype (fmap (map $ show.avarIdent) (fnClosedVars f))
+    FnTypeAST intype outtype (fnTypeCloses' f)
+
 
 bindingForAnnFn :: AnnFn -> ContextBinding
 bindingForAnnFn f = TermVarBinding (fnNameA f) (annFnVar f)
@@ -96,12 +107,14 @@ fnVar f = AnnVar (fnTypeFrom f) (Ident (fnName f) (-12345))
 typecheckFnSCC :: Graph.SCC FnAST -> (Context, TcEnv) -> IO ([TypecheckResult AnnExpr], (Context, TcEnv))
 typecheckFnSCC scc (ctx, tcenv) = do
     let fns = Graph.flattenSCC scc
-    annfns <- forM fns $ \ast -> do
-        let name = fnName ast
-        putStrLn $ "typechecking " ++ name ++ show (contextBindings ctx)
-        let extctx = prependContextBinding ctx (bindingForFnAST ast)
-        typechecked <- unTc (typecheck extctx (E_FnAST ast) Nothing) tcenv
-        inspect extctx typechecked (E_FnAST ast)
+    annfns <- forM fns $ \fn -> do
+        let ast = (E_FnAST fn)
+        let name = fnName fn
+        putStrLn $ "typechecking " ++ name
+        runOutput $ showStructure ast
+        let extctx = prependContextBinding ctx (bindingForFnAST fn)
+        typechecked <- unTc (typecheck extctx ast Nothing) tcenv
+        inspect extctx typechecked ast
         return typechecked
     return $ if allAnnotated annfns
         then let fns = [f | (Annotated (E_AnnFn f)) <- annfns] in
@@ -122,17 +135,19 @@ mapFoldM (a:as) b1 f = do
     (cs2, b3) <- mapFoldM as b2 f
     return (cs1 ++ cs2, b3)
 
-typecheckModule :: ModuleAST FnAST -> TcEnv -> IO (Maybe (ModuleAST AnnFn))
+typecheckModule :: ModuleAST FnAST -> TcEnv -> IO (Maybe (Context, ModuleAST AnnFn))
 typecheckModule mod tcenv = do
     let fns = moduleASTfunctions mod
     let (bindings, u) = computeRootContextBindings 1
     let sortedFns = buildCallGraph fns bindings -- :: [SCC FnAST]
     putStrLn $ "Function SCC list : " ++ show [(fnName f, fnFreeVariables f bindings) | fns <- sortedFns, f <- Graph.flattenSCC fns]
     let ctx = Context bindings
-    (annFns, _ctx) <- mapFoldM sortedFns (ctx, tcenv) typecheckFnSCC
+    (annFns, (extctx, tcenv')) <- mapFoldM sortedFns (ctx, tcenv) typecheckFnSCC
     -- annFns :: [TypecheckResult AnnExpr]
     if allAnnotated annFns
-        then return $ Just (ModuleAST [f | (Annotated (E_AnnFn f)) <- annFns] (moduleASTsourceLines mod))
+        then return $ Just (extctx,
+                            ModuleAST [f | (Annotated (E_AnnFn f)) <- annFns]
+                                      (moduleASTsourceLines mod))
         else return $ Nothing
 
 allAnnotated :: [TypecheckResult AnnExpr] -> Bool
@@ -182,9 +197,19 @@ main = do
         let sm = parseSourceModule pb_exprs
         uniqref <- newIORef 1
         let tcenv = TcEnv { tcEnvUniqs = uniqref, tcParents = [] }
-        elabModule <- typecheckModule sm tcenv
-        case elabModule of
-            (Just mod) -> dumpModuleToProtobuf mod outfile
+        modResults  <- typecheckModule sm tcenv
+        case modResults of
+            (Just (extctx, mod)) ->
+                      do dumpModuleToProtobuf mod outfile
+                         runOutput $ (outLn "vvvv ===================================")
+                         runOutput $ (outCSLn Yellow (joinWith "\n" $ map show (contextBindings extctx)))
+                         (Annotated prog) <- unTc (closureConvertAndLift extctx mod) tcenv
+                         let fns = moduleASTfunctions mod
+                         let (LLProgram procs) = prog
+                         dumpModuleToProtobufLL prog (outfile ++ ".ll.pb")
+                         runOutput $ (outLn "/// ===================================")
+                         runOutput $ showProgramStructure prog
+                         runOutput $ (outLn "^^^ ===================================")
             Nothing    -> error $ "Unable to type check input module!"
 
 

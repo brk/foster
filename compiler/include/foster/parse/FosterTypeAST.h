@@ -8,17 +8,9 @@
 #include "base/Assert.h"
 #include "parse/TypeASTVisitor.h"
 
-#include "parse/FosterASTKinds-inl.h"
-
 #include "llvm/CallingConv.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/LLVMContext.h"
-
-// implicit includes
-//#include "base/SourceRange.h"
-//#include "llvm/Support/raw_ostream.h"
-//#include <string>
-//#include <iosfwd>
 
 #include <map>
 #include <list>
@@ -35,7 +27,7 @@ class FnTypeAST;
 class RefTypeAST;
 class TupleTypeAST;
 
-class DumpTypeToProtobufPass;
+string str(const TypeAST* type);
 
 bool hasEqualRepr(TypeAST* src, TypeAST* dst);
 bool arePhysicallyCompatible(const llvm::Type* src,
@@ -83,7 +75,6 @@ public:
 
 class TypeVariableAST : public TypeAST {
   std::string typeVarName;
-  foster::Kind* kind;
 
   llvm::PATypeHolder opaqueType;
   explicit TypeVariableAST(const llvm::OpaqueType* opaqueType,
@@ -203,7 +194,6 @@ public:
 
   llvm::CallingConv::ID getCallingConventionID() const;
   std::string           getCallingConventionName() const;
-  friend class DumpTypeToProtobufPass;
 };
 
 

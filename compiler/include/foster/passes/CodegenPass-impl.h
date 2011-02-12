@@ -5,8 +5,6 @@
 #ifndef FOSTER_PASSES_CODEGEN_IMPL_H
 #define FOSTER_PASSES_CODEGEN_IMPL_H
 
-#include "parse/ExprASTVisitor.h"
-
 #include "passes/CodegenPass.h"
 
 #include "llvm/Module.h"
@@ -58,9 +56,7 @@ llvm::Value* storeAndMarkPointerAsGCRoot(llvm::Value* val,
 struct LLModule;
 struct LLExpr;
 
-struct CodegenPass : public ExprASTVisitor {
-  #include "parse/ExprASTVisitor.decls.inc.h"
-
+struct CodegenPass {
   typedef foster::SymbolTable<llvm::Value> ValueTable;
   typedef ValueTable::LexicalScope         ValueScope;
   ValueTable valueSymTab;
@@ -78,7 +74,6 @@ struct CodegenPass : public ExprASTVisitor {
 
   void codegen(LLModule*);
   void codegen(LLExpr*);
-  void codegen(ExprAST*);
 
   llvm::Value* lookup(const std::string& fullyQualifiedSymbol);
 
