@@ -76,6 +76,7 @@ llvm::ConstantInt* getConstantInt64For(int64_t val);
 llvm::ConstantInt* getConstantInt32For(int32_t val);
 llvm::ConstantInt* getConstantInt8For(int8_t val);
 
+void storeNullPointerToSlot(llvm::Value* slot);
 
 class Nominalizer {
 public:

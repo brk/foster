@@ -278,7 +278,11 @@ bool isPointerToCompatibleFnTy(const llvm::Type* ty,
  return false;
 }
 
-
+void storeNullPointerToSlot(llvm::Value* slot) {
+  foster::builder.CreateStore(
+    llvm::ConstantPointerNull::getNullValue(slot->getType()->getContainedType(0)),
+    slot, /*isVolatile=*/ false);
+}
 
 struct Nominalizer::Impl {
   std::map<const llvm::Type*, int> nomCount;

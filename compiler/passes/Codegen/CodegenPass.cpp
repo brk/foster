@@ -438,11 +438,7 @@ void codegenClosure(FnAST* ast, CodegenPass* self) {
     builder.CreateStore(env->value, clo_env_slot, /*isVolatile=*/ false);
   } else {
     // Store null env pointer if environment is empty
-    builder.CreateStore(
-        llvm::ConstantPointerNull::getNullValue(
-                       clo_env_slot->getType()->getContainedType(0)),
-        clo_env_slot,
-        /* isVolatile= */ false);
+    storeNullPointerToSlot(clo_env_slot);
   }
 
   Value* genericClo = builder.CreateBitCast(clo,

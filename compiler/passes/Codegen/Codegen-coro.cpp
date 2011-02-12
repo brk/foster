@@ -5,7 +5,7 @@
 
 #include "base/Assert.h"
 #include "base/Diagnostics.h"
-#include "base/LLVMUtils.h" // getConstantInt32, builder
+#include "base/LLVMUtils.h"
 
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h" // for str()
@@ -339,20 +339,19 @@ Value* CodegenPass::emitCoroCreateFn(
   // ccoro->g.fn  = NULL;
   Value* fcoro_fn = builder.CreateConstInBoundsGEP2_32(gfcoro, 0, coroField_Fn(), "fcoro_fn");
   Value* ccoro_fn = builder.CreateConstInBoundsGEP2_32(gccoro, 0, coroField_Fn(), "ccoro_fn");
-  builder.CreateStore(llvm::ConstantPointerNull::getNullValue(ccoro_fn->getType()->getContainedType(0)),
-                      ccoro_fn);
+  storeNullPointerToSlot(ccoro_fn);
 
   Value* clo_code_ptr = builder.CreateConstInBoundsGEP2_32(pclo, 0, 0, "clo_fn_slot");
   Value* clo_code     = builder.CreateLoad(clo_code_ptr, "clo_fn");
   Value* clo_code_gen = builder.CreateBitCast(clo_code, fcoro_fn->getType()->getContainedType(0));
   builder.CreateStore(clo_code_gen, fcoro_fn);
 
-  // fcoro->g.env = pclo->env;
   // ccoro->g.env = NULL;
+  // fcoro->g.env = pclo->env;
   Value* fcoro_env = builder.CreateConstInBoundsGEP2_32(gfcoro, 0, coroField_Env(), "fcoro_env");
   Value* ccoro_env = builder.CreateConstInBoundsGEP2_32(gccoro, 0, coroField_Env(), "ccoro_env");
-  builder.CreateStore(llvm::ConstantPointerNull::getNullValue(ccoro_env->getType()->getContainedType(0)),
-                      ccoro_env);
+  storeNullPointerToSlot(ccoro_env);
+
   Value* clo_env_ptr = builder.CreateConstInBoundsGEP2_32(pclo, 0, 1, "clo_env_slot");
   Value* clo_env     = builder.CreateLoad(clo_env_ptr, "clo_env");
   Value* clo_env_gen = builder.CreateBitCast(clo_env, fcoro_env->getType()->getContainedType(0));
@@ -362,9 +361,8 @@ Value* CodegenPass::emitCoroCreateFn(
   // ccoro->g.invoker = NULL;
   Value* fcoro_invoker = builder.CreateConstInBoundsGEP2_32(gfcoro, 0, coroField_Invoker(), "fcoro_sib");
   Value* ccoro_invoker = builder.CreateConstInBoundsGEP2_32(gccoro, 0, coroField_Invoker(), "ccoro_sib");
-  Value* null_invoker  = llvm::ConstantPointerNull::getNullValue(fcoro_invoker->getType()->getContainedType(0));
-  builder.CreateStore(null_invoker, fcoro_invoker);
-  builder.CreateStore(null_invoker, ccoro_invoker);
+  storeNullPointerToSlot(fcoro_invoker);
+  storeNullPointerToSlot(ccoro_invoker);
 
   Value* fcoro_status = builder.CreateConstInBoundsGEP2_32(gfcoro, 0, coroField_Status(), "fcoro_status");
   Value* ccoro_status = builder.CreateConstInBoundsGEP2_32(gccoro, 0, coroField_Status(), "ccoro_status");
