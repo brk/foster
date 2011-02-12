@@ -8,7 +8,6 @@
 #include "base/InputFile.h"
 #include "base/LLVMUtils.h"
 #include "base/InputTextBuffer.h"
-#include "passes/DumpToProtobuf.h"
 #include "parse/ProtobufUtils.h"
 #include "parse/ANTLRtoFosterAST.h"
 #include "parse/ParsingContext.h"
@@ -22,6 +21,7 @@
 //         serialized in Protobuf format.
 
 using namespace llvm;
+using std::string;
 
 static cl::opt<string>
 optInputPath(cl::Positional, cl::desc("<input file>"));
