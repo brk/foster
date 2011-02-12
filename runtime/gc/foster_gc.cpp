@@ -335,7 +335,7 @@ class copying_gc {
           // probably an actual pointer
           cell_size = map->cell_size;
         }
-        foster_assert(cell_size > 16, "cell size must be at least 16!");
+        foster_assert(cell_size >= 16, "cell size must be at least 16!");
 
         //fprintf(gclog, "copying cell %p, cell size %llu\n", cell, cell_size); fflush(gclog);
 
