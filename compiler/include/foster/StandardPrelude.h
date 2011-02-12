@@ -14,9 +14,6 @@ namespace llvm {
 
 namespace foster {
 
-// TODO move to CompilationContext ?
-extern std::set<std::string> globalNames;
-
 // Add module m's C-linkage functions in the global scopes,
 // and also add prototypes to the linkee module.
 void putModuleMembersInScope(llvm::Module* m, llvm::Module* linkee);

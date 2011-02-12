@@ -22,7 +22,6 @@ using namespace llvm;
 
 namespace foster {
 
-std::set<string> globalNames;
 bool gPrintLLVMImports = false;
 
 static const char* sOps[] = {
@@ -112,7 +111,6 @@ getConcretePrimitiveFunction(Module* m, const char* op, const Type* ty) {
   ASSERT(returnType != NULL);
 
   std::string funcName = "primitive_" + std::string(op) + "_" + str(ty);
-  globalNames.insert(funcName);
 
   FunctionType* ft = FunctionType::get(returnType, argtypes, false);
   Function* f = Function::Create(ft, Function::PrivateLinkage, funcName, m);
@@ -163,7 +161,6 @@ void
 addLLVMIntrinsic(Module* m, llvm::Intrinsic::ID id) {
   std::string funcName =
         pystring::replace(llvm::Intrinsic::getName(id), ".", "_");
-  globalNames.insert(funcName);
 
   const FunctionType* ft = llvm::Intrinsic::getType(m->getContext(), id);
   Function* f = Function::Create(ft, Function::PrivateLinkage, funcName, m);
@@ -196,18 +193,6 @@ addConcretePrimitiveFunctionsTo(Module* m) {
   addConcretePrimitiveFunctionTo(m, "bitnot", Type::getInt1Ty(getGlobalContext()));
   addConcretePrimitiveFunctionTo(m, "sext_i64", Type::getInt32Ty(getGlobalContext()));
   addLLVMIntrinsic(m, llvm::Intrinsic::readcyclecounter);
-
-  globalNames.insert("coro_create_i32x2_i32");
-  globalNames.insert("coro_invoke_i32x2_i32");
-  globalNames.insert("coro_yield_i32x2_i32");
-  globalNames.insert("coro_create_i32_i32");
-  globalNames.insert("coro_invoke_i32_i32");
-  globalNames.insert("coro_yield_i32_i32");
-  globalNames.insert("coro_create_i32_i32x2");
-  globalNames.insert("coro_invoke_i32_i32x2");
-  globalNames.insert("coro_yield_i32_i32x2");
-
-  globalNames.insert("coro_invoke");
 }
 
 // Add module m's C-linkage functions in the global scopes,
@@ -335,8 +320,6 @@ void putModuleMembersInScope(Module* m, Module* linkee) {
     bool hasDef = !f.isDeclaration();
     if (hasDef && !isCxxLinkage
                && !pystring::startswith(name, "__cxx_", 0)) {
-      globalNames.insert(name);
-
       // Ensure that, when parsing, function calls to this name will find it
       const Type* ty = f.getType();
       // We get a pointer-to-whatever-function type, because f is a global
