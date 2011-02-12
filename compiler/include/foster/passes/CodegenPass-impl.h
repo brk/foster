@@ -5,8 +5,6 @@
 #ifndef FOSTER_PASSES_CODEGEN_IMPL_H
 #define FOSTER_PASSES_CODEGEN_IMPL_H
 
-#include "passes/CodegenPass.h"
-
 #include "llvm/Module.h"
 #include "llvm/DerivedTypes.h"
 #include "parse/FosterSymbolTable.h"
