@@ -22,7 +22,7 @@ struct PrettyPrintPass : public ExprASTVisitor {
   // This can be used in lieu of ast->accept(ppp)
   // to ensure proper outer parens,
   // mainly useful for unit tests.
-  void emit(ExprAST*, bool forceOuterParens = false);
+  void emit(const ExprAST*, bool forceOuterParens = false);
 
   virtual void visitChildren(ExprAST* ast) {
    // Only visit children manually!
@@ -45,7 +45,7 @@ public:
 
   void setPrintSignaturesOnly(bool newval) { printSignaturesOnly = newval; }
   void scan(const PrettyPrinter::PPToken& token) { pp.scan(token); }
-  void emitType(TypeAST* ty);
+  void emitType(const TypeAST* ty);
 
   ~PrettyPrintPass() {}
 
@@ -54,7 +54,7 @@ public:
 };
 
 namespace foster {
-  void prettyPrintExpr(ExprAST* t,
+  void prettyPrintExpr(const ExprAST* t,
                  llvm::raw_ostream& out, int width, int indent_width,
                  bool printSignaturesOnly) {
     PrettyPrintPass pp(out, width, indent_width);
@@ -113,12 +113,12 @@ public:
 
 // Note: to get explicit parenthesization, recurse() should be called
 // instead of ast->accept(); in pretty printing bodies.
-inline void recurse(PrettyPrintPass* p, ExprAST* ast, bool wrapInParens) {
+inline void recurse(PrettyPrintPass* p, const ExprAST* ast, bool wrapInParens) {
   if (!ast) {
     p->scan(PPToken("<nil>"));
   } else {
     ScopedParens sp(p, wrapInParens);
-    ast->accept(p);
+    (const_cast<ExprAST*>(ast))->accept(p);
   }
 }
 
@@ -141,11 +141,11 @@ bool needsParens(ExprAST* child) {
 
 ////////////////////////////////////////////////////////////////////
 
-void PrettyPrintPass::emitType(TypeAST* ty) {
+void PrettyPrintPass::emitType(const TypeAST* ty) {
   scan(PPToken(str(ty)));
 }
 
-void PrettyPrintPass::emit(ExprAST* ast, bool forceParens) {
+void PrettyPrintPass::emit(const ExprAST* ast, bool forceParens) {
   recurse(this, ast, forceParens || foster::wasExplicitlyParenthesized(ast));
 }
 
@@ -536,10 +536,10 @@ void PrettyPrintTypePass::visit(TupleTypeAST* ast) {
 
 namespace foster {
 
-void prettyPrintType(TypeAST* t,
+void prettyPrintType(const TypeAST* t,
                      llvm::raw_ostream& out, int width, int indent_width) {
   PrettyPrintTypePass pp(out, width, indent_width);
-  t->accept(&pp);
+  const_cast<TypeAST*>(t)->accept(&pp);
 }
 
 } // namespace foster

@@ -30,7 +30,7 @@ class APInt;
 
 namespace foster {
 
-bool wasExplicitlyParenthesized(ExprAST* ast);
+bool wasExplicitlyParenthesized(const ExprAST* ast);
 
 class SourceRange;
 
