@@ -85,24 +85,7 @@ ExprAST* parseCall(const pb::Expr& e, const foster::SourceRange& range) {
 ExprAST* parseCompiles(const pb::Expr& e, const foster::SourceRange& range) {
   ASSERT(e.parts_size() == 1) << "CompilesExpr parts size: "
                               << e.parts_size();
-
-  BuiltinCompilesExprAST* rv = new BuiltinCompilesExprAST(
-                                          ExprAST_from_pb(& e.parts(0)), range);
-  if (!e.has_compiles_status()) {
-    llvm::outs() << "Warning: CompilesExpr had no status, using kNotChecked."
-                 << "\n";
-    rv->status = BuiltinCompilesExprAST::kNotChecked;
-  } else if (e.compiles_status() == "kNotChecked") {
-    rv->status = BuiltinCompilesExprAST::kNotChecked;
-  } else if (e.compiles_status() == "kWouldCompile") {
-    rv->status = BuiltinCompilesExprAST::kWouldCompile;
-  } else if (e.compiles_status() == "kWouldNotCompile") {
-    rv->status = BuiltinCompilesExprAST::kWouldNotCompile;
-  } else {
-    ASSERT(false) << "Unknown CompilesExpr status: "
-                  << e.compiles_status() << "\n";
-  }
-  return rv;
+  return new BuiltinCompilesExprAST(ExprAST_from_pb(& e.parts(0)), range);
 }
 
 ExprAST* parseFn(const pb::Expr& e, const foster::SourceRange& range) {

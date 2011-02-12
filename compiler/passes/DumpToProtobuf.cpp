@@ -138,10 +138,6 @@ void DumpToProtobufPass::visit(IfExprAST* ast)              {
   dumpChild(this, if_->mutable_else_expr(), ast->getElseExpr());
 }
 
-void DumpToProtobufPass::visit(NilExprAST* ast)             {
-  ASSERT(false) << "We shouldn't be dumping a NilExprAST to pb!";
-}
-
 void DumpToProtobufPass::visit(SubscriptAST* ast)           {
   processExprAST(current, ast, pb::Expr::SUBSCRIPT);
   dumpChildren(this, ast);
@@ -173,26 +169,8 @@ void DumpToProtobufPass::visit(TupleExprAST* ast)           {
 
 void DumpToProtobufPass::visit(BuiltinCompilesExprAST* ast) {
   processExprAST(current, ast, pb::Expr::COMPILES);
-
-  bool hadParsingError = ast->parts.empty() || ast->parts[0] == NULL;
-  if (hadParsingError) {
-    ast->status = BuiltinCompilesExprAST::kWouldNotCompile;
-  }
-
-  switch (ast->status) {
-    case BuiltinCompilesExprAST::kNotChecked:
-      current->set_compiles_status("kNotChecked"); break;
-    case BuiltinCompilesExprAST::kWouldCompile:
-      current->set_compiles_status("kWouldCompile"); break;
-    case BuiltinCompilesExprAST::kWouldNotCompile:
-      current->set_compiles_status("kWouldNotCompile"); break;
-  }
-
-  if (hadParsingError) {
-    // Hackety hack, give a fake AST node for now...
+  if (ast->parts[0] == NULL) {
     ast->parts.clear();
-    ast->parts.push_back(new VariableAST("fake_error_node", NULL,
-                                  foster::SourceRange::getEmptyRange()));
   }
   dumpChildren(this, ast);
 }

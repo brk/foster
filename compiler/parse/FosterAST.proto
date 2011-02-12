@@ -59,12 +59,8 @@ message Expr {
     TY_APP = 25;
     SUBSCRIPT = 26;
 
-
-
-
     COMPILES = 31;
     IF = 32;
-
 
     MODULE = 35;
     NAMED_TYPE_DECL = 36;
@@ -88,9 +84,6 @@ message Expr {
 
   // Tuple
   optional bool   is_closure_environment = 25;
-
-  // Compiles
-  optional string compiles_status = 28;
 
   // Fn
   optional bool is_closure = 27;

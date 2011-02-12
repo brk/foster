@@ -89,15 +89,11 @@ parseCall pbexpr lines =
                 (base:args) -> E_CallAST range (CallAST base (E_TupleAST args False))
                 _ -> error "call needs a base!"
 
-compileStatus :: Maybe String -> CompilesStatus
-compileStatus Nothing                   = CS_NotChecked
-compileStatus (Just "kNotChecked")      = CS_NotChecked
-compileStatus (Just "kWouldCompile")    = CS_WouldCompile
-compileStatus (Just "kWouldNotCompile") = CS_WouldNotCompile
-compileStatus (Just x                 ) = error $ "Unable to interpret compiles status " ++ x
-
-parseCompiles pbexpr lines =  E_CompilesAST (part 0 (PbExpr.parts pbexpr) lines)
-                                    (compileStatus $ fmap uToString $ PbExpr.compiles_status pbexpr)
+parseCompiles pbexpr lines =
+    let numChildren = Seq.length $ PbExpr.parts pbexpr in
+    case numChildren of
+        1 -> E_CompilesAST (part 0 (PbExpr.parts pbexpr) lines) CS_NotChecked
+        _ -> E_CompilesAST (E_VarAST Nothing "parse error")     CS_WouldNotCompile
 
 parseFn pbexpr lines = let parts = PbExpr.parts pbexpr in
                        assert ((Data.Sequence.length parts) == 2) $

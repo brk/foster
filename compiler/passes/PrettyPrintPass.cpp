@@ -126,7 +126,6 @@ bool isAtom(ExprAST* ast) {
   if (dynamic_cast<BoolAST*>(ast)) return true;
   if (dynamic_cast<IntAST*>(ast)) return true;
   if (dynamic_cast<VariableAST*>(ast)) return true;
-  if (dynamic_cast<NilExprAST*>(ast)) return true;
   return false;
 }
 
@@ -278,10 +277,6 @@ void PrettyPrintPass::visit(IfExprAST* ast) {
   scan(PPToken(" else "));
   emit(ast->getElseExpr());
   }
-}
-
-void PrettyPrintPass::visit(NilExprAST* ast) {
-  scan(PPToken("nil"));
 }
 
 // $0 [ $1 ]

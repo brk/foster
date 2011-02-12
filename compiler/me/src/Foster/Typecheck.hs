@@ -69,12 +69,13 @@ typecheck ctx expr maybeExpTy =
             Just avar  -> return $ E_AnnVar avar
             Nothing    -> tcFails $ out $ "Unknown variable " ++ s
         E_CompilesAST e c -> case c of
+            CS_WouldNotCompile -> return $ AnnCompiles CS_WouldNotCompile
+            CS_WouldCompile -> error "No support for re-type checking CompilesAST nodes."
             CS_NotChecked -> do
                 success <- wasSuccessful (typecheck ctx e Nothing)
                 return $ AnnCompiles $ case success of
                             True  -> CS_WouldCompile
                             False -> CS_WouldNotCompile
-            otherwise -> return $ AnnCompiles c
 
 -----------------------------------------------------------------------
 typecheckIf ctx (IfAST a b c) maybeExpTy = do

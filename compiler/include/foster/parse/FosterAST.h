@@ -70,16 +70,6 @@ struct ExprAST {
   virtual void accept(ExprASTVisitor* visitor) = 0;
 };
 
-struct BinaryExprAST : public ExprAST {
-  explicit BinaryExprAST(const char* const tag,
-                         ExprAST* e1, ExprAST* e2,
-                         foster::SourceRange sourceRange)
-      : ExprAST(tag, sourceRange) {
-    this->parts.push_back(e1);
-    this->parts.push_back(e2);
-  }
-};
-
 class IntAST;
 class BoolAST;
 class SeqAST;
@@ -192,10 +182,13 @@ struct TupleExprAST : public ExprAST {
 };
 
 // base[index]
-struct SubscriptAST : public BinaryExprAST {
+struct SubscriptAST : public ExprAST {
   explicit SubscriptAST(ExprAST* base, ExprAST* index,
                         foster::SourceRange sourceRange)
-    : BinaryExprAST("SubscriptAST", base, index, sourceRange) {}
+    : ExprAST("SubscriptAST", sourceRange) {
+    this->parts.push_back(base);
+    this->parts.push_back(index);
+  }
   virtual void accept(ExprASTVisitor* visitor);
 };
 
@@ -320,23 +313,13 @@ struct IfExprAST : public ExprAST {
   ExprAST*& getElseExpr() { ASSERT(parts.size() == 3); return parts[2]; }
 };
 
-// This class exists only as a placeholder for the env ptr in a closure struct,
-// for LLVM to generate a null pointer.
-// For all intents and purposes, it does not exist before the closure
-// conversion pass runs
-struct NilExprAST : public ExprAST {
-  explicit NilExprAST(foster::SourceRange sourceRange)
-     : ExprAST("NilExprAST", sourceRange) {}
-  virtual void accept(ExprASTVisitor* visitor);
-};
-
 struct BuiltinCompilesExprAST : public ExprAST {
-  enum Status { kWouldCompile, kWouldNotCompile, kNotChecked } status;
   explicit BuiltinCompilesExprAST(ExprAST* expr, foster::SourceRange sourceRange)
-     : ExprAST("CompilesExprAST", sourceRange), status(kNotChecked) {
+     : ExprAST("CompilesExprAST", sourceRange) {
        parts.push_back(expr);
    }
-  // Must manually visit children (for typechecking) because we don't want to codegen our children!
+  // Must manually visit children (for typechecking)
+  // because we don't want to codegen our children!
   virtual void accept(ExprASTVisitor* visitor);
 };
 

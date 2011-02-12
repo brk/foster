@@ -185,7 +185,6 @@ void           IntAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
 void            FnAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
 void      VariableAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
 void        IfExprAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
-void       NilExprAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
 void     PrototypeAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
 void        ModuleAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
 void          CallAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
