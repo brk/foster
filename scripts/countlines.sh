@@ -39,7 +39,7 @@ echo
 insp 'compiler/*.cpp ' compiler/*.cpp
 insp "compiler/passes" compiler/passes compiler/include/foster/passes
 insp "compiler/parse " compiler/parse  compiler/include/foster/parse
-insp "compiler/base  " compiler/parse  compiler/include/foster/base
+insp "compiler/base  " compiler/base   compiler/include/foster/base
 insp "compiler/llvm  " compiler/llvm
 insp "compiler/me    " compiler/me
 echo
