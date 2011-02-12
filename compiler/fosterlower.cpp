@@ -157,6 +157,21 @@ void linkTo(llvm::Module*& transient,
   }
 }
 
+void addCoroTransferDeclaration(llvm::Module* dst,
+                                llvm::Module* src) {
+  // coro_transfer isn't automatically added
+  // because it's only a declaration, not a definition.
+  coro_transfer =
+    llvm::dyn_cast<llvm::Function>(
+      dst->getOrInsertFunction("coro_transfer",
+      llvm::dyn_cast<llvm::FunctionType>(
+             src->getFunction("coro_transfer")
+                                ->getType()->getContainedType(0))));
+
+  coro_transfer->addAttribute(1, llvm::Attribute::InReg);
+  coro_transfer->addAttribute(2, llvm::Attribute::InReg);
+}
+
 int main(int argc, char** argv) {
   int program_status = 0;
   GOOGLE_PROTOBUF_VERIFY_VERSION;
@@ -226,16 +241,7 @@ int main(int argc, char** argv) {
   module->getOrInsertGlobal("current_coro",
     current_coro->getType()->getContainedType(0));
 
-  // coro_transfer isn't automatically added because it's
-  // only a declaration, not a definition.
-  coro_transfer = llvm::dyn_cast<llvm::Function>(
-                  module->getOrInsertFunction("coro_transfer",
-    llvm::dyn_cast<llvm::FunctionType>(
-                    libfoster_bc->getFunction("coro_transfer")
-                                ->getType()->getContainedType(0))));
-  coro_transfer->addAttribute(1, llvm::Attribute::InReg);
-  coro_transfer->addAttribute(2, llvm::Attribute::InReg);
-
+  addCoroTransferDeclaration(module, libfoster_bc);
   // TODO mark foster__assert as alwaysinline
 
   foster::putModuleMembersInScope(libfoster_bc, module);
