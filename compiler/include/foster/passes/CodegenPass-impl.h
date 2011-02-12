@@ -15,12 +15,15 @@
 
 #include <string>
 
+using llvm::Value;
+
 // Declarations for Codegen-typemaps.cpp
 llvm::GlobalVariable*
 emitTypeMap(const llvm::Type* ty, std::string name, bool skipOffsetZero = false);
 
-void registerType(const Type* ty, std::string desiredName,
-                  llvm::Module* mod,
+void registerType(const llvm::Type* ty,
+                  std::string       desiredName,
+                  llvm::Module*     mod,
                   bool isClosureEnvironment = false);
 
 llvm::GlobalVariable* getTypeMapForType(const llvm::Type*, llvm::Module* mod);
@@ -33,8 +36,8 @@ const inline llvm::PointerType* ptrTo(const llvm::Type* t) {
 
 // From CodegenUtils.cpp
 Value* getUnitValue();
-llvm::Value* emitMalloc(const llvm::Type* ty);
-llvm::Value* allocateMPInt();
+Value* emitMalloc(const llvm::Type* ty);
+Value* allocateMPInt();
 Value* getElementFromComposite(Value* compositeValue, Value* idxValue);
 Value* getPointerToIndex(Value* compositeValue,
                          Value* idxValue,
