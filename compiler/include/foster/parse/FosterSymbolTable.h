@@ -62,6 +62,10 @@ public:
 
     virtual ~LexicalScope() {}
 
+    void remove(const string& ident) {
+      val_of.erase(ident);
+    }
+
     T* insert(const string& ident, T* V) {
       T* old = val_of[ident];
       if (old) {
@@ -116,6 +120,10 @@ public:
 
   virtual T* lookup(const string& ident) {
     return currentScope()->lookup(ident);
+  }
+
+  void remove(const string& ident) {
+    currentScope()->remove(ident);
   }
 
   /// Inserts the given value into the current scope.
