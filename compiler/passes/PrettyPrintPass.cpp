@@ -483,16 +483,16 @@ void PrettyPrintTypePass::visit(TypeVariableAST* ast) {
 void PrettyPrintTypePass::visit(FnTypeAST* ast) {
   int np = ast->getNumParams();
   scan(PPToken("("));
-  if (np > 1) { scan(PPToken("(")); }
+  if (np > 1) { scan(PPToken("|")); }
   for (int i = 0; i < np; ++i) {
     if (i > 0) {
       scan(PPToken(", "));
     }
     emit(ast->getParamType(i));
   }
-  if (np > 1) { scan(PPToken(")")); }
+  if (np > 1) { scan(PPToken("|")); }
   scan(PPToken(" "));
-  scan(PPToken("=>"));
+  scan(PPToken("=" + ast->getCallingConventionName() + ">"));
   scan(PPToken(" "));
   emit(ast->getReturnType());
   scan(PPToken(")"));
