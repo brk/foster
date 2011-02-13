@@ -5,8 +5,6 @@
 #ifndef FOSTER_SYMBOL_TABLE_H
 #define FOSTER_SYMBOL_TABLE_H
 
-#include "llvm/Support/raw_ostream.h"
-
 #include "base/Assert.h"
 
 #include <string>

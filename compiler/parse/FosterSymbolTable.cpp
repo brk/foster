@@ -7,7 +7,6 @@
 #include "parse/FosterTypeAST.h"
 
 #include "llvm/Value.h"
-#include "llvm/Support/raw_ostream.h"
 
 #include <sstream>
 
