@@ -75,14 +75,6 @@ public:
   static bool
   isReservedKeyword(const std::string& op);
 
-  ///////////////////
-
-  static void
-  setParent(ExprAST* child, ExprAST* parent);
-
-  static ExprAST*
-  getParent(ExprAST* child);
-
   /////////////////////
 
   static void

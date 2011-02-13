@@ -178,22 +178,6 @@ ParsingContext::isReservedKeyword(const string& op) {
 
 ////////////////////////////////////////////////////////////////////
 
-void // static
-ParsingContext::setParent(ExprAST* child, ExprAST* parent) {
-  ASSERT(!gParsingContexts.empty());
-
-  gParsingContexts.top()->impl->parents[child] = parent;
-}
-
-ExprAST* // static
-ParsingContext::getParent(ExprAST* child) {
-  if (gParsingContexts.empty()) { return NULL; }
-
-  return gParsingContexts.top()->impl->parents[child];
-}
-
-////////////////////////////////////////////////////////////////////
-
 ParsingContext::ParsingContext() {
   impl = new Impl();
 }

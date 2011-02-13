@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#include "parse/ParsingContext.h"
 #include "passes/PrettyPrintPass.h"
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
@@ -227,14 +226,9 @@ void PrettyPrintPass::visit(PrototypeAST* ast) {
 
 // fnProto fnBody
 void PrettyPrintPass::visit(FnAST* ast) {
-  bool isTopLevelFn = foster::ParsingContext::getParent(ast) == NULL;
-  if (isTopLevelFn) { scan(pp.tNewline); }
-
   emit(ast->getProto());
 
   if (!this->printSignaturesOnly) {
-    if (!isTopLevelFn) { scan(pp.tNewline); }
-
     if (ast->getBody()) {
       emit(ast->getBody());
     }
@@ -295,13 +289,8 @@ void PrettyPrintPass::visit(SeqAST* ast) {
   FnAST* followingFn = NULL;
   {
   ScopedIndent si(this);
-  followingFn = dynamic_cast<FnAST*>(foster::ParsingContext::getParent(ast));
-  if (followingFn) {
-    scan(PPToken(" {"));
-    scan(pp.tNewline);
-  } else {
-    scan(PPToken("{ "));
-  }
+  scan(PPToken(" {"));
+  scan(pp.tNewline);
 
   for (size_t i = 0; i < ast->parts.size(); ++i) {
     { ScopedBlock sb(this);
