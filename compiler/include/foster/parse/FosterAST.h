@@ -30,23 +30,12 @@ class VariableAST;
 class ExprASTVisitor;
 
 typedef std::vector<ExprAST*> Exprs;
-std::ostream& operator<<(std::ostream& out, ExprAST& expr);
 
 string str(const ExprAST* expr);
 
 namespace foster {
   SourceRangeHighlighter show(ExprAST* ast);
-  struct CFG;
   extern char kDefaultFnLiteralCallingConvention[];
-}
-
-inline bool isArithOp(const std::string& op) {
-  return op == "+" || op == "-" || op == "/" || op == "*";
-}
-
-inline bool isCmpOp(const std::string& op) {
-  return op == "<" || op == "<=" || op == ">" || op == ">="
-      || op == "==" || op == "!=";
 }
 
 ///////////////////////////////////////////////////////////
@@ -54,14 +43,13 @@ inline bool isCmpOp(const std::string& op) {
 struct ExprAST {
   std::vector<ExprAST*> parts;
 
-  llvm::Value* value;
   TypeAST* type;
   foster::SourceRange sourceRange;
   const char* const tag;
 
   explicit ExprAST(const char* const tag,
                    foster::SourceRange sourceRange)
-    : value(NULL), type(NULL),
+    : type(NULL),
       sourceRange(sourceRange), tag(tag) {}
   virtual ~ExprAST() {}
   virtual std::ostream& operator<<(std::ostream& out) const;
@@ -231,8 +219,6 @@ public:
 // generic-env-ptr. This allows type checking to be agnostic of the types stored
 // in the env, while still allowing codegen to insert the appropriate bitcasts.
  struct FnAST : public ExprAST {
-   std::vector<foster::CFG*> cfgs;
-
    PrototypeAST* proto;
    ExprScopeType* scope;
 

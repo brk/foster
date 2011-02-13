@@ -24,9 +24,7 @@ getFullSymbolInfoNodeLabel(
     std::pair<std::string, ExprAST*> p = *it;
     ExprAST* ast = p.second;
 
-    ss << newline << p.first << ":" << ast;
-    if (ast) { ss << ast->value; } else { ss << "NO value"; }
-    ss << newline;
+    ss << newline << p.first << ":" << ast << newline;
   }
   return ss.str();
 }
