@@ -70,9 +70,8 @@ public:
 
     T* insert(const string& ident, T* V) {
       T* old = val_of[ident];
-      if (old) {
-        //llvm::errs() << "Unexpectedly overwriting old value of " << ident << "\n";
-      }
+      ASSERT(!old) << "Alpha conversion failed: should never insert"
+                      " the same name (" << ident << ") in the same scope twice!";
       val_of[ident] = V;
       return V;
     }
