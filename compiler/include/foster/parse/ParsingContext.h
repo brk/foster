@@ -64,9 +64,6 @@ public:
   static void
   insertType(const std::string& str, TypeAST* ast);
 
-  static ExprAST*
-  lookupExpr(const std::string& str);
-
   static void
   insertExpr(const std::string& str, ExprAST* ast);
 

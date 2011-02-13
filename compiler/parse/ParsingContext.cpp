@@ -157,13 +157,6 @@ ParsingContext::lookupType(const std::string& str) {
   return cc->impl->typeScope.lookup(str);
 }
 
-ExprAST* // static
-ParsingContext::lookupExpr(const std::string& str) {
-  ASSERT(!gParsingContexts.empty());
-  ParsingContext* cc = gParsingContexts.top();
-  return cc->impl->exprScope.lookup(str);
-}
-
 void // static
 ParsingContext::insertType(const std::string& str, TypeAST* ast) {
   ASSERT(!gParsingContexts.empty());
@@ -178,7 +171,7 @@ ParsingContext::insertExpr(const std::string& name, ExprAST* ast) {
   if (! impl->exprScope._private_getCurrentScope()->thisLevelContains(name)) {
     impl->exprScope.insert(name, ast);
   } else {
-    ExprAST* existing = lookupExpr(name);
+    ExprAST* existing = impl->exprScope.lookup(name);
     if (existing == ast) {
       EDiag() << "topScopeInsert(ExprAST " << name << ") was redundant!";
     } else {
