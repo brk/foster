@@ -141,7 +141,7 @@ closureConvert globalVars ctx expr =
         let g = closureConvert globalVars ctx in
         case expr of
             AnnBool         b                    -> return $ (LLBool b, [])
-            AnnCompiles   c                      -> return $ (LLBool (c == CS_WouldCompile), [])
+            AnnCompiles c msg                    -> return $ (LLBool (c == CS_WouldCompile), [])
             AnnIf      t  a b c                  -> do (ca, pa) <- g a
                                                        (cb, pb) <- g b
                                                        (cc, pc) <- g c

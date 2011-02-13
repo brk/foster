@@ -361,9 +361,9 @@ dumpExpr x@(AnnSubscript t a b ) =
                     , PbExpr.tag   = SUBSCRIPT
                     , PbExpr.type' = Just $ dumpType (typeAST x)  }
 
-dumpExpr (AnnCompiles CS_WouldCompile)    = dumpExpr (AnnBool True)
-dumpExpr (AnnCompiles CS_WouldNotCompile) = dumpExpr (AnnBool False)
-dumpExpr (AnnCompiles CS_NotChecked) = error "dumpExpr (AnnCompiles CS_NotChecked)"
+dumpExpr (AnnCompiles CS_WouldCompile _)    = dumpExpr (AnnBool True)
+dumpExpr (AnnCompiles CS_WouldNotCompile _) = dumpExpr (AnnBool False)
+dumpExpr (AnnCompiles CS_NotChecked _) = error "dumpExpr (AnnCompiles CS_NotChecked)"
 
 dumpExpr x@(AnnInt ty int) =
     P'.defaultValue { PbExpr.pb_int = Just $ dumpInt (litIntText int)

@@ -69,7 +69,7 @@ instance Expr AnnExpr where
         case e of
             AnnBool         b    -> out $ "AnnBool      " ++ (show b)
             AnnCall  r t b a     -> out $ "AnnCall      " ++ " :: " ++ show t
-            AnnCompiles     c    -> out $ "AnnCompiles  " ++ show c
+            AnnCompiles c msg    -> out $ "AnnCompiles  " ++ show c ++ " - " ++ msg
             AnnIf      t  a b c  -> out $ "AnnIf        " ++ " :: " ++ show t
             AnnInt ty int        -> out $ "AnnInt       " ++ (litIntText int) ++ " :: " ++ show ty
             E_AnnFn annFn        -> out $ "AnnFn " ++ fnNameA annFn ++ " // " ++ (show $ annFnBoundNames annFn)
@@ -82,7 +82,7 @@ instance Expr AnnExpr where
         case e of
             AnnBool         b                    -> []
             AnnCall  r t b a                     -> [b, a]
-            AnnCompiles   c                      -> []
+            AnnCompiles c msg                    -> []
             AnnIf      t  a b c                  -> [a, b, c]
             AnnInt t _                           -> []
             E_AnnFn annFn                        -> [annFnBody annFn]
@@ -196,7 +196,7 @@ data AnnExpr =
 
         -- This one's a bit odd, in that we can't include an AnnExpr
         -- because the subterm doesn't need to be well-typed...
-        | AnnCompiles   CompilesStatus
+        | AnnCompiles   CompilesStatus String
         deriving (Show)
 
 data AnnVar       = AnnVar { avarType :: TypeAST, avarIdent :: Ident } deriving (Eq, Show)
@@ -230,7 +230,7 @@ typeAST (AnnInt t _)         = t
 typeAST (AnnTuple es b)      = TupleTypeAST [typeAST e | e <- es]
 typeAST (E_AnnFn annFn)      = annFnType annFn
 typeAST (AnnCall r t b a)    = t
-typeAST (AnnCompiles c)      = fosBoolType
+typeAST (AnnCompiles c msg)  = fosBoolType
 typeAST (AnnIf t a b c)      = t
 typeAST (AnnSeq a b)         = typeAST b
 typeAST (AnnSubscript t _ _) = t

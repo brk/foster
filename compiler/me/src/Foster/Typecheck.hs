@@ -2,12 +2,14 @@ module Foster.Typecheck where
 
 import Data.Map(Map)
 import qualified Data.Map as Map
-import List(length, zip, zip3, all, sort, group, head, elem, lookup)
+import List(length, zip, zip3, all, sort, group, head, elem, lookup, elemIndex)
 import Monad(liftM)
 
 import Debug.Trace(trace)
 import Control.Exception(assert)
 import Data.Maybe(isJust, fromJust)
+import qualified Data.Text as T
+import Data.Char(toLower)
 
 import System.Console.ANSI
 
@@ -69,13 +71,13 @@ typecheck ctx expr maybeExpTy =
             Just avar  -> return $ E_AnnVar avar
             Nothing    -> tcFails $ out $ "Unknown variable " ++ s
         E_CompilesAST e c -> case c of
-            CS_WouldNotCompile -> return $ AnnCompiles CS_WouldNotCompile
+            CS_WouldNotCompile -> return $ AnnCompiles CS_WouldNotCompile "parse error"
             CS_WouldCompile -> error "No support for re-type checking CompilesAST nodes."
             CS_NotChecked -> do
-                success <- wasSuccessful (typecheck ctx e Nothing)
-                return $ AnnCompiles $ case success of
-                            True  -> CS_WouldCompile
-                            False -> CS_WouldNotCompile
+                maybeOutput <- extractErrors (typecheck ctx e Nothing)
+                return $ case maybeOutput of
+                            Nothing -> AnnCompiles CS_WouldCompile    ""
+                            Just o  -> AnnCompiles CS_WouldNotCompile (outToString o)
 
 -----------------------------------------------------------------------
 typecheckIf ctx (IfAST a b c) maybeExpTy = do

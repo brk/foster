@@ -105,6 +105,14 @@ wasSuccessful tce =
                        TypecheckErrors ss -> return (Annotated False)
                        })
 
+extractErrors :: Tc a -> Tc (Maybe Output)
+extractErrors tce =
+    Tc (\env -> do { result <- unTc tce env
+                   ; case result of
+                       Annotated expr     -> return (Annotated Nothing)
+                       TypecheckErrors ss -> return (Annotated (Just ss))
+                       })
+
 
 isAnnotated :: TypecheckResult AnnExpr -> Bool
 isAnnotated (Annotated _) = True
