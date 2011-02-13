@@ -1,6 +1,6 @@
 // IN: 10 20 30
 // http://www.research.att.com/~njas/sequences/table?a=45&fmt=4
-fn "main" () {
+main = fn () {
   expect_i32(55)
   print_i32(fib-naive(read_i32()))
 

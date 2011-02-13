@@ -82,7 +82,7 @@ test-let = fn ( to i32) {
   print_i32( murmurhash2-step-let(4, 1308571692, 24, 5bd1e995_16) )
 }
 
-fn "main" ( to i32) {
+main = fn ( to i32) {
   test-manually-lifted()
   test-let-transformed()
   test-let()

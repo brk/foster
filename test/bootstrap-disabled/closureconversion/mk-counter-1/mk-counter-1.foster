@@ -11,11 +11,11 @@ type Counter = fn (to tuple {i32, Counter})
 //  }
 //}
 
-fn "main" () {
+main = fn () {
   0
 }
 
-//fn "main" () {
+//main = fn () {
 //  let c:Counter = mkcounter(read_i32()) in {
 //  let t:tuple {i32, Counter} = c() in {
 //    expect_i32(3)

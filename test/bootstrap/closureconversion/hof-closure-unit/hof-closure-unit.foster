@@ -2,7 +2,7 @@
 
 run-clo = fn (f:fn()) {  f()  }
 
-fn "main" () {
+main = fn () {
   let n:i32 = read_i32() in {
   let c:  fn() =   fn () { n + read_i32() }   in {
     expect_i32(5)

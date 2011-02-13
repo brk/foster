@@ -12,7 +12,7 @@ f = fn () {
   print_i32(g())
 }
 
-fn "main" () {
+main = fn () {
   //expect_i32(3)
   //c_invoke_fnptr_to_i32(f)
 }

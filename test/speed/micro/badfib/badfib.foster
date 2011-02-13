@@ -11,7 +11,7 @@ timefn = fn (f:fn() to i64) {
   } : i64
 }
 
-fn "main" () {
+main = fn () {
   let n:i32 = read_i32() in {
     print_i64(timefn( fn () { print_i32(badfib(n)) } ))
   }

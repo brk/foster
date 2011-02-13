@@ -2,7 +2,7 @@
 
 run-clo-1 = fn (y:i32, f:fn(z:i32, x:i32)) {  f(y, read_i32())  }
 
-fn "main" () {
+main = fn () {
   let n:i32 = read_i32() in {
   let a:i32 = read_i32() in {
   let c:  fn(z:i32, x:i32) =   fn (z:i32, x:i32) { (z + a) * n + x }   in {

@@ -7,7 +7,7 @@ run-it = fn (f:fn()) {
 // This just tests passing of (lambda-lifted) function pointers,
 // since the anonymous function defined below is trivially closed. 
 
-fn "main" () {
+main = fn () {
   expect_i32(42)
   print_i32(run-it( fn () { read_i32() } ))
 }

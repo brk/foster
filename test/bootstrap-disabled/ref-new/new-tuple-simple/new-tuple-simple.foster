@@ -24,7 +24,7 @@ expect-eq-reftref = fn (t1:tuple {i32,i32}, t2:ref tuple{ref i32, ref i32}) {
   print_i32(deref(deref(t2)[1]))
 }
 
-fn "main" () {
+main = fn () {
   expect-eq-tref( tuple {2,3}, tuple { new read_i32(), new read_i32() } )
   
   expect-eq-reft( tuple {5,8}, new tuple { read_i32(), read_i32() } )

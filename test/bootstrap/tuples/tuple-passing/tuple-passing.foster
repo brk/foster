@@ -2,7 +2,7 @@
 print_0_of_t_i32_i1 = fn (x : tuple { i32, i1 }) { print_i32(x[0]) }
 print_1_of_t_i32_i1 = fn (x : tuple { i32, i1 }) { print_i1(x[1]) }
 
-fn "main" () {
+main = fn () {
   expect_i32(42)
   print_0_of_t_i32_i1(tuple { 42, true })
   

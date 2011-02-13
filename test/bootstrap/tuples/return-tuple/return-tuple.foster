@@ -13,7 +13,7 @@ tuple_from = fn (x : i32, y : i1   to  tuple { i32, i1 }) { tuple { x, y } }
 // rx, ry = unpack tuple { x, y } ?
 //}
 
-fn "main" () {
+main = fn () {
   expect_i32(42)
   print_0_of_t_i32_i1(tuple_from( 42, true ))
   

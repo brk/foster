@@ -33,8 +33,7 @@ no-root-for-dead-ptrs = fn () {
   expect_i32(42)
   print_i32(deref(new 42))
 }
-
-fn "main" () {
+main = fn () {
   fn-no-gc(30, new 30)
   //no-gc-after-new()
   no-root-for-dead-ptrs()

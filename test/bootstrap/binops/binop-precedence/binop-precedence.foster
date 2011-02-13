@@ -1,4 +1,4 @@
-fn "main" () {
+main = fn () {
   expect_i32(14) ;  print_i32(2 + 3 * 4)
   expect_i32(10) ;  print_i32(2 * 3 + 4)
 

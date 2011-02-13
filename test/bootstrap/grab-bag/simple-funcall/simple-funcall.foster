@@ -1,6 +1,6 @@
 one = fn () { 1 }
 
-fn "main" () {
+main = fn () {
   expect_i32(1) ; print_i32(one())
   
   // Test that variable scoping is respected: outer v not in scope

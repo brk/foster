@@ -1,4 +1,4 @@
-fn "main" () {
+main = fn () {
   expect_i1(true)  ; print_i1(__COMPILES__ let v:ref i32 = new 3 in {0} )
   // No default construction for now, so raw typenames aren't acceptable. Will change eventually.
   expect_i1(false) ; print_i1(__COMPILES__ let v:ref i32 = new i32 in {0})

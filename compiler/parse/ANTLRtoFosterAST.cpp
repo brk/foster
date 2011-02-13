@@ -259,6 +259,7 @@ FnAST* buildFn(PrototypeAST* proto, pTree bodyTree) {
 string parseFnName(string defaultSymbolTemplate, pTree tree) {
   string name;
   if (getChildCount(child(tree, 0)) == 1) {
+    ASSERT(false) << "temporarily disabled support for fn symbol names";
     pTree treeName = child(tree, 0);
     string nameWithQuotes = textOf(child(treeName, 0));
     name = nameWithQuotes.substr(1, nameWithQuotes.size() - 2);

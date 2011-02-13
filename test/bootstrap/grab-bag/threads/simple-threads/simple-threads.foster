@@ -1,6 +1,6 @@
 fib = fn (x : i32) { if x < 3 then { 1 } else { fib(x - 1) + fib(x - 2) } }
 
-fn "main" () {
+main = fn () {
 
   // This only starts one thread in order to remain deterministic...
   

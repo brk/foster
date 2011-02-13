@@ -1,4 +1,4 @@
-fn "main" () {
+main = fn () {
   expect_i1(true)
   print_i1(__COMPILES__ simd-vector { 11, 12, 13, 14 }[0] )
 
