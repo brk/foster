@@ -8,6 +8,7 @@
 #include "base/PathManager.h"
 #include "base/InputFile.h"
 
+#include "parse/FosterSymbolTable.h"
 #include "parse/ANTLRtoFosterAST.h"
 #include "parse/ParsingContext.h"
 #include "parse/ProtobufToAST.h"
@@ -94,13 +95,13 @@ ExprAST* parseFn(const pb::Expr& e, const foster::SourceRange& range) {
   PrototypeAST* proto = dynamic_cast<PrototypeAST*>(ExprAST_from_pb(& e.parts(0)));
   ExprAST* body = NULL;
 
-  ExprAST::ScopeType* scope = gScope.pushScope(proto->getName());
+  ExprScopeType* scope = ParsingContext::pushScope(proto->getName());
     // Ensure all the function parameters are available in the function body.
     for (unsigned i = 0; i < proto->inArgs.size(); ++i) {
       scope->insert(proto->inArgs[i]->name, proto->inArgs[i]);
     }
     body = ExprAST_from_pb(& e.parts(1));
-  gScope.popScope();
+  ParsingContext::popScope();
 
   FnAST* fn = new FnAST(proto, body, scope, range);
   if (e.has_is_closure() && e.is_closure()) {
@@ -146,7 +147,7 @@ ExprAST* parseModule(const pb::Expr& e, const foster::SourceRange& range) {
   }
   return new ModuleAST(args,
                        moduleName,
-                       gScope.getRootScope(),
+                       ParsingContext::getRootScope(),
                        range);
 }
 

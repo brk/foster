@@ -5,8 +5,8 @@
 #include "base/Assert.h"
 #include "base/FreshNameGenerator.h"
 
+#include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
-#include "parse/FosterSymbolTable.h"
 #include "parse/ParsingContext.h"
 
 #include "llvm/Module.h"
@@ -28,6 +28,9 @@ std::stack<ParsingContext*> gParsingContexts;
 struct ParsingContext::Impl {
   OperatorPrecedenceTable prec;
   FreshNameGenerator freshNames;
+
+  SymbolTable<ExprAST> exprScope;
+  SymbolTable<TypeAST> typeScope;
 
   std::map<pANTLR3_BASE_TREE, pANTLR3_COMMON_TOKEN> startTokens;
   std::map<pANTLR3_BASE_TREE, pANTLR3_COMMON_TOKEN>   endTokens;
@@ -103,6 +106,91 @@ ParsingContext::popCurrentContext() {
 
 /////////////////////
 
+ExprScopeType*
+ParsingContext::newScope(const std::string& str) {
+  ASSERT(!gParsingContexts.empty());
+  ParsingContext* cc = gParsingContexts.top();
+  return cc->impl->exprScope.newScope(str);
+}
+
+void
+ParsingContext::popExistingScope(ExprScopeType* s) {
+  ASSERT(!gParsingContexts.empty());
+  ParsingContext* cc = gParsingContexts.top();
+  cc->impl->exprScope.popExistingScope(s);
+}
+
+ExprScopeType*
+ParsingContext::pushScope(const std::string& str) {
+  ASSERT(!gParsingContexts.empty());
+  ParsingContext* cc = gParsingContexts.top();
+  return cc->impl->exprScope.pushScope(str);
+}
+
+ExprScopeType*
+ParsingContext::getRootScope() {
+  ASSERT(!gParsingContexts.empty());
+  ParsingContext* cc = gParsingContexts.top();
+  return cc->impl->exprScope.getRootScope();
+}
+
+/*
+ExprScopeType* // static
+ParsingContext::currentScope() {
+  ASSERT(!gParsingContexts.empty());
+  ParsingContext* cc = gParsingContexts.top();
+  return cc->impl->exprScope._private_getCurrentScope();
+}
+*/
+
+void // static
+ParsingContext::popScope() {
+  ASSERT(!gParsingContexts.empty());
+  ParsingContext* cc = gParsingContexts.top();
+  cc->impl->exprScope.popScope();
+}
+
+TypeAST* // static
+ParsingContext::lookupType(const std::string& str) {
+  ASSERT(!gParsingContexts.empty());
+  ParsingContext* cc = gParsingContexts.top();
+  return cc->impl->typeScope.lookup(str);
+}
+
+ExprAST* // static
+ParsingContext::lookupExpr(const std::string& str) {
+  ASSERT(!gParsingContexts.empty());
+  ParsingContext* cc = gParsingContexts.top();
+  return cc->impl->exprScope.lookup(str);
+}
+
+void // static
+ParsingContext::insertType(const std::string& str, TypeAST* ast) {
+  ASSERT(!gParsingContexts.empty());
+  ParsingContext* cc = gParsingContexts.top();
+  cc->impl->typeScope.insert(str, ast);
+}
+
+void // static
+ParsingContext::insertExpr(const std::string& name, ExprAST* ast) {
+  ASSERT(!gParsingContexts.empty());
+  ParsingContext::Impl* impl = gParsingContexts.top()->impl;
+  if (! impl->exprScope._private_getCurrentScope()->thisLevelContains(name)) {
+    impl->exprScope.insert(name, ast);
+  } else {
+    ExprAST* existing = lookupExpr(name);
+    if (existing == ast) {
+      EDiag() << "topScopeInsert(ExprAST " << name << ") was redundant!";
+    } else {
+      EDiag() << "topScopeInsert(ExprAST " << name << ") had unexpected collision"
+        << "\n\told: " << str(existing)
+        << "\n\tnew: " << str(     ast);
+    }
+  }
+}
+
+/////////////////////
+
 std::string // static
 ParsingContext::freshName(std::string like) {
   ASSERT(!foster::gParsingContexts.empty());
@@ -149,7 +237,7 @@ ParsingContext::clearTokenBoundaries() {
 
 foster::OperatorPrecedenceTable::OperatorRelation // static
 ParsingContext::getOperatorRelation(const std::string& op1,
-                                        const std::string& op2) {
+                                    const std::string& op2) {
   ASSERT(!gParsingContexts.empty());
 
   return gParsingContexts.top()->impl->prec.get(op1, op2);
@@ -189,7 +277,7 @@ map<string, const llvm::Type*> gCachedLLVMTypes;
 TypeAST* TypeASTFor(const string& name) {
   if (gCachedLLVMTypes.count(name) == 1) {
     return NamedTypeAST::get(name, gCachedLLVMTypes[name]);
-  } else if (TypeAST* ty = gTypeScope.lookup(name)) {
+  } else if (TypeAST* ty = ParsingContext::lookupType(name)) {
     return ty;
   } else {
     return NULL;

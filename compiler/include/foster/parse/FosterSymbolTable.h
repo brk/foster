@@ -7,6 +7,8 @@
 
 #include "llvm/Support/raw_ostream.h"
 
+#include "base/Assert.h"
+
 #include <string>
 #include <map>
 #include <set>
@@ -173,21 +175,14 @@ public:
   std::vector<LexicalScope*> scopeStack;
 };
 
-extern SymbolTable<ExprAST> gScope;
-extern SymbolTable<TypeAST> gTypeScope;
-
-void gScopeInsert(const std::string& str, ExprAST* ast);
-
 // }}}
 
 } // namespace foster
 
+typedef foster::SymbolTable<ExprAST>::LexicalScope ExprScopeType;
 
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
 
-using foster::gScope;
-using foster::gScopeInsert;
-using foster::gTypeScope;
 
 #endif // header guard

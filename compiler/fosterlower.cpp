@@ -38,6 +38,7 @@ using std::string;
 
 using foster::ScopedTimer;
 using foster::EDiag;
+using foster::ParsingContext;
 
 namespace foster {
   struct ScopeInfo;
@@ -214,7 +215,7 @@ int main(int argc, char** argv) {
   mp_int =
     llvm::PointerType::getUnqual(mpz_struct_ty);
   module->addTypeName("mp_int", mp_int);
-  gTypeScope.insert("int", NamedTypeAST::get("int", mp_int));
+  ParsingContext::insertType("int", NamedTypeAST::get("int", mp_int));
 
   foster_generic_coro_t = libfoster_bc->getTypeByName("struct.foster_generic_coro");
   ASSERT(foster_generic_coro_t != NULL);

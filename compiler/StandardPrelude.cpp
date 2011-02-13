@@ -12,6 +12,7 @@
 
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
+#include "parse/ParsingContext.h"
 
 #include "pystring/pystring.h"
 
@@ -150,7 +151,7 @@ addConcretePrimitiveFunctionTo(Module* m, const char* op, const Type* ty) {
     llvm::outs() << "\t" << name << " :: " << str(fty) << "\n";
   }
 
-  gScope.insert(name, new VariableAST(name,
+  ParsingContext::insertExpr(name, new VariableAST(name,
                                       TypeAST::reconstruct(fty),
                                       SourceRange::getEmptyRange()));
 
@@ -173,7 +174,7 @@ addLLVMIntrinsic(Module* m, llvm::Intrinsic::ID id) {
   llvm::Value* rv = fBuilder.CreateCall(llvm::Intrinsic::getDeclaration(m, id));
   fBuilder.CreateRet(rv);
 
-  gScope.insert(funcName, new VariableAST(funcName,
+  ParsingContext::insertExpr(funcName, new VariableAST(funcName,
                                       TypeAST::reconstruct(ft),
                                       SourceRange::getEmptyRange()));
 }
@@ -203,8 +204,8 @@ putModuleMembersInInternalScope(const std::string& scopeName,
   if (!m) return NULL;
 
   foster::SymbolTable<ExprAST>::LexicalScope* scope = NULL;
-  scope = gScope.newScope(string("$") + scopeName);
-  gScope.popExistingScope(scope);
+  scope = ParsingContext::newScope(string("$") + scopeName);
+  ParsingContext::popExistingScope(scope);
 
 
   // Collect type names from the module.
@@ -342,7 +343,7 @@ void putModuleMembersInScope(Module* m, Module* linkee) {
                  << str(fnty) << "\n";
         }
 
-        gScope.insert(name, new VariableAST(name,
+        ParsingContext::insertExpr(name, new VariableAST(name,
                                             TypeAST::reconstruct(fnty),
                                             SourceRange::getEmptyRange()));
       } else {

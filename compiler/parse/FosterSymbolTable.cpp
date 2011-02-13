@@ -13,27 +13,6 @@
 
 namespace foster {
 
-SymbolTable<TypeAST> gTypeScope;
-SymbolTable<ExprAST> gScope;
-
-void gScopeInsert(const std::string& name, ExprAST* ast) {
-  bool currentScopeHas = gScope._private_getCurrentScope()->thisLevelContains(name);
-  if (!currentScopeHas) {
-    gScope.insert(name, ast);
-  } else {
-    ExprAST* existing = gScope._private_getCurrentScope()->lookup(name);
-    if (existing == ast) {
-      llvm::outs() << "gScopeInsert(ExprAST " << name << ") was redundant!" << "\n";
-    } else {
-      llvm::outs() << "gScopeInsert(ExprAST " << name << ") had unexpected collision"
-        << "\n\told: " << existing << " :: " << str(existing)
-        << "\n\tnew: " <<      ast << " :: " << str(     ast)
-        << "\n";
-    }
-  }
-}
-
-
 std::string
 getFullSymbolInfoNodeLabel(
     const foster::SymbolTable<ExprAST>::LexicalScope* node,

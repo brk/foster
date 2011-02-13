@@ -52,8 +52,6 @@ inline bool isCmpOp(const std::string& op) {
 ///////////////////////////////////////////////////////////
 
 struct ExprAST {
-  typedef foster::SymbolTable<ExprAST>::LexicalScope ScopeType;
-
   std::vector<ExprAST*> parts;
 
   llvm::Value* value;
@@ -236,7 +234,7 @@ public:
    std::vector<foster::CFG*> cfgs;
 
    PrototypeAST* proto;
-   ScopeType* scope;
+   ExprScopeType* scope;
 
    // For closures; requires calcualation of free variables.
    // Top-level functions (which are, by definition, not closures)
@@ -254,7 +252,7 @@ public:
    }
 
    explicit FnAST(PrototypeAST* proto, ExprAST* body,
-                  ExprAST::ScopeType* ascope,
+                  ExprScopeType* ascope,
                   foster::SourceRange sourceRange)
       : ExprAST("FnAST", sourceRange),
         proto(proto), scope(ascope),
@@ -272,7 +270,7 @@ public:
 };
 
 struct ModuleAST : public ExprAST {
-  ExprAST::ScopeType* scope;
+  ExprScopeType* scope;
   std::vector<FnAST*> fn_parts;
   typedef std::vector<FnAST*>::iterator FnAST_iterator;
   FnAST_iterator fn_begin() { return fn_parts.begin();}
@@ -280,7 +278,7 @@ struct ModuleAST : public ExprAST {
 
   explicit ModuleAST(const std::vector<ExprAST*>& _parts,
                      const std::string& name,
-                     ExprAST::ScopeType* parentScope,
+                     ExprScopeType* parentScope,
                      foster::SourceRange sourceRange)
     : ExprAST("ModuleAST", sourceRange)
     , scope(parentScope->newNestedScope(name)) {
