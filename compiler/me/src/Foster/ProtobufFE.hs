@@ -161,8 +161,7 @@ parseSeq pbexpr lines =
 
 -- | Convert a list of ExprASTs to a right-leaning "list" of SeqAST nodes.
 buildSeqs :: [ExprAST] -> ExprAST
-buildSeqs []    = E_IntAST (LiteralInt 1 "0" "0" 10)
-                  --error "(buildSeqs []): no skip yet, so no expr to return!"
+buildSeqs []    = E_TupleAST [] False
 buildSeqs [a]   = a
 buildSeqs [a,b] = E_SeqAST a b
 buildSeqs (a:b) = E_SeqAST a (buildSeqs b)

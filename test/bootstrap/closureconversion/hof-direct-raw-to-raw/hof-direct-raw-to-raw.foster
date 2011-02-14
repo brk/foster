@@ -15,5 +15,6 @@ f = fn () {
 main = fn () {
   //expect_i32(3)
   //c_invoke_fnptr_to_i32(f)
+  0
 }
 
