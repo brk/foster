@@ -90,5 +90,7 @@ Haskell
       export PATH=$PATH:~/.cabal/bin
       cabal install haskell-src
       cabal install gtk2hs-buildtools
+      cabal install chart
+      cabal install criterion
       cabal install text protocol-buffers filepath hprotoc ansi-terminal leksah
 
