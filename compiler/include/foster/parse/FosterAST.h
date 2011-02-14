@@ -70,24 +70,14 @@ class ModuleAST;
 
 struct IntAST : public ExprAST {
 private:
-  const APInt* apint;
   const string text;
-  const int base;
 public:
-  explicit IntAST(int activeBits,
-                  const string& originalText,
-                  const string& cleanText, int base,
+  explicit IntAST(const string& originalText,
                   foster::SourceRange sourceRange);
   virtual void accept(ExprASTVisitor* visitor);
 
-  const llvm::APInt& getAPInt() const;
   std::string getOriginalText() const;
-  int getBase() const { return base; }
-
-  unsigned intSizeForNBits(unsigned n) const;
 };
-
-IntAST* literalIntAST(int lit, const foster::SourceRange& sourceRange);
 
 struct BoolAST : public ExprAST {
   bool boolValue;

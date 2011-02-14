@@ -10,7 +10,6 @@
 #include "parse/FosterTypeAST.h"
 #include "parse/ExprASTVisitor.h"
 #include "parse/ParsingContext.h"
-#include "parse/ANTLRtoFosterAST.h" // just for parseAPIntFromClean()
 #include "parse/FosterUtils.h"
 #include "parse/DumpStructure.h"
 
@@ -107,50 +106,11 @@ void ExprASTVisitor::onVisitChild(ExprAST* ast, ExprAST* child) {
 ////////////////////////////////////////////////////////////////////
 
 
-IntAST::IntAST(int activeBits,
-                const string& originalText,
-                const string& cleanText, int base,
-                foster::SourceRange sourceRange)
-        : ExprAST("IntAST", sourceRange), text(originalText), base(base) {
-  // Debug builds of LLVM don't ignore leading zeroes when considering
-  // needed bit widths.
-  int bitsLLVMneeds = (std::max)(intSizeForNBits(activeBits),
-                                 (unsigned) cleanText.size());
-  int ourSize = intSizeForNBits(bitsLLVMneeds);
-  apint = new APInt(ourSize, cleanText, base);
-  type = TypeAST::i(ourSize);
-}
+IntAST::IntAST(const string& originalText,
+              foster::SourceRange sourceRange)
+        : ExprAST("IntAST", sourceRange), text(originalText) {}
 
-unsigned IntAST::intSizeForNBits(unsigned n) const {
-  // Disabled until we get better inferred literal types
-  //if (n <= 1) return 1;
-  //if (n <= 8) return 8;
-  //if (n <= 16) return 16;
-  if (n <= 32) return 32;
-  if (n <= 64) return 64;
-  ASSERT(false) << "Support for arbitrary-precision ints not yet implemented.";
-  return 0;
-}
-
-
-IntAST* literalIntAST(int lit, const foster::SourceRange& sourceRange) {
-  std::stringstream ss; ss << lit;
-  string text = ss.str();
-
-  APInt* p = foster::parseAPIntFromClean(text, 10, sourceRange);
-  IntAST* rv = new IntAST(p->getActiveBits(), text, text, 10, sourceRange);
-  return rv;
-}
-
-const llvm::APInt& IntAST::getAPInt() const { return *apint; }
 std::string IntAST::getOriginalText() const { return text; }
-
-llvm::ConstantInt* getConstantInt(IntAST* n) {
-  ASSERT(n->type && n->type->getLLVMType());
-
-  llvm::Constant* c = ConstantInt::get(n->type->getLLVMType(), n->getAPInt());
-  return llvm::dyn_cast<ConstantInt>(c);
-}
 
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////

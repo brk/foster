@@ -226,14 +226,13 @@ llvm::Value* CodegenPass::lookup(const std::string& fullyQualifiedSymbol) {
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
 
-struct IntAST;
-llvm::ConstantInt* getConstantInt(IntAST* n);
-
 llvm::Value* LLInt::codegen(CodegenPass* pass) {
   ASSERT(this->type && this->type->getLLVMType());
+  const llvm::Type* ty = this->type->getLLVMType();
 
-  llvm::Value* small = getConstantInt(intast);
+  llvm::Value* small = ConstantInt::get(ty, this->getAPInt());
 
+  // Our type could be an LLVM type, or an arbitrary precision int type.
   if (this->type->getLLVMType()->isIntegerTy()) {
     return small;
   } else if (false) {
@@ -241,6 +240,7 @@ llvm::Value* LLInt::codegen(CodegenPass* pass) {
     // must be initialized from string data.
     ASSERT(false) << "codegen for int values that don't fit"
                   << " in 64 bits not yet implemented";
+    return NULL;
   } else {
     // Small integers may be initialized immediately.
     llvm::Value* mpint = pass->allocateMPInt();

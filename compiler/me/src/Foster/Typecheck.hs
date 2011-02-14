@@ -9,7 +9,6 @@ import Debug.Trace(trace)
 import Control.Exception(assert)
 import Data.Maybe(isJust, fromJust)
 import qualified Data.Text as T
-import Data.Char(toLower)
 
 import System.Console.ANSI
 
@@ -58,7 +57,7 @@ typecheck ctx expr maybeExpTy =
         E_IfAST ifast   -> typecheckIf ctx ifast maybeExpTy
         E_FnAST f       -> typecheckFn ctx  f    maybeExpTy
         E_CallAST rng call -> typecheckCall ctx rng call maybeExpTy
-        E_IntAST litInt -> do return (AnnInt (NamedTypeAST "i32") litInt)
+        E_IntAST rng txt -> typecheckInt rng txt
         E_SeqAST a b -> do
             ea <- typecheck ctx a Nothing --(Just TypeUnitAST)
             eb <- typecheck ctx b maybeExpTy
@@ -305,3 +304,36 @@ collectErrors tce =
                        TypecheckErrors ss -> return (Annotated ss)
                        })
 
+
+-----------------------------------------------------------------------
+
+typecheckInt :: ESourceRange -> String -> Tc AnnExpr
+typecheckInt rng originalText = do
+    let goodBases = [2, 8, 10, 16]
+    let maxBits = 32
+    (clean, base) <- extractCleanBase originalText
+    sanityCheck (base `Prelude.elem` goodBases)
+                ("Integer base must be one of " ++ show goodBases ++ "; was " ++ show base)
+    sanityCheck (onlyValidDigitsIn clean base)
+                ("Cleaned integer must contain only hex digits: " ++ clean)
+    let int = precheckedLiteralInt originalText maxBits clean base
+    let activeBits = litIntMinBits int
+    sanityCheck (activeBits <= maxBits)
+                ("Integers currently limited to " ++ show maxBits ++ " bits, "
+                                                  ++ clean ++ " requires " ++ show activeBits)
+    return (AnnInt (NamedTypeAST $ "i" ++ show maxBits) int)
+
+-- Given "raw" integer text like "123`456_10",
+-- return ("123456", 10)
+extractCleanBase :: String -> Tc (String, Int)
+extractCleanBase text = do
+    let noticks = Prelude.filter (/= '`') text
+    case splitString "_" noticks of
+        [first, base] -> return (first, read base)
+        [first]       -> return (first, 10)
+        otherwise     -> tcFails (outLn $ "Unable to parse integer literal " ++ text)
+
+splitString :: String -> String -> [String]
+splitString needle haystack =
+    let textParts = T.splitOn (T.pack needle) (T.pack haystack) in
+    map T.unpack textParts

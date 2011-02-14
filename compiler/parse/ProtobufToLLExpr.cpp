@@ -91,7 +91,7 @@ LLExpr* parseCall(const pb::Expr& e, const foster::SourceRange& range) {
     LLExpr* expr = LLExpr_from_pb(&e.parts(i));
     LLVar* var = dynamic_cast<LLVar*>(expr);
     ASSERT(var != NULL) << "args to LLCall must be vars! got"
-    << pb::Expr::Tag_Name(e.parts(i).tag());
+                        << pb::Expr::Tag_Name(e.parts(i).tag());
     args.push_back(var);
   }
   return new LLCall(base, args, range);
@@ -110,19 +110,8 @@ LLExpr* parseIf(const pb::Expr& e, const foster::SourceRange& range) {
 
 LLExpr* parseInt(const pb::Expr& e, const foster::SourceRange& range) {
   if (!e.has_pb_int()) return NULL;
-
   const pb::PBInt& i = e.pb_int();
-  string text = i.originaltext();
-  string clean = pystring::replace(text, "`", "");
-  vector<string> parts;
-  pystring::split(clean, parts, "_");
-  int base = 10;
-  if (parts.size() == 2) {
-    clean = parts[0];
-    std::stringstream ss; ss << parts[1]; ss >> base;
-  }
-
-  return new LLInt(foster::parseInt(clean, text, base, range));
+  return new LLInt(i.clean(), i.bits(), i.base());
 }
 
 LLClosure* parseClosure(const pb::Closure& clo) {

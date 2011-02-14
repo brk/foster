@@ -221,7 +221,7 @@ uniqifyAll :: [String] -> Tc [Ident]
 uniqifyAll ss = sequence $ map uniqify ss
 
 litInt32 :: Int -> LLExpr
-litInt32 i = LLInt (NamedTypeAST "i32") $ LiteralInt 32 (show i) (show i) 10
+litInt32 i = LLInt (NamedTypeAST "i32") $ getLiteralInt i
 
 procType proc = procTypeFromLLProto (llProcProto proc)
 

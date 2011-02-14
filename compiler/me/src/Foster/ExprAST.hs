@@ -37,7 +37,7 @@ instance Expr ExprAST where
             E_CallAST rng call   -> out $ "CallAST      " ++ tryGetCallNameE (callASTbase call)
             E_CompilesAST e c    -> out $ "CompilesAST  "
             E_IfAST _            -> out $ "IfAST        "
-            E_IntAST litInt      -> out $ "IntAST       " ++ (litIntText litInt)
+            E_IntAST rng text    -> out $ "IntAST       " ++ text
             E_FnAST f            -> out $ "FnAST        " ++ (prototypeASTname $ fnProto f)
             E_SeqAST   a b       -> out $ "SeqAST       "
             E_SubscriptAST  a b  -> out $ "SubscriptAST "
@@ -49,7 +49,7 @@ instance Expr ExprAST where
             E_CallAST rng call   -> [callASTbase call, callASTargs call]
             E_CompilesAST   e c  -> [e]
             E_IfAST (IfAST a b c)-> [a, b, c]
-            E_IntAST litInt      -> []
+            E_IntAST rng txt     -> []
             E_FnAST f            -> [fnBody f]
             E_SeqAST        a b  -> unbuildSeqs e
             E_SubscriptAST  a b  -> [a, b]
@@ -127,7 +127,7 @@ data IfAST = IfAST { ifASTcond :: ExprAST
 
 data ExprAST =
           E_BoolAST       ESourceRange Bool
-        | E_IntAST        LiteralInt
+        | E_IntAST        ESourceRange String
         | E_TupleAST      { tupleParts :: [ExprAST]
                           , tupleIsEnv :: Bool }
         | E_FnAST         FnAST

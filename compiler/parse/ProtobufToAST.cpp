@@ -123,20 +123,8 @@ ExprAST* parseIf(const pb::Expr& e, const foster::SourceRange& range) {
 }
 
 ExprAST* parseInt(const pb::Expr& e, const foster::SourceRange& range) {
-  if (!e.has_pb_int()) return NULL;
-
-  const pb::PBInt& i = e.pb_int();
-  string text = i.originaltext();
-  string clean = pystring::replace(text, "`", "");
-  vector<string> parts;
-  pystring::split(clean, parts, "_");
-  int base = 10;
-  if (parts.size() == 2) {
-    clean = parts[0];
-    std::stringstream ss; ss << parts[1]; ss >> base;
-  }
-
-  return foster::parseInt(clean, text, base, range);
+  if (!e.has_int_text()) return NULL;
+  return new IntAST(e.int_text(), range);
 }
 
 ExprAST* parseModule(const pb::Expr& e, const foster::SourceRange& range) {

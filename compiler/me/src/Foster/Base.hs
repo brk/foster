@@ -5,8 +5,11 @@ import Control.Monad
 
 import Data.Sequence as Seq
 import Data.Maybe(fromJust)
-import Data.List(replicate, intersperse)
+import Data.List as List
 import qualified Data.Text as T
+
+import Data.Char(toLower)
+import Data.Bits(shiftR)
 
 data OutputData = OutputData { outputDataSGRs :: [SGR]
                              , outputDataString :: String }
@@ -38,13 +41,40 @@ runOutput outs = do
 
 type Uniq = Int
 
-data Literal = LitInt LiteralInt
-
-data LiteralInt = LiteralInt { litIntMinBits :: Integer
+data LiteralInt = LiteralInt { litIntValue   :: Integer
+                             , litIntMinBits :: Int
                              , litIntText    :: String
-                             , litIntClean   :: String
                              , litIntBase    :: Int
                              } deriving (Show)
+
+getLiteralInt :: Int -> LiteralInt
+getLiteralInt i = precheckedLiteralInt (show i) 32 (show i) 10
+
+-- Precondition: the provided string must be parseable in the given radix
+precheckedLiteralInt :: String -> Int -> String -> Int -> LiteralInt
+precheckedLiteralInt originalText maxBits clean base =
+    let integerValue = parseRadixRev (fromIntegral base) (List.reverse clean) in
+    let activeBits = List.length (bitStringOf integerValue) in
+    LiteralInt integerValue activeBits originalText base
+
+indexOf x = (toLower x) `List.elemIndex` "0123456789abcdef"
+
+onlyValidDigitsIn :: String -> Int -> Bool
+onlyValidDigitsIn str lim =
+    let validIndex mi = Just True == fmap (< lim) mi in
+    Prelude.all validIndex (map indexOf str)
+
+-- Precondition: string contains only valid hex digits.
+parseRadixRev :: Integer -> String -> Integer
+parseRadixRev r ""     = 0
+parseRadixRev r (c:cs) = (r * parseRadixRev r cs) + (fromIntegral $ fromJust (indexOf c))
+
+lowBitOf n = if even n then "1" else "0"
+
+bitStringOf n | n <= 1     = show n
+              | otherwise = bitStringOf (shiftR n 1) ++ lowBitOf n
+
+
 
 data Ident = Ident { identPrefix :: String
                    , identNum    :: Uniq }
@@ -100,7 +130,7 @@ highlightLineRange bcol ecol =
     let len = ecol - bcol in
     if len <= 0
         then ""
-        else (Data.List.replicate bcol ' ') ++ (Data.List.replicate len '~')
+        else (List.replicate bcol ' ') ++ (List.replicate len '~')
 
 data SourceLines = SourceLines (Seq T.Text)
 

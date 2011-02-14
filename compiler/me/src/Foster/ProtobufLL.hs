@@ -147,7 +147,9 @@ dumpExpr x@(LLSubscript t a b ) =
                     , PbExpr.type' = Just $ dumpType (typeLL x)  }
 
 dumpExpr x@(LLInt ty int) =
-    P'.defaultValue { PbExpr.pb_int = Just $ dumpInt (litIntText int)
+    P'.defaultValue { PbExpr.pb_int = Just $ dumpInt (show $ litIntValue int)
+                                                     (litIntMinBits int)
+                                                     (litIntBase    int)
                     , PbExpr.tag   = LL_INT
                     , PbExpr.type' = Just $ dumpType (typeLL x)  }
 
@@ -207,7 +209,10 @@ dumpCall t base args =
 dumpIf x@(LLIf t a b c) =
         PBIf { test_expr = dumpExpr a, then_expr = dumpExpr b, else_expr = dumpExpr c }
 
-dumpInt origText = PBInt.PBInt { originalText = u8fromString origText }
+dumpInt cleanText activeBits base =
+        PBInt.PBInt { clean = u8fromString cleanText
+                    , bits  = intToInt32   activeBits
+                    , base  = intToInt32   base }
 
 dumpProto p@(LLPrototype t ident formals callconv) =
     Proto { Proto.name  = u8fromString (dumpIdent ident)

@@ -99,7 +99,9 @@ message PBInt {
   // The middle-end is also responsible for checking that the literal is
   // used appropriately (e.g. no passing 64-bit literal to 32-bit func).
   //
-  required string originalText =  2;
+  required string clean = 2;
+  required int32  bits  = 3;
+  required int32  base  = 4;
 }
 
 message Proto {

@@ -17,7 +17,6 @@ import Data.Traversable(fmapDefault)
 import Data.Sequence(length, index, Seq, empty, fromList)
 import Data.Maybe(fromMaybe, fromJust, isJust)
 import Data.Foldable(toList)
-import Data.Char(toLower)
 
 import Control.Exception(assert)
 import qualified Data.Text as T
@@ -118,42 +117,8 @@ parseIf pbexpr lines =
 
 parseInt :: PbExpr.Expr -> SourceLines -> ExprAST
 parseInt pbexpr lines =
-        if (isSet pbexpr PbExpr.pb_int)
-                then (parseFromPBInt (getVal pbexpr PbExpr.pb_int) lines)
-                else error "must have int to parse from int!"
-
-splitString :: String -> String -> [String]
-splitString needle haystack =
-        let textParts = T.splitOn (T.pack needle) (T.pack haystack) in
-        map T.unpack textParts
-
-onlyHexDigitsIn :: String -> Bool
-onlyHexDigitsIn str =
-        Prelude.all (\x -> (toLower x) `Prelude.elem` "0123456789abcdef") str
-
-parseFromPBInt :: PBInt -> SourceLines -> ExprAST
-parseFromPBInt pbint lines =
-        let text = uToString $ PBInt.originalText pbint in
-        let (clean, base) = extractCleanBase text in
-        assert (base `Prelude.elem` [2, 8, 10, 16]) $
-        assert (onlyHexDigitsIn clean) $
-        mkIntASTFromClean clean text base lines
-
--- Given "raw" integer text like "123`456_10",
--- return ("123456", 10)
-extractCleanBase :: String -> (String, Int)
-extractCleanBase text =
-        let noticks = Prelude.filter (/= '`') text in
-        case splitString "_" noticks of
-            [first, base] -> (first, read base)
-            otherwise     -> (noticks, 10)
-
-mkIntASTFromClean :: String -> String -> Int -> SourceLines -> ExprAST
-mkIntASTFromClean clean text base lines =
-        let bitsPerDigit = ceiling $ (log $ fromIntegral base) / (log 2) in
-        let conservativeBitsNeeded = bitsPerDigit * (Prelude.length clean) + 2 in
-        let activeBits = toInteger conservativeBitsNeeded in
-        E_IntAST (LiteralInt activeBits text clean base)
+        let range = parseRange pbexpr lines in
+        E_IntAST range (uToString $ getVal pbexpr PbExpr.int_text)
 
 parseSeq pbexpr lines =
     let exprs = map (\x -> parseExpr x lines) $ toList (PbExpr.parts pbexpr) in
@@ -365,7 +330,7 @@ dumpExpr (AnnCompiles CS_WouldNotCompile _) = dumpExpr (AnnBool False)
 dumpExpr (AnnCompiles CS_NotChecked _) = error "dumpExpr (AnnCompiles CS_NotChecked)"
 
 dumpExpr x@(AnnInt ty int) =
-    P'.defaultValue { PbExpr.pb_int = Just $ dumpInt (litIntText int)
+    P'.defaultValue { PbExpr.int_text = Just $ u8fromString $ litIntText int
                     , PbExpr.tag   = PB_INT
                     , PbExpr.type' = Just $ dumpType (typeAST x)  }
 

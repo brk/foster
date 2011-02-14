@@ -20,7 +20,6 @@
 #include "pystring/pystring.h"
 
 #include "llvm/Support/MemoryBuffer.h"
-#include "llvm/ADT/APInt.h"
 #include "llvm/System/Path.h"
 
 #include <iostream>
@@ -62,66 +61,6 @@ const char* getDefaultCallingConvParse() {
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
 
-namespace foster {
-// "Clean" refers to integer literal text consisting
-// only of (possibly hex) digits, no trailer or infix ticks.
-APInt* parseAPIntFromClean(const std::string& clean, int base,
-                           const SourceRange& sourceRange) {
-  // Make sure the base is a reasonable one.
-  if (!(base == 2  || base == 8
-     || base == 10 || base == 16)) {
-    EDiag() << "int base must be 2, 8, 10, or 16, but was "
-            << base << show(sourceRange);
-    return NULL;
-  }
-
-  // Now, clean is a string of only (possibly hex) digits.
-
-  // Make sure the literal only contains
-  // valid digits for the chosen base.
-  const char* digits = "0123456789abcdef";
-  for (size_t i = 0; i < clean.size(); ++i) {
-    char c = tolower(clean[i]);
-    ptrdiff_t pos = std::find(digits, digits + 16, c) - digits;
-    if (pos >= base) {
-      EDiag() << "int literal contained invalid digit '" << (std::string(1, clean[i]))
-                  << "' @ " << pos << "/" << base << ", " << i << " : " << clean
-              << show(sourceRange);
-      return NULL;
-    }
-  }
-
-  // Start with a conservative estimate of how
-  // many bits we need to represent this integer
-  int bitsPerDigit = int(ceil(log(base)/log(2)));
-  int conservativeBitsNeeded = bitsPerDigit * clean.size() + 2;
-
-  llvm::APInt* apint = new llvm::APInt(conservativeBitsNeeded, clean, base);
-
-  // This is just a temporary safety measure/sanity check.
-  unsigned activeBits = apint->getActiveBits();
-  if (activeBits > 32) {
-    EDiag() << "Integer literal requires " << activeBits
-            << " bits to represent." << show(sourceRange);
-    return NULL;
-  }
-
-  return apint;
-}
-
-
-IntAST* parseInt(const string& clean, const string& alltext, int base,
-                 const SourceRange& sourceRange) {
-  const APInt* apint = foster::parseAPIntFromClean(clean, base, sourceRange);
-  if (!apint) {
-    return NULL;
-  }
-
-  return new IntAST(apint->getActiveBits(), alltext, clean, base, sourceRange);
-}
-
-} // namespace foster
-
 IntAST* parseIntFrom(pTree t, const SourceRange& sourceRange) {
   if (textOf(t) != "INT") {
     EDiag() << "parseIntFrom() called on non-INT token " << textOf(t)
@@ -129,47 +68,22 @@ IntAST* parseIntFrom(pTree t, const SourceRange& sourceRange) {
     return NULL;
   }
 
-  int base = 10;
-  std::stringstream clean, alltext;
+  std::stringstream alltext;
 
   // Each child is either a hex clump, a backtick, or an underscore
   int nchildren = getChildCount(t);
   for (int i = 0; i < nchildren; ++i) {
     string text = textOf(child(t, i));
-    if (text == "_") {
-      if (i != nchildren - 2) {
-        EDiag() << "number can have only one underscore,"
-                << "in 2nd-to-last position!" << show(sourceRange);
-        return NULL;
-      } else {
-        string baseText = textOf(child(t, i+1));
-        alltext << "_" << baseText;
-
-        std::stringstream ss_base(baseText);
-        ss_base >> base;
-        break;
-      }
-    } else if (pystring::count(text, "_") >= 1) {
-      // An identifier like feed`face_16  is parsed as   feed ` face_16
-      // not as  feed ` face _ 16, so we have to split the base off manually.
-      std::vector<std::string> parts;
-      pystring::split(text, parts, "_");
-      if (parts.size() > 2) {
-        EDiag() << "Number can have only one underscore! " << show(sourceRange);
-        return NULL;
-      }
-      clean << parts[0];
-      std::stringstream ss_base(parts[1]); ss_base >> base;
-      alltext << text;
-    } else if (text != "`") {
-      clean << text;
-      alltext << text;
-    } else {
-      alltext << text;
+    if (text == "_" && i != nchildren - 2) {
+      EDiag() << "number can have only one underscore,"
+              << "in 2nd-to-last position!" << show(sourceRange);
+      return NULL;
     }
+
+    alltext << text;
   }
 
-  return foster::parseInt(clean.str(), alltext.str(), base, sourceRange);
+  return new IntAST(alltext.str(), sourceRange);
 }
 
 ////////////////////////////////////////////////////////////////////

@@ -8,7 +8,9 @@
 #include "base/Assert.h"
 #include "base/Diagnostics.h"
 #include "parse/FosterSymbolTable.h"
-//#include "parse/FosterAST.h"
+#include "parse/FosterTypeAST.h"
+
+#include "llvm/ADT/APInt.h"
 
 #include <vector>
 #include <string>
@@ -38,7 +40,6 @@ typedef std::vector<LLVar*> LLVars;
 std::ostream& operator<<(std::ostream& out, LLExpr& expr);
 
 //string str(LLExpr* expr);
-
 namespace foster {
   //SourceRangeHighlighter show(LLExpr* ast);
   struct CFG;
@@ -60,7 +61,6 @@ struct LLExpr {
                    foster::SourceRange sourceRange)
     : type(NULL), sourceRange(sourceRange), tag(tag) {}
   virtual ~LLExpr() {}
-  //virtual std::ostream& operator<<(std::ostream& out) const = 0;
 
   virtual llvm::Value* codegen(CodegenPass* pass) = 0;
 };
@@ -134,12 +134,35 @@ struct IntAST;
 
 struct LLInt : public LLExpr {
 private:
-  IntAST* intast;
+  std::string cleanText;
+  std::string originalText;
+  llvm::APInt* apint;
+
 public:
-  explicit LLInt(IntAST* intast)
-    : LLExpr("LLInt", foster::SourceRange::getEmptyRange()), intast(intast) {}
+  explicit LLInt(const std::string& cleanText, int activeBits, int base)
+    : LLExpr("LLInt", foster::SourceRange::getEmptyRange()) {
+    // Debug builds of LLVM don't ignore leading zeroes when considering
+    // needed bit widths.
+    int bitsLLVMneeds = (std::max)(intSizeForNBits(activeBits),
+                                   (unsigned) cleanText.size());
+    int ourSize = intSizeForNBits(bitsLLVMneeds);
+    apint = new APInt(ourSize, cleanText, base);
+    type = TypeAST::i(ourSize);
+  }
 
   virtual llvm::Value* codegen(CodegenPass* pass);
+  llvm::APInt& getAPInt() { return *apint; }
+
+  unsigned intSizeForNBits(unsigned n) const {
+  // Disabled until we get better inferred literal types
+    //if (n <= 1) return 1;
+    //if (n <= 8) return 8;
+    //if (n <= 16) return 16;
+    if (n <= 32) return 32;
+    if (n <= 64) return 64;
+    ASSERT(false) << "Support for arbitrary-precision ints not yet implemented.";
+    return 0;
+  }
 };
 
 struct LLBool : public LLExpr {

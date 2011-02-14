@@ -186,10 +186,6 @@ TEST(ProtobufToAST, sm_int_literal_plain) {
   ASSERT_TRUE(ire);
 
   ASSERT_EQ(ie->getOriginalText(), ire->getOriginalText());
-  ASSERT_EQ(ie->getBase(), ire->getBase());
-
-  ASSERT_EQ(123, ie->getAPInt().getZExtValue());
-  ASSERT_EQ(123, ire->getAPInt().getZExtValue());
 }
 
 TEST(ProtobufToAST, sm_int_literal_fancy_base2) {
@@ -205,11 +201,6 @@ TEST(ProtobufToAST, sm_int_literal_fancy_base2) {
   ASSERT_TRUE(ire);
 
   ASSERT_EQ(ie->getOriginalText(), ire->getOriginalText());
-  ASSERT_EQ(ie->getBase(), ire->getBase());
-  ASSERT_EQ(2,             ire->getBase());
-
-  ASSERT_EQ(0x35, ie->getAPInt().getZExtValue());
-  ASSERT_EQ(0x35, ire->getAPInt().getZExtValue());
 }
 
 TEST(ProtobufToAST, lg_int_literal_fancy_base16) {
@@ -224,11 +215,6 @@ TEST(ProtobufToAST, lg_int_literal_fancy_base16) {
   ASSERT_TRUE(ire);
 
   ASSERT_EQ(ie->getOriginalText(), ire->getOriginalText());
-  ASSERT_EQ(ie->getBase(), ire->getBase());
-  ASSERT_EQ(16,            ire->getBase());
-
-  ASSERT_EQ(0xFEEDFACEuLL, ie->getAPInt().getZExtValue());
-  ASSERT_EQ(0xFEEDFACEuLL, ire->getAPInt().getZExtValue());
 }
 
 // TODO: check "DEAD`FEED`FACE_16 when literals can have > 32 bits
