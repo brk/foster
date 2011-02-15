@@ -30,17 +30,6 @@ public:
   std::string getShortName() const;
 };
 
-class InputFileRegistry {
-public:
-  InputFileRegistry();
-  InputFile* getOrCreateInputFileForAbsolutePath(const llvm::sys::Path& path);
-
-private:
-  struct Impl; Impl* impl;
-};
-
-extern InputFileRegistry gInputFileRegistry;
-
 } // namespace foster
 
 #endif
