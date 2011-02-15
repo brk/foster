@@ -150,11 +150,6 @@ addConcretePrimitiveFunctionTo(Module* m, const char* op, const Type* ty) {
   if (gPrintLLVMImports) {
     llvm::outs() << "\t" << name << " :: " << str(fty) << "\n";
   }
-
-  ParsingContext::insertExpr(name, new VariableAST(name,
-                                      TypeAST::reconstruct(fty),
-                                      SourceRange::getEmptyRange()));
-
   return f;
 }
 
@@ -173,10 +168,6 @@ addLLVMIntrinsic(Module* m, llvm::Intrinsic::ID id) {
   fBuilder.SetInsertPoint(bb);
   llvm::Value* rv = fBuilder.CreateCall(llvm::Intrinsic::getDeclaration(m, id));
   fBuilder.CreateRet(rv);
-
-  ParsingContext::insertExpr(funcName, new VariableAST(funcName,
-                                      TypeAST::reconstruct(ft),
-                                      SourceRange::getEmptyRange()));
 }
 
 void
@@ -196,17 +187,11 @@ addConcretePrimitiveFunctionsTo(Module* m) {
   addLLVMIntrinsic(m, llvm::Intrinsic::readcyclecounter);
 }
 
-// Add module m's C-linkage functions in the global scopes,
-// and also add prototypes to the linkee module.
-foster::SymbolTable<ExprAST>::LexicalScope*
+// Add prototypes for module m's C-linkage functions to the linkee module.
+void
 putModuleMembersInInternalScope(const std::string& scopeName,
                                      Module* m, Module* linkee) {
-  if (!m) return NULL;
-
-  foster::SymbolTable<ExprAST>::LexicalScope* scope = NULL;
-  scope = ParsingContext::newScope(string("$") + scopeName);
-  ParsingContext::popExistingScope(scope);
-
+  if (!m) return;
 
   // Collect type names from the module.
   const TypeSymbolTable & typeSymTab = m->getTypeSymbolTable();
@@ -285,10 +270,6 @@ putModuleMembersInInternalScope(const std::string& scopeName,
       if (gPrintLLVMImports) {
         outs() << "<internal>\t" << hasDef << "\t" << name << " \n";
       }
-
-      scope->insert(name, new VariableAST(name,
-                                          TypeAST::reconstruct(fnty),
-                                          SourceRange::getEmptyRange()));
     } else {
       ASSERT(false) << "how could a function not have function type?!?";
     }
@@ -303,8 +284,6 @@ putModuleMembersInInternalScope(const std::string& scopeName,
     }
     m->getFunctionList().erase(m->getFunction(*it));
   }
-
-  return scope;
 }
 
 // Add module m's C-linkage functions in the global scopes,
@@ -342,10 +321,6 @@ void putModuleMembersInScope(Module* m, Module* linkee) {
           outs() << "inserting variable in global scope: " << name << " : "
                  << str(fnty) << "\n";
         }
-
-        ParsingContext::insertExpr(name, new VariableAST(name,
-                                            TypeAST::reconstruct(fnty),
-                                            SourceRange::getEmptyRange()));
       } else {
         ASSERT(false) << "how could a function not have function type?!?";
       }

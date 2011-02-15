@@ -149,27 +149,15 @@ PrototypeAST* getFnProto(string name,
   foster::SourceRange sourceRange = rangeFrom(formalsTree, sourceEndTree);
   PrototypeAST* proto = new PrototypeAST(retTy, name, in, sourceRange);
 
-  ParsingContext::getRootScope()->insert(name, proto);
+  //ParsingContext::getRootScope()->insert(name, proto);
 
   return proto;
 }
 
 FnAST* buildFn(PrototypeAST* proto, pTree bodyTree) {
-  ExprAST* body = NULL;
-  ExprScopeType* scope = ParsingContext::pushScope(proto->getName());
-    // Ensure all the function parameters are available in the function body.
-    for (unsigned i = 0; i < proto->inArgs.size(); ++i) {
-      if (!scope->lookup(proto->inArgs[i]->name)) {
-        // We got a function definition with multiple identical arguments;
-        // we'll just ignore the later ones and let typechecking clean up.
-        scope->insert(proto->inArgs[i]->name, proto->inArgs[i]);
-      }
-    }
-    body = ExprAST_from(bodyTree);
-  ParsingContext::popScope();
-
+  ExprAST* body = ExprAST_from(bodyTree);
   // TODO make source range more accurate
-  return new FnAST(proto, body, scope, rangeOf(bodyTree));
+  return new FnAST(proto, body, rangeOf(bodyTree));
 }
 
 string parseFnName(string name, pTree tree) {
@@ -272,7 +260,6 @@ ModuleAST* parseTopLevel(pTree tree, std::string moduleName) {
 
   return new ModuleAST(parsedExprs,
                        moduleName,
-                       ParsingContext::getRootScope(),
                        rangeOf(tree));
 }
 

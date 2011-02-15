@@ -43,29 +43,11 @@ public:
 
   /////////////////////
 
-  static ExprScopeType*
-  newScope(const std::string& str);
-
-  static void
-  popExistingScope(ExprScopeType*);
-
-  static ExprScopeType*
-  pushScope(const std::string& str);
-
-  static ExprScopeType*
-  getRootScope();
-
-  static void
-  popScope();
-
   static TypeAST*
   lookupType(const std::string& str);
 
   static void
   insertType(const std::string& str, TypeAST* ast);
-
-  static void
-  insertExpr(const std::string& str, ExprAST* ast);
 
   /////////////////////
 

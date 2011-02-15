@@ -120,7 +120,7 @@ void DumpToProtobufPass::visit(FnAST* ast) {
 
 void DumpToProtobufPass::visit(ModuleAST* ast)              {
   processExprAST(current, ast, pb::Expr::MODULE);
-  current->set_name(ast->scope->getName());
+  current->set_name(ast->name);
   dumpChildren(this, ast);
 }
 

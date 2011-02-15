@@ -7,7 +7,6 @@
 
 #include "base/Assert.h"
 #include "base/Diagnostics.h"
-#include "parse/FosterSymbolTable.h"
 
 #include <vector>
 #include <string>
@@ -210,7 +209,6 @@ public:
 // in the env, while still allowing codegen to insert the appropriate bitcasts.
  struct FnAST : public ExprAST {
    PrototypeAST* proto;
-   ExprScopeType* scope;
 
    // For closures; requires calcualation of free variables.
    // Top-level functions (which are, by definition, not closures)
@@ -228,10 +226,9 @@ public:
    }
 
    explicit FnAST(PrototypeAST* proto, ExprAST* body,
-                  ExprScopeType* ascope,
                   foster::SourceRange sourceRange)
       : ExprAST("FnAST", sourceRange),
-        proto(proto), scope(ascope),
+        proto(proto),
         environmentParts(NULL) {
      parts.push_back(body);
    }
@@ -246,7 +243,7 @@ public:
 };
 
 struct ModuleAST : public ExprAST {
-  ExprScopeType* scope;
+  std::string name;
   std::vector<FnAST*> fn_parts;
   typedef std::vector<FnAST*>::iterator FnAST_iterator;
   FnAST_iterator fn_begin() { return fn_parts.begin();}
@@ -254,10 +251,8 @@ struct ModuleAST : public ExprAST {
 
   explicit ModuleAST(const std::vector<ExprAST*>& _parts,
                      const std::string& name,
-                     ExprScopeType* parentScope,
                      foster::SourceRange sourceRange)
-    : ExprAST("ModuleAST", sourceRange)
-    , scope(parentScope->newNestedScope(name)) {
+    : ExprAST("ModuleAST", sourceRange), name(name) {
 
       for (int i = 0; i < _parts.size(); ++i) {
         if (FnAST* f = dynamic_cast<FnAST*>(_parts[i])) {

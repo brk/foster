@@ -15,7 +15,6 @@
 using std::string;
 
 struct TypeAST;
-struct ExprAST;
 
 namespace llvm {
   class Value;
@@ -175,8 +174,6 @@ public:
 // }}}
 
 } // namespace foster
-
-typedef foster::SymbolTable<ExprAST>::LexicalScope ExprScopeType;
 
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////

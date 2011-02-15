@@ -106,50 +106,6 @@ ParsingContext::popCurrentContext() {
 
 /////////////////////
 
-ExprScopeType*
-ParsingContext::newScope(const std::string& str) {
-  ASSERT(!gParsingContexts.empty());
-  ParsingContext* cc = gParsingContexts.top();
-  return cc->impl->exprScope.newScope(str);
-}
-
-void
-ParsingContext::popExistingScope(ExprScopeType* s) {
-  ASSERT(!gParsingContexts.empty());
-  ParsingContext* cc = gParsingContexts.top();
-  cc->impl->exprScope.popExistingScope(s);
-}
-
-ExprScopeType*
-ParsingContext::pushScope(const std::string& str) {
-  ASSERT(!gParsingContexts.empty());
-  ParsingContext* cc = gParsingContexts.top();
-  return cc->impl->exprScope.pushScope(str);
-}
-
-ExprScopeType*
-ParsingContext::getRootScope() {
-  ASSERT(!gParsingContexts.empty());
-  ParsingContext* cc = gParsingContexts.top();
-  return cc->impl->exprScope.getRootScope();
-}
-
-/*
-ExprScopeType* // static
-ParsingContext::currentScope() {
-  ASSERT(!gParsingContexts.empty());
-  ParsingContext* cc = gParsingContexts.top();
-  return cc->impl->exprScope._private_getCurrentScope();
-}
-*/
-
-void // static
-ParsingContext::popScope() {
-  ASSERT(!gParsingContexts.empty());
-  ParsingContext* cc = gParsingContexts.top();
-  cc->impl->exprScope.popScope();
-}
-
 TypeAST* // static
 ParsingContext::lookupType(const std::string& str) {
   ASSERT(!gParsingContexts.empty());
@@ -162,24 +118,6 @@ ParsingContext::insertType(const std::string& str, TypeAST* ast) {
   ASSERT(!gParsingContexts.empty());
   ParsingContext* cc = gParsingContexts.top();
   cc->impl->typeScope.insert(str, ast);
-}
-
-void // static
-ParsingContext::insertExpr(const std::string& name, ExprAST* ast) {
-  ASSERT(!gParsingContexts.empty());
-  ParsingContext::Impl* impl = gParsingContexts.top()->impl;
-  if (! impl->exprScope._private_getCurrentScope()->thisLevelContains(name)) {
-    impl->exprScope.insert(name, ast);
-  } else {
-    ExprAST* existing = impl->exprScope.lookup(name);
-    if (existing == ast) {
-      EDiag() << "topScopeInsert(ExprAST " << name << ") was redundant!";
-    } else {
-      EDiag() << "topScopeInsert(ExprAST " << name << ") had unexpected collision"
-        << "\n\told: " << str(existing)
-        << "\n\tnew: " << str(     ast);
-    }
-  }
 }
 
 /////////////////////
