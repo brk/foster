@@ -23,7 +23,7 @@ namespace llvm {
   namespace sys { class Path; }
 }
 
-#define FOSTER_VERSION_STR "0.0.5"
+#define FOSTER_VERSION_STR "0.0.6"
 
 std::ostream& operator<<(std::ostream& out, const llvm::Type& ty);
 
@@ -70,8 +70,6 @@ bool isPointerToCompatibleFnTy(const llvm::Type* first, const llvm::FunctionType
 
 bool voidCompatibleReturnTypes(const llvm::FunctionType* expected,
                                const llvm::FunctionType* actual);
-
-bool isVoid(const llvm::Type* ty);
 
 llvm::ConstantInt* getConstantInt64For(int64_t val);
 llvm::ConstantInt* getConstantInt32For(int32_t val);

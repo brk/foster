@@ -375,7 +375,7 @@ llvm::Value* LLSeq::codegen(CodegenPass* pass) {
     // Find last non-void value
     for (size_t n = values.size() - 1; n >= 0; --n) {
       value = values[n];
-      if (value && !isVoid(value->getType())) {
+      if (value && !value->getType()->isVoidTy()) {
         break;
       }
     }
@@ -631,7 +631,7 @@ llvm::Value* LLProc::codegen(CodegenPass* pass) {
 
   if (returningVoid) {
     builder.CreateRetVoid();
-  } else if (isVoid(rv->getType())) {
+  } else if (rv->getType()->isVoidTy()) {
     EDiag() << "unable to return non-void value from "
             << getName() << " given only void";
   } else {
@@ -853,7 +853,7 @@ void doLowLevelWrapperFnCoercions(const llvm::Type* expectedType,
           tryExtractCallableType(TypeAST::reconstruct(
               llvm::dyn_cast<const llvm::DerivedType>(expectedType)))) {
       if (isVoidOrUnit(expectedFnTy->getReturnType())
-                        && !isVoid(llvmFnTy)) {
+                        && !llvmFnTy->isVoidTy()) {
         ASSERT(false) << "No support at the moment for "
             << "auto-generating void-returning wrappers.";
         //arg = getVoidReturningVersionOf(arg, fnty);
@@ -1049,7 +1049,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
             << " args but expected " << FT->getNumParams();
 
   llvm::CallInst* callInst = NULL;
-  if (isVoid(FT->getReturnType())) {
+  if (FT->getReturnType()->isVoidTy()) {
     callInst = builder.CreateCall(FV, valArgs.begin(), valArgs.end());
   } else {
     callInst = builder.CreateCall(FV, valArgs.begin(), valArgs.end(), "calltmp");

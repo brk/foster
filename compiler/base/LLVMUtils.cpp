@@ -241,13 +241,9 @@ bool isPointerToPointerToType(const llvm::Type* p, const llvm::Type* t) {
   return p->isPointerTy() && isPointerToType(p->getContainedType(0), t);
 }
 
-bool isVoid(const llvm::Type* ty) {
-  return ty == ty->getVoidTy(llvm::getGlobalContext());
-}
-
 bool voidCompatibleReturnTypes(const llvm::FunctionType* expected,
                                const llvm::FunctionType* actual) {
-  return isVoid(expected->getReturnType())
+  return expected->getReturnType()->isVoidTy()
       || expected->getReturnType() == actual->getReturnType();
 }
 
