@@ -97,7 +97,7 @@ DDiag::~DDiag() {}
     }
 
     if (sourceFile) {
-      out << sourceFile->getShortSuffixPath();
+      out << sourceFile->getShortName();
     } else if (sourceBuffer) {
       out << "{-memory-}";
     } else {

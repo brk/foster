@@ -172,7 +172,7 @@ bool handleNoViableAlt(pANTLR3_EXCEPTION ex,
                         const string& tokenText,
                         const SourceRange& r) {
   const char* approxPosition = describeApproximateStartPosition(r);
-  errs() << r.source->getShortSuffixPath() << ":"
+  errs() << r.source->getShortName() << ":"
          << "error: got stuck parsing near the " << approxPosition
          << " of line " << (r.begin.line + 1) << ":\n\n"
          << r << "\n";
@@ -185,7 +185,7 @@ bool handleMismatchedToken(pANTLR3_EXCEPTION ex,
                         const string& tokenText,
                         const SourceRange& r) {
   const char* approxPosition = describeApproximateStartPosition(r);
-  errs() << r.source->getShortSuffixPath() << ":"
+  errs() << r.source->getShortName() << ":"
          << "error: unexpected token near the " << approxPosition
          << " of line " << (r.begin.line + 1) << ":\n\n"
          << r << "\n";
@@ -198,7 +198,7 @@ bool handleGenericError(pANTLR3_EXCEPTION ex,
                         const string& tokenText,
                         const SourceRange& r) {
   const char* approxPosition = describeApproximateStartPosition(r);
-  errs() << r.source->getShortSuffixPath() << ":"
+  errs() << r.source->getShortName() << ":"
          << "generic error: " << ((const char*) ex->message)
          << " near the " << approxPosition
          << " of line " << (r.begin.line + 1) << ":\n\n"
@@ -212,7 +212,7 @@ bool handleUnwantedToken(pANTLR3_EXCEPTION ex,
                         const string& tokenText,
                         const SourceRange& r) {
   const char* approxPosition = describeApproximateStartPosition(r);
-  errs() << r.source->getShortSuffixPath() << ":"
+  errs() << r.source->getShortName() << ":"
          << "error: " << ((const char*) ex->message)
          << " " << tokenText
          << " near the " << approxPosition

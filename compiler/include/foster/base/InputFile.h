@@ -27,7 +27,7 @@ public:
 
   InputTextBuffer* getBuffer() const { return buf; }
   const llvm::sys::Path& getPath() const { return path; }
-  std::string getShortSuffixPath() const;
+  std::string getShortName() const;
 };
 
 class InputFileRegistry {

@@ -14,16 +14,15 @@
 namespace foster {
 
 InputFile::InputFile(const llvm::sys::Path& path) : path(path) {
-  gPathManager.registerPath(path);
   buf = new InputTextBuffer(path);
 }
 
-std::string InputFile::getShortSuffixPath() const {
+std::string InputFile::getShortName() const {
   if (!this) {
     return "<unknown file>";
   }
 
-  return gPathManager.getShortestUnambiguousSuffix(path);
+  return path.str();
 }
 
 ////////////////////////////////////////////////////////////////////
