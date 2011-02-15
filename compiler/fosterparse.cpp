@@ -8,10 +8,13 @@
 #include "base/InputFile.h"
 #include "base/LLVMUtils.h"
 #include "base/InputTextBuffer.h"
-#include "parse/ProtobufUtils.h"
+#include "parse/FosterAST.h"
 #include "parse/ANTLRtoFosterAST.h"
 #include "parse/ParsingContext.h"
 
+#include "passes/DumpToProtobuf.h"
+
+#include <fstream>
 #include <string>
 
 // Usage:
@@ -22,12 +25,49 @@
 
 using namespace llvm;
 using std::string;
+using foster::EDiag;
 
 static cl::opt<string>
 optInputPath(cl::Positional, cl::desc("<input file>"));
 
 static cl::opt<string>
 optOutputPath(cl::Positional, cl::desc("<output file>"));
+
+void dumpModuleToProtobuf(ModuleAST* mod, const string& filename) {
+  ASSERT(mod != NULL);
+
+  foster::fepb::SourceModule sm;
+  const foster::InputTextBuffer* buf = mod->sourceRange.buf;
+  if (buf) {
+    for (int i = 0; i < buf->getLineCount(); ++i) {
+      sm.add_line(buf->getLine(i));
+    }
+  }
+
+  foster::fepb::Expr* pbModuleExpr = sm.mutable_expr();
+  DumpToProtobufPass p(pbModuleExpr); mod->accept(&p);
+
+  if (!pbModuleExpr->IsInitialized()) {
+    EDiag() << "Protobuf message is not initialized!\n";
+  }
+
+  if (filename == "-") {
+    EDiag() << "warning: dumping module to file named '-', not stdout!";
+  }
+
+  std::string debug_filename = filename + ".dbg.txt";
+  std::ofstream debug_out(debug_filename.c_str(),
+                          std::ios::trunc | std::ios::binary);
+  debug_out << pbModuleExpr->DebugString();
+
+  std::ofstream out(filename.c_str(),
+                  std::ios::trunc | std::ios::binary);
+  if (sm.SerializeToOstream(&out)) {
+    // ok!
+  } else {
+    EDiag() << "serialization returned false\n";
+  }
+}
 
 int main(int argc, char** argv) {
   ///cl::SetVersionPrinter(&printVersionInfo);

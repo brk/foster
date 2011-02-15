@@ -10,7 +10,6 @@
 
 #include "parse/FosterAST.h"
 #include "parse/ProtobufToAST.h"
-#include "parse/ProtobufUtils.h"
 
 #include "passes/DumpToProtobuf.h"
 
@@ -35,26 +34,6 @@ newInputBufferFromSourceModule(const foster::fepb::SourceModule& sm) {
       << "actual   line count: " << buf->getLineCount();
 
   return buf;
-}
-
-ModuleAST* readSourceModuleFromProtobuf(const string& pathstr,
-                                        foster::fepb::SourceModule& out_sm) {
-  std::fstream input(pathstr.c_str(), std::ios::in | std::ios::binary);
-  if (!out_sm.ParseFromIstream(&input)) {
-    return NULL;
-  }
-
-  const foster::InputTextBuffer* inputBuffer = gInputTextBuffer;
-  gInputTextBuffer = newInputBufferFromSourceModule(out_sm);
-  ExprAST* expr = foster::ExprAST_from_pb(out_sm.mutable_expr());
-  gInputTextBuffer = inputBuffer;
-
-  if (!expr) {
-    EDiag() << "unable to parse expression from source module protobuf";
-    return NULL;
-  }
-
-  return dynamic_cast<ModuleAST*>(expr);
 }
 
 void dumpModuleToProtobuf(ModuleAST* mod, const string& filename) {

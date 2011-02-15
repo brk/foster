@@ -12,7 +12,6 @@
 #include "parse/ParsingContext.h"
 #include "parse/DumpStructure.h"
 
-#include "passes/PassUtils.h"
 #include "passes/CodegenPass-impl.h"
 
 #include "llvm/Attributes.h"

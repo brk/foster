@@ -349,8 +349,6 @@ add_dependencies(fosterc_llvm fosterc_base)
 
 
 add_library(fosterc_passes STATIC
-  compiler/passes/PassUtils.cpp
-  # compiler/passes/Codegen/CodegenPass.cpp
   compiler/passes/Codegen/CodegenUtils.cpp
   compiler/passes/Codegen/Codegen-coro.cpp
   compiler/passes/Codegen/Codegen-typemaps.cpp
@@ -413,16 +411,6 @@ add_dependencies(fosteroptc
 add_dependencies(libfoster_bc chromium_base)
 add_dependencies(libfoster_bc cpuid)
 add_dependencies(libfoster_bc coro)
-
-add_executable(pbfosterview
-  tools/pbfosterview/pbfosterview.cpp
-  compiler/passes/PrettyPrintPass.cpp
-  ${GENERATED}/FosterAST.pb.cc
-  compiler/passes/DumpToProtobuf.cpp
-)
-target_link_libraries(pbfosterview
-  fosterc_passes fosterc_parse fosterc_base
-  antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
 
 #####################################################################
 

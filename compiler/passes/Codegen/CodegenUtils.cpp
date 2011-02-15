@@ -83,8 +83,8 @@ Value* getElementFromComposite(Value* compositeValue, Value* idxValue) {
     return builder.CreateLoad(gep, "subgep_ld");
   } else if (llvm::isa<llvm::StructType>(compositeType)
           && llvm::isa<llvm::Constant>(idxValue)) {
-    // Struct values may be indexed only by constant expressions
-    ASSERT(llvm::isa<llvm::ConstantInt>(idxValue));
+    ASSERT(llvm::isa<llvm::ConstantInt>(idxValue))
+        << "struct values may be indexed only by constant expressions";
     unsigned uidx = unsigned(getSaturating(dyn_cast<ConstantInt>(idxValue)));
     return builder.CreateExtractValue(compositeValue, uidx, "subexv");
   } else if (llvm::isa<llvm::VectorType>(compositeType)) {
@@ -95,8 +95,8 @@ Value* getElementFromComposite(Value* compositeValue, Value* idxValue) {
               << __FILE__ << ":" << __LINE__ << "\n";
     }
   } else {
-    llvm::errs() << "Cannot index into value type " << *compositeType
-                 << " with non-constant index " << *idxValue << "\n";
+    EDiag() << "Cannot index into value type " << str(compositeType)
+            << " with non-constant index " << str(idxValue);
   }
   return NULL;
 }
@@ -229,12 +229,10 @@ CodegenPass::emitMalloc(const llvm::Type* ty) {
                        mod);
 }
 
-
 llvm::Value*
 CodegenPass::allocateMPInt() {
   llvm::Value* mp_int_alloc = mod->getFunction("mp_int_alloc");
   ASSERT(mp_int_alloc);
-  llvm::Value* mpint = builder.CreateCall(mp_int_alloc);
-  return mpint;
+  return builder.CreateCall(mp_int_alloc);
 }
 
