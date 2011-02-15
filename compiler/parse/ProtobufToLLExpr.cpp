@@ -5,8 +5,6 @@
 #include "base/Assert.h"
 #include "base/Diagnostics.h"
 #include "base/SourceRange.h"
-#include "base/PathManager.h"
-#include "base/InputFile.h"
 
 #include "parse/ANTLRtoFosterAST.h"
 #include "parse/ParsingContext.h"
@@ -54,24 +52,7 @@ void parseRangeFrom(foster::SourceRange& r, const PB& p) {
   pb::SourceRange sr = p.range();
   initSourceLocation(const_cast<foster::SourceLocation&>(r.begin), sr.mutable_begin());
   initSourceLocation(const_cast<foster::SourceLocation&>(r.end  ), sr.mutable_end());
-
   r.source = NULL;
-
-  if (sr.has_file_path()) {
-    const std::string& pathstr = sr.file_path();
-    llvm::sys::Path path = llvm::sys::Path(pathstr);
-
-    if (path.isValid()) {
-      makePathAbsolute(path);
-      if (path.canRead()) {
-        r.source = foster::gInputFileRegistry
-                              .getOrCreateInputFileForAbsolutePath(path);
-      }
-    }
-  } else {
-    // No explicit file path -- use an implicit path?
-    // TODO
-  }
 }
 
 namespace foster {
