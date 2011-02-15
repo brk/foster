@@ -240,9 +240,14 @@ void compileToNativeAssembly(Module* mod, const string& filename) {
   llvm::formatted_raw_ostream out(raw_out,
       llvm::formatted_raw_ostream::PRESERVE_STREAM);
 
+  CodeGenOpt::Level
+        asmOptLevel = optOptimizeZero
+                        ? CodeGenOpt::Less // None, Default
+                        : CodeGenOpt::Aggressive;
+
   if (tm->addPassesToEmitFile(passes, out,
       TargetMachine::CGFT_AssemblyFile,
-      CodeGenOpt::Aggressive,
+      asmOptLevel,
       disableVerify)) {
     llvm::errs() << "Unable to emit assembly file! " << "\n";
     exit(1);

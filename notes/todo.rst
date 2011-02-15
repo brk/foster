@@ -1,6 +1,6 @@
 TODO
 ----
-
+* CodeGenOpt::None seems to trigger a closure-related bug in either r113708 or us.
 * Arrays
   * Type constructors
   * Card marking?
