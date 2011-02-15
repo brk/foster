@@ -323,8 +323,6 @@ add_library(fosterc_parse STATIC
   compiler/parse/ANTLRtoFosterErrorHandling.cpp
   compiler/parse/OperatorPrecedence.cpp
   compiler/parse/DumpStructure.cpp
-  compiler/parse/ProtobufToAST.cpp
-  compiler/parse/ProtobufUtils.cpp
   compiler/parse/FosterUtils.cpp
   ${GENERATED}/FosterAST.pb.cc
   ${GENERATED}/fosterParser.c
@@ -430,7 +428,6 @@ target_link_libraries(unittest_fosterc_base
 
 add_executable(unittest_fosterc_parse
   ${PROJECT_SOURCE_DIR}/compiler/parse/ANTLRtoFosterAST_unittest.cpp
-  ${PROJECT_SOURCE_DIR}/compiler/parse/ProtobufToAST_unittest.cpp
   ${PROJECT_SOURCE_DIR}/compiler/base/PughSinofskyPrettyPrinter_unittest.cpp
   ${GENERATED}/FosterAST.pb.cc
 )
