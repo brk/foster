@@ -201,8 +201,6 @@ GlobalVariable* constructTypeMap(const llvm::Type* ty,
                                  const OffsetSet& pointerOffsets,
                                  llvm::Module* mod) {
   int numPointers = pointerOffsets.size();
-
-  ArrayType* entriesty = ArrayType::get(getTypeMapEntryType(mod), numPointers);
   const StructType* typeMapTy = getTypeMapType(numPointers, mod);
 
   GlobalVariable* typeMapVar = new GlobalVariable(
@@ -219,9 +217,6 @@ GlobalVariable* constructTypeMap(const llvm::Type* ty,
   // with recursive types.
   typeMapForType[ty] = typeMapVar;
 
-  // Construct the type map itself
-  std::vector<Constant*> typeMapFields;
-
   std::string wrapped;
   raw_string_ostream ss(wrapped); ss << name << " = " << *ty;
   Constant* cname = ConstantArray::get(getGlobalContext(),
@@ -236,13 +231,6 @@ GlobalVariable* constructTypeMap(const llvm::Type* ty,
       /*Name=*/        ".typename." + name);
   typeNameVar->setAlignment(1);
 
-  bool isCoro = pystring::startswith(name, "coro_");
-
-  Constant* cnameptr = arrayVariableToPointer(typeNameVar);
-  typeMapFields.push_back(cellSizeOf(ty));
-  typeMapFields.push_back(cnameptr);
-  typeMapFields.push_back(getConstantInt32For(numPointers));
-  typeMapFields.push_back(getConstantInt8For(isCoro ? 1 : 0));
 
   std::vector<Constant*> typeMapEntries;
   for (OffsetSet::iterator si =  pointerOffsets.begin();
@@ -252,12 +240,21 @@ GlobalVariable* constructTypeMap(const llvm::Type* ty,
     typeMapEntries.push_back(getTypeMapEntryFor(subty, suboffset, mod));
   }
 
+  bool isCoro = pystring::startswith(name, "coro_");
 
-  typeMapFields.push_back(ConstantArray::get(entriesty, typeMapEntries));
+  // Construct the type map itself
+  std::vector<Constant*> typeMapFields;
+  typeMapFields.push_back(cellSizeOf(ty));
+  typeMapFields.push_back(arrayVariableToPointer(typeNameVar));
+  typeMapFields.push_back(getConstantInt32For(numPointers));
+  typeMapFields.push_back(getConstantInt8For(isCoro ? 1 : 0));
+  typeMapFields.push_back(
+         ConstantArray::get(
+                ArrayType::get(getTypeMapEntryType(mod), numPointers),
+                typeMapEntries));
 
-  Constant* typeMap = ConstantStruct::get(typeMapTy, typeMapFields);
-
-  typeMapVar->setInitializer(typeMap);
+  typeMapVar->setInitializer(
+        ConstantStruct::get(typeMapTy, typeMapFields));
   return typeMapVar;
 }
 
