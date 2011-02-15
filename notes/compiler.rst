@@ -32,16 +32,19 @@ passes to be dynamically loaded into standard LLVM tools like
 ``opt`` and ``llc``. Unfortunately, that functionality is not
 supported on Windows, and will not be in the forseeable future.
 Thus, we must in to some degree write a copy of ``opt`` and/or
-``llc`` which statically link in our plugin and passes. The main
-question is whether lowering to LLVM IR should be done in C++
-or via the Haskell ``llvm`` library. Right now, mostly for
-"historical" reasons, there is a single unified ``fosterlower``
-binary which produces LLVM IR, then immediately runs cleanup
-passes, and finally either dumps the IR or links and compiles
-the IR to assembly (and in the future: machine code, directly).
+``llc`` which statically link in our plugin and passes.
+Currently, we have a ``fosterlower`` binary, which converts
+protobufs with a close-to-LLVM representation, and outputs
+linked LLVM with initial peephole optimizations. There is a
+second ``fosteroptc`` binary which optimizes the final program
+and emits native assembly (in the future, this will likely
+output a binary directly, saving us at most 5% in compilation time).
 
-Right now the ASTs passed out of the front-end and into the
-back-end are the same, but that should probably change...
+Possible choices for generation of LLVM IR:
+
+  * Have C++ convert custom IR from protobuf to LLVM
+  * Have Haskell generate LLVM via text string pasting
+  * Have Haskell generate LLVM-isomorphic protocol buffers
 
 .. ::
     #. Resolution: compute fully-qualified versions of all names.
