@@ -115,7 +115,6 @@ void DumpToProtobufPass::visit(FnAST* ast) {
   processExprAST(current, ast, pb::Expr::FN);
   dumpChild(this, this->current->add_parts(), ast->getProto());
   dumpChild(this, this->current->add_parts(), ast->parts[0]);
-  this->current->set_is_closure(ast->isClosure());
 }
 
 void DumpToProtobufPass::visit(ModuleAST* ast)              {

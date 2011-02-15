@@ -99,10 +99,7 @@ parseFn pbexpr lines = let parts = PbExpr.parts pbexpr in
                        FnAST (parseProtoP (index parts 0)
                                           lines)
                              (part 1 parts lines)
-                             (case PbExpr.is_closure pbexpr of
-                                            Nothing    -> Nothing
-                                            Just False -> Nothing
-                                            Just True  -> Just [])
+                             (Just []) -- assume closure until proven otherwise
 
 parseFnAST pbexpr lines = E_FnAST $ parseFn pbexpr lines
 
@@ -142,9 +139,12 @@ parseTuple pbexpr lines =
 parseVar pbexpr lines = E_VarAST (fmap parseType (PbExpr.type' pbexpr))
                                  (uToString (fromJust $ PbExpr.name pbexpr))
 
+toplevel :: FnAST -> FnAST
+toplevel (FnAST a b (Just [])) = FnAST a b Nothing
+
 parseModule :: PbExpr.Expr -> SourceLines -> ModuleAST FnAST
 parseModule pbexpr lines =
-    ModuleAST [parseFn e lines| e <- toList $ PbExpr.parts pbexpr]
+    ModuleAST [toplevel (parseFn e lines) | e <- toList $ PbExpr.parts pbexpr]
               lines
 
 
@@ -297,8 +297,7 @@ dumpExprProto fnTy proto@(AnnPrototype t s es) =
 dumpExpr :: AnnExpr -> PbExpr.Expr
 
 dumpExpr x@(E_AnnFn (AnnFn fnTy p b cs)) =
-    P'.defaultValue { PbExpr.is_closure = Just (isJust cs)
-                    , PbExpr.parts = fromList $ [dumpExprProto fnTy p, dumpExpr b]
+    P'.defaultValue { PbExpr.parts = fromList $ [dumpExprProto fnTy p, dumpExpr b]
                     , PbExpr.tag   = Foster.Fepb.Expr.Tag.FN
                     , PbExpr.type' = Just $ dumpType fnTy }
 

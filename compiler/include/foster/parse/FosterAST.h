@@ -210,34 +210,16 @@ public:
  struct FnAST : public ExprAST {
    PrototypeAST* proto;
 
-   // For closures; requires calcualation of free variables.
-   // Top-level functions (which are, by definition, not closures)
-   // have this field unset either in ANTLRtoFosterAST or
-   // during lambda lifting.
-   Exprs* environmentParts;
-   bool isClosure() const { return environmentParts != NULL; }
-   void markAsClosure() {
-     ASSERT(!environmentParts);
-     environmentParts = new Exprs();
-   }
-   void removeClosureEnvironment() {
-     delete environmentParts;
-     environmentParts = NULL;
-   }
-
    explicit FnAST(PrototypeAST* proto, ExprAST* body,
                   foster::SourceRange sourceRange)
       : ExprAST("FnAST", sourceRange),
-        proto(proto),
-        environmentParts(NULL) {
+        proto(proto) {
      parts.push_back(body);
    }
 
    virtual void accept(ExprASTVisitor* visitor);
 
-  std::string& getName() { return getProto()->name; }
   std::string getName() const { return getProto()->getName(); }
-  PrototypeAST* getProto() { return proto; }
   PrototypeAST* getProto() const { return proto; }
   ExprAST*& getBody() { return parts[0]; }
 };

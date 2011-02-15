@@ -155,6 +155,22 @@ add_custom_command(
           ${PROJECT_SOURCE_DIR}/compiler/parse/FosterLL.proto
   )
 
+
+add_custom_command(
+  OUTPUT
+          ${GENERATED}/LLVM.pb.h
+          ${GENERATED}/LLVM.pb.cc
+          ${GENERATED}/LLVM_pb2.py
+  COMMAND ${PROTOBUF_PROTOC_EXECUTABLE}
+          -I ${PROJECT_SOURCE_DIR}/compiler/llvm/
+          ${PROJECT_SOURCE_DIR}/compiler/llvm/LLVM.proto
+          --cpp_out=${GENERATED}
+          --python_out=${GENERATED}
+
+  DEPENDS
+          ${PROJECT_SOURCE_DIR}/compiler/llvm/LLVM.proto
+  )
+
 #-------------------------------------------------------------------
 
 # Generate Haskell code to manipulate AST protobuf files.
@@ -402,6 +418,18 @@ target_link_libraries(fosteroptc
 
 add_dependencies(fosteroptc
     libfoster_bc coro_wrapper_bc imath_wrapper_bc hs_me)
+
+############
+
+add_executable(proto2llvm
+    compiler/llvm/ProtoToLLVM.cpp
+    ${GENERATED}/LLVM.pb.cc)
+
+target_link_libraries(proto2llvm
+    ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
+
+add_dependencies(proto2llvm
+    libfoster_bc coro_wrapper_bc imath_wrapper_bc)
 
 ############
 

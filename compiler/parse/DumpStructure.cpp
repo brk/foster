@@ -51,12 +51,6 @@ struct DumpExpr {
       dump(ast->parts[i]);
     }
 
-    if (CONST(FnAST) e = dynamic_cast<CONST(FnAST)>(ast)) {
-      if (e->isClosure()) {
-        dump(e->getProto());
-      }
-    }
-
     if (CONST(PrototypeAST) e = dynamic_cast<CONST(PrototypeAST)>(ast)) {
       for (unsigned i = 0; i < e->inArgs.size(); ++i) {
         stages.back() = statusFor(i, e->inArgs.size());
@@ -86,8 +80,7 @@ struct DumpExpr {
       return std::string(e->tag) + " " + e->getOriginalText();
     }
     if (CONST(FnAST) e = dynamic_cast<CONST(FnAST)>(ast)) {
-      return std::string(e->tag) + " " + e->getName()
-      + " clo: " + std::string(e->isClosure() ? "yes" : "no") + " :: " + str(ast->type);
+      return std::string(e->tag) + " " + e->getName() + " :: " + str(ast->type);
     }
     if (CONST(PrototypeAST) e = dynamic_cast<CONST(PrototypeAST)>(ast)) {
       return std::string(e->tag) + " " + e->getName() + " " + str(ast->type);

@@ -85,9 +85,6 @@ message Expr {
   // Tuple
   optional bool   is_closure_environment = 25;
 
-  // Fn
-  optional bool is_closure = 27;
-
   // AnnTyApp
   optional Type ty_app_arg_type = 29;
 }

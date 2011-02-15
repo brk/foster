@@ -233,7 +233,6 @@ ModuleAST* parseTopLevel(pTree tree, std::string moduleName) {
     } else {
       ExprAST* otherExpr = ExprAST_from(c);
       if (FnAST* explicitlyNamedFn = dynamic_cast<FnAST*>(otherExpr)) {
-        explicitlyNamedFn->removeClosureEnvironment();
         parsedExprs[i] = explicitlyNamedFn;
       } else {
         EDiag() << "expected function or type" << show(rangeOf(c));
@@ -253,9 +252,7 @@ ModuleAST* parseTopLevel(pTree tree, std::string moduleName) {
     pTree fntree =   (typeOf(c) == FNDEF)   ?   child(c, 1)
                        : (typeOf(c) == FN   )   ?   c
                        :                            NULL;
-    FnAST* fn = buildFn(proto, child(fntree, 3));
-    fn->removeClosureEnvironment();
-    parsedExprs[i] = fn;
+    parsedExprs[i] = buildFn(proto, child(fntree, 3));
   }
 
   return new ModuleAST(parsedExprs,
@@ -492,7 +489,6 @@ ExprAST* ExprAST_from(pTree tree) {
   }
 
   if (token == FN) {
-    // for now, this "<anon_fn" prefix is used for closure conversion later on
     FnAST* fn = parseFn("<anon_fn_", tree);
     if (!fn->getBody()) {
       foster::EDiag() << "Found bare proto (with no body)"
@@ -500,7 +496,6 @@ ExprAST* ExprAST_from(pTree tree) {
                       << foster::show(fn);
       return NULL;
     }
-    fn->markAsClosure();
     return fn;
   }
 
