@@ -111,7 +111,7 @@ LLExpr* parseIf(const pb::Expr& e, const foster::SourceRange& range) {
 LLExpr* parseInt(const pb::Expr& e, const foster::SourceRange& range) {
   if (!e.has_pb_int()) return NULL;
   const pb::PBInt& i = e.pb_int();
-  return new LLInt(i.clean(), i.bits(), i.base());
+  return new LLInt(i.clean(), i.bits());
 }
 
 LLClosure* parseClosure(const pb::Closure& clo) {

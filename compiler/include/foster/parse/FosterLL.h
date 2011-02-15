@@ -139,14 +139,14 @@ private:
   llvm::APInt* apint;
 
 public:
-  explicit LLInt(const std::string& cleanText, int activeBits, int base)
+  explicit LLInt(const std::string& cleanTextBase10, int activeBits)
     : LLExpr("LLInt", foster::SourceRange::getEmptyRange()) {
     // Debug builds of LLVM don't ignore leading zeroes when considering
     // needed bit widths.
     int bitsLLVMneeds = (std::max)(intSizeForNBits(activeBits),
                                    (unsigned) cleanText.size());
     int ourSize = intSizeForNBits(bitsLLVMneeds);
-    apint = new APInt(ourSize, cleanText, base);
+    apint = new APInt(ourSize, cleanTextBase10, 10);
     type = TypeAST::i(ourSize);
   }
 
