@@ -66,11 +66,13 @@ initializeLLVM() {
 }
 
 void
-validateInputFile(const std::string& pathstr) {
+validateFileOrDir(const std::string& pathstr,
+                  const char* inp,
+                  bool want_dir) {
   llvm::sys::PathWithStatus path(pathstr);
 
   if (path.empty()) {
-    EDiag() << "Error: need an input filename!";
+    EDiag() << "Error: need an " << inp << " filename!";
     exit(1);
   }
 
@@ -79,46 +81,32 @@ validateInputFile(const std::string& pathstr) {
          = path.getFileStatus(/*forceUpdate=*/ false, &err);
   if (!status) {
     if (err.empty()) {
-      EDiag() << "Error occurred when reading input path '"
+      EDiag() << "Error occurred when reading " << inp << " path '"
               << pathstr << "'";
     } else {
-      EDiag() << "Error validating input path: " << err;
+      EDiag() << "Error validating " << inp << " path: " << err;
     }
     exit(1);
   }
 
-  if (status->isDir) {
-    EDiag() << "Error: input must be a file, not a directory!";
+  if (status->isDir != want_dir) {
+    if (want_dir) {
+      EDiag() << "Error: " << inp << " must be a directory, not a file!";
+    } else {
+      EDiag() << "Error: " << inp << " must be a file, not a directory!";
+    }
     exit(1);
   }
 }
 
+void
+validateInputFile(const std::string& pathstr) {
+  validateFileOrDir(pathstr, "input", false);
+}
+
 void validateOutputFile(const std::string& pathstr) {
   llvm::sys::Path outputPath(pathstr);
-  llvm::sys::PathWithStatus path(outputPath.getDirname());
-
-  if (pathstr.empty()) {
-    EDiag() << "Error: need an output filename!";
-    exit(1);
-  }
-
-  std::string err;
-  const llvm::sys::FileStatus* status
-         = path.getFileStatus(/*forceUpdate=*/ false, &err);
-  if (!status) {
-    if (err.empty()) {
-      EDiag() << "Error occurred when reading output path '"
-              << pathstr << "'";
-    } else {
-      EDiag() << "Error validating output path: " << err;
-    }
-    exit(1);
-  }
-
-  if (!status->isDir) {
-    EDiag() << "Error: output directory must exist!";
-    exit(1);
-  }
+  validateFileOrDir(outputPath.getDirname(), "output", true);
 }
 
 void runFunctionPassesOverModule(llvm::FunctionPassManager& fpasses,
