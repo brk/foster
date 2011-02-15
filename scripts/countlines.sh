@@ -12,10 +12,14 @@ sumof () {
   $@ | grep SUM | awk '{print $5}'
 }
 
-insp () {
+inspbase () {
   echo -n "$1" ' '
   shift
   sumof cloc $@ --quiet --skip-uniqueness --exclude-dir=compiler/me/src/Foster/Fepb,compiler/me/src/Foster/Bepb
+}
+
+insp () {
+  inspbase "$@" --not-match-f="_unittest.cpp"
 }
 
 need () {
@@ -42,7 +46,9 @@ insp "compiler/parse " compiler/parse  compiler/include/foster/parse
 insp "compiler/base  " compiler/base   compiler/include/foster/base
 insp "compiler/llvm  " compiler/llvm
 insp "compiler/me    " compiler/me
+
 echo
 insp "runtime        " runtime
 insp "compiler       " compiler
+inspbase "unittests      " compiler --match-f="_unittest.cpp"
 insp "third_party    " third_party
