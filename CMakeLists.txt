@@ -305,7 +305,6 @@ add_library(fosterc_base STATIC
   compiler/base/LLVMUtils.cpp
   compiler/base/InputFile.cpp
   compiler/base/InputTextBuffer.cpp
-  compiler/base/PathManager.cpp
   compiler/base/SourceRange.cpp
   compiler/base/TimingsRepository.cpp
   compiler/base/FreshNameGenerator.cpp
@@ -414,7 +413,6 @@ add_dependencies(libfoster_bc coro)
 
 add_executable(unittest_fosterc_base
   ${PROJECT_SOURCE_DIR}/compiler/base/Assert_unittest.cpp
-  ${PROJECT_SOURCE_DIR}/compiler/base/PathManager_unittest.cpp
   ${PROJECT_SOURCE_DIR}/compiler/base/SourceRange_unittest.cpp
   ${PROJECT_SOURCE_DIR}/compiler/base/GenericGraph_unittest.cpp
   ${PROJECT_SOURCE_DIR}/compiler/base/FreshNameGenerator_unittest.cpp
