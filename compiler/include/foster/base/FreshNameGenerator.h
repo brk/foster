@@ -13,10 +13,9 @@ class FreshNameGenerator {
 public:
   FreshNameGenerator();
 
-  /// Generates a unique name given a template with embedded printf-style
-  /// place holder ("%d"); each template gets a separate sequence of
-  /// uniquifying numbers either embedded, if there is a place holder,
-  /// or appended, if there is no place holder in the string.
+  /// Generates a unique name given a base string;
+  /// each template gets a separate sequence of
+  /// uniquifying numbers appended to it.
   std::string fresh(std::string like);
 
 private:

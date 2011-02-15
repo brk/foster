@@ -18,22 +18,9 @@ FreshNameGenerator::FreshNameGenerator() {
 }
 
 std::string FreshNameGenerator::fresh(std::string like) {
-  std::stringstream ss;
-  size_t pos = like.find("%d", 0);
   size_t curr = impl->counts[like]++;
-  if (std::string::npos == pos) { // append uniquifier, if any
-    if (curr == 0) {
-      ss << like; // Only append integer when we see second copy of symbol
-    } else {
-      ss << like << curr;
-    }
-  } else { // If it's a template, make the substitution, even the first time
-    ss << curr; // int>string
-    like.replace(pos, 2, ss.str());
-    ss.str("");
-    ss.clear(); // reset
-    ss << like;
-  }
+  std::stringstream ss; ss << like;
+  if (curr > 0) { ss << curr; }
   return ss.str();
 }
 

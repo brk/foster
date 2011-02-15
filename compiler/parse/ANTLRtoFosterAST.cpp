@@ -172,19 +172,14 @@ FnAST* buildFn(PrototypeAST* proto, pTree bodyTree) {
   return new FnAST(proto, body, scope, rangeOf(bodyTree));
 }
 
-// defaultSymbolTemplate can include "%d" to embed a unique number; otherwise,
-// a unique int will be appended to the template.
-string parseFnName(string defaultSymbolTemplate, pTree tree) {
-  string name;
+string parseFnName(string name, pTree tree) {
   if (getChildCount(child(tree, 0)) == 1) {
     ASSERT(false) << "temporarily disabled support for fn symbol names";
     pTree treeName = child(tree, 0);
     string nameWithQuotes = textOf(child(treeName, 0));
     name = nameWithQuotes.substr(1, nameWithQuotes.size() - 2);
-  } else {
-    name = freshName(defaultSymbolTemplate);
   }
-  return name;
+  return freshName(name);
 }
 
 FnAST* parseFn(string defaultSymbolTemplate, pTree tree) {
@@ -479,7 +474,7 @@ ExprAST* ExprAST_from(pTree tree) {
       tyExprTree = child(tree, 3);
     }
 
-    PrototypeAST* proto = getFnProto(freshName("<anon_fnlet_%d>"),
+    PrototypeAST* proto = getFnProto(freshName("<anon_fnlet_"),
                                      child(tree, 0),
                                      tyExprTree);
     FnAST* fn = buildFn(proto, child(tree, 2));
@@ -511,7 +506,7 @@ ExprAST* ExprAST_from(pTree tree) {
 
   if (token == FN) {
     // for now, this "<anon_fn" prefix is used for closure conversion later on
-    FnAST* fn = parseFn("<anon_fn_%d>", tree);
+    FnAST* fn = parseFn("<anon_fn_", tree);
     if (!fn->getBody()) {
       foster::EDiag() << "Found bare proto (with no body)"
                       << " when expecting full fn literal."
@@ -570,7 +565,7 @@ TypeAST* TypeAST_from(pTree tree) {
   }
 
   if (token == FN) {
-    FnAST* fn = parseFn("<anon_fn_type_%d>", tree);
+    FnAST* fn = parseFn("<anon_fn_type_", tree);
     if (!fn) {
       EDiag() << "no fn expr when parsing fn type!" << show(sourceRange);
       return NULL;
