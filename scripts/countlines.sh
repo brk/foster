@@ -13,7 +13,7 @@ sumof () {
 }
 
 inspbase () {
-  echo -n "$1" ' '
+  /bin/echo -n "$1" ' '
   shift
   sumof cloc $@ --quiet --skip-uniqueness --exclude-dir=compiler/me/src/Foster/Fepb,compiler/me/src/Foster/Bepb
 }
@@ -36,8 +36,8 @@ need awk
 # title "runtime"
 # cloc --quiet runtime --by-file
 
-echo -n "notes            "
-cat   notes/*.rst notes/*.txt | wc -l
+/bin/echo -n "notes            "
+cat   notes/*.rst notes/*.txt | wc -l | awk '{print $1}'
 echo
 
 insp 'compiler/*.cpp ' compiler/*.cpp
