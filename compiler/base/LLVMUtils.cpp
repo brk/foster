@@ -241,34 +241,6 @@ bool isPointerToPointerToType(const llvm::Type* p, const llvm::Type* t) {
   return p->isPointerTy() && isPointerToType(p->getContainedType(0), t);
 }
 
-bool voidCompatibleReturnTypes(const llvm::FunctionType* expected,
-                               const llvm::FunctionType* actual) {
-  return expected->getReturnType()->isVoidTy()
-      || expected->getReturnType() == actual->getReturnType();
-}
-
-bool isPointerToCompatibleFnTy(const llvm::Type* ty,
-                               const llvm::FunctionType* fnty) {
- if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
-   if (const llvm::FunctionType* pfnty = llvm::dyn_cast<llvm::FunctionType>(
-                                                     pty->getElementType())) {
-     // Compatible means all parameters have same types, and return values are
-     // either same, or pfnty has void and fnty has non-void return type.
-     if (!voidCompatibleReturnTypes(pfnty, fnty)) { return false; }
-
-     if (pfnty->getNumParams() != fnty->getNumParams()) { return false; }
-     for (size_t i = 0; i < fnty->getNumParams(); ++i) {
-       if (pfnty->getParamType(i) != fnty->getParamType(i)) {
-         return false;
-       }
-     }
-
-     return true;
-   }
- }
- return false;
-}
-
 void storeNullPointerToSlot(llvm::Value* slot) {
   foster::builder.CreateStore(
     llvm::ConstantPointerNull::getNullValue(slot->getType()->getContainedType(0)),

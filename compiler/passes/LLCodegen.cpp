@@ -839,26 +839,15 @@ void doLowLevelWrapperFnCoercions(const llvm::Type* expectedType,
   // 2) A Foster function which expects a closure value.
 
   bool argExpectedFunctionPointer
-          = isPointerToCompatibleFnTy(expectedType, llvmFnTy);
-
+          = expectedType->isPointerTy()
+         && expectedType->getContainedType(0)->isFunctionTy();
   if (argExpectedFunctionPointer) {
-  // Case 1 is simple; we just change the arg type to "function pointer"
-  // instead of "function value" and LLVM takes care of the rest.
-  //
-  // The only wrinkle is return value compatibility: we'd like to
-  // automatically generate a return-value-eating wrapper if we try
-  // to pass a function returning a value to a function expecting
-  // a procedure returning void.
-    if (FnTypeAST* expectedFnTy =
-          tryExtractCallableType(TypeAST::reconstruct(
-              llvm::dyn_cast<const llvm::DerivedType>(expectedType)))) {
-      if (isVoidOrUnit(expectedFnTy->getReturnType())
-                        && !llvmFnTy->isVoidTy()) {
-        ASSERT(false) << "No support at the moment for "
-            << "auto-generating void-returning wrappers.";
-        //arg = getVoidReturningVersionOf(arg, fnty);
-      }
-    }
+    ASSERT(llvmFnTy == expectedType)
+        << "calling a function that expects a bare pointer arg:\n\t"
+        << str(expectedType) << " -VS- " << str(llvmFnTy);
+    // Do we want to codegen to handle automatic insertion
+    // of type-coercion wrappers? For now, we'll require
+    // strict type compatibility.
   } else {
   // Case 2 (passing an env-less C function to a context expecting a closure)
   // is not so simple, since a closure code pointer must take the

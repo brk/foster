@@ -64,13 +64,6 @@ bool isPointerToType(const llvm::Type* p, const llvm::Type* t);
 // returns true if p == t**
 bool isPointerToPointerToType(const llvm::Type* p, const llvm::Type* t);
 
-// A compatible function type matches at all arguments, except that the return type
-// for the first may be void, and the return type for the second need not be.
-bool isPointerToCompatibleFnTy(const llvm::Type* first, const llvm::FunctionType* second);
-
-bool voidCompatibleReturnTypes(const llvm::FunctionType* expected,
-                               const llvm::FunctionType* actual);
-
 llvm::ConstantInt* getConstantInt64For(int64_t val);
 llvm::ConstantInt* getConstantInt32For(int32_t val);
 llvm::ConstantInt* getConstantInt8For(int8_t val);
