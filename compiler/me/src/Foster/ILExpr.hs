@@ -51,7 +51,7 @@ data ILPrototype = ILPrototype  { ilProtoReturnType :: TypeAST
                                 , ilProtoCallConv   :: String
                                 } deriving (Eq, Show)
 
-instance Expr ILExpr where
+instance Structured ILExpr where
     textOf e width =
         let spaces = Prelude.replicate width '\SP'  in
         case e of
@@ -78,7 +78,6 @@ instance Expr ILExpr where
             ILSubscript t a b                   -> [ILVar a, b]
             ILVar (AnnVar t i)                  -> []
             ILTyApp t e argty                   -> [e]
-    freeVars e = error "freeVars ilexpr not yet done."
 
 showProgramStructure :: ILProgram -> Output
 showProgramStructure (ILProgram procdefs) =

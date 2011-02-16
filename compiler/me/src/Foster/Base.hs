@@ -141,3 +141,32 @@ sourceLine (SourceLines seq) n =
         else Just (T.unpack $ Seq.index seq n)
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+
+class Structured a where
+    textOf     :: a -> Int -> Output
+    childrenOf :: a -> [a]
+
+-- Builds trees like this:
+-- AnnSeq        :: i32
+-- ├─AnnCall       :: i32
+-- │ ├─AnnVar       expect_i32 :: ((i32) -> i32)
+-- │ └─AnnTuple
+-- │   └─AnnInt       999999 :: i32
+
+showStructure :: (Structured a) => a -> Output
+showStructure e = showStructureP e (out "") False where
+    showStructureP e prefix isLast =
+        let children = childrenOf e in
+        let thisIndent = prefix ++ out (if isLast then "└─" else "├─") in
+        let nextIndent = prefix ++ out (if isLast then "  " else "│ ") in
+        let padding = max 6 (60 - Prelude.length thisIndent) in
+        -- [ (child, index, numchildren) ]
+        let childpairs = Prelude.zip3 children [1..]
+                               (Prelude.repeat (Prelude.length children)) in
+        let childlines = map (\(c, n, l) ->
+                                showStructureP c nextIndent (n == l))
+                             childpairs in
+        (thisIndent :: Output) ++ (textOf e padding) ++ (out "\n") ++ (Prelude.foldl (++) (out "") childlines)
+
+-----------------------------------------------------------------------

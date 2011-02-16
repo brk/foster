@@ -21,15 +21,13 @@ data CompilesStatus = CS_WouldCompile | CS_WouldNotCompile | CS_NotChecked
     deriving (Eq, Show)
 
 class Expr a where
-    textOf     :: a -> Int -> Output
-    childrenOf :: a -> [a]
     freeVars   :: a -> [String]
 
 tryGetCallNameE :: ExprAST -> String
 tryGetCallNameE (E_VarAST mt v) = v
 tryGetCallNameE _ = ""
 
-instance Expr ExprAST where
+instance Structured ExprAST where
     textOf e width =
         let spaces = Prelude.replicate width '\SP'  in
         case e of
@@ -55,6 +53,8 @@ instance Expr ExprAST where
             E_SubscriptAST  a b  -> [a, b]
             E_TupleAST     es b  -> es
             E_VarAST       mt v  -> []
+
+instance Expr ExprAST where
     freeVars e = case e of
         E_VarAST mt nm      -> [nm]
         E_FnAST f           -> let bodyvars =  Set.fromList (freeVars (fnBody f)) in
@@ -63,7 +63,7 @@ instance Expr ExprAST where
         _                   -> concatMap freeVars (childrenOf e)
 
 
-instance Expr AnnExpr where
+instance Structured AnnExpr where
     textOf e width =
         let spaces = Prelude.replicate width '\SP'  in
         case e of
@@ -91,6 +91,8 @@ instance Expr AnnExpr where
             AnnTuple     es b                    -> es
             E_AnnVar      v                      -> []
             E_AnnTyApp t e argty                 -> [e]
+
+instance Expr AnnExpr where
     freeVars e = [identPrefix i | i <- freeIdentsA e]
 
 butnot :: Ord a => [a] -> [a] -> [a]
