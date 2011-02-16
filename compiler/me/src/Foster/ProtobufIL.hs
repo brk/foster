@@ -133,8 +133,6 @@ dumpExpr (ILVar (AnnVar t i)) =
                     , PbExpr.tag   = IL_VAR
                     , PbExpr.type' = Just $ dumpType t  }
 
-dumpExpr x@(ILSeq a b) = dumpSeqOf (unbuildSeqsIL x) (typeIL x)
-
 dumpExpr x@(ILTuple es) =
     P'.defaultValue { PbExpr.parts = fromList [dumpExpr e | e <- es]
                     , PbExpr.tag   = IL_TUPLE
@@ -193,11 +191,6 @@ dumpRange range =
                         (dumpSourceLocation $ sourceRangeBegin range)
                   (Just (dumpSourceLocation $ sourceRangeEnd   range)))
 -----------------------------------------------------------------------
-
-dumpSeqOf exprs ty =
-    P'.defaultValue { PbExpr.parts = fromList [dumpExpr e | e <- exprs]
-                    , PbExpr.tag   = IL_SEQ
-                    , PbExpr.type' = Just $ dumpType ty  }
 
 dumpCall t base args =
     P'.defaultValue { PbExpr.parts = fromList $ fmap (\v -> dumpExpr (ILVar v)) (base : args)

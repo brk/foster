@@ -397,7 +397,9 @@ llvm::Value* LLLetVal::codegen(CodegenPass* pass) {
   llvm::outs() << "llletval " << name << " = "  << boundexpr->tag << " in " << inexpr->tag << "\n";
 
   Value* b = boundexpr->codegen(pass);
-  b->setName(this->name);
+  if (!b->getType()->isVoidTy()) {
+    b->setName(this->name);
+  }
 
   pass->valueSymTab.insert(this->name, b);
   Value* rv = inexpr->codegen(pass);

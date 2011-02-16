@@ -37,7 +37,6 @@ data ILExpr =
         | ILSubscript   { ilSubscriptType :: TypeAST
                         , ilSubscriptBase  :: AnnVar
                         , ilSubscriptIndex :: ILExpr  }
-        | ILSeq         ILExpr ILExpr
         | ILIf          TypeAST ILExpr ILExpr ILExpr
 --        | ILAppDirect   Ident ILExpr
 --        | ILAppClosure  Ident ILExpr
@@ -62,7 +61,6 @@ instance Expr ILExpr where
             ILLetVal t x a b    -> out $ "ILLetVal    " ++ show x ++ " = ... in ... "
             ILIf      t  a b c  -> out $ "ILIf        " ++ " :: " ++ show t
             ILInt ty int        -> out $ "ILInt       " ++ (litIntText int) ++ " :: " ++ show ty
-            ILSeq          a b  -> out $ "ILSeq       " ++ " :: " ++ show (typeIL b)
             ILSubscript  t a b  -> out $ "ILSubscript " ++ " :: " ++ show t
             ILTuple     es      -> out $ "ILTuple     (size " ++ (show $ length es) ++ ")"
             ILVar (AnnVar t i)  -> out $ "ILVar       " ++ show i ++ " :: " ++ show t
@@ -76,7 +74,6 @@ instance Expr ILExpr where
             ILLetVal t x a b                    -> [a, b]
             ILCall    t b vs                    -> [ILVar b] ++ [ILVar v | v <- vs]
             ILIf      t  a b c                  -> [a, b, c]
-            ILSeq      a b                      -> unbuildSeqsIL e
             ILSubscript t a b                   -> [ILVar a, b]
             ILVar (AnnVar t i)                  -> []
             ILTyApp t e argty                   -> [e]
@@ -107,7 +104,6 @@ typeIL (ILClosures t closures expr) = t
 typeIL (ILLetVal t x a b)  = t
 typeIL (ILCall t id expr)  = t
 typeIL (ILIf t a b c)      = t
-typeIL (ILSeq a b)         = typeIL b
 typeIL (ILSubscript t _ _) = t
 typeIL (ILVar (AnnVar t i)) = t
 typeIL (ILTyApp overailType tm tyArgs) = overailType
@@ -138,9 +134,12 @@ closureConvert globalVars ctx expr =
                                                        (cc, pc) <- g c
                                                        return $ (ILIf t ca cb cc, pa++pb++pc)
             AnnInt t   i                        ->  return $ (ILInt t i, [])
-            AnnSeq      a b                      -> do (ca, pa) <- g a
+            AnnSeq      a b                      -> do lhs <- fresh ".seq"
+                                                       (ca, pa) <- g a
                                                        (cb, pb) <- g b
-                                                       return $ (ILSeq ca cb, pa++pb)
+                                                       let ty = typeIL cb
+                                                       let avar = AnnVar (typeIL ca) lhs
+                                                       return $ (ILLetVal ty avar ca cb, pa++pb)
             AnnSubscript t a b                   -> do (ca, pa) <- g a
                                                        (cb, pb) <- g b
                                                        nlets <- nestedLets [ca] (\[va] -> ILSubscript t va cb)
@@ -153,7 +152,7 @@ closureConvert globalVars ctx expr =
             E_AnnVar      v                      -> return $ (ILVar v, [])
 
             E_AnnFn annFn -> do
-                clo <- uniqify "clo"
+                clo <- fresh "clo"
                 let freeNames = freeVars expr `excluding` (Set.insert (fnNameA annFn) globalVars)
                 -- let env = tuple of free variables
                 -- rewrite body, replacing mentions of free variables with lookups in env
@@ -203,13 +202,13 @@ lambdaLift globalVars ctx f freevars =
         return $ (ILProcDef newproto newbody):newprocs
 
 
-uniqify :: String -> Tc Ident
-uniqify s = do
+fresh :: String -> Tc Ident
+fresh s = do
     u <- newTcUniq
     return (Ident s u)
 
 uniqifyAil :: [String] -> Tc [Ident]
-uniqifyAil ss = sequence $ map uniqify ss
+uniqifyAil ss = sequence $ map fresh ss
 
 litInt32 :: Int -> ILExpr
 litInt32 i = ILInt (NamedTypeAST "i32") $ getLiteralInt i
@@ -248,7 +247,7 @@ nestedLets' (e:es) vars g =
       (ILVar v) -> nestedLets' es (v:vars) g
       --
       otherwise -> do
-        x        <- uniqify ".x"
+        x        <- fresh ".x"
         let vx = AnnVar (typeIL e) x
         innerlet <- nestedLets' es (vx:vars) g
         return $ (ILLetVal (typeIL innerlet)
@@ -256,7 +255,7 @@ nestedLets' (e:es) vars g =
 
 closureConvertAnnFn :: KnownVars -> Context -> AnnFn -> [String] -> Tc [ILProcDef]
 closureConvertAnnFn globalVars ctx f freevars = do
-    envName <- uniqify ".env"
+    envName <- fresh ".env"
     uniqIdents <- uniqifyAil freevars
     let uniqFreeVars =  trace ("closure converting " ++ (show $ fnNameA f)) $  map ((contextVar ctx).identPrefix) uniqIdents
     let envTypes = map avarType uniqFreeVars
@@ -278,8 +277,3 @@ closureConvertAnnFn globalVars ctx f freevars = do
                         }
     (newbody, newprocs) <- nestedLets uniqFreeVars 0
     return $ (ILProcDef newproto newbody):newprocs
-
-
-unbuildSeqsIL :: ILExpr -> [ILExpr]
-unbuildSeqsIL (ILSeq a b) = a : unbuildSeqsIL b
-unbuildSeqsIL expr = [expr]
