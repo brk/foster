@@ -185,7 +185,7 @@ int main(int argc, char** argv) {
   cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster compiler backend\n");
 
   foster::gPrintLLVMImports = optPrintLLVMImports;
-  foster::validateInputFile(optInputPath);
+  foster::validateInputFile(optInputPath + ".ll.pb");
 
   foster::ensureDirectoryExists(dumpdirFile(""));
 

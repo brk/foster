@@ -200,8 +200,7 @@ main = do
         modResults  <- typecheckModule sm tcenv
         case modResults of
             (Just (extctx, mod)) ->
-                      do dumpModuleToProtobuf mod outfile
-                         runOutput $ (outLn "vvvv ===================================")
+                      do runOutput $ (outLn "vvvv ===================================")
                          runOutput $ (outCSLn Yellow (joinWith "\n" $ map show (contextBindings extctx)))
                          (Annotated prog) <- unTc (closureConvertAndLift extctx mod) tcenv
                          let fns = moduleASTfunctions mod
