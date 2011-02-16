@@ -12,10 +12,14 @@ sumof () {
   $@ | grep SUM | awk '{print $5}'
 }
 
+runcloc () {
+ cloc $@ --quiet --skip-uniqueness --exclude-dir=compiler/me/src/Foster/Fepb,compiler/me/src/Foster/Bepb
+}
+
 inspbase () {
   /bin/echo -n "$1" ' '
   shift
-  sumof cloc $@ --quiet --skip-uniqueness --exclude-dir=compiler/me/src/Foster/Fepb,compiler/me/src/Foster/Bepb
+  sumof runcloc $@
 }
 
 insp () {
@@ -29,12 +33,25 @@ need () {
   fi
 }
 
+hasarg () {
+  arg=$1
+  shift
+  echo echo $@  grep -- "${arg}"
+  echo $@ | grep -- "${arg}" &>/dev/null
+}
+
+
 need cloc
 need grep
 need awk
 
-# title "runtime"
-# cloc --quiet runtime --by-file
+if hasarg '--all' $@ ; then
+  runcloc compiler/base --by-file
+  runcloc compiler/parse --by-file
+  runcloc compiler/passes --by-file
+  runcloc compiler/llvm --by-file
+  exit
+fi
 
 /bin/echo -n "notes            "
 cat   notes/*.rst notes/*.txt | wc -l | awk '{print $1}'
