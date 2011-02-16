@@ -138,8 +138,8 @@ add_custom_command(
           ${GENERATED}/FosterAST.pb.h
           ${GENERATED}/FosterAST.pb.cc
           ${GENERATED}/FosterAST_pb2.py
-          ${GENERATED}/FosterLL.pb.h
-          ${GENERATED}/FosterLL.pb.cc
+          ${GENERATED}/FosterIL.pb.h
+          ${GENERATED}/FosterIL.pb.cc
   COMMAND ${PROTOBUF_PROTOC_EXECUTABLE}
           -I ${PROJECT_SOURCE_DIR}/compiler/parse/
           ${PROJECT_SOURCE_DIR}/compiler/parse/FosterAST.proto
@@ -147,12 +147,12 @@ add_custom_command(
           --python_out=${GENERATED}
   COMMAND ${PROTOBUF_PROTOC_EXECUTABLE}
           -I ${PROJECT_SOURCE_DIR}/compiler/parse/
-          ${PROJECT_SOURCE_DIR}/compiler/parse/FosterLL.proto
+          ${PROJECT_SOURCE_DIR}/compiler/parse/FosterIL.proto
           --cpp_out=${GENERATED}
           --python_out=${GENERATED}
   DEPENDS
           ${PROJECT_SOURCE_DIR}/compiler/parse/FosterAST.proto
-          ${PROJECT_SOURCE_DIR}/compiler/parse/FosterLL.proto
+          ${PROJECT_SOURCE_DIR}/compiler/parse/FosterIL.proto
   )
 
 
@@ -179,18 +179,18 @@ add_custom_command(
          ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Bepb.hs
   COMMAND cp ${PROJECT_SOURCE_DIR}/compiler/parse/FosterAST.proto
              ${PROJECT_SOURCE_DIR}/compiler/me/FosterAST.protox
-  COMMAND cp ${PROJECT_SOURCE_DIR}/compiler/parse/FosterLL.proto
-             ${PROJECT_SOURCE_DIR}/compiler/me/FosterLL.protox
+  COMMAND cp ${PROJECT_SOURCE_DIR}/compiler/parse/FosterIL.proto
+             ${PROJECT_SOURCE_DIR}/compiler/me/FosterIL.protox
   COMMAND ${HPROTOC}
           --haskell_out=${PROJECT_SOURCE_DIR}/compiler/me/src
           ${PROJECT_SOURCE_DIR}/compiler/me/FosterAST.protox
   COMMAND ${HPROTOC}
           --haskell_out=${PROJECT_SOURCE_DIR}/compiler/me/src
-          ${PROJECT_SOURCE_DIR}/compiler/me/FosterLL.protox
+          ${PROJECT_SOURCE_DIR}/compiler/me/FosterIL.protox
   WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/compiler/me
   DEPENDS
           ${PROJECT_SOURCE_DIR}/compiler/parse/FosterAST.proto
-          ${PROJECT_SOURCE_DIR}/compiler/parse/FosterLL.proto
+          ${PROJECT_SOURCE_DIR}/compiler/parse/FosterIL.proto
   )
 
 # Generate middle-end from Haskell source files, once

@@ -33,10 +33,10 @@ import Text.ProtocolBuffers(messageGet)
 import System.Console.ANSI
 import Foster.Base
 import Foster.ProtobufFE
-import Foster.ProtobufLL
+import Foster.ProtobufIL
 import Foster.ExprAST
 import Foster.TypeAST
-import Foster.LLExpr
+import Foster.ILExpr
 import Foster.Typecheck
 import Foster.Context
 
@@ -200,8 +200,8 @@ main = do
                          runOutput $ (outCSLn Yellow (joinWith "\n" $ map show (contextBindings extctx)))
                          (Annotated prog) <- unTc (closureConvertAndLift extctx mod) tcenv
                          let fns = moduleASTfunctions mod
-                         let (LLProgram procs) = prog
-                         dumpModuleToProtobufLL prog (outfile ++ ".ll.pb")
+                         let (ILProgram procs) = prog
+                         dumpModuleToProtobufIL prog (outfile ++ ".ll.pb")
                          runOutput $ (outLn "/// ===================================")
                          runOutput $ showProgramStructure prog
                          runOutput $ (outLn "^^^ ===================================")

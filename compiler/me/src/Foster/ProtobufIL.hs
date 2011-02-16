@@ -4,12 +4,12 @@
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
-module Foster.ProtobufLL (
-  dumpModuleToProtobufLL
+module Foster.ProtobufIL (
+  dumpModuleToProtobufIL
 ) where
 
 import Foster.Base
-import Foster.LLExpr
+import Foster.ILExpr
 import Foster.ExprAST
 import Foster.TypeAST
 
@@ -119,62 +119,62 @@ dumpProcType (FnTypeAST s t cs) =
 -----------------------------------------------------------------------
 -----------------------------------------------------------------------
 
-dumpExpr :: LLExpr -> PbExpr.Expr
+dumpExpr :: ILExpr -> PbExpr.Expr
 
-dumpExpr (LLCall t base args) = dumpCall t base args
+dumpExpr (ILCall t base args) = dumpCall t base args
 
-dumpExpr x@(LLBool b) =
+dumpExpr x@(ILBool b) =
     P'.defaultValue { bool_value   = Just b
-                    , PbExpr.tag   = LL_BOOL
-                    , PbExpr.type' = Just $ dumpType (typeLL x)  }
+                    , PbExpr.tag   = IL_BOOL
+                    , PbExpr.type' = Just $ dumpType (typeIL x)  }
 
-dumpExpr (LLVar (AnnVar t i)) =
+dumpExpr (ILVar (AnnVar t i)) =
     P'.defaultValue { PbExpr.name  = Just $ u8fromString (dumpIdent i)
-                    , PbExpr.tag   = LL_VAR
+                    , PbExpr.tag   = IL_VAR
                     , PbExpr.type' = Just $ dumpType t  }
 
-dumpExpr x@(LLSeq a b) = dumpSeqOf (unbuildSeqsLL x) (typeLL x)
+dumpExpr x@(ILSeq a b) = dumpSeqOf (unbuildSeqsIL x) (typeIL x)
 
-dumpExpr x@(LLTuple es) =
+dumpExpr x@(ILTuple es) =
     P'.defaultValue { PbExpr.parts = fromList [dumpExpr e | e <- es]
-                    , PbExpr.tag   = LL_TUPLE
-                    , PbExpr.type' = Just $ dumpType (typeLL x)  }
+                    , PbExpr.tag   = IL_TUPLE
+                    , PbExpr.type' = Just $ dumpType (typeIL x)  }
 
-dumpExpr x@(LLSubscript t a b ) =
-    P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [LLVar a, b])
-                    , PbExpr.tag   = LL_SUBSCRIPT
-                    , PbExpr.type' = Just $ dumpType (typeLL x)  }
+dumpExpr x@(ILSubscript t a b ) =
+    P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [ILVar a, b])
+                    , PbExpr.tag   = IL_SUBSCRIPT
+                    , PbExpr.type' = Just $ dumpType (typeIL x)  }
 
-dumpExpr x@(LLInt ty int) =
+dumpExpr x@(ILInt ty int) =
     P'.defaultValue { PbExpr.pb_int = Just $ dumpInt (show $ litIntValue int)
                                                      (litIntMinBits int)
-                    , PbExpr.tag   = LL_INT
-                    , PbExpr.type' = Just $ dumpType (typeLL x)  }
+                    , PbExpr.tag   = IL_INT
+                    , PbExpr.type' = Just $ dumpType (typeIL x)  }
 
-dumpExpr x@(LLIf t a b c) =
+dumpExpr x@(ILIf t a b c) =
     P'.defaultValue { pb_if        = Just (dumpIf $ x)
-                    , PbExpr.tag   = LL_IF
-                    , PbExpr.type' = Just $ dumpType (typeLL x) }
+                    , PbExpr.tag   = IL_IF
+                    , PbExpr.type' = Just $ dumpType (typeIL x) }
 
-dumpExpr x@(LLTyApp overallTy baseExpr argType) =
+dumpExpr x@(ILTyApp overallTy baseExpr argType) =
     P'.defaultValue { PbExpr.ty_app_arg_type = Just $ dumpType argType
                     , PbExpr.parts = fromList (fmap dumpExpr [baseExpr])
-                    , PbExpr.tag   = LL_TY_APP
+                    , PbExpr.tag   = IL_TY_APP
                     , PbExpr.type' = Just $ dumpType overallTy }
 
-dumpExpr x@(LLClosures ty closures expr) =
+dumpExpr x@(ILClosures ty closures expr) =
     P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [expr])
-                    , PbExpr.tag   = LL_CLOSURES
+                    , PbExpr.tag   = IL_CLOSURES
                     , PbExpr.closures = fromList (fmap dumpClosureWithName closures)
-                    , PbExpr.type' = Just $ dumpType (typeLL expr) }
+                    , PbExpr.type' = Just $ dumpType (typeIL expr) }
 
-dumpExpr (LLLetVal t x a b) =
+dumpExpr (ILLetVal t x a b) =
     P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [a, b])
-                    , PbExpr.tag   = LL_LETVAL
+                    , PbExpr.tag   = IL_LETVAL
                     , PbExpr.name  = Just $ u8fromString (dumpIdent $ avarIdent x)
                     , PbExpr.type' = Just $ dumpType t }
 
-dumpClosureWithName (varid, LLClosure procid idents) =
+dumpClosureWithName (varid, ILClosure procid idents) =
     Closure { varname  = u8fromString (dumpIdent   varid)
             , procid   = u8fromString (identPrefix procid)
             , varnames = fromList (fmap u8fromString (fmap dumpIdent idents)) }
@@ -196,49 +196,49 @@ dumpRange range =
 
 dumpSeqOf exprs ty =
     P'.defaultValue { PbExpr.parts = fromList [dumpExpr e | e <- exprs]
-                    , PbExpr.tag   = LL_SEQ
+                    , PbExpr.tag   = IL_SEQ
                     , PbExpr.type' = Just $ dumpType ty  }
 
 dumpCall t base args =
-    P'.defaultValue { PbExpr.parts = fromList $ fmap (\v -> dumpExpr (LLVar v)) (base : args)
-                    , PbExpr.tag   = LL_CALL
+    P'.defaultValue { PbExpr.parts = fromList $ fmap (\v -> dumpExpr (ILVar v)) (base : args)
+                    , PbExpr.tag   = IL_CALL
                     , PbExpr.type' = Just $ dumpType t }
 
-dumpIf x@(LLIf t a b c) =
+dumpIf x@(ILIf t a b c) =
         PBIf { test_expr = dumpExpr a, then_expr = dumpExpr b, else_expr = dumpExpr c }
 
 dumpInt cleanText activeBits =
         PBInt.PBInt { clean = u8fromString cleanText
                     , bits  = intToInt32   activeBits }
 
-dumpProto p@(LLPrototype t ident formals callconv) =
+dumpProto p@(ILPrototype t ident formals callconv) =
     Proto { Proto.name  = u8fromString (dumpIdent ident)
           , in_args     = fromList $ [dumpVar e | e <- formals]
-          , proctype    = dumpProcType (procTypeFromLLProto p)
+          , proctype    = dumpProcType (procTypeFromILProto p)
           , Proto.range = Nothing }
 
 dumpVar (AnnVar t ident) =
     P'.defaultValue { PbExpr.name  = Just $ u8fromString (dumpIdent ident)
-                    , PbExpr.tag   = LL_VAR
+                    , PbExpr.tag   = IL_VAR
                     , PbExpr.type' = Just $ dumpType t  }
 
 
-dumpProc (LLProcDef proto body) =
+dumpProc (ILProcDef proto body) =
     Proc { Proc.proto = dumpProto proto
          , Proc.body  = dumpExpr body
          }
 
 -----------------------------------------------------------------------
 
-dumpProgramToModule :: LLProgram -> Module
-dumpProgramToModule (LLProgram procdefs) =
+dumpProgramToModule :: ILProgram -> Module
+dumpProgramToModule (ILProgram procdefs) =
     Module   { modulename = u8fromString $ "foo"
              , protos     = fromList []
              , procs      = fromList [dumpProc p | p <- procdefs]
              }
 
-dumpModuleToProtobufLL :: LLProgram -> FilePath -> IO ()
-dumpModuleToProtobufLL mod outpath = do
+dumpModuleToProtobufIL :: ILProgram -> FilePath -> IO ()
+dumpModuleToProtobufIL mod outpath = do
     let llmod = dumpProgramToModule mod
     L.writeFile outpath (messagePut llmod)
     return ()

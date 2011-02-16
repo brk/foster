@@ -44,19 +44,19 @@ message ProcType {
 
 message Expr {
   enum Tag {
-    LL_INT = 16;
-    LL_BOOL = 17;
-    LL_VAR = 18;
-    LL_CLOSURES = 19;
-    LL_TUPLE = 20;
-    LL_LETVAL = 21;
-    LL_CALL = 23;
-    LL_SEQ = 24;
-    LL_TY_APP = 25;
-    LL_SUBSCRIPT = 26;
+    IL_INT = 16;
+    IL_BOOL = 17;
+    IL_VAR = 18;
+    IL_CLOSURES = 19;
+    IL_TUPLE = 20;
+    IL_LETVAL = 21;
+    IL_CALL = 23;
+    IL_SEQ = 24;
+    IL_TY_APP = 25;
+    IL_SUBSCRIPT = 26;
 
-    LL_IF = 32;
-    LL_NAMED_TYPE_DECL = 36;
+    IL_IF = 32;
+    IL_NAMED_TYPE_DECL = 36;
   }
   repeated Expr        parts = 1;
   required Tag           tag = 2;
