@@ -282,9 +282,6 @@ typecheckTuple ctx es b (Just ty)
 typecheckTuple' ctx es b ts = do
         let ets = List.zip es ts -- :: [(ExprAST, TypeAST)]
         let subparts = map (\(e,t) -> typecheck ctx e t) ets
-        -- subparts :: [(TypecheckResult AnnExpr)]
-        -- subparts :: [Tc AnnExpr]
-        -- sequence subparts :: [AnnExpr]
         subAnnots <- sequence $ liftM wasSuccessful subparts
 
         if Prelude.and subAnnots
@@ -293,8 +290,6 @@ typecheckTuple' ctx es b ts = do
                     }
             else do { errmsgs <- sequence $ map collectErrors subparts
                     ; tcFails $ concat errmsgs }
--- have : cE :: m a -> m b
---              [m a]
 -----------------------------------------------------------------------
 collectErrors :: Tc a -> Tc Output
 collectErrors tce =

@@ -12,15 +12,6 @@ import Debug.Trace(trace)
 import Data.Set(Set)
 import Data.Set as Set(fromList, toList, difference, insert)
 
-{-
-import Data.Int
-import Data.Set as Set(fromList, toList, difference)
-import Data.Sequence as Seq
-
-import Data.List(replicate)
-import qualified Data.Text as T
--}
-
 import Foster.Base
 import Foster.Context
 import Foster.TypeAST

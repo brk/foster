@@ -14,7 +14,6 @@ import qualified Data.ByteString.Lazy as L(readFile)
 import qualified Data.ByteString.Lazy.UTF8 as U(toString)
 import qualified System.IO.UTF8 as U(putStrLn)
 
-import Test.HUnit
 import Debug.Trace(trace)
 import Control.Exception(assert)
 
@@ -181,9 +180,6 @@ main :: IO ()
 main = do
   args <- getArgs
   (f, outfile) <- case args of
-         ["--test"] -> do
-                runUnitTests
-                return (error $ "Done running unit tests...")
          [infile, outfile] -> do
                 protobuf <- L.readFile infile
                 return (protobuf, outfile)
@@ -211,35 +207,3 @@ main = do
                          runOutput $ (outLn "^^^ ===================================")
             Nothing    -> error $ "Unable to type check input module!"
 
-
------------------------------------------------------------------------
-{-
-trMaybe :: TypecheckResult AnnExpr -> Maybe AnnExpr
-trMaybe (TypecheckErrors _) = Nothing
-trMaybe (Annotated ae) = Just $ ae
-
-test1 = let term = (E_BoolAST (EMissingSourceRange "") True) in
-        let expectedType = Nothing in
-        let anticipated = (AnnBool True) in
-        TestCase (do let taa = trMaybe $ typecheck rootContext term expectedType
-                     assertEqual ("for " ++ show term ++ ", ")
-                             (fmap showStructure (Just anticipated))
-                             (fmap showStructure taa))
-
--- |- (\x.e) (coro_create_i32(...))  ==> (\x:Coro i32 i32.e)
---test2 = let proto = (PrototypeAST protoRetTy "f" [(VarAST "v" )] ) in
---        let body = in
---        let term = (FnAST proto body Nothing) in
---        let expectedType = Nothing in
---        let anticipated = (AnnBool True) in
---        TestCase (do let taa = trMaybe $ typecheck rootContext term expectedType
---                     assertEqual ("for " ++ show term ++ ", ")
---                             (fmap showStructureA (Just anticipated))
---                             (fmap showStructureA taa))
---
-tests = TestList [TestLabel "test1" test1
-                 --,TestLabel "test2" test2
-                 ]
--}
-runUnitTests = do return ()
---    runTestTT tests
