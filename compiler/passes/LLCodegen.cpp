@@ -617,23 +617,24 @@ llvm::Value* LLProc::codegen(CodegenPass* pass) {
   Value* rv = this->getBody()->codegen(pass);
 
   ASSERT(rv) << "null body value when codegenning function " << this->getName();
+  const FunctionType* ft = dyn_cast<FunctionType>(F->getType()->getContainedType(0));
 
-  bool returningVoid = isVoidOrUnit(getProto()->getFnType()->getReturnType());
+  bool fnReturnsUnit = isVoidOrUnit(ft->getReturnType());
 
   // If we try to return a tuple* when the fn specifies a tuple, manually insert a load
   if (rv->getType()->isDerivedType()
-      && !returningVoid
-      && isPointerToType(rv->getType(), getProto()->getFnType()->getReturnType()->getLLVMType())) {
+      && !fnReturnsUnit
+      && isPointerToType(rv->getType(), ft->getReturnType())) {
     rv = builder.CreateLoad(rv, false, "structPtrToStruct");
   }
 
   pass->valueSymTab.popExistingScope(scope);
 
-  if (returningVoid) {
+  if (fnReturnsUnit) {
     builder.CreateRetVoid();
-  } else if (rv->getType()->isVoidTy()) {
+  } else if (isVoidOrUnit(rv->getType())) {
     EDiag() << "unable to return non-void value from "
-            << getName() << " given only void";
+            << getName() << " given only unit";
   } else {
     builder.CreateRet(rv);
   }

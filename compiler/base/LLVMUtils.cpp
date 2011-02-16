@@ -232,8 +232,22 @@ llvm::ConstantInt* getConstantInt8For(int8_t val) {
   return llvm::ConstantInt::get(Type::getInt8Ty(getGlobalContext()), val);
 }
 
+bool isVoidOrUnit(const llvm::Type* ty) {
+  return ty->isVoidTy() || isUnit(ty);
+}
+
+// Check that ty == {}
+bool isUnit(const llvm::Type* ty) {
+  return ty == llvm::StructType::get(getGlobalContext(), false);
+}
+
+// Syntactically conspicuous
+bool typesEqual(const llvm::Type* t1, const llvm::Type* t2) {
+  return t1 == t2;
+}
+
 bool isPointerToType(const llvm::Type* p, const llvm::Type* t) {
-  return p->isPointerTy() && p->getContainedType(0) == t;
+  return p->isPointerTy() && typesEqual(t, p->getContainedType(0));
 }
 
 // returns true if p == t**

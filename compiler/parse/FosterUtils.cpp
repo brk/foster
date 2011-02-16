@@ -144,21 +144,3 @@ bool isGenericClosureType(const llvm::Type* ty) {
   return false;
 }
 
-bool isUnit(TypeAST* ty) {
-  TupleTypeAST* t = dynamic_cast<TupleTypeAST*>(ty);
-  return t && t->getNumElements() == 0;
-}
-
-bool isVoid(TypeAST* ty) {
-  NamedTypeAST* namedTy = dynamic_cast<NamedTypeAST*>(ty);
-  return namedTy && namedTy->getName() == "void";
-}
-
-bool isVoidOrUnit(TypeAST* ty) {
-  return isVoid(ty) || isUnit(ty);
-}
-
-// Check that ty == {}
-bool isUnit(const llvm::Type* ty) {
-  return ty == llvm::StructType::get(getGlobalContext(), false);
-}
