@@ -58,7 +58,7 @@ instance Expr ILExpr where
             ILBool         b    -> out $ "ILBool      " ++ (show b)
             ILCall    t b a     -> out $ "ILCall      " ++ " :: " ++ show t
             ILClosures t bnds e -> out $ "ILClosures  " ++ show (map (\(id,clo) -> id) bnds)
-            ILLetVal t x a b    -> out $ "ILLetVal    " ++ show x ++ " = ... in ... "
+            ILLetVal t x a b    -> out $ "ILLetVal    " ++ (show $ avarIdent x) ++ " :: " ++ (show $ avarType x) ++ " = ... in ... "
             ILIf      t  a b c  -> out $ "ILIf        " ++ " :: " ++ show t
             ILInt ty int        -> out $ "ILInt       " ++ (litIntText int) ++ " :: " ++ show ty
             ILSubscript  t a b  -> out $ "ILSubscript " ++ " :: " ++ show t
@@ -71,6 +71,7 @@ instance Expr ILExpr where
             ILInt t _                           -> []
             ILTuple     es                      -> es
             ILClosures t clzs e                 -> [e]
+            ILLetVal t x a i@(ILLetVal _ _ _ _) -> a : childrenOf i
             ILLetVal t x a b                    -> [a, b]
             ILCall    t b vs                    -> [ILVar b] ++ [ILVar v | v <- vs]
             ILIf      t  a b c                  -> [a, b, c]
