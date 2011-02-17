@@ -48,7 +48,8 @@ void addClosureTypeName(llvm::Module* mod, TupleTypeAST* cty) {
     }
     ss << "_to_" << *(fty->getReturnType()->getLLVMType());
 
-    mod->addTypeName(freshName(ss.str()), cty->getLLVMType());
+    mod->addTypeName(foster::ParsingContext::freshName(ss.str()),
+                     cty->getLLVMType());
 
     namedClosureTypes[cty] = true;
   }

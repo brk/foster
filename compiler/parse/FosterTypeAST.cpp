@@ -17,6 +17,7 @@ using std::vector;
 using std::map;
 
 using foster::SourceRange;
+using foster::ParsingContext;
 
 const char* getDefaultCallingConvRecon() {
   //foster::EDiag() << "getDefaultCallingConvRecon()";
@@ -194,7 +195,7 @@ const llvm::Type* NamedTypeAST::getLLVMType() const {
 TypeVariableAST* TypeVariableAST::get(const std::string& name,
                                       const SourceRange& sourceRange) {
   return new TypeVariableAST(llvm::OpaqueType::get(llvm::getGlobalContext()),
-                             freshName(name), sourceRange);
+                             ParsingContext::freshName(name), sourceRange);
 }
 
 ////////////////////////////////////////////////////////////////////

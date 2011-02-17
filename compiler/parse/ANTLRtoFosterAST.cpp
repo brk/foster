@@ -167,7 +167,7 @@ string parseFnName(string name, pTree tree) {
     string nameWithQuotes = textOf(child(treeName, 0));
     name = nameWithQuotes.substr(1, nameWithQuotes.size() - 2);
   }
-  return freshName(name);
+  return ParsingContext::freshName(name);
 }
 
 FnAST* parseFn(string defaultSymbolTemplate, pTree tree) {
@@ -458,7 +458,7 @@ ExprAST* ExprAST_from(pTree tree) {
       tyExprTree = child(tree, 3);
     }
 
-    PrototypeAST* proto = getFnProto(freshName("<anon_fnlet_"),
+    PrototypeAST* proto = getFnProto(ParsingContext::freshName("<anon_fnlet_"),
                                      child(tree, 0),
                                      tyExprTree);
     FnAST* fn = buildFn(proto, child(tree, 2));

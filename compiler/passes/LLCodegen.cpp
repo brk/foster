@@ -44,6 +44,7 @@ using foster::builder;
 using foster::currentOuts;
 using foster::currentErrs;
 using foster::SourceRange;
+using foster::ParsingContext;
 using foster::EDiag;
 using foster::show;
 
@@ -864,7 +865,7 @@ void doLowLevelWrapperFnCoercions(const llvm::Type* expectedType,
   // functions we see being passed directly by name; it would forward
   // all parameters to the regular function, except for the env ptr.
     LLProc* wrapper = getClosureVersionOf(arg, expectedType, fnty, pass);
-    std::string cloname = freshName("c-clo");
+    std::string cloname = ParsingContext::freshName("c-clo");
     std::vector<LLClosure*> closures;
     std::vector<std::string> vars;
     closures.push_back(new LLClosure(cloname, wrapper->proto->getName(), vars));
@@ -1149,12 +1150,12 @@ LLProc* getClosureVersionOf(LLExpr* arg,
   std::vector<TypeAST*> envTypes;
   std::vector<LLVar*> callArgs;
 
-  inArgNames.push_back(new LLVar(freshName("__ignored_env__"),
+  inArgNames.push_back(new LLVar(ParsingContext::freshName("__ignored_env__"),
                             SourceRange::getEmptyRange()));
   inArgTypes.push_back(RefTypeAST::get(TupleTypeAST::get(envTypes)));
 
   for (size_t i = 0; i < fnty->getNumParams(); ++i) {
-    LLVar* a = new LLVar(freshName("_cv_arg"),
+    LLVar* a = new LLVar(ParsingContext::freshName("_cv_arg"),
                         SourceRange::getEmptyRange());
     inArgNames.push_back(a);
     inArgTypes.push_back(fnty->getParamType(i));

@@ -23,8 +23,6 @@ namespace llvm {
 struct ExprAST;
 struct TypeAST;
 
-std::string freshName(std::string like);
-
 namespace foster {
 
 class ParsingContext {

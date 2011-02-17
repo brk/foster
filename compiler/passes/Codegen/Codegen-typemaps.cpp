@@ -26,6 +26,7 @@ using namespace llvm;
 
 using foster::EDiag;
 using foster::builder;
+using foster::ParsingContext;
 
 llvm::GlobalVariable* getTypeMapForType(const llvm::Type*, llvm::Module* mod);
 
@@ -332,7 +333,7 @@ void registerType(const Type* ty,
 
   registeredTypes[ty] = true;
 
-  std::string name = freshName(desiredName);
+  std::string name = ParsingContext::freshName(desiredName);
   mod->addTypeName(name, ty);
   emitTypeMap(ty, name, mod, isClosureEnvironment);
 }
@@ -357,10 +358,10 @@ llvm::GlobalVariable* getTypeMapForType(const llvm::Type* ty,
   if (const llvm::StructType* sty = isCoroStruct(ty)) {
     gv = emitCoroTypeMap(sty, mod);
   } else if (!ty->isAbstract() && !ty->isAggregateType()) {
-    gv = emitTypeMap(ty, freshName("gcatom"), mod);
+    gv = emitTypeMap(ty, ParsingContext::freshName("gcatom"), mod);
     // emitTypeMap also sticks gv in typeMapForType
   } else if (isGenericClosureType(ty)) {
-    gv = emitTypeMap(ty, freshName("genericClosure"), mod,
+    gv = emitTypeMap(ty, ParsingContext::freshName("genericClosure"), mod,
                      /*skipOffsetZero*/ true);
   }
 

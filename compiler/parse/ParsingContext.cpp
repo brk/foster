@@ -228,7 +228,3 @@ void ParsingContext::initCachedLLVMTypeNames() {
 
 } // namespace foster
 
-string freshName(string like) {
-  return foster::ParsingContext::freshName(like);
-}
-
