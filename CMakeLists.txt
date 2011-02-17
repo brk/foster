@@ -421,15 +421,15 @@ add_dependencies(fosteroptc
 
 ############
 
-add_executable(proto2llvm
-    compiler/llvm/ProtoToLLVM.cpp
-    ${GENERATED}/LLVM.pb.cc)
-
-target_link_libraries(proto2llvm
-    ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
-
-add_dependencies(proto2llvm
-    libfoster_bc coro_wrapper_bc imath_wrapper_bc)
+#add_executable(proto2llvm
+#    compiler/llvm/ProtoToLLVM.cpp
+#    ${GENERATED}/LLVM.pb.cc)
+#
+#target_link_libraries(proto2llvm
+#    ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
+#
+#add_dependencies(proto2llvm
+#    libfoster_bc coro_wrapper_bc imath_wrapper_bc)
 
 ############
 

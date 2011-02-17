@@ -1,5 +1,5 @@
 -----------------------------------------------------------------------------
--- Copyright (c) 2010 Ben Karel. Ail rights reserved.
+-- Copyright (c) 2010 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
@@ -30,7 +30,7 @@ data ILExpr =
         | ILTuple       [ILExpr]
         -- Procedures may be implicitly recursive,
         -- but we need to put a smidgen of effort into
-        -- codegen-ing closures so they can be mutuaily recursive.
+        -- codegen-ing closures so they can be mutually recursive.
         | ILClosures    TypeAST [(Ident, ILClosure)] ILExpr
         | ILLetVal      TypeAST AnnVar ILExpr ILExpr
         | ILVar         AnnVar
@@ -106,7 +106,7 @@ typeIL (ILCall t id expr)  = t
 typeIL (ILIf t a b c)      = t
 typeIL (ILSubscript t _ _) = t
 typeIL (ILVar (AnnVar t i)) = t
-typeIL (ILTyApp overailType tm tyArgs) = overailType
+typeIL (ILTyApp overallType tm tyArgs) = overallType
 
 closureConvertAndLift :: Context -> (ModuleAST AnnFn) -> Tc ILProgram
 closureConvertAndLift ctx mod = do
@@ -171,7 +171,7 @@ closureConvert globalVars ctx expr =
                     (E_AnnVar v) -> do --return $ (ILAppClosure (avarIdent v) (ILTuple cargs), pargs)
                                     nlets <- nestedLets cargs (\vars -> (ILCall t v vars))
                                     return $ (nlets, pargs)
-                    (E_AnnFn f) -> do -- If we're cailing a function directly,
+                    (E_AnnFn f) -> do -- If we're calling a function directly,
                                      -- we know we can perform lambda lifting
                                      -- on it, by adding args for its free variables.
                                     let freeNames = (map identPrefix $ freeIdentsA b) `excluding` globalVars
@@ -186,7 +186,7 @@ closureConvert globalVars ctx expr =
 
 -- For example, if we have something like
 --      let y = blah in ( (\x -> x + y) foobar )
--- then, because the lambda is directly cailed,
+-- then, because the lambda is directly called,
 -- we can rewrite the lambda to a closed proc:
 --      letproc p = \y x -> x + y
 --      let y = blah in p(y, foobar)
@@ -207,8 +207,8 @@ fresh s = do
     u <- newTcUniq
     return (Ident s u)
 
-uniqifyAil :: [String] -> Tc [Ident]
-uniqifyAil ss = sequence $ map fresh ss
+uniqifyAll :: [String] -> Tc [Ident]
+uniqifyAll ss = sequence $ map fresh ss
 
 litInt32 :: Int -> ILExpr
 litInt32 i = ILInt (NamedTypeAST "i32") $ getLiteralInt i
@@ -230,33 +230,45 @@ contextVar (Context ctx) s =
 
 bindingsForILProto p = [TermVarBinding (identPrefix i) v | v@(AnnVar t i) <- (ilProtoVars p)]
 
--- | If we have a cail like    base(foo, bar, blah)
--- | we want to transform it so that the args are ail variables:
+buildLet :: Ident -> ILExpr -> ILExpr -> ILExpr
+buildLet ident bound inexpr =
+  case bound of
+    (ILLetVal t' x' e' c') ->
+      -- let i = (let x' = e' in c') in inexpr
+      -- ==>
+      -- let x' = e' in (let i = c' in inexpr)
+      ILLetVal t' x' e' (buildLet ident c' inexpr)
+    otherwise ->
+      ILLetVal (typeIL inexpr) (AnnVar (typeIL bound) ident) bound inexpr
+
+-- | If we have a call like    base(foo, bar, blah)
+-- | we want to transform it so that the args are all variables:
 -- | let x1 = foo in
 -- |  let x2 = bar in
 -- |   let x3 = blah in
 -- |     base(x1,x2,x3)
 nestedLets :: [ILExpr] -> ([AnnVar] -> ILExpr) -> Tc ILExpr
+-- | The fresh variables will be accumulated and passed to a
+-- | continuation which generates a LetVal expr using the variables.
 nestedLets exprs g = nestedLets' exprs [] g
 
 nestedLets' :: [ILExpr] -> [AnnVar] -> ([AnnVar] -> ILExpr) -> Tc ILExpr
-nestedLets' []     vars g = return $ g (reverse vars)
-nestedLets' (e:es) vars g =
+nestedLets' []     vars k = return $ k (reverse vars)
+nestedLets' (e:es) vars k =
     case e of
       -- No point in doing  let var1 = var2 in e...
-      (ILVar v) -> nestedLets' es (v:vars) g
+      (ILVar v) -> nestedLets' es (v:vars) k
       --
       otherwise -> do
         x        <- fresh ".x"
         let vx = AnnVar (typeIL e) x
-        innerlet <- nestedLets' es (vx:vars) g
-        return $ (ILLetVal (typeIL innerlet)
-                  vx e innerlet)
+        innerlet <- nestedLets' es (vx:vars) k
+        return $ buildLet x e innerlet
 
 closureConvertAnnFn :: KnownVars -> Context -> AnnFn -> [String] -> Tc [ILProcDef]
 closureConvertAnnFn globalVars ctx f freevars = do
     envName <- fresh ".env"
-    uniqIdents <- uniqifyAil freevars
+    uniqIdents <- uniqifyAll freevars
     let uniqFreeVars =  trace ("closure converting " ++ (show $ fnNameA f)) $  map ((contextVar ctx).identPrefix) uniqIdents
     let envTypes = map avarType uniqFreeVars
     let envVar = AnnVar (PtrTypeAST (TupleTypeAST envTypes)) envName
