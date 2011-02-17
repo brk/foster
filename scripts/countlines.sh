@@ -36,7 +36,6 @@ need () {
 hasarg () {
   arg=$1
   shift
-  echo echo $@  grep -- "${arg}"
   echo $@ | grep -- "${arg}" &>/dev/null
 }
 
