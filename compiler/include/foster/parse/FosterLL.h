@@ -67,7 +67,6 @@ struct LLExpr {
 
 class LLInt;
 class LLBool;
-class LLSeq;
 class LLTuple;
 class LLSubscript;
 class LLProc;
@@ -203,18 +202,6 @@ struct LLTypeApp : public LLExpr {
   explicit LLTypeApp(LLExpr* base, TypeAST* arg,
                     foster::SourceRange sourceRange)
       : LLExpr("LLTypeApp", sourceRange), base(base), typeArg(arg) {
-  }
-  virtual llvm::Value* codegen(CodegenPass* pass);
-};
-
-struct LLSeq : public LLExpr {
-  std::vector<LLExpr*> parts;
-  explicit LLSeq(const LLExprs& exprs, foster::SourceRange sourceRange)
-    : LLExpr("LLSeq", sourceRange) { this->parts = exprs;
-
-      for (int i = 0; i < parts.size(); ++i) {
-        ASSERT(parts[i] > ((void*) 0x1000)) << "bad seq part " << i;
-      }
   }
   virtual llvm::Value* codegen(CodegenPass* pass);
 };

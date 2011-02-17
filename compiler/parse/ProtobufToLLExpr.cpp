@@ -148,14 +148,6 @@ LLProc* parseProc(const pb::Proc& e) {
                     LLExpr_from_pb(& e.body()));
 }
 
-LLSeq* parseSeq(const pb::Expr& e, const foster::SourceRange& range) {
-  LLExprs args;
-  for (int i = 0; i < e.parts_size(); ++i) {
-    args.push_back(LLExpr_from_pb(&e.parts(i)));
-  }
-  return new LLSeq(args, range);
-}
-
 /*
 LLExpr* parseSimd(const pb::Expr& e, const foster::SourceRange& range) {
   return new SimdVectorAST(LLExpr_from_pb(& e.parts(0)), range);
@@ -170,8 +162,11 @@ LLExpr* parseSubscript(const pb::Expr& e, const foster::SourceRange& range) {
 }
 
 LLExpr* parseTuple(const pb::Expr& e, const foster::SourceRange& range) {
-  LLSeq* seq = parseSeq(e, range);
-  LLTuple* rv = new LLTuple(seq->parts, range);
+  LLExprs args;
+  for (int i = 0; i < e.parts_size(); ++i) {
+    args.push_back(LLExpr_from_pb(&e.parts(i)));
+  }
+  LLTuple* rv = new LLTuple(args, range);
   rv->isClosureEnvironment = e.is_closure_environment();
   return rv;
 }
@@ -225,7 +220,6 @@ LLExpr* LLExpr_from_pb(const pb::Expr* pe) {
   case pb::Expr::LL_CALL:      rv = parseCall(e, range); break;
   case pb::Expr::LL_IF:        rv = parseIf(e, range); break;
   case pb::Expr::LL_INT:       rv = parseInt(e, range); break;
-  case pb::Expr::LL_SEQ:       rv = parseSeq(e, range); break;
   case pb::Expr::LL_LETVAL:    rv = parseLetVal(e, range); break;
   case pb::Expr::LL_CLOSURES:  rv = parseClosures(e, range); break;
 //  case pb::Expr::SIMD:      rv = parseSimd(e, range); break;

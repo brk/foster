@@ -361,39 +361,6 @@ llvm::Value* LLProto::codegen(CodegenPass* pass) {
   return F;
 }
 
-llvm::Value* LLSeq::codegen(CodegenPass* pass) {
-  //EDiag() << "Codegen for LLSeqs should (eventually) be subsumed by CFG building!";
-
-  std::vector<llvm::Value*> values;
-  llvm::Value* value = NULL;
-  if (!this->parts.empty()) {
-    for (int n = 0; n < this->parts.size(); ++n) {
-      LLExpr* part = this->parts[n];
-      ASSERT(part) << "parts["<<n<<"] of seq was NULL!";
-      llvm::Value* v = part->codegen(pass);
-      if (v) { values.push_back(v); }
-    }
-    // Find last non-void value
-    for (size_t n = values.size() - 1; n >= 0; --n) {
-      value = values[n];
-      if (value && !value->getType()->isVoidTy()) {
-        break;
-      }
-    }
-  }
-
-  if (!value) {
-    if (this->parts.empty()) {
-      // Empty sequences become unit values, silently.
-    } else {
-      foster::DDiag() << "warning: value-less sequence of length "
-                      << this->parts.size();// << show(this);
-    }
-    value = getUnitValue();
-  }
-  return value;
-}
-
 llvm::Value* LLLetVal::codegen(CodegenPass* pass) {
   llvm::outs() << "llletval " << name << " = "  << boundexpr->tag << " in " << inexpr->tag << "\n";
 
