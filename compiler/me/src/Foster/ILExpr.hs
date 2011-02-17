@@ -134,7 +134,7 @@ closureConvert globalVars ctx expr =
                                                        (cc, pc) <- g c
                                                        return $ (ILIf t ca cb cc, pa++pb++pc)
             AnnInt t   i                        ->  return $ (ILInt t i, [])
-            AnnSeq      a b                      -> do lhs <- fresh ".seq"
+            AnnSeq      a b                      -> do lhs <- tcFresh ".seq"
                                                        (ca, pa) <- g a
                                                        (cb, pb) <- g b
                                                        let ty = typeIL cb
@@ -152,7 +152,7 @@ closureConvert globalVars ctx expr =
             E_AnnVar      v                      -> return $ (ILVar v, [])
 
             E_AnnFn annFn -> do
-                clo <- fresh "clo"
+                clo <- tcFresh "clo"
                 let freeNames = freeVars expr `excluding` (Set.insert (fnNameA annFn) globalVars)
                 -- let env = tuple of free variables
                 -- rewrite body, replacing mentions of free variables with lookups in env
@@ -202,13 +202,13 @@ lambdaLift globalVars ctx f freevars =
         return $ (ILProcDef newproto newbody):newprocs
 
 
-fresh :: String -> Tc Ident
-fresh s = do
+tcFresh :: String -> Tc Ident
+tcFresh s = do
     u <- newTcUniq
     return (Ident s u)
 
 uniqifyAll :: [String] -> Tc [Ident]
-uniqifyAll ss = sequence $ map fresh ss
+uniqifyAll ss = sequence $ map tcFresh ss
 
 litInt32 :: Int -> ILExpr
 litInt32 i = ILInt (NamedTypeAST "i32") $ getLiteralInt i
@@ -260,14 +260,14 @@ nestedLets' (e:es) vars k =
       (ILVar v) -> nestedLets' es (v:vars) k
       --
       otherwise -> do
-        x        <- fresh ".x"
+        x        <- tcFresh ".x"
         let vx = AnnVar (typeIL e) x
         innerlet <- nestedLets' es (vx:vars) k
         return $ buildLet x e innerlet
 
 closureConvertAnnFn :: KnownVars -> Context -> AnnFn -> [String] -> Tc [ILProcDef]
 closureConvertAnnFn globalVars ctx f freevars = do
-    envName <- fresh ".env"
+    envName <- tcFresh ".env"
     uniqIdents <- uniqifyAll freevars
     let uniqFreeVars =  trace ("closure converting " ++ (show $ fnNameA f)) $  map ((contextVar ctx).identPrefix) uniqIdents
     let envTypes = map avarType uniqFreeVars
