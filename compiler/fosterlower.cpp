@@ -27,7 +27,7 @@
 #include "parse/ProtobufToLLExpr.h"
 #include "parse/ParsingContext.h" // for LLVM type names
 
-#include "_generated_/FosterLL.pb.h"
+#include "_generated_/FosterIL.pb.h"
 
 #include "StandardPrelude.h"
 

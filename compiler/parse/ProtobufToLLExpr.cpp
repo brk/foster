@@ -17,7 +17,7 @@
 
 #include "pystring/pystring.h"
 
-#include "_generated_/FosterLL.pb.h"
+#include "_generated_/FosterIL.pb.h"
 
 #include <vector>
 
@@ -216,17 +216,17 @@ LLExpr* LLExpr_from_pb(const pb::Expr* pe) {
   LLExpr* rv = NULL;
 
   switch (e.tag()) {
-  case pb::Expr::LL_BOOL:      rv = parseBool(e, range); break;
-  case pb::Expr::LL_CALL:      rv = parseCall(e, range); break;
-  case pb::Expr::LL_IF:        rv = parseIf(e, range); break;
-  case pb::Expr::LL_INT:       rv = parseInt(e, range); break;
-  case pb::Expr::LL_LETVAL:    rv = parseLetVal(e, range); break;
-  case pb::Expr::LL_CLOSURES:  rv = parseClosures(e, range); break;
+  case pb::Expr::IL_BOOL:      rv = parseBool(e, range); break;
+  case pb::Expr::IL_CALL:      rv = parseCall(e, range); break;
+  case pb::Expr::IL_IF:        rv = parseIf(e, range); break;
+  case pb::Expr::IL_INT:       rv = parseInt(e, range); break;
+  case pb::Expr::IL_LETVAL:    rv = parseLetVal(e, range); break;
+  case pb::Expr::IL_CLOSURES:  rv = parseClosures(e, range); break;
 //  case pb::Expr::SIMD:      rv = parseSimd(e, range); break;
-  case pb::Expr::LL_TY_APP:    rv = parseE_TyApp(e, range); break;
-  case pb::Expr::LL_SUBSCRIPT: rv = parseSubscript(e, range); break;
-  case pb::Expr::LL_TUPLE:     rv = parseTuple(e, range); break;
-  case pb::Expr::LL_VAR:       rv = parseVar(e, range); break;
+  case pb::Expr::IL_TY_APP:    rv = parseE_TyApp(e, range); break;
+  case pb::Expr::IL_SUBSCRIPT: rv = parseSubscript(e, range); break;
+  case pb::Expr::IL_TUPLE:     rv = parseTuple(e, range); break;
+  case pb::Expr::IL_VAR:       rv = parseVar(e, range); break;
 
   default:
     EDiag() << "Unknown protobuf tag: " << e.tag();

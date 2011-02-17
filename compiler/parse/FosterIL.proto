@@ -99,7 +99,7 @@ message PBInt {
   // The middle-end is also responsible for checking that the literal is
   // used appropriately (e.g. no passing 64-bit literal to 32-bit func).
   //
-  required string clean = 2;
+  required string clean = 2; // in base 10
   required int32  bits  = 3;
 }
 

@@ -400,7 +400,7 @@ add_executable(fosterlower
     compiler/StandardPrelude.cpp
     compiler/parse/ProtobufToLLExpr.cpp
     compiler/passes/LLCodegen.cpp
-    ${GENERATED}/FosterLL.pb.cc
+    ${GENERATED}/FosterIL.pb.cc
   )
 target_link_libraries(fosterlower
   fosterc_parse fosterc_passes fosterc_parse fosterc_base
