@@ -201,12 +201,6 @@ lambdaLift globalVars ctx f freevars =
         (newbody, newprocs) <- closureConvert globalVars extctx (annFnBody f)
         return $ (ILProcDef newproto newbody):newprocs
 
-
-tcFresh :: String -> Tc Ident
-tcFresh s = do
-    u <- newTcUniq
-    return (Ident s u)
-
 uniqifyAll :: [String] -> Tc [Ident]
 uniqifyAll ss = sequence $ map tcFresh ss
 

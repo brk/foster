@@ -90,6 +90,11 @@ newTcUniq = Tc (\tcenv -> do { let ref = tcEnvUniqs tcenv
                              ; return (Annotated uniq)
                              })
 
+tcFresh :: String -> Tc Ident
+tcFresh s = do
+    u <- newTcUniq
+    return (Ident s u)
+
 tcGetCurrentHistory :: Tc [ExprAST]
 tcGetCurrentHistory = Tc (\tcenv -> do { return (Annotated $
                                           Prelude.reverse $ tcParents tcenv) })
