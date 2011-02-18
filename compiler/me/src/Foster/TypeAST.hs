@@ -10,6 +10,8 @@ import Foster.Base
 import List(foldr1, length)
 import Data.IORef(IORef)
 
+data AnnVar = AnnVar { avarType :: TypeAST, avarIdent :: Ident } deriving (Eq, Show)
+
 type Sigma = TypeAST
 type Rho   = TypeAST -- No top-level ForAll
 type Tau   = TypeAST -- No ForAlls anywhere

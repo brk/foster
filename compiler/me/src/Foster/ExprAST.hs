@@ -201,8 +201,6 @@ data AnnExpr =
         | AnnCompiles   CompilesStatus String
         deriving (Show)
 
-data AnnVar       = AnnVar { avarType :: TypeAST, avarIdent :: Ident } deriving (Eq, Show)
-
 -- Body annotated, and overall type added
 data AnnFn        = AnnFn  { annFnType :: TypeAST
                            , annFnProto :: AnnPrototype
