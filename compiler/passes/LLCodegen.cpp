@@ -65,9 +65,7 @@ void codegenLL(LLModule* package, llvm::Module* mod) {
   package->codegen(&cp);
 }
 
-std::string getSymbolName(const std::string& sourceName) {
-  // TODO this substitution should probably be explicitly restricted
-  // to apply only to top-level function definitions.
+std::string getGlobalSymbolName(const std::string& sourceName) {
   if (sourceName == "main") {
     // libfoster contains a main() symbol that handles
     // initialization and shutdown/cleanup of the runtime,
@@ -91,10 +89,6 @@ bool structTypeContainsPointers(const llvm::StructType* ty) {
   }
   return false;
 }
-
-// converts   t1, (envptrty, t2, t3)   to   { rt (envptrty, t2, t3)*, envptrty }
-// TODO handle functions of native arity >= 1
-//const llvm::StructType* closureTypeFromClosedFnType(const FunctionType* fnty);
 
 // Follows up to two (type-based) pointer indirections for the given value.
 llvm::Value* getClosureStructValue(llvm::Value* maybePtrToClo) {
@@ -317,41 +311,37 @@ llvm::Value* emitRuntimeArbitraryPrecisionOperation(const std::string& op,
 }
 */
 
-llvm::Value* LLProto::codegen(CodegenPass* pass) {
-  std::string symbolName = foster::getSymbolName(this->getName());
+void setFunctionArgumentNames(llvm::Function* F,
+              const std::vector<std::string>& argnames) {
+  ASSERT(argnames.size() == F->arg_size())
+            << "error when codegenning proto " << F->getName()
+            << "\n of type " << str(F->getType())
+            << "; inArgs.size: " << argnames.size() <<
+               "; F.arg_size: " << F->arg_size() << "\n" << str(F);
 
-  // Give function literals internal linkage, since we know that
-  // they can only be referenced from the function in which they
-  // are defined.
+  Function::arg_iterator AI = F->arg_begin();
+  for (size_t i = 0; i != argnames.size(); ++i, ++AI) {
+    AI->setName(argnames[i]);
+  }
+}
+
+llvm::Value* LLProto::codegen(CodegenPass* pass) {
+  std::string symbolName = foster::getGlobalSymbolName(this->name);
+
+  // Give function literals internal linkage, since we know that they can
+  // only be referenced from the function in which they are defined.
   llvm::GlobalValue::LinkageTypes functionLinkage =
-      (this->getName().find("anon_fnlet_") != string::npos)
+      (this->name.find("anon_fnlet_") != string::npos)
         ? Function::InternalLinkage
         : Function::ExternalLinkage;
-
-  llvm::outs() << "Codegenning proto " << symbolName <<"\n";
 
   const llvm::FunctionType* FT = dyn_cast<FunctionType>(getLLVMType(this->type));
   Function* F = Function::Create(FT, functionLinkage, symbolName, pass->mod);
 
-  ASSERT(this->inArgs.size() == F->arg_size())
-  << "error when codegenning proto " << symbolName
-  << "\n of type " << str(this->type)
-  << "; inArgs.size: " << this->inArgs.size() <<
-     "; F.arg_size: " << F->arg_size() << "\n" << str(F);
+  ASSERT(F) << "function creation failed for proto " << this->name;
+  ASSERT(F->getName() == symbolName) << "redefinition of function " << symbolName;
 
-  if (!F) {
-    EDiag() << "function creation failed for proto " << this->getName();
-  } else if (F->getName() != symbolName) {
-    // If F conflicted, there was already something with our desired name
-    EDiag() << "redefinition of function " << symbolName;
-  } else {
-    // Set names for all arguments
-    Function::arg_iterator AI = F->arg_begin();
-    ASSERT(this->inArgs.size() == F->arg_size());
-    for (size_t i = 0; i != this->inArgs.size(); ++i, ++AI) {
-      AI->setName(this->inArgs[i]->name);
-    }
-  }
+  setFunctionArgumentNames(F, this->argnames);
 
   if (FnTypeAST* fnty = dynamic_cast<FnTypeAST*>(this->type)) {
     F->setCallingConv(fnty->getCallingConventionID());
@@ -560,7 +550,7 @@ llvm::Value* LLProc::codegen(CodegenPass* pass) {
   // dynamically-allocated pointer parameters.
   if (true) { // conservative approximation to MightAlloc
     Function::arg_iterator AI = F->arg_begin();
-    ASSERT(F->arg_size() == this->getProto()->inArgs.size());
+    ASSERT(F->arg_size() == this->proto->argnames.size());
     for (size_t i = 0; i != F->arg_size(); ++i, ++AI) {
       if (mightContainHeapPointers(AI->getType())) {
 #if 0
@@ -835,7 +825,7 @@ void doLowLevelWrapperFnCoercions(const llvm::Type* expectedType,
     std::string cloname = ParsingContext::freshName("c-clo");
     std::vector<LLClosure*> closures;
     std::vector<std::string> vars;
-    closures.push_back(new LLClosure(cloname, wrapper->proto->getName(), vars));
+    closures.push_back(new LLClosure(cloname, wrapper->getName(), vars));
     LLExpr* clo = new LLClosures(new LLVar(cloname, arg->sourceRange),
                              closures, arg->sourceRange);
     arg = clo;
@@ -1112,19 +1102,18 @@ LLProc* getClosureVersionOf(LLExpr* arg,
     return exists;
   }
 
-  std::vector<LLVar*>   inArgNames;
+  std::vector<std::string>   inArgNames;
   std::vector<TypeAST*> inArgTypes;
   std::vector<TypeAST*> envTypes;
   std::vector<LLVar*> callArgs;
 
-  inArgNames.push_back(new LLVar(ParsingContext::freshName("__ignored_env__"),
-                            SourceRange::getEmptyRange()));
+  inArgNames.push_back(ParsingContext::freshName("__ignored_env__"));
   inArgTypes.push_back(RefTypeAST::get(TupleTypeAST::get(envTypes)));
 
   for (size_t i = 0; i < fnty->getNumParams(); ++i) {
     LLVar* a = new LLVar(ParsingContext::freshName("_cv_arg"),
                         SourceRange::getEmptyRange());
-    inArgNames.push_back(a);
+    inArgNames.push_back(a->name);
     inArgTypes.push_back(fnty->getParamType(i));
     callArgs.push_back(a);
   }

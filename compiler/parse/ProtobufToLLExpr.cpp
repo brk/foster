@@ -126,16 +126,12 @@ LLProto* parseProto(const pb::Proto& proto) {
 
   FnTypeAST* proctype = parseProcType(proto.proctype());
 
-  std::vector<LLVar*> args;
+  std::vector<std::string> args;
   llvm::outs() << "parsing proto for " << proto.name()
                << " with " << proto.in_args_size() << "args and proc type "
                << str(proctype) << "\n";
   for (int i = 0; i < proto.in_args_size(); ++i) {
-    LLExpr* arg = LLExpr_from_pb(& proto.in_args(i));
-    LLVar* var = dynamic_cast<LLVar*>(arg);
-    ASSERT(var) << "proto must have var, but arg " << i << " was something else.";
-    args.push_back(var);
-    llvm::outs() << "\t" << var->name << "\n";
+    args.push_back(proto.in_args(i));
   }
 
 

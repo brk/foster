@@ -98,16 +98,16 @@ private:
 public:
   llvm::Value* value;
 
-  string getName() const { return name; }
   FnTypeAST* getFnType() { return type; }
 
-  std::vector<LLVar*> inArgs;
+  std::vector<std::string> argnames;
 
   LLProto(FnTypeAST* procType, const string& name,
-          const std::vector<LLVar*>& inArgs)
-   : name(name), type(procType), inArgs(inArgs) {
+          const std::vector<std::string>& argnames)
+   : name(name), type(procType), argnames(argnames) {
     value = NULL;
   }
+  const std::string& getName() const { return name; }
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
@@ -119,8 +119,7 @@ struct LLProc {
    explicit LLProc(LLProto* proto, LLExpr* body)
     : proto(proto), body(body) {}
 
-  std::string& getName() { return proto->name; }
-  std::string getName() const { return proto->getName(); }
+  const std::string& getName() const { return proto->name; }
   LLProto* getProto() { return proto; }
   LLProto* getProto() const { return proto; }
   LLExpr*& getBody() { return body; }

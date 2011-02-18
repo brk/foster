@@ -105,7 +105,7 @@ message PBInt {
 
 message Proto {
   required ProcType proctype      = 1;
-  repeated Expr   in_args         = 2; // really Var nodes: name + type
+  repeated string in_args         = 2;
   required string name            = 3;
   optional SourceRange range      = 5;
 }

@@ -62,11 +62,11 @@ identFullString :: Ident -> String
 identFullString = show
 
 -- Primitive values have minimal C-level name mangling, at the moment...
-dumpIdent :: Ident -> String
+dumpIdent :: Ident -> P'.Utf8
 dumpIdent i = let p = identPrefix i in
               if (isJust $ lookup p rootContextPairs) || identNum i < 0
-                then identPrefix i
-                else identFullString i
+                then u8fromString $ identPrefix i
+                else u8fromString $ identFullString i
 
 -----------------------------------------------------------------------
 
@@ -129,7 +129,7 @@ dumpExpr x@(ILBool b) =
                     , PbExpr.type' = Just $ dumpType (typeIL x)  }
 
 dumpExpr (ILVar (AnnVar t i)) =
-    P'.defaultValue { PbExpr.name  = Just $ u8fromString (dumpIdent i)
+    P'.defaultValue { PbExpr.name  = Just $ dumpIdent i
                     , PbExpr.tag   = IL_VAR
                     , PbExpr.type' = Just $ dumpType t  }
 
@@ -169,13 +169,13 @@ dumpExpr x@(ILClosures ty closures expr) =
 dumpExpr (ILLetVal t x a b) =
     P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [a, b])
                     , PbExpr.tag   = IL_LETVAL
-                    , PbExpr.name  = Just $ u8fromString (dumpIdent $ avarIdent x)
+                    , PbExpr.name  = Just $ dumpIdent $ avarIdent x
                     , PbExpr.type' = Just $ dumpType t }
 
 dumpClosureWithName (varid, ILClosure procid idents) =
-    Closure { varname  = u8fromString (dumpIdent   varid)
+    Closure { varname  = dumpIdent varid
             , procid   = u8fromString (identPrefix procid)
-            , varnames = fromList (fmap u8fromString (fmap dumpIdent idents)) }
+            , varnames = fromList (fmap dumpIdent idents) }
 
 -----------------------------------------------------------------------
 intToInt32 :: Int -> P'.Int32
@@ -205,13 +205,13 @@ dumpInt cleanText activeBits =
                     , bits  = intToInt32   activeBits }
 
 dumpProto p@(ILPrototype t ident formals callconv) =
-    Proto { Proto.name  = u8fromString (dumpIdent ident)
-          , in_args     = fromList $ [dumpVar e | e <- formals]
+    Proto { Proto.name  = dumpIdent ident
+          , in_args     = fromList $ [dumpIdent (avarIdent v) | v <- formals]
           , proctype    = dumpProcType (procTypeFromILProto p)
           , Proto.range = Nothing }
 
 dumpVar (AnnVar t ident) =
-    P'.defaultValue { PbExpr.name  = Just $ u8fromString (dumpIdent ident)
+    P'.defaultValue { PbExpr.name  = Just $ dumpIdent ident
                     , PbExpr.tag   = IL_VAR
                     , PbExpr.type' = Just $ dumpType t  }
 
