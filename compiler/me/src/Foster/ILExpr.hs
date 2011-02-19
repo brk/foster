@@ -129,7 +129,7 @@ closureConvert ctx expr =
 
             E_AnnFn annFn -> do
                 clo <- ilmFresh "clo"
-                (ILMState _ globalVars _) <- get
+                globalVars <- gets ilmGlobals
                 let freeNames = freeVars expr `excluding` (Set.insert (fnNameA annFn) globalVars)
                 -- let env = tuple of free variables
                 -- rewrite body, replacing mentions of free variables with lookups in env
@@ -147,7 +147,7 @@ closureConvert ctx expr =
                     (E_AnnFn f) -> do -- If we're calling a function directly,
                                      -- we know we can perform lambda lifting
                                      -- on it, by adding args for its free variables.
-                                    (ILMState _ globalVars _) <- get
+                                    globalVars <- gets ilmGlobals
                                     let freeNames = (map identPrefix $ freeIdentsA b) `excluding` globalVars
                                     let freevars = map (contextVar ctx) freeNames
                                     newproc <- lambdaLift ctx f freevars
