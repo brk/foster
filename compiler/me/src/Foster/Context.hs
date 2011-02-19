@@ -7,12 +7,7 @@ import Foster.ExprAST
 import Foster.TypeAST
 
 data ContextBinding = TermVarBinding String AnnVar
-data Context = Context { contextBindings :: [ContextBinding]
-                       --, contextTcHistory :: ContextHistory
-                       }
-
---inExpr :: Context -> ExprAST -> Context
---inExpr c e = c { contextTcHistory = e : (contextTcHistory c) }
+data Context = Context { contextBindings :: [ContextBinding] }
 
 prependContextBinding :: Context -> ContextBinding -> Context
 prependContextBinding ctx prefix =
