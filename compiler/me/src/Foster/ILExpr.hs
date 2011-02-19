@@ -166,8 +166,7 @@ closureConvert ctx expr =
 --      let y = blah in p(y, foobar)
 lambdaLift :: Context -> AnnFn -> [AnnVar] -> ILM ILProcDef
 lambdaLift ctx f freevars =
-    let newproto = trace ("lambda lifting " ++ (show $ fnNameA f)) $
-                    case (annFnProto f) of
+    let newproto = case (annFnProto f) of
                     (AnnPrototype rt nm vars) ->
                         (ILPrototype rt nm (freevars ++ vars) "fastcc") in
     let extctx =  prependContextBindings ctx (bindingsForILProto newproto) in
@@ -237,7 +236,7 @@ closureConvertAnnFn :: Context -> AnnFn -> [String] -> ILM ILProcDef
 closureConvertAnnFn ctx f freevars = do
     envName <- ilmFresh ".env"
     uniqIdents <- uniqifyAll freevars
-    let uniqFreeVars =  trace ("closure converting " ++ (show $ fnNameA f)) $  map ((contextVar ctx).identPrefix) uniqIdents
+    let uniqFreeVars = map ((contextVar ctx).identPrefix) uniqIdents
     let envTypes = map avarType uniqFreeVars
     let envVar = AnnVar (PtrTypeAST (TupleTypeAST envTypes)) envName
     let newproto = case (annFnProto f) of
