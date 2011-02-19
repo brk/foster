@@ -265,7 +265,7 @@ int main(int argc, char** argv) {
     dumpModuleToFile(module, dumpdirFile(optOutputName + ".preopt.ll"));
   }
 
-  dumpModuleToFile(module, dumpdirFile(optOutputName + ".preopt.bc"));
+  dumpModuleToBitcode(module, dumpdirFile(optOutputName + ".preopt.bc"));
 
   if (optDumpStats) {
     string err;
