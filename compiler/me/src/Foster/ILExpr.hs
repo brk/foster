@@ -32,7 +32,7 @@ data ILExpr =
         -- Procedures may be implicitly recursive,
         -- but we need to put a smidgen of effort into
         -- codegen-ing closures so they can be mutually recursive.
-        | ILClosures    TypeAST [(Ident, ILClosure)] ILExpr
+        | ILClosures    TypeAST [Ident] [ILClosure] ILExpr
         | ILLetVal      TypeAST AnnVar ILExpr ILExpr
         | ILVar         AnnVar
         | ILSubscript   { ilSubscriptType :: TypeAST
@@ -135,11 +135,10 @@ closureConvert ctx expr =
                 -- rewrite body, replacing mentions of free variables with lookups in env
                 newproc <- closureConvertAnnFn ctx annFn freeNames
                 let procty = procType newproc
-                return $ ILClosures procty [
-                                (clo, ILClosure (ilProtoIdent $ ilProcProto newproc)
-                                                (map (\n -> avarIdent (contextVar ctx n)) freeNames))
-                            ]
-                            (ILVar (AnnVar procty clo))
+                return $ (ILClosures procty
+                            [clo] [ILClosure (ilProtoIdent $ ilProcProto newproc)
+                                                (map (\n -> avarIdent (contextVar ctx n)) freeNames)
+                            ] (ILVar (AnnVar procty clo)))
             -- b(a)
             AnnCall  r t b a -> do
                 ILTuple cargs <- g a
@@ -260,7 +259,7 @@ typeIL :: ILExpr -> TypeAST
 typeIL (ILBool _)          = fosBoolType
 typeIL (ILInt t _)         = t
 typeIL (ILTuple es)        = TupleTypeAST [typeIL e | e <- es]
-typeIL (ILClosures t closures expr) = t
+typeIL (ILClosures t n b e) = t
 typeIL (ILLetVal t x a b)  = t
 typeIL (ILCall t id expr)  = t
 typeIL (ILIf t a b c)      = t
@@ -274,7 +273,7 @@ instance Structured ILExpr where
         case e of
             ILBool         b    -> out $ "ILBool      " ++ (show b)
             ILCall    t b a     -> out $ "ILCall      " ++ " :: " ++ show t
-            ILClosures t bnds e -> out $ "ILClosures  " ++ show (map (\(id,clo) -> id) bnds)
+            ILClosures t n b e  -> out $ "ILClosures  " ++ show n
             ILLetVal t x a b    -> out $ "ILLetVal    " ++ (show $ avarIdent x) ++ " :: " ++ (show $ avarType x) ++ " = ... in ... "
             ILIf      t  a b c  -> out $ "ILIf        " ++ " :: " ++ show t
             ILInt ty int        -> out $ "ILInt       " ++ (litIntText int) ++ " :: " ++ show ty
@@ -287,7 +286,7 @@ instance Structured ILExpr where
             ILBool         b                    -> []
             ILInt t _                           -> []
             ILTuple     es                      -> es
-            ILClosures t clzs e                 -> [e]
+            ILClosures t bnds clos e            -> [e]
             --ILLetVal t x a i@(ILLetVal _ _ _ _) -> a : childrenOf i
             ILLetVal t x a b                    -> [a, b]
             ILCall    t b vs                    -> [ILVar b] ++ [ILVar v | v <- vs]

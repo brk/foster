@@ -160,10 +160,10 @@ dumpExpr x@(ILTyApp overallTy baseExpr argType) =
                     , PbExpr.tag   = IL_TY_APP
                     , PbExpr.type' = Just $ dumpType overallTy }
 
-dumpExpr x@(ILClosures ty closures expr) =
+dumpExpr x@(ILClosures ty names closures expr) =
     P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [expr])
                     , PbExpr.tag   = IL_CLOSURES
-                    , PbExpr.closures = fromList (fmap dumpClosureWithName closures)
+                    , PbExpr.closures = fromList (fmap dumpClosureWithName (Prelude.zip names closures))
                     , PbExpr.type' = Just $ dumpType (typeIL expr) }
 
 dumpExpr x@(ILLetVal t _ _ _) =
