@@ -68,6 +68,7 @@ type KnownVars = Set String
 data ILMState = ILMState {
     ilmUniq    :: Uniq
   , ilmGlobals :: KnownVars
+  , ilmProcDefs :: [ILProcDef]
 }
 
 type ILM a = State ILMState a
@@ -77,6 +78,11 @@ ilmFresh s = do old <- get
                 put (old { ilmUniq = (ilmUniq old) + 1 })
                 return (Ident s (ilmUniq old))
 
+ilmPutProc :: ILProcDef -> ILM ILProcDef
+ilmPutProc p = do
+        old <- get
+        put (old { ilmProcDefs = p:(ilmProcDefs old) })
+        return p
 
 closureConvertAndLift :: Context -> (ModuleAST AnnFn) -> ILProgram
 closureConvertAndLift ctx m =
@@ -85,75 +91,70 @@ closureConvertAndLift ctx m =
     -- Lambda lifting wiil closure convert nested functions.
     let globalVars = (Set.fromList $ map (\(TermVarBinding s _) -> s) (contextBindings ctx)) in
     let procs' = forM fns (\fn -> lambdaLift ctx fn []) in
-    let procs = evalState procs' (ILMState 0 globalVars) in
-    ILProgram (concat procs)
+    let newstate = execState procs' (ILMState 0 globalVars []) in
+    ILProgram $ (ilmProcDefs newstate)
 
 excluding :: Ord a => [a] -> Set a -> [a]
 excluding bs zs =  Set.toList $ Set.difference (Set.fromList bs) zs
 
-closureConvert :: Context -> AnnExpr -> ILM (ILExpr, [ILProcDef])
+closureConvert :: Context -> AnnExpr -> ILM ILExpr
 closureConvert ctx expr =
         let g = closureConvert ctx in
         case expr of
-            AnnBool         b                    -> return $ (ILBool b, [])
-            AnnCompiles c msg                    -> return $ (ILBool (c == CS_WouldCompile), [])
-            AnnInt t   i                         -> return $ (ILInt t i, [])
-            E_AnnVar      v                      -> return $ (ILVar v,   [])
+            AnnBool         b                    -> return $ ILBool b
+            AnnCompiles c msg                    -> return $ ILBool (c == CS_WouldCompile)
+            AnnInt t   i                         -> return $ ILInt t i
+            E_AnnVar      v                      -> return $ ILVar v
 
             AnnIf      t  a b c                  -> do x <- ilmFresh ".ife"
-                                                       (ca, pa) <- g a
-                                                       (cb, pb) <- g b
-                                                       (cc, pc) <- g c
-                                                       let v = AnnVar (typeIL ca) x
-                                                       return $ (buildLet x ca (ILIf t v cb cc) , pa++pb++pc)
+                                                       a' <- g a
+                                                       b' <- g b
+                                                       c' <- g c
+                                                       let v = AnnVar (typeIL a') x
+                                                       return $ buildLet x a' (ILIf t v b' c')
 
             AnnSeq      a b                      -> do lhs <- ilmFresh ".seq"
-                                                       (ca, pa) <- g a
-                                                       (cb, pb) <- g b
-                                                       return $ (buildLet lhs ca cb, pa++pb)
+                                                       a' <- g a
+                                                       b' <- g b
+                                                       return $ buildLet lhs a' b'
 
-            AnnSubscript t a b                   -> do (ca, pa) <- g a
-                                                       (cb, pb) <- g b
-                                                       nlets <- nestedLets [ca] (\[va] -> ILSubscript t va cb)
-                                                       return (nlets, pa++pb)
-            AnnTuple     es b                    -> do gs <- sequence $ map g es
-                                                       let (cs, ps) = unzip gs
-                                                       return $ (ILTuple cs, concat ps)
-            E_AnnTyApp t e argty                 -> do (ce, pe) <- g e
-                                                       return $ (ILTyApp t ce argty, pe)
+            AnnSubscript t a b                   -> do a' <- g a
+                                                       b' <- g b
+                                                       nestedLets [a'] (\[va] -> ILSubscript t va b')
+
+            AnnTuple     es b                    -> do cs <- sequence $ map g es
+                                                       return $ ILTuple cs
+            E_AnnTyApp t e argty                 -> do e' <- g e
+                                                       return $ ILTyApp t e' argty
 
             E_AnnFn annFn -> do
                 clo <- ilmFresh "clo"
-                (ILMState _ globalVars) <- get
+                (ILMState _ globalVars _) <- get
                 let freeNames = freeVars expr `excluding` (Set.insert (fnNameA annFn) globalVars)
                 -- let env = tuple of free variables
                 -- rewrite body, replacing mentions of free variables with lookups in env
-                (newproc:newprocs) <- closureConvertAnnFn ctx annFn freeNames
+                newproc <- closureConvertAnnFn ctx annFn freeNames
                 let procty = procType newproc
-                return (ILClosures procty [
+                return $ ILClosures procty [
                                 (clo, ILClosure (ilProtoIdent $ ilProcProto newproc)
                                                 (map (\n -> avarIdent (contextVar ctx n)) freeNames))
                             ]
                             (ILVar (AnnVar procty clo))
-                       , newproc:newprocs)
             -- b(a)
             AnnCall  r t b a -> do
-                (ILTuple cargs, pargs)  <- g a
+                ILTuple cargs <- g a
                 case b of
-                    (E_AnnVar v) -> do --return $ (ILAppClosure (avarIdent v) (ILTuple cargs), pargs)
-                                    nlets <- nestedLets cargs (\vars -> (ILCall t v vars))
-                                    return $ (nlets, pargs)
+                    (E_AnnVar v) -> do nestedLets cargs (\vars -> (ILCall t v vars))
                     (E_AnnFn f) -> do -- If we're calling a function directly,
                                      -- we know we can perform lambda lifting
                                      -- on it, by adding args for its free variables.
-                                    (ILMState _ globalVars) <- get
+                                    (ILMState _ globalVars _) <- get
                                     let freeNames = (map identPrefix $ freeIdentsA b) `excluding` globalVars
                                     let freevars = map (contextVar ctx) freeNames
-                                    (newproc:newprocs) <- lambdaLift ctx f freevars
+                                    newproc <- lambdaLift ctx f freevars
                                     let procid = (ilProtoIdent (ilProcProto newproc))
                                     let procvar = (AnnVar (procType newproc) procid)
-                                    nlets <- nestedLets cargs (\vars -> ILCall t procvar (freevars ++ vars))
-                                    return $ (nlets, newproc:(newprocs++pargs))
+                                    nestedLets cargs (\vars -> ILCall t procvar (freevars ++ vars))
                     _ -> error $ "AnnCall with non-var base of " ++ show b
 
 
@@ -163,7 +164,7 @@ closureConvert ctx expr =
 -- we can rewrite the lambda to a closed proc:
 --      letproc p = \y x -> x + y
 --      let y = blah in p(y, foobar)
-lambdaLift :: Context -> AnnFn -> [AnnVar] -> ILM [ILProcDef]
+lambdaLift :: Context -> AnnFn -> [AnnVar] -> ILM ILProcDef
 lambdaLift ctx f freevars =
     let newproto = trace ("lambda lifting " ++ (show $ fnNameA f)) $
                     case (annFnProto f) of
@@ -171,8 +172,8 @@ lambdaLift ctx f freevars =
                         (ILPrototype rt nm (freevars ++ vars) "fastcc") in
     let extctx =  prependContextBindings ctx (bindingsForILProto newproto) in
     do
-        (newbody, newprocs) <- closureConvert extctx (annFnBody f)
-        return $ (ILProcDef newproto newbody):newprocs
+        newbody <- closureConvert extctx (annFnBody f)
+        ilmPutProc (ILProcDef newproto newbody)
 
 uniqifyAll :: [String] -> ILM [Ident]
 uniqifyAll ss = sequence $ map ilmFresh ss
@@ -232,7 +233,7 @@ nestedLets' (e:es) vars k =
         innerlet <- nestedLets' es (vx:vars) k
         return $ buildLet x e innerlet
 
-closureConvertAnnFn :: Context -> AnnFn -> [String] -> ILM [ILProcDef]
+closureConvertAnnFn :: Context -> AnnFn -> [String] -> ILM ILProcDef
 closureConvertAnnFn ctx f freevars = do
     envName <- ilmFresh ".env"
     uniqIdents <- uniqifyAll freevars
@@ -245,17 +246,16 @@ closureConvertAnnFn ctx f freevars = do
     let nestedLets vars i = case vars of
             [] -> closureConvert ctx (annFnBody f)
             -- Does this loop need to augment the context?
-            (v:vs) -> do { (innerlet, newprocs) <- nestedLets vs (i + 1)
-                        ; return $ ((ILLetVal (typeIL innerlet)
+            (v:vs) -> do { innerlet <- nestedLets vs (i + 1)
+                         ; return $ (ILLetVal (typeIL innerlet)
                                              v
                                              (ILSubscript (avarType v)
                                                           envVar
                                                           (litInt32 i))
                                              innerlet)
-                                    , newprocs)
                         }
-    (newbody, newprocs) <- nestedLets uniqFreeVars 0
-    return $ (ILProcDef newproto newbody):newprocs
+    newbody <- nestedLets uniqFreeVars 0
+    ilmPutProc (ILProcDef newproto newbody)
 
 
 typeIL :: ILExpr -> TypeAST
