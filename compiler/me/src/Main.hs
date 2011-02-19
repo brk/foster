@@ -103,7 +103,7 @@ fnVar f = AnnVar (fnTypeFrom f) (Ident (fnName f) (-12345))
 -- Every function in the SCC should typecheck against the input context,
 -- and the resulting context should include the computed types of each
 -- function in the SCC.
-typecheckFnSCC :: Graph.SCC FnAST -> (Context, TcEnv) -> IO ([TypecheckResult AnnExpr], (Context, TcEnv))
+typecheckFnSCC :: Graph.SCC FnAST -> (Context, TcEnv) -> IO ([OutputOr AnnExpr], (Context, TcEnv))
 typecheckFnSCC scc (ctx, tcenv) = do
     let fns = Graph.flattenSCC scc
     annfns <- forM fns $ \fn -> do
@@ -115,18 +115,17 @@ typecheckFnSCC scc (ctx, tcenv) = do
         typechecked <- unTc (typecheck extctx ast Nothing) tcenv
         inspect extctx typechecked ast
         return typechecked
-    return $ if allAnnotated annfns
-        then let fns = [f | (Annotated (E_AnnFn f)) <- annfns] in
+    return $ if allOK annfns
+        then let fns = [f | (OK (E_AnnFn f)) <- annfns] in
              let newbindings = foldr (\f b -> (bindingForAnnFn f):b) [] fns in
              (annfns, (prependContextBindings ctx newbindings, tcenv))
-        else ([TypecheckErrors (typecheckError ctx (out $ "not all functions type checked correctly in SCC: "
-                                ++ show [fnName f | f <- fns]))
+        else ([Errors (out $ "not all functions type checked correctly in SCC: "
+                                ++ show [fnName f | f <- fns])
               ],(ctx, tcenv))
 
---foldMap :: [Graph.SCC FnAST] -> Context -> (Graph.SCC FnAST -> Context -> IO ([TypecheckResult AnnExpr], Context)) -> ...
---foldMap :: [[FnAST]] -> Context -> ([FnAST] -> Context -> IO ([TypecheckResult AnnExpr], Context)) -> IO ([TypecheckResult AnnExpr], Context)
-
-mapFoldM :: (Monad m) => [a] -> b -> (a -> b -> m ([c], b)) -> m ([c], b)
+mapFoldM :: (Monad m) => [a] -> b ->
+                         (a -> b -> m ([c], b))
+                                 -> m ([c], b)
 mapFoldM []  b  f    = fail "mapFoldM must be given a non-empty list"
 mapFoldM [a] b1 f    = f a b1
 mapFoldM (a:as) b1 f = do
@@ -142,24 +141,24 @@ typecheckModule mod tcenv = do
     putStrLn $ "Function SCC list : " ++ show [(fnName f, fnFreeVariables f bindings) | fns <- sortedFns, f <- Graph.flattenSCC fns]
     let ctx = Context bindings
     (annFns, (extctx, tcenv')) <- mapFoldM sortedFns (ctx, tcenv) typecheckFnSCC
-    -- annFns :: [TypecheckResult AnnExpr]
-    if allAnnotated annFns
+    -- annFns :: [OutputOr AnnExpr]
+    if allOK annFns
         then return $ Just (extctx,
-                            ModuleAST [f | (Annotated (E_AnnFn f)) <- annFns]
+                            ModuleAST [f | (OK (E_AnnFn f)) <- annFns]
                                       (moduleASTsourceLines mod))
         else return $ Nothing
 
-allAnnotated :: [TypecheckResult AnnExpr] -> Bool
-allAnnotated results = List.all isAnnotated results
+allOK :: [OutputOr AnnExpr] -> Bool
+allOK results = List.all isOK results
 
-inspect :: Context -> TypecheckResult AnnExpr -> ExprAST -> IO Bool
+inspect :: Context -> OutputOr AnnExpr -> ExprAST -> IO Bool
 inspect ctx typechecked ast =
     case typechecked of
-        Annotated e -> do
+        OK e -> do
             putStrLn $ "Successful typecheck!"
             runOutput $ showStructure e
             return True
-        TypecheckErrors errs -> do
+        Errors errs -> do
             runOutput $ showStructure ast
             runOutput $ (outCSLn Red "Typecheck error: ")
             forM_ errs $ \(output) ->
@@ -200,14 +199,14 @@ main = do
                          runOutput $ (outCSLn Yellow (joinWith "\n" $ map show (contextBindings extctx)))
                          aprog <- unTc (closureConvertAndLift extctx mod) tcenv
                          case aprog of
-                            (Annotated prog) -> do
+                            (OK prog) -> do
                                let fns = moduleASTfunctions mod
                                let (ILProgram procs) = prog
                                dumpModuleToProtobufIL prog (outfile ++ ".ll.pb")
                                runOutput $ (outLn "/// ===================================")
                                runOutput $ showProgramStructure prog
                                runOutput $ (outLn "^^^ ===================================")
-                            (TypecheckErrors errs) -> do
+                            (Errors errs) -> do
                                runOutput $ errs
             Nothing    -> error $ "Unable to type check input module!"
 

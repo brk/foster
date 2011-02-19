@@ -295,8 +295,8 @@ collectErrors :: Tc a -> Tc Output
 collectErrors tce =
     Tc (\env -> do { result <- unTc tce env
                    ; case result of
-                       Annotated expr     -> return (Annotated [])
-                       TypecheckErrors ss -> return (Annotated ss)
+                       OK expr     -> return (OK [])
+                       Errors ss -> return   (OK ss)
                        })
 
 

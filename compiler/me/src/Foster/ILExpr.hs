@@ -38,8 +38,6 @@ data ILExpr =
                         , ilSubscriptBase  :: AnnVar
                         , ilSubscriptIndex :: ILExpr  }
         | ILIf          TypeAST ILExpr ILExpr ILExpr
---        | ILAppDirect   Ident ILExpr
---        | ILAppClosure  Ident ILExpr
         | ILCall        TypeAST AnnVar [AnnVar]
         | ILTyApp       TypeAST ILExpr TypeAST
         deriving (Show)
@@ -50,34 +48,6 @@ data ILPrototype = ILPrototype  { ilProtoReturnType :: TypeAST
                                 , ilProtoVars       :: [AnnVar]
                                 , ilProtoCallConv   :: String
                                 } deriving (Eq, Show)
-
-instance Structured ILExpr where
-    textOf e width =
-        let spaces = Prelude.replicate width '\SP'  in
-        case e of
-            ILBool         b    -> out $ "ILBool      " ++ (show b)
-            ILCall    t b a     -> out $ "ILCall      " ++ " :: " ++ show t
-            ILClosures t bnds e -> out $ "ILClosures  " ++ show (map (\(id,clo) -> id) bnds)
-            ILLetVal t x a b    -> out $ "ILLetVal    " ++ (show $ avarIdent x) ++ " :: " ++ (show $ avarType x) ++ " = ... in ... "
-            ILIf      t  a b c  -> out $ "ILIf        " ++ " :: " ++ show t
-            ILInt ty int        -> out $ "ILInt       " ++ (litIntText int) ++ " :: " ++ show ty
-            ILSubscript  t a b  -> out $ "ILSubscript " ++ " :: " ++ show t
-            ILTuple     es      -> out $ "ILTuple     (size " ++ (show $ length es) ++ ")"
-            ILVar (AnnVar t i)  -> out $ "ILVar       " ++ show i ++ " :: " ++ show t
-            ILTyApp t e argty   -> out $ "ILTyApp     [" ++ show argty ++ "] :: " ++ show t
-    childrenOf e =
-        case e of
-            ILBool         b                    -> []
-            ILInt t _                           -> []
-            ILTuple     es                      -> es
-            ILClosures t clzs e                 -> [e]
-            ILLetVal t x a i@(ILLetVal _ _ _ _) -> a : childrenOf i
-            ILLetVal t x a b                    -> [a, b]
-            ILCall    t b vs                    -> [ILVar b] ++ [ILVar v | v <- vs]
-            ILIf      t  a b c                  -> [a, b, c]
-            ILSubscript t a b                   -> [ILVar a, b]
-            ILVar (AnnVar t i)                  -> []
-            ILTyApp t e argty                   -> [e]
 
 showProgramStructure :: ILProgram -> Output
 showProgramStructure (ILProgram procdefs) =
@@ -96,17 +66,6 @@ showProcStructure (ILProcDef proto body) =
                                     , annProtoVars       :: [AnnVar]
     -}
 
-typeIL :: ILExpr -> TypeAST
-typeIL (ILBool _)          = fosBoolType
-typeIL (ILInt t _)         = t
-typeIL (ILTuple es)        = TupleTypeAST [typeIL e | e <- es]
-typeIL (ILClosures t closures expr) = t
-typeIL (ILLetVal t x a b)  = t
-typeIL (ILCall t id expr)  = t
-typeIL (ILIf t a b c)      = t
-typeIL (ILSubscript t _ _) = t
-typeIL (ILVar (AnnVar t i)) = t
-typeIL (ILTyApp overallType tm tyArgs) = overallType
 
 closureConvertAndLift :: Context -> (ModuleAST AnnFn) -> Tc ILProgram
 closureConvertAndLift ctx mod = do
@@ -283,3 +242,45 @@ closureConvertAnnFn globalVars ctx f freevars = do
                         }
     (newbody, newprocs) <- nestedLets uniqFreeVars 0
     return $ (ILProcDef newproto newbody):newprocs
+
+
+typeIL :: ILExpr -> TypeAST
+typeIL (ILBool _)          = fosBoolType
+typeIL (ILInt t _)         = t
+typeIL (ILTuple es)        = TupleTypeAST [typeIL e | e <- es]
+typeIL (ILClosures t closures expr) = t
+typeIL (ILLetVal t x a b)  = t
+typeIL (ILCall t id expr)  = t
+typeIL (ILIf t a b c)      = t
+typeIL (ILSubscript t _ _) = t
+typeIL (ILVar (AnnVar t i)) = t
+typeIL (ILTyApp overallType tm tyArgs) = overallType
+
+instance Structured ILExpr where
+    textOf e width =
+        let spaces = Prelude.replicate width '\SP'  in
+        case e of
+            ILBool         b    -> out $ "ILBool      " ++ (show b)
+            ILCall    t b a     -> out $ "ILCall      " ++ " :: " ++ show t
+            ILClosures t bnds e -> out $ "ILClosures  " ++ show (map (\(id,clo) -> id) bnds)
+            ILLetVal t x a b    -> out $ "ILLetVal    " ++ (show $ avarIdent x) ++ " :: " ++ (show $ avarType x) ++ " = ... in ... "
+            ILIf      t  a b c  -> out $ "ILIf        " ++ " :: " ++ show t
+            ILInt ty int        -> out $ "ILInt       " ++ (litIntText int) ++ " :: " ++ show ty
+            ILSubscript  t a b  -> out $ "ILSubscript " ++ " :: " ++ show t
+            ILTuple     es      -> out $ "ILTuple     (size " ++ (show $ length es) ++ ")"
+            ILVar (AnnVar t i)  -> out $ "ILVar       " ++ show i ++ " :: " ++ show t
+            ILTyApp t e argty   -> out $ "ILTyApp     [" ++ show argty ++ "] :: " ++ show t
+    childrenOf e =
+        case e of
+            ILBool         b                    -> []
+            ILInt t _                           -> []
+            ILTuple     es                      -> es
+            ILClosures t clzs e                 -> [e]
+            ILLetVal t x a i@(ILLetVal _ _ _ _) -> a : childrenOf i
+            ILLetVal t x a b                    -> [a, b]
+            ILCall    t b vs                    -> [ILVar b] ++ [ILVar v | v <- vs]
+            ILIf      t  a b c                  -> [a, b, c]
+            ILSubscript t a b                   -> [ILVar a, b]
+            ILVar (AnnVar t i)                  -> []
+            ILTyApp t e argty                   -> [e]
+

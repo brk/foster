@@ -33,15 +33,10 @@ termVarLookup name bindings =
     let termbindings = [(nm, annvar) | (TermVarBinding nm annvar) <- bindings] in
     lookup name termbindings
 
-
-
---typecheckError ctx output = (contextTcHistory ctx, output)
-typecheckError ctx output = output
-
 -- Either, with better names for the cases...
-data TypecheckResult expr
-    = Annotated        expr
-    | TypecheckErrors  Output
+data OutputOr expr
+    = OK      expr
+    | Errors  Output
     deriving (Eq)
 
 -- Based on "Practical type inference for arbitrary rank types."
@@ -55,21 +50,21 @@ data TcEnv = TcEnv { tcEnvUniqs :: IORef Uniq
                    , tcParents  :: [ExprAST]
                    }
 
-newtype Tc a = Tc (TcEnv -> IO (TypecheckResult a))
-unTc :: Tc a ->   (TcEnv -> IO (TypecheckResult a))
+newtype Tc a = Tc (TcEnv -> IO (OutputOr a))
+unTc :: Tc a ->   (TcEnv -> IO (OutputOr a))
 unTc   (Tc f) =   f
 
 instance Monad Tc where
-    return x = Tc (\_env -> return (Annotated x))
-    fail err = Tc (\_env -> return (TypecheckErrors (outLn err)))
+    return x = Tc (\_env -> return (OK x))
+    fail err = Tc (\_env -> return (Errors (outLn err)))
     m >>= k = Tc (\env -> do { result <- unTc m env
                            ; case result of
-                              Annotated expr -> unTc (k expr) env
-                              TypecheckErrors ss -> return (TypecheckErrors ss)
+                              OK expr -> unTc (k expr) env
+                              Errors ss -> return (Errors ss)
                            })
 
 tcLift :: IO a -> Tc a
-tcLift action = Tc (\_env -> do { r <- action; return (Annotated r) })
+tcLift action = Tc (\_env -> do { r <- action; return (OK r) })
 
 newTcRef v = tcLift $ newIORef v
 
@@ -87,7 +82,7 @@ newTcUniq :: Tc Uniq
 newTcUniq = Tc (\tcenv -> do { let ref = tcEnvUniqs tcenv
                              ; uniq <- readIORef ref
                              ; writeIORef ref (uniq + 1)
-                             ; return (Annotated uniq)
+                             ; return (OK uniq)
                              })
 
 tcFresh :: String -> Tc Ident
@@ -96,32 +91,32 @@ tcFresh s = do
     return (Ident s u)
 
 tcGetCurrentHistory :: Tc [ExprAST]
-tcGetCurrentHistory = Tc (\tcenv -> do { return (Annotated $
+tcGetCurrentHistory = Tc (\tcenv -> do { return (OK $
                                           Prelude.reverse $ tcParents tcenv) })
 
 tcFails :: Output -> Tc a
-tcFails errs = Tc (\_env -> return (TypecheckErrors errs))
+tcFails errs = Tc (\_env -> return (Errors errs))
 
 wasSuccessful :: Tc a -> Tc Bool
 wasSuccessful tce =
     Tc (\env -> do { result <- unTc tce env
                    ; case result of
-                       Annotated expr     -> return (Annotated True)
-                       TypecheckErrors ss -> return (Annotated False)
+                       OK expr     -> return (OK True)
+                       Errors ss -> return (OK False)
                        })
 
 extractErrors :: Tc a -> Tc (Maybe Output)
 extractErrors tce =
     Tc (\env -> do { result <- unTc tce env
                    ; case result of
-                       Annotated expr     -> return (Annotated Nothing)
-                       TypecheckErrors ss -> return (Annotated (Just ss))
+                       OK expr     -> return (OK Nothing)
+                       Errors ss -> return (OK (Just ss))
                        })
 
 
-isAnnotated :: TypecheckResult AnnExpr -> Bool
-isAnnotated (Annotated _) = True
-isAnnotated _ = False
+isOK :: OutputOr AnnExpr -> Bool
+isOK (OK _) = True
+isOK _      = False
 
 -----------------------------------------------------------------------
 
