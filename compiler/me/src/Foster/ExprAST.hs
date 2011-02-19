@@ -95,12 +95,6 @@ instance Structured AnnExpr where
 instance Expr AnnExpr where
     freeVars e = [identPrefix i | i <- freeIdentsA e]
 
-butnot :: Ord a => [a] -> [a] -> [a]
-butnot bs zs =
-    let sbs = Set.fromList bs in
-    let szs = Set.fromList zs in
-    Set.toList (Set.difference sbs szs)
-
 freeIdentsA e = case e of
         E_AnnVar v      -> [avarIdent v]
         E_AnnFn f       -> let bodyvars =  freeIdentsA (annFnBody f) in
@@ -114,10 +108,6 @@ annFnBoundNames fn =
     let vars = annProtoVars (annFnProto fn) in
     map show vars
 
-data ModuleAST fnType = ModuleAST {
-          moduleASTfunctions   :: [fnType]
-        , moduleASTsourceLines :: SourceLines
-     }
 
 data CallAST = CallAST { callASTbase :: ExprAST
                        , callASTargs :: ExprAST

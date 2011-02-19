@@ -3,6 +3,7 @@ module Foster.Base where
 import System.Console.ANSI
 import Control.Monad
 
+import Data.Set as Set(fromList, toList, difference)
 import Data.Sequence as Seq
 import Data.Maybe(fromJust)
 import Data.List as List
@@ -75,6 +76,16 @@ bitStringOf n | n <= 1     = show n
               | otherwise = bitStringOf (shiftR n 1) ++ lowBitOf n
 
 
+butnot :: Ord a => [a] -> [a] -> [a]
+butnot bs zs =
+    let sbs = Set.fromList bs in
+    let szs = Set.fromList zs in
+    Set.toList (Set.difference sbs szs)
+
+data ModuleAST fnType = ModuleAST {
+          moduleASTfunctions   :: [fnType]
+        , moduleASTsourceLines :: SourceLines
+     }
 
 data Ident = Ident { identPrefix :: String
                    , identNum    :: Uniq }
