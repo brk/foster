@@ -101,9 +101,7 @@ closureConvert globalVars ctx expr =
             AnnSeq      a b                      -> do lhs <- tcFresh ".seq"
                                                        (ca, pa) <- g a
                                                        (cb, pb) <- g b
-                                                       let ty = typeIL cb
-                                                       let avar = AnnVar (typeIL ca) lhs
-                                                       return $ (ILLetVal ty avar ca cb, pa++pb)
+                                                       return $ (buildLet lhs ca cb, pa++pb)
 
             AnnSubscript t a b                   -> do (ca, pa) <- g a
                                                        (cb, pb) <- g b
@@ -281,7 +279,7 @@ instance Structured ILExpr where
             ILInt t _                           -> []
             ILTuple     es                      -> es
             ILClosures t clzs e                 -> [e]
-            ILLetVal t x a i@(ILLetVal _ _ _ _) -> a : childrenOf i
+            --ILLetVal t x a i@(ILLetVal _ _ _ _) -> a : childrenOf i
             ILLetVal t x a b                    -> [a, b]
             ILCall    t b vs                    -> [ILVar b] ++ [ILVar v | v <- vs]
             ILIf      t  v b c                  -> [ILVar v, b, c]

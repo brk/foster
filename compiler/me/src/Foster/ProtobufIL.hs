@@ -166,11 +166,18 @@ dumpExpr x@(ILClosures ty closures expr) =
                     , PbExpr.closures = fromList (fmap dumpClosureWithName closures)
                     , PbExpr.type' = Just $ dumpType (typeIL expr) }
 
-dumpExpr (ILLetVal t x a b) =
-    P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [a, b])
-                    , PbExpr.tag   = IL_LETVAL
-                    , PbExpr.name  = Just $ dumpIdent $ avarIdent x
+dumpExpr x@(ILLetVal t _ _ _) =
+    let (e, nms, vals) = unzipLetVals x in
+    P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr (e:vals))
+                    , PbExpr.tag   = IL_LETVALS
+                    , PbExpr.names = fromList nms
                     , PbExpr.type' = Just $ dumpType t }
+
+unzipLetVals :: ILExpr -> (ILExpr, [P'.Utf8], [ILExpr])
+unzipLetVals (ILLetVal t x a b) =
+        let (e, nms, vals) = unzipLetVals b in
+        ( e , (dumpIdent $ avarIdent x):nms , a:vals )
+unzipLetVals e = (e, [], [])
 
 dumpClosureWithName (varid, ILClosure procid idents) =
     Closure { varname  = dumpIdent varid

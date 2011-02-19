@@ -49,7 +49,7 @@ message Expr {
     IL_VAR = 18;
     IL_CLOSURES = 19;
     IL_TUPLE = 20;
-    IL_LETVAL = 21;
+    IL_LETVALS = 21;
     IL_CALL = 23;
     IL_SEQ = 24;
     IL_TY_APP = 25;
@@ -63,6 +63,7 @@ message Expr {
   optional Type         type = 3;
   optional SourceRange range = 4;
   repeated Closure  closures = 5;
+  repeated string      names = 6;
   optional PBInt      pb_int = 17;
   optional PBIf       pb_if  = 21;
 

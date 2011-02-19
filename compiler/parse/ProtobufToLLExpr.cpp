@@ -113,12 +113,20 @@ LLExpr* parseClosures(const pb::Expr& e, const foster::SourceRange& range) {
                         closures, range);
 }
 
-LLExpr* parseLetVal(const pb::Expr& e, const foster::SourceRange& range) {
-  ASSERT(e.parts_size() == 2) << "parseLetVal needs 2 subexprs";
-  // let name = parts[0] in parts[1];
-  return new LLLetVal(e.name(),
-                      LLExpr_from_pb(&e.parts(0)),
-                      LLExpr_from_pb(&e.parts(1)));
+LLExpr* parseLetVals(const pb::Expr& e, const foster::SourceRange& range) {
+  ASSERT(e.parts_size() == e.names_size() + 1);
+  ASSERT(e.parts_size() >= 2) << "parseLetVal needs at least 2 subexprs";
+  int N = e.names_size() - 1;
+  LLExpr* letval = new LLLetVal(e.names(N),
+                                LLExpr_from_pb(&e.parts(N+1)),
+                                LLExpr_from_pb(&e.parts(0)));
+  // let nm[0] = p[1] in
+  // let nm[N] = p[N+1] in p[0]
+  while (N --> 0) {
+    letval = new LLLetVal(e.names(N), LLExpr_from_pb(&e.parts(N+1)), letval);
+  }
+
+  return letval;
 }
 
 LLProto* parseProto(const pb::Proto& proto) {
@@ -216,7 +224,7 @@ LLExpr* LLExpr_from_pb(const pb::Expr* pe) {
   case pb::Expr::IL_CALL:      rv = parseCall(e, range); break;
   case pb::Expr::IL_IF:        rv = parseIf(e, range); break;
   case pb::Expr::IL_INT:       rv = parseInt(e, range); break;
-  case pb::Expr::IL_LETVAL:    rv = parseLetVal(e, range); break;
+  case pb::Expr::IL_LETVALS:   rv = parseLetVals(e, range); break;
   case pb::Expr::IL_CLOSURES:  rv = parseClosures(e, range); break;
 //  case pb::Expr::SIMD:      rv = parseSimd(e, range); break;
   case pb::Expr::IL_TY_APP:    rv = parseE_TyApp(e, range); break;
