@@ -8,6 +8,7 @@ module Foster.ILExpr where
 
 import Data.Maybe(fromJust)
 import Control.Monad(forM)
+import Control.Monad.State
 import Debug.Trace(trace)
 import Data.Set(Set)
 import Data.Set as Set(fromList, toList, difference, insert)
@@ -61,28 +62,35 @@ showProcStructure (ILProcDef proto body) =
         ++ (out " @@@ ") ++ (out $ ilProtoCallConv proto)
         ++ (out "\n") ++  showStructure body
       ++ out "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"
-    {- annProtoReturnType :: TypeAST
-                                    , annProtoIdent      :: Ident
-                                    , annProtoVars       :: [AnnVar]
-    -}
-
-
-closureConvertAndLift :: Context -> (ModuleAST AnnFn) -> Tc ILProgram
-closureConvertAndLift ctx mod = do
-    let fns = moduleASTfunctions mod
-    -- We lambda lift top level functions, since we know they don't have any "real" free vars.
-    -- Lambda lifting wiil closure convert nested functions.
-    let globalVars = (Set.fromList $ map (\(TermVarBinding s _) -> s) (contextBindings ctx))
-    procs <- forM fns (\fn -> lambdaLift globalVars ctx fn [])
-
-    return $ ILProgram (concat procs)
 
 type KnownVars = Set String
+
+data ILMState = ILMState {
+    ilmUniq :: Uniq
+}
+
+type ILM a = State ILMState a
+
+ilmFresh :: String -> ILM Ident
+ilmFresh s = do old <- get
+                put (old { ilmUniq = (ilmUniq old) + 1 })
+                return (Ident s (ilmUniq old))
+
+
+closureConvertAndLift :: Context -> (ModuleAST AnnFn) -> ILProgram
+closureConvertAndLift ctx m =
+    let fns = moduleASTfunctions m in
+    -- We lambda lift top level functions, since we know they don't have any "real" free vars.
+    -- Lambda lifting wiil closure convert nested functions.
+    let globalVars = (Set.fromList $ map (\(TermVarBinding s _) -> s) (contextBindings ctx)) in
+    let procs' = forM fns (\fn -> lambdaLift globalVars ctx fn []) in
+    let procs = evalState procs' (ILMState 0) in
+    ILProgram (concat procs)
 
 excluding :: Ord a => [a] -> Set a -> [a]
 excluding bs zs =  Set.toList $ Set.difference (Set.fromList bs) zs
 
-closureConvert :: KnownVars -> Context -> AnnExpr -> Tc (ILExpr, [ILProcDef])
+closureConvert :: KnownVars -> Context -> AnnExpr -> ILM (ILExpr, [ILProcDef])
 closureConvert globalVars ctx expr =
         let g = closureConvert globalVars ctx in
         case expr of
@@ -91,14 +99,14 @@ closureConvert globalVars ctx expr =
             AnnInt t   i                         -> return $ (ILInt t i, [])
             E_AnnVar      v                      -> return $ (ILVar v,   [])
 
-            AnnIf      t  a b c                  -> do x <- tcFresh ".ife"
+            AnnIf      t  a b c                  -> do x <- ilmFresh ".ife"
                                                        (ca, pa) <- g a
                                                        (cb, pb) <- g b
                                                        (cc, pc) <- g c
                                                        let v = AnnVar (typeIL ca) x
                                                        return $ (buildLet x ca (ILIf t v cb cc) , pa++pb++pc)
 
-            AnnSeq      a b                      -> do lhs <- tcFresh ".seq"
+            AnnSeq      a b                      -> do lhs <- ilmFresh ".seq"
                                                        (ca, pa) <- g a
                                                        (cb, pb) <- g b
                                                        return $ (buildLet lhs ca cb, pa++pb)
@@ -114,7 +122,7 @@ closureConvert globalVars ctx expr =
                                                        return $ (ILTyApp t ce argty, pe)
 
             E_AnnFn annFn -> do
-                clo <- tcFresh "clo"
+                clo <- ilmFresh "clo"
                 let freeNames = freeVars expr `excluding` (Set.insert (fnNameA annFn) globalVars)
                 -- let env = tuple of free variables
                 -- rewrite body, replacing mentions of free variables with lookups in env
@@ -152,7 +160,7 @@ closureConvert globalVars ctx expr =
 -- we can rewrite the lambda to a closed proc:
 --      letproc p = \y x -> x + y
 --      let y = blah in p(y, foobar)
-lambdaLift :: KnownVars -> Context -> AnnFn -> [AnnVar] -> Tc [ILProcDef]
+lambdaLift :: KnownVars -> Context -> AnnFn -> [AnnVar] -> ILM [ILProcDef]
 lambdaLift globalVars ctx f freevars =
     let newproto = trace ("lambda lifting " ++ (show $ fnNameA f)) $
                     case (annFnProto f) of
@@ -163,8 +171,8 @@ lambdaLift globalVars ctx f freevars =
         (newbody, newprocs) <- closureConvert globalVars extctx (annFnBody f)
         return $ (ILProcDef newproto newbody):newprocs
 
-uniqifyAll :: [String] -> Tc [Ident]
-uniqifyAll ss = sequence $ map tcFresh ss
+uniqifyAll :: [String] -> ILM [Ident]
+uniqifyAll ss = sequence $ map ilmFresh ss
 
 litInt32 :: Int -> ILExpr
 litInt32 i = ILInt (NamedTypeAST "i32") $ getLiteralInt i
@@ -203,12 +211,12 @@ buildLet ident bound inexpr =
 -- |  let x2 = bar in
 -- |   let x3 = blah in
 -- |     base(x1,x2,x3)
-nestedLets :: [ILExpr] -> ([AnnVar] -> ILExpr) -> Tc ILExpr
+nestedLets :: [ILExpr] -> ([AnnVar] -> ILExpr) -> ILM ILExpr
 -- | The fresh variables will be accumulated and passed to a
 -- | continuation which generates a LetVal expr using the variables.
 nestedLets exprs g = nestedLets' exprs [] g
 
-nestedLets' :: [ILExpr] -> [AnnVar] -> ([AnnVar] -> ILExpr) -> Tc ILExpr
+nestedLets' :: [ILExpr] -> [AnnVar] -> ([AnnVar] -> ILExpr) -> ILM ILExpr
 nestedLets' []     vars k = return $ k (reverse vars)
 nestedLets' (e:es) vars k =
     case e of
@@ -216,14 +224,14 @@ nestedLets' (e:es) vars k =
       (ILVar v) -> nestedLets' es (v:vars) k
       --
       otherwise -> do
-        x        <- tcFresh ".x"
+        x        <- ilmFresh ".x"
         let vx = AnnVar (typeIL e) x
         innerlet <- nestedLets' es (vx:vars) k
         return $ buildLet x e innerlet
 
-closureConvertAnnFn :: KnownVars -> Context -> AnnFn -> [String] -> Tc [ILProcDef]
+closureConvertAnnFn :: KnownVars -> Context -> AnnFn -> [String] -> ILM [ILProcDef]
 closureConvertAnnFn globalVars ctx f freevars = do
-    envName <- tcFresh ".env"
+    envName <- ilmFresh ".env"
     uniqIdents <- uniqifyAll freevars
     let uniqFreeVars =  trace ("closure converting " ++ (show $ fnNameA f)) $  map ((contextVar ctx).identPrefix) uniqIdents
     let envTypes = map avarType uniqFreeVars

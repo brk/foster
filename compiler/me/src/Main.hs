@@ -197,16 +197,12 @@ main = do
             (Just (extctx, mod)) ->
                       do runOutput $ (outLn "vvvv ===================================")
                          runOutput $ (outCSLn Yellow (joinWith "\n" $ map show (contextBindings extctx)))
-                         aprog <- unTc (closureConvertAndLift extctx mod) tcenv
-                         case aprog of
-                            (OK prog) -> do
-                               let fns = moduleASTfunctions mod
-                               let (ILProgram procs) = prog
-                               dumpModuleToProtobufIL prog (outfile ++ ".ll.pb")
-                               runOutput $ (outLn "/// ===================================")
-                               runOutput $ showProgramStructure prog
-                               runOutput $ (outLn "^^^ ===================================")
-                            (Errors errs) -> do
-                               runOutput $ errs
+                         let prog = closureConvertAndLift extctx mod
+                         let fns = moduleASTfunctions mod
+                         let (ILProgram procs) = prog
+                         dumpModuleToProtobufIL prog (outfile ++ ".ll.pb")
+                         runOutput $ (outLn "/// ===================================")
+                         runOutput $ showProgramStructure prog
+                         runOutput $ (outLn "^^^ ===================================")
             Nothing    -> error $ "Unable to type check input module!"
 
