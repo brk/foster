@@ -176,20 +176,25 @@ add_custom_command(
 # Generate Haskell code to manipulate AST protobuf files.
 add_custom_command(
   OUTPUT ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Fepb.hs
-         ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Bepb.hs
   COMMAND cp ${PROJECT_SOURCE_DIR}/compiler/parse/FosterAST.proto
              ${PROJECT_SOURCE_DIR}/compiler/me/FosterAST.protox
-  COMMAND cp ${PROJECT_SOURCE_DIR}/compiler/parse/FosterIL.proto
-             ${PROJECT_SOURCE_DIR}/compiler/me/FosterIL.protox
   COMMAND ${HPROTOC}
           --haskell_out=${PROJECT_SOURCE_DIR}/compiler/me/src
           ${PROJECT_SOURCE_DIR}/compiler/me/FosterAST.protox
+  WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/compiler/me
+  DEPENDS
+          ${PROJECT_SOURCE_DIR}/compiler/parse/FosterAST.proto
+  )
+
+add_custom_command(
+  OUTPUT ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Bepb.hs
+  COMMAND cp ${PROJECT_SOURCE_DIR}/compiler/parse/FosterIL.proto
+             ${PROJECT_SOURCE_DIR}/compiler/me/FosterIL.protox
   COMMAND ${HPROTOC}
           --haskell_out=${PROJECT_SOURCE_DIR}/compiler/me/src
           ${PROJECT_SOURCE_DIR}/compiler/me/FosterIL.protox
   WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/compiler/me
   DEPENDS
-          ${PROJECT_SOURCE_DIR}/compiler/parse/FosterAST.proto
           ${PROJECT_SOURCE_DIR}/compiler/parse/FosterIL.proto
   )
 
