@@ -148,6 +148,7 @@ LLModule* readLLProgramFromProtobuf(const string& pathstr,
                                         foster::bepb::Module& out_sm) {
   std::fstream input(pathstr.c_str(), std::ios::in | std::ios::binary);
   if (!out_sm.ParseFromIstream(&input)) {
+    EDiag() << "ParseFromIstream() failed!";
     return NULL;
   }
 
@@ -241,6 +242,7 @@ int main(int argc, char** argv) {
 
   {
     LLModule* prog = readLLProgramFromProtobuf(optInputPath + ".ll.pb", pbin);
+    ASSERT(prog) << "Unable to read LL program from protobuf!";
 
     foster::codegenLL(prog, module);
 
