@@ -197,8 +197,8 @@ dumpCall t base args =
                     , PbExpr.tag   = IL_CALL
                     , PbExpr.type' = Just $ dumpType t }
 
-dumpIf x@(ILIf t a b c) =
-        PBIf { test_expr = dumpExpr a, then_expr = dumpExpr b, else_expr = dumpExpr c }
+dumpIf x@(ILIf t v b c) =
+        PBIf { test_expr = dumpExpr (ILVar v), then_expr = dumpExpr b, else_expr = dumpExpr c }
 
 dumpInt cleanText activeBits =
         PBInt.PBInt { clean = u8fromString cleanText

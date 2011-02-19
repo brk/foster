@@ -37,7 +37,7 @@ data ILExpr =
         | ILSubscript   { ilSubscriptType :: TypeAST
                         , ilSubscriptBase  :: AnnVar
                         , ilSubscriptIndex :: ILExpr  }
-        | ILIf          TypeAST ILExpr ILExpr ILExpr
+        | ILIf          TypeAST AnnVar ILExpr ILExpr
         | ILCall        TypeAST AnnVar [AnnVar]
         | ILTyApp       TypeAST ILExpr TypeAST
         deriving (Show)
@@ -88,17 +88,23 @@ closureConvert globalVars ctx expr =
         case expr of
             AnnBool         b                    -> return $ (ILBool b, [])
             AnnCompiles c msg                    -> return $ (ILBool (c == CS_WouldCompile), [])
-            AnnIf      t  a b c                  -> do (ca, pa) <- g a
+            AnnInt t   i                         -> return $ (ILInt t i, [])
+            E_AnnVar      v                      -> return $ (ILVar v,   [])
+
+            AnnIf      t  a b c                  -> do x <- tcFresh ".ife"
+                                                       (ca, pa) <- g a
                                                        (cb, pb) <- g b
                                                        (cc, pc) <- g c
-                                                       return $ (ILIf t ca cb cc, pa++pb++pc)
-            AnnInt t   i                        ->  return $ (ILInt t i, [])
+                                                       let v = AnnVar (typeIL ca) x
+                                                       return $ (buildLet x ca (ILIf t v cb cc) , pa++pb++pc)
+
             AnnSeq      a b                      -> do lhs <- tcFresh ".seq"
                                                        (ca, pa) <- g a
                                                        (cb, pb) <- g b
                                                        let ty = typeIL cb
                                                        let avar = AnnVar (typeIL ca) lhs
                                                        return $ (ILLetVal ty avar ca cb, pa++pb)
+
             AnnSubscript t a b                   -> do (ca, pa) <- g a
                                                        (cb, pb) <- g b
                                                        nlets <- nestedLets [ca] (\[va] -> ILSubscript t va cb)
@@ -108,7 +114,6 @@ closureConvert globalVars ctx expr =
                                                        return $ (ILTuple cs, concat ps)
             E_AnnTyApp t e argty                 -> do (ce, pe) <- g e
                                                        return $ (ILTyApp t ce argty, pe)
-            E_AnnVar      v                      -> return $ (ILVar v, [])
 
             E_AnnFn annFn -> do
                 clo <- tcFresh "clo"
@@ -279,7 +284,7 @@ instance Structured ILExpr where
             ILLetVal t x a i@(ILLetVal _ _ _ _) -> a : childrenOf i
             ILLetVal t x a b                    -> [a, b]
             ILCall    t b vs                    -> [ILVar b] ++ [ILVar v | v <- vs]
-            ILIf      t  a b c                  -> [a, b, c]
+            ILIf      t  v b c                  -> [ILVar v, b, c]
             ILSubscript t a b                   -> [ILVar a, b]
             ILVar (AnnVar t i)                  -> []
             ILTyApp t e argty                   -> [e]
