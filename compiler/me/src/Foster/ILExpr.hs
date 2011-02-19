@@ -66,7 +66,8 @@ showProcStructure (ILProcDef proto body) =
 type KnownVars = Set String
 
 data ILMState = ILMState {
-    ilmUniq :: Uniq
+    ilmUniq    :: Uniq
+  , ilmGlobals :: KnownVars
 }
 
 type ILM a = State ILMState a
@@ -83,16 +84,16 @@ closureConvertAndLift ctx m =
     -- We lambda lift top level functions, since we know they don't have any "real" free vars.
     -- Lambda lifting wiil closure convert nested functions.
     let globalVars = (Set.fromList $ map (\(TermVarBinding s _) -> s) (contextBindings ctx)) in
-    let procs' = forM fns (\fn -> lambdaLift globalVars ctx fn []) in
-    let procs = evalState procs' (ILMState 0) in
+    let procs' = forM fns (\fn -> lambdaLift ctx fn []) in
+    let procs = evalState procs' (ILMState 0 globalVars) in
     ILProgram (concat procs)
 
 excluding :: Ord a => [a] -> Set a -> [a]
 excluding bs zs =  Set.toList $ Set.difference (Set.fromList bs) zs
 
-closureConvert :: KnownVars -> Context -> AnnExpr -> ILM (ILExpr, [ILProcDef])
-closureConvert globalVars ctx expr =
-        let g = closureConvert globalVars ctx in
+closureConvert :: Context -> AnnExpr -> ILM (ILExpr, [ILProcDef])
+closureConvert ctx expr =
+        let g = closureConvert ctx in
         case expr of
             AnnBool         b                    -> return $ (ILBool b, [])
             AnnCompiles c msg                    -> return $ (ILBool (c == CS_WouldCompile), [])
@@ -123,10 +124,11 @@ closureConvert globalVars ctx expr =
 
             E_AnnFn annFn -> do
                 clo <- ilmFresh "clo"
+                (ILMState _ globalVars) <- get
                 let freeNames = freeVars expr `excluding` (Set.insert (fnNameA annFn) globalVars)
                 -- let env = tuple of free variables
                 -- rewrite body, replacing mentions of free variables with lookups in env
-                (newproc:newprocs) <- closureConvertAnnFn globalVars ctx annFn freeNames
+                (newproc:newprocs) <- closureConvertAnnFn ctx annFn freeNames
                 let procty = procType newproc
                 return (ILClosures procty [
                                 (clo, ILClosure (ilProtoIdent $ ilProcProto newproc)
@@ -144,9 +146,10 @@ closureConvert globalVars ctx expr =
                     (E_AnnFn f) -> do -- If we're calling a function directly,
                                      -- we know we can perform lambda lifting
                                      -- on it, by adding args for its free variables.
+                                    (ILMState _ globalVars) <- get
                                     let freeNames = (map identPrefix $ freeIdentsA b) `excluding` globalVars
                                     let freevars = map (contextVar ctx) freeNames
-                                    (newproc:newprocs) <- lambdaLift globalVars ctx f freevars
+                                    (newproc:newprocs) <- lambdaLift ctx f freevars
                                     let procid = (ilProtoIdent (ilProcProto newproc))
                                     let procvar = (AnnVar (procType newproc) procid)
                                     nlets <- nestedLets cargs (\vars -> ILCall t procvar (freevars ++ vars))
@@ -160,15 +163,15 @@ closureConvert globalVars ctx expr =
 -- we can rewrite the lambda to a closed proc:
 --      letproc p = \y x -> x + y
 --      let y = blah in p(y, foobar)
-lambdaLift :: KnownVars -> Context -> AnnFn -> [AnnVar] -> ILM [ILProcDef]
-lambdaLift globalVars ctx f freevars =
+lambdaLift :: Context -> AnnFn -> [AnnVar] -> ILM [ILProcDef]
+lambdaLift ctx f freevars =
     let newproto = trace ("lambda lifting " ++ (show $ fnNameA f)) $
                     case (annFnProto f) of
                     (AnnPrototype rt nm vars) ->
                         (ILPrototype rt nm (freevars ++ vars) "fastcc") in
     let extctx =  prependContextBindings ctx (bindingsForILProto newproto) in
     do
-        (newbody, newprocs) <- closureConvert globalVars extctx (annFnBody f)
+        (newbody, newprocs) <- closureConvert extctx (annFnBody f)
         return $ (ILProcDef newproto newbody):newprocs
 
 uniqifyAll :: [String] -> ILM [Ident]
@@ -229,8 +232,8 @@ nestedLets' (e:es) vars k =
         innerlet <- nestedLets' es (vx:vars) k
         return $ buildLet x e innerlet
 
-closureConvertAnnFn :: KnownVars -> Context -> AnnFn -> [String] -> ILM [ILProcDef]
-closureConvertAnnFn globalVars ctx f freevars = do
+closureConvertAnnFn :: Context -> AnnFn -> [String] -> ILM [ILProcDef]
+closureConvertAnnFn ctx f freevars = do
     envName <- ilmFresh ".env"
     uniqIdents <- uniqifyAll freevars
     let uniqFreeVars =  trace ("closure converting " ++ (show $ fnNameA f)) $  map ((contextVar ctx).identPrefix) uniqIdents
@@ -240,7 +243,7 @@ closureConvertAnnFn globalVars ctx f freevars = do
                     (AnnPrototype rt nm vars) ->
                         (ILPrototype rt nm (envVar:vars) "fastcc")
     let nestedLets vars i = case vars of
-            [] -> closureConvert globalVars ctx (annFnBody f)
+            [] -> closureConvert ctx (annFnBody f)
             -- Does this loop need to augment the context?
             (v:vs) -> do { (innerlet, newprocs) <- nestedLets vs (i + 1)
                         ; return $ ((ILLetVal (typeIL innerlet)
