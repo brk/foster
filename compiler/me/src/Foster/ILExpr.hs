@@ -174,11 +174,10 @@ lambdaLift ctx f freevars =
         newbody <- closureConvert extctx (annFnBody f)
         ilmPutProc (ILProcDef newproto newbody)
 
+bindingsForILProto p = [TermVarBinding (identPrefix i) v | v@(AnnVar t i) <- (ilProtoVars p)]
+
 uniqifyAll :: [String] -> ILM [Ident]
 uniqifyAll ss = sequence $ map ilmFresh ss
-
-litInt32 :: Int -> ILExpr
-litInt32 i = ILInt (NamedTypeAST "i32") $ getLiteralInt i
 
 procType proc = procTypeFromILProto (ilProcProto proc)
 
@@ -194,8 +193,6 @@ contextVar (Context ctx) s =
     case termVarLookup s ctx of
             Just v -> v
             Nothing -> error $ "free var not in context: " ++ s
-
-bindingsForILProto p = [TermVarBinding (identPrefix i) v | v@(AnnVar t i) <- (ilProtoVars p)]
 
 buildLet :: Ident -> ILExpr -> ILExpr -> ILExpr
 buildLet ident bound inexpr =
@@ -256,6 +253,8 @@ closureConvertAnnFn ctx f freevars = do
     newbody <- nestedLets uniqFreeVars 0
     ilmPutProc (ILProcDef newproto newbody)
 
+litInt32 :: Int -> ILExpr
+litInt32 i = ILInt (NamedTypeAST "i32") $ getLiteralInt i
 
 typeIL :: ILExpr -> TypeAST
 typeIL (ILBool _)          = fosBoolType
