@@ -29,8 +29,7 @@ def invoke_antlr(antlr, output, input):
   output_file = os.path.join(output, in_tail)
   copy_and_rewrite(input, output_file, uncomment_language_C)
 
-  print antlr
-  print output_file
+  print "run_antlr.py: Using %s to process %s" % (antlr, output_file)
 
   cmd = "java -cp %s org.antlr.Tool %s" % (antlr, output_file)
   arglist = cmd.split(" ")

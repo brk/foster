@@ -38,8 +38,6 @@ set(CORO_METHOD CORO_ASM
     DOC "libcoro implementation: CORO_{ASM,SJLJ,LOSER,PTHREAD}")
 
 set(GENERATED ${PROJECT_BINARY_DIR}/_generated_)
-configure_file(${PROJECT_SOURCE_DIR}/FosterConfig.in.h
-               ${GENERATED}/FosterConfig.h)
 
 # ~~~~~~~~~~~~~~~~~~~~ Protocol Buffers ~~~~~~~~~~~~~~~~~~~~~~
 find_package(Protobuf REQUIRED)
@@ -314,8 +312,6 @@ if (CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
    "${CMAKE_EXE_LINKER_FLAGS} -Wl,--compress-debug-sections,zlib")
 endif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
 
-add_custom_target(fosterc_config_h DEPENDS ${GENERATED}/FosterConfig.h)
-
 #####################################################################
 include(${PROJECT_SOURCE_DIR}/third_party/chromium_base/CMakeLists.txt)
 include(${PROJECT_SOURCE_DIR}/third_party/cpuid/CMakeLists.txt)
@@ -335,7 +331,6 @@ add_library(fosterc_base STATIC
   compiler/base/PughSinofskyPrettyPrinter.cpp
   third_party/pystring/pystring.cpp
 )
-add_dependencies(fosterc_base fosterc_config_h)
 
 add_library(fosterc_parse STATIC
   compiler/parse/FosterAST.cpp
