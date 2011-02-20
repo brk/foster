@@ -28,7 +28,7 @@ data ILProcDef = ILProcDef { ilProcProto :: ILPrototype
 data ILExpr =
           ILBool        Bool
         | ILInt         TypeAST LiteralInt
-        | ILTuple       [ILExpr]
+        | ILTuple       [AnnVar]
         -- Procedures may be implicitly recursive,
         -- but we need to put a smidgen of effort into
         -- codegen-ing closures so they can be mutually recursive.
@@ -123,7 +123,8 @@ closureConvert ctx expr =
                                                        nestedLets [a'] (\[va] -> ILSubscript t va b')
 
             AnnTuple     es b                    -> do cs <- mapM g es
-                                                       return $ ILTuple cs
+                                                       nestedLets cs (\vs -> ILTuple vs)
+
             E_AnnTyApp t e argty                 -> do e' <- g e
                                                        return $ ILTyApp t e' argty
 
@@ -140,8 +141,8 @@ closureConvert ctx expr =
                                                 (map (\n -> avarIdent (contextVar ctx n)) freeNames)
                             ] (ILVar (AnnVar procty clo)))
             -- b(a)
-            AnnCall  r t b a -> do
-                ILTuple cargs <- g a
+            AnnCall  r t b (AnnTuple es _) -> do
+                cargs <- mapM g es
                 case b of
                     (E_AnnVar v) -> do nestedLets cargs (\vars -> (ILCall t v vars))
                     (E_AnnFn f) -> do -- If we're calling a function directly,
@@ -263,7 +264,7 @@ litInt32 i = ILInt (NamedTypeAST "i32") $ getLiteralInt i
 typeIL :: ILExpr -> TypeAST
 typeIL (ILBool _)          = fosBoolType
 typeIL (ILInt t _)         = t
-typeIL (ILTuple es)        = TupleTypeAST [typeIL e | e <- es]
+typeIL (ILTuple vs)        = TupleTypeAST [typeIL $ ILVar v | v <- vs]
 typeIL (ILClosures t n b e) = t
 typeIL (ILLetVal t x a b)  = t
 typeIL (ILCall t id expr)  = t
@@ -290,7 +291,7 @@ instance Structured ILExpr where
         case e of
             ILBool         b                    -> []
             ILInt t _                           -> []
-            ILTuple     es                      -> es
+            ILTuple     vs                      -> map ILVar vs
             ILClosures t bnds clos e            -> [e]
             --ILLetVal t x a i@(ILLetVal _ _ _ _) -> a : childrenOf i
             ILLetVal t x a b                    -> [a, b]

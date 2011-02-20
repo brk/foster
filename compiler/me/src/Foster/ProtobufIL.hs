@@ -135,8 +135,8 @@ dumpExpr (ILVar (AnnVar t i)) =
                     , PbExpr.tag   = IL_VAR
                     , PbExpr.type' = Just $ dumpType t  }
 
-dumpExpr x@(ILTuple es) =
-    P'.defaultValue { PbExpr.parts = fromList [dumpExpr e | e <- es]
+dumpExpr x@(ILTuple vs) =
+    P'.defaultValue { PbExpr.parts = fromList [dumpExpr $ ILVar v | v <- vs]
                     , PbExpr.tag   = IL_TUPLE
                     , PbExpr.type' = Just $ dumpType (typeIL x)  }
 
