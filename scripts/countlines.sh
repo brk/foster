@@ -33,10 +33,17 @@ need () {
   fi
 }
 
-hasarg () {
-  arg=$1
-  shift
-  echo $@ | grep -- "${arg}" &>/dev/null
+checkargs () {
+  case $@ in
+    *--all*)
+      runcloc compiler/base --by-file
+      runcloc compiler/parse --by-file
+      runcloc compiler/passes --by-file
+      runcloc compiler/llvm --by-file
+      runcloc compiler/me --by-file
+      exit
+      ;;
+  esac
 }
 
 
@@ -44,13 +51,7 @@ need cloc
 need grep
 need awk
 
-if hasarg '--all' $@ ; then
-  runcloc compiler/base --by-file
-  runcloc compiler/parse --by-file
-  runcloc compiler/passes --by-file
-  runcloc compiler/llvm --by-file
-  exit
-fi
+checkargs $@
 
 /bin/echo -n "notes            "
 cat   notes/*.rst notes/*.txt | wc -l | awk '{print $1}'
