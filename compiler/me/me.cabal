@@ -8,7 +8,7 @@ copyright:
 maintainer:
 build-depends: HUnit -any, ansi-terminal -any, base -any,
                bytestring -any, containers -any, filepath >=1.1.0.3,
-               haskell98 -any, protocol-buffers -any,
+               haskell98 -any, mtl -any, protocol-buffers -any,
                protocol-buffers-descriptor -any, text -any, utf8-string -any
 stability:
 homepage:

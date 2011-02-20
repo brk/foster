@@ -37,15 +37,10 @@ std::ostream& operator<<(std::ostream& out, LLExpr& expr);
 struct CodegenPass;
 
 struct LLExpr {
-  typedef foster::SymbolTable<LLExpr>::LexicalScope ScopeType;
-
   TypeAST* type;
-  foster::SourceRange sourceRange;
   const char* const tag;
 
-  explicit LLExpr(const char* const tag,
-                   foster::SourceRange sourceRange)
-    : type(NULL), sourceRange(sourceRange), tag(tag) {}
+  explicit LLExpr(const char* const tag) : type(NULL), tag(tag) {}
   virtual ~LLExpr() {}
 
   virtual llvm::Value* codegen(CodegenPass* pass) = 0;
@@ -123,7 +118,7 @@ private:
 
 public:
   explicit LLInt(const std::string& cleanTextBase10, int activeBits)
-    : LLExpr("LLInt", foster::SourceRange::getEmptyRange()) {
+    : LLExpr("LLInt") {
     // Debug builds of LLVM don't ignore leading zeroes when considering
     // needed bit widths.
     int bitsLLVMneeds = (std::max)(intSizeForNBits(activeBits),
@@ -150,8 +145,8 @@ public:
 
 struct LLBool : public LLExpr {
   bool boolValue;
-  explicit LLBool(string val, foster::SourceRange sourceRange)
-    : LLExpr("LLBool", sourceRange), boolValue(val == "true") {}
+  explicit LLBool(string val)
+    : LLExpr("LLBool"), boolValue(val == "true") {}
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
@@ -160,9 +155,7 @@ struct LLVar : public LLExpr {
   LLProto* lazilyInsertedPrototype;
   // Type is not used
 
-  explicit LLVar(const string& name,
-                 foster::SourceRange sourceRange)
-      : LLExpr("LLVar", sourceRange),
+  explicit LLVar(const string& name) : LLExpr("LLVar"),
         name(name), lazilyInsertedPrototype(NULL) {}
   virtual llvm::Value* codegen(CodegenPass* pass);
   const string& getName() { return name; }
@@ -173,9 +166,8 @@ struct LLVar : public LLExpr {
 struct LLCall : public LLExpr {
   LLVar* base;
   std::vector<LLVar*> args;
-  LLCall(LLVar* base, std::vector<LLVar*>& args,
-         foster::SourceRange sourceRange)
-  : LLExpr("LLCall", sourceRange), base(base), args(args) { }
+  LLCall(LLVar* base, std::vector<LLVar*>& args)
+  : LLExpr("LLCall"), base(base), args(args) { }
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
@@ -183,9 +175,8 @@ struct LLCall : public LLExpr {
 struct LLTypeApp : public LLExpr {
   LLExpr* base;
   TypeAST* typeArg;
-  explicit LLTypeApp(LLExpr* base, TypeAST* arg,
-                    foster::SourceRange sourceRange)
-      : LLExpr("LLTypeApp", sourceRange), base(base), typeArg(arg) {
+  explicit LLTypeApp(LLExpr* base, TypeAST* arg)
+      : LLExpr("LLTypeApp"), base(base), typeArg(arg) {
   }
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
@@ -193,8 +184,8 @@ struct LLTypeApp : public LLExpr {
 struct LLTuple : public LLExpr {
   std::vector<LLExpr*> parts;
   bool isClosureEnvironment;
-  explicit LLTuple(const std::vector<LLExpr*>& exprs, foster::SourceRange sourceRange)
-    : LLExpr("LLTuple", sourceRange),
+  explicit LLTuple(const std::vector<LLExpr*>& exprs)
+    : LLExpr("LLTuple"),
       isClosureEnvironment(false) {
     parts = exprs;
   }
@@ -205,9 +196,8 @@ struct LLTuple : public LLExpr {
 struct LLSubscript : public LLExpr {
   LLExpr* base;
   LLExpr* index;
-  explicit LLSubscript(LLExpr* base, LLExpr* index,
-                        foster::SourceRange sourceRange)
-    : LLExpr("LLSubscript", sourceRange), base(base), index(index) {
+  explicit LLSubscript(LLExpr* base, LLExpr* index)
+    : LLExpr("LLSubscript"), base(base), index(index) {
     }
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
@@ -226,9 +216,8 @@ struct LLClosure {
 struct LLClosures : public LLExpr {
   LLExpr* expr;
   std::vector<LLClosure*> closures;
-  explicit LLClosures(LLExpr* expr, std::vector<LLClosure*>& closures,
-                  foster::SourceRange sourceRange)
-    : LLExpr("LLCLosures", sourceRange), expr(expr) { this->closures = closures; }
+  explicit LLClosures(LLExpr* expr, std::vector<LLClosure*>& closures)
+    : LLExpr("LLCLosures"), expr(expr) { this->closures = closures; }
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
@@ -238,7 +227,7 @@ struct LLLetVal : public LLExpr {
   LLExpr* inexpr;
   explicit LLLetVal(const std::string& name,
                     LLExpr* boundexpr, LLExpr* inexpr)
-  : LLExpr("LLLetVal", sourceRange),
+  : LLExpr("LLLetVal"),
      name(name), boundexpr(boundexpr), inexpr(inexpr) {}
 
   virtual llvm::Value* codegen(CodegenPass* pass);
@@ -246,9 +235,8 @@ struct LLLetVal : public LLExpr {
 
 struct LLIf : public LLExpr {
   std::vector<LLExpr*> parts;
-  LLIf(LLExpr* testExpr, LLExpr* thenExpr, LLExpr* elseExpr,
-            foster::SourceRange sourceRange)
-    : LLExpr("LLIf", sourceRange) {
+  LLIf(LLExpr* testExpr, LLExpr* thenExpr, LLExpr* elseExpr)
+    : LLExpr("LLIf") {
     parts.push_back(testExpr);
     parts.push_back(thenExpr);
     parts.push_back(elseExpr);
@@ -262,14 +250,14 @@ struct LLIf : public LLExpr {
 
 struct LLNil : public LLExpr {
   explicit LLNil(foster::SourceRange sourceRange)
-     : LLExpr("LLNil", sourceRange) {}
+     : LLExpr("LLNil") {}
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
 /*
 struct RawPtrAST : public LLExpr {
-  explicit RawPtrAST(Exprs exprs, foster::SourceRange sourceRange)
-    : RawPtrAST("RawPtrAST", sourceRange) { this->parts = exprs; }
+  explicit RawPtrAST(Exprs exprs)
+    : RawPtrAST("RawPtrAST") { this->parts = exprs; }
 
 };
 */

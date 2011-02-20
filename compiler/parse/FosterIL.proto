@@ -1,16 +1,5 @@
 package foster.bepb;
 
-message SourceLocation {
-  required int32 line   = 1;
-  required int32 column = 2;
-}
-
-message SourceRange {
-  optional string         file_path = 1;
-  required SourceLocation begin     = 2;
-  optional SourceLocation end       = 3;
-}
-
 message Type {
   enum Tag {
     LLVM_NAMED = 1; // i32, void, etc
@@ -24,7 +13,6 @@ message Type {
     TYPE_VARIABLE = 9;
   }
 
-  optional SourceRange range = 1;
   required Tag         tag   = 2;
 
   // LLVM_NAMED, TYPE_VARIABLE
@@ -61,7 +49,6 @@ message Expr {
   repeated Expr        parts = 1;
   required Tag           tag = 2;
   optional Type         type = 3;
-  optional SourceRange range = 4;
   repeated Closure  closures = 5;
   repeated string      names = 6;
   optional PBInt      pb_int = 17;
@@ -108,7 +95,6 @@ message Proto {
   required ProcType proctype      = 1;
   repeated string in_args         = 2;
   required string name            = 3;
-  optional SourceRange range      = 5;
 }
 
 message PBIf {

@@ -468,7 +468,7 @@ llvm::Value* LLClosure::codegen(CodegenPass* pass) {
     //values.push_back(llvm::ConstantPointerNull::getNullValue(pi8));
 
     for (int i = 0; i < vars.size(); ++i) {
-      LLVar v(vars[i], foster::SourceRange::getEmptyRange());
+      LLVar v(vars[i]);
       values.push_back(v.codegen(pass));
     }
 
@@ -806,8 +806,7 @@ void doLowLevelWrapperFnCoercions(const llvm::Type* expectedType,
     std::vector<LLClosure*> closures;
     std::vector<std::string> vars;
     closures.push_back(new LLClosure(cloname, wrapper->getName(), vars));
-    LLExpr* clo = new LLClosures(new LLVar(cloname, arg->sourceRange),
-                             closures, arg->sourceRange);
+    LLExpr* clo = new LLClosures(new LLVar(cloname), closures);
     arg = clo;
   }
 }
@@ -1075,8 +1074,7 @@ LLProc* getClosureVersionOf(LLExpr* arg,
   inArgTypes.push_back(RefTypeAST::get(TupleTypeAST::get(envTypes)));
 
   for (size_t i = 0; i < fnty->getNumParams(); ++i) {
-    LLVar* a = new LLVar(ParsingContext::freshName("_cv_arg"),
-                        SourceRange::getEmptyRange());
+    LLVar* a = new LLVar(ParsingContext::freshName("_cv_arg"));
     inArgNames.push_back(a->name);
     inArgTypes.push_back(fnty->getParamType(i));
     callArgs.push_back(a);
@@ -1093,7 +1091,7 @@ LLProc* getClosureVersionOf(LLExpr* arg,
                                        externalCallingConvention);
 
   LLProto* proto = new LLProto(newfnty, fnName, inArgNames);
-  LLExpr* body = new LLCall(var, callArgs, SourceRange::getEmptyRange());
+  LLExpr* body = new LLCall(var, callArgs);
   LLProc* proc = new LLProc(proto, body);
 
   //proto->type = proc->type = genericClosureVersionOf(fnty);

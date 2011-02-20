@@ -41,12 +41,10 @@ import Foster.Bepb.PBInt    as PBInt
 import Foster.Bepb.Expr     as PbExpr
 import Foster.Bepb.Module   as Module
 import Foster.Bepb.Expr.Tag
-import qualified Foster.Bepb.SourceRange as Pb
-import qualified Foster.Bepb.SourceLocation as Pb
 
 import qualified Text.ProtocolBuffers.Header as P'
 
--- String conversions
+-- Simple conversions
 
 textToPUtf8 :: T.Text -> P'.Utf8
 textToPUtf8 t = u8fromString $ T.unpack t
@@ -55,6 +53,9 @@ textToPUtf8 t = u8fromString $ T.unpack t
 
 u8fromString :: String -> P'.Utf8
 u8fromString s = P'.Utf8 (UTF8.fromString s)
+
+intToInt32 :: Int -> P'.Int32
+intToInt32 i = (fromInteger (toInteger i))
 
 -----------------------------------------------------------------------
 
@@ -185,19 +186,6 @@ dumpClosureWithName (varid, ILClosure procid idents) =
             , varnames = fromList (fmap dumpIdent idents) }
 
 -----------------------------------------------------------------------
-intToInt32 :: Int -> P'.Int32
-intToInt32 i = (fromInteger (toInteger i))
-
-dumpSourceLocation (ESourceLocation line col) =
-    Pb.SourceLocation (intToInt32 line) (intToInt32 col)
-
-dumpRange :: ESourceRange -> Maybe Pb.SourceRange
-dumpRange (EMissingSourceRange s) = Nothing
-dumpRange range =
-    Just (Pb.SourceRange (fmap u8fromString $ sourceRangeFile  range)
-                        (dumpSourceLocation $ sourceRangeBegin range)
-                  (Just (dumpSourceLocation $ sourceRangeEnd   range)))
------------------------------------------------------------------------
 
 dumpCall t base args =
     P'.defaultValue { PbExpr.parts = fromList $ fmap (\v -> dumpExpr (ILVar v)) (base : args)
@@ -214,8 +202,7 @@ dumpInt cleanText activeBits =
 dumpProto p@(ILPrototype t ident formals callconv) =
     Proto { Proto.name  = dumpIdent ident
           , in_args     = fromList $ [dumpIdent (avarIdent v) | v <- formals]
-          , proctype    = dumpProcType (procTypeFromILProto p)
-          , Proto.range = Nothing }
+          , proctype    = dumpProcType (procTypeFromILProto p) }
 
 dumpVar (AnnVar t ident) =
     P'.defaultValue { PbExpr.name  = Just $ dumpIdent ident
