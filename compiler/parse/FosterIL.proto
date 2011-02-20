@@ -40,8 +40,8 @@ message Expr {
     IL_LETVALS = 21;
     IL_CALL = 23;
     IL_SEQ = 24;
-    IL_TY_APP = 25;
     IL_SUBSCRIPT = 26;
+    IL_CORO_INVOKE = 27;
 
     IL_IF = 32;
     IL_NAMED_TYPE_DECL = 36;
@@ -60,7 +60,7 @@ message Expr {
 
   optional bool   is_closure_environment = 25;   // Tuple
 
-  optional Type ty_app_arg_type = 29;   // AnnTyApp
+  optional CoroPrim coro_prim = 30;
 }
 
 message Proc {
@@ -101,6 +101,11 @@ message PBIf {
   required Expr test_expr = 2;
   required Expr then_expr = 3;
   required Expr else_expr = 4;
+}
+
+message CoroPrim {
+  required Type ret_type = 1;
+  required Type arg_type = 2;
 }
 
 message Module {

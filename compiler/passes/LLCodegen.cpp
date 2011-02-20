@@ -634,79 +634,9 @@ llvm::Value* LLIf::codegen(CodegenPass* pass) {
   }
 }
 
-llvm::Value* LLTypeApp::codegen(CodegenPass* pass) {
-  //EDiag() << "CodegenPass::visit ETypeAppAST\n" << show(this->parts[0])
-  // << "\n\tty arg: " << str(this->typeArg);
-
-  if (LLVar* var = dynamic_cast<LLVar*>(base)) {
-    const std::string& fullyQualifiedSymbol = var->getName();
-
-    if (fullyQualifiedSymbol == "coro_invoke") {
-      if (TupleTypeAST* args = dynamic_cast<TupleTypeAST*>(this->typeArg)) {
-        ASSERT(args->getNumContainedTypes() == 2)
-          << "expected 2 arg tuple for coro_invoke, got "
-          << str(args);
-        return pass->emitCoroInvokeFn(
-                          args->getContainedType(0)->getLLVMType(),
-                          args->getContainedType(1)->getLLVMType());
-      }
-    }
- /**
-  if (!v) {
-    if (fullyQualifiedSymbol == "coro_create_i32_i32") {
-      v = emitCoroCreateFn(builder.getInt32Ty(), builder.getInt32Ty());
-    } else if (fullyQualifiedSymbol == "coro_create_i32x2_i32") {
-      std::vector<const Type*> argTypes;
-      argTypes.push_back(builder.getInt32Ty());
-      argTypes.push_back(builder.getInt32Ty());
-      v = emitCoroCreateFn(builder.getInt32Ty(),
-        llvm::StructType::get(mod->getContext(), argTypes));
-    } else if (fullyQualifiedSymbol == "coro_create_i32_i32x2") {
-      std::vector<const Type*> argTypes;
-      argTypes.push_back(builder.getInt32Ty());
-      argTypes.push_back(builder.getInt32Ty());
-      v = emitCoroCreateFn(
-        llvm::StructType::get(mod->getContext(), argTypes),
-        builder.getInt32Ty());
-    }
-
-      else if (fullyQualifiedSymbol == "coro_invoke_i32_i32") {
-      v = emitCoroInvokeFn(builder.getInt32Ty(), builder.getInt32Ty());
-    } else if (fullyQualifiedSymbol == "coro_invoke_i32x2_i32") {
-      std::vector<const Type*> argTypes;
-      argTypes.push_back(builder.getInt32Ty());
-      argTypes.push_back(builder.getInt32Ty());
-      v = emitCoroInvokeFn(builder.getInt32Ty(),
-        llvm::StructType::get(mod->getContext(), argTypes));
-    } else if (fullyQualifiedSymbol == "coro_invoke_i32_i32x2") {
-      std::vector<const Type*> argTypes;
-      argTypes.push_back(builder.getInt32Ty());
-      argTypes.push_back(builder.getInt32Ty());
-      v = emitCoroInvokeFn(
-        llvm::StructType::get(mod->getContext(), argTypes),
-        builder.getInt32Ty());
-    }
-
-      else if (fullyQualifiedSymbol == "coro_yield_i32_i32") {
-      v = emitCoroYieldFn(builder.getInt32Ty(), builder.getInt32Ty());
-    } else if (fullyQualifiedSymbol == "coro_yield_i32x2_i32") {
-      std::vector<const Type*> argTypes;
-      argTypes.push_back(builder.getInt32Ty());
-      argTypes.push_back(builder.getInt32Ty());
-      v = emitCoroYieldFn(builder.getInt32Ty(),
-        llvm::StructType::get(mod->getContext(), argTypes));
-    }  else if (fullyQualifiedSymbol == "coro_yield_i32_i32x2") {
-      std::vector<const Type*> argTypes;
-      argTypes.push_back(builder.getInt32Ty());
-      argTypes.push_back(builder.getInt32Ty());
-      v = emitCoroYieldFn(
-        llvm::StructType::get(mod->getContext(), argTypes),
-        builder.getInt32Ty());
-    }
-  }
-  **/
-  }
-  ASSERT(false) << "falling off the end of LLTypeApp::codegen";
+llvm::Value* LLCoroInvoke::codegen(CodegenPass* pass) {
+  return pass->emitCoroInvokeFn(retType->getLLVMType(),
+                                typeArg->getLLVMType());
 }
 
 llvm::Value* LLNil::codegen(CodegenPass* pass) {

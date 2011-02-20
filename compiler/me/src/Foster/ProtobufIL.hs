@@ -39,6 +39,7 @@ import Foster.Bepb.Proc     as Proc
 import Foster.Bepb.PBIf     as PBIf
 import Foster.Bepb.PBInt    as PBInt
 import Foster.Bepb.Expr     as PbExpr
+import Foster.Bepb.CoroPrim as PbCoroPrim
 import Foster.Bepb.Module   as Module
 import Foster.Bepb.Expr.Tag
 
@@ -113,7 +114,7 @@ dumpProcType (FnTypeAST s t cs) =
     in
     ProcType.ProcType {
           arg_types = fromList args
-        , ret_type  = dumpType t
+        , ProcType.ret_type  = dumpType t
         , calling_convention = Just $ u8fromString (defaultCallingConvFor cs)
     }
 
@@ -155,11 +156,17 @@ dumpExpr x@(ILIf t a b c) =
                     , PbExpr.tag   = IL_IF
                     , PbExpr.type' = Just $ dumpType (typeIL x) }
 
+dumpExpr x@(ILTyApp overallTy (ILVar (AnnVar _ (Ident "coro_invoke" _)))
+                    (TupleTypeAST [retty, argty])) =
+    P'.defaultValue { PbExpr.tag   = IL_CORO_INVOKE
+                    , PbExpr.coro_prim = Just $ P'.defaultValue    {
+                              PbCoroPrim.ret_type = dumpType retty ,
+                              PbCoroPrim.arg_type = dumpType argty }
+                    }
+
 dumpExpr x@(ILTyApp overallTy baseExpr argType) =
-    P'.defaultValue { PbExpr.ty_app_arg_type = Just $ dumpType argType
-                    , PbExpr.parts = fromList (fmap dumpExpr [baseExpr])
-                    , PbExpr.tag   = IL_TY_APP
-                    , PbExpr.type' = Just $ dumpType overallTy }
+    error $ "Unable to dump type application node " ++ show x
+          ++ " (should handle substitution before codegen)."
 
 dumpExpr x@(ILClosures ty names closures expr) =
     P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [expr])

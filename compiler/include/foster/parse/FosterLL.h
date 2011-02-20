@@ -169,16 +169,6 @@ struct LLCall : public LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
-// e[ty]
-struct LLTypeApp : public LLExpr {
-  LLExpr* base;
-  TypeAST* typeArg;
-  explicit LLTypeApp(LLExpr* base, TypeAST* arg)
-      : LLExpr("LLTypeApp"), base(base), typeArg(arg) {
-  }
-  virtual llvm::Value* codegen(CodegenPass* pass);
-};
-
 struct LLTuple : public LLExpr {
   std::vector<LLExpr*> parts;
   bool isClosureEnvironment;
@@ -259,6 +249,16 @@ struct RawPtrAST : public LLExpr {
 
 };
 */
+
+// coro_invoke[]
+struct LLCoroInvoke : public LLExpr {
+  TypeAST* retType;
+  TypeAST* typeArg;
+  explicit LLCoroInvoke(TypeAST* ret, TypeAST* arg)
+      : LLExpr("LLCoroInvoke"), retType(ret), typeArg(arg) {}
+  virtual llvm::Value* codegen(CodegenPass* pass);
+};
+
 
 #endif // header guard
 

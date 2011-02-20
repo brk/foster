@@ -164,15 +164,15 @@ LLExpr* parseTuple(const pb::Expr& e) {
   return rv;
 }
 
-LLExpr* parseE_TyApp(const pb::Expr& e) {
-  ASSERT(e.has_type()) << "TY_APP must have overall type";
-  ASSERT(e.has_ty_app_arg_type()) << "TY_APP must have arg type";
-  ASSERT(e.parts_size() == 1) << "TY_APP must have base";
+LLCoroInvoke* parseCoroInvoke(const pb::CoroPrim& e) {
+  return new LLCoroInvoke(
+      TypeAST_from_pb(& e.ret_type()),
+      TypeAST_from_pb(& e.arg_type()));
+}
 
-  LLExpr* tyapp = new LLTypeApp(
-      LLExpr_from_pb(& e.parts(0)),
-      TypeAST_from_pb(& e.ty_app_arg_type()));
-  return tyapp;
+LLExpr* parseCoroInvoke(const pb::Expr& e) {
+  ASSERT(e.has_coro_prim());
+  return parseCoroInvoke(e.coro_prim());
 }
 
 LLExpr* parseVar(const pb::Expr& e) {
@@ -211,7 +211,7 @@ LLExpr* LLExpr_from_pb(const pb::Expr* pe) {
   case pb::Expr::IL_LETVALS:   rv = parseLetVals(e); break;
   case pb::Expr::IL_CLOSURES:  rv = parseClosures(e); break;
 //  case pb::Expr::SIMD:      rv = parseSimd(e); break;
-  case pb::Expr::IL_TY_APP:    rv = parseE_TyApp(e); break;
+  case pb::Expr::IL_CORO_INVOKE: rv = parseCoroInvoke(e); break;
   case pb::Expr::IL_SUBSCRIPT: rv = parseSubscript(e); break;
   case pb::Expr::IL_TUPLE:     rv = parseTuple(e); break;
   case pb::Expr::IL_VAR:       rv = parseVar(e); break;
