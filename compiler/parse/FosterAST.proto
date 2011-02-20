@@ -75,15 +75,11 @@ message Expr {
 
   optional PBIf       pb_if      = 21;
 
-
   // Bool
   optional bool   bool_value = 23;
 
   // Var, Module, named type decl
   optional string name  = 24;
-
-  // Tuple
-  optional bool   is_closure_environment = 25;
 
   // AnnTyApp
   optional Type ty_app_arg_type = 29;

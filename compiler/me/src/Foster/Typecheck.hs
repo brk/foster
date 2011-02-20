@@ -65,7 +65,7 @@ typecheck ctx expr maybeExpTy =
         E_SubscriptAST  a b    -> do ta <- typecheck ctx a Nothing
                                      tb <- typecheck ctx b Nothing
                                      typecheckSubscript ta (typeAST ta) tb maybeExpTy
-        E_TupleAST  exprs b   -> typecheckTuple ctx exprs maybeExpTy
+        E_TupleAST  exprs  -> typecheckTuple ctx exprs maybeExpTy
         E_VarAST mt s -> case termVarLookup s (contextBindings ctx) of
             Just avar  -> return $ E_AnnVar avar
             Nothing    -> tcFails $ out $ "Unknown variable " ++ s

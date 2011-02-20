@@ -144,11 +144,8 @@ struct SeqAST : public ExprAST {
 };
 
 struct TupleExprAST : public ExprAST {
-  bool isClosureEnvironment;
-
   explicit TupleExprAST(ExprAST* expr, foster::SourceRange sourceRange)
-    : ExprAST("TupleExprAST", sourceRange),
-      isClosureEnvironment(false) {
+    : ExprAST("TupleExprAST", sourceRange) {
     parts.push_back(expr);
   }
   virtual void accept(ExprASTVisitor* visitor);

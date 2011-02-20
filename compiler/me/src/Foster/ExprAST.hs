@@ -34,8 +34,7 @@ data IfAST = IfAST { ifASTcond :: ExprAST
 data ExprAST =
           E_BoolAST       ESourceRange Bool
         | E_IntAST        ESourceRange String
-        | E_TupleAST      { tupleParts :: [ExprAST]
-                          , tupleIsEnv :: Bool }
+        | E_TupleAST      [ExprAST]
         | E_FnAST         FnAST
         | E_CallAST       ESourceRange CallAST
         | E_CompilesAST   ExprAST CompilesStatus
@@ -159,7 +158,7 @@ instance Structured ExprAST where
             E_FnAST f            -> out $ "FnAST        " ++ (prototypeASTname $ fnProto f)
             E_SeqAST   a b       -> out $ "SeqAST       "
             E_SubscriptAST  a b  -> out $ "SubscriptAST "
-            E_TupleAST     es b  -> out $ "TupleAST     "
+            E_TupleAST     es    -> out $ "TupleAST     "
             E_VarAST mt v        -> out $ "VarAST       " ++ v ++ " :: " ++ show mt
     childrenOf e =
         case e of
@@ -171,7 +170,7 @@ instance Structured ExprAST where
             E_FnAST f            -> [fnBody f]
             E_SeqAST        a b  -> unbuildSeqs e
             E_SubscriptAST  a b  -> [a, b]
-            E_TupleAST     es b  -> es
+            E_TupleAST     es    -> es
             E_VarAST       mt v  -> []
 
 instance Expr ExprAST where

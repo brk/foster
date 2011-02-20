@@ -84,7 +84,7 @@ parseCall pbexpr lines =
         let range = parseRange pbexpr lines in
         case map (\x -> parseExpr x lines) $ toList (PbExpr.parts pbexpr) of
                 --[base, arg] -> CallAST range base arg
-                (base:args) -> E_CallAST range (CallAST base (E_TupleAST args False))
+                (base:args) -> E_CallAST range (CallAST base (E_TupleAST args))
                 _ -> error "call needs a base!"
 
 parseCompiles pbexpr lines =
@@ -122,7 +122,7 @@ parseSeq pbexpr lines =
 
 -- | Convert a list of ExprASTs to a right-leaning "list" of SeqAST nodes.
 buildSeqs :: [ExprAST] -> ExprAST
-buildSeqs []    = E_TupleAST [] False
+buildSeqs []    = E_TupleAST []
 buildSeqs [a]   = a
 buildSeqs [a,b] = E_SeqAST a b
 buildSeqs (a:b) = E_SeqAST a (buildSeqs b)
@@ -132,8 +132,7 @@ parseSubscript pbexpr lines =
     E_SubscriptAST (part 0 parts lines) (part 1 parts lines)
 
 parseTuple pbexpr lines =
-    let exprs = map (\x -> parseExpr x lines) $ toList $ PbExpr.parts pbexpr in
-    E_TupleAST exprs (fromMaybe False $ PbExpr.is_closure_environment pbexpr)
+    E_TupleAST (map (\x -> parseExpr x lines) $ toList $ PbExpr.parts pbexpr)
 
 parseVar pbexpr lines = E_VarAST (fmap parseType (PbExpr.type' pbexpr))
                                  (uToString (fromJust $ PbExpr.name pbexpr))
