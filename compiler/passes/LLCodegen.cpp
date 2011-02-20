@@ -238,27 +238,13 @@ llvm::Value* LLBool::codegen(CodegenPass* pass) {
 }
 
 llvm::Value* LLVar::codegen(CodegenPass* pass) {
-  // This looks up the lexically closest definition for the given variable
-  // name, as provided by a function parameter or some such binding construct.
-  // Note that getValue(this) is NOT used to cache the result; this ensures
-  // that closure conversion is free to duplicate AST nodes and still get
-  // properly scoped argument values inside converted functions.
-  if (this->lazilyInsertedPrototype) {
-    if (!this->lazilyInsertedPrototype->value) {
-      foster::DDiag() << "lazily inserting prototype for "
-                      << this->lazilyInsertedPrototype->getName();
-      this->lazilyInsertedPrototype->codegen(pass);
-    }
-    return this->lazilyInsertedPrototype->value;
-  } else {
-    // The variable for an environment can be looked up multiple times...
-    llvm::Value* v = pass->lookup(getName());
+  // The variable for an environment can be looked up multiple times...
+  llvm::Value* v = pass->lookup(getName());
 
-    if (llvm::AllocaInst* ai = llvm::dyn_cast_or_null<llvm::AllocaInst>(v)) {
-      return builder.CreateLoad(ai, /*isVolatile=*/ false, "autoload");
-    } else {
-      return v;
-    }
+  if (llvm::AllocaInst* ai = llvm::dyn_cast_or_null<llvm::AllocaInst>(v)) {
+    return builder.CreateLoad(ai, /*isVolatile=*/ false, "autoload");
+  } else {
+    return v;
   }
 
   pass->valueSymTab.dump(currentOuts());

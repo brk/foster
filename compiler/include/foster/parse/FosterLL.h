@@ -152,13 +152,11 @@ struct LLBool : public LLExpr {
 
 struct LLVar : public LLExpr {
   string name;
-  LLProto* lazilyInsertedPrototype;
   // Type is not used
 
   explicit LLVar(const string& name) : LLExpr("LLVar"),
-        name(name), lazilyInsertedPrototype(NULL) {}
+        name(name) {}
   virtual llvm::Value* codegen(CodegenPass* pass);
-  const string& getName() { return name; }
   const string getName() const { return name; }
 };
 
