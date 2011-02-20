@@ -72,7 +72,7 @@ data AnnExpr =
         | E_AnnFn       AnnFn
 
         -- Add an overall type for the application
-        | AnnCall       ESourceRange TypeAST AnnExpr AnnExpr
+        | AnnCall       ESourceRange TypeAST AnnExpr [AnnExpr]
 
         -- Add an overall type for the if branch
         | AnnIf         TypeAST AnnExpr AnnExpr AnnExpr
@@ -179,7 +179,7 @@ instance Structured AnnExpr where
         let spaces = Prelude.replicate width '\SP'  in
         case e of
             AnnBool         b    -> out $ "AnnBool      " ++ (show b)
-            AnnCall  r t b a     -> out $ "AnnCall      " ++ " :: " ++ show t
+            AnnCall  r t b args  -> out $ "AnnCall      " ++ " :: " ++ show t
             AnnCompiles c msg    -> out $ "AnnCompiles  " ++ show c ++ " - " ++ msg
             AnnIf      t  a b c  -> out $ "AnnIf        " ++ " :: " ++ show t
             AnnInt ty int        -> out $ "AnnInt       " ++ (litIntText int) ++ " :: " ++ show ty
@@ -192,7 +192,7 @@ instance Structured AnnExpr where
     childrenOf e =
         case e of
             AnnBool         b                    -> []
-            AnnCall  r t b a                     -> [b, a]
+            AnnCall  r t b args                  -> b:args
             AnnCompiles c msg                    -> []
             AnnIf      t  a b c                  -> [a, b, c]
             AnnInt t _                           -> []

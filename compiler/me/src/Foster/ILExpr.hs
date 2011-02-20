@@ -137,7 +137,7 @@ closureConvert ctx expr =
                                                 (map (\n -> avarIdent (contextVar ctx n)) freeNames)
                             ] (ILVar (AnnVar procty clo)))
             -- b(a)
-            AnnCall  r t b (AnnTuple es) -> do
+            AnnCall  r t b es -> do
                 cargs <- mapM g es
                 case b of
                     (E_AnnVar v) -> do nestedLets cargs (\vars -> (ILCall t v vars))

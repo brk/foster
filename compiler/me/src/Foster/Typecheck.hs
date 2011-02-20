@@ -138,13 +138,13 @@ implicitTypeProjection tyvars rho eb argtype range = do
             return $ E_AnnTyApp substRho eb (minimalTuple tyProjTypes)
 
 
-typecheckCallWithBaseFnType ea eb range =
-    case (typeAST eb, typeAST ea) of
+typecheckCallWithBaseFnType eargs eb range =
+    case (typeAST eb, typeAST (AnnTuple eargs)) of
          (FnTypeAST formaltype restype cs, argtype) ->
             if isJust $ typeJoin formaltype argtype
-                then return (AnnCall range restype eb ea)
+                then return (AnnCall range restype eb eargs)
                 else do ebStruct <- tcShowStructure eb
-                        eaStruct <- tcShowStructure ea
+                        eaStruct <- tcShowStructure (AnnTuple eargs)
                         tcFails $ (out $ "CallAST mismatches:\n"
                                        ++ "base: ") ++ (ebStruct) ++ (out $ "\n"
                                        ++ "arg : ") ++ (eaStruct) ++ (out $ "\n"
@@ -159,14 +159,15 @@ typecheckCall ctx range base args maybeExpTy =
       -- we can determine the types of the formals based on the actuals.
       case base of
         (E_FnAST f) -> do
-           ea <- typecheck ctx (E_TupleAST args) Nothing
+           ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) Nothing
            let expectedLambdaType = case maybeExpTy of
-                Nothing  -> (Just (FnTypeAST (typeAST ea) (MissingTypeAST "typecheckCall-3")  irrelevantClosedOverVars))
+                Nothing  -> (Just (FnTypeAST (typeAST ea)
+                                             (MissingTypeAST "typecheckCall-3")  irrelevantClosedOverVars))
                 (Just t) -> (Just (FnTypeAST (MissingTypeAST "typecheckCall-2") t irrelevantClosedOverVars))
 
            eb <- typecheck ctx base expectedLambdaType
            trace ("typecheckCall with literal fn base, exp ty " ++ (show expectedLambdaType)) $
-            typecheckCallWithBaseFnType ea eb range
+            typecheckCallWithBaseFnType eargs eb range
 
         -- Otherwise, typecheck the function first, then the args.
         _ -> do
@@ -200,7 +201,7 @@ typecheckCall ctx range base args maybeExpTy =
 
                     -- Type check the args, unifying them
                     -- with the expected arg type
-                    ea <- typecheck ctx (E_TupleAST args) (Just $ unifiableArgType)
+                    ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) (Just $ unifiableArgType)
 
                     case unifyTypes unifiableArgType (typeAST ea) of
                       Nothing -> tcFails $ out $ "Failed to determine type arguments to apply!" ++ show range
@@ -209,11 +210,11 @@ typecheckCall ctx range base args maybeExpTy =
                         let unifiableRhoType = parSubstTy tyvarsAndMetavars rho in
                         let substitutedFnType = tySubst unifiableRhoType tysub in
                         let annTyApp = E_AnnTyApp substitutedFnType eb (minimalTuple tyProjTypes) in
-                        typecheckCallWithBaseFnType ea annTyApp range
+                        typecheckCallWithBaseFnType eargs annTyApp range
 
               (FnTypeAST formaltype restype cs) -> do
-                    ea <- typecheck ctx (E_TupleAST args) (Just $ getFnArgType (typeAST eb))
-                    typecheckCallWithBaseFnType ea eb range
+                    ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) (Just $ getFnArgType (typeAST eb))
+                    typecheckCallWithBaseFnType eargs eb range
 
 -----------------------------------------------------------------------
 
