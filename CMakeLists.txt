@@ -403,7 +403,7 @@ target_link_libraries(fosterparse
 add_executable(fosterlower
     compiler/fosterlower.cpp
     compiler/StandardPrelude.cpp
-    compiler/parse/ProtobufToLLExpr.cpp
+    compiler/passes/ProtobufToLLExpr.cpp
     compiler/passes/LLCodegen.cpp
     ${GENERATED}/FosterIL.pb.cc
   )
