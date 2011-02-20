@@ -386,7 +386,7 @@ bool tryBindClosureFunctionTypes(const llvm::Type*          origType,
   }
   fnType = llvm::dyn_cast<llvm::FunctionType>(pfnty->getContainedType(0));
   if (!fnType) {
-     EDiag() << "expected " << str(origType) << " to be a ptr to fn type.";
+    EDiag() << "expected " << str(origType) << " to be a ptr to fn type.";
     return false;
   }
   if (fnType->getNumParams() == 0) {
@@ -521,8 +521,6 @@ llvm::Value* LLProc::codegen(CodegenPass* pass) {
   ASSERT(F != NULL) << "unable to codegen function " << getName();
 
   F->setGC("fostergc");
-
-  llvm::outs() << "Codegenning PROC " << getName() <<"\n";
 
   BasicBlock* prevBB = builder.GetInsertBlock();
   BasicBlock* BB = BasicBlock::Create(getGlobalContext(), "entry", F);
@@ -752,9 +750,6 @@ LLProc* getClosureVersionOf(LLExpr* arg,
                             FnTypeAST* fnty,
                             CodegenPass* pass);
 
-// Follows up to two (type-based) pointer indirections for the given value.
-llvm::Value* getClosureStructValue(llvm::Value* maybePtrToClo);
-
 bool
 isKnownNonAllocating(LLVar* varast) {
   // silly hack for now...
@@ -844,7 +839,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
           genericClosureVersionOf(closureFnType)->getLLVMFnType());
     llvm::Value* clo = getClosureStructValue(FV);
 
-    ASSERT(!clo->getType()->isPointerTy())
+    ASSERT(clo->getType()->isStructTy())
         << "clo value should be a tuple, not a pointer";
     llvm::Value* envPtr = builder.CreateExtractValue(clo, 1, "getCloEnv");
 
@@ -864,11 +859,10 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
              << "\nFV: " << str(FV);
 
   for (size_t i = 0; i < this->args.size(); ++i) {
-    // Args checked for nulls during typechecking
-    LLExpr* arg = this->args[i];
-
-    ASSERT(i < FT->getNumContainedTypes()) << "i = " << i << "; FT = " << str(FT);// << show(this);
+    ASSERT(i < FT->getNumContainedTypes());
     const llvm::Type* expectedType = FT->getContainedType(i);
+
+    LLExpr* arg = this->args[i];
     doLowLevelWrapperFnCoercions(expectedType, arg, pass);
     Value* V = arg->codegen(pass);
     ASSERT(V) << "null codegenned value for arg " << (i - 1) << " of call";
@@ -879,6 +873,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
     const Type* formalType = FT->getParamType(valArgs.size());
     if (llvm::isa<llvm::StructType>(formalType)) {
       if (llvm::PointerType::get(formalType, 0) == V->getType()) {
+        // This is used when passing closures, for example.
         V = builder.CreateLoad(V, "loadStructParam");
       }
     }
@@ -892,13 +887,6 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
   for (size_t i = 0; i < valArgs.size(); ++i) {
     llvm::Value*& V = valArgs[i];
 
-    /*
-    foster::DDiag(llvm::raw_ostream::GREEN)
-        << "::FT = " << str(FT) << "; " << i
-        << "; " << FT->getNumContainedTypes()
-        << "; " << valArgs.size();
-     */
-
     ASSERT(FT->getNumContainedTypes() > (i+1)) << "i = " << i
         << "; FT->getNumContainedTypes() = " << FT->getNumContainedTypes()
         << "; valArgs.size() = " << valArgs.size()
@@ -906,14 +894,6 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
 
     // ContainedType[0] is the return type; args start at 1
     const llvm::Type* expectedType = FT->getContainedType(i + 1);
-
-    // If we're given a T** when we expect a T*,
-    // automatically load the reference from the stack.
-    if (V->getType() != expectedType
-     && expectedType->isPointerTy()
-     && isPointerToType(V->getType(), expectedType)) {
-      V = builder.CreateLoad(V, /*isVolatile=*/ false, "unstackref");
-    }
 
     // If we have a T loaded from a T*, and we expect a T*,
     // use the T* (TODO: make sure the T* isn't stack allocated!)
