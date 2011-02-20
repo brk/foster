@@ -81,15 +81,13 @@ CanStackAllocate canStackAllocate(LLTuple* ast) {
   return CanStackAllocate(true);
 }
 
-// Follows up to two (type-based) pointer indirections for the given value.
+// Follows a (type-based) pointer indirections for the given value.
 llvm::Value* getClosureStructValue(llvm::Value* maybePtrToClo) {
   llvm::outs() << "maybePtrToClo: " << str(maybePtrToClo) << "\n";
   if (maybePtrToClo->getType()->isPointerTy()) {
     maybePtrToClo = builder.CreateLoad(maybePtrToClo, /*isVolatile=*/ false, "derefCloPtr");
   }
-  if (maybePtrToClo->getType()->isPointerTy()) {
-    maybePtrToClo = builder.CreateLoad(maybePtrToClo, /*isVolatile=*/ false, "derefCloPtr");
-  }
+  ASSERT(maybePtrToClo->getType()->isStructTy());
   return maybePtrToClo;
 }
 
@@ -126,10 +124,6 @@ void LLModule::codegen(CodegenPass* pass) {
     procs[i]->codegen(pass);
   }
 }
-
-Value* tempHackExtendInt(Value* val, const Type* toTy);
-
-const llvm::Type* getLLVMType(TypeAST* type);
 
 bool isSafeToStackAllocate(LLTuple* ast) {
   return true;
