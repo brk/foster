@@ -13,7 +13,7 @@ sumof () {
 }
 
 runcloc () {
- cloc $@ --quiet --skip-uniqueness --exclude-dir=compiler/me/src/Foster/Fepb,compiler/me/src/Foster/Bepb
+ cloc $@ --quiet --skip-uniqueness --exclude-dir=compiler/me/src/Foster/Fepb,compiler/me/src/Foster/Bepb,compiler/me/src/Llvmpb
 }
 
 inspbase () {
