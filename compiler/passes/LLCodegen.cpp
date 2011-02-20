@@ -740,7 +740,7 @@ llvm::Value* LLSubscript::codegen(CodegenPass* pass) {
     base = builder.CreateLoad(base, /*isVolatile*/ false, "subload");
   }
 
-  return getElementFromComposite(base, idx);
+  return getElementFromComposite(base, idx, "");
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -835,20 +835,19 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
     // The function type here includes a parameter for the
     // generic environment type, e.g. (i32 => i32) becomes
     // i32 (i8*, i32).
+    callingConv = closureFnType->getCallingConventionID(); haveSetCallingConv = true;
     FT = dyn_cast<const FunctionType>(
           genericClosureVersionOf(closureFnType)->getLLVMFnType());
     llvm::Value* clo = getClosureStructValue(FV);
 
     ASSERT(clo->getType()->isStructTy())
         << "clo value should be a tuple, not a pointer";
+    FV = builder.CreateExtractValue(clo, 0, "getCloCode");
     llvm::Value* envPtr = builder.CreateExtractValue(clo, 1, "getCloEnv");
 
     // Pass env pointer as first parameter to function.
     ASSERT(valArgs.empty());
     valArgs.push_back(envPtr);
-
-    FV = builder.CreateExtractValue(clo, 0, "getCloCode");
-    callingConv = closureFnType->getCallingConventionID(); haveSetCallingConv = true;
   } else {
     ASSERT(false);
   }

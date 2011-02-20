@@ -70,7 +70,8 @@ uint64_t getSaturating(const llvm::ConstantInt* ci) {
   return static_cast<T>(ci->getLimitedValue(allOnes));
 }
 
-Value* getElementFromComposite(Value* compositeValue, Value* idxValue) {
+Value* getElementFromComposite(Value* compositeValue, Value* idxValue,
+                               const std::string& msg) {
   const Type* compositeType = compositeValue->getType();
   if (llvm::isa<llvm::PointerType>(compositeType)) {
     // Pointers to composites are indexed via getelementptr
@@ -79,17 +80,17 @@ Value* getElementFromComposite(Value* compositeValue, Value* idxValue) {
     //        into an array, pointer or vector, integers of any width
     //        are allowed, and they are not required to be constant."
     //   -- http://llvm.org/docs/LangRef.html#i_getelementptr
-    Value* gep = getPointerToIndex(compositeValue, idxValue, "subgep");
+    Value* gep = getPointerToIndex(compositeValue, idxValue, (msg + ".subgep").c_str());
     return builder.CreateLoad(gep, "subgep_ld");
   } else if (llvm::isa<llvm::StructType>(compositeType)
           && llvm::isa<llvm::Constant>(idxValue)) {
     ASSERT(llvm::isa<llvm::ConstantInt>(idxValue))
         << "struct values may be indexed only by constant expressions";
     unsigned uidx = unsigned(getSaturating(dyn_cast<ConstantInt>(idxValue)));
-    return builder.CreateExtractValue(compositeValue, uidx, "subexv");
+    return builder.CreateExtractValue(compositeValue, uidx, (msg + "subexv").c_str());
   } else if (llvm::isa<llvm::VectorType>(compositeType)) {
     if (llvm::isa<llvm::Constant>(idxValue)) {
-      return builder.CreateExtractElement(compositeValue, idxValue, "simdexv");
+      return builder.CreateExtractElement(compositeValue, idxValue, (msg + "simdexv").c_str());
     } else {
       EDiag() << "TODO: codegen for indexing vectors by non-constants"
               << __FILE__ << ":" << __LINE__ << "\n";
