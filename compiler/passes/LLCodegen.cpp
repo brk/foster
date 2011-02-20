@@ -81,15 +81,6 @@ CanStackAllocate canStackAllocate(LLTuple* ast) {
   return CanStackAllocate(true);
 }
 
-bool structTypeContainsPointers(const llvm::StructType* ty) {
-  for (unsigned i = 0; i < ty->getNumElements(); ++i) {
-    if (ty->getTypeAtIndex(i)->isPointerTy()) {
-      return true;
-    }
-  }
-  return false;
-}
-
 // Follows up to two (type-based) pointer indirections for the given value.
 llvm::Value* getClosureStructValue(llvm::Value* maybePtrToClo) {
   llvm::outs() << "maybePtrToClo: " << str(maybePtrToClo) << "\n";
