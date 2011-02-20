@@ -12,6 +12,8 @@ import qualified Data.Text as T
 import Data.Char(toLower)
 import Data.Bits(shiftR)
 
+-- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
 data OutputData = OutputData { outputDataSGRs :: [SGR]
                              , outputDataString :: String }
 type Output = [OutputData]
@@ -42,14 +44,16 @@ runOutput outs = do
 
 type Uniq = Int
 
+-- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
 data LiteralInt = LiteralInt { litIntValue   :: Integer
                              , litIntMinBits :: Int
                              , litIntText    :: String
                              , litIntBase    :: Int
                              } deriving (Show)
 
-getLiteralInt :: Int -> LiteralInt
-getLiteralInt i = precheckedLiteralInt (show i) 32 (show i) 10
+getLiteralInt :: Int -> Int -> LiteralInt
+getLiteralInt bits i = precheckedLiteralInt (show i) bits (show i) 10
 
 -- Precondition: the provided string must be parseable in the given radix
 precheckedLiteralInt :: String -> Int -> String -> Int -> LiteralInt
@@ -75,17 +79,7 @@ lowBitOf n = if even n then "1" else "0"
 bitStringOf n | n <= 1     = show n
               | otherwise = bitStringOf (shiftR n 1) ++ lowBitOf n
 
-
-butnot :: Ord a => [a] -> [a] -> [a]
-butnot bs zs =
-    let sbs = Set.fromList bs in
-    let szs = Set.fromList zs in
-    Set.toList (Set.difference sbs szs)
-
-data ModuleAST fnType = ModuleAST {
-          moduleASTfunctions   :: [fnType]
-        , moduleASTsourceLines :: SourceLines
-     }
+-- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 data Ident = Ident { identPrefix :: String
                    , identNum    :: Uniq }
@@ -101,13 +95,24 @@ instance Show Ident where
 
 irrelevantIdentNum = (-12345) :: Int
 
+-- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+data ModuleAST fnType = ModuleAST {
+          moduleASTfunctions   :: [fnType]
+        , moduleASTsourceLines :: SourceLines
+     }
 
+butnot :: Ord a => [a] -> [a] -> [a]
+butnot bs zs =
+    let sbs = Set.fromList bs in
+    let szs = Set.fromList zs in
+    Set.toList (Set.difference sbs szs)
 
 joinWith :: String -> [String] -> String
 joinWith s [] = ""
 joinWith s ss = foldr1 (++) (intersperse s ss)
 
+-- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 data ESourceLocation = ESourceLocation { sourceLocationLine :: Int
                                        , sourceLocationCol  :: Int

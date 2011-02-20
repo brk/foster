@@ -254,7 +254,7 @@ closureConvertAnnFn ctx f freevars = do
     ilmPutProc (ILProcDef newproto newbody)
 
 litInt32 :: Int -> ILExpr
-litInt32 i = ILInt (NamedTypeAST "i32") $ getLiteralInt i
+litInt32 i = ILInt (NamedTypeAST "i32") $ getLiteralInt 32 i
 
 typeIL :: ILExpr -> TypeAST
 typeIL (ILBool _)          = fosBoolType
