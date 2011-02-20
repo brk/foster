@@ -137,12 +137,6 @@ def binpath(bindir, prog):
   else:
     return os.path.join(bindir, prog)
 
-def tmppath(prog):
-  if os.path.isabs(prog):
-    return prog
-  else:
-    return os.path.join(bindir, prog)
-
 def get_paths(bindir, options):
   join = os.path.join
   paths = {
