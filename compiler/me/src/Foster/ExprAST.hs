@@ -76,8 +76,7 @@ data AnnExpr =
                         , aintLitInt :: LiteralInt }
 
         -- No need for an explicit type, so long as subexprs are typed.
-        | AnnTuple      { annTupleParts :: [AnnExpr]
-                        , annTupleIsEnv :: Bool }
+        | AnnTuple      [AnnExpr]
 
         | E_AnnFn       AnnFn
 
@@ -131,7 +130,7 @@ unbuildSeqsA expr = [expr]
 typeAST :: AnnExpr -> TypeAST
 typeAST (AnnBool _)          = fosBoolType
 typeAST (AnnInt t _)         = t
-typeAST (AnnTuple es b)      = TupleTypeAST [typeAST e | e <- es]
+typeAST (AnnTuple es)        = TupleTypeAST [typeAST e | e <- es]
 typeAST (E_AnnFn annFn)      = annFnType annFn
 typeAST (AnnCall r t b a)    = t
 typeAST (AnnCompiles c msg)  = fosBoolType
@@ -196,7 +195,7 @@ instance Structured AnnExpr where
             E_AnnFn annFn        -> out $ "AnnFn " ++ fnNameA annFn ++ " // " ++ (show $ annFnBoundNames annFn)
             AnnSeq          a b  -> out $ "AnnSeq       " ++ " :: " ++ show (typeAST b)
             AnnSubscript  t a b  -> out $ "AnnSubscript " ++ " :: " ++ show t
-            AnnTuple     es b    -> out $ "AnnTuple     "
+            AnnTuple     es      -> out $ "AnnTuple     "
             E_AnnVar (AnnVar t v) -> out $ "AnnVar       " ++ show v ++ " :: " ++ show t
             E_AnnTyApp t e argty -> out $ "AnnTyApp     [" ++ show argty ++ "] :: " ++ show t
     childrenOf e =
@@ -209,7 +208,7 @@ instance Structured AnnExpr where
             E_AnnFn annFn                        -> [annFnBody annFn]
             AnnSeq      a b                      -> unbuildSeqsA e
             AnnSubscript t a b                   -> [a, b]
-            AnnTuple     es b                    -> es
+            AnnTuple     es                      -> es
             E_AnnVar      v                      -> []
             E_AnnTyApp t e argty                 -> [e]
 

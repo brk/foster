@@ -122,7 +122,7 @@ closureConvert ctx expr =
                                                        b' <- g b
                                                        nestedLets [a'] (\[va] -> ILSubscript t va b')
 
-            AnnTuple     es b                    -> do cs <- mapM g es
+            AnnTuple     es                      -> do cs <- mapM g es
                                                        nestedLets cs (\vs -> ILTuple vs)
 
             E_AnnTyApp t e argty                 -> do e' <- g e
@@ -141,7 +141,7 @@ closureConvert ctx expr =
                                                 (map (\n -> avarIdent (contextVar ctx n)) freeNames)
                             ] (ILVar (AnnVar procty clo)))
             -- b(a)
-            AnnCall  r t b (AnnTuple es _) -> do
+            AnnCall  r t b (AnnTuple es) -> do
                 cargs <- mapM g es
                 case b of
                     (E_AnnVar v) -> do nestedLets cargs (\vars -> (ILCall t v vars))

@@ -65,7 +65,7 @@ typecheck ctx expr maybeExpTy =
         E_SubscriptAST  a b    -> do ta <- typecheck ctx a Nothing
                                      tb <- typecheck ctx b Nothing
                                      typecheckSubscript ta (typeAST ta) tb maybeExpTy
-        E_TupleAST  exprs b   -> typecheckTuple ctx exprs b maybeExpTy
+        E_TupleAST  exprs b   -> typecheckTuple ctx exprs maybeExpTy
         E_VarAST mt s -> case termVarLookup s (contextBindings ctx) of
             Just avar  -> return $ E_AnnVar avar
             Nothing    -> tcFails $ out $ "Unknown variable " ++ s
@@ -266,27 +266,27 @@ verifyNonOverlappingVariableNames fnName varNames = do
                                     ++ ": had duplicated formal parameter names: " ++ show duplicates
 
 -----------------------------------------------------------------------
-typecheckTuple ctx exprs b Nothing = typecheckTuple' ctx exprs b [Nothing | e <- exprs]
+typecheckTuple ctx exprs Nothing = typecheckTuple' ctx exprs [Nothing | e <- exprs]
 
-typecheckTuple ctx exprs b (Just (TupleTypeAST ts)) =
+typecheckTuple ctx exprs (Just (TupleTypeAST ts)) =
     if length exprs /= length ts
       then tcFails $ out $ "typecheckTuple: length of tuple (" ++ (show $ length exprs) ++
                         ") and expected tuple (" ++ (show $ length ts) ++
                         ") types did not agree:\n"
                             ++ show exprs ++ " versus \n" ++ show ts
-      else typecheckTuple' ctx exprs b [Just t | t <- ts]
+      else typecheckTuple' ctx exprs [Just t | t <- ts]
 
-typecheckTuple ctx es b (Just ty)
+typecheckTuple ctx es (Just ty)
     = tcFails $ out $ "typecheck: tuple (" ++ show es ++ ") cannot check against non-tuple type " ++ show ty
 
-typecheckTuple' ctx es b ts = do
+typecheckTuple' ctx es ts = do
         let ets = List.zip es ts -- :: [(ExprAST, TypeAST)]
         let subparts = map (\(e,t) -> typecheck ctx e t) ets
         subAnnots <- sequence $ liftM wasSuccessful subparts
 
         if Prelude.and subAnnots
             then do { subexprs <- sequence subparts
-                    ; return (AnnTuple subexprs b)
+                    ; return (AnnTuple subexprs)
                     }
             else do { errmsgs <- sequence $ map collectErrors subparts
                     ; tcFails $ concat errmsgs }
