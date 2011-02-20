@@ -106,10 +106,10 @@ parseIf pbexpr lines =
         if (isSet pbexpr PbExpr.pb_if)
                 then parseFromPBIf (getVal pbexpr PbExpr.pb_if)
                 else error "must have if to parse from if!"
-        where parseFromPBIf pbif = E_IfAST $
-                 IfAST (parseExpr (PBIf.test_expr pbif) lines)
-                       (parseExpr (PBIf.then_expr pbif) lines)
-                       (parseExpr (PBIf.else_expr pbif) lines)
+        where parseFromPBIf pbif =
+               (E_IfAST (parseExpr (PBIf.test_expr pbif) lines)
+                        (parseExpr (PBIf.then_expr pbif) lines)
+                        (parseExpr (PBIf.else_expr pbif) lines))
 
 parseInt :: PbExpr.Expr -> SourceLines -> ExprAST
 parseInt pbexpr lines =

@@ -27,10 +27,6 @@ data CallAST = CallAST { callASTbase :: ExprAST
                        , callASTargs :: ExprAST
                        } deriving (Show)
 
-data IfAST = IfAST { ifASTcond :: ExprAST
-                   , ifASTthen :: ExprAST
-                   , ifASTelse :: ExprAST } deriving (Show)
-
 data ExprAST =
           E_BoolAST       ESourceRange Bool
         | E_IntAST        ESourceRange String
@@ -38,7 +34,7 @@ data ExprAST =
         | E_FnAST         FnAST
         | E_CallAST       ESourceRange CallAST
         | E_CompilesAST   ExprAST CompilesStatus
-        | E_IfAST         IfAST
+        | E_IfAST         ExprAST ExprAST ExprAST
         | E_SeqAST        ExprAST ExprAST
         | E_SubscriptAST  { subscriptBase  :: ExprAST
                           , subscriptIndex :: ExprAST }
@@ -153,7 +149,7 @@ instance Structured ExprAST where
             E_BoolAST rng  b     -> out $ "BoolAST      " ++ (show b)
             E_CallAST rng call   -> out $ "CallAST      " ++ tryGetCallNameE (callASTbase call)
             E_CompilesAST e c    -> out $ "CompilesAST  "
-            E_IfAST _            -> out $ "IfAST        "
+            E_IfAST _ _ _        -> out $ "IfAST        "
             E_IntAST rng text    -> out $ "IntAST       " ++ text
             E_FnAST f            -> out $ "FnAST        " ++ (prototypeASTname $ fnProto f)
             E_SeqAST   a b       -> out $ "SeqAST       "
@@ -165,7 +161,7 @@ instance Structured ExprAST where
             E_BoolAST rng b      -> []
             E_CallAST rng call   -> [callASTbase call, callASTargs call]
             E_CompilesAST   e c  -> [e]
-            E_IfAST (IfAST a b c)-> [a, b, c]
+            E_IfAST a b c        -> [a, b, c]
             E_IntAST rng txt     -> []
             E_FnAST f            -> [fnBody f]
             E_SeqAST        a b  -> unbuildSeqs e

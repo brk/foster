@@ -54,7 +54,7 @@ typecheck ctx expr maybeExpTy =
   tcWithScope expr $
     do case expr of
         E_BoolAST rng b -> do return (AnnBool b)
-        E_IfAST ifast   -> typecheckIf ctx ifast maybeExpTy
+        E_IfAST a b c   -> typecheckIf ctx a b c maybeExpTy
         E_FnAST f       -> typecheckFn ctx  f    maybeExpTy
         E_CallAST rng call -> typecheckCall ctx rng call maybeExpTy
         E_IntAST rng txt -> typecheckInt rng txt
@@ -79,7 +79,7 @@ typecheck ctx expr maybeExpTy =
                             Just o  -> AnnCompiles CS_WouldNotCompile (outToString o)
 
 -----------------------------------------------------------------------
-typecheckIf ctx (IfAST a b c) maybeExpTy = do
+typecheckIf ctx a b c maybeExpTy = do
     ea <- typecheck ctx a (Just fosBoolType)
     eb <- typecheck ctx b maybeExpTy
     ec <- typecheck ctx c maybeExpTy
