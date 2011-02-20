@@ -328,7 +328,7 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
     return TypeVariableAST::get(tyname, range);
   }
 
-  currentErrs() << "Error: found unexpected type in protobuf!\n" << t.DebugString() << "\n";
+  EDiag() << "Error: found unexpected type in protobuf!\n" << t.DebugString();
 
   return NULL;
 }

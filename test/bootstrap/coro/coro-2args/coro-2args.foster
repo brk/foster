@@ -8,45 +8,46 @@
 //             }
 
 
-//test-coro2a = fn () {
-//  expect_i32(30)
-//  expect_i32(120)
-//
-//  let co = coro_create_i32x2_i32( fn(x : i32, y : i32) {
-//                           let a : tuple {i32, i32} = coro_yield_i32x2_i32(x + y)
-//                           let b : tuple {i32, i32} = coro_yield_i32x2_i32(a[0] + 20) in {
-//                            print_i32(111111)
-//                             12345
-//                           }
-//                         }) in {
-//     let x : i32 = coro_invoke_i32x2_i32(co, 10, 20) in {
-//         let y : i32 = coro_invoke_i32x2_i32(co, 100, 200) in {
-//           print_i32(x)
-//           print_i32(y)
-//           0
-//         }
-//     }
-//  }
-//  0
-//}
-
-test-coro2b = fn () {
+test-coro2a = fn () {
   expect_i32(30)
   expect_i32(120)
 
-  let co = coro_create_i32_i32x2( fn(x : i32 to tuple {i32, i32}) {
-                           let a : i32 = coro_yield_i32_i32x2(1 + x, x) in {
+  let co = coro_create_i32x2_i32( fn(x : i32, y : i32) {
+                           let a : tuple {i32, i32} = coro_yield_i32x2_i32(x + y)
+                           let b : tuple {i32, i32} = coro_yield_i32x2_i32(a[0] + 20) in {
                             print_i32(111111)
+                             12345
                            }
-                           tuple { 0, 0 }
                          }) in {
-     //let x : tuple {i32,i32} = coro_invoke_i32_i32x2(co, 10) in {
-     //  print_i32(x[0])
-       0
-     //}
+     let x : i32 = coro_invoke_i32x2_i32(co, 10, 20) in {
+         let y : i32 = coro_invoke_i32x2_i32(co, 100, 200) in {
+           print_i32(x)
+           print_i32(y)
+           0
+         }
+     }
   }
+  0
 }
 
+//test-coro2b = fn () {
+//  expect_i32(30)
+//  expect_i32(120)
+//
+//  let co = coro_create_i32_i32x2( fn(x : i32 to tuple {i32, i32}) {
+//                           let a : i32 = coro_yield_i32_i32x2(1 + x, x) in {
+//                            print_i32(111111)
+//                           }
+//                           tuple { 0, 0 }
+//                         }) in {
+//     //let x : tuple {i32,i32} = coro_invoke_i32_i32x2(co, 10) in {
+//     //  print_i32(x[0])
+//       0
+//     //}
+//  }
+//}
+
 main = fn () {
-  test-coro2b()
+  test-coro2a()
+  //test-coro2b()
 }

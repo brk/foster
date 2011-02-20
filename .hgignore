@@ -11,8 +11,7 @@ _obj/
 tools/c-viewer/
 dox/
 notes/_build/
-compiler/me/FosterAST.protox
-compiler/me/FosterLL.protox
+glob:compiler/me/*.protox
 compiler/me/dist/
 compiler/me/src/Foster/Fepb/
 compiler/me/src/Foster/Fepb.hs

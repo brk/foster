@@ -154,6 +154,11 @@ closureConvert ctx expr =
                                     let procid = (ilProtoIdent (ilProcProto newproc))
                                     let procvar = (AnnVar (procType newproc) procid)
                                     nestedLets cargs (\vars -> ILCall t procvar (freevars ++ vars))
+                    (E_AnnTyApp ot (E_AnnVar v) argty) -> do
+                                    x <- ilmFresh "appty"
+                                    let var = AnnVar ot x
+                                    nlets <- nestedLets cargs (\vars -> ILCall t var vars)
+                                    return $ buildLet x (ILTyApp ot (ILVar v) argty) nlets 
                     _ -> error $ "AnnCall with non-var base of " ++ show b
 
 
