@@ -23,16 +23,12 @@ data CompilesStatus = CS_WouldCompile | CS_WouldNotCompile | CS_NotChecked
 class Expr a where
     freeVars   :: a -> [String]
 
-data CallAST = CallAST { callASTbase :: ExprAST
-                       , callASTargs :: ExprAST
-                       } deriving (Show)
-
 data ExprAST =
           E_BoolAST       ESourceRange Bool
         | E_IntAST        ESourceRange String
         | E_TupleAST      [ExprAST]
         | E_FnAST         FnAST
-        | E_CallAST       ESourceRange CallAST
+        | E_CallAST       ESourceRange ExprAST [ExprAST]
         | E_CompilesAST   ExprAST CompilesStatus
         | E_IfAST         ExprAST ExprAST ExprAST
         | E_SeqAST        ExprAST ExprAST
@@ -147,7 +143,7 @@ instance Structured ExprAST where
         let spaces = Prelude.replicate width '\SP'  in
         case e of
             E_BoolAST rng  b     -> out $ "BoolAST      " ++ (show b)
-            E_CallAST rng call   -> out $ "CallAST      " ++ tryGetCallNameE (callASTbase call)
+            E_CallAST rng b args -> out $ "CallAST      " ++ tryGetCallNameE b
             E_CompilesAST e c    -> out $ "CompilesAST  "
             E_IfAST _ _ _        -> out $ "IfAST        "
             E_IntAST rng text    -> out $ "IntAST       " ++ text
@@ -159,7 +155,7 @@ instance Structured ExprAST where
     childrenOf e =
         case e of
             E_BoolAST rng b      -> []
-            E_CallAST rng call   -> [callASTbase call, callASTargs call]
+            E_CallAST rng b args -> b:args
             E_CompilesAST   e c  -> [e]
             E_IfAST a b c        -> [a, b, c]
             E_IntAST rng txt     -> []

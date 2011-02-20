@@ -84,7 +84,7 @@ parseCall pbexpr lines =
         let range = parseRange pbexpr lines in
         case map (\x -> parseExpr x lines) $ toList (PbExpr.parts pbexpr) of
                 --[base, arg] -> CallAST range base arg
-                (base:args) -> E_CallAST range (CallAST base (E_TupleAST args))
+                (base:args) -> E_CallAST range base args
                 _ -> error "call needs a base!"
 
 parseCompiles pbexpr lines =
