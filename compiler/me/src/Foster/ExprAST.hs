@@ -78,7 +78,7 @@ data AnnExpr =
         | AnnIf         TypeAST AnnExpr AnnExpr AnnExpr
 
         -- The type of a sequence is the type of its second part
-        | AnnSeq        AnnExpr AnnExpr
+        | AnnLetVar     Ident AnnExpr AnnExpr
 
         -- Subscripts get an overall type
         | AnnSubscript  TypeAST AnnExpr AnnExpr
@@ -112,12 +112,6 @@ fnNameA f = identPrefix $ annProtoIdent (annFnProto f)
 
 -----------------------------------------------------------------------
 
-unbuildSeqsA :: AnnExpr -> [AnnExpr]
-unbuildSeqsA (AnnSeq a b) = a : unbuildSeqsA b
-unbuildSeqsA expr = [expr]
-
------------------------------------------------------------------------
-
 typeAST :: AnnExpr -> TypeAST
 typeAST (AnnBool _)          = fosBoolType
 typeAST (AnnInt t _)         = t
@@ -126,7 +120,7 @@ typeAST (E_AnnFn annFn)      = annFnType annFn
 typeAST (AnnCall r t b a)    = t
 typeAST (AnnCompiles c msg)  = fosBoolType
 typeAST (AnnIf t a b c)      = t
-typeAST (AnnSeq a b)         = typeAST b
+typeAST (AnnLetVar _ a b)    = typeAST b
 typeAST (AnnSubscript t _ _) = t
 typeAST (E_AnnVar (AnnVar t s)) = t
 typeAST (E_AnnTyApp substitutedTy tm tyArgs) = substitutedTy
@@ -184,7 +178,7 @@ instance Structured AnnExpr where
             AnnIf      t  a b c  -> out $ "AnnIf        " ++ " :: " ++ show t
             AnnInt ty int        -> out $ "AnnInt       " ++ (litIntText int) ++ " :: " ++ show ty
             E_AnnFn annFn        -> out $ "AnnFn " ++ fnNameA annFn ++ " // " ++ (show $ annFnBoundNames annFn)
-            AnnSeq          a b  -> out $ "AnnSeq       " ++ " :: " ++ show (typeAST b)
+            AnnLetVar id    a b  -> out $ "AnnLetVar    " ++ show id ++ " :: " ++ show (typeAST b)
             AnnSubscript  t a b  -> out $ "AnnSubscript " ++ " :: " ++ show t
             AnnTuple     es      -> out $ "AnnTuple     "
             E_AnnVar (AnnVar t v) -> out $ "AnnVar       " ++ show v ++ " :: " ++ show t
@@ -197,7 +191,7 @@ instance Structured AnnExpr where
             AnnIf      t  a b c                  -> [a, b, c]
             AnnInt t _                           -> []
             E_AnnFn annFn                        -> [annFnBody annFn]
-            AnnSeq      a b                      -> unbuildSeqsA e
+            AnnLetVar _ a b                      -> [a, b]
             AnnSubscript t a b                   -> [a, b]
             AnnTuple     es                      -> es
             E_AnnVar      v                      -> []

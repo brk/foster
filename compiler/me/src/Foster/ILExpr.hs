@@ -111,9 +111,8 @@ closureConvert ctx expr =
                                          let v = AnnVar (typeIL a') x
                                          return $ buildLet x a' (ILIf t v b' c')
 
-            AnnSeq      a b        -> do lhs <- ilmFresh ".seq"
-                                         [a', b'] <- mapM g [a, b]
-                                         return $ buildLet lhs a' b'
+            AnnLetVar id a b       -> do [a', b'] <- mapM g [a, b]
+                                         return $ buildLet id a' b'
 
             AnnSubscript t a b     -> do [a', b'] <- mapM g [a, b]
                                          nestedLets [a'] (\[va] -> ILSubscript t va b')
