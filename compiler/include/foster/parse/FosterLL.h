@@ -24,27 +24,13 @@ namespace llvm {
   class ConstantInt;
 }
 
-using llvm::Type;
 using llvm::Value;
-using llvm::APInt;
 
 class LLExpr;
 class TypeAST;
 class FnTypeAST;
-class LLVar;
-class LLExprVisitor;
-
-typedef std::vector<LLExpr*> LLExprs;
-typedef std::vector<LLVar*> LLVars;
 
 std::ostream& operator<<(std::ostream& out, LLExpr& expr);
-
-//string str(LLExpr* expr);
-namespace foster {
-  //SourceRangeHighlighter show(LLExpr* ast);
-  struct CFG;
-  extern char kDefaultFnLiteralCallingConvention[];
-}
 
 ///////////////////////////////////////////////////////////
 
@@ -72,7 +58,6 @@ class LLSubscript;
 class LLProc;
 class LLIf;
 class LLProto;
-class LLVar;
 
 
 struct LLModule {
@@ -144,7 +129,7 @@ public:
     int bitsLLVMneeds = (std::max)(intSizeForNBits(activeBits),
                                    (unsigned) cleanText.size());
     int ourSize = intSizeForNBits(bitsLLVMneeds);
-    apint = new APInt(ourSize, cleanTextBase10, 10);
+    apint = new llvm::APInt(ourSize, cleanTextBase10, 10);
     type = TypeAST::i(ourSize);
   }
 
@@ -208,7 +193,7 @@ struct LLTypeApp : public LLExpr {
 struct LLTuple : public LLExpr {
   std::vector<LLExpr*> parts;
   bool isClosureEnvironment;
-  explicit LLTuple(LLExprs& exprs, foster::SourceRange sourceRange)
+  explicit LLTuple(const std::vector<LLExpr*>& exprs, foster::SourceRange sourceRange)
     : LLExpr("LLTuple", sourceRange),
       isClosureEnvironment(false) {
     parts = exprs;

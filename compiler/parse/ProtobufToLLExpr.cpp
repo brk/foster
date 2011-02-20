@@ -166,7 +166,7 @@ LLExpr* parseSubscript(const pb::Expr& e, const foster::SourceRange& range) {
 }
 
 LLExpr* parseTuple(const pb::Expr& e, const foster::SourceRange& range) {
-  LLExprs args;
+  std::vector<LLExpr*> args;
   for (int i = 0; i < e.parts_size(); ++i) {
     args.push_back(LLExpr_from_pb(&e.parts(i)));
   }
