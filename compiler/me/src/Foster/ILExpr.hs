@@ -101,32 +101,28 @@ closureConvert :: Context -> AnnExpr -> ILM ILExpr
 closureConvert ctx expr =
         let g = closureConvert ctx in
         case expr of
-            AnnBool         b                    -> return $ ILBool b
-            AnnCompiles c msg                    -> return $ ILBool (c == CS_WouldCompile)
-            AnnInt t   i                         -> return $ ILInt t i
-            E_AnnVar      v                      -> return $ ILVar v
+            AnnBool b              -> return $ ILBool b
+            AnnCompiles c msg      -> return $ ILBool (c == CS_WouldCompile)
+            AnnInt t i             -> return $ ILInt t i
+            E_AnnVar v             -> return $ ILVar v
 
-            AnnIf      t  a b c                  -> do x <- ilmFresh ".ife"
-                                                       a' <- g a
-                                                       b' <- g b
-                                                       c' <- g c
-                                                       let v = AnnVar (typeIL a') x
-                                                       return $ buildLet x a' (ILIf t v b' c')
+            AnnIf      t  a b c    -> do x <- ilmFresh ".ife"
+                                         [a', b', c'] <- mapM g [a, b, c]
+                                         let v = AnnVar (typeIL a') x
+                                         return $ buildLet x a' (ILIf t v b' c')
 
-            AnnSeq      a b                      -> do lhs <- ilmFresh ".seq"
-                                                       a' <- g a
-                                                       b' <- g b
-                                                       return $ buildLet lhs a' b'
+            AnnSeq      a b        -> do lhs <- ilmFresh ".seq"
+                                         [a', b'] <- mapM g [a, b]
+                                         return $ buildLet lhs a' b'
 
-            AnnSubscript t a b                   -> do a' <- g a
-                                                       b' <- g b
-                                                       nestedLets [a'] (\[va] -> ILSubscript t va b')
+            AnnSubscript t a b     -> do [a', b'] <- mapM g [a, b]
+                                         nestedLets [a'] (\[va] -> ILSubscript t va b')
 
-            AnnTuple     es                      -> do cs <- mapM g es
-                                                       nestedLets cs (\vs -> ILTuple vs)
+            AnnTuple     es        -> do cs <- mapM g es
+                                         nestedLets cs (\vs -> ILTuple vs)
 
-            E_AnnTyApp t e argty                 -> do e' <- g e
-                                                       return $ ILTyApp t e' argty
+            E_AnnTyApp t e argty   -> do e' <- g e
+                                         return $ ILTyApp t e' argty
 
             E_AnnFn annFn -> do
                 clo <- ilmFresh "clo"
