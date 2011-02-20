@@ -5,6 +5,8 @@ cmake_policy(VERSION 2.8.0)
 
 ####################### Configuration Rules ########################
 
+SET(LIBRARY_OUTPUT_PATH ${PROJECT_BINARY_DIR}/_nativelibs_)
+
 set(LLVM_VERSION 2.8)
 
 option(USE_FOSTER_GC_PLUGIN
@@ -211,12 +213,12 @@ add_custom_target(hs_me
 #-------------------------------------------------------------------
 
 add_custom_command(
-  OUTPUT ${PROJECT_BINARY_DIR}/libfoster_main.o
+  OUTPUT ${PROJECT_BINARY_DIR}/_nativelibs_/libfoster_main.o
   COMMAND
         ${CMAKE_CXX_COMPILER} -g
           ${PROJECT_SOURCE_DIR}/runtime/libfoster_main.cpp
           -I ${PROJECT_SOURCE_DIR}/runtime/gc/
-                -c -o ${PROJECT_BINARY_DIR}/libfoster_main.o
+                -c -o ${PROJECT_BINARY_DIR}/_nativelibs_/libfoster_main.o
   DEPENDS
         ${PROJECT_SOURCE_DIR}/runtime/libfoster_main.cpp
 )
@@ -251,7 +253,7 @@ add_custom_command(
 # and would be rebuilt on every single invocation of make.
 add_custom_target(libfoster_bc DEPENDS
         ${PROJECT_BINARY_DIR}/libfoster.bc
-        ${PROJECT_BINARY_DIR}/libfoster_main.o)
+        ${PROJECT_BINARY_DIR}/_nativelibs_/libfoster_main.o)
 
 
 #-----------------------------------------------------------
@@ -475,7 +477,6 @@ add_test(bootstrap
   python ${PROJECT_SOURCE_DIR}/scripts/run_all.py
          ${PROJECT_SOURCE_DIR}/test/bootstrap
          --bindir ${PROJECT_BINARY_DIR}
-         --me=me
   )
 
 # Look for non-silent diff -u output

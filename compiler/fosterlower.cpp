@@ -289,7 +289,7 @@ cleanup:
 
   if (optPrintTimings) {
     setTimingDescriptions();
-    foster::gTimings.print();
+    foster::gTimings.print("fosterlower");
   }
   return program_status;
 }

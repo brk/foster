@@ -13,7 +13,6 @@ if os.name == 'nt':
 else:
   walltime = time.time
 
-
 def default_lookup(word, table):
   if word in table:
     return table[word]
@@ -35,7 +34,7 @@ class TestFailed(Exception):
     return "Failed to run " + self.cmdline + "\n\tfor test " + self.path
 
 # returns (status, elapsed-time-ms)
-def run_command(cmd, paths, testpath, stdout=None, stderr=None, stdin=None, strictrv=True):
+def run_command(cmd, paths, testpath, showcmd=False, stdout=None, stderr=None, stdin=None, strictrv=True):
   if type(cmd) == str:
     cmd = cmd.split(' ')
   arglist = [default_lookup(arg, paths) for arg in cmd]
@@ -47,6 +46,11 @@ def run_command(cmd, paths, testpath, stdout=None, stderr=None, stdin=None, stri
   cmdline = ' '.join(arglist)
   if not stdin is None:
     cmdline += " < " + stdin.name
+  if not stdout is None:
+    cmdline += " > " + stdout.name
+
+  if showcmd:
+      print "::^^^::", cmdline
 
   if strictrv and rv != 0:
     raise TestFailed(cmdline, testpath)

@@ -323,7 +323,7 @@ cleanup:
 
   if (optPrintTimings) {
     setTimingDescriptions();
-    foster::gTimings.print();
+    foster::gTimings.print("fosteroptc");
   }
   return program_status;
 }

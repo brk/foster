@@ -26,7 +26,7 @@ public:
   }
 
   void incr(const char* dottedpath, uint64_t n);
-  void print();
+  void print(const std::string& title);
 };
 
 extern TimingsRepository gTimings;

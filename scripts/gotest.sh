@@ -1,12 +1,18 @@
 #!/bin/sh
 
-D=../foster/test/$1
-T=$D/`basename $1`.foster
-
+P=$1
 shift
+D=../foster/test/$P
+T=$D/`basename $P`.foster
+
+cleanout () {
+  rm -f gclog.txt
+}
 
 if [ -d $D ]; then
-    ./test.sh ${T} $@
+ make fosteroptc fosterparse fosterlower me && cleanout
+ echo python ../foster/scripts/run_test.py --verbose ${T} "$@"
+ python ../foster/scripts/run_test.py --verbose ${T} "$@"
 else
   echo "Make new test $T? y/[n]"
   read CONFIRM

@@ -21,6 +21,8 @@ from optparse import OptionParser
 tests_passed = set()
 tests_failed = set()
 
+options = None
+
 def ensure_dir_exists(dirname):
   if not os.path.exists(dirname):
     return os.mkdir(dirname)
@@ -48,9 +50,9 @@ def extract_expected_input(path):
   return open(tmpname, 'r')
 
 def get_static_libs():
-    return ' '.join(
-        ["libfoster_main.o libchromium_base.a",
-         "libcpuid.a libimath.a libcoro.a"])
+    return ' '.join([os.path.join("_nativelibs_", lib) for lib in
+         ("libfoster_main.o libchromium_base.a " +
+          "libcpuid.a libimath.a libcoro.a").split(" ")])
 
 def get_link_flags():
   common = ['-lpthread']
@@ -69,24 +71,29 @@ def testname(testpath):
 
 def compile_test_to_bitcode(paths, testpath, compilelog, finalpath):
     finalname = os.path.basename(finalpath)
+    verbose = options and options.verbose
 
     # running fosterparse on a source file produces a ParsedAST
     (s1, e1) = run_command(['fosterparse', testpath, '_out.parsed.pb'],
-                paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
+                paths, testpath, showcmd=verbose,
+                stdout=compilelog, stderr=compilelog, strictrv=True)
 
     # running fostercheck on a ParsedAST produces an ElaboratedAST
     (s2, e2) = run_command(['fostercheck', '_out.parsed.pb', '_out.checked.pb'],
-                paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
+                paths, testpath, showcmd=verbose,
+                stdout=compilelog, stderr=compilelog, strictrv=True)
 
     # running fosterlower on a ParsedAST produces a bitcode Module
     # linking a bunch of Modules produces a Module
-    (s3, e3) = run_command(['fosterlower', '_out.checked.pb', '-o', finalname, '-dump-prelinked'],
-                paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
+    (s3, e3) = run_command(['fosterlower', '_out.checked.pb', '-o', finalname, '-dump-prelinked', '-fosterc-time'],
+                paths, testpath, showcmd=verbose,
+                stdout=compilelog, stderr=compilelog, strictrv=True)
 
     # Running opt on a Module produces a Module
     # Running llc on a Module produces an assembly file
-    (s4, e4) = run_command(['fosteroptc', finalpath + '.preopt.bc', '-O0'],
-                paths, testpath, stdout=compilelog, stderr=compilelog, strictrv=True)
+    (s4, e4) = run_command(['fosteroptc', finalpath + '.preopt.bc', '-O0', '-fosterc-time'],
+                paths, testpath, showcmd=verbose,
+                stdout=compilelog, stderr=compilelog, strictrv=True)
 
     return (s4, e1, e2, e3, e4)
 
@@ -94,9 +101,10 @@ def run_one_test(testpath, paths, tmpdir):
   start = walltime()
   exp_filename = os.path.join(tmpdir, "expected.txt")
   act_filename = os.path.join(tmpdir, "actual.txt")
+  log_filename = os.path.join(tmpdir, "compile.log.txt")
   with open(exp_filename, 'w') as expected:
     with open(act_filename, 'w') as actual:
-      with open(os.path.join(tmpdir, "compile.log.txt"), 'w') as compilelog:
+      with open(log_filename, 'w') as compilelog:
         infile = extract_expected_input(testpath)
 
         finalpath = os.path.join('fc-output', 'out')
@@ -115,6 +123,10 @@ def run_one_test(testpath, paths, tmpdir):
         else:
           tests_failed.add(testpath)
 
+        if options and options.verbose:
+            run_command(["cat", log_filename], {}, "", showcmd=True)
+            print "==================================="
+
         total_elapsed = elapsed_since(start)
         compile_elapsed = (as_elapsed + ld_elapsed + fp_elapsed + fm_elapsed + fl_elapsed + fc_elapsed)
         overhead = total_elapsed - (compile_elapsed + rn_elapsed)
@@ -125,41 +137,51 @@ def run_one_test(testpath, paths, tmpdir):
         print "".join("-" for x in range(60))
         infile.close()
 
+  if options and options.verbose:
+      run_command(["paste", exp_filename, act_filename], {}, "")
+
+
 def main(testpath, paths, tmpdir):
   testdir = os.path.join(tmpdir, testname(testpath))
   if not os.path.isdir(testdir):
     os.makedirs(testdir)
   run_one_test(testpath, paths, testdir)
 
-def binpath(bindir, prog):
+def mkpath(root, prog):
   if os.path.isabs(prog):
     return prog
   else:
-    return os.path.join(bindir, prog)
+    return os.path.join(root, prog)
 
-def get_paths(bindir, options):
+def get_paths(options):
   join = os.path.join
+  bindir = options.bindir
   paths = {
       'bindir':    bindir
   }
-  for prog in ['fosterc', 'fosterparse', 'fosterlower', 'fostercheck', 'fosteroptc']:
-      paths[prog] = binpath(bindir, prog)
-  for lib in ['libfoster.bc', 'libcpuid.o', 'libfoster_main.o']:
-      paths[lib] = binpath(bindir, lib)
+  for prog in ['fosterparse', 'fosterlower', 'fosteroptc']:
+      paths[prog] = mkpath(bindir, prog)
+  for lib in ['libfoster.bc', 'libfoster_main.o']:
+      paths[lib] =  mkpath(bindir, lib)
+
+  for out in ['_out.parsed.pb', '_out.checked.pb']:
+      paths[out] =  mkpath(tmpdir, out)
 
   if options.me != 'fostercheck':
-    paths['fostercheck'] = binpath(bindir, options.me)
+    paths['fostercheck'] = mkpath(bindir, options.me)
 
   # compiler spits out foster.ll in current directory
-  paths['foster.ll'] = join(os.path.dirname(paths['fosterc']), 'foster.ll')
+  paths['foster.ll'] = join(os.path.dirname(paths['fosterparse']), 'foster.ll')
   return paths
 
 def get_test_parser(usage):
   parser = OptionParser(usage=usage)
   parser.add_option("--bindir", dest="bindir", action="store", default=os.getcwd(),
                     help="Use bindir as default place to find binaries; defaults to current directory")
-  parser.add_option("--me", dest="me", action="store", default="fostercheck",
+  parser.add_option("--me", dest="me", action="store", default="me",
                     help="Relative (from bindir) or absolute path to binary to use for type checking.")
+  parser.add_option("--verbose", action="store_true", dest="verbose", default=False,
+                    help="Show more information about program output.")
   return parser
 
 if __name__ == "__main__":
@@ -171,9 +193,8 @@ if __name__ == "__main__":
     sys.exit(1)
 
   testpath = args[0]
-  bindir = options.bindir
 
-  tmpdir = os.path.join(bindir, 'test-tmpdir')
+  tmpdir = os.path.join(options.bindir, 'test-tmpdir')
   ensure_dir_exists(tmpdir)
 
-  main(testpath, get_paths(bindir, options), tmpdir)
+  main(testpath, get_paths(options), tmpdir)

@@ -26,7 +26,7 @@ void TimingsRepository::incr(const char* dottedpath, uint64_t n) {
   }
 }
 
-void TimingsRepository::print() {
+void TimingsRepository::print(const std::string& title) {
   typedef std::map<string, uint64_t>::iterator Iter;
   size_t maxTotalLength = 0;
   for (Iter it = totals.begin(); it != totals.end(); ++it) {
@@ -35,9 +35,10 @@ void TimingsRepository::print() {
   }
   string pathFormatString;
   llvm::raw_string_ostream pfs(pathFormatString);
-  pfs << "%-" << (maxTotalLength) << "s";
+  pfs << "\t%-" << (maxTotalLength) << "s";
   pfs.flush();
 
+  llvm::outs() << "============== " << title << " =============\n";
   llvm::outs() << llvm::format(pathFormatString.c_str(), (const char*) "Category name")
       << "    Total" << "  " << "Local" << "\n";
 
