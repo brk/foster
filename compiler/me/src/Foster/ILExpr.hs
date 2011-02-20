@@ -122,7 +122,7 @@ closureConvert ctx expr =
                                                        b' <- g b
                                                        nestedLets [a'] (\[va] -> ILSubscript t va b')
 
-            AnnTuple     es b                    -> do cs <- sequence $ map g es
+            AnnTuple     es b                    -> do cs <- mapM g es
                                                        return $ ILTuple cs
             E_AnnTyApp t e argty                 -> do e' <- g e
                                                        return $ ILTyApp t e' argty
@@ -158,7 +158,7 @@ closureConvert ctx expr =
                                     x <- ilmFresh "appty"
                                     let var = AnnVar ot x
                                     nlets <- nestedLets cargs (\vars -> ILCall t var vars)
-                                    return $ buildLet x (ILTyApp ot (ILVar v) argty) nlets 
+                                    return $ buildLet x (ILTyApp ot (ILVar v) argty) nlets
                     _ -> error $ "AnnCall with non-var base of " ++ show b
 
 
@@ -181,7 +181,7 @@ lambdaLift ctx f freevars =
 bindingsForILProto p = [TermVarBinding (identPrefix i) v | v@(AnnVar t i) <- (ilProtoVars p)]
 
 uniqifyAll :: [String] -> ILM [Ident]
-uniqifyAll ss = sequence $ map ilmFresh ss
+uniqifyAll ss = mapM ilmFresh ss
 
 procType proc = procTypeFromILProto (ilProcProto proc)
 
