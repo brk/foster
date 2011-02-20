@@ -153,7 +153,7 @@ def mkpath(root, prog):
   else:
     return os.path.join(root, prog)
 
-def get_paths(options):
+def get_paths(options, tmpdir):
   join = os.path.join
   bindir = options.bindir
   paths = {
@@ -161,8 +161,12 @@ def get_paths(options):
   }
   for prog in ['fosterparse', 'fosterlower', 'fosteroptc']:
       paths[prog] = mkpath(bindir, prog)
-  for lib in ['libfoster.bc', 'libfoster_main.o']:
-      paths[lib] =  mkpath(bindir, lib)
+
+  for lib in ['libfoster.bc']:
+      paths[lib] =  mkpath(bindir, os.path.join('_bitcodelibs_', lib))
+
+  for lib in [ 'libfoster_main.o']:
+      paths[lib] =  mkpath(bindir, os.path.join('_nativelibs_', lib))
 
   for out in ['_out.parsed.pb', '_out.checked.pb']:
       paths[out] =  mkpath(tmpdir, out)
@@ -197,4 +201,4 @@ if __name__ == "__main__":
   tmpdir = os.path.join(options.bindir, 'test-tmpdir')
   ensure_dir_exists(tmpdir)
 
-  main(testpath, get_paths(options), tmpdir)
+  main(testpath, get_paths(options, tmpdir), tmpdir)

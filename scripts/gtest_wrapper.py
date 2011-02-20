@@ -25,7 +25,8 @@ if __name__ == "__main__":
   rv = 0
 
   with tempfile.TemporaryFile() as tmp:
-    rv, elapsed = run_command(binary, {}, binary, tmp, None, None, False)
+    rv, elapsed = run_command(binary, {}, binary,
+                               showcmd=False, stdout=tmp, stderr=None, strictrv=False)
 
     tmp.seek(0)
     line = None

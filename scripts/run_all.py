@@ -48,13 +48,12 @@ if __name__ == "__main__":
     sys.exit(1)
 
   bootstrap_dir = args[0]
-  bindir = options.bindir
 
-  tmpdir = os.path.join(bindir, 'test-tmpdir')
+  tmpdir = os.path.join(options.bindir, 'test-tmpdir')
   ensure_dir_exists(tmpdir)
 
 
   print options
   print args
 
-  main(bootstrap_dir, get_paths(bindir, options), tmpdir)
+  main(bootstrap_dir, get_paths(options, tmpdir), tmpdir)

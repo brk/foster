@@ -110,6 +110,7 @@ void setTimingDescriptions() {
 }
 
 Module* readLLVMModuleFromPath(string path) {
+  foster::validateInputFile(path);
   ScopedTimer timer("io.file.readmodule");
   return foster::readLLVMModuleFromPath(path);
 }
@@ -282,8 +283,6 @@ int main(int argc, char** argv) {
 
   cl::SetVersionPrinter(&printVersionInfo);
   cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster compiler backend (LLVM optimization)\n");
-
-  foster::validateInputFile(optInputPath);
 
   foster::ensureDirectoryExists(dumpdirFile(""));
 

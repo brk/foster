@@ -101,6 +101,7 @@ void setTimingDescriptions() {
 }
 
 Module* readLLVMModuleFromPath(string path) {
+  foster::validateInputFile(path);
   ScopedTimer timer("io.file.readmodule");
   return foster::readLLVMModuleFromPath(path);
 }
@@ -200,11 +201,8 @@ int main(int argc, char** argv) {
 
   llvm::Module* module = new Module(mainModulePath.str().c_str(), getGlobalContext());
 
-  foster::validateInputFile("libfoster.bc");
-  foster::validateInputFile("imath-wrapper.bc");
-
-  libfoster_bc = readLLVMModuleFromPath("libfoster.bc");
-  imath_bc = readLLVMModuleFromPath("imath-wrapper.bc");
+  libfoster_bc = readLLVMModuleFromPath("_bitcodelibs_/libfoster.bc");
+  imath_bc     = readLLVMModuleFromPath("_bitcodelibs_/imath-wrapper.bc");
   ASSERT(imath_bc) << "must have imath library!";
 
   const llvm::Type* mpz_struct_ty = imath_bc->getTypeByName("struct.mpz");
@@ -257,8 +255,8 @@ int main(int argc, char** argv) {
   }
 
   { ScopedTimer timer("llvm.link");
-    linkTo(libfoster_bc, "libfoster.bc", module);
-    linkTo(imath_bc, "imath.bc", module);
+    linkTo(libfoster_bc, "libfoster", module);
+    linkTo(imath_bc,     "imath",     module);
   }
 
   if (optDumpPostLinkedIR) {
