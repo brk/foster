@@ -16,7 +16,7 @@
  *
  **/
 
-#include "imath.h"
+#include "_generated_/imath.h"
 
 mp_digit* foster_mp_digits(mp_int z) { return MP_DIGITS(z); }
 mp_size   foster_mp_alloc(mp_int z) { return MP_ALLOC(z); }

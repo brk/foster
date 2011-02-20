@@ -12,6 +12,10 @@ import os.path
 
 USAGE = "args: path/to/antlr.jar path/to/output-dir path/to/inputgrammar.g"
 
+def without_ext(name):
+  (root, ext) = os.path.splitext(name)
+  return root
+
 def invoke_antlr(antlr, output, input):
   """Copies the input grammar to the output directory,
       rewrites it in-place to enable C output,
@@ -33,6 +37,10 @@ def invoke_antlr(antlr, output, input):
   print cmd
   import subprocess
   subprocess.call(arglist)
+
+  # ANTLR 3.2 is naughty and spits out <grammar>.tokens
+  # in the cwd, but we don't need to keep it around.
+  os.remove(without_ext(in_tail)+".tokens")
 
 def ensure_dir_exists(output):
   """Creates the given directory if it doesn't exist;

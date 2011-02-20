@@ -48,7 +48,7 @@ def compile_source(src):
   return outbc
 
 def link_all(bcs):
-  outbc = os.path.join(bindir, "libfoster.bc")
+  outbc = os.path.join(bindir, "_bitcodelibs_", "libfoster.bc")
   cmd = "%s %s -link-as-library -o %s" % (llvmld, " ".join(bcs), outbc)
   print cmd
   return subprocess.call(cmd.split(" "))
@@ -59,7 +59,7 @@ if __name__ == '__main__':
   bindir = sys.argv[3]
   staticlibsuffix_unused = sys.argv[4]
   llvmld = os.path.join(sys.argv[5], 'llvm-ld')
-  outdir = os.path.join(bindir, "gc_bc")
+  outdir = os.path.join(bindir, "_bitcodelibs_/gc_bc")
   ensure_dir_exists(outdir)
 
   coro_method = sys.argv[6]

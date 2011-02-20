@@ -232,7 +232,7 @@ set(LIBFOSTER_CPP_SOURCES
 
 # Use clang or llvm-g++ to build libfoster.bc
 add_custom_command(
-  OUTPUT ${PROJECT_BINARY_DIR}/libfoster.bc
+  OUTPUT ${PROJECT_BINARY_DIR}/_bitcodelibs_/libfoster.bc
   COMMAND
     python ${PROJECT_SOURCE_DIR}/scripts/build_libfoster.py
         "${LLVM_G++}"
@@ -244,7 +244,7 @@ add_custom_command(
         ${LIBFOSTER_CPP_SOURCES}
   DEPENDS
     ${LIBFOSTER_CPP_SOURCES}
-    ${PROJECT_BINARY_DIR}/imath.h
+    ${PROJECT_BINARY_DIR}/_generated_/imath.h
     ${PROJECT_SOURCE_DIR}/scripts/build_libfoster.py
 )
 # We could attach the command to build libfoster.bc directly
@@ -252,7 +252,7 @@ add_custom_command(
 # be that libfoster.bc would always be considered out of date,
 # and would be rebuilt on every single invocation of make.
 add_custom_target(libfoster_bc DEPENDS
-        ${PROJECT_BINARY_DIR}/libfoster.bc
+        ${PROJECT_BINARY_DIR}/_bitcodelibs_/libfoster.bc
         ${PROJECT_BINARY_DIR}/_nativelibs_/libfoster_main.o)
 
 
@@ -260,20 +260,21 @@ add_custom_target(libfoster_bc DEPENDS
 
 add_custom_command(
   OUTPUT
-        ${PROJECT_BINARY_DIR}/imath-wrapper.bc
+        ${PROJECT_BINARY_DIR}/_bitcodelibs_/imath-wrapper.bc
+  COMMAND mkdir -p ${PROJECT_BINARY_DIR}/_bitcodelibs_
   COMMAND
         ${LLVM_G++} -x c
           ${PROJECT_SOURCE_DIR}/third_party/imath/imath-wrapper.c
           -I ${PROJECT_BINARY_DIR}
           -c -emit-llvm
-          -o ${PROJECT_BINARY_DIR}/imath-wrapper.bc
+          -o ${PROJECT_BINARY_DIR}/_bitcodelibs_/imath-wrapper.bc
   DEPENDS
+          ${PROJECT_BINARY_DIR}/_generated_/imath.h
           ${PROJECT_SOURCE_DIR}/third_party/imath/imath-wrapper.c
 )
 
 add_custom_target(imath_wrapper_bc DEPENDS
-        ${PROJECT_BINARY_DIR}/imath.h
-        ${PROJECT_BINARY_DIR}/imath-wrapper.bc
+        ${PROJECT_BINARY_DIR}/_bitcodelibs_/imath-wrapper.bc
         imath)
 
 #-----------------------------------------------------------

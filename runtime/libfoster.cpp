@@ -14,7 +14,7 @@
 #include "foster_gc.h"
 #include "libfoster_gc_roots.h"
 
-#include "imath.h"
+#include "_generated_/imath.h"
 #include "cpuid.h"
 
 // This file provides the bootstrap "standard library" of utility functions for
