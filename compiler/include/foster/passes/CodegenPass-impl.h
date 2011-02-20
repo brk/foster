@@ -34,7 +34,8 @@ const inline llvm::PointerType* ptrTo(const llvm::Type* t) {
 Value* getUnitValue();
 Value* emitMalloc(const llvm::Type* ty);
 Value* allocateMPInt();
-Value* getElementFromComposite(Value* compositeValue, Value* idxValue);
+Value* getElementFromComposite(Value* compositeValue, Value* idxValue,
+                               const std::string& msg);
 Value* getPointerToIndex(Value* compositeValue,
                          Value* idxValue,
                          const std::string& name);

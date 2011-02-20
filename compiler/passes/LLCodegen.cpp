@@ -81,24 +81,13 @@ CanStackAllocate canStackAllocate(LLTuple* ast) {
   return CanStackAllocate(true);
 }
 
-bool structTypeContainsPointers(const llvm::StructType* ty) {
-  for (unsigned i = 0; i < ty->getNumElements(); ++i) {
-    if (ty->getTypeAtIndex(i)->isPointerTy()) {
-      return true;
-    }
-  }
-  return false;
-}
-
-// Follows up to two (type-based) pointer indirections for the given value.
+// Follows a (type-based) pointer indirections for the given value.
 llvm::Value* getClosureStructValue(llvm::Value* maybePtrToClo) {
   llvm::outs() << "maybePtrToClo: " << str(maybePtrToClo) << "\n";
   if (maybePtrToClo->getType()->isPointerTy()) {
     maybePtrToClo = builder.CreateLoad(maybePtrToClo, /*isVolatile=*/ false, "derefCloPtr");
   }
-  if (maybePtrToClo->getType()->isPointerTy()) {
-    maybePtrToClo = builder.CreateLoad(maybePtrToClo, /*isVolatile=*/ false, "derefCloPtr");
-  }
+  ASSERT(maybePtrToClo->getType()->isStructTy());
   return maybePtrToClo;
 }
 
@@ -135,10 +124,6 @@ void LLModule::codegen(CodegenPass* pass) {
     procs[i]->codegen(pass);
   }
 }
-
-Value* tempHackExtendInt(Value* val, const Type* toTy);
-
-const llvm::Type* getLLVMType(TypeAST* type);
 
 bool isSafeToStackAllocate(LLTuple* ast) {
   return true;
@@ -253,27 +238,13 @@ llvm::Value* LLBool::codegen(CodegenPass* pass) {
 }
 
 llvm::Value* LLVar::codegen(CodegenPass* pass) {
-  // This looks up the lexically closest definition for the given variable
-  // name, as provided by a function parameter or some such binding construct.
-  // Note that getValue(this) is NOT used to cache the result; this ensures
-  // that closure conversion is free to duplicate AST nodes and still get
-  // properly scoped argument values inside converted functions.
-  if (this->lazilyInsertedPrototype) {
-    if (!this->lazilyInsertedPrototype->value) {
-      foster::DDiag() << "lazily inserting prototype for "
-                      << this->lazilyInsertedPrototype->getName();
-      this->lazilyInsertedPrototype->codegen(pass);
-    }
-    return this->lazilyInsertedPrototype->value;
-  } else {
-    // The variable for an environment can be looked up multiple times...
-    llvm::Value* v = pass->lookup(getName());
+  // The variable for an environment can be looked up multiple times...
+  llvm::Value* v = pass->lookup(getName());
 
-    if (llvm::AllocaInst* ai = llvm::dyn_cast_or_null<llvm::AllocaInst>(v)) {
-      return builder.CreateLoad(ai, /*isVolatile=*/ false, "autoload");
-    } else {
-      return v;
-    }
+  if (llvm::AllocaInst* ai = llvm::dyn_cast_or_null<llvm::AllocaInst>(v)) {
+    return builder.CreateLoad(ai, /*isVolatile=*/ false, "autoload");
+  } else {
+    return v;
   }
 
   pass->valueSymTab.dump(currentOuts());
@@ -401,7 +372,7 @@ bool tryBindClosureFunctionTypes(const llvm::Type*          origType,
   }
   fnType = llvm::dyn_cast<llvm::FunctionType>(pfnty->getContainedType(0));
   if (!fnType) {
-     EDiag() << "expected " << str(origType) << " to be a ptr to fn type.";
+    EDiag() << "expected " << str(origType) << " to be a ptr to fn type.";
     return false;
   }
   if (fnType->getNumParams() == 0) {
@@ -483,7 +454,7 @@ llvm::Value* LLClosure::codegen(CodegenPass* pass) {
     //values.push_back(llvm::ConstantPointerNull::getNullValue(pi8));
 
     for (int i = 0; i < vars.size(); ++i) {
-      LLVar v(vars[i], foster::SourceRange::getEmptyRange());
+      LLVar v(vars[i]);
       values.push_back(v.codegen(pass));
     }
 
@@ -536,8 +507,6 @@ llvm::Value* LLProc::codegen(CodegenPass* pass) {
   ASSERT(F != NULL) << "unable to codegen function " << getName();
 
   F->setGC("fostergc");
-
-  llvm::outs() << "Codegenning PROC " << getName() <<"\n";
 
   BasicBlock* prevBB = builder.GetInsertBlock();
   BasicBlock* BB = BasicBlock::Create(getGlobalContext(), "entry", F);
@@ -757,7 +726,7 @@ llvm::Value* LLSubscript::codegen(CodegenPass* pass) {
     base = builder.CreateLoad(base, /*isVolatile*/ false, "subload");
   }
 
-  return getElementFromComposite(base, idx);
+  return getElementFromComposite(base, idx, "");
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -766,9 +735,6 @@ LLProc* getClosureVersionOf(LLExpr* arg,
                             const llvm::Type* expectedType,
                             FnTypeAST* fnty,
                             CodegenPass* pass);
-
-// Follows up to two (type-based) pointer indirections for the given value.
-llvm::Value* getClosureStructValue(llvm::Value* maybePtrToClo);
 
 bool
 isKnownNonAllocating(LLVar* varast) {
@@ -826,8 +792,7 @@ void doLowLevelWrapperFnCoercions(const llvm::Type* expectedType,
     std::vector<LLClosure*> closures;
     std::vector<std::string> vars;
     closures.push_back(new LLClosure(cloname, wrapper->getName(), vars));
-    LLExpr* clo = new LLClosures(new LLVar(cloname, arg->sourceRange),
-                             closures, arg->sourceRange);
+    LLExpr* clo = new LLClosures(new LLVar(cloname), closures);
     arg = clo;
   }
 }
@@ -855,20 +820,19 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
     // The function type here includes a parameter for the
     // generic environment type, e.g. (i32 => i32) becomes
     // i32 (i8*, i32).
+    callingConv = closureFnType->getCallingConventionID(); haveSetCallingConv = true;
     FT = dyn_cast<const FunctionType>(
           genericClosureVersionOf(closureFnType)->getLLVMFnType());
     llvm::Value* clo = getClosureStructValue(FV);
 
-    ASSERT(!clo->getType()->isPointerTy())
+    ASSERT(clo->getType()->isStructTy())
         << "clo value should be a tuple, not a pointer";
+    FV = builder.CreateExtractValue(clo, 0, "getCloCode");
     llvm::Value* envPtr = builder.CreateExtractValue(clo, 1, "getCloEnv");
 
     // Pass env pointer as first parameter to function.
     ASSERT(valArgs.empty());
     valArgs.push_back(envPtr);
-
-    FV = builder.CreateExtractValue(clo, 0, "getCloCode");
-    callingConv = closureFnType->getCallingConventionID(); haveSetCallingConv = true;
   } else {
     ASSERT(false);
   }
@@ -879,11 +843,10 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
              << "\nFV: " << str(FV);
 
   for (size_t i = 0; i < this->args.size(); ++i) {
-    // Args checked for nulls during typechecking
-    LLExpr* arg = this->args[i];
-
-    ASSERT(i < FT->getNumContainedTypes()) << "i = " << i << "; FT = " << str(FT);// << show(this);
+    ASSERT(i < FT->getNumContainedTypes());
     const llvm::Type* expectedType = FT->getContainedType(i);
+
+    LLExpr* arg = this->args[i];
     doLowLevelWrapperFnCoercions(expectedType, arg, pass);
     Value* V = arg->codegen(pass);
     ASSERT(V) << "null codegenned value for arg " << (i - 1) << " of call";
@@ -894,6 +857,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
     const Type* formalType = FT->getParamType(valArgs.size());
     if (llvm::isa<llvm::StructType>(formalType)) {
       if (llvm::PointerType::get(formalType, 0) == V->getType()) {
+        // This is used when passing closures, for example.
         V = builder.CreateLoad(V, "loadStructParam");
       }
     }
@@ -907,13 +871,6 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
   for (size_t i = 0; i < valArgs.size(); ++i) {
     llvm::Value*& V = valArgs[i];
 
-    /*
-    foster::DDiag(llvm::raw_ostream::GREEN)
-        << "::FT = " << str(FT) << "; " << i
-        << "; " << FT->getNumContainedTypes()
-        << "; " << valArgs.size();
-     */
-
     ASSERT(FT->getNumContainedTypes() > (i+1)) << "i = " << i
         << "; FT->getNumContainedTypes() = " << FT->getNumContainedTypes()
         << "; valArgs.size() = " << valArgs.size()
@@ -921,14 +878,6 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
 
     // ContainedType[0] is the return type; args start at 1
     const llvm::Type* expectedType = FT->getContainedType(i + 1);
-
-    // If we're given a T** when we expect a T*,
-    // automatically load the reference from the stack.
-    if (V->getType() != expectedType
-     && expectedType->isPointerTy()
-     && isPointerToType(V->getType(), expectedType)) {
-      V = builder.CreateLoad(V, /*isVolatile=*/ false, "unstackref");
-    }
 
     // If we have a T loaded from a T*, and we expect a T*,
     // use the T* (TODO: make sure the T* isn't stack allocated!)
@@ -1111,8 +1060,7 @@ LLProc* getClosureVersionOf(LLExpr* arg,
   inArgTypes.push_back(RefTypeAST::get(TupleTypeAST::get(envTypes)));
 
   for (size_t i = 0; i < fnty->getNumParams(); ++i) {
-    LLVar* a = new LLVar(ParsingContext::freshName("_cv_arg"),
-                        SourceRange::getEmptyRange());
+    LLVar* a = new LLVar(ParsingContext::freshName("_cv_arg"));
     inArgNames.push_back(a->name);
     inArgTypes.push_back(fnty->getParamType(i));
     callArgs.push_back(a);
@@ -1129,7 +1077,7 @@ LLProc* getClosureVersionOf(LLExpr* arg,
                                        externalCallingConvention);
 
   LLProto* proto = new LLProto(newfnty, fnName, inArgNames);
-  LLExpr* body = new LLCall(var, callArgs, SourceRange::getEmptyRange());
+  LLExpr* body = new LLCall(var, callArgs);
   LLProc* proc = new LLProc(proto, body);
 
   //proto->type = proc->type = genericClosureVersionOf(fnty);

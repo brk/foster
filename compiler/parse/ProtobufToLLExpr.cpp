@@ -44,26 +44,15 @@ using std::vector;
 
 namespace pb = foster::bepb;
 
-void initSourceLocation(foster::SourceLocation& loc,
-                        const pb::SourceLocation* pbloc);
-
-template <typename PB>
-void parseRangeFrom(foster::SourceRange& r, const PB& p) {
-  pb::SourceRange sr = p.range();
-  initSourceLocation(const_cast<foster::SourceLocation&>(r.begin), sr.mutable_begin());
-  initSourceLocation(const_cast<foster::SourceLocation&>(r.end  ), sr.mutable_end());
-  r.source = NULL;
-}
-
 namespace foster {
 
 namespace {
 
-LLExpr* parseBool(const pb::Expr& e, const foster::SourceRange& range) {
-  return new LLBool(e.bool_value() ? "true" : "false", range);
+LLExpr* parseBool(const pb::Expr& e) {
+  return new LLBool(e.bool_value() ? "true" : "false");
 }
 
-LLExpr* parseCall(const pb::Expr& e, const foster::SourceRange& range) {
+LLExpr* parseCall(const pb::Expr& e) {
   ASSERT(e.parts_size() >= 1);
 
   LLVar* base = dynamic_cast<LLVar*>(LLExpr_from_pb(&e.parts(0)));
@@ -75,10 +64,10 @@ LLExpr* parseCall(const pb::Expr& e, const foster::SourceRange& range) {
                         << pb::Expr::Tag_Name(e.parts(i).tag());
     args.push_back(var);
   }
-  return new LLCall(base, args, range);
+  return new LLCall(base, args);
 }
 
-LLExpr* parseIf(const pb::Expr& e, const foster::SourceRange& range) {
+LLExpr* parseIf(const pb::Expr& e) {
   ASSERT(e.has_pb_if());
 
   const pb::PBIf& i = e.pb_if();
@@ -86,10 +75,10 @@ LLExpr* parseIf(const pb::Expr& e, const foster::SourceRange& range) {
   return new LLIf(
       LLExpr_from_pb(& i.test_expr()),
       LLExpr_from_pb(& i.then_expr()),
-      LLExpr_from_pb(& i.else_expr()), range);
+      LLExpr_from_pb(& i.else_expr()));
 }
 
-LLExpr* parseInt(const pb::Expr& e, const foster::SourceRange& range) {
+LLExpr* parseInt(const pb::Expr& e) {
   if (!e.has_pb_int()) return NULL;
   const pb::PBInt& i = e.pb_int();
   return new LLInt(i.clean(), i.bits());
@@ -103,17 +92,17 @@ LLClosure* parseClosure(const pb::Closure& clo) {
   return new LLClosure(clo.varname(), clo.procid(), varnames);
 }
 
-LLExpr* parseClosures(const pb::Expr& e, const foster::SourceRange& range) {
+LLExpr* parseClosures(const pb::Expr& e) {
   ASSERT(e.parts_size() == 1) << "parseClosures needs 1 subexpr";
   std::vector<LLClosure*> closures;
   for (int i = 0; i < e.closures_size(); ++i) {
     closures.push_back(parseClosure(e.closures(i)));
   }
   return new LLClosures(LLExpr_from_pb(&e.parts(0)),
-                        closures, range);
+                        closures);
 }
 
-LLExpr* parseLetVals(const pb::Expr& e, const foster::SourceRange& range) {
+LLExpr* parseLetVals(const pb::Expr& e) {
   ASSERT(e.parts_size() == e.names_size() + 1);
   ASSERT(e.parts_size() >= 2) << "parseLetVal needs at least 2 subexprs";
   int N = e.names_size() - 1;
@@ -153,41 +142,41 @@ LLProc* parseProc(const pb::Proc& e) {
 }
 
 /*
-LLExpr* parseSimd(const pb::Expr& e, const foster::SourceRange& range) {
+LLExpr* parseSimd(const pb::Expr& e) {
   return new SimdVectorAST(LLExpr_from_pb(& e.parts(0)), range);
 }
 */
 
-LLExpr* parseSubscript(const pb::Expr& e, const foster::SourceRange& range) {
+LLExpr* parseSubscript(const pb::Expr& e) {
   ASSERT(e.parts_size() == 2) << "subscript must have base and index";
   return new LLSubscript(
       LLExpr_from_pb(& e.parts(0)),
-      LLExpr_from_pb(& e.parts(1)), range);
+      LLExpr_from_pb(& e.parts(1)));
 }
 
-LLExpr* parseTuple(const pb::Expr& e, const foster::SourceRange& range) {
-  LLExprs args;
+LLExpr* parseTuple(const pb::Expr& e) {
+  std::vector<LLExpr*> args;
   for (int i = 0; i < e.parts_size(); ++i) {
     args.push_back(LLExpr_from_pb(&e.parts(i)));
   }
-  LLTuple* rv = new LLTuple(args, range);
+  LLTuple* rv = new LLTuple(args);
   rv->isClosureEnvironment = e.is_closure_environment();
   return rv;
 }
 
-LLExpr* parseE_TyApp(const pb::Expr& e, const foster::SourceRange& range) {
+LLExpr* parseE_TyApp(const pb::Expr& e) {
   ASSERT(e.has_type()) << "TY_APP must have overall type";
   ASSERT(e.has_ty_app_arg_type()) << "TY_APP must have arg type";
   ASSERT(e.parts_size() == 1) << "TY_APP must have base";
 
   LLExpr* tyapp = new LLTypeApp(
       LLExpr_from_pb(& e.parts(0)),
-      TypeAST_from_pb(& e.ty_app_arg_type()), range);
+      TypeAST_from_pb(& e.ty_app_arg_type()));
   return tyapp;
 }
 
-LLExpr* parseVar(const pb::Expr& e, const foster::SourceRange& range) {
-  return new LLVar(e.name(), range);
+LLExpr* parseVar(const pb::Expr& e) {
+  return new LLVar(e.name());
 }
 
 } // unnamed namespace
@@ -212,25 +201,20 @@ LLExpr* LLExpr_from_pb(const pb::Expr* pe) {
   if (!pe) return NULL;
   const pb::Expr& e = *pe;
 
-  foster::SourceRange range = foster::SourceRange::getEmptyRange();
-  if (e.has_range()) {
-    parseRangeFrom(range, e);
-  }
-
   LLExpr* rv = NULL;
 
   switch (e.tag()) {
-  case pb::Expr::IL_BOOL:      rv = parseBool(e, range); break;
-  case pb::Expr::IL_CALL:      rv = parseCall(e, range); break;
-  case pb::Expr::IL_IF:        rv = parseIf(e, range); break;
-  case pb::Expr::IL_INT:       rv = parseInt(e, range); break;
-  case pb::Expr::IL_LETVALS:   rv = parseLetVals(e, range); break;
-  case pb::Expr::IL_CLOSURES:  rv = parseClosures(e, range); break;
-//  case pb::Expr::SIMD:      rv = parseSimd(e, range); break;
-  case pb::Expr::IL_TY_APP:    rv = parseE_TyApp(e, range); break;
-  case pb::Expr::IL_SUBSCRIPT: rv = parseSubscript(e, range); break;
-  case pb::Expr::IL_TUPLE:     rv = parseTuple(e, range); break;
-  case pb::Expr::IL_VAR:       rv = parseVar(e, range); break;
+  case pb::Expr::IL_BOOL:      rv = parseBool(e); break;
+  case pb::Expr::IL_CALL:      rv = parseCall(e); break;
+  case pb::Expr::IL_IF:        rv = parseIf(e); break;
+  case pb::Expr::IL_INT:       rv = parseInt(e); break;
+  case pb::Expr::IL_LETVALS:   rv = parseLetVals(e); break;
+  case pb::Expr::IL_CLOSURES:  rv = parseClosures(e); break;
+//  case pb::Expr::SIMD:      rv = parseSimd(e); break;
+  case pb::Expr::IL_TY_APP:    rv = parseE_TyApp(e); break;
+  case pb::Expr::IL_SUBSCRIPT: rv = parseSubscript(e); break;
+  case pb::Expr::IL_TUPLE:     rv = parseTuple(e); break;
+  case pb::Expr::IL_VAR:       rv = parseVar(e); break;
 
   default:
     EDiag() << "Unknown protobuf tag: " << e.tag();
@@ -270,11 +254,6 @@ FnTypeAST* parseProcType(const bepb::ProcType& fnty) {
 TypeAST* TypeAST_from_pb(const pb::Type* pt) {
   if (!pt) return NULL;
   const pb::Type& t = *pt;
-
-  foster::SourceRange range = foster::SourceRange::getEmptyRange();
-  if (t.has_range()) {
-    parseRangeFrom(range, t);
-  }
 
   if (t.tag() == pb::Type::PTR) {
     return RefTypeAST::get(TypeAST_from_pb(&t.type_parts(0)));
@@ -325,7 +304,7 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
 
   if (t.tag() == pb::Type::TYPE_VARIABLE) {
     const string& tyname = t.name();
-    return TypeVariableAST::get(tyname, range);
+    return TypeVariableAST::get(tyname, SourceRange::getEmptyRange());
   }
 
   EDiag() << "Error: found unexpected type in protobuf!\n" << t.DebugString();
@@ -335,13 +314,3 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
 
 } // namespace foster
 
-
-void initSourceLocation(foster::SourceLocation& loc,
-                        const pb::SourceLocation* pbloc) {
-  if (!pbloc) {
-    loc = foster::SourceLocation::getInvalidLocation();
-  } else {
-    loc.line = pbloc->line();
-    loc.column = pbloc->column();
-  }
-}

@@ -87,12 +87,10 @@ struct BoolAST : public ExprAST {
 
 struct VariableAST : public ExprAST {
   string name;
-  PrototypeAST* lazilyInsertedPrototype;
 
   explicit VariableAST(const string& name, TypeAST* aType,
                        foster::SourceRange sourceRange)
-      : ExprAST("VariableAST", sourceRange),
-        name(name), lazilyInsertedPrototype(NULL) {
+      : ExprAST("VariableAST", sourceRange), name(name) {
     this->type = aType;
   }
 
