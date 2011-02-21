@@ -53,12 +53,6 @@ unbuildSeqs :: ExprAST -> [ExprAST]
 unbuildSeqs (E_SeqAST a b) = a : unbuildSeqs b
 unbuildSeqs expr = [expr]
 
-
-fnTypeCloses' :: FnAST -> Maybe [(Ident, TypeAST)]
-fnTypeCloses' f =
-    let devar (AnnVar ty id) = (id, ty) in
-    fmap (map devar) (fnClosedVars f)
-
 -----------------------------------------------------------------------
 
 data AnnExpr =

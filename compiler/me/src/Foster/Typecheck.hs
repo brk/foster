@@ -250,7 +250,7 @@ typecheckFn' ctx f expArgType expBodyType = do
                                          (Ident fnProtoName irrelevantIdentNum)
                                          (typeJoinVars uniquelyNamedFormals expArgType)) in
             let argtypes = TupleTypeAST [avarType v | v <- (annProtoVars annproto)] in
-            let fnty = FnTypeAST argtypes someReturnType (fnTypeCloses' f) in
+            let fnty = FnTypeAST argtypes someReturnType (fnClosedVars f) in
             return (E_AnnFn (AnnFn fnty annproto annbody (fnClosedVars f)))
         otherwise ->
          tcFails $ out $ "typecheck '" ++ fnProtoName

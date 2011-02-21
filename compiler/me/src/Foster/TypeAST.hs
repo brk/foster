@@ -22,7 +22,7 @@ data TypeAST =
          | TupleTypeAST     [TypeAST]
          | FnTypeAST        { fnTypeDomain :: TypeAST
                             , fnTypeRange  :: TypeAST
-                            , fnTypeCloses :: (Maybe [(Ident, TypeAST)]) }
+                            , fnTypeCloses :: Maybe [AnnVar] }
          | CoroType         TypeAST TypeAST
          | ForAll           [TyVar] Rho
          | T_TyVar          TyVar
