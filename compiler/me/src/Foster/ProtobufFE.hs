@@ -98,7 +98,7 @@ parseFn pbexpr lines = let parts = PbExpr.parts pbexpr in
                        FnAST (parseProtoP (index parts 0)
                                           lines)
                              (part 1 parts lines)
-                             (Just []) -- assume closure until proven otherwise
+                             False -- assume closure until proven otherwise
 
 parseFnAST pbexpr lines = E_FnAST $ parseFn pbexpr lines
 
@@ -138,7 +138,7 @@ parseVar pbexpr lines = E_VarAST (fmap parseType (PbExpr.type' pbexpr))
                                  (uToString (fromJust $ PbExpr.name pbexpr))
 
 toplevel :: FnAST -> FnAST
-toplevel (FnAST a b (Just [])) = FnAST a b Nothing
+toplevel (FnAST a b False) = FnAST a b True
 
 parseModule :: PbExpr.Expr -> SourceLines -> ModuleAST FnAST
 parseModule pbexpr lines =

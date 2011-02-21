@@ -89,7 +89,8 @@ fnTypeFrom :: FnAST -> TypeAST
 fnTypeFrom f =
     let intype = TupleTypeAST [avarType v | v <- prototypeASTformals (fnProto f)] in
     let outtype = prototypeASTretType (fnProto f) in
-    FnTypeAST intype outtype (fnClosedVars f)
+    let fnClosedVars = if fnWasToplevel f then Nothing else Just [] in
+    FnTypeAST intype outtype fnClosedVars
 
 
 bindingForAnnFn :: AnnFn -> ContextBinding

@@ -40,7 +40,7 @@ data ExprAST =
 
 data FnAST  = FnAST { fnProto :: PrototypeAST
                     , fnBody  :: ExprAST
-                    , fnClosedVars :: (Maybe [AnnVar])
+                    , fnWasToplevel :: Bool
                     } deriving (Show)
 data PrototypeAST = PrototypeAST {
                           prototypeASTretType :: TypeAST
