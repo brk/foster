@@ -73,6 +73,11 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath):
     finalname = os.path.basename(finalpath)
     verbose = options and options.verbose
 
+    # Getting tee functionality in Python is a pain in the behind
+    # so we just disable logging when running with --verbose.
+    if verbose:
+      compilelog = None
+
     # running fosterparse on a source file produces a ParsedAST
     (s1, e1) = run_command(['fosterparse', testpath, '_out.parsed.pb'],
                 paths, testpath, showcmd=verbose,
@@ -123,10 +128,6 @@ def run_one_test(testpath, paths, tmpdir):
         else:
           tests_failed.add(testpath)
 
-        if options and options.verbose:
-            run_command(["cat", log_filename], {}, "", showcmd=True)
-            print "==================================="
-
         total_elapsed = elapsed_since(start)
         compile_elapsed = (as_elapsed + ld_elapsed + fp_elapsed + fm_elapsed + fl_elapsed + fc_elapsed)
         overhead = total_elapsed - (compile_elapsed + rn_elapsed)
@@ -145,6 +146,7 @@ def main(testpath, paths, tmpdir):
   testdir = os.path.join(tmpdir, testname(testpath))
   if not os.path.isdir(testdir):
     os.makedirs(testdir)
+
   run_one_test(testpath, paths, testdir)
 
 def mkpath(root, prog):
