@@ -1,6 +1,8 @@
 module Foster.Context where
 
 import Data.IORef(IORef,newIORef,readIORef,writeIORef)
+import Data.Maybe(isNothing)
+import Control.Monad(liftM)
 
 import Foster.Base
 import Foster.ExprAST
@@ -61,6 +63,9 @@ instance Monad Tc where
 tcLift :: IO a -> Tc a
 tcLift action = Tc (\_env -> do { r <- action; return (OK r) })
 
+tcFails :: Output -> Tc a
+tcFails errs = Tc (\_env -> return (Errors errs))
+
 newTcRef v = tcLift $ newIORef v
 
 newTcUnificationVar :: Tc MetaTyVar
@@ -89,25 +94,16 @@ tcGetCurrentHistory :: Tc [ExprAST]
 tcGetCurrentHistory = Tc (\tcenv -> do { return (OK $
                                           Prelude.reverse $ tcParents tcenv) })
 
-tcFails :: Output -> Tc a
-tcFails errs = Tc (\_env -> return (Errors errs))
-
 wasSuccessful :: Tc a -> Tc Bool
-wasSuccessful tce =
-    Tc (\env -> do { result <- unTc tce env
-                   ; case result of
-                       OK expr     -> return (OK True)
-                       Errors ss -> return (OK False)
-                       })
+wasSuccessful tce = liftM isNothing $ extractErrors tce
 
 extractErrors :: Tc a -> Tc (Maybe Output)
 extractErrors tce =
     Tc (\env -> do { result <- unTc tce env
                    ; case result of
-                       OK expr     -> return (OK Nothing)
+                       OK expr   -> return (OK Nothing)
                        Errors ss -> return (OK (Just ss))
                        })
-
 
 isOK :: OutputOr AnnExpr -> Bool
 isOK (OK _) = True
