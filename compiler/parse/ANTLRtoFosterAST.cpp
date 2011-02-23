@@ -43,8 +43,6 @@ using foster::currentOuts;
 
 #include "parse/ANTLRtoFosterAST-inl.h"
 
-Exprs getExprs(pTree tree);
-
 // expressions wrapped in () are marked here
 std::map<const ExprAST*, bool> gWasWrappedInExplicitParens;
 
@@ -92,17 +90,6 @@ IntAST* parseIntFrom(pTree t, const SourceRange& sourceRange) {
 
 ExprAST* ExprAST_from(pTree tree);
 
-/// Returns ast if ast may be valid as the LHS of an assign expr, else NULL.
-/// Valid forms for the LHS of an assign expr are:
-/// * Variables (presumably to a ref)
-/// * Subscripts
-/// * Lookups (eventually)
-ExprAST* validateAssignLHS(ExprAST* ast) {
-  if (dynamic_cast<VariableAST*>(ast)) { return ast; }
-  if (dynamic_cast<SubscriptAST*>(ast)) { return ast; }
-  return NULL;
-}
-
 /// Extract a name and (possibly) a type, and insert
 /// a new VariableAST for the name in the symbol table.
 VariableAST* parseFormal(pTree tree) {
@@ -149,8 +136,6 @@ PrototypeAST* getFnProto(string name,
   foster::SourceRange sourceRange = rangeFrom(formalsTree, sourceEndTree);
   PrototypeAST* proto = new PrototypeAST(retTy, name, in, sourceRange);
 
-  //ParsingContext::getRootScope()->insert(name, proto);
-
   return proto;
 }
 
@@ -176,7 +161,6 @@ FnAST* parseFn(string defaultSymbolTemplate, pTree tree) {
   PrototypeAST* proto = getFnProto(name,
                                    child(tree, 1),
                                    child(tree, 2));
-  //currentOuts() << "parseFn proto = " << str(proto) << "\n";
   return buildFn(proto, child(tree, 3));
 }
 
@@ -301,6 +285,14 @@ TypeAST* parseCtorType(pTree tree,
   return NULL;
 }
 
+Exprs getExprs(pTree tree) {
+  Exprs f;
+  for (size_t i = 0; i < getChildCount(tree); ++i) {
+    f.push_back(ExprAST_from(child(tree, i)));
+  }
+  return f;
+}
+
 ExprAST* parseTrailers(pTree tree,
                        const foster::SourceRange& sourceRange) {
   ASSERT(getChildCount(tree) >= 2);
@@ -313,14 +305,6 @@ ExprAST* parseTrailers(pTree tree,
       prefix = new CallAST(prefix, args, sourceRange);
     } else if (trailerType == LOOKUP) {
       ASSERT("lookups temporarily not supported");
-      /*
-      pTree nameNode = child(child(tree, i), 0);
-      const string& name = textOf(child(nameNode, 0));
-      prefix = prefix->lookup(name);
-      if (!prefix) {
-        currentErrs() << "Lookup of name '" << name << "' failed." << "\n";
-      }
-      */
     } else if (trailerType == SUBSCRIPT) {
       prefix = new SubscriptAST(prefix,
                                 ExprAST_from(child(child(tree, i), 0)),
@@ -360,8 +344,6 @@ ExprAST* parseBuiltinCompiles(pTree tree, const SourceRange& sourceRange) {
  return new BuiltinCompilesExprAST(ExprAST_from(child(tree, 0)), sourceRange);
 }
 
-
-
 ExprAST* extractBinopChain(pTree tree,
            std::vector< std::pair<std::string, ExprAST*> >& pairs) {
   pTree binops = child(tree, 0);
@@ -384,10 +366,10 @@ void leftAssoc(std::vector<std::string>& opstack,
   ExprAST*           x = argstack.back(); argstack.pop_back();
   const std::string& o =  opstack.back();  opstack.pop_back();
 
-  ExprAST* opr = new VariableAST("primitive_"+o+"_i32", NULL, rangeFrom(x, y));
   Exprs exprs;
   exprs.push_back(x);
   exprs.push_back(y);
+  ExprAST* opr = new VariableAST("primitive_"+o+"_i32", NULL, rangeFrom(x, y));
   argstack.push_back(new CallAST(opr, exprs, rangeFrom(x, y)));
 }
 
@@ -516,14 +498,6 @@ ExprAST* ExprAST_from(pTree tree) {
                   << "with text '" << text << "'"
                   << foster::show(sourceRange);
   return NULL;
-}
-
-Exprs getExprs(pTree tree) {
-  Exprs f;
-  for (size_t i = 0; i < getChildCount(tree); ++i) {
-    f.push_back(ExprAST_from(child(tree, i)));
-  }
-  return f;
 }
 
 TypeAST* TypeAST_from(pTree tree) {
