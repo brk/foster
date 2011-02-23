@@ -583,6 +583,28 @@ std::vector<TypeAST*> getTypes(pTree tree) {
 
 namespace foster {
 
+  struct FosterIndentingTokenSource : ANTLR3_TOKEN_SOURCE {
+    pANTLR3_TOKEN_SOURCE originalSource;
+  };
+
+  pANTLR3_COMMON_TOKEN fosterNextTokenFunc(pANTLR3_TOKEN_SOURCE tokenSource) {
+    FosterIndentingTokenSource* fits = (FosterIndentingTokenSource*) tokenSource;
+    return fits->originalSource->nextToken(fits->originalSource);
+  }
+
+  pANTLR3_TOKEN_SOURCE newFosterIndentingTokenSource(pANTLR3_TOKEN_SOURCE src) {
+    FosterIndentingTokenSource* s = new FosterIndentingTokenSource;
+    s->originalSource = src;
+    // Set all the fields required for an ANTLR3_TOKEN_SOURCE.
+    s->eofToken   = src->eofToken;
+    s->fileName   = src->fileName;
+    s->skipToken  = src->skipToken;
+    s->strFactory = src->strFactory;
+    s->super      = (void*) s;
+    s->nextToken  = fosterNextTokenFunc;
+    return s;
+  }
+
   struct ANTLRContext {
     string filename;
     pANTLR3_INPUT_STREAM input;
@@ -616,8 +638,11 @@ namespace foster {
         exit(ANTLR3_ERR_NOMEM);
       }
 
+      pANTLR3_TOKEN_SOURCE customSource
+                = newFosterIndentingTokenSource(TOKENSOURCE(ctx.lxr));
+
       ctx.tstream = antlr3CommonTokenStreamSourceNew(ANTLR3_SIZE_HINT,
-                                                     TOKENSOURCE(ctx.lxr));
+                                                     customSource);
 
       if (ctx.tstream == NULL) {
         ANTLR3_FPRINTF(stderr, "Out of memory trying to allocate token stream.\n");
