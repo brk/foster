@@ -35,12 +35,12 @@ need () {
 
 checkargs () {
   case $@ in
-    *--all*)
-      runcloc compiler/base --by-file
-      runcloc compiler/parse --by-file
-      runcloc compiler/passes --by-file
-      runcloc compiler/llvm --by-file
-      runcloc compiler/me --by-file
+    *--by-file*)
+      runcloc compiler/base   --by-file --not-match-f="_unittest.cpp"
+      runcloc compiler/parse  --by-file --not-match-f="_unittest.cpp"
+      runcloc compiler/passes --by-file --not-match-f="_unittest.cpp"
+      runcloc compiler/llvm   --by-file --not-match-f="_unittest.cpp"
+      runcloc compiler/me     --by-file --not-match-f="_unittest.cpp"
       exit
       ;;
   esac
