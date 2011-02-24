@@ -25,6 +25,7 @@ import qualified Data.Graph as Graph
 import Data.Maybe(isJust, fromJust, fromMaybe)
 import Data.Foldable(forM_)
 import Control.Monad(forM)
+import Control.Monad.State
 import Monad(join,liftM)
 import Data.IORef(IORef,newIORef,readIORef,writeIORef)
 
@@ -65,16 +66,12 @@ instance FnLike AnnFn where
 
 computeRootContextBindings :: Uniq -> ([ContextBinding], Uniq)
 computeRootContextBindings u =
-    let pair2binding (nm, ty) uniq = (tvb, uniq + 1)
-            where tvb = TermVarBinding nm (AnnVar ty (Ident nm (- uniq)))
-   in
-   stFold pair2binding rootContextPairs u
-
-stFold :: (a -> s -> (b, s)) -> [a] -> s -> ([b], s)
-stFold f [] u = ([], u)
-stFold f (a:as) u = let (b,u') = f a u in
-                    let (bs,ufin) = stFold f as u' in
-                    ((b:bs), ufin)
+   runState (mapM pair2binding rootContextPairs) u where
+        pair2binding :: (String, TypeAST) -> State Uniq ContextBinding
+        pair2binding (nm, ty) = do
+               uniq <- get
+               put (uniq + 1)
+               return $ TermVarBinding nm (AnnVar ty (Ident nm (- uniq)))
 
 isPrimitiveName name rootContext = isJust $ termVarLookup name rootContext
 
@@ -162,7 +159,7 @@ inspect ctx typechecked ast =
         Errors errs -> do
             runOutput $ showStructure ast
             runOutput $ (outCSLn Red "Typecheck error: ")
-            forM_ errs $ \(output) ->
+            Data.Foldable.forM_ errs $ \(output) ->
                 do {-runOutput $ (outLn $ "hist len: " ++ (show $ Prelude.length hist))
                    forM_ (Prelude.reverse hist) $ \expr ->
                         do runOutput $ textOf expr 60
