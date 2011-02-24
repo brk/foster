@@ -63,7 +63,6 @@ message Expr {
     IF = 32;
 
     MODULE = 35;
-    NAMED_TYPE_DECL = 36;
   }
   repeated Expr        parts = 1;
   required Tag           tag = 2;

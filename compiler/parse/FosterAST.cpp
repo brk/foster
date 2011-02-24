@@ -116,10 +116,6 @@ std::ostream& ExprAST::operator<<(std::ostream& out) const {
   foster::dumpExprStructure(raw, this);
 }
 
-std::ostream& NamedTypeDeclAST::operator<<(std::ostream& out) const {
-  return out << "type " << name << " = " << str(type) << "\n";
-}
-
 //////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////
 
@@ -132,7 +128,6 @@ void     PrototypeAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
 void        ModuleAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
 void          CallAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
 void      ETypeAppAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
-void NamedTypeDeclAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
 void BuiltinCompilesExprAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
 
 void          SeqAST::accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }

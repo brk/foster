@@ -123,11 +123,6 @@ void DumpToProtobufPass::visit(ModuleAST* ast)              {
   dumpChildren(this, ast);
 }
 
-void DumpToProtobufPass::visit(NamedTypeDeclAST* ast) {
-  processExprAST(current, ast, pb::Expr::NAMED_TYPE_DECL);
-  current->set_name(ast->name);
-}
-
 void DumpToProtobufPass::visit(IfExprAST* ast)              {
   processExprAST(current, ast, pb::Expr::IF);
   pb::PBIf* if_ = current->mutable_pb_if();
