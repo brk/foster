@@ -530,11 +530,6 @@ TypeAST* TypeAST_from(pTree tree) {
       EDiag() << "had unexpected fn body when parsing fn type!" << show(fn);
     }
 
-    llvm::outs() << "fn type node:\n";
-    foster::prettyPrintExpr(fn, llvm::outs(), 40);
-    foster::dumpExprStructure(llvm::outs(), fn);
-    llvm::outs() << "\n\n";
-
     std::vector<TypeAST*> argTypes;
 
     for (int i = 0; i < fn->getProto()->inArgs.size(); ++i) {

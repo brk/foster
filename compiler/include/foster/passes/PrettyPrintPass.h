@@ -12,7 +12,7 @@ class TypeAST;
 
 namespace foster {
   void prettyPrintExpr(const ExprAST* t,
-		 llvm::raw_ostream& out,
+                 llvm::raw_ostream& out,
                  int width = 80, int indend_width = 2,
                  bool printSignaturesOnly = false);
 

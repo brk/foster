@@ -26,7 +26,9 @@ using llvm::APInt;
 class ExprAST;
 class TypeAST;
 class VariableAST;
-class ExprASTVisitor;
+
+class DumpToProtobufPass;
+class PrettyPrintPass;
 
 typedef std::vector<ExprAST*> Exprs;
 
@@ -52,7 +54,8 @@ struct ExprAST {
       sourceRange(sourceRange), tag(tag) {}
   virtual ~ExprAST() {}
   virtual std::ostream& operator<<(std::ostream& out) const;
-  virtual void accept(ExprASTVisitor* visitor) = 0;
+  virtual void dump(DumpToProtobufPass* pass) = 0;
+  virtual void show(PrettyPrintPass*    pass) = 0;
 };
 
 class IntAST;
@@ -73,7 +76,8 @@ private:
 public:
   explicit IntAST(const string& originalText,
                   foster::SourceRange sourceRange);
-  virtual void accept(ExprASTVisitor* visitor);
+  virtual void dump(DumpToProtobufPass* pass);
+  virtual void show(PrettyPrintPass*    pass);
 
   std::string getOriginalText() const;
 };
@@ -82,7 +86,8 @@ struct BoolAST : public ExprAST {
   bool boolValue;
   explicit BoolAST(string val, foster::SourceRange sourceRange)
     : ExprAST("BoolAST", sourceRange), boolValue(val == "true") {}
-  virtual void accept(ExprASTVisitor* visitor);
+  virtual void dump(DumpToProtobufPass* pass);
+  virtual void show(PrettyPrintPass*    pass);
 };
 
 struct VariableAST : public ExprAST {
@@ -94,7 +99,8 @@ struct VariableAST : public ExprAST {
     this->type = aType;
   }
 
-  virtual void accept(ExprASTVisitor* visitor);
+  virtual void dump(DumpToProtobufPass* pass);
+  virtual void show(PrettyPrintPass*    pass);
 
   const string& getName() { return name; }
   const string getName() const { return name; }
@@ -107,7 +113,8 @@ struct CallAST : public ExprAST {
     parts.push_back(base);
     for (size_t i = 0; i < args.size(); ++i) parts.push_back(args[i]);
   }
-  virtual void accept(ExprASTVisitor* visitor);
+  virtual void dump(DumpToProtobufPass* pass);
+  virtual void show(PrettyPrintPass*    pass);
 };
 
 // e[ty]
@@ -118,13 +125,15 @@ struct ETypeAppAST : public ExprAST {
       : ExprAST("ETypeAppAST", sourceRange), typeArg(arg) {
     parts.push_back(base);
   }
-  virtual void accept(ExprASTVisitor* visitor);
+  virtual void dump(DumpToProtobufPass* pass);
+  virtual void show(PrettyPrintPass*    pass);
 };
 
 struct SeqAST : public ExprAST {
   explicit SeqAST(Exprs exprs, foster::SourceRange sourceRange)
     : ExprAST("SeqAST", sourceRange) { this->parts = exprs; }
-  virtual void accept(ExprASTVisitor* visitor);
+  virtual void dump(DumpToProtobufPass* pass);
+  virtual void show(PrettyPrintPass*    pass);
 };
 
 struct TupleExprAST : public ExprAST {
@@ -132,7 +141,8 @@ struct TupleExprAST : public ExprAST {
     : ExprAST("TupleExprAST", sourceRange) {
     parts.push_back(expr);
   }
-  virtual void accept(ExprASTVisitor* visitor);
+  virtual void dump(DumpToProtobufPass* pass);
+  virtual void show(PrettyPrintPass*    pass);
 };
 
 // base[index]
@@ -143,7 +153,8 @@ struct SubscriptAST : public ExprAST {
     this->parts.push_back(base);
     this->parts.push_back(index);
   }
-  virtual void accept(ExprASTVisitor* visitor);
+  virtual void dump(DumpToProtobufPass* pass);
+  virtual void show(PrettyPrintPass*    pass);
 };
 
 class FnAST;
@@ -164,7 +175,8 @@ public:
          const std::vector<VariableAST*>& inArgs,
          foster::SourceRange sourceRange);
 
-  virtual void accept(ExprASTVisitor* visitor);
+  virtual void dump(DumpToProtobufPass* pass);
+  virtual void show(PrettyPrintPass*    pass);
 };
 
 // As noted by the designers of Lua, closures are an implementation strategy
@@ -196,7 +208,8 @@ public:
      parts.push_back(body);
    }
 
-   virtual void accept(ExprASTVisitor* visitor);
+   virtual void dump(DumpToProtobufPass* pass);
+   virtual void show(PrettyPrintPass*    pass);
 
   std::string getName() const { return getProto()->getName(); }
   PrototypeAST* getProto() const { return proto; }
@@ -225,7 +238,8 @@ struct ModuleAST : public ExprAST {
       }
   }
 
-  virtual void accept(ExprASTVisitor* visitor);
+  virtual void dump(DumpToProtobufPass* pass);
+  virtual void show(PrettyPrintPass*    pass);
 };
 
 struct IfExprAST : public ExprAST {
@@ -236,7 +250,8 @@ struct IfExprAST : public ExprAST {
     parts.push_back(thenExpr);
     parts.push_back(elseExpr);
   }
-  virtual void accept(ExprASTVisitor* visitor);
+  virtual void dump(DumpToProtobufPass* pass);
+  virtual void show(PrettyPrintPass*    pass);
 
   ExprAST*& getTestExpr() { ASSERT(parts.size() == 3); return parts[0]; }
   ExprAST*& getThenExpr() { ASSERT(parts.size() == 3); return parts[1]; }
@@ -250,7 +265,8 @@ struct BuiltinCompilesExprAST : public ExprAST {
    }
   // Must manually visit children (for typechecking)
   // because we don't want to codegen our children!
-  virtual void accept(ExprASTVisitor* visitor);
+  virtual void dump(DumpToProtobufPass* pass);
+  virtual void show(PrettyPrintPass*    pass);
 };
 
 

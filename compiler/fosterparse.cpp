@@ -45,7 +45,7 @@ void dumpModuleToProtobuf(ModuleAST* mod, const string& filename) {
   }
 
   foster::fepb::Expr* pbModuleExpr = sm.mutable_expr();
-  DumpToProtobufPass p(pbModuleExpr); mod->accept(&p);
+  DumpToProtobufPass p(pbModuleExpr); mod->dump(&p);
 
   if (!pbModuleExpr->IsInitialized()) {
     EDiag() << "Protobuf message is not initialized!\n";

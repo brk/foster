@@ -6,7 +6,6 @@
 #define FOSTER_TYPE_AST_H
 
 #include "base/Assert.h"
-#include "parse/TypeASTVisitor.h"
 
 #include "llvm/CallingConv.h"
 #include "llvm/DerivedTypes.h"
@@ -20,8 +19,10 @@ using std::string;
 
 using foster::SourceRange;
 
-class IntAST;
+class PrettyPrintTypePass;
+class DumpTypeToProtobufPass;
 
+class IntAST;
 class TypeAST;
 class FnTypeAST;
 class RefTypeAST;
@@ -55,7 +56,8 @@ public:
   const SourceRange& getSourceRange() const { return sourceRange; }
   virtual const llvm::Type* getLLVMType() const { return repr; }
 
-  virtual void accept(TypeASTVisitor* visitor) = 0;
+  virtual void show(PrettyPrintTypePass*    pass) = 0;
+  virtual void dump(DumpTypeToProtobufPass* pass) = 0;
   virtual bool isTypeVariable() { return false; }
   virtual bool canConvertTo(TypeAST* otherType);
 
@@ -84,7 +86,8 @@ class TypeVariableAST : public TypeAST {
       typeVarName(typeVarName), opaqueType(opaqueType) {}
 
 public:
-  virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
+  virtual void show(PrettyPrintTypePass* pass);
+  virtual void dump(DumpTypeToProtobufPass* pass);
   virtual bool isTypeVariable() { return true; }
 
   const std::string& getTypeVariableName() { return typeVarName; }
@@ -101,15 +104,17 @@ class NamedTypeAST : public TypeAST {
      : TypeAST("NamedType", NULL, sourceRange),
        name(typeName), nonLLVMType(underlyingType) {}
 
-  explicit NamedTypeAST(const std::string& typeName, const llvm::Type* underlyingType,
-                          const SourceRange& sourceRange)
+  explicit NamedTypeAST(const std::string& typeName,
+                        const llvm::Type* underlyingType,
+                        const SourceRange& sourceRange)
        : TypeAST("NamedType", underlyingType, sourceRange),
          name(typeName), nonLLVMType(NULL) {}
 
   static std::map<const llvm::Type*, TypeAST*> thinWrappers;
 
 public:
-  virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
+  virtual void show(PrettyPrintTypePass* pass);
+  virtual void dump(DumpTypeToProtobufPass* pass);
   virtual const llvm::Type* getLLVMType() const;
   const std::string getName() { return name; }
 
@@ -127,7 +132,8 @@ protected:
   virtual ~IndexableTypeAST() {}
 
 public:
-  virtual void accept(TypeASTVisitor* visitor) = 0;
+  virtual void show(PrettyPrintTypePass* pass) = 0;
+  virtual void dump(DumpTypeToProtobufPass* pass) = 0;
 
   virtual TypeAST*& getContainedType(size_t idx) = 0;
   virtual int64_t   getNumElements() const = 0;
@@ -146,7 +152,8 @@ class RefTypeAST : public TypeAST {
   typedef TypeAST* RefTypeArgs;
   static std::map<RefTypeArgs, RefTypeAST*> refCache;
 public:
-  virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
+  virtual void show(PrettyPrintTypePass* pass);
+  virtual void dump(DumpTypeToProtobufPass* pass);
   virtual const llvm::Type* getLLVMType() const;
 
   virtual bool canConvertTo(TypeAST* otherType);
@@ -174,7 +181,8 @@ class FnTypeAST : public TypeAST {
       markedAsClosure(false) {}
 
 public:
-  virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
+  virtual void show(PrettyPrintTypePass* pass);
+  virtual void dump(DumpTypeToProtobufPass* pass);
   virtual const llvm::Type* getLLVMType() const;
 
   static FnTypeAST* get(TypeAST* retTy,
@@ -208,7 +216,8 @@ class TupleTypeAST : public IndexableTypeAST {
   typedef std::vector<TypeAST*> Args;
   static std::map<Args, TupleTypeAST*> tupleTypeCache;
 public:
-  virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
+  virtual void show(PrettyPrintTypePass* pass);
+  virtual void dump(DumpTypeToProtobufPass* pass);
   virtual const llvm::Type* getLLVMType() const;
 
   virtual int getNumContainedTypes() const { return parts.size(); }
@@ -228,7 +237,8 @@ class CoroTypeAST : public TypeAST {
       a(targ), b(tret) {}
 
 public:
-  virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
+  virtual void show(PrettyPrintTypePass* pass);
+  virtual void dump(DumpTypeToProtobufPass* pass);
   virtual const llvm::Type* getLLVMType() const;
 
   virtual bool canConvertTo(TypeAST* otherType);
@@ -247,7 +257,8 @@ class CArrayTypeAST : public TypeAST {
       cell(tcell), size(size) {}
 
 public:
-  virtual void accept(TypeASTVisitor* visitor) { visitor->visit(this); }
+  virtual void show(PrettyPrintTypePass* pass);
+  virtual void dump(DumpTypeToProtobufPass* pass);
   virtual const llvm::Type* getLLVMType() const;
 
   uint64_t getSize() { return size; }

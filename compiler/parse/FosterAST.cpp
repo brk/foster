@@ -7,7 +7,6 @@
 
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
-#include "parse/ExprASTVisitor.h"
 #include "parse/DumpStructure.h"
 
 #include "passes/PrettyPrintPass.h"
@@ -74,22 +73,7 @@ char kDefaultFnLiteralCallingConvention[] = "fastcc";
 
 } // namespace foster
 
-void ExprASTVisitor::visitChildren(ExprAST* ast) {
-  for (size_t i = 0; i < ast->parts.size(); ++i) {
-    if (ast->parts[i]) {
-      this->onVisitChild(ast, ast->parts[i]);
-    } else {
-      EDiag() << "visitChildren saw null part " << i << " for ast node " << str(ast) << show(ast);
-    }
-  }
-}
-
-void ExprASTVisitor::onVisitChild(ExprAST* ast, ExprAST* child) {
-  child->accept(this);
-}
-
 ////////////////////////////////////////////////////////////////////
-
 
 IntAST::IntAST(const string& originalText,
               foster::SourceRange sourceRange)
@@ -116,20 +100,3 @@ std::ostream& ExprAST::operator<<(std::ostream& out) const {
   foster::dumpExprStructure(raw, this);
 }
 
-//////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////
-
-void          BoolAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
-void           IntAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
-void            FnAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
-void      VariableAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
-void        IfExprAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
-void     PrototypeAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
-void        ModuleAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
-void          CallAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
-void      ETypeAppAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
-void BuiltinCompilesExprAST::accept(ExprASTVisitor* visitor) { visitor->visit(this); }
-
-void          SeqAST::accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
-void    SubscriptAST::accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }
-void    TupleExprAST::accept(ExprASTVisitor* visitor) { visitor->visitChildren(this); visitor->visit(this); }

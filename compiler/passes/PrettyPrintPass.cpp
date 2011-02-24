@@ -10,26 +10,18 @@
 #include <sstream>
 
 #include "base/PughSinofskyPrettyPrinter.h"
-#include "parse/ExprASTVisitor.h"
 
 #include "pystring/pystring.h"
 
 
-struct PrettyPrintPass : public ExprASTVisitor {
-  #include "parse/ExprASTVisitor.decls.inc.h"
-
+struct PrettyPrintPass {
   // This can be used in lieu of ast->accept(ppp)
   // to ensure proper outer parens,
   // mainly useful for unit tests.
   void emit(const ExprAST*, bool forceOuterParens = false);
 
-  virtual void visitChildren(ExprAST* ast) {
-   // Only visit children manually!
-  }
-
   typedef foster::PughSinofskyPrettyPrinter PrettyPrinter;
 
-private:
   PrettyPrinter pp;
   // Controls whether type ascriptions on variable names are printed.
   // Used to print ascriptions on fn formals but not let bindings.
@@ -52,61 +44,49 @@ public:
   friend class ScopedIndent;
 };
 
-namespace foster {
-  void prettyPrintExpr(const ExprAST* t,
-                 llvm::raw_ostream& out, int width, int indent_width,
-                 bool printSignaturesOnly) {
-    PrettyPrintPass pp(out, width, indent_width);
-    pp.setPrintSignaturesOnly(printSignaturesOnly);
-    pp.emit(t);
-  }
-}
-
-
 ////////////////////////////////////////////////////////////////////
 
 typedef PrettyPrintPass::PrettyPrinter::PPToken PPToken;
 
 class ScopedParens {
-  PrettyPrintPass* p;
+  PrettyPrintPass* pass;
   bool enable;
 public:
   ScopedParens(PrettyPrintPass* p, bool enable = true)
-    : p(p), enable(enable) {
+    : pass(p), enable(enable) {
     if (enable) {
-      p->scan(PPToken("("));
+      pass->scan(PPToken("("));
     }
   }
 
   ~ScopedParens() {
     if (enable) {
-      p->scan(PPToken(")"));
+      pass->scan(PPToken(")"));
     }
   }
 };
 
 class ScopedBlock {
-  PrettyPrintPass* p;
+  PrettyPrintPass* pass;
 public:
-  ScopedBlock(PrettyPrintPass* p) : p(p) {
-    p->scan(p->pp.tBlockOpen);
+  ScopedBlock(PrettyPrintPass* p) : pass(p) {
+    pass->scan(pass->pp.tBlockOpen);
   }
 
   ~ScopedBlock() {
-    p->scan(p->pp.tBlockClose);
+    pass->scan(pass->pp.tBlockClose);
   }
 };
 
-
 class ScopedIndent {
-  PrettyPrintPass* p;
+  PrettyPrintPass* pass;
 public:
-  ScopedIndent(PrettyPrintPass* p) : p(p) {
-    p->scan(p->pp.tIndent);
+  ScopedIndent(PrettyPrintPass* p) : pass(p) {
+    pass->scan(pass->pp.tIndent);
   }
 
   ~ScopedIndent() {
-    p->scan(p->pp.tDedent);
+    pass->scan(pass->pp.tDedent);
   }
 };
 
@@ -117,7 +97,7 @@ inline void recurse(PrettyPrintPass* p, const ExprAST* ast, bool wrapInParens) {
     p->scan(PPToken("<nil>"));
   } else {
     ScopedParens sp(p, wrapInParens);
-    (const_cast<ExprAST*>(ast))->accept(p);
+    (const_cast<ExprAST*>(ast))->show(p);
   }
 }
 
@@ -149,23 +129,23 @@ void PrettyPrintPass::emit(const ExprAST* ast, bool forceParens) {
 
 ////////////////////////////////////////////////////////////////////
 
-void PrettyPrintPass::visit(BoolAST* ast) {
-  scan(PPToken( (ast->boolValue) ? "true" : "false" ));
+void BoolAST::show(PrettyPrintPass* pass) {
+  pass->scan(PPToken( (boolValue) ? "true" : "false" ));
 }
 
-void PrettyPrintPass::visit(IntAST* ast) {
-  scan(PPToken(ast->getOriginalText()));
+void IntAST::show(PrettyPrintPass* pass) {
+  pass->scan(PPToken(this->getOriginalText()));
 }
 
 // name (: type)
-void PrettyPrintPass::visit(VariableAST* ast) {
-  ScopedBlock sb(this);
-  scan(PPToken(ast->name));
-  //std::stringstream ss; ss << "@" << ast; scan(PPToken(ss.str()));
-  if (this->printVarTypes) {
-    scan(PPToken(":"));
-    if (ast->type) {
-      emitType(ast->type);
+void VariableAST::show(PrettyPrintPass* pass) {
+  ScopedBlock sb(pass);
+  pass->scan(PPToken(this->name));
+  //std::stringstream ss; ss << "@" << this; pass->scan(PPToken(ss.str()));
+  if (pass->printVarTypes) {
+    pass->scan(PPToken(":"));
+    if (this->type) {
+      pass->emitType(this->type);
     }
   }
 }
@@ -198,104 +178,104 @@ void prettyPrintBinaryExpr(PrettyPrintPass* pass,
 }
 
 // fn Name (inArgs to outArgs)
-void PrettyPrintPass::visit(PrototypeAST* ast) {
-  ScopedBlock sb(this);
-  { ScopedBlock sb(this);
-  scan(PPToken("fn"));
-  scan(PPToken(" "));
-  scan(PPToken(ast->getName()));
+void PrototypeAST::show(PrettyPrintPass* pass) {
+  ScopedBlock sb(pass);
+  { ScopedBlock sb(pass);
+  pass->scan(PPToken("fn"));
+  pass->scan(PPToken(" "));
+  pass->scan(PPToken(this->getName()));
   }
 
-  { ScopedBlock sb(this);
-  scan(PPToken(" "));
-  scan(PPToken("("));
-  for (size_t i = 0; i < ast->inArgs.size(); ++i) {
-    scan(PPToken(" "));
-    this->printVarTypes = true;
-    emit(ast->inArgs[i]);
-    this->printVarTypes = false;
+  { ScopedBlock sb(pass);
+  pass->scan(PPToken(" "));
+  pass->scan(PPToken("("));
+  for (size_t i = 0; i < this->inArgs.size(); ++i) {
+    pass->scan(PPToken(" "));
+    pass->printVarTypes = true;
+    pass->emit(this->inArgs[i]);
+    pass->printVarTypes = false;
   }
-  if (ast->resultTy != NULL) {
-    scan(PPToken(" to "));
-    scan(PPToken(str(ast->resultTy)));
+  if (this->resultTy != NULL) {
+    pass->scan(PPToken(" to "));
+    pass->scan(PPToken(str(this->resultTy)));
   }
-  scan(PPToken(" "));
-  scan(PPToken(")"));
+  pass->scan(PPToken(" "));
+  pass->scan(PPToken(")"));
   } // block for params
 }
 
 // fnProto fnBody
-void PrettyPrintPass::visit(FnAST* ast) {
-  emit(ast->getProto());
+void FnAST::show(PrettyPrintPass* pass) {
+  pass->emit(this->getProto());
 
-  if (!this->printSignaturesOnly) {
-    if (ast->getBody()) {
-      emit(ast->getBody());
+  if (!pass->printSignaturesOnly) {
+    if (this->getBody()) {
+      pass->emit(this->getBody());
     }
   }
 }
 
-void PrettyPrintPass::visit(ModuleAST* ast) {
-  for (size_t i = 0; i < ast->parts.size(); ++i) {
-    emit(ast->parts[i]);
-    scan(pp.tNewline);
+void ModuleAST::show(PrettyPrintPass* pass) {
+  for (size_t i = 0; i < this->parts.size(); ++i) {
+    pass->emit(this->parts[i]);
+    pass->scan(pass->pp.tNewline);
   }
 }
 
 // if $0 then $1 else $2
-void PrettyPrintPass::visit(IfExprAST* ast) {
-  ScopedBlock sb(this);
+void IfExprAST::show(PrettyPrintPass* pass) {
+  ScopedBlock sb(pass);
 
-  { ScopedBlock sb(this);
-  scan(PPToken("if "));
-  emit(ast->getTestExpr());
+  { ScopedBlock sb(pass);
+  pass->scan(PPToken("if "));
+  pass->emit(this->getTestExpr());
   }
 
-  scan(pp.tConnNewline);
+  pass->scan(pass->pp.tConnNewline);
 
-  { ScopedBlock sb(this);
-  scan(PPToken(" then "));
-  emit(ast->getThenExpr());
+  { ScopedBlock sb(pass);
+  pass->scan(PPToken(" then "));
+  pass->emit(this->getThenExpr());
   }
 
-  scan(pp.tConnNewline);
+  pass->scan(pass->pp.tConnNewline);
 
-  { ScopedBlock sb(this);
-  scan(PPToken(" else "));
-  emit(ast->getElseExpr());
+  { ScopedBlock sb(pass);
+  pass->scan(PPToken(" else "));
+  pass->emit(this->getElseExpr());
   }
 }
 
 // $0 [ $1 ]
-void PrettyPrintPass::visit(SubscriptAST* ast) {
-  ScopedBlock sb(this);
-  emit(ast->parts[0]);
+void SubscriptAST::show(PrettyPrintPass* pass) {
+  ScopedBlock sb(pass);
+  pass->emit(this->parts[0]);
 
-  scan(PPToken("["));
-  emit(ast->parts[1]);
-  scan(PPToken("]"));
+  pass->scan(PPToken("["));
+  pass->emit(this->parts[1]);
+  pass->scan(PPToken("]"));
 }
 
 // { $0 ; $1 ; ... ; $n }
-void PrettyPrintPass::visit(SeqAST* ast) {
-  ScopedBlock sb(this);
+void SeqAST::show(PrettyPrintPass* pass) {
+  ScopedBlock sb(pass);
   FnAST* followingFn = NULL;
   {
-  ScopedIndent si(this);
-  scan(PPToken(" {"));
-  scan(pp.tNewline);
+  ScopedIndent si(pass);
+  pass->scan(PPToken(" {"));
+  pass->scan(pass->pp.tNewline);
 
-  for (size_t i = 0; i < ast->parts.size(); ++i) {
-    { ScopedBlock sb(this);
-    emit(ast->parts[i]);
+  for (size_t i = 0; i < this->parts.size(); ++i) {
+    { ScopedBlock sb(pass);
+    pass->emit(this->parts[i]);
     }
 
-    if (i != ast->parts.size() - 1) {
-      if (dynamic_cast<CallAST*>(ast->parts[i])) {
-        scan(pp.tNewline);
+    if (i != this->parts.size() - 1) {
+      if (dynamic_cast<CallAST*>(this->parts[i])) {
+        pass->scan(pass->pp.tNewline);
       } else {
-        scan(PPToken("; "));
-        scan(pp.tConnNewline);
+        pass->scan(PPToken("; "));
+        pass->scan(pass->pp.tConnNewline);
       }
     }
   }
@@ -303,10 +283,10 @@ void PrettyPrintPass::visit(SeqAST* ast) {
   } // indent/dedent
 
   if (followingFn) {
-    scan(pp.tNewline);
-    scan(PPToken("}"));
+    pass->scan(pass->pp.tNewline);
+    pass->scan(PPToken("}"));
   } else {
-    scan(PPToken(" }"));
+    pass->scan(PPToken(" }"));
   }
 }
 
@@ -321,104 +301,87 @@ bool isPrimitiveBinopCall(CallAST* call) {
 }
 
 // $0 ( $1, $2, ... , $n )
-void PrettyPrintPass::visit(CallAST* ast) {
-  if (isPrimitiveBinopCall(ast)) {
-    prettyPrintBinaryExpr(this, ast);
+void CallAST::show(PrettyPrintPass* pass) {
+  if (isPrimitiveBinopCall(this)) {
+    prettyPrintBinaryExpr(pass, this);
     return;
   }
 
-  ScopedBlock sb(this);
+  ScopedBlock sb(pass);
 
-  { ScopedBlock sb(this);
-  emit(ast->parts[0]);
+  { ScopedBlock sb(pass);
+  pass->emit(this->parts[0]);
   }
-  { ScopedBlock sb(this);
-  scan(PPToken("("));
+  { ScopedBlock sb(pass);
+  pass->scan(PPToken("("));
 
-  if (ast->parts.size() > 1) {
-    scan(pp.tIndent);
+  if (this->parts.size() > 1) {
+    pass->scan(pass->pp.tIndent);
   }
 
   bool first = true;
-  for (size_t i = 1; i < ast->parts.size(); ++i) {
+  for (size_t i = 1; i < this->parts.size(); ++i) {
     if (!first) {
-      scan(PPToken(","));
-      scan(PPToken(" "));
+      pass->scan(PPToken(","));
+      pass->scan(PPToken(" "));
     }
     first = false;
 
-    if (i == ast->parts.size() -1) {
+    if (i == this->parts.size() -1) {
       // dedent "early" because a dedent followed directly
       // by a close-paren doesn't do much for us...
-      scan(pp.tDedent);
+      pass->scan(pass->pp.tDedent);
     }
 
-    emit(ast->parts[i]);
+    pass->emit(this->parts[i]);
   }
 
-  scan(PPToken(")"));
+  pass->scan(PPToken(")"));
   } // scoped block
 }
 
 // $0.[$ty]
-void PrettyPrintPass::visit(ETypeAppAST* ast) {
-  emit(ast->parts[0]);
-  scan(PPToken(".["));
-  emitType(ast->typeArg);
-  scan(PPToken("]"));
+void ETypeAppAST::show(PrettyPrintPass* pass) {
+  pass->emit(this->parts[0]);
+  pass->scan(PPToken(".["));
+  pass->emitType(this->typeArg);
+  pass->scan(PPToken("]"));
 }
 
-#if 0
-// array $0
-void PrettyPrintPass::visit(ArrayExprAST* ast) {
-  scan(PPToken("array"));
-  scan(PPToken(" "));
-  emit(ast->parts[0]);
-}
-#endif
 // tuple $0
-void PrettyPrintPass::visit(TupleExprAST* ast) {
-  ScopedBlock sb(this);
-  scan(PPToken("tuple"));
-  scan(PPToken(" "));
-  emit(ast->parts[0]);
+void TupleExprAST::show(PrettyPrintPass* pass) {
+  ScopedBlock sb(pass);
+  pass->scan(PPToken("tuple"));
+  pass->scan(PPToken(" "));
+  pass->emit(this->parts[0]);
 }
-
-/*
-// simd-vector $0
-void PrettyPrintPass::visit(SimdVectorAST* ast) {
-  ScopedBlock sb(this);
-  scan(PPToken("simd-vector"));
-  scan(PPToken(" "));
-  emit(ast->parts[0]);
-}
-*/
 
 // __COMPILES__ $0
-void PrettyPrintPass::visit(BuiltinCompilesExprAST* ast) {
-  ScopedBlock sb(this);
-  scan(PPToken("__COMPILES__"));
-  scan(PPToken(" "));
-  emit(ast->parts[0]);
+void BuiltinCompilesExprAST::show(PrettyPrintPass* pass) {
+  ScopedBlock sb(pass);
+  pass->scan(PPToken("__COMPILES__"));
+  pass->scan(PPToken(" "));
+  pass->emit(this->parts[0]);
+}
+
+////////////////////////////////////////////////////////////////////
+
+namespace foster {
+  void prettyPrintExpr(const ExprAST* t,
+                 llvm::raw_ostream& out, int width, int indent_width,
+                 bool printSignaturesOnly) {
+    PrettyPrintPass pp(out, width, indent_width);
+    pp.setPrintSignaturesOnly(printSignaturesOnly);
+    pp.emit(t);
+  }
 }
 
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////
 
-#include "parse/TypeASTVisitor.h"
+inline void recurse(PrettyPrintTypePass* const p, TypeAST* ast);
 
-namespace {
-
-struct PrettyPrintTypePass;
-inline void recurse(PrettyPrintTypePass* p, TypeAST* ast);
-
-struct PrettyPrintTypePass : public TypeASTVisitor {
-  #include "parse/TypeASTVisitor.decls.inc.h"
-
-  virtual void visitChildren(ExprAST* ast) {
-   // Only visit children manually!
-  }
+struct PrettyPrintTypePass {
   inline void emit(TypeAST* t) { recurse(this, t); }
 
   typedef foster::PughSinofskyPrettyPrinter PrettyPrinter;
@@ -435,11 +398,11 @@ public:
   ~PrettyPrintTypePass() {}
 };
 
-inline void recurse(PrettyPrintTypePass* p, TypeAST* ast) {
+inline void recurse(PrettyPrintTypePass* pass, TypeAST* ast) {
   if (!ast) {
-    p->scan(PPToken("<nil>"));
+    pass->scan(PPToken("<nil>"));
   } else {
-    ast->accept(p);
+    ast->show(pass);
   }
 }
 
@@ -447,76 +410,75 @@ typedef PrettyPrintTypePass::PrettyPrinter::PPToken PPToken;
 
 ////////////////////////////////////////////////////////////////////
 
-void PrettyPrintTypePass::visit(NamedTypeAST* ast) {
-  scan(PPToken(ast->getName()));
+void NamedTypeAST::show(PrettyPrintTypePass* pass){
+  pass->scan(PPToken(this->getName()));
 }
 
-void PrettyPrintTypePass::visit(TypeVariableAST* ast) {
-  scan(PPToken("TypeVar("));
-  scan(PPToken(ast->getTypeVariableName()));
-  scan(PPToken(")"));
+void TypeVariableAST::show(PrettyPrintTypePass* pass){
+  pass->scan(PPToken("TypeVar("));
+  pass->scan(PPToken(this->getTypeVariableName()));
+  pass->scan(PPToken(")"));
 }
 
-void PrettyPrintTypePass::visit(FnTypeAST* ast) {
-  int np = ast->getNumParams();
-  scan(PPToken("("));
-  if (np > 1) { scan(PPToken("|")); }
+void FnTypeAST::show(PrettyPrintTypePass* pass){
+  int np = this->getNumParams();
+  pass->scan(PPToken("("));
+  if (np > 1) { pass->scan(PPToken("|")); }
   for (int i = 0; i < np; ++i) {
     if (i > 0) {
-      scan(PPToken(", "));
+      pass->scan(PPToken(", "));
     }
-    emit(ast->getParamType(i));
+    pass->emit(this->getParamType(i));
   }
-  if (np > 1) { scan(PPToken("|")); }
-  scan(PPToken(" "));
-  scan(PPToken("=" + ast->getCallingConventionName() + ">"));
-  scan(PPToken(" "));
-  emit(ast->getReturnType());
-  scan(PPToken(")"));
+  if (np > 1) { pass->scan(PPToken("|")); }
+  pass->scan(PPToken(" "));
+  pass->scan(PPToken("=" + this->getCallingConventionName() + ">"));
+  pass->scan(PPToken(" "));
+  pass->emit(this->getReturnType());
+  pass->scan(PPToken(")"));
 }
 
-void PrettyPrintTypePass::visit(RefTypeAST* ast) {
-  scan(PPToken("ref("));
-  emit(ast->getElementType());
-  scan(PPToken(")"));
+void RefTypeAST::show(PrettyPrintTypePass* pass){
+  pass->scan(PPToken("ref("));
+  pass->emit(this->getElementType());
+  pass->scan(PPToken(")"));
 }
 
-void PrettyPrintTypePass::visit(CoroTypeAST* ast) {
-  scan(PPToken("Coro("));
-  emit(ast->getContainedType(0));
-  scan(PPToken(", "));
-  emit(ast->getContainedType(1));
-  scan(PPToken(")"));
+void CoroTypeAST::show(PrettyPrintTypePass* pass){
+  pass->scan(PPToken("Coro("));
+  pass->emit(this->getContainedType(0));
+  pass->scan(PPToken(", "));
+  pass->emit(this->getContainedType(1));
+  pass->scan(PPToken(")"));
 }
 
-void PrettyPrintTypePass::visit(CArrayTypeAST* ast) {
-  std::stringstream ss; ss << ast->getSize();
-  scan(PPToken("CArray["));
-  emit(ast->getContainedType(0));
-  scan(PPToken("]("));
-  scan(PPToken(ss.str()));
-  scan(PPToken(")"));
+void CArrayTypeAST::show(PrettyPrintTypePass* pass){
+  std::stringstream ss; ss << this->getSize();
+  pass->scan(PPToken("CArray["));
+  pass->emit(this->getContainedType(0));
+  pass->scan(PPToken("]("));
+  pass->scan(PPToken(ss.str()));
+  pass->scan(PPToken(")"));
 }
 
-void PrettyPrintTypePass::visit(TupleTypeAST* ast) {
-  scan(PPToken(" { "));
-  for (int i = 0; i < ast->getNumContainedTypes(); ++i) {
+void TupleTypeAST::show(PrettyPrintTypePass* pass){
+  pass->scan(PPToken(" { "));
+  for (int i = 0; i < this->getNumContainedTypes(); ++i) {
     if (i > 0) {
-      scan(PPToken(", "));
+      pass->scan(PPToken(", "));
     }
-    emit(ast->getContainedType(i));
+    pass->emit(this->getContainedType(i));
   }
-  scan(PPToken(" } "));
+  pass->scan(PPToken(" } "));
 }
-
-} // unnamed namespace
 
 namespace foster {
 
 void prettyPrintType(const TypeAST* t,
                      llvm::raw_ostream& out, int width, int indent_width) {
   PrettyPrintTypePass pp(out, width, indent_width);
-  const_cast<TypeAST*>(t)->accept(&pp);
+  const_cast<TypeAST*>(t)->show(&pp);
 }
 
 } // namespace foster
+

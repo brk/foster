@@ -29,7 +29,7 @@ void dumpChild(DumpToProtobufPass* pass,
   ASSERT(child != NULL);
   pb::Expr* saved = pass->current;
   pass->current = target;
-  child->accept(pass);
+  child->dump(pass);
   pass->current = saved;
 }
 
@@ -74,97 +74,97 @@ void processExprAST(pb::Expr* current,
 
   if (ast->type) {
     DumpTypeToProtobufPass dt(current->mutable_type());
-    ast->type->accept(&dt);
+    ast->type->dump(&dt);
   }
 }
 
 /////////////////////////////////////////////////////////////////////
 
-void DumpToProtobufPass::visit(BoolAST* ast)                {
-  processExprAST(current, ast, pb::Expr::BOOL);
-  current->set_bool_value(ast->boolValue);
+void BoolAST::dump(DumpToProtobufPass* pass) {
+  processExprAST(pass->current, this, pb::Expr::BOOL);
+  pass->current->set_bool_value(this->boolValue);
 }
 
-void DumpToProtobufPass::visit(IntAST* ast)                 {
-  processExprAST(current, ast, pb::Expr::PB_INT);
-  current->set_int_text(ast->getOriginalText());
+void IntAST::dump(DumpToProtobufPass* pass) {
+  processExprAST(pass->current, this, pb::Expr::PB_INT);
+  pass->current->set_int_text(this->getOriginalText());
 }
 
-void DumpToProtobufPass::visit(VariableAST* ast)            {
-  processExprAST(current, ast, pb::Expr::VAR);
-  current->set_name(ast->name);
+void VariableAST::dump(DumpToProtobufPass* pass) {
+  processExprAST(pass->current, this, pb::Expr::VAR);
+  pass->current->set_name(this->name);
 }
 
-void DumpToProtobufPass::visit(PrototypeAST* ast)           {
-  processExprAST(current, ast, pb::Expr::PROTO);
-  pb::Proto* proto = current->mutable_proto();
-  proto->set_name(ast->getName());
+void PrototypeAST::dump(DumpToProtobufPass* pass) {
+  processExprAST(pass->current, this, pb::Expr::PROTO);
+  pb::Proto* proto = pass->current->mutable_proto();
+  proto->set_name(this->getName());
 
-  proto->mutable_in_args()->Reserve(ast->parts.size());
-  for (size_t i = 0; i < ast->inArgs.size(); ++i) {
-    dumpChild(this, proto->add_in_args(), ast->inArgs[i]);
+  proto->mutable_in_args()->Reserve(this->parts.size());
+  for (size_t i = 0; i < this->inArgs.size(); ++i) {
+    dumpChild(pass, proto->add_in_args(), this->inArgs[i]);
   }
 
-  if (ast->resultTy) {
+  if (this->resultTy) {
     DumpTypeToProtobufPass dt(proto->mutable_result());
-    ast->resultTy->accept(&dt);
+    this->resultTy->dump(&dt);
   }
 }
 
-void DumpToProtobufPass::visit(FnAST* ast) {
-  processExprAST(current, ast, pb::Expr::FN);
-  dumpChild(this, this->current->add_parts(), ast->getProto());
-  dumpChild(this, this->current->add_parts(), ast->parts[0]);
+void FnAST::dump(DumpToProtobufPass* pass) {
+  processExprAST(pass->current, this, pb::Expr::FN);
+  dumpChild(pass, pass->current->add_parts(), this->getProto());
+  dumpChild(pass, pass->current->add_parts(), this->parts[0]);
 }
 
-void DumpToProtobufPass::visit(ModuleAST* ast)              {
-  processExprAST(current, ast, pb::Expr::MODULE);
-  current->set_name(ast->name);
-  dumpChildren(this, ast);
+void ModuleAST::dump(DumpToProtobufPass* pass) {
+  processExprAST(pass->current, this, pb::Expr::MODULE);
+  pass->current->set_name(this->name);
+  dumpChildren(pass, this);
 }
 
-void DumpToProtobufPass::visit(IfExprAST* ast)              {
-  processExprAST(current, ast, pb::Expr::IF);
-  pb::PBIf* if_ = current->mutable_pb_if();
-  dumpChild(this, if_->mutable_test_expr(), ast->getTestExpr());
-  dumpChild(this, if_->mutable_then_expr(), ast->getThenExpr());
-  dumpChild(this, if_->mutable_else_expr(), ast->getElseExpr());
+void IfExprAST::dump(DumpToProtobufPass* pass) {
+  processExprAST(pass->current, this, pb::Expr::IF);
+  pb::PBIf* if_ = pass->current->mutable_pb_if();
+  dumpChild(pass, if_->mutable_test_expr(), this->getTestExpr());
+  dumpChild(pass, if_->mutable_then_expr(), this->getThenExpr());
+  dumpChild(pass, if_->mutable_else_expr(), this->getElseExpr());
 }
 
-void DumpToProtobufPass::visit(SubscriptAST* ast)           {
-  processExprAST(current, ast, pb::Expr::SUBSCRIPT);
-  dumpChildren(this, ast);
+void SubscriptAST::dump(DumpToProtobufPass* pass) {
+  processExprAST(pass->current, this, pb::Expr::SUBSCRIPT);
+  dumpChildren(pass, this);
 }
 
-void DumpToProtobufPass::visit(SeqAST* ast)                 {
-  processExprAST(current, ast, pb::Expr::SEQ);
-  dumpChildren(this, ast);
+void SeqAST::dump(DumpToProtobufPass* pass) {
+  processExprAST(pass->current, this, pb::Expr::SEQ);
+  dumpChildren(pass, this);
 }
 
-void DumpToProtobufPass::visit(CallAST* ast)                {
-  processExprAST(current, ast, pb::Expr::CALL);
-  dumpChildren(this, ast);
+void CallAST::dump(DumpToProtobufPass* pass) {
+  processExprAST(pass->current, this, pb::Expr::CALL);
+  dumpChildren(pass, this);
 }
 
-void DumpToProtobufPass::visit(ETypeAppAST* ast)                {
-  processExprAST(current, ast, pb::Expr::TY_APP);
-  dumpChildren(this, ast);
-  DumpTypeToProtobufPass dt(current->mutable_ty_app_arg_type());
-  ast->typeArg->accept(&dt);
+void ETypeAppAST::dump(DumpToProtobufPass* pass) {
+  processExprAST(pass->current, this, pb::Expr::TY_APP);
+  dumpChildren(pass, this);
+  DumpTypeToProtobufPass dt(pass->current->mutable_ty_app_arg_type());
+  this->typeArg->dump(&dt);
 }
 
-void DumpToProtobufPass::visit(TupleExprAST* ast)           {
-  processExprAST(current, ast, pb::Expr::TUPLE);
-  ASSERT(ast->parts.size() == 1); // have a SeqAST wrapper...
-  dumpChildren(this, ast->parts[0]);
+void TupleExprAST::dump(DumpToProtobufPass* pass) {
+  processExprAST(pass->current, this, pb::Expr::TUPLE);
+  ASSERT(this->parts.size() == 1); // have a SeqAST wrapper...
+  dumpChildren(pass, this->parts[0]);
 }
 
-void DumpToProtobufPass::visit(BuiltinCompilesExprAST* ast) {
-  processExprAST(current, ast, pb::Expr::COMPILES);
-  if (ast->parts[0] == NULL) {
-    ast->parts.clear();
+void BuiltinCompilesExprAST::dump(DumpToProtobufPass* pass) {
+  processExprAST(pass->current, this, pb::Expr::COMPILES);
+  if (this->parts[0] == NULL) {
+    this->parts.clear();
   }
-  dumpChildren(this, ast);
+  dumpChildren(pass, this);
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -176,7 +176,7 @@ void dumpChild(DumpTypeToProtobufPass* pass,
 
   pb::Type* saved = pass->current;
   pass->current = target;
-  child->accept(pass);
+  child->dump(pass);
   pass->current = saved;
 }
 
@@ -190,62 +190,62 @@ void setTagAndRange(pb::Type* target,
 }
 
 
-void DumpTypeToProtobufPass::visit(NamedTypeAST* ast) {
-  setTagAndRange(current, ast, pb::Type::LLVM_NAMED);
-  string tyname = str(ast->getLLVMType());
+void NamedTypeAST::dump(DumpTypeToProtobufPass* pass) {
+  setTagAndRange(pass->current, this, pb::Type::LLVM_NAMED);
+  string tyname = str(this->getLLVMType());
   ASSERT(!tyname.empty());
-  current->set_name(tyname);
+  pass->current->set_name(tyname);
 }
 
-void DumpTypeToProtobufPass::visit(TypeVariableAST* ast) {
-  setTagAndRange(current, ast, pb::Type::TYPE_VARIABLE);
-  current->set_name(ast->getTypeVariableName());
+void TypeVariableAST::dump(DumpTypeToProtobufPass* pass) {
+  setTagAndRange(pass->current, this, pb::Type::TYPE_VARIABLE);
+  pass->current->set_name(this->getTypeVariableName());
 }
 
-void DumpTypeToProtobufPass::visit(FnTypeAST* ast) {
-  setTagAndRange(current, ast, pb::Type::FN);
+void FnTypeAST::dump(DumpTypeToProtobufPass* pass) {
+  setTagAndRange(pass->current, this, pb::Type::FN);
 
-  pb::FnType* fnty = current->mutable_fnty();
-  fnty->set_calling_convention(ast->getCallingConventionName());
+  pb::FnType* fnty = pass->current->mutable_fnty();
+  fnty->set_calling_convention(this->getCallingConventionName());
 
-  if (ast->getReturnType()) {
-    dumpChild(this, fnty->mutable_ret_type(), ast->getReturnType());
+  if (this->getReturnType()) {
+    dumpChild(pass, fnty->mutable_ret_type(), this->getReturnType());
   }
 
-  fnty->mutable_arg_types()->Reserve(ast->getNumParams());
-  for (int i = 0; i < ast->getNumParams(); ++i) {
-    dumpChild(this, fnty->add_arg_types(), ast->getParamType(i));
+  fnty->mutable_arg_types()->Reserve(this->getNumParams());
+  for (int i = 0; i < this->getNumParams(); ++i) {
+    dumpChild(pass, fnty->add_arg_types(), this->getParamType(i));
   }
 
-  fnty->set_is_closure(ast->isMarkedAsClosure());
+  fnty->set_is_closure(this->isMarkedAsClosure());
 }
 
-void DumpTypeToProtobufPass::visit(RefTypeAST* ast) {
-  setTagAndRange(current, ast, pb::Type::REF);
+void RefTypeAST::dump(DumpTypeToProtobufPass* pass) {
+  setTagAndRange(pass->current, this, pb::Type::REF);
 
-  if (ast->getElementType()) {
-    dumpChild(this, current->mutable_ref_underlying_type(), ast->getElementType());
+  if (this->getElementType()) {
+    dumpChild(pass, pass->current->mutable_ref_underlying_type(), this->getElementType());
   }
 }
 
-void DumpTypeToProtobufPass::visit(CoroTypeAST* ast) {
-  setTagAndRange(current, ast, pb::Type::CORO);
-  dumpChild(this, current->add_type_parts(), ast->getContainedType(0));
-  dumpChild(this, current->add_type_parts(), ast->getContainedType(1));
+void CoroTypeAST::dump(DumpTypeToProtobufPass* pass) {
+  setTagAndRange(pass->current, this, pb::Type::CORO);
+  dumpChild(pass, pass->current->add_type_parts(), this->getContainedType(0));
+  dumpChild(pass, pass->current->add_type_parts(), this->getContainedType(1));
 }
 
-void DumpTypeToProtobufPass::visit(CArrayTypeAST* ast) {
-  setTagAndRange(current, ast, pb::Type::CARRAY);
-  current->set_carray_size(ast->getSize());
-  dumpChild(this, current->add_type_parts(), ast->getContainedType(0));
+void CArrayTypeAST::dump(DumpTypeToProtobufPass* pass) {
+  setTagAndRange(pass->current, this, pb::Type::CARRAY);
+  pass->current->set_carray_size(this->getSize());
+  dumpChild(pass, pass->current->add_type_parts(), this->getContainedType(0));
 }
 
-void DumpTypeToProtobufPass::visit(TupleTypeAST* ast) {
-  setTagAndRange(current, ast, pb::Type::TUPLE);
-  current->mutable_type_parts()->Reserve(ast->getNumContainedTypes());
-  for (int i = 0; i < ast->getNumContainedTypes(); ++i) {
-    ASSERT(ast->getContainedType(i)) << "Unexpected NULL type when dumping TupleTypeAST " << str(ast);
-    dumpChild(this, current->add_type_parts(), ast->getContainedType(i));
+void TupleTypeAST::dump(DumpTypeToProtobufPass* pass) {
+  setTagAndRange(pass->current, this, pb::Type::TUPLE);
+  pass->current->mutable_type_parts()->Reserve(this->getNumContainedTypes());
+  for (int i = 0; i < this->getNumContainedTypes(); ++i) {
+    ASSERT(this->getContainedType(i)) << "Unexpected NULL type when dumping TupleTypeAST " << str(this);
+    dumpChild(pass, pass->current->add_type_parts(), this->getContainedType(i));
   }
 }
 
