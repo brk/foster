@@ -4,19 +4,15 @@
 
 #include "base/Assert.h"
 #include "base/Diagnostics.h"
-#include "base/LLVMUtils.h"
 
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
 #include "parse/ExprASTVisitor.h"
-#include "parse/ParsingContext.h"
-#include "parse/FosterUtils.h"
 #include "parse/DumpStructure.h"
 
 #include "passes/PrettyPrintPass.h"
 
 #include "llvm/DerivedTypes.h"
-#include "llvm/Constants.h"
 #include "llvm/Support/raw_os_ostream.h"
 
 #include <map>
@@ -31,8 +27,6 @@ using foster::SourceRangeHighlighter;
 using foster::SourceLocation;
 
 using llvm::Type;
-using llvm::BasicBlock;
-using llvm::Function;
 using llvm::getGlobalContext;
 using llvm::FunctionType;
 using llvm::IntegerType;
@@ -64,15 +58,6 @@ string str(const TypeAST* expr) {
   if (expr) {
     std::stringstream ss; ss << (*expr); return ss.str();
   } else { return "<nil>"; }
-}
-
-bool isPrintRef(const ExprAST* base) {
-  if (const VariableAST* var = dynamic_cast<const VariableAST*>(base)) {
-    if (var->name == "print_ref") {
-      return true;
-    }
-  }
-  return false;
 }
 
 namespace foster {
@@ -123,8 +108,6 @@ PrototypeAST::PrototypeAST(TypeAST* retTy, const string& name,
         ASSERT(resultTy != NULL) << "proto: " << name << foster::show(sourceRange);
 }
 
-
-////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
 
