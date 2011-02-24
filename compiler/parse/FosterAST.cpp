@@ -6,16 +6,11 @@
 #include "base/Diagnostics.h"
 
 #include "parse/FosterAST.h"
-#include "parse/FosterTypeAST.h"
-#include "parse/DumpStructure.h"
+#include "parse/DumpStructure.h" // for dumpExprStructure
+#include "passes/PrettyPrintPass.h" // for prettyPrintType
 
-#include "passes/PrettyPrintPass.h"
-
-#include "llvm/DerivedTypes.h"
 #include "llvm/Support/raw_os_ostream.h"
 
-#include <map>
-#include <vector>
 #include <sstream>
 
 using foster::EDiag;
@@ -25,16 +20,7 @@ using foster::SourceRange;
 using foster::SourceRangeHighlighter;
 using foster::SourceLocation;
 
-using llvm::Type;
-using llvm::getGlobalContext;
-using llvm::FunctionType;
-using llvm::IntegerType;
-using llvm::Value;
-using llvm::ConstantInt;
-
-using std::vector;
 using std::string;
-
 
 std::ostream& operator<<(std::ostream& out, const TypeAST& type) {
   llvm::raw_os_ostream rout(out);
@@ -72,25 +58,6 @@ SourceRangeHighlighter show(ExprAST* ast) {
 char kDefaultFnLiteralCallingConvention[] = "fastcc";
 
 } // namespace foster
-
-////////////////////////////////////////////////////////////////////
-
-IntAST::IntAST(const string& originalText,
-              foster::SourceRange sourceRange)
-        : ExprAST("IntAST", sourceRange), text(originalText) {}
-
-std::string IntAST::getOriginalText() const { return text; }
-
-////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////
-
-PrototypeAST::PrototypeAST(TypeAST* retTy, const string& name,
-             const std::vector<VariableAST*>& inArgs,
-             foster::SourceRange sourceRange)
-    : ExprAST("PrototypeAST", sourceRange),
-      name(name), inArgs(inArgs), resultTy(retTy) {
-        ASSERT(resultTy != NULL) << "proto: " << name << foster::show(sourceRange);
-}
 
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////

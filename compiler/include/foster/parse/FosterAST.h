@@ -75,11 +75,12 @@ private:
   const string text;
 public:
   explicit IntAST(const string& originalText,
-                  foster::SourceRange sourceRange);
+              foster::SourceRange sourceRange)
+        : ExprAST("IntAST", sourceRange), text(originalText) {}
   virtual void dump(DumpToProtobufPass* pass);
   virtual void show(PrettyPrintPass*    pass);
 
-  std::string getOriginalText() const;
+  std::string getOriginalText() const { return text; }
 };
 
 struct BoolAST : public ExprAST {
@@ -102,7 +103,6 @@ struct VariableAST : public ExprAST {
   virtual void dump(DumpToProtobufPass* pass);
   virtual void show(PrettyPrintPass*    pass);
 
-  const string& getName() { return name; }
   const string getName() const { return name; }
 };
 
@@ -171,9 +171,14 @@ public:
   std::vector<VariableAST*> inArgs;
   TypeAST* resultTy;
 
+
   PrototypeAST(TypeAST* retTy, const string& name,
-         const std::vector<VariableAST*>& inArgs,
-         foster::SourceRange sourceRange);
+               const std::vector<VariableAST*>& inArgs,
+               foster::SourceRange sourceRange)
+    : ExprAST("PrototypeAST", sourceRange),
+      name(name), inArgs(inArgs), resultTy(retTy) {
+        ASSERT(resultTy != NULL) << "proto: " << name << foster::show(sourceRange);
+  }
 
   virtual void dump(DumpToProtobufPass* pass);
   virtual void show(PrettyPrintPass*    pass);
