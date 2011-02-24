@@ -76,14 +76,14 @@ struct OperatorPrecedenceTable::Impl {
   bool check() {
     bool tableComplete = true;
     for (OpSet::iterator it = knownOperators.begin();
-	                  		 it != knownOperators.end(); ++it) {
+                                         it != knownOperators.end(); ++it) {
       for (OpSet::iterator it2 = knownOperators.begin();
-			                     it2 != knownOperators.end(); ++it2) {
+                                             it2 != knownOperators.end(); ++it2) {
         OperatorRelation rel = table[ OpPair(*it, *it2) ];
         if (rel == kNoRelationSpecified) {
-          currentOuts() << "No relation specified between \t" << *it
-              << " and " << *it2 << "\n";
           tableComplete = false;
+          EDiag() << "No relation specified between "
+                  << " \t" << *it << " and " << *it2;
         }
       }
     }
@@ -92,18 +92,16 @@ struct OperatorPrecedenceTable::Impl {
 
   void parseAsTighter(const OperatorPrecedenceTable::Operator& a,
                       const OperatorPrecedenceTable::Operator& b) {
-    table[ OpPair(a, b) ] = kOpBindsTighter;
-
     knownOperators.insert(a);
     knownOperators.insert(b);
+    table[ OpPair(a, b) ] = kOpBindsTighter;
   }
 
   void parseAsLooser(const OperatorPrecedenceTable::Operator& a,
                      const OperatorPrecedenceTable::Operator& b) {
-    table[ OpPair(a, b) ] = kOpBindsLooser;
-
     knownOperators.insert(a);
     knownOperators.insert(b);
+    table[ OpPair(a, b) ] = kOpBindsLooser;
   }
 
   void parseAs(const string& a, const string& b) {
@@ -155,10 +153,10 @@ struct OperatorPrecedenceTable::Impl {
       const OperatorPrecedenceTable::Operator& z = *it;
       for (vector<string>::const_iterator oit = ops.begin();
                                     oit != ops.end(); ++oit) {
-	const string& x = *oit;
+        const string& x = *oit;
         table[ OpPair(x, z) ] = table[ OpPair(knownOp, z) ];
         table[ OpPair(z, x) ] = table[ OpPair(z, knownOp) ];
-	knownOperators.insert(x);
+        knownOperators.insert(x);
       }
     }
   }
@@ -172,7 +170,7 @@ struct OperatorPrecedenceTable::Impl {
 
     for (size_t i = 0; i < vtops.size(); ++i) {
       for (size_t j = 0; j < vlops.size(); ++j) {
-	    const string& z = vtops[i];
+            const string& z = vtops[i];
         const string& q = vlops[j];
         // If Z binds tighter than Q,
         // parse   a Z b Q c   as (a Z b) Q c
@@ -213,7 +211,7 @@ struct OperatorPrecedenceTable::Impl {
     pystring::split(ops, vops);
     for (size_t i = 0; i < vops.size(); ++i) {
       for (size_t j = 0; j < vops.size(); ++j) {
-	table[ OpPair(vops[i], vops[j]) ] = kOpInvalidTogetherUnparenthesized;
+        table[ OpPair(vops[i], vops[j]) ] = kOpInvalidTogetherUnparenthesized;
       }
     }
     equivPrec(vops);
@@ -294,9 +292,9 @@ struct OperatorPrecedenceTable::Impl {
 
   void dump() {
     for (OpSet::iterator it = knownOperators.begin();
-			 it != knownOperators.end(); ++it) {
+                         it != knownOperators.end(); ++it) {
       for (OpSet::iterator it2 = knownOperators.begin();
-			   it2 != knownOperators.end(); ++it2) {
+                           it2 != knownOperators.end(); ++it2) {
         const char* relstr = str(table[ OpPair(*it, *it2) ]);
         currentOuts() << *it << "\t" << relstr << "\t" << *it2 << "\n";
       }
