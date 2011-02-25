@@ -11,23 +11,14 @@ main
 import System.Environment(getArgs,getProgName)
 
 import qualified Data.ByteString.Lazy as L(readFile)
-import qualified Data.ByteString.Lazy.UTF8 as U(toString)
-import qualified System.IO.UTF8 as U(putStrLn)
 
-import Debug.Trace(trace)
-import Control.Exception(assert)
-
-import List(length, zip, all, sort, group, head)
-import Data.Set(Set)
+import List(all)
 import qualified Data.Set as Set
-import Data.Graph(Graph)
 import qualified Data.Graph as Graph
-import Data.Maybe(isJust, fromJust, fromMaybe)
+import Data.Maybe(isJust)
 import Data.Foldable(forM_)
-import Control.Monad(forM)
 import Control.Monad.State
-import Monad(join,liftM)
-import Data.IORef(IORef,newIORef,readIORef,writeIORef)
+import Data.IORef(newIORef)
 
 import Text.ProtocolBuffers(messageGet)
 

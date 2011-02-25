@@ -6,8 +6,6 @@
 
 module Foster.ILExpr where
 
-import Data.Maybe(fromJust)
-import Control.Monad(forM)
 import Control.Monad.State
 import Debug.Trace(trace)
 import Data.Set(Set)

@@ -1,8 +1,6 @@
 module Foster.Typecheck where
 
-import Data.Map(Map)
-import qualified Data.Map as Map
-import List(length, zip, zip3, all, sort, group, head, elem, lookup, elemIndex)
+import List(length, zip, sort, group, head)
 import Monad(liftM)
 
 import Debug.Trace(trace)
@@ -26,6 +24,7 @@ typeJoinVars vars (Just (MissingTypeAST _)) = vars
 typeJoinVars vars (Just (TupleTypeAST expTys)) =
     Control.Exception.assert ((List.length vars) == (List.length expTys)) $
     [(AnnVar (fromJust (typeJoin t e)) v) | ((AnnVar t v), e) <- (List.zip vars expTys)]
+typeJoinVars var (Just t) = error $ "typeJoinVars not yet implemented for type " ++ show t
 
 
 extractBindings :: [AnnVar] -> Maybe TypeAST -> [ContextBinding]

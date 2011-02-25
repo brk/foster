@@ -13,17 +13,16 @@ import Foster.ExprAST
 import Foster.TypeAST
 
 import Data.Traversable(fmapDefault)
-import Data.Sequence(length, index, Seq, empty, fromList)
+import Data.Sequence as Seq
+import Data.Sequence(length)
 import Data.Maybe(fromMaybe, fromJust, isJust)
 import Data.Foldable(toList)
 
 import Control.Exception(assert)
 import qualified Data.Text as T
-import qualified Data.ByteString.Lazy as L(writeFile)
 import Data.ByteString.Lazy.UTF8 as UTF8
-import Data.Sequence as Seq
 
-import Text.ProtocolBuffers(isSet,getVal,messagePut)
+import Text.ProtocolBuffers(isSet,getVal)
 import Text.ProtocolBuffers.Basic(uToString)
 
 import Foster.Fepb.FnType   as PbFnType
@@ -31,7 +30,6 @@ import Foster.Fepb.Type.Tag as PbTypeTag
 import Foster.Fepb.Type     as PbType
 import Foster.Fepb.Proto    as Proto
 import Foster.Fepb.PBIf     as PBIf
-import Foster.Fepb.PBInt    as PBInt
 import Foster.Fepb.Expr     as PbExpr
 import Foster.Fepb.SourceModule as SourceModule
 import Foster.Fepb.Expr.Tag(Tag(PB_INT, BOOL, VAR, TUPLE, COMPILES, MODULE,
@@ -139,6 +137,8 @@ parseVar pbexpr lines = E_VarAST $ VarAST (fmap parseType (PbExpr.type' pbexpr))
 
 toplevel :: FnAST -> FnAST
 toplevel (FnAST a b False) = FnAST a b True
+toplevel (FnAST _ _ True ) = error $ "Broken invariant: top-level functions " ++
+                                     "should not have their top-level bit set before we do it!"
 
 parseModule :: PbExpr.Expr -> SourceLines -> ModuleAST FnAST
 parseModule pbexpr lines =
@@ -164,6 +164,7 @@ parseProtoPP proto lines =
 
 getVarName :: ExprAST -> String
 getVarName (E_VarAST v) = evarName v
+getVarName x = error $ "getVarName given a non-variable! " ++ show x
 
 getType :: PbExpr.Expr -> TypeAST
 getType e = case PbExpr.type' e of
@@ -235,6 +236,9 @@ parseType t = case PbType.tag t of
                 PbTypeTag.FN -> parseFnTy . fromJust $ PbType.fnty t
                 PbTypeTag.TUPLE -> TupleTypeAST [parseType p | p <- toList $ PbType.type_parts t]
                 PbTypeTag.TYPE_VARIABLE -> error "Type variable parsing not yet implemented."
+                PbTypeTag.CORO -> error "Parsing for CORO type not yet implemented"
+                PbTypeTag.CARRAY -> error "Parsing for CARRAY type not yet implemented"
+                PbTypeTag.FORALL_TY -> error "Parsing for FORALL_TY type not yet implemented"
 
 parseFnTy :: FnType -> TypeAST
 parseFnTy fty = FnTypeAST (TupleTypeAST [parseType x | x <- toList $ PbFnType.arg_types fty])

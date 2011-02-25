@@ -6,13 +6,7 @@
 
 module Foster.ExprAST where
 
-import Data.Int
 import Data.Set as Set(fromList, toList, difference)
-
-import Data.Sequence as Seq
-import Data.Maybe(fromJust)
-import Data.List(replicate)
-import qualified Data.Text as T
 
 import Foster.Base
 import Foster.TypeAST
