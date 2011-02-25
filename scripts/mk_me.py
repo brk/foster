@@ -33,7 +33,8 @@ if __name__ == "__main__":
   params = {
         'bindir' :  normalize(options.bindir),
         'srcroot':  normalize(options.srcroot),
-        'hsflags': "-XFlexibleInstances -XMultiParamTypeClasses -XDeriveDataTypeable",
+        'hsflags': "-XFlexibleInstances -XMultiParamTypeClasses -XDeriveDataTypeable" +
+                   " -fwarn-unused-imports -fwarn-incomplete-patterns",
       }
 
   cmd = "ghc --make -i%(srcroot)s/compiler/me/src %(hsflags)s %(srcroot)s/compiler/me/src/Main.hs -o %(bindir)s/me" % params
