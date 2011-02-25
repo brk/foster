@@ -68,9 +68,9 @@ typecheck ctx expr maybeExpTy =
                                      tb <- typecheck ctx b Nothing
                                      typecheckSubscript ta (typeAST ta) tb maybeExpTy
         E_TupleAST  exprs  -> typecheckTuple ctx exprs maybeExpTy
-        E_VarAST mt s -> case termVarLookup s (contextBindings ctx) of
+        E_VarAST v -> case termVarLookup (evarName v) (contextBindings ctx) of
             Just avar  -> return $ E_AnnVar avar
-            Nothing    -> tcFails $ out $ "Unknown variable " ++ s
+            Nothing    -> tcFails $ out $ "Unknown variable " ++ (evarName v)
         E_CompilesAST e c -> case c of
             CS_WouldNotCompile -> return $ AnnCompiles CS_WouldNotCompile "parse error"
             CS_WouldCompile -> error "No support for re-type checking CompilesAST nodes."

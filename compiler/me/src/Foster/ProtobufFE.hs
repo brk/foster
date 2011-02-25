@@ -90,8 +90,8 @@ parseCall pbexpr lines =
 parseCompiles pbexpr lines =
     let numChildren = Seq.length $ PbExpr.parts pbexpr in
     case numChildren of
-        1 -> E_CompilesAST (part 0 (PbExpr.parts pbexpr) lines) CS_NotChecked
-        _ -> E_CompilesAST (E_VarAST Nothing "parse error")     CS_WouldNotCompile
+        1 -> E_CompilesAST (part 0 (PbExpr.parts pbexpr) lines)      CS_NotChecked
+        _ -> E_CompilesAST (E_VarAST (VarAST Nothing "parse error")) CS_WouldNotCompile
 
 parseFn pbexpr lines = let parts = PbExpr.parts pbexpr in
                        assert ((Data.Sequence.length parts) == 2) $
@@ -134,8 +134,8 @@ parseSubscript pbexpr lines =
 parseTuple pbexpr lines =
     E_TupleAST (map (\x -> parseExpr x lines) $ toList $ PbExpr.parts pbexpr)
 
-parseVar pbexpr lines = E_VarAST (fmap parseType (PbExpr.type' pbexpr))
-                                 (uToString (fromJust $ PbExpr.name pbexpr))
+parseVar pbexpr lines = E_VarAST $ VarAST (fmap parseType (PbExpr.type' pbexpr))
+                                          (uToString (fromJust $ PbExpr.name pbexpr))
 
 toplevel :: FnAST -> FnAST
 toplevel (FnAST a b False) = FnAST a b True
@@ -163,7 +163,7 @@ parseProtoPP proto lines =
     PrototypeAST retTy name vars
 
 getVarName :: ExprAST -> String
-getVarName (E_VarAST mt s) = s
+getVarName (E_VarAST v) = evarName v
 
 getType :: PbExpr.Expr -> TypeAST
 getType e = case PbExpr.type' e of
@@ -173,11 +173,11 @@ getType e = case PbExpr.type' e of
 getFormal :: PbExpr.Expr -> SourceLines ->  AnnVar
 getFormal e lines = case PbExpr.tag e of
             VAR -> case parseVar e lines of
-                    (E_VarAST mt v) ->
-                        let i = (Ident v (54321)) in
-                        case mt of
+                    (E_VarAST v) ->
+                        let i = (Ident (evarName v) (54321)) in
+                        case evarMaybeType v of
                             Just t  -> (AnnVar t i)
-                            Nothing -> (AnnVar (MissingTypeAST $ "ProtobufUtils.getFormal " ++ v) i)
+                            Nothing -> (AnnVar (MissingTypeAST $ "ProtobufUtils.getFormal " ++ (evarName v)) i)
             _   -> error "getVar must be given a var!"
 
 sourceRangeFromPBRange :: Pb.SourceRange -> SourceLines -> ESourceRange

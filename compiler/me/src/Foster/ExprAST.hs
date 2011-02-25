@@ -34,9 +34,11 @@ data ExprAST =
         | E_SeqAST        ExprAST ExprAST
         | E_SubscriptAST  { subscriptBase  :: ExprAST
                           , subscriptIndex :: ExprAST }
-        | E_VarAST       { evarMaybeType :: Maybe TypeAST
-                         , evarName      :: String }
+        | E_VarAST        E_VarAST
         deriving Show
+
+data E_VarAST = VarAST { evarMaybeType :: Maybe TypeAST
+                       , evarName      :: String } deriving (Show)
 
 data FnAST  = FnAST { fnProto :: PrototypeAST
                     , fnBody  :: ExprAST
@@ -123,7 +125,7 @@ typeAST (E_AnnTyApp substitutedTy tm tyArgs) = substitutedTy
 
 
 tryGetCallNameE :: ExprAST -> String
-tryGetCallNameE (E_VarAST mt v) = v
+tryGetCallNameE (E_VarAST (VarAST mt v)) = v
 tryGetCallNameE _ = ""
 
 instance Structured ExprAST where
@@ -139,7 +141,7 @@ instance Structured ExprAST where
             E_SeqAST   a b       -> out $ "SeqAST       "
             E_SubscriptAST  a b  -> out $ "SubscriptAST "
             E_TupleAST     es    -> out $ "TupleAST     "
-            E_VarAST mt v        -> out $ "VarAST       " ++ v ++ " :: " ++ show mt
+            E_VarAST v           -> out $ "VarAST       " ++ evarName v ++ " :: " ++ show (evarMaybeType v)
     childrenOf e =
         case e of
             E_BoolAST rng b      -> []
@@ -151,11 +153,11 @@ instance Structured ExprAST where
             E_SeqAST        a b  -> unbuildSeqs e
             E_SubscriptAST  a b  -> [a, b]
             E_TupleAST     es    -> es
-            E_VarAST       mt v  -> []
+            E_VarAST _           -> []
 
 instance Expr ExprAST where
     freeVars e = case e of
-        E_VarAST mt nm      -> [nm]
+        E_VarAST v          -> [evarName v]
         E_FnAST f           -> let bodyvars =  Set.fromList (freeVars (fnBody f)) in
                                let boundvars = Set.fromList (map (identPrefix.avarIdent) (prototypeASTformals (fnProto f))) in
                                Set.toList (Set.difference bodyvars boundvars)
