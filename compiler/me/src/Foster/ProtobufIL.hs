@@ -10,25 +10,16 @@ module Foster.ProtobufIL (
 
 import Foster.Base
 import Foster.ILExpr
-import Foster.ExprAST
 import Foster.TypeAST
 
-import Debug.Trace(trace)
+import Data.Maybe(isJust)
 
-import Data.Traversable(fmapDefault)
-import Data.Sequence(length, index, Seq, empty, fromList)
-import Data.Maybe(fromMaybe, fromJust, isJust)
-import Data.Foldable(toList)
-import Data.Char(toLower)
-
-import Control.Exception(assert)
 import qualified Data.Text as T
 import qualified Data.ByteString.Lazy as L(writeFile)
 import Data.ByteString.Lazy.UTF8 as UTF8
 import Data.Sequence as Seq
 
-import Text.ProtocolBuffers(isSet,getVal,messagePut)
-import Text.ProtocolBuffers.Basic(uToString)
+import Text.ProtocolBuffers(messagePut)
 
 import Foster.Bepb.ProcType as ProcType
 import Foster.Bepb.Type.Tag as PbTypeTag
@@ -117,6 +108,7 @@ dumpProcType (FnTypeAST s t cs) =
         , ProcType.ret_type  = dumpType t
         , calling_convention = Just $ u8fromString (defaultCallingConvFor cs)
     }
+dumpProcType other = error $ "dumpProcType called with non-FnTypeAST node! " ++ show other
 
 -----------------------------------------------------------------------
 -----------------------------------------------------------------------
@@ -201,6 +193,7 @@ dumpCall t base args =
 
 dumpIf x@(ILIf t v b c) =
         PBIf { test_expr = dumpExpr (ILVar v), then_expr = dumpExpr b, else_expr = dumpExpr c }
+dumpIf other = error $ "dumpIf called with non-ILIf node: " ++ show other
 
 dumpInt cleanText activeBits =
         PBInt.PBInt { clean = u8fromString cleanText
