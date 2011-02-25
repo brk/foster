@@ -141,6 +141,11 @@ void SeqAST::dump(DumpToProtobufPass* pass) {
   dumpChildren(pass, this);
 }
 
+void LetAST::dump(DumpToProtobufPass* pass) {
+  processExprAST(pass->current, this, pb::Expr::LET);
+  dumpChildren(pass, this);
+}
+
 void CallAST::dump(DumpToProtobufPass* pass) {
   processExprAST(pass->current, this, pb::Expr::CALL);
   dumpChildren(pass, this);

@@ -32,8 +32,8 @@ import Foster.Fepb.Proto    as Proto
 import Foster.Fepb.PBIf     as PBIf
 import Foster.Fepb.Expr     as PbExpr
 import Foster.Fepb.SourceModule as SourceModule
-import Foster.Fepb.Expr.Tag(Tag(PB_INT, BOOL, VAR, TUPLE, COMPILES, MODULE,
-                              TY_APP, IF, FN, PROTO, CALL, SEQ, SUBSCRIPT))
+import Foster.Fepb.Expr.Tag(Tag(PB_INT, BOOL, VAR, TUPLE, COMPILES, -- MODULE, TY_APP,
+                                      IF, FN, LET, PROTO, CALL, SEQ, SUBSCRIPT))
 import qualified Foster.Fepb.SourceRange as Pb
 import qualified Foster.Fepb.SourceLocation as Pb
 
@@ -113,6 +113,15 @@ parseInt :: PbExpr.Expr -> SourceLines -> ExprAST
 parseInt pbexpr lines =
         let range = parseRange pbexpr lines in
         E_IntAST range (uToString $ getVal pbexpr PbExpr.int_text)
+
+parseLet pbexpr lines =
+    let range = parseRange pbexpr lines in
+    let parts = PbExpr.parts pbexpr in
+    let (E_VarAST var) = part 0 parts lines in
+    (E_LetAST range var
+              (part 1 parts lines)
+              (part 2 parts lines)
+              (Just $ getType pbexpr))
 
 parseSeq pbexpr lines =
     let exprs = map (\x -> parseExpr x lines) $ toList (PbExpr.parts pbexpr) in
@@ -215,6 +224,7 @@ parseExpr pbexpr lines =
                 PROTO   -> error $ "parseExpr cannot parse a standalone proto!" ++ (show $ PbExpr.tag pbexpr) ++ "\n"
                 CALL      -> parseCall
                 SEQ       -> parseSeq
+                LET       -> parseLet
                 COMPILES  -> parseCompiles
                 SUBSCRIPT -> parseSubscript
                 otherwise -> error $ "parseExpr saw unknown tag: " ++ (show $ PbExpr.tag pbexpr) ++ "\n"

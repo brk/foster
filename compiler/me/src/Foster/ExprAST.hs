@@ -22,6 +22,7 @@ data ExprAST =
         | E_IntAST        ESourceRange String
         | E_TupleAST      [ExprAST]
         | E_FnAST         FnAST
+        | E_LetAST        ESourceRange E_VarAST ExprAST ExprAST (Maybe TypeAST)
         | E_CallAST       ESourceRange ExprAST [ExprAST]
         | E_CompilesAST   ExprAST CompilesStatus
         | E_IfAST         ExprAST ExprAST ExprAST
@@ -132,6 +133,7 @@ instance Structured ExprAST where
             E_IfAST _ _ _        -> out $ "IfAST        "
             E_IntAST rng text    -> out $ "IntAST       " ++ text
             E_FnAST f            -> out $ "FnAST        " ++ (prototypeASTname $ fnProto f)
+            E_LetAST rng v a b t -> out $ "LetAST       " ++ show v
             E_SeqAST   a b       -> out $ "SeqAST       "
             E_SubscriptAST  a b  -> out $ "SubscriptAST "
             E_TupleAST     es    -> out $ "TupleAST     "
@@ -144,6 +146,7 @@ instance Structured ExprAST where
             E_IfAST a b c        -> [a, b, c]
             E_IntAST rng txt     -> []
             E_FnAST f            -> [fnBody f]
+            E_LetAST rng v a b t -> [a, b]
             E_SeqAST        a b  -> unbuildSeqs e
             E_SubscriptAST  a b  -> [a, b]
             E_TupleAST     es    -> es
@@ -152,6 +155,7 @@ instance Structured ExprAST where
 instance Expr ExprAST where
     freeVars e = case e of
         E_VarAST v          -> [evarName v]
+        E_LetAST rng v a b t -> freeVars a ++ (freeVars b `butnot` [evarName v])
         E_FnAST f           -> let bodyvars =  Set.fromList (freeVars (fnBody f)) in
                                let boundvars = Set.fromList (map (identPrefix.avarIdent) (prototypeASTformals (fnProto f))) in
                                Set.toList (Set.difference bodyvars boundvars)
@@ -192,6 +196,7 @@ instance Expr AnnExpr where
 
 freeIdentsA e = case e of
         E_AnnVar v      -> [avarIdent v]
+        AnnLetVar id a b  -> freeIdentsA a ++ (freeIdentsA b `butnot` [id])
         E_AnnFn f       -> let bodyvars =  freeIdentsA (annFnBody f) in
                            let boundvars = map avarIdent (annProtoVars (annFnProto f)) in
                            bodyvars `butnot` boundvars

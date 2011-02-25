@@ -129,6 +129,22 @@ struct ETypeAppAST : public ExprAST {
   virtual void show(PrettyPrintPass*    pass);
 };
 
+struct LetAST : public ExprAST {
+  explicit LetAST(VariableAST* var,
+                  ExprAST* bound,
+                  ExprAST* inexpr,
+                  TypeAST* overallType,
+                  foster::SourceRange sourceRange)
+    : ExprAST("LetAST", sourceRange) {
+    parts.push_back(var);
+    parts.push_back(bound);
+    parts.push_back(inexpr);
+    type = overallType;
+  }
+  virtual void dump(DumpToProtobufPass* pass);
+  virtual void show(PrettyPrintPass*    pass);
+};
+
 struct SeqAST : public ExprAST {
   explicit SeqAST(Exprs exprs, foster::SourceRange sourceRange)
     : ExprAST("SeqAST", sourceRange) { this->parts = exprs; }

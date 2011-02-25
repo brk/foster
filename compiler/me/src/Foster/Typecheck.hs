@@ -58,6 +58,14 @@ typecheck ctx expr maybeExpTy =
         E_CallAST rng base args ->
                             typecheckCall ctx rng base args maybeExpTy
         E_IntAST rng txt -> typecheckInt rng txt
+        E_LetAST rng v a b mt ->
+            do ea <- typecheck ctx  a (evarMaybeType v)
+               id <- tcFresh (evarName v)
+               let annvar = AnnVar (typeAST ea) id
+               let ctx' = extendContext ctx [annvar] (fmap (\t -> TupleTypeAST [t]) (evarMaybeType v))
+               eb <- typecheck ctx' b mt
+               return (AnnLetVar id ea eb)
+
         E_SeqAST a b -> do
             ea <- typecheck ctx a Nothing --(Just TypeUnitAST)
             eb <- typecheck ctx b maybeExpTy

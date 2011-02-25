@@ -7,7 +7,6 @@
 module Foster.ILExpr where
 
 import Control.Monad.State
-import Debug.Trace(trace)
 import Data.Set(Set)
 import Data.Set as Set(fromList, toList, difference, insert)
 
@@ -109,7 +108,11 @@ closureConvert ctx expr =
                                          let v = AnnVar (typeIL a') x
                                          return $ buildLet x a' (ILIf t v b' c')
 
-            AnnLetVar id a b       -> do [a', b'] <- mapM g [a, b]
+            AnnLetVar id a b       -> do a' <- g a
+                                         let annvar = AnnVar (typeIL a') id
+                                         let binding = TermVarBinding (identPrefix id) annvar
+                                         let ctx' = prependContextBindings ctx [binding]
+                                         b' <- closureConvert ctx' b
                                          return $ buildLet id a' b'
 
             AnnSubscript t a b     -> do [a', b'] <- mapM g [a, b]
@@ -186,11 +189,13 @@ procTypeFromILProto proto =
         then FnTypeAST argtys retty (Just [])
         else FnTypeAST argtys retty Nothing
 
+showctx ctx = show $ map (\(TermVarBinding nm v) -> nm ++ "/" ++ (show $ avarIdent v)) ctx
 
+contextVar :: Context -> String -> AnnVar
 contextVar (Context ctx) s =
     case termVarLookup s ctx of
             Just v -> v
-            Nothing -> error $ "free var not in context: " ++ s
+            Nothing -> error $ "ILExpr: free var not in context: " ++ s ++ "\n" ++ showctx ctx
 
 buildLet :: Ident -> ILExpr -> ILExpr -> ILExpr
 buildLet ident bound inexpr =

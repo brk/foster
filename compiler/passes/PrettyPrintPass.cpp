@@ -256,6 +256,17 @@ void SubscriptAST::show(PrettyPrintPass* pass) {
   pass->scan(PPToken("]"));
 }
 
+// let $0 = $1 in $2
+void LetAST::show(PrettyPrintPass* pass) {
+  pass->scan(PPToken("let "));
+  pass->emit(this->parts[0]);
+  pass->scan(PPToken(" = "));
+  pass->emit(this->parts[1]);
+  pass->scan(PPToken(" in "));
+  ScopedBlock sb(pass);
+  pass->emit(this->parts[2]);
+}
+
 // { $0 ; $1 ; ... ; $n }
 void SeqAST::show(PrettyPrintPass* pass) {
   ScopedBlock sb(pass);

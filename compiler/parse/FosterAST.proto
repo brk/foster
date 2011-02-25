@@ -50,7 +50,7 @@ message Expr {
     PB_INT = 16;
     BOOL = 17;
     VAR = 18;
-
+    LET = 19;
     TUPLE = 20;
     FN = 21;
     PROTO = 22;

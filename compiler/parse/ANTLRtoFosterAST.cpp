@@ -587,6 +587,19 @@ ExprAST* parseBinopChain(pTree tree) {
   return argstack[0];
 }
 
+// <formal arg (body | next) [type]>
+ExprAST* parseLetExpr(pTree tree, const foster::SourceRange& sourceRange) {
+  TypeAST* type = NULL;
+  if (getChildCount(tree) == 4) {
+    type = TypeAST_from(child(tree, 3));
+  }
+
+  VariableAST* var = parseFormal(child(tree, 0));
+  ExprAST* bound  = ExprAST_from(child(tree, 1));
+  ExprAST* inexpr = ExprAST_from(child(tree, 2));
+  return new LetAST(var, bound, inexpr, type, sourceRange);
+}
+
 ExprAST* ExprAST_from(pTree tree) {
   if (!tree) return NULL;
 
@@ -603,7 +616,7 @@ ExprAST* ExprAST_from(pTree tree) {
   if (token == COMPILES) {    return parseBuiltinCompiles(tree, sourceRange); }
   if (token == BODY) {        return ExprAST_from(child(tree, 0)); }
   if (token == BINOP_CHAIN) { return parseBinopChain(tree); }
-
+  if (token == LETEXPR) { return parseLetExpr(tree, sourceRange); }
   if (text == "false" || text == "true") {
     return new BoolAST(text, sourceRange);
   }
@@ -611,23 +624,6 @@ ExprAST* ExprAST_from(pTree tree) {
   if (token == NAME) {
     string varName = textOf(child(tree, 0));
     return new VariableAST(varName, NULL, sourceRange);
-  }
-
-  // <formal arg (body | next) [type]>
-  if (token == LETEXPR) {
-    pTree tyExprTree = NULL;
-    if (getChildCount(tree) == 4) {
-      tyExprTree = child(tree, 3);
-    }
-
-    PrototypeAST* proto = getFnProto(ParsingContext::freshName("<anon_fnlet_"),
-                                     child(tree, 0),
-                                     tyExprTree);
-    FnAST* fn = buildFn(proto, child(tree, 2));
-
-    ExprAST* a = ExprAST_from(child(tree, 1));
-    Exprs args; args.push_back(a);
-    return new CallAST(fn, args, sourceRange);
   }
 
   if (token == FNDEF) {
