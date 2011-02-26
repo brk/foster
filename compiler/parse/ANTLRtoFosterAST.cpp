@@ -21,6 +21,7 @@
 
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/System/Path.h"
+#include "llvm/ADT/Statistic.h"
 
 #include <iostream>
 #include <string>
@@ -40,6 +41,11 @@ using foster::ParsingContext;
 
 using foster::currentErrs;
 using foster::currentOuts;
+
+#define DEBUG_TYPE "foster"
+
+STATISTIC(sgNumExprAST, "Number of ExprASTs created");
+STATISTIC(sgNumTypeAST, "Number of TypeASTs created");
 
 std::string str(pANTLR3_STRING pstr) {
   return string((const char*)pstr->chars);
@@ -603,6 +609,8 @@ ExprAST* parseLetExpr(pTree tree, const foster::SourceRange& sourceRange) {
 ExprAST* ExprAST_from(pTree tree) {
   if (!tree) return NULL;
 
+  ++sgNumExprAST;
+
   int token = typeOf(tree);
   string text = textOf(tree);
   foster::SourceRange sourceRange = rangeOf(tree);
@@ -678,6 +686,8 @@ ExprAST* ExprAST_from(pTree tree) {
 
 TypeAST* TypeAST_from(pTree tree) {
   if (!tree) return NULL;
+
+  ++sgNumTypeAST;
 
   int token = typeOf(tree);
   string text = textOf(tree);

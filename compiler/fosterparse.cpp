@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
+#include "llvm/ADT/Statistic.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/System/Path.h"
 
@@ -32,6 +33,10 @@ optInputPath(cl::Positional, cl::desc("<input file>"));
 
 static cl::opt<string>
 optOutputPath(cl::Positional, cl::desc("<output file>"));
+
+static cl::opt<bool>
+optDumpStats("dump-stats",
+  cl::desc("[foster] Dump timing and other statistics from parsing"));
 
 void dumpModuleToProtobuf(ModuleAST* mod, const string& filename) {
   ASSERT(mod != NULL);
@@ -93,5 +98,10 @@ int main(int argc, char** argv) {
     return 4;
   }
   dumpModuleToProtobuf(exprAST, optOutputPath);
+
+  if (optDumpStats) {
+    llvm::PrintStatistics(llvm::outs());
+  }
+
   return 0;
 }
