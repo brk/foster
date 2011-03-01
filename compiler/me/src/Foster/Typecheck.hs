@@ -48,6 +48,14 @@ sanityCheck :: Bool -> String -> Tc AnnExpr
 sanityCheck cond msg = if cond then do return (AnnBool True)
                                else tcFails (outCSLn Red msg)
 
+isFnAST (E_FnAST _) = True
+isFnAST _           = False
+
+data RecursiveStatus = YesRecursive | NotRecursive
+isRecursive :: String -> ExprAST -> RecursiveStatus
+isRecursive boundName expr =
+    if boundName `elem` freeVars expr && isFnAST expr then YesRecursive else NotRecursive
+
 typecheck :: Context -> ExprAST -> Maybe TypeAST -> Tc AnnExpr
 typecheck ctx expr maybeExpTy =
   tcWithScope expr $
@@ -58,13 +66,30 @@ typecheck ctx expr maybeExpTy =
         E_CallAST rng base args ->
                             typecheckCall ctx rng base args maybeExpTy
         E_IntAST rng txt -> typecheckInt rng txt
-        E_LetAST rng v a b mt ->
-            do ea <- typecheck ctx  a (evarMaybeType v)
-               id <- tcFresh (evarName v)
-               let annvar = AnnVar (typeAST ea) id
-               let ctx' = extendContext ctx [annvar] (fmap (\t -> TupleTypeAST [t]) (evarMaybeType v))
-               eb <- typecheck ctx' b mt
-               return (AnnLetVar id ea eb)
+
+        E_LetAST rng (VarAST maybeVarType boundName) a b mt ->
+            case (isRecursive boundName a, maybeVarType) of
+                (YesRecursive, Nothing) ->
+                    tcFails (outCS Red $ "Unification-based inference not yet supported for recursive let bindings. "
+                                 ++ " Please add type annotation for let binding of " ++ boundName ++ ":"
+                                 ++ highlightFirstLine rng)
+                (YesRecursive, Just exptype) ->
+                    do id <- tcFresh boundName
+                       let exptupletype = Just $ TupleTypeAST [exptype]
+                       let boundCtx = extendContext ctx [AnnVar exptype id] exptupletype
+                       eaf@(E_AnnFn ea) <- typecheck boundCtx  a maybeVarType
+                       let annvar = AnnVar (typeAST eaf) id
+                       let ctx' = extendContext ctx [annvar] exptupletype
+                       eb <- typecheck ctx' b mt
+                       return (AnnLetFuns [id] [ea] eb)
+                (NotRecursive, _) ->
+                    do id <- tcFresh boundName
+                       ea <- typecheck ctx  a maybeVarType
+                       let annvar = AnnVar (typeAST ea) id
+                       let exptupletype = (fmap (\t -> TupleTypeAST [t]) maybeVarType)
+                       let ctx' = extendContext ctx [annvar] exptupletype
+                       eb <- typecheck ctx' b mt
+                       return (AnnLetVar id ea eb)
 
         E_SeqAST a b -> do
             ea <- typecheck ctx a Nothing --(Just TypeUnitAST)

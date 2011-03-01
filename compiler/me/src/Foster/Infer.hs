@@ -4,11 +4,9 @@ import Data.Map(Map)
 import qualified Data.Map as Map
 import List(length, elem, lookup)
 import Data.Maybe(fromMaybe, fromJust)
-import Data.IORef(IORef,newIORef,readIORef,writeIORef)
 
 import Foster.Base
 import Foster.TypeAST
-import Foster.ExprAST
 import Foster.Context
 
 ----------------------
@@ -37,6 +35,7 @@ parSubstTy prvNextPairs ty =
     case ty of
         (MissingTypeAST s)   -> fromMaybe ty $ List.lookup ty prvNextPairs
         (NamedTypeAST s)     -> fromMaybe ty $ List.lookup ty prvNextPairs
+        (PtrTypeAST _)       -> fromMaybe ty $ List.lookup ty prvNextPairs
         (TupleTypeAST types) -> (TupleTypeAST [parSubstTy prvNextPairs t | t <- types])
         (FnTypeAST s t cs)   -> (FnTypeAST (parSubstTy prvNextPairs s) (parSubstTy prvNextPairs t) cs)
         (CoroType s t)   -> (CoroType (parSubstTy prvNextPairs s) (parSubstTy prvNextPairs t))
@@ -47,6 +46,7 @@ parSubstTy prvNextPairs ty =
         (T_TyVar tv)     -> fromMaybe ty $ List.lookup ty prvNextPairs
         (MetaTyVar mtv)  -> fromMaybe ty $ List.lookup ty prvNextPairs
 
+
 -- Replaces types for meta type variables (unification variables)
 -- according to the given type substitution.
 tySubst :: TypeAST -> TypeSubst -> TypeAST
@@ -54,6 +54,7 @@ tySubst ty subst =
     case ty of
         (MissingTypeAST s)   -> ty
         (NamedTypeAST s)     -> ty
+        (PtrTypeAST t)       -> PtrTypeAST (tySubst t subst)
         (TupleTypeAST types) -> (TupleTypeAST [tySubst t subst | t <- types])
         (FnTypeAST s t cs)   -> (FnTypeAST (tySubst s subst) (tySubst t subst) cs)
         (CoroType s t)   -> (CoroType (tySubst s subst) (tySubst t subst))

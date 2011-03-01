@@ -6,6 +6,7 @@
 
 module Foster.ILExpr where
 
+--import Debug.Trace(trace)
 import Control.Monad.State
 import Data.Set(Set)
 import Data.Set as Set(fromList, toList, difference, insert)
@@ -15,8 +16,8 @@ import Foster.Context
 import Foster.TypeAST
 import Foster.ExprAST
 
-data ILClosure = ILClosure { ilClosureIdent :: Ident
-                           , ilClosureFlatVars :: [Ident]     } deriving Show
+data ILClosure = ILClosure { ilClosureProcIdent :: Ident
+                           , ilClosureCaptures  :: [AnnVar] } deriving Show
 
 data ILProgram = ILProgram [ILProcDef] -- ILExpr
 
@@ -94,6 +95,28 @@ closureConvertAndLift ctx m =
 excluding :: Ord a => [a] -> Set a -> [a]
 excluding bs zs =  Set.toList $ Set.difference (Set.fromList bs) zs
 
+closureOfAnnFn :: Context -> (Ident, AnnFn) -> ILM (ILClosure, ILProcDef)
+closureOfAnnFn ctx (id, fn) = do
+    globalVars <- gets ilmGlobals
+    {- Given   letfun f = fn () { ... f() .... }
+               andfun g = fn () { ... f() .... }
+       we want g to close over the closure for f, but f itself
+       ought to make a direct call to its proc, rather than closing over itself.
+       So we exclude f from the list of closed-over variables for f's body,
+       as well as excluding any variables which we happen to know are globals.
+    -}
+    let freeNames = freeVars (E_AnnFn fn) `excluding` (Set.insert (identPrefix id)
+                                                      (Set.insert (fnNameA fn)     globalVars))
+    newproc <- closureConvertAnnFn id ctx fn freeNames
+    return $ (ILClosure (ilProtoIdent $ ilProcProto newproc)
+                        (map (\n -> contextVar "closureOfAnnFn" ctx n) freeNames)
+             , newproc)
+
+prependAnnBinding (id, expr) ctx =
+    let annvar = AnnVar (typeAST expr) id in
+    prependContextBinding ctx (TermVarBinding (identPrefix id) annvar)
+
+
 closureConvert :: Context -> AnnExpr -> ILM ILExpr
 closureConvert ctx expr =
         let g = closureConvert ctx in
@@ -108,12 +131,17 @@ closureConvert ctx expr =
                                          let v = AnnVar (typeIL a') x
                                          return $ buildLet x a' (ILIf t v b' c')
 
-            AnnLetVar id a b       -> do a' <- g a
-                                         let annvar = AnnVar (typeIL a') id
-                                         let binding = TermVarBinding (identPrefix id) annvar
-                                         let ctx' = prependContextBindings ctx [binding]
+            AnnLetVar id a b       -> do let ctx' = prependAnnBinding (id, a) ctx
+                                         a' <- closureConvert ctx' a
                                          b' <- closureConvert ctx' b
                                          return $ buildLet id a' b'
+
+            AnnLetFuns ids fns e   -> do -- Make sure the functions can close over each other
+                                         let ctx' = foldr prependAnnBinding ctx (zip ids (map E_AnnFn fns))
+                                         combined <- mapM (closureOfAnnFn ctx') (zip ids fns)
+                                         let (closures, _procdefs) = unzip combined
+                                         e' <- g e
+                                         return $ ILClosures (typeIL e') ids closures e'
 
             AnnSubscript t a b     -> do [a', b'] <- mapM g [a, b]
                                          nestedLets [a'] (\[va] -> ILSubscript t va b')
@@ -124,19 +152,12 @@ closureConvert ctx expr =
             E_AnnTyApp t e argty   -> do e' <- g e
                                          return $ ILTyApp t e' argty
 
-            E_AnnFn annFn -> do
-                clo <- ilmFresh "clo"
-                globalVars <- gets ilmGlobals
-                let freeNames = freeVars expr `excluding` (Set.insert (fnNameA annFn) globalVars)
-                -- let env = tuple of free variables
-                -- rewrite body, replacing mentions of free variables with lookups in env
-                newproc <- closureConvertAnnFn ctx annFn freeNames
+            E_AnnFn annFn          -> do
+                clo_id <- ilmFresh "clo"
+                (closure, newproc) <- closureOfAnnFn ctx (clo_id, annFn)
                 let procty = procType newproc
-                return $ (ILClosures procty
-                            [clo] [ILClosure (ilProtoIdent $ ilProcProto newproc)
-                                                (map (\n -> avarIdent (contextVar ctx n)) freeNames)
-                            ] (ILVar (AnnVar procty clo)))
-            -- b(a)
+                return $ (ILClosures procty [clo_id] [closure] (ILVar (AnnVar procty clo_id)))
+
             AnnCall  r t b es -> do
                 cargs <- mapM g es
                 case b of
@@ -146,7 +167,7 @@ closureConvert ctx expr =
                                      -- on it, by adding args for its free variables.
                                     globalVars <- gets ilmGlobals
                                     let freeNames = (map identPrefix $ freeIdentsA b) `excluding` globalVars
-                                    let freevars = map (contextVar ctx) freeNames
+                                    let freevars = map (contextVar "ANnCall" ctx) freeNames
                                     newproc <- lambdaLift ctx f freevars
                                     let procid = (ilProtoIdent (ilProcProto newproc))
                                     let procvar = (AnnVar (procType newproc) procid)
@@ -189,13 +210,13 @@ procTypeFromILProto proto =
         then FnTypeAST argtys retty (Just [])
         else FnTypeAST argtys retty Nothing
 
-showctx ctx = show $ map (\(TermVarBinding nm v) -> nm ++ "/" ++ (show $ avarIdent v)) ctx
+showctx (Context bindings) = show $ map (\(TermVarBinding nm v) -> nm ++ "/" ++ (show $ avarIdent v)) bindings
 
-contextVar :: Context -> String -> AnnVar
-contextVar (Context ctx) s =
+contextVar :: String -> Context -> String -> AnnVar
+contextVar dbg (Context ctx) s =
     case termVarLookup s ctx of
             Just v -> v
-            Nothing -> error $ "ILExpr: free var not in context: " ++ s ++ "\n" ++ showctx ctx
+            Nothing -> error $ "ILExpr: " ++ dbg ++ " free var not in context: " ++ s ++ "\n" ++ showctx (Context ctx)
 
 buildLet :: Ident -> ILExpr -> ILExpr -> ILExpr
 buildLet ident bound inexpr =
@@ -232,18 +253,19 @@ nestedLets' (e:es) vars k =
         innerlet <- nestedLets' es (vx:vars) k
         return $ buildLet x e innerlet
 
-closureConvertAnnFn :: Context -> AnnFn -> [String] -> ILM ILProcDef
-closureConvertAnnFn ctx f freevars = do
+closureConvertAnnFn :: Ident -> Context -> AnnFn -> [String] -> ILM ILProcDef
+closureConvertAnnFn self_id ctx f freevars = do
     envName <- ilmFresh ".env"
-    uniqIdents <- uniqifyAll freevars
-    let uniqFreeVars = map ((contextVar ctx).identPrefix) uniqIdents
+    let uniqFreeVars = map (contextVar "closureConvertAnnFn" ctx) freevars
     let envTypes = map avarType uniqFreeVars
     let envVar = AnnVar (PtrTypeAST (TupleTypeAST envTypes)) envName
     let newproto = case (annFnProto f) of
                     (AnnPrototype rt nm vars) ->
                         (ILPrototype rt nm (envVar:vars) "fastcc")
     let nestedLets vars i = case vars of
-            [] -> closureConvert ctx (annFnBody f)
+            [] -> do body <- closureConvert ctx (annFnBody f)
+                     let procVar = (AnnVar (procTypeFromILProto newproto) (ilProtoIdent newproto))
+                     return $ buildLet self_id (ILTuple [procVar, envVar]) body
             -- Does this loop need to augment the context?
             (v:vs) -> do { innerlet <- nestedLets vs (i + 1)
                          ; return $ (ILLetVal (typeIL innerlet)
@@ -271,13 +293,16 @@ typeIL (ILSubscript t _ _) = t
 typeIL (ILVar (AnnVar t i)) = t
 typeIL (ILTyApp overallType tm tyArgs) = overallType
 
+showClosurePair :: (Ident, ILClosure) -> String
+showClosurePair (name, clo) = (show name) ++ " capturing " ++ (show clo)
+
 instance Structured ILExpr where
     textOf e width =
         let spaces = Prelude.replicate width '\SP'  in
         case e of
             ILBool         b    -> out $ "ILBool      " ++ (show b)
             ILCall    t b a     -> out $ "ILCall      " ++ " :: " ++ show t
-            ILClosures t n b e  -> out $ "ILClosures  " ++ show n
+            ILClosures t ns cs e -> out $ "ILClosures  " ++ show (map showClosurePair (zip ns cs))
             ILLetVal t x a b    -> out $ "ILLetVal    " ++ (show $ avarIdent x) ++ " :: " ++ (show $ avarType x) ++ " = ... in ... "
             ILIf      t  a b c  -> out $ "ILIf        " ++ " :: " ++ show t
             ILInt ty int        -> out $ "ILInt       " ++ (litIntText int) ++ " :: " ++ show ty
@@ -291,7 +316,6 @@ instance Structured ILExpr where
             ILInt t _                           -> []
             ILTuple     vs                      -> map ILVar vs
             ILClosures t bnds clos e            -> [e]
-            --ILLetVal t x a i@(ILLetVal _ _ _ _) -> a : childrenOf i
             ILLetVal t x a b                    -> [a, b]
             ILCall    t b vs                    -> [ILVar b] ++ [ILVar v | v <- vs]
             ILIf      t  v b c                  -> [ILVar v, b, c]

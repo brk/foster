@@ -68,8 +68,11 @@ data AnnExpr =
         -- Add an overall type for the if branch
         | AnnIf         TypeAST AnnExpr AnnExpr AnnExpr
 
-        -- The type of a sequence is the type of its second part
         | AnnLetVar     Ident AnnExpr AnnExpr
+
+        -- We have separate syntax for a SCC of recursive functions
+        -- because they are compiled differently from non-recursive closures.
+        | AnnLetFuns    [Ident] [AnnFn] AnnExpr
 
         -- Subscripts get an overall type
         | AnnSubscript  TypeAST AnnExpr AnnExpr
@@ -112,6 +115,7 @@ typeAST (AnnCall r t b a)    = t
 typeAST (AnnCompiles c msg)  = fosBoolType
 typeAST (AnnIf t a b c)      = t
 typeAST (AnnLetVar _ a b)    = typeAST b
+typeAST (AnnLetFuns _ _ e)   = typeAST e
 typeAST (AnnSubscript t _ _) = t
 typeAST (E_AnnVar (AnnVar t s)) = t
 typeAST (E_AnnTyApp substitutedTy tm tyArgs) = substitutedTy
@@ -173,6 +177,7 @@ instance Structured AnnExpr where
             AnnInt ty int        -> out $ "AnnInt       " ++ (litIntText int) ++ " :: " ++ show ty
             E_AnnFn annFn        -> out $ "AnnFn " ++ fnNameA annFn ++ " // " ++ (show $ annFnBoundNames annFn)
             AnnLetVar id    a b  -> out $ "AnnLetVar    " ++ show id ++ " :: " ++ show (typeAST b)
+            AnnLetFuns ids fns e -> out $ "AnnLetFuns   " ++ show ids
             AnnSubscript  t a b  -> out $ "AnnSubscript " ++ " :: " ++ show t
             AnnTuple     es      -> out $ "AnnTuple     "
             E_AnnVar (AnnVar t v) -> out $ "AnnVar       " ++ show v ++ " :: " ++ show t
@@ -186,6 +191,7 @@ instance Structured AnnExpr where
             AnnInt t _                           -> []
             E_AnnFn annFn                        -> [annFnBody annFn]
             AnnLetVar _ a b                      -> [a, b]
+            AnnLetFuns ids fns e                 -> (map E_AnnFn fns) ++ [e]
             AnnSubscript t a b                   -> [a, b]
             AnnTuple     es                      -> es
             E_AnnVar      v                      -> []
@@ -196,7 +202,12 @@ instance Expr AnnExpr where
 
 freeIdentsA e = case e of
         E_AnnVar v      -> [avarIdent v]
-        AnnLetVar id a b  -> freeIdentsA a ++ (freeIdentsA b `butnot` [id])
+        AnnLetVar id a b     -> freeIdentsA a ++ (freeIdentsA b `butnot` [id])
+        -- Note that all free idents of the bound expr are free in letvar,
+        -- but letfuns removes the bound name from that set!
+        AnnLetFuns ids fns e ->
+                           concatMap boundvars (zip ids fns) ++ (freeIdentsA e `butnot` ids) where
+                                     boundvars (id, fn) = freeIdentsA (E_AnnFn fn) `butnot` [id]
         E_AnnFn f       -> let bodyvars =  freeIdentsA (annFnBody f) in
                            let boundvars = map avarIdent (annProtoVars (annFnProto f)) in
                            bodyvars `butnot` boundvars

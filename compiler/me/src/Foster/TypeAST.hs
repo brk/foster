@@ -7,10 +7,13 @@
 module Foster.TypeAST where
 
 import Foster.Base
-import List(foldr1, length)
+import List(length)
 import Data.IORef(IORef)
 
-data AnnVar = AnnVar { avarType :: TypeAST, avarIdent :: Ident } deriving (Eq, Show)
+data AnnVar = AnnVar { avarType :: TypeAST, avarIdent :: Ident } deriving (Eq)
+
+instance Show AnnVar where
+    show (AnnVar ty id) = show id ++ " :: " ++ show ty
 
 type Sigma = TypeAST
 type Rho   = TypeAST -- No top-level ForAll

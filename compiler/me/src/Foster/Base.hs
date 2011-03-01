@@ -132,6 +132,17 @@ showSourceRange :: ESourceRange -> String
 showSourceRange (EMissingSourceRange s) = "<missing range: " ++ s ++ ">"
 showSourceRange (ESourceRange begin end lines filepath) = "\n" ++ showSourceLines begin end lines ++ "\n"
 
+highlightFirstLine :: ESourceRange -> String
+highlightFirstLine (EMissingSourceRange s) = "<missing range: " ++ s ++ ">"
+highlightFirstLine (ESourceRange (ESourceLocation bline bcol)
+                                 (ESourceLocation _     ecol) lines filepath) =
+    "\n" ++ highlightLine bline bcol ecol lines ++ "\n"
+
+-- If a single line is specified, show it with highlighting;
+-- otherwise, show the lines spanning the two locations (inclusive).
+highlightLine line bcol ecol lines =
+    joinWith "\n" [fromJust $ sourceLine lines line, highlightLineRange bcol ecol]
+
 -- If a single line is specified, show it with highlighting;
 -- otherwise, show the lines spanning the two locations (inclusive).
 showSourceLines (ESourceLocation bline bcol) (ESourceLocation eline ecol) lines =

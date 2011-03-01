@@ -179,10 +179,10 @@ unzipLetVals (ILLetVal t x a b) =
         ( e , (dumpIdent $ avarIdent x):nms , a:vals )
 unzipLetVals e = (e, [], [])
 
-dumpClosureWithName (varid, ILClosure procid idents) =
+dumpClosureWithName (varid, ILClosure procid captvars) =
     Closure { varname  = dumpIdent varid
             , procid   = u8fromString (identPrefix procid)
-            , varnames = fromList (fmap dumpIdent idents) }
+            , varnames = fromList (fmap (dumpIdent.avarIdent) captvars) }
 
 -----------------------------------------------------------------------
 
