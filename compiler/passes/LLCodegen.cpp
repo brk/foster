@@ -431,17 +431,17 @@ llvm::Value* LLClosure::codegen(CodegenPass* pass) {
   }
 
   // { code*, env* }*
-  llvm::AllocaInst* clo = CreateEntryAlloca(cloStructTy, "closure");
+  llvm::AllocaInst* clo = CreateEntryAlloca(cloStructTy, varname + ".closure");
 
   // TODO the (stack reference to the) closure should be marked as
   // a GC root IFF the environment has been dynamically allocated.
 
   // (code*)*
-  Value* clo_code_slot = builder.CreateConstGEP2_32(clo, 0, 0, "clo_code");
+  Value* clo_code_slot = builder.CreateConstGEP2_32(clo, 0, 0, varname + ".clo_code");
   builder.CreateStore(proc, clo_code_slot, /*isVolatile=*/ false);
 
   // (env*)*
-  Value* clo_env_slot = builder.CreateConstGEP2_32(clo, 0, 1, "clo_env");
+  Value* clo_env_slot = builder.CreateConstGEP2_32(clo, 0, 1, varname + ".clo_env");
 
 
   if (vars.empty()) {
@@ -471,7 +471,7 @@ llvm::Value* LLClosure::codegen(CodegenPass* pass) {
 
       Value* clo_env_typemap_slot =
             builder.CreateConstGEP2_32(envValue, 0, 0,
-                                       "clo_env_typemap_slot");
+                                       varname + ".clo_env_typemap_slot");
       llvm::outs() << "clo_env_typemap :: " << clo_env_typemap <<"\n";
       llvm::outs() << "clo_env_typemap :: " << str(clo_env_typemap->getType()) <<"\n";
       llvm::outs() << "clo_env_typemap_slot : " << str(clo_env_typemap_slot->getType()) <<"\n";
@@ -493,8 +493,8 @@ llvm::outs() << "to " << str(clo_env_slot) << "\n\t :: " << str(clo_env_slot->ge
 
   const llvm::StructType* genStructTy = genericClosureStructTy(fnty);
   Value* genericClo = builder.CreateBitCast(clo,
-                              ptrTo(genStructTy), "hideCloTy");
-  return builder.CreateLoad(genericClo, /*isVolatile=*/ false, "loadClosure");
+                              ptrTo(genStructTy), varname + ".hideCloTy");
+  return builder.CreateLoad(genericClo, /*isVolatile=*/ false, varname + ".loadClosure");
 }
 
 //==================================================================
