@@ -27,15 +27,13 @@ data ILExpr =
           ILBool        Bool
         | ILInt         TypeAST LiteralInt
         | ILTuple       [AnnVar]
+        | ILVar         AnnVar
         -- Procedures may be implicitly recursive,
         -- but we need to put a smidgen of effort into
         -- codegen-ing closures so they can be mutually recursive.
         | ILClosures    [Ident] [ILClosure] ILExpr
-        | ILLetVal      Ident ILExpr ILExpr
-        | ILVar         AnnVar
-        | ILSubscript   { ilSubscriptType :: TypeAST
-                        , ilSubscriptBase  :: AnnVar
-                        , ilSubscriptIndex :: ILExpr  }
+        | ILLetVal       Ident    ILExpr    ILExpr
+        | ILSubscript   TypeAST AnnVar ILExpr
         | ILIf          TypeAST AnnVar ILExpr ILExpr
         | ILCall        TypeAST AnnVar [AnnVar]
         | ILTyApp       TypeAST ILExpr TypeAST
@@ -160,6 +158,10 @@ closureConvert ctx expr =
                     _ -> error $ "AnnCall with non-var base of " ++ show b
 
 
+closureConvertedProto :: [AnnVar] -> AnnPrototype -> ILPrototype
+closureConvertedProto freeVars (AnnPrototype rt nm vars) =
+                                (ILPrototype rt nm (freeVars++vars) "fastcc")
+
 -- For example, if we have something like
 --      let y = blah in ( (\x -> x + y) foobar )
 -- then, because the lambda is directly called,
@@ -167,19 +169,15 @@ closureConvert ctx expr =
 --      letproc p = \y x -> x + y
 --      let y = blah in p(y, foobar)
 lambdaLift :: Context -> AnnFn -> [AnnVar] -> ILM ILProcDef
-lambdaLift ctx f freevars =
-    let newproto = case (annFnProto f) of
-                    (AnnPrototype rt nm vars) ->
-                        (ILPrototype rt nm (freevars ++ vars) "fastcc") in
+lambdaLift ctx f freeVars =
+    let newproto = closureConvertedProto freeVars (annFnProto f) in
     let extctx =  prependContextBindings ctx (bindingsForILProto newproto) in
-    do
-        newbody <- closureConvert extctx (annFnBody f)
+    -- Ensure the free vars in the body are bound in the ctx...
+     do newbody <- closureConvert extctx (annFnBody f)
         ilmPutProc (ILProcDef newproto newbody)
-
-bindingsForILProto p = [TermVarBinding (identPrefix i) v | v@(AnnVar t i) <- (ilProtoVars p)]
-
-uniqifyAll :: [String] -> ILM [Ident]
-uniqifyAll ss = mapM ilmFresh ss
+    where
+        bindingsForILProto p = [TermVarBinding (identPrefix i) v
+                               | v@(AnnVar t i) <- (ilProtoVars p)]
 
 procType proc = procTypeFromILProto (ilProcProto proc)
 
@@ -190,13 +188,13 @@ procTypeFromILProto proto =
         then FnTypeAST argtys retty (Just [])
         else FnTypeAST argtys retty Nothing
 
-showctx (Context bindings) = show $ map (\(TermVarBinding nm v) -> nm ++ "/" ++ (show $ avarIdent v)) bindings
-
 contextVar :: String -> Context -> String -> AnnVar
 contextVar dbg (Context ctx) s =
     case termVarLookup s ctx of
             Just v -> v
             Nothing -> error $ "ILExpr: " ++ dbg ++ " free var not in context: " ++ s ++ "\n" ++ showctx (Context ctx)
+    where showctx (Context bindings) =
+            show $ map (\(TermVarBinding nm v) -> nm ++ "/" ++ (show $ avarIdent v)) bindings
 
 buildLet :: Ident -> ILExpr -> ILExpr -> ILExpr
 buildLet ident bound inexpr =
@@ -225,11 +223,9 @@ nestedLets' (e:es) vars k =
     case e of
       -- No point in doing  let var1 = var2 in e...
       (ILVar v) -> nestedLets' es (v:vars) k
-      --
       otherwise -> do
         x        <- ilmFresh ".x"
-        let vx = AnnVar (typeIL e) x
-        innerlet <- nestedLets' es (vx:vars) k
+        innerlet <- nestedLets' es ((AnnVar (typeIL e) x):vars) k
         return $ buildLet x e innerlet
 
 
@@ -258,7 +254,7 @@ closureOfAnnFn ctx (self_id, fn) = do
         let uniqFreeVars = map (contextVar "closureConvertAnnFn" ctx) freeNames
         let envTypes = map avarType uniqFreeVars
         let envVar   = AnnVar (PtrTypeAST (TupleTypeAST envTypes)) envName
-        let newproto = closureConvertedProto envVar (annFnProto f)
+        let newproto = closureConvertedProto [envVar] (annFnProto f)
         -- If the body has x and y free, the closure converted body should be
         -- let x = env[0] in
         -- let y = env[1] in body
@@ -273,12 +269,8 @@ closureOfAnnFn ctx (self_id, fn) = do
         newbody <- withVarsFromEnv uniqFreeVars 0
         ilmPutProc (ILProcDef newproto newbody)
 
-    closureConvertedProto :: AnnVar -> AnnPrototype -> ILPrototype
-    closureConvertedProto envVar (AnnPrototype rt nm vars) =
-                                  (ILPrototype rt nm (envVar:vars) "fastcc")
-
-litInt32 :: Int -> ILExpr
-litInt32 i = ILInt (NamedTypeAST "i32") $ getLiteralInt 32 i
+    litInt32 :: Int -> ILExpr
+    litInt32 i = ILInt (NamedTypeAST "i32") $ getLiteralInt 32 i
 
 typeIL :: ILExpr -> TypeAST
 typeIL (ILBool _)          = fosBoolType
@@ -291,9 +283,6 @@ typeIL (ILIf t a b c)      = t
 typeIL (ILSubscript t _ _) = t
 typeIL (ILVar (AnnVar t i)) = t
 typeIL (ILTyApp overallType tm tyArgs) = overallType
-
-showClosurePair :: (Ident, ILClosure) -> String
-showClosurePair (name, clo) = (show name) ++ " capturing " ++ (show clo)
 
 instance Structured ILExpr where
     textOf e width =
@@ -309,16 +298,20 @@ instance Structured ILExpr where
             ILTuple     es      -> out $ "ILTuple     (size " ++ (show $ length es) ++ ")"
             ILVar (AnnVar t i)  -> out $ "ILVar       " ++ show i ++ " :: " ++ show t
             ILTyApp t e argty   -> out $ "ILTyApp     [" ++ show argty ++ "] :: " ++ show t
+        where
+            showClosurePair :: (Ident, ILClosure) -> String
+            showClosurePair (name, clo) = (show name) ++ " capturing " ++ (show clo)
+
     childrenOf e =
         case e of
-            ILBool         b                    -> []
-            ILInt t _                           -> []
-            ILTuple     vs                      -> map ILVar vs
-            ILClosures bnds clos e              -> [e]
-            ILLetVal x b e                      -> [b, e]
-            ILCall    t b vs                    -> [ILVar b] ++ [ILVar v | v <- vs]
-            ILIf      t  v b c                  -> [ILVar v, b, c]
-            ILSubscript t a b                   -> [ILVar a, b]
-            ILVar (AnnVar t i)                  -> []
-            ILTyApp t e argty                   -> [e]
+            ILBool b                -> []
+            ILInt t _               -> []
+            ILTuple     vs          -> map ILVar vs
+            ILClosures bnds clos e  -> [e]
+            ILLetVal x b e          -> [b, e]
+            ILCall    t b vs        -> [ILVar b] ++ [ILVar v | v <- vs]
+            ILIf      t  v b c      -> [ILVar v, b, c]
+            ILSubscript t a b       -> [ILVar a, b]
+            ILVar (AnnVar t i)      -> []
+            ILTyApp t e argty       -> [e]
 
