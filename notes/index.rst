@@ -12,6 +12,7 @@ Foster Notes
    test
    features
    compiler
+   closures
    syntax
    llvm
    todo

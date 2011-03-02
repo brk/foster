@@ -31,7 +31,7 @@ data ILExpr =
         -- but we need to put a smidgen of effort into
         -- codegen-ing closures so they can be mutually recursive.
         | ILClosures    [Ident] [ILClosure] ILExpr
-        | ILLetVal      AnnVar ILExpr ILExpr
+        | ILLetVal      Ident ILExpr ILExpr
         | ILVar         AnnVar
         | ILSubscript   { ilSubscriptType :: TypeAST
                         , ilSubscriptBase  :: AnnVar
@@ -202,12 +202,11 @@ buildLet :: Ident -> ILExpr -> ILExpr -> ILExpr
 buildLet ident bound inexpr =
   case bound of
     (ILLetVal x' e' c') ->
-      -- let i = (let x' = e' in c') in inexpr
-      -- ==>
-      -- let x' = e' in (let i = c' in inexpr)
-      ILLetVal x' e' (buildLet ident c' inexpr)
-    otherwise ->
-      ILLetVal (AnnVar (typeIL bound) ident) bound inexpr
+         -- let i = (let x' = e' in c') in inexpr
+         -- ==>
+         -- let x' = e' in (let i = c' in inexpr)
+         ILLetVal x' e' (buildLet ident c' inexpr)
+    _ -> ILLetVal ident bound inexpr
 
 -- | If we have a call like    base(foo, bar, blah)
 -- | we want to transform it so that the args are all variables:
@@ -260,16 +259,17 @@ closureOfAnnFn ctx (self_id, fn) = do
         let envTypes = map avarType uniqFreeVars
         let envVar   = AnnVar (PtrTypeAST (TupleTypeAST envTypes)) envName
         let newproto = closureConvertedProto envVar (annFnProto f)
-        --
+        -- If the body has x and y free, the closure converted body should be
+        -- let x = env[0] in
+        -- let y = env[1] in body
         let withVarsFromEnv vars i = case vars of
                 [] -> do body <- closureConvert ctx (annFnBody f)
                          let procVar = (AnnVar (procTypeFromILProto newproto) (ilProtoIdent newproto))
                          return $ buildLet self_id (ILTuple [procVar, envVar]) body
                 (v:vs) -> do innerlet <- withVarsFromEnv vs (i + 1)
-                             return $ (ILLetVal v (ILSubscript (avarType v)
-                                                               envVar
-                                                               (litInt32 i))
-                                                  innerlet)
+                             return $ (ILLetVal (avarIdent v)
+                                                (ILSubscript (avarType v) envVar (litInt32 i))
+                                                innerlet)
         newbody <- withVarsFromEnv uniqFreeVars 0
         ilmPutProc (ILProcDef newproto newbody)
 
@@ -302,7 +302,7 @@ instance Structured ILExpr where
             ILBool         b    -> out $ "ILBool      " ++ (show b)
             ILCall    t b a     -> out $ "ILCall      " ++ " :: " ++ show t
             ILClosures ns cs e  -> out $ "ILClosures  " ++ show (map showClosurePair (zip ns cs))
-            ILLetVal   x b e    -> out $ "ILLetVal    " ++ (show $ avarIdent x) ++ " :: " ++ (show $ avarType x) ++ " = ... in ... "
+            ILLetVal   x b e    -> out $ "ILLetVal    " ++ (show x) ++ " :: " ++ (show $ typeIL b) ++ " = ... in ... "
             ILIf      t  a b c  -> out $ "ILIf        " ++ " :: " ++ show t
             ILInt ty int        -> out $ "ILInt       " ++ (litIntText int) ++ " :: " ++ show ty
             ILSubscript  t a b  -> out $ "ILSubscript " ++ " :: " ++ show t

@@ -176,7 +176,7 @@ dumpExpr x@(ILLetVal _ _ inexpr) =
 unzipLetVals :: ILExpr -> (ILExpr, [P'.Utf8], [ILExpr])
 unzipLetVals (ILLetVal x a b) =
         let (e, nms, vals) = unzipLetVals b in
-        ( e , (dumpIdent $ avarIdent x):nms , a:vals )
+        ( e , (dumpIdent x):nms , a:vals )
 unzipLetVals e = (e, [], [])
 
 dumpClosureWithName (varid, ILClosure procid captvars) =
