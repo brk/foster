@@ -30,8 +30,8 @@ data ILExpr =
         -- Procedures may be implicitly recursive,
         -- but we need to put a smidgen of effort into
         -- codegen-ing closures so they can be mutually recursive.
-        | ILClosures    TypeAST [Ident] [ILClosure] ILExpr
-        | ILLetVal      TypeAST AnnVar ILExpr ILExpr
+        | ILClosures    [Ident] [ILClosure] ILExpr
+        | ILLetVal      AnnVar ILExpr ILExpr
         | ILVar         AnnVar
         | ILSubscript   { ilSubscriptType :: TypeAST
                         , ilSubscriptBase  :: AnnVar
@@ -121,7 +121,7 @@ closureConvert ctx expr =
                                          combined <- mapM (closureOfAnnFn ctx') (zip ids fns)
                                          let (closures, _procdefs) = unzip combined
                                          e' <- g e
-                                         return $ ILClosures (typeIL e') ids closures e'
+                                         return $ ILClosures ids closures e'
 
             AnnSubscript t a b     -> do [a', b'] <- mapM g [a, b]
                                          nestedLets [a'] (\[va] -> ILSubscript t va b')
@@ -136,7 +136,7 @@ closureConvert ctx expr =
                 clo_id <- ilmFresh "clo"
                 (closure, newproc) <- closureOfAnnFn ctx (clo_id, annFn)
                 let procty = procType newproc
-                return $ (ILClosures procty [clo_id] [closure] (ILVar (AnnVar procty clo_id)))
+                return $ (ILClosures [clo_id] [closure] (ILVar (AnnVar procty clo_id)))
 
             AnnCall  r t b es -> do
                 cargs <- mapM g es
@@ -201,13 +201,13 @@ contextVar dbg (Context ctx) s =
 buildLet :: Ident -> ILExpr -> ILExpr -> ILExpr
 buildLet ident bound inexpr =
   case bound of
-    (ILLetVal t' x' e' c') ->
+    (ILLetVal x' e' c') ->
       -- let i = (let x' = e' in c') in inexpr
       -- ==>
       -- let x' = e' in (let i = c' in inexpr)
-      ILLetVal t' x' e' (buildLet ident c' inexpr)
+      ILLetVal x' e' (buildLet ident c' inexpr)
     otherwise ->
-      ILLetVal (typeIL inexpr) (AnnVar (typeIL bound) ident) bound inexpr
+      ILLetVal (AnnVar (typeIL bound) ident) bound inexpr
 
 -- | If we have a call like    base(foo, bar, blah)
 -- | we want to transform it so that the args are all variables:
@@ -266,11 +266,10 @@ closureOfAnnFn ctx (self_id, fn) = do
                          let procVar = (AnnVar (procTypeFromILProto newproto) (ilProtoIdent newproto))
                          return $ buildLet self_id (ILTuple [procVar, envVar]) body
                 (v:vs) -> do innerlet <- withVarsFromEnv vs (i + 1)
-                             return $ (ILLetVal (typeIL innerlet) v
-                                                 (ILSubscript (avarType v)
-                                                              envVar
-                                                              (litInt32 i))
-                                                 innerlet)
+                             return $ (ILLetVal v (ILSubscript (avarType v)
+                                                               envVar
+                                                               (litInt32 i))
+                                                  innerlet)
         newbody <- withVarsFromEnv uniqFreeVars 0
         ilmPutProc (ILProcDef newproto newbody)
 
@@ -285,8 +284,8 @@ typeIL :: ILExpr -> TypeAST
 typeIL (ILBool _)          = fosBoolType
 typeIL (ILInt t _)         = t
 typeIL (ILTuple vs)        = TupleTypeAST [typeIL $ ILVar v | v <- vs]
-typeIL (ILClosures t n b e) = t
-typeIL (ILLetVal t x a b)  = t
+typeIL (ILClosures n b e)  = typeIL e
+typeIL (ILLetVal x b e)    = typeIL e
 typeIL (ILCall t id expr)  = t
 typeIL (ILIf t a b c)      = t
 typeIL (ILSubscript t _ _) = t
@@ -302,8 +301,8 @@ instance Structured ILExpr where
         case e of
             ILBool         b    -> out $ "ILBool      " ++ (show b)
             ILCall    t b a     -> out $ "ILCall      " ++ " :: " ++ show t
-            ILClosures t ns cs e -> out $ "ILClosures  " ++ show (map showClosurePair (zip ns cs))
-            ILLetVal t x a b    -> out $ "ILLetVal    " ++ (show $ avarIdent x) ++ " :: " ++ (show $ avarType x) ++ " = ... in ... "
+            ILClosures ns cs e  -> out $ "ILClosures  " ++ show (map showClosurePair (zip ns cs))
+            ILLetVal   x b e    -> out $ "ILLetVal    " ++ (show $ avarIdent x) ++ " :: " ++ (show $ avarType x) ++ " = ... in ... "
             ILIf      t  a b c  -> out $ "ILIf        " ++ " :: " ++ show t
             ILInt ty int        -> out $ "ILInt       " ++ (litIntText int) ++ " :: " ++ show ty
             ILSubscript  t a b  -> out $ "ILSubscript " ++ " :: " ++ show t
@@ -315,8 +314,8 @@ instance Structured ILExpr where
             ILBool         b                    -> []
             ILInt t _                           -> []
             ILTuple     vs                      -> map ILVar vs
-            ILClosures t bnds clos e            -> [e]
-            ILLetVal t x a b                    -> [a, b]
+            ILClosures bnds clos e              -> [e]
+            ILLetVal x b e                      -> [b, e]
             ILCall    t b vs                    -> [ILVar b] ++ [ILVar v | v <- vs]
             ILIf      t  v b c                  -> [ILVar v, b, c]
             ILSubscript t a b                   -> [ILVar a, b]

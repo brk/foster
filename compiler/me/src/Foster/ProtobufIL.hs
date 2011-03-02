@@ -160,21 +160,21 @@ dumpExpr x@(ILTyApp overallTy baseExpr argType) =
     error $ "Unable to dump type application node " ++ show x
           ++ " (should handle substitution before codegen)."
 
-dumpExpr x@(ILClosures ty names closures expr) =
+dumpExpr x@(ILClosures names closures expr) =
     P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [expr])
                     , PbExpr.tag   = IL_CLOSURES
                     , PbExpr.closures = fromList (fmap dumpClosureWithName (Prelude.zip names closures))
                     , PbExpr.type' = Just $ dumpType (typeIL expr) }
 
-dumpExpr x@(ILLetVal t _ _ _) =
+dumpExpr x@(ILLetVal _ _ inexpr) =
     let (e, nms, vals) = unzipLetVals x in
     P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr (e:vals))
                     , PbExpr.tag   = IL_LETVALS
                     , PbExpr.names = fromList nms
-                    , PbExpr.type' = Just $ dumpType t }
+                    , PbExpr.type' = Just $ dumpType (typeIL inexpr) }
 
 unzipLetVals :: ILExpr -> (ILExpr, [P'.Utf8], [ILExpr])
-unzipLetVals (ILLetVal t x a b) =
+unzipLetVals (ILLetVal x a b) =
         let (e, nms, vals) = unzipLetVals b in
         ( e , (dumpIdent $ avarIdent x):nms , a:vals )
 unzipLetVals e = (e, [], [])
