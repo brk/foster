@@ -88,29 +88,9 @@ closureConvertAndLift ctx m =
     -- We lambda lift top level functions, since we know they don't have any "real" free vars.
     -- Lambda lifting wiil closure convert nested functions.
     let globalVars = (Set.fromList $ map (\(TermVarBinding s _) -> s) (contextBindings ctx)) in
-    let procs' = forM fns (\fn -> lambdaLift ctx fn []) in
-    let newstate = execState procs' (ILMState 0 globalVars []) in
+    let procsILM = forM fns (\fn -> lambdaLift ctx fn []) in
+    let newstate = execState procsILM (ILMState 0 globalVars []) in
     ILProgram $ (ilmProcDefs newstate)
-
-excluding :: Ord a => [a] -> Set a -> [a]
-excluding bs zs =  Set.toList $ Set.difference (Set.fromList bs) zs
-
-closureOfAnnFn :: Context -> (Ident, AnnFn) -> ILM (ILClosure, ILProcDef)
-closureOfAnnFn ctx (id, fn) = do
-    globalVars <- gets ilmGlobals
-    {- Given   letfun f = fn () { ... f() .... }
-               andfun g = fn () { ... f() .... }
-       we want g to close over the closure for f, but f itself
-       ought to make a direct call to its proc, rather than closing over itself.
-       So we exclude f from the list of closed-over variables for f's body,
-       as well as excluding any variables which we happen to know are globals.
-    -}
-    let freeNames = freeVars (E_AnnFn fn) `excluding` (Set.insert (identPrefix id)
-                                                      (Set.insert (fnNameA fn)     globalVars))
-    newproc <- closureConvertAnnFn id ctx fn freeNames
-    return $ (ILClosure (ilProtoIdent $ ilProcProto newproc)
-                        (map (\n -> contextVar "closureOfAnnFn" ctx n) freeNames)
-             , newproc)
 
 prependAnnBinding (id, expr) ctx =
     let annvar = AnnVar (typeAST expr) id in
@@ -253,30 +233,50 @@ nestedLets' (e:es) vars k =
         innerlet <- nestedLets' es (vx:vars) k
         return $ buildLet x e innerlet
 
-closureConvertAnnFn :: Ident -> Context -> AnnFn -> [String] -> ILM ILProcDef
-closureConvertAnnFn self_id ctx f freevars = do
-    envName <- ilmFresh ".env"
-    let uniqFreeVars = map (contextVar "closureConvertAnnFn" ctx) freevars
-    let envTypes = map avarType uniqFreeVars
-    let envVar = AnnVar (PtrTypeAST (TupleTypeAST envTypes)) envName
-    let newproto = case (annFnProto f) of
-                    (AnnPrototype rt nm vars) ->
-                        (ILPrototype rt nm (envVar:vars) "fastcc")
-    let nestedLets vars i = case vars of
-            [] -> do body <- closureConvert ctx (annFnBody f)
-                     let procVar = (AnnVar (procTypeFromILProto newproto) (ilProtoIdent newproto))
-                     return $ buildLet self_id (ILTuple [procVar, envVar]) body
-            -- Does this loop need to augment the context?
-            (v:vs) -> do { innerlet <- nestedLets vs (i + 1)
-                         ; return $ (ILLetVal (typeIL innerlet)
-                                             v
-                                             (ILSubscript (avarType v)
-                                                          envVar
-                                                          (litInt32 i))
-                                             innerlet)
-                        }
-    newbody <- nestedLets uniqFreeVars 0
-    ilmPutProc (ILProcDef newproto newbody)
+
+excluding :: Ord a => [a] -> Set a -> [a]
+excluding bs zs =  Set.toList $ Set.difference (Set.fromList bs) zs
+
+closureOfAnnFn :: Context -> (Ident, AnnFn) -> ILM (ILClosure, ILProcDef)
+closureOfAnnFn ctx (self_id, fn) = do
+    globalVars <- gets ilmGlobals
+    {- Given   letfun f = fn () { ... f() .... }
+               andfun g = fn () { ... f() .... }
+       we want g to close over the closure for f, but f itself
+       ought to make a direct call to its proc, rather than closing over itself.
+       So we exclude f from the list of closed-over variables for f's body,
+       as well as excluding any variables which we happen to know are globals.
+    -}
+    let freeNames = freeVars (E_AnnFn fn) `excluding` (Set.insert (identPrefix self_id)
+                                                      (Set.insert (fnNameA fn) globalVars))
+    let capturedVars = map (\n -> contextVar "closureOfAnnFn" ctx n) freeNames
+    newproc <- closureConvertAnnFn fn freeNames
+    return $ (ILClosure (ilProtoIdent $ ilProcProto newproc) capturedVars , newproc)
+  where
+    closureConvertAnnFn :: AnnFn -> [String] -> ILM ILProcDef
+    closureConvertAnnFn f freeNames = do
+        envName <- ilmFresh ".env"
+        let uniqFreeVars = map (contextVar "closureConvertAnnFn" ctx) freeNames
+        let envTypes = map avarType uniqFreeVars
+        let envVar   = AnnVar (PtrTypeAST (TupleTypeAST envTypes)) envName
+        let newproto = closureConvertedProto envVar (annFnProto f)
+        --
+        let withVarsFromEnv vars i = case vars of
+                [] -> do body <- closureConvert ctx (annFnBody f)
+                         let procVar = (AnnVar (procTypeFromILProto newproto) (ilProtoIdent newproto))
+                         return $ buildLet self_id (ILTuple [procVar, envVar]) body
+                (v:vs) -> do innerlet <- withVarsFromEnv vs (i + 1)
+                             return $ (ILLetVal (typeIL innerlet) v
+                                                 (ILSubscript (avarType v)
+                                                              envVar
+                                                              (litInt32 i))
+                                                 innerlet)
+        newbody <- withVarsFromEnv uniqFreeVars 0
+        ilmPutProc (ILProcDef newproto newbody)
+
+    closureConvertedProto :: AnnVar -> AnnPrototype -> ILPrototype
+    closureConvertedProto envVar (AnnPrototype rt nm vars) =
+                                  (ILPrototype rt nm (envVar:vars) "fastcc")
 
 litInt32 :: Int -> ILExpr
 litInt32 i = ILInt (NamedTypeAST "i32") $ getLiteralInt 32 i
