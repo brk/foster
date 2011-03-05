@@ -233,12 +233,11 @@ add_custom_command(
   OUTPUT ${PROJECT_BINARY_DIR}/_bitcodelibs_/libfoster.bc
   COMMAND
     python ${PROJECT_SOURCE_DIR}/scripts/build_libfoster.py
-        "${LLVM_G++}"
-        ${PROJECT_SOURCE_DIR}
-        ${PROJECT_BINARY_DIR}
-        "${CMAKE_STATIC_LIBRARY_SUFFIX}"
-        "${LLVM_BINDIR}"
-        ${CORO_METHOD}
+        --clang="${LLVM_G++}"
+        --srcdir=${PROJECT_SOURCE_DIR}
+        --bindir=${PROJECT_BINARY_DIR}
+        --llvmdir="${LLVM_BINDIR}"
+        --corodef=${CORO_METHOD}
         ${LIBFOSTER_CPP_SOURCES}
   DEPENDS
     ${LIBFOSTER_CPP_SOURCES}

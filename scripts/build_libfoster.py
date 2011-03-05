@@ -12,10 +12,13 @@ import os.path
 import subprocess
 import shutil
 
+from optparse import OptionParser
+
 clang = "<llvm compiler not set>"
 bindir = "<bindir not set>"
 outdir = "<outdir not set>"
 coro_method = "<coro_method not set>"
+debug_flag = ""
 
 def ensure_dir_exists(output):
   """Creates the given directory if it doesn't exist;
@@ -42,7 +45,8 @@ def compile_source(src):
   include_dirs = [bindir, runtime, runtime_gc, basedir, cpuiddir, corodir]
   includes = ' '.join(['-I ' + path for path in include_dirs])
   defines = ' -D'.join(['', coro_method])
-  cmd = "%s %s %s %s -g -emit-llvm -c -o %s" % (clang, src, includes, defines, outbc)
+  flags = debug_flag + defines
+  cmd = "%s %s %s %s -emit-llvm -c -o %s" % (clang, src, includes, flags, outbc)
   print cmd
   subprocess.call(cmd.split(" "))
   return outbc
@@ -53,17 +57,39 @@ def link_all(bcs):
   print cmd
   return subprocess.call(cmd.split(" "))
 
-if __name__ == '__main__':
-  clang  = sys.argv[1]
-  srcdir = sys.argv[2]
-  bindir = sys.argv[3]
-  staticlibsuffix_unused = sys.argv[4]
-  llvmld = os.path.join(sys.argv[5], 'llvm-ld')
+def get_libfoster_parser(usage):
+  parser = OptionParser(usage=usage)
+  parser.add_option("--bindir", dest="bindir", action="store",
+                    help="Use bindir as default place to find binaries")
+  parser.add_option("--srcdir", dest="srcdir", action="store",
+                    help="Use srcdir as default place to find binaries")
+  parser.add_option("--clang", dest="clang", action="store",
+                    help="Path to clang(++)")
+  parser.add_option("--llvmdir", dest="llvmdir", action="store",
+                    help="Path to LLVM bin dir (llvm-ld should be found here)")
+  parser.add_option("--corodef", dest="corodef", action="store",
+                    help="libcoro method definition, like CORO_ASM")
+  parser.add_option("--debug_mode", action="store_true", dest="debug", default=False,
+                    help="Show more information about program output.")
+  parser.add_option("--verbose", action="store_true", dest="verbose", default=False,
+                    help="Show more information about program output.")
+  return parser
+
+if __name__ == "__main__":
+  parser = get_libfoster_parser("usage: %prog [options]")
+  (options, args) = parser.parse_args()
+
+  clang  = options.clang
+  srcdir = options.srcdir
+  bindir = options.bindir
+  llvmld = os.path.join(options.llvmdir, 'llvm-ld')
   outdir = os.path.join(bindir, "_bitcodelibs_/gc_bc")
   ensure_dir_exists(outdir)
 
-  coro_method = sys.argv[6]
-  sources = sys.argv[7:]
+  coro_method = options.corodef
+  sources = args
+  if options.debug:
+    debug_flag = "-g"
 
   bitcodes = [compile_source(source) for source in sources]
 
