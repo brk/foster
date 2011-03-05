@@ -82,6 +82,6 @@ if (${WIN32})
   )
 endif (${WIN32})
 
-add_library(chromium_base STATIC
+add_library(chromium_base SHARED
   ${BASE_SOURCES}
 )

@@ -49,9 +49,12 @@ def extract_expected_input(path):
     f.writelines(inlines)
   return open(tmpname, 'r')
 
+def nativelib_dir():
+  return "_nativelibs_"
+
 def get_static_libs():
-    return ' '.join([os.path.join("_nativelibs_", lib) for lib in
-         ("libfoster_main.o libchromium_base.a " +
+    return ' '.join([os.path.join(nativelib_dir(), lib) for lib in
+         ("libfoster_main.o libchromium_base.so " +
           "libcpuid.a libimath.a libcoro.a").split(" ")])
 
 def get_link_flags():
@@ -117,8 +120,10 @@ def run_one_test(testpath, paths, tmpdir):
 
         rv, fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed = compile_test_to_bitcode(paths, testpath, compilelog, finalpath)
 
-        rv, as_elapsed = run_command('g++ %s.s -c -o %s.o' % (finalpath, finalpath), paths, testpath)
-        rv, ld_elapsed = run_command('g++ %s.o %s %s -o %s' % (finalpath, get_static_libs(), get_link_flags(), exepath),
+        rv, as_elapsed = run_command(('gcc %s.s -c -o %s.o' % (finalpath, finalpath)),
+                                    paths, testpath)
+        rv, ld_elapsed = run_command('g++ %s.o %s %s -o %s' % (finalpath, get_static_libs(), get_link_flags(), exepath)
+                                      + " -Wl,-R," + os.path.abspath(nativelib_dir()),
                                     paths, testpath)
         rv, rn_elapsed = run_command(exepath,  paths, testpath, stdout=actual, stderr=expected, stdin=infile, strictrv=False)
 
