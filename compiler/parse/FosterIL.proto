@@ -64,8 +64,10 @@ message Expr {
 }
 
 message Proc {
-  required Proto proto = 1;
-  required Expr  body  = 2;
+  required ProcType proctype = 1;
+  repeated string   in_args  = 2;
+  required string   name     = 3;
+  optional Expr     body     = 4;
 }
 
 message Closure {
@@ -91,12 +93,6 @@ message PBInt {
   required int32  bits  = 3;
 }
 
-message Proto {
-  required ProcType proctype      = 1;
-  repeated string in_args         = 2;
-  required string name            = 3;
-}
-
 message PBIf {
   required Expr test_expr = 2;
   required Expr then_expr = 3;
@@ -110,6 +106,5 @@ message CoroPrim {
 
 message Module {
   required string modulename = 1;
-  repeated Proto  protos     = 2;
-  repeated Proc   procs      = 3;
+  repeated Proc   procs      = 2;
 }

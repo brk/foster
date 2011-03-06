@@ -52,58 +52,37 @@ class LLTuple;
 class LLSubscript;
 class LLProc;
 class LLIf;
-class LLProto;
 
 
 struct LLModule {
   const std::string name;
   std::vector<LLProc*> procs;
-  std::vector<LLProto*> protos;
 
   explicit LLModule(const std::string& name,
-                    const std::vector<LLProc*>& procs,
-                    const std::vector<LLProto*>& protos)
-  : name(name), procs(procs), protos(protos) {}
+                    const std::vector<LLProc*>& procs)
+  : name(name), procs(procs) {}
 
   void codegen(CodegenPass* pass);
 };
 
-
-// The ->value for a LLProto node is a llvm::Function*
-struct LLProto {
-private:
+struct LLProc {
+  llvm::Value* value;
   FnTypeAST* type;
   string name;
-  friend class LLProc;
-public:
-  llvm::Value* value;
-
-  FnTypeAST* getFnType() { return type; }
-
+  LLExpr* body;
   std::vector<std::string> argnames;
 
-  LLProto(FnTypeAST* procType, const string& name,
-          const std::vector<std::string>& argnames)
-   : name(name), type(procType), argnames(argnames) {
-    value = NULL;
+  explicit LLProc(FnTypeAST* procType, const string& name,
+          const std::vector<std::string>& argnames, LLExpr* body)
+    : name(name), type(procType), argnames(argnames), body(body) {
+      value = NULL;
   }
+
+  FnTypeAST* getFnType() { return type; }
   const std::string& getName() const { return name; }
-  virtual llvm::Value* codegen(CodegenPass* pass);
-};
-
-
-struct LLProc {
-   LLProto* proto;
-   LLExpr* body;
-
-   explicit LLProc(LLProto* proto, LLExpr* body)
-    : proto(proto), body(body) {}
-
-  const std::string& getName() const { return proto->name; }
-  LLProto* getProto() { return proto; }
-  LLProto* getProto() const { return proto; }
   LLExpr*& getBody() { return body; }
   virtual llvm::Value* codegen(CodegenPass* pass);
+  virtual llvm::Value* codegenProto(CodegenPass* pass);
 };
 
 ////////////////////////////////////////////////////////////////
@@ -162,7 +141,8 @@ struct LLVar : public LLExpr {
 
 // base(args)
 struct LLCall : public LLExpr {
-  LLVar* base;
+  // This must be a Var instead of just a string
+  LLVar* base; // because
   std::vector<LLVar*> args;
   LLCall(LLVar* base, std::vector<LLVar*>& args)
   : LLExpr("LLCall"), base(base), args(args) { }

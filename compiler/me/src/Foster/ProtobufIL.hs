@@ -24,7 +24,6 @@ import Text.ProtocolBuffers(messagePut)
 import Foster.Bepb.ProcType as ProcType
 import Foster.Bepb.Type.Tag as PbTypeTag
 import Foster.Bepb.Type     as PbType
-import Foster.Bepb.Proto    as Proto
 import Foster.Bepb.Closure  as Closure
 import Foster.Bepb.Proc     as Proc
 import Foster.Bepb.PBIf     as PBIf
@@ -206,21 +205,17 @@ dumpVar (AnnVar t ident) =
 
 
 dumpProc p =
-    Proc { Proc.proto = dumpProto p
-         , Proc.body  = dumpExpr (ilProcBody p)
+    Proc { Proc.name  = dumpIdent (ilProcIdent p)
+         , in_args    = fromList $ [dumpIdent (avarIdent v) | v <- (ilProcVars p)]
+         , proctype   = dumpProcType (procType p)
+         , Proc.body  = Just $ dumpExpr (ilProcBody p)
          }
-  where
-  dumpProto p =
-    Proto { Proto.name  = dumpIdent (ilProcIdent p)
-          , in_args     = fromList $ [dumpIdent (avarIdent v) | v <- (ilProcVars p)]
-          , proctype    = dumpProcType (procType p) }
 
 -----------------------------------------------------------------------
 
 dumpProgramToModule :: ILProgram -> Module
 dumpProgramToModule (ILProgram procdefs) =
     Module   { modulename = u8fromString $ "foo"
-             , protos     = fromList []
              , procs      = fromList [dumpProc p | p <- procdefs]
              }
 

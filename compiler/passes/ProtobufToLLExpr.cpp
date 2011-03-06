@@ -118,26 +118,18 @@ LLExpr* parseLetVals(const pb::Expr& e) {
   return letval;
 }
 
-LLProto* parseProto(const pb::Proto& proto) {
-  ASSERT(proto.has_proctype()) << "protobuf LLProto missing proc type!";
+LLProc* parseProc(const pb::Proc& e) {
+  ASSERT(e.has_proctype()) << "protobuf LLProc missing proc type!";
 
-  FnTypeAST* proctype = parseProcType(proto.proctype());
+  FnTypeAST* proctype = parseProcType(e.proctype());
 
   std::vector<std::string> args;
-  llvm::outs() << "parsing proto for " << proto.name()
-               << " with " << proto.in_args_size() << "args and proc type "
-               << str(proctype) << "\n";
-  for (int i = 0; i < proto.in_args_size(); ++i) {
-    args.push_back(proto.in_args(i));
+  for (int i = 0; i < e.in_args_size(); ++i) {
+    args.push_back(e.in_args(i));
   }
 
-
-  const std::string& name = proto.name();
-  return new LLProto(proctype, name, args);
-}
-
-LLProc* parseProc(const pb::Proc& e) {
-  return new LLProc(parseProto(e.proto()),
+  const std::string& name = e.name();
+  return new LLProc(proctype, name, args,
                     LLExpr_from_pb(& e.body()));
 }
 
@@ -185,15 +177,11 @@ LLExpr* parseVar(const pb::Expr& e) {
 
 LLModule* LLModule_from_pb(const pb::Module& e) {
   string moduleName = e.modulename();
-  std::vector<LLProto*> protos;
-  for (int i = 0; i < e.protos_size(); ++i) {
-    protos.push_back(parseProto(e.protos(i)));
-  }
   std::vector<LLProc*> procs;
   for (int i = 0; i < e.procs_size(); ++i) {
     procs.push_back(parseProc(e.procs(i)));
   }
-  return new LLModule(moduleName, procs, protos);
+  return new LLModule(moduleName, procs);
 }
 
 

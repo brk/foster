@@ -115,7 +115,7 @@ void LLModule::codegen(CodegenPass* pass) {
   for (size_t i = 0; i < procs.size(); ++i) {
     LLProc* f = procs[i];
     // Ensure that the value is in the SymbolInfo entry in the symbol table.
-    pass->valueSymTab.insert(f->getName(), f->getProto()->codegen(pass));
+    pass->valueSymTab.insert(f->getName(), f->codegenProto(pass));
   }
 
   // Codegen all the function bodies, now that we can resolve mutually-recursive
@@ -296,32 +296,6 @@ void setFunctionArgumentNames(llvm::Function* F,
   }
 }
 
-llvm::Value* LLProto::codegen(CodegenPass* pass) {
-  std::string symbolName = foster::getGlobalSymbolName(this->name);
-
-  // Give function literals internal linkage, since we know that they can
-  // only be referenced from the function in which they are defined.
-  llvm::GlobalValue::LinkageTypes functionLinkage =
-      (this->name.find("anon_fnlet_") != string::npos)
-        ? Function::InternalLinkage
-        : Function::ExternalLinkage;
-
-  const llvm::FunctionType* FT = dyn_cast<FunctionType>(getLLVMType(this->type));
-  Function* F = Function::Create(FT, functionLinkage, symbolName, pass->mod);
-
-  ASSERT(F) << "function creation failed for proto " << this->name;
-  ASSERT(F->getName() == symbolName) << "redefinition of function " << symbolName;
-
-  setFunctionArgumentNames(F, this->argnames);
-
-  if (FnTypeAST* fnty = dynamic_cast<FnTypeAST*>(this->type)) {
-    F->setCallingConv(fnty->getCallingConventionID());
-  }
-
-  this->value = F;
-  return F;
-}
-
 llvm::Value* LLLetVal::codegen(CodegenPass* pass) {
   llvm::outs() << "llletval " << name << " = "  << boundexpr->tag << " in " << inexpr->tag << "\n";
 
@@ -499,11 +473,37 @@ llvm::outs() << "to " << str(clo_env_slot) << "\n\t :: " << str(clo_env_slot->ge
 
 //==================================================================
 
+llvm::Value* LLProc::codegenProto(CodegenPass* pass) {
+  std::string symbolName = foster::getGlobalSymbolName(this->name);
+
+  // Give function literals internal linkage, since we know that they can
+  // only be referenced from the function in which they are defined.
+  llvm::GlobalValue::LinkageTypes functionLinkage =
+      (this->name.find("anon_fnlet_") != string::npos)
+        ? Function::InternalLinkage
+        : Function::ExternalLinkage;
+
+  const llvm::FunctionType* FT = dyn_cast<FunctionType>(getLLVMType(this->type));
+  Function* F = Function::Create(FT, functionLinkage, symbolName, pass->mod);
+
+  ASSERT(F) << "function creation failed for proto " << this->name;
+  ASSERT(F->getName() == symbolName) << "redefinition of function " << symbolName;
+
+  setFunctionArgumentNames(F, this->argnames);
+
+  if (FnTypeAST* fnty = dynamic_cast<FnTypeAST*>(this->type)) {
+    F->setCallingConv(fnty->getCallingConventionID());
+  }
+
+  this->value = F;
+  return F;
+}
+
 llvm::Value* LLProc::codegen(CodegenPass* pass) {
   ASSERT(this->getBody() != NULL);
-  ASSERT(this->getProto()->value) << "LLModule should codegen function protos.";
+  ASSERT(this->value) << "LLModule should codegen function protos.";
 
-  Function* F = dyn_cast<Function>(this->getProto()->value);
+  Function* F = dyn_cast<Function>(this->value);
   ASSERT(F != NULL) << "unable to codegen function " << getName();
 
   F->setGC("fostergc");
@@ -519,7 +519,7 @@ llvm::Value* LLProc::codegen(CodegenPass* pass) {
   // dynamically-allocated pointer parameters.
   if (true) { // conservative approximation to MightAlloc
     Function::arg_iterator AI = F->arg_begin();
-    ASSERT(F->arg_size() == this->proto->argnames.size());
+    ASSERT(F->arg_size() == this->argnames.size());
     for (size_t i = 0; i != F->arg_size(); ++i, ++AI) {
       if (mightContainHeapPointers(AI->getType())) {
 #if 0
@@ -1006,17 +1006,14 @@ LLProc* getClosureVersionOf(LLExpr* arg,
                                        inArgTypes,
                                        externalCallingConvention);
 
-  LLProto* proto = new LLProto(newfnty, fnName, inArgNames);
   LLExpr* body = new LLCall(var, callArgs);
-  LLProc* proc = new LLProc(proto, body);
-
-  //proto->type = proc->type = genericClosureVersionOf(fnty);
-  proto->codegen(pass);
-  proc->codegen(pass);
+  LLProc* proc = new LLProc(newfnty, fnName, inArgNames, body);
 
   // Regular functions get their proto values added when the module
   // starts codegenning, but we need to do it ourselves here.
-  pass->valueSymTab.insert(proc->getName(), proc->getProto()->value);
+  proc->codegenProto(pass);
+  pass->valueSymTab.insert(proc->getName(), proc->value);
+  proc->codegen(pass);
 
   sClosureVersions[fnName] = proc;
 
