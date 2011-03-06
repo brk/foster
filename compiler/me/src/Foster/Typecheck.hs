@@ -281,13 +281,12 @@ typecheckFn' ctx f expArgType expBodyType = do
     annbody <- typecheck extCtx (fnBody f) expBodyType
     case typeJoin fnProtoRetTy (typeAST annbody) of
         (Just someReturnType) ->
-            let annproto = (AnnPrototype someReturnType
-                                         (Ident fnProtoName irrelevantIdentNum)
-                                         (typeJoinVars uniquelyNamedFormals expArgType)) in
-            let argtypes = TupleTypeAST [avarType v | v <- (annProtoVars annproto)] in
+            let formalVars = typeJoinVars uniquelyNamedFormals expArgType in
+            let argtypes = TupleTypeAST (map avarType formalVars) in
             let fnClosedVars = if fnWasToplevel f then Nothing else Just [] in
             let fnty = FnTypeAST argtypes someReturnType fnClosedVars in
-            return (E_AnnFn (AnnFn fnty annproto annbody fnClosedVars))
+            return (E_AnnFn (AnnFn fnty (Ident fnProtoName irrelevantIdentNum)
+                                   formalVars annbody fnClosedVars))
         otherwise ->
          tcFails $ out $ "typecheck '" ++ fnProtoName
                     ++ "': proto ret type " ++ show fnProtoRetTy

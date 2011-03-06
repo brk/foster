@@ -199,11 +199,6 @@ dumpInt cleanText activeBits =
         PBInt.PBInt { clean = u8fromString cleanText
                     , bits  = intToInt32   activeBits }
 
-dumpProto p@(ILPrototype t ident formals callconv) =
-    Proto { Proto.name  = dumpIdent ident
-          , in_args     = fromList $ [dumpIdent (avarIdent v) | v <- formals]
-          , proctype    = dumpProcType (procTypeFromILProto p) }
-
 dumpVar (AnnVar t ident) =
     P'.defaultValue { PbExpr.name  = Just $ dumpIdent ident
                     , PbExpr.tag   = IL_VAR
@@ -214,6 +209,11 @@ dumpProc (ILProcDef proto body) =
     Proc { Proc.proto = dumpProto proto
          , Proc.body  = dumpExpr body
          }
+  where
+  dumpProto p@(ILPrototype t ident formals callconv) =
+    Proto { Proto.name  = dumpIdent ident
+          , in_args     = fromList $ [dumpIdent (avarIdent v) | v <- formals]
+          , proctype    = dumpProcType (procTypeFromILProto p) }
 
 -----------------------------------------------------------------------
 

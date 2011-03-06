@@ -90,19 +90,14 @@ data AnnExpr =
         deriving (Show)
 
 -- Body annotated, and overall type added
-data AnnFn        = AnnFn  { annFnType :: TypeAST
-                           , annFnProto :: AnnPrototype
-                           , annFnBody :: AnnExpr
+data AnnFn        = AnnFn  { annFnType  :: TypeAST
+                           , annFnIdent :: Ident
+                           , annFnVars  :: [AnnVar]
+                           , annFnBody  :: AnnExpr
                            , annFnClosedVars :: (Maybe [AnnVar])
                            } deriving (Show)
 
-
-data AnnPrototype = AnnPrototype    { annProtoReturnType :: TypeAST
-                                    , annProtoIdent      :: Ident
-                                    , annProtoVars       :: [AnnVar]
-                                    } deriving (Eq, Show)
-
-fnNameA f = identPrefix $ annProtoIdent (annFnProto f)
+fnNameA f = identPrefix (annFnIdent f)
 
 -----------------------------------------------------------------------
 
@@ -209,13 +204,11 @@ freeIdentsA e = case e of
                            concatMap boundvars (zip ids fns) ++ (freeIdentsA e `butnot` ids) where
                                      boundvars (id, fn) = freeIdentsA (E_AnnFn fn) `butnot` [id]
         E_AnnFn f       -> let bodyvars =  freeIdentsA (annFnBody f) in
-                           let boundvars = map avarIdent (annProtoVars (annFnProto f)) in
+                           let boundvars = map avarIdent (annFnVars f) in
                            bodyvars `butnot` boundvars
         _               -> concatMap freeIdentsA (childrenOf e)
 
 
 annFnBoundNames :: AnnFn -> [String]
-annFnBoundNames fn =
-    let vars = annProtoVars (annFnProto fn) in
-    map show vars
+annFnBoundNames fn = map show (annFnVars fn)
 

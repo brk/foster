@@ -71,7 +71,6 @@ buildCallGraph asts bindings =
     let nodeList = (map (\ast -> (ast, fnName ast, fnFreeVariables ast bindings)) asts) in
     Graph.stronglyConnComp nodeList
 
-annFnVar f = AnnVar (annFnType f) (annProtoIdent $ annFnProto f)
 
 fnTypeFrom :: FnAST -> TypeAST
 fnTypeFrom f =
@@ -80,9 +79,9 @@ fnTypeFrom f =
     let fnClosedVars = if fnWasToplevel f then Nothing else Just [] in
     FnTypeAST intype outtype fnClosedVars
 
-
 bindingForAnnFn :: AnnFn -> ContextBinding
 bindingForAnnFn f = TermVarBinding (fnNameA f) (annFnVar f)
+ where annFnVar f = AnnVar (annFnType f) (annFnIdent f)
 
 bindingForFnAST :: FnAST -> ContextBinding
 bindingForFnAST f = TermVarBinding (fnName f) (fnVar f)

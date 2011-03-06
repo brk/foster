@@ -118,8 +118,7 @@ closureConvert ctx expr =
 
             AnnLetFuns ids fns e   -> do let idfns = zip ids fns
                                          cloEnvIds <- mapM (\id -> ilmFresh (".env." ++ identPrefix id)) ids
-                                         let protos = map annFnProto fns
-                                         let info = Map.fromList (zip ids (zip protos cloEnvIds))
+                                         let info = Map.fromList (zip ids (zip fns cloEnvIds))
                                          combined <- mapM (closureOfAnnFn ctx idfns info) idfns
                                          let (closures, _procdefs) = unzip combined
                                          e' <- g e
@@ -160,9 +159,9 @@ closureConvert ctx expr =
                     _ -> error $ "AnnCall with non-var base of " ++ show b
 
 
-closureConvertedProto :: [AnnVar] -> AnnPrototype -> ILPrototype
-closureConvertedProto freeVars (AnnPrototype rt nm vars) =
-                                (ILPrototype rt nm (freeVars++vars) "fastcc")
+closureConvertedProto :: [AnnVar] -> AnnFn -> ILPrototype
+closureConvertedProto freeVars f =
+    (ILPrototype (fnTypeRange (annFnType f)) (annFnIdent f) (freeVars++annFnVars f) "fastcc")
 
 -- For example, if we have something like
 --      let y = blah in ( (\x -> x + y) foobar )
@@ -172,7 +171,7 @@ closureConvertedProto freeVars (AnnPrototype rt nm vars) =
 --      let y = blah in p(y, foobar)
 lambdaLift :: Context -> AnnFn -> [AnnVar] -> ILM ILProcDef
 lambdaLift ctx f freeVars =
-    let newproto = closureConvertedProto freeVars (annFnProto f) in
+    let newproto = closureConvertedProto freeVars f in
     let extctx =  prependContextBindings ctx (bindingsForILProto newproto) in
     -- Ensure the free vars in the body are bound in the ctx...
      do newbody <- closureConvert extctx (annFnBody f)
@@ -189,12 +188,6 @@ procTypeFromILProto proto =
     if ilProtoCallConv proto == "fastcc"
         then FnTypeAST argtys retty (Just [])
         else FnTypeAST argtys retty Nothing
-
-fnTypeOf :: AnnPrototype -> TypeAST
-fnTypeOf proto =
-    let intype = TupleTypeAST (map avarType $ annProtoVars proto) in
-    let outtype = annProtoReturnType proto in
-    FnTypeAST intype outtype Nothing
 
 contextVar :: String -> Context -> String -> AnnVar
 contextVar dbg (Context ctx) s =
@@ -240,10 +233,10 @@ nestedLets' (e:es) vars k =
 -- and (B) the LLVM codegen doesn't check the type field in this case.
 bogusEnvType = PtrTypeAST (TupleTypeAST [])
 
-makeEnvPassingExplicit :: AnnExpr -> Map Ident (AnnPrototype, Ident) -> AnnExpr
-makeEnvPassingExplicit expr protoAndEnvForClosure =
+makeEnvPassingExplicit :: AnnExpr -> Map Ident (AnnFn, Ident) -> AnnExpr
+makeEnvPassingExplicit expr fnAndEnvForClosure =
     q expr where
-    fq (AnnFn ty proto body vars) = (AnnFn ty proto (q body) vars)
+    fq (AnnFn ty id vars body clovars) = (AnnFn ty id vars (q body) clovars)
     q e = case e of
             AnnBool b         -> e
             AnnCompiles c msg -> e
@@ -257,27 +250,27 @@ makeEnvPassingExplicit expr protoAndEnvForClosure =
             E_AnnTyApp t e argty  -> E_AnnTyApp t (q e) argty
             E_AnnFn f             -> E_AnnFn (fq f)
             AnnCall r t (E_AnnVar v) es
-                | Map.member (avarIdent v) protoAndEnvForClosure ->
-                    let (proto, envid) = protoAndEnvForClosure Map.! (avarIdent v) in
-                    let protovar = E_AnnVar (AnnVar (fnTypeOf proto) (annProtoIdent proto))  in
+                | Map.member (avarIdent v) fnAndEnvForClosure ->
+                    let (f, envid) = fnAndEnvForClosure Map.! (avarIdent v) in
+                    let fnvar = E_AnnVar (AnnVar (annFnType f) (annFnIdent f)) in
                     -- We don't know the env type here, since we don't
                     -- pre-collect the set of closed-over envs from other procs.
                     let env = E_AnnVar (AnnVar bogusEnvType envid) in
-                    (AnnCall r t protovar (env:(map q es)))
+                    (AnnCall r t fnvar (env:(map q es)))
             AnnCall r t b es -> AnnCall r t (q b) (map q es)
 
 
 excluding :: Ord a => [a] -> Set a -> [a]
 excluding bs zs =  Set.toList $ Set.difference (Set.fromList bs) zs
 
-type InfoMap = Map Ident (AnnPrototype, Ident)
+type InfoMap = Map Ident (AnnFn, Ident)
 
 closureOfAnnFn :: Context -> [(Ident, AnnFn)] -> InfoMap
                            -> (Ident, AnnFn) -> ILM (ILClosure, ILProcDef)
 closureOfAnnFn ctx allIdsFns infoMap (self_id, fn) = do
     let allIdNames = map (\(id, _) -> identPrefix id) allIdsFns
     let envName  =     (identPrefix.snd) (infoMap Map.! self_id)
-    let funNames = map (identPrefix.annProtoIdent.fst) (Map.elems infoMap)
+    let funNames = map (identPrefix.annFnIdent.fst) (Map.elems infoMap)
     globalVars <- gets ilmGlobals
     {- Given   letfun f = fn () { ... f() .... }
                andfun g = fn () { ... f() .... }
@@ -297,7 +290,7 @@ closureOfAnnFn ctx allIdsFns infoMap (self_id, fn) = do
         let uniqFreeVars = map (contextVar "closureConvertAnnFn" ctx) freeNames
         let envTypes = map avarType uniqFreeVars
         let envVar   = AnnVar (PtrTypeAST (TupleTypeAST envTypes)) envName
-        let newproto = closureConvertedProto [envVar] (annFnProto f)
+        let newproto = closureConvertedProto [envVar] f
         -- If the body has x and y free, the closure converted body should be
         -- let x = env[0] in
         -- let y = env[1] in body
@@ -309,7 +302,7 @@ closureOfAnnFn ctx allIdsFns infoMap (self_id, fn) = do
                                                 innerlet)
         newbody <- withVarsFromEnv uniqFreeVars 0
         ilmPutProc (ILProcDef newproto newbody)
-    closureConvertAnnFn _ info freeNames = undefined
+    closureConvertAnnFn _ info freeNames = error "closureConvertAnnFn called on non-fn"
 
     litInt32 :: Int -> ILExpr
     litInt32 i = ILInt (NamedTypeAST "i32") $ getLiteralInt 32 i
