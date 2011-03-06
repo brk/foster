@@ -85,3 +85,7 @@ endif (${WIN32})
 add_library(chromium_base SHARED
   ${BASE_SOURCES}
 )
+
+if (${APPLE})
+  target_link_libraries(chromium_base "-framework Cocoa")
+endif (${APPLE})
