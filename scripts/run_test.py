@@ -76,6 +76,14 @@ def get_link_flags():
   }[platform.system()]()
   return ' '.join(flags)
 
+def rpath(path):
+  import platform
+  return {
+    'Darwin': lambda: "",
+    'Linux' : lambda:  ' -Wl,-R,' + os.path.abspath(path),
+  }[platform.system()]()
+
+
 def testname(testpath):
   """Given '/path/to/some/test.foster', returns 'test'"""
   return os.path.basename(testpath).replace('.foster', '')
@@ -128,9 +136,10 @@ def run_one_test(testpath, paths, tmpdir):
 
         rv, fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed = compile_test_to_bitcode(paths, testpath, compilelog, finalpath)
 
-        rv, as_elapsed = run_command(('gcc %s.s -c -o %s.o' % (finalpath, finalpath)),
+        rv, as_elapsed = run_command('gcc %s.s -c -o %s.o' % (finalpath, finalpath),
                                     paths, testpath)
         rv, ld_elapsed = run_command('g++ %s.o %s %s -o %s' % (finalpath, get_static_libs(), get_link_flags(), exepath)
+                                    + rpath(nativelib_dir()),
                                     paths, testpath)
         rv, rn_elapsed = run_command(exepath,  paths, testpath, stdout=actual, stderr=expected, stdin=infile, strictrv=False)
 
