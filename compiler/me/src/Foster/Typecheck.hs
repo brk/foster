@@ -249,6 +249,8 @@ typecheckCall ctx range base args maybeExpTy =
                     ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) (Just $ getFnArgType (typeAST eb))
                     typecheckCallWithBaseFnType eargs eb range
 
+              _ -> error $ "Unexpected type for callee: " ++ show (typeAST eb)
+
 -----------------------------------------------------------------------
 
 typecheckFn ctx f Nothing = typecheckFn' ctx f Nothing Nothing
@@ -259,6 +261,7 @@ typecheckFn ctx f (Just (FnTypeAST s t cs')) =
       else tcFails $ out $ "typecheck fn '" ++ prototypeASTname proto
                         ++ "': proto return type, " ++ show (prototypeASTretType proto)
                         ++ ", did not match return type of expected fn type " ++ show (FnTypeAST s t cs')
+typecheckFn ctx f (Just t) = error $ "Unexpected type in typecheckFn: " ++ show t
 
 rename :: Ident -> Uniq -> Ident
 rename (Ident p i) u = (Ident p u)

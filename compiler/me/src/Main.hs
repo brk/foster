@@ -86,8 +86,7 @@ bindingForAnnFn f = TermVarBinding (fnNameA f) (annFnVar f)
 
 bindingForFnAST :: FnAST -> ContextBinding
 bindingForFnAST f = TermVarBinding (fnName f) (fnVar f)
-
-fnVar f = AnnVar (fnTypeFrom f) (Ident (fnName f) (-12345))
+ where    fnVar f = AnnVar (fnTypeFrom f) (Ident (fnName f) (-12345))
 
 -- Every function in the SCC should typecheck against the input context,
 -- and the resulting context should include the computed types of each

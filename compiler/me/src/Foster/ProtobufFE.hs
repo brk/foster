@@ -141,8 +141,11 @@ parseSubscript pbexpr lines =
 parseTuple pbexpr lines =
     E_TupleAST (map (\x -> parseExpr x lines) $ toList $ PbExpr.parts pbexpr)
 
-parseVar pbexpr lines = E_VarAST $ VarAST (fmap parseType (PbExpr.type' pbexpr))
-                                          (uToString (fromJust $ PbExpr.name pbexpr))
+
+parseEVar pbexpr lines = E_VarAST (parseVar pbexpr lines)
+
+parseVar pbexpr lines =  VarAST (fmap parseType (PbExpr.type' pbexpr))
+                                (uToString (fromJust $ PbExpr.name pbexpr))
 
 toplevel :: FnAST -> FnAST
 toplevel (FnAST a b False) = FnAST a b True
@@ -182,12 +185,11 @@ getType e = case PbExpr.type' e of
 
 getFormal :: PbExpr.Expr -> SourceLines ->  AnnVar
 getFormal e lines = case PbExpr.tag e of
-            VAR -> case parseVar e lines of
-                    (E_VarAST v) ->
-                        let i = (Ident (evarName v) (54321)) in
-                        case evarMaybeType v of
-                            Just t  -> (AnnVar t i)
-                            Nothing -> (AnnVar (MissingTypeAST $ "ProtobufUtils.getFormal " ++ (evarName v)) i)
+            VAR -> let v = parseVar e lines in
+                   let i = (Ident (evarName v) (54321)) in
+                   case evarMaybeType v of
+                       Just t  -> (AnnVar t i)
+                       Nothing -> (AnnVar (MissingTypeAST $ "ProtobufUtils.getFormal " ++ (evarName v)) i)
             _   -> error "getVar must be given a var!"
 
 sourceRangeFromPBRange :: Pb.SourceRange -> SourceLines -> ESourceRange
@@ -218,7 +220,7 @@ parseExpr pbexpr lines =
                 PB_INT  -> parseInt
                 IF      -> parseIf
                 BOOL    -> parseBool
-                VAR     -> parseVar
+                VAR     -> parseEVar
                 Foster.Fepb.Expr.Tag.TUPLE   -> parseTuple
                 Foster.Fepb.Expr.Tag.FN      -> parseFnAST
                 PROTO   -> error $ "parseExpr cannot parse a standalone proto!" ++ (show $ PbExpr.tag pbexpr) ++ "\n"
