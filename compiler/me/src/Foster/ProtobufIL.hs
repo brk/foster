@@ -205,15 +205,15 @@ dumpVar (AnnVar t ident) =
                     , PbExpr.type' = Just $ dumpType t  }
 
 
-dumpProc (ILProcDef proto body) =
-    Proc { Proc.proto = dumpProto proto
-         , Proc.body  = dumpExpr body
+dumpProc p =
+    Proc { Proc.proto = dumpProto p
+         , Proc.body  = dumpExpr (ilProcBody p)
          }
   where
-  dumpProto p@(ILPrototype t ident formals callconv) =
-    Proto { Proto.name  = dumpIdent ident
-          , in_args     = fromList $ [dumpIdent (avarIdent v) | v <- formals]
-          , proctype    = dumpProcType (procTypeFromILProto p) }
+  dumpProto p =
+    Proto { Proto.name  = dumpIdent (ilProcIdent p)
+          , in_args     = fromList $ [dumpIdent (avarIdent v) | v <- (ilProcVars p)]
+          , proctype    = dumpProcType (procType p) }
 
 -----------------------------------------------------------------------
 

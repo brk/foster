@@ -23,8 +23,12 @@ data ILClosure = ILClosure { ilClosureProcIdent :: Ident
 
 data ILProgram = ILProgram [ILProcDef] -- ILExpr
 
-data ILProcDef = ILProcDef { ilProcProto :: ILPrototype
-                           , ilProcBody  :: ILExpr       } deriving Show
+data ILProcDef = ILProcDef { ilProcReturnType :: TypeAST
+                           , ilProcIdent      :: Ident
+                           , ilProcVars       :: [AnnVar]
+                           , ilProcCallConv   :: String
+                           , ilProcBody  :: ILExpr
+                           } deriving Show
 data ILExpr =
           ILBool        Bool
         | ILInt         TypeAST LiteralInt
@@ -41,24 +45,17 @@ data ILExpr =
         | ILTyApp       TypeAST ILExpr TypeAST
         deriving (Show)
 
-
-data ILPrototype = ILPrototype  { ilProtoReturnType :: TypeAST
-                                , ilProtoIdent      :: Ident
-                                , ilProtoVars       :: [AnnVar]
-                                , ilProtoCallConv   :: String
-                                } deriving (Eq, Show)
-
 showProgramStructure :: ILProgram -> Output
 showProgramStructure (ILProgram procdefs) =
     concat [showProcStructure p | p <- procdefs]
 
 procVarDesc (AnnVar ty id) = "( " ++ (show id) ++ " :: " ++ show ty ++ " ) "
 
-showProcStructure (ILProcDef proto body) =
-    out (show $ ilProtoIdent proto) ++ (out " // ")
-        ++ (out $ show $ map procVarDesc (ilProtoVars proto))
-        ++ (out " @@@ ") ++ (out $ ilProtoCallConv proto)
-        ++ (out "\n") ++  showStructure body
+showProcStructure proc =
+    out (show $ ilProcIdent proc) ++ (out " // ")
+        ++ (out $ show $ map procVarDesc (ilProcVars proc))
+        ++ (out " @@@ ") ++ (out $ ilProcCallConv proc)
+        ++ (out "\n") ++  showStructure (ilProcBody proc)
       ++ out "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"
 
 type KnownVars = Set String
@@ -148,7 +145,7 @@ closureConvert ctx expr =
                                     let freeNames = (map identPrefix $ freeIdentsA b) `excluding` globalVars
                                     let freevars = map (contextVar "ANnCall" ctx) freeNames
                                     newproc <- lambdaLift ctx f freevars
-                                    let procid = (ilProtoIdent (ilProcProto newproc))
+                                    let procid = (ilProcIdent newproc)
                                     let procvar = (AnnVar (procType newproc) procid)
                                     nestedLets cargs (\vars -> ILCall t procvar (freevars ++ vars))
                     (E_AnnTyApp ot (E_AnnVar v) argty) -> do
@@ -158,10 +155,10 @@ closureConvert ctx expr =
                                     return $ buildLet x (ILTyApp ot (ILVar v) argty) nlets
                     _ -> error $ "AnnCall with non-var base of " ++ show b
 
-
-closureConvertedProto :: [AnnVar] -> AnnFn -> ILPrototype
-closureConvertedProto freeVars f =
-    (ILPrototype (fnTypeRange (annFnType f)) (annFnIdent f) (freeVars++annFnVars f) "fastcc")
+closureConvertedProc :: [AnnVar] -> AnnFn -> ILExpr -> ILProcDef
+closureConvertedProc liftedProcVars f newbody =
+    ILProcDef (fnTypeRange (annFnType f)) (annFnIdent f) liftedProcVars
+                              "fastcc" newbody
 
 -- For example, if we have something like
 --      let y = blah in ( (\x -> x + y) foobar )
@@ -171,21 +168,19 @@ closureConvertedProto freeVars f =
 --      let y = blah in p(y, foobar)
 lambdaLift :: Context -> AnnFn -> [AnnVar] -> ILM ILProcDef
 lambdaLift ctx f freeVars =
-    let newproto = closureConvertedProto freeVars f in
-    let extctx =  prependContextBindings ctx (bindingsForILProto newproto) in
+    let liftedProcVars = freeVars ++ annFnVars f in
+    let extctx =  prependContextBindings ctx (bindingsForVars liftedProcVars) in
     -- Ensure the free vars in the body are bound in the ctx...
      do newbody <- closureConvert extctx (annFnBody f)
-        ilmPutProc (ILProcDef newproto newbody)
+        ilmPutProc (closureConvertedProc liftedProcVars f newbody)
     where
-        bindingsForILProto p = [TermVarBinding (identPrefix i) v
-                               | v@(AnnVar t i) <- (ilProtoVars p)]
+        bindingsForVars vars = [TermVarBinding (identPrefix i) v
+                               | v@(AnnVar t i) <- vars]
 
-procType proc = procTypeFromILProto (ilProcProto proc)
-
-procTypeFromILProto proto =
-    let retty = ilProtoReturnType proto in
-    let argtys = TupleTypeAST (map avarType (ilProtoVars proto)) in
-    if ilProtoCallConv proto == "fastcc"
+procType proc =
+    let retty = ilProcReturnType proc in
+    let argtys = TupleTypeAST (map avarType (ilProcVars proc)) in
+    if ilProcCallConv proc == "fastcc"
         then FnTypeAST argtys retty (Just [])
         else FnTypeAST argtys retty Nothing
 
@@ -282,7 +277,7 @@ closureOfAnnFn ctx allIdsFns infoMap (self_id, fn) = do
     let capturedVars = map (\n -> contextVar "closureOfAnnFn" ctx n) freeNames
     newproc <- closureConvertAnnFn transformedFn infoMap freeNames
     return $ trace ("capturedVars:" ++ show capturedVars ++ "\n\nallIdsFns: " ++ show allIdsFns) $
-        (ILClosure (ilProtoIdent $ ilProcProto newproc) capturedVars , newproc)
+        (ILClosure (ilProcIdent newproc) capturedVars , newproc)
   where
     closureConvertAnnFn :: AnnExpr -> InfoMap -> [String] -> ILM ILProcDef
     closureConvertAnnFn (E_AnnFn f) info freeNames = do
@@ -290,7 +285,6 @@ closureOfAnnFn ctx allIdsFns infoMap (self_id, fn) = do
         let uniqFreeVars = map (contextVar "closureConvertAnnFn" ctx) freeNames
         let envTypes = map avarType uniqFreeVars
         let envVar   = AnnVar (PtrTypeAST (TupleTypeAST envTypes)) envName
-        let newproto = closureConvertedProto [envVar] f
         -- If the body has x and y free, the closure converted body should be
         -- let x = env[0] in
         -- let y = env[1] in body
@@ -301,7 +295,7 @@ closureOfAnnFn ctx allIdsFns infoMap (self_id, fn) = do
                                                 (ILSubscript (avarType v) envVar (litInt32 i))
                                                 innerlet)
         newbody <- withVarsFromEnv uniqFreeVars 0
-        ilmPutProc (ILProcDef newproto newbody)
+        ilmPutProc (closureConvertedProc (envVar:(annFnVars f)) f newbody)
     closureConvertAnnFn _ info freeNames = error "closureConvertAnnFn called on non-fn"
 
     litInt32 :: Int -> ILExpr
