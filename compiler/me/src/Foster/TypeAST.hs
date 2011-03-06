@@ -88,11 +88,6 @@ minimalTuple []    = TupleTypeAST []
 minimalTuple [arg] = arg
 minimalTuple args  = TupleTypeAST args
 
-{-
-unTuple :: TypeAST -> [TypeAST]
-unTuple (TupleTypeAST ts) = ts
-unTuple t = [t]
--}
 
 mkFnType   args rets = FnTypeAST (TupleTypeAST args) (minimalTuple rets) Nothing
 mkCoroType args rets =  CoroType (minimalTuple args) (minimalTuple rets)

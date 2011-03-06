@@ -11,7 +11,7 @@ import Control.Monad.State
 import Data.Set(Set)
 import Data.Set as Set(fromList, toList, difference, union)
 import Data.Map(Map)
-import qualified Data.Map as Map((!), fromList)
+import qualified Data.Map as Map((!), fromList, member, elems)
 
 import Foster.Base
 import Foster.Context
@@ -190,6 +190,12 @@ procTypeFromILProto proto =
         then FnTypeAST argtys retty (Just [])
         else FnTypeAST argtys retty Nothing
 
+fnTypeOf :: AnnPrototype -> TypeAST
+fnTypeOf proto =
+    let intype = TupleTypeAST (map avarType $ annProtoVars proto) in
+    let outtype = annProtoReturnType proto in
+    FnTypeAST intype outtype Nothing
+
 contextVar :: String -> Context -> String -> AnnVar
 contextVar dbg (Context ctx) s =
     case termVarLookup s ctx of
@@ -230,6 +236,36 @@ nestedLets' (e:es) vars k =
         innerlet <- nestedLets' es ((AnnVar (typeIL e) x):vars) k
         return $ buildLet x e innerlet
 
+-- This works because (A) we never type check ILExprs,
+-- and (B) the LLVM codegen doesn't check the type field in this case.
+bogusEnvType = PtrTypeAST (TupleTypeAST [])
+
+makeEnvPassingExplicit :: AnnExpr -> Map Ident (AnnPrototype, Ident) -> AnnExpr
+makeEnvPassingExplicit expr protoAndEnvForClosure =
+    q expr where
+    fq (AnnFn ty proto body vars) = (AnnFn ty proto (q body) vars)
+    q e = case e of
+            AnnBool b         -> e
+            AnnCompiles c msg -> e
+            AnnInt t i        -> e
+            E_AnnVar v        -> e -- We don't alter standalone references to closures
+            AnnIf t a b c    -> AnnIf      t (q a) (q b) (q c)
+            AnnLetVar id a b -> AnnLetVar id (q a) (q b)
+            AnnLetFuns ids fns e  -> AnnLetFuns ids (map fq fns) (q e)
+            AnnSubscript t a b    -> AnnSubscript t (q a) (q b)
+            AnnTuple es           -> AnnTuple (map q es)
+            E_AnnTyApp t e argty  -> E_AnnTyApp t (q e) argty
+            E_AnnFn f             -> E_AnnFn (fq f)
+            AnnCall r t (E_AnnVar v) es
+                | Map.member (avarIdent v) protoAndEnvForClosure ->
+                    let (proto, envid) = protoAndEnvForClosure Map.! (avarIdent v) in
+                    let protovar = E_AnnVar (AnnVar (fnTypeOf proto) (annProtoIdent proto))  in
+                    -- We don't know the env type here, since we don't
+                    -- pre-collect the set of closed-over envs from other procs.
+                    let env = E_AnnVar (AnnVar bogusEnvType envid) in
+                    (AnnCall r t protovar (env:(map q es)))
+            AnnCall r t b es -> AnnCall r t (q b) (map q es)
+
 
 excluding :: Ord a => [a] -> Set a -> [a]
 excluding bs zs =  Set.toList $ Set.difference (Set.fromList bs) zs
@@ -240,19 +276,23 @@ closureOfAnnFn :: Context -> [(Ident, AnnFn)] -> InfoMap
                            -> (Ident, AnnFn) -> ILM (ILClosure, ILProcDef)
 closureOfAnnFn ctx allIdsFns infoMap (self_id, fn) = do
     let allIdNames = map (\(id, _) -> identPrefix id) allIdsFns
+    let envName  =     (identPrefix.snd) (infoMap Map.! self_id)
+    let funNames = map (identPrefix.annProtoIdent.fst) (Map.elems infoMap)
     globalVars <- gets ilmGlobals
     {- Given   letfun f = fn () { ... f() .... }
                andfun g = fn () { ... f() .... }
        neither f nor g should close over f itself, or any global vars.
     -}
-    let freeNames = freeVars (E_AnnFn fn) `excluding` (Set.union (Set.fromList allIdNames) globalVars)
+    let transformedFn = makeEnvPassingExplicit (E_AnnFn fn) infoMap
+    let freeNames = freeVars transformedFn `excluding`
+                       (Set.union (Set.fromList $ envName : funNames ++ allIdNames) globalVars)
     let capturedVars = map (\n -> contextVar "closureOfAnnFn" ctx n) freeNames
-    newproc <- closureConvertAnnFn fn infoMap freeNames
+    newproc <- closureConvertAnnFn transformedFn infoMap freeNames
     return $ trace ("capturedVars:" ++ show capturedVars ++ "\n\nallIdsFns: " ++ show allIdsFns) $
         (ILClosure (ilProtoIdent $ ilProcProto newproc) capturedVars , newproc)
   where
-    closureConvertAnnFn :: AnnFn -> InfoMap -> [String] -> ILM ILProcDef
-    closureConvertAnnFn f info freeNames = do
+    closureConvertAnnFn :: AnnExpr -> InfoMap -> [String] -> ILM ILProcDef
+    closureConvertAnnFn (E_AnnFn f) info freeNames = do
         let envName = snd (info Map.! self_id)
         let uniqFreeVars = map (contextVar "closureConvertAnnFn" ctx) freeNames
         let envTypes = map avarType uniqFreeVars
@@ -262,15 +302,14 @@ closureOfAnnFn ctx allIdsFns infoMap (self_id, fn) = do
         -- let x = env[0] in
         -- let y = env[1] in body
         let withVarsFromEnv vars i = case vars of
-                [] -> do body <- closureConvert ctx (annFnBody f)
-                         let procVar = (AnnVar (procTypeFromILProto newproto) (ilProtoIdent newproto))
-                         return $ buildLet self_id (ILTuple [procVar, envVar]) body
+                [] -> do closureConvert ctx (annFnBody f)
                 (v:vs) -> do innerlet <- withVarsFromEnv vs (i + 1)
                              return $ (ILLetVal (avarIdent v)
                                                 (ILSubscript (avarType v) envVar (litInt32 i))
                                                 innerlet)
         newbody <- withVarsFromEnv uniqFreeVars 0
         ilmPutProc (ILProcDef newproto newbody)
+    closureConvertAnnFn _ info freeNames = undefined
 
     litInt32 :: Int -> ILExpr
     litInt32 i = ILInt (NamedTypeAST "i32") $ getLiteralInt 32 i
