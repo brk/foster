@@ -6,10 +6,12 @@
 
 module Foster.ILExpr where
 
---import Debug.Trace(trace)
+import Debug.Trace(trace)
 import Control.Monad.State
 import Data.Set(Set)
-import Data.Set as Set(fromList, toList, difference, insert)
+import Data.Set as Set(fromList, toList, difference, union)
+import Data.Map(Map)
+import qualified Data.Map as Map((!), fromList)
 
 import Foster.Base
 import Foster.Context
@@ -114,9 +116,11 @@ closureConvert ctx expr =
                                          b' <- closureConvert ctx' b
                                          return $ buildLet id a' b'
 
-            AnnLetFuns ids fns e   -> do -- Make sure the functions can close over each other
-                                         let ctx' = foldr prependAnnBinding ctx (zip ids (map E_AnnFn fns))
-                                         combined <- mapM (closureOfAnnFn ctx') (zip ids fns)
+            AnnLetFuns ids fns e   -> do let idfns = zip ids fns
+                                         cloEnvIds <- mapM (\id -> ilmFresh (".env." ++ identPrefix id)) ids
+                                         let protos = map annFnProto fns
+                                         let info = Map.fromList (zip ids (zip protos cloEnvIds))
+                                         combined <- mapM (closureOfAnnFn ctx idfns info) idfns
                                          let (closures, _procdefs) = unzip combined
                                          e' <- g e
                                          return $ ILClosures ids closures e'
@@ -131,10 +135,8 @@ closureConvert ctx expr =
                                          return $ ILTyApp t e' argty
 
             E_AnnFn annFn          -> do
-                clo_id <- ilmFresh "clo"
-                (closure, newproc) <- closureOfAnnFn ctx (clo_id, annFn)
-                let procty = procType newproc
-                return $ (ILClosures [clo_id] [closure] (ILVar (AnnVar procty clo_id)))
+                clo_id <- ilmFresh "lit_clo"
+                g (AnnLetFuns [clo_id] [annFn] (E_AnnVar $ AnnVar (typeAST (E_AnnFn annFn)) clo_id))
 
             AnnCall  r t b es -> do
                 cargs <- mapM g es
@@ -232,25 +234,26 @@ nestedLets' (e:es) vars k =
 excluding :: Ord a => [a] -> Set a -> [a]
 excluding bs zs =  Set.toList $ Set.difference (Set.fromList bs) zs
 
-closureOfAnnFn :: Context -> (Ident, AnnFn) -> ILM (ILClosure, ILProcDef)
-closureOfAnnFn ctx (self_id, fn) = do
+type InfoMap = Map Ident (AnnPrototype, Ident)
+
+closureOfAnnFn :: Context -> [(Ident, AnnFn)] -> InfoMap
+                           -> (Ident, AnnFn) -> ILM (ILClosure, ILProcDef)
+closureOfAnnFn ctx allIdsFns infoMap (self_id, fn) = do
+    let allIdNames = map (\(id, _) -> identPrefix id) allIdsFns
     globalVars <- gets ilmGlobals
     {- Given   letfun f = fn () { ... f() .... }
                andfun g = fn () { ... f() .... }
-       we want g to close over the closure for f, but f itself
-       ought to make a direct call to its proc, rather than closing over itself.
-       So we exclude f from the list of closed-over variables for f's body,
-       as well as excluding any variables which we happen to know are globals.
+       neither f nor g should close over f itself, or any global vars.
     -}
-    let freeNames = freeVars (E_AnnFn fn) `excluding` (Set.insert (identPrefix self_id)
-                                                      (Set.insert (fnNameA fn) globalVars))
+    let freeNames = freeVars (E_AnnFn fn) `excluding` (Set.union (Set.fromList allIdNames) globalVars)
     let capturedVars = map (\n -> contextVar "closureOfAnnFn" ctx n) freeNames
-    newproc <- closureConvertAnnFn fn freeNames
-    return $ (ILClosure (ilProtoIdent $ ilProcProto newproc) capturedVars , newproc)
+    newproc <- closureConvertAnnFn fn infoMap freeNames
+    return $ trace ("capturedVars:" ++ show capturedVars ++ "\n\nallIdsFns: " ++ show allIdsFns) $
+        (ILClosure (ilProtoIdent $ ilProcProto newproc) capturedVars , newproc)
   where
-    closureConvertAnnFn :: AnnFn -> [String] -> ILM ILProcDef
-    closureConvertAnnFn f freeNames = do
-        envName <- ilmFresh ".env"
+    closureConvertAnnFn :: AnnFn -> InfoMap -> [String] -> ILM ILProcDef
+    closureConvertAnnFn f info freeNames = do
+        let envName = snd (info Map.! self_id)
         let uniqFreeVars = map (contextVar "closureConvertAnnFn" ctx) freeNames
         let envTypes = map avarType uniqFreeVars
         let envVar   = AnnVar (PtrTypeAST (TupleTypeAST envTypes)) envName
@@ -300,7 +303,7 @@ instance Structured ILExpr where
             ILTyApp t e argty   -> out $ "ILTyApp     [" ++ show argty ++ "] :: " ++ show t
         where
             showClosurePair :: (Ident, ILClosure) -> String
-            showClosurePair (name, clo) = (show name) ++ " capturing " ++ (show clo)
+            showClosurePair (name, clo) = (show name) ++ " bound to " ++ (show clo)
 
     childrenOf e =
         case e of
