@@ -13,6 +13,7 @@
 #include "parse/ANTLRtoFosterAST.h"
 #include "parse/ParsingContext.h"
 
+#include "base/TimingsRepository.h"
 #include "passes/DumpToProtobuf.h"
 
 #include <fstream>
@@ -26,7 +27,9 @@
 
 using namespace llvm;
 using std::string;
+
 using foster::EDiag;
+using foster::ScopedTimer;
 
 static cl::opt<string>
 optInputPath(cl::Positional, cl::desc("<input file>"));
@@ -37,6 +40,19 @@ optOutputPath(cl::Positional, cl::desc("<output file>"));
 static cl::opt<bool>
 optDumpStats("dump-stats",
   cl::desc("[foster] Dump timing and other statistics from parsing"));
+
+static cl::opt<bool>
+optPrintTimings("fosterc-time",
+  cl::desc("[foster] Print timing measurements of compiler passes"));
+
+void setTimingDescriptions() {
+  using foster::gTimings;
+  gTimings.describe("total", "Overall compiler runtime (ms)");
+
+  gTimings.describe("io.parse", "Time spent parsing input file (ms)");
+  gTimings.describe("io.file",  "Time spent doing non-parsing I/O (ms)");
+  gTimings.describe("io.proto", "Time spent reading/writing protobufs (ms)");
+}
 
 void dumpModuleToProtobuf(ModuleAST* mod, const string& filename) {
   ASSERT(mod != NULL);
@@ -50,7 +66,9 @@ void dumpModuleToProtobuf(ModuleAST* mod, const string& filename) {
   }
 
   foster::fepb::Expr* pbModuleExpr = sm.mutable_expr();
+  { ScopedTimer timer("io.protobuf.convert");
   DumpToProtobufPass p(pbModuleExpr); mod->dump(&p);
+  }
 
   if (!pbModuleExpr->IsInitialized()) {
     EDiag() << "Protobuf message is not initialized!\n";
@@ -60,11 +78,7 @@ void dumpModuleToProtobuf(ModuleAST* mod, const string& filename) {
     EDiag() << "warning: dumping module to file named '-', not stdout!";
   }
 
-  std::string debug_filename = filename + ".dbg.txt";
-  std::ofstream debug_out(debug_filename.c_str(),
-                          std::ios::trunc | std::ios::binary);
-  debug_out << pbModuleExpr->DebugString();
-
+  ScopedTimer timer("io.protobuf.out");
   std::ofstream out(filename.c_str(),
                   std::ios::trunc | std::ios::binary);
   if (sm.SerializeToOstream(&out)) {
@@ -90,18 +104,26 @@ int main(int argc, char** argv) {
   foster::ParsingContext::initCachedLLVMTypeNames();
 
   foster::ParsingContext::pushNewContext();
-  ModuleAST* exprAST = foster::parseModule(infile, optInputPath,
-                                parseTree, ctx, numParseErrors);
+
+  ModuleAST* exprAST = NULL;
+  { ScopedTimer timer("io.parse");
+    exprAST = foster::parseModule(infile, optInputPath, parseTree, ctx, numParseErrors);
+  }
+
   if (numParseErrors > 0) {
     return 3;
   } else if (!exprAST) {
     return 4;
   }
+
   dumpModuleToProtobuf(exprAST, optOutputPath);
 
+  if (optPrintTimings) {
+    setTimingDescriptions();
+    foster::gTimings.print("fosterparse");
+  }
   if (optDumpStats) {
     llvm::PrintStatistics(llvm::outs());
   }
-
   return 0;
 }
