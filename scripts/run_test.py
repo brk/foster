@@ -52,9 +52,17 @@ def extract_expected_input(path):
 def nativelib_dir():
   return "_nativelibs_"
 
+def shared(lib):
+  import platform
+  suffix = {
+    'Darwin': ".dylib",
+    'Linux':  ".so"
+  }[platform.system()]
+  return lib + suffix
+
 def get_static_libs():
     return ' '.join([os.path.join(nativelib_dir(), lib) for lib in
-         ("libfoster_main.o libchromium_base.so " +
+         ("libfoster_main.o " + shared("libchromium_base") + " " +
           "libcpuid.a libimath.a libcoro.a").split(" ")])
 
 def get_link_flags():
@@ -123,7 +131,6 @@ def run_one_test(testpath, paths, tmpdir):
         rv, as_elapsed = run_command(('gcc %s.s -c -o %s.o' % (finalpath, finalpath)),
                                     paths, testpath)
         rv, ld_elapsed = run_command('g++ %s.o %s %s -o %s' % (finalpath, get_static_libs(), get_link_flags(), exepath)
-                                      + " -Wl,-R," + os.path.abspath(nativelib_dir()),
                                     paths, testpath)
         rv, rn_elapsed = run_command(exepath,  paths, testpath, stdout=actual, stderr=expected, stdin=infile, strictrv=False)
 

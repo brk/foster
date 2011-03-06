@@ -86,6 +86,18 @@ add_library(chromium_base SHARED
   ${BASE_SOURCES}
 )
 
+set (LIBCHRMB ${CMAKE_SHARED_LIBRARY_PREFIX}chromium_base${CMAKE_SHARED_LIBRARY_SUFFIX})
+
+# This is a bit of a hack... Mac OS X makes it sort of painful
+# to embed an rpath in a shared library, compared to using -R.
+# So we copy the shared lib to the directory we "know" will end
+# up containing the binary that needs it...
+add_custom_command(TARGET chromium_base POST_BUILD
+  COMMAND mkdir -p ${PROJECT_BINARY_DIR}/fc-output
+  COMMAND cp ${PROJECT_BINARY_DIR}/_nativelibs_/${LIBCHRMB}
+             ${PROJECT_BINARY_DIR}/fc-output/
+)
+
 if (${APPLE})
   target_link_libraries(chromium_base "-framework Cocoa")
 endif (${APPLE})
