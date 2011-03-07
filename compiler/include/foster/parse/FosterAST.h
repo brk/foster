@@ -249,7 +249,7 @@ struct ModuleAST : public ExprAST {
                      foster::SourceRange sourceRange)
     : ExprAST("ModuleAST", sourceRange), name(name) {
 
-      for (int i = 0; i < _parts.size(); ++i) {
+      for (size_t i = 0; i < _parts.size(); ++i) {
         if (FnAST* f = dynamic_cast<FnAST*>(_parts[i])) {
           fn_parts.push_back(f);
         }

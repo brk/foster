@@ -326,7 +326,7 @@ llvm::Value* LLClosures::codegen(CodegenPass* pass) {
 
   llvm::Value* exp = expr->codegen(pass);
 
-  for (int i = 0; i < closures.size(); ++i) {
+  for (size_t i = 0; i < closures.size(); ++i) {
      pass->valueSymTab.remove(closures[i]->varname);
   }
 
@@ -374,7 +374,7 @@ const llvm::StructType*
 genericClosureStructTy(const llvm::FunctionType* fnty) {
   const Type* retty = fnty->getReturnType();
   std::vector<const llvm::Type*> argTypes;
-  for (int i = 0; i < fnty->getNumParams(); ++i) {
+  for (size_t i = 0; i < fnty->getNumParams(); ++i) {
      argTypes.push_back(fnty->getParamType(i));
   }
   argTypes[0] = builder.getInt8PtrTy();
@@ -427,7 +427,7 @@ llvm::Value* LLClosure::codegen(CodegenPass* pass) {
     //const llvm::Type* pi8 = builder.getInt8PtrTy();
     //values.push_back(llvm::ConstantPointerNull::getNullValue(pi8));
 
-    for (int i = 0; i < vars.size(); ++i) {
+    for (size_t i = 0; i < vars.size(); ++i) {
       LLVar v(vars[i]);
       values.push_back(v.codegen(pass));
     }
@@ -650,7 +650,8 @@ llvm::Value* LLSubscript::codegen(CodegenPass* pass) {
   ASSERT(base); ASSERT(idx);
 
   const llvm::Type* baseTy = base->getType();
-  if (getLLVMType(this->type) && isPointerToType(baseTy, getLLVMType(this->type))
+  if ((getLLVMType(this->type)
+       && isPointerToType(baseTy, getLLVMType(this->type)))
       || (baseTy->isPointerTy()
        && baseTy->getContainedType(0)->isPointerTy())) {
     base = builder.CreateLoad(base, /*isVolatile*/ false, "subload");
@@ -823,7 +824,6 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
     V = tempHackExtendInt(V, expectedType);
     bool needsAdjusting = V->getType() != expectedType;
     if (needsAdjusting) {
-      LLExpr* arg = this->args[i];
       TypeAST* argty = this->args[i]->type;
 
       EDiag() << str(V) << "->getType() is " << str(V->getType())
@@ -921,7 +921,7 @@ codegenTupleValues(CodegenPass* pass,
   }
 
   std::vector<const llvm::Type*> loweredTypes;
-  for (int i = 0; i < values.size(); ++i) {
+  for (size_t i = 0; i < values.size(); ++i) {
     llvm::outs() << "tuple value " << i << "\t" << str(values[i]) << " :: " << str(values[i]->getType()) << "\n";
     loweredTypes.push_back(values[i]->getType());
   }
@@ -943,7 +943,7 @@ codegenTupleValues(CodegenPass* pass,
 
   // pt has type tuple*
 
-  for (int i = 0; i < values.size(); ++i) {
+  for (size_t i = 0; i < values.size(); ++i) {
     Value* dst = builder.CreateConstGEP2_32(pt, 0, i, "gep");
     builder.CreateStore(values[i], dst, /*isVolatile*/ false);
   }
@@ -953,7 +953,7 @@ codegenTupleValues(CodegenPass* pass,
 
 llvm::Value* LLTuple::codegen(CodegenPass* pass) {
   std::vector<llvm::Value*> values;
-  for (int i = 0; i < parts.size(); ++i) {
+  for (size_t i = 0; i < parts.size(); ++i) {
     values.push_back(parts[i]->codegen(pass));
   }
 
@@ -989,7 +989,7 @@ LLProc* getClosureVersionOf(LLExpr* arg,
   inArgNames.push_back(ParsingContext::freshName("__ignored_env__"));
   inArgTypes.push_back(RefTypeAST::get(TupleTypeAST::get(envTypes)));
 
-  for (size_t i = 0; i < fnty->getNumParams(); ++i) {
+  for (int i = 0; i < fnty->getNumParams(); ++i) {
     LLVar* a = new LLVar(ParsingContext::freshName("_cv_arg"));
     inArgNames.push_back(a->name);
     inArgTypes.push_back(fnty->getParamType(i));

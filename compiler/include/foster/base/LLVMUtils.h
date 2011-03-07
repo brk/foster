@@ -76,8 +76,8 @@ void storeNullPointerToSlot(llvm::Value* slot);
 
 class Nominalizer {
 public:
-  llvm::StructType* nominalize(const llvm::Type*);
-  llvm::Type* denominalize(const llvm::StructType*);
+  const llvm::StructType* nominalize(const llvm::Type*);
+  const llvm::Type* denominalize(const llvm::StructType*);
   bool isNominalized(const llvm::StructType*);
 private:
   struct Impl;

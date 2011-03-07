@@ -315,7 +315,6 @@ int main(int argc, char** argv) {
   llvm::outs().flush();
   llvm::errs().flush();
 
-cleanup:
   delete wholeProgramTimer;
 
   delete module; module = NULL;

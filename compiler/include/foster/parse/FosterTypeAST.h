@@ -135,7 +135,7 @@ public:
   virtual void show(PrettyPrintTypePass* pass) = 0;
   virtual void dump(DumpTypeToProtobufPass* pass) = 0;
 
-  virtual TypeAST*& getContainedType(size_t idx) = 0;
+  virtual TypeAST*& getContainedType(int idx) = 0;
   virtual int64_t   getNumElements() const = 0;
   virtual bool      indexValid(int idx) const { return idx < getNumElements(); }
 };
@@ -222,7 +222,7 @@ public:
 
   virtual int getNumContainedTypes() const { return parts.size(); }
   virtual int64_t getNumElements()   const { return parts.size(); }
-  virtual TypeAST*& getContainedType(size_t i);
+  virtual TypeAST*& getContainedType(int i);
 
   static TupleTypeAST* get(const std::vector<TypeAST*>& parts);
 };
@@ -243,7 +243,7 @@ public:
 
   virtual bool canConvertTo(TypeAST* otherType);
   virtual int getNumContainedTypes() const { return 2; }
-  virtual TypeAST*& getContainedType(size_t i);
+  virtual TypeAST*& getContainedType(int i);
 
   static CoroTypeAST* get(TypeAST* targ, TypeAST* tret);
 };
@@ -264,7 +264,7 @@ public:
   uint64_t getSize() { return size; }
   virtual bool canConvertTo(TypeAST* otherType);
   virtual int getNumContainedTypes() const { return 1; }
-  virtual TypeAST*& getContainedType(size_t i);
+  virtual TypeAST*& getContainedType(int i);
 
   static CArrayTypeAST* get(TypeAST* tcell, uint64_t size);
 };

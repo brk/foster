@@ -77,7 +77,7 @@ InputTextBuffer::getMemoryBuffer() const {
 
 StringRef
 InputTextBuffer::getLine(int n) const {
-  ASSERT(n >= 0 && static_cast<size_t>(n) < this->getLineCount());
+  ASSERT(n >= 0 && n < this->getLineCount());
   return impl->lineCache[n];
 }
 

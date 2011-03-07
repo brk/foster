@@ -71,7 +71,7 @@ struct ImathImprover : public BasicBlockPass {
     std::set<CallInst*> mp_int_allocated;
     std::map<Value*, Constant*> small_mp_ints;
 
-    Function* mp_int_init_value;
+    Function* mp_int_init_value = NULL;
 
     // We store a graph of instructions to remove,
     // so that we can perform removals in topological sorted order,

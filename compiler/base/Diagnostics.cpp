@@ -67,7 +67,6 @@ namespace foster {
   std::set<std::string> gEnabledDebuggingTags;
 
   llvm::raw_ostream& dbg(const std::string& tag) {
-    const bool debuggingEnabled = true;
     if (foster::gDebugLoggingEnabled
       && (gEnabledDebuggingTags.empty()
        || gEnabledDebuggingTags.count(tag) == 1)) {

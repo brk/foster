@@ -66,11 +66,11 @@ struct LLModule {
 };
 
 struct LLProc {
-  llvm::Value* value;
-  FnTypeAST* type;
   string name;
-  LLExpr* body;
+  FnTypeAST* type;
   std::vector<std::string> argnames;
+  LLExpr* body;
+  llvm::Value* value;
 
   explicit LLProc(FnTypeAST* procType, const string& name,
           const std::vector<std::string>& argnames, LLExpr* body)

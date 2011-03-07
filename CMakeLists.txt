@@ -377,6 +377,7 @@ set_target_properties(fosterc_llvm
   COMPILE_FLAGS -Wall
 )
 
+
 # We've already set most of llvm-config's flags above via LLVM_CFLAGS;
 # here, we just want to set the flags we removed from LLVM_CFLAGS.
 #
@@ -438,6 +439,14 @@ add_dependencies(fosteroptc
 add_dependencies(libfoster_bc chromium_base)
 add_dependencies(libfoster_bc cpuid)
 add_dependencies(libfoster_bc coro)
+
+
+set_target_properties(
+  fosterc_passes fosterc_parse fosterc_base
+  fosterparse fosterlower fosteroptc
+  PROPERTIES
+  COMPILE_FLAGS -Wall
+)
 
 #####################################################################
 

@@ -104,24 +104,6 @@ Value* getElementFromComposite(Value* compositeValue, Value* idxValue,
 
 ////////////////////////////////////////////////////////////////////
 
-// If the provided root is an alloca, return it directly;
-// if it's a bitcast, return the first arg bitcast to alloca (or NULL);
-// otherwise, die.
-llvm::AllocaInst* getAllocaForRoot(llvm::Instruction* root) {
-  if (llvm::AllocaInst* ai = llvm::dyn_cast<llvm::AllocaInst>(root)) {
-    return ai;
-  }
-
-  if (llvm::BitCastInst* bi = llvm::dyn_cast<llvm::BitCastInst>(root)) {
-    llvm::Value* op = *(bi->op_begin());
-    return llvm::cast<llvm::AllocaInst>(op);
-  }
-
-  ASSERT(false) << "root must be alloca or bitcast of alloca!";
-  return NULL;
-}
-
-
 // root should be an AllocaInst or a bitcast of such
 void markGCRoot(llvm::Value* root,
                 llvm::Constant* meta,
@@ -149,7 +131,6 @@ void markGCRoot(llvm::Value* root,
   llvm::MDNode* metamdnode =
             llvm::MDNode::get(builder.getContext(), &vmeta, 1);
   llvm::Instruction* rootinst = llvm::dyn_cast<llvm::Instruction>(root);
-  llvm::AllocaInst* allocainst = getAllocaForRoot(rootinst);
   if (!rootinst) {
     llvm::outs() << "root kind is " << llvmValueTag(root) << "\n";
     ASSERT(false) << "need inst!";

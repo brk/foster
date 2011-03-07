@@ -65,5 +65,6 @@ char kDefaultFnLiteralCallingConvention[] = "fastcc";
 std::ostream& ExprAST::operator<<(std::ostream& out) const {
   llvm::raw_os_ostream raw(out);
   foster::dumpExprStructure(raw, this);
+  return out;
 }
 

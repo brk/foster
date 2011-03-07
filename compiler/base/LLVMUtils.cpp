@@ -300,11 +300,11 @@ struct Nominalizer::Impl {
 
   bool isNominalized(const llvm::StructType* sty) {
     ASSERT(sty->getNumContainedTypes() == 2);
-    ASSERT(isNomTag[sty->getContainedType(1)]);
+    return isNomTag[sty->getContainedType(1)];
   }
 };
 
-llvm::StructType* Nominalizer::nominalize(const llvm::Type* t ) { impl->nominalize(t); }
-llvm::Type* Nominalizer::denominalize(const llvm::StructType* t) { impl->denominalize(t); }
-bool Nominalizer::isNominalized(const llvm::StructType* t) { impl->isNominalized(t); }
+const llvm::StructType* Nominalizer::nominalize(const llvm::Type* t )  { return impl->nominalize(t); }
+const llvm::Type* Nominalizer::denominalize(const llvm::StructType* t) { return impl->denominalize(t); }
+bool Nominalizer::isNominalized(const llvm::StructType* t)       { return impl->isNominalized(t); }
 

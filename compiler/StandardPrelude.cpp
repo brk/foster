@@ -91,6 +91,7 @@ codegenPrimitiveOperation(const std::string& op,
   else if (op == "bitashr") { return b.CreateAShr(VL, VR, "ashrtmp"); }
 
   ASSERT(false) << "unhandled op '" << op << "'";
+  return NULL;
 }
 
 static Function*
@@ -262,7 +263,7 @@ putModuleMembersInInternalScope(const std::string& scopeName,
 
     if (const FunctionType* fnty =
                                       dyn_cast<FunctionType>(ty)) {
-      Value* decl = linkee->getOrInsertFunction(
+      linkee->getOrInsertFunction(
           StringRef(name),
           fnty,
           f.getAttributes());
@@ -312,7 +313,7 @@ void putModuleMembersInScope(Module* m, Module* linkee) {
                                       dyn_cast<FunctionType>(ty)) {
         // Ensure that codegen for the given function finds the 'declare'
         // TODO make lazy prototype?
-        Value* decl = linkee->getOrInsertFunction(
+        linkee->getOrInsertFunction(
             StringRef(name),
             fnty,
             f.getAttributes());

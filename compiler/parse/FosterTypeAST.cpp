@@ -304,7 +304,7 @@ const llvm::Type* TupleTypeAST::getLLVMType() const {
   return repr;
 }
 
-TypeAST*& TupleTypeAST::getContainedType(size_t i) {
+TypeAST*& TupleTypeAST::getContainedType(int i) {
   ASSERT(indexValid(i));
   return parts[i];
 }
@@ -344,7 +344,7 @@ bool CoroTypeAST::canConvertTo(TypeAST* otherType) {
   return false;
 }
 
-TypeAST*& CoroTypeAST::getContainedType(size_t i) {
+TypeAST*& CoroTypeAST::getContainedType(int i) {
   ASSERT(i >= 0 && i < getNumContainedTypes());
   return (i == 0) ? a : b;
 }
@@ -370,7 +370,7 @@ bool CArrayTypeAST::canConvertTo(TypeAST* otherType) {
   return false;
 }
 
-TypeAST*& CArrayTypeAST::getContainedType(size_t i) {
+TypeAST*& CArrayTypeAST::getContainedType(int i) {
   ASSERT(i >= 0 && i < getNumContainedTypes());
   return cell;
 }

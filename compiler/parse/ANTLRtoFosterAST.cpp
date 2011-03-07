@@ -537,7 +537,7 @@ ExprAST* extractBinopChain(pTree tree,
 
   ASSERT(getChildCount(binops) == getChildCount(compounds) - 1);
 
-  for (int i = 0; i < getChildCount(binops); ++i) {
+  for (size_t i = 0; i < getChildCount(binops); ++i) {
     pairs.push_back(std::make_pair(
                         textOf(child(binops, i)),
                         ExprAST_from(child(compounds, i + 1))));
@@ -569,7 +569,7 @@ ExprAST* parseBinopChain(pTree tree) {
   argstack.push_back(pairs[0].second);
   opstack.push_back(pairs[0].first);
 
-  for (int i = 1; i < pairs.size(); ++i) {
+  for (size_t i = 1; i < pairs.size(); ++i) {
     const std::string& opd = pairs[i].first;
     ExprAST* e = pairs[i].second;
     while (!opstack.empty()) {
@@ -718,7 +718,7 @@ TypeAST* TypeAST_from(pTree tree) {
 
     std::vector<TypeAST*> argTypes;
 
-    for (int i = 0; i < fn->getProto()->inArgs.size(); ++i) {
+    for (size_t i = 0; i < fn->getProto()->inArgs.size(); ++i) {
       llvm::outs() << "fn arg type " << i << " : " << fn->getProto()->inArgs[i]->type << "\n";
       argTypes.push_back(fn->getProto()->inArgs[i]->type);
     }
