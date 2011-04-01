@@ -11,6 +11,7 @@ add_custom_command(
            -F "${CMAKE_CXX_CFLAGS}"
   VERBATIM
   DEPENDS
+    ${PROJECT_BINARY_DIR}/_generated_
     ${imath_ROOT}/imath.in.h
     ${imath_ROOT}/generate-imath.h.py
   )

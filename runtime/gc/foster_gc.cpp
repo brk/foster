@@ -10,7 +10,6 @@
 #include "libfoster.h"
 #include "foster_gc.h"
 #include "libfoster_gc_roots.h"
-#include "_generated_/FosterConfig.h"
 
 #include "base/time.h"
 #include "base/platform_thread.h"

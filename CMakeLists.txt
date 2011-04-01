@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 2.6)
+cmake_minimum_required (VERSION 2.8)
 project (foster)
 
 cmake_policy(VERSION 2.8.0)
@@ -119,6 +119,16 @@ find_package(Threads REQUIRED)
 
 ####################### Compilation Rules ##########################
 
+# Creating the _generated_ directory is easy enough!
+add_custom_command(
+  OUTPUT           ${PROJECT_BINARY_DIR}/_generated_
+                   ${PROJECT_BINARY_DIR}/_nativelibs_
+                   ${PROJECT_BINARY_DIR}/_bitcodelibs_
+  COMMAND mkdir -p ${PROJECT_BINARY_DIR}/_generated_
+  COMMAND mkdir -p ${PROJECT_BINARY_DIR}/_nativelibs_
+  COMMAND mkdir -p ${PROJECT_BINARY_DIR}/_bitcodelibs_
+)
+
 # Use python to build fosterParser.c when grammar/foster.g changes
 add_custom_command(
   OUTPUT ${GENERATED}/fosterParser.c
@@ -211,13 +221,14 @@ add_custom_target(hs_me
 #-------------------------------------------------------------------
 
 add_custom_command(
-  OUTPUT ${PROJECT_BINARY_DIR}/_nativelibs_/libfoster_main.o
+  OUTPUT ${LIBRARY_OUTPUT_PATH}/libfoster_main.o
   COMMAND
         ${CMAKE_CXX_COMPILER} -g
           ${PROJECT_SOURCE_DIR}/runtime/libfoster_main.cpp
           -I ${PROJECT_SOURCE_DIR}/runtime/gc/
-                -c -o ${PROJECT_BINARY_DIR}/_nativelibs_/libfoster_main.o
+                -c -o ${LIBRARY_OUTPUT_PATH}/libfoster_main.o
   DEPENDS
+        ${LIBRARY_OUTPUT_PATH}
         ${PROJECT_SOURCE_DIR}/runtime/libfoster_main.cpp
 )
 
@@ -241,6 +252,7 @@ add_custom_command(
         ${LIBFOSTER_CPP_SOURCES}
   DEPENDS
     ${LIBFOSTER_CPP_SOURCES}
+    ${PROJECT_BINARY_DIR}/_bitcodelibs_
     ${PROJECT_BINARY_DIR}/_generated_/imath.h
     ${PROJECT_SOURCE_DIR}/scripts/build_libfoster.py
 )
@@ -250,7 +262,7 @@ add_custom_command(
 # and would be rebuilt on every single invocation of make.
 add_custom_target(libfoster_bc DEPENDS
         ${PROJECT_BINARY_DIR}/_bitcodelibs_/libfoster.bc
-        ${PROJECT_BINARY_DIR}/_nativelibs_/libfoster_main.o)
+        ${LIBRARY_OUTPUT_PATH}/libfoster_main.o)
 
 
 #-----------------------------------------------------------
@@ -258,7 +270,6 @@ add_custom_target(libfoster_bc DEPENDS
 add_custom_command(
   OUTPUT
         ${PROJECT_BINARY_DIR}/_bitcodelibs_/imath-wrapper.bc
-  COMMAND mkdir -p ${PROJECT_BINARY_DIR}/_bitcodelibs_
   COMMAND
         ${LLVM_G++} -x c
           ${PROJECT_SOURCE_DIR}/third_party/imath/imath-wrapper.c
@@ -267,6 +278,7 @@ add_custom_command(
           -o ${PROJECT_BINARY_DIR}/_bitcodelibs_/imath-wrapper.bc
   DEPENDS
           ${PROJECT_BINARY_DIR}/_generated_/imath.h
+          ${PROJECT_BINARY_DIR}/_bitcodelibs_
           ${PROJECT_SOURCE_DIR}/third_party/imath/imath-wrapper.c
 )
 
