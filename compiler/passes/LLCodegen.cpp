@@ -449,8 +449,6 @@ llvm::Value* LLClosure::codegen(CodegenPass* pass) {
           clo_env_typemap_slot, /*isVolatile=*/ false);
     #endif
 
-llvm::outs() << "storing " << str(envValue) << "\n\t :: " << str(envValue->getType()) << "\n";
-llvm::outs() << "to " << str(clo_env_slot) << "\n\t :: " << str(clo_env_slot->getType()) << "\n";
     // Only store the env in the closure if the env contains entries.
     builder.CreateStore(envValue, clo_env_slot, /*isVolatile=*/ false);
   }
@@ -665,6 +663,8 @@ isKnownNonAllocating(LLVar* varast) {
   return false;
 }
 
+////////////////////////////////////////////////////////////////////
+
 void doLowLevelWrapperFnCoercions(const llvm::Type* expectedType,
                                   LLExpr*& arg,
                                   CodegenPass* pass) {
@@ -718,6 +718,9 @@ void doLowLevelWrapperFnCoercions(const llvm::Type* expectedType,
   }
 }
 
+////////////////////////////////////////////////////////////////////
+
+// TODO this shouldn't need to be 200 lines :(
 llvm::Value* LLCall::codegen(CodegenPass* pass) {
   ASSERT(base != NULL) << "unable to codegen call due to null base";
 
@@ -738,18 +741,18 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
   } else if (FnTypeAST* closureFnType = dynamic_cast<FnTypeAST*>(base->type)) {
     // If our base has a Foster-level function type but not a
     // LLVM-level function type, it must mean we're calling a closure.
+    callingConv = closureFnType->getCallingConventionID(); haveSetCallingConv = true;
+
     // The function type here includes a parameter for the
     // generic environment type, e.g. (i32 => i32) becomes
     // i32 (i8*, i32).
-    callingConv = closureFnType->getCallingConventionID(); haveSetCallingConv = true;
     FT = dyn_cast<const FunctionType>(
           genericClosureVersionOf(closureFnType)->getLLVMFnType());
-    llvm::Value* clo = getClosureStructValue(FV);
 
-    ASSERT(clo->getType()->isStructTy())
-        << "clo value should be a tuple, not a pointer";
-    FV = builder.CreateExtractValue(clo, 0, "getCloCode");
-    llvm::Value* envPtr = builder.CreateExtractValue(clo, 1, "getCloEnv");
+    // Load code and env pointers from closure...
+    llvm::Value* envPtr =
+         getElementFromComposite(FV, getConstantInt32For(1), "getCloEnv");
+    FV = getElementFromComposite(FV, getConstantInt32For(0), "getCloCode");
 
     // Pass env pointer as first parameter to function.
     ASSERT(valArgs.empty());
@@ -818,13 +821,6 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
       EDiag() << str(V) << "->getType() is " << str(V->getType())
               << "; expecting " << str(expectedType)
               << "\n\targty is " << argty->tag << "\t" << str(argty);
-
-      //if (isPointerToType(expectedType, V->getType())) {
-      //  EDiag() << "That is: have T, expected T*";
-      //}
-      //if (isPointerToType(V->getType(), expectedType)) {
-      //  EDiag() << "That is: have T*, expected T";
-      //}
     }
 
     // If we're given a clo** when we expect a clo,
@@ -832,12 +828,6 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
     if (isPointerToPointerToType(V->getType(), expectedType)
      && isGenericClosureType(expectedType)) {
       V = getClosureStructValue(V);
-    }
-
-    if (needsAdjusting) {
-      currentOuts() << str(V) << "->getType() is " << str(V->getType())
-          << "; expected type is " << str(expectedType)
-          << "; expect clo? " << isGenericClosureType(expectedType) << "\n";
     }
 
     // LLVM intrinsics and C functions can take pointer-to-X args,
@@ -854,18 +844,18 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
       }
     }
 
-    if (V->getType() != expectedType) {
-      EDiag() << "type mismatch, " << str(V->getType())
+    ASSERT(V->getType() == expectedType)
+              << "type mismatch, " << str(V->getType())
               << " vs expected type " << str(expectedType)
               << "\nbase is " << str(FV)
               << "\nwith base type " << str(FV->getType());
-    }
   }
 
   ASSERT(FT->getNumParams() == valArgs.size())
             << "function arity mismatch, got " << valArgs.size()
             << " args but expected " << FT->getNumParams();
 
+  // Give the instruction a name, if we can...
   llvm::CallInst* callInst = NULL;
   if (FT->getReturnType()->isVoidTy()) {
     callInst = builder.CreateCall(FV, valArgs.begin(), valArgs.end());
