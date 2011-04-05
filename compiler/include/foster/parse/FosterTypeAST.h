@@ -59,7 +59,6 @@ public:
   virtual void show(PrettyPrintTypePass*    pass) = 0;
   virtual void dump(DumpTypeToProtobufPass* pass) = 0;
   virtual bool isTypeVariable() { return false; }
-  virtual bool canConvertTo(TypeAST* otherType);
 
   static TypeAST* i(int n);
   static TypeAST* getVoid();
@@ -156,7 +155,6 @@ public:
   virtual void dump(DumpTypeToProtobufPass* pass);
   virtual const llvm::Type* getLLVMType() const;
 
-  virtual bool canConvertTo(TypeAST* otherType);
   TypeAST*& getElementType() { return underlyingType; }
 
   // given (T), returns (ref T)
@@ -241,7 +239,6 @@ public:
   virtual void dump(DumpTypeToProtobufPass* pass);
   virtual const llvm::Type* getLLVMType() const;
 
-  virtual bool canConvertTo(TypeAST* otherType);
   virtual int getNumContainedTypes() const { return 2; }
   virtual TypeAST*& getContainedType(int i);
 
@@ -262,7 +259,6 @@ public:
   virtual const llvm::Type* getLLVMType() const;
 
   uint64_t getSize() { return size; }
-  virtual bool canConvertTo(TypeAST* otherType);
   virtual int getNumContainedTypes() const { return 1; }
   virtual TypeAST*& getContainedType(int i);
 

@@ -141,21 +141,6 @@ TypeAST* TypeAST::reconstruct(const llvm::Type* loweredType) {
 
 ////////////////////////////////////////////////////////////////////
 
-// virtual
-bool TypeAST::canConvertTo(TypeAST* otherType) {
-  bool rv = arePhysicallyCompatible(this->getLLVMType(),
-                                    otherType->getLLVMType());
-  if (!rv) {
-    // TODO want source range from ExprAST asking for conversion
-    llvm::outs() << str(this) << "  [cannot convert to]  "
-              << str(otherType) << "\n";
-  }
-  return rv;
-}
-
-
-////////////////////////////////////////////////////////////////////
-
 map<const llvm::Type*, TypeAST*> NamedTypeAST::thinWrappers;
 
 TypeAST* NamedTypeAST::get(const std::string& name,
@@ -218,11 +203,6 @@ RefTypeAST* RefTypeAST::get(TypeAST* baseType) {
   ref = new RefTypeAST(baseType, SourceRange::getEmptyRange());
   refCache[args] = ref;
   return ref;
-}
-
-// virtual
-bool RefTypeAST::canConvertTo(TypeAST* otherType) {
-  return TypeAST::canConvertTo(otherType);
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -338,12 +318,6 @@ const llvm::Type* CoroTypeAST::getLLVMType() const {
   return repr;
 }
 
-// virtual
-bool CoroTypeAST::canConvertTo(TypeAST* otherType) {
-  ASSERT(false) << "CoroTypeAST :: canConvertTo " << str(otherType);
-  return false;
-}
-
 TypeAST*& CoroTypeAST::getContainedType(int i) {
   ASSERT(i >= 0 && i < getNumContainedTypes());
   return (i == 0) ? a : b;
@@ -362,12 +336,6 @@ const llvm::Type* CArrayTypeAST::getLLVMType() const {
   if (!repr) {
   }
   return repr;
-}
-
-// virtual
-bool CArrayTypeAST::canConvertTo(TypeAST* otherType) {
-  ASSERT(false) << "CArrayTypeAST :: canConvertTo " << str(otherType);
-  return false;
 }
 
 TypeAST*& CArrayTypeAST::getContainedType(int i) {
