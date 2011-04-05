@@ -91,16 +91,6 @@ llvm::Value* getClosureStructValue(llvm::Value* maybePtrToClo) {
   return maybePtrToClo;
 }
 
-Value* tempHackExtendInt(Value* val, const Type* toTy) {
-  const Type* valTy = val->getType();
-  // The type checker should ensure that size(expTy) is >= size(argTy)
-  if (valTy != toTy && valTy->isIntegerTy() && toTy->isIntegerTy()) {
-    return builder.CreateZExt(val, toTy, "zextimplicit");
-  } else {
-    return val;
-  }
-}
-
 const llvm::Type* getLLVMType(TypeAST* type) {
   ASSERT(type) << "getLLVMType must be given a non-null type!";
   return type->getLLVMType();
@@ -821,7 +811,6 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
       }
     }
 
-    V = tempHackExtendInt(V, expectedType);
     bool needsAdjusting = V->getType() != expectedType;
     if (needsAdjusting) {
       TypeAST* argty = this->args[i]->type;
