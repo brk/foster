@@ -1,4 +1,4 @@
-main = fn () {
+main = fn (to i32) {
   expect_i1(false)
-  print_i1( __COMPILES__ fn (a:i32, a:i32) { a } )
+  print_i1( __COMPILES__ fn (a:i32, a:i32 to i32) { a } )
 }

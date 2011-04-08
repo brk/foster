@@ -7,7 +7,7 @@
 //               }
 //             }
 
-main = fn () {
+main = fn (to i32) {
   expect_i32(1111111)
   expect_i32(2222222)
   expect_i32(4444444)
@@ -23,7 +23,7 @@ main = fn () {
   expect_i32(9999999)
 
   print_i32(1111111)
-  let co = coro_create_i32_i32( fn(x : i32) {
+  let co = coro_create_i32_i32( fn(x : i32 to i32) {
                                         print_i32(4444444)
                                         force_gc_for_debugging_purposes()
                                         print_i32(x) // 10

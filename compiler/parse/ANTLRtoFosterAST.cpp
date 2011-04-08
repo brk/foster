@@ -296,14 +296,12 @@ PrototypeAST* getFnProto(string name,
                          pTree formalsTree,
                          pTree retTyExprTree)
 {
-  std::vector<VariableAST*> in = getFormals(formalsTree);
-  TypeAST* retTy = TypeAST_from(retTyExprTree);
-  if (!retTy) {
-    retTy = TypeAST::i(32);
-  }
-
   pTree sourceEndTree = (retTyExprTree != NULL) ? retTyExprTree : formalsTree;
   foster::SourceRange sourceRange = rangeFrom(formalsTree, sourceEndTree);
+
+  std::vector<VariableAST*> in = getFormals(formalsTree);
+  TypeAST* retTy = TypeAST_from(retTyExprTree);
+  ASSERT(retTy) << "all functions must have explicit return type annotations";
   PrototypeAST* proto = new PrototypeAST(retTy, name, in, sourceRange);
 
   return proto;

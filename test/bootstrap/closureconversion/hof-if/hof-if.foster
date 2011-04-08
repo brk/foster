@@ -8,7 +8,7 @@ hof-and = fn (a : fn(to i1), b: fn(to i1) to i1) {
   if a() then b() else false
 }
 
-main = fn () {
+main = fn (to i32) {
   let x : i32 = read_i32()
   let y : i32 = read_i32()
   let z : i32 = read_i32() in {

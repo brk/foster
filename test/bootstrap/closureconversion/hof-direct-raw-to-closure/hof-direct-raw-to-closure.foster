@@ -5,7 +5,7 @@ fx = fn (to i32) { read_i32() }
 // This tests passing of top-level functions to higher-order
 // Foster functions, which (pessimistically?) expect a closure.
 
-main = fn () {
+main = fn (to i32) {
   expect_i32(42) ;  print_i32(run-it(fx)) // Foster fn
 
   expect_i32(48) ;  print_i32(run-it(read_i32)) // C fn
@@ -14,5 +14,5 @@ main = fn () {
   0
 }
 
-run-it = fn (f:fn()) {  f()  }
+run-it = fn (f:fn(to i32) to i32) {  f()  }
 

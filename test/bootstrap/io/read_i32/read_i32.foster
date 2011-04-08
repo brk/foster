@@ -2,7 +2,7 @@
 // The testing infrastructure looks for lines like the one above and
 // feeds the data to stdin
 
-main = fn () {
+main = fn (to i32) {
   expect_i32(2)
   print_i32(read_i32())
 

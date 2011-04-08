@@ -122,14 +122,14 @@ TEST(ANTLRtoFosterAST, first_order_types_simple_correct) {
   initCachedLLVMTypes();
   EXPECT_EQ(0,
       pystring::count("opaque",
-                      pr(parse("fn (x : i32) { 0 }")))
+                      pr(parse("fn (x : i32 to i32) { 0 }")))
   );
 }
 
 TEST(ANTLRtoFosterAST, higher_order_types_simple_correct) {
   initCachedLLVMTypes();
   EXPECT_EQ(0,
-      pystring::count(pr(parse("fn (x : fn (z:i64)) { 0 }")),
+      pystring::count(pr(parse("fn (x : fn (z:i64 to i32) to i32) { 0 }")),
                       "opaque")
   );
 }
@@ -137,7 +137,7 @@ TEST(ANTLRtoFosterAST, higher_order_types_simple_correct) {
 TEST(ANTLRtoFosterAST, higher_order_types_simple_incorrect) {
   initCachedLLVMTypes();
   // equivalent to "fn (x : fn (i64:i32)) { 0 }"
-  string s = pr(parse("fn (x : fn (i64)) { 0 }"));
+  string s = pr(parse("fn (x : fn (i64 to i32) to i32) { 0 }"));
   EXPECT_EQ(0, pystring::count(s, "opaque"));
 }
 

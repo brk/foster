@@ -1,10 +1,10 @@
 // IN: 2 3 5 8 13
 
-run-clo = fn (f:fn()) {  f()  }
+run-clo = fn (f:fn( to i32) to i32) {  f()  }
 
-main = fn () {
+main = fn (to i32) {
   let n:i32 = read_i32() in {
-  let c:  fn() =   fn () { n + read_i32() }   in {
+  let c:  fn(to i32) =   fn (to i32) { n + read_i32() }   in {
     expect_i32(5)
     print_i32(run-clo(c))
   }

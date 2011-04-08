@@ -1,4 +1,4 @@
-main = fn () {
+main = fn (to i32) {
   //expect_int(32)
   // print_int(32)
   //

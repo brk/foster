@@ -1,4 +1,4 @@
-main = fn () {
+main = fn (to i32) {
   expect_i32(42)
   print_i32( tuple { 42, true }[0] )
 

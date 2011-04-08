@@ -1,4 +1,4 @@
-main = fn () {
+main = fn (to i32) {
   expect_i32b(11100_2)
   print_i32b(primitive_bitshl_i32(111_2, 2))
 

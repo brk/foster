@@ -3,16 +3,16 @@
 
 g_inner = fn (to i32) { 0 }
 
-g = fn () {
+g = fn (to i32) {
   //c_invoke_fnptr_to_i32(g_inner)
   3
 }
 
-f = fn () {
+f = fn (to i32) {
   print_i32(g())
 }
 
-main = fn () {
+main = fn (to i32) {
   //expect_i32(3)
   //c_invoke_fnptr_to_i32(f)
   0

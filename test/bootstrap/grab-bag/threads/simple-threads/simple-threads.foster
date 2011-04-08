@@ -1,6 +1,6 @@
-fib = fn (x : i32) { if x < 3 then { 1 } else { fib(x - 1) + fib(x - 2) } }
+fib = fn (x : i32 to i32) { if x < 3 then { 1 } else { fib(x - 1) + fib(x - 2) } }
 
-main = fn () {
+main = fn (to i32) {
 
   // This only starts one thread in order to remain deterministic...
 
@@ -10,7 +10,7 @@ main = fn () {
   // creation, until we start mirroring Clang++ and passing structs
   // as byval pointers instead of regular values.
   //
-  //thread_create_i32(fn () { print_i32(fib(30)) })
+  //thread_create_i32(fn (to i32) { print_i32(fib(30)) })
   //thread_waitall()
 
   0
