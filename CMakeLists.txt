@@ -73,7 +73,10 @@ string(REPLACE "-ggdb"       "" LLVM_CFLAGS "${LLVM_CFLAGS}")
 # except for LLVM plugins, which inherit from LLVM classes and
 # therefore must agree on whether to expect and use typeinfo or not.
 #
-string(REPLACE "-fno-rtti" "" LLVM_CFLAGS "${LLVM_CFLAGS}")
+set (NO_RTTI_FLAG "-fno-rtti")
+set (NDEBUG_FLAG "-DNDEBUG")
+string(REPLACE ${NO_RTTI_FLAG} "" LLVM_CFLAGS "${LLVM_CFLAGS}")
+string(REPLACE ${NDEBUG_FLAG} "" LLVM_CFLAGS "${LLVM_CFLAGS}")
 
 # Make sure we don't have any extraneous newlines in generated Makefiles
 #
@@ -393,14 +396,20 @@ set_target_properties(fosterc_llvm
 # We've already set most of llvm-config's flags above via LLVM_CFLAGS;
 # here, we just want to set the flags we removed from LLVM_CFLAGS.
 #
-set (NO_RTTI_FLAG "-fno-rtti")
-if (${LLVM_ORIGINAL_CFLAGS} MATCHES ${NO_RTTI_FLAG})
+set (LLVM_EXTRA_CFLAGS "")
+
+   if (${LLVM_ORIGINAL_CFLAGS} MATCHES         ${NO_RTTI_FLAG})
+  set (LLVM_EXTRA_CFLAGS "${LLVM_EXTRA_CFLAGS} ${NO_RTTI_FLAG}")
+endif (${LLVM_ORIGINAL_CFLAGS} MATCHES         ${NO_RTTI_FLAG})
+
+   if (${LLVM_ORIGINAL_CFLAGS} MATCHES         ${NDEBUG_FLAG})
+  set (LLVM_EXTRA_CFLAGS "${LLVM_EXTRA_CFLAGS} ${NDEBUG_FLAG}")
+endif (${LLVM_ORIGINAL_CFLAGS} MATCHES         ${NDEBUG_FLAG})
+
 set_target_properties(fosterc_llvm
   PROPERTIES
-  COMPILE_FLAGS ${NO_RTTI_FLAG}
+  COMPILE_FLAGS ${LLVM_EXTRA_CFLAGS}
 )
-endif (${LLVM_ORIGINAL_CFLAGS} MATCHES ${NO_RTTI_FLAG})
-
 ############
 
 add_executable(fosterparse compiler/fosterparse.cpp)
