@@ -11,9 +11,6 @@
 #include "parse/ANTLRtoFosterErrorHandling.h"
 #include "parse/ParsingContext.h"
 
-#include "parse/DumpStructure.h"
-#include "passes/PrettyPrintPass.h"
-
 #include "_generated_/fosterLexer.h"
 #include "_generated_/fosterParser.h"
 
@@ -29,7 +26,6 @@
 #include <vector>
 #include <sstream>
 #include <cassert>
-#include <algorithm>
 
 using std::string;
 
@@ -77,18 +73,12 @@ size_t getChildCount(pTree tree) {
 }
 
 string textOf(pTree tree) {
-  if (!tree) {
-    currentErrs() << "Error! Can't get text of a null node!" << "\n";
-    return "<NULL pTree>";
-  }
+  ASSERT(tree) << "can't get text of null pTree!";
   return str(tree->getText(tree));
 }
 
 pTree child(pTree tree, int i) {
-  if (!tree) {
-    currentErrs() << "Error! Can't take child of null pTree!" << "\n";
-    return NULL;
-  }
+  ASSERT(tree) << "can't take child of null pTree!";
   return (pTree) tree->getChild(tree, i);
 }
 
@@ -168,12 +158,6 @@ foster::SourceLocation getEndLocation(pANTLR3_COMMON_TOKEN tok) {
 foster::SourceRange rangeFrom(pTree start, pTree end) {
   pANTLR3_COMMON_TOKEN stok = getStartToken(start);
   pANTLR3_COMMON_TOKEN etok = getEndToken(end);
-  if (false && (!stok || !etok)) {
-    currentOuts() << "rangeFrom " << start << " => " << stok << " ;; "
-              << end << " => " << etok << "\n";
-    if (!stok) { display_pTree(start, 2); }
-    if (!etok) { display_pTree(  end, 2); }
-  }
   return foster::SourceRange(foster::gInputFile,
       getStartLocation(stok),
       getEndLocation(etok),
@@ -630,8 +614,7 @@ ExprAST* ExprAST_from(pTree tree) {
   }
 
   if (token == NAME) {
-    string varName = textOf(child(tree, 0));
-    return new VariableAST(varName, NULL, sourceRange);
+    return new VariableAST(textOf(child(tree, 0)), NULL, sourceRange);
   }
 
   if (token == FNDEF) {
@@ -898,12 +881,20 @@ namespace foster {
     gInputFile = &file;
     gInputTextBuffer = file.getBuffer();
 
+    llvm::sys::TimeValue parse_beg = llvm::sys::TimeValue::now();
+
     fosterParser_program_return langAST = ctx->psr->program(ctx->psr);
 
+    llvm::sys::TimeValue parse_mid = llvm::sys::TimeValue::now();
     outTree = langAST.tree;
     outNumANTLRErrors = ctx->psr->pParser->rec->state->errorCount;
 
     ModuleAST* m = parseTopLevel(outTree, moduleName);
+
+    llvm::sys::TimeValue parse_end = llvm::sys::TimeValue::now();
+
+    //llvm::outs() << "ANTLR  parsing: " << (parse_mid - parse_beg).msec() << "\n";
+    //llvm::outs() << "Foster parsing: " << (parse_end - parse_mid).msec() << "\n";
 
     return m;
   }
