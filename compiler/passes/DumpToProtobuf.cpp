@@ -7,7 +7,8 @@
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
 #include "passes/DumpToProtobuf.h"
-#include "llvm/System/Path.h"
+
+#include "llvm/Support/Path.h"
 
 // Protobufs do not easily allow mirroring of existing object
 // graph structures in the depth-first style preorder style usually

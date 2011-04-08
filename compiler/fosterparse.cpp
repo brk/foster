@@ -4,10 +4,11 @@
 
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/System/Path.h"
+
+#include "base/LLVMUtils.h"
+#include "llvm/Support/Process.h"
 
 #include "base/InputFile.h"
-#include "base/LLVMUtils.h"
 #include "base/InputTextBuffer.h"
 #include "parse/FosterAST.h"
 #include "parse/ANTLRtoFosterAST.h"

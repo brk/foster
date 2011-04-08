@@ -5,8 +5,10 @@
 #ifndef FOSTER_LLVM_UTILS_H
 #define FOSTER_LLVM_UTILS_H
 
-#include "llvm/System/DataTypes.h"
-#include "llvm/System/Path.h"
+#include "llvm/Support/DataTypes.h"
+#include "llvm/Support/Path.h"
+#include "llvm/Support/TimeValue.h"
+
 #include "llvm/Support/IRBuilder.h"
 
 #include <iosfwd>

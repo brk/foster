@@ -19,9 +19,9 @@
 
 #include "pystring/pystring.h"
 
-#include "llvm/Support/MemoryBuffer.h"
-#include "llvm/System/Path.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/Path.h"
 
 #include <iostream>
 #include <string>

@@ -5,19 +5,15 @@
 #include "base/Assert.h"
 #include "base/InputTextBuffer.h"
 
-#include "llvm/System/Path.h"
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/Support/MemoryBuffer.h"
 
 using llvm::MemoryBuffer;
 using llvm::StringRef;
 
-#define LLVM_29 0
-
-#if LLVM_29
+#include "llvm/Support/Path.h"
 #include "llvm/Support/system_error.h"
 using llvm::error_code;
-#endif
 
 namespace foster {
 
@@ -56,14 +52,10 @@ struct InputTextBuffer::Impl {
 };
 
 InputTextBuffer::InputTextBuffer(const llvm::sys::Path& path) {
-  #if LLVM_29
   llvm::OwningPtr<MemoryBuffer> membuf;
   error_code err = MemoryBuffer::getFile(path.str(), membuf);
   ASSERT(!err) << "error message is: " << err.message();
   impl = new Impl(membuf.take());
-  #else
-  impl = new Impl(MemoryBuffer::getFile(path.str()));
-  #endif
 }
 
 InputTextBuffer::InputTextBuffer(const char* data, size_t length) {

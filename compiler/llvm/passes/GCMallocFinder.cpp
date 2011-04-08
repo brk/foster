@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
+#define DEBUG_TYPE "gcmallocfinder"
+
 #include "llvm/Pass.h"
 #include "llvm/Function.h"
 #include "llvm/LLVMContext.h"
@@ -10,7 +12,6 @@
 #include "llvm/CallGraphSCCPass.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/StringSwitch.h"
-#include "llvm/System/TimeValue.h"
 
 #include "base/LLVMUtils.h"
 
@@ -32,10 +33,16 @@ using namespace llvm;
 // TODO export this information!
 // TODO have gcroot-improver use this information.
 
+namespace llvm {
+  void initializeGCMallocFinderPass(llvm::PassRegistry&);
+}
+
 namespace {
 struct GCMallocFinder : public CallGraphSCCPass {
   static char ID;
-  GCMallocFinder() : CallGraphSCCPass(ID) {}
+  GCMallocFinder() : CallGraphSCCPass(ID) {
+    initializeGCMallocFinderPass(*PassRegistry::getPassRegistry());
+  }
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     AU.setPreservesAll();
@@ -186,13 +193,13 @@ char GCMallocFinder::ID = 0;
 
 } // unnamed namespace
 
-namespace llvm {
-  void initializeGCMallocFinderPass(llvm::PassRegistry&);
-}
-INITIALIZE_PASS(GCMallocFinder, "foster-gcmallocfinder",
+INITIALIZE_PASS_BEGIN(GCMallocFinder, "foster-gcmallocfinder",
                 "Identifies (non-)allocating functions.",
-                false,
-                false);
+                false, false)
+INITIALIZE_AG_DEPENDENCY(CallGraph)
+INITIALIZE_PASS_END(GCMallocFinder, "foster-gcmallocfinder",
+                "Identifies (non-)allocating functions.",
+                false, false)
 
 namespace foster {
 

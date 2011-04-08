@@ -4,7 +4,8 @@
 
 #include "base/InputFile.h"
 #include "base/InputTextBuffer.h"
-#include "llvm/System/Path.h"
+
+#include "llvm/Support/Path.h"
 
 #include <map>
 #include <string>

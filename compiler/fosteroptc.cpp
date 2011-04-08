@@ -23,6 +23,11 @@
 #include "llvm/Target/TargetRegistry.h"
 #include "llvm/Target/TargetOptions.h"
 
+
+#include "base/LLVMUtils.h"
+
+#include "llvm/Support/Host.h"
+#include "llvm/Support/Signals.h"
 #include "llvm/Support/StandardPasses.h"
 #include "llvm/Support/PassNameParser.h"
 #include "llvm/Support/CommandLine.h"
@@ -31,13 +36,10 @@
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/raw_os_ostream.h"
-#include "llvm/System/Host.h"
-#include "llvm/System/Signals.h"
 
 ////////////////////////////////////////////////////////////////////
 
 #include "base/Assert.h"
-#include "base/LLVMUtils.h"
 #include "base/TimingsRepository.h"
 
 #include "passes/FosterPasses.h"

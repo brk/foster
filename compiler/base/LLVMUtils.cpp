@@ -14,14 +14,12 @@
 #include "llvm/LLVMContext.h"
 #include "llvm/PassManager.h"
 #include "llvm/Assembly/AssemblyAnnotationWriter.h"
-#include "llvm/System/Signals.h"
 #include "llvm/Support/IRReader.h"
 #include "llvm/Support/FormattedStream.h"
 
-#ifdef LLVM_29
 #include "llvm/Support/FileSystem.h"
 #include "llvm/ADT/SmallString.h"
-#endif
+#include "llvm/Support/Signals.h"
 
 using namespace llvm;
 
@@ -168,13 +166,10 @@ void dumpModuleToBitcode(llvm::Module* mod, const std::string& filename) {
 } // namespace foster
 
 void makePathAbsolute(llvm::sys::Path& path) {
-  path.makeAbsolute();
-#ifdef LLVM_29
   llvm::SmallString<128> pathstr(path.str());
   llvm::error_code err = llvm::sys::fs::make_absolute(pathstr);
   ASSERT(err == llvm::errc::success) << err.message();
   path.set(pathstr);
-#endif
 }
 
 const char* llvmValueTag(const llvm::Value* v) {
