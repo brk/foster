@@ -23,6 +23,7 @@
 #include "llvm/Target/TargetRegistry.h"
 #include "llvm/Target/TargetOptions.h"
 
+#include "pystring/pystring.h"
 
 #include "base/LLVMUtils.h"
 
@@ -65,8 +66,9 @@ optInputPath(cl::Positional, cl::desc("<input file.bc/ll>"));
 
 static cl::opt<string>
 optOutputName("o",
-  cl::desc("[foster] Base name of output file (writes <out>.s)"),
-  cl::init("out"));
+  cl::desc("[foster] Output file; with no extension, writes <out>.s"));
+
+static string gOutputNameBase;
 
 static cl::opt<bool>
 optDumpPostOptIR("dump-postopt",
@@ -109,17 +111,13 @@ void setTimingDescriptions() {
   gTimings.describe("llvm.opt",  "Time spent in LLVM IR optimization (ms)");
   gTimings.describe("llvm.link", "Time spent linking LLVM modules (ms)");
   gTimings.describe("llvm.llc",  "Time spent doing llc's job (IR->asm) (ms)");
+  gTimings.describe("llvm.llc+", "Time spent doing llc's job (IR->obj) (ms)");
 }
 
 Module* readLLVMModuleFromPath(string path) {
   foster::validateInputFile(path);
   ScopedTimer timer("io.file.readmodule");
   return foster::readLLVMModuleFromPath(path);
-}
-
-string dumpdirFile(const string& filename) {
-  static string dumpdir("fc-output/");
-  return dumpdir + filename;
 }
 
 void dumpModuleToFile(Module* mod, const string& filename) {
@@ -198,8 +196,20 @@ void optimizeModuleAndRunPasses(Module* mod) {
   passes.run(*mod);
 }
 
-void compileToNativeAssembly(Module* mod, const string& filename) {
-  ScopedTimer timer("llvm.llc");
+void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
+  TargetMachine::CodeGenFileType filetype = TargetMachine::CGFT_ObjectFile;
+  if (pystring::endswith(filename, ".s")) {
+    filetype = TargetMachine::CGFT_AssemblyFile;
+  } else if (pystring::endswith(filename, ".o")
+         || pystring::endswith(filename, ".obj")) {
+    filetype = TargetMachine::CGFT_ObjectFile;
+  } else {
+    ASSERT(false) << "Expected filename " << filename
+                  << " to end with .s or .o or .obj";
+  }
+
+  ScopedTimer timer((filetype == TargetMachine::CGFT_AssemblyFile)
+                    ? "llvm.llc" : "llvm.llc+");
 
   llvm::Triple triple(mod->getTargetTriple());
   if (triple.getTriple().empty()) {
@@ -231,27 +241,26 @@ void compileToNativeAssembly(Module* mod, const string& filename) {
     passes.add(new TargetData(mod));
   }
 
-  bool disableVerify = true;
-
-  llvm::raw_fd_ostream raw_out(filename.c_str(), err, 0);
-  if (!err.empty()) {
-    llvm::errs() << "Error when opening file to print assembly to:\n\t"
-        << err << "\n";
-    exit(1);
+  int flags = 0;
+  if (filetype == TargetMachine::CGFT_ObjectFile) {
+    flags |= raw_fd_ostream::F_Binary;
   }
+
+  llvm::raw_fd_ostream raw_out(filename.c_str(), err, flags);
+  ASSERT(err.empty()) << "Error when opening file to print output to:\n\t"
+                      << err;
 
   llvm::formatted_raw_ostream out(raw_out,
       llvm::formatted_raw_ostream::PRESERVE_STREAM);
 
   CodeGenOpt::Level
-        asmOptLevel = optOptimizeZero
+         cgOptLevel = optOptimizeZero
                         ? CodeGenOpt::Less // None, Default
                         : CodeGenOpt::Aggressive;
 
+  bool disableVerify = true;
   if (tm->addPassesToEmitFile(passes, out,
-      TargetMachine::CGFT_AssemblyFile,
-      asmOptLevel,
-      disableVerify)) {
+      filetype, cgOptLevel, disableVerify)) {
     llvm::errs() << "Unable to emit assembly file! " << "\n";
     exit(1);
   }
@@ -286,7 +295,16 @@ int main(int argc, char** argv) {
   cl::SetVersionPrinter(&printVersionInfo);
   cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster compiler backend (LLVM optimization)\n");
 
-  foster::ensureDirectoryExists(dumpdirFile(""));
+  ASSERT(optOutputName != "");
+  if ( pystring::endswith(optOutputName, ".o")
+    || pystring::endswith(optOutputName, ".s")) {
+    gOutputNameBase = string(optOutputName.begin(), optOutputName.end() - 2);
+  } else if (pystring::endswith(optOutputName, ".obj")) {
+    gOutputNameBase = string(optOutputName.begin(), optOutputName.end() - 4);
+  } else {
+    gOutputNameBase = optOutputName;
+    optOutputName = optOutputName + ".s";
+  }
 
   foster::initializeLLVM();
 
@@ -297,20 +315,20 @@ int main(int argc, char** argv) {
 
   if (optCleanupOnly) {
     foster::runCleanupPasses(*module);
-    dumpModuleToBitcode(module, dumpdirFile(optOutputName + ".cleaned.bc"));
+    dumpModuleToBitcode(module, (gOutputNameBase + ".cleaned.bc"));
   } else {
     optimizeModuleAndRunPasses(module);
 
     if (optDumpPostOptIR) {
-      dumpModuleToFile(module, dumpdirFile(optOutputName + ".postopt.ll"));
+      dumpModuleToFile(module,  (gOutputNameBase + ".postopt.ll"));
     }
 
-    compileToNativeAssembly(module, dumpdirFile(optOutputName + ".s"));
+    compileToNativeAssemblyOrObject(module, optOutputName);
   }
 
   if (optDumpStats) {
     string err;
-    llvm::raw_fd_ostream out(dumpdirFile(optOutputName + ".optc.stats.txt").c_str(), err);
+    llvm::raw_fd_ostream out((gOutputNameBase + ".optc.stats.txt").c_str(), err);
     llvm::PrintStatistics(out);
   }
 

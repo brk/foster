@@ -91,6 +91,12 @@ def testname(testpath):
 def compile_test_to_bitcode(paths, testpath, compilelog, finalpath):
     finalname = os.path.basename(finalpath)
     verbose = options and options.verbose
+    to_asm  = options and options.asm
+
+    if to_asm:
+      ext = ".s"
+    else:
+      ext = ".o"
 
     # Getting tee functionality in Python is a pain in the behind
     # so we just disable logging when running with --verbose.
@@ -115,11 +121,12 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath):
 
     # Running opt on a Module produces a Module
     # Running llc on a Module produces an assembly file
-    (s4, e4) = run_command(['fosteroptc', finalpath + '.preopt.bc', '-O0', '-fosterc-time'],
+    (s4, e4) = run_command(['fosteroptc', finalpath + '.preopt.bc',
+                               '-O0', '-fosterc-time', '-o', finalpath + ext],
                 paths, testpath, showcmd=verbose,
                 stdout=compilelog, stderr=compilelog, strictrv=True)
 
-    return (s4, e1, e2, e3, e4)
+    return (s4, to_asm, e1, e2, e3, e4)
 
 def run_one_test(testpath, paths, tmpdir):
   start = walltime()
@@ -134,10 +141,15 @@ def run_one_test(testpath, paths, tmpdir):
         finalpath = os.path.join('fc-output', 'out')
         exepath   = os.path.join('fc-output', 'a.out')
 
-        rv, fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed = compile_test_to_bitcode(paths, testpath, compilelog, finalpath)
+        rv, to_asm, fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed = \
+                compile_test_to_bitcode(paths, testpath, compilelog, finalpath)
 
-        rv, as_elapsed = run_command('gcc %s.s -c -o %s.o' % (finalpath, finalpath),
-                                    paths, testpath)
+        if to_asm:
+          rv, as_elapsed = run_command('gcc %s.s -c -o %s.o' % (finalpath, finalpath),
+                                      paths, testpath)
+        else:
+          as_elapsed = 0
+
         rv, ld_elapsed = run_command('g++ %s.o %s %s -o %s' % (finalpath, get_static_libs(), get_link_flags(), exepath)
                                     + rpath(nativelib_dir()),
                                     paths, testpath)
@@ -209,6 +221,8 @@ def get_test_parser(usage):
                     help="Relative (from bindir) or absolute path to binary to use for type checking.")
   parser.add_option("--verbose", action="store_true", dest="verbose", default=False,
                     help="Show more information about program output.")
+  parser.add_option("--asm", action="store_true", dest="asm", default=False,
+                    help="Compile to assembly rather than object file.")
   return parser
 
 if __name__ == "__main__":
