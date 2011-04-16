@@ -31,6 +31,7 @@ import Foster.TypeAST
 import Foster.ILExpr
 import Foster.Typecheck
 import Foster.Context
+import Foster.Smallstep
 
 -----------------------------------------------------------------------
 class FnLike f where
@@ -165,10 +166,10 @@ inspect ctx typechecked ast =
 main :: IO ()
 main = do
   args <- getArgs
-  (f, outfile) <- case args of
-         [infile, outfile] -> do
+  (f, outfile, rest) <- case args of
+         (infile : outfile : rest) -> do
                 protobuf <- L.readFile infile
-                return (protobuf, outfile)
+                return (protobuf, outfile, rest)
          _ -> do
                 self <- getProgName
                 return (error $ "Usage: " ++ self ++ " path/to/infile.pb path/to/outfile.pb")
@@ -185,11 +186,13 @@ main = do
                       do runOutput $ (outLn "vvvv ===================================")
                          runOutput $ (outCSLn Yellow (joinWith "\n" $ map show (contextBindings extctx)))
                          let prog = closureConvertAndLift extctx mod
-                         let fns = moduleASTfunctions mod
-                         let (ILProgram procs) = prog
                          dumpModuleToProtobufIL prog (outfile ++ ".ll.pb")
                          runOutput $ (outLn "/// ===================================")
                          runOutput $ showProgramStructure prog
                          runOutput $ (outLn "^^^ ===================================")
+                         when (rest == ["--interpret"]) (do
+                           _unused <- interpretProg prog
+                           return ())
+                         return ()
             Nothing    -> error $ "Unable to type check input module!"
 
