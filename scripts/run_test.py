@@ -103,13 +103,18 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath):
     if verbose:
       compilelog = None
 
+    if options and options.interpret:
+      interpret = ["--interpret"]
+    else:
+      interpret = []
+
     # running fosterparse on a source file produces a ParsedAST
     (s1, e1) = run_command(['fosterparse', testpath, '_out.parsed.pb'],
                 paths, testpath, showcmd=verbose,
                 stdout=compilelog, stderr=compilelog, strictrv=True)
 
     # running fostercheck on a ParsedAST produces an ElaboratedAST
-    (s2, e2) = run_command(['fostercheck', '_out.parsed.pb', '_out.checked.pb'],
+    (s2, e2) = run_command(['fostercheck', '_out.parsed.pb', '_out.checked.pb'] + interpret,
                 paths, testpath, showcmd=verbose,
                 stdout=compilelog, stderr=compilelog, strictrv=True)
 
@@ -223,6 +228,8 @@ def get_test_parser(usage):
                     help="Show more information about program output.")
   parser.add_option("--asm", action="store_true", dest="asm", default=False,
                     help="Compile to assembly rather than object file.")
+  parser.add_option("--interpret", action="store_true", dest="interpret", default=False,
+                    help="Run using interpreter instead of compiling via LLVM")
   return parser
 
 if __name__ == "__main__":
