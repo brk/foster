@@ -3,6 +3,9 @@ module Foster.Smallstep where
 import List(foldr)
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Int
+import Data.Bits
+import Data.Maybe(isJust)
 
 import Foster.Base
 import Foster.TypeAST
@@ -16,6 +19,12 @@ interpretProg prog = do
   let globalState = MachineState procmap emptyHeap mainCoro
   val <- interpret globalState
   return val
+
+interpret gs =
+  if isValue (exprOf gs)
+     then do return gs
+     else do gs' <- step gs
+             interpret gs'
 
 buildProcMap (ILProgram procdefs) =
   List.foldr ins Map.empty procdefs where
@@ -38,7 +47,7 @@ data MachineState = MachineState {
 }
 
 exprOf gs = coroExpr (stCoro gs)
-getvar gs avar = case Map.lookup (avarIdent avar) (coroEnv (stCoro gs)) of
+getval gs avar = case Map.lookup (avarIdent avar) (coroEnv (stCoro gs)) of
         Just e -> e
         Nothing -> error $ "Unable to look up local variable " ++ show avar
 
@@ -63,7 +72,7 @@ step gs =
                                   gs' <- step (withExpr gs b)
                                   return $ withExpr gs' (ILLetVal x (exprOf gs' ) e)
     ILCall t b vs ->
-        let args = map (getvar gs) vs in
+        let args = map (getval gs) vs in
         case Map.lookup (avarIdent b) (stProcmap gs) of
            Just proc ->
               let names = map avarIdent (ilProcVars proc) in
@@ -74,8 +83,8 @@ step gs =
     ILIf t v b c -> error "step ilif"
     ILSubscript t v (ILInt _ i) ->
         let n = fromInteger (litIntValue i) in
-        case getvar gs v of
-          ILTuple vars -> return $ withExpr gs (getvar gs (vars !! n))
+        case getval gs v of
+          ILTuple vars -> return $ withExpr gs (getval gs (vars !! n))
           _ -> error "Expected base of subscript to be tuple"
 
     ILSubscript t v e ->
@@ -102,18 +111,60 @@ isPrintFunction name =
     "print_i1"   -> True
     otherwise -> False
 
-tryEvalPrimitive gs "force_gc_for_debugging_purposes" args =
-  do return $ withExpr gs (ILTuple [])
+modifyInt32With :: (Int32 -> Int32 -> Int32)
+       -> LiteralInt -> LiteralInt -> LiteralInt
+modifyInt32With f i1 i2 =
+  let v1 = fromInteger (litIntValue i1) in
+  let v2 = fromInteger (litIntValue i2) in
+  let int = fromIntegral (f v1 v2) in
+  i1 { litIntValue = int }
+
+ashr32   a b = shiftR a (fromIntegral b)
+shl32    a b = shiftL a (fromIntegral b)
+
+tryGetInt32PrimOp2 :: String -> Maybe (LiteralInt -> LiteralInt -> LiteralInt)
+tryGetInt32PrimOp2 name =
+  case name of
+    "primitive_*_i32"       -> Just (modifyInt32With (*))
+    "primitive_bitashr_i32" -> Just (modifyInt32With ashr32)
+    "primitive_bitshl_i32"  -> Just (modifyInt32With shl32)
+    "primitive_bitxor_i32"  -> Just (modifyInt32With xor)
+    "primitive_bitor_i32"   -> Just (modifyInt32With (.|.))
+    "primitive_bitand_i32"  -> Just (modifyInt32With (.&.))
+    otherwise -> Nothing
+
+tryEvalPrimitive gs primName [ILInt t i1, ILInt _ i2]
+  | isJust (tryGetInt32PrimOp2 primName) =
+ let (Just fn) = tryGetInt32PrimOp2 primName in
+ return $ withExpr gs (ILInt t (fn i1 i2))
+
+tryEvalPrimitive gs "primitive_negate_i32" [ILInt t i] =
+ let int = litIntValue i in
+ return $ withExpr gs (ILInt t (i { litIntValue = negate int }))
+
+tryEvalPrimitive gs "force_gc_for_debugging_purposes" _args =
+  return $ withExpr gs (ILTuple [])
+
+tryEvalPrimitive gs primName [val]
+  | isPrintFunction primName =
+      do putStrLn (display gs val)
+         return $ withExpr gs val
+
+tryEvalPrimitive gs "expect_i32b" [val@(ILInt _ i)] =
+      do putStrLn (showBits32 (litIntValue i))
+         return $ withExpr gs val
+
+tryEvalPrimitive gs "print_i32b" [val@(ILInt _ i)] =
+      do putStrLn (showBits32 (litIntValue i))
+         return $ withExpr gs val
 
 tryEvalPrimitive gs primName args =
-    let coro = stCoro gs in
-    if isPrintFunction primName
-      then
-           case args of
-               [arg]      -> do putStrLn (show arg)
-                                return $ gs { stCoro = coro { coroExpr=arg } }
-               otherwise -> undefined
-      else error ("step ilcall " ++ show primName)
+      error ("step ilcall " ++ show primName ++ " with args: " ++ show args)
+
+showBits32 n =
+  let bits = map (testBit n) [0 .. (32 - 1)] in
+  let s = map (\b -> if b then '1' else '0') bits in
+  (reverse s) ++ "_2"
 
 isValue (ILBool _)           = True
 isValue (ILInt t _)          = True
@@ -126,9 +177,14 @@ isValue (ILIf t a b c)       = False
 isValue (ILSubscript t _ _)  = False
 isValue (ILTyApp overallType tm tyArgs) = False
 
-interpret gs =
-  if isValue (coroExpr (stCoro gs))
-     then do return gs
-     else do gs' <- step gs
-             interpret gs'
-
+display gs (ILBool True)        = "true"
+display gs (ILBool False)       = "false"
+display gs (ILInt t i)          = show (litIntValue i)
+display gs (ILTuple vs)         = "(" ++ joinWith ", " (map (display gs) (map (getval gs) vs)) ++ ")"
+display gs (ILVar (AnnVar t i)) = show i
+display gs (ILClosures n b e)   = "<...closures...>"
+display gs (ILLetVal x b e)     = error "Should not try to display non-value expr!"
+display gs (ILCall t id expr)   = error "Should not try to display non-value expr!"
+display gs (ILIf t a b c)       = error "Should not try to display non-value expr!"
+display gs (ILSubscript t _ _)  = error "Should not try to display non-value expr!"
+display gs (ILTyApp overallType tm tyArgs) = error "Should not try to display non-value expr!"
