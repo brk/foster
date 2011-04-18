@@ -111,21 +111,29 @@ isPrintFunction name =
     "print_i1"   -> True
     otherwise -> False
 
+liftInt :: (Integral a) => (a -> a -> b) ->
+          LiteralInt -> LiteralInt -> b
+liftInt f i1 i2 =
+  let v1 = fromInteger (litIntValue i1) in
+  let v2 = fromInteger (litIntValue i2) in
+  f v1 v2
+
 modifyInt32With :: (Int32 -> Int32 -> Int32)
        -> LiteralInt -> LiteralInt -> LiteralInt
 modifyInt32With f i1 i2 =
-  let v1 = fromInteger (litIntValue i1) in
-  let v2 = fromInteger (litIntValue i2) in
-  let int = fromIntegral (f v1 v2) in
+  let int = fromIntegral (liftInt f i1 i2) in
   i1 { litIntValue = int }
 
 ashr32   a b = shiftR a (fromIntegral b)
 shl32    a b = shiftL a (fromIntegral b)
 
-tryGetInt32PrimOp2 :: String -> Maybe (LiteralInt -> LiteralInt -> LiteralInt)
-tryGetInt32PrimOp2 name =
+tryGetInt32PrimOp2Int32 :: String -> Maybe (LiteralInt -> LiteralInt -> LiteralInt)
+tryGetInt32PrimOp2Int32 name =
   case name of
     "primitive_*_i32"       -> Just (modifyInt32With (*))
+    "primitive_+_i32"       -> Just (modifyInt32With (+))
+    "primitive_-_i32"       -> Just (modifyInt32With (-))
+    "primitive_/_i32"       -> Just (modifyInt32With div)
     "primitive_bitashr_i32" -> Just (modifyInt32With ashr32)
     "primitive_bitshl_i32"  -> Just (modifyInt32With shl32)
     "primitive_bitxor_i32"  -> Just (modifyInt32With xor)
@@ -133,10 +141,27 @@ tryGetInt32PrimOp2 name =
     "primitive_bitand_i32"  -> Just (modifyInt32With (.&.))
     otherwise -> Nothing
 
+tryGetInt32PrimOp2Bool :: String -> Maybe (Int32 -> Int32 -> Bool)
+tryGetInt32PrimOp2Bool name =
+  case name of
+    "primitive_<_i32"        -> Just ((<))
+    "primitive_<=_i32"       -> Just ((<=))
+    "primitive_==_i32"       -> Just ((==))
+    "primitive_!=_i32"       -> Just ((/=))
+    "primitive_>=_i32"       -> Just ((>=))
+    "primitive_>_i32"        -> Just ((>))
+    otherwise -> Nothing
+
 tryEvalPrimitive gs primName [ILInt t i1, ILInt _ i2]
-  | isJust (tryGetInt32PrimOp2 primName) =
- let (Just fn) = tryGetInt32PrimOp2 primName in
+  | isJust (tryGetInt32PrimOp2Int32 primName) =
+ let (Just fn) = tryGetInt32PrimOp2Int32 primName in
  return $ withExpr gs (ILInt t (fn i1 i2))
+
+tryEvalPrimitive gs primName [ILInt t i1, ILInt _ i2]
+  | isJust (tryGetInt32PrimOp2Bool primName) =
+ let (Just fn) = tryGetInt32PrimOp2Bool primName in
+ return $ withExpr gs (ILBool (liftInt fn i1 i2))
+
 
 tryEvalPrimitive gs "primitive_negate_i32" [ILInt t i] =
  let int = litIntValue i in
