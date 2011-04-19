@@ -11,92 +11,166 @@ import Foster.Base
 import Foster.TypeAST
 import Foster.ILExpr
 
+-- Extend ILExpr et al with a way of representing
+-- intermediate results of evaluation like locations
+-- and closures.
+
+-- A term is either a normal-form value,
+-- or a non-normal-form expression.
+data SSTerm = SSTmExpr  IExpr
+            | SSTmValue SSValue
+            deriving (Show)
+
+data SSValue = SSBool     Bool
+             | SSInt      LiteralInt
+             | SSTuple    [SSValue]
+             | SSLocation Location
+             | SSClosure  ILClosure
+             deriving (Show)
+
+-- Expressions are terms that are not in normal form.
+data IExpr =
+          ITuple [AnnVar]
+        | IVar    AnnVar
+        -- Procedures may be implicitly recursive,
+        -- but we need to put a smidgen of effort into
+        -- codegen-ing closures so they can be mutually recursive.
+        | IClosures    [Ident] [ILClosure] SSTerm
+        | ILetVal       Ident    SSTerm    SSTerm
+        | ISubscript   AnnVar SSTerm
+        | IIf          AnnVar SSTerm SSTerm
+        | ICall        AnnVar [AnnVar]
+        | ITyApp       TypeAST SSTerm  TypeAST
+        deriving (Show)
+
+data SSProcDef = SSProcDef { ssProcIdent      :: Ident
+                           , ssProcVars       :: [AnnVar]
+                           , ssProcBody       :: SSTerm
+                           } deriving Show
+
+-- There is a trivial translation from ILExpr to SSTerm...
+ssTermOfExpr :: ILExpr -> SSTerm
+ssTermOfExpr expr =
+  let tr = ssTermOfExpr in
+  case expr of
+    ILBool b               -> SSTmValue $ SSBool b
+    ILInt t i              -> SSTmValue $ SSInt i
+    ILVar a                -> SSTmExpr  $ IVar a
+    ILTuple vs             -> SSTmExpr  $ ITuple vs
+    ILClosures bnds clos e -> SSTmExpr  $ IClosures bnds clos (tr e)
+    ILLetVal x b e         -> SSTmExpr  $ ILetVal x (tr b) (tr e)
+    ILCall    t b vs       -> SSTmExpr  $ ICall b vs
+    ILIf      t  v b c     -> SSTmExpr  $ IIf v (tr b) (tr c)
+    ILSubscript t a b      -> SSTmExpr  $ ISubscript a (tr b)
+    ILTyApp t e argty      -> SSTmExpr  $ ITyApp t (tr e) argty
+
+-- ... which lifts in a  straightfoward way to procedure definitions.
+ssProcDefFrom pd =
+  SSProcDef (ilProcIdent pd) (ilProcVars pd)
+               (ssTermOfExpr (ilProcBody pd))
+
+-- To interpret a program, we construct a coroutine for main
+-- (no arguments need be passed yet) and step until the program finishes.
 interpretProg prog = do
   let procmap = buildProcMap prog
   let main = (procmap Map.! (Ident "main" irrelevantIdentNum))
-  let mainCoro = Coro (ilProcBody main) Map.empty
+  let mainCoro = Coro (ssProcBody main) Map.empty
   let emptyHeap = Heap 0 Map.empty
   let globalState = MachineState procmap emptyHeap mainCoro
   val <- interpret globalState
   return val
 
 interpret gs =
-  if isValue (exprOf gs)
-     then do return gs
-     else do gs' <- step gs
-             interpret gs'
+  case (termOf gs) of
+    SSTmValue _ -> do return gs
+    otherwise   -> do gs' <- step gs
+                      interpret gs'
 
 buildProcMap (ILProgram procdefs) =
   List.foldr ins Map.empty procdefs where
-    ins procdef map = Map.insert (ilProcIdent procdef) procdef map
+    ins procdef map = Map.insert (ilProcIdent procdef)
+                                 (ssProcDefFrom procdef) map
 
 type Location = Int
 nextLocation x = x + 1
 data Heap = Heap {
           hpBump :: Location
-        , hpMap  :: Map Location ILExpr
+        , hpMap  :: Map Location SSTerm
 }
 data Coro = Coro {
-    coroExpr :: ILExpr
-  , coroEnv  :: Map Ident ILExpr
+    coroTerm :: SSTerm
+  , coroEnv  :: Map Ident SSValue
 }
 data MachineState = MachineState {
-           stProcmap :: Map Ident ILProcDef
+           stProcmap :: Map Ident SSProcDef
         ,  stHeap    :: Heap
         ,  stCoro    :: Coro
 }
 
-exprOf gs = coroExpr (stCoro gs)
+termOf gs = coroTerm (stCoro gs)
+
+getval :: MachineState -> AnnVar -> SSValue
 getval gs avar = case Map.lookup (avarIdent avar) (coroEnv (stCoro gs)) of
         Just e -> e
         Nothing -> error $ "Unable to look up local variable " ++ show avar
 
-withExpr gs e =
+withTerm gs e =
   let coro = stCoro gs in
-  gs { stCoro = coro { coroExpr = e } }
+  gs { stCoro = coro { coroTerm = e } }
 
+step :: MachineState -> IO MachineState
 step gs =
   let coro = stCoro gs in
-  case coroExpr coro of
-    ILBool b                -> do return gs
-    ILInt t _               -> do return gs
-    ILTuple     vs          -> do return gs
-    ILVar (AnnVar t i)      -> do return gs
-    ILClosures bnds clos e  -> error "step ilclo"
-    ILLetVal x b e          -> if isValue b
-                                then
-                                  let env' = Map.insert x b (coroEnv coro) in
-                                  let newCoro = coro { coroExpr = e, coroEnv = env' } in
-                                  return $ gs { stCoro = newCoro }
-                                else do
-                                  gs' <- step (withExpr gs b)
-                                  return $ withExpr gs' (ILLetVal x (exprOf gs' ) e)
-    ILCall t b vs ->
+  case coroTerm coro of
+    SSTmExpr e -> stepExpr gs e
+    SSTmValue _ -> return gs
+
+stepExpr :: MachineState -> IExpr -> IO MachineState
+stepExpr gs expr =
+  let coro = stCoro gs in
+  case expr of
+    ITuple     vs          -> do return gs -- TODO
+    IVar (AnnVar t i)      -> do return gs
+    IClosures bnds clos e  -> error $ "step ilclo bnds=" ++ show bnds ++ "\nclos = " ++ show clos
+    ILetVal x b e          ->
+      case b of
+        SSTmValue bval -> let env' = Map.insert x bval (coroEnv coro) in
+                          let newCoro = coro { coroTerm = e, coroEnv = env' } in
+                          return $ gs { stCoro = newCoro }
+        SSTmExpr _     -> do
+                          gs' <- step (withTerm gs b)
+                          {- TODO: gs might contain a non-expr value... -}
+                          return $ withTerm gs' (SSTmExpr $ ILetVal x (termOf gs' ) e)
+    ICall b vs ->
         let args = map (getval gs) vs in
         case Map.lookup (avarIdent b) (stProcmap gs) of
            Just proc ->
-              let names = map avarIdent (ilProcVars proc) in
+              let names = map avarIdent (ssProcVars proc) in
               let gs' = extendEnv gs names args in
-              return $ withExpr gs' (ilProcBody proc)
+              return $ withTerm gs' (ssProcBody proc)
            Nothing -> tryEvalPrimitive gs (identPrefix (avarIdent b)) args
 
-    ILIf t v b c ->
+    IIf v b c ->
         case getval gs v of
-                ILBool True -> return $ withExpr gs b
-                ILBool False -> return $ withExpr gs c
-                otherwise -> error "if cond was not a boolean"
-    ILSubscript t v (ILInt _ i) ->
+           (SSBool True ) -> return $ withTerm gs b
+           (SSBool False) -> return $ withTerm gs c
+           otherwise -> error "if cond was not a boolean"
+
+    ISubscript v (SSTmValue (SSInt i)) ->
         let n = fromInteger (litIntValue i) in
         case getval gs v of
-          ILTuple vars -> return $ withExpr gs (getval gs (vars !! n))
-          _ -> error "Expected base of subscript to be tuple"
+          SSTuple vals ->
+               return $ withTerm gs (SSTmValue (vals !! n))
+          _ -> error "Expected base of subscript to be tuple value"
 
-    ILSubscript t v e ->
-        if isValue e
-          then error $ ("step ilsubsc " ++ show t ++ " !! " ++ show v ++ " // " ++ show e)
-          else do gs' <- step (withExpr gs e)
-                  return $ withExpr gs' (ILSubscript t v (exprOf gs' ))
-    ILTyApp t e argty -> error "step iltyapp"
+    ISubscript v e@(SSTmExpr _) ->
+      do gs' <- step (withTerm gs e)
+         return $ withTerm gs' (SSTmExpr $ ISubscript v (termOf gs' ))
+
+    ISubscript v (SSTmValue e) ->
+      error $ ("step ilsubsc "  ++ show v ++ " // " ++ show e)
+
+    ITyApp t e argty -> error "step iltyapp"
 
 extendEnv gs names args =
   let ins (id, arg) map = Map.insert id arg map in
@@ -156,36 +230,37 @@ tryGetInt32PrimOp2Bool name =
     "primitive_>_i32"        -> Just ((>))
     otherwise -> Nothing
 
-tryEvalPrimitive gs primName [ILInt t i1, ILInt _ i2]
+tryEvalPrimitive :: MachineState -> String -> [SSValue] -> IO MachineState
+tryEvalPrimitive gs primName [SSInt i1, SSInt i2]
   | isJust (tryGetInt32PrimOp2Int32 primName) =
  let (Just fn) = tryGetInt32PrimOp2Int32 primName in
- return $ withExpr gs (ILInt t (fn i1 i2))
+ return $ withTerm gs (SSTmValue $ SSInt (fn i1 i2))
 
-tryEvalPrimitive gs primName [ILInt t i1, ILInt _ i2]
+tryEvalPrimitive gs primName [SSInt i1, SSInt i2]
   | isJust (tryGetInt32PrimOp2Bool primName) =
  let (Just fn) = tryGetInt32PrimOp2Bool primName in
- return $ withExpr gs (ILBool (liftInt fn i1 i2))
+ return $ withTerm gs (SSTmValue $ SSBool (liftInt fn i1 i2))
 
 
-tryEvalPrimitive gs "primitive_negate_i32" [ILInt t i] =
+tryEvalPrimitive gs "primitive_negate_i32" [SSInt i] =
  let int = litIntValue i in
- return $ withExpr gs (ILInt t (i { litIntValue = negate int }))
+ return $ withTerm gs (SSTmValue $ SSInt (i { litIntValue = negate int }))
 
 tryEvalPrimitive gs "force_gc_for_debugging_purposes" _args =
-  return $ withExpr gs (ILTuple [])
+  return $ withTerm gs (SSTmValue $ SSTuple [])
 
 tryEvalPrimitive gs primName [val]
   | isPrintFunction primName =
-      do putStrLn (display gs val)
-         return $ withExpr gs val
+      do putStrLn (display val)
+         return $ withTerm gs (SSTmValue val)
 
-tryEvalPrimitive gs "expect_i32b" [val@(ILInt _ i)] =
+tryEvalPrimitive gs "expect_i32b" [val@(SSInt i)] =
       do putStrLn (showBits32 (litIntValue i))
-         return $ withExpr gs val
+         return $ withTerm gs (SSTmValue val)
 
-tryEvalPrimitive gs "print_i32b" [val@(ILInt _ i)] =
+tryEvalPrimitive gs "print_i32b" [val@(SSInt i)] =
       do putStrLn (showBits32 (litIntValue i))
-         return $ withExpr gs val
+         return $ withTerm gs (SSTmValue val)
 
 tryEvalPrimitive gs primName args =
       error ("step ilcall " ++ show primName ++ " with args: " ++ show args)
@@ -195,25 +270,11 @@ showBits32 n =
   let s = map (\b -> if b then '1' else '0') bits in
   (reverse s) ++ "_2"
 
-isValue (ILBool _)           = True
-isValue (ILInt t _)          = True
-isValue (ILTuple vs)         = True
-isValue (ILVar (AnnVar t i)) = True
-isValue (ILClosures n b e)   = False
-isValue (ILLetVal x b e)     = False
-isValue (ILCall t id expr)   = False
-isValue (ILIf t a b c)       = False
-isValue (ILSubscript t _ _)  = False
-isValue (ILTyApp overallType tm tyArgs) = False
 
-display gs (ILBool True)        = "true"
-display gs (ILBool False)       = "false"
-display gs (ILInt t i)          = show (litIntValue i)
-display gs (ILTuple vs)         = "(" ++ joinWith ", " (map (display gs) (map (getval gs) vs)) ++ ")"
-display gs (ILVar (AnnVar t i)) = show i
-display gs (ILClosures n b e)   = "<...closures...>"
-display gs (ILLetVal x b e)     = error "Should not try to display non-value expr!"
-display gs (ILCall t id expr)   = error "Should not try to display non-value expr!"
-display gs (ILIf t a b c)       = error "Should not try to display non-value expr!"
-display gs (ILSubscript t _ _)  = error "Should not try to display non-value expr!"
-display gs (ILTyApp overallType tm tyArgs) = error "Should not try to display non-value expr!"
+display :: SSValue -> String
+display (SSBool True ) = "true"
+display (SSBool False) = "false"
+display (SSInt i     ) = show (litIntValue i)
+display (SSTuple vals) = "(" ++ joinWith ", " (map display vals) ++ ")"
+display (SSLocation z) = "<location " ++ show z ++ ">"
+display (SSClosure c ) = "<closure>"
