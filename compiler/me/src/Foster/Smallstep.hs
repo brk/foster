@@ -80,7 +80,11 @@ step gs =
               return $ withExpr gs' (ilProcBody proc)
            Nothing -> tryEvalPrimitive gs (identPrefix (avarIdent b)) args
 
-    ILIf t v b c -> error "step ilif"
+    ILIf t v b c ->
+        case getval gs v of
+                ILBool True -> return $ withExpr gs b
+                ILBool False -> return $ withExpr gs c
+                otherwise -> error "if cond was not a boolean"
     ILSubscript t v (ILInt _ i) ->
         let n = fromInteger (litIntValue i) in
         case getval gs v of
