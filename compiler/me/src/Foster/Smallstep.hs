@@ -129,8 +129,8 @@ stepExpr :: MachineState -> IExpr -> IO MachineState
 stepExpr gs expr =
   let coro = stCoro gs in
   case expr of
-    ITuple     vs          -> do return gs -- TODO
     IVar (AnnVar t i)      -> do return gs
+    ITuple     vs          -> do return $ withTerm gs (SSTmValue $ SSTuple (map (getval gs) vs))
     IClosures bnds clos e  -> error $ "step ilclo bnds=" ++ show bnds ++ "\nclos = " ++ show clos
     ILetVal x b e          ->
       case b of
@@ -232,19 +232,22 @@ tryGetInt32PrimOp2Bool name =
 
 tryEvalPrimitive :: MachineState -> String -> [SSValue] -> IO MachineState
 tryEvalPrimitive gs primName [SSInt i1, SSInt i2]
-  | isJust (tryGetInt32PrimOp2Int32 primName) =
- let (Just fn) = tryGetInt32PrimOp2Int32 primName in
- return $ withTerm gs (SSTmValue $ SSInt (fn i1 i2))
+        | isJust (tryGetInt32PrimOp2Int32 primName) =
+  let (Just fn) = tryGetInt32PrimOp2Int32 primName in
+  return $ withTerm gs (SSTmValue $ SSInt (fn i1 i2))
 
 tryEvalPrimitive gs primName [SSInt i1, SSInt i2]
-  | isJust (tryGetInt32PrimOp2Bool primName) =
- let (Just fn) = tryGetInt32PrimOp2Bool primName in
- return $ withTerm gs (SSTmValue $ SSBool (liftInt fn i1 i2))
+        | isJust (tryGetInt32PrimOp2Bool primName) =
+  let (Just fn) = tryGetInt32PrimOp2Bool primName in
+  return $ withTerm gs (SSTmValue $ SSBool (liftInt fn i1 i2))
 
 
 tryEvalPrimitive gs "primitive_negate_i32" [SSInt i] =
- let int = litIntValue i in
- return $ withTerm gs (SSTmValue $ SSInt (i { litIntValue = negate int }))
+  let int = litIntValue i in
+  return $ withTerm gs (SSTmValue $ SSInt (i { litIntValue = negate int }))
+
+tryEvalPrimitive gs "primitive_bitnot_i1" [SSBool b] =
+  return $ withTerm gs (SSTmValue $ SSBool (not b))
 
 tryEvalPrimitive gs "force_gc_for_debugging_purposes" _args =
   return $ withTerm gs (SSTmValue $ SSTuple [])
