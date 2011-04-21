@@ -148,6 +148,14 @@ closureConvert ctx expr =
                                     let procid = (ilProcIdent newproc)
                                     let procvar = (AnnVar (procType newproc) procid)
                                     nestedLets cargs (\vars -> ILCall t procvar (freevars ++ vars))
+
+                    -- v[types](args) =>
+                    -- let <fresh> = v[types] in <fresh>(args)
+                    -- TODO generate coro primitives here?
+                    -- Because the LLVM implementation specializes coro functions
+                    -- (at compile time)
+                    -- to produce a distinguished (function pointer) value,
+                    -- whereas the interpreter treats the coroutine primitives specially.
                     (E_AnnTyApp ot (E_AnnVar v) argty) -> do
                                     x <- ilmFresh "appty"
                                     let var = AnnVar ot x

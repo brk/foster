@@ -26,6 +26,7 @@ data SSValue = SSBool     Bool
              | SSTuple    [SSValue]
              | SSLocation Location
              | SSClosure  ILClosure
+             | SSCoro     Coro
              deriving (Show)
 
 -- Expressions are terms that are not in normal form.
@@ -40,7 +41,7 @@ data IExpr =
         | ISubscript   AnnVar SSTerm
         | IIf          AnnVar SSTerm SSTerm
         | ICall        AnnVar [AnnVar]
-        | ITyApp       TypeAST SSTerm  TypeAST
+        | ITyApp       SSTerm  TypeAST
         deriving (Show)
 
 data SSProcDef = SSProcDef { ssProcIdent      :: Ident
@@ -62,7 +63,7 @@ ssTermOfExpr expr =
     ILCall    t b vs       -> SSTmExpr  $ ICall b vs
     ILIf      t  v b c     -> SSTmExpr  $ IIf v (tr b) (tr c)
     ILSubscript t a b      -> SSTmExpr  $ ISubscript a (tr b)
-    ILTyApp t e argty      -> SSTmExpr  $ ITyApp t (tr e) argty
+    ILTyApp t e argty      -> SSTmExpr  $ ITyApp (tr e) argty
 
 -- ... which lifts in a  straightfoward way to procedure definitions.
 ssProcDefFrom pd =
@@ -95,17 +96,24 @@ type Location = Int
 nextLocation x = x + 1
 data Heap = Heap {
           hpBump :: Location
-        , hpMap  :: Map Location SSTerm
+        , hpMap  :: Map Location SSValue
 }
 data Coro = Coro {
     coroTerm :: SSTerm
   , coroEnv  :: Map Ident SSValue
-}
+} deriving (Show)
 data MachineState = MachineState {
            stProcmap :: Map Ident SSProcDef
         ,  stHeap    :: Heap
         ,  stCoro    :: Coro
 }
+
+extendHeap :: MachineState -> SSValue -> (Location, MachineState)
+extendHeap gs val =
+  let heap = stHeap gs in
+  let loc = nextLocation (hpBump heap) in
+  let hmp = Map.insert loc val (hpMap heap) in
+  (loc, gs { stHeap = Heap { hpBump = loc, hpMap = hmp } })
 
 termOf gs = coroTerm (stCoro gs)
 
@@ -122,24 +130,28 @@ step :: MachineState -> IO MachineState
 step gs =
   let coro = stCoro gs in
   case coroTerm coro of
-    SSTmExpr e -> stepExpr gs e
+    SSTmExpr e -> do --putStrLn (show e)
+                     stepExpr gs e
     SSTmValue _ -> return gs
 
 stepExpr :: MachineState -> IExpr -> IO MachineState
 stepExpr gs expr =
   let coro = stCoro gs in
   case expr of
-    IVar (AnnVar t i)      -> do return gs
+    IVar avar              -> do return $ withTerm gs (SSTmValue $ getval gs avar)
     ITuple     vs          -> do return $ withTerm gs (SSTmValue $ SSTuple (map (getval gs) vs))
-    IClosures bnds clos e  -> error $ "step ilclo bnds=" ++ show bnds ++ "\nclos = " ++ show clos
+    IClosures bnds clos e  ->
+      -- This is not quite right; closures should close over each other!
+      let clovals = map SSClosure clos in
+      let gs' = extendEnv gs bnds clovals in
+      return $ withTerm gs' e
+
     ILetVal x b e          ->
       case b of
         SSTmValue bval -> let env' = Map.insert x bval (coroEnv coro) in
                           let newCoro = coro { coroTerm = e, coroEnv = env' } in
                           return $ gs { stCoro = newCoro }
-        SSTmExpr _     -> do
-                          gs' <- step (withTerm gs b)
-                          {- TODO: gs might contain a non-expr value... -}
+        SSTmExpr _     -> step (withTerm gs b) >>= \gs' ->
                           return $ withTerm gs' (SSTmExpr $ ILetVal x (termOf gs' ) e)
     ICall b vs ->
         let args = map (getval gs) vs in
@@ -170,7 +182,14 @@ stepExpr gs expr =
     ISubscript v (SSTmValue e) ->
       error $ ("step ilsubsc "  ++ show v ++ " // " ++ show e)
 
-    ITyApp t e argty -> error "step iltyapp"
+    ITyApp e@(SSTmExpr (IVar (AnnVar _ (Ident "coro_invoke" _)))) argty
+      -> return $ withTerm gs e
+
+    ITyApp e@(SSTmExpr _) argty ->
+       do gs' <- step (withTerm gs e)
+          return $ withTerm gs' (SSTmExpr $ ITyApp (termOf gs' ) argty)
+
+    ITyApp (SSTmValue e) argty -> error $ "step iltyapp " ++ show e
 
 extendEnv gs names args =
   let ins (id, arg) map = Map.insert id arg map in
@@ -252,6 +271,13 @@ tryEvalPrimitive gs "primitive_bitnot_i1" [SSBool b] =
 tryEvalPrimitive gs "force_gc_for_debugging_purposes" _args =
   return $ withTerm gs (SSTmValue $ SSTuple [])
 
+{- "Rule 4 describes the action of creating a coroutine.
+    It creates a new label to represent the coroutine and extends the
+    store with a mapping from this label to the coroutine main function." -}
+tryEvalPrimitive gs ("coro_create_i32_i32") [clo] =
+  let (loc, gs') = extendHeap gs clo in
+  return $ withTerm gs' (SSTmValue $ SSLocation loc)
+
 tryEvalPrimitive gs primName [val]
   | isPrintFunction primName =
       do putStrLn (display val)
@@ -281,3 +307,5 @@ display (SSInt i     ) = show (litIntValue i)
 display (SSTuple vals) = "(" ++ joinWith ", " (map display vals) ++ ")"
 display (SSLocation z) = "<location " ++ show z ++ ">"
 display (SSClosure c ) = "<closure>"
+display (SSCoro    c ) = "<coro>"
+
