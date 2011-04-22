@@ -157,7 +157,7 @@ closureConvert ctx expr =
                     -- to produce a distinguished (function pointer) value,
                     -- whereas the interpreter treats the coroutine primitives specially.
                     (E_AnnTyApp ot (E_AnnVar v) argty) -> do
-                                    x <- ilmFresh "appty"
+                                    x <- ilmFresh $ "appty_" ++ (identPrefix $ avarIdent v)
                                     let var = AnnVar ot x
                                     nlets <- nestedLets cargs (\vars -> ILCall t var vars)
                                     return $ buildLet x (ILTyApp ot (ILVar v) argty) nlets

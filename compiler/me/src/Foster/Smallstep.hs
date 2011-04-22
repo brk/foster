@@ -11,10 +11,6 @@ import Foster.Base
 import Foster.TypeAST
 import Foster.ILExpr
 
--- Extend ILExpr et al with a way of representing
--- intermediate results of evaluation like locations
--- and closures.
-
 -- A term is either a normal-form value,
 -- or a non-normal-form expression.
 data SSTerm = SSTmExpr  IExpr
@@ -75,7 +71,7 @@ ssProcDefFrom pd =
 interpretProg prog = do
   let procmap = buildProcMap prog
   let main = (procmap Map.! (Ident "main" irrelevantIdentNum))
-  let mainCoro = Coro (ssProcBody main) Map.empty
+  let mainCoro = Coro (ssProcBody main) [] Map.empty CoroStatusRunning Nothing
   let emptyHeap = Heap 0 Map.empty
   let globalState = MachineState procmap emptyHeap mainCoro
   val <- interpret globalState
@@ -98,15 +94,35 @@ data Heap = Heap {
           hpBump :: Location
         , hpMap  :: Map Location SSValue
 }
+data CoroStatus = CoroStatusInvalid
+                | CoroStatusSuspended
+                | CoroStatusDormant
+                | CoroStatusRunning
+                | CoroStatusDead
+                deriving (Show)
 data Coro = Coro {
     coroTerm :: SSTerm
+  , coroArgs :: [AnnVar]
   , coroEnv  :: Map Ident SSValue
+  , coroStat :: CoroStatus
+  , coroPrev :: Maybe Location
 } deriving (Show)
+
 data MachineState = MachineState {
            stProcmap :: Map Ident SSProcDef
         ,  stHeap    :: Heap
         ,  stCoro    :: Coro
 }
+
+coroFromClosure gs (ILClosure id avars) =
+  let ssproc = (stProcmap gs) Map.! id in
+  let ins avar map = Map.insert (avarIdent avar) (getval gs avar) map in
+  let initmap = List.foldr ins Map.empty avars in
+  Coro (ssProcBody ssproc) (ssProcVars ssproc) initmap CoroStatusSuspended Nothing
+
+modifyHeap gs loc val =
+  let heap = stHeap gs in
+  heap { hpMap = Map.insert loc val (hpMap heap) }
 
 extendHeap :: MachineState -> SSValue -> (Location, MachineState)
 extendHeap gs val =
@@ -115,7 +131,17 @@ extendHeap gs val =
   let hmp = Map.insert loc val (hpMap heap) in
   (loc, gs { stHeap = Heap { hpBump = loc, hpMap = hmp } })
 
+lookupHeap :: MachineState -> Location -> SSValue
+lookupHeap gs loc =
+  case Map.lookup loc (hpMap (stHeap gs)) of
+    Just v -> v
+    Nothing -> error $ "Unable to find heap cell for location " ++ show loc
+
 termOf gs = coroTerm (stCoro gs)
+
+isGlobalPrimitive name = case name of
+  "coro_invoke" -> True
+  otherwise -> False
 
 getval :: MachineState -> AnnVar -> SSValue
 getval gs avar = case Map.lookup (avarIdent avar) (coroEnv (stCoro gs)) of
@@ -198,6 +224,18 @@ extendEnv gs names args =
   let env' = List.foldr ins env (zip names args) in
   gs { stCoro = coro {coroEnv = env' } }
 
+tryInvokeToCoro gs loc args =
+  let (SSCoro ncoro) = lookupHeap gs loc in
+  let ccoro = stCoro gs in
+  -- Change ccoro state to suspended
+  -- ensure that ncoro is not dead or running
+  -- change ncoro state to running
+  let gs2 = gs {
+      stHeap = modifyHeap gs loc (SSCoro $ ccoro { coroStat = CoroStatusSuspended })
+    , stCoro = ncoro { coroPrev = (Just loc), coroStat = CoroStatusRunning }
+  } in
+  extendEnv gs2 (tail $ map avarIdent $ coroArgs ncoro) args
+
 isPrintFunction name =
   case name of
     "expect_i64" -> True
@@ -274,9 +312,13 @@ tryEvalPrimitive gs "force_gc_for_debugging_purposes" _args =
 {- "Rule 4 describes the action of creating a coroutine.
     It creates a new label to represent the coroutine and extends the
     store with a mapping from this label to the coroutine main function." -}
-tryEvalPrimitive gs ("coro_create_i32_i32") [clo] =
-  let (loc, gs') = extendHeap gs clo in
+tryEvalPrimitive gs ("coro_create_i32_i32") [SSClosure clo] =
+  let coro = coroFromClosure gs clo in
+  let (loc, gs') = extendHeap gs (SSCoro coro) in
   return $ withTerm gs' (SSTmValue $ SSLocation loc)
+
+tryEvalPrimitive gs ("appty_coro_invoke") ((SSLocation loc):args) =
+  return $ tryInvokeToCoro gs loc args
 
 tryEvalPrimitive gs primName [val]
   | isPrintFunction primName =
