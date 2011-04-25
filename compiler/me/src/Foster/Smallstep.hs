@@ -8,6 +8,7 @@ import Data.Bits
 import Data.Maybe(isJust)
 
 import Control.Exception(assert)
+import System.Console.ANSI
 
 import Foster.Base
 import Foster.TypeAST
@@ -71,6 +72,9 @@ ssProcDefFrom pd =
 -- To interpret a program, we construct a coroutine for main
 -- (no arguments need be passed yet) and step until the program finishes.
 interpretProg prog = do
+  _ <- writeFile "istdout.txt" ""
+  _ <- writeFile "istderr.txt" ""
+
   let procmap = buildProcMap prog
   let main = (procmap Map.! (Ident "main" irrelevantIdentNum))
   let loc  = 0
@@ -279,16 +283,6 @@ extendEnv gs names args =
   let env  = coroEnv coro in
   withEnv gs (List.foldr ins env (zip names args))
 
-isPrintFunction name =
-  case name of
-    "expect_i64" -> True
-    "print_i64"  -> True
-    "expect_i32" -> True
-    "print_i32"  -> True
-    "expect_i1"  -> True
-    "print_i1"   -> True
-    otherwise -> False
-
 liftInt :: (Integral a) => (a -> a -> b) ->
           LiteralInt -> LiteralInt -> b
 liftInt f i1 i2 =
@@ -393,20 +387,32 @@ tryEvalPrimitive gs ("coro_invoke_i32_i32") ((SSLocation targetloc):args) =
 
 tryEvalPrimitive gs primName [val]
   | isPrintFunction primName =
-      do putStrLn (display val)
+      do printString (display val)
+         return $ withTerm gs (SSTmValue val)
+
+tryEvalPrimitive gs primName [val]
+  | isExpectFunction primName =
+      do expectString (display val)
          return $ withTerm gs (SSTmValue val)
 
 tryEvalPrimitive gs "expect_i32b" [val@(SSInt i)] =
-      do putStrLn (showBits32 (litIntValue i))
+      do expectString (showBits32 (litIntValue i))
          return $ withTerm gs (SSTmValue val)
 
 tryEvalPrimitive gs "print_i32b" [val@(SSInt i)] =
-      do putStrLn (showBits32 (litIntValue i))
+      do printString (showBits32 (litIntValue i))
          return $ withTerm gs (SSTmValue val)
 
 tryEvalPrimitive gs primName args =
       error ("step ilcall " ++ show primName ++ " with args: " ++ show args)
 
+printString  s = do
+  runOutput (outCSLn Blue s)
+  appendFile "istderr.txt" (s ++ "\n")
+
+expectString s = do
+  runOutput (outCSLn Green s)
+  appendFile "istdout.txt" (s ++ "\n")
 
 tryInvokeToCoro gs targetloc [arg] =
   let (SSCoro ncoro) = lookupHeap gs targetloc in
@@ -435,6 +441,20 @@ showBits32 n =
   let bits = map (testBit n) [0 .. (32 - 1)] in
   let s = map (\b -> if b then '1' else '0') bits in
   (reverse s) ++ "_2"
+
+isPrintFunction name =
+  case name of
+    "print_i64"  -> True
+    "print_i32"  -> True
+    "print_i1"   -> True
+    otherwise    -> False
+
+isExpectFunction name =
+  case name of
+    "expect_i64" -> True
+    "expect_i32" -> True
+    "expect_i1"  -> True
+    otherwise    -> False
 
 view :: SSTerm -> String
 view (SSTmValue v) = display v
