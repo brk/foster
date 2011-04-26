@@ -113,6 +113,8 @@ rootContextPairs =
     ,(,) "expect_i1"   $ mkFnType [i1] [i32]
     ,(,)  "print_i1"   $ mkFnType [i1] [i32]
 
+    ,(,) "opaquely_i32" $ mkFnType [i32] [i32]
+
     ,(,) "coro_create_i32_i32" $ coroCreateType [i32] [i32]
     ,(,) "coro_invoke_i32_i32" $ coroInvokeType [i32] [i32]
     ,(,) "coro_yield_i32_i32"  $ coroYieldType  [i32] [i32]

@@ -23,6 +23,16 @@ using namespace llvm;
 
 namespace foster {
 
+  void addStandardExternDeclarations(Module* mod) {
+    const llvm::Type* i32 = TypeAST::i(32)->getLLVMType();
+    std::vector<const Type*> args;
+    args.push_back(i32);
+    mod->getOrInsertFunction("opaquely_i32",
+         FunctionType::get(i32, args,
+                       /*isVarArg=*/ false)
+      );
+  }
+
 bool gPrintLLVMImports = false;
 
 static const char* sOps[] = {

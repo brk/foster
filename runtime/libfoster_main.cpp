@@ -14,6 +14,8 @@ extern "C" int foster__main();
 
 #include "libfoster.h"
 
+extern "C" int32_t opaquely_i32(int32_t n);
+
 int main(int argc, char** argv) {
   foster::runtime::initialize();
   int rv = foster__main();
@@ -21,3 +23,4 @@ int main(int argc, char** argv) {
   return rv;
 }
 
+int32_t opaquely_i32(int32_t n) { return n; }

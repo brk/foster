@@ -1,13 +1,13 @@
 // IN: 2 3 5 8 13
 
-run-clo-1 = fn (y:i32, f:fn(z:i32, x:i32 to i32) to i32) {  f(y, read_i32())  }
+run-clo-1 = fn (y:i32, f:fn(z:i32, x:i32 to i32) to i32) {  f(y, opaquely_i32(8))  }
 
 main = fn (to i32) {
-  let n:i32 = read_i32() in {
-  let a:i32 = read_i32() in {
+  let n:i32 = opaquely_i32(2) in {
+  let a:i32 = opaquely_i32(3) in {
   let c:  fn(z:i32, x:i32 to i32) =   fn (z:i32, x:i32 to i32) { (z + a) * n + x }   in {
     // n = 2, a = 3, y = 5, x = 8
     expect_i32((5+3) * 2 + 8)
-    print_i32(run-clo-1(read_i32(), c))
+    print_i32(run-clo-1(opaquely_i32(5), c))
   } } }
 }

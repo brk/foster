@@ -228,6 +228,7 @@ int main(int argc, char** argv) {
   module->getOrInsertGlobal("current_coro",
     current_coro->getType()->getContainedType(0));
 
+  foster::addStandardExternDeclarations(module);
   addCoroTransferDeclaration(module, libfoster_bc);
   // TODO mark foster__assert as alwaysinline
 
