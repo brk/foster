@@ -70,12 +70,12 @@ ssProcDefFrom pd =
   SSProcDef (ilProcIdent pd) (ilProcVars pd)
                (ssTermOfExpr (ilProcBody pd))
 
+errFile gs = (stTmpDir gs) ++ "/istderr.txt"
+outFile gs = (stTmpDir gs) ++ "/istdout.txt"
+
 -- To interpret a program, we construct a coroutine for main
 -- (no arguments need be passed yet) and step until the program finishes.
-interpretProg prog = do
-  _ <- writeFile "istdout.txt" ""
-  _ <- writeFile "istderr.txt" ""
-
+interpretProg prog tmpDir = do
   let procmap = buildProcMap prog
   let main = (procmap Map.! (Ident "main" irrelevantIdentNum))
   let loc  = 0
@@ -88,7 +88,11 @@ interpretProg prog = do
                       , coroStack = [(env, Prelude.id)]
                       } where env = Map.empty
   let emptyHeap = Heap (nextLocation loc) (Map.singleton loc (SSCoro mainCoro))
-  let globalState = MachineState procmap emptyHeap loc
+  let globalState = MachineState procmap emptyHeap loc tmpDir
+
+  _ <- writeFile (outFile globalState) ""
+  _ <- writeFile (errFile globalState) ""
+
   stepsTaken <- newIORef 0
   val <- interpret stepsTaken globalState
   numSteps <- readIORef stepsTaken
@@ -135,6 +139,7 @@ data MachineState = MachineState {
            stProcmap :: Map Ident SSProcDef
         ,  stHeap    :: Heap
         ,  stCoroLoc :: Location
+        ,  stTmpDir  :: String
 }
 
 stCoro gs = let (SSCoro c) = lookupHeap gs (stCoroLoc gs) in c
@@ -394,35 +399,35 @@ tryEvalPrimitive gs ("coro_invoke_i32_i32") ((SSLocation targetloc):args) =
 
 tryEvalPrimitive gs primName [val]
   | isPrintFunction primName =
-      do printString (display val)
+      do printString gs (display val)
          return $ withTerm gs (SSTmValue val)
 
 tryEvalPrimitive gs primName [val]
   | isExpectFunction primName =
-      do expectString (display val)
+      do expectString gs (display val)
          return $ withTerm gs (SSTmValue val)
 
 tryEvalPrimitive gs "opaquely_i32" [val] =
   return $ withTerm gs (SSTmValue val)
 
 tryEvalPrimitive gs "expect_i32b" [val@(SSInt i)] =
-      do expectString (showBits32 (litIntValue i))
+      do expectString gs (showBits32 (litIntValue i))
          return $ withTerm gs (SSTmValue val)
 
 tryEvalPrimitive gs "print_i32b" [val@(SSInt i)] =
-      do printString (showBits32 (litIntValue i))
+      do printString gs (showBits32 (litIntValue i))
          return $ withTerm gs (SSTmValue val)
 
 tryEvalPrimitive gs primName args =
       error ("step ilcall " ++ show primName ++ " with args: " ++ show args)
 
-printString  s = do
+printString  gs s = do
   runOutput (outCSLn Blue s)
-  appendFile "istderr.txt" (s ++ "\n")
+  appendFile (errFile gs) (s ++ "\n")
 
-expectString s = do
+expectString gs s = do
   runOutput (outCSLn Green s)
-  appendFile "istdout.txt" (s ++ "\n")
+  appendFile (outFile gs) (s ++ "\n")
 
 tryInvokeToCoro gs targetloc [arg] =
   let (SSCoro ncoro) = lookupHeap gs targetloc in

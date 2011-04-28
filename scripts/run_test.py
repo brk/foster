@@ -88,7 +88,7 @@ def testname(testpath):
   """Given '/path/to/some/test.foster', returns 'test'"""
   return os.path.basename(testpath).replace('.foster', '')
 
-def compile_test_to_bitcode(paths, testpath, compilelog, finalpath):
+def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
     finalname = os.path.basename(finalpath)
     verbose = options and options.verbose
     to_asm  = options and options.asm
@@ -104,7 +104,7 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath):
       compilelog = None
 
     if options and options.interpret:
-      interpret = ["--interpret"]
+      interpret = ["--interpret", tmpdir]
     else:
       interpret = []
 
@@ -154,7 +154,7 @@ def run_one_test(testpath, paths, tmpdir):
         exepath   = os.path.join('fc-output', 'a.out')
 
         rv, to_asm, fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed = \
-                compile_test_to_bitcode(paths, testpath, compilelog, finalpath)
+                compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir)
 
         if to_asm:
           rv, as_elapsed = run_command('gcc %s.s -c -o %s.o' % (finalpath, finalpath),

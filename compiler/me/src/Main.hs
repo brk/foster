@@ -9,6 +9,8 @@ main
 ) where
 
 import System.Environment(getArgs,getProgName)
+import System.Console.GetOpt
+import System.Console.ANSI
 
 import qualified Data.ByteString.Lazy as L(readFile)
 
@@ -22,7 +24,6 @@ import Data.IORef(newIORef)
 
 import Text.ProtocolBuffers(messageGet)
 
-import System.Console.ANSI
 import Foster.Base
 import Foster.ProtobufFE
 import Foster.ProtobufIL
@@ -162,14 +163,32 @@ inspect ctx typechecked ast =
 
 -----------------------------------------------------------------------
 
+data Flag = Interpret String
+
+options :: [OptDescr Flag]
+options =
+ [ Option []     ["interpret"]  (ReqArg Interpret "DIR")  "interpret in DIR"
+ ]
+
+parseOpts :: [String] -> IO ([Flag], [String])
+parseOpts argv =
+  case getOpt Permute options argv of
+    (o,n,[]  ) -> return (o,n)
+    (_,_,errs) -> ioError (userError (concat errs ++ usageInfo header options))
+  where header = "Usage: me [OPTION...] files..."
+
+getInterpretFlag ([], _) = Nothing
+getInterpretFlag (((Interpret d):as) , _) = Just d
+getInterpretFlag ((_:as), bs) = getInterpretFlag (as, bs)
 
 main :: IO ()
 main = do
   args <- getArgs
-  (f, outfile, rest) <- case args of
+  (f, outfile, flagVals) <- case args of
          (infile : outfile : rest) -> do
                 protobuf <- L.readFile infile
-                return (protobuf, outfile, rest)
+                flagVals <- parseOpts rest
+                return (protobuf, outfile, flagVals)
          _ -> do
                 self <- getProgName
                 return (error $ "Usage: " ++ self ++ " path/to/infile.pb path/to/outfile.pb")
@@ -190,9 +209,10 @@ main = do
                          runOutput $ (outLn "/// ===================================")
                          runOutput $ showProgramStructure prog
                          runOutput $ (outLn "^^^ ===================================")
-                         when (rest == ["--interpret"]) (do
-                           _unused <- interpretProg prog
-                           return ())
-                         return ()
+                         (case getInterpretFlag flagVals of
+                           Nothing -> return ()
+                           Just tmpDir -> do
+                              _unused <- interpretProg prog tmpDir
+                              return ())
             Nothing    -> error $ "Unable to type check input module!"
 
