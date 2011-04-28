@@ -6,6 +6,7 @@ import qualified Data.Map as Map
 import Data.Int
 import Data.Bits
 import Data.Maybe(isJust)
+import Data.IORef
 
 import Control.Exception(assert)
 import System.Console.ANSI
@@ -88,19 +89,17 @@ interpretProg prog = do
                       } where env = Map.empty
   let emptyHeap = Heap (nextLocation loc) (Map.singleton loc (SSCoro mainCoro))
   let globalState = MachineState procmap emptyHeap loc
-  val <- interpret globalState
+  stepsTaken <- newIORef 0
+  val <- interpret stepsTaken globalState
+  numSteps <- readIORef stepsTaken
+  putStrLn ("Interpreter finished in " ++ show numSteps ++ " steps.")
   return val
-{-
-interpret gs =
-  case (termOf gs) of
-    SSTmValue _ -> return gs
-    otherwise   -> step gs >>= interpret
--}
 
-interpret gs =
+interpret stepsTaken gs =
   case (coroStack $ stCoro gs) of
-    []         -> return gs
-    otherwise  -> step gs >>= interpret
+    []         -> do return gs
+    otherwise  -> modifyIORef stepsTaken (+1) >>
+                  step gs >>= interpret stepsTaken
 
 buildProcMap (ILProgram procdefs) =
   List.foldr ins Map.empty procdefs where
