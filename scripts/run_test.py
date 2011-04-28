@@ -145,6 +145,7 @@ def run_one_test(testpath, paths, tmpdir):
   exp_filename = os.path.join(tmpdir, "expected.txt")
   act_filename = os.path.join(tmpdir, "actual.txt")
   log_filename = os.path.join(tmpdir, "compile.log.txt")
+  iact_filename = os.path.join(tmpdir, "istdout.txt")
   with open(exp_filename, 'w') as expected:
     with open(act_filename, 'w') as actual:
       with open(log_filename, 'w') as compilelog:
@@ -168,10 +169,16 @@ def run_one_test(testpath, paths, tmpdir):
         rv, rn_elapsed = run_command(exepath,  paths, testpath, stdout=actual, stderr=expected, stdin=infile, strictrv=False)
 
         df_rv = subprocess.call(['diff', '-u', exp_filename, act_filename])
-        if df_rv == 0:
-          tests_passed.add(testpath)
-        else:
+        if df_rv != 0:
           tests_failed.add(testpath)
+        elif options and options.interpret:
+          df_rv = subprocess.call(['diff', '-u', act_filename, iact_filename])
+          if df_rv != 0:
+            tests_failed.add(testpath)
+          else:
+            tests_passed.add(testpath)
+        else:
+          tests_passed.add(testpath)
 
         total_elapsed = elapsed_since(start)
         compile_elapsed = (as_elapsed + ld_elapsed + fp_elapsed + fm_elapsed + fl_elapsed + fc_elapsed)
