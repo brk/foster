@@ -80,21 +80,27 @@ interpretProg prog = do
   let loc  = 0
   let mainCoro = Coro { coroTerm = (ssProcBody main)
                       , coroArgs = []
-                      , coroEnv = Map.empty
+                      , coroEnv  = env
                       , coroStat = CoroStatusRunning
                       , coroLoc  = loc
                       , coroPrev = Nothing
-                      , coroCont = ("default", Prelude.id)
-                      }
+                      , coroStack = [(env, Prelude.id)]
+                      } where env = Map.empty
   let emptyHeap = Heap (nextLocation loc) (Map.singleton loc (SSCoro mainCoro))
   let globalState = MachineState procmap emptyHeap loc
   val <- interpret globalState
   return val
-
+{-
 interpret gs =
   case (termOf gs) of
     SSTmValue _ -> return gs
     otherwise   -> step gs >>= interpret
+-}
+
+interpret gs =
+  case (coroStack $ stCoro gs) of
+    []         -> return gs
+    otherwise  -> step gs >>= interpret
 
 buildProcMap (ILProgram procdefs) =
   List.foldr ins Map.empty procdefs where
@@ -113,14 +119,15 @@ data CoroStatus = CoroStatusInvalid
                 | CoroStatusRunning
                 | CoroStatusDead
                 deriving (Show, Eq)
+type CoroEnv = Map Ident SSValue
 data Coro = Coro {
     coroTerm :: SSTerm
   , coroArgs :: [AnnVar]
-  , coroEnv  :: Map Ident SSValue
+  , coroEnv  :: CoroEnv
   , coroStat :: CoroStatus
   , coroLoc  :: Location
   , coroPrev :: Maybe Location
-  , coroCont :: (String, SSTerm -> SSTerm) -- silly implementation detail...
+  , coroStack :: [(CoroEnv, SSTerm -> SSTerm)]
 } deriving (Show)
 
 instance Show (SSTerm -> SSTerm) where show f = "<coro cont>"
@@ -138,24 +145,23 @@ step gs =
   let coro = stCoro gs in
   case coroTerm coro of
     SSTmExpr e -> do --putStrLn ("\n\n" ++ show (coroLoc coro) ++ " ==> " ++ show e)
-                     --putStrLn (show (coroLoc coro) ++ " ==> " ++ (coroTag coro))
+                     --putStrLn (show (coroLoc coro) ++ " ==> " ++ show (coroStack coro))
                      stepExpr gs e
-    SSTmValue _ -> return gs
-
-coroTag c = let (t, _) = coroCont c in t
+    SSTmValue _ -> do let (gs2, (env, cont)) = popCoroCont gs
+                      return $ withEnv (withTerm gs2 (cont (termOf gs2))) env
 
 coroFromClosure :: MachineState -> ILClosure -> ((Location, MachineState), Coro)
 coroFromClosure gs (ILClosure id avars) =
   let ssproc = (stProcmap gs) Map.! id in
   let ins avar map = Map.insert (avarIdent avar) (getval gs avar) map in
-  let initmap = List.foldr ins Map.empty avars in
+  let env = List.foldr ins Map.empty avars in
   let coro = Coro { coroTerm = ssProcBody ssproc
                   , coroArgs = ssProcVars ssproc
-                  , coroEnv  = initmap
+                  , coroEnv  = env
                   , coroStat = CoroStatusDormant
                   , coroLoc  = nextLocation (hpBump (stHeap gs))
                   , coroPrev = Nothing
-                  , coroCont = ("default", Prelude.id)
+                  , coroStack = [(env, Prelude.id)]
                   } in
   ((extendHeap gs (SSCoro coro)), coro)
 
@@ -187,6 +193,7 @@ lookupHeap gs loc =
     Nothing -> error $ "Unable to find heap cell for location " ++ show loc
 
 termOf gs = coroTerm (stCoro gs)
+envOf  gs = coroEnv  (stCoro gs)
 
 isGlobalPrimitive name = case name of
   "coro_invoke" -> True
@@ -206,21 +213,21 @@ getval gs avar = case Map.lookup (avarIdent avar) (coroEnv (stCoro gs)) of
 withTerm gs e = modifyHeapWith gs (stCoroLoc gs) (\(SSCoro c) -> SSCoro $ c { coroTerm = e })
 withEnv  gs e = modifyHeapWith gs (stCoroLoc gs) (\(SSCoro c) -> SSCoro $ c { coroEnv  = e })
 
-setCoroCont gs delimCont@(tag, _) =
- modifyHeapWith gs (stCoroLoc gs)
-             (\(SSCoro c) -> SSCoro $ c { coroCont = delimCont })
+pushCoroCont gs delimCont =
+  let currStack = coroStack (stCoro gs) in
+  modifyHeapWith gs (stCoroLoc gs)
+             (\(SSCoro c) -> SSCoro $ c { coroStack = delimCont:currStack })
 
-subStep gs delimCont = do
-  -- set the current coro's small continuation
-  -- let prevCont = coroCont (stCoro gs)
-  -- Note that this should be the only place we see "<- step"!
-  gs2 <- step (setCoroCont gs delimCont)
-  let (_tag, cont) = coroCont (stCoro gs2)
-  return $ withTerm gs2 (cont (termOf gs2))
+popCoroCont gs =
+  let cont:restStack = coroStack (stCoro gs) in
+  (modifyHeapWith gs (stCoroLoc gs)
+             (\(SSCoro c) -> SSCoro $ c { coroStack = restStack }), cont)
+
+subStep gs delimCont = step (pushCoroCont gs delimCont)
 
 stepExpr :: MachineState -> IExpr -> IO MachineState
-stepExpr gs expr =
-  let coro = stCoro gs in
+stepExpr gs expr = do
+  let coro = stCoro gs
   case expr of
     IVar avar              -> do return $ withTerm gs (SSTmValue $ getval gs avar)
     ITuple     vs          -> do return $ withTerm gs (SSTmValue $ SSTuple (map (getval gs) vs))
@@ -232,22 +239,24 @@ stepExpr gs expr =
 
     ILetVal x b e          ->
       case b of
-        SSTmValue bval -> return $ withTerm (extendEnv gs [x] [bval]) e
-        SSTmExpr _     -> subStep (withTerm gs b) ("ILetVal " ++ show x ++ " = ... \n" ++ view e ++ "\n\n", \t -> SSTmExpr $ ILetVal x t e)
+        SSTmValue bval -> do return $ withTerm (extendEnv gs [x] [bval]) e
+        SSTmExpr _     -> subStep (withTerm gs b) ( envOf gs
+                                                  , \t -> SSTmExpr $ ILetVal x t e)
 
     ICall b vs ->
         let args = map (getval gs) vs in
         case Map.lookup (avarIdent b) (stProcmap gs) of
            Just proc ->
               let names = map avarIdent (ssProcVars proc) in
-              return $ withTerm (extendEnv gs names args) (ssProcBody proc)
+              return $ withTerm (extendEnv gs names args)
+                                (ssProcBody proc)
            Nothing -> tryEvalPrimitive gs (identPrefix (avarIdent b)) args
 
     IIf v b c ->
         case getval gs v of
            (SSBool True ) -> return $ withTerm gs b
            (SSBool False) -> return $ withTerm gs c
-           otherwise -> error "if cond was not a boolean"
+           otherwise -> error $ "if cond was not a boolean: " ++ show v ++ " => " ++ display (getval gs v)
 
     ISubscript v (SSTmValue (SSInt i)) ->
         let n = fromInteger (litIntValue i) in
@@ -256,7 +265,7 @@ stepExpr gs expr =
                return $ withTerm gs (SSTmValue (vals !! n))
           _ -> error "Expected base of subscript to be tuple value"
 
-    ISubscript v e@(SSTmExpr _) -> subStep (withTerm gs e) ("ISubscript", \t -> SSTmExpr $ ISubscript v t)
+    ISubscript v e@(SSTmExpr _) -> subStep (withTerm gs e) (envOf gs, \t -> SSTmExpr $ ISubscript v t)
 
     ISubscript v (SSTmValue e) ->
       error $ ("step ilsubsc "  ++ show v ++ " // " ++ show e)
@@ -264,10 +273,9 @@ stepExpr gs expr =
     ITyApp e@(SSTmExpr (IVar (AnnVar _ (Ident "coro_invoke" _)))) argty
       -> return $ withTerm gs e
 
-    ITyApp e@(SSTmExpr _) argty -> subStep (withTerm gs e) ("ITyApp", \t -> SSTmExpr $ ITyApp t argty)
+    ITyApp e@(SSTmExpr _) argty -> subStep (withTerm gs e) (envOf gs, \t -> SSTmExpr $ ITyApp t argty)
 
     ITyApp (SSTmValue e) argty -> error $ "step iltyapp " ++ show e
-
 
 canSwitchToCoro c =
   case coroStat c of
@@ -462,7 +470,9 @@ isExpectFunction name =
 view :: SSTerm -> String
 view (SSTmValue v) = display v
 view (SSTmExpr (ILetVal x t e)) = "let " ++ show x ++ " = " ++ view t ++ " in\n" ++ view e
-view (SSTmExpr  e) = show e
+view (SSTmExpr (IIf v a b)) = "if " ++ show v ++ " then { " ++ view a ++ " } else { " ++ view b ++ " }"
+view (SSTmExpr (ICall b vs)) = show (avarIdent b) ++ show (map avarIdent vs)
+view (SSTmExpr e) = show e
 
 display :: SSValue -> String
 display (SSBool True ) = "true"
