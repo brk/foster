@@ -395,6 +395,9 @@ tryEvalPrimitive gs primName [val]
       do expectString (display val)
          return $ withTerm gs (SSTmValue val)
 
+tryEvalPrimitive gs "opaquely_i32" [val] =
+  return $ withTerm gs (SSTmValue val)
+
 tryEvalPrimitive gs "expect_i32b" [val@(SSInt i)] =
       do expectString (showBits32 (litIntValue i))
          return $ withTerm gs (SSTmValue val)
