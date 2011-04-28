@@ -108,6 +108,13 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath):
     else:
       interpret = []
 
+    optlevel = '-O0'
+    if options and options.optlevel:
+      # Right now fosteroptc only recognizes -O0, not -O2 or such.
+      # So if we don't disable optimizations, we probably want to
+      # see the optimized LLVM IR.
+      optlevel = '-dump-postopt'
+
     # running fosterparse on a source file produces a ParsedAST
     (s1, e1) = run_command(['fosterparse', testpath, '_out.parsed.pb'],
                 paths, testpath, showcmd=verbose,
@@ -127,7 +134,7 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath):
     # Running opt on a Module produces a Module
     # Running llc on a Module produces an assembly file
     (s4, e4) = run_command(['fosteroptc', finalpath + '.preopt.bc',
-                               '-O0', '-fosterc-time', '-o', finalpath + ext],
+                               optlevel, '-fosterc-time', '-o', finalpath + ext],
                 paths, testpath, showcmd=verbose,
                 stdout=compilelog, stderr=compilelog, strictrv=True)
 
@@ -230,6 +237,9 @@ def get_test_parser(usage):
                     help="Compile to assembly rather than object file.")
   parser.add_option("--interpret", action="store_true", dest="interpret", default=False,
                     help="Run using interpreter instead of compiling via LLVM")
+  parser.add_option("--optimize", dest="optlevel", default=False,
+                    help="Enable optimizations in fosteroptc")
+
   return parser
 
 if __name__ == "__main__":
