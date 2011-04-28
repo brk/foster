@@ -1,14 +1,13 @@
-// IN: 10 20 30
 // http://www.research.att.com/~njas/sequences/table?a=45&fmt=4
 main = fn (to i32) {
   expect_i32(55)
-  print_i32(fib-naive(read_i32()))
+  print_i32(fib-naive(opaquely_i32(10)))
 
   expect_i32(6765)
-  print_i32(fib-tailrecursive(read_i32(), 0, 1))
+  print_i32(fib-tailrecursive(opaquely_i32(20), 0, 1))
 
   expect_i32(832040)
-  print_i32(fib-naive(read_i32()))
+  print_i32(fib-naive(opaquely_i32(30)))
 }
 
 fib-naive = fn (x : i32 to i32) {

@@ -1,6 +1,6 @@
-// IN: 42 48
+// IN: 48
 
-fx = fn (to i32) { read_i32() }
+fx = fn (to i32) { opaquely_i32(42) }
 
 // This tests passing of top-level functions to higher-order
 // Foster functions, which (pessimistically?) expect a closure.

@@ -1,5 +1,3 @@
-// IN: 2 3 5 8 13
-
 run-clo-1 = fn (y:i32, f:fn(z:i32, x:i32 to i32) to i32) {  f(y, opaquely_i32(8))  }
 
 main = fn (to i32) {
