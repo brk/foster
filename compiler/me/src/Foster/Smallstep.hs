@@ -26,7 +26,7 @@ data SSValue = SSBool      Bool
              | SSPrimitive SSPrimId
              | SSTuple     [SSValue]
              | SSLocation  Location
-             | SSClosure   ILClosure
+             | SSClosure   ILClosure [SSValue]
              | SSCoro      Coro
              deriving (Show)
 
@@ -159,11 +159,11 @@ step gs =
     SSTmValue _ -> do let (gs2, (env, cont)) = popCoroCont gs
                       return $ withEnv (withTerm gs2 (cont (termOf gs2))) env
 
-coroFromClosure :: MachineState -> ILClosure -> ((Location, MachineState), Coro)
-coroFromClosure gs (ILClosure id avars) =
+coroFromClosure :: MachineState -> ILClosure -> [SSValue] -> ((Location, MachineState), Coro)
+coroFromClosure gs (ILClosure id avars) cenv =
   let ssproc = (stProcmap gs) Map.! id in
-  let ins id map = Map.insert id (getval gs id) map in
-  let env = List.foldr ins Map.empty (map avarIdent avars) in
+  let ins (id,val) map = Map.insert id val map in
+  let env = List.foldr ins Map.empty (zip (map avarIdent avars) cenv) in
   let coro = Coro { coroTerm = ssProcBody ssproc
                   , coroArgs = ssProcVars ssproc
                   , coroEnv  = env
@@ -252,7 +252,9 @@ stepExpr gs expr = do
     ITuple     vs          -> do return $ withTerm gs (SSTmValue $ SSTuple (map (getval gs) (map avarIdent vs)))
     IClosures bnds clos e  ->
       -- This is not quite right; closures should close over each other!
-      let clovals = map SSClosure clos in
+      let mkSSClosure clo = SSClosure clo (map ((getval gs).avarIdent)
+                                              (ilClosureCaptures clo)) in
+      let clovals = map mkSSClosure clos in
       let gs' = extendEnv gs bnds clovals in
       return $ withTerm gs' e
 
@@ -268,9 +270,9 @@ stepExpr gs expr = do
            Just proc -> return (callProc gs proc args)
            Nothing ->
              case tryGetVal gs b of
-               Just (SSClosure clo) ->
+               Just (SSClosure clo env) ->
                  case Map.lookup (ilClosureProcIdent clo) (stProcmap gs) of
-                   Just proc -> return (callProc gs proc args)
+                   Just proc -> return (callProc gs proc ((SSTuple env):args))
                    Nothing -> error $ "No proc for closure!"
                Just (SSPrimitive p) -> evalPrimitive p gs args
                Just v -> error $ "Cannot call non-closure value " ++ display v
@@ -385,8 +387,8 @@ evalPrimitive PrimCoroInvoke gs _ = error $ "Wrong arguments to coro_invoke"
 {- "Rule 4 describes the action of creating a coroutine.
     It creates a new label to represent the coroutine and extends the
     store with a mapping from this label to the coroutine main function." -}
-evalPrimitive PrimCoroCreate gs [SSClosure clo] =
-  let ((loc, gs2), coro) = coroFromClosure gs clo in
+evalPrimitive PrimCoroCreate gs [SSClosure clo env] =
+  let ((loc, gs2), coro) = coroFromClosure gs clo env in
   return $ withTerm gs2 (SSTmValue $ SSLocation loc)
 
 evalPrimitive PrimCoroCreate gs _ = error $ "Wrong arguments to coro_create"
@@ -508,6 +510,6 @@ display (SSPrimitive p) = "<" ++ show p ++ ">"
 display (SSInt i     )  = show (litIntValue i)
 display (SSTuple vals)  = "(" ++ joinWith ", " (map display vals) ++ ")"
 display (SSLocation z)  = "<location " ++ show z ++ ">"
-display (SSClosure c )  = "<closure>"
-display (SSCoro    c )  = "<coro>"
+display (SSClosure _ _) = "<closure>"
+display (SSCoro    _  ) = "<coro>"
 
