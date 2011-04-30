@@ -54,7 +54,7 @@ instance Show TypeAST where
         (CoroType s t)   -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
         (ForAll tvs rho) -> "(ForAll " ++ show tvs ++ ". " ++ show rho ++ ")"
         (T_TyVar tv)     -> show tv
-        (MetaTyVar mtv)  -> "(~!)"
+        (MetaTyVar (Meta u tyref))  -> "(~!" ++ show u ++ ")"
         (PtrTypeAST ty)  -> "(Ptr " ++ show ty ++ ")"
 
 instance Eq TypeAST where
