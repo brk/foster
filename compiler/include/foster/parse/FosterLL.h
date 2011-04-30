@@ -239,6 +239,14 @@ struct LLCoroInvoke : public LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
+struct LLCoroCreate : public LLExpr {
+  TypeAST* retType;
+  TypeAST* typeArg;
+  explicit LLCoroCreate(TypeAST* ret, TypeAST* arg)
+      : LLExpr("LLCoroCreate"), retType(ret), typeArg(arg) {}
+  virtual llvm::Value* codegen(CodegenPass* pass);
+};
+
 
 #endif // header guard
 

@@ -24,7 +24,7 @@ typeJoinVars vars (Just (MissingTypeAST _)) = vars
 typeJoinVars vars (Just (TupleTypeAST expTys)) =
     Control.Exception.assert ((List.length vars) == (List.length expTys)) $
     [(AnnVar (fromJust (typeJoin t e)) v) | ((AnnVar t v), e) <- (List.zip vars expTys)]
-typeJoinVars var (Just t) = error $ "typeJoinVars not yet implemented for type " ++ show t
+typeJoinVars vars (Just t) = error $ "typeJoinVars not yet implemented for type " ++ show t
 
 
 extractBindings :: [AnnVar] -> Maybe TypeAST -> [ContextBinding]
@@ -42,6 +42,7 @@ extendContext ctx protoFormals expFormals =
 typeJoin :: TypeAST -> TypeAST -> Maybe TypeAST
 typeJoin (MissingTypeAST _) x = Just x
 typeJoin x (MissingTypeAST _) = Just x
+typeJoin x (MetaTyVar _)      = Just x
 typeJoin x y = if x == y then Just x else Nothing
 
 sanityCheck :: Bool -> String -> Tc AnnExpr
@@ -212,7 +213,7 @@ typecheckCall ctx range base args maybeExpTy =
            eb <- typecheck ctx base expectedLambdaType
            case (typeAST eb) of
               (ForAll tyvars rho) -> do
-                    let (FnTypeAST rhoArgType _ _) = rho
+                    let (FnTypeAST rhoArgType _ _) = trace ("forall: " ++ highlightFirstLine range) rho
                     --                  rhoargtype =   ('a -> 'b)
                     -- base has type ForAll ['a 'b]   (('a -> 'b) -> (Coro 'a 'b))
                     -- The forall-bound vars won't unify with concrete types in the term arg,
@@ -312,6 +313,10 @@ typecheckTuple ctx exprs (Just (TupleTypeAST ts)) =
                         ") types did not agree:\n"
                             ++ show exprs ++ " versus \n" ++ show ts
       else typecheckTuple' ctx exprs [Just t | t <- ts]
+
+-- terrible, no good, very bad hack
+typecheckTuple ctx exprs (Just (MetaTyVar mtv)) =
+  typecheckTuple' ctx exprs [Nothing | _ <- exprs]
 
 typecheckTuple ctx es (Just ty)
     = tcFails $ out $ "typecheck: tuple (" ++ show es ++ ") cannot check against non-tuple type " ++ show ty

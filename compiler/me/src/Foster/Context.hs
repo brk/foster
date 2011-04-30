@@ -66,7 +66,14 @@ tcLift action = Tc (\_env -> do { r <- action; return (OK r) })
 tcFails :: Output -> Tc a
 tcFails errs = Tc (\_env -> return (Errors errs))
 
+newTcRef :: a -> Tc (IORef a)
 newTcRef v = tcLift $ newIORef v
+
+readTcRef :: MetaTyVar -> Tc (Maybe Tau)
+readTcRef (Meta _u r) = tcLift $ readIORef r
+
+writeTcMeta :: MetaTyVar -> Tau -> Tc ()
+writeTcMeta (Meta _u r) v = tcLift $ writeIORef r (Just v)
 
 newTcUnificationVar :: Tc MetaTyVar
 newTcUnificationVar = do

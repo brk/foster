@@ -115,36 +115,28 @@ rootContextPairs =
 
     ,(,) "opaquely_i32" $ mkFnType [i32] [i32]
 
-    ,(,) "coro_create_i32_i32" $ coroCreateType [i32] [i32]
-    ,(,) "coro_invoke_i32_i32" $ coroInvokeType [i32] [i32]
     ,(,) "coro_yield_i32_i32"  $ coroYieldType  [i32] [i32]
-
-    ,(,) "coro_create_i32x2_i32" $ coroCreateType [i32, i32] [i32]
-    ,(,) "coro_invoke_i32x2_i32" $ coroInvokeType [i32, i32] [i32]
     ,(,) "coro_yield_i32x2_i32"  $ coroYieldType  [i32, i32] [i32]
-
-    ,(,) "coro_create_i32_i32x2" $ coroCreateType [i32] [i32,i32]
-    ,(,) "coro_invoke_i32_i32x2" $ coroInvokeType [i32] [i32,i32]
     ,(,) "coro_yield_i32_i32x2"  $ coroYieldType  [i32] [i32,i32]
-
 
     -- forall a b, (a -> b) -> Coro a b
     ,(,) "coro_create" $ let a = BoundTyVar "a" in
                          let b = BoundTyVar "b" in
                          (ForAll [a, b]
-                           (FnTypeAST (FnTypeAST (T_TyVar a) (T_TyVar b) Nothing)
-                                      (CoroType  (T_TyVar a) (T_TyVar b))
-                                       Nothing))
-    -- forall a b, (a, Coro a b) -> b
+                           (mkFnType [mkFnType   [T_TyVar a] [T_TyVar b]]
+                                     [mkCoroType [T_TyVar a] [T_TyVar b]]))
+
+    -- forall a b, (Coro a b, a) -> b
     ,(,) "coro_invoke" $ let a = BoundTyVar "a" in
                          let b = BoundTyVar "b" in
                          (ForAll [a, b]
-                            (FnTypeAST (TupleTypeAST [(CoroType (T_TyVar a) (T_TyVar b)), (T_TyVar a)])
-                                       (T_TyVar b) Nothing))
+                            (mkFnType [(mkCoroType [T_TyVar a] [T_TyVar b]), (T_TyVar a)]
+                                      [T_TyVar b]))
+
     -- forall a b, (b -> a)
     ,(,) "coro_yield"  $ let a = BoundTyVar "a" in
                          let b = BoundTyVar "b" in
-                         (ForAll [a, b] (FnTypeAST (T_TyVar b) (T_TyVar a) Nothing))
+                         (ForAll [a, b] (mkFnType [T_TyVar b] [T_TyVar a]))
 
     ,(,) "primitive_sext_i64_i32" $ mkFnType [i32] [i64]
     ,(,) "primitive_negate_i32"   $ mkFnType [i32] [i32]

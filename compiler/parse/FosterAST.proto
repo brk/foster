@@ -47,22 +47,22 @@ message FnType {
 
 message Expr {
   enum Tag {
-    PB_INT = 16;
-    BOOL = 17;
-    VAR = 18;
-    LET = 19;
-    TUPLE = 20;
-    FN = 21;
-    PROTO = 22;
-    CALL = 23;
-    SEQ = 24;
-    TY_APP = 25;
+    PB_INT    = 16;
+    BOOL      = 17;
+    VAR       = 18;
+    LET       = 19;
+    TUPLE     = 20;
+    FN        = 21;
+    PROTO     = 22;
+    CALL      = 23;
+    SEQ       = 24;
+    TY_APP    = 25;
     SUBSCRIPT = 26;
 
-    COMPILES = 31;
-    IF = 32;
+    COMPILES  = 31;
+    IF        = 32;
 
-    MODULE = 35;
+    MODULE    = 35;
   }
   repeated Expr        parts = 1;
   required Tag           tag = 2;

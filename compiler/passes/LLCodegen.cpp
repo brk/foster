@@ -130,41 +130,8 @@ llvm::Value* CodegenPass::lookup(const std::string& fullyQualifiedSymbol) {
   v = mod->getFunction(fullyQualifiedSymbol);
 
   if (!v) {
-    if (fullyQualifiedSymbol == "coro_create_i32_i32") {
-      v = emitCoroCreateFn(builder.getInt32Ty(), builder.getInt32Ty());
-    } else if (fullyQualifiedSymbol == "coro_create_i32x2_i32") {
-      std::vector<const Type*> argTypes;
-      argTypes.push_back(builder.getInt32Ty());
-      argTypes.push_back(builder.getInt32Ty());
-      v = emitCoroCreateFn(builder.getInt32Ty(),
-        llvm::StructType::get(mod->getContext(), argTypes));
-    } else if (fullyQualifiedSymbol == "coro_create_i32_i32x2") {
-      std::vector<const Type*> argTypes;
-      argTypes.push_back(builder.getInt32Ty());
-      argTypes.push_back(builder.getInt32Ty());
-      v = emitCoroCreateFn(
-        llvm::StructType::get(mod->getContext(), argTypes),
-        builder.getInt32Ty());
-    }
 
-      else if (fullyQualifiedSymbol == "coro_invoke_i32_i32") {
-      v = emitCoroInvokeFn(builder.getInt32Ty(), builder.getInt32Ty());
-    } else if (fullyQualifiedSymbol == "coro_invoke_i32x2_i32") {
-      std::vector<const Type*> argTypes;
-      argTypes.push_back(builder.getInt32Ty());
-      argTypes.push_back(builder.getInt32Ty());
-      v = emitCoroInvokeFn(builder.getInt32Ty(),
-        llvm::StructType::get(mod->getContext(), argTypes));
-    } else if (fullyQualifiedSymbol == "coro_invoke_i32_i32x2") {
-      std::vector<const Type*> argTypes;
-      argTypes.push_back(builder.getInt32Ty());
-      argTypes.push_back(builder.getInt32Ty());
-      v = emitCoroInvokeFn(
-        llvm::StructType::get(mod->getContext(), argTypes),
-        builder.getInt32Ty());
-    }
-
-      else if (fullyQualifiedSymbol == "coro_yield_i32_i32") {
+    if (fullyQualifiedSymbol == "coro_yield_i32_i32") {
       v = emitCoroYieldFn(builder.getInt32Ty(), builder.getInt32Ty());
     } else if (fullyQualifiedSymbol == "coro_yield_i32x2_i32") {
       std::vector<const Type*> argTypes;
@@ -624,6 +591,13 @@ llvm::Value* LLIf::codegen(CodegenPass* pass) {
 
 llvm::Value* LLCoroInvoke::codegen(CodegenPass* pass) {
   return pass->emitCoroInvokeFn(retType->getLLVMType(),
+                                typeArg->getLLVMType());
+}
+
+llvm::Value* LLCoroCreate::codegen(CodegenPass* pass) {
+  llvm::outs() << "coro create; retType is " << str(retType->getLLVMType())
+               << "; typeArg is " << str(typeArg->getLLVMType()) << "\n";
+  return pass->emitCoroCreateFn(retType->getLLVMType(),
                                 typeArg->getLLVMType());
 }
 

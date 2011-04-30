@@ -43,12 +43,17 @@ enum {
   FOSTER_CORO_DEAD
 };
 
+bool isSingleElementStruct(const llvm::Type* t,
+                     const llvm::StructType*& sty) {
+  sty = llvm::dyn_cast<llvm::StructType>(t);
+  return sty != NULL && sty->getNumElements() == 0;
+}
+
 void addCoroArgs(std::vector<const Type*>& fnTyArgs,
                  const llvm::Type* argTypes) {
-  if (const llvm::StructType* sty = llvm::dyn_cast<llvm::StructType>(argTypes)) {
-    for (unsigned i = 0; i < sty->getNumElements(); ++i) {
-      fnTyArgs.push_back(sty->getElementType(i));
-    }
+  const llvm::StructType* sty;
+  if (isSingleElementStruct(argTypes, sty)) {
+    fnTyArgs.push_back(sty->getElementType(0));
   } else {
     fnTyArgs.push_back(argTypes);
   }
@@ -56,10 +61,9 @@ void addCoroArgs(std::vector<const Type*>& fnTyArgs,
 
 void addCoroArgs(std::vector<Value*>& fnArgs,
                  llvm::Value* argVals) {
-  if (const llvm::StructType* sty = llvm::dyn_cast<llvm::StructType>(argVals->getType())) {
-    for (unsigned i = 0; i < sty->getNumElements(); ++i) {
-      fnArgs.push_back(getElementFromComposite(argVals, getConstantInt32For(i), "coroarg"));
-    }
+  const llvm::StructType* sty;
+  if (isSingleElementStruct(argVals->getType(), sty)) {
+    fnArgs.push_back(getElementFromComposite(argVals, getConstantInt32For(0), "coroarg"));
   } else {
     fnArgs.push_back(argVals);
   }

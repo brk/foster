@@ -147,9 +147,10 @@ dumpExpr x@(ILIf t a b c) =
                     , PbExpr.tag   = IL_IF
                     , PbExpr.type' = Just $ dumpType (typeIL x) }
 
-dumpExpr x@(ILTyApp overallTy (ILVar (AnnVar _ (Ident "coro_invoke" _)))
-                    (TupleTypeAST [retty, argty])) =
-    P'.defaultValue { PbExpr.tag   = IL_CORO_INVOKE
+dumpExpr x@(ILTyApp overallTy (ILVar (AnnVar _ (Ident corofn _)))
+                    (TupleTypeAST [argty, retty]))
+          | corofn == "coro_invoke" || corofn == "coro_create" =
+    P'.defaultValue { PbExpr.tag   = coroFnTag corofn
                     , PbExpr.coro_prim = Just $ P'.defaultValue    {
                               PbCoroPrim.ret_type = dumpType retty ,
                               PbCoroPrim.arg_type = dumpType argty }
@@ -171,6 +172,11 @@ dumpExpr x@(ILLetVal _ _ inexpr) =
                     , PbExpr.tag   = IL_LETVALS
                     , PbExpr.names = fromList nms
                     , PbExpr.type' = Just $ dumpType (typeIL inexpr) }
+
+coroFnTag "coro_invoke" = IL_CORO_INVOKE
+coroFnTag "coro_create" = IL_CORO_CREATE
+coroFnTag "coro_yield"  = IL_CORO_YIELD
+coroFnTag other = error $ "Unknown coro primitive: " ++ other
 
 unzipLetVals :: ILExpr -> (ILExpr, [P'.Utf8], [ILExpr])
 unzipLetVals (ILLetVal x a b) =

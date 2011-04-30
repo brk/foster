@@ -298,6 +298,8 @@ stepExpr gs expr = do
 
     ITyApp e@(SSTmExpr _) argty -> subStep (withTerm gs e) (envOf gs, \t -> SSTmExpr $ ITyApp t argty)
     ITyApp e@(SSTmValue (SSPrimitive PrimCoroInvoke)) argty -> return $ withTerm gs e
+    ITyApp e@(SSTmValue (SSPrimitive PrimCoroCreate)) argty -> return $ withTerm gs e
+    ITyApp e@(SSTmValue (SSPrimitive PrimCoroYield )) argty -> return $ withTerm gs e
     ITyApp (SSTmValue e) argty -> error $ "step iltyapp " ++ show e
 
 canSwitchToCoro c =

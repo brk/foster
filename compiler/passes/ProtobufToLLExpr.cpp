@@ -167,6 +167,18 @@ LLExpr* parseCoroInvoke(const pb::Expr& e) {
   return parseCoroInvoke(e.coro_prim());
 }
 
+
+LLCoroCreate* parseCoroCreate(const pb::CoroPrim& e) {
+  return new LLCoroCreate(
+      TypeAST_from_pb(& e.ret_type()),
+      TypeAST_from_pb(& e.arg_type()));
+}
+
+LLExpr* parseCoroCreate(const pb::Expr& e) {
+  ASSERT(e.has_coro_prim());
+  return parseCoroCreate(e.coro_prim());
+}
+
 LLExpr* parseVar(const pb::Expr& e) {
   return new LLVar(e.name());
 }
@@ -200,6 +212,8 @@ LLExpr* LLExpr_from_pb(const pb::Expr* pe) {
   case pb::Expr::IL_CLOSURES:  rv = parseClosures(e); break;
 //  case pb::Expr::SIMD:      rv = parseSimd(e); break;
   case pb::Expr::IL_CORO_INVOKE: rv = parseCoroInvoke(e); break;
+  case pb::Expr::IL_CORO_CREATE: rv = parseCoroCreate(e); break;
+
   case pb::Expr::IL_SUBSCRIPT: rv = parseSubscript(e); break;
   case pb::Expr::IL_TUPLE:     rv = parseTuple(e); break;
   case pb::Expr::IL_VAR:       rv = parseVar(e); break;

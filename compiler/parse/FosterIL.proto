@@ -42,7 +42,8 @@ message Expr {
     IL_SEQ = 24;
     IL_SUBSCRIPT = 26;
     IL_CORO_INVOKE = 27;
-
+    IL_CORO_CREATE = 28;
+    IL_CORO_YIELD  = 29;
     IL_IF = 32;
     IL_NAMED_TYPE_DECL = 36;
   }
