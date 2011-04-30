@@ -36,7 +36,7 @@ data SSPrimId = PrimCoroInvoke | PrimCoroCreate | PrimCoroYield
 
 -- Expressions are terms that are not in normal form.
 data IExpr =
-          ITuple [AnnVar]
+          ITuple [Ident]
         | IVar    Ident
         -- Procedures may be implicitly recursive,
         -- but we need to put a smidgen of effort into
@@ -62,7 +62,7 @@ ssTermOfExpr expr =
     ILBool b               -> SSTmValue $ SSBool b
     ILInt t i              -> SSTmValue $ SSInt i
     ILVar a                -> SSTmExpr  $ IVar (avarIdent a)
-    ILTuple vs             -> SSTmExpr  $ ITuple vs
+    ILTuple vs             -> SSTmExpr  $ ITuple (map avarIdent vs)
     ILClosures bnds clos e -> SSTmExpr  $ IClosures bnds clos (tr e)
     ILLetVal x b e         -> SSTmExpr  $ ILetVal x (tr b) (tr e)
     ILCall    t b vs       -> SSTmExpr  $ ICall (avarIdent b) (map avarIdent vs)
@@ -161,7 +161,7 @@ step gs =
 
 coroFromClosure :: MachineState -> ILClosure -> [SSValue] -> ((Location, MachineState), Coro)
 coroFromClosure gs (ILClosure id avars) cenv =
-  let ssproc = (stProcmap gs) Map.! id in
+  let (Just ssproc) = tryLookupProc gs id in
   let ins (id,val) map = Map.insert id val map in
   let env = List.foldr ins Map.empty (zip (map avarIdent avars) cenv) in
   let coro = Coro { coroTerm = ssProcBody ssproc
@@ -173,10 +173,15 @@ coroFromClosure gs (ILClosure id avars) cenv =
                   , coroStack = [(env, Prelude.id)]
                   } in
   ((extendHeap gs (SSCoro coro)), coro)
+    where
+      extendHeap :: MachineState -> SSValue -> (Location, MachineState)
+      extendHeap gs val =
+        let heap = stHeap gs in
+        let loc = nextLocation (hpBump heap) in
+        let hmp = Map.insert loc val (hpMap heap) in
+        (loc, gs { stHeap = Heap { hpBump = loc, hpMap = hmp } })
 
-modifyHeap gs loc val =
-  let heap = stHeap gs in
-  heap { hpMap = Map.insert loc val (hpMap heap) }
+tryLookupProc gs id = Map.lookup id (stProcmap gs)
 
 modifyHeap2 gs l1 v1 l2 v2 =
   let heap = stHeap gs in
@@ -187,13 +192,6 @@ modifyHeapWith gs loc fn =
   let val  = lookupHeap gs loc in
   let heap = oldheap { hpMap = Map.insert loc (fn val) (hpMap oldheap) } in
   gs { stHeap = heap }
-
-extendHeap :: MachineState -> SSValue -> (Location, MachineState)
-extendHeap gs val =
-  let heap = stHeap gs in
-  let loc = nextLocation (hpBump heap) in
-  let hmp = Map.insert loc val (hpMap heap) in
-  (loc, gs { stHeap = Heap { hpBump = loc, hpMap = hmp } })
 
 lookupHeap :: MachineState -> Location -> SSValue
 lookupHeap gs loc =
@@ -217,7 +215,6 @@ tryGetVal gs id =
        s | isPrintFunction  s -> Just $ SSPrimitive (PrimNamed "print")
        s | isExpectFunction s -> Just $ SSPrimitive (PrimNamed "expect")
        otherwise -> Nothing
-
 
 getval :: MachineState -> Ident -> SSValue
 getval gs id =
@@ -248,8 +245,8 @@ stepExpr :: MachineState -> IExpr -> IO MachineState
 stepExpr gs expr = do
   let coro = stCoro gs
   case expr of
-    IVar avar              -> do return $ withTerm gs (SSTmValue $ getval gs avar)
-    ITuple     vs          -> do return $ withTerm gs (SSTmValue $ SSTuple (map (getval gs) (map avarIdent vs)))
+    IVar avar  -> do return $ withTerm gs (SSTmValue $ getval gs avar)
+    ITuple vs  -> do return $ withTerm gs (SSTmValue $ SSTuple (map (getval gs) vs))
     IClosures bnds clos e  ->
       -- This is not quite right; closures should close over each other!
       let mkSSClosure clo = SSClosure clo (map ((getval gs).avarIdent)
@@ -266,12 +263,14 @@ stepExpr gs expr = do
 
     ICall b vs ->
         let args = map (getval gs) vs in
-        case Map.lookup b (stProcmap gs) of
+        case tryLookupProc gs b of
+           -- Call of known procedure
            Just proc -> return (callProc gs proc args)
            Nothing ->
+             -- Call of closure or primitive
              case tryGetVal gs b of
                Just (SSClosure clo env) ->
-                 case Map.lookup (ilClosureProcIdent clo) (stProcmap gs) of
+                 case tryLookupProc gs (ilClosureProcIdent clo) of
                    Just proc -> return (callProc gs proc ((SSTuple env):args))
                    Nothing -> error $ "No proc for closure!"
                Just (SSPrimitive p) -> evalPrimitive p gs args
@@ -285,10 +284,9 @@ stepExpr gs expr = do
            otherwise -> error $ "if cond was not a boolean: " ++ show v ++ " => " ++ display (getval gs v)
 
     ISubscript v (SSTmValue (SSInt i)) ->
-        let n = fromInteger (litIntValue i) in
         case getval gs v of
-          SSTuple vals ->
-               return $ withTerm gs (SSTmValue (vals !! n))
+          SSTuple vals -> return $ withTerm gs (SSTmValue (vals !! n))
+                              where n = fromInteger (litIntValue i)
           _ -> error "Expected base of subscript to be tuple value"
 
     ISubscript v e@(SSTmExpr _) -> subStep (withTerm gs e) (envOf gs, \t -> SSTmExpr $ ISubscript v t)
@@ -297,9 +295,9 @@ stepExpr gs expr = do
       error $ ("step ilsubsc "  ++ show v ++ " // " ++ show e)
 
     ITyApp e@(SSTmExpr _) argty -> subStep (withTerm gs e) (envOf gs, \t -> SSTmExpr $ ITyApp t argty)
-    ITyApp e@(SSTmValue (SSPrimitive PrimCoroInvoke)) argty -> return $ withTerm gs e
-    ITyApp e@(SSTmValue (SSPrimitive PrimCoroCreate)) argty -> return $ withTerm gs e
-    ITyApp e@(SSTmValue (SSPrimitive PrimCoroYield )) argty -> return $ withTerm gs e
+    ITyApp e@(SSTmValue (SSPrimitive PrimCoroInvoke)) _ -> return $ withTerm gs e
+    ITyApp e@(SSTmValue (SSPrimitive PrimCoroCreate)) _ -> return $ withTerm gs e
+    ITyApp e@(SSTmValue (SSPrimitive PrimCoroYield )) _ -> return $ withTerm gs e
     ITyApp (SSTmValue e) argty -> error $ "step iltyapp " ++ show e
 
 canSwitchToCoro c =
@@ -362,7 +360,9 @@ tryGetInt32PrimOp2Bool name =
 evalPrimitive :: SSPrimId -> MachineState -> [SSValue] -> IO MachineState
 evalPrimitive PrimCoroInvoke gs [(SSLocation targetloc),arg] =
   let (SSCoro ncoro) = lookupHeap gs targetloc in
-  let ccoro = assert (canSwitchToCoro ncoro) (stCoro gs) in
+  let ccoro = if canSwitchToCoro ncoro
+                then stCoro gs
+                else error "Unable to invoke coroutine!" in
   let hadRun = CoroStatusDormant /= coroStat ncoro in
   let newcoro2 = ncoro { coroPrev = (Just $ coroLoc ccoro)
                        , coroStat = CoroStatusRunning } in
@@ -405,10 +405,11 @@ evalPrimitive PrimCoroYield gs [arg] =
     Just prevloc ->
       let (SSCoro prevcoro) = assert (prevloc /= coroLoc ccoro) $
                                lookupHeap gs prevloc in
-      let newpcoro = prevcoro { coroStat = CoroStatusRunning
-                              , coroTerm = SSTmValue arg } in
-      let gs2 = assert (canSwitchToCoro prevcoro) $
-                 gs {
+      let newpcoro = if canSwitchToCoro prevcoro then
+                      prevcoro { coroStat = CoroStatusRunning
+                               , coroTerm = SSTmValue arg }
+                      else error "Unable to yield to saved coro!" in
+      let gs2 = gs {
           stHeap = modifyHeap2 gs prevloc (SSCoro newpcoro)
                           (coroLoc ccoro) (SSCoro $ ccoro { coroPrev = Nothing
                                                           , coroStat = CoroStatusSuspended })
