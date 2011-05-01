@@ -18,29 +18,31 @@ import Foster.Context
 
 -----------------------------------------------------------------------
 
-typeJoinVars :: [AnnVar] -> (Maybe TypeAST) -> [AnnVar]
-typeJoinVars vars (Nothing) = vars
+typeJoinVars :: [AnnVar] -> (Maybe TypeAST) -> Tc [AnnVar]
+typeJoinVars vars (Nothing) = return $ vars
+typeJoinVars [var] (Just (MetaTyVar m)) = return [var] -- TODO hack :(
 typeJoinVars vars (Just (TupleTypeAST expTys)) =
     Control.Exception.assert ((List.length vars) == (List.length expTys)) $
-    [(AnnVar (fromJust (typeJoin t e)) v) | ((AnnVar t v), e) <- (List.zip vars expTys)]
-typeJoinVars vars (Just t) = error $ "typeJoinVars not yet implemented for type " ++ show t
+    return [(AnnVar (fromJust (typeJoin t e)) v) | ((AnnVar t v), e) <- (List.zip vars expTys)]
+typeJoinVars vars (Just t) =
+  error $ "typeJoinVars not yet implemented for type " ++ show t ++ " against " ++ show vars
 
 
-extractBindings :: [AnnVar] -> Maybe TypeAST -> [ContextBinding]
-extractBindings fnProtoFormals maybeExpTy =
-    let bindingForVar v = TermVarBinding (identPrefix $ avarIdent v) v in
-    let bindings = map bindingForVar (typeJoinVars fnProtoFormals maybeExpTy) in
+extractBindings :: [AnnVar] -> Maybe TypeAST -> Tc [ContextBinding]
+extractBindings fnProtoFormals maybeExpTy = do
+    let bindingForVar v = TermVarBinding (identPrefix $ avarIdent v) v
+    joinedVars <- typeJoinVars fnProtoFormals maybeExpTy
+    let bindings = map bindingForVar joinedVars
     trace ("extractBindings: " ++ show bindings) $
-      bindings
+     return bindings
 
-extendContext :: Context -> [AnnVar] -> Maybe TypeAST -> Context
-extendContext ctx protoFormals expFormals =
-    prependContextBindings ctx (extractBindings protoFormals expFormals)
+extendContext :: Context -> [AnnVar] -> Maybe TypeAST -> Tc Context
+extendContext ctx protoFormals expFormals = do
+    bindings <- extractBindings protoFormals expFormals
+    return $ prependContextBindings ctx bindings
 
-
+-- TODO replace with unify
 typeJoin :: TypeAST -> TypeAST -> Maybe TypeAST
-typeJoin (MissingTypeAST _) x = Just x
-typeJoin x (MissingTypeAST _) = Just x
 typeJoin x (MetaTyVar _)      = Just x
 typeJoin x y = if x == y then Just x else Nothing
 
@@ -76,10 +78,10 @@ typecheck ctx expr maybeExpTy =
                 (YesRecursive, Just exptype) ->
                     do id <- tcFresh boundName
                        let exptupletype = Just $ TupleTypeAST [exptype]
-                       let boundCtx = extendContext ctx [AnnVar exptype id] exptupletype
+                       boundCtx <- extendContext ctx [AnnVar exptype id] exptupletype
                        eaf@(E_AnnFn ea) <- typecheck boundCtx  a maybeVarType
                        let annvar = AnnVar (typeAST eaf) id
-                       let ctx' = extendContext ctx [annvar] exptupletype
+                       ctx' <- extendContext ctx [annvar] exptupletype
                        eb <- typecheck ctx' b mt
                        return (AnnLetFuns [id] [ea] eb)
                 (NotRecursive, _) ->
@@ -87,7 +89,7 @@ typecheck ctx expr maybeExpTy =
                        ea <- typecheck ctx  a maybeVarType
                        let annvar = AnnVar (typeAST ea) id
                        let exptupletype = (fmap (\t -> TupleTypeAST [t]) maybeVarType)
-                       let ctx' = extendContext ctx [annvar] exptupletype
+                       ctx' <- extendContext ctx [annvar] exptupletype
                        eb <- typecheck ctx' b mt
                        return (AnnLetVar id ea eb)
 
@@ -129,6 +131,8 @@ safeListIndex lst idx =
         then Nothing
         else Just $ lst !! idx
 
+-- Tuple subscripts must have a literal integer subscript denoting the field;
+-- looking up the field at runtime wouldn't make much sense.
 typecheckSubscript base (TupleTypeAST types) i@(AnnInt ty int) maybeExpTy =
     let literalValue = read (litIntText int) :: Integer in
     case safeListIndex types (fromInteger literalValue) of
@@ -138,6 +142,7 @@ typecheckSubscript base (TupleTypeAST types) i@(AnnInt ty int) maybeExpTy =
 typecheckSubscript base baseType index maybeExpTy =
        tcFails $ out $ "SubscriptAST " ++ show baseType ++ "[" ++ show index ++ "]" ++ " (:: " ++ show maybeExpTy ++ ")"
 
+-- Maps (a -> b)   or   ForAll [...] (a -> b)    to a.
 getFnArgType :: TypeAST -> TypeAST
 getFnArgType (FnTypeAST a r cs) = a
 getFnArgType t@(ForAll tvs rho) =
@@ -193,10 +198,10 @@ typecheckCall ctx range base args maybeExpTy =
       case base of
         (E_FnAST f) -> do
            ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) Nothing
+           m <- newTcUnificationVar
            let expectedLambdaType = case maybeExpTy of
-                Nothing  -> (Just (FnTypeAST (typeAST ea)
-                                             (MissingTypeAST "typecheckCall-3")  irrelevantClosedOverVars))
-                (Just t) -> (Just (FnTypeAST (MissingTypeAST "typecheckCall-2") t irrelevantClosedOverVars))
+                Nothing  -> (Just (FnTypeAST (typeAST ea) (MetaTyVar m) irrelevantClosedOverVars))
+                (Just t) -> (Just (FnTypeAST (MetaTyVar m)     t        irrelevantClosedOverVars))
 
            eb <- typecheck ctx base expectedLambdaType
            trace ("typecheckCall with literal fn base, exp ty " ++ (show expectedLambdaType)) $
@@ -204,9 +209,10 @@ typecheckCall ctx range base args maybeExpTy =
 
         -- Otherwise, typecheck the function first, then the args.
         _ -> do
-           let expectedLambdaType = case maybeExpTy of
-                Nothing  -> Nothing
-                (Just t) -> (Just (FnTypeAST (MissingTypeAST "typecheckCall-1") t irrelevantClosedOverVars))
+           expectedLambdaType <- case maybeExpTy of
+                Nothing  -> return $ Nothing
+                (Just t) -> do m <- newTcUnificationVar
+                               return $ Just (FnTypeAST (MetaTyVar m) t irrelevantClosedOverVars)
                 -- If we have (e1 e2) :: T, we infer that e1 :: (? -> T) and e2 :: ?
 
            eb <- typecheck ctx base expectedLambdaType
@@ -277,14 +283,14 @@ typecheckFn' ctx f expArgType expBodyType = do
     _ <- verifyNonOverlappingVariableNames fnProtoName
                                            (map (identPrefix.avarIdent) fnProtoRawFormals)
     uniquelyNamedFormals <- mapM uniquelyName fnProtoRawFormals
-    let extCtx = extendContext ctx uniquelyNamedFormals expArgType
+    extCtx <- extendContext ctx uniquelyNamedFormals expArgType
     annbody <- typecheck extCtx (fnBody f) expBodyType
     case typeJoin fnProtoRetTy (typeAST annbody) of
-        (Just someReturnType) ->
-            let formalVars = typeJoinVars uniquelyNamedFormals expArgType in
-            let argtypes = TupleTypeAST (map avarType formalVars) in
-            let fnClosedVars = if fnWasToplevel f then Nothing else Just [] in
-            let fnty = FnTypeAST argtypes someReturnType fnClosedVars in
+        (Just someReturnType) -> do
+            formalVars <- typeJoinVars uniquelyNamedFormals expArgType
+            let argtypes = TupleTypeAST (map avarType formalVars)
+            let fnClosedVars = if fnWasToplevel f then Nothing else Just []
+            let fnty = FnTypeAST argtypes someReturnType fnClosedVars
             return (E_AnnFn (AnnFn fnty (Ident fnProtoName irrelevantIdentNum)
                                    formalVars annbody fnClosedVars))
         otherwise ->
