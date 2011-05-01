@@ -20,8 +20,7 @@ type Rho   = TypeAST -- No top-level ForAll
 type Tau   = TypeAST -- No ForAlls anywhere
 
 data TypeAST =
-           MissingTypeAST { missingTypeProgAnnotation :: String }
-         | NamedTypeAST     String
+           NamedTypeAST     String
          | TupleTypeAST     [TypeAST]
          | FnTypeAST        { fnTypeDomain :: TypeAST
                             , fnTypeRange  :: TypeAST
@@ -47,7 +46,6 @@ instance Show TyVar where
 
 instance Show TypeAST where
     show x = case x of
-        (MissingTypeAST s)   -> "(MissingTypeAST " ++ s ++ ")"
         (NamedTypeAST s)     -> s
         (TupleTypeAST types) -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
         (FnTypeAST s t cs)   -> "(" ++ show s ++ " -> " ++ show t ++ " @{" ++ show cs ++ "})"
@@ -65,7 +63,6 @@ instance Eq MetaTyVar where
 
 typesEqual :: TypeAST -> TypeAST -> Bool
 
-typesEqual (MissingTypeAST x) (MissingTypeAST y) = x == y
 typesEqual (NamedTypeAST x) (NamedTypeAST y) = x == y
 typesEqual (TupleTypeAST as) (TupleTypeAST bs) =
     List.length as == List.length bs && Prelude.and [typesEqual a b | (a, b) <- Prelude.zip as bs]

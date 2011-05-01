@@ -20,7 +20,6 @@ import Foster.Context
 
 typeJoinVars :: [AnnVar] -> (Maybe TypeAST) -> [AnnVar]
 typeJoinVars vars (Nothing) = vars
-typeJoinVars vars (Just (MissingTypeAST _)) = vars
 typeJoinVars vars (Just (TupleTypeAST expTys)) =
     Control.Exception.assert ((List.length vars) == (List.length expTys)) $
     [(AnnVar (fromJust (typeJoin t e)) v) | ((AnnVar t v), e) <- (List.zip vars expTys)]

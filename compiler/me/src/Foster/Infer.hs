@@ -33,7 +33,6 @@ assocListWithoutKeys lst keys =
 parSubstTy :: [(TypeAST, TypeAST)] -> TypeAST -> TypeAST
 parSubstTy prvNextPairs ty =
     case ty of
-        (MissingTypeAST s)   -> fromMaybe ty $ List.lookup ty prvNextPairs
         (NamedTypeAST s)     -> fromMaybe ty $ List.lookup ty prvNextPairs
         (PtrTypeAST _)       -> fromMaybe ty $ List.lookup ty prvNextPairs
         (TupleTypeAST types) -> (TupleTypeAST [parSubstTy prvNextPairs t | t <- types])
@@ -52,7 +51,6 @@ parSubstTy prvNextPairs ty =
 tySubst :: TypeAST -> TypeSubst -> TypeAST
 tySubst ty subst =
     case ty of
-        (MissingTypeAST s)   -> ty
         (NamedTypeAST s)     -> ty
         (PtrTypeAST t)       -> PtrTypeAST (tySubst t subst)
         (TupleTypeAST types) -> (TupleTypeAST [tySubst t subst | t <- types])

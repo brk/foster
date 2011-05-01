@@ -66,7 +66,6 @@ tagForClosedVars Nothing  = PbTypeTag.PROC
 tagForClosedVars (Just _) = PbTypeTag.CLOSURE
 
 dumpType :: TypeAST -> PbType.Type
-dumpType (MissingTypeAST s)   = error $ "dumpType MissingTypeAST " ++ s
 dumpType (NamedTypeAST s)     = P'.defaultValue { PbType.tag  = PbTypeTag.LLVM_NAMED
                                                 , PbType.name = Just $ u8fromString s }
 dumpType (TupleTypeAST types) = P'.defaultValue { PbType.tag  = PbTypeTag.TUPLE

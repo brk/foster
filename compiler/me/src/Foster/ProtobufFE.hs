@@ -171,7 +171,7 @@ parseProtoPP proto lines =
     let name = uToString $ Proto.name proto in
     let retTy = case Proto.result proto of
                     Just t  -> parseType t
-                    Nothing -> MissingTypeAST $ "ProtobufUtils.parseProtoPP " ++ name in
+                    Nothing -> error ("Prototype " ++ name ++ " missing required type annotation!") in
     PrototypeAST retTy name vars
 
 getVarName :: ExprAST -> String
@@ -181,7 +181,7 @@ getVarName x = error $ "getVarName given a non-variable! " ++ show x
 getType :: PbExpr.Expr -> TypeAST
 getType e = case PbExpr.type' e of
                 Just t -> parseType t
-                Nothing -> MissingTypeAST $ "ProtobufUtils.getType " ++ show (PbExpr.tag e)
+                Nothing -> error $ "ProtobufUtils.getType " ++ show (PbExpr.tag e)
 
 getFormal :: PbExpr.Expr -> SourceLines ->  AnnVar
 getFormal e lines = case PbExpr.tag e of
@@ -189,7 +189,8 @@ getFormal e lines = case PbExpr.tag e of
                    let i = (Ident (evarName v) (54321)) in
                    case evarMaybeType v of
                        Just t  -> (AnnVar t i)
-                       Nothing -> (AnnVar (MissingTypeAST $ "ProtobufUtils.getFormal " ++ (evarName v)) i)
+                       Nothing -> --(AnnVar (MissingTypeAST $ "ProtobufUtils.getFormal " ++ (evarName v)) i)
+                                  error $ "Missing annotation on variable " ++ show v
             _   -> error "getVar must be given a var!"
 
 sourceRangeFromPBRange :: Pb.SourceRange -> SourceLines -> ESourceRange
