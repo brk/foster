@@ -40,7 +40,7 @@ class FnLike f where
     fnFreeVariables :: f -> [ContextBinding] -> [String]
 
 instance FnLike FnAST where
-    fnName f = prototypeASTname (fnProto f)
+    fnName f = fnAstName f
     fnFreeVariables f bindings =
         let allCalledFns = Set.fromList $ freeVars (fnBody f) in
         -- remove names of primitive functions
@@ -74,16 +74,15 @@ buildCallGraph asts bindings =
     Graph.stronglyConnComp nodeList
 
 
-fnTypeFrom :: FnAST -> TypeAST
-fnTypeFrom f =
-    let intype = TupleTypeAST [avarType v | v <- prototypeASTformals (fnProto f)] in
-    let outtype = prototypeASTretType (fnProto f) in
-    let fnClosedVars = if fnWasToplevel f then Nothing else Just [] in
-    FnTypeAST intype outtype fnClosedVars
-
 bindingForAnnFn :: AnnFn -> ContextBinding
 bindingForAnnFn f = TermVarBinding (fnNameA f) (annFnVar f)
  where annFnVar f = AnnVar (annFnType f) (annFnIdent f)
+
+fnTypeFrom :: FnAST -> TypeAST
+fnTypeFrom f  =
+    let intype = TupleTypeAST [avarType v | v <- fnFormals f] in
+    let fnClosedVars = if fnWasToplevel f then Nothing else Just [] in
+    FnTypeAST intype (fnRetType f) fnClosedVars
 
 bindingForFnAST :: FnAST -> ContextBinding
 bindingForFnAST f = TermVarBinding (fnName f) (fnVar f)
@@ -99,10 +98,10 @@ typecheckFnSCC scc (ctx, tcenv) = do
         let ast = (E_FnAST fn)
         let name = fnName fn
         putStrLn $ "typechecking " ++ name
-        runOutput $ showStructure ast
-        let extctx = prependContextBinding ctx (bindingForFnAST fn)
-        typechecked <- unTc (typecheck extctx ast Nothing) tcenv
-        inspect extctx typechecked ast
+        typechecked <- unTc (do --uRetTy <- newTcUnificationVar
+                                let extctx = prependContextBinding ctx (bindingForFnAST fn)
+                                typecheck extctx ast Nothing) tcenv
+        inspect ctx typechecked ast
         return typechecked
     return $ if allOK annfns
         then let fns = [f | (OK (E_AnnFn f)) <- annfns] in
@@ -178,8 +177,10 @@ parseOpts argv =
   where header = "Usage: me [OPTION...] files..."
 
 getInterpretFlag ([], _) = Nothing
-getInterpretFlag (((Interpret d):as) , _) = Just d
-getInterpretFlag ((_:as), bs) = getInterpretFlag (as, bs)
+getInterpretFlag ((f:fs), bs) =
+        case f of
+                Interpret d -> Just d
+                --otherwise   -> getInterpretFlag (fs, bs)
 
 main :: IO ()
 main = do

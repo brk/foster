@@ -35,14 +35,11 @@ data ExprAST =
 data E_VarAST = VarAST { evarMaybeType :: Maybe TypeAST
                        , evarName      :: String } deriving (Show)
 
-data FnAST  = FnAST { fnProto :: PrototypeAST
+data FnAST  = FnAST { fnAstName :: String
+                    , fnRetType :: TypeAST
+                    , fnFormals :: [AnnVar]
                     , fnBody  :: ExprAST
                     , fnWasToplevel :: Bool
-                    } deriving (Show)
-data PrototypeAST = PrototypeAST {
-                          prototypeASTretType :: TypeAST
-                        , prototypeASTname    :: String
-                        , prototypeASTformals :: [AnnVar]
                     } deriving (Show)
 
 -- | Converts a right-leaning "list" of SeqAST nodes to a List
@@ -131,7 +128,7 @@ instance Structured ExprAST where
             E_CompilesAST e c    -> out $ "CompilesAST  "
             E_IfAST _ _ _        -> out $ "IfAST        "
             E_IntAST rng text    -> out $ "IntAST       " ++ text
-            E_FnAST f            -> out $ "FnAST        " ++ (prototypeASTname $ fnProto f)
+            E_FnAST f            -> out $ "FnAST        " ++ (fnAstName f)
             E_LetAST rng v a b t -> out $ "LetAST       " ++ show v
             E_SeqAST   a b       -> out $ "SeqAST       "
             E_SubscriptAST  a b  -> out $ "SubscriptAST "
@@ -156,7 +153,7 @@ instance Expr ExprAST where
         E_VarAST v          -> [evarName v]
         E_LetAST rng v a b t -> freeVars a ++ (freeVars b `butnot` [evarName v])
         E_FnAST f           -> let bodyvars =  Set.fromList (freeVars (fnBody f)) in
-                               let boundvars = Set.fromList (map (identPrefix.avarIdent) (prototypeASTformals (fnProto f))) in
+                               let boundvars = Set.fromList (map (identPrefix.avarIdent) (fnFormals f)) in
                                Set.toList (Set.difference bodyvars boundvars)
         _                   -> concatMap freeVars (childrenOf e)
 

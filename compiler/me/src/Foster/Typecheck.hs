@@ -4,8 +4,7 @@ import List(length, zip, sort, group, head)
 import Monad(liftM)
 
 import Debug.Trace(trace)
-import Control.Exception(assert)
-import Data.Maybe(isJust, fromJust)
+import Data.Maybe(isJust)
 import qualified Data.Text as T
 
 import System.Console.ANSI
@@ -22,8 +21,9 @@ typeJoinVars :: [AnnVar] -> (Maybe TypeAST) -> Tc [AnnVar]
 typeJoinVars vars (Nothing) = return $ vars
 typeJoinVars [var] (Just (MetaTyVar m)) = return [var] -- TODO hack :(
 typeJoinVars vars (Just (TupleTypeAST expTys)) =
-    Control.Exception.assert ((List.length vars) == (List.length expTys)) $
-    return [(AnnVar (fromJust (typeJoin t e)) v) | ((AnnVar t v), e) <- (List.zip vars expTys)]
+    if (List.length vars) == (List.length expTys)
+      then return [(AnnVar (justTypeJoin t e) v) | ((AnnVar t v), e) <- (List.zip vars expTys)]
+      else tcFails $ out "Lengths of tuples must agree!"
 typeJoinVars vars (Just t) =
   error $ "typeJoinVars not yet implemented for type " ++ show t ++ " against " ++ show vars
 
@@ -43,8 +43,13 @@ extendContext ctx protoFormals expFormals = do
 
 -- TODO replace with unify
 typeJoin :: TypeAST -> TypeAST -> Maybe TypeAST
-typeJoin x (MetaTyVar _)      = Just x
+typeJoin x (MetaTyVar _)    = Just x
+typeJoin (MetaTyVar _) x    = Just x
 typeJoin x y = if x == y then Just x else Nothing
+
+justTypeJoin x y =
+  case typeJoin x y of Just t -> t
+                       Nothing -> error $ "Unable to join types " ++ show x ++ " and " ++ show y
 
 sanityCheck :: Bool -> String -> Tc AnnExpr
 sanityCheck cond msg = if cond then do return (AnnBool True)
@@ -261,12 +266,12 @@ typecheckCall ctx range base args maybeExpTy =
 
 typecheckFn ctx f Nothing = typecheckFn' ctx f Nothing Nothing
 typecheckFn ctx f (Just (FnTypeAST s t cs')) =
-    let proto = fnProto f in
-    if isJust $ typeJoin (prototypeASTretType proto)   t
+    if isJust $ typeJoin (fnRetType f)   t
       then typecheckFn' ctx f (Just s) (Just t)
-      else tcFails $ out $ "typecheck fn '" ++ prototypeASTname proto
-                        ++ "': proto return type, " ++ show (prototypeASTretType proto)
+      else tcFails $ out $ "typecheck fn '" ++ fnAstName f
+                        ++ "': proto return type, " ++ show (fnRetType  f)
                         ++ ", did not match return type of expected fn type " ++ show (FnTypeAST s t cs')
+
 typecheckFn ctx f (Just t) = error $ "Unexpected type in typecheckFn: " ++ show t
 
 rename :: Ident -> Uniq -> Ident
@@ -279,12 +284,15 @@ uniquelyName (AnnVar ty id) = do
 
 typecheckFn' :: Context -> FnAST -> Maybe TypeAST -> Maybe TypeAST -> Tc AnnExpr
 typecheckFn' ctx f expArgType expBodyType = do
-    let (PrototypeAST fnProtoRetTy fnProtoName fnProtoRawFormals) = fnProto f
+    let fnProtoRawFormals = fnFormals f
+    let fnProtoName = fnAstName f
+    let fnProtoRetTy = fnRetType f
     _ <- verifyNonOverlappingVariableNames fnProtoName
                                            (map (identPrefix.avarIdent) fnProtoRawFormals)
     uniquelyNamedFormals <- mapM uniquelyName fnProtoRawFormals
     extCtx <- extendContext ctx uniquelyNamedFormals expArgType
     annbody <- typecheck extCtx (fnBody f) expBodyType
+
     case typeJoin fnProtoRetTy (typeAST annbody) of
         (Just someReturnType) -> do
             formalVars <- typeJoinVars uniquelyNamedFormals expArgType

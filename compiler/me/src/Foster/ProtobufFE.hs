@@ -92,11 +92,24 @@ parseCompiles pbexpr lines =
         _ -> E_CompilesAST (E_VarAST (VarAST Nothing "parse error")) CS_WouldNotCompile
 
 parseFn pbexpr lines = let parts = PbExpr.parts pbexpr in
+                       let (name, retty, formals) = parseProtoP (index parts 0) lines in
                        assert ((Data.Sequence.length parts) == 2) $
-                       FnAST (parseProtoP (index parts 0)
-                                          lines)
+                       FnAST name retty formals
                              (part 1 parts lines)
                              False -- assume closure until proven otherwise
+  where
+     parseProtoP :: PbExpr.Expr -> SourceLines -> (String, TypeAST, [AnnVar])
+     parseProtoP pbexpr lines =
+         case PbExpr.proto pbexpr of
+             Nothing     -> error "Need a Proto in the protocol buffer to parse a PrototypeAST!"
+             Just proto  ->
+                 let args = Proto.in_args proto in
+                 let vars = map (\x -> getFormal x lines) $ toList args in
+                 let name = uToString $ Proto.name proto in
+                 let retTy = case Proto.result proto of
+                                 Just t  -> parseType t
+                                 Nothing -> error ("Prototype " ++ name ++ " missing required type annotation!") in
+                    (name, retTy, vars)
 
 parseFnAST pbexpr lines = E_FnAST $ parseFn pbexpr lines
 
@@ -148,31 +161,16 @@ parseVar pbexpr lines =  VarAST (fmap parseType (PbExpr.type' pbexpr))
                                 (uToString (fromJust $ PbExpr.name pbexpr))
 
 toplevel :: FnAST -> FnAST
-toplevel (FnAST a b False) = FnAST a b True
-toplevel (FnAST _ _ True ) = error $ "Broken invariant: top-level functions " ++
-                                     "should not have their top-level bit set before we do it!"
+toplevel (FnAST a b c d False) = FnAST a b c d True
+toplevel (FnAST _ _ _ _ True ) =
+        error $ "Broken invariant: top-level functions " ++
+                "should not have their top-level bit set before we do it!"
 
 parseModule :: PbExpr.Expr -> SourceLines -> ModuleAST FnAST
 parseModule pbexpr lines =
     ModuleAST [toplevel (parseFn e lines) | e <- toList $ PbExpr.parts pbexpr]
               lines
 
-
-parseProtoP :: PbExpr.Expr -> SourceLines -> PrototypeAST
-parseProtoP pbexpr lines =
-    case PbExpr.proto pbexpr of
-                Nothing     -> error "Need a Proto in the protocol buffer to parse a PrototypeAST!"
-                Just proto  -> parseProtoPP proto lines
-
-parseProtoPP :: Proto -> SourceLines -> PrototypeAST
-parseProtoPP proto lines =
-    let args = Proto.in_args proto in
-    let vars = map (\x -> getFormal x lines) $ toList args in
-    let name = uToString $ Proto.name proto in
-    let retTy = case Proto.result proto of
-                    Just t  -> parseType t
-                    Nothing -> error ("Prototype " ++ name ++ " missing required type annotation!") in
-    PrototypeAST retTy name vars
 
 getVarName :: ExprAST -> String
 getVarName (E_VarAST v) = evarName v

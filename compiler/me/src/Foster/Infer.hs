@@ -72,6 +72,7 @@ tyEnvSubst ctx tysub =
 tySubstConstraints constraints tysub =
     [TypeConstrEq (tySubst t1 tysub) (tySubst t2 tysub) | TypeConstrEq t1 t2 <- constraints]
 
+unifyTypes :: TypeAST -> TypeAST -> UnifySoln
 unifyTypes t1 t2 = unify [TypeConstrEq t1 t2]
 
 unify :: [TypeConstraint] -> UnifySoln
