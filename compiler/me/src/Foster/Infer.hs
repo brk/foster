@@ -71,35 +71,38 @@ tyEnvSubst ctx tysub =
 
 tySubstConstraints constraints tysub =
     [TypeConstrEq (tySubst t1 tysub) (tySubst t2 tysub) | TypeConstrEq t1 t2 <- constraints]
+    
+-------------------------------------------------
 
-unifyTypes :: TypeAST -> TypeAST -> UnifySoln
-unifyTypes t1 t2 = unify [TypeConstrEq t1 t2]
+tcUnifyTypes :: TypeAST -> TypeAST -> Tc UnifySoln
+tcUnifyTypes t1 t2 = tcUnify [TypeConstrEq t1 t2]
 
-unify :: [TypeConstraint] -> UnifySoln
-unify constraints = unifyLoop constraints emptyTypeConstraintSet
+tcUnify :: [TypeConstraint] -> Tc UnifySoln
+tcUnify constraints = tcUnifyLoop constraints emptyTypeConstraintSet
 
-unifyLoop :: [TypeConstraint] -> TypeSubst -> UnifySoln
-unifyLoop [] tysub = Just tysub
-unifyLoop ((TypeConstrEq t1 t2):constraints) tysub =
+tcUnifyLoop :: [TypeConstraint] -> TypeSubst -> Tc UnifySoln
+tcUnifyLoop [] tysub = return $ Just tysub
+tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
     if typesEqual t1 t2
-      then unifyLoop constraints tysub
+      then tcUnifyLoop constraints tysub
       else case (t1, t2) of
                 ((FnTypeAST a1 a2 _), (FnTypeAST b1 b2 _)) ->
-                    unifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub
+                    tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub
                 ((CoroType a1 a2), (CoroType b1 b2)) ->
-                    unifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub
+                    tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub
                 ((TupleTypeAST tys1), (TupleTypeAST tys2)) ->
                     if List.length tys1 /= List.length tys2
-                      then error $ "Unable to unify tuples of different lengths!"
-                      else unifyLoop ([TypeConstrEq a b | (a, b) <- zip tys1 tys2] ++ constraints) tysub
+                      then tcFails $ out "Unable to unify tuples of different lengths!"
+                      else tcUnifyLoop ([TypeConstrEq a b | (a, b) <- zip tys1 tys2] ++ constraints) tysub
                 ((MetaTyVar m), ty) ->
-                    unifyVar m ty tysub constraints
+                    tcUnifyVar m ty tysub constraints
                 (ty, (MetaTyVar m)) ->
-                    unifyVar m ty tysub constraints
+                    tcUnifyVar m ty tysub constraints
                 otherwise ->
-                    error $ "Unable to unify " ++ show t1 ++ " and " ++ show t2
+                    tcFails $ out ("Unable to unify " ++ show t1 ++ " and " ++ show t2)
 
-unifyVar :: MetaTyVar -> TypeAST -> TypeSubst -> [TypeConstraint] -> UnifySoln
-unifyVar (Meta uniq tyref) ty tysub constraints =
+tcUnifyVar :: MetaTyVar -> TypeAST -> TypeSubst -> [TypeConstraint] -> Tc UnifySoln
+tcUnifyVar (Meta uniq tyref) ty tysub constraints =
     let tysub' = (Map.insert uniq ty tysub) in
-    unifyLoop (tySubstConstraints constraints (Map.singleton uniq ty)) tysub'
+    tcUnifyLoop (tySubstConstraints constraints (Map.singleton uniq ty)) tysub'
+

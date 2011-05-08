@@ -1,11 +1,11 @@
 module Foster.Typecheck where
 
 import List(length, zip, sort, group, head)
-import Monad(liftM)
+import Control.Monad(liftM, forM_)
 
 import Debug.Trace(trace)
-import Data.Maybe(isJust)
 import qualified Data.Text as T
+import qualified Data.Map as Map((!))
 
 import System.Console.ANSI
 
@@ -17,13 +17,45 @@ import Foster.Context
 
 -----------------------------------------------------------------------
 
+collectUnificationVars :: TypeAST -> [MetaTyVar]
+collectUnificationVars x =
+    case x of
+        (NamedTypeAST s)     -> []
+        (TupleTypeAST types) -> concat [collectUnificationVars t | t <- types]
+        (FnTypeAST s r cs)   -> concat [collectUnificationVars t | t <- [s,r]]
+        (CoroType s r)       -> concat [collectUnificationVars t | t <- [s,r]]
+        (ForAll tvs rho)     -> collectUnificationVars rho
+        (T_TyVar tv)         -> []
+        (MetaTyVar m)        -> [m]
+        (PtrTypeAST ty)      -> collectUnificationVars ty
+
+equateTypes :: TypeAST -> TypeAST -> Maybe String -> Tc ()
+equateTypes t1 t2 msg = do
+  tcOnError (liftM out msg) (tcUnifyTypes t1 t2) (\(Just soln) -> do
+     let univars = concat [collectUnificationVars t | t <- [t1, t2]]
+     forM_ univars (\m@(Meta u _) -> do
+       let t2 = (soln Map.! u)
+       mt1 <- readTcRef m
+       case mt1 of
+         Nothing -> writeTcMeta m t2
+         Just t1 -> if typesEqual t1 t2 then return ()
+                      else tcFails (out $ "meta ty var " ++ show u ++ " had conflicting types (msg = " ++ show msg ++ ")")
+                    ))
+
 typeJoinVars :: [AnnVar] -> (Maybe TypeAST) -> Tc [AnnVar]
+
 typeJoinVars vars (Nothing) = return $ vars
-typeJoinVars [var] (Just (MetaTyVar m)) = return [var] -- TODO hack :(
+
+typeJoinVars [var@(AnnVar t v)] (Just u@(MetaTyVar m)) = do
+    equateTypes t u Nothing
+    return [var]
+
 typeJoinVars vars (Just (TupleTypeAST expTys)) =
     if (List.length vars) == (List.length expTys)
-      then return [(AnnVar (justTypeJoin t e) v) | ((AnnVar t v), e) <- (List.zip vars expTys)]
+      then sequence [equateTypes t e Nothing >> return (AnnVar t v)
+                    | ((AnnVar t v), e) <- (List.zip vars expTys)]
       else tcFails $ out "Lengths of tuples must agree!"
+
 typeJoinVars vars (Just t) =
   error $ "typeJoinVars not yet implemented for type " ++ show t ++ " against " ++ show vars
 
@@ -33,27 +65,15 @@ extractBindings fnProtoFormals maybeExpTy = do
     let bindingForVar v = TermVarBinding (identPrefix $ avarIdent v) v
     joinedVars <- typeJoinVars fnProtoFormals maybeExpTy
     let bindings = map bindingForVar joinedVars
-    trace ("extractBindings: " ++ show bindings) $
-     return bindings
+    return bindings
 
 extendContext :: Context -> [AnnVar] -> Maybe TypeAST -> Tc Context
 extendContext ctx protoFormals expFormals = do
     bindings <- extractBindings protoFormals expFormals
     return $ prependContextBindings ctx bindings
 
--- TODO replace with unify
-typeJoin :: TypeAST -> TypeAST -> Maybe TypeAST
-typeJoin x (MetaTyVar _)    = Just x
-typeJoin (MetaTyVar _) x    = Just x
-typeJoin x y = if x == y then Just x else Nothing
-
-justTypeJoin x y =
-  case typeJoin x y of Just t -> t
-                       Nothing -> error $ "Unable to join types " ++ show x ++ " and " ++ show y
-
-sanityCheck :: Bool -> String -> Tc AnnExpr
-sanityCheck cond msg = if cond then do return (AnnBool True)
-                               else tcFails (outCSLn Red msg)
+sanityCheck :: Bool -> String -> Tc ()
+sanityCheck cond msg = if cond then return () else tcFails (outCSLn Red msg)
 
 isFnAST (E_FnAST _) = True
 isFnAST _           = False
@@ -124,10 +144,8 @@ typecheckIf ctx a b c maybeExpTy = do
     ea <- typecheck ctx a (Just fosBoolType)
     eb <- typecheck ctx b maybeExpTy
     ec <- typecheck ctx c maybeExpTy
-    _  <- sanityCheck (isJust $ typeJoin (typeAST ea) fosBoolType)
-                      "IfAST: type of conditional wasn't boolean"
-    _  <- sanityCheck (isJust $ typeJoin (typeAST eb) (typeAST ec))
-                      "IfAST: types of branches didn't match"
+    equateTypes (typeAST ea) fosBoolType  (Just "IfAST: type of conditional wasn't boolean")
+    equateTypes (typeAST eb) (typeAST ec) (Just "IfAST: types of branches didn't match")
     return (AnnIf (typeAST eb) ea eb ec)
 
 safeListIndex :: [a] -> Int -> Maybe a
@@ -172,7 +190,8 @@ implicitTypeProjection tyvars rho eb argtype range = do
     let (FnTypeAST rhoArgType _ _) = rho
     let t_tyvars = [T_TyVar tv | tv <- tyvars]
     let unifiableArgType = parSubstTy (List.zip t_tyvars [MetaTyVar u | u <- unificationVars]) rhoArgType
-    case unifyTypes unifiableArgType argtype of
+    unificationResults <- tcUnifyTypes unifiableArgType argtype
+    case unificationResults of
         Nothing -> error $ "Failed to determine type arguments to apply!" ++ show range
         (Just tysub) ->
             let tyProjTypes = extractSubstTypes unificationVars tysub in
@@ -183,15 +202,9 @@ implicitTypeProjection tyvars rho eb argtype range = do
 
 typecheckCallWithBaseFnType eargs eb range =
     case (typeAST eb, typeAST (AnnTuple eargs)) of
-         (FnTypeAST formaltype restype cs, argtype) ->
-            if isJust $ typeJoin formaltype argtype
-                then return (AnnCall range restype eb eargs)
-                else do ebStruct <- tcShowStructure eb
-                        eaStruct <- tcShowStructure (AnnTuple eargs)
-                        tcFails $ (out $ "CallAST mismatches:\n"
-                                       ++ "base: ") ++ (ebStruct) ++ (out $ "\n"
-                                       ++ "arg : ") ++ (eaStruct) ++ (out $ "\n"
-                                       ++ show formaltype ++ "\nvs\n" ++ show argtype ++ "\nrange:\n" ++ show range)
+         (FnTypeAST formaltype restype cs, argtype) -> do
+           equateTypes formaltype argtype (Just $ "CallAST mismatch between formal & arg types" ++ show range)
+           return (AnnCall range restype eb eargs)
          otherwise -> do
             ebStruct <- tcShowStructure eb
             tcFails $ (out $ "CallAST w/o FnAST type: ") ++ ebStruct
@@ -247,7 +260,8 @@ typecheckCall ctx range base args maybeExpTy =
                     -- with the expected arg type
                     ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) (Just $ unifiableArgType)
 
-                    case unifyTypes unifiableArgType (typeAST ea) of
+                    unificationResults <- tcUnifyTypes unifiableArgType (typeAST ea)
+                    case unificationResults of
                       Nothing -> tcFails $ out $ "Failed to determine type arguments to apply!" ++ show range
                       Just tysub ->
                         let tyProjTypes = extractSubstTypes unificationVars tysub in
@@ -264,13 +278,8 @@ typecheckCall ctx range base args maybeExpTy =
 
 -----------------------------------------------------------------------
 
-typecheckFn ctx f Nothing = typecheckFn' ctx f Nothing Nothing
-typecheckFn ctx f (Just (FnTypeAST s t cs')) =
-    if isJust $ typeJoin (fnRetType f)   t
-      then typecheckFn' ctx f (Just s) (Just t)
-      else tcFails $ out $ "typecheck fn '" ++ fnAstName f
-                        ++ "': proto return type, " ++ show (fnRetType  f)
-                        ++ ", did not match return type of expected fn type " ++ show (FnTypeAST s t cs')
+typecheckFn ctx f Nothing =                    typecheckFn' ctx f Nothing  Nothing
+typecheckFn ctx f (Just (FnTypeAST s t cs')) = typecheckFn' ctx f (Just s) (Just t)
 
 typecheckFn ctx f (Just t) = error $ "Unexpected type in typecheckFn: " ++ show t
 
@@ -293,18 +302,15 @@ typecheckFn' ctx f expArgType expBodyType = do
     extCtx <- extendContext ctx uniquelyNamedFormals expArgType
     annbody <- typecheck extCtx (fnBody f) expBodyType
 
-    case typeJoin fnProtoRetTy (typeAST annbody) of
-        (Just someReturnType) -> do
-            formalVars <- typeJoinVars uniquelyNamedFormals expArgType
-            let argtypes = TupleTypeAST (map avarType formalVars)
-            let fnClosedVars = if fnWasToplevel f then Nothing else Just []
-            let fnty = FnTypeAST argtypes someReturnType fnClosedVars
-            return (E_AnnFn (AnnFn fnty (Ident fnProtoName irrelevantIdentNum)
-                                   formalVars annbody fnClosedVars))
-        otherwise ->
-         tcFails $ out $ "typecheck '" ++ fnProtoName
-                    ++ "': proto ret type " ++ show fnProtoRetTy
-                    ++ " did not match body type " ++ show (typeAST annbody)
+    equateTypes fnProtoRetTy (typeAST annbody) (Just $ "return type/body type mismatch in " ++ fnProtoName)
+
+    formalVars <- typeJoinVars uniquelyNamedFormals expArgType
+    let argtypes = TupleTypeAST (map avarType formalVars)
+    let fnClosedVars = if fnWasToplevel f then Nothing else Just []
+    let fnty = FnTypeAST argtypes (typeAST annbody) fnClosedVars
+    return (E_AnnFn (AnnFn fnty (Ident fnProtoName irrelevantIdentNum)
+                           formalVars annbody fnClosedVars))
+
 
 verifyNonOverlappingVariableNames :: String -> [String] -> Tc AnnExpr
 verifyNonOverlappingVariableNames fnName varNames = do

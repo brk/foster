@@ -1,5 +1,4 @@
 main = fn(to i32) {
-
   // Mismatch between declared and inferred return types
   expect_i1(true) ; print_i1(__COMPILES__  fn(to i32) { 0 }  )
   expect_i1(false); print_i1(__COMPILES__  fn(to i32) { true }  )
@@ -20,6 +19,17 @@ main = fn(to i32) {
   expect_i1(true)  ; print_i1(__COMPILES__  fn(x:i32, y:i32 to i32) { 0 }  )
   expect_i1(false) ; print_i1(__COMPILES__  fn(x:i32, x:i32 to i32) { 0 }  )
 
+  // IfAST condition must be bool
+  expect_i1(true)  ; print_i1(__COMPILES__  if true then true else true  )
+  expect_i1(false) ; print_i1(__COMPILES__  if  0   then true else true  )
+  expect_i1(false) ; print_i1(__COMPILES__  if  0   then true else true  )
+
+  // IfAST branches must have same type
+  expect_i1(true)  ; print_i1(__COMPILES__  if true then true else true  )
+  expect_i1(false) ; print_i1(__COMPILES__  if true then  0   else true  )
+
+  0
 }
 
 a = fn(to i32) { 0 }
+b = fn(x:i32 to i32) { x }

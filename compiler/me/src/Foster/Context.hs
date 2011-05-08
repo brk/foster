@@ -60,6 +60,15 @@ instance Monad Tc where
                               Errors ss -> return (Errors ss)
                            })
 
+-- Modifies the standard Tc monad bind operator
+-- to append an error message, if necessary.
+tcOnError Nothing  m k = m >>= k
+tcOnError (Just o) m k = Tc (\env -> do { result <- unTc m env
+                                        ; case result of
+                                           OK expr -> unTc (k expr) env
+                                           Errors ss -> return (Errors (ss ++ out "\n" ++ o))
+                                        })
+                           
 tcLift :: IO a -> Tc a
 tcLift action = Tc (\_env -> do { r <- action; return (OK r) })
 
