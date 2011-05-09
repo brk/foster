@@ -349,7 +349,6 @@ add_library(fosterc_base STATIC
 add_library(fosterc_parse STATIC
   compiler/parse/FosterAST.cpp
   compiler/parse/FosterTypeAST.cpp
-  compiler/parse/FosterSymbolTable.cpp
   compiler/parse/ParsingContext.cpp
   compiler/parse/ANTLRtoFosterAST.cpp
   compiler/parse/ANTLRtoFosterErrorHandling.cpp
