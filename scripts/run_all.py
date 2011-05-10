@@ -11,18 +11,21 @@ import traceback
 import run_test
 from list_all import collect_all_tests
 
+def run_and_print_test(testpath, tmpdir, paths):
+  try:
+    test_tmpdir = os.path.join(tmpdir, run_test.testname(testpath))
+    result = run_test.run_one_test(testpath, paths, test_tmpdir)
+    result.print_table()
+  except run_test.TestFailed:
+    run_test.tests_failed.add(testpath)
+      
 def run_all_tests(bootstrap_dir, paths, tmpdir):
   tests = collect_all_tests(bootstrap_dir)
   for testpath in tests:
-
-    test_tmpdir = os.path.join(tmpdir, run_test.testname(testpath))
-    run_test.ensure_dir_exists(test_tmpdir)
     try:
-      run_test.run_one_test(testpath, paths, test_tmpdir)
+      run_and_print_test(testpath, tmpdir, paths)
     except KeyboardInterrupt:
       return
-    except run_test.TestFailed:
-      run_test.tests_failed.add(testpath)
 
 def main(bootstrap_dir, paths, tmpdir):
   walkstart = run_test.walltime()

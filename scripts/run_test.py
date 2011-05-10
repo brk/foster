@@ -140,12 +140,40 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
 
     return (s4, to_asm, e1, e2, e3, e4)
 
+class TestResult(object):
+  def __init__(self, label, total_elapsed, compile_elapsed, overhead,
+          fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed, as_elapsed, ld_elapsed, rn_elapsed):
+    self.label = label
+    self.total_elapsed = total_elapsed
+    self.compile_elapsed = compile_elapsed
+    self.overhead = overhead
+    self.fp_elapsed = fp_elapsed
+    self.fm_elapsed = fm_elapsed
+    self.fl_elapsed = fl_elapsed
+    self.fc_elapsed = fc_elapsed
+    self.as_elapsed = as_elapsed
+    self.ld_elapsed = ld_elapsed
+    self.rn_elapsed = rn_elapsed
+
+  def print_table(self):
+    print "fpr:%4d | fme:%4d | flo:%4d | foc:%4d | as:%4d | ld:%4d | run:%4d | py:%3d | tot:%5d | %s" % (
+                self.fp_elapsed, self.fm_elapsed, self.fl_elapsed, self.fc_elapsed,
+                self.as_elapsed, self.ld_elapsed, self.rn_elapsed,
+                self.overhead, self.total_elapsed, self.label)
+
+    print "fpr:%3.0f%% | fme:%3.0f%% | flo:%3.0f%% | foc:%3.0f%% | as:%3.0f%% | ld:%3.0f%%" % tuple(100.0*x/float(self.compile_elapsed)
+        for x in list((self.fp_elapsed, self.fm_elapsed, self.fl_elapsed,
+                       self.fc_elapsed, self.as_elapsed, self.ld_elapsed)))
+    print "".join("-" for x in range(60))
+
 def run_one_test(testpath, paths, tmpdir):
+  ensure_dir_exists(tmpdir)
   start = walltime()
   exp_filename = os.path.join(tmpdir, "expected.txt")
   act_filename = os.path.join(tmpdir, "actual.txt")
   log_filename = os.path.join(tmpdir, "compile.log.txt")
   iact_filename = os.path.join(tmpdir, "istdout.txt")
+  result = None
   with open(exp_filename, 'w') as expected:
     with open(act_filename, 'w') as actual:
       with open(log_filename, 'w') as compilelog:
@@ -183,15 +211,13 @@ def run_one_test(testpath, paths, tmpdir):
         total_elapsed = elapsed_since(start)
         compile_elapsed = (as_elapsed + ld_elapsed + fp_elapsed + fm_elapsed + fl_elapsed + fc_elapsed)
         overhead = total_elapsed - (compile_elapsed + rn_elapsed)
-        print "fpr:%4d | fme:%4d | flo:%4d | foc:%4d | as:%4d | ld:%4d | run:%4d | py:%3d | tot:%5d | %s" % (fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed,
-                        as_elapsed, ld_elapsed, rn_elapsed, overhead, total_elapsed, testname(testpath))
-
-        print "fpr:%3.0f%% | fme:%3.0f%% | flo:%3.0f%% | foc:%3.0f%% | as:%3.0f%% | ld:%3.0f%%" % tuple(100.0*x/float(compile_elapsed) for x in list((fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed, as_elapsed, ld_elapsed)))
-        print "".join("-" for x in range(60))
+        result = TestResult(testname(testpath), total_elapsed, compile_elapsed, overhead,
+          fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed, as_elapsed, ld_elapsed, rn_elapsed)
         infile.close()
 
   if options and options.verbose:
       run_command(["paste", exp_filename, act_filename], {}, "")
+  return result
 
 
 def main(testpath, paths, tmpdir):
@@ -199,7 +225,8 @@ def main(testpath, paths, tmpdir):
   if not os.path.isdir(testdir):
     os.makedirs(testdir)
 
-  run_one_test(testpath, paths, testdir)
+  result = run_one_test(testpath, paths, testdir)
+  result.print_table()
 
 def mkpath(root, prog):
   if os.path.isabs(prog):
