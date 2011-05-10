@@ -28,6 +28,9 @@ main = fn(to i32) {
   expect_i1(true)  ; print_i1(__COMPILES__  if true then true else true  )
   expect_i1(false) ; print_i1(__COMPILES__  if true then  0   else true  )
 
+  // Call to non-function thing
+  expect_i1(false) ; print_i1(__COMPILES__ tuple { 0 }(0))
+  
   0
 }
 

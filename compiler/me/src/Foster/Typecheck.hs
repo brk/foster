@@ -199,7 +199,7 @@ typecheckCall ctx range base@(E_FnAST f) args maybeExpTy = do
    trace ("typecheckCall with literal fn base, exp ty " ++ (show expectedLambdaType)) $
     typecheckCallWithBaseFnType eargs eb range
 
-        -- Otherwise, typecheck the function first, then the args.
+-- Otherwise, typecheck the function first, then the args.
 typecheckCall ctx range base args maybeExpTy = do
    expectedLambdaType <- case maybeExpTy of
         Nothing  -> return $ Nothing
@@ -252,7 +252,8 @@ typecheckCall ctx range base args maybeExpTy = do
             ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) (Just $ getFnArgType (typeAST eb))
             typecheckCallWithBaseFnType eargs eb range
 
-      _ -> error $ "Unexpected type for callee: " ++ show (typeAST eb)
+      _ -> tcFails $ out ("Called expression had unexpected type: "
+                          ++ show (typeAST eb) ++ highlightFirstLine range)
 
 -----------------------------------------------------------------------
 
