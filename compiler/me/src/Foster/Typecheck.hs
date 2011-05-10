@@ -123,9 +123,9 @@ typecheck ctx expr maybeExpTy =
             eb <- typecheck ctx b maybeExpTy
             id <- tcFresh ".seq"
             return (AnnLetVar id ea eb)
-        E_SubscriptAST  a b    -> do ta <- typecheck ctx a Nothing
+        E_SubscriptAST a b rng -> do ta <- typecheck ctx a Nothing
                                      tb <- typecheck ctx b Nothing
-                                     typecheckSubscript ta (typeAST ta) tb maybeExpTy
+                                     typecheckSubscript rng ta (typeAST ta) tb maybeExpTy
         E_TupleAST exprs -> typecheckTuple ctx exprs maybeExpTy
 
         E_VarAST v -> case termVarLookup (evarName v) (contextBindings ctx) of
@@ -155,14 +155,17 @@ typecheckIf ctx a b c maybeExpTy = do
 
 -- Tuple subscripts must have a literal integer subscript denoting the field;
 -- looking up the field at runtime wouldn't make much sense.
-typecheckSubscript base (TupleTypeAST types) i@(AnnInt ty int) maybeExpTy =
+typecheckSubscript rng base (TupleTypeAST types) i@(AnnInt ty int) maybeExpTy =
     let literalValue = read (litIntText int) :: Integer in
     case safeListIndex types (fromInteger literalValue) of
         Nothing -> tcFails $ out $ "Literal index " ++ litIntText int ++ " to subscript was out of bounds"
         Just t  -> return (AnnSubscript t base i)
 
-typecheckSubscript base baseType index maybeExpTy =
-       tcFails $ out $ "SubscriptAST " ++ show baseType ++ "[" ++ show index ++ "]" ++ " (:: " ++ show maybeExpTy ++ ")"
+typecheckSubscript rng base baseType index maybeExpTy =
+    tcFails $ out $ "Unable to subscript expression of type " ++ show baseType
+                ++ " with expression " ++ show index
+                ++ " (context expected type " ++ show maybeExpTy ++ ")"
+                ++ highlightFirstLine rng
 
 -----------------------------------------------------------------------
 

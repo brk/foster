@@ -149,8 +149,9 @@ buildSeqs [a,b] = E_SeqAST a b
 buildSeqs (a:b) = E_SeqAST a (buildSeqs b)
 
 parseSubscript pbexpr lines =
+    let range = parseRange pbexpr lines in
     let parts = PbExpr.parts pbexpr in
-    E_SubscriptAST (part 0 parts lines) (part 1 parts lines)
+    E_SubscriptAST (part 0 parts lines) (part 1 parts lines) range
 
 parseTuple pbexpr lines =
     E_TupleAST (map (\x -> parseExpr x lines) $ toList $ PbExpr.parts pbexpr)

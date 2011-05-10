@@ -28,7 +28,8 @@ data ExprAST =
         | E_IfAST         ExprAST ExprAST ExprAST
         | E_SeqAST        ExprAST ExprAST
         | E_SubscriptAST  { subscriptBase  :: ExprAST
-                          , subscriptIndex :: ExprAST }
+                          , subscriptIndex :: ExprAST
+                          , subscriptRange :: ESourceRange }
         | E_VarAST        E_VarAST
         deriving Show
 
@@ -132,7 +133,7 @@ instance Structured ExprAST where
             E_FnAST f            -> out $ "FnAST        " ++ (fnAstName f)
             E_LetAST rng v a b t -> out $ "LetAST       " ++ show v
             E_SeqAST   a b       -> out $ "SeqAST       "
-            E_SubscriptAST  a b  -> out $ "SubscriptAST "
+            E_SubscriptAST a b r -> out $ "SubscriptAST "
             E_TupleAST     es    -> out $ "TupleAST     "
             E_VarAST v           -> out $ "VarAST       " ++ evarName v ++ " :: " ++ show (evarMaybeType v)
     childrenOf e =
@@ -144,8 +145,8 @@ instance Structured ExprAST where
             E_IntAST rng txt     -> []
             E_FnAST f            -> [fnBody f]
             E_LetAST rng v a b t -> [a, b]
-            E_SeqAST        a b  -> unbuildSeqs e
-            E_SubscriptAST  a b  -> [a, b]
+            E_SeqAST       a b   -> unbuildSeqs e
+            E_SubscriptAST a b r -> [a, b]
             E_TupleAST     es    -> es
             E_VarAST _           -> []
 
