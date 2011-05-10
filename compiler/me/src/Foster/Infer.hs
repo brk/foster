@@ -1,4 +1,9 @@
-module Foster.Infer where
+module Foster.Infer(
+    tcUnifyTypes
+  , parSubstTy
+  , tySubst
+  , extractSubstTypes
+) where
 
 import Data.Map(Map)
 import qualified Data.Map as Map
@@ -24,8 +29,8 @@ extractSubstTypes metaVars tysub =
     let keys = [u | (Meta u _) <- metaVars] in
     map (\k -> fromJust $ Map.lookup k tysub) keys
 
-assocListWithoutKeys :: (Eq a) => [(a,b)] -> [a] -> [(a,b)]
-assocListWithoutKeys lst keys =
+assocFilterOut :: (Eq a) => [(a,b)] -> [a] -> [(a,b)]
+assocFilterOut lst keys =
     [(a,b) | (a,b) <- lst, not(List.elem a keys)]
 
 -- Substitute each element of prv with its corresponding element from nxt;
@@ -38,9 +43,8 @@ parSubstTy prvNextPairs ty =
         (TupleTypeAST types) -> (TupleTypeAST [parSubstTy prvNextPairs t | t <- types])
         (FnTypeAST s t cs)   -> (FnTypeAST (parSubstTy prvNextPairs s) (parSubstTy prvNextPairs t) cs)
         (CoroType s t)   -> (CoroType (parSubstTy prvNextPairs s) (parSubstTy prvNextPairs t))
-        (ForAll tvs rho) -> let prvNextPairs' = assocListWithoutKeys
-                                                    prvNextPairs
-                                                    [T_TyVar tv | tv <- tvs] in
+        (ForAll tvs rho) -> let prvNextPairs' = prvNextPairs `assocFilterOut`
+                                                     [T_TyVar tv | tv <- tvs] in
                             (ForAll tvs (parSubstTy prvNextPairs' rho))
         (T_TyVar tv)     -> fromMaybe ty $ List.lookup ty prvNextPairs
         (MetaTyVar mtv)  -> fromMaybe ty $ List.lookup ty prvNextPairs

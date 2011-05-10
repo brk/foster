@@ -126,10 +126,12 @@ typecheck ctx expr maybeExpTy =
         E_SubscriptAST  a b    -> do ta <- typecheck ctx a Nothing
                                      tb <- typecheck ctx b Nothing
                                      typecheckSubscript ta (typeAST ta) tb maybeExpTy
-        E_TupleAST  exprs  -> typecheckTuple ctx exprs maybeExpTy
+        E_TupleAST exprs -> typecheckTuple ctx exprs maybeExpTy
+
         E_VarAST v -> case termVarLookup (evarName v) (contextBindings ctx) of
             Just avar  -> return $ E_AnnVar avar
             Nothing    -> tcFails $ out $ "Unknown variable " ++ (evarName v)
+
         E_CompilesAST e c -> case c of
             CS_WouldNotCompile -> return $ AnnCompiles CS_WouldNotCompile "parse error"
             CS_WouldCompile -> error "No support for re-type checking CompilesAST nodes."
@@ -140,6 +142,7 @@ typecheck ctx expr maybeExpTy =
                             Just o  -> AnnCompiles CS_WouldNotCompile (outToString o)
 
 -----------------------------------------------------------------------
+
 typecheckIf ctx a b c maybeExpTy = do
     ea <- typecheck ctx a (Just fosBoolType)
     eb <- typecheck ctx b maybeExpTy
@@ -148,11 +151,7 @@ typecheckIf ctx a b c maybeExpTy = do
     equateTypes (typeAST eb) (typeAST ec) (Just "IfAST: types of branches didn't match")
     return (AnnIf (typeAST eb) ea eb ec)
 
-safeListIndex :: [a] -> Int -> Maybe a
-safeListIndex lst idx =
-    if List.length lst <= idx
-        then Nothing
-        else Just $ lst !! idx
+-----------------------------------------------------------------------
 
 -- Tuple subscripts must have a literal integer subscript denoting the field;
 -- looking up the field at runtime wouldn't make much sense.
@@ -165,6 +164,8 @@ typecheckSubscript base (TupleTypeAST types) i@(AnnInt ty int) maybeExpTy =
 typecheckSubscript base baseType index maybeExpTy =
        tcFails $ out $ "SubscriptAST " ++ show baseType ++ "[" ++ show index ++ "]" ++ " (:: " ++ show maybeExpTy ++ ")"
 
+-----------------------------------------------------------------------
+
 -- Maps (a -> b)   or   ForAll [...] (a -> b)    to a.
 getFnArgType :: TypeAST -> TypeAST
 getFnArgType (FnTypeAST a r cs) = a
@@ -174,31 +175,6 @@ getFnArgType t@(ForAll tvs rho) =
 getFnArgType x = error $ "Called argType on non-FnTypeAST: " ++ show x
 
 irrelevantClosedOverVars = Nothing
-
--- Example: argtype:             ((Coro i32 i32), i32)
---          eb:
---  typeAST eb: (ForAll ['a,'b]. (((Coro 'a 'b), 'a) -> 'b))
---  getFnArgType $ typeAST eb:    ((Coro 'a 'b), 'a)
--- So we unify the type of the actual argument
--- with the arg type under the forall, and the
--- resulting substitution tells us what type application to produce.
--- Much of the complexity here comes from the fact that we distinguish between
--- forall-bound tyvars and meta type variables (aka unification variables).
-implicitTypeProjection :: [TyVar] -> TypeAST -> AnnExpr -> TypeAST -> ESourceRange -> Tc AnnExpr
-implicitTypeProjection tyvars rho eb argtype range = do
-    unificationVars <- sequence [newTcUnificationVar | _ <- tyvars]
-    let (FnTypeAST rhoArgType _ _) = rho
-    let t_tyvars = [T_TyVar tv | tv <- tyvars]
-    let unifiableArgType = parSubstTy (List.zip t_tyvars [MetaTyVar u | u <- unificationVars]) rhoArgType
-    unificationResults <- tcUnifyTypes unifiableArgType argtype
-    case unificationResults of
-        Nothing -> error $ "Failed to determine type arguments to apply!" ++ show range
-        (Just tysub) ->
-            let tyProjTypes = extractSubstTypes unificationVars tysub in
-            let unifiableRhoType = parSubstTy (List.zip t_tyvars [MetaTyVar u | u <- unificationVars]) rho in
-            let substRho = tySubst unifiableRhoType tysub in
-            return $ E_AnnTyApp substRho eb (minimalTuple tyProjTypes)
-
 
 typecheckCallWithBaseFnType eargs eb range =
     case (typeAST eb, typeAST (AnnTuple eargs)) of
@@ -210,71 +186,73 @@ typecheckCallWithBaseFnType eargs eb range =
             tcFails $ (out $ "CallAST w/o FnAST type: ") ++ ebStruct
                                        ++ (out $ " :: " ++ (show $ typeAST eb))
 
-typecheckCall ctx range base args maybeExpTy =
-      -- If we have an explicit redex (call to a literal function),
-      -- we can determine the types of the formals based on the actuals.
-      case base of
-        (E_FnAST f) -> do
-           ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) Nothing
-           m <- newTcUnificationVar
-           let expectedLambdaType = case maybeExpTy of
-                Nothing  -> (Just (FnTypeAST (typeAST ea) (MetaTyVar m) irrelevantClosedOverVars))
-                (Just t) -> (Just (FnTypeAST (MetaTyVar m)     t        irrelevantClosedOverVars))
+-- If we have an explicit redex (call to a literal function),
+-- we can determine the types of the formals based on the actuals.
+typecheckCall ctx range base@(E_FnAST f) args maybeExpTy = do
+   ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) Nothing
+   m <- newTcUnificationVar
+   let expectedLambdaType = case maybeExpTy of
+        Nothing  -> (Just (FnTypeAST (typeAST ea) (MetaTyVar m) irrelevantClosedOverVars))
+        (Just t) -> (Just (FnTypeAST (MetaTyVar m)     t        irrelevantClosedOverVars))
 
-           eb <- typecheck ctx base expectedLambdaType
-           trace ("typecheckCall with literal fn base, exp ty " ++ (show expectedLambdaType)) $
-            typecheckCallWithBaseFnType eargs eb range
+   eb <- typecheck ctx base expectedLambdaType
+   trace ("typecheckCall with literal fn base, exp ty " ++ (show expectedLambdaType)) $
+    typecheckCallWithBaseFnType eargs eb range
 
         -- Otherwise, typecheck the function first, then the args.
-        _ -> do
-           expectedLambdaType <- case maybeExpTy of
-                Nothing  -> return $ Nothing
-                (Just t) -> do m <- newTcUnificationVar
-                               return $ Just (FnTypeAST (MetaTyVar m) t irrelevantClosedOverVars)
-                -- If we have (e1 e2) :: T, we infer that e1 :: (? -> T) and e2 :: ?
+typecheckCall ctx range base args maybeExpTy = do
+   expectedLambdaType <- case maybeExpTy of
+        Nothing  -> return $ Nothing
+        (Just t) -> do m <- newTcUnificationVar
+                       return $ Just (FnTypeAST (MetaTyVar m) t irrelevantClosedOverVars)
+        -- If we have (e1 e2) :: T, we infer that e1 :: (? -> T) and e2 :: ?
 
-           eb <- typecheck ctx base expectedLambdaType
-           case (typeAST eb) of
-              (ForAll tyvars rho) -> do
-                    let (FnTypeAST rhoArgType _ _) = trace ("forall: " ++ highlightFirstLine range) rho
-                    --                  rhoargtype =   ('a -> 'b)
-                    -- base has type ForAll ['a 'b]   (('a -> 'b) -> (Coro 'a 'b))
-                    -- The forall-bound vars won't unify with concrete types in the term arg,
-                    -- so we replace the forall-bound vars with unification variables
-                    -- when computing the type of the term argument.
+   eb <- typecheck ctx base expectedLambdaType
+   case (typeAST eb) of
+      (ForAll tyvars rho) -> do
+         let (FnTypeAST rhoArgType _ _) = trace ("forall: " ++ highlightFirstLine range) rho
+         --                  rhoargtype =   ('a -> 'b)
+         -- base has type ForAll ['a 'b]   (('a -> 'b) -> (Coro 'a 'b))
+         -- The forall-bound vars won't unify with concrete types in the term arg,
+         -- so we replace the forall-bound vars with unification variables
+         -- when computing the type of the term argument.
 
-                    -- That is, instead of checking the args against ('a -> 'b),
-                    -- we must use unification variables instead:    (?a -> ?b)
-                    -- and then extract the types from unification
-                    -- to use as type arguments.
+         -- That is, instead of checking the args against ('a -> 'b),
+         -- we must use unification variables instead:    (?a -> ?b)
+         -- and then extract the types from unification
+         -- to use as type arguments.
 
-                    -- Generate unification vars corresponding to the bound type variables
-                    unificationVars <- sequence [newTcUnificationVar | _ <- tyvars]
-                    let tyvarsAndMetavars = (List.zip [T_TyVar tv | tv <- tyvars]
-                                                     [MetaTyVar u | u <- unificationVars])
+         -- Generate unification vars corresponding to the bound type variables
+         unificationVars <- sequence [newTcUnificationVar | _ <- tyvars]
+         let tyvarsAndMetavars = (List.zip [T_TyVar tv | tv <- tyvars]
+                                          [MetaTyVar u | u <- unificationVars])
 
-                    -- (?a -> ?b)
-                    let unifiableArgType = parSubstTy tyvarsAndMetavars rhoArgType
+         -- (?a -> ?b)
+         let unifiableArgType = parSubstTy tyvarsAndMetavars rhoArgType
 
-                    -- Type check the args, unifying them
-                    -- with the expected arg type
-                    ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) (Just $ unifiableArgType)
+         -- Type check the args, unifying them
+         -- with the expected arg type
+         ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) (Just $ unifiableArgType)
 
-                    unificationResults <- tcUnifyTypes unifiableArgType (typeAST ea)
-                    case unificationResults of
-                      Nothing -> tcFails $ out $ "Failed to determine type arguments to apply!" ++ show range
-                      Just tysub ->
-                        let tyProjTypes = extractSubstTypes unificationVars tysub in
-                        let unifiableRhoType = parSubstTy tyvarsAndMetavars rho in
-                        let substitutedFnType = tySubst unifiableRhoType tysub in
-                        let annTyApp = E_AnnTyApp substitutedFnType eb (minimalTuple tyProjTypes) in
-                        typecheckCallWithBaseFnType eargs annTyApp range
+         unificationResults <- tcUnifyTypes unifiableArgType (typeAST ea)
+         case unificationResults of
+           Nothing -> tcFails $ out $ "Failed to determine type arguments to apply!" ++ show range
+           Just tysub ->
+             -- Suppose typeAST ea = (t1 -> t2):
+             -- ((?a -> ?b) -> (Coro ?a ?b))
+             let unifiableRhoType = parSubstTy tyvarsAndMetavars rho in
+              -- ((t1 -> t2) -> (Coro t1 t2))
+             let substitutedFnType = tySubst unifiableRhoType tysub in
+             -- eb[tyProjTypes]::substitutedFnType
+             let annTyApp = E_AnnTyApp substitutedFnType eb (minimalTuple tyProjTypes)
+                  where tyProjTypes = extractSubstTypes unificationVars tysub
+             in typecheckCallWithBaseFnType eargs annTyApp range
 
-              (FnTypeAST formaltype restype cs) -> do
-                    ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) (Just $ getFnArgType (typeAST eb))
-                    typecheckCallWithBaseFnType eargs eb range
+      (FnTypeAST formaltype restype cs) -> do
+            ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) (Just $ getFnArgType (typeAST eb))
+            typecheckCallWithBaseFnType eargs eb range
 
-              _ -> error $ "Unexpected type for callee: " ++ show (typeAST eb)
+      _ -> error $ "Unexpected type for callee: " ++ show (typeAST eb)
 
 -----------------------------------------------------------------------
 
@@ -282,14 +260,6 @@ typecheckFn ctx f Nothing =                    typecheckFn' ctx f Nothing  Nothi
 typecheckFn ctx f (Just (FnTypeAST s t cs')) = typecheckFn' ctx f (Just s) (Just t)
 
 typecheckFn ctx f (Just t) = error $ "Unexpected type in typecheckFn: " ++ show t
-
-rename :: Ident -> Uniq -> Ident
-rename (Ident p i) u = (Ident p u)
-
-uniquelyName :: AnnVar -> Tc AnnVar
-uniquelyName (AnnVar ty id) = do
-    uniq <- newTcUniq
-    return (AnnVar ty (rename id uniq))
 
 typecheckFn' :: Context -> FnAST -> Maybe TypeAST -> Maybe TypeAST -> Tc AnnExpr
 typecheckFn' ctx f expArgType expBodyType = do
@@ -310,17 +280,6 @@ typecheckFn' ctx f expArgType expBodyType = do
     let fnty = FnTypeAST argtypes (typeAST annbody) fnClosedVars
     return (E_AnnFn (AnnFn fnty (Ident fnProtoName irrelevantIdentNum)
                            formalVars annbody fnClosedVars))
-
-
-verifyNonOverlappingVariableNames :: String -> [String] -> Tc AnnExpr
-verifyNonOverlappingVariableNames fnName varNames = do
-    let duplicates = [List.head dups
-                     | dups <- List.group (List.sort varNames)
-                     , List.length dups > 1]
-    case duplicates of
-        []        -> return (AnnBool True)
-        otherwise -> tcFails $ out $ "Error when checking " ++ fnName
-                                    ++ ": had duplicated formal parameter names: " ++ show duplicates
 
 -----------------------------------------------------------------------
 typecheckTuple ctx exprs Nothing = typecheckTuple' ctx exprs [Nothing | e <- exprs]
@@ -352,16 +311,6 @@ typecheckTuple' ctx es ts = do
             else do { errmsgs <- sequence $ map collectErrors subparts
                     ; tcFails $ concat errmsgs }
 -----------------------------------------------------------------------
-collectErrors :: Tc a -> Tc Output
-collectErrors tce =
-    Tc (\env -> do { result <- unTc tce env
-                   ; case result of
-                       OK expr     -> return (OK [])
-                       Errors ss -> return   (OK ss)
-                       })
-
-
------------------------------------------------------------------------
 
 typecheckInt :: ESourceRange -> String -> Tc AnnExpr
 typecheckInt rng originalText = do
@@ -389,7 +338,42 @@ extractCleanBase text = do
         [first]       -> return (first, 10)
         otherwise     -> tcFails (outLn $ "Unable to parse integer literal " ++ text)
 
+-----------------------------------------------------------------------
+
 splitString :: String -> String -> [String]
 splitString needle haystack =
     let textParts = T.splitOn (T.pack needle) (T.pack haystack) in
     map T.unpack textParts
+
+collectErrors :: Tc a -> Tc Output
+collectErrors tce =
+    Tc (\env -> do { result <- unTc tce env
+                   ; case result of
+                       OK expr     -> return (OK [])
+                       Errors ss -> return   (OK ss)
+                       })
+
+safeListIndex :: [a] -> Int -> Maybe a
+safeListIndex lst idx =
+    if List.length lst <= idx
+        then Nothing
+        else Just $ lst !! idx
+
+rename :: Ident -> Uniq -> Ident
+rename (Ident p i) u = (Ident p u)
+
+uniquelyName :: AnnVar -> Tc AnnVar
+uniquelyName (AnnVar ty id) = do
+    uniq <- newTcUniq
+    return (AnnVar ty (rename id uniq))
+
+verifyNonOverlappingVariableNames :: String -> [String] -> Tc AnnExpr
+verifyNonOverlappingVariableNames fnName varNames = do
+    let duplicates = [List.head dups
+                     | dups <- List.group (List.sort varNames)
+                     , List.length dups > 1]
+    case duplicates of
+        []        -> return (AnnBool True)
+        otherwise -> tcFails $ out $ "Error when checking " ++ fnName
+                                    ++ ": had duplicated formal parameter names: " ++ show duplicates
+
