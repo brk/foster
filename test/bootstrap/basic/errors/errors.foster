@@ -31,6 +31,8 @@ main = fn(to i32) {
   // Call to non-function thing
   expect_i1(false) ; print_i1(__COMPILES__ tuple { 0 }(0))
   
+  expect_i1(false) ; print_i1(__COMPILES__ if fn(x:i32 to i32) { 0 } then 3 else 4)
+
   0
 }
 

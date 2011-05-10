@@ -91,10 +91,11 @@ parseCompiles pbexpr lines =
         1 -> E_CompilesAST (part 0 (PbExpr.parts pbexpr) lines)      CS_NotChecked
         _ -> E_CompilesAST (E_VarAST (VarAST Nothing "parse error")) CS_WouldNotCompile
 
-parseFn pbexpr lines = let parts = PbExpr.parts pbexpr in
+parseFn pbexpr lines = let range = parseRange pbexpr lines in
+                       let parts = PbExpr.parts pbexpr in
                        let (name, retty, formals) = parseProtoP (index parts 0) lines in
                        assert ((Data.Sequence.length parts) == 2) $
-                       FnAST name retty formals
+                       FnAST range name retty formals
                              (part 1 parts lines)
                              False -- assume closure until proven otherwise
   where
@@ -111,7 +112,7 @@ parseFn pbexpr lines = let parts = PbExpr.parts pbexpr in
                                  Nothing -> error ("Prototype " ++ name ++ " missing required type annotation!") in
                     (name, retTy, vars)
 
-parseFnAST pbexpr lines = E_FnAST $ parseFn pbexpr lines
+parseFnAST pbexpr lines = E_FnAST (parseFn pbexpr lines)
 
 parseIf pbexpr lines =
         if (isSet pbexpr PbExpr.pb_if)
@@ -161,8 +162,8 @@ parseVar pbexpr lines =  VarAST (fmap parseType (PbExpr.type' pbexpr))
                                 (uToString (fromJust $ PbExpr.name pbexpr))
 
 toplevel :: FnAST -> FnAST
-toplevel (FnAST a b c d False) = FnAST a b c d True
-toplevel (FnAST _ _ _ _ True ) =
+toplevel (FnAST a b c d e False) = FnAST a b c d e True
+toplevel (FnAST _ _ _ _ _ True ) =
         error $ "Broken invariant: top-level functions " ++
                 "should not have their top-level bit set before we do it!"
 

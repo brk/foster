@@ -260,7 +260,9 @@ typecheckCall ctx range base args maybeExpTy = do
 typecheckFn ctx f Nothing =                    typecheckFn' ctx f Nothing  Nothing
 typecheckFn ctx f (Just (FnTypeAST s t cs')) = typecheckFn' ctx f (Just s) (Just t)
 
-typecheckFn ctx f (Just t) = error $ "Unexpected type in typecheckFn: " ++ show t
+typecheckFn ctx f (Just t) = tcFails $
+                out ("Context of function literal expects non-function type: "
+                                ++ show t ++ highlightFirstLine (fnAstRange f))
 
 typecheckFn' :: Context -> FnAST -> Maybe TypeAST -> Maybe TypeAST -> Tc AnnExpr
 typecheckFn' ctx f expArgType expBodyType = do

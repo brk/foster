@@ -35,7 +35,8 @@ data ExprAST =
 data E_VarAST = VarAST { evarMaybeType :: Maybe TypeAST
                        , evarName      :: String } deriving (Show)
 
-data FnAST  = FnAST { fnAstName :: String
+data FnAST  = FnAST { fnAstRange :: ESourceRange
+                    , fnAstName :: String
                     , fnRetType :: TypeAST
                     , fnFormals :: [AnnVar]
                     , fnBody  :: ExprAST
