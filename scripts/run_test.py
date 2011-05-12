@@ -102,6 +102,9 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
     # so we just disable logging when running with --verbose.
     if verbose:
       compilelog = None
+      verbosearg = ["--verbose"]
+    else:
+      verbosearg = []
 
     if options and options.interpret:
       interpret = ["--interpret", tmpdir]
@@ -121,7 +124,7 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
                 stdout=compilelog, stderr=compilelog, strictrv=True)
 
     # running fostercheck on a ParsedAST produces an ElaboratedAST
-    (s2, e2) = run_command(['fostercheck', '_out.parsed.pb', '_out.checked.pb'] + interpret,
+    (s2, e2) = run_command(['fostercheck', '_out.parsed.pb', '_out.checked.pb'] + interpret + verbosearg,
                 paths, testpath, showcmd=verbose,
                 stdout=compilelog, stderr=compilelog, strictrv=True)
 

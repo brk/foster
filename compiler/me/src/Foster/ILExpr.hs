@@ -193,11 +193,11 @@ procType proc =
         else FnTypeAST argtys retty Nothing
 
 contextVar :: String -> Context -> String -> AnnVar
-contextVar dbg (Context ctx) s =
-    case termVarLookup s ctx of
+contextVar dbg ctx s =
+    case termVarLookup s (contextBindings ctx) of
             Just v -> v
-            Nothing -> error $ "ILExpr: " ++ dbg ++ " free var not in context: " ++ s ++ "\n" ++ showctx (Context ctx)
-    where showctx (Context bindings) =
+            Nothing -> error $ "ILExpr: " ++ dbg ++ " free var not in context: " ++ s ++ "\n" ++ showctx (contextBindings ctx)
+    where showctx bindings =
             show $ map (\(TermVarBinding nm v) -> nm ++ "/" ++ (show $ avarIdent v)) bindings
 
 buildLet :: Ident -> ILExpr -> ILExpr -> ILExpr

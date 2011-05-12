@@ -121,13 +121,13 @@ mapFoldM (a:as) b1 f = do
     (cs2, b3) <- mapFoldM as b2 f
     return (cs1 ++ cs2, b3)
 
-typecheckModule :: ModuleAST FnAST -> TcEnv -> IO (Maybe (Context, ModuleAST AnnFn))
-typecheckModule mod tcenv = do
+typecheckModule :: Bool -> ModuleAST FnAST -> TcEnv -> IO (Maybe (Context, ModuleAST AnnFn))
+typecheckModule verboseMode mod tcenv = do
     let fns = moduleASTfunctions mod
     let (bindings, u) = computeRootContextBindings 1
     let sortedFns = buildCallGraph fns bindings -- :: [SCC FnAST]
     putStrLn $ "Function SCC list : " ++ show [(fnName f, fnFreeVariables f bindings) | fns <- sortedFns, f <- Graph.flattenSCC fns]
-    let ctx = Context bindings
+    let ctx = Context bindings verboseMode
     (annFns, (extctx, tcenv')) <- mapFoldM sortedFns (ctx, tcenv) typecheckFnSCC
     -- annFns :: [OutputOr AnnExpr]
     if allOK annFns
@@ -143,8 +143,9 @@ inspect :: Context -> OutputOr AnnExpr -> ExprAST -> IO Bool
 inspect ctx typechecked ast =
     case typechecked of
         OK e -> do
-            putStrLn $ "Successful typecheck!"
-            runOutput $ showStructure e
+            when (contextVerbose ctx) (do
+                putStrLn $ "Successful typecheck!"
+                runOutput $ showStructure e)
             return True
         Errors errs -> do
             runOutput $ showStructure ast
@@ -162,11 +163,12 @@ inspect ctx typechecked ast =
 
 -----------------------------------------------------------------------
 
-data Flag = Interpret String
+data Flag = Interpret String | Verbose
 
 options :: [OptDescr Flag]
 options =
  [ Option []     ["interpret"]  (ReqArg Interpret "DIR")  "interpret in DIR"
+ , Option []     ["verbose"]    (NoArg  Verbose)          "verbose mode"
  ]
 
 parseOpts :: [String] -> IO ([Flag], [String])
@@ -180,7 +182,13 @@ getInterpretFlag ([], _) = Nothing
 getInterpretFlag ((f:fs), bs) =
         case f of
                 Interpret d -> Just d
-                --otherwise   -> getInterpretFlag (fs, bs)
+                otherwise   -> getInterpretFlag (fs, bs)
+
+getVerboseFlag ([], _) = False
+getVerboseFlag ((f:fs), bs) =
+        case f of
+                Verbose -> True
+                otherwise   -> getVerboseFlag (fs, bs)
 
 main :: IO ()
 main = do
@@ -197,19 +205,22 @@ main = do
   case messageGet f of
     Left msg -> error ("Failed to parse protocol buffer.\n"++msg)
     Right (pb_exprs,_) -> do
+        let verboseMode = getVerboseFlag flagVals
         let sm = parseSourceModule pb_exprs
         uniqref <- newIORef 1
         let tcenv = TcEnv { tcEnvUniqs = uniqref, tcParents = [] }
-        modResults  <- typecheckModule sm tcenv
+        modResults  <- typecheckModule verboseMode sm tcenv
         case modResults of
             (Just (extctx, mod)) ->
-                      do runOutput $ (outLn "vvvv ===================================")
-                         runOutput $ (outCSLn Yellow (joinWith "\n" $ map show (contextBindings extctx)))
+                      do when verboseMode (do
+                           runOutput $ (outLn "vvvv ===================================")
+                           runOutput $ (outCSLn Yellow (joinWith "\n" $ map show (contextBindings extctx))))
                          let prog = closureConvertAndLift extctx mod
                          dumpModuleToProtobufIL prog (outfile ++ ".ll.pb")
-                         runOutput $ (outLn "/// ===================================")
-                         runOutput $ showProgramStructure prog
-                         runOutput $ (outLn "^^^ ===================================")
+                         when verboseMode (do
+                             runOutput $ (outLn "/// ===================================")
+                             runOutput $ showProgramStructure prog
+                             runOutput $ (outLn "^^^ ==================================="))
                          (case getInterpretFlag flagVals of
                            Nothing -> return ()
                            Just tmpDir -> do
