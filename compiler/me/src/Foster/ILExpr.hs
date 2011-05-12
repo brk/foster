@@ -93,7 +93,9 @@ prependAnnBinding (id, expr) ctx =
     let annvar = AnnVar (typeAST expr) id in
     prependContextBinding ctx (TermVarBinding (identPrefix id) annvar)
 
-
+-- Note that closure conversion is combined with the transformation from
+-- AnnExpr to ILExpr, which mainly consists of making evaluation order for
+-- the subexpressions of tuples and calls (etc) explicit.
 closureConvert :: Context -> AnnExpr -> ILM ILExpr
 closureConvert ctx expr =
         let g = closureConvert ctx in

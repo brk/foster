@@ -29,6 +29,11 @@ collectUnificationVars x =
         (MetaTyVar m)        -> [m]
         (PtrTypeAST ty)      -> collectUnificationVars ty
 
+-- equateTypes first attempts to unify the two given types.
+-- If unification fails, the provided error message (if any)
+-- is printed along with the unification failure error message.
+-- If unification succeeds, each unification variable in the two
+-- types is updated according to the unification solution.
 equateTypes :: TypeAST -> TypeAST -> Maybe String -> Tc ()
 equateTypes t1 t2 msg = do
   tcOnError (liftM out msg) (tcUnifyTypes t1 t2) (\(Just soln) -> do

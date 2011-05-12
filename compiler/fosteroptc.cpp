@@ -253,6 +253,8 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
   llvm::formatted_raw_ostream out(raw_out,
       llvm::formatted_raw_ostream::PRESERVE_STREAM);
 
+  // TODO: LLVM 2.9 and earlier sometimes crashes in X86ISelDAG
+  // with CodeGenOpt::None; is that our fault or theirs?
   CodeGenOpt::Level
          cgOptLevel = optOptimizeZero
                         ? CodeGenOpt::Less // None, Default
