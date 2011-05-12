@@ -28,7 +28,7 @@ def ensure_dir_exists(dirname):
     return os.mkdir(dirname)
   return True
 
-def extract_expected_input(path):
+def extract_expected_input(path, rootdir):
   """Reads lines from the start of the file at the given path,
      until it sees a line that is not a commented key/value pair."""
   inlines = []
@@ -44,7 +44,7 @@ def extract_expected_input(path):
       if label == "IN":
         inlines.append(value)
 
-  tmpname = 'tmp.input.txt'
+  tmpname = os.path.join(rootdir, '_extracted_input.txt')
   with open(tmpname, 'w') as f:
     f.writelines(inlines)
   return open(tmpname, 'r')
@@ -118,19 +118,23 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
       # see the optimized LLVM IR.
       optlevel = '-dump-postopt'
 
+    parse_output = os.path.join(tmpdir, '_out.parsed.pb')
+    check_output = os.path.join(tmpdir, '_out.checked.pb')
+
     # running fosterparse on a source file produces a ParsedAST
-    (s1, e1) = run_command(['fosterparse', testpath, '_out.parsed.pb'],
+    (s1, e1) = run_command(['fosterparse', testpath, parse_output],
                 paths, testpath, showcmd=verbose,
                 stdout=compilelog, stderr=compilelog, strictrv=True)
 
     # running fostercheck on a ParsedAST produces an ElaboratedAST
-    (s2, e2) = run_command(['fostercheck', '_out.parsed.pb', '_out.checked.pb'] + interpret + verbosearg,
+    (s2, e2) = run_command(['fostercheck', parse_output, check_output] + interpret + verbosearg,
                 paths, testpath, showcmd=verbose,
                 stdout=compilelog, stderr=compilelog, strictrv=True)
 
     # running fosterlower on a ParsedAST produces a bitcode Module
     # linking a bunch of Modules produces a Module
-    (s3, e3) = run_command(['fosterlower', '_out.checked.pb', '-o', finalname, '-dump-prelinked', '-fosterc-time'],
+    (s3, e3) = run_command(['fosterlower', check_output, '-o', finalname,
+                            '-outdir', tmpdir, '-dump-prelinked', '-fosterc-time'],
                 paths, testpath, showcmd=verbose,
                 stdout=compilelog, stderr=compilelog, strictrv=True)
 
@@ -143,30 +147,15 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
 
     return (s4, to_asm, e1, e2, e3, e4)
 
-class TestResult(object):
-  def __init__(self, label, total_elapsed, compile_elapsed, overhead,
-          fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed, as_elapsed, ld_elapsed, rn_elapsed):
-    self.label = label
-    self.total_elapsed = total_elapsed
-    self.compile_elapsed = compile_elapsed
-    self.overhead = overhead
-    self.fp_elapsed = fp_elapsed
-    self.fm_elapsed = fm_elapsed
-    self.fl_elapsed = fl_elapsed
-    self.fc_elapsed = fc_elapsed
-    self.as_elapsed = as_elapsed
-    self.ld_elapsed = ld_elapsed
-    self.rn_elapsed = rn_elapsed
-
-  def print_table(self):
+def print_result_table(res):
     print "fpr:%4d | fme:%4d | flo:%4d | foc:%4d | as:%4d | ld:%4d | run:%4d | py:%3d | tot:%5d | %s" % (
-                self.fp_elapsed, self.fm_elapsed, self.fl_elapsed, self.fc_elapsed,
-                self.as_elapsed, self.ld_elapsed, self.rn_elapsed,
-                self.overhead, self.total_elapsed, self.label)
+                res['fp_elapsed'], res['fm_elapsed'], res['fl_elapsed'], res['fc_elapsed'],
+                res['as_elapsed'], res['ld_elapsed'], res['rn_elapsed'],
+                res['overhead'], res['total_elapsed'], res['label'])
 
-    print "fpr:%3.0f%% | fme:%3.0f%% | flo:%3.0f%% | foc:%3.0f%% | as:%3.0f%% | ld:%3.0f%%" % tuple(100.0*x/float(self.compile_elapsed)
-        for x in list((self.fp_elapsed, self.fm_elapsed, self.fl_elapsed,
-                       self.fc_elapsed, self.as_elapsed, self.ld_elapsed)))
+    print "fpr:%3.0f%% | fme:%3.0f%% | flo:%3.0f%% | foc:%3.0f%% | as:%3.0f%% | ld:%3.0f%%" % tuple(100.0*x/float(res['compile_elapsed'])
+        for x in list((res['fp_elapsed'], res['fm_elapsed'], res['fl_elapsed'],
+                       res['fc_elapsed'], res['as_elapsed'], res['ld_elapsed'])))
     print "".join("-" for x in range(60))
 
 def run_one_test(testpath, paths, tmpdir):
@@ -180,10 +169,11 @@ def run_one_test(testpath, paths, tmpdir):
   with open(exp_filename, 'w') as expected:
     with open(act_filename, 'w') as actual:
       with open(log_filename, 'w') as compilelog:
-        infile = extract_expected_input(testpath)
+        infile = extract_expected_input(testpath, tmpdir)
+        #testpath = os.path.abspath(testpath)
 
-        finalpath = os.path.join('fc-output', 'out')
-        exepath   = os.path.join('fc-output', 'a.out')
+        finalpath = os.path.join(tmpdir, 'out')
+        exepath   = os.path.join(tmpdir, 'a.out')
 
         rv, to_asm, fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed = \
                 compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir)
@@ -214,8 +204,10 @@ def run_one_test(testpath, paths, tmpdir):
         total_elapsed = elapsed_since(start)
         compile_elapsed = (as_elapsed + ld_elapsed + fp_elapsed + fm_elapsed + fl_elapsed + fc_elapsed)
         overhead = total_elapsed - (compile_elapsed + rn_elapsed)
-        result = TestResult(testname(testpath), total_elapsed, compile_elapsed, overhead,
-          fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed, as_elapsed, ld_elapsed, rn_elapsed)
+        result = dict(label=testname(testpath), total_elapsed=total_elapsed,
+                       compile_elapsed=compile_elapsed, overhead=overhead,
+          fp_elapsed=fp_elapsed, fm_elapsed=fm_elapsed, fl_elapsed=fl_elapsed,
+          fc_elapsed=fc_elapsed, as_elapsed=as_elapsed, ld_elapsed=ld_elapsed, rn_elapsed=rn_elapsed)
         infile.close()
 
   if options and options.verbose:
@@ -229,7 +221,7 @@ def main(testpath, paths, tmpdir):
     os.makedirs(testdir)
 
   result = run_one_test(testpath, paths, testdir)
-  result.print_table()
+  print_result_table(result)
 
 def mkpath(root, prog):
   if os.path.isabs(prog):

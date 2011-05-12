@@ -7,25 +7,39 @@ import subprocess
 import sys
 import shutil
 import traceback
+import multiprocessing
+import itertools
 
 import run_test
 from list_all import collect_all_tests
 
-def run_and_print_test(testpath, tmpdir, paths):
+def worker_run_test(info):
+  testpath, tmpdir, paths = info
   try:
     test_tmpdir = os.path.join(tmpdir, run_test.testname(testpath))
     result = run_test.run_one_test(testpath, paths, test_tmpdir)
-    result.print_table()
+    return (testpath, result)
+  except KeyboardInterrupt:
+    return (testpath, None) # Workers should ignore keyboard interrupts
   except run_test.TestFailed:
-    run_test.tests_failed.add(testpath)
-      
+    return (testpath, None)
+
 def run_all_tests(bootstrap_dir, paths, tmpdir):
   tests = collect_all_tests(bootstrap_dir)
-  for testpath in tests:
-    try:
-      run_and_print_test(testpath, tmpdir, paths)
-    except KeyboardInterrupt:
-      return
+  pool = multiprocessing.Pool()
+  try:
+    for result in pool.imap_unordered(worker_run_test,
+                itertools.izip(tests,
+                  itertools.repeat(tmpdir),
+                  itertools.repeat(paths))):
+       testpath, result = result
+       if result is not None:
+         run_test.print_result_table(result)
+         run_test.tests_passed.add(testpath)
+       else:
+         run_test.tests_failed.add(testpath)
+  except KeyboardInterrupt:
+    return
 
 def main(bootstrap_dir, paths, tmpdir):
   walkstart = run_test.walltime()

@@ -56,6 +56,11 @@ optOutputName("o",
   cl::desc("[foster] Base name of output file"),
   cl::init("out"));
 
+static cl::opt<string>
+optOutdirName("outdir",
+  cl::desc("[foster] Output directory for output and dump files"),
+  cl::init("fc-output"));
+
 static cl::opt<bool>
 optEmitDebugInfo("g",
   cl::desc("[foster] Emit debug information in generated LLVM IR"));
@@ -106,9 +111,8 @@ Module* readLLVMModuleFromPath(string path) {
   return foster::readLLVMModuleFromPath(path);
 }
 
-string dumpdirFile(const string& filename) {
-  static string dumpdir("fc-output/");
-  return dumpdir + filename;
+string outdirFile(const string& filename) {
+  return optOutdirName + "/" + filename;
 }
 
 void dumpModuleToFile(Module* mod, const string& filename) {
@@ -189,7 +193,7 @@ int main(int argc, char** argv) {
   foster::gPrintLLVMImports = optPrintLLVMImports;
   foster::validateInputFile(optInputPath + ".ll.pb");
 
-  foster::ensureDirectoryExists(dumpdirFile(""));
+  foster::ensureDirectoryExists(outdirFile(""));
 
   foster::initializeLLVM();
   foster::ParsingContext::initCachedLLVMTypeNames();
@@ -252,7 +256,7 @@ int main(int argc, char** argv) {
 
 
   if (optDumpPreLinkedIR) {
-    dumpModuleToFile(module, dumpdirFile(optOutputName + ".prelink.ll").c_str());
+    dumpModuleToFile(module, outdirFile(optOutputName + ".prelink.ll").c_str());
   }
 
   { ScopedTimer timer("llvm.link");
@@ -261,14 +265,14 @@ int main(int argc, char** argv) {
   }
 
   if (optDumpPostLinkedIR) {
-    dumpModuleToFile(module, dumpdirFile(optOutputName + ".preopt.ll"));
+    dumpModuleToFile(module, outdirFile(optOutputName + ".preopt.ll"));
   }
 
-  dumpModuleToBitcode(module, dumpdirFile(optOutputName + ".preopt.bc"));
+  dumpModuleToBitcode(module, outdirFile(optOutputName + ".preopt.bc"));
 
   if (optDumpStats) {
     string err;
-    llvm::raw_fd_ostream out(dumpdirFile(optOutputName + "lower.stats.txt").c_str(), err);
+    llvm::raw_fd_ostream out(outdirFile(optOutputName + "lower.stats.txt").c_str(), err);
     llvm::PrintStatistics(out);
   }
 
