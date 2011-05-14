@@ -19,6 +19,9 @@ import qualified Data.ByteString.Lazy as L(writeFile)
 import Data.ByteString.Lazy.UTF8 as UTF8
 import Data.Sequence as Seq
 
+import Data.IORef(readIORef)
+import System.IO.Unsafe(unsafePerformIO)
+
 import Text.ProtocolBuffers(messagePut)
 
 import Foster.Bepb.ProcType as ProcType
@@ -65,6 +68,7 @@ dumpIdent i = let p = identPrefix i in
 tagForClosedVars Nothing  = PbTypeTag.PROC
 tagForClosedVars (Just _) = PbTypeTag.CLOSURE
 
+{-# NOINLINE dumpType #-}
 dumpType :: TypeAST -> PbType.Type
 dumpType (NamedTypeAST s)     = P'.defaultValue { PbType.tag  = PbTypeTag.LLVM_NAMED
                                                 , PbType.name = Just $ u8fromString s }
@@ -91,6 +95,12 @@ dumpType x@(T_TyVar (BoundTyVar s)) =
 dumpType x@(PtrTypeAST ty) =    P'.defaultValue { PbType.tag = PbTypeTag.PTR
                                                 , type_parts = fromList $ fmap dumpType [ty]
                                                 }
+dumpType (MetaTyVar (Meta u tyref)) =
+  unsafePerformIO $ do mty <- readIORef tyref
+                       case mty of
+                          Nothing -> error $ "Cannot dump un-unified unification variable " ++ show u  ++ "!"
+                          Just t -> return $ dumpType t
+
 dumpType other = error $ "dumpType saw unknown type " ++ show other
 
 defaultCallingConvFor Nothing = "coldcc"

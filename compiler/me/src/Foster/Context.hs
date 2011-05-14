@@ -70,7 +70,7 @@ tcOnError (Just o) m k = Tc (\env -> do { result <- unTc m env
                                            OK expr -> unTc (k expr) env
                                            Errors ss -> return (Errors (ss ++ out "\n" ++ o))
                                         })
-                           
+
 tcLift :: IO a -> Tc a
 tcLift action = Tc (\_env -> do { r <- action; return (OK r) })
 
@@ -143,3 +143,4 @@ getStructureContextMessage = do
                     [] ->        (outLn $ "\tTop-level definition:")
                     otherwise -> (outLn $ "\tContext for AST below is:") ++ concat outputs
     return output
+

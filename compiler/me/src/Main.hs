@@ -78,15 +78,10 @@ bindingForAnnFn :: AnnFn -> ContextBinding
 bindingForAnnFn f = TermVarBinding (fnNameA f) (annFnVar f)
  where annFnVar f = AnnVar (annFnType f) (annFnIdent f)
 
-fnTypeFrom :: FnAST -> TypeAST
-fnTypeFrom f  =
-    let intype = TupleTypeAST [avarType v | v <- fnFormals f] in
-    let fnClosedVars = if fnWasToplevel f then Nothing else Just [] in
-    FnTypeAST intype (fnRetType f) fnClosedVars
 
-bindingForFnAST :: FnAST -> ContextBinding
-bindingForFnAST f = TermVarBinding (fnName f) (fnVar f)
- where    fnVar f = AnnVar (fnTypeFrom f) (Ident (fnName f) (-12345))
+bindingForFnAST :: FnAST -> TypeAST -> ContextBinding
+bindingForFnAST f t = let n = fnName f in
+                      TermVarBinding n (AnnVar t (Ident n (-12345)))
 
 -- Every function in the SCC should typecheck against the input context,
 -- and the resulting context should include the computed types of each
@@ -98,8 +93,8 @@ typecheckFnSCC scc (ctx, tcenv) = do
         let ast = (E_FnAST fn)
         let name = fnName fn
         putStrLn $ "typechecking " ++ name
-        typechecked <- unTc (do --uRetTy <- newTcUnificationVar
-                                let extctx = prependContextBinding ctx (bindingForFnAST fn)
+        typechecked <- unTc (do uRetTy <- newTcUnificationVar
+                                let extctx = prependContextBinding ctx (bindingForFnAST fn (MetaTyVar uRetTy))
                                 typecheck extctx ast Nothing) tcenv
         inspect ctx typechecked ast
         return typechecked
@@ -211,8 +206,8 @@ main = do
         let tcenv = TcEnv { tcEnvUniqs = uniqref, tcParents = [] }
         modResults  <- typecheckModule verboseMode sm tcenv
         case modResults of
-            (Just (extctx, mod)) ->
-                      do when verboseMode (do
+            (Just (extctx, mod)) -> do
+                         when verboseMode (do
                            runOutput $ (outLn "vvvv ===================================")
                            runOutput $ (outCSLn Yellow (joinWith "\n" $ map show (contextBindings extctx))))
                          let prog = closureConvertAndLift extctx mod

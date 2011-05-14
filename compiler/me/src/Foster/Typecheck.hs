@@ -5,7 +5,7 @@ import Control.Monad(liftM, forM_)
 
 import Debug.Trace(trace)
 import qualified Data.Text as T
-import qualified Data.Map as Map((!))
+import qualified Data.Map as Map(lookup)
 
 import System.Console.ANSI
 
@@ -39,13 +39,11 @@ equateTypes t1 t2 msg = do
   tcOnError (liftM out msg) (tcUnifyTypes t1 t2) (\(Just soln) -> do
      let univars = concat [collectUnificationVars t | t <- [t1, t2]]
      forM_ univars (\m@(Meta u _) -> do
-       let t2 = (soln Map.! u)
-       mt1 <- readTcRef m
-       case mt1 of
-         Nothing -> writeTcMeta m t2
-         Just t1 -> if typesEqual t1 t2 then return ()
-                      else tcFails (out $ "meta ty var " ++ show u ++ " had conflicting types (msg = " ++ show msg ++ ")")
-                    ))
+       case Map.lookup u soln of
+         Nothing -> return ()
+         Just t2 -> do mt1 <- readTcRef m
+                       case mt1 of Nothing -> writeTcMeta m t2
+                                   Just t1 -> equateTypes t1 t2 msg))
 
 typeJoinVars :: [AnnVar] -> (Maybe TypeAST) -> Tc [AnnVar]
 
@@ -184,11 +182,13 @@ getFnArgType x = error $ "Called argType on non-FnTypeAST: " ++ show x
 
 irrelevantClosedOverVars = Nothing
 
-typecheckCallWithBaseFnType eargs eb range =
-    case (typeAST eb, typeAST (AnnTuple eargs)) of
+typecheckCallWithBaseFnType eargs eb basetype range =
+    case (basetype, typeAST (AnnTuple eargs))
+      of
          (FnTypeAST formaltype restype cs, argtype) -> do
            equateTypes formaltype argtype (Just $ "CallAST mismatch between formal & arg types" ++ show range)
            return (AnnCall range restype eb eargs)
+
          otherwise -> do
             ebStruct <- tcShowStructure eb
             tcFails $ (out $ "CallAST w/o FnAST type: ") ++ ebStruct
@@ -205,7 +205,7 @@ typecheckCall ctx range base@(E_FnAST f) args maybeExpTy = do
 
    eb <- typecheck ctx base expectedLambdaType
    trace ("typecheckCall with literal fn base, exp ty " ++ (show expectedLambdaType)) $
-    typecheckCallWithBaseFnType eargs eb range
+    typecheckCallWithBaseFnType eargs eb (typeAST eb) range
 
 -- Otherwise, typecheck the function first, then the args.
 typecheckCall ctx range base args maybeExpTy = do
@@ -254,11 +254,22 @@ typecheckCall ctx range base args maybeExpTy = do
              -- eb[tyProjTypes]::substitutedFnType
              let annTyApp = E_AnnTyApp substitutedFnType eb (minimalTuple tyProjTypes)
                   where tyProjTypes = extractSubstTypes unificationVars tysub
-             in typecheckCallWithBaseFnType eargs annTyApp range
+             in typecheckCallWithBaseFnType eargs annTyApp (typeAST annTyApp) range
 
-      (FnTypeAST formaltype restype cs) -> do
-            ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) (Just $ getFnArgType (typeAST eb))
-            typecheckCallWithBaseFnType eargs eb range
+      fnty@(FnTypeAST formaltype restype cs) -> do
+            ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) (Just formaltype)
+            typecheckCallWithBaseFnType eargs eb fnty range
+
+      m@(MetaTyVar u) -> do
+            ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) Nothing
+
+            ft <- newTcUnificationVar
+            rt <- newTcUnificationVar
+            let fnty = (FnTypeAST (MetaTyVar ft) (MetaTyVar rt) (Just []))
+            equateTypes (MetaTyVar ft) (typeAST ea) Nothing
+            equateTypes m fnty Nothing
+
+            typecheckCallWithBaseFnType eargs eb fnty range
 
       _ -> tcFails $ out ("Called expression had unexpected type: "
                           ++ show (typeAST eb) ++ highlightFirstLine range)
