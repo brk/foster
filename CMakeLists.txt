@@ -345,6 +345,10 @@ add_library(fosterc_base STATIC
   compiler/base/PughSinofskyPrettyPrinter.cpp
   third_party/pystring/pystring.cpp
 )
+add_dependencies(fosterc_base
+  ${GENERATED}/FosterAST.pb.h
+  ${GENERATED}/FosterIL.pb.h
+)
 
 add_library(fosterc_parse STATIC
   compiler/parse/FosterAST.cpp
