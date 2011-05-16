@@ -165,12 +165,10 @@ def run_one_test(testpath, paths, tmpdir):
   act_filename = os.path.join(tmpdir, "actual.txt")
   log_filename = os.path.join(tmpdir, "compile.log.txt")
   iact_filename = os.path.join(tmpdir, "istdout.txt")
-  result = None
   with open(exp_filename, 'w') as expected:
     with open(act_filename, 'w') as actual:
       with open(log_filename, 'w') as compilelog:
         infile = extract_expected_input(testpath, tmpdir)
-        #testpath = os.path.abspath(testpath)
 
         finalpath = os.path.join(tmpdir, 'out')
         exepath   = os.path.join(tmpdir, 'a.out')
@@ -189,26 +187,25 @@ def run_one_test(testpath, paths, tmpdir):
                                     paths, testpath)
         rv, rn_elapsed = run_command(exepath,  paths, testpath, stdout=actual, stderr=expected, stdin=infile, strictrv=False)
 
-        df_rv = subprocess.call(['diff', '-u', exp_filename, act_filename])
-        if df_rv != 0:
-          tests_failed.add(testpath)
-        elif options and options.interpret:
-          df_rv = subprocess.call(['diff', '-u', act_filename, iact_filename])
-          if df_rv != 0:
-            tests_failed.add(testpath)
-          else:
-            tests_passed.add(testpath)
-        else:
-          tests_passed.add(testpath)
+  did_fail = False
+  df_rv = subprocess.call(['diff', '-u', exp_filename, act_filename])
+  print "diff returned ", df_rv
+  if df_rv != 0:
+    did_fail = True
+  elif options and options.interpret:
+    df_rv = subprocess.call(['diff', '-u', act_filename, iact_filename])
+    if df_rv != 0:
+      did_fail = True
 
-        total_elapsed = elapsed_since(start)
-        compile_elapsed = (as_elapsed + ld_elapsed + fp_elapsed + fm_elapsed + fl_elapsed + fc_elapsed)
-        overhead = total_elapsed - (compile_elapsed + rn_elapsed)
-        result = dict(label=testname(testpath), total_elapsed=total_elapsed,
-                       compile_elapsed=compile_elapsed, overhead=overhead,
-          fp_elapsed=fp_elapsed, fm_elapsed=fm_elapsed, fl_elapsed=fl_elapsed,
-          fc_elapsed=fc_elapsed, as_elapsed=as_elapsed, ld_elapsed=ld_elapsed, rn_elapsed=rn_elapsed)
-        infile.close()
+  total_elapsed = elapsed_since(start)
+  compile_elapsed = (as_elapsed + ld_elapsed + fp_elapsed + fm_elapsed + fl_elapsed + fc_elapsed)
+  overhead = total_elapsed - (compile_elapsed + rn_elapsed)
+  result = dict(failed=did_fail, label=testname(testpath),
+                total_elapsed=total_elapsed,
+                compile_elapsed=compile_elapsed, overhead=overhead,
+    fp_elapsed=fp_elapsed, fm_elapsed=fm_elapsed, fl_elapsed=fl_elapsed,
+    fc_elapsed=fc_elapsed, as_elapsed=as_elapsed, ld_elapsed=ld_elapsed, rn_elapsed=rn_elapsed)
+  infile.close()
 
   if options and options.verbose:
       run_command(["paste", exp_filename, act_filename], {}, "")
@@ -222,6 +219,11 @@ def main(testpath, paths, tmpdir):
 
   result = run_one_test(testpath, paths, testdir)
   print_result_table(result)
+
+  if result['failed']:
+    tests_failed.add(testpath)
+  else:
+    tests_passed.add(testpath)
 
 def mkpath(root, prog):
   if os.path.isabs(prog):
