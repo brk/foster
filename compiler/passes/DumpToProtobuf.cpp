@@ -34,11 +34,11 @@ void dumpChild(DumpToProtobufPass* pass,
   pass->current = saved;
 }
 
-void dumpChildren(DumpToProtobufPass* pass,
-                  ExprAST* ast) {
-  pass->current->mutable_parts()->Reserve(ast->parts.size());
-  for (size_t i = 0; i < ast->parts.size(); ++i) {
-    dumpChild(pass, pass->current->add_parts(), ast->parts[i]);
+void dumpChildren(DumpToProtobufPass* pass, ExprAST* ast) {
+  std::vector<ExprAST*>& parts = ast->parts;
+  pass->current->mutable_parts()->Reserve(parts.size());
+  for (size_t i = 0; i < parts.size(); ++i) {
+    dumpChild(pass, pass->current->add_parts(), parts[i]);
   }
 }
 
@@ -81,6 +81,29 @@ void processExprAST(pb::Expr* current,
 
 /////////////////////////////////////////////////////////////////////
 
+void dumpModule(DumpToProtobufPass* pass,
+                foster::fepb::SourceModule& sm, ModuleAST* mod) {
+  sm.set_name(mod->name);
+  sm.mutable_parts()->Reserve(mod->parts.size());
+  for (size_t i = 0; i < mod->parts.size(); ++i) {
+    dumpChild(pass, sm.add_parts(), mod->parts[i]);
+  }
+/*
+  for (size_t i = 0; i < mod->decl_parts.size(); ++i) {
+    //pb::Decl* d = sm.add_decl();
+    ASSERT(false && " dumpModule");
+  }
+
+  for (size_t i = 0; i < mod->defn_parts.size(); ++i) {
+    pb::Defn* d = sm.add_defn();
+    d->set_name(mod->defn_parts[i]->name);
+    dumpChild(pass, d->mutable_body(), mod->defn_parts[i]->body);
+  }
+*/
+}
+
+/////////////////////////////////////////////////////////////////////
+
 void BoolAST::dump(DumpToProtobufPass* pass) {
   processExprAST(pass->current, this, pb::Expr::BOOL);
   pass->current->set_bool_value(this->boolValue);
@@ -116,12 +139,6 @@ void FnAST::dump(DumpToProtobufPass* pass) {
   processExprAST(pass->current, this, pb::Expr::FN);
   dumpChild(pass, pass->current->add_parts(), this->getProto());
   dumpChild(pass, pass->current->add_parts(), this->parts[0]);
-}
-
-void ModuleAST::dump(DumpToProtobufPass* pass) {
-  processExprAST(pass->current, this, pb::Expr::MODULE);
-  pass->current->set_name(this->name);
-  dumpChildren(pass, this);
 }
 
 void IfExprAST::dump(DumpToProtobufPass* pass) {

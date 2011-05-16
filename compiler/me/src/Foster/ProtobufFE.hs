@@ -168,9 +168,9 @@ toplevel (FnAST _ _ _ _ _ True ) =
         error $ "Broken invariant: top-level functions " ++
                 "should not have their top-level bit set before we do it!"
 
-parseModule :: PbExpr.Expr -> SourceLines -> ModuleAST FnAST
-parseModule pbexpr lines =
-    ModuleAST [toplevel (parseFn e lines) | e <- toList $ PbExpr.parts pbexpr]
+parseModule :: String -> [PbExpr.Expr] -> SourceLines -> ModuleAST FnAST
+parseModule name pbexprs lines =
+    ModuleAST [toplevel (parseFn e lines) | e <- pbexprs]
               lines
 
 
@@ -237,7 +237,8 @@ parseExpr pbexpr lines =
 parseSourceModule :: SourceModule -> ModuleAST FnAST
 parseSourceModule sm =
     let lines = sourceLines sm in
-    parseModule (SourceModule.expr sm) lines
+    parseModule (uToString $ SourceModule.name  sm)
+                (toList    $ SourceModule.parts sm) lines
 
 sourceLines :: SourceModule -> SourceLines
 sourceLines sm = SourceLines (fmapDefault (\x -> T.pack (uToString x)) (SourceModule.line sm))

@@ -9,8 +9,12 @@
 
 struct DumpToProtobufPass {
   foster::fepb::Expr* current;
-  DumpToProtobufPass(foster::fepb::Expr* current) : current(current) {}
+  DumpToProtobufPass() : current(NULL) {}
 };
+
+void dumpModule(DumpToProtobufPass* p,
+                foster::fepb::SourceModule& sm,
+                ModuleAST* mod);
 
 struct DumpTypeToProtobufPass {
   foster::fepb::Type* current;

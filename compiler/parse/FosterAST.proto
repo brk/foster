@@ -61,8 +61,6 @@ message Expr {
 
     COMPILES  = 31;
     IF        = 32;
-
-    MODULE    = 35;
   }
   repeated Expr        parts = 1;
   required Tag           tag = 2;
@@ -77,7 +75,7 @@ message Expr {
   // Bool
   optional bool   bool_value = 23;
 
-  // Var, Module, named type decl
+  // Var, named type decl
   optional string name  = 24;
 
   // AnnTyApp
@@ -97,6 +95,7 @@ message PBIf {
 }
 
 message SourceModule {
-  repeated string line = 2;
-  required Expr   expr = 3;
+  required string name  = 1;
+  repeated string line  = 2;
+  repeated Expr   parts = 3;
 }

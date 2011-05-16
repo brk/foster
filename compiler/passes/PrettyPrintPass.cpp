@@ -215,13 +215,6 @@ void FnAST::show(PrettyPrintPass* pass) {
   }
 }
 
-void ModuleAST::show(PrettyPrintPass* pass) {
-  for (size_t i = 0; i < this->parts.size(); ++i) {
-    pass->emit(this->parts[i]);
-    pass->scan(pass->pp.tNewline);
-  }
-}
-
 // if $0 then $1 else $2
 void IfExprAST::show(PrettyPrintPass* pass) {
   ScopedBlock sb(pass);

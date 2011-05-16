@@ -237,9 +237,11 @@ public:
   ExprAST*& getBody() { return parts[0]; }
 };
 
-struct ModuleAST : public ExprAST {
+struct ModuleAST {
   std::string name;
+  const foster::InputTextBuffer* buf;
   std::vector<FnAST*> fn_parts;
+  std::vector<ExprAST*> parts;
   typedef std::vector<FnAST*>::iterator FnAST_iterator;
   FnAST_iterator fn_begin() { return fn_parts.begin();}
   FnAST_iterator fn_end() { return fn_parts.end(); }
@@ -247,7 +249,7 @@ struct ModuleAST : public ExprAST {
   explicit ModuleAST(const std::vector<ExprAST*>& _parts,
                      const std::string& name,
                      foster::SourceRange sourceRange)
-    : ExprAST("ModuleAST", sourceRange), name(name) {
+    : name(name), buf(sourceRange.buf) {
 
       for (size_t i = 0; i < _parts.size(); ++i) {
         if (FnAST* f = dynamic_cast<FnAST*>(_parts[i])) {
@@ -258,9 +260,6 @@ struct ModuleAST : public ExprAST {
         parts.push_back(_parts[i]);
       }
   }
-
-  virtual void dump(DumpToProtobufPass* pass);
-  virtual void show(PrettyPrintPass*    pass);
 };
 
 struct IfExprAST : public ExprAST {

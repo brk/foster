@@ -59,19 +59,18 @@ void dumpModuleToProtobuf(ModuleAST* mod, const string& filename) {
   ASSERT(mod != NULL);
 
   foster::fepb::SourceModule sm;
-  const foster::InputTextBuffer* buf = mod->sourceRange.buf;
+  const foster::InputTextBuffer* buf = mod->buf;
   if (buf) {
     for (int i = 0; i < buf->getLineCount(); ++i) {
       sm.add_line(buf->getLine(i));
     }
   }
 
-  foster::fepb::Expr* pbModuleExpr = sm.mutable_expr();
   { ScopedTimer timer("io.protobuf.convert");
-  DumpToProtobufPass p(pbModuleExpr); mod->dump(&p);
+  DumpToProtobufPass p; dumpModule(&p, sm, mod);
   }
 
-  if (!pbModuleExpr->IsInitialized()) {
+  if (!sm.IsInitialized()) {
     EDiag() << "Protobuf message is not initialized!\n";
   }
 
