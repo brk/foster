@@ -189,7 +189,6 @@ def run_one_test(testpath, paths, tmpdir):
 
   did_fail = False
   df_rv = subprocess.call(['diff', '-u', exp_filename, act_filename])
-  print "diff returned ", df_rv
   if df_rv != 0:
     did_fail = True
   elif options and options.interpret:
