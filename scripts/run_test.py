@@ -88,62 +88,65 @@ def testname(testpath):
   """Given '/path/to/some/test.foster', returns 'test'"""
   return os.path.basename(testpath).replace('.foster', '')
 
+def output_extension(to_asm):
+  if to_asm:
+    return ".s"
+  else:
+    return ".o"
+
+def verbosearg(verbose):
+  if verbose:
+    return ["--verbose"]
+  else:
+    return []
+
+def optlevel(options):
+  if options and options.optlevel:
+    # Right now fosteroptc only recognizes -O0, not -O2 or such.
+    # So if we don't disable optimizations, we probably want to
+    # see the optimized LLVM IR.
+    return '-dump-postopt'
+  else:
+    return '-O0'
+
 def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
     finalname = os.path.basename(finalpath)
-    verbose = options and options.verbose
+    ext = output_extension(options)
     to_asm  = options and options.asm
-
-    if to_asm:
-      ext = ".s"
-    else:
-      ext = ".o"
+    verbose = options and options.verbose
+    if verbose:
+      compilelog = None
 
     # Getting tee functionality in Python is a pain in the behind
     # so we just disable logging when running with --verbose.
-    if verbose:
-      compilelog = None
-      verbosearg = ["--verbose"]
-    else:
-      verbosearg = []
-
     if options and options.interpret:
       interpret = ["--interpret", tmpdir]
     else:
       interpret = []
 
-    optlevel = '-O0'
-    if options and options.optlevel:
-      # Right now fosteroptc only recognizes -O0, not -O2 or such.
-      # So if we don't disable optimizations, we probably want to
-      # see the optimized LLVM IR.
-      optlevel = '-dump-postopt'
-
     parse_output = os.path.join(tmpdir, '_out.parsed.pb')
     check_output = os.path.join(tmpdir, '_out.checked.pb')
 
-    # running fosterparse on a source file produces a ParsedAST
-    (s1, e1) = run_command(['fosterparse', testpath, parse_output],
+    def crun(cmdlist):
+      return run_command(cmdlist,
                 paths, testpath, showcmd=verbose,
                 stdout=compilelog, stderr=compilelog, strictrv=True)
 
+    # running fosterparse on a source file produces a ParsedAST
+    (s1, e1) = crun(['fosterparse', testpath, parse_output])
+
     # running fostercheck on a ParsedAST produces an ElaboratedAST
-    (s2, e2) = run_command(['fostercheck', parse_output, check_output] + interpret + verbosearg,
-                paths, testpath, showcmd=verbose,
-                stdout=compilelog, stderr=compilelog, strictrv=True)
+    (s2, e2) = crun(['fostercheck', parse_output, check_output] + interpret + verbosearg(verbose))
 
     # running fosterlower on a ParsedAST produces a bitcode Module
     # linking a bunch of Modules produces a Module
-    (s3, e3) = run_command(['fosterlower', check_output, '-o', finalname,
-                            '-outdir', tmpdir, '-dump-prelinked', '-fosterc-time'],
-                paths, testpath, showcmd=verbose,
-                stdout=compilelog, stderr=compilelog, strictrv=True)
+    (s3, e3) = crun(['fosterlower', check_output, '-o', finalname,
+                            '-outdir', tmpdir, '-dump-prelinked', '-fosterc-time'])
 
     # Running opt on a Module produces a Module
     # Running llc on a Module produces an assembly file
-    (s4, e4) = run_command(['fosteroptc', finalpath + '.preopt.bc',
-                               optlevel, '-fosterc-time', '-o', finalpath + ext],
-                paths, testpath, showcmd=verbose,
-                stdout=compilelog, stderr=compilelog, strictrv=True)
+    (s4, e4) = crun(['fosteroptc', finalpath + '.preopt.bc',
+                               optlevel(options), '-fosterc-time', '-o', finalpath + ext])
 
     return (s4, to_asm, e1, e2, e3, e4)
 
