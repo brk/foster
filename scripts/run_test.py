@@ -158,6 +158,11 @@ def print_result_table(res):
                        res['fc_elapsed'], res['as_elapsed'], res['ld_elapsed'])))
     print "".join("-" for x in range(60))
 
+def run_diff(a, b):
+  "Returns True if diff finds a difference between file a and file b."
+  df_rv = subprocess.call(['diff', '-u', a, b])
+  return df_rv != 0
+
 def run_one_test(testpath, paths, tmpdir):
   ensure_dir_exists(tmpdir)
   start = walltime()
@@ -187,14 +192,9 @@ def run_one_test(testpath, paths, tmpdir):
                                     paths, testpath)
         rv, rn_elapsed = run_command(exepath,  paths, testpath, stdout=actual, stderr=expected, stdin=infile, strictrv=False)
 
-  did_fail = False
-  df_rv = subprocess.call(['diff', '-u', exp_filename, act_filename])
-  if df_rv != 0:
-    did_fail = True
-  elif options and options.interpret:
-    df_rv = subprocess.call(['diff', '-u', act_filename, iact_filename])
-    if df_rv != 0:
-      did_fail = True
+  did_fail = run_diff(exp_filename, act_filename)
+  if (not did_fail) and options and options.interpret:
+    did_fail = run_diff(act_filename, iact_filename)
 
   total_elapsed = elapsed_since(start)
   compile_elapsed = (as_elapsed + ld_elapsed + fp_elapsed + fm_elapsed + fl_elapsed + fc_elapsed)
