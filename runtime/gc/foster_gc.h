@@ -43,7 +43,7 @@ struct heap_cell {
   }
 
   static heap_cell* for_body(void* ptr) {
-    return (heap_cell*) offset(ptr, -HEAP_CELL_HEADER_SIZE);
+    return (heap_cell*) offset(ptr, -((int)HEAP_CELL_HEADER_SIZE));
   }
 };
 
