@@ -13,18 +13,12 @@ import itertools
 import run_test
 from list_all import collect_all_tests
 
-def classify_result(result, testpath):
-  if result['failed']:
-    run_test.tests_failed.add(testpath)
-  else:
-    run_test.tests_passed.add(testpath)
-
 def run_and_print_test(testpath, tmpdir, paths):
   try:
     test_tmpdir = os.path.join(tmpdir, run_test.testname(testpath))
     result = run_test.run_one_test(testpath, paths, test_tmpdir)
     run_test.print_result_table(result)
-    classify_result(result, testpath)
+    run_test.classify_result(result, testpath)
   except run_test.TestFailed:
     run_test.tests_failed.add(testpath)
 
@@ -58,7 +52,7 @@ def run_all_tests_fast(bootstrap_dir, paths, tmpdir):
        testpath, result = result
        if result is not None:
          run_test.print_result_table(result)
-         classify_result(result, testpath)
+         run_test.classify_result(result, testpath)
        else:
          run_test.tests_failed.add(testpath)
   except KeyboardInterrupt:

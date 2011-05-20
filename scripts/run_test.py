@@ -185,9 +185,8 @@ def run_one_test(testpath, paths, tmpdir):
                 compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir)
 
         if to_asm:
-          rv, as_elapsed = run_command('gcc %s.s -c -o %s.o' % (finalpath, finalpath),
-                                      paths, testpath)
-        else:
+          rv, as_elapsed = run_command('gcc %s.s -c -o %s.o' % (finalpath, finalpath), paths, testpath)
+        else: # fosteroptc emitted a .o directly.
           as_elapsed = 0
 
         rv, ld_elapsed = run_command('g++ %s.o %s %s -o %s' % (finalpath, get_static_libs(), get_link_flags(), exepath)
@@ -214,6 +213,12 @@ def run_one_test(testpath, paths, tmpdir):
   return result
 
 
+def classify_result(result, testpath):
+  if result['failed']:
+    tests_failed.add(testpath)
+  else:
+    tests_passed.add(testpath)
+
 def main(testpath, paths, tmpdir):
   testdir = os.path.join(tmpdir, testname(testpath))
   if not os.path.isdir(testdir):
@@ -221,11 +226,7 @@ def main(testpath, paths, tmpdir):
 
   result = run_one_test(testpath, paths, testdir)
   print_result_table(result)
-
-  if result['failed']:
-    tests_failed.add(testpath)
-  else:
-    tests_passed.add(testpath)
+  classify_result(result, testpath)
 
 def mkpath(root, prog):
   if os.path.isabs(prog):
