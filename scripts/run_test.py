@@ -111,9 +111,9 @@ def optlevel(options):
 
 def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
     finalname = os.path.basename(finalpath)
-    ext = output_extension(options)
-    to_asm  = options and options.asm
     verbose = options and options.verbose
+    to_asm  = options and options.asm
+    ext = output_extension(to_asm)
     if verbose:
       compilelog = None
 
