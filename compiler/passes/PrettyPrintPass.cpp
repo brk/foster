@@ -177,41 +177,21 @@ void prettyPrintBinaryExpr(PrettyPrintPass* pass,
   pass->emit(e2, needsParens(e2));
 }
 
-// fn Name (inArgs to outArgs)
-void PrototypeAST::show(PrettyPrintPass* pass) {
-  ScopedBlock sb(pass);
-  { ScopedBlock sb(pass);
-  pass->scan(PPToken("fn"));
-  pass->scan(PPToken(" "));
-  pass->scan(PPToken(this->getName()));
-  }
-
-  { ScopedBlock sb(pass);
-  pass->scan(PPToken(" "));
-  pass->scan(PPToken("("));
-  for (size_t i = 0; i < this->inArgs.size(); ++i) {
-    pass->scan(PPToken(" "));
-    pass->printVarTypes = true;
-    pass->emit(this->inArgs[i]);
-    pass->printVarTypes = false;
-  }
-  if (this->resultTy != NULL) {
-    pass->scan(PPToken(" to "));
-    pass->scan(PPToken(str(this->resultTy)));
-  }
-  pass->scan(PPToken(" "));
-  pass->scan(PPToken(")"));
-  } // block for params
+void showFormal(Formal* f, PrettyPrintPass* pass) {
+  ASSERT(false && "showFormal() not yet implemented");
 }
 
-// fnProto fnBody
-void FnAST::show(PrettyPrintPass* pass) {
-  pass->emit(this->getProto());
-
-  if (!pass->printSignaturesOnly) {
-    if (this->getBody()) {
-      pass->emit(this->getBody());
+void ValAbs::show(PrettyPrintPass* pass) {
+  { ScopedBlock sb(pass);
+    pass->scan(PPToken("{"));
+    { ScopedBlock sb2(pass);
+      for (size_t i = 0; i < this->formals.size(); ++i) {
+        showFormal(formals[i], pass);
+        pass->scan(PPToken(" => "));
+      }
     }
+    pass->emit(this->parts[0]);
+    pass->scan(PPToken("}"));
   }
 }
 
@@ -263,7 +243,6 @@ void LetAST::show(PrettyPrintPass* pass) {
 // { $0 ; $1 ; ... ; $n }
 void SeqAST::show(PrettyPrintPass* pass) {
   ScopedBlock sb(pass);
-  FnAST* followingFn = NULL;
   {
   ScopedIndent si(pass);
   pass->scan(PPToken(" {"));
@@ -286,12 +265,7 @@ void SeqAST::show(PrettyPrintPass* pass) {
 
   } // indent/dedent
 
-  if (followingFn) {
-    pass->scan(pass->pp.tNewline);
-    pass->scan(PPToken("}"));
-  } else {
-    pass->scan(PPToken(" }"));
-  }
+  pass->scan(PPToken(" }"));
 }
 
 bool isPrimitiveBinopCall(CallAST* call) {

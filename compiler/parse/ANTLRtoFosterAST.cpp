@@ -40,9 +40,6 @@ using foster::currentOuts;
 
 #define DEBUG_TYPE "foster"
 
-STATISTIC(sgNumExprAST, "Number of ExprASTs created");
-STATISTIC(sgNumTypeAST, "Number of TypeASTs created");
-
 std::string str(pANTLR3_STRING pstr) {
   return string((const char*)pstr->chars);
 }
@@ -72,15 +69,17 @@ size_t getChildCount(pTree tree) {
   return static_cast<size_t>(tree->getChildCount(tree));
 }
 
+pTree child(pTree tree, int i) {
+  ASSERT(tree) << "can't take child of null pTree!";
+  return (pTree) tree->getChild(tree, i);
+}
+
 string textOf(pTree tree) {
   ASSERT(tree) << "can't get text of null pTree!";
   return str(tree->getText(tree));
 }
 
-pTree child(pTree tree, int i) {
-  ASSERT(tree) << "can't take child of null pTree!";
-  return (pTree) tree->getChild(tree, i);
-}
+string textOfVar(pTree tree) { return textOf(child(tree, 0)); }
 
 int typeOf(pTree tree) { return tree->getType(tree); }
 
@@ -90,6 +89,7 @@ pANTLR3_COMMON_TOKEN getStartToken(pTree tree) {
   if (tok) return tok;
 
   // Some nodes we're okay with having no token info for...
+  /*
   if (getChildCount(tree) == 0) {
     int tag = typeOf(tree);
     if (tag == OUT || tag == IN || tag == BODY
@@ -97,6 +97,7 @@ pANTLR3_COMMON_TOKEN getStartToken(pTree tree) {
       return NULL;
     }
   }
+  */
 
   // Usually, ANTLR will have annotated the tree directly;
   // however, in some cases, only subtrees will have token
@@ -120,6 +121,7 @@ pANTLR3_COMMON_TOKEN getEndToken(pTree tree) {
   pANTLR3_COMMON_TOKEN tok = ParsingContext::getEndToken(tree);
   if (tok) return tok;
 
+  /*
   if (getChildCount(tree) == 0) {
     int tag = typeOf(tree);
     if (tag == OUT || tag == IN || tag == BODY
@@ -127,6 +129,7 @@ pANTLR3_COMMON_TOKEN getEndToken(pTree tree) {
       return NULL;
     }
   }
+  */
 
   pTree node = tree;
   while (!tok && getChildCount(node) > 0) {
@@ -229,9 +232,10 @@ const char* getDefaultCallingConvParse() {
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
 
-IntAST* parseIntFrom(pTree t, const SourceRange& sourceRange) {
-  if (textOf(t) != "INT") {
-    EDiag() << "parseIntFrom() called on non-INT token " << textOf(t)
+IntAST* parseIntFrom(pTree t) {
+  const SourceRange& sourceRange = rangeOf(t);
+  if (textOf(t) != "INT_NUM") {
+    EDiag() << "parseIntFrom() called on non-INT_NUM token " << textOf(t)
             << show(sourceRange);
     return NULL;
   }
@@ -259,199 +263,7 @@ IntAST* parseIntFrom(pTree t, const SourceRange& sourceRange) {
 ////////////////////////////////////////////////////////////////////
 
 ExprAST* ExprAST_from(pTree tree);
-
-/// Extract a name and (possibly) a type, and insert
-/// a new VariableAST for the name in the symbol table.
-VariableAST* parseFormal(pTree tree) {
-  // ^(FORMAL ^(NAME varName) ^(... type ... ))
-  pTree varNameTree = child(tree, 0);
-  if (!varNameTree) {
-    currentErrs() << "Error! Null var name in parseFormal..." << "\n";
-    display_pTree(tree, 4);
-    return NULL;
-  }
-  string varName = textOf(child(varNameTree, 0));
-  if (getChildCount(tree) == 2) {
-    TypeAST* tyExpr = TypeAST_from(child(tree, 1));
-    return new VariableAST(varName, tyExpr, rangeOf(tree));
-  } else {
-    // no fixed type, infer later
-    return new VariableAST(varName, NULL, rangeOf(tree));
-  }
-}
-
-std::vector<VariableAST*> getFormals(pTree tree) {
-  std::vector<VariableAST*> args;
-  if (textOf(tree) == "FORMAL") {
-    args.push_back(parseFormal(tree));
-  } else {
-    for (size_t i = 0; i < getChildCount(tree); ++i) {
-       args.push_back(parseFormal(child(tree, i)));
-    }
-  }
-  return args;
-}
-
-PrototypeAST* getFnProto(string name,
-                         pTree formalsTree,
-                         pTree retTyExprTree)
-{
-  pTree sourceEndTree = (retTyExprTree != NULL) ? retTyExprTree : formalsTree;
-  foster::SourceRange sourceRange = rangeFrom(formalsTree, sourceEndTree);
-
-  std::vector<VariableAST*> in = getFormals(formalsTree);
-  TypeAST* retTy = TypeAST_from(retTyExprTree);
-  ASSERT(retTy) << "all functions must have explicit return type annotations";
-  PrototypeAST* proto = new PrototypeAST(retTy, name, in, sourceRange);
-
-  return proto;
-}
-
-FnAST* buildFn(PrototypeAST* proto, pTree bodyTree) {
-  ExprAST* body = ExprAST_from(bodyTree);
-  // TODO make source range more accurate
-  return new FnAST(proto, body, rangeOf(bodyTree));
-}
-
-string parseFnName(string name, pTree tree) {
-  if (getChildCount(child(tree, 0)) == 1) {
-    ASSERT(false) << "temporarily disabled support for fn symbol names";
-    pTree treeName = child(tree, 0);
-    string nameWithQuotes = textOf(child(treeName, 0));
-    name = nameWithQuotes.substr(1, nameWithQuotes.size() - 2);
-  }
-  return ParsingContext::freshName(name);
-}
-
-FnAST* parseFn(string defaultSymbolTemplate, pTree tree) {
-  // (FN 0:NAME 1:IN 2:OUT 3:BODY)
-  string name = parseFnName(defaultSymbolTemplate, tree);
-  PrototypeAST* proto = getFnProto(name,
-                                   child(tree, 1),
-                                   child(tree, 2));
-  return buildFn(proto, child(tree, 3));
-}
-
-// ExprAST_from() is straight-up recursive, and uses gScope and gTypeScope
-// to keep track of lexical scoping for variables and types, respectively.
-// This works wonderfully for function bodies, where variables must appear
-// in topologically sorted order. In order to allow functions at the top-level
-// to appear in unsorted order, we have to separate the extraction of function
-// prototypes (and insertion of said name/proto pair into the gScope symbol
-// table) from the actual parsing of the function body.
-ModuleAST* parseTopLevel(pTree tree, std::string moduleName) {
-  // The top level is composed of:
-  //
-  // * Type definitions, such as
-  //        type node = tuple { ?ref node, i32 }
-  // * Function definitions, such as
-  //        f = fn () { 0 }
-
-  std::vector<pTree> pendingParseTrees(getChildCount(tree));
-  std::vector<ExprAST*> parsedExprs(getChildCount(tree));
-  // forall i, exprs[i] == pendingParseTrees[i] == NULL
-
-  for (size_t i = 0; i < getChildCount(tree); ++i) {
-    pendingParseTrees[i] = child(tree, i);
-  }
-
-  // forall i, exprs[i] == NULL, pendingParseTrees[i] != NULL
-  typedef std::map<pTree, PrototypeAST*> ProtoMap;
-  ProtoMap protos;
-
-  for (size_t i = 0; i < pendingParseTrees.size(); ++i) {
-    pTree c = pendingParseTrees[i];
-    int token = typeOf(c);
-
-    if (token == FNDEF) {
-      ASSERT(getChildCount(c) == 2);
-      // x = fn { blah }   ===   x = fn "x" { blah }
-      pTree lval = (child(c, 0));
-      pTree rval = (child(c, 1));
-      if (typeOf(lval) == NAME && typeOf(rval) == FN) {
-        // (FN 0:NAME 1:IN 2:OUT 3:BODY)
-        string name = parseFnName(textOf(child(lval, 0)), rval);
-        protos[c] = getFnProto(name, child(rval, 1), child(rval, 2));
-      } else {
-        EDiag() << "not assigning top-level function to a name?"
-                << show(rangeOf(c));
-      }
-      // parsedExprs[i] remains NULL
-    } else if (token == FN) {
-      // (FN 0:NAME 1:IN 2:OUT 3:BODY)
-      string name = parseFnName(textOf(child(c, 0)), c);
-      protos[c] = getFnProto(name, child(c, 1), child(c, 2));
-      // parsedExprs[i] remains NULL
-    } else {
-      ExprAST* otherExpr = ExprAST_from(c);
-      if (FnAST* explicitlyNamedFn = dynamic_cast<FnAST*>(otherExpr)) {
-        parsedExprs[i] = explicitlyNamedFn;
-      } else {
-        EDiag() << "expected function or type" << show(rangeOf(c));
-      }
-    }
-  }
-
-  // forall i, either parsedExprs[i] == NULL && protos[i] != NULL
-  //              or  parsedExprs[i] != NULL
-
-  for (size_t i = 0; i < parsedExprs.size(); ++i) {
-    if (parsedExprs[i]) continue;
-    pTree c = pendingParseTrees[i];
-    ASSERT(c) << "no parsed expr and no pending parse tree?!?";
-    PrototypeAST* proto = protos[c];
-    ASSERT(proto) << "no parsed expr and no proto?!?" << show(rangeOf(c));
-    pTree fntree =   (typeOf(c) == FNDEF)   ?   child(c, 1)
-                       : (typeOf(c) == FN   )   ?   c
-                       :                            NULL;
-    parsedExprs[i] = buildFn(proto, child(fntree, 3));
-  }
-
-  return new ModuleAST(parsedExprs,
-                       moduleName,
-                       rangeOf(tree));
-}
-
-// ^(CTOR ^(NAME blah) ^(SEQ ...))
-ExprAST* parseCtorExpr(pTree tree,
-                       const foster::SourceRange& sourceRange) {
-  pTree nameNode = child(tree, 0);
-  pTree seqArgs = child(tree, 1);
-
-  string name = textOf(child(nameNode, 0));
-
-  if (name == "tuple") {
-    return new TupleExprAST(ExprAST_from(seqArgs), sourceRange);
-  }
-
-  foster::EDiag() << "CTOR token parsing found unknown"
-                  << " type name '" << name << "'"
-                  << foster::show(sourceRange);
-  return NULL;
-}
-
 std::vector<TypeAST*> getTypes(pTree tree);
-
-// ^(CTOR ^(NAME blah) ^(SEQ ...))
-TypeAST* parseCtorType(pTree tree,
-                       const foster::SourceRange& sourceRange) {
-  pTree nameNode = child(tree, 0);
-  pTree seqArgs = child(tree, 1);
-
-  string name = textOf(child(nameNode, 0));
-  if (name == "tuple") {
-    return TupleTypeAST::get(getTypes(seqArgs)); //, sourceRange);
-  }
-
-  if (TypeAST* ty = ParsingContext::lookupType(name)) {
-    return ty; // TODO fix
-  }
-
-  foster::EDiag() << "CTOR type parsing found unknown"
-                  << " type name '" << name << "'"
-                  << foster::show(sourceRange);
-  return NULL;
-}
 
 Exprs getExprs(pTree tree) {
   Exprs f;
@@ -461,37 +273,7 @@ Exprs getExprs(pTree tree) {
   return f;
 }
 
-ExprAST* parseTrailers(pTree tree,
-                       const foster::SourceRange& sourceRange) {
-  ASSERT(getChildCount(tree) >= 2);
-  // name (args) ... (args)
-  ExprAST* prefix = ExprAST_from(child(tree, 0));
-  for (size_t i = 1; i < getChildCount(tree); ++i) {
-    int trailerType = typeOf(child(tree, i));
-    if (trailerType == CALL) {
-      Exprs args = getExprs(child(tree, i));
-      prefix = new CallAST(prefix, args, sourceRange);
-    } else if (trailerType == LOOKUP) {
-      ASSERT("lookups temporarily not supported");
-    } else if (trailerType == SUBSCRIPT) {
-      prefix = new SubscriptAST(prefix,
-                                ExprAST_from(child(child(tree, i), 0)),
-                                sourceRange);
-    } else {
-      currentErrs() << "Unknown trailer type " << textOf(child(tree, i)) << "\n";
-    }
-  }
-  return prefix;
-}
-
-ExprAST* parseIf(pTree tree, const SourceRange& sourceRange) {
-  return new IfExprAST(ExprAST_from(child(tree, 0)),
-                       ExprAST_from(child(tree, 1)),
-                       ExprAST_from(child(tree, 2)),
-                       sourceRange);
-}
-
-ExprAST* parseSeq(pTree tree, const SourceRange& sourceRange) {
+ExprAST* parseSeq(pTree tree) {
   Exprs exprs;
   for (size_t i = 0; i < getChildCount(tree); ++i) {
     ExprAST* ast = ExprAST_from(child(tree, i));
@@ -499,7 +281,7 @@ ExprAST* parseSeq(pTree tree, const SourceRange& sourceRange) {
       exprs.push_back(ast);
     }
   }
-  return new SeqAST(exprs, sourceRange);
+  return new SeqAST(exprs, rangeOf(tree));
 }
 
 ExprAST* parseParenExpr(pTree tree) {
@@ -508,24 +290,118 @@ ExprAST* parseParenExpr(pTree tree) {
   return rv;
 }
 
-ExprAST* parseBuiltinCompiles(pTree tree, const SourceRange& sourceRange) {
- return new BuiltinCompilesExprAST(ExprAST_from(child(tree, 0)), sourceRange);
+Formal* parseFormal(pTree formal) {
+  ASSERT(getChildCount(formal) == 2);
+  TypeAST* ty = TypeAST_from(child(formal, 1));
+  return new Formal(textOfVar(child(formal, 0)), ty);
 }
 
-ExprAST* extractBinopChain(pTree tree,
-           std::vector< std::pair<std::string, ExprAST*> >& pairs) {
-  pTree binops = child(tree, 0);
-  pTree compounds = child(tree, 1);
+// ^(VAL_ABS formal* e_seq)
+ExprAST* parseValAbs(pTree tree) {
+  size_t nchild = getChildCount(tree);
+  std::vector<Formal*> formals;
+  for (size_t i = 0; i < nchild - 1; ++i) {
+    formals.push_back(parseFormal(child(tree, i)));
+  }
+  TypeAST* resultType = NULL;
+  return new ValAbs(formals, parseSeq(child(tree, nchild - 1)),
+                    resultType, rangeOf(tree));
+}
 
-  ASSERT(getChildCount(binops) == getChildCount(compounds) - 1);
+ExprAST* parseTuple(pTree t) {
+  if (getChildCount(t) == 1) {
+    return ExprAST_from(child(t, 0));
+  } return new TupleExprAST(getExprs(t), rangeOf(t));
+}
 
-  for (size_t i = 0; i < getChildCount(binops); ++i) {
-    pairs.push_back(std::make_pair(
-                        textOf(child(binops, i)),
-                        ExprAST_from(child(compounds, i + 1))));
+Binding parseBinding(pTree tree) {
+  return Binding(textOfVar(child(tree, 0)), ExprAST_from(child(tree, 1)));
+}
+
+// ^(LETS binding+ e)
+ExprAST* parseLets(pTree tree) {
+  ExprAST* e = ExprAST_from(child(tree, getChildCount(tree) - 1));
+  std::vector<Binding> bindings;
+  for (size_t i = 0; i < getChildCount(tree) - 1; ++i) {
+    bindings.push_back(parseBinding(child(tree, i)));
+  }
+  return new LetAST(bindings, e, rangeOf(tree));
+}
+
+ExprAST* parseTermVar(pTree t) {
+  return new VariableAST(textOf(child(t, 0)), NULL, rangeOf(t));
+}
+
+ExprAST* parseIf(pTree tree) {
+  return new IfExprAST(ExprAST_from(child(tree, 0)),
+                       ExprAST_from(child(tree, 1)),
+                       ExprAST_from(child(tree, 2)),
+                       rangeOf(tree));
+}
+
+ExprAST* parseBuiltinCompiles(pTree t) {
+ return new BuiltinCompilesExprAST(ExprAST_from(child(t, 0)), rangeOf(t));
+}
+
+ExprAST* parseAtom(pTree tree) {
+  int token = typeOf(tree);
+
+  if (token == VAL_ABS)  { return parseValAbs(tree); }
+  if (token == LETS)     { return parseLets(tree); }
+  if (token == TUPLE)    { return parseTuple(tree); }
+  if (token == TERMVAR)  { return parseTermVar(tree); }
+  if (token == INT_NUM)  { return parseIntFrom(tree); }
+  if (token == IF)       { return parseIf(tree); }
+  if (token == COMPILES) { return parseBuiltinCompiles(tree); }
+
+  string text = textOf(tree);
+
+  if (text == "false" || text == "true") {
+    return new BoolAST(text, rangeOf(tree));
   }
 
-  return ExprAST_from(child(compounds, 0));
+  display_pTree(tree, 2);
+  foster::EDiag() << "returning NULL ExprAST for parseAtom token " << str(tree->getToken(tree));
+  return NULL;
+}
+
+ExprAST* parseSubscript(ExprAST* base, pTree tree) {
+  return new SubscriptAST(base, ExprAST_from(child(tree, 0)), rangeOf(tree));
+}
+
+ExprAST* parseSuffix(ExprAST* base, pTree tree) {
+  int token = typeOf(tree);
+
+  if (token == SUBSCRIPT) { return parseSubscript(base, tree); }
+  display_pTree(tree, 2);
+  foster::EDiag() << "returning NULL ExprAST for parseSuffix token " << str(tree->getToken(tree));
+  return NULL;
+}
+
+// ^(LVALUE atom suffix*)
+ExprAST* parseLValue(pTree tree) {
+  ExprAST* acc = parseAtom(child(tree, 0));
+  for (size_t i = 1; i < getChildCount(tree); ++i) {
+     acc = parseSuffix(acc, child(tree, i));
+  }
+  return acc;
+}
+
+// ^(PHRASE lvalue+)
+ExprAST* parsePhrase(pTree tree) {
+  ExprAST* base = parseLValue(child(tree, 0));
+  if (getChildCount(tree) == 1) { return base; }
+  Exprs exprs;
+  for (size_t i = 1; i < getChildCount(tree); ++i) {
+    exprs.push_back(parseLValue(child(tree, i)));
+  }
+  return new CallAST(base, exprs, rangeOf(tree));
+}
+
+ExprAST* parseBinops(pTree tree) {
+  display_pTree(tree, 2);
+  foster::EDiag() << "returning NULL TypeAST for parseBinops token " << str(tree->getToken(tree));
+  return NULL;
 }
 
 void leftAssoc(std::vector<std::string>& opstack,
@@ -541,9 +417,14 @@ void leftAssoc(std::vector<std::string>& opstack,
   argstack.push_back(new CallAST(opr, exprs, rangeFrom(x, y)));
 }
 
-ExprAST* parseBinopChain(pTree tree) {
+ExprAST* parseBinopChain(ExprAST* first, pTree tree) {
   std::vector< std::pair<std::string, ExprAST*> > pairs;
-  ExprAST* first = extractBinopChain(tree, pairs);
+
+  for (size_t i = 1; i < getChildCount(tree); i += 2) {
+    pairs.push_back(std::make_pair(
+                             textOf(child(tree, i)),
+                        parsePhrase(child(tree, i + 1))));
+  }
 
   std::vector<std::string> opstack;
   std::vector<ExprAST*> argstack;
@@ -575,76 +456,25 @@ ExprAST* parseBinopChain(pTree tree) {
   return argstack[0];
 }
 
-// <formal arg (body | next) [type]>
-ExprAST* parseLetExpr(pTree tree, const foster::SourceRange& sourceRange) {
-  TypeAST* type = NULL;
-  if (getChildCount(tree) == 4) {
-    type = TypeAST_from(child(tree, 3));
-  }
-
-  VariableAST* var = parseFormal(child(tree, 0));
-  ExprAST* bound  = ExprAST_from(child(tree, 1));
-  ExprAST* inexpr = ExprAST_from(child(tree, 2));
-  return new LetAST(var, bound, inexpr, type, sourceRange);
+// ^(TERM phrase binops?)
+ExprAST* parseTerm(pTree tree) {
+  ExprAST* base = parsePhrase(child(tree, 0));
+  if (getChildCount(tree) == 1) {
+    return base;
+  } else return parseBinopChain(base, tree);
+  display_pTree(tree, 2);
+  foster::EDiag() << "returning NULL TypeAST for parseTerm token " << str(tree->getToken(tree));
+  return NULL;
 }
 
 ExprAST* ExprAST_from(pTree tree) {
   if (!tree) return NULL;
 
-  ++sgNumExprAST;
-
   int token = typeOf(tree);
   string text = textOf(tree);
   foster::SourceRange sourceRange = rangeOf(tree);
 
-  if (token == TRAILERS) { return parseTrailers(tree, sourceRange); }
-  if (token == CTOR) {     return parseCtorExpr(tree, sourceRange); }
-  if (token == IF) {       return parseIf(tree, sourceRange); }
-  if (token == EXPRS || token == SEQ) { return parseSeq(tree, sourceRange); }
-  if (token == INT) {         return parseIntFrom(tree, sourceRange); }
-  if (token == PARENEXPR) {   return parseParenExpr(tree); }
-  if (token == COMPILES) {    return parseBuiltinCompiles(tree, sourceRange); }
-  if (token == BODY) {        return ExprAST_from(child(tree, 0)); }
-  if (token == BINOP_CHAIN) { return parseBinopChain(tree); }
-  if (token == LETEXPR) { return parseLetExpr(tree, sourceRange); }
-  if (text == "false" || text == "true") {
-    return new BoolAST(text, sourceRange);
-  }
-
-  if (token == NAME) {
-    return new VariableAST(textOf(child(tree, 0)), NULL, sourceRange);
-  }
-
-  if (token == FNDEF) {
-    ASSERT(getChildCount(tree) == 2);
-    // x = fn { blah }   ===   x = fn "x" { blah }
-    pTree lval = (child(tree, 0));
-    pTree rval = (child(tree, 1));
-
-    if (typeOf(lval) == NAME && typeOf(rval) == FN) {
-      return parseFn(textOf(child(lval, 0)), rval);
-    } else {
-      currentErrs() << "Not assigning function to a name?" << "\n";
-      return NULL;
-    }
-  }
-
-  if (token == OUT) {
-    return (getChildCount(tree) == 0)
-              ? NULL
-              : ExprAST_from(child(tree, 0));
-  }
-
-  if (token == FN) {
-    FnAST* fn = parseFn("<anon_fn_", tree);
-    if (!fn->getBody()) {
-      foster::EDiag() << "Found bare proto (with no body)"
-                      << " when expecting full fn literal."
-                      << foster::show(fn);
-      return NULL;
-    }
-    return fn;
-  }
+  if (token == TERM) { return parseTerm(tree); }
 
   // Should have handled all keywords by now...
   if (ParsingContext::isKeyword(text)) {
@@ -659,64 +489,93 @@ ExprAST* ExprAST_from(pTree tree) {
   }
 
   string name = str(tree->getToken(tree));
-  foster::EDiag() << "returning NULL ExprAST for tree token " << name
+  foster::EDiag() << "returning NULL ExprAST for ExprAST_from token " << name
                   << "with text '" << text << "'"
                   << foster::show(sourceRange);
   return NULL;
 }
 
+
+ModuleAST* parseTopLevel(pTree tree, std::string moduleName) {
+  // The top level is composed of declarations and definitions.
+  std::vector<Decl*> decls;
+  std::vector<Defn*> defns;
+
+  EDiag() << "top level child count: " << getChildCount(tree);
+
+  for (size_t i = 0; i < getChildCount(tree); ++i) {
+    pTree c = child(tree, i);
+    int token = typeOf(c);
+
+    if (token == DEFN) { // ^(DEFN x atom)
+      string name = textOfVar(child(c, 0));
+      ExprAST* atom = parseAtom(child(c, 1));
+      defns.push_back(new Defn(name, atom));
+
+      if (ValAbs* fn = dynamic_cast<ValAbs*>(atom)) { fn->name = name; }
+    } else if (token == DECL) {
+      pTree typevar = child(c, 0);
+      pTree type    = child(c, 1);
+      decls.push_back(new Decl(textOfVar(typevar), TypeAST_from(type)));
+    } else {
+      EDiag() << "Unexpected top-level element with token ID " << token;
+      EDiag() << show(rangeOf(c));
+    }
+  }
+  return new ModuleAST(decls, defns, moduleName);
+}
+
+////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////
+
+// ^(FUNC_TYPE t+)
+TypeAST* parseFuncType(pTree tree) {
+  std::vector<TypeAST*> types;
+  for (size_t i = 0; i < getChildCount(tree) - 1; ++i) {
+    types.push_back(TypeAST_from(child(tree, i)));
+  }
+  TypeAST* rt = TypeAST_from(child(tree, getChildCount(tree) - 1));
+  return FnTypeAST::get(rt, types, "fastcc");
+}
+
+// ^(TYPEVAR a)
+TypeAST* parseTypeVar(pTree tree) {
+  TypeAST* ty = NULL;
+  return new NamedTypeAST(textOf(child(tree, 0)), ty, rangeOf(tree));
+}
+
+TypeAST* parseTypeAtom(pTree tree) {
+  int token = typeOf(tree);
+
+  if (token == FUNC_TYPE) { return parseFuncType(tree); }
+  if (token == TUPLE)   { return TupleTypeAST::get(getTypes(tree)); }
+  if (token == TYPEVAR) { return parseTypeVar(tree); }
+
+  display_pTree(tree, 2);
+  EDiag() << "parseTypeAtom";
+  return NULL;
+}
+
+std::vector<TypeAST*> getTypes(pTree tree) {
+  std::vector<TypeAST*> types;
+  for (size_t i = 0; i < getChildCount(tree); ++i) {
+    TypeAST* ast = TypeAST_from(child(tree, i));
+    if (ast != NULL) {
+      types.push_back(ast);
+    }
+  }
+  return types;
+}
+
 TypeAST* TypeAST_from(pTree tree) {
   if (!tree) return NULL;
-
-  ++sgNumTypeAST;
 
   int token = typeOf(tree);
   string text = textOf(tree);
   foster::SourceRange sourceRange = rangeOf(tree);
 
-  if (token == PARENEXPR) { return TypeAST_from(child(tree, 0));  }
-  if (token == CTOR) { return parseCtorType(tree, sourceRange);  }
-
-  if (token == NAME) {
-    string name = textOf(child(tree, 0));
-    TypeAST* ty = TypeASTFor(name);
-    if (!ty) {
-      EDiag() << "name " << name << " appears to not be a valid type name"
-              << show(sourceRange);
-    }
-    return ty;
-  }
-
-  if (token == FN) {
-    FnAST* fn = parseFn("<anon_fn_type_", tree);
-    if (!fn) {
-      EDiag() << "no fn expr when parsing fn type!" << show(sourceRange);
-      return NULL;
-    }
-    if (fn->getBody()) {
-      EDiag() << "had unexpected fn body when parsing fn type!" << show(fn);
-    }
-
-    std::vector<TypeAST*> argTypes;
-
-    for (size_t i = 0; i < fn->getProto()->inArgs.size(); ++i) {
-      llvm::outs() << "fn arg type " << i << " : " << fn->getProto()->inArgs[i]->type << "\n";
-      argTypes.push_back(fn->getProto()->inArgs[i]->type);
-    }
-
-    TypeAST* returnType = fn->getProto()->resultTy;
-    FnTypeAST* fty =  FnTypeAST::get(returnType, argTypes,
-                                     getDefaultCallingConvParse());
-    // Mark the function type as a known closure type,
-    // rather than a top-level procedure type.
-    fty->markAsClosure();
-    return fty;
-  }
-
-  if (token == OUT) {
-    bool noChildren = (getChildCount(tree) == 0);
-    return noChildren ? NULL : TypeAST_from(child(tree, 0));
-  }
+  if (token == TYPE_ATOM) { return parseTypeAtom(child(tree, 0)); }
 
   string name = str(tree->getToken(tree));
   foster::EDiag() << "returning NULL TypeAST for tree token " << name
@@ -724,24 +583,9 @@ TypeAST* TypeAST_from(pTree tree) {
   return NULL;
 }
 
-std::vector<TypeAST*> getTypes(pTree tree) {
-  int token = typeOf(tree);
-
-  std::vector<TypeAST*> types;
-  if (token == EXPRS || token == SEQ) {
-    for (size_t i = 0; i < getChildCount(tree); ++i) {
-      TypeAST* ast = TypeAST_from(child(tree, i));
-      if (ast != NULL) {
-        types.push_back(ast);
-      }
-    }
-  } else {
-    display_pTree(tree, 0);
-    foster::EDiag() << "getTypes called with unexpected tree!";
-  }
-  return types;
-}
-
+////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////
 
 namespace foster {
 
@@ -847,7 +691,7 @@ namespace foster {
     gInputFile = NULL;
     gInputTextBuffer = membuf;
 
-    fosterParser_expr_return langAST = ctx->psr->expr(ctx->psr);
+    fosterParser_program_return langAST = ctx->psr->program(ctx->psr);
 
     outNumANTLRErrors = ctx->psr->pParser->rec->state->errorCount;
 

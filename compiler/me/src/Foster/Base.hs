@@ -141,14 +141,14 @@ highlightFirstLine (ESourceRange (ESourceLocation bline bcol)
 -- If a single line is specified, show it with highlighting;
 -- otherwise, show the lines spanning the two locations (inclusive).
 highlightLine line bcol ecol lines =
-    joinWith "\n" [fromJust $ sourceLine lines line, highlightLineRange bcol ecol]
+    joinWith "\n" [sourceLine lines line, highlightLineRange bcol ecol]
 
 -- If a single line is specified, show it with highlighting;
 -- otherwise, show the lines spanning the two locations (inclusive).
 showSourceLines (ESourceLocation bline bcol) (ESourceLocation eline ecol) lines =
     if bline == eline
-        then joinWith "\n" [fromJust $ sourceLine lines bline, highlightLineRange bcol ecol]
-        else joinWith "\n" [fromJust $ sourceLine lines n | n <- [bline..eline]]
+        then joinWith "\n" [sourceLine lines bline, highlightLineRange bcol ecol]
+        else joinWith "\n" [sourceLine lines n | n <- [bline..eline]]
 
 -- Generates a string of spaces and twiddles which underlines
 -- a given range of characters.
@@ -161,11 +161,11 @@ highlightLineRange bcol ecol =
 
 data SourceLines = SourceLines (Seq T.Text)
 
-sourceLine :: SourceLines -> Int -> Maybe String
+sourceLine :: SourceLines -> Int -> String
 sourceLine (SourceLines seq) n =
     if n < 0 || Seq.length seq < n
-        then Nothing
-        else Just (T.unpack $ Seq.index seq n)
+        then "<no line " ++ show n ++ ">"
+        else (T.unpack $ Seq.index seq n)
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

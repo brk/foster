@@ -1,23 +1,19 @@
-prim-and = fn(a : i1, b: i1 to i1) {
-  if a then b else false
-}
+prim-and = { a : i1 => b: i1 =>
+  if a then b else false end
+};
 
-hof-and = fn (a : fn(to i1), b: fn(to i1) to i1) {
-  if a() then b() else false
-}
+hof-and = { a : {i1} => b: {i1} =>
+  if a() then b() else false end
+};
 
-main = fn (to i32) {
-  let x : i32 = opaquely_i32(2)
-  let y : i32 = opaquely_i32(3)
-  let z : i32 = opaquely_i32(4) in {
-    expect_i1(true)
-    print_i1( prim-and( x < y, y < z) )
-    
-    expect_i1(false)
-    print_i1( prim-and( x < y, z < y) )
-    
-    expect_i1(true)
-    print_i1(  hof-and( fn (to i1) { x < y },
-                        fn (to i1) { y < z }) )
-  }
-}
+main = {
+  let x = opaquely_i32 2;
+      y = opaquely_i32 3;
+      z = opaquely_i32 4;
+    in {
+    expect_i1 true;  print_i1 (prim-and (x < y) (y < z));
+    expect_i1 false; print_i1 (prim-and (x < y) (z < y));
+    expect_i1 true ; print_i1 (hof-and { x < y } { y < z });
+    0
+  }() end
+};

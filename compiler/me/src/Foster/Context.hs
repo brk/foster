@@ -46,6 +46,7 @@ data OutputOr expr
 --   of functions to be type checked in the same Gamma context. But
 --   we do need to thread the supply of unique variables through...
 data TcEnv = TcEnv { tcEnvUniqs :: IORef Uniq
+                   , tcUnificationVars :: IORef [MetaTyVar]
                    , tcParents  :: [ExprAST]
                    }
 
@@ -80,17 +81,30 @@ tcFails errs = Tc (\_env -> return (Errors errs))
 newTcRef :: a -> Tc (IORef a)
 newTcRef v = tcLift $ newIORef v
 
-readTcRef :: MetaTyVar -> Tc (Maybe Tau)
-readTcRef (Meta _ r _) = tcLift $ readIORef r
+readTcRef :: IORef a -> Tc a
+readTcRef r = tcLift $ readIORef r
+
+writeTcRef :: IORef a -> a -> Tc ()
+writeTcRef r v = tcLift $ writeIORef r v
+
+readTcMeta :: MetaTyVar -> Tc (Maybe Tau)
+readTcMeta (Meta _ r _) = readTcRef r
 
 writeTcMeta :: MetaTyVar -> Tau -> Tc ()
-writeTcMeta (Meta _ r _) v = tcLift $ writeIORef r (Just v)
+writeTcMeta (Meta _ r _) v = writeTcRef r (Just v)
 
 newTcUnificationVar :: String -> Tc MetaTyVar
 newTcUnificationVar desc = do
     u   <- newTcUniq
     ref <- newTcRef Nothing
-    return $ Meta u ref desc
+    tcRecordUnificationVar (Meta u ref desc)
+
+tcRecordUnificationVar :: MetaTyVar -> Tc MetaTyVar
+tcRecordUnificationVar m
+    = Tc (\env -> do let vr = tcUnificationVars env
+                     vs <- readIORef vr
+                     writeIORef vr (m:vs)
+                     return (OK m))
 
 tcWithScope :: ExprAST -> Tc a -> Tc a
 tcWithScope expr (Tc f)

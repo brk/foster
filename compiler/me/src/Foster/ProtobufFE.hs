@@ -28,12 +28,15 @@ import Text.ProtocolBuffers.Basic(uToString)
 import Foster.Fepb.FnType   as PbFnType
 import Foster.Fepb.Type.Tag as PbTypeTag
 import Foster.Fepb.Type     as PbType
-import Foster.Fepb.Proto    as Proto
+import Foster.Fepb.Formal   as PbFormal
+import Foster.Fepb.TermBinding    as PbTermBinding
+import Foster.Fepb.PBLet    as PBLet
+import Foster.Fepb.Defn     as Defn
 import Foster.Fepb.PBIf     as PBIf
 import Foster.Fepb.Expr     as PbExpr
 import Foster.Fepb.SourceModule as SourceModule
 import Foster.Fepb.Expr.Tag(Tag(PB_INT, BOOL, VAR, TUPLE, COMPILES, -- MODULE, TY_APP,
-                                      IF, FN, LET, PROTO, CALL, SEQ, SUBSCRIPT))
+                                      IF, VAL_ABS, LET, CALL, SEQ, SUBSCRIPT))
 import qualified Foster.Fepb.SourceRange as Pb
 import qualified Foster.Fepb.SourceLocation as Pb
 
@@ -81,8 +84,9 @@ parseBool pbexpr lines =
 parseCall pbexpr lines =
         let range = parseRange pbexpr lines in
         case map (\x -> parseExpr x lines) $ toList (PbExpr.parts pbexpr) of
-                --[base, arg] -> CallAST range base arg
-                (base:args) -> E_CallAST range base args
+                (base:args) -> E_CallAST range base (filterUnit args)
+                    where filterUnit [E_TupleAST []] = []
+                          filterUnit args = args
                 _ -> error "call needs a base!"
 
 parseCompiles pbexpr lines =
@@ -93,26 +97,18 @@ parseCompiles pbexpr lines =
 
 parseFn pbexpr lines = let range = parseRange pbexpr lines in
                        let parts = PbExpr.parts pbexpr in
-                       let (name, retty, formals) = parseProtoP (index parts 0) lines in
-                       assert ((Data.Sequence.length parts) == 2) $
-                       FnAST range name retty formals
-                             (part 1 parts lines)
+                       let name  = uToString.fromJust $ PbExpr.name pbexpr in
+                       let formals = toList $ PbExpr.formals pbexpr in
+                       let mretty = parseReturnType name pbexpr in
+                       assert ((Data.Sequence.length parts) == 1) $
+                       FnAST range name mretty (map parseFormal formals)
+                             (part 0 parts lines)
                              False -- assume closure until proven otherwise
   where
-     parseProtoP :: PbExpr.Expr -> SourceLines -> (String, TypeAST, [AnnVar])
-     parseProtoP pbexpr lines =
-         case PbExpr.proto pbexpr of
-             Nothing     -> error "Need a Proto in the protocol buffer to parse a PrototypeAST!"
-             Just proto  ->
-                 let args = Proto.in_args proto in
-                 let vars = map (\x -> getFormal x lines) $ toList args in
-                 let name = uToString $ Proto.name proto in
-                 let retTy = case Proto.result proto of
-                                 Just t  -> parseType t
-                                 Nothing -> error ("Prototype " ++ name ++ " missing required type annotation!") in
-                    (name, retTy, vars)
+     parseFormal (Formal u t) = AnnVar (parseType t) (Ident (uToString u) 0)
+     parseReturnType name pbexpr = fmap parseType (PbExpr.result_type pbexpr)
 
-parseFnAST pbexpr lines = E_FnAST (parseFn pbexpr lines)
+parseValAbs pbexpr lines = E_FnAST (parseFn pbexpr lines)
 
 parseIf pbexpr lines =
         if (isSet pbexpr PbExpr.pb_if)
@@ -129,13 +125,20 @@ parseInt pbexpr lines =
         E_IntAST range (uToString $ getVal pbexpr PbExpr.int_text)
 
 parseLet pbexpr lines =
-    let range = parseRange pbexpr lines in
-    let parts = PbExpr.parts pbexpr in
-    let (E_VarAST var) = part 0 parts lines in
-    (E_LetAST range var
-              (part 1 parts lines)
-              (part 2 parts lines)
-              (Just $ getType pbexpr))
+    parsePBLet (parseRange pbexpr lines)
+               (fromJust $ PbExpr.pb_let pbexpr)
+               (fmap parseType $ PbExpr.type' pbexpr)
+               lines
+      where parseBinding lines (PbTermBinding.TermBinding u e) =
+                (Foster.ExprAST.TermBinding (VarAST Nothing (uToString u)) (parseExpr e lines))
+            parsePBLet range pblet mty lines =
+                let bindings = map (parseBinding lines) (toList $ PBLet.binding pblet) in
+                (buildLets range bindings (parseExpr (PBLet.body pblet) lines) mty)
+            buildLets range bindings expr mty =
+                case bindings of
+                   []     -> error "parseLet requires at least one binding!" -- TODO show range
+                   (b:[]) -> E_LetAST range b expr mty
+                   (b:bs) -> E_LetAST range b (buildLets range bs expr mty) Nothing
 
 parseSeq pbexpr lines =
     let exprs = map (\x -> parseExpr x lines) $ toList (PbExpr.parts pbexpr) in
@@ -168,20 +171,13 @@ toplevel (FnAST _ _ _ _ _ True ) =
         error $ "Broken invariant: top-level functions " ++
                 "should not have their top-level bit set before we do it!"
 
-parseModule :: String -> [PbExpr.Expr] -> SourceLines -> ModuleAST FnAST
-parseModule name pbexprs lines =
-    ModuleAST [toplevel (parseFn e lines) | e <- pbexprs]
+parseModule name decls defns lines =
+    ModuleAST [toplevel (parseFn e lines) | (Defn nm e) <- defns]
               lines
-
 
 getVarName :: ExprAST -> String
 getVarName (E_VarAST v) = evarName v
 getVarName x = error $ "getVarName given a non-variable! " ++ show x
-
-getType :: PbExpr.Expr -> TypeAST
-getType e = case PbExpr.type' e of
-                Just t -> parseType t
-                Nothing -> error $ "ProtobufUtils.getType " ++ show (PbExpr.tag e)
 
 getFormal :: PbExpr.Expr -> SourceLines ->  AnnVar
 getFormal e lines = case PbExpr.tag e of
@@ -189,8 +185,7 @@ getFormal e lines = case PbExpr.tag e of
                    let i = (Ident (evarName v) (54321)) in
                    case evarMaybeType v of
                        Just t  -> (AnnVar t i)
-                       Nothing -> --(AnnVar (MissingTypeAST $ "ProtobufUtils.getFormal " ++ (evarName v)) i)
-                                  error $ "Missing annotation on variable " ++ show v
+                       Nothing -> error $ "Missing annotation on variable " ++ show v
             _   -> error "getVar must be given a var!"
 
 sourceRangeFromPBRange :: Pb.SourceRange -> SourceLines -> ESourceRange
@@ -223,8 +218,7 @@ parseExpr pbexpr lines =
                 BOOL    -> parseBool
                 VAR     -> parseEVar
                 Foster.Fepb.Expr.Tag.TUPLE   -> parseTuple
-                Foster.Fepb.Expr.Tag.FN      -> parseFnAST
-                PROTO   -> error $ "parseExpr cannot parse a standalone proto!" ++ (show $ PbExpr.tag pbexpr) ++ "\n"
+                Foster.Fepb.Expr.Tag.VAL_ABS -> parseValAbs
                 CALL      -> parseCall
                 SEQ       -> parseSeq
                 LET       -> parseLet
@@ -237,8 +231,9 @@ parseExpr pbexpr lines =
 parseSourceModule :: SourceModule -> ModuleAST FnAST
 parseSourceModule sm =
     let lines = sourceLines sm in
-    parseModule (uToString $ SourceModule.name  sm)
-                (toList    $ SourceModule.parts sm) lines
+    parseModule (uToString $ SourceModule.name sm)
+                (toList    $ SourceModule.decl sm)
+                (toList    $ SourceModule.defn sm) lines
 
 sourceLines :: SourceModule -> SourceLines
 sourceLines sm = SourceLines (fmapDefault (\x -> T.pack (uToString x)) (SourceModule.line sm))

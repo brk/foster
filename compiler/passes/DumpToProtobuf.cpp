@@ -6,6 +6,7 @@
 #include "base/LLVMUtils.h"
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
+#include "parse/ParsingContext.h"
 #include "passes/DumpToProtobuf.h"
 
 #include "llvm/Support/Path.h"
@@ -84,11 +85,7 @@ void processExprAST(pb::Expr* current,
 void dumpModule(DumpToProtobufPass* pass,
                 foster::fepb::SourceModule& sm, ModuleAST* mod) {
   sm.set_name(mod->name);
-  sm.mutable_parts()->Reserve(mod->parts.size());
-  for (size_t i = 0; i < mod->parts.size(); ++i) {
-    dumpChild(pass, sm.add_parts(), mod->parts[i]);
-  }
-/*
+
   for (size_t i = 0; i < mod->decl_parts.size(); ++i) {
     //pb::Decl* d = sm.add_decl();
     ASSERT(false && " dumpModule");
@@ -99,7 +96,6 @@ void dumpModule(DumpToProtobufPass* pass,
     d->set_name(mod->defn_parts[i]->name);
     dumpChild(pass, d->mutable_body(), mod->defn_parts[i]->body);
   }
-*/
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -119,26 +115,27 @@ void VariableAST::dump(DumpToProtobufPass* pass) {
   pass->current->set_name(this->name);
 }
 
-void PrototypeAST::dump(DumpToProtobufPass* pass) {
-  processExprAST(pass->current, this, pb::Expr::PROTO);
-  pb::Proto* proto = pass->current->mutable_proto();
-  proto->set_name(this->getName());
-
-  proto->mutable_in_args()->Reserve(this->parts.size());
-  for (size_t i = 0; i < this->inArgs.size(); ++i) {
-    dumpChild(pass, proto->add_in_args(), this->inArgs[i]);
-  }
-
-  if (this->resultTy) {
-    DumpTypeToProtobufPass dt(proto->mutable_result());
-    this->resultTy->dump(&dt);
-  }
+void dumpFormal(DumpToProtobufPass* pass, pb::Formal* target, Formal* formal) {
+  target->set_name(formal->name);
+  ASSERT(formal->type) << "Formal parameter " << formal->name << " must have type!";
+  DumpTypeToProtobufPass dt(target->mutable_type());
+  formal->type->dump(&dt);
 }
 
-void FnAST::dump(DumpToProtobufPass* pass) {
-  processExprAST(pass->current, this, pb::Expr::FN);
-  dumpChild(pass, pass->current->add_parts(), this->getProto());
+void ValAbs::dump(DumpToProtobufPass* pass) {
+  processExprAST(pass->current, this, pb::Expr::VAL_ABS);
+  if (this->name == "") {
+    this->name = foster::ParsingContext::freshName("<anon_fn_");
+  }
+  pass->current->set_name(this->name);
+  for (size_t i = 0; i < this->formals.size(); ++i) {
+    dumpFormal(pass, pass->current->add_formals(), this->formals[i]);
+  }
   dumpChild(pass, pass->current->add_parts(), this->parts[0]);
+  if (this->resultType) {
+    DumpTypeToProtobufPass dt(pass->current->mutable_result_type());
+    this->resultType->dump(&dt);
+  }
 }
 
 void IfExprAST::dump(DumpToProtobufPass* pass) {
@@ -161,7 +158,13 @@ void SeqAST::dump(DumpToProtobufPass* pass) {
 
 void LetAST::dump(DumpToProtobufPass* pass) {
   processExprAST(pass->current, this, pb::Expr::LET);
-  dumpChildren(pass, this);
+  pb::PBLet* let_ = pass->current->mutable_pb_let();
+  for (size_t i = 0; i < this->bindings.size(); ++i) {
+    pb::TermBinding* b = let_->add_binding();
+    b->set_name(this->bindings[i].name);
+    dumpChild(pass, b->mutable_body(), this->bindings[i].body);
+  }
+  dumpChild(pass, let_->mutable_body(), this->parts[0]);
 }
 
 void CallAST::dump(DumpToProtobufPass* pass) {
@@ -178,8 +181,7 @@ void ETypeAppAST::dump(DumpToProtobufPass* pass) {
 
 void TupleExprAST::dump(DumpToProtobufPass* pass) {
   processExprAST(pass->current, this, pb::Expr::TUPLE);
-  ASSERT(this->parts.size() == 1); // have a SeqAST wrapper...
-  dumpChildren(pass, this->parts[0]);
+  dumpChildren(pass, this);
 }
 
 void BuiltinCompilesExprAST::dump(DumpToProtobufPass* pass) {
@@ -215,9 +217,10 @@ void setTagAndRange(pb::Type* target,
 
 void NamedTypeAST::dump(DumpTypeToProtobufPass* pass) {
   setTagAndRange(pass->current, this, pb::Type::LLVM_NAMED);
-  string tyname = str(this->getLLVMType());
-  ASSERT(!tyname.empty());
-  pass->current->set_name(tyname);
+  //string tyname = str(this->getLLVMType());
+  //ASSERT(!tyname.empty());
+  //pass->current->set_name(tyname);
+  pass->current->set_name(this->name);
 }
 
 void TypeVariableAST::dump(DumpTypeToProtobufPass* pass) {

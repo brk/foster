@@ -20,7 +20,7 @@ import qualified Data.Graph as Graph
 import Data.Maybe(isJust)
 import Data.Foldable(forM_)
 import Control.Monad.State
-import Data.IORef(newIORef)
+import Data.IORef(newIORef, readIORef)
 
 import Text.ProtocolBuffers(messageGet)
 
@@ -203,11 +203,20 @@ main = do
         let verboseMode = getVerboseFlag flagVals
         let sm = parseSourceModule pb_exprs
         uniqref <- newIORef 1
-        let tcenv = TcEnv { tcEnvUniqs = uniqref, tcParents = [] }
+        varlist <- newIORef []
+        let tcenv = TcEnv { tcEnvUniqs = uniqref,
+                     tcUnificationVars = varlist,
+                             tcParents = [] }
         modResults  <- typecheckModule verboseMode sm tcenv
         case modResults of
             (Just (extctx, mod)) -> do
                          when verboseMode (do
+                           metaTyVars <- readIORef varlist
+                           runOutput $ (outLn $ "generated " ++ (show $ length metaTyVars) ++ " meta type variables:")
+                           forM metaTyVars (\mtv@(Meta _ r _) -> do
+                               t <- readIORef r
+                               runOutput (outLn $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t))
+
                            runOutput $ (outLn "vvvv ===================================")
                            runOutput $ (outCSLn Yellow (joinWith "\n" $ map show (contextBindings extctx))))
                          let prog = closureConvertAndLift extctx mod

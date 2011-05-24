@@ -1,10 +1,9 @@
-run-clo = fn (f:fn( to i32) to i32) {  f()  }
+run-clo = { f:{i32} => f () };
 
-main = fn (to i32) {
-  let n:i32 = opaquely_i32(2) in {
-  let c:  fn(to i32) =   fn (to i32) { n + opaquely_i32(3) }   in {
-    expect_i32(5)
-    print_i32(run-clo(c))
-  }
-  }
-}
+main = {
+  let n = opaquely_i32 2;
+      c = { n + (opaquely_i32 3) };
+     j0 = expect_i32 5;
+     j1 = print_i32 (run-clo c);
+  in 0 end
+};

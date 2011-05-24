@@ -44,6 +44,10 @@ message FnType {
   optional bool   is_closure = 4;
 }
 
+message Formal {
+  required string name = 1;
+  required Type   type = 2;
+}
 
 message Expr {
   enum Tag {
@@ -52,8 +56,7 @@ message Expr {
     VAR       = 18;
     LET       = 19;
     TUPLE     = 20;
-    FN        = 21;
-    PROTO     = 22;
+    VAL_ABS   = 21;
     CALL      = 23;
     SEQ       = 24;
     TY_APP    = 25;
@@ -68,9 +71,9 @@ message Expr {
   optional SourceRange range = 4;
 
   optional string     int_text   = 17;
-  optional Proto      proto      = 18;
 
   optional PBIf       pb_if      = 21;
+  optional PBLet      pb_let     = 22;
 
   // Bool
   optional bool   bool_value = 23;
@@ -78,14 +81,22 @@ message Expr {
   // Var, named type decl
   optional string name  = 24;
 
+  // ValAbs
+  repeated Formal formals     = 25;
+  optional Type   result_type = 26;
+
   // AnnTyApp
   optional Type ty_app_arg_type = 29;
 }
 
-message Proto {
-  repeated Expr   in_args = 2; // really Var nodes
-  optional Type   result  = 3;
-  required string name    = 4;
+message PBLet {
+  repeated TermBinding binding = 1;
+  required Expr        body    = 2;
+}
+
+message TermBinding {
+  required string name = 1;
+  required Expr   body = 2;
 }
 
 message PBIf {
@@ -94,8 +105,19 @@ message PBIf {
   required Expr else_expr = 4;
 }
 
+message Decl {
+  required string name = 1;
+  required Type   type = 2;
+}
+
+message Defn {
+  required string name = 1;
+  required Expr   body = 2;
+}
+
 message SourceModule {
-  required string name  = 1;
-  repeated string line  = 2;
-  repeated Expr   parts = 3;
+  required string name = 1;
+  repeated string line = 2;
+  repeated Decl   decl = 3;
+  repeated Defn   defn = 4;
 }

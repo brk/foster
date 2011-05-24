@@ -51,12 +51,6 @@ struct DumpExpr {
       dump(ast->parts[i]);
     }
 
-    if (CONST(PrototypeAST) e = dynamic_cast<CONST(PrototypeAST)>(ast)) {
-      for (unsigned i = 0; i < e->inArgs.size(); ++i) {
-        stages.back() = statusFor(i, e->inArgs.size());
-        dump(e->inArgs[i]);
-      }
-    }
     stages.pop_back();
   }
 
@@ -79,12 +73,7 @@ struct DumpExpr {
     if (CONST(IntAST) e = dynamic_cast<CONST(IntAST)>(ast)) {
       return std::string(e->tag) + " " + e->getOriginalText();
     }
-    if (CONST(FnAST) e = dynamic_cast<CONST(FnAST)>(ast)) {
-      return std::string(e->tag) + " " + e->getName() + " :: " + str(ast->type);
-    }
-    if (CONST(PrototypeAST) e = dynamic_cast<CONST(PrototypeAST)>(ast)) {
-      return std::string(e->tag) + " " + e->getName() + " " + str(ast->type);
-    }
+
     return std::string(ast->tag) + " :: " + str(ast->type);
   }
 

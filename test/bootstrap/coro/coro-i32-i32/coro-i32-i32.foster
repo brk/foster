@@ -8,25 +8,20 @@
 //             }
 
 
-main = fn (to i32) {
-  expect_i32(999999)
-  expect_i32(10)
-  expect_i32(120)
+main = {
+  expect_i32 999999;
+  expect_i32 10;
+  expect_i32 120;
 
-  print_i32(999999)
-  let co = coro_create( fn(x : i32 to i32) {
-                           let a : i32 = coro_yield_i32_i32(x)
-                           let b : i32 = coro_yield_i32_i32(a + 20) in {
-                             0
-                           }
-                         }) in {
-     let x : i32 = coro_invoke(co, 10) in {
-         let y : i32 = coro_invoke(co, 100) in {
-           print_i32(x)
-           print_i32(y)
-           0
-         }
-     }
-  }
-  0
-}
+  print_i32 999999;
+  let co = coro_create { x : i32 =>
+                           let a = coro_yield_i32_i32 x;
+                               b = coro_yield_i32_i32 (a + 20);
+                            in 0 end
+                        };
+      x = coro_invoke co 10;
+      y = coro_invoke co 100;
+     j0 = print_i32 x;
+     j1 = print_i32 y;
+  in 0 end
+};

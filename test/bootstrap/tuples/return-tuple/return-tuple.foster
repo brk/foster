@@ -1,8 +1,8 @@
 // Need separate function because LLVM structs must be indexed by const val
-print_0_of_t_i32_i1 = fn (x : tuple { i32, i1 } to i32) { print_i32(x[0]) }
-print_1_of_t_i32_i1 = fn (x : tuple { i32, i1 } to i32) { print_i1(x[1]) }
+print_0_of_t_i32_i1 = { x : (i32, i1) => print_i32 x[0] };
+print_1_of_t_i32_i1 = { x : (i32, i1) => print_i1  x[1] };
 
-tuple_from = fn (x : i32, y : i1   to  tuple { i32, i1 }) { tuple { x, y } }
+tuple_from = { x : i32 => y : i1 => (x, y) };
 
 // TODO:
 //implicit_tuple_from = fn (x : i32, y : i1) to (rx : i32, ry : i1) {
@@ -13,10 +13,10 @@ tuple_from = fn (x : i32, y : i1   to  tuple { i32, i1 }) { tuple { x, y } }
 // rx, ry = unpack tuple { x, y } ?
 //}
 
-main = fn (to i32) {
-  expect_i32(42)
-  print_0_of_t_i32_i1(tuple_from( 42, true ))
-  
-  expect_i1(true)
-  print_1_of_t_i32_i1(tuple_from ( 42, true ))
-}
+main = {
+  let j0 = expect_i32 42;
+      j1 = print_0_of_t_i32_i1 (tuple_from 42 true);
+      j2 = expect_i1  true;
+      j3 = print_1_of_t_i32_i1 (tuple_from 42 true);
+   in 0 end
+};

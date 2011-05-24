@@ -17,12 +17,16 @@ data CompilesStatus = CS_WouldCompile | CS_WouldNotCompile | CS_NotChecked
 class Expr a where
     freeVars   :: a -> [String]
 
+data TermBinding = TermBinding E_VarAST ExprAST
+        deriving (Show)
+
 data ExprAST =
           E_BoolAST       ESourceRange Bool
         | E_IntAST        ESourceRange String
         | E_TupleAST      [ExprAST]
         | E_FnAST         FnAST
-        | E_LetAST        ESourceRange E_VarAST ExprAST ExprAST (Maybe TypeAST)
+        | E_LetAST        ESourceRange  TermBinding  ExprAST (Maybe TypeAST)
+        | E_LetRec        ESourceRange [TermBinding] ExprAST (Maybe TypeAST)
         | E_CallAST       ESourceRange ExprAST [ExprAST]
         | E_CompilesAST   ExprAST CompilesStatus
         | E_IfAST         ExprAST ExprAST ExprAST
@@ -38,7 +42,7 @@ data E_VarAST = VarAST { evarMaybeType :: Maybe TypeAST
 
 data FnAST  = FnAST { fnAstRange :: ESourceRange
                     , fnAstName :: String
-                    , fnRetType :: TypeAST
+                    , fnRetType :: Maybe TypeAST
                     , fnFormals :: [AnnVar]
                     , fnBody  :: ExprAST
                     , fnWasToplevel :: Bool
@@ -131,7 +135,8 @@ instance Structured ExprAST where
             E_IfAST _ _ _        -> out $ "IfAST        "
             E_IntAST rng text    -> out $ "IntAST       " ++ text
             E_FnAST f            -> out $ "FnAST        " ++ (fnAstName f)
-            E_LetAST rng v a b t -> out $ "LetAST       " ++ show v
+            E_LetRec rnd bnz e t -> out $ "LetRec       "
+            E_LetAST rng bnd e t -> out $ "LetAST       " ++ (case bnd of (TermBinding v _) -> evarName v)
             E_SeqAST   a b       -> out $ "SeqAST       "
             E_SubscriptAST a b r -> out $ "SubscriptAST "
             E_TupleAST     es    -> out $ "TupleAST     "
@@ -144,16 +149,22 @@ instance Structured ExprAST where
             E_IfAST a b c        -> [a, b, c]
             E_IntAST rng txt     -> []
             E_FnAST f            -> [fnBody f]
-            E_LetAST rng v a b t -> [a, b]
+            E_LetRec rnd bnz e t -> [termBindingExpr bnd | bnd <- bnz] ++ [e]
+            E_LetAST rng bnd e t -> (termBindingExpr bnd):[e]
             E_SeqAST       a b   -> unbuildSeqs e
             E_SubscriptAST a b r -> [a, b]
             E_TupleAST     es    -> es
             E_VarAST _           -> []
 
+termBindingExpr (TermBinding _ e) = e
+termBindingExprs bs = map termBindingExpr bs
+termBindingNames bs = map (\(TermBinding v _) -> evarName v) bs
+bindingFreeVars (TermBinding v e) = freeVars e `butnot` [evarName v]
+
 instance Expr ExprAST where
     freeVars e = case e of
         E_VarAST v          -> [evarName v]
-        E_LetAST rng v a b t -> freeVars a ++ (freeVars b `butnot` [evarName v])
+        E_LetAST rng bnd e t -> freeVars e ++ (bindingFreeVars bnd)
         E_FnAST f           -> let bodyvars =  Set.fromList (freeVars (fnBody f)) in
                                let boundvars = Set.fromList (map (identPrefix.avarIdent) (fnFormals f)) in
                                Set.toList (Set.difference bodyvars boundvars)
@@ -169,7 +180,7 @@ instance Structured AnnExpr where
             AnnCompiles c msg    -> out $ "AnnCompiles  " ++ show c ++ " - " ++ msg
             AnnIf      t  a b c  -> out $ "AnnIf        " ++ " :: " ++ show t
             AnnInt ty int        -> out $ "AnnInt       " ++ (litIntText int) ++ " :: " ++ show ty
-            E_AnnFn annFn        -> out $ "AnnFn " ++ fnNameA annFn ++ " // " ++ (show $ annFnBoundNames annFn)
+            E_AnnFn annFn        -> out $ "AnnFn " ++ fnNameA annFn ++ " // " ++ (show $ annFnBoundNames annFn) ++ " :: " ++ show (annFnType annFn)
             AnnLetVar id    a b  -> out $ "AnnLetVar    " ++ show id ++ " :: " ++ show (typeAST b)
             AnnLetFuns ids fns e -> out $ "AnnLetFuns   " ++ show ids
             AnnSubscript  t a b  -> out $ "AnnSubscript " ++ " :: " ++ show t

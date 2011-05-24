@@ -8,28 +8,22 @@
 //             }
 
 
-test-coro2a = fn (to i32) {
-  expect_i32(30)
-  expect_i32(120)
+test-coro2a = {
+  expect_i32 30;
+  expect_i32 120;
 
-  //let co = coro_create( fn(x : i32, y : i32 to i32) {
-  let co = coro_create( fn(xy : tuple { i32, i32 } to i32) {
-                           let a : tuple {i32, i32} = coro_yield_i32x2_i32(xy[0] + xy[1])
-                           let b : tuple {i32, i32} = coro_yield_i32x2_i32(a[0] + 20) in {
-                            print_i32(111111)
-                             12345
-                           }
-                         }) in {
-     let x : i32 = coro_invoke(co, tuple { 10, 20 }) in {
-         let y : i32 = coro_invoke(co, tuple { 100, 200 }) in {
-           print_i32(x)
-           print_i32(y)
-           0
-         }
-     }
-  }
-  0
-}
+  let co = coro_create { xy : (i32, i32) =>
+                          let a = coro_yield_i32x2_i32 (xy[0] + xy[1]);
+                             j0 = coro_yield_i32x2_i32 (a[0] + 20);
+                             j1 = print_i32 111111;
+                           in 12345 end
+                         };
+      x = coro_invoke co (10, 20);
+      y = coro_invoke co (100, 200);
+     j0 = print_i32 x;
+     j1 = print_i32 y;
+  in 0 end
+};
 
 //test-coro2b = fn (to i32) {
 //  expect_i32(30)
@@ -48,7 +42,8 @@ test-coro2a = fn (to i32) {
 //  }
 //}
 
-main = fn (to i32) {
-  test-coro2a()
-  //test-coro2b()
-}
+main = {
+  test-coro2a();
+  //test-coro2b();
+  0
+};

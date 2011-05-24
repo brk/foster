@@ -1,24 +1,3 @@
-mrmr-step2 = fn (km:i32, r:i32        to i32) { primitive_bitxor_i32(km, primitive_bitashr_i32(km, r)) }
-mrmr-step5 = fn (h:i32, kx:i32, m:i32 to i32) { primitive_bitxor_i32(h * m, kx * m)  }
-murmurhash2-step-manually-lifted = fn (k:i32, h:i32, r:i32, m:i32 to i32) {
-  mrmr-step5(h, mrmr-step2(k * m, r), m)
-}
-
-murmurhash2-step-let-transformed = fn (k:i32, h:i32, r:i32, m:i32 to i32) {
-  fn    (km:i32 to i32) { // step 2
-    fn  (kx:i32 to i32) { // step 5
-      primitive_bitxor_i32(h * m, kx * m)
-    } (primitive_bitxor_i32(km, primitive_bitashr_i32(km, r)))
-  }   (k * m)
-}
-
-murmurhash2-step-let = fn (k:i32, h:i32, r:i32, m:i32 to i32) {
-  let km:i32 = k * m
-  let kx:i32 = primitive_bitxor_i32(km, primitive_bitashr_i32(km, r)) in {
-    primitive_bitxor_i32(h * m, kx * m)
-  }
-}
-
 //murmurhash2-step = fn (k:i32, h:i32, r:i32, m:i32 to i32) {
 //  bitxor(h * m, kx * m) where
 //  kx = primitive_bitxor_i32(km, primitive_bitashr_i32(km, r)) where
@@ -40,50 +19,75 @@ murmurhash2-step-let = fn (k:i32, h:i32, r:i32, m:i32 to i32) {
 
 // let v = a in e -> fn (v) { e }(a)
 
-test-manually-lifted = fn ( to i32) {
-  expect_i32(1040811149)
-  print_i32( murmurhash2-step-manually-lifted(1, primitive_negate_i32(1), 24, 5bd1e995_16) )
+test-manually-lifted = {
+  expect_i32 1040811149;
+  print_i32 (murmurhash2-step-manually-lifted 1 (primitive_negate_i32 1) 24 5bd1e995_16);
 
-  expect_i32(640067440)
-  print_i32( murmurhash2-step-manually-lifted(2, 1040811149, 24, 5bd1e995_16) )
+  expect_i32 640067440;
+  print_i32 (murmurhash2-step-manually-lifted 2 1040811149 24 5bd1e995_16);
 
-  expect_i32(1308571692)
-  print_i32( murmurhash2-step-manually-lifted(3, 640067440, 24, 5bd1e995_16) )
+  expect_i32 1308571692;
+  print_i32 (murmurhash2-step-manually-lifted 3 640067440 24 5bd1e995_16);
 
-  expect_i32(primitive_negate_i32(2051158325))
-  print_i32( murmurhash2-step-manually-lifted(4, 1308571692, 24, 5bd1e995_16) )
-}
+  expect_i32 (primitive_negate_i32 2051158325);
+  print_i32 (murmurhash2-step-manually-lifted 4 1308571692 24 5bd1e995_16);
+  0;
+};
 
-test-let-transformed = fn ( to i32) {
-  expect_i32(1040811149)
-  print_i32( murmurhash2-step-let-transformed(1, primitive_negate_i32(1), 24, 5bd1e995_16) )
+test-let-transformed = {
+  expect_i32 1040811149;
+  print_i32 (murmurhash2-step-let-transformed 1 (primitive_negate_i32 1) 24 5bd1e995_16);
 
-  expect_i32(640067440)
-  print_i32( murmurhash2-step-let-transformed(2, 1040811149, 24, 5bd1e995_16) )
+  expect_i32 640067440;
+  print_i32 (murmurhash2-step-let-transformed 2 1040811149 24 5bd1e995_16);
 
-  expect_i32(1308571692)
-  print_i32( murmurhash2-step-let-transformed(3, 640067440, 24, 5bd1e995_16) )
+  expect_i32 1308571692;
+  print_i32 (murmurhash2-step-let-transformed 3 640067440 24 5bd1e995_16);
 
-  expect_i32(primitive_negate_i32(2051158325))
-  print_i32( murmurhash2-step-let-transformed(4, 1308571692, 24, 5bd1e995_16) )
-}
+  expect_i32 (primitive_negate_i32 2051158325);
+  print_i32 (murmurhash2-step-let-transformed 4 1308571692 24 5bd1e995_16);
+  0;
+};
 
-test-let = fn ( to i32) {
-  expect_i32(1040811149)
-  print_i32( murmurhash2-step-let(1, primitive_negate_i32(1), 24, 5bd1e995_16) )
+test-let = {
+  expect_i32 1040811149;
+  print_i32 (murmurhash2-step-let 1 (primitive_negate_i32 1) 24 1`540`483`477);
 
-  expect_i32(640067440)
-  print_i32( murmurhash2-step-let(2, 1040811149, 24, 5bd1e995_16) )
+  expect_i32 640067440;
+  print_i32 (murmurhash2-step-let 2 1040811149 24 5bd1e995_16);
 
-  expect_i32(1308571692)
-  print_i32( murmurhash2-step-let(3, 640067440, 24, 5bd1e995_16) )
+  expect_i32 1308571692;
+  print_i32 (murmurhash2-step-let 3 640067440 24 5bd1e995_16);
 
-  expect_i32(primitive_negate_i32(2051158325))
-  print_i32( murmurhash2-step-let(4, 1308571692, 24, 5bd1e995_16) )
-}
+  expect_i32 (primitive_negate_i32 2051158325);
+  print_i32  (murmurhash2-step-let 4 1308571692 24 5bd1e995_16);
+  0;
+};
 
-main = fn ( to i32) {
-  test-manually-lifted()
-  test-let-transformed()
-  test-let()
-}
+main = {
+  test-manually-lifted ();
+  test-let-transformed ();
+  test-let ();
+  0;
+};
+
+
+mrmr-step2 = { km:i32 => r:i32 => primitive_bitxor_i32 km (primitive_bitashr_i32 km r) };
+mrmr-step5 = { h:i32 => kx:i32 => m:i32 => primitive_bitxor_i32 (h * m) (kx * m) };
+murmurhash2-step-manually-lifted = { k:i32 => h:i32 => r:i32 => m:i32 =>
+  mrmr-step5 h (mrmr-step2 (k * m) r) m
+};
+
+murmurhash2-step-let-transformed = { k:i32 => h:i32 => r:i32 => m:i32 =>
+  {    km:i32 =>
+    {  kx:i32 =>
+       primitive_bitxor_i32 (h * m) (kx * m)
+    } (primitive_bitxor_i32 km (primitive_bitashr_i32 km r))
+  }   (k * m)
+};
+
+murmurhash2-step-let = { k:i32 => h:i32 => r:i32 => m:i32 =>
+  let km = k * m;
+      kx = primitive_bitxor_i32 km (primitive_bitashr_i32 km r);
+   in      primitive_bitxor_i32 (h * m) (kx * m) end
+};

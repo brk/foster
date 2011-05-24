@@ -63,9 +63,8 @@ class BoolAST;
 class SeqAST;
 class TupleExprAST;
 class SubscriptAST;
-class FnAST;
 class IfExprAST;
-class PrototypeAST;
+//class PrototypeAST;
 class VariableAST;
 
 class ModuleAST;
@@ -129,17 +128,20 @@ struct ETypeAppAST : public ExprAST {
   virtual void show(PrettyPrintPass*    pass);
 };
 
+struct Binding {
+  string name;
+  ExprAST* body;
+  explicit Binding(const string& name, ExprAST* body)
+  : name(name), body(body) {}
+};
+
 struct LetAST : public ExprAST {
-  explicit LetAST(VariableAST* var,
-                  ExprAST* bound,
+  std::vector<Binding> bindings;
+  explicit LetAST(std::vector<Binding> bindings,
                   ExprAST* inexpr,
-                  TypeAST* overallType,
                   foster::SourceRange sourceRange)
-    : ExprAST("LetAST", sourceRange) {
-    parts.push_back(var);
-    parts.push_back(bound);
+    : ExprAST("LetAST", sourceRange), bindings(bindings) {
     parts.push_back(inexpr);
-    type = overallType;
   }
   virtual void dump(DumpToProtobufPass* pass);
   virtual void show(PrettyPrintPass*    pass);
@@ -153,9 +155,9 @@ struct SeqAST : public ExprAST {
 };
 
 struct TupleExprAST : public ExprAST {
-  explicit TupleExprAST(ExprAST* expr, foster::SourceRange sourceRange)
+  explicit TupleExprAST(Exprs exprs, foster::SourceRange sourceRange)
     : ExprAST("TupleExprAST", sourceRange) {
-    parts.push_back(expr);
+      for (size_t i = 0; i < exprs.size(); ++i) { parts.push_back(exprs[i]); }
   }
   virtual void dump(DumpToProtobufPass* pass);
   virtual void show(PrettyPrintPass*    pass);
@@ -173,31 +175,27 @@ struct SubscriptAST : public ExprAST {
   virtual void show(PrettyPrintPass*    pass);
 };
 
-class FnAST;
+struct Formal {
+  string name; // eventually, pattern
+  TypeAST* type;
+  explicit Formal(const string& name, TypeAST* type)
+  : name(name), type(type) {}
+};
 
-// The ->value for a PrototypeAST node is a llvm::Function*
-struct PrototypeAST : public ExprAST {
-private:
+struct ValAbs : public ExprAST {
+  std::vector<Formal*> formals;
+  TypeAST* resultType;
   string name;
-  friend class FnAST;
-public:
-
-  string getName() const { return name; }
-
-  std::vector<VariableAST*> inArgs;
-  TypeAST* resultTy;
-
-
-  PrototypeAST(TypeAST* retTy, const string& name,
-               const std::vector<VariableAST*>& inArgs,
-               foster::SourceRange sourceRange)
-    : ExprAST("PrototypeAST", sourceRange),
-      name(name), inArgs(inArgs), resultTy(retTy) {
-        ASSERT(resultTy != NULL) << "proto: " << name << foster::show(sourceRange);
+  explicit ValAbs(std::vector<Formal*> formals, ExprAST* body,
+                  TypeAST* resultType, foster::SourceRange sourceRange)
+  : ExprAST("ValAbs", sourceRange), formals(formals), resultType(resultType) {
+     parts.push_back(body);
   }
 
   virtual void dump(DumpToProtobufPass* pass);
   virtual void show(PrettyPrintPass*    pass);
+
+  ExprAST*& getBody() { return parts[0]; }
 };
 
 // As noted by the designers of Lua, closures are an implementation strategy
@@ -219,47 +217,31 @@ public:
 // its "external" LLVM type is a struct of function-taking-generic-env-ptr and
 // generic-env-ptr. This allows type checking to be agnostic of the types stored
 // in the env, while still allowing codegen to insert the appropriate bitcasts.
- struct FnAST : public ExprAST {
-   PrototypeAST* proto;
 
-   explicit FnAST(PrototypeAST* proto, ExprAST* body,
-                  foster::SourceRange sourceRange)
-      : ExprAST("FnAST", sourceRange),
-        proto(proto) {
-     parts.push_back(body);
-   }
+struct Defn {
+  string name;
+  ExprAST* body;
+  explicit Defn(const string& name, ExprAST* body)
+  : name(name), body(body) {}
+};
 
-   virtual void dump(DumpToProtobufPass* pass);
-   virtual void show(PrettyPrintPass*    pass);
-
-  std::string getName() const { return getProto()->getName(); }
-  PrototypeAST* getProto() const { return proto; }
-  ExprAST*& getBody() { return parts[0]; }
+struct Decl {
+  string name;
+  TypeAST* type;
+  explicit Decl(const string& name, TypeAST* type)
+  : name(name), type(type) {}
 };
 
 struct ModuleAST {
   std::string name;
   const foster::InputTextBuffer* buf;
-  std::vector<FnAST*> fn_parts;
-  std::vector<ExprAST*> parts;
-  typedef std::vector<FnAST*>::iterator FnAST_iterator;
-  FnAST_iterator fn_begin() { return fn_parts.begin();}
-  FnAST_iterator fn_end() { return fn_parts.end(); }
+  std::vector<Defn*> defn_parts;
+  std::vector<Decl*> decl_parts;
 
-  explicit ModuleAST(const std::vector<ExprAST*>& _parts,
-                     const std::string& name,
-                     foster::SourceRange sourceRange)
-    : name(name), buf(sourceRange.buf) {
-
-      for (size_t i = 0; i < _parts.size(); ++i) {
-        if (FnAST* f = dynamic_cast<FnAST*>(_parts[i])) {
-          fn_parts.push_back(f);
-        }
-        // parts contains all subexprs,
-        // some of which are copied in fn_parts.
-        parts.push_back(_parts[i]);
-      }
-  }
+  explicit ModuleAST(const std::vector<Decl*>& decls,
+                     const std::vector<Defn*>& defns,
+                     const std::string& name)
+  : name(name), buf(NULL), defn_parts(defns), decl_parts(decls) {}
 };
 
 struct IfExprAST : public ExprAST {

@@ -1,11 +1,10 @@
-run-it = fn (f:fn(to i32) to i32) {
-  f()
-}
+run-it = { f:{i32} => f () };
 
 // This just tests passing of (lambda-lifted) function pointers,
 // since the anonymous function defined below is trivially closed.
 
-main = fn (to i32) {
-  expect_i32(42)
-  print_i32(run-it( fn (to i32) { opaquely_i32(42) } ))
-}
+main = {
+  expect_i32 42;
+  print_i32 (run-it { opaquely_i32 42 } );
+  0
+};

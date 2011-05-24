@@ -214,12 +214,6 @@ dumpInt cleanText activeBits =
         PBInt.PBInt { clean = u8fromString cleanText
                     , bits  = intToInt32   activeBits }
 
-dumpVar (AnnVar t ident) =
-    P'.defaultValue { PbExpr.name  = Just $ dumpIdent ident
-                    , PbExpr.tag   = IL_VAR
-                    , PbExpr.type' = Just $ dumpType t  }
-
-
 dumpProc p =
     Proc { Proc.name  = dumpIdent (ilProcIdent p)
          , in_args    = fromList $ [dumpIdent (avarIdent v) | v <- (ilProcVars p)]

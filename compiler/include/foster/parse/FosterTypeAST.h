@@ -98,11 +98,6 @@ class NamedTypeAST : public TypeAST {
   const std::string name;
   TypeAST* nonLLVMType;
 
-  explicit NamedTypeAST(const std::string& typeName, TypeAST* underlyingType,
-                        const SourceRange& sourceRange)
-     : TypeAST("NamedType", NULL, sourceRange),
-       name(typeName), nonLLVMType(underlyingType) {}
-
   explicit NamedTypeAST(const std::string& typeName,
                         const llvm::Type* underlyingType,
                         const SourceRange& sourceRange)
@@ -112,6 +107,12 @@ class NamedTypeAST : public TypeAST {
   static std::map<const llvm::Type*, TypeAST*> thinWrappers;
 
 public:
+  explicit NamedTypeAST(const std::string& typeName,
+                        TypeAST* underlyingType,
+                        const SourceRange& sourceRange)
+     : TypeAST("NamedType", NULL, sourceRange),
+       name(typeName), nonLLVMType(underlyingType) {}
+
   virtual void show(PrettyPrintTypePass* pass);
   virtual void dump(DumpTypeToProtobufPass* pass);
   virtual const llvm::Type* getLLVMType() const;

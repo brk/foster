@@ -41,7 +41,7 @@ equateTypes t1 t2 msg = do
      forM_ univars (\m@(Meta u _ _) -> do
        case Map.lookup u soln of
          Nothing -> return ()
-         Just t2 -> do mt1 <- readTcRef m
+         Just t2 -> do mt1 <- readTcMeta m
                        case mt1 of Nothing -> writeTcMeta m t2
                                    Just t1 -> equateTypes t1 t2 msg))
 
@@ -53,11 +53,15 @@ typeJoinVars [var@(AnnVar t v)] (Just u@(MetaTyVar m)) = do
     equateTypes t u Nothing
     return [var]
 
+typeJoinVars []   (Just u@(MetaTyVar m)) = do
+    equateTypes u (TupleTypeAST []) Nothing
+    return []
+
 typeJoinVars vars (Just (TupleTypeAST expTys)) =
     if (List.length vars) == (List.length expTys)
       then sequence [equateTypes t e Nothing >> return (AnnVar t v)
                     | ((AnnVar t v), e) <- (List.zip vars expTys)]
-      else tcFails $ out "Lengths of tuples must agree!"
+      else tcFails (out $ "Lengths of tuples must agree! Had " ++ show vars ++ " and " ++ show expTys)
 
 typeJoinVars vars (Just t) =
   error $ "typeJoinVars not yet implemented for type " ++ show t ++ " against " ++ show vars
@@ -97,7 +101,12 @@ typecheck ctx expr maybeExpTy =
                             typecheckCall ctx rng base args maybeExpTy
         E_IntAST rng txt -> typecheckInt rng txt
 
-        E_LetAST rng (VarAST maybeVarType boundName) a b mt ->
+        E_LetRec rng bindings e mt ->
+            error "E_LetRec typechecking not yet implemented."
+
+        E_LetAST rng (TermBinding v a) e mt ->
+            let boundName    = evarName v in
+            let maybeVarType = evarMaybeType v in
             case (isRecursive boundName a, maybeVarType) of
                 (YesRecursive, Nothing) ->
                     tcFails (outCS Red $ "Unification-based inference not yet supported for recursive let bindings. "
@@ -110,16 +119,16 @@ typecheck ctx expr maybeExpTy =
                        eaf@(E_AnnFn ea) <- typecheck boundCtx  a maybeVarType
                        let annvar = AnnVar (typeAST eaf) id
                        ctx' <- extendContext ctx [annvar] exptupletype
-                       eb <- typecheck ctx' b mt
-                       return (AnnLetFuns [id] [ea] eb)
+                       ee <- typecheck ctx' e mt
+                       return (AnnLetFuns [id] [ea] ee)
                 (NotRecursive, _) ->
                     do id <- tcFresh boundName
                        ea <- typecheck ctx  a maybeVarType
                        let annvar = AnnVar (typeAST ea) id
                        let exptupletype = (fmap (\t -> TupleTypeAST [t]) maybeVarType)
                        ctx' <- extendContext ctx [annvar] exptupletype
-                       eb <- typecheck ctx' b mt
-                       return (AnnLetVar id ea eb)
+                       ee <- typecheck ctx' e mt
+                       return (AnnLetVar id ea ee)
 
         E_SeqAST a b -> do
             ea <- typecheck ctx a Nothing --(Just TypeUnitAST)
@@ -182,6 +191,11 @@ getFnArgType x = error $ "Called argType on non-FnTypeAST: " ++ show x
 
 irrelevantClosedOverVars = Nothing
 
+-- For example,   foo (1, 2)   would produce:
+-- eargs   = [1, 2]
+-- argtype = (i32, i32)
+-- eb       = foo
+-- basetype = (?a -> ?b) ((for top level functions))
 typecheckCallWithBaseFnType eargs eb basetype range =
     case (basetype, typeAST (AnnTuple eargs))
       of
@@ -266,9 +280,8 @@ typecheckCall ctx range base args maybeExpTy = do
             ft <- newTcUnificationVar "ret type"
             rt <- newTcUnificationVar "arg type"
             let fnty = (FnTypeAST (MetaTyVar ft) (MetaTyVar rt) (Just []))
-            equateTypes (MetaTyVar ft) (typeAST ea) Nothing
-            equateTypes m fnty Nothing
 
+            equateTypes m fnty Nothing
             typecheckCallWithBaseFnType eargs eb fnty range
 
       _ -> tcFails $ out ("Called expression had unexpected type: "
@@ -287,7 +300,13 @@ typecheckFn' :: Context -> FnAST -> Maybe TypeAST -> Maybe TypeAST -> Tc AnnExpr
 typecheckFn' ctx f expArgType expBodyType = do
     let fnProtoRawFormals = fnFormals f
     let fnProtoName = fnAstName f
-    let fnProtoRetTy = fnRetType f
+    -- If the function has a return type annotation, use that;
+    -- otherwise, we assume it has a monomorphic return type
+    -- and determine the exact type via unification.
+    fnProtoRetTy <- case fnRetType f of
+                          Nothing -> do u <- newTcUnificationVar "fn ret type"
+                                        return $ MetaTyVar u
+                          Just t -> return t
     _ <- verifyNonOverlappingVariableNames fnProtoName
                                            (map (identPrefix.avarIdent) fnProtoRawFormals)
     uniquelyNamedFormals <- mapM uniquelyName fnProtoRawFormals
@@ -300,12 +319,18 @@ typecheckFn' ctx f expArgType expBodyType = do
     let argtypes = TupleTypeAST (map avarType formalVars)
     let fnClosedVars = if fnWasToplevel f then Nothing else Just []
     let fnty = FnTypeAST argtypes (typeAST annbody) fnClosedVars
+
+    case termVarLookup fnProtoName (contextBindings ctx) of
+      Nothing -> return ()
+      Just av -> equateTypes fnty (avarType av) (Just "overall function types")
+
     return (E_AnnFn (AnnFn fnty (Ident fnProtoName irrelevantIdentNum)
                            formalVars annbody fnClosedVars))
 
 -----------------------------------------------------------------------
 typecheckTuple ctx exprs Nothing = typecheckTuple' ctx exprs [Nothing | e <- exprs]
-
+typecheckTuple ctx [E_TupleAST []]
+                         (Just (TupleTypeAST [])) = return (AnnTuple [])
 typecheckTuple ctx exprs (Just (TupleTypeAST ts)) =
     if length exprs /= length ts
       then tcFails $ out $ "typecheckTuple: length of tuple (" ++ (show $ length exprs) ++
