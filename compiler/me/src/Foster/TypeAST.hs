@@ -34,7 +34,7 @@ data TypeAST =
 data TyVar = BoundTyVar String -- bound by a ForAll, that is
            | SkolemTyVar String Uniq deriving (Eq)
 
-data MetaTyVar = Meta Uniq TyRef
+data MetaTyVar = Meta Uniq TyRef String
 
 type TyRef = IORef (Maybe Tau)
     -- Nothing: type variable not substituted
@@ -52,14 +52,14 @@ instance Show TypeAST where
         (CoroType s t)   -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
         (ForAll tvs rho) -> "(ForAll " ++ show tvs ++ ". " ++ show rho ++ ")"
         (T_TyVar tv)     -> show tv
-        (MetaTyVar (Meta u tyref))  -> "(~!" ++ show u ++ ")"
+        (MetaTyVar (Meta u tyref desc))  -> "(~!" ++ show u ++ ":" ++ desc ++ ")"
         (PtrTypeAST ty)  -> "(Ptr " ++ show ty ++ ")"
 
 instance Eq TypeAST where
     t1 == t2 = typesEqual t1 t2
 
 instance Eq MetaTyVar where
-    (Meta u1 _) == (Meta u2 _) = u1 == u2
+    (Meta u1 _ _) == (Meta u2 _ _) = u1 == u2
 
 typesEqual :: TypeAST -> TypeAST -> Bool
 

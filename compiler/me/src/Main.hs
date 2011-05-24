@@ -93,7 +93,7 @@ typecheckFnSCC scc (ctx, tcenv) = do
         let ast = (E_FnAST fn)
         let name = fnName fn
         putStrLn $ "typechecking " ++ name
-        typechecked <- unTc (do uRetTy <- newTcUnificationVar
+        typechecked <- unTc (do uRetTy <- newTcUnificationVar "toplevel fn type"
                                 let extctx = prependContextBinding ctx (bindingForFnAST fn (MetaTyVar uRetTy))
                                 typecheck extctx ast Nothing) tcenv
         inspect ctx typechecked ast

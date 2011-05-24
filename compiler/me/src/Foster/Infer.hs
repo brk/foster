@@ -26,7 +26,7 @@ emptyTypeConstraintSet = Map.empty
 
 extractSubstTypes :: [MetaTyVar] -> TypeSubst -> [TypeAST]
 extractSubstTypes metaVars tysub =
-    let keys = [u | (Meta u _) <- metaVars] in
+    let keys = [u | (Meta u _ _) <- metaVars] in
     map (\k -> fromJust $ Map.lookup k tysub) keys
 
 assocFilterOut :: (Eq a) => [(a,b)] -> [a] -> [(a,b)]
@@ -62,7 +62,7 @@ tySubst ty subst =
         (CoroType s t)   -> (CoroType (tySubst s subst) (tySubst t subst))
         (ForAll tvs rho) -> (ForAll tvs (tySubst rho subst))
         (T_TyVar tv)     -> ty
-        (MetaTyVar (Meta u tyref))  -> Map.findWithDefault ty u subst
+        (MetaTyVar (Meta u tyref _))  -> Map.findWithDefault ty u subst
 
 tyEnvSubst :: Context -> TypeSubst -> Context
 tyEnvSubst ctx tysub =
@@ -75,7 +75,7 @@ tyEnvSubst ctx tysub =
 
 tySubstConstraints constraints tysub =
     [TypeConstrEq (tySubst t1 tysub) (tySubst t2 tysub) | TypeConstrEq t1 t2 <- constraints]
-    
+
 -------------------------------------------------
 
 tcUnifyTypes :: TypeAST -> TypeAST -> Tc UnifySoln
@@ -106,7 +106,7 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                     tcFails $ out ("Unable to unify " ++ show t1 ++ " and " ++ show t2)
 
 tcUnifyVar :: MetaTyVar -> TypeAST -> TypeSubst -> [TypeConstraint] -> Tc UnifySoln
-tcUnifyVar (Meta uniq tyref) ty tysub constraints =
+tcUnifyVar (Meta uniq tyref _) ty tysub constraints =
     let tysub' = (Map.insert uniq ty tysub) in
     tcUnifyLoop (tySubstConstraints constraints (Map.singleton uniq ty)) tysub'
 

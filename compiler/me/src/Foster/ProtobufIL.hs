@@ -95,10 +95,11 @@ dumpType x@(T_TyVar (BoundTyVar s)) =
 dumpType x@(PtrTypeAST ty) =    P'.defaultValue { PbType.tag = PbTypeTag.PTR
                                                 , type_parts = fromList $ fmap dumpType [ty]
                                                 }
-dumpType (MetaTyVar (Meta u tyref)) =
+dumpType (MetaTyVar (Meta u tyref desc)) =
   unsafePerformIO $ do mty <- readIORef tyref
                        case mty of
-                          Nothing -> error $ "Cannot dump un-unified unification variable " ++ show u  ++ "!"
+                          Nothing -> error $ "Cannot dump un-unified unification variable "
+                                               ++ show u  ++ "(" ++ desc ++ ")!"
                           Just t -> return $ dumpType t
 
 dumpType other = error $ "dumpType saw unknown type " ++ show other

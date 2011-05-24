@@ -38,7 +38,7 @@ equateTypes :: TypeAST -> TypeAST -> Maybe String -> Tc ()
 equateTypes t1 t2 msg = do
   tcOnError (liftM out msg) (tcUnifyTypes t1 t2) (\(Just soln) -> do
      let univars = concat [collectUnificationVars t | t <- [t1, t2]]
-     forM_ univars (\m@(Meta u _) -> do
+     forM_ univars (\m@(Meta u _ _) -> do
        case Map.lookup u soln of
          Nothing -> return ()
          Just t2 -> do mt1 <- readTcRef m
@@ -198,7 +198,7 @@ typecheckCallWithBaseFnType eargs eb basetype range =
 -- we can determine the types of the formals based on the actuals.
 typecheckCall ctx range base@(E_FnAST f) args maybeExpTy = do
    ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) Nothing
-   m <- newTcUnificationVar
+   m <- newTcUnificationVar "call"
    let expectedLambdaType = case maybeExpTy of
         Nothing  -> (Just (FnTypeAST (typeAST ea) (MetaTyVar m) irrelevantClosedOverVars))
         (Just t) -> (Just (FnTypeAST (MetaTyVar m)     t        irrelevantClosedOverVars))
@@ -211,7 +211,7 @@ typecheckCall ctx range base@(E_FnAST f) args maybeExpTy = do
 typecheckCall ctx range base args maybeExpTy = do
    expectedLambdaType <- case maybeExpTy of
         Nothing  -> return $ Nothing
-        (Just t) -> do m <- newTcUnificationVar
+        (Just t) -> do m <- newTcUnificationVar "inferred arg type"
                        return $ Just (FnTypeAST (MetaTyVar m) t irrelevantClosedOverVars)
         -- If we have (e1 e2) :: T, we infer that e1 :: (? -> T) and e2 :: ?
 
@@ -231,7 +231,7 @@ typecheckCall ctx range base args maybeExpTy = do
          -- to use as type arguments.
 
          -- Generate unification vars corresponding to the bound type variables
-         unificationVars <- sequence [newTcUnificationVar | _ <- tyvars]
+         unificationVars <- sequence [newTcUnificationVar "type parameter" | _ <- tyvars]
          let tyvarsAndMetavars = (List.zip [T_TyVar tv | tv <- tyvars]
                                           [MetaTyVar u | u <- unificationVars])
 
@@ -263,8 +263,8 @@ typecheckCall ctx range base args maybeExpTy = do
       m@(MetaTyVar u) -> do
             ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) Nothing
 
-            ft <- newTcUnificationVar
-            rt <- newTcUnificationVar
+            ft <- newTcUnificationVar "ret type"
+            rt <- newTcUnificationVar "arg type"
             let fnty = (FnTypeAST (MetaTyVar ft) (MetaTyVar rt) (Just []))
             equateTypes (MetaTyVar ft) (typeAST ea) Nothing
             equateTypes m fnty Nothing

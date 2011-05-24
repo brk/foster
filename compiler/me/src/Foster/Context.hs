@@ -81,16 +81,16 @@ newTcRef :: a -> Tc (IORef a)
 newTcRef v = tcLift $ newIORef v
 
 readTcRef :: MetaTyVar -> Tc (Maybe Tau)
-readTcRef (Meta _u r) = tcLift $ readIORef r
+readTcRef (Meta _ r _) = tcLift $ readIORef r
 
 writeTcMeta :: MetaTyVar -> Tau -> Tc ()
-writeTcMeta (Meta _u r) v = tcLift $ writeIORef r (Just v)
+writeTcMeta (Meta _ r _) v = tcLift $ writeIORef r (Just v)
 
-newTcUnificationVar :: Tc MetaTyVar
-newTcUnificationVar = do
+newTcUnificationVar :: String -> Tc MetaTyVar
+newTcUnificationVar desc = do
     u   <- newTcUniq
     ref <- newTcRef Nothing
-    return $ Meta u ref
+    return $ Meta u ref desc
 
 tcWithScope :: ExprAST -> Tc a -> Tc a
 tcWithScope expr (Tc f)
