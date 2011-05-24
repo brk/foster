@@ -136,6 +136,10 @@ add_custom_command(
 add_custom_command(
   OUTPUT ${GENERATED}/fosterParser.c
          ${GENERATED}/fosterLexer.c
+
+  # Make sure later stages fail if this stage fails.
+  COMMAND rm -f ${GENERATED}/fosterLexer.h
+
   COMMAND python ${PROJECT_SOURCE_DIR}/scripts/run_antlr.py
                     ${ANTLR_JAR}
                     ${GENERATED}

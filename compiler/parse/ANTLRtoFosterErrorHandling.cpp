@@ -31,10 +31,11 @@ namespace foster {
 displayRecognitionErrorFunc sgDefaultDRE;
 
 // Handler functions should return false to prevent default ANTLR printouts.
-bool handleNoViableAlt(pANTLR3_EXCEPTION, const string&, const SourceRange&);
-bool handleGenericError(pANTLR3_EXCEPTION, const string&, const SourceRange&);
-bool handleMissingToken(pANTLR3_EXCEPTION, const string&, const SourceRange&);
-bool handleUnwantedToken(pANTLR3_EXCEPTION, const string&, const SourceRange&);
+bool handleEarlyExit(      pANTLR3_EXCEPTION, const string&, const SourceRange&);
+bool handleNoViableAlt(    pANTLR3_EXCEPTION, const string&, const SourceRange&);
+bool handleGenericError(   pANTLR3_EXCEPTION, const string&, const SourceRange&);
+bool handleMissingToken(   pANTLR3_EXCEPTION, const string&, const SourceRange&);
+bool handleUnwantedToken(  pANTLR3_EXCEPTION, const string&, const SourceRange&);
 bool handleMismatchedToken(pANTLR3_EXCEPTION, const string&, const SourceRange&);
 
 inline SourceLocation advanceColumn(foster::SourceLocation s, int n) {
@@ -116,6 +117,9 @@ static void	customDisplayRecognitionErrorFunc
     case ANTLR3_UNWANTED_TOKEN_EXCEPTION:
       doDefault = handleUnwantedToken(ex, tokenText, sourceRange);
       break;
+    case ANTLR3_EARLY_EXIT_EXCEPTION:
+      doDefault = handleEarlyExit(ex, tokenText, sourceRange);
+      break;
     default:
       break;
   }
@@ -129,6 +133,24 @@ void installRecognitionErrorFilter(pANTLR3_BASE_RECOGNIZER recognizer) {
   sgDefaultDRE = recognizer->displayRecognitionError;
   recognizer->displayRecognitionError =
         customDisplayRecognitionErrorFunc;
+}
+/////////////////////////////////////////////////////////////////////
+
+bool handleEarlyExit(pANTLR3_EXCEPTION ex,
+                     const string& tokenText,
+                     const SourceRange& r) {
+  errs() << "Error: early exit at token " << tokenText << ":\n\n"
+         << r << "\n";
+  errs() << "Early exits are often caused by the lexer returning a token\n"
+         << "  that the parser was not expecting. For example,\n"
+         << "  when parsing '1+32', if lexing identifies '+32' as\n"
+         << "  a SYMBOL, instead of just '+', then the parser will\n"
+         << "  expect to see an expression, and will raise an early\n"
+         << "  exit exception if it sees anything else, like a semicolon.\n"
+         << "  I'd like to show you the previously parsed tokens, but\n"
+         << "  can't see how to do so at the moment...\n\n";
+
+  return true;
 }
 
 /////////////////////////////////////////////////////////////////////
