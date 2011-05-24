@@ -222,6 +222,25 @@ struct LLNil : public LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
+struct LLAlloc : public LLExpr {
+  LLExpr* base;
+  explicit LLAlloc(LLExpr* e) : LLExpr("LLAlloc"), base(e) {}
+  virtual llvm::Value* codegen(CodegenPass* pass);
+};
+
+struct LLDeref : public LLExpr {
+  LLExpr* base;
+  explicit LLDeref(LLExpr* e) : LLExpr("LLDeref"), base(e) {}
+  virtual llvm::Value* codegen(CodegenPass* pass);
+};
+
+struct LLStore : public LLExpr {
+  LLExpr* v; LLExpr* r;
+  explicit LLStore(LLExpr* v, LLExpr* r)
+    : LLExpr("LLStore"), v(v), r(r) {}
+  virtual llvm::Value* codegen(CodegenPass* pass);
+};
+
 /*
 struct RawPtrAST : public LLExpr {
   explicit RawPtrAST(Exprs exprs)

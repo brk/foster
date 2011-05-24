@@ -39,6 +39,9 @@ data ILExpr =
         -- codegen-ing closures so they can be mutually recursive.
         | ILClosures    [Ident] [ILClosure] ILExpr
         | ILLetVal       Ident    ILExpr    ILExpr
+        | ILAlloc               AnnVar
+        | ILDeref       TypeAST AnnVar
+        | ILStore       TypeAST AnnVar AnnVar
         | ILSubscript   TypeAST AnnVar ILExpr
         | ILIf          TypeAST AnnVar ILExpr ILExpr
         | ILCall        TypeAST AnnVar [AnnVar]
@@ -123,6 +126,12 @@ closureConvert ctx expr =
                                          e' <- g e
                                          return $ ILClosures ids closures e'
 
+            AnnAlloc a             -> do a' <- g a
+                                         nestedLets [a'] (\[x] -> ILAlloc x)
+            AnnDeref t a           -> do a' <- g a
+                                         nestedLets [a'] (\[x] -> ILDeref t x)
+            AnnStore t a b         -> do [a', b'] <- mapM g [a, b]
+                                         nestedLets [a', b'] (\[x, y] -> ILStore t x y)
             AnnSubscript t a b     -> do [a', b'] <- mapM g [a, b]
                                          nestedLets [a'] (\[va] -> ILSubscript t va b')
 
@@ -250,6 +259,9 @@ makeEnvPassingExplicit expr fnAndEnvForClosure =
             AnnIf t a b c    -> AnnIf      t (q a) (q b) (q c)
             AnnLetVar id a b -> AnnLetVar id (q a) (q b)
             AnnLetFuns ids fns e  -> AnnLetFuns ids (map fq fns) (q e)
+            AnnAlloc a     -> AnnAlloc   (q a)
+            AnnDeref t a   -> AnnDeref t (q a)
+            AnnStore t a b -> AnnStore t (q a) (q b)
             AnnSubscript t a b    -> AnnSubscript t (q a) (q b)
             AnnTuple es           -> AnnTuple (map q es)
             E_AnnTyApp t e argty  -> E_AnnTyApp t (q e) argty
@@ -319,6 +331,9 @@ typeIL (ILClosures n b e)  = typeIL e
 typeIL (ILLetVal x b e)    = typeIL e
 typeIL (ILCall t id expr)  = t
 typeIL (ILIf t a b c)      = t
+typeIL (ILAlloc v)         = RefType (typeIL $ ILVar v)
+typeIL (ILDeref t _)       = t
+typeIL (ILStore t _ _)     = t
 typeIL (ILSubscript t _ _) = t
 typeIL (ILVar (AnnVar t i)) = t
 typeIL (ILTyApp overallType tm tyArgs) = overallType
@@ -333,6 +348,9 @@ instance Structured ILExpr where
             ILLetVal   x b e    -> out $ "ILLetVal    " ++ (show x) ++ " :: " ++ (show $ typeIL b) ++ " = ... in ... "
             ILIf      t  a b c  -> out $ "ILIf        " ++ " :: " ++ show t
             ILInt ty int        -> out $ "ILInt       " ++ (litIntText int) ++ " :: " ++ show ty
+            ILAlloc v           -> out $ "ILAlloc     "
+            ILDeref t a         -> out $ "ILDeref     "
+            ILStore t a b       -> out $ "ILStore     "
             ILSubscript  t a b  -> out $ "ILSubscript " ++ " :: " ++ show t
             ILTuple     es      -> out $ "ILTuple     (size " ++ (show $ length es) ++ ")"
             ILVar (AnnVar t i)  -> out $ "ILVar       " ++ show i ++ " :: " ++ show t
@@ -348,8 +366,11 @@ instance Structured ILExpr where
             ILTuple     vs          -> map ILVar vs
             ILClosures bnds clos e  -> [e]
             ILLetVal x b e          -> [b, e]
-            ILCall    t b vs        -> [ILVar b] ++ [ILVar v | v <- vs]
-            ILIf      t  v b c      -> [ILVar v, b, c]
+            ILCall  t v vs          -> [ILVar v] ++ [ILVar v | v <- vs]
+            ILIf    t v b c         -> [ILVar v, b, c]
+            ILAlloc   v             -> [ILVar v]
+            ILDeref t v             -> [ILVar v]
+            ILStore t v w           -> [ILVar v, ILVar w]
             ILSubscript t a b       -> [ILVar a, b]
             ILVar (AnnVar t i)      -> []
             ILTyApp t e argty       -> [e]

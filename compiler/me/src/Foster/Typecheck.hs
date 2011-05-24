@@ -27,6 +27,7 @@ collectUnificationVars x =
         (ForAll tvs rho)     -> collectUnificationVars rho
         (T_TyVar tv)         -> []
         (MetaTyVar m)        -> [m]
+        (RefType    ty)      -> collectUnificationVars ty
         (PtrTypeAST ty)      -> collectUnificationVars ty
 
 -- equateTypes first attempts to unify the two given types.
@@ -129,6 +130,22 @@ typecheck ctx expr maybeExpTy =
                        ctx' <- extendContext ctx [annvar] exptupletype
                        ee <- typecheck ctx' e mt
                        return (AnnLetVar id ea ee)
+
+        E_AllocAST rng a -> do
+          ea <- typecheck ctx a Nothing
+          return (AnnAlloc ea)
+
+        E_DerefAST rng a -> do
+          ea <- typecheck ctx a Nothing -- TODO: match maybeExpTy?
+          case typeAST ea of
+            RefType    t -> return (AnnDeref t ea)
+            PtrTypeAST t -> return (AnnDeref t ea)
+            otherwise    -> tcFails (out $ "Expected deref-ed expr to have pointer type!")
+
+        E_StoreAST rng a b -> do
+          ea <- typecheck ctx a Nothing
+          eb <- typecheck ctx b Nothing
+          return (AnnStore (TupleTypeAST []) ea eb)
 
         E_SeqAST a b -> do
             ea <- typecheck ctx a Nothing --(Just TypeUnitAST)

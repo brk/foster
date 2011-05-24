@@ -218,6 +218,29 @@ void IfExprAST::show(PrettyPrintPass* pass) {
   pass->emit(this->getElseExpr());
   }
 }
+// (ref $0)
+void AllocAST::show(PrettyPrintPass* pass) {
+  ScopedBlock sb(pass);
+  pass->scan(PPToken("(ref "));
+  pass->emit(this->parts[0]);
+  pass->scan(PPToken(")"));
+}
+
+
+// $0^
+void DerefAST::show(PrettyPrintPass* pass) {
+  ScopedBlock sb(pass);
+  pass->emit(this->parts[0]);
+  pass->scan(PPToken("^"));
+}
+
+// $0 >^ $1
+void StoreAST::show(PrettyPrintPass* pass) {
+  ScopedBlock sb(pass);
+  pass->emit(this->parts[0]);
+  pass->scan(PPToken(" >^ "));
+  pass->emit(this->parts[1]);
+}
 
 // $0 [ $1 ]
 void SubscriptAST::show(PrettyPrintPass* pass) {

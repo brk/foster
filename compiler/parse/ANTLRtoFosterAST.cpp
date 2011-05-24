@@ -339,6 +339,10 @@ ExprAST* parseIf(pTree tree) {
                        rangeOf(tree));
 }
 
+ExprAST* parseRef(pTree tree) {
+  return new AllocAST(ExprAST_from(child(tree, 0)), rangeOf(tree));
+}
+
 ExprAST* parseBuiltinCompiles(pTree t) {
  return new BuiltinCompilesExprAST(ExprAST_from(child(t, 0)), rangeOf(t));
 }
@@ -352,6 +356,7 @@ ExprAST* parseAtom(pTree tree) {
   if (token == TERMVAR)  { return parseTermVar(tree); }
   if (token == INT_NUM)  { return parseIntFrom(tree); }
   if (token == IF)       { return parseIf(tree); }
+  if (token == REF)      { return parseRef(tree); }
   if (token == COMPILES) { return parseBuiltinCompiles(tree); }
 
   string text = textOf(tree);
@@ -369,10 +374,21 @@ ExprAST* parseSubscript(ExprAST* base, pTree tree) {
   return new SubscriptAST(base, ExprAST_from(child(tree, 0)), rangeOf(tree));
 }
 
+ExprAST* parseDeref(ExprAST* base, pTree tree) {
+  return new DerefAST(base, rangeOf(tree));
+}
+
+ExprAST* parseStore(ExprAST* base, pTree t) {
+  return new StoreAST(base, parseTermVar(child(t, 0)), rangeOf(t));
+}
+
 ExprAST* parseSuffix(ExprAST* base, pTree tree) {
   int token = typeOf(tree);
 
   if (token == SUBSCRIPT) { return parseSubscript(base, tree); }
+  if (token == DEREF)     { return parseDeref(base, tree); }
+  if (token == ASSIGN_TO) { return parseStore(base, tree); }
+
   display_pTree(tree, 2);
   foster::EDiag() << "returning NULL ExprAST for parseSuffix token " << str(tree->getToken(tree));
   return NULL;

@@ -253,6 +253,23 @@ void setFunctionArgumentNames(llvm::Function* F,
   }
 }
 
+llvm::Value* LLAlloc::codegen(CodegenPass* pass) {
+  ASSERT(this && this->base && this->base->type);
+  return pass->emitMalloc(this->base->type->getLLVMType());
+}
+
+llvm::Value* LLDeref::codegen(CodegenPass* pass) {
+  return builder.CreateLoad(this->base->codegen(pass),
+                            /*isVolatile=*/ false,
+                            "");
+}
+
+llvm::Value* LLStore::codegen(CodegenPass* pass) {
+  llvm::Value* vv = this->v->codegen(pass);
+  llvm::Value* vr = this->r->codegen(pass);
+  return builder.CreateStore(vv, vr, /*isVolatile=*/ false);
+}
+
 llvm::Value* LLLetVal::codegen(CodegenPass* pass) {
   llvm::outs() << "llletval " << name << " = "  << boundexpr->tag << " in " << inexpr->tag << "\n";
 

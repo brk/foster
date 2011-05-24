@@ -183,6 +183,22 @@ LLExpr* parseVar(const pb::Expr& e) {
   return new LLVar(e.name());
 }
 
+
+LLExpr* parseAlloc(const pb::Expr& e) {
+  return new LLAlloc(LLExpr_from_pb(& e.parts(0)));
+}
+
+LLExpr* parseDeref(const pb::Expr& e) {
+  return new LLDeref(LLExpr_from_pb(& e.parts(0)));
+}
+
+
+LLExpr* parseStore(const pb::Expr& e) {
+  return new LLStore(
+      LLExpr_from_pb(& e.parts(0)),
+      LLExpr_from_pb(& e.parts(1)));
+}
+
 } // unnamed namespace
 
 ////////////////////////////////////////////////////////////////////
@@ -213,7 +229,9 @@ LLExpr* LLExpr_from_pb(const pb::Expr* pe) {
 //  case pb::Expr::SIMD:      rv = parseSimd(e); break;
   case pb::Expr::IL_CORO_INVOKE: rv = parseCoroInvoke(e); break;
   case pb::Expr::IL_CORO_CREATE: rv = parseCoroCreate(e); break;
-
+  case pb::Expr::IL_ALLOC:     rv = parseAlloc(e); break;
+  case pb::Expr::IL_DEREF:     rv = parseDeref(e); break;
+  case pb::Expr::IL_STORE:     rv = parseStore(e); break;
   case pb::Expr::IL_SUBSCRIPT: rv = parseSubscript(e); break;
   case pb::Expr::IL_TUPLE:     rv = parseTuple(e); break;
   case pb::Expr::IL_VAR:       rv = parseVar(e); break;

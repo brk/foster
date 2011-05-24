@@ -91,7 +91,7 @@ dumpType x@(T_TyVar (BoundTyVar s)) =
                                 P'.defaultValue { PbType.tag  = PbTypeTag.TYPE_VARIABLE
                                                 , PbType.name = Just $ u8fromString s
                                                 }
-
+dumpType x@(RefType ty) = dumpType (PtrTypeAST ty)
 dumpType x@(PtrTypeAST ty) =    P'.defaultValue { PbType.tag = PbTypeTag.PTR
                                                 , type_parts = fromList $ fmap dumpType [ty]
                                                 }
@@ -139,6 +139,21 @@ dumpExpr (ILVar (AnnVar t i)) =
 dumpExpr x@(ILTuple vs) =
     P'.defaultValue { PbExpr.parts = fromList [dumpExpr $ ILVar v | v <- vs]
                     , PbExpr.tag   = IL_TUPLE
+                    , PbExpr.type' = Just $ dumpType (typeIL x)  }
+
+dumpExpr x@(ILAlloc a) =
+    P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [ILVar a])
+                    , PbExpr.tag   = IL_ALLOC
+                    , PbExpr.type' = Just $ dumpType (PtrTypeAST $ typeIL (ILVar a))  }
+
+dumpExpr x@(ILDeref t a) =
+    P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [ILVar a])
+                    , PbExpr.tag   = IL_DEREF
+                    , PbExpr.type' = Just $ dumpType (typeIL x)  }
+
+dumpExpr x@(ILStore t a b ) =
+    P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [ILVar a, ILVar b])
+                    , PbExpr.tag   = IL_STORE
                     , PbExpr.type' = Just $ dumpType (typeIL x)  }
 
 dumpExpr x@(ILSubscript t a b ) =

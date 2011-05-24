@@ -35,8 +35,10 @@ import Foster.Fepb.Defn     as Defn
 import Foster.Fepb.PBIf     as PBIf
 import Foster.Fepb.Expr     as PbExpr
 import Foster.Fepb.SourceModule as SourceModule
-import Foster.Fepb.Expr.Tag(Tag(PB_INT, BOOL, VAR, TUPLE, COMPILES, -- MODULE, TY_APP,
-                                      IF, VAL_ABS, LET, CALL, SEQ, SUBSCRIPT))
+import Foster.Fepb.Expr.Tag(Tag(IF, LET, VAR, SEQ,
+                                BOOL, CALL, -- MODULE, TY_APP,
+                                ALLOC, DEREF, STORE, TUPLE, PB_INT,
+                                COMPILES, VAL_ABS, SUBSCRIPT))
 import qualified Foster.Fepb.SourceRange as Pb
 import qualified Foster.Fepb.SourceLocation as Pb
 
@@ -151,6 +153,21 @@ buildSeqs [a]   = a
 buildSeqs [a,b] = E_SeqAST a b
 buildSeqs (a:b) = E_SeqAST a (buildSeqs b)
 
+parseAlloc pbexpr lines =
+    let range = parseRange pbexpr lines in
+    let parts = PbExpr.parts pbexpr in
+    E_AllocAST range (part 0 parts lines)
+
+parseStore pbexpr lines =
+    let range = parseRange pbexpr lines in
+    let parts = PbExpr.parts pbexpr in
+    E_StoreAST range (part 0 parts lines) (part 1 parts lines)
+
+parseDeref pbexpr lines =
+    let range = parseRange pbexpr lines in
+    let parts = PbExpr.parts pbexpr in
+    E_DerefAST range (part 0 parts lines)
+
 parseSubscript pbexpr lines =
     let range = parseRange pbexpr lines in
     let parts = PbExpr.parts pbexpr in
@@ -222,6 +239,9 @@ parseExpr pbexpr lines =
                 CALL      -> parseCall
                 SEQ       -> parseSeq
                 LET       -> parseLet
+                ALLOC     -> parseAlloc
+                DEREF     -> parseDeref
+                STORE     -> parseStore
                 COMPILES  -> parseCompiles
                 SUBSCRIPT -> parseSubscript
                 otherwise -> error $ "parseExpr saw unknown tag: " ++ (show $ PbExpr.tag pbexpr) ++ "\n"

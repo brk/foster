@@ -31,6 +31,9 @@ data ExprAST =
         | E_CompilesAST   ExprAST CompilesStatus
         | E_IfAST         ExprAST ExprAST ExprAST
         | E_SeqAST        ExprAST ExprAST
+        | E_AllocAST      ESourceRange ExprAST
+        | E_DerefAST      ESourceRange ExprAST
+        | E_StoreAST      ESourceRange ExprAST ExprAST
         | E_SubscriptAST  { subscriptBase  :: ExprAST
                           , subscriptIndex :: ExprAST
                           , subscriptRange :: ESourceRange }
@@ -77,6 +80,10 @@ data AnnExpr =
         -- because they are compiled differently from non-recursive closures.
         | AnnLetFuns    [Ident] [AnnFn] AnnExpr
 
+        | AnnAlloc      AnnExpr
+        | AnnDeref      TypeAST AnnExpr
+        | AnnStore      TypeAST AnnExpr AnnExpr
+
         -- Subscripts get an overall type
         | AnnSubscript  TypeAST AnnExpr AnnExpr
 
@@ -114,6 +121,9 @@ typeAST (AnnCompiles c msg)  = fosBoolType
 typeAST (AnnIf t a b c)      = t
 typeAST (AnnLetVar _ a b)    = typeAST b
 typeAST (AnnLetFuns _ _ e)   = typeAST e
+typeAST (AnnAlloc e)         = RefType (typeAST e)
+typeAST (AnnDeref t _)       = t
+typeAST (AnnStore t _ _)     = t
 typeAST (AnnSubscript t _ _) = t
 typeAST (E_AnnVar (AnnVar t s)) = t
 typeAST (E_AnnTyApp substitutedTy tm tyArgs) = substitutedTy
@@ -138,6 +148,9 @@ instance Structured ExprAST where
             E_LetRec rnd bnz e t -> out $ "LetRec       "
             E_LetAST rng bnd e t -> out $ "LetAST       " ++ (case bnd of (TermBinding v _) -> evarName v)
             E_SeqAST   a b       -> out $ "SeqAST       "
+            E_AllocAST rng a     -> out $ "AllocAST     "
+            E_DerefAST rng a     -> out $ "DerefAST     "
+            E_StoreAST rng a b   -> out $ "StoreAST     "
             E_SubscriptAST a b r -> out $ "SubscriptAST "
             E_TupleAST     es    -> out $ "TupleAST     "
             E_VarAST v           -> out $ "VarAST       " ++ evarName v ++ " :: " ++ show (evarMaybeType v)
@@ -152,6 +165,9 @@ instance Structured ExprAST where
             E_LetRec rnd bnz e t -> [termBindingExpr bnd | bnd <- bnz] ++ [e]
             E_LetAST rng bnd e t -> (termBindingExpr bnd):[e]
             E_SeqAST       a b   -> unbuildSeqs e
+            E_AllocAST rng a     -> [a]
+            E_DerefAST rng a     -> [a]
+            E_StoreAST rng a b   -> [a, b]
             E_SubscriptAST a b r -> [a, b]
             E_TupleAST     es    -> es
             E_VarAST _           -> []
@@ -183,6 +199,9 @@ instance Structured AnnExpr where
             E_AnnFn annFn        -> out $ "AnnFn " ++ fnNameA annFn ++ " // " ++ (show $ annFnBoundNames annFn) ++ " :: " ++ show (annFnType annFn)
             AnnLetVar id    a b  -> out $ "AnnLetVar    " ++ show id ++ " :: " ++ show (typeAST b)
             AnnLetFuns ids fns e -> out $ "AnnLetFuns   " ++ show ids
+            AnnAlloc        a    -> out $ "AnnAlloc     "
+            AnnDeref      t a    -> out $ "AnnDeref     "
+            AnnStore      t a b  -> out $ "AnnStore     "
             AnnSubscript  t a b  -> out $ "AnnSubscript " ++ " :: " ++ show t
             AnnTuple     es      -> out $ "AnnTuple     "
             E_AnnVar (AnnVar t v) -> out $ "AnnVar       " ++ show v ++ " :: " ++ show t
@@ -197,6 +216,9 @@ instance Structured AnnExpr where
             E_AnnFn annFn                        -> [annFnBody annFn]
             AnnLetVar _ a b                      -> [a, b]
             AnnLetFuns ids fns e                 -> (map E_AnnFn fns) ++ [e]
+            AnnAlloc        a                    -> [a]
+            AnnDeref      t a                    -> [a]
+            AnnStore      t a b                  -> [a, b]
             AnnSubscript t a b                   -> [a, b]
             AnnTuple     es                      -> es
             E_AnnVar      v                      -> []

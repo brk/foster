@@ -38,6 +38,9 @@ data SSPrimId = PrimCoroInvoke | PrimCoroCreate | PrimCoroYield
 data IExpr =
           ITuple [Ident]
         | IVar    Ident
+        | IAlloc  Ident
+        | IDeref  Ident
+        | IStore  Ident Ident
         -- Procedures may be implicitly recursive,
         -- but we need to put a smidgen of effort into
         -- codegen-ing closures so they can be mutually recursive.
@@ -68,6 +71,9 @@ ssTermOfExpr expr =
     ILCall    t b vs       -> SSTmExpr  $ ICall (avarIdent b) (map avarIdent vs)
     ILIf      t  v b c     -> SSTmExpr  $ IIf (avarIdent v) (tr b) (tr c)
     ILSubscript t a b      -> SSTmExpr  $ ISubscript (avarIdent a) (tr b)
+    ILAlloc a              -> SSTmExpr  $ IAlloc (avarIdent a)
+    ILDeref t a            -> SSTmExpr  $ IDeref (avarIdent a)
+    ILStore t a b          -> SSTmExpr  $ IStore (avarIdent a) (avarIdent b)
     ILTyApp t e argty      -> SSTmExpr  $ ITyApp (tr e) argty
 
 -- ... which lifts in a  straightfoward way to procedure definitions.
@@ -173,13 +179,13 @@ coroFromClosure gs (ILClosure id avars) cenv =
                   , coroStack = [(env, Prelude.id)]
                   } in
   ((extendHeap gs (SSCoro coro)), coro)
-    where
-      extendHeap :: MachineState -> SSValue -> (Location, MachineState)
-      extendHeap gs val =
-        let heap = stHeap gs in
-        let loc = nextLocation (hpBump heap) in
-        let hmp = Map.insert loc val (hpMap heap) in
-        (loc, gs { stHeap = Heap { hpBump = loc, hpMap = hmp } })
+
+extendHeap :: MachineState -> SSValue -> (Location, MachineState)
+extendHeap gs val =
+  let heap = stHeap gs in
+  let loc = nextLocation (hpBump heap) in
+  let hmp = Map.insert loc val (hpMap heap) in
+  (loc, gs { stHeap = Heap { hpBump = loc, hpMap = hmp } })
 
 tryLookupProc gs id = Map.lookup id (stProcmap gs)
 
@@ -245,8 +251,17 @@ stepExpr :: MachineState -> IExpr -> IO MachineState
 stepExpr gs expr = do
   let coro = stCoro gs
   case expr of
-    IVar avar  -> do return $ withTerm gs (SSTmValue $ getval gs avar)
-    ITuple vs  -> do return $ withTerm gs (SSTmValue $ SSTuple (map (getval gs) vs))
+    IVar i    -> do return $ withTerm gs (SSTmValue $ getval gs i)
+    ITuple vs -> do return $ withTerm gs (SSTmValue $ SSTuple (map (getval gs) vs))
+
+    IAlloc i     -> do let (loc, gs') = extendHeap gs (getval gs i)
+                       return $ withTerm gs' (SSTmValue $ SSLocation loc)
+    IDeref i     -> do let (SSLocation z) = getval gs i
+                       return $ withTerm gs  (SSTmValue $ lookupHeap gs z)
+    IStore iv ir -> do let (SSLocation z) = getval gs ir
+                       let gs' = modifyHeapWith gs z (\_ -> getval gs iv)
+                       return $ withTerm gs' (SSTmValue $ SSTuple [])
+
     IClosures bnds clos e  ->
       -- This is not quite right; closures should close over each other!
       let mkSSClosure clo = SSClosure clo (map ((getval gs).avarIdent)

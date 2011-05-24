@@ -61,7 +61,9 @@ message Expr {
     SEQ       = 24;
     TY_APP    = 25;
     SUBSCRIPT = 26;
-
+    ALLOC     = 27;
+    DEREF     = 28;
+    STORE     = 29;
     COMPILES  = 31;
     IF        = 32;
   }

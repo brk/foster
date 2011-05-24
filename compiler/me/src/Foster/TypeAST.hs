@@ -29,7 +29,8 @@ data TypeAST =
          | ForAll           [TyVar] Rho
          | T_TyVar          TyVar
          | MetaTyVar        MetaTyVar
-         | PtrTypeAST       TypeAST
+         | RefType          TypeAST
+         | PtrTypeAST       TypeAST -- TODO split this into ILType
 
 data TyVar = BoundTyVar String -- bound by a ForAll, that is
            | SkolemTyVar String Uniq deriving (Eq)
@@ -53,6 +54,7 @@ instance Show TypeAST where
         (ForAll tvs rho) -> "(ForAll " ++ show tvs ++ ". " ++ show rho ++ ")"
         (T_TyVar tv)     -> show tv
         (MetaTyVar (Meta u tyref desc))  -> "(~!" ++ show u ++ ":" ++ desc ++ ")"
+        (RefType    ty)  -> "(Ref " ++ show ty ++ ")"
         (PtrTypeAST ty)  -> "(Ptr " ++ show ty ++ ")"
 
 instance Eq TypeAST where

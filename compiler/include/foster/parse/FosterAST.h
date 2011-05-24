@@ -163,6 +163,46 @@ struct TupleExprAST : public ExprAST {
   virtual void show(PrettyPrintPass*    pass);
 };
 
+//////////////////////////////////////////////
+//////////////////////////////////////////////
+
+// (ref base)
+struct AllocAST : public ExprAST {
+  explicit AllocAST(ExprAST* base,
+                    foster::SourceRange sourceRange)
+    : ExprAST("AllocAST", sourceRange) {
+    this->parts.push_back(base);
+  }
+  virtual void dump(DumpToProtobufPass* pass);
+  virtual void show(PrettyPrintPass*    pass);
+};
+
+// base^
+struct DerefAST : public ExprAST {
+  explicit DerefAST(ExprAST* base,
+                   foster::SourceRange sourceRange)
+    : ExprAST("DerefAST", sourceRange) {
+    this->parts.push_back(base);
+  }
+  virtual void dump(DumpToProtobufPass* pass);
+  virtual void show(PrettyPrintPass*    pass);
+};
+
+// ev >^ er
+struct StoreAST : public ExprAST {
+  explicit StoreAST(ExprAST* ev, ExprAST* er,
+                    foster::SourceRange sourceRange)
+    : ExprAST("StoreAST", sourceRange) {
+    this->parts.push_back(ev);
+    this->parts.push_back(er);
+  }
+  virtual void dump(DumpToProtobufPass* pass);
+  virtual void show(PrettyPrintPass*    pass);
+};
+
+//////////////////////////////////////////////
+//////////////////////////////////////////////
+
 // base[index]
 struct SubscriptAST : public ExprAST {
   explicit SubscriptAST(ExprAST* base, ExprAST* index,
