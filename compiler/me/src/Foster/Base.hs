@@ -97,8 +97,9 @@ irrelevantIdentNum = (-12345) :: Int
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
-data ModuleAST fnType = ModuleAST {
-          moduleASTfunctions   :: [fnType]
+data ModuleAST fnCtor ty = ModuleAST {
+          moduleASTfunctions   :: [fnCtor]
+        , moduleASTdecls       :: [(String, ty)]
         , moduleASTsourceLines :: SourceLines
      }
 

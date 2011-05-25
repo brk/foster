@@ -32,6 +32,7 @@ import Foster.Fepb.Formal   as PbFormal
 import Foster.Fepb.TermBinding    as PbTermBinding
 import Foster.Fepb.PBLet    as PBLet
 import Foster.Fepb.Defn     as Defn
+import Foster.Fepb.Decl     as Decl
 import Foster.Fepb.PBIf     as PBIf
 import Foster.Fepb.Expr     as PbExpr
 import Foster.Fepb.SourceModule as SourceModule
@@ -62,7 +63,7 @@ identFullString = show
 -- Primitive values have minimal C-level name mangling, at the moment...
 dumpIdent :: Ident -> String
 dumpIdent i = let p = identPrefix i in
-              if (isJust $ lookup p rootContextPairs) || identNum i < 0
+              if (isJust $ lookup p rootContextDecls) || identNum i < 0
                 then identPrefix i
                 else identFullString i
 
@@ -200,7 +201,8 @@ toplevel (FnAST _ _ _ _ _ True ) =
                 "should not have their top-level bit set before we do it!"
 
 parseModule name decls defns lines =
-    ModuleAST [toplevel (parseFn e lines) | (Defn nm e) <- defns]
+    ModuleAST [toplevel (parseFn e lines)  | (Defn nm e) <- defns]
+              [(uToString nm, parseType t) | (Decl nm t) <- decls]
               lines
 
 getVarName :: ExprAST -> String
@@ -260,7 +262,7 @@ parseExpr pbexpr lines =
         in
    fn pbexpr lines
 
-parseSourceModule :: SourceModule -> ModuleAST FnAST
+parseSourceModule :: SourceModule -> ModuleAST FnAST TypeAST
 parseSourceModule sm =
     let lines = sourceLines sm in
     parseModule (uToString $ SourceModule.name sm)

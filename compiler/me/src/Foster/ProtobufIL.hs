@@ -59,7 +59,7 @@ identFullString = show
 -- Primitive values have minimal C-level name mangling, at the moment...
 dumpIdent :: Ident -> P'.Utf8
 dumpIdent i = let p = identPrefix i in
-              if (isJust $ lookup p rootContextPairs) || identNum i < 0
+              if (isJust $ lookup p rootContextDecls) || identNum i < 0
                 then u8fromString $ identPrefix i
                 else u8fromString $ identFullString i
 

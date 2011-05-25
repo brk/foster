@@ -1,3 +1,6 @@
+expect_i32b :: { i32 => () };
+print_i32b  :: { i32 => () };
+
 main = {
   expect_i32b 11100_2;
   print_i32b (primitive_bitshl_i32 111_2 2);

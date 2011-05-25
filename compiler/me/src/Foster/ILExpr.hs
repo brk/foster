@@ -82,7 +82,7 @@ ilmPutProc p = do
         put (old { ilmProcDefs = p:(ilmProcDefs old) })
         return p
 
-closureConvertAndLift :: Context -> (ModuleAST AnnFn) -> ILProgram
+closureConvertAndLift :: Context -> (ModuleAST AnnFn TypeAST) -> ILProgram
 closureConvertAndLift ctx m =
     let fns = moduleASTfunctions m in
     -- We lambda lift top level functions, since we know they don't have any "real" free vars.

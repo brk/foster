@@ -87,8 +87,10 @@ void dumpModule(DumpToProtobufPass* pass,
   sm.set_name(mod->name);
 
   for (size_t i = 0; i < mod->decl_parts.size(); ++i) {
-    //pb::Decl* d = sm.add_decl();
-    ASSERT(false && " dumpModule");
+    pb::Decl* d = sm.add_decl();
+    d->set_name(mod->decl_parts[i]->name);
+    DumpTypeToProtobufPass dt(d->mutable_type());
+    mod->decl_parts[i]->type->dump(&dt);
   }
 
   for (size_t i = 0; i < mod->defn_parts.size(); ++i) {

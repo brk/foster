@@ -98,16 +98,13 @@ coroInvokeType args rets = mkFnType ((mkCoroType args rets) : args) rets
 coroYieldType  args rets = mkFnType rets args
 coroCreateType args rets = mkFnType [mkFnType args rets] [mkCoroType args rets]
 
-rootContextPairs =
+rootContextDecls =
     [(,) "llvm_readcyclecounter" $ mkFnType [] [i64]
     ,(,) "expect_i32"  $ mkFnType [i32] [i32]
     ,(,)  "print_i32"  $ mkFnType [i32] [i32]
-    ,(,) "expect_i32b" $ mkFnType [i32] [i32]
-    ,(,)  "print_i32b" $ mkFnType [i32] [i32]
     ,(,) "expect_i64"  $ mkFnType [i64] [i32]
     ,(,)  "print_i64"  $ mkFnType [i64] [i32]
-    ,(,) "expect_i64b" $ mkFnType [i64] [i32]
-    ,(,)  "print_i64b" $ mkFnType [i64] [i32]
+
     ,(,)   "read_i32"  $ mkFnType  []   [i32]
     ,(,) "expect_i1"   $ mkFnType [i1] [i32]
     ,(,)  "print_i1"   $ mkFnType [i1] [i32]

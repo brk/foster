@@ -57,9 +57,9 @@ instance FnLike AnnFn where
         -- remove recursive function name calls
         Set.toList $ Set.filter (\name -> fnName f /= name) nonPrimitives
 
-computeRootContextBindings :: Uniq -> ([ContextBinding], Uniq)
-computeRootContextBindings u =
-   runState (mapM pair2binding rootContextPairs) u where
+computeContextBindings :: Uniq -> [(String, TypeAST)] -> ([ContextBinding], Uniq)
+computeContextBindings u decls =
+   runState (mapM pair2binding decls) u where
         pair2binding :: (String, TypeAST) -> State Uniq ContextBinding
         pair2binding (nm, ty) = do
                uniq <- get
@@ -116,10 +116,12 @@ mapFoldM (a:as) b1 f = do
     (cs2, b3) <- mapFoldM as b2 f
     return (cs1 ++ cs2, b3)
 
-typecheckModule :: Bool -> ModuleAST FnAST -> TcEnv -> IO (Maybe (Context, ModuleAST AnnFn))
+typecheckModule :: Bool -> ModuleAST FnAST TypeAST -> TcEnv
+                        -> IO (Maybe (Context, ModuleAST AnnFn TypeAST))
 typecheckModule verboseMode mod tcenv = do
     let fns = moduleASTfunctions mod
-    let (bindings, u) = computeRootContextBindings 1
+    let (bindings, u) = computeContextBindings 1
+                         (rootContextDecls ++ moduleASTdecls mod)
     let sortedFns = buildCallGraph fns bindings -- :: [SCC FnAST]
     putStrLn $ "Function SCC list : " ++ show [(fnName f, fnFreeVariables f bindings) | fns <- sortedFns, f <- Graph.flattenSCC fns]
     let ctx = Context bindings verboseMode
@@ -128,6 +130,7 @@ typecheckModule verboseMode mod tcenv = do
     if allOK annFns
         then return $ Just (extctx,
                             ModuleAST [f | (OK (E_AnnFn f)) <- annFns]
+                                      (moduleASTdecls mod)
                                       (moduleASTsourceLines mod))
         else return $ Nothing
 
