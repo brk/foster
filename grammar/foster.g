@@ -74,12 +74,12 @@ suffix  :       ':[' t (',' t)* ']'                      -> ^(VAL_TYPE_APP t+)  
 //      |       '.(' e ')'                      -> ^(VAL_APP e)
   ;
 
-ifexpr                  :       'if' cond=e 'then' thenpart=e 'else' elsepart=e 'end'
+ifexpr                  :       'if' cond=e 'then' thenpart=e_seq 'else' elsepart=e_seq 'end'
           -> ^(IF $cond $thenpart $elsepart);
 
 binding : x '=' e ';' -> ^(BINDING x e);
 
-lets    : 'let' binding+ 'in' e 'end'   -> ^(LETS binding+ e);
+lets    : 'let' binding+ 'in' e_seq 'end'   -> ^(LETS binding+ e_seq);
 
 // atom is really (type/val abstraction)
 letrec : 'rec' binding+ 'in' atom 'end' -> ^(LETREC binding+ atom);

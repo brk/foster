@@ -1,12 +1,13 @@
 main = {
-  let s  = llvm_readcyclecounter ();
-      j0 = expect_i32 2;
-      j1 = print_i32 (opaquely_i32 2);
-      e  = llvm_readcyclecounter ();
-      j2 = expect_i1 true;
-      j3 = print_i1
-               (primitive_<_i64
+  let s = llvm_readcyclecounter ();
+  in
+    expect_i32 2;
+    print_i32 (opaquely_i32 2);
+    let e = llvm_readcyclecounter (); in
+      expect_i1 true;
+      print_i1 (primitive_<_i64
                  (primitive_sext_i64_i32 128)
                  (primitive_-_i64 e s));
-   in 0 end
+      0 end
+  end
 };

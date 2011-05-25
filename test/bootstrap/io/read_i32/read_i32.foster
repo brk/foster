@@ -3,16 +3,16 @@
 // feeds the data to stdin
 
 main = {
-  let j0 = expect_i32 2;
-      j1 = print_i32 (read_i32 ());
+  expect_i32 2;
+  print_i32 (read_i32 ());
 
-      j2 = expect_i32 3;
-      j3 = print_i32 (read_i32 ());
+  expect_i32 3;
+  print_i32 (read_i32 ());
 
-      j4 = expect_i32 5;
-      j5 = print_i32 (read_i32 ());
+  expect_i32 5;
+  print_i32 (read_i32 ());
 
-      j6 = expect_i32 8;
-      j7 = print_i32 (read_i32 ());
-   in 0 end
+  expect_i32 8;
+  print_i32 (read_i32 ());
+  0
 };

@@ -1,10 +1,10 @@
 main = {
-  let j0 = expect_i1 (true);
-      j1 = print_i1 (__COMPILES__ defined-later());
+  expect_i1 (true);
+  print_i1 (__COMPILES__ defined-later());
 
-      j2 = expect_i1(false);
-      j3 = print_i1 (__COMPILES__ not-defined-later());
-   in 0 end
+  expect_i1(false);
+  print_i1 (__COMPILES__ not-defined-later());
+  0
 };
 
 defined-later = { 0 };

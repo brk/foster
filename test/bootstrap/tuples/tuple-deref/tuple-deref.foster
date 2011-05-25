@@ -1,33 +1,33 @@
 main = {
-  let j00 = expect_i32 42;
-      j01 = print_i32( (42, true)[0] );
+   expect_i32 42;
+   print_i32( (42, true)[0] );
 
-      j02 = expect_i1 true;
-      j03 = print_i1( (42, true)[1] );
+   expect_i1 true;
+   print_i1( (42, true)[1] );
 
-      j04 = expect_i32 44;
-      j05 = print_i32( (true, 43, 44)[2] );
+   expect_i32 44;
+   print_i32( (true, 43, 44)[2] );
 
-      j06 = expect_i32 42;
-      j07 = print_i32( (42, 43, 44)[0] );
+   expect_i32 42;
+   print_i32( (42, 43, 44)[0] );
 
-      j08 = expect_i1 false;
-      j09 = print_i1 (__COMPILES__ (42, 43, 44)[333] );
+   expect_i1 false;
+   print_i1 (__COMPILES__ (42, 43, 44)[333] );
 
-  //  j10 = expect_i1 false; // TODO this is misparsed at the moment, indexing takes int and not expr
-  //  j11 = print_i1 (__COMPILES__ (42, 43, 44)[0 - 1] );
+// expect_i1 false; // TODO this is misparsed at the moment, indexing takes int and not expr
+// print_i1 (__COMPILES__ (42, 43, 44)[0 - 1] );
 
-      j12 = expect_i1 false;
-      j13 = print_i1 (__COMPILES__ (42, 43, 44)[true] );
+   expect_i1 false;
+   print_i1 (__COMPILES__ (42, 43, 44)[true] );
 
-  //  j14 = expect_i1 true; // LLVM disallows empty structs
-  //  j15 = print_i1 (__COMPILES__ ());
+// expect_i1 true; // LLVM disallows empty structs
+// print_i1 (__COMPILES__ ());
 
-      j16 = expect_i1 false; // ... but you can't index into it!
-      j17 = print_i1 (__COMPILES__ ()[0] );
+   expect_i1 false; // ... but you can't index into it!
+   print_i1 (__COMPILES__ ()[0] );
 
-      j18 = expect_i1 false;
-      j19 = print_i1 (__COMPILES__ true[0] );
-   in 0 end
+   expect_i1 false;
+   print_i1 (__COMPILES__ true[0] );
+   0
 };
 

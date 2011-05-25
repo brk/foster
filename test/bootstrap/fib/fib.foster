@@ -1,14 +1,14 @@
 // http://www.research.att.com/~njas/sequences/table?a=45&fmt=4
 main = {
-  let j0 = expect_i32 55;
-      j1 = print_i32 (fib-naive (opaquely_i32 10));
+  expect_i32 55;
+  print_i32 (fib-naive (opaquely_i32 10));
 
-      j2 = expect_i32 610;
-      j3 = print_i32 (fib-naive (opaquely_i32 15));
+  expect_i32 610;
+  print_i32 (fib-naive (opaquely_i32 15));
 
-      j4 = expect_i32 6765;
-      j5 = print_i32 (fib-tailrecursive (opaquely_i32 20) 0 1);
-   in 0 end
+  expect_i32 6765;
+  print_i32 (fib-tailrecursive (opaquely_i32 20) 0 1);
+  0
 };
 
 fib-naive = { x : i32 =>

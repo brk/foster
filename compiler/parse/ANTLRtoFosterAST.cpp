@@ -318,9 +318,9 @@ Binding parseBinding(pTree tree) {
   return Binding(textOfVar(child(tree, 0)), ExprAST_from(child(tree, 1)));
 }
 
-// ^(LETS binding+ e)
+// ^(LETS binding+ e_seq)
 ExprAST* parseLets(pTree tree) {
-  ExprAST* e = ExprAST_from(child(tree, getChildCount(tree) - 1));
+  ExprAST* e = parseSeq(child(tree, getChildCount(tree) - 1));
   std::vector<Binding> bindings;
   for (size_t i = 0; i < getChildCount(tree) - 1; ++i) {
     bindings.push_back(parseBinding(child(tree, i)));
@@ -332,10 +332,11 @@ ExprAST* parseTermVar(pTree t) {
   return new VariableAST(textOf(child(t, 0)), NULL, rangeOf(t));
 }
 
+// ^(IF e e_seq e_seq)
 ExprAST* parseIf(pTree tree) {
   return new IfExprAST(ExprAST_from(child(tree, 0)),
-                       ExprAST_from(child(tree, 1)),
-                       ExprAST_from(child(tree, 2)),
+                       parseSeq(child(tree, 1)),
+                       parseSeq(child(tree, 2)),
                        rangeOf(tree));
 }
 
