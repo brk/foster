@@ -1,0 +1,23 @@
+main = {
+  simpler();
+  capture();
+};
+
+simpler = {
+  let r = (ref 0);
+     j0 = expect_i32 0;
+     j1 =  print_i32 r^;
+     j2 = 3 >^ r;
+     j3 = expect_i32 3;
+     j4 =  print_i32 r^;
+  in 0 end
+};
+
+capture = {
+  let r = (ref 0);
+      f = { r^ };
+     j2 = 2 >^ r;
+     j3 = expect_i32 2;
+     j4 =  print_i32 (f ());
+  in 0 end
+};
