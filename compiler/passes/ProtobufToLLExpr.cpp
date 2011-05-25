@@ -156,41 +156,17 @@ LLExpr* parseTuple(const pb::Expr& e) {
   return rv;
 }
 
-LLCoroInvoke* parseCoroInvoke(const pb::CoroPrim& e) {
-  return new LLCoroInvoke(
-      TypeAST_from_pb(& e.ret_type()),
-      TypeAST_from_pb(& e.arg_type()));
+LLExpr* parseCoroPrim(const pb::Expr& e) {
+  const pb::CoroPrim& p = e.coro_prim();
+  TypeAST* r = TypeAST_from_pb(& p.ret_type());
+  TypeAST* a = TypeAST_from_pb(& p.arg_type());
+  switch (e.tag()) {
+  case pb::Expr::IL_CORO_INVOKE: return new LLCoroPrim("coro_invoke", r, a);
+  case pb::Expr::IL_CORO_CREATE: return new LLCoroPrim("coro_create", r, a);
+  case pb::Expr::IL_CORO_YIELD : return new LLCoroPrim("coro_yield",  r, a);
+  default: return NULL;
+  }
 }
-
-LLExpr* parseCoroInvoke(const pb::Expr& e) {
-  ASSERT(e.has_coro_prim());
-  return parseCoroInvoke(e.coro_prim());
-}
-
-
-LLCoroCreate* parseCoroCreate(const pb::CoroPrim& e) {
-  return new LLCoroCreate(
-      TypeAST_from_pb(& e.ret_type()),
-      TypeAST_from_pb(& e.arg_type()));
-}
-
-LLExpr* parseCoroCreate(const pb::Expr& e) {
-  ASSERT(e.has_coro_prim());
-  return parseCoroCreate(e.coro_prim());
-}
-
-
-LLCoroYield* parseCoroYield(const pb::CoroPrim& e) {
-  return new LLCoroYield(
-      TypeAST_from_pb(& e.ret_type()),
-      TypeAST_from_pb(& e.arg_type()));
-}
-
-LLExpr* parseCoroYield(const pb::Expr& e) {
-  ASSERT(e.has_coro_prim());
-  return parseCoroYield(e.coro_prim());
-}
-
 
 LLExpr* parseVar(const pb::Expr& e) {
   return new LLVar(e.name());
@@ -239,9 +215,9 @@ LLExpr* LLExpr_from_pb(const pb::Expr* pe) {
   case pb::Expr::IL_LETVALS:   rv = parseLetVals(e); break;
   case pb::Expr::IL_CLOSURES:  rv = parseClosures(e); break;
 //  case pb::Expr::SIMD:      rv = parseSimd(e); break;
-  case pb::Expr::IL_CORO_INVOKE: rv = parseCoroInvoke(e); break;
-  case pb::Expr::IL_CORO_CREATE: rv = parseCoroCreate(e); break;
-  case pb::Expr::IL_CORO_YIELD : rv = parseCoroYield(e); break;
+  case pb::Expr::IL_CORO_INVOKE: rv = parseCoroPrim(e); break;
+  case pb::Expr::IL_CORO_CREATE: rv = parseCoroPrim(e); break;
+  case pb::Expr::IL_CORO_YIELD : rv = parseCoroPrim(e); break;
   case pb::Expr::IL_ALLOC:     rv = parseAlloc(e); break;
   case pb::Expr::IL_DEREF:     rv = parseDeref(e); break;
   case pb::Expr::IL_STORE:     rv = parseStore(e); break;

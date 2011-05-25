@@ -249,31 +249,15 @@ struct RawPtrAST : public LLExpr {
 };
 */
 
-// coro_invoke[]
-struct LLCoroInvoke : public LLExpr {
+struct LLCoroPrim : public LLExpr {
+  string   primName;
   TypeAST* retType;
   TypeAST* typeArg;
-  explicit LLCoroInvoke(TypeAST* ret, TypeAST* arg)
-      : LLExpr("LLCoroInvoke"), retType(ret), typeArg(arg) {}
+  explicit LLCoroPrim(string primName, TypeAST* ret, TypeAST* arg)
+      : LLExpr("LLCoroPrim"), primName(primName),
+        retType(ret), typeArg(arg) {}
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
-
-struct LLCoroCreate : public LLExpr {
-  TypeAST* retType;
-  TypeAST* typeArg;
-  explicit LLCoroCreate(TypeAST* ret, TypeAST* arg)
-      : LLExpr("LLCoroCreate"), retType(ret), typeArg(arg) {}
-  virtual llvm::Value* codegen(CodegenPass* pass);
-};
-
-struct LLCoroYield : public LLExpr {
-  TypeAST* retType;
-  TypeAST* typeArg;
-  explicit LLCoroYield(TypeAST* ret, TypeAST* arg)
-      : LLExpr("LLCoroYield"), retType(ret), typeArg(arg) {}
-  virtual llvm::Value* codegen(CodegenPass* pass);
-};
-
 
 #endif // header guard
 

@@ -586,23 +586,14 @@ llvm::Value* LLIf::codegen(CodegenPass* pass) {
   }
 }
 
-llvm::Value* LLCoroInvoke::codegen(CodegenPass* pass) {
-  return pass->emitCoroInvokeFn(retType->getLLVMType(),
-                                typeArg->getLLVMType());
+llvm::Value* LLCoroPrim::codegen(CodegenPass* pass) {
+  const llvm::Type* r = retType->getLLVMType();
+  const llvm::Type* a = typeArg->getLLVMType();
+  if (this->primName == "coro_yield") { return pass->emitCoroYieldFn(r, a); }
+  if (this->primName == "coro_invoke") { return pass->emitCoroInvokeFn(r, a); }
+  if (this->primName == "coro_create") { return pass->emitCoroCreateFn(r, a); }
+  ASSERT(false); return NULL;
 }
-
-llvm::Value* LLCoroCreate::codegen(CodegenPass* pass) {
-  llvm::outs() << "coro create; retType is " << str(retType->getLLVMType())
-               << "; typeArg is " << str(typeArg->getLLVMType()) << "\n";
-  return pass->emitCoroCreateFn(retType->getLLVMType(),
-                                typeArg->getLLVMType());
-}
-
-llvm::Value* LLCoroYield::codegen(CodegenPass* pass) {
-  return pass->emitCoroYieldFn(retType->getLLVMType(),
-                               typeArg->getLLVMType());
-}
-
 
 llvm::Value* LLNil::codegen(CodegenPass* pass) {
   return llvm::ConstantPointerNull::getNullValue(getLLVMType(this->type));
