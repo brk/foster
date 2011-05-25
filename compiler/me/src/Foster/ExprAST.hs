@@ -38,6 +38,7 @@ data ExprAST =
                           , subscriptIndex :: ExprAST
                           , subscriptRange :: ESourceRange }
         | E_VarAST        E_VarAST
+        | E_TyApp         ESourceRange ExprAST TypeAST
         deriving Show
 
 data E_VarAST = VarAST { evarMaybeType :: Maybe TypeAST
@@ -153,6 +154,7 @@ instance Structured ExprAST where
             E_StoreAST rng a b   -> out $ "StoreAST     "
             E_SubscriptAST a b r -> out $ "SubscriptAST "
             E_TupleAST     es    -> out $ "TupleAST     "
+            E_TyApp rng a t      -> out $ "TyApp        "
             E_VarAST v           -> out $ "VarAST       " ++ evarName v ++ " :: " ++ show (evarMaybeType v)
     childrenOf e =
         case e of
@@ -170,6 +172,7 @@ instance Structured ExprAST where
             E_StoreAST rng a b   -> [a, b]
             E_SubscriptAST a b r -> [a, b]
             E_TupleAST     es    -> es
+            E_TyApp  rng a t     -> [a]
             E_VarAST _           -> []
 
 termBindingExpr (TermBinding _ e) = e
@@ -222,7 +225,7 @@ instance Structured AnnExpr where
             AnnSubscript t a b                   -> [a, b]
             AnnTuple     es                      -> es
             E_AnnVar      v                      -> []
-            E_AnnTyApp t e argty                 -> [e]
+            E_AnnTyApp t a argty                 -> [a]
 
 instance Expr AnnExpr where
     freeVars e = [identPrefix i | i <- freeIdentsA e]

@@ -8,7 +8,7 @@ module Foster.Infer(
 import Data.Map(Map)
 import qualified Data.Map as Map
 import List(length, elem, lookup)
-import Data.Maybe(fromMaybe, fromJust)
+import Data.Maybe(fromMaybe)
 
 import Foster.Base
 import Foster.TypeAST
@@ -27,7 +27,8 @@ emptyTypeConstraintSet = Map.empty
 extractSubstTypes :: [MetaTyVar] -> TypeSubst -> [TypeAST]
 extractSubstTypes metaVars tysub =
     let keys = [u | (Meta u _ _) <- metaVars] in
-    map (\k -> fromJust $ Map.lookup k tysub) keys
+    map (\k -> fromMaybe (error $ "Subst map missing key " ++ show k)
+                         (Map.lookup k tysub)) keys
 
 assocFilterOut :: (Eq a) => [(a,b)] -> [a] -> [(a,b)]
 assocFilterOut lst keys =
@@ -38,8 +39,9 @@ assocFilterOut lst keys =
 parSubstTy :: [(TypeAST, TypeAST)] -> TypeAST -> TypeAST
 parSubstTy prvNextPairs ty =
     case ty of
-        (NamedTypeAST s)     -> fromMaybe ty $ List.lookup ty prvNextPairs
-        (PtrTypeAST _)       -> fromMaybe ty $ List.lookup ty prvNextPairs
+        (NamedTypeAST _)     -> fromMaybe ty $ List.lookup ty prvNextPairs
+        (PtrTypeAST   _)     -> fromMaybe ty $ List.lookup ty prvNextPairs
+        (RefType      _)     -> fromMaybe ty $ List.lookup ty prvNextPairs
         (TupleTypeAST types) -> (TupleTypeAST [parSubstTy prvNextPairs t | t <- types])
         (FnTypeAST s t cs)   -> (FnTypeAST (parSubstTy prvNextPairs s) (parSubstTy prvNextPairs t) cs)
         (CoroType s t)   -> (CoroType (parSubstTy prvNextPairs s) (parSubstTy prvNextPairs t))
@@ -56,6 +58,7 @@ tySubst :: TypeAST -> TypeSubst -> TypeAST
 tySubst ty subst =
     case ty of
         (NamedTypeAST s)     -> ty
+        (RefType    t)       -> RefType    (tySubst t subst)
         (PtrTypeAST t)       -> PtrTypeAST (tySubst t subst)
         (TupleTypeAST types) -> (TupleTypeAST [tySubst t subst | t <- types])
         (FnTypeAST s t cs)   -> (FnTypeAST (tySubst s subst) (tySubst t subst) cs)

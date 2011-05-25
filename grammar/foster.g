@@ -67,7 +67,7 @@ binop   :       SYMBOL;
 phrase  :       lvalue+                         -> ^(PHRASE lvalue+);
 lvalue  :       atom suffix*                    -> ^(LVALUE atom suffix*);
 
-suffix  :       ':[' t ']'                      -> ^(VAL_TYPE_APP t)    // type application
+suffix  :       ':[' t (',' t)* ']'                      -> ^(VAL_TYPE_APP t+)    // type application
   |     '^'                             -> ^(DEREF)             // dereference
   |     '>^' x                          -> ^(ASSIGN_TO x)       // ref cell update
   |     '[' e ']'                       -> ^(SUBSCRIPT e)

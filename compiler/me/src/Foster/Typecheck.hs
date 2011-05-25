@@ -161,6 +161,8 @@ typecheck ctx expr maybeExpTy =
             Just avar  -> return $ E_AnnVar avar
             Nothing    -> tcFails $ out $ "Unknown variable " ++ (evarName v)
 
+        E_TyApp rng e t -> typecheckTyApp ctx rng e t maybeExpTy
+
         E_CompilesAST e c -> case c of
             CS_WouldNotCompile -> return $ AnnCompiles CS_WouldNotCompile "parse error"
             CS_WouldCompile -> error "No support for re-type checking CompilesAST nodes."
@@ -179,6 +181,24 @@ typecheckIf ctx a b c maybeExpTy = do
     equateTypes (typeAST ea) fosBoolType  (Just "IfAST: type of conditional wasn't boolean")
     equateTypes (typeAST eb) (typeAST ec) (Just "IfAST: types of branches didn't match")
     return (AnnIf (typeAST eb) ea eb ec)
+
+-----------------------------------------------------------------------
+
+listize (TupleTypeAST tys) = tys
+listize ty                 = [ty]
+
+typecheckTyApp ctx rng a t maybeExpTy = do
+    ea <- typecheck ctx a Nothing
+    case (typeAST ea) of
+      (ForAll tyvars rho) -> do
+        let tys = listize t
+        if (List.length tys /= List.length tyvars)
+          then tcFails (out $ "typecheckTyApp: arity mismatch")
+          else let tyvarsAndTys = List.zip (map T_TyVar tyvars) tys in
+               return $ E_AnnTyApp (parSubstTy tyvarsAndTys rho) ea t
+      othertype ->
+        tcFails (out $ "Cannot apply type args to expression of"
+                   ++ " non-ForAll type ")
 
 -----------------------------------------------------------------------
 
@@ -225,6 +245,9 @@ typecheckCallWithBaseFnType eargs eb basetype range =
             tcFails $ (out $ "CallAST w/o FnAST type: ") ++ ebStruct
                                        ++ (out $ " :: " ++ (show $ typeAST eb))
 
+vname n (E_VarAST ev) = show n ++ " for " ++ evarName ev
+vname n _             = show n
+
 -- If we have an explicit redex (call to a literal function),
 -- we can determine the types of the formals based on the actuals.
 typecheckCall ctx range base@(E_FnAST f) args maybeExpTy = do
@@ -249,8 +272,8 @@ typecheckCall ctx range base args maybeExpTy = do
    eb <- typecheck ctx base expectedLambdaType
    case (typeAST eb) of
       (ForAll tyvars rho) -> do
-         let (FnTypeAST rhoArgType _ _) = trace ("forall: " ++ highlightFirstLine range) rho
-         --                  rhoargtype =   ('a -> 'b)
+         let (FnTypeAST rhoArgType _ _) = rho
+         -- Example:         rhoargtype =   ('a -> 'b)
          -- base has type ForAll ['a 'b]   (('a -> 'b) -> (Coro 'a 'b))
          -- The forall-bound vars won't unify with concrete types in the term arg,
          -- so we replace the forall-bound vars with unification variables
@@ -262,7 +285,7 @@ typecheckCall ctx range base args maybeExpTy = do
          -- to use as type arguments.
 
          -- Generate unification vars corresponding to the bound type variables
-         unificationVars <- sequence [newTcUnificationVar "type parameter" | _ <- tyvars]
+         unificationVars <- sequence [newTcUnificationVar $ "type parameter" ++ vname n base | (_, n) <- zip tyvars [1..]]
          let tyvarsAndMetavars = (List.zip [T_TyVar tv | tv <- tyvars]
                                           [MetaTyVar u | u <- unificationVars])
 

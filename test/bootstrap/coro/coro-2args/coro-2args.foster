@@ -13,8 +13,8 @@ test-coro2a = {
   expect_i32 120;
 
   let co = coro_create { xy : (i32, i32) =>
-                          let a = coro_yield_i32x2_i32 (xy[0] + xy[1]);
-                             j0 = coro_yield_i32x2_i32 (a[0] + 20);
+                          let a = coro_yield:[(i32,i32),i32] (xy[0] + xy[1]);
+                             j0 = coro_yield:[(i32,i32),i32] (a[0] + 20);
                              j1 = print_i32 111111;
                            in 12345 end
                          };

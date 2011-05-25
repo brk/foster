@@ -114,10 +114,6 @@ rootContextPairs =
 
     ,(,) "opaquely_i32" $ mkFnType [i32] [i32]
 
-    ,(,) "coro_yield_i32_i32"  $ coroYieldType  [i32] [i32]
-    ,(,) "coro_yield_i32x2_i32"  $ coroYieldType  [i32, i32] [i32]
-    ,(,) "coro_yield_i32_i32x2"  $ coroYieldType  [i32] [i32,i32]
-
     -- forall a b, (a -> b) -> Coro a b
     ,(,) "coro_create" $ let a = BoundTyVar "a" in
                          let b = BoundTyVar "b" in
@@ -133,6 +129,8 @@ rootContextPairs =
                                       [T_TyVar b]))
 
     -- forall a b, (b -> a)
+    -- (only not quite: a and b must be unifiable
+    --  with the arg & return types of the containing function)
     ,(,) "coro_yield"  $ let a = BoundTyVar "a" in
                          let b = BoundTyVar "b" in
                          (ForAll [a, b] (mkFnType [T_TyVar b] [T_TyVar a]))

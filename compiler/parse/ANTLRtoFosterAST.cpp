@@ -382,13 +382,27 @@ ExprAST* parseStore(ExprAST* base, pTree t) {
   return new StoreAST(base, parseTermVar(child(t, 0)), rangeOf(t));
 }
 
+// ^(VAL_TYPE_APP t+)
+ExprAST* parseValTypeApp(ExprAST* base, pTree tree) {
+  std::vector<TypeAST*> types;
+  for (size_t i = 0; i < getChildCount(tree); ++i) {
+    types.push_back(TypeAST_from(child(tree, i)));
+  }
+  if (types.size() == 1) {
+    return new ETypeAppAST(NULL, base, types[0], rangeOf(tree));
+  } else {
+    return new ETypeAppAST(NULL, base, TupleTypeAST::get(types),
+                           rangeOf(tree));
+  }
+}
+
 ExprAST* parseSuffix(ExprAST* base, pTree tree) {
   int token = typeOf(tree);
 
   if (token == SUBSCRIPT) { return parseSubscript(base, tree); }
   if (token == DEREF)     { return parseDeref(base, tree); }
   if (token == ASSIGN_TO) { return parseStore(base, tree); }
-
+  if (token == VAL_TYPE_APP) { return parseValTypeApp(base, tree); }
   display_pTree(tree, 2);
   foster::EDiag() << "returning NULL ExprAST for parseSuffix token " << str(tree->getToken(tree));
   return NULL;

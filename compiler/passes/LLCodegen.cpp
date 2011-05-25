@@ -130,26 +130,6 @@ llvm::Value* CodegenPass::lookup(const std::string& fullyQualifiedSymbol) {
   v = mod->getFunction(fullyQualifiedSymbol);
 
   if (!v) {
-
-    if (fullyQualifiedSymbol == "coro_yield_i32_i32") {
-      v = emitCoroYieldFn(builder.getInt32Ty(), builder.getInt32Ty());
-    } else if (fullyQualifiedSymbol == "coro_yield_i32x2_i32") {
-      std::vector<const Type*> argTypes;
-      argTypes.push_back(builder.getInt32Ty());
-      argTypes.push_back(builder.getInt32Ty());
-      v = emitCoroYieldFn(builder.getInt32Ty(),
-        llvm::StructType::get(mod->getContext(), argTypes));
-    }  else if (fullyQualifiedSymbol == "coro_yield_i32_i32x2") {
-      std::vector<const Type*> argTypes;
-      argTypes.push_back(builder.getInt32Ty());
-      argTypes.push_back(builder.getInt32Ty());
-      v = emitCoroYieldFn(
-        llvm::StructType::get(mod->getContext(), argTypes),
-        builder.getInt32Ty());
-    }
-  }
-
-  if (!v) {
    currentErrs() << "name was neither fn arg nor fn name: "
               << fullyQualifiedSymbol << "\n";
    valueSymTab.dump(currentErrs());
@@ -618,6 +598,12 @@ llvm::Value* LLCoroCreate::codegen(CodegenPass* pass) {
                                 typeArg->getLLVMType());
 }
 
+llvm::Value* LLCoroYield::codegen(CodegenPass* pass) {
+  return pass->emitCoroYieldFn(retType->getLLVMType(),
+                               typeArg->getLLVMType());
+}
+
+
 llvm::Value* LLNil::codegen(CodegenPass* pass) {
   return llvm::ConstantPointerNull::getNullValue(getLLVMType(this->type));
 }
@@ -855,6 +841,9 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
   }
 
   callInst->setCallingConv(callingConv);
+  if (callingConv == llvm::CallingConv::Fast) {
+    callInst->setTailCall(true);
+  }
 
   if (isKnownNonAllocating(base)) {
     markAsNonAllocating(callInst);

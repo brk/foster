@@ -8,7 +8,7 @@ message SourceLocation {
 message SourceRange {
   optional string         file_path = 1;
   required SourceLocation begin     = 2;
-  optional SourceLocation end       = 3;
+  required SourceLocation end       = 3;
 }
 
 message Type {

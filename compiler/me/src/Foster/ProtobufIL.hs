@@ -174,7 +174,9 @@ dumpExpr x@(ILIf t a b c) =
 
 dumpExpr x@(ILTyApp overallTy (ILVar (AnnVar _ (Ident corofn _)))
                     (TupleTypeAST [argty, retty]))
-          | corofn == "coro_invoke" || corofn == "coro_create" =
+          | corofn == "coro_invoke"
+         || corofn == "coro_create"
+         || corofn == "coro_yield" =
     P'.defaultValue { PbExpr.tag   = coroFnTag corofn
                     , PbExpr.coro_prim = Just $ P'.defaultValue    {
                               PbCoroPrim.ret_type = dumpType retty ,

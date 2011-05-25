@@ -266,6 +266,14 @@ struct LLCoroCreate : public LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
+struct LLCoroYield : public LLExpr {
+  TypeAST* retType;
+  TypeAST* typeArg;
+  explicit LLCoroYield(TypeAST* ret, TypeAST* arg)
+      : LLExpr("LLCoroYield"), retType(ret), typeArg(arg) {}
+  virtual llvm::Value* codegen(CodegenPass* pass);
+};
+
 
 #endif // header guard
 

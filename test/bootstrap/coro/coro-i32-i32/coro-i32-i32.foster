@@ -7,7 +7,6 @@
 //               }
 //             }
 
-
 main = {
   expect_i32 999999;
   expect_i32 10;
@@ -15,8 +14,8 @@ main = {
 
   print_i32 999999;
   let co = coro_create { x : i32 =>
-                           let a = coro_yield_i32_i32 x;
-                               b = coro_yield_i32_i32 (a + 20);
+                           let a = coro_yield:[i32,i32] x;
+                               b = coro_yield:[i32,i32] (a + 20);
                             in 0 end
                         };
       x = coro_invoke co 10;

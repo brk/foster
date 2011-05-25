@@ -15,7 +15,7 @@ import Foster.TypeAST
 import Data.Traversable(fmapDefault)
 import Data.Sequence as Seq
 import Data.Sequence(length)
-import Data.Maybe(fromMaybe, fromJust, isJust)
+import Data.Maybe(fromMaybe, isJust)
 import Data.Foldable(toList)
 
 import Control.Exception(assert)
@@ -36,7 +36,7 @@ import Foster.Fepb.PBIf     as PBIf
 import Foster.Fepb.Expr     as PbExpr
 import Foster.Fepb.SourceModule as SourceModule
 import Foster.Fepb.Expr.Tag(Tag(IF, LET, VAR, SEQ,
-                                BOOL, CALL, -- MODULE, TY_APP,
+                                BOOL, CALL, TY_APP,-- MODULE,
                                 ALLOC, DEREF, STORE, TUPLE, PB_INT,
                                 COMPILES, VAL_ABS, SUBSCRIPT))
 import qualified Foster.Fepb.SourceRange as Pb
@@ -76,6 +76,9 @@ dumpIdent i = let p = identPrefix i in
 -- optional PhoneType type      => (getVal phone_number type')
 -----------------------------------------------------------------------
 
+getName desc (Just s) = uToString s
+getName desc Nothing  = error "Missing required name in " ++ desc ++ "!"
+
 part :: Int -> Seq PbExpr.Expr -> SourceLines -> ExprAST
 part i parts lines = parseExpr (index parts i) lines
 
@@ -99,7 +102,7 @@ parseCompiles pbexpr lines =
 
 parseFn pbexpr lines = let range = parseRange pbexpr lines in
                        let parts = PbExpr.parts pbexpr in
-                       let name  = uToString.fromJust $ PbExpr.name pbexpr in
+                       let name  = getName "fn" $ PbExpr.name pbexpr in
                        let formals = toList $ PbExpr.formals pbexpr in
                        let mretty = parseReturnType name pbexpr in
                        assert ((Data.Sequence.length parts) == 1) $
@@ -128,7 +131,8 @@ parseInt pbexpr lines =
 
 parseLet pbexpr lines =
     parsePBLet (parseRange pbexpr lines)
-               (fromJust $ PbExpr.pb_let pbexpr)
+               (fromMaybe (error "Protobuf node tagged LET without PbLet field!")
+                          (PbExpr.pb_let pbexpr))
                (fmap parseType $ PbExpr.type' pbexpr)
                lines
       where parseBinding lines (PbTermBinding.TermBinding u e) =
@@ -176,11 +180,18 @@ parseSubscript pbexpr lines =
 parseTuple pbexpr lines =
     E_TupleAST (map (\x -> parseExpr x lines) $ toList $ PbExpr.parts pbexpr)
 
+parseTyApp pbexpr lines =
+    let range = parseRange pbexpr lines in
+    E_TyApp range
+            (part 0 (PbExpr.parts pbexpr) lines)
+            (parseType $ case PbExpr.ty_app_arg_type pbexpr of
+                                Nothing -> error "TyApp missing arg type!"
+                                Just ty -> ty)
 
 parseEVar pbexpr lines = E_VarAST (parseVar pbexpr lines)
 
-parseVar pbexpr lines =  VarAST (fmap parseType (PbExpr.type' pbexpr))
-                                (uToString (fromJust $ PbExpr.name pbexpr))
+parseVar pbexpr lines = VarAST (fmap parseType (PbExpr.type' pbexpr))
+                               (getName "var" $ PbExpr.name pbexpr)
 
 toplevel :: FnAST -> FnAST
 toplevel (FnAST a b c d e False) = FnAST a b c d e True
@@ -209,7 +220,7 @@ sourceRangeFromPBRange :: Pb.SourceRange -> SourceLines -> ESourceRange
 sourceRangeFromPBRange pbrange lines =
     ESourceRange
         (parseSourceLocation (Pb.begin pbrange))
-        (parseSourceLocation (fromJust $ Pb.end   pbrange))
+        (parseSourceLocation (Pb.end   pbrange))
         lines
         (fmap uToString (Pb.file_path pbrange))
 
@@ -242,9 +253,10 @@ parseExpr pbexpr lines =
                 ALLOC     -> parseAlloc
                 DEREF     -> parseDeref
                 STORE     -> parseStore
+                TY_APP    -> parseTyApp
                 COMPILES  -> parseCompiles
                 SUBSCRIPT -> parseSubscript
-                otherwise -> error $ "parseExpr saw unknown tag: " ++ (show $ PbExpr.tag pbexpr) ++ "\n"
+                --otherwise -> error $ "parseExpr saw unknown tag: " ++ (show $ PbExpr.tag pbexpr) ++ "\n"
         in
    fn pbexpr lines
 
@@ -260,9 +272,10 @@ sourceLines sm = SourceLines (fmapDefault (\x -> T.pack (uToString x)) (SourceMo
 
 parseType :: Type -> TypeAST
 parseType t = case PbType.tag t of
-                PbTypeTag.LLVM_NAMED -> NamedTypeAST $ uToString (fromJust $ PbType.name t)
+                PbTypeTag.LLVM_NAMED -> NamedTypeAST $ (getName "type name" $ PbType.name t)
                 PbTypeTag.REF -> error "Ref types not yet implemented"
-                PbTypeTag.FN -> parseFnTy . fromJust $ PbType.fnty t
+                PbTypeTag.FN -> fromMaybe (error "Protobuf node tagged FN without fnty field!")
+                                          (fmap parseFnTy $ PbType.fnty t)
                 PbTypeTag.TUPLE -> TupleTypeAST [parseType p | p <- toList $ PbType.type_parts t]
                 PbTypeTag.TYPE_VARIABLE -> error "Type variable parsing not yet implemented."
                 PbTypeTag.CORO -> error "Parsing for CORO type not yet implemented"
