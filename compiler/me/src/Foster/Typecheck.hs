@@ -149,8 +149,8 @@ typecheck ctx expr maybeExpTy =
 
         E_SeqAST a b -> do
             ea <- typecheck ctx a Nothing --(Just TypeUnitAST)
-            eb <- typecheck ctx b maybeExpTy
             id <- tcFresh ".seq"
+            eb <- typecheck ctx b maybeExpTy
             return (AnnLetVar id ea eb)
         E_SubscriptAST a b rng -> do ta <- typecheck ctx a Nothing
                                      tb <- typecheck ctx b Nothing
