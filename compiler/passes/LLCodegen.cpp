@@ -773,43 +773,26 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
 
     // If we have a T loaded from a T*, and we expect a T*,
     // use the T* (TODO: make sure the T* isn't stack allocated!)
+    // LLVM intrinsics and C functions can take pointer-to-X args,
+    // but codegen for variables will have already emitted a load
+    // from the variable's implicit address.
     if (V->getType() != expectedType &&
       isPointerToType(expectedType, V->getType())) {
       if (llvm::LoadInst* load = llvm::dyn_cast<llvm::LoadInst>(V)) {
-        EDiag() << "Have a T = " << str(V->getType())
-                << ", expecting a T* = " << str(expectedType);
+        /*EDiag() << "Have a T = " << str(V->getType())
+                << ", expecting a T* = " << str(expectedType);*/
         V = load->getPointerOperand();
+        load->eraseFromParent();
       }
     }
 
     bool needsAdjusting = V->getType() != expectedType;
     if (needsAdjusting) {
       TypeAST* argty = this->args[i]->type;
-
       EDiag() << str(V) << "->getType() is " << str(V->getType())
               << "; expecting " << str(expectedType)
               << "\n\targty is " << argty->tag << "\t" << str(argty);
-    }
-
-    // If we're given a clo** when we expect a clo,
-    // automatically load the reference from the stack.
-    if (isPointerToPointerToType(V->getType(), expectedType)
-     && isGenericClosureType(expectedType)) {
-      V = getClosureStructValue(V);
-    }
-
-    // LLVM intrinsics and C functions can take pointer-to-X args,
-    // but codegen for variables will have already emitted a load
-    // from the variable's implicit address.
-    // So, if our expected type is pointer-to-our-value-type, and
-    // our value is a load, we'll pull the pointer from the load.
-    if (expectedType->isPointerTy()) {
-      if (expectedType->getContainedType(0) == V->getType()) {
-        if (llvm::LoadInst* load = dyn_cast<llvm::LoadInst>(V)) {
-          V = load->getPointerOperand();
-          load->eraseFromParent();
-        }
-      }
+      ASSERT(false);
     }
 
     ASSERT(V->getType() == expectedType)
