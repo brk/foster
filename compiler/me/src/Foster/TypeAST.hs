@@ -10,7 +10,7 @@ import Foster.Base
 import List(length)
 import Data.IORef(IORef)
 
-data AnnVar = AnnVar { avarType :: TypeAST, avarIdent :: Ident } deriving (Eq)
+data AnnVar = AnnVar { avarType :: TypeAST, avarIdent :: Ident }
 
 instance Show AnnVar where
     show (AnnVar ty id) = show id ++ " :: " ++ show ty
@@ -57,11 +57,9 @@ instance Show TypeAST where
         (RefType    ty)  -> "(Ref " ++ show ty ++ ")"
         (PtrTypeAST ty)  -> "(Ptr " ++ show ty ++ ")"
 
-instance Eq TypeAST where
-    t1 == t2 = typesEqual t1 t2
-
 instance Eq MetaTyVar where
     (Meta u1 _ _) == (Meta u2 _ _) = u1 == u2
+
 
 typesEqual :: TypeAST -> TypeAST -> Bool
 
@@ -75,13 +73,11 @@ typesEqual (ForAll vars1 ty1) (ForAll vars2 ty2) =
     vars1 == vars2 && typesEqual ty1 ty2
 typesEqual (T_TyVar tv1) (T_TyVar tv2) = tv1 == tv2
 typesEqual (MetaTyVar mtv1) (MetaTyVar mtv2) = mtv1 == mtv2
-typesEqual (PtrTypeAST ty1) (PtrTypeAST ty2) = ty1 == ty2
+typesEqual (PtrTypeAST ty1) (PtrTypeAST ty2) = typesEqual ty1 ty2
 typesEqual _ _ = False
 
 
-
 fosBoolType = NamedTypeAST "i1"
-
 
 minimalTuple []    = TupleTypeAST []
 minimalTuple [arg] = arg

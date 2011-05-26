@@ -30,6 +30,9 @@ extractSubstTypes metaVars tysub =
     map (\k -> fromMaybe (error $ "Subst map missing key " ++ show k)
                          (Map.lookup k tysub)) keys
 
+instance Eq TypeAST where
+    t1 == t2 = typesEqual t1 t2
+
 assocFilterOut :: (Eq a) => [(a,b)] -> [a] -> [(a,b)]
 assocFilterOut lst keys =
     [(a,b) | (a,b) <- lst, not(List.elem a keys)]
