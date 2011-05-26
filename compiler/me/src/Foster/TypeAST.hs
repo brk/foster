@@ -105,6 +105,7 @@ rootContextDecls =
     ,(,) "expect_i64"  $ mkFnType [i64] [i32]
     ,(,)  "print_i64"  $ mkFnType [i64] [i32]
 
+    ,(,)   "read_i32"  $ mkFnType  []   [i32]
     ,(,) "expect_i1"   $ mkFnType [i1] [i32]
     ,(,)  "print_i1"   $ mkFnType [i1] [i32]
 

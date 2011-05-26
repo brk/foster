@@ -169,24 +169,14 @@ class FnTypeAST : public TypeAST {
   std::string callingConvention;
   bool markedAsClosure;
 
+public:
   explicit FnTypeAST(TypeAST* returnType,
                      const std::vector<TypeAST*>& argTypes,
-                     const std::string& callingConvention,
-                     const SourceRange& sourceRange)
-    : TypeAST("FnType", NULL, sourceRange),
-      returnType(returnType),
-      argTypes(argTypes),
-      callingConvention(callingConvention),
-      markedAsClosure(false) {}
+                     const std::string& callingConvention);
 
-public:
   virtual void show(PrettyPrintTypePass* pass);
   virtual void dump(DumpTypeToProtobufPass* pass);
   virtual const llvm::Type* getLLVMType() const;
-
-  static FnTypeAST* get(TypeAST* retTy,
-                        const std::vector<TypeAST*>& argTypes,
-                        const std::string& callingConvName);
 
   TypeAST*& getParamType(int i) { return argTypes[i]; }
   TypeAST* getParamType(int i) const { return argTypes[i]; }

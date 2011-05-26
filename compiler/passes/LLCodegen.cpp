@@ -952,9 +952,9 @@ LLProc* getClosureVersionOf(LLExpr* arg,
   pass->valueSymTab.popExistingScope(scope);
 
   std::string externalCallingConvention = fnty->getCallingConventionName();
-  FnTypeAST* newfnty = FnTypeAST::get(fnty->getReturnType(),
-                                       inArgTypes,
-                                       externalCallingConvention);
+  FnTypeAST* newfnty = new FnTypeAST(fnty->getReturnType(),
+                                     inArgTypes,
+                                     externalCallingConvention);
 
   LLExpr* body = new LLCall(var, callArgs);
   LLProc* proc = new LLProc(newfnty, fnName, inArgNames, body);

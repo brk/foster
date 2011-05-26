@@ -97,7 +97,7 @@ struct TypeReconstructor {
       for (size_t i = 0; i < fnty->getNumParams(); ++i) {
          args.push_back(recon(fnty->getParamType(i)));
       }
-      return FnTypeAST::get(ret, args, getDefaultCallingConvRecon());
+      return new FnTypeAST(ret, args, getDefaultCallingConvRecon());
     }
 
     if (const llvm::StructType* sty
@@ -207,17 +207,16 @@ RefTypeAST* RefTypeAST::get(TypeAST* baseType) {
 
 /////////////////////////////////////////////////////////////////////
 
-FnTypeAST* FnTypeAST::get(TypeAST* returnType,
-                          const vector<TypeAST*>& argTypes,
-                          const std::string& callingConvName) {
-  ASSERT(returnType) << "FnTypeAST::get() needs non-NULL return type";
-
-  FnTypeAST* fty = new FnTypeAST(returnType,
-                       argTypes,
-                       callingConvName,
-                       SourceRange::getEmptyRange());
-  fty->getCallingConventionID(); // ensure we have a valid calling convention...
-  return fty;
+FnTypeAST::FnTypeAST(TypeAST* returnType,
+                     const std::vector<TypeAST*>& argTypes,
+                     const std::string& callingConvention)
+    : TypeAST("FnType", NULL, SourceRange::getEmptyRange()),
+      returnType(returnType),
+      argTypes(argTypes),
+      callingConvention(callingConvention),
+      markedAsClosure(false) {
+  ASSERT(returnType) << "FnTypeAST() needs non-NULL return type";
+  getCallingConventionID(); // ensure we have a valid calling convention...
 }
 
 const llvm::Type* FnTypeAST::getLLVMType() const {

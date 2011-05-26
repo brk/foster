@@ -567,7 +567,7 @@ TypeAST* parseFuncType(pTree tree) {
     types.push_back(TypeAST_from(child(tree, i)));
   }
   TypeAST* rt = TypeAST_from(child(tree, getChildCount(tree) - 1));
-  return FnTypeAST::get(rt, types, "fastcc");
+  return new FnTypeAST(rt, types, "fastcc");
 }
 
 // ^(TYPEVAR a)

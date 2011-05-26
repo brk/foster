@@ -4,7 +4,6 @@ fx = { opaquely_i32 42 };
 
 // This tests passing of top-level functions to higher-order
 // Foster functions, which (pessimistically?) expect a closure.
-read_i32 :: { () => i32 };
 
 main = {
   expect_i32 42 ; print_i32 (run-it fx); // Foster fn

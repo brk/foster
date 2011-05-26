@@ -67,8 +67,8 @@ FnTypeAST* genericClosureVersionOf(const FnTypeAST* fnty, bool skipFirstArg) {
     fnParams.push_back(fnty->getParamType(i));
   }
 
-  return FnTypeAST::get(fnty->getReturnType(), fnParams,
-                        fnty->getCallingConventionName());
+  return new FnTypeAST(fnty->getReturnType(), fnParams,
+                       fnty->getCallingConventionName());
 }
 
 FnTypeAST* genericClosureVersionOf(const FnTypeAST* fnty) {

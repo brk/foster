@@ -257,7 +257,7 @@ FnTypeAST* parseProcType(const bepb::ProcType& fnty) {
     << "must provide calling convention for all function types!";
    std::string callingConvention = fnty.calling_convention();
 
-  return FnTypeAST::get(retTy, argTypes, callingConvention);
+  return new FnTypeAST(retTy, argTypes, callingConvention);
 }
 
 TypeAST* TypeAST_from_pb(const pb::Type* pt) {
