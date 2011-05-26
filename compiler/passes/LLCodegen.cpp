@@ -48,6 +48,8 @@ using foster::ParsingContext;
 using foster::EDiag;
 using foster::show;
 
+char kFosterMain[] = "foster__main";
+
 struct IsClosureEnvironment {
   explicit IsClosureEnvironment(bool v) : value(v) {}
   bool value;
@@ -70,7 +72,7 @@ std::string getGlobalSymbolName(const std::string& sourceName) {
     // libfoster contains a main() symbol that handles
     // initialization and shutdown/cleanup of the runtime,
     // calling this symbol in between.
-    return "foster__main";
+    return kFosterMain;
   }
   return sourceName;
 }
@@ -447,6 +449,12 @@ llvm::Value* LLProc::codegenProto(CodegenPass* pass) {
 
   this->type->markAsProc();
   const llvm::FunctionType* FT = getLLVMFunctionType(this->type);
+
+  if (symbolName == kFosterMain) {
+    // No args, returning void...
+    FT = llvm::FunctionType::get(builder.getVoidTy(), false);
+  }
+
   ASSERT(FT) << "expecting top-level proc to have FunctionType!";
 
   Function* F = Function::Create(FT, functionLinkage, symbolName, pass->mod);
@@ -506,6 +514,13 @@ llvm::Value* LLProc::codegen(CodegenPass* pass) {
         scope->insert(AI->getNameStr(), arg_addr);
       }
     }
+  }
+
+  // Enforce that the main function always returns void.
+  if (F->getName() == kFosterMain) {
+    std::vector<LLExpr*> exprs;
+    this->body = new LLLetVal("!ignored", this->body,
+      new LLTuple(exprs));
   }
 
   Value* rv = this->getBody()->codegen(pass);
