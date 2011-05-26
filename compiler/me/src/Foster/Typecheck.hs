@@ -314,11 +314,11 @@ typecheckCall ctx range base args maybeExpTy = do
             ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) (Just formaltype)
             typecheckCallWithBaseFnType eargs eb fnty range
 
-      m@(MetaTyVar u) -> do
+      m@(MetaTyVar (Meta _ _ desc)) -> do
             ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) Nothing
 
-            ft <- newTcUnificationVar "ret type"
-            rt <- newTcUnificationVar "arg type"
+            ft <- newTcUnificationVar $ "ret type for " ++ desc
+            rt <- newTcUnificationVar $ "arg type for " ++ desc
             let fnty = (FnTypeAST (MetaTyVar ft) (MetaTyVar rt) FastCC (Just []))
 
             equateTypes m fnty Nothing
@@ -346,7 +346,7 @@ typecheckFn' ctx f cc expArgType expBodyType = do
     -- otherwise, we assume it has a monomorphic return type
     -- and determine the exact type via unification.
     fnProtoRetTy <- case fnRetType f of
-                          Nothing -> do u <- newTcUnificationVar "fn ret type"
+                          Nothing -> do u <- newTcUnificationVar $ "inf. ret type for " ++ fnProtoName
                                         return $ MetaTyVar u
                           Just t -> return t
     _ <- verifyNonOverlappingVariableNames fnProtoName
