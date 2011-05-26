@@ -10,6 +10,10 @@ import Foster.Base
 import List(length)
 import Data.IORef(IORef)
 
+data CallConv = CCC | FastCC deriving (Eq, Show)
+briefCC CCC = "ccc"
+briefCC FastCC = ""
+
 data AnnVar = AnnVar { avarType :: TypeAST, avarIdent :: Ident }
 
 instance Show AnnVar where
@@ -24,6 +28,7 @@ data TypeAST =
          | TupleTypeAST     [TypeAST]
          | FnTypeAST        { fnTypeDomain :: TypeAST
                             , fnTypeRange  :: TypeAST
+                            , fnTypeCallConv :: CallConv
                             , fnTypeCloses :: Maybe [AnnVar] }
          | CoroType         TypeAST TypeAST
          | ForAll           [TyVar] Rho
@@ -49,7 +54,7 @@ instance Show TypeAST where
     show x = case x of
         (NamedTypeAST s)     -> s
         (TupleTypeAST types) -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
-        (FnTypeAST s t cs)   -> "(" ++ show s ++ " -> " ++ show t ++ " @{" ++ show cs ++ "})"
+        (FnTypeAST s t cc cs)-> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
         (CoroType s t)   -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
         (ForAll tvs rho) -> "(ForAll " ++ show tvs ++ ". " ++ show rho ++ ")"
         (T_TyVar tv)     -> show tv
@@ -66,8 +71,10 @@ typesEqual :: TypeAST -> TypeAST -> Bool
 typesEqual (NamedTypeAST x) (NamedTypeAST y) = x == y
 typesEqual (TupleTypeAST as) (TupleTypeAST bs) =
     List.length as == List.length bs && Prelude.and [typesEqual a b | (a, b) <- Prelude.zip as bs]
-typesEqual (FnTypeAST a1 b1 c1) (FnTypeAST a2 b2 c2) =
-    typesEqual a1 a2 && typesEqual b1 b2 -- ignore c1 and c2 for now...
+typesEqual (FnTypeAST a1 b1 c1 d1) (FnTypeAST a2 b2 c2 d2) =
+    typesEqual a1 a2 && typesEqual b1 b2
+                      && c1 == c2
+                -- ignore d1 and d2 for now...
 typesEqual (CoroType a1 b1) (CoroType a2 b2) = typesEqual a1 a2 && typesEqual b1 b2
 typesEqual (ForAll vars1 ty1) (ForAll vars2 ty2) =
     vars1 == vars2 && typesEqual ty1 ty2
@@ -83,8 +90,8 @@ minimalTuple []    = TupleTypeAST []
 minimalTuple [arg] = arg
 minimalTuple args  = TupleTypeAST args
 
-
-mkFnType   args rets = FnTypeAST (TupleTypeAST args) (minimalTuple rets) Nothing
+mkProcType args rets = FnTypeAST (TupleTypeAST args) (minimalTuple rets) CCC    Nothing
+mkFnType   args rets = FnTypeAST (TupleTypeAST args) (minimalTuple rets) FastCC Nothing
 mkCoroType args rets =  CoroType (minimalTuple args) (minimalTuple rets)
 i32 = (NamedTypeAST "i32")
 i64 = (NamedTypeAST "i64")
@@ -96,16 +103,15 @@ coroCreateType args rets = mkFnType [mkFnType args rets] [mkCoroType args rets]
 
 rootContextDecls =
     [(,) "llvm_readcyclecounter" $ mkFnType [] [i64]
-    ,(,) "expect_i32"  $ mkFnType [i32] [i32]
-    ,(,)  "print_i32"  $ mkFnType [i32] [i32]
-    ,(,) "expect_i64"  $ mkFnType [i64] [i32]
-    ,(,)  "print_i64"  $ mkFnType [i64] [i32]
+    ,(,) "expect_i32"  $ mkProcType [i32] [i32]
+    ,(,)  "print_i32"  $ mkProcType [i32] [i32]
+    ,(,) "expect_i64"  $ mkProcType [i64] [i32]
+    ,(,)  "print_i64"  $ mkProcType [i64] [i32]
 
-    ,(,)   "read_i32"  $ mkFnType  []   [i32]
-    ,(,) "expect_i1"   $ mkFnType [i1] [i32]
-    ,(,)  "print_i1"   $ mkFnType [i1] [i32]
+    ,(,) "expect_i1"   $ mkProcType [i1] [i32]
+    ,(,)  "print_i1"   $ mkProcType [i1] [i32]
 
-    ,(,) "opaquely_i32" $ mkFnType [i32] [i32]
+    ,(,) "opaquely_i32" $ mkProcType [i32] [i32]
 
     -- forall a b, (a -> b) -> Coro a b
     ,(,) "coro_create" $ let a = BoundTyVar "a" in

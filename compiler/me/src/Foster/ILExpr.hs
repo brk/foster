@@ -21,12 +21,13 @@ import Foster.ExprAST
 data ILClosure = ILClosure { ilClosureProcIdent :: Ident
                            , ilClosureCaptures  :: [AnnVar] } deriving Show
 
-data ILProgram = ILProgram [ILProcDef] -- ILExpr
+data ILProgram = ILProgram [ILProcDef] [ILDecl]
+data ILDecl    = ILDecl String TypeAST deriving (Show)
 
 data ILProcDef = ILProcDef { ilProcReturnType :: TypeAST
                            , ilProcIdent      :: Ident
                            , ilProcVars       :: [AnnVar]
-                           , ilProcCallConv   :: String
+                           , ilProcCallConv   :: CallConv
                            , ilProcBody  :: ILExpr
                            } deriving Show
 data ILExpr =
@@ -49,7 +50,7 @@ data ILExpr =
         deriving (Show)
 
 showProgramStructure :: ILProgram -> Output
-showProgramStructure (ILProgram procdefs) =
+showProgramStructure (ILProgram procdefs decls) =
     concat [showProcStructure p | p <- procdefs]
 
 procVarDesc (AnnVar ty id) = "( " ++ (show id) ++ " :: " ++ show ty ++ " ) "
@@ -57,7 +58,7 @@ procVarDesc (AnnVar ty id) = "( " ++ (show id) ++ " :: " ++ show ty ++ " ) "
 showProcStructure proc =
     out (show $ ilProcIdent proc) ++ (out " // ")
         ++ (out $ show $ map procVarDesc (ilProcVars proc))
-        ++ (out " @@@ ") ++ (out $ ilProcCallConv proc)
+        ++ (out " @@@ ") ++ (out $ show $ ilProcCallConv proc)
         ++ (out "\n") ++  showStructure (ilProcBody proc)
       ++ out "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"
 
@@ -85,12 +86,13 @@ ilmPutProc p = do
 closureConvertAndLift :: Context -> (ModuleAST AnnFn TypeAST) -> ILProgram
 closureConvertAndLift ctx m =
     let fns = moduleASTfunctions m in
+    let decls = map (\(s,t) -> ILDecl s t) (moduleASTdecls m) in
     -- We lambda lift top level functions, since we know they don't have any "real" free vars.
     -- Lambda lifting wiil closure convert nested functions.
     let globalVars = (Set.fromList $ map (\(TermVarBinding s _) -> s) (contextBindings ctx)) in
     let procsILM = forM fns (\fn -> lambdaLift ctx fn []) in
     let newstate = execState procsILM (ILMState 0 globalVars []) in
-    ILProgram $ (ilmProcDefs newstate)
+    ILProgram (ilmProcDefs newstate) decls
 
 prependAnnBinding (id, expr) ctx =
     let annvar = AnnVar (typeAST expr) id in
@@ -177,7 +179,7 @@ closureConvert ctx expr =
 closureConvertedProc :: [AnnVar] -> AnnFn -> ILExpr -> ILProcDef
 closureConvertedProc liftedProcVars f newbody =
     ILProcDef (fnTypeRange (annFnType f)) (annFnIdent f) liftedProcVars
-                              "fastcc" newbody
+                              FastCC newbody
 
 -- For example, if we have something like
 --      let y = blah in ( (\x -> x + y) foobar )
@@ -199,9 +201,10 @@ lambdaLift ctx f freeVars =
 procType proc =
     let retty = ilProcReturnType proc in
     let argtys = TupleTypeAST (map avarType (ilProcVars proc)) in
-    if ilProcCallConv proc == "fastcc"
-        then FnTypeAST argtys retty (Just [])
-        else FnTypeAST argtys retty Nothing
+    let cc = ilProcCallConv proc in
+    if  cc == FastCC
+        then FnTypeAST argtys retty cc (Just [])
+        else FnTypeAST argtys retty cc  Nothing
 
 contextVar :: String -> Context -> String -> AnnVar
 contextVar dbg ctx s =

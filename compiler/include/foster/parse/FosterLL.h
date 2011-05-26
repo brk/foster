@@ -53,14 +53,25 @@ class LLSubscript;
 class LLProc;
 class LLIf;
 
+struct LLDecl {
+  string name;
+  TypeAST* type;
+  explicit LLDecl(const string& name, TypeAST* type)
+      : name(name), type(type) {}
+  llvm::Value* codegen(CodegenPass* pass);
+  const string getName() const { return name; }
+  TypeAST*     getType() const { return type; }
+};
 
 struct LLModule {
   const std::string name;
   std::vector<LLProc*> procs;
+  std::vector<LLDecl*> decls;
 
   explicit LLModule(const std::string& name,
-                    const std::vector<LLProc*>& procs)
-  : name(name), procs(procs) {}
+                    const std::vector<LLProc*>& procs,
+                    const std::vector<LLDecl*> decls)
+  : name(name), procs(procs), decls(decls) {}
 
   void codegen(CodegenPass* pass);
 };

@@ -29,6 +29,7 @@ import Foster.Bepb.Type.Tag as PbTypeTag
 import Foster.Bepb.Type     as PbType
 import Foster.Bepb.Closure  as Closure
 import Foster.Bepb.Proc     as Proc
+import Foster.Bepb.Decl     as Decl
 import Foster.Bepb.PBIf     as PBIf
 import Foster.Bepb.PBInt    as PBInt
 import Foster.Bepb.Expr     as PbExpr
@@ -74,7 +75,8 @@ dumpType (NamedTypeAST s)     = P'.defaultValue { PbType.tag  = PbTypeTag.LLVM_N
                                                 , PbType.name = Just $ u8fromString s }
 dumpType (TupleTypeAST types) = P'.defaultValue { PbType.tag  = PbTypeTag.TUPLE
                                                 ,  type_parts = fromList $ fmap dumpType types }
-dumpType x@(FnTypeAST s t cs) = P'.defaultValue { PbType.tag  = tagForClosedVars cs
+dumpType x@(FnTypeAST s t cc cs) =
+                                P'.defaultValue { PbType.tag  = tagForClosedVars cs
                                                 , PbType.procty = Just $ dumpProcType x
                                                 }
 dumpType x@(CoroType a b)     = P'.defaultValue { PbType.tag  = PbTypeTag.CORO
@@ -104,10 +106,7 @@ dumpType (MetaTyVar (Meta u tyref desc)) =
 
 dumpType other = error $ "dumpType saw unknown type " ++ show other
 
-defaultCallingConvFor Nothing = "coldcc"
-defaultCallingConvFor (Just _) = "fastcc"
-
-dumpProcType (FnTypeAST s t cs) =
+dumpProcType (FnTypeAST s t cc _) =
     let args = case s of
                 TupleTypeAST types -> [dumpType x | x <- types]
                 otherwise          -> [dumpType s]
@@ -115,8 +114,10 @@ dumpProcType (FnTypeAST s t cs) =
     ProcType.ProcType {
           arg_types = fromList args
         , ProcType.ret_type  = dumpType t
-        , calling_convention = Just $ u8fromString (defaultCallingConvFor cs)
+        , calling_convention = Just $ u8fromString (stringOfCC cc)
     }
+      where stringOfCC FastCC = "fastcc"
+            stringOfCC CCC    = "ccc"
 dumpProcType other = error $ "dumpProcType called with non-FnTypeAST node! " ++ show other
 
 -----------------------------------------------------------------------
@@ -240,10 +241,16 @@ dumpProc p =
 
 -----------------------------------------------------------------------
 
+dumpDecl (ILDecl s t) =
+    Decl { Decl.name  = u8fromString s
+         , Decl.type' = dumpType t
+         }
+
 dumpProgramToModule :: ILProgram -> Module
-dumpProgramToModule (ILProgram procdefs) =
+dumpProgramToModule (ILProgram procdefs decls) =
     Module   { modulename = u8fromString $ "foo"
              , procs      = fromList [dumpProc p | p <- procdefs]
+             , decls      = fromList [dumpDecl d | d <- decls]
              }
 
 dumpModuleToProtobufIL :: ILProgram -> FilePath -> IO ()

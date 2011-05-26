@@ -2,7 +2,7 @@
 // The testing infrastructure looks for lines like the one above and
 // feeds the data to stdin
 
-read_i32 :: { i32 };
+read_i32 :: { i32 } @ { proc = true };
 
 main = {
   expect_i32 2;

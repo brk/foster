@@ -561,13 +561,50 @@ ModuleAST* parseTopLevel(pTree tree, std::string moduleName) {
 ////////////////////////////////////////////////////////////////////
 
 // ^(FUNC_TYPE t+)
-TypeAST* parseFuncType(pTree tree) {
-  std::vector<TypeAST*> types;
-  for (size_t i = 0; i < getChildCount(tree) - 1; ++i) {
-    types.push_back(TypeAST_from(child(tree, i)));
+// ^(BINDING binding+)
+void parseAnnots(std::map<string, string>& annots,
+                 pTree tree) {
+  for (size_t i = 0; i < getChildCount(tree); ++i) {
+    Binding b = parseBinding(child(tree, i));
+    string  k = b.name;
+    string  v;
+
+    if (VariableAST* q = dynamic_cast<VariableAST*>(b.body)) {
+      v = q->name;
+    } else
+    if (IntAST* q = dynamic_cast<IntAST*>(b.body)) {
+      v = q->getOriginalText();
+    } else
+    if (BoolAST* q = dynamic_cast<BoolAST*>(b.body)) {
+      v = q->boolValue ? "true" : "false";
+    }
+
+    if (v == "") {
+      EDiag() << "Annotation failed to parse value string from "
+              << string(b.body->tag) << show(b.body);
+    } else {
+      annots[k] = v;
+    }
   }
-  TypeAST* rt = TypeAST_from(child(tree, getChildCount(tree) - 1));
-  return new FnTypeAST(rt, types, "fastcc");
+}
+
+// ^(FUNC_TYPE ^(TUPLE t+) tannots?)
+TypeAST* parseFuncType(pTree tree) {
+  std::vector<TypeAST*> types = getTypes(child(tree, 0));
+  TypeAST* rt = types.back(); types.pop_back();
+
+  std::map<string, string> annots;
+  if (getChildCount(tree) == 2) {
+    parseAnnots(annots, child(tree, 1));
+  }
+
+  // Lambdas default to fastcc, procs default to ccc.
+  bool isProc = annots.find("proc") != annots.end()
+             && annots["proc"] == "true";
+  if (annots["callconv"] == "") {
+    annots["callconv"] = isProc ? "ccc" : "fastcc";
+  }
+  return new FnTypeAST(rt, types, annots);
 }
 
 // ^(TYPEVAR a)

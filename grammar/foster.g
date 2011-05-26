@@ -123,12 +123,17 @@ t       :               // types
           )
   ;
 
+barebinding 
+	:  x '=' e -> ^(BINDING x e);
+tannots :  barebinding (',' barebinding)* -> ^(BINDING barebinding+);
+
 tatom   :
     a                                                                   // type variables
   | '(' ')'                             -> ^(TUPLE)
   | '(' t (',' t)* ')'                  -> ^(TUPLE t+)  // tuples (products) (sugar: (a,b,c) == Tuple3 a b c)
 //      | ':{'        (a ':' k '->')+ t '}'     -> ^(TYPE_TYP_ABS a k t)        // type-level abstractions
-  | '{'    t  ('=>' t)* '}'             -> ^(FUNC_TYPE t+)             // function types
+  | '{'    t  ('=>' t)* '}'
+   ('@' '{' tannots '}')?               -> ^(FUNC_TYPE ^(TUPLE t+) tannots?)  // function types
 //      | '{' 'forall' (a ':' k ',')+ t '}'     -> ^(FORALL_TYPE a k t)         // universal type
   | '$' ctor                                        -> ^(TYPE_CTOR ctor)            // type constructor constant
   ;

@@ -433,7 +433,9 @@ void FnTypeAST::show(PrettyPrintTypePass* pass){
   }
   if (np > 1) { pass->scan(PPToken("|")); }
   pass->scan(PPToken(" "));
-  pass->scan(PPToken("=" + this->getCallingConventionName() + ">"));
+  string arrow = "=" + this->getCallingConventionName() +
+        (this->isMarkedAsClosure() ? " func" : " proc") + ">";
+  pass->scan(PPToken(arrow));
   pass->scan(PPToken(" "));
   pass->emit(this->getReturnType());
   pass->scan(PPToken(")"));

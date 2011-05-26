@@ -55,7 +55,7 @@ void addClosureTypeName(llvm::Module* mod, TupleTypeAST* cty) {
   }
 }
 
-// Converts t1 (t2, t3)   to  t1 (i8*, t2, t3)
+// Converts t1 (t2, t3)   to  t1 (i8*, t2, t3)*
 FnTypeAST* genericClosureVersionOf(const FnTypeAST* fnty, bool skipFirstArg) {
   TypeAST* envType = RefTypeAST::get(TypeAST::i(8));
 
@@ -67,8 +67,10 @@ FnTypeAST* genericClosureVersionOf(const FnTypeAST* fnty, bool skipFirstArg) {
     fnParams.push_back(fnty->getParamType(i));
   }
 
-  return new FnTypeAST(fnty->getReturnType(), fnParams,
-                       fnty->getCallingConventionName());
+  FnTypeAST* f = new FnTypeAST(fnty->getReturnType(), fnParams,
+                               fnty->getAnnots());
+  f->markAsProc();
+  return f;
 }
 
 FnTypeAST* genericClosureVersionOf(const FnTypeAST* fnty) {
@@ -83,9 +85,9 @@ static TupleTypeAST* genericClosureTypeFor(const TypeAST* ty, bool skipFirstArg)
 
     // We can mark closures with whatever calling convention we want,
     // since closures are internal by definition.
-    FnTypeAST* newFnTy = genericClosureVersionOf(fnty, skipFirstArg);
+    FnTypeAST* newProcTy = genericClosureVersionOf(fnty, skipFirstArg);
     std::vector<TypeAST*> cloTypes;
-    cloTypes.push_back(RefTypeAST::get(newFnTy));
+    cloTypes.push_back(newProcTy);
     cloTypes.push_back(envType);
     TupleTypeAST* cloTy = TupleTypeAST::get(cloTypes);
     return cloTy;

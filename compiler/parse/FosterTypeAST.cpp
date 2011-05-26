@@ -92,12 +92,15 @@ struct TypeReconstructor {
 
     if (const llvm::FunctionType* fnty
            = llvm::dyn_cast<const llvm::FunctionType>(loweredType)) {
+      ASSERT(false) << "cannot reconstruct function type " << str(fnty) << "\n";
+    /*
       TypeAST* ret = recon(fnty->getReturnType());
       vector<TypeAST*> args;
       for (size_t i = 0; i < fnty->getNumParams(); ++i) {
          args.push_back(recon(fnty->getParamType(i)));
       }
       return new FnTypeAST(ret, args, getDefaultCallingConvRecon());
+      */
     }
 
     if (const llvm::StructType* sty
@@ -209,14 +212,18 @@ RefTypeAST* RefTypeAST::get(TypeAST* baseType) {
 
 FnTypeAST::FnTypeAST(TypeAST* returnType,
                      const std::vector<TypeAST*>& argTypes,
-                     const std::string& callingConvention)
+                     std::map<string, string> _annots)
     : TypeAST("FnType", NULL, SourceRange::getEmptyRange()),
       returnType(returnType),
       argTypes(argTypes),
-      callingConvention(callingConvention),
-      markedAsClosure(false) {
+      annots(_annots) {
   ASSERT(returnType) << "FnTypeAST() needs non-NULL return type";
   getCallingConventionID(); // ensure we have a valid calling convention...
+
+  // By default, function types are not proc types...
+  if (annots["proc"] == "") {
+    annots["proc"] = "false";
+  }
 }
 
 const llvm::Type* FnTypeAST::getLLVMType() const {
@@ -224,7 +231,7 @@ const llvm::Type* FnTypeAST::getLLVMType() const {
     if (isMarkedAsClosure()) {
       repr = genericClosureTypeFor(this)->getLLVMType();
     } else {
-      repr = getLLVMFnType();
+      repr = llvm::PointerType::getUnqual(getLLVMFnType());
     }
   }
   return repr;
@@ -251,19 +258,30 @@ const llvm::FunctionType* FnTypeAST::getLLVMFnType() const {
                                  /*isVarArg=*/ false);
 }
 
+bool FnTypeAST::isMarkedAsClosure() const {
+  std::map<std::string, std::string>::const_iterator
+    it = annots.find("proc");
+  ASSERT(it != annots.end()) << "FnTypeAST missing 'proc' annotation";
+  return (*it).second == "false";
+}
+
 std::string FnTypeAST::getCallingConventionName() const {
-  return callingConvention;
+  std::map<std::string, std::string>::const_iterator
+    it = annots.find("callconv");
+  ASSERT(it != annots.end()) << "FnTypeAST missing 'callconv' annotation";
+  return (*it).second;
 }
 
 llvm::CallingConv::ID FnTypeAST::getCallingConventionID() const {
-  if (callingConvention == "fastcc") {
+  std::string cc = getCallingConventionName();
+  if (cc == "fastcc") {
     return llvm::CallingConv::Fast;
-  } else if (callingConvention == "ccc") {
+  } else if (cc == "ccc") {
     return llvm::CallingConv::C;
-  } else if (callingConvention == "coldcc") {
+  } else if (cc == "coldcc") {
     return llvm::CallingConv::Cold;
   } else {
-    ASSERT(false) << "Unknown calling convention: " << callingConvention;
+    ASSERT(false) << "Unknown calling convention: " << cc;
     return llvm::CallingConv::C;
   }
 }

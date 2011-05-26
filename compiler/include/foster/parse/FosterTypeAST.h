@@ -162,17 +162,15 @@ public:
   static RefTypeAST* get(TypeAST* baseType);
 };
 
-
 class FnTypeAST : public TypeAST {
   TypeAST* returnType;
   std::vector<TypeAST*> argTypes;
-  std::string callingConvention;
-  bool markedAsClosure;
+  std::map<std::string, std::string> annots;
 
 public:
   explicit FnTypeAST(TypeAST* returnType,
                      const std::vector<TypeAST*>& argTypes,
-                     const std::string& callingConvention);
+                     std::map<std::string, std::string> annots);
 
   virtual void show(PrettyPrintTypePass* pass);
   virtual void dump(DumpTypeToProtobufPass* pass);
@@ -184,10 +182,13 @@ public:
   TypeAST* getReturnType() const { return returnType; }
   int getNumParams() const { return argTypes.size(); }
 
+  std::map<std::string, std::string>
+        getAnnots() const { return annots; }
   const llvm::FunctionType* getLLVMFnType() const;
 
-  void markAsClosure() { markedAsClosure = true; }
-  bool isMarkedAsClosure() const { return markedAsClosure; }
+  void markAsClosure() { annots["proc"] = "false"; }
+  void markAsProc()    { annots["proc"] = "true"; }
+  bool isMarkedAsClosure() const;
 
   llvm::CallingConv::ID getCallingConventionID() const;
   std::string           getCallingConventionName() const;

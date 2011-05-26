@@ -191,13 +191,25 @@ LLExpr* parseStore(const pb::Expr& e) {
 
 ////////////////////////////////////////////////////////////////////
 
+LLDecl* parseDecl(const pb::Decl& e) {
+  return new LLDecl(      e.name(),
+        TypeAST_from_pb(& e.type()));
+}
+
 LLModule* LLModule_from_pb(const pb::Module& e) {
   string moduleName = e.modulename();
+
   std::vector<LLProc*> procs;
   for (int i = 0; i < e.procs_size(); ++i) {
     procs.push_back(parseProc(e.procs(i)));
   }
-  return new LLModule(moduleName, procs);
+
+  std::vector<LLDecl*> decls;
+  for (int i = 0; i < e.decls_size(); ++i) {
+    decls.push_back(parseDecl(e.decls(i)));
+  }
+
+  return new LLModule(moduleName, procs, decls);
 }
 
 
@@ -255,9 +267,9 @@ FnTypeAST* parseProcType(const bepb::ProcType& fnty) {
 
   ASSERT(fnty.has_calling_convention())
     << "must provide calling convention for all function types!";
-   std::string callingConvention = fnty.calling_convention();
-
-  return new FnTypeAST(retTy, argTypes, callingConvention);
+  std::map<std::string, std::string> annots;
+  annots["callconv"] = fnty.calling_convention();
+  return new FnTypeAST(retTy, argTypes, annots);
 }
 
 TypeAST* TypeAST_from_pb(const pb::Type* pt) {
@@ -269,7 +281,9 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
   }
 
   if (t.tag() == pb::Type::PROC) {
-    return parseProcType(t.procty());
+    FnTypeAST* fnty = parseProcType(t.procty());
+    fnty->markAsProc();
+    return fnty;
   }
 
   if (t.tag() == pb::Type::CLOSURE) {

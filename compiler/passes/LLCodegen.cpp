@@ -425,6 +425,16 @@ llvm::Value* LLClosure::codegen(CodegenPass* pass) {
 
 //==================================================================
 
+const llvm::FunctionType*
+getLLVMFunctionType(FnTypeAST* t) {
+  if (const llvm::PointerType* pt =
+   dyn_cast<llvm::PointerType>(getLLVMType(t))) {
+    return dyn_cast<FunctionType>(pt->getContainedType(0));
+  } else {
+    return NULL;
+  }
+}
+
 llvm::Value* LLProc::codegenProto(CodegenPass* pass) {
   std::string symbolName = foster::getGlobalSymbolName(this->name);
 
@@ -435,7 +445,10 @@ llvm::Value* LLProc::codegenProto(CodegenPass* pass) {
         ? Function::InternalLinkage
         : Function::ExternalLinkage;
 
-  const llvm::FunctionType* FT = dyn_cast<FunctionType>(getLLVMType(this->type));
+  this->type->markAsProc();
+  const llvm::FunctionType* FT = getLLVMFunctionType(this->type);
+  ASSERT(FT) << "expecting top-level proc to have FunctionType!";
+
   Function* F = Function::Create(FT, functionLinkage, symbolName, pass->mod);
 
   ASSERT(F) << "function creation failed for proto " << this->name;
@@ -640,10 +653,9 @@ void doLowLevelWrapperFnCoercions(const llvm::Type* expectedType,
   if (!fnty) return;
 
   // FnTypeAST could mean a closure or a raw function...
-  const llvm::FunctionType* llvmFnTy =
-        llvm::dyn_cast<const llvm::FunctionType>(fnty->getLLVMType());
-  // Codegenning   callee( arg )  where arg has raw function type, not closure type!
+  const llvm::FunctionType* llvmFnTy = getLLVMFunctionType(fnty);
 
+  // Codegenning   callee( arg )  where arg has raw function type, not closure type!
   if (!llvmFnTy) return;
 
   // If we still have a bare function type at codegen time, it means
@@ -740,28 +752,28 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
 
     LLExpr* arg = this->args[i];
     doLowLevelWrapperFnCoercions(expectedType, arg, pass);
-    Value* V = arg->codegen(pass);
-    ASSERT(V) << "null codegenned value for arg " << (i - 1) << " of call";
+    Value* argV = arg->codegen(pass);
+    ASSERT(argV) << "null codegenned value for arg " << (i - 1) << " of call";
 
     // Is the formal parameter a pass-by-value struct and the provided argument
     // a pointer to the same kind of struct? If so, load the struct into a virtual
     // register in order to pass it to the function...
     const Type* formalType = FT->getParamType(valArgs.size());
     if (llvm::isa<llvm::StructType>(formalType)) {
-      if (llvm::PointerType::get(formalType, 0) == V->getType()) {
+      if (llvm::PointerType::get(formalType, 0) == argV->getType()) {
         // This is used when passing closures, for example.
-        V = builder.CreateLoad(V, "loadStructParam");
+        argV = builder.CreateLoad(argV, "loadStructParam");
       }
     }
 
-    valArgs.push_back(V);
+    valArgs.push_back(argV);
   }
 
   // Stack slot loads must be done after codegen for all arguments
   // has taken place, in order to ensure that no allocations will occur
   // between the load and the call.
   for (size_t i = 0; i < valArgs.size(); ++i) {
-    llvm::Value*& V = valArgs[i];
+    llvm::Value*& argV = valArgs[i];
 
     ASSERT(FT->getNumContainedTypes() > (i+1)) << "i = " << i
         << "; FT->getNumContainedTypes() = " << FT->getNumContainedTypes()
@@ -776,27 +788,27 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
     // LLVM intrinsics and C functions can take pointer-to-X args,
     // but codegen for variables will have already emitted a load
     // from the variable's implicit address.
-    if (V->getType() != expectedType &&
-      isPointerToType(expectedType, V->getType())) {
-      if (llvm::LoadInst* load = llvm::dyn_cast<llvm::LoadInst>(V)) {
-        /*EDiag() << "Have a T = " << str(V->getType())
+    if (argV->getType() != expectedType &&
+      isPointerToType(expectedType, argV->getType())) {
+      if (llvm::LoadInst* load = llvm::dyn_cast<llvm::LoadInst>(argV)) {
+        /*EDiag() << "Have a T = " << str(argV->getType())
                 << ", expecting a T* = " << str(expectedType);*/
-        V = load->getPointerOperand();
+        argV = load->getPointerOperand();
         load->eraseFromParent();
       }
     }
 
-    bool needsAdjusting = V->getType() != expectedType;
+    bool needsAdjusting = argV->getType() != expectedType;
     if (needsAdjusting) {
       TypeAST* argty = this->args[i]->type;
-      EDiag() << str(V) << "->getType() is " << str(V->getType())
+      EDiag() << str(argV) << "->getType() is " << str(argV->getType())
               << "; expecting " << str(expectedType)
               << "\n\targty is " << argty->tag << "\t" << str(argty);
       ASSERT(false);
     }
 
-    ASSERT(V->getType() == expectedType)
-              << "type mismatch, " << str(V->getType())
+    ASSERT(argV->getType() == expectedType)
+              << "type mismatch, " << str(argV->getType())
               << " vs expected type " << str(expectedType)
               << "\nbase is " << str(FV)
               << "\nwith base type " << str(FV->getType());
@@ -934,11 +946,10 @@ LLProc* getClosureVersionOf(LLExpr* arg,
   // But don't use it for doing codegen outside the proto.
   pass->valueSymTab.popExistingScope(scope);
 
-  std::string externalCallingConvention = fnty->getCallingConventionName();
   FnTypeAST* newfnty = new FnTypeAST(fnty->getReturnType(),
                                      inArgTypes,
-                                     externalCallingConvention);
-
+                                     fnty->getAnnots());
+  newfnty->markAsProc();
   LLExpr* body = new LLCall(var, callArgs);
   LLProc* proc = new LLProc(newfnty, fnName, inArgNames, body);
 

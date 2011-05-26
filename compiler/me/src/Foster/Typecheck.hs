@@ -22,7 +22,7 @@ collectUnificationVars x =
     case x of
         (NamedTypeAST s)     -> []
         (TupleTypeAST types) -> concat [collectUnificationVars t | t <- types]
-        (FnTypeAST s r cs)   -> concat [collectUnificationVars t | t <- [s,r]]
+        (FnTypeAST s r cc cs)-> concat [collectUnificationVars t | t <- [s,r]]
         (CoroType s r)       -> concat [collectUnificationVars t | t <- [s,r]]
         (ForAll tvs rho)     -> collectUnificationVars rho
         (T_TyVar tv)         -> []
@@ -220,7 +220,7 @@ typecheckSubscript rng base baseType index maybeExpTy =
 
 -- Maps (a -> b)   or   ForAll [...] (a -> b)    to a.
 getFnArgType :: TypeAST -> TypeAST
-getFnArgType (FnTypeAST a r cs) = a
+getFnArgType (FnTypeAST a r cc cs) = a
 getFnArgType t@(ForAll tvs rho) =
     let fnargty = getFnArgType rho in
     trace ("getFnArgType " ++ show t ++ " ::> " ++ show fnargty) $ fnargty
@@ -236,7 +236,7 @@ irrelevantClosedOverVars = Nothing
 typecheckCallWithBaseFnType eargs eb basetype range =
     case (basetype, typeAST (AnnTuple eargs))
       of
-         (FnTypeAST formaltype restype cs, argtype) -> do
+         (FnTypeAST formaltype restype cc cs, argtype) -> do
            equateTypes formaltype argtype (Just $ "CallAST mismatch between formal & arg types" ++ show range)
            return (AnnCall range restype eb eargs)
 
@@ -254,8 +254,8 @@ typecheckCall ctx range base@(E_FnAST f) args maybeExpTy = do
    ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) Nothing
    m <- newTcUnificationVar "call"
    let expectedLambdaType = case maybeExpTy of
-        Nothing  -> (Just (FnTypeAST (typeAST ea) (MetaTyVar m) irrelevantClosedOverVars))
-        (Just t) -> (Just (FnTypeAST (MetaTyVar m)     t        irrelevantClosedOverVars))
+        Nothing  -> (Just (FnTypeAST (typeAST ea) (MetaTyVar m) FastCC irrelevantClosedOverVars))
+        (Just t) -> (Just (FnTypeAST (MetaTyVar m)     t        FastCC irrelevantClosedOverVars))
 
    eb <- typecheck ctx base expectedLambdaType
    trace ("typecheckCall with literal fn base, exp ty " ++ (show expectedLambdaType)) $
@@ -266,13 +266,13 @@ typecheckCall ctx range base args maybeExpTy = do
    expectedLambdaType <- case maybeExpTy of
         Nothing  -> return $ Nothing
         (Just t) -> do m <- newTcUnificationVar "inferred arg type"
-                       return $ Just (FnTypeAST (MetaTyVar m) t irrelevantClosedOverVars)
+                       return $ Just (FnTypeAST (MetaTyVar m) t FastCC irrelevantClosedOverVars)
         -- If we have (e1 e2) :: T, we infer that e1 :: (? -> T) and e2 :: ?
 
    eb <- typecheck ctx base expectedLambdaType
    case (typeAST eb) of
       (ForAll tyvars rho) -> do
-         let (FnTypeAST rhoArgType _ _) = rho
+         let (FnTypeAST rhoArgType _ _ _) = rho
          -- Example:         rhoargtype =   ('a -> 'b)
          -- base has type ForAll ['a 'b]   (('a -> 'b) -> (Coro 'a 'b))
          -- The forall-bound vars won't unify with concrete types in the term arg,
@@ -310,7 +310,7 @@ typecheckCall ctx range base args maybeExpTy = do
                   where tyProjTypes = extractSubstTypes unificationVars tysub
              in typecheckCallWithBaseFnType eargs annTyApp (typeAST annTyApp) range
 
-      fnty@(FnTypeAST formaltype restype cs) -> do
+      fnty@(FnTypeAST formaltype restype cc cs) -> do
             ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) (Just formaltype)
             typecheckCallWithBaseFnType eargs eb fnty range
 
@@ -319,7 +319,7 @@ typecheckCall ctx range base args maybeExpTy = do
 
             ft <- newTcUnificationVar "ret type"
             rt <- newTcUnificationVar "arg type"
-            let fnty = (FnTypeAST (MetaTyVar ft) (MetaTyVar rt) (Just []))
+            let fnty = (FnTypeAST (MetaTyVar ft) (MetaTyVar rt) FastCC (Just []))
 
             equateTypes m fnty Nothing
             typecheckCallWithBaseFnType eargs eb fnty range
@@ -329,15 +329,17 @@ typecheckCall ctx range base args maybeExpTy = do
 
 -----------------------------------------------------------------------
 
-typecheckFn ctx f Nothing =                    typecheckFn' ctx f Nothing  Nothing
-typecheckFn ctx f (Just (FnTypeAST s t cs')) = typecheckFn' ctx f (Just s) (Just t)
+typecheckFn ctx f Nothing =
+                typecheckFn' ctx f FastCC Nothing  Nothing
+typecheckFn ctx f (Just (FnTypeAST s t cc cs')) =
+                typecheckFn' ctx f     cc (Just s) (Just t)
 
 typecheckFn ctx f (Just t) = tcFails $
                 out ("Context of function literal expects non-function type: "
                                 ++ show t ++ highlightFirstLine (fnAstRange f))
 
-typecheckFn' :: Context -> FnAST -> Maybe TypeAST -> Maybe TypeAST -> Tc AnnExpr
-typecheckFn' ctx f expArgType expBodyType = do
+typecheckFn' :: Context -> FnAST -> CallConv -> Maybe TypeAST -> Maybe TypeAST -> Tc AnnExpr
+typecheckFn' ctx f cc expArgType expBodyType = do
     let fnProtoRawFormals = fnFormals f
     let fnProtoName = fnAstName f
     -- If the function has a return type annotation, use that;
@@ -358,7 +360,7 @@ typecheckFn' ctx f expArgType expBodyType = do
     formalVars <- typeJoinVars uniquelyNamedFormals expArgType
     let argtypes = TupleTypeAST (map avarType formalVars)
     let fnClosedVars = if fnWasToplevel f then Nothing else Just []
-    let fnty = FnTypeAST argtypes (typeAST annbody) fnClosedVars
+    let fnty = FnTypeAST argtypes (typeAST annbody) cc fnClosedVars
 
     case termVarLookup fnProtoName (contextBindings ctx) of
       Nothing -> return ()

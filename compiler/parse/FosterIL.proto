@@ -27,6 +27,9 @@ message ProcType {
   repeated Type arg_types = 1;
   required Type ret_type  = 2;
   optional string calling_convention = 3;
+
+  //repeated string annot_key = 3;
+  //repeated string annot_val = 4;
 }
 
 
@@ -108,7 +111,13 @@ message CoroPrim {
   required Type arg_type = 2;
 }
 
+message Decl {
+  required string name = 1;
+  required Type   type = 2;
+}
+
 message Module {
   required string modulename = 1;
   repeated Proc   procs      = 2;
+  repeated Decl   decls      = 3;
 }

@@ -170,6 +170,41 @@ LLModule* readLLProgramFromProtobuf(const string& pathstr,
   return prog;
 }
 
+bool
+areDeclaredTypesOK(llvm::Module* mod,
+     const std::vector<LLDecl*>& decls) {
+  for (size_t i = 0; i < decls.size(); ++i) {
+    LLDecl*   d = decls[i];
+    TypeAST*  t = d->getType();
+    Function* f = mod->getFunction(d->getName());
+    Value* v;
+    if (!f) { v = mod->getGlobalVariable(d->getName()); }
+    else { // Make sure function callconv matches
+      FnTypeAST* fnty = dynamic_cast<FnTypeAST*>(t);
+      ASSERT(f->getCallingConv() == fnty->getCallingConventionID())
+        << "\nCalling convention mismatch for symbol " << d->getName()
+        << ":\n"
+        << "had " << fnty->getCallingConventionID()
+           << "(" << fnty->getCallingConventionName() << ")"
+        << "; expected " << f->getCallingConv();
+      v = f;
+    }
+
+    ASSERT(v) << "unable to find module entry for " << d->getName();
+    const llvm::Type* ty = t->getLLVMType();
+    if (v->getType() != ty) {
+      EDiag() << "mismatch between declared and imported types"
+              << " for symbol " << d->getName() << ":\n"
+              << "Declared: " << str(t) << "\n"
+              << " in LLVM: " << str(ty) << "\n"
+              << "Imported: " << str(v->getType()) << "\n";
+      return false;
+    }
+
+  }
+  return true;
+}
+
 namespace foster {
 void codegenLL(LLModule* package, llvm::Module* mod);
 }
@@ -247,6 +282,10 @@ int main(int argc, char** argv) {
     LLModule* prog = readLLProgramFromProtobuf(optInputPath + ".ll.pb", pbin);
     ASSERT(prog) << "Unable to read LL program from protobuf!";
 
+    if(!areDeclaredTypesOK(module, prog->decls)) {
+      program_status = 1; goto cleanup;
+    }
+
     foster::codegenLL(prog, module);
 
     // Run cleanup passes on newly-generated code,
@@ -276,12 +315,12 @@ int main(int argc, char** argv) {
     llvm::PrintStatistics(out);
   }
 
+cleanup:
   google::protobuf::ShutdownProtobufLibrary();
   foster::gInputFile = NULL;
   llvm::outs().flush();
   llvm::errs().flush();
 
-cleanup:
   foster::ParsingContext::popCurrentContext();
 
   delete wholeProgramTimer;

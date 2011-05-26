@@ -46,7 +46,9 @@ parSubstTy prvNextPairs ty =
         (PtrTypeAST   _)     -> fromMaybe ty $ List.lookup ty prvNextPairs
         (RefType      _)     -> fromMaybe ty $ List.lookup ty prvNextPairs
         (TupleTypeAST types) -> (TupleTypeAST [parSubstTy prvNextPairs t | t <- types])
-        (FnTypeAST s t cs)   -> (FnTypeAST (parSubstTy prvNextPairs s) (parSubstTy prvNextPairs t) cs)
+        (FnTypeAST s t cc cs)-> (FnTypeAST (parSubstTy prvNextPairs s)
+                                           (parSubstTy prvNextPairs t)
+                                           cc cs) -- TODO unify calling convention?
         (CoroType s t)   -> (CoroType (parSubstTy prvNextPairs s) (parSubstTy prvNextPairs t))
         (ForAll tvs rho) -> let prvNextPairs' = prvNextPairs `assocFilterOut`
                                                      [T_TyVar tv | tv <- tvs] in
@@ -64,7 +66,9 @@ tySubst ty subst =
         (RefType    t)       -> RefType    (tySubst t subst)
         (PtrTypeAST t)       -> PtrTypeAST (tySubst t subst)
         (TupleTypeAST types) -> (TupleTypeAST [tySubst t subst | t <- types])
-        (FnTypeAST s t cs)   -> (FnTypeAST (tySubst s subst) (tySubst t subst) cs)
+        (FnTypeAST s t cc cs)-> (FnTypeAST (tySubst s subst)
+                                           (tySubst t subst)
+                                           cc cs)
         (CoroType s t)   -> (CoroType (tySubst s subst) (tySubst t subst))
         (ForAll tvs rho) -> (ForAll tvs (tySubst rho subst))
         (T_TyVar tv)     -> ty
@@ -96,8 +100,14 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
     if typesEqual t1 t2
       then tcUnifyLoop constraints tysub
       else case (t1, t2) of
-                ((FnTypeAST a1 a2 _), (FnTypeAST b1 b2 _)) ->
+                ((FnTypeAST a1 a2 cc1 _), (FnTypeAST b1 b2 cc2 _)) ->
+                  if cc1 == cc2 || (cc1 == FastCC && cc2 == CCC) then
+                    -- We can implicitly convert a CCC to a FastCC
+                    -- (but not the other way 'round) using implicitly-inserted
+                    -- coercions during lowering to LLVM.
                     tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub
+                  else tcFails (out $ "Cannot unify function types with different calling conventions: "
+                                    ++ show cc1 ++ " vs " ++ show cc2)
                 ((CoroType a1 a2), (CoroType b1 b2)) ->
                     tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub
                 ((TupleTypeAST tys1), (TupleTypeAST tys2)) ->

@@ -1,13 +1,17 @@
-// IN: 48
+// IN: 48 52
 
 fx = { opaquely_i32 42 };
 
 // This tests passing of top-level functions to higher-order
 // Foster functions, which (pessimistically?) expect a closure.
 
+read_i32 :: { i32 } @ { proc = true };
+
 main = {
-  expect_i32 42 ; print_i32 (run-it fx); // Foster fn
-  expect_i32 48 ; print_i32 (run-it read_i32); // C fn
+  expect_i32 42 ; print_i32 (run-it fx);              // Foster fn, named
+  expect_i32 48 ; print_i32 (run-it { read_i32 () }); // Foster fn, anon
+  expect_i32 52 ; print_i32 (run-it read_i32);        // C fn, directly
+
   force_gc_for_debugging_purposes();
   0
 };

@@ -284,9 +284,15 @@ parseType t = case PbType.tag t of
                 PbTypeTag.CARRAY -> error "Parsing for CARRAY type not yet implemented"
                 PbTypeTag.FORALL_TY -> error "Parsing for FORALL_TY type not yet implemented"
 
+parseCallConv Nothing         = FastCC
+parseCallConv (Just "fastcc") = FastCC
+parseCallConv (Just "ccc"   ) = CCC
+parseCallConv (Just other   ) = error $ "Unknown call conv " ++ other
+
 parseFnTy :: FnType -> TypeAST
 parseFnTy fty = FnTypeAST (TupleTypeAST [parseType x | x <- toList $ PbFnType.arg_types fty])
                           (parseType $ PbFnType.ret_type fty)
-                          (case PbFnType.is_closure fty of
-                            Nothing  -> Nothing
-                            (Just b) -> Just [])
+                          (parseCallConv (fmap uToString $ PbFnType.calling_convention fty))
+                          (if fromMaybe True $ PbFnType.is_closure fty
+                            then Just []
+                            else Nothing)

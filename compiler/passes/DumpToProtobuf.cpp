@@ -249,6 +249,7 @@ void FnTypeAST::dump(DumpTypeToProtobufPass* pass) {
   setTagAndRange(pass->current, this, pb::Type::FN);
 
   pb::FnType* fnty = pass->current->mutable_fnty();
+
   fnty->set_calling_convention(this->getCallingConventionName());
 
   if (this->getReturnType()) {
@@ -259,7 +260,6 @@ void FnTypeAST::dump(DumpTypeToProtobufPass* pass) {
   for (int i = 0; i < this->getNumParams(); ++i) {
     dumpChild(pass, fnty->add_arg_types(), this->getParamType(i));
   }
-
   fnty->set_is_closure(this->isMarkedAsClosure());
 }
 
