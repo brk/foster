@@ -103,13 +103,13 @@ coroCreateType args rets = mkFnType [mkFnType args rets] [mkCoroType args rets]
 
 rootContextDecls =
     [(,) "llvm_readcyclecounter" $ mkFnType [] [i64]
-    ,(,) "expect_i32"  $ mkProcType [i32] [i32]
-    ,(,)  "print_i32"  $ mkProcType [i32] [i32]
-    ,(,) "expect_i64"  $ mkProcType [i64] [i32]
-    ,(,)  "print_i64"  $ mkProcType [i64] [i32]
+    ,(,) "expect_i32"  $ mkProcType [i32] []
+    ,(,)  "print_i32"  $ mkProcType [i32] []
+    ,(,) "expect_i64"  $ mkProcType [i64] []
+    ,(,)  "print_i64"  $ mkProcType [i64] []
 
-    ,(,) "expect_i1"   $ mkProcType [i1] [i32]
-    ,(,)  "print_i1"   $ mkProcType [i1] [i32]
+    ,(,) "expect_i1"   $ mkProcType [i1] []
+    ,(,)  "print_i1"   $ mkProcType [i1] []
 
     ,(,) "opaquely_i32" $ mkProcType [i32] [i32]
 

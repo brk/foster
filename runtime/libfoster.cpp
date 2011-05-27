@@ -105,15 +105,15 @@ int fprint_b2(FILE* f, Int x) {
   return n;
 }
 
-int fprint_i64(FILE* f, int64_t x) { return fprintf(f, "%" PRId64 "\n", x) - 1; }
-int fprint_i64x(FILE* f, int64_t x) { return fprintf(f, "%" PRIX64 "_16\n", x) - 1; }
-int fprint_i64b(FILE* f, int64_t x) { return fprint_b2<64>(f, x); }
+void fprint_i64(FILE* f, int64_t x) { fprintf(f, "%" PRId64 "\n", x); }
+void fprint_i64x(FILE* f, int64_t x) { fprintf(f, "%" PRIX64 "_16\n", x); }
+void fprint_i64b(FILE* f, int64_t x) { fprint_b2<64>(f, x); }
 
-int fprint_i32(FILE* f, int32_t x) { int n = fprintf(f, "%d\n", x) - 1; fflush(f); return n; }
-int fprint_i32x(FILE* f, int32_t x) { return fprintf(f, "%X_16\n", x) - 1; }
-int fprint_i32b(FILE* f, int32_t x) { return fprint_b2<32>(f, x); }
+void fprint_i32(FILE* f, int32_t x) {  fprintf(f, "%d\n", x); fflush(f); }
+void fprint_i32x(FILE* f, int32_t x) { fprintf(f, "%X_16\n", x); }
+void fprint_i32b(FILE* f, int32_t x) { fprint_b2<32>(f, x); }
 
-int fprint_mp_int(FILE* f, mp_int m, int radix) {
+void fprint_mp_int(FILE* f, mp_int m, int radix) {
   mp_small small;
   mp_result conv = mp_int_to_int(m, &small);
   if (conv != MP_RANGE) {
@@ -127,9 +127,8 @@ int fprint_mp_int(FILE* f, mp_int m, int radix) {
   mp_result len = mp_int_string_len(m, radix);
   char* buf = (char*) malloc(len);
   mp_result res0 = mp_int_to_string(m, radix, buf, len);
-  int rv = fprintf(f, "%s\n", buf);
+  fprintf(f, "%s\n", buf);
   free(buf);
-  return rv;
 }
 
 } } // namespace foster::runtime
@@ -208,33 +207,33 @@ int print_ref(void* x) {
   return 0;
 }
 
-int  print_int(mp_int m) { return fprint_mp_int(stdout, m, 10); }
-int expect_int(mp_int m) { return fprint_mp_int(stderr, m, 10); }
-int  print_intx(mp_int m) { return fprint_mp_int(stdout, m, 16); }
-int expect_intx(mp_int m) { return fprint_mp_int(stderr, m, 16); }
-int  print_intb(mp_int m) { return fprint_mp_int(stdout, m, 2); }
-int expect_intb(mp_int m) { return fprint_mp_int(stderr, m, 2); }
+void  print_int(mp_int m) { fprint_mp_int(stdout, m, 10); }
+void expect_int(mp_int m) { fprint_mp_int(stderr, m, 10); }
+void  print_intx(mp_int m) { fprint_mp_int(stdout, m, 16); }
+void expect_intx(mp_int m) { fprint_mp_int(stderr, m, 16); }
+void  print_intb(mp_int m) { fprint_mp_int(stdout, m, 2); }
+void expect_intb(mp_int m) { fprint_mp_int(stderr, m, 2); }
 
-int  print_i32(int32_t x) { return fprint_i32(stdout, x); }
-int expect_i32(int32_t x) { return fprint_i32(stderr, x); }
+void  print_i32(int32_t x) { fprint_i32(stdout, x); }
+void expect_i32(int32_t x) { fprint_i32(stderr, x); }
 
-int  print_i32x(int32_t x) { return fprint_i32x(stdout, x); }
-int expect_i32x(int32_t x) { return fprint_i32x(stderr, x); }
+void  print_i32x(int32_t x) { fprint_i32x(stdout, x); }
+void expect_i32x(int32_t x) { fprint_i32x(stderr, x); }
 
-int  print_i32b(int32_t x) { return fprint_i32b(stdout, x); }
-int expect_i32b(int32_t x) { return fprint_i32b(stderr, x); }
+void  print_i32b(int32_t x) { fprint_i32b(stdout, x); }
+void expect_i32b(int32_t x) { fprint_i32b(stderr, x); }
 
 int read_i32() { int32_t n; scanf(" %d", &n); return n; }
 
-int  print_i64(int64_t x) { return fprint_i64(stdout, x); }
-int expect_i64(int64_t x) { return fprint_i64(stderr, x); }
-int expect_i64x(int64_t x) { return fprint_i64x(stderr, x); }
-int expect_i64b(int64_t x) { return fprint_i64b(stderr, x); }
+void  print_i64(int64_t x) { fprint_i64(stdout, x); }
+void expect_i64(int64_t x) { fprint_i64(stderr, x); }
+void expect_i64x(int64_t x) { fprint_i64x(stderr, x); }
+void expect_i64b(int64_t x) { fprint_i64b(stderr, x); }
 
-//int  print_i8(char x) { return fprint_i8(stdout, x); }
-//int expect_i8(char x) { return fprint_i8(stderr, x); }
+//void  print_i8(char x) { fprint_i8(stdout, x); }
+//void expect_i8(char x) { fprint_i8(stderr, x); }
 
 // C type "bool" becomes LLVM "i8 zeroext", not "i1"
-int  print_i1(bool x) { return fprintf(stdout, (x ? "true\n" : "false\n")); }
-int expect_i1(bool x) { return fprintf(stderr, (x ? "true\n" : "false\n")); }
+void  print_i1(bool x) { fprintf(stdout, (x ? "true\n" : "false\n")); }
+void expect_i1(bool x) { fprintf(stderr, (x ? "true\n" : "false\n")); }
 } // extern "C"

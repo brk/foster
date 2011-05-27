@@ -228,6 +228,8 @@ getval gs id =
     Just e -> e
     Nothing -> error $ "Unable to look up local variable " ++ show id
 
+unit = (SSTmValue $ SSTuple [])
+
 withTerm gs e = modifyHeapWith gs (stCoroLoc gs) (\(SSCoro c) -> SSCoro $ c { coroTerm = e })
 withEnv  gs e = modifyHeapWith gs (stCoroLoc gs) (\(SSCoro c) -> SSCoro $ c { coroEnv  = e })
 
@@ -260,7 +262,7 @@ stepExpr gs expr = do
                        return $ withTerm gs  (SSTmValue $ lookupHeap gs z)
     IStore iv ir -> do let (SSLocation z) = getval gs ir
                        let gs' = modifyHeapWith gs z (\_ -> getval gs iv)
-                       return $ withTerm gs' (SSTmValue $ SSTuple [])
+                       return $ withTerm gs' unit
 
     IClosures bnds clos e  ->
       -- This is not quite right; closures should close over each other!
@@ -477,18 +479,18 @@ tryEvalPrimitive gs "primitive_bitnot_i1" [SSBool b] =
   return $ withTerm gs (SSTmValue $ SSBool (not b))
 
 tryEvalPrimitive gs "force_gc_for_debugging_purposes" _args =
-  return $ withTerm gs (SSTmValue $ SSTuple [])
+  return $ withTerm gs unit
 
 tryEvalPrimitive gs "opaquely_i32" [val] =
   return $ withTerm gs (SSTmValue val)
 
 tryEvalPrimitive gs "expect_i32b" [val@(SSInt i)] =
       do expectString gs (showBits32 (litIntValue i))
-         return $ withTerm gs (SSTmValue val)
+         return $ withTerm gs unit
 
 tryEvalPrimitive gs "print_i32b" [val@(SSInt i)] =
       do printString gs (showBits32 (litIntValue i))
-         return $ withTerm gs (SSTmValue val)
+         return $ withTerm gs unit
 
 tryEvalPrimitive gs primName args =
       error ("step ilcall 'prim' " ++ show primName ++ " with args: " ++ show args)
