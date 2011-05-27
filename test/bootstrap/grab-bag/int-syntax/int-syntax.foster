@@ -34,6 +34,4 @@ main = {
   expect_i1 true; print_i1( __COMPILES__ 0`1111`1111`1111`1111`1111`1111`1111`1111_2);
     // one + 32 bits
   expect_i1 false; print_i1( __COMPILES__ 1`1111`1111`1111`1111`1111`1111`1111`1111_2);
-
-  0
 };

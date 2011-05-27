@@ -1,7 +1,6 @@
 main = {
   simpler();
   capture();
-  0
 };
 
 simpler = {

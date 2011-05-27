@@ -1,6 +1,5 @@
 
 main = {
-  let j0 = expect_i1 false;
-      j1 = print_i1 (__COMPILES__ { a:() => a:() => a } ) ;
-   in 0 end
+  expect_i1 false;
+  print_i1 (__COMPILES__ { a:() => a:() => a } ) ;
 };

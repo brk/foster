@@ -1,5 +1,4 @@
 main = {
-/*
   // Mismatch between declared and inferred return types
   //expect_i1 true ; print_i1 (__COMPILES__  { 0 }  )
   //expect_i1 false; print_i1 (__COMPILES__  fn(to i32) { true }  )
@@ -37,10 +36,6 @@ main = {
 
   // Try to subscript non-subscriptable expression.
   expect_i1 false ; print_i1 (__COMPILES__ 0[0]);
-
-  0;
-*/
-  {0}();
 };
 
 a = { 0 };

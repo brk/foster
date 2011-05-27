@@ -19,6 +19,5 @@ main = {
 
   expect_i1 false; // tuple should typecheck elements
   print_i1 (__COMPILES__ (if 2 then 2 else 1 end, 2));
-  0
 };
 

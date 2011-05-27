@@ -6,5 +6,4 @@ run-it = { f:{i32} => f () };
 main = {
   expect_i32 42;
   print_i32 (run-it { opaquely_i32 42 } );
-  0
 };

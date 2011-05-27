@@ -8,7 +8,6 @@ main = {
 
   expect_i32 6765;
   print_i32 (fib-tailrecursive (opaquely_i32 20) 0 1);
-  0
 };
 
 fib-naive = { x : i32 =>

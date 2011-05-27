@@ -8,5 +8,4 @@ main = {
 
   expect_i1 true;
   print_1_of_t_i32_i1 (42, true);
-  0
 };

@@ -20,9 +20,10 @@ test-coro2a = {
                          };
       x = coro_invoke co (10, 20);
       y = coro_invoke co (100, 200);
-     j0 = print_i32 x;
-     j1 = print_i32 y;
-  in 0 end
+   in
+     print_i32 x;
+     print_i32 y;
+  end
 };
 
 //test-coro2b = fn (to i32) {
@@ -45,5 +46,4 @@ test-coro2a = {
 main = {
   test-coro2a();
   //test-coro2b();
-  0
 };

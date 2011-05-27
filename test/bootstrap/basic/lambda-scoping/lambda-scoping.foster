@@ -1,7 +1,6 @@
 main = {
   expect_i32 3;
   print_i32 (foo 2);
-  0
 };
 
 foo = { x:i32 =>

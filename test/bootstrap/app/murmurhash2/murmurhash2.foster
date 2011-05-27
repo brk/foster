@@ -31,7 +31,6 @@ test-manually-lifted = {
 
   expect_i32 (primitive_negate_i32 2051158325);
   print_i32 (murmurhash2-step-manually-lifted 4 1308571692 24 5bd1e995_16);
-  0;
 };
 
 test-let-transformed = {
@@ -46,7 +45,6 @@ test-let-transformed = {
 
   expect_i32 (primitive_negate_i32 2051158325);
   print_i32 (murmurhash2-step-let-transformed 4 1308571692 24 5bd1e995_16);
-  0;
 };
 
 test-let = {
@@ -61,14 +59,12 @@ test-let = {
 
   expect_i32 (primitive_negate_i32 2051158325);
   print_i32  (murmurhash2-step-let 4 1308571692 24 5bd1e995_16);
-  0;
 };
 
 main = {
   test-manually-lifted ();
   test-let-transformed ();
   test-let ();
-  0;
 };
 
 

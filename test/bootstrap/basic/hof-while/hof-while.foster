@@ -16,6 +16,9 @@ main = {
   expect_i32 2;
   let v = (ref 0);
       n = opaquely_i32 3;
-     j0 = hof-while { v^ < n } { print_i32 v^ ; (v^ + 1) >^ v ; 0 };
-   in 0 end
+   in
+     hof-while { v^ < n } {
+       print_i32 v^ ; (v^ + 1) >^ v ; 0
+     }
+  end
 };

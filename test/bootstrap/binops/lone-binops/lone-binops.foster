@@ -13,5 +13,4 @@ main = {
 
   expect_i32b 11011_2;
   print_i32b (primitive_bitxor_i32 10010_2 01001_2);
-  0
 };

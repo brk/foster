@@ -20,7 +20,8 @@ main = {
                         };
       x = coro_invoke co 10;
       y = coro_invoke co 100;
-     j0 = print_i32 x;
-     j1 = print_i32 y;
-  in 0 end
+   in
+     print_i32 x;
+     print_i32 y;
+  end
 };

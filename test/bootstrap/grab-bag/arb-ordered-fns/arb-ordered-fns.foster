@@ -4,7 +4,6 @@ main = {
 
   expect_i1(false);
   print_i1 (__COMPILES__ not-defined-later());
-  0
 };
 
 defined-later = { 0 };

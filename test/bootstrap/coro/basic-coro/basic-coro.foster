@@ -38,7 +38,7 @@ main = {
                             }()
                           end;
                    };
-  j0 = {
+  in
       print_i32 2222222;
     //force_gc_for_debugging_purposes();
       print_i32 (coro_invoke co 10); // 6666
@@ -49,7 +49,6 @@ main = {
       print_i32 (coro_invoke co 30);
       print_i32 3333333;
       print_i32 9999999;
-    }();
-  in 0 end
+  end
 };
 
