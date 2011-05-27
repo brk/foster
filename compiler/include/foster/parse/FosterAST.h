@@ -67,7 +67,19 @@ class IfExprAST;
 //class PrototypeAST;
 class VariableAST;
 
-class ModuleAST;
+class Decl; class Defn;
+struct ModuleAST {
+  std::string name;
+  const foster::InputTextBuffer* buf;
+  std::vector<Defn*> defn_parts;
+  std::vector<Decl*> decl_parts;
+
+  explicit ModuleAST(const std::vector<Decl*>& decls,
+                     const std::vector<Defn*>& defns,
+                     const std::string& name)
+  : name(name), buf(NULL), defn_parts(defns), decl_parts(decls) {}
+};
+
 
 struct IntAST : public ExprAST {
 private:
@@ -270,18 +282,6 @@ struct Decl {
   TypeAST* type;
   explicit Decl(const string& name, TypeAST* type)
   : name(name), type(type) {}
-};
-
-struct ModuleAST {
-  std::string name;
-  const foster::InputTextBuffer* buf;
-  std::vector<Defn*> defn_parts;
-  std::vector<Decl*> decl_parts;
-
-  explicit ModuleAST(const std::vector<Decl*>& decls,
-                     const std::vector<Defn*>& defns,
-                     const std::string& name)
-  : name(name), buf(NULL), defn_parts(defns), decl_parts(decls) {}
 };
 
 struct IfExprAST : public ExprAST {

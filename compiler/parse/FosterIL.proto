@@ -75,6 +75,7 @@ message Proc {
   repeated string   in_args  = 2;
   required string   name     = 3;
   optional Expr     body     = 4;
+  optional string   lines    = 5;
 }
 
 message Closure {
@@ -120,4 +121,5 @@ message Module {
   required string modulename = 1;
   repeated Proc   procs      = 2;
   repeated Decl   decls      = 3;
+  repeated string modlines   = 4;
 }

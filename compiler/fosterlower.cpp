@@ -130,7 +130,7 @@ void linkTo(llvm::Module*& transient,
             llvm::Module* module) {
   string errMsg;
   if (Linker::LinkModules(module, transient, &errMsg)) {
-    llvm::errs() << "Error when linking in " << name << ": " << errMsg << "\n";
+    EDiag() << "Error when linking in " << name << ": " << errMsg << "\n";
   }
 }
 

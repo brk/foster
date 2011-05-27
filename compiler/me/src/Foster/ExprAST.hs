@@ -106,6 +106,7 @@ data AnnFn        = AnnFn  { annFnType  :: TypeAST
                            , annFnVars  :: [AnnVar]
                            , annFnBody  :: AnnExpr
                            , annFnClosedVars :: (Maybe [AnnVar])
+                           , annFnRange :: ESourceRange
                            } deriving (Show)
 
 fnNameA f = identPrefix (annFnIdent f)

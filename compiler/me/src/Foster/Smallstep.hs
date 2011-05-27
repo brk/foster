@@ -116,7 +116,7 @@ interpret stepsTaken gs =
     otherwise  -> modifyIORef stepsTaken (+1) >>
                   step gs >>= interpret stepsTaken
 
-buildProcMap (ILProgram procdefs _decls) =
+buildProcMap (ILProgram procdefs _decls _lines) =
   List.foldr ins Map.empty procdefs where
     ins procdef map = Map.insert (ilProcIdent procdef)
                                  (ssProcDefFrom procdef) map

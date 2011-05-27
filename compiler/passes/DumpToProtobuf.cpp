@@ -3,6 +3,7 @@
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
 #include "base/InputFile.h"
+#include "base/InputTextBuffer.h"
 #include "base/LLVMUtils.h"
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
@@ -97,6 +98,12 @@ void dumpModule(DumpToProtobufPass* pass,
     pb::Defn* d = sm.add_defn();
     d->set_name(mod->defn_parts[i]->name);
     dumpChild(pass, d->mutable_body(), mod->defn_parts[i]->body);
+  }
+
+  if (const foster::InputTextBuffer* buf = mod->buf) {
+    for (int i = 0; i < buf->getLineCount(); ++i) {
+      sm.add_line(buf->getLine(i));
+    }
   }
 }
 

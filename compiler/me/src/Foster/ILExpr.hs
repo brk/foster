@@ -21,14 +21,15 @@ import Foster.ExprAST
 data ILClosure = ILClosure { ilClosureProcIdent :: Ident
                            , ilClosureCaptures  :: [AnnVar] } deriving Show
 
-data ILProgram = ILProgram [ILProcDef] [ILDecl]
+data ILProgram = ILProgram [ILProcDef] [ILDecl] SourceLines
 data ILDecl    = ILDecl String TypeAST deriving (Show)
 
 data ILProcDef = ILProcDef { ilProcReturnType :: TypeAST
                            , ilProcIdent      :: Ident
                            , ilProcVars       :: [AnnVar]
+                           , ilProcRange      :: ESourceRange
                            , ilProcCallConv   :: CallConv
-                           , ilProcBody  :: ILExpr
+                           , ilProcBody       :: ILExpr
                            } deriving Show
 data ILExpr =
           ILBool        Bool
@@ -50,7 +51,7 @@ data ILExpr =
         deriving (Show)
 
 showProgramStructure :: ILProgram -> Output
-showProgramStructure (ILProgram procdefs decls) =
+showProgramStructure (ILProgram procdefs decls _lines) =
     concat [showProcStructure p | p <- procdefs]
 
 procVarDesc (AnnVar ty id) = "( " ++ (show id) ++ " :: " ++ show ty ++ " ) "
@@ -92,7 +93,7 @@ closureConvertAndLift ctx m =
     let globalVars = (Set.fromList $ map (\(TermVarBinding s _) -> s) (contextBindings ctx)) in
     let procsILM = forM fns (\fn -> lambdaLift ctx fn []) in
     let newstate = execState procsILM (ILMState 0 globalVars []) in
-    ILProgram (ilmProcDefs newstate) decls
+    ILProgram (ilmProcDefs newstate) decls (moduleASTsourceLines m)
 
 prependAnnBinding (id, expr) ctx =
     let annvar = AnnVar (typeAST expr) id in
@@ -178,8 +179,9 @@ closureConvert ctx expr =
 
 closureConvertedProc :: [AnnVar] -> AnnFn -> ILExpr -> ILProcDef
 closureConvertedProc liftedProcVars f newbody =
-    ILProcDef (fnTypeRange (annFnType f)) (annFnIdent f) liftedProcVars
-                              FastCC newbody
+    ILProcDef (fnTypeRange (annFnType f))
+              (annFnIdent f) liftedProcVars
+              (annFnRange f) FastCC newbody
 
 -- For example, if we have something like
 --      let y = blah in ( (\x -> x + y) foobar )
@@ -253,7 +255,7 @@ bogusEnvType = PtrTypeAST (TupleTypeAST [])
 makeEnvPassingExplicit :: AnnExpr -> Map Ident (AnnFn, Ident) -> AnnExpr
 makeEnvPassingExplicit expr fnAndEnvForClosure =
     q expr where
-    fq (AnnFn ty id vars body clovars) = (AnnFn ty id vars (q body) clovars)
+    fq (AnnFn ty id vars body clovars rng) = (AnnFn ty id vars (q body) clovars rng)
     q e = case e of
             AnnBool b         -> e
             AnnCompiles c msg -> e

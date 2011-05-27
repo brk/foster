@@ -532,8 +532,6 @@ ModuleAST* parseTopLevel(pTree tree, std::string moduleName) {
   std::vector<Decl*> decls;
   std::vector<Defn*> defns;
 
-  EDiag() << "top level child count: " << getChildCount(tree);
-
   for (size_t i = 0; i < getChildCount(tree); ++i) {
     pTree c = child(tree, i);
     int token = typeOf(c);
@@ -806,6 +804,7 @@ namespace foster {
     //llvm::outs() << "ANTLR  parsing: " << (parse_mid - parse_beg).msec() << "\n";
     //llvm::outs() << "Foster parsing: " << (parse_end - parse_mid).msec() << "\n";
 
+    m->buf = gInputTextBuffer;
     return m;
   }
 

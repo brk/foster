@@ -164,8 +164,9 @@ data SourceLines = SourceLines (Seq T.Text)
 
 sourceLine :: SourceLines -> Int -> String
 sourceLine (SourceLines seq) n =
-    if n < 0 || Seq.length seq < n
-        then "<no line " ++ show n ++ ">"
+    if n < 0 || Seq.length seq <= n
+        then "<no line " ++ show n ++ " of "
+                         ++ (show $ Seq.length seq) ++ ">"
         else (T.unpack $ Seq.index seq n)
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||

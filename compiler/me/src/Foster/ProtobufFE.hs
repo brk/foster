@@ -114,7 +114,8 @@ parseFn pbexpr lines = let range = parseRange pbexpr lines in
      parseFormal (Formal u t) = AnnVar (parseType t) (Ident (uToString u) 0)
      parseReturnType name pbexpr = fmap parseType (PbExpr.result_type pbexpr)
 
-parseValAbs pbexpr lines = E_FnAST (parseFn pbexpr lines)
+parseValAbs pbexpr lines =
+  E_FnAST (parseFn pbexpr lines)
 
 parseIf pbexpr lines =
         if (isSet pbexpr PbExpr.pb_if)

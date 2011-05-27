@@ -367,7 +367,8 @@ typecheckFn' ctx f cc expArgType expBodyType = do
       Just av -> equateTypes fnty (avarType av) (Just "overall function types")
 
     return (E_AnnFn (AnnFn fnty (Ident fnProtoName irrelevantIdentNum)
-                           formalVars annbody fnClosedVars))
+                           formalVars annbody fnClosedVars
+                           (fnAstRange f)))
 
 -----------------------------------------------------------------------
 typecheckTuple ctx exprs Nothing = typecheckTuple' ctx exprs [Nothing | e <- exprs]

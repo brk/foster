@@ -46,6 +46,9 @@ namespace pb = foster::bepb;
 
 namespace foster {
 
+// In LLVMUtils.cpp
+extern std::map<std::string, std::string> sgProcLines;
+
 namespace {
 
 LLExpr* parseBool(const pb::Expr& e) {
@@ -128,8 +131,9 @@ LLProc* parseProc(const pb::Proc& e) {
     args.push_back(e.in_args(i));
   }
 
-  const std::string& name = e.name();
-  return new LLProc(proctype, name, args,
+  foster::sgProcLines[e.name()] = e.lines();
+
+  return new LLProc(proctype, e.name(), args,
                     LLExpr_from_pb(& e.body()));
 }
 

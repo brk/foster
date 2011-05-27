@@ -21,6 +21,8 @@
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/Signals.h"
 
+#include "pystring/pystring.h"
+
 using namespace llvm;
 
 std::ostream& operator<<(std::ostream& out, const llvm::Type& ty) {
@@ -46,6 +48,7 @@ std::string str(const llvm::Value* value) {
 
 namespace foster {
 
+std::map<std::string, std::string> sgProcLines;
 llvm::IRBuilder<> builder(llvm::getGlobalContext());
 
 /// Macros in TargetSelect.h conflict with those from ANTLR, so this code
@@ -133,6 +136,23 @@ struct CommentWriter : public llvm::AssemblyAnnotationWriter {
     if (v.getType()->isVoidTy()) return;
     os.PadToColumn(62);
     os << "; #uses = " << v.getNumUses() << "\t; " << *(v.getType());
+  }
+
+  void emitFunctionAnnot(const llvm::Function* f, formatted_raw_ostream& os) {
+    if (!f->isDeclaration()) {
+
+      std::string originalName = f->getName();
+      if (originalName == "foster__main") {
+        originalName = "main";
+      }
+
+      std::string& s = sgProcLines[originalName];
+      if (!s.empty()) {
+        os << "; Function " << f->getName() << " source text:\n";
+        os << pystring::replace(s, "\n", "\n;   ") << "\n";
+      }
+
+    }
   }
 };
 

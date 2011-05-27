@@ -237,6 +237,7 @@ dumpProc p =
          , in_args    = fromList $ [dumpIdent (avarIdent v) | v <- (ilProcVars p)]
          , proctype   = dumpProcType (procType p)
          , Proc.body  = Just $ dumpExpr (ilProcBody p)
+         , Proc.lines = Just $ u8fromString (showSourceRange $ ilProcRange p)
          }
 
 -----------------------------------------------------------------------
@@ -247,10 +248,11 @@ dumpDecl (ILDecl s t) =
          }
 
 dumpProgramToModule :: ILProgram -> Module
-dumpProgramToModule (ILProgram procdefs decls) =
+dumpProgramToModule (ILProgram procdefs decls (SourceLines lines)) =
     Module   { modulename = u8fromString $ "foo"
              , procs      = fromList [dumpProc p | p <- procdefs]
              , decls      = fromList [dumpDecl d | d <- decls]
+             , modlines   = fmap (\x -> u8fromString $ T.unpack x) lines
              }
 
 dumpModuleToProtobufIL :: ILProgram -> FilePath -> IO ()
