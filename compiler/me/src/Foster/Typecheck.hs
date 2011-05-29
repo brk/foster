@@ -157,9 +157,10 @@ typecheck ctx expr maybeExpTy =
                                      typecheckSubscript rng ta (typeAST ta) tb maybeExpTy
         E_TupleAST exprs -> typecheckTuple ctx exprs maybeExpTy
 
-        E_VarAST v -> case termVarLookup (evarName v) (contextBindings ctx) of
+        E_VarAST rng v -> case termVarLookup (evarName v) (contextBindings ctx) of
             Just avar  -> return $ E_AnnVar avar
-            Nothing    -> tcFails $ out $ "Unknown variable " ++ (evarName v)
+            Nothing    -> tcFails (out $ "Unknown variable " ++ (evarName v)
+                                      ++ showSourceRange rng)
 
         E_TyApp rng e t -> typecheckTyApp ctx rng e t maybeExpTy
 
@@ -245,8 +246,8 @@ typecheckCallWithBaseFnType eargs eb basetype range =
             tcFails $ (out $ "CallAST w/o FnAST type: ") ++ ebStruct
                                        ++ (out $ " :: " ++ (show $ typeAST eb))
 
-vname n (E_VarAST ev) = show n ++ " for " ++ evarName ev
-vname n _             = show n
+vname n (E_VarAST rng ev) = show n ++ " for " ++ evarName ev
+vname n _                 = show n
 
 -- If we have an explicit redex (call to a literal function),
 -- we can determine the types of the formals based on the actuals.

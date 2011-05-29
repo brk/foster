@@ -98,8 +98,9 @@ parseCall pbexpr lines =
 parseCompiles pbexpr lines =
     let numChildren = Seq.length $ PbExpr.parts pbexpr in
     case numChildren of
-        1 -> E_CompilesAST (part 0 (PbExpr.parts pbexpr) lines)      CS_NotChecked
-        _ -> E_CompilesAST (E_VarAST (VarAST Nothing "parse error")) CS_WouldNotCompile
+        1 -> E_CompilesAST (part 0 (PbExpr.parts pbexpr) lines) CS_NotChecked
+        _ -> E_CompilesAST (E_VarAST (EMissingSourceRange "parseCompiles")
+                           (VarAST Nothing "parse error")) CS_WouldNotCompile
 
 parseFn pbexpr lines = let range = parseRange pbexpr lines in
                        let parts = PbExpr.parts pbexpr in
@@ -190,7 +191,9 @@ parseTyApp pbexpr lines =
                                 Nothing -> error "TyApp missing arg type!"
                                 Just ty -> ty)
 
-parseEVar pbexpr lines = E_VarAST (parseVar pbexpr lines)
+parseEVar pbexpr lines =
+    let range = parseRange pbexpr lines in
+    E_VarAST range (parseVar pbexpr lines)
 
 parseVar pbexpr lines = VarAST (fmap parseType (PbExpr.type' pbexpr))
                                (getName "var" $ PbExpr.name pbexpr)
@@ -207,7 +210,7 @@ parseModule name decls defns lines =
               lines
 
 getVarName :: ExprAST -> String
-getVarName (E_VarAST v) = evarName v
+getVarName (E_VarAST rng v) = evarName v
 getVarName x = error $ "getVarName given a non-variable! " ++ show x
 
 getFormal :: PbExpr.Expr -> SourceLines ->  AnnVar

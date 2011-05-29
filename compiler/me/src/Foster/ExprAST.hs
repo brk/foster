@@ -37,7 +37,7 @@ data ExprAST =
         | E_SubscriptAST  { subscriptBase  :: ExprAST
                           , subscriptIndex :: ExprAST
                           , subscriptRange :: ESourceRange }
-        | E_VarAST        E_VarAST
+        | E_VarAST        ESourceRange E_VarAST
         | E_TyApp         ESourceRange ExprAST TypeAST
         deriving Show
 
@@ -134,7 +134,7 @@ typeAST (E_AnnTyApp substitutedTy tm tyArgs) = substitutedTy
 
 
 tryGetCallNameE :: ExprAST -> String
-tryGetCallNameE (E_VarAST (VarAST mt v)) = v
+tryGetCallNameE (E_VarAST rng (VarAST mt v)) = v
 tryGetCallNameE _ = ""
 
 instance Structured ExprAST where
@@ -156,7 +156,7 @@ instance Structured ExprAST where
             E_SubscriptAST a b r -> out $ "SubscriptAST "
             E_TupleAST     es    -> out $ "TupleAST     "
             E_TyApp rng a t      -> out $ "TyApp        "
-            E_VarAST v           -> out $ "VarAST       " ++ evarName v ++ " :: " ++ show (evarMaybeType v)
+            E_VarAST rng v       -> out $ "VarAST       " ++ evarName v ++ " :: " ++ show (evarMaybeType v)
     childrenOf e =
         case e of
             E_BoolAST rng b      -> []
@@ -174,7 +174,7 @@ instance Structured ExprAST where
             E_SubscriptAST a b r -> [a, b]
             E_TupleAST     es    -> es
             E_TyApp  rng a t     -> [a]
-            E_VarAST _           -> []
+            E_VarAST _ _         -> []
 
 termBindingExpr (TermBinding _ e) = e
 termBindingExprs bs = map termBindingExpr bs
@@ -183,7 +183,7 @@ bindingFreeVars (TermBinding v e) = freeVars e `butnot` [evarName v]
 
 instance Expr ExprAST where
     freeVars e = case e of
-        E_VarAST v          -> [evarName v]
+        E_VarAST rng v      -> [evarName v]
         E_LetAST rng bnd e t -> freeVars e ++ (bindingFreeVars bnd)
         E_FnAST f           -> let bodyvars =  Set.fromList (freeVars (fnBody f)) in
                                let boundvars = Set.fromList (map (identPrefix.avarIdent) (fnFormals f)) in
