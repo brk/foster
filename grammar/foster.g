@@ -20,7 +20,7 @@ tokens {
 
   VAL_APP;
   BINDING; LETS; LETREC; SEQ;
-  RAT_NUM; INT_NUM;
+  RAT_NUM; INT_NUM; BOOL;
   DECL; DEFN;
   TERMVAR; TYPEVAR;
   TERM; PHRASE; LVALUE; SUBSCRIPT;
@@ -113,7 +113,7 @@ p       :               // patterns
   ;
 */
 
-lit     : num | str | TRU | FLS;
+lit     : num | str | TRU -> ^(BOOL TRU) | FLS -> ^(BOOL FLS);
 
 /////////////////////////////////////////////////////////////////////////////////////////
 

@@ -348,6 +348,16 @@ ExprAST* parseBuiltinCompiles(pTree t) {
  return new BuiltinCompilesExprAST(ExprAST_from(child(t, 0)), rangeOf(t));
 }
 
+ExprAST* parseBool(pTree t) {
+  string text = textOf(child(t, 0));
+  if (text == "false" || text == "true") {
+    return new BoolAST(text, rangeOf(t));
+  } else {
+    foster::EDiag() << "Invalid boolean text literal: " << text;
+    return NULL;
+  }
+}
+
 ExprAST* parseAtom(pTree tree) {
   int token = typeOf(tree);
 
@@ -359,12 +369,7 @@ ExprAST* parseAtom(pTree tree) {
   if (token == IF)       { return parseIf(tree); }
   if (token == REF)      { return parseRef(tree); }
   if (token == COMPILES) { return parseBuiltinCompiles(tree); }
-
-  string text = textOf(tree);
-
-  if (text == "false" || text == "true") {
-    return new BoolAST(text, rangeOf(tree));
-  }
+  if (token == BOOL)     { return parseBool(tree); }
 
   display_pTree(tree, 2);
   foster::EDiag() << "returning NULL ExprAST for parseAtom token " << str(tree->getToken(tree));
