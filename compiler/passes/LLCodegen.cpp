@@ -571,7 +571,10 @@ llvm::Value* LLIf::codegen(CodegenPass* pass) {
 
   builder.CreateCondBr(cond, thenBB, elseBB);
 
+  Value* iftmp = CreateEntryAlloca(getLLVMType(this->type), "iftmp_slot");;
+
   Value* then; Value* else_;
+  bool elseNeedsLoad = false;
 
   { // Codegen the then-branch of the if expression
     builder.SetInsertPoint(thenBB);
@@ -579,6 +582,24 @@ llvm::Value* LLIf::codegen(CodegenPass* pass) {
     ASSERT(then != NULL)
         << "codegen for if expr failed due to missing 'then' branch";
 
+    {
+      const Type* valTy = getLLVMType(this->type);
+      if (valTy != then->getType()) {
+        ASSERT(isPointerToType(then->getType(), valTy))
+                << "valTy is " << str(valTy)
+                << "; actual type of then branch is "
+                << str(then->getType());
+         // If we have a code construct like
+         //   if cond then { new blah {} } else { new blah {} }
+         // then the ast type (and thus valType) will be blah*
+         // but the exprs will be stack slots of type blah**,
+         // requiring a load...
+         then = builder.CreateLoad(then, false, "ifthen_rhs");
+         elseNeedsLoad = true;
+      }
+    }
+
+    builder.CreateStore(then, iftmp, /*isVolatile=*/ false);
     builder.CreateBr(mergeBB);
     thenBB = builder.GetInsertBlock();
   }
@@ -590,27 +611,19 @@ llvm::Value* LLIf::codegen(CodegenPass* pass) {
     ASSERT(else_ != NULL)
         << "codegen for if expr failed due to missing 'else' branch";
 
+    if (elseNeedsLoad) {
+      else_ = builder.CreateLoad(else_, false, "ifelse_rhs");
+    }
+    builder.CreateStore(else_, iftmp, /*isVolatile=*/ false);
     builder.CreateBr(mergeBB);
     elseBB = builder.GetInsertBlock();
   }
 
-  { // Codegen the PHI node to merge control flow
-    const Type* valTy = getLLVMType(this->type);
-    if (valTy != then->getType() && isPointerToType(then->getType(), valTy)) {
-      // If we have a code construct like
-      //   if cond then { new blah {} } else { new blah {} }
-      // then the ast type (and thus valType) will be blah*
-      // but the exprs will be stack slots of type blah**
-      valTy = then->getType();
-    }
-
+  {
     F->getBasicBlockList().push_back(mergeBB);
     builder.SetInsertPoint(mergeBB);
 
-    PHINode *PN = builder.CreatePHI(valTy, "iftmp");
-    PN->addIncoming(then, thenBB);
-    PN->addIncoming(else_, elseBB);
-    return PN;
+    return builder.CreateLoad(iftmp, /*isVolatile*/ false, "iftmp");
   }
 }
 

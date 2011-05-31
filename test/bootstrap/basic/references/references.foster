@@ -1,6 +1,7 @@
 main = {
   simpler();
   capture();
+  ref-if ();
 };
 
 simpler = {
@@ -20,5 +21,13 @@ capture = {
      2 >^ r;
      expect_i32 2;
       print_i32 (f ());
+  end
+};
+
+ref-if = {
+  let r = if 2 == opaquely_i32 2 then (ref 0) else (ref 1) end;
+  in
+   expect_i32 0;
+    print_i32 r^;
   end
 };
