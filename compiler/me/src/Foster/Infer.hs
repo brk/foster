@@ -100,6 +100,16 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
     if typesEqual t1 t2
       then tcUnifyLoop constraints tysub
       else case (t1, t2) of
+                ((NamedTypeAST n1), (NamedTypeAST n2)) ->
+                  if n1 == n2 then tcUnifyLoop constraints tysub
+                              else tcFails (out $ "Unable to unify different named types: "
+                                              ++ n1 ++ " vs " ++ n2)
+
+                ((TupleTypeAST tys1), (TupleTypeAST tys2)) ->
+                    if List.length tys1 /= List.length tys2
+                      then tcFails $ out "Unable to unify tuples of different lengths!"
+                      else tcUnifyLoop ([TypeConstrEq a b | (a, b) <- zip tys1 tys2] ++ constraints) tysub
+
                 ((FnTypeAST a1 a2 cc1 _), (FnTypeAST b1 b2 cc2 _)) ->
                   if cc1 == cc2 || (cc1 == FastCC && cc2 == CCC) then
                     -- We can implicitly convert a CCC to a FastCC
@@ -108,16 +118,24 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                     tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub
                   else tcFails (out $ "Cannot unify function types with different calling conventions: "
                                     ++ show cc1 ++ " vs " ++ show cc2)
+
                 ((CoroType a1 a2), (CoroType b1 b2)) ->
                     tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub
-                ((TupleTypeAST tys1), (TupleTypeAST tys2)) ->
-                    if List.length tys1 /= List.length tys2
-                      then tcFails $ out "Unable to unify tuples of different lengths!"
-                      else tcUnifyLoop ([TypeConstrEq a b | (a, b) <- zip tys1 tys2] ++ constraints) tysub
+
+                -- TODO: ForAll: alpha-equivalence?
+                -- TODO: T_TyVar -- alpha equivalence?
+
                 ((MetaTyVar m), ty) ->
                     tcUnifyVar m ty tysub constraints
                 (ty, (MetaTyVar m)) ->
                     tcUnifyVar m ty tysub constraints
+
+                ((RefType t1), (RefType t2)) ->
+                    tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
+
+                ((PtrTypeAST t1), (PtrTypeAST t2)) ->
+                    tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
+
                 otherwise ->
                     tcFails $ out ("Unable to unify " ++ show t1 ++ " and " ++ show t2)
 
