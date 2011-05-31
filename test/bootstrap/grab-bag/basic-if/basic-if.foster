@@ -1,10 +1,14 @@
-//main = fn (to i32) {
-//  expect_i32(4)
-//  print_i32(if 1 == 2 then { 3 } else { 4 })
-//}
-
 main = {
-  expect_i32 (4);
-  print_i32  (if 1 == 2 then 3 else 4 end);
+  iftru ();
+  iffls ();
 };
 
+iftru = {
+  expect_i32 3;
+  print_i32  if 2 == opaquely_i32 2 then 3 else 4 end;
+};
+
+iffls = {
+  expect_i32 4;
+  print_i32  if 1 == opaquely_i32 2 then 3 else 4 end;
+};
