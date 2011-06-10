@@ -19,6 +19,7 @@ struct PrettyPrintPass {
   // to ensure proper outer parens,
   // mainly useful for unit tests.
   void emit(const ExprAST*, bool forceOuterParens = false);
+  void emit(const Pattern*, bool forceOuterParens = false);
 
   typedef foster::PughSinofskyPrettyPrinter PrettyPrinter;
 
@@ -101,6 +102,14 @@ inline void recurse(PrettyPrintPass* p, const ExprAST* ast, bool wrapInParens) {
   }
 }
 
+inline void recurse(PrettyPrintPass* p, const Pattern* ast) {
+  if (!ast) {
+    p->scan(PPToken("<nil>"));
+  } else {
+    (const_cast<Pattern*>(ast))->show(p);
+  }
+}
+
 bool isAtom(ExprAST* ast) {
   if (dynamic_cast<BoolAST*>(ast)) return true;
   if (dynamic_cast<IntAST*>(ast)) return true;
@@ -125,6 +134,10 @@ void PrettyPrintPass::emitType(const TypeAST* ty) {
 
 void PrettyPrintPass::emit(const ExprAST* ast, bool forceParens) {
   recurse(this, ast, forceParens || foster::wasExplicitlyParenthesized(ast));
+}
+
+void PrettyPrintPass::emit(const Pattern* ast, bool forceParens) {
+  recurse(this, ast);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -192,6 +205,42 @@ void ValAbs::show(PrettyPrintPass* pass) {
     }
     pass->emit(this->parts[0]);
     pass->scan(PPToken("}"));
+  }
+}
+
+void WildcardPattern::show(PrettyPrintPass* pass) {
+  pass->scan(PPToken("_"));
+}
+
+void LiteralPattern::show(PrettyPrintPass* pass) {
+  pass->emit(this->pattern);
+}
+
+void TuplePattern::show(PrettyPrintPass* pass) {
+  ASSERT(false && "PrettyPrintPass/TuplePattern not yet implemented");
+}
+
+// case e (of p)+ end
+void CaseExpr::show(PrettyPrintPass* pass) {
+  { ScopedBlock sb(pass);
+  pass->scan(PPToken("case "));
+  pass->emit(this->parts[0]);
+  }
+
+  { ScopedBlock sb(pass);
+    for (size_t i = 0; i < branches.size(); ++i) {
+      pass->scan(PPToken("of "));
+      { ScopedBlock sb(pass);
+        pass->emit(branches[i].first);
+      }
+      pass->scan(PPToken(" -> "));
+      { ScopedBlock sb(pass);
+        pass->emit(branches[i].second);
+      }
+    }
+  }
+  { ScopedBlock sb(pass);
+  pass->scan(PPToken("end"));
   }
 }
 

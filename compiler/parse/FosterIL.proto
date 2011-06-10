@@ -41,8 +41,10 @@ message Expr {
     IL_CLOSURES = 19;
     IL_TUPLE = 20;
     IL_LETVALS = 21;
+    IL_CASE = 22;
     IL_CALL = 23;
     IL_SEQ = 24;
+
     IL_SUBSCRIPT = 26;
     IL_CORO_INVOKE = 27;
     IL_CORO_CREATE = 28;
@@ -61,6 +63,7 @@ message Expr {
   optional PBInt      pb_int = 17;
   optional PBIf       pb_if  = 21;
 
+  optional DecisionTree   dt = 22;
   optional bool   bool_value = 23;   // Bool
 
   optional string name  = 24;  // Var, LETVAL named type decl
@@ -110,6 +113,37 @@ message PBIf {
 message CoroPrim {
   required Type ret_type = 1;
   required Type arg_type = 2;
+}
+
+message DecisionTree {
+  enum Tag {
+    DT_FAIL = 16;
+    DT_LEAF = 17;
+    DT_SWAP = 18;
+    DT_SWITCH = 19;
+  }
+  required Tag          tag        = 1;
+  optional PbSwitchCase switchcase = 4;
+  optional DecisionTree swapDt     = 6;
+  optional Expr         leaf_action = 7;
+  repeated string       leaf_idents = 8;
+  repeated PbOccurrence leaf_idoccs = 9;
+}
+
+message PbSwitchCase {
+  repeated PbCtorId     ctors   = 1;
+  repeated DecisionTree trees   = 2;
+  optional DecisionTree defCase = 3;
+  optional PbOccurrence occ     = 4;
+}
+
+message PbCtorId {
+  required string ctorTypeName = 1;
+  required int32  ctorLocalId  = 2;
+}
+
+message PbOccurrence {
+  repeated int32 occ_offset = 1;
 }
 
 message Decl {

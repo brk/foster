@@ -34,12 +34,15 @@ import Foster.Fepb.PBLet    as PBLet
 import Foster.Fepb.Defn     as Defn
 import Foster.Fepb.Decl     as Decl
 import Foster.Fepb.PBIf     as PBIf
+import Foster.Fepb.PBCase   as PBCase
 import Foster.Fepb.Expr     as PbExpr
 import Foster.Fepb.SourceModule as SourceModule
 import Foster.Fepb.Expr.Tag(Tag(IF, LET, VAR, SEQ,
                                 BOOL, CALL, TY_APP,-- MODULE,
                                 ALLOC, DEREF, STORE, TUPLE, PB_INT,
-                                COMPILES, VAL_ABS, SUBSCRIPT))
+                                CASE_EXPR, COMPILES, VAL_ABS, SUBSCRIPT,
+                                PAT_WILDCARD, PAT_INT, PAT_BOOL,
+                                PAT_VARIABLE, PAT_TUPLE))
 import qualified Foster.Fepb.SourceRange as Pb
 import qualified Foster.Fepb.SourceLocation as Pb
 
@@ -198,6 +201,33 @@ parseEVar pbexpr lines =
 parseVar pbexpr lines = VarAST (fmap parseType (PbExpr.type' pbexpr))
                                (getName "var" $ PbExpr.name pbexpr)
 
+parsePattern :: PbExpr.Expr -> SourceLines -> EPattern
+parsePattern pbexpr lines =
+  let range = parseRange pbexpr lines in
+  let parts = PbExpr.parts pbexpr in
+  case PbExpr.tag pbexpr of
+    PAT_WILDCARD -> EP_Wildcard range
+    PAT_TUPLE    -> EP_Tuple range (map (\x -> parsePattern x lines)
+                                     (toList $ PbExpr.parts pbexpr))
+    _ -> case (PbExpr.tag pbexpr, part 0 parts lines) of
+           (PAT_BOOL, E_BoolAST _ bv) -> EP_Bool range bv
+           (PAT_INT,   E_IntAST _ iv) -> EP_Int  range iv
+           (PAT_VARIABLE, E_VarAST _ v)-> EP_Variable range v
+
+           otherwise -> error $ "parsePattern called with non-matching tag/arg!"
+                                ++ " " ++ show (PbExpr.tag pbexpr)
+
+
+parseCaseExpr pbexpr lines =
+  let range = parseRange pbexpr lines in
+  case PbExpr.pb_case pbexpr of
+    Nothing -> error "must have if to parse from if!"
+    Just pbcase ->
+      (E_Case range
+              (parseExpr (PBCase.scrutinee pbcase) lines)
+       (Prelude.zip (toList $ fmap (\p -> parsePattern p lines) (PBCase.pattern pbcase))
+                    (toList $ fmap (\e -> parseExpr    e lines) (PBCase.branch  pbcase))))
+
 toplevel :: FnAST -> FnAST
 toplevel (FnAST a b c d e False) = FnAST a b c d e True
 toplevel (FnAST _ _ _ _ _ True ) =
@@ -260,8 +290,15 @@ parseExpr pbexpr lines =
                 DEREF     -> parseDeref
                 STORE     -> parseStore
                 TY_APP    -> parseTyApp
+                CASE_EXPR -> parseCaseExpr
                 COMPILES  -> parseCompiles
                 SUBSCRIPT -> parseSubscript
+                PAT_WILDCARD -> error "parseExpr called on pattern!"
+                PAT_VARIABLE -> error "parseExpr called on pattern!"
+                PAT_BOOL     -> error "parseExpr called on pattern!"
+                PAT_INT      -> error "parseExpr called on pattern!"
+                PAT_TUPLE    -> error "parseExpr called on pattern!"
+
                 --otherwise -> error $ "parseExpr saw unknown tag: " ++ (show $ PbExpr.tag pbexpr) ++ "\n"
         in
    fn pbexpr lines

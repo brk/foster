@@ -14,6 +14,7 @@ import System.Console.ANSI
 import Foster.Base
 import Foster.TypeAST
 import Foster.ILExpr
+import Foster.PatternMatch
 
 -- A term is either a normal-form value,
 -- or a non-normal-form expression.
@@ -22,17 +23,28 @@ data SSTerm = SSTmExpr  IExpr
             deriving (Show)
 
 data SSValue = SSBool      Bool
-             | SSInt       LiteralInt
+             | SSInt       Integer
              | SSPrimitive SSPrimId
              | SSTuple     [SSValue]
              | SSLocation  Location
              | SSClosure   ILClosure [SSValue]
              | SSCoro      Coro
-             deriving (Show)
+             deriving (Eq, Show)
+
+instance Eq LiteralInt
+  where l1 == l2 = (litIntValue l1) == (litIntValue l2)
+
+instance Eq ILClosure
+  where c1 == c2 = (ilClosureProcIdent c1) == (ilClosureProcIdent c2)
+                &&  (map avarIdent $ ilClosureCaptures c1)
+                 == (map avarIdent $ ilClosureCaptures c2)
+
+instance Eq Coro
+  where c1 == c2 = (coroLoc c1) == (coroLoc c2)
 
 data SSPrimId = PrimCoroInvoke | PrimCoroCreate | PrimCoroYield
               | PrimNamed String
-             deriving (Show)
+             deriving (Eq, Show)
 
 -- Expressions are terms that are not in normal form.
 data IExpr =
@@ -49,6 +61,7 @@ data IExpr =
         | ISubscript    Ident   SSTerm
         | IIf           Ident   SSTerm     SSTerm
         | ICall         Ident  [Ident]
+        | ICase         Ident  (DecisionTree ILExpr) [(Pattern, SSTerm)]
         | ITyApp       SSTerm  TypeAST
         deriving (Show)
 
@@ -63,7 +76,7 @@ ssTermOfExpr expr =
   let tr = ssTermOfExpr in
   case expr of
     ILBool b               -> SSTmValue $ SSBool b
-    ILInt t i              -> SSTmValue $ SSInt i
+    ILInt t i              -> SSTmValue $ SSInt $ litIntValue i
     ILVar a                -> SSTmExpr  $ IVar (avarIdent a)
     ILTuple vs             -> SSTmExpr  $ ITuple (map avarIdent vs)
     ILClosures bnds clos e -> SSTmExpr  $ IClosures bnds clos (tr e)
@@ -75,6 +88,7 @@ ssTermOfExpr expr =
     ILDeref t a            -> SSTmExpr  $ IDeref (avarIdent a)
     ILStore t a b          -> SSTmExpr  $ IStore (avarIdent a) (avarIdent b)
     ILTyApp t e argty      -> SSTmExpr  $ ITyApp (tr e) argty
+    ILCase t a bs dt       -> SSTmExpr  $ ICase (avarIdent a) dt [(p, tr e) | (p, e) <- bs]
 
 -- ... which lifts in a  straightfoward way to procedure definitions.
 ssProcDefFrom pd =
@@ -278,6 +292,22 @@ stepExpr gs expr = do
         SSTmExpr _     -> subStep (withTerm gs b) ( envOf gs
                                                   , \t -> SSTmExpr $ ILetVal x t e)
 
+    ICase a _dt [] -> error $ "Pattern match failure!"
+    ICase a dt ((p, e):bs) ->
+       -- First, interpret the pattern list directly
+       -- (using recursive calls to discard unmatched branches).
+       case matchPattern p (getval gs a) of
+         Nothing -> return $ withTerm gs (SSTmExpr $ ICase a dt bs)
+         Just varsvals ->
+           -- Then check that interpreting the decision tree
+           -- gives identical results to direct pattern interpretation.
+           case evalDecisionTree dt (getval gs a) of
+              Just vv | vv == varsvals ->
+                    let (vars, vals) = unzip varsvals in
+                    return $ withTerm (extendEnv gs vars vals) e
+              elsewise ->
+                    error $ "Direct pattern matching disagreed with decision tree!"
+                        ++ "\n" ++ show elsewise ++ " vs \n" ++ show varsvals
     ICall b vs ->
         let args = map (getval gs) vs in
         case tryLookupProc gs b of
@@ -303,7 +333,7 @@ stepExpr gs expr = do
     ISubscript v (SSTmValue (SSInt i)) ->
         case getval gs v of
           SSTuple vals -> return $ withTerm gs (SSTmValue (vals !! n))
-                              where n = fromInteger (litIntValue i)
+                              where n = fromInteger i
           _ -> error "Expected base of subscript to be tuple value"
 
     ISubscript v e@(SSTmExpr _) -> subStep (withTerm gs e) (envOf gs, \t -> SSTmExpr $ ISubscript v t)
@@ -317,6 +347,60 @@ stepExpr gs expr = do
     ITyApp e@(SSTmValue (SSPrimitive PrimCoroYield )) _ -> return $ withTerm gs e
     ITyApp (SSTmValue e) argty -> error $ "step iltyapp " ++ show e
 
+
+evalDecisionTree :: DecisionTree ILExpr -> SSValue -> Maybe [(Ident, SSValue)]
+evalDecisionTree (DT_Fail) v = error "evalDecisionTree hit DT_Fail!"
+evalDecisionTree (DT_Swap i dt) v = evalDecisionTree dt v
+evalDecisionTree (DT_Leaf _ idsoccs) v =
+  Just $ map (lookupOcc v) idsoccs
+    where lookupOcc v (id, []) = (id, v)
+          lookupOcc v (id, all@(occ:occs)) =
+            case v of SSTuple vs -> lookupOcc (vs !! occ) (id, occs)
+                      otherwise  -> error $ "Pattern match failure: "
+                                        ++ "Cannot index non-tuple value: " ++ show v
+
+evalDecisionTree (DT_Switch occ (SwitchCase branches def)) v =
+  evalSwitchCase (getOcc occ v) branches def where
+    evalSwitchCase w ((ctor, dt):rest) def =
+      if ctorMatches w ctor
+        then evalDecisionTree dt v
+        else evalSwitchCase w rest def
+    evalSwitchCase w [] (Just dt) = evalDecisionTree dt v
+    evalSwitchCase w [] Nothing = error $ "evalSwitchCase " ++ show w ++ " [] Nothing"
+
+    ctorMatches (SSInt i) (CtorId "Int32" n) = n == fromInteger i
+    ctorMatches (SSInt _) (CtorId _ _) = False
+    ctorMatches (SSTuple vs) (CtorId "()" n) = n == (Prelude.length vs)
+    ctorMatches (SSTuple _ ) (CtorId _ _) = False
+    ctorMatches v ctor = error $ "ctorMatches " ++ show ctor ++ " ==? " ++ show v
+
+    getOcc [] v = v
+    getOcc (i:rest) (SSTuple vs) = getOcc rest (vs !! i)
+    getOcc occ v = error $ "getOcc " ++ show occ ++ ";; " ++ show v
+
+matchPattern :: Pattern -> SSValue -> Maybe [(Ident, SSValue)]
+matchPattern p v =
+  let trivialMatchSuccess = Just [] in
+  let matchFailure        = Nothing in
+  let matchIf cond = if cond then trivialMatchSuccess
+                             else matchFailure in
+  case (v, p) of
+    (_, P_Wildcard _   ) -> trivialMatchSuccess
+    (_, P_Variable _ id) -> Just [(id, v)]
+
+    (SSInt i1, P_Int _ i2)   -> matchIf $ i1 == litIntValue i2
+    (_       , P_Int _ _ )   -> matchFailure
+
+    (SSBool b1, P_Bool _ b2) -> matchIf $ b1 == b2
+    (_        , P_Bool _ _ ) -> matchFailure
+
+    (SSTuple [], P_Tuple _ []) -> trivialMatchSuccess
+    (SSTuple (v1:vals), P_Tuple _ (p1:pats)) -> do
+        b1 <- matchPattern p1 v1
+        b2 <- mapM (\(p,v) -> matchPattern p v) (zip pats vals)
+        return $ b1 ++ (concat b2)
+    (_, P_Tuple _ _) -> matchFailure
+
 canSwitchToCoro c =
   case coroStat c of
     CoroStatusInvalid   -> False
@@ -325,6 +409,7 @@ canSwitchToCoro c =
     CoroStatusRunning   -> False
     CoroStatusDead      -> False
 
+extendEnv :: MachineState -> [Ident] -> [SSValue] -> MachineState
 extendEnv gs names args =
   let ins (id, arg) map = Map.insert id arg map in
   let coro = stCoro gs in
@@ -332,22 +417,21 @@ extendEnv gs names args =
   withEnv gs (List.foldr ins env (zip names args))
 
 liftInt :: (Integral a) => (a -> a -> b) ->
-          LiteralInt -> LiteralInt -> b
+          Integer -> Integer -> b
 liftInt f i1 i2 =
-  let v1 = fromInteger (litIntValue i1) in
-  let v2 = fromInteger (litIntValue i2) in
+  let v1 = fromInteger i1 in
+  let v2 = fromInteger i2 in
   f v1 v2
 
 modifyInt32With :: (Int32 -> Int32 -> Int32)
-       -> LiteralInt -> LiteralInt -> LiteralInt
+       -> Integer -> Integer -> Integer
 modifyInt32With f i1 i2 =
-  let int = fromIntegral (liftInt f i1 i2) in
-  i1 { litIntValue = int }
+  fromIntegral (liftInt f i1 i2)
 
 ashr32   a b = shiftR a (fromIntegral b)
 shl32    a b = shiftL a (fromIntegral b)
 
-tryGetInt32PrimOp2Int32 :: String -> Maybe (LiteralInt -> LiteralInt -> LiteralInt)
+tryGetInt32PrimOp2Int32 :: String -> Maybe (Integer -> Integer -> Integer)
 tryGetInt32PrimOp2Int32 name =
   case name of
     "primitive_*_i32"       -> Just (modifyInt32With (*))
@@ -472,8 +556,7 @@ tryEvalPrimitive gs primName [SSInt i1, SSInt i2]
 
 
 tryEvalPrimitive gs "primitive_negate_i32" [SSInt i] =
-  let int = litIntValue i in
-  return $ withTerm gs (SSTmValue $ SSInt (i { litIntValue = negate int }))
+  return $ withTerm gs (SSTmValue $ SSInt (negate i))
 
 tryEvalPrimitive gs "primitive_bitnot_i1" [SSBool b] =
   return $ withTerm gs (SSTmValue $ SSBool (not b))
@@ -485,11 +568,11 @@ tryEvalPrimitive gs "opaquely_i32" [val] =
   return $ withTerm gs (SSTmValue val)
 
 tryEvalPrimitive gs "expect_i32b" [val@(SSInt i)] =
-      do expectString gs (showBits32 (litIntValue i))
+      do expectString gs (showBits32 i)
          return $ withTerm gs unit
 
 tryEvalPrimitive gs "print_i32b" [val@(SSInt i)] =
-      do printString gs (showBits32 (litIntValue i))
+      do printString gs (showBits32 i)
          return $ withTerm gs unit
 
 tryEvalPrimitive gs primName args =
@@ -527,7 +610,7 @@ display :: SSValue -> String
 display (SSBool True )  = "true"
 display (SSBool False)  = "false"
 display (SSPrimitive p) = "<" ++ show p ++ ">"
-display (SSInt i     )  = show (litIntValue i)
+display (SSInt i     )  = show i
 display (SSTuple vals)  = "(" ++ joinWith ", " (map display vals) ++ ")"
 display (SSLocation z)  = "<location " ++ show z ++ ">"
 display (SSClosure _ _) = "<closure>"

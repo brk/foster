@@ -17,6 +17,7 @@ import Foster.Base
 import Foster.Context
 import Foster.TypeAST
 import Foster.ExprAST
+import Foster.PatternMatch
 
 data ILClosure = ILClosure { ilClosureProcIdent :: Ident
                            , ilClosureCaptures  :: [AnnVar] } deriving Show
@@ -46,6 +47,7 @@ data ILExpr =
         | ILStore       TypeAST AnnVar AnnVar
         | ILSubscript   TypeAST AnnVar ILExpr
         | ILIf          TypeAST AnnVar ILExpr ILExpr
+        | ILCase        TypeAST AnnVar [(Pattern, ILExpr)] (DecisionTree ILExpr)
         | ILCall        TypeAST AnnVar [AnnVar]
         | ILTyApp       TypeAST ILExpr TypeAST
         deriving (Show)
@@ -141,6 +143,12 @@ closureConvert ctx expr =
             AnnTuple     es        -> do cs <- mapM g es
                                          nestedLets cs (\vs -> ILTuple vs)
 
+            AnnCase t e bs         -> do e' <- g e
+                                         ibs <- mapM (\(p, a) -> do a' <- g a
+                                                                    return (p, a' )) bs
+                                         let allSigs = []
+                                         let dt = compilePatterns ibs allSigs
+                                         nestedLets [e'] (\[va] -> ILCase t va ibs (trace (show dt) dt))
             E_AnnTyApp t e argty   -> do e' <- g e
                                          return $ ILTyApp t e' argty
 
@@ -269,6 +277,7 @@ makeEnvPassingExplicit expr fnAndEnvForClosure =
             AnnStore t a b -> AnnStore t (q a) (q b)
             AnnSubscript t a b    -> AnnSubscript t (q a) (q b)
             AnnTuple es           -> AnnTuple (map q es)
+            AnnCase t e bs        -> AnnCase t (q e) [(p, q e) | (p, e) <- bs]
             E_AnnTyApp t e argty  -> E_AnnTyApp t (q e) argty
             E_AnnFn f             -> E_AnnFn (fq f)
             AnnCall r t (E_AnnVar v) es
@@ -340,6 +349,7 @@ typeIL (ILAlloc v)         = RefType (typeIL $ ILVar v)
 typeIL (ILDeref t _)       = t
 typeIL (ILStore t _ _)     = t
 typeIL (ILSubscript t _ _) = t
+typeIL (ILCase t _ _ _)    = t
 typeIL (ILVar (AnnVar t i)) = t
 typeIL (ILTyApp overallType tm tyArgs) = overallType
 
@@ -356,6 +366,7 @@ instance Structured ILExpr where
             ILAlloc v           -> out $ "ILAlloc     "
             ILDeref t a         -> out $ "ILDeref     "
             ILStore t a b       -> out $ "ILStore     "
+            ILCase t _ _ _      -> out $ "ILCase      "
             ILSubscript  t a b  -> out $ "ILSubscript " ++ " :: " ++ show t
             ILTuple     es      -> out $ "ILTuple     (size " ++ (show $ length es) ++ ")"
             ILVar (AnnVar t i)  -> out $ "ILVar       " ++ show i ++ " :: " ++ show t
@@ -369,6 +380,7 @@ instance Structured ILExpr where
             ILBool b                -> []
             ILInt t _               -> []
             ILTuple     vs          -> map ILVar vs
+            ILCase _ e bs _dt       -> (ILVar e):(map snd bs)
             ILClosures bnds clos e  -> [e]
             ILLetVal x b e          -> [b, e]
             ILCall  t v vs          -> [ILVar v] ++ [ILVar v | v <- vs]

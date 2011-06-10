@@ -39,10 +39,8 @@ data ExprAST =
                           , subscriptRange :: ESourceRange }
         | E_VarAST        ESourceRange E_VarAST
         | E_TyApp         ESourceRange ExprAST TypeAST
+        | E_Case          ESourceRange ExprAST [(EPattern, ExprAST)]
         deriving Show
-
-data E_VarAST = VarAST { evarMaybeType :: Maybe TypeAST
-                       , evarName      :: String } deriving (Show)
 
 data FnAST  = FnAST { fnAstRange :: ESourceRange
                     , fnAstName :: String
@@ -95,6 +93,7 @@ data AnnExpr =
                      ,  annTyAppExpr        :: AnnExpr
                      ,  annTyAppArgTypes    :: TypeAST }
 
+        | AnnCase    TypeAST AnnExpr [(Pattern, AnnExpr)]
         -- This one's a bit odd, in that we can't include an AnnExpr
         -- because the subterm doesn't need to be well-typed...
         | AnnCompiles   CompilesStatus String
@@ -127,6 +126,7 @@ typeAST (AnnAlloc e)         = RefType (typeAST e)
 typeAST (AnnDeref t _)       = t
 typeAST (AnnStore t _ _)     = t
 typeAST (AnnSubscript t _ _) = t
+typeAST (AnnCase t _ _)      = t
 typeAST (E_AnnVar (AnnVar t s)) = t
 typeAST (E_AnnTyApp substitutedTy tm tyArgs) = substitutedTy
 
@@ -156,6 +156,7 @@ instance Structured ExprAST where
             E_SubscriptAST a b r -> out $ "SubscriptAST "
             E_TupleAST     es    -> out $ "TupleAST     "
             E_TyApp rng a t      -> out $ "TyApp        "
+            E_Case rng _ _       -> out $ "Case         "
             E_VarAST rng v       -> out $ "VarAST       " ++ evarName v ++ " :: " ++ show (evarMaybeType v)
     childrenOf e =
         case e of
@@ -174,6 +175,7 @@ instance Structured ExprAST where
             E_SubscriptAST a b r -> [a, b]
             E_TupleAST     es    -> es
             E_TyApp  rng a t     -> [a]
+            E_Case rng e bs      -> e:(map snd bs)
             E_VarAST _ _         -> []
 
 termBindingExpr (TermBinding _ e) = e
@@ -208,6 +210,7 @@ instance Structured AnnExpr where
             AnnStore      t a b  -> out $ "AnnStore     "
             AnnSubscript  t a b  -> out $ "AnnSubscript " ++ " :: " ++ show t
             AnnTuple     es      -> out $ "AnnTuple     "
+            AnnCase      t e bs  -> out $ "AnnCase      "
             E_AnnVar (AnnVar t v) -> out $ "AnnVar       " ++ show v ++ " :: " ++ show t
             E_AnnTyApp t e argty -> out $ "AnnTyApp     [" ++ show argty ++ "] :: " ++ show t
     childrenOf e =
@@ -225,6 +228,7 @@ instance Structured AnnExpr where
             AnnStore      t a b                  -> [a, b]
             AnnSubscript t a b                   -> [a, b]
             AnnTuple     es                      -> es
+            AnnCase t e bs                       -> e:(map snd bs)
             E_AnnVar      v                      -> []
             E_AnnTyApp t a argty                 -> [a]
 

@@ -165,15 +165,8 @@ void emitPrintRef(llvm::Module* mod, llvm::Value* ref) {
   builder.CreateCall(print_ref, bc);
 }
 
-
-void emitFosterAssert(llvm::Module* mod, llvm::Value* cond, const char* cstr) {
-  Value* fosterAssert = mod->getFunction("foster__assert");
-  ASSERT(fosterAssert != NULL);
-
-  Value* msg_array = builder.CreateGlobalString(cstr);
-  Value* msg = builder.CreateBitCast(msg_array, builder.getInt8PtrTy());
-  builder.CreateCall2(fosterAssert, cond, msg);
-}
+// in CodegenUtils.cpp
+void emitFosterAssert(llvm::Module* mod, llvm::Value* cond, const char* cstr);
 
 ////////////////////////////////////////////////////////////////////
 

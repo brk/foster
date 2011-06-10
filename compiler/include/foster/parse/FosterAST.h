@@ -312,5 +312,54 @@ struct BuiltinCompilesExprAST : public ExprAST {
 };
 
 
+class Pattern {
+protected:
+  Pattern(foster::SourceRange range) : sourceRange(range) {}
+public:
+  foster::SourceRange sourceRange;
+  virtual void dump(DumpToProtobufPass* pass) = 0;
+  virtual void show(PrettyPrintPass*    pass) = 0;
+};
+
+struct LiteralPattern : public Pattern {
+public:
+  ExprAST* pattern;
+  enum Variety { LP_VAR, LP_INT, LP_BOOL } variety;
+  explicit LiteralPattern(foster::SourceRange range,
+                          Variety v,
+                          ExprAST* pattern) : Pattern(range), pattern(pattern), variety(v) {}
+  virtual void dump(DumpToProtobufPass* pass);
+  virtual void show(PrettyPrintPass*    pass);
+};
+
+struct TuplePattern : public Pattern {
+  std::vector<Pattern*> patterns;
+  explicit TuplePattern(foster::SourceRange range,
+                        std::vector<Pattern*> patterns)
+    : Pattern(range), patterns(patterns) {}
+  virtual void dump(DumpToProtobufPass* pass);
+  virtual void show(PrettyPrintPass*    pass);
+};
+
+struct WildcardPattern : public Pattern {
+  WildcardPattern(foster::SourceRange range) : Pattern(range) {}
+  virtual void dump(DumpToProtobufPass* pass);
+  virtual void show(PrettyPrintPass*    pass);
+};
+
+typedef std::pair<Pattern*, ExprAST*> CaseBranch;
+struct CaseExpr : public ExprAST {
+  std::vector<CaseBranch> branches;
+  explicit CaseExpr(ExprAST* scrutinee,
+                    const std::vector<CaseBranch>& branches,
+                    const foster::SourceRange& sourceRange)
+    : ExprAST("CaseExpr", sourceRange), branches(branches) {
+    parts.push_back(scrutinee);
+  }
+
+  virtual void dump(DumpToProtobufPass* pass);
+  virtual void show(PrettyPrintPass*    pass);
+};
+
 #endif // header guard
 

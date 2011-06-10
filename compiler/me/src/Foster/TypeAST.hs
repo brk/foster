@@ -19,6 +19,27 @@ data AnnVar = AnnVar { avarType :: TypeAST, avarIdent :: Ident }
 instance Show AnnVar where
     show (AnnVar ty id) = show id ++ " :: " ++ show ty
 
+data EPattern =
+          EP_Wildcard      ESourceRange
+        | EP_Variable      ESourceRange E_VarAST
+        | EP_Bool          ESourceRange Bool
+        | EP_Int           ESourceRange String
+        | EP_Tuple         ESourceRange [EPattern]
+        deriving (Show)
+
+-- EPattern variable bindings can have type annotations
+-- for typechecking.
+data Pattern =
+          P_Wildcard      ESourceRange
+        | P_Variable      ESourceRange Ident
+        | P_Bool          ESourceRange Bool
+        | P_Int           ESourceRange LiteralInt
+        | P_Tuple         ESourceRange [Pattern]
+        deriving (Show)
+
+data E_VarAST = VarAST { evarMaybeType :: Maybe TypeAST
+                       , evarName      :: String } deriving (Show)
+
 type Sigma = TypeAST
 type Rho   = TypeAST -- No top-level ForAll
 type Tau   = TypeAST -- No ForAlls anywhere

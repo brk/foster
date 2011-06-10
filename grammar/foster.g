@@ -30,7 +30,7 @@ tokens {
   KIND_TYPE; KIND_TYOP; FORALL_TYPE;
   FUNC_TYPE;
   TYPE_CTOR;
-  FORMAL; MODULE;
+  FORMAL; MODULE; WILDCARD;
 }
 
 
@@ -98,20 +98,18 @@ atom    :       // syntactically "closed" terms
   | '(' e (',' e)* ')'                  -> ^(TUPLE e+)  // tuples (products) (sguar: (a,b,c) == Tuple3 a b c)
   | '{' (formal '=>')* e_seq '}'        -> ^(VAL_ABS formal* e_seq) // value abstraction (terms indexed by terms)
 //      | '{' 'forall' a ':' k ',' e '}'        -> ^(TYP_ABS a k e) // type abstraction (terms indexed by types)
-//      | CASE e (OF pmatch)+ END               // pattern matching
+  | CASE e (OF pmatch)+ END             -> ^(CASE e pmatch+) // pattern matching
   ;
-/*
-pmatch  : p '->' e;
+
+pmatch  : p '->' e -> ^(CASE p e);
 
 p       :               // patterns
-    x                                   // variables
-  | '_'                                 // wildcards
-  | num
-  | str
-  | '(' 'ref' p ')'                     // allocation
-  | '(' (p ',')* ')'                    // tuples (products)
+    x                                     // variables
+  | '_'                 -> ^(WILDCARD)    // wildcards
+  | lit
+  | '(' ')'             -> ^(TUPLE)
+  | '(' p (',' p)* ')'  -> ^(TUPLE p+)    // tuples (products)
   ;
-*/
 
 lit     : num | str | TRU -> ^(BOOL TRU) | FLS -> ^(BOOL FLS);
 

@@ -26,6 +26,7 @@
 #include "pystring/pystring.h"
 
 #include <map>
+#include <sstream>
 
 using llvm::Type;
 using llvm::BasicBlock;
@@ -253,8 +254,6 @@ llvm::Value* LLStore::codegen(CodegenPass* pass) {
 }
 
 llvm::Value* LLLetVal::codegen(CodegenPass* pass) {
-  llvm::outs() << "llletval " << name << " = "  << boundexpr->tag << " in " << inexpr->tag << "\n";
-
   Value* b = boundexpr->codegen(pass);
   if (!b->getType()->isVoidTy()) {
     b->setName(this->name);
@@ -557,27 +556,31 @@ llvm::Value* LLProc::codegen(CodegenPass* pass) {
   return F;
 }
 
+void addAndEmitTo(Function* f, BasicBlock* bb) {
+  f->getBasicBlockList().push_back(bb);
+  builder.SetInsertPoint(bb);
+}
+
 llvm::Value* LLIf::codegen(CodegenPass* pass) {
   //EDiag() << "Codegen for LLIfs should (eventually) be subsumed by CFG building!";
   Value* cond = this->getTestExpr()->codegen(pass);;
   ASSERT(cond != NULL)
         << "codegen for if expr failed due to missing condition";
 
-  Function *F = builder.GetInsertBlock()->getParent();
-
-  BasicBlock* thenBB = BasicBlock::Create(getGlobalContext(), "then", F);
+  BasicBlock* thenBB = BasicBlock::Create(getGlobalContext(), "then");
   BasicBlock* elseBB = BasicBlock::Create(getGlobalContext(), "else");
   BasicBlock* mergeBB = BasicBlock::Create(getGlobalContext(), "ifcont");
 
   builder.CreateCondBr(cond, thenBB, elseBB);
 
-  Value* iftmp = CreateEntryAlloca(getLLVMType(this->type), "iftmp_slot");;
+  Value* iftmp = CreateEntryAlloca(getLLVMType(this->type), "iftmp_slot");
 
   Value* then; Value* else_;
   bool elseNeedsLoad = false;
+  Function *F = builder.GetInsertBlock()->getParent();
 
   { // Codegen the then-branch of the if expression
-    builder.SetInsertPoint(thenBB);
+    addAndEmitTo(thenBB);
     then = this->getThenExpr()->codegen(pass);
     ASSERT(then != NULL)
         << "codegen for if expr failed due to missing 'then' branch";
@@ -601,12 +604,10 @@ llvm::Value* LLIf::codegen(CodegenPass* pass) {
 
     builder.CreateStore(then, iftmp, /*isVolatile=*/ false);
     builder.CreateBr(mergeBB);
-    thenBB = builder.GetInsertBlock();
   }
 
   { // Codegen the else-branch of the if expression
-    F->getBasicBlockList().push_back(elseBB);
-    builder.SetInsertPoint(elseBB);
+    addAndEmitTo(elseBB);
     else_ = this->getElseExpr()->codegen(pass);
     ASSERT(else_ != NULL)
         << "codegen for if expr failed due to missing 'else' branch";
@@ -616,15 +617,10 @@ llvm::Value* LLIf::codegen(CodegenPass* pass) {
     }
     builder.CreateStore(else_, iftmp, /*isVolatile=*/ false);
     builder.CreateBr(mergeBB);
-    elseBB = builder.GetInsertBlock();
   }
 
-  {
-    F->getBasicBlockList().push_back(mergeBB);
-    builder.SetInsertPoint(mergeBB);
-
-    return builder.CreateLoad(iftmp, /*isVolatile*/ false, "iftmp");
-  }
+  addAndEmitTo(mergeBB);
+  return builder.CreateLoad(iftmp, /*isVolatile*/ false, "iftmp");
 }
 
 llvm::Value* LLCoroPrim::codegen(CodegenPass* pass) {
@@ -634,6 +630,128 @@ llvm::Value* LLCoroPrim::codegen(CodegenPass* pass) {
   if (this->primName == "coro_invoke") { return pass->emitCoroInvokeFn(r, a); }
   if (this->primName == "coro_create") { return pass->emitCoroCreateFn(r, a); }
   ASSERT(false); return NULL;
+}
+
+llvm::Value* LLCase::codegen(CodegenPass* pass) {
+  llvm::Value* v = this->scrutinee->codegen(pass);
+  llvm::AllocaInst* rv_slot = CreateEntryAlloca(getLLVMType(this->type), "case_slot");
+  this->dt->codegen(pass, v, rv_slot);
+  return builder.CreateLoad(rv_slot, /*isVolatile=*/ false, ".case");
+}
+
+llvm::Value* lookupOccs(Occurrence* occ, llvm::Value* v) {
+  const std::vector<int>& occs = occ->offsets;
+  llvm::Value* rv = v;
+  for (size_t i = 0; i < occs.size(); ++i) {
+    rv = getElementFromComposite(rv,
+             getConstantInt32For(occs[i]), "switch_insp");
+  }
+  return rv;
+}
+
+void DecisionTree::codegen(CodegenPass* pass,
+                           llvm::Value* scrutinee,
+                           llvm::AllocaInst* rv_slot) {
+  if (tag == DecisionTree::DT_FAIL) {
+    EDiag() << "DecisionTree codegen, tag = DT_FAIL; v = " << str(scrutinee);
+    emitFosterAssert(pass->mod, builder.getInt1(false), "pattern match failure!");
+    return;
+  }
+
+  if (tag == DecisionTree::DT_LEAF) {
+    ASSERT(this->action != NULL);
+    Value* rv = NULL;
+
+    for (size_t i = 0; i < binds.size(); ++i) {
+       Value* v = lookupOccs(binds[i].second, scrutinee);
+       if (!v->getType()->isVoidTy()) {
+         v->setName("pat_" + binds[i].first);
+       }
+       pass->valueSymTab.insert(binds[i].first, v);
+    }
+    rv = this->action->codegen(pass);
+    for (size_t i = 0; i < binds.size(); ++i) {
+       pass->valueSymTab.remove(binds[i].first);
+    }
+
+    ASSERT(rv != NULL);
+    builder.CreateStore(rv, rv_slot, /*isVolatile=*/ false);
+    return;
+  } // end DT_LEAF
+
+  if (tag == DecisionTree::DT_SWAP) {
+    ASSERT(false) << "Should not have DT_SWAP nodes at codegen!";
+  } // end DT_SWAP
+
+  if (tag == DecisionTree::DT_SWITCH) {
+    sc->codegen(pass, scrutinee, rv_slot);
+    return;
+  }
+
+  EDiag() << "DecisionTree codegen, tag = " << tag << "; v = " << str(scrutinee);
+}
+
+void SwitchCase::codegen(CodegenPass* pass,
+                         llvm::Value* scrutinee,
+                         llvm::AllocaInst* rv_slot) {
+  ASSERT(ctors.size() == trees.size());
+  ASSERT(ctors.size() >= 1);
+
+  BasicBlock* defaultBB = NULL;
+  if (defaultCase != NULL) {
+    defaultBB = BasicBlock::Create(getGlobalContext(), "case_default");
+  }
+
+  // Special-case codegen for when there's only one
+  // possible case, to avoid superfluous branches.
+  if (trees.size() == 1 && !defaultCase) {
+    trees[0]->codegen(pass, scrutinee, rv_slot);
+    return;
+  }
+
+  // Fetch the subterm of the scrutinee being inspected.
+  llvm::Value* v = lookupOccs(occ, scrutinee);
+
+  // TODO: switching on a.p. integers: possible at all?
+  // If so, it will require manual if-else chaining,
+  // not a simple int32 switch...
+
+  llvm::SwitchInst* si = builder.CreateSwitch(v, defaultBB, ctors.size());
+  BasicBlock* bbEnd = BasicBlock::Create(getGlobalContext(), "case_end");
+  Function *F = builder.GetInsertBlock()->getParent();
+
+  for (size_t i = 0; i < ctors.size(); ++i) {
+    CtorId c = ctors[i];
+    DecisionTree* t = trees[i];
+
+    ConstantInt* onVal = NULL;
+    // Compute the "tag" associated with this branch.
+    if (c.first == "Int32") {
+      onVal = getConstantInt32For(c.second);
+    } else {
+      ASSERT(false) << "SwitchCase ctor " << i << "/" << ctors.size()
+             << ": " << c.first << "."  << c.second
+             << "\n" << str(v)  << "::" << str(v->getType());
+    }
+
+    // Emit the code for the branch expression,
+    // ending with a branch to the end of the case-expr.
+    std::stringstream ss; ss << "casetest_" << i;
+    BasicBlock* destBB = BasicBlock::Create(getGlobalContext(), ss.str());
+    addAndEmitTo(F, destBB);
+    t->codegen(pass, scrutinee, rv_slot);
+    builder.CreateBr(bbEnd);
+
+    si->addCase(onVal, destBB);
+  }
+
+  if (defaultCase) {
+    addAndEmitTo(F, defaultBB);
+    defaultCase->codegen(pass, scrutinee, rv_slot);
+    builder.CreateBr(bbEnd);
+  }
+
+  addAndEmitTo(F, bbEnd);
 }
 
 llvm::Value* LLNil::codegen(CodegenPass* pass) {
@@ -895,7 +1013,6 @@ codegenTupleValues(CodegenPass* pass,
 
   std::vector<const llvm::Type*> loweredTypes;
   for (size_t i = 0; i < values.size(); ++i) {
-    llvm::outs() << "tuple value " << i << "\t" << str(values[i]) << " :: " << str(values[i]->getType()) << "\n";
     loweredTypes.push_back(values[i]->getType());
   }
   llvm::StructType* tupleType = llvm::StructType::get(

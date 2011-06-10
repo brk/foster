@@ -11,6 +11,7 @@ module Foster.ProtobufIL (
 import Foster.Base
 import Foster.ILExpr
 import Foster.TypeAST
+import Foster.PatternMatch
 
 import Data.Maybe(isJust)
 
@@ -33,9 +34,14 @@ import Foster.Bepb.Decl     as Decl
 import Foster.Bepb.PBIf     as PBIf
 import Foster.Bepb.PBInt    as PBInt
 import Foster.Bepb.Expr     as PbExpr
+import Foster.Bepb.PbCtorId as PbCtorId
+import Foster.Bepb.PbOccurrence as PbOccurrence
+import Foster.Bepb.DecisionTree as PbDecisionTree
+import Foster.Bepb.PbSwitchCase as PbSwitchCase
 import Foster.Bepb.CoroPrim as PbCoroPrim
 import Foster.Bepb.Module   as Module
 import Foster.Bepb.Expr.Tag
+import Foster.Bepb.DecisionTree.Tag
 
 import qualified Text.ProtocolBuffers.Header as P'
 
@@ -188,6 +194,12 @@ dumpExpr x@(ILTyApp overallTy baseExpr argType) =
     error $ "Unable to dump type application node " ++ show x
           ++ " (should handle substitution before codegen)."
 
+dumpExpr x@(ILCase t a _bs decisionTree) =
+    P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [ILVar a])
+                    , PbExpr.dt    = Just $ dumpDecisionTree decisionTree
+                    , PbExpr.tag   = IL_CASE
+                    , PbExpr.type' = Just $ dumpType t }
+
 dumpExpr x@(ILClosures names closures expr) =
     P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [expr])
                     , PbExpr.tag   = IL_CLOSURES
@@ -216,6 +228,36 @@ dumpClosureWithName (varid, ILClosure procid captvars) =
     Closure { varname  = dumpIdent varid
             , procid   = u8fromString (identPrefix procid)
             , varnames = fromList (fmap (dumpIdent.avarIdent) captvars) }
+
+dumpDecisionTree (DT_Fail) =
+    P'.defaultValue { PbDecisionTree.tag = DT_FAIL }
+
+dumpDecisionTree (DT_Leaf expr idsoccs) =
+    P'.defaultValue { PbDecisionTree.tag    = DT_LEAF
+                    , PbDecisionTree.leaf_idents = fromList $ map (dumpIdent.fst) idsoccs
+                    , PbDecisionTree.leaf_idoccs = fromList $ map (dumpOcc  .snd) idsoccs
+                    , PbDecisionTree.leaf_action = Just $ dumpExpr expr }
+
+dumpDecisionTree (DT_Swap i dt) = dumpDecisionTree dt
+
+dumpDecisionTree (DT_Switch occ sc) =
+    P'.defaultValue { PbDecisionTree.tag    = DT_SWITCH
+                    , PbDecisionTree.switchcase = Just $ dumpSwitchCase occ sc }
+
+dumpSwitchCase :: Occurrence -> SwitchCase ILExpr -> PbSwitchCase
+dumpSwitchCase occ (SwitchCase ctorDTpairs defaultCase) =
+    let (ctors, dts) = Prelude.unzip ctorDTpairs in
+    P'.defaultValue { PbSwitchCase.ctors = fromList (map dumpCtorId ctors)
+                    , PbSwitchCase.trees = fromList (map dumpDecisionTree dts)
+                    , PbSwitchCase.defCase = fmap dumpDecisionTree defaultCase
+                    , PbSwitchCase.occ   = Just $ dumpOcc occ }
+
+dumpCtorId (CtorId s i) =
+    P'.defaultValue { PbCtorId.ctorTypeName = u8fromString s
+                    , PbCtorId.ctorLocalId  = intToInt32 i }
+
+dumpOcc offs =
+    P'.defaultValue { PbOccurrence.occ_offset = fromList $ map intToInt32 offs }
 
 -----------------------------------------------------------------------
 

@@ -218,6 +218,60 @@ void BuiltinCompilesExprAST::dump(DumpToProtobufPass* pass) {
 
 /////////////////////////////////////////////////////////////////////
 
+void dumpPattern(DumpToProtobufPass* pass,
+                 pb::Expr* target,
+                 Pattern*  pat) {
+  ASSERT(pat != NULL);
+  pb::Expr* saved = pass->current;
+  pass->current = target;
+  pat->dump(pass);
+  pass->current = saved;
+}
+
+void WildcardPattern::dump(DumpToProtobufPass* pass) {
+  pass->current->set_tag(pb::Expr::PAT_WILDCARD);
+  setSourceRange(pass->current->mutable_range(), this->sourceRange);
+}
+
+void LiteralPattern::dump(DumpToProtobufPass* pass) {
+  setSourceRange(pass->current->mutable_range(), this->sourceRange);
+  switch (variety) {
+  case LP_VAR:  pass->current->set_tag(pb::Expr::PAT_VARIABLE); break;
+  case LP_INT:  pass->current->set_tag(pb::Expr::PAT_INT);  break;
+  case LP_BOOL: pass->current->set_tag(pb::Expr::PAT_BOOL); break;
+  }
+
+  dumpChild(pass, pass->current->add_parts(), this->pattern);
+}
+
+void TuplePattern::dump(DumpToProtobufPass* pass) {
+  pass->current->set_tag(pb::Expr::PAT_TUPLE);
+  setSourceRange(pass->current->mutable_range(), this->sourceRange);
+
+  std::vector<Pattern*>& parts = this->patterns;
+  pass->current->mutable_parts()->Reserve(parts.size());
+  for (size_t i = 0; i < parts.size(); ++i) {
+    llvm::outs() << "dumping tuple pattern " << i << "/" << parts.size() <<"\n";
+    dumpPattern(pass, pass->current->add_parts(), parts[i]);
+  }
+}
+
+void CaseExpr::dump(DumpToProtobufPass* pass) {
+  processExprAST(pass->current, this, pb::Expr::CASE_EXPR);
+  pb::PBCase* c = pass->current->mutable_pb_case();
+  dumpChild(pass, c->mutable_scrutinee(), this->parts[0]);
+  for (size_t i = 0; i < this->branches.size(); ++i) {
+    CaseBranch b = this->branches[i];
+    llvm::outs() << b.first << "dumping case pattern " << i << "/" << branches.size() <<"\n";
+    dumpPattern(pass, c->add_pattern(), b.first);
+    llvm::outs() << b.second << "dumping case branch " << i << "/" << branches.size() <<"\n";
+    dumpChild(  pass, c->add_branch(), b.second);
+    llvm::outs() << "done dumping case branch " << i << "/" << branches.size() <<"\n";
+  }
+}
+
+/////////////////////////////////////////////////////////////////////
+
 void dumpChild(DumpTypeToProtobufPass* pass,
                pb::Type* target,
                TypeAST* child) {

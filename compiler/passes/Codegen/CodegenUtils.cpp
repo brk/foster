@@ -20,6 +20,15 @@ using foster::builder;
 
 ////////////////////////////////////////////////////////////////////
 
+void emitFosterAssert(llvm::Module* mod, llvm::Value* cond, const char* cstr) {
+  Value* fosterAssert = mod->getFunction("foster__assert");
+  ASSERT(fosterAssert != NULL);
+
+  Value* msg_array = builder.CreateGlobalString(cstr);
+  Value* msg = builder.CreateBitCast(msg_array, builder.getInt8PtrTy());
+  builder.CreateCall2(fosterAssert, cond, msg);
+}
+
 llvm::Value* getUnitValue() {
   std::vector<llvm::Constant*> noArgs;
   return llvm::ConstantStruct::get(

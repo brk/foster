@@ -1,7 +1,7 @@
 module Foster.Typecheck where
 
 import List(length, zip, sort, group, head)
-import Control.Monad(liftM, forM_)
+import Control.Monad(liftM, forM_, forM)
 
 import Debug.Trace(trace)
 import qualified Data.Text as T
@@ -95,7 +95,14 @@ typecheck :: Context -> ExprAST -> Maybe TypeAST -> Tc AnnExpr
 typecheck ctx expr maybeExpTy =
   tcWithScope expr $
     do case expr of
-        E_BoolAST rng b -> do return (AnnBool b)
+        E_BoolAST rng b ->
+          case maybeExpTy of
+            Nothing -> return (AnnBool b)
+            Just  t | t == fosBoolType
+                    -> return (AnnBool b)
+            Just  t -> tcFails (out $ "Unable to check Bool constant in context"
+                                   ++ " expecting non-Bool type " ++ show t
+                                   ++ showSourceRange rng)
         E_IfAST a b c   -> typecheckIf ctx a b c maybeExpTy
         E_FnAST f       -> typecheckFn ctx  f    maybeExpTy
         E_CallAST rng base args ->
@@ -164,6 +171,8 @@ typecheck ctx expr maybeExpTy =
 
         E_TyApp rng e t -> typecheckTyApp ctx rng e t maybeExpTy
 
+        E_Case rng a branches -> typecheckCase ctx rng a branches maybeExpTy
+
         E_CompilesAST e c -> case c of
             CS_WouldNotCompile -> return $ AnnCompiles CS_WouldNotCompile "parse error"
             CS_WouldCompile -> error "No support for re-type checking CompilesAST nodes."
@@ -172,6 +181,71 @@ typecheck ctx expr maybeExpTy =
                 return $ case maybeOutput of
                             Nothing -> AnnCompiles CS_WouldCompile    ""
                             Just o  -> AnnCompiles CS_WouldNotCompile (outToString o)
+
+-----------------------------------------------------------------------
+
+checkPattern :: EPattern -> Tc Pattern
+checkPattern p = case p of
+  EP_Wildcard r  ->  do return $ P_Wildcard r
+  EP_Variable r v -> do id <- tcFresh (evarName v)
+                        return $ P_Variable r id
+  EP_Bool r b     -> return $ P_Bool r b
+  EP_Int r str    -> do annint <- typecheckInt r str
+                        return $ P_Int  r (aintLitInt annint)
+  EP_Tuple r eps  -> do ps <- mapM checkPattern eps
+                        return $ P_Tuple r ps
+
+typecheckCase ctx rng a branches maybeExpTy = do
+  -- (A) The expected type applies to the branches,
+  -- not to the scrutinee.
+  -- (B) Each pattern must check against the scrutinee type.
+  -- (C) Each branch must check against the expected type,
+  --  as well as successfully unify against the overall type.
+
+  aa <- typecheck ctx a Nothing
+  m <- newTcUnificationVar "case"
+  -- TODO: verify that all vars bound by pattern are unique
+  abranches <- forM branches (\(pat, e) -> do
+      p <- checkPattern pat
+      bindings <- extractPatternBindings p (typeAST aa)
+      let ectx = trace ("bindings: " ++ show bindings) $
+                  prependContextBindings ctx bindings
+      ae <- typecheck ectx e maybeExpTy
+      equateTypes (MetaTyVar m) (typeAST ae)
+        (Just $ "Failed to unify all branches of case " ++ show rng)
+      return (p, ae)
+    )
+  return $ AnnCase (MetaTyVar m) aa abranches
+
+varbind id ty = TermVarBinding (identPrefix id) (AnnVar ty id)
+
+extractPatternBindings :: Pattern -> TypeAST -> Tc [ContextBinding]
+extractPatternBindings (P_Wildcard _   ) ty = return []
+extractPatternBindings (P_Variable _ id) ty = return [varbind id ty]
+
+extractPatternBindings (P_Bool r v) ty = do
+  ae <- typecheck (Context [] True) (E_BoolAST r v) (Just ty)
+  -- literals don't bind anything, but we still need to check
+  -- that we dont' try matching e.g. a bool against an int.
+  return []
+extractPatternBindings (P_Int r litint) ty = do
+  ae <- typecheck (Context [] True) (E_IntAST r (litIntText litint)) (Just ty)
+  -- literals don't bind anything, but we still need to check
+  -- that we dont' try matching e.g. a bool against an int.
+  return []
+
+extractPatternBindings (P_Tuple r [p]) ty = extractPatternBindings p ty
+extractPatternBindings (P_Tuple r ps)  ty =
+   case ty of
+     TupleTypeAST ts ->
+        (if List.length ps == List.length ts
+          then do bindings <- sequence [extractPatternBindings p t | (p, t) <- zip ps ts]
+                  return $ concat bindings
+          else tcFails (out $ "Cannot match pattern against tuple type"
+                              ++ " of different length."))
+     otherwise -> tcFails (out $ "Cannot check tuple pattern"
+                              ++ " against non-tuple type " ++ show ty
+                              ++ showSourceRange r)
 
 -----------------------------------------------------------------------
 
@@ -297,6 +371,7 @@ typecheckCall ctx range base args maybeExpTy = do
          -- with the expected arg type
          ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) (Just $ unifiableArgType)
 
+         -- TODO should this be equateTypes instead of tcUnifyTypes?
          unificationResults <- tcUnifyTypes unifiableArgType (typeAST ea)
          case unificationResults of
            Nothing -> tcFails $ out $ "Failed to determine type arguments to apply!" ++ show range

@@ -57,6 +57,7 @@ message Expr {
     LET       = 19;
     TUPLE     = 20;
     VAL_ABS   = 21;
+
     CALL      = 23;
     SEQ       = 24;
     TY_APP    = 25;
@@ -64,8 +65,15 @@ message Expr {
     ALLOC     = 27;
     DEREF     = 28;
     STORE     = 29;
+    CASE_EXPR = 30;
     COMPILES  = 31;
     IF        = 32;
+
+    PAT_WILDCARD = 41;
+    PAT_VARIABLE = 42;
+    PAT_INT      = 43;
+    PAT_BOOL     = 44;
+    PAT_TUPLE    = 45;
   }
   repeated Expr        parts = 1;
   required Tag           tag = 2;
@@ -74,6 +82,7 @@ message Expr {
 
   optional string     int_text   = 17;
 
+  optional PBCase     pb_case    = 20;
   optional PBIf       pb_if      = 21;
   optional PBLet      pb_let     = 22;
 
@@ -105,6 +114,12 @@ message PBIf {
   required Expr test_expr = 2;
   required Expr then_expr = 3;
   required Expr else_expr = 4;
+}
+
+message PBCase {
+  required Expr    scrutinee = 1;
+  repeated Expr    pattern   = 2;
+  repeated Expr    branch    = 3;
 }
 
 message Decl {

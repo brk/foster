@@ -160,6 +160,73 @@ LLExpr* parseTuple(const pb::Expr& e) {
   return rv;
 }
 
+CtorId parseCtorId(const pb::PbCtorId& c) {
+  return CtorId(c.ctortypename(),
+                c.ctorlocalid());
+}
+
+DecisionTree* parseDecisionTree(const pb::DecisionTree& dt);
+
+Occurrence* parseOccurrence(const pb::PbOccurrence& o) {
+  Occurrence* rv = new Occurrence;
+  for (int i = 0; i < o.occ_offset_size(); ++i) {
+    rv->offsets.push_back(o.occ_offset(i));
+  }
+  return rv;
+}
+
+SwitchCase* parseSwitchCase(const pb::PbSwitchCase& sc) {
+  SwitchCase* rv = new SwitchCase;
+
+  for (int i = 0; i < sc.ctors_size(); ++i) {
+    rv->ctors.push_back(parseCtorId(sc.ctors(i)));
+  }
+
+  for (int i = 0; i < sc.trees_size(); ++i) {
+    rv->trees.push_back(parseDecisionTree(sc.trees(i)));
+  }
+
+  if (sc.has_defcase()) {
+    rv->defaultCase = parseDecisionTree(sc.defcase());
+  } else {
+    rv->defaultCase = NULL;
+  }
+
+  rv->occ = parseOccurrence(sc.occ());
+  return rv;
+}
+
+DecisionTree* parseDecisionTree(const pb::DecisionTree& dt) {
+  std::vector<DTBinding> binds;
+
+  switch (dt.tag()) {
+  case pb::DecisionTree::DT_FAIL:
+     return new DecisionTree(DecisionTree::DT_FAIL);
+  case pb::DecisionTree::DT_LEAF:
+    for (int i = 0; i < dt.leaf_idents_size(); ++i) {
+      binds.push_back(DTBinding(
+                        dt.leaf_idents(i),
+                        parseOccurrence(dt.leaf_idoccs(i))));
+    }
+    return new DecisionTree(DecisionTree::DT_LEAF,
+                            binds,
+                            LLExpr_from_pb(&dt.leaf_action()));
+  case pb::DecisionTree::DT_SWAP:
+    return parseDecisionTree(dt.swapdt());
+  case pb::DecisionTree::DT_SWITCH:
+    SwitchCase* sc = parseSwitchCase(dt.switchcase());
+    return new DecisionTree(DecisionTree::DT_SWITCH, sc);
+  }
+  foster::EDiag() << "parseDecisionTree returning null for tag " << dt.tag();
+  return NULL;
+}
+
+LLExpr* parseCase(const pb::Expr& e) {
+  DecisionTree* dt = parseDecisionTree(e.dt());
+  return new LLCase(LLExpr_from_pb(&e.parts(0)), dt,
+                    TypeAST_from_pb(& e.type()));
+}
+
 LLExpr* parseCoroPrim(const pb::Expr& e) {
   const pb::CoroPrim& p = e.coro_prim();
   TypeAST* r = TypeAST_from_pb(& p.ret_type());
@@ -226,6 +293,7 @@ LLExpr* LLExpr_from_pb(const pb::Expr* pe) {
   switch (e.tag()) {
   case pb::Expr::IL_BOOL:      rv = parseBool(e); break;
   case pb::Expr::IL_CALL:      rv = parseCall(e); break;
+  case pb::Expr::IL_CASE:      rv = parseCase(e); break;
   case pb::Expr::IL_IF:        rv = parseIf(e); break;
   case pb::Expr::IL_INT:       rv = parseInt(e); break;
   case pb::Expr::IL_LETVALS:   rv = parseLetVals(e); break;

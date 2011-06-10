@@ -1,19 +1,50 @@
 TODO
 ----
-* CodeGenOpt::None seems to trigger a closure-related bug in either r113708 or us.
-* Arrays
-  * Type constructors
-  * Card marking?
-* Records
-* Strings
-* References
-  * Separate from Addr? Fat ptr?
-* Coroutines
-  * On-demand stack growth/detection of impending overflow
-  * make foster_coro struct be generic in arg type
-  * tracing stack roots up the coro invocation chain
-* Test that recursive closures work as expected
+* Pattern matching (done?)
+  * Arbitrary-sized integers
 
+* Algebraic data types (data/variant/oneof)    
+  * Representation guarantees for restricted cases
+    * all zero-arity    => int tags (32 bit?)
+    * 1 non-zero arity,
+      1     zero arity  => (nullable) pointer to { fields ... }
+    * else              => (non-null) pointer to { ctortag, fields... }
+
+  * Layout situations for data types:
+    * Most common: don't care about offsets, access fields indirectly.
+    * Sometimes: want interop with C struct layout.
+      Field order matters, but struct not packed.
+    * Rarely: need bit-level layout (and pattern matching); packed struct.
+
+* Primitive types
+  * Integer vs Int32 ?
+    * Determining types of literals
+    * Overloading of operators like +
+      * Abstrcting over one type   : simply-typed functions
+      * Abstracting over all types : polymorphic  functions
+      * Abstracting over a set of
+         types with a common property : type classes?
+                                        existentials?
+                                        interfaces?
+                                        higher-order polymorphism?
+                                        higher kinds?
+          algebraic or other non-structural properties?
+
+  * Arrays
+    * Type constructors (dependent types)
+    * Card marking?
+    * When can an array be unboxed?
+  * Records
+    * "Struct" vs "hashtable" (open vs closed world)
+  * Strings (standard but not primitive, given arrays?)
+  * References (done?)
+    * Separate from Addr? Fat ptr for interior refs?
+  * Coroutines (mostly done?)
+    * On-demand stack growth/detection of impending overflow
+    * make foster_coro struct be generic in arg type
+    * tracing stack roots up the coro invocation chain
+* CodeGenOpt::None seems to trigger a closure-related bug in either r113708 or us.
+* Test that recursive closures work as expected
 * Type operators (types indexed by types)
 
 * Mutability
@@ -26,7 +57,6 @@ TODO
   * C/Go explicit pointers
   * Java implicit pointers
   * Disciple implicit refs
-* Records: open world vs closed world, Lua tables vs C structs...
 
 * Impredicative polymorphism, notes from
   http://www.eecs.harvard.edu/~greg/cs256sp2005/lec15.txt

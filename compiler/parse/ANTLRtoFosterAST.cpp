@@ -358,6 +358,89 @@ ExprAST* parseBool(pTree t) {
   }
 }
 
+Pattern* parsePattern(pTree t);
+
+std::vector<Pattern*> getPatterns(pTree tree) {
+  std::vector<Pattern*> f;
+  for (size_t i = 0; i < getChildCount(tree); ++i) {
+    f.push_back(parsePattern(child(tree, i)));
+  }
+  return f;
+}
+
+Pattern* parseTuplePattern(pTree t) {
+  if (getChildCount(t) == 1) {
+    return parsePattern(child(t, 0));
+  } return new TuplePattern(rangeOf(t), getPatterns(t));
+}
+
+ExprAST* parseAtom(pTree tree);
+Pattern* parsePatternAtom(pTree t) {
+  int token = typeOf(t);
+  if (token == TUPLE) { return parseTuplePattern(t); }
+  if (token == TERMVAR) { return new LiteralPattern(rangeOf(t), LiteralPattern::LP_VAR, parseAtom(t)); }
+  if (token == INT_NUM) { return new LiteralPattern(rangeOf(t), LiteralPattern::LP_INT, parseAtom(t)); }
+  if (token == BOOL   ) { return new LiteralPattern(rangeOf(t), LiteralPattern::LP_BOOL, parseAtom(t)); }
+  //if (token == STR    ) { return new LiteralPattern(LiteralPattern::LP_STR, parseAtom(t)); }
+
+  display_pTree(t, 2);
+  foster::EDiag() << "BOOL = " << BOOL << "; token = " << token;
+  foster::EDiag() << "returning NULL Pattern for parsePatternAtom token " << str(t->getToken(t));
+  return NULL;
+}
+
+// ^(LVALUE atom suffix*)
+Pattern* parsePatternLvalue(pTree t) {
+  ASSERT(getChildCount(t) == 1) << "patterns partially parsed";
+  return parsePatternAtom(child(t, 0));
+}
+
+// ^(PHRASE lvalue+)
+Pattern* parsePatternPhrase(pTree t) {
+  ASSERT(getChildCount(t) == 1) << "phrase patterns must not contain applications";
+  return parsePatternLvalue(child(t, 0));
+}
+
+// ^(TERM phrase binops?)
+Pattern* parsePatternTerm(pTree t) {
+  ASSERT(getChildCount(t) == 1) << "term patterns must not contain binops";
+  return parsePatternPhrase(child(t, 0));
+}
+
+Pattern* parsePattern(pTree t) {
+  int token = typeOf(t);
+
+  if (token == WILDCARD) { return new WildcardPattern(rangeOf(t)); }
+  if (token == TERMVAR
+   || token == INT_NUM
+   || token == BOOL
+   || token == STR
+   || token == TUPLE)  { return parsePatternAtom(t); }
+  if (token == PHRASE) { return parsePatternPhrase(t); }
+  if (token == TERM)   { return parsePatternTerm(t); }
+
+  display_pTree(t, 2);
+  foster::EDiag() << "returning NULL Pattern for parsePattern token " << str(t->getToken(t));
+  return NULL;
+}
+
+// ^(CASE p e)
+CaseBranch parseCaseBranch(pTree t) {
+  CaseBranch b = std::make_pair(parsePattern(child(t, 0)),
+                                ExprAST_from(child(t, 1)));
+  return b;
+}
+
+// ^(CASE e pmatch+)
+ExprAST* parseCase(pTree t) {
+  ExprAST* scrutinee = ExprAST_from(child(t, 0));
+  std::vector<CaseBranch> branches;
+  for (size_t i = 1; i < getChildCount(t); ++i) {
+    branches.push_back(parseCaseBranch(child(t, i)));
+  }
+  return new CaseExpr(scrutinee, branches, rangeOf(t));
+}
+
 ExprAST* parseAtom(pTree tree) {
   int token = typeOf(tree);
 
@@ -369,6 +452,7 @@ ExprAST* parseAtom(pTree tree) {
   if (token == IF)       { return parseIf(tree); }
   if (token == REF)      { return parseRef(tree); }
   if (token == COMPILES) { return parseBuiltinCompiles(tree); }
+  if (token == CASE)     { return parseCase(tree); }
   if (token == BOOL)     { return parseBool(tree); }
 
   display_pTree(tree, 2);

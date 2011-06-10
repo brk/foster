@@ -31,6 +31,7 @@ const inline llvm::PointerType* ptrTo(const llvm::Type* t) {
 }
 
 // From CodegenUtils.cpp
+void emitFosterAssert(llvm::Module* mod, llvm::Value* cond, const char* cstr);
 Value* getUnitValue();
 Value* emitMalloc(const llvm::Type* ty);
 Value* allocateMPInt();

@@ -22,6 +22,7 @@ namespace llvm {
   class Value;
   class APInt;
   class ConstantInt;
+  class AllocaInst;
 }
 
 using llvm::Value;
@@ -227,6 +228,20 @@ struct LLIf : public LLExpr {
   LLExpr*& getElseExpr() { ASSERT(parts.size() == 3); return parts[2]; }
 };
 
+struct DecisionTree;
+struct LLCase : public LLExpr {
+  LLExpr* scrutinee;
+  DecisionTree* dt;
+  TypeAST* branchType;
+
+  LLCase(LLExpr* testExpr, DecisionTree* dt, TypeAST* ty)
+    : LLExpr("LLCase"), scrutinee(testExpr), dt(dt), branchType(ty) {
+  }
+
+  virtual llvm::Value* codegen(CodegenPass* pass);
+};
+
+
 struct LLNil : public LLExpr {
   explicit LLNil(foster::SourceRange sourceRange)
      : LLExpr("LLNil") {}
@@ -268,6 +283,38 @@ struct LLCoroPrim : public LLExpr {
       : LLExpr("LLCoroPrim"), primName(primName),
         retType(ret), typeArg(arg) {}
   virtual llvm::Value* codegen(CodegenPass* pass);
+};
+
+typedef std::pair<string, int> CtorId;
+struct DecisionTree;
+
+struct Occurrence {
+  std::vector<int> offsets;
+};
+
+struct SwitchCase {
+  std::vector<CtorId>        ctors;
+  std::vector<DecisionTree*> trees;
+  DecisionTree*        defaultCase;
+  Occurrence*                  occ;
+  void codegen(CodegenPass* pass, llvm::Value* scrutinee, llvm::AllocaInst* rv_slot);
+};
+
+typedef std::pair<std::string, Occurrence*> DTBinding;
+struct DecisionTree {
+  enum Tag {
+    DT_FAIL, DT_LEAF, DT_SWAP, DT_SWITCH
+  } tag;
+  TypeAST* type;
+  std::vector<DTBinding> binds; LLExpr* action;
+  SwitchCase* sc;
+  DecisionTree(Tag t)            : tag(t), type(NULL), action(NULL), sc(NULL) {}
+  DecisionTree(Tag t, std::vector<DTBinding> binds, LLExpr* e)
+                                 : tag(t), type(NULL), binds(binds),
+                                           action(e), sc(NULL) {}
+  DecisionTree(Tag t, SwitchCase* sc)
+                                 : tag(t), type(NULL), action(NULL), sc(sc) {}
+  void codegen(CodegenPass* pass, llvm::Value* scrutinee, llvm::AllocaInst* rv_slot);
 };
 
 #endif // header guard
