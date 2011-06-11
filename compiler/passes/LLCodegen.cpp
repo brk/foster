@@ -580,7 +580,7 @@ llvm::Value* LLIf::codegen(CodegenPass* pass) {
   Function *F = builder.GetInsertBlock()->getParent();
 
   { // Codegen the then-branch of the if expression
-    addAndEmitTo(thenBB);
+    addAndEmitTo(F, thenBB);
     then = this->getThenExpr()->codegen(pass);
     ASSERT(then != NULL)
         << "codegen for if expr failed due to missing 'then' branch";
@@ -607,7 +607,7 @@ llvm::Value* LLIf::codegen(CodegenPass* pass) {
   }
 
   { // Codegen the else-branch of the if expression
-    addAndEmitTo(elseBB);
+    addAndEmitTo(F, elseBB);
     else_ = this->getElseExpr()->codegen(pass);
     ASSERT(else_ != NULL)
         << "codegen for if expr failed due to missing 'else' branch";
@@ -619,7 +619,7 @@ llvm::Value* LLIf::codegen(CodegenPass* pass) {
     builder.CreateBr(mergeBB);
   }
 
-  addAndEmitTo(mergeBB);
+  addAndEmitTo(F, mergeBB);
   return builder.CreateLoad(iftmp, /*isVolatile*/ false, "iftmp");
 }
 
