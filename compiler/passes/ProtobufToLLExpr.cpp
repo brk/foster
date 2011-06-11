@@ -212,7 +212,7 @@ DecisionTree* parseDecisionTree(const pb::DecisionTree& dt) {
                             binds,
                             LLExpr_from_pb(&dt.leaf_action()));
   case pb::DecisionTree::DT_SWAP:
-    return parseDecisionTree(dt.swapdt());
+    ASSERT(false) << "Shouldn't be codegenning DT_SWAP nodes!";
   case pb::DecisionTree::DT_SWITCH:
     SwitchCase* sc = parseSwitchCase(dt.switchcase());
     return new DecisionTree(DecisionTree::DT_SWITCH, sc);

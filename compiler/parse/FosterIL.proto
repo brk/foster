@@ -124,7 +124,6 @@ message DecisionTree {
   }
   required Tag          tag        = 1;
   optional PbSwitchCase switchcase = 4;
-  optional DecisionTree swapDt     = 6;
   optional Expr         leaf_action = 7;
   repeated string       leaf_idents = 8;
   repeated PbOccurrence leaf_idoccs = 9;
