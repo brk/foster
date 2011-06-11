@@ -468,10 +468,6 @@ ExprAST* parseDeref(ExprAST* base, pTree tree) {
   return new DerefAST(base, rangeOf(tree));
 }
 
-ExprAST* parseStore(ExprAST* base, pTree t) {
-  return new StoreAST(base, parseTermVar(child(t, 0)), rangeOf(t));
-}
-
 // ^(VAL_TYPE_APP t+)
 ExprAST* parseValTypeApp(ExprAST* base, pTree tree) {
   std::vector<TypeAST*> types;
@@ -491,7 +487,6 @@ ExprAST* parseSuffix(ExprAST* base, pTree tree) {
 
   if (token == SUBSCRIPT) { return parseSubscript(base, tree); }
   if (token == DEREF)     { return parseDeref(base, tree); }
-  if (token == ASSIGN_TO) { return parseStore(base, tree); }
   if (token == VAL_TYPE_APP) { return parseValTypeApp(base, tree); }
   display_pTree(tree, 2);
   foster::EDiag() << "returning NULL ExprAST for parseSuffix token " << str(tree->getToken(tree));
@@ -530,11 +525,15 @@ void leftAssoc(std::vector<std::string>& opstack,
   ExprAST*           x = argstack.back(); argstack.pop_back();
   const std::string& o =  opstack.back();  opstack.pop_back();
 
-  Exprs exprs;
-  exprs.push_back(x);
-  exprs.push_back(y);
-  ExprAST* opr = new VariableAST("primitive_"+o+"_i32", NULL, rangeFrom(x, y));
-  argstack.push_back(new CallAST(opr, exprs, rangeFrom(x, y)));
+  if (o == ">^") {
+    argstack.push_back(new StoreAST(x, y, rangeFrom(x, y)));
+  } else {
+    Exprs exprs;
+    exprs.push_back(x);
+    exprs.push_back(y);
+    ExprAST* opr = new VariableAST("primitive_"+o+"_i32", NULL, rangeFrom(x, y));
+    argstack.push_back(new CallAST(opr, exprs, rangeFrom(x, y)));
+  }
 }
 
 ExprAST* parseBinopChain(ExprAST* first, pTree tree) {

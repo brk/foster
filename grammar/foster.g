@@ -61,15 +61,18 @@ e    :
               -> ^(TERM phrase binops?)
   ;
 
-binops  :       (binop phrase)+;
+binops  :       (binop phrase)+;	
 binop   :       SYMBOL;
 
 phrase  :       lvalue+                         -> ^(PHRASE lvalue+);
 lvalue  :       atom suffix*                    -> ^(LVALUE atom suffix*);
 
-suffix  :       ':[' t (',' t)* ']'                      -> ^(VAL_TYPE_APP t+)    // type application
+type_application
+	:	':[' t (',' t)* ']'             -> ^(VAL_TYPE_APP t+)    // type application
+	;
+	
+suffix  :       type_application
   |     '^'                             -> ^(DEREF)             // dereference
-  |     '>^' x                          -> ^(ASSIGN_TO x)       // ref cell update
   |     '[' e ']'                       -> ^(SUBSCRIPT e)
 //      |       '.(' e ')'                      -> ^(VAL_APP e)
   ;
@@ -134,6 +137,8 @@ tatom   :
    ('@' '{' tannots '}')?               -> ^(FUNC_TYPE ^(TUPLE t+) tannots?)  // function types
 //      | '{' 'forall' (a ':' k ',')+ t '}'     -> ^(FORALL_TYPE a k t)         // universal type
   | '$' ctor                                        -> ^(TYPE_CTOR ctor)            // type constructor constant
+  // The dollar sign is required to distinguish type constructors
+  // from type variables, since we don't use upper/lower case to distinguish.
   ;
 
 ctor : x ;
@@ -218,7 +223,7 @@ fragment SYMBOL_SINGLE_START   :  '!' | '|'
         | '?' | '+' | '*';
 fragment SYMBOL_MULTI_START : '=' | SYMBOL_SINGLE_START;
 fragment IDENT_SYMBOL   :         '_' | SYMBOL_MULTI_START;
-fragment SYMBOL_GLYPH   :         '/' | IDENT_SYMBOL;
+fragment SYMBOL_GLYPH   :         '/' | '^' | IDENT_SYMBOL;
 
 // Examples of Unicode escape sequences:
 //      \u0000
