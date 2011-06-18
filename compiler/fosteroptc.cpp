@@ -284,6 +284,20 @@ void setDefaultCommandLineOptions() {
   llvm::NoFramePointerElim = true;
 }
 
+void calculateOutputNames() {
+  ASSERT(optOutputName != "");
+  
+  if ( pystring::endswith(optOutputName, ".o")
+    || pystring::endswith(optOutputName, ".s")) {
+    gOutputNameBase = string(optOutputName.begin(), optOutputName.end() - 2);
+  } else if (pystring::endswith(optOutputName, ".obj")) {
+    gOutputNameBase = string(optOutputName.begin(), optOutputName.end() - 4);
+  } else {
+    gOutputNameBase = optOutputName;
+    optOutputName = optOutputName + ".s";
+  }
+}
+
 int main(int argc, char** argv) {
   int program_status = 0;
   foster::linkFosterGC(); // statically, not dynamically
@@ -297,18 +311,8 @@ int main(int argc, char** argv) {
   cl::SetVersionPrinter(&printVersionInfo);
   cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster compiler backend (LLVM optimization)\n");
 
-  ASSERT(optOutputName != "");
-  if ( pystring::endswith(optOutputName, ".o")
-    || pystring::endswith(optOutputName, ".s")) {
-    gOutputNameBase = string(optOutputName.begin(), optOutputName.end() - 2);
-  } else if (pystring::endswith(optOutputName, ".obj")) {
-    gOutputNameBase = string(optOutputName.begin(), optOutputName.end() - 4);
-  } else {
-    gOutputNameBase = optOutputName;
-    optOutputName = optOutputName + ".s";
-  }
-
   foster::initializeLLVM();
+  calculateOutputNames();
 
   llvm::sys::Path mainModulePath(optInputPath);
   makePathAbsolute(mainModulePath);
