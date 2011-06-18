@@ -2,6 +2,8 @@ main = {
   simpler();
   capture();
   ref-if ();
+  ref-until();
+  hof-until();
 };
 
 simpler = {
@@ -29,5 +31,44 @@ ref-if = {
   in
    expect_i32 0;
     print_i32 r^;
+  end
+};
+
+hof-until-if = { c : {i1} => b : { () } =>
+  if c () then 0 else let j0 = b (); in hof-until-if c b end
+  end
+};
+
+hof-until-case = { c : {i1} => b : { () } =>
+  case c ()
+    of true ->  0
+    of false -> let j0 = b (); in hof-until-case c b end
+  end
+};
+
+hof-until = {
+  let r = (ref 6);
+   in expect_i32 6;
+      expect_i32 5;
+      expect_i32 4;
+      hof-until-if   { r^ == 3 } { print_i32 r^; (r^ - 1) >^ r; };
+      expect_i32 3;
+      expect_i32 4;
+      expect_i32 5;
+      hof-until-case { r^ == 6 } { print_i32 r^; (r^ + 1) >^ r; };
+  end
+};
+
+ref-until = {
+  expect_i32 3;
+  expect_i32 3;
+  expect_i32 2;
+  expect_i32 1;
+  let r = (ref opaquely_i32 3);
+   in print_i32 r^;
+      until r^ == 0 then
+        print_i32 r^;
+        (r^ - 1) >^ r;
+      end
   end
 };

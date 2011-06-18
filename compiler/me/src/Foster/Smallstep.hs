@@ -60,6 +60,7 @@ data IExpr =
         | ILetVal       Ident   SSTerm     SSTerm
         | ISubscript    Ident   SSTerm
         | IIf           Ident   SSTerm     SSTerm
+        | IUntil                SSTerm     SSTerm
         | ICall         Ident  [Ident]
         | ICase         Ident  (DecisionTree ILExpr) [(Pattern, SSTerm)]
         | ITyApp       SSTerm  TypeAST
@@ -83,6 +84,7 @@ ssTermOfExpr expr =
     ILLetVal x b e         -> SSTmExpr  $ ILetVal x (tr b) (tr e)
     ILCall    t b vs       -> SSTmExpr  $ ICall (avarIdent b) (map avarIdent vs)
     ILIf      t  v b c     -> SSTmExpr  $ IIf (avarIdent v) (tr b) (tr c)
+    ILUntil   t  a b       -> SSTmExpr  $ IUntil            (tr a) (tr b)
     ILSubscript t a b      -> SSTmExpr  $ ISubscript (avarIdent a) (tr b)
     ILAlloc a              -> SSTmExpr  $ IAlloc (avarIdent a)
     ILDeref t a            -> SSTmExpr  $ IDeref (avarIdent a)
@@ -330,6 +332,12 @@ stepExpr gs expr = do
            (SSBool False) -> return $ withTerm gs c
            otherwise -> error $ "if cond was not a boolean: " ++ show v ++ " => " ++ display (getval gs v)
 
+    IUntil c b ->
+      let v = (Ident "!untilval" 0) in
+      return $ withTerm gs (SSTmExpr $
+        ILetVal v c (SSTmExpr $ IIf v unit
+                    (SSTmExpr $ ILetVal (Ident "_" 0) b (SSTmExpr $ IUntil c b))))
+
     ISubscript v (SSTmValue (SSInt i)) ->
         case getval gs v of
           SSTuple vals -> return $ withTerm gs (SSTmValue (vals !! n))
@@ -368,6 +376,8 @@ evalDecisionTree (DT_Switch occ (SwitchCase branches def)) v =
     evalSwitchCase w [] (Just dt) = evalDecisionTree dt v
     evalSwitchCase w [] Nothing = error $ "evalSwitchCase " ++ show w ++ " [] Nothing"
 
+    ctorMatches (SSBool b)  (CtorId "Bool" n) = (b == True  && n == 1)
+                                             || (b == False && n == 0)
     ctorMatches (SSInt i) (CtorId "Int32" n) = n == fromInteger i
     ctorMatches (SSInt _) (CtorId _ _) = False
     ctorMatches (SSTuple vs) (CtorId "()" n) = n == (Prelude.length vs)

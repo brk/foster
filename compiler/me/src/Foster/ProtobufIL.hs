@@ -179,6 +179,11 @@ dumpExpr x@(ILIf t a b c) =
                     , PbExpr.tag   = IL_IF
                     , PbExpr.type' = Just $ dumpType (typeIL x) }
 
+dumpExpr x@(ILUntil t a b) =
+    P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [a, b])
+                    , PbExpr.tag   = IL_UNTIL
+                    , PbExpr.type' = Just $ dumpType (typeIL x) }
+
 dumpExpr x@(ILTyApp overallTy (ILVar (AnnVar _ (Ident corofn _)))
                     (TupleTypeAST [argty, retty]))
           | corofn == "coro_invoke"

@@ -300,6 +300,20 @@ struct IfExprAST : public ExprAST {
   ExprAST*& getElseExpr() { ASSERT(parts.size() == 3); return parts[2]; }
 };
 
+struct UntilExpr : public ExprAST {
+  UntilExpr(ExprAST* testExpr, ExprAST* thenExpr,
+            foster::SourceRange sourceRange)
+    : ExprAST("UntilExpr", sourceRange) {
+    parts.push_back(testExpr);
+    parts.push_back(thenExpr);
+  }
+  virtual void dump(DumpToProtobufPass* pass);
+  virtual void show(PrettyPrintPass*    pass);
+
+  ExprAST*& getTestExpr() { ASSERT(parts.size() == 2); return parts[0]; }
+  ExprAST*& getThenExpr() { ASSERT(parts.size() == 2); return parts[1]; }
+};
+
 struct BuiltinCompilesExprAST : public ExprAST {
   explicit BuiltinCompilesExprAST(ExprAST* expr, foster::SourceRange sourceRange)
      : ExprAST("CompilesExprAST", sourceRange) {

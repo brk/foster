@@ -44,7 +44,7 @@ message Expr {
     IL_CASE = 22;
     IL_CALL = 23;
     IL_SEQ = 24;
-
+    IL_UNTIL = 25;
     IL_SUBSCRIPT = 26;
     IL_CORO_INVOKE = 27;
     IL_CORO_CREATE = 28;

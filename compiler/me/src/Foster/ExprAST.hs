@@ -30,6 +30,7 @@ data ExprAST =
         | E_CallAST       ESourceRange ExprAST [ExprAST]
         | E_CompilesAST   ExprAST CompilesStatus
         | E_IfAST         ExprAST ExprAST ExprAST
+        | E_UntilAST      ExprAST ExprAST
         | E_SeqAST        ExprAST ExprAST
         | E_AllocAST      ESourceRange ExprAST
         | E_DerefAST      ESourceRange ExprAST
@@ -72,6 +73,7 @@ data AnnExpr =
 
         -- Add an overall type for the if branch
         | AnnIf         TypeAST AnnExpr AnnExpr AnnExpr
+        | AnnUntil      TypeAST AnnExpr AnnExpr
 
         | AnnLetVar     Ident AnnExpr AnnExpr
 
@@ -120,6 +122,7 @@ typeAST (E_AnnFn annFn)      = annFnType annFn
 typeAST (AnnCall r t b a)    = t
 typeAST (AnnCompiles c msg)  = fosBoolType
 typeAST (AnnIf t a b c)      = t
+typeAST (AnnUntil t _ _)     = t
 typeAST (AnnLetVar _ a b)    = typeAST b
 typeAST (AnnLetFuns _ _ e)   = typeAST e
 typeAST (AnnAlloc e)         = RefType (typeAST e)
@@ -145,6 +148,7 @@ instance Structured ExprAST where
             E_CallAST rng b args -> out $ "CallAST      " ++ tryGetCallNameE b
             E_CompilesAST e c    -> out $ "CompilesAST  "
             E_IfAST _ _ _        -> out $ "IfAST        "
+            E_UntilAST _ _       -> out $ "UntilAST     "
             E_IntAST rng text    -> out $ "IntAST       " ++ text
             E_FnAST f            -> out $ "FnAST        " ++ (fnAstName f)
             E_LetRec rnd bnz e t -> out $ "LetRec       "
@@ -164,6 +168,7 @@ instance Structured ExprAST where
             E_CallAST rng b args -> b:args
             E_CompilesAST   e c  -> [e]
             E_IfAST a b c        -> [a, b, c]
+            E_UntilAST a b       -> [a, b]
             E_IntAST rng txt     -> []
             E_FnAST f            -> [fnBody f]
             E_LetRec rnd bnz e t -> [termBindingExpr bnd | bnd <- bnz] ++ [e]
@@ -201,6 +206,7 @@ instance Structured AnnExpr where
             AnnCall  r t b args  -> out $ "AnnCall      " ++ " :: " ++ show t
             AnnCompiles c msg    -> out $ "AnnCompiles  " ++ show c ++ " - " ++ msg
             AnnIf      t  a b c  -> out $ "AnnIf        " ++ " :: " ++ show t
+            AnnUntil   t  a b    -> out $ "AnnUntil     " ++ " :: " ++ show t
             AnnInt ty int        -> out $ "AnnInt       " ++ (litIntText int) ++ " :: " ++ show ty
             E_AnnFn annFn        -> out $ "AnnFn " ++ fnNameA annFn ++ " // " ++ (show $ annFnBoundNames annFn) ++ " :: " ++ show (annFnType annFn)
             AnnLetVar id    a b  -> out $ "AnnLetVar    " ++ show id ++ " :: " ++ show (typeAST b)
@@ -219,6 +225,7 @@ instance Structured AnnExpr where
             AnnCall  r t b args                  -> b:args
             AnnCompiles c msg                    -> []
             AnnIf      t  a b c                  -> [a, b, c]
+            AnnUntil   t  a b                    -> [a, b]
             AnnInt t _                           -> []
             E_AnnFn annFn                        -> [annFnBody annFn]
             AnnLetVar _ a b                      -> [a, b]

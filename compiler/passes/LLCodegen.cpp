@@ -238,7 +238,11 @@ void setFunctionArgumentNames(llvm::Function* F,
 
 llvm::Value* LLAlloc::codegen(CodegenPass* pass) {
   ASSERT(this && this->base && this->base->type);
-  return pass->emitMalloc(this->base->type->getLLVMType());
+  llvm::Value* storedVal = this->base->codegen(pass);
+  llvm::Value* ptrSlot   = pass->emitMalloc(this->base->type->getLLVMType());
+  llvm::Value* ptr       = builder.CreateLoad(ptrSlot, /*isVolatile=*/ false, "");
+  builder.CreateStore(storedVal, ptr, /*isVolatile=*/ false);
+  return ptr;
 }
 
 llvm::Value* LLDeref::codegen(CodegenPass* pass) {
@@ -623,6 +627,33 @@ llvm::Value* LLIf::codegen(CodegenPass* pass) {
   return builder.CreateLoad(iftmp, /*isVolatile*/ false, "iftmp");
 }
 
+
+llvm::Value* LLUntil::codegen(CodegenPass* pass) {
+  //EDiag() << "Codegen for LLUntils should (eventually) be subsumed by CFG building!";
+
+  BasicBlock* testBB = BasicBlock::Create(getGlobalContext(), "until_test");
+  BasicBlock* thenBB = BasicBlock::Create(getGlobalContext(), "until_body");
+  BasicBlock* mergeBB = BasicBlock::Create(getGlobalContext(), "until_cont");
+  Function *F = builder.GetInsertBlock()->getParent();
+
+  builder.CreateBr(testBB);
+
+  addAndEmitTo(F, testBB);
+  Value* cond = this->getTestExpr()->codegen(pass);
+  ASSERT(cond != NULL) << "codegen for until loop failed due to missing cond";
+  builder.CreateCondBr(cond, mergeBB, thenBB);
+
+  { // Codegen the body of the loop
+    addAndEmitTo(F, thenBB);
+    Value* v = this->getThenExpr()->codegen(pass);
+    ASSERT(v != NULL) << "codegen for until loop failed due to missing body";
+    builder.CreateBr(testBB);
+  }
+
+  addAndEmitTo(F, mergeBB);
+  return getUnitValue();
+}
+
 llvm::Value* LLCoroPrim::codegen(CodegenPass* pass) {
   const llvm::Type* r = retType->getLLVMType();
   const llvm::Type* a = typeArg->getLLVMType();
@@ -716,8 +747,10 @@ void SwitchCase::codegen(CodegenPass* pass,
   // If so, it will require manual if-else chaining,
   // not a simple int32 switch...
 
-  llvm::SwitchInst* si = builder.CreateSwitch(v, defaultBB, ctors.size());
   BasicBlock* bbEnd = BasicBlock::Create(getGlobalContext(), "case_end");
+  BasicBlock* defOrContBB = defaultBB ? defaultBB : bbEnd;
+  llvm::SwitchInst* si = builder.CreateSwitch(v, defOrContBB, ctors.size());
+
   Function *F = builder.GetInsertBlock()->getParent();
 
   for (size_t i = 0; i < ctors.size(); ++i) {
@@ -728,6 +761,8 @@ void SwitchCase::codegen(CodegenPass* pass,
     // Compute the "tag" associated with this branch.
     if (c.first == "Int32") {
       onVal = getConstantInt32For(c.second);
+    } else if (c.first == "Bool") {
+      onVal = builder.getInt1(c.second);
     } else {
       ASSERT(false) << "SwitchCase ctor " << i << "/" << ctors.size()
              << ": " << c.first << "."  << c.second

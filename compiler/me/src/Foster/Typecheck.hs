@@ -104,6 +104,11 @@ typecheck ctx expr maybeExpTy =
                                    ++ " expecting non-Bool type " ++ show t
                                    ++ showSourceRange rng)
         E_IfAST a b c   -> typecheckIf ctx a b c maybeExpTy
+        E_UntilAST a b  -> do aa <- typecheck ctx a (Just fosBoolType)
+                              ab <- typecheck ctx b Nothing
+                              equateTypes (typeAST aa) fosBoolType  (Just "E_Until: type of conditional wasn't boolean")
+                              return $ AnnUntil (TupleTypeAST []) aa ab
+
         E_FnAST f       -> typecheckFn ctx  f    maybeExpTy
         E_CallAST rng base args ->
                             typecheckCall ctx rng base args maybeExpTy

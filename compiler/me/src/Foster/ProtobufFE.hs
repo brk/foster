@@ -37,7 +37,7 @@ import Foster.Fepb.PBIf     as PBIf
 import Foster.Fepb.PBCase   as PBCase
 import Foster.Fepb.Expr     as PbExpr
 import Foster.Fepb.SourceModule as SourceModule
-import Foster.Fepb.Expr.Tag(Tag(IF, LET, VAR, SEQ,
+import Foster.Fepb.Expr.Tag(Tag(IF, LET, VAR, SEQ, UNTIL,
                                 BOOL, CALL, TY_APP,-- MODULE,
                                 ALLOC, DEREF, STORE, TUPLE, PB_INT,
                                 CASE_EXPR, COMPILES, VAL_ABS, SUBSCRIPT,
@@ -129,6 +129,10 @@ parseIf pbexpr lines =
                (E_IfAST (parseExpr (PBIf.test_expr pbif) lines)
                         (parseExpr (PBIf.then_expr pbif) lines)
                         (parseExpr (PBIf.else_expr pbif) lines))
+
+parseUntil pbexpr lines =
+     E_UntilAST (part 0 (PbExpr.parts pbexpr) lines)
+                (part 1 (PbExpr.parts pbexpr) lines)
 
 parseInt :: PbExpr.Expr -> SourceLines -> ExprAST
 parseInt pbexpr lines =
@@ -279,6 +283,7 @@ parseExpr pbexpr lines =
     let fn = case PbExpr.tag pbexpr of
                 PB_INT  -> parseInt
                 IF      -> parseIf
+                UNTIL   -> parseUntil
                 BOOL    -> parseBool
                 VAR     -> parseEVar
                 Foster.Fepb.Expr.Tag.TUPLE   -> parseTuple

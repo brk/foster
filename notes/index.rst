@@ -15,6 +15,8 @@ Foster Notes
    closures
    syntax
    llvm
+   compiled-examples
+   gc
    todo
 
 .. Indices and tables

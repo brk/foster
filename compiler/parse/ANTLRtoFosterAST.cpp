@@ -340,6 +340,13 @@ ExprAST* parseIf(pTree tree) {
                        rangeOf(tree));
 }
 
+// ^(UNTIL e e_seq)
+ExprAST* parseUntil(pTree tree) {
+  return new UntilExpr(ExprAST_from(child(tree, 0)),
+                       parseSeq(child(tree, 1)),
+                       rangeOf(tree));
+}
+
 ExprAST* parseRef(pTree tree) {
   return new AllocAST(ExprAST_from(child(tree, 0)), rangeOf(tree));
 }
@@ -447,6 +454,7 @@ ExprAST* parseAtom(pTree tree) {
   if (token == VAL_ABS)  { return parseValAbs(tree); }
   if (token == LETS)     { return parseLets(tree); }
   if (token == TUPLE)    { return parseTuple(tree); }
+  if (token == UNTIL)    { return parseUntil(tree); }
   if (token == TERMVAR)  { return parseTermVar(tree); }
   if (token == INT_NUM)  { return parseIntFrom(tree); }
   if (token == IF)       { return parseIf(tree); }

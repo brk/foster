@@ -47,6 +47,7 @@ data ILExpr =
         | ILStore       TypeAST AnnVar AnnVar
         | ILSubscript   TypeAST AnnVar ILExpr
         | ILIf          TypeAST AnnVar ILExpr ILExpr
+        | ILUntil       TypeAST ILExpr ILExpr
         | ILCase        TypeAST AnnVar [(Pattern, ILExpr)] (DecisionTree ILExpr)
         | ILCall        TypeAST AnnVar [AnnVar]
         | ILTyApp       TypeAST ILExpr TypeAST
@@ -117,6 +118,10 @@ closureConvert ctx expr =
                                          [a', b', c'] <- mapM g [a, b, c]
                                          let v = AnnVar (typeIL a') x
                                          return $ buildLet x a' (ILIf t v b' c')
+
+            AnnUntil   t  a b      -> do x <- ilmFresh ".ife"
+                                         [a', b'] <- mapM g [a, b]
+                                         return $ (ILUntil t a' b')
 
             AnnLetVar id a b       -> do let ctx' = prependAnnBinding (id, a) ctx
                                          a' <- closureConvert ctx' a
@@ -270,6 +275,7 @@ makeEnvPassingExplicit expr fnAndEnvForClosure =
             AnnInt t i        -> e
             E_AnnVar v        -> e -- We don't alter standalone references to closures
             AnnIf t a b c    -> AnnIf      t (q a) (q b) (q c)
+            AnnUntil t a b   -> AnnUntil   t (q a) (q b)
             AnnLetVar id a b -> AnnLetVar id (q a) (q b)
             AnnLetFuns ids fns e  -> AnnLetFuns ids (map fq fns) (q e)
             AnnAlloc a     -> AnnAlloc   (q a)
@@ -345,6 +351,7 @@ typeIL (ILClosures n b e)  = typeIL e
 typeIL (ILLetVal x b e)    = typeIL e
 typeIL (ILCall t id expr)  = t
 typeIL (ILIf t a b c)      = t
+typeIL (ILUntil t a b)     = t
 typeIL (ILAlloc v)         = RefType (typeIL $ ILVar v)
 typeIL (ILDeref t _)       = t
 typeIL (ILStore t _ _)     = t
@@ -362,6 +369,7 @@ instance Structured ILExpr where
             ILClosures ns cs e  -> out $ "ILClosures  " ++ show (map showClosurePair (zip ns cs))
             ILLetVal   x b e    -> out $ "ILLetVal    " ++ (show x) ++ " :: " ++ (show $ typeIL b) ++ " = ... in ... "
             ILIf      t  a b c  -> out $ "ILIf        " ++ " :: " ++ show t
+            ILUntil   t  a b    -> out $ "ILUntil     " ++ " :: " ++ show t
             ILInt ty int        -> out $ "ILInt       " ++ (litIntText int) ++ " :: " ++ show ty
             ILAlloc v           -> out $ "ILAlloc     "
             ILDeref t a         -> out $ "ILDeref     "
@@ -379,6 +387,7 @@ instance Structured ILExpr where
         case e of
             ILBool b                -> []
             ILInt t _               -> []
+            ILUntil t a b           -> [a, b]
             ILTuple     vs          -> map ILVar vs
             ILCase _ e bs _dt       -> (ILVar e):(map snd bs)
             ILClosures bnds clos e  -> [e]

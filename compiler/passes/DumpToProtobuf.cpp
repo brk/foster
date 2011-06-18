@@ -155,6 +155,11 @@ void IfExprAST::dump(DumpToProtobufPass* pass) {
   dumpChild(pass, if_->mutable_else_expr(), this->getElseExpr());
 }
 
+void UntilExpr::dump(DumpToProtobufPass* pass) {
+  processExprAST(pass->current, this, pb::Expr::UNTIL);
+  dumpChildren(pass, this);
+}
+
 void AllocAST::dump(DumpToProtobufPass* pass) {
   processExprAST(pass->current, this, pb::Expr::ALLOC);
   dumpChildren(pass, this);

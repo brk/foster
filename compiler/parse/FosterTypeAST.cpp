@@ -351,6 +351,7 @@ CoroTypeAST* CoroTypeAST::get(TypeAST* targ, TypeAST* tret) {
 
 const llvm::Type* CArrayTypeAST::getLLVMType() const {
   if (!repr) {
+    ASSERT(false);
   }
   return repr;
 }

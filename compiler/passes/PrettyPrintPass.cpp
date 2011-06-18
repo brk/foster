@@ -267,6 +267,17 @@ void IfExprAST::show(PrettyPrintPass* pass) {
   pass->emit(this->getElseExpr());
   }
 }
+
+// until $0 then $1 $end
+void UntilExpr::show(PrettyPrintPass* pass) {
+  ScopedBlock sb(pass);
+  pass->scan(PPToken("until "));
+  pass->emit(this->parts[0]);
+  pass->scan(PPToken(" then "));
+  pass->emit(this->parts[1]);
+  pass->scan(PPToken(" end"));
+}
+
 // (ref $0)
 void AllocAST::show(PrettyPrintPass* pass) {
   ScopedBlock sb(pass);

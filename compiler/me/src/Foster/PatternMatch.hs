@@ -78,7 +78,7 @@ computeBindings (occ, SP_Ctor (CtorId "()" _) pats) =
   let occs = expand occ (Prelude.length pats) in
   concat $ map computeBindings (zip occs pats)
 computeBindings (occ, SP_Ctor (CtorId c _) pats)
-        | c == "Int32"   = []
+        | c == "Int32" || c == "Bool" = []
 computeBindings (occ, SP_Ctor c pats) =
   error $ "computeBindings " ++ show c ++ " ;; " ++ show pats
 
@@ -204,6 +204,8 @@ isSignature ctorSet allSigs =
     ["()"] -> True
     ["List"] ->
       ctorSet == Set.fromList [CtorId "List" 0, CtorId "List" 1]
+    ["Bool"] ->
+      ctorSet == Set.fromList [CtorId "Bool" 0, CtorId "Bool" 1]
     [typename] ->
       error $ "isSignature: Unknown type name! ctorSet = " ++ show ctorSet
     otherwise ->

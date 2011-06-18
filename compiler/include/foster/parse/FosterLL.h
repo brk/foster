@@ -228,6 +228,19 @@ struct LLIf : public LLExpr {
   LLExpr*& getElseExpr() { ASSERT(parts.size() == 3); return parts[2]; }
 };
 
+struct LLUntil : public LLExpr {
+  std::vector<LLExpr*> parts;
+  LLUntil(LLExpr* testExpr, LLExpr* thenExpr)
+    : LLExpr("LLUntil") {
+    parts.push_back(testExpr);
+    parts.push_back(thenExpr);
+  }
+
+  virtual llvm::Value* codegen(CodegenPass* pass);
+  LLExpr*& getTestExpr() { ASSERT(parts.size() == 2); return parts[0]; }
+  LLExpr*& getThenExpr() { ASSERT(parts.size() == 2); return parts[1]; }
+};
+
 struct DecisionTree;
 struct LLCase : public LLExpr {
   LLExpr* scrutinee;

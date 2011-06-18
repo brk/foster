@@ -18,7 +18,7 @@ tokens {
   TYPE='type';
   COMPILES='__COMPILES__';
 
-  VAL_APP;
+  VAL_APP; UNTIL;
   BINDING; LETS; LETREC; SEQ;
   RAT_NUM; INT_NUM; BOOL;
   DECL; DEFN;
@@ -95,6 +95,7 @@ atom    :       // syntactically "closed" terms
   | lets
   | letrec
   | ifexpr
+  | 'until' e 'then' e_seq 'end'  -> ^(UNTIL e e_seq)
   | '(' ')'                             -> ^(TUPLE)
   | '(' COMPILES e ')'                  -> ^(COMPILES e)
   | '(' 'ref' e ')'                     -> ^(REF e)     // allocation

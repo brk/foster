@@ -150,6 +150,13 @@ LLExpr* parseSubscript(const pb::Expr& e) {
       LLExpr_from_pb(& e.parts(1)));
 }
 
+LLExpr* parseUntil(const pb::Expr& e) {
+  ASSERT(e.parts_size() == 2) << "until must have cond and body";
+  return new LLUntil(
+      LLExpr_from_pb(& e.parts(0)),
+      LLExpr_from_pb(& e.parts(1)));
+}
+
 LLExpr* parseTuple(const pb::Expr& e) {
   std::vector<LLExpr*> args;
   for (int i = 0; i < e.parts_size(); ++i) {
@@ -298,6 +305,7 @@ LLExpr* LLExpr_from_pb(const pb::Expr* pe) {
   case pb::Expr::IL_INT:       rv = parseInt(e); break;
   case pb::Expr::IL_LETVALS:   rv = parseLetVals(e); break;
   case pb::Expr::IL_CLOSURES:  rv = parseClosures(e); break;
+  case pb::Expr::IL_UNTIL:     rv = parseUntil(e); break;
 //  case pb::Expr::SIMD:      rv = parseSimd(e); break;
   case pb::Expr::IL_CORO_INVOKE: rv = parseCoroPrim(e); break;
   case pb::Expr::IL_CORO_CREATE: rv = parseCoroPrim(e); break;
