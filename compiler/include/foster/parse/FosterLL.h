@@ -153,8 +153,7 @@ struct LLVar : public LLExpr {
 
 // base(args)
 struct LLCall : public LLExpr {
-  // This must be a Var instead of just a string
-  LLVar* base; // because
+  LLVar* base;
   std::vector<LLVar*> args;
   LLCall(LLVar* base, std::vector<LLVar*>& args)
   : LLExpr("LLCall"), base(base), args(args) { }
@@ -162,21 +161,21 @@ struct LLCall : public LLExpr {
 };
 
 struct LLTuple : public LLExpr {
-  std::vector<LLExpr*> parts;
+  std::vector<LLVar*> parts;
   bool isClosureEnvironment;
-  explicit LLTuple(const std::vector<LLExpr*>& exprs)
+  explicit LLTuple(const std::vector<LLVar*>& vars)
     : LLExpr("LLTuple"),
       isClosureEnvironment(false) {
-    parts = exprs;
+    parts = vars;
   }
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
-// base[index]
+// v[index]
 struct LLSubscript : public LLExpr {
-  LLExpr* base;
+  LLVar * base;
   LLExpr* index;
-  explicit LLSubscript(LLExpr* base, LLExpr* index)
+  explicit LLSubscript(LLVar* base, LLExpr* index)
     : LLExpr("LLSubscript"), base(base), index(index) {
     }
   virtual llvm::Value* codegen(CodegenPass* pass);
@@ -215,7 +214,7 @@ struct LLLetVal : public LLExpr {
 
 struct LLIf : public LLExpr {
   std::vector<LLExpr*> parts;
-  LLIf(LLExpr* testExpr, LLExpr* thenExpr, LLExpr* elseExpr)
+  LLIf(LLVar* testExpr, LLExpr* thenExpr, LLExpr* elseExpr)
     : LLExpr("LLIf") {
     parts.push_back(testExpr);
     parts.push_back(thenExpr);
@@ -243,11 +242,11 @@ struct LLUntil : public LLExpr {
 
 struct DecisionTree;
 struct LLCase : public LLExpr {
-  LLExpr* scrutinee;
+  LLVar* scrutinee;
   DecisionTree* dt;
   TypeAST* branchType;
 
-  LLCase(LLExpr* testExpr, DecisionTree* dt, TypeAST* ty)
+  LLCase(LLVar* testExpr, DecisionTree* dt, TypeAST* ty)
     : LLExpr("LLCase"), scrutinee(testExpr), dt(dt), branchType(ty) {
   }
 
@@ -262,20 +261,20 @@ struct LLNil : public LLExpr {
 };
 
 struct LLAlloc : public LLExpr {
-  LLExpr* base;
-  explicit LLAlloc(LLExpr* e) : LLExpr("LLAlloc"), base(e) {}
+  LLVar* base;
+  explicit LLAlloc(LLVar* e) : LLExpr("LLAlloc"), base(e) {}
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
 struct LLDeref : public LLExpr {
-  LLExpr* base;
-  explicit LLDeref(LLExpr* e) : LLExpr("LLDeref"), base(e) {}
+  LLVar* base;
+  explicit LLDeref(LLVar* e) : LLExpr("LLDeref"), base(e) {}
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
 struct LLStore : public LLExpr {
-  LLExpr* v; LLExpr* r;
-  explicit LLStore(LLExpr* v, LLExpr* r)
+  LLVar* v; LLVar* r;
+  explicit LLStore(LLVar* v, LLVar* r)
     : LLExpr("LLStore"), v(v), r(r) {}
   virtual llvm::Value* codegen(CodegenPass* pass);
 };

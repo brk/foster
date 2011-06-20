@@ -224,8 +224,10 @@ llvm::Value* LLVar::codegen(CodegenPass* pass) {
   llvm::Value* v = pass->lookup(getName());
 
   if (llvm::AllocaInst* ai = llvm::dyn_cast_or_null<llvm::AllocaInst>(v)) {
+    EDiag() << "var " << getName() << " was     alloca:\n\t" << str(v) << " :: " << str(v->getType());
     return builder.CreateLoad(ai, /*isVolatile=*/ false, "autoload");
-  } else {
+  } else if (v) {
+    //EDiag() << "var " << getName() << " was not alloca:\n\t" << str(v) << " :: " << str(v->getType());
     return v;
   }
 
@@ -279,6 +281,13 @@ void setFunctionArgumentNames(llvm::Function* F,
 }
 
 llvm::Value* LLAlloc::codegen(CodegenPass* pass) {
+  // (alloc base) is equivalent to
+  //    let sv = base;
+  //        rs  = mallocType t;
+  //        r   = rs^;
+  //     in sv >^ r;
+  //        r
+  //    end
   ASSERT(this && this->base && this->base->type);
   llvm::Value* storedVal = this->base->codegen(pass);
   llvm::Value* ptrSlot   = pass->emitMalloc(this->base->type->getLLVMType());
@@ -288,6 +297,10 @@ llvm::Value* LLAlloc::codegen(CodegenPass* pass) {
 }
 
 llvm::Value* LLDeref::codegen(CodegenPass* pass) {
+  // base could be an array a[i] or a slot for a reference variable r.
+  // a[i] should codegen to &a[i], the address of the slot in the array.
+  // r    should codegen to the contents of the slot (the ref pointer value),
+  //        not the slot address.
   return builder.CreateLoad(this->base->codegen(pass),
                             /*isVolatile=*/ false,
                             "");
@@ -296,6 +309,7 @@ llvm::Value* LLDeref::codegen(CodegenPass* pass) {
 llvm::Value* LLStore::codegen(CodegenPass* pass) {
   llvm::Value* vv = this->v->codegen(pass);
   llvm::Value* vr = this->r->codegen(pass);
+  ASSERT(isPointerToType(vr->getType(), vv->getType()));
   return builder.CreateStore(vv, vr, /*isVolatile=*/ false);
 }
 
@@ -563,9 +577,8 @@ llvm::Value* LLProc::codegen(CodegenPass* pass) {
 
   // Enforce that the main function always returns void.
   if (F->getName() == kFosterMain) {
-    std::vector<LLExpr*> exprs;
-    this->body = new LLLetVal("!ignored", this->body,
-      new LLTuple(exprs));
+    std::vector<LLVar*> vars;
+    this->body = new LLLetVal("!ignored", this->body, new LLTuple(vars));
   }
 
   Value* rv = this->getBody()->codegen(pass);

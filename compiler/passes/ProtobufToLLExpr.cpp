@@ -31,6 +31,12 @@ namespace bepb {
 } // namespace foster::bepb
 
 LLExpr* LLExpr_from_pb(const bepb::Expr*);
+LLVar*  LLVar_from_pb(const bepb::Expr* pb) {
+  LLExpr* e = LLExpr_from_pb(pb);
+  LLVar* rv = dynamic_cast<LLVar*>(e);
+  ASSERT(rv) << "Expected var, got " << e->tag;
+  return rv;
+}
 
 TypeAST* TypeAST_from_pb(const bepb::Type*);
 FnTypeAST* parseProcType(const bepb::ProcType&);
@@ -58,14 +64,10 @@ LLExpr* parseBool(const pb::Expr& e) {
 LLExpr* parseCall(const pb::Expr& e) {
   ASSERT(e.parts_size() >= 1);
 
-  LLVar* base = dynamic_cast<LLVar*>(LLExpr_from_pb(&e.parts(0)));
+  LLVar* base = LLVar_from_pb(&e.parts(0));
   std::vector<LLVar*> args;
   for (int i = 1; i < e.parts_size(); ++i) {
-    LLExpr* expr = LLExpr_from_pb(&e.parts(i));
-    LLVar* var = dynamic_cast<LLVar*>(expr);
-    ASSERT(var != NULL) << "args to LLCall must be vars! got"
-                        << pb::Expr::Tag_Name(e.parts(i).tag());
-    args.push_back(var);
+    args.push_back(LLVar_from_pb(&e.parts(i)));
   }
   return new LLCall(base, args);
 }
@@ -76,7 +78,7 @@ LLExpr* parseIf(const pb::Expr& e) {
   const pb::PBIf& i = e.pb_if();
 
   return new LLIf(
-      LLExpr_from_pb(& i.test_expr()),
+       LLVar_from_pb(& i.test_expr()),
       LLExpr_from_pb(& i.then_expr()),
       LLExpr_from_pb(& i.else_expr()));
 }
@@ -146,7 +148,7 @@ LLExpr* parseSimd(const pb::Expr& e) {
 LLExpr* parseSubscript(const pb::Expr& e) {
   ASSERT(e.parts_size() == 2) << "subscript must have base and index";
   return new LLSubscript(
-      LLExpr_from_pb(& e.parts(0)),
+       LLVar_from_pb(& e.parts(0)),
       LLExpr_from_pb(& e.parts(1)));
 }
 
@@ -158,9 +160,9 @@ LLExpr* parseUntil(const pb::Expr& e) {
 }
 
 LLExpr* parseTuple(const pb::Expr& e) {
-  std::vector<LLExpr*> args;
+  std::vector<LLVar*> args;
   for (int i = 0; i < e.parts_size(); ++i) {
-    args.push_back(LLExpr_from_pb(&e.parts(i)));
+    args.push_back(LLVar_from_pb(&e.parts(i)));
   }
   LLTuple* rv = new LLTuple(args);
   rv->isClosureEnvironment = e.is_closure_environment();
@@ -230,7 +232,7 @@ DecisionTree* parseDecisionTree(const pb::DecisionTree& dt) {
 
 LLExpr* parseCase(const pb::Expr& e) {
   DecisionTree* dt = parseDecisionTree(e.dt());
-  return new LLCase(LLExpr_from_pb(&e.parts(0)), dt,
+  return new LLCase(LLVar_from_pb(&e.parts(0)), dt,
                     TypeAST_from_pb(& e.type()));
 }
 
@@ -252,17 +254,17 @@ LLExpr* parseVar(const pb::Expr& e) {
 
 
 LLExpr* parseAlloc(const pb::Expr& e) {
-  return new LLAlloc(LLExpr_from_pb(& e.parts(0)));
+  return new LLAlloc(LLVar_from_pb(& e.parts(0)));
 }
 
 LLExpr* parseDeref(const pb::Expr& e) {
-  return new LLDeref(LLExpr_from_pb(& e.parts(0)));
+  return new LLDeref(LLVar_from_pb(& e.parts(0)));
 }
 
 LLExpr* parseStore(const pb::Expr& e) {
   return new LLStore(
-      LLExpr_from_pb(& e.parts(0)),
-      LLExpr_from_pb(& e.parts(1)));
+      LLVar_from_pb(& e.parts(0)),
+      LLVar_from_pb(& e.parts(1)));
 }
 
 } // unnamed namespace
