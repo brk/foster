@@ -125,12 +125,55 @@ bool isSafeToStackAllocate(LLTuple* ast) {
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
 
+llvm::Value* generateAllocDAarray32(CodegenPass* pass) {
+  // Create a function of type  array[i32] (i32 n)
+  std::vector<const Type*> fnTyArgs;
+  fnTyArgs.push_back(builder.getInt32Ty());
+
+  const llvm::Type* elt_ty = builder.getInt32Ty();
+  const llvm::FunctionType* fnty =
+        llvm::FunctionType::get(
+                   /*Result=*/   ArrayTypeAST::getZeroLengthTypeRef(elt_ty),
+                   /*Params=*/   fnTyArgs,
+                   /*isVarArg=*/ false);
+
+  Function* f = Function::Create(
+    /*Type=*/    fnty,
+    /*Linkage=*/ llvm::GlobalValue::InternalLinkage,
+    /*Name=*/    ".foster_alloc_array_32", pass->mod);
+
+  f->setGC("fostergc");
+
+  /////////////////////////////
+
+  Function::arg_iterator args = f->arg_begin();
+  Value* n = args++;
+  n->setName("n");
+
+  BasicBlock* prevBB = builder.GetInsertBlock();
+  BasicBlock* BB = BasicBlock::Create(builder.getContext(), "entry", f);
+  builder.SetInsertPoint(BB);
+
+  Value* slot = pass->emitArrayMalloc(elt_ty, n);
+  builder.CreateRet(builder.CreateLoad(slot, /*isVolatile=*/ false));
+
+  if (prevBB) {
+    builder.SetInsertPoint(prevBB);
+  }
+
+  return f;
+}
+
 llvm::Value* CodegenPass::lookup(const std::string& fullyQualifiedSymbol) {
   llvm::Value* v =  valueSymTab.lookup(fullyQualifiedSymbol);
   if (v) return v;
 
   // Otherwise, it should be a function name.
   v = mod->getFunction(fullyQualifiedSymbol);
+
+  if (!v && fullyQualifiedSymbol == "allocDArray32") {
+    v = generateAllocDAarray32(this);
+  }
 
   if (!v) {
    currentErrs() << "name was neither fn arg nor fn name: "
@@ -140,7 +183,6 @@ llvm::Value* CodegenPass::lookup(const std::string& fullyQualifiedSymbol) {
   }
   return v;
 }
-
 
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
@@ -507,7 +549,7 @@ llvm::Value* LLProc::codegen(CodegenPass* pass) {
         // arg_addr would be i32**,    {i32}**,  or {i32*}*.
         llvm::outs() << "inserting gcparam " <<AI->getNameStr()<< " in scope\n";
         scope->insert(AI->getNameStr(),
-                      storeAndMarkPointerAsGCRoot(AI, pass->mod));
+                      storeAndMarkPointerAsGCRoot(AI, NotArray, pass->mod));
       } else {
         llvm::AllocaInst* arg_addr = CreateEntryAlloca(
                                                 AI->getType(),
@@ -793,6 +835,32 @@ llvm::Value* LLNil::codegen(CodegenPass* pass) {
   return llvm::ConstantPointerNull::getNullValue(getLLVMType(this->type));
 }
 
+bool isPointerToStruct(const llvm::Type* ty) {
+  if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
+    if (llvm::dyn_cast<llvm::StructType>(pty->getContainedType(0))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+llvm::Value* tryBindArray(llvm::Value* base) {
+  // {i64, [0 x T]}*
+  if (isPointerToStruct(base->getType())) {
+    const llvm::Type* sty = base->getType()->getContainedType(0);
+    if (sty->getNumContainedTypes() == 2
+      && sty->getContainedType(0) == builder.getInt64Ty()) {
+      if (const llvm::ArrayType* aty =
+        llvm::dyn_cast<llvm::ArrayType>(sty->getContainedType(1))) {
+        if (aty->getNumElements() == 0) {
+          return getPointerToIndex(base, getConstantInt32For(1), "");
+        }
+      }
+    }
+  }
+  return NULL;
+}
+
 llvm::Value* LLSubscript::codegen(CodegenPass* pass) {
   Value* base = this->base->codegen(pass);
   Value* idx  = this->index->codegen(pass);
@@ -807,7 +875,12 @@ llvm::Value* LLSubscript::codegen(CodegenPass* pass) {
     base = builder.CreateLoad(base, /*isVolatile*/ false, "subload");
   }
 
-  return getElementFromComposite(base, idx, "");
+  if (llvm::Value* arr = tryBindArray(base)) {
+    //EDiag() << "arr = " << str(arr) << " :: " << str(arr->getType());
+    return getPointerToIndex( arr, idx, "");
+  } else {
+    return getElementFromComposite(base, idx, "");
+  }
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -982,7 +1055,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
     bool needsAdjusting = argV->getType() != expectedType;
     if (needsAdjusting) {
       TypeAST* argty = this->args[i]->type;
-      EDiag() << str(argV) << "->getType() is " << str(argV->getType())
+      EDiag() << "\n" << str(argV) << "->getType() is\n" << str(argV->getType())
               << "; expecting " << str(expectedType)
               << "\n\targty is " << argty->tag << "\t" << str(argty);
       ASSERT(false);
@@ -1031,7 +1104,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
       value = builder.CreateLoad(value, /*isVolatile=*/ false, "destack");
     }
 
-    value = storeAndMarkPointerAsGCRoot(value, pass->mod);
+    value = storeAndMarkPointerAsGCRoot(value, NotArray, pass->mod);
   }
 
   return value;
@@ -1056,7 +1129,7 @@ codegenTupleValues(CodegenPass* pass,
   llvm::Value* pt = NULL;
 
   const char* typeName = (isClosureEnvironment.value) ? "env" : "tuple";
-  registerType(tupleType, typeName, pass->mod, isClosureEnvironment.value);
+  registerType(tupleType, typeName, pass->mod, NotArray, isClosureEnvironment.value);
 
   // Allocate tuple space
   if (!canStackAllocate.value) {

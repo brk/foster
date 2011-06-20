@@ -11,6 +11,7 @@ message Type {
     CLOSURE = 7;
     FORALL_TY = 8;
     TYPE_VARIABLE = 9;
+    ARRAY = 10;
   }
 
   required Tag         tag   = 2;

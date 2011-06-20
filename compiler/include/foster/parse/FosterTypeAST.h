@@ -257,5 +257,27 @@ public:
   static CArrayTypeAST* get(TypeAST* tcell, uint64_t size);
 };
 
+
+class ArrayTypeAST : public TypeAST {
+  TypeAST* cell;
+  uint64_t size;
+
+  explicit ArrayTypeAST(TypeAST* tcell, const SourceRange& sr)
+    : TypeAST("ArrayType", NULL, sr),
+      cell(tcell) {}
+
+public:
+  virtual void show(PrettyPrintTypePass* pass);
+  virtual void dump(DumpTypeToProtobufPass* pass);
+  virtual const llvm::Type* getLLVMType() const;
+  static  const llvm::Type* getZeroLengthTypeRef(const llvm::Type* t);
+  static  const llvm::Type* getSizedArrayTypeRef(const llvm::Type* t, int64_t n);
+
+  virtual int getNumContainedTypes() const { return 1; }
+  virtual TypeAST*& getContainedType(int i);
+
+  static ArrayTypeAST* get(TypeAST* tcell);
+};
+
 #endif // header guard
 

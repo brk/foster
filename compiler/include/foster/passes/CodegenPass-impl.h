@@ -14,15 +14,23 @@
 using llvm::Value;
 
 // Declarations for Codegen-typemaps.cpp
+enum ArrayOrNot {
+  YesArray, NotArray
+};
+
 llvm::GlobalVariable*
-emitTypeMap(const llvm::Type* ty, std::string name, bool skipOffsetZero = false);
+emitTypeMap(const llvm::Type* ty, std::string name,
+            ArrayOrNot arrayStatus,
+            llvm::Module* mod,
+            bool skipOffsetZero = false);
 
 void registerType(const llvm::Type* ty,
                   std::string       desiredName,
                   llvm::Module*     mod,
+                  ArrayOrNot,
                   bool isClosureEnvironment = false);
 
-llvm::GlobalVariable* getTypeMapForType(const llvm::Type*, llvm::Module* mod);
+llvm::GlobalVariable* getTypeMapForType(const llvm::Type*, llvm::Module*, ArrayOrNot);
 
 bool mightContainHeapPointers(const llvm::Type* ty);
 
@@ -48,8 +56,9 @@ llvm::AllocaInst* CreateEntryAlloca(const llvm::Type* ty,
                                     const std::string& name);
 llvm::AllocaInst* stackSlotWithValue(llvm::Value* val,
                                      const std::string& name);
-llvm::Value* storeAndMarkPointerAsGCRoot(llvm::Value* val,
-                                         llvm::Module* mod);
+llvm::Value* storeAndMarkPointerAsGCRoot(llvm::Value*,
+                                         ArrayOrNot,
+                                         llvm::Module*);
 
 ////////////////////////////////////////////////////////////////////
 
@@ -79,6 +88,10 @@ struct CodegenPass {
 
   // Returns ty**, the stack slot containing a ty*.
   llvm::Value* emitMalloc(const llvm::Type* ty);
+
+  // Returns array_type[elt_ty]**, the stack slot containing an array_type[elt_ty]*.
+  llvm::Value* emitArrayMalloc(const llvm::Type* elt_ty,
+                               llvm::Value* n);
 
   llvm::Value* allocateMPInt();
 

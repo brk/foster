@@ -45,6 +45,7 @@ parSubstTy prvNextPairs ty =
         (NamedTypeAST _)     -> fromMaybe ty $ List.lookup ty prvNextPairs
         (PtrTypeAST   _)     -> fromMaybe ty $ List.lookup ty prvNextPairs
         (RefType      _)     -> fromMaybe ty $ List.lookup ty prvNextPairs
+        (ArrayType    _)     -> fromMaybe ty $ List.lookup ty prvNextPairs
         (TupleTypeAST types) -> (TupleTypeAST [parSubstTy prvNextPairs t | t <- types])
         (FnTypeAST s t cc cs)-> (FnTypeAST (parSubstTy prvNextPairs s)
                                            (parSubstTy prvNextPairs t)
@@ -64,6 +65,7 @@ tySubst ty subst =
     case ty of
         (NamedTypeAST s)     -> ty
         (RefType    t)       -> RefType    (tySubst t subst)
+        (ArrayType  t)       -> ArrayType  (tySubst t subst)
         (PtrTypeAST t)       -> PtrTypeAST (tySubst t subst)
         (TupleTypeAST types) -> (TupleTypeAST [tySubst t subst | t <- types])
         (FnTypeAST s t cc cs)-> (FnTypeAST (tySubst s subst)

@@ -524,6 +524,12 @@ void CArrayTypeAST::show(PrettyPrintTypePass* pass){
   pass->scan(PPToken(")"));
 }
 
+void ArrayTypeAST::show(PrettyPrintTypePass* pass){
+  pass->scan(PPToken("(Array "));
+  pass->emit(this->getContainedType(0));
+  pass->scan(PPToken(")"));
+}
+
 void TupleTypeAST::show(PrettyPrintTypePass* pass){
   pass->scan(PPToken(" { "));
   for (int i = 0; i < this->getNumContainedTypes(); ++i) {

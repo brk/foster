@@ -103,6 +103,10 @@ dumpType x@(RefType ty) = dumpType (PtrTypeAST ty)
 dumpType x@(PtrTypeAST ty) =    P'.defaultValue { PbType.tag = PbTypeTag.PTR
                                                 , type_parts = fromList $ fmap dumpType [ty]
                                                 }
+dumpType x@(ArrayType ty) =     P'.defaultValue { PbType.tag = PbTypeTag.ARRAY
+                                                , type_parts = fromList $ fmap dumpType [ty]
+                                                }
+
 dumpType (MetaTyVar (Meta u tyref desc)) =
   unsafePerformIO $ do mty <- readIORef tyref
                        case mty of

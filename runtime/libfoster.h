@@ -25,6 +25,7 @@ extern "C" {
 
 // Interface to foster's memory allocator; see gc/foster_gc_allocate.cpp
 void* memalloc_cell(void* typeinfo);
+void* memalloc_array(void* typeinfo, int64_t n);
 void foster__assert(bool, const char*);
 
 }

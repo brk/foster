@@ -7,6 +7,7 @@
 #include "base/LLVMUtils.h"
 
 #include "passes/CodegenPass-impl.h"
+#include "parse/FosterTypeAST.h"
 
 #include "llvm/Intrinsics.h"
 #include "llvm/LLVMContext.h"
@@ -125,7 +126,9 @@ void markGCRoot(llvm::Value* root,
   // If we don't have something more specific, try using
   // the lowered type's type map.
   if (!meta) {
-    meta = getTypeMapForType(root->getType(), mod);
+    EDiag() << "Why are we marking a gc root without any metadata??\n\t"
+                  << str(root->getType());
+    meta = getTypeMapForType(root->getType(), mod, NotArray);
   }
 
   if (!meta) {
@@ -175,6 +178,7 @@ llvm::AllocaInst* stackSlotWithValue(llvm::Value* val, const std::string& name) 
 //      TODO need to guarantee that the val passed to us is either
 //      a pointer to memalloc-ed memory, or a value that does not escape.
 llvm::Value* storeAndMarkPointerAsGCRoot(llvm::Value* val,
+                                         ArrayOrNot arrayStatus,
                                          llvm::Module* mod) {
   if (!val->getType()->isPointerTy()) {
      llvm::AllocaInst* valptr = stackSlotWithValue(val, "ptrfromnonptr");
@@ -191,7 +195,8 @@ llvm::Value* storeAndMarkPointerAsGCRoot(llvm::Value* val,
   llvm::Value* root = builder.CreateBitCast(stackslot,
                                       ptrTo(builder.getInt8PtrTy()), "gcroot");
 
-  markGCRoot(root, getTypeMapForType(val->getType()->getContainedType(0), mod),
+  markGCRoot(root, getTypeMapForType(val->getType()->getContainedType(0),
+                                     mod, arrayStatus),
              mod);
   builder.CreateStore(val, stackslot, /*isVolatile=*/ false);
 
@@ -207,7 +212,7 @@ CodegenPass::emitMalloc(const llvm::Type* ty) {
   llvm::Value* memalloc_cell = mod->getFunction("memalloc_cell");
   ASSERT(memalloc_cell != NULL) << "NO memalloc_cell IN MODULE! :(";
 
-  llvm::GlobalVariable* ti = getTypeMapForType(ty, mod);
+  llvm::GlobalVariable* ti = getTypeMapForType(ty, mod, NotArray);
   ASSERT(ti != NULL);
   const llvm::Type* typemap_type = memalloc_cell->getType()
                                             ->getContainedType(0)
@@ -217,6 +222,30 @@ CodegenPass::emitMalloc(const llvm::Type* ty) {
 
   return storeAndMarkPointerAsGCRoot(
                        builder.CreateBitCast(mem, ptrTo(ty), "ptr"),
+                       NotArray,
+                       mod);
+}
+
+
+llvm::Value*
+CodegenPass::emitArrayMalloc(const llvm::Type* elt_ty,
+                             llvm::Value* n) {
+  llvm::Value* memalloc = mod->getFunction("memalloc_array");
+  ASSERT(memalloc != NULL) << "NO memalloc_array IN MODULE! :(";
+
+  llvm::GlobalVariable* ti = getTypeMapForType(elt_ty, mod, YesArray);
+  ASSERT(ti != NULL);
+  const llvm::Type* typemap_type = memalloc->getType() // function ptr
+                                            ->getContainedType(0) // function
+                                            ->getContainedType(1); // first arg
+  llvm::Value* typemap = builder.CreateBitCast(ti, typemap_type);
+  llvm::Value* num_elts = builder.CreateSExt(n, builder.getInt64Ty(), "ext");
+  llvm::CallInst* mem = builder.CreateCall2(memalloc, typemap, num_elts, "mem");
+
+  return storeAndMarkPointerAsGCRoot(
+                       builder.CreateBitCast(mem,
+                              ArrayTypeAST::getZeroLengthTypeRef(elt_ty), "arr_ptr"),
+                       YesArray,
                        mod);
 }
 

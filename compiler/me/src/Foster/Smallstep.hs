@@ -10,6 +10,7 @@ import Data.Int
 import Data.Bits
 import Data.Maybe(isJust)
 import Data.IORef
+import Data.Array
 
 import Control.Exception(assert)
 import System.Console.ANSI
@@ -28,14 +29,12 @@ data SSTerm = SSTmExpr  IExpr
 data SSValue = SSBool      Bool
              | SSInt       Integer
              | SSPrimitive SSPrimId
+             | SSArray     (Array Int Location)
              | SSTuple     [SSValue]
              | SSLocation  Location
              | SSClosure   ILClosure [SSValue]
              | SSCoro      Coro
              deriving (Eq, Show)
-
-instance Eq LiteralInt
-  where l1 == l2 = (litIntValue l1) == (litIntValue l2)
 
 instance Eq ILClosure
   where c1 == c2 = (ilClosureProcIdent c1) == (ilClosureProcIdent c2)
@@ -268,6 +267,8 @@ popCoroCont gs =
 
 subStep gs delimCont = step (pushCoroCont gs delimCont)
 
+arrayIndex arr n = SSLocation (arr ! n)
+
 stepExpr :: MachineState -> IExpr -> IO MachineState
 stepExpr gs expr = do
   let coro = stCoro gs
@@ -342,9 +343,10 @@ stepExpr gs expr = do
                     (SSTmExpr $ ILetVal (Ident "_" 0) b (SSTmExpr $ IUntil c b))))
 
     ISubscript v (SSTmValue (SSInt i)) ->
+        let n = fromInteger i in
         case getval gs v of
           SSTuple vals -> return $ withTerm gs (SSTmValue (vals !! n))
-                              where n = fromInteger i
+          SSArray arr  -> return $ withTerm gs (SSTmValue (arrayIndex arr n))
           _ -> error "Expected base of subscript to be tuple value"
 
     ISubscript v e@(SSTmExpr _) -> subStep (withTerm gs e) (envOf gs, \t -> SSTmExpr $ ISubscript v t)
@@ -588,10 +590,28 @@ tryEvalPrimitive gs "print_i32b" [val@(SSInt i)] =
       do printString gs (showBits32 i)
          return $ withTerm gs unit
 
+tryEvalPrimitive gs0 "allocDArray32" [SSInt i] =
+      do (inits, gs) <- mapFoldM [0.. i - 1] gs0 (\n -> \gs1 ->
+                                let (loc, gs) = extendHeap gs1 (SSInt 0) in
+                                return ([(fromInteger n, loc)], gs)
+                        )
+         return $ withTerm gs (SSTmValue $ SSArray $
+                        array (0, fromInteger $ i - 1) inits)
+
 tryEvalPrimitive gs primName args =
       error ("step ilcall 'prim' " ++ show primName ++ " with args: " ++ show args)
 
 --------------------------------------------------------------------
+
+mapFoldM :: (Monad m) => [a] -> b ->
+                         (a -> b -> m ([c], b))
+                                 -> m ([c], b)
+mapFoldM []  b  f    = return ([], b)
+mapFoldM [a] b1 f    = f a b1
+mapFoldM (a:as) b1 f = do
+    (cs1, b2) <- f a b1
+    (cs2, b3) <- mapFoldM as b2 f
+    return (cs1 ++ cs2, b3)
 
 showBits32 n =
   let bits = map (testBit n) [0 .. (32 - 1)] in
@@ -624,6 +644,7 @@ display (SSBool True )  = "true"
 display (SSBool False)  = "false"
 display (SSPrimitive p) = "<" ++ show p ++ ">"
 display (SSInt i     )  = show i
+display (SSArray a   )  = show a
 display (SSTuple vals)  = "(" ++ joinWith ", " (map display vals) ++ ")"
 display (SSLocation z)  = "<location " ++ show z ++ ">"
 display (SSClosure _ _) = "<closure>"

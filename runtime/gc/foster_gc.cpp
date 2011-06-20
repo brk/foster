@@ -39,6 +39,7 @@ struct typemap {
   const char* name;
   int32_t numEntries;
   char isCoro;
+  char isArray;
   struct entry {
     const void* typeinfo;
     int32_t offset;
@@ -216,8 +217,8 @@ class copying_gc {
 
       int64_t free_size() { return end - bump; }
 
-      bool can_allocate_cell(int64_t cell_size) {
-        return end > bump + cell_size;
+      bool can_allocate_bytes(int64_t num_bytes) {
+        return end > bump + num_bytes;
       }
 
       void* allocate_cell_prechecked(typemap* typeinfo) {
@@ -225,6 +226,19 @@ class copying_gc {
         bump += typeinfo->cell_size;
         allot->set_meta(typeinfo);
         return allot->body_addr();
+      }
+
+      void* allocate_array_prechecked(typemap* elt_typeinfo,
+                                      int64_t  num_elts,
+                                      int64_t  total_bytes) {
+        heap_cell* allot = (heap_cell*) bump;
+        bump += total_bytes;
+        allot->set_meta(elt_typeinfo);
+        // allot = [meta|size|e1...]
+        void* body_addr = allot->body_addr();
+        int64_t* size = (int64_t*) body_addr;
+                *size = num_elts;
+        return body_addr;
       }
 
       // Prerequisite: body is a stack pointer.
@@ -338,7 +352,7 @@ class copying_gc {
 
         //fprintf(gclog, "copying cell %p, cell size %llu\n", cell, cell_size); fflush(gclog);
 
-        if (can_allocate_cell(cell_size)) {
+        if (can_allocate_bytes(cell_size)) {
           memcpy(bump, cell, cell_size);
           heap_cell* new_addr = (heap_cell*) bump;
           bump += cell_size;
@@ -452,13 +466,33 @@ public:
     ++num_allocations;
     int64_t cell_size = typeinfo->cell_size;
 
-    if (curr->can_allocate_cell(cell_size)) {
+    if (curr->can_allocate_bytes(cell_size)) {
       return curr->allocate_cell_prechecked(typeinfo);
     } else {
       gc();
-      if (curr->can_allocate_cell(cell_size)) {
+      if (curr->can_allocate_bytes(cell_size)) {
         fprintf(gclog, "gc collection freed space, now have %lld\n", curr->free_size());
             return curr->allocate_cell_prechecked(typeinfo);
+      } else {
+        fprintf(gclog, "working set exceeded heap size! aborting...\n"); fflush(gclog);
+        exit(255); // TODO be more careful if we're allocating from a coro...
+        return NULL;
+      }
+    }
+  }
+
+  void* allocate_array(typemap* elt_typeinfo, int64_t n) {
+    ++num_allocations;
+    int64_t cell_size = elt_typeinfo->cell_size;
+    int64_t req_bytes = 8 + 8 + n * cell_size; // typeinfo, elt count, elts.
+
+    if (curr->can_allocate_bytes(req_bytes)) {
+      return curr->allocate_array_prechecked(elt_typeinfo, n, req_bytes);
+    } else {
+      gc();
+      if (curr->can_allocate_bytes(req_bytes)) {
+        fprintf(gclog, "gc collection freed space, now have %lld\n", curr->free_size());
+            return curr->allocate_array_prechecked(elt_typeinfo, n, req_bytes);
       } else {
         fprintf(gclog, "working set exceeded heap size! aborting...\n"); fflush(gclog);
         exit(255); // TODO be more careful if we're allocating from a coro...
@@ -627,6 +661,10 @@ std::string format_ref(void* ptr) {
 
 extern "C" void* memalloc_cell(typemap* typeinfo) {
   return allocator->allocate_cell(typeinfo);
+}
+
+extern "C" void* memalloc_array(typemap* typeinfo, int64_t n) {
+  return allocator->allocate_array(typeinfo, n);
 }
 
 void force_gc_for_debugging_purposes() {

@@ -28,6 +28,7 @@ collectUnificationVars x =
         (T_TyVar tv)         -> []
         (MetaTyVar m)        -> [m]
         (RefType    ty)      -> collectUnificationVars ty
+        (ArrayType  ty)      -> collectUnificationVars ty
         (PtrTypeAST ty)      -> collectUnificationVars ty
 
 -- equateTypes first attempts to unify the two given types.
@@ -166,7 +167,7 @@ typecheck ctx expr maybeExpTy =
             return (AnnLetVar id ea eb)
         E_SubscriptAST a b rng -> do ta <- typecheck ctx a Nothing
                                      tb <- typecheck ctx b Nothing
-                                     typecheckSubscript rng ta (typeAST ta) tb maybeExpTy
+                                     typecheckSubscript ctx rng ta (typeAST ta) tb maybeExpTy
         E_TupleAST exprs -> typecheckTuple ctx exprs maybeExpTy
 
         E_VarAST rng v -> case termVarLookup (evarName v) (contextBindings ctx) of
@@ -284,13 +285,29 @@ typecheckTyApp ctx rng a t maybeExpTy = do
 
 -- Tuple subscripts must have a literal integer subscript denoting the field;
 -- looking up the field at runtime wouldn't make much sense.
-typecheckSubscript rng base (TupleTypeAST types) i@(AnnInt ty int) maybeExpTy =
+typecheckSubscript ctx rng base (TupleTypeAST types) i@(AnnInt ty int) maybeExpTy =
     let literalValue = read (litIntText int) :: Integer in
     case safeListIndex types (fromInteger literalValue) of
         Nothing -> tcFails $ out $ "Literal index " ++ litIntText int ++ " to subscript was out of bounds"
         Just t  -> return (AnnSubscript t base i)
 
-typecheckSubscript rng base baseType index maybeExpTy =
+-- TODO make sure i is not negative or too big
+typecheckSubscript ctx rng base (ArrayType t) i@(AnnInt ty int) (Just expTy) = do
+    equateTypes t expTy (Just "subscript expected type")
+    return (AnnSubscript (RefType t) base i)
+
+typecheckSubscript ctx rng base (ArrayType t) i@(AnnInt ty int) Nothing = do
+    return (AnnSubscript (RefType t) base i)
+
+typecheckSubscript ctx rng base (ArrayType t) aiexpr maybeExpTy = do
+    -- TODO check aiexpr type is compatible with Word
+    case maybeExpTy of
+      Nothing -> return ()
+      Just expTy -> equateTypes t expTy (Just "subscript expected type")
+
+    return (AnnSubscript (RefType t) base aiexpr)
+
+typecheckSubscript ctx rng base baseType index maybeExpTy =
     tcFails $ out $ "Unable to subscript expression of type " ++ show baseType
                 ++ " with expression " ++ show index
                 ++ " (context expected type " ++ show maybeExpTy ++ ")"

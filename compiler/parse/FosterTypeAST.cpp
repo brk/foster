@@ -373,3 +373,35 @@ CArrayTypeAST* CArrayTypeAST::get(TypeAST* tcell, uint64_t size) {
 
 /////////////////////////////////////////////////////////////////////
 
+const llvm::Type* ArrayTypeAST::getSizedArrayTypeRef(const llvm::Type* t, int64_t n) {
+  return llvm::PointerType::getUnqual(
+          llvm::StructType::get(llvm::getGlobalContext(),
+                      llvm::IntegerType::get(llvm::getGlobalContext(), 64),
+                      llvm::ArrayType::get(t, n),
+                            NULL));
+}
+
+
+const llvm::Type* ArrayTypeAST::getZeroLengthTypeRef(const llvm::Type* t) {
+  return getSizedArrayTypeRef(t, 0);
+}
+
+const llvm::Type* ArrayTypeAST::getLLVMType() const {
+  if (!repr) {
+    repr = getZeroLengthTypeRef(this->cell->getLLVMType());
+  }
+  return repr;
+}
+
+TypeAST*& ArrayTypeAST::getContainedType(int i) {
+  ASSERT(i >= 0 && i < getNumContainedTypes());
+  return cell;
+}
+
+ArrayTypeAST* ArrayTypeAST::get(TypeAST* tcell) {
+  ASSERT(tcell);
+  return new ArrayTypeAST(tcell, SourceRange::getEmptyRange());
+}
+
+
+/////////////////////////////////////////////////////////////////////

@@ -56,6 +56,7 @@ data TypeAST =
          | T_TyVar          TyVar
          | MetaTyVar        MetaTyVar
          | RefType          TypeAST
+         | ArrayType        TypeAST
          | PtrTypeAST       TypeAST -- TODO split this into ILType
 
 data TyVar = BoundTyVar String -- bound by a ForAll, that is
@@ -81,6 +82,7 @@ instance Show TypeAST where
         (T_TyVar tv)     -> show tv
         (MetaTyVar (Meta u tyref desc))  -> "(~!" ++ show u ++ ":" ++ desc ++ ")"
         (RefType    ty)  -> "(Ref " ++ show ty ++ ")"
+        (ArrayType  ty)  -> "(Array " ++ show ty ++ ")"
         (PtrTypeAST ty)  -> "(Ptr " ++ show ty ++ ")"
 
 instance Eq MetaTyVar where
@@ -133,6 +135,7 @@ rootContextDecls =
     ,(,)  "print_i1"   $ mkProcType [i1] []
 
     ,(,) "opaquely_i32" $ mkProcType [i32] [i32]
+    ,(,) "allocDArray32" $ mkProcType [i32] [ArrayType i32]
 
     -- forall a b, (a -> b) -> Coro a b
     ,(,) "coro_create" $ let a = BoundTyVar "a" in

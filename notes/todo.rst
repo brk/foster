@@ -2,8 +2,9 @@ TODO
 ----
 * Pattern matching (done?)
   * Arbitrary-sized integers
+  * User-defined types
 
-* Algebraic data types (data/variant/oneof)    
+* Algebraic data types (data/variant/oneof)
   * Representation guarantees for restricted cases
     * all zero-arity    => int tags (32 bit?)
     * 1 non-zero arity,
@@ -28,6 +29,8 @@ TODO
                                         interfaces?
                                         higher-order polymorphism?
                                         higher kinds?
+                                        refinements?
+                                        dependent types?
           algebraic or other non-structural properties?
 
   * Arrays

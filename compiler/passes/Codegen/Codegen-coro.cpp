@@ -386,7 +386,7 @@ void generateInvokeYield(bool isYield,
                          const llvm::Type* retTy,
                          const llvm::Type* argTypes,
                          const std::vector<llvm::Value*>& inputArgs) {
-  llvm::Value* coro_slot = storeAndMarkPointerAsGCRoot(coro, mod);
+  llvm::Value* coro_slot = storeAndMarkPointerAsGCRoot(coro, NotArray, mod);
 
   llvm::Value* current_coro_slot = mod->getGlobalVariable("current_coro");
   Value* current_coro = builder.CreateLoad(current_coro_slot);

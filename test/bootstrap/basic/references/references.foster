@@ -1,9 +1,10 @@
 main = {
-  simpler();
-  capture();
-  ref-if ();
-  ref-until();
-  hof-until();
+  //simpler();
+  //capture();
+  //ref-if ();
+  //ref-until();
+  //hof-until();
+  arrays();
 };
 
 simpler = {
@@ -31,6 +32,26 @@ ref-if = {
   in
    expect_i32 0;
     print_i32 r^;
+  end
+};
+
+newDArray32 = { n : i32 => f : { i32 => i32 } =>
+  let a = allocDArray32 n;
+      x = (ref n);
+   in
+      until x^ == 0 then
+          f x^      >^ a[x^ - 1];
+           (x^ - 1) >^ x
+      end;
+    a
+  end
+};
+
+arrays = {
+  let a = newDArray32 2 { n : i32 => n };
+   in
+      expect_i32 2;
+     print_i32 a[1]^;
   end
 };
 

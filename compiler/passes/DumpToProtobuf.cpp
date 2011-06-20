@@ -349,6 +349,10 @@ void CArrayTypeAST::dump(DumpTypeToProtobufPass* pass) {
   dumpChild(pass, pass->current->add_type_parts(), this->getContainedType(0));
 }
 
+void ArrayTypeAST::dump(DumpTypeToProtobufPass* pass) {
+  ASSERT(false);
+}
+
 void TupleTypeAST::dump(DumpTypeToProtobufPass* pass) {
   setTagAndRange(pass->current, this, pb::Type::TUPLE);
   pass->current->mutable_type_parts()->Reserve(this->getNumContainedTypes());
