@@ -1,4 +1,7 @@
-module Foster.Smallstep where
+module Foster.Smallstep (
+interpretProg
+)
+where
 
 import Data.List as List
 import Data.Map (Map)
