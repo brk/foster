@@ -250,8 +250,8 @@ struct LLCase : public LLExpr {
 };
 
 struct LLAlloc : public LLExpr {
-  LLVar* base;
-  explicit LLAlloc(LLVar* e) : LLExpr("LLAlloc"), base(e) {}
+  LLVar* baseVar;
+  explicit LLAlloc(LLVar* e) : LLExpr("LLAlloc"), baseVar(e) {}
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 

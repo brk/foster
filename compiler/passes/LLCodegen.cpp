@@ -51,11 +51,6 @@ using foster::show;
 
 char kFosterMain[] = "foster__main";
 
-struct IsClosureEnvironment {
-  explicit IsClosureEnvironment(bool v) : value(v) {}
-  bool value;
-};
-
 struct CanStackAllocate {
   explicit CanStackAllocate(bool v) : value(v) {}
   bool value;
@@ -290,10 +285,10 @@ llvm::Value* LLAlloc::codegen(CodegenPass* pass) {
   //     in sv >^ r;
   //        r
   //    end
-  ASSERT(this && this->base && this->base->type);
-  llvm::Value* storedVal = this->base->codegen(pass);
-  llvm::Value* ptrSlot   = pass->emitMalloc(this->base->type->getLLVMType());
-  llvm::Value* ptr       = builder.CreateLoad(ptrSlot, /*isVolatile=*/ false, "");
+  ASSERT(this && this->baseVar && this->baseVar->type);
+  llvm::Value* storedVal = this->baseVar->codegen(pass);
+  llvm::Value* ptrSlot   = pass->emitMalloc(this->baseVar->type->getLLVMType());
+  llvm::Value* ptr       = builder.CreateLoad(ptrSlot, /*isVolatile=*/ false, "alloc_slot_ptr");
   builder.CreateStore(storedVal, ptr, /*isVolatile=*/ false);
   return ptr;
 }
@@ -407,12 +402,6 @@ genericClosureStructTy(const llvm::FunctionType* fnty) {
            ptrTo(FunctionType::get(retty, argTypes, false)),
            builder.getInt8PtrTy(), NULL);
 }
-
-llvm::Value*
-codegenTupleValues(CodegenPass* pass,
-                   std::vector<llvm::Value*> values,
-                   CanStackAllocate     canStackAllocate,
-                   IsClosureEnvironment isClosureEnvironment);
 
 llvm::Value* LLClosure::codegen(CodegenPass* pass) {
   llvm::Value* proc = pass->lookupFunctionOrDie(procname);
@@ -1106,54 +1095,38 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
   return value;
 }
 
-llvm::Value*
-codegenTupleValues(CodegenPass* pass,
-                   std::vector<llvm::Value*> values,
-                   CanStackAllocate     canStackAllocate,
-                   IsClosureEnvironment isClosureEnvironment) {
-  if (values.empty()) {
+llvm::Value* LLTuple::codegen(CodegenPass* pass) {
+  if (parts.empty()) {
     return getUnitValue(); // It's silly to allocate a unit value!
   }
 
-  std::vector<const llvm::Type*> loweredTypes;
-  for (size_t i = 0; i < values.size(); ++i) {
-    loweredTypes.push_back(values[i]->getType());
+  std::vector<llvm::Value*> values;
+  for (size_t i = 0; i < parts.size(); ++i) {
+    values.push_back(parts[i]->codegen(pass));
   }
-  llvm::StructType* tupleType = llvm::StructType::get(
-            llvm::getGlobalContext(), loweredTypes, /*isPacked=*/false);
+
+  const llvm::Type* tupleType = this->type->getLLVMType();
+  const char* typeName = (isClosureEnvironment) ? "env" : "tuple";
+  registerType(tupleType, typeName, pass->mod, NotArray, isClosureEnvironment);
 
   llvm::Value* pt = NULL;
 
-  const char* typeName = (isClosureEnvironment.value) ? "env" : "tuple";
-  registerType(tupleType, typeName, pass->mod, NotArray, isClosureEnvironment.value);
-
   // Allocate tuple space
-  if (!canStackAllocate.value) {
+  if (!canStackAllocate(this).value) {
     pt = pass->emitMalloc(tupleType);
     pt = builder.CreateLoad(pt, "normalize");
   } else {
     pt = CreateEntryAlloca(tupleType, "s");
   }
-
   // pt has type tuple*
 
+  // Store the values into the point.
   for (size_t i = 0; i < values.size(); ++i) {
     Value* dst = builder.CreateConstGEP2_32(pt, 0, i, "gep");
     builder.CreateStore(values[i], dst, /*isVolatile*/ false);
   }
 
   return pt;
-}
-
-llvm::Value* LLTuple::codegen(CodegenPass* pass) {
-  std::vector<llvm::Value*> values;
-  for (size_t i = 0; i < parts.size(); ++i) {
-    values.push_back(parts[i]->codegen(pass));
-  }
-
-  return codegenTupleValues(pass, values,
-                            canStackAllocate(this),
-            IsClosureEnvironment(this->isClosureEnvironment));
 }
 
 

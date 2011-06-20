@@ -94,7 +94,9 @@ LLTuple* parseTuple(const pb::Expr& e) {
   for (int i = 0; i < e.parts_size(); ++i) {
     args.push_back(LLVar_from_pb(&e.parts(i)));
   }
-  return new LLTuple(args);
+  LLTuple* tup = new LLTuple(args);
+  tup->type = TypeAST_from_pb(&e.type());
+  return tup;
 }
 
 LLClosure* parseClosure(const pb::Closure& clo) {

@@ -41,7 +41,6 @@ const inline llvm::PointerType* ptrTo(const llvm::Type* t) {
 // From CodegenUtils.cpp
 void emitFosterAssert(llvm::Module* mod, llvm::Value* cond, const char* cstr);
 Value* getUnitValue();
-Value* emitMalloc(const llvm::Type* ty);
 Value* allocateMPInt();
 Value* getElementFromComposite(Value* compositeValue, Value* idxValue,
                                const std::string& msg);
@@ -56,9 +55,9 @@ llvm::AllocaInst* CreateEntryAlloca(const llvm::Type* ty,
                                     const std::string& name);
 llvm::AllocaInst* stackSlotWithValue(llvm::Value* val,
                                      const std::string& name);
-llvm::Value* storeAndMarkPointerAsGCRoot(llvm::Value*,
-                                         ArrayOrNot,
-                                         llvm::Module*);
+llvm::AllocaInst* storeAndMarkPointerAsGCRoot(llvm::Value*,
+                                              ArrayOrNot,
+                                              llvm::Module*);
 
 ////////////////////////////////////////////////////////////////////
 
@@ -87,11 +86,11 @@ struct CodegenPass {
   llvm::Function* lookupFunctionOrDie(const std::string& fullyQualifiedSymbol);
 
   // Returns ty**, the stack slot containing a ty*.
-  llvm::Value* emitMalloc(const llvm::Type* ty);
+  llvm::AllocaInst* emitMalloc(const llvm::Type* ty);
 
   // Returns array_type[elt_ty]**, the stack slot containing an array_type[elt_ty]*.
   llvm::Value* emitArrayMalloc(const llvm::Type* elt_ty,
-                               llvm::Value* n);
+                                    llvm::Value* n);
 
   llvm::Value* allocateMPInt();
 
