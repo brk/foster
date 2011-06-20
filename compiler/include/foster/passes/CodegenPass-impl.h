@@ -84,7 +84,7 @@ struct CodegenPass {
   void codegen(LLModule*);
   void codegen(LLExpr*);
 
-  llvm::Value* lookup(const std::string& fullyQualifiedSymbol);
+  llvm::Function* lookupFunctionOrDie(const std::string& fullyQualifiedSymbol);
 
   // Returns ty**, the stack slot containing a ty*.
   llvm::Value* emitMalloc(const llvm::Type* ty);

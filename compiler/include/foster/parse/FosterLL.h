@@ -204,40 +204,33 @@ struct LLLetVal : public LLExpr {
   std::string name;
   LLExpr* boundexpr;
   LLExpr* inexpr;
-  explicit LLLetVal(const std::string& name,
-                    LLExpr* boundexpr, LLExpr* inexpr)
-  : LLExpr("LLLetVal"),
-     name(name), boundexpr(boundexpr), inexpr(inexpr) {}
+  explicit LLLetVal(const std::string& name, LLExpr* boundexpr, LLExpr* inexpr)
+  : LLExpr("LLLetVal"), name(name), boundexpr(boundexpr), inexpr(inexpr) {}
 
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
 struct LLIf : public LLExpr {
-  std::vector<LLExpr*> parts;
-  LLIf(LLVar* testExpr, LLExpr* thenExpr, LLExpr* elseExpr)
-    : LLExpr("LLIf") {
-    parts.push_back(testExpr);
-    parts.push_back(thenExpr);
-    parts.push_back(elseExpr);
-  }
+  LLVar* cond;
+  LLExpr* thenExpr;
+  LLExpr* elseExpr;
+  LLIf(LLVar* cond, LLExpr* thenExpr, LLExpr* elseExpr)
+     : LLExpr("LLIf"), cond(cond), thenExpr(thenExpr), elseExpr(elseExpr) {}
 
   virtual llvm::Value* codegen(CodegenPass* pass);
-  LLExpr*& getTestExpr() { ASSERT(parts.size() == 3); return parts[0]; }
-  LLExpr*& getThenExpr() { ASSERT(parts.size() == 3); return parts[1]; }
-  LLExpr*& getElseExpr() { ASSERT(parts.size() == 3); return parts[2]; }
+  LLVar*  getTestExpr() { return cond; }
+  LLExpr* getThenExpr() { return thenExpr; }
+  LLExpr* getElseExpr() { return elseExpr; }
 };
 
 struct LLUntil : public LLExpr {
-  std::vector<LLExpr*> parts;
+  LLExpr* cond; LLExpr* body;
   LLUntil(LLExpr* testExpr, LLExpr* thenExpr)
-    : LLExpr("LLUntil") {
-    parts.push_back(testExpr);
-    parts.push_back(thenExpr);
-  }
+        : LLExpr("LLUntil"), cond(testExpr), body(thenExpr) {}
 
   virtual llvm::Value* codegen(CodegenPass* pass);
-  LLExpr*& getTestExpr() { ASSERT(parts.size() == 2); return parts[0]; }
-  LLExpr*& getThenExpr() { ASSERT(parts.size() == 2); return parts[1]; }
+  LLExpr*& getTestExpr() { return cond; }
+  LLExpr*& getThenExpr() { return body; }
 };
 
 struct DecisionTree;

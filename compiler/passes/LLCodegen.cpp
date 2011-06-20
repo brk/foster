@@ -125,7 +125,7 @@ bool isSafeToStackAllocate(LLTuple* ast) {
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
 
-llvm::Value* generateAllocDAarray32(CodegenPass* pass) {
+llvm::Function* generateAllocDAarray32(CodegenPass* pass) {
   // Create a function of type  array[i32] (i32 n)
   std::vector<const Type*> fnTyArgs;
   fnTyArgs.push_back(builder.getInt32Ty());
@@ -164,24 +164,21 @@ llvm::Value* generateAllocDAarray32(CodegenPass* pass) {
   return f;
 }
 
-llvm::Value* CodegenPass::lookup(const std::string& fullyQualifiedSymbol) {
-  llvm::Value* v =  valueSymTab.lookup(fullyQualifiedSymbol);
-  if (v) return v;
-
+llvm::Function* CodegenPass::lookupFunctionOrDie(const std::string& fullyQualifiedSymbol) {
   // Otherwise, it should be a function name.
-  v = mod->getFunction(fullyQualifiedSymbol);
+  llvm::Function* f = mod->getFunction(fullyQualifiedSymbol);
 
-  if (!v && fullyQualifiedSymbol == "allocDArray32") {
-    v = generateAllocDAarray32(this);
+  if (!f && fullyQualifiedSymbol == "allocDArray32") {
+    f = generateAllocDAarray32(this);
   }
 
-  if (!v) {
-   currentErrs() << "name was neither fn arg nor fn name: "
+  if (!f) {
+   currentErrs() << "Unable to find function in module named: "
               << fullyQualifiedSymbol << "\n";
    valueSymTab.dump(currentErrs());
-   ASSERT(false) << "unable to find value for symbol " << fullyQualifiedSymbol;
+   ASSERT(false) << "unable to find function " << fullyQualifiedSymbol;
   }
-  return v;
+  return f;
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -221,7 +218,8 @@ llvm::Value* LLBool::codegen(CodegenPass* pass) {
 
 llvm::Value* LLVar::codegen(CodegenPass* pass) {
   // The variable for an environment can be looked up multiple times...
-  llvm::Value* v = pass->lookup(getName());
+  llvm::Value* v = pass->valueSymTab.lookup(getName());
+  if (!v) v = pass->lookupFunctionOrDie(getName());
 
   if (llvm::AllocaInst* ai = llvm::dyn_cast_or_null<llvm::AllocaInst>(v)) {
     EDiag() << "var " << getName() << " was     alloca:\n\t" << str(v) << " :: " << str(v->getType());
@@ -406,8 +404,7 @@ codegenTupleValues(CodegenPass* pass,
                    IsClosureEnvironment isClosureEnvironment);
 
 llvm::Value* LLClosure::codegen(CodegenPass* pass) {
-  llvm::Value* proc = pass->lookup(procname);
-  ASSERT(proc) << "no proc named " << procname << " when codegenning closure";
+  llvm::Value* proc = pass->lookupFunctionOrDie(procname);
   const llvm::FunctionType* fnty;
   const llvm::StructType* envStructTy;
   const llvm::StructType* cloStructTy;
@@ -873,16 +870,7 @@ llvm::Value* tryBindArray(llvm::Value* base) {
 llvm::Value* LLSubscript::codegen(CodegenPass* pass) {
   Value* base = this->base->codegen(pass);
   Value* idx  = this->index->codegen(pass);
-
   ASSERT(base); ASSERT(idx);
-
-  const llvm::Type* baseTy = base->getType();
-  if ((getLLVMType(this->type)
-       && isPointerToType(baseTy, getLLVMType(this->type)))
-      || (baseTy->isPointerTy()
-       && baseTy->getContainedType(0)->isPointerTy())) {
-    base = builder.CreateLoad(base, /*isVolatile*/ false, "subload");
-  }
 
   if (llvm::Value* arr = tryBindArray(base)) {
     //EDiag() << "arr = " << str(arr) << " :: " << str(arr->getType());
