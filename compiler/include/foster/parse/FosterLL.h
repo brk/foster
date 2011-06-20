@@ -253,13 +253,6 @@ struct LLCase : public LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
-
-struct LLNil : public LLExpr {
-  explicit LLNil(foster::SourceRange sourceRange)
-     : LLExpr("LLNil") {}
-  virtual llvm::Value* codegen(CodegenPass* pass);
-};
-
 struct LLAlloc : public LLExpr {
   LLVar* base;
   explicit LLAlloc(LLVar* e) : LLExpr("LLAlloc"), base(e) {}
@@ -278,14 +271,6 @@ struct LLStore : public LLExpr {
     : LLExpr("LLStore"), v(v), r(r) {}
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
-
-/*
-struct RawPtrAST : public LLExpr {
-  explicit RawPtrAST(Exprs exprs)
-    : RawPtrAST("RawPtrAST") { this->parts = exprs; }
-
-};
-*/
 
 struct LLCoroPrim : public LLExpr {
   string   primName;

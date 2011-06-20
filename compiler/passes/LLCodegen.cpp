@@ -844,10 +844,6 @@ void SwitchCase::codegen(CodegenPass* pass,
   addAndEmitTo(F, bbEnd);
 }
 
-llvm::Value* LLNil::codegen(CodegenPass* pass) {
-  return llvm::ConstantPointerNull::getNullValue(getLLVMType(this->type));
-}
-
 bool isPointerToStruct(const llvm::Type* ty) {
   if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
     if (llvm::dyn_cast<llvm::StructType>(pty->getContainedType(0))) {
