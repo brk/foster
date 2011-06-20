@@ -311,15 +311,22 @@ llvm::Value* LLStore::codegen(CodegenPass* pass) {
   return builder.CreateStore(vv, vr, /*isVolatile=*/ false);
 }
 
-llvm::Value* LLLetVal::codegen(CodegenPass* pass) {
-  Value* b = boundexpr->codegen(pass);
-  if (!b->getType()->isVoidTy()) {
-    b->setName(this->name);
+llvm::Value* LLLetVals::codegen(CodegenPass* pass) {
+  for (size_t i = 0; i < exprs.size(); ++i) {
+    Value* b = exprs[i]->codegen(pass);
+    if (!b->getType()->isVoidTy()) {
+      b->setName(names[i]);
+    }
+
+    pass->valueSymTab.insert(names[i], b);
   }
 
-  pass->valueSymTab.insert(this->name, b);
   Value* rv = inexpr->codegen(pass);
-  pass->valueSymTab.remove(this->name);
+
+  for (size_t i = 0; i < exprs.size(); ++i) {
+    pass->valueSymTab.remove(names[i]);
+  }
+
   return rv;
 }
 
@@ -575,7 +582,9 @@ llvm::Value* LLProc::codegen(CodegenPass* pass) {
   // Enforce that the main function always returns void.
   if (F->getName() == kFosterMain) {
     std::vector<LLVar*> vars;
-    this->body = new LLLetVal("!ignored", this->body, new LLTuple(vars));
+    std::vector<std::string> names; names.push_back("!ignored");
+    std::vector<LLExpr*>     exprs; exprs.push_back(this->body);
+    this->body = new LLLetVals(names, exprs, new LLTuple(vars));
   }
 
   Value* rv = this->getBody()->codegen(pass);

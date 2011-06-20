@@ -110,17 +110,15 @@ LLExpr* parseClosures(const pb::Expr& e) {
 LLExpr* parseLetVals(const pb::Expr& e) {
   ASSERT(e.parts_size() == e.names_size() + 1);
   ASSERT(e.parts_size() >= 2) << "parseLetVal needs at least 2 subexprs";
-  int N = e.names_size() - 1;
-  LLExpr* letval = new LLLetVal(e.names(N),
-                                LLExpr_from_pb(&e.parts(N+1)),
-                                LLExpr_from_pb(&e.parts(0)));
+  std::vector<std::string> names;
+  std::vector<LLExpr*>     exprs;
+  for (int i = 0; i < e.names_size(); ++i) {
+    names.push_back(e.names(i));
+    exprs.push_back(LLExpr_from_pb(&e.parts(i + 1)));
+  }
   // let nm[0] = p[1] in
   // let nm[N] = p[N+1] in p[0]
-  while (N --> 0) {
-    letval = new LLLetVal(e.names(N), LLExpr_from_pb(&e.parts(N+1)), letval);
-  }
-
-  return letval;
+  return new LLLetVals(names, exprs, LLExpr_from_pb(&e.parts(0)));
 }
 
 LLProc* parseProc(const pb::Proc& e) {

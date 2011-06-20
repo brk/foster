@@ -200,12 +200,13 @@ struct LLClosures : public LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
-struct LLLetVal : public LLExpr {
-  std::string name;
-  LLExpr* boundexpr;
+struct LLLetVals : public LLExpr {
+  std::vector<std::string> names;
+  std::vector<LLExpr*>     exprs;
   LLExpr* inexpr;
-  explicit LLLetVal(const std::string& name, LLExpr* boundexpr, LLExpr* inexpr)
-  : LLExpr("LLLetVal"), name(name), boundexpr(boundexpr), inexpr(inexpr) {}
+  explicit LLLetVals(const std::vector<std::string>& names,
+                     const std::vector<LLExpr*>&     exprs, LLExpr* inexpr)
+  : LLExpr("LLLetVals"), names(names), exprs(exprs), inexpr(inexpr) {}
 
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
