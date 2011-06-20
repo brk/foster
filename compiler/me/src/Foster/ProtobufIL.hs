@@ -236,7 +236,7 @@ unzipLetVals e = (e, [], [])
 dumpClosureWithName (varid, ILClosure procid captvars) =
     Closure { varname  = dumpIdent varid
             , procid   = u8fromString (identPrefix procid)
-            , varnames = fromList (fmap (dumpIdent.avarIdent) captvars) }
+            , env      = dumpExpr (ILTuple captvars) }
 
 dumpDecisionTree (DT_Fail) =
     P'.defaultValue { PbDecisionTree.tag = DT_FAIL }

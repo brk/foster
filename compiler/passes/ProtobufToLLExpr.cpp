@@ -89,12 +89,18 @@ LLExpr* parseInt(const pb::Expr& e) {
   return new LLInt(i.clean(), i.bits());
 }
 
-LLClosure* parseClosure(const pb::Closure& clo) {
-  std::vector<std::string> varnames;
-  for (int i = 0; i < clo.varnames_size(); ++i) {
-    varnames.push_back(clo.varnames(i));
+LLTuple* parseTuple(const pb::Expr& e) {
+  std::vector<LLVar*> args;
+  for (int i = 0; i < e.parts_size(); ++i) {
+    args.push_back(LLVar_from_pb(&e.parts(i)));
   }
-  return new LLClosure(clo.varname(), clo.procid(), varnames);
+  LLTuple* rv = new LLTuple(args);
+  rv->isClosureEnvironment = e.is_closure_environment();
+  return rv;
+}
+
+LLClosure* parseClosure(const pb::Closure& clo) {
+  return new LLClosure(clo.varname(), clo.procid(), parseTuple(clo.env()));
 }
 
 LLExpr* parseClosures(const pb::Expr& e) {
@@ -155,16 +161,6 @@ LLExpr* parseUntil(const pb::Expr& e) {
   return new LLUntil(
       LLExpr_from_pb(& e.parts(0)),
       LLExpr_from_pb(& e.parts(1)));
-}
-
-LLExpr* parseTuple(const pb::Expr& e) {
-  std::vector<LLVar*> args;
-  for (int i = 0; i < e.parts_size(); ++i) {
-    args.push_back(LLVar_from_pb(&e.parts(i)));
-  }
-  LLTuple* rv = new LLTuple(args);
-  rv->isClosureEnvironment = e.is_closure_environment();
-  return rv;
 }
 
 CtorId parseCtorId(const pb::PbCtorId& c) {

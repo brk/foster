@@ -99,6 +99,10 @@ const llvm::Type* getLLVMType(TypeAST* type) {
   return type->getLLVMType();
 }
 
+LLTuple* getEmptyTuple() {
+  std::vector<LLVar*> vars;
+  return new LLTuple(vars);
+}
 
 ////////////////////////////////////////////////////////////////////
 
@@ -437,25 +441,13 @@ llvm::Value* LLClosure::codegen(CodegenPass* pass) {
   Value* clo_env_slot = builder.CreateConstGEP2_32(clo, 0, 1, varname + ".clo_env");
 
 
-  if (vars.empty()) {
+  if (env->parts.empty()) {
     storeNullPointerToSlot(clo_env_slot);
   } else {
     std::vector<llvm::Value*> values;
 
     // Ensure that the environment contains space for the type map.
-    //const llvm::Type* pi8 = builder.getInt8PtrTy();
-    //values.push_back(llvm::ConstantPointerNull::getNullValue(pi8));
-
-    for (size_t i = 0; i < vars.size(); ++i) {
-      LLVar v(vars[i]);
-      values.push_back(v.codegen(pass));
-    }
-
-    bool isClosureEnvironment  = true;
-    bool isSafeToStackAllocate = false;
-    llvm::Value* envValue = codegenTupleValues(pass, values,
-                   CanStackAllocate(isSafeToStackAllocate),
-               IsClosureEnvironment(isClosureEnvironment));
+    llvm::Value* envValue = env->codegen(pass);
 
     #if 0 // this is broken atm...
       // Store the typemap in the environment's typemap slot.
@@ -581,10 +573,9 @@ llvm::Value* LLProc::codegen(CodegenPass* pass) {
 
   // Enforce that the main function always returns void.
   if (F->getName() == kFosterMain) {
-    std::vector<LLVar*> vars;
     std::vector<std::string> names; names.push_back("!ignored");
     std::vector<LLExpr*>     exprs; exprs.push_back(this->body);
-    this->body = new LLLetVals(names, exprs, new LLTuple(vars));
+    this->body = new LLLetVals(names, exprs, getEmptyTuple());
   }
 
   Value* rv = this->getBody()->codegen(pass);
@@ -951,8 +942,7 @@ void doLowLevelWrapperFnCoercions(const llvm::Type* expectedType,
     LLProc* wrapper = getClosureVersionOf(arg, expectedType, fnty, pass);
     std::string cloname = ParsingContext::freshName("c-clo");
     std::vector<LLClosure*> closures;
-    std::vector<std::string> vars;
-    closures.push_back(new LLClosure(cloname, wrapper->getName(), vars));
+    closures.push_back(new LLClosure(cloname, wrapper->getName(), getEmptyTuple()));
     LLExpr* clo = new LLClosures(new LLVar(cloname), closures);
     arg = clo;
   }

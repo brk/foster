@@ -85,7 +85,7 @@ message Proc {
 message Closure {
   required string varname  = 1;
   required string procid   = 2;
-  repeated string varnames = 3;
+  required Expr   env      = 3;
 }
 
 message PBInt {

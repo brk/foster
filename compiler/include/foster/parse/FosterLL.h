@@ -184,11 +184,11 @@ struct LLSubscript : public LLExpr {
 struct LLClosure {
   std::string varname;
   std::string procname;
-  std::vector<std::string> vars;
+  LLTuple*    env;
   explicit LLClosure(const std::string& varname,
                      const std::string& procname,
-                     const std::vector<std::string>& vars)
-    : varname(varname), procname(procname), vars(vars) {}
+                     LLTuple* env)
+    : varname(varname), procname(procname), env(env) {}
  virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
