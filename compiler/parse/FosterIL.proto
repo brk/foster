@@ -69,8 +69,6 @@ message Expr {
 
   optional string name  = 24;  // Var, LETVAL named type decl
 
-  optional bool   is_closure_environment = 25;   // Tuple
-
   optional CoroPrim coro_prim = 30;
 }
 

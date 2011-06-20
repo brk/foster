@@ -188,7 +188,9 @@ struct LLClosure {
   explicit LLClosure(const std::string& varname,
                      const std::string& procname,
                      LLTuple* env)
-    : varname(varname), procname(procname), env(env) {}
+    : varname(varname), procname(procname), env(env) {
+   env->isClosureEnvironment = true;
+ }
  virtual llvm::Value* codegen(CodegenPass* pass);
 };
 

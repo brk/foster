@@ -94,9 +94,7 @@ LLTuple* parseTuple(const pb::Expr& e) {
   for (int i = 0; i < e.parts_size(); ++i) {
     args.push_back(LLVar_from_pb(&e.parts(i)));
   }
-  LLTuple* rv = new LLTuple(args);
-  rv->isClosureEnvironment = e.is_closure_environment();
-  return rv;
+  return new LLTuple(args);
 }
 
 LLClosure* parseClosure(const pb::Closure& clo) {
