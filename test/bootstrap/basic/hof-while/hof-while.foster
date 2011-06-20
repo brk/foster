@@ -1,14 +1,7 @@
 hof-while = { t : {i1} => b : { i32 } =>
-  if t () then let j0 = b (); in hof-while t b end
+  if t () then b (); hof-while t b
           else 0 end
 };
-
-/*
-hof-while = { t : {i1} => b : { () } =>
-  if t () then let j0 = b(); in hof-while t b end
-          else () end
-};
-*/
 
 main = {
   expect_i32 0;
