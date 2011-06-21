@@ -568,7 +568,7 @@ void copying_gc::gc() {
 
   flip();
   next->clear(); // for debugging purposes
-  fprintf(gclog, "\t/gc\n");
+  fprintf(gclog, "\t/gc\n\n");
   fflush(gclog);
 }
 
@@ -629,7 +629,7 @@ void register_stackmaps() {
         clusterForAddress[safePointAddress] = pc;
       }
 
-      fprintf(gclog, "    cluster fsize %d, & %d, live: %d + %d\n",
+      fprintf(gclog, "    cluster fsize %d, & %d, live: %d + %d\n\n",
                      c.frameSize, c.addressCount,
                      c.liveCountWithMetadata, c.liveCountWithoutMetadata);
     }
@@ -669,6 +669,7 @@ std::string format_ref(void* ptr) {
 }
 
 extern "C" void* memalloc_cell(typemap* typeinfo) {
+  //allocator->force_gc_for_debugging_purposes();
   return allocator->allocate_cell(typeinfo);
 }
 

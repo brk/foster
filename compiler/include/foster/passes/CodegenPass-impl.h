@@ -65,6 +65,9 @@ struct CodegenPass {
   typedef foster::SymbolTable<llvm::Value> ValueTable;
   typedef ValueTable::LexicalScope         ValueScope;
   ValueTable valueSymTab;
+  std::map<llvm::Function*, llvm::Instruction*> allocaPoints;
+
+  llvm::Instruction* getCurrentAllocaPoint();
 
   llvm::Module* mod;
   //llvm::DIBuilder* dib;
@@ -81,6 +84,8 @@ struct CodegenPass {
   void codegen(LLExpr*);
 
   llvm::Function* lookupFunctionOrDie(const std::string& fullyQualifiedSymbol);
+
+  void addEntryBB(llvm::Function* f);
 
   // Returns ty**, the stack slot containing a ty*.
   llvm::AllocaInst* emitMalloc(const llvm::Type* ty);

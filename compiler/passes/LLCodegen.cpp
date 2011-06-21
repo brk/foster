@@ -141,8 +141,7 @@ llvm::Function* generateAllocDAarray32(CodegenPass* pass) {
   n->setName("n");
 
   BasicBlock* prevBB = builder.GetInsertBlock();
-  BasicBlock* BB = BasicBlock::Create(builder.getContext(), "entry", f);
-  builder.SetInsertPoint(BB);
+  pass->addEntryBB(f);
 
   Value* slot = pass->emitArrayMalloc(elt_ty, n);
   builder.CreateRet(builder.CreateLoad(slot, /*isVolatile=*/ false));
@@ -521,8 +520,7 @@ llvm::Value* LLProc::codegen(CodegenPass* pass) {
   F->setGC("fostergc");
 
   BasicBlock* prevBB = builder.GetInsertBlock();
-  BasicBlock* BB = BasicBlock::Create(getGlobalContext(), "entry", F);
-  builder.SetInsertPoint(BB);
+  pass->addEntryBB(F);
 
   CodegenPass::ValueScope* scope = pass->valueSymTab.newScope(this->getName());
 

@@ -182,7 +182,7 @@ int coroField_Status() { return 5; }
 ////////////////////////////////////////////////////////////////////
 
 Value* emitCoroWrapperFn(
-  llvm::Module* mod,
+  CodegenPass* pass,
   const llvm::Type* retTy,
   const llvm::Type* argTypes)
 {
@@ -197,7 +197,7 @@ Value* emitCoroWrapperFn(
   Function* wrapper = Function::Create(
     /*Type=*/    getCoroWrapperFnTy(),
     /*Linkage=*/ llvm::GlobalValue::InternalLinkage,
-    /*Name=*/    functionName, mod);
+    /*Name=*/    functionName, pass->mod);
 
   // The wrapper has to use the C calling convention because
   // libcoro expects the f_c arg to be pushed on the stack.
@@ -211,8 +211,7 @@ Value* emitCoroWrapperFn(
   ptr_f_c->setName("f_c");
 
   BasicBlock* prevBB = builder.GetInsertBlock();
-  BasicBlock* BB = BasicBlock::Create(getGlobalContext(), "entry", wrapper);
-  builder.SetInsertPoint(BB);
+  pass->addEntryBB(wrapper);
 
   Value* fc  = builder.CreateBitCast(ptr_f_c, ptrTo(getSplitCoroType(argTypes)));
   Value* fcg = builder.CreateConstInBoundsGEP2_32(fc, 0, 0, "fc_gen");
@@ -297,8 +296,7 @@ Value* CodegenPass::emitCoroCreateFn(
   pclo->setName("pclo");
 
   BasicBlock* prevBB = builder.GetInsertBlock();
-  BasicBlock* BB = BasicBlock::Create(getGlobalContext(), "entry", create);
-  builder.SetInsertPoint(BB);
+  this->addEntryBB(create);
 
   // foster_coro_i32_i32* fcoro = (foster_coro_i32_i32*) memalloc_cell(NULL);
   // foster_coro_i32_i32* ccoro = (foster_coro_i32_i32*) memalloc_cell(NULL);
@@ -309,7 +307,7 @@ Value* CodegenPass::emitCoroCreateFn(
   Value* ccoro      = builder.CreateLoad(ccoro_slot, "ccoro");
 
 
-  llvm::Value* wrapper = emitCoroWrapperFn(this->mod, retTy, argTypes);
+  llvm::Value* wrapper = emitCoroWrapperFn(this, retTy, argTypes);
   // coro_func wrapper = ...;
   // foster_coro_create(wrapper, fcoro);
   llvm::Value* foster_coro_create = this->mod->getFunction("foster_coro_create");
@@ -534,8 +532,7 @@ Value* CodegenPass::emitCoroInvokeFn(
   }
 
   BasicBlock* prevBB = builder.GetInsertBlock();
-  BasicBlock* BB = BasicBlock::Create(getGlobalContext(), "entry", create);
-  builder.SetInsertPoint(BB);
+  this->addEntryBB(create);
 
   Value* coro = builder.CreateBitCast(coro_concrete, ptrTo(foster_generic_coro_t));
 
@@ -581,10 +578,7 @@ Value* CodegenPass::emitCoroYieldFn(
   }
 
   BasicBlock* prevBB = builder.GetInsertBlock();
-  BasicBlock* BB = BasicBlock::Create(getGlobalContext(), "entry", yield);
-  builder.SetInsertPoint(BB);
-
-
+  this->addEntryBB(yield);
 
   Value* current_coro_slot = this->mod->getGlobalVariable("current_coro");
   ASSERT(current_coro_slot != NULL);

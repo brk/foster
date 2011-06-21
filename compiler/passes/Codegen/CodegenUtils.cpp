@@ -115,7 +115,8 @@ Value* getElementFromComposite(Value* compositeValue, Value* idxValue,
 ////////////////////////////////////////////////////////////////////
 
 // root should be an AllocaInst or a bitcast of such
-void markGCRoot(llvm::Value* root,
+void markGCRoot(llvm::IRBuilder<>& tmpBuilder,
+                llvm::Value* root,
                 llvm::Constant* meta,
                 llvm::Module* mod) {
   llvm::Constant* llvm_gcroot = llvm::Intrinsic::getDeclaration(mod,
@@ -149,9 +150,20 @@ void markGCRoot(llvm::Value* root,
   }
   rootinst->setMetadata("fostergcroot", metamdnode);
 
-  builder.CreateCall2(llvm_gcroot, root, meta);
+  tmpBuilder.CreateCall2(llvm_gcroot, root, meta);
 }
 
+void CodegenPass::addEntryBB(Function* f) {
+  BasicBlock* BB = BasicBlock::Create(getGlobalContext(), "entry", f);
+  this->allocaPoints[f] = new llvm::BitCastInst(builder.getInt32(0),
+                                                builder.getInt32Ty(),
+                                                "alloca point", BB);
+  builder.SetInsertPoint(BB);
+}
+
+llvm::Instruction* CodegenPass::getCurrentAllocaPoint() {
+  return allocaPoints[builder.GetInsertBlock()->getParent()];
+}
 
 // Creates an AllocaInst in the entry block of the current function,
 // so that mem2reg will be able to optimize loads and stores from the alloca.
@@ -192,12 +204,24 @@ CodegenPass::storeAndMarkPointerAsGCRoot(llvm::Value* val,
 
   // allocate a slot for a T* on the stack
   llvm::AllocaInst* stackslot = CreateEntryAlloca(val->getType(), "stackref");
-  llvm::Value* root = builder.CreateBitCast(stackslot,
-                                      ptrTo(builder.getInt8PtrTy()), "gcroot");
 
-  markGCRoot(root, getTypeMapForType(val->getType()->getContainedType(0),
-                                     mod, arrayStatus),
-             mod);
+  // mark the slot (out of line) as a gc root.
+  {
+    llvm::BasicBlock& entryBlock =
+        builder.GetInsertBlock()->getParent()->getEntryBlock();
+    ASSERT(getCurrentAllocaPoint() != NULL) << (builder.GetInsertBlock()->getParent()->getName());
+    llvm::IRBuilder<> tmpBuilder(&entryBlock, getCurrentAllocaPoint());
+
+    llvm::Value* root = tmpBuilder.CreateBitCast(stackslot,
+                                        ptrTo(tmpBuilder.getInt8PtrTy()), "gcroot");
+
+    markGCRoot(tmpBuilder,
+               root, getTypeMapForType(val->getType()->getContainedType(0),
+                                       mod, arrayStatus),
+               mod);
+  }
+
+  // Store the T* in the stack slot
   builder.CreateStore(val, stackslot, /*isVolatile=*/ false);
 
   // Instead of returning the pointer (of type T*),
