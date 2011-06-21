@@ -156,10 +156,10 @@ public:
       //     int32_t AddressCount;
       //     int32_t LiveCountWithMetadata;
       //     int32_t LiveCountWithoutMetadata;
-      //     void*   SafePointAddress[AddressCount];
       //     {int32_t,
       //      void*} LiveOffsetsWithMetadata[LiveCountWithMetadata];
       //     int32_t LiveOffsets[LiveCountWithoutMetadata];
+      //     void*   SafePointAddress[AddressCount];
       //   } PointCluster[PointClusterCount];
       // } __foster_gcmap_<FUNCTIONNAME>;
 
@@ -212,7 +212,7 @@ public:
         AP.EmitInt32(offsets.size());
         i32sForThisFunction++;
 
-        // Emit the stack offsets for the metadata-less roots in the cluster.
+        // Emit the stack offsets for the metadata-imbued roots in the cluster.
         for (RootOffsetsWithMetadata::iterator
                                    rit = offsetsWithMetadata.begin();
                                    rit != offsetsWithMetadata.end(); ++rit) {

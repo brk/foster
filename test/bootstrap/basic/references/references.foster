@@ -4,7 +4,15 @@ main = {
   //ref-if ();
   //ref-until();
   //hof-until();
-  arrays();
+  //arrays();
+  tuprefs();
+};
+
+tuprefs = {
+  let t = ((ref opaquely_i32 1), (ref 2)); in
+    expect_i32 1;
+     print_i32 t[0]^
+  end
 };
 
 simpler = {

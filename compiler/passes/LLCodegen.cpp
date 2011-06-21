@@ -51,11 +51,6 @@ using foster::show;
 
 char kFosterMain[] = "foster__main";
 
-struct CanStackAllocate {
-  explicit CanStackAllocate(bool v) : value(v) {}
-  bool value;
-};
-
 namespace foster {
 
 void codegenLL(LLModule* package, llvm::Module* mod) {
@@ -75,8 +70,8 @@ std::string getGlobalSymbolName(const std::string& sourceName) {
 
 } // namespace foster
 
-CanStackAllocate canStackAllocate(LLTuple* ast) {
-  return CanStackAllocate(true);
+bool canStackAllocate(LLTuple* ast) {
+  return true;
 }
 
 // Follows a (type-based) pointer indirections for the given value.
@@ -115,10 +110,6 @@ void LLModule::codegen(CodegenPass* pass) {
   for (size_t i = 0; i < procs.size(); ++i) {
     procs[i]->codegen(pass);
   }
-}
-
-bool isSafeToStackAllocate(LLTuple* ast) {
-  return true;
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -290,7 +281,7 @@ llvm::Value* LLAlloc::codegen(CodegenPass* pass) {
   llvm::Value* ptrSlot   = pass->emitMalloc(this->baseVar->type->getLLVMType());
   llvm::Value* ptr       = builder.CreateLoad(ptrSlot, /*isVolatile=*/ false, "alloc_slot_ptr");
   builder.CreateStore(storedVal, ptr, /*isVolatile=*/ false);
-  return ptr;
+  return ptrSlot;
 }
 
 llvm::Value* LLDeref::codegen(CodegenPass* pass) {
@@ -313,7 +304,11 @@ llvm::Value* LLStore::codegen(CodegenPass* pass) {
 llvm::Value* LLLetVals::codegen(CodegenPass* pass) {
   for (size_t i = 0; i < exprs.size(); ++i) {
     Value* b = exprs[i]->codegen(pass);
-    if (!b->getType()->isVoidTy()) {
+    if (b->getType()->isVoidTy()) continue;
+    if (b->hasName()
+      && pystring::startswith(b->getName(), "stackref")) {
+      b->setName(names[i] + "_slot");
+    } else {
       b->setName(names[i]);
     }
 
@@ -430,7 +425,7 @@ llvm::Value* LLClosure::codegen(CodegenPass* pass) {
   Value* clo_env_slot = builder.CreateConstGEP2_32(clo, 0, 1, varname + ".clo_env");
 
 
-  if (env->parts.empty()) {
+  if (env->vars.empty()) {
     storeNullPointerToSlot(clo_env_slot);
   } else {
     std::vector<llvm::Value*> values;
@@ -1096,13 +1091,8 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
 }
 
 llvm::Value* LLTuple::codegen(CodegenPass* pass) {
-  if (parts.empty()) {
+  if (vars.empty()) {
     return getUnitValue(); // It's silly to allocate a unit value!
-  }
-
-  std::vector<llvm::Value*> values;
-  for (size_t i = 0; i < parts.size(); ++i) {
-    values.push_back(parts[i]->codegen(pass));
   }
 
   const llvm::Type* tupleType = this->type->getLLVMType();
@@ -1112,7 +1102,7 @@ llvm::Value* LLTuple::codegen(CodegenPass* pass) {
   llvm::Value* pt = NULL;
 
   // Allocate tuple space
-  if (!canStackAllocate(this).value) {
+  if (!canStackAllocate(this)) {
     pt = pass->emitMalloc(tupleType);
     pt = builder.CreateLoad(pt, "normalize");
   } else {
@@ -1121,9 +1111,10 @@ llvm::Value* LLTuple::codegen(CodegenPass* pass) {
   // pt has type tuple*
 
   // Store the values into the point.
-  for (size_t i = 0; i < values.size(); ++i) {
+  for (size_t i = 0; i < vars.size(); ++i) {
     Value* dst = builder.CreateConstGEP2_32(pt, 0, i, "gep");
-    builder.CreateStore(values[i], dst, /*isVolatile*/ false);
+    Value* val = vars[i]->codegen(pass);
+    builder.CreateStore(val, dst, /*isVolatile*/ false);
   }
 
   return pt;

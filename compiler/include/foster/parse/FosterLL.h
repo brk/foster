@@ -161,13 +161,11 @@ struct LLCall : public LLExpr {
 };
 
 struct LLTuple : public LLExpr {
-  std::vector<LLVar*> parts;
+  std::vector<LLVar*> vars;
   bool isClosureEnvironment;
   explicit LLTuple(const std::vector<LLVar*>& vars)
-    : LLExpr("LLTuple"),
-      isClosureEnvironment(false) {
-    parts = vars;
-  }
+    : LLExpr("LLTuple"), vars(vars),
+      isClosureEnvironment(false) {}
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
