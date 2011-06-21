@@ -381,14 +381,14 @@ Value* CodegenPass::emitCoroCreateFn(
 ////////////////////////////////////////////////////////////////////
 
 void generateInvokeYield(bool isYield,
-                         llvm::Module* mod,
+                         CodegenPass* pass,
                          llvm::Value* coro,
                          const llvm::Type* retTy,
                          const llvm::Type* argTypes,
                          const std::vector<llvm::Value*>& inputArgs) {
-  llvm::Value* coro_slot = storeAndMarkPointerAsGCRoot(coro, NotArray, mod);
+  llvm::Value* coro_slot = pass->storeAndMarkPointerAsGCRoot(coro, NotArray);
 
-  llvm::Value* current_coro_slot = mod->getGlobalVariable("current_coro");
+  llvm::Value* current_coro_slot = pass->mod->getGlobalVariable("current_coro");
   Value* current_coro = builder.CreateLoad(current_coro_slot);
 
   /// TODO: call coro_dump(coro)
@@ -408,7 +408,7 @@ void generateInvokeYield(bool isYield,
   Value* status_addr = builder.CreateConstInBoundsGEP2_32(coro, 0, coroField_Status(), "statusaddr");
   Value* status = builder.CreateLoad(status_addr);
   Value* cond = builder.CreateICmpEQ(status, expectedStatus);
-  emitFosterAssert(mod, cond, expectedStatusMsg);
+  emitFosterAssert(pass->mod, cond, expectedStatusMsg);
 
   // Store the input arguments to coro->arg.
   Value* concrete_coro = builder.CreateBitCast(coro,
@@ -450,7 +450,7 @@ void generateInvokeYield(bool isYield,
     builder.CreateStore(coro, current_coro_slot);
   }
 
-  Value* coroTransfer = mod->getFunction("coro_transfer");
+  Value* coroTransfer = pass->mod->getFunction("coro_transfer");
   ASSERT(coroTransfer != NULL);
   Value*     ctx_addr = builder.CreateConstInBoundsGEP2_32(coro,            0, coroField_Context());
   Value* sib_ctx_addr = builder.CreateConstInBoundsGEP2_32(sibling_ptr_gen, 0, coroField_Context());
@@ -539,7 +539,7 @@ Value* CodegenPass::emitCoroInvokeFn(
 
   Value* coro = builder.CreateBitCast(coro_concrete, ptrTo(foster_generic_coro_t));
 
-  generateInvokeYield(false, this->mod, coro, retTy, argTypes, inputArgs);
+  generateInvokeYield(false, this, coro, retTy, argTypes, inputArgs);
 
   if (prevBB) {
     builder.SetInsertPoint(prevBB);
@@ -598,7 +598,7 @@ Value* CodegenPass::emitCoroYieldFn(
   Value* sibling_slot = builder.CreateConstInBoundsGEP2_32(current_coro, 0, coroField_Sibling(), "siblingaddr");
   Value* coro = builder.CreateLoad(sibling_slot);
 
-  generateInvokeYield(true, this->mod, coro, retTy, argTypes, inputArgs);
+  generateInvokeYield(true, this, coro, retTy, argTypes, inputArgs);
 
   if (prevBB) {
     builder.SetInsertPoint(prevBB);

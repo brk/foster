@@ -178,9 +178,8 @@ llvm::AllocaInst* stackSlotWithValue(llvm::Value* val, const std::string& name) 
 //      TODO need to guarantee that the val passed to us is either
 //      a pointer to memalloc-ed memory, or a value that does not escape.
 llvm::AllocaInst*
-storeAndMarkPointerAsGCRoot(llvm::Value* val,
-                            ArrayOrNot arrayStatus,
-                            llvm::Module* mod) {
+CodegenPass::storeAndMarkPointerAsGCRoot(llvm::Value* val,
+                                         ArrayOrNot arrayStatus) {
   if (!val->getType()->isPointerTy()) {
      llvm::AllocaInst* valptr = stackSlotWithValue(val, "ptrfromnonptr");
      val = valptr;
@@ -223,8 +222,7 @@ CodegenPass::emitMalloc(const llvm::Type* ty) {
 
   return storeAndMarkPointerAsGCRoot(
                        builder.CreateBitCast(mem, ptrTo(ty), "ptr"),
-                       NotArray,
-                       mod);
+                       NotArray);
 }
 
 
@@ -246,8 +244,7 @@ CodegenPass::emitArrayMalloc(const llvm::Type* elt_ty,
   return storeAndMarkPointerAsGCRoot(
                        builder.CreateBitCast(mem,
                               ArrayTypeAST::getZeroLengthTypeRef(elt_ty), "arr_ptr"),
-                       YesArray,
-                       mod);
+                       YesArray);
 }
 
 llvm::Value*

@@ -55,9 +55,6 @@ llvm::AllocaInst* CreateEntryAlloca(const llvm::Type* ty,
                                     const std::string& name);
 llvm::AllocaInst* stackSlotWithValue(llvm::Value* val,
                                      const std::string& name);
-llvm::AllocaInst* storeAndMarkPointerAsGCRoot(llvm::Value*,
-                                              ArrayOrNot,
-                                              llvm::Module*);
 
 ////////////////////////////////////////////////////////////////////
 
@@ -93,6 +90,11 @@ struct CodegenPass {
                                     llvm::Value* n);
 
   llvm::Value* allocateMPInt();
+
+  llvm::AllocaInst*
+        storeAndMarkPointerAsGCRoot(llvm::Value*,
+                                    ArrayOrNot);
+
 
   Value* emitCoroCreateFn(const llvm::Type* retTy,
                           const llvm::Type* argTypes);

@@ -543,7 +543,7 @@ llvm::Value* LLProc::codegen(CodegenPass* pass) {
         // arg_addr would be i32**,    {i32}**,  or {i32*}*.
         llvm::outs() << "inserting gcparam " <<AI->getNameStr()<< " in scope\n";
         scope->insert(AI->getNameStr(),
-                      storeAndMarkPointerAsGCRoot(AI, NotArray, pass->mod));
+                      pass->storeAndMarkPointerAsGCRoot(AI, NotArray));
       } else {
         llvm::AllocaInst* arg_addr = CreateEntryAlloca(
                                                 AI->getType(),
@@ -1084,7 +1084,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
       value = builder.CreateLoad(value, /*isVolatile=*/ false, "destack");
     }
 
-    value = storeAndMarkPointerAsGCRoot(value, NotArray, pass->mod);
+    value = pass->storeAndMarkPointerAsGCRoot(value, NotArray);
   }
 
   return value;
