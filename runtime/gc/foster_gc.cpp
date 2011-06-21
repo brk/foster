@@ -149,10 +149,10 @@ const unsigned int FOSTER_GC_DEFAULT_ALIGNMENT_MASK = 15; // 0b0..001111
 // 0 -> 0      1 -> 4
 // 2 -> 4      3 -> 4
 // 4 -> 4      5 -> 8
-inline uintptr_t
-roundUpToNearestMultipleWeak(uintptr_t v, uintptr_t powerOf2) {
+template <typename T>
+inline T* roundUpToNearestMultipleWeak(T* v, intptr_t powerOf2) {
   uintptr_t mask = powerOf2 - 1;
-  return (v + mask) & ~mask;
+  return (T*) ((uintptr_t(v) + mask) & ~mask);
 }
 
 inline bool
@@ -199,8 +199,8 @@ class copying_gc {
         // We want to position the bump pointer far enough into the buffer
         // so that after accounting for the heap cell header, the body pointer
         // resulting from allocation will be properly aligned.
-        bump = (char*) roundUpToNearestMultipleWeak(
-                          uintptr_t(start + HEAP_CELL_HEADER_SIZE),
+        bump = roundUpToNearestMultipleWeak(
+                          start + HEAP_CELL_HEADER_SIZE,
                           FOSTER_GC_DEFAULT_ALIGNMENT)
                                           - HEAP_CELL_HEADER_SIZE;
       }
@@ -574,6 +574,11 @@ void copying_gc::gc() {
 
 std::map<void*, const stackmap::PointCluster*> clusterForAddress;
 
+template <typename T>
+intptr_t byte_distance(T* a, T* b) {
+  return ((char*) a) - ((char*) b);
+}
+
 // Stack map registration walks through the stack maps emitted
 // by the Foster LLVM GC plugin
 void register_stackmaps() {
@@ -584,8 +589,12 @@ void register_stackmaps() {
   size_t totalOffset = 0;
 
   for (int32_t m = 0; m < numStackMaps; ++m) {
-    const stackmap* stackmap_ptr = (const stackmap*) offset(ps, totalOffset);
-    fprintf(gclog, "  stackmap_ptr: %p\n", stackmap_ptr); fflush(gclog);
+    // Compute a properly aligned stackmap pointer.
+    const stackmap* unaligned_stackmap_ptr = (const stackmap*) offset(ps, totalOffset);
+    const stackmap* stackmap_ptr = roundUpToNearestMultipleWeak(unaligned_stackmap_ptr, sizeof(void*));
+    totalOffset += byte_distance(stackmap_ptr, unaligned_stackmap_ptr);
+
+    fprintf(gclog, "  %d stackmap_ptr: %p; unaligned = %p\n", m, stackmap_ptr, unaligned_stackmap_ptr); fflush(gclog);
     const stackmap& s = *stackmap_ptr;
     int32_t numClusters = s.pointClusterCount;
     fprintf(gclog, "  num clusters: %d\n", numClusters); fflush(gclog);
