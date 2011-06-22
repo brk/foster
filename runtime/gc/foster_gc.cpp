@@ -218,7 +218,7 @@ class copying_gc {
       int64_t free_size() { return end - bump; }
 
       bool can_allocate_bytes(int64_t num_bytes) {
-        return end > bump + num_bytes;
+        return free_size() > num_bytes;
       }
 
       void* allocate_cell_prechecked(typemap* typeinfo) {
