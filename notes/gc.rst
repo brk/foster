@@ -10,6 +10,12 @@ or a pointer to a type map for the body, which contains offsets for the
 pointers contained in the body, along with type maps for the contents of
 those pointers.
 
+Typeinfo maps are aligned to at least a multiple of 8, yielding
+3 bits in the header pointer. One bit is used to mark forwarding pointers.
+One bit is used to mark objects which should be updated rather than moved;
+for example, objects allocated on the stack or via malloc instead of through
+a bump-pointer alloctor. [[ TODO implement this :) ]]
+
 Diagram::
 
     [Object *-]-+
@@ -54,4 +60,30 @@ An array has a slightly different representation::
             struct { i8* typeinfo; i32 offset }[numPtrEntries];
           }
 
+There are three cases for the elements worth considering:
 
+  * Non-pointer POD types, or structs thereof. No GC action necessary.
+  * Struct containing pointers. GC loops for each element,
+    computes aligned element start position and recurses at offsets.
+  * Pointer. As above.
+
+Stable Pointers
+---------------
+
+Interfacing with C code requires an alternative to a compacting or copying
+garbage collector, because the moving GC will be unable to update pointers
+held by external C code.
+
+One simple option would be to track which pointers can flow to external C
+functions (that is, those which are conservatively assumed to capture args),
+and ensure that those pointers are allocated from a reference-counted heap.
+
+However, that would open up race conditions between concurrently-executing
+Foster code and C code. What we really want is make sure that any object
+reachable from C code has a stable address. Address-stability can (I think)
+be tracked as an effect. However, it must be implemented for a lower-level
+IR which makes allocation explicit.
+
+On the other hand, "hiding" such an allocation decision behind an effect
+may be misguided; perhaps it's better to simply expose stable pointers as
+an explicit data type, along the lines of Haskell's FFI?
