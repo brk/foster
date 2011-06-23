@@ -7,16 +7,19 @@
 //               }
 //             }
 
+fst = { x : (i32, i32) => case x of (y, _) -> y end };
 
 test-coro2a = {
   expect_i32 30;
   expect_i32 120;
 
-  let co = coro_create { xy : (i32, i32) =>
-                          let a = coro_yield:[(i32,i32),i32] (xy[0] + xy[1]);
-                             j0 = coro_yield:[(i32,i32),i32] (a[0] + 20);
+  let co = coro_create { pq : (i32, i32) =>
+                         case pq of (p, q) ->
+                          let a = coro_yield:[(i32,i32),i32] (p + q);
+                             j0 = coro_yield:[(i32,i32),i32] (fst a + 20);
                              j1 = print_i32 111111;
                            in 12345 end
+                         end
                          };
       x = coro_invoke co (10, 20);
       y = coro_invoke co (100, 200);

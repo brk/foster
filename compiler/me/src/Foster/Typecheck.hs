@@ -286,10 +286,8 @@ typecheckTyApp ctx rng a t maybeExpTy = do
 -- Tuple subscripts must have a literal integer subscript denoting the field;
 -- looking up the field at runtime wouldn't make much sense.
 typecheckSubscript ctx rng base (TupleTypeAST types) i@(AnnInt ty int) maybeExpTy =
-    let literalValue = read (litIntText int) :: Integer in
-    case safeListIndex types (fromInteger literalValue) of
-        Nothing -> tcFails $ out $ "Literal index " ++ litIntText int ++ " to subscript was out of bounds"
-        Just t  -> return (AnnSubscript t base i)
+    tcFails (out $ "Subscripting tuples is not allowed;"
+                ++ " use pattern matching instead!")
 
 -- TODO make sure i is not negative or too big
 typecheckSubscript ctx rng base (ArrayType t) i@(AnnInt ty int) (Just expTy) = do
@@ -540,12 +538,6 @@ collectErrors tce =
                        OK expr     -> return (OK [])
                        Errors ss -> return   (OK ss)
                        })
-
-safeListIndex :: [a] -> Int -> Maybe a
-safeListIndex lst idx =
-    if List.length lst <= idx
-        then Nothing
-        else Just $ lst !! idx
 
 rename :: Ident -> Uniq -> Ident
 rename (Ident p i) u = (Ident p u)

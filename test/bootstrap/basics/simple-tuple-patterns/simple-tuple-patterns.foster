@@ -1,4 +1,6 @@
 main = {
+  tuple-cloconv();
+
   //t10 ();
   t11 ();
 
@@ -7,6 +9,14 @@ main = {
       of (_, _, _) -> 0
       of (_, _, _) -> 1
     end
+};
+
+tuple-cloconv = {
+  // This test ensures that bindings introduced by pattern matching
+  // can be successfully closed over.
+  let f = case (1, 2) of (_, b) -> { b } end;
+  in  expect_i32 2; print_i32 (f ())
+  end
 };
 
 /*

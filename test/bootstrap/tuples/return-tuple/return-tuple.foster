@@ -1,6 +1,5 @@
-// Need separate function because LLVM structs must be indexed by const val
-print_0_of_t_i32_i1 = { x : (i32, i1) => print_i32 x[0] };
-print_1_of_t_i32_i1 = { x : (i32, i1) => print_i1  x[1] };
+print_0_of_t_i32_i1 = { x : (i32, i1) => case x of (y, _) -> print_i32 y end };
+//print_1_of_t_i32_i1 = { x : (i32, i1) => case x of (_, y) -> print_i1  y end };
 
 tuple_from = { x : i32 => y : i1 => (x, y) };
 
@@ -16,6 +15,10 @@ tuple_from = { x : i32 => y : i1 => (x, y) };
 main = {
   expect_i32 42;
   print_0_of_t_i32_i1 (tuple_from 42 true);
-  expect_i1  true;
-  print_1_of_t_i32_i1 (tuple_from 42 true);
+ // expect_i1  true;
+//  print_1_of_t_i32_i1 (tuple_from 42 true);
+
+  expect_i1 true;
+  print_i1 (__COMPILES__ ());
+
 };

@@ -1,9 +1,6 @@
-// Need separate function because LLVM structs must be indexed by const val
-print_0_of_t_i32_i1 = { x : (i32, i1) => print_i32 x[0] };
+print_0_of_t_i32_i1 = { x : (i32, i1) => case x of (y, _) -> print_i32 y end };
 print_1_of_t_i32_i1 = { x : (i32, i1) =>
-  force_gc_for_debugging_purposes();
-  print_i1  x[1];
-};
+      force_gc_for_debugging_purposes(); case x of (_, y) -> print_i1  y end };
 
 main = {
   expect_i32 42;

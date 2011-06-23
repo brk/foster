@@ -119,7 +119,7 @@ closureConvert ctx expr =
                                          let v = AnnVar (typeIL a') x
                                          return $ buildLet x a' (ILIf t v b' c')
 
-            AnnUntil   t  a b      -> do x <- ilmFresh ".ife"
+            AnnUntil   t  a b      -> do x <- ilmFresh ".until"
                                          [a', b'] <- mapM g [a, b]
                                          return $ (ILUntil t a' b')
 
@@ -149,8 +149,11 @@ closureConvert ctx expr =
                                          nestedLets cs (\vs -> ILTuple vs)
 
             AnnCase t e bs         -> do e' <- g e
-                                         ibs <- mapM (\(p, a) -> do a' <- g a
-                                                                    return (p, a' )) bs
+                                         ibs <- mapM (\(p, a) -> do
+                                                        let bindings = patternBindings (p, typeAST e)
+                                                        let ctx' = prependContextBindings ctx bindings
+                                                        a' <- closureConvert ctx' a
+                                                        return (p, a' )) bs
                                          let allSigs = []
                                          let dt = compilePatterns ibs allSigs
                                          nestedLets [e'] (\[va] -> ILCase t va ibs (trace (show dt) dt))
@@ -309,8 +312,8 @@ closureOfAnnFn ctx allIdsFns infoMap (self_id, fn) = do
     let envName  =     (identPrefix.snd) (infoMap Map.! self_id)
     let funNames = map (identPrefix.annFnIdent.fst) (Map.elems infoMap)
     globalVars <- gets ilmGlobals
-    {- Given   letfun f = fn () { ... f() .... }
-               andfun g = fn () { ... f() .... }
+    {- Given   letfun f = { ... f() .... }
+               andfun g = { ... f() .... }
        neither f nor g should close over f itself, or any global vars.
     -}
     let transformedFn = makeEnvPassingExplicit (E_AnnFn fn) infoMap
@@ -330,6 +333,7 @@ closureOfAnnFn ctx allIdsFns infoMap (self_id, fn) = do
         -- If the body has x and y free, the closure converted body should be
         -- let x = env[0] in
         -- let y = env[1] in body
+        -- TODO switch to case env of (x, y, ...) -> body end
         let withVarsFromEnv vars i = case vars of
                 [] -> do closureConvert ctx (annFnBody f)
                 (v:vs) -> do innerlet <- withVarsFromEnv vs (i + 1)
@@ -401,3 +405,17 @@ instance Structured ILExpr where
             ILVar (AnnVar t i)      -> []
             ILTyApp t e argty       -> [e]
 
+patternBindings :: (Pattern, TypeAST) -> [ContextBinding]
+patternBindings (p, ty) =
+  case p of
+    P_Bool     rng _ -> []
+    P_Int      rng _ -> []
+    P_Wildcard rng   -> []
+    P_Variable rng id -> [TermVarBinding (identPrefix id) $
+                                            AnnVar ty id]
+    P_Tuple    rng pats ->
+      case ty of
+        TupleTypeAST tys ->
+          concat $ map patternBindings (zip pats tys)
+        otherwise -> (error $ "patternBindings failed on typechecked pattern!"
+                                ++ "\np = " ++ show p ++ " ; ty = " ++ show ty)

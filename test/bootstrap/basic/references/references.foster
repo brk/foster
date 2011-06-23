@@ -11,7 +11,7 @@ main = {
 tuprefs = {
   let t = ((ref opaquely_i32 1), (ref 2)); in
     expect_i32 1;
-     print_i32 t[0]^
+    case t of (r, _) -> print_i32 r^ end
   end
 };
 
