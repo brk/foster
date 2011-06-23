@@ -6,8 +6,6 @@
 
 module Foster.ExprAST where
 
-import Data.Set as Set(fromList, toList, difference)
-
 import Foster.Base
 import Foster.TypeAST
 
@@ -192,10 +190,22 @@ instance Expr ExprAST where
     freeVars e = case e of
         E_VarAST rng v      -> [evarName v]
         E_LetAST rng bnd e t -> freeVars e ++ (bindingFreeVars bnd)
-        E_FnAST f           -> let bodyvars =  Set.fromList (freeVars (fnBody f)) in
-                               let boundvars = Set.fromList (map (identPrefix.avarIdent) (fnFormals f)) in
-                               Set.toList (Set.difference bodyvars boundvars)
+        E_Case rng e epatbnds -> freeVars e ++ (concatMap epatBindingFreeVars epatbnds)
+        E_FnAST f           -> let bodyvars  = freeVars (fnBody f) in
+                               let boundvars = map (identPrefix.avarIdent) (fnFormals f) in
+                               bodyvars `butnot` boundvars
         _                   -> concatMap freeVars (childrenOf e)
+
+epatBindingFreeVars (pat, expr) =
+  freeVars expr `butnot` epatBoundNames pat
+  where epatBoundNames :: EPattern -> [String]
+        epatBoundNames pat =
+          case pat of
+            EP_Wildcard _rng      -> []
+            EP_Variable _rng evar -> [evarName evar]
+            EP_Bool     _rng _    -> []
+            EP_Int      _rng _    -> []
+            EP_Tuple    _rng pats -> concatMap epatBoundNames pats
 
 
 instance Structured AnnExpr where
@@ -245,6 +255,7 @@ instance Expr AnnExpr where
 freeIdentsA e = case e of
         E_AnnVar v      -> [avarIdent v]
         AnnLetVar id a b     -> freeIdentsA a ++ (freeIdentsA b `butnot` [id])
+        AnnCase _t e patbnds -> freeIdentsA e ++ (concatMap patBindingFreeIds patbnds)
         -- Note that all free idents of the bound expr are free in letvar,
         -- but letfuns removes the bound name from that set!
         AnnLetFuns ids fns e ->
@@ -255,6 +266,16 @@ freeIdentsA e = case e of
                            bodyvars `butnot` boundvars
         _               -> concatMap freeIdentsA (childrenOf e)
 
+patBindingFreeIds (pat, expr) =
+  freeIdentsA expr `butnot` patBoundIds pat
+  where patBoundIds :: Pattern -> [Ident]
+        patBoundIds pat =
+          case pat of
+            P_Wildcard _rng      -> []
+            P_Variable _rng id   -> [id]
+            P_Bool     _rng _    -> []
+            P_Int      _rng _    -> []
+            P_Tuple    _rng pats -> concatMap patBoundIds pats
 
 annFnBoundNames :: AnnFn -> [String]
 annFnBoundNames fn = map show (annFnVars fn)
