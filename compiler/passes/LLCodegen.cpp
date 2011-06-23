@@ -989,6 +989,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
              << base->tag << "\t" << base->type->tag
              << "\nFV: " << str(FV);
 
+  // Collect the args, performing coercions if necessary.
   for (size_t i = 0; i < this->args.size(); ++i) {
     ASSERT(i < FT->getNumContainedTypes());
     const llvm::Type* expectedType = FT->getContainedType(i);
@@ -1027,7 +1028,9 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
     const llvm::Type* expectedType = FT->getContainedType(i + 1);
 
     // If we have a T loaded from a T*, and we expect a T*,
-    // use the T* (TODO: make sure the T* isn't stack allocated!)
+    // use the T* (TODO: make sure the T* isn't an alloca, unless
+    //   we know that the arg won't be captured!)
+    //
     // LLVM intrinsics and C functions can take pointer-to-X args,
     // but codegen for variables will have already emitted a load
     // from the variable's implicit address.
@@ -1039,15 +1042,6 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
         argV = load->getPointerOperand();
         load->eraseFromParent();
       }
-    }
-
-    bool needsAdjusting = argV->getType() != expectedType;
-    if (needsAdjusting) {
-      TypeAST* argty = this->args[i]->type;
-      EDiag() << "\n" << str(argV) << "->getType() is\n" << str(argV->getType())
-              << "; expecting " << str(expectedType)
-              << "\n\targty is " << argty->tag << "\t" << str(argty);
-      ASSERT(false);
     }
 
     ASSERT(argV->getType() == expectedType)
@@ -1078,25 +1072,22 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
     markAsNonAllocating(callInst);
   }
 
-  llvm::Value* value = callInst;
-
   // If we have e.g. a function like   mk-tree :: .... -> ref node
   // that returns a pointer, we assume that the pointer refers to
   // heap-allocated memory and must be stored on the stack and marked
   // as a GC root. In order that updates from the GC take effect,
   // we use the stack slot (of type T**) instead of the pointer (T*) itself
   // as the return value of the call.
-  if (value->getType()->isPointerTy()) {
-    const llvm::Type* retty = value->getType();
-    if (retty->getContainedType(0)->isPointerTy()) {
-      // have T**; load T* value so it can be stored in a gcroot slot
-      value = builder.CreateLoad(value, /*isVolatile=*/ false, "destack");
-    }
+  if ( callingConv == llvm::CallingConv::Fast
+    && callInst->getType()->isPointerTy()) {
+    // As a sanity check, we shouldn't ever get a pointer-to-pointer,
+    // at least not from Foster code...
+    ASSERT(!callInst->getType()->getContainedType(0)->isPointerTy());
 
-    value = pass->storeAndMarkPointerAsGCRoot(value, NotArray);
+    return pass->storeAndMarkPointerAsGCRoot(callInst, NotArray);
+  } else {
+    return callInst;
   }
-
-  return value;
 }
 
 llvm::Value* LLTuple::codegen(CodegenPass* pass) {
