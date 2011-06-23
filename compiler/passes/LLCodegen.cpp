@@ -94,6 +94,16 @@ LLTuple* getEmptyTuple() {
   return new LLTuple(vars);
 }
 
+llvm::Value* emitStore(llvm::Value* val,
+                       llvm::Value* ptr) {
+  if (val->getType()->isVoidTy()) {
+    // Can't store a void!
+    return getUnitValue();
+  }
+  ASSERT(isPointerToType(ptr->getType(), val->getType()));
+  return builder.CreateStore(val, ptr, /*isVolatile=*/ false);
+}
+
 ////////////////////////////////////////////////////////////////////
 
 void LLModule::codegen(CodegenPass* pass) {
@@ -279,7 +289,7 @@ llvm::Value* LLAlloc::codegen(CodegenPass* pass) {
   llvm::Value* storedVal = this->baseVar->codegen(pass);
   llvm::Value* ptrSlot   = pass->emitMalloc(this->baseVar->type->getLLVMType());
   llvm::Value* ptr       = builder.CreateLoad(ptrSlot, /*isVolatile=*/ false, "alloc_slot_ptr");
-  builder.CreateStore(storedVal, ptr, /*isVolatile=*/ false);
+  emitStore(storedVal, ptr);
   return ptrSlot;
 }
 
@@ -296,8 +306,7 @@ llvm::Value* LLDeref::codegen(CodegenPass* pass) {
 llvm::Value* LLStore::codegen(CodegenPass* pass) {
   llvm::Value* vv = this->v->codegen(pass);
   llvm::Value* vr = this->r->codegen(pass);
-  ASSERT(isPointerToType(vr->getType(), vv->getType()));
-  return builder.CreateStore(vv, vr, /*isVolatile=*/ false);
+  return emitStore(vv, vr);
 }
 
 llvm::Value* LLLetVals::codegen(CodegenPass* pass) {
@@ -640,7 +649,7 @@ llvm::Value* LLIf::codegen(CodegenPass* pass) {
       }
     }
 
-    builder.CreateStore(then, iftmp, /*isVolatile=*/ false);
+    emitStore(then, iftmp);
     builder.CreateBr(mergeBB);
   }
 
@@ -653,7 +662,7 @@ llvm::Value* LLIf::codegen(CodegenPass* pass) {
     if (elseNeedsLoad) {
       else_ = builder.CreateLoad(else_, false, "ifelse_rhs");
     }
-    builder.CreateStore(else_, iftmp, /*isVolatile=*/ false);
+    emitStore(else_, iftmp);
     builder.CreateBr(mergeBB);
   }
 
@@ -740,7 +749,7 @@ void DecisionTree::codegen(CodegenPass* pass,
     }
 
     ASSERT(rv != NULL);
-    builder.CreateStore(rv, rv_slot, /*isVolatile=*/ false);
+    emitStore(rv, rv_slot);
     return;
   } // end DT_LEAF
 
@@ -1112,7 +1121,7 @@ llvm::Value* LLTuple::codegen(CodegenPass* pass) {
   for (size_t i = 0; i < vars.size(); ++i) {
     Value* dst = builder.CreateConstGEP2_32(pt, 0, i, "gep");
     Value* val = vars[i]->codegen(pass);
-    builder.CreateStore(val, dst, /*isVolatile*/ false);
+    emitStore(val, dst);
   }
 
   return pt;
