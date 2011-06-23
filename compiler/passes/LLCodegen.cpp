@@ -865,8 +865,10 @@ llvm::Value* LLSubscript::codegen(CodegenPass* pass) {
 
   if (llvm::Value* arr = tryBindArray(base)) {
     //EDiag() << "arr = " << str(arr) << " :: " << str(arr->getType());
+    // TODO emit code to validate idx value is in range.
     return getPointerToIndex( arr, idx, "");
   } else {
+    ASSERT(false) << "no more subscripting non-array values!";
     return getElementFromComposite(base, idx, "");
   }
 }

@@ -330,17 +330,16 @@ closureOfAnnFn ctx allIdsFns infoMap (self_id, fn) = do
         let uniqFreeVars = map (contextVar "closureConvertAnnFn" ctx) freeNames
         let envTypes = map avarType uniqFreeVars
         let envVar   = AnnVar (PtrTypeAST (TupleTypeAST envTypes)) envName
+
         -- If the body has x and y free, the closure converted body should be
-        -- let x = env[0] in
-        -- let y = env[1] in body
-        -- TODO switch to case env of (x, y, ...) -> body end
-        let withVarsFromEnv vars i = case vars of
-                [] -> do closureConvert ctx (annFnBody f)
-                (v:vs) -> do innerlet <- withVarsFromEnv vs (i + 1)
-                             return $ (ILLetVal (avarIdent v)
-                                                (ILSubscript (avarType v) envVar (litInt32 i))
-                                                innerlet)
-        newbody <- withVarsFromEnv uniqFreeVars 0
+        -- New body is   case env of (x, y, ...) -> body end
+        newbody <- let oldbody = annFnBody f in
+                   let norange = EMissingSourceRange "closureConvertAnnFn" in
+                   let patVar a = P_Variable norange (avarIdent a) in
+                   closureConvert ctx $
+                     AnnCase (typeAST oldbody) (E_AnnVar envVar)
+                        [ (P_Tuple norange (map patVar uniqFreeVars)
+                          , oldbody) ]
         ilmPutProc (closureConvertedProc (envVar:(annFnVars f)) f newbody)
     closureConvertAnnFn _ info freeNames = error "closureConvertAnnFn called on non-fn"
 
