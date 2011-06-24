@@ -301,11 +301,10 @@ Value* CodegenPass::emitCoroCreateFn(
   // foster_coro_i32_i32* fcoro = (foster_coro_i32_i32*) memalloc_cell(NULL);
   // foster_coro_i32_i32* ccoro = (foster_coro_i32_i32*) memalloc_cell(NULL);
   Value* fcoro_slot = this->emitMalloc(getSplitCoroType(argTypes));
-  Value* fcoro      = builder.CreateLoad(fcoro_slot, "fcoro");
-
   Value* ccoro_slot = this->emitMalloc(getSplitCoroType(retTy   ));
-  Value* ccoro      = builder.CreateLoad(ccoro_slot, "ccoro");
 
+  Value* fcoro      = builder.CreateLoad(fcoro_slot, "fcoro");
+  Value* ccoro      = builder.CreateLoad(ccoro_slot, "ccoro");
 
   llvm::Value* wrapper = emitCoroWrapperFn(this, retTy, argTypes);
   // coro_func wrapper = ...;
