@@ -16,6 +16,7 @@ Foster Notes
    syntax
    llvm
    compiled-examples
+   coro
    gc
    todo
 
