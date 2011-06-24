@@ -43,6 +43,7 @@ void foster_coro_create(coro_func corofn,
   // (via reallocation or stack segment chaining).
   // TODO use mark-sweep GC for coro stacks.
   void* sptr = malloc(ssize);
+  memset(sptr, 0xEE, ssize); // for debugging only
   foster_generic_coro* coro = (foster_generic_coro*) arg;
   coro_create(&coro->ctx, corofn, coro, sptr, ssize);
 }
