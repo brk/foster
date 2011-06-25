@@ -179,6 +179,7 @@ class copying_gc {
         start = (char*) malloc(size);
         end   = start + size;
         reset_bump();
+        memset(start, 0x66, size);
 
         genericClosureMarker = NULL;
       }
