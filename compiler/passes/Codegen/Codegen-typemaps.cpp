@@ -13,6 +13,7 @@
 #include "llvm/InstrTypes.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Module.h"
+#include "llvm/ADT/VectorExtras.h"
 
 #include <map>
 #include <set>
@@ -31,7 +32,7 @@ using foster::ParsingContext;
 llvm::GlobalVariable* getTypeMapForType(const llvm::Type*, llvm::Module*, ArrayOrNot);
 
 typedef std::pair<const Type*, Constant*> OffsetInfo;
-typedef std::set<OffsetInfo> OffsetSet;
+typedef std::vector<OffsetInfo> OffsetSet;
 
 // Converts a global variable of type [_ x T] to a local var of type T*.
 Constant* arrayVariableToPointer(GlobalVariable* arr) {
@@ -48,7 +49,7 @@ OffsetSet countPointersInType(const Type* ty) {
   if (ty->isPointerTy()
     && ty->getContainedType(0)->isSized()) {
     // Pointers to functions/labels/other non-sized types do not get GC'd.
-    rv.insert(OffsetInfo(ty->getContainedType(0),
+    rv.push_back(OffsetInfo(ty->getContainedType(0),
                          getConstantInt64For(0)));
   }
 
@@ -69,7 +70,7 @@ OffsetSet countPointersInType(const Type* ty) {
       for (OffsetSet::iterator si = sub.begin(); si != sub.end(); ++si) {
         const Type* subty = si->first;
         Constant* suboffset = si->second;
-        rv.insert(OffsetInfo(subty,
+        rv.push_back(OffsetInfo(subty,
             ConstantExpr::getAdd(suboffset, slotOffset)));
       }
     }
@@ -238,8 +239,8 @@ GlobalVariable* constructTypeMap(const llvm::Type* ty,
 
 
   std::vector<Constant*> typeMapEntries;
-  for (OffsetSet::iterator si =  pointerOffsets.begin();
-                           si != pointerOffsets.end(); ++si) {
+  for (OffsetSet::const_iterator si =  pointerOffsets.begin();
+                                 si != pointerOffsets.end(); ++si) {
     const Type* subty = si->first;
     Constant* suboffset = si->second;
     typeMapEntries.push_back(getTypeMapEntryFor(subty, suboffset, arrayStatus, mod));
@@ -265,21 +266,6 @@ GlobalVariable* constructTypeMap(const llvm::Type* ty,
   return typeMapVar;
 }
 
-
-void removeEntryWithOffset(OffsetSet& os, Constant* offset) {
-  OffsetSet::iterator toRemove = os.end();
-  for (OffsetSet::iterator it = os.begin(); it != os.end(); ++it) {
-    if (it->second == offset) {
-      toRemove = it;
-      break;
-    }
-  }
-
-  if (toRemove != os.end()) {
-    os.erase(toRemove);
-  }
-}
-
 // Computes the offsets of all pointers in the given type,
 // and constructs a type map using those offsets.
 GlobalVariable* emitTypeMap(
@@ -287,29 +273,38 @@ GlobalVariable* emitTypeMap(
     std::string name,
     ArrayOrNot arrayStatus,
     llvm::Module* mod,
-    bool skipOffsetZero) {
+    std::vector<int> skippedIndexVector) {
+  // Careful! The indices here are relative to the values
+  // returend by countPointersInType(), not the indicies
+  // in the type of those pointers.
+  std::set<int> skippedOffsets(skippedIndexVector.begin(),
+                               skippedIndexVector.end());
+  for(size_t i = 0; i < skippedIndexVector.size(); ++i) {
+    EDiag() << "plan to skip index " << skippedIndexVector[i];
+  }
+  OffsetSet filteredOffsets;
   OffsetSet pointerOffsets = countPointersInType(ty);
-  //currentOuts() << "emitting type map for type " << str(ty)
-  // << " ; skipping offset zero? " << skipOffsetZero << "\n";
-
-  if (skipOffsetZero) {
-    // Remove entry for first pointer, which corresponds
-    // to the type map for the environment.
-    removeEntryWithOffset(pointerOffsets,
-                          getConstantInt64For(0));
+  for(size_t i = 0; i < pointerOffsets.size(); ++i) {
+    if (skippedOffsets.count(i) == 0) {
+      EDiag() << "adding pointer offset " << i;
+      filteredOffsets.push_back(pointerOffsets[i]);
+    } else {
+      EDiag() << "skipping pointer offset " << i;
+    }
   }
 
-  return constructTypeMap(ty, name, pointerOffsets, arrayStatus, mod);
+  return constructTypeMap(ty, name, filteredOffsets, arrayStatus, mod);
 }
 
 // The struct type is
 // { { { i8** }, \2*, void (i8*)*, i8*, \2*, i32 }, i32 }
 // {
-//   { <coro_context>
-//   , sibling         <---
+//   { <coro_context>           0
+//   , sibling         <---    (1)
 //   , fn
-//   , env             <---
-//   , invoker         <---
+//   , env             <---    (2)
+//   , invoker         <---    (3)
+//   , indirect_self            4
 //   , status
 //   }
 //   argty
@@ -327,7 +322,7 @@ GlobalVariable* emitCoroTypeMap(const StructType* sty, llvm::Module* mod) {
   // We skip the first entry, which is the stack pointer in the coro_context.
   // The pointer-to-function will be automatically skipped, and the remaining
   // pointers are precisely those which we want the GC to notice.
-  return emitTypeMap(sty, ss.str(), NotArray, mod, /*skipOffsetZero*/ true);
+  return emitTypeMap(sty, ss.str(), NotArray, mod, make_vector(0, 4, NULL));
 }
 
 void registerType(const Type* ty,
@@ -343,7 +338,12 @@ void registerType(const Type* ty,
 
   std::string name = ParsingContext::freshName(desiredName);
   mod->addTypeName(name, ty);
-  emitTypeMap(ty, name, arrayStatus, mod, isClosureEnvironment);
+
+  std::vector<int> skipOffsets;
+  if (isClosureEnvironment) {
+    skipOffsets.push_back(0);
+  }
+  emitTypeMap(ty, name, arrayStatus, mod, skipOffsets);
 }
 
 const llvm::StructType*
@@ -367,11 +367,12 @@ llvm::GlobalVariable* getTypeMapForType(const llvm::Type* ty,
   if (const llvm::StructType* sty = isCoroStruct(ty)) {
     gv = emitCoroTypeMap(sty, mod);
   } else if (!ty->isAbstract() && !ty->isAggregateType()) {
-    gv = emitTypeMap(ty, ParsingContext::freshName("gcatom"), arrayStatus, mod);
+    gv = emitTypeMap(ty, ParsingContext::freshName("gcatom"), arrayStatus, mod,
+                     std::vector<int>());
     // emitTypeMap also sticks gv in typeMapForType
   } else if (isGenericClosureType(ty)) {
     gv = emitTypeMap(ty, ParsingContext::freshName("genericClosure"), arrayStatus, mod,
-                     /*skipOffsetZero*/ true);
+                     make_vector(0, NULL));
   }
 
   if (!gv) {

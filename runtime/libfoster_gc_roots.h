@@ -16,6 +16,7 @@ struct foster_generic_coro {
   void (*fn)(void*);
   void* env;
   foster_generic_coro* invoker;
+  foster_generic_coro** indirect_self;
   int32_t status;
 };
 

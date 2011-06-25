@@ -22,7 +22,7 @@ llvm::GlobalVariable*
 emitTypeMap(const llvm::Type* ty, std::string name,
             ArrayOrNot arrayStatus,
             llvm::Module* mod,
-            bool skipOffsetZero = false);
+            std::vector<int> skippedOffsets);
 
 void registerType(const llvm::Type* ty,
                   std::string       desiredName,

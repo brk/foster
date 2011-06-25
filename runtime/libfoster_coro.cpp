@@ -33,6 +33,12 @@ namespace runtime {
 
 extern "C" {
 
+void foster_coro_ensure_self_reference(foster_generic_coro* coro) {
+  if (coro->indirect_self != NULL) {
+    *(coro->indirect_self) = coro;
+  }
+}
+
 // corofn :: void* -> void
 void foster_coro_create(coro_func corofn,
                         void* arg) {
@@ -45,13 +51,22 @@ void foster_coro_create(coro_func corofn,
   void* sptr = malloc(ssize);
   memset(sptr, 0xEE, ssize); // for debugging only
   foster_generic_coro* coro = (foster_generic_coro*) arg;
-  coro_create(&coro->ctx, corofn, coro, sptr, ssize);
+  coro->indirect_self = (foster_generic_coro**) malloc(sizeof(coro));
+  foster_coro_ensure_self_reference(coro);
+  coro_create(&coro->ctx, corofn, coro->indirect_self,
+              sptr, ssize);
 }
 
 // This is a no-op for the CORO_ASM backend,
 // but we should still call it anyways (TODO).
 void foster_coro_destroy(coro_context* ctx) {
   (void) coro_destroy(ctx);
+}
+
+void foster_coro_delete_self_reference(void* vc) {
+  foster_generic_coro* coro = (foster_generic_coro*) vc;
+  free(coro->indirect_self);
+  coro->indirect_self = NULL;
 }
 
 } // extern "C"

@@ -852,6 +852,9 @@ void coro_dump(foster_generic_coro* coro) {
   }
 }
 
+// Declared in libfoster_coro.cpp
+extern "C"
+void foster_coro_ensure_self_reference(foster_generic_coro* coro);
 
 void scanCoroStack(foster_generic_coro* coro,
                    gc_visitor_fn visitor) {
@@ -864,16 +867,12 @@ void scanCoroStack(foster_generic_coro* coro,
     return;
   }
 
+  foster_coro_ensure_self_reference(coro);
+
   // If we've made it this far, then the coroutine is owned by us,
   // and is either dormant or suspended. We don't scan
   // the stack of a running coro, since we should already have done so.
   // But we will trace back the coro invocation chain and scan other stacks.
-
-  //bool isCCoro = coro->fn == NULL;
-  //bool shouldScanStack = (coro->status == FOSTER_CORO_DORMANT && !isCCoro);
-  //if (!shouldScanStack) {
-    //return;
-  //}
 
   // Another point worth mentioning is that two generic_coros
   // may point to the same stack but have different statuses:

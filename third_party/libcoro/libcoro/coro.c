@@ -80,15 +80,20 @@ static coro_func coro_init_func;
 static void *coro_init_arg;
 static coro_context *new_coro, *create_coro;
 
+void foster_coro_delete_self_reference(void*);
+
 static void
 coro_init (void)
 {
   volatile coro_func func = coro_init_func;
-  volatile void *arg = coro_init_arg;
+  volatile void *indirect_arg = coro_init_arg;
 
   coro_transfer (new_coro, create_coro);
 
-  func ((void *)arg);
+  volatile void* coro_arg = * (void**)indirect_arg;
+  foster_coro_delete_self_reference(coro_arg);
+
+  func ((void *)coro_arg);
 
   /* the new coro returned. bad. just abort() for now */
   abort ();

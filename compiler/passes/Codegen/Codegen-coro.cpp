@@ -175,7 +175,8 @@ int coroField_Sibling() { return 1; }
 int coroField_Fn() { return 2; }
 int coroField_Env() { return 3; }
 int coroField_Invoker() { return 4; }
-int coroField_Status() { return 5; }
+int coroField_IndirectSelf() { return 5; }
+int coroField_Status() { return 6; }
 
 ////////////////////////////////////////////////////////////////////
 ////////////////////////// CORO WRAPPER  ///////////////////////////
@@ -306,15 +307,6 @@ Value* CodegenPass::emitCoroCreateFn(
   Value* fcoro      = builder.CreateLoad(fcoro_slot, "fcoro");
   Value* ccoro      = builder.CreateLoad(ccoro_slot, "ccoro");
 
-  llvm::Value* wrapper = emitCoroWrapperFn(this, retTy, argTypes);
-  // coro_func wrapper = ...;
-  // foster_coro_create(wrapper, fcoro);
-  llvm::Value* foster_coro_create = this->mod->getFunction("foster_coro_create");
-  ASSERT(foster_coro_create != NULL);
-
-  Value* fcoro_gen = builder.CreateBitCast(fcoro, builder.getInt8PtrTy());
-  builder.CreateCall2(foster_coro_create, wrapper, fcoro_gen);
-
   // TODO call memset on the full structs
 
   Value* gfcoro = builder.CreateConstInBoundsGEP2_32(fcoro, 0, 0, "gfcoro");
@@ -358,10 +350,27 @@ Value* CodegenPass::emitCoroCreateFn(
   storeNullPointerToSlot(fcoro_invoker);
   storeNullPointerToSlot(ccoro_invoker);
 
+  // fcoro->g.indirect_self = NULL;
+  // ccoro->g.indirect_self = NULL;
+  Value* fcoro_indirect_self = builder.CreateConstInBoundsGEP2_32(gfcoro, 0, coroField_IndirectSelf(), "fcoro_self");
+  Value* ccoro_indirect_self = builder.CreateConstInBoundsGEP2_32(gccoro, 0, coroField_IndirectSelf(), "ccoro_self");
+  storeNullPointerToSlot(fcoro_indirect_self);
+  storeNullPointerToSlot(ccoro_indirect_self);
+
   Value* fcoro_status = builder.CreateConstInBoundsGEP2_32(gfcoro, 0, coroField_Status(), "fcoro_status");
   Value* ccoro_status = builder.CreateConstInBoundsGEP2_32(gccoro, 0, coroField_Status(), "ccoro_status");
   builder.CreateStore(getConstantInt32For(FOSTER_CORO_DORMANT), fcoro_status);
   builder.CreateStore(getConstantInt32For(FOSTER_CORO_INVALID), ccoro_status);
+
+  llvm::Value* wrapper = emitCoroWrapperFn(this, retTy, argTypes);
+  // coro_func wrapper = ...;
+  // foster_coro_create(wrapper, fcoro);
+  llvm::Value* foster_coro_create = this->mod->getFunction("foster_coro_create");
+  ASSERT(foster_coro_create != NULL);
+
+  Value* fcoro_gen = builder.CreateBitCast(fcoro, builder.getInt8PtrTy());
+  builder.CreateCall2(foster_coro_create, wrapper, fcoro_gen);
+
 
   // return (foster_coro_i32_i32*) fcoro;
   builder.CreateRet(fcoro);
