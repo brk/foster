@@ -152,12 +152,18 @@ Constant* getTypeMapEntryFor(const Type* entryTy,
                              llvm::Module* mod) {
   std::vector<Constant*> fields;
 
-  GlobalVariable* typeMapVar = getTypeMapForType(entryTy, mod, arrayStatus);
-
-  // Get the type map or (if no pointers) body size, cast to an i8*.
-  if (typeMapVar) {
-        fields.push_back(ConstantExpr::getCast(Instruction::BitCast,
-                        typeMapVar, builder.getInt8PtrTy()));
+  if (entryTy == foster_generic_coro_t) {
+    // Instead of claiming that some block of memory is
+    // only the size of a generic coro, we emit a NULL
+    // metadata block to force the GC to find the actual
+    // runtime size.
+    fields.push_back(
+      llvm::ConstantPointerNull::get(builder.getInt8PtrTy()));
+  } else if (GlobalVariable* typeMapVar =
+    getTypeMapForType(entryTy, mod, arrayStatus)) {
+    // Get the type map or (if no pointers) body size, cast to an i8*.
+    fields.push_back(ConstantExpr::getCast(Instruction::BitCast,
+                     typeMapVar, builder.getInt8PtrTy()));
   } else {
         // If we can't tell the garbage collector how to collect a type by
         // giving it a pointer to a type map, it's probably because the type
@@ -300,29 +306,32 @@ GlobalVariable* emitTypeMap(
 // { { { i8** }, \2*, void (i8*)*, i8*, \2*, i32 }, i32 }
 // {
 //   { <coro_context>           0
-//   , sibling         <---    (1)
+//   , sibling         <---    [1]
 //   , fn
 //   , env             <---    (2)
-//   , invoker         <---    (3)
+//   , invoker         <---    [3]
 //   , indirect_self            4
 //   , status
 //   }
 //   argty
 // }
 GlobalVariable* emitCoroTypeMap(const StructType* sty, llvm::Module* mod) {
-  std::string sname;
-  llvm::raw_string_ostream ss(sname); ss << "coro_";
   bool hasKnownTypes = sty->getNumElements() == 2;
-  if (hasKnownTypes) {
-    ss << *(sty->getTypeAtIndex(1));
-  } else {
-    ss << "gen";
+  if (!hasKnownTypes) {
+    // Generic coro; don't generate a typemap,
+    // because it will be the wrong size at runtime!
+    return NULL;
   }
+
+  std::string sname;
+  llvm::raw_string_ostream ss(sname);
+  ss << "coro_" << *(sty->getTypeAtIndex(1));
 
   // We skip the first entry, which is the stack pointer in the coro_context.
   // The pointer-to-function will be automatically skipped, and the remaining
   // pointers are precisely those which we want the GC to notice.
-  return emitTypeMap(sty, ss.str(), NotArray, mod, make_vector(0, 4, NULL));
+  return emitTypeMap(sty, ss.str(), NotArray, mod,
+                     make_vector(0, 4, NULL));
 }
 
 void registerType(const Type* ty,

@@ -297,45 +297,42 @@ class copying_gc {
         }
       }
 
+      void complain_to_lack_of_metadata(void* body, heap_cell* cell) {
+        const int ptrsize = sizeof(void*);
+        void** bp4 = (void**) offset(body, ptrsize);
+        const void* meta2 = *(const void**) offset(body, -ptrsize);
+        inspect_typemap((typemap*) meta2);
+        fprintf(gclog, "called copy with null metadata\n"); fflush(gclog);
+        fprintf(gclog, "body   is %p -> %p\n", body, *(void**)body); fflush(gclog);
+        fprintf(gclog, "body+%d is %p -> %p\n", ptrsize, offset(body, ptrsize), *bp4); fflush(gclog);
+        fprintf(gclog, "body-%d is %p -> %p\n", ptrsize, offset(body,-ptrsize), *(void**)offset(body,-ptrsize));
+        fflush(gclog);
+        void** envptr = (void**)*bp4;
+        fprintf(gclog, "envptr: %p -> %p\n", envptr, *envptr); fflush(gclog);
+        typemap* envtm = (typemap*) *envptr;
+        fprintf(gclog, "env tm name is %s, # ptrs = %d\n", envtm->name, envtm->numEntries); fflush(gclog);
+      }
+
       // returns body of newly allocated cell
       void* copy(void* body, const void* meta) {
-        const int ptrsize = sizeof(void*);
         heap_cell* cell = heap_cell::for_body(body);
+        meta = meta ? meta : cell->get_meta();
 
         if (!meta) {
-          meta = cell->get_meta();
-        }
-
-        if (!(meta)) {
-          void** bp4 = (void**) offset(body, ptrsize);
-          const void* meta2 = *(const void**) offset(body, -ptrsize);
-          inspect_typemap((typemap*) meta2);
-          fprintf(gclog, "called copy with null metadata\n"); fflush(gclog);
-          fprintf(gclog, "body   is %p -> %p\n", body, *(void**)body); fflush(gclog);
-          fprintf(gclog, "body+%d is %p -> %p\n", ptrsize, offset(body, ptrsize), *bp4); fflush(gclog);
-          fprintf(gclog, "body-%d is %p -> %p\n", ptrsize, offset(body,-ptrsize), *(void**)offset(body,-ptrsize));
-          fflush(gclog);
-          void** envptr = (void**)*bp4;
-          fprintf(gclog, "envptr: %p -> %p\n", envptr, *envptr); fflush(gclog);
-          typemap* envtm = (typemap*) *envptr;
-          fprintf(gclog, "env tm name is %s, # ptrs = %d\n", envtm->name, envtm->numEntries); fflush(gclog);
+          complain_to_lack_of_metadata(body, cell);
           return NULL;
         }
 
         //fprintf(gclog, "copying cell %p, meta %p\n", cell, meta); fflush(gclog);
-        //fprintf(gclog, "copying cell %p, is fwded? %d\n", cell, cell->is_forwarded()); fflush(gclog);
         if (cell->is_forwarded()) {
           void* fwd = cell->get_forwarded_body();
-          //fprintf(gclog, "cell %p(->0x%x) considered forwarded to %p for body %p(->0x%x)\n",
-          //  cell, *(unsigned int*)cell, fwd, body, *(unsigned int*)body);
+          //fprintf(gclog, "cell %p(->%p) considered forwarded to [[%p]] for body %p(->%p)\n",
+          //  cell, *(void**)cell,
+          //  fwd, body, *(void**)body); fflush(gclog);
           return fwd;
         }
 
         int64_t cell_size;
-        if (!meta) {
-          meta = (void*) cell->cell_size();
-        }
-
         if (!isMetadataPointer(meta)) {
           cell_size = int64_t(meta);
         } else {
@@ -350,7 +347,6 @@ class copying_gc {
           cell_size = map->cell_size;
         }
         foster_assert(cell_size >= 16, "cell size must be at least 16!");
-
         //fprintf(gclog, "copying cell %p, cell size %llu\n", cell, cell_size); fflush(gclog);
 
         if (can_allocate_bytes(cell_size)) {
@@ -361,7 +357,8 @@ class copying_gc {
           if (isMetadataPointer(meta)) {
             const typemap* map = (const typemap*) meta;
 
-            fprintf(gclog, "copying cell %p, map np %d, name %s\n", cell, map->numEntries, map->name); fflush(gclog);
+            //fprintf(gclog, "copying %lld cell %p, map np %d, name %s\n",
+            //  cell_size, cell, map->numEntries, map->name); fflush(gclog);
 
             // for each pointer field in the cell
             for (int i = 0; i < map->numEntries; ++i) {
@@ -379,7 +376,6 @@ class copying_gc {
                 *newslot = copy(*oldslot, e.typeinfo);
                 //fprintf(gclog, "recursively copied  of cell %p slot %p with ti %p to %p\n",
                  // cell, oldslot, e.typeinfo, newslot); fflush(gclog);
-
               }
             }
 
