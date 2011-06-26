@@ -81,8 +81,9 @@ ilmFresh s = do old <- get
                 put (old { ilmUniq = (ilmUniq old) + 1 })
                 return (Ident s (ilmUniq old))
 
-ilmPutProc :: ILProcDef -> ILM ILProcDef
-ilmPutProc p = do
+ilmPutProc :: ILM ILProcDef -> ILM ILProcDef
+ilmPutProc p_action = do
+        p   <- p_action
         old <- get
         put (old { ilmProcDefs = p:(ilmProcDefs old) })
         return p
@@ -192,11 +193,13 @@ closureConvert ctx expr =
                                     return $ buildLet x (ILTyApp ot (ILVar v) argty) nlets
                     _ -> error $ "AnnCall with non-var base of " ++ show b
 
-closureConvertedProc :: [AnnVar] -> AnnFn -> ILExpr -> ILProcDef
-closureConvertedProc liftedProcVars f newbody =
-    ILProcDef (fnTypeRange (annFnType f))
+closureConvertedProc :: [AnnVar] -> AnnFn -> ILExpr -> ILM ILProcDef
+closureConvertedProc liftedProcVars f newbody = do
+    -- Ensure that return values are codegenned through a variable binding.
+    namedReturnValue <- nestedLets [newbody] (\[rv] -> ILVar rv)
+    return $ ILProcDef (fnTypeRange (annFnType f))
               (annFnIdent f) liftedProcVars
-              (annFnRange f) FastCC newbody
+              (annFnRange f) FastCC namedReturnValue
 
 -- For example, if we have something like
 --      let y = blah in ( (\x -> x + y) foobar )

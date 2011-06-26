@@ -313,12 +313,16 @@ llvm::Value* LLStore::codegen(CodegenPass* pass) {
 llvm::Value* LLLetVals::codegen(CodegenPass* pass) {
   for (size_t i = 0; i < exprs.size(); ++i) {
     Value* b = exprs[i]->codegen(pass);
-    if (b->getType()->isVoidTy()) continue;
-    if (b->hasName()
-      && pystring::startswith(b->getName(), "stackref")) {
-      b->setName(names[i] + "_slot");
+
+    if (b->getType()->isVoidTy()) {
+      // Can't assign a name to void values in LLVM.
     } else {
-      b->setName(names[i]);
+      if (b->hasName()
+        && pystring::startswith(b->getName(), "stackref")) {
+        b->setName(names[i] + "_slot");
+      } else {
+        b->setName(names[i]);
+      }
     }
 
     pass->valueSymTab.insert(names[i], b);
@@ -548,11 +552,6 @@ llvm::Value* LLProc::codegen(CodegenPass* pass) {
     ASSERT(F->arg_size() == this->argnames.size());
     for (size_t i = 0; i != F->arg_size(); ++i, ++AI) {
       if (mightContainHeapPointers(AI->getType())) {
-#if 0
-        std::cout << "marking root for var " << this->getProto()->inArgs[i]->name
-            << " of ast type " << *(this->getProto()->inArgs[i]->type)
-            << " and value type " << *(AI->getType()) << "\n";
-#endif
         // Type could be like i32*, like {i32}* or like {i32*}.
         // arg_addr would be i32**,    {i32}**,  or {i32*}*.
         llvm::outs() << "inserting gcparam " <<AI->getNameStr()<< " in scope\n";
@@ -583,13 +582,10 @@ llvm::Value* LLProc::codegen(CodegenPass* pass) {
 
   bool fnReturnsUnit = isVoidOrUnit(ft->getReturnType());
 
-  // If we try to return a tuple* or tuple** when the fn specifies a tuple,
-  // manually insert a load or two.
+  // If we try to return a tuple* when the fn specifies a tuple,
+  // manually insert a load.
   if (rv->getType()->isDerivedType() && !fnReturnsUnit) {
-    if (isPointerToPointerToType(rv->getType(), ft->getReturnType())) {
-      rv = builder.CreateLoad(rv, false, "structPtrSlotToStructPtr");
-      rv = builder.CreateLoad(rv, false, "structPtrToStruct");
-    } else if (isPointerToType(rv->getType(), ft->getReturnType())) {
+    if (isPointerToType(rv->getType(), ft->getReturnType())) {
       rv = builder.CreateLoad(rv, false, "structPtrToStruct");
     }
   }
