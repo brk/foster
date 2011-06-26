@@ -119,8 +119,7 @@ closureConvert ctx expr =
                                          let v = AnnVar (typeIL a') x
                                          return $ buildLet x a' (ILIf t v b' c')
 
-            AnnUntil   t  a b      -> do x <- ilmFresh ".until"
-                                         [a', b'] <- mapM g [a, b]
+            AnnUntil   t  a b      -> do [a', b'] <- mapM g [a, b]
                                          return $ (ILUntil t a' b')
 
             AnnLetVar id a b       -> do let ctx' = prependAnnBinding (id, a) ctx
