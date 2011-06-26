@@ -7,5 +7,21 @@ main = {
   print_0_of_t_i32_i1 (42, true);
   expect_i1 true;
   print_1_of_t_i32_i1 (42, true);
+
+  test2();
 };
 
+test2 = {
+  let t = (opaquely_i32 3, 4);
+   in
+      expect_i32 3;
+      // If t is heap allocated and is codegenned to a
+      // pointer loaded from the gc root, it will be stale
+      // after a GC, and (because semispaces are cleared after GC)
+      // the following test will return the wrong value.
+      force_gc_for_debugging_purposes();
+      case t
+        of (a, _) -> print_i32 a
+      end;
+  end
+};

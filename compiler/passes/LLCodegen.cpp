@@ -71,7 +71,7 @@ std::string getGlobalSymbolName(const std::string& sourceName) {
 } // namespace foster
 
 bool canStackAllocate(LLTuple* ast) {
-  return true;
+  return false;
 }
 
 // Follows a (type-based) pointer indirections for the given value.
@@ -100,7 +100,10 @@ llvm::Value* emitStore(llvm::Value* val,
     // Can't store a void!
     return getUnitValue();
   }
-  ASSERT(isPointerToType(ptr->getType(), val->getType()));
+  ASSERT(isPointerToType(ptr->getType(), val->getType())) << "\n"
+  << "ptr type: " << str(ptr->getType()) << "\n"
+  << "val type: " << str(val->getType());
+
   return builder.CreateStore(val, ptr, /*isVolatile=*/ false);
 }
 
@@ -221,10 +224,8 @@ llvm::Value* LLVar::codegen(CodegenPass* pass) {
   if (!v) v = pass->lookupFunctionOrDie(getName());
 
   if (llvm::AllocaInst* ai = llvm::dyn_cast_or_null<llvm::AllocaInst>(v)) {
-    EDiag() << "var " << getName() << " was     alloca:\n\t" << str(v) << " :: " << str(v->getType());
     return builder.CreateLoad(ai, /*isVolatile=*/ false, "autoload");
   } else if (v) {
-    //EDiag() << "var " << getName() << " was not alloca:\n\t" << str(v) << " :: " << str(v->getType());
     return v;
   }
 
@@ -406,6 +407,10 @@ genericClosureStructTy(const llvm::FunctionType* fnty) {
            builder.getInt8PtrTy(), NULL);
 }
 
+bool isPointerToPointer(const llvm::Type* p) {
+  return p->isPointerTy() && p->getContainedType(0)->isPointerTy();
+}
+
 llvm::Value* LLClosure::codegen(CodegenPass* pass) {
   llvm::Value* proc = pass->lookupFunctionOrDie(procname);
   const llvm::FunctionType* fnty;
@@ -427,7 +432,7 @@ llvm::Value* LLClosure::codegen(CodegenPass* pass) {
 
   // (code*)*
   Value* clo_code_slot = builder.CreateConstGEP2_32(clo, 0, 0, varname + ".clo_code");
-  builder.CreateStore(proc, clo_code_slot, /*isVolatile=*/ false);
+  emitStore(proc, clo_code_slot);
 
   // (env*)*
   Value* clo_env_slot = builder.CreateConstGEP2_32(clo, 0, 1, varname + ".clo_env");
@@ -440,6 +445,9 @@ llvm::Value* LLClosure::codegen(CodegenPass* pass) {
 
     // Ensure that the environment contains space for the type map.
     llvm::Value* envValue = env->codegen(pass);
+    if (isPointerToPointer(envValue->getType())) {
+      envValue = builder.CreateLoad(envValue, /*isVolatile=*/ false, "env_ptr");
+    }
 
     #if 0 // this is broken atm...
       // Store the typemap in the environment's typemap slot.
@@ -458,12 +466,11 @@ llvm::Value* LLClosure::codegen(CodegenPass* pass) {
           ConstantExpr::getBitCast(clo_env_typemap,
                                    clo_env_typemap_slot->getType()->getContainedType(0));
 
-      builder.CreateStore(clo_env_typemap_cast,
-          clo_env_typemap_slot, /*isVolatile=*/ false);
+      emitStore(clo_env_typemap_cast, clo_env_typemap_slot);
     #endif
 
     // Only store the env in the closure if the env contains entries.
-    builder.CreateStore(envValue, clo_env_slot, /*isVolatile=*/ false);
+    emitStore(envValue, clo_env_slot);
   }
 
   const llvm::StructType* genStructTy = genericClosureStructTy(fnty);
@@ -555,7 +562,7 @@ llvm::Value* LLProc::codegen(CodegenPass* pass) {
         llvm::AllocaInst* arg_addr = CreateEntryAlloca(
                                                 AI->getType(),
                                                 AI->getNameStr() + "_addr");
-        builder.CreateStore(AI, arg_addr, /*isVolatile*/ false);
+        emitStore(AI, arg_addr);
         llvm::outs() << "inserting param " <<AI->getNameStr()<< " in scope\n";
         scope->insert(AI->getNameStr(), arg_addr);
       }
@@ -576,11 +583,15 @@ llvm::Value* LLProc::codegen(CodegenPass* pass) {
 
   bool fnReturnsUnit = isVoidOrUnit(ft->getReturnType());
 
-  // If we try to return a tuple* when the fn specifies a tuple, manually insert a load
-  if (rv->getType()->isDerivedType()
-      && !fnReturnsUnit
-      && isPointerToType(rv->getType(), ft->getReturnType())) {
-    rv = builder.CreateLoad(rv, false, "structPtrToStruct");
+  // If we try to return a tuple* or tuple** when the fn specifies a tuple,
+  // manually insert a load or two.
+  if (rv->getType()->isDerivedType() && !fnReturnsUnit) {
+    if (isPointerToPointerToType(rv->getType(), ft->getReturnType())) {
+      rv = builder.CreateLoad(rv, false, "structPtrSlotToStructPtr");
+      rv = builder.CreateLoad(rv, false, "structPtrToStruct");
+    } else if (isPointerToType(rv->getType(), ft->getReturnType())) {
+      rv = builder.CreateLoad(rv, false, "structPtrToStruct");
+    }
   }
 
   pass->valueSymTab.popExistingScope(scope);
@@ -1100,15 +1111,19 @@ llvm::Value* LLTuple::codegen(CodegenPass* pass) {
   registerType(tupleType, typeName, pass->mod, NotArray, isClosureEnvironment);
 
   llvm::Value* pt = NULL;
+  llvm::Value* rv = NULL;
+
+  // TODO could factor this out into an
+  // allocate-without-initializing function...
 
   // Allocate tuple space
   if (!canStackAllocate(this)) {
-    pt = pass->emitMalloc(tupleType);
-    pt = builder.CreateLoad(pt, "normalize");
+    rv = pass->emitMalloc(tupleType);
+    pt = builder.CreateLoad(rv, "normalize");
   } else {
     pt = CreateEntryAlloca(tupleType, "s");
+    rv = pt;
   }
-  // pt has type tuple*
 
   // Store the values into the point.
   for (size_t i = 0; i < vars.size(); ++i) {
@@ -1117,7 +1132,7 @@ llvm::Value* LLTuple::codegen(CodegenPass* pass) {
     emitStore(val, dst);
   }
 
-  return pt;
+  return rv;
 }
 
 
