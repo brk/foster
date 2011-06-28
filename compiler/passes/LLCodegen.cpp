@@ -91,7 +91,7 @@ const llvm::Type* getLLVMType(TypeAST* type) {
 
 LLTuple* getEmptyTuple() {
   std::vector<LLVar*> vars;
-  return new LLTuple(vars);
+  return new LLTuple(vars, NULL);
 }
 
 llvm::Value* emitStore(llvm::Value* val,
@@ -285,17 +285,23 @@ llvm::Value* emitRuntimeArbitraryPrecisionOperation(const std::string& op,
 //////////////// LLAlloc, LLDeref, LLStore /////////////////////////
 ////////////////////////////////////////////////////////////////////
 
-void setFunctionArgumentNames(llvm::Function* F,
-              const std::vector<std::string>& argnames) {
-  ASSERT(argnames.size() == F->arg_size())
-            << "error when codegenning proto " << F->getName()
-            << "\n of type " << str(F->getType())
-            << "; inArgs.size: " << argnames.size() <<
-               "; F.arg_size: " << F->arg_size() << "\n" << str(F);
+llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
+  const llvm::Type* ty = NULL;
+  if (TupleTypeAST* tuplety = dynamic_cast<TupleTypeAST*>(this->type)) {
+    ty = tuplety->getLLVMTypeUnboxed();
+  } else {
+    ty = this->type->getLLVMType();
+  }
 
-  Function::arg_iterator AI = F->arg_begin();
-  for (size_t i = 0; i != argnames.size(); ++i, ++AI) {
-    AI->setName(argnames[i]);
+  switch (this->region) {
+  case MEM_REGION_STACK:
+    return CreateEntryAlloca(ty, "alloc");
+
+  case MEM_REGION_GLOBAL_HEAP:
+    return pass->emitMalloc(ty);
+
+  default:
+    ASSERT(false); return NULL;
   }
 }
 
@@ -532,6 +538,20 @@ getLLVMFunctionType(FnTypeAST* t) {
     return dyn_cast<FunctionType>(pt->getContainedType(0));
   } else {
     return NULL;
+  }
+}
+
+void setFunctionArgumentNames(llvm::Function* F,
+              const std::vector<std::string>& argnames) {
+  ASSERT(argnames.size() == F->arg_size())
+            << "error when codegenning proto " << F->getName()
+            << "\n of type " << str(F->getType())
+            << "; inArgs.size: " << argnames.size() <<
+               "; F.arg_size: " << F->arg_size() << "\n" << str(F);
+
+  Function::arg_iterator AI = F->arg_begin();
+  for (size_t i = 0; i != argnames.size(); ++i, ++AI) {
+    AI->setName(argnames[i]);
   }
 }
 
@@ -1142,27 +1162,21 @@ llvm::Value* LLTuple::codegen(CodegenPass* pass) {
     return getUnitValue(); // It's silly to allocate a unit value!
   }
 
-  TupleTypeAST* tuplety = dynamic_cast<TupleTypeAST*>(this->type);
+  TupleTypeAST* tuplety = dynamic_cast<TupleTypeAST*>(this->allocator->type);
   ASSERT(tuplety != NULL);
 
   const llvm::Type* tupleType = tuplety->getLLVMTypeUnboxed();
   const char* typeName = (isClosureEnvironment) ? "env" : "tuple";
   registerType(tupleType, typeName, pass->mod, NotArray, isClosureEnvironment);
 
-  llvm::Value* pt = NULL;
-  llvm::Value* rv = NULL;
-
-  // TODO could factor this out into an
-  // allocate-without-initializing function...
-
-  // Allocate tuple space
-  if (!canStackAllocate(this)) {
-    rv = pass->emitMalloc(tupleType);
-    pt = builder.CreateLoad(rv, "normalize");
-  } else {
-    pt = CreateEntryAlloca(tupleType, "s");
-    rv = pt;
-  }
+  llvm::Value* rv = allocator->codegen(pass);
+  // Heap-allocated things codegen to a stack slot, which
+  // is the Value we want the tuple to codegen to, but
+  // we need temporary access to the pointer stored in the slot.
+  // Otherwise, bad things happen.
+  llvm::Value* pt = allocator->isStackAllocated()
+                        ? rv
+                        : builder.CreateLoad(rv, "normalize");
 
   // Store the values into the point.
   for (size_t i = 0; i < vars.size(); ++i) {

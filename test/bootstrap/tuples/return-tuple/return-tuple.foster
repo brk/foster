@@ -23,9 +23,9 @@ main = {
   expect_i1 true;
   print_i1 (__COMPILES__ ());
 
-  expect_i32 42;
-  print_0_of_t_i32_i1 (tuple_from_if (opaquely_i32 42) true);
+  expect_i32 43;
+  print_0_of_t_i32_i1 (tuple_from_if (opaquely_i32 43) true);
 
-  expect_i32 42;
-  print_0_of_t_i32_i1 (tuple_from_case (opaquely_i32 42) true);
+  expect_i32 44;
+  print_0_of_t_i32_i1 (tuple_from_case (opaquely_i32 44) true);
 };

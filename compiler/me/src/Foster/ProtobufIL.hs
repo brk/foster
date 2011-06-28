@@ -35,6 +35,7 @@ import Foster.Bepb.PBIf     as PBIf
 import Foster.Bepb.PBInt    as PBInt
 import Foster.Bepb.Expr     as PbExpr
 import Foster.Bepb.PbCtorId as PbCtorId
+import Foster.Bepb.AllocInfo as PbAllocInfo
 import Foster.Bepb.PbOccurrence as PbOccurrence
 import Foster.Bepb.DecisionTree as PbDecisionTree
 import Foster.Bepb.PbSwitchCase as PbSwitchCase
@@ -42,6 +43,7 @@ import Foster.Bepb.CoroPrim as PbCoroPrim
 import Foster.Bepb.Module   as Module
 import Foster.Bepb.Expr.Tag
 import Foster.Bepb.DecisionTree.Tag
+import Foster.Bepb.AllocInfo.MemRegion
 
 import qualified Text.ProtocolBuffers.Header as P'
 
@@ -131,6 +133,15 @@ dumpProcType (FnTypeAST s t cc _) =
 dumpProcType other = error $ "dumpProcType called with non-FnTypeAST node! " ++ show other
 
 -----------------------------------------------------------------------
+dumpMemRegion :: AllocMemRegion -> Foster.Bepb.AllocInfo.MemRegion.MemRegion
+dumpMemRegion amr = case amr of
+        MemRegionStack      -> Foster.Bepb.AllocInfo.MemRegion.MEM_REGION_STACK
+        MemRegionGlobalHeap -> Foster.Bepb.AllocInfo.MemRegion.MEM_REGION_GLOBAL_HEAP
+
+dumpAllocate :: ILAllocInfo -> PbAllocInfo.AllocInfo
+dumpAllocate (ILAllocInfo region maybe_array_size) =
+    P'.defaultValue { PbAllocInfo.mem_region = dumpMemRegion region
+                    , PbAllocInfo.array_size = fmap (dumpExpr . ILVar) maybe_array_size }
 -----------------------------------------------------------------------
 
 dumpExpr :: ILExpr -> PbExpr.Expr
@@ -150,7 +161,9 @@ dumpExpr (ILVar (AnnVar t i)) =
 dumpExpr x@(ILTuple vs) =
     P'.defaultValue { PbExpr.parts = fromList [dumpExpr $ ILVar v | v <- vs]
                     , PbExpr.tag   = IL_TUPLE
-                    , PbExpr.type' = Just $ dumpType (typeIL x)  }
+                    , PbExpr.type' = Just $ dumpType (typeIL x)
+                    , PbExpr.alloc_info = Just $ dumpAllocate
+                                (ILAllocInfo MemRegionGlobalHeap Nothing) }
 
 dumpExpr x@(ILAlloc a) =
     P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [ILVar a])

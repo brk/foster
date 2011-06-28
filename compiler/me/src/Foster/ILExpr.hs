@@ -53,6 +53,10 @@ data ILExpr =
         | ILTyApp       TypeAST ILExpr TypeAST
         deriving (Show)
 
+data AllocMemRegion = MemRegionStack
+                    | MemRegionGlobalHeap
+data ILAllocInfo = ILAllocInfo AllocMemRegion (Maybe AnnVar)
+
 showProgramStructure :: ILProgram -> Output
 showProgramStructure (ILProgram procdefs decls _lines) =
     concat [showProcStructure p | p <- procdefs]

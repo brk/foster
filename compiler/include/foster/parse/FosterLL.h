@@ -47,12 +47,9 @@ struct LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass) = 0;
 };
 
-class LLInt;
-class LLBool;
 class LLTuple;
-class LLSubscript;
 class LLProc;
-class LLIf;
+class LLAllocate;
 
 struct LLDecl {
   string name;
@@ -163,9 +160,11 @@ struct LLCall : public LLExpr {
 struct LLTuple : public LLExpr {
   std::vector<LLVar*> vars;
   bool isClosureEnvironment;
-  explicit LLTuple(const std::vector<LLVar*>& vars)
+  LLAllocate*     allocator;
+
+  explicit LLTuple(const std::vector<LLVar*>& vars, LLAllocate* a)
     : LLExpr("LLTuple"), vars(vars),
-      isClosureEnvironment(false) {}
+      isClosureEnvironment(false), allocator(a) {}
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
@@ -244,6 +243,19 @@ struct LLCase : public LLExpr {
     : LLExpr("LLCase"), scrutinee(testExpr), dt(dt), branchType(ty) {
   }
 
+  virtual llvm::Value* codegen(CodegenPass* pass);
+};
+
+struct LLAllocate : public LLExpr {
+  LLVar* arraySize; // NULL if not allocating an array
+  enum MemRegion {
+      MEM_REGION_STACK
+    , MEM_REGION_GLOBAL_HEAP
+  } region;
+  bool isStackAllocated() const { return region == MEM_REGION_STACK; }
+
+  explicit LLAllocate(TypeAST* t, MemRegion m) : LLExpr("LLAllocate"),
+           region(m) { this->type = t; }
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 

@@ -89,14 +89,33 @@ LLExpr* parseInt(const pb::Expr& e) {
   return new LLInt(i.clean(), i.bits());
 }
 
+LLAllocate* parseAllocate(const pb::Expr& e) {
+  ASSERT(e.has_alloc_info());
+  const pb::AllocInfo& a = e.alloc_info();
+  LLVar* array_size = NULL;
+
+  if (a.has_array_size()) {
+    array_size = LLVar_from_pb(&a.array_size());
+  }
+
+  LLAllocate::MemRegion target_region = LLAllocate::MEM_REGION_STACK;
+  switch (a.mem_region()) {
+  case             pb::AllocInfo::MEM_REGION_STACK:
+      target_region = LLAllocate::MEM_REGION_STACK; break;
+  case             pb::AllocInfo::MEM_REGION_GLOBAL_HEAP:
+      target_region = LLAllocate::MEM_REGION_GLOBAL_HEAP; break;
+  default: ASSERT(false) << "Unknown target region for AllocInfo.";
+  }
+  return new LLAllocate(TypeAST_from_pb(& e.type()),
+                        target_region);
+}
+
 LLTuple* parseTuple(const pb::Expr& e) {
   std::vector<LLVar*> args;
   for (int i = 0; i < e.parts_size(); ++i) {
     args.push_back(LLVar_from_pb(&e.parts(i)));
   }
-  LLTuple* tup = new LLTuple(args);
-  tup->type = TypeAST_from_pb(&e.type());
-  return tup;
+  return new LLTuple(args, parseAllocate(e));
 }
 
 LLClosure* parseClosure(const pb::Closure& clo) {
