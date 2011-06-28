@@ -102,7 +102,9 @@ llvm::Value* emitStore(llvm::Value* val,
   }
   ASSERT(isPointerToType(ptr->getType(), val->getType())) << "\n"
   << "ptr type: " << str(ptr->getType()) << "\n"
-  << "val type: " << str(val->getType());
+  << "val type: " << str(val->getType()) << "\n"
+  << "val is  : " << str(val) << "\n"
+  << "ptr is  : " << str(ptr);
 
   return builder.CreateStore(val, ptr, /*isVolatile=*/ false);
 }
@@ -558,11 +560,8 @@ llvm::Value* LLProc::codegen(CodegenPass* pass) {
         scope->insert(AI->getNameStr(),
                       pass->storeAndMarkPointerAsGCRoot(AI, NotArray));
       } else {
-        llvm::AllocaInst* arg_addr = CreateEntryAlloca(
-                                                AI->getType(),
-                                                AI->getNameStr() + "_addr");
-        emitStore(AI, arg_addr);
-        llvm::outs() << "inserting param " <<AI->getNameStr()<< " in scope\n";
+        llvm::AllocaInst* arg_addr =
+                stackSlotWithValue(AI, AI->getNameStr() + "_addr");
         scope->insert(AI->getNameStr(), arg_addr);
       }
     }
@@ -595,8 +594,8 @@ llvm::Value* LLProc::codegen(CodegenPass* pass) {
   if (fnReturnsUnit) {
     builder.CreateRetVoid();
   } else if (isVoidOrUnit(rv->getType())) {
-    EDiag() << "unable to return non-void value from "
-            << getName() << " given only unit";
+    EDiag() << "unable to return non-void (" << str(ft->getReturnType()) << ") value from "
+    << getName() << " given only unit:\n" << str(rv);
   } else {
     builder.CreateRet(rv);
   }

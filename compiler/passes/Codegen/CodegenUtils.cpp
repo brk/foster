@@ -237,7 +237,7 @@ CodegenPass::emitMalloc(const llvm::Type* ty) {
   ASSERT(memalloc_cell != NULL) << "NO memalloc_cell IN MODULE! :(";
 
   llvm::GlobalVariable* ti = getTypeMapForType(ty, mod, NotArray);
-  ASSERT(ti != NULL);
+  ASSERT(ti != NULL) << "malloc must have type info for type " << str(ty);
   const llvm::Type* typemap_type = memalloc_cell->getType()
                                             ->getContainedType(0)
                                             ->getContainedType(1);
