@@ -288,15 +288,19 @@ llvm::CallingConv::ID FnTypeAST::getCallingConventionID() const {
 
 /////////////////////////////////////////////////////////////////////
 
+const llvm::StructType* TupleTypeAST::getLLVMTypeUnboxed() const {
+  vector<const llvm::Type*> loweredTypes;
+  for (size_t i = 0; i < parts.size(); ++i) {
+    loweredTypes.push_back(parts[i]->getLLVMType());
+  }
+
+  return llvm::StructType::get(
+            llvm::getGlobalContext(), loweredTypes, /*isPacked=*/false);
+}
+
 const llvm::Type* TupleTypeAST::getLLVMType() const {
   if (!repr) {
-    vector<const llvm::Type*> loweredTypes;
-    for (size_t i = 0; i < parts.size(); ++i) {
-      loweredTypes.push_back(parts[i]->getLLVMType());
-    }
-
-    repr = llvm::StructType::get(
-            llvm::getGlobalContext(), loweredTypes, /*isPacked=*/false);
+    repr = llvm::PointerType::getUnqual(getLLVMTypeUnboxed());
   }
   return repr;
 }

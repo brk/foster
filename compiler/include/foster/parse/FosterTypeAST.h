@@ -208,6 +208,7 @@ class TupleTypeAST : public IndexableTypeAST {
 public:
   virtual void show(PrettyPrintTypePass* pass);
   virtual void dump(DumpTypeToProtobufPass* pass);
+  virtual const llvm::StructType* getLLVMTypeUnboxed() const;
   virtual const llvm::Type* getLLVMType() const;
 
   virtual int getNumContainedTypes() const { return parts.size(); }

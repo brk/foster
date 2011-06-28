@@ -13,5 +13,6 @@ main = {
      hof-while { v^ < n } {
        print_i32 v^ ; (v^ + 1) >^ v ; 0
      }
+     ; opaquely_i32 4
   end
 };

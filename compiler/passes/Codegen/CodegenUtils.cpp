@@ -182,6 +182,10 @@ llvm::AllocaInst* stackSlotWithValue(llvm::Value* val, const std::string& name) 
   return valptr;
 }
 
+void CodegenPass::markAsNeedingImplicitLoads(llvm::Value* v) {
+  this->needsImplicitLoad.insert(v);
+}
+
 // Unlike markGCRoot, this does not require the root be an AllocaInst
 // (though it should still be a pointer).
 // This function is intended for marking intermediate values. It stores
@@ -203,7 +207,8 @@ CodegenPass::storeAndMarkPointerAsGCRoot(llvm::Value* val,
   // val now has pointer type.
 
   // allocate a slot for a T* on the stack
-  llvm::AllocaInst* stackslot = CreateEntryAlloca(val->getType(), "stackref");
+  llvm::AllocaInst* stackslot = stackSlotWithValue(val, "stackref");
+  this->markAsNeedingImplicitLoads(stackslot);
 
   // mark the slot (out of line) as a gc root.
   {
@@ -220,9 +225,6 @@ CodegenPass::storeAndMarkPointerAsGCRoot(llvm::Value* val,
                                        mod, arrayStatus),
                mod);
   }
-
-  // Store the T* in the stack slot
-  builder.CreateStore(val, stackslot, /*isVolatile=*/ false);
 
   // Instead of returning the pointer (of type T*),
   // we return the stack slot (of type T**) so that copying GC will be able to

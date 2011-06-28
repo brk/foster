@@ -55,7 +55,7 @@ namespace foster {
 
 void codegenLL(LLModule* package, llvm::Module* mod) {
   CodegenPass cp(mod);
-  package->codegen(&cp);
+  package->codegenModule(&cp);
 }
 
 std::string getGlobalSymbolName(const std::string& sourceName) {
@@ -109,9 +109,28 @@ llvm::Value* emitStore(llvm::Value* val,
   return builder.CreateStore(val, ptr, /*isVolatile=*/ false);
 }
 
+llvm::Value* CodegenPass::emit(LLExpr* e, TypeAST* t) {
+  llvm::Value* v = e->codegen(this);
+
+  if (this->needsImplicitLoad.count(v) == 1) {
+    v = builder.CreateLoad(v, /*isVolatile=*/ false,
+                           v->getName() + ".autoload");
+  }
+
+  if (t) {
+    const llvm::Type* ty = getLLVMType(t);
+    if (v->getType() != ty) {
+      ASSERT(false) << "********* expected type " << str(ty)
+                           << "; had type " << str(v->getType())
+                           << "\n for value " << str(v);
+    }
+  }
+  return v;
+}
+
 ////////////////////////////////////////////////////////////////////
 
-void LLModule::codegen(CodegenPass* pass) {
+void LLModule::codegenModule(CodegenPass* pass) {
   // Ensure that the llvm::Function*s are created for all the function
   // prototypes, so that mutually recursive function references resolve.
   for (size_t i = 0; i < procs.size(); ++i) {
@@ -123,7 +142,7 @@ void LLModule::codegen(CodegenPass* pass) {
   // Codegen all the function bodies, now that we can resolve mutually-recursive
   // function references without needing to store prototypes in call nodes.
   for (size_t i = 0; i < procs.size(); ++i) {
-    procs[i]->codegen(pass);
+    procs[i]->codegenProc(pass);
   }
 }
 
@@ -186,6 +205,7 @@ llvm::Function* CodegenPass::lookupFunctionOrDie(const std::string& fullyQualifi
 }
 
 ////////////////////////////////////////////////////////////////////
+//////////////// LLInt, LLBool, LLVar///////////////////////////////
 ////////////////////////////////////////////////////////////////////
 
 llvm::Value* LLInt::codegen(CodegenPass* pass) {
@@ -224,12 +244,7 @@ llvm::Value* LLVar::codegen(CodegenPass* pass) {
   // The variable for an environment can be looked up multiple times...
   llvm::Value* v = pass->valueSymTab.lookup(getName());
   if (!v) v = pass->lookupFunctionOrDie(getName());
-
-  if (llvm::AllocaInst* ai = llvm::dyn_cast_or_null<llvm::AllocaInst>(v)) {
-    return builder.CreateLoad(ai, /*isVolatile=*/ false, "autoload");
-  } else if (v) {
-    return v;
-  }
+  if (v) return v;
 
   pass->valueSymTab.dump(currentOuts());
   ASSERT(false) << "Unknown variable name " << this->name << " in CodegenPass";
@@ -266,6 +281,10 @@ llvm::Value* emitRuntimeArbitraryPrecisionOperation(const std::string& op,
 }
 */
 
+////////////////////////////////////////////////////////////////////
+//////////////// LLAlloc, LLDeref, LLStore /////////////////////////
+////////////////////////////////////////////////////////////////////
+
 void setFunctionArgumentNames(llvm::Function* F,
               const std::vector<std::string>& argnames) {
   ASSERT(argnames.size() == F->arg_size())
@@ -289,7 +308,7 @@ llvm::Value* LLAlloc::codegen(CodegenPass* pass) {
   //        r
   //    end
   ASSERT(this && this->baseVar && this->baseVar->type);
-  llvm::Value* storedVal = this->baseVar->codegen(pass);
+  llvm::Value* storedVal = pass->emit(baseVar, NULL);
   llvm::Value* ptrSlot   = pass->emitMalloc(this->baseVar->type->getLLVMType());
   llvm::Value* ptr       = builder.CreateLoad(ptrSlot, /*isVolatile=*/ false, "alloc_slot_ptr");
   emitStore(storedVal, ptr);
@@ -301,19 +320,26 @@ llvm::Value* LLDeref::codegen(CodegenPass* pass) {
   // a[i] should codegen to &a[i], the address of the slot in the array.
   // r    should codegen to the contents of the slot (the ref pointer value),
   //        not the slot address.
-  return builder.CreateLoad(this->base->codegen(pass),
+  return builder.CreateLoad(pass->emit(base, NULL),
                             /*isVolatile=*/ false,
                             "");
 }
 
 llvm::Value* LLStore::codegen(CodegenPass* pass) {
-  llvm::Value* vv = this->v->codegen(pass);
-  llvm::Value* vr = this->r->codegen(pass);
+  llvm::Value* vv = pass->emit(v, NULL);
+  llvm::Value* vr = pass->emit(r, NULL);
   return emitStore(vv, vr);
 }
 
+////////////////////////////////////////////////////////////////////
+//////////////// LLLetVals /////////////////////////////////////////
+////////////////////////////////////////////////////////////////////
+
 llvm::Value* LLLetVals::codegen(CodegenPass* pass) {
   for (size_t i = 0; i < exprs.size(); ++i) {
+    // We use codegen() instead of pass>emit()
+    // because emit inserts implict loads, which we
+    // want done as late as possible.
     Value* b = exprs[i]->codegen(pass);
 
     if (b->getType()->isVoidTy()) {
@@ -330,7 +356,7 @@ llvm::Value* LLLetVals::codegen(CodegenPass* pass) {
     pass->valueSymTab.insert(names[i], b);
   }
 
-  Value* rv = inexpr->codegen(pass);
+  Value* rv = pass->emit(inexpr, NULL);
 
   for (size_t i = 0; i < exprs.size(); ++i) {
     pass->valueSymTab.remove(names[i]);
@@ -338,6 +364,10 @@ llvm::Value* LLLetVals::codegen(CodegenPass* pass) {
 
   return rv;
 }
+
+////////////////////////////////////////////////////////////////////
+//////////////// LLClosures ////////////////////////////////////////
+////////////////////////////////////////////////////////////////////
 
 llvm::Value* LLClosures::codegen(CodegenPass* pass) {
   // This AST node binds a mutually-recursive set of functions,
@@ -353,7 +383,7 @@ llvm::Value* LLClosures::codegen(CodegenPass* pass) {
 
   pass->valueSymTab.insert(c.varname, clo);
 
-  llvm::Value* exp = expr->codegen(pass);
+  llvm::Value* exp = pass->emit(expr, NULL);
 
   for (size_t i = 0; i < closures.size(); ++i) {
      pass->valueSymTab.remove(closures[i]->varname);
@@ -433,8 +463,12 @@ llvm::Value* LLClosure::codegen(CodegenPass* pass) {
   // { code*, env* }*
   llvm::AllocaInst* clo = CreateEntryAlloca(cloStructTy, varname + ".closure");
 
-  // TODO the (stack reference to the) closure should be marked as
-  // a GC root IFF the environment has been dynamically allocated.
+  //llvm::AllocaInst* clo_slot = pass->emitMalloc(cloStructTy);
+  //llvm::Value* clo = builder.CreateLoad(clo_slot, /*isVolatile=*/ false,
+  //                                      varname + ".closure");
+  // TODO explicitly allocate with separate AST nodes
+  // TODO register closure type
+
 
   // (code*)*
   Value* clo_code_slot = builder.CreateConstGEP2_32(clo, 0, 0, varname + ".clo_code");
@@ -450,10 +484,10 @@ llvm::Value* LLClosure::codegen(CodegenPass* pass) {
     std::vector<llvm::Value*> values;
 
     // Ensure that the environment contains space for the type map.
-    llvm::Value* envValue = env->codegen(pass);
-    if (isPointerToPointer(envValue->getType())) {
-      envValue = builder.CreateLoad(envValue, /*isVolatile=*/ false, "env_ptr");
-    }
+    llvm::Value* envValue = pass->emit(env, NULL);
+    //if (isPointerToPointer(envValue->getType())) {
+    //  envValue = builder.CreateLoad(envValue, /*isVolatile=*/ false, "env_ptr");
+    //}
 
     #if 0 // this is broken atm...
       // Store the typemap in the environment's typemap slot.
@@ -482,10 +516,14 @@ llvm::Value* LLClosure::codegen(CodegenPass* pass) {
   const llvm::StructType* genStructTy = genericClosureStructTy(fnty);
   Value* genericClo = builder.CreateBitCast(clo,
                               ptrTo(genStructTy), varname + ".hideCloTy");
-  return builder.CreateLoad(genericClo, /*isVolatile=*/ false, varname + ".loadClosure");
+  // TODO replace with implicit loads?
+  return genericClo;
+  //return builder.CreateLoad(genericClo, /*isVolatile=*/ false, varname + ".loadClosure");
 }
 
-//==================================================================
+////////////////////////////////////////////////////////////////////
+//////////////// LLProc ////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////
 
 const llvm::FunctionType*
 getLLVMFunctionType(FnTypeAST* t) {
@@ -532,7 +570,7 @@ llvm::Value* LLProc::codegenProto(CodegenPass* pass) {
   return F;
 }
 
-llvm::Value* LLProc::codegen(CodegenPass* pass) {
+llvm::Value* LLProc::codegenProc(CodegenPass* pass) {
   ASSERT(this->getBody() != NULL);
   ASSERT(this->value) << "LLModule should codegen function protos.";
 
@@ -563,6 +601,7 @@ llvm::Value* LLProc::codegen(CodegenPass* pass) {
         llvm::AllocaInst* arg_addr =
                 stackSlotWithValue(AI, AI->getNameStr() + "_addr");
         scope->insert(AI->getNameStr(), arg_addr);
+        pass->markAsNeedingImplicitLoads(arg_addr);
       }
     }
   }
@@ -574,7 +613,7 @@ llvm::Value* LLProc::codegen(CodegenPass* pass) {
     this->body = new LLLetVals(names, exprs, getEmptyTuple());
   }
 
-  Value* rv = this->getBody()->codegen(pass);
+  Value* rv = pass->emit(getBody(), NULL);
 
   ASSERT(rv) << "null body value when codegenning function " << this->getName();
   const FunctionType* ft = dyn_cast<FunctionType>(F->getType()->getContainedType(0));
@@ -616,7 +655,7 @@ void addAndEmitTo(Function* f, BasicBlock* bb) {
 
 llvm::Value* LLIf::codegen(CodegenPass* pass) {
   //EDiag() << "Codegen for LLIfs should (eventually) be subsumed by CFG building!";
-  Value* cond = this->getTestExpr()->codegen(pass);;
+  Value* cond = pass->emit(getTestExpr(), NULL);
   ASSERT(cond != NULL)
         << "codegen for if expr failed due to missing condition";
 
@@ -634,7 +673,8 @@ llvm::Value* LLIf::codegen(CodegenPass* pass) {
 
   { // Codegen the then-branch of the if expression
     addAndEmitTo(F, thenBB);
-    then = this->getThenExpr()->codegen(pass);
+    then = pass->emit(getThenExpr(), this->type);
+
     ASSERT(then != NULL)
         << "codegen for if expr failed due to missing 'then' branch";
 
@@ -645,13 +685,13 @@ llvm::Value* LLIf::codegen(CodegenPass* pass) {
                 << "valTy is " << str(valTy)
                 << "; actual type of then branch is "
                 << str(then->getType());
-         // If we have a code construct like
-         //   if cond then { new blah {} } else { new blah {} }
-         // then the ast type (and thus valType) will be blah*
-         // but the exprs will be stack slots of type blah**,
-         // requiring a load...
-         then = builder.CreateLoad(then, false, "ifthen_rhs");
-         elseNeedsLoad = true;
+        // If we have a code construct like
+        //   if cond then { new blah {} } else { new blah {} }
+        // then the ast type (and thus valType) will be blah*
+        // but the exprs will be stack slots of type blah**,
+        // requiring a load...
+        then = builder.CreateLoad(then, false, "ifthen_rhs");
+        elseNeedsLoad = true;
       }
     }
 
@@ -661,7 +701,7 @@ llvm::Value* LLIf::codegen(CodegenPass* pass) {
 
   { // Codegen the else-branch of the if expression
     addAndEmitTo(F, elseBB);
-    else_ = this->getElseExpr()->codegen(pass);
+    else_ = pass->emit(getElseExpr(), this->type);
     ASSERT(else_ != NULL)
         << "codegen for if expr failed due to missing 'else' branch";
 
@@ -688,13 +728,13 @@ llvm::Value* LLUntil::codegen(CodegenPass* pass) {
   builder.CreateBr(testBB);
 
   addAndEmitTo(F, testBB);
-  Value* cond = this->getTestExpr()->codegen(pass);
+  Value* cond = pass->emit(getTestExpr(), NULL);
   ASSERT(cond != NULL) << "codegen for until loop failed due to missing cond";
   builder.CreateCondBr(cond, mergeBB, thenBB);
 
   { // Codegen the body of the loop
     addAndEmitTo(F, thenBB);
-    Value* v = this->getThenExpr()->codegen(pass);
+    Value* v = pass->emit(getThenExpr(), NULL);
     ASSERT(v != NULL) << "codegen for until loop failed due to missing body";
     builder.CreateBr(testBB);
   }
@@ -713,10 +753,11 @@ llvm::Value* LLCoroPrim::codegen(CodegenPass* pass) {
 }
 
 llvm::Value* LLCase::codegen(CodegenPass* pass) {
-  llvm::Value* v = this->scrutinee->codegen(pass);
+  llvm::Value* v = pass->emit(scrutinee, NULL);
   llvm::AllocaInst* rv_slot = CreateEntryAlloca(getLLVMType(this->type), "case_slot");
-  this->dt->codegen(pass, v, rv_slot);
-  return builder.CreateLoad(rv_slot, /*isVolatile=*/ false, ".case");
+  pass->markAsNeedingImplicitLoads(rv_slot);
+  this->dt->codegenDecisionTree(pass, v, rv_slot);
+  return rv_slot;
 }
 
 llvm::Value* lookupOccs(Occurrence* occ, llvm::Value* v) {
@@ -729,9 +770,9 @@ llvm::Value* lookupOccs(Occurrence* occ, llvm::Value* v) {
   return rv;
 }
 
-void DecisionTree::codegen(CodegenPass* pass,
-                           llvm::Value* scrutinee,
-                           llvm::AllocaInst* rv_slot) {
+void DecisionTree::codegenDecisionTree(CodegenPass* pass,
+                                       llvm::Value* scrutinee,
+                                       llvm::AllocaInst* rv_slot) {
   if (tag == DecisionTree::DT_FAIL) {
     EDiag() << "DecisionTree codegen, tag = DT_FAIL; v = " << str(scrutinee);
     emitFosterAssert(pass->mod, builder.getInt1(false), "pattern match failure!");
@@ -749,7 +790,7 @@ void DecisionTree::codegen(CodegenPass* pass,
        }
        pass->valueSymTab.insert(binds[i].first, v);
     }
-    rv = this->action->codegen(pass);
+    rv = pass->emit(action, NULL);
     for (size_t i = 0; i < binds.size(); ++i) {
        pass->valueSymTab.remove(binds[i].first);
     }
@@ -764,16 +805,16 @@ void DecisionTree::codegen(CodegenPass* pass,
   } // end DT_SWAP
 
   if (tag == DecisionTree::DT_SWITCH) {
-    sc->codegen(pass, scrutinee, rv_slot);
+    sc->codegenSwitch(pass, scrutinee, rv_slot);
     return;
   }
 
   EDiag() << "DecisionTree codegen, tag = " << tag << "; v = " << str(scrutinee);
 }
 
-void SwitchCase::codegen(CodegenPass* pass,
-                         llvm::Value* scrutinee,
-                         llvm::AllocaInst* rv_slot) {
+void SwitchCase::codegenSwitch(CodegenPass* pass,
+                               llvm::Value* scrutinee,
+                               llvm::AllocaInst* rv_slot) {
   ASSERT(ctors.size() == trees.size());
   ASSERT(ctors.size() >= 1);
 
@@ -785,7 +826,7 @@ void SwitchCase::codegen(CodegenPass* pass,
   // Special-case codegen for when there's only one
   // possible case, to avoid superfluous branches.
   if (trees.size() == 1 && !defaultCase) {
-    trees[0]->codegen(pass, scrutinee, rv_slot);
+    trees[0]->codegenDecisionTree(pass, scrutinee, rv_slot);
     return;
   }
 
@@ -823,7 +864,7 @@ void SwitchCase::codegen(CodegenPass* pass,
     std::stringstream ss; ss << "casetest_" << i;
     BasicBlock* destBB = BasicBlock::Create(getGlobalContext(), ss.str());
     addAndEmitTo(F, destBB);
-    t->codegen(pass, scrutinee, rv_slot);
+    t->codegenDecisionTree(pass, scrutinee, rv_slot);
     builder.CreateBr(bbEnd);
 
     si->addCase(onVal, destBB);
@@ -831,7 +872,7 @@ void SwitchCase::codegen(CodegenPass* pass,
 
   if (defaultCase) {
     addAndEmitTo(F, defaultBB);
-    defaultCase->codegen(pass, scrutinee, rv_slot);
+    defaultCase->codegenDecisionTree(pass, scrutinee, rv_slot);
     builder.CreateBr(bbEnd);
   }
 
@@ -865,8 +906,8 @@ llvm::Value* tryBindArray(llvm::Value* base) {
 }
 
 llvm::Value* LLSubscript::codegen(CodegenPass* pass) {
-  Value* base = this->base->codegen(pass);
-  Value* idx  = this->index->codegen(pass);
+  Value* base = pass->emit(this->base , NULL);
+  Value* idx  = pass->emit(this->index, NULL);
   ASSERT(base); ASSERT(idx);
 
   if (llvm::Value* arr = tryBindArray(base)) {
@@ -953,7 +994,7 @@ void doLowLevelWrapperFnCoercions(const llvm::Type* expectedType,
 llvm::Value* LLCall::codegen(CodegenPass* pass) {
   ASSERT(base != NULL) << "unable to codegen call due to null base";
 
-  Value* FV = base->codegen(pass);
+  Value* FV = pass->emit(base, NULL);
   ASSERT(FV) << "unable to codegen call due to missing value for base";
 
   const FunctionType* FT = NULL;
@@ -1002,7 +1043,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
 
     LLExpr* arg = this->args[i];
     doLowLevelWrapperFnCoercions(expectedType, arg, pass);
-    Value* argV = arg->codegen(pass);
+    Value* argV = pass->emit(arg, NULL);
     ASSERT(argV) << "null codegenned value for arg " << (i - 1) << " of call";
 
     // Is the formal parameter a pass-by-value struct and the provided argument
@@ -1101,7 +1142,10 @@ llvm::Value* LLTuple::codegen(CodegenPass* pass) {
     return getUnitValue(); // It's silly to allocate a unit value!
   }
 
-  const llvm::Type* tupleType = this->type->getLLVMType();
+  TupleTypeAST* tuplety = dynamic_cast<TupleTypeAST*>(this->type);
+  ASSERT(tuplety != NULL);
+
+  const llvm::Type* tupleType = tuplety->getLLVMTypeUnboxed();
   const char* typeName = (isClosureEnvironment) ? "env" : "tuple";
   registerType(tupleType, typeName, pass->mod, NotArray, isClosureEnvironment);
 
@@ -1123,7 +1167,7 @@ llvm::Value* LLTuple::codegen(CodegenPass* pass) {
   // Store the values into the point.
   for (size_t i = 0; i < vars.size(); ++i) {
     Value* dst = builder.CreateConstGEP2_32(pt, 0, i, "gep");
-    Value* val = vars[i]->codegen(pass);
+    Value* val = pass->emit(vars[i], NULL);
     emitStore(val, dst);
   }
 
@@ -1155,7 +1199,7 @@ LLProc* getClosureVersionOf(LLExpr* arg,
   std::vector<LLVar*> callArgs;
 
   inArgNames.push_back(ParsingContext::freshName("__ignored_env__"));
-  inArgTypes.push_back(RefTypeAST::get(TupleTypeAST::get(envTypes)));
+  inArgTypes.push_back(TupleTypeAST::get(envTypes));
 
   for (int i = 0; i < fnty->getNumParams(); ++i) {
     LLVar* a = new LLVar(ParsingContext::freshName("_cv_arg"));
@@ -1180,7 +1224,7 @@ LLProc* getClosureVersionOf(LLExpr* arg,
   // starts codegenning, but we need to do it ourselves here.
   proc->codegenProto(pass);
   pass->valueSymTab.insert(proc->getName(), proc->value);
-  proc->codegen(pass);
+  proc->codegenProc(pass);
 
   sClosureVersions[fnName] = proc;
 

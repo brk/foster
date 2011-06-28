@@ -331,7 +331,7 @@ closureOfAnnFn ctx allIdsFns infoMap (self_id, fn) = do
         let envName = snd (info Map.! self_id)
         let uniqFreeVars = map (contextVar "closureConvertAnnFn" ctx) freeNames
         let envTypes = map avarType uniqFreeVars
-        let envVar   = AnnVar (PtrTypeAST (TupleTypeAST envTypes)) envName
+        let envVar   = AnnVar (TupleTypeAST envTypes) envName
 
         -- If the body has x and y free, the closure converted body should be
         -- New body is   case env of (x, y, ...) -> body end

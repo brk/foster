@@ -10,6 +10,8 @@
 #include "parse/FosterSymbolTable.h"
 
 #include <string>
+#include <map>
+#include <set>
 
 using llvm::Value;
 
@@ -66,6 +68,7 @@ struct CodegenPass {
   typedef ValueTable::LexicalScope         ValueScope;
   ValueTable valueSymTab;
   std::map<llvm::Function*, llvm::Instruction*> allocaPoints;
+  std::set<llvm::Value*> needsImplicitLoad;
 
   llvm::Instruction* getCurrentAllocaPoint();
 
@@ -85,21 +88,20 @@ struct CodegenPass {
 
   llvm::Function* lookupFunctionOrDie(const std::string& fullyQualifiedSymbol);
 
+  void markAsNeedingImplicitLoads(llvm::Value* v);
   void addEntryBB(llvm::Function* f);
+
+  Value* emit(LLExpr* e, TypeAST* t);
 
   // Returns ty**, the stack slot containing a ty*.
   llvm::AllocaInst* emitMalloc(const llvm::Type* ty);
 
   // Returns array_type[elt_ty]**, the stack slot containing an array_type[elt_ty]*.
-  llvm::Value* emitArrayMalloc(const llvm::Type* elt_ty,
-                                    llvm::Value* n);
+  Value* emitArrayMalloc(const llvm::Type* elt_ty, llvm::Value* n);
 
-  llvm::Value* allocateMPInt();
+  Value* allocateMPInt();
 
-  llvm::AllocaInst*
-        storeAndMarkPointerAsGCRoot(llvm::Value*,
-                                    ArrayOrNot);
-
+  llvm::AllocaInst* storeAndMarkPointerAsGCRoot(llvm::Value*, ArrayOrNot);
 
   Value* emitCoroCreateFn(const llvm::Type* retTy,
                           const llvm::Type* argTypes);

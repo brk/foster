@@ -74,7 +74,7 @@ struct LLModule {
                     const std::vector<LLDecl*> decls)
   : name(name), procs(procs), decls(decls) {}
 
-  void codegen(CodegenPass* pass);
+  void codegenModule(CodegenPass* pass);
 };
 
 struct LLProc {
@@ -93,7 +93,7 @@ struct LLProc {
   FnTypeAST* getFnType() { return type; }
   const std::string& getName() const { return name; }
   LLExpr*& getBody() { return body; }
-  virtual llvm::Value* codegen(CodegenPass* pass);
+  virtual llvm::Value* codegenProc(CodegenPass* pass);
   virtual llvm::Value* codegenProto(CodegenPass* pass);
 };
 
@@ -288,7 +288,8 @@ struct SwitchCase {
   std::vector<DecisionTree*> trees;
   DecisionTree*        defaultCase;
   Occurrence*                  occ;
-  void codegen(CodegenPass* pass, llvm::Value* scrutinee, llvm::AllocaInst* rv_slot);
+  void codegenSwitch(CodegenPass* pass, llvm::Value* scrutinee,
+                     llvm::AllocaInst* rv_slot);
 };
 
 typedef std::pair<std::string, Occurrence*> DTBinding;
@@ -305,7 +306,8 @@ struct DecisionTree {
                                            action(e), sc(NULL) {}
   DecisionTree(Tag t, SwitchCase* sc)
                                  : tag(t), type(NULL), action(NULL), sc(sc) {}
-  void codegen(CodegenPass* pass, llvm::Value* scrutinee, llvm::AllocaInst* rv_slot);
+  void codegenDecisionTree(CodegenPass* pass, llvm::Value* scrutinee,
+                           llvm::AllocaInst* rv_slot);
 };
 
 #endif // header guard

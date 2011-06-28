@@ -1,6 +1,11 @@
 print_0_of_t_i32_i1 = { x : (i32, i1) => case x of (y, _) -> print_i32 y end };
 
-tuple_from = { x : i32 => y : i1 => (x, y) };
+tuple_from      = { x : i32 => y : i1 => (x, y) };
+
+tuple_from_if   = { x : i32 => y : i1 => if x == 3 then (x, y) else (x, y) end };
+
+tuple_from_case = { x : i32 => y : i1 => case x of 3 -> (x, y)
+                                                of _ -> (x, y) end };
 
 // TODO:
 //implicit_tuple_from = fn (x : i32, y : i1) to (rx : i32, ry : i1) {
@@ -18,4 +23,9 @@ main = {
   expect_i1 true;
   print_i1 (__COMPILES__ ());
 
+  expect_i32 42;
+  print_0_of_t_i32_i1 (tuple_from_if (opaquely_i32 42) true);
+
+  expect_i32 42;
+  print_0_of_t_i32_i1 (tuple_from_case (opaquely_i32 42) true);
 };
