@@ -251,9 +251,10 @@ bool isVoidOrUnit(const llvm::Type* ty) {
   return ty->isVoidTy() || isUnit(ty);
 }
 
-// Check that ty == {}
+// Check that ty == {} or {}*
 bool isUnit(const llvm::Type* ty) {
-  return ty == llvm::StructType::get(getGlobalContext(), false);
+  const llvm::Type* emptyTy = llvm::StructType::get(getGlobalContext(), false);
+  return typesEqual(ty, emptyTy) || isPointerToType(ty, emptyTy);
 }
 
 // Syntactically conspicuous
