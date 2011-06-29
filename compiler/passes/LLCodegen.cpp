@@ -70,20 +70,6 @@ std::string getGlobalSymbolName(const std::string& sourceName) {
 
 } // namespace foster
 
-bool canStackAllocate(LLTuple* ast) {
-  return false;
-}
-
-// Follows a (type-based) pointer indirections for the given value.
-llvm::Value* getClosureStructValue(llvm::Value* maybePtrToClo) {
-  llvm::outs() << "maybePtrToClo: " << str(maybePtrToClo) << "\n";
-  if (maybePtrToClo->getType()->isPointerTy()) {
-    maybePtrToClo = builder.CreateLoad(maybePtrToClo, /*isVolatile=*/ false, "derefCloPtr");
-  }
-  ASSERT(maybePtrToClo->getType()->isStructTy());
-  return maybePtrToClo;
-}
-
 const llvm::Type* getLLVMType(TypeAST* type) {
   ASSERT(type) << "getLLVMType must be given a non-null type!";
   return type->getLLVMType();
@@ -575,7 +561,7 @@ llvm::Value* LLProc::codegenProto(CodegenPass* pass) {
 
   ASSERT(FT) << "expecting top-level proc to have FunctionType!";
 
-  Function* F = Function::Create(FT, functionLinkage, symbolName, pass->mod);
+  this->F = Function::Create(FT, functionLinkage, symbolName, pass->mod);
 
   ASSERT(F) << "function creation failed for proto " << this->name;
   ASSERT(F->getName() == symbolName) << "redefinition of function " << symbolName;
@@ -586,16 +572,17 @@ llvm::Value* LLProc::codegenProto(CodegenPass* pass) {
     F->setCallingConv(fnty->getCallingConventionID());
   }
 
-  this->value = F;
   return F;
+}
+
+bool functionMightAllocateMemory(LLProc* proc) {
+  return true; // conservative approximation to MightAlloc
 }
 
 llvm::Value* LLProc::codegenProc(CodegenPass* pass) {
   ASSERT(this->getBody() != NULL);
-  ASSERT(this->value) << "LLModule should codegen function protos.";
-
-  Function* F = dyn_cast<Function>(this->value);
-  ASSERT(F != NULL) << "unable to codegen function " << getName();
+  ASSERT(this->F != NULL) << "LLModule should codegen proto for " << getName();
+  ASSERT(F->arg_size() == this->argnames.size());
 
   F->setGC("fostergc");
 
@@ -607,10 +594,9 @@ llvm::Value* LLProc::codegenProc(CodegenPass* pass) {
   // If the body of the function might allocate memory, the first thing
   // the function should do is create stack slots/GC roots to hold
   // dynamically-allocated pointer parameters.
-  if (true) { // conservative approximation to MightAlloc
+  if (functionMightAllocateMemory(this)) {
     Function::arg_iterator AI = F->arg_begin();
-    ASSERT(F->arg_size() == this->argnames.size());
-    for (size_t i = 0; i != F->arg_size(); ++i, ++AI) {
+    for ( ; AI != F->arg_end(); ++AI) {
       if (mightContainHeapPointers(AI->getType())) {
         // Type could be like i32*, like {i32}* or like {i32*}.
         // arg_addr would be i32**,    {i32}**,  or {i32*}*.
@@ -1237,7 +1223,7 @@ LLProc* getClosureVersionOf(LLExpr* arg,
   // Regular functions get their proto values added when the module
   // starts codegenning, but we need to do it ourselves here.
   proc->codegenProto(pass);
-  pass->valueSymTab.insert(proc->getName(), proc->value);
+  pass->valueSymTab.insert(proc->getName(), proc->F);
   proc->codegenProc(pass);
 
   sClosureVersions[fnName] = proc;

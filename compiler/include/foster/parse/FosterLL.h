@@ -21,7 +21,7 @@ namespace llvm {
   class Type;
   class Value;
   class APInt;
-  class ConstantInt;
+  class Function;
   class AllocaInst;
 }
 
@@ -79,13 +79,11 @@ struct LLProc {
   FnTypeAST* type;
   std::vector<std::string> argnames;
   LLExpr* body;
-  llvm::Value* value;
+  llvm::Function* F;
 
   explicit LLProc(FnTypeAST* procType, const string& name,
           const std::vector<std::string>& argnames, LLExpr* body)
-    : name(name), type(procType), argnames(argnames), body(body) {
-      value = NULL;
-  }
+  : name(name), type(procType), argnames(argnames), body(body), F(NULL) {}
 
   FnTypeAST* getFnType() { return type; }
   const std::string& getName() const { return name; }
