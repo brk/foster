@@ -19,4 +19,10 @@ void runCleanupPasses(llvm::Module& mod) {
   passes.run(mod);
 }
 
+void runWarningPasses(llvm::Module& mod) {
+  llvm::FunctionPassManager fpasses(&mod);
+  fpasses.add(foster::createEscapingAllocaFinderPass());
+  foster::runFunctionPassesOverModule(fpasses, &mod);
+}
+
 }

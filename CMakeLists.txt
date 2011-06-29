@@ -379,6 +379,7 @@ set_source_files_properties(
 add_library(fosterc_llvm STATIC
   compiler/llvm/passes/ImathImprover.cpp
   compiler/llvm/passes/GCMallocFinder.cpp
+  compiler/llvm/passes/EscapingAllocaFinder.cpp
   compiler/llvm/passes/FosterPasses.cpp
   compiler/llvm/plugins/FosterGC.cpp
 )

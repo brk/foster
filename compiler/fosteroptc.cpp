@@ -286,7 +286,7 @@ void setDefaultCommandLineOptions() {
 
 void calculateOutputNames() {
   ASSERT(optOutputName != "");
-  
+
   if ( pystring::endswith(optOutputName, ".o")
     || pystring::endswith(optOutputName, ".s")) {
     gOutputNameBase = string(optOutputName.begin(), optOutputName.end() - 2);
@@ -322,6 +322,7 @@ int main(int argc, char** argv) {
   if (optCleanupOnly) {
     foster::runCleanupPasses(*module);
     dumpModuleToBitcode(module, (gOutputNameBase + ".cleaned.bc"));
+    foster::runWarningPasses(*module);
   } else {
     optimizeModuleAndRunPasses(module);
 

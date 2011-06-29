@@ -298,6 +298,10 @@ int main(int argc, char** argv) {
     dumpModuleToFile(module, outdirFile(optOutputName + ".prelink.ll").c_str());
   }
 
+  {
+    foster::runWarningPasses(*module);
+  }
+
   { ScopedTimer timer("llvm.link");
     linkTo(libfoster_bc, "libfoster", module);
     linkTo(imath_bc,     "imath",     module);
