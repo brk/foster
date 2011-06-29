@@ -655,49 +655,23 @@ llvm::Value* LLIf::codegen(CodegenPass* pass) {
   builder.CreateCondBr(cond, thenBB, elseBB);
 
   Value* iftmp = CreateEntryAlloca(getLLVMType(this->type), "iftmp_slot");
-
-  Value* then; Value* else_;
-  bool elseNeedsLoad = false;
+  pass->markAsNeedingImplicitLoads(iftmp);
+  
   Function *F = builder.GetInsertBlock()->getParent();
-
-  { // Codegen the then-branch of the if expression
+  {
     addAndEmitTo(F, thenBB);
-    then = pass->emit(getThenExpr(), this->type);
-
-    {
-      const Type* valTy = getLLVMType(this->type);
-      if (valTy != then->getType()) {
-        ASSERT(isPointerToType(then->getType(), valTy))
-                << "valTy is " << str(valTy)
-                << "; actual type of then branch is "
-                << str(then->getType());
-        // If we have a code construct like
-        //   if cond then { new blah {} } else { new blah {} }
-        // then the ast type (and thus valType) will be blah*
-        // but the exprs will be stack slots of type blah**,
-        // requiring a load...
-        then = builder.CreateLoad(then, false, "ifthen_rhs");
-        elseNeedsLoad = true;
-      }
-    }
-
-    emitStore(then, iftmp);
+    emitStore(pass->emit(getThenExpr(), this->type), iftmp);
     builder.CreateBr(mergeBB);
   }
 
-  { // Codegen the else-branch of the if expression
+  {
     addAndEmitTo(F, elseBB);
-    else_ = pass->emit(getElseExpr(), this->type);
-
-    if (elseNeedsLoad) {
-      else_ = builder.CreateLoad(else_, false, "ifelse_rhs");
-    }
-    emitStore(else_, iftmp);
+    emitStore(pass->emit(getElseExpr(), this->type), iftmp);
     builder.CreateBr(mergeBB);
   }
 
   addAndEmitTo(F, mergeBB);
-  return builder.CreateLoad(iftmp, /*isVolatile*/ false, "iftmp");
+  return iftmp;
 }
 
 
