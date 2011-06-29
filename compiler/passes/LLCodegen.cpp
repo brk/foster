@@ -331,24 +331,24 @@ llvm::Value* LLStore::codegen(CodegenPass* pass) {
 //////////////// LLLetVals /////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
 
+void trySetName(llvm::Value* v, const string& name) {
+  if (v->getType()->isVoidTy()) {
+    // Can't assign a name to void values in LLVM.
+  } else {
+    v->setName(name);
+  }
+}
+
 llvm::Value* LLLetVals::codegen(CodegenPass* pass) {
   for (size_t i = 0; i < exprs.size(); ++i) {
     // We use codegen() instead of pass>emit()
     // because emit inserts implict loads, which we
     // want done as late as possible.
     Value* b = exprs[i]->codegen(pass);
-
-    if (b->getType()->isVoidTy()) {
-      // Can't assign a name to void values in LLVM.
-    } else {
-      if (b->hasName()
-        && pystring::startswith(b->getName(), "stackref")) {
-        b->setName(names[i] + "_slot");
-      } else {
-        b->setName(names[i]);
-      }
-    }
-
+    trySetName(b, (b->hasName()
+                   && pystring::startswith(b->getName(), "stackref"))
+                ? names[i] + "_slot"
+                : names[i]);
     pass->valueSymTab.insert(names[i], b);
   }
 
@@ -777,21 +777,19 @@ llvm::Value* lookupOccs(Occurrence* occ, llvm::Value* v) {
 void DecisionTree::codegenDecisionTree(CodegenPass* pass,
                                        llvm::Value* scrutinee,
                                        llvm::AllocaInst* rv_slot) {
-  if (tag == DecisionTree::DT_FAIL) {
+  Value* rv = NULL;
+  switch (tag) {
+  case DecisionTree::DT_FAIL:
     EDiag() << "DecisionTree codegen, tag = DT_FAIL; v = " << str(scrutinee);
     emitFosterAssert(pass->mod, builder.getInt1(false), "pattern match failure!");
-    return;
-  }
+    break;
 
-  if (tag == DecisionTree::DT_LEAF) {
+  case DecisionTree::DT_LEAF:
     ASSERT(this->action != NULL);
-    Value* rv = NULL;
 
     for (size_t i = 0; i < binds.size(); ++i) {
        Value* v = lookupOccs(binds[i].second, scrutinee);
-       if (!v->getType()->isVoidTy()) {
-         v->setName("pat_" + binds[i].first);
-       }
+       trySetName(v, "pat_" + binds[i].first);
        pass->valueSymTab.insert(binds[i].first, v);
     }
     rv = pass->emit(action, NULL);
@@ -801,19 +799,16 @@ void DecisionTree::codegenDecisionTree(CodegenPass* pass,
 
     ASSERT(rv != NULL);
     emitStore(rv, rv_slot);
-    return;
-  } // end DT_LEAF
+    break;
 
-  if (tag == DecisionTree::DT_SWAP) {
+  case DecisionTree::DT_SWAP:
     ASSERT(false) << "Should not have DT_SWAP nodes at codegen!";
-  } // end DT_SWAP
+  // end DT_SWAP
 
-  if (tag == DecisionTree::DT_SWITCH) {
+  case DecisionTree::DT_SWITCH:
     sc->codegenSwitch(pass, scrutinee, rv_slot);
-    return;
+    break;
   }
-
-  EDiag() << "DecisionTree codegen, tag = " << tag << "; v = " << str(scrutinee);
 }
 
 void SwitchCase::codegenSwitch(CodegenPass* pass,
