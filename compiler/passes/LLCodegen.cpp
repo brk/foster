@@ -511,11 +511,7 @@ llvm::Value* LLClosure::codegen(CodegenPass* pass) {
   }
 
   const llvm::StructType* genStructTy = genericClosureStructTy(fnty);
-  Value* genericClo = builder.CreateBitCast(clo,
-                              ptrTo(genStructTy), varname + ".hideCloTy");
-  // TODO replace with implicit loads?
-  return genericClo;
-  //return builder.CreateLoad(genericClo, /*isVolatile=*/ false, varname + ".loadClosure");
+  return builder.CreateBitCast(clo, ptrTo(genStructTy), varname + ".hideCloTy");
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -639,6 +635,8 @@ llvm::Value* LLProc::codegenProc(CodegenPass* pass) {
   return F;
 }
 
+////////////////////////////////////////////////////////////////////
+
 void addAndEmitTo(Function* f, BasicBlock* bb) {
   f->getBasicBlockList().push_back(bb);
   builder.SetInsertPoint(bb);
@@ -656,7 +654,7 @@ llvm::Value* LLIf::codegen(CodegenPass* pass) {
 
   Value* iftmp = CreateEntryAlloca(getLLVMType(this->type), "iftmp_slot");
   pass->markAsNeedingImplicitLoads(iftmp);
-  
+
   Function *F = builder.GetInsertBlock()->getParent();
   {
     addAndEmitTo(F, thenBB);
@@ -674,6 +672,7 @@ llvm::Value* LLIf::codegen(CodegenPass* pass) {
   return iftmp;
 }
 
+////////////////////////////////////////////////////////////////////
 
 llvm::Value* LLUntil::codegen(CodegenPass* pass) {
   //EDiag() << "Codegen for LLUntils should (eventually) be subsumed by CFG building!";
@@ -698,6 +697,8 @@ llvm::Value* LLUntil::codegen(CodegenPass* pass) {
   addAndEmitTo(F, mergeBB);
   return getUnitValue();
 }
+
+////////////////////////////////////////////////////////////////////
 
 llvm::Value* LLCoroPrim::codegen(CodegenPass* pass) {
   const llvm::Type* r = retType->getLLVMType();
@@ -829,6 +830,8 @@ void SwitchCase::codegenSwitch(CodegenPass* pass,
 
   addAndEmitTo(F, bbEnd);
 }
+
+////////////////////////////////////////////////////////////////////
 
 bool isPointerToStruct(const llvm::Type* ty) {
   if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
@@ -989,57 +992,12 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
 
   // Collect the args, performing coercions if necessary.
   for (size_t i = 0; i < this->args.size(); ++i) {
-    ASSERT(i < FT->getNumContainedTypes());
-    const llvm::Type* expectedType = FT->getContainedType(i);
+    const llvm::Type* expectedType = FT->getParamType(valArgs.size());
 
     LLExpr* arg = this->args[i];
     doLowLevelWrapperFnCoercions(expectedType, arg, pass);
-    Value* argV = pass->emit(arg, NULL);
-
-    // Is the formal parameter a pass-by-value struct and the provided argument
-    // a pointer to the same kind of struct? If so, load the struct into a virtual
-    // register in order to pass it to the function...
-    const Type* formalType = FT->getParamType(valArgs.size());
-    if (llvm::isa<llvm::StructType>(formalType)) {
-      if (llvm::PointerType::get(formalType, 0) == argV->getType()) {
-        // This is used when passing closures, for example.
-        argV = builder.CreateLoad(argV, "loadStructParam");
-      }
-    }
-
+    llvm::Value* argV = pass->emit(arg, NULL);
     valArgs.push_back(argV);
-  }
-
-  // Stack slot loads must be done after codegen for all arguments
-  // has taken place, in order to ensure that no allocations will occur
-  // between the load and the call.
-  for (size_t i = 0; i < valArgs.size(); ++i) {
-    llvm::Value*& argV = valArgs[i];
-
-    ASSERT(FT->getNumContainedTypes() > (i+1)) << "i = " << i
-        << "; FT->getNumContainedTypes() = " << FT->getNumContainedTypes()
-        << "; valArgs.size() = " << valArgs.size()
-        << "; FT = " << str(FT); // << "::" << show(this) << "\n";
-
-    // ContainedType[0] is the return type; args start at 1
-    const llvm::Type* expectedType = FT->getContainedType(i + 1);
-
-    // If we have a T loaded from a T*, and we expect a T*,
-    // use the T* (TODO: make sure the T* isn't an alloca, unless
-    //   we know that the arg won't be captured!)
-    //
-    // LLVM intrinsics and C functions can take pointer-to-X args,
-    // but codegen for variables will have already emitted a load
-    // from the variable's implicit address.
-    if (argV->getType() != expectedType &&
-      isPointerToType(expectedType, argV->getType())) {
-      if (llvm::LoadInst* load = llvm::dyn_cast<llvm::LoadInst>(argV)) {
-        /*EDiag() << "Have a T = " << str(argV->getType())
-                << ", expecting a T* = " << str(expectedType);*/
-        argV = load->getPointerOperand();
-        load->eraseFromParent();
-      }
-    }
 
     ASSERT(argV->getType() == expectedType)
               << "type mismatch, " << str(argV->getType())
@@ -1049,18 +1007,16 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
   }
 
   ASSERT(FT->getNumParams() == valArgs.size())
-            << "function arity mismatch, got " << valArgs.size()
+            << "function arity mismatch for " << base->getName()
+            << "; got " << valArgs.size()
             << " args but expected " << FT->getNumParams();
 
   // Give the instruction a name, if we can...
-  llvm::CallInst* callInst = NULL;
-  if (FT->getReturnType()->isVoidTy()) {
-    callInst = builder.CreateCall(FV, valArgs.begin(), valArgs.end());
-  } else {
-    callInst = builder.CreateCall(FV, valArgs.begin(), valArgs.end(), "calltmp");
-  }
-
+  llvm::CallInst* callInst =
+        builder.CreateCall(FV, valArgs.begin(), valArgs.end());
   callInst->setCallingConv(callingConv);
+  trySetName(callInst, "calltmp");
+
   if (callingConv == llvm::CallingConv::Fast) {
     callInst->setTailCall(true);
   }
