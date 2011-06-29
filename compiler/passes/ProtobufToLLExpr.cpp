@@ -146,6 +146,16 @@ LLExpr* parseLetVals(const pb::Expr& e) {
   return new LLLetVals(names, exprs, LLExpr_from_pb(&e.parts(0)));
 }
 
+llvm::GlobalValue::LinkageTypes
+parseLinkage(const pb::Proc::Linkage linkage) {
+  switch (linkage) {
+  case pb::Proc::Internal: return llvm::GlobalValue::InternalLinkage;
+  case pb::Proc::External: return llvm::GlobalValue::ExternalLinkage;
+  default: ASSERT(false) << "unknown linkage!";
+           return llvm::GlobalValue::InternalLinkage;
+  }
+}
+
 LLProc* parseProc(const pb::Proc& e) {
   ASSERT(e.has_proctype()) << "protobuf LLProc missing proc type!";
 
@@ -159,6 +169,7 @@ LLProc* parseProc(const pb::Proc& e) {
   foster::sgProcLines[e.name()] = e.lines();
 
   return new LLProc(proctype, e.name(), args,
+                    parseLinkage(e.linkage()),
                     LLExpr_from_pb(& e.body()));
 }
 

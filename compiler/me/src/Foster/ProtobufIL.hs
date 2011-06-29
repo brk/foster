@@ -42,6 +42,7 @@ import Foster.Bepb.PbSwitchCase as PbSwitchCase
 import Foster.Bepb.CoroPrim as PbCoroPrim
 import Foster.Bepb.Module   as Module
 import Foster.Bepb.Expr.Tag
+import Foster.Bepb.Proc.Linkage
 import Foster.Bepb.DecisionTree.Tag
 import Foster.Bepb.AllocInfo.MemRegion
 
@@ -302,6 +303,7 @@ dumpProc p =
          , proctype   = dumpProcType (procType p)
          , Proc.body  = Just $ dumpExpr (ilProcBody p)
          , Proc.lines = Just $ u8fromString (showSourceRange $ ilProcRange p)
+         , Proc.linkage = Foster.Bepb.Proc.Linkage.Internal
          }
 
 -----------------------------------------------------------------------

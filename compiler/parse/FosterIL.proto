@@ -85,11 +85,16 @@ message AllocInfo {
 }
 
 message Proc {
+  enum Linkage {
+    Internal = 1;
+    External = 2;
+  }
   required ProcType proctype = 1;
   repeated string   in_args  = 2;
   required string   name     = 3;
   optional Expr     body     = 4;
   optional string   lines    = 5;
+  required Linkage  linkage  = 6;
 }
 
 message Closure {

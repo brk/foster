@@ -95,7 +95,11 @@ llvm::Value* emitStore(llvm::Value* val,
   return builder.CreateStore(val, ptr, /*isVolatile=*/ false);
 }
 
-llvm::Value* CodegenPass::emit(LLExpr* e, TypeAST* t) {
+// emit() serves as a wrapper around codegen()
+// which inserts implicit loads as needed, and also
+// verifies that the expected type matches the generated type.
+// In most cases, emit() should be used instead of codegen().
+llvm::Value* CodegenPass::emit(LLExpr* e, TypeAST* expectedType) {
   llvm::Value* v = e->codegen(this);
 
   if (this->needsImplicitLoad.count(v) == 1) {
@@ -103,8 +107,8 @@ llvm::Value* CodegenPass::emit(LLExpr* e, TypeAST* t) {
                            v->getName() + ".autoload");
   }
 
-  if (t) {
-    const llvm::Type* ty = getLLVMType(t);
+  if (expectedType) {
+    const llvm::Type* ty = getLLVMType(expectedType);
     if (v->getType() != ty) {
       ASSERT(false) << "********* expected type " << str(ty)
                            << "; had type " << str(v->getType())
@@ -544,24 +548,18 @@ void setFunctionArgumentNames(llvm::Function* F,
 llvm::Value* LLProc::codegenProto(CodegenPass* pass) {
   std::string symbolName = foster::getGlobalSymbolName(this->name);
 
-  // Give function literals internal linkage, since we know that they can
-  // only be referenced from the function in which they are defined.
-  llvm::GlobalValue::LinkageTypes functionLinkage =
-      (this->name.find("anon_fnlet_") != string::npos)
-        ? Function::InternalLinkage
-        : Function::ExternalLinkage;
-
   this->type->markAsProc();
   const llvm::FunctionType* FT = getLLVMFunctionType(this->type);
 
   if (symbolName == kFosterMain) {
     // No args, returning void...
     FT = llvm::FunctionType::get(builder.getVoidTy(), false);
+    this->functionLinkage = llvm::GlobalValue::ExternalLinkage;
   }
 
   ASSERT(FT) << "expecting top-level proc to have FunctionType!";
 
-  this->F = Function::Create(FT, functionLinkage, symbolName, pass->mod);
+  this->F = Function::Create(FT, this->functionLinkage, symbolName, pass->mod);
 
   ASSERT(F) << "function creation failed for proto " << this->name;
   ASSERT(F->getName() == symbolName) << "redefinition of function " << symbolName;
@@ -1218,7 +1216,8 @@ LLProc* getClosureVersionOf(LLExpr* arg,
                                      fnty->getAnnots());
   newfnty->markAsProc();
   LLExpr* body = new LLCall(var, callArgs);
-  LLProc* proc = new LLProc(newfnty, fnName, inArgNames, body);
+  LLProc* proc = new LLProc(newfnty, fnName, inArgNames,
+                            llvm::GlobalValue::InternalLinkage, body);
 
   // Regular functions get their proto values added when the module
   // starts codegenning, but we need to do it ourselves here.

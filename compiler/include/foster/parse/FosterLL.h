@@ -11,6 +11,7 @@
 #include "parse/FosterTypeAST.h"
 
 #include "llvm/ADT/APInt.h"
+#include "llvm/GlobalValue.h"
 
 #include <vector>
 #include <string>
@@ -77,13 +78,16 @@ struct LLModule {
 struct LLProc {
   string name;
   FnTypeAST* type;
+  llvm::GlobalValue::LinkageTypes functionLinkage;
   std::vector<std::string> argnames;
   LLExpr* body;
   llvm::Function* F;
 
   explicit LLProc(FnTypeAST* procType, const string& name,
-          const std::vector<std::string>& argnames, LLExpr* body)
-  : name(name), type(procType), argnames(argnames), body(body), F(NULL) {}
+          const std::vector<std::string>& argnames,
+          llvm::GlobalValue::LinkageTypes linkage, LLExpr* body)
+  : name(name), type(procType), functionLinkage(linkage),
+    argnames(argnames), body(body), F(NULL) {}
 
   FnTypeAST* getFnType() { return type; }
   const std::string& getName() const { return name; }
