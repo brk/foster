@@ -115,6 +115,7 @@ llvm::Value* CodegenPass::emit(LLExpr* e, TypeAST* expectedType) {
                            << "\n for value " << str(v);
     }
   }
+  ASSERT(v != NULL);
   return v;
 }
 
@@ -596,9 +597,6 @@ llvm::Value* LLProc::codegenProc(CodegenPass* pass) {
     Function::arg_iterator AI = F->arg_begin();
     for ( ; AI != F->arg_end(); ++AI) {
       if (mightContainHeapPointers(AI->getType())) {
-        // Type could be like i32*, like {i32}* or like {i32*}.
-        // arg_addr would be i32**,    {i32}**,  or {i32*}*.
-        llvm::outs() << "inserting gcparam " <<AI->getNameStr()<< " in scope\n";
         scope->insert(AI->getNameStr(),
                       pass->storeAndMarkPointerAsGCRoot(AI, NotArray));
       } else {
@@ -618,29 +616,18 @@ llvm::Value* LLProc::codegenProc(CodegenPass* pass) {
   }
 
   Value* rv = pass->emit(getBody(), NULL);
-
-  ASSERT(rv) << "null body value when codegenning function " << this->getName();
-  const FunctionType* ft = dyn_cast<FunctionType>(F->getType()->getContainedType(0));
-
-  bool fnReturnsUnit = isVoidOrUnit(ft->getReturnType());
-
-  // If we try to return a tuple* when the fn specifies a tuple,
-  // manually insert a load.
-  if (rv->getType()->isDerivedType() && !fnReturnsUnit) {
-    if (isPointerToType(rv->getType(), ft->getReturnType())) {
-      rv = builder.CreateLoad(rv, false, "structPtrToStruct");
-    }
-  }
-
   pass->valueSymTab.popExistingScope(scope);
 
-  if (fnReturnsUnit) {
+  const FunctionType* ft = dyn_cast<FunctionType>(F->getType()->getContainedType(0));
+
+  if (isVoidOrUnit(ft->getReturnType())) {
     builder.CreateRetVoid();
-  } else if (isVoidOrUnit(rv->getType())) {
-    EDiag() << "unable to return non-void (" << str(ft->getReturnType()) << ") value from "
-    << getName() << " given only unit:\n" << str(rv);
   } else {
     builder.CreateRet(rv);
+    ASSERT(rv->getType() == ft->getReturnType())
+        << "unable to return type " << str(ft->getReturnType()) << " from "
+        << getName() << " given:\n" << str(rv);
+
   }
   //llvm::verifyFunction(*F);
 
@@ -660,8 +647,6 @@ void addAndEmitTo(Function* f, BasicBlock* bb) {
 llvm::Value* LLIf::codegen(CodegenPass* pass) {
   //EDiag() << "Codegen for LLIfs should (eventually) be subsumed by CFG building!";
   Value* cond = pass->emit(getTestExpr(), NULL);
-  ASSERT(cond != NULL)
-        << "codegen for if expr failed due to missing condition";
 
   BasicBlock* thenBB = BasicBlock::Create(getGlobalContext(), "then");
   BasicBlock* elseBB = BasicBlock::Create(getGlobalContext(), "else");
@@ -678,9 +663,6 @@ llvm::Value* LLIf::codegen(CodegenPass* pass) {
   { // Codegen the then-branch of the if expression
     addAndEmitTo(F, thenBB);
     then = pass->emit(getThenExpr(), this->type);
-
-    ASSERT(then != NULL)
-        << "codegen for if expr failed due to missing 'then' branch";
 
     {
       const Type* valTy = getLLVMType(this->type);
@@ -706,8 +688,6 @@ llvm::Value* LLIf::codegen(CodegenPass* pass) {
   { // Codegen the else-branch of the if expression
     addAndEmitTo(F, elseBB);
     else_ = pass->emit(getElseExpr(), this->type);
-    ASSERT(else_ != NULL)
-        << "codegen for if expr failed due to missing 'else' branch";
 
     if (elseNeedsLoad) {
       else_ = builder.CreateLoad(else_, false, "ifelse_rhs");
@@ -733,13 +713,11 @@ llvm::Value* LLUntil::codegen(CodegenPass* pass) {
 
   addAndEmitTo(F, testBB);
   Value* cond = pass->emit(getTestExpr(), NULL);
-  ASSERT(cond != NULL) << "codegen for until loop failed due to missing cond";
   builder.CreateCondBr(cond, mergeBB, thenBB);
 
   { // Codegen the body of the loop
     addAndEmitTo(F, thenBB);
-    Value* v = pass->emit(getThenExpr(), NULL);
-    ASSERT(v != NULL) << "codegen for until loop failed due to missing body";
+    pass->emit(getThenExpr(), NULL);
     builder.CreateBr(testBB);
   }
 
@@ -1043,7 +1021,6 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
     LLExpr* arg = this->args[i];
     doLowLevelWrapperFnCoercions(expectedType, arg, pass);
     Value* argV = pass->emit(arg, NULL);
-    ASSERT(argV) << "null codegenned value for arg " << (i - 1) << " of call";
 
     // Is the formal parameter a pass-by-value struct and the provided argument
     // a pointer to the same kind of struct? If so, load the struct into a virtual
