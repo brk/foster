@@ -1,0 +1,10 @@
+main = {
+  expect_i32 1111111;
+  expect_i32 2222222;
+  let c1 = coro_create  { x : i32 => print_i32 1111111; coro_yield:[i32,i32] x; x };
+      c2 = coro_create  { x : i32 => print_i32 2222222; coro_yield:[i32,i32] x; x };
+  in
+      coro_invoke c1 0;
+      coro_invoke c2 0;
+  end
+};
