@@ -154,8 +154,9 @@ struct LLVar : public LLExpr {
 struct LLCall : public LLExpr {
   LLVar* base;
   std::vector<LLVar*> args;
-  LLCall(LLVar* base, std::vector<LLVar*>& args)
-  : LLExpr("LLCall"), base(base), args(args) { }
+  bool isPrimitive;
+  LLCall(LLVar* base, std::vector<LLVar*>& args, bool isPrim)
+  : LLExpr("LLCall"), base(base), args(args), isPrimitive(isPrim) { }
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
@@ -266,8 +267,8 @@ struct LLAllocate : public LLExpr {
   } region;
   bool isStackAllocated() const { return region == MEM_REGION_STACK; }
 
-  explicit LLAllocate(TypeAST* t, MemRegion m) : LLExpr("LLAllocate"),
-           region(m) { this->type = t; }
+  explicit LLAllocate(TypeAST* t, LLVar* arrSize, MemRegion m)
+     : LLExpr("LLAllocate"), arraySize(arrSize), region(m) { this->type = t; }
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 

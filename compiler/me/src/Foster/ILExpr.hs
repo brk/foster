@@ -43,6 +43,7 @@ data ILExpr =
         | ILClosures    [Ident] [ILClosure] ILExpr
         | ILLetVal       Ident    ILExpr    ILExpr
         | ILAlloc               AnnVar
+        | ILAllocArray  TypeAST AnnVar
         | ILDeref       TypeAST AnnVar
         | ILStore       TypeAST AnnVar AnnVar
         | ILArrayRead   TypeAST AnnVar AnnVar
@@ -51,6 +52,7 @@ data ILExpr =
         | ILUntil       TypeAST ILExpr ILExpr
         | ILCase        TypeAST AnnVar [(Pattern, ILExpr)] (DecisionTree ILExpr)
         | ILCall        TypeAST AnnVar [AnnVar]
+        | ILCallPrim    TypeAST AnnVar [AnnVar]
         | ILTyApp       TypeAST ILExpr TypeAST
         deriving (Show)
 
@@ -119,6 +121,8 @@ closureConvert ctx expr =
             AnnCompiles c msg      -> return $ ILBool (c == CS_WouldCompile)
             AnnInt t i             -> return $ ILInt t i
             E_AnnVar v             -> return $ ILVar v
+            AnnPrimitive v         -> error $ "Primitives must be called directly!\n"
+                                           ++ "Found non-call use of " ++ show v
 
             AnnIf      t  a b c    -> do x <- ilmFresh ".ife"
                                          [a', b', c'] <- mapM g [a, b, c]
@@ -177,6 +181,7 @@ closureConvert ctx expr =
                 cargs <- mapM g es
                 case b of
                     (E_AnnVar v) -> do nestedLets cargs (\vars -> (ILCall t v vars))
+                    (AnnPrimitive v) -> do nestedLets cargs (\vars -> (ILCallPrim t v vars))
                     (E_AnnFn f) -> do -- If we're calling a function directly,
                                      -- we know we can perform lambda lifting
                                      -- on it, by adding args for its free variables.
@@ -187,6 +192,9 @@ closureConvert ctx expr =
                                     let procid = (ilProcIdent newproc)
                                     let procvar = (AnnVar (procType newproc) procid)
                                     nestedLets cargs (\vars -> ILCall t procvar (freevars ++ vars))
+
+                    (E_AnnTyApp ot (AnnPrimitive (AnnVar _ (Ident "allocDArray" _))) argty) ->
+                        nestedLets cargs (\[arraySize] -> ILAllocArray argty arraySize)
 
                     -- v[types](args) =>
                     -- let <fresh> = v[types] in <fresh>(args)
@@ -200,7 +208,7 @@ closureConvert ctx expr =
                                     let var = AnnVar ot x
                                     nlets <- nestedLets cargs (\vars -> ILCall t var vars)
                                     return $ buildLet x (ILTyApp ot (ILVar v) argty) nlets
-                    _ -> error $ "AnnCall with non-var base of " ++ show b
+                    _ -> error $ "ILExpr.closureConvert: AnnCall with non-var base of " ++ show b
 
 closureConvertedProc :: [AnnVar] -> AnnFn -> ILExpr -> ILM ILProcDef
 closureConvertedProc liftedProcVars f newbody = do
@@ -288,6 +296,7 @@ makeEnvPassingExplicit expr fnAndEnvForClosure =
             AnnCompiles c msg -> e
             AnnInt t i        -> e
             E_AnnVar v        -> e -- We don't alter standalone references to closures
+            AnnPrimitive v    -> error $ "makeEnvPassingExplicit called on AnnPrimitive " ++ show v
             AnnIf t a b c    -> AnnIf      t (q a) (q b) (q c)
             AnnUntil t a b   -> AnnUntil   t (q a) (q b)
             AnnLetVar id a b -> AnnLetVar id (q a) (q b)
@@ -364,13 +373,15 @@ typeIL (ILTuple vs)        = TupleTypeAST [typeIL $ ILVar v | v <- vs]
 typeIL (ILClosures n b e)  = typeIL e
 typeIL (ILLetVal x b e)    = typeIL e
 typeIL (ILCall t id expr)  = t
+typeIL (ILCallPrim t id e) = t
+typeIL (ILAllocArray elt_ty _) = ArrayType elt_ty
 typeIL (ILIf t a b c)      = t
 typeIL (ILUntil t a b)     = t
 typeIL (ILAlloc v)         = RefType (typeIL $ ILVar v)
 typeIL (ILDeref t _)       = t
 typeIL (ILStore t _ _)     = t
 typeIL (ILArrayRead t _ _) = t
-typeIL (ILArrayPoke _ _ _) = TupleTypeAST [] 
+typeIL (ILArrayPoke _ _ _) = TupleTypeAST []
 typeIL (ILCase t _ _ _)    = t
 typeIL (ILVar (AnnVar t i)) = t
 typeIL (ILTyApp overallType tm tyArgs) = overallType
@@ -381,6 +392,7 @@ instance Structured ILExpr where
         case e of
             ILBool         b    -> out $ "ILBool      " ++ (show b)
             ILCall    t b a     -> out $ "ILCall      " ++ " :: " ++ show t
+            ILCallPrim t b a    -> out $ "ILCallPrim  " ++ " :: " ++ show t
             ILClosures ns cs e  -> out $ "ILClosures  " ++ show (map showClosurePair (zip ns cs))
             ILLetVal   x b e    -> out $ "ILLetVal    " ++ (show x) ++ " :: " ++ (show $ typeIL b) ++ " = ... in ... "
             ILIf      t  a b c  -> out $ "ILIf        " ++ " :: " ++ show t
@@ -390,6 +402,7 @@ instance Structured ILExpr where
             ILDeref t a         -> out $ "ILDeref     "
             ILStore t a b       -> out $ "ILStore     "
             ILCase t _ _ _      -> out $ "ILCase      "
+            ILAllocArray _ _    -> out $ "ILAllocArray "
             ILArrayRead  t a b  -> out $ "ILArrayRead " ++ " :: " ++ show t
             ILArrayPoke v b i   -> out $ "ILArrayPoke "
             ILTuple     es      -> out $ "ILTuple     (size " ++ (show $ length es) ++ ")"
@@ -408,9 +421,11 @@ instance Structured ILExpr where
             ILCase _ e bs _dt       -> (ILVar e):(map snd bs)
             ILClosures bnds clos e  -> [e]
             ILLetVal x b e          -> [b, e]
-            ILCall  t v vs          -> [ILVar v] ++ [ILVar v | v <- vs]
+            ILCall     t v vs       -> [ILVar v] ++ [ILVar v | v <- vs]
+            ILCallPrim t v vs       ->              [ILVar v | v <- vs]
             ILIf    t v b c         -> [ILVar v, b, c]
             ILAlloc   v             -> [ILVar v]
+            ILAllocArray _ v        -> [ILVar v]
             ILDeref t v             -> [ILVar v]
             ILStore t v w           -> [ILVar v, ILVar w]
             ILArrayRead t a b       -> [ILVar a, ILVar b]

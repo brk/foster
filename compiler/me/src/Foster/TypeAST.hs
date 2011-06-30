@@ -135,7 +135,9 @@ rootContextDecls =
     ,(,)  "print_i1"   $ mkProcType [i1] []
 
     ,(,) "opaquely_i32" $ mkProcType [i32] [i32]
-    ,(,) "allocDArray32" $ mkProcType [i32] [ArrayType i32]
+    ,(,) "allocDArray" $ let a = BoundTyVar "a" in
+                         ForAll [a]
+                           (mkProcType [i32] [ArrayType (T_TyVar a)])
 
     -- forall a b, (a -> b) -> Coro a b
     ,(,) "coro_create" $ let a = BoundTyVar "a" in

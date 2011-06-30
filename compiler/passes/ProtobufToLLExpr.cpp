@@ -61,7 +61,7 @@ LLExpr* parseBool(const pb::Expr& e) {
   return new LLBool(e.bool_value() ? "true" : "false");
 }
 
-LLExpr* parseCall(const pb::Expr& e) {
+LLExpr* parseCall(const pb::Expr& e, bool isPrimitive) {
   ASSERT(e.parts_size() >= 1);
 
   LLVar* base = LLVar_from_pb(&e.parts(0));
@@ -69,7 +69,7 @@ LLExpr* parseCall(const pb::Expr& e) {
   for (int i = 1; i < e.parts_size(); ++i) {
     args.push_back(LLVar_from_pb(&e.parts(i)));
   }
-  return new LLCall(base, args);
+  return new LLCall(base, args, isPrimitive);
 }
 
 LLExpr* parseIf(const pb::Expr& e) {
@@ -106,7 +106,7 @@ LLAllocate* parseAllocate(const pb::Expr& e) {
       target_region = LLAllocate::MEM_REGION_GLOBAL_HEAP; break;
   default: ASSERT(false) << "Unknown target region for AllocInfo.";
   }
-  return new LLAllocate(TypeAST_from_pb(& e.type()),
+  return new LLAllocate(TypeAST_from_pb(& e.type()), array_size,
                         target_region);
 }
 
@@ -333,7 +333,8 @@ LLExpr* LLExpr_from_pb(const pb::Expr* pe) {
 
   switch (e.tag()) {
   case pb::Expr::IL_BOOL:      rv = parseBool(e); break;
-  case pb::Expr::IL_CALL:      rv = parseCall(e); break;
+  case pb::Expr::IL_CALL:      rv = parseCall(e, false); break;
+  case pb::Expr::IL_CALL_PRIM: rv = parseCall(e, true); break;
   case pb::Expr::IL_CASE:      rv = parseCase(e); break;
   case pb::Expr::IL_IF:        rv = parseIf(e); break;
   case pb::Expr::IL_INT:       rv = parseInt(e); break;
@@ -344,6 +345,7 @@ LLExpr* LLExpr_from_pb(const pb::Expr* pe) {
   case pb::Expr::IL_CORO_INVOKE: rv = parseCoroPrim(e); break;
   case pb::Expr::IL_CORO_CREATE: rv = parseCoroPrim(e); break;
   case pb::Expr::IL_CORO_YIELD : rv = parseCoroPrim(e); break;
+  case pb::Expr::IL_MEMALLOC:  rv = parseAllocate(e); break;
   case pb::Expr::IL_ALLOC:     rv = parseAlloc(e); break;
   case pb::Expr::IL_DEREF:     rv = parseDeref(e); break;
   case pb::Expr::IL_STORE:     rv = parseStore(e); break;

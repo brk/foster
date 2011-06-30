@@ -44,9 +44,9 @@ message Expr {
     IL_LETVALS = 21;
     IL_CASE = 22;
     IL_CALL = 23;
-    IL_SEQ = 24;
-    IL_UNTIL = 25;
     
+    IL_UNTIL = 25;
+    IL_CALL_PRIM = 26;
     IL_CORO_INVOKE = 27;
     IL_CORO_CREATE = 28;
     IL_CORO_YIELD  = 29;

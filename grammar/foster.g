@@ -18,7 +18,7 @@ tokens {
   TYPE='type';
   COMPILES='__COMPILES__';
 
-  VAL_APP; UNTIL;
+  VAL_APP; UNTIL; PRIMITIVE;
   BINDING; LETS; LETREC; SEQ;
   RAT_NUM; INT_NUM; BOOL;
   DECL; DEFN;
@@ -61,7 +61,7 @@ e    :
               -> ^(TERM phrase binops?)
   ;
 
-binops  :       (binop phrase)+;	
+binops  :       (binop phrase)+;
 binop   :       SYMBOL;
 
 phrase  :       lvalue+                         -> ^(PHRASE lvalue+);
@@ -70,7 +70,7 @@ lvalue  :       atom suffix*                    -> ^(LVALUE atom suffix*);
 type_application
 	:	':[' t (',' t)* ']'             -> ^(VAL_TYPE_APP t+)    // type application
 	;
-	
+
 suffix  :       type_application
   |     '^'                             -> ^(DEREF)             // dereference
   |     '[' e ']'                       -> ^(SUBSCRIPT e)
@@ -91,11 +91,12 @@ formal  : x (':' t) -> ^(FORMAL x t);
 
 atom    :       // syntactically "closed" terms
     x                                   // variables
+  | '#' x                              -> ^(PRIMITIVE x)
   | lit                                 // literals
   | lets
   | letrec
   | ifexpr
-  | 'until' e 'then' e_seq 'end'  -> ^(UNTIL e e_seq)
+  | 'until' e 'then' e_seq 'end'        -> ^(UNTIL e e_seq)
   | '(' ')'                             -> ^(TUPLE)
   | '(' COMPILES e ')'                  -> ^(COMPILES e)
   | '(' 'ref' e ')'                     -> ^(REF e)     // allocation
@@ -125,7 +126,7 @@ t       :               // types
           )
   ;
 
-barebinding 
+barebinding
 	:  x '=' e -> ^(BINDING x e);
 tannots :  barebinding (',' barebinding)* -> ^(BINDING barebinding+);
 

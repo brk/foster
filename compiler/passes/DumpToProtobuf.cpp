@@ -124,6 +124,11 @@ void VariableAST::dump(DumpToProtobufPass* pass) {
   pass->current->set_name(this->name);
 }
 
+void PrimitiveAST::dump(DumpToProtobufPass* pass) {
+  processExprAST(pass->current, this, pb::Expr::PRIMITIVE);
+  pass->current->set_name(this->name);
+}
+
 void dumpFormal(DumpToProtobufPass* pass, pb::Formal* target, Formal* formal) {
   target->set_name(formal->name);
   ASSERT(formal->type) << "Formal parameter " << formal->name << " must have type!";

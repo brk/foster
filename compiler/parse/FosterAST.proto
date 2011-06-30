@@ -68,7 +68,7 @@ message Expr {
     CASE_EXPR = 30;
     COMPILES  = 31;
     IF        = 32;
-
+    PRIMITIVE = 33;
     PAT_WILDCARD = 41;
     PAT_VARIABLE = 42;
     PAT_INT      = 43;

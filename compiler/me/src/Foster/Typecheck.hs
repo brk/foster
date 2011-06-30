@@ -172,6 +172,12 @@ typecheck ctx expr maybeExpTy =
                                      typecheckSubscript ctx rng ta (typeAST ta) tb maybeExpTy
         E_TupleAST exprs -> typecheckTuple ctx exprs maybeExpTy
 
+        E_Primitive rng v -> case termVarLookup (evarName v) (contextBindings ctx) of
+            Just avar     -> return $ AnnPrimitive avar
+            Nothing       -> tcFails (out $ "Unknown primitive " ++ (evarName v)
+                                         ++ showSourceRange rng)
+
+
         E_VarAST rng v -> case termVarLookup (evarName v) (contextBindings ctx) of
             Just avar  -> return $ E_AnnVar avar
             Nothing    -> tcFails (out $ "Unknown variable " ++ (evarName v)
@@ -273,7 +279,7 @@ listize ty                 = [ty]
 typecheckTyApp ctx rng a t maybeExpTy = do
     ea <- typecheck ctx a Nothing
     case (typeAST ea) of
-      (ForAll tyvars rho) -> do
+      (ForAll tyvars rho) -> do --
         let tys = listize t
         if (List.length tys /= List.length tyvars)
           then tcFails (out $ "typecheckTyApp: arity mismatch")
@@ -406,6 +412,7 @@ typecheckCall ctx range base args maybeExpTy = do
                   where tyProjTypes = extractSubstTypes unificationVars tysub
              in typecheckCallWithBaseFnType eargs annTyApp (typeAST annTyApp) range
 
+      -- (typeAST eb) ==
       fnty@(FnTypeAST formaltype restype cc cs) -> do
             ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) (Just formaltype)
             typecheckCallWithBaseFnType eargs eb fnty range

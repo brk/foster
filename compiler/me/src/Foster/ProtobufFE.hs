@@ -38,7 +38,7 @@ import Foster.Fepb.PBCase   as PBCase
 import Foster.Fepb.Expr     as PbExpr
 import Foster.Fepb.SourceModule as SourceModule
 import Foster.Fepb.Expr.Tag(Tag(IF, LET, VAR, SEQ, UNTIL,
-                                BOOL, CALL, TY_APP,-- MODULE,
+                                BOOL, CALL, TY_APP, PRIMITIVE, -- MODULE,
                                 ALLOC, DEREF, STORE, TUPLE, PB_INT,
                                 CASE_EXPR, COMPILES, VAL_ABS, SUBSCRIPT,
                                 PAT_WILDCARD, PAT_INT, PAT_BOOL,
@@ -205,6 +205,10 @@ parseEVar pbexpr lines =
 parseVar pbexpr lines = VarAST (fmap parseType (PbExpr.type' pbexpr))
                                (getName "var" $ PbExpr.name pbexpr)
 
+parsePrimitive pbexpr lines =
+    let range = parseRange pbexpr lines in
+    E_Primitive range (parseVar pbexpr lines)
+
 parsePattern :: PbExpr.Expr -> SourceLines -> EPattern
 parsePattern pbexpr lines =
   let range = parseRange pbexpr lines in
@@ -298,6 +302,7 @@ parseExpr pbexpr lines =
                 CASE_EXPR -> parseCaseExpr
                 COMPILES  -> parseCompiles
                 SUBSCRIPT -> parseSubscript
+                PRIMITIVE -> parsePrimitive
                 PAT_WILDCARD -> error "parseExpr called on pattern!"
                 PAT_VARIABLE -> error "parseExpr called on pattern!"
                 PAT_BOOL     -> error "parseExpr called on pattern!"

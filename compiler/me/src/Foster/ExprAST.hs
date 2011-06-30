@@ -37,6 +37,7 @@ data ExprAST =
                           , subscriptIndex :: ExprAST
                           , subscriptRange :: ESourceRange }
         | E_VarAST        ESourceRange E_VarAST
+        | E_Primitive     ESourceRange E_VarAST
         | E_TyApp         ESourceRange ExprAST TypeAST
         | E_Case          ESourceRange ExprAST [(EPattern, ExprAST)]
         deriving Show
@@ -89,6 +90,8 @@ data AnnExpr =
         --Vars go from a Maybe TypeAST to a required TypeAST
         | E_AnnVar       AnnVar
 
+        | AnnPrimitive   AnnVar
+
         | E_AnnTyApp {  annTyAppOverallType :: TypeAST
                      ,  annTyAppExpr        :: AnnExpr
                      ,  annTyAppArgTypes    :: TypeAST }
@@ -129,6 +132,7 @@ typeAST (AnnStore t _ _)     = t
 typeAST (AnnSubscript t _ _) = t
 typeAST (AnnCase t _ _)      = t
 typeAST (E_AnnVar (AnnVar t s)) = t
+typeAST (AnnPrimitive (AnnVar t s)) = t
 typeAST (E_AnnTyApp substitutedTy tm tyArgs) = substitutedTy
 
 -----------------------------------------------------------------------
@@ -136,6 +140,7 @@ typeAST (E_AnnTyApp substitutedTy tm tyArgs) = substitutedTy
 
 tryGetCallNameE :: ExprAST -> String
 tryGetCallNameE (E_VarAST rng (VarAST mt v)) = v
+tryGetCallNameE (E_Primitive rng (VarAST mt v)) = v
 tryGetCallNameE _ = ""
 
 instance Structured ExprAST where
@@ -160,6 +165,7 @@ instance Structured ExprAST where
             E_TyApp rng a t      -> out $ "TyApp        "
             E_Case rng _ _       -> out $ "Case         "
             E_VarAST rng v       -> out $ "VarAST       " ++ evarName v ++ " :: " ++ show (evarMaybeType v)
+            E_Primitive rng v    -> out $ "PrimitiveAST " ++ evarName v ++ " :: " ++ show (evarMaybeType v)
     childrenOf e =
         case e of
             E_BoolAST rng b      -> []
@@ -180,6 +186,7 @@ instance Structured ExprAST where
             E_TyApp  rng a t     -> [a]
             E_Case rng e bs      -> e:(map snd bs)
             E_VarAST _ _         -> []
+            E_Primitive _ _      -> []
 
 termBindingExpr (TermBinding _ e) = e
 termBindingExprs bs = map termBindingExpr bs
@@ -189,6 +196,7 @@ bindingFreeVars (TermBinding v e) = freeVars e `butnot` [evarName v]
 instance Expr ExprAST where
     freeVars e = case e of
         E_VarAST rng v      -> [evarName v]
+        E_Primitive rng v   -> [] -- Primitives are never actually closed over...
         E_LetAST rng bnd e t -> freeVars e ++ (bindingFreeVars bnd)
         E_Case rng e epatbnds -> freeVars e ++ (concatMap epatBindingFreeVars epatbnds)
         E_FnAST f           -> let bodyvars  = freeVars (fnBody f) in
@@ -228,6 +236,7 @@ instance Structured AnnExpr where
             AnnTuple     es      -> out $ "AnnTuple     "
             AnnCase      t e bs  -> out $ "AnnCase      "
             E_AnnVar (AnnVar t v) -> out $ "AnnVar       " ++ show v ++ " :: " ++ show t
+            AnnPrimitive (AnnVar t v) -> out $ "AnnPrimitive " ++ show v ++ " :: " ++ show t
             E_AnnTyApp t e argty -> out $ "AnnTyApp     [" ++ show argty ++ "] :: " ++ show t
     childrenOf e =
         case e of
@@ -247,6 +256,7 @@ instance Structured AnnExpr where
             AnnTuple     es                      -> es
             AnnCase t e bs                       -> e:(map snd bs)
             E_AnnVar      v                      -> []
+            AnnPrimitive  v                      -> []
             E_AnnTyApp t a argty                 -> [a]
 
 instance Expr AnnExpr where
@@ -254,6 +264,7 @@ instance Expr AnnExpr where
 
 freeIdentsA e = case e of
         E_AnnVar v      -> [avarIdent v]
+        AnnPrimitive v  -> []
         AnnLetVar id a b     -> freeIdentsA a ++ (freeIdentsA b `butnot` [id])
         AnnCase _t e patbnds -> freeIdentsA e ++ (concatMap patBindingFreeIds patbnds)
         -- Note that all free idents of the bound expr are free in letvar,
@@ -279,4 +290,5 @@ patBindingFreeIds (pat, expr) =
 
 annFnBoundNames :: AnnFn -> [String]
 annFnBoundNames fn = map show (annFnVars fn)
+
 

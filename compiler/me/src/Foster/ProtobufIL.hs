@@ -147,7 +147,8 @@ dumpAllocate (ILAllocInfo region maybe_array_size) =
 
 dumpExpr :: ILExpr -> PbExpr.Expr
 
-dumpExpr (ILCall t base args) = dumpCall t base args
+dumpExpr (ILCall     t base args) = dumpCall IL_CALL      t base args
+dumpExpr (ILCallPrim t base args) = dumpCall IL_CALL_PRIM t base args
 
 dumpExpr x@(ILBool b) =
     P'.defaultValue { bool_value   = Just b
@@ -171,6 +172,13 @@ dumpExpr x@(ILAlloc a) =
                     , PbExpr.tag   = IL_ALLOC
                     , PbExpr.type' = Just $ dumpType (PtrTypeAST $ typeIL (ILVar a))  }
 
+dumpExpr x@(ILAllocArray elt_ty size) =
+    P'.defaultValue { PbExpr.parts = fromList []
+                    , PbExpr.tag   = IL_MEMALLOC
+                    , PbExpr.type' = Just $ dumpType elt_ty
+                    , PbExpr.alloc_info = Just $ dumpAllocate
+                                (ILAllocInfo MemRegionGlobalHeap (Just size)) }
+
 dumpExpr x@(ILDeref t a) =
     P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [ILVar a])
                     , PbExpr.tag   = IL_DEREF
@@ -185,7 +193,7 @@ dumpExpr x@(ILArrayRead t a b ) =
     P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [ILVar a, ILVar b])
                     , PbExpr.tag   = IL_ARRAY_READ
                     , PbExpr.type' = Just $ dumpType (typeIL x)  }
-                    
+
 dumpExpr x@(ILArrayPoke v b i ) =
     P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [ILVar v, ILVar b, ILVar i])
                     , PbExpr.tag   = IL_ARRAY_POKE
@@ -289,9 +297,9 @@ dumpOcc offs =
 
 -----------------------------------------------------------------------
 
-dumpCall t base args =
+dumpCall tag t base args =
     P'.defaultValue { PbExpr.parts = fromList $ fmap (\v -> dumpExpr (ILVar v)) (base : args)
-                    , PbExpr.tag   = IL_CALL
+                    , PbExpr.tag   = tag
                     , PbExpr.type' = Just $ dumpType t }
 
 dumpIf x@(ILIf t v b c) =

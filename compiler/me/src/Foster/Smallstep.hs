@@ -65,6 +65,7 @@ data IExpr =
         | IIf           Ident   SSTerm     SSTerm
         | IUntil                SSTerm     SSTerm
         | ICall         Ident  [Ident]
+        | ICallPrim     String [Ident]
         | ICase         Ident  (DecisionTree ILExpr) [(Pattern, SSTerm)]
         | ITyApp       SSTerm  TypeAST
         deriving (Show)
@@ -85,11 +86,13 @@ ssTermOfExpr expr =
     ILTuple vs             -> SSTmExpr  $ ITuple (map avarIdent vs)
     ILClosures bnds clos e -> SSTmExpr  $ IClosures bnds clos (tr e)
     ILLetVal x b e         -> SSTmExpr  $ ILetVal x (tr b) (tr e)
-    ILCall    t b vs       -> SSTmExpr  $ ICall (avarIdent b) (map avarIdent vs)
-    ILIf      t  v b c     -> SSTmExpr  $ IIf (avarIdent v) (tr b) (tr c)
-    ILUntil   t  a b       -> SSTmExpr  $ IUntil            (tr a) (tr b)
+    ILCall     t b vs      -> SSTmExpr  $ ICall (avarIdent b) (map avarIdent vs)
+    ILCallPrim t b vs      -> SSTmExpr  $ ICallPrim (identPrefix $ avarIdent b) (map avarIdent vs)
+    ILIf       t  v b c    -> SSTmExpr  $ IIf (avarIdent v) (tr b) (tr c)
+    ILUntil    t  a b      -> SSTmExpr  $ IUntil            (tr a) (tr b)
     ILArrayRead t a b      -> SSTmExpr  $ IArrayRead (avarIdent a) (avarIdent b)
     ILArrayPoke v b i      -> SSTmExpr  $ IArrayPoke (avarIdent v) (avarIdent b) (avarIdent i)
+    ILAllocArray ety n     -> SSTmExpr  $ ICallPrim "allocDArray" [avarIdent n]
     ILAlloc a              -> SSTmExpr  $ IAlloc (avarIdent a)
     ILDeref t a            -> SSTmExpr  $ IDeref (avarIdent a)
     ILStore t a b          -> SSTmExpr  $ IStore (avarIdent a) (avarIdent b)
@@ -317,6 +320,10 @@ stepExpr gs expr = do
               elsewise ->
                     error $ "Direct pattern matching disagreed with decision tree!"
                         ++ "\n" ++ show elsewise ++ " vs \n" ++ show varsvals
+    ICallPrim name vs ->
+        let args = map (getval gs) vs in
+        tryEvalPrimitive gs name args
+
     ICall b vs ->
         let args = map (getval gs) vs in
         case tryLookupProc gs b of
@@ -352,7 +359,7 @@ stepExpr gs expr = do
           SSArray arr  ->  let (SSLocation z) = arraySlotLocation arr n in
                            return $ withTerm gs  (SSTmValue $ lookupHeap gs z)
           _ -> error "Expected base of array read to be array value"
-          
+
     IArrayPoke iv base idxvar ->
         let (SSInt i) = getval gs idxvar in
         let n = fromInteger i in
@@ -598,7 +605,9 @@ tryEvalPrimitive gs "print_i32b" [val@(SSInt i)] =
       do printString gs (showBits32 i)
          return $ withTerm gs unit
 
-tryEvalPrimitive gs0 "allocDArray32" [SSInt i] =
+-- The array cells are initially filled with constant zeros,
+-- regardless of what type we will eventually store.
+tryEvalPrimitive gs0 "allocDArray" [SSInt i] =
       do (inits, gs) <- mapFoldM [0.. i - 1] gs0 (\n -> \gs1 ->
                                 let (loc, gs) = extendHeap gs1 (SSInt 0) in
                                 return ([(fromInteger n, loc)], gs)

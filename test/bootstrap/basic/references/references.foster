@@ -5,9 +5,10 @@ main = {
   //ref-until();
   //hof-until();
   arrays();
-  tuprefs();
+  //tuprefs();
 };
 
+/*
 tuprefs = {
   let t = ((ref opaquely_i32 1), (ref 2)); in
     expect_i32 1;
@@ -42,9 +43,10 @@ ref-if = {
     print_i32 r^;
   end
 };
+*/
 
 newDArray32 = { n : i32 => f : { i32 => i32 } =>
-  let a = allocDArray32 n;
+  let a = #allocDArray:[i32] n;
       x = (ref n);
    in
       until x^ == 0 then
@@ -63,6 +65,7 @@ arrays = {
   end
 };
 
+/*
 hof-until-if = { c : {i1} => b : { () } =>
   if c () then 0 else let j0 = b (); in hof-until-if c b end
   end
@@ -101,3 +104,4 @@ ref-until = {
       end
   end
 };
+*/

@@ -153,7 +153,7 @@ void IntAST::show(PrettyPrintPass* pass) {
 // name (: type)
 void VariableAST::show(PrettyPrintPass* pass) {
   ScopedBlock sb(pass);
-  pass->scan(PPToken(this->name));
+  pass->scan(PPToken(this->getName()));
   //std::stringstream ss; ss << "@" << this; pass->scan(PPToken(ss.str()));
   if (pass->printVarTypes) {
     pass->scan(PPToken(":"));
@@ -162,6 +162,12 @@ void VariableAST::show(PrettyPrintPass* pass) {
     }
   }
 }
+
+void PrimitiveAST::show(PrettyPrintPass* pass) {
+  ScopedBlock sb(pass);
+  pass->scan(PPToken(this->getName()));
+}
+
 
 std::string getPrimitiveOpName(const std::string& varname) {
   if (!pystring::startswith(varname, "primitive_")) {

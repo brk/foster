@@ -100,6 +100,7 @@ llvm::Value* emitStore(llvm::Value* val,
 // verifies that the expected type matches the generated type.
 // In most cases, emit() should be used instead of codegen().
 llvm::Value* CodegenPass::emit(LLExpr* e, TypeAST* expectedType) {
+  ASSERT(e != NULL) << "null expr passed to emit()!";
   llvm::Value* v = e->codegen(this);
 
   if (this->needsImplicitLoad.count(v) == 1) {
@@ -140,51 +141,9 @@ void LLModule::codegenModule(CodegenPass* pass) {
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
 
-llvm::Function* generateAllocDAarray32(CodegenPass* pass) {
-  // Create a function of type  array[i32] (i32 n)
-  std::vector<const Type*> fnTyArgs;
-  fnTyArgs.push_back(builder.getInt32Ty());
-
-  const llvm::Type* elt_ty = builder.getInt32Ty();
-  const llvm::FunctionType* fnty =
-        llvm::FunctionType::get(
-                   /*Result=*/   ArrayTypeAST::getZeroLengthTypeRef(elt_ty),
-                   /*Params=*/   fnTyArgs,
-                   /*isVarArg=*/ false);
-
-  Function* f = Function::Create(
-    /*Type=*/    fnty,
-    /*Linkage=*/ llvm::GlobalValue::InternalLinkage,
-    /*Name=*/    ".foster_alloc_array_32", pass->mod);
-
-  f->setGC("fostergc");
-
-  /////////////////////////////
-
-  Function::arg_iterator args = f->arg_begin();
-  Value* n = args++;
-  n->setName("n");
-
-  BasicBlock* prevBB = builder.GetInsertBlock();
-  pass->addEntryBB(f);
-
-  Value* slot = pass->emitArrayMalloc(elt_ty, n);
-  builder.CreateRet(builder.CreateLoad(slot, /*isVolatile=*/ false));
-
-  if (prevBB) {
-    builder.SetInsertPoint(prevBB);
-  }
-
-  return f;
-}
-
 llvm::Function* CodegenPass::lookupFunctionOrDie(const std::string& fullyQualifiedSymbol) {
   // Otherwise, it should be a function name.
   llvm::Function* f = mod->getFunction(fullyQualifiedSymbol);
-
-  if (!f && fullyQualifiedSymbol == "allocDArray32") {
-    f = generateAllocDAarray32(this);
-  }
 
   if (!f) {
    currentErrs() << "Unable to find function in module named: "
@@ -276,23 +235,43 @@ llvm::Value* emitRuntimeArbitraryPrecisionOperation(const std::string& op,
 //////////////// LLAlloc, LLDeref, LLStore /////////////////////////
 ////////////////////////////////////////////////////////////////////
 
-llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
+Value* allocateCell(CodegenPass* pass, TypeAST* type,
+                    LLAllocate::MemRegion region) {
   const llvm::Type* ty = NULL;
-  if (TupleTypeAST* tuplety = dynamic_cast<TupleTypeAST*>(this->type)) {
+  if (TupleTypeAST* tuplety = dynamic_cast<TupleTypeAST*>(type)) {
     ty = tuplety->getLLVMTypeUnboxed();
   } else {
-    ty = this->type->getLLVMType();
+    ty = type->getLLVMType();
   }
 
-  switch (this->region) {
-  case MEM_REGION_STACK:
+  switch (region) {
+  case LLAllocate::MEM_REGION_STACK:
     return CreateEntryAlloca(ty, "alloc");
 
-  case MEM_REGION_GLOBAL_HEAP:
+  case LLAllocate::MEM_REGION_GLOBAL_HEAP:
     return pass->emitMalloc(ty);
 
   default:
     ASSERT(false); return NULL;
+  }
+}
+
+Value* allocateArray(CodegenPass* pass, TypeAST* ty,
+                     LLAllocate::MemRegion region,
+                     Value* arraySize) {
+  const llvm::Type* elt_ty = getLLVMType(ty);
+  ASSERT(region == LLAllocate::MEM_REGION_GLOBAL_HEAP);
+  return pass->emitArrayMalloc(elt_ty, arraySize);
+}
+
+llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
+  if (this->arraySize != NULL) {
+    EDiag() << "allocating array, type = " << str(this->type);
+    return allocateArray(pass, this->type, this->region,
+                         pass->emit(this->arraySize, NULL));
+  } else {
+    EDiag() << "allocating cell...";
+    return allocateCell(pass, this->type, this->region);
   }
 }
 
@@ -1139,7 +1118,7 @@ LLProc* getClosureVersionOf(LLExpr* arg,
                                      inArgTypes,
                                      fnty->getAnnots());
   newfnty->markAsProc();
-  LLExpr* body = new LLCall(var, callArgs);
+  LLExpr* body = new LLCall(var, callArgs, false);
   LLProc* proc = new LLProc(newfnty, fnName, inArgNames,
                             llvm::GlobalValue::InternalLinkage, body);
 
