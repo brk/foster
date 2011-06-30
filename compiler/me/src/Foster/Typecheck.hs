@@ -285,8 +285,6 @@ typecheckTyApp ctx rng a t maybeExpTy = do
 
 -----------------------------------------------------------------------
 
--- Tuple subscripts must have a literal integer subscript denoting the field;
--- looking up the field at runtime wouldn't make much sense.
 typecheckSubscript ctx rng base (TupleTypeAST types) i@(AnnInt ty int) maybeExpTy =
     tcFails (out $ "Subscripting tuples is not allowed;"
                 ++ " use pattern matching instead!")
@@ -305,7 +303,7 @@ typecheckSubscript ctx rng base (ArrayType t) aiexpr maybeExpTy = do
       Nothing -> return ()
       Just expTy -> equateTypes t expTy (Just "subscript expected type")
 
-    return (AnnSubscript (RefType t) base aiexpr)
+    return (AnnSubscript t base aiexpr)
 
 typecheckSubscript ctx rng base baseType index maybeExpTy =
     tcFails $ out $ "Unable to subscript expression of type " ++ show baseType
