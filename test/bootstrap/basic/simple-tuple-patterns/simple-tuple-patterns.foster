@@ -1,10 +1,22 @@
 main = {
- //t1 ();
- //t2 ();
- //t3 ();
+  t1 ();
+  t2 ();
+  t3 ();
   t5 ();
+  tuple-cloconv();
+  t10 ();
+  t11 ();
+  t12 ();
 };
-/*
+
+tuple-cloconv = {
+  // This test ensures that bindings introduced by pattern matching
+  // can be successfully closed over.
+  let f = case (1, 2) of (_, b) -> { b } end;
+  in  expect_i32 2; print_i32 (f ())
+  end
+};
+
 t1 = {
   expect_i32 1;
   print_i32
@@ -41,7 +53,6 @@ t4 = {
       of a -> a
     end;
 };
-*/
 
 // Ensure that subsequent (un-taken) matches do not mess us up.
 t5 = {
@@ -50,5 +61,34 @@ t5 = {
     case (opaquely_i32 3, opaquely_i32 5)
       of (3, b) -> b
       of (c, d) -> 12345
+    end;
+};
+
+
+t10 = {
+  expect_i32 10;
+  print_i32
+    case (opaquely_i32 1, opaquely_i32 2)
+      of (3, b) -> primitive_+_i32 2 b
+      of a -> 10
+    end;
+};
+
+t11 = {
+  expect_i32 11;
+  print_i32
+    case (opaquely_i32 1, opaquely_i32 2, opaquely_i32 3)
+      of (a, 3, b) -> b
+      of (a, 2, c) -> primitive_+_i32 8 c
+      of (a, d, c) -> d
+    end;
+};
+
+t12 = {
+  expect_i32 123;
+  print_i32
+    case (opaquely_i32 1, opaquely_i32 2, opaquely_i32 3)
+      of (_, _, _) -> 123
+      of (_, _, _) -> 1
     end;
 };
