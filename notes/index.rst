@@ -14,6 +14,7 @@ Foster Notes
    compiler
    closures
    syntax
+   arrays
    llvm
    compiled-examples
    coro
