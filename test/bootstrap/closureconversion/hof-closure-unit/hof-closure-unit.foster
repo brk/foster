@@ -1,9 +1,21 @@
 run-clo = { f:{i32} => f () };
 
 main = {
+  test-capture-zero();
+  test-capture-one();
+};
+
+test-capture-one = {
   let n = opaquely_i32 2;
       c = { n + (opaquely_i32 3) };
      j0 = expect_i32 5;
+     j1 = print_i32 (run-clo c);
+  in 0 end
+};
+
+test-capture-zero = {
+  let c = { (opaquely_i32 0)  + (opaquely_i32 3) };
+     j0 = expect_i32 3;
      j1 = print_i32 (run-clo c);
   in 0 end
 };

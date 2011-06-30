@@ -191,10 +191,11 @@ step gs =
 coroFromClosure :: MachineState -> ILClosure -> [SSValue] -> ((Location, MachineState), Coro)
 coroFromClosure gs (ILClosure id avars) cenv =
   let (Just ssproc) = tryLookupProc gs id in
+  let (clo_env:args) = ssProcVars ssproc in
   let ins (id,val) map = Map.insert id val map in
-  let env = List.foldr ins Map.empty (zip (map avarIdent avars) cenv) in
+  let env = List.foldr ins Map.empty [(avarIdent clo_env, SSTuple cenv)] in
   let coro = Coro { coroTerm = ssProcBody ssproc
-                  , coroArgs = ssProcVars ssproc
+                  , coroArgs = args
                   , coroEnv  = env
                   , coroStat = CoroStatusDormant
                   , coroLoc  = nextLocation (hpBump (stHeap gs))
@@ -304,7 +305,7 @@ stepExpr gs expr = do
         SSTmExpr _     -> subStep (withTerm gs b) ( envOf gs
                                                   , \t -> SSTmExpr $ ILetVal x t e)
 
-    ICase a _dt [] -> error $ "Pattern match failure!"
+    ICase a _dt [] -> error $ "Smallstep.hs: Pattern match failure when evaluating case expr!"
     ICase a dt ((p, e):bs) ->
        -- First, interpret the pattern list directly
        -- (using recursive calls to discard unmatched branches).
@@ -512,7 +513,8 @@ evalPrimitive PrimCoroInvoke gs [(SSLocation targetloc),arg] =
                                    (coroLoc ncoro) (SSCoro $ newcoro)
          , stCoroLoc = coroLoc ncoro
        } in
-       return $ extendEnv gs2 (tail $ map avarIdent $ coroArgs newcoro) [arg]
+       let names = map avarIdent $ coroArgs newcoro in
+       return $ extendEnv gs2 names [arg]
 
 evalPrimitive PrimCoroInvoke gs _ = error $ "Wrong arguments to coro_invoke"
 
