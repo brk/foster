@@ -862,10 +862,8 @@ llvm::Value* tryBindArray(llvm::Value* base) {
 llvm::Value* LLSubscript::codegen(CodegenPass* pass) {
   Value* base = pass->emit(this->base , NULL);
   Value* idx  = pass->emit(this->index, NULL);
-  ASSERT(base); ASSERT(idx);
 
   if (llvm::Value* arr = tryBindArray(base)) {
-    //EDiag() << "arr = " << str(arr) << " :: " << str(arr->getType());
     // TODO emit code to validate idx value is in range.
     return getPointerToIndex( arr, idx, "");
   } else {

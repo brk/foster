@@ -292,10 +292,7 @@ GlobalVariable* emitTypeMap(
   OffsetSet pointerOffsets = countPointersInType(ty);
   for(size_t i = 0; i < pointerOffsets.size(); ++i) {
     if (skippedOffsets.count(i) == 0) {
-      EDiag() << "adding pointer offset " << i;
       filteredOffsets.push_back(pointerOffsets[i]);
-    } else {
-      EDiag() << "skipping pointer offset " << i;
     }
   }
 
