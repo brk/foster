@@ -59,7 +59,7 @@ arrays = {
   let a = newDArray32 2 { n : i32 => n };
    in
       expect_i32 2;
-     print_i32 a[1];
+     print_i32 a[opaquely_i32 1];
   end
 };
 

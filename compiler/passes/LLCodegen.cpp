@@ -864,10 +864,15 @@ bool tryBindArray(llvm::Value* base, Value*& arr, Value*& len) {
   return false;
 }
 
-llvm::Value* getArraySlot(llvm::Value* base, llvm::Value* idx) {
-  llvm::Value* arr = NULL; llvm::Value* len;
+Value* getArraySlot(Value* base, Value* idx, CodegenPass* pass) {
+  Value* arr = NULL; Value* len;
   if (tryBindArray(base, arr, len)) {
     // TODO emit code to validate idx value is in range.
+    emitFosterAssert(pass->mod,
+      builder.CreateICmpSLT(
+                builder.CreateSExt(idx, len->getType()),
+                len, "boundscheck"),
+      "array index out of bounds!");
     return getPointerToIndex(arr, idx, "arr_slot");
   } else {
     ASSERT(false) << "expected array, got " << str(base);
@@ -878,7 +883,7 @@ llvm::Value* getArraySlot(llvm::Value* base, llvm::Value* idx) {
 llvm::Value* LLArrayRead::codegen(CodegenPass* pass) {
   Value* base = pass->emit(this->base , NULL);
   Value* idx  = pass->emit(this->index, NULL);
-  Value* slot = getArraySlot(base, idx);
+  Value* slot = getArraySlot(base, idx, pass);
   Value* val  = builder.CreateLoad(slot, /*isVolatile=*/ false);
   return newImplicitStackSlot(val, pass);
 }
@@ -887,7 +892,7 @@ llvm::Value* LLArrayPoke::codegen(CodegenPass* pass) {
   Value* val  = pass->emit(this->value, NULL);
   Value* base = pass->emit(this->base , NULL);
   Value* idx  = pass->emit(this->index, NULL);
-  Value* slot = getArraySlot(base, idx);
+  Value* slot = getArraySlot(base, idx, pass);
   return builder.CreateStore(val, slot, /*isVolatile=*/ false);
 }
 

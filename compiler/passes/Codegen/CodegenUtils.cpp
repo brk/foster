@@ -91,7 +91,7 @@ Value* getElementFromComposite(Value* compositeValue, Value* idxValue,
     //        are allowed, and they are not required to be constant."
     //   -- http://llvm.org/docs/LangRef.html#i_getelementptr
     Value* gep = getPointerToIndex(compositeValue, idxValue, (msg + ".subgep").c_str());
-    return builder.CreateLoad(gep, "subgep_ld");
+    return builder.CreateLoad(gep, gep->getName() + "_ld");
   } else if (llvm::isa<llvm::StructType>(compositeType)
           && llvm::isa<llvm::Constant>(idxValue)) {
     ASSERT(llvm::isa<llvm::ConstantInt>(idxValue))
