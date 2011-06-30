@@ -62,7 +62,7 @@ data ILAllocInfo = ILAllocInfo AllocMemRegion (Maybe AnnVar)
 
 showProgramStructure :: ILProgram -> Output
 showProgramStructure (ILProgram procdefs decls _lines) =
-    concat [showProcStructure p | p <- procdefs]
+    concatMap showProcStructure procdefs
 
 procVarDesc (AnnVar ty id) = "( " ++ (show id) ++ " :: " ++ show ty ++ " ) "
 
@@ -443,7 +443,6 @@ patternBindings (p, ty) =
                                             AnnVar ty id]
     P_Tuple    rng pats ->
       case ty of
-        TupleTypeAST tys ->
-          concat $ map patternBindings (zip pats tys)
+        TupleTypeAST tys -> concatMap patternBindings (zip pats tys)
         otherwise -> (error $ "patternBindings failed on typechecked pattern!"
                                 ++ "\np = " ++ show p ++ " ; ty = " ++ show ty)
