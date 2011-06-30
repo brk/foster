@@ -45,7 +45,7 @@ data ILExpr =
         | ILAlloc               AnnVar
         | ILDeref       TypeAST AnnVar
         | ILStore       TypeAST AnnVar AnnVar
-        | ILSubscript   TypeAST AnnVar ILExpr
+        | ILSubscript   TypeAST AnnVar AnnVar
         | ILIf          TypeAST AnnVar ILExpr ILExpr
         | ILUntil       TypeAST ILExpr ILExpr
         | ILCase        TypeAST AnnVar [(Pattern, ILExpr)] (DecisionTree ILExpr)
@@ -147,7 +147,7 @@ closureConvert ctx expr =
             AnnStore t a b         -> do [a', b'] <- mapM g [a, b]
                                          nestedLets [a', b'] (\[x, y] -> ILStore t x y)
             AnnSubscript t a b     -> do [a', b'] <- mapM g [a, b]
-                                         nestedLets [a'] (\[va] -> ILSubscript t va b')
+                                         nestedLets [a', b'] (\[va, vb] -> ILSubscript t va vb)
 
             AnnTuple     es        -> do cs <- mapM g es
                                          nestedLets cs (\vs -> ILTuple vs)
@@ -406,7 +406,7 @@ instance Structured ILExpr where
             ILAlloc   v             -> [ILVar v]
             ILDeref t v             -> [ILVar v]
             ILStore t v w           -> [ILVar v, ILVar w]
-            ILSubscript t a b       -> [ILVar a, b]
+            ILSubscript t a b       -> [ILVar a, ILVar b]
             ILVar (AnnVar t i)      -> []
             ILTyApp t e argty       -> [e]
 

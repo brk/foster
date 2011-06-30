@@ -4,7 +4,7 @@ main = {
   //ref-if ();
   //ref-until();
   //hof-until();
-  //arrays();
+  arrays();
   tuprefs();
 };
 

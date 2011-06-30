@@ -172,9 +172,9 @@ struct LLTuple : public LLExpr {
 
 // v[index]
 struct LLSubscript : public LLExpr {
-  LLVar * base;
-  LLExpr* index;
-  explicit LLSubscript(LLVar* base, LLExpr* index)
+  LLVar* base;
+  LLVar* index;
+  explicit LLSubscript(LLVar* base, LLVar* index)
     : LLExpr("LLSubscript"), base(base), index(index) {
     }
   virtual llvm::Value* codegen(CodegenPass* pass);

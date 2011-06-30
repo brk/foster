@@ -60,7 +60,7 @@ data IExpr =
         -- codegen-ing closures so they can be mutually recursive.
         | IClosures    [Ident] [ILClosure] SSTerm
         | ILetVal       Ident   SSTerm     SSTerm
-        | ISubscript    Ident   SSTerm
+        | ISubscript    Ident   Ident
         | IIf           Ident   SSTerm     SSTerm
         | IUntil                SSTerm     SSTerm
         | ICall         Ident  [Ident]
@@ -87,7 +87,7 @@ ssTermOfExpr expr =
     ILCall    t b vs       -> SSTmExpr  $ ICall (avarIdent b) (map avarIdent vs)
     ILIf      t  v b c     -> SSTmExpr  $ IIf (avarIdent v) (tr b) (tr c)
     ILUntil   t  a b       -> SSTmExpr  $ IUntil            (tr a) (tr b)
-    ILSubscript t a b      -> SSTmExpr  $ ISubscript (avarIdent a) (tr b)
+    ILSubscript t a b      -> SSTmExpr  $ ISubscript (avarIdent a) (avarIdent b)
     ILAlloc a              -> SSTmExpr  $ IAlloc (avarIdent a)
     ILDeref t a            -> SSTmExpr  $ IDeref (avarIdent a)
     ILStore t a b          -> SSTmExpr  $ IStore (avarIdent a) (avarIdent b)
@@ -342,17 +342,12 @@ stepExpr gs expr = do
         ILetVal v c (SSTmExpr $ IIf v unit
                     (SSTmExpr $ ILetVal (Ident "_" 0) b (SSTmExpr $ IUntil c b))))
 
-    ISubscript v (SSTmValue (SSInt i)) ->
+    ISubscript v idxvar ->
+        let (SSInt i) = getval gs idxvar in
         let n = fromInteger i in
         case getval gs v of
-          SSTuple vals -> return $ withTerm gs (SSTmValue (vals !! n))
           SSArray arr  -> return $ withTerm gs (SSTmValue (arrayIndex arr n))
-          _ -> error "Expected base of subscript to be tuple value"
-
-    ISubscript v e@(SSTmExpr _) -> subStep (withTerm gs e) (envOf gs, \t -> SSTmExpr $ ISubscript v t)
-
-    ISubscript v (SSTmValue e) ->
-      error $ ("step ilsubsc "  ++ show v ++ " // " ++ show e)
+          _ -> error "Expected base of subscript to be array value"
 
     ITyApp e@(SSTmExpr _) argty -> subStep (withTerm gs e) (envOf gs, \t -> SSTmExpr $ ITyApp t argty)
     ITyApp e@(SSTmValue (SSPrimitive PrimCoroInvoke)) _ -> return $ withTerm gs e

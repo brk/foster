@@ -183,7 +183,7 @@ LLExpr* parseSubscript(const pb::Expr& e) {
   ASSERT(e.parts_size() == 2) << "subscript must have base and index";
   return new LLSubscript(
        LLVar_from_pb(& e.parts(0)),
-      LLExpr_from_pb(& e.parts(1)));
+       LLVar_from_pb(& e.parts(1)));
 }
 
 LLExpr* parseUntil(const pb::Expr& e) {

@@ -182,7 +182,7 @@ dumpExpr x@(ILStore t a b ) =
                     , PbExpr.type' = Just $ dumpType (typeIL x)  }
 
 dumpExpr x@(ILSubscript t a b ) =
-    P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [ILVar a, b])
+    P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [ILVar a, ILVar b])
                     , PbExpr.tag   = IL_SUBSCRIPT
                     , PbExpr.type' = Just $ dumpType (typeIL x)  }
 
