@@ -256,7 +256,6 @@ void TuplePattern::dump(DumpToProtobufPass* pass) {
   std::vector<Pattern*>& parts = this->patterns;
   pass->current->mutable_parts()->Reserve(parts.size());
   for (size_t i = 0; i < parts.size(); ++i) {
-    llvm::outs() << "dumping tuple pattern " << i << "/" << parts.size() <<"\n";
     dumpPattern(pass, pass->current->add_parts(), parts[i]);
   }
 }
@@ -267,11 +266,8 @@ void CaseExpr::dump(DumpToProtobufPass* pass) {
   dumpChild(pass, c->mutable_scrutinee(), this->parts[0]);
   for (size_t i = 0; i < this->branches.size(); ++i) {
     CaseBranch b = this->branches[i];
-    llvm::outs() << b.first << "dumping case pattern " << i << "/" << branches.size() <<"\n";
     dumpPattern(pass, c->add_pattern(), b.first);
-    llvm::outs() << b.second << "dumping case branch " << i << "/" << branches.size() <<"\n";
     dumpChild(  pass, c->add_branch(), b.second);
-    llvm::outs() << "done dumping case branch " << i << "/" << branches.size() <<"\n";
   }
 }
 
