@@ -47,8 +47,6 @@ void checkPointerToIndex(Value* ptrToCompositeValue,
       << "Attempt to use index " << str(idxValue)
       << "\non val of type "     << str(ptrToCompositeValue->getType())
       << "\nwith value "         << str(ptrToCompositeValue);
-      llvm::outs() << "gep " << str(ptrToCompositeValue->getType())
-                    << "  of type " << str(idxValue) << "\n";
   } else {
     ASSERT(false) << "Pointer to non-composite type "
                   <<  str(ptrToCompositeValue->getType())
