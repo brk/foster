@@ -574,6 +574,16 @@ bool functionMightAllocateMemory(LLProc* proc) {
   return true; // conservative approximation to MightAlloc
 }
 
+llvm::AllocaInst* newImplicitStackSlot(llvm::Value* v, CodegenPass* pass) {
+  if (mightContainHeapPointers(v->getType())) {
+    return pass->storeAndMarkPointerAsGCRoot(v, NotArray);
+  } else {
+    llvm::AllocaInst* slot = stackSlotWithValue(v, v->getNameStr() + "_addr");
+    pass->markAsNeedingImplicitLoads(slot);
+    return slot;
+  }
+}
+
 llvm::Value* LLProc::codegenProc(CodegenPass* pass) {
   ASSERT(this->getBody() != NULL);
   ASSERT(this->F != NULL) << "LLModule should codegen proto for " << getName();
@@ -592,15 +602,8 @@ llvm::Value* LLProc::codegenProc(CodegenPass* pass) {
   if (functionMightAllocateMemory(this)) {
     Function::arg_iterator AI = F->arg_begin();
     for ( ; AI != F->arg_end(); ++AI) {
-      if (mightContainHeapPointers(AI->getType())) {
-        scope->insert(AI->getNameStr(),
-                      pass->storeAndMarkPointerAsGCRoot(AI, NotArray));
-      } else {
-        llvm::AllocaInst* arg_addr =
-                stackSlotWithValue(AI, AI->getNameStr() + "_addr");
-        scope->insert(AI->getNameStr(), arg_addr);
-        pass->markAsNeedingImplicitLoads(arg_addr);
-      }
+      llvm::Value* slot = newImplicitStackSlot(AI, pass);
+      scope->insert(AI->getNameStr(), slot);
     }
   }
 
@@ -842,7 +845,7 @@ bool isPointerToStruct(const llvm::Type* ty) {
   return false;
 }
 
-llvm::Value* tryBindArray(llvm::Value* base) {
+bool tryBindArray(llvm::Value* base, Value*& arr, Value*& len) {
   // {i64, [0 x T]}*
   if (isPointerToStruct(base->getType())) {
     const llvm::Type* sty = base->getType()->getContainedType(0);
@@ -851,25 +854,41 @@ llvm::Value* tryBindArray(llvm::Value* base) {
       if (const llvm::ArrayType* aty =
         llvm::dyn_cast<llvm::ArrayType>(sty->getContainedType(1))) {
         if (aty->getNumElements() == 0) {
-          return getPointerToIndex(base, getConstantInt32For(1), "");
+          arr = getPointerToIndex(base, getConstantInt32For(1), "arr");
+          len = getElementFromComposite(base, getConstantInt32For(0), "len");
+          return true;
         }
       }
     }
   }
-  return NULL;
+  return false;
 }
 
-llvm::Value* LLSubscript::codegen(CodegenPass* pass) {
+llvm::Value* getArraySlot(llvm::Value* base, llvm::Value* idx) {
+  llvm::Value* arr = NULL; llvm::Value* len;
+  if (tryBindArray(base, arr, len)) {
+    // TODO emit code to validate idx value is in range.
+    return getPointerToIndex(arr, idx, "arr_slot");
+  } else {
+    ASSERT(false) << "expected array, got " << str(base);
+    return NULL;
+  }
+}
+
+llvm::Value* LLArrayRead::codegen(CodegenPass* pass) {
   Value* base = pass->emit(this->base , NULL);
   Value* idx  = pass->emit(this->index, NULL);
+  Value* slot = getArraySlot(base, idx);
+  Value* val  = builder.CreateLoad(slot, /*isVolatile=*/ false);
+  return newImplicitStackSlot(val, pass);
+}
 
-  if (llvm::Value* arr = tryBindArray(base)) {
-    // TODO emit code to validate idx value is in range.
-    return getPointerToIndex( arr, idx, "");
-  } else {
-    ASSERT(false) << "no more subscripting non-array values!";
-    return getElementFromComposite(base, idx, "");
-  }
+llvm::Value* LLArrayPoke::codegen(CodegenPass* pass) {
+  Value* val  = pass->emit(this->value, NULL);
+  Value* base = pass->emit(this->base , NULL);
+  Value* idx  = pass->emit(this->index, NULL);
+  Value* slot = getArraySlot(base, idx);
+  return builder.CreateStore(val, slot, /*isVolatile=*/ false);
 }
 
 ////////////////////////////////////////////////////////////////////

@@ -181,9 +181,14 @@ dumpExpr x@(ILStore t a b ) =
                     , PbExpr.tag   = IL_STORE
                     , PbExpr.type' = Just $ dumpType (typeIL x)  }
 
-dumpExpr x@(ILSubscript t a b ) =
+dumpExpr x@(ILArrayRead t a b ) =
     P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [ILVar a, ILVar b])
-                    , PbExpr.tag   = IL_SUBSCRIPT
+                    , PbExpr.tag   = IL_ARRAY_READ
+                    , PbExpr.type' = Just $ dumpType (typeIL x)  }
+                    
+dumpExpr x@(ILArrayPoke v b i ) =
+    P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [ILVar v, ILVar b, ILVar i])
+                    , PbExpr.tag   = IL_ARRAY_POKE
                     , PbExpr.type' = Just $ dumpType (typeIL x)  }
 
 dumpExpr x@(ILInt ty int) =

@@ -45,7 +45,8 @@ data ILExpr =
         | ILAlloc               AnnVar
         | ILDeref       TypeAST AnnVar
         | ILStore       TypeAST AnnVar AnnVar
-        | ILSubscript   TypeAST AnnVar AnnVar
+        | ILArrayRead   TypeAST AnnVar AnnVar
+        | ILArrayPoke           AnnVar AnnVar AnnVar
         | ILIf          TypeAST AnnVar ILExpr ILExpr
         | ILUntil       TypeAST ILExpr ILExpr
         | ILCase        TypeAST AnnVar [(Pattern, ILExpr)] (DecisionTree ILExpr)
@@ -144,10 +145,14 @@ closureConvert ctx expr =
                                          nestedLets [a'] (\[x] -> ILAlloc x)
             AnnDeref t a           -> do a' <- g a
                                          nestedLets [a'] (\[x] -> ILDeref t x)
+            AnnStore t a (AnnSubscript _t b c)
+                                   -> do [a', b', c'] <- mapM g [a, b, c]
+                                         nestedLets [a', b', c'] (\[x, y, z] ->
+                                                ILArrayPoke x y z)
             AnnStore t a b         -> do [a', b'] <- mapM g [a, b]
                                          nestedLets [a', b'] (\[x, y] -> ILStore t x y)
             AnnSubscript t a b     -> do [a', b'] <- mapM g [a, b]
-                                         nestedLets [a', b'] (\[va, vb] -> ILSubscript t va vb)
+                                         nestedLets [a', b'] (\[va, vb] -> ILArrayRead t va vb)
 
             AnnTuple     es        -> do cs <- mapM g es
                                          nestedLets cs (\vs -> ILTuple vs)
@@ -364,7 +369,8 @@ typeIL (ILUntil t a b)     = t
 typeIL (ILAlloc v)         = RefType (typeIL $ ILVar v)
 typeIL (ILDeref t _)       = t
 typeIL (ILStore t _ _)     = t
-typeIL (ILSubscript t _ _) = t
+typeIL (ILArrayRead t _ _) = t
+typeIL (ILArrayPoke _ _ _) = TupleTypeAST [] 
 typeIL (ILCase t _ _ _)    = t
 typeIL (ILVar (AnnVar t i)) = t
 typeIL (ILTyApp overallType tm tyArgs) = overallType
@@ -384,7 +390,8 @@ instance Structured ILExpr where
             ILDeref t a         -> out $ "ILDeref     "
             ILStore t a b       -> out $ "ILStore     "
             ILCase t _ _ _      -> out $ "ILCase      "
-            ILSubscript  t a b  -> out $ "ILSubscript " ++ " :: " ++ show t
+            ILArrayRead  t a b  -> out $ "ILArrayRead " ++ " :: " ++ show t
+            ILArrayPoke v b i   -> out $ "ILArrayPoke "
             ILTuple     es      -> out $ "ILTuple     (size " ++ (show $ length es) ++ ")"
             ILVar (AnnVar t i)  -> out $ "ILVar       " ++ show i ++ " :: " ++ show t
             ILTyApp t e argty   -> out $ "ILTyApp     [" ++ show argty ++ "] :: " ++ show t
@@ -406,7 +413,8 @@ instance Structured ILExpr where
             ILAlloc   v             -> [ILVar v]
             ILDeref t v             -> [ILVar v]
             ILStore t v w           -> [ILVar v, ILVar w]
-            ILSubscript t a b       -> [ILVar a, ILVar b]
+            ILArrayRead t a b       -> [ILVar a, ILVar b]
+            ILArrayPoke v b i       -> [ILVar v, ILVar b, ILVar i]
             ILVar (AnnVar t i)      -> []
             ILTyApp t e argty       -> [e]
 

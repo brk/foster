@@ -60,7 +60,8 @@ data IExpr =
         -- codegen-ing closures so they can be mutually recursive.
         | IClosures    [Ident] [ILClosure] SSTerm
         | ILetVal       Ident   SSTerm     SSTerm
-        | ISubscript    Ident   Ident
+        | IArrayRead    Ident   Ident
+        | IArrayPoke    Ident   Ident Ident
         | IIf           Ident   SSTerm     SSTerm
         | IUntil                SSTerm     SSTerm
         | ICall         Ident  [Ident]
@@ -87,7 +88,8 @@ ssTermOfExpr expr =
     ILCall    t b vs       -> SSTmExpr  $ ICall (avarIdent b) (map avarIdent vs)
     ILIf      t  v b c     -> SSTmExpr  $ IIf (avarIdent v) (tr b) (tr c)
     ILUntil   t  a b       -> SSTmExpr  $ IUntil            (tr a) (tr b)
-    ILSubscript t a b      -> SSTmExpr  $ ISubscript (avarIdent a) (avarIdent b)
+    ILArrayRead t a b      -> SSTmExpr  $ IArrayRead (avarIdent a) (avarIdent b)
+    ILArrayPoke v b i      -> SSTmExpr  $ IArrayPoke (avarIdent v) (avarIdent b) (avarIdent i)
     ILAlloc a              -> SSTmExpr  $ IAlloc (avarIdent a)
     ILDeref t a            -> SSTmExpr  $ IDeref (avarIdent a)
     ILStore t a b          -> SSTmExpr  $ IStore (avarIdent a) (avarIdent b)
@@ -267,7 +269,7 @@ popCoroCont gs =
 
 subStep gs delimCont = step (pushCoroCont gs delimCont)
 
-arrayIndex arr n = SSLocation (arr ! n)
+arraySlotLocation arr n = SSLocation (arr ! n)
 
 stepExpr :: MachineState -> IExpr -> IO MachineState
 stepExpr gs expr = do
@@ -278,8 +280,9 @@ stepExpr gs expr = do
 
     IAlloc i     -> do let (loc, gs') = extendHeap gs (getval gs i)
                        return $ withTerm gs' (SSTmValue $ SSLocation loc)
-    IDeref i     -> do let (SSLocation z) = getval gs i
-                       return $ withTerm gs  (SSTmValue $ lookupHeap gs z)
+    IDeref i     -> do case getval gs i of
+                         SSLocation z -> return $ withTerm gs  (SSTmValue $ lookupHeap gs z)
+                         other -> error $ "cannot deref non-location value " ++ show other
     IStore iv ir -> do let (SSLocation z) = getval gs ir
                        let gs' = modifyHeapWith gs z (\_ -> getval gs iv)
                        return $ withTerm gs' unit
@@ -342,12 +345,22 @@ stepExpr gs expr = do
         ILetVal v c (SSTmExpr $ IIf v unit
                     (SSTmExpr $ ILetVal (Ident "_" 0) b (SSTmExpr $ IUntil c b))))
 
-    ISubscript v idxvar ->
+    IArrayRead base idxvar ->
         let (SSInt i) = getval gs idxvar in
         let n = fromInteger i in
-        case getval gs v of
-          SSArray arr  -> return $ withTerm gs (SSTmValue (arrayIndex arr n))
-          _ -> error "Expected base of subscript to be array value"
+        case getval gs base of
+          SSArray arr  ->  let (SSLocation z) = arraySlotLocation arr n in
+                           return $ withTerm gs  (SSTmValue $ lookupHeap gs z)
+          _ -> error "Expected base of array read to be array value"
+          
+    IArrayPoke iv base idxvar ->
+        let (SSInt i) = getval gs idxvar in
+        let n = fromInteger i in
+        case getval gs base of
+          SSArray arr  -> let (SSLocation z) = arraySlotLocation arr n in
+                          let gs' = modifyHeapWith gs z (\_ -> getval gs iv) in
+                          return $ withTerm gs' unit
+          other -> error $ "Expected base of array write to be array value; had " ++ show other
 
     ITyApp e@(SSTmExpr _) argty -> subStep (withTerm gs e) (envOf gs, \t -> SSTmExpr $ ITyApp t argty)
     ITyApp e@(SSTmValue (SSPrimitive PrimCoroInvoke)) _ -> return $ withTerm gs e

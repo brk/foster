@@ -158,6 +158,7 @@ typecheck ctx expr maybeExpTy =
         E_StoreAST rng a b -> do
           ea <- typecheck ctx a Nothing
           eb <- typecheck ctx b Nothing
+          -- TODO verify that the val is a pointer to the slot
           return (AnnStore (TupleTypeAST []) ea eb)
 
         E_SeqAST a b -> do
@@ -165,6 +166,7 @@ typecheck ctx expr maybeExpTy =
             id <- tcFresh ".seq"
             eb <- typecheck ctx b maybeExpTy
             return (AnnLetVar id ea eb)
+
         E_SubscriptAST a b rng -> do ta <- typecheck ctx a Nothing
                                      tb <- typecheck ctx b Nothing
                                      typecheckSubscript ctx rng ta (typeAST ta) tb maybeExpTy
@@ -292,10 +294,10 @@ typecheckSubscript ctx rng base (TupleTypeAST types) i@(AnnInt ty int) maybeExpT
 -- TODO make sure i is not negative or too big
 typecheckSubscript ctx rng base (ArrayType t) i@(AnnInt ty int) (Just expTy) = do
     equateTypes t expTy (Just "subscript expected type")
-    return (AnnSubscript (RefType t) base i)
+    return (AnnSubscript t base i)
 
 typecheckSubscript ctx rng base (ArrayType t) i@(AnnInt ty int) Nothing = do
-    return (AnnSubscript (RefType t) base i)
+    return (AnnSubscript t base i)
 
 typecheckSubscript ctx rng base (ArrayType t) aiexpr maybeExpTy = do
     -- TODO check aiexpr type is compatible with Word

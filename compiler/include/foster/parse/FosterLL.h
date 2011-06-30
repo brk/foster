@@ -170,13 +170,23 @@ struct LLTuple : public LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
-// v[index]
-struct LLSubscript : public LLExpr {
+// base[index]
+struct LLArrayRead : public LLExpr {
   LLVar* base;
   LLVar* index;
-  explicit LLSubscript(LLVar* base, LLVar* index)
-    : LLExpr("LLSubscript"), base(base), index(index) {
+  explicit LLArrayRead(LLVar* base, LLVar* index)
+    : LLExpr("LLArrayRead"), base(base), index(index) {
     }
+  virtual llvm::Value* codegen(CodegenPass* pass);
+};
+
+// val >^ base[index]
+struct LLArrayPoke : public LLExpr {
+  LLVar* value;
+  LLVar* base;
+  LLVar* index;
+  explicit LLArrayPoke(LLVar* v, LLVar* b, LLVar* i)
+    : LLExpr("LLArrayPoke"), value(v), base(b), index(i) {}
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 

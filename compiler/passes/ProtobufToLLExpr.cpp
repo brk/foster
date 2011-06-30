@@ -179,11 +179,19 @@ LLExpr* parseSimd(const pb::Expr& e) {
 }
 */
 
-LLExpr* parseSubscript(const pb::Expr& e) {
-  ASSERT(e.parts_size() == 2) << "subscript must have base and index";
-  return new LLSubscript(
+LLExpr* parseArrayRead(const pb::Expr& e) {
+  ASSERT(e.parts_size() == 2) << "array_read must have base and index";
+  return new LLArrayRead(
        LLVar_from_pb(& e.parts(0)),
        LLVar_from_pb(& e.parts(1)));
+}
+
+LLExpr* parseArrayPoke(const pb::Expr& e) {
+  ASSERT(e.parts_size() == 3) << "array_write must have value, base and index";
+  return new LLArrayPoke(
+       LLVar_from_pb(& e.parts(0)),
+       LLVar_from_pb(& e.parts(1)),
+       LLVar_from_pb(& e.parts(2)));
 }
 
 LLExpr* parseUntil(const pb::Expr& e) {
@@ -339,7 +347,8 @@ LLExpr* LLExpr_from_pb(const pb::Expr* pe) {
   case pb::Expr::IL_ALLOC:     rv = parseAlloc(e); break;
   case pb::Expr::IL_DEREF:     rv = parseDeref(e); break;
   case pb::Expr::IL_STORE:     rv = parseStore(e); break;
-  case pb::Expr::IL_SUBSCRIPT: rv = parseSubscript(e); break;
+  case pb::Expr::IL_ARRAY_READ:rv = parseArrayRead(e); break;
+  case pb::Expr::IL_ARRAY_POKE:rv = parseArrayPoke(e); break;
   case pb::Expr::IL_TUPLE:     rv = parseTuple(e); break;
   case pb::Expr::IL_VAR:       rv = parseVar(e); break;
 
