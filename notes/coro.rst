@@ -74,4 +74,4 @@ A number of possible solutions present themselves:
   merely update the slot directly accessible from the coro
   struct.
 
-
+We currently implement option #3.

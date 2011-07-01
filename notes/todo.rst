@@ -1,10 +1,40 @@
 TODO
-----
+====
 
+TODO: libraries, benchmarks, & applications
+-------------------------------------------
+* Strings
+* Hash tables
+* Growable vectors
+* Parallel benchmarks?
+
+TODO: implementation details
+----------------------------
+* Move primiitve recognition to Haskell, not parser
+* Test that recursive closures work as expected
+* Update chromium-base
+ * Use format_macros.h
+ * stringprintf.h ?
+ * Keep statistics of GC/mutator run times?
+  * metrics/stats_counter.h
+  * metrics/histogram.h
+  * perftimer.h (would need modification)
+* Benchmarking/profiling infrastructure
+* Implement debug info once we get access to DIBuilder
+* Update libcoro
+* Build explicit CFGs (CPS?) in Haskell-land
 * Some correctness/well-formedness checks are performed after
   ``__COMPILES__`` nodes are finalized, which undermines the accuracy
   of ``__COMPILES__``.
+* Coroutines (mostly done?)
+  * On-demand stack growth/detection of impending overflow
+  * make foster_coro struct be generic in arg type
+  * tracing stack roots up the coro invocation chain
+  * Generally: do more testing of GC and coroutines!
 
+TODO: design & implementation
+-----------------------------
+* Type operators (types indexed by types)
 * Pattern matching (done?)
   * Arbitrary-sized integers
   * User-defined types
@@ -47,13 +77,7 @@ TODO
   * Strings (standard but not primitive, given arrays?)
   * References (done?)
     * Separate from Addr? Fat ptr for interior refs?
-  * Coroutines (mostly done?)
-    * On-demand stack growth/detection of impending overflow
-    * make foster_coro struct be generic in arg type
-    * tracing stack roots up the coro invocation chain
 * CodeGenOpt::None seems to trigger a closure-related bug in either r113708 or us.
-* Test that recursive closures work as expected
-* Type operators (types indexed by types)
 
 * Mutability
  * Effects, a la Disciple
@@ -104,13 +128,3 @@ TODO
 
 * Interfacing with C libraries:
 
-
-* chromium-base
- * Use format_macros.h
- * stringprintf.h ?
- * Keep statistics of GC/mutator run times?
-  * metrics/stats_counter.h
-  * metrics/histogram.h
-  * perftimer.h (would need modification)
-
-* Implement debug info once we get access to DIBuilder
