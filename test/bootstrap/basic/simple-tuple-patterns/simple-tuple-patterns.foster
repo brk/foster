@@ -7,6 +7,7 @@ main = {
   t10 ();
   t11 ();
   t12 ();
+  case-gcroots();
 };
 
 tuple-cloconv = {
@@ -90,5 +91,25 @@ t12 = {
     case (opaquely_i32 1, opaquely_i32 2, opaquely_i32 3)
       of (_, _, _) -> 123
       of (_, _, _) -> 1
+    end;
+};
+
+
+let-gcroot = {
+    let r = (ref 2);
+     in force_gc_for_debugging_purposes();
+        expect_i32 2;
+        print_i32 r^;
+    end;
+};
+
+case-gcroots = {
+    let-gcroot();
+    let z = (ref 2); in
+    case z
+      of r -> force_gc_for_debugging_purposes();
+              expect_i32 2;
+              print_i32 r^;
+    end;
     end;
 };

@@ -369,8 +369,8 @@ Value* CodegenPass::emitCoroCreateFn(
   ASSERT(foster_coro_create != NULL);
 
   Value* fcoro_gen = builder.CreateBitCast(fcoro, builder.getInt8PtrTy());
-  builder.CreateCall2(foster_coro_create, wrapper, fcoro_gen);
-
+  llvm::CallInst* call = builder.CreateCall2(foster_coro_create, wrapper, fcoro_gen);
+  markAsNonAllocating(call);
 
   // return (foster_coro_i32_i32*) fcoro;
   builder.CreateRet(fcoro);
