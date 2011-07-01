@@ -10,6 +10,7 @@
 #include "llvm/Support/TimeValue.h"
 
 #include "llvm/Support/IRBuilder.h"
+#include "llvm/ADT/StringSet.h"
 
 #include <iosfwd>
 
@@ -35,6 +36,7 @@ std::string str(const llvm::Value* value);
 namespace foster {
 
 void initializeLLVM();
+void initializeKnownNonAllocatingFQNames(llvm::StringSet<>& names);
 
 /// Ensures that the given path exists and is a file, not a directory.
 /// Calls exit() if file is not a readable file.

@@ -106,7 +106,7 @@ atom    :       // syntactically "closed" terms
   | CASE e (OF pmatch)+ END             -> ^(CASE e pmatch+) // pattern matching
   ;
 
-pmatch  : p '->' e -> ^(CASE p e);
+pmatch  : p '->' e_seq -> ^(CASE p e_seq);
 
 p       :               // patterns
     x                                     // variables

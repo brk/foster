@@ -17,20 +17,6 @@ import Foster.Context
 
 -----------------------------------------------------------------------
 
-collectUnificationVars :: TypeAST -> [MetaTyVar]
-collectUnificationVars x =
-    case x of
-        (NamedTypeAST s)     -> []
-        (TupleTypeAST types) -> concat [collectUnificationVars t | t <- types]
-        (FnTypeAST s r cc cs)-> concat [collectUnificationVars t | t <- [s,r]]
-        (CoroType s r)       -> concat [collectUnificationVars t | t <- [s,r]]
-        (ForAll tvs rho)     -> collectUnificationVars rho
-        (T_TyVar tv)         -> []
-        (MetaTyVar m)        -> [m]
-        (RefType    ty)      -> collectUnificationVars ty
-        (ArrayType  ty)      -> collectUnificationVars ty
-        (PtrTypeAST ty)      -> collectUnificationVars ty
-
 -- equateTypes first attempts to unify the two given types.
 -- If unification fails, the provided error message (if any)
 -- is printed along with the unification failure error message.
@@ -39,13 +25,28 @@ collectUnificationVars x =
 equateTypes :: TypeAST -> TypeAST -> Maybe String -> Tc ()
 equateTypes t1 t2 msg = do
   tcOnError (liftM out msg) (tcUnifyTypes t1 t2) (\(Just soln) -> do
-     let univars = concat [collectUnificationVars t | t <- [t1, t2]]
+     let univars = concatMap collectUnificationVars [t1, t2]
      forM_ univars (\m@(Meta u _ _) -> do
        case Map.lookup u soln of
          Nothing -> return ()
          Just t2 -> do mt1 <- readTcMeta m
                        case mt1 of Nothing -> writeTcMeta m t2
                                    Just t1 -> equateTypes t1 t2 msg))
+  where
+     collectUnificationVars :: TypeAST -> [MetaTyVar]
+     collectUnificationVars x =
+         case x of
+             (NamedTypeAST s)     -> []
+             (TupleTypeAST types) -> concatMap collectUnificationVars types
+             (FnTypeAST s r cc cs)-> concatMap collectUnificationVars [s,r]
+             (CoroType s r)       -> concatMap collectUnificationVars [s,r]
+             (ForAll tvs rho)     -> collectUnificationVars rho
+             (T_TyVar tv)         -> []
+             (MetaTyVar m)        -> [m]
+             (RefType    ty)      -> collectUnificationVars ty
+             (ArrayType  ty)      -> collectUnificationVars ty
+             (PtrTypeAST ty)      -> collectUnificationVars ty
+
 
 typeJoinVars :: [AnnVar] -> (Maybe TypeAST) -> Tc [AnnVar]
 

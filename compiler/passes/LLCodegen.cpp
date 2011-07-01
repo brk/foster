@@ -141,6 +141,15 @@ void LLModule::codegenModule(CodegenPass* pass) {
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
 
+CodegenPass::CodegenPass(llvm::Module* m) : mod(m) {
+  //dib = new DIBuilder(*mod);
+  foster::initializeKnownNonAllocatingFQNames(knownNonAllocatingFunctions);
+}
+
+bool CodegenPass::isKnownNonAllocating(LLVar* v) const {
+  return 1 == this->knownNonAllocatingFunctions.count(v->getName());
+}
+
 llvm::Function* CodegenPass::lookupFunctionOrDie(const std::string& fullyQualifiedSymbol) {
   // Otherwise, it should be a function name.
   llvm::Function* f = mod->getFunction(fullyQualifiedSymbol);
@@ -553,7 +562,14 @@ bool functionMightAllocateMemory(LLProc* proc) {
   return true; // conservative approximation to MightAlloc
 }
 
-llvm::AllocaInst* newImplicitStackSlot(llvm::Value* v, CodegenPass* pass) {
+llvm::AllocaInst* ensureImplicitStackSlot(llvm::Value* v, CodegenPass* pass) {
+  if (llvm::LoadInst* load = llvm::dyn_cast<llvm::LoadInst>(v)) {
+    llvm::AllocaInst* slot = llvm::dyn_cast<llvm::AllocaInst>(load->getOperand(0));
+    if (slot && pass->needsImplicitLoad.count(slot) == 1) {
+      return slot;
+    }
+  }
+
   if (mightContainHeapPointers(v->getType())) {
     return pass->storeAndMarkPointerAsGCRoot(v, NotArray);
   } else {
@@ -581,7 +597,7 @@ llvm::Value* LLProc::codegenProc(CodegenPass* pass) {
   if (functionMightAllocateMemory(this)) {
     Function::arg_iterator AI = F->arg_begin();
     for ( ; AI != F->arg_end(); ++AI) {
-      llvm::Value* slot = newImplicitStackSlot(AI, pass);
+      llvm::Value* slot = ensureImplicitStackSlot(AI, pass);
       scope->insert(AI->getNameStr(), slot);
     }
   }
@@ -699,12 +715,12 @@ llvm::Value* LLCase::codegen(CodegenPass* pass) {
   return rv_slot;
 }
 
-llvm::Value* lookupOccs(Occurrence* occ, llvm::Value* v) {
+llvm::Value* lookupOccs(Occurrence* occ, llvm::Value* v, CodegenPass* pass) {
   const std::vector<int>& occs = occ->offsets;
   llvm::Value* rv = v;
   for (size_t i = 0; i < occs.size(); ++i) {
-    rv = getElementFromComposite(rv,
-             getConstantInt32For(occs[i]), "switch_insp");
+    llvm::Constant* idx = getConstantInt32For(occs[i]);
+    rv = getElementFromComposite(rv, idx, "switch_insp");
   }
   return rv;
 }
@@ -723,9 +739,10 @@ void DecisionTree::codegenDecisionTree(CodegenPass* pass,
     ASSERT(this->action != NULL);
 
     for (size_t i = 0; i < binds.size(); ++i) {
-       Value* v = lookupOccs(binds[i].second, scrutinee);
-       trySetName(v, "pat_" + binds[i].first);
-       pass->valueSymTab.insert(binds[i].first, v);
+       Value* v = lookupOccs(binds[i].second, scrutinee, pass);
+       Value* v_slot = ensureImplicitStackSlot(v, pass);
+       trySetName(v_slot, "pat_" + binds[i].first + "_slot");
+       pass->valueSymTab.insert(binds[i].first, v_slot);
     }
     rv = pass->emit(action, NULL);
     for (size_t i = 0; i < binds.size(); ++i) {
@@ -764,15 +781,14 @@ void SwitchCase::codegenSwitch(CodegenPass* pass,
     return;
   }
 
-  // Fetch the subterm of the scrutinee being inspected.
-  llvm::Value* v = lookupOccs(occ, scrutinee);
-
   // TODO: switching on a.p. integers: possible at all?
   // If so, it will require manual if-else chaining,
   // not a simple int32 switch...
 
   BasicBlock* bbEnd = BasicBlock::Create(getGlobalContext(), "case_end");
   BasicBlock* defOrContBB = defaultBB ? defaultBB : bbEnd;
+  // Fetch the subterm of the scrutinee being inspected.
+  llvm::Value* v = lookupOccs(occ, scrutinee, pass);
   llvm::SwitchInst* si = builder.CreateSwitch(v, defOrContBB, ctors.size());
 
   Function *F = builder.GetInsertBlock()->getParent();
@@ -864,7 +880,7 @@ llvm::Value* LLArrayRead::codegen(CodegenPass* pass) {
   Value* idx  = pass->emit(this->index, NULL);
   Value* slot = getArraySlot(base, idx, pass);
   Value* val  = builder.CreateLoad(slot, /*isVolatile=*/ false);
-  return newImplicitStackSlot(val, pass);
+  return ensureImplicitStackSlot(val, pass);
 }
 
 llvm::Value* LLArrayPoke::codegen(CodegenPass* pass) {
@@ -882,13 +898,6 @@ LLProc* getClosureVersionOf(LLExpr* arg,
                             FnTypeAST* fnty,
                             CodegenPass* pass);
 
-bool
-isKnownNonAllocating(LLVar* varast) {
-  // silly hack for now...
-  if (pystring::startswith(varast->getName(), "expect_")) return true;
-  if (pystring::startswith(varast->getName(), "print_")) return true;
-  return false;
-}
 
 ////////////////////////////////////////////////////////////////////
 
@@ -1022,7 +1031,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
     callInst->setTailCall(true);
   }
 
-  if (isKnownNonAllocating(base)) {
+  if (pass->isKnownNonAllocating(base)) {
     markAsNonAllocating(callInst);
   }
 

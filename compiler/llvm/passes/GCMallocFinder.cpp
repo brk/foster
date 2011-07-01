@@ -44,20 +44,15 @@ struct GCMallocFinder : public CallGraphSCCPass {
     initializeGCMallocFinderPass(*PassRegistry::getPassRegistry());
   }
 
+  const char* getPassName() const { return "GCMallocFinder"; }
+
   void getAnalysisUsage(AnalysisUsage &AU) const {
     AU.setPreservesAll();
   }
 
+  llvm::StringSet<> knownNonAllocatingFQNames;
   virtual bool doInitialization(CallGraph &CG) {
-    knownNonAllocatingFQNames.insert("print_i32");
-    knownNonAllocatingFQNames.insert("expect_i32");
-    knownNonAllocatingFQNames.insert("print_i1");
-    knownNonAllocatingFQNames.insert("expect_i1");
-    knownNonAllocatingFQNames.insert("read_i32");
-    knownNonAllocatingFQNames.insert("mp_int_zero");
-    knownNonAllocatingFQNames.insert("mp_int_clear");
-    knownNonAllocatingFQNames.insert("mp_int_init_value");
-
+    foster::initializeKnownNonAllocatingFQNames(knownNonAllocatingFQNames);
     return false;
   }
 
@@ -71,10 +66,8 @@ struct GCMallocFinder : public CallGraphSCCPass {
     kStatusMayTriggerGC
   };
 
-  std::set<std::string> knownNonAllocatingFQNames;
-
+  std::map<Function*, GCMallocStatus> cache;
   bool isKnownNotToAllocate(Function* fn) {
-    static std::map<Function*, GCMallocStatus> cache;
     GCMallocStatus status = cache[fn];
     if (status == kStatusUnknownGCBehavior) {
       status = kStatusMayTriggerGC;

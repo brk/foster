@@ -437,10 +437,10 @@ Pattern* parsePattern(pTree t) {
   return NULL;
 }
 
-// ^(CASE p e)
+// ^(CASE p e_seq)
 CaseBranch parseCaseBranch(pTree t) {
   CaseBranch b = std::make_pair(parsePattern(child(t, 0)),
-                                ExprAST_from(child(t, 1)));
+                                parseSeq(    child(t, 1)));
   return b;
 }
 

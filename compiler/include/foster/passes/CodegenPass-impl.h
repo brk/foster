@@ -62,6 +62,7 @@ llvm::AllocaInst* stackSlotWithValue(llvm::Value* val,
 
 struct LLModule;
 struct LLExpr;
+struct LLVar;
 
 struct CodegenPass {
   typedef foster::SymbolTable<llvm::Value> ValueTable;
@@ -74,10 +75,9 @@ struct CodegenPass {
 
   llvm::Module* mod;
   //llvm::DIBuilder* dib;
+  llvm::StringSet<> knownNonAllocatingFunctions;
 
-  explicit CodegenPass(llvm::Module* mod) : mod(mod) {
-    //dib = new DIBuilder(*mod);
-  }
+  explicit CodegenPass(llvm::Module* mod);
 
   ~CodegenPass() {
     //delete dib;
@@ -86,6 +86,7 @@ struct CodegenPass {
   void codegen(LLModule*);
   void codegen(LLExpr*);
 
+  bool isKnownNonAllocating(LLVar* v) const;
   llvm::Function* lookupFunctionOrDie(const std::string& fullyQualifiedSymbol);
 
   void markAsNeedingImplicitLoads(llvm::Value* v);

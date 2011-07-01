@@ -32,7 +32,11 @@ struct EscapingAllocaFinder : public FunctionPass {
   static char ID;
   EscapingAllocaFinder() : FunctionPass(ID) {}
 
+  virtual const char* getPassName() const { return "EscapingAllocaFinder"; }
+
   virtual bool runOnFunction(Function& F) {
+    if (!F.hasGC()) return false;
+
     std::set<llvm::Value*> allocas;
 
     // Collect allocas

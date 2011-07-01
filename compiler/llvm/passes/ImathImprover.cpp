@@ -34,6 +34,7 @@ struct ImathImprover : public BasicBlockPass {
   static char ID;
   ImathImprover() : BasicBlockPass(ID), builder(getGlobalContext()) {}
 
+  const char* getPassName() const { return "ImathImprover"; }
   llvm::IRBuilder<> builder;
 
   bool isCallTo(CallInst* call, const char* funcName) {
