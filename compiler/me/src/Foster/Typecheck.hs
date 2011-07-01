@@ -173,7 +173,7 @@ typecheck ctx expr maybeExpTy =
                                      typecheckSubscript ctx rng ta (typeAST ta) tb maybeExpTy
         E_TupleAST exprs -> typecheckTuple ctx exprs maybeExpTy
 
-        E_Primitive rng v -> case termVarLookup (evarName v) (contextBindings ctx) of
+        E_Primitive rng v -> case termVarLookup (evarName v) (primitiveBindings ctx) of
             Just avar     -> return $ AnnPrimitive avar
             Nothing       -> tcFails (out $ "Unknown primitive " ++ (evarName v)
                                          ++ showSourceRange rng)
@@ -239,12 +239,12 @@ extractPatternBindings (P_Wildcard _   ) ty = return []
 extractPatternBindings (P_Variable _ id) ty = return [varbind id ty]
 
 extractPatternBindings (P_Bool r v) ty = do
-  ae <- typecheck (Context [] True) (E_BoolAST r v) (Just ty)
+  ae <- typecheck emptyContext (E_BoolAST r v) (Just ty)
   -- literals don't bind anything, but we still need to check
   -- that we dont' try matching e.g. a bool against an int.
   return []
 extractPatternBindings (P_Int r litint) ty = do
-  ae <- typecheck (Context [] True) (E_IntAST r (litIntText litint)) (Just ty)
+  ae <- typecheck emptyContext (E_IntAST r (litIntText litint)) (Just ty)
   -- literals don't bind anything, but we still need to check
   -- that we dont' try matching e.g. a bool against an int.
   return []

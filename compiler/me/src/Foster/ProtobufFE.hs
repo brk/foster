@@ -15,7 +15,7 @@ import Foster.TypeAST
 import Data.Traversable(fmapDefault)
 import Data.Sequence as Seq
 import Data.Sequence(length)
-import Data.Maybe(fromMaybe, isJust)
+import Data.Maybe(fromMaybe)
 import Data.Foldable(toList)
 
 import Control.Exception(assert)
@@ -38,7 +38,7 @@ import Foster.Fepb.PBCase   as PBCase
 import Foster.Fepb.Expr     as PbExpr
 import Foster.Fepb.SourceModule as SourceModule
 import Foster.Fepb.Expr.Tag(Tag(IF, LET, VAR, SEQ, UNTIL,
-                                BOOL, CALL, TY_APP, PRIMITIVE, -- MODULE,
+                                BOOL, CALL, TY_APP, -- MODULE,
                                 ALLOC, DEREF, STORE, TUPLE, PB_INT,
                                 CASE_EXPR, COMPILES, VAL_ABS, SUBSCRIPT,
                                 PAT_WILDCARD, PAT_INT, PAT_BOOL,
@@ -66,7 +66,7 @@ identFullString = show
 -- Primitive values have minimal C-level name mangling, at the moment...
 dumpIdent :: Ident -> String
 dumpIdent i = let p = identPrefix i in
-              if (isJust $ lookup p rootContextDecls) || identNum i < 0
+              if (isPrimitiveName p) || identNum i < 0
                 then identPrefix i
                 else identFullString i
 
@@ -198,9 +198,12 @@ parseTyApp pbexpr lines =
                                 Nothing -> error "TyApp missing arg type!"
                                 Just ty -> ty)
 
-parseEVar pbexpr lines =
+parseEVarOrPrim pbexpr lines =
     let range = parseRange pbexpr lines in
-    E_VarAST range (parseVar pbexpr lines)
+    let var   = parseVar pbexpr lines in
+    if isPrimitiveName (evarName var)
+      then E_Primitive range var
+      else E_VarAST    range var
 
 parseVar pbexpr lines = VarAST (fmap parseType (PbExpr.type' pbexpr))
                                (getName "var" $ PbExpr.name pbexpr)
@@ -289,7 +292,7 @@ parseExpr pbexpr lines =
                 IF      -> parseIf
                 UNTIL   -> parseUntil
                 BOOL    -> parseBool
-                VAR     -> parseEVar
+                VAR     -> parseEVarOrPrim
                 Foster.Fepb.Expr.Tag.TUPLE   -> parseTuple
                 Foster.Fepb.Expr.Tag.VAL_ABS -> parseValAbs
                 CALL      -> parseCall
@@ -302,7 +305,6 @@ parseExpr pbexpr lines =
                 CASE_EXPR -> parseCaseExpr
                 COMPILES  -> parseCompiles
                 SUBSCRIPT -> parseSubscript
-                PRIMITIVE -> parsePrimitive
                 PAT_WILDCARD -> error "parseExpr called on pattern!"
                 PAT_VARIABLE -> error "parseExpr called on pattern!"
                 PAT_BOOL     -> error "parseExpr called on pattern!"

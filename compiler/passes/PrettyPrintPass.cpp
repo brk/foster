@@ -163,12 +163,6 @@ void VariableAST::show(PrettyPrintPass* pass) {
   }
 }
 
-void PrimitiveAST::show(PrettyPrintPass* pass) {
-  ScopedBlock sb(pass);
-  pass->scan(PPToken(this->getName()));
-}
-
-
 std::string getPrimitiveOpName(const std::string& varname) {
   if (!pystring::startswith(varname, "primitive_")) {
     return "";

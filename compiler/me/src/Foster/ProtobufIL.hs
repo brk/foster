@@ -13,8 +13,6 @@ import Foster.ILExpr
 import Foster.TypeAST
 import Foster.PatternMatch
 
-import Data.Maybe(isJust)
-
 import qualified Data.Text as T
 import qualified Data.ByteString.Lazy as L(writeFile)
 import Data.ByteString.Lazy.UTF8 as UTF8
@@ -69,7 +67,7 @@ identFullString = show
 -- Primitive values have minimal C-level name mangling, at the moment...
 dumpIdent :: Ident -> P'.Utf8
 dumpIdent i = let p = identPrefix i in
-              if (isJust $ lookup p rootContextDecls) || identNum i < 0
+              if isPrimitiveName p || identNum i < 0
                 then u8fromString $ identPrefix i
                 else u8fromString $ identFullString i
 
@@ -78,7 +76,6 @@ dumpIdent i = let p = identPrefix i in
 tagForClosedVars Nothing  = PbTypeTag.PROC
 tagForClosedVars (Just _) = PbTypeTag.CLOSURE
 
-{-# NOINLINE dumpType #-}
 dumpType :: TypeAST -> PbType.Type
 dumpType (NamedTypeAST s)     = P'.defaultValue { PbType.tag  = PbTypeTag.LLVM_NAMED
                                                 , PbType.name = Just $ u8fromString s }

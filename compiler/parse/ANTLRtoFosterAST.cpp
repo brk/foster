@@ -332,12 +332,6 @@ ExprAST* parseTermVar(pTree t) {
   return new VariableAST(textOf(child(t, 0)), NULL, rangeOf(t));
 }
 
-// ^(PRIMITIVE ^(TERMVAR name))
-ExprAST* parsePrimitive(pTree t) {
-  std::string name = textOf(child(child(t, 0), 0));
-  return new PrimitiveAST(name, rangeOf(t));
-}
-
 // ^(IF e e_seq e_seq)
 ExprAST* parseIf(pTree tree) {
   return new IfExprAST(ExprAST_from(child(tree, 0)),
@@ -468,7 +462,6 @@ ExprAST* parseAtom(pTree tree) {
   if (token == COMPILES) { return parseBuiltinCompiles(tree); }
   if (token == CASE)     { return parseCase(tree); }
   if (token == BOOL)     { return parseBool(tree); }
-  if (token == PRIMITIVE) {return parsePrimitive(tree); }
 
   display_pTree(tree, 2);
   foster::EDiag() << "returning NULL ExprAST for parseAtom token " << str(tree->getToken(tree));
@@ -546,7 +539,7 @@ void leftAssoc(std::vector<std::string>& opstack,
     Exprs exprs;
     exprs.push_back(x);
     exprs.push_back(y);
-    ExprAST* opr = new VariableAST("primitive_"+o+"_i32", NULL, rangeFrom(x, y));
+    ExprAST* opr = new VariableAST("primitive_" + o + "_i32", NULL, rangeFrom(x, y));
     argstack.push_back(new CallAST(opr, exprs, rangeFrom(x, y)));
   }
 }

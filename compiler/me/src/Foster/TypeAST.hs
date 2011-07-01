@@ -9,6 +9,7 @@ module Foster.TypeAST where
 import Foster.Base
 import List(length)
 import Data.IORef(IORef)
+import qualified Data.Set as Set
 
 data CallConv = CCC | FastCC deriving (Eq, Show)
 briefCC CCC = "ccc"
@@ -124,7 +125,9 @@ coroInvokeType args rets = mkFnType ((mkCoroType args rets) : args) rets
 coroYieldType  args rets = mkFnType rets args
 coroCreateType args rets = mkFnType [mkFnType args rets] [mkCoroType args rets]
 
-rootContextDecls =
+primitiveNamesSet = Set.fromList (map fst primitiveDecls)
+isPrimitiveName name = Set.member name primitiveNamesSet
+primitiveDecls =
     [(,) "llvm_readcyclecounter" $ mkFnType [] [i64]
     ,(,) "expect_i32"  $ mkProcType [i32] []
     ,(,)  "print_i32"  $ mkProcType [i32] []

@@ -196,19 +196,26 @@ closureConvert ctx expr =
                     (E_AnnTyApp ot (AnnPrimitive (AnnVar _ (Ident "allocDArray" _))) argty) ->
                         nestedLets cargs (\[arraySize] -> ILAllocArray argty arraySize)
 
-                    -- v[types](args) =>
-                    -- let <fresh> = v[types] in <fresh>(args)
-                    -- TODO generate coro primitives here?
-                    -- Because the LLVM implementation specializes coro functions
-                    -- (at compile time)
-                    -- to produce a distinguished (function pointer) value,
-                    -- whereas the interpreter treats the coroutine primitives specially.
-                    (E_AnnTyApp ot (E_AnnVar v) argty) -> do
-                                    x <- ilmFresh $ "appty_" ++ (identPrefix $ avarIdent v)
-                                    let var = AnnVar ot x
-                                    nlets <- nestedLets cargs (\vars -> ILCall t var vars)
-                                    return $ buildLet x (ILTyApp ot (ILVar v) argty) nlets
+                    (E_AnnTyApp ot (E_AnnVar v) argty) ->
+                       closureConvertCall t cargs ot v argty ILCall
+
+                    (E_AnnTyApp ot (AnnPrimitive v) argty) -> do
+                       closureConvertCall t cargs ot v argty ILCallPrim
+
                     _ -> error $ "ILExpr.closureConvert: AnnCall with non-var base of " ++ show b
+
+-- v[types](args) =>
+-- let <fresh> = v[types] in <fresh>(args)
+-- TODO generate coro primitives here?
+-- Because the LLVM implementation specializes coro functions
+-- (at compile time)
+-- to produce a distinguished (function pointer) value,
+-- whereas the interpreter treats the coroutine primitives specially.
+closureConvertCall t cargs ot v argty ilcall = do
+  x <- ilmFresh $ "appty_" ++ (identPrefix $ avarIdent v)
+  let var = AnnVar ot x
+  nlets <- nestedLets cargs (\vars -> ilcall t var vars)
+  return $ buildLet x (ILTyApp ot (ILVar v) argty) nlets
 
 closureConvertedProc :: [AnnVar] -> AnnFn -> ILExpr -> ILM ILProcDef
 closureConvertedProc liftedProcVars f newbody = do
@@ -296,7 +303,7 @@ makeEnvPassingExplicit expr fnAndEnvForClosure =
             AnnCompiles c msg -> e
             AnnInt t i        -> e
             E_AnnVar v        -> e -- We don't alter standalone references to closures
-            AnnPrimitive v    -> error $ "makeEnvPassingExplicit called on AnnPrimitive " ++ show v
+            AnnPrimitive v    -> e
             AnnIf t a b c    -> AnnIf      t (q a) (q b) (q c)
             AnnUntil t a b   -> AnnUntil   t (q a) (q b)
             AnnLetVar id a b -> AnnLetVar id (q a) (q b)

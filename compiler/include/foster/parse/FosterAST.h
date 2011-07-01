@@ -117,15 +117,6 @@ struct VariableAST : public ExprAST {
   const string getName() const { return name; }
 };
 
-struct PrimitiveAST : public ExprAST {
-  string name;
-  explicit PrimitiveAST(const string& name, foster::SourceRange sourceRange)
-      : ExprAST("PrimitiveAST", sourceRange), name(name) {}
-  virtual void dump(DumpToProtobufPass* pass);
-  virtual void show(PrettyPrintPass*    pass);
-  const string getName() const { return name; }
-};
-
 // base(args)
 struct CallAST : public ExprAST {
   CallAST(ExprAST* base, Exprs args, foster::SourceRange sourceRange)

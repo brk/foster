@@ -66,8 +66,6 @@ computeContextBindings u decls =
                put (uniq + 1)
                return $ TermVarBinding nm (AnnVar ty (Ident nm (- uniq)))
 
-isPrimitiveName name rootContext = isJust $ termVarLookup name rootContext
-
 buildCallGraph :: FnLike f => [f] -> [ContextBinding] -> [Graph.SCC f]
 buildCallGraph asts bindings =
     let nodeList = (map (\ast -> (ast, fnName ast, fnFreeVariables ast bindings)) asts) in
@@ -120,11 +118,11 @@ typecheckModule :: Bool -> ModuleAST FnAST TypeAST -> TcEnv
                         -> IO (Maybe (Context, ModuleAST AnnFn TypeAST))
 typecheckModule verboseMode mod tcenv = do
     let fns = moduleASTfunctions mod
-    let (bindings, u) = computeContextBindings 1
-                         (rootContextDecls ++ moduleASTdecls mod)
-    let sortedFns = buildCallGraph fns bindings -- :: [SCC FnAST]
-    putStrLn $ "Function SCC list : " ++ show [(fnName f, fnFreeVariables f bindings) | fns <- sortedFns, f <- Graph.flattenSCC fns]
-    let ctx = Context bindings verboseMode
+    let (primBindings, u') = computeContextBindings 1 primitiveDecls
+    let (declBindings, u) = computeContextBindings u' (moduleASTdecls mod)
+    let sortedFns = buildCallGraph fns declBindings -- :: [SCC FnAST]
+    putStrLn $ "Function SCC list : " ++ show [(fnName f, fnFreeVariables f declBindings) | fns <- sortedFns, f <- Graph.flattenSCC fns]
+    let ctx = Context declBindings primBindings verboseMode
     (annFns, (extctx, tcenv')) <- mapFoldM sortedFns (ctx, tcenv) typecheckFnSCC
     -- annFns :: [OutputOr AnnExpr]
     if allOK annFns
@@ -202,14 +200,14 @@ main = do
 
   case messageGet f of
     Left msg -> error ("Failed to parse protocol buffer.\n"++msg)
-    Right (pb_exprs,_) -> do
-        let verboseMode = getVerboseFlag flagVals
-        let sm = parseSourceModule pb_exprs
+    Right (pb_module, _) -> do
+        let sm = parseSourceModule pb_module
         uniqref <- newIORef 1
         varlist <- newIORef []
         let tcenv = TcEnv { tcEnvUniqs = uniqref,
                      tcUnificationVars = varlist,
                              tcParents = [] }
+        let verboseMode = getVerboseFlag flagVals
         modResults  <- typecheckModule verboseMode sm tcenv
         case modResults of
             (Just (extctx, mod)) -> do

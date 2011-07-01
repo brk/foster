@@ -18,7 +18,7 @@ tokens {
   TYPE='type';
   COMPILES='__COMPILES__';
 
-  VAL_APP; UNTIL; PRIMITIVE;
+  VAL_APP; UNTIL;
   BINDING; LETS; LETREC; SEQ;
   RAT_NUM; INT_NUM; BOOL;
   DECL; DEFN;
@@ -91,7 +91,6 @@ formal  : x (':' t) -> ^(FORMAL x t);
 
 atom    :       // syntactically "closed" terms
     x                                   // variables
-  | '#' x                              -> ^(PRIMITIVE x)
   | lit                                 // literals
   | lets
   | letrec

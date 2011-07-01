@@ -9,9 +9,12 @@ import Foster.ExprAST
 import Foster.TypeAST
 
 data ContextBinding = TermVarBinding String AnnVar
-data Context = Context { contextBindings :: [ContextBinding]
-                       , contextVerbose  :: Bool
+data Context = Context { contextBindings   :: [ContextBinding]
+                       , primitiveBindings :: [ContextBinding]
+                       , contextVerbose    :: Bool
                        }
+
+emptyContext = Context [] [] True
 
 prependContextBinding :: Context -> ContextBinding -> Context
 prependContextBinding ctx prefix =
