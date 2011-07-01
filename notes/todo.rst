@@ -4,19 +4,6 @@ TODO
 * Some correctness/well-formedness checks are performed after
   ``__COMPILES__`` nodes are finalized, which undermines the accuracy
   of ``__COMPILES__``.
-* Make both heap and stack allocation explicit.
-* Emit bounds checks on array subscripting
-* Do separate codegen for array read and array write.
-* Array locations are not first-class
-  (because that would imply that instead of every ref being just a pointer,
-   refs created as a result of array subscripting would have to be represented
-   differently, as an array slice, and would either need different layout
-   ``(pointer to slot, array pointer)``
-   or different operations ``(pointer to (pointer to slot, array pointer))``.
-   The same reasoning applies to slots of data structures.
-   Disciple bites the bullet and provides a ``#`` operator;
-   ``a#b`` is like ``&(a.b)`` except that it produces a ref which internally
-   embeds a pointer to the parent object.
 
 * Pattern matching (done?)
   * Arbitrary-sized integers
