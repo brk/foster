@@ -1,6 +1,9 @@
 TODO
 ----
 
+* Some correctness/well-formedness checks are performed after
+  ``__COMPILES__`` nodes are finalized, which undermines the accuracy
+  of ``__COMPILES__``.
 * Make both heap and stack allocation explicit.
 * Emit bounds checks on array subscripting
 * Do separate codegen for array read and array write.

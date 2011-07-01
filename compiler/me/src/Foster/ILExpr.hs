@@ -117,12 +117,12 @@ closureConvert :: Context -> AnnExpr -> ILM ILExpr
 closureConvert ctx expr =
         let g = closureConvert ctx in
         case expr of
-            AnnBool b              -> return $ ILBool b
-            AnnCompiles c msg      -> return $ ILBool (c == CS_WouldCompile)
-            AnnInt t i             -> return $ ILInt t i
-            E_AnnVar v             -> return $ ILVar v
-            AnnPrimitive v         -> error $ "Primitives must be called directly!\n"
-                                           ++ "Found non-call use of " ++ show v
+            AnnBool b          -> return $ ILBool b
+            AnnCompiles c msg  -> return $ ILBool (c == CS_WouldCompile)
+            AnnInt t i         -> return $ ILInt t i
+            E_AnnVar v         -> return $ ILVar v
+            AnnPrimitive v     -> error $ "Primitives must be called directly!"
+                                       ++ "\n\tFound non-call use of " ++ show v
 
             AnnIf      t  a b c    -> do x <- ilmFresh ".ife"
                                          [a', b', c'] <- mapM g [a, b, c]
