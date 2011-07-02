@@ -122,17 +122,21 @@ dumpCoroPrim coroPrim argty retty =
                           PbCoroPrim.ret_type = dumpType retty ,
                           PbCoroPrim.arg_type = dumpType argty }
                     }
+dumpProcRef base =
+    P'.defaultValue { PbExpr.tag = IL_PROC_REF
+                    , PbExpr.name = Just $ dumpIdent base }
 -----------------------------------------------------------------------
 
 dumpExpr :: ILExpr -> PbExpr.Expr
 
 dumpExpr (ILCall     t base args)
-        = dumpCall IL_CALL t (dumpExpr $ ILVar base) args
+        = dumpCall t (dumpExpr $ ILVar base) args
+
 dumpExpr (ILCallPrim t (ILNamedPrim base) args)
-        = dumpCall IL_CALL t (dumpExpr $ ILVar base) args
+        = dumpCall t (dumpProcRef $ tidIdent base) args
 
 dumpExpr (ILCallPrim t (ILCoroPrim c a r) args)
-        = dumpCall IL_CALL t (dumpCoroPrim c a r) args
+        = dumpCall t (dumpCoroPrim c a r) args
 
 dumpExpr x@(ILBool b) =
     P'.defaultValue { bool_value   = Just b
@@ -269,9 +273,9 @@ dumpOcc offs =
 
 -----------------------------------------------------------------------
 
-dumpCall tag t base args =
+dumpCall t base args =
     P'.defaultValue { PbExpr.parts = fromList $ base:(fmap (dumpExpr.ILVar) args)
-                    , PbExpr.tag   = tag
+                    , PbExpr.tag   = IL_CALL
                     , PbExpr.type' = Just $ dumpType t }
 
 dumpIf x@(ILIf t v b c) =

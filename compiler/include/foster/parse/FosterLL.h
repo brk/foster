@@ -150,6 +150,11 @@ struct LLVar : public LLExpr {
   const string getName() const { return name; }
 };
 
+struct LLProcRef : public LLVar {
+  LLProcRef(std::string name) : LLVar(name) {}
+  virtual llvm::Value* codegen(CodegenPass* pass);
+};
+
 // base(args)
 struct LLCall : public LLExpr {
   LLExpr* base;

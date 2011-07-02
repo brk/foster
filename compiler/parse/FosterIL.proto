@@ -46,7 +46,7 @@ message Expr {
     IL_CALL = 23;
 
     IL_UNTIL = 25;
-
+    IL_PROC_REF = 26;
     IL_CORO_INVOKE = 27;
     IL_CORO_CREATE = 28;
     IL_CORO_YIELD  = 29;

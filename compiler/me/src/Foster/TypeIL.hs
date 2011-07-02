@@ -42,7 +42,6 @@ instance Show TypeIL where
         (ArrayTypeIL ty)   -> "(Array " ++ show ty ++ ")"
         (PtrTypeIL ty)     -> "(Ptr " ++ show ty ++ ")"
 
-
 ilOf :: TypeAST -> Tc TypeIL
 ilOf typ =
   case typ of

@@ -32,33 +32,6 @@ const llvm::Type* llvmIntType(int n) {
   return llvm::IntegerType::get(llvm::getGlobalContext(), n);
 }
 
-bool isAutoConvertible(const llvm::Type* fromTy,
-                       const llvm::Type* toTy) {
-  // no case for i1 needed because equality is taken care of
-
-  bool to8  = toTy == llvmIntType(8);
-  bool to16 = toTy == llvmIntType(16);
-  bool to32 = toTy == llvmIntType(32);
-  bool to64 = toTy == llvmIntType(64);
-
-  if (fromTy == llvmIntType(1)) {
-    return /**/ to8 /*|| to16 || to32 || to64*/;
-  } else if (fromTy == llvmIntType(8)) {
-    return /*to8 ||*/ to16 || to32 || to64;
-  } else if (fromTy == llvmIntType(16)) {
-    return /*to8 || to16 ||*/ to32 || to64;
-  } else if (fromTy == llvmIntType(32)) {
-    return /*to8 || to16 || to32 ||*/ to64;
-  }
-  // 64 bits:
-  return false;
-}
-
-bool arePhysicallyCompatible(const llvm::Type* src,
-                             const llvm::Type* dst) {
-  return src == dst || isAutoConvertible(src, dst);
-}
-
 /////////////////////////////////////////////////////////////////////
 
 //virtual

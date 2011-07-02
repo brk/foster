@@ -152,7 +152,8 @@ typecheck ctx expr maybeExpTy =
           ea <- typecheck ctx a Nothing -- TODO: match maybeExpTy?
           case typeAST ea of
             RefTypeAST t -> return (AnnDeref t ea)
-            otherwise    -> tcFails [out $ "Expected deref-ed expr to have ref type!"]
+            other        -> tcFails [out $ "Expected deref-ed expr "
+                                     ++ "to have ref type, had " ++ show other ++ show rng]
 
         E_StoreAST rng a b -> do
           ea <- typecheck ctx a Nothing

@@ -169,7 +169,7 @@ llvm::Value* LLInt::codegen(CodegenPass* pass) {
   llvm::Value* small = ConstantInt::get(ty, this->getAPInt());
 
   // Our type could be an LLVM type, or an arbitrary precision int type.
-  if (this->type->getLLVMType()->isIntegerTy()) {
+  if (ty->isIntegerTy()) {
     return small;
   } else if (false) {
     // MP integer constants that do not fit in 64 bits
@@ -192,6 +192,10 @@ llvm::Value* LLInt::codegen(CodegenPass* pass) {
 
 llvm::Value* LLBool::codegen(CodegenPass* pass) {
   return builder.getInt1(this->boolValue);
+}
+
+llvm::Value* LLProcRef::codegen(CodegenPass* pass) {
+  return pass->lookupFunctionOrDie(this->name);
 }
 
 llvm::Value* LLVar::codegen(CodegenPass* pass) {
