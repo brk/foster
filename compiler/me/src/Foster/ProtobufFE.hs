@@ -11,6 +11,7 @@ module Foster.ProtobufFE (
 import Foster.Base
 import Foster.ExprAST
 import Foster.TypeAST
+import Foster.ProtobufUtils(pUtf8ToText)
 
 import Data.Traversable(fmapDefault)
 import Data.Sequence as Seq
@@ -19,8 +20,6 @@ import Data.Maybe(fromMaybe)
 import Data.Foldable(toList)
 
 import Control.Exception(assert)
-import qualified Data.Text as T
-import Data.ByteString.Lazy.UTF8 as UTF8
 
 import Text.ProtocolBuffers(isSet,getVal)
 import Text.ProtocolBuffers.Basic(uToString)
@@ -48,30 +47,7 @@ import qualified Foster.Fepb.SourceLocation as Pb
 
 import qualified Text.ProtocolBuffers.Header as P'
 
--- String conversions
-
-textToPUtf8 :: T.Text -> P'.Utf8
-textToPUtf8 t = u8fromString $ T.unpack t
-
--- uToString :: P'.Utf8 -> String
-
-u8fromString :: String -> P'.Utf8
-u8fromString s = P'.Utf8 (UTF8.fromString s)
-
 -----------------------------------------------------------------------
-
-identFullString :: Ident -> String
-identFullString = show
-
--- Primitive values have minimal C-level name mangling, at the moment...
-dumpIdent :: Ident -> String
-dumpIdent i = let p = identPrefix i in
-              if (isPrimitiveName p) || identNum i < 0
-                then identPrefix i
-                else identFullString i
-
----------
-
 -- hprotoc cheat sheet:
 --
 -- required string name         => (name person)
@@ -323,7 +299,7 @@ parseSourceModule sm =
                 (toList    $ SourceModule.defn sm) lines
 
 sourceLines :: SourceModule -> SourceLines
-sourceLines sm = SourceLines (fmapDefault (\x -> T.pack (uToString x)) (SourceModule.line sm))
+sourceLines sm = SourceLines (fmapDefault pUtf8ToText (SourceModule.line sm))
 
 parseType :: Type -> TypeAST
 parseType t = case PbType.tag t of

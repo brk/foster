@@ -12,11 +12,11 @@ import Foster.Base
 import Foster.ILExpr
 import Foster.TypeAST
 import Foster.PatternMatch
+import Foster.ProtobufUtils
 
 import qualified Data.Text as T
 import qualified Data.ByteString.Lazy as L(writeFile)
-import Data.ByteString.Lazy.UTF8 as UTF8
-import Data.Sequence as Seq
+import Data.Sequence as Seq(fromList)
 
 import Data.IORef(readIORef)
 import System.IO.Unsafe(unsafePerformIO)
@@ -45,19 +45,6 @@ import Foster.Bepb.DecisionTree.Tag
 import Foster.Bepb.AllocInfo.MemRegion
 
 import qualified Text.ProtocolBuffers.Header as P'
-
--- Simple conversions
-
-textToPUtf8 :: T.Text -> P'.Utf8
-textToPUtf8 t = u8fromString $ T.unpack t
-
--- uToString :: P'.Utf8 -> String
-
-u8fromString :: String -> P'.Utf8
-u8fromString s = P'.Utf8 (UTF8.fromString s)
-
-intToInt32 :: Int -> P'.Int32
-intToInt32 i = (fromInteger (toInteger i))
 
 -----------------------------------------------------------------------
 
