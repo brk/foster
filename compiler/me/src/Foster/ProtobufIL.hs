@@ -141,11 +141,23 @@ dumpAllocate (ILAllocInfo region maybe_array_size) =
     P'.defaultValue { PbAllocInfo.mem_region = dumpMemRegion region
                     , PbAllocInfo.array_size = fmap (dumpExpr . ILVar) maybe_array_size }
 -----------------------------------------------------------------------
+dumpCoroPrim coroPrim argty retty =
+    P'.defaultValue { PbExpr.tag = coroFnTag coroPrim
+                    , PbExpr.coro_prim = Just $ P'.defaultValue    {
+                          PbCoroPrim.ret_type = dumpType retty ,
+                          PbCoroPrim.arg_type = dumpType argty }
+                    }
+-----------------------------------------------------------------------
 
 dumpExpr :: ILExpr -> PbExpr.Expr
 
-dumpExpr (ILCall     t base args) = dumpCall IL_CALL      t base args
-dumpExpr (ILCallPrim t base args) = dumpCall IL_CALL_PRIM t base args
+dumpExpr (ILCall     t base args)
+        = dumpCall IL_CALL      t (dumpExpr $ ILVar base) args
+dumpExpr (ILCallPrim t (ILNamedPrim base) args)
+        = dumpCall IL_CALL_PRIM t (dumpExpr $ ILVar base) args
+
+dumpExpr (ILCallPrim t (ILCoroPrim c a r) args)
+        = dumpCall IL_CALL_PRIM t (dumpCoroPrim c a r) args
 
 dumpExpr x@(ILBool b) =
     P'.defaultValue { bool_value   = Just b
@@ -212,17 +224,6 @@ dumpExpr x@(ILUntil t a b) =
                     , PbExpr.tag   = IL_UNTIL
                     , PbExpr.type' = Just $ dumpType (typeIL x) }
 
-dumpExpr x@(ILTyApp overallTy (ILVar (AnnVar _ (Ident corofn _)))
-                    (TupleTypeAST [argty, retty]))
-          | corofn == "coro_invoke"
-         || corofn == "coro_create"
-         || corofn == "coro_yield" =
-    P'.defaultValue { PbExpr.tag   = coroFnTag corofn
-                    , PbExpr.coro_prim = Just $ P'.defaultValue    {
-                              PbCoroPrim.ret_type = dumpType retty ,
-                              PbCoroPrim.arg_type = dumpType argty }
-                    }
-
 dumpExpr x@(ILTyApp overallTy baseExpr argType) =
     error $ "Unable to dump type application node " ++ show x
           ++ " (should handle substitution before codegen)."
@@ -246,10 +247,9 @@ dumpExpr x@(ILLetVal _ _ inexpr) =
                     , PbExpr.names = fromList nms
                     , PbExpr.type' = Just $ dumpType (typeIL inexpr) }
 
-coroFnTag "coro_invoke" = IL_CORO_INVOKE
-coroFnTag "coro_create" = IL_CORO_CREATE
-coroFnTag "coro_yield"  = IL_CORO_YIELD
-coroFnTag other = error $ "Unknown coro primitive: " ++ other
+coroFnTag CoroInvoke = IL_CORO_INVOKE
+coroFnTag CoroCreate = IL_CORO_CREATE
+coroFnTag CoroYield  = IL_CORO_YIELD
 
 unzipLetVals :: ILExpr -> (ILExpr, [P'.Utf8], [ILExpr])
 unzipLetVals (ILLetVal x a b) =
@@ -295,7 +295,7 @@ dumpOcc offs =
 -----------------------------------------------------------------------
 
 dumpCall tag t base args =
-    P'.defaultValue { PbExpr.parts = fromList $ fmap (\v -> dumpExpr (ILVar v)) (base : args)
+    P'.defaultValue { PbExpr.parts = fromList $ base:(fmap (dumpExpr.ILVar) args)
                     , PbExpr.tag   = tag
                     , PbExpr.type' = Just $ dumpType t }
 

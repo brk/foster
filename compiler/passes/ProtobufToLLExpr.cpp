@@ -61,15 +61,16 @@ LLExpr* parseBool(const pb::Expr& e) {
   return new LLBool(e.bool_value() ? "true" : "false");
 }
 
-LLExpr* parseCall(const pb::Expr& e, bool isPrimitive) {
+LLExpr* parseCall(const pb::Expr& e) {
   ASSERT(e.parts_size() >= 1);
 
-  LLVar* base = LLVar_from_pb(&e.parts(0));
+  LLExpr* base = LLExpr_from_pb(&e.parts(0));
   std::vector<LLVar*> args;
   for (int i = 1; i < e.parts_size(); ++i) {
     args.push_back(LLVar_from_pb(&e.parts(i)));
   }
-  return new LLCall(base, args, isPrimitive);
+  bool callMayTriggerGC = e.call_may_trigger_gc();
+  return new LLCall(base, args, callMayTriggerGC);
 }
 
 LLExpr* parseIf(const pb::Expr& e) {
@@ -333,8 +334,8 @@ LLExpr* LLExpr_from_pb(const pb::Expr* pe) {
 
   switch (e.tag()) {
   case pb::Expr::IL_BOOL:      rv = parseBool(e); break;
-  case pb::Expr::IL_CALL:      rv = parseCall(e, false); break;
-  case pb::Expr::IL_CALL_PRIM: rv = parseCall(e, true); break;
+  case pb::Expr::IL_CALL:      rv = parseCall(e); break;
+  case pb::Expr::IL_CALL_PRIM: rv = parseCall(e); break;
   case pb::Expr::IL_CASE:      rv = parseCase(e); break;
   case pb::Expr::IL_IF:        rv = parseIf(e); break;
   case pb::Expr::IL_INT:       rv = parseInt(e); break;

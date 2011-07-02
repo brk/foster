@@ -12,6 +12,7 @@ import Data.Set(Set)
 import Data.Set as Set(fromList, toList, difference, union)
 import Data.Map(Map)
 import qualified Data.Map as Map((!), fromList, member, elems)
+import Data.Maybe(isJust)
 
 import Foster.Base
 import Foster.Context
@@ -52,9 +53,15 @@ data ILExpr =
         | ILUntil       TypeAST ILExpr ILExpr
         | ILCase        TypeAST AnnVar [(Pattern, ILExpr)] (DecisionTree ILExpr)
         | ILCall        TypeAST AnnVar [AnnVar]
-        | ILCallPrim    TypeAST AnnVar [AnnVar]
+        | ILCallPrim    TypeAST ILPrim [AnnVar]
         | ILTyApp       TypeAST ILExpr TypeAST
         deriving (Show)
+
+data ILPrim = ILNamedPrim AnnVar
+            | ILCoroPrim  CoroPrim TypeAST TypeAST
+            deriving (Show)
+data CoroPrim = CoroCreate | CoroInvoke | CoroYield
+            deriving (Show)
 
 data AllocMemRegion = MemRegionStack
                     | MemRegionGlobalHeap
@@ -181,7 +188,9 @@ closureConvert ctx expr =
                 cargs <- mapM g es
                 case b of
                     (E_AnnVar v) -> do nestedLets cargs (\vars -> (ILCall t v vars))
-                    (AnnPrimitive v) -> do nestedLets cargs (\vars -> (ILCallPrim t v vars))
+                    (AnnPrimitive v) -> do
+                        let prim = ILNamedPrim v
+                        nestedLets cargs (\vars -> (ILCallPrim t prim vars))
                     (E_AnnFn f) -> do -- If we're calling a function directly,
                                      -- we know we can perform lambda lifting
                                      -- on it, by adding args for its free variables.
@@ -196,14 +205,31 @@ closureConvert ctx expr =
                     (E_AnnTyApp ot (AnnPrimitive (AnnVar _ (Ident "allocDArray" _))) argty) ->
                         nestedLets cargs (\[arraySize] -> ILAllocArray argty arraySize)
 
-                    (E_AnnTyApp ot (E_AnnVar v) argty) ->
-                       closureConvertCall t cargs ot v argty ILCall
+                    (E_AnnTyApp ot (E_AnnVar v) argty) -> do
+                        x <- ilmFresh $ "appty_" ++ (identPrefix $ avarIdent v)
+                        let var = AnnVar ot x
+                        nlets <- nestedLets cargs (\vars -> ILCall t var vars)
+                        return $ buildLet x (ILTyApp ot (ILVar v) argty) nlets
 
-                    (E_AnnTyApp ot (AnnPrimitive v) argty) -> do
-                       closureConvertCall t cargs ot v argty ILCallPrim
+                    (E_AnnTyApp ot (AnnPrimitive v@(AnnVar _ (Ident primName _))) appty) ->
+                        case (coroPrimFor primName, appty) of
+                          (Just coroPrim, TupleTypeAST [argty, retty]) -> do
+                            let prim = ILCoroPrim coroPrim argty retty
+                            nestedLets cargs (\vars -> ILCallPrim t prim vars)
+                          otherwise -> do
+                            let primName = identPrefix $ avarIdent v
+                            x <- ilmFresh $ "appty_" ++ primName
+                            let prim = ILNamedPrim v
+                            nlets <- nestedLets cargs (\vars -> ILCallPrim t prim vars)
+                            return $ buildLet x (ILTyApp ot (ILVar v) appty) nlets
 
                     _ -> error $ "ILExpr.closureConvert: AnnCall with non-var base of " ++ show b
 
+isCoroPrimName n = isJust (coroPrimFor n)
+coroPrimFor "coro_create" = Just $ CoroCreate
+coroPrimFor "coro_invoke" = Just $ CoroInvoke
+coroPrimFor "coro_yield"  = Just $ CoroYield
+coroPrimFor _ = Nothing
 -- v[types](args) =>
 -- let <fresh> = v[types] in <fresh>(args)
 -- TODO generate coro primitives here?
@@ -211,11 +237,6 @@ closureConvert ctx expr =
 -- (at compile time)
 -- to produce a distinguished (function pointer) value,
 -- whereas the interpreter treats the coroutine primitives specially.
-closureConvertCall t cargs ot v argty ilcall = do
-  x <- ilmFresh $ "appty_" ++ (identPrefix $ avarIdent v)
-  let var = AnnVar ot x
-  nlets <- nestedLets cargs (\vars -> ilcall t var vars)
-  return $ buildLet x (ILTyApp ot (ILVar v) argty) nlets
 
 closureConvertedProc :: [AnnVar] -> AnnFn -> ILExpr -> ILM ILProcDef
 closureConvertedProc liftedProcVars f newbody = do
@@ -399,7 +420,7 @@ instance Structured ILExpr where
         case e of
             ILBool         b    -> out $ "ILBool      " ++ (show b)
             ILCall    t b a     -> out $ "ILCall      " ++ " :: " ++ show t
-            ILCallPrim t b a    -> out $ "ILCallPrim  " ++ " :: " ++ show t
+            ILCallPrim t prim a -> out $ "ILCallPrim  " ++ (show prim) ++ " :: " ++ show t
             ILClosures ns cs e  -> out $ "ILClosures  " ++ show (map showClosurePair (zip ns cs))
             ILLetVal   x b e    -> out $ "ILLetVal    " ++ (show x) ++ " :: " ++ (show $ typeIL b) ++ " = ... in ... "
             ILIf      t  a b c  -> out $ "ILIf        " ++ " :: " ++ show t

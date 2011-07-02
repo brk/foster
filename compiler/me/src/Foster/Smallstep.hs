@@ -12,7 +12,6 @@ import Data.Maybe(isJust)
 import Data.IORef
 import Data.Array
 
-import Control.Exception(assert)
 import System.Console.ANSI
 
 import Foster.Base
@@ -28,7 +27,6 @@ data SSTerm = SSTmExpr  IExpr
 
 data SSValue = SSBool      Bool
              | SSInt       Integer
-             | SSPrimitive SSPrimId
              | SSArray     (Array Int Location)
              | SSTuple     [SSValue]
              | SSLocation  Location
@@ -44,10 +42,6 @@ instance Eq ILClosure
 instance Eq Coro
   where c1 == c2 = (coroLoc c1) == (coroLoc c2)
 
-data SSPrimId = PrimCoroInvoke | PrimCoroCreate | PrimCoroYield
-              | PrimNamed String
-             deriving (Eq, Show)
-
 -- Expressions are terms that are not in normal form.
 data IExpr =
           ITuple [Ident]
@@ -62,10 +56,11 @@ data IExpr =
         | ILetVal       Ident   SSTerm     SSTerm
         | IArrayRead    Ident   Ident
         | IArrayPoke    Ident   Ident Ident
+        | IAllocArray   TypeAST Ident
         | IIf           Ident   SSTerm     SSTerm
         | IUntil                SSTerm     SSTerm
         | ICall         Ident  [Ident]
-        | ICallPrim     String [Ident]
+        | ICallPrim     ILPrim [Ident]
         | ICase         Ident  (DecisionTree ILExpr) [(Pattern, SSTerm)]
         | ITyApp       SSTerm  TypeAST
         deriving (Show)
@@ -87,12 +82,12 @@ ssTermOfExpr expr =
     ILClosures bnds clos e -> SSTmExpr  $ IClosures bnds clos (tr e)
     ILLetVal x b e         -> SSTmExpr  $ ILetVal x (tr b) (tr e)
     ILCall     t b vs      -> SSTmExpr  $ ICall (avarIdent b) (map avarIdent vs)
-    ILCallPrim t b vs      -> SSTmExpr  $ ICallPrim (identPrefix $ avarIdent b) (map avarIdent vs)
+    ILCallPrim t b vs      -> SSTmExpr  $ ICallPrim b (map avarIdent vs)
     ILIf       t  v b c    -> SSTmExpr  $ IIf (avarIdent v) (tr b) (tr c)
     ILUntil    t  a b      -> SSTmExpr  $ IUntil            (tr a) (tr b)
     ILArrayRead t a b      -> SSTmExpr  $ IArrayRead (avarIdent a) (avarIdent b)
     ILArrayPoke v b i      -> SSTmExpr  $ IArrayPoke (avarIdent v) (avarIdent b) (avarIdent i)
-    ILAllocArray ety n     -> SSTmExpr  $ ICallPrim "allocDArray" [avarIdent n]
+    ILAllocArray ety n     -> SSTmExpr  $ IAllocArray ety (avarIdent n)
     ILAlloc a              -> SSTmExpr  $ IAlloc (avarIdent a)
     ILDeref t a            -> SSTmExpr  $ IDeref (avarIdent a)
     ILStore t a b          -> SSTmExpr  $ IStore (avarIdent a) (avarIdent b)
@@ -234,23 +229,11 @@ envOf  gs = coroEnv  (stCoro gs)
 
 beginsWith s p = isJust (stripPrefix p s)
 
-tryGetVal :: MachineState -> Ident -> Maybe SSValue
-tryGetVal gs id =
-  let mv = Map.lookup id (coroEnv (stCoro gs)) in
-  if isJust mv then mv else
-    case identPrefix id of
-       s | s `beginsWith` "coro_invoke" -> Just $ SSPrimitive PrimCoroInvoke
-       s | s `beginsWith` "coro_create" -> Just $ SSPrimitive PrimCoroCreate
-       s | s `beginsWith` "coro_yield"  -> Just $ SSPrimitive PrimCoroYield
-       s | isPrintFunction  s -> Just $ SSPrimitive (PrimNamed "print")
-       s | isExpectFunction s -> Just $ SSPrimitive (PrimNamed "expect")
-       otherwise -> Nothing
-
 getval :: MachineState -> Ident -> SSValue
 getval gs id =
-  case tryGetVal gs id of
-    Just e -> e
-    Nothing -> error $ "Unable to look up local variable " ++ show id
+  case Map.lookup id (coroEnv (stCoro gs)) of
+    Just v -> v
+    Nothing -> error $ "Unable to get value for " ++ show id
 
 unit = (SSTmValue $ SSTuple [])
 
@@ -321,9 +304,9 @@ stepExpr gs expr = do
               elsewise ->
                     error $ "Direct pattern matching disagreed with decision tree!"
                         ++ "\n" ++ show elsewise ++ " vs \n" ++ show varsvals
-    ICallPrim name vs ->
+    ICallPrim prim vs ->
         let args = map (getval gs) vs in
-        tryEvalPrimitive gs name args
+        evalPrimitive prim gs args
 
     ICall b vs ->
         let args = map (getval gs) vs in
@@ -331,15 +314,13 @@ stepExpr gs expr = do
            -- Call of known procedure
            Just proc -> return (callProc gs proc args)
            Nothing ->
-             -- Call of closure or primitive
-             case tryGetVal gs b of
-               Just (SSClosure clo env) ->
+             -- Call of closure
+             case getval gs b of
+               (SSClosure clo env) ->
                  case tryLookupProc gs (ilClosureProcIdent clo) of
                    Just proc -> return (callProc gs proc ((SSTuple env):args))
                    Nothing -> error $ "No proc for closure!"
-               Just (SSPrimitive p) -> evalPrimitive p gs args
-               Just v -> error $ "Cannot call non-closure value " ++ display v
-               Nothing -> tryEvalPrimitive gs (identPrefix b) args
+               v -> error $ "Cannot call non-closure value " ++ display v
 
     IIf v b c ->
         case getval gs v of
@@ -370,10 +351,19 @@ stepExpr gs expr = do
                           return $ withTerm gs' unit
           other -> error $ "Expected base of array write to be array value; had " ++ show other
 
+    IAllocArray ty sizeid -> do
+        let (SSInt i) = getval gs sizeid
+        -- The array cells are initially filled with constant zeros,
+        -- regardless of what type we will eventually store.
+        (inits, gs2) <- mapFoldM [0.. i - 1] gs (\n -> \gs1 ->
+                                let (loc, gs) = extendHeap gs1 (SSInt 0) in
+                                return ([(fromInteger n, loc)], gs)
+                       )
+        return $ withTerm gs2 (SSTmValue $ SSArray $
+                        array (0, fromInteger $ i - 1) inits)
+
+
     ITyApp e@(SSTmExpr _) argty -> subStep (withTerm gs e) (envOf gs, \t -> SSTmExpr $ ITyApp t argty)
-    ITyApp e@(SSTmValue (SSPrimitive PrimCoroInvoke)) _ -> return $ withTerm gs e
-    ITyApp e@(SSTmValue (SSPrimitive PrimCoroCreate)) _ -> return $ withTerm gs e
-    ITyApp e@(SSTmValue (SSPrimitive PrimCoroYield )) _ -> return $ withTerm gs e
     ITyApp (SSTmValue e) argty -> error $ "step iltyapp " ++ show e
 
 
@@ -489,6 +479,10 @@ tryGetInt32PrimOp2Bool name =
 
 --------------------------------------------------------------------
 
+evalPrimitive :: ILPrim -> MachineState -> [SSValue] -> IO MachineState
+evalPrimitive prim gs args = error $ "evalPrimitive " ++ show prim
+                                 ++ " not yet defined"
+{-
 evalPrimitive :: SSPrimId -> MachineState -> [SSValue] -> IO MachineState
 evalPrimitive PrimCoroInvoke gs [(SSLocation targetloc),arg] =
   let (SSCoro ncoro) = lookupHeap gs targetloc in
@@ -562,6 +556,7 @@ evalPrimitive (PrimNamed "expect") gs [val] =
 
 evalPrimitive (PrimNamed p) gs args =
   error $ "step evalPrimitive named " ++ p ++ " with " ++ show (map display args)
+-}
 
 --------------------------------------------------------------------
 
@@ -607,16 +602,6 @@ tryEvalPrimitive gs "print_i32b" [val@(SSInt i)] =
       do printString gs (showBits32 i)
          return $ withTerm gs unit
 
--- The array cells are initially filled with constant zeros,
--- regardless of what type we will eventually store.
-tryEvalPrimitive gs0 "allocDArray" [SSInt i] =
-      do (inits, gs) <- mapFoldM [0.. i - 1] gs0 (\n -> \gs1 ->
-                                let (loc, gs) = extendHeap gs1 (SSInt 0) in
-                                return ([(fromInteger n, loc)], gs)
-                        )
-         return $ withTerm gs (SSTmValue $ SSArray $
-                        array (0, fromInteger $ i - 1) inits)
-
 tryEvalPrimitive gs primName args =
       error ("step ilcall 'prim' " ++ show primName ++ " with args: " ++ show args)
 
@@ -661,7 +646,6 @@ view (SSTmExpr e) = show e
 display :: SSValue -> String
 display (SSBool True )  = "true"
 display (SSBool False)  = "false"
-display (SSPrimitive p) = "<" ++ show p ++ ">"
 display (SSInt i     )  = show i
 display (SSArray a   )  = show a
 display (SSTuple vals)  = "(" ++ joinWith ", " (map display vals) ++ ")"

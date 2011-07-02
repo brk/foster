@@ -152,11 +152,11 @@ struct LLVar : public LLExpr {
 
 // base(args)
 struct LLCall : public LLExpr {
-  LLVar* base;
+  LLExpr* base;
   std::vector<LLVar*> args;
-  bool isPrimitive;
-  LLCall(LLVar* base, std::vector<LLVar*>& args, bool isPrim)
-  : LLExpr("LLCall"), base(base), args(args), isPrimitive(isPrim) { }
+  bool callMightTriggerGC;
+  LLCall(LLExpr* base, std::vector<LLVar*>& args, bool mayGC)
+  : LLExpr("LLCall"), base(base), args(args), callMightTriggerGC(mayGC) { }
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 

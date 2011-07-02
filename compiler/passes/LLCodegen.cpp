@@ -143,11 +143,6 @@ void LLModule::codegenModule(CodegenPass* pass) {
 
 CodegenPass::CodegenPass(llvm::Module* m) : mod(m) {
   //dib = new DIBuilder(*mod);
-  foster::initializeKnownNonAllocatingFQNames(knownNonAllocatingFunctions);
-}
-
-bool CodegenPass::isKnownNonAllocating(LLVar* v) const {
-  return 1 == this->knownNonAllocatingFunctions.count(v->getName());
 }
 
 llvm::Function* CodegenPass::lookupFunctionOrDie(const std::string& fullyQualifiedSymbol) {
@@ -704,7 +699,8 @@ llvm::Value* LLCoroPrim::codegen(CodegenPass* pass) {
   if (this->primName == "coro_yield") { return pass->emitCoroYieldFn(r, a); }
   if (this->primName == "coro_invoke") { return pass->emitCoroInvokeFn(r, a); }
   if (this->primName == "coro_create") { return pass->emitCoroCreateFn(r, a); }
-  ASSERT(false); return NULL;
+  ASSERT(false) << "unknown coro prim: " << this->primName;
+  return NULL;
 }
 
 llvm::Value* LLCase::codegen(CodegenPass* pass) {
@@ -1013,11 +1009,12 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
               << "type mismatch, " << str(argV->getType())
               << " vs expected type " << str(expectedType)
               << "\nbase is " << str(FV)
-              << "\nwith base type " << str(FV->getType());
+              << "\nwith base type " << str(FV->getType())
+              << "\nargV = " << str(argV);
   }
 
   ASSERT(FT->getNumParams() == valArgs.size())
-            << "function arity mismatch for " << base->getName()
+            << "function arity mismatch for " << FV->getName()
             << "; got " << valArgs.size()
             << " args but expected " << FT->getNumParams();
 
@@ -1031,7 +1028,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
     callInst->setTailCall(true);
   }
 
-  if (pass->isKnownNonAllocating(base)) {
+  if (!this->callMightTriggerGC) {
     markAsNonAllocating(callInst);
   }
 

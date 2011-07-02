@@ -86,7 +86,6 @@ struct CodegenPass {
   void codegen(LLModule*);
   void codegen(LLExpr*);
 
-  bool isKnownNonAllocating(LLVar* v) const;
   llvm::Function* lookupFunctionOrDie(const std::string& fullyQualifiedSymbol);
 
   void markAsNeedingImplicitLoads(llvm::Value* v);
