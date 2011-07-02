@@ -81,9 +81,8 @@ parseCompiles pbexpr =
     let numChildren = Seq.length $ PbExpr.parts pbexpr in
     case numChildren of
         1 -> do [body] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
-                return $ E_CompilesAST body CS_NotChecked
-        _ -> return $ E_CompilesAST (E_VarAST (EMissingSourceRange "parseCompiles")
-                           (VarAST Nothing "parse error")) CS_WouldNotCompile
+                return $ E_CompilesAST (Just body)
+        _ ->    return $ E_CompilesAST (Nothing)
 
 parseFn pbexpr = do range <- parseRange pbexpr
                     [body] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)

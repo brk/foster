@@ -20,7 +20,7 @@ data ExprAST =
         | E_LetAST        ESourceRange  TermBinding  ExprAST (Maybe TypeAST)
         | E_LetRec        ESourceRange [TermBinding] ExprAST (Maybe TypeAST)
         | E_CallAST       ESourceRange ExprAST [ExprAST]
-        | E_CompilesAST   ExprAST CompilesStatus
+        | E_CompilesAST   (Maybe ExprAST)
         | E_IfAST         ExprAST ExprAST ExprAST
         | E_UntilAST      ExprAST ExprAST
         | E_SeqAST        ExprAST ExprAST
@@ -143,7 +143,7 @@ instance Structured ExprAST where
         case e of
             E_BoolAST rng  b     -> out $ "BoolAST      " ++ (show b)
             E_CallAST rng b args -> out $ "CallAST      " ++ tryGetCallNameE b
-            E_CompilesAST e c    -> out $ "CompilesAST  "
+            E_CompilesAST _      -> out $ "CompilesAST  "
             E_IfAST _ _ _        -> out $ "IfAST        "
             E_UntilAST _ _       -> out $ "UntilAST     "
             E_IntAST rng text    -> out $ "IntAST       " ++ text
@@ -164,7 +164,8 @@ instance Structured ExprAST where
         case e of
             E_BoolAST rng b      -> []
             E_CallAST rng b args -> b:args
-            E_CompilesAST   e c  -> [e]
+            E_CompilesAST (Just e) -> [e]
+            E_CompilesAST Nothing -> []
             E_IfAST a b c        -> [a, b, c]
             E_UntilAST a b       -> [a, b]
             E_IntAST rng txt     -> []

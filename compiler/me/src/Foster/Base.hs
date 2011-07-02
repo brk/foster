@@ -61,11 +61,6 @@ data CallConv = CCC | FastCC deriving (Eq, Show)
 briefCC CCC = "ccc"
 briefCC FastCC = ""
 
-data CompilesStatus = CS_WouldCompile
-                    | CS_WouldNotCompile
-                    | CS_NotChecked
-    deriving (Eq, Show)
-
 data ProcOrFunc = FT_Proc | FT_Func deriving (Show)
 
 data TyVar = BoundTyVar String -- bound by a ForAll, that is

@@ -188,10 +188,9 @@ typecheck ctx expr maybeExpTy =
 
         E_Case rng a branches -> typecheckCase ctx rng a branches maybeExpTy
 
-        E_CompilesAST e c -> case c of
-            CS_WouldNotCompile -> return $ AnnCompiles (CompilesResult $ Errors [out $ "parse error"])
-            CS_WouldCompile -> error "No support for re-type checking CompilesAST nodes."
-            CS_NotChecked -> do
+        E_CompilesAST me -> case me of
+            Nothing -> return $ AnnCompiles (CompilesResult $ Errors [out $ "parse error"])
+            Just e -> do
                 outputOrE <- tcIntrospect (typecheck ctx e Nothing)
                 return $ AnnCompiles (CompilesResult outputOrE)
 

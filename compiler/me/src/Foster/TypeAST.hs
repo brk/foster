@@ -117,6 +117,8 @@ primitiveDecls =
 
     ,(,) "expect_i1"   $ mkProcType [i1] []
     ,(,)  "print_i1"   $ mkProcType [i1] []
+    ,(,) "expect_i32b" $ mkProcType [i32] []
+    ,(,)  "print_i32b" $ mkProcType [i32] []
 
     ,(,) "opaquely_i32" $ mkProcType [i32] [i32]
     ,(,) "allocDArray" $ let a = BoundTyVar "a" in
