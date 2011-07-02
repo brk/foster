@@ -1,8 +1,6 @@
 module Foster.Context where
 
 import Data.IORef(IORef,newIORef,readIORef,writeIORef)
-import Data.Maybe(isNothing)
-import Control.Monad(liftM)
 
 import Foster.Base
 import Foster.ExprAST
@@ -35,12 +33,6 @@ termVarLookup name bindings =
     let termbindings = [(nm, annvar) | (TermVarBinding nm annvar) <- bindings] in
     lookup name termbindings
 
--- Either, with better names for the cases...
-data OutputOr expr
-    = OK      expr
-    | Errors  Output
-    deriving (Eq)
-
 -- Based on "Practical type inference for arbitrary rank types."
 -- One significant difference is that we do not include the Gamma context
 --   (mapping term variables to types) in the TcEnv, because we do not
@@ -59,7 +51,7 @@ unTc e (Tc f) =   f e
 
 instance Monad Tc where
     return x = Tc (\_env -> return (OK x))
-    fail err = Tc (\_env -> return (Errors (outLn err)))
+    fail err = Tc (\_env -> return (Errors [outLn err]))
     m >>= k = Tc (\env -> do { result <- unTc env m
                              ; case result of
                                 OK expr -> unTc env (k expr)
@@ -79,14 +71,14 @@ tcOnError Nothing  m k = m >>= k
 tcOnError (Just o) m k = Tc (\env -> do { result <- unTc env m
                                         ; case result of
                                            OK expr -> unTc env (k expr)
-                                           Errors ss -> return (Errors (ss ++ out "\n" ++ o))
+                                           Errors ss -> return (Errors (o:ss))
                                         })
 
 tcLift :: IO a -> Tc a
 tcLift action = Tc (\_env -> do { r <- action; return (OK r) })
 
-tcFails :: Output -> Tc a
-tcFails errs = Tc (\_env -> return (Errors errs))
+tcFails :: [Output] -> Tc a
+tcFails errs = Tc (\_env -> return $ Errors errs)
 
 newTcRef :: a -> Tc (IORef a)
 newTcRef v = tcLift $ newIORef v
@@ -136,16 +128,11 @@ tcGetCurrentHistory :: Tc [ExprAST]
 tcGetCurrentHistory = Tc (\tcenv -> do { return (OK $
                                           Prelude.reverse $ tcParents tcenv) })
 
-wasSuccessful :: Tc a -> Tc Bool
-wasSuccessful tce = liftM isNothing $ extractErrors tce
-
-extractErrors :: Tc a -> Tc (Maybe Output)
-extractErrors tce =
-    Tc (\env -> do { result <- unTc env tce
-                   ; case result of
-                       OK expr   -> return (OK Nothing)
-                       Errors ss -> return (OK (Just ss))
-                       })
+tcIntrospect :: Tc a -> Tc (OutputOr a)
+tcIntrospect action =
+    Tc (\env -> do { result <- unTc env action
+                   ; return (OK result)
+                   })
 
 isOK :: OutputOr ty -> Bool
 isOK (OK _) = True

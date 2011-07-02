@@ -10,6 +10,7 @@ import Foster.Base
 import Foster.Context
 import Foster.ExprAST
 import Foster.TypeIL
+import Foster.TypeAST(TypeAST(TupleTypeAST))
 
 {-
   AnnExprIL defines a copy of AnnExpr, annotated
@@ -19,7 +20,29 @@ import Foster.TypeIL
   to succeed.
 -}
 
-type AIVar = TypedId TypeIL
+data AIExpr=
+          AIBool       Bool
+        | AIInt        TypeIL LiteralInt
+        | AITuple      [AIExpr]
+        | E_AIFn       AIFn
+        | AICall       ESourceRange TypeIL AIExpr [AIExpr]
+        | AICallPrim   ESourceRange TypeIL ILPrim [AIExpr]
+        | AIIf         TypeIL AIExpr AIExpr AIExpr
+        | AIUntil      TypeIL AIExpr AIExpr
+        | AILetVar     Ident AIExpr AIExpr
+        | AILetFuns    [Ident] [AIFn] AIExpr
+        | AIAllocArray TypeIL AIExpr
+        | AIAlloc      AIExpr
+        | AIDeref      TypeIL AIExpr
+        | AIStore      TypeIL AIExpr AIExpr
+        | AISubscript  TypeIL AIExpr AIExpr
+        | E_AIVar       (TypedId TypeIL)
+        | E_AITyApp { aiTyAppOverallType :: TypeIL
+                    , aiTyAppExpr        :: AIExpr
+                    , aiTyAppArgTypes    :: TypeIL }
+        | AICase    TypeIL AIExpr [(Pattern, AIExpr)]
+        deriving (Show)
+
 data AIFn = AiFn { aiFnType  :: TypeIL
                  , aiFnIdent :: Ident
                  , aiFnVars  :: [TypedId TypeIL]
@@ -29,59 +52,14 @@ data AIFn = AiFn { aiFnType  :: TypeIL
 
 aiFnName f = identPrefix (aiFnIdent f)
 
-data AIExpr=
-          AIBool       Bool
-        | AIInt        TypeIL LiteralInt
-
-        -- No need for an explicit type, so long as subexprs are typed.
-        | AITuple      [AIExpr]
-
-        | E_AIFn       AIFn
-
-        -- Add an overall type for the application
-        | AICall       ESourceRange TypeIL AIExpr [AIExpr]
-
-        -- Add an overall type for the if branch
-        | AIIf         TypeIL AIExpr AIExpr AIExpr
-        | AIUntil      TypeIL AIExpr AIExpr
-
-        | AILetVar     Ident AIExpr AIExpr
-
-        -- We have separate syntax for a SCC of recursive functions
-        -- because they are compiled differently from non-recursive closures.
-        | AILetFuns    [Ident] [AIFn] AIExpr
-
-        | AIAlloc      AIExpr
-        | AIDeref      TypeIL AIExpr
-        | AIStore      TypeIL AIExpr AIExpr
-
-        -- Subscripts get an overall type
-        | AISubscript  TypeIL AIExpr AIExpr
-
-        --Vars go from a Maybe TypeIL to a required TypeIL
-        | E_AIVar       (TypedId TypeIL)
-
-        | AIPrimitive   (TypedId TypeIL)
-
-        | E_AITyApp { aiTyAppOverallType :: TypeIL
-                    , aiTyAppExpr        :: AIExpr
-                    , aiTyAppArgTypes    :: TypeIL }
-
-        | AICase    TypeIL AIExpr [(Pattern, AIExpr)]
-        -- This one's a bit odd, in that we can't include an AIExpr
-        -- because the subterm doesn't need to be well-typed...
-        | AICompiles   CompilesStatus String
-        deriving (Show)
-
 ail :: Context TypeIL -> AnnExpr -> Tc AIExpr
 ail ctx ae =
     let q = ail ctx in
     case ae of
         AnnBool      b             -> return $ AIBool         b
-        AnnCall  r t b args        -> do ti <- ilOf t
-                                         (bi:argsi) <- mapM q (b:args)
-                                         return $ AICall  r ti bi argsi
-        AnnCompiles c msg          -> return $ AICompiles c msg
+        AnnCompiles (CompilesResult ooe) -> do
+                oox <- tcIntrospect (tcInject ooe q)
+                return $ AIBool (isOK oox)
         AnnIf      t  a b c        -> do ti <- ilOf t
                                          [x,y,z] <- mapM q [a,b,c]
                                          return $ AIIf    ti x y z
@@ -113,8 +91,37 @@ ail ctx ae =
                                          bsi <- mapM (\(p,e) -> do a <- q e
                                                                    return (p, a)) bs
                                          return $ AICase ti ei bsi
-        AnnPrimitive (TypedId t i) -> do ti <- ilOf t
-                                         return $ AIPrimitive (TypedId ti i)
+        AnnPrimitive v -> tcFails [out $ "Primitives must be called directly!"
+                                      ++ "\n\tFound non-call use of " ++ show v]
+        AnnCall r t b args -> do
+            ti <- ilOf t
+            argsi <- mapM q args
+            case b of
+                AnnPrimitive (TypedId pty id) -> do
+                   pti <- ilOf pty
+                   return $ AICallPrim r ti (ILNamedPrim (TypedId pti id)) argsi
+
+                E_AnnTyApp ot (AnnPrimitive (TypedId _ (Ident "allocDArray" _))) argty -> do
+                    let [arraySize] = argsi
+                    aty <- ilOf argty
+                    return $ AIAllocArray aty arraySize
+
+                E_AnnTyApp ot (AnnPrimitive (TypedId vty id@(Ident primName _))) appty ->
+                   case (coroPrimFor primName, appty) of
+                     (Just coroPrim, TupleTypeAST [argty, retty]) -> do
+                       [aty, rty] <- mapM ilOf [argty, retty]
+                       return $ AICallPrim r ti (ILCoroPrim coroPrim aty rty) argsi
+                     otherwise -> do
+                       -- v[types](args) ~~>> let <fresh> = v[types] in <fresh>(args)
+                       [vti, oti, appti] <- mapM ilOf [vty, ot, appty]
+                       let primVar = TypedId vti id
+                       let call = AICallPrim r ti (ILNamedPrim primVar) argsi
+                       let primName = identPrefix id
+                       x <- tcFresh $ "appty_" ++ primName
+                       return $ AILetVar x (E_AITyApp oti (E_AIVar primVar) appti) call
+                _ -> do bi <- q b
+                        return $ AICall r ti bi argsi
+
         E_AnnVar (TypedId t v)     -> do ti <- ilOf t
                                          return $ E_AIVar (TypedId ti v)
         E_AnnFn annFn              -> do aif <- aiFnOf ctx annFn
@@ -123,6 +130,11 @@ ail ctx ae =
                                          at <- ilOf argty
                                          ae <- q e
                                          return $ E_AITyApp ti ae at
+
+coroPrimFor "coro_create" = Just $ CoroCreate
+coroPrimFor "coro_invoke" = Just $ CoroInvoke
+coroPrimFor "coro_yield"  = Just $ CoroYield
+coroPrimFor _ = Nothing
 
 aiFnOf :: Context TypeIL -> AnnFn -> Tc AIFn
 aiFnOf ctx f = do
@@ -140,7 +152,6 @@ aiFnOf ctx f = do
 instance AExpr AIExpr where
     freeIdents e = case e of
         E_AIVar v     -> [tidIdent v]
-        AIPrimitive v -> []
         AILetVar id a b     -> freeIdents a ++ (freeIdents b `butnot` [id])
         AICase _t e patbnds -> freeIdents e ++ (concatMap patBindingFreeIds patbnds)
         -- Note that all free idents of the bound expr are free in letvar,
@@ -162,19 +173,19 @@ instance Structured AIExpr where
         case e of
             AIBool         b      -> []
             AICall  r t b args    -> b:args
-            AICompiles c msg      -> []
+            AICallPrim r t b args ->   args
             AIIf      t  a b c    -> [a, b, c]
             AIUntil   t  a b      -> [a, b]
             AIInt t _             -> []
             AILetVar _ a b        -> [a, b]
             AILetFuns ids fns e   -> (map E_AIFn fns) ++ [e]
+            AIAllocArray t a      -> [a]
             AIAlloc        a      -> [a]
             AIDeref      t a      -> [a]
             AIStore      t a b    -> [a, b]
             AISubscript t a b     -> [a, b]
             AITuple     es        -> es
             AICase t e bs         -> e:(map snd bs)
-            AIPrimitive  v        -> []
             E_AIVar      v        -> []
             E_AIFn f              -> [aiFnBody f]
             E_AITyApp t a argty   -> [a]

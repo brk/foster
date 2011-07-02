@@ -38,9 +38,7 @@ main = {
   expect_i1 false ; print_i1 (__COMPILES__ 0[0]);
 
   // Primitives must be called, not treated as first class values.
-  //expect_i1 true; print_i1 (__COMPILES__ let f = print_i1; in f true end);
-  //expect_i1 true;
-  //let f = print_i1; in f true end;
+  expect_i1 false; print_i1 (__COMPILES__ let f = print_i1; in f true end);
 };
 
 a = { 0 };

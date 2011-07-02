@@ -91,9 +91,10 @@ data AnnExpr =
                      ,  annTyAppArgTypes    :: TypeAST }
 
         | AnnCase    TypeAST AnnExpr [(Pattern, AnnExpr)]
-        -- This one's a bit odd, in that we can't include an AnnExpr
-        -- because the subterm doesn't need to be well-typed...
-        | AnnCompiles   CompilesStatus String
+        -- This one's a bit odd, in that we can't always include an AnnExpr
+        -- because the subterm doesn't need to be well-typed.
+        -- But we should include one if possible, for further checking.
+        | AnnCompiles   (CompilesResult AnnExpr)
         deriving (Show)
 
 -- Body annotated, and overall type added
@@ -114,7 +115,7 @@ typeAST (AnnInt t _)         = t
 typeAST (AnnTuple es)        = TupleTypeAST [typeAST e | e <- es]
 typeAST (E_AnnFn annFn)      = annFnType annFn
 typeAST (AnnCall r t b a)    = t
-typeAST (AnnCompiles c msg)  = fosBoolType
+typeAST (AnnCompiles _)      = fosBoolType
 typeAST (AnnIf t a b c)      = t
 typeAST (AnnUntil t _ _)     = t
 typeAST (AnnLetVar _ a b)    = typeAST b
@@ -215,7 +216,7 @@ instance Structured AnnExpr where
         case e of
             AnnBool         b    -> out $ "AnnBool      " ++ (show b)
             AnnCall  r t b args  -> out $ "AnnCall      " ++ " :: " ++ show t
-            AnnCompiles c msg    -> out $ "AnnCompiles  " ++ show c ++ " - " ++ msg
+            AnnCompiles cr       -> out $ "AnnCompiles  " ++ show cr
             AnnIf      t  a b c  -> out $ "AnnIf        " ++ " :: " ++ show t
             AnnUntil   t  a b    -> out $ "AnnUntil     " ++ " :: " ++ show t
             AnnInt ty int        -> out $ "AnnInt       " ++ (litIntText int) ++ " :: " ++ show ty
@@ -235,7 +236,8 @@ instance Structured AnnExpr where
         case e of
             AnnBool         b                    -> []
             AnnCall  r t b args                  -> b:args
-            AnnCompiles c msg                    -> []
+            AnnCompiles (CompilesResult (OK e))  -> [e]
+            AnnCompiles (CompilesResult (Errors _)) -> []
             AnnIf      t  a b c                  -> [a, b, c]
             AnnUntil   t  a b                    -> [a, b]
             AnnInt t _                           -> []

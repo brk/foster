@@ -53,7 +53,7 @@ data ILExpr =
         -- codegen-ing closures so they can be mutually recursive.
         | ILClosures    [Ident] [ILClosure] ILExpr
         | ILLetVal       Ident    ILExpr    ILExpr
-        | ILAlloc               AIVar
+        | ILAlloc              AIVar
         | ILAllocArray  TypeIL AIVar
         | ILDeref       TypeIL AIVar
         | ILStore       TypeIL AIVar AIVar
@@ -66,12 +66,6 @@ data ILExpr =
         | ILCallPrim    TypeIL ILPrim [AIVar]
         | ILTyApp       TypeIL ILExpr TypeIL
         deriving (Show)
-
-data ILPrim = ILNamedPrim AIVar
-            | ILCoroPrim  CoroPrim TypeIL TypeIL
-            deriving (Show)
-data CoroPrim = CoroCreate | CoroInvoke | CoroYield
-            deriving (Show)
 
 data AllocMemRegion = MemRegionStack
                     | MemRegionGlobalHeap
@@ -138,12 +132,8 @@ closureConvert ctx expr =
         let g = closureConvert ctx in
         case expr of
             AIBool b          -> return $ ILBool b
-            AICompiles c msg  -> return $ ILBool (c == CS_WouldCompile)
             AIInt t i         -> return $ ILInt t i
             E_AIVar v         -> return $ ILVar v
-            AIPrimitive v     -> error $ "Primitives must be called directly!"
-                                       ++ "\n\tFound non-call use of " ++ show v
-
             AIIf      t  a b c    -> do x <- ilmFresh ".ife"
                                         [a', b', c'] <- mapM g [a, b, c]
                                         let v = TypedId (typeIL a') x
@@ -164,7 +154,8 @@ closureConvert ctx expr =
                                         let (closures, _procdefs) = unzip combined
                                         e' <- g e
                                         return $ ILClosures ids closures e'
-
+            AIAllocArray t a      -> do a' <- g a
+                                        nestedLets [a'] (\[x] -> ILAllocArray t x)
             AIAlloc a             -> do a' <- g a
                                         nestedLets [a'] (\[x] -> ILAlloc x)
             AIDeref t a           -> do a' <- g a
@@ -202,13 +193,14 @@ closureConvert ctx expr =
                 let clovar = E_AIVar $ TypedId (typeAI x) clo_id
                 g (AILetFuns [clo_id] [aiFn] clovar)
 
+            AICallPrim r t prim es -> do
+                cargs <- mapM g es
+                nestedLets cargs (\vars -> (ILCallPrim t prim vars))
+
             AICall  r t b es -> do
                 cargs <- mapM g es
                 case b of
                     (E_AIVar v) -> do nestedLets cargs (\vars -> (ILCall t v vars))
-                    (AIPrimitive v) -> do
-                        let prim = ILNamedPrim v
-                        nestedLets cargs (\vars -> (ILCallPrim t prim vars))
                     (E_AIFn f) -> do -- If we're calling a function directly,
                                      -- we know we can perform lambda lifting
                                      -- on it, by adding args for its free variables.
@@ -222,41 +214,7 @@ closureConvert ctx expr =
                                     let procvar = (TypedId procty procid)
                                     nestedLets cargs (\vars -> ILCall t procvar (freevars ++ vars))
 
-                    (E_AITyApp ot (AIPrimitive (TypedId _ (Ident "allocDArray" _))) argty) ->
-                        nestedLets cargs (\[arraySize] -> ILAllocArray argty arraySize)
-
-                    (E_AITyApp ot (E_AIVar v) argty) -> do
-                        x <- ilmFresh $ "appty_" ++ (identPrefix $ tidIdent v)
-                        let var = TypedId ot x
-                        nlets <- nestedLets cargs (\vars -> ILCall t var vars)
-                        return $ buildLet x (ILTyApp ot (ILVar v) argty) nlets
-
-                    (E_AITyApp ot (AIPrimitive v@(TypedId _ (Ident primName _))) appty) ->
-                        case (coroPrimFor primName, appty) of
-                          (Just coroPrim, TupleTypeIL [argty, retty]) -> do
-                            let prim = ILCoroPrim coroPrim argty retty
-                            nestedLets cargs (\vars -> ILCallPrim t prim vars)
-                          otherwise -> do
-                            let primName = identPrefix $ tidIdent v
-                            x <- ilmFresh $ "appty_" ++ primName
-                            let prim = ILNamedPrim v
-                            nlets <- nestedLets cargs (\vars -> ILCallPrim t prim vars)
-                            return $ buildLet x (ILTyApp ot (ILVar v) appty) nlets
-
                     _ -> error $ "ILExpr.closureConvert: AnnCall with non-var base of " ++ show b
-
-coroPrimFor "coro_create" = Just $ CoroCreate
-coroPrimFor "coro_invoke" = Just $ CoroInvoke
-coroPrimFor "coro_yield"  = Just $ CoroYield
-coroPrimFor _ = Nothing
-
--- v[types](args) =>
--- let <fresh> = v[types] in <fresh>(args)
--- TODO generate coro primitives here?
--- Because the LLVM implementation specializes coro functions
--- (at compile time)
--- to produce a distinguished (function pointer) value,
--- whereas the interpreter treats the coroutine primitives specially.
 
 closureConvertedProc :: [AIVar] -> AIFn -> ILExpr -> ILM ILProcDef
 closureConvertedProc liftedProcVars f newbody = do
@@ -335,14 +293,13 @@ makeEnvPassingExplicit expr fnAndEnvForClosure =
     fq (AiFn ty id vars body rng) = (AiFn ty id vars (q body) rng)
     q e = case e of
             AIBool b         -> e
-            AICompiles c msg -> e
             AIInt t i        -> e
             E_AIVar v        -> e -- We don't alter standalone references to closures
-            AIPrimitive v    -> e
             AIIf t a b c    -> AIIf      t (q a) (q b) (q c)
             AIUntil t a b   -> AIUntil   t (q a) (q b)
             AILetVar id a b -> AILetVar id (q a) (q b)
             AILetFuns ids fns e  -> AILetFuns ids (map fq fns) (q e)
+            AIAllocArray t a -> AIAllocArray t (q a)
             AIAlloc a     -> AIAlloc   (q a)
             AIDeref t a   -> AIDeref t (q a)
             AIStore t a b -> AIStore t (q a) (q b)
@@ -351,6 +308,7 @@ makeEnvPassingExplicit expr fnAndEnvForClosure =
             AICase t e bs        -> AICase t (q e) [(p, q e) | (p, e) <- bs]
             E_AITyApp t e argty  -> E_AITyApp t (q e) argty
             E_AIFn f             -> E_AIFn (fq f)
+            AICallPrim r t prim es -> AICallPrim r t prim (map q es)
             AICall r t (E_AIVar v) es
                 | Map.member (tidIdent v) fnAndEnvForClosure ->
                     let (f, envid) = fnAndEnvForClosure Map.! (tidIdent v) in
@@ -440,7 +398,8 @@ typeAI (AIBool _)          = NamedTypeIL "i1"
 typeAI (AIInt t _)         = t
 typeAI (AITuple es)        = TupleTypeIL (map typeAI es)
 typeAI (AICall r t b a)    = t
-typeAI (AICompiles c msg)  = NamedTypeIL "i1"
+typeAI (AICallPrim r t b a)= t
+typeAI (AIAllocArray elt_ty _) = ArrayTypeIL elt_ty
 typeAI (AIIf t a b c)      = t
 typeAI (AIUntil t _ _)     = t
 typeAI (AILetVar _ a b)    = typeAI b
@@ -450,7 +409,6 @@ typeAI (AIDeref t _)       = t
 typeAI (AIStore t _ _)     = t
 typeAI (AISubscript t _ _) = t
 typeAI (AICase t _ _)      = t
-typeAI (AIPrimitive tid)   = tidType tid
 typeAI (E_AIVar tid)       = tidType tid
 typeAI (E_AITyApp substitutedTy tm tyArgs) = substitutedTy
 typeAI (E_AIFn aiFn)       = aiFnType aiFn

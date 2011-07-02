@@ -24,6 +24,12 @@ data TypeIL =
          | ArrayTypeIL     TypeIL
          | PtrTypeIL       TypeIL
 
+type AIVar = TypedId TypeIL
+data ILPrim = ILNamedPrim AIVar
+            | ILCoroPrim  CoroPrim TypeIL TypeIL
+            deriving (Show)
+data CoroPrim = CoroCreate | CoroInvoke | CoroYield
+            deriving (Show)
 
 instance Show TypeIL where
     show x = case x of
@@ -59,7 +65,7 @@ ilOf typ =
      (MetaTyVar (Meta u tyref desc)) -> do
         mty <- readTcRef tyref
         case mty of
-          Nothing -> tcFails (out $ "Found un-unified unification variable "
-                                  ++ show u ++ "(" ++ desc ++ ")!")
+          Nothing -> tcFails [out $ "Found un-unified unification variable "
+                                  ++ show u ++ "(" ++ desc ++ ")!"]
           Just t  -> ilOf t
 

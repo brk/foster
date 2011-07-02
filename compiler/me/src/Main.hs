@@ -109,8 +109,8 @@ typecheckFnSCC scc (ctx, tcenv) = do
      then let fns = [f | (OK (E_AnnFn f)) <- annfns] in
           let newbindings = foldr (\f b -> (bindingForAnnFn f):b) [] fns in
           return (annfns, (prependContextBindings ctx newbindings, tcenv))
-     else return ([Errors (out $ "not all functions type checked correctly in SCC: "
-                             ++ show [fnName f | f <- fns])
+     else return ([Errors [out $ "not all functions type checked correctly in SCC: "
+                             ++ show [fnName f | f <- fns]]
            ],(ctx, tcenv))
 
 mapFoldM :: (Monad m) => [a] -> b ->
@@ -172,6 +172,13 @@ liftOutput f ooa =
 allOK :: [OutputOr ty] -> Bool
 allOK results = List.all isOK results
 
+printOutputs :: [Output] -> IO ()
+printOutputs outs =
+  Data.Foldable.forM_ outs $ \(output) ->
+    do
+       runOutput $ output
+       runOutput $ (outLn "")
+
 inspect :: Context TypeAST -> OutputOr AnnExpr -> ExprAST -> IO Bool
 inspect ctx typechecked ast =
     case typechecked of
@@ -183,13 +190,7 @@ inspect ctx typechecked ast =
         Errors errs -> do
             runOutput $ showStructure ast
             runOutput $ (outCSLn Red "Typecheck error: ")
-            Data.Foldable.forM_ errs $ \(output) ->
-                do {-runOutput $ (outLn $ "hist len: " ++ (show $ Prelude.length hist))
-                   forM_ (Prelude.reverse hist) $ \expr ->
-                        do runOutput $ textOf expr 60
-                           runOutput $ outLn ""
-                    -}
-                   runOutput $ [output]
+            printOutputs errs
 
             do runOutput $ (outLn "")
             return False
@@ -268,5 +269,7 @@ main = do
                            Just tmpDir -> do
                               _unused <- interpretProg prog tmpDir
                               return ())
-            Errors o    -> error $ "Unable to type check input module!"
+            Errors os -> do runOutput (outCSLn Red $ "Unable to type check input module:")
+                            printOutputs os
+                            error "compilation failed"
 

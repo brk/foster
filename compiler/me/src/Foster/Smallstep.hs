@@ -482,81 +482,81 @@ tryGetInt32PrimOp2Bool name =
 evalPrimitive :: ILPrim -> MachineState -> [SSValue] -> IO MachineState
 evalPrimitive prim gs args = error $ "evalPrimitive " ++ show prim
                                  ++ " not yet defined"
-{-
-evalPrimitive :: SSPrimId -> MachineState -> [SSValue] -> IO MachineState
-evalPrimitive PrimCoroInvoke gs [(SSLocation targetloc),arg] =
-  let (SSCoro ncoro) = lookupHeap gs targetloc in
-  let ccoro = if canSwitchToCoro ncoro
-                then stCoro gs
-                else error "Unable to invoke coroutine!" in
-  let hadRun = CoroStatusDormant /= coroStat ncoro in
-  let newcoro2 = ncoro { coroPrev = (Just $ coroLoc ccoro)
-                       , coroStat = CoroStatusRunning } in
-  if hadRun
-    then
-       let newcoro = newcoro2 { coroTerm = SSTmValue arg } in
-       return $ gs {
-           stHeap = modifyHeap2 gs (coroLoc ccoro) (SSCoro $ ccoro { coroStat = CoroStatusSuspended })
-                                   (coroLoc ncoro) (SSCoro $ newcoro)
-         , stCoroLoc = coroLoc ncoro
-       }
-    else
-       let newcoro = newcoro2 in
-       let gs2 = gs {
-           stHeap = modifyHeap2 gs (coroLoc ccoro) (SSCoro $ ccoro { coroStat = CoroStatusSuspended })
-                                   (coroLoc ncoro) (SSCoro $ newcoro)
-         , stCoroLoc = coroLoc ncoro
-       } in
-       let names = map tidIdent $ coroArgs newcoro in
-       return $ extendEnv gs2 names [arg]
 
-evalPrimitive PrimCoroInvoke gs _ = error $ "Wrong arguments to coro_invoke"
+-- evalPrimitive :: SSPrimId -> MachineState -> [SSValue] -> IO MachineState
+-- evalPrimitive PrimCoroInvoke gs [(SSLocation targetloc),arg] =
+--   let (SSCoro ncoro) = lookupHeap gs targetloc in
+--   let ccoro = if canSwitchToCoro ncoro
+--                 then stCoro gs
+--                 else error "Unable to invoke coroutine!" in
+--   let hadRun = CoroStatusDormant /= coroStat ncoro in
+--   let newcoro2 = ncoro { coroPrev = (Just $ coroLoc ccoro)
+--                        , coroStat = CoroStatusRunning } in
+--   if hadRun
+--     then
+--        let newcoro = newcoro2 { coroTerm = SSTmValue arg } in
+--        return $ gs {
+--            stHeap = modifyHeap2 gs (coroLoc ccoro) (SSCoro $ ccoro { coroStat = CoroStatusSuspended })
+--                                    (coroLoc ncoro) (SSCoro $ newcoro)
+--          , stCoroLoc = coroLoc ncoro
+--        }
+--     else
+--        let newcoro = newcoro2 in
+--        let gs2 = gs {
+--            stHeap = modifyHeap2 gs (coroLoc ccoro) (SSCoro $ ccoro { coroStat = CoroStatusSuspended })
+--                                    (coroLoc ncoro) (SSCoro $ newcoro)
+--          , stCoroLoc = coroLoc ncoro
+--        } in
+--        let names = map tidIdent $ coroArgs newcoro in
+--        return $ extendEnv gs2 names [arg]
+--
+-- evalPrimitive PrimCoroInvoke gs _ = error $ "Wrong arguments to coro_invoke"
+--
+--
+-- {- "Rule 4 describes the action of creating a coroutine.
+--     It creates a new label to represent the coroutine and extends the
+--     store with a mapping from this label to the coroutine main function." -}
+-- evalPrimitive PrimCoroCreate gs [SSClosure clo env] =
+--   let ((loc, gs2), coro) = coroFromClosure gs clo env in
+--   return $ withTerm gs2 (SSTmValue $ SSLocation loc)
+--
+-- evalPrimitive PrimCoroCreate gs _ = error $ "Wrong arguments to coro_create"
+--
+--
+-- -- The current coro is returned to the heap, marked suspended, with no previous coro.
+-- -- The previous coro becomes the new coro, with status running.
+-- evalPrimitive PrimCoroYield gs [arg] =
+--   let ccoro = stCoro gs in
+--   case coroPrev ccoro of
+--     Nothing -> error $ "Cannot yield from initial coroutine!\n" ++ show ccoro
+--     Just prevloc ->
+--       let (SSCoro prevcoro) = assert (prevloc /= coroLoc ccoro) $
+--                                lookupHeap gs prevloc in
+--       let newpcoro = if canSwitchToCoro prevcoro then
+--                       prevcoro { coroStat = CoroStatusRunning
+--                                , coroTerm = SSTmValue arg }
+--                       else error "Unable to yield to saved coro!" in
+--       let gs2 = gs {
+--           stHeap = modifyHeap2 gs prevloc (SSCoro newpcoro)
+--                           (coroLoc ccoro) (SSCoro $ ccoro { coroPrev = Nothing
+--                                                           , coroStat = CoroStatusSuspended })
+--         , stCoroLoc = prevloc
+--       } in
+--       return $ gs2
+-- evalPrimitive PrimCoroYield gs _ = error $ "Wrong arguments to coro_yield"
+--
+--
+-- evalPrimitive (PrimNamed "print") gs [val] =
+--       do printString gs (display val)
+--          return $ withTerm gs (SSTmValue val)
+--
+-- evalPrimitive (PrimNamed "expect") gs [val] =
+--       do expectString gs (display val)
+--          return $ withTerm gs (SSTmValue val)
+--
+-- evalPrimitive (PrimNamed p) gs args =
+--   error $ "step evalPrimitive named " ++ p ++ " with " ++ show (map display args)
 
-
-{- "Rule 4 describes the action of creating a coroutine.
-    It creates a new label to represent the coroutine and extends the
-    store with a mapping from this label to the coroutine main function." -}
-evalPrimitive PrimCoroCreate gs [SSClosure clo env] =
-  let ((loc, gs2), coro) = coroFromClosure gs clo env in
-  return $ withTerm gs2 (SSTmValue $ SSLocation loc)
-
-evalPrimitive PrimCoroCreate gs _ = error $ "Wrong arguments to coro_create"
-
-
--- The current coro is returned to the heap, marked suspended, with no previous coro.
--- The previous coro becomes the new coro, with status running.
-evalPrimitive PrimCoroYield gs [arg] =
-  let ccoro = stCoro gs in
-  case coroPrev ccoro of
-    Nothing -> error $ "Cannot yield from initial coroutine!\n" ++ show ccoro
-    Just prevloc ->
-      let (SSCoro prevcoro) = assert (prevloc /= coroLoc ccoro) $
-                               lookupHeap gs prevloc in
-      let newpcoro = if canSwitchToCoro prevcoro then
-                      prevcoro { coroStat = CoroStatusRunning
-                               , coroTerm = SSTmValue arg }
-                      else error "Unable to yield to saved coro!" in
-      let gs2 = gs {
-          stHeap = modifyHeap2 gs prevloc (SSCoro newpcoro)
-                          (coroLoc ccoro) (SSCoro $ ccoro { coroPrev = Nothing
-                                                          , coroStat = CoroStatusSuspended })
-        , stCoroLoc = prevloc
-      } in
-      return $ gs2
-evalPrimitive PrimCoroYield gs _ = error $ "Wrong arguments to coro_yield"
-
-
-evalPrimitive (PrimNamed "print") gs [val] =
-      do printString gs (display val)
-         return $ withTerm gs (SSTmValue val)
-
-evalPrimitive (PrimNamed "expect") gs [val] =
-      do expectString gs (display val)
-         return $ withTerm gs (SSTmValue val)
-
-evalPrimitive (PrimNamed p) gs args =
-  error $ "step evalPrimitive named " ++ p ++ " with " ++ show (map display args)
--}
 
 --------------------------------------------------------------------
 

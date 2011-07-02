@@ -104,12 +104,12 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
       else case (t1, t2) of
                 ((NamedTypeAST n1), (NamedTypeAST n2)) ->
                   if n1 == n2 then tcUnifyLoop constraints tysub
-                              else tcFails (out $ "Unable to unify different named types: "
-                                              ++ n1 ++ " vs " ++ n2)
+                              else tcFails [out $ "Unable to unify different named types: "
+                                              ++ n1 ++ " vs " ++ n2]
 
                 ((TupleTypeAST tys1), (TupleTypeAST tys2)) ->
                     if List.length tys1 /= List.length tys2
-                      then tcFails $ out "Unable to unify tuples of different lengths!"
+                      then tcFails [out $ "Unable to unify tuples of different lengths!"]
                       else tcUnifyLoop ([TypeConstrEq a b | (a, b) <- zip tys1 tys2] ++ constraints) tysub
 
                 ((FnTypeAST a1 a2 cc1 _), (FnTypeAST b1 b2 cc2 _)) ->
@@ -118,8 +118,8 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                     -- (but not the other way 'round) using implicitly-inserted
                     -- coercions during lowering to LLVM.
                     tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub
-                  else tcFails (out $ "Cannot unify function types with different calling conventions: "
-                                    ++ show cc1 ++ " vs " ++ show cc2)
+                  else tcFails [out $ "Cannot unify function types with different calling conventions: "
+                                    ++ show cc1 ++ " vs " ++ show cc2]
 
                 ((CoroType a1 a2), (CoroType b1 b2)) ->
                     tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub
@@ -139,7 +139,7 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                     tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 
                 otherwise ->
-                    tcFails $ out ("Unable to unify " ++ show t1 ++ " and " ++ show t2)
+                    tcFails [out $ "Unable to unify " ++ show t1 ++ " and " ++ show t2]
 
 tcUnifyVar :: MetaTyVar -> TypeAST -> TypeSubst -> [TypeConstraint] -> Tc UnifySoln
 tcUnifyVar (Meta uniq tyref _) ty tysub constraints =
