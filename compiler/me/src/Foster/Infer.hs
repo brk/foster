@@ -43,17 +43,17 @@ parSubstTy :: [(TypeAST, TypeAST)] -> TypeAST -> TypeAST
 parSubstTy prvNextPairs ty =
     case ty of
         (NamedTypeAST _)     -> fromMaybe ty $ List.lookup ty prvNextPairs
-        (RefType   t)   ->   RefType (parSubstTy prvNextPairs t)
-        (ArrayType t)   -> ArrayType (parSubstTy prvNextPairs t)
+        (RefTypeAST   t)   -> RefTypeAST   (parSubstTy prvNextPairs t)
+        (ArrayTypeAST t)   -> ArrayTypeAST (parSubstTy prvNextPairs t)
         (TupleTypeAST types) -> (TupleTypeAST [parSubstTy prvNextPairs t | t <- types])
         (FnTypeAST s t cc cs)-> (FnTypeAST (parSubstTy prvNextPairs s)
                                            (parSubstTy prvNextPairs t)
                                            cc cs) -- TODO unify calling convention?
-        (CoroType s t)   -> (CoroType (parSubstTy prvNextPairs s) (parSubstTy prvNextPairs t))
-        (ForAll tvs rho) -> let prvNextPairs' = prvNextPairs `assocFilterOut`
-                                                     [T_TyVar tv | tv <- tvs] in
-                            (ForAll tvs (parSubstTy prvNextPairs' rho))
-        (T_TyVar tv)     -> fromMaybe ty $ List.lookup ty prvNextPairs
+        (CoroTypeAST s t)   -> (CoroTypeAST (parSubstTy prvNextPairs s) (parSubstTy prvNextPairs t))
+        (ForAllAST tvs rho) -> let prvNextPairs' = prvNextPairs `assocFilterOut`
+                                                     [TyVarAST tv | tv <- tvs] in
+                            (ForAllAST tvs (parSubstTy prvNextPairs' rho))
+        (TyVarAST tv)    -> fromMaybe ty $ List.lookup ty prvNextPairs
         (MetaTyVar mtv)  -> fromMaybe ty $ List.lookup ty prvNextPairs
 
 
@@ -63,15 +63,15 @@ tySubst :: TypeAST -> TypeSubst -> TypeAST
 tySubst ty subst =
     case ty of
         (NamedTypeAST s)     -> ty
-        (RefType    t)       -> RefType    (tySubst t subst)
-        (ArrayType  t)       -> ArrayType  (tySubst t subst)
+        (RefTypeAST    t)    -> RefTypeAST   (tySubst t subst)
+        (ArrayTypeAST  t)    -> ArrayTypeAST (tySubst t subst)
         (TupleTypeAST types) -> (TupleTypeAST [tySubst t subst | t <- types])
         (FnTypeAST s t cc cs)-> (FnTypeAST (tySubst s subst)
                                            (tySubst t subst)
                                            cc cs)
-        (CoroType s t)   -> (CoroType (tySubst s subst) (tySubst t subst))
-        (ForAll tvs rho) -> (ForAll tvs (tySubst rho subst))
-        (T_TyVar tv)     -> ty
+        (CoroTypeAST s t)   -> (CoroTypeAST (tySubst s subst) (tySubst t subst))
+        (ForAllAST tvs rho) -> (ForAllAST tvs (tySubst rho subst))
+        (TyVarAST tv)       -> ty
         (MetaTyVar (Meta u tyref _))  -> Map.findWithDefault ty u subst
 
 tyEnvSubst :: Context TypeAST -> TypeSubst -> Context TypeAST
@@ -119,10 +119,10 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                   else tcFails [out $ "Cannot unify function types with different calling conventions: "
                                     ++ show cc1 ++ " vs " ++ show cc2]
 
-                ((CoroType a1 a2), (CoroType b1 b2)) ->
+                ((CoroTypeAST a1 a2), (CoroTypeAST b1 b2)) ->
                     tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub
 
-                -- TODO: ForAll: alpha-equivalence?
+                -- TODO: ForAllAST: alpha-equivalence?
                 -- TODO: T_TyVar -- alpha equivalence?
 
                 ((MetaTyVar m), ty) ->
@@ -130,7 +130,7 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                 (ty, (MetaTyVar m)) ->
                     tcUnifyVar m ty tysub constraints
 
-                ((RefType t1), (RefType t2)) ->
+                ((RefTypeAST t1), (RefTypeAST t2)) ->
                     tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 
                 otherwise ->

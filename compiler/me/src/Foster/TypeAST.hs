@@ -36,12 +36,12 @@ data TypeAST =
                             , fnTypeRange  :: TypeAST
                             , fnTypeCallConv :: CallConv
                             , fnTypeProcOrFunc :: ProcOrFunc }
-         | CoroType         TypeAST TypeAST
-         | ForAll           [TyVar] Rho
-         | T_TyVar          TyVar
+         | CoroTypeAST      TypeAST TypeAST
+         | ForAllAST        [TyVar] Rho
+         | TyVarAST         TyVar
          | MetaTyVar        MetaTyVar
-         | RefType          TypeAST
-         | ArrayType        TypeAST
+         | RefTypeAST       TypeAST
+         | ArrayTypeAST     TypeAST
 
 data MetaTyVar = Meta Uniq TyRef String
 
@@ -58,12 +58,12 @@ instance Show TypeAST where
         (NamedTypeAST s)     -> s
         (TupleTypeAST types) -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
         (FnTypeAST s t cc cs)-> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
-        (CoroType s t)   -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
-        (ForAll tvs rho) -> "(ForAll " ++ show tvs ++ ". " ++ show rho ++ ")"
-        (T_TyVar tv)     -> show tv
+        (CoroTypeAST s t)   -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
+        (ForAllAST tvs rho) -> "(ForAll " ++ show tvs ++ ". " ++ show rho ++ ")"
+        (TyVarAST tv)     -> show tv
         (MetaTyVar (Meta u tyref desc))  -> "(~!" ++ show u ++ ":" ++ desc ++ ")"
-        (RefType    ty)  -> "(Ref " ++ show ty ++ ")"
-        (ArrayType  ty)  -> "(Array " ++ show ty ++ ")"
+        (RefTypeAST    ty)  -> "(Ref " ++ show ty ++ ")"
+        (ArrayTypeAST  ty)  -> "(Array " ++ show ty ++ ")"
 
 instance Eq MetaTyVar where
     (Meta u1 _ _) == (Meta u2 _ _) = u1 == u2
@@ -78,10 +78,10 @@ typesEqual (FnTypeAST a1 b1 c1 d1) (FnTypeAST a2 b2 c2 d2) =
     typesEqual a1 a2 && typesEqual b1 b2
                       && c1 == c2
                 -- ignore d1 and d2 for now...
-typesEqual (CoroType a1 b1) (CoroType a2 b2) = typesEqual a1 a2 && typesEqual b1 b2
-typesEqual (ForAll vars1 ty1) (ForAll vars2 ty2) =
+typesEqual (CoroTypeAST a1 b1) (CoroTypeAST a2 b2) = typesEqual a1 a2 && typesEqual b1 b2
+typesEqual (ForAllAST vars1 ty1) (ForAllAST vars2 ty2) =
     vars1 == vars2 && typesEqual ty1 ty2
-typesEqual (T_TyVar tv1) (T_TyVar tv2) = tv1 == tv2
+typesEqual (TyVarAST tv1) (TyVarAST tv2) = tv1 == tv2
 typesEqual (MetaTyVar mtv1) (MetaTyVar mtv2) = mtv1 == mtv2
 typesEqual _ _ = False
 
@@ -94,7 +94,7 @@ minimalTuple args  = TupleTypeAST args
 
 mkProcType args rets = FnTypeAST (TupleTypeAST args) (minimalTuple rets) CCC    FT_Proc
 mkFnType   args rets = FnTypeAST (TupleTypeAST args) (minimalTuple rets) FastCC FT_Func
-mkCoroType args rets =  CoroType (minimalTuple args) (minimalTuple rets)
+mkCoroType args rets = CoroTypeAST (minimalTuple args) (minimalTuple rets)
 i32 = (NamedTypeAST "i32")
 i64 = (NamedTypeAST "i64")
 i1  = (NamedTypeAST "i1")
@@ -119,29 +119,29 @@ primitiveDecls =
 
     ,(,) "opaquely_i32" $ mkProcType [i32] [i32]
     ,(,) "allocDArray" $ let a = BoundTyVar "a" in
-                         ForAll [a]
-                           (mkProcType [i32] [ArrayType (T_TyVar a)])
+                         ForAllAST [a]
+                           (mkProcType [i32] [ArrayTypeAST (TyVarAST a)])
 
     -- forall a b, (a -> b) -> Coro a b
     ,(,) "coro_create" $ let a = BoundTyVar "a" in
                          let b = BoundTyVar "b" in
-                         (ForAll [a, b]
-                           (mkFnType [mkFnType   [T_TyVar a] [T_TyVar b]]
-                                     [mkCoroType [T_TyVar a] [T_TyVar b]]))
+                         (ForAllAST [a, b]
+                           (mkFnType [mkFnType   [TyVarAST a] [TyVarAST b]]
+                                     [mkCoroType [TyVarAST a] [TyVarAST b]]))
 
     -- forall a b, (Coro a b, a) -> b
     ,(,) "coro_invoke" $ let a = BoundTyVar "a" in
                          let b = BoundTyVar "b" in
-                         (ForAll [a, b]
-                            (mkFnType [(mkCoroType [T_TyVar a] [T_TyVar b]), (T_TyVar a)]
-                                      [T_TyVar b]))
+                         (ForAllAST [a, b]
+                            (mkFnType [(mkCoroType [TyVarAST a] [TyVarAST b]), (TyVarAST a)]
+                                      [TyVarAST b]))
 
     -- forall a b, (b -> a)
     -- (only not quite: a and b must be unifiable
     --  with the arg & return types of the containing function)
     ,(,) "coro_yield"  $ let a = BoundTyVar "a" in
                          let b = BoundTyVar "b" in
-                         (ForAll [a, b] (mkFnType [T_TyVar b] [T_TyVar a]))
+                         (ForAllAST [a, b] (mkFnType [TyVarAST b] [TyVarAST a]))
 
     ,(,) "primitive_sext_i64_i32" $ mkFnType [i32] [i64]
     ,(,) "primitive_negate_i32"   $ mkFnType [i32] [i32]

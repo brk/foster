@@ -20,7 +20,7 @@ data TypeIL =
                            , fnTypeILProcOrFunc :: ProcOrFunc }
          | CoroTypeIL      TypeIL  TypeIL
          | ForAllIL        [TyVar] RhoIL
-         | T_TyVarIL       TyVar
+         | TyVarIL         TyVar
          | ArrayTypeIL     TypeIL
          | PtrTypeIL       TypeIL
 
@@ -38,9 +38,9 @@ instance Show TypeIL where
         (FnTypeIL   s t cc cs)-> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
         (CoroTypeIL s t)   -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
         (ForAllIL tvs rho) -> "(ForAll " ++ show tvs ++ ". " ++ show rho ++ ")"
-        (T_TyVarIL tv)     -> show tv
-        (ArrayTypeIL ty)  -> "(Array " ++ show ty ++ ")"
-        (PtrTypeIL ty)  -> "(Ptr " ++ show ty ++ ")"
+        (TyVarIL tv)       -> show tv
+        (ArrayTypeIL ty)   -> "(Array " ++ show ty ++ ")"
+        (PtrTypeIL ty)     -> "(Ptr " ++ show ty ++ ")"
 
 
 ilOf :: TypeAST -> Tc TypeIL
@@ -51,15 +51,15 @@ ilOf typ =
                                 return $ (TupleTypeIL tys)
      (FnTypeAST s t cc cs)-> do [x,y] <- mapM ilOf [s,t]
                                 return $ (FnTypeIL x y cc cs)
-     (CoroType s t)       -> do [x,y] <- mapM ilOf [s,t]
+     (CoroTypeAST s t)    -> do [x,y] <- mapM ilOf [s,t]
                                 return $ (CoroTypeIL x y)
-     (RefType    ty)      -> do t <- ilOf ty
+     (RefTypeAST ty)      -> do t <- ilOf ty
                                 return $ (PtrTypeIL   t)
-     (ArrayType  ty)      -> do t <- ilOf ty
+     (ArrayTypeAST  ty)   -> do t <- ilOf ty
                                 return $ (ArrayTypeIL t)
-     (ForAll tvs rho)     -> do t <- ilOf rho
+     (ForAllAST tvs rho)  -> do t <- ilOf rho
                                 return $ (ForAllIL tvs t)
-     (T_TyVar tv)         -> return $ (T_TyVarIL tv)
+     (TyVarAST tv)         -> return $ (TyVarIL tv)
      (MetaTyVar (Meta u tyref desc)) -> do
         mty <- readTcRef tyref
         case mty of

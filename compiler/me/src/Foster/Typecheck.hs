@@ -39,12 +39,12 @@ equateTypes t1 t2 msg = do
              (NamedTypeAST s)     -> []
              (TupleTypeAST types) -> concatMap collectUnificationVars types
              (FnTypeAST s r cc cs)-> concatMap collectUnificationVars [s,r]
-             (CoroType s r)       -> concatMap collectUnificationVars [s,r]
-             (ForAll tvs rho)     -> collectUnificationVars rho
-             (T_TyVar tv)         -> []
+             (CoroTypeAST s r)    -> concatMap collectUnificationVars [s,r]
+             (ForAllAST tvs rho)  -> collectUnificationVars rho
+             (TyVarAST tv)        -> []
              (MetaTyVar m)        -> [m]
-             (RefType    ty)      -> collectUnificationVars ty
-             (ArrayType  ty)      -> collectUnificationVars ty
+             (RefTypeAST   ty)    -> collectUnificationVars ty
+             (ArrayTypeAST  ty)   -> collectUnificationVars ty
 
 
 typeJoinVars :: [AnnVar] -> (Maybe TypeAST) -> Tc [AnnVar]
@@ -151,7 +151,7 @@ typecheck ctx expr maybeExpTy =
         E_DerefAST rng a -> do
           ea <- typecheck ctx a Nothing -- TODO: match maybeExpTy?
           case typeAST ea of
-            RefType    t -> return (AnnDeref t ea)
+            RefTypeAST t -> return (AnnDeref t ea)
             otherwise    -> tcFails [out $ "Expected deref-ed expr to have ref type!"]
 
         E_StoreAST rng a b -> do
@@ -275,11 +275,11 @@ listize ty                 = [ty]
 typecheckTyApp ctx rng a t maybeExpTy = do
     ea <- typecheck ctx a Nothing
     case (typeAST ea) of
-      (ForAll tyvars rho) -> do --
+      (ForAllAST tyvars rho) -> do --
         let tys = listize t
         if (List.length tys /= List.length tyvars)
           then tcFails [out $ "typecheckTyApp: arity mismatch"]
-          else let tyvarsAndTys = List.zip (map T_TyVar tyvars) tys in
+          else let tyvarsAndTys = List.zip (map TyVarAST tyvars) tys in
                return $ E_AnnTyApp (parSubstTy tyvarsAndTys rho) ea t
       othertype ->
         tcFails [out $ "Cannot apply type args to expression of"
@@ -292,14 +292,14 @@ typecheckSubscript ctx rng base (TupleTypeAST types) i@(AnnInt ty int) maybeExpT
                 ++ " use pattern matching instead!"]
 
 -- TODO make sure i is not negative or too big
-typecheckSubscript ctx rng base (ArrayType t) i@(AnnInt ty int) (Just expTy) = do
+typecheckSubscript ctx rng base (ArrayTypeAST t) i@(AnnInt ty int) (Just expTy) = do
     equateTypes t expTy (Just "subscript expected type")
     return (AnnSubscript t base i)
 
-typecheckSubscript ctx rng base (ArrayType t) i@(AnnInt ty int) Nothing = do
+typecheckSubscript ctx rng base (ArrayTypeAST t) i@(AnnInt ty int) Nothing = do
     return (AnnSubscript t base i)
 
-typecheckSubscript ctx rng base (ArrayType t) aiexpr maybeExpTy = do
+typecheckSubscript ctx rng base (ArrayTypeAST t) aiexpr maybeExpTy = do
     -- TODO check aiexpr type is compatible with Word
     case maybeExpTy of
       Nothing -> return ()
@@ -318,7 +318,7 @@ typecheckSubscript ctx rng base baseType index maybeExpTy =
 -- Maps (a -> b)   or   ForAll [...] (a -> b)    to a.
 getFnArgType :: TypeAST -> TypeAST
 getFnArgType (FnTypeAST a r cc cs) = a
-getFnArgType t@(ForAll tvs rho) =
+getFnArgType t@(ForAllAST tvs rho) =
     let fnargty = getFnArgType rho in
     trace ("getFnArgType " ++ show t ++ " ::> " ++ show fnargty) $ fnargty
 getFnArgType x = error $ "Called argType on non-FnTypeAST: " ++ show x
@@ -366,7 +366,7 @@ typecheckCall ctx range base args maybeExpTy = do
 
    eb <- typecheck ctx base expectedLambdaType
    case (typeAST eb) of
-      (ForAll tyvars rho) -> do
+      (ForAllAST tyvars rho) -> do
          let (FnTypeAST rhoArgType _ _ _) = rho
          -- Example:         rhoargtype =   ('a -> 'b)
          -- base has type ForAll ['a 'b]   (('a -> 'b) -> (Coro 'a 'b))
@@ -381,8 +381,8 @@ typecheckCall ctx range base args maybeExpTy = do
 
          -- Generate unification vars corresponding to the bound type variables
          unificationVars <- sequence [newTcUnificationVar $ "type parameter" ++ vname n base | (_, n) <- zip tyvars [1..]]
-         let tyvarsAndMetavars = (List.zip [T_TyVar tv | tv <- tyvars]
-                                          [MetaTyVar u | u <- unificationVars])
+         let tyvarsAndMetavars = (List.zip (map TyVarAST tyvars)
+                                          (map MetaTyVar unificationVars))
 
          -- (?a -> ?b)
          let unifiableArgType = parSubstTy tyvarsAndMetavars rhoArgType

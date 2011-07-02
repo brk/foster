@@ -80,7 +80,7 @@ dumpType x@(ForAllIL tyvars ty) = let tyVarName tv = case tv of
                                                 ,  type_parts = fromList $ fmap dumpType [ty]
                                                 , tyvar_names = fromList $ fmap tyVarName tyvars }
 
-dumpType x@(T_TyVarIL (BoundTyVar s)) =
+dumpType x@(TyVarIL (BoundTyVar s)) =
                                 P'.defaultValue { PbType.tag  = PbTypeTag.TYPE_VARIABLE
                                                 , PbType.name = Just $ u8fromString s
                                                 }

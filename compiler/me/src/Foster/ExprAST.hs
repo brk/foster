@@ -110,24 +110,27 @@ fnNameA f = identPrefix (annFnIdent f)
 -----------------------------------------------------------------------
 
 typeAST :: AnnExpr -> TypeAST
-typeAST (AnnBool _)          = fosBoolType
-typeAST (AnnInt t _)         = t
-typeAST (AnnTuple es)        = TupleTypeAST [typeAST e | e <- es]
-typeAST (E_AnnFn annFn)      = annFnType annFn
-typeAST (AnnCall r t b a)    = t
-typeAST (AnnCompiles _)      = fosBoolType
-typeAST (AnnIf t a b c)      = t
-typeAST (AnnUntil t _ _)     = t
-typeAST (AnnLetVar _ a b)    = typeAST b
-typeAST (AnnLetFuns _ _ e)   = typeAST e
-typeAST (AnnAlloc e)         = RefType (typeAST e)
-typeAST (AnnDeref t _)       = t
-typeAST (AnnStore t _ _)     = t
-typeAST (AnnSubscript t _ _) = t
-typeAST (AnnCase t _ _)      = t
-typeAST (E_AnnVar tid)       = tidType tid
-typeAST (AnnPrimitive tid)   = tidType tid
-typeAST (E_AnnTyApp substitutedTy tm tyArgs) = substitutedTy
+typeAST annexpr =
+  let recur = typeAST in
+  case annexpr of
+     (AnnBool _)          -> fosBoolType
+     (AnnInt t _)         -> t
+     (AnnTuple es)        -> TupleTypeAST [recur e | e <- es]
+     (E_AnnFn annFn)      -> annFnType annFn
+     (AnnCall r t b a)    -> t
+     (AnnCompiles _)      -> fosBoolType
+     (AnnIf t a b c)      -> t
+     (AnnUntil t _ _)     -> t
+     (AnnLetVar _ a b)    -> recur b
+     (AnnLetFuns _ _ e)   -> recur e
+     (AnnAlloc e)         -> RefTypeAST (recur e)
+     (AnnDeref t _)       -> t
+     (AnnStore t _ _)     -> t
+     (AnnSubscript t _ _) -> t
+     (AnnCase t _ _)      -> t
+     (E_AnnVar tid)       -> tidType tid
+     (AnnPrimitive tid)   -> tidType tid
+     (E_AnnTyApp substitutedTy tm tyArgs) -> substitutedTy
 
 -----------------------------------------------------------------------
 
