@@ -57,8 +57,6 @@ ilOf typ =
                                 return $ (PtrTypeIL   t)
      (ArrayType  ty)      -> do t <- ilOf ty
                                 return $ (ArrayTypeIL t)
-     (PtrTypeAST ty)      -> do t <- ilOf ty
-                                return $ (PtrTypeIL   t)
      (ForAll tvs rho)     -> do t <- ilOf rho
                                 return $ (ForAllIL tvs t)
      (T_TyVar tv)         -> return $ (T_TyVarIL tv)

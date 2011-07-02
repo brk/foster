@@ -43,7 +43,6 @@ parSubstTy :: [(TypeAST, TypeAST)] -> TypeAST -> TypeAST
 parSubstTy prvNextPairs ty =
     case ty of
         (NamedTypeAST _)     -> fromMaybe ty $ List.lookup ty prvNextPairs
-        (PtrTypeAST   _)     -> fromMaybe ty $ List.lookup ty prvNextPairs
         (RefType   t)   ->   RefType (parSubstTy prvNextPairs t)
         (ArrayType t)   -> ArrayType (parSubstTy prvNextPairs t)
         (TupleTypeAST types) -> (TupleTypeAST [parSubstTy prvNextPairs t | t <- types])
@@ -66,7 +65,6 @@ tySubst ty subst =
         (NamedTypeAST s)     -> ty
         (RefType    t)       -> RefType    (tySubst t subst)
         (ArrayType  t)       -> ArrayType  (tySubst t subst)
-        (PtrTypeAST t)       -> PtrTypeAST (tySubst t subst)
         (TupleTypeAST types) -> (TupleTypeAST [tySubst t subst | t <- types])
         (FnTypeAST s t cc cs)-> (FnTypeAST (tySubst s subst)
                                            (tySubst t subst)
@@ -133,9 +131,6 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                     tcUnifyVar m ty tysub constraints
 
                 ((RefType t1), (RefType t2)) ->
-                    tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
-
-                ((PtrTypeAST t1), (PtrTypeAST t2)) ->
                     tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 
                 otherwise ->

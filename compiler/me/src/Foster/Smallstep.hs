@@ -85,7 +85,7 @@ ssTermOfExpr expr =
     ILCall     t b vs      -> SSTmExpr  $ ICall (tidIdent b) (map tidIdent vs)
     ILCallPrim t b vs      -> SSTmExpr  $ ICallPrim b (map tidIdent vs)
     ILIf       t  v b c    -> SSTmExpr  $ IIf (tidIdent v) (tr b) (tr c)
-    ILUntil    t  a b      -> SSTmExpr  $ IUntil            (tr a) (tr b)
+    ILUntil    t  a b      -> SSTmExpr  $ IUntil    (tr a) (tr b)
     ILArrayRead t a b      -> SSTmExpr  $ IArrayRead (tidIdent a) (tidIdent b)
     ILArrayPoke v b i      -> SSTmExpr  $ IArrayPoke (tidIdent v) (tidIdent b) (tidIdent i)
     ILAllocArray ety n     -> SSTmExpr  $ IAllocArray (tidIdent n)

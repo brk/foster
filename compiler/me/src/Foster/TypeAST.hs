@@ -42,7 +42,6 @@ data TypeAST =
          | MetaTyVar        MetaTyVar
          | RefType          TypeAST
          | ArrayType        TypeAST
-         | PtrTypeAST       TypeAST
 
 data MetaTyVar = Meta Uniq TyRef String
 
@@ -65,7 +64,6 @@ instance Show TypeAST where
         (MetaTyVar (Meta u tyref desc))  -> "(~!" ++ show u ++ ":" ++ desc ++ ")"
         (RefType    ty)  -> "(Ref " ++ show ty ++ ")"
         (ArrayType  ty)  -> "(Array " ++ show ty ++ ")"
-        (PtrTypeAST ty)  -> "(Ptr " ++ show ty ++ ")"
 
 instance Eq MetaTyVar where
     (Meta u1 _ _) == (Meta u2 _ _) = u1 == u2
@@ -85,7 +83,6 @@ typesEqual (ForAll vars1 ty1) (ForAll vars2 ty2) =
     vars1 == vars2 && typesEqual ty1 ty2
 typesEqual (T_TyVar tv1) (T_TyVar tv2) = tv1 == tv2
 typesEqual (MetaTyVar mtv1) (MetaTyVar mtv2) = mtv1 == mtv2
-typesEqual (PtrTypeAST ty1) (PtrTypeAST ty2) = typesEqual ty1 ty2
 typesEqual _ _ = False
 
 

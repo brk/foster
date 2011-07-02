@@ -45,7 +45,6 @@ equateTypes t1 t2 msg = do
              (MetaTyVar m)        -> [m]
              (RefType    ty)      -> collectUnificationVars ty
              (ArrayType  ty)      -> collectUnificationVars ty
-             (PtrTypeAST ty)      -> collectUnificationVars ty
 
 
 typeJoinVars :: [AnnVar] -> (Maybe TypeAST) -> Tc [AnnVar]
@@ -153,8 +152,7 @@ typecheck ctx expr maybeExpTy =
           ea <- typecheck ctx a Nothing -- TODO: match maybeExpTy?
           case typeAST ea of
             RefType    t -> return (AnnDeref t ea)
-            PtrTypeAST t -> return (AnnDeref t ea)
-            otherwise    -> tcFails [out $ "Expected deref-ed expr to have pointer type!"]
+            otherwise    -> tcFails [out $ "Expected deref-ed expr to have ref type!"]
 
         E_StoreAST rng a b -> do
           ea <- typecheck ctx a Nothing
