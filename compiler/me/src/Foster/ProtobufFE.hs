@@ -15,11 +15,11 @@ import Foster.ProtobufUtils(pUtf8ToText)
 
 import Data.Traversable(fmapDefault)
 import Data.Sequence as Seq
-import Data.Sequence(length)
 import Data.Maybe(fromMaybe)
 import Data.Foldable(toList)
 
-import Control.Exception(assert)
+import Control.Monad.State
+import Data.Set(Set)
 
 import Text.ProtocolBuffers(isSet,getVal)
 import Text.ProtocolBuffers.Basic(uToString)
@@ -56,85 +56,92 @@ import qualified Text.ProtocolBuffers.Header as P'
 -- optional PhoneType type      => (getVal phone_number type')
 -----------------------------------------------------------------------
 
+type KnownVars = Set String
+data FEState = FEState {
+    feModuleLines :: SourceLines
+}
+
+type FE a = State FEState a
+
 getName desc (Just s) = uToString s
 getName desc Nothing  = error "Missing required name in " ++ desc ++ "!"
 
-part :: Int -> Seq PbExpr.Expr -> SourceLines -> ExprAST
-part i parts lines = parseExpr (index parts i) lines
+parseBool pbexpr = do
+    range <- parseRange pbexpr
+    return $ E_BoolAST range $ fromMaybe False (PbExpr.bool_value pbexpr)
 
-parseBool pbexpr lines =
-        let range = parseRange pbexpr lines in
-        E_BoolAST range $ fromMaybe False (PbExpr.bool_value pbexpr)
+parseCall pbexpr = do
+    range <- parseRange pbexpr
+    (base:args) <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
+    return $ E_CallAST range base (filterUnit args)
+                where filterUnit [E_TupleAST []] = []
+                      filterUnit args = args
 
-parseCall pbexpr lines =
-        let range = parseRange pbexpr lines in
-        case map (\x -> parseExpr x lines) $ toList (PbExpr.parts pbexpr) of
-                (base:args) -> E_CallAST range base (filterUnit args)
-                    where filterUnit [E_TupleAST []] = []
-                          filterUnit args = args
-                _ -> error "call needs a base!"
-
-parseCompiles pbexpr lines =
+parseCompiles pbexpr =
     let numChildren = Seq.length $ PbExpr.parts pbexpr in
     case numChildren of
-        1 -> E_CompilesAST (part 0 (PbExpr.parts pbexpr) lines) CS_NotChecked
-        _ -> E_CompilesAST (E_VarAST (EMissingSourceRange "parseCompiles")
+        1 -> do [body] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
+                return $ E_CompilesAST body CS_NotChecked
+        _ -> return $ E_CompilesAST (E_VarAST (EMissingSourceRange "parseCompiles")
                            (VarAST Nothing "parse error")) CS_WouldNotCompile
 
-parseFn pbexpr lines = let range = parseRange pbexpr lines in
-                       let parts = PbExpr.parts pbexpr in
-                       let name  = getName "fn" $ PbExpr.name pbexpr in
-                       let formals = toList $ PbExpr.formals pbexpr in
-                       let mretty = parseReturnType name pbexpr in
-                       assert ((Data.Sequence.length parts) == 1) $
-                       FnAST range name mretty (map parseFormal formals)
-                             (part 0 parts lines)
-                             False -- assume closure until proven otherwise
+parseFn pbexpr = do range <- parseRange pbexpr
+                    [body] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
+                    let name  = getName "fn" $ PbExpr.name pbexpr
+                    let formals = toList $ PbExpr.formals pbexpr
+                    let mretty = parseReturnType name pbexpr
+                    return $ (FnAST range name mretty (map parseFormal formals)
+                               body
+                               False) -- assume closure until proven otherwise
   where
      parseFormal (Formal u t) = AnnVar (parseType t) (Ident (uToString u) 0)
      parseReturnType name pbexpr = fmap parseType (PbExpr.result_type pbexpr)
 
-parseValAbs pbexpr lines =
-  E_FnAST (parseFn pbexpr lines)
+parseValAbs pbexpr = do
+  fn <- parseFn pbexpr
+  return $ E_FnAST fn
 
-parseIf pbexpr lines =
+parseIf pbexpr =
         if (isSet pbexpr PbExpr.pb_if)
                 then parseFromPBIf (getVal pbexpr PbExpr.pb_if)
                 else error "must have if to parse from if!"
-        where parseFromPBIf pbif =
-               (E_IfAST (parseExpr (PBIf.test_expr pbif) lines)
-                        (parseExpr (PBIf.then_expr pbif) lines)
-                        (parseExpr (PBIf.else_expr pbif) lines))
+        where parseFromPBIf pbif = do
+               eif   <- parseExpr (PBIf.test_expr pbif)
+               ethen <- parseExpr (PBIf.then_expr pbif)
+               eelse <- parseExpr (PBIf.else_expr pbif)
+               return (E_IfAST  eif ethen eelse)
 
-parseUntil pbexpr lines =
-     E_UntilAST (part 0 (PbExpr.parts pbexpr) lines)
-                (part 1 (PbExpr.parts pbexpr) lines)
+parseUntil pbexpr = do
+    [a, b] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
+    return $ E_UntilAST a b
 
-parseInt :: PbExpr.Expr -> SourceLines -> ExprAST
-parseInt pbexpr lines =
-        let range = parseRange pbexpr lines in
-        E_IntAST range (uToString $ getVal pbexpr PbExpr.int_text)
+parseInt :: PbExpr.Expr -> FE ExprAST
+parseInt pbexpr = do
+    range <- parseRange pbexpr
+    return $ E_IntAST range (uToString $ getVal pbexpr PbExpr.int_text)
 
-parseLet pbexpr lines =
-    parsePBLet (parseRange pbexpr lines)
+parseLet pbexpr = do
+    range <- parseRange pbexpr
+    parsePBLet range
                (fromMaybe (error "Protobuf node tagged LET without PbLet field!")
                           (PbExpr.pb_let pbexpr))
                (fmap parseType $ PbExpr.type' pbexpr)
-               lines
-      where parseBinding lines (PbTermBinding.TermBinding u e) =
-                (Foster.ExprAST.TermBinding (VarAST Nothing (uToString u)) (parseExpr e lines))
-            parsePBLet range pblet mty lines =
-                let bindings = map (parseBinding lines) (toList $ PBLet.binding pblet) in
-                (buildLets range bindings (parseExpr (PBLet.body pblet) lines) mty)
+      where parseBinding (PbTermBinding.TermBinding u e) = do
+                body <- parseExpr e
+                return (Foster.ExprAST.TermBinding (VarAST Nothing (uToString u)) body)
+            parsePBLet range pblet mty = do
+                bindings <- mapM parseBinding (toList $ PBLet.binding pblet)
+                body <- parseExpr (PBLet.body pblet)
+                return $ buildLets range bindings body mty
             buildLets range bindings expr mty =
                 case bindings of
                    []     -> error "parseLet requires at least one binding!" -- TODO show range
                    (b:[]) -> E_LetAST range b expr mty
                    (b:bs) -> E_LetAST range b (buildLets range bs expr mty) Nothing
 
-parseSeq pbexpr lines =
-    let exprs = map (\x -> parseExpr x lines) $ toList (PbExpr.parts pbexpr) in
-    buildSeqs exprs
+parseSeq pbexpr = do
+    exprs <- mapM parseExpr $ toList (toList $ PbExpr.parts pbexpr)
+    return $ buildSeqs exprs
 
 -- | Convert a list of ExprASTs to a right-leaning "list" of SeqAST nodes.
 buildSeqs :: [ExprAST] -> ExprAST
@@ -143,109 +150,88 @@ buildSeqs [a]   = a
 buildSeqs [a,b] = E_SeqAST a b
 buildSeqs (a:b) = E_SeqAST a (buildSeqs b)
 
-parseAlloc pbexpr lines =
-    let range = parseRange pbexpr lines in
-    let parts = PbExpr.parts pbexpr in
-    E_AllocAST range (part 0 parts lines)
+parseAlloc pbexpr = do
+    range <- parseRange pbexpr
+    [body] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
+    return $ E_AllocAST range body
 
-parseStore pbexpr lines =
-    let range = parseRange pbexpr lines in
-    let parts = PbExpr.parts pbexpr in
-    E_StoreAST range (part 0 parts lines) (part 1 parts lines)
+parseStore pbexpr = do
+    range <- parseRange pbexpr
+    [a,b] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
+    return $ E_StoreAST range a b
 
-parseDeref pbexpr lines =
-    let range = parseRange pbexpr lines in
-    let parts = PbExpr.parts pbexpr in
-    E_DerefAST range (part 0 parts lines)
+parseDeref pbexpr = do
+    range <- parseRange pbexpr
+    [body] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
+    return $ E_DerefAST range body
 
-parseSubscript pbexpr lines =
-    let range = parseRange pbexpr lines in
-    let parts = PbExpr.parts pbexpr in
-    E_SubscriptAST (part 0 parts lines) (part 1 parts lines) range
+parseSubscript pbexpr = do
+    range <- parseRange pbexpr
+    [a,b] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
+    return $ E_SubscriptAST a b range
 
-parseTuple pbexpr lines =
-    E_TupleAST (map (\x -> parseExpr x lines) $ toList $ PbExpr.parts pbexpr)
+parseTuple pbexpr = do
+    exprs <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
+    return $ E_TupleAST exprs
 
-parseTyApp pbexpr lines =
-    let range = parseRange pbexpr lines in
-    E_TyApp range
-            (part 0 (PbExpr.parts pbexpr) lines)
+parseTyApp pbexpr = do
+    range  <- parseRange pbexpr
+    [body] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
+    return $ E_TyApp range  body
             (parseType $ case PbExpr.ty_app_arg_type pbexpr of
                                 Nothing -> error "TyApp missing arg type!"
                                 Just ty -> ty)
 
-parseEVarOrPrim pbexpr lines =
-    let range = parseRange pbexpr lines in
-    let var   = parseVar pbexpr lines in
+parseEVarOrPrim pbexpr = do
+    range <- parseRange pbexpr
+    let var = parseVar pbexpr
     if isPrimitiveName (evarName var)
-      then E_Primitive range var
-      else E_VarAST    range var
+      then return $ E_Primitive range var
+      else return $ E_VarAST    range var
 
-parseVar pbexpr lines = VarAST (fmap parseType (PbExpr.type' pbexpr))
+parseVar pbexpr = do VarAST (fmap parseType (PbExpr.type' pbexpr))
                                (getName "var" $ PbExpr.name pbexpr)
 
-parsePrimitive pbexpr lines =
-    let range = parseRange pbexpr lines in
-    E_Primitive range (parseVar pbexpr lines)
-
-parsePattern :: PbExpr.Expr -> SourceLines -> EPattern
-parsePattern pbexpr lines =
-  let range = parseRange pbexpr lines in
-  let parts = PbExpr.parts pbexpr in
+parsePattern :: PbExpr.Expr -> FE EPattern
+parsePattern pbexpr = do
+  range <- parseRange pbexpr
   case PbExpr.tag pbexpr of
-    PAT_WILDCARD -> EP_Wildcard range
-    PAT_TUPLE    -> EP_Tuple range (map (\x -> parsePattern x lines)
-                                     (toList $ PbExpr.parts pbexpr))
-    _ -> case (PbExpr.tag pbexpr, part 0 parts lines) of
-           (PAT_BOOL, E_BoolAST _ bv) -> EP_Bool range bv
-           (PAT_INT,   E_IntAST _ iv) -> EP_Int  range iv
-           (PAT_VARIABLE, E_VarAST _ v)-> EP_Variable range v
+    PAT_WILDCARD -> return $ EP_Wildcard range
+    PAT_TUPLE    -> do pats <- mapM parsePattern (toList $ PbExpr.parts pbexpr)
+                       return $ EP_Tuple range pats
+    _ -> do [expr] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
+            return $ case (PbExpr.tag pbexpr, expr) of
+              (PAT_BOOL, E_BoolAST _ bv) -> EP_Bool range bv
+              (PAT_INT,   E_IntAST _ iv) -> EP_Int  range iv
+              (PAT_VARIABLE, E_VarAST _ v)-> EP_Variable range v
 
-           otherwise -> error $ "parsePattern called with non-matching tag/arg!"
-                                ++ " " ++ show (PbExpr.tag pbexpr)
+              otherwise -> error $ "parsePattern called with non-matching tag/arg!"
+                                   ++ " " ++ show (PbExpr.tag pbexpr)
 
 
-parseCaseExpr pbexpr lines =
-  let range = parseRange pbexpr lines in
+parseCaseExpr pbexpr = do
+  range <- parseRange pbexpr
   case PbExpr.pb_case pbexpr of
     Nothing -> error "must have if to parse from if!"
-    Just pbcase ->
-      (E_Case range
-              (parseExpr (PBCase.scrutinee pbcase) lines)
-       (Prelude.zip (toList $ fmap (\p -> parsePattern p lines) (PBCase.pattern pbcase))
-                    (toList $ fmap (\e -> parseExpr    e lines) (PBCase.branch  pbcase))))
-
-toplevel :: FnAST -> FnAST
-toplevel (FnAST a b c d e False) = FnAST a b c d e True
-toplevel (FnAST _ _ _ _ _ True ) =
-        error $ "Broken invariant: top-level functions " ++
-                "should not have their top-level bit set before we do it!"
-
-parseModule name decls defns lines =
-    ModuleAST [toplevel (parseFn e lines)  | (Defn nm e) <- defns]
-              [(uToString nm, parseType t) | (Decl nm t) <- decls]
-              lines
+    Just pbcase -> do
+      expr <- parseExpr (PBCase.scrutinee pbcase)
+      patterns    <- mapM parsePattern (toList $ PBCase.pattern pbcase)
+      branchexprs <- mapM parseExpr    (toList $ PBCase.branch  pbcase)
+      return $ E_Case range expr (Prelude.zip patterns branchexprs)
 
 getVarName :: ExprAST -> String
 getVarName (E_VarAST rng v) = evarName v
 getVarName x = error $ "getVarName given a non-variable! " ++ show x
 
-getFormal :: PbExpr.Expr -> SourceLines ->  AnnVar
-getFormal e lines = case PbExpr.tag e of
-            VAR -> let v = parseVar e lines in
-                   let i = (Ident (evarName v) (54321)) in
-                   case evarMaybeType v of
-                       Just t  -> (AnnVar t i)
-                       Nothing -> error $ "Missing annotation on variable " ++ show v
-            _   -> error "getVar must be given a var!"
-
-sourceRangeFromPBRange :: Pb.SourceRange -> SourceLines -> ESourceRange
-sourceRangeFromPBRange pbrange lines =
-    ESourceRange
-        (parseSourceLocation (Pb.begin pbrange))
-        (parseSourceLocation (Pb.end   pbrange))
-        lines
-        (fmap uToString (Pb.file_path pbrange))
+getFormal :: PbExpr.Expr -> FE  AnnVar
+getFormal e =
+  case PbExpr.tag e of
+     VAR -> do let v = parseVar e
+               let i = (Ident (evarName v) (54321))
+               case evarMaybeType v of
+                   Just t  -> return (AnnVar t i)
+                   Nothing -> error $ "Missing annotation on variable " ++ show v
+     _   -> error "getVar must be given a var!"
 
 getString :: Maybe P'.Utf8 -> String
 getString Nothing  = ""
@@ -255,14 +241,19 @@ parseSourceLocation :: Pb.SourceLocation -> ESourceLocation
 parseSourceLocation sr = -- This may fail for files of more than 2^29 lines...
     ESourceLocation (fromIntegral $ Pb.line sr) (fromIntegral $ Pb.column sr)
 
-parseRange :: PbExpr.Expr -> SourceLines ->  ESourceRange
-parseRange pbexpr lines = case PbExpr.range pbexpr of
-                        Nothing   -> EMissingSourceRange (show $ PbExpr.tag pbexpr)
-                        (Just r)  -> sourceRangeFromPBRange r lines
+parseRange :: PbExpr.Expr -> FE ESourceRange
+parseRange pbexpr =
+  case PbExpr.range pbexpr of
+    Nothing   -> do return $ EMissingSourceRange (show $ PbExpr.tag pbexpr)
+    (Just r)  ->  do lines <- gets feModuleLines
+                     return $ ESourceRange
+                       (parseSourceLocation (Pb.begin r))
+                       (parseSourceLocation (Pb.end   r))
+                       lines
+                       (fmap uToString (Pb.file_path r))
 
-parseExpr :: PbExpr.Expr -> SourceLines -> ExprAST
-parseExpr pbexpr lines =
-    let range = parseRange pbexpr in
+parseExpr :: PbExpr.Expr -> FE ExprAST
+parseExpr pbexpr =
     let fn = case PbExpr.tag pbexpr of
                 PB_INT  -> parseInt
                 IF      -> parseIf
@@ -289,14 +280,28 @@ parseExpr pbexpr lines =
 
                 --otherwise -> error $ "parseExpr saw unknown tag: " ++ (show $ PbExpr.tag pbexpr) ++ "\n"
         in
-   fn pbexpr lines
+   fn pbexpr
 
-parseSourceModule :: SourceModule -> ModuleAST FnAST TypeAST
+toplevel :: FnAST -> FnAST
+toplevel (FnAST a b c d e False) = FnAST a b c d e True
+toplevel (FnAST _ _ _ _ _ True ) =
+        error $ "Broken invariant: top-level functions " ++
+                "should not have their top-level bit set before we do it!"
+
+parseModule name decls defns = do
+    lines <- gets feModuleLines
+    funcs <- sequence $ [(parseFn e)  | (Defn nm e) <- defns]
+    return $ ModuleAST (map toplevel funcs)
+                [(uToString nm, parseType t) | (Decl nm t) <- decls]
+                lines
+
+parseSourceModule :: SourceModule -> (ModuleAST FnAST TypeAST)
 parseSourceModule sm =
-    let lines = sourceLines sm in
-    parseModule (uToString $ SourceModule.name sm)
-                (toList    $ SourceModule.decl sm)
-                (toList    $ SourceModule.defn sm) lines
+    evalState
+      (parseModule (uToString $ SourceModule.name sm)
+                   (toList    $ SourceModule.decl sm)
+                   (toList    $ SourceModule.defn sm))
+      (FEState (sourceLines sm))
 
 sourceLines :: SourceModule -> SourceLines
 sourceLines sm = SourceLines (fmapDefault pUtf8ToText (SourceModule.line sm))
