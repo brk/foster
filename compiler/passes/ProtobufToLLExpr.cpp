@@ -335,7 +335,6 @@ LLExpr* LLExpr_from_pb(const pb::Expr* pe) {
   switch (e.tag()) {
   case pb::Expr::IL_BOOL:      rv = parseBool(e); break;
   case pb::Expr::IL_CALL:      rv = parseCall(e); break;
-  case pb::Expr::IL_CALL_PRIM: rv = parseCall(e); break;
   case pb::Expr::IL_CASE:      rv = parseCase(e); break;
   case pb::Expr::IL_IF:        rv = parseIf(e); break;
   case pb::Expr::IL_INT:       rv = parseInt(e); break;

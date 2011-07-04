@@ -138,12 +138,12 @@ dumpCoroPrim coroPrim argty retty =
 dumpExpr :: ILExpr -> PbExpr.Expr
 
 dumpExpr (ILCall     t base args)
-        = dumpCall IL_CALL      t (dumpExpr $ ILVar base) args
+        = dumpCall IL_CALL t (dumpExpr $ ILVar base) args
 dumpExpr (ILCallPrim t (ILNamedPrim base) args)
-        = dumpCall IL_CALL_PRIM t (dumpExpr $ ILVar base) args
+        = dumpCall IL_CALL t (dumpExpr $ ILVar base) args
 
 dumpExpr (ILCallPrim t (ILCoroPrim c a r) args)
-        = dumpCall IL_CALL_PRIM t (dumpCoroPrim c a r) args
+        = dumpCall IL_CALL t (dumpCoroPrim c a r) args
 
 dumpExpr x@(ILBool b) =
     P'.defaultValue { bool_value   = Just b
