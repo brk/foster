@@ -14,7 +14,6 @@ import Foster.TypeAST
 import Foster.PatternMatch
 import Foster.ProtobufUtils
 
-import qualified Data.Text as T
 import qualified Data.ByteString.Lazy as L(writeFile)
 import Data.Sequence as Seq(fromList)
 
@@ -315,7 +314,7 @@ dumpProgramToModule (ILProgram procdefs decls (SourceLines lines)) =
     Module   { modulename = u8fromString $ "foo"
              , procs      = fromList [dumpProc p | p <- procdefs]
              , decls      = fromList [dumpDecl d | d <- decls]
-             , modlines   = fmap (\x -> u8fromString $ T.unpack x) lines
+             , modlines   = fmap textToPUtf8 lines
              }
 
 dumpModuleToProtobufIL :: ILProgram -> FilePath -> IO ()
