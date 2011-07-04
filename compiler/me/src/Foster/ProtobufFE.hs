@@ -307,16 +307,17 @@ sourceLines :: SourceModule -> SourceLines
 sourceLines sm = SourceLines (fmapDefault pUtf8ToText (SourceModule.line sm))
 
 parseType :: Type -> TypeAST
-parseType t = case PbType.tag t of
-                PbTypeTag.LLVM_NAMED -> NamedTypeAST $ (getName "type name" $ PbType.name t)
-                PbTypeTag.REF -> error "Ref types not yet implemented"
-                PbTypeTag.FN -> fromMaybe (error "Protobuf node tagged FN without fnty field!")
-                                          (fmap parseFnTy $ PbType.fnty t)
-                PbTypeTag.TUPLE -> TupleTypeAST [parseType p | p <- toList $ PbType.type_parts t]
-                PbTypeTag.TYPE_VARIABLE -> error "Type variable parsing not yet implemented."
-                PbTypeTag.CORO -> error "Parsing for CORO type not yet implemented"
-                PbTypeTag.CARRAY -> error "Parsing for CARRAY type not yet implemented"
-                PbTypeTag.FORALL_TY -> error "Parsing for FORALL_TY type not yet implemented"
+parseType t =
+    case PbType.tag t of
+         PbTypeTag.LLVM_NAMED -> NamedTypeAST $ (getName "type name" $ PbType.name t)
+         PbTypeTag.REF -> error "Ref types not yet implemented"
+         PbTypeTag.FN -> fromMaybe (error "Protobuf node tagged FN without fnty field!")
+                                   (fmap parseFnTy $ PbType.fnty t)
+         PbTypeTag.TUPLE -> TupleTypeAST [parseType p | p <- toList $ PbType.type_parts t]
+         PbTypeTag.TYPE_VARIABLE -> error "Type variable parsing not yet implemented."
+         PbTypeTag.CORO -> error "Parsing for CORO type not yet implemented"
+         PbTypeTag.CARRAY -> error "Parsing for CARRAY type not yet implemented"
+         PbTypeTag.FORALL_TY -> error "Parsing for FORALL_TY type not yet implemented"
 
 parseCallConv Nothing         = FastCC
 parseCallConv (Just "fastcc") = FastCC

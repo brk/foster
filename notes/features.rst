@@ -442,6 +442,20 @@ an order of magnitude less frequently than "regular" objects.
 
 -----------
 
+Higher-*
+--------
+
+Higher-order types are functions which take function as arguments.
+
+Polymorphic functions are functions indexed by types.
+
+Higher-rank types describe
+"Functions which take polymorphic functions as arguments."
+
+Higher-kinded types describe functions from types to types.
+
+
+
 
 Impredicative Polymorphism
 --------------------------
