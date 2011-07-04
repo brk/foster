@@ -60,8 +60,8 @@ dumpIdent i = let p = identPrefix i in
 
 -----------------------------------------------------------------------
 
-tagForClosedVars Nothing  = PbTypeTag.PROC
-tagForClosedVars (Just _) = PbTypeTag.CLOSURE
+tagProcOrFunc FT_Proc = PbTypeTag.PROC
+tagProcOrFunc FT_Func = PbTypeTag.CLOSURE
 
 dumpType :: TypeAST -> PbType.Type
 dumpType (NamedTypeAST s)     = P'.defaultValue { PbType.tag  = PbTypeTag.LLVM_NAMED
@@ -69,7 +69,7 @@ dumpType (NamedTypeAST s)     = P'.defaultValue { PbType.tag  = PbTypeTag.LLVM_N
 dumpType (TupleTypeAST types) = P'.defaultValue { PbType.tag  = PbTypeTag.TUPLE
                                                 ,  type_parts = fromList $ fmap dumpType types }
 dumpType x@(FnTypeAST s t cc cs) =
-                                P'.defaultValue { PbType.tag  = tagForClosedVars cs
+                                P'.defaultValue { PbType.tag  = tagProcOrFunc cs
                                                 , PbType.procty = Just $ dumpProcType x
                                                 }
 dumpType x@(CoroType a b)     = P'.defaultValue { PbType.tag  = PbTypeTag.CORO

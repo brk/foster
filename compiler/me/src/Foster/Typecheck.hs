@@ -328,8 +328,6 @@ getFnArgType t@(ForAll tvs rho) =
     trace ("getFnArgType " ++ show t ++ " ::> " ++ show fnargty) $ fnargty
 getFnArgType x = error $ "Called argType on non-FnTypeAST: " ++ show x
 
-irrelevantClosedOverVars = Nothing
-
 -- For example,   foo (1, 2)   would produce:
 -- eargs   = [1, 2]
 -- argtype = (i32, i32)
@@ -356,8 +354,8 @@ typecheckCall ctx range base@(E_FnAST f) args maybeExpTy = do
    ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) Nothing
    m <- newTcUnificationVar "call"
    let expectedLambdaType = case maybeExpTy of
-        Nothing  -> (Just (FnTypeAST (typeAST ea) (MetaTyVar m) FastCC irrelevantClosedOverVars))
-        (Just t) -> (Just (FnTypeAST (MetaTyVar m)     t        FastCC irrelevantClosedOverVars))
+        Nothing  -> (Just (FnTypeAST (typeAST ea) (MetaTyVar m) FastCC FT_Func))
+        (Just t) -> (Just (FnTypeAST (MetaTyVar m)     t        FastCC FT_Func))
 
    eb <- typecheck ctx base expectedLambdaType
    trace ("typecheckCall with literal fn base, exp ty " ++ (show expectedLambdaType)) $
@@ -368,7 +366,7 @@ typecheckCall ctx range base args maybeExpTy = do
    expectedLambdaType <- case maybeExpTy of
         Nothing  -> return $ Nothing
         (Just t) -> do m <- newTcUnificationVar "inferred arg type"
-                       return $ Just (FnTypeAST (MetaTyVar m) t FastCC irrelevantClosedOverVars)
+                       return $ Just (FnTypeAST (MetaTyVar m) t FastCC FT_Func)
         -- If we have (e1 e2) :: T, we infer that e1 :: (? -> T) and e2 :: ?
 
    eb <- typecheck ctx base expectedLambdaType
@@ -423,7 +421,7 @@ typecheckCall ctx range base args maybeExpTy = do
 
             ft <- newTcUnificationVar $ "ret type for " ++ desc
             rt <- newTcUnificationVar $ "arg type for " ++ desc
-            let fnty = (FnTypeAST (MetaTyVar ft) (MetaTyVar rt) FastCC (Just []))
+            let fnty = FnTypeAST (MetaTyVar ft) (MetaTyVar rt) FastCC FT_Func
 
             equateTypes m fnty Nothing
             typecheckCallWithBaseFnType eargs eb fnty range
@@ -463,7 +461,7 @@ typecheckFn' ctx f cc expArgType expBodyType = do
 
     formalVars <- typeJoinVars uniquelyNamedFormals expArgType
     let argtypes = TupleTypeAST (map avarType formalVars)
-    let fnClosedVars = if fnWasToplevel f then Nothing else Just []
+    let fnClosedVars = if fnWasToplevel f then FT_Proc else FT_Func
     let fnty = FnTypeAST argtypes (typeAST annbody) cc fnClosedVars
 
     case termVarLookup fnProtoName (contextBindings ctx) of

@@ -268,8 +268,8 @@ procType proc =
     let argtys = TupleTypeAST (map avarType (ilProcVars proc)) in
     let cc = ilProcCallConv proc in
     if  cc == FastCC
-        then FnTypeAST argtys retty cc (Just [])
-        else FnTypeAST argtys retty cc  Nothing
+        then FnTypeAST argtys retty cc FT_Func
+        else FnTypeAST argtys retty cc FT_Proc
 
 contextVar :: String -> Context -> String -> AnnVar
 contextVar dbg ctx s =

@@ -45,13 +45,15 @@ type Sigma = TypeAST
 type Rho   = TypeAST -- No top-level ForAll
 type Tau   = TypeAST -- No ForAlls anywhere
 
+data ProcOrFunc = FT_Proc | FT_Func deriving (Show)
+
 data TypeAST =
            NamedTypeAST     String
          | TupleTypeAST     [TypeAST]
          | FnTypeAST        { fnTypeDomain :: TypeAST
                             , fnTypeRange  :: TypeAST
                             , fnTypeCallConv :: CallConv
-                            , fnTypeCloses :: Maybe [AnnVar] }
+                            , fnTypeProcOrFunc :: ProcOrFunc }
          | CoroType         TypeAST TypeAST
          | ForAll           [TyVar] Rho
          | T_TyVar          TyVar
@@ -114,8 +116,8 @@ minimalTuple []    = TupleTypeAST []
 minimalTuple [arg] = arg
 minimalTuple args  = TupleTypeAST args
 
-mkProcType args rets = FnTypeAST (TupleTypeAST args) (minimalTuple rets) CCC    Nothing
-mkFnType   args rets = FnTypeAST (TupleTypeAST args) (minimalTuple rets) FastCC Nothing
+mkProcType args rets = FnTypeAST (TupleTypeAST args) (minimalTuple rets) CCC    FT_Proc
+mkFnType   args rets = FnTypeAST (TupleTypeAST args) (minimalTuple rets) FastCC FT_Func
 mkCoroType args rets =  CoroType (minimalTuple args) (minimalTuple rets)
 i32 = (NamedTypeAST "i32")
 i64 = (NamedTypeAST "i64")

@@ -329,5 +329,5 @@ parseFnTy fty = FnTypeAST (TupleTypeAST [parseType x | x <- toList $ PbFnType.ar
                           (parseType $ PbFnType.ret_type fty)
                           (parseCallConv (fmap uToString $ PbFnType.calling_convention fty))
                           (if fromMaybe True $ PbFnType.is_closure fty
-                            then Just []
-                            else Nothing)
+                            then FT_Func
+                            else FT_Proc)
