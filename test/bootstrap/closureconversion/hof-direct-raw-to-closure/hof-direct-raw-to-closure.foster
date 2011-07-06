@@ -10,10 +10,11 @@ read_i32 :: { i32 } @ { proc = true };
 main = {
   expect_i32 42 ; print_i32 (run-it fx);              // Foster fn, named
   expect_i32 48 ; print_i32 (run-it { read_i32 () }); // Foster fn, anon
+  expect_i32 50 ; // check shadowing of global names
+    let read_i32 = { opaquely_i32 50 }; in
+                  print_i32 (run-it read_i32); end;
   expect_i32 52 ; print_i32 (run-it read_i32);        // C fn, directly
-
   force_gc_for_debugging_purposes();
-  0
 };
 
 run-it = { f: {i32} => f() };
