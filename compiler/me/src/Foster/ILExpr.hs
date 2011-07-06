@@ -20,6 +20,17 @@ import Foster.TypeAST
 import Foster.ExprAST
 import Foster.PatternMatch
 
+{--
+Foster.ILExpr binds all intermediate values to named variables
+via a variant of K-normalization. To avoid Yet Another Intermediate Language,
+the transformation from AnnExpr to ILExpr is combined with closure conversion
+and lambda lifting.
+
+closureConvertAndLift :: Context TypeAST
+                      -> (ModuleAST AnnFn TypeAST)
+                      -> ILProgram
+--}
+
 data ILClosure = ILClosure { ilClosureProcIdent :: Ident
                            , ilClosureCaptures  :: [AnnVar] } deriving Show
 
