@@ -311,10 +311,6 @@ nestedLets' (e:es) vars k =
         innerlet <- nestedLets' es ((TypedId (typeIL e) x):vars) k
         return $ buildLet x e innerlet
 
--- This works because (A) we never type check ILExprs,
--- and (B) the LLVM codegen doesn't check the type field in this case.
-bogusEnvType = PtrTypeAST (TupleTypeAST [])
-
 makeEnvPassingExplicit :: AnnExpr -> Map Ident (AnnFn, Ident) -> AnnExpr
 makeEnvPassingExplicit expr fnAndEnvForClosure =
     q expr where
@@ -343,7 +339,10 @@ makeEnvPassingExplicit expr fnAndEnvForClosure =
                     let fnvar = E_AnnVar (TypedId (annFnType f) (annFnIdent f)) in
                     -- We don't know the env type here, since we don't
                     -- pre-collect the set of closed-over envs from other procs.
-                    let env = E_AnnVar (TypedId bogusEnvType envid) in
+                    let env = let bogusEnvType = PtrTypeAST (TupleTypeAST []) in
+                              E_AnnVar (TypedId bogusEnvType envid) in
+                              -- This works because (A) we never type check ILExprs,
+                              -- and (B) the LLVM codegen doesn't check the type field in this case.
                     (AnnCall r t fnvar (env:(map q es)))
             AnnCall r t b es -> AnnCall r t (q b) (map q es)
 
