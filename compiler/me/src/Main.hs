@@ -37,7 +37,7 @@ import Foster.Smallstep
 -----------------------------------------------------------------------
 class FnLike f where
     fnName :: f -> String
-    fnFreeVariables :: f -> [ContextBinding] -> [String]
+    fnFreeVariables :: f -> [ContextBinding ty] -> [String]
 
 instance FnLike FnAST where
     fnName f = fnAstName f
@@ -57,34 +57,36 @@ instance FnLike AnnFn where
         -- remove recursive function name calls
         Set.toList $ Set.filter (\name -> fnName f /= name) nonPrimitives
 
-computeContextBindings :: Uniq -> [(String, TypeAST)] -> ([ContextBinding], Uniq)
+computeContextBindings :: Uniq -> [(String, TypeAST)] -> ([ContextBinding TypeAST], Uniq)
 computeContextBindings u decls =
    runState (mapM pair2binding decls) u where
-        pair2binding :: (String, TypeAST) -> State Uniq ContextBinding
+        pair2binding :: (String, TypeAST) -> State Uniq (ContextBinding TypeAST)
         pair2binding (nm, ty) = do
                uniq <- get
                put (uniq + 1)
                return $ TermVarBinding nm (TypedId ty (Ident nm (- uniq)))
 
-buildCallGraph :: FnLike f => [f] -> [ContextBinding] -> [Graph.SCC f]
+buildCallGraph :: FnLike f => [f] -> [ContextBinding ty] -> [Graph.SCC f]
 buildCallGraph asts bindings =
     let nodeList = (map (\ast -> (ast, fnName ast, fnFreeVariables ast bindings)) asts) in
     Graph.stronglyConnComp nodeList
 
 
-bindingForAnnFn :: AnnFn -> ContextBinding
+bindingForAnnFn :: AnnFn -> ContextBinding TypeAST
 bindingForAnnFn f = TermVarBinding (fnNameA f) (annFnVar f)
  where annFnVar f = TypedId (annFnType f) (annFnIdent f)
 
 
-bindingForFnAST :: FnAST -> TypeAST -> ContextBinding
+bindingForFnAST :: FnAST -> TypeAST -> ContextBinding TypeAST
 bindingForFnAST f t = let n = fnName f in
                       TermVarBinding n (TypedId t (Ident n (-12345)))
 
 -- Every function in the SCC should typecheck against the input context,
 -- and the resulting context should include the computed types of each
 -- function in the SCC.
-typecheckFnSCC :: Graph.SCC FnAST -> (Context, TcEnv) -> IO ([OutputOr AnnExpr], (Context, TcEnv))
+typecheckFnSCC :: Graph.SCC FnAST
+               -> (Context TypeAST, TcEnv)
+               -> IO ([OutputOr AnnExpr], (Context TypeAST, TcEnv))
 typecheckFnSCC scc (ctx, tcenv) = do
     let fns = Graph.flattenSCC scc
     annfns <- forM fns $ \fn -> do
@@ -115,7 +117,7 @@ mapFoldM (a:as) b1 f = do
     return (cs1 ++ cs2, b3)
 
 typecheckModule :: Bool -> ModuleAST FnAST TypeAST -> TcEnv
-                        -> IO (Maybe (Context, ModuleAST AnnFn TypeAST))
+                        -> IO (Maybe (Context TypeAST, ModuleAST AnnFn TypeAST))
 typecheckModule verboseMode mod tcenv = do
     let fns = moduleASTfunctions mod
     let (primBindings, u') = computeContextBindings 1 primitiveDecls
@@ -135,7 +137,7 @@ typecheckModule verboseMode mod tcenv = do
 allOK :: [OutputOr AnnExpr] -> Bool
 allOK results = List.all isOK results
 
-inspect :: Context -> OutputOr AnnExpr -> ExprAST -> IO Bool
+inspect :: Context TypeAST -> OutputOr AnnExpr -> ExprAST -> IO Bool
 inspect ctx typechecked ast =
     case typechecked of
         OK e -> do

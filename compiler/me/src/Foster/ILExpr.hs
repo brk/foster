@@ -102,7 +102,7 @@ ilmPutProc p_action = do
         put (old { ilmProcDefs = p:(ilmProcDefs old) })
         return p
 
-closureConvertAndLift :: Context -> (ModuleAST AnnFn TypeAST) -> ILProgram
+closureConvertAndLift :: Context TypeAST -> (ModuleAST AnnFn TypeAST) -> ILProgram
 closureConvertAndLift ctx m =
     let fns = moduleASTfunctions m in
     let decls = map (\(s,t) -> ILDecl s t) (moduleASTdecls m) in
@@ -120,7 +120,7 @@ prependAnnBinding (id, expr) ctx =
 -- Note that closure conversion is combined with the transformation from
 -- AnnExpr to ILExpr, which mainly consists of making evaluation order for
 -- the subexpressions of tuples and calls (etc) explicit.
-closureConvert :: Context -> AnnExpr -> ILM ILExpr
+closureConvert :: Context TypeAST -> AnnExpr -> ILM ILExpr
 closureConvert ctx expr =
         let g = closureConvert ctx in
         case expr of
@@ -254,7 +254,7 @@ closureConvertedProc liftedProcVars f newbody = do
 -- we can rewrite the lambda to a closed proc:
 --      letproc p = \y x -> x + y
 --      let y = blah in p(y, foobar)
-lambdaLift :: Context -> AnnFn -> [AnnVar] -> ILM ILProcDef
+lambdaLift :: Context TypeAST -> AnnFn -> [AnnVar] -> ILM ILProcDef
 lambdaLift ctx f freeVars =
     let liftedProcVars = freeVars ++ annFnVars f in
     let extctx =  prependContextBindings ctx (bindingsForVars liftedProcVars) in
@@ -271,7 +271,7 @@ preProcType proc =
     let cc = ilProcCallConv proc in
     (argtys, retty, cc)
 
-contextVar :: String -> Context -> String -> AnnVar
+contextVar :: String -> Context TypeAST -> String -> AnnVar
 contextVar dbg ctx s =
     case termVarLookup s (contextBindings ctx) of
             Just v -> v
@@ -352,8 +352,11 @@ excluding bs zs =  Set.toList $ Set.difference (Set.fromList bs) zs
 
 type InfoMap = Map Ident (AnnFn, Ident)
 
-closureOfAnnFn :: Context -> [(Ident, AnnFn)] -> InfoMap
-                           -> (Ident, AnnFn) -> ILM (ILClosure, ILProcDef)
+closureOfAnnFn :: Context TypeAST
+               -> [(Ident, AnnFn)]
+               -> InfoMap
+               -> (Ident, AnnFn)
+               -> ILM (ILClosure, ILProcDef)
 closureOfAnnFn ctx allIdsFns infoMap (self_id, fn) = do
     let allIdNames = map (\(id, _) -> identPrefix id) allIdsFns
     let envName  =     (identPrefix.snd) (infoMap Map.! self_id)
@@ -460,7 +463,7 @@ instance Structured ILExpr where
             ILVar (TypedId t i)      -> []
             ILTyApp t e argty       -> [e]
 
-patternBindings :: (Pattern, TypeAST) -> [ContextBinding]
+patternBindings :: (Pattern, TypeAST) -> [ContextBinding TypeAST]
 patternBindings (p, ty) =
   case p of
     P_Bool     rng _ -> []

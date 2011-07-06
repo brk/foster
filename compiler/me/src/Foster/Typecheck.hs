@@ -70,14 +70,14 @@ typeJoinVars vars (Just t) =
   error $ "typeJoinVars not yet implemented for type " ++ show t ++ " against " ++ show vars
 
 
-extractBindings :: [AnnVar] -> Maybe TypeAST -> Tc [ContextBinding]
+extractBindings :: [AnnVar] -> Maybe TypeAST -> Tc [ContextBinding TypeAST]
 extractBindings fnProtoFormals maybeExpTy = do
     let bindingForVar v = TermVarBinding (identPrefix $ tidIdent v) v
     joinedVars <- typeJoinVars fnProtoFormals maybeExpTy
     let bindings = map bindingForVar joinedVars
     return bindings
 
-extendContext :: Context -> [AnnVar] -> Maybe TypeAST -> Tc Context
+extendContext :: Context TypeAST -> [AnnVar] -> Maybe TypeAST -> Tc (Context TypeAST)
 extendContext ctx protoFormals expFormals = do
     bindings <- extractBindings protoFormals expFormals
     return $ prependContextBindings ctx bindings
@@ -93,7 +93,7 @@ isRecursive :: String -> ExprAST -> RecursiveStatus
 isRecursive boundName expr =
     if boundName `elem` freeVars expr && isFnAST expr then YesRecursive else NotRecursive
 
-typecheck :: Context -> ExprAST -> Maybe TypeAST -> Tc AnnExpr
+typecheck :: Context TypeAST -> ExprAST -> Maybe TypeAST -> Tc AnnExpr
 typecheck ctx expr maybeExpTy =
   tcWithScope expr $
     do case expr of
@@ -234,7 +234,7 @@ typecheckCase ctx rng a branches maybeExpTy = do
 
 varbind id ty = TermVarBinding (identPrefix id) (TypedId ty id)
 
-extractPatternBindings :: Pattern -> TypeAST -> Tc [ContextBinding]
+extractPatternBindings :: Pattern -> TypeAST -> Tc [ContextBinding TypeAST]
 extractPatternBindings (P_Wildcard _   ) ty = return []
 extractPatternBindings (P_Variable _ id) ty = return [varbind id ty]
 
@@ -442,7 +442,7 @@ typecheckFn ctx f (Just t) = tcFails $
                 out ("Context of function literal expects non-function type: "
                                 ++ show t ++ highlightFirstLine (fnAstRange f))
 
-typecheckFn' :: Context -> FnAST -> CallConv -> Maybe TypeAST -> Maybe TypeAST -> Tc AnnExpr
+typecheckFn' :: Context TypeAST -> FnAST -> CallConv -> Maybe TypeAST -> Maybe TypeAST -> Tc AnnExpr
 typecheckFn' ctx f cc expArgType expBodyType = do
     let fnProtoRawFormals = fnFormals f
     let fnProtoName = fnAstName f

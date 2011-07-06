@@ -76,7 +76,7 @@ tySubst ty subst =
         (T_TyVar tv)     -> ty
         (MetaTyVar (Meta u tyref _))  -> Map.findWithDefault ty u subst
 
-tyEnvSubst :: Context -> TypeSubst -> Context
+tyEnvSubst :: Context TypeAST -> TypeSubst -> Context TypeAST
 tyEnvSubst ctx tysub =
     let newBindings = map (\bind ->
                   case bind of

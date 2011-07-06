@@ -8,29 +8,29 @@ import Foster.Base
 import Foster.ExprAST
 import Foster.TypeAST
 
-data ContextBinding = TermVarBinding String AnnVar
-data Context = Context { contextBindings   :: [ContextBinding]
-                       , primitiveBindings :: [ContextBinding]
-                       , contextVerbose    :: Bool
-                       }
+data ContextBinding ty = TermVarBinding String (TypedId ty)
+data Context ty = Context { contextBindings   :: [ContextBinding ty]
+                          , primitiveBindings :: [ContextBinding ty]
+                          , contextVerbose    :: Bool
+                          }
 
 emptyContext = Context [] [] True
 
-prependContextBinding :: Context -> ContextBinding -> Context
+prependContextBinding :: Context ty -> ContextBinding ty -> Context ty
 prependContextBinding ctx prefix =
     ctx { contextBindings = prefix : (contextBindings ctx) }
 
-prependContextBindings :: Context -> [ContextBinding] -> Context
+prependContextBindings :: Context ty -> [ContextBinding ty] -> Context ty
 prependContextBindings ctx prefix =
     ctx { contextBindings = prefix ++ (contextBindings ctx) }
 
-instance Show ContextBinding where
+instance (Show ty) => Show (ContextBinding ty) where
     show (TermVarBinding s annvar) = "(termvar " ++ s ++ " :: " ++ show annvar
 
-ctxBoundIdents :: Context -> [Ident]
+ctxBoundIdents :: Context ty -> [Ident]
 ctxBoundIdents ctx = [tidIdent v | TermVarBinding _ v <- (contextBindings ctx)]
 
-termVarLookup :: String -> [ContextBinding] -> Maybe AnnVar
+termVarLookup :: String -> [ContextBinding ty] -> Maybe (TypedId ty)
 termVarLookup name bindings =
     let termbindings = [(nm, annvar) | (TermVarBinding nm annvar) <- bindings] in
     lookup name termbindings
