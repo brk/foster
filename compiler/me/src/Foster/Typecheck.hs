@@ -353,9 +353,9 @@ vname n _                 = show n
 typecheckCall ctx range base@(E_FnAST f) args maybeExpTy = do
    ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) Nothing
    m <- newTcUnificationVar "call"
-   let expectedLambdaType = case maybeExpTy of
-        Nothing  -> (Just (FnTypeAST (typeAST ea) (MetaTyVar m) FastCC FT_Func))
-        (Just t) -> (Just (FnTypeAST (MetaTyVar m)     t        FastCC FT_Func))
+   let expectedLambdaType = Just $ case maybeExpTy of
+        Nothing  -> mkFuncTy (typeAST ea) (MetaTyVar m)
+        (Just t) -> mkFuncTy (MetaTyVar m)     t
 
    eb <- typecheck ctx base expectedLambdaType
    trace ("typecheckCall with literal fn base, exp ty " ++ (show expectedLambdaType)) $
@@ -366,7 +366,7 @@ typecheckCall ctx range base args maybeExpTy = do
    expectedLambdaType <- case maybeExpTy of
         Nothing  -> return $ Nothing
         (Just t) -> do m <- newTcUnificationVar "inferred arg type"
-                       return $ Just (FnTypeAST (MetaTyVar m) t FastCC FT_Func)
+                       return $ Just $ mkFuncTy (MetaTyVar m) t
         -- If we have (e1 e2) :: T, we infer that e1 :: (? -> T) and e2 :: ?
 
    eb <- typecheck ctx base expectedLambdaType
@@ -421,7 +421,8 @@ typecheckCall ctx range base args maybeExpTy = do
 
             ft <- newTcUnificationVar $ "ret type for " ++ desc
             rt <- newTcUnificationVar $ "arg type for " ++ desc
-            let fnty = FnTypeAST (MetaTyVar ft) (MetaTyVar rt) FastCC FT_Func
+            -- TODO this should sometimes be proc, not func...
+            let fnty = mkFuncTy (MetaTyVar ft) (MetaTyVar rt)
 
             equateTypes m fnty Nothing
             typecheckCallWithBaseFnType eargs eb fnty range
@@ -429,6 +430,7 @@ typecheckCall ctx range base args maybeExpTy = do
       _ -> tcFails $ out ("Called expression had unexpected type: "
                           ++ show (typeAST eb) ++ highlightFirstLine range)
 
+mkFuncTy a r = FnTypeAST a r FastCC FT_Func
 -----------------------------------------------------------------------
 
 typecheckFn ctx f Nothing =
