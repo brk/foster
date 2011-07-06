@@ -318,7 +318,7 @@ bogusEnvType = PtrTypeAST (TupleTypeAST [])
 makeEnvPassingExplicit :: AnnExpr -> Map Ident (AnnFn, Ident) -> AnnExpr
 makeEnvPassingExplicit expr fnAndEnvForClosure =
     q expr where
-    fq (AnnFn ty id vars body clovars rng) = (AnnFn ty id vars (q body) clovars rng)
+    fq (AnnFn ty id vars body rng) = (AnnFn ty id vars (q body) rng)
     q e = case e of
             AnnBool b         -> e
             AnnCompiles c msg -> e

@@ -463,15 +463,15 @@ typecheckFn' ctx f cc expArgType expBodyType = do
 
     formalVars <- typeJoinVars uniquelyNamedFormals expArgType
     let argtypes = TupleTypeAST (map avarType formalVars)
-    let fnClosedVars = if fnWasToplevel f then FT_Proc else FT_Func
-    let fnty = FnTypeAST argtypes (typeAST annbody) cc fnClosedVars
+    let procOrFunc = if fnWasToplevel f then FT_Proc else FT_Func
+    let fnty = FnTypeAST argtypes (typeAST annbody) cc procOrFunc
 
     case termVarLookup fnProtoName (contextBindings ctx) of
       Nothing -> return ()
       Just av -> equateTypes fnty (avarType av) (Just "overall function types")
 
     return (E_AnnFn (AnnFn fnty (Ident fnProtoName irrelevantIdentNum)
-                           formalVars annbody fnClosedVars
+                           formalVars annbody
                            (fnAstRange f)))
 
 -----------------------------------------------------------------------

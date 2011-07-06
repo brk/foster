@@ -107,7 +107,6 @@ data AnnFn        = AnnFn  { annFnType  :: TypeAST
                            , annFnIdent :: Ident
                            , annFnVars  :: [AnnVar]
                            , annFnBody  :: AnnExpr
-                           , annFnProcOrFunc :: ProcOrFunc
                            , annFnRange :: ESourceRange
                            } deriving (Show)
 
