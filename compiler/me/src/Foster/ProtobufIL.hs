@@ -69,7 +69,7 @@ dumpType (TupleTypeAST types) = P'.defaultValue { PbType.tag  = PbTypeTag.TUPLE
                                                 ,  type_parts = fromList $ fmap dumpType types }
 dumpType x@(FnTypeAST s t cc cs) =
                                 P'.defaultValue { PbType.tag  = tagProcOrFunc cs
-                                                , PbType.procty = Just $ dumpProcType x
+                                                , PbType.procty = Just $ dumpProcType (s, t, cc)
                                                 }
 dumpType x@(CoroType a b)     = P'.defaultValue { PbType.tag  = PbTypeTag.CORO
                                                 ,  type_parts = fromList $ fmap dumpType [a,b] }
@@ -102,7 +102,7 @@ dumpType (MetaTyVar (Meta u tyref desc)) =
 
 dumpType other = error $ "dumpType saw unknown type " ++ show other
 
-dumpProcType (FnTypeAST s t cc _) =
+dumpProcType (s, t, cc) =
     let args = case s of
                 TupleTypeAST types -> [dumpType x | x <- types]
                 otherwise          -> [dumpType s]
@@ -114,7 +114,6 @@ dumpProcType (FnTypeAST s t cc _) =
     }
       where stringOfCC FastCC = "fastcc"
             stringOfCC CCC    = "ccc"
-dumpProcType other = error $ "dumpProcType called with non-FnTypeAST node! " ++ show other
 
 -----------------------------------------------------------------------
 dumpMemRegion :: AllocMemRegion -> Foster.Bepb.AllocInfo.MemRegion.MemRegion
@@ -296,7 +295,7 @@ dumpInt cleanText activeBits =
 dumpProc p =
     Proc { Proc.name  = dumpIdent (ilProcIdent p)
          , in_args    = fromList $ [dumpIdent (avarIdent v) | v <- (ilProcVars p)]
-         , proctype   = dumpProcType (procType p)
+         , proctype   = dumpProcType (preProcType p)
          , Proc.body  = Just $ dumpExpr (ilProcBody p)
          , Proc.lines = Just $ u8fromString (showSourceRange $ ilProcRange p)
          , Proc.linkage = Foster.Bepb.Proc.Linkage.Internal

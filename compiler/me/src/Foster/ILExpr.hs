@@ -199,7 +199,9 @@ closureConvert ctx expr =
                                     let freevars = map (contextVar "ANnCall" ctx) freeNames
                                     newproc <- lambdaLift ctx f freevars
                                     let procid = (ilProcIdent newproc)
-                                    let procvar = (AnnVar (procType newproc) procid)
+                                    let (argtys, retty, cc) = preProcType newproc
+                                    let procty = FnTypeAST argtys retty cc FT_Proc
+                                    let procvar = (AnnVar procty procid)
                                     nestedLets cargs (\vars -> ILCall t procvar (freevars ++ vars))
 
                     (E_AnnTyApp ot (AnnPrimitive (AnnVar _ (Ident "allocDArray" _))) argty) ->
@@ -263,11 +265,11 @@ lambdaLift ctx f freeVars =
         bindingsForVars vars = [TermVarBinding (identPrefix i) v
                                | v@(AnnVar t i) <- vars]
 
-procType proc =
+preProcType proc =
     let retty = ilProcReturnType proc in
     let argtys = TupleTypeAST (map avarType (ilProcVars proc)) in
     let cc = ilProcCallConv proc in
-    FnTypeAST argtys retty cc FT_Proc
+    (argtys, retty, cc)
 
 contextVar :: String -> Context -> String -> AnnVar
 contextVar dbg ctx s =
