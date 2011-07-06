@@ -64,7 +64,7 @@ computeContextBindings u decls =
         pair2binding (nm, ty) = do
                uniq <- get
                put (uniq + 1)
-               return $ TermVarBinding nm (AnnVar ty (Ident nm (- uniq)))
+               return $ TermVarBinding nm (TypedId ty (Ident nm (- uniq)))
 
 buildCallGraph :: FnLike f => [f] -> [ContextBinding] -> [Graph.SCC f]
 buildCallGraph asts bindings =
@@ -74,12 +74,12 @@ buildCallGraph asts bindings =
 
 bindingForAnnFn :: AnnFn -> ContextBinding
 bindingForAnnFn f = TermVarBinding (fnNameA f) (annFnVar f)
- where annFnVar f = AnnVar (annFnType f) (annFnIdent f)
+ where annFnVar f = TypedId (annFnType f) (annFnIdent f)
 
 
 bindingForFnAST :: FnAST -> TypeAST -> ContextBinding
 bindingForFnAST f t = let n = fnName f in
-                      TermVarBinding n (AnnVar t (Ident n (-12345)))
+                      TermVarBinding n (TypedId t (Ident n (-12345)))
 
 -- Every function in the SCC should typecheck against the input context,
 -- and the resulting context should include the computed types of each

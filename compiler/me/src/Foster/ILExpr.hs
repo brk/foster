@@ -71,7 +71,7 @@ showProgramStructure :: ILProgram -> Output
 showProgramStructure (ILProgram procdefs decls _lines) =
     concatMap showProcStructure procdefs
 
-procVarDesc (AnnVar ty id) = "( " ++ (show id) ++ " :: " ++ show ty ++ " ) "
+procVarDesc (TypedId ty id) = "( " ++ (show id) ++ " :: " ++ show ty ++ " ) "
 
 showProcStructure proc =
     out (show $ ilProcIdent proc) ++ (out " // ")
@@ -114,7 +114,7 @@ closureConvertAndLift ctx m =
     ILProgram (ilmProcDefs newstate) decls (moduleASTsourceLines m)
 
 prependAnnBinding (id, expr) ctx =
-    let annvar = AnnVar (typeAST expr) id in
+    let annvar = TypedId (typeAST expr) id in
     prependContextBinding ctx (TermVarBinding (identPrefix id) annvar)
 
 -- Note that closure conversion is combined with the transformation from
@@ -133,7 +133,7 @@ closureConvert ctx expr =
 
             AnnIf      t  a b c    -> do x <- ilmFresh ".ife"
                                          [a', b', c'] <- mapM g [a, b, c]
-                                         let v = AnnVar (typeIL a') x
+                                         let v = TypedId (typeIL a') x
                                          return $ buildLet x a' (ILIf t v b' c')
 
             AnnUntil   t  a b      -> do [a', b'] <- mapM g [a, b]
@@ -182,7 +182,7 @@ closureConvert ctx expr =
 
             E_AnnFn annFn          -> do
                 clo_id <- ilmFresh "lit_clo"
-                g (AnnLetFuns [clo_id] [annFn] (E_AnnVar $ AnnVar (typeAST (E_AnnFn annFn)) clo_id))
+                g (AnnLetFuns [clo_id] [annFn] (E_AnnVar $ TypedId (typeAST (E_AnnFn annFn)) clo_id))
 
             AnnCall  r t b es -> do
                 cargs <- mapM g es
@@ -201,25 +201,25 @@ closureConvert ctx expr =
                                     let procid = (ilProcIdent newproc)
                                     let (argtys, retty, cc) = preProcType newproc
                                     let procty = FnTypeAST argtys retty cc FT_Proc
-                                    let procvar = (AnnVar procty procid)
+                                    let procvar = (TypedId procty procid)
                                     nestedLets cargs (\vars -> ILCall t procvar (freevars ++ vars))
 
-                    (E_AnnTyApp ot (AnnPrimitive (AnnVar _ (Ident "allocDArray" _))) argty) ->
+                    (E_AnnTyApp ot (AnnPrimitive (TypedId _ (Ident "allocDArray" _))) argty) ->
                         nestedLets cargs (\[arraySize] -> ILAllocArray argty arraySize)
 
                     (E_AnnTyApp ot (E_AnnVar v) argty) -> do
-                        x <- ilmFresh $ "appty_" ++ (identPrefix $ avarIdent v)
-                        let var = AnnVar ot x
+                        x <- ilmFresh $ "appty_" ++ (identPrefix $ tidIdent v)
+                        let var = TypedId ot x
                         nlets <- nestedLets cargs (\vars -> ILCall t var vars)
                         return $ buildLet x (ILTyApp ot (ILVar v) argty) nlets
 
-                    (E_AnnTyApp ot (AnnPrimitive v@(AnnVar _ (Ident primName _))) appty) ->
+                    (E_AnnTyApp ot (AnnPrimitive v@(TypedId _ (Ident primName _))) appty) ->
                         case (coroPrimFor primName, appty) of
                           (Just coroPrim, TupleTypeAST [argty, retty]) -> do
                             let prim = ILCoroPrim coroPrim argty retty
                             nestedLets cargs (\vars -> ILCallPrim t prim vars)
                           otherwise -> do
-                            let primName = identPrefix $ avarIdent v
+                            let primName = identPrefix $ tidIdent v
                             x <- ilmFresh $ "appty_" ++ primName
                             let prim = ILNamedPrim v
                             nlets <- nestedLets cargs (\vars -> ILCallPrim t prim vars)
@@ -263,11 +263,11 @@ lambdaLift ctx f freeVars =
         ilmPutProc (closureConvertedProc liftedProcVars f newbody)
     where
         bindingsForVars vars = [TermVarBinding (identPrefix i) v
-                               | v@(AnnVar t i) <- vars]
+                               | v@(TypedId t i) <- vars]
 
 preProcType proc =
     let retty = ilProcReturnType proc in
-    let argtys = TupleTypeAST (map avarType (ilProcVars proc)) in
+    let argtys = TupleTypeAST (map tidType (ilProcVars proc)) in
     let cc = ilProcCallConv proc in
     (argtys, retty, cc)
 
@@ -277,7 +277,7 @@ contextVar dbg ctx s =
             Just v -> v
             Nothing -> error $ "ILExpr: " ++ dbg ++ " free var not in context: " ++ s ++ "\n" ++ showctx (contextBindings ctx)
     where showctx bindings =
-            show $ map (\(TermVarBinding nm v) -> nm ++ "/" ++ (show $ avarIdent v)) bindings
+            show $ map (\(TermVarBinding nm v) -> nm ++ "/" ++ (show $ tidIdent v)) bindings
 
 buildLet :: Ident -> ILExpr -> ILExpr -> ILExpr
 buildLet ident bound inexpr =
@@ -308,7 +308,7 @@ nestedLets' (e:es) vars k =
       (ILVar v) -> nestedLets' es (v:vars) k
       otherwise -> do
         x        <- ilmFresh ".x"
-        innerlet <- nestedLets' es ((AnnVar (typeIL e) x):vars) k
+        innerlet <- nestedLets' es ((TypedId (typeIL e) x):vars) k
         return $ buildLet x e innerlet
 
 -- This works because (A) we never type check ILExprs,
@@ -338,12 +338,12 @@ makeEnvPassingExplicit expr fnAndEnvForClosure =
             E_AnnTyApp t e argty  -> E_AnnTyApp t (q e) argty
             E_AnnFn f             -> E_AnnFn (fq f)
             AnnCall r t (E_AnnVar v) es
-                | Map.member (avarIdent v) fnAndEnvForClosure ->
-                    let (f, envid) = fnAndEnvForClosure Map.! (avarIdent v) in
-                    let fnvar = E_AnnVar (AnnVar (annFnType f) (annFnIdent f)) in
+                | Map.member (tidIdent v) fnAndEnvForClosure ->
+                    let (f, envid) = fnAndEnvForClosure Map.! (tidIdent v) in
+                    let fnvar = E_AnnVar (TypedId (annFnType f) (annFnIdent f)) in
                     -- We don't know the env type here, since we don't
                     -- pre-collect the set of closed-over envs from other procs.
-                    let env = E_AnnVar (AnnVar bogusEnvType envid) in
+                    let env = E_AnnVar (TypedId bogusEnvType envid) in
                     (AnnCall r t fnvar (env:(map q es)))
             AnnCall r t b es -> AnnCall r t (q b) (map q es)
 
@@ -376,14 +376,14 @@ closureOfAnnFn ctx allIdsFns infoMap (self_id, fn) = do
     closureConvertAnnFn (E_AnnFn f) info freeNames = do
         let envName = snd (info Map.! self_id)
         let uniqFreeVars = map (contextVar "closureConvertAnnFn" ctx) freeNames
-        let envTypes = map avarType uniqFreeVars
-        let envVar   = AnnVar (TupleTypeAST envTypes) envName
+        let envTypes = map tidType uniqFreeVars
+        let envVar   = TypedId (TupleTypeAST envTypes) envName
 
         -- If the body has x and y free, the closure converted body should be
         -- New body is   case env of (x, y, ...) -> body end
         newbody <- let oldbody = annFnBody f in
                    let norange = EMissingSourceRange "closureConvertAnnFn" in
-                   let patVar a = P_Variable norange (avarIdent a) in
+                   let patVar a = P_Variable norange (tidIdent a) in
                    closureConvert ctx $
                      AnnCase (typeAST oldbody) (E_AnnVar envVar)
                         [ (P_Tuple norange (map patVar uniqFreeVars)
@@ -411,7 +411,7 @@ typeIL (ILStore t _ _)     = t
 typeIL (ILArrayRead t _ _) = t
 typeIL (ILArrayPoke _ _ _) = TupleTypeAST []
 typeIL (ILCase t _ _ _)    = t
-typeIL (ILVar (AnnVar t i)) = t
+typeIL (ILVar (TypedId t i)) = t
 typeIL (ILTyApp overallType tm tyArgs) = overallType
 
 instance Structured ILExpr where
@@ -434,7 +434,7 @@ instance Structured ILExpr where
             ILArrayRead  t a b  -> out $ "ILArrayRead " ++ " :: " ++ show t
             ILArrayPoke v b i   -> out $ "ILArrayPoke "
             ILTuple     es      -> out $ "ILTuple     (size " ++ (show $ length es) ++ ")"
-            ILVar (AnnVar t i)  -> out $ "ILVar       " ++ show i ++ " :: " ++ show t
+            ILVar (TypedId t i)  -> out $ "ILVar       " ++ show i ++ " :: " ++ show t
             ILTyApp t e argty   -> out $ "ILTyApp     [" ++ show argty ++ "] :: " ++ show t
         where
             showClosurePair :: (Ident, ILClosure) -> String
@@ -458,7 +458,7 @@ instance Structured ILExpr where
             ILStore t v w           -> [ILVar v, ILVar w]
             ILArrayRead t a b       -> [ILVar a, ILVar b]
             ILArrayPoke v b i       -> [ILVar v, ILVar b, ILVar i]
-            ILVar (AnnVar t i)      -> []
+            ILVar (TypedId t i)      -> []
             ILTyApp t e argty       -> [e]
 
 patternBindings :: (Pattern, TypeAST) -> [ContextBinding]
@@ -468,7 +468,7 @@ patternBindings (p, ty) =
     P_Int      rng _ -> []
     P_Wildcard rng   -> []
     P_Variable rng id -> [TermVarBinding (identPrefix id) $
-                                            AnnVar ty id]
+                                           TypedId ty id]
     P_Tuple    rng pats ->
       case ty of
         TupleTypeAST tys -> concatMap patternBindings (zip pats tys)

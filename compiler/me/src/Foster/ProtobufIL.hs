@@ -149,7 +149,7 @@ dumpExpr x@(ILBool b) =
                     , PbExpr.tag   = IL_BOOL
                     , PbExpr.type' = Just $ dumpType (typeIL x)  }
 
-dumpExpr (ILVar (AnnVar t i)) =
+dumpExpr (ILVar (TypedId t i)) =
     P'.defaultValue { PbExpr.name  = Just $ dumpIdent i
                     , PbExpr.tag   = IL_VAR
                     , PbExpr.type' = Just $ dumpType t  }
@@ -294,7 +294,7 @@ dumpInt cleanText activeBits =
 
 dumpProc p =
     Proc { Proc.name  = dumpIdent (ilProcIdent p)
-         , in_args    = fromList $ [dumpIdent (avarIdent v) | v <- (ilProcVars p)]
+         , in_args    = fromList $ [dumpIdent (tidIdent v) | v <- (ilProcVars p)]
          , proctype   = dumpProcType (preProcType p)
          , Proc.body  = Just $ dumpExpr (ilProcBody p)
          , Proc.lines = Just $ u8fromString (showSourceRange $ ilProcRange p)

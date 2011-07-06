@@ -17,7 +17,7 @@ class Expr a where
 
 data TermBinding = TermBinding E_VarAST ExprAST
         deriving (Show)
-
+type AnnVar = TypedId TypeAST
 data ExprAST =
           E_BoolAST       ESourceRange Bool
         | E_IntAST        ESourceRange String
@@ -130,8 +130,8 @@ typeAST (AnnDeref t _)       = t
 typeAST (AnnStore t _ _)     = t
 typeAST (AnnSubscript t _ _) = t
 typeAST (AnnCase t _ _)      = t
-typeAST (E_AnnVar (AnnVar t s)) = t
-typeAST (AnnPrimitive (AnnVar t s)) = t
+typeAST (E_AnnVar (TypedId t s)) = t
+typeAST (AnnPrimitive (TypedId t s)) = t
 typeAST (E_AnnTyApp substitutedTy tm tyArgs) = substitutedTy
 
 -----------------------------------------------------------------------
@@ -199,7 +199,7 @@ instance Expr ExprAST where
         E_LetAST rng bnd e t -> freeVars e ++ (bindingFreeVars bnd)
         E_Case rng e epatbnds -> freeVars e ++ (concatMap epatBindingFreeVars epatbnds)
         E_FnAST f           -> let bodyvars  = freeVars (fnBody f) in
-                               let boundvars = map (identPrefix.avarIdent) (fnFormals f) in
+                               let boundvars = map (identPrefix.tidIdent) (fnFormals f) in
                                bodyvars `butnot` boundvars
         _                   -> concatMap freeVars (childrenOf e)
 
@@ -234,8 +234,8 @@ instance Structured AnnExpr where
             AnnSubscript  t a b  -> out $ "AnnSubscript " ++ " :: " ++ show t
             AnnTuple     es      -> out $ "AnnTuple     "
             AnnCase      t e bs  -> out $ "AnnCase      "
-            E_AnnVar (AnnVar t v) -> out $ "AnnVar       " ++ show v ++ " :: " ++ show t
-            AnnPrimitive (AnnVar t v) -> out $ "AnnPrimitive " ++ show v ++ " :: " ++ show t
+            E_AnnVar (TypedId t v) -> out $ "AnnVar       " ++ show v ++ " :: " ++ show t
+            AnnPrimitive (TypedId t v) -> out $ "AnnPrimitive " ++ show v ++ " :: " ++ show t
             E_AnnTyApp t e argty -> out $ "AnnTyApp     [" ++ show argty ++ "] :: " ++ show t
     childrenOf e =
         case e of
@@ -262,7 +262,7 @@ instance Expr AnnExpr where
     freeVars e = [identPrefix i | i <- freeIdentsA e]
 
 freeIdentsA e = case e of
-        E_AnnVar v      -> [avarIdent v]
+        E_AnnVar v      -> [tidIdent v]
         AnnPrimitive v  -> []
         AnnLetVar id a b     -> freeIdentsA a ++ (freeIdentsA b `butnot` [id])
         AnnCase _t e patbnds -> freeIdentsA e ++ (concatMap patBindingFreeIds patbnds)
@@ -272,7 +272,7 @@ freeIdentsA e = case e of
                            concatMap boundvars (zip ids fns) ++ (freeIdentsA e `butnot` ids) where
                                      boundvars (id, fn) = freeIdentsA (E_AnnFn fn) `butnot` [id]
         E_AnnFn f       -> let bodyvars =  freeIdentsA (annFnBody f) in
-                           let boundvars = map avarIdent (annFnVars f) in
+                           let boundvars = map tidIdent (annFnVars f) in
                            bodyvars `butnot` boundvars
         _               -> concatMap freeIdentsA (childrenOf e)
 

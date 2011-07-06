@@ -94,7 +94,7 @@ parseFn pbexpr = do range <- parseRange pbexpr
                                body
                                False) -- assume closure until proven otherwise
   where
-     parseFormal (Formal u t) = AnnVar (parseType t) (Ident (uToString u) 0)
+     parseFormal (Formal u t) = TypedId (parseType t) (Ident (uToString u) 0)
      parseReturnType name pbexpr = fmap parseType (PbExpr.result_type pbexpr)
 
 parseValAbs pbexpr = do
@@ -223,13 +223,13 @@ getVarName :: ExprAST -> String
 getVarName (E_VarAST rng v) = evarName v
 getVarName x = error $ "getVarName given a non-variable! " ++ show x
 
-getFormal :: PbExpr.Expr -> FE  AnnVar
+getFormal :: PbExpr.Expr -> FE (TypedId TypeAST)
 getFormal e =
   case PbExpr.tag e of
      VAR -> do let v = parseVar e
                let i = (Ident (evarName v) (54321))
                case evarMaybeType v of
-                   Just t  -> return (AnnVar t i)
+                   Just t  -> return (TypedId t i)
                    Nothing -> error $ "Missing annotation on variable " ++ show v
      _   -> error "getVar must be given a var!"
 

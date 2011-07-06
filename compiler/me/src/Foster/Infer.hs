@@ -80,8 +80,8 @@ tyEnvSubst :: Context -> TypeSubst -> Context
 tyEnvSubst ctx tysub =
     let newBindings = map (\bind ->
                   case bind of
-                    TermVarBinding str (AnnVar ty id) ->
-                        TermVarBinding str (AnnVar (tySubst ty tysub) id))
+                    TermVarBinding str (TypedId ty id) ->
+                        TermVarBinding str (TypedId (tySubst ty tysub) id))
                   (contextBindings ctx) in
     ctx { contextBindings = newBindings }
 

@@ -52,7 +52,7 @@ typeJoinVars :: [AnnVar] -> (Maybe TypeAST) -> Tc [AnnVar]
 
 typeJoinVars vars (Nothing) = return $ vars
 
-typeJoinVars [var@(AnnVar t v)] (Just u@(MetaTyVar m)) = do
+typeJoinVars [var@(TypedId t v)] (Just u@(MetaTyVar m)) = do
     equateTypes t u Nothing
     return [var]
 
@@ -62,8 +62,8 @@ typeJoinVars []   (Just u@(MetaTyVar m)) = do
 
 typeJoinVars vars (Just (TupleTypeAST expTys)) =
     if (List.length vars) == (List.length expTys)
-      then sequence [equateTypes t e Nothing >> return (AnnVar t v)
-                    | ((AnnVar t v), e) <- (List.zip vars expTys)]
+      then sequence [equateTypes t e Nothing >> return (TypedId t v)
+                    | ((TypedId t v), e) <- (List.zip vars expTys)]
       else tcFails (out $ "Lengths of tuples must agree! Had " ++ show vars ++ " and " ++ show expTys)
 
 typeJoinVars vars (Just t) =
@@ -72,7 +72,7 @@ typeJoinVars vars (Just t) =
 
 extractBindings :: [AnnVar] -> Maybe TypeAST -> Tc [ContextBinding]
 extractBindings fnProtoFormals maybeExpTy = do
-    let bindingForVar v = TermVarBinding (identPrefix $ avarIdent v) v
+    let bindingForVar v = TermVarBinding (identPrefix $ tidIdent v) v
     joinedVars <- typeJoinVars fnProtoFormals maybeExpTy
     let bindings = map bindingForVar joinedVars
     return bindings
@@ -130,16 +130,16 @@ typecheck ctx expr maybeExpTy =
                 (YesRecursive, Just exptype) ->
                     do id <- tcFresh boundName
                        let exptupletype = Just $ TupleTypeAST [exptype]
-                       boundCtx <- extendContext ctx [AnnVar exptype id] exptupletype
+                       boundCtx <- extendContext ctx [TypedId exptype id] exptupletype
                        eaf@(E_AnnFn ea) <- typecheck boundCtx  a maybeVarType
-                       let annvar = AnnVar (typeAST eaf) id
+                       let annvar = TypedId (typeAST eaf) id
                        ctx' <- extendContext ctx [annvar] exptupletype
                        ee <- typecheck ctx' e mt
                        return (AnnLetFuns [id] [ea] ee)
                 (NotRecursive, _) ->
                     do id <- tcFresh boundName
                        ea <- typecheck ctx  a maybeVarType
-                       let annvar = AnnVar (typeAST ea) id
+                       let annvar = TypedId (typeAST ea) id
                        let exptupletype = (fmap (\t -> TupleTypeAST [t]) maybeVarType)
                        ctx' <- extendContext ctx [annvar] exptupletype
                        ee <- typecheck ctx' e mt
@@ -232,7 +232,7 @@ typecheckCase ctx rng a branches maybeExpTy = do
     )
   return $ AnnCase (MetaTyVar m) aa abranches
 
-varbind id ty = TermVarBinding (identPrefix id) (AnnVar ty id)
+varbind id ty = TermVarBinding (identPrefix id) (TypedId ty id)
 
 extractPatternBindings :: Pattern -> TypeAST -> Tc [ContextBinding]
 extractPatternBindings (P_Wildcard _   ) ty = return []
@@ -454,7 +454,7 @@ typecheckFn' ctx f cc expArgType expBodyType = do
                                         return $ MetaTyVar u
                           Just t -> return t
     _ <- verifyNonOverlappingVariableNames fnProtoName
-                                           (map (identPrefix.avarIdent) fnProtoRawFormals)
+                                           (map (identPrefix.tidIdent) fnProtoRawFormals)
     uniquelyNamedFormals <- mapM uniquelyName fnProtoRawFormals
     extCtx <- extendContext ctx uniquelyNamedFormals expArgType
     annbody <- typecheck extCtx (fnBody f) expBodyType
@@ -462,13 +462,13 @@ typecheckFn' ctx f cc expArgType expBodyType = do
     equateTypes fnProtoRetTy (typeAST annbody) (Just $ "return type/body type mismatch in " ++ fnProtoName)
 
     formalVars <- typeJoinVars uniquelyNamedFormals expArgType
-    let argtypes = TupleTypeAST (map avarType formalVars)
+    let argtypes = TupleTypeAST (map tidType formalVars)
     let procOrFunc = if fnWasToplevel f then FT_Proc else FT_Func
     let fnty = FnTypeAST argtypes (typeAST annbody) cc procOrFunc
 
     case termVarLookup fnProtoName (contextBindings ctx) of
       Nothing -> return ()
-      Just av -> equateTypes fnty (avarType av) (Just "overall function types")
+      Just av -> equateTypes fnty (tidType av) (Just "overall function types")
 
     return (E_AnnFn (AnnFn fnty (Ident fnProtoName irrelevantIdentNum)
                            formalVars annbody
@@ -550,10 +550,10 @@ collectErrors tce =
 rename :: Ident -> Uniq -> Ident
 rename (Ident p i) u = (Ident p u)
 
-uniquelyName :: AnnVar -> Tc AnnVar
-uniquelyName (AnnVar ty id) = do
+uniquelyName :: TypedId t -> Tc (TypedId t)
+uniquelyName (TypedId ty id) = do
     uniq <- newTcUniq
-    return (AnnVar ty (rename id uniq))
+    return (TypedId ty (rename id uniq))
 
 verifyNonOverlappingVariableNames :: String -> [String] -> Tc AnnExpr
 verifyNonOverlappingVariableNames fnName varNames = do

@@ -36,8 +36,8 @@ data SSValue = SSBool      Bool
 
 instance Eq ILClosure
   where c1 == c2 = (ilClosureProcIdent c1) == (ilClosureProcIdent c2)
-                &&  (map avarIdent $ ilClosureCaptures c1)
-                 == (map avarIdent $ ilClosureCaptures c2)
+                &&  (map tidIdent $ ilClosureCaptures c1)
+                 == (map tidIdent $ ilClosureCaptures c2)
 
 instance Eq Coro
   where c1 == c2 = (coroLoc c1) == (coroLoc c2)
@@ -66,7 +66,7 @@ data IExpr =
         deriving (Show)
 
 data SSProcDef = SSProcDef { ssProcIdent      :: Ident
-                           , ssProcVars       :: [AnnVar]
+                           , ssProcVars       :: [Ident]
                            , ssProcBody       :: SSTerm
                            } deriving Show
 
@@ -77,26 +77,26 @@ ssTermOfExpr expr =
   case expr of
     ILBool b               -> SSTmValue $ SSBool b
     ILInt t i              -> SSTmValue $ SSInt $ litIntValue i
-    ILVar a                -> SSTmExpr  $ IVar (avarIdent a)
-    ILTuple vs             -> SSTmExpr  $ ITuple (map avarIdent vs)
+    ILVar a                -> SSTmExpr  $ IVar (tidIdent a)
+    ILTuple vs             -> SSTmExpr  $ ITuple (map tidIdent vs)
     ILClosures bnds clos e -> SSTmExpr  $ IClosures bnds clos (tr e)
     ILLetVal x b e         -> SSTmExpr  $ ILetVal x (tr b) (tr e)
-    ILCall     t b vs      -> SSTmExpr  $ ICall (avarIdent b) (map avarIdent vs)
-    ILCallPrim t b vs      -> SSTmExpr  $ ICallPrim b (map avarIdent vs)
-    ILIf       t  v b c    -> SSTmExpr  $ IIf (avarIdent v) (tr b) (tr c)
+    ILCall     t b vs      -> SSTmExpr  $ ICall (tidIdent b) (map tidIdent vs)
+    ILCallPrim t b vs      -> SSTmExpr  $ ICallPrim b (map tidIdent vs)
+    ILIf       t  v b c    -> SSTmExpr  $ IIf (tidIdent v) (tr b) (tr c)
     ILUntil    t  a b      -> SSTmExpr  $ IUntil            (tr a) (tr b)
-    ILArrayRead t a b      -> SSTmExpr  $ IArrayRead (avarIdent a) (avarIdent b)
-    ILArrayPoke v b i      -> SSTmExpr  $ IArrayPoke (avarIdent v) (avarIdent b) (avarIdent i)
-    ILAllocArray ety n     -> SSTmExpr  $ IAllocArray ety (avarIdent n)
-    ILAlloc a              -> SSTmExpr  $ IAlloc (avarIdent a)
-    ILDeref t a            -> SSTmExpr  $ IDeref (avarIdent a)
-    ILStore t a b          -> SSTmExpr  $ IStore (avarIdent a) (avarIdent b)
+    ILArrayRead t a b      -> SSTmExpr  $ IArrayRead (tidIdent a) (tidIdent b)
+    ILArrayPoke v b i      -> SSTmExpr  $ IArrayPoke (tidIdent v) (tidIdent b) (tidIdent i)
+    ILAllocArray ety n     -> SSTmExpr  $ IAllocArray ety (tidIdent n)
+    ILAlloc a              -> SSTmExpr  $ IAlloc (tidIdent a)
+    ILDeref t a            -> SSTmExpr  $ IDeref (tidIdent a)
+    ILStore t a b          -> SSTmExpr  $ IStore (tidIdent a) (tidIdent b)
     ILTyApp t e argty      -> SSTmExpr  $ ITyApp (tr e) argty
-    ILCase t a bs dt       -> SSTmExpr  $ ICase (avarIdent a) dt [(p, tr e) | (p, e) <- bs]
+    ILCase t a bs dt       -> SSTmExpr  $ ICase (tidIdent a) dt [(p, tr e) | (p, e) <- bs]
 
 -- ... which lifts in a  straightfoward way to procedure definitions.
 ssProcDefFrom pd =
-  SSProcDef (ilProcIdent pd) (ilProcVars pd)
+  SSProcDef (ilProcIdent pd) (map tidIdent $ ilProcVars pd)
                (ssTermOfExpr (ilProcBody pd))
 
 errFile gs = (stTmpDir gs) ++ "/istderr.txt"
@@ -154,7 +154,7 @@ data CoroStatus = CoroStatusInvalid
 type CoroEnv = Map Ident SSValue
 data Coro = Coro {
     coroTerm :: SSTerm
-  , coroArgs :: [AnnVar]
+  , coroArgs :: [Ident]
   , coroEnv  :: CoroEnv
   , coroStat :: CoroStatus
   , coroLoc  :: Location
@@ -188,7 +188,7 @@ coroFromClosure gs (ILClosure id avars) cenv =
   let (Just ssproc) = tryLookupProc gs id in
   let (clo_env:args) = ssProcVars ssproc in
   let ins (id,val) map = Map.insert id val map in
-  let env = List.foldr ins Map.empty [(avarIdent clo_env, SSTuple cenv)] in
+  let env = List.foldr ins Map.empty [(clo_env, SSTuple cenv)] in
   let coro = Coro { coroTerm = ssProcBody ssproc
                   , coroArgs = args
                   , coroEnv  = env
@@ -241,7 +241,7 @@ withTerm gs e = modifyHeapWith gs (stCoroLoc gs) (\(SSCoro c) -> SSCoro $ c { co
 withEnv  gs e = modifyHeapWith gs (stCoroLoc gs) (\(SSCoro c) -> SSCoro $ c { coroEnv  = e })
 
 callProc gs proc args =
-  let names = map avarIdent (ssProcVars proc) in
+  let names = ssProcVars proc in
   withTerm (extendEnv gs names args) (ssProcBody proc)
 
 pushCoroCont gs delimCont =
@@ -276,7 +276,7 @@ stepExpr gs expr = do
 
     IClosures bnds clos e  ->
       -- This is not quite right; closures should close over each other!
-      let mkSSClosure clo = SSClosure clo (map ((getval gs).avarIdent)
+      let mkSSClosure clo = SSClosure clo (map ((getval gs).tidIdent)
                                               (ilClosureCaptures clo)) in
       let clovals = map mkSSClosure clos in
       let gs' = extendEnv gs bnds clovals in
@@ -507,7 +507,7 @@ evalPrimitive PrimCoroInvoke gs [(SSLocation targetloc),arg] =
                                    (coroLoc ncoro) (SSCoro $ newcoro)
          , stCoroLoc = coroLoc ncoro
        } in
-       let names = map avarIdent $ coroArgs newcoro in
+       let names = map tidIdent $ coroArgs newcoro in
        return $ extendEnv gs2 names [arg]
 
 evalPrimitive PrimCoroInvoke gs _ = error $ "Wrong arguments to coro_invoke"

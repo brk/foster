@@ -15,10 +15,10 @@ data CallConv = CCC | FastCC deriving (Eq, Show)
 briefCC CCC = "ccc"
 briefCC FastCC = ""
 
-data AnnVar = AnnVar { avarType :: TypeAST, avarIdent :: Ident }
+data TypedId ty = TypedId { tidType :: ty, tidIdent :: Ident }
 
-instance Show AnnVar where
-    show (AnnVar ty id) = show id ++ " :: " ++ show ty
+instance (Show ty) => Show (TypedId ty) where
+    show (TypedId ty id) = show id ++ " :: " ++ show ty
 
 data EPattern =
           EP_Wildcard      ESourceRange
@@ -60,7 +60,7 @@ data TypeAST =
          | MetaTyVar        MetaTyVar
          | RefType          TypeAST
          | ArrayType        TypeAST
-         | PtrTypeAST       TypeAST -- TODO split this into ILType
+         | PtrTypeAST       TypeAST
 
 data TyVar = BoundTyVar String -- bound by a ForAll, that is
            | SkolemTyVar String Uniq deriving (Eq)

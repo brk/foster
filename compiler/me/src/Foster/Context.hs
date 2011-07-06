@@ -28,7 +28,7 @@ instance Show ContextBinding where
     show (TermVarBinding s annvar) = "(termvar " ++ s ++ " :: " ++ show annvar
 
 ctxBoundIdents :: Context -> [Ident]
-ctxBoundIdents ctx = [avarIdent v | TermVarBinding _ v <- (contextBindings ctx)]
+ctxBoundIdents ctx = [tidIdent v | TermVarBinding _ v <- (contextBindings ctx)]
 
 termVarLookup :: String -> [ContextBinding] -> Maybe AnnVar
 termVarLookup name bindings =
