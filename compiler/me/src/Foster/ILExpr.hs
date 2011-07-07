@@ -124,8 +124,9 @@ closureConvertAndLift ctx m =
     let newstate = execState procsILM (ILMState 0 globalVars []) in
     ILProgram (ilmProcDefs newstate) decls (moduleASTsourceLines m)
 
-prependAnnBinding (id, expr) ctx =
-    let annvar = TypedId (typeAST expr) id in
+prependILBinding :: (Ident, ILExpr) -> Context TypeAST -> Context TypeAST
+prependILBinding (id, ile) ctx =
+    let annvar = TypedId (typeIL ile) id in
     prependContextBinding ctx (TermVarBinding (identPrefix id) annvar)
 
 -- Note that closure conversion is combined with the transformation from
@@ -150,8 +151,8 @@ closureConvert ctx expr =
             AnnUntil   t  a b      -> do [a', b'] <- mapM g [a, b]
                                          return $ (ILUntil t a' b')
 
-            AnnLetVar id a b       -> do let ctx' = prependAnnBinding (id, a) ctx
-                                         a' <- closureConvert ctx' a
+            AnnLetVar id a b       -> do a' <- closureConvert ctx  a
+                                         let ctx' = prependILBinding (id, a') ctx
                                          b' <- closureConvert ctx' b
                                          return $ buildLet id a' b'
 
