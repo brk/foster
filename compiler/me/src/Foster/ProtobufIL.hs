@@ -10,15 +10,13 @@ module Foster.ProtobufIL (
 
 import Foster.Base
 import Foster.ILExpr
-import Foster.TypeAST
+import Foster.TypeIL
+import Foster.TypeAST(isPrimitiveName)
 import Foster.PatternMatch
 import Foster.ProtobufUtils
 
 import qualified Data.ByteString.Lazy as L(writeFile)
 import Data.Sequence as Seq(fromList)
-
-import Data.IORef(readIORef)
-import System.IO.Unsafe(unsafePerformIO)
 
 import Text.ProtocolBuffers(messagePut)
 
@@ -62,50 +60,42 @@ dumpIdent i = let p = identPrefix i in
 tagProcOrFunc FT_Proc = PbTypeTag.PROC
 tagProcOrFunc FT_Func = PbTypeTag.CLOSURE
 
-dumpType :: TypeAST -> PbType.Type
-dumpType (NamedTypeAST s)     = P'.defaultValue { PbType.tag  = PbTypeTag.LLVM_NAMED
+dumpType :: TypeIL -> PbType.Type
+dumpType (NamedTypeIL s)     = P'.defaultValue { PbType.tag  = PbTypeTag.LLVM_NAMED
                                                 , PbType.name = Just $ u8fromString s }
-dumpType (TupleTypeAST types) = P'.defaultValue { PbType.tag  = PbTypeTag.TUPLE
+dumpType (TupleTypeIL types) = P'.defaultValue { PbType.tag  = PbTypeTag.TUPLE
                                                 ,  type_parts = fromList $ fmap dumpType types }
-dumpType x@(FnTypeAST s t cc cs) =
+dumpType x@(FnTypeIL s t cc cs) =
                                 P'.defaultValue { PbType.tag  = tagProcOrFunc cs
                                                 , PbType.procty = Just $ dumpProcType (s, t, cc)
                                                 }
-dumpType x@(CoroType a b)     = P'.defaultValue { PbType.tag  = PbTypeTag.CORO
+dumpType x@(CoroTypeIL a b)     = P'.defaultValue { PbType.tag  = PbTypeTag.CORO
                                                 ,  type_parts = fromList $ fmap dumpType [a,b] }
 
-dumpType x@(ForAll tyvars ty) = let tyVarName tv = case tv of
+dumpType x@(ForAllIL tyvars ty) = let tyVarName tv = case tv of
                                                     BoundTyVar nm -> u8fromString nm
                                                     SkolemTyVar s u -> error $ "dumpType (Forall ...) saw skolem var " ++ s
                                 in
                                 P'.defaultValue { PbType.tag  = PbTypeTag.FORALL_TY
                                                 ,  type_parts = fromList $ fmap dumpType [ty]
                                                 , tyvar_names = fromList $ fmap tyVarName tyvars }
-dumpType x@(T_TyVar (BoundTyVar s)) =
+
+dumpType x@(T_TyVarIL (BoundTyVar s)) =
                                 P'.defaultValue { PbType.tag  = PbTypeTag.TYPE_VARIABLE
                                                 , PbType.name = Just $ u8fromString s
                                                 }
-dumpType x@(RefType ty) = dumpType (PtrTypeAST ty)
-dumpType x@(PtrTypeAST ty) =    P'.defaultValue { PbType.tag = PbTypeTag.PTR
+dumpType x@(PtrTypeIL ty) =    P'.defaultValue { PbType.tag = PbTypeTag.PTR
                                                 , type_parts = fromList $ fmap dumpType [ty]
                                                 }
-dumpType x@(ArrayType ty) =     P'.defaultValue { PbType.tag = PbTypeTag.ARRAY
+dumpType x@(ArrayTypeIL ty) =     P'.defaultValue { PbType.tag = PbTypeTag.ARRAY
                                                 , type_parts = fromList $ fmap dumpType [ty]
                                                 }
-
-dumpType (MetaTyVar (Meta u tyref desc)) =
-  unsafePerformIO $ do mty <- readIORef tyref
-                       case mty of
-                          Nothing -> error $ "Cannot dump un-unified unification variable "
-                                               ++ show u  ++ "(" ++ desc ++ ")!"
-                          Just t -> return $ dumpType t
-
 dumpType other = error $ "dumpType saw unknown type " ++ show other
 
 dumpProcType (s, t, cc) =
     let args = case s of
-                TupleTypeAST types -> [dumpType x | x <- types]
-                otherwise          -> [dumpType s]
+                TupleTypeIL types -> [dumpType x | x <- types]
+                otherwise         -> [dumpType s]
     in
     ProcType.ProcType {
           arg_types = fromList args
@@ -164,7 +154,7 @@ dumpExpr x@(ILTuple vs) =
 dumpExpr x@(ILAlloc a) =
     P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [ILVar a])
                     , PbExpr.tag   = IL_ALLOC
-                    , PbExpr.type' = Just $ dumpType (PtrTypeAST $ typeIL (ILVar a))  }
+                    , PbExpr.type' = Just $ dumpType (PtrTypeIL $ typeIL (ILVar a))  }
 
 dumpExpr x@(ILAllocArray elt_ty size) =
     P'.defaultValue { PbExpr.parts = fromList []

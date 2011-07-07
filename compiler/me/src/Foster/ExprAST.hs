@@ -9,12 +9,6 @@ module Foster.ExprAST where
 import Foster.Base
 import Foster.TypeAST
 
-data CompilesStatus = CS_WouldCompile | CS_WouldNotCompile | CS_NotChecked
-    deriving (Eq, Show)
-
-class Expr a where
-    freeVars   :: a -> [String]
-
 data TermBinding = TermBinding E_VarAST ExprAST
         deriving (Show)
 type AnnVar = TypedId TypeAST
@@ -130,8 +124,8 @@ typeAST (AnnDeref t _)       = t
 typeAST (AnnStore t _ _)     = t
 typeAST (AnnSubscript t _ _) = t
 typeAST (AnnCase t _ _)      = t
-typeAST (E_AnnVar (TypedId t s)) = t
-typeAST (AnnPrimitive (TypedId t s)) = t
+typeAST (E_AnnVar tid)       = tidType tid
+typeAST (AnnPrimitive tid)   = tidType tid
 typeAST (E_AnnTyApp substitutedTy tm tyArgs) = substitutedTy
 
 -----------------------------------------------------------------------
@@ -194,8 +188,8 @@ bindingFreeVars (TermBinding v e) = freeVars e `butnot` [evarName v]
 
 instance Expr ExprAST where
     freeVars e = case e of
-        E_VarAST rng v      -> [evarName v]
-        E_Primitive rng v   -> [] -- Primitives are never actually closed over...
+        E_VarAST rng v       -> [evarName v]
+        E_Primitive rng v    -> [] -- Primitives are never actually closed over...
         E_LetAST rng bnd e t -> freeVars e ++ (bindingFreeVars bnd)
         E_Case rng e epatbnds -> freeVars e ++ (concatMap epatBindingFreeVars epatbnds)
         E_FnAST f           -> let bodyvars  = freeVars (fnBody f) in
@@ -225,7 +219,6 @@ instance Structured AnnExpr where
             AnnIf      t  a b c  -> out $ "AnnIf        " ++ " :: " ++ show t
             AnnUntil   t  a b    -> out $ "AnnUntil     " ++ " :: " ++ show t
             AnnInt ty int        -> out $ "AnnInt       " ++ (litIntText int) ++ " :: " ++ show ty
-            E_AnnFn annFn        -> out $ "AnnFn " ++ fnNameA annFn ++ " // " ++ (show $ annFnBoundNames annFn) ++ " :: " ++ show (annFnType annFn)
             AnnLetVar id    a b  -> out $ "AnnLetVar    " ++ show id ++ " :: " ++ show (typeAST b)
             AnnLetFuns ids fns e -> out $ "AnnLetFuns   " ++ show ids
             AnnAlloc        a    -> out $ "AnnAlloc     "
@@ -234,8 +227,9 @@ instance Structured AnnExpr where
             AnnSubscript  t a b  -> out $ "AnnSubscript " ++ " :: " ++ show t
             AnnTuple     es      -> out $ "AnnTuple     "
             AnnCase      t e bs  -> out $ "AnnCase      "
-            E_AnnVar (TypedId t v) -> out $ "AnnVar       " ++ show v ++ " :: " ++ show t
             AnnPrimitive (TypedId t v) -> out $ "AnnPrimitive " ++ show v ++ " :: " ++ show t
+            E_AnnVar (TypedId t v) -> out $ "AnnVar       " ++ show v ++ " :: " ++ show t
+            E_AnnFn annFn        -> out $ "AnnFn " ++ fnNameA annFn ++ " // " ++ (show $ annFnBoundNames annFn) ++ " :: " ++ show (annFnType annFn)
             E_AnnTyApp t e argty -> out $ "AnnTyApp     [" ++ show argty ++ "] :: " ++ show t
     childrenOf e =
         case e of
@@ -258,34 +252,21 @@ instance Structured AnnExpr where
             AnnPrimitive  v                      -> []
             E_AnnTyApp t a argty                 -> [a]
 
-instance Expr AnnExpr where
-    freeVars e = [identPrefix i | i <- freeIdentsA e]
-
-freeIdentsA e = case e of
+instance AExpr AnnExpr where
+    freeIdents e = case e of
         E_AnnVar v      -> [tidIdent v]
         AnnPrimitive v  -> []
-        AnnLetVar id a b     -> freeIdentsA a ++ (freeIdentsA b `butnot` [id])
-        AnnCase _t e patbnds -> freeIdentsA e ++ (concatMap patBindingFreeIds patbnds)
+        AnnLetVar id a b     -> freeIdents a ++ (freeIdents b `butnot` [id])
+        AnnCase _t e patbnds -> freeIdents e ++ (concatMap patBindingFreeIds patbnds)
         -- Note that all free idents of the bound expr are free in letvar,
         -- but letfuns removes the bound name from that set!
         AnnLetFuns ids fns e ->
-                           concatMap boundvars (zip ids fns) ++ (freeIdentsA e `butnot` ids) where
-                                     boundvars (id, fn) = freeIdentsA (E_AnnFn fn) `butnot` [id]
-        E_AnnFn f       -> let bodyvars =  freeIdentsA (annFnBody f) in
+                           concatMap boundvars (zip ids fns) ++ (freeIdents e `butnot` ids) where
+                                     boundvars (id, fn) = freeIdents (E_AnnFn fn) `butnot` [id]
+        E_AnnFn f       -> let bodyvars =  freeIdents (annFnBody f) in
                            let boundvars = map tidIdent (annFnVars f) in
                            bodyvars `butnot` boundvars
-        _               -> concatMap freeIdentsA (childrenOf e)
-
-patBindingFreeIds (pat, expr) =
-  freeIdentsA expr `butnot` patBoundIds pat
-  where patBoundIds :: Pattern -> [Ident]
-        patBoundIds pat =
-          case pat of
-            P_Wildcard _rng      -> []
-            P_Variable _rng id   -> [id]
-            P_Bool     _rng _    -> []
-            P_Int      _rng _    -> []
-            P_Tuple    _rng pats -> concatMap patBoundIds pats
+        _               -> concatMap freeIdents (childrenOf e)
 
 annFnBoundNames :: AnnFn -> [String]
 annFnBoundNames fn = map show (annFnVars fn)

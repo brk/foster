@@ -29,6 +29,8 @@ import Foster.ProtobufFE
 import Foster.ProtobufIL
 import Foster.ExprAST
 import Foster.TypeAST
+import Foster.AnnExprIL
+import Foster.TypeIL
 import Foster.ILExpr
 import Foster.Typecheck
 import Foster.Context
@@ -47,6 +49,9 @@ instance FnLike FnAST where
         let nonPrimitives = Set.filter (\var -> not (isJust $ termVarLookup var bindings)) allCalledFns in
         -- remove recursive function name calls
         Set.toList $ Set.filter (\name -> fnName f /= name) nonPrimitives
+
+instance Expr AnnExpr where
+    freeVars e = map identPrefix (freeIdents e)
 
 instance FnLike AnnFn where
     fnName = fnNameA
@@ -76,7 +81,6 @@ bindingForAnnFn :: AnnFn -> ContextBinding TypeAST
 bindingForAnnFn f = TermVarBinding (fnNameA f) (annFnVar f)
  where annFnVar f = TypedId (annFnType f) (annFnIdent f)
 
-
 bindingForFnAST :: FnAST -> TypeAST -> ContextBinding TypeAST
 bindingForFnAST f t = let n = fnName f in
                       TermVarBinding n (TypedId t (Ident n (-12345)))
@@ -93,18 +97,21 @@ typecheckFnSCC scc (ctx, tcenv) = do
         let ast = (E_FnAST fn)
         let name = fnName fn
         putStrLn $ "typechecking " ++ name
-        typechecked <- unTc (do uRetTy <- newTcUnificationVar $ "toplevel fn type for " ++ name
-                                let extctx = prependContextBinding ctx (bindingForFnAST fn (MetaTyVar uRetTy))
-                                typecheck extctx ast Nothing) tcenv
-        inspect ctx typechecked ast
-        return typechecked
-    return $ if allOK annfns
-        then let fns = [f | (OK (E_AnnFn f)) <- annfns] in
-             let newbindings = foldr (\f b -> (bindingForAnnFn f):b) [] fns in
-             (annfns, (prependContextBindings ctx newbindings, tcenv))
-        else ([Errors (out $ "not all functions type checked correctly in SCC: "
-                                ++ show [fnName f | f <- fns])
-              ],(ctx, tcenv))
+        annfn <- unTc tcenv $
+                    do uRetTy <- newTcUnificationVar $ "toplevel fn type for " ++ name
+                       let extctx = prependContextBinding ctx (bindingForFnAST fn (MetaTyVar uRetTy))
+                       typecheck extctx ast Nothing
+        -- We can't convert AnnExpr to AIExpr here because
+        -- the output context is threaded through further type checking.
+        inspect ctx annfn ast
+        return annfn
+    if allOK annfns
+     then let fns = [f | (OK (E_AnnFn f)) <- annfns] in
+          let newbindings = foldr (\f b -> (bindingForAnnFn f):b) [] fns in
+          return (annfns, (prependContextBindings ctx newbindings, tcenv))
+     else return ([Errors (out $ "not all functions type checked correctly in SCC: "
+                             ++ show [fnName f | f <- fns])
+           ],(ctx, tcenv))
 
 mapFoldM :: (Monad m) => [a] -> b ->
                          (a -> b -> m ([c], b))
@@ -117,24 +124,52 @@ mapFoldM (a:as) b1 f = do
     return (cs1 ++ cs2, b3)
 
 typecheckModule :: Bool -> ModuleAST FnAST TypeAST -> TcEnv
-                        -> IO (Maybe (Context TypeAST, ModuleAST AnnFn TypeAST))
-typecheckModule verboseMode mod tcenv = do
+                        -> IO (OutputOr (Context TypeIL, ModuleAST AIFn TypeIL))
+typecheckModule verboseMode mod tcenv0 = do
     let fns = moduleASTfunctions mod
     let (primBindings, u') = computeContextBindings 1 primitiveDecls
     let (declBindings, u) = computeContextBindings u' (moduleASTdecls mod)
     let sortedFns = buildCallGraph fns declBindings -- :: [SCC FnAST]
     putStrLn $ "Function SCC list : " ++ show [(fnName f, fnFreeVariables f declBindings) | fns <- sortedFns, f <- Graph.flattenSCC fns]
-    let ctx = Context declBindings primBindings verboseMode
-    (annFns, (extctx, tcenv')) <- mapFoldM sortedFns (ctx, tcenv) typecheckFnSCC
-    -- annFns :: [OutputOr AnnExpr]
-    if allOK annFns
-        then return $ Just (extctx,
-                            ModuleAST [f | (OK (E_AnnFn f)) <- annFns]
-                                      (moduleASTdecls mod)
-                                      (moduleASTsourceLines mod))
-        else return $ Nothing
+    let ctx0 = Context declBindings primBindings verboseMode
+    (annFns, (ctx, tcenv)) <- mapFoldM sortedFns (ctx0, tcenv0) typecheckFnSCC
+    unTc tcenv (convertTypeILofAST mod ctx annFns)
 
-allOK :: [OutputOr AnnExpr] -> Bool
+convertTypeILofAST :: ModuleAST FnAST TypeAST
+                   -> Context TypeAST
+                   -> [OutputOr AnnExpr]
+                   -> Tc (Context TypeIL, ModuleAST AIFn TypeIL)
+convertTypeILofAST mod ctx_ast oo_annfns = do
+  decls <- mapM convertDecl (moduleASTdecls mod)
+  ctx_il <- liftContextM ilOf ctx_ast
+  aiFns <- mapM (\ae -> tcInject ae (ail ctx_il)) oo_annfns
+  let m = ModuleAST [f | (E_AIFn f) <- aiFns]
+                    decls (moduleASTsourceLines mod)
+  return (ctx_il, m)
+
+convertDecl :: (String, TypeAST) -> Tc (String, TypeIL)
+convertDecl (s, ty) = do
+  t <- ilOf ty
+  return (s, t)
+
+liftBinding :: Monad m => (t1 -> m t2) -> ContextBinding t1 -> m (ContextBinding t2)
+liftBinding f (TermVarBinding s (TypedId t i)) = do
+  t2 <- f t
+  return $ TermVarBinding s (TypedId t2 i)
+
+liftContextM :: Monad m => (t1 -> m t2) -> Context t1 -> m (Context t2)
+liftContextM f (Context cb pb vb) = do
+  cb' <- mapM (liftBinding f) cb
+  pb' <- mapM (liftBinding f) pb
+  return $ Context cb' pb' vb
+
+liftOutput :: (a -> OutputOr b) -> OutputOr a -> OutputOr b
+liftOutput f ooa =
+  case ooa of
+    OK a     -> f a
+    Errors o -> Errors o
+
+allOK :: [OutputOr ty] -> Bool
 allOK results = List.all isOK results
 
 inspect :: Context TypeAST -> OutputOr AnnExpr -> ExprAST -> IO Bool
@@ -212,7 +247,7 @@ main = do
         let verboseMode = getVerboseFlag flagVals
         modResults  <- typecheckModule verboseMode sm tcenv
         case modResults of
-            (Just (extctx, mod)) -> do
+            (OK (ctx_il, mod)) -> do
                          when verboseMode (do
                            metaTyVars <- readIORef varlist
                            runOutput $ (outLn $ "generated " ++ (show $ length metaTyVars) ++ " meta type variables:")
@@ -220,9 +255,9 @@ main = do
                                t <- readIORef r
                                runOutput (outLn $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t))
 
-                           runOutput $ (outLn "vvvv ===================================")
-                           runOutput $ (outCSLn Yellow (joinWith "\n" $ map show (contextBindings extctx))))
-                         let prog = closureConvertAndLift extctx mod
+                           runOutput $ (outLn "vvvv contextBindings:====================")
+                           runOutput $ (outCSLn Yellow (joinWith "\n" $ map show (contextBindings ctx_il))))
+                         let prog = closureConvertAndLift ctx_il mod
                          dumpModuleToProtobufIL prog (outfile ++ ".ll.pb")
                          when verboseMode (do
                              runOutput $ (outLn "/// ===================================")
@@ -233,5 +268,5 @@ main = do
                            Just tmpDir -> do
                               _unused <- interpretProg prog tmpDir
                               return ())
-            Nothing    -> error $ "Unable to type check input module!"
+            Errors o    -> error $ "Unable to type check input module!"
 

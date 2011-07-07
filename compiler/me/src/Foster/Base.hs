@@ -46,6 +46,52 @@ type Uniq = Int
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+data CallConv = CCC | FastCC deriving (Eq, Show)
+briefCC CCC = "ccc"
+briefCC FastCC = ""
+
+data CompilesStatus = CS_WouldCompile
+                    | CS_WouldNotCompile
+                    | CS_NotChecked
+    deriving (Eq, Show)
+
+data ProcOrFunc = FT_Proc | FT_Func deriving (Show)
+
+data TyVar = BoundTyVar String -- bound by a ForAll, that is
+           | SkolemTyVar String Uniq deriving (Eq)
+
+class Expr a where
+    freeVars   :: a -> [String]
+
+class AExpr a where
+    freeIdents   :: a -> [Ident]
+
+patBindingFreeIds :: AExpr e => (Pattern, e) -> [Ident]
+patBindingFreeIds (pat, expr) =
+  freeIdents expr `butnot` patBoundIds pat
+  where patBoundIds :: Pattern -> [Ident]
+        patBoundIds pat =
+          case pat of
+            P_Wildcard _rng      -> []
+            P_Variable _rng id   -> [id]
+            P_Bool     _rng _    -> []
+            P_Int      _rng _    -> []
+            P_Tuple    _rng pats -> concatMap patBoundIds pats
+
+-- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+-- EPattern variable bindings can have type annotations
+-- for typechecking.
+data Pattern =
+          P_Wildcard      ESourceRange
+        | P_Variable      ESourceRange Ident
+        | P_Bool          ESourceRange Bool
+        | P_Int           ESourceRange LiteralInt
+        | P_Tuple         ESourceRange [Pattern]
+        deriving (Show)
+
+-- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
 data LiteralInt = LiteralInt { litIntValue   :: Integer
                              , litIntMinBits :: Int
                              , litIntText    :: String
@@ -94,6 +140,8 @@ instance Show Ident where
     show i = (identPrefix i) ++ "!" ++ (show $ identNum i)
 
 irrelevantIdentNum = (-12345) :: Int
+
+data TypedId ty = TypedId { tidType :: ty, tidIdent :: Ident }
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

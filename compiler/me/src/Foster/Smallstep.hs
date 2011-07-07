@@ -15,7 +15,7 @@ import Data.Array
 import System.Console.ANSI
 
 import Foster.Base
-import Foster.TypeAST
+import Foster.TypeIL
 import Foster.ILExpr
 import Foster.PatternMatch
 
@@ -56,13 +56,13 @@ data IExpr =
         | ILetVal       Ident   SSTerm     SSTerm
         | IArrayRead    Ident   Ident
         | IArrayPoke    Ident   Ident Ident
-        | IAllocArray   TypeAST Ident
+        | IAllocArray   Ident
         | IIf           Ident   SSTerm     SSTerm
         | IUntil                SSTerm     SSTerm
         | ICall         Ident  [Ident]
         | ICallPrim     ILPrim [Ident]
         | ICase         Ident  (DecisionTree ILExpr) [(Pattern, SSTerm)]
-        | ITyApp       SSTerm  TypeAST
+        | ITyApp        SSTerm TypeIL
         deriving (Show)
 
 data SSProcDef = SSProcDef { ssProcIdent      :: Ident
@@ -87,7 +87,7 @@ ssTermOfExpr expr =
     ILUntil    t  a b      -> SSTmExpr  $ IUntil            (tr a) (tr b)
     ILArrayRead t a b      -> SSTmExpr  $ IArrayRead (tidIdent a) (tidIdent b)
     ILArrayPoke v b i      -> SSTmExpr  $ IArrayPoke (tidIdent v) (tidIdent b) (tidIdent i)
-    ILAllocArray ety n     -> SSTmExpr  $ IAllocArray ety (tidIdent n)
+    ILAllocArray ety n     -> SSTmExpr  $ IAllocArray (tidIdent n)
     ILAlloc a              -> SSTmExpr  $ IAlloc (tidIdent a)
     ILDeref t a            -> SSTmExpr  $ IDeref (tidIdent a)
     ILStore t a b          -> SSTmExpr  $ IStore (tidIdent a) (tidIdent b)
@@ -351,7 +351,7 @@ stepExpr gs expr = do
                           return $ withTerm gs' unit
           other -> error $ "Expected base of array write to be array value; had " ++ show other
 
-    IAllocArray ty sizeid -> do
+    IAllocArray sizeid -> do
         let (SSInt i) = getval gs sizeid
         -- The array cells are initially filled with constant zeros,
         -- regardless of what type we will eventually store.

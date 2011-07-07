@@ -5,7 +5,6 @@ import qualified Data.Set  as Set
 import Data.Set(Set)
 
 import Foster.Base
-import Foster.TypeAST
 
 {-
 Straightforward implementation of pattern match compilation

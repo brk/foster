@@ -54,24 +54,31 @@ data TcEnv = TcEnv { tcEnvUniqs :: IORef Uniq
                    }
 
 newtype Tc a = Tc (TcEnv -> IO (OutputOr a))
-unTc :: Tc a ->   (TcEnv -> IO (OutputOr a))
-unTc   (Tc f) =   f
+unTc :: TcEnv -> Tc a    -> IO (OutputOr a)
+unTc e (Tc f) =   f e
 
 instance Monad Tc where
     return x = Tc (\_env -> return (OK x))
     fail err = Tc (\_env -> return (Errors (outLn err)))
-    m >>= k = Tc (\env -> do { result <- unTc m env
-                           ; case result of
-                              OK expr -> unTc (k expr) env
-                              Errors ss -> return (Errors ss)
-                           })
+    m >>= k = Tc (\env -> do { result <- unTc env m
+                             ; case result of
+                                OK expr -> unTc env (k expr)
+                                Errors ss -> return (Errors ss)
+                             })
+
+tcInject :: (OutputOr a) -> (a -> Tc b) -> Tc b
+tcInject result k = Tc (\env -> do case result of
+                                     OK expr -> unTc env (k expr)
+                                     Errors ss -> return (Errors ss)
+                       )
 
 -- Modifies the standard Tc monad bind operator
 -- to append an error message, if necessary.
+--tcOnError :: (Maybe Output) ->
 tcOnError Nothing  m k = m >>= k
-tcOnError (Just o) m k = Tc (\env -> do { result <- unTc m env
+tcOnError (Just o) m k = Tc (\env -> do { result <- unTc env m
                                         ; case result of
-                                           OK expr -> unTc (k expr) env
+                                           OK expr -> unTc env (k expr)
                                            Errors ss -> return (Errors (ss ++ out "\n" ++ o))
                                         })
 
@@ -134,13 +141,13 @@ wasSuccessful tce = liftM isNothing $ extractErrors tce
 
 extractErrors :: Tc a -> Tc (Maybe Output)
 extractErrors tce =
-    Tc (\env -> do { result <- unTc tce env
+    Tc (\env -> do { result <- unTc env tce
                    ; case result of
                        OK expr   -> return (OK Nothing)
                        Errors ss -> return (OK (Just ss))
                        })
 
-isOK :: OutputOr AnnExpr -> Bool
+isOK :: OutputOr ty -> Bool
 isOK (OK _) = True
 isOK _      = False
 

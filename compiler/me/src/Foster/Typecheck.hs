@@ -541,7 +541,7 @@ splitString needle haystack =
 
 collectErrors :: Tc a -> Tc Output
 collectErrors tce =
-    Tc (\env -> do { result <- unTc tce env
+    Tc (\env -> do { result <- unTc env tce
                    ; case result of
                        OK expr     -> return (OK [])
                        Errors ss -> return   (OK ss)
