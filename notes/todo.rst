@@ -10,6 +10,16 @@ TODO: libraries, benchmarks, & applications
 
 TODO: implementation details
 ----------------------------
+* Design pointer representations and GC integration:
+ * Stable pointers
+  * Malloced/foreign memory
+  * Pointers to stack-allocated objects
+  * Scheme to control whether a pointer is considered a GC root
+  * Invariants for what kinds of pointers can point
+    to which other kinds of pointers, and whether pointer kinds are known
+    statically or dynamically.
+ * Constructor tags on pointers, pointer masking, switching on ctag bits.
+
 * Move primiitve recognition to Haskell, not parser
 * Test that recursive closures work as expected
 * Update chromium-base

@@ -242,61 +242,6 @@ class copying_gc {
         return body_addr;
       }
 
-      // Prerequisite: body is a stack pointer.
-      // Behavior:
-      // * Any slots containing stack pointers should be recursively update()ed.
-      // * Any slots containing heap pointers should be
-      //   overwritten with copy()'d values.
-      void ss_update(void* body, const void* meta) {
-        if (!meta) {
-          fprintf(gclog, "can't update body %p with no type map!\n", body);
-          return;
-        }
-
-        const typemap* map = (const typemap*) meta;
-        bool isClosure =
-            (genericClosureMarker && genericClosureMarker == map->name)
-            || strncmp("genericClosure", map->name, 14) == 0;
-
-        if (isClosure) {
-          // closure value is { code*, env = i8* }
-          // but we don't want to use the (i8*) typemap entry for the env ptr.
-          // Instead, we manually fetch the correct typemap from the
-          // environment itself, and use it instead of e.typeinfo
-          void** envptr_slot = (void**) offset(body, sizeof(void*));
-          void** envptr = *(void***) envptr_slot;
-          if (!envptr) return;
-
-          typemap* envmap = (typemap*) *envptr;
-          if (this->parent->is_probable_stack_pointer(envptr, envptr_slot)) {
-            ss_update(envptr, envmap);
-          } else {
-            *envptr_slot = ss_copy(envptr, envmap);
-          }
-          return;
-        }
-
-        // for each pointer field in the cell
-        for (int i = 0; i < map->numEntries; ++i) {
-          const typemap::entry& e = map->entries[i];
-          void** oldslot = (void**) offset(body, e.offset);
-          #if 0
-          fprintf(gclog, "update: body is %p, offset is %d, "
-            "oldslot is %p, slotval is %p, typeinfo is %p\n",
-            body, e.offset, oldslot, *oldslot, e.typeinfo); fflush(gclog);
-          #endif
-          // recursively copy the field from cell, yielding subfwdaddr
-          // set the copied cell field to subfwdaddr
-          if (*oldslot != NULL) {
-            if (this->parent->is_probable_stack_pointer(*oldslot, oldslot)) {
-              ss_update(*oldslot, e.typeinfo);
-            } else {
-              *oldslot = ss_copy(*oldslot, e.typeinfo);
-            }
-          }
-        }
-      }
-
       void complain_to_lack_of_metadata(void* body, heap_cell* cell) {
         const int ptrsize = sizeof(void*);
         void** bp4 = (void**) offset(body, ptrsize);
@@ -462,20 +407,24 @@ public:
     return "unknown";
   }
 
-  // TODO this is just wrong ... :(
-  bool is_probable_stack_pointer(void* suspect, void* knownstackaddr) {
-    if (curr->contains(suspect) || next->contains(suspect)) return false;
-    return (labs(((char*)suspect) - (char*)knownstackaddr) < (1<<20));
-  }
-
-  // copy the cell at the given address to the next semispace
-  void* copy(void* body, const void* meta) {
-    return next->ss_copy(body, meta);
-  }
-
-  // update slots in the body containing pointers to heap cells
-  void update(void* body, const void* meta) {
-    next->ss_update(body, meta);
+  void copy_or_update(void* body, void** root, const void* meta) {
+    //       |------------|            |------------|
+    // root: |    body    |---\        |    _size   |
+    //       |------------|   |        |------------|
+    //                        \------> |            |
+    //                                 |            |
+    //                                 |            |
+    //                                 |------------|
+    void* newaddr = next->ss_copy(body, meta);
+    //fprintf(gclog, "copying_gc_root_visitor(%p -> %p): copied  body\n", root, body); fflush(gclog);
+    if (meta) {
+      typemap* map = (typemap*) meta;
+      fprintf(gclog, "\tname: %s", map->name);
+    }
+    if (newaddr) {
+      fprintf(gclog, "; replacing %p with %p\n", body, newaddr);
+      *root = newaddr;
+    }
   }
 
   void* allocate_cell(typemap* typeinfo) {
@@ -532,41 +481,7 @@ void copying_gc_root_visitor(void **root, const void *meta) {
   }
 
   if (body) {
-    // todo: change test to is_body_immobile(...)
-    if (allocator->is_probable_stack_pointer(body, root)) {
-      //       |------------|
-      // root: |    body    |---\
-      //       |------------|   |
-      // body: |            |<--/
-      //       |            |
-      //       |            |
-      //       |------------|
-      fprintf(gclog, "found stack pointer\n");
-      if (meta) {
-        typemap* map = (typemap*) meta;
-        fprintf(gclog, "name is %s, # ptrs is %d\n", map->name, map->numEntries);
-      }
-
-      allocator->update(body, meta);
-    } else {
-      //       |------------|            |------------|
-      // root: |    body    |---\        |    _size   |
-      //       |------------|   |        |------------|
-      //                        \------> |            |
-      //                                 |            |
-      //                                 |            |
-      //                                 |------------|
-      void* newaddr = allocator->copy(body, meta);
-      //fprintf(gclog, "copying_gc_root_visitor(%p -> %p): copied  body\n", root, body); fflush(gclog);
-      if (meta) {
-        typemap* map = (typemap*) meta;
-        fprintf(gclog, "\tname: %s", map->name);
-      }
-      if (newaddr) {
-        fprintf(gclog, "; replacing %p with %p\n", body, newaddr);
-        *root = newaddr;
-      }
-    }
+    allocator->copy_or_update(body, root, meta);
   }
 }
 
