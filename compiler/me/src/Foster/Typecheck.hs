@@ -104,15 +104,19 @@ typecheck ctx expr maybeExpTy =
             Just  t -> tcFails [out $ "Unable to check Bool constant in context"
                                    ++ " expecting non-Bool type " ++ show t
                                    ++ showSourceRange rng]
-        E_IfAST a b c   -> typecheckIf ctx a b c maybeExpTy
-        E_UntilAST a b  -> do aa <- typecheck ctx a (Just fosBoolType)
-                              ab <- typecheck ctx b Nothing
-                              equateTypes (typeAST aa) fosBoolType  (Just "E_Until: type of conditional wasn't boolean")
-                              return $ AnnUntil (TupleTypeAST []) aa ab
+        E_IfAST rng a b c -> typecheckIf ctx a b c maybeExpTy
+        E_UntilAST rng a b -> do
+                aa <- typecheck ctx a (Just fosBoolType)
+                ab <- typecheck ctx b Nothing
+                equateTypes (typeAST aa) fosBoolType  (Just "E_Until: type of conditional wasn't boolean")
+                return $ AnnUntil (TupleTypeAST []) aa ab
 
-        E_FnAST f       -> typecheckFn ctx  f    maybeExpTy
-        E_CallAST rng base args ->
-                            typecheckCall ctx rng base args maybeExpTy
+        E_FnAST f ->
+             typecheckFn ctx  f    maybeExpTy
+
+        E_CallAST rng base argtup ->
+             typecheckCall ctx rng base (E_TupleAST argtup) maybeExpTy
+
         E_IntAST rng txt -> typecheckInt rng txt
 
         E_LetRec rng bindings e mt ->
@@ -161,16 +165,16 @@ typecheck ctx expr maybeExpTy =
           -- TODO verify that the val is a pointer to the slot
           return (AnnStore (TupleTypeAST []) ea eb)
 
-        E_SeqAST a b -> do
+        E_SeqAST rng a b -> do
             ea <- typecheck ctx a Nothing --(Just TypeUnitAST)
             id <- tcFresh ".seq"
             eb <- typecheck ctx b maybeExpTy
             return (AnnLetVar id ea eb)
 
-        E_SubscriptAST a b rng -> do ta <- typecheck ctx a Nothing
+        E_SubscriptAST rng a b -> do ta <- typecheck ctx a Nothing
                                      tb <- typecheck ctx b Nothing
                                      typecheckSubscript ctx rng ta (typeAST ta) tb maybeExpTy
-        E_TupleAST exprs -> typecheckTuple ctx exprs maybeExpTy
+        E_TupleAST (TupleAST rng exprs) -> typecheckTuple ctx exprs maybeExpTy
 
         E_Primitive rng v -> case termVarLookup (evarName v) (primitiveBindings ctx) of
             Just avar     -> return $ AnnPrimitive avar
@@ -187,7 +191,7 @@ typecheck ctx expr maybeExpTy =
 
         E_Case rng a branches -> typecheckCase ctx rng a branches maybeExpTy
 
-        E_CompilesAST me -> case me of
+        E_CompilesAST rng me -> case me of
             Nothing -> return $ AnnCompiles (CompilesResult $ Errors [out $ "parse error"])
             Just e -> do
                 outputOrE <- tcIntrospect (typecheck ctx e Nothing)
@@ -347,7 +351,7 @@ vname n _                 = show n
 -- If we have an explicit redex (call to a literal function),
 -- we can determine the types of the formals based on the actuals.
 typecheckCall ctx range base@(E_FnAST f) args maybeExpTy = do
-   ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) Nothing
+   ea@(AnnTuple eargs) <- typecheck ctx args Nothing
    m <- newTcUnificationVar "call"
    let expectedLambdaType = Just $ case maybeExpTy of
         Nothing  -> mkFuncTy (typeAST ea) (MetaTyVar m)
@@ -390,7 +394,7 @@ typecheckCall ctx range base args maybeExpTy = do
 
          -- Type check the args, unifying them
          -- with the expected arg type
-         ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) (Just $ unifiableArgType)
+         ea@(AnnTuple eargs) <- typecheck ctx args (Just $ unifiableArgType)
 
          -- TODO should this be equateTypes instead of tcUnifyTypes?
          unificationResults <- tcUnifyTypes unifiableArgType (typeAST ea)
@@ -409,11 +413,11 @@ typecheckCall ctx range base args maybeExpTy = do
 
       -- (typeAST eb) ==
       fnty@(FnTypeAST formaltype restype cc cs) -> do
-            ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) (Just formaltype)
+            ea@(AnnTuple eargs) <- typecheck ctx args (Just formaltype)
             typecheckCallWithBaseFnType eargs eb fnty range
 
       m@(MetaTyVar (Meta _ _ desc)) -> do
-            ea@(AnnTuple eargs) <- typecheck ctx (E_TupleAST args) Nothing
+            ea@(AnnTuple eargs) <- typecheck ctx args Nothing
 
             ft <- newTcUnificationVar $ "ret type for " ++ desc
             rt <- newTcUnificationVar $ "arg type for " ++ desc
@@ -472,7 +476,7 @@ typecheckFn' ctx f cc expArgType expBodyType = do
 
 -----------------------------------------------------------------------
 typecheckTuple ctx exprs Nothing = typecheckTuple' ctx exprs [Nothing | e <- exprs]
-typecheckTuple ctx [E_TupleAST []]
+typecheckTuple ctx [E_TupleAST (TupleAST rng [])]
                          (Just (TupleTypeAST [])) = return (AnnTuple [])
 typecheckTuple ctx exprs (Just (TupleTypeAST ts)) =
     if length exprs /= length ts
@@ -557,4 +561,5 @@ verifyNonOverlappingVariableNames fnName varNames = do
         []        -> return (AnnBool True)
         otherwise -> tcFails [out $ "Error when checking " ++ fnName
                                  ++ ": had duplicated formal parameter names: " ++ show duplicates]
+
 

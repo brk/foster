@@ -173,6 +173,7 @@ data ESourceLocation = ESourceLocation { sourceLocationLine :: Int
                                        , sourceLocationCol  :: Int
                                        } deriving (Eq, Show)
 
+-- Note: sourceRangeLines is *all* lines, not just those in the range.
 data ESourceRange = ESourceRange { sourceRangeBegin :: ESourceLocation
                                  , sourceRangeEnd   :: ESourceLocation
                                  , sourceRangeLines :: SourceLines
@@ -182,6 +183,20 @@ data ESourceRange = ESourceRange { sourceRangeBegin :: ESourceLocation
 
 instance Show ESourceRange where
     show = showSourceRange
+
+class SourceRanged a
+  where rangeOf :: a -> ESourceRange
+
+rangeSpanOf :: SourceRanged a => ESourceRange -> [a] -> ESourceRange
+rangeSpanOf defaultRange allRanges =
+    let ranges = map rangeOf allRanges in
+    rsp defaultRange [r | r@(ESourceRange _ _ _ _) <- ranges]
+  where rsp defaultRange [] = defaultRange
+        rsp _ (b:srs) = ESourceRange (sourceRangeBegin b)
+                                     (sourceRangeEnd $ last srs)
+                                     (sourceRangeLines b)
+                                     (sourceRangeFile  b)
+
 
 showSourceRange :: ESourceRange -> String
 showSourceRange (EMissingSourceRange s) = "<missing range: " ++ s ++ ">"

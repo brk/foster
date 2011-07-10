@@ -15,27 +15,26 @@ type AnnVar = TypedId TypeAST
 data ExprAST =
           E_BoolAST       ESourceRange Bool
         | E_IntAST        ESourceRange String
-        | E_TupleAST      [ExprAST]
+        | E_TupleAST      TupleAST
         | E_FnAST         FnAST
         | E_LetAST        ESourceRange  TermBinding  ExprAST (Maybe TypeAST)
         | E_LetRec        ESourceRange [TermBinding] ExprAST (Maybe TypeAST)
-        | E_CallAST       ESourceRange ExprAST [ExprAST]
-        | E_CompilesAST   (Maybe ExprAST)
-        | E_IfAST         ExprAST ExprAST ExprAST
-        | E_UntilAST      ExprAST ExprAST
-        | E_SeqAST        ExprAST ExprAST
+        | E_CallAST       ESourceRange ExprAST TupleAST
+        | E_CompilesAST   ESourceRange (Maybe ExprAST)
+        | E_IfAST         ESourceRange ExprAST ExprAST ExprAST
+        | E_UntilAST      ESourceRange ExprAST ExprAST
+        | E_SeqAST        ESourceRange ExprAST ExprAST
         | E_AllocAST      ESourceRange ExprAST
         | E_DerefAST      ESourceRange ExprAST
         | E_StoreAST      ESourceRange ExprAST ExprAST
-        | E_SubscriptAST  { subscriptBase  :: ExprAST
-                          , subscriptIndex :: ExprAST
-                          , subscriptRange :: ESourceRange }
+        | E_SubscriptAST  ESourceRange ExprAST ExprAST
         | E_VarAST        ESourceRange E_VarAST
         | E_Primitive     ESourceRange E_VarAST
         | E_TyApp         ESourceRange ExprAST TypeAST
         | E_Case          ESourceRange ExprAST [(EPattern, ExprAST)]
         deriving Show
-
+data TupleAST = TupleAST { tupleAstRange :: ESourceRange
+                         , tupleAstExprs :: [ExprAST] } deriving (Show)
 data FnAST  = FnAST { fnAstRange :: ESourceRange
                     , fnAstName :: String
                     , fnRetType :: Maybe TypeAST
@@ -46,7 +45,7 @@ data FnAST  = FnAST { fnAstRange :: ESourceRange
 
 -- | Converts a right-leaning "list" of SeqAST nodes to a List
 unbuildSeqs :: ExprAST -> [ExprAST]
-unbuildSeqs (E_SeqAST a b) = a : unbuildSeqs b
+unbuildSeqs (E_SeqAST _rng a b) = a : unbuildSeqs b
 unbuildSeqs expr = [expr]
 
 -----------------------------------------------------------------------
@@ -146,19 +145,19 @@ instance Structured ExprAST where
         case e of
             E_BoolAST rng  b     -> out $ "BoolAST      " ++ (show b)
             E_CallAST rng b args -> out $ "CallAST      " ++ tryGetCallNameE b
-            E_CompilesAST _      -> out $ "CompilesAST  "
-            E_IfAST _ _ _        -> out $ "IfAST        "
-            E_UntilAST _ _       -> out $ "UntilAST     "
+            E_CompilesAST _rng _ -> out $ "CompilesAST  "
+            E_IfAST _rng _ _ _   -> out $ "IfAST        "
+            E_UntilAST _rng _ _  -> out $ "UntilAST     "
             E_IntAST rng text    -> out $ "IntAST       " ++ text
             E_FnAST f            -> out $ "FnAST        " ++ (fnAstName f)
             E_LetRec rnd bnz e t -> out $ "LetRec       "
             E_LetAST rng bnd e t -> out $ "LetAST       " ++ (case bnd of (TermBinding v _) -> evarName v)
-            E_SeqAST   a b       -> out $ "SeqAST       "
+            E_SeqAST _rng a b    -> out $ "SeqAST       "
             E_AllocAST rng a     -> out $ "AllocAST     "
             E_DerefAST rng a     -> out $ "DerefAST     "
             E_StoreAST rng a b   -> out $ "StoreAST     "
             E_SubscriptAST a b r -> out $ "SubscriptAST "
-            E_TupleAST     es    -> out $ "TupleAST     "
+            E_TupleAST _         -> out $ "TupleAST     "
             E_TyApp rng a t      -> out $ "TyApp        "
             E_Case rng _ _       -> out $ "Case         "
             E_VarAST rng v       -> out $ "VarAST       " ++ evarName v ++ " :: " ++ show (evarMaybeType v)
@@ -166,21 +165,21 @@ instance Structured ExprAST where
     childrenOf e =
         case e of
             E_BoolAST rng b      -> []
-            E_CallAST rng b args -> b:args
-            E_CompilesAST (Just e) -> [e]
-            E_CompilesAST Nothing -> []
-            E_IfAST a b c        -> [a, b, c]
-            E_UntilAST a b       -> [a, b]
+            E_CallAST rng b tup -> b:(tupleAstExprs tup)
+            E_CompilesAST _rng (Just e) -> [e]
+            E_CompilesAST _rng Nothing -> []
+            E_IfAST _rng    a b c -> [a, b, c]
+            E_UntilAST _rng a b   -> [a, b]
             E_IntAST rng txt     -> []
             E_FnAST f            -> [fnBody f]
             E_LetRec rnd bnz e t -> [termBindingExpr bnd | bnd <- bnz] ++ [e]
             E_LetAST rng bnd e t -> (termBindingExpr bnd):[e]
-            E_SeqAST       a b   -> unbuildSeqs e
+            E_SeqAST _rng  a b   -> unbuildSeqs e
             E_AllocAST rng a     -> [a]
             E_DerefAST rng a     -> [a]
             E_StoreAST rng a b   -> [a, b]
-            E_SubscriptAST a b r -> [a, b]
-            E_TupleAST     es    -> es
+            E_SubscriptAST r a b -> [a, b]
+            E_TupleAST tup       -> tupleAstExprs tup
             E_TyApp  rng a t     -> [a]
             E_Case rng e bs      -> e:(map snd bs)
             E_VarAST _ _         -> []
@@ -190,6 +189,29 @@ termBindingExpr (TermBinding _ e) = e
 termBindingExprs bs = map termBindingExpr bs
 termBindingNames bs = map (\(TermBinding v _) -> evarName v) bs
 bindingFreeVars (TermBinding v e) = freeVars e `butnot` [evarName v]
+
+instance SourceRanged ExprAST
+  where
+    rangeOf e = case e of
+      E_BoolAST       rng _ -> rng
+      E_IntAST        rng _ -> rng
+      E_TupleAST    tup -> tupleAstRange tup
+      E_FnAST         f -> fnAstRange f
+      E_LetAST        rng _ _ _ -> rng
+      E_LetRec        rng _ _ _ -> rng
+      E_CallAST       rng _ _   -> rng
+      E_CompilesAST   rng _     -> rng
+      E_IfAST         rng _ _ _ -> rng
+      E_UntilAST      rng _ _   -> rng
+      E_SeqAST        rng _ _   -> rng
+      E_AllocAST      rng _     -> rng
+      E_DerefAST      rng _     -> rng
+      E_StoreAST      rng _ _   -> rng
+      E_SubscriptAST  rng _ _   -> rng
+      E_VarAST        rng _     -> rng
+      E_Primitive     rng _     -> rng
+      E_TyApp         rng _ _   -> rng
+      E_Case          rng _ _   -> rng
 
 instance Expr ExprAST where
     freeVars e = case e of

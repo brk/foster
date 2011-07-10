@@ -71,18 +71,19 @@ parseBool pbexpr = do
     return $ E_BoolAST range $ fromMaybe False (PbExpr.bool_value pbexpr)
 
 parseCall pbexpr = do
-    range <- parseRange pbexpr
+    rng <- parseRange pbexpr
     (base:args) <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
-    return $ E_CallAST range base (filterUnit args)
-                where filterUnit [E_TupleAST []] = []
-                      filterUnit args = args
+    return $ E_CallAST rng base (filterUnit rng args)
+      where filterUnit rng [E_TupleAST (TupleAST r [])] = TupleAST r []
+            filterUnit rng args = TupleAST (rangeSpanOf rng args) args
 
-parseCompiles pbexpr =
-    let numChildren = Seq.length $ PbExpr.parts pbexpr in
+parseCompiles pbexpr = do
+    range <- parseRange pbexpr
+    let numChildren = Seq.length $ PbExpr.parts pbexpr
     case numChildren of
         1 -> do [body] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
-                return $ E_CompilesAST (Just body)
-        _ ->    return $ E_CompilesAST (Nothing)
+                return $ E_CompilesAST range (Just body)
+        _ ->    return $ E_CompilesAST range (Nothing)
 
 parseFn pbexpr = do range <- parseRange pbexpr
                     [body] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
@@ -105,14 +106,16 @@ parseIf pbexpr =
                 then parseFromPBIf (getVal pbexpr PbExpr.pb_if)
                 else error "must have if to parse from if!"
         where parseFromPBIf pbif = do
+               range <- parseRange pbexpr
                eif   <- parseExpr (PBIf.test_expr pbif)
                ethen <- parseExpr (PBIf.then_expr pbif)
                eelse <- parseExpr (PBIf.else_expr pbif)
-               return (E_IfAST  eif ethen eelse)
+               return (E_IfAST range eif ethen eelse)
 
 parseUntil pbexpr = do
+    range <- parseRange pbexpr
     [a, b] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
-    return $ E_UntilAST a b
+    return $ E_UntilAST range a b
 
 parseInt :: PbExpr.Expr -> FE ExprAST
 parseInt pbexpr = do
@@ -144,10 +147,9 @@ parseSeq pbexpr = do
 
 -- | Convert a list of ExprASTs to a right-leaning "list" of SeqAST nodes.
 buildSeqs :: [ExprAST] -> ExprAST
-buildSeqs []    = E_TupleAST []
+buildSeqs []    = E_TupleAST $ TupleAST (EMissingSourceRange "buildSeqs") []
 buildSeqs [a]   = a
-buildSeqs [a,b] = E_SeqAST a b
-buildSeqs (a:b) = E_SeqAST a (buildSeqs b)
+buildSeqs (a:b) = E_SeqAST (EMissingSourceRange "buildSeqs") a (buildSeqs b)
 
 parseAlloc pbexpr = do
     range <- parseRange pbexpr
@@ -167,11 +169,12 @@ parseDeref pbexpr = do
 parseSubscript pbexpr = do
     range <- parseRange pbexpr
     [a,b] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
-    return $ E_SubscriptAST a b range
+    return $ E_SubscriptAST range a b
 
 parseTuple pbexpr = do
+    range <- parseRange pbexpr
     exprs <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
-    return $ E_TupleAST exprs
+    return $ E_TupleAST $ TupleAST range exprs
 
 parseTyApp pbexpr = do
     range  <- parseRange pbexpr
