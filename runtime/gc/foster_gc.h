@@ -8,8 +8,6 @@ namespace gc {
 void initialize();
 int  cleanup();
 void force_gc_for_debugging_purposes();
-std::string format_ref(void*);
-
 
 // Performs byte-wise addition on void pointer base
 inline void* offset(void* base, int off) {
