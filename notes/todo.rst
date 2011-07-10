@@ -5,6 +5,8 @@ TODO: libraries, benchmarks, & applications
 -------------------------------------------
 * Strings
 * Hash tables
+* MP integers
+* Floating-point types
 * Growable vectors
 * Parallel benchmarks?
 
@@ -19,6 +21,10 @@ TODO: implementation details
     to which other kinds of pointers, and whether pointer kinds are known
     statically or dynamically.
  * Constructor tags on pointers, pointer masking, switching on ctag bits.
+ * Escape analysis to enable stack allocation
+  * Aligned allocas
+
+* Interaction between primitive integer types and polymorphism at LLVM level.
 
 * Move primiitve recognition to Haskell, not parser
 * Test that recursive closures work as expected
@@ -30,12 +36,8 @@ TODO: implementation details
   * metrics/histogram.h
   * perftimer.h (would need modification)
 * Benchmarking/profiling infrastructure
-* Implement debug info once we get access to DIBuilder
-* Update libcoro
+* Implement debug info using DIBuilder.
 * Build explicit CFGs (CPS?) in Haskell-land
-* Some correctness/well-formedness checks are performed after
-  ``__COMPILES__`` nodes are finalized, which undermines the accuracy
-  of ``__COMPILES__``.
 * Coroutines (mostly done?)
   * On-demand stack growth/detection of impending overflow
   * make foster_coro struct be generic in arg type
