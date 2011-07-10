@@ -68,6 +68,63 @@ struct ImathImprover : public BasicBlockPass {
     return rv;
   }
 
+  void replaceWithFoldedValues(CallInst* call, BasicBlock& BB,
+          Constant* c1, Constant* c2,
+          BasicBlock::iterator    it,
+          Function* mp_int_init_value,
+          foster::GenericGraph<Instruction*>&   pendingRemovals,
+          std::map<Value*, Constant*>&          small_mp_ints) {
+    // If both args are constant values, replace with folded constant.
+
+    // Have code like
+    // %0 = call %mp_int @mp_int_alloc()
+    // %1 = call i32 @mp_int_init_value(%mp_int %0, i32 5)
+    // %2 = call %mp_int @mp_int_alloc()
+    // %3 = call i32 @mp_int_init_value(%mp_int %2, i32 5)
+    // %4 = call %mp_int @mp_int_alloc()
+    // %5 = call i32 @mp_int_init(%mp_int %4)
+    // %6 = call i32 @mp_int_mul(%mp_int %0, %mp_int %2, %mp_int %4)
+
+    // Want to end up with just
+    // %4 = call %mp_int @mp_int_alloc()
+    // %7 = call i32 @mp_int_init_value(%mp_int %4, i32 25)
+
+    Value* v4 = call->getArgOperand(2);
+    // We must manually erase %0, %1, %2, %3, and %5
+    // %0 and %2 are the call args
+    Value* v0 = call->getArgOperand(0);
+    Value* v2 = call->getArgOperand(1);
+    // %1 and %3 are uses of %0 and %2 which are calls to mp_int_init_value.
+    Value* v1 = getUseOf_Calling(v0, "mp_int_init_value");
+    Value* v3 = getUseOf_Calling(v2, "mp_int_init_value");
+
+    // %5 is the use of arg3 which is a call to mp_int_init
+    Value* v5 = getUseOf_Calling(v4, "mp_int_init");
+
+    // Replace %6 with, e.g
+    // %7 = call i32 @mp_int_init_value(%mp_int %4, i32 25)
+    builder.SetInsertPoint(&BB, it);
+    std::string mp_operation = call->getCalledFunction()->getNameStr();
+    Value* folded = getAppropriateOperation(c1, c2, mp_operation);
+    Value* newcall = builder.CreateCall2(mp_int_init_value, v4, folded);
+    call->replaceAllUsesWith(newcall);
+
+    // Ensure that further intstructions know we've created a constant.
+    if (Constant* fc = dyn_cast<Constant>(folded)) {
+      small_mp_ints[v4] = fc;
+    } else {
+      llvm::errs() << "\tfolded = " << (*folded) << "\n";
+      llvm::errs().flush();
+    }
+
+    scheduleForRemoval(call, pendingRemovals);
+    scheduleForRemoval(dyn_cast<Instruction>(v5), pendingRemovals);
+    scheduleForRemoval(dyn_cast<Instruction>(v3), pendingRemovals);
+    scheduleForRemoval(dyn_cast<Instruction>(v2), pendingRemovals);
+    scheduleForRemoval(dyn_cast<Instruction>(v1), pendingRemovals);
+    scheduleForRemoval(dyn_cast<Instruction>(v0), pendingRemovals);
+  }
+
   virtual bool runOnBasicBlock(BasicBlock& BB) {
     std::set<CallInst*> mp_int_allocated;
     std::map<Value*, Constant*> small_mp_ints;
@@ -94,8 +151,10 @@ struct ImathImprover : public BasicBlockPass {
 
         unsigned int_arg = 0;
         unsigned val_arg = 1; // second arg, from 0
-        Constant* c = cast<Constant>(call->getArgOperand(val_arg));
-        small_mp_ints[call->getArgOperand(int_arg)] = c;
+        // Arg might be a load from a slot instead of a constant.
+        if (Constant* c = dyn_cast<Constant>(call->getArgOperand(val_arg))) {
+          small_mp_ints[call->getArgOperand(int_arg)] = c;
+        }
       }
 
 
@@ -103,7 +162,6 @@ struct ImathImprover : public BasicBlockPass {
             || isCallTo(call, "mp_int_add")) {
         Constant* c1 = small_mp_ints[call->getArgOperand(0)];
         Constant* c2 = small_mp_ints[call->getArgOperand(1)];
-        std::string mp_operation = call->getCalledFunction()->getNameStr();
 
         if ((!c1) && (!c2)) {
           // TODO: convert _mul to _sqr here
@@ -111,49 +169,9 @@ struct ImathImprover : public BasicBlockPass {
         }
 
         if (c1 && c2) {
-          // If both args are constant values, replace with folded constant.
-
-          // Have code like
-          // %0 = call %mp_int @mp_int_alloc()
-          // %1 = call i32 @mp_int_init_value(%mp_int %0, i32 5)
-          // %2 = call %mp_int @mp_int_alloc()
-          // %3 = call i32 @mp_int_init_value(%mp_int %2, i32 5)
-          // %4 = call %mp_int @mp_int_alloc()
-          // %5 = call i32 @mp_int_init(%mp_int %4)
-          // %6 = call i32 @mp_int_mul(%mp_int %0, %mp_int %2, %mp_int %4)
-
-          // Want to end up with just
-          // %4 = call %mp_int @mp_int_alloc()
-          // %7 = call i32 @mp_int_init_value(%mp_int %4, i32 25)
-
-          Value* v4 = call->getArgOperand(2);
-          // We must manually erase %0, %1, %2, %3, and %5
-          // %0 and %2 are the call args
-          Value* v0 = call->getArgOperand(0);
-          Value* v2 = call->getArgOperand(1);
-          // %1 and %3 are uses of %0 and %2 which are calls to mp_int_init_value.
-          Value* v1 = getUseOf_Calling(v0, "mp_int_init_value");
-          Value* v3 = getUseOf_Calling(v2, "mp_int_init_value");
-
-          // %5 is the use of arg3 which is a call to mp_int_init
-          Value* v5 = getUseOf_Calling(v4, "mp_int_init");
-
-          // Replace %6 with, e.g
-          // %7 = call i32 @mp_int_init_value(%mp_int %4, i32 25)
-          builder.SetInsertPoint(&BB, it);
-          Value* folded = getAppropriateOperation(c1, c2, mp_operation);
-          Value* newcall = builder.CreateCall2(mp_int_init_value, v4, folded);
-          call->replaceAllUsesWith(newcall);
-
-          // Ensure that further intstructions know we've created a constant.
-          small_mp_ints[v4] = cast<Constant>(folded);
-
-          scheduleForRemoval(call, pendingRemovals);
-          scheduleForRemoval(dyn_cast<Instruction>(v5), pendingRemovals);
-          scheduleForRemoval(dyn_cast<Instruction>(v3), pendingRemovals);
-          scheduleForRemoval(dyn_cast<Instruction>(v2), pendingRemovals);
-          scheduleForRemoval(dyn_cast<Instruction>(v1), pendingRemovals);
-          scheduleForRemoval(dyn_cast<Instruction>(v0), pendingRemovals);
+          replaceWithFoldedValues(call, BB, c1, c2, it,
+                                  mp_int_init_value,
+                                  pendingRemovals, small_mp_ints);
         } else if (c1) {
         // If one arg is constant, use the _value variant.
 
