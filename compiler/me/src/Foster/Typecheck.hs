@@ -328,6 +328,19 @@ getFnArgType t@(ForAllAST tvs rho) =
     trace ("getFnArgType " ++ show t ++ " ::> " ++ show fnargty) $ fnargty
 getFnArgType x = error $ "Called argType on non-FnTypeAST: " ++ show x
 
+showtypes :: [AnnExpr] -> TypeAST -> String
+showtypes args expectedTypes = concatMap showtypes' (zip3 [1..] args expTypes)
+  where showtypes' (n, expr, expty) =
+            if show (typeAST expr) == show expty
+              then ""
+              else
+                ("\n\tArg has type " ++ show (typeAST expr)
+                        ++ ", expected " ++ show expty ++ ":"
+                        ++ show (rangeOf expr))
+        expTypes = (case expectedTypes of
+                        (TupleTypeAST x) -> x
+                        x -> [x]) ++ repeat (NamedTypeAST "<unknown>")
+
 -- For example,   foo (1, 2)   would produce:
 -- eargs   = [1, 2]
 -- argtype = (i32, i32)
@@ -337,9 +350,9 @@ typecheckCallWithBaseFnType argtup eb basetype range =
     case (basetype, typeAST (AnnTuple argtup))
       of
          (FnTypeAST formaltype restype cc cs, argtype) -> do
-           let errmsg = ("CallAST mismatch between formal & arg types" ++ show range)
-           -- ++ showtypes (annTupleExprs argtup) formaltype)
-           -- TODO show type & range of each arg individually
+           -- Note use of implicit laziness to avoid unnecessary work.
+           let errmsg = ("CallAST mismatch between formal & arg types\n"
+                          ++ showtypes (annTupleExprs argtup) formaltype)
            equateTypes formaltype argtype (Just $ errmsg)
            return (AnnCall range restype eb argtup)
 
