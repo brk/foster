@@ -56,57 +56,57 @@ ail :: Context TypeIL -> AnnExpr -> Tc AIExpr
 ail ctx ae =
     let q = ail ctx in
     case ae of
-        AnnBool      b             -> return $ AIBool         b
-        AnnCompiles (CompilesResult ooe) -> do
+        AnnBool _rng b             -> return $ AIBool         b
+        AnnCompiles _rng (CompilesResult ooe) -> do
                 oox <- tcIntrospect (tcInject ooe q)
                 return $ AIBool (isOK oox)
-        AnnIf      t  a b c        -> do ti <- ilOf t
+        AnnIf rng  t  a b c        -> do ti <- ilOf t
                                          [x,y,z] <- mapM q [a,b,c]
                                          return $ AIIf    ti x y z
-        AnnUntil   t  a b          -> do ti <- ilOf t
+        AnnUntil rng t  a b        -> do ti <- ilOf t
                                          [x,y]   <- mapM q [a,b]
                                          return $ AIUntil ti x y
-        AnnInt     t int           -> do ti <- ilOf t
+        AnnInt _rng t int          -> do ti <- ilOf t
                                          return $ AIInt ti int
-        AnnLetVar id  a b          -> do [x,y]   <- mapM q [a,b]
+        AnnLetVar _rng id  a b     -> do [x,y]   <- mapM q [a,b]
                                          return $ AILetVar id x y
-        AnnLetFuns ids fns e       -> do fnsi <- mapM (aiFnOf ctx) fns
+        AnnLetFuns _rng ids fns e  -> do fnsi <- mapM (aiFnOf ctx) fns
                                          ei <- q e
                                          return $ AILetFuns ids fnsi ei
-        AnnAlloc        a          -> do [x] <- mapM q [a]
+        AnnAlloc _rng   a          -> do [x] <- mapM q [a]
                                          return $ AIAlloc x
-        AnnDeref      t a          -> do ti <- ilOf t
+        AnnDeref _rng t a          -> do ti <- ilOf t
                                          [x] <- mapM q [a]
                                          return $ AIDeref     ti x
-        AnnStore      t a b        -> do ti <- ilOf t
+        AnnStore _rng t a b        -> do ti <- ilOf t
                                          [x,y]   <- mapM q [a,b]
                                          return $ AIStore     ti x y
-        AnnSubscript  t a b        -> do ti <- ilOf t
+        AnnSubscript _rng t a b    -> do ti <- ilOf t
                                          [x,y]   <- mapM q [a,b]
                                          return $ AISubscript ti x y
         AnnTuple tup               -> do aies <- mapM (ail ctx) (childrenOf ae)
                                          return $ AITuple aies
-        AnnCase t e bs             -> do ti <- ilOf t
+        AnnCase _rng t e bs        -> do ti <- ilOf t
                                          ei <- q e
                                          bsi <- mapM (\(p,e) -> do a <- q e
                                                                    return (p, a)) bs
                                          return $ AICase ti ei bsi
-        AnnPrimitive v -> tcFails [out $ "Primitives must be called directly!"
-                                      ++ "\n\tFound non-call use of " ++ show v]
+        AnnPrimitive _rng v -> tcFails [out $ "Primitives must be called directly!"
+                                          ++ "\n\tFound non-call use of " ++ show v]
         AnnCall r t b (E_AnnTuple _rng args) -> do
             ti <- ilOf t
             argsi <- mapM q args
             case b of
-                AnnPrimitive (TypedId pty id) -> do
+                AnnPrimitive _rng (TypedId pty id) -> do
                    pti <- ilOf pty
                    return $ AICallPrim r ti (ILNamedPrim (TypedId pti id)) argsi
 
-                E_AnnTyApp ot (AnnPrimitive (TypedId _ (Ident "allocDArray" _))) argty -> do
+                E_AnnTyApp _ ot (AnnPrimitive _rng (TypedId _ (Ident "allocDArray" _))) argty -> do
                     let [arraySize] = argsi
                     aty <- ilOf argty
                     return $ AIAllocArray aty arraySize
 
-                E_AnnTyApp ot (AnnPrimitive (TypedId vty id@(Ident primName _))) appty ->
+                E_AnnTyApp _ ot (AnnPrimitive _rng (TypedId vty id@(Ident primName _))) appty ->
                    case (coroPrimFor primName, appty) of
                      (Just coroPrim, TupleTypeAST [argty, retty]) -> do
                        [aty, rty] <- mapM ilOf [argty, retty]
@@ -122,11 +122,11 @@ ail ctx ae =
                 _ -> do bi <- q b
                         return $ AICall r ti bi argsi
 
-        E_AnnVar (TypedId t v)     -> do ti <- ilOf t
+        E_AnnVar _rng (TypedId t v)-> do ti <- ilOf t
                                          return $ E_AIVar (TypedId ti v)
         E_AnnFn annFn              -> do aif <- aiFnOf ctx annFn
                                          return $ E_AIFn aif
-        E_AnnTyApp t e argty       -> do ti <- ilOf t
+        E_AnnTyApp _rng t e argty  -> do ti <- ilOf t
                                          at <- ilOf argty
                                          ae <- q e
                                          return $ E_AITyApp ti ae at

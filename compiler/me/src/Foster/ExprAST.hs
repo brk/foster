@@ -51,8 +51,9 @@ unbuildSeqs expr = [expr]
 -----------------------------------------------------------------------
 
 data AnnExpr =
-          AnnBool       Bool
-        | AnnInt        { aintType   :: TypeAST
+          AnnBool       ESourceRange Bool
+        | AnnInt        { aintRange  :: ESourceRange
+                        , aintType   :: TypeAST
                         , aintLitInt :: LiteralInt }
 
         -- No need for an explicit type, so long as subexprs are typed.
@@ -64,36 +65,37 @@ data AnnExpr =
         | AnnCall       ESourceRange TypeAST AnnExpr AnnTuple
 
         -- Add an overall type for the if branch
-        | AnnIf         TypeAST AnnExpr AnnExpr AnnExpr
-        | AnnUntil      TypeAST AnnExpr AnnExpr
+        | AnnIf         ESourceRange TypeAST AnnExpr AnnExpr AnnExpr
+        | AnnUntil      ESourceRange TypeAST AnnExpr AnnExpr
 
-        | AnnLetVar     Ident AnnExpr AnnExpr
+        | AnnLetVar     ESourceRange Ident AnnExpr AnnExpr
 
         -- We have separate syntax for a SCC of recursive functions
         -- because they are compiled differently from non-recursive closures.
-        | AnnLetFuns    [Ident] [AnnFn] AnnExpr
+        | AnnLetFuns    ESourceRange [Ident] [AnnFn] AnnExpr
 
-        | AnnAlloc      AnnExpr
-        | AnnDeref      TypeAST AnnExpr
-        | AnnStore      TypeAST AnnExpr AnnExpr
+        | AnnAlloc      ESourceRange AnnExpr
+        | AnnDeref      ESourceRange TypeAST AnnExpr
+        | AnnStore      ESourceRange TypeAST AnnExpr AnnExpr
 
         -- Subscripts get an overall type
-        | AnnSubscript  TypeAST AnnExpr AnnExpr
+        | AnnSubscript  ESourceRange TypeAST AnnExpr AnnExpr
 
         --Vars go from a Maybe TypeAST to a required TypeAST
-        | E_AnnVar       AnnVar
+        | E_AnnVar       ESourceRange AnnVar
 
-        | AnnPrimitive   AnnVar
+        | AnnPrimitive   ESourceRange AnnVar
 
-        | E_AnnTyApp {  annTyAppOverallType :: TypeAST
+        | E_AnnTyApp {  annTyAppRange       :: ESourceRange
+                     ,  annTyAppOverallType :: TypeAST
                      ,  annTyAppExpr        :: AnnExpr
                      ,  annTyAppArgTypes    :: TypeAST }
 
-        | AnnCase    TypeAST AnnExpr [(Pattern, AnnExpr)]
+        | AnnCase    ESourceRange TypeAST AnnExpr [(Pattern, AnnExpr)]
         -- This one's a bit odd, in that we can't always include an AnnExpr
         -- because the subterm doesn't need to be well-typed.
         -- But we should include one if possible, for further checking.
-        | AnnCompiles   (CompilesResult AnnExpr)
+        | AnnCompiles   ESourceRange (CompilesResult AnnExpr)
         deriving (Show)
 
 data AnnTuple = E_AnnTuple { annTupleRange :: ESourceRange
@@ -115,24 +117,24 @@ typeAST :: AnnExpr -> TypeAST
 typeAST annexpr =
   let recur = typeAST in
   case annexpr of
-     (AnnBool _)          -> fosBoolType
-     (AnnInt t _)         -> t
-     (AnnTuple tup)       -> TupleTypeAST [recur e | e <- childrenOf annexpr]
-     (E_AnnFn annFn)      -> annFnType annFn
-     (AnnCall r t b a)    -> t
-     (AnnCompiles _)      -> fosBoolType
-     (AnnIf t a b c)      -> t
-     (AnnUntil t _ _)     -> t
-     (AnnLetVar _ a b)    -> recur b
-     (AnnLetFuns _ _ e)   -> recur e
-     (AnnAlloc e)         -> RefTypeAST (recur e)
-     (AnnDeref t _)       -> t
-     (AnnStore t _ _)     -> t
-     (AnnSubscript t _ _) -> t
-     (AnnCase t _ _)      -> t
-     (E_AnnVar tid)       -> tidType tid
-     (AnnPrimitive tid)   -> tidType tid
-     (E_AnnTyApp substitutedTy tm tyArgs) -> substitutedTy
+     (AnnBool _rng _)        -> fosBoolType
+     (AnnInt _rng t _)       -> t
+     (AnnTuple tup)          -> TupleTypeAST [recur e | e <- childrenOf annexpr]
+     (E_AnnFn annFn)         -> annFnType annFn
+     (AnnCall r t b a)       -> t
+     (AnnCompiles _rng _)    -> fosBoolType
+     (AnnIf _rng t a b c)    -> t
+     (AnnUntil _rng t _ _)   -> t
+     (AnnLetVar _rng _ a b)  -> recur b
+     (AnnLetFuns _rng _ _ e) -> recur e
+     (AnnAlloc _rng e)       -> RefTypeAST (recur e)
+     (AnnDeref _rng t _)     -> t
+     (AnnStore _rng t _ _)   -> t
+     (AnnSubscript _r t _ _) -> t
+     (AnnCase _rng t _ _)    -> t
+     (E_AnnVar _rng tid)     -> tidType tid
+     (AnnPrimitive _rng tid) -> tidType tid
+     (E_AnnTyApp _rng substitutedTy tm tyArgs) -> substitutedTy
 
 -----------------------------------------------------------------------
 
@@ -243,55 +245,55 @@ instance Structured AnnExpr where
     textOf e width =
         let spaces = Prelude.replicate width '\SP'  in
         case e of
-            AnnBool         b    -> out $ "AnnBool      " ++ (show b)
-            AnnCall  r t b args  -> out $ "AnnCall      " ++ " :: " ++ show t
-            AnnCompiles cr       -> out $ "AnnCompiles  " ++ show cr
-            AnnIf      t  a b c  -> out $ "AnnIf        " ++ " :: " ++ show t
-            AnnUntil   t  a b    -> out $ "AnnUntil     " ++ " :: " ++ show t
-            AnnInt ty int        -> out $ "AnnInt       " ++ (litIntText int) ++ " :: " ++ show ty
-            AnnLetVar id    a b  -> out $ "AnnLetVar    " ++ show id ++ " :: " ++ show (typeAST b)
-            AnnLetFuns ids fns e -> out $ "AnnLetFuns   " ++ show ids
-            AnnAlloc        a    -> out $ "AnnAlloc     "
-            AnnDeref      t a    -> out $ "AnnDeref     "
-            AnnStore      t a b  -> out $ "AnnStore     "
-            AnnSubscript  t a b  -> out $ "AnnSubscript " ++ " :: " ++ show t
+            AnnBool _rng    b    -> out $ "AnnBool      " ++ (show b)
+            AnnCall rng t b args -> out $ "AnnCall      " ++ " :: " ++ show t
+            AnnCompiles rng cr   -> out $ "AnnCompiles  " ++ show cr
+            AnnIf _rng t  a b c  -> out $ "AnnIf        " ++ " :: " ++ show t
+            AnnUntil _rng t a b  -> out $ "AnnUntil     " ++ " :: " ++ show t
+            AnnInt _rng ty int   -> out $ "AnnInt       " ++ (litIntText int) ++ " :: " ++ show ty
+            AnnLetVar _rng id a b -> out $ "AnnLetVar    " ++ show id ++ " :: " ++ show (typeAST b)
+            AnnLetFuns _r ids fns e -> out $ "AnnLetFuns   " ++ show ids
+            AnnAlloc _rng   a    -> out $ "AnnAlloc     "
+            AnnDeref _rng t a    -> out $ "AnnDeref     "
+            AnnStore _rng t a b  -> out $ "AnnStore     "
+            AnnSubscript _r t a b-> out $ "AnnSubscript " ++ " :: " ++ show t
             AnnTuple     es      -> out $ "AnnTuple     "
-            AnnCase      t e bs  -> out $ "AnnCase      "
-            AnnPrimitive (TypedId t v) -> out $ "AnnPrimitive " ++ show v ++ " :: " ++ show t
-            E_AnnVar (TypedId t v) -> out $ "AnnVar       " ++ show v ++ " :: " ++ show t
+            AnnCase _rng t e bs  -> out $ "AnnCase      "
+            AnnPrimitive _r (TypedId t v) -> out $ "AnnPrimitive " ++ show v ++ " :: " ++ show t
+            E_AnnVar _r (TypedId t v) -> out $ "AnnVar       " ++ show v ++ " :: " ++ show t
             E_AnnFn annFn        -> out $ "AnnFn " ++ fnNameA annFn ++ " // " ++ (show $ annFnBoundNames annFn) ++ " :: " ++ show (annFnType annFn)
-            E_AnnTyApp t e argty -> out $ "AnnTyApp     [" ++ show argty ++ "] :: " ++ show t
+            E_AnnTyApp _rng t e argty -> out $ "AnnTyApp     [" ++ show argty ++ "] :: " ++ show t
     childrenOf e =
         case e of
-            AnnBool         b                    -> []
+            AnnBool _rng    b                    -> []
             AnnCall  r t b argtup                -> b:(annTupleExprs argtup)
-            AnnCompiles (CompilesResult (OK e))  -> [e]
-            AnnCompiles (CompilesResult (Errors _)) -> []
-            AnnIf      t  a b c                  -> [a, b, c]
-            AnnUntil   t  a b                    -> [a, b]
-            AnnInt t _                           -> []
+            AnnCompiles _rng (CompilesResult (OK e))     -> [e]
+            AnnCompiles _rng (CompilesResult (Errors _)) -> []
+            AnnIf _rng t  a b c                  -> [a, b, c]
+            AnnUntil _rng t  a b                 -> [a, b]
+            AnnInt   _rng t _                    -> []
             E_AnnFn annFn                        -> [annFnBody annFn]
-            AnnLetVar _ a b                      -> [a, b]
-            AnnLetFuns ids fns e                 -> (map E_AnnFn fns) ++ [e]
-            AnnAlloc        a                    -> [a]
-            AnnDeref      t a                    -> [a]
-            AnnStore      t a b                  -> [a, b]
-            AnnSubscript t a b                   -> [a, b]
+            AnnLetVar _rng _ a b                 -> [a, b]
+            AnnLetFuns _rng ids fns e            -> (map E_AnnFn fns) ++ [e]
+            AnnAlloc _rng   a                    -> [a]
+            AnnDeref _rng t a                    -> [a]
+            AnnStore _rng t a b                  -> [a, b]
+            AnnSubscript _rng t a b              -> [a, b]
             AnnTuple tup                         -> annTupleExprs tup
-            AnnCase t e bs                       -> e:(map snd bs)
-            E_AnnVar      v                      -> []
-            AnnPrimitive  v                      -> []
-            E_AnnTyApp t a argty                 -> [a]
+            AnnCase _rng t e bs                  -> e:(map snd bs)
+            E_AnnVar     _rng v                  -> []
+            AnnPrimitive _rng v                  -> []
+            E_AnnTyApp _rng t a argty            -> [a]
 
 instance AExpr AnnExpr where
     freeIdents e = case e of
-        E_AnnVar v      -> [tidIdent v]
-        AnnPrimitive v  -> []
-        AnnLetVar id a b     -> freeIdents a ++ (freeIdents b `butnot` [id])
-        AnnCase _t e patbnds -> freeIdents e ++ (concatMap patBindingFreeIds patbnds)
+        E_AnnVar     _rng v -> [tidIdent v]
+        AnnPrimitive _rng v -> []
+        AnnLetVar _rng id a b     -> freeIdents a ++ (freeIdents b `butnot` [id])
+        AnnCase _rng _t e patbnds -> freeIdents e ++ (concatMap patBindingFreeIds patbnds)
         -- Note that all free idents of the bound expr are free in letvar,
         -- but letfuns removes the bound name from that set!
-        AnnLetFuns ids fns e ->
+        AnnLetFuns _rng ids fns e ->
                            concatMap boundvars (zip ids fns) ++ (freeIdents e `butnot` ids) where
                                      boundvars (id, fn) = freeIdents (E_AnnFn fn) `butnot` [id]
         E_AnnFn f       -> let bodyvars =  freeIdents (annFnBody f) in
@@ -302,4 +304,24 @@ instance AExpr AnnExpr where
 annFnBoundNames :: AnnFn -> [String]
 annFnBoundNames fn = map show (annFnVars fn)
 
+instance SourceRanged AnnExpr where
+  rangeOf expr = case expr of
+      AnnBool rng    b            -> rng
+      AnnCall rng t b argtup      -> rng
+      AnnCompiles rng _           -> rng
+      AnnIf rng t  a b c          -> rng
+      AnnUntil rng t  a b         -> rng
+      AnnInt   rng t _            -> rng
+      E_AnnFn f                   -> annFnRange f
+      AnnLetVar rng _ a b         -> rng
+      AnnLetFuns rng ids fns e    -> rng
+      AnnAlloc rng   a            -> rng
+      AnnDeref rng t a            -> rng
+      AnnStore rng t a b          -> rng
+      AnnSubscript rng t a b      -> rng
+      AnnTuple tup                -> annTupleRange tup
+      AnnCase rng t e bs          -> rng
+      E_AnnVar     rng v          -> rng
+      AnnPrimitive rng v          -> rng
+      E_AnnTyApp rng t a argty    -> rng
 
