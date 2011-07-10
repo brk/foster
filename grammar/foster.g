@@ -18,7 +18,7 @@ tokens {
   TYPE='type';
   COMPILES='__COMPILES__';
 
-  VAL_APP; UNTIL;
+  VAL_APP; UNTIL; FORMALS;
   BINDING; LETS; LETREC; SEQ;
   RAT_NUM; INT_NUM; BOOL;
   DECL; DEFN;
@@ -100,7 +100,7 @@ atom    :       // syntactically "closed" terms
   | '(' COMPILES e ')'                  -> ^(COMPILES e)
   | '(' 'ref' e ')'                     -> ^(REF e)     // allocation
   | '(' e (',' e)* ')'                  -> ^(TUPLE e+)  // tuples (products) (sguar: (a,b,c) == Tuple3 a b c)
-  | '{' (formal '=>')* e_seq '}'        -> ^(VAL_ABS formal* e_seq) // value abstraction (terms indexed by terms)
+  | '{' (formal '=>')* e_seq? '}'       -> ^(VAL_ABS ^(FORMALS formal*) e_seq?) // value abstraction (terms indexed by terms)
 //      | '{' 'forall' a ':' k ',' e '}'        -> ^(TYP_ABS a k e) // type abstraction (terms indexed by types)
   | CASE e (OF pmatch)+ END             -> ^(CASE e pmatch+) // pattern matching
   ;
