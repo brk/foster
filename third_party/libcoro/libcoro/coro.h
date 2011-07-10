@@ -70,6 +70,10 @@
  * 2008-11-19 define coro_*jmp symbols for easier porting.
  * 2009-06-23 tentative win32-backend support for mingw32 (Yasuhiro Matsumoto).
  * 2010-12-03 tentative support for uclibc (which lacks all sorts of things).
+ * 2011-05-30 set initial callee-saved-registers to zero with CORO_ASM.
+ *            use .cfi_undefined rip on linux-amd64 for better backtraces.
+ * 2011-06-08 maybe properly implement weird windows amd64 calling conventions.
+ * 2011-07-03 rely on __GCC_HAVE_DWARF2_CFI_ASM for cfi detection.
  */
 
 #ifndef CORO_H
@@ -204,7 +208,7 @@ void coro_destroy (coro_context *ctx);
     && !defined(CORO_SJLJ) && !defined(CORO_LINUX) \
     && !defined(CORO_IRIX) && !defined(CORO_ASM) \
     && !defined(CORO_PTHREAD)
-# if defined(WINDOWS)
+# if defined(WINDOWS) || defined(_WIN32)
 #  define CORO_LOSER 1 /* you don't win with windoze */
 # elif defined(__linux) && (defined(__x86) || defined (__amd64))
 #  define CORO_ASM 1

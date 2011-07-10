@@ -1,16 +1,16 @@
 /*
- * Copyright (c) 2001-2009 Marc Alexander Lehmann <schmorp@schmorp.de>
- *
+ * Copyright (c) 2001-2011 Marc Alexander Lehmann <schmorp@schmorp.de>
+ * 
  * Redistribution and use in source and binary forms, with or without modifica-
  * tion, are permitted provided that the following conditions are met:
- *
+ * 
  *   1.  Redistributions of source code must retain the above copyright notice,
  *       this list of conditions and the following disclaimer.
- *
+ * 
  *   2.  Redistributions in binary form must reproduce the above copyright
  *       notice, this list of conditions and the following disclaimer in the
  *       documentation and/or other materials provided with the distribution.
- *
+ * 
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
  * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MER-
  * CHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO
@@ -90,6 +90,10 @@ coro_init (void)
 
   coro_transfer (new_coro, create_coro);
 
+#if __GCC_HAVE_DWARF2_CFI_ASM && __amd64
+  asm (".cfi_undefined rip");
+#endif
+
   volatile void* coro_arg = * (void**)indirect_arg;
   foster_coro_delete_self_reference(coro_arg);
 
@@ -116,6 +120,11 @@ trampoline (int sig)
 # endif
 
 # if CORO_ASM
+
+  #if _WIN32
+    #define CORO_WIN_TIB 1
+  #endif
+
   asm (
        ".text\n"
       #if defined(__APPLE__)
@@ -129,53 +138,76 @@ trampoline (int sig)
        /* windows, of course, gives a shit on the amd64 ABI and uses different registers */
        /* http://blogs.msdn.com/freik/archive/2005/03/17/398200.aspx */
        #if __amd64
-         #define NUM_SAVED 6
-         "\tpush %rbp\n"
-         "\tpush %rbx\n"
-         "\tpush %r12\n"
-         "\tpush %r13\n"
-         "\tpush %r14\n"
-         "\tpush %r15\n"
-         #if CORO_WIN_TIB
-           "\tpush %gs:0x0\n"
-           "\tpush %gs:0x8\n"
-           "\tpush %gs:0xc\n"
+         #ifdef WIN32
+           /* TODO: xmm6..15 also would need to be saved. sigh. */
+           #define NUM_SAVED 8
+           "\tpushq %rsi\n"
+           "\tpushq %rdi\n"
+           "\tpushq %rbp\n"
+           "\tpushq %rbx\n"
+           "\tpushq %r12\n"
+           "\tpushq %r13\n"
+           "\tpushq %r14\n"
+           "\tpushq %r15\n"
+           #if CORO_WIN_TIB
+             "\tpushq %fs:0x0\n"
+             "\tpushq %fs:0x8\n"
+             "\tpushq %fs:0xc\n"
+           #endif
+           "\tmovq %rsp, (%rcx)\n"
+           "\tmovq (%rdx), %rsp\n"
+           #if CORO_WIN_TIB
+             "\tpopq %fs:0xc\n"
+             "\tpopq %fs:0x8\n"
+             "\tpopq %fs:0x0\n"
+           #endif
+           "\tpopq %r15\n"
+           "\tpopq %r14\n"
+           "\tpopq %r13\n"
+           "\tpopq %r12\n"
+           "\tpopq %rbx\n"
+           "\tpopq %rbp\n"
+           "\tpopq %rdi\n"
+           "\tpopq %rsi\n"
+         #else
+           #define NUM_SAVED 6
+           "\tpushq %rbp\n"
+           "\tpushq %rbx\n"
+           "\tpushq %r12\n"
+           "\tpushq %r13\n"
+           "\tpushq %r14\n"
+           "\tpushq %r15\n"
+           "\tmovq %rsp, (%rdi)\n"
+           "\tmovq (%rsi), %rsp\n"
+           "\tpopq %r15\n"
+           "\tpopq %r14\n"
+           "\tpopq %r13\n"
+           "\tpopq %r12\n"
+           "\tpopq %rbx\n"
+           "\tpopq %rbp\n"
          #endif
-         "\tmov  %rsp, (%rdi)\n"
-         "\tmov  (%rsi), %rsp\n"
-         #if CORO_WIN_TIB
-           "\tpop  %gs:0xc\n"
-           "\tpop  %gs:0x8\n"
-           "\tpop  %gs:0x0\n"
-         #endif
-         "\tpop  %r15\n"
-         "\tpop  %r14\n"
-         "\tpop  %r13\n"
-         "\tpop  %r12\n"
-         "\tpop  %rbx\n"
-         "\tpop  %rbp\n"
        #elif __i386
          #define NUM_SAVED 4
-         "\tpush %ebp\n"
-         "\tpush %ebx\n"
-         "\tpush %esi\n"
-         "\tpush %edi\n"
+         "\tpushl %ebp\n"
+         "\tpushl %ebx\n"
+         "\tpushl %esi\n"
+         "\tpushl %edi\n"
          #if CORO_WIN_TIB
-           "\tpush %fs:0\n"
-           "\tpush %fs:4\n"
-           "\tpush %fs:8\n"
+           "\tpushl %fs:0\n"
+           "\tpushl %fs:4\n"
+           "\tpushl %fs:8\n"
          #endif
-         "\tmov  %esp, (%eax)\n"
-         "\tmov  (%edx), %esp\n"
+         "\tmovl %esp, (%eax)\n"
+         "\tmovl (%edx), %esp\n"
          #if CORO_WIN_TIB
-           "\tpop  %fs:8\n"
-           "\tpop  %fs:4\n"
-           "\tpop  %fs:0\n"
+           "\tpopl %fs:8\n"
+           "\tpopl %fs:4\n"
+           "\tpopl %fs:0\n"
          #endif
-         "\tpop  %edi\n"
-         "\tpop  %esi\n"
-         "\tpop  %ebx\n"
-         "\tpop  %ebp\n"
+         "\tpopl %edi\n"
+         "\tpopl %esi\n"
+         "\tpopl %ebx\n"
+         "\tpopl %ebp\n"
        #else
          #error unsupported architecture
        #endif
@@ -316,10 +348,9 @@ coro_create (coro_context *ctx, coro_func coro, void *arg, void *sptr, long ssiz
   #endif
 
   ctx->sp -= NUM_SAVED;
-  // This location is, in effect, a frame pointer, so we
-  // want to make sure that it is NULL so that when the GC
-  // traces the stack, it doesn't get a garbage frame pointer.
-  ctx->sp[NUM_SAVED - 1] = NULL;
+  // Make sure that ctx->sp[NUM_SAVED - 1],
+  // which is effectively a return address, is zeroed out.
+  memset (ctx->sp, 0, sizeof (*ctx->sp) * NUM_SAVED);
 
 # elif CORO_UCONTEXT
 
