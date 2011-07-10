@@ -82,7 +82,7 @@ LLTuple* getEmptyTuple() {
 
 llvm::Value* emitStore(llvm::Value* val,
                        llvm::Value* ptr) {
-  if (val->getType()->isVoidTy()) {
+  if (isUnit(val->getType())) {
     // Can't store a void!
     return getUnitValue();
   }
@@ -110,7 +110,7 @@ llvm::Value* CodegenPass::emit(LLExpr* e, TypeAST* expectedType) {
 
   if (expectedType) {
     const llvm::Type* ty = getLLVMType(expectedType);
-    if (v->getType() != ty) {
+    if (!typesEqual(v->getType(), ty)) {
       ASSERT(false) << "********* expected type " << str(ty)
                            << "; had type " << str(v->getType())
                            << "\n for value " << str(v);
@@ -285,15 +285,15 @@ llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
 
 llvm::Value* LLAlloc::codegen(CodegenPass* pass) {
   // (alloc base) is equivalent to
-  //    let sv = base;
-  //        rs  = mallocType t;
+  //    let rs  = mallocType t;
+  //        sv = base;
   //        r   = rs^;
   //     in sv >^ r;
   //        r
   //    end
   ASSERT(this && this->baseVar && this->baseVar->type);
-  llvm::Value* storedVal = pass->emit(baseVar, NULL);
   llvm::Value* ptrSlot   = pass->emitMalloc(this->baseVar->type->getLLVMType());
+  llvm::Value* storedVal = pass->emit(baseVar, NULL);
   llvm::Value* ptr       = builder.CreateLoad(ptrSlot, /*isVolatile=*/ false, "alloc_slot_ptr");
   emitStore(storedVal, ptr);
   return ptrSlot;
