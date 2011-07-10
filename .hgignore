@@ -6,8 +6,12 @@ glob:.svn
 glob:.*.swp
 glob:.*.swo
 glob:output
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
 diff.txt
 _obj/
+tmp/
 tools/c-viewer/
 dox/
 notes/_build/
