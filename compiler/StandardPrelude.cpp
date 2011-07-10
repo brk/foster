@@ -38,7 +38,7 @@ bool gPrintLLVMImports = false;
 static const char* sOps[] = {
   "negate", "bitnot",
 
-  "+", "-", "/", "*",
+  "+", "-", "/", "*", "srem",
 
   "<" ,
   "<=",
@@ -83,6 +83,7 @@ codegenPrimitiveOperation(const std::string& op,
   else if (op == "-") { return b.CreateSub(VL, VR, "subtmp"); }
   else if (op == "/") { return b.CreateSDiv(VL, VR, "divtmp"); }
   else if (op == "*") { return b.CreateMul(VL, VR, "multmp"); }
+  else if (op == "srem") { return b.CreateSRem(VL, VR, "sremtmp"); }
 
   // Also have unsigned variants
   else if (op == "<")  { return b.CreateICmpSLT(VL, VR, "slttmp"); }

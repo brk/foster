@@ -159,6 +159,7 @@ primitiveDecls =
     ,(,) "primitive_-_i32"  $ mkFnType [i32, i32] [i32]
     ,(,) "primitive_*_i32"  $ mkFnType [i32, i32] [i32]
     ,(,) "primitive_+_i32"  $ mkFnType [i32, i32] [i32]
+    ,(,) "primitive_srem_i32"$ mkFnType [i32, i32] [i32]
     ,(,) "primitive_<_i32"  $ mkFnType [i32, i32] [i1]
     ,(,) "primitive_<=_i32" $ mkFnType [i32, i32] [i1]
     ,(,) "primitive_==_i32" $ mkFnType [i32, i32] [i1]
