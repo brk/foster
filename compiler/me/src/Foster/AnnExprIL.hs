@@ -8,7 +8,7 @@ module Foster.AnnExprIL where
 
 import Foster.Base
 import Foster.Context
-import Foster.ExprAST
+import Foster.AnnExpr
 import Foster.TypeIL
 import Foster.TypeAST(TypeAST(TupleTypeAST))
 

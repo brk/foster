@@ -29,6 +29,7 @@ import Foster.ProtobufFE
 import Foster.ProtobufIL
 import Foster.ExprAST
 import Foster.TypeAST
+import Foster.AnnExpr
 import Foster.AnnExprIL
 import Foster.TypeIL
 import Foster.ILExpr

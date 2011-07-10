@@ -12,6 +12,7 @@ import System.Console.ANSI
 import Foster.Base
 import Foster.TypeAST
 import Foster.ExprAST
+import Foster.AnnExpr
 import Foster.Infer
 import Foster.Context
 

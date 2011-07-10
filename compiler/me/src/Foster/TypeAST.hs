@@ -25,6 +25,8 @@ data EPattern =
 data E_VarAST = VarAST { evarMaybeType :: Maybe TypeAST
                        , evarName      :: String } deriving (Show)
 
+type AnnVar = TypedId TypeAST
+
 type Sigma = TypeAST
 type Rho   = TypeAST -- No top-level ForAll
 type Tau   = TypeAST -- No ForAlls anywhere
