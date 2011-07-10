@@ -10,25 +10,34 @@ import Foster.Base
 import Foster.TypeAST
 
 data ExprAST =
+        -- Literals
           E_BoolAST       ESourceRange Bool
         | E_IntAST        ESourceRange String
         | E_TupleAST      TupleAST
         | E_FnAST         FnAST
-        | E_LetAST        ESourceRange  TermBinding  ExprAST (Maybe TypeAST)
-        | E_LetRec        ESourceRange [TermBinding] ExprAST (Maybe TypeAST)
-        | E_CallAST       ESourceRange ExprAST TupleAST
-        | E_CompilesAST   ESourceRange (Maybe ExprAST)
+        -- Control flow
         | E_IfAST         ESourceRange ExprAST ExprAST ExprAST
         | E_UntilAST      ESourceRange ExprAST ExprAST
         | E_SeqAST        ESourceRange ExprAST ExprAST
+        -- Creation of bindings
+        | E_Case          ESourceRange ExprAST [(EPattern, ExprAST)]
+        | E_LetAST        ESourceRange  TermBinding  ExprAST (Maybe TypeAST)
+        | E_LetRec        ESourceRange [TermBinding] ExprAST (Maybe TypeAST)
+        -- Use of bindings
+        | E_VarAST        ESourceRange E_VarAST
+        | E_Primitive     ESourceRange E_VarAST
+        -- Others
+        | E_CallAST       ESourceRange ExprAST TupleAST
+        | E_CompilesAST   ESourceRange (Maybe ExprAST)
+        -- Mutable ref cells
         | E_AllocAST      ESourceRange ExprAST
         | E_DerefAST      ESourceRange ExprAST
         | E_StoreAST      ESourceRange ExprAST ExprAST
+        -- Array subscripting
         | E_SubscriptAST  ESourceRange ExprAST ExprAST
-        | E_VarAST        ESourceRange E_VarAST
-        | E_Primitive     ESourceRange E_VarAST
+        -- Terms indexed by types
         | E_TyApp         ESourceRange ExprAST TypeAST
-        | E_Case          ESourceRange ExprAST [(EPattern, ExprAST)]
+
         deriving Show
 
 data TupleAST = TupleAST { tupleAstRange :: ESourceRange
