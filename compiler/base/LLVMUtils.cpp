@@ -271,16 +271,16 @@ bool isVoidOrUnit(const llvm::Type* ty) {
 // Check that ty == {} or {}*
 bool isUnit(const llvm::Type* ty) {
   const llvm::Type* emptyTy = llvm::StructType::get(getGlobalContext(), false);
-  return typesEqual(ty, emptyTy) || isPointerToType(ty, emptyTy);
+  return ty->isVoidTy() || (ty == emptyTy) || isPointerToType(ty, emptyTy);
 }
 
 // Syntactically conspicuous
 bool typesEqual(const llvm::Type* t1, const llvm::Type* t2) {
-  return t1 == t2;
+  return (t1 == t2) || (isUnit(t1) && isUnit(t2));
 }
 
 bool isPointerToType(const llvm::Type* p, const llvm::Type* t) {
-  return p->isPointerTy() && typesEqual(t, p->getContainedType(0));
+  return p->isPointerTy() && (t == p->getContainedType(0));
 }
 
 // returns true if p == t**
