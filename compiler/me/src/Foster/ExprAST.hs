@@ -56,12 +56,12 @@ data AnnExpr =
                         , aintLitInt :: LiteralInt }
 
         -- No need for an explicit type, so long as subexprs are typed.
-        | AnnTuple      [AnnExpr]
+        | AnnTuple      AnnTuple
 
         | E_AnnFn       AnnFn
 
         -- Add an overall type for the application
-        | AnnCall       ESourceRange TypeAST AnnExpr [AnnExpr]
+        | AnnCall       ESourceRange TypeAST AnnExpr AnnTuple
 
         -- Add an overall type for the if branch
         | AnnIf         TypeAST AnnExpr AnnExpr AnnExpr
@@ -96,6 +96,9 @@ data AnnExpr =
         | AnnCompiles   (CompilesResult AnnExpr)
         deriving (Show)
 
+data AnnTuple = E_AnnTuple { annTupleRange :: ESourceRange
+                           , annTupleExprs :: [AnnExpr] } deriving (Show)
+
 -- Body annotated, and overall type added
 data AnnFn        = AnnFn  { annFnType  :: TypeAST
                            , annFnIdent :: Ident
@@ -114,7 +117,7 @@ typeAST annexpr =
   case annexpr of
      (AnnBool _)          -> fosBoolType
      (AnnInt t _)         -> t
-     (AnnTuple es)        -> TupleTypeAST [recur e | e <- es]
+     (AnnTuple tup)       -> TupleTypeAST [recur e | e <- childrenOf annexpr]
      (E_AnnFn annFn)      -> annFnType annFn
      (AnnCall r t b a)    -> t
      (AnnCompiles _)      -> fosBoolType
@@ -261,7 +264,7 @@ instance Structured AnnExpr where
     childrenOf e =
         case e of
             AnnBool         b                    -> []
-            AnnCall  r t b args                  -> b:args
+            AnnCall  r t b argtup                -> b:(annTupleExprs argtup)
             AnnCompiles (CompilesResult (OK e))  -> [e]
             AnnCompiles (CompilesResult (Errors _)) -> []
             AnnIf      t  a b c                  -> [a, b, c]
@@ -274,7 +277,7 @@ instance Structured AnnExpr where
             AnnDeref      t a                    -> [a]
             AnnStore      t a b                  -> [a, b]
             AnnSubscript t a b                   -> [a, b]
-            AnnTuple     es                      -> es
+            AnnTuple tup                         -> annTupleExprs tup
             AnnCase t e bs                       -> e:(map snd bs)
             E_AnnVar      v                      -> []
             AnnPrimitive  v                      -> []

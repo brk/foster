@@ -333,12 +333,12 @@ getFnArgType x = error $ "Called argType on non-FnTypeAST: " ++ show x
 -- argtype = (i32, i32)
 -- eb       = foo
 -- basetype = (?a -> ?b) ((for top level functions))
-typecheckCallWithBaseFnType eargs eb basetype range =
-    case (basetype, typeAST (AnnTuple eargs))
+typecheckCallWithBaseFnType argtup eb basetype range =
+    case (basetype, typeAST (AnnTuple argtup))
       of
          (FnTypeAST formaltype restype cc cs, argtype) -> do
            equateTypes formaltype argtype (Just $ "CallAST mismatch between formal & arg types" ++ show range)
-           return (AnnCall range restype eb eargs)
+           return (AnnCall range restype eb argtup)
 
          otherwise -> do
             ebStruct <- tcShowStructure eb
@@ -475,9 +475,9 @@ typecheckFn' ctx f cc expArgType expBodyType = do
                            (fnAstRange f)))
 
 -----------------------------------------------------------------------
-typecheckTuple ctx exprs Nothing = typecheckTuple' ctx exprs [Nothing | e <- exprs]
-typecheckTuple ctx [E_TupleAST (TupleAST rng [])]
-                         (Just (TupleTypeAST [])) = return (AnnTuple [])
+typecheckTuple ctx exprs Nothing =
+  typecheckTuple' ctx exprs [Nothing | e <- exprs]
+
 typecheckTuple ctx exprs (Just (TupleTypeAST ts)) =
     if length exprs /= length ts
       then tcFails [out $ "typecheckTuple: length of tuple (" ++ (show $ length exprs) ++
@@ -499,7 +499,8 @@ typecheckTuple' ctx es ts = do
         let subactions = map (\(e,t) -> typecheck ctx e t) ets
         results <- tcIntrospect (sequence subactions)
         case results of
-          OK exprs -> return (AnnTuple exprs)
+          OK exprs -> let rng = rangeSpanOf (EMissingSourceRange "typecheckTuple'") es in
+                      return (AnnTuple (E_AnnTuple rng exprs))
           Errors errs -> tcFails errs
 -----------------------------------------------------------------------
 

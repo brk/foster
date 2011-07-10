@@ -84,7 +84,7 @@ ail ctx ae =
         AnnSubscript  t a b        -> do ti <- ilOf t
                                          [x,y]   <- mapM q [a,b]
                                          return $ AISubscript ti x y
-        AnnTuple es                -> do aies <- mapM (ail ctx) es
+        AnnTuple tup               -> do aies <- mapM (ail ctx) (childrenOf ae)
                                          return $ AITuple aies
         AnnCase t e bs             -> do ti <- ilOf t
                                          ei <- q e
@@ -93,7 +93,7 @@ ail ctx ae =
                                          return $ AICase ti ei bsi
         AnnPrimitive v -> tcFails [out $ "Primitives must be called directly!"
                                       ++ "\n\tFound non-call use of " ++ show v]
-        AnnCall r t b args -> do
+        AnnCall r t b (E_AnnTuple _rng args) -> do
             ti <- ilOf t
             argsi <- mapM q args
             case b of
