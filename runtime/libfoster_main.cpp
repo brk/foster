@@ -18,9 +18,9 @@ extern "C" int32_t opaquely_i32(int32_t n);
 
 int main(int argc, char** argv) {
   foster::runtime::initialize();
-  int rv = foster__main();
+  foster__main();
   foster::runtime::cleanup();
-  return rv;
+  return 0;
 }
 
 int32_t opaquely_i32(int32_t n) { return n; }
