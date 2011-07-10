@@ -47,13 +47,6 @@ struct typemap {
   entry entries[0];
 };
 
-int print_ref(void* x) {
-  std::string fmt = format_ref(x);
-  fprintf(gclog, "%s\n", fmt.c_str());
-  fflush(gclog);
-  return 0;
-}
-
 void inspect_typemap(typemap* ti) {
   fprintf(gclog, "typemap: %p\n", ti); fflush(gclog);
   if (!ti) return;
@@ -401,12 +394,6 @@ public:
     return false;
   }
 
-  const char* describe(void* ptr) {
-    if (curr->contains(ptr)) return "curr";
-    if (next->contains(ptr)) return "next";
-    return "unknown";
-  }
-
   void copy_or_update(void* body, void** root, const void* meta) {
     //       |------------|            |------------|
     // root: |    body    |---\        |    _size   |
@@ -592,13 +579,6 @@ int cleanup() {
   bool had_problems = allocator->had_problems();
   delete allocator;
   return had_problems ? 99 : 0;
-}
-
-std::string format_ref(void* ptr) {
-  static char buf[64];
-  // TODO add method lock
-  sprintf(buf, "%p - (%s)", ptr, allocator->describe(ptr));
-  return std::string(buf);
 }
 
 extern "C" void* memalloc_cell(typemap* typeinfo) {
@@ -827,7 +807,6 @@ void scanCoroStack(foster_generic_coro* coro,
 
   fprintf(gclog, "========= scanning coro (%p, fn=%p, %s) stack from %p\n",
       coro, coro->fn, coro_status(coro->status), frameptr);
-  print_ref(coro);
 
   visitGCRootsWithStackMaps(frameptr, visitor);
 
