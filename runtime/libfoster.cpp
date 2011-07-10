@@ -200,13 +200,6 @@ int force_gc_for_debugging_purposes() {
   gc::force_gc_for_debugging_purposes(); return 0;
 }
 
-int print_ref(void* x) {
-  std::string fmt = gc::format_ref(x);
-  fprintf(stdout, "%s\n", fmt.c_str());
-  fflush(stdout);
-  return 0;
-}
-
 void  print_int(mp_int m) { fprint_mp_int(stdout, m, 10); }
 void expect_int(mp_int m) { fprint_mp_int(stderr, m, 10); }
 void  print_intx(mp_int m) { fprint_mp_int(stdout, m, 16); }
