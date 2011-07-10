@@ -472,9 +472,11 @@ void copying_gc_root_visitor(void **root, const void *meta) {
   }
 }
 
-void copying_gc::gc() {
-  ++num_collections;
+base::TimeTicks gc_time;
 
+void copying_gc::gc() {
+  base::TimeTicks begin = base::TimeTicks::HighResNow();
+  ++num_collections;
   fprintf(gclog, "visiting gc roots on current stack\n"); fflush(gclog);
   visitGCRootsWithStackMaps(__builtin_frame_address(0),
                             copying_gc_root_visitor);
@@ -489,6 +491,8 @@ void copying_gc::gc() {
   next->clear(); // for debugging purposes
   fprintf(gclog, "\t/gc\n\n");
   fflush(gclog);
+
+  gc_time += (base::TimeTicks::HighResNow() - begin);
 }
 
 std::map<void*, const stackmap::PointCluster*> clusterForAddress;
@@ -557,9 +561,11 @@ void register_stackmaps() {
   fflush(gclog);
 }
 
-base::TimeTicks start;
+base::TimeTicks runtime_start;
+base::TimeTicks    init_start;
 
 void initialize() {
+  init_start = base::TimeTicks::HighResNow();
   gclog = fopen("gclog.txt", "w");
   fprintf(gclog, "----------- gclog ------------\n");
 
@@ -568,14 +574,25 @@ void initialize() {
 
   register_stackmaps();
 
-  start = base::TimeTicks::HighResNow();
+  gc_time = base::TimeTicks();
+  runtime_start = base::TimeTicks::HighResNow();
+}
+
+void gclog_time(const char* msg, base::TimeDelta d) {
+  fprintf(gclog, "%s: %2ld.%03ld s\n", msg,
+          long(d.InSeconds()),
+          long(d.InMilliseconds() - (d.InSeconds() * 1000)));
 }
 
 int cleanup() {
-  base::TimeDelta elapsed = base::TimeTicks::HighResNow() - start;
-  fprintf(gclog, "Elapsed runtime: %ld.%ld s\n",
-                  long(elapsed.InSeconds()),
-          long(elapsed.InMilliseconds() - (elapsed.InSeconds() * 1000)));
+  base::TimeTicks fin = base::TimeTicks::HighResNow();
+  base::TimeDelta total_elapsed = fin - init_start;
+  base::TimeDelta  init_elapsed = runtime_start - init_start;
+  base::TimeDelta    gc_elapsed = gc_time - base::TimeTicks();
+  gclog_time("Elapsed runtime", total_elapsed);
+  gclog_time("Initlzn runtime",  init_elapsed);
+  gclog_time("     GC runtime",    gc_elapsed);
+  gclog_time("Mutator runtime", total_elapsed - gc_elapsed - init_elapsed);
   bool had_problems = allocator->had_problems();
   delete allocator;
   return had_problems ? 99 : 0;
