@@ -14,7 +14,7 @@ namespace foster {
 namespace runtime {
 
 void initialize();
-void cleanup();
+int  cleanup();
 
 } // namespace foster::runtime
 } // namespace foster

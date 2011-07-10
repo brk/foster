@@ -199,7 +199,6 @@ def run_one_test(testpath, paths, tmpdir):
     if (not did_fail) and options and options.interpret:
       did_fail = run_diff(act_filename, iact_filename)
   else:
-    print exepath, "failed with non-zero return value."
     did_fail = True
 
   total_elapsed = elapsed_since(start)
@@ -213,7 +212,11 @@ def run_one_test(testpath, paths, tmpdir):
   infile.close()
 
   if options and options.verbose:
-      run_command(["paste", exp_filename, act_filename], {}, "")
+    run_command(["paste", exp_filename, act_filename], {}, "")
+
+  if rv != 0:
+    print exepath, "failed with non-zero return value", rv
+
   return result
 
 

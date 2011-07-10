@@ -6,7 +6,7 @@ namespace runtime {
 namespace gc {
 
 void initialize();
-void cleanup();
+int  cleanup();
 void force_gc_for_debugging_purposes();
 std::string format_ref(void*);
 

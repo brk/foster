@@ -247,7 +247,7 @@ class copying_gc {
       // * Any slots containing stack pointers should be recursively update()ed.
       // * Any slots containing heap pointers should be
       //   overwritten with copy()'d values.
-      void update(void* body, const void* meta) {
+      void ss_update(void* body, const void* meta) {
         if (!meta) {
           fprintf(gclog, "can't update body %p with no type map!\n", body);
           return;
@@ -269,9 +269,9 @@ class copying_gc {
 
           typemap* envmap = (typemap*) *envptr;
           if (this->parent->is_probable_stack_pointer(envptr, envptr_slot)) {
-            update(envptr, envmap);
+            ss_update(envptr, envmap);
           } else {
-            *envptr_slot = copy(envptr, envmap);
+            *envptr_slot = ss_copy(envptr, envmap);
           }
           return;
         }
@@ -289,9 +289,9 @@ class copying_gc {
           // set the copied cell field to subfwdaddr
           if (*oldslot != NULL) {
             if (this->parent->is_probable_stack_pointer(*oldslot, oldslot)) {
-              update(*oldslot, e.typeinfo);
+              ss_update(*oldslot, e.typeinfo);
             } else {
-              *oldslot = copy(*oldslot, e.typeinfo);
+              *oldslot = ss_copy(*oldslot, e.typeinfo);
             }
           }
         }
@@ -314,7 +314,9 @@ class copying_gc {
       }
 
       // returns body of newly allocated cell
-      void* copy(void* body, const void* meta) {
+      void* ss_copy(void* body, const void* meta) {
+        if (!this->parent->owns(body)) return body;
+
         heap_cell* cell = heap_cell::for_body(body);
         meta = meta ? meta : cell->get_meta();
 
@@ -373,7 +375,7 @@ class copying_gc {
                 void** newslot = (void**) offset(new_addr->body_addr(), e.offset);
                 //fprintf(gclog, "recursively copying of cell %p slot %p with ti %p to %p\n",
                  // cell, oldslot, e.typeinfo, newslot); fflush(gclog);
-                *newslot = copy(*oldslot, e.typeinfo);
+                *newslot = ss_copy(*oldslot, e.typeinfo);
                 //fprintf(gclog, "recursively copied  of cell %p slot %p with ti %p to %p\n",
                  // cell, oldslot, e.typeinfo, newslot); fflush(gclog);
               }
@@ -401,6 +403,7 @@ class copying_gc {
 
   int num_allocations;
   int num_collections;
+  bool saw_bad_pointer;
 
   void gc();
 
@@ -428,6 +431,7 @@ public:
 
     num_allocations = 0;
     num_collections = 0;
+    saw_bad_pointer = false;
   }
 
   ~copying_gc() {
@@ -435,7 +439,22 @@ public:
                       num_allocations, num_collections);
   }
 
+  bool had_problems() { return saw_bad_pointer; }
+
   void force_gc_for_debugging_purposes() { this->gc(); }
+
+  bool owns(void* ptr) {
+    if (curr->contains(ptr)) return true;
+    saw_bad_pointer = true;
+    if (next->contains(ptr)) {
+      fprintf(gclog, "foster_gc error: tried to collect"
+                     " pointer in next-semispace: %p\n", ptr);
+      return false;
+    }
+    fprintf(gclog, "foster_gc error: copying_gc cannot collect"
+                     " pointer that it did not allocate: %p\n", ptr);
+    return false;
+  }
 
   const char* describe(void* ptr) {
     if (curr->contains(ptr)) return "curr";
@@ -451,12 +470,12 @@ public:
 
   // copy the cell at the given address to the next semispace
   void* copy(void* body, const void* meta) {
-    return next->copy(body, meta);
+    return next->ss_copy(body, meta);
   }
 
   // update slots in the body containing pointers to heap cells
   void update(void* body, const void* meta) {
-    next->update(body, meta);
+    next->ss_update(body, meta);
   }
 
   void* allocate_cell(typemap* typeinfo) {
@@ -513,6 +532,7 @@ void copying_gc_root_visitor(void **root, const void *meta) {
   }
 
   if (body) {
+    // todo: change test to is_body_immobile(...)
     if (allocator->is_probable_stack_pointer(body, root)) {
       //       |------------|
       // root: |    body    |---\
@@ -649,13 +669,14 @@ void initialize() {
   start = base::TimeTicks::HighResNow();
 }
 
-void cleanup() {
+int cleanup() {
   base::TimeDelta elapsed = base::TimeTicks::HighResNow() - start;
   fprintf(gclog, "Elapsed runtime: %ld.%ld s\n",
                   long(elapsed.InSeconds()),
           long(elapsed.InMilliseconds() - (elapsed.InSeconds() * 1000)));
-
+  bool had_problems = allocator->had_problems();
   delete allocator;
+  return had_problems ? 99 : 0;
 }
 
 std::string format_ref(void* ptr) {

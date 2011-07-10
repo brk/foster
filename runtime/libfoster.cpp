@@ -81,8 +81,8 @@ void initialize() {
   gc::initialize();
 }
 
-void cleanup() {
-  gc::cleanup();
+int cleanup() {
+  return gc::cleanup();
 }
 
 #ifndef PRId64
