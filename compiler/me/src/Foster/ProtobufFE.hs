@@ -144,12 +144,12 @@ parseLet pbexpr = do
 parseSeq pbexpr = do
     exprs <- mapM parseExpr $ toList (toList $ PbExpr.parts pbexpr)
     return $ buildSeqs exprs
-
--- | Convert a list of ExprASTs to a right-leaning "list" of SeqAST nodes.
-buildSeqs :: [ExprAST] -> ExprAST
-buildSeqs []    = E_TupleAST $ TupleAST (EMissingSourceRange "buildSeqs") []
-buildSeqs [a]   = a
-buildSeqs (a:b) = E_SeqAST (EMissingSourceRange "buildSeqs") a (buildSeqs b)
+      where
+        -- Convert a list of ExprASTs to a right-leaning "list" of SeqAST nodes.
+        buildSeqs :: [ExprAST] -> ExprAST
+        buildSeqs []    = E_TupleAST $ TupleAST (EMissingSourceRange "buildSeqs") []
+        buildSeqs [a]   = a
+        buildSeqs (a:b) = E_SeqAST (EMissingSourceRange "buildSeqs") a (buildSeqs b)
 
 parseAlloc pbexpr = do
     range <- parseRange pbexpr
