@@ -243,6 +243,7 @@ set(LIBFOSTER_CPP_SOURCES
         ${PROJECT_SOURCE_DIR}/runtime/libfoster.cpp
         ${PROJECT_SOURCE_DIR}/runtime/libfoster_coro.cpp
         ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc.cpp
+        ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc_stackmaps.cpp
         ${PROJECT_SOURCE_DIR}/runtime/libfoster_gc_roots.cpp
 )
 

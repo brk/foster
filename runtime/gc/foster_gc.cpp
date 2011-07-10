@@ -20,6 +20,10 @@
 
 /////////////////////////////////////////////////////////////////
 
+void register_stackmaps();
+
+#include "foster_gc_utils.h"
+
 #include <sstream>
 #include <list>
 #include <vector>
@@ -31,122 +35,11 @@ namespace gc {
 
 FILE* gclog = NULL;
 
-// This structure describes the layout of a particular type,
-// giving offsets and type descriptors for the pointer slots.
-// Note that the GC plugin emits unpadded elements!
-struct typemap {
-  int64_t cell_size;
-  const char* name;
-  int32_t numEntries;
-  char isCoro;
-  char isArray;
-  struct entry {
-    const void* typeinfo;
-    int32_t offset;
-  };
-  entry entries[0];
-};
-
-void inspect_typemap(typemap* ti) {
-  fprintf(gclog, "typemap: %p\n", ti); fflush(gclog);
-  if (!ti) return;
-
-  fprintf(gclog, "\tsize: %lld\n", ti->cell_size);
-  fprintf(gclog, "\tname: %s\n", ti->name);
-  fprintf(gclog, "\tisCoro: %d\n", ti->isCoro);
-  fprintf(gclog, "\tnumE: %d\n", ti->numEntries);
-  fflush(gclog);
-  int iters = ti->numEntries > 128 ? 0 : ti->numEntries;
-  for (int i = 0; i < iters; ++i) {
-    fprintf(gclog, "\t\t@%d: %p\n", ti->entries[i].offset,
-                                 ti->entries[i].typeinfo);
-    fflush(gclog);
-  }
-}
-
-struct stackmap {
-  struct OffsetWithMetadata {
-    void* metadata;
-    int32_t offset;
-  };
-  // GC maps emit structures without alignment, so we can't simply
-  // use sizeof(stackmap::OffsetWithMetadata), because that value
-  // includes padding.
-
-  // A safe point is a location in the code stream where it is
-  // safe for garbage collection to happen (that is, where the
-  // code generator guarantees that any registers which might
-  // hold references to live objects have been stored on the stack).
-  //
-  // A point cluster is a collection of safe points which share
-  // the same layout of live pointers. Because LLVM does not (as of
-  // this writing) calculate liveness information, all safe points
-  // in the same function wind up with the same "live" variables.
-  int32_t pointClusterCount;
-  struct PointCluster {
-    // register_stackmaps() assumes it knows the layout of this struct!
-    int32_t frameSize;
-    int32_t addressCount;
-    int32_t liveCountWithMetadata;
-    int32_t liveCountWithoutMetadata;
-    OffsetWithMetadata
-            liveOffsetsWithMetadata[0];
-    int32_t liveOffsetsWithoutMetadata[0];
-    void*   safePointAddresses[0];
-
-    // Use manual pointer arithmetic to avoid C's padding rules.
-    const OffsetWithMetadata* offsetWithMetadata(int i) const {
-      #define OFFSET_WITH_METADATA_SIZE (sizeof(void*) + sizeof(int32_t))
-      return (const OffsetWithMetadata*)
-                  offset((void*) liveOffsetsWithMetadata,
-                         i * OFFSET_WITH_METADATA_SIZE);
-    }
-
-    // TODO provide similar methods to find actual
-    // addresses of the other flexible arrays.
-  };
-  PointCluster pointClusters[0];
-};
-
-struct stackmap_table {
-  int32_t numStackMaps;
-  stackmap stackmaps[0];
-};
-
-// This symbol is emitted by the fostergc LLVM GC plugin to the
-// final generated assembly.
-extern "C" {
-  extern stackmap_table foster__gcmaps;
-}
-
 ////////////////////////////////////////////////////////////////////
 
-typedef void (*gc_visitor_fn)(void** root, const void* meta);
-
-void visitGCRootsWithStackMaps(void* start_frame,
-                               gc_visitor_fn visitor);
-
-void copying_gc_root_visitor(void **root, const void *meta);
+void inspect_typemap(typemap* ti);
 
 void scanCoroStack(foster_generic_coro* coro, gc_visitor_fn visitor);
-
-bool isMetadataPointer(const void* meta) {
- return uint64_t(meta) > uint64_t(1<<16);
-}
-
-const unsigned int FOSTER_GC_DEFAULT_ALIGNMENT = 16;      // 0b0..010000
-const unsigned int FOSTER_GC_DEFAULT_ALIGNMENT_MASK = 15; // 0b0..001111
-
-
-// E.g. if powerOf2 is 4, performs the following mapping:
-// 0 -> 0      1 -> 4
-// 2 -> 4      3 -> 4
-// 4 -> 4      5 -> 8
-template <typename T>
-inline T* roundUpToNearestMultipleWeak(T* v, intptr_t powerOf2) {
-  uintptr_t mask = powerOf2 - 1;
-  return (T*) ((uintptr_t(v) + mask) & ~mask);
-}
 
 inline bool
 isCoroBelongingToOtherThread(const typemap* map, void* body) {
@@ -235,21 +128,7 @@ class copying_gc {
         return body_addr;
       }
 
-      void complain_to_lack_of_metadata(void* body, heap_cell* cell) {
-        const int ptrsize = sizeof(void*);
-        void** bp4 = (void**) offset(body, ptrsize);
-        const void* meta2 = *(const void**) offset(body, -ptrsize);
-        inspect_typemap((typemap*) meta2);
-        fprintf(gclog, "called copy with null metadata\n"); fflush(gclog);
-        fprintf(gclog, "body   is %p -> %p\n", body, *(void**)body); fflush(gclog);
-        fprintf(gclog, "body+%d is %p -> %p\n", ptrsize, offset(body, ptrsize), *bp4); fflush(gclog);
-        fprintf(gclog, "body-%d is %p -> %p\n", ptrsize, offset(body,-ptrsize), *(void**)offset(body,-ptrsize));
-        fflush(gclog);
-        void** envptr = (void**)*bp4;
-        fprintf(gclog, "envptr: %p -> %p\n", envptr, *envptr); fflush(gclog);
-        typemap* envtm = (typemap*) *envptr;
-        fprintf(gclog, "env tm name is %s, # ptrs = %d\n", envtm->name, envtm->numEntries); fflush(gclog);
-      }
+      void complain_to_lack_of_metadata(void* body, heap_cell* cell);
 
       // returns body of newly allocated cell
       void* ss_copy(void* body, const void* meta) {
@@ -473,10 +352,12 @@ void copying_gc_root_visitor(void **root, const void *meta) {
 }
 
 base::TimeTicks gc_time;
+base::TimeTicks runtime_start;
+base::TimeTicks    init_start;
 
 void copying_gc::gc() {
   base::TimeTicks begin = base::TimeTicks::HighResNow();
-  ++num_collections;
+  ++this->num_collections;
   fprintf(gclog, "visiting gc roots on current stack\n"); fflush(gclog);
   visitGCRootsWithStackMaps(__builtin_frame_address(0),
                             copying_gc_root_visitor);
@@ -495,74 +376,10 @@ void copying_gc::gc() {
   gc_time += (base::TimeTicks::HighResNow() - begin);
 }
 
-std::map<void*, const stackmap::PointCluster*> clusterForAddress;
+typedef std::map<void*, const stackmap::PointCluster*> ClusterMap;
+ClusterMap clusterForAddress;
 
-template <typename T>
-intptr_t byte_distance(T* a, T* b) {
-  return ((char*) a) - ((char*) b);
-}
-
-// Stack map registration walks through the stack maps emitted
-// by the Foster LLVM GC plugin
-void register_stackmaps() {
-  int32_t numStackMaps = foster__gcmaps.numStackMaps;
-  fprintf(gclog, "num stack maps: %d\n", numStackMaps); fflush(gclog);
-
-  void* ps = (void*) foster__gcmaps.stackmaps;
-  size_t totalOffset = 0;
-
-  for (int32_t m = 0; m < numStackMaps; ++m) {
-    // Compute a properly aligned stackmap pointer.
-    const stackmap* unaligned_stackmap_ptr = (const stackmap*) offset(ps, totalOffset);
-    const stackmap* stackmap_ptr = roundUpToNearestMultipleWeak(unaligned_stackmap_ptr, sizeof(void*));
-    totalOffset += byte_distance(stackmap_ptr, unaligned_stackmap_ptr);
-
-    fprintf(gclog, "  %d stackmap_ptr: %p; unaligned = %p\n", m, stackmap_ptr, unaligned_stackmap_ptr); fflush(gclog);
-    const stackmap& s = *stackmap_ptr;
-    int32_t numClusters = s.pointClusterCount;
-    fprintf(gclog, "  num clusters: %d\n", numClusters); fflush(gclog);
-
-    totalOffset += sizeof(s.pointClusterCount);
-
-    for (int32_t i = 0; i < numClusters; ++i) {
-      const stackmap::PointCluster* pc =
-        (const stackmap::PointCluster*) offset(ps, totalOffset);
-      //fprintf(gclog, "  pointcluster*: %p\n", pc); fflush(gclog);
-
-      const stackmap::PointCluster& c = *pc;
-      totalOffset += sizeof(int32_t) * 4 // sizes + counts
-                   + sizeof(int32_t) * c.liveCountWithoutMetadata
-                   + OFFSET_WITH_METADATA_SIZE * c.liveCountWithMetadata;
-
-      void** safePointAddresses = (void**) offset(ps, totalOffset);
-      totalOffset += sizeof(void*)   * c.addressCount;
-
-      fprintf(gclog, "  safePointAddrs: "); fflush(gclog);
-      for (int i = 0; i < c.addressCount; ++i) {
-        fprintf(gclog, " %p ,", safePointAddresses[i]);
-      }
-      fprintf(gclog, "\n");
-      //fprintf(gclog, "  sizeof(stackmap::OffsetWithMetadata): %lu\n", sizeof(stackmap::OffsetWithMetadata));
-      //fprintf(gclog, "  OFFSET_WITH_METADATA_SIZE: %lu\n", OFFSET_WITH_METADATA_SIZE);
-      //fprintf(gclog, "  c.liveCountWithMetadata: %d\n", c.liveCountWithMetadata);
-      //fprintf(gclog, "  c.liveCountWithoutMetadata: %d\n", c.liveCountWithoutMetadata);
-
-      for (int32_t i = 0; i < c.addressCount; ++i) {
-        void* safePointAddress = safePointAddresses[i];
-        clusterForAddress[safePointAddress] = pc;
-      }
-
-      fprintf(gclog, "    cluster fsize %d, & %d, live: %d + %d\n\n",
-                     c.frameSize, c.addressCount,
-                     c.liveCountWithMetadata, c.liveCountWithoutMetadata);
-    }
-  }
-  fprintf(gclog, "--------- gclog stackmap registration complete ----------\n");
-  fflush(gclog);
-}
-
-base::TimeTicks runtime_start;
-base::TimeTicks    init_start;
+void register_stackmaps(ClusterMap& clusterForAddress);
 
 void initialize() {
   init_start = base::TimeTicks::HighResNow();
@@ -572,7 +389,7 @@ void initialize() {
   const int KB = 1024;
   allocator = new copying_gc(1024 * KB);
 
-  register_stackmaps();
+  register_stackmaps(clusterForAddress);
 
   gc_time = base::TimeTicks();
   runtime_start = base::TimeTicks::HighResNow();
@@ -595,6 +412,7 @@ int cleanup() {
   gclog_time("Mutator runtime", total_elapsed - gc_elapsed - init_elapsed);
   bool had_problems = allocator->had_problems();
   delete allocator;
+  fclose(gclog); gclog = NULL;
   return had_problems ? 99 : 0;
 }
 
@@ -611,42 +429,7 @@ void force_gc_for_debugging_purposes() {
   allocator->force_gc_for_debugging_purposes();
 }
 
-// Refresher: on x86, stack frames look like this,
-// provided we've told LLVM to disable frame pointer elimination:
-// 0x0
-//      ........
-//    |-----------|
-//    |local vars | <- top of stack
-//    |saved regs |
-//    |   etc     |
-//    |-----------|
-// +--| prev ebp  | <-- %ebp
-// |  |-----------|
-// |  | ret addr  | (PUSHed by call insn)
-// |  |-----------|
-// |  | fn params |
-// v  | ......... |
-//
-// 0x7f..ff (kernel starts at 0x80....)
-//
-// Each frame pointer stores the address of the previous
-// frame pointer.
-struct frameinfo { frameinfo* frameptr; void* retaddr; };
-
-// obtain frame via (frameinfo*) __builtin_frame_address(0)
-int backtrace_x86(frameinfo* frame, frameinfo* frames, size_t frames_sz) {
-  int i = 0;
-  while (frame && frames_sz --> 0) {
-    if (1 && frame) {
-      fprintf(gclog, "...... frame: %p, frameptr: %p, retaddr: %p\n", frame, frame->frameptr, frame->retaddr);
-      fflush(gclog);
-    }
-    frames[i] = (*frame);
-    frame     = (*frame).frameptr;
-    ++i;
-  }
-  return i;
-}
+#include "foster_gc_backtrace_x86-inl.h"
 
 void visitGCRootsWithStackMaps(void* start_frame,
                                gc_visitor_fn visitor) {
@@ -656,19 +439,19 @@ void visitGCRootsWithStackMaps(void* start_frame,
 
   // Collect frame pointers and return addresses
   // for the current call stack.
-  int nFrames = backtrace_x86((frameinfo*) start_frame, frames, MAX_NUM_RET_ADDRS);
+  int nFrames = foster_backtrace((frameinfo*) start_frame, frames, MAX_NUM_RET_ADDRS);
   const bool SANITY_CHECK_CUSTOM_BACKTRACE = false;
   if (SANITY_CHECK_CUSTOM_BACKTRACE) {
     // backtrace() fails when called from a coroutine's stack...
     int numRetAddrs = backtrace((void**)&retaddrs, MAX_NUM_RET_ADDRS);
-#if 1
-    for (int i = 0; i < numRetAddrs; ++i) {
-      fprintf(gclog, "backtrace: %p\n", retaddrs[i]);
+    if (true) {
+      for (int i = 0; i < numRetAddrs; ++i) {
+        fprintf(gclog, "backtrace: %p\n", retaddrs[i]);
+      }
+      for (int i = 0; i < nFrames; ++i) {
+        fprintf(gclog, "           %p\n", frames[i].retaddr);
+      }
     }
-    for (int i = 0; i < nFrames; ++i) {
-      fprintf(gclog, "           %p\n", frames[i].retaddr);
-    }
-#endif
     int diff = numRetAddrs - nFrames;
     for (int i = 0; i < numRetAddrs; ++i) {
       if (frames[i].retaddr != retaddrs[diff + i]) {
@@ -729,13 +512,16 @@ void visitGCRootsWithStackMaps(void* start_frame,
   }
 }
 
+/////////////////////////////////////////////////////////////////
+////////////////////// coro functions ///////////////////////////
+/////////////////////////////////////////////////////////////////
 
 // coro_transfer (using CORO_ASM) pushes a fixed number
 // of registers on the stack before switching stacks and jumping.
 // Because coro_transfer is marked noinline, the first register
 // implicitly pushed is the old %eip, and the first register
 // explicitly pushed is %ebp /  %rbp, thus forming an x86 stack frame.
-void* topmost_frame_pointer(foster_generic_coro* coro) {
+void* coro_topmost_frame_pointer(foster_generic_coro* coro) {
   // If the coro status is "running", we should scan the coro
   // but not its stack (since the stack will be examined from ::gc()).
   // TODO when multithreading, running coros should be stamed with
@@ -819,7 +605,7 @@ void scanCoroStack(foster_generic_coro* coro,
   // TODO mark stack so it won't be swept away
 
   // extract frame pointer from ctx, and visit its stack.
-  void* frameptr = topmost_frame_pointer(coro);
+  void* frameptr = coro_topmost_frame_pointer(coro);
   foster_assert(frameptr != NULL, "(c)coro frame ptr shouldn't be NULL!");
 
   fprintf(gclog, "========= scanning coro (%p, fn=%p, %s) stack from %p\n",
@@ -832,6 +618,44 @@ void scanCoroStack(foster_generic_coro* coro,
 }
 
 /////////////////////////////////////////////////////////////////
+
+void copying_gc::semispace::complain_to_lack_of_metadata(
+                             void* body, heap_cell* cell) {
+  const int ptrsize = sizeof(void*);
+  void** bp4 = (void**) offset(body, ptrsize);
+  const void* meta2 = *(const void**) offset(body, -ptrsize);
+  inspect_typemap((typemap*) meta2);
+  fprintf(gclog, "called copy with null metadata\n"); fflush(gclog);
+  fprintf(gclog, "body   is %p -> %p\n", body, *(void**)body); fflush(gclog);
+  fprintf(gclog, "body+%d is %p -> %p\n", ptrsize, offset(body, ptrsize), *bp4); fflush(gclog);
+  fprintf(gclog, "body-%d is %p -> %p\n", ptrsize, offset(body,-ptrsize), *(void**)offset(body,-ptrsize));
+  fflush(gclog);
+  void** envptr = (void**)*bp4;
+  fprintf(gclog, "envptr: %p -> %p\n", envptr, *envptr); fflush(gclog);
+  typemap* envtm = (typemap*) *envptr;
+  fprintf(gclog, "env tm name is %s, # ptrs = %d\n", envtm->name, envtm->numEntries); fflush(gclog);
+}
+
+void inspect_typemap(typemap* ti) {
+  fprintf(gclog, "typemap: %p\n", ti); fflush(gclog);
+  if (!ti) return;
+
+  fprintf(gclog, "\tsize: %lld\n", ti->cell_size);
+  fprintf(gclog, "\tname: %s\n", ti->name);
+  fprintf(gclog, "\tisCoro: %d\n", ti->isCoro);
+  fprintf(gclog, "\tnumE: %d\n", ti->numEntries);
+  fflush(gclog);
+  int iters = ti->numEntries > 128 ? 0 : ti->numEntries;
+  for (int i = 0; i < iters; ++i) {
+    fprintf(gclog, "\t\t@%d: %p\n", ti->entries[i].offset,
+                                 ti->entries[i].typeinfo);
+    fflush(gclog);
+  }
+}
+
+bool isMetadataPointer(const void* meta) {
+ return uint64_t(meta) > uint64_t(1<<16);
+}
 
 } } } // namespace foster::runtime::gc
 
