@@ -20,50 +20,14 @@ using llvm::FunctionType;
 
 const llvm::Type* foster_generic_coro_t;
 
-// Converts T (X, Y) and T (X, Y)* to T (X, Y)
-FnTypeAST* tryExtractCallableType(TypeAST* ty) {
-  if (RefTypeAST* r = dynamic_cast<RefTypeAST*>(ty)) {
-    // Avoid doing full recursion on pointer types; fn* is callable,
-    // but fn** is not.
-    ty = r->getElementType();
-  }
-  if (FnTypeAST* f = dynamic_cast<FnTypeAST*>(ty)) { return f; }
-  //std::cerr << "RETURNING NULL for extracting function type from " << str(ty) << std::endl;
-  return NULL;
-}
-
-std::map<TupleTypeAST*, bool> namedClosureTypes;
-
-void addClosureTypeName(llvm::Module* mod, TupleTypeAST* cty) {
-  if (!mod) return;
-  if (namedClosureTypes[cty]) return;
-
-  std::stringstream ss;
-  ss << "ClosureTy";
-  FnTypeAST* fty = tryExtractCallableType(cty->getContainedType(0));
-  if (fty != NULL) {
-    // Skip generic closure argument
-    for (int i = 1; i < fty->getNumParams(); ++i) {
-      ss << "_" << *(fty->getParamType(i)->getLLVMType());
-    }
-    ss << "_to_" << *(fty->getReturnType()->getLLVMType());
-
-    mod->addTypeName(foster::ParsingContext::freshName(ss.str()),
-                     cty->getLLVMType());
-
-    namedClosureTypes[cty] = true;
-  }
-}
-
 // Converts t1 (t2, t3)   to  t1 (i8*, t2, t3)*
-FnTypeAST* genericClosureVersionOf(const FnTypeAST* fnty, bool skipFirstArg) {
+FnTypeAST* genericClosureVersionOf(const FnTypeAST* fnty) {
   TypeAST* envType = RefTypeAST::get(TypeAST::i(8));
 
   std::vector<TypeAST*> fnParams;
   fnParams.push_back(envType);
 
-  int firstArg = skipFirstArg ? 1 : 0;
-  for (int i = firstArg; i < fnty->getNumParams(); ++i) {
+  for (int i = 0; i < fnty->getNumParams(); ++i) {
     fnParams.push_back(fnty->getParamType(i));
   }
 
@@ -73,19 +37,14 @@ FnTypeAST* genericClosureVersionOf(const FnTypeAST* fnty, bool skipFirstArg) {
   return f;
 }
 
-FnTypeAST* genericClosureVersionOf(const FnTypeAST* fnty) {
-  return genericClosureVersionOf(fnty, /*skipFirstArg*/ false);
-}
-
 // converts      t1 (t2, t3)      to { t1 (i8*, t2, t3)*, i8* }
-// or    t1 (envty* nest, t2, t3) to { t1 (i8*, t2, t3)*, i8* }
-static TupleTypeAST* genericClosureTypeFor(const TypeAST* ty, bool skipFirstArg) {
+TupleTypeAST* genericClosureTypeFor(const TypeAST* ty) {
   if (const FnTypeAST* fnty = dynamic_cast<const FnTypeAST*>(ty)) {
     TypeAST* envType = RefTypeAST::get(TypeAST::i(8));
 
     // We can mark closures with whatever calling convention we want,
     // since closures are internal by definition.
-    FnTypeAST* newProcTy = genericClosureVersionOf(fnty, skipFirstArg);
+    FnTypeAST* newProcTy = genericClosureVersionOf(fnty);
     std::vector<TypeAST*> cloTypes;
     cloTypes.push_back(newProcTy);
     cloTypes.push_back(envType);
@@ -95,16 +54,6 @@ static TupleTypeAST* genericClosureTypeFor(const TypeAST* ty, bool skipFirstArg)
     foster::EDiag() << "unable to extract fn type from " << str(const_cast<TypeAST*>(ty)) << "\n";
     return NULL;
   }
-}
-
-// converts t1 (t2, t3) to { t1 (i8*, t2, t3)*, i8* }
-TupleTypeAST* genericClosureTypeFor(const TypeAST* ty) {
-  return genericClosureTypeFor(ty, false);
-}
-
-// converts t1 (envty*, t2, t3) to { t1 (i8*, t2, t3)*, i8* }
-TupleTypeAST* genericVersionOfClosureType(const TypeAST* ty) {
-  return genericClosureTypeFor(ty, true);
 }
 
 bool isValidClosureType(const llvm::Type* ty) {
