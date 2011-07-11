@@ -49,8 +49,8 @@ data OutputOr expr
     deriving (Eq)
 
 data CompilesResult expr = CompilesResult (OutputOr expr)
-instance (Show expr) => Show (CompilesResult expr) where
-  show (CompilesResult (OK e))     = show e
+instance (SourceRanged expr) => Show (CompilesResult expr) where
+  show (CompilesResult (OK e))     = show (rangeOf e)
   show (CompilesResult (Errors _)) = "<...invalid term...>"
 
 type Uniq = Int
