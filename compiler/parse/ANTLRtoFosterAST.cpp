@@ -333,8 +333,25 @@ ExprAST* parseLets(pTree tree) {
   return new LetAST(bindings, e, rangeOf(tree));
 }
 
-ExprAST* parseTermVar(pTree t) {
-  return new VariableAST(textOf(child(t, 0)), NULL, rangeOf(t));
+bool isLexicalOperator(const std::string& text) {
+  ASSERT(!text.empty());
+  return !isalpha(text[0]); // coincides with fragment IDENT_START
+}
+
+std::string getVarName(std::string text) {
+  if (isLexicalOperator(text) && text != ">^") {
+    return "primitive_" + text + "_i32";
+  } else {
+    return text;
+  }
+}
+
+VariableAST* parseVarDirect(pTree t) {
+  return new VariableAST(getVarName(textOf(t)), NULL, rangeOf(t));
+}
+
+VariableAST* parseTermVar(pTree t) {
+  return new VariableAST(getVarName(textOfVar(t)), NULL, rangeOf(t));
 }
 
 // ^(IF e e_seq e_seq)
@@ -532,43 +549,46 @@ ExprAST* parseBinops(pTree tree) {
   return NULL;
 }
 
-void leftAssoc(std::vector<std::string>& opstack,
+typedef std::pair<VariableAST*, std::string> VarOpPair;
+
+void leftAssoc(std::vector<VarOpPair>& opstack,
                std::vector<ExprAST*>& argstack) {
-  ExprAST*           y = argstack.back(); argstack.pop_back();
-  ExprAST*           x = argstack.back(); argstack.pop_back();
-  const std::string& o =  opstack.back();  opstack.pop_back();
+  ExprAST*  y = argstack.back(); argstack.pop_back();
+  ExprAST*  x = argstack.back(); argstack.pop_back();
+  VarOpPair p =  opstack.back();  opstack.pop_back();
+  const std::string& o = p.second;
 
   if (o == ">^") {
+    // TODO move this switch to desugaring in me.
     argstack.push_back(new StoreAST(x, y, rangeFrom(x, y)));
   } else {
     Exprs exprs;
     exprs.push_back(x);
     exprs.push_back(y);
-    ExprAST* opr = new VariableAST("primitive_" + o + "_i32", NULL, rangeFrom(x, y));
-    argstack.push_back(new CallAST(opr, exprs, rangeFrom(x, y)));
+    argstack.push_back(new CallAST(p.first, exprs, rangeFrom(x, y)));
   }
 }
 
 ExprAST* parseBinopChain(ExprAST* first, pTree tree) {
-  std::vector< std::pair<std::string, ExprAST*> > pairs;
+  std::vector< std::pair<VarOpPair, ExprAST*> > pairs;
 
   for (size_t i = 1; i < getChildCount(tree); i += 2) {
     pairs.push_back(std::make_pair(
-                             textOf(child(tree, i)),
-                        parsePhrase(child(tree, i + 1))));
+                     VarOpPair(parseVarDirect(child(tree, i)),
+                                       textOf(child(tree, i))),
+                     parsePhrase(child(tree, i + 1))));
   }
 
-  std::vector<std::string> opstack;
+  std::vector<VarOpPair> opstack;
   std::vector<ExprAST*> argstack;
   argstack.push_back(first);
   argstack.push_back(pairs[0].second);
   opstack.push_back(pairs[0].first);
 
   for (size_t i = 1; i < pairs.size(); ++i) {
-    const std::string& opd = pairs[i].first;
-    ExprAST* e = pairs[i].second;
     while (!opstack.empty()) {
-      const std::string& top = opstack.back();
+      const std::string& top = opstack.back().second;
+      const std::string& opd = pairs[i].first.second;
       foster::OperatorPrecedenceTable::OperatorRelation rel =
                            ParsingContext::getOperatorRelation(top, opd);
       if (rel != foster::OperatorPrecedenceTable::kOpBindsTighter) {
@@ -576,8 +596,9 @@ ExprAST* parseBinopChain(ExprAST* first, pTree tree) {
       }
       leftAssoc(opstack, argstack);
     }
-    argstack.push_back(e);
-    opstack.push_back(opd);
+
+    argstack.push_back(pairs[i].second);
+    opstack.push_back( pairs[i].first);
   }
 
   while (!opstack.empty()) {

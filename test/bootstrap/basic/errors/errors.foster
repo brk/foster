@@ -39,6 +39,11 @@ main = {
 
   // Primitives must be called, not treated as first class values.
   expect_i1 false; print_i1 (__COMPILES__ let f = print_i1; in f true end);
+
+  // >^ is, for now, a primitive unlike +, which means it
+  // can't be implicitly turned into a first-class function value.
+  expect_i1 true ; print_i1 (__COMPILES__  2  >^ (ref 0));
+  expect_i1 false; print_i1 (__COMPILES__ (>^) 2 (ref 0));
 };
 
 a = { 0 };
