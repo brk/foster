@@ -25,7 +25,6 @@ public:
   bool check();
   bool isKnownOperatorName(const std::string&);
   OperatorRelation get(const Operator& opa, const Operator& opb);
-  void dump();
 
 private:
   struct Impl;

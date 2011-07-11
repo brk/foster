@@ -72,7 +72,13 @@ public:
   OperatorRelation get(const Operator& opa, const Operator& opb) {
     requireKnownOperator(opa);
     requireKnownOperator(opb);
-    return table[ OpPair(opa, opb) ];
+    OpTable::iterator it = table.find(OpPair(opa, opb));
+    if (it == table.end()) {
+      dumpOperatorRelation();
+      ASSERT(false) << "Operator precedence table has no entry for "
+                    << "operator pair '" << opa << "' and '" << opb << "'";
+    }
+    return (*it).second;
   }
 
   // returns true if table is complete
@@ -100,7 +106,7 @@ public:
 private:
   void requireKnownOperator(const Operator& op) {
     if (!isKnownOperator(op)) {
-      dump();
+      dumpKnownOperators();
       ASSERT(false) << "Unknown operator " << op;
     }
   }
@@ -306,7 +312,16 @@ public:
     return NULL;
   }
 
-  void dump() {
+private:
+  void dumpKnownOperators() {
+    currentOuts() << "Known operators:\n";
+    for (OpSet::iterator it = knownOperators.begin();
+                         it != knownOperators.end(); ++it) {
+      currentOuts() << "\t" << *it << "\n";
+    }
+  }
+
+  void dumpOperatorRelation() {
     for (OpSet::iterator it = knownOperators.begin();
                          it != knownOperators.end(); ++it) {
       for (OpSet::iterator it2 = knownOperators.begin();
@@ -334,7 +349,6 @@ bool OperatorPrecedenceTable::isKnownOperatorName(const std::string& s) {
 }
 
 bool OperatorPrecedenceTable::check() { return impl->check(); }
-void OperatorPrecedenceTable::dump() { impl->dump(); }
 
 } // namespace foster
 
