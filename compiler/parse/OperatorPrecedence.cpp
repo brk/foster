@@ -57,7 +57,7 @@ using foster::currentOuts;
 
 namespace foster {
 
-struct OperatorPrecedenceTable::Impl {
+class OperatorPrecedenceTable::Impl {
 
   typedef pair<OperatorPrecedenceTable::Operator,
                OperatorPrecedenceTable::Operator> OpPair;
@@ -68,7 +68,10 @@ struct OperatorPrecedenceTable::Impl {
   typedef set<string> OpSet;
   OpSet knownOperators;
 
+public:
   OperatorRelation get(const Operator& opa, const Operator& opb) {
+    requireKnownOperator(opa);
+    requireKnownOperator(opb);
     return table[ OpPair(opa, opb) ];
   }
 
@@ -88,6 +91,18 @@ struct OperatorPrecedenceTable::Impl {
       }
     }
     return tableComplete;
+  }
+
+  bool isKnownOperator(const Operator& op) {
+    return knownOperators.count(op) == 1;
+  }
+
+private:
+  void requireKnownOperator(const Operator& op) {
+    if (!isKnownOperator(op)) {
+      dump();
+      ASSERT(false) << "Unknown operator " << op;
+    }
   }
 
   void parseAsTighter(const OperatorPrecedenceTable::Operator& a,
@@ -217,6 +232,7 @@ struct OperatorPrecedenceTable::Impl {
     equivPrec(vops);
   }
 
+public:
   // returns true if table is complete
   bool buildDefaultTable() {
     // * tighter than +
@@ -307,10 +323,6 @@ OperatorPrecedenceTable::OperatorPrecedenceTable() {
   impl->buildDefaultTable();
 }
 
-bool OperatorPrecedenceTable::check() {
-  return impl->check();
-}
-
 OperatorPrecedenceTable::OperatorRelation
 OperatorPrecedenceTable::get(const OperatorPrecedenceTable::Operator& opa,
                              const OperatorPrecedenceTable::Operator& opb) {
@@ -318,12 +330,11 @@ OperatorPrecedenceTable::get(const OperatorPrecedenceTable::Operator& opa,
 }
 
 bool OperatorPrecedenceTable::isKnownOperatorName(const std::string& s) {
-  return impl->knownOperators.count(s) == 1;
+  return impl->isKnownOperator(s);
 }
 
-void OperatorPrecedenceTable::dump() {
-  impl->dump();
-}
+bool OperatorPrecedenceTable::check() { return impl->check(); }
+void OperatorPrecedenceTable::dump() { impl->dump(); }
 
 } // namespace foster
 
