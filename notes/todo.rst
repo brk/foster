@@ -12,6 +12,7 @@ TODO: libraries, benchmarks, & applications
 
 TODO: implementation details
 ----------------------------
+* rusage() in runtime when on Linux (+ OS X?)
 * Design pointer representations and GC integration:
  * Stable pointers
   * Malloced/foreign memory
