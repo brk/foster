@@ -17,7 +17,9 @@ set (BASE_SOURCES
 	${CHROMIUM_BASE}/base/stringprintf.cc
 	${CHROMIUM_BASE}/base/pickle.cc
 	${CHROMIUM_BASE}/base/time.cc
+	${CHROMIUM_BASE}/base/memory/ref_counted.cc
 	${CHROMIUM_BASE}/base/threading/thread_restrictions.cc
+	${CHROMIUM_BASE}/base/threading/thread_collision_warner.cc
 	${CHROMIUM_BASE}/base/utf_string_conversions.cc
 	${CHROMIUM_BASE}/base/utf_string_conversion_utils.cc
 	${CHROMIUM_BASE}/base/vlog.cc
