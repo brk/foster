@@ -5,7 +5,9 @@ cmake_policy(VERSION 2.8.0)
 
 ####################### Configuration Rules ########################
 
-SET(LIBRARY_OUTPUT_PATH ${PROJECT_BINARY_DIR}/_nativelibs_)
+set(LIBRARY_OUTPUT_PATH ${PROJECT_BINARY_DIR}/_nativelibs_)
+
+
 
 set(LLVM_VERSION 2.8)
 
@@ -121,6 +123,10 @@ find_package(Threads REQUIRED)
 # TODO: provide ${CMAKE_THREAD_LIBS_INIT} to compile scripts
 
 ####################### Compilation Rules ##########################
+
+add_custom_target(lib_output_dir
+  COMMAND mkdir -p ${PROJECT_BINARY_DIR}/_nativelibs_
+)
 
 # Creating the _generated_ directory is easy enough!
 add_custom_command(

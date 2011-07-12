@@ -94,8 +94,9 @@ set (LIBCHRMB ${CMAKE_SHARED_LIBRARY_PREFIX}chromium_base${CMAKE_SHARED_LIBRARY_
 # up containing the binary that needs it...
 add_custom_command(TARGET chromium_base POST_BUILD
   COMMAND mkdir -p ${PROJECT_BINARY_DIR}/fc-output
-  COMMAND cp ${PROJECT_BINARY_DIR}/_nativelibs_/${LIBCHRMB}
+  COMMAND cp ${LIBRARY_OUTPUT_PATH}/${LIBCHRMB}
              ${PROJECT_BINARY_DIR}/fc-output/
+  DEPENDS ${LIBRARY_OUTPUT_PATH}
 )
 
 if (${APPLE})
