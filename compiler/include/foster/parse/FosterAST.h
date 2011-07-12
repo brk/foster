@@ -28,7 +28,6 @@ class TypeAST;
 class VariableAST;
 
 class DumpToProtobufPass;
-class PrettyPrintPass;
 
 typedef std::vector<ExprAST*> Exprs;
 
@@ -52,7 +51,6 @@ struct ExprAST {
       sourceRange(sourceRange), tag(tag) {}
   virtual ~ExprAST() {}
   virtual void dump(DumpToProtobufPass* pass) = 0;
-  virtual void show(PrettyPrintPass*    pass) = 0;
 };
 
 class IntAST;
@@ -85,7 +83,6 @@ public:
               foster::SourceRange sourceRange)
         : ExprAST("IntAST", sourceRange), text(originalText) {}
   virtual void dump(DumpToProtobufPass* pass);
-  virtual void show(PrettyPrintPass*    pass);
 
   std::string getOriginalText() const { return text; }
 };
@@ -95,7 +92,6 @@ struct BoolAST : public ExprAST {
   explicit BoolAST(string val, foster::SourceRange sourceRange)
     : ExprAST("BoolAST", sourceRange), boolValue(val == "true") {}
   virtual void dump(DumpToProtobufPass* pass);
-  virtual void show(PrettyPrintPass*    pass);
 };
 
 struct VariableAST : public ExprAST {
@@ -108,7 +104,6 @@ struct VariableAST : public ExprAST {
   }
 
   virtual void dump(DumpToProtobufPass* pass);
-  virtual void show(PrettyPrintPass*    pass);
 
   const string getName() const { return name; }
 };
@@ -121,7 +116,6 @@ struct CallAST : public ExprAST {
     for (size_t i = 0; i < args.size(); ++i) parts.push_back(args[i]);
   }
   virtual void dump(DumpToProtobufPass* pass);
-  virtual void show(PrettyPrintPass*    pass);
 };
 
 // e[ty]
@@ -133,7 +127,6 @@ struct ETypeAppAST : public ExprAST {
     parts.push_back(base);
   }
   virtual void dump(DumpToProtobufPass* pass);
-  virtual void show(PrettyPrintPass*    pass);
 };
 
 struct Binding {
@@ -152,14 +145,12 @@ struct LetAST : public ExprAST {
     parts.push_back(inexpr);
   }
   virtual void dump(DumpToProtobufPass* pass);
-  virtual void show(PrettyPrintPass*    pass);
 };
 
 struct SeqAST : public ExprAST {
   explicit SeqAST(Exprs exprs, foster::SourceRange sourceRange)
     : ExprAST("SeqAST", sourceRange) { this->parts = exprs; }
   virtual void dump(DumpToProtobufPass* pass);
-  virtual void show(PrettyPrintPass*    pass);
 };
 
 struct TupleExprAST : public ExprAST {
@@ -168,7 +159,6 @@ struct TupleExprAST : public ExprAST {
       for (size_t i = 0; i < exprs.size(); ++i) { parts.push_back(exprs[i]); }
   }
   virtual void dump(DumpToProtobufPass* pass);
-  virtual void show(PrettyPrintPass*    pass);
 };
 
 //////////////////////////////////////////////
@@ -182,7 +172,6 @@ struct AllocAST : public ExprAST {
     this->parts.push_back(base);
   }
   virtual void dump(DumpToProtobufPass* pass);
-  virtual void show(PrettyPrintPass*    pass);
 };
 
 // base^
@@ -193,7 +182,6 @@ struct DerefAST : public ExprAST {
     this->parts.push_back(base);
   }
   virtual void dump(DumpToProtobufPass* pass);
-  virtual void show(PrettyPrintPass*    pass);
 };
 
 // ev >^ er
@@ -205,7 +193,6 @@ struct StoreAST : public ExprAST {
     this->parts.push_back(er);
   }
   virtual void dump(DumpToProtobufPass* pass);
-  virtual void show(PrettyPrintPass*    pass);
 };
 
 //////////////////////////////////////////////
@@ -220,7 +207,6 @@ struct SubscriptAST : public ExprAST {
     this->parts.push_back(index);
   }
   virtual void dump(DumpToProtobufPass* pass);
-  virtual void show(PrettyPrintPass*    pass);
 };
 
 struct Formal {
@@ -241,7 +227,6 @@ struct ValAbs : public ExprAST {
   }
 
   virtual void dump(DumpToProtobufPass* pass);
-  virtual void show(PrettyPrintPass*    pass);
 
   ExprAST*& getBody() { return parts[0]; }
 };
@@ -289,7 +274,6 @@ struct IfExprAST : public ExprAST {
     parts.push_back(elseExpr);
   }
   virtual void dump(DumpToProtobufPass* pass);
-  virtual void show(PrettyPrintPass*    pass);
 
   ExprAST*& getTestExpr() { ASSERT(parts.size() == 3); return parts[0]; }
   ExprAST*& getThenExpr() { ASSERT(parts.size() == 3); return parts[1]; }
@@ -304,7 +288,6 @@ struct UntilExpr : public ExprAST {
     parts.push_back(thenExpr);
   }
   virtual void dump(DumpToProtobufPass* pass);
-  virtual void show(PrettyPrintPass*    pass);
 
   ExprAST*& getTestExpr() { ASSERT(parts.size() == 2); return parts[0]; }
   ExprAST*& getThenExpr() { ASSERT(parts.size() == 2); return parts[1]; }
@@ -318,7 +301,6 @@ struct BuiltinCompilesExprAST : public ExprAST {
   // Must manually visit children (for typechecking)
   // because we don't want to codegen our children!
   virtual void dump(DumpToProtobufPass* pass);
-  virtual void show(PrettyPrintPass*    pass);
 };
 
 
@@ -328,7 +310,6 @@ protected:
 public:
   foster::SourceRange sourceRange;
   virtual void dump(DumpToProtobufPass* pass) = 0;
-  virtual void show(PrettyPrintPass*    pass) = 0;
 };
 
 struct LiteralPattern : public Pattern {
@@ -339,7 +320,6 @@ public:
                           Variety v,
                           ExprAST* pattern) : Pattern(range), pattern(pattern), variety(v) {}
   virtual void dump(DumpToProtobufPass* pass);
-  virtual void show(PrettyPrintPass*    pass);
 };
 
 struct TuplePattern : public Pattern {
@@ -348,13 +328,11 @@ struct TuplePattern : public Pattern {
                         std::vector<Pattern*> patterns)
     : Pattern(range), patterns(patterns) {}
   virtual void dump(DumpToProtobufPass* pass);
-  virtual void show(PrettyPrintPass*    pass);
 };
 
 struct WildcardPattern : public Pattern {
   WildcardPattern(foster::SourceRange range) : Pattern(range) {}
   virtual void dump(DumpToProtobufPass* pass);
-  virtual void show(PrettyPrintPass*    pass);
 };
 
 typedef std::pair<Pattern*, ExprAST*> CaseBranch;
@@ -368,7 +346,6 @@ struct CaseExpr : public ExprAST {
   }
 
   virtual void dump(DumpToProtobufPass* pass);
-  virtual void show(PrettyPrintPass*    pass);
 };
 
 #endif // header guard

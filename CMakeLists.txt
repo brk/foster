@@ -498,18 +498,6 @@ target_link_libraries(unittest_fosterc_base
   gtest_main
   antlr3c ${LLVM_LDFLAGS})
 
-#######
-
-add_executable(unittest_fosterc_parse
-  ${PROJECT_SOURCE_DIR}/compiler/parse/ANTLRtoFosterAST_unittest.cpp
-  ${PROJECT_SOURCE_DIR}/compiler/base/PughSinofskyPrettyPrinter_unittest.cpp
-  ${GENERATED}/FosterAST.pb.cc
-)
-target_link_libraries(unittest_fosterc_parse
-  fosterc_passes fosterc_parse fosterc_base
-  gtest_main
-  antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
-
 #####################################################################
 
 enable_testing()
