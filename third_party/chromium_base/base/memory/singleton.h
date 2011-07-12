@@ -1,16 +1,30 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef BASE_SINGLETON_H_
-#define BASE_SINGLETON_H_
+// PLEASE READ: Do you really need a singleton?
+//
+// Singletons make it hard to determine the lifetime of an object, which can
+// lead to buggy code and spurious crashes.
+//
+// Instead of adding another singleton into the mix, try to identify either:
+//   a) An existing singleton that can manage your object's lifetime
+//   b) Locations where you can deterministically create the object and pass
+//      into other objects
+//
+// If you absolutely need a singleton, please keep them as trivial as possible
+// and ideally a leaf dependency. Singletons get problematic when they attempt
+// to do too much in their destructor or have circular dependencies.
+
+#ifndef BASE_MEMORY_SINGLETON_H_
+#define BASE_MEMORY_SINGLETON_H_
 #pragma once
 
 #include "base/at_exit.h"
 #include "base/atomicops.h"
-#include "base/platform_thread.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
-#include "base/thread_restrictions.h"
+#include "base/threading/platform_thread.h"
+#include "base/threading/thread_restrictions.h"
 
 // Default traits for Singleton<Type>. Calls operator new and operator delete on
 // the object. Registers automatic deletion at process exit.
@@ -126,7 +140,7 @@ template <typename Type> base::subtle::Atomic32
 // Example usage:
 //
 // In your header:
-//   #include "base/singleton.h"
+//   #include "base/memory/singleton.h"
 //   class FooClass {
 //    public:
 //     static FooClass* GetInstance();  <-- See comment below on this.
@@ -243,7 +257,7 @@ class Singleton {
       value = base::subtle::NoBarrier_Load(&instance_);
       if (value != kBeingCreatedMarker)
         break;
-      PlatformThread::YieldCurrentThread();
+      base::PlatformThread::YieldCurrentThread();
     }
 
     // See the corresponding HAPPENS_BEFORE above.
@@ -254,7 +268,7 @@ class Singleton {
   // Adapter function for use with AtExit().  This should be called single
   // threaded, so don't use atomic operations.
   // Calling OnExit while singleton is in use by other threads is a mistake.
-  static void OnExit(void* unused) {
+  static void OnExit(void* /*unused*/) {
     // AtExit should only ever be register after the singleton instance was
     // created.  We should only ever get here with a valid instance_ pointer.
     Traits::Delete(
@@ -268,4 +282,4 @@ template <typename Type, typename Traits, typename DifferentiatingType>
 base::subtle::AtomicWord Singleton<Type, Traits, DifferentiatingType>::
     instance_ = 0;
 
-#endif  // BASE_SINGLETON_H_
+#endif  // BASE_MEMORY_SINGLETON_H_

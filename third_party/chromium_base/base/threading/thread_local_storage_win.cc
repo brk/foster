@@ -1,12 +1,14 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/thread_local_storage.h"
+#include "base/threading/thread_local_storage.h"
 
 #include <windows.h>
 
 #include "base/logging.h"
+
+namespace base {
 
 // In order to make TLS destructors work, we need to keep function
 // pointers to the destructor for each TLS that we allocate.
@@ -45,7 +47,7 @@ void** ThreadLocalStorage::Initialize() {
       TlsFree(value);
     }
   }
-  DCHECK(TlsGetValue(tls_key_) == NULL);
+  DCHECK(!TlsGetValue(tls_key_));
 
   // Create an array to store our data.
   void** tls_data = new void*[kThreadLocalStorageSize];
@@ -55,7 +57,8 @@ void** ThreadLocalStorage::Initialize() {
 }
 
 ThreadLocalStorage::Slot::Slot(TLSDestructorFunc destructor)
-    : initialized_(false) {
+    : initialized_(false),
+      slot_(0) {
   Initialize(destructor);
 }
 
@@ -87,7 +90,8 @@ void* ThreadLocalStorage::Slot::Get() const {
   void** tls_data = static_cast<void**>(TlsGetValue(tls_key_));
   if (!tls_data)
     tls_data = ThreadLocalStorage::Initialize();
-  DCHECK(slot_ >= 0 && slot_ < kThreadLocalStorageSize);
+  DCHECK_GE(slot_, 0);
+  DCHECK_LT(slot_, kThreadLocalStorageSize);
   return tls_data[slot_];
 }
 
@@ -95,7 +99,8 @@ void ThreadLocalStorage::Slot::Set(void* value) {
   void** tls_data = static_cast<void**>(TlsGetValue(tls_key_));
   if (!tls_data)
     tls_data = ThreadLocalStorage::Initialize();
-  DCHECK(slot_ >= 0 && slot_ < kThreadLocalStorageSize);
+  DCHECK_GE(slot_, 0);
+  DCHECK_LT(slot_, kThreadLocalStorageSize);
   tls_data[slot_] = value;
 }
 
@@ -121,6 +126,8 @@ void ThreadLocalStorage::ThreadExit() {
   // In case there are other "onexit" handlers...
   TlsSetValue(tls_key_, NULL);
 }
+
+}  // namespace base
 
 // Thread Termination Callbacks.
 // Windows doesn't support a per-thread destructor with its
@@ -150,7 +157,7 @@ void NTAPI OnThreadExit(PVOID module, DWORD reason, PVOID reserved) {
   // On XP SP0 & SP1, the DLL_PROCESS_ATTACH is never seen. It is sent on SP2+
   // and on W2K and W2K3. So don't assume it is sent.
   if (DLL_THREAD_DETACH == reason || DLL_PROCESS_DETACH == reason)
-    ThreadLocalStorage::ThreadExit();
+    base::ThreadLocalStorage::ThreadExit();
 }
 
 // .CRT$XLA to .CRT$XLZ is an array of PIMAGE_TLS_CALLBACK pointers that are

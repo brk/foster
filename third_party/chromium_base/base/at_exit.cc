@@ -1,25 +1,30 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "base/at_exit.h"
+
+#include <stddef.h>
+#include <ostream>
+
 #include "base/logging.h"
 
 namespace base {
 
 // Keep a stack of registered AtExitManagers.  We always operate on the most
-// recent, and we should never have more than one outside of testing, when we
-// use the shadow version of the constructor.  We don't protect this for
-// thread-safe access, since it will only be modified in testing.
+// recent, and we should never have more than one outside of testing (for a
+// statically linked version of this library).  Testing may use the shadow
+// version of the constructor, and if we are building a dynamic library we may
+// end up with multiple AtExitManagers on the same process.  We don't protect
+// this for thread-safe access, since it will only be modified in testing.
 static AtExitManager* g_top_manager = NULL;
 
-AtExitManager::AtExitManager() : next_manager_(NULL) {
+AtExitManager::AtExitManager() : next_manager_(g_top_manager) {
+// If multiple modules instantiate AtExitManagers they'll end up living in this
+// module... they have to coexist.
+#if !defined(BASE_DLL)
   DCHECK(!g_top_manager);
-  g_top_manager = this;
-}
-
-AtExitManager::AtExitManager(bool shadow) : next_manager_(g_top_manager) {
-  DCHECK(shadow || !g_top_manager);
+#endif
   g_top_manager = this;
 }
 
@@ -28,7 +33,7 @@ AtExitManager::~AtExitManager() {
     NOTREACHED() << "Tried to ~AtExitManager without an AtExitManager";
     return;
   }
-  DCHECK(g_top_manager == this);
+  DCHECK_EQ(this, g_top_manager);
 
   ProcessCallbacksNow();
   g_top_manager = next_manager_;
@@ -62,6 +67,11 @@ void AtExitManager::ProcessCallbacksNow() {
 
     callback_and_param.func_(callback_and_param.param_);
   }
+}
+
+AtExitManager::AtExitManager(bool shadow) : next_manager_(g_top_manager) {
+  DCHECK(shadow || !g_top_manager);
+  g_top_manager = this;
 }
 
 }  // namespace base

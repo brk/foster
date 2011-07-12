@@ -1,6 +1,10 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
+#ifndef FOSTER_ENABLED
+#define FOSTER_ENABLED 0
+#endif
 
 #include "base/logging.h"
 
@@ -14,7 +18,6 @@ typedef HANDLE MutexHandle;
 // Windows doesn't define STDERR_FILENO.  Define it here.
 #define STDERR_FILENO 2
 #elif defined(OS_MACOSX)
-#include <CoreFoundation/CoreFoundation.h>
 #include <mach/mach.h>
 #include <mach/mach_time.h>
 #include <mach-o/dyld.h>
@@ -40,31 +43,32 @@ typedef FILE* FileHandle;
 typedef pthread_mutex_t* MutexHandle;
 #endif
 
+#include <algorithm>
+#include <cstring>
 #include <ctime>
 #include <iomanip>
-#include <cstring>
-#include <algorithm>
+#include <ostream>
 
-//#include "base/base_switches.h"
+#include "base/base_switches.h"
 //#include "base/command_line.h"
 #include "base/debug/debugger.h"
 //#include "base/debug/stack_trace.h"
 #include "base/eintr_wrapper.h"
-#include "base/lock_impl.h"
 #include "base/string_piece.h"
+#include "base/synchronization/lock_impl.h"
 #include "base/utf_string_conversions.h"
 #include "base/vlog.h"
 #if defined(OS_POSIX)
 #include "base/safe_strerror_posix.h"
 #endif
-#if defined(OS_MACOSX)
-#include "base/mac/scoped_cftyperef.h"
-#include "base/sys_string_conversions.h"
+
+#if defined(OS_ANDROID)
+#include <android/log.h>
 #endif
 
 namespace logging {
 
-bool g_enable_dcheck = false;
+DcheckState g_dcheck_state = DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS;
 VlogInfo* g_vlog_info = NULL;
 
 const char* const log_severity_names[LOG_NUM_SEVERITIES] = {
@@ -133,6 +137,8 @@ int32 CurrentThreadId() {
   return mach_thread_self();
 #elif defined(OS_LINUX)
   return syscall(__NR_gettid);
+#elif defined(OS_ANDROID)
+  return gettid();
 #elif defined(OS_FREEBSD)
   // TODO(BSD): find a better thread ID
   return reinterpret_cast<int64>(pthread_self());
@@ -243,7 +249,7 @@ class LoggingLock {
       }
 #endif
     } else {
-      log_lock = new LockImpl();
+      log_lock = new base::internal::LockImpl();
     }
     initialized = true;
   }
@@ -282,7 +288,7 @@ class LoggingLock {
   // The lock is used if log file locking is false. It helps us avoid problems
   // with multiple threads writing to the log file at the same time.  Use
   // LockImpl directly instead of using Lock, because Lock makes logging calls.
-  static LockImpl* log_lock;
+  static base::internal::LockImpl* log_lock;
 
   // When we don't use a lock, we are using a global mutex. We need to do this
   // because LockFileEx is not thread safe.
@@ -299,7 +305,7 @@ class LoggingLock {
 // static
 bool LoggingLock::initialized = false;
 // static
-LockImpl* LoggingLock::log_lock = NULL;
+base::internal::LockImpl* LoggingLock::log_lock = NULL;
 // static
 LogLockingState LoggingLock::lock_log_file = LOCK_LOG_FILE;
 
@@ -353,15 +359,15 @@ bool InitializeLogFileHandle() {
 bool BaseInitLoggingImpl(const PathChar* new_log_file,
                          LoggingDestination logging_dest,
                          LogLockingState lock_log,
-                         OldFileDeletionState delete_old) {
-  //CommandLine* command_line = CommandLine::ForCurrentProcess();
-  g_enable_dcheck = true;
-  //    command_line->HasSwitch(switches::kEnableDCHECK);
+                         OldFileDeletionState delete_old,
+                         DcheckState dcheck_state) {
+  g_dcheck_state = dcheck_state;
   delete g_vlog_info;
   g_vlog_info = NULL;
+#if FOSTER_ENABLED
   // Don't bother initializing g_vlog_info unless we use one of the
   // vlog switches.
-#if 0
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kV) ||
       command_line->HasSwitch(switches::kVModule)) {
     g_vlog_info =
@@ -505,12 +511,6 @@ void DisplayDebugMessageInDialog(const std::string& str) {
     MessageBoxW(NULL, &cmdline[0], L"Fatal error",
                 MB_OK | MB_ICONHAND | MB_TOPMOST);
   }
-#elif defined(OS_MACOSX)
-  base::mac::ScopedCFTypeRef<CFStringRef> message(
-      base::SysUTF8ToCFStringRef(str));
-  CFUserNotificationDisplayNotice(0, kCFUserNotificationStopAlertLevel,
-                                  NULL, NULL, NULL, CFSTR("Fatal Error"),
-                                  message, NULL);
 #else
   // We intentionally don't implement a dialog on other platforms.
   // You can just look at stderr.
@@ -532,19 +532,6 @@ LogMessage::LogMessage(const char* file, int line, LogSeverity severity,
   Init(file, line);
 }
 
-LogMessage::LogMessage(const char* file, int line, const CheckOpString& result)
-    : severity_(LOG_FATAL), file_(file), line_(line) {
-  Init(file, line);
-  stream_ << "Check failed: " << (*result.str_);
-}
-
-LogMessage::LogMessage(const char* file, int line, LogSeverity severity,
-                       const CheckOpString& result)
-    : severity_(severity), file_(file), line_(line) {
-  Init(file, line);
-  stream_ << "Check failed: " << (*result.str_);
-}
-
 LogMessage::LogMessage(const char* file, int line)
     : severity_(LOG_INFO), file_(file), line_(line) {
   Init(file, line);
@@ -555,59 +542,30 @@ LogMessage::LogMessage(const char* file, int line, LogSeverity severity)
   Init(file, line);
 }
 
-// writes the common header info to the stream
-void LogMessage::Init(const char* file, int line) {
-  base::StringPiece filename(file);
-  size_t last_slash_pos = filename.find_last_of("\\/");
-  if (last_slash_pos != base::StringPiece::npos)
-    filename.remove_prefix(last_slash_pos + 1);
+LogMessage::LogMessage(const char* file, int line, std::string* result)
+    : severity_(LOG_FATAL), file_(file), line_(line) {
+  Init(file, line);
+  stream_ << "Check failed: " << *result;
+  delete result;
+}
 
-  // TODO(darin): It might be nice if the columns were fixed width.
-
-  stream_ <<  '[';
-  if (log_process_id)
-    stream_ << CurrentProcessId() << ':';
-  if (log_thread_id)
-    stream_ << CurrentThreadId() << ':';
-  if (log_timestamp) {
-    time_t t = time(NULL);
-    struct tm local_time = {0};
-#if _MSC_VER >= 1400
-    localtime_s(&local_time, &t);
-#else
-    localtime_r(&t, &local_time);
-#endif
-    struct tm* tm_time = &local_time;
-    stream_ << std::setfill('0')
-            << std::setw(2) << 1 + tm_time->tm_mon
-            << std::setw(2) << tm_time->tm_mday
-            << '/'
-            << std::setw(2) << tm_time->tm_hour
-            << std::setw(2) << tm_time->tm_min
-            << std::setw(2) << tm_time->tm_sec
-            << ':';
-  }
-  if (log_tickcount)
-    stream_ << TickCount() << ':';
-  if (severity_ >= 0)
-    stream_ << log_severity_names[severity_];
-  else
-    stream_ << "VERBOSE" << -severity_;
-
-  stream_ << ":" << filename << "(" << line << ")] ";
-
-  message_start_ = stream_.tellp();
+LogMessage::LogMessage(const char* file, int line, LogSeverity severity,
+                       std::string* result)
+    : severity_(severity), file_(file), line_(line) {
+  Init(file, line);
+  stream_ << "Check failed: " << *result;
+  delete result;
 }
 
 LogMessage::~LogMessage() {
-#ifndef NDEBUG
+  // TODO(port): enable stacktrace generation on LOG_FATAL once backtrace are
+  // working in Android.
+#if FOSTER_ENABLED && !defined(NDEBUG) && !defined(OS_ANDROID)
   if (severity_ == LOG_FATAL) {
-#if 0
     // Include a stack trace on a fatal.
     base::debug::StackTrace trace;
     stream_ << std::endl;  // Newline to separate from log message.
     trace.OutputToStream(&stream_);
-#endif
   }
 #endif
   stream_ << std::endl;
@@ -624,6 +582,24 @@ LogMessage::~LogMessage() {
       logging_destination == LOG_TO_BOTH_FILE_AND_SYSTEM_DEBUG_LOG) {
 #if defined(OS_WIN)
     OutputDebugStringA(str_newline.c_str());
+#elif defined(OS_ANDROID)
+    android_LogPriority priority = ANDROID_LOG_UNKNOWN;
+    switch (severity_) {
+      case LOG_INFO:
+        priority = ANDROID_LOG_INFO;
+        break;
+      case LOG_WARNING:
+        priority = ANDROID_LOG_WARN;
+        break;
+      case LOG_ERROR:
+      case LOG_ERROR_REPORT:
+        priority = ANDROID_LOG_ERROR;
+        break;
+      case LOG_FATAL:
+        priority = ANDROID_LOG_FATAL;
+        break;
+    }
+    __android_log_write(priority, "chromium", str_newline.c_str());
 #endif
     fprintf(stderr, "%s", str_newline.c_str());
     fflush(stderr);
@@ -692,6 +668,50 @@ LogMessage::~LogMessage() {
       DisplayDebugMessageInDialog(stream_.str());
     }
   }
+}
+
+// writes the common header info to the stream
+void LogMessage::Init(const char* file, int line) {
+  base::StringPiece filename(file);
+  size_t last_slash_pos = filename.find_last_of("\\/");
+  if (last_slash_pos != base::StringPiece::npos)
+    filename.remove_prefix(last_slash_pos + 1);
+
+  // TODO(darin): It might be nice if the columns were fixed width.
+
+  stream_ <<  '[';
+  if (log_process_id)
+    stream_ << CurrentProcessId() << ':';
+  if (log_thread_id)
+    stream_ << CurrentThreadId() << ':';
+  if (log_timestamp) {
+    time_t t = time(NULL);
+    struct tm local_time = {0};
+#if _MSC_VER >= 1400
+    localtime_s(&local_time, &t);
+#else
+    localtime_r(&t, &local_time);
+#endif
+    struct tm* tm_time = &local_time;
+    stream_ << std::setfill('0')
+            << std::setw(2) << 1 + tm_time->tm_mon
+            << std::setw(2) << tm_time->tm_mday
+            << '/'
+            << std::setw(2) << tm_time->tm_hour
+            << std::setw(2) << tm_time->tm_min
+            << std::setw(2) << tm_time->tm_sec
+            << ':';
+  }
+  if (log_tickcount)
+    stream_ << TickCount() << ':';
+  if (severity_ >= 0)
+    stream_ << log_severity_names[severity_];
+  else
+    stream_ << "VERBOSE" << -severity_;
+
+  stream_ << ":" << filename << "(" << line << ")] ";
+
+  message_start_ = stream_.tellp();
 }
 
 #if defined(OS_WIN)
@@ -828,3 +848,15 @@ void RawLog(int level, const char* message) {
 std::ostream& operator<<(std::ostream& out, const wchar_t* wstr) {
   return out << WideToUTF8(std::wstring(wstr));
 }
+
+namespace base {
+
+// This was defined at the beginnig of this file.
+#undef write
+
+std::ostream& operator<<(std::ostream& o, const StringPiece& piece) {
+  o.write(piece.data(), static_cast<std::streamsize>(piece.size()));
+  return o;
+}
+
+}  // namespace base

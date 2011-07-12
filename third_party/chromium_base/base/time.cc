@@ -4,9 +4,9 @@
 
 #include "base/time.h"
 #include "base/sys_string_conversions.h"
-#include "base/third_party/nspr/prtime.h"
+//#include "base/third_party/nspr/prtime.h"
 
-//#include "base/logging.h"
+#include "base/logging.h"
 
 namespace base {
 
@@ -97,9 +97,8 @@ Time Time::LocalMidnight() const {
   return FromLocalExploded(exploded);
 }
 
-#if 0
-/////
 // static
+/*
 bool Time::FromString(const wchar_t* time_string, Time* parsed_time) {
   DCHECK((time_string != NULL) && (parsed_time != NULL));
   std::string ascii_time_string = SysWideToUTF8(time_string);
@@ -114,7 +113,7 @@ bool Time::FromString(const wchar_t* time_string, Time* parsed_time) {
   *parsed_time = Time(result_time);
   return true;
 }
-#endif
+*/
 
 // Time::Exploded -------------------------------------------------------------
 

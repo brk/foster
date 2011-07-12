@@ -1,4 +1,4 @@
-// Copyright (c) 2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -39,9 +39,10 @@
 #include <new>  // For placement new.
 
 #include "base/atomicops.h"
+#include "base/base_api.h"
 #include "base/basictypes.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
-#include "base/thread_restrictions.h"
+#include "base/threading/thread_restrictions.h"
 
 namespace base {
 
@@ -80,7 +81,7 @@ void (*LeakyLazyInstanceTraits<Type>::Delete)(void* instance) = NULL;
 
 // We pull out some of the functionality into a non-templated base, so that we
 // can implement the more complicated pieces out of line in the .cc file.
-class LazyInstanceHelper {
+class BASE_API LazyInstanceHelper {
  protected:
   enum {
     STATE_EMPTY    = 0,
@@ -88,9 +89,19 @@ class LazyInstanceHelper {
     STATE_CREATED  = 2
   };
 
-  explicit LazyInstanceHelper(LinkerInitialized x) { /* state_ is 0 */ }
+  explicit LazyInstanceHelper(LinkerInitialized /*unused*/) {/* state_ is 0 */}
+
   // Declaring a destructor (even if it's empty) will cause MSVC to register a
   // static initializer to register the empty destructor with atexit().
+
+  // A destructor is intentionally not defined.  If we were to say
+  // ~LazyInstanceHelper() { }
+  // Even though it's empty, a destructor will still be generated.
+  // In order for the constructor to be called for static variables,
+  // it will be registered as a callback at runtime with AtExit().
+  // We don't want this, so we don't declare a destructor at all,
+  // effectively keeping the type POD (at least in terms of
+  // initialization and destruction).
 
   // Check if instance needs to be created. If so return true otherwise
   // if another thread has beat us, wait for instance to be created and
@@ -111,8 +122,11 @@ template <typename Type, typename Traits = DefaultLazyInstanceTraits<Type> >
 class LazyInstance : public LazyInstanceHelper {
  public:
   explicit LazyInstance(LinkerInitialized x) : LazyInstanceHelper(x) { }
+
   // Declaring a destructor (even if it's empty) will cause MSVC to register a
   // static initializer to register the empty destructor with atexit().
+  // Refer to the destructor-related comment in LazyInstanceHelper.
+  // ~LazyInstance() {}
 
   Type& Get() {
     return *Pointer();
@@ -123,11 +137,17 @@ class LazyInstance : public LazyInstanceHelper {
       base::ThreadRestrictions::AssertSingletonAllowed();
 
     // We will hopefully have fast access when the instance is already created.
-    if ((base::subtle::NoBarrier_Load(&state_) != STATE_CREATED) &&
+    // Since a thread sees state_ != STATE_CREATED at most once,
+    // the load is taken out of NeedsInstance() as a fast-path.
+    // The load has acquire memory ordering as a thread which sees
+    // state_ == STATE_CREATED needs to acquire visibility over
+    // the associated data (buf_). Pairing Release_Store is in
+    // CompleteInstance().
+    if ((base::subtle::Acquire_Load(&state_) != STATE_CREATED) &&
         NeedsInstance()) {
       // Create the instance in the space provided by |buf_|.
       instance_ = Traits::New(buf_);
-      // Traits::Delete will be null for LeakyLazyInstannceTraits
+      // Traits::Delete will be null for LeakyLazyInstanceTraits
       void (*dtor)(void*) = Traits::Delete;
       CompleteInstance(this, (dtor == NULL) ? NULL : OnExit);
     }
@@ -139,6 +159,19 @@ class LazyInstance : public LazyInstanceHelper {
     // See the corresponding HAPPENS_BEFORE in CompleteInstance(...).
     ANNOTATE_HAPPENS_AFTER(&state_);
     return instance_;
+  }
+
+  bool operator==(Type* p) {
+    switch (base::subtle::NoBarrier_Load(&state_)) {
+      case STATE_EMPTY:
+        return p == NULL;
+      case STATE_CREATING:
+        return static_cast<int8*>(static_cast<void*>(p)) == buf_;
+      case STATE_CREATED:
+        return p == instance_;
+      default:
+        return false;
+    }
   }
 
  private:

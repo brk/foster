@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,42 +6,60 @@
 // the low-level platform-specific abstraction to the OS's threading interface.
 // You should instead be using a message-loop driven Thread, see thread.h.
 
-#ifndef BASE_PLATFORM_THREAD_H_
-#define BASE_PLATFORM_THREAD_H_
+#ifndef BASE_THREADING_PLATFORM_THREAD_H_
+#define BASE_THREADING_PLATFORM_THREAD_H_
 #pragma once
 
+#include "base/base_api.h"
 #include "base/basictypes.h"
+#include "build/build_config.h"
+
+#if defined(OS_WIN)
+#include <windows.h>
+#elif defined(OS_POSIX)
+#include <pthread.h>
+#if defined(OS_MACOSX)
+#include <mach/mach.h>
+#else  // OS_POSIX && !OS_MACOSX
+#include <unistd.h>
+#endif
+#endif
+
+namespace base {
 
 // PlatformThreadHandle should not be assumed to be a numeric type, since the
 // standard intends to allow pthread_t to be a structure.  This means you
 // should not initialize it to a value, like 0.  If it's a member variable, the
 // constructor can safely "value initialize" using () in the initializer list.
 #if defined(OS_WIN)
-#include <windows.h>
 typedef DWORD PlatformThreadId;
 typedef void* PlatformThreadHandle;  // HANDLE
 const PlatformThreadHandle kNullThreadHandle = NULL;
 #elif defined(OS_POSIX)
-#include <pthread.h>
 typedef pthread_t PlatformThreadHandle;
 const PlatformThreadHandle kNullThreadHandle = 0;
 #if defined(OS_MACOSX)
-#include <mach/mach.h>
 typedef mach_port_t PlatformThreadId;
 #else  // OS_POSIX && !OS_MACOSX
-#include <unistd.h>
 typedef pid_t PlatformThreadId;
 #endif
 #endif
 
 const PlatformThreadId kInvalidThreadId = 0;
 
+// Valid values for SetThreadPriority()
+enum ThreadPriority{
+  kThreadPriority_Normal,
+  // Suitable for low-latency, glitch-resistant audio.
+  kThreadPriority_RealtimeAudio
+};
+
 // A namespace for low-level thread functions.
-class PlatformThread {
+class BASE_API PlatformThread {
  public:
   // Implement this interface to run code on a background thread.  Your
   // ThreadMain method will be called on the newly created thread.
-  class Delegate {
+  class BASE_API Delegate {
    public:
     virtual ~Delegate() {}
     virtual void ThreadMain() = 0;
@@ -80,8 +98,13 @@ class PlatformThread {
   // |thread_handle|.
   static void Join(PlatformThreadHandle thread_handle);
 
+  static void SetThreadPriority(PlatformThreadHandle handle,
+                                ThreadPriority priority);
+
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(PlatformThread);
 };
 
-#endif  // BASE_PLATFORM_THREAD_H_
+}  // namespace base
+
+#endif  // BASE_THREADING_PLATFORM_THREAD_H_

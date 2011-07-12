@@ -1,19 +1,21 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef BASE_LOCK_H_
-#define BASE_LOCK_H_
+#ifndef BASE_SYNCHRONIZATION_LOCK_H_
+#define BASE_SYNCHRONIZATION_LOCK_H_
 #pragma once
 
-#include "base/lock_impl.h"
-#include "base/platform_thread.h"
+#include "base/base_api.h"
+#include "base/synchronization/lock_impl.h"
+#include "base/threading/platform_thread.h"
+
+namespace base {
 
 // A convenient wrapper for an OS specific critical section.  The only real
 // intelligence in this class is in debug mode for the support for the
 // AssertAcquired() method.
-
-class Lock {
+class BASE_API Lock {
  public:
 #if defined(NDEBUG)             // Optimized wrapper implementation
   Lock() : lock_() {}
@@ -80,10 +82,11 @@ class Lock {
   // Determines validity of owning_thread_id_.  Needed as we don't have
   // a null owning_thread_id_ value.
   bool owned_by_thread_;
-  PlatformThreadId owning_thread_id_;
+  base::PlatformThreadId owning_thread_id_;
 #endif  // NDEBUG
 
-  LockImpl lock_;  // Platform specific underlying lock implementation.
+  // Platform specific underlying lock implementation.
+  internal::LockImpl lock_;
 
   DISALLOW_COPY_AND_ASSIGN(Lock);
 };
@@ -124,4 +127,6 @@ class AutoUnlock {
   DISALLOW_COPY_AND_ASSIGN(AutoUnlock);
 };
 
-#endif  // BASE_LOCK_H_
+}  // namespace base
+
+#endif  // BASE_SYNCHRONIZATION_LOCK_H_

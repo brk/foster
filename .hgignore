@@ -12,6 +12,7 @@ cmake_install.cmake
 diff.txt
 _obj/
 tmp/
+disabled.hg/
 tools/c-viewer/
 dox/
 notes/_build/

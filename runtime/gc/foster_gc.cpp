@@ -12,7 +12,7 @@
 #include "libfoster_gc_roots.h"
 
 #include "base/time.h"
-#include "base/platform_thread.h"
+#include "base/threading/platform_thread.h"
 
 #include "execinfo.h"
 

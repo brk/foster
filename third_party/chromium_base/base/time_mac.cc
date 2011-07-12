@@ -1,4 +1,4 @@
-// Copyright (c) 2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,7 @@
 #include <time.h>
 
 #include "base/basictypes.h"
-//#include "base/logging.h"
+#include "base/logging.h"
 #include "base/mac/scoped_cftyperef.h"
 
 namespace base {
@@ -112,7 +112,7 @@ TimeTicks TimeTicks::Now() {
     // whether mach_timebase_info has already been called.  This is
     // recommended by Apple's QA1398.
     kern_return_t kr = mach_timebase_info(&timebase_info);
-    /////DCHECK(kr == KERN_SUCCESS);
+    DCHECK_EQ(KERN_SUCCESS, kr);
   }
 
   // mach_absolute_time is it when it comes to ticks on the Mac.  Other calls

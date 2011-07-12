@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,13 +6,12 @@
 #include "build/build_config.h"
 
 #include <errno.h>
+#include <execinfo.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/param.h>
 #include <sys/stat.h>
-#if !defined(OS_NACL)
-#include <sys/sysctl.h>
-#endif
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -27,19 +26,27 @@
 #include <AvailabilityMacros.h>
 #endif
 
+#if defined(OS_MACOSX) || defined(OS_OPENBSD) || defined(OS_FREEBSD)
+#include <sys/sysctl.h>
+#endif
+
 #include <iostream>
 
 #include "base/basictypes.h"
-#include "base/compat_execinfo.h"
 #include "base/eintr_wrapper.h"
 #include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/safe_strerror_posix.h"
-#include "base/scoped_ptr.h"
 #include "base/string_piece.h"
 #include "base/stringprintf.h"
 
 #if defined(USE_SYMBOLIZE)
 #include "base/third_party/symbolize/symbolize.h"
+#endif
+
+#if defined(OS_ANDROID)
+#include <execinfo.h>
+#include "base/threading/platform_thread.h"
 #endif
 
 namespace base {
@@ -92,7 +99,7 @@ bool BeingDebugged() {
   return being_debugged;
 }
 
-#elif defined(OS_LINUX)
+#elif defined(OS_LINUX) || defined(OS_ANDROID)
 
 // We can look in /proc/self/status for TracerPid.  We are likely used in crash
 // handling, so we are careful not to use the heap or have side effects.
@@ -135,9 +142,9 @@ bool BeingDebugged() {
   return false;
 }
 
-#elif defined(OS_FREEBSD)
+#else
 
-bool DebugUtil::BeingDebugged() {
+bool BeingDebugged() {
   // TODO(benl): can we determine this under FreeBSD?
   NOTIMPLEMENTED();
   return false;
@@ -159,7 +166,7 @@ bool DebugUtil::BeingDebugged() {
 // Linux: Debug mode, send SIGTRAP; Release mode, send SIGABRT.
 // Mac: Always send SIGTRAP.
 
-#if defined(NDEBUG) && !defined(OS_MACOSX)
+#if defined(NDEBUG) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
 #define DEBUG_BREAK() abort()
 #elif defined(OS_NACL)
 // The NaCl verifier doesn't let use use int3.  For now, we call abort().  We
@@ -167,13 +174,30 @@ bool DebugUtil::BeingDebugged() {
 // http://code.google.com/p/nativeclient/issues/detail?id=645
 #define DEBUG_BREAK() abort()
 #elif defined(ARCH_CPU_ARM_FAMILY)
+#if defined(OS_ANDROID)
+// Though Android has a "helpful" process called debuggerd to catch native
+// signals on the general assumption that they are fatal errors, we've had great
+// difficulty continuing in a debugger once we stop from SIGINT triggered by
+// native code.
+//
+// Use GDB to set |go| to 1 to resume execution.
+#define DEBUG_BREAK() do { \
+  volatile int go = 0;             \
+  while (!go) { base::PlatformThread::Sleep(100); }   \
+} while (0)
+#else
+// ARM && !ANDROID
 #define DEBUG_BREAK() asm("bkpt 0")
+#endif
 #else
 #define DEBUG_BREAK() asm("int3")
 #endif
 
 void BreakDebugger() {
   DEBUG_BREAK();
+#if defined(NDEBUG)
+  _exit(1);
+#endif
 }
 
 }  // namespace debug

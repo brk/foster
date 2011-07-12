@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,6 +25,8 @@
 
 #include <time.h>
 
+#include "base/atomicops.h"
+#include "base/base_api.h"
 #include "base/basictypes.h"
 
 #if defined(OS_POSIX)
@@ -43,12 +45,9 @@ namespace base {
 class Time;
 class TimeTicks;
 
-// This unit test does a lot of manual time manipulation.
-class PageLoadTrackerUnitTest;
-
 // TimeDelta ------------------------------------------------------------------
 
-class TimeDelta {
+class BASE_API TimeDelta {
  public:
   TimeDelta() : delta_(0) {
   }
@@ -178,7 +177,7 @@ inline TimeDelta operator*(int64 a, TimeDelta td) {
 // Time -----------------------------------------------------------------------
 
 // Represents a wall clock time.
-class Time {
+class BASE_API Time {
  public:
   static const int64 kMillisecondsPerSecond = 1000;
   static const int64 kMicrosecondsPerMillisecond = 1000;
@@ -204,7 +203,7 @@ class Time {
   // Represents an exploded time that can be formatted nicely. This is kind of
   // like the Win32 SYSTEMTIME structure or the Unix "struct tm" with a few
   // additions and changes to prevent errors.
-  struct Exploded {
+  struct BASE_API Exploded {
     int year;          // Four digit year "2007"
     int month;         // 1-based month (values 1 = January, etc.)
     int day_of_week;   // 0-based day of week (0 = Sunday, etc.)
@@ -283,10 +282,16 @@ class Time {
   // Activates or deactivates the high resolution timer based on the |activate|
   // flag.  If the HighResolutionTimer is not Enabled (see
   // EnableHighResolutionTimer), this function will return false.  Otherwise
-  // returns true.
+  // returns true.  Each successful activate call must be paired with a
+  // subsequent deactivate call.
   // All callers to activate the high resolution timer must eventually call
   // this function to deactivate the high resolution timer.
   static bool ActivateHighResolutionTimer(bool activate);
+
+  // Returns true if the high resolution timer is both enabled and activated.
+  // This is provided for testing only, and is not tracked in a thread-safe
+  // way.
+  static bool IsHighResolutionTimerInUse();
 #endif
 
   // Converts an exploded structure representing either the local time or UTC
@@ -312,7 +317,7 @@ class Time {
   // in the input string, we assume local time.
   // TODO(iyengar) Move the FromString/FromTimeT/ToTimeT/FromFileTime to
   // a new time converter class.
-  static bool FromString(const wchar_t* time_string, Time* parsed_time);
+  //static bool FromString(const wchar_t* time_string, Time* parsed_time);
 
   // For serializing, use FromInternalValue to reconstitute. Please don't use
   // this and do arithmetic on it, as it is more error prone than using the
@@ -385,6 +390,9 @@ class Time {
  private:
   friend class TimeDelta;
 
+  explicit Time(int64 us) : us_(us) {
+  }
+
   // Explodes the given time to either local time |is_local = true| or UTC
   // |is_local = false|.
   void Explode(bool is_local, Exploded* exploded) const;
@@ -392,9 +400,6 @@ class Time {
   // Unexplodes a given time assuming the source is either local time
   // |is_local = true| or UTC |is_local = false|.
   static Time FromExploded(bool is_local, const Exploded& exploded);
-
-  explicit Time(int64 us) : us_(us) {
-  }
 
   // The representation of Jan 1, 1970 UTC in microseconds since the
   // platform-dependent epoch.
@@ -405,15 +410,14 @@ class Time {
   // when using battery power, we might elect to prevent high speed timers
   // which would draw more power.
   static bool high_resolution_timer_enabled_;
+  // Count of activations on the high resolution timer.  Only use in tests
+  // which are single threaded.
+  static int high_resolution_timer_activated_;
 #endif
 
   // Time in microseconds in UTC.
   int64 us_;
 };
-
-inline Time TimeDelta::operator+(Time t) const {
-  return Time(t.us_ + delta_);
-}
 
 // Inline the TimeDelta factory methods, for fast TimeDelta construction.
 
@@ -447,9 +451,13 @@ inline TimeDelta TimeDelta::FromMicroseconds(int64 us) {
   return TimeDelta(us);
 }
 
+inline Time TimeDelta::operator+(Time t) const {
+  return Time(t.us_ + delta_);
+}
+
 // TimeTicks ------------------------------------------------------------------
 
-class TimeTicks {
+class BASE_API TimeTicks {
  public:
   TimeTicks() : ticks_(0) {
   }
@@ -534,7 +542,6 @@ class TimeTicks {
 
  protected:
   friend class TimeDelta;
-  friend class PageLoadTrackerUnitTest;
 
   // Please use Now() to create a new object. This is for internal use
   // and testing. Ticks is in microseconds.

@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 
 #include <sys/time.h>
 #include <time.h>
+#include <unistd.h>
 
 #include <limits>
 
@@ -13,6 +14,19 @@
 #include "base/logging.h"
 
 namespace base {
+
+struct timespec TimeDelta::ToTimeSpec() const {
+  int64 microseconds = InMicroseconds();
+  time_t seconds = 0;
+  if (microseconds >= Time::kMicrosecondsPerSecond) {
+    seconds = InSeconds();
+    microseconds -= seconds * Time::kMicrosecondsPerSecond;
+  }
+  struct timespec result =
+      {seconds,
+       microseconds * Time::kNanosecondsPerMicrosecond};
+  return result;
+}
 
 #if !defined(OS_MACOSX)
 // The Time routines in this file use standard POSIX routines, or almost-
@@ -60,6 +74,30 @@ Time Time::NowFromSystemTime() {
   return Now();
 }
 
+void Time::Explode(bool is_local, Exploded* exploded) const {
+  // Time stores times with microsecond resolution, but Exploded only carries
+  // millisecond resolution, so begin by being lossy.  Adjust from Windows
+  // epoch (1601) to Unix epoch (1970);
+  int64 milliseconds = (us_ - kWindowsEpochDeltaMicroseconds) /
+      kMicrosecondsPerMillisecond;
+  time_t seconds = milliseconds / kMillisecondsPerSecond;
+
+  struct tm timestruct;
+  if (is_local)
+    localtime_r(&seconds, &timestruct);
+  else
+    gmtime_r(&seconds, &timestruct);
+
+  exploded->year         = timestruct.tm_year + 1900;
+  exploded->month        = timestruct.tm_mon + 1;
+  exploded->day_of_week  = timestruct.tm_wday;
+  exploded->day_of_month = timestruct.tm_mday;
+  exploded->hour         = timestruct.tm_hour;
+  exploded->minute       = timestruct.tm_min;
+  exploded->second       = timestruct.tm_sec;
+  exploded->millisecond  = milliseconds % kMillisecondsPerSecond;
+}
+
 // static
 Time Time::FromExploded(bool is_local, const Exploded& exploded) {
   struct tm timestruct;
@@ -72,8 +110,10 @@ Time Time::FromExploded(bool is_local, const Exploded& exploded) {
   timestruct.tm_wday   = exploded.day_of_week;  // mktime/timegm ignore this
   timestruct.tm_yday   = 0;     // mktime/timegm ignore this
   timestruct.tm_isdst  = -1;    // attempt to figure it out
+#if !defined(OS_NACL) && !defined(OS_SOLARIS)
   timestruct.tm_gmtoff = 0;     // not a POSIX field, so mktime/timegm ignore
   timestruct.tm_zone   = NULL;  // not a POSIX field, so mktime/timegm ignore
+#endif
 
   time_t seconds;
   if (is_local)
@@ -119,35 +159,11 @@ Time Time::FromExploded(bool is_local, const Exploded& exploded) {
       kWindowsEpochDeltaMicroseconds);
 }
 
-void Time::Explode(bool is_local, Exploded* exploded) const {
-  // Time stores times with microsecond resolution, but Exploded only carries
-  // millisecond resolution, so begin by being lossy.  Adjust from Windows
-  // epoch (1601) to Unix epoch (1970);
-  int64 milliseconds = (us_ - kWindowsEpochDeltaMicroseconds) /
-      kMicrosecondsPerMillisecond;
-  time_t seconds = milliseconds / kMillisecondsPerSecond;
-
-  struct tm timestruct;
-  if (is_local)
-    localtime_r(&seconds, &timestruct);
-  else
-    gmtime_r(&seconds, &timestruct);
-
-  exploded->year         = timestruct.tm_year + 1900;
-  exploded->month        = timestruct.tm_mon + 1;
-  exploded->day_of_week  = timestruct.tm_wday;
-  exploded->day_of_month = timestruct.tm_mday;
-  exploded->hour         = timestruct.tm_hour;
-  exploded->minute       = timestruct.tm_min;
-  exploded->second       = timestruct.tm_sec;
-  exploded->millisecond  = milliseconds % kMillisecondsPerSecond;
-}
-
 // TimeTicks ------------------------------------------------------------------
 // FreeBSD 6 has CLOCK_MONOLITHIC but defines _POSIX_MONOTONIC_CLOCK to -1.
 #if (defined(OS_POSIX) &&                                               \
      defined(_POSIX_MONOTONIC_CLOCK) && _POSIX_MONOTONIC_CLOCK >= 0) || \
-     defined(OS_FREEBSD) || defined(OS_OPENBSD)
+     defined(OS_FREEBSD) || defined(OS_OPENBSD) || defined(OS_ANDROID)
 
 // static
 TimeTicks TimeTicks::Now() {
@@ -166,6 +182,15 @@ TimeTicks TimeTicks::Now() {
   return TimeTicks(absolute_micro);
 }
 
+#elif defined(OS_NACL)
+
+TimeTicks TimeTicks::Now() {
+  // Sadly, Native Client does not have _POSIX_TIMERS enabled in sys/features.h
+  // Apparently NaCl only has CLOCK_REALTIME:
+  // http://code.google.com/p/nativeclient/issues/detail?id=1159
+  return TimeTicks(clock());
+}
+
 #else  // _POSIX_MONOTONIC_CLOCK
 #error No usable tick clock function on this platform.
 #endif  // _POSIX_MONOTONIC_CLOCK
@@ -176,19 +201,6 @@ TimeTicks TimeTicks::HighResNow() {
 }
 
 #endif  // !OS_MACOSX
-
-struct timespec TimeDelta::ToTimeSpec() const {
-  int64 microseconds = InMicroseconds();
-  time_t seconds = 0;
-  if (microseconds >= Time::kMicrosecondsPerSecond) {
-    seconds = InSeconds();
-    microseconds -= seconds * Time::kMicrosecondsPerSecond;
-  }
-  struct timespec result =
-      {seconds,
-       microseconds * Time::kNanosecondsPerMicrosecond};
-  return result;
-}
 
 struct timeval Time::ToTimeVal() const {
   struct timeval result;

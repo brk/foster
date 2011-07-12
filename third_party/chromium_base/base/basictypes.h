@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,9 +27,12 @@ typedef short               int16;
 typedef int                 int32;
 #endif
 
-// The NSPR system headers define 64-bit as |long| when possible.  In order to
-// not have typedef mismatches, we do the same on LP64.
-#if __LP64__
+// The NSPR system headers define 64-bit as |long| when possible, except on
+// Mac OS X.  In order to not have typedef mismatches, we do the same on LP64.
+//
+// On Mac OS X, |long long| is used for 64-bit types for compatibility with
+// <inttypes.h> format macros even in the LP64 model.
+#if defined(__LP64__) && !defined(OS_MACOSX)
 typedef long                int64;
 #else
 typedef long long           int64;
@@ -51,11 +54,8 @@ typedef unsigned int       uint32;
 #endif
 
 // See the comment above about NSPR and 64-bit.
-#if __LP64__
-#ifndef _UINT64 // Avoid conflicts with cssmconfig.h from Security.framework.
-#define _UINT64
+#if defined(__LP64__) && !defined(OS_MACOSX)
 typedef unsigned long uint64;
-#endif
 #else
 typedef unsigned long long uint64;
 #endif
@@ -238,7 +238,7 @@ struct CompileAssert {
 //   expr is a compile-time constant.  (Template arguments must be
 //   determined at compile-time.)
 //
-// - The outter parentheses in CompileAssert<(bool(expr))> are necessary
+// - The outer parentheses in CompileAssert<(bool(expr))> are necessary
 //   to work around a bug in gcc 3.4.4 and 4.0.1.  If we had written
 //
 //     CompileAssert<bool(expr)>

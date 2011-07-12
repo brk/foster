@@ -5,7 +5,8 @@ set (CHROMIUM_BASE_ARCH x86)
 set (BASE_SOURCES
 	${CHROMIUM_BASE}/base/at_exit.cc
 	${CHROMIUM_BASE}/base/lazy_instance.cc
-	${CHROMIUM_BASE}/base/lock.cc
+	${CHROMIUM_BASE}/base/file_path.cc
+	${CHROMIUM_BASE}/base/synchronization/lock.cc
 	${CHROMIUM_BASE}/base/logging.cc
 	${CHROMIUM_BASE}/base/debug/debugger.cc
 	${CHROMIUM_BASE}/base/string_util.cc
@@ -14,8 +15,9 @@ set (BASE_SOURCES
 	${CHROMIUM_BASE}/base/string_split.cc
 	${CHROMIUM_BASE}/base/string_piece.cc
 	${CHROMIUM_BASE}/base/stringprintf.cc
+	${CHROMIUM_BASE}/base/pickle.cc
 	${CHROMIUM_BASE}/base/time.cc
-	${CHROMIUM_BASE}/base/thread_restrictions.cc
+	${CHROMIUM_BASE}/base/threading/thread_restrictions.cc
 	${CHROMIUM_BASE}/base/utf_string_conversions.cc
 	${CHROMIUM_BASE}/base/utf_string_conversion_utils.cc
 	${CHROMIUM_BASE}/base/vlog.cc
@@ -30,7 +32,8 @@ if (${APPLE})
 set(BASE_SOURCES
     ${BASE_SOURCES}
 	${CHROMIUM_BASE}/base/time_mac.cc
-	${CHROMIUM_BASE}/base/platform_thread_mac.mm
+	${CHROMIUM_BASE}/base/mac/foundation_util.mm
+	${CHROMIUM_BASE}/base/threading/platform_thread_mac.mm
 	${CHROMIUM_BASE}/base/sys_string_conversions_mac.mm
 )
 endif (${APPLE})
@@ -59,10 +62,10 @@ endif (${CHROMIUM_BASE_ARCH} STREQUAL "x86")
 if (${UNIX})
   set (BASE_SOURCES
     ${BASE_SOURCES}
-	${CHROMIUM_BASE}/base/lock_impl_posix.cc
+	${CHROMIUM_BASE}/base/synchronization/lock_impl_posix.cc
 	${CHROMIUM_BASE}/base/safe_strerror_posix.cc
-	${CHROMIUM_BASE}/base/platform_thread_posix.cc
-	${CHROMIUM_BASE}/base/thread_local_posix.cc
+	${CHROMIUM_BASE}/base/threading/platform_thread_posix.cc
+	${CHROMIUM_BASE}/base/threading/thread_local_posix.cc
 	${CHROMIUM_BASE}/base/debug/debugger_posix.cc
   )
 endif (${UNIX})
@@ -73,11 +76,11 @@ if (${WIN32})
   set (BASE_SOURCES
     ${BASE_SOURCES}
 	${CHROMIUM_BASE}/base/time_win.cc
-	${CHROMIUM_BASE}/base/lock_impl_win.cc
+	${CHROMIUM_BASE}/base/synchronization/lock_impl_win.cc
 	${CHROMIUM_BASE}/base/logging_win.cc
-	${CHROMIUM_BASE}/base/platform_thread_win.cc
 	${CHROMIUM_BASE}/base/debug/debugger_win.cc
-	${CHROMIUM_BASE}/base/thread_local_win.cc
+	${CHROMIUM_BASE}/base/threading/platform_thread_win.cc
+	${CHROMIUM_BASE}/base/threading/thread_local_win.cc
 	${CHROMIUM_BASE}/base/sys_string_conversions_win.cc
   )
 endif (${WIN32})

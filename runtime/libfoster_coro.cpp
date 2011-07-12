@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#include "base/lock.h"
+#include "base/synchronization/lock.h"
 
 #include "libfoster.h"
 #include "libfoster_gc_roots.h"
@@ -12,7 +12,7 @@ using namespace foster::runtime;
 
 #define TRACE do { fprintf(stdout, "%s::%d\n", __FILE__, __LINE__); fflush(stdout); } while (0)
 
-Lock coro_create_mutex;
+base::Lock coro_create_mutex;
 
 namespace foster {
 namespace runtime {
@@ -42,7 +42,7 @@ void foster_coro_ensure_self_reference(foster_generic_coro* coro) {
 // corofn :: void* -> void
 void foster_coro_create(coro_func corofn,
                         void* arg) {
-  AutoLock locker(coro_create_mutex);
+  base::AutoLock locker(coro_create_mutex);
 
   long ssize = 16*1024;
   // TODO allocate small stacks that grow on demand

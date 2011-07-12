@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,8 +8,9 @@
 
 #include <stack>
 
+#include "base/base_api.h"
 #include "base/basictypes.h"
-#include "base/lock.h"
+#include "base/synchronization/lock.h"
 
 namespace base {
 
@@ -27,14 +28,7 @@ namespace base {
 // When the exit_manager object goes out of scope, all the registered
 // callbacks and singleton destructors will be called.
 
-class AtExitManager {
- protected:
-  // This constructor will allow this instance of AtExitManager to be created
-  // even if one already exists.  This should only be used for testing!
-  // AtExitManagers are kept on a global stack, and it will be removed during
-  // destruction.  This allows you to shadow another AtExitManager.
-  explicit AtExitManager(bool shadow);
-
+class BASE_API AtExitManager {
  public:
   typedef void (*AtExitCallbackType)(void*);
 
@@ -52,6 +46,13 @@ class AtExitManager {
   // is possible to register new callbacks after calling this function.
   static void ProcessCallbacksNow();
 
+ protected:
+  // This constructor will allow this instance of AtExitManager to be created
+  // even if one already exists.  This should only be used for testing!
+  // AtExitManagers are kept on a global stack, and it will be removed during
+  // destruction.  This allows you to shadow another AtExitManager.
+  explicit AtExitManager(bool shadow);
+
  private:
   struct CallbackAndParam {
     CallbackAndParam(AtExitCallbackType func, void* param)
@@ -60,7 +61,7 @@ class AtExitManager {
     void* param_;
   };
 
-  Lock lock_;
+  base::Lock lock_;
   std::stack<CallbackAndParam> stack_;
   AtExitManager* next_manager_;  // Stack of managers to allow shadowing.
 

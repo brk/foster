@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 // Copied from strings/stringpiece.h with modifications
@@ -19,21 +19,28 @@
 #define BASE_STRING_PIECE_H_
 #pragma once
 
-#include <algorithm>
-#include <iosfwd>
 #include <string>
 
+#include "base/base_api.h"
 #include "base/basictypes.h"
 
 namespace base {
 
-class StringPiece {
+class BASE_API StringPiece {
  public:
+  // standard STL container boilerplate
   typedef size_t size_type;
+  typedef char value_type;
+  typedef const char* pointer;
+  typedef const char& reference;
+  typedef const char& const_reference;
+  typedef ptrdiff_t difference_type;
+  typedef const char* const_iterator;
+  typedef const char* iterator;
+  typedef std::reverse_iterator<const_iterator> const_reverse_iterator;
+  typedef std::reverse_iterator<iterator> reverse_iterator;
 
- private:
-  const char*   ptr_;
-  size_type     length_;
+  static const size_type npos;
 
  public:
   // We provide non-explicit singleton constructors so users can pass
@@ -85,7 +92,8 @@ class StringPiece {
   }
 
   int compare(const StringPiece& x) const {
-    int r = wordmemcmp(ptr_, x.ptr_, std::min(length_, x.length_));
+    int r = wordmemcmp(
+        ptr_, x.ptr_, (length_ < x.length_ ? length_ : x.length_));
     if (r == 0) {
       if (length_ < x.length_) r = -1;
       else if (length_ > x.length_) r = +1;
@@ -113,17 +121,6 @@ class StringPiece {
             (wordmemcmp(ptr_ + (length_-x.length_), x.ptr_, x.length_) == 0));
   }
 
-  // standard STL container boilerplate
-  typedef char value_type;
-  typedef const char* pointer;
-  typedef const char& reference;
-  typedef const char& const_reference;
-  typedef ptrdiff_t difference_type;
-  static const size_type npos;
-  typedef const char* const_iterator;
-  typedef const char* iterator;
-  typedef std::reverse_iterator<const_iterator> const_reverse_iterator;
-  typedef std::reverse_iterator<iterator> reverse_iterator;
   iterator begin() const { return ptr_; }
   iterator end() const { return ptr_ + length_; }
   const_reverse_iterator rbegin() const {
@@ -161,17 +158,21 @@ class StringPiece {
   static int wordmemcmp(const char* p, const char* p2, size_type N) {
     return memcmp(p, p2, N);
   }
+
+ private:
+  const char*   ptr_;
+  size_type     length_;
 };
 
-bool operator==(const StringPiece& x, const StringPiece& y);
+BASE_API bool operator==(const StringPiece& x, const StringPiece& y);
 
 inline bool operator!=(const StringPiece& x, const StringPiece& y) {
   return !(x == y);
 }
 
 inline bool operator<(const StringPiece& x, const StringPiece& y) {
-  const int r = StringPiece::wordmemcmp(x.data(), y.data(),
-                                        std::min(x.size(), y.size()));
+  const int r = StringPiece::wordmemcmp(
+      x.data(), y.data(), (x.size() < y.size() ? x.size() : y.size()));
   return ((r < 0) || ((r == 0) && (x.size() < y.size())));
 }
 
@@ -186,9 +187,6 @@ inline bool operator<=(const StringPiece& x, const StringPiece& y) {
 inline bool operator>=(const StringPiece& x, const StringPiece& y) {
   return !(x < y);
 }
-
-// allow StringPiece to be logged (needed for unit testing).
-extern std::ostream& operator<<(std::ostream& o, const StringPiece& piece);
 
 }  // namespace base
 

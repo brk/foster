@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,28 +8,10 @@
 #pragma once
 
 #include <string>
+
+#include "base/base_api.h"
+#include "base/debug/trace_event.h"
 #include "base/win/event_trace_provider.h"
-
-#define TRACE_EVENT_BEGIN(name, id, extra) \
-  base::debug::TraceLog::Trace( \
-      name, \
-      base::debug::TraceLog::EVENT_BEGIN, \
-      reinterpret_cast<const void*>(id), \
-      extra);
-
-#define TRACE_EVENT_END(name, id, extra) \
-  base::debug::TraceLog::Trace( \
-      name, \
-      base::debug::TraceLog::EVENT_END, \
-      reinterpret_cast<const void*>(id), \
-      extra);
-
-#define TRACE_EVENT_INSTANT(name, id, extra) \
-  base::debug::TraceLog::Trace( \
-      name, \
-      base::debug::TraceLog::EVENT_INSTANT, \
-      reinterpret_cast<const void*>(id), \
-      extra);
 
 // Fwd.
 template <typename Type>
@@ -40,14 +22,8 @@ namespace debug {
 
 // This EtwTraceProvider subclass implements ETW logging
 // for the macros above on Windows.
-class TraceLog : public base::win::EtwTraceProvider {
+class BASE_API TraceEventETWProvider : public base::win::EtwTraceProvider {
  public:
-  enum EventType {
-    EVENT_BEGIN,
-    EVENT_END,
-    EVENT_INSTANT
-  };
-
   // Start logging trace events.
   // This is a noop in this implementation.
   static bool StartTracing();
@@ -61,14 +37,14 @@ class TraceLog : public base::win::EtwTraceProvider {
   // be used for length.
   static void Trace(const char* name,
                     size_t name_len,
-                    EventType type,
+                    TraceEventPhase type,
                     const void* id,
                     const char* extra,
                     size_t extra_len);
 
   // Allows passing extra as a std::string for convenience.
   static void Trace(const char* name,
-                    EventType type,
+                    TraceEventPhase type,
                     const void* id,
                     const std::string& extra) {
     return Trace(name, -1, type, id, extra.c_str(), extra.length());
@@ -77,7 +53,7 @@ class TraceLog : public base::win::EtwTraceProvider {
   // Allows passing extra as a const char* to avoid constructing temporary
   // std::string instances where not needed.
   static void Trace(const char* name,
-                    EventType type,
+                    TraceEventPhase type,
                     const void* id,
                     const char* extra) {
     return Trace(name, -1, type, id, extra, -1);
@@ -85,7 +61,7 @@ class TraceLog : public base::win::EtwTraceProvider {
 
   // Retrieves the singleton.
   // Note that this may return NULL post-AtExit processing.
-  static TraceLog* GetInstance();
+  static TraceEventETWProvider* GetInstance();
 
   // Returns true iff tracing is turned on.
   bool IsTracing() {
@@ -99,7 +75,7 @@ class TraceLog : public base::win::EtwTraceProvider {
   //    string will be used.
   void TraceEvent(const char* name,
                   size_t name_len,
-                  EventType type,
+                  TraceEventPhase type,
                   const void* id,
                   const char* extra,
                   size_t extra_len);
@@ -110,20 +86,20 @@ class TraceLog : public base::win::EtwTraceProvider {
 
  private:
   // Ensure only the provider can construct us.
-  friend struct StaticMemorySingletonTraits<TraceLog>;
-  TraceLog();
+  friend struct StaticMemorySingletonTraits<TraceEventETWProvider>;
+  TraceEventETWProvider();
 
-  DISALLOW_COPY_AND_ASSIGN(TraceLog);
+  DISALLOW_COPY_AND_ASSIGN(TraceEventETWProvider);
 };
 
 // The ETW trace provider GUID.
-extern const GUID kChromeTraceProviderName;
+BASE_API extern const GUID kChromeTraceProviderName;
 
 // The ETW event class GUID for 32 bit events.
-extern const GUID kTraceEventClass32;
+BASE_API extern const GUID kTraceEventClass32;
 
 // The ETW event class GUID for 64 bit events.
-extern const GUID kTraceEventClass64;
+BASE_API extern const GUID kTraceEventClass64;
 
 // The ETW event types, IDs 0x00-0x09 are reserved, so start at 0x10.
 const base::win::EtwEventType kTraceEventTypeBegin = 0x10;
