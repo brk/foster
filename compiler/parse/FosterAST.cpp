@@ -6,7 +6,6 @@
 #include "base/Diagnostics.h"
 
 #include "parse/FosterAST.h"
-#include "parse/DumpStructure.h" // for dumpExprStructure
 #include "passes/PrettyPrintPass.h" // for prettyPrintType
 
 #include "llvm/Support/raw_os_ostream.h"
@@ -26,17 +25,6 @@ std::ostream& operator<<(std::ostream& out, const TypeAST& type) {
   llvm::raw_os_ostream rout(out);
   foster::prettyPrintType(&type, rout, 40);
   return out;
-}
-
-std::ostream& operator<<(std::ostream& out, const ExprAST& expr) {
-  return expr.operator<<(out);
-}
-
-
-string str(const ExprAST* expr) {
-  if (expr) {
-    std::stringstream ss; ss << (*expr); return ss.str();
-  } else { return "<nil>"; }
 }
 
 string str(const TypeAST* expr) {
@@ -59,12 +47,4 @@ char kDefaultFnLiteralCallingConvention[] = "fastcc";
 
 } // namespace foster
 
-////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////
-
-std::ostream& ExprAST::operator<<(std::ostream& out) const {
-  llvm::raw_os_ostream raw(out);
-  foster::dumpExprStructure(raw, this);
-  return out;
-}
 

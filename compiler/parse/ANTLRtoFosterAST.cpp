@@ -229,37 +229,22 @@ const char* getDefaultCallingConvParse() {
 }
 
 ////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////
 
 IntAST* parseIntFrom(pTree t) {
-  const SourceRange& sourceRange = rangeOf(t);
-  if (textOf(t) != "INT_NUM") {
-    EDiag() << "parseIntFrom() called on non-INT_NUM token " << textOf(t)
-            << show(sourceRange);
-    return NULL;
-  }
+  ASSERT(textOf(t) == "INT_NUM")
+            << "parseIntFrom() called on non-INT_NUM token " << textOf(t)
+            << show(rangeOf(t));
 
   std::stringstream alltext;
 
-  // Each child is either a hex clump, a backtick, or an underscore
   int nchildren = getChildCount(t);
   for (int i = 0; i < nchildren; ++i) {
-    string text = textOf(child(t, i));
-    if (text == "_" && i != nchildren - 2) {
-      EDiag() << "number can have only one underscore,"
-              << "in 2nd-to-last position!" << show(sourceRange);
-      return NULL;
-    }
-
-    alltext << text;
+    alltext << textOf(child(t, i));
   }
 
-  return new IntAST(alltext.str(), sourceRange);
+  return new IntAST(alltext.str(), rangeOf(t));
 }
 
-////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
 
 ExprAST* ExprAST_from(pTree tree);
@@ -277,9 +262,9 @@ ExprAST* parseSeq(pTree tree) {
   Exprs exprs;
   for (size_t i = 0; i < getChildCount(tree); ++i) {
     ExprAST* ast = ExprAST_from(child(tree, i));
-    if (ast != NULL) {
-      exprs.push_back(ast);
-    }
+    exprs.push_back(ast);
+    ASSERT(ast != NULL)
+        << "NULL element in seq: " << show(rangeOf(child(tree, i)));
   }
   return new SeqAST(exprs, rangeOf(tree));
 }

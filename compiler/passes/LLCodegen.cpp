@@ -10,7 +10,6 @@
 #include "parse/FosterTypeAST.h"
 #include "parse/FosterUtils.h"
 #include "parse/ParsingContext.h"
-#include "parse/DumpStructure.h"
 
 #include "passes/CodegenPass-impl.h"
 

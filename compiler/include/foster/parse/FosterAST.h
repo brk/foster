@@ -32,8 +32,6 @@ class PrettyPrintPass;
 
 typedef std::vector<ExprAST*> Exprs;
 
-string str(const ExprAST* expr);
-
 namespace foster {
   SourceRangeHighlighter show(ExprAST* ast);
   extern char kDefaultFnLiteralCallingConvention[];
@@ -53,7 +51,6 @@ struct ExprAST {
     : type(NULL),
       sourceRange(sourceRange), tag(tag) {}
   virtual ~ExprAST() {}
-  virtual std::ostream& operator<<(std::ostream& out) const;
   virtual void dump(DumpToProtobufPass* pass) = 0;
   virtual void show(PrettyPrintPass*    pass) = 0;
 };
@@ -64,7 +61,6 @@ class SeqAST;
 class TupleExprAST;
 class SubscriptAST;
 class IfExprAST;
-//class PrototypeAST;
 class VariableAST;
 
 class Decl; class Defn;

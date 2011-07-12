@@ -369,7 +369,6 @@ add_library(fosterc_parse STATIC
   compiler/parse/ANTLRtoFosterAST.cpp
   compiler/parse/ANTLRtoFosterErrorHandling.cpp
   compiler/parse/OperatorPrecedence.cpp
-  compiler/parse/DumpStructure.cpp
   compiler/parse/FosterUtils.cpp
   ${GENERATED}/FosterAST.pb.cc
   ${GENERATED}/fosterParser.c
