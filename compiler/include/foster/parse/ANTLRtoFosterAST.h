@@ -11,48 +11,14 @@
 
 typedef pANTLR3_BASE_TREE pTree;
 
-class TypeAST;
-TypeAST* TypeAST_from(pTree tree);
-
-void dumpANTLRTree(std::ostream& out, pTree tree, int depth);
-
-std::string str(pANTLR3_COMMON_TOKEN tok);
-
-bool isBitwiseOpName(const std::string& op);
-
-class IntAST;
-class ExprAST;
 class ModuleAST;
-
-namespace llvm {
-class APInt;
-}
 
 namespace foster {
 
-bool wasExplicitlyParenthesized(const ExprAST* ast);
-
-class SourceRange;
-
-IntAST* parseInt(const std::string& clean,
-                 const std::string& alltext,
-                 int base,
-                 const SourceRange& sourceRange);
-
-llvm::APInt* parseAPIntFromClean(const std::string& clean, int base,
-                                 const SourceRange& sourceRange);
-
 class ANTLRContext;
+struct InputFile;
 
 void deleteANTLRContext(ANTLRContext* ctx);
-
-struct InputFile;
-struct ParsingContext;
-
-ExprAST* parseExpr(const std::string& source,
-                   unsigned& outNumANTLRErrors,
-                   ParsingContext* cc);
-
 ModuleAST* parseModule(const InputFile& file, const std::string& moduleName,
                        pTree& outTree,
                        ANTLRContext*& outContext,

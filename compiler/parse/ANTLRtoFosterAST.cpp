@@ -63,6 +63,7 @@ string str(pANTLR3_COMMON_TOKEN tok) {
   }
 }
 
+TypeAST* TypeAST_from(pTree tree);
 void display_pTree(pTree t, int nspaces);
 
 size_t getChildCount(pTree tree) {
@@ -216,13 +217,6 @@ void display_pTree(pTree t, int nspaces) {
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
 
-// expressions wrapped in () are marked here
-std::map<const ExprAST*, bool> gWasWrappedInExplicitParens;
-
-bool foster::wasExplicitlyParenthesized(const ExprAST* ast) {
-  return gWasWrappedInExplicitParens[ast];
-}
-
 const char* getDefaultCallingConvParse() {
   //foster::EDiag() << "getDefaultCallingConvParse()";
   return foster::kDefaultFnLiteralCallingConvention;
@@ -259,20 +253,11 @@ Exprs getExprs(pTree tree) {
 }
 
 ExprAST* parseSeq(pTree tree) {
-  Exprs exprs;
-  for (size_t i = 0; i < getChildCount(tree); ++i) {
-    ExprAST* ast = ExprAST_from(child(tree, i));
-    exprs.push_back(ast);
-    ASSERT(ast != NULL)
-        << "NULL element in seq: " << show(rangeOf(child(tree, i)));
-  }
-  return new SeqAST(exprs, rangeOf(tree));
+  return new SeqAST(getExprs(tree), rangeOf(tree));
 }
 
 ExprAST* parseParenExpr(pTree tree) {
-  ExprAST* rv = ExprAST_from(child(tree, 0));
-  gWasWrappedInExplicitParens[rv] = true;
-  return rv;
+  return ExprAST_from(child(tree, 0));
 }
 
 Formal* parseFormal(pTree formal) {
@@ -846,41 +831,6 @@ namespace foster {
   } // unnamed namespace
 
   void deleteANTLRContext(ANTLRContext* ctx) { delete ctx; }
-
-  ExprAST* parseExpr(const std::string& source,
-                     unsigned& outNumANTLRErrors,
-                     ParsingContext* cc) {
-    ANTLRContext* ctx = new ANTLRContext();
-    const char* s = source.c_str();
-
-    foster::InputTextBuffer* membuf = new InputTextBuffer(s, source.size());
-    createParser(*ctx, "", membuf);
-
-    installTreeTokenBoundaryTracker(ctx->psr->adaptor);
-    foster::installRecognitionErrorFilter(ctx->psr->pParser->rec);
-
-    ParsingContext::pushContext(cc);
-
-    gInputFile = NULL;
-    gInputTextBuffer = membuf;
-
-    fosterParser_program_return langAST = ctx->psr->program(ctx->psr);
-
-    outNumANTLRErrors = ctx->psr->pParser->rec->state->errorCount;
-
-    ExprAST* rv = ExprAST_from(langAST.tree);
-
-    // If we reuse the same compilation context again later,
-    // we do not want to accidentally pick up an incorrect
-    // token boundary if we happen to randomly get the same
-    // tree pointer values! Doing so can make ANTLR crash.
-    ParsingContext::clearTokenBoundaries();
-    ParsingContext::popCurrentContext();
-
-    delete ctx;
-
-    return rv;
-  }
 
   ModuleAST* parseModule(const InputFile& file,
                        const std::string& moduleName,
