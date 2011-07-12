@@ -35,6 +35,10 @@ need () {
 
 checkargs () {
   case $@ in
+    *--help*)
+      echo "$0 [--by-file]"
+      exit
+      ;;
     *--by-file*)
       runcloc compiler/base   --by-file --not-match-f="_unittest.cpp"
       runcloc compiler/parse  --by-file --not-match-f="_unittest.cpp"
