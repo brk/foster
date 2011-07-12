@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#include "llvm/LLVMContext.h"
 #include "llvm/Module.h"
 #include "llvm/Linker.h"
 #include "llvm/ADT/Statistic.h"
@@ -16,7 +15,6 @@
 ////////////////////////////////////////////////////////////////////
 
 #include "base/Assert.h"
-#include "base/LLVMUtils.h"
 #include "base/TimingsRepository.h"
 
 #include "passes/FosterPasses.h"
@@ -32,16 +30,13 @@
 #include "StandardPrelude.h"
 
 #include <fstream>
-#include <vector>
 
 using std::string;
 
 using foster::ScopedTimer;
 using foster::EDiag;
-using foster::ParsingContext;
 
 namespace foster {
-  struct ScopeInfo;
   extern bool gPrintLLVMImports; // in StandardPrelude.cpp
 }
 
@@ -253,7 +248,8 @@ int main(int argc, char** argv) {
   mp_int =
     llvm::PointerType::getUnqual(mpz_struct_ty);
   module->addTypeName("mp_int", mp_int);
-  ParsingContext::insertType("int", NamedTypeAST::get("int", mp_int));
+  foster::ParsingContext::insertType("int",
+                   NamedTypeAST::get("int", mp_int));
 
   foster_generic_coro_t = libfoster_bc->getTypeByName("struct.foster_generic_coro");
   ASSERT(foster_generic_coro_t != NULL);

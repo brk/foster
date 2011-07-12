@@ -18,11 +18,9 @@ namespace foster {
 class ANTLRContext;
 struct InputFile;
 
-void deleteANTLRContext(ANTLRContext* ctx);
-ModuleAST* parseModule(const InputFile& file, const std::string& moduleName,
-                       pTree& outTree,
-                       ANTLRContext*& outContext,
-                       unsigned& outNumANTLRErrors);
+ModuleAST* parseModule(const InputFile& file,
+                       const std::string& moduleName,
+                       unsigned* outNumANTLRErrors);
 
 } // namespace foster
 

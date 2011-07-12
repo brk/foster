@@ -833,11 +833,9 @@ namespace foster {
   void deleteANTLRContext(ANTLRContext* ctx) { delete ctx; }
 
   ModuleAST* parseModule(const InputFile& file,
-                       const std::string& moduleName,
-                       pTree& outTree,
-                       ANTLRContext*& ctx,
-                       unsigned& outNumANTLRErrors) {
-    ctx = new ANTLRContext();
+                         const std::string& moduleName,
+                         unsigned* outNumANTLRErrors) {
+    ANTLRContext* ctx = new ANTLRContext();
     createParser(*ctx, file);
 
     installTreeTokenBoundaryTracker(ctx->psr->adaptor);
@@ -851,10 +849,9 @@ namespace foster {
     fosterParser_program_return langAST = ctx->psr->program(ctx->psr);
 
     llvm::sys::TimeValue parse_mid = llvm::sys::TimeValue::now();
-    outTree = langAST.tree;
-    outNumANTLRErrors = ctx->psr->pParser->rec->state->errorCount;
+    *outNumANTLRErrors = ctx->psr->pParser->rec->state->errorCount;
 
-    ModuleAST* m = parseTopLevel(outTree, moduleName);
+    ModuleAST* m = parseTopLevel(langAST.tree, moduleName);
 
     llvm::sys::TimeValue parse_end = llvm::sys::TimeValue::now();
 

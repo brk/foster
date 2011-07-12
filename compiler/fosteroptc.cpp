@@ -2,30 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#include "llvm/DerivedTypes.h"
-#include "llvm/ExecutionEngine/ExecutionEngine.h"
-// We don't actually use the JIT, but we need this header for
-// the TargetData member of the ExecutionEngine to be properly
-// initialized to the host machine's native target.
-#include "llvm/ExecutionEngine/JIT.h"
-#include "llvm/LLVMContext.h"
 #include "llvm/Module.h"
-#include "llvm/Linker.h"
 #include "llvm/LinkAllPasses.h"
 #include "llvm/PassManager.h"
 #include "llvm/ADT/Statistic.h"
-#include "llvm/ADT/Triple.h"
 #include "llvm/Config/config.h"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
 #include "llvm/CodeGen/LinkAllAsmWriterComponents.h"
 #include "llvm/Target/TargetData.h"
-#include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetRegistry.h"
 #include "llvm/Target/TargetOptions.h"
 
 #include "pystring/pystring.h"
-
-#include "base/LLVMUtils.h"
 
 #include "llvm/Support/Host.h"
 #include "llvm/Support/Signals.h"
@@ -46,7 +34,6 @@
 #include "passes/FosterPasses.h"
 
 #include <fstream>
-#include <vector>
 
 using namespace llvm;
 
@@ -55,7 +42,6 @@ using foster::SourceRange;
 using foster::EDiag;
 
 namespace foster {
-  struct ScopeInfo;
   void linkFosterGC(); // defined in llmv/plugins/FosterGC.cpp
 }
 

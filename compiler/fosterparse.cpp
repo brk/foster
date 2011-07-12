@@ -5,9 +5,6 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/CommandLine.h"
 
-#include "base/LLVMUtils.h"
-#include "llvm/Support/Process.h"
-
 #include "base/InputFile.h"
 #include "base/InputTextBuffer.h"
 #include "parse/FosterAST.h"
@@ -89,7 +86,6 @@ void dumpModuleToProtobuf(ModuleAST* mod, const string& filename) {
 }
 
 int main(int argc, char** argv) {
-  ///cl::SetVersionPrinter(&printVersionInfo);
   cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster parser\n");
 
   foster::validateInputFile(optInputPath);
@@ -97,8 +93,6 @@ int main(int argc, char** argv) {
   llvm::sys::Path inPath(optInputPath);
   const foster::InputFile infile(inPath);
 
-  pANTLR3_BASE_TREE parseTree = NULL;
-  foster::ANTLRContext* ctx = NULL;
   unsigned numParseErrors = 0;
 
   foster::ParsingContext::initCachedLLVMTypeNames();
@@ -107,7 +101,8 @@ int main(int argc, char** argv) {
 
   ModuleAST* exprAST = NULL;
   { ScopedTimer timer("io.parse");
-    exprAST = foster::parseModule(infile, optInputPath, parseTree, ctx, numParseErrors);
+    exprAST = foster::parseModule(infile, optInputPath,
+                                  &numParseErrors);
   }
 
   if (numParseErrors > 0) {

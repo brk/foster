@@ -5,7 +5,7 @@ The compiler was originally a monolithic C++ binary.
 It is now a separate front-end, middle-end, and back-end,
 which communicate via protocol buffers.
 
-The front-end is written in C++, and uses ANTLR and LLVM
+The front-end is written in C++, and uses ANTLR
 to turn text strings into parse trees, which it then
 massages into AST nodes.
 
@@ -37,8 +37,7 @@ Currently, we have a ``fosterlower`` binary, which converts
 protobufs with a close-to-LLVM representation, and outputs
 linked LLVM with initial peephole optimizations. There is a
 second ``fosteroptc`` binary which optimizes the final program
-and emits native assembly (in the future, this will likely
-output a binary directly, saving us at most 5% in compilation time).
+and emits native object code or assembly.
 
 Possible choices for generation of LLVM IR:
 
