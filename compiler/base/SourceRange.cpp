@@ -30,8 +30,8 @@ SourceRange::SourceRange(const InputFile* source,
                          const InputTextBuffer* abuf)
     : source(source), begin(abegin), end(aend), buf(abuf) {
 
-  if (source) {
-   //  buf = source->getBuffer();
+  if (source && !buf) {
+    buf = source->getBuffer();
   }
 
   // In error situations, ANTLR will sometimes give us invalid
