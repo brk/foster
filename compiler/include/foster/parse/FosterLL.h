@@ -48,7 +48,6 @@ struct LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass) = 0;
 };
 
-class LLTuple;
 class LLProc;
 class LLAllocate;
 
@@ -202,13 +201,14 @@ struct LLClosure {
   std::string varname;
   std::string procname;
   LLTuple*    env;
-  explicit LLClosure(const std::string& varname,
-                     const std::string& procname,
-                     LLTuple* env)
-    : varname(varname), procname(procname), env(env) {
+  explicit LLClosure(const std::string& _var ,
+                     const std::string& _proc,
+                     LLTuple* _env)
+    : varname(_var), procname(_proc), env(_env) {
    env->isClosureEnvironment = true;
  }
- virtual llvm::Value* codegen(CodegenPass* pass);
+ llvm::Value* codegenStorage(CodegenPass* pass);
+ llvm::Value* codegenClosure(CodegenPass* pass, llvm::Value* envSlot);
 };
 
 struct LLClosures : public LLExpr {

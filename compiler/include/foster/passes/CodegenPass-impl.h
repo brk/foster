@@ -92,6 +92,7 @@ struct CodegenPass {
   void addEntryBB(llvm::Function* f);
 
   Value* emit(LLExpr* e, TypeAST* t);
+  Value* autoload(Value* v);
 
   // Returns ty**, the stack slot containing a ty*.
   llvm::AllocaInst* emitMalloc(const llvm::Type* ty);

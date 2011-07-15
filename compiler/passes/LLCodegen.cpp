@@ -94,6 +94,13 @@ llvm::Value* emitStore(llvm::Value* val,
   return builder.CreateStore(val, ptr, /*isVolatile=*/ false);
 }
 
+llvm::Value* CodegenPass::autoload(llvm::Value* v) {
+  if (this->needsImplicitLoad.count(v) == 1) {
+    return builder.CreateLoad(v, /*isVolatile=*/ false,
+                              v->getName() + ".autoload");
+  } else return v;
+}
+
 // emit() serves as a wrapper around codegen()
 // which inserts implicit loads as needed, and also
 // verifies that the expected type matches the generated type.
@@ -101,11 +108,7 @@ llvm::Value* emitStore(llvm::Value* val,
 llvm::Value* CodegenPass::emit(LLExpr* e, TypeAST* expectedType) {
   ASSERT(e != NULL) << "null expr passed to emit()!";
   llvm::Value* v = e->codegen(this);
-
-  if (this->needsImplicitLoad.count(v) == 1) {
-    v = builder.CreateLoad(v, /*isVolatile=*/ false,
-                           v->getName() + ".autoload");
-  }
+  v = autoload(v);
 
   if (expectedType) {
     const llvm::Type* ty = getLLVMType(expectedType);
@@ -362,8 +365,11 @@ llvm::Value* LLClosures::codegen(CodegenPass* pass) {
 
   LLClosure& c = *closures[0];
 
-  llvm::Value* clo = c.codegen(pass);
+  llvm::Value* envSlot = c.codegenStorage(pass);
+  llvm::Value* envPtr = pass->autoload(envSlot);
+  c.env->codegenTo(pass, envPtr);
 
+  llvm::Value* clo = c.codegenClosure(pass, envPtr);
   pass->valueSymTab.insert(c.varname, clo);
 
   llvm::Value* exp = pass->emit(expr, NULL);
@@ -430,8 +436,11 @@ bool isPointerToPointer(const llvm::Type* p) {
   return p->isPointerTy() && p->getContainedType(0)->isPointerTy();
 }
 
-llvm::Value* LLClosure::codegen(CodegenPass* pass) {
+llvm::Value* LLClosure::codegenClosure(
+                        CodegenPass* pass,
+                        llvm::Value* envPtr) {
   llvm::Value* proc = pass->lookupFunctionOrDie(procname);
+
   const llvm::FunctionType* fnty;
   const llvm::StructType* envStructTy;
   const llvm::StructType* cloStructTy;
@@ -444,14 +453,13 @@ llvm::Value* LLClosure::codegen(CodegenPass* pass) {
   }
 
   // { code*, env* }*
-  llvm::AllocaInst* clo = CreateEntryAlloca(cloStructTy, varname + ".closure");
+  llvm::AllocaInst* clo =
+        CreateEntryAlloca(cloStructTy, varname + ".closure");
 
   //llvm::AllocaInst* clo_slot = pass->emitMalloc(cloStructTy);
   //llvm::Value* clo = builder.CreateLoad(clo_slot, /*isVolatile=*/ false,
   //                                      varname + ".closure");
-  // TODO explicitly allocate with separate AST nodes
   // TODO register closure type
-
 
   // (code*)*
   Value* clo_code_slot = builder.CreateConstGEP2_32(clo, 0, 0, varname + ".clo_code");
@@ -459,45 +467,19 @@ llvm::Value* LLClosure::codegen(CodegenPass* pass) {
 
   // (env*)*
   Value* clo_env_slot = builder.CreateConstGEP2_32(clo, 0, 1, varname + ".clo_env");
-
-
   if (env->vars.empty()) {
     storeNullPointerToSlot(clo_env_slot);
   } else {
-    std::vector<llvm::Value*> values;
-
-    // Ensure that the environment contains space for the type map.
-    llvm::Value* envValue = pass->emit(env, NULL);
-    //if (isPointerToPointer(envValue->getType())) {
-    //  envValue = builder.CreateLoad(envValue, /*isVolatile=*/ false, "env_ptr");
-    //}
-
-    #if 0 // this is broken atm...
-      // Store the typemap in the environment's typemap slot.
-      llvm::GlobalVariable* clo_env_typemap
-          = getTypeMapForType(envStructTy, pass->mod);
-
-      Value* clo_env_typemap_slot =
-            builder.CreateConstGEP2_32(envValue, 0, 0,
-                                       varname + ".clo_env_typemap_slot");
-      llvm::outs() << "clo_env_typemap :: " << clo_env_typemap <<"\n";
-      llvm::outs() << "clo_env_typemap :: " << str(clo_env_typemap->getType()) <<"\n";
-      llvm::outs() << "clo_env_typemap_slot : " << str(clo_env_typemap_slot->getType()) <<"\n";
-      llvm::outs() << "clo_env_typemap_slot*: " << str(clo_env_typemap_slot->getType()->getContainedType(0)) <<"\n";
-
-      Value* clo_env_typemap_cast =
-          ConstantExpr::getBitCast(clo_env_typemap,
-                                   clo_env_typemap_slot->getType()->getContainedType(0));
-
-      emitStore(clo_env_typemap_cast, clo_env_typemap_slot);
-    #endif
-
     // Only store the env in the closure if the env contains entries.
-    emitStore(envValue, clo_env_slot);
+    emitStore(envPtr, clo_env_slot);
   }
 
   const llvm::StructType* genStructTy = genericClosureStructTy(fnty);
   return builder.CreateBitCast(clo, ptrTo(genStructTy), varname + ".hideCloTy");
+}
+
+llvm::Value* LLClosure::codegenStorage(CodegenPass* pass) {
+  return env->codegenStorage(pass);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -1054,6 +1036,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
 }
 
 llvm::Value* LLTuple::codegenStorage(CodegenPass* pass) {
+  if (vars.empty()) { return getUnitValue(); }
   ASSERT(this->allocator);
   TupleTypeAST* tuplety = dynamic_cast<TupleTypeAST*>(this->allocator->type);
   ASSERT(tuplety != NULL);
