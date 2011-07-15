@@ -81,7 +81,7 @@ LLTuple* getEmptyTuple() {
 
 llvm::Value* emitStore(llvm::Value* val,
                        llvm::Value* ptr) {
-  if (isUnit(val->getType())) {
+  if (val->getType()->isVoidTy()) {
     // Can't store a void!
     return getUnitValue();
   }
