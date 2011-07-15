@@ -1053,11 +1053,8 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
   }
 }
 
-llvm::Value* LLTuple::codegen(CodegenPass* pass) {
-  if (vars.empty()) {
-    return getUnitValue(); // It's silly to allocate a unit value!
-  }
-
+llvm::Value* LLTuple::codegenStorage(CodegenPass* pass) {
+  ASSERT(this->allocator);
   TupleTypeAST* tuplety = dynamic_cast<TupleTypeAST*>(this->allocator->type);
   ASSERT(tuplety != NULL);
 
@@ -1065,25 +1062,34 @@ llvm::Value* LLTuple::codegen(CodegenPass* pass) {
   const char* typeName = (isClosureEnvironment) ? "env" : "tuple";
   registerType(tupleType, typeName, pass->mod, NotArray, isClosureEnvironment);
 
-  llvm::Value* rv = allocator->codegen(pass);
+  return allocator->codegen(pass);
+}
+
+llvm::Value* LLTuple::codegen(CodegenPass* pass) {
+  if (vars.empty()) { return getUnitValue(); }
+
+  llvm::Value* slot = codegenStorage(pass);
+
   // Heap-allocated things codegen to a stack slot, which
-  // is the Value we want the tuple to codegen to, but
+  // is the Value we want the overall tuple to codegen as, but
   // we need temporary access to the pointer stored in the slot.
   // Otherwise, bad things happen.
   llvm::Value* pt = allocator->isStackAllocated()
-                        ? rv
-                        : builder.CreateLoad(rv, "normalize");
+           ? slot
+           : builder.CreateLoad(slot, "normalize");
+  codegenTo(pass, pt);
+  return slot;
+}
 
+void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
   // Store the values into the point.
   for (size_t i = 0; i < vars.size(); ++i) {
-    Value* dst = builder.CreateConstGEP2_32(pt, 0, i, "gep");
+    ASSERT(tup_ptr != NULL);
+    Value* dst = builder.CreateConstGEP2_32(tup_ptr, 0, i, "gep");
     Value* val = pass->emit(vars[i], NULL);
     emitStore(val, dst);
   }
-
-  return rv;
 }
-
 
 // Create function    fnName({}* env, arg-args) { arg(arg-args) }
 // that hard-codes call to fn referenced by arg,

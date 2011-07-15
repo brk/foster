@@ -173,6 +173,8 @@ struct LLTuple : public LLExpr {
   explicit LLTuple(const std::vector<LLVar*>& vars, LLAllocate* a)
     : LLExpr("LLTuple"), vars(vars),
       isClosureEnvironment(false), allocator(a) {}
+  llvm::Value* codegenStorage(CodegenPass* pass);
+  void codegenTo(CodegenPass* pass, llvm::Value* tup_ptr);
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
