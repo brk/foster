@@ -272,3 +272,41 @@ CodegenPass::allocateMPInt() {
   return builder.CreateCall(mp_int_alloc);
 }
 
+llvm::Value*
+codegenPrimitiveOperation(const std::string& op,
+                          IRBuilder<>& b,
+                          const std::vector<Value*>& args) {
+  Value* VL = args[0];
+       if (op == "negate") { return b.CreateNeg(VL, "negtmp"); }
+  else if (op == "bitnot") { return b.CreateNot(VL, "nottmp"); }
+  else if (op == "sext_i64") { return b.CreateSExt(VL, b.getInt64Ty(), "sexti64tmp"); }
+
+  Value* VR = args[1];
+  // Other variants: F (float), NSW (no signed wrap), NUW,
+  // UDiv, ExactSDiv, URem, SRem,
+       if (op == "+") { return b.CreateAdd(VL, VR, "addtmp"); }
+  else if (op == "-") { return b.CreateSub(VL, VR, "subtmp"); }
+  else if (op == "/") { return b.CreateSDiv(VL, VR, "divtmp"); }
+  else if (op == "*") { return b.CreateMul(VL, VR, "multmp"); }
+  else if (op == "srem") { return b.CreateSRem(VL, VR, "sremtmp"); }
+
+  // Also have unsigned variants
+  else if (op == "<")  { return b.CreateICmpSLT(VL, VR, "slttmp"); }
+  else if (op == "<=") { return b.CreateICmpSLE(VL, VR, "sletmp"); }
+  else if (op == ">")  { return b.CreateICmpSGT(VL, VR, "sgttmp"); }
+  else if (op == ">=") { return b.CreateICmpSGE(VL, VR, "sgetmp"); }
+  else if (op == "==") { return b.CreateICmpEQ(VL, VR, "eqtmp"); }
+  else if (op == "!=") { return b.CreateICmpNE(VL, VR, "netmp"); }
+
+  else if (op == "bitand") { return b.CreateAnd(VL, VR, "bitandtmp"); }
+  else if (op == "bitor") {  return b.CreateOr( VL, VR, "bitortmp"); }
+  else if (op == "bitxor") { return b.CreateXor(VL, VR, "bitxortmp"); }
+
+  else if (op == "bitshl") { return b.CreateShl(VL, VR, "shltmp"); }
+  else if (op == "bitlshr") { return b.CreateLShr(VL, VR, "lshrtmp"); }
+  else if (op == "bitashr") { return b.CreateAShr(VL, VR, "ashrtmp"); }
+
+  ASSERT(false) << "unhandled op '" << op << "'";
+  return NULL;
+}
+

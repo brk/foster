@@ -8,12 +8,13 @@ module Foster.AnnExprIL where
 
 import Data.Set(Set)
 import Data.Set as Set(member)
+import Data.Map as Map(lookup)
 
 import Foster.Base
 import Foster.Context
 import Foster.AnnExpr
 import Foster.TypeIL
-import Foster.TypeAST(TypeAST(TupleTypeAST))
+import Foster.TypeAST(gFosterPrimOpsTable, TypeAST(TupleTypeAST))
 
 {-
   AnnExprIL defines a copy of AnnExpr, annotated
@@ -115,7 +116,7 @@ ail ctx knownProcNames ae =
 
                 AnnPrimitive _rng (TypedId pty id) -> do
                    pti <- ilOf pty
-                   return $ AICall ti (E_AIPrim $ ILNamedPrim (TypedId pti id)) argsi
+                   return $ AICall ti (E_AIPrim $ ilPrimFor pti id) argsi
 
                 E_AnnFn _ -> do
                    bi <- q b
@@ -164,6 +165,11 @@ coroPrimFor _ = Nothing
 isProcType (FnTypeIL _ _ _ FT_Proc) = True
 isProcType _ = False
 
+ilPrimFor ti id =
+  case Map.lookup (identPrefix id) gFosterPrimOpsTable of
+        Just (ty, op) -> op
+        Nothing       -> ILNamedPrim (TypedId ti id)
+
 aiFnOf :: Context TypeIL -> KnownProcNames -> AnnFn -> Tc AIFn
 aiFnOf ctx procNames f = do
  ft <- ilOf (annFnType f)
@@ -196,7 +202,7 @@ instance Expr AIExpr where
     freeVars e = map identPrefix (freeIdents e)
 
 instance Structured AIExpr where
-    textOf e width = error "textOf AIExpr not yet defined"
+    textOf e width = error "textOf AIExpr not yet implemented"
     childrenOf e =
         case e of
             E_AIPrim p            -> []

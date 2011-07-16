@@ -319,6 +319,8 @@ stepExpr gs expr = do
         case prim of
           ILNamedPrim (TypedId _ (Ident name _)) ->
                                    evalNamedPrimitive name gs args
+          ILPrimOp op size -> let name = "primitive_"++op++"_i"++show size in
+                                   evalNamedPrimitive name gs args
           ILCoroPrim prim t1 t2 -> evalCoroPrimitive prim gs args
 
     ICall b vs ->
@@ -450,17 +452,18 @@ extendEnv gs names args =
   let env  = coroEnv coro in
   withEnv gs (List.foldr ins env (zip names args))
 
-liftInt :: (Integral a) => (a -> a -> b) ->
+liftInt2 :: (Integral a) => (a -> a -> b) ->
           Integer -> Integer -> b
-liftInt f i1 i2 =
-  let v1 = fromInteger i1 in
-  let v2 = fromInteger i2 in
-  f v1 v2
+liftInt2 f i1 i2 = f (fromInteger i1) (fromInteger i2)
 
-modifyInt32With :: (Int32 -> Int32 -> Int32)
-       -> Integer -> Integer -> Integer
-modifyInt32With f i1 i2 =
-  fromIntegral (liftInt f i1 i2)
+liftInt :: (Integral a) => (a -> b) -> Integer -> b
+liftInt f i1 =     f (fromInteger i1)
+
+modifyInt32sWith :: (Int32 -> Int32 -> Int32) -> Integer -> Integer -> Integer
+modifyInt32sWith f i1 i2 = fromIntegral (liftInt2 f i1 i2)
+
+modifyInt32With :: (Int32 -> Int32) -> Integer -> Integer
+modifyInt32With f i1 =     fromIntegral (liftInt f i1)
 
 ashr32   a b = shiftR a (fromIntegral b)
 shl32    a b = shiftL a (fromIntegral b)
@@ -468,15 +471,15 @@ shl32    a b = shiftL a (fromIntegral b)
 tryGetInt32PrimOp2Int32 :: String -> Maybe (Integer -> Integer -> Integer)
 tryGetInt32PrimOp2Int32 name =
   case name of
-    "primitive_*_i32"       -> Just (modifyInt32With (*))
-    "primitive_+_i32"       -> Just (modifyInt32With (+))
-    "primitive_-_i32"       -> Just (modifyInt32With (-))
-    "primitive_/_i32"       -> Just (modifyInt32With div)
-    "primitive_bitashr_i32" -> Just (modifyInt32With ashr32)
-    "primitive_bitshl_i32"  -> Just (modifyInt32With shl32)
-    "primitive_bitxor_i32"  -> Just (modifyInt32With xor)
-    "primitive_bitor_i32"   -> Just (modifyInt32With (.|.))
-    "primitive_bitand_i32"  -> Just (modifyInt32With (.&.))
+    "primitive_*_i32"       -> Just (modifyInt32sWith (*))
+    "primitive_+_i32"       -> Just (modifyInt32sWith (+))
+    "primitive_-_i32"       -> Just (modifyInt32sWith (-))
+    "primitive_/_i32"       -> Just (modifyInt32sWith div)
+    "primitive_bitashr_i32" -> Just (modifyInt32sWith ashr32)
+    "primitive_bitshl_i32"  -> Just (modifyInt32sWith shl32)
+    "primitive_bitxor_i32"  -> Just (modifyInt32sWith xor)
+    "primitive_bitor_i32"   -> Just (modifyInt32sWith (.|.))
+    "primitive_bitand_i32"  -> Just (modifyInt32sWith (.&.))
     otherwise -> Nothing
 
 tryGetInt32PrimOp2Bool :: String -> Maybe (Int32 -> Int32 -> Bool)
@@ -524,13 +527,16 @@ evalNamedPrimitive primName gs  [SSInt i1, SSInt i2]
 evalNamedPrimitive primName gs [SSInt i1, SSInt i2]
           | isJust (tryGetInt32PrimOp2Bool primName) =
     let (Just fn) = tryGetInt32PrimOp2Bool primName in
-    return $ withTerm gs (SSTmValue $ SSBool (liftInt fn i1 i2))
+    return $ withTerm gs (SSTmValue $ SSBool (liftInt2 fn i1 i2))
 
 evalNamedPrimitive "primitive_negate_i32" gs [SSInt i] =
   return $ withTerm gs (SSTmValue $ SSInt (negate i))
 
 evalNamedPrimitive "primitive_bitnot_i1" gs [SSBool b] =
   return $ withTerm gs (SSTmValue $ SSBool (not b))
+
+evalNamedPrimitive "primitive_bitnot_i32" gs [SSInt i] =
+  return $ withTerm gs (SSTmValue $ SSInt ((modifyInt32With complement) i))
 
 evalNamedPrimitive prim gs args = error $ "evalNamedPrimitive " ++ show prim
                                  ++ " not yet defined"

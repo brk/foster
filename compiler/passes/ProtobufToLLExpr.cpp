@@ -73,6 +73,15 @@ LLExpr* parseCall(const pb::Expr& e) {
   return new LLCall(base, args, callMayTriggerGC);
 }
 
+LLExpr* parseCallPrimOp(const pb::Expr& e) {
+  ASSERT(e.parts_size() >= 1);
+  std::vector<LLVar*> args;
+  for (int i = 0; i < e.parts_size(); ++i) {
+    args.push_back(LLVar_from_pb(&e.parts(i)));
+  }
+  return new LLCallPrimOp(e.name(), args);
+}
+
 LLExpr* parseIf(const pb::Expr& e) {
   ASSERT(e.has_pb_if());
 
@@ -332,27 +341,28 @@ LLExpr* LLExpr_from_pb(const pb::Expr* pe) {
   LLExpr* rv = NULL;
 
   switch (e.tag()) {
-  case pb::Expr::IL_BOOL:      rv = parseBool(e); break;
-  case pb::Expr::IL_CALL:      rv = parseCall(e); break;
-  case pb::Expr::IL_CASE:      rv = parseCase(e); break;
-  case pb::Expr::IL_IF:        rv = parseIf(e); break;
-  case pb::Expr::IL_INT:       rv = parseInt(e); break;
-  case pb::Expr::IL_PROC_REF:  rv = parseProcRef(e); break;
-  case pb::Expr::IL_LETVALS:   rv = parseLetVals(e); break;
-  case pb::Expr::IL_CLOSURES:  rv = parseClosures(e); break;
-  case pb::Expr::IL_UNTIL:     rv = parseUntil(e); break;
-//  case pb::Expr::SIMD:      rv = parseSimd(e); break;
+  case pb::Expr::IL_BOOL:        rv = parseBool(e); break;
+  case pb::Expr::IL_CALL:        rv = parseCall(e); break;
+  case pb::Expr::IL_CALL_PRIMOP: rv = parseCallPrimOp(e); break;
+  case pb::Expr::IL_CASE:        rv = parseCase(e); break;
+  case pb::Expr::IL_IF:          rv = parseIf(e); break;
+  case pb::Expr::IL_INT:         rv = parseInt(e); break;
+  case pb::Expr::IL_PROC_REF:    rv = parseProcRef(e); break;
+  case pb::Expr::IL_LETVALS:     rv = parseLetVals(e); break;
+  case pb::Expr::IL_CLOSURES:    rv = parseClosures(e); break;
+  case pb::Expr::IL_UNTIL:       rv = parseUntil(e); break;
+  //case pb::Expr::IL_SIMD:        rv = parseSimd(e); break;
   case pb::Expr::IL_CORO_INVOKE: rv = parseCoroPrim(e); break;
   case pb::Expr::IL_CORO_CREATE: rv = parseCoroPrim(e); break;
   case pb::Expr::IL_CORO_YIELD : rv = parseCoroPrim(e); break;
-  case pb::Expr::IL_MEMALLOC:  rv = parseAllocate(e); break;
-  case pb::Expr::IL_ALLOC:     rv = parseAlloc(e); break;
-  case pb::Expr::IL_DEREF:     rv = parseDeref(e); break;
-  case pb::Expr::IL_STORE:     rv = parseStore(e); break;
-  case pb::Expr::IL_ARRAY_READ:rv = parseArrayRead(e); break;
-  case pb::Expr::IL_ARRAY_POKE:rv = parseArrayPoke(e); break;
-  case pb::Expr::IL_TUPLE:     rv = parseTuple(e); break;
-  case pb::Expr::IL_VAR:       rv = parseVar(e); break;
+  case pb::Expr::IL_MEMALLOC:    rv = parseAllocate(e); break;
+  case pb::Expr::IL_ALLOC:       rv = parseAlloc(e); break;
+  case pb::Expr::IL_DEREF:       rv = parseDeref(e); break;
+  case pb::Expr::IL_STORE:       rv = parseStore(e); break;
+  case pb::Expr::IL_ARRAY_READ:  rv = parseArrayRead(e); break;
+  case pb::Expr::IL_ARRAY_POKE:  rv = parseArrayPoke(e); break;
+  case pb::Expr::IL_TUPLE:       rv = parseTuple(e); break;
+  case pb::Expr::IL_VAR:         rv = parseVar(e); break;
 
   default:
     EDiag() << "Unknown protobuf tag: " << e.tag();

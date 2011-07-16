@@ -25,11 +25,7 @@ data TypeIL =
          | PtrTypeIL       TypeIL
 
 type AIVar = TypedId TypeIL
-data ILPrim = ILNamedPrim AIVar
-            | ILCoroPrim  CoroPrim TypeIL TypeIL
-            deriving (Show)
-data CoroPrim = CoroCreate | CoroInvoke | CoroYield
-            deriving (Show)
+type ILPrim = FosterPrim TypeIL
 
 instance Show TypeIL where
     show x = case x of

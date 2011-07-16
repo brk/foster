@@ -188,6 +188,7 @@ inspect ctx typechecked ast =
     case typechecked of
         OK e -> do
             when (contextVerbose ctx) (do
+                runOutput $ showStructure ast
                 putStrLn $ "Successful typecheck!"
                 runOutput $ showStructure e)
             return True

@@ -9,10 +9,8 @@ module Foster.TypeAST where
 import Foster.Base
 import List(length)
 import Data.IORef(IORef)
+import Data.Map as Map(fromList, toList)
 import qualified Data.Set as Set
-
-instance (Show ty) => Show (TypedId ty) where
-    show (TypedId ty id) = show id ++ " :: " ++ show ty
 
 data EPattern =
           EP_Wildcard      ESourceRange
@@ -108,8 +106,7 @@ coroCreateType args rets = mkFnType [mkFnType args rets] [mkCoroType args rets]
 primitiveNamesSet = Set.fromList (map fst primitiveDecls)
 isPrimitiveName name = Set.member name primitiveNamesSet
 primitiveDecls =
-    [(,) "llvm_readcyclecounter" $ mkFnType [] [i64]
-    ,(,) "expect_i32"  $ mkProcType [i32] []
+    [(,) "expect_i32"  $ mkProcType [i32] []
     ,(,)  "print_i32"  $ mkProcType [i32] []
     ,(,) "expect_i64"  $ mkProcType [i64] []
     ,(,)  "print_i64"  $ mkProcType [i64] []
@@ -145,24 +142,48 @@ primitiveDecls =
                          let b = BoundTyVar "b" in
                          (ForAllAST [a, b] (mkFnType [TyVarAST b] [TyVarAST a]))
 
-    ,(,) "primitive_sext_i64_i32" $ mkFnType [i32] [i64]
-    ,(,) "primitive_negate_i32"   $ mkFnType [i32] [i32]
-    ,(,) "primitive_bitnot_i1"    $ mkFnType [i1] [i1]
-    ,(,) "primitive_bitshl_i32"   $ mkFnType [i32, i32] [i32]
-    ,(,) "primitive_bitashr_i32"  $ mkFnType [i32, i32] [i32]
-    ,(,) "primitive_bitlshr_i32"  $ mkFnType [i32, i32] [i32]
-    ,(,) "primitive_bitor_i32"    $ mkFnType [i32, i32] [i32]
-    ,(,) "primitive_bitand_i32"   $ mkFnType [i32, i32] [i32]
-    ,(,) "primitive_bitxor_i32"   $ mkFnType [i32, i32] [i32]
     ,(,) "force_gc_for_debugging_purposes" $ mkFnType [] []
+    ,(,) "llvm_readcyclecounter" $ mkFnType [] [i64]
 
-    ,(,) "primitive_<_i64"  $ mkFnType [i64, i64] [i1]
-    ,(,) "primitive_-_i64"  $ mkFnType [i64, i64] [i64]
-    ,(,) "primitive_-_i32"  $ mkFnType [i32, i32] [i32]
-    ,(,) "primitive_*_i32"  $ mkFnType [i32, i32] [i32]
-    ,(,) "primitive_+_i32"  $ mkFnType [i32, i32] [i32]
-    ,(,) "primitive_srem_i32"$ mkFnType [i32, i32] [i32]
-    ,(,) "primitive_<_i32"  $ mkFnType [i32, i32] [i1]
-    ,(,) "primitive_<=_i32" $ mkFnType [i32, i32] [i1]
-    ,(,) "primitive_==_i32" $ mkFnType [i32, i32] [i1]
-    ]
+    ] ++ (map (\(name, (ty, op)) -> (name, ty)) $ Map.toList gFosterPrimOpsTable)
+
+gFosterPrimOpsTable = Map.fromList $
+  [(,) "primitive_negate_i1"    $ (,) (mkFnType [i1] [i1]       ) $ ILPrimOp "negate" 1
+  ,(,) "primitive_bitnot_i1"    $ (,) (mkFnType [i1] [i1]       ) $ ILPrimOp "bitnot" 1
+  ,(,) "primitive_sext_i64_i32" $ (,) (mkFnType [i32] [i64]     ) $ ILPrimOp "sext_i64" 32
+  ,(,) "primitive_+_i64"        $ (,) (mkFnType [i64, i64] [i64]) $ ILPrimOp "+" 64
+  ,(,) "primitive_-_i64"        $ (,) (mkFnType [i64, i64] [i64]) $ ILPrimOp "-" 64
+  ,(,) "primitive_*_i64"        $ (,) (mkFnType [i64, i64] [i64]) $ ILPrimOp "*" 64
+  ,(,) "primitive_bitand_i64"   $ (,) (mkFnType [i64, i64] [i64]) $ ILPrimOp "bitand"  64
+  ,(,) "primitive_bitor_i64"    $ (,) (mkFnType [i64, i64] [i64]) $ ILPrimOp "bitor"   64
+  ,(,) "primitive_bitxor_i64"   $ (,) (mkFnType [i64, i64] [i64]) $ ILPrimOp "bitxor"  64
+  ,(,) "primitive_bitshl_i64"   $ (,) (mkFnType [i64, i64] [i64]) $ ILPrimOp "bitshl"  64
+  ,(,) "primitive_bitlshr_i64"  $ (,) (mkFnType [i64, i64] [i64]) $ ILPrimOp "bitlshr" 64
+  ,(,) "primitive_bitashr_i64"  $ (,) (mkFnType [i64, i64] [i64]) $ ILPrimOp "bitashr" 64
+  ,(,) "primitive_<_i64"        $ (,) (mkFnType [i64, i64] [i1] ) $ ILPrimOp "<"  64
+  ,(,) "primitive_>_i64"        $ (,) (mkFnType [i64, i64] [i1] ) $ ILPrimOp ">"  64
+  ,(,) "primitive_<=_i64"       $ (,) (mkFnType [i64, i64] [i1] ) $ ILPrimOp "<=" 64
+  ,(,) "primitive_>=_i64"       $ (,) (mkFnType [i64, i64] [i1] ) $ ILPrimOp ">=" 64
+  ,(,) "primitive_==_i64"       $ (,) (mkFnType [i64, i64] [i1] ) $ ILPrimOp "==" 64
+  ,(,) "primitive_!=_i64"       $ (,) (mkFnType [i64, i64] [i1] ) $ ILPrimOp "!=" 64
+  ,(,) "primitive_negate_i64"   $ (,) (mkFnType [i64] [i64]     ) $ ILPrimOp "negate"  64
+  ,(,) "primitive_bitnot_i64"   $ (,) (mkFnType [i64] [i64]     ) $ ILPrimOp "bitnot"  64
+  ,(,) "primitive_+_i32"        $ (,) (mkFnType [i32, i32] [i32]) $ ILPrimOp "+" 32
+  ,(,) "primitive_-_i32"        $ (,) (mkFnType [i32, i32] [i32]) $ ILPrimOp "-" 32
+  ,(,) "primitive_*_i32"        $ (,) (mkFnType [i32, i32] [i32]) $ ILPrimOp "*" 32
+  ,(,) "primitive_bitand_i32"   $ (,) (mkFnType [i32, i32] [i32]) $ ILPrimOp "bitand"  32
+  ,(,) "primitive_bitor_i32"    $ (,) (mkFnType [i32, i32] [i32]) $ ILPrimOp "bitor"   32
+  ,(,) "primitive_bitxor_i32"   $ (,) (mkFnType [i32, i32] [i32]) $ ILPrimOp "bitxor"  32
+  ,(,) "primitive_bitshl_i32"   $ (,) (mkFnType [i32, i32] [i32]) $ ILPrimOp "bitshl"  32
+  ,(,) "primitive_bitlshr_i32"  $ (,) (mkFnType [i32, i32] [i32]) $ ILPrimOp "bitlshr" 32
+  ,(,) "primitive_bitashr_i32"  $ (,) (mkFnType [i32, i32] [i32]) $ ILPrimOp "bitashr" 32
+  ,(,) "primitive_srem_i32"     $ (,) (mkFnType [i32, i32] [i32]) $ ILPrimOp "srem" 32 -- TODO 64
+  ,(,) "primitive_<_i32"        $ (,) (mkFnType [i32, i32] [i1] ) $ ILPrimOp "<"  32
+  ,(,) "primitive_>_i32"        $ (,) (mkFnType [i32, i32] [i1] ) $ ILPrimOp ">"  32
+  ,(,) "primitive_<=_i32"       $ (,) (mkFnType [i32, i32] [i1] ) $ ILPrimOp "<=" 32
+  ,(,) "primitive_>=_i32"       $ (,) (mkFnType [i32, i32] [i1] ) $ ILPrimOp ">=" 32
+  ,(,) "primitive_==_i32"       $ (,) (mkFnType [i32, i32] [i1] ) $ ILPrimOp "==" 32
+  ,(,) "primitive_!=_i32"       $ (,) (mkFnType [i32, i32] [i1] ) $ ILPrimOp "!=" 32
+  ,(,) "primitive_negate_i32"   $ (,) (mkFnType [i32] [i32]     ) $ ILPrimOp "negate"  32
+  ,(,) "primitive_bitnot_i32"   $ (,) (mkFnType [i32] [i32]     ) $ ILPrimOp "bitnot"  32
+  ]

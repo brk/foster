@@ -1,5 +1,6 @@
 main = {
   let s = llvm_readcyclecounter (); in
+    // Do some IO to force the two cycle counter readings apart.
     expect_i32 2;
     print_i32 (opaquely_i32 2);
     let e = llvm_readcyclecounter (); in

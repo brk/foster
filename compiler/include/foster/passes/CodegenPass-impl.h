@@ -44,6 +44,9 @@ const inline llvm::PointerType* ptrTo(const llvm::Type* t) {
 void emitFosterAssert(llvm::Module* mod, llvm::Value* cond, const char* cstr);
 Value* getUnitValue();
 Value* allocateMPInt();
+llvm::Value* codegenPrimitiveOperation(const std::string& op,
+                                       llvm::IRBuilder<>& b,
+                                       const std::vector<Value*>& args);
 Value* getElementFromComposite(Value* compositeValue, Value* idxValue,
                                const std::string& msg);
 Value* getPointerToIndex(Value* compositeValue,

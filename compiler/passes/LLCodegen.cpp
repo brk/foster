@@ -950,11 +950,18 @@ doLowLevelWrapperFnCoercions(const llvm::Type* expectedType,
 
 ////////////////////////////////////////////////////////////////////
 
+llvm::Value* LLCallPrimOp::codegen(CodegenPass* pass) {
+  std::vector<llvm::Value*> vals;
+  for (size_t i = 0; i < this->args.size(); ++i) {
+    vals.push_back(pass->emit(this->args[i], NULL));
+  }
+  return codegenPrimitiveOperation(this->op, builder, vals);
+}
+
 bool isGenericClosureEnvType(const Type* ty) {
   return ty == builder.getInt8PtrTy();
 }
 
-// TODO this shouldn't need to be 200 lines :(
 llvm::Value* LLCall::codegen(CodegenPass* pass) {
   ASSERT(base != NULL) << "unable to codegen call due to null base";
 

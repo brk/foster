@@ -44,7 +44,7 @@ message Expr {
     IL_LETVALS = 21;
     IL_CASE = 22;
     IL_CALL = 23;
-
+    IL_CALL_PRIMOP = 24;
     IL_UNTIL = 25;
     IL_PROC_REF = 26;
     IL_CORO_INVOKE = 27;
@@ -75,7 +75,8 @@ message Expr {
   optional AllocInfo alloc_info = 25;
   optional bool call_may_trigger_gc = 26;
 
-  optional CoroPrim coro_prim = 30;
+  optional CoroPrim     coro_prim = 30;
+  optional int32     prim_op_size = 31;
 }
 
 message AllocInfo {

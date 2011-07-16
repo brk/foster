@@ -151,6 +151,19 @@ irrelevantIdentNum = (-12345) :: Int
 
 data TypedId ty = TypedId { tidType :: ty, tidIdent :: Ident }
 
+instance (Show ty) => Show (TypedId ty)
+  where show (TypedId ty id) = show id ++ " :: " ++ show ty
+
+data Show ty => FosterPrim ty
+               = ILNamedPrim (TypedId ty)
+               | ILPrimOp { ilPrimOpName :: String
+                          , ilPrimOpSize :: Int }
+               | ILCoroPrim  CoroPrim ty ty
+            deriving (Show)
+
+data CoroPrim = CoroCreate | CoroInvoke | CoroYield
+            deriving (Show)
+
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 data ModuleAST fnCtor ty = ModuleAST {

@@ -164,6 +164,14 @@ struct LLCall : public LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
+struct LLCallPrimOp : public LLExpr {
+  std::vector<LLVar*> args;
+  std::string op;
+  LLCallPrimOp(std::string _op, std::vector<LLVar*>& _args)
+  : LLExpr("LLCallPrimOp"), args(_args), op(_op) { }
+  virtual llvm::Value* codegen(CodegenPass* pass);
+};
+
 struct LLTuple : public LLExpr {
   std::vector<LLVar*> vars;
   bool isClosureEnvironment;

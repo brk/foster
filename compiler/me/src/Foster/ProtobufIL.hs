@@ -135,6 +135,9 @@ dumpExpr (ILCallPrim t (ILNamedPrim base) args)
 dumpExpr (ILCallPrim t (ILCoroPrim c a r) args)
         = dumpCall t (dumpCoroPrim c a r) args
 
+dumpExpr (ILCallPrim t (ILPrimOp op size) args)
+        = dumpCallPrimOp t op size args
+
 dumpExpr x@(ILBool b) =
     P'.defaultValue { bool_value   = Just b
                     , PbExpr.tag   = IL_BOOL
@@ -282,6 +285,13 @@ dumpILVar t i VarLocal =
 dumpCall t base args =
     P'.defaultValue { PbExpr.parts = fromList $ base:(fmap (dumpExpr.ILVar) args)
                     , PbExpr.tag   = IL_CALL
+                    , PbExpr.type' = Just $ dumpType t }
+
+dumpCallPrimOp t op size args =
+    P'.defaultValue { PbExpr.parts = fromList $ fmap (dumpExpr.ILVar) args
+                    , PbExpr.tag   = IL_CALL_PRIMOP
+                    , PbExpr.name         = Just $ u8fromString op
+                    , PbExpr.prim_op_size = Just $ intToInt32 size
                     , PbExpr.type' = Just $ dumpType t }
 
 dumpIf x@(ILIf t v b c) =

@@ -90,23 +90,23 @@ instance Structured AnnExpr where
     textOf e width =
         let spaces = Prelude.replicate width '\SP'  in
         case e of
-            AnnBool _rng    b    -> out $ "AnnBool      " ++ (show b)
-            AnnCall rng t b args -> out $ "AnnCall      " ++ " :: " ++ show t
-            AnnCompiles rng cr   -> out $ "AnnCompiles  " ++ show cr
-            AnnIf _rng t  a b c  -> out $ "AnnIf        " ++ " :: " ++ show t
-            AnnUntil _rng t a b  -> out $ "AnnUntil     " ++ " :: " ++ show t
-            AnnInt _rng ty int   -> out $ "AnnInt       " ++ (litIntText int) ++ " :: " ++ show ty
-            AnnLetVar _rng id a b -> out $ "AnnLetVar    " ++ show id ++ " :: " ++ show (typeAST b)
+            AnnBool _rng    b       -> out $ "AnnBool      " ++ (show b)
+            AnnCall rng t b args    -> out $ "AnnCall      " ++ " :: " ++ show t
+            AnnCompiles rng cr      -> out $ "AnnCompiles  " ++ show cr
+            AnnIf _rng t  a b c     -> out $ "AnnIf        " ++ " :: " ++ show t
+            AnnUntil _rng t a b     -> out $ "AnnUntil     " ++ " :: " ++ show t
+            AnnInt _rng ty int      -> out $ "AnnInt       " ++ (litIntText int) ++ " :: " ++ show ty
+            AnnLetVar _rng id a b   -> out $ "AnnLetVar    " ++ show id ++ " :: " ++ show (typeAST b)
             AnnLetFuns _r ids fns e -> out $ "AnnLetFuns   " ++ show ids
-            AnnAlloc _rng   a    -> out $ "AnnAlloc     "
-            AnnDeref _rng t a    -> out $ "AnnDeref     "
-            AnnStore _rng t a b  -> out $ "AnnStore     "
-            AnnSubscript _r t a b-> out $ "AnnSubscript " ++ " :: " ++ show t
-            AnnTuple     es      -> out $ "AnnTuple     "
-            AnnCase _rng t e bs  -> out $ "AnnCase      "
-            AnnPrimitive _r (TypedId t v) -> out $ "AnnPrimitive " ++ show v ++ " :: " ++ show t
-            E_AnnVar _r (TypedId t v) -> out $ "AnnVar       " ++ show v ++ " :: " ++ show t
-            E_AnnFn annFn        -> out $ "AnnFn " ++ fnNameA annFn ++ " // " ++ (show $ annFnBoundNames annFn) ++ " :: " ++ show (annFnType annFn)
+            AnnAlloc _rng   a       -> out $ "AnnAlloc     "
+            AnnDeref _rng t a       -> out $ "AnnDeref     "
+            AnnStore _rng t a b     -> out $ "AnnStore     "
+            AnnSubscript _r t a b   -> out $ "AnnSubscript " ++ " :: " ++ show t
+            AnnTuple     es         -> out $ "AnnTuple     "
+            AnnCase _rng t e bs     -> out $ "AnnCase      "
+            AnnPrimitive _r tid     -> out $ "AnnPrimitive " ++ show tid
+            E_AnnVar _r tid         -> out $ "AnnVar       " ++ show tid
+            E_AnnFn annFn           -> out $ "AnnFn " ++ fnNameA annFn ++ " // " ++ (show $ annFnBoundNames annFn) ++ " :: " ++ show (annFnType annFn)
             E_AnnTyApp _rng t e argty -> out $ "AnnTyApp     [" ++ show argty ++ "] :: " ++ show t
     childrenOf e =
         case e of
