@@ -45,26 +45,29 @@ data ILProcDef = ILProcDef { ilProcReturnType :: TypeIL
                            , ilProcBody       :: ILExpr
                            } deriving Show
 data ILExpr =
+        -- Literals
           ILBool        Bool
         | ILInt         TypeIL LiteralInt
         | ILTuple       [AIVar]
-        | ILVar         AIVar
-        -- Procedures may be implicitly recursive,
-        -- but we need to put a smidgen of effort into
-        -- codegen-ing closures so they can be mutually recursive.
-        | ILClosures    [Ident] [ILClosure] ILExpr
-        | ILLetVal       Ident    ILExpr    ILExpr
-        | ILAlloc              AIVar
-        | ILAllocArray  TypeIL AIVar
-        | ILDeref       TypeIL AIVar
-        | ILStore       TypeIL AIVar AIVar
-        | ILArrayRead   TypeIL AIVar AIVar
-        | ILArrayPoke           AIVar AIVar AIVar
+        -- Control flow
         | ILIf          TypeIL AIVar ILExpr ILExpr
         | ILUntil       TypeIL ILExpr ILExpr
+        -- Creation of bindings
         | ILCase        TypeIL AIVar [(Pattern, ILExpr)] (DecisionTree ILExpr)
-        | ILCall        TypeIL AIVar [AIVar]
+        | ILLetVal       Ident    ILExpr    ILExpr
+        | ILClosures    [Ident] [ILClosure] ILExpr
+        -- Use of bindings
+        | ILVar         AIVar
         | ILCallPrim    TypeIL ILPrim [AIVar]
+        | ILCall        TypeIL AIVar [AIVar]
+        -- Mutable ref cells
+        | ILAlloc              AIVar
+        | ILDeref       TypeIL AIVar
+        | ILStore       TypeIL AIVar AIVar
+        -- Array operations
+        | ILAllocArray  TypeIL AIVar
+        | ILArrayRead   TypeIL AIVar AIVar
+        | ILArrayPoke           AIVar AIVar AIVar
         | ILTyApp       TypeIL ILExpr TypeIL
         deriving (Show)
 
@@ -205,11 +208,11 @@ closureConvert ctx expr =
                 let clovar = E_AIVar $ TypedId (typeAI x) clo_id
                 g (AILetFuns [clo_id] [aiFn] clovar)
 
-            AICallPrim r t prim es -> do
+            AICallPrim t prim es -> do
                 cargs <- mapM g es
                 nestedLets cargs (\vars -> (ILCallPrim t prim vars))
 
-            AICall  r t b es -> do
+            AICall    t b es -> do
                 cargs <- mapM g es
                 case b of
                     (E_AIVar v) -> do nestedLets cargs (\vars -> (ILCall t v vars))
@@ -386,14 +389,14 @@ closureOfAIFn ctx infoMap (closedNames, (self_id, fn)) = do
         AIAlloc a        -> AIAlloc   (q a)
         AIDeref t a      -> AIDeref t (q a)
         AIStore t a b    -> AIStore t (q a) (q b)
-        E_AIFn f               -> E_AIFn (fq f) -- TODO: is this case ever taken?
+        E_AIFn f               -> E_AIFn (fq f)
         AISubscript t a b      -> AISubscript t (q a) (q b)
         AITuple es             -> AITuple (map q es)
         AICase t e bs          -> AICase t (q e) [(p, q e) | (p, e) <- bs]
-        E_AITyApp t e argty    -> E_AITyApp t (q e) argty
-        AICallPrim r t prim es -> AICallPrim r t prim (map q es)
+        E_AITyApp  t e argty   -> E_AITyApp t (q e) argty
+        AICallPrim t prim es   -> AICallPrim t prim (map q es)
         -- The only really interesting case:
-        AICall r t (E_AIVar v) es
+        AICall     t (E_AIVar v) es
             | Map.member (tidIdent v) infoMap ->
                 let (f, envid) = infoMap Map.! (tidIdent v) in
                 let fnvar = E_AIVar (TypedId (aiFnType f) (aiFnIdent f)) in
@@ -403,9 +406,9 @@ closureOfAIFn ctx infoMap (closedNames, (self_id, fn)) = do
                           -- This works because (A) we never type check ILExprs,
                           -- and (B) the LLVM codegen doesn't check the type field in this case.
                 -- CallProc, passing env as first parameter
-                AICall r t fnvar (env:(map q es))
+                AICall t fnvar (env:(map q es))
         -- TODO when is guard above false?
-        AICall r t b es -> AICall r t (q b) (map q es)
+        AICall   t b es -> AICall   t (q b) (map q es)
 
 typeIL :: ILExpr -> TypeIL
 typeIL (ILBool _)          = NamedTypeIL "i1"
@@ -431,8 +434,8 @@ typeAI :: AIExpr -> TypeIL
 typeAI (AIBool _)          = NamedTypeIL "i1"
 typeAI (AIInt t _)         = t
 typeAI (AITuple es)        = TupleTypeIL (map typeAI es)
-typeAI (AICall r t b a)    = t
-typeAI (AICallPrim r t b a)= t
+typeAI (AICall t b a)      = t
+typeAI (AICallPrim   t b a)= t
 typeAI (AIAllocArray elt_ty _) = ArrayTypeIL elt_ty
 typeAI (AIIf t a b c)      = t
 typeAI (AIUntil t _ _)     = t

@@ -10,50 +10,39 @@ import Foster.Base
 import Foster.TypeAST
 
 data AnnExpr =
+        -- Literals
           AnnBool       ESourceRange Bool
         | AnnInt        { aintRange  :: ESourceRange
                         , aintType   :: TypeAST
                         , aintLitInt :: LiteralInt }
-
-        -- No need for an explicit type, so long as subexprs are typed.
         | AnnTuple      AnnTuple
-
         | E_AnnFn       AnnFn
 
-        -- Add an overall type for the application
-        | AnnCall       ESourceRange TypeAST AnnExpr AnnTuple
-
-        -- Add an overall type for the if branch
+        -- Control flow
         | AnnIf         ESourceRange TypeAST AnnExpr AnnExpr AnnExpr
         | AnnUntil      ESourceRange TypeAST AnnExpr AnnExpr
-
+        -- Creation of bindings
+        | AnnCase       ESourceRange TypeAST AnnExpr [(Pattern, AnnExpr)]
         | AnnLetVar     ESourceRange Ident AnnExpr AnnExpr
-
         -- We have separate syntax for a SCC of recursive functions
         -- because they are compiled differently from non-recursive closures.
         | AnnLetFuns    ESourceRange [Ident] [AnnFn] AnnExpr
-
+        -- Use of bindings
+        | E_AnnVar      ESourceRange AnnVar
+        | AnnPrimitive  ESourceRange AnnVar
+        | AnnCall       ESourceRange TypeAST AnnExpr AnnTuple
+        -- Mutable ref cells
         | AnnAlloc      ESourceRange AnnExpr
         | AnnDeref      ESourceRange TypeAST AnnExpr
         | AnnStore      ESourceRange TypeAST AnnExpr AnnExpr
-
-        -- Subscripts get an overall type
+        -- Array operations
         | AnnSubscript  ESourceRange TypeAST AnnExpr AnnExpr
-
-        --Vars go from a Maybe TypeAST to a required TypeAST
-        | E_AnnVar       ESourceRange AnnVar
-
-        | AnnPrimitive   ESourceRange AnnVar
-
+        -- Terms indexed by types
         | E_AnnTyApp {  annTyAppRange       :: ESourceRange
                      ,  annTyAppOverallType :: TypeAST
                      ,  annTyAppExpr        :: AnnExpr
                      ,  annTyAppArgTypes    :: TypeAST }
-
-        | AnnCase    ESourceRange TypeAST AnnExpr [(Pattern, AnnExpr)]
-        -- This one's a bit odd, in that we can't always include an AnnExpr
-        -- because the subterm doesn't need to be well-typed.
-        -- But we should include one if possible, for further checking.
+        -- Others
         | AnnCompiles   ESourceRange (CompilesResult AnnExpr)
         deriving (Show)
 

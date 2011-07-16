@@ -21,26 +21,33 @@ import Foster.TypeAST(TypeAST(TupleTypeAST))
 -}
 
 data AIExpr=
+        -- Literals
           AIBool       Bool
         | AIInt        TypeIL LiteralInt
         | AITuple      [AIExpr]
         | E_AIFn       AIFn
-        | AICall       ESourceRange TypeIL AIExpr [AIExpr]
-        | AICallPrim   ESourceRange TypeIL ILPrim [AIExpr]
+        -- Control flow
         | AIIf         TypeIL AIExpr AIExpr AIExpr
         | AIUntil      TypeIL AIExpr AIExpr
+        -- Creation of bindings
+        | AICase       TypeIL AIExpr [(Pattern, AIExpr)]
         | AILetVar     Ident AIExpr AIExpr
         | AILetFuns    [Ident] [AIFn] AIExpr
-        | AIAllocArray TypeIL AIExpr
+        -- Use of bindings
+        | E_AIVar      (TypedId TypeIL)
+        | AICallPrim   TypeIL ILPrim [AIExpr]
+        | AICall       TypeIL AIExpr [AIExpr]
+        -- Mutable ref cells
         | AIAlloc      AIExpr
         | AIDeref      TypeIL AIExpr
         | AIStore      TypeIL AIExpr AIExpr
+        -- Array operations
+        | AIAllocArray TypeIL AIExpr
         | AISubscript  TypeIL AIExpr AIExpr
-        | E_AIVar       (TypedId TypeIL)
+        -- Terms indexed by types
         | E_AITyApp { aiTyAppOverallType :: TypeIL
                     , aiTyAppExpr        :: AIExpr
                     , aiTyAppArgTypes    :: TypeIL }
-        | AICase    TypeIL AIExpr [(Pattern, AIExpr)]
         deriving (Show)
 
 data AIFn = AiFn { aiFnType  :: TypeIL
@@ -99,7 +106,7 @@ ail ctx ae =
             case b of
                 AnnPrimitive _rng (TypedId pty id) -> do
                    pti <- ilOf pty
-                   return $ AICallPrim r ti (ILNamedPrim (TypedId pti id)) argsi
+                   return $ AICallPrim ti (ILNamedPrim (TypedId pti id)) argsi
 
                 E_AnnTyApp _ ot (AnnPrimitive _rng (TypedId _ (Ident "allocDArray" _))) argty -> do
                     let [arraySize] = argsi
@@ -110,17 +117,17 @@ ail ctx ae =
                    case (coroPrimFor primName, appty) of
                      (Just coroPrim, TupleTypeAST [argty, retty]) -> do
                        [aty, rty] <- mapM ilOf [argty, retty]
-                       return $ AICallPrim r ti (ILCoroPrim coroPrim aty rty) argsi
+                       return $ AICallPrim ti (ILCoroPrim coroPrim aty rty) argsi
                      otherwise -> do
                        -- v[types](args) ~~>> let <fresh> = v[types] in <fresh>(args)
                        [vti, oti, appti] <- mapM ilOf [vty, ot, appty]
                        let primVar = TypedId vti id
-                       let call = AICallPrim r ti (ILNamedPrim primVar) argsi
+                       let call = AICallPrim ti (ILNamedPrim primVar) argsi
                        let primName = identPrefix id
                        x <- tcFresh $ "appty_" ++ primName
                        return $ AILetVar x (E_AITyApp oti (E_AIVar primVar) appti) call
                 _ -> do bi <- q b
-                        return $ AICall r ti bi argsi
+                        return $ AICall ti bi argsi
 
         E_AnnVar _rng (TypedId t v)-> do ti <- ilOf t
                                          return $ E_AIVar (TypedId ti v)
@@ -172,8 +179,8 @@ instance Structured AIExpr where
     childrenOf e =
         case e of
             AIBool         b      -> []
-            AICall  r t b args    -> b:args
-            AICallPrim r t b args ->   args
+            AICall    t b args    -> b:args
+            AICallPrim   t b args ->   args
             AIIf      t  a b c    -> [a, b, c]
             AIUntil   t  a b      -> [a, b]
             AIInt t _             -> []

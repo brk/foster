@@ -26,9 +26,7 @@ data ExprAST =
         -- Use of bindings
         | E_VarAST        ESourceRange E_VarAST
         | E_Primitive     ESourceRange E_VarAST
-        -- Others
         | E_CallAST       ESourceRange ExprAST TupleAST
-        | E_CompilesAST   ESourceRange (Maybe ExprAST)
         -- Mutable ref cells
         | E_AllocAST      ESourceRange ExprAST
         | E_DerefAST      ESourceRange ExprAST
@@ -37,7 +35,8 @@ data ExprAST =
         | E_SubscriptAST  ESourceRange ExprAST ExprAST
         -- Terms indexed by types
         | E_TyApp         ESourceRange ExprAST TypeAST
-
+        -- Others
+        | E_CompilesAST   ESourceRange (Maybe ExprAST)
         deriving Show
 
 data TupleAST = TupleAST { tupleAstRange :: ESourceRange
