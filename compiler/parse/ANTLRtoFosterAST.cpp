@@ -293,14 +293,26 @@ Binding parseBinding(pTree tree) {
   return Binding(textOfVar(child(tree, 0)), ExprAST_from(child(tree, 1)));
 }
 
-// ^(LETS binding+ e_seq)
-ExprAST* parseLets(pTree tree) {
-  ExprAST* e = parseSeq(child(tree, getChildCount(tree) - 1));
+std::vector<Binding> parseBindings(pTree tree) {
   std::vector<Binding> bindings;
-  for (size_t i = 0; i < getChildCount(tree) - 1; ++i) {
+  for (size_t i = 0; i < getChildCount(tree); ++i) {
     bindings.push_back(parseBinding(child(tree, i)));
   }
-  return new LetAST(bindings, e, rangeOf(tree));
+  return bindings;
+}
+
+// ^(LETS ^(MU binding+) e_seq)
+ExprAST* parseLets(pTree tree) {
+  return new LetAST(parseBindings(child(tree, 0)),
+                         parseSeq(child(tree, 1)),
+                         false, rangeOf(tree));
+}
+
+// ^(LETREC ^(MU binding+) e_seq)
+ExprAST* parseLetRec(pTree tree) {
+  return new LetAST(parseBindings(child(tree, 0)),
+                         parseSeq(child(tree, 1)),
+                         true,  rangeOf(tree));
 }
 
 bool isLexicalOperator(const std::string& text) {
@@ -445,6 +457,7 @@ ExprAST* parseAtom(pTree tree) {
 
   if (token == VAL_ABS)  { return parseValAbs(tree); }
   if (token == LETS)     { return parseLets(tree); }
+  if (token == LETREC)   { return parseLetRec(tree); }
   if (token == TUPLE)    { return parseTuple(tree); }
   if (token == UNTIL)    { return parseUntil(tree); }
   if (token == TERMVAR)  { return parseTermVar(tree); }

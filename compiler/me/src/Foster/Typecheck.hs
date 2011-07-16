@@ -121,7 +121,7 @@ typecheck ctx expr maybeExpTy =
         E_IntAST rng txt -> typecheckInt rng txt
 
         E_LetRec rng bindings e mt ->
-            error "E_LetRec typechecking not yet implemented."
+            typecheckLetRec ctx rng bindings e mt
 
         E_LetAST rng (TermBinding v a) e mt ->
             let boundName    = evarName v in
@@ -197,6 +197,41 @@ typecheck ctx expr maybeExpTy =
             Just e -> do
                 outputOrE <- tcIntrospect (typecheck ctx e Nothing)
                 return $ AnnCompiles rng (CompilesResult outputOrE)
+
+-----------------------------------------------------------------------
+
+{-
+  rec a = body_a;
+      b = body_b;
+      ...;
+   in e end
+-}
+typecheckLetRec ctx0 rng bindings e mt = do
+    -- Generate unification variables for the overall type of
+    -- each binding.
+    unificationVars <- sequence [newTcUnificationVar $
+                                  "letrec_" ++ evarName v
+                                | (TermBinding v _) <- bindings]
+    ids <- sequence [tcFresh (evarName v)
+                    | (TermBinding v _) <- bindings]
+    -- Create an extended context for typechecking the bindings
+    let makeTermVarBinding (u, id) = do
+           let t = MetaTyVar u
+           return $ TermVarBinding (identPrefix id) (TypedId t id)
+    ctxBindings <- mapM makeTermVarBinding (zip unificationVars ids)
+    let ctx = prependContextBindings ctx0 ctxBindings
+    -- Typecheck each binding
+    tcbodies <- forM (zip unificationVars bindings) $
+       (\(u, TermBinding v b) -> do
+           typecheck ctx b (evarMaybeType v)
+       )
+
+    -- Typecheck the body as well
+    e' <- typecheck ctx e mt
+
+    let fns = [f | (E_AnnFn f) <- tcbodies]
+    return $ AnnLetFuns rng ids fns e'
+
 
 -----------------------------------------------------------------------
 
@@ -424,7 +459,7 @@ typecheckCall ctx rng base args maybeExpTy = do
               -- ((t1 -> t2) -> (Coro t1 t2))
              let substitutedFnType = tySubst unifiableRhoType tysub in
              -- eb[tyProjTypes]::substitutedFnType
-             let annTyApp = E_AnnTyApp rng substitutedFnType eb (minimalTuple tyProjTypes)
+             let annTyApp = E_AnnTyApp rng substitutedFnType eb (minimalTupleAST tyProjTypes)
                   where tyProjTypes = extractSubstTypes unificationVars tysub
              in typecheckCallWithBaseFnType eargs annTyApp (typeAST annTyApp) rng
 

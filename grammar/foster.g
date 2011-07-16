@@ -68,8 +68,8 @@ phrase  :       lvalue+                         -> ^(PHRASE lvalue+);
 lvalue  :       atom suffix*                    -> ^(LVALUE atom suffix*);
 
 type_application
-	:	':[' t (',' t)* ']'             -> ^(VAL_TYPE_APP t+)    // type application
-	;
+        :	':[' t (',' t)* ']'             -> ^(VAL_TYPE_APP t+)    // type application
+        ;
 
 suffix  :       type_application
   |     '^'                             -> ^(DEREF)             // dereference
@@ -82,10 +82,8 @@ ifexpr                  :       'if' cond=e 'then' thenpart=e_seq 'else' elsepar
 
 binding : x '=' e ';' -> ^(BINDING x e);
 
-lets    : 'let' binding+ 'in' e_seq 'end'   -> ^(LETS binding+ e_seq);
-
-// atom is really (type/val abstraction)
-letrec : 'rec' binding+ 'in' atom 'end' -> ^(LETREC binding+ atom);
+lets   : 'let' binding+ 'in' e_seq 'end' -> ^(LETS   ^(LETS binding+) e_seq);
+letrec : 'rec' binding+ 'in' e_seq 'end' -> ^(LETREC ^(LETS binding+) e_seq);
 
 formal  : x (':' t) -> ^(FORMAL x t);
 
@@ -126,7 +124,7 @@ t       :               // types
   ;
 
 barebinding
-	:  x '=' e -> ^(BINDING x e);
+        :  x '=' e -> ^(BINDING x e);
 tannots :  barebinding (',' barebinding)* -> ^(BINDING barebinding+);
 
 tatom   :

@@ -85,13 +85,20 @@ llvm::Value* emitStore(llvm::Value* val,
     // Can't store a void!
     return getUnitValue();
   }
-  ASSERT(isPointerToType(ptr->getType(), val->getType())) << "\n"
-  << "ptr type: " << str(ptr->getType()) << "\n"
-  << "val type: " << str(val->getType()) << "\n"
-  << "val is  : " << str(val) << "\n"
-  << "ptr is  : " << str(ptr);
 
-  return builder.CreateStore(val, ptr, /*isVolatile=*/ false);
+  if (!isPointerToType(ptr->getType(), val->getType())) {
+    ASSERT(false) << "ELIDING STORE DUE TO MISMATCHED TYPES:\n"
+            << "ptr type: " << str(ptr->getType()) << "\n"
+            << "val type: " << str(val->getType()) << "\n"
+            << "val is  : " << str(val) << "\n"
+            << "ptr is  : " << str(ptr);
+    EDiag() << "unit is: " << str(getUnitValue());
+    return builder.CreateBitCast(builder.getInt32(0),
+                                 builder.getInt32Ty(),
+                                 "elided store");
+  } else {
+    return builder.CreateStore(val, ptr, /*isVolatile=*/ false);
+  }
 }
 
 llvm::Value* CodegenPass::autoload(llvm::Value* v) {
@@ -359,18 +366,44 @@ llvm::Value* LLClosures::codegen(CodegenPass* pass) {
   // This AST node binds a mutually-recursive set of functions,
   // represented as closure values, in a designated expression.
 
-  ASSERT(closures.size() == 1)
-       << "EXPEDIENT HACK: MUTUALLY RECURSIVE CLOSURE CODEGEN"
-                << " NOT YET IMPLEMENTED!";
+  std::vector<llvm::Value*> envSlots;
+  for (size_t i = 0; i < closures.size(); ++i) {
+    envSlots.push_back(closures[i]->codegenStorage(pass));
+  }
 
-  LLClosure& c = *closures[0];
+  // Stick each closure environment in the symbol table.
+  std::vector<llvm::Value*> envPtrs;
+  for (size_t i = 0; i < closures.size(); ++i) {
+    // Make sure we close over generic versions of our pointers...
+    llvm::Value* envPtr = pass->autoload(envSlots[i]);
+    llvm::Value* genPtr = builder.CreateBitCast(envPtr,
+                                builder.getInt8PtrTy(),
+                                closures[i]->envname + ".generic");
+    pass->valueSymTab.insert(closures[i]->envname, genPtr);
 
-  llvm::Value* envSlot = c.codegenStorage(pass);
-  llvm::Value* envPtr = pass->autoload(envSlot);
-  c.env->codegenTo(pass, envPtr);
+    envPtrs.push_back(envPtr);
+  }
 
-  llvm::Value* clo = c.codegenClosure(pass, envPtr);
-  pass->valueSymTab.insert(c.varname, clo);
+  // Now that all the env pointers are in scope,
+  // store the appropriate values through each pointer.
+  for (size_t i = 0; i < closures.size(); ++i) {
+    closures[i]->env->codegenTo(pass, envPtrs[i]);
+  }
+
+  // And clean up.
+  for (size_t i = 0; i < closures.size(); ++i) {
+    pass->valueSymTab.remove(closures[i]->envname);
+  }
+
+  ////////////////////////////////////////////////////////
+  ////////////////////////////////////////////////////////
+
+  // Generate each closure, sticking it in the symbol table
+  // so that the body of the LetClosures node has access.
+  for (size_t i = 0; i < closures.size(); ++i) {
+    llvm::Value* clo = closures[i]->codegenClosure(pass, envPtrs[i]);
+    pass->valueSymTab.insert(closures[i]->varname, clo);
+  }
 
   llvm::Value* exp = pass->emit(expr, NULL);
 
@@ -383,9 +416,8 @@ llvm::Value* LLClosures::codegen(CodegenPass* pass) {
 
 bool tryBindClosureFunctionTypes(const llvm::Type*          origType,
                                  const llvm::FunctionType*& fnType,
-                                 const llvm::StructType*  & envStructTy,
                                  const llvm::StructType*  & cloStructTy) {
-  fnType = NULL; envStructTy = NULL; cloStructTy = NULL;
+  fnType = NULL; cloStructTy = NULL;
 
   const llvm::PointerType* pfnty = llvm::dyn_cast<llvm::PointerType>(origType);
   if (!pfnty) {
@@ -404,12 +436,6 @@ bool tryBindClosureFunctionTypes(const llvm::Type*          origType,
   const llvm::PointerType* maybeEnvType =
                 llvm::dyn_cast<llvm::PointerType>(fnType->getParamType(0));
   if (!maybeEnvType) return false;
-  envStructTy = llvm::dyn_cast<llvm::StructType>(
-                          maybeEnvType->getContainedType(0));
-  if (!envStructTy) {
-    EDiag() << "expected " << str(fnType) << " to have a concrete struct env parameter.";
-    return false;
-  }
 
   cloStructTy = llvm::StructType::get(origType->getContext(),
                     pfnty, maybeEnvType, NULL);
@@ -442,11 +468,9 @@ llvm::Value* LLClosure::codegenClosure(
   llvm::Value* proc = pass->lookupFunctionOrDie(procname);
 
   const llvm::FunctionType* fnty;
-  const llvm::StructType* envStructTy;
   const llvm::StructType* cloStructTy;
 
-  if (!tryBindClosureFunctionTypes(proc->getType(),
-            fnty, envStructTy, cloStructTy)) {
+  if (!tryBindClosureFunctionTypes(proc->getType(), fnty, cloStructTy)) {
     ASSERT(false) << "proc " << procname
                   << " with type " << str(proc->getType())
                   << " not closed??";
@@ -879,7 +903,6 @@ LLProc* getClosureVersionOf(LLExpr* arg,
                             FnTypeAST* fnty,
                             CodegenPass* pass);
 
-
 ////////////////////////////////////////////////////////////////////
 
 void doLowLevelWrapperFnCoercions(const llvm::Type* expectedType,
@@ -926,14 +949,19 @@ void doLowLevelWrapperFnCoercions(const llvm::Type* expectedType,
   // all parameters to the regular function, except for the env ptr.
     LLProc* wrapper = getClosureVersionOf(arg, expectedType, fnty, pass);
     std::string cloname = ParsingContext::freshName("c-clo");
+    std::string envname = ParsingContext::freshName("c-clo-empty-env");
     std::vector<LLClosure*> closures;
-    closures.push_back(new LLClosure(cloname, wrapper->getName(), getEmptyTuple()));
+    closures.push_back(new LLClosure(cloname, envname, wrapper->getName(), getEmptyTuple()));
     LLExpr* clo = new LLClosures(new LLVar(cloname), closures);
     arg = clo;
   }
 }
 
 ////////////////////////////////////////////////////////////////////
+
+bool isGenericClosureEnvType(const Type* ty) {
+  return ty == builder.getInt8PtrTy();
+}
 
 // TODO this shouldn't need to be 200 lines :(
 llvm::Value* LLCall::codegen(CodegenPass* pass) {
@@ -988,6 +1016,15 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
     LLExpr* arg = this->args[i];
     doLowLevelWrapperFnCoercions(expectedType, arg, pass);
     llvm::Value* argV = pass->emit(arg, NULL);
+
+    // This is a an artifact produced by the mutual recursion
+    // of the environments of mutually recursive closures.
+    if (isGenericClosureEnvType(argV->getType())
+      && argV->getType() != expectedType) {
+      EDiag() << "emitting bitcast gen2spec " << str(expectedType);
+      argV = builder.CreateBitCast(argV, expectedType, "gen2spec");
+    }
+
     valArgs.push_back(argV);
 
     ASSERT(argV->getType() == expectedType)
@@ -1037,13 +1074,19 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
 
 llvm::Value* LLTuple::codegenStorage(CodegenPass* pass) {
   if (vars.empty()) { return getUnitValue(); }
+
   ASSERT(this->allocator);
   TupleTypeAST* tuplety = dynamic_cast<TupleTypeAST*>(this->allocator->type);
-  ASSERT(tuplety != NULL);
 
-  const llvm::Type* tupleType = tuplety->getLLVMTypeUnboxed();
-  const char* typeName = (isClosureEnvironment) ? "env" : "tuple";
-  registerType(tupleType, typeName, pass->mod, NotArray, isClosureEnvironment);
+  ASSERT(tuplety != NULL)
+        << "allocator wants to emit type " << str(this->allocator->type)
+        << "; var 0 :: " << str(vars[0]->type);
+
+  if (tuplety) {
+    const llvm::Type* tupleType = tuplety->getLLVMTypeUnboxed();
+    const char* typeName = (isClosureEnvironment) ? "env" : "tuple";
+    registerType(tupleType, typeName, pass->mod, NotArray, isClosureEnvironment);
+  }
 
   return allocator->codegen(pass);
 }

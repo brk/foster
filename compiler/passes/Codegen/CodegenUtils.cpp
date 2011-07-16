@@ -31,9 +31,13 @@ void emitFosterAssert(llvm::Module* mod, llvm::Value* cond, const char* cstr) {
 }
 
 llvm::Value* getUnitValue() {
+  return llvm::ConstantPointerNull::get(
+                builder.getInt8PtrTy());
+  /*
   std::vector<llvm::Constant*> noArgs;
   return llvm::ConstantStruct::get(
             llvm::StructType::get(builder.getContext()), noArgs);
+  */
 }
 
 void checkPointerToIndex(Value* ptrToCompositeValue,
@@ -50,7 +54,8 @@ void checkPointerToIndex(Value* ptrToCompositeValue,
   } else {
     ASSERT(false) << "Pointer to non-composite type "
                   <<  str(ptrToCompositeValue->getType())
-                  << "passed to getPointerToIndex(... " << name << ")";
+                  << "passed to getPointerToIndex(" << str(idxValue)
+                                         << " ... " << name << ")";
   }
 }
 

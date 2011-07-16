@@ -90,13 +90,13 @@ typesEqual _ _ = False
 
 fosBoolType = NamedTypeAST "i1"
 
-minimalTuple []    = TupleTypeAST []
-minimalTuple [arg] = arg
-minimalTuple args  = TupleTypeAST args
+minimalTupleAST []    = TupleTypeAST []
+minimalTupleAST [arg] = arg
+minimalTupleAST args  = TupleTypeAST args
 
-mkProcType args rets = FnTypeAST (TupleTypeAST args) (minimalTuple rets) CCC    FT_Proc
-mkFnType   args rets = FnTypeAST (TupleTypeAST args) (minimalTuple rets) FastCC FT_Func
-mkCoroType args rets = CoroTypeAST (minimalTuple args) (minimalTuple rets)
+mkProcType args rets = FnTypeAST (TupleTypeAST args) (minimalTupleAST rets) CCC    FT_Proc
+mkFnType   args rets = FnTypeAST (TupleTypeAST args) (minimalTupleAST rets) FastCC FT_Func
+mkCoroType args rets = CoroTypeAST (minimalTupleAST args) (minimalTupleAST rets)
 i32 = (NamedTypeAST "i32")
 i64 = (NamedTypeAST "i64")
 i1  = (NamedTypeAST "i1")

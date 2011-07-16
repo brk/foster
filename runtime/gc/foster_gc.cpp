@@ -110,6 +110,7 @@ class copying_gc {
 
       void* allocate_cell_prechecked(typemap* typeinfo) {
         heap_cell* allot = (heap_cell*) bump;
+        memset(bump, 0xAA, typeinfo->cell_size);
         bump += typeinfo->cell_size;
         allot->set_meta(typeinfo);
         return allot->body_addr();

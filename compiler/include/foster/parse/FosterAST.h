@@ -138,10 +138,12 @@ struct Binding {
 
 struct LetAST : public ExprAST {
   std::vector<Binding> bindings;
+  bool isRecursive;
   explicit LetAST(std::vector<Binding> bindings,
-                  ExprAST* inexpr,
+                  ExprAST* inexpr, bool rec,
                   foster::SourceRange sourceRange)
-    : ExprAST("LetAST", sourceRange), bindings(bindings) {
+    : ExprAST("LetAST", sourceRange),
+      bindings(bindings), isRecursive(rec) {
     parts.push_back(inexpr);
   }
   virtual void dump(DumpToProtobufPass* pass);

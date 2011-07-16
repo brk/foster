@@ -120,7 +120,8 @@ LLTuple* parseTuple(const pb::Expr& e) {
 }
 
 LLClosure* parseClosure(const pb::Closure& clo) {
-  return new LLClosure(clo.varname(), clo.procid(), parseTuple(clo.env()));
+  return new LLClosure(clo.varname(), clo.envid(), clo.procid(),
+                       parseTuple(clo.env()));
 }
 
 LLExpr* parseClosures(const pb::Expr& e) {
@@ -442,6 +443,7 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
     if (!tyname.empty() && tyname != "<NULL Ty>") {
       rv = foster::TypeASTFor(tyname);
     }
+    ASSERT(rv) << "unable to find type named " << tyname;
     return rv;
   }
 

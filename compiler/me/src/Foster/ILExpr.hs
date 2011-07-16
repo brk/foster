@@ -9,9 +9,9 @@ module Foster.ILExpr where
 import Debug.Trace(trace)
 import Control.Monad.State
 import Data.Set(Set)
-import Data.Set as Set(fromList, toList, difference, union)
+import Data.Set as Set(fromList, toList, difference, member)
 import Data.Map(Map)
-import qualified Data.Map as Map((!), fromList, member, elems)
+import qualified Data.Map as Map((!), fromList, member, keys, elems, findWithDefault)
 
 import Foster.Base
 import Foster.Context
@@ -31,6 +31,7 @@ closureConvertAndLift :: Context TypeIL
 --}
 
 data ILClosure = ILClosure { ilClosureProcIdent :: Ident
+                           , ilClosureEnvIdent  :: Ident
                            , ilClosureCaptures  :: [AIVar] } deriving Show
 
 data ILProgram = ILProgram [ILProcDef] [ILDecl] SourceLines
@@ -106,6 +107,8 @@ ilmPutProc p_action = do
         put (old { ilmProcDefs = p:(ilmProcDefs old) })
         return p
 
+fakeCloEnvType = TupleTypeIL []
+
 closureConvertAndLift :: Context TypeIL
                       -> (ModuleAST AIFn TypeIL)
                       -> ILProgram
@@ -114,7 +117,8 @@ closureConvertAndLift ctx m =
     let decls = map (\(s,t) -> ILDecl s t) (moduleASTdecls m) in
     -- We lambda lift top level functions, since we know they don't have any "real" free vars.
     -- Lambda lifting wiil closure convert nested functions.
-    let globalVars = (Set.fromList $ map (\(TermVarBinding s _) -> s) (contextBindings ctx)) in
+    let nameOfBinding (TermVarBinding s _) = s in
+    let globalVars = Set.fromList $ map nameOfBinding (contextBindings ctx) in
     let procsILM = forM fns (\fn -> lambdaLift ctx fn []) in
     let newstate = execState procsILM (ILMState 0 globalVars []) in
     ILProgram (ilmProcDefs newstate) decls (moduleASTsourceLines m)
@@ -147,13 +151,21 @@ closureConvert ctx expr =
                                         b' <- closureConvert ctx' b
                                         return $ buildLet id a' b'
 
-            AILetFuns ids fns e   -> do let idfns = zip ids fns
-                                        cloEnvIds <- mapM (\id -> ilmFresh (".env." ++ identPrefix id)) ids
-                                        let info = Map.fromList (zip ids (zip fns cloEnvIds))
-                                        combined <- mapM (closureOfAIFn ctx idfns info) idfns
-                                        let (closures, _procdefs) = unzip combined
-                                        e' <- g e
-                                        return $ ILClosures ids closures e'
+            AILetFuns ids fns e   -> do
+                cloEnvIds <- mapM (\id -> ilmFresh (".env." ++ identPrefix id)) ids
+
+                let cloEnvBinding id = TermVarBinding (identPrefix id) (TypedId fakeCloEnvType id)
+                let ext = prependContextBindings ctx (map cloEnvBinding cloEnvIds)
+
+                let infoMap = Map.fromList (zip ids (zip fns cloEnvIds))
+                let idfns = zip ids fns
+
+                closedNms <- mapM (closedNamesOfAIFn infoMap) idfns
+                combined  <- mapM (closureOfAIFn ext infoMap) (zip closedNms idfns)
+                let (closures, _procdefs) = unzip combined
+                e' <- closureConvert ext e
+                return $ ILClosures ids closures e'
+
             AIAllocArray t a      -> do a' <- g a
                                         nestedLets [a'] (\[x] -> ILAllocArray t x)
             AIAlloc a             -> do a' <- g a
@@ -252,6 +264,7 @@ contextVar dbg ctx s =
     case termVarLookup s (contextBindings ctx) of
             Just v -> v
             Nothing -> error $ "ILExpr: " ++ dbg ++ " free var not in context: " ++ s ++ "\n" ++ showctx (contextBindings ctx)
+                       --TypedId (NamedTypeIL "i32") (Ident ("{" ++ s ++ "-NCTX-" ++ dbg ++ "}") 0)
     where showctx bindings =
             show $ map (\(TermVarBinding nm v) -> nm ++ "/" ++ (show $ tidIdent v)) bindings
 
@@ -275,91 +288,77 @@ nestedLets :: [ILExpr] -> ([AIVar] -> ILExpr) -> ILM ILExpr
 -- | The fresh variables will be accumulated and passed to a
 -- | continuation which generates a LetVal expr using the variables.
 nestedLets exprs g = nestedLets' exprs [] g
-
-nestedLets' :: [ILExpr] -> [AIVar] -> ([AIVar] -> ILExpr) -> ILM ILExpr
-nestedLets' []     vars k = return $ k (reverse vars)
-nestedLets' (e:es) vars k =
-    case e of
-      -- No point in doing  let var1 = var2 in e...
-      (ILVar v) -> nestedLets' es (v:vars) k
-      otherwise -> do
-        x        <- ilmFresh ".x"
-        innerlet <- nestedLets' es ((TypedId (typeIL e) x):vars) k
-        return $ buildLet x e innerlet
-
-makeEnvPassingExplicit :: AIExpr -> Map Ident (AIFn, Ident) -> AIExpr
-makeEnvPassingExplicit expr fnAndEnvForClosure =
-    q expr where
-    fq (AiFn ty id vars body rng) = (AiFn ty id vars (q body) rng)
-    q e = case e of
-            AIBool b         -> e
-            AIInt t i        -> e
-            E_AIVar v        -> e -- We don't alter standalone references to closures
-            AIIf t a b c    -> AIIf      t (q a) (q b) (q c)
-            AIUntil t a b   -> AIUntil   t (q a) (q b)
-            AILetVar id a b -> AILetVar id (q a) (q b)
-            AILetFuns ids fns e  -> AILetFuns ids (map fq fns) (q e)
-            AIAllocArray t a -> AIAllocArray t (q a)
-            AIAlloc a     -> AIAlloc   (q a)
-            AIDeref t a   -> AIDeref t (q a)
-            AIStore t a b -> AIStore t (q a) (q b)
-            AISubscript t a b    -> AISubscript t (q a) (q b)
-            AITuple es           -> AITuple (map q es)
-            AICase t e bs        -> AICase t (q e) [(p, q e) | (p, e) <- bs]
-            E_AITyApp t e argty  -> E_AITyApp t (q e) argty
-            E_AIFn f             -> E_AIFn (fq f)
-            AICallPrim r t prim es -> AICallPrim r t prim (map q es)
-            AICall r t (E_AIVar v) es
-                | Map.member (tidIdent v) fnAndEnvForClosure ->
-                    let (f, envid) = fnAndEnvForClosure Map.! (tidIdent v) in
-                    let fnvar = E_AIVar (TypedId (aiFnType f) (aiFnIdent f)) in
-                    -- We don't know the env type here, since we don't
-                    -- pre-collect the set of closed-over envs from other procs.
-                    let env = let bogusEnvType = PtrTypeIL (TupleTypeIL []) in
-                              E_AIVar (TypedId bogusEnvType envid) in
-                              -- This works because (A) we never type check ILExprs,
-                              -- and (B) the LLVM codegen doesn't check the type field in this case.
-                    (AICall r t fnvar (env:(map q es)))
-            AICall r t b es -> AICall r t (q b) (map q es)
-
+  where
+    nestedLets' :: [ILExpr] -> [AIVar] -> ([AIVar] -> ILExpr) -> ILM ILExpr
+    nestedLets' []     vars k = return $ k (reverse vars)
+    nestedLets' (e:es) vars k =
+        case e of
+          -- No point in doing  let var1 = var2 in e...
+          -- Instead, pass var2 to k instead of var1.
+          (ILVar v) -> nestedLets' es (v:vars) k
+          otherwise -> do
+            x        <- ilmFresh ".x"
+            innerlet <- nestedLets' es ((TypedId (typeIL e) x):vars) k
+            return $ buildLet x e innerlet
 
 excluding :: Ord a => [a] -> Set a -> [a]
 excluding bs zs =  Set.toList $ Set.difference (Set.fromList bs) zs
 
 type InfoMap = Map Ident (AIFn, Ident)
 
-closureOfAIFn :: Context TypeIL
-               -> [(Ident, AIFn)]
-               -> InfoMap
-               -> (Ident, AIFn)
-               -> ILM (ILClosure, ILProcDef)
-closureOfAIFn ctx allIdsFns infoMap (self_id, fn) = do
-    let allIdNames = map (\(id, _) -> identPrefix id) allIdsFns
-    let envName  =     (identPrefix.snd) (infoMap Map.! self_id)
-    let funNames = map (identPrefix.aiFnIdent.fst) (Map.elems infoMap)
-    globalVars <- gets ilmGlobals
-    {- Given   letfun f = { ... f() .... }
-               andfun g = { ... f() .... }
-       neither f nor g should close over f itself, or any global vars.
+closedNamesOfAIFn :: InfoMap
+                  -> (Ident, AIFn)
+                  -> ILM [String]
+closedNamesOfAIFn infoMap (self_id, fn) = do
+    -- ids are the names of the recursively bound functions
+    let ids      =          Map.keys  infoMap
+    let envIds   = map snd (Map.elems infoMap)
+    {- Given   rec f = { ... f() .... };
+                   g = { ... f() .... };
+               in ... end;
+       neither f nor g should close over the closure f itself, or any global
+       vars. Nor does the closure converted proc capture its own environment
+       variable, because it will be added as an implicit parameter. The
+       environment for f, however, *is* closed over in g.
     -}
-    let transformedFn = makeEnvPassingExplicit (E_AIFn fn) infoMap
-    let freeNames = freeVars transformedFn `excluding`
-                       (Set.union (Set.fromList $ envName : funNames ++ allIdNames) globalVars)
+    let rawFreeIds = freeIdents (E_AIFn fn) `excluding` (Set.fromList [self_id])
+
+    -- Have (i.e.) g capture f's env var instead of "f" itself,
+    -- and make sure we filter out the global names.
+    globalVars <- gets ilmGlobals
+    let envFor = Map.fromList $ zip ids envIds
+    let freeNames = map (\n -> Map.findWithDefault n n envFor) rawFreeIds
+
+    return $ trace ("freeNames("++ show self_id++") = " ++ show freeNames)
+             filter (\name -> not $ Set.member name globalVars)
+                    (map identPrefix freeNames)
+
+closureOfAIFn :: Context TypeIL
+               -> InfoMap
+               -> ([String], (Ident, AIFn))
+               -> ILM (ILClosure, ILProcDef)
+closureOfAIFn ctx infoMap (closedNames, (self_id, fn)) = do
+    let transformedFn = makeEnvPassingExplicit (E_AIFn fn)
+    (envVar, newproc) <- closureConvertFn transformedFn infoMap closedNames
+
+    -- Look up each captured var in the environment to determine what its
+    -- type is. This is a sanity check that the names we need to close over
+    -- are actually there to be closed over, with known types.
     let capturedVars = map (\n -> contextVar ("closureOfAIFn (" ++ show self_id ++")")
-                                             ctx n) freeNames
-    newproc <- closureConvertFn transformedFn infoMap freeNames
-    return $ trace ("capturedVars:" ++ show capturedVars ++ "\n\nallIdsFns: " ++ show allIdsFns) $
-        (ILClosure (ilProcIdent newproc) capturedVars , newproc)
+                                              ctx n) closedNames
+    return $ trace ("capturedVars for " ++ show self_id ++  ":" ++ (show $ capturedVars)) $
+         --trace ("raw closedNames for " ++ show self_id ++  ":" ++ (show $ freeIdents (E_AIFn fn))) $
+        (ILClosure (ilProcIdent newproc) envVar capturedVars, newproc)
   where
-    closureConvertFn :: AIExpr -> InfoMap -> [String] -> ILM ILProcDef
+    closureConvertFn :: AIExpr -> InfoMap -> [String] -> ILM (Ident, ILProcDef)
     closureConvertFn (E_AIFn f) info freeNames = do
-        let envName = snd (info Map.! self_id)
+        let envId        = snd (info Map.! self_id)
         let uniqFreeVars = map (contextVar "closureConvertAIFn" ctx) freeNames
         let envTypes = map tidType uniqFreeVars
-        let envVar   = TypedId (TupleTypeIL envTypes) envName
+        let envVar   = TypedId (TupleTypeIL envTypes) envId
 
         -- If the body has x and y free, the closure converted body should be
-        -- New body is   case env of (x, y, ...) -> body end
+        --     case env of (x, y, ...) -> body end
         newbody <- let oldbody = aiFnBody f in
                    let norange = EMissingSourceRange "closureConvertAIFn" in
                    let patVar a = P_Variable norange (tidIdent a) in
@@ -367,11 +366,46 @@ closureOfAIFn ctx allIdsFns infoMap (self_id, fn) = do
                      AICase (typeAI oldbody) (E_AIVar envVar)
                         [ (P_Tuple norange (map patVar uniqFreeVars)
                           , oldbody) ]
-        ilmPutProc (closureConvertedProc (envVar:(aiFnVars f)) f newbody)
+        proc <- ilmPutProc (closureConvertedProc (envVar:(aiFnVars f)) f newbody)
+        return (envId, proc)
     closureConvertFn _ info freeNames = error "closureConvertAIFn called on non-fn"
 
-    litInt32 :: Int -> ILExpr
-    litInt32 i = ILInt (NamedTypeIL "i32") $ getLiteralInt 32 i
+    makeEnvPassingExplicit :: AIExpr -> AIExpr
+    makeEnvPassingExplicit expr =
+      q expr where
+      fq (AiFn ty id vars body rng) = (AiFn ty id vars (q body) rng)
+      q e = case e of
+        AIBool b         -> e
+        AIInt t i        -> e
+        E_AIVar v        -> e -- We don't alter standalone references to closures
+        AIIf t a b c         -> AIIf      t (q a) (q b) (q c)
+        AIUntil t a b        -> AIUntil   t (q a) (q b)
+        AILetVar id a b      -> AILetVar id (q a) (q b)
+        AILetFuns ids fns e  -> AILetFuns ids (map fq fns) (q e)
+        AIAllocArray t a -> AIAllocArray t (q a)
+        AIAlloc a        -> AIAlloc   (q a)
+        AIDeref t a      -> AIDeref t (q a)
+        AIStore t a b    -> AIStore t (q a) (q b)
+        E_AIFn f               -> E_AIFn (fq f) -- TODO: is this case ever taken?
+        AISubscript t a b      -> AISubscript t (q a) (q b)
+        AITuple es             -> AITuple (map q es)
+        AICase t e bs          -> AICase t (q e) [(p, q e) | (p, e) <- bs]
+        E_AITyApp t e argty    -> E_AITyApp t (q e) argty
+        AICallPrim r t prim es -> AICallPrim r t prim (map q es)
+        -- The only really interesting case:
+        AICall r t (E_AIVar v) es
+            | Map.member (tidIdent v) infoMap ->
+                let (f, envid) = infoMap Map.! (tidIdent v) in
+                let fnvar = E_AIVar (TypedId (aiFnType f) (aiFnIdent f)) in
+                -- We don't know the env type here, since we don't
+                -- pre-collect the set of closed-over envs from other procs.
+                let env = E_AIVar (TypedId fakeCloEnvType envid) in
+                          -- This works because (A) we never type check ILExprs,
+                          -- and (B) the LLVM codegen doesn't check the type field in this case.
+                -- CallProc, passing env as first parameter
+                AICall r t fnvar (env:(map q es))
+        -- TODO when is guard above false?
+        AICall r t b es -> AICall r t (q b) (map q es)
 
 typeIL :: ILExpr -> TypeIL
 typeIL (ILBool _)          = NamedTypeIL "i1"
@@ -428,7 +462,7 @@ instance Structured ILExpr where
             ILAlloc v           -> out $ "ILAlloc     "
             ILDeref t a         -> out $ "ILDeref     "
             ILStore t a b       -> out $ "ILStore     "
-            ILCase t _ _ _      -> out $ "ILCase      "
+            ILCase t _ bnds _   -> out $ "ILCase      " ++ (show $ map fst bnds)
             ILAllocArray _ _    -> out $ "ILAllocArray "
             ILArrayRead  t a b  -> out $ "ILArrayRead " ++ " :: " ++ show t
             ILArrayPoke v b i   -> out $ "ILArrayPoke "

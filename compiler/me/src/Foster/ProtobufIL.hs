@@ -236,9 +236,10 @@ unzipLetVals (ILLetVal x a b) =
         ( e , (dumpIdent x):nms , a:vals )
 unzipLetVals e = (e, [], [])
 
-dumpClosureWithName (varid, ILClosure procid captvars) =
+dumpClosureWithName (varid, ILClosure procid envid captvars) =
     Closure { varname  = dumpIdent varid
             , procid   = u8fromString (identPrefix procid)
+            , envid    = dumpIdent envid
             , env      = dumpExpr (ILTuple captvars) }
 
 dumpDecisionTree (DT_Fail) =

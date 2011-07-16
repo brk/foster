@@ -188,6 +188,7 @@ void SeqAST::dump(DumpToProtobufPass* pass) {
 void LetAST::dump(DumpToProtobufPass* pass) {
   processExprAST(pass->current, this, pb::Expr::LET);
   pb::PBLet* let_ = pass->current->mutable_pb_let();
+  let_->set_is_recursive(this->isRecursive);
   for (size_t i = 0; i < this->bindings.size(); ++i) {
     pb::TermBinding* b = let_->add_binding();
     b->set_name(this->bindings[i].name);

@@ -29,7 +29,7 @@ TODO: implementation details
 
 * Move primiitve recognition to Haskell, not parser
 * Test that recursive closures work as expected
-* Update chromium-base
+* Expand use of chromium-base
  * Use format_macros.h
  * stringprintf.h ?
  * Keep statistics of GC/mutator run times?

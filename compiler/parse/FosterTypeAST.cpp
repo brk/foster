@@ -148,6 +148,7 @@ const llvm::Type* NamedTypeAST::getLLVMType() const {
   if (!repr) {
     repr = nonLLVMType->getLLVMType();
   }
+  ASSERT(repr) << "no named type: " << name;
   return repr;
 }
 
@@ -220,8 +221,11 @@ const llvm::FunctionType* FnTypeAST::getLLVMFnType() const {
     loweredArgTypes.push_back(ty);
   }
 
-
   const llvm::Type* retTy = returnType->getLLVMType();
+
+  // TODO conflict here between polymorphism (which needs
+  // a uniform ABI) and C-compatibility (which says that
+  // procs returning unit should be marked void?
   if (isUnit(retTy)) {
     retTy = llvm::Type::getVoidTy(llvm::getGlobalContext());
   }
@@ -261,21 +265,21 @@ llvm::CallingConv::ID FnTypeAST::getCallingConventionID() const {
 
 /////////////////////////////////////////////////////////////////////
 
-const llvm::StructType* TupleTypeAST::getLLVMTypeUnboxed() const {
+const llvm::Type* TupleTypeAST::getLLVMTypeUnboxed() const {
   vector<const llvm::Type*> loweredTypes;
   for (size_t i = 0; i < parts.size(); ++i) {
     loweredTypes.push_back(parts[i]->getLLVMType());
   }
-
-  return llvm::StructType::get(
+  if (loweredTypes.empty()) {
+    return TypeAST::i(8)->getLLVMType();
+  } else {
+    return llvm::StructType::get(
             llvm::getGlobalContext(), loweredTypes, /*isPacked=*/false);
+  }
 }
 
 const llvm::Type* TupleTypeAST::getLLVMType() const {
-  if (!repr) {
-    repr = llvm::PointerType::getUnqual(getLLVMTypeUnboxed());
-  }
-  return repr;
+  return llvm::PointerType::getUnqual(getLLVMTypeUnboxed());
 }
 
 TypeAST*& TupleTypeAST::getContainedType(int i) {
@@ -283,18 +287,11 @@ TypeAST*& TupleTypeAST::getContainedType(int i) {
   return parts[i];
 }
 
-map<TupleTypeAST::Args, TupleTypeAST*> TupleTypeAST::tupleTypeCache;
-
 TupleTypeAST* TupleTypeAST::get(const vector<TypeAST*>& argTypes) {
-  TupleTypeAST* tup = tupleTypeCache[argTypes];
-  if (!tup) {
-    if (!argTypes.empty() && !argTypes.back()) {
-      ASSERT(argTypes.back()) << "Tuple type must not contain NULL members.";
-    }
-    tup = new TupleTypeAST(argTypes, SourceRange::getEmptyRange());
-    tupleTypeCache[argTypes] = tup;
+  if (!argTypes.empty()) {
+    ASSERT(argTypes.back()) << "Tuple type must not contain NULL members.";
   }
-  return tup;
+  return new TupleTypeAST(argTypes, SourceRange::getEmptyRange());
 }
 
 /////////////////////////////////////////////////////////////////////

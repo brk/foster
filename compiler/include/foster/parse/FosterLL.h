@@ -199,12 +199,14 @@ struct LLArrayPoke : public LLExpr {
 
 struct LLClosure {
   std::string varname;
+  std::string envname;
   std::string procname;
   LLTuple*    env;
-  explicit LLClosure(const std::string& _var ,
+  explicit LLClosure(const std::string& _varn,
+                     const std::string& _envn,
                      const std::string& _proc,
                      LLTuple* _env)
-    : varname(_var), procname(_proc), env(_env) {
+    : varname(_varn), envname(_envn), procname(_proc), env(_env) {
    env->isClosureEnvironment = true;
  }
  llvm::Value* codegenStorage(CodegenPass* pass);

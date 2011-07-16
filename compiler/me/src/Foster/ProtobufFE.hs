@@ -134,7 +134,9 @@ parseLet pbexpr = do
             parsePBLet range pblet mty = do
                 bindings <- mapM parseBinding (toList $ PBLet.binding pblet)
                 body <- parseExpr (PBLet.body pblet)
-                return $ buildLets range bindings body mty
+                if PBLet.is_recursive pblet
+                  then return $ E_LetRec  range bindings body mty
+                  else return $ buildLets range bindings body mty
             buildLets range bindings expr mty =
                 case bindings of
                    []     -> error "parseLet requires at least one binding!" -- TODO show range

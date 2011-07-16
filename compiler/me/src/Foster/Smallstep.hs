@@ -185,7 +185,7 @@ step gs =
                       return $ withEnv (withTerm gs2 (cont (termOf gs2))) env
 
 coroFromClosure :: MachineState -> ILClosure -> [SSValue] -> ((Location, MachineState), Coro)
-coroFromClosure gs (ILClosure id avars) cenv =
+coroFromClosure gs (ILClosure id _envid avars) cenv =
   let (Just ssproc) = tryLookupProc gs id in
   let (clo_env:args) = ssProcVars ssproc in
   let ins (id,val) map = Map.insert id val map in

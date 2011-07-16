@@ -103,6 +103,7 @@ message Expr {
 message PBLet {
   repeated TermBinding binding = 1;
   required Expr        body    = 2;
+  required bool   is_recursive = 3;
 }
 
 message TermBinding {

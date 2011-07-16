@@ -104,6 +104,7 @@ message Closure {
   required string varname  = 1;
   required string procid   = 2;
   required Expr   env      = 3;
+  required string envid    = 4;
 }
 
 message PBInt {
