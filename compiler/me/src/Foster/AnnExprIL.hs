@@ -37,7 +37,7 @@ data AIExpr=
         | AILetVar     Ident AIExpr AIExpr
         | AILetFuns    [Ident] [AIFn] AIExpr
         -- Use of bindings
-        | E_AIVar      (TypedId TypeIL)
+        | E_AIVar      VarNamespace (TypedId TypeIL)
         | E_AIPrim     ILPrim
         | AICall       TypeIL AIExpr [AIExpr]
         -- Mutable ref cells
@@ -138,7 +138,7 @@ ail ctx knownProcNames ae =
                        let call = AICall ti (E_AIPrim $ ILNamedPrim primVar) argsi
                        let primName = identPrefix id
                        x <- tcFresh $ "appty_" ++ primName
-                       return $ AILetVar x (E_AITyApp oti (E_AIVar primVar) appti) call
+                       return $ AILetVar x (E_AITyApp oti (E_AIVar VarLocal primVar) appti) call
 
                 -- TODO write test cases for the obvious missing combinations...
                 _ -> tcFails [out $ "Unknown base of call: " ++ show b]
@@ -146,8 +146,8 @@ ail ctx knownProcNames ae =
         E_AnnVar _rng (TypedId t id)-> do
                 ti <- ilOf t
                 if isProcType ti || Set.member (identPrefix id) knownProcNames
-                  then return $ E_AIPrim (ILNamedPrim $ TypedId ti id)
-                  else return $ E_AIVar               $ TypedId ti id
+                  then return $ E_AIVar VarProc  (TypedId ti id)
+                  else return $ E_AIVar VarLocal (TypedId ti id)
 
         E_AnnFn annFn              -> do aif <- aiFnOf ctx knownProcNames annFn
                                          return $ E_AIFn aif
@@ -179,7 +179,7 @@ aiFnOf ctx procNames f = do
 
 instance AExpr AIExpr where
     freeIdents e = case e of
-        E_AIVar v     -> [tidIdent v]
+        E_AIVar _ v  -> [tidIdent v]
         AILetVar id a b     -> freeIdents a ++ (freeIdents b `butnot` [id])
         AICase _t e patbnds -> freeIdents e ++ (concatMap patBindingFreeIds patbnds)
         -- Note that all free idents of the bound expr are free in letvar,
@@ -214,7 +214,7 @@ instance Structured AIExpr where
             AISubscript t a b     -> [a, b]
             AITuple     es        -> es
             AICase t e bs         -> e:(map snd bs)
-            E_AIVar      v        -> []
+            E_AIVar _ns  v        -> []
             E_AIFn f              -> [aiFnBody f]
             E_AITyApp t a argty   -> [a]
 

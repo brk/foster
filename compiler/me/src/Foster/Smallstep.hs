@@ -231,11 +231,19 @@ envOf  gs = coroEnv  (stCoro gs)
 
 beginsWith s p = isJust (stripPrefix p s)
 
+trivialClosureForProc p =
+  SSClosure (ILClosure (ssProcIdent p) (error "proc env ident?") []) []
+
 getval :: MachineState -> Ident -> SSValue
 getval gs id =
-  case Map.lookup id (coroEnv (stCoro gs)) of
+  let env = coroEnv (stCoro gs) in
+  case Map.lookup id env of
     Just v -> v
-    Nothing -> error $ "Unable to get value for " ++ show id
+    Nothing -> case tryLookupProc gs id of
+      Just p -> trivialClosureForProc p
+      Nothing ->
+               error $ "Unable to get value for " ++ show id
+                      ++ "\n\tenv (unsorted) is " ++ show env
 
 unit = (SSTmValue $ SSTuple [])
 

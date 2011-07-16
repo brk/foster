@@ -3,6 +3,7 @@ run-clo = { f:{i32} => f () };
 main = {
   test-capture-zero();
   test-capture-one();
+  test-run-it();
 };
 
 test-capture-one = {
@@ -19,3 +20,9 @@ test-capture-zero = {
      j1 = print_i32 (run-clo c);
   in 0 end
 };
+
+test-run-it = {
+  expect_i32 42 ; print_i32 (run-it fx);
+};
+fx = { opaquely_i32 42 };
+run-it = { f: {i32} => f() };
