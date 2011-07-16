@@ -6,6 +6,9 @@
 
 module Foster.AnnExprIL where
 
+import Data.Set(Set)
+import Data.Set as Set(member)
+
 import Foster.Base
 import Foster.Context
 import Foster.AnnExpr
@@ -35,7 +38,7 @@ data AIExpr=
         | AILetFuns    [Ident] [AIFn] AIExpr
         -- Use of bindings
         | E_AIVar      (TypedId TypeIL)
-        | AICallPrim   TypeIL ILPrim [AIExpr]
+        | E_AIPrim     ILPrim
         | AICall       TypeIL AIExpr [AIExpr]
         -- Mutable ref cells
         | AIAlloc      AIExpr
@@ -59,9 +62,11 @@ data AIFn = AiFn { aiFnType  :: TypeIL
 
 aiFnName f = identPrefix (aiFnIdent f)
 
-ail :: Context TypeIL -> AnnExpr -> Tc AIExpr
-ail ctx ae =
-    let q = ail ctx in
+type KnownProcNames = Set String
+
+ail :: Context TypeIL -> KnownProcNames -> AnnExpr -> Tc AIExpr
+ail ctx knownProcNames ae =
+    let q = ail ctx knownProcNames in
     case ae of
         AnnBool _rng b             -> return $ AIBool         b
         AnnCompiles _rng (CompilesResult ooe) -> do
@@ -77,7 +82,7 @@ ail ctx ae =
                                          return $ AIInt ti int
         AnnLetVar _rng id  a b     -> do [x,y]   <- mapM q [a,b]
                                          return $ AILetVar id x y
-        AnnLetFuns _rng ids fns e  -> do fnsi <- mapM (aiFnOf ctx) fns
+        AnnLetFuns _rng ids fns e  -> do fnsi <- mapM (aiFnOf ctx knownProcNames) fns
                                          ei <- q e
                                          return $ AILetFuns ids fnsi ei
         AnnAlloc _rng   a          -> do [x] <- mapM q [a]
@@ -91,7 +96,7 @@ ail ctx ae =
         AnnSubscript _rng t a b    -> do ti <- ilOf t
                                          [x,y]   <- mapM q [a,b]
                                          return $ AISubscript ti x y
-        AnnTuple tup               -> do aies <- mapM (ail ctx) (childrenOf ae)
+        AnnTuple tup               -> do aies <- mapM q (childrenOf ae)
                                          return $ AITuple aies
         AnnCase _rng t e bs        -> do ti <- ilOf t
                                          ei <- q e
@@ -104,9 +109,17 @@ ail ctx ae =
             ti <- ilOf t
             argsi <- mapM q args
             case b of
+                E_AnnVar _rng _var -> do
+                   bi <- q b
+                   return $ AICall ti bi argsi
+
                 AnnPrimitive _rng (TypedId pty id) -> do
                    pti <- ilOf pty
-                   return $ AICallPrim ti (ILNamedPrim (TypedId pti id)) argsi
+                   return $ AICall ti (E_AIPrim $ ILNamedPrim (TypedId pti id)) argsi
+
+                E_AnnFn _ -> do
+                   bi <- q b
+                   return $ AICall ti bi argsi
 
                 E_AnnTyApp _ ot (AnnPrimitive _rng (TypedId _ (Ident "allocDArray" _))) argty -> do
                     let [arraySize] = argsi
@@ -117,21 +130,26 @@ ail ctx ae =
                    case (coroPrimFor primName, appty) of
                      (Just coroPrim, TupleTypeAST [argty, retty]) -> do
                        [aty, rty] <- mapM ilOf [argty, retty]
-                       return $ AICallPrim ti (ILCoroPrim coroPrim aty rty) argsi
+                       return $ AICall ti (E_AIPrim $ ILCoroPrim coroPrim aty rty) argsi
                      otherwise -> do
                        -- v[types](args) ~~>> let <fresh> = v[types] in <fresh>(args)
                        [vti, oti, appti] <- mapM ilOf [vty, ot, appty]
                        let primVar = TypedId vti id
-                       let call = AICallPrim ti (ILNamedPrim primVar) argsi
+                       let call = AICall ti (E_AIPrim $ ILNamedPrim primVar) argsi
                        let primName = identPrefix id
                        x <- tcFresh $ "appty_" ++ primName
                        return $ AILetVar x (E_AITyApp oti (E_AIVar primVar) appti) call
-                _ -> do bi <- q b
-                        return $ AICall ti bi argsi
 
-        E_AnnVar _rng (TypedId t v)-> do ti <- ilOf t
-                                         return $ E_AIVar (TypedId ti v)
-        E_AnnFn annFn              -> do aif <- aiFnOf ctx annFn
+                -- TODO write test cases for the obvious missing combinations...
+                _ -> tcFails [out $ "Unknown base of call: " ++ show b]
+
+        E_AnnVar _rng (TypedId t id)-> do
+                ti <- ilOf t
+                if isProcType ti || Set.member (identPrefix id) knownProcNames
+                  then return $ E_AIPrim (ILNamedPrim $ TypedId ti id)
+                  else return $ E_AIVar               $ TypedId ti id
+
+        E_AnnFn annFn              -> do aif <- aiFnOf ctx knownProcNames annFn
                                          return $ E_AIFn aif
         E_AnnTyApp _rng t e argty  -> do ti <- ilOf t
                                          at <- ilOf argty
@@ -143,12 +161,15 @@ coroPrimFor "coro_invoke" = Just $ CoroInvoke
 coroPrimFor "coro_yield"  = Just $ CoroYield
 coroPrimFor _ = Nothing
 
-aiFnOf :: Context TypeIL -> AnnFn -> Tc AIFn
-aiFnOf ctx f = do
+isProcType (FnTypeIL _ _ _ FT_Proc) = True
+isProcType _ = False
+
+aiFnOf :: Context TypeIL -> KnownProcNames -> AnnFn -> Tc AIFn
+aiFnOf ctx procNames f = do
  ft <- ilOf (annFnType f)
  fnVars <- mapM (\(TypedId t i) -> do ty <- ilOf t
                                       return $ TypedId ty i) (annFnVars f)
- body <- ail ctx (annFnBody f)
+ body <- ail ctx procNames (annFnBody f)
  return $ AiFn { aiFnType  = ft
                , aiFnIdent = annFnIdent f
                , aiFnVars  = fnVars
@@ -178,9 +199,9 @@ instance Structured AIExpr where
     textOf e width = error "textOf AIExpr not yet defined"
     childrenOf e =
         case e of
+            E_AIPrim p            -> []
             AIBool         b      -> []
             AICall    t b args    -> b:args
-            AICallPrim   t b args ->   args
             AIIf      t  a b c    -> [a, b, c]
             AIUntil   t  a b      -> [a, b]
             AIInt t _             -> []

@@ -137,7 +137,8 @@ void LLModule::codegenModule(CodegenPass* pass) {
   for (size_t i = 0; i < procs.size(); ++i) {
     LLProc* f = procs[i];
     // Ensure that the value is in the SymbolInfo entry in the symbol table.
-    pass->valueSymTab.insert(f->getName(), f->codegenProto(pass));
+    f->codegenProto(pass);
+    //pass->valueSymTab.insert(f->getName(), );
   }
 
   // Codegen all the function bodies, now that we can resolve mutually-recursive
@@ -210,7 +211,6 @@ llvm::Value* LLProcRef::codegen(CodegenPass* pass) {
 llvm::Value* LLVar::codegen(CodegenPass* pass) {
   // The variable for an environment can be looked up multiple times...
   llvm::Value* v = pass->valueSymTab.lookup(getName());
-  if (!v) v = pass->lookupFunctionOrDie(getName());
   if (v) return v;
 
   pass->valueSymTab.dump(currentOuts());
@@ -898,43 +898,34 @@ llvm::Value* LLArrayPoke::codegen(CodegenPass* pass) {
 
 ////////////////////////////////////////////////////////////////////
 
-LLProc* getClosureVersionOf(LLExpr* arg,
+LLProc* getClosureVersionOf(llvm::Function* f,
                             const llvm::Type* expectedType,
-                            FnTypeAST* fnty,
+                            LLVar* arg,
                             CodegenPass* pass);
 
 ////////////////////////////////////////////////////////////////////
 
-void doLowLevelWrapperFnCoercions(const llvm::Type* expectedType,
-                                  LLExpr*& arg,
-                                  CodegenPass* pass) {
-  FnTypeAST* fnty = dynamic_cast<FnTypeAST*>(arg->type);
-  if (!fnty) return;
+llvm::Value*
+doLowLevelWrapperFnCoercions(const llvm::Type* expectedType,
+                             llvm::Value* argV,
+                             LLVar* arg,
+                             CodegenPass* pass)
+{
+  // Codegenning   callee(... arg ...)  where arg is a procedure, not a closure.
+  llvm::Function* f = llvm::dyn_cast<llvm::Function>(argV);
+  if (!f) return argV;
 
-  // FnTypeAST could mean a closure or a raw function...
-  const llvm::FunctionType* llvmFnTy = getLLVMFunctionType(fnty);
-
-  // Codegenning   callee( arg )  where arg has raw function type, not closure type!
-  if (!llvmFnTy) return;
-
-  // If we still have a bare function type at codegen time, it means
-  // the code specified a (top-level) procedure name.
   // Since we made it past type checking, we should have only two
-  // possibilities for what kind of function is doing the invoking:
+  // possibilities for the callee:
   //
   // 1) A C-linkage function which expects a bare function pointer.
   // 2) A Foster function which expects a closure value.
 
-  bool argExpectedFunctionPointer
-          = expectedType->isPointerTy()
-         && expectedType->getContainedType(0)->isFunctionTy();
-  if (argExpectedFunctionPointer) {
-    ASSERT(llvmFnTy == expectedType)
-        << "calling a function that expects a bare pointer arg:\n\t"
-        << str(expectedType) << " -VS- " << str(llvmFnTy);
+  if (isPointerToFunction(expectedType)) {
     // Do we want to codegen to handle automatic insertion
     // of type-coercion wrappers? For now, we'll require
     // strict type compatibility.
+    return argV;
   } else {
   // Case 2 (passing an env-less C function to a context expecting a closure)
   // is not so simple, since a closure code pointer must take the
@@ -947,13 +938,13 @@ void doLowLevelWrapperFnCoercions(const llvm::Type* expectedType,
   // The simplest approach is to lazily generate a "closure version" of any
   // functions we see being passed directly by name; it would forward
   // all parameters to the regular function, except for the env ptr.
-    LLProc* wrapper = getClosureVersionOf(arg, expectedType, fnty, pass);
+    LLProc* wrapper = getClosureVersionOf(f, expectedType, arg, pass);
     std::string cloname = ParsingContext::freshName("c-clo");
     std::string envname = ParsingContext::freshName("c-clo-empty-env");
     std::vector<LLClosure*> closures;
     closures.push_back(new LLClosure(cloname, envname, wrapper->getName(), getEmptyTuple()));
     LLExpr* clo = new LLClosures(new LLVar(cloname), closures);
-    arg = clo;
+    return pass->emit(clo, NULL);
   }
 }
 
@@ -1013,9 +1004,9 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
   for (size_t i = 0; i < this->args.size(); ++i) {
     const llvm::Type* expectedType = FT->getParamType(valArgs.size());
 
-    LLExpr* arg = this->args[i];
-    doLowLevelWrapperFnCoercions(expectedType, arg, pass);
-    llvm::Value* argV = pass->emit(arg, NULL);
+    llvm::Value* argV = pass->emit(this->args[i], NULL);
+    argV = doLowLevelWrapperFnCoercions(expectedType, argV,
+                                        this->args[i], pass);
 
     // This is a an artifact produced by the mutual recursion
     // of the environments of mutually recursive closures.
@@ -1121,16 +1112,13 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
 // that hard-codes call to fn referenced by arg,
 // and is suitable for embedding as the code ptr in a closure pair,
 // unlike the given function, which doesn't want the env ptr.
-LLProc* getClosureVersionOf(LLExpr* arg,
+LLProc* getClosureVersionOf(llvm::Function* f,
                             const llvm::Type* expectedType,
-                            FnTypeAST* fnty,
+                            LLVar* var,
                             CodegenPass* pass) {
   static std::map<string, LLProc*> sClosureVersions;
 
-  LLVar* var = dynamic_cast<LLVar*>(arg);
-  ASSERT(var != NULL) << "getClosureVersionOf() must be given a LLVar";
-
-  string fnName = "__closureVersionOf__" + var->name;
+  string fnName = "__closureVersionOf__" + f->getName().str();
   if (LLProc* exists = sClosureVersions[fnName]) {
     return exists;
   }
@@ -1143,10 +1131,12 @@ LLProc* getClosureVersionOf(LLExpr* arg,
   inArgNames.push_back(ParsingContext::freshName("__ignored_env__"));
   inArgTypes.push_back(TupleTypeAST::get(envTypes));
 
-  for (int i = 0; i < fnty->getNumParams(); ++i) {
+  FnTypeAST* oldfnty = dynamic_cast<FnTypeAST*>(var->type);
+  ASSERT(oldfnty) << var->name << " :: " << str(var->type);
+  for (int i = 0; i < oldfnty->getNumParams(); ++i) {
     LLVar* a = new LLVar(ParsingContext::freshName("_cv_arg"));
     inArgNames.push_back(a->name);
-    inArgTypes.push_back(fnty->getParamType(i));
+    inArgTypes.push_back(oldfnty->getParamType(i));
     callArgs.push_back(a);
   }
 
@@ -1155,9 +1145,9 @@ LLProc* getClosureVersionOf(LLExpr* arg,
   // But don't use it for doing codegen outside the proto.
   pass->valueSymTab.popExistingScope(scope);
 
-  FnTypeAST* newfnty = new FnTypeAST(fnty->getReturnType(),
+  FnTypeAST* newfnty = new FnTypeAST(oldfnty->getReturnType(),
                                      inArgTypes,
-                                     fnty->getAnnots());
+                                     oldfnty->getAnnots());
   newfnty->markAsProc();
   LLExpr* body = new LLCall(var, callArgs, false);
   LLProc* proc = new LLProc(newfnty, fnName, inArgNames,

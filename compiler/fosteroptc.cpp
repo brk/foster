@@ -29,6 +29,7 @@
 ////////////////////////////////////////////////////////////////////
 
 #include "base/Assert.h"
+#include "base/LLVMUtils.h"
 #include "base/TimingsRepository.h"
 
 #include "passes/FosterPasses.h"

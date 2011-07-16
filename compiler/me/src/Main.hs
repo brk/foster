@@ -63,6 +63,8 @@ instance FnLike AnnFn where
         -- remove recursive function name calls
         Set.toList $ Set.filter (\name -> fnName f /= name) nonPrimitives
 
+fnNames f = [fnName f]
+
 computeContextBindings :: Uniq -> [(String, TypeAST)] -> ([ContextBinding TypeAST], Uniq)
 computeContextBindings u decls =
    runState (mapM pair2binding decls) u where
@@ -143,7 +145,8 @@ convertTypeILofAST :: ModuleAST FnAST TypeAST
 convertTypeILofAST mod ctx_ast oo_annfns = do
   decls <- mapM convertDecl (moduleASTdecls mod)
   ctx_il <- liftContextM ilOf ctx_ast
-  aiFns <- mapM (\ae -> tcInject ae (ail ctx_il)) oo_annfns
+  let knownProcNames = Set.fromList $ concatMap fnNames (moduleASTfunctions mod)
+  aiFns <- mapM (\ae -> tcInject ae (ail ctx_il knownProcNames)) oo_annfns
   let m = ModuleAST [f | (E_AIFn f) <- aiFns]
                     decls (moduleASTsourceLines mod)
   return (ctx_il, m)

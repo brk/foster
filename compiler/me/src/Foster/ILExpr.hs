@@ -48,32 +48,32 @@ data ILExpr =
         -- Literals
           ILBool        Bool
         | ILInt         TypeIL LiteralInt
-        | ILTuple       [AIVar]
+        | ILTuple       [ILVar]
         -- Control flow
-        | ILIf          TypeIL AIVar ILExpr ILExpr
+        | ILIf          TypeIL ILVar  ILExpr ILExpr
         | ILUntil       TypeIL ILExpr ILExpr
         -- Creation of bindings
-        | ILCase        TypeIL AIVar [(Pattern, ILExpr)] (DecisionTree ILExpr)
+        | ILCase        TypeIL ILVar [(Pattern, ILExpr)] (DecisionTree ILExpr)
         | ILLetVal       Ident    ILExpr    ILExpr
         | ILClosures    [Ident] [ILClosure] ILExpr
         -- Use of bindings
-        | ILVar         AIVar
-        | ILCallPrim    TypeIL ILPrim [AIVar]
-        | ILCall        TypeIL AIVar [AIVar]
+        | ILVar         ILVar
+        | ILCallPrim    TypeIL ILPrim [ILVar]
+        | ILCall        TypeIL ILVar  [ILVar]
         -- Mutable ref cells
-        | ILAlloc              AIVar
-        | ILDeref       TypeIL AIVar
-        | ILStore       TypeIL AIVar AIVar
+        | ILAlloc              ILVar
+        | ILDeref       TypeIL ILVar
+        | ILStore       TypeIL ILVar ILVar
         -- Array operations
-        | ILAllocArray  TypeIL AIVar
-        | ILArrayRead   TypeIL AIVar AIVar
-        | ILArrayPoke           AIVar AIVar AIVar
+        | ILAllocArray  TypeIL ILVar
+        | ILArrayRead   TypeIL ILVar ILVar
+        | ILArrayPoke          ILVar ILVar ILVar
         | ILTyApp       TypeIL ILExpr TypeIL
         deriving (Show)
-
+data ILVar = IL_Var     AIVar  VarNamespace deriving (Show)
 data AllocMemRegion = MemRegionStack
                     | MemRegionGlobalHeap
-data ILAllocInfo = ILAllocInfo AllocMemRegion (Maybe AIVar)
+data ILAllocInfo = ILAllocInfo AllocMemRegion (Maybe ILVar)
 
 showProgramStructure :: ILProgram -> Output
 showProgramStructure (ILProgram procdefs decls _lines) =
@@ -112,6 +112,8 @@ ilmPutProc p_action = do
 
 fakeCloEnvType = TupleTypeIL []
 
+localVar v = IL_Var v VarLocal
+
 closureConvertAndLift :: Context TypeIL
                       -> (ModuleAST AIFn TypeIL)
                       -> ILProgram
@@ -140,10 +142,14 @@ closureConvert ctx expr =
         case expr of
             AIBool b          -> return $ ILBool b
             AIInt t i         -> return $ ILInt t i
-            E_AIVar v         -> return $ ILVar v
+            E_AIVar v         -> return $ ILVar $ localVar v
+            E_AIPrim (ILNamedPrim v) ->
+                                 return $ ILVar $ IL_Var v VarProc
+                       -- error $ "ILExpr.closureConvert: Should have detected named prim " ++ show v
+            E_AIPrim p -> error $ "ILExpr.closureConvert: Should have detected prim " ++ show p
             AIIf      t  a b c    -> do x <- ilmFresh ".ife"
                                         [a', b', c'] <- mapM g [a, b, c]
-                                        let v = TypedId (typeIL a') x
+                                        let v = localVar (TypedId (typeIL a') x)
                                         return $ buildLet x a' (ILIf t v b' c')
 
             AIUntil   t  a b      -> do [a', b'] <- mapM g [a, b]
@@ -208,14 +214,11 @@ closureConvert ctx expr =
                 let clovar = E_AIVar $ TypedId (typeAI x) clo_id
                 g (AILetFuns [clo_id] [aiFn] clovar)
 
-            AICallPrim t prim es -> do
-                cargs <- mapM g es
-                nestedLets cargs (\vars -> (ILCallPrim t prim vars))
-
             AICall    t b es -> do
                 cargs <- mapM g es
                 case b of
-                    (E_AIVar v) -> do nestedLets cargs (\vars -> (ILCall t v vars))
+                    (E_AIPrim p) -> do nestedLets cargs (\vars -> (ILCallPrim t p vars))
+                    (E_AIVar v) -> do nestedLets cargs (\vars -> (ILCall t (localVar v) vars))
                     (E_AIFn f) -> do -- If we're calling a function directly,
                                      -- we know we can perform lambda lifting
                                      -- on it, by adding args for its free variables.
@@ -226,8 +229,9 @@ closureConvert ctx expr =
                                     let procid = (ilProcIdent newproc)
                                     let (argtys, retty, cc) = preProcType newproc
                                     let procty = FnTypeIL argtys retty cc FT_Proc
-                                    let procvar = (TypedId procty procid)
-                                    nestedLets cargs (\vars -> ILCall t procvar (freevars ++ vars))
+                                    let p = ILNamedPrim $ TypedId procty procid
+                                    let freelocals = map localVar freevars
+                                    nestedLets cargs (\vars -> ILCallPrim t p (freelocals ++ vars))
 
                     _ -> error $ "ILExpr.closureConvert: AnnCall with non-var base of " ++ show b
 
@@ -287,12 +291,12 @@ buildLet ident bound inexpr =
 -- |  let x2 = bar in
 -- |   let x3 = blah in
 -- |     base(x1,x2,x3)
-nestedLets :: [ILExpr] -> ([AIVar] -> ILExpr) -> ILM ILExpr
+nestedLets :: [ILExpr] -> ([ILVar] -> ILExpr) -> ILM ILExpr
 -- | The fresh variables will be accumulated and passed to a
 -- | continuation which generates a LetVal expr using the variables.
 nestedLets exprs g = nestedLets' exprs [] g
   where
-    nestedLets' :: [ILExpr] -> [AIVar] -> ([AIVar] -> ILExpr) -> ILM ILExpr
+    nestedLets' :: [ILExpr] -> [ILVar] -> ([ILVar] -> ILExpr) -> ILM ILExpr
     nestedLets' []     vars k = return $ k (reverse vars)
     nestedLets' (e:es) vars k =
         case e of
@@ -301,7 +305,8 @@ nestedLets exprs g = nestedLets' exprs [] g
           (ILVar v) -> nestedLets' es (v:vars) k
           otherwise -> do
             x        <- ilmFresh ".x"
-            innerlet <- nestedLets' es ((TypedId (typeIL e) x):vars) k
+            let v = localVar (TypedId (typeIL e) x)
+            innerlet <- nestedLets' es (v:vars) k
             return $ buildLet x e innerlet
 
 excluding :: Ord a => [a] -> Set a -> [a]
@@ -381,6 +386,7 @@ closureOfAIFn ctx infoMap (closedNames, (self_id, fn)) = do
         AIBool b         -> e
         AIInt t i        -> e
         E_AIVar v        -> e -- We don't alter standalone references to closures
+        E_AIPrim p       -> e
         AIIf t a b c         -> AIIf      t (q a) (q b) (q c)
         AIUntil t a b        -> AIUntil   t (q a) (q b)
         AILetVar id a b      -> AILetVar id (q a) (q b)
@@ -394,26 +400,27 @@ closureOfAIFn ctx infoMap (closedNames, (self_id, fn)) = do
         AITuple es             -> AITuple (map q es)
         AICase t e bs          -> AICase t (q e) [(p, q e) | (p, e) <- bs]
         E_AITyApp  t e argty   -> E_AITyApp t (q e) argty
-        AICallPrim t prim es   -> AICallPrim t prim (map q es)
         -- The only really interesting case:
         AICall     t (E_AIVar v) es
             | Map.member (tidIdent v) infoMap ->
                 let (f, envid) = infoMap Map.! (tidIdent v) in
-                let fnvar = E_AIVar (TypedId (aiFnType f) (aiFnIdent f)) in
+                let procId = TypedId (aiFnType f) (aiFnIdent f) in
                 -- We don't know the env type here, since we don't
                 -- pre-collect the set of closed-over envs from other procs.
                 let env = E_AIVar (TypedId fakeCloEnvType envid) in
                           -- This works because (A) we never type check ILExprs,
                           -- and (B) the LLVM codegen doesn't check the type field in this case.
-                -- CallProc, passing env as first parameter
-                AICall t fnvar (env:(map q es))
+                -- Call proc, passing env as first parameter.
+                AICall t (E_AIPrim $ ILNamedPrim procId) (env:(map q es))
         -- TODO when is guard above false?
         AICall   t b es -> AICall   t (q b) (map q es)
+
+ilVarLift f (IL_Var v _) = f v
 
 typeIL :: ILExpr -> TypeIL
 typeIL (ILBool _)          = NamedTypeIL "i1"
 typeIL (ILInt t _)         = t
-typeIL (ILTuple vs)        = TupleTypeIL [typeIL $ ILVar v | v <- vs]
+typeIL (ILTuple vs)        = TupleTypeIL (map (ilVarLift tidType) vs)
 typeIL (ILClosures n b e)  = typeIL e
 typeIL (ILLetVal x b e)    = typeIL e
 typeIL (ILCall t id expr)  = t
@@ -421,21 +428,23 @@ typeIL (ILCallPrim t id e) = t
 typeIL (ILAllocArray elt_ty _) = ArrayTypeIL elt_ty
 typeIL (ILIf t a b c)      = t
 typeIL (ILUntil t a b)     = t
-typeIL (ILAlloc v)         = PtrTypeIL (typeIL $ ILVar v)
+typeIL (ILAlloc v)         = PtrTypeIL (ilVarLift tidType v)
 typeIL (ILDeref t _)       = t
 typeIL (ILStore t _ _)     = t
 typeIL (ILArrayRead t _ _) = t
 typeIL (ILArrayPoke _ _ _) = TupleTypeIL []
 typeIL (ILCase t _ _ _)    = t
-typeIL (ILVar (TypedId t i)) = t
+typeIL (ILVar v)           = ilVarLift tidType v
 typeIL (ILTyApp overallType tm tyArgs) = overallType
 
 typeAI :: AIExpr -> TypeIL
 typeAI (AIBool _)          = NamedTypeIL "i1"
+typeAI (E_AIVar tid)       = tidType tid
+typeAI (E_AIPrim (ILNamedPrim tid)) = tidType tid
+typeAI (E_AIPrim p) = error $ "typeAI not defined for prim " ++ show p
 typeAI (AIInt t _)         = t
 typeAI (AITuple es)        = TupleTypeIL (map typeAI es)
 typeAI (AICall t b a)      = t
-typeAI (AICallPrim   t b a)= t
 typeAI (AIAllocArray elt_ty _) = ArrayTypeIL elt_ty
 typeAI (AIIf t a b c)      = t
 typeAI (AIUntil t _ _)     = t
@@ -446,7 +455,6 @@ typeAI (AIDeref t _)       = t
 typeAI (AIStore t _ _)     = t
 typeAI (AISubscript t _ _) = t
 typeAI (AICase t _ _)      = t
-typeAI (E_AIVar tid)       = tidType tid
 typeAI (E_AITyApp substitutedTy tm tyArgs) = substitutedTy
 typeAI (E_AIFn aiFn)       = aiFnType aiFn
 
@@ -470,31 +478,33 @@ instance Structured ILExpr where
             ILArrayRead  t a b  -> out $ "ILArrayRead " ++ " :: " ++ show t
             ILArrayPoke v b i   -> out $ "ILArrayPoke "
             ILTuple     es      -> out $ "ILTuple     (size " ++ (show $ length es) ++ ")"
-            ILVar (TypedId t i)  -> out $ "ILVar       " ++ show i ++ " :: " ++ show t
+            ILVar (IL_Var (TypedId t i) ns)
+                                -> out $ "ILVar(" ++ show ns ++ "):   " ++ show i ++ " :: " ++ show t
             ILTyApp t e argty   -> out $ "ILTyApp     [" ++ show argty ++ "] :: " ++ show t
         where
             showClosurePair :: (Ident, ILClosure) -> String
             showClosurePair (name, clo) = (show name) ++ " bound to " ++ (show clo)
 
     childrenOf e =
+        let var v = ILVar v in
         case e of
             ILBool b                -> []
             ILInt t _               -> []
             ILUntil t a b           -> [a, b]
-            ILTuple     vs          -> map ILVar vs
-            ILCase _ e bs _dt       -> (ILVar e):(map snd bs)
+            ILTuple     vs          -> map var vs
+            ILCase _ e bs _dt       -> (var e):(map snd bs)
             ILClosures bnds clos e  -> [e]
             ILLetVal x b e          -> [b, e]
-            ILCall     t v vs       -> [ILVar v] ++ [ILVar v | v <- vs]
-            ILCallPrim t v vs       ->              [ILVar v | v <- vs]
-            ILIf    t v b c         -> [ILVar v, b, c]
-            ILAlloc   v             -> [ILVar v]
-            ILAllocArray _ v        -> [ILVar v]
-            ILDeref t v             -> [ILVar v]
-            ILStore t v w           -> [ILVar v, ILVar w]
-            ILArrayRead t a b       -> [ILVar a, ILVar b]
-            ILArrayPoke v b i       -> [ILVar v, ILVar b, ILVar i]
-            ILVar (TypedId t i)      -> []
+            ILCall     t v vs       -> [var v] ++ [var v | v <- vs]
+            ILCallPrim t v vs       ->            [var v | v <- vs]
+            ILIf    t v b c         -> [var v, b, c]
+            ILAlloc   v             -> [var v]
+            ILAllocArray _ v        -> [var v]
+            ILDeref t v             -> [var v]
+            ILStore t v w           -> [var v, var w]
+            ILArrayRead t a b       -> [var a, var b]
+            ILArrayPoke v b i       -> [var v, var b, var i]
+            ILVar _                 -> []
             ILTyApp t e argty       -> [e]
 
 patternBindings :: (Pattern, TypeIL) -> [ContextBinding TypeIL]

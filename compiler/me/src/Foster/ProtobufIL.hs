@@ -114,7 +114,7 @@ dumpMemRegion amr = case amr of
 dumpAllocate :: ILAllocInfo -> PbAllocInfo.AllocInfo
 dumpAllocate (ILAllocInfo region maybe_array_size) =
     P'.defaultValue { PbAllocInfo.mem_region = dumpMemRegion region
-                    , PbAllocInfo.array_size = fmap (dumpExpr . ILVar) maybe_array_size }
+                    , PbAllocInfo.array_size = fmap (dumpExpr.ILVar) maybe_array_size }
 -----------------------------------------------------------------------
 dumpCoroPrim coroPrim argty retty =
     P'.defaultValue { PbExpr.tag = coroFnTag coroPrim
@@ -122,9 +122,6 @@ dumpCoroPrim coroPrim argty retty =
                           PbCoroPrim.ret_type = dumpType retty ,
                           PbCoroPrim.arg_type = dumpType argty }
                     }
-dumpProcRef base =
-    P'.defaultValue { PbExpr.tag = IL_PROC_REF
-                    , PbExpr.name = Just $ dumpIdent base }
 -----------------------------------------------------------------------
 
 dumpExpr :: ILExpr -> PbExpr.Expr
@@ -133,7 +130,7 @@ dumpExpr (ILCall     t base args)
         = dumpCall t (dumpExpr $ ILVar base) args
 
 dumpExpr (ILCallPrim t (ILNamedPrim base) args)
-        = dumpCall t (dumpProcRef $ tidIdent base) args
+        = dumpCall t (dumpProcRef base) args
 
 dumpExpr (ILCallPrim t (ILCoroPrim c a r) args)
         = dumpCall t (dumpCoroPrim c a r) args
@@ -143,10 +140,7 @@ dumpExpr x@(ILBool b) =
                     , PbExpr.tag   = IL_BOOL
                     , PbExpr.type' = Just $ dumpType (typeIL x)  }
 
-dumpExpr (ILVar (TypedId t i)) =
-    P'.defaultValue { PbExpr.name  = Just $ dumpIdent i
-                    , PbExpr.tag   = IL_VAR
-                    , PbExpr.type' = Just $ dumpType t  }
+dumpExpr (ILVar (IL_Var (TypedId t i) ns)) = dumpILVar t i ns
 
 dumpExpr x@(ILTuple vs) =
     P'.defaultValue { PbExpr.parts = fromList [dumpExpr $ ILVar v | v <- vs]
@@ -173,17 +167,17 @@ dumpExpr x@(ILDeref t a) =
                     , PbExpr.type' = Just $ dumpType (typeIL x)  }
 
 dumpExpr x@(ILStore t a b ) =
-    P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [ILVar a, ILVar b])
+    P'.defaultValue { PbExpr.parts = fromList (fmap (dumpExpr.ILVar) [a, b])
                     , PbExpr.tag   = IL_STORE
                     , PbExpr.type' = Just $ dumpType (typeIL x)  }
 
 dumpExpr x@(ILArrayRead t a b ) =
-    P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [ILVar a, ILVar b])
+    P'.defaultValue { PbExpr.parts = fromList (fmap (dumpExpr.ILVar) [a, b])
                     , PbExpr.tag   = IL_ARRAY_READ
                     , PbExpr.type' = Just $ dumpType (typeIL x)  }
 
 dumpExpr x@(ILArrayPoke v b i ) =
-    P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [ILVar v, ILVar b, ILVar i])
+    P'.defaultValue { PbExpr.parts = fromList (fmap (dumpExpr.ILVar) [v, b, i])
                     , PbExpr.tag   = IL_ARRAY_POKE
                     , PbExpr.type' = Just $ dumpType (typeIL x)  }
 
@@ -208,7 +202,7 @@ dumpExpr x@(ILTyApp overallTy baseExpr argType) =
           ++ " (should handle substitution before codegen)."
 
 dumpExpr x@(ILCase t a _bs decisionTree) =
-    P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [ILVar a])
+    P'.defaultValue { PbExpr.parts = fromList (fmap (dumpExpr.ILVar) [a])
                     , PbExpr.dt    = Just $ dumpDecisionTree decisionTree
                     , PbExpr.tag   = IL_CASE
                     , PbExpr.type' = Just $ dumpType t }
@@ -240,7 +234,7 @@ dumpClosureWithName (varid, ILClosure procid envid captvars) =
     Closure { varname  = dumpIdent varid
             , procid   = u8fromString (identPrefix procid)
             , envid    = dumpIdent envid
-            , env      = dumpExpr (ILTuple captvars) }
+            , env      = dumpExpr (ILTuple (map localVar captvars)) }
 
 dumpDecisionTree (DT_Fail) =
     P'.defaultValue { PbDecisionTree.tag = DT_FAIL }
@@ -274,13 +268,26 @@ dumpOcc offs =
 
 -----------------------------------------------------------------------
 
+dumpProcRef base =
+    P'.defaultValue { PbExpr.tag   = IL_PROC_REF
+                    , PbExpr.name  = Just $ dumpIdent (tidIdent base)
+                    , PbExpr.type' = Just $ dumpType (tidType  base) }
+
+dumpILVar t i VarProc = dumpProcRef (TypedId t i)
+dumpILVar t i VarLocal =
+    P'.defaultValue { PbExpr.name  = Just $ dumpIdent i
+                    , PbExpr.tag   = IL_VAR
+                    , PbExpr.type' = Just $ dumpType t  }
+
 dumpCall t base args =
     P'.defaultValue { PbExpr.parts = fromList $ base:(fmap (dumpExpr.ILVar) args)
                     , PbExpr.tag   = IL_CALL
                     , PbExpr.type' = Just $ dumpType t }
 
 dumpIf x@(ILIf t v b c) =
-        PBIf { test_expr = dumpExpr (ILVar v), then_expr = dumpExpr b, else_expr = dumpExpr c }
+        PBIf { test_expr = dumpExpr (ILVar v)
+             , then_expr = dumpExpr b
+             , else_expr = dumpExpr c }
 dumpIf other = error $ "dumpIf called with non-ILIf node: " ++ show other
 
 dumpInt cleanText activeBits =

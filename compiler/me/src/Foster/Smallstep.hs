@@ -75,25 +75,26 @@ data SSProcDef = SSProcDef { ssProcIdent      :: Ident
 ssTermOfExpr :: ILExpr -> SSTerm
 ssTermOfExpr expr =
   let tr = ssTermOfExpr in
+  let idOf v = ilVarLift tidIdent v in
   case expr of
     ILBool b               -> SSTmValue $ SSBool b
     ILInt t i              -> SSTmValue $ SSInt $ litIntValue i
-    ILVar a                -> SSTmExpr  $ IVar (tidIdent a)
-    ILTuple vs             -> SSTmExpr  $ ITuple (map tidIdent vs)
+    ILVar v                -> SSTmExpr  $ IVar (idOf v)
+    ILTuple vs             -> SSTmExpr  $ ITuple (map idOf vs)
     ILClosures bnds clos e -> SSTmExpr  $ IClosures bnds clos (tr e)
     ILLetVal x b e         -> SSTmExpr  $ ILetVal x (tr b) (tr e)
-    ILCall     t b vs      -> SSTmExpr  $ ICall (tidIdent b) (map tidIdent vs)
-    ILCallPrim t b vs      -> SSTmExpr  $ ICallPrim b (map tidIdent vs)
-    ILIf       t  v b c    -> SSTmExpr  $ IIf (tidIdent v) (tr b) (tr c)
+    ILCall     t b vs      -> SSTmExpr  $ ICall (idOf b) (map idOf vs)
+    ILCallPrim t b vs      -> SSTmExpr  $ ICallPrim b (map idOf vs)
+    ILIf       t  v b c    -> SSTmExpr  $ IIf (idOf v) (tr b) (tr c)
     ILUntil    t  a b      -> SSTmExpr  $ IUntil    (tr a) (tr b)
-    ILArrayRead t a b      -> SSTmExpr  $ IArrayRead (tidIdent a) (tidIdent b)
-    ILArrayPoke v b i      -> SSTmExpr  $ IArrayPoke (tidIdent v) (tidIdent b) (tidIdent i)
-    ILAllocArray ety n     -> SSTmExpr  $ IAllocArray (tidIdent n)
-    ILAlloc a              -> SSTmExpr  $ IAlloc (tidIdent a)
-    ILDeref t a            -> SSTmExpr  $ IDeref (tidIdent a)
-    ILStore t a b          -> SSTmExpr  $ IStore (tidIdent a) (tidIdent b)
+    ILArrayRead t a b      -> SSTmExpr  $ IArrayRead (idOf a) (idOf b)
+    ILArrayPoke v b i      -> SSTmExpr  $ IArrayPoke (idOf v) (idOf b) (idOf i)
+    ILAllocArray ety n     -> SSTmExpr  $ IAllocArray (idOf n)
+    ILAlloc a              -> SSTmExpr  $ IAlloc (idOf a)
+    ILDeref t a            -> SSTmExpr  $ IDeref (idOf a)
+    ILStore t a b          -> SSTmExpr  $ IStore (idOf a) (idOf b)
     ILTyApp t e argty      -> SSTmExpr  $ ITyApp (tr e) argty
-    ILCase t a bs dt       -> SSTmExpr  $ ICase (tidIdent a) dt [(p, tr e) | (p, e) <- bs]
+    ILCase t a bs dt       -> SSTmExpr  $ ICase (idOf a) dt [(p, tr e) | (p, e) <- bs]
 
 -- ... which lifts in a  straightfoward way to procedure definitions.
 ssProcDefFrom pd =

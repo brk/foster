@@ -5,7 +5,9 @@
 #ifndef FOSTER_BASE_TIMINGS_REPOSITORY
 #define FOSTER_BASE_TIMINGS_REPOSITORY
 
-#include "base/LLVMUtils.h"
+#include "llvm/Support/DataTypes.h"
+#include "llvm/Support/Path.h"
+#include "llvm/Support/TimeValue.h"
 
 #include <map>
 #include <string>

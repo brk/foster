@@ -166,7 +166,6 @@ typecheck ctx expr maybeExpTy =
             Nothing       -> tcFails [out $ "Unknown primitive " ++ (evarName v)
                                          ++ showSourceRange rng]
 
-
         E_VarAST rng v -> case termVarLookup (evarName v) (contextBindings ctx) of
             Just avar  -> return $ E_AnnVar rng avar
             Nothing    -> tcFails [out $ "Unknown variable " ++ (evarName v)

@@ -63,6 +63,8 @@ briefCC FastCC = ""
 
 data ProcOrFunc = FT_Proc | FT_Func deriving (Show)
 
+data VarNamespace = VarProc | VarLocal deriving (Show)
+
 data TyVar = BoundTyVar String -- bound by a ForAll, that is
            | SkolemTyVar String Uniq deriving (Eq)
 

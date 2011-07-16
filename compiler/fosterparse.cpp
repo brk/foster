@@ -5,13 +5,15 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/CommandLine.h"
 
+#include "base/LLVMUtils.h"
 #include "base/InputFile.h"
 #include "base/InputTextBuffer.h"
+#include "base/TimingsRepository.h"
+
 #include "parse/FosterAST.h"
 #include "parse/ANTLRtoFosterAST.h"
 #include "parse/ParsingContext.h"
 
-#include "base/TimingsRepository.h"
 #include "passes/DumpToProtobuf.h"
 
 #include <fstream>
