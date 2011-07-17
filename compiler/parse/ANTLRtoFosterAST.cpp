@@ -188,7 +188,7 @@ foster::SourceRange rangeFrom(ExprAST* a, ExprAST* b) {
 }
 
 
-string spaces(int n) { return string(n, ' '); }
+string spaces(int n) { return (n > 0) ? string(n, ' ') : ""; }
 
 void display_pTree(pTree t, int nspaces) {
   if (!t) {
@@ -201,8 +201,8 @@ void display_pTree(pTree t, int nspaces) {
   int nchildren = getChildCount(t);
   std::stringstream ss;
   ss << spaces(nspaces) << "<" << text << "; ";
-  currentOuts() << ss.str() << spaces(70 - ss.str().size())
-            << token << " @ " << t;
+  currentOuts() << ss.str() << spaces(100 - ss.str().size())
+                << token << " @ " << t;
   currentOuts() << " (";
   currentOuts() << (ParsingContext::getStartToken(t) ? '+' : '-');
   currentOuts() << (ParsingContext::getEndToken(t)   ? '+' : '-');
@@ -552,14 +552,18 @@ void leftAssoc(std::vector<VarOpPair>& opstack,
   }
 }
 
-ExprAST* parseBinopChain(ExprAST* first, pTree tree) {
+ExprAST* parseBinopChain(ExprAST* first, pTree binOpPairs) {
+  if (getChildCount(binOpPairs) == 0) {
+    return first;
+  }
+
   std::vector< std::pair<VarOpPair, ExprAST*> > pairs;
 
-  for (size_t i = 1; i < getChildCount(tree); i += 2) {
+  for (size_t i = 0; i < getChildCount(binOpPairs); i += 2) {
     pairs.push_back(std::make_pair(
-                     VarOpPair(parseVarDirect(child(tree, i)),
-                                       textOf(child(tree, i))),
-                     parsePhrase(child(tree, i + 1))));
+                     VarOpPair(parseVarDirect(child(binOpPairs, i)),
+                                       textOf(child(binOpPairs, i))),
+                     parsePhrase(child(binOpPairs, i + 1))));
   }
 
   std::vector<VarOpPair> opstack;
@@ -592,15 +596,27 @@ ExprAST* parseBinopChain(ExprAST* first, pTree tree) {
   return argstack[0];
 }
 
-// ^(TERM phrase binops?)
+// ^(TERM ^(MU opr?) ^(MU phrase) ^(MU binops?))
 ExprAST* parseTerm(pTree tree) {
-  ExprAST* base = parsePhrase(child(tree, 0));
-  if (getChildCount(tree) == 1) {
-    return base;
-  } else return parseBinopChain(base, tree);
-  display_pTree(tree, 2);
-  foster::EDiag() << "returning NULL TypeAST for parseTerm token " << str(tree->getToken(tree));
-  return NULL;
+  pTree pTmaybeOpr = child(tree, 0);
+  pTree pTphrase   = child(tree, 1);
+  pTree pTmaybeBin = child(tree, 2);
+  ExprAST* base = parsePhrase(child(pTphrase, 0));
+
+  if (getChildCount(pTmaybeOpr) > 0) {
+    VariableAST* opvar = parseTermVar(pTmaybeOpr);
+    // TODO move this check so it is caught by __COMPILES__
+    ASSERT(opvar->getName() == "-")
+                       << "For now, only unary - is allowed, not unary "
+                       << "'" << opvar->getName() << "'"
+                       << show(rangeOf(pTmaybeOpr));
+    // If we have            - f x y (+ ...) ...,
+    // interpret this as ((-) (f x y)) (+ ...) ...
+    std::vector<ExprAST*> exprs; exprs.push_back(base);
+    base = new CallAST(opvar, exprs, rangeFrom(pTmaybeOpr, pTphrase));
+  }
+
+  return parseBinopChain(base, pTmaybeBin);
 }
 
 ExprAST* ExprAST_from(pTree tree) {

@@ -31,6 +31,8 @@ tokens {
   FUNC_TYPE;
   TYPE_CTOR;
   FORMAL; MODULE; WILDCARD;
+
+  MU; // child marker
 }
 
 
@@ -56,13 +58,12 @@ k       :               // kinds
 
 e_seq 	:	 e (';' e)* ';'? -> ^(SEQ e+);
 e    :
-    phrase
-        binops? // value application
-              -> ^(TERM phrase binops?)
+    opr? phrase
+           binops? // value application, with optional prefix operator
+              -> ^(TERM ^(MU opr?) ^(MU phrase) ^(MU binops?))
   ;
 
-binops  :       (binop phrase)+;
-binop   :       SYMBOL;
+binops  :       (opr phrase)+;
 
 phrase  :       lvalue+                         -> ^(PHRASE lvalue+);
 lvalue  :       atom suffix*                    -> ^(LVALUE atom suffix*);
@@ -77,21 +78,11 @@ suffix  :       type_application
 //      |       '.(' e ')'                      -> ^(VAL_APP e)
   ;
 
-ifexpr                  :       'if' cond=e 'then' thenpart=e_seq 'else' elsepart=e_seq 'end'
-          -> ^(IF $cond $thenpart $elsepart);
-
-binding : x '=' e ';' -> ^(BINDING x e);
-
-lets   : 'let' binding+ 'in' e_seq 'end' -> ^(LETS   ^(LETS binding+) e_seq);
-letrec : 'rec' binding+ 'in' e_seq 'end' -> ^(LETREC ^(LETS binding+) e_seq);
-
-formal  : x (':' t) -> ^(FORMAL x t);
-
 atom    :       // syntactically "closed" terms
     x                                   // variables
   | lit                                 // literals
-  | lets
-  | letrec
+  | lets                                // sequential let
+  | letrec                              // recursive let
   | ifexpr
   | 'until' e 'then' e_seq 'end'        -> ^(UNTIL e e_seq)
   | '(' ')'                             -> ^(TUPLE)
@@ -115,6 +106,16 @@ p       :               // patterns
 
 lit     : num | str | TRU -> ^(BOOL TRU) | FLS -> ^(BOOL FLS);
 
+ifexpr : 'if' cond=e 'then' thenpart=e_seq 'else' elsepart=e_seq 'end'
+          -> ^(IF $cond $thenpart $elsepart);
+
+binding : x '=' e ';' -> ^(BINDING x e);
+
+lets   : 'let' binding+ 'in' e_seq 'end' -> ^(LETS   ^(MU binding+) e_seq);
+letrec : 'rec' binding+ 'in' e_seq 'end' -> ^(LETREC ^(MU binding+) e_seq);
+
+formal  : x (':' t) -> ^(FORMAL x t);
+
 /////////////////////////////////////////////////////////////////////////////////////////
 
 t       :               // types
@@ -133,8 +134,8 @@ tatom   :
   | '(' t (',' t)* ')'                  -> ^(TUPLE t+)  // tuples (products) (sugar: (a,b,c) == Tuple3 a b c)
 //      | ':{'        (a ':' k '->')+ t '}'     -> ^(TYPE_TYP_ABS a k t)        // type-level abstractions
   | '{'    t  ('=>' t)* '}'
-   ('@' '{' tannots '}')?               -> ^(FUNC_TYPE ^(TUPLE t+) tannots?)  // function types
-//      | '{' 'forall' (a ':' k ',')+ t '}'     -> ^(FORALL_TYPE a k t)         // universal type
+   ('@' '{' tannots '}')?               -> ^(FUNC_TYPE ^(TUPLE t+) tannots?)  // description of terms indexed by terms
+//      | '{' 'forall' (a ':' k ',')+ t '}'     -> ^(FORALL_TYPE a k t)       // description of terms indexed by types
   | '$' ctor                                        -> ^(TYPE_CTOR ctor)            // type constructor constant
   // The dollar sign is required to distinguish type constructors
   // from type variables, since we don't use upper/lower case to distinguish.
@@ -175,7 +176,7 @@ num     :       num_start (
 str                     :       s=STR -> ^(STR $s);
 
 hex_clump               :       DIGIT_HEX_CLUMP | IDENT;
-DIGIT_HEX_CLUMP         :       ('0'..'9') HEX_DIGIT*;
+DIGIT_HEX_CLUMP         :       DIGIT HEX_DIGIT*;
 
 
 fragment TICK  : '\'';
@@ -205,24 +206,29 @@ STR
 fragment ESC_SEQ        :       '\\' ('t'|'n'|'r'|'"'|TICK|'\\') | UNICODE_ESC;
 
 
-
+fragment WORD_CHAR              : 'a'..'z' | 'A'..'Z';
+fragment DIGIT                  : '0'..'9';
 
 // Identifiers must start with an upper or lowercase letter.
 IDENT                   :       IDENT_START IDENT_CONTINUE*;
+fragment IDENT_START            : WORD_CHAR;
+fragment IDENT_CONTINUE         :(DIGIT | WORD_CHAR | IDENT_SYMBOL);
 // Meanwhile, symbols start with a non-numeric, non-alphabetic glyph.
 // We must play some tricks here to ensure that '=' is a keyword, not a symbol.
+// Also, +Int32 is a symbol, but +2 is not.
 SYMBOL                  :       SYMBOL_SINGLE_START
-                        |       SYMBOL_MULTI_START  SYMBOL_CONTINUE+;
+                        |       SYMBOL_MULTI_START   SYMBOL_CONTINUE_NDIG   SYMBOL_CONTINUE*;
 
-fragment IDENT_START            : 'a'..'z' | 'A'..'Z';
-fragment IDENT_CONTINUE         :('a'..'z' | 'A'..'Z' | '0'..'9' | IDENT_SYMBOL);
-fragment SYMBOL_CONTINUE        :('a'..'z' | 'A'..'Z' |            SYMBOL_GLYPH);
-fragment SYMBOL_SINGLE_START   :  '!' | '|'
+fragment SYMBOL_CONTINUE        :(SYMBOL_CONTINUE_NDIG | DIGIT);
+fragment SYMBOL_CONTINUE_NDIG   :('/' | '^' | WORD_CHAR | IDENT_SYMBOL);
+
+fragment IDENT_SYMBOL   :      '_' | SYMBOL_MULTI_START;
+fragment SYMBOL_MULTI_START  : '=' | SYMBOL_SINGLE_START;
+fragment SYMBOL_SINGLE_START : '!' | '|'
         | '>' | '<' | '-'
         | '?' | '+' | '*';
-fragment SYMBOL_MULTI_START : '=' | SYMBOL_SINGLE_START;
-fragment IDENT_SYMBOL   :         '_' | SYMBOL_MULTI_START;
-fragment SYMBOL_GLYPH   :         '/' | '^' | IDENT_SYMBOL;
+
+
 
 // Examples of Unicode escape sequences:
 //      \u0000
