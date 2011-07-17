@@ -1045,7 +1045,10 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
   trySetName(callInst, "calltmp");
 
   if (callingConv == llvm::CallingConv::Fast) {
-    callInst->setTailCall(true);
+    // In order to mark this call as a tail call, we must know that
+    // none of the args being passed are pointers into this stack frame.
+    // Because we don't do this analysis, we don't enable TCO for now.
+    //callInst->setTailCall(true);
   }
 
   if (!this->callMightTriggerGC) {
