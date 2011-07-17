@@ -69,21 +69,24 @@ main = {
 
 
 mrmr-step2 = { km:i32 => r:i32 => primitive_bitxor_i32 km (primitive_bitashr_i32 km r) };
-mrmr-step5 = { h:i32 => kx:i32 => m:i32 => primitive_bitxor_i32 (h * m) (kx * m) };
+mrmr-step5 = { h:i32 => kx:i32 => m:i32 =>
+                primitive_bitxor_i32 (primitive_*_i32 h  m)
+                                     (primitive_*_i32 kx m) };
 murmurhash2-step-manually-lifted = { k:i32 => h:i32 => r:i32 => m:i32 =>
-  mrmr-step5 h (mrmr-step2 (k * m) r) m
+  mrmr-step5 h (mrmr-step2 (primitive_*_i32 k m) r) m
 };
 
 murmurhash2-step-let-transformed = { k:i32 => h:i32 => r:i32 => m:i32 =>
   {    km:i32 =>
     {  kx:i32 =>
-       primitive_bitxor_i32 (h * m) (kx * m)
+       primitive_bitxor_i32 (primitive_*_i32 h m) (primitive_*_i32 kx m)
     } (primitive_bitxor_i32 km (primitive_bitashr_i32 km r))
-  }   (k * m)
+  }   (primitive_*_i32 k m)
 };
 
 murmurhash2-step-let = { k:i32 => h:i32 => r:i32 => m:i32 =>
-  let km = k * m;
+  let km = primitive_*_i32 k m;
       kx = primitive_bitxor_i32 km (primitive_bitashr_i32 km r);
-   in      primitive_bitxor_i32 (h * m) (kx * m) end
+   in      primitive_bitxor_i32 (primitive_*_i32  h m)
+                                (primitive_*_i32 kx m) end
 };

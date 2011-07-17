@@ -15,8 +15,8 @@ test-coro2a = {
 
   let co = coro_create { pq : (i32, i32) =>
                          case pq of (p, q) ->
-                          let a = coro_yield:[(i32,i32),i32] (p + q);
-                             j0 = coro_yield:[(i32,i32),i32] (fst a + 20);
+                          let a = coro_yield:[(i32,i32),i32] (primitive_+_i32 p q);
+                             j0 = coro_yield:[(i32,i32),i32] (primitive_+_i32 (fst a) 20);
                              j1 = print_i32 111111;
                            in 12345 end
                          end
@@ -34,7 +34,7 @@ test-coro2a = {
 //  expect_i32(120)
 //
 //  let co = coro_create_i32_i32x2( fn(x : i32 to tuple {i32, i32}) {
-//                           let a : i32 = coro_yield_i32_i32x2(1 + x, x) in {
+//                           let a : i32 = coro_yield_i32_i32x2(primitive_+_i32 1 x, x) in {
 //                            print_i32(111111)
 //                           }
 //                           tuple { 0, 0 }

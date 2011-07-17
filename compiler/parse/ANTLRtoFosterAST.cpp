@@ -320,20 +320,12 @@ bool isLexicalOperator(const std::string& text) {
   return !isalpha(text[0]); // coincides with fragment IDENT_START
 }
 
-std::string getVarName(std::string text) {
-  if (isLexicalOperator(text) && text != ">^") {
-    return "primitive_" + text + "_i32";
-  } else {
-    return text;
-  }
-}
-
 VariableAST* parseVarDirect(pTree t) {
-  return new VariableAST(getVarName(textOf(t)), NULL, rangeOf(t));
+  return new VariableAST(textOf(t), NULL, rangeOf(t));
 }
 
 VariableAST* parseTermVar(pTree t) {
-  return new VariableAST(getVarName(textOfVar(t)), NULL, rangeOf(t));
+  return new VariableAST(textOfVar(t), NULL, rangeOf(t));
 }
 
 // ^(IF e e_seq e_seq)

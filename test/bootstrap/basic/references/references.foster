@@ -1,14 +1,14 @@
 main = {
-  //simpler();
-  //capture();
-  //ref-if ();
-  //ref-until();
-  //hof-until();
+  simpler();
+  capture();
+  ref-if ();
   arrays();
-  //tuprefs();
+  tuprefs();
+  ref-until();
+  //hof-until(); // TODO why is this broken?
 };
 
-/*
+
 tuprefs = {
   let t = ((ref opaquely_i32 1), (ref 2)); in
     expect_i32 1;
@@ -37,21 +37,20 @@ capture = {
 };
 
 ref-if = {
-  let r = if 2 == opaquely_i32 2 then (ref 0) else (ref 1) end;
+  let r = if primitive_==_i32 2 (opaquely_i32 2) then (ref 0) else (ref 1) end;
   in
    expect_i32 0;
     print_i32 r^;
   end
 };
-*/
 
 newDArray32 = { n : i32 => f : { i32 => i32 } =>
   let a = #allocDArray:[i32] n;
       x = (ref n);
    in
-      until x^ == 0 then
-          f x^      >^ a[x^ - 1];
-           (x^ - 1) >^ x
+      until primitive_==_i32 x^ 0 then
+          f x^      >^ a[primitive_-_i32 x^ 1];
+           (primitive_-_i32 x^ 1) >^ x
       end;
     a
   end
@@ -65,7 +64,7 @@ arrays = {
   end
 };
 
-/*
+
 hof-until-if = { c : {i1} => b : { () } =>
   if c () then 0 else let j0 = b (); in hof-until-if c b end
   end
@@ -79,15 +78,19 @@ hof-until-case = { c : {i1} => b : { () } =>
 };
 
 hof-until = {
-  let r = (ref 6);
-   in expect_i32 6;
-      expect_i32 5;
-      expect_i32 4;
-      hof-until-if   { r^ == 3 } { print_i32 r^; (r^ - 1) >^ r; };
-      expect_i32 3;
-      expect_i32 4;
-      expect_i32 5;
-      hof-until-case { r^ == 6 } { print_i32 r^; (r^ + 1) >^ r; };
+  let r = (ref 16);
+   in expect_i32 16;
+      expect_i32 15;
+      expect_i32 14;
+      hof-until-if   { primitive_==_i32 r^ 13 } {
+                print_i32 r^; (primitive_-_i32 r^ 1) >^ r;
+      };
+      expect_i32 13;
+      expect_i32 14;
+      expect_i32 15;
+      hof-until-case { primitive_==_i32 r^ 16 } {
+                print_i32 r^; (primitive_+_i32 r^ 1) >^ r;
+      };
   end
 };
 
@@ -98,10 +101,9 @@ ref-until = {
   expect_i32 1;
   let r = (ref opaquely_i32 3);
    in print_i32 r^;
-      until r^ == 0 then
+      until primitive_==_i32 r^ 0 then
         print_i32 r^;
-        (r^ - 1) >^ r;
+        (primitive_-_i32 r^ 1) >^ r;
       end
   end
 };
-*/

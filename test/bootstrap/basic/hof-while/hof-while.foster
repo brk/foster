@@ -4,15 +4,40 @@ hof-while = { t : {i1} => b : { i32 } =>
 };
 
 main = {
+  variant-one();
+  variant-two();
+};
+
+variant-one = {
   expect_i32 0;
   expect_i32 1;
   expect_i32 2;
   let v = (ref 0);
       n = opaquely_i32 3;
    in
-     hof-while { v^ < n } {
-       print_i32 v^ ; (v^ + 1) >^ v ; 0
+     hof-while { primitive_<_i32 v^ n } {
+       print_i32 v^ ; (primitive_+_i32 v^ 1) >^ v ; 0
      }
      ; opaquely_i32 4
   end
 };
+
+variant-two = {
+  expect_i32 0;
+  expect_i32 1;
+  expect_i32 2;
+  let v = (ref 0);
+      n = opaquely_i32 3;
+   in
+     hof-while { primitive_<_i32 v^ n } {
+       print_i32 v^ ; (primitive_+_i32 v^ 1) >^ v ; 0
+     }
+      ; opaquely_i32 4 // TODO removing this breaks things!
+  end
+};
+
+// TODO check this
+// hof-while-unit = { t : {i1} => b : { () } =>
+//   if t () then b (); hof-while-unit t b
+//           else () end
+// };

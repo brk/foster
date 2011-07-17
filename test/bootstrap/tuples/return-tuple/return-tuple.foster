@@ -2,7 +2,8 @@ print_0_of_t_i32_i1 = { x : (i32, i1) => case x of (y, _) -> print_i32 y end };
 
 tuple_from      = { x : i32 => y : i1 => (x, y) };
 
-tuple_from_if   = { x : i32 => y : i1 => if x == 3 then (x, y) else (x, y) end };
+tuple_from_if   = { x : i32 => y : i1 =>
+                  if primitive_==_i32 x 3 then (x, y) else (x, y) end };
 
 tuple_from_case = { x : i32 => y : i1 => case x of 3 -> (x, y)
                                                 of _ -> (x, y) end };

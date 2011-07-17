@@ -2,19 +2,19 @@ test = { arg:i32 =>
    // syntactically nested function definition
    // (with no free variables); equivalent to
    // definition at top level.
-   expect_i32(3) ;  print_i32( { a:i32 => a + 1 }(2) );
+   expect_i32(3) ;  print_i32( { a:i32 => primitive_+_i32 a 1 }(2) );
 
   // requires closure conversion!
-  expect_i32(2 + arg) ;  print_i32 ( { x:i32 => x + arg }(2) )
+  expect_i32(primitive_+_i32 2 arg) ;  print_i32 ( { x:i32 => primitive_+_i32 x arg }(2) )
 };
 
 f = { a:i32 => b:i32 => c:i32 =>
   { x:i32 =>
   { y:i32 =>
-  { z:i32 => (x * y) + z // 12 + 8 = 20
-            }(x * c) // 2*4 = 8
-            }(b + 3) // 3+3 = 6
-            }(4 - a) // 4-2 = 2
+  { z:i32 => primitive_+_i32 (primitive_*_i32 x y) z // 12 + 8 = 20
+            }(primitive_*_i32 x c) // 2*4 = 8
+            }(primitive_+_i32 b 3) // 3+3 = 6
+            }(primitive_-_i32 4 a) // 4-2 = 2
 };
 
 main = {

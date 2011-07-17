@@ -5,10 +5,11 @@ run-clo-1 = { y : i32 =>
 main = {
   let n = opaquely_i32 2;
       a = opaquely_i32 3;
-      c = { z:i32 => x:i32 => (z + a) * n + x };
+      c = { z:i32 => x:i32 =>  // (z + a) * n + x
+        primitive_+_i32 (primitive_*_i32 (primitive_+_i32 z a) n) x };
       // n = 2, a = 3, y = 5, x = 8
-     j0 = expect_i32 ((5+3) * 2 + 8);
-   in
+   in // (5+3) * 2 + 8 = 24
+     expect_i32 24;
      print_i32 (run-clo-1 (opaquely_i32 5) c)
   end
 };

@@ -117,6 +117,8 @@ primitiveDecls =
     ,(,)  "print_i32b" $ mkProcType [i32] []
 
     ,(,) "opaquely_i32" $ mkProcType [i32] [i32]
+
+    -- forall a, i32 -> Array a
     ,(,) "allocDArray" $ let a = BoundTyVar "a" in
                          ForAllAST [a]
                            (mkProcType [i32] [ArrayTypeAST (TyVarAST a)])

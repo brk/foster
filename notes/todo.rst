@@ -1,6 +1,10 @@
 TODO
 ====
 
+TODO: bugs
+----------
+* hof-while variants
+
 TODO: libraries, benchmarks, & applications
 -------------------------------------------
 * Strings
