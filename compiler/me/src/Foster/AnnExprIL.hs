@@ -122,12 +122,13 @@ ail ctx knownProcNames ae =
                    bi <- q b
                    return $ AICall ti bi argsi
 
-                E_AnnTyApp _ ot (AnnPrimitive _rng (TypedId _ (Ident "allocDArray" _))) argty -> do
+                E_AnnTyApp _ ot (AnnPrimitive _rng (TypedId _ (GlobalSymbol "allocDArray"))) argty -> do
                     let [arraySize] = argsi
                     aty <- ilOf argty
                     return $ AIAllocArray aty arraySize
 
-                E_AnnTyApp _ ot (AnnPrimitive _rng (TypedId vty id@(Ident primName _))) appty ->
+                E_AnnTyApp _ ot (AnnPrimitive _rng (TypedId vty id)) appty ->
+                   let primName = identPrefix id in
                    case (coroPrimFor primName, appty) of
                      (Just coroPrim, TupleTypeAST [argty, retty]) -> do
                        [aty, rty] <- mapM ilOf [argty, retty]

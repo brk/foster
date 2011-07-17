@@ -503,7 +503,7 @@ typecheckFn' ctx f cc expArgType expBodyType = do
       Nothing -> return ()
       Just av -> equateTypes fnty (tidType av) (Just "overall function types")
 
-    return (E_AnnFn (AnnFn fnty (Ident fnProtoName irrelevantIdentNum)
+    return (E_AnnFn (AnnFn fnty (GlobalSymbol fnProtoName)
                            formalVars annbody
                            (fnAstRange f)))
 
@@ -578,13 +578,16 @@ collectErrors tce =
                        Errors ss -> return   (OK ss)
                        })
 
-rename :: Ident -> Uniq -> Ident
-rename (Ident p i) u = (Ident p u)
+rename :: Ident -> Uniq -> Tc Ident
+rename (Ident p i) u = return (Ident p u)
+rename (GlobalSymbol name) _u =
+        tcFails [out $ "Cannot rename global symbol " ++ show name]
 
 uniquelyName :: TypedId t -> Tc (TypedId t)
 uniquelyName (TypedId ty id) = do
     uniq <- newTcUniq
-    return (TypedId ty (rename id uniq))
+    newid <- rename id uniq
+    return (TypedId ty newid)
 
 verifyNonOverlappingVariableNames :: String -> [String] -> Tc ()
 verifyNonOverlappingVariableNames fnName varNames = do

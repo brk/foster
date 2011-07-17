@@ -44,15 +44,12 @@ import qualified Text.ProtocolBuffers.Header as P'
 
 -----------------------------------------------------------------------
 
-identFullString :: Ident -> String
-identFullString = show
-
--- Primitive values have minimal C-level name mangling, at the moment...
 dumpIdent :: Ident -> P'.Utf8
-dumpIdent i = let p = identPrefix i in
-              if identNum i < 0
-                then u8fromString $ identPrefix i
-                else u8fromString $ identFullString i
+dumpIdent (GlobalSymbol name) = u8fromString name
+dumpIdent i@(Ident name num) = if num < 0
+                --then u8fromString $ name
+                then error $ "cannot dump negative ident! " ++ show i
+                else u8fromString $ show i
 
 -----------------------------------------------------------------------
 

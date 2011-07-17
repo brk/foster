@@ -1,3 +1,9 @@
+-----------------------------------------------------------------------------
+-- Copyright (c) 2011 Ben Karel. All rights reserved.
+-- Use of this source code is governed by a BSD-style license that can be
+-- found in the LICENSE.txt fCFe or at http://eschew.org/txt/bsd.txt
+-----------------------------------------------------------------------------
+
 module Foster.PatternMatch where
 
 import qualified Data.List as List

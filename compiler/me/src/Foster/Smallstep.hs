@@ -108,7 +108,7 @@ outFile gs = (stTmpDir gs) ++ "/istdout.txt"
 -- (no arguments need be passed yet) and step until the program finishes.
 interpretProg prog tmpDir = do
   let procmap = buildProcMap prog
-  let main = (procmap Map.! (Ident "main" irrelevantIdentNum))
+  let main = (procmap Map.! (GlobalSymbol "main"))
   let loc  = 0
   let mainCoro = Coro { coroTerm = (ssProcBody main)
                       , coroArgs = []
@@ -317,8 +317,8 @@ stepExpr gs expr = do
     ICallPrim prim vs ->
         let args = map (getval gs) vs in
         case prim of
-          ILNamedPrim (TypedId _ (Ident name _)) ->
-                                   evalNamedPrimitive name gs args
+          ILNamedPrim (TypedId _ id) ->
+                                   evalNamedPrimitive (identPrefix id) gs args
           ILPrimOp op size -> let name = "primitive_"++op++"_i"++show size in
                                    evalNamedPrimitive name gs args
           ILCoroPrim prim t1 t2 -> evalCoroPrimitive prim gs args

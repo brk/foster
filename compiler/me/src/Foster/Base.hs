@@ -135,19 +135,21 @@ bitStringOf n | n <= 1     = show n
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
-data Ident = Ident { identPrefix :: String
-                   , identNum    :: Uniq }
+identPrefix (GlobalSymbol name) = name
+identPrefix (Ident name _)      = name
+
+data Ident = Ident        String Uniq
+           | GlobalSymbol String
 
 instance Ord Ident where
     compare a b = compare (show a) (show b)
 
 instance Eq Ident where
-    i@(Ident _ _) == j@(Ident _ _) = (show i) == (show j)
+    i == j      =    (show i) == (show j)
 
 instance Show Ident where
-    show i = (identPrefix i) ++ "!" ++ (show $ identNum i)
-
-irrelevantIdentNum = (-12345) :: Int
+    show (Ident name number) = name ++ "!" ++ show number
+    show (GlobalSymbol name) = name
 
 data TypedId ty = TypedId { tidType :: ty, tidIdent :: Ident }
 

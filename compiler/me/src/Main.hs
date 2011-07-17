@@ -65,28 +65,22 @@ instance FnLike AnnFn where
 
 fnNames f = [fnName f]
 
-computeContextBindings :: Uniq -> [(String, TypeAST)] -> ([ContextBinding TypeAST], Uniq)
-computeContextBindings u decls =
-   runState (mapM pair2binding decls) u where
-        pair2binding :: (String, TypeAST) -> State Uniq (ContextBinding TypeAST)
-        pair2binding (nm, ty) = do
-               uniq <- get
-               put (uniq + 1)
-               return $ TermVarBinding nm (TypedId ty (Ident nm (- uniq)))
+pair2binding (nm, ty) = TermVarBinding nm (TypedId ty (GlobalSymbol nm))
+
+computeContextBindings :: [(String, TypeAST)] -> [ContextBinding TypeAST]
+computeContextBindings decls = map pair2binding decls
 
 buildCallGraph :: FnLike f => [f] -> [ContextBinding ty] -> [Graph.SCC f]
-buildCallGraph asts bindings =
-    let nodeList = (map (\ast -> (ast, fnName ast, fnFreeVariables ast bindings)) asts) in
-    Graph.stronglyConnComp nodeList
-
+buildCallGraph asts bindings = Graph.stronglyConnComp nodeList where
+  nodeList = map (\ast -> (ast, fnName ast,
+                           fnFreeVariables ast bindings)) asts
 
 bindingForAnnFn :: AnnFn -> ContextBinding TypeAST
 bindingForAnnFn f = TermVarBinding (fnNameA f) (annFnVar f)
  where annFnVar f = TypedId (annFnType f) (annFnIdent f)
 
 bindingForFnAST :: FnAST -> TypeAST -> ContextBinding TypeAST
-bindingForFnAST f t = let n = fnName f in
-                      TermVarBinding n (TypedId t (Ident n (-12345)))
+bindingForFnAST f t = let n = fnName f in pair2binding (n, t)
 
 -- Every function in the SCC should typecheck against the input context,
 -- and the resulting context should include the computed types of each
@@ -130,8 +124,8 @@ typecheckModule :: Bool -> ModuleAST FnAST TypeAST -> TcEnv
                         -> IO (OutputOr (Context TypeIL, ModuleAST AIFn TypeIL))
 typecheckModule verboseMode mod tcenv0 = do
     let fns = moduleASTfunctions mod
-    let (primBindings, u') = computeContextBindings 1 primitiveDecls
-    let (declBindings, u) = computeContextBindings u' (moduleASTdecls mod)
+    let primBindings = computeContextBindings primitiveDecls
+    let declBindings = computeContextBindings (moduleASTdecls mod)
     let sortedFns = buildCallGraph fns declBindings -- :: [SCC FnAST]
     putStrLn $ "Function SCC list : " ++ show [(fnName f, fnFreeVariables f declBindings) | fns <- sortedFns, f <- Graph.flattenSCC fns]
     let ctx0 = Context declBindings primBindings verboseMode
