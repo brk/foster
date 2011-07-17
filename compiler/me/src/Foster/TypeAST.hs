@@ -10,7 +10,6 @@ import Foster.Base
 import List(length)
 import Data.IORef(IORef)
 import Data.Map as Map(fromList, toList)
-import qualified Data.Set as Set
 
 data EPattern =
           EP_Wildcard      ESourceRange
@@ -103,8 +102,6 @@ coroInvokeType args rets = mkFnType ((mkCoroType args rets) : args) rets
 coroYieldType  args rets = mkFnType rets args
 coroCreateType args rets = mkFnType [mkFnType args rets] [mkCoroType args rets]
 
-primitiveNamesSet = Set.fromList (map fst primitiveDecls)
-isPrimitiveName name = Set.member name primitiveNamesSet
 primitiveDecls =
     [(,) "expect_i32"  $ mkProcType [i32] []
     ,(,)  "print_i32"  $ mkProcType [i32] []

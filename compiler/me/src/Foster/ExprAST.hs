@@ -25,7 +25,6 @@ data ExprAST =
         | E_LetRec        ESourceRange [TermBinding] ExprAST (Maybe TypeAST)
         -- Use of bindings
         | E_VarAST        ESourceRange E_VarAST
-        | E_Primitive     ESourceRange E_VarAST
         | E_CallAST       ESourceRange ExprAST TupleAST
         -- Mutable ref cells
         | E_AllocAST      ESourceRange ExprAST
@@ -62,7 +61,6 @@ unbuildSeqs expr = [expr]
 
 tryGetCallNameE :: ExprAST -> String
 tryGetCallNameE (E_VarAST rng (VarAST mt v)) = v
-tryGetCallNameE (E_Primitive rng (VarAST mt v)) = v
 tryGetCallNameE _ = ""
 
 instance Structured ExprAST where
@@ -87,7 +85,6 @@ instance Structured ExprAST where
             E_TyApp rng a t      -> out $ "TyApp        "
             E_Case rng _ _       -> out $ "Case         "
             E_VarAST rng v       -> out $ "VarAST       " ++ evarName v ++ " :: " ++ show (evarMaybeType v)
-            E_Primitive rng v    -> out $ "PrimitiveAST " ++ evarName v ++ " :: " ++ show (evarMaybeType v)
     childrenOf e =
         case e of
             E_BoolAST rng b      -> []
@@ -109,7 +106,6 @@ instance Structured ExprAST where
             E_TyApp  rng a t     -> [a]
             E_Case rng e bs      -> e:(map snd bs)
             E_VarAST _ _         -> []
-            E_Primitive _ _      -> []
 
 termBindingExpr (TermBinding _ e) = e
 termBindingExprs bs = map termBindingExpr bs
@@ -135,14 +131,12 @@ instance SourceRanged ExprAST
       E_StoreAST      rng _ _   -> rng
       E_SubscriptAST  rng _ _   -> rng
       E_VarAST        rng _     -> rng
-      E_Primitive     rng _     -> rng
       E_TyApp         rng _ _   -> rng
       E_Case          rng _ _   -> rng
 
 instance Expr ExprAST where
     freeVars e = case e of
         E_VarAST rng v       -> [evarName v]
-        E_Primitive rng v    -> [] -- Primitives are never actually closed over...
         E_LetAST rng bnd e t -> freeVars e ++ (bindingFreeVars bnd)
         E_Case rng e epatbnds -> freeVars e ++ (concatMap epatBindingFreeVars epatbnds)
         E_FnAST f           -> let bodyvars  = freeVars (fnBody f) in

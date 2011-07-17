@@ -186,12 +186,9 @@ parseTyApp pbexpr = do
                                 Nothing -> error "TyApp missing arg type!"
                                 Just ty -> ty)
 
-parseEVarOrPrim pbexpr = do
+parseEVar pbexpr = do
     range <- parseRange pbexpr
-    let var = parseVar pbexpr
-    if isPrimitiveName (evarName var)
-      then return $ E_Primitive range var
-      else return $ E_VarAST    range var
+    return $ E_VarAST range (parseVar pbexpr)
 
 parseVar pbexpr = do VarAST (fmap parseType (PbExpr.type' pbexpr))
                                (getName "var" $ PbExpr.name pbexpr)
@@ -263,7 +260,7 @@ parseExpr pbexpr =
                 IF      -> parseIf
                 UNTIL   -> parseUntil
                 BOOL    -> parseBool
-                VAR     -> parseEVarOrPrim
+                VAR     -> parseEVar
                 Foster.Fepb.Expr.Tag.TUPLE   -> parseTuple
                 Foster.Fepb.Expr.Tag.VAL_ABS -> parseValAbs
                 CALL      -> parseCall

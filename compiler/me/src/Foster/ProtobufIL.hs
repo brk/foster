@@ -11,7 +11,6 @@ module Foster.ProtobufIL (
 import Foster.Base
 import Foster.ILExpr
 import Foster.TypeIL
-import Foster.TypeAST(isPrimitiveName)
 import Foster.PatternMatch
 import Foster.ProtobufUtils
 
@@ -51,7 +50,7 @@ identFullString = show
 -- Primitive values have minimal C-level name mangling, at the moment...
 dumpIdent :: Ident -> P'.Utf8
 dumpIdent i = let p = identPrefix i in
-              if isPrimitiveName p || identNum i < 0
+              if identNum i < 0
                 then u8fromString $ identPrefix i
                 else u8fromString $ identFullString i
 

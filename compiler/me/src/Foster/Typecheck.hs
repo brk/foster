@@ -161,15 +161,13 @@ typecheck ctx expr maybeExpTy =
                                      typecheckSubscript ctx rng ta (typeAST ta) tb maybeExpTy
         E_TupleAST (TupleAST rng exprs) -> typecheckTuple ctx exprs maybeExpTy
 
-        E_Primitive rng v -> case termVarLookup (evarName v) (primitiveBindings ctx) of
-            Just avar     -> return $ AnnPrimitive rng avar
-            Nothing       -> tcFails [out $ "Unknown primitive " ++ (evarName v)
-                                         ++ showSourceRange rng]
-
         E_VarAST rng v -> case termVarLookup (evarName v) (contextBindings ctx) of
-            Just avar  -> return $ E_AnnVar rng avar
-            Nothing    -> tcFails [out $ "Unknown variable " ++ (evarName v)
-                                      ++ showSourceRange rng]
+            Just avar -> return $ E_AnnVar rng avar
+            Nothing   ->
+              case termVarLookup (evarName v) (primitiveBindings ctx) of
+                Just avar -> return $ AnnPrimitive rng avar
+                Nothing   -> tcFails [out $ "Unknown variable " ++ (evarName v)
+                                         ++ showSourceRange rng]
 
         E_TyApp rng e t -> typecheckTyApp ctx rng e t maybeExpTy
 
