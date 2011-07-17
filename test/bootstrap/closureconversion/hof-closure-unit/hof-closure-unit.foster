@@ -8,14 +8,14 @@ main = {
 
 test-capture-one = {
   let n = opaquely_i32 2;
-      c = { primitive_+_i32 n (opaquely_i32 3) };
+      c = { n +Int32 (opaquely_i32 3) };
      j0 = expect_i32 5;
      j1 = print_i32 (run-clo c);
   in 0 end
 };
 
 test-capture-zero = {
-  let c = { primitive_+_i32 (opaquely_i32 0) (opaquely_i32 3) };
+  let c = { (opaquely_i32 0) +Int32 (opaquely_i32 3) };
      j0 = expect_i32 3;
      j1 = print_i32 (run-clo c);
   in 0 end

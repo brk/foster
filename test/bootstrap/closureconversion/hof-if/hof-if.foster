@@ -11,11 +11,11 @@ main = {
       y = opaquely_i32 3;
       z = opaquely_i32 4;
   in
-    expect_i1 true;  print_i1 (prim-and (primitive_<_i32 x y)
-                                        (primitive_<_i32 y z));
-    expect_i1 false; print_i1 (prim-and (primitive_<_i32 x y)
-                                        (primitive_<_i32 z y));
-    expect_i1 true ; print_i1 (hof-and { primitive_<_i32 x y }
-                                       { primitive_<_i32 y z });
+    expect_i1 true;  print_i1 (prim-and (x <Int32 y)
+                                        (y <Int32 z));
+    expect_i1 false; print_i1 (prim-and (x <Int32 y)
+                                        (z <Int32 y));
+    expect_i1 true ; print_i1 (hof-and { x <Int32 y }
+                                       { y <Int32 z });
   end
 };

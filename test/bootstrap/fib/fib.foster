@@ -11,21 +11,21 @@ main = {
 };
 
 fib-naive = { x : i32 =>
-  if primitive_<_i32 x 3
+  if x <Int32 3
     then 1
-    else primitive_+_i32 (fib-naive (primitive_-_i32 x 1))
-                         (fib-naive (primitive_-_i32 x 2))
+    else (fib-naive (x -Int32 1)) +Int32
+         (fib-naive (x -Int32 2))
   end
 };
 
 fib-tailrecursive = { x : i32 =>
                 current : i32 =>
                    next : i32 =>
-  if primitive_==_i32 x 0
+  if x ==Int32 0
     then current
-    else fib-tailrecursive (primitive_-_i32 x 1)
+    else fib-tailrecursive (x -Int32 1)
                             next
-                           (primitive_+_i32 current next)
+                           (current +Int32 next)
   end
 };
 

@@ -524,6 +524,19 @@ ExprAST* parseBinops(pTree tree) {
   return NULL;
 }
 
+// Returns the punctuation chars at the start of the given string.
+// This isn't quite right in the presence of user-defined operators,
+// since we'd want .e.g +++ to behave like +.
+std::string oprPrefixOf(std::string s) {
+  if (!s.empty() && !ispunct(s[0])) {
+    return s; // for "and", "or", etc.
+  }
+  std::string::iterator b, e;
+  b = s.begin(); e = s.end();
+  while (b != e && ispunct(*b)) { ++b; }
+  return std::string(s.begin(), b);
+}
+
 typedef std::pair<VariableAST*, std::string> VarOpPair;
 
 void leftAssoc(std::vector<VarOpPair>& opstack,
@@ -554,7 +567,7 @@ ExprAST* parseBinopChain(ExprAST* first, pTree binOpPairs) {
   for (size_t i = 0; i < getChildCount(binOpPairs); i += 2) {
     pairs.push_back(std::make_pair(
                      VarOpPair(parseVarDirect(child(binOpPairs, i)),
-                                       textOf(child(binOpPairs, i))),
+                           oprPrefixOf(textOf(child(binOpPairs, i)))),
                      parsePhrase(child(binOpPairs, i + 1))));
   }
 

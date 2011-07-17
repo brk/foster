@@ -1,16 +1,16 @@
 main = {
   expect_i32b 11100_2;
-  print_i32b (primitive_bitshl_i32 111_2 2);
+  print_i32b ((bitshl-Int32) 111_2 2);
 
   expect_i32b 1111_2;
-  print_i32b (primitive_bitor_i32 101_2 1010_2);
+  print_i32b ((bitor-Int32) 101_2 1010_2);
 
   expect_i32b 1010_2;
-  print_i32b (primitive_bitand_i32 1111_2 1010_2);
+  print_i32b ((bitand-Int32) 1111_2 1010_2);
 
   expect_i32b 11011_2;
-  print_i32b (primitive_bitxor_i32 10010_2 01001_2);
+  print_i32b ((bitxor-Int32) 10010_2 01001_2);
 
   expect_i32b 1111`1111`1111`1111`1111`1111`1111`1000_2;
-  print_i32b (primitive_bitnot_i32     0000`0000`0111_2);
+  print_i32b ((bitnot-Int32)    0000`0000`0111_2);
 };

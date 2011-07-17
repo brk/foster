@@ -4,11 +4,11 @@ main = {
 };
 
 foo = { x:i32 =>
-  if primitive_==_i32 x 0 then
+  if x ==Int32 0 then
     0
   else
-    let y = primitive_+_i32 x 1;
-        z = foo (primitive_-_i32 x 1);
+    let y = x +Int32 1;
+        z = foo (x -Int32 1);
      in y end
   end
 };

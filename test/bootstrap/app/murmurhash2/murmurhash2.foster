@@ -1,6 +1,6 @@
 //murmurhash2-step = fn (k:i32, h:i32, r:i32, m:i32 to i32) {
 //  bitxor(h * m, kx * m) where
-//  kx = primitive_bitxor_i32(km, primitive_bitashr_i32(km, r)) where
+//  kx = bitxor-Int32(km, bitashr-Int32(km, r)) where
 //  km = k * m
 //}
 
@@ -14,14 +14,14 @@
 
 // foster?
 // let km = k * m
-// let kx = primitive_bitxor_i32(km, primitive_bitashr_i32(km, r))
+// let kx = bitxor-Int32 km (bitashr-Int32 km r)
 // bitxor(h * m, kx * m)
 
 // let v = a in e -> fn (v) { e }(a)
 
 test-manually-lifted = {
   expect_i32 1040811149;
-  print_i32 (murmurhash2-step-manually-lifted 1 (primitive_negate_i32 1) 24 5bd1e995_16);
+  print_i32 (murmurhash2-step-manually-lifted 1 (negate-Int32 1) 24 5bd1e995_16);
 
   expect_i32 640067440;
   print_i32 (murmurhash2-step-manually-lifted 2 1040811149 24 5bd1e995_16);
@@ -29,13 +29,13 @@ test-manually-lifted = {
   expect_i32 1308571692;
   print_i32 (murmurhash2-step-manually-lifted 3 640067440 24 5bd1e995_16);
 
-  expect_i32 (primitive_negate_i32 2051158325);
+  expect_i32 (negate-Int32 2051158325);
   print_i32 (murmurhash2-step-manually-lifted 4 1308571692 24 5bd1e995_16);
 };
 
 test-let-transformed = {
   expect_i32 1040811149;
-  print_i32 (murmurhash2-step-let-transformed 1 (primitive_negate_i32 1) 24 5bd1e995_16);
+  print_i32 (murmurhash2-step-let-transformed 1 (negate-Int32 1) 24 5bd1e995_16);
 
   expect_i32 640067440;
   print_i32 (murmurhash2-step-let-transformed 2 1040811149 24 5bd1e995_16);
@@ -43,13 +43,13 @@ test-let-transformed = {
   expect_i32 1308571692;
   print_i32 (murmurhash2-step-let-transformed 3 640067440 24 5bd1e995_16);
 
-  expect_i32 (primitive_negate_i32 2051158325);
+  expect_i32 (negate-Int32 2051158325);
   print_i32 (murmurhash2-step-let-transformed 4 1308571692 24 5bd1e995_16);
 };
 
 test-let = {
   expect_i32 1040811149;
-  print_i32 (murmurhash2-step-let 1 (primitive_negate_i32 1) 24 1`540`483`477);
+  print_i32 (murmurhash2-step-let 1 (negate-Int32 1) 24 1`540`483`477);
 
   expect_i32 640067440;
   print_i32 (murmurhash2-step-let 2 1040811149 24 5bd1e995_16);
@@ -57,7 +57,7 @@ test-let = {
   expect_i32 1308571692;
   print_i32 (murmurhash2-step-let 3 640067440 24 5bd1e995_16);
 
-  expect_i32 (primitive_negate_i32 2051158325);
+  expect_i32 (negate-Int32 2051158325);
   print_i32  (murmurhash2-step-let 4 1308571692 24 5bd1e995_16);
 };
 
@@ -68,25 +68,25 @@ main = {
 };
 
 
-mrmr-step2 = { km:i32 => r:i32 => primitive_bitxor_i32 km (primitive_bitashr_i32 km r) };
+mrmr-step2 = { km:i32 => r:i32 => bitxor-Int32 km (bitashr-Int32 km r) };
 mrmr-step5 = { h:i32 => kx:i32 => m:i32 =>
-                primitive_bitxor_i32 (primitive_*_i32 h  m)
-                                     (primitive_*_i32 kx m) };
+                        bitxor-Int32 (h  *Int32 m)
+                                     (kx *Int32 m) };
 murmurhash2-step-manually-lifted = { k:i32 => h:i32 => r:i32 => m:i32 =>
-  mrmr-step5 h (mrmr-step2 (primitive_*_i32 k m) r) m
+  mrmr-step5 h (mrmr-step2 (k *Int32 m) r) m
 };
 
 murmurhash2-step-let-transformed = { k:i32 => h:i32 => r:i32 => m:i32 =>
   {    km:i32 =>
     {  kx:i32 =>
-       primitive_bitxor_i32 (primitive_*_i32 h m) (primitive_*_i32 kx m)
-    } (primitive_bitxor_i32 km (primitive_bitashr_i32 km r))
-  }   (primitive_*_i32 k m)
+       bitxor-Int32 (h *Int32 m) (kx *Int32 m)
+    } (bitxor-Int32 km (bitashr-Int32 km r))
+  }   (k *Int32 m)
 };
 
 murmurhash2-step-let = { k:i32 => h:i32 => r:i32 => m:i32 =>
-  let km = primitive_*_i32 k m;
-      kx = primitive_bitxor_i32 km (primitive_bitashr_i32 km r);
-   in      primitive_bitxor_i32 (primitive_*_i32  h m)
-                                (primitive_*_i32 kx m) end
+  let km = k *Int32 m;
+      kx = bitxor-Int32 km (bitashr-Int32 km r);
+   in      bitxor-Int32 (h  *Int32 m)
+                        (kx *Int32 m) end
 };

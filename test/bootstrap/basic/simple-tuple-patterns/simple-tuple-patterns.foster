@@ -30,7 +30,7 @@ t2 = {
   expect_i32 2;
   print_i32
     case (opaquely_i32 1, opaquely_i32 1)
-      of (a, b) -> primitive_+_i32 a b
+      of (a, b) -> a +Int32 b
     end;
 };
 
@@ -70,7 +70,7 @@ t10 = {
   expect_i32 10;
   print_i32
     case (opaquely_i32 1, opaquely_i32 2)
-      of (3, b) -> primitive_+_i32 2 b
+      of (3, b) -> 2 +Int32 b
       of a -> 10
     end;
 };
@@ -80,7 +80,7 @@ t11 = {
   print_i32
     case (opaquely_i32 1, opaquely_i32 2, opaquely_i32 3)
       of (a, 3, b) -> b
-      of (a, 2, c) -> primitive_+_i32 8 c
+      of (a, 2, c) -> 8 +Int32 c
       of (a, d, c) -> d
     end;
 };

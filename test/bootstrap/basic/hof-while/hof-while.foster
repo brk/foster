@@ -15,8 +15,8 @@ variant-one = {
   let v = (ref 0);
       n = opaquely_i32 3;
    in
-     hof-while { primitive_<_i32 v^ n } {
-       print_i32 v^ ; (primitive_+_i32 v^ 1) >^ v ; 0
+     hof-while { v^ <Int32 n } {
+       print_i32 v^ ; (v^ +Int32 1) >^ v ; 0
      }
      ; opaquely_i32 4
   end
@@ -29,8 +29,8 @@ variant-two = {
   let v = (ref 0);
       n = opaquely_i32 3;
    in
-     hof-while { primitive_<_i32 v^ n } {
-       print_i32 v^ ; (primitive_+_i32 v^ 1) >^ v ; 0
+     hof-while { v^ <Int32 n } {
+       print_i32 v^ ; (v^ +Int32 1) >^ v ; 0
      }
       ; opaquely_i32 4 // TODO removing this breaks things!
   end

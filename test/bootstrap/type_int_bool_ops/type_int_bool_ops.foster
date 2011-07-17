@@ -12,7 +12,7 @@ main = {
   //print_i1(__COMPILES__ -true);
 
   expect_i1 true;
-  print_i1 (primitive_bitnot_i1 false);
+  print_i1 (not false);
 
   expect_i1 false; // 2 is not of type i1
   print_i1 (__COMPILES__ if 2 then 222 else 111 end);

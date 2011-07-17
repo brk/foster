@@ -37,7 +37,7 @@ capture = {
 };
 
 ref-if = {
-  let r = if primitive_==_i32 2 (opaquely_i32 2) then (ref 0) else (ref 1) end;
+  let r = if 2 ==Int32 (opaquely_i32 2) then (ref 0) else (ref 1) end;
   in
    expect_i32 0;
     print_i32 r^;
@@ -48,9 +48,9 @@ newDArray32 = { n : i32 => f : { i32 => i32 } =>
   let a = #allocDArray:[i32] n;
       x = (ref n);
    in
-      until primitive_==_i32 x^ 0 then
-          f x^      >^ a[primitive_-_i32 x^ 1];
-           (primitive_-_i32 x^ 1) >^ x
+      until x^ ==Int32 0 then
+          f x^      >^ a[x^ -Int32  1];
+           (x^ -Int32 1) >^ x
       end;
     a
   end
@@ -82,14 +82,14 @@ hof-until = {
    in expect_i32 16;
       expect_i32 15;
       expect_i32 14;
-      hof-until-if   { primitive_==_i32 r^ 13 } {
-                print_i32 r^; (primitive_-_i32 r^ 1) >^ r;
+      hof-until-if   { r^ ==Int32 13 } {
+                print_i32 r^; (r^ -Int32 1) >^ r;
       };
       expect_i32 13;
       expect_i32 14;
       expect_i32 15;
-      hof-until-case { primitive_==_i32 r^ 16 } {
-                print_i32 r^; (primitive_+_i32 r^ 1) >^ r;
+      hof-until-case { r^ ==Int32 16 } {
+                print_i32 r^; (r^ +Int32 1) >^ r;
       };
   end
 };
@@ -101,9 +101,9 @@ ref-until = {
   expect_i32 1;
   let r = (ref opaquely_i32 3);
    in print_i32 r^;
-      until primitive_==_i32 r^ 0 then
+      until r^ ==Int32 0 then
         print_i32 r^;
-        (primitive_-_i32 r^ 1) >^ r;
+        (r^ -Int32 1) >^ r;
       end
   end
 };
