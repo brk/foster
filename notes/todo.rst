@@ -27,8 +27,6 @@ TODO: implementation details
 
 * Interaction between primitive integer types and polymorphism at LLVM level.
 
-* Move primiitve recognition to Haskell, not parser
-* Test that recursive closures work as expected
 * Expand use of chromium-base
  * Use format_macros.h
  * stringprintf.h ?
