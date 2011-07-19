@@ -667,6 +667,45 @@ ADTs
 Records
 -------
 
+Pattern Matching and Views
+--------------------------
+
+There are two sorts of pattern matching of interest. At the "low" level,
+there is case analysis, which amounts to syntactic sugar (+ binding) for
+decision trees of switches on constant (word sized) integer values.
+
+However, primitive case analysis has a number of shortcomings which
+warrant a higher-level matching construct:
+
+* One often wants a logical view of data types, independent of representation,
+  rather than a concrete view tied to representation choices. This leads
+  toward the idea of views or active patterns.
+* It's often appealing to do "inverted" matching::
+
+        match True with
+        | foo (bar, baz) -> blah
+        | otherfunc quux -> blah
+        | ...
+
+  or perhaps against curried predicates::
+
+        match n with    // T
+        | (< 0) ->      // T -> Bool
+        | (> 0) ->      //
+
+  or perhaps string matching::
+
+        match s with
+        | /blarg/ -> hmm
+        | /frozz/ -> buzz
+        | otherString -> what
+        ...
+
+In the above cases, matching cannot (reasonably) be compiled to
+anything but sequential if-then-else tests. On the other hand, this
+allows patterns to involve tests of arbitrary complexity (such as bignum
+comparisons) and active patterns.
+
 Named Parameters
 ----------------
 
