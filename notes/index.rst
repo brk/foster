@@ -16,6 +16,8 @@ Foster Notes
    syntax
    arrays
    llvm
+   mutation
+   parallelism
    compiled-examples
    coro
    gc
