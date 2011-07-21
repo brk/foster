@@ -15,34 +15,16 @@
 #include <list>
 #include <vector>
 
-using std::string;
-
 using foster::SourceRange;
 
+class TypeAST;
 class PrettyPrintTypePass;
 class DumpTypeToProtobufPass;
 
-class IntAST;
-class TypeAST;
-class FnTypeAST;
-class RefTypeAST;
-class TupleTypeAST;
-
-string str(const TypeAST* type);
-
-bool hasEqualRepr(TypeAST* src, TypeAST* dst);
-bool arePhysicallyCompatible(const llvm::Type* src,
-                             const llvm::Type* dst);
-
-// TODO namespace foster { }
+std::string str(const TypeAST* type);
 
 class TypeAST {
 protected:
-  // Equivalent (equal or convertible) representation types
-  // is a necessary but not sufficient precondition for two
-  // types to be compatible. For example, nullable and non-
-  // nullable reference to T are both represented by type
-  // T*, but they are not always compatible.
   mutable const llvm::Type* repr;
   const SourceRange sourceRange;
 
@@ -58,20 +40,8 @@ public:
 
   virtual void show(PrettyPrintTypePass*    pass) = 0;
   virtual void dump(DumpTypeToProtobufPass* pass) = 0;
-  virtual bool isTypeVariable() { return false; }
 
   static TypeAST* i(int n);
-  static TypeAST* getVoid();
-
-  // In some situations, such as (for now)
-  // when a llvm::Module gives us a function type, we need
-  // to make a best effort at reconstruting a specific
-  // TypeAST tree based on the provided llvm::Type.
-  // The correct "long-term" approach is to design and
-  // emit interface definitions in parallel with compiled
-  // Modules, so that we don't lose e.g. nullability info
-  // in the first place.
-  static TypeAST* reconstruct(const llvm::Type* loweredType);
 };
 
 class TypeVariableAST : public TypeAST {
@@ -87,24 +57,31 @@ class TypeVariableAST : public TypeAST {
 public:
   virtual void show(PrettyPrintTypePass* pass);
   virtual void dump(DumpTypeToProtobufPass* pass);
-  virtual bool isTypeVariable() { return true; }
 
   const std::string& getTypeVariableName() { return typeVarName; }
 
   static TypeVariableAST* get(const std::string& name, const SourceRange& sourceRange);
 };
 
+class PrimitiveTypeAST : public TypeAST {
+  const std::string name; // Used for pretty printing
+  static std::map<const llvm::Type*, TypeAST*> thinWrappers;
+public:
+  explicit PrimitiveTypeAST(const std::string& typeName,
+                            const llvm::Type* underlyingType,
+                            const SourceRange& sourceRange)
+  : TypeAST("PrimitiveType", underlyingType, sourceRange), name(typeName) {}
+
+  virtual void show(PrettyPrintTypePass* pass);
+  virtual void dump(DumpTypeToProtobufPass* pass);
+  virtual const llvm::Type* getLLVMType() const { return this->repr; }
+  const std::string getName() { return name; }
+  static TypeAST* get(const std::string& name, const llvm::Type* loweredType);
+};
+
 class NamedTypeAST : public TypeAST {
   const std::string name;
   TypeAST* nonLLVMType;
-
-  explicit NamedTypeAST(const std::string& typeName,
-                        const llvm::Type* underlyingType,
-                        const SourceRange& sourceRange)
-       : TypeAST("NamedType", underlyingType, sourceRange),
-         name(typeName), nonLLVMType(NULL) {}
-
-  static std::map<const llvm::Type*, TypeAST*> thinWrappers;
 
 public:
   explicit NamedTypeAST(const std::string& typeName,
@@ -117,10 +94,6 @@ public:
   virtual void dump(DumpTypeToProtobufPass* pass);
   virtual const llvm::Type* getLLVMType() const;
   const std::string getName() { return name; }
-
-  // get() should be used for primitive LLVM types;
-  // reconstruct() should be used for derived llvm types.
-  static TypeAST* get(const std::string& name, const llvm::Type* loweredType);
 };
 
 class IndexableTypeAST : public TypeAST {

@@ -44,6 +44,10 @@ inline void recurse(PrettyPrintTypePass* pass, TypeAST* ast) {
 
 ////////////////////////////////////////////////////////////////////
 
+void PrimitiveTypeAST::show(PrettyPrintTypePass* pass){
+  pass->scan(PPToken(this->getName()));
+}
+
 void NamedTypeAST::show(PrettyPrintTypePass* pass){
   pass->scan(PPToken(this->getName()));
 }

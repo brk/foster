@@ -207,7 +207,7 @@ map<string, const llvm::Type*> gCachedLLVMTypes;
 
 TypeAST* TypeASTFor(const string& name) {
   if (gCachedLLVMTypes.count(name) == 1) {
-    return NamedTypeAST::get(name, gCachedLLVMTypes[name]);
+    return PrimitiveTypeAST::get(name, gCachedLLVMTypes[name]);
   } else if (TypeAST* ty = ParsingContext::lookupType(name)) {
     return ty;
   } else {

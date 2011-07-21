@@ -19,15 +19,6 @@ using std::map;
 using foster::SourceRange;
 using foster::ParsingContext;
 
-const char* getDefaultCallingConvRecon() {
-  //foster::EDiag() << "getDefaultCallingConvRecon()";
-  return foster::kDefaultFnLiteralCallingConvention;
-}
-
-bool hasEqualRepr(TypeAST* src, TypeAST* dst) {
-  return src->getLLVMType() == dst->getLLVMType();
-}
-
 const llvm::Type* llvmIntType(int n) {
   return llvm::IntegerType::get(llvm::getGlobalContext(), n);
 }
@@ -39,112 +30,27 @@ TypeAST::~TypeAST() {}
 
 TypeAST* TypeAST::i(int n) {
   std::stringstream ss; ss << "i" << n;
-  return NamedTypeAST::get(ss.str(), llvmIntType(n));
-}
-
-TypeAST* TypeAST::getVoid() {
-  return NamedTypeAST::get("void", llvm::Type::getVoidTy(llvm::getGlobalContext()));
-}
-
-struct TypeReconstructor {
-  TypeAST* recon(const llvm::Type* loweredType) {
-    if (loweredType->isVoidTy()) { return TypeAST::getVoid(); }
-
-    if (loweredType->isPointerTy()) {
-      const llvm::Type* pointee = loweredType->getContainedType(0);
-      if (TypeAST* s = seen[pointee]) {
-        if (s == (TypeAST*) 1 && !llvm::isa<llvm::StructType>(pointee)) {
-          llvm::outs() << "Recursive type: " << str(loweredType) << "\n";
-          return RefTypeAST::get(NamedTypeAST::get("bogus/opaque!", pointee));
-        } else {
-          return s;
-        }
-      }
-      return RefTypeAST::get(recon(pointee));
-    }
-
-    if (const llvm::FunctionType* fnty
-           = llvm::dyn_cast<const llvm::FunctionType>(loweredType)) {
-      ASSERT(false) << "cannot reconstruct function type " << str(fnty) << "\n";
-    /*
-      TypeAST* ret = recon(fnty->getReturnType());
-      vector<TypeAST*> args;
-      for (size_t i = 0; i < fnty->getNumParams(); ++i) {
-         args.push_back(recon(fnty->getParamType(i)));
-      }
-      return new FnTypeAST(ret, args, getDefaultCallingConvRecon());
-      */
-    }
-
-    if (const llvm::StructType* sty
-           = llvm::dyn_cast<const llvm::StructType>(loweredType)) {
-      seen[sty] = (TypeAST*) 1;
-      vector<TypeAST*> args;
-      for (size_t i = 0; i < sty->getNumElements(); ++i) {
-         args.push_back(recon(sty->getContainedType(i)));
-      }
-      seen[sty] = (TypeAST*) 0;
-      return TupleTypeAST::get(args);
-    }
-
-    if (loweredType->isArrayTy()) {
-      const llvm::ArrayType* arr =
-          llvm::dyn_cast<llvm::ArrayType>(loweredType);
-      return CArrayTypeAST::get(
-          recon(arr->getElementType()),
-          arr->getNumElements());
-    }
-
-    if (llvm::dyn_cast<const llvm::OpaqueType>(loweredType)) {
-      return NamedTypeAST::get("opaque", loweredType);
-    }
-
-    if (loweredType->isIntegerTy()) {
-      return NamedTypeAST::get(str(loweredType), loweredType);
-    }
-
-    llvm::outs() << "TypeReconstructor::reconstruct() did not recognize " << str(loweredType) << "\n";
-
-    return NamedTypeAST::get(str(loweredType), loweredType);
-  }
-
-  map<const llvm::Type*, TypeAST*> seen;
-};
-
-TypeAST* TypeAST::reconstruct(const llvm::Type* loweredType) {
-  TypeReconstructor tr; return tr.recon(loweredType);
+  return PrimitiveTypeAST::get(ss.str(), llvmIntType(n));
 }
 
 ////////////////////////////////////////////////////////////////////
 
-map<const llvm::Type*, TypeAST*> NamedTypeAST::thinWrappers;
+map<const llvm::Type*, TypeAST*> PrimitiveTypeAST::thinWrappers;
 
-TypeAST* NamedTypeAST::get(const std::string& name,
-                           const llvm::Type* loweredType) {
-  if (!loweredType) return NULL;
-  if (const llvm::DerivedType* derived
-                       = llvm::dyn_cast<const llvm::DerivedType>(loweredType)) {
-    if (llvm::dyn_cast<const llvm::IntegerType>(loweredType)) {
-      // fall through to non-derived case
-    } else if (name == "opaque") {
-      // fall through to non-derived case
-    } else {
-      llvm::errs() << "NamedTypeAST::get() warning: derived types should "
-                   " not be passed to NamedTypeAST::get(" << name << ")! Got: "
-                << str(loweredType) << "\n";
-      return TypeAST::reconstruct(derived);
-    }
-  }
-
+TypeAST* PrimitiveTypeAST::get(const std::string& name,
+                               const llvm::Type* loweredType) {
+  ASSERT(loweredType);
   TypeAST* tyast = thinWrappers[loweredType];
   if (tyast) { return tyast; }
-  tyast = new NamedTypeAST(name, loweredType, SourceRange::getEmptyRange());
+  tyast = new PrimitiveTypeAST(name, loweredType, SourceRange::getEmptyRange());
   thinWrappers[loweredType] = tyast;
   return tyast;
 }
 
+////////////////////////////////////////////////////////////////////
+
 const llvm::Type* NamedTypeAST::getLLVMType() const {
-  ASSERT(nonLLVMType || repr);
+  ASSERT(nonLLVMType);
   if (!repr) {
     repr = nonLLVMType->getLLVMType();
   }

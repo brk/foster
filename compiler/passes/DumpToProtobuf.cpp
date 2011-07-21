@@ -294,6 +294,9 @@ void setTagAndRange(pb::Type* target,
   }
 }
 
+void PrimitiveTypeAST::dump(DumpTypeToProtobufPass* pass) {
+  ASSERT(false) << "no dumping primitive types";
+}
 
 void NamedTypeAST::dump(DumpTypeToProtobufPass* pass) {
   setTagAndRange(pass->current, this, pb::Type::LLVM_NAMED);

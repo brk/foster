@@ -249,8 +249,8 @@ int main(int argc, char** argv) {
   mp_int =
     llvm::PointerType::getUnqual(mpz_struct_ty);
   module->addTypeName("mp_int", mp_int);
-  foster::ParsingContext::insertType("int",
-                   NamedTypeAST::get("int", mp_int));
+  foster::ParsingContext::insertType("Int",
+               PrimitiveTypeAST::get("Int", mp_int));
 
   foster_generic_coro_t = libfoster_bc->getTypeByName("struct.foster_generic_coro");
   ASSERT(foster_generic_coro_t != NULL);
