@@ -117,14 +117,36 @@ Value* getElementFromComposite(Value* compositeValue, Value* idxValue,
 
 ////////////////////////////////////////////////////////////////////
 
-// root should be an AllocaInst or a bitcast of such
-void markGCRoot(llvm::AllocaInst* stackslot,
-                llvm::Constant* meta,
-                CodegenPass* pass) {
+void markGCRootWithMetadata(llvm::AllocaInst* stackslot, CodegenPass* pass,
+                            llvm::Constant* const meta) {
+  llvm::Value* const vmeta = meta;
+  llvm::MDNode* metamdnode =
+            llvm::MDNode::get(stackslot->getContext(), &vmeta, 1);
+  stackslot->setMetadata("fostergcroot", metamdnode);
+
+  llvm::Function* F = builder.GetInsertBlock()->getParent();
+  llvm::BasicBlock& entryBlock = F->getEntryBlock();
+  ASSERT(pass->getCurrentAllocaPoint() != NULL) << F->getName();
+
+  // Make sure that all the calls to llvm.gcroot() happen in the entry block.
+  llvm::IRBuilder<> tmpBuilder(&entryBlock, pass->getCurrentAllocaPoint());
+  llvm::Value* root = tmpBuilder.CreateBitCast(stackslot,
+                         ptrTo(tmpBuilder.getInt8PtrTy()), "gcroot");
+
   llvm::Constant* llvm_gcroot = llvm::Intrinsic::getDeclaration(pass->mod,
                                                llvm::Intrinsic::gcroot);
   ASSERT(llvm_gcroot) << "unable to mark GC root, llvm.gcroot not found";
+  tmpBuilder.CreateCall2(llvm_gcroot, root, meta);
+}
 
+void markGCRootWithUnknownCtor(llvm::AllocaInst* stackslot, CodegenPass* pass) {
+  markGCRootWithMetadata(stackslot, pass,
+         llvm::ConstantPointerNull::get(builder.getInt8PtrTy()));
+}
+
+void markGCRoot(llvm::AllocaInst* stackslot,
+                llvm::Constant* meta,
+                CodegenPass* pass) {
   // If we don't have something more specific, try using
   // the lowered type's type map.
   if (!meta) {
@@ -141,19 +163,7 @@ void markGCRoot(llvm::AllocaInst* stackslot,
     meta = ConstantExpr::getBitCast(meta, builder.getInt8PtrTy());
   }
 
-  llvm::Value* const vmeta = meta;
-  llvm::MDNode* metamdnode =
-            llvm::MDNode::get(builder.getContext(), &vmeta, 1);
-  stackslot->setMetadata("fostergcroot", metamdnode);
-
-  llvm::Function* F = builder.GetInsertBlock()->getParent();
-  llvm::BasicBlock& entryBlock = F->getEntryBlock();
-  ASSERT(pass->getCurrentAllocaPoint() != NULL) << F->getName();
-  llvm::IRBuilder<> tmpBuilder(&entryBlock, pass->getCurrentAllocaPoint());
-  llvm::Value* root = tmpBuilder.CreateBitCast(stackslot,
-                         ptrTo(tmpBuilder.getInt8PtrTy()), "gcroot");
-
-  tmpBuilder.CreateCall2(llvm_gcroot, root, meta);
+  markGCRootWithMetadata(stackslot, pass, meta);
 }
 
 void CodegenPass::addEntryBB(Function* f) {
@@ -189,6 +199,22 @@ void CodegenPass::markAsNeedingImplicitLoads(llvm::Value* v) {
   this->needsImplicitLoad.insert(v);
 }
 
+llvm::AllocaInst*
+CodegenPass::storeAndMarkPointerAsGCRootUnknownCtor(llvm::Value* val) {
+  ASSERT(val->getType()->isPointerTy());
+
+  // allocate a slot for a T* on the stack
+  llvm::AllocaInst* stackslot = stackSlotWithValue(val, "stackref");
+  this->markAsNeedingImplicitLoads(stackslot);
+
+  markGCRootWithUnknownCtor(stackslot, this);
+
+  // Instead of returning the pointer (of type T*),
+  // we return the stack slot (of type T**) so that copying GC will be able to
+  // modify the stack slot effectively.
+  return stackslot;
+}
+
 // Unlike markGCRoot, this does not require the root be an AllocaInst
 // (though it should still be a pointer).
 // This function is intended for marking intermediate values. It stores
@@ -197,17 +223,9 @@ void CodegenPass::markAsNeedingImplicitLoads(llvm::Value* v) {
 //      TODO need to guarantee that the val passed to us is either
 //      a pointer to memalloc-ed memory, or a value that does not escape.
 llvm::AllocaInst*
-CodegenPass::storeAndMarkPointerAsGCRoot(llvm::Value* val,
-                                         ArrayOrNot arrayStatus) {
-  if (!val->getType()->isPointerTy()) {
-     llvm::AllocaInst* valptr = stackSlotWithValue(val, "ptrfromnonptr");
-     val = valptr;
-     // We end up with a stack slot pointing to a stack slot, rather than
-     // a stack slot pointing to a heap-allocated block.
-     // The garbage collector detects this and skips collection.
-  }
-
-  // val now has pointer type.
+CodegenPass::storeAndMarkPointerAsGCRootKnownCtor(llvm::Value* val,
+                                                  ArrayOrNot arrayStatus) {
+  ASSERT(val->getType()->isPointerTy());
 
   // allocate a slot for a T* on the stack
   llvm::AllocaInst* stackslot = stackSlotWithValue(val, "stackref");
@@ -238,7 +256,7 @@ CodegenPass::emitMalloc(const llvm::Type* ty) {
   llvm::Value* typemap = builder.CreateBitCast(ti, typemap_type);
   llvm::CallInst* mem = builder.CreateCall(memalloc_cell, typemap, "mem");
 
-  return storeAndMarkPointerAsGCRoot(
+  return storeAndMarkPointerAsGCRootKnownCtor(
                        builder.CreateBitCast(mem, ptrTo(ty), "ptr"),
                        NotArray);
 }
@@ -259,7 +277,7 @@ CodegenPass::emitArrayMalloc(const llvm::Type* elt_ty,
   llvm::Value* num_elts = builder.CreateSExt(n, builder.getInt64Ty(), "ext");
   llvm::CallInst* mem = builder.CreateCall2(memalloc, typemap, num_elts, "mem");
 
-  return storeAndMarkPointerAsGCRoot(
+  return storeAndMarkPointerAsGCRootKnownCtor(
                        builder.CreateBitCast(mem,
                               ArrayTypeAST::getZeroLengthTypeRef(elt_ty), "arr_ptr"),
                        YesArray);

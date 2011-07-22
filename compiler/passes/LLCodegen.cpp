@@ -575,7 +575,7 @@ llvm::AllocaInst* ensureImplicitStackSlot(llvm::Value* v, CodegenPass* pass) {
   }
 
   if (mightContainHeapPointers(v->getType())) {
-    return pass->storeAndMarkPointerAsGCRoot(v, NotArray);
+    return pass->storeAndMarkPointerAsGCRootUnknownCtor(v);
   } else {
     llvm::AllocaInst* slot = stackSlotWithValue(v, v->getNameStr() + "_addr");
     pass->markAsNeedingImplicitLoads(slot);
@@ -1067,7 +1067,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
     // at least not from Foster code...
     ASSERT(!callInst->getType()->getContainedType(0)->isPointerTy());
 
-    return pass->storeAndMarkPointerAsGCRoot(callInst, NotArray);
+    return pass->storeAndMarkPointerAsGCRootUnknownCtor(callInst);
   } else {
     return callInst;
   }

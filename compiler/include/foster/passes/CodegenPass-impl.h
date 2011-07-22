@@ -105,7 +105,8 @@ struct CodegenPass {
 
   Value* allocateMPInt();
 
-  llvm::AllocaInst* storeAndMarkPointerAsGCRoot(llvm::Value*, ArrayOrNot);
+  llvm::AllocaInst* storeAndMarkPointerAsGCRootKnownCtor(llvm::Value*, ArrayOrNot);
+  llvm::AllocaInst* storeAndMarkPointerAsGCRootUnknownCtor(llvm::Value*);
 
   Value* emitCoroCreateFn(const llvm::Type* retTy,
                           const llvm::Type* argTypes);
