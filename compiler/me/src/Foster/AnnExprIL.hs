@@ -65,9 +65,9 @@ aiFnName f = identPrefix (aiFnIdent f)
 
 type KnownProcNames = Set String
 
-ail :: Context TypeIL -> KnownProcNames -> AnnExpr -> Tc AIExpr
-ail ctx knownProcNames ae =
-    let q = ail ctx knownProcNames in
+ail :: KnownProcNames -> AnnExpr -> Tc AIExpr
+ail knownProcNames ae =
+    let q = ail knownProcNames in
     case ae of
         AnnBool _rng b             -> return $ AIBool         b
         AnnCompiles _rng (CompilesResult ooe) -> do
@@ -83,7 +83,7 @@ ail ctx knownProcNames ae =
                                          return $ AIInt ti int
         AnnLetVar _rng id  a b     -> do [x,y]   <- mapM q [a,b]
                                          return $ AILetVar id x y
-        AnnLetFuns _rng ids fns e  -> do fnsi <- mapM (aiFnOf ctx knownProcNames) fns
+        AnnLetFuns _rng ids fns e  -> do fnsi <- mapM (aiFnOf knownProcNames) fns
                                          ei <- q e
                                          return $ AILetFuns ids fnsi ei
         AnnAlloc _rng   a          -> do [x] <- mapM q [a]
@@ -142,7 +142,7 @@ ail ctx knownProcNames ae =
                   then return $ E_AIVar VarProc  (TypedId ti id)
                   else return $ E_AIVar VarLocal (TypedId ti id)
 
-        E_AnnFn annFn              -> do aif <- aiFnOf ctx knownProcNames annFn
+        E_AnnFn annFn              -> do aif <- aiFnOf knownProcNames annFn
                                          return $ E_AIFn aif
         E_AnnTyApp _rng t e argty  -> do ti <- ilOf t
                                          at <- ilOf argty
@@ -162,12 +162,12 @@ ilPrimFor ti id =
         Just (ty, op) -> op
         Nothing       -> ILNamedPrim (TypedId ti id)
 
-aiFnOf :: Context TypeIL -> KnownProcNames -> AnnFn -> Tc AIFn
-aiFnOf ctx procNames f = do
+aiFnOf :: KnownProcNames -> AnnFn -> Tc AIFn
+aiFnOf procNames f = do
  ft <- ilOf (annFnType f)
  fnVars <- mapM (\(TypedId t i) -> do ty <- ilOf t
                                       return $ TypedId ty i) (annFnVars f)
- body <- ail ctx procNames (annFnBody f)
+ body <- ail procNames (annFnBody f)
  return $ AiFn { aiFnType  = ft
                , aiFnIdent = annFnIdent f
                , aiFnVars  = fnVars

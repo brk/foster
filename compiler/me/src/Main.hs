@@ -140,7 +140,7 @@ convertTypeILofAST mod ctx_ast oo_annfns = do
   decls <- mapM convertDecl (moduleASTdecls mod)
   ctx_il <- liftContextM ilOf ctx_ast
   let knownProcNames = Set.fromList $ concatMap fnNames (moduleASTfunctions mod)
-  aiFns <- mapM (\ae -> tcInject ae (ail ctx_il knownProcNames)) oo_annfns
+  aiFns <- mapM (\ae -> tcInject ae (ail knownProcNames)) oo_annfns
   let m = ModuleAST [f | (E_AIFn f) <- aiFns]
                     decls (moduleASTsourceLines mod)
   return (ctx_il, m)
