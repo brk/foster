@@ -174,12 +174,12 @@ struct LLCallPrimOp : public LLExpr {
 
 struct LLTuple : public LLExpr {
   std::vector<LLVar*> vars;
-  bool isClosureEnvironment;
-  LLAllocate*     allocator;
+  const char* typeName;
+  LLAllocate* allocator;
 
   explicit LLTuple(const std::vector<LLVar*>& vars, LLAllocate* a)
     : LLExpr("LLTuple"), vars(vars),
-      isClosureEnvironment(false), allocator(a) {}
+      typeName("tuple"), allocator(a) {}
   llvm::Value* codegenStorage(CodegenPass* pass);
   void codegenTo(CodegenPass* pass, llvm::Value* tup_ptr);
   virtual llvm::Value* codegen(CodegenPass* pass);
@@ -215,7 +215,7 @@ struct LLClosure {
                      const std::string& _proc,
                      LLTuple* _env)
     : varname(_varn), envname(_envn), procname(_proc), env(_env) {
-   env->isClosureEnvironment = true;
+   env->typeName = "env";
  }
  llvm::Value* codegenStorage(CodegenPass* pass);
  llvm::Value* codegenClosure(CodegenPass* pass, llvm::Value* envSlot);

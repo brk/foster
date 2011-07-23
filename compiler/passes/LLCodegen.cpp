@@ -1085,8 +1085,9 @@ llvm::Value* LLTuple::codegenStorage(CodegenPass* pass) {
 
   if (tuplety) {
     const llvm::Type* tupleType = tuplety->getLLVMTypeUnboxed();
-    const char* typeName = (isClosureEnvironment) ? "env" : "tuple";
-    registerType(tupleType, typeName, pass->mod, NotArray, isClosureEnvironment);
+    bool isClosureEnvironment = this->typeName == string("env");
+    registerType(tupleType, this->typeName, pass->mod,
+                 NotArray, isClosureEnvironment);
   }
 
   return allocator->codegen(pass);
