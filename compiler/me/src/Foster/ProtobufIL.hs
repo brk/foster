@@ -139,7 +139,7 @@ dumpExpr x@(ILBool b) =
                     , PbExpr.tag   = IL_BOOL
                     , PbExpr.type' = Just $ dumpType (typeIL x)  }
 
-dumpExpr (ILVar (IL_Var (TypedId t i))) = dumpILVar t i
+dumpExpr (ILVar (TypedId t i)) = dumpILVar t i
 
 dumpExpr x@(ILTuple vs) =
     P'.defaultValue { PbExpr.parts = fromList [dumpExpr $ ILVar v | v <- vs]
@@ -233,7 +233,7 @@ dumpClosureWithName (varid, ILClosure procid envid captvars) =
     Closure { varname  = dumpIdent varid
             , procid   = u8fromString (identPrefix procid)
             , envid    = dumpIdent envid
-            , env      = dumpExpr (ILTuple (map localVar captvars)) }
+            , env      = dumpExpr (ILTuple captvars) }
 
 dumpDecisionTree (DT_Fail) =
     P'.defaultValue { PbDecisionTree.tag = DT_FAIL }

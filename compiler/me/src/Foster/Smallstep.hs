@@ -74,8 +74,8 @@ data SSProcDef = SSProcDef { ssProcIdent      :: Ident
 -- There is a trivial translation from ILExpr to SSTerm...
 ssTermOfExpr :: ILExpr -> SSTerm
 ssTermOfExpr expr =
-  let tr = ssTermOfExpr in
-  let idOf v = ilVarLift tidIdent v in
+  let tr   = ssTermOfExpr in
+  let idOf = tidIdent     in
   case expr of
     ILBool b               -> SSTmValue $ SSBool b
     ILInt t i              -> SSTmValue $ SSInt $ litIntValue i
