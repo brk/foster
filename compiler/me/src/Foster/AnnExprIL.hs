@@ -6,8 +6,6 @@
 
 module Foster.AnnExprIL where
 
-import Data.Set(Set)
-import Data.Set as Set(member)
 import Data.Map as Map(lookup)
 
 import Foster.Base
@@ -63,11 +61,9 @@ data AIFn = AiFn { aiFnType  :: TypeIL
 
 aiFnName f = identPrefix (aiFnIdent f)
 
-type KnownProcNames = Set String
-
-ail :: KnownProcNames -> AnnExpr -> Tc AIExpr
-ail knownProcNames ae =
-    let q = ail knownProcNames in
+ail :: AnnExpr -> Tc AIExpr
+ail ae =
+    let q = ail in
     case ae of
         AnnBool _rng b             -> return $ AIBool         b
         AnnCompiles _rng (CompilesResult ooe) -> do
@@ -83,7 +79,7 @@ ail knownProcNames ae =
                                          return $ AIInt ti int
         AnnLetVar _rng id  a b     -> do [x,y]   <- mapM q [a,b]
                                          return $ AILetVar id x y
-        AnnLetFuns _rng ids fns e  -> do fnsi <- mapM (aiFnOf knownProcNames) fns
+        AnnLetFuns _rng ids fns e  -> do fnsi <- mapM aiFnOf fns
                                          ei <- q e
                                          return $ AILetFuns ids fnsi ei
         AnnAlloc _rng   a          -> do [x] <- mapM q [a]
@@ -136,13 +132,11 @@ ail knownProcNames ae =
 
                 otherwise -> do bi <- q b ; return $ AICall ti bi argsi
 
-        E_AnnVar _rng (TypedId t id)-> do
-                ti <- ilOf t
-                if isProcType ti || Set.member (identPrefix id) knownProcNames
-                  then return $ E_AIVar VarProc  (TypedId ti id)
-                  else return $ E_AIVar VarLocal (TypedId ti id)
+        E_AnnVar _rng v ns -> do
+                vv <- aiVar v
+                return $ E_AIVar ns vv
 
-        E_AnnFn annFn              -> do aif <- aiFnOf knownProcNames annFn
+        E_AnnFn annFn              -> do aif <- aiFnOf annFn
                                          return $ E_AIFn aif
         E_AnnTyApp _rng t e argty  -> do ti <- ilOf t
                                          at <- ilOf argty
@@ -154,20 +148,19 @@ coroPrimFor "coro_invoke" = Just $ CoroInvoke
 coroPrimFor "coro_yield"  = Just $ CoroYield
 coroPrimFor _ = Nothing
 
-isProcType (FnTypeIL _ _ _ FT_Proc) = True
-isProcType _ = False
-
 ilPrimFor ti id =
   case Map.lookup (identPrefix id) gFosterPrimOpsTable of
         Just (ty, op) -> op
         Nothing       -> ILNamedPrim (TypedId ti id)
 
-aiFnOf :: KnownProcNames -> AnnFn -> Tc AIFn
-aiFnOf procNames f = do
+aiVar (TypedId t i) = do ty <- ilOf t
+                         return $ TypedId ty i
+
+aiFnOf :: AnnFn -> Tc AIFn
+aiFnOf f = do
  ft <- ilOf (annFnType f)
- fnVars <- mapM (\(TypedId t i) -> do ty <- ilOf t
-                                      return $ TypedId ty i) (annFnVars f)
- body <- ail procNames (annFnBody f)
+ fnVars <- mapM aiVar (annFnVars f)
+ body <- ail (annFnBody f)
  return $ AiFn { aiFnType  = ft
                , aiFnIdent = annFnIdent f
                , aiFnVars  = fnVars

@@ -6,6 +6,7 @@ import Control.Monad(liftM, forM_, forM)
 import Debug.Trace(trace)
 import qualified Data.Text as T
 import qualified Data.Map as Map(lookup)
+import Data.Set as Set(member)
 
 import System.Console.ANSI
 
@@ -160,25 +161,28 @@ typecheck ctx expr maybeExpTy =
                                      tb <- typecheck ctx b Nothing
                                      typecheckSubscript ctx rng ta (typeAST ta) tb maybeExpTy
         E_TupleAST (TupleAST rng exprs) -> typecheckTuple ctx exprs maybeExpTy
-
-        E_VarAST rng v -> case termVarLookup (evarName v) (contextBindings ctx) of
-            Just avar -> return $ E_AnnVar rng avar
-            Nothing   ->
-              case termVarLookup (evarName v) (primitiveBindings ctx) of
-                Just avar -> return $ AnnPrimitive rng avar
-                Nothing   -> tcFails [out $ "Unknown variable " ++ (evarName v)
-                                         ++ showSourceRange rng]
-
-        E_TyApp rng e t -> typecheckTyApp ctx rng e t maybeExpTy
-
-        E_Case rng a branches -> typecheckCase ctx rng a branches maybeExpTy
-
+        E_VarAST rng v        -> typecheckVar   ctx rng v
+        E_TyApp rng e t       -> typecheckTyApp ctx rng e t maybeExpTy
+        E_Case rng a branches -> typecheckCase  ctx rng a branches maybeExpTy
         E_CompilesAST rng me -> case me of
             Nothing -> return $ AnnCompiles rng (CompilesResult $ Errors [out $ "parse error"])
             Just e -> do
                 outputOrE <- tcIntrospect (typecheck ctx e Nothing)
                 return $ AnnCompiles rng (CompilesResult outputOrE)
 
+-----------------------------------------------------------------------
+typecheckVar ctx rng v =
+  case termVarLookup (evarName v) (contextBindings ctx) of
+    Just avar@(TypedId t id) ->
+              let ns = if Set.member (show id) (contextKnownProcs ctx)
+                         then VarProc
+                         else VarLocal
+             in return $ E_AnnVar rng avar ns
+    Nothing   ->
+      case termVarLookup (evarName v) (primitiveBindings ctx) of
+        Just avar -> return $ AnnPrimitive rng avar
+        Nothing   -> tcFails [out $ "Unknown variable " ++ (evarName v)
+                                 ++ showSourceRange rng]
 -----------------------------------------------------------------------
 
 {-

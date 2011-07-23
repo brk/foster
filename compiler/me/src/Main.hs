@@ -120,6 +120,16 @@ mapFoldM (a:as) b1 f = do
     (cs2, b3) <- mapFoldM as b2 f
     return (cs1 ++ cs2, b3)
 
+knownProcNames mod =
+  Set.fromList $ concatMap fnNames (moduleASTfunctions mod) ++
+                 concatMap procNames (moduleASTdecls mod)
+  where
+        procNames (name, ty) | isProcType ty = [name]
+                             | otherwise     = []
+          where isProcType (FnTypeAST _ _ _ FT_Proc) = True
+                isProcType  _                        = False
+
+
 typecheckModule :: Bool -> ModuleAST FnAST TypeAST -> TcEnv
                         -> IO (OutputOr (Context TypeIL, ModuleAST AIFn TypeIL))
 typecheckModule verboseMode mod tcenv0 = do
@@ -128,7 +138,7 @@ typecheckModule verboseMode mod tcenv0 = do
     let declBindings = computeContextBindings (moduleASTdecls mod)
     let sortedFns = buildCallGraph fns declBindings -- :: [SCC FnAST]
     putStrLn $ "Function SCC list : " ++ show [(fnName f, fnFreeVariables f declBindings) | fns <- sortedFns, f <- Graph.flattenSCC fns]
-    let ctx0 = Context declBindings primBindings verboseMode
+    let ctx0 = Context declBindings primBindings verboseMode (knownProcNames mod)
     (annFns, (ctx, tcenv)) <- mapFoldM sortedFns (ctx0, tcenv0) typecheckFnSCC
     unTc tcenv (convertTypeILofAST mod ctx annFns)
 
@@ -139,8 +149,7 @@ convertTypeILofAST :: ModuleAST FnAST TypeAST
 convertTypeILofAST mod ctx_ast oo_annfns = do
   decls <- mapM convertDecl (moduleASTdecls mod)
   ctx_il <- liftContextM ilOf ctx_ast
-  let knownProcNames = Set.fromList $ concatMap fnNames (moduleASTfunctions mod)
-  aiFns <- mapM (\ae -> tcInject ae (ail knownProcNames)) oo_annfns
+  aiFns <- mapM (\ae -> tcInject ae ail) oo_annfns
   let m = ModuleAST [f | (E_AIFn f) <- aiFns]
                     decls (moduleASTsourceLines mod)
   return (ctx_il, m)
@@ -156,10 +165,10 @@ liftBinding f (TermVarBinding s (TypedId t i)) = do
   return $ TermVarBinding s (TypedId t2 i)
 
 liftContextM :: Monad m => (t1 -> m t2) -> Context t1 -> m (Context t2)
-liftContextM f (Context cb pb vb) = do
+liftContextM f (Context cb pb vb kp) = do
   cb' <- mapM (liftBinding f) cb
   pb' <- mapM (liftBinding f) pb
-  return $ Context cb' pb' vb
+  return $ Context cb' pb' vb kp
 
 liftOutput :: (a -> OutputOr b) -> OutputOr a -> OutputOr b
 liftOutput f ooa =
