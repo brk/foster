@@ -28,7 +28,7 @@ data AnnExpr =
         -- because they are compiled differently from non-recursive closures.
         | AnnLetFuns    ESourceRange [Ident] [AnnFn] AnnExpr
         -- Use of bindings
-        | E_AnnVar      ESourceRange AnnVar VarNamespace
+        | E_AnnVar      ESourceRange AnnVar
         | AnnPrimitive  ESourceRange AnnVar
         | AnnCall       ESourceRange TypeAST AnnExpr AnnTuple
         -- Mutable ref cells
@@ -80,7 +80,7 @@ typeAST annexpr =
      (AnnStore _rng t _ _)   -> t
      (AnnSubscript _r t _ _) -> t
      (AnnCase _rng t _ _)    -> t
-     (E_AnnVar _rng tid _ns) -> tidType tid
+     (E_AnnVar _rng tid)     -> tidType tid
      (AnnPrimitive _rng tid) -> tidType tid
      (E_AnnTyApp _rng substitutedTy tm tyArgs) -> substitutedTy
 
@@ -105,18 +105,18 @@ instance Structured AnnExpr where
             AnnTuple     es         -> out $ "AnnTuple     "
             AnnCase _rng t e bs     -> out $ "AnnCase      "
             AnnPrimitive _r tid     -> out $ "AnnPrimitive " ++ show tid
-            E_AnnVar _r tid _ns     -> out $ "AnnVar       " ++ show tid
+            E_AnnVar _r tid         -> out $ "AnnVar       " ++ show tid
             E_AnnFn annFn           -> out $ "AnnFn " ++ fnNameA annFn ++ " // " ++ (show $ annFnBoundNames annFn) ++ " :: " ++ show (annFnType annFn)
             E_AnnTyApp _rng t e argty -> out $ "AnnTyApp     [" ++ show argty ++ "] :: " ++ show t
     childrenOf e =
         case e of
-            AnnBool _rng    b                    -> []
+            AnnBool {}                           -> []
             AnnCall  r t b argtup                -> b:(annTupleExprs argtup)
             AnnCompiles _rng (CompilesResult (OK e))     -> [e]
             AnnCompiles _rng (CompilesResult (Errors _)) -> []
             AnnIf _rng t  a b c                  -> [a, b, c]
             AnnUntil _rng t  a b                 -> [a, b]
-            AnnInt   _rng t _                    -> []
+            AnnInt {}                            -> []
             E_AnnFn annFn                        -> [annFnBody annFn]
             AnnLetVar _rng _ a b                 -> [a, b]
             AnnLetFuns _rng ids fns e            -> (map E_AnnFn fns) ++ [e]
@@ -126,16 +126,16 @@ instance Structured AnnExpr where
             AnnSubscript _rng t a b              -> [a, b]
             AnnTuple tup                         -> annTupleExprs tup
             AnnCase _rng t e bs                  -> e:(map snd bs)
-            E_AnnVar     _rng v _ns              -> []
-            AnnPrimitive _rng v                  -> []
+            E_AnnVar {}                          -> []
+            AnnPrimitive {}                      -> []
             E_AnnTyApp _rng t a argty            -> [a]
 
 -----------------------------------------------------------------------
 
 instance AExpr AnnExpr where
     freeIdents e = case e of
-        E_AnnVar _rng v _ns -> [tidIdent v]
-        AnnPrimitive _rng v -> []
+        E_AnnVar _rng v     -> [tidIdent v]
+        AnnPrimitive {}     -> []
         AnnLetVar _rng id a b     -> freeIdents a ++ (freeIdents b `butnot` [id])
         AnnCase _rng _t e patbnds -> freeIdents e ++ (concatMap patBindingFreeIds patbnds)
         -- Note that all free idents of the bound expr are free in letvar,
@@ -170,7 +170,7 @@ instance SourceRanged AnnExpr where
       AnnSubscript rng t a b      -> rng
       AnnTuple tup                -> annTupleRange tup
       AnnCase rng t e bs          -> rng
-      E_AnnVar     rng v _ns      -> rng
+      E_AnnVar     rng v          -> rng
       AnnPrimitive rng v          -> rng
       E_AnnTyApp rng t a argty    -> rng
 

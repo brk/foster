@@ -70,7 +70,7 @@ data ILExpr =
         | ILArrayPoke          ILVar ILVar ILVar
         | ILTyApp       TypeIL ILExpr TypeIL
         deriving (Show)
-data ILVar = IL_Var     AIVar  VarNamespace deriving (Show)
+data ILVar = IL_Var     AIVar deriving (Show)
 data AllocMemRegion = MemRegionStack
                     | MemRegionGlobalHeap
 data ILAllocInfo = ILAllocInfo AllocMemRegion (Maybe ILVar)
@@ -112,7 +112,7 @@ ilmPutProc p_action = do
 
 fakeCloEnvType = TupleTypeIL []
 
-localVar v = IL_Var v VarLocal
+localVar v = IL_Var v
 
 closureConvertAndLift :: Context TypeIL
                       -> (ModuleAST AIFn TypeIL)
@@ -142,7 +142,7 @@ closureConvert ctx expr =
         case expr of
             AIBool b          -> return $ ILBool b
             AIInt t i         -> return $ ILInt t i
-            E_AIVar ns v      -> return $ ILVar $ IL_Var v ns
+            E_AIVar v         -> return $ ILVar $ IL_Var v
             E_AIPrim p -> error $ "ILExpr.closureConvert: Should have detected prim " ++ show p
             AIIf      t  a b c    -> do x <- ilmFresh ".ife"
                                         [a', b', c'] <- mapM g [a, b, c]
@@ -208,7 +208,7 @@ closureConvert ctx expr =
             -- special-case optimization for {...}()
             x@(E_AIFn aiFn)        -> do
                 clo_id <- ilmFresh "lit_clo"
-                let clovar = E_AIVar VarLocal $ TypedId (typeAI x) clo_id
+                let clovar = E_AIVar $ TypedId (typeAI x) clo_id
                 g (AILetFuns [clo_id] [aiFn] clovar)
 
             AICall    t b es -> do
@@ -224,12 +224,12 @@ closureConvert ctx expr =
                                     let procid = (ilProcIdent newproc)
                                     let (argtys, retty, cc) = preProcType newproc
                                     let procty = FnTypeIL argtys retty cc FT_Proc
-                                    let p = IL_Var (TypedId procty procid) VarProc
+                                    let p = IL_Var (TypedId procty procid)
                                     let freelocals = map localVar freevars
                                     nestedLets cargs (\vars -> ILCall t p (freelocals ++ vars))
 
-                    (E_AIPrim p)   -> do nestedLets cargs (\vars -> (ILCallPrim t p vars))
-                    (E_AIVar ns v) -> do nestedLets cargs (\vars -> (ILCall t (IL_Var v ns) vars))
+                    (E_AIPrim p) -> do nestedLets cargs (\vars -> (ILCallPrim t p vars))
+                    (E_AIVar v)  -> do nestedLets cargs (\vars -> (ILCall t (IL_Var v) vars))
                     _ -> do cb <- g b; nestedLets (cb:cargs) (\(vb:vars) -> (ILCall t vb vars))
 
 closureConvertedProc :: [AIVar] -> AIFn -> ILExpr -> ILM ILProcDef
@@ -368,7 +368,7 @@ closureOfAIFn ctx infoMap (closedNames, (self_id, fn)) = do
                    let norange = EMissingSourceRange "closureConvertAIFn" in
                    let patVar a = P_Variable norange (tidIdent a) in
                    closureConvert ctx $
-                     AICase (typeAI oldbody) (E_AIVar VarLocal envVar)
+                     AICase (typeAI oldbody) (E_AIVar envVar)
                         [ (P_Tuple norange (map patVar uniqFreeVars)
                           , oldbody) ]
         proc <- ilmPutProc (closureConvertedProc (envVar:(aiFnVars f)) f newbody)
@@ -380,9 +380,9 @@ closureOfAIFn ctx infoMap (closedNames, (self_id, fn)) = do
       q expr where
       fq (AiFn ty id vars body rng) = (AiFn ty id vars (q body) rng)
       q e = case e of
-        AIBool b         -> e
-        AIInt t i        -> e
-        E_AIVar _ns v    -> e -- We don't alter standalone references to closures
+        AIBool  {}       -> e
+        AIInt   {}       -> e
+        E_AIVar {}       -> e -- We don't alter standalone references to closures
         E_AIPrim p       -> e
         AIIf t a b c         -> AIIf      t (q a) (q b) (q c)
         AIUntil t a b        -> AIUntil   t (q a) (q b)
@@ -398,21 +398,21 @@ closureOfAIFn ctx infoMap (closedNames, (self_id, fn)) = do
         AICase t e bs          -> AICase t (q e) [(p, q e) | (p, e) <- bs]
         E_AITyApp  t e argty   -> E_AITyApp t (q e) argty
         -- The only really interesting case:
-        AICall     t (E_AIVar ns v) es
+        AICall     t (E_AIVar v) es
             | Map.member (tidIdent v) infoMap ->
                 let (f, envid) = infoMap Map.! (tidIdent v) in
                 let procId = TypedId (aiFnType f) (aiFnIdent f) in
                 -- We don't know the env type here, since we don't
                 -- pre-collect the set of closed-over envs from other procs.
-                let env = E_AIVar VarLocal (TypedId fakeCloEnvType envid) in
+                let env = E_AIVar (TypedId fakeCloEnvType envid) in
                           -- This works because (A) we never type check ILExprs,
                           -- and (B) the LLVM codegen doesn't check the type field in this case.
                 -- Call proc, passing env as first parameter.
-                AICall t (E_AIVar VarProc procId) (env:(map q es))
+                AICall t (E_AIVar procId) (env:(map q es))
         -- TODO when is guard above false?
         AICall   t b es -> AICall   t (q b) (map q es)
 
-ilVarLift f (IL_Var v _) = f v
+ilVarLift f (IL_Var v) = f v
 
 typeIL :: ILExpr -> TypeIL
 typeIL (ILBool _)          = NamedTypeIL "i1"
@@ -436,7 +436,7 @@ typeIL (ILTyApp overallType tm tyArgs) = overallType
 
 typeAI :: AIExpr -> TypeIL
 typeAI (AIBool _)          = NamedTypeIL "i1"
-typeAI (E_AIVar _ns tid)   = tidType tid
+typeAI (E_AIVar tid)       = tidType tid
 typeAI (E_AIPrim (ILNamedPrim tid)) = tidType tid
 typeAI (E_AIPrim p) = error $ "typeAI not defined for prim " ++ show p
 typeAI (AIInt t _)         = t
@@ -475,8 +475,10 @@ instance Structured ILExpr where
             ILArrayRead  t a b  -> out $ "ILArrayRead " ++ " :: " ++ show t
             ILArrayPoke v b i   -> out $ "ILArrayPoke "
             ILTuple     es      -> out $ "ILTuple     (size " ++ (show $ length es) ++ ")"
-            ILVar (IL_Var (TypedId t i) ns)
-                                -> out $ "ILVar(" ++ show ns ++ "):   " ++ show i ++ " :: " ++ show t
+            ILVar (IL_Var (TypedId t (GlobalSymbol name)))
+                                -> out $ "ILVar(Global):   " ++ name ++ " :: " ++ show t
+            ILVar (IL_Var (TypedId t i))
+                                -> out $ "ILVar(Local):   " ++ show i ++ " :: " ++ show t
             ILTyApp t e argty   -> out $ "ILTyApp     [" ++ show argty ++ "] :: " ++ show t
         where
             showClosurePair :: (Ident, ILClosure) -> String

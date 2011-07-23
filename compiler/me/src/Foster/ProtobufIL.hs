@@ -126,7 +126,7 @@ dumpExpr (ILCall     t base args)
         = dumpCall t (dumpExpr $ ILVar base) args
 
 dumpExpr (ILCallPrim t (ILNamedPrim base) args)
-        = dumpCall t (dumpProcRef base) args
+        = dumpCall t (dumpGlobalSymbol base) args
 
 dumpExpr (ILCallPrim t (ILCoroPrim c a r) args)
         = dumpCall t (dumpCoroPrim c a r) args
@@ -139,7 +139,7 @@ dumpExpr x@(ILBool b) =
                     , PbExpr.tag   = IL_BOOL
                     , PbExpr.type' = Just $ dumpType (typeIL x)  }
 
-dumpExpr (ILVar (IL_Var (TypedId t i) ns)) = dumpILVar t i ns
+dumpExpr (ILVar (IL_Var (TypedId t i))) = dumpILVar t i
 
 dumpExpr x@(ILTuple vs) =
     P'.defaultValue { PbExpr.parts = fromList [dumpExpr $ ILVar v | v <- vs]
@@ -267,13 +267,13 @@ dumpOcc offs =
 
 -----------------------------------------------------------------------
 
-dumpProcRef base =
-    P'.defaultValue { PbExpr.tag   = IL_PROC_REF
+dumpGlobalSymbol base =
+    P'.defaultValue { PbExpr.tag   = IL_GLOBAL_SYMBOL
                     , PbExpr.name  = Just $ dumpIdent (tidIdent base)
                     , PbExpr.type' = Just $ dumpType (tidType  base) }
 
-dumpILVar t i VarProc = dumpProcRef (TypedId t i)
-dumpILVar t i VarLocal =
+dumpILVar t i@(GlobalSymbol _) = dumpGlobalSymbol (TypedId t i)
+dumpILVar t i =
     P'.defaultValue { PbExpr.name  = Just $ dumpIdent i
                     , PbExpr.tag   = IL_VAR
                     , PbExpr.type' = Just $ dumpType t  }

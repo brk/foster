@@ -149,14 +149,16 @@ struct LLVar : public LLExpr {
   const string getName() const { return name; }
 };
 
-struct LLProcRef : public LLVar {
-  LLProcRef(std::string name) : LLVar(name) {}
+struct LLGlobalSymbol : public LLVar {
+  LLGlobalSymbol(std::string name) : LLVar(name) {}
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
 // base(args)
 struct LLCall : public LLExpr {
   LLExpr* base;
+  // Calls may be to non-var bases (LLCoroPrim, etc)
+  // because we lazily generate polymorphic instantiations.
   std::vector<LLVar*> args;
   bool callMightTriggerGC;
   LLCall(LLExpr* base, std::vector<LLVar*>& args, bool mayGC)

@@ -217,7 +217,7 @@ llvm::Value* LLBool::codegen(CodegenPass* pass) {
   return builder.getInt1(this->boolValue);
 }
 
-llvm::Value* LLProcRef::codegen(CodegenPass* pass) {
+llvm::Value* LLGlobalSymbol::codegen(CodegenPass* pass) {
   return pass->lookupFunctionOrDie(this->name);
 }
 
@@ -996,25 +996,26 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
     // Call to top level function
     FT = F->getFunctionType();
     callingConv = F->getCallingConv(); haveSetCallingConv = true;
-  } else if (FnTypeAST* closureFnType = dynamic_cast<FnTypeAST*>(base->type)) {
-    // If our base has a Foster-level function type but not a
-    // LLVM-level function type, it must mean we're calling a closure.
-    callingConv = closureFnType->getCallingConventionID(); haveSetCallingConv = true;
+  } else if (FnTypeAST* fnType = dynamic_cast<FnTypeAST*>(base->type)) {
+    callingConv = fnType->getCallingConventionID(); haveSetCallingConv = true;
+    if (fnType->isMarkedAsClosure()) {
+      // The function type here includes a parameter for the
+      // generic environment type, e.g. (i32 => i32) becomes
+      // i32 (i8*, i32).
+      FT = dyn_cast<const FunctionType>(
+            genericClosureVersionOf(fnType)->getLLVMFnType());
 
-    // The function type here includes a parameter for the
-    // generic environment type, e.g. (i32 => i32) becomes
-    // i32 (i8*, i32).
-    FT = dyn_cast<const FunctionType>(
-          genericClosureVersionOf(closureFnType)->getLLVMFnType());
+      // Load code and env pointers from closure...
+      llvm::Value* envPtr =
+           getElementFromComposite(FV, getConstantInt32For(1), "getCloEnv");
+      FV = getElementFromComposite(FV, getConstantInt32For(0), "getCloCode");
 
-    // Load code and env pointers from closure...
-    llvm::Value* envPtr =
-         getElementFromComposite(FV, getConstantInt32For(1), "getCloEnv");
-    FV = getElementFromComposite(FV, getConstantInt32For(0), "getCloCode");
-
-    // Pass env pointer as first parameter to function.
-    ASSERT(valArgs.empty());
-    valArgs.push_back(envPtr);
+      // Pass env pointer as first parameter to function.
+      ASSERT(valArgs.empty());
+      valArgs.push_back(envPtr);
+    } else {
+      FT = fnType->getLLVMFnType();
+    }
   } else {
     ASSERT(false);
   }

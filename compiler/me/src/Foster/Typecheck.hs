@@ -171,13 +171,18 @@ typecheck ctx expr maybeExpTy =
                 return $ AnnCompiles rng (CompilesResult outputOrE)
 
 -----------------------------------------------------------------------
+reclassify VarProc  id@(GlobalSymbol {}) = id
+reclassify VarProc  id@(Ident {}) = error $ "reclassify local->global? " ++ show id --GlobalSymbol (identPrefix id)
+reclassify VarLocal id@(Ident {}) = id
+reclassify VarLocal id@(GlobalSymbol {}) = error $ "reclassify global->local? " ++ show id
+
 typecheckVar ctx rng v =
   case termVarLookup (evarName v) (contextBindings ctx) of
     Just avar@(TypedId t id) ->
               let ns = if Set.member (show id) (contextKnownProcs ctx)
                          then VarProc
                          else VarLocal
-             in return $ E_AnnVar rng avar ns
+             in return $ E_AnnVar rng (TypedId t (reclassify ns id))
     Nothing   ->
       case termVarLookup (evarName v) (primitiveBindings ctx) of
         Just avar -> return $ AnnPrimitive rng avar

@@ -291,8 +291,8 @@ LLExpr* parseCoroPrim(const pb::Expr& e) {
   }
 }
 
-LLExpr* parseVar(const pb::Expr& e)     { return new LLVar(e.name()); }
-LLExpr* parseProcRef(const pb::Expr& e) { return new LLProcRef(e.name()); }
+LLExpr* parseVar(const pb::Expr& e)          { return new LLVar(e.name()); }
+LLExpr* parseGlobalSymbol(const pb::Expr& e) { return new LLGlobalSymbol(e.name()); }
 
 LLExpr* parseAlloc(const pb::Expr& e) {
   return new LLAlloc(LLVar_from_pb(& e.parts(0)));
@@ -347,7 +347,7 @@ LLExpr* LLExpr_from_pb(const pb::Expr* pe) {
   case pb::Expr::IL_CASE:        rv = parseCase(e); break;
   case pb::Expr::IL_IF:          rv = parseIf(e); break;
   case pb::Expr::IL_INT:         rv = parseInt(e); break;
-  case pb::Expr::IL_PROC_REF:    rv = parseProcRef(e); break;
+  case pb::Expr::IL_GLOBAL_SYMBOL:rv = parseGlobalSymbol(e); break;
   case pb::Expr::IL_LETVALS:     rv = parseLetVals(e); break;
   case pb::Expr::IL_CLOSURES:    rv = parseClosures(e); break;
   case pb::Expr::IL_UNTIL:       rv = parseUntil(e); break;

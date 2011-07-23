@@ -36,7 +36,7 @@ data AIExpr=
         | AILetVar     Ident AIExpr AIExpr
         | AILetFuns    [Ident] [AIFn] AIExpr
         -- Use of bindings
-        | E_AIVar      VarNamespace (TypedId TypeIL)
+        | E_AIVar      (TypedId TypeIL)
         | E_AIPrim     ILPrim
         | AICall       TypeIL AIExpr [AIExpr]
         -- Mutable ref cells
@@ -128,13 +128,13 @@ ail ae =
                        let call = AICall ti (E_AIPrim $ ILNamedPrim primVar) argsi
                        let primName = identPrefix id
                        x <- tcFresh $ "appty_" ++ primName
-                       return $ AILetVar x (E_AITyApp oti (E_AIVar VarLocal primVar) appti) call
+                       return $ AILetVar x (E_AITyApp oti (E_AIVar primVar) appti) call
 
                 otherwise -> do bi <- q b ; return $ AICall ti bi argsi
 
-        E_AnnVar _rng v ns -> do
+        E_AnnVar _rng v -> do
                 vv <- aiVar v
-                return $ E_AIVar ns vv
+                return $ E_AIVar vv
 
         E_AnnFn annFn              -> do aif <- aiFnOf annFn
                                          return $ E_AIFn aif
@@ -170,7 +170,7 @@ aiFnOf f = do
 
 instance AExpr AIExpr where
     freeIdents e = case e of
-        E_AIVar _ v  -> [tidIdent v]
+        E_AIVar v           -> [tidIdent v]
         AILetVar id a b     -> freeIdents a ++ (freeIdents b `butnot` [id])
         AICase _t e patbnds -> freeIdents e ++ (concatMap patBindingFreeIds patbnds)
         -- Note that all free idents of the bound expr are free in letvar,
@@ -190,12 +190,12 @@ instance Structured AIExpr where
     textOf e width = error "textOf AIExpr not yet implemented"
     childrenOf e =
         case e of
-            E_AIPrim p            -> []
-            AIBool         b      -> []
+            E_AIPrim {}           -> []
+            AIBool   {}           -> []
             AICall    t b args    -> b:args
             AIIf      t  a b c    -> [a, b, c]
             AIUntil   t  a b      -> [a, b]
-            AIInt t _             -> []
+            AIInt {}              -> []
             AILetVar _ a b        -> [a, b]
             AILetFuns ids fns e   -> (map E_AIFn fns) ++ [e]
             AIAllocArray t a      -> [a]
@@ -205,7 +205,7 @@ instance Structured AIExpr where
             AISubscript t a b     -> [a, b]
             AITuple     es        -> es
             AICase t e bs         -> e:(map snd bs)
-            E_AIVar _ns  v        -> []
+            E_AIVar {}            -> []
             E_AIFn f              -> [aiFnBody f]
             E_AITyApp t a argty   -> [a]
 

@@ -46,7 +46,7 @@ message Expr {
     IL_CALL = 23;
     IL_CALL_PRIMOP = 24;
     IL_UNTIL = 25;
-    IL_PROC_REF = 26;
+
     IL_CORO_INVOKE = 27;
     IL_CORO_CREATE = 28;
     IL_CORO_YIELD  = 29;
@@ -58,6 +58,7 @@ message Expr {
     IL_ARRAY_READ = 35;
     IL_ARRAY_POKE = 36;
     IL_NAMED_TYPE_DECL = 37;
+    IL_GLOBAL_SYMBOL = 40;
   }
   repeated Expr        parts = 1;
   required Tag           tag = 2;

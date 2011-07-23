@@ -1,0 +1,29 @@
+main = {
+  call_deref_a();
+  call_deref_b();
+};
+
+// Test that global symbols may be let-bound and stored in refs.
+
+g = { x : i32 => { x } };
+
+call_deref_a = {
+  let r = (ref g);
+     gg = r^;
+   in
+      expect_i32 3;
+      print_i32 ((gg 3) ());
+  end
+};
+
+f = { x : i32 => x };
+
+call_deref_b = {
+  let r = (ref f);
+     gg = r^;
+   in
+      expect_i32 3;
+      print_i32 (gg 3);
+  end
+};
+
