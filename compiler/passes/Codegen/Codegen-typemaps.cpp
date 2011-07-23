@@ -273,8 +273,7 @@ GlobalVariable* emitCoroTypeMap(const StructType* sty, llvm::Module* mod) {
 void registerType(const Type* ty,
                   std::string desiredName,
                   llvm::Module* mod,
-                  ArrayOrNot arrayStatus,
-                  bool isClosureEnvironment) {
+                  ArrayOrNot arrayStatus) {
   static std::map<const Type*, bool> registeredTypes;
 
   if (registeredTypes[ty]) return;
@@ -284,11 +283,7 @@ void registerType(const Type* ty,
   std::string name = ParsingContext::freshName(desiredName);
   mod->addTypeName(name, ty);
 
-  std::vector<int> skipOffsets;
-  if (isClosureEnvironment) {
-    skipOffsets.push_back(0);
-  }
-  emitTypeMap(ty, name, arrayStatus, mod, skipOffsets);
+  emitTypeMap(ty, name, arrayStatus, mod, std::vector<int>());
 }
 
 const llvm::StructType*
@@ -317,7 +312,7 @@ llvm::GlobalVariable* getTypeMapForType(const llvm::Type* ty,
     // emitTypeMap also sticks gv in typeMapForType
   } else if (isGenericClosureType(ty)) {
     gv = emitTypeMap(ty, ParsingContext::freshName("genericClosure"), arrayStatus, mod,
-                     make_vector(0, NULL));
+                     std::vector<int>());
   }
 
   if (!gv) {

@@ -29,8 +29,7 @@ emitTypeMap(const llvm::Type* ty, std::string name,
 void registerType(const llvm::Type* ty,
                   std::string       desiredName,
                   llvm::Module*     mod,
-                  ArrayOrNot,
-                  bool isClosureEnvironment = false);
+                  ArrayOrNot);
 
 llvm::GlobalVariable* getTypeMapForType(const llvm::Type*, llvm::Module*, ArrayOrNot);
 
