@@ -31,8 +31,8 @@ using foster::ParsingContext;
 
 llvm::GlobalVariable* getTypeMapForType(const llvm::Type*, llvm::Module*, ArrayOrNot);
 
-typedef std::pair<const Type*, Constant*> OffsetInfo;
-typedef std::vector<OffsetInfo> OffsetSet;
+typedef Constant*   Offset;
+typedef std::vector<Offset> OffsetSet;
 
 // Converts a global variable of type [_ x T] to a local var of type T*.
 Constant* arrayVariableToPointer(GlobalVariable* arr) {
@@ -42,15 +42,19 @@ Constant* arrayVariableToPointer(GlobalVariable* arr) {
   return ConstantExpr::getGetElementPtr(arr, &idx[0], idx.size());
 }
 
+bool isGarbageCollectible(const Type* ty) {
+  // For now, we don't distinguish between different kinds of pointer;
+  // we consider any pointer to be a possible heap pointer.
+  return ty->isPointerTy() && ty->getContainedType(0)->isSized();
+}
+
 OffsetSet countPointersInType(const Type* ty) {
   ASSERT(ty) << "Can't count pointers in a NULL type!";
 
   OffsetSet rv;
-  if (ty->isPointerTy()
-    && ty->getContainedType(0)->isSized()) {
+  if (isGarbageCollectible(ty)) {
     // Pointers to functions/labels/other non-sized types do not get GC'd.
-    rv.push_back(OffsetInfo(ty->getContainedType(0),
-                         getConstantInt64For(0)));
+    rv.push_back(getConstantInt64For(0));
   }
 
   // array, struct, union
@@ -68,10 +72,8 @@ OffsetSet countPointersInType(const Type* ty) {
       Constant* slotOffset = ConstantExpr::getOffsetOf(sty, i);
       OffsetSet sub = countPointersInType(sty->getTypeAtIndex(i));
       for (OffsetSet::iterator si = sub.begin(); si != sub.end(); ++si) {
-        const Type* subty = si->first;
-        Constant* suboffset = si->second;
-        rv.push_back(OffsetInfo(subty,
-            ConstantExpr::getAdd(suboffset, slotOffset)));
+        Offset suboffset = *si;
+        rv.push_back(ConstantExpr::getAdd(suboffset, slotOffset));
       }
     }
   }
@@ -88,8 +90,6 @@ OffsetSet countPointersInType(const Type* ty) {
 }
 
 bool mightContainHeapPointers(const llvm::Type* ty) {
-  // For now, we don't distinguish between different kinds of pointer;
-  // we consider any pointer to be a possible heap pointer.
   OffsetSet offsets = countPointersInType(ty);
   return !offsets.empty();
 }
@@ -120,87 +120,32 @@ Constant* cellSizeOf(const Type* ty) {
   return roundUpToNearestMultiple(cs, defaultHeapAlignment());
 }
 
-std::map<const Type*, GlobalVariable*> typeMapForType;
+typedef std::pair<const Type*, ArrayOrNot> TypeSig;
+std::map<TypeSig, GlobalVariable*> typeMapCache;
 
-// %typemap_entry = type { i8*, i32 }
-const StructType* getTypeMapEntryType(llvm::Module* mod) {
-  const StructType* entryty = dyn_cast_or_null<StructType>(
-                                mod->getTypeByName("typemap_entry"));
-  if (!entryty) {
-    std::vector<const Type*> entryty_types;
-    entryty_types.push_back(builder.getInt8PtrTy()); // typeinfo
-    entryty_types.push_back(builder.getInt32Ty());   // offset
-    entryty = StructType::get(getGlobalContext(), entryty_types,
-                                          /*isPacked=*/false);
-    mod->addTypeName("typemap_entry", entryty);
-  }
-  return entryty;
+const Type* getTypeMapOffsetType() {
+  return builder.getInt32Ty();
 }
 
-// A type map entry is a pair:
-//  struct { i8* typeinfo; i32 offset }
-//
-// The |offset| field is the offset of a slot in the parent type.
-// The |typeinfo| field is either a pointer to a typemap describing
-// the slot, or (for atomic types) the size of the cell.
-//
-// We can distinguish the two cases at runtime since only arrays
-// can lead to objects of any significant (multi-KB) size.
-Constant* getTypeMapEntryFor(const Type* entryTy,
-                             Constant*   offset,
-                             ArrayOrNot  arrayStatus,
-                             llvm::Module* mod) {
-  std::vector<Constant*> fields;
-
-  if (entryTy == foster_generic_coro_t) {
-    // Instead of claiming that some block of memory is
-    // only the size of a generic coro, we emit a NULL
-    // metadata block to force the GC to find the actual
-    // runtime size.
-    fields.push_back(
-      llvm::ConstantPointerNull::get(builder.getInt8PtrTy()));
-  } else if (GlobalVariable* typeMapVar =
-    getTypeMapForType(entryTy, mod, arrayStatus)) {
-    // Get the type map or (if no pointers) body size, cast to an i8*.
-    fields.push_back(ConstantExpr::getCast(Instruction::BitCast,
-                     typeMapVar, builder.getInt8PtrTy()));
-  } else {
-        // If we can't tell the garbage collector how to collect a type by
-        // giving it a pointer to a type map, it's probably because the type
-        // doesn't have a type map, i.e. the type is atomic. Instead, tell
-        // the garbage collector how large the type is.
-        fields.push_back(
-            ConstantExpr::getCast(Instruction::IntToPtr,
-                                  cellSizeOf(entryTy),
-                                  builder.getInt8PtrTy()));
-  }
-
-  // Convert the Constant* offset to an i32.
-  fields.push_back(ConstantExpr::getTruncOrBitCast(
-                   offset, builder.getInt32Ty()));
-
-  return ConstantStruct::get(getTypeMapEntryType(mod), fields);
-}
-
-// Keep synchronized with runtime/gc/foster_gc.cpp
+// Keep synchronized with runtime/gc/foster_gc_utils.h
 // struct {
 //   i64         cellSize;
 //   i8*         typeName;
 //   i32         numPtrEntries;
 //   i8          isCoro;
 //   i8          isArray;
-//   struct { i8* typeinfo; i32 offset }[numPtrEntries];
+//   i32         offsets[numPtrEntries];
 // }
-const StructType* getTypeMapType(int numPointers, llvm::Module* mod) {
-  ArrayType* entriesty = ArrayType::get(getTypeMapEntryType(mod), numPointers);
+const StructType* getTypeMapType(int numPointers) {
+  ArrayType* offsetsTy = ArrayType::get(getTypeMapOffsetType(), numPointers);
 
   std::vector<const Type*> typeMapTyFields;
-  typeMapTyFields.push_back(builder.getInt64Ty()); // cellSize
+  typeMapTyFields.push_back(builder.getInt64Ty());   // cellSize
   typeMapTyFields.push_back(builder.getInt8PtrTy()); // typeName
-  typeMapTyFields.push_back(builder.getInt32Ty()); // numPtrEntries
-  typeMapTyFields.push_back(builder.getInt8Ty()); // isCoro
-  typeMapTyFields.push_back(builder.getInt8Ty()); // isArray
-  typeMapTyFields.push_back(entriesty); // { i8*, i32 }[n]
+  typeMapTyFields.push_back(builder.getInt32Ty());   // numPtrEntries
+  typeMapTyFields.push_back(builder.getInt8Ty());    // isCoro
+  typeMapTyFields.push_back(builder.getInt8Ty());    // isArray
+  typeMapTyFields.push_back(offsetsTy);              // i32[n]
 
   return StructType::get(getGlobalContext(), typeMapTyFields);
 }
@@ -213,7 +158,7 @@ GlobalVariable* constructTypeMap(const llvm::Type* ty,
                                  ArrayOrNot arrayStatus,
                                  llvm::Module* mod) {
   int numPointers = pointerOffsets.size();
-  const StructType* typeMapTy = getTypeMapType(numPointers, mod);
+  const StructType* typeMapTy = getTypeMapType(numPointers);
 
   GlobalVariable* typeMapVar = new GlobalVariable(
     /*Module=*/     *mod,
@@ -224,10 +169,6 @@ GlobalVariable* constructTypeMap(const llvm::Type* ty,
     /*Name=*/        "__foster_typemap_" + name,
     /*ThreadLocal=*/ false);
   typeMapVar->setAlignment(16);
-
-  // Register the (as-yet uninitialized) variable to avoid problems
-  // with recursive types.
-  typeMapForType[ty] = typeMapVar;
 
   std::string wrapped;
   raw_string_ostream ss(wrapped); ss << name << " = " << *ty;
@@ -244,16 +185,16 @@ GlobalVariable* constructTypeMap(const llvm::Type* ty,
   typeNameVar->setAlignment(1);
 
 
-  std::vector<Constant*> typeMapEntries;
-  for (OffsetSet::const_iterator si =  pointerOffsets.begin();
-                                 si != pointerOffsets.end(); ++si) {
-    const Type* subty = si->first;
-    Constant* suboffset = si->second;
-    typeMapEntries.push_back(getTypeMapEntryFor(subty, suboffset, arrayStatus, mod));
+  std::vector<Constant*> typeMapOffsets;
+  for (OffsetSet::const_iterator it =  pointerOffsets.begin();
+                                 it != pointerOffsets.end(); ++it) {
+    typeMapOffsets.push_back(ConstantExpr::getTruncOrBitCast(
+                                     *it, builder.getInt32Ty()));
   }
 
   bool isCoro = pystring::startswith(name, "coro_");
   bool isArray = arrayStatus == YesArray;
+  ArrayType* offsetsTy = ArrayType::get(getTypeMapOffsetType(), numPointers);
 
   // Construct the type map itself
   std::vector<Constant*> typeMapFields;
@@ -262,13 +203,9 @@ GlobalVariable* constructTypeMap(const llvm::Type* ty,
   typeMapFields.push_back(getConstantInt32For(numPointers));
   typeMapFields.push_back(getConstantInt8For(isCoro ? 1 : 0));
   typeMapFields.push_back(getConstantInt8For(isArray ? 1 : 0));
-  typeMapFields.push_back(
-         ConstantArray::get(
-                ArrayType::get(getTypeMapEntryType(mod), numPointers),
-                typeMapEntries));
+  typeMapFields.push_back(ConstantArray::get(offsetsTy, typeMapOffsets));
 
-  typeMapVar->setInitializer(
-        ConstantStruct::get(typeMapTy, typeMapFields));
+  typeMapVar->setInitializer(ConstantStruct::get(typeMapTy, typeMapFields));
   return typeMapVar;
 }
 
@@ -296,7 +233,9 @@ GlobalVariable* emitTypeMap(
     }
   }
 
-  return constructTypeMap(ty, name, filteredOffsets, arrayStatus, mod);
+  typeMapCache[TypeSig(ty, arrayStatus)] =
+      constructTypeMap(ty, name, filteredOffsets, arrayStatus, mod);
+  return typeMapCache[TypeSig(ty, arrayStatus)];
 }
 
 // The struct type is
@@ -367,7 +306,7 @@ isCoroStruct(const llvm::Type* ty) {
 llvm::GlobalVariable* getTypeMapForType(const llvm::Type* ty,
                                         llvm::Module* mod,
                                         ArrayOrNot arrayStatus) {
-  llvm::GlobalVariable* gv = typeMapForType[ty];
+  llvm::GlobalVariable* gv = typeMapCache[TypeSig(ty, arrayStatus)];
   if (gv) return gv;
 
   if (const llvm::StructType* sty = isCoroStruct(ty)) {

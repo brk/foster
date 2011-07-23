@@ -132,11 +132,11 @@ class copying_gc {
       void complain_to_lack_of_metadata(void* body, heap_cell* cell);
 
       // returns body of newly allocated cell
-      void* ss_copy(void* body, const void* meta) {
+      void* ss_copy(void* body) {
         if (!this->parent->owns(body)) return body;
 
         heap_cell* cell = heap_cell::for_body(body);
-        meta = meta ? meta : cell->get_meta();
+        const void* meta = cell->get_meta();
 
         if (!meta) {
           complain_to_lack_of_metadata(body, cell);
@@ -181,19 +181,19 @@ class copying_gc {
             //  cell_size, cell, map->numEntries, map->name); fflush(gclog);
 
             // for each pointer field in the cell
-            for (int i = 0; i < map->numEntries; ++i) {
-              const typemap::entry& e = map->entries[i];
-              void** oldslot = (void**) offset(body, e.offset);
+            for (int i = 0; i < map->numOffsets; ++i) {
+              int32_t off_bytes = map->offsets[i];
+              void** oldslot = (void**) offset(body, off_bytes);
 
               //fprintf(gclog, "body is %p, offset is %d, typeinfo is %p, addr_of_ptr_slot is %p, ptr_slot_val is %p\n",
               //    body, e.offset, e.typeinfo, oldslot, *oldslot);
               // recursively copy the field from cell, yielding subfwdaddr
               // set the copied cell field to subfwdaddr
               if (*oldslot != NULL) {
-                void** newslot = (void**) offset(new_addr->body_addr(), e.offset);
+                void** newslot = (void**) offset(new_addr->body_addr(), off_bytes);
                 //fprintf(gclog, "recursively copying of cell %p slot %p with ti %p to %p\n",
                  // cell, oldslot, e.typeinfo, newslot); fflush(gclog);
-                *newslot = ss_copy(*oldslot, e.typeinfo);
+                *newslot = ss_copy(*oldslot);
                 //fprintf(gclog, "recursively copied  of cell %p slot %p with ti %p to %p\n",
                  // cell, oldslot, e.typeinfo, newslot); fflush(gclog);
               }
@@ -274,7 +274,7 @@ public:
     return false;
   }
 
-  void copy_or_update(void* body, void** root, const void* meta) {
+  void copy_or_update(void* body, void** root) {
     //       |------------|            |------------|
     // root: |    body    |---\        |    _size   |
     //       |------------|   |        |------------|
@@ -282,12 +282,8 @@ public:
     //                                 |            |
     //                                 |            |
     //                                 |------------|
-    void* newaddr = next->ss_copy(body, meta);
+    void* newaddr = next->ss_copy(body);
     //fprintf(gclog, "copying_gc_root_visitor(%p -> %p): copied  body\n", root, body); fflush(gclog);
-    if (meta) {
-      typemap* map = (typemap*) meta;
-      fprintf(gclog, "\tname: %s", map->name);
-    }
     if (newaddr) {
       fprintf(gclog, "; replacing %p with %p\n", body, newaddr);
       *root = newaddr;
@@ -348,7 +344,7 @@ void copying_gc_root_visitor(void **root, const void *meta) {
   }
 
   if (body) {
-    allocator->copy_or_update(body, root, meta);
+    allocator->copy_or_update(body, root);
   }
 }
 
@@ -634,22 +630,21 @@ void copying_gc::semispace::complain_to_lack_of_metadata(
   void** envptr = (void**)*bp4;
   fprintf(gclog, "envptr: %p -> %p\n", envptr, *envptr); fflush(gclog);
   typemap* envtm = (typemap*) *envptr;
-  fprintf(gclog, "env tm name is %s, # ptrs = %d\n", envtm->name, envtm->numEntries); fflush(gclog);
+  fprintf(gclog, "env tm name is %s, # ptrs = %d\n", envtm->name, envtm->numOffsets); fflush(gclog);
 }
 
 void inspect_typemap(typemap* ti) {
   fprintf(gclog, "typemap: %p\n", ti); fflush(gclog);
   if (!ti) return;
 
-  fprintf(gclog, "\tsize: %lld\n", ti->cell_size);
-  fprintf(gclog, "\tname: %s\n", ti->name);
-  fprintf(gclog, "\tisCoro: %d\n", ti->isCoro);
-  fprintf(gclog, "\tnumE: %d\n", ti->numEntries);
+  fprintf(gclog, "\tsize:       %lld\n", ti->cell_size);
+  fprintf(gclog, "\tname:       %s\n",   ti->name);
+  fprintf(gclog, "\tisCoro:     %d\n",   ti->isCoro);
+  fprintf(gclog, "\tnumOffsets: %d\n",   ti->numOffsets);
   fflush(gclog);
-  int iters = ti->numEntries > 128 ? 0 : ti->numEntries;
+  int iters = ti->numOffsets > 128 ? 0 : ti->numOffsets;
   for (int i = 0; i < iters; ++i) {
-    fprintf(gclog, "\t\t@%d: %p\n", ti->entries[i].offset,
-                                 ti->entries[i].typeinfo);
+    fprintf(gclog, "\t@%d, ", ti->offsets[i]);
     fflush(gclog);
   }
 }

@@ -74,16 +74,12 @@ struct heap_cell {
 // giving offsets and type descriptors for the pointer slots.
 // Note that the GC plugin emits unpadded elements!
 struct typemap {
-  int64_t cell_size;
+  int64_t     cell_size;
   const char* name;
-  int32_t numEntries;
-  char isCoro;
-  char isArray;
-  struct entry {
-    const void* typeinfo;
-    int32_t offset;
-  };
-  entry entries[0];
+  int32_t     numOffsets;
+  char        isCoro;
+  char        isArray;
+  int32_t     offsets[0];
 };
 
 struct stackmap {
