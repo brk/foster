@@ -78,7 +78,7 @@ bool isValidClosureType(const llvm::Type* ty) {
   return false;
 }
 
-// Checks that ty == { i32 (i8*, ...)*, i8* }
+// Checks that ty == { ___ (i8*, ...)*, i8* }
 bool isGenericClosureType(const llvm::Type* ty) {
   using foster::builder;
   if (const llvm::StructType* sty= llvm::dyn_cast<const llvm::StructType>(ty)) {
@@ -89,7 +89,6 @@ bool isGenericClosureType(const llvm::Type* ty) {
     const llvm::Type* fnty = sty->getContainedType(0)->getContainedType(0);
     if (!fnty->isFunctionTy()) return false;
     if (!fnty->getNumContainedTypes() >= 2) return false;
-    if (fnty->getContainedType(0) != builder.getInt32Ty()) return false;
     if (fnty->getContainedType(1) != builder.getInt8PtrTy()) return false;
     return true;
   }

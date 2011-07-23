@@ -79,6 +79,10 @@ LLTuple* getEmptyTuple() {
   return new LLTuple(vars, NULL);
 }
 
+const llvm::Type* slotType(llvm::Value* v) {
+  return v->getType()->getContainedType(0);
+}
+
 llvm::Value* emitStore(llvm::Value* val,
                        llvm::Value* ptr) {
   if (val->getType()->isVoidTy()) {
@@ -98,6 +102,15 @@ llvm::Value* emitStore(llvm::Value* val,
                                  "elided store");
   } else {
     return builder.CreateStore(val, ptr, /*isVolatile=*/ false);
+  }
+}
+
+llvm::Value* emitStoreWithCast(llvm::Value* val,
+                               llvm::Value* ptr) {
+  if (!isPointerToType(ptr->getType(), val->getType())) {
+    return emitStore(builder.CreateBitCast(val, slotType(ptr)), ptr);
+  } else {
+    return emitStore(val, ptr);
   }
 }
 
@@ -263,6 +276,7 @@ Value* allocateCell(CodegenPass* pass, TypeAST* type,
 
   switch (region) {
   case LLAllocate::MEM_REGION_STACK:
+    EDiag() << "allocating cell on stack of type " << str(ty);
     return CreateEntryAlloca(ty, "alloc");
 
   case LLAllocate::MEM_REGION_GLOBAL_HEAP:
@@ -287,7 +301,6 @@ llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
     return allocateArray(pass, this->type, this->region,
                          pass->emit(this->arraySize, NULL));
   } else {
-    EDiag() << "allocating cell...";
     return allocateCell(pass, this->type, this->region);
   }
 }
@@ -401,7 +414,7 @@ llvm::Value* LLClosures::codegen(CodegenPass* pass) {
   // Generate each closure, sticking it in the symbol table
   // so that the body of the LetClosures node has access.
   for (size_t i = 0; i < closures.size(); ++i) {
-    llvm::Value* clo = closures[i]->codegenClosure(pass, envPtrs[i]);
+    llvm::Value* clo = closures[i]->codegenClosure(pass, envSlots[i]);
     pass->valueSymTab.insert(closures[i]->varname, clo);
   }
 
@@ -464,7 +477,7 @@ bool isPointerToPointer(const llvm::Type* p) {
 
 llvm::Value* LLClosure::codegenClosure(
                         CodegenPass* pass,
-                        llvm::Value* envPtr) {
+                        llvm::Value* envPtrOrSlot) {
   llvm::Value* proc = pass->lookupFunctionOrDie(procname);
 
   const llvm::FunctionType* fnty;
@@ -476,30 +489,34 @@ llvm::Value* LLClosure::codegenClosure(
                   << " not closed??";
   }
 
-  // { code*, env* }*
-  llvm::AllocaInst* clo =
-        CreateEntryAlloca(cloStructTy, varname + ".closure");
+  llvm::Value* clo = NULL; llvm::Value* rv = NULL;
+  bool closureEscapes = true;
+  if (closureEscapes) {
+    // // { code*, env* }**
+    llvm::AllocaInst* clo_slot = pass->emitMalloc(genericClosureStructTy(fnty));
+    clo = builder.CreateLoad(clo_slot, /*isVolatile=*/ false,
+                                         varname + ".closure"); rv = clo_slot;
+  } else { // { code*, env* }*
+    clo = CreateEntryAlloca(cloStructTy, varname + ".closure"); rv = clo;
+  }
 
-  //llvm::AllocaInst* clo_slot = pass->emitMalloc(cloStructTy);
-  //llvm::Value* clo = builder.CreateLoad(clo_slot, /*isVolatile=*/ false,
-  //                                      varname + ".closure");
   // TODO register closure type
 
-  // (code*)*
   Value* clo_code_slot = builder.CreateConstGEP2_32(clo, 0, 0, varname + ".clo_code");
-  emitStore(proc, clo_code_slot);
+  emitStoreWithCast(proc, clo_code_slot);
 
-  // (env*)*
   Value* clo_env_slot = builder.CreateConstGEP2_32(clo, 0, 1, varname + ".clo_env");
   if (env->vars.empty()) {
     storeNullPointerToSlot(clo_env_slot);
   } else {
     // Only store the env in the closure if the env contains entries.
-    emitStore(envPtr, clo_env_slot);
+    llvm::Value* envPtr = pass->autoload(envPtrOrSlot);
+    emitStoreWithCast(envPtr, clo_env_slot);
   }
 
-  const llvm::StructType* genStructTy = genericClosureStructTy(fnty);
-  return builder.CreateBitCast(clo, ptrTo(genStructTy), varname + ".hideCloTy");
+  //const llvm::StructType* genStructTy = genericClosureStructTy(fnty);
+  //return builder.CreateBitCast(clo, ptrTo(genStructTy), varname + ".hideCloTy");
+  return rv;
 }
 
 llvm::Value* LLClosure::codegenStorage(CodegenPass* pass) {

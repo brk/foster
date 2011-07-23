@@ -7,14 +7,38 @@ hof-and = { a : {i1} => b: {i1} =>
 };
 
 main = {
+  test1();
+  test2();
+  test3();
+};
+
+test1 = {
   let x = opaquely_i32 2;
       y = opaquely_i32 3;
       z = opaquely_i32 4;
   in
     expect_i1 true;  print_i1 (prim-and (x <Int32 y)
                                         (y <Int32 z));
+  end
+};
+
+
+test2 = {
+  let x = opaquely_i32 2;
+      y = opaquely_i32 3;
+      z = opaquely_i32 4;
+  in
     expect_i1 false; print_i1 (prim-and (x <Int32 y)
                                         (z <Int32 y));
+  end
+};
+
+
+test3 = {
+  let x = opaquely_i32 2;
+      y = opaquely_i32 3;
+      z = opaquely_i32 4;
+  in
     expect_i1 true ; print_i1 (hof-and { x <Int32 y }
                                        { y <Int32 z });
   end
