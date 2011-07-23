@@ -214,8 +214,6 @@ closureConvert ctx expr =
             AICall    t b es -> do
                 cargs <- mapM g es
                 case b of
-                    (E_AIPrim p) -> do nestedLets cargs (\vars -> (ILCallPrim t p vars))
-                    (E_AIVar ns v) -> do nestedLets cargs (\vars -> (ILCall t (IL_Var v ns) vars))
                     (E_AIFn f) -> do -- If we're calling a function directly,
                                      -- we know we can perform lambda lifting
                                      -- on it, by adding args for its free variables.
@@ -230,7 +228,9 @@ closureConvert ctx expr =
                                     let freelocals = map localVar freevars
                                     nestedLets cargs (\vars -> ILCall t p (freelocals ++ vars))
 
-                    _ -> error $ "ILExpr.closureConvert: AnnCall with non-var base of " ++ show b
+                    (E_AIPrim p)   -> do nestedLets cargs (\vars -> (ILCallPrim t p vars))
+                    (E_AIVar ns v) -> do nestedLets cargs (\vars -> (ILCall t (IL_Var v ns) vars))
+                    _ -> do cb <- g b; nestedLets (cb:cargs) (\(vb:vars) -> (ILCall t vb vars))
 
 closureConvertedProc :: [AIVar] -> AIFn -> ILExpr -> ILM ILProcDef
 closureConvertedProc liftedProcVars f newbody = do

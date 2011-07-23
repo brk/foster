@@ -110,17 +110,9 @@ ail ctx knownProcNames ae =
             ti <- ilOf t
             argsi <- mapM q args
             case b of
-                E_AnnVar _rng _var -> do
-                   bi <- q b
-                   return $ AICall ti bi argsi
-
                 AnnPrimitive _rng (TypedId pty id) -> do
                    pti <- ilOf pty
                    return $ AICall ti (E_AIPrim $ ilPrimFor pti id) argsi
-
-                E_AnnFn _ -> do
-                   bi <- q b
-                   return $ AICall ti bi argsi
 
                 E_AnnTyApp _ ot (AnnPrimitive _rng (TypedId _ (GlobalSymbol "allocDArray"))) argty -> do
                     let [arraySize] = argsi
@@ -142,8 +134,7 @@ ail ctx knownProcNames ae =
                        x <- tcFresh $ "appty_" ++ primName
                        return $ AILetVar x (E_AITyApp oti (E_AIVar VarLocal primVar) appti) call
 
-                -- TODO write test cases for the obvious missing combinations...
-                _ -> tcFails [out $ "Unknown base of call: " ++ show b]
+                otherwise -> do bi <- q b ; return $ AICall ti bi argsi
 
         E_AnnVar _rng (TypedId t id)-> do
                 ti <- ilOf t
