@@ -614,16 +614,6 @@ expectString gs s = do
 
 --------------------------------------------------------------------
 
-mapFoldM :: (Monad m) => [a] -> b ->
-                         (a -> b -> m ([c], b))
-                                 -> m ([c], b)
-mapFoldM []  b  f    = return ([], b)
-mapFoldM [a] b1 f    = f a b1
-mapFoldM (a:as) b1 f = do
-    (cs1, b2) <- f a b1
-    (cs2, b3) <- mapFoldM as b2 f
-    return (cs1 ++ cs2, b3)
-
 showBits32 n =
   let bits = map (testBit n) [0 .. (32 - 1)] in
   let s = map (\b -> if b then '1' else '0') bits in

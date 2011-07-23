@@ -285,3 +285,14 @@ showStructure e = showStructureP e (out "") False where
         (thisIndent :: Output) ++ (textOf e padding) ++ (out "\n") ++ (Prelude.foldl (++) (out "") childlines)
 
 -----------------------------------------------------------------------
+
+-- | Does what it says on the tin: monadically combines a map and a fold,
+-- | threading state through.
+mapFoldM :: (Monad m) => [a] -> b ->
+                         (a  -> b -> m ([c], b))
+                                  -> m ([c], b)
+mapFoldM []     b  f = return ([], b)
+mapFoldM (x:xs) b1 f = do
+    (cs1, b2) <- f x b1
+    (cs2, b3) <- mapFoldM xs b2 f
+    return (cs1 ++ cs2, b3)
