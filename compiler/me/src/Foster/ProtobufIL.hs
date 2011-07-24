@@ -53,7 +53,7 @@ dumpIdent i@(Ident name num) = if num < 0
 
 mayTriggerGC :: AIVar -> Bool
 mayTriggerGC (TypedId _ (GlobalSymbol name)) = globalMayGC name
-  where globalMayGC name = name `Prelude.elem` ["expect_i1", "print_i1"
+  where globalMayGC name = not $ name `Prelude.elem` ["expect_i1", "print_i1"
                         ,"expect_i64" , "print_i64" , "expect_i32", "print_i32"
                         ,"expect_i32b", "print_i32b"]
 mayTriggerGC _ = True
