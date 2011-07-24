@@ -433,8 +433,8 @@ void force_gc_for_debugging_purposes() {
 void visitGCRootsWithStackMaps(void* start_frame,
                                gc_visitor_fn visitor) {
   enum { MAX_NUM_RET_ADDRS = 1024 };
-  static void* retaddrs[MAX_NUM_RET_ADDRS];
-  static frameinfo frames[MAX_NUM_RET_ADDRS];
+  void* retaddrs[MAX_NUM_RET_ADDRS];
+  frameinfo frames[MAX_NUM_RET_ADDRS];
 
   // Collect frame pointers and return addresses
   // for the current call stack.
