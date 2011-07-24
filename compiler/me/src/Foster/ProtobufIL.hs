@@ -51,6 +51,13 @@ dumpIdent i@(Ident name num) = if num < 0
                 then error $ "cannot dump negative ident! " ++ show i
                 else u8fromString $ show i
 
+mayTriggerGC :: AIVar -> Bool
+mayTriggerGC (TypedId _ (GlobalSymbol name)) = globalMayGC name
+  where globalMayGC name = name `Prelude.elem` ["expect_i1", "print_i1"
+                        ,"expect_i64" , "print_i64" , "expect_i32", "print_i32"
+                        ,"expect_i32b", "print_i32b"]
+mayTriggerGC _ = True
+
 -----------------------------------------------------------------------
 
 tagProcOrFunc FT_Proc = PbTypeTag.PROC
@@ -123,13 +130,13 @@ dumpCoroPrim coroPrim argty retty =
 dumpExpr :: ILExpr -> PbExpr.Expr
 
 dumpExpr (ILCall     t base args)
-        = dumpCall t (dumpExpr $ ILVar base) args
+        = dumpCall t (dumpExpr $ ILVar base) args (mayTriggerGC base)
 
 dumpExpr (ILCallPrim t (ILNamedPrim base) args)
-        = dumpCall t (dumpGlobalSymbol base) args
+        = dumpCall t (dumpGlobalSymbol base) args (mayTriggerGC base)
 
 dumpExpr (ILCallPrim t (ILCoroPrim c a r) args)
-        = dumpCall t (dumpCoroPrim c a r) args
+        = dumpCall t (dumpCoroPrim c a r) args True
 
 dumpExpr (ILCallPrim t (ILPrimOp op size) args)
         = dumpCallPrimOp t op size args
@@ -278,10 +285,11 @@ dumpILVar t i =
                     , PbExpr.tag   = IL_VAR
                     , PbExpr.type' = Just $ dumpType t  }
 
-dumpCall t base args =
+dumpCall t base args mayGC =
     P'.defaultValue { PbExpr.parts = fromList $ base:(fmap (dumpExpr.ILVar) args)
                     , PbExpr.tag   = IL_CALL
-                    , PbExpr.type' = Just $ dumpType t }
+                    , PbExpr.type' = Just $ dumpType t
+                    , PbExpr.call_may_trigger_gc = Just $ mayGC }
 
 dumpCallPrimOp t op size args =
     P'.defaultValue { PbExpr.parts = fromList $ fmap (dumpExpr.ILVar) args
