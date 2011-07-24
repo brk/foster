@@ -160,24 +160,6 @@ fnOf f = do
              , fnRange = (annFnRange f)
              }
 
-instance AExpr AIExpr where
-    freeIdents e = case e of
-        E_AIVar v           -> [tidIdent v]
-        AILetVar id a b     -> freeIdents a ++ (freeIdents b `butnot` [id])
-        AICase _t e patbnds -> freeIdents e ++ (concatMap patBindingFreeIds patbnds)
-        -- Note that all free idents of the bound expr are free in letvar,
-        -- but letfuns removes the bound name from that set!
-        AILetFuns ids fns e ->
-                           concatMap boundvars (zip ids fns) ++ (freeIdents e `butnot` ids) where
-                                     boundvars (id, fn) = freeIdents (E_AIFn fn) `butnot` [id]
-        E_AIFn f       -> let bodyvars =  freeIdents (fnBody f) in
-                          let boundvars = map tidIdent (fnVars f) in
-                          bodyvars `butnot` boundvars
-        _               -> concatMap freeIdents (childrenOf e)
-
-instance Expr AIExpr where
-    freeVars e = map identPrefix (freeIdents e)
-
 instance Structured AIExpr where
     textOf e width = error "textOf AIExpr not yet implemented"
     childrenOf e =

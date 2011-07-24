@@ -316,6 +316,12 @@ dumpProc p =
          , Proc.lines = Just $ u8fromString (showSourceRange $ ilProcRange p)
          , Proc.linkage = Foster.Bepb.Proc.Linkage.Internal
          }
+  where
+        preProcType proc =
+            let retty = ilProcReturnType proc in
+            let argtys = TupleTypeIL (map tidType (ilProcVars proc)) in
+            let cc = ilProcCallConv proc in
+            (argtys, retty, cc)
 
 -----------------------------------------------------------------------
 

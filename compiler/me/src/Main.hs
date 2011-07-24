@@ -33,6 +33,7 @@ import Foster.AnnExpr
 import Foster.AnnExprIL
 import Foster.TypeIL
 import Foster.ILExpr
+import Foster.KNExpr
 import Foster.Typecheck
 import Foster.Context
 import Foster.Smallstep
@@ -244,7 +245,8 @@ main = do
 
                            runOutput $ (outLn "vvvv contextBindings:====================")
                            runOutput $ (outCSLn Yellow (joinWith "\n" $ map show (contextBindings ctx_il))))
-                         let prog = closureConvertAndLift ctx_il mod
+                         let kmod = kNormalizeModule mod
+                         let prog = closureConvertAndLift ctx_il kmod
                          dumpModuleToProtobufIL prog (outfile ++ ".ll.pb")
                          when verboseMode (do
                              runOutput $ (outLn "/// ===================================")
