@@ -42,10 +42,10 @@ void inspect_typemap(typemap* ti);
 void scanCoroStack(foster_generic_coro* coro, gc_visitor_fn visitor);
 
 inline bool
-isCoroBelongingToOtherThread(const typemap* map, void* body) {
+isCoroBelongingToOtherThread(const typemap* map, heap_cell* cell) {
   #ifdef FOSTER_MULTITHREADED
   if (map->isCoro) {
-    foster_generic_coro* coro = (foster_generic_coro*) body;
+    foster_generic_coro* coro = (foster_generic_coro*) cell->body_addr();
     if (coro->status == FOSTER_CORO_RUNNING) {
       // Don't scan a coroutine if it's being run by another thread!
       if (coro->owner_thread != PlatformThread::CurrentId()) {
@@ -129,27 +129,23 @@ class copying_gc {
         return body_addr;
       }
 
-      void complain_to_lack_of_metadata(void* body, heap_cell* cell);
+      void complain_to_lack_of_metadata(heap_cell* cell);
 
       // returns body of newly allocated cell
-      void* ss_copy(void* body) {
-        if (!this->parent->owns(body)) return body;
+      void* ss_copy(heap_cell* cell) {
+        if (!this->parent->owns(cell)) return cell->body_addr();
+        void* result = NULL;
+        const void* meta = NULL;
 
-        heap_cell* cell = heap_cell::for_body(body);
-        const void* meta = cell->get_meta();
-
-        if (!meta) {
-          complain_to_lack_of_metadata(body, cell);
-          return NULL;
+        if (cell->is_forwarded()) {
+          result = cell->get_forwarded_body();
+          goto return_result;
         }
 
-        //fprintf(gclog, "copying cell %p, meta %p\n", cell, meta); fflush(gclog);
-        if (cell->is_forwarded()) {
-          void* fwd = cell->get_forwarded_body();
-          //fprintf(gclog, "cell %p(->%p) considered forwarded to [[%p]] for body %p(->%p)\n",
-          //  cell, *(void**)cell,
-          //  fwd, body, *(void**)body); fflush(gclog);
-          return fwd;
+        meta = cell->get_meta();
+        foster_assert(meta != NULL, "cannot copy cell lacking metadata");
+        if (isMetadataPointer(meta)) {
+          inspect_typemap((typemap*)meta);
         }
 
         int64_t cell_size;
@@ -157,10 +153,10 @@ class copying_gc {
           cell_size = int64_t(meta);
         } else {
           const typemap* map = (const typemap*) meta;
-          if (isCoroBelongingToOtherThread(map, body)) {
+          if (isCoroBelongingToOtherThread(map, cell)) {
             // Don't copy or scan a coroutine if
             // it belongs to a different thread!
-            return body;
+            return cell->body_addr();
           }
 
           // probably an actual pointer
@@ -181,6 +177,7 @@ class copying_gc {
             //  cell_size, cell, map->numEntries, map->name); fflush(gclog);
 
             // for each pointer field in the cell
+            void* body = cell->body_addr();
             for (int i = 0; i < map->numOffsets; ++i) {
               int32_t off_bytes = map->offsets[i];
               void** oldslot = (void**) offset(body, off_bytes);
@@ -193,7 +190,7 @@ class copying_gc {
                 void** newslot = (void**) offset(new_addr->body_addr(), off_bytes);
                 //fprintf(gclog, "recursively copying of cell %p slot %p with ti %p to %p\n",
                  // cell, oldslot, e.typeinfo, newslot); fflush(gclog);
-                *newslot = ss_copy(*oldslot);
+                *newslot = ss_copy(heap_cell::for_body(*oldslot));
                 foster_assert(*newslot != NULL,     "copying gc should not null out slots");
                 foster_assert(*newslot != *oldslot, "copying gc should return new pointers");
                 //fprintf(gclog, "recursively copied  of cell %p slot %p with ti %p to %p\n",
@@ -207,7 +204,8 @@ class copying_gc {
             }
           }
 
-          return cell->get_forwarded_body();
+          result = cell->get_forwarded_body();
+          goto return_result;
         } else {
           printf("not enough space to copy!\n");
           printf("have %llu = 0x%llx\n", free_size(), (unsigned long long) free_size());
@@ -215,6 +213,9 @@ class copying_gc {
           //exit(255);
           return NULL;
         }
+        return_result:
+          fprintf(gclog, "; replacing %p with %p\n", cell->body_addr(), result);
+          return result;
       }
   };
 
@@ -263,16 +264,20 @@ public:
 
   void force_gc_for_debugging_purposes() { this->gc(); }
 
-  bool owns(void* ptr) {
-    if (curr->contains(ptr)) return true;
+  bool owns(heap_cell* cell) {
+    if (curr->contains(cell)) return true;
     saw_bad_pointer = true;
-    if (next->contains(ptr)) {
+    if (next->contains(cell)) {
       fprintf(gclog, "foster_gc error: tried to collect"
-                     " pointer in next-semispace: %p\n", ptr);
-      return false;
+                     " pointer in next-semispace: %p, with meta %p\n",
+                     cell, cell->get_meta());
+      fflush(gclog);
+      fprintf(gclog, "%p", ((heap_cell*)NULL)->get_meta());
+      //return false;
     }
     fprintf(gclog, "foster_gc error: copying_gc cannot collect"
-                     " pointer that it did not allocate: %p\n", ptr);
+                     " pointer that it did not allocate: %p, with meta %p\n",
+                     cell, cell->get_meta());
     return false;
   }
 
@@ -281,15 +286,10 @@ public:
     // root: |    body    |---\        |    _size   |
     //       |------------|   |        |------------|
     //                        \------> |            |
-    //                                 |            |
+    //                                ...          ...
     //                                 |            |
     //                                 |------------|
-    void* newaddr = next->ss_copy(body);
-    //fprintf(gclog, "copying_gc_root_visitor(%p -> %p): copied  body\n", root, body); fflush(gclog);
-    if (newaddr) {
-      fprintf(gclog, "; replacing %p with %p\n", body, newaddr);
-      *root = newaddr;
-    }
+    *root = next->ss_copy(heap_cell::for_body(body));
   }
 
   void* allocate_cell(typemap* typeinfo) {
@@ -340,11 +340,6 @@ copying_gc* allocator = NULL;
 void copying_gc_root_visitor(void **root, const void *meta) {
   foster_assert(root != NULL, "someone passed a NULL root addr!");
   void* body = *root;
-  fprintf(gclog, "copying_gc_root_visitor(root %p -> body %p, meta %p)\n", root, body, meta); fflush(gclog);
-  if (isMetadataPointer(meta)) {
-    inspect_typemap((typemap*)meta);
-  }
-
   if (body) {
     allocator->copy_or_update(body, root);
   }
@@ -618,8 +613,8 @@ void scanCoroStack(foster_generic_coro* coro,
 
 /////////////////////////////////////////////////////////////////
 
-void copying_gc::semispace::complain_to_lack_of_metadata(
-                             void* body, heap_cell* cell) {
+void copying_gc::semispace::complain_to_lack_of_metadata(heap_cell* cell) {
+  void* body = cell->body_addr();
   const int ptrsize = sizeof(void*);
   void** bp4 = (void**) offset(body, ptrsize);
   const void* meta2 = *(const void**) offset(body, -ptrsize);
@@ -638,13 +633,12 @@ void copying_gc::semispace::complain_to_lack_of_metadata(
 void inspect_typemap(typemap* ti) {
   fprintf(gclog, "typemap: %p\n", ti); fflush(gclog);
   if (!ti) return;
-
-  fprintf(gclog, "\tsize:       %lld\n", ti->cell_size);
-  fprintf(gclog, "\tname:       %s\n",   ti->name);
-  fprintf(gclog, "\tisCoro:     %d\n",   ti->isCoro);
-  fprintf(gclog, "\tnumOffsets: %d\n",   ti->numOffsets);
-  fflush(gclog);
-  int iters = ti->numOffsets > 128 ? 0 : ti->numOffsets;
+  fprintf(gclog, "\tsize:       %lld\n", ti->cell_size);   fflush(gclog);
+  foster_assert(ti->cell_size > 0, "invalid typemap in inspect_typemap");
+  fprintf(gclog, "\tname:       %s\n",   ti->name);        fflush(gclog);
+  fprintf(gclog, "\tisCoro:     %d\n",   ti->isCoro);      fflush(gclog);
+  fprintf(gclog, "\tnumOffsets: %d\n",   ti->numOffsets);  fflush(gclog);
+  int iters = ti->numOffsets > 128 ? 0 : ti->numOffsets;   fflush(gclog);
   for (int i = 0; i < iters; ++i) {
     fprintf(gclog, "\t@%d, ", ti->offsets[i]);
     fflush(gclog);
