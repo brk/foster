@@ -194,6 +194,8 @@ class copying_gc {
                 //fprintf(gclog, "recursively copying of cell %p slot %p with ti %p to %p\n",
                  // cell, oldslot, e.typeinfo, newslot); fflush(gclog);
                 *newslot = ss_copy(*oldslot);
+                foster_assert(*newslot != NULL,     "copying gc should not null out slots");
+                foster_assert(*newslot != *oldslot, "copying gc should return new pointers");
                 //fprintf(gclog, "recursively copied  of cell %p slot %p with ti %p to %p\n",
                  // cell, oldslot, e.typeinfo, newslot); fflush(gclog);
               }
