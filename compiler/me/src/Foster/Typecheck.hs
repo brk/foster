@@ -501,7 +501,7 @@ typecheckFn' ctx f cc expArgType expBodyType = do
                                            (map (identPrefix.tidIdent) fnProtoRawFormals)
     uniquelyNamedFormals <- mapM uniquelyName fnProtoRawFormals
     extCtx <- extendContext ctx uniquelyNamedFormals expArgType
-    annbody <- typecheck extCtx (fnBody f) expBodyType
+    annbody <- typecheck extCtx (fnAstBody f) expBodyType
 
     equateTypes fnProtoRetTy (typeAST annbody) (Just $ "return type/body type mismatch in " ++ fnProtoName)
 

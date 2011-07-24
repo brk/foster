@@ -42,10 +42,10 @@ data TupleAST = TupleAST { tupleAstRange :: ESourceRange
                          , tupleAstExprs :: [ExprAST] } deriving (Show)
 
 data FnAST  = FnAST { fnAstRange :: ESourceRange
-                    , fnAstName :: String
-                    , fnRetType :: Maybe TypeAST
-                    , fnFormals :: [AnnVar]
-                    , fnBody  :: ExprAST
+                    , fnAstName  :: String
+                    , fnRetType  :: Maybe TypeAST
+                    , fnFormals  :: [AnnVar]
+                    , fnAstBody  :: ExprAST
                     , fnWasToplevel :: Bool
                     } deriving (Show)
 
@@ -94,7 +94,7 @@ instance Structured ExprAST where
             E_IfAST _rng    a b c -> [a, b, c]
             E_UntilAST _rng a b   -> [a, b]
             E_IntAST rng txt     -> []
-            E_FnAST f            -> [fnBody f]
+            E_FnAST f            -> [fnAstBody f]
             E_LetRec rnd bnz e t -> [termBindingExpr bnd | bnd <- bnz] ++ [e]
             E_LetAST rng bnd e t -> (termBindingExpr bnd):[e]
             E_SeqAST _rng  a b   -> unbuildSeqs e
@@ -139,7 +139,7 @@ instance Expr ExprAST where
         E_VarAST rng v       -> [evarName v]
         E_LetAST rng bnd e t -> freeVars e ++ (bindingFreeVars bnd)
         E_Case rng e epatbnds -> freeVars e ++ (concatMap epatBindingFreeVars epatbnds)
-        E_FnAST f           -> let bodyvars  = freeVars (fnBody f) in
+        E_FnAST f           -> let bodyvars  = freeVars (fnAstBody f) in
                                let boundvars = map (identPrefix.tidIdent) (fnFormals f) in
                                bodyvars `butnot` boundvars
         _                   -> concatMap freeVars (childrenOf e)

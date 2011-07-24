@@ -62,3 +62,13 @@ ilOf typ =
                                   ++ show u ++ "(" ++ desc ++ ")!"]
           Just t  -> ilOf t
 
+-----------------------------------------------------------------------
+
+data Fn expr = Fn { fnType  :: TypeIL
+                  , fnIdent :: Ident
+                  , fnVars  :: [TypedId TypeIL]
+                  , fnBody  :: expr
+                  , fnRange :: ESourceRange
+                  } deriving (Show)
+
+fnName f = identPrefix (fnIdent f)

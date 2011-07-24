@@ -43,8 +43,8 @@ pair2binding (nm, ty) = TermVarBinding nm (TypedId ty (GlobalSymbol nm))
 
 -----------------------------------------------------------------------
 
-fnFreeVariables f bindings =
-   let allCalledFns = Set.fromList $ freeVars (fnBody f) in
+fnAstFreeVariables f bindings =
+   let allCalledFns = Set.fromList $ freeVars (fnAstBody f) in
    -- remove names of primitive functions
    let nonPrimitives = Set.filter (\var -> isNothing $ termVarLookup var bindings) allCalledFns in
    -- remove recursive function name calls
@@ -53,7 +53,7 @@ fnFreeVariables f bindings =
 buildCallGraph :: [FnAST] -> [ContextBinding ty] -> [Graph.SCC FnAST]
 buildCallGraph asts bindings = Graph.stronglyConnComp nodeList where
   nodeList = map (\ast -> (ast, fnAstName ast,
-                           fnFreeVariables ast bindings)) asts
+                           fnAstFreeVariables ast bindings)) asts
 
 -----------------------------------------------------------------------
 
@@ -103,14 +103,14 @@ typecheckFnSCC scc (ctx, tcenv) = do
 -- |     or else we consider type checking to have failed
 -- |     (no implicit instantiation at the moment!)
 typecheckModule :: Bool -> ModuleAST FnAST TypeAST -> TcEnv
-                        -> IO (OutputOr (Context TypeIL, ModuleAST AIFn TypeIL))
+                        -> IO (OutputOr (Context TypeIL, ModuleAST (Fn AIExpr) TypeIL))
 typecheckModule verboseMode mod tcenv0 = do
     let fns = moduleASTfunctions mod
     let primBindings = computeContextBindings primitiveDecls
     let declBindings = computeContextBindings (moduleASTdecls mod)
     let sortedFns = buildCallGraph fns declBindings -- :: [SCC FnAST]
     putStrLn $ "Function SCC list : " ++
-                        show [(fnAstName f, fnFreeVariables f declBindings)
+                        show [(fnAstName f, fnAstFreeVariables f declBindings)
                              | fns <- sortedFns, f <- Graph.flattenSCC fns]
     let ctx0 = Context declBindings primBindings verboseMode (knownProcNames mod)
     (annFns, (ctx, tcenv)) <- mapFoldM sortedFns (ctx0, tcenv0) typecheckFnSCC
@@ -132,7 +132,7 @@ typecheckModule verboseMode mod tcenv0 = do
    convertTypeILofAST :: ModuleAST FnAST TypeAST
                       -> Context TypeAST
                       -> [OutputOr AnnExpr]
-                      -> Tc (Context TypeIL, ModuleAST AIFn TypeIL)
+                      -> Tc (Context TypeIL, ModuleAST (Fn AIExpr) TypeIL)
    convertTypeILofAST mod ctx_ast oo_annfns = do
      decls  <- mapM convertDecl (moduleASTdecls mod)
      ctx_il <- liftContextM ilOf ctx_ast

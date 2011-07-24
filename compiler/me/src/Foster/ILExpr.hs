@@ -26,7 +26,7 @@ the transformation from AnnExpr to ILExpr is combined with closure conversion
 and lambda lifting.
 
 closureConvertAndLift :: Context TypeIL
-                      -> (ModuleAST AIFn TypeIL)
+                      -> (ModuleAST (Fn AIExpr) TypeIL)
                       -> ILProgram
 --}
 
@@ -112,7 +112,7 @@ ilmPutProc p_action = do
 fakeCloEnvType = TupleTypeIL []
 
 closureConvertAndLift :: Context TypeIL
-                      -> (ModuleAST AIFn TypeIL)
+                      -> (ModuleAST (Fn AIExpr) TypeIL)
                       -> ILProgram
 closureConvertAndLift ctx m =
     let fns = moduleASTfunctions m in
@@ -203,10 +203,10 @@ closureConvert ctx expr =
             -- them to named closures.
             -- We avoid doing this earlier only to enable
             -- special-case optimization for {...}()
-            x@(E_AIFn aiFn)        -> do
+            x@(E_AIFn fn)        -> do
                 clo_id <- ilmFresh "lit_clo"
                 let clovar = E_AIVar $ TypedId (typeAI x) clo_id
-                g (AILetFuns [clo_id] [aiFn] clovar)
+                g (AILetFuns [clo_id] [fn] clovar)
 
             AICall    t b es -> do
                 cargs <- mapM g es
@@ -228,13 +228,13 @@ closureConvert ctx expr =
                     (E_AIVar v)  -> do nestedLets cargs (\vars -> (ILCall t v vars))
                     _ -> do cb <- g b; nestedLets (cb:cargs) (\(vb:vars) -> (ILCall t vb vars))
 
-closureConvertedProc :: [AIVar] -> AIFn -> ILExpr -> ILM ILProcDef
+closureConvertedProc :: [AIVar] -> (Fn AIExpr) -> ILExpr -> ILM ILProcDef
 closureConvertedProc liftedProcVars f newbody = do
     -- Ensure that return values are codegenned through a variable binding.
     namedReturnValue <- nestedLets [newbody] (\[rv] -> ILVar rv)
-    return $ ILProcDef (fnTypeILRange (aiFnType f))
-              (aiFnIdent f) liftedProcVars
-              (aiFnRange f) FastCC namedReturnValue
+    return $ ILProcDef (fnTypeILRange (fnType f))
+              (fnIdent f) liftedProcVars
+              (fnRange f) FastCC namedReturnValue
 
 -- For example, if we have something like
 --      let y = blah in ( (\x -> x + y) foobar )
@@ -242,12 +242,12 @@ closureConvertedProc liftedProcVars f newbody = do
 -- we can rewrite the lambda to a closed proc:
 --      letproc p = \y x -> x + y
 --      let y = blah in p(y, foobar)
-lambdaLift :: Context TypeIL -> AIFn -> [AIVar] -> ILM ILProcDef
+lambdaLift :: Context TypeIL -> (Fn AIExpr) -> [AIVar] -> ILM ILProcDef
 lambdaLift ctx f freeVars =
-    let liftedProcVars = freeVars ++ aiFnVars f in
+    let liftedProcVars = freeVars ++ fnVars f in
     let extctx = prependContextBindings ctx (bindingsForVars liftedProcVars) in
     -- Ensure the free vars in the body are bound in the ctx...
-     do newbody <- closureConvert extctx (aiFnBody f)
+     do newbody <- closureConvert extctx (fnBody f)
         ilmPutProc (closureConvertedProc liftedProcVars f newbody)
     where
         bindingsForVars vars = [TermVarBinding (identPrefix i) v
@@ -305,10 +305,10 @@ nestedLets exprs g = nestedLets' exprs [] g
 excluding :: Ord a => [a] -> Set a -> [a]
 excluding bs zs =  Set.toList $ Set.difference (Set.fromList bs) zs
 
-type InfoMap = Map Ident (AIFn, Ident)
+type InfoMap = Map Ident ((Fn AIExpr), Ident)
 
 closedNamesOfAIFn :: InfoMap
-                  -> (Ident, AIFn)
+                  -> (Ident, (Fn AIExpr))
                   -> ILM [String]
 closedNamesOfAIFn infoMap (self_id, fn) = do
     -- ids are the names of the recursively bound functions
@@ -336,7 +336,7 @@ closedNamesOfAIFn infoMap (self_id, fn) = do
 
 closureOfAIFn :: Context TypeIL
                -> InfoMap
-               -> ([String], (Ident, AIFn))
+               -> ([String], (Ident, (Fn AIExpr)))
                -> ILM (ILClosure, ILProcDef)
 closureOfAIFn ctx infoMap (closedNames, (self_id, fn)) = do
     let transformedFn = makeEnvPassingExplicit (E_AIFn fn)
@@ -360,21 +360,21 @@ closureOfAIFn ctx infoMap (closedNames, (self_id, fn)) = do
 
         -- If the body has x and y free, the closure converted body should be
         --     case env of (x, y, ...) -> body end
-        newbody <- let oldbody = aiFnBody f in
+        newbody <- let oldbody = fnBody f in
                    let norange = EMissingSourceRange "closureConvertAIFn" in
                    let patVar a = P_Variable norange (tidIdent a) in
                    closureConvert ctx $
                      AICase (typeAI oldbody) (E_AIVar envVar)
                         [ (P_Tuple norange (map patVar uniqFreeVars)
                           , oldbody) ]
-        proc <- ilmPutProc (closureConvertedProc (envVar:(aiFnVars f)) f newbody)
+        proc <- ilmPutProc (closureConvertedProc (envVar:(fnVars f)) f newbody)
         return (envId, proc)
     closureConvertFn _ info freeNames = error "closureConvertAIFn called on non-fn"
 
     makeEnvPassingExplicit :: AIExpr -> AIExpr
     makeEnvPassingExplicit expr =
       q expr where
-      fq (AiFn ty id vars body rng) = (AiFn ty id vars (q body) rng)
+      fq (Fn ty id vars body rng) = (Fn ty id vars (q body) rng)
       q e = case e of
         AIBool  {}       -> e
         AIInt   {}       -> e
@@ -397,7 +397,7 @@ closureOfAIFn ctx infoMap (closedNames, (self_id, fn)) = do
         AICall     t (E_AIVar v) es
             | Map.member (tidIdent v) infoMap ->
                 let (f, envid) = infoMap Map.! (tidIdent v) in
-                let procId = TypedId (aiFnType f) (aiFnIdent f) in
+                let procId = TypedId (fnType f) (fnIdent f) in
                 -- We don't know the env type here, since we don't
                 -- pre-collect the set of closed-over envs from other procs.
                 let env = E_AIVar (TypedId fakeCloEnvType envid) in
@@ -447,7 +447,7 @@ typeAI (AIStore t _ _)     = t
 typeAI (AISubscript t _ _) = t
 typeAI (AICase t _ _)      = t
 typeAI (E_AITyApp substitutedTy tm tyArgs) = substitutedTy
-typeAI (E_AIFn aiFn)       = aiFnType aiFn
+typeAI (E_AIFn fn)       = fnType fn
 
 instance Structured ILExpr where
     textOf e width =

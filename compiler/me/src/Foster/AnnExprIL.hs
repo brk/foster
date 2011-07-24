@@ -27,14 +27,14 @@ data AIExpr=
           AIBool       Bool
         | AIInt        TypeIL LiteralInt
         | AITuple      [AIExpr]
-        | E_AIFn       AIFn
+        | E_AIFn       (Fn AIExpr)
         -- Control flow
         | AIIf         TypeIL AIExpr AIExpr AIExpr
         | AIUntil      TypeIL AIExpr AIExpr
         -- Creation of bindings
         | AICase       TypeIL AIExpr [(Pattern, AIExpr)]
         | AILetVar     Ident AIExpr AIExpr
-        | AILetFuns    [Ident] [AIFn] AIExpr
+        | AILetFuns    [Ident] [Fn AIExpr] AIExpr
         -- Use of bindings
         | E_AIVar      (TypedId TypeIL)
         | E_AIPrim     ILPrim
@@ -51,15 +51,6 @@ data AIExpr=
                     , aiTyAppExpr        :: AIExpr
                     , aiTyAppArgTypes    :: TypeIL }
         deriving (Show)
-
-data AIFn = AiFn { aiFnType  :: TypeIL
-                 , aiFnIdent :: Ident
-                 , aiFnVars  :: [TypedId TypeIL]
-                 , aiFnBody  :: AIExpr
-                 , aiFnRange :: ESourceRange
-                 } deriving (Show)
-
-aiFnName f = identPrefix (aiFnIdent f)
 
 ail :: AnnExpr -> Tc AIExpr
 ail ae =
@@ -79,7 +70,7 @@ ail ae =
                                          return $ AIInt ti int
         AnnLetVar _rng id  a b     -> do [x,y]   <- mapM q [a,b]
                                          return $ AILetVar id x y
-        AnnLetFuns _rng ids fns e  -> do fnsi <- mapM aiFnOf fns
+        AnnLetFuns _rng ids fns e  -> do fnsi <- mapM fnOf fns
                                          ei <- q e
                                          return $ AILetFuns ids fnsi ei
         AnnAlloc _rng   a          -> do [x] <- mapM q [a]
@@ -137,7 +128,7 @@ ail ae =
                 vv <- aiVar v
                 return $ E_AIVar vv
 
-        E_AnnFn annFn              -> do aif <- aiFnOf annFn
+        E_AnnFn annFn              -> do aif <- fnOf annFn
                                          return $ E_AIFn aif
         E_AnnTyApp _rng t e argty  -> do ti <- ilOf t
                                          at <- ilOf argty
@@ -157,17 +148,17 @@ ilPrimFor ti id =
 aiVar (TypedId t i) = do ty <- ilOf t
                          return $ TypedId ty i
 
-aiFnOf :: AnnFn -> Tc AIFn
-aiFnOf f = do
+fnOf :: AnnFn -> Tc (Fn AIExpr)
+fnOf f = do
  ft <- ilOf (annFnType f)
  fnVars <- mapM aiVar (annFnVars f)
  body <- ail (annFnBody f)
- return $ AiFn { aiFnType  = ft
-               , aiFnIdent = annFnIdent f
-               , aiFnVars  = fnVars
-               , aiFnBody  = body
-               , aiFnRange = (annFnRange f)
-               }
+ return $ Fn { fnType  = ft
+             , fnIdent = annFnIdent f
+             , fnVars  = fnVars
+             , fnBody  = body
+             , fnRange = (annFnRange f)
+             }
 
 instance AExpr AIExpr where
     freeIdents e = case e of
@@ -179,8 +170,8 @@ instance AExpr AIExpr where
         AILetFuns ids fns e ->
                            concatMap boundvars (zip ids fns) ++ (freeIdents e `butnot` ids) where
                                      boundvars (id, fn) = freeIdents (E_AIFn fn) `butnot` [id]
-        E_AIFn f       -> let bodyvars =  freeIdents (aiFnBody f) in
-                          let boundvars = map tidIdent (aiFnVars f) in
+        E_AIFn f       -> let bodyvars =  freeIdents (fnBody f) in
+                          let boundvars = map tidIdent (fnVars f) in
                           bodyvars `butnot` boundvars
         _               -> concatMap freeIdents (childrenOf e)
 
@@ -207,6 +198,6 @@ instance Structured AIExpr where
             AITuple     es        -> es
             AICase t e bs         -> e:(map snd bs)
             E_AIVar {}            -> []
-            E_AIFn f              -> [aiFnBody f]
+            E_AIFn f              -> [fnBody f]
             E_AITyApp t a argty   -> [a]
 
