@@ -51,6 +51,7 @@ data TcEnv = TcEnv { tcEnvUniqs :: IORef Uniq
                    }
 
 newtype Tc a = Tc (TcEnv -> IO (OutputOr a))
+
 unTc :: TcEnv -> Tc a    -> IO (OutputOr a)
 unTc e (Tc f) =   f e
 
@@ -63,15 +64,16 @@ instance Monad Tc where
                                 Errors ss -> return (Errors ss)
                              })
 
-tcInject :: (OutputOr a) -> (a -> Tc b) -> Tc b
-tcInject result k = Tc (\env -> do case result of
+-- | Given a Tc function and the result of a previous Tc action,
+-- | fmap the function in OutputOr (and return a monadic value).
+tcInject :: (a -> Tc b) -> (OutputOr a) -> Tc b
+tcInject k result = Tc (\env -> do case result of
                                      OK expr -> unTc env (k expr)
                                      Errors ss -> return (Errors ss)
                        )
 
 -- Modifies the standard Tc monad bind operator
 -- to append an error message, if necessary.
---tcOnError :: (Maybe Output) ->
 tcOnError Nothing  m k = m >>= k
 tcOnError (Just o) m k = Tc (\env -> do { result <- unTc env m
                                         ; case result of

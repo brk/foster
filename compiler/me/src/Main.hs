@@ -17,7 +17,7 @@ import qualified Data.ByteString.Lazy as L(readFile)
 import List(all)
 import qualified Data.Set as Set
 import qualified Data.Graph as Graph
-import Data.Maybe(isJust)
+import Data.Maybe(isNothing)
 import Data.Foldable(forM_)
 import Control.Monad.State
 import Data.IORef(newIORef, readIORef)
@@ -38,49 +38,24 @@ import Foster.Context
 import Foster.Smallstep
 
 -----------------------------------------------------------------------
-class FnLike f where
-    fnName :: f -> String
-    fnFreeVariables :: f -> [ContextBinding ty] -> [String]
-
-instance FnLike FnAST where
-    fnName f = fnAstName f
-    fnFreeVariables f bindings =
-        let allCalledFns = Set.fromList $ freeVars (fnBody f) in
-        -- remove names of primitive functions
-        let nonPrimitives = Set.filter (\var -> not (isJust $ termVarLookup var bindings)) allCalledFns in
-        -- remove recursive function name calls
-        Set.toList $ Set.filter (\name -> fnName f /= name) nonPrimitives
-
-instance Expr AnnExpr where
-    freeVars e = map identPrefix (freeIdents e)
-
-instance FnLike AnnFn where
-    fnName = fnNameA
-    fnFreeVariables f bindings =
-        let allCalledFns = Set.fromList $ freeVars (annFnBody f) in
-        -- remove names of primitive functions
-        let nonPrimitives = Set.filter (\var -> not (isJust $ termVarLookup var bindings)) allCalledFns in
-        -- remove recursive function name calls
-        Set.toList $ Set.filter (\name -> fnName f /= name) nonPrimitives
-
-fnNames f = [fnName f]
 
 pair2binding (nm, ty) = TermVarBinding nm (TypedId ty (GlobalSymbol nm))
 
-computeContextBindings :: [(String, TypeAST)] -> [ContextBinding TypeAST]
-computeContextBindings decls = map pair2binding decls
+-----------------------------------------------------------------------
 
-buildCallGraph :: FnLike f => [f] -> [ContextBinding ty] -> [Graph.SCC f]
+fnFreeVariables f bindings =
+   let allCalledFns = Set.fromList $ freeVars (fnBody f) in
+   -- remove names of primitive functions
+   let nonPrimitives = Set.filter (\var -> isNothing $ termVarLookup var bindings) allCalledFns in
+   -- remove recursive function name calls
+   Set.toList $ Set.filter (\name -> fnAstName f /= name) nonPrimitives
+
+buildCallGraph :: [FnAST] -> [ContextBinding ty] -> [Graph.SCC FnAST]
 buildCallGraph asts bindings = Graph.stronglyConnComp nodeList where
-  nodeList = map (\ast -> (ast, fnName ast,
+  nodeList = map (\ast -> (ast, fnAstName ast,
                            fnFreeVariables ast bindings)) asts
 
-bindingForAnnFn :: AnnFn -> ContextBinding TypeAST
-bindingForAnnFn f = TermVarBinding (fnNameA f) (annFnVar f)
- where annFnVar f = TypedId (annFnType f) (annFnIdent f)
-
-bindingForFnAST :: FnAST -> TypeAST -> ContextBinding TypeAST
-bindingForFnAST f t = let n = fnName f in pair2binding (n, t)
+-----------------------------------------------------------------------
 
 -- Every function in the SCC should typecheck against the input context,
 -- and the resulting context should include the computed types of each
@@ -92,7 +67,7 @@ typecheckFnSCC scc (ctx, tcenv) = do
     let fns = Graph.flattenSCC scc
     annfns <- forM fns $ \fn -> do
         let ast = (E_FnAST fn)
-        let name = fnName fn
+        let name = fnAstName fn
         putStrLn $ "typechecking " ++ name
         annfn <- unTc tcenv $
                     do uRetTy <- newTcUnificationVar $ "toplevel fn type for " ++ name
@@ -102,24 +77,31 @@ typecheckFnSCC scc (ctx, tcenv) = do
         -- the output context is threaded through further type checking.
         inspect ctx annfn ast
         return annfn
-    if allOK annfns
+    if List.all isOK annfns
      then let fns = [f | (OK (E_AnnFn f)) <- annfns] in
           let newbindings = foldr (\f b -> (bindingForAnnFn f):b) [] fns in
           return (annfns, (prependContextBindings ctx newbindings, tcenv))
      else return ([Errors [out $ "not all functions type checked correctly in SCC: "
-                             ++ show [fnName f | f <- fns]]
+                             ++ show [fnAstName f | f <- fns]]
            ],(ctx, tcenv))
 
-knownProcNames mod =
-  Set.fromList $ concatMap fnNames (moduleASTfunctions mod) ++
-                 concatMap procNames (moduleASTdecls mod)
-  where
-        procNames (name, ty) | isProcType ty = [name]
-                             | otherwise     = []
-          where isProcType (FnTypeAST _ _ _ FT_Proc) = True
-                isProcType  _                        = False
+   where
+        bindingForAnnFn :: AnnFn -> ContextBinding TypeAST
+        bindingForAnnFn f = TermVarBinding (fnNameA f) (annFnVar f)
+         where annFnVar f = TypedId (annFnType f) (annFnIdent f)
 
+        bindingForFnAST :: FnAST -> TypeAST -> ContextBinding TypeAST
+        bindingForFnAST f t = pair2binding (fnAstName f, t)
 
+-- | Typechecking a module proceeds as follows:
+-- |  #. Build separate binding lists for the globally-defined primitiveDecls
+-- |     and the module's top-level (function) declarations.
+-- |  #. Build a (conservative) dependency graph on the module's top-level
+-- |     declarations, yielding a list of SCCs of declarations.
+-- |  #. Typecheck the SCCs bottom-up, propagating results as we go along.
+-- |  #. Make sure that all unification variables have been properly eliminated,
+-- |     or else we consider type checking to have failed
+-- |     (no implicit instantiation at the moment!)
 typecheckModule :: Bool -> ModuleAST FnAST TypeAST -> TcEnv
                         -> IO (OutputOr (Context TypeIL, ModuleAST AIFn TypeIL))
 typecheckModule verboseMode mod tcenv0 = do
@@ -127,47 +109,53 @@ typecheckModule verboseMode mod tcenv0 = do
     let primBindings = computeContextBindings primitiveDecls
     let declBindings = computeContextBindings (moduleASTdecls mod)
     let sortedFns = buildCallGraph fns declBindings -- :: [SCC FnAST]
-    putStrLn $ "Function SCC list : " ++ show [(fnName f, fnFreeVariables f declBindings) | fns <- sortedFns, f <- Graph.flattenSCC fns]
+    putStrLn $ "Function SCC list : " ++
+                        show [(fnAstName f, fnFreeVariables f declBindings)
+                             | fns <- sortedFns, f <- Graph.flattenSCC fns]
     let ctx0 = Context declBindings primBindings verboseMode (knownProcNames mod)
     (annFns, (ctx, tcenv)) <- mapFoldM sortedFns (ctx0, tcenv0) typecheckFnSCC
     unTc tcenv (convertTypeILofAST mod ctx annFns)
+ where
+   computeContextBindings :: [(String, TypeAST)] -> [ContextBinding TypeAST]
+   computeContextBindings decls = map pair2binding decls
 
-convertTypeILofAST :: ModuleAST FnAST TypeAST
-                   -> Context TypeAST
-                   -> [OutputOr AnnExpr]
-                   -> Tc (Context TypeIL, ModuleAST AIFn TypeIL)
-convertTypeILofAST mod ctx_ast oo_annfns = do
-  decls <- mapM convertDecl (moduleASTdecls mod)
-  ctx_il <- liftContextM ilOf ctx_ast
-  aiFns <- mapM (\ae -> tcInject ae ail) oo_annfns
-  let m = ModuleAST [f | (E_AIFn f) <- aiFns]
-                    decls (moduleASTsourceLines mod)
-  return (ctx_il, m)
+   knownProcNames mod =
+     Set.fromList $ concatMap fnNames (moduleASTfunctions mod) ++
+                    concatMap procNames (moduleASTdecls mod)
+        where
+           fnNames f = [fnAstName f]
+           isProcType (FnTypeAST _ _ _ FT_Proc) = True
+           isProcType  _                        = False
+           procNames (name, ty) | isProcType ty = [name]
+                                | otherwise     = []
 
-convertDecl :: (String, TypeAST) -> Tc (String, TypeIL)
-convertDecl (s, ty) = do
-  t <- ilOf ty
-  return (s, t)
+   convertTypeILofAST :: ModuleAST FnAST TypeAST
+                      -> Context TypeAST
+                      -> [OutputOr AnnExpr]
+                      -> Tc (Context TypeIL, ModuleAST AIFn TypeIL)
+   convertTypeILofAST mod ctx_ast oo_annfns = do
+     decls  <- mapM convertDecl (moduleASTdecls mod)
+     ctx_il <- liftContextM ilOf ctx_ast
+     aiFns  <- mapM (tcInject ail) oo_annfns
+     let m = ModuleAST [f | (E_AIFn f) <- aiFns]
+                       decls (moduleASTsourceLines mod)
+     return (ctx_il, m)
+       where
+        convertDecl :: (String, TypeAST) -> Tc (String, TypeIL)
+        convertDecl (s, ty) = do
+          t <- ilOf ty
+          return (s, t)
 
-liftBinding :: Monad m => (t1 -> m t2) -> ContextBinding t1 -> m (ContextBinding t2)
-liftBinding f (TermVarBinding s (TypedId t i)) = do
-  t2 <- f t
-  return $ TermVarBinding s (TypedId t2 i)
+        liftContextM :: Monad m => (t1 -> m t2) -> Context t1 -> m (Context t2)
+        liftContextM f (Context cb pb vb kp) = do
+          cb' <- mapM (liftBinding f) cb
+          pb' <- mapM (liftBinding f) pb
+          return $ Context cb' pb' vb kp
 
-liftContextM :: Monad m => (t1 -> m t2) -> Context t1 -> m (Context t2)
-liftContextM f (Context cb pb vb kp) = do
-  cb' <- mapM (liftBinding f) cb
-  pb' <- mapM (liftBinding f) pb
-  return $ Context cb' pb' vb kp
-
-liftOutput :: (a -> OutputOr b) -> OutputOr a -> OutputOr b
-liftOutput f ooa =
-  case ooa of
-    OK a     -> f a
-    Errors o -> Errors o
-
-allOK :: [OutputOr ty] -> Bool
-allOK results = List.all isOK results
+        liftBinding :: Monad m => (t1 -> m t2) -> ContextBinding t1 -> m (ContextBinding t2)
+        liftBinding f (TermVarBinding s (TypedId t i)) = do
+          t2 <- f t
+          return $ TermVarBinding s (TypedId t2 i)
 
 printOutputs :: [Output] -> IO ()
 printOutputs outs =

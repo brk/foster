@@ -67,7 +67,7 @@ ail ae =
     case ae of
         AnnBool _rng b             -> return $ AIBool         b
         AnnCompiles _rng (CompilesResult ooe) -> do
-                oox <- tcIntrospect (tcInject ooe q)
+                oox <- tcIntrospect (tcInject q ooe)
                 return $ AIBool (isOK oox)
         AnnIf rng  t  a b c        -> do ti <- ilOf t
                                          [x,y,z] <- mapM q [a,b,c]
@@ -130,7 +130,8 @@ ail ae =
                        x <- tcFresh $ "appty_" ++ primName
                        return $ AILetVar x (E_AITyApp oti (E_AIVar primVar) appti) call
 
-                otherwise -> do bi <- q b ; return $ AICall ti bi argsi
+                otherwise -> do bi <- q b
+                                return $ AICall ti bi argsi
 
         E_AnnVar _rng v -> do
                 vv <- aiVar v
