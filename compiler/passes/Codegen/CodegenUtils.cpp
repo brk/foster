@@ -117,6 +117,27 @@ Value* getElementFromComposite(Value* compositeValue, Value* idxValue,
 
 ////////////////////////////////////////////////////////////////////
 
+Constant* getSlotName(llvm::AllocaInst* stackslot, CodegenPass* pass) {
+  std::string fnname = stackslot->getParent()->getParent()->getNameStr();
+  std::string slotname = fnname + "(( " + stackslot->getNameStr() + " ))";
+  Constant* cslotname = ConstantArray::get(getGlobalContext(),
+                                           slotname.c_str(),
+                                           true);
+  GlobalVariable* slotnameVar = new GlobalVariable(
+      /*Module=*/      *(pass->mod),
+      /*Type=*/        cslotname->getType(),
+      /*isConstant=*/  true,
+      /*Linkage=*/     GlobalValue::PrivateLinkage,
+      /*Initializer=*/ cslotname,
+      /*Name=*/        ".slotname." + slotname);
+  slotnameVar->setAlignment(1);
+
+  return llvm::ConstantExpr::getBitCast(arrayVariableToPointer(slotnameVar),
+                                        builder.getInt8PtrTy());
+}
+
+////////////////////////////////////////////////////////////////////
+
 void markGCRootWithMetadata(llvm::AllocaInst* stackslot, CodegenPass* pass,
                             llvm::Constant* const meta) {
   llvm::Value* const vmeta = meta;
@@ -139,31 +160,8 @@ void markGCRootWithMetadata(llvm::AllocaInst* stackslot, CodegenPass* pass,
   tmpBuilder.CreateCall2(llvm_gcroot, root, meta);
 }
 
-void markGCRootWithUnknownCtor(llvm::AllocaInst* stackslot, CodegenPass* pass) {
-  markGCRootWithMetadata(stackslot, pass,
-         llvm::ConstantPointerNull::get(builder.getInt8PtrTy()));
-}
-
-void markGCRoot(llvm::AllocaInst* stackslot,
-                llvm::Constant* meta,
-                CodegenPass* pass) {
-  // If we don't have something more specific, try using
-  // the lowered type's type map.
-  if (!meta) {
-    EDiag() << "Why are we marking a gc root without any metadata??\n\t"
-                  << str(stackslot->getType());
-    meta = getTypeMapForType(stackslot->getType(), pass->mod, NotArray);
-  }
-
-  if (!meta) {
-    // If we don't have a type map, use a NULL pointer.
-    meta = llvm::ConstantPointerNull::get(builder.getInt8PtrTy());
-  } else if (meta->getType() != builder.getInt8PtrTy()) {
-    // If we do have a type map, make sure it's of type i8*.
-    meta = ConstantExpr::getBitCast(meta, builder.getInt8PtrTy());
-  }
-
-  markGCRootWithMetadata(stackslot, pass, meta);
+void markGCRoot(llvm::AllocaInst* stackslot, CodegenPass* pass) {
+  markGCRootWithMetadata(stackslot, pass, getSlotName(stackslot, pass));
 }
 
 void CodegenPass::addEntryBB(Function* f) {
@@ -190,29 +188,13 @@ llvm::AllocaInst* CreateEntryAlloca(const llvm::Type* ty, const std::string& nam
 }
 
 llvm::AllocaInst* stackSlotWithValue(llvm::Value* val, const std::string& name) {
-  llvm::AllocaInst* valptr = CreateEntryAlloca(val->getType(), name);
+  llvm::AllocaInst* valptr = CreateEntryAlloca(val->getType(), val->getNameStr() + name);
   builder.CreateStore(val, valptr, /*isVolatile=*/ false);
   return valptr;
 }
 
 void CodegenPass::markAsNeedingImplicitLoads(llvm::Value* v) {
   this->needsImplicitLoad.insert(v);
-}
-
-llvm::AllocaInst*
-CodegenPass::storeAndMarkPointerAsGCRootUnknownCtor(llvm::Value* val) {
-  ASSERT(val->getType()->isPointerTy());
-
-  // allocate a slot for a T* on the stack
-  llvm::AllocaInst* stackslot = stackSlotWithValue(val, "stackref");
-  this->markAsNeedingImplicitLoads(stackslot);
-
-  markGCRootWithUnknownCtor(stackslot, this);
-
-  // Instead of returning the pointer (of type T*),
-  // we return the stack slot (of type T**) so that copying GC will be able to
-  // modify the stack slot effectively.
-  return stackslot;
 }
 
 // Unlike markGCRoot, this does not require the root be an AllocaInst
@@ -223,18 +205,14 @@ CodegenPass::storeAndMarkPointerAsGCRootUnknownCtor(llvm::Value* val) {
 //      TODO need to guarantee that the val passed to us is either
 //      a pointer to memalloc-ed memory, or a value that does not escape.
 llvm::AllocaInst*
-CodegenPass::storeAndMarkPointerAsGCRootKnownCtor(llvm::Value* val,
-                                                  ArrayOrNot arrayStatus) {
+CodegenPass::storeAndMarkPointerAsGCRoot(llvm::Value* val) {
   ASSERT(val->getType()->isPointerTy());
 
   // allocate a slot for a T* on the stack
-  llvm::AllocaInst* stackslot = stackSlotWithValue(val, "stackref");
+  llvm::AllocaInst* stackslot = stackSlotWithValue(val, ".stackref");
   this->markAsNeedingImplicitLoads(stackslot);
 
-  markGCRoot(stackslot,
-             getTypeMapForType(val->getType()->getContainedType(0),
-                                       mod, arrayStatus),
-             this);
+  markGCRoot(stackslot, this);
 
   // Instead of returning the pointer (of type T*),
   // we return the stack slot (of type T**) so that copying GC will be able to
@@ -256,9 +234,8 @@ CodegenPass::emitMalloc(const llvm::Type* ty) {
   llvm::Value* typemap = builder.CreateBitCast(ti, typemap_type);
   llvm::CallInst* mem = builder.CreateCall(memalloc_cell, typemap, "mem");
 
-  return storeAndMarkPointerAsGCRootKnownCtor(
-                       builder.CreateBitCast(mem, ptrTo(ty), "ptr"),
-                       NotArray);
+  return storeAndMarkPointerAsGCRoot(
+                       builder.CreateBitCast(mem, ptrTo(ty), "ptr"));
 }
 
 
@@ -277,10 +254,9 @@ CodegenPass::emitArrayMalloc(const llvm::Type* elt_ty,
   llvm::Value* num_elts = builder.CreateSExt(n, builder.getInt64Ty(), "ext");
   llvm::CallInst* mem = builder.CreateCall2(memalloc, typemap, num_elts, "mem");
 
-  return storeAndMarkPointerAsGCRootKnownCtor(
-                       builder.CreateBitCast(mem,
-                              ArrayTypeAST::getZeroLengthTypeRef(elt_ty), "arr_ptr"),
-                       YesArray);
+  return storeAndMarkPointerAsGCRoot(
+           builder.CreateBitCast(mem,
+                  ArrayTypeAST::getZeroLengthTypeRef(elt_ty), "arr_ptr"));
 }
 
 llvm::Value*

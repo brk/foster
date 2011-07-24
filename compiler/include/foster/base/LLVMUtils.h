@@ -61,6 +61,7 @@ void makePathAbsolute(llvm::sys::Path& path);
 
 const char* llvmValueTag(const llvm::Value* v);
 void markAsNonAllocating(llvm::CallInst* callInst);
+llvm::Constant* arrayVariableToPointer(llvm::GlobalVariable* arr);
 
 bool isPointerToFunction(const llvm::Type* p);
 

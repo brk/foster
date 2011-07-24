@@ -34,14 +34,6 @@ llvm::GlobalVariable* getTypeMapForType(const llvm::Type*, llvm::Module*, ArrayO
 typedef Constant*   Offset;
 typedef std::vector<Offset> OffsetSet;
 
-// Converts a global variable of type [_ x T] to a local var of type T*.
-Constant* arrayVariableToPointer(GlobalVariable* arr) {
-  std::vector<Constant*> idx;
-  idx.push_back(getConstantInt64For(0));
-  idx.push_back(getConstantInt64For(0));
-  return ConstantExpr::getGetElementPtr(arr, &idx[0], idx.size());
-}
-
 bool isGarbageCollectible(const Type* ty) {
   // For now, we don't distinguish between different kinds of pointer;
   // we consider any pointer to be a possible heap pointer.

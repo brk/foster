@@ -252,6 +252,14 @@ void markAsNonAllocating(llvm::CallInst* callInst) {
   callInst->setMetadata("willnotgc", mdnode);
 }
 
+// Converts a global variable of type [_ x T] to a local var of type T*.
+Constant* arrayVariableToPointer(GlobalVariable* arr) {
+  std::vector<Constant*> idx;
+  idx.push_back(getConstantInt64For(0));
+  idx.push_back(getConstantInt64For(0));
+  return ConstantExpr::getGetElementPtr(arr, &idx[0], idx.size());
+}
+
 llvm::ConstantInt* getConstantInt64For(int64_t val) {
   return llvm::ConstantInt::get(Type::getInt64Ty(getGlobalContext()), val);
 }

@@ -269,14 +269,14 @@ public:
     saw_bad_pointer = true;
     if (next->contains(cell)) {
       fprintf(gclog, "foster_gc error: tried to collect"
-                     " pointer in next-semispace: %p, with meta %p\n",
+                     " cell in next-semispace: %p, with meta %p\n",
                      cell, cell->get_meta());
       fflush(gclog);
       fprintf(gclog, "%p", ((heap_cell*)NULL)->get_meta());
       //return false;
     }
     fprintf(gclog, "foster_gc error: copying_gc cannot collect"
-                     " pointer that it did not allocate: %p, with meta %p\n",
+                     " cell that it did not allocate: %p, with meta %p\n",
                      cell, cell->get_meta());
     return false;
   }
@@ -337,9 +337,11 @@ copying_gc* allocator = NULL;
 // This function statically references the global allocator.
 // Eventually we'll want a generational GC with thread-specific
 // allocators and (perhaps) type-specific allocators.
-void copying_gc_root_visitor(void **root, const void *meta) {
+void copying_gc_root_visitor(void **root, const void *slotname) {
   foster_assert(root != NULL, "someone passed a NULL root addr!");
   void* body = *root;
+  //fprintf(gclog, "\t\tSTACK SLOT %p contains %p, slot name = %s\n", root, body,
+  //                   (slotname ? ((const char*) slotname) : "<unknown slot>"));
   if (body) {
     allocator->copy_or_update(body, root);
   }
@@ -352,7 +354,7 @@ base::TimeTicks    init_start;
 void copying_gc::gc() {
   base::TimeTicks begin = base::TimeTicks::HighResNow();
   ++this->num_collections;
-  fprintf(gclog, "visiting gc roots on current stack\n"); fflush(gclog);
+  fprintf(gclog, ">>>>>>> visiting gc roots on current stack\n"); fflush(gclog);
   visitGCRootsWithStackMaps(__builtin_frame_address(0),
                             copying_gc_root_visitor);
 
@@ -490,8 +492,8 @@ void visitGCRootsWithStackMaps(void* start_frame,
       continue;
     }
 
-    fprintf(gclog, "retaddr %p, frame ptr %p: live count w/meta %d, w/o %d\n",
-      safePointAddr, frameptr,
+    fprintf(gclog, "\nframe %d: retaddr %p, frame ptr %p: live count w/meta %d, w/o %d\n",
+      i, safePointAddr, frameptr,
       pc->liveCountWithMetadata, pc->liveCountWithoutMetadata);
 
     int32_t frameSize = pc->frameSize;
@@ -502,7 +504,9 @@ void visitGCRootsWithStackMaps(void* start_frame,
 
       visitor((void**) rootaddr, meta);
     }
-    // TODO also scan pointers without metadata
+
+    foster_assert(pc->liveCountWithoutMetadata == 0,
+                  "TODO: scan pointer w/o metadata");
   }
 }
 
@@ -607,7 +611,7 @@ void scanCoroStack(foster_generic_coro* coro,
 
   visitGCRootsWithStackMaps(frameptr, visitor);
 
-  fprintf(gclog, "scanned ccoro stack from %p\n", frameptr);
+  fprintf(gclog, "========= scanned ccoro stack from %p\n", frameptr);
   fflush(gclog);
 }
 
