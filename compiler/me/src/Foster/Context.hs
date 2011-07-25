@@ -2,22 +2,18 @@ module Foster.Context where
 
 import Data.IORef(IORef,newIORef,readIORef,writeIORef)
 
-import Data.Set(Set)
-import Data.Set as Set(empty)
-
 import Foster.Base
 import Foster.ExprAST
 import Foster.TypeAST
 
-type KnownProcNames = Set String
 data ContextBinding ty = TermVarBinding String (TypedId ty)
 data Context ty = Context { contextBindings   :: [ContextBinding ty]
                           , primitiveBindings :: [ContextBinding ty]
                           , contextVerbose    :: Bool
-                          , contextKnownProcs :: KnownProcNames
                           }
 
-emptyContext = Context [] [] True Set.empty
+emptyContext :: Context ty
+emptyContext = Context [] [] True
 
 prependContextBinding :: Context ty -> ContextBinding ty -> Context ty
 prependContextBinding ctx prefix =

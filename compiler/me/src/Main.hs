@@ -113,22 +113,12 @@ typecheckModule verboseMode mod tcenv0 = do
     putStrLn $ "Function SCC list : " ++
                         show [(fnAstName f, fnAstFreeVariables f declBindings)
                              | fns <- sortedFns, f <- Graph.flattenSCC fns]
-    let ctx0 = Context declBindings primBindings verboseMode (knownProcNames mod)
+    let ctx0 = Context declBindings primBindings verboseMode
     (annFns, (ctx, tcenv)) <- mapFoldM sortedFns (ctx0, tcenv0) typecheckFnSCC
     unTc tcenv (convertTypeILofAST mod ctx annFns)
  where
    computeContextBindings :: [(String, TypeAST)] -> [ContextBinding TypeAST]
    computeContextBindings decls = map pair2binding decls
-
-   knownProcNames mod =
-     Set.fromList $ concatMap fnNames (moduleASTfunctions mod) ++
-                    concatMap procNames (moduleASTdecls mod)
-        where
-           fnNames f = [fnAstName f]
-           isProcType (FnTypeAST _ _ _ FT_Proc) = True
-           isProcType  _                        = False
-           procNames (name, ty) | isProcType ty = [name]
-                                | otherwise     = []
 
    convertTypeILofAST :: ModuleAST FnAST TypeAST
                       -> Context TypeAST
@@ -148,10 +138,10 @@ typecheckModule verboseMode mod tcenv0 = do
           return (s, t)
 
         liftContextM :: Monad m => (t1 -> m t2) -> Context t1 -> m (Context t2)
-        liftContextM f (Context cb pb vb kp) = do
+        liftContextM f (Context cb pb vb) = do
           cb' <- mapM (liftBinding f) cb
           pb' <- mapM (liftBinding f) pb
-          return $ Context cb' pb' vb kp
+          return $ Context cb' pb' vb
 
         liftBinding :: Monad m => (t1 -> m t2) -> ContextBinding t1 -> m (ContextBinding t2)
         liftBinding f (TermVarBinding s (TypedId t i)) = do
