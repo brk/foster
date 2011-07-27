@@ -64,12 +64,12 @@ struct LLDecl {
 struct LLModule {
   const std::string name;
   std::vector<LLProc*> procs;
-  std::vector<LLDecl*> decls;
+  std::vector<LLDecl*> val_decls;
 
   explicit LLModule(const std::string& name,
                     const std::vector<LLProc*>& procs,
-                    const std::vector<LLDecl*> decls)
-  : name(name), procs(procs), decls(decls) {}
+                    const std::vector<LLDecl*> vdecls)
+  : name(name), procs(procs), val_decls(vdecls) {}
 
   void codegenModule(CodegenPass* pass);
 };

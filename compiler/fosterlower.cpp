@@ -167,7 +167,7 @@ LLModule* readLLProgramFromProtobuf(const string& pathstr,
 }
 
 bool
-areDeclaredTypesOK(llvm::Module* mod,
+areDeclaredValueTypesOK(llvm::Module* mod,
      const std::vector<LLDecl*>& decls) {
   for (size_t i = 0; i < decls.size(); ++i) {
     LLDecl*   d = decls[i];
@@ -279,7 +279,7 @@ int main(int argc, char** argv) {
     LLModule* prog = readLLProgramFromProtobuf(optInputPath + ".ll.pb", pbin);
     ASSERT(prog) << "Unable to read LL program from protobuf!";
 
-    if(!areDeclaredTypesOK(module, prog->decls)) {
+    if(!areDeclaredValueTypesOK(module, prog->val_decls)) {
       program_status = 1; goto cleanup;
     }
 
