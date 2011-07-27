@@ -10,9 +10,16 @@ TODO: libraries, benchmarks, & applications
 * Growable vectors
 * Parallel benchmarks?
 
+TODO: minor optimizations
+-------------------------
+* Keep at most one stack slot per subterm (position) of case-inspected values.
+* Ensure that code like ``case foo of (bar, baz) -> (bar, baz) end``
+  doesn't do any heap allocation (when we're returning an immutable value
+  identical to (some subterm of) the inspected value.
+* Perform CSE when doing pattern match compilation.
+
 TODO: implementation details
 ----------------------------
-* Keep at most one stack slot per subterm (position) of case-inspected values.
 * rusage() in runtime when on Linux (+ OS X?)
 * Design pointer representations and GC integration:
  * Stable pointers

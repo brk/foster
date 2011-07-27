@@ -1,5 +1,10 @@
 
 main = {
+  // Make sure that functions with duplicated
+  // argument names are disallowed.
   expect_i1 false;
-  print_i1 (__COMPILES__ { a:() => a:() => a } ) ;
+  print_i1 (__COMPILES__ { a:() => a:() => a } );
+  
+  expect_i1 true;
+  print_i1 (__COMPILES__ { a:() => b:() => a } );
 };

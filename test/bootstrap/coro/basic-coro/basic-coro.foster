@@ -1,5 +1,3 @@
-// IN: 2 3 5 8 13
-
 // coro_wrap = forall a b,
 //             fn (f : fn(arg : a to b)) {
 //               let c = coro_create(f) in {
@@ -22,22 +20,21 @@ main = {
   expect_i32 9999999;
 
   print_i32 1111111;
-  let co = coro_create  { x : i32 =>
-                          print_i32 4444444;
-                          force_gc_for_debugging_purposes ();
-                          print_i32 x; // 10
-                          let y = coro_yield:[i32,i32] 6666;
-                            in {
-                              force_gc_for_debugging_purposes();
-                              coro_yield:[i32,i32] y;
-                              print_i32 5555555;
-                              force_gc_for_debugging_purposes();
-                              print_i32 6666666;
-                              coro_yield:[i32,i32] 7777;
-                              9999
-                            }()
-                          end;
-                   };
+  let co = coro_create { x : i32 =>
+              print_i32 4444444;
+              force_gc_for_debugging_purposes ();
+              print_i32 x; // 10
+              let y = coro_yield:[i32,i32] 6666;
+               in
+                  force_gc_for_debugging_purposes();
+                  coro_yield:[i32,i32] y;
+                  print_i32 5555555;
+                  force_gc_for_debugging_purposes();
+                  print_i32 6666666;
+                  coro_yield:[i32,i32] 7777;
+                  9999
+              end;
+           };
       //j0 = force_gc_for_debugging_purposes();
       r  = (ref 0);
   in

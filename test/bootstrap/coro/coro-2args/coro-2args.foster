@@ -1,12 +1,3 @@
-// IN: 2 3 5 8 13
-
-// coro_wrap = forall a b,
-//             fn (f : fn(arg : a to b)) {
-//               let c = coro_create(f) in {
-//                 fn (arg : a) { coro_invoke(c, a) }
-//               }
-//             }
-
 fst = { x : (i32, i32) => case x of (y, _) -> y end };
 
 test-coro2a = {
@@ -14,39 +5,20 @@ test-coro2a = {
   expect_i32 120;
 
   let co = coro_create { pq : (i32, i32) =>
-                         case pq of (p, q) ->
-                          let a = coro_yield:[(i32,i32),i32] (p +Int32 q);
-                             j0 = coro_yield:[(i32,i32),i32] ((fst a) +Int32 20);
-                             j1 = print_i32 111111;
-                           in 12345 end
-                         end
-                         };
-      x = coro_invoke co (10, 20);
-      y = coro_invoke co (100, 200);
+             case pq of (p, q) ->
+              let a = coro_yield:[(i32,i32),i32] (p +Int32 q);
+               in     coro_yield:[(i32,i32),i32] ((fst a) +Int32 20);
+                      print_i32 111111;
+                 12345
+              end
+             end
+           };
    in
-     print_i32 x;
-     print_i32 y;
+     print_i32 (coro_invoke co (10, 20));
+     print_i32 (coro_invoke co (100, 200));
   end
 };
 
-//test-coro2b = fn (to i32) {
-//  expect_i32(30)
-//  expect_i32(120)
-//
-//  let co = coro_create_i32_i32x2( fn(x : i32 to tuple {i32, i32}) {
-//                           let a : i32 = coro_yield_i32_i32x2(1 +Int32 x, x) in {
-//                            print_i32(111111)
-//                           }
-//                           tuple { 0, 0 }
-//                         }) in {
-//     //let x : tuple {i32,i32} = coro_invoke_i32_i32x2(co, 10) in {
-//     //  print_i32(x[0])
-//       0
-//     //}
-//  }
-//}
-
 main = {
   test-coro2a();
-  //test-coro2b();
 };
