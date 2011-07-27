@@ -15,6 +15,7 @@ import System.Console.ANSI
 import qualified Data.ByteString.Lazy as L(readFile)
 
 import List(all)
+import qualified Data.Map as Map(fromList)
 import qualified Data.Set as Set
 import qualified Data.Graph as Graph
 import Data.Maybe(isNothing)
@@ -109,6 +110,8 @@ typecheckModule verboseMode mod tcenv0 = do
     let fns = moduleASTfunctions mod
     let primBindings = computeContextBindings primitiveDecls
     let declBindings = computeContextBindings (moduleASTdecls mod)
+                    ++ computeContextBindings (concatMap extractCtorTypes $
+                                               moduleASTdataTypes mod)
     let sortedFns = buildCallGraph fns declBindings -- :: [SCC FnAST]
     putStrLn $ "Function SCC list : " ++
                         show [(fnAstName f, fnAstFreeVariables f declBindings)
@@ -120,22 +123,41 @@ typecheckModule verboseMode mod tcenv0 = do
    computeContextBindings :: [(String, TypeAST)] -> [ContextBinding TypeAST]
    computeContextBindings decls = map pair2binding decls
 
+   extractCtorTypes :: DataType TypeAST -> [(String, TypeAST)]
+   extractCtorTypes (DataType datatypeName ctors) = map nmCTy ctors
+     where nmCTy (DataCtor name types) = (name, ctorTypeAST datatypeName types)
+
+   ctorTypeAST dtName types =
+        FnTypeAST (minimalTupleAST types) (NamedTypeAST dtName) FastCC FT_Proc
+
    convertTypeILofAST :: ModuleAST FnAST TypeAST
                       -> Context TypeAST
                       -> [OutputOr AnnExpr]
                       -> Tc (Context TypeIL, ModuleAST (Fn AIExpr) TypeIL)
    convertTypeILofAST mod ctx_ast oo_annfns = do
-     decls  <- mapM convertDecl (moduleASTdecls mod)
-     ctx_il <- liftContextM ilOf ctx_ast
-     aiFns  <- mapM (tcInject ail) oo_annfns
+     decls     <- mapM convertDecl (moduleASTdecls mod)
+     datatypes <- mapM convertDataType (moduleASTdataTypes mod)
+     ctx_il    <- liftContextM ilOf ctx_ast
+     aiFns     <- mapM (tcInject ail) oo_annfns
      let m = ModuleAST [f | (E_AIFn f) <- aiFns]
-                       decls (moduleASTsourceLines mod)
+                       decls datatypes (moduleASTsourceLines mod)
      return (ctx_il, m)
        where
         convertDecl :: (String, TypeAST) -> Tc (String, TypeIL)
         convertDecl (s, ty) = do
           t <- ilOf ty
           return (s, t)
+
+        convertDataType :: DataType TypeAST -> Tc (DataType TypeIL)
+        convertDataType (DataType s ctors) = do
+          cts <- mapM convertDataCtor ctors
+          return $ DataType s cts
+            where
+              convertDataCtor :: DataCtor TypeAST -> Tc (DataCtor TypeIL)
+              convertDataCtor (DataCtor s types) = do
+                tys <- mapM ilOf types
+                return $ DataCtor s tys
+
 
         liftContextM :: Monad m => (t1 -> m t2) -> Context t1 -> m (Context t2)
         liftContextM f (Context cb pb vb) = do
@@ -171,6 +193,17 @@ inspect ctx typechecked ast =
 
             do runOutput $ (outLn "")
             return False
+
+-----------------------------------------------------------------------
+
+dataTypeSigs :: [DataType TypeIL] -> DataTypeSigs
+dataTypeSigs datatypes = Map.fromList $ map ctorIdSet datatypes where
+  ctorIdSet :: DataType TypeIL -> (DataTypeName, DataTypeSig)
+  ctorIdSet (DataType name ctors) =
+      let ctorNameToIdMap = map (ctorIdFor name) (zip [0..] ctors) in
+      (name, DataTypeSig (Map.fromList ctorNameToIdMap))
+
+  ctorIdFor name (n, DataCtor ctorName _) = (ctorName, CtorId name ctorName n)
 
 -----------------------------------------------------------------------
 
@@ -221,7 +254,8 @@ main = do
         varlist <- newIORef []
         let tcenv = TcEnv { tcEnvUniqs = uniqref,
                      tcUnificationVars = varlist,
-                             tcParents = [] }
+                             tcParents = [],
+                           tcDataTypes = moduleASTdataTypes sm }
         let verboseMode = getVerboseFlag flagVals
         modResults  <- typecheckModule verboseMode sm tcenv
         case modResults of
@@ -235,8 +269,9 @@ main = do
 
                            runOutput $ (outLn "vvvv contextBindings:====================")
                            runOutput $ (outCSLn Yellow (joinWith "\n" $ map show (contextBindings ctx_il))))
-                         let kmod = kNormalizeModule mod
-                         let prog = closureConvertAndLift ctx_il kmod
+                         let dataSigs = dataTypeSigs (moduleASTdataTypes mod)
+                         let kmod = kNormalizeModule mod ctx_il dataSigs
+                         let prog = closureConvertAndLift ctx_il dataSigs kmod
                          dumpModuleToProtobufIL prog (outfile ++ ".ll.pb")
                          when verboseMode (do
                              runOutput $ (outLn "/// ===================================")

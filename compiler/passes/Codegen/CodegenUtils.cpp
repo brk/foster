@@ -83,16 +83,12 @@ uint64_t getSaturating(const llvm::ConstantInt* ci) {
   return static_cast<T>(ci->getLimitedValue(allOnes));
 }
 
-Value* getElementFromComposite(Value* compositeValue, Value* idxValue,
+Value* getElementFromComposite(Value* compositeValue,  Value* idxValue,
                                const std::string& msg) {
   const Type* compositeType = compositeValue->getType();
+  // To get an element from an in-memory object, compute the address of
+  // the appropriate struct field and emit a load.
   if (llvm::isa<llvm::PointerType>(compositeType)) {
-    // Pointers to composites are indexed via getelementptr
-    // TODO: "When indexing into a (optionally packed) structure,
-    //        only i32 integer constants are allowed. When indexing
-    //        into an array, pointer or vector, integers of any width
-    //        are allowed, and they are not required to be constant."
-    //   -- http://llvm.org/docs/LangRef.html#i_getelementptr
     Value* gep = getPointerToIndex(compositeValue, idxValue, (msg + ".subgep").c_str());
     return builder.CreateLoad(gep, gep->getName() + "_ld");
   } else if (llvm::isa<llvm::StructType>(compositeType)
@@ -222,12 +218,13 @@ CodegenPass::storeAndMarkPointerAsGCRoot(llvm::Value* val) {
 
 
 llvm::AllocaInst*
-CodegenPass::emitMalloc(const llvm::Type* ty) {
+CodegenPass::emitMalloc(const llvm::Type* ty, int8_t ctorId) {
   llvm::Value* memalloc_cell = mod->getFunction("memalloc_cell");
   ASSERT(memalloc_cell != NULL) << "NO memalloc_cell IN MODULE! :(";
 
-  llvm::GlobalVariable* ti = getTypeMapForType(ty, mod, NotArray);
-  ASSERT(ti != NULL) << "malloc must have type info for type " << str(ty);
+  llvm::GlobalVariable* ti = getTypeMapForType(ty, ctorId, mod, NotArray);
+  ASSERT(ti != NULL) << "malloc must have type info for type " << str(ty)
+                     << "; ctor id " << ctorId;
   const llvm::Type* typemap_type = memalloc_cell->getType()
                                             ->getContainedType(0)
                                             ->getContainedType(1);
@@ -240,12 +237,16 @@ CodegenPass::emitMalloc(const llvm::Type* ty) {
 
 
 llvm::Value*
-CodegenPass::emitArrayMalloc(const llvm::Type* elt_ty,
-                             llvm::Value* n) {
+CodegenPass::emitArrayMalloc(const llvm::Type* elt_ty, llvm::Value* n) {
   llvm::Value* memalloc = mod->getFunction("memalloc_array");
   ASSERT(memalloc != NULL) << "NO memalloc_array IN MODULE! :(";
 
-  llvm::GlobalVariable* ti = getTypeMapForType(elt_ty, mod, YesArray);
+  int8_t ctorId = -1;
+  // TODO this is bogus; we should have, at most, 3 flat array representations:
+  // 1) (packed) non-struct POD
+  // 2) GC-able pointers
+  // 3) (maybe) unboxed structs, for types with a single ctor.
+  llvm::GlobalVariable* ti = getTypeMapForType(elt_ty, ctorId, mod, YesArray);
   ASSERT(ti != NULL);
   const llvm::Type* typemap_type = memalloc->getType() // function ptr
                                             ->getContainedType(0) // function

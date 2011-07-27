@@ -73,7 +73,8 @@ message Expr {
     PAT_VARIABLE = 42;
     PAT_INT      = 43;
     PAT_BOOL     = 44;
-    PAT_TUPLE    = 45;
+    PAT_CTOR     = 45;
+    PAT_TUPLE    = 46;
   }
   repeated Expr        parts = 1;
   required Tag           tag = 2;
@@ -133,9 +134,20 @@ message Defn {
   required Expr   body = 2;
 }
 
+message DataType {
+  required string   name = 1;
+  repeated DataCtor ctor = 2;
+}
+
+message DataCtor {
+  required string   name = 1;
+  repeated Type     type = 2;
+}
+
 message SourceModule {
-  required string name = 1;
-  repeated string line = 2;
-  repeated Decl   decl = 3;
-  repeated Defn   defn = 4;
+  required string   name      = 1;
+  repeated string   line      = 2;
+  repeated Decl     decl      = 3;
+  repeated Defn     defn      = 4;
+  repeated DataType data_type = 5;
 }

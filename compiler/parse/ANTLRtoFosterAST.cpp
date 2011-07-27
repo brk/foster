@@ -362,11 +362,22 @@ ExprAST* parseBool(pTree t) {
 }
 
 Pattern* parsePattern(pTree t);
+Pattern* parsePatternAtom(pTree t);
+
+std::vector<Pattern*> noPatterns() { std::vector<Pattern*> f; return f; }
 
 std::vector<Pattern*> getPatterns(pTree tree) {
   std::vector<Pattern*> f;
   for (size_t i = 0; i < getChildCount(tree); ++i) {
     f.push_back(parsePattern(child(tree, i)));
+  }
+  return f;
+}
+
+std::vector<Pattern*> getPatternAtomsFrom1(pTree tree) {
+  std::vector<Pattern*> f;
+  for (size_t i = 1; i < getChildCount(tree); ++i) {
+    f.push_back(parsePatternAtom(child(tree, i)));
   }
   return f;
 }
@@ -377,54 +388,39 @@ Pattern* parseTuplePattern(pTree t) {
   } return new TuplePattern(rangeOf(t), getPatterns(t));
 }
 
+// ^(CTOR x)
+VariableAST* parseCtor(pTree t) {
+  ASSERT(typeOf(t) == CTOR);
+  return parseTermVar(child(t, 0));
+}
+
 ExprAST* parseAtom(pTree tree);
 Pattern* parsePatternAtom(pTree t) {
+
   int token = typeOf(t);
-  if (token == TUPLE) { return parseTuplePattern(t); }
-  if (token == TERMVAR) { return new LiteralPattern(rangeOf(t), LiteralPattern::LP_VAR, parseAtom(t)); }
+  if ((token == PHRASE)
+    || (token == TERM)) { ASSERT(false); }
+
+    if (token == CTOR ) { EDiag() << "398: " << textOfVar(child(t, 0)); return new CtorPattern(rangeOf(t), textOfVar(child(t, 0)), noPatterns()); }
+  if (token == WILDCARD) { return new WildcardPattern(rangeOf(t)); }
+  if (token == TUPLE)   { return parseTuplePattern(t); }
+  if (token == TERMVAR) { return new LiteralPattern(rangeOf(t), LiteralPattern::LP_VAR, parseTermVar(t)); }
   if (token == INT_NUM) { return new LiteralPattern(rangeOf(t), LiteralPattern::LP_INT, parseAtom(t)); }
   if (token == BOOL   ) { return new LiteralPattern(rangeOf(t), LiteralPattern::LP_BOOL, parseAtom(t)); }
   //if (token == STR    ) { return new LiteralPattern(LiteralPattern::LP_STR, parseAtom(t)); }
 
   display_pTree(t, 2);
-  foster::EDiag() << "BOOL = " << BOOL << "; token = " << token;
-  foster::EDiag() << "returning NULL Pattern for parsePatternAtom token " << str(t->getToken(t));
+  ASSERT(false) << "returning NULL Pattern for parsePatternAtom token " << str(t->getToken(t));
   return NULL;
 }
 
-// ^(LVALUE atom suffix*)
-Pattern* parsePatternLvalue(pTree t) {
-  ASSERT(getChildCount(t) == 1) << "patterns partially parsed";
-  return parsePatternAtom(child(t, 0));
-}
-
-// ^(PHRASE lvalue+)
-Pattern* parsePatternPhrase(pTree t) {
-  ASSERT(getChildCount(t) == 1) << "phrase patterns must not contain applications";
-  return parsePatternLvalue(child(t, 0));
-}
-
-// ^(TERM phrase binops?)
-Pattern* parsePatternTerm(pTree t) {
-  ASSERT(getChildCount(t) == 1) << "term patterns must not contain binops";
-  return parsePatternPhrase(child(t, 0));
-}
-
+// ^(MU patom) (may be ctor)
+// ^(MU pctor patom*)
 Pattern* parsePattern(pTree t) {
-  int token = typeOf(t);
-
-  if (token == WILDCARD) { return new WildcardPattern(rangeOf(t)); }
-  if (token == TERMVAR
-   || token == INT_NUM
-   || token == BOOL
-   || token == STR
-   || token == TUPLE)  { return parsePatternAtom(t); }
-  if (token == PHRASE) { return parsePatternPhrase(t); }
-  if (token == TERM)   { return parsePatternTerm(t); }
-
-  display_pTree(t, 2);
-  foster::EDiag() << "returning NULL Pattern for parsePattern token " << str(t->getToken(t));
-  return NULL;
+  if (getChildCount(t) == 1) {
+    return parsePatternAtom(child(t, 0));
+  } return new CtorPattern(rangeOf(t), parseCtor(child(t, 0))->getName(),
+                           getPatternAtomsFrom1(t));
 }
 
 // ^(CASE p e_seq)
@@ -458,6 +454,7 @@ ExprAST* parseAtom(pTree tree) {
   if (token == REF)      { return parseRef(tree); }
   if (token == COMPILES) { return parseBuiltinCompiles(tree); }
   if (token == CASE)     { return parseCase(tree); }
+  if (token == CTOR)     { return parseCtor(tree); }
   if (token == BOOL)     { return parseBool(tree); }
 
   display_pTree(tree, 2);
@@ -646,20 +643,33 @@ ExprAST* ExprAST_from(pTree tree) {
   }
 
   string name = str(tree->getToken(tree));
-  foster::EDiag() << "returning NULL ExprAST for ExprAST_from token " << name
+  ASSERT(false) << "returning NULL ExprAST for ExprAST_from token " << name
                   << "with text '" << text << "'"
                   << foster::show(sourceRange);
   return NULL;
 }
 
+TypeAST* parseTypeAtom(pTree tree);
 
-ModuleAST* parseTopLevel(pTree tree, std::string moduleName) {
+// ^(OF dctor tatom*)
+DataCtorAST* parseDataCtor(pTree t) {
+  //foster::SourceRange sourceRange = rangeOf(t);
+  DataCtorAST* c = new DataCtorAST();
+  c->name = parseCtor(child(t, 0))->getName();
+  for (size_t i = 1; i < getChildCount(t); ++i) {
+    c->types.push_back(parseTypeAtom(child(t, i)));
+  }
+  return c;
+}
+
+ModuleAST* parseTopLevel(pTree root_tree, std::string moduleName) {
   // The top level is composed of declarations and definitions.
   std::vector<Decl*> decls;
   std::vector<Defn*> defns;
+  std::vector<Data*> datas;
 
-  for (size_t i = 0; i < getChildCount(tree); ++i) {
-    pTree c = child(tree, i);
+  for (size_t i = 0; i < getChildCount(root_tree); ++i) {
+    pTree c = child(root_tree, i);
     int token = typeOf(c);
 
     if (token == DEFN) { // ^(DEFN x atom)
@@ -672,12 +682,19 @@ ModuleAST* parseTopLevel(pTree tree, std::string moduleName) {
       pTree typevar = child(c, 0);
       pTree type    = child(c, 1);
       decls.push_back(new Decl(textOfVar(typevar), TypeAST_from(type)));
+    } else if (token == DATATYPE) { // ^(DATATYPE id ddef_ctor+)
+      std::vector<DataCtorAST*> ctors;
+      for (size_t i = 1; i < getChildCount(c); ++i) {
+        ctors.push_back(parseDataCtor(child(c, i)));
+      }
+      datas.push_back(new Data(textOf(child(c, 0)), ctors));
     } else {
-      EDiag() << "Unexpected top-level element with token ID " << token;
+      EDiag() << "ANTLRtoFosterAST.cpp: "
+              << "Unexpected top-level element with token ID " << token;
       EDiag() << show(rangeOf(c));
     }
   }
-  return new ModuleAST(decls, defns, moduleName);
+  return new ModuleAST(decls, defns, datas, moduleName);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -745,7 +762,7 @@ TypeAST* parseTypeAtom(pTree tree) {
   if (token == TYPEVAR) { return parseTypeVar(tree); }
 
   display_pTree(tree, 2);
-  EDiag() << "parseTypeAtom";
+  ASSERT(false) << "parseTypeAtom";
   return NULL;
 }
 

@@ -83,6 +83,22 @@ void processExprAST(pb::Expr* current,
 
 /////////////////////////////////////////////////////////////////////
 
+void dumpDataCtor(DataCtorAST* cc, pb::DataCtor* c) {
+  c->set_name(cc->name);
+  for (size_t i = 0; i < cc->types.size(); ++i) {
+    ASSERT(cc->types[i] != NULL);
+    DumpTypeToProtobufPass dt(c->add_type());
+    cc->types[i]->dump(&dt);
+  }
+}
+
+void dumpDataCtors(Data* dd, pb::DataType* d) {
+ d->set_name(dd->name);
+ for (size_t i = 0; i < dd->ctors.size(); ++i) {
+   dumpDataCtor(dd->ctors[i], d->add_ctor());
+ }
+}
+
 void dumpModule(DumpToProtobufPass* pass,
                 foster::fepb::SourceModule& sm, ModuleAST* mod) {
   sm.set_name(mod->name);
@@ -98,6 +114,10 @@ void dumpModule(DumpToProtobufPass* pass,
     pb::Defn* d = sm.add_defn();
     d->set_name(mod->defn_parts[i]->name);
     dumpChild(pass, d->mutable_body(), mod->defn_parts[i]->body);
+  }
+
+  for (size_t i = 0; i < mod->data_parts.size(); ++i) {
+    dumpDataCtors(mod->data_parts[i], sm.add_data_type());
   }
 
   if (const foster::InputTextBuffer* buf = mod->buf) {
@@ -250,6 +270,18 @@ void LiteralPattern::dump(DumpToProtobufPass* pass) {
   dumpChild(pass, pass->current->add_parts(), this->pattern);
 }
 
+void CtorPattern::dump(DumpToProtobufPass* pass) {
+  pass->current->set_tag(pb::Expr::PAT_CTOR);
+  setSourceRange(pass->current->mutable_range(), this->sourceRange);
+  pass->current->set_name(this->ctorName);
+
+  std::vector<Pattern*>& parts = this->patterns;
+  pass->current->mutable_parts()->Reserve(parts.size());
+  for (size_t i = 0; i < parts.size(); ++i) {
+    dumpPattern(pass, pass->current->add_parts(), parts[i]);
+  }
+}
+
 void TuplePattern::dump(DumpToProtobufPass* pass) {
   pass->current->set_tag(pb::Expr::PAT_TUPLE);
   setSourceRange(pass->current->mutable_range(), this->sourceRange);
@@ -304,6 +336,10 @@ void NamedTypeAST::dump(DumpTypeToProtobufPass* pass) {
   //ASSERT(!tyname.empty());
   //pass->current->set_name(tyname);
   pass->current->set_name(this->name);
+}
+
+void DataTypeAST::dump(DumpTypeToProtobufPass* pass) {
+  ASSERT(false) << "data types should be handled after initial parsing";
 }
 
 void TypeVariableAST::dump(DumpTypeToProtobufPass* pass) {

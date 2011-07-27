@@ -29,7 +29,7 @@ tokens {
   TYPE_TYP_APP; TYPE_TYP_ABS;
   KIND_TYPE; KIND_TYOP; FORALL_TYPE;
   FUNC_TYPE;
-  TYPE_CTOR;
+  TYPE_CTOR; DATATYPE; CTOR;
   FORMAL; MODULE; WILDCARD;
 
   MU; // child marker
@@ -40,7 +40,13 @@ program :       decl_or_defn* EOF               ->  ^(MODULE decl_or_defn*);
 
 decl_or_defn : decl | defn;
 decl    :       x '::' t ';'                    -> ^(DECL x t);
-defn    :       x EQ atom ';'                   -> ^(DEFN x atom); // We should allow suffixes, but only of type application.
+defn    :       x EQ atom ';'                   -> ^(DEFN x atom) // We should allow suffixes, but only of type application.
+        |	data_defn ';'
+        ;
+
+// Or perhaps TYPE id OF (CASE ctor ...)+
+data_defn : TYPE CASE id data_ctor+             -> ^(DATATYPE id data_ctor+);
+data_ctor : OF dctor tatom*                     -> ^(OF dctor tatom*);
 
 opr     :       SYMBOL;
 id      :       IDENT;
@@ -96,12 +102,16 @@ atom    :       // syntactically "closed" terms
 
 pmatch  : p '->' e_seq -> ^(CASE p e_seq);
 
-p       :               // patterns
-    x                                     // variables
-  | '_'                 -> ^(WILDCARD)    // wildcards
+// patterns
+p : patom+               -> ^(MU patom+);
+
+patom :
+    x                                      // variables
+  | '_'                  -> ^(WILDCARD)    // wildcards
   | lit
-  | '(' ')'             -> ^(TUPLE)
-  | '(' p (',' p)* ')'  -> ^(TUPLE p+)    // tuples (products)
+  | dctor                -> dctor
+  | '(' ')'              -> ^(TUPLE)
+  | '(' p (',' p)* ')'   -> ^(TUPLE p+)    // tuples (products)
   ;
 
 lit     : num | str | TRU -> ^(BOOL TRU) | FLS -> ^(BOOL FLS);
@@ -135,12 +145,15 @@ tatom   :
   | '{'    t  ('=>' t)* '}'
    ('@' '{' tannots '}')?               -> ^(FUNC_TYPE ^(TUPLE t+) tannots?)  // description of terms indexed by terms
 //      | '{' 'forall' (a ':' k ',')+ t '}'     -> ^(FORALL_TYPE a k t)       // description of terms indexed by types
-  | '$' ctor                                        -> ^(TYPE_CTOR ctor)            // type constructor constant
+//      | ':{'        (a ':' k '->')+ t '}'     -> ^(TYPE_TYP_ABS a k t)        // type-level abstractions
+//  | tctor                                -> ^(TYPE_CTOR tctor)                  // type constructor constant
   // The dollar sign is required to distinguish type constructors
   // from type variables, since we don't use upper/lower case to distinguish.
   ;
 
-ctor : x ;
+ctor  :     x           -> ^(CTOR x);
+dctor : '$' ctor	-> ctor ;
+tctor : '$' ctor	-> ctor ;
 
 
 // Numbers are things like:

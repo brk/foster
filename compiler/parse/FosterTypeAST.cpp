@@ -11,6 +11,8 @@
 #include "parse/ParsingContext.h"
 #include "parse/FosterUtils.h"
 
+#include "llvm/Module.h"
+
 #include <sstream>
 
 using std::vector;
@@ -50,12 +52,26 @@ TypeAST* PrimitiveTypeAST::get(const std::string& name,
 ////////////////////////////////////////////////////////////////////
 
 const llvm::Type* NamedTypeAST::getLLVMType() const {
-  ASSERT(nonLLVMType);
+  ASSERT(namedType);
   if (!repr) {
-    repr = nonLLVMType->getLLVMType();
+    repr = namedType->getLLVMType();
   }
   ASSERT(repr) << "no named type: " << name;
   return repr;
+}
+
+////////////////////////////////////////////////////////////////////
+
+const llvm::PointerType* DataTypeAST::getOpaquePointerTy(llvm::Module* mod) const {
+  if (!this->opaq) {
+    this->opaq = llvm::OpaqueType::get(llvm::getGlobalContext());
+    if (mod) { mod->addTypeName(this->name, this->opaq); }
+  }
+  return llvm::PointerType::getUnqual(this->opaq);
+}
+
+const llvm::Type* DataTypeAST::getLLVMType() const {
+  return this->getOpaquePointerTy(NULL);
 }
 
 ////////////////////////////////////////////////////////////////////

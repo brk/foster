@@ -30,6 +30,7 @@ data SSValue = SSBool      Bool
              | SSInt       Integer
              | SSArray     (Array Int Location)
              | SSTuple     [SSValue]
+             | SSCtorVal   CtorId [SSValue]
              | SSLocation  Location
              | SSClosure   ILClosure [SSValue]
              | SSCoro      Coro
@@ -43,7 +44,7 @@ instance Eq ILClosure
 instance Eq Coro
   where c1 == c2 = (coroLoc c1) == (coroLoc c2)
 
--- Expressions are terms that are not in normal form.
+-- Expressions are terms that are not values.
 data IExpr =
           ITuple [Ident]
         | IVar    Ident
@@ -64,6 +65,7 @@ data IExpr =
         | ICallPrim     ILPrim [Ident]
         | ICase         Ident  (DecisionTree ILExpr) [(Pattern, SSTerm)]
         | ITyApp        SSTerm TypeIL
+        | IAppCtor      CtorId [Ident]
         deriving (Show)
 
 data SSProcDef = SSProcDef { ssProcIdent      :: Ident
@@ -95,11 +97,16 @@ ssTermOfExpr expr =
     ILStore t a b          -> SSTmExpr  $ IStore (idOf a) (idOf b)
     ILTyApp t e argty      -> SSTmExpr  $ ITyApp (tr e) argty
     ILCase t a bs dt       -> SSTmExpr  $ ICase (idOf a) dt [(p, tr e) | (p, e) <- bs]
+    ILAppCtor t cid vs     -> SSTmExpr  $ IAppCtor cid (map idOf vs)
+                               --where dciOf (ILDataCtor d _ (DataCtor c _))
+                               --            = (DataCtorIdent d c)
 
 -- ... which lifts in a  straightfoward way to procedure definitions.
 ssProcDefFrom pd =
-  SSProcDef (ilProcIdent pd) (map tidIdent $ ilProcVars pd)
-               (ssTermOfExpr (ilProcBody pd))
+  SSProcDef { ssProcIdent = ilProcIdent pd
+            , ssProcVars  = map tidIdent $ ilProcVars pd
+            , ssProcBody  = ssTermOfExpr (ilProcBody pd)
+            }
 
 errFile gs = (stTmpDir gs) ++ "/istderr.txt"
 outFile gs = (stTmpDir gs) ++ "/istdout.txt"
@@ -136,10 +143,9 @@ interpret stepsTaken gs =
     otherwise  -> modifyIORef stepsTaken (+1) >>
                   step gs >>= interpret stepsTaken
 
-buildProcMap (ILProgram procdefs _decls _lines) =
-  List.foldr ins Map.empty procdefs where
-    ins procdef map = Map.insert (ilProcIdent procdef)
-                                 (ssProcDefFrom procdef) map
+buildProcMap (ILProgram procdefs _decls _dtypes _lines) =
+  Map.fromList (map (procMapPair . ssProcDefFrom) procdefs)
+               where procMapPair ssproc = (ssProcIdent ssproc, ssproc)
 
 type Location = Int
 nextLocation x = x + 1
@@ -272,8 +278,9 @@ stepExpr :: MachineState -> IExpr -> IO MachineState
 stepExpr gs expr = do
   let coro = stCoro gs
   case expr of
-    IVar i    -> do return $ withTerm gs (SSTmValue $ getval gs i)
-    ITuple vs -> do return $ withTerm gs (SSTmValue $ SSTuple (map (getval gs) vs))
+    IVar i         -> do return $ withTerm gs (SSTmValue $ getval gs i)
+    ITuple      vs -> do return $ withTerm gs (SSTmValue $ SSTuple      (map (getval gs) vs))
+    IAppCtor id vs -> do return $ withTerm gs (SSTmValue $ SSCtorVal id (map (getval gs) vs))
 
     IAlloc i     -> do let (loc, gs') = extendHeap gs (getval gs i)
                        return $ withTerm gs' (SSTmValue $ SSLocation loc)
@@ -388,10 +395,11 @@ evalDecisionTree (DT_Swap i dt) v = evalDecisionTree dt v
 evalDecisionTree (DT_Leaf _ idsoccs) v =
   Just $ map (lookupOcc v) idsoccs
     where lookupOcc v (id, []) = (id, v)
-          lookupOcc v (id, all@(occ:occs)) =
-            case v of SSTuple vs -> lookupOcc (vs !! occ) (id, occs)
-                      otherwise  -> error $ "Pattern match failure: "
-                                        ++ "Cannot index non-tuple value: " ++ show v
+          lookupOcc v (id, all@(occ:occs)) = case v of
+            SSTuple     vs -> lookupOcc (vs !! occ) (id, occs)
+            SSCtorVal _ vs -> lookupOcc (vs !! occ) (id, occs)
+            otherwise  -> error $ "Pattern match failure: "
+                              ++ "Cannot index non-tuple/ctor value: " ++ show v
 
 evalDecisionTree (DT_Switch occ (SwitchCase branches def)) v =
   evalSwitchCase (getOcc occ v) branches def where
@@ -402,17 +410,26 @@ evalDecisionTree (DT_Switch occ (SwitchCase branches def)) v =
     evalSwitchCase w [] (Just dt) = evalDecisionTree dt v
     evalSwitchCase w [] Nothing = error $ "evalSwitchCase " ++ show w ++ " [] Nothing"
 
-    ctorMatches (SSBool b)  (CtorId "Bool" n) = (b == True  && n == 1)
-                                             || (b == False && n == 0)
-    ctorMatches (SSInt i) (CtorId "Int32" n) = n == fromInteger i
-    ctorMatches (SSInt _) (CtorId _ _) = False
-    ctorMatches (SSTuple vs) (CtorId "()" n) = n == (Prelude.length vs)
-    ctorMatches (SSTuple _ ) (CtorId _ _) = False
-    ctorMatches v ctor = error $ "ctorMatches " ++ show ctor ++ " ==? " ++ show v
+    ctorMatches (SSBool b)  (CtorId "Bool" _ n) = (b == True  && n == 1)
+                                               || (b == False && n == 0)
+    ctorMatches (SSInt i) (CtorId tyname _ n) = tyname == "Int32"
+                                             && n == fromInteger i
+    ctorMatches (SSTuple vs) (CtorId tyname _ n) = tyname == "()"
+                                             && n == Prelude.length vs
+    ctorMatches (SSCtorVal vid _) cid = vid == cid
+
+    ctorMatches v ctor = error $
+        "Smallstep.hs: evalDecisionTree had unhandled case in ctorMatches: "
+        ++ show ctor ++ " ==? " ++ show v
 
     getOcc [] v = v
     getOcc (i:rest) (SSTuple vs) = getOcc rest (vs !! i)
     getOcc occ v = error $ "getOcc " ++ show occ ++ ";; " ++ show v
+
+matchPatterns :: [Pattern] -> [SSValue] -> Maybe [(Ident, SSValue)]
+matchPatterns pats vals = do
+  matchLists <- mapM (\(p, v) -> matchPattern p v) (zip pats vals)
+  return $ concat matchLists
 
 matchPattern :: Pattern -> SSValue -> Maybe [(Ident, SSValue)]
 matchPattern p v =
@@ -420,6 +437,8 @@ matchPattern p v =
   let matchFailure        = Nothing in
   let matchIf cond = if cond then trivialMatchSuccess
                              else matchFailure in
+                             -- TODO fold dcname + cname in ctorid?
+  let eqCID (CtorId dname cname _) dci = dci == (DataCtorIdent dname cname) in
   case (v, p) of
     (_, P_Wildcard _   ) -> trivialMatchSuccess
     (_, P_Variable _ id) -> Just [(id, v)]
@@ -430,12 +449,13 @@ matchPattern p v =
     (SSBool b1, P_Bool _ b2) -> matchIf $ b1 == b2
     (_        , P_Bool _ _ ) -> matchFailure
 
-    (SSTuple [], P_Tuple _ []) -> trivialMatchSuccess
-    (SSTuple (v1:vals), P_Tuple _ (p1:pats)) -> do
-        b1 <- matchPattern p1 v1
-        b2 <- mapM (\(p,v) -> matchPattern p v) (zip pats vals)
-        return $ b1 ++ (concat b2)
+    (SSCtorVal vid vals, P_Ctor _ pats cid) -> do _ <- matchIf $ vid `eqCID` cid
+                                                  matchPatterns pats vals
+    (_                 , P_Ctor _ _ _)      -> matchFailure
+
+    (SSTuple vals, P_Tuple _ pats) -> matchPatterns pats vals
     (_, P_Tuple _ _) -> matchFailure
+
 
 canSwitchToCoro c =
   case coroStat c of
@@ -647,6 +667,7 @@ display (SSInt i     )  = show i
 display (SSArray a   )  = show a
 display (SSTuple vals)  = "(" ++ joinWith ", " (map display vals) ++ ")"
 display (SSLocation z)  = "<location " ++ show z ++ ">"
+display (SSCtorVal id vals) = "(" ++ show id ++ joinWith " " (map display vals) ++ ")"
 display (SSClosure _ _) = "<closure>"
 display (SSCoro    _  ) = "<coro>"
 

@@ -77,8 +77,10 @@ struct typemap {
   int64_t     cell_size;
   const char* name;
   int32_t     numOffsets;
-  char        isCoro;
-  char        isArray;
+  int8_t      ctorId;
+  int8_t      isCoro;
+  int8_t      isArray;
+  int8_t      unused_padding;
   int32_t     offsets[0];
 };
 

@@ -12,6 +12,7 @@ message Type {
     FORALL_TY = 8;
     TYPE_VARIABLE = 9;
     ARRAY = 10;
+    DATATYPE = 11;
   }
 
   required Tag         tag   = 2;
@@ -19,9 +20,15 @@ message Type {
   // LLVM_NAMED, TYPE_VARIABLE
   optional string name = 3;
   optional ProcType procty = 17;
-  repeated Type type_parts = 18;   // for tuple, coro, carray
+  repeated Type type_parts = 18;
   optional uint64 carray_size = 19;
   repeated string tyvar_names = 20; // for FORALL_TY
+  repeated PbDataCtor ctor    = 21;
+}
+
+message PbDataCtor {
+  required string   name = 1;
+  repeated Type     type = 2;
 }
 
 message ProcType {
@@ -45,8 +52,8 @@ message Expr {
     IL_CASE = 22;
     IL_CALL = 23;
     IL_CALL_PRIMOP = 24;
-    IL_UNTIL = 25;
-
+    IL_CTOR  = 25;
+    IL_UNTIL = 26;
     IL_CORO_INVOKE = 27;
     IL_CORO_CREATE = 28;
     IL_CORO_YIELD  = 29;
@@ -78,6 +85,7 @@ message Expr {
 
   optional CoroPrim     coro_prim = 30;
   optional int32     prim_op_size = 31;
+  optional PbCtorId       ctor_id = 32;
 }
 
 message AllocInfo {
@@ -159,8 +167,9 @@ message PbSwitchCase {
 }
 
 message PbCtorId {
-  required string ctorTypeName = 1;
-  required int32  ctorLocalId  = 2;
+  required string ctor_type_name = 1;
+  required string ctor_ctor_name = 2;
+  required int32  ctor_local_id  = 3;
 }
 
 message PbOccurrence {
@@ -173,9 +182,10 @@ message Decl {
 }
 
 message Module {
-  required string modulename = 1;
-  repeated Proc   procs      = 2;
-  repeated Decl   decls      = 3;
-  repeated string modlines   = 4;
+  required string      modulename = 1;
+  repeated Proc        procs      = 2;
+  repeated Decl        val_decls  = 3;
+  repeated Decl        typ_decls  = 4;
+  repeated string      modlines   = 5;
 }
 

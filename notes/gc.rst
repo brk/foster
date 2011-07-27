@@ -67,6 +67,45 @@ There are three cases for the elements worth considering:
     computes aligned element start position and recurses at offsets.
   * Pointer. As above.
 
+An algebraic data type with multiple constructors likely needs a third
+representation, sufficient to distinguish which constructor was used to
+build the object. One possibility::
+
+
+    [Object *-]-+
+    [Reference] |
+                v
+      +--------+----------+----------+----------+
+      | header |          |    f1    |    f2   ...
+      |  ptr * |   ctor   |          |         ...
+      +------|-+----------+----------+----------+
+             |
+             v
+          struct {
+            i64         cellSize;
+            i8*         typePlusCtorName;
+            i32         numPtrEntries;
+            i8          isCoro;
+            i8          isArray = false;
+            struct { i8* typeinfo; i32 offset }[numPtrEntries];
+          }
+
+There are a number of potential variations on the above sketch:
+
+ #. Ctor bits could be stored in (A) the object reference,
+    (B) the header pointer, or (C, shown) a designated constructor field.
+ #. The header pointer could describe the overall type (with cell size equal to
+    the largest-layout variant) or the specific variant.
+ #. As a special case, data types with one nullary variant can have
+    a plain pointer representation.
+
+With a variant-specific typeinfo pointer, extra ctor tag bits are not
+strictly needed, as the pointer itself could be used in a switch (or
+at least an if-cascade, since converting a global var addr to constant int
+**may** not be kosher). Or the struct of typeinfo could be extended with an
+i8 ctorTag field.
+
+
 Stable Pointers
 ---------------
 

@@ -5,6 +5,7 @@ import Control.Monad
 
 import Data.Set as Set(fromList, toList, difference)
 import Data.Sequence as Seq
+import Data.Map as Map(Map)
 import Data.Maybe(fromJust)
 import Data.List as List
 import qualified Data.Text as T
@@ -80,19 +81,23 @@ patBindingFreeIds (pat, expr) =
   where patBoundIds :: Pattern -> [Ident]
         patBoundIds pat =
           case pat of
-            P_Wildcard _rng      -> []
-            P_Variable _rng id   -> [id]
-            P_Bool     _rng _    -> []
-            P_Int      _rng _    -> []
-            P_Tuple    _rng pats -> concatMap patBoundIds pats
+            P_Wildcard _rng         -> []
+            P_Variable _rng id      -> [id]
+            P_Bool     _rng _       -> []
+            P_Int      _rng _       -> []
+            P_Ctor     _rng pats nm -> concatMap patBoundIds pats
+            P_Tuple    _rng pats    -> concatMap patBoundIds pats
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+data DataCtorIdent = DataCtorIdent String String deriving (Eq, Show)
 
 -- EPattern variable bindings can have type annotations
 -- for typechecking.
 data Pattern =
           P_Wildcard      ESourceRange
         | P_Variable      ESourceRange Ident
+        | P_Ctor          ESourceRange [Pattern] DataCtorIdent
         | P_Bool          ESourceRange Bool
         | P_Int           ESourceRange LiteralInt
         | P_Tuple         ESourceRange [Pattern]
@@ -168,9 +173,32 @@ data CoroPrim = CoroCreate | CoroInvoke | CoroYield
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+data (Show ty) => DataType ty = DataType String [DataCtor ty] deriving Show
+data (Show ty) => DataCtor ty = DataCtor String [ty]          deriving Show
+
+dataTypeName  (DataType name _)  = name
+dataTypeCtors (DataType _ ctors) = ctors
+
+data CtorId     = CtorId   { ctorTypeName :: String
+                           , ctorCtorName :: String
+                           , ctorSmallInt :: Int
+                           } deriving (Show, Eq)
+
+instance Ord CtorId where
+  compare a b = compare (show a) (show b)
+
+type CtorName = String
+type DataTypeName = String
+
+data DataTypeSig = DataTypeSig (Map CtorName CtorId) deriving Show
+type DataTypeSigs = Map DataTypeName DataTypeSig
+
+-- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
 data ModuleAST fnCtor ty = ModuleAST {
           moduleASTfunctions   :: [fnCtor]
         , moduleASTdecls       :: [(String, ty)]
+        , moduleASTdataTypes   :: [DataType ty]
         , moduleASTsourceLines :: SourceLines
      }
 

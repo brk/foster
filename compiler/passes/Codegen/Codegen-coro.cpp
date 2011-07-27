@@ -299,10 +299,11 @@ Value* CodegenPass::emitCoroCreateFn(
   BasicBlock* prevBB = builder.GetInsertBlock();
   this->addEntryBB(create);
 
+  int8_t bogusCtor = -1;
   // foster_coro_i32_i32* fcoro = (foster_coro_i32_i32*) memalloc_cell(NULL);
   // foster_coro_i32_i32* ccoro = (foster_coro_i32_i32*) memalloc_cell(NULL);
-  Value* fcoro_slot = this->emitMalloc(getSplitCoroType(argTypes));
-  Value* ccoro_slot = this->emitMalloc(getSplitCoroType(retTy   ));
+  Value* fcoro_slot = this->emitMalloc(getSplitCoroType(argTypes), bogusCtor);
+  Value* ccoro_slot = this->emitMalloc(getSplitCoroType(retTy   ), bogusCtor);
 
   Value* fcoro      = builder.CreateLoad(fcoro_slot, "fcoro");
   Value* ccoro      = builder.CreateLoad(ccoro_slot, "ccoro");

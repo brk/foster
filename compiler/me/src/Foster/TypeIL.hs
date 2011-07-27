@@ -72,3 +72,5 @@ data Fn expr = Fn { fnType  :: TypeIL
                   } deriving (Show)
 
 fnName f = identPrefix (fnIdent f)
+
+data ILDataCtor = ILDataCtor String Int (DataCtor TypeIL) deriving Show

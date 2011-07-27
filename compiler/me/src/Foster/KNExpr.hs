@@ -11,6 +11,7 @@ kNormalizeModule, KNExpr(..), typeKN
 where
 
 import Control.Monad.State
+import qualified Data.Map as Map((!))
 
 import Foster.Base
 import Foster.Context
@@ -36,6 +37,8 @@ data KNExpr =
         | KNVar         AIVar
         | KNCallPrim    TypeIL ILPrim [AIVar]
         | KNCall        TypeIL AIVar  [AIVar]
+        -- | KNAppCtor     TypeIL ILDataCtor [AIVar] -- dumped as CtorId
+        | KNAppCtor     TypeIL CtorId [AIVar] -- dumped as CtorId
         -- Mutable ref cells
         | KNAlloc              AIVar
         | KNDeref       TypeIL AIVar
@@ -58,12 +61,32 @@ knFresh s = do old <- get
                put (old { knUniq = (knUniq old) + 1 })
                return (Ident s (knUniq old))
 
+kNormalCtor :: Context TypeIL -> DataTypeSigs -> DataType TypeIL -> DataCtor TypeIL -> KN (Fn KNExpr)
+kNormalCtor ctx dataSigs (DataType dname _) (DataCtor cname tys) = do
+  let dci = case dataSigs Map.! dname of DataTypeSig m -> m Map.! cname
+  let (Just tid) = termVarLookup cname (contextBindings ctx)
+  let vars = map (\(t,n) -> TypedId t $ Ident ".gen" n) (zip tys [0..])
+  -- TODO fnType + fnIdent -> fnAnnVar?
+  return $ Fn { fnType  = tidType  tid --fnty
+              , fnIdent = tidIdent tid --GlobalSymbol $ dciCtorName dci
+              , fnVars  = vars
+              , fnBody  = KNAppCtor (NamedTypeIL dname) dci vars
+              , fnRange = EMissingSourceRange ("kNormalCtor " ++ show dci)
+              }
+
+kNormalCtors :: Context TypeIL -> DataTypeSigs -> DataType TypeIL -> [KN (Fn KNExpr)]
+kNormalCtors ctx dataSigs dtype = map (kNormalCtor ctx dataSigs dtype) (dataTypeCtors dtype)
+
 kNormalizeModule :: (ModuleAST (Fn AIExpr) TypeIL)
+                 -> Context TypeIL -> DataTypeSigs
                  -> (ModuleAST (Fn KNExpr) TypeIL)
-kNormalizeModule m =
+kNormalizeModule m ctx dataSigs =
     let nameOfBinding (TermVarBinding s _) = s in
-    let knFuncsKN = mapM (kNormalizeFn) (moduleASTfunctions m) in
-    let knFuncs = evalState knFuncsKN (KNState 0) in
+    let knRegularFuncs = map kNormalizeFn (moduleASTfunctions m) in
+    -- TODO move ctor wrapping earlier?
+    let knCtorFuncs    = concatMap (kNormalCtors ctx dataSigs) (moduleASTdataTypes m) in
+    let knAllFuncsKN   = knRegularFuncs ++ knCtorFuncs in
+    let knFuncs = evalState (sequence knAllFuncsKN) (KNState 0) in
     m { moduleASTfunctions = knFuncs }
 
 
@@ -168,6 +191,7 @@ typeKN (KNLetVal x b e)    = typeKN e
 typeKN (KNLetFuns _ _ e)   = typeKN e
 typeKN (KNCall t id expr)  = t
 typeKN (KNCallPrim t id e) = t
+typeKN (KNAppCtor t _ _  ) = t
 typeKN (KNAllocArray elt_ty _) = ArrayTypeIL elt_ty
 typeKN (KNIf t a b c)      = t
 typeKN (KNUntil t a b)     = t
@@ -188,6 +212,7 @@ instance Structured KNExpr where
             KNBool         b    -> out $ "KNBool      " ++ (show b)
             KNCall    t b a     -> out $ "KNCall      " ++ " :: " ++ show t
             KNCallPrim t prim a -> out $ "KNCallPrim  " ++ (show prim) ++ " :: " ++ show t
+            KNAppCtor  t cid vs -> out $ "KNAppCtor   " ++ (show cid) ++ " :: " ++ show t
             KNLetVal   x b e    -> out $ "KNLetVal    " ++ (show x) ++ " :: " ++ (show $ typeKN b) ++ " = ... in ... "
             KNLetFuns {}        -> out $ "KNLetFuns   "
             KNIf      t  a b c  -> out $ "KNIf        " ++ " :: " ++ show t
@@ -218,6 +243,7 @@ instance Structured KNExpr where
             KNLetVal x b e          -> [b, e]
             KNCall     t v vs       -> [var v] ++ [var v | v <- vs]
             KNCallPrim t v vs       ->            [var v | v <- vs]
+            KNAppCtor  t c vs       ->            [var v | v <- vs]
             KNIf    t v b c         -> [var v, b, c]
             KNAlloc   v             -> [var v]
             KNAllocArray _ v        -> [var v]

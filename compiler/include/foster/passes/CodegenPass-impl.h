@@ -15,6 +15,8 @@
 
 using llvm::Value;
 
+struct TupleTypeAST;
+
 // Declarations for Codegen-typemaps.cpp
 enum ArrayOrNot {
   YesArray, NotArray
@@ -23,15 +25,16 @@ enum ArrayOrNot {
 llvm::GlobalVariable*
 emitTypeMap(const llvm::Type* ty, std::string name,
             ArrayOrNot arrayStatus,
+            int8_t        ctorId,
             llvm::Module* mod,
             std::vector<int> skippedOffsets);
 
-void registerType(const llvm::Type* ty,
-                  std::string       desiredName,
-                  llvm::Module*     mod,
-                  ArrayOrNot);
-
-llvm::GlobalVariable* getTypeMapForType(const llvm::Type*, llvm::Module*, ArrayOrNot);
+void registerTupleType(TupleTypeAST* tupletyp,
+                       std::string   desiredName,
+                       int8_t        ctorId,
+                       llvm::Module* mod);
+llvm::GlobalVariable* getTypeMapForType(const llvm::Type*, int8_t ctorId,
+                                        llvm::Module*, ArrayOrNot);
 
 bool mightContainHeapPointers(const llvm::Type* ty);
 
@@ -66,10 +69,14 @@ struct LLModule;
 struct LLExpr;
 struct LLVar;
 
+struct DataTypeAST;
+
 struct CodegenPass {
   typedef foster::SymbolTable<llvm::Value> ValueTable;
   typedef ValueTable::LexicalScope         ValueScope;
   ValueTable valueSymTab;
+
+  std::map<std::string, DataTypeAST*> isKnownDataType;
   std::map<llvm::Function*, llvm::Instruction*> allocaPoints;
   std::set<llvm::Value*> needsImplicitLoad;
 
@@ -97,7 +104,7 @@ struct CodegenPass {
   Value* autoload(Value* v);
 
   // Returns ty**, the stack slot containing a ty*.
-  llvm::AllocaInst* emitMalloc(const llvm::Type* ty);
+  llvm::AllocaInst* emitMalloc(const llvm::Type* ty, int8_t ctorId);
 
   // Returns array_type[elt_ty]**, the stack slot containing an array_type[elt_ty]*.
   Value* emitArrayMalloc(const llvm::Type* elt_ty, llvm::Value* n);

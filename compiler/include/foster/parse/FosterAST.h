@@ -61,17 +61,19 @@ class SubscriptAST;
 class IfExprAST;
 class VariableAST;
 
-class Decl; class Defn;
+class Decl; class Defn; class Data;
 struct ModuleAST {
   std::string name;
   const foster::InputTextBuffer* buf;
   std::vector<Defn*> defn_parts;
   std::vector<Decl*> decl_parts;
+  std::vector<Data*> data_parts;
 
   explicit ModuleAST(const std::vector<Decl*>& decls,
                      const std::vector<Defn*>& defns,
+                     const std::vector<Data*>& datas,
                      const std::string& name)
-  : name(name), buf(NULL), defn_parts(defns), decl_parts(decls) {}
+  : name(name), buf(NULL), defn_parts(defns), decl_parts(decls), data_parts(datas) {}
 };
 
 
@@ -267,6 +269,18 @@ struct Decl {
   : name(name), type(type) {}
 };
 
+struct DataCtorAST {
+  string name;
+  std::vector<TypeAST*> types;
+};
+
+struct Data {
+  string name;
+  std::vector<DataCtorAST*> ctors;
+  explicit Data(const string& name, std::vector<DataCtorAST*> ctors)
+  : name(name), ctors(ctors) {}
+};
+
 struct IfExprAST : public ExprAST {
   IfExprAST(ExprAST* testExpr, ExprAST* thenExpr, ExprAST* elseExpr,
             foster::SourceRange sourceRange)
@@ -321,6 +335,16 @@ public:
   explicit LiteralPattern(foster::SourceRange range,
                           Variety v,
                           ExprAST* pattern) : Pattern(range), pattern(pattern), variety(v) {}
+  virtual void dump(DumpToProtobufPass* pass);
+};
+
+struct CtorPattern : public Pattern {
+  std::string ctorName;
+  std::vector<Pattern*> patterns;
+  explicit CtorPattern(foster::SourceRange range,
+                       std::string name,
+                       std::vector<Pattern*> pats)
+    : Pattern(range), ctorName(name), patterns(pats) {}
   virtual void dump(DumpToProtobufPass* pass);
 };
 

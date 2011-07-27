@@ -32,6 +32,8 @@ import Foster.Fepb.TermBinding    as PbTermBinding
 import Foster.Fepb.PBLet    as PBLet
 import Foster.Fepb.Defn     as Defn
 import Foster.Fepb.Decl     as Decl
+import Foster.Fepb.DataType as DataType
+import Foster.Fepb.DataCtor as DataCtor
 import Foster.Fepb.PBIf     as PBIf
 import Foster.Fepb.PBCase   as PBCase
 import Foster.Fepb.Expr     as PbExpr
@@ -40,7 +42,7 @@ import Foster.Fepb.Expr.Tag(Tag(IF, LET, VAR, SEQ, UNTIL,
                                 BOOL, CALL, TY_APP, -- MODULE,
                                 ALLOC, DEREF, STORE, TUPLE, PB_INT,
                                 CASE_EXPR, COMPILES, VAL_ABS, SUBSCRIPT,
-                                PAT_WILDCARD, PAT_INT, PAT_BOOL,
+                                PAT_WILDCARD, PAT_INT, PAT_BOOL, PAT_CTOR,
                                 PAT_VARIABLE, PAT_TUPLE))
 import qualified Foster.Fepb.SourceRange as Pb
 import qualified Foster.Fepb.SourceLocation as Pb
@@ -200,6 +202,9 @@ parsePattern pbexpr = do
     PAT_WILDCARD -> return $ EP_Wildcard range
     PAT_TUPLE    -> do pats <- mapM parsePattern (toList $ PbExpr.parts pbexpr)
                        return $ EP_Tuple range pats
+    PAT_CTOR    -> do let name = getName "pat_ctor" $ PbExpr.name pbexpr
+                      pats <- mapM parsePattern (toList $ PbExpr.parts pbexpr)
+                      return $ EP_Ctor range pats name
     _ -> do [expr] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
             return $ case (PbExpr.tag pbexpr, expr) of
               (PAT_BOOL, E_BoolAST _ bv) -> EP_Bool range bv
@@ -275,6 +280,7 @@ parseExpr pbexpr =
                 SUBSCRIPT -> parseSubscript
                 PAT_WILDCARD -> error "parseExpr called on pattern!"
                 PAT_VARIABLE -> error "parseExpr called on pattern!"
+                PAT_CTOR     -> error "parseExpr called on pattern!"
                 PAT_BOOL     -> error "parseExpr called on pattern!"
                 PAT_INT      -> error "parseExpr called on pattern!"
                 PAT_TUPLE    -> error "parseExpr called on pattern!"
@@ -289,11 +295,23 @@ toplevel (FnAST _ _ _ _ _ True ) =
         error $ "Broken invariant: top-level functions " ++
                 "should not have their top-level bit set before we do it!"
 
-parseModule name decls defns = do
+parseDataCtor :: DataCtor.DataCtor -> FE (Foster.Base.DataCtor TypeAST)
+parseDataCtor ct = do
+    let types = map parseType (toList $ DataCtor.type' ct)
+    return $ Foster.Base.DataCtor (uToString $ DataCtor.name ct) types
+
+parseDataType :: DataType.DataType -> FE (Foster.Base.DataType TypeAST)
+parseDataType dt = do
+    ctors <- mapM parseDataCtor (toList $ DataType.ctor dt)
+    return $ Foster.Base.DataType (uToString $ DataType.name dt) ctors
+
+parseModule name decls defns data_types = do
     lines <- gets feModuleLines
     funcs <- sequence $ [(parseFn e)  | (Defn nm e) <- defns]
+    dtypes <- mapM parseDataType data_types
     return $ ModuleAST (map toplevel funcs)
                 [(uToString nm, parseType t) | (Decl nm t) <- decls]
+                dtypes
                 lines
 
 parseSourceModule :: SourceModule -> (ModuleAST FnAST TypeAST)
@@ -301,7 +319,8 @@ parseSourceModule sm =
     evalState
       (parseModule (uToString $ SourceModule.name sm)
                    (toList    $ SourceModule.decl sm)
-                   (toList    $ SourceModule.defn sm))
+                   (toList    $ SourceModule.defn sm)
+                   (toList    $ SourceModule.data_type sm))
       (FEState (sourceLines sm))
 
 sourceLines :: SourceModule -> SourceLines

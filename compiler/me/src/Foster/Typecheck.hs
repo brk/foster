@@ -1,4 +1,4 @@
-module Foster.Typecheck where
+module Foster.Typecheck(typecheck) where
 
 import List(length, zip, sort, group, head)
 import Control.Monad(liftM, forM_, forM)
@@ -215,14 +215,25 @@ typecheckLetRec ctx0 rng bindings e mt = do
 
 -----------------------------------------------------------------------
 
+getTypeNameForCtor ctorName = do
+  alldts <- tcGetDataTypes
+  let datatypes = findDataTypesForCtor ctorName alldts
+  case datatypes of
+    [DataType typeName _] -> return typeName
+    _ -> tcFails [out $ "getTypeNameForCtor: unable to find datatype "
+                     ++ "definition for ctor $" ++ ctorName]
+
 checkPattern :: EPattern -> Tc Pattern
 checkPattern p = case p of
-  EP_Wildcard r  ->  do return $ P_Wildcard r
+  EP_Wildcard r   -> do return $ P_Wildcard r
+  EP_Bool r b     -> do return $ P_Bool r b
   EP_Variable r v -> do id <- tcFresh (evarName v)
                         return $ P_Variable r id
-  EP_Bool r b     -> return $ P_Bool r b
   EP_Int r str    -> do annint <- typecheckInt r str
                         return $ P_Int  r (aintLitInt annint)
+  EP_Ctor r eps s -> do ps <- mapM checkPattern eps
+                        tyName <- getTypeNameForCtor s
+                        return $ P_Ctor r ps (DataCtorIdent tyName s)
   EP_Tuple r eps  -> do ps <- mapM checkPattern eps
                         return $ P_Tuple r ps
 
@@ -248,11 +259,38 @@ typecheckCase ctx rng a branches maybeExpTy = do
     )
   return $ AnnCase rng (MetaTyVar m) aa abranches
 
+getCtorsOfDataType :: String -> DataType TypeAST -> [DataCtor TypeAST]
+getCtorsOfDataType ctorName dt@(DataType _ ctors) =
+  let wantedCtor (DataCtor name _) = ctorName == name in
+  filter wantedCtor ctors
+
+findDataTypesForCtor :: String -> [DataType TypeAST] -> [DataType TypeAST]
+findDataTypesForCtor ctorName alldts =
+  let wantedCtor (DataCtor name _) = ctorName == name in
+  filter (\(DataType _ ctors) -> any wantedCtor ctors) alldts
+
 varbind id ty = TermVarBinding (identPrefix id) (TypedId ty id)
 
 extractPatternBindings :: Pattern -> TypeAST -> Tc [ContextBinding TypeAST]
 extractPatternBindings (P_Wildcard _   ) ty = return []
 extractPatternBindings (P_Variable _ id) ty = return [varbind id ty]
+
+extractPatternBindings p@(P_Ctor _ pats (DataCtorIdent dtypName ctorName)) ty = do
+  alldts <- tcGetDataTypes
+  let datatypes = findDataTypesForCtor ctorName alldts
+  case datatypes of
+    [dt] ->
+       case getCtorsOfDataType ctorName dt of
+         [(DataCtor _ types)] -> do
+           bindings <- sequence [extractPatternBindings p t | (p, t) <- zip pats types]
+           return $ concat bindings
+         ctors  ->
+           tcFails [out $ "extractPatternBindings: Too many ctors! " ++ show ctors ++ " ;; " ++ show ty]
+    []  -> tcFails [out $ "Typecheck.extractPatternBindings: No datatype found with ctor name " ++ ctorName
+                               ++ "\n\t" ++ show alldts
+                               ++ "\n\t" ++ show p]
+    dts -> tcFails [out $ "Typecheck.extractPatternBindings: Too many datatypes! " ++ ctorName
+                                ++ "\n\t" ++ show dts]
 
 extractPatternBindings (P_Bool r v) ty = do
   ae <- typecheck emptyContext (E_BoolAST r v) (Just ty)

@@ -19,22 +19,23 @@ import Data.Sequence as Seq(fromList)
 
 import Text.ProtocolBuffers(messagePut)
 
-import Foster.Bepb.ProcType as ProcType
-import Foster.Bepb.Type.Tag as PbTypeTag
-import Foster.Bepb.Type     as PbType
-import Foster.Bepb.Closure  as Closure
-import Foster.Bepb.Proc     as Proc
-import Foster.Bepb.Decl     as Decl
-import Foster.Bepb.PBIf     as PBIf
-import Foster.Bepb.PBInt    as PBInt
-import Foster.Bepb.Expr     as PbExpr
-import Foster.Bepb.PbCtorId as PbCtorId
-import Foster.Bepb.AllocInfo as PbAllocInfo
+import Foster.Bepb.ProcType     as ProcType
+import Foster.Bepb.Type.Tag     as PbTypeTag
+import Foster.Bepb.Type         as PbType
+import Foster.Bepb.Closure      as Closure
+import Foster.Bepb.Proc         as Proc
+import Foster.Bepb.Decl         as Decl
+import Foster.Bepb.PBIf         as PBIf
+import Foster.Bepb.PBInt        as PBInt
+import Foster.Bepb.Expr         as PbExpr
+import Foster.Bepb.PbCtorId     as PbCtorId
+import Foster.Bepb.AllocInfo    as PbAllocInfo
+import Foster.Bepb.PbDataCtor   as PbDataCtor
 import Foster.Bepb.PbOccurrence as PbOccurrence
 import Foster.Bepb.DecisionTree as PbDecisionTree
 import Foster.Bepb.PbSwitchCase as PbSwitchCase
-import Foster.Bepb.CoroPrim as PbCoroPrim
-import Foster.Bepb.Module   as Module
+import Foster.Bepb.CoroPrim     as PbCoroPrim
+import Foster.Bepb.Module       as Module
 import Foster.Bepb.Expr.Tag
 import Foster.Bepb.Proc.Linkage
 import Foster.Bepb.DecisionTree.Tag
@@ -108,6 +109,17 @@ dumpProcType (s, t, cc) =
       where stringOfCC FastCC = "fastcc"
             stringOfCC CCC    = "ccc"
 
+dumpDataCtor (DataCtor ctorName types) =
+  PbDataCtor { PbDataCtor.name  = u8fromString ctorName
+             , PbDataCtor.type' = fromList $ map dumpType types
+             }
+
+dumpDataType name ctors =
+    P'.defaultValue { PbType.tag  = PbTypeTag.DATATYPE
+                    , PbType.name = Just $ u8fromString name
+                    , PbType.ctor = fromList $ fmap dumpDataCtor ctors
+                    }
+
 -----------------------------------------------------------------------
 dumpMemRegion :: AllocMemRegion -> Foster.Bepb.AllocInfo.MemRegion.MemRegion
 dumpMemRegion amr = case amr of
@@ -140,6 +152,9 @@ dumpExpr (ILCallPrim t (ILCoroPrim c a r) args)
 
 dumpExpr (ILCallPrim t (ILPrimOp op size) args)
         = dumpCallPrimOp t op size args
+
+dumpExpr (ILAppCtor t cid args)
+        = dumpAppCtor t cid args
 
 dumpExpr x@(ILBool b) =
     P'.defaultValue { bool_value   = Just b
@@ -265,9 +280,10 @@ dumpSwitchCase occ (SwitchCase ctorDTpairs defaultCase) =
                     , PbSwitchCase.defCase = fmap dumpDecisionTree defaultCase
                     , PbSwitchCase.occ   = Just $ dumpOcc occ }
 
-dumpCtorId (CtorId s i) =
-    P'.defaultValue { PbCtorId.ctorTypeName = u8fromString s
-                    , PbCtorId.ctorLocalId  = intToInt32 i }
+dumpCtorId (CtorId s n i) =
+    P'.defaultValue { PbCtorId.ctor_type_name = u8fromString s
+                    , PbCtorId.ctor_ctor_name = u8fromString n
+                    , PbCtorId.ctor_local_id  = intToInt32 i }
 
 dumpOcc offs =
     P'.defaultValue { PbOccurrence.occ_offset = fromList $ map intToInt32 offs }
@@ -298,6 +314,12 @@ dumpCallPrimOp t op size args =
                     , PbExpr.prim_op_size = Just $ intToInt32 size
                     , PbExpr.type' = Just $ dumpType t }
 
+dumpAppCtor t cid args =
+    P'.defaultValue { PbExpr.parts   = fromList $ fmap (dumpExpr.ILVar) args
+                    , PbExpr.tag     = IL_CTOR
+                    , PbExpr.ctor_id = Just $ dumpCtorId cid
+                    , PbExpr.type'   = Just $ dumpType t }
+
 dumpIf x@(ILIf t v b c) =
         PBIf { test_expr = dumpExpr (ILVar v)
              , then_expr = dumpExpr b
@@ -325,16 +347,22 @@ dumpProc p =
 
 -----------------------------------------------------------------------
 
+dumpDataTypeDecl (DataType typeName ctors) =
+    Decl { Decl.name  = u8fromString typeName
+         , Decl.type' = dumpDataType typeName ctors
+         }
+
 dumpDecl (ILDecl s t) =
     Decl { Decl.name  = u8fromString s
          , Decl.type' = dumpType t
          }
 
 dumpProgramToModule :: ILProgram -> Module
-dumpProgramToModule (ILProgram procdefs decls (SourceLines lines)) =
+dumpProgramToModule (ILProgram procdefs decls datatypes (SourceLines lines)) =
     Module   { modulename = u8fromString $ "foo"
              , procs      = fromList [dumpProc p | p <- procdefs]
-             , decls      = fromList [dumpDecl d | d <- decls]
+             , val_decls  = fromList (map dumpDecl decls)
+             , typ_decls  = fromList (map dumpDataTypeDecl datatypes)
              , modlines   = fmap textToPUtf8 lines
              }
 

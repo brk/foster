@@ -31,7 +31,7 @@ data ILClosure = ILClosure { ilClosureProcIdent :: Ident
                            , ilClosureEnvIdent  :: Ident
                            , ilClosureCaptures  :: [AIVar] } deriving Show
 
-data ILProgram = ILProgram [ILProcDef] [ILDecl] SourceLines
+data ILProgram = ILProgram [ILProcDef] [ILDecl] [DataType TypeIL] SourceLines
 data ILDecl    = ILDecl String TypeIL deriving (Show)
 
 data ILProcDef = ILProcDef { ilProcReturnType :: TypeIL
@@ -57,6 +57,7 @@ data ILExpr =
         | ILVar         AIVar
         | ILCallPrim    TypeIL ILPrim [AIVar]
         | ILCall        TypeIL AIVar  [AIVar]
+        | ILAppCtor     TypeIL CtorId [AIVar] -- ILDataCtor
         -- Mutable ref cells
         | ILAlloc              AIVar
         | ILDeref       TypeIL AIVar
@@ -72,7 +73,7 @@ data AllocMemRegion = MemRegionStack
 data ILAllocInfo = ILAllocInfo AllocMemRegion (Maybe AIVar)
 
 showProgramStructure :: ILProgram -> Output
-showProgramStructure (ILProgram procdefs decls _lines) =
+showProgramStructure (ILProgram procdefs decls _dtypes _lines) =
     concatMap showProcStructure procdefs
 
 procVarDesc (TypedId ty id) = "( " ++ (show id) ++ " :: " ++ show ty ++ " ) "
@@ -90,6 +91,7 @@ data ILMState = ILMState {
     ilmUniq    :: Uniq
   , ilmGlobals :: KnownVars
   , ilmProcDefs :: [ILProcDef]
+  , ilmCtors   :: DataTypeSigs
 }
 
 type ILM a = State ILMState a
@@ -108,10 +110,10 @@ ilmPutProc p_action = do
 
 fakeCloEnvType = TupleTypeIL []
 
-closureConvertAndLift :: Context TypeIL
+closureConvertAndLift :: Context TypeIL -> DataTypeSigs
                       -> (ModuleAST (Fn KNExpr) TypeIL)
                       -> ILProgram
-closureConvertAndLift ctx m =
+closureConvertAndLift ctx dataSigs m =
     let fns = moduleASTfunctions m in
     let decls = map (\(s,t) -> ILDecl s t) (moduleASTdecls m) in
     -- We lambda lift top level functions, since we know they don't have any "real" free vars.
@@ -119,8 +121,9 @@ closureConvertAndLift ctx m =
     let nameOfBinding (TermVarBinding s _) = s in
     let globalVars = Set.fromList $ map nameOfBinding (contextBindings ctx) in
     let procsILM = forM fns (\fn -> lambdaLift ctx fn []) in
-    let newstate = execState procsILM (ILMState 0 globalVars []) in
-    ILProgram (ilmProcDefs newstate) decls (moduleASTsourceLines m)
+    let dataTypes = moduleASTdataTypes m in
+    let newstate = execState procsILM (ILMState 0 globalVars [] dataSigs) in
+    ILProgram (ilmProcDefs newstate) decls dataTypes (moduleASTsourceLines m)
 
 prependILBinding :: (Ident, ILExpr) -> Context TypeIL -> Context TypeIL
 prependILBinding (id, ile) ctx =
@@ -145,6 +148,7 @@ closureConvert ctx expr =
             KNArrayPoke a b c -> return $ ILArrayPoke a b c
             KNTuple     vs    -> return $ ILTuple vs
             KNCallPrim t p vs -> return $ ILCallPrim t p vs
+            KNAppCtor  t c vs -> return $ ILAppCtor  t c vs
             KNCall     t b vs -> return $ ILCall     t b vs
 
             KNTyApp t e argty -> do e' <- g e ; return $ ILTyApp t e' argty
@@ -176,7 +180,7 @@ closureConvert ctx expr =
                                                let extctx = prependContextBindings ctx bindings
                                                a' <- closureConvert extctx a
                                                return (p, a' )) bs
-                                let allSigs = []
+                                allSigs <- gets ilmCtors
                                 let dt = compilePatterns ibs allSigs
                                 return $ ILCase t v ibs (trace (show dt) dt)
 
@@ -318,6 +322,7 @@ closureOfKnFn ctx0 infoMap (closedNames, (self_id, fn)) = do
         KNArrayPoke  {} -> e
         KNTuple      {} -> e
         KNCallPrim   {} -> e
+        KNAppCtor    {} -> e
 
         KNIf t v b c           -> KNIf    t v (q b) (q c)
         KNUntil t a b          -> KNUntil t   (q a) (q b)
@@ -347,7 +352,8 @@ typeIL (ILTuple vs)        = TupleTypeIL (map tidType vs)
 typeIL (ILClosures n b e)  = typeIL e
 typeIL (ILLetVal x b e)    = typeIL e
 typeIL (ILCall t id expr)  = t
-typeIL (ILCallPrim t id e) = t
+typeIL (ILCallPrim t id vs)= t
+typeIL (ILAppCtor t cid vs)= t
 typeIL (ILAllocArray elt_ty _) = ArrayTypeIL elt_ty
 typeIL (ILIf t a b c)      = t
 typeIL (ILUntil t a b)     = t
@@ -367,6 +373,7 @@ instance Structured ILExpr where
             ILBool         b    -> out $ "ILBool      " ++ (show b)
             ILCall    t b a     -> out $ "ILCall      " ++ " :: " ++ show t
             ILCallPrim t prim a -> out $ "ILCallPrim  " ++ (show prim) ++ " :: " ++ show t
+            ILAppCtor t cid vs  -> out $ "ILAppCtor   " ++ (show cid) ++ " :: " ++ show t
             ILClosures ns cs e  -> out $ "ILClosures  " ++ show (map showClosurePair (zip ns cs))
             ILLetVal   x b e    -> out $ "ILLetVal    " ++ (show x) ++ " :: " ++ (show $ typeIL b) ++ " = ... in ... "
             ILIf      t  a b c  -> out $ "ILIf        " ++ " :: " ++ show t
@@ -375,7 +382,7 @@ instance Structured ILExpr where
             ILAlloc v           -> out $ "ILAlloc     "
             ILDeref t a         -> out $ "ILDeref     "
             ILStore t a b       -> out $ "ILStore     "
-            ILCase t _ bnds _   -> out $ "ILCase      " ++ (show $ map fst bnds)
+            ILCase t _ bnds dt  -> (out "ILCase     \n") ++ (showStructure dt)
             ILAllocArray _ _    -> out $ "ILAllocArray "
             ILArrayRead  t a b  -> out $ "ILArrayRead " ++ " :: " ++ show t
             ILArrayPoke v b i   -> out $ "ILArrayPoke "
@@ -401,6 +408,7 @@ instance Structured ILExpr where
             ILLetVal x b e          -> [b, e]
             ILCall     t v vs       -> [var v] ++ [var v | v <- vs]
             ILCallPrim t v vs       ->            [var v | v <- vs]
+            ILAppCtor t c vs       ->             [var v | v <- vs]
             ILIf    t v b c         -> [var v, b, c]
             ILAlloc   v             -> [var v]
             ILAllocArray _ v        -> [var v]
@@ -419,6 +427,8 @@ patternBindings (p, ty) =
     P_Wildcard rng   -> []
     P_Variable rng id -> [TermVarBinding (identPrefix id) $
                                            TypedId ty id]
+    P_Ctor     rng pats _ ->
+      error $ "ILExpr.patternBindings not yet implemented for " ++ show (p, ty)
     P_Tuple    rng pats ->
       case ty of
         TupleTypeIL tys -> concatMap patternBindings (zip pats tys)

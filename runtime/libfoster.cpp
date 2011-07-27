@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <vector>
 
+#include "libfoster.h"
 #include "foster_gc.h"
 #include "libfoster_gc_roots.h"
 
@@ -229,4 +230,9 @@ void expect_i64b(int64_t x) { fprint_i64b(stderr, x); }
 // C type "bool" becomes LLVM "i8 zeroext", not "i1"
 void  print_i1(bool x) { fprintf(stdout, (x ? "true\n" : "false\n")); }
 void expect_i1(bool x) { fprintf(stderr, (x ? "true\n" : "false\n")); }
+
+int8_t foster_ctor_id_of(void* body) {
+  return foster::runtime::ctor_id_of(body);
+}
+
 } // extern "C"

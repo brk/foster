@@ -14,6 +14,7 @@ import Data.Map as Map(fromList, toList)
 data EPattern =
           EP_Wildcard      ESourceRange
         | EP_Variable      ESourceRange E_VarAST
+        | EP_Ctor          ESourceRange [EPattern] String
         | EP_Bool          ESourceRange Bool
         | EP_Int           ESourceRange String
         | EP_Tuple         ESourceRange [EPattern]

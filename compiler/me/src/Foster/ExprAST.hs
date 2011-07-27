@@ -151,6 +151,7 @@ epatBindingFreeVars (pat, expr) =
           case pat of
             EP_Wildcard _rng      -> []
             EP_Variable _rng evar -> [evarName evar]
+            EP_Ctor     _rng pats nm -> []
             EP_Bool     _rng _    -> []
             EP_Int      _rng _    -> []
             EP_Tuple    _rng pats -> concatMap epatBoundNames pats

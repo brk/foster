@@ -8,6 +8,7 @@
 
 #include "parse/FosterUtils.h"
 #include "parse/ParsingContext.h"
+#include "parse/FosterTypeAST.h"
 
 #include "llvm/DerivedTypes.h"
 #include "llvm/InstrTypes.h"
@@ -112,7 +113,11 @@ Constant* cellSizeOf(const Type* ty) {
   return roundUpToNearestMultiple(cs, defaultHeapAlignment());
 }
 
-typedef std::pair<const Type*, ArrayOrNot> TypeSig;
+typedef std::pair<const Type*, std::pair<ArrayOrNot, int8_t> > TypeSig;
+TypeSig mkTypeSig(const Type* t, ArrayOrNot a, int8_t c) {
+  return std::make_pair(t, std::make_pair(a, c));
+}
+
 std::map<TypeSig, GlobalVariable*> typeMapCache;
 
 const Type* getTypeMapOffsetType() {
@@ -124,8 +129,10 @@ const Type* getTypeMapOffsetType() {
 //   i64         cellSize;
 //   i8*         typeName;
 //   i32         numPtrEntries;
+//   i8          ctorId;
 //   i8          isCoro;
 //   i8          isArray;
+//   i8          unused_padding;
 //   i32         offsets[numPtrEntries];
 // }
 const StructType* getTypeMapType(int numPointers) {
@@ -135,8 +142,10 @@ const StructType* getTypeMapType(int numPointers) {
   typeMapTyFields.push_back(builder.getInt64Ty());   // cellSize
   typeMapTyFields.push_back(builder.getInt8PtrTy()); // typeName
   typeMapTyFields.push_back(builder.getInt32Ty());   // numPtrEntries
+  typeMapTyFields.push_back(builder.getInt8Ty());    // ctorId
   typeMapTyFields.push_back(builder.getInt8Ty());    // isCoro
   typeMapTyFields.push_back(builder.getInt8Ty());    // isArray
+  typeMapTyFields.push_back(builder.getInt8Ty());    // unused_padding
   typeMapTyFields.push_back(offsetsTy);              // i32[n]
 
   return StructType::get(getGlobalContext(), typeMapTyFields);
@@ -144,11 +153,12 @@ const StructType* getTypeMapType(int numPointers) {
 
 // Return a global corresponding to layout of getTypeMapType()
 // The returned global is also stored in the typeMapForType[] map.
-GlobalVariable* constructTypeMap(const llvm::Type* ty,
+GlobalVariable* constructTypeMap(const llvm::Type*  ty,
                                  const std::string& name,
-                                 const OffsetSet& pointerOffsets,
-                                 ArrayOrNot arrayStatus,
-                                 llvm::Module* mod) {
+                                 const OffsetSet&   pointerOffsets,
+                                 ArrayOrNot         arrayStatus,
+                                 int8_t             ctorId,
+                                 llvm::Module*      mod) {
   int numPointers = pointerOffsets.size();
   const StructType* typeMapTy = getTypeMapType(numPointers);
 
@@ -193,8 +203,10 @@ GlobalVariable* constructTypeMap(const llvm::Type* ty,
   typeMapFields.push_back(cellSizeOf(ty));
   typeMapFields.push_back(arrayVariableToPointer(typeNameVar));
   typeMapFields.push_back(getConstantInt32For(numPointers));
+  typeMapFields.push_back(getConstantInt8For(ctorId));
   typeMapFields.push_back(getConstantInt8For(isCoro ? 1 : 0));
   typeMapFields.push_back(getConstantInt8For(isArray ? 1 : 0));
+  typeMapFields.push_back(getConstantInt8For(0)); // unused padding
   typeMapFields.push_back(ConstantArray::get(offsetsTy, typeMapOffsets));
 
   typeMapVar->setInitializer(ConstantStruct::get(typeMapTy, typeMapFields));
@@ -207,6 +219,7 @@ GlobalVariable* emitTypeMap(
     const Type* ty,
     std::string name,
     ArrayOrNot arrayStatus,
+    int8_t        ctorId,
     llvm::Module* mod,
     std::vector<int> skippedIndexVector) {
   // Careful! The indices here are relative to the values
@@ -225,9 +238,9 @@ GlobalVariable* emitTypeMap(
     }
   }
 
-  typeMapCache[TypeSig(ty, arrayStatus)] =
-      constructTypeMap(ty, name, filteredOffsets, arrayStatus, mod);
-  return typeMapCache[TypeSig(ty, arrayStatus)];
+  TypeSig sig = mkTypeSig(ty, arrayStatus, ctorId);
+  typeMapCache[sig] = constructTypeMap(ty, name, filteredOffsets, arrayStatus, ctorId, mod);
+  return typeMapCache[sig];
 }
 
 // The struct type is
@@ -258,24 +271,27 @@ GlobalVariable* emitCoroTypeMap(const StructType* sty, llvm::Module* mod) {
   // We skip the first entry, which is the stack pointer in the coro_context.
   // The pointer-to-function will be automatically skipped, and the remaining
   // pointers are precisely those which we want the GC to notice.
-  return emitTypeMap(sty, ss.str(), NotArray, mod,
+  int8_t bogusCtor = -1;
+  return emitTypeMap(sty, ss.str(), NotArray, bogusCtor, mod,
                      make_vector(0, 4, NULL));
 }
 
-void registerType(const Type* ty,
-                  std::string desiredName,
-                  llvm::Module* mod,
-                  ArrayOrNot arrayStatus) {
-  static std::map<const Type*, bool> registeredTypes;
+void registerTupleType(TupleTypeAST* tupletyp,
+                       std::string desiredName,
+                       int8_t        ctorId,
+                       llvm::Module* mod) {
+  static std::map<TypeSig, bool> registeredTypes;
 
-  if (registeredTypes[ty]) return;
+  const llvm::Type* ty = tupletyp->getLLVMTypeUnboxed();
+  TypeSig sig = mkTypeSig(ty, NotArray, ctorId);
+  if (registeredTypes[sig]) return;
 
-  registeredTypes[ty] = true;
+  registeredTypes[sig] = true;
 
   std::string name = ParsingContext::freshName(desiredName);
   mod->addTypeName(name, ty);
-
-  emitTypeMap(ty, name, arrayStatus, mod, std::vector<int>());
+  EDiag() << "registered type " << name << " = " << str(ty) << "; ctor id " << ctorId;
+  emitTypeMap(ty, name, NotArray, ctorId, mod, std::vector<int>());
 }
 
 const llvm::StructType*
@@ -291,20 +307,21 @@ isCoroStruct(const llvm::Type* ty) {
 }
 
 llvm::GlobalVariable* getTypeMapForType(const llvm::Type* ty,
+                                        int8_t ctorId,
                                         llvm::Module* mod,
                                         ArrayOrNot arrayStatus) {
-  llvm::GlobalVariable* gv = typeMapCache[TypeSig(ty, arrayStatus)];
+  llvm::GlobalVariable* gv = typeMapCache[mkTypeSig(ty, arrayStatus, ctorId)];
   if (gv) return gv;
 
   if (const llvm::StructType* sty = isCoroStruct(ty)) {
     gv = emitCoroTypeMap(sty, mod);
   } else if (!ty->isAbstract() && !ty->isAggregateType()) {
-    gv = emitTypeMap(ty, ParsingContext::freshName("gcatom"), arrayStatus, mod,
-                     std::vector<int>());
+    gv = emitTypeMap(ty, ParsingContext::freshName("gcatom"), arrayStatus,
+                     ctorId, mod, std::vector<int>());
     // emitTypeMap also sticks gv in typeMapForType
   } else if (isGenericClosureType(ty)) {
-    gv = emitTypeMap(ty, ParsingContext::freshName("genericClosure"), arrayStatus, mod,
-                     std::vector<int>());
+    gv = emitTypeMap(ty, ParsingContext::freshName("genericClosure"), arrayStatus,
+                     ctorId, mod, std::vector<int>());
   }
 
   if (!gv) {

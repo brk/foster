@@ -57,6 +57,13 @@ extern std::map<std::string, std::string> sgProcLines;
 
 namespace {
 
+CtorId parseCtorId(const pb::PbCtorId& c) { CtorId x;
+  x.typeName = c.ctor_type_name();
+  x.ctorName = c.ctor_ctor_name();
+  x.smallId = c.ctor_local_id();
+  return x;
+}
+
 LLExpr* parseBool(const pb::Expr& e) {
   return new LLBool(e.bool_value() ? "true" : "false");
 }
@@ -80,6 +87,15 @@ LLExpr* parseCallPrimOp(const pb::Expr& e) {
     args.push_back(LLVar_from_pb(&e.parts(i)));
   }
   return new LLCallPrimOp(e.name(), args);
+}
+
+LLExpr* parseAppCtor(const pb::Expr& e) {
+  ASSERT(e.has_ctor_id()) << "APP_CTOR without ctor id?";
+  std::vector<LLVar*> vars;
+  for (int i = 0; i < e.parts_size(); ++i) {
+    vars.push_back(LLVar_from_pb(&e.parts(i)));
+  }
+  return new LLAppCtor(parseCtorId(e.ctor_id()), vars);
 }
 
 LLExpr* parseIf(const pb::Expr& e) {
@@ -116,7 +132,8 @@ LLAllocate* parseAllocate(const pb::Expr& e) {
       target_region = LLAllocate::MEM_REGION_GLOBAL_HEAP; break;
   default: ASSERT(false) << "Unknown target region for AllocInfo.";
   }
-  return new LLAllocate(TypeAST_from_pb(& e.type()), array_size,
+  int8_t bogusCtorId = -2;
+  return new LLAllocate(TypeAST_from_pb(& e.type()), bogusCtorId, array_size,
                         target_region);
 }
 
@@ -210,11 +227,6 @@ LLExpr* parseUntil(const pb::Expr& e) {
   return new LLUntil(
       LLExpr_from_pb(& e.parts(0)),
       LLExpr_from_pb(& e.parts(1)));
-}
-
-CtorId parseCtorId(const pb::PbCtorId& c) {
-  return CtorId(c.ctortypename(),
-                c.ctorlocalid());
 }
 
 DecisionTree* parseDecisionTree(const pb::DecisionTree& dt);
@@ -320,17 +332,34 @@ LLDecl* parseDecl(const pb::Decl& e) {
 LLModule* LLModule_from_pb(const pb::Module& e) {
   string moduleName = e.modulename();
 
+  // Walk the type declarations and add their types to the current scope.
+  // In contrast, the value declarations are only for checking purposes; if
+  // a value isn't in a Module we've imported, we can't magically summon it!
+  std::vector<NamedTypeAST*> namedTypes;
+  for (int i = 0; i < e.typ_decls_size(); ++i){
+    namedTypes.push_back(new NamedTypeAST(e.typ_decls(i).name(), NULL,
+                         foster::SourceRange::getEmptyRange()));
+    ParsingContext::insertType(e.typ_decls(i).name(),
+                               namedTypes.back());
+  }
+  std::vector<LLDecl*> datatype_decls;
+  for (int i = 0; i < e.typ_decls_size(); ++i){
+    LLDecl* d = parseDecl(e.typ_decls(i));
+    namedTypes[i]->setNamedType(d->getType());
+    datatype_decls.push_back(d);
+  }
+
   std::vector<LLProc*> procs;
   for (int i = 0; i < e.procs_size(); ++i) {
     procs.push_back(parseProc(e.procs(i)));
   }
 
-  std::vector<LLDecl*> decls;
-  for (int i = 0; i < e.decls_size(); ++i) {
-    decls.push_back(parseDecl(e.decls(i)));
+  std::vector<LLDecl*> vdecls;
+  for (int i = 0; i < e.val_decls_size(); ++i) {
+    vdecls.push_back(parseDecl(e.val_decls(i)));
   }
 
-  return new LLModule(moduleName, procs, decls);
+  return new LLModule(moduleName, procs, vdecls, datatype_decls);
 }
 
 
@@ -344,6 +373,7 @@ LLExpr* LLExpr_from_pb(const pb::Expr* pe) {
   case pb::Expr::IL_BOOL:        rv = parseBool(e); break;
   case pb::Expr::IL_CALL:        rv = parseCall(e); break;
   case pb::Expr::IL_CALL_PRIMOP: rv = parseCallPrimOp(e); break;
+  case pb::Expr::IL_CTOR:        rv = parseAppCtor(e); break;
   case pb::Expr::IL_CASE:        rv = parseCase(e); break;
   case pb::Expr::IL_IF:          rv = parseIf(e); break;
   case pb::Expr::IL_INT:         rv = parseInt(e); break;
@@ -397,6 +427,24 @@ FnTypeAST* parseProcType(const bepb::ProcType& fnty) {
   std::map<std::string, std::string> annots;
   annots["callconv"] = fnty.calling_convention();
   return new FnTypeAST(retTy, argTypes, annots);
+}
+
+
+DataCtor* parseDataCtor(const pb::PbDataCtor* ct) {
+  DataCtor* c = new DataCtor;
+  c->name = ct->name();
+  for (int i = 0; i < ct->type_size(); ++i) {
+    c->types.push_back(TypeAST_from_pb(& ct->type(i)));
+  }
+  return c;
+}
+
+std::vector<DataCtor*> parseDataCtors(const pb::Type& t) {
+  std::vector<DataCtor*> rv;
+  for (int i = 0; i < t.ctor_size(); ++i) {
+    rv.push_back(parseDataCtor(& t.ctor(i)));
+  }
+  return rv;
 }
 
 TypeAST* TypeAST_from_pb(const pb::Type* pt) {
@@ -460,6 +508,12 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
   if (t.tag() == pb::Type::TYPE_VARIABLE) {
     const string& tyname = t.name();
     return TypeVariableAST::get(tyname, SourceRange::getEmptyRange());
+  }
+
+  if (t.tag() == pb::Type::DATATYPE) {
+    const string& tyname = t.name();
+    return new DataTypeAST(tyname, parseDataCtors(t),
+                           SourceRange::getEmptyRange());
   }
 
   EDiag() << "Error: found unexpected type in protobuf!\n" << t.DebugString();

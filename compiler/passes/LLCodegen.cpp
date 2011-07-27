@@ -52,6 +52,8 @@ char kFosterMain[] = "foster__main";
 
 namespace foster {
 
+int8_t bogusCtorId(int8_t c) { return c; }
+
 void codegenLL(LLModule* package, llvm::Module* mod) {
   CodegenPass cp(mod);
   package->codegenModule(&cp);
@@ -162,7 +164,45 @@ void copyValuesToStruct(const std::vector<llvm::Value*>& vals,
 
 ////////////////////////////////////////////////////////////////////
 
+void registerKnownDataTypes(const std::vector<LLDecl*> datatype_decls,
+                            CodegenPass* pass) {
+  for (size_t i = 0; i < datatype_decls.size(); ++i) {
+     LLDecl* d = datatype_decls[i];
+     const std::string& typeName = d->getName();
+     DataTypeAST* dt = dynamic_cast<DataTypeAST*>(d->getType());
+     pass->isKnownDataType[typeName] = dt;
+  }
+}
+
+TupleTypeAST* getDataCtorType(DataCtor* dc) {
+  return TupleTypeAST::get(dc->types);
+}
+
+llvm::Value* LLAppCtor::codegen(CodegenPass* pass) {
+  DataTypeAST* dt = pass->isKnownDataType[this->ctorId.typeName];
+  ASSERT(dt) << "unable to find data type for " << this->ctorId.typeName;
+  DataCtor* dc = dt->getCtor(this->ctorId.smallId);
+  TupleTypeAST* ty = getDataCtorType(dc);
+
+  // This basically duplicates LLTuple::codegen and should eventually
+  // be properly implemented in terms of it.
+  registerTupleType(ty, this->ctorId.typeName + "." + this->ctorId.ctorName,
+                    this->ctorId.smallId, pass->mod);
+  LLAllocate a(ty, this->ctorId.smallId, NULL,
+               LLAllocate::MEM_REGION_GLOBAL_HEAP);
+  llvm::Value* obj_slot = a.codegen(pass);
+  llvm::Value* obj = builder.CreateLoad(obj_slot);
+
+  copyValuesToStruct(codegenAll(pass, this->args), obj);
+
+  const llvm::PointerType* dtype = dt->getOpaquePointerTy(pass->mod);
+  // TODO fix to use a stack slot properly
+  return builder.CreateBitCast(obj, dtype);
+}
+
 void LLModule::codegenModule(CodegenPass* pass) {
+  registerKnownDataTypes(datatype_decls, pass);
+
   // Ensure that the llvm::Function*s are created for all the function
   // prototypes, so that mutually recursive function references resolve.
   for (size_t i = 0; i < procs.size(); ++i) {
@@ -282,7 +322,7 @@ llvm::Value* emitRuntimeArbitraryPrecisionOperation(const std::string& op,
 ////////////////////////////////////////////////////////////////////
 
 Value* allocateCell(CodegenPass* pass, TypeAST* type,
-                    LLAllocate::MemRegion region) {
+                    LLAllocate::MemRegion region, int8_t ctorId) {
   const llvm::Type* ty = NULL;
   if (TupleTypeAST* tuplety = dynamic_cast<TupleTypeAST*>(type)) {
     ty = tuplety->getLLVMTypeUnboxed();
@@ -296,7 +336,7 @@ Value* allocateCell(CodegenPass* pass, TypeAST* type,
     return CreateEntryAlloca(ty, "alloc");
 
   case LLAllocate::MEM_REGION_GLOBAL_HEAP:
-    return pass->emitMalloc(ty);
+    return pass->emitMalloc(ty, ctorId);
 
   default:
     ASSERT(false); return NULL;
@@ -317,7 +357,7 @@ llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
     return allocateArray(pass, this->type, this->region,
                          pass->emit(this->arraySize, NULL));
   } else {
-    return allocateCell(pass, this->type, this->region);
+    return allocateCell(pass, this->type, this->region, this->ctorId);
   }
 }
 
@@ -330,7 +370,7 @@ llvm::Value* LLAlloc::codegen(CodegenPass* pass) {
   //        r
   //    end
   ASSERT(this && this->baseVar && this->baseVar->type);
-  llvm::Value* ptrSlot   = pass->emitMalloc(this->baseVar->type->getLLVMType());
+  llvm::Value* ptrSlot   = pass->emitMalloc(this->baseVar->type->getLLVMType(), foster::bogusCtorId(-4));
   llvm::Value* storedVal = pass->emit(baseVar, NULL);
   llvm::Value* ptr       = builder.CreateLoad(ptrSlot, /*isVolatile=*/ false, "alloc_slot_ptr");
   emitStore(storedVal, ptr);
@@ -509,7 +549,7 @@ llvm::Value* LLClosure::codegenClosure(
   bool closureEscapes = true;
   if (closureEscapes) {
     // // { code*, env* }**
-    llvm::AllocaInst* clo_slot = pass->emitMalloc(genericClosureStructTy(fnty));
+    llvm::AllocaInst* clo_slot = pass->emitMalloc(genericClosureStructTy(fnty), foster::bogusCtorId(-5));
     clo = builder.CreateLoad(clo_slot, /*isVolatile=*/ false,
                                          varname + ".closure"); rv = clo_slot;
   } else { // { code*, env* }*
@@ -745,27 +785,55 @@ llvm::Value* LLCoroPrim::codegen(CodegenPass* pass) {
   return NULL;
 }
 
+////////////////////////////////////////////////////////////////////
+
+llvm::Value* emitFakeComment(std::string s) {
+  EDiag() << "emitFakeComment: " << s;
+  return new llvm::BitCastInst(builder.getInt32(0), builder.getInt32Ty(), s,
+                               builder.GetInsertBlock());
+}
+
+////////////////////////////////////////////////////////////////////
+
 llvm::Value* LLCase::codegen(CodegenPass* pass) {
   llvm::Value* v = pass->emit(scrutinee, NULL);
   llvm::AllocaInst* rv_slot = CreateEntryAlloca(getLLVMType(this->type), "case_slot");
   pass->markAsNeedingImplicitLoads(rv_slot);
-  this->dt->codegenDecisionTree(pass, v, rv_slot);
+  OccCtorMap ctorSymTab;
+  this->dt->codegenDecisionTree(pass, v, rv_slot, ctorSymTab);
   return rv_slot;
 }
 
-llvm::Value* lookupOccs(Occurrence* occ, llvm::Value* v, CodegenPass* pass) {
+llvm::Value* lookupOccs(Occurrence* occ, llvm::Value* v, OccCtorMap& ctab) {
+  ASSERT(occ != NULL);
   const std::vector<int>& occs = occ->offsets;
   llvm::Value* rv = v;
+
+  std::vector<int> currentOccs;
+
+  // If we know that the subterm at this position was created with
+  // a particular data constructor, emit a cast to that ctor's type.
+  if (TupleTypeAST* tupty = ctab[currentOccs]) {
+    rv = builder.CreateBitCast(rv, tupty->getLLVMType());
+  }
+
   for (size_t i = 0; i < occs.size(); ++i) {
     llvm::Constant* idx = getConstantInt32For(occs[i]);
     rv = getElementFromComposite(rv, idx, "switch_insp");
+
+    currentOccs.push_back(occs[i]);
+    if (TupleTypeAST* tupty = ctab[currentOccs]) {
+      rv = builder.CreateBitCast(rv, tupty->getLLVMType());
+    }
   }
+
   return rv;
 }
 
 void DecisionTree::codegenDecisionTree(CodegenPass* pass,
                                        llvm::Value* scrutinee,
-                                       llvm::AllocaInst* rv_slot) {
+                                       llvm::AllocaInst* rv_slot,
+                                       OccCtorMap& ctab) {
   Value* rv = NULL;
   switch (tag) {
   case DecisionTree::DT_FAIL:
@@ -775,9 +843,9 @@ void DecisionTree::codegenDecisionTree(CodegenPass* pass,
 
   case DecisionTree::DT_LEAF:
     ASSERT(this->action != NULL);
-
+    emitFakeComment("codegen dt leaf");
     for (size_t i = 0; i < binds.size(); ++i) {
-       Value* v = lookupOccs(binds[i].second, scrutinee, pass);
+       Value* v = lookupOccs(binds[i].second, scrutinee, ctab);
        Value* v_slot = ensureImplicitStackSlot(v, pass);
        trySetName(v_slot, "pat_" + binds[i].first + "_slot");
        pass->valueSymTab.insert(binds[i].first, v_slot);
@@ -796,14 +864,22 @@ void DecisionTree::codegenDecisionTree(CodegenPass* pass,
   // end DT_SWAP
 
   case DecisionTree::DT_SWITCH:
-    sc->codegenSwitch(pass, scrutinee, rv_slot);
+    sc->codegenSwitch(pass, scrutinee, rv_slot, ctab);
     break;
   }
 }
 
+llvm::Value* emitCallGetCtorIdOf(CodegenPass* pass, llvm::Value* v) {
+  llvm::Value* foster_ctor_id_of = pass->mod->getFunction("foster_ctor_id_of");
+  ASSERT(foster_ctor_id_of != NULL);
+  return builder.CreateCall(foster_ctor_id_of, builder.CreateBitCast(v,
+                                                 builder.getInt8PtrTy()));
+}
+
 void SwitchCase::codegenSwitch(CodegenPass* pass,
                                llvm::Value* scrutinee,
-                               llvm::AllocaInst* rv_slot) {
+                               llvm::AllocaInst* rv_slot,
+                               OccCtorMap& ctab) {
   ASSERT(ctors.size() == trees.size());
   ASSERT(ctors.size() >= 1);
 
@@ -815,36 +891,51 @@ void SwitchCase::codegenSwitch(CodegenPass* pass,
   // Special-case codegen for when there's only one
   // possible case, to avoid superfluous branches.
   if (trees.size() == 1 && !defaultCase) {
-    trees[0]->codegenDecisionTree(pass, scrutinee, rv_slot);
+    trees[0]->codegenDecisionTree(pass, scrutinee, rv_slot, ctab);
     return;
   }
+
+  // All the ctors should have the same data type, now that we have at least
+  // one ctor, check if it's associated with a data type we know of.
+  DataTypeAST* dt = pass->isKnownDataType[ctors[0].typeName];
 
   // TODO: switching on a.p. integers: possible at all?
   // If so, it will require manual if-else chaining,
   // not a simple int32 switch...
-
   BasicBlock* bbEnd = BasicBlock::Create(getGlobalContext(), "case_end");
   BasicBlock* defOrContBB = defaultBB ? defaultBB : bbEnd;
   // Fetch the subterm of the scrutinee being inspected.
-  llvm::Value* v = lookupOccs(occ, scrutinee, pass);
-  llvm::SwitchInst* si = builder.CreateSwitch(v, defOrContBB, ctors.size());
+  llvm::Value* inspected = lookupOccs(this->occ, scrutinee, ctab);
 
+  // If we're looking at a data type, emit code to get the ctor tag,
+  // instead of switching on the pointer value directly.
+  if (dt) {    inspected = emitCallGetCtorIdOf(pass, inspected);  }
+
+  // Switch on the inspected value; we'll fill in the ctor branches as we go.
+  llvm::SwitchInst* si = builder.CreateSwitch(inspected, defOrContBB, ctors.size());
   Function *F = builder.GetInsertBlock()->getParent();
 
   for (size_t i = 0; i < ctors.size(); ++i) {
     CtorId c = ctors[i];
-    DecisionTree* t = trees[i];
-
     ConstantInt* onVal = NULL;
+    TupleTypeAST* tupty = NULL;
+
     // Compute the "tag" associated with this branch.
-    if (c.first == "Int32") {
-      onVal = getConstantInt32For(c.second);
-    } else if (c.first == "Bool") {
-      onVal = builder.getInt1(c.second);
+    // Also, if needed, we shall bitcast the scrutinee (for data types)
+    // from an unknown to a specific ctor-associated type in order to perform
+    // further case discrimination.
+    if (dt) {
+      tupty = getDataCtorType(dt->getCtor(c.smallId));
+      ctab[this->occ->offsets] = tupty;
+      onVal = getConstantInt8For(c.smallId);
+    } else if (c.typeName == "Bool") {
+      onVal = builder.getInt1(c.smallId);
+    } else if (c.typeName == "Int32") {
+      onVal = getConstantInt32For(c.smallId);
     } else {
-      ASSERT(false) << "SwitchCase ctor " << i << "/" << ctors.size()
-             << ": " << c.first << "."  << c.second
-             << "\n" << str(v)  << "::" << str(v->getType());
+      ASSERT(false) << "SwitchCase ctor " << (i+1) << "/" << ctors.size()
+             << ": " << c.typeName << "." << c.ctorName << "#" << c.smallId
+             << "\n" << str(scrutinee)  << "::" << str(scrutinee->getType());
     }
 
     // Emit the code for the branch expression,
@@ -852,15 +943,18 @@ void SwitchCase::codegenSwitch(CodegenPass* pass,
     std::stringstream ss; ss << "casetest_" << i;
     BasicBlock* destBB = BasicBlock::Create(getGlobalContext(), ss.str());
     addAndEmitTo(F, destBB);
-    t->codegenDecisionTree(pass, scrutinee, rv_slot);
+    trees[i]->codegenDecisionTree(pass, scrutinee, rv_slot, ctab);
     builder.CreateBr(bbEnd);
 
+    ASSERT(inspected->getType() == onVal->getType())
+        << "switch case and inspected value had different types!";
     si->addCase(onVal, destBB);
+    if (tupty) { ctab.erase(this->occ->offsets); }
   }
 
   if (defaultCase) {
     addAndEmitTo(F, defaultBB);
-    defaultCase->codegenDecisionTree(pass, scrutinee, rv_slot);
+    defaultCase->codegenDecisionTree(pass, scrutinee, rv_slot, ctab);
     builder.CreateBr(bbEnd);
   }
 
@@ -1114,8 +1208,7 @@ llvm::Value* LLTuple::codegenStorage(CodegenPass* pass) {
         << "; var 0 :: " << str(vars[0]->type);
 
   if (tuplety) {
-    const llvm::Type* tupleType = tuplety->getLLVMTypeUnboxed();
-    registerType(tupleType, this->typeName, pass->mod, NotArray);
+    registerTupleType(tuplety, this->typeName, foster::bogusCtorId(-2), pass->mod);
   }
 
   return allocator->codegen(pass);

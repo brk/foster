@@ -52,6 +52,10 @@ void NamedTypeAST::show(PrettyPrintTypePass* pass){
   pass->scan(PPToken(this->getName()));
 }
 
+void DataTypeAST::show(PrettyPrintTypePass* pass){
+  pass->scan(PPToken(this->getName()));
+}
+
 void TypeVariableAST::show(PrettyPrintTypePass* pass){
   pass->scan(PPToken("TypeVar("));
   pass->scan(PPToken(this->getTypeVariableName()));

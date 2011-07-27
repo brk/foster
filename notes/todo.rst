@@ -12,6 +12,7 @@ TODO: libraries, benchmarks, & applications
 
 TODO: implementation details
 ----------------------------
+* Keep at most one stack slot per subterm (position) of case-inspected values.
 * rusage() in runtime when on Linux (+ OS X?)
 * Design pointer representations and GC integration:
  * Stable pointers

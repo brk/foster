@@ -32,11 +32,11 @@ class LLExpr;
 class TypeAST;
 class FnTypeAST;
 
+struct CodegenPass;
+
 std::ostream& operator<<(std::ostream& out, LLExpr& expr);
 
 ///////////////////////////////////////////////////////////
-
-struct CodegenPass;
 
 struct LLExpr {
   TypeAST* type;
@@ -65,11 +65,13 @@ struct LLModule {
   const std::string name;
   std::vector<LLProc*> procs;
   std::vector<LLDecl*> val_decls;
+  std::vector<LLDecl*> datatype_decls;
 
   explicit LLModule(const std::string& name,
                     const std::vector<LLProc*>& procs,
-                    const std::vector<LLDecl*> vdecls)
-  : name(name), procs(procs), val_decls(vdecls) {}
+                    const std::vector<LLDecl*> vdecls,
+                    const std::vector<LLDecl*> datatype_decls)
+  : name(name), procs(procs), val_decls(vdecls), datatype_decls(datatype_decls) {}
 
   void codegenModule(CodegenPass* pass);
 };
@@ -163,6 +165,20 @@ struct LLCall : public LLExpr {
   bool callMightTriggerGC;
   LLCall(LLExpr* base, std::vector<LLVar*>& args, bool mayGC)
   : LLExpr("LLCall"), base(base), args(args), callMightTriggerGC(mayGC) { }
+  virtual llvm::Value* codegen(CodegenPass* pass);
+};
+
+struct CtorId {
+  string typeName;
+  string ctorName;
+  int smallId;
+};
+
+struct LLAppCtor : public LLExpr {
+  std::vector<LLVar*> args;
+  CtorId ctorId;
+  LLAppCtor(CtorId c, std::vector<LLVar*>& _args)
+  : LLExpr("LLAppCtor"), args(_args), ctorId(c) { }
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
@@ -280,14 +296,15 @@ struct LLCase : public LLExpr {
 
 struct LLAllocate : public LLExpr {
   LLVar* arraySize; // NULL if not allocating an array
+  int8_t ctorId;
   enum MemRegion {
       MEM_REGION_STACK
     , MEM_REGION_GLOBAL_HEAP
   } region;
   bool isStackAllocated() const { return region == MEM_REGION_STACK; }
 
-  explicit LLAllocate(TypeAST* t, LLVar* arrSize, MemRegion m)
-     : LLExpr("LLAllocate"), arraySize(arrSize), region(m) { this->type = t; }
+  explicit LLAllocate(TypeAST* t, int8_t c, LLVar* arrSize, MemRegion m)
+     : LLExpr("LLAllocate"), arraySize(arrSize), ctorId(c), region(m) { this->type = t; }
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
@@ -320,12 +337,13 @@ struct LLCoroPrim : public LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
-typedef std::pair<string, int> CtorId;
 struct DecisionTree;
 
 struct Occurrence {
   std::vector<int> offsets;
 };
+
+typedef std::map<std::vector<int>, TupleTypeAST*> OccCtorMap;
 
 struct SwitchCase {
   std::vector<CtorId>        ctors;
@@ -333,10 +351,11 @@ struct SwitchCase {
   DecisionTree*        defaultCase;
   Occurrence*                  occ;
   void codegenSwitch(CodegenPass* pass, llvm::Value* scrutinee,
-                     llvm::AllocaInst* rv_slot);
+                     llvm::AllocaInst* rv_slot, OccCtorMap& ctab);
 };
 
 typedef std::pair<std::string, Occurrence*> DTBinding;
+
 struct DecisionTree {
   enum Tag {
     DT_FAIL, DT_LEAF, DT_SWAP, DT_SWITCH
@@ -351,7 +370,8 @@ struct DecisionTree {
   DecisionTree(Tag t, SwitchCase* sc)
                                  : tag(t), type(NULL), action(NULL), sc(sc) {}
   void codegenDecisionTree(CodegenPass* pass, llvm::Value* scrutinee,
-                           llvm::AllocaInst* rv_slot);
+                           llvm::AllocaInst* rv_slot,
+                           OccCtorMap& ctab);
 };
 
 #endif // header guard

@@ -7,8 +7,10 @@
 module Foster.PatternMatch where
 
 import qualified Data.List as List
-import qualified Data.Set  as Set
 import Data.Set(Set)
+import qualified Data.Set  as Set(size, fromList, toList, map)
+import Data.Map(Map)
+import qualified Data.Map  as Map(lookup, size)
 
 import Foster.Base
 
@@ -37,7 +39,7 @@ data Show a =>
 -- pretty good use case for parameterized modules!
 data Show a =>
      Action a   = Action     a          deriving (Show)
-data CtorId     = CtorId     String Int deriving (Show, Eq)
+
 type Occurrence = [Int]
 type ClauseCol  = [SPattern]
 data Show a =>
@@ -52,43 +54,66 @@ data SPattern = SP_Wildcard
               | SP_Ctor      CtorId  [SPattern]
              deriving (Show)
 
-instance Ord CtorId where
-  compare a b = compare (show a) (show b)
+instance (Show a, Structured a) => Structured (DecisionTree a) where
+    textOf e width =
+        let spaces = Prelude.replicate width '\SP'  in
+        case e of
+          DT_Fail           -> out $ "DT_Fail      "
+          DT_Leaf a idsoccs -> (out $ "DT_Leaf    " ++ show idsoccs ++ "\n") ++ (showStructure a)
+          DT_Swap i dt      -> out $ "DT_Swap      " ++ (show i)
+          DT_Switch occ sc  -> out $ "DT_Switch    " ++ (show occ) ++ (show $ subIds sc)
+    childrenOf e =
+      case e of
+        (DT_Fail)     -> []
+        (DT_Leaf _ _) -> []
+        (DT_Swap i dt)      -> [dt]
+        (DT_Switch occ sc)  -> subDts sc
 
-compilePatterns :: Show a => [(Pattern, a)] -> [Set CtorId] -> DecisionTree a
+subIds (SwitchCase idsDts _) = map fst idsDts
+subDts (SwitchCase idsDts Nothing)  = map snd idsDts
+subDts (SwitchCase idsDts (Just d)) = map snd idsDts ++ [d]
+
+compilePatterns :: Show a => [(Pattern, a)] -> DataTypeSigs -> DecisionTree a
 compilePatterns bs allSigs =
  cc [[]] (ClauseMatrix $ map compilePatternRow bs) allSigs
  where
   compilePatternRow (p, a) = ClauseRow (compilePattern p)
                                        [compilePattern p] a
   compilePattern p = case p of
-    (P_Wildcard _  ) -> SP_Wildcard
-    (P_Variable _ v) -> SP_Variable v
-    (P_Bool     _ b) -> SP_Ctor (boolCtor b)  []
-    (P_Int      _ i) -> SP_Ctor (int32Ctor i) []
-    (P_Tuple _ pats) -> SP_Ctor (tupleCtor pats) (map compilePattern pats)
-  boolCtor False = CtorId "Bool" 0
-  boolCtor True  = CtorId "Bool" 1
+    (P_Wildcard _  )   -> SP_Wildcard
+    (P_Variable _ v)   -> SP_Variable v
+    (P_Bool     _ b)   -> SP_Ctor (boolCtor b)  []
+    (P_Int      _ i)   -> SP_Ctor (int32Ctor i) []
+    (P_Ctor _ pats ctorIdent) ->
+                          SP_Ctor (sigOf ctorIdent) (map compilePattern pats)
+    (P_Tuple _ pats)   -> SP_Ctor (tupleCtor pats)  (map compilePattern pats)
+  boolCtor False = CtorId "Bool" "False" 0
+  boolCtor True  = CtorId "Bool" "True"  1
 
-  tupleCtor pats = CtorId "()" (Prelude.length pats)
+  tupleCtor pats = CtorId "()" "()" (Prelude.length pats)
 
-  int32Ctor li = CtorId "Int32" (if litIntMinBits li <= 32
+  int32Ctor li = CtorId "Int32" "<Int32>"
+                               (if litIntMinBits li <= 32
                                   then fromInteger $ litIntValue li
                                   else error "cannot cram >32 bits into Int32!")
+
+  sigOf x@(DataCtorIdent typeName ctorName) =
+    case Map.lookup typeName allSigs of
+      Just (DataTypeSig sigMap) ->
+        case Map.lookup ctorName sigMap of
+          Just sig -> sig
+          Nothing -> error $ "PatternMatch.sigOf unable to find signature for ctor " ++ show x
+      Nothing  -> error $ "PatternMatch.sigOf unable to find signature for data type " ++ show x
 
 computeBindings :: (Occurrence, SPattern) -> [(Ident, Occurrence)]
 computeBindings (occ, SP_Variable i) = [(i, occ)]
 computeBindings (occ, SP_Wildcard  ) = []
-computeBindings (occ, SP_Ctor (CtorId "()" _) pats) =
+computeBindings (occ, SP_Ctor _ pats) =
   let occs = expand occ (Prelude.length pats) in
-  concat $ map computeBindings (zip occs pats)
-computeBindings (occ, SP_Ctor (CtorId c _) pats)
-        | c == "Int32" || c == "Bool" = []
-computeBindings (occ, SP_Ctor c pats) =
-  error $ "computeBindings " ++ show c ++ " ;; " ++ show pats
+  concatMap computeBindings (zip occs pats)
 
 -- "Compilation is defined by cases as follows."
-cc :: Show a => [Occurrence] -> ClauseMatrix a -> [Set CtorId] -> DecisionTree a
+cc :: Show a => [Occurrence] -> ClauseMatrix a -> DataTypeSigs -> DecisionTree a
 
 -- No row to match -> failure
 cc _ (ClauseMatrix []) allSigs = DT_Fail
@@ -120,7 +145,7 @@ cc occs cm allSigs =
     else
       let o' = swapOcc i occs in
       let m' = swapCol i cm   in
-      DT_Swap i $ cc o' m' allSigs
+      {- DT_Swap i $ -} cc o' m' allSigs
 
 allGuaranteedMatch pats = List.all trivialMatch pats
 anyGuaranteedMatch pats = List.any trivialMatch pats
@@ -196,24 +221,26 @@ swapRow i (ClauseRow orig pats a) = ClauseRow orig pats' a
 swapCol :: Show a => Int -> ClauseMatrix a -> ClauseMatrix a
 swapCol i (ClauseMatrix rows) = ClauseMatrix (map (swapRow i) rows)
 
-arityOf (CtorId "List" 0) = 0
-arityOf (CtorId "List" 1) = 2
-arityOf (CtorId "()"   n) = n
-arityOf (CtorId "Int32" _) = 0
+arityOf (CtorId "()" _ n) = n
+arityOf (CtorId "Int32" _ _) = 0
+arityOf (CtorId "Int32List" "Nil"  0) = 0
+arityOf (CtorId "Int32List" "Cons" 1) = 2
 arityOf c                 = error $ "arityOf " ++ show c
 
+isSignature :: (Set CtorId) -> (Map String DataTypeSig) -> Bool
 isSignature ctorSet allSigs =
-  let typeNames = Set.map (\(CtorId n _) -> n) ctorSet in
+  let typeNames = Set.map ctorTypeName ctorSet in
   case Set.toList typeNames of
     ["Int32"] -> False
     ["()"] -> True
-    ["List"] ->
-      ctorSet == Set.fromList [CtorId "List" 0, CtorId "List" 1]
-    ["Bool"] ->
-      ctorSet == Set.fromList [CtorId "Bool" 0, CtorId "Bool" 1]
+    ["Bool"] -> Set.size ctorSet == 2
     [typename] ->
-      error $ "isSignature: Unknown type name! ctorSet = " ++ show ctorSet
+      case Map.lookup typename allSigs of
+       (Just (DataTypeSig map)) -> Set.size ctorSet == Map.size map
+       Nothing ->
+        error $ "isSignature: Unknown type name " ++ typename ++ "! ctorSet = " ++ show ctorSet
     otherwise ->
-      error $ "isSignature: Multiple type names in ctor set!"
+      error $ "Error in PatternMatch.isSignature: "
+           ++ "Multiple type names in ctor set: " ++ show ctorSet
 
 

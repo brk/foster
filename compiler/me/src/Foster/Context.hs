@@ -44,6 +44,7 @@ termVarLookup name bindings =
 data TcEnv = TcEnv { tcEnvUniqs :: IORef Uniq
                    , tcUnificationVars :: IORef [MetaTyVar]
                    , tcParents  :: [ExprAST]
+                   , tcDataTypes :: [DataType TypeAST]
                    }
 
 newtype Tc a = Tc (TcEnv -> IO (OutputOr a))
@@ -130,6 +131,8 @@ tcFresh s = do
 tcGetCurrentHistory :: Tc [ExprAST]
 tcGetCurrentHistory = Tc (\tcenv -> do { return (OK $
                                           Prelude.reverse $ tcParents tcenv) })
+
+tcGetDataTypes = Tc (\tcenv -> do { return (OK $ tcDataTypes tcenv) })
 
 tcIntrospect :: Tc a -> Tc (OutputOr a)
 tcIntrospect action =

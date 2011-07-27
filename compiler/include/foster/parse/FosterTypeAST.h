@@ -81,18 +81,44 @@ public:
 
 class NamedTypeAST : public TypeAST {
   const std::string name;
-  TypeAST* nonLLVMType;
+  mutable TypeAST* namedType;
 
 public:
   explicit NamedTypeAST(const std::string& typeName,
                         TypeAST* underlyingType,
                         const SourceRange& sourceRange)
      : TypeAST("NamedType", NULL, sourceRange),
-       name(typeName), nonLLVMType(underlyingType) {}
-
+       name(typeName), namedType(underlyingType) {}
+  void setNamedType(TypeAST* t) { namedType = t; }
   virtual void show(PrettyPrintTypePass* pass);
   virtual void dump(DumpTypeToProtobufPass* pass);
   virtual const llvm::Type* getLLVMType() const;
+  const std::string getName() { return name; }
+};
+
+struct DataCtor {
+  std::string name;
+  std::vector<TypeAST*> types;
+};
+
+class DataTypeAST : public TypeAST {
+  const std::string name;
+  const std::vector<DataCtor*> ctors;
+  mutable llvm::OpaqueType* opaq;
+
+public:
+  explicit DataTypeAST(const std::string& typeName,
+                       std::vector<DataCtor*> ctors,
+                       const SourceRange& sourceRange)
+     : TypeAST("DataTypeAST", NULL, sourceRange),
+       name(typeName), ctors(ctors), opaq(NULL) {}
+
+  virtual void show(PrettyPrintTypePass* pass);
+  virtual void dump(DumpTypeToProtobufPass* pass);
+  virtual const llvm::Type* getLLVMType() const; // don't use this one!
+  const llvm::PointerType* getOpaquePointerTy(llvm::Module* mod) const;
+  size_t getNumCtors() const { return ctors.size(); }
+  DataCtor* getCtor(size_t x) const { return ctors[x]; }
   const std::string getName() { return name; }
 };
 
