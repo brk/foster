@@ -51,10 +51,10 @@ x       :       id              -> ^(TERMVAR id)
 a       :       id              -> ^(TYPEVAR id)
         |       '(' opr ')'     -> ^(TYPEVAR opr);       // type variables
 
-k       :               // kinds
-    'Type'                              -> ^(KIND_TYPE)         // kind of types
-  |     '{' a '->' k '}'                -> ^(KIND_TYOP a k)     // dependent kinds (kinds of type operators)
-  ;
+//k       :               // kinds
+//    'Type'                              -> ^(KIND_TYPE)         // kind of types
+//  |     '{' a '->' k '}'                -> ^(KIND_TYOP a k)     // dependent kinds (kinds of type operators)
+//  ;
 
 e_seq 	:	 e (';' e)* ';'? -> ^(SEQ e+);
 e    :
@@ -132,7 +132,6 @@ tatom   :
     a                                                                   // type variables
   | '(' ')'                             -> ^(TUPLE)
   | '(' t (',' t)* ')'                  -> ^(TUPLE t+)  // tuples (products) (sugar: (a,b,c) == Tuple3 a b c)
-//      | ':{'        (a ':' k '->')+ t '}'     -> ^(TYPE_TYP_ABS a k t)        // type-level abstractions
   | '{'    t  ('=>' t)* '}'
    ('@' '{' tannots '}')?               -> ^(FUNC_TYPE ^(TUPLE t+) tannots?)  // description of terms indexed by terms
 //      | '{' 'forall' (a ':' k ',')+ t '}'     -> ^(FORALL_TYPE a k t)       // description of terms indexed by types
@@ -154,30 +153,60 @@ ctor : x ;
 // Every number starts with a sequence of one or more
 // hexadecimal digit clumps, separated by backticks.
 // ((fragment))
-num_start               :  (IDENT '`' hex_clump  | DIGIT_HEX_CLUMP)  ('`' hex_clump)*;
+num_start               :  (id '`' hex_clump // e.g. the start of   abc`def_16
+                           | DIGIT_HEX_CLUMP)  ('`' hex_clump)*;
 // Numbers may end (optionally) with a trailer specifying their base.
-// ((fragment))
-int_rat_base            :       '_' hex_clump;
+// This is not a lexer rule because we don't want to ignore space after the _.
+INT_RAT_BASE            :       '_' HEX_CLUMP;
 // A rational number continues with more digits after a "decimal" point.
 // To avoid ambiguity for "1234.a123" (compound.name vs num.rat), we require
 // that rational numbers must distinguish the first clump after the point
 // by either starting with a decimal digit (unlike IDENT), or by including
 // either a clump separator or a base trailer.
-rat_continue    :       '.' (   IDENT (                    int_rat_base
-              |   ('`' hex_clump)+ int_rat_base?)
-      | DIGIT_HEX_CLUMP ('`' hex_clump)* int_rat_base?
-      );
+rat_continue    :       '.' (   IDENT (                        INT_RAT_BASE
+                                      |       ('`' HEX_CLUMP)+ INT_RAT_BASE?)
+                            | DIGIT_HEX_CLUMP ('`' HEX_CLUMP)* INT_RAT_BASE?
+                            );
 // A number is either an integer or a rational, depending on whether it contains a decimal point.
 num     :       num_start (
-          int_rat_base? -> ^(INT_NUM num_start int_rat_base?)
+          INT_RAT_BASE? -> ^(INT_NUM num_start INT_RAT_BASE?)
         | rat_continue  -> ^(RAT_NUM num_start rat_continue)
                           );
 
-str                     :       s=STR -> ^(STR $s);
-
-hex_clump               :       DIGIT_HEX_CLUMP | IDENT;
 DIGIT_HEX_CLUMP         :       DIGIT HEX_DIGIT*;
 
+fragment
+HEX_CLUMP               :       DIGIT_HEX_CLUMP | IDENT;
+hex_clump               :       DIGIT_HEX_CLUMP | IDENT;
+
+
+
+fragment WORD_CHAR      : 'a'..'z' | 'A'..'Z';
+fragment DIGIT          : '0'..'9';
+fragment HEX_DIGIT      : DIGIT |'a'..'f' | 'A'..'F' ;
+
+// Identifiers must start with an upper or lowercase letter.
+IDENT                   :       IDENT_START IDENT_CONTINUE*;
+fragment IDENT_START            : WORD_CHAR;
+fragment IDENT_CONTINUE         :(DIGIT | WORD_CHAR | IDENT_SYMBOL);
+// Meanwhile, symbols start with a non-numeric, non-alphabetic glyph.
+// We must play some tricks here to ensure that '=' is a keyword, not a symbol.
+// Also, +Int32 is a symbol, but +2 is not.
+SYMBOL                  :       SYMBOL_SINGLE_START
+                        |       SYMBOL_MULTI_START   SYMBOL_CONTINUE_NDIG   SYMBOL_CONTINUE*;
+
+fragment SYMBOL_CONTINUE        :(SYMBOL_CONTINUE_NDIG | DIGIT);
+fragment SYMBOL_CONTINUE_NDIG   :('/' | '^' | WORD_CHAR | IDENT_SYMBOL);
+
+fragment IDENT_SYMBOL   :      '_' | SYMBOL_MULTI_START;
+fragment SYMBOL_MULTI_START  : '=' | SYMBOL_SINGLE_START;
+fragment SYMBOL_SINGLE_START : '!' | '|'
+        | '>' | '<' | '-'
+        | '?' | '+' | '*';
+
+
+
+str                     :       s=STR -> ^(STR $s);
 
 fragment TICK  : '\'';
 fragment TRTK  : '\'\'\''; // triple-tick
@@ -205,31 +234,6 @@ STR
 // Escape sequences are limited to \n, \t, \r, \", \', \\, and \u...
 fragment ESC_SEQ        :       '\\' ('t'|'n'|'r'|'"'|TICK|'\\') | UNICODE_ESC;
 
-
-fragment WORD_CHAR              : 'a'..'z' | 'A'..'Z';
-fragment DIGIT                  : '0'..'9';
-
-// Identifiers must start with an upper or lowercase letter.
-IDENT                   :       IDENT_START IDENT_CONTINUE*;
-fragment IDENT_START            : WORD_CHAR;
-fragment IDENT_CONTINUE         :(DIGIT | WORD_CHAR | IDENT_SYMBOL);
-// Meanwhile, symbols start with a non-numeric, non-alphabetic glyph.
-// We must play some tricks here to ensure that '=' is a keyword, not a symbol.
-// Also, +Int32 is a symbol, but +2 is not.
-SYMBOL                  :       SYMBOL_SINGLE_START
-                        |       SYMBOL_MULTI_START   SYMBOL_CONTINUE_NDIG   SYMBOL_CONTINUE*;
-
-fragment SYMBOL_CONTINUE        :(SYMBOL_CONTINUE_NDIG | DIGIT);
-fragment SYMBOL_CONTINUE_NDIG   :('/' | '^' | WORD_CHAR | IDENT_SYMBOL);
-
-fragment IDENT_SYMBOL   :      '_' | SYMBOL_MULTI_START;
-fragment SYMBOL_MULTI_START  : '=' | SYMBOL_SINGLE_START;
-fragment SYMBOL_SINGLE_START : '!' | '|'
-        | '>' | '<' | '-'
-        | '?' | '+' | '*';
-
-
-
 // Examples of Unicode escape sequences:
 //      \u0000
 //      \U0000
@@ -255,8 +259,6 @@ fragment UNICODE_INNER
   : ('a'..'z'|'A'..'Z'|'0'..'9'|'_'|' '|'+'|'-');
 
 
-fragment HEX_DIGIT      :       ('0'..'9'|'a'..'f'|'A'..'F');
-
 LINE_COMMENT    :       '//' ~('\n'|'\r')* '\r'? {$channel=HIDDEN;} ;
 
 NESTING_COMMENT :
@@ -272,5 +274,6 @@ WS  :   ( ' '
         | '\r'
         )+ {$channel=HIDDEN;}
     ;
+
 
 
