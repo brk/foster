@@ -142,16 +142,32 @@ llvm::Value* CodegenPass::emit(LLExpr* e, TypeAST* expectedType) {
   return v;
 }
 
+std::vector<llvm::Value*>
+codegenAll(CodegenPass* pass, const std::vector<LLVar*>& args) {
+  std::vector<llvm::Value*> vals;
+  for (size_t i = 0; i < args.size(); ++i) {
+    vals.push_back(pass->emit(args[i], NULL));
+  }
+  return vals;
+}
+
+void copyValuesToStruct(const std::vector<llvm::Value*>& vals,
+                        llvm::Value* tup_ptr) {
+  ASSERT(tup_ptr != NULL);
+  for (size_t i = 0; i < vals.size(); ++i) {
+    Value* dst = builder.CreateConstGEP2_32(tup_ptr, 0, i, "gep");
+    emitStore(vals[i], dst);
+  }
+}
+
 ////////////////////////////////////////////////////////////////////
 
 void LLModule::codegenModule(CodegenPass* pass) {
   // Ensure that the llvm::Function*s are created for all the function
   // prototypes, so that mutually recursive function references resolve.
   for (size_t i = 0; i < procs.size(); ++i) {
-    LLProc* f = procs[i];
     // Ensure that the value is in the SymbolInfo entry in the symbol table.
-    f->codegenProto(pass);
-    //pass->valueSymTab.insert(f->getName(), );
+    procs[i]->codegenProto(pass);
   }
 
   // Codegen all the function bodies, now that we can resolve mutually-recursive
@@ -968,11 +984,7 @@ doLowLevelWrapperFnCoercions(const llvm::Type* expectedType,
 ////////////////////////////////////////////////////////////////////
 
 llvm::Value* LLCallPrimOp::codegen(CodegenPass* pass) {
-  std::vector<llvm::Value*> vals;
-  for (size_t i = 0; i < this->args.size(); ++i) {
-    vals.push_back(pass->emit(this->args[i], NULL));
-  }
-  return codegenPrimitiveOperation(this->op, builder, vals);
+  return codegenPrimitiveOperation(this->op, builder, codegenAll(pass, this->args));
 }
 
 bool isGenericClosureEnvType(const Type* ty) {
@@ -1126,13 +1138,7 @@ llvm::Value* LLTuple::codegen(CodegenPass* pass) {
 }
 
 void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
-  // Store the values into the point.
-  for (size_t i = 0; i < vars.size(); ++i) {
-    ASSERT(tup_ptr != NULL);
-    Value* dst = builder.CreateConstGEP2_32(tup_ptr, 0, i, "gep");
-    Value* val = pass->emit(vars[i], NULL);
-    emitStore(val, dst);
-  }
+  copyValuesToStruct(codegenAll(pass, this->vars), tup_ptr);
 }
 
 // Create function    fnName({}* env, arg-args) { arg(arg-args) }
