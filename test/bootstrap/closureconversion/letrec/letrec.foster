@@ -1,0 +1,37 @@
+main = {
+  expect_i1 true; print_i1 (is-odd 3);
+
+  loopy 3;
+
+  // todo: error message for f(); instead of f 2;
+};
+
+is-odd = { z:i32 =>
+  rec even = { x:i32 => if x ==Int32 0 then true else odd  (x -Int32 1) end };
+      odd  = { x:i32 => if x ==Int32 1 then true else even (x -Int32 1) end };
+   in odd (opaquely_i32 3);
+  end
+};
+
+loopy = { z:i32 =>
+  rec loop = { x:i32 => if x ==Int32 0 then true else loop (x -Int32 1) end };
+   in loop z;
+  end
+};
+
+/*
+even.env :: (oe, i32) = ee
+odd.env  :: (ee, i8) = oe
+
+scc.env :: (i32, i8)
+
+let f1 = ref foo;
+    f2 = ref bar;
+    f3 = ref baz; in
+  rec m1 = { args => ... f2 ... } ;
+      m2 = ... ;
+      m3 = ... ;
+
+ends up being a bunch of pairs which share the
+same "big" env, which acts like a "this" pointer.
+*/

@@ -7,7 +7,7 @@ LLVM Lowerings
 LLVM enforces a distinction between objects, which live in memory
 and can be mutated via ``store`` instructions,
 and values, which are single-assignment (i.e. not mutable)
-and live in registers.
+and live in (virtual) SSA registers.
 
 LLVM provides a highly effective optimization pass called ``mem2reg``,
 which takes values stored on the stack (in memory) and promotes them
@@ -44,6 +44,7 @@ obviously useful. A few items of note:
 * C# or C++-style reference semantics could be implemented using
   the third technique; it remains to be seen whether
   reference semantics are actually needed or not.
+  
 * Actually, the double-pointer stack slot is only for consistency
   in Clang's generated code. There is no operator available to
   mutate the pointer in the stack slot independently of the object
@@ -138,8 +139,7 @@ instead of by (const or non-const) reference?
 * Value size is <= n machine words, for some small n.
   SIMD vectors are an exception, since they have dedicated
   machine registers which are larger than one regular word.
-* The ref must not be written through
-  (but it can be rebound).
+* The ref must not be written through.
 * Copying must be defined for the type. The primitive types
   are trivially and implicitly copyable, but copying is not
   well defined for all types.
