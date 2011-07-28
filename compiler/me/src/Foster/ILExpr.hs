@@ -346,7 +346,7 @@ closureOfKnFn ctx0 infoMap (closedNames, (self_id, fn)) = do
         KNCall   t v vs -> KNCall t v vs
 
 typeIL :: ILExpr -> TypeIL
-typeIL (ILBool _)          = NamedTypeIL "i1"
+typeIL (ILBool _)          = boolTypeIL
 typeIL (ILInt t _)         = t
 typeIL (ILTuple vs)        = TupleTypeIL (map tidType vs)
 typeIL (ILClosures n b e)  = typeIL e

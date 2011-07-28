@@ -5,7 +5,7 @@ main = {
 
 // Test that global symbols may be let-bound and stored in refs.
 
-g = { x : i32 => { x } };
+g = { x : Int32 => { x } };
 
 call_deref_a = {
   let r = (ref g);
@@ -16,7 +16,7 @@ call_deref_a = {
   end
 };
 
-f = { x : i32 => x };
+f = { x : Int32 => x };
 
 call_deref_b = {
   let r = (ref f);

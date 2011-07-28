@@ -64,6 +64,10 @@ ilOf typ =
 
 -----------------------------------------------------------------------
 
+boolTypeIL = NamedTypeIL "Bool"
+
+-----------------------------------------------------------------------
+
 data Fn expr = Fn { fnType  :: TypeIL
                   , fnIdent :: Ident
                   , fnVars  :: [TypedId TypeIL]

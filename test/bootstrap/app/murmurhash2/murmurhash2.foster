@@ -1,4 +1,4 @@
-//murmurhash2-step = { k:i32, h:i32, r:i32, m:i32 =>
+//murmurhash2-step = { k:Int32, h:Int32, r:Int32, m:Int32 =>
 //  bitxor(h * m, kx * m) where
 //  kx = bitxor(km, bitashr(km, r)) where
 //  km = k * m
@@ -60,26 +60,26 @@ main = {
   test-let ();
 };
 
-mrmr-step2 = { km:i32 => r:i32 =>
+mrmr-step2 = { km:Int32 => r:Int32 =>
                         bitxor-Int32 km (bitashr-Int32 km r) };
-mrmr-step5 = { h:i32 => kx:i32 => m:i32 =>
+mrmr-step5 = { h:Int32 => kx:Int32 => m:Int32 =>
                         bitxor-Int32 (h  *Int32 m)
                                      (kx *Int32 m) };
 murmurhash2-step-manually-lifted = {
-                        k:i32 => h:i32 => r:i32 => m:i32 =>
+                        k:Int32 => h:Int32 => r:Int32 => m:Int32 =>
   mrmr-step5 h (mrmr-step2 (k *Int32 m) r) m
 };
 
 murmurhash2-step-let-transformed = {
-                        k:i32 => h:i32 => r:i32 => m:i32 =>
-  {    km:i32 =>
-    {  kx:i32 =>
+                        k:Int32 => h:Int32 => r:Int32 => m:Int32 =>
+  {    km:Int32 =>
+    {  kx:Int32 =>
        bitxor-Int32 (h *Int32 m) (kx *Int32 m)
     } (bitxor-Int32 km (bitashr-Int32 km r))
   }   (k *Int32 m)
 };
 
-murmurhash2-step-let = { k:i32 => h:i32 => r:i32 => m:i32 =>
+murmurhash2-step-let = { k:Int32 => h:Int32 => r:Int32 => m:Int32 =>
   let km = k *Int32 m;
       kx = bitxor-Int32 km (bitashr-Int32 km r);
    in      bitxor-Int32 (h  *Int32 m)

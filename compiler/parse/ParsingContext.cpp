@@ -216,14 +216,11 @@ TypeAST* TypeASTFor(const string& name) {
 }
 
 void ParsingContext::initCachedLLVMTypeNames() {
-  gCachedLLVMTypes["i1"] = llvm::IntegerType::get(getGlobalContext(), 1);
-  gCachedLLVMTypes["i8"] = llvm::IntegerType::get(getGlobalContext(), 8);
-  gCachedLLVMTypes["i16"] = llvm::IntegerType::get(getGlobalContext(), 16);
-  gCachedLLVMTypes["i32"] = llvm::IntegerType::get(getGlobalContext(), 32);
-  gCachedLLVMTypes["i64"] = llvm::IntegerType::get(getGlobalContext(), 64);
-
-  gCachedLLVMTypes["i8*"] = llvm::PointerType::getUnqual(gCachedLLVMTypes["i8"]);
-  gCachedLLVMTypes["i8**"] = llvm::PointerType::getUnqual(gCachedLLVMTypes["i8*"]);
+  gCachedLLVMTypes["Bool"]  = llvm::IntegerType::get(getGlobalContext(), 1);
+  gCachedLLVMTypes["Int8"]  = llvm::IntegerType::get(getGlobalContext(), 8);
+  gCachedLLVMTypes["Int16"] = llvm::IntegerType::get(getGlobalContext(), 16);
+  gCachedLLVMTypes["Int32"] = llvm::IntegerType::get(getGlobalContext(), 32);
+  gCachedLLVMTypes["Int64"] = llvm::IntegerType::get(getGlobalContext(), 64);
 }
 
 } // namespace foster

@@ -44,8 +44,8 @@ ref-if = {
   end
 };
 
-newDArray32 = { n : i32 => f : { i32 => i32 } =>
-  let a = #allocDArray:[i32] n;
+newDArray32 = { n : Int32 => f : { Int32 => Int32 } =>
+  let a = #allocDArray:[Int32] n;
       x = (ref n);
    in
       until x^ ==Int32 0 then
@@ -57,7 +57,7 @@ newDArray32 = { n : i32 => f : { i32 => i32 } =>
 };
 
 arrays = {
-  let a = newDArray32 2 { n : i32 => n };
+  let a = newDArray32 2 { n : Int32 => n };
    in
       expect_i32 2;
      print_i32 a[opaquely_i32 1];
@@ -65,12 +65,12 @@ arrays = {
 };
 
 
-hof-until-if = { c : {i1} => b : { () } =>
+hof-until-if = { c : {Bool} => b : { () } =>
   if c () then 0 else let j0 = b (); in hof-until-if c b end
   end
 };
 
-hof-until-case = { c : {i1} => b : { () } =>
+hof-until-case = { c : {Bool} => b : { () } =>
   case c ()
     of true ->  0
     of false -> let j0 = b (); in hof-until-case c b end

@@ -10,7 +10,7 @@ main = {
   print_i32 (fib-tailrecursive (opaquely_i32 20) 0 1);
 };
 
-fib-naive = { x : i32 =>
+fib-naive = { x : Int32 =>
   if x <Int32 3
     then 1
     else (fib-naive (x -Int32 1)) +Int32
@@ -18,9 +18,9 @@ fib-naive = { x : i32 =>
   end
 };
 
-fib-tailrecursive = { x : i32 =>
-                current : i32 =>
-                   next : i32 =>
+fib-tailrecursive = { x : Int32 =>
+                current : Int32 =>
+                   next : Int32 =>
   if x ==Int32 0
     then current
     else fib-tailrecursive (x -Int32 1)

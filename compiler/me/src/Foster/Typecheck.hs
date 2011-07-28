@@ -590,7 +590,7 @@ typecheckInt rng originalText = do
     sanityCheck (activeBits <= maxBits)
                 ("Integers currently limited to " ++ show maxBits ++ " bits, "
                                                   ++ clean ++ " requires " ++ show activeBits)
-    return (AnnInt rng (NamedTypeAST $ "i" ++ show maxBits) int)
+    return (AnnInt rng (NamedTypeAST $ "Int" ++ show maxBits) int)
 
 -- Given "raw" integer text like "123`456_10",
 -- return ("123456", 10)

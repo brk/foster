@@ -1,13 +1,13 @@
-fst = { x : (i32, i32) => case x of (y, _) -> y end };
+fst = { x : (Int32, Int32) => case x of (y, _) -> y end };
 
 test-coro2a = {
   expect_i32 30;
   expect_i32 120;
 
-  let co = coro_create { pq : (i32, i32) =>
+  let co = coro_create { pq : (Int32, Int32) =>
              case pq of (p, q) ->
-              let a = coro_yield:[(i32,i32),i32] (p +Int32 q);
-               in     coro_yield:[(i32,i32),i32] ((fst a) +Int32 20);
+              let a = coro_yield:[(Int32,Int32),Int32] (p +Int32 q);
+               in     coro_yield:[(Int32,Int32),Int32] ((fst a) +Int32 20);
                       print_i32 111111;
                  12345
               end

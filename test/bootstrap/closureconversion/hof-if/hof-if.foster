@@ -1,8 +1,8 @@
-prim-and = { a : i1 => b: i1 =>
+prim-and = { a : Bool => b: Bool =>
   if a then b else false end
 };
 
-hof-and = { a : {i1} => b: {i1} =>
+hof-and = { a : {Bool} => b: {Bool} =>
   if a() then b() else false end
 };
 

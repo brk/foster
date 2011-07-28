@@ -1,15 +1,15 @@
-print_0_of_t_i32_i1 = { x : (i32, i1) => case x of (y, _) -> print_i32 y end };
+print_0_of_t_i32_i1 = { x : (Int32, Bool) => case x of (y, _) -> print_i32 y end };
 
-tuple_from      = { x : i32 => y : i1 => (x, y) };
+tuple_from      = { x : Int32 => y : Bool => (x, y) };
 
-tuple_from_if   = { x : i32 => y : i1 =>
+tuple_from_if   = { x : Int32 => y : Bool =>
                   if x ==Int32 3 then (x, y) else (x, y) end };
 
-tuple_from_case = { x : i32 => y : i1 => case x of 3 -> (x, y)
+tuple_from_case = { x : Int32 => y : Bool => case x of 3 -> (x, y)
                                                 of _ -> (x, y) end };
 
 // TODO:
-//implicit_tuple_from = fn (x : i32, y : i1) to (rx : i32, ry : i1) {
+//implicit_tuple_from = fn (x : Int32, y : Bool) to (rx : Int32, ry : Bool) {
 // (x,y) ?
 // or
 // rx, ry = x, y ?

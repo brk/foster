@@ -5,7 +5,7 @@ fx = { opaquely_i32 42 };
 // This tests passing of top-level functions to higher-order
 // Foster functions, which (pessimistically?) expect a closure.
 
-read_i32 :: { i32 } @ { proc = true };
+read_i32 :: { Int32 } @ { proc = true };
 
 main = {
   expect_i32 48 ; print_i32 (run-it { read_i32 () }); // Foster fn, anon
@@ -19,7 +19,7 @@ check-call-of-literal-function = {
   expect_i32 55 ; { print_i32 55 }();
 };
 
-run-it = { f: {i32} => f() };
+run-it = { f: {Int32} => f() };
 
 check-shadowing = {
   expect_i32 50 ; // check shadowing of global names

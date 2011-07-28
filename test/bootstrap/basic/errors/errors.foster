@@ -32,7 +32,7 @@ main = {
   expect_i1 false ; print_i1 (__COMPILES__ (0,0) (0));
 
   // Try to check function against non-function type
-  expect_i1 false ; print_i1 (__COMPILES__ if { x:i32 => 0 } then 3 else 4 end);
+  expect_i1 false ; print_i1 (__COMPILES__ if { x:Int32 => 0 } then 3 else 4 end);
 
   // Try to subscript non-subscriptable expression.
   expect_i1 false ; print_i1 (__COMPILES__ 0[0]);
@@ -47,4 +47,4 @@ main = {
 };
 
 a = { 0 };
-b = { x:i32 => x };
+b = { x : Int32 => x };

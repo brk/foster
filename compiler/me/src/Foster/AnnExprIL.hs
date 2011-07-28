@@ -124,9 +124,8 @@ ail ae =
                 otherwise -> do bi <- q b
                                 return $ AICall ti bi argsi
 
-        E_AnnVar _rng v -> do
-                vv <- aiVar v
-                return $ E_AIVar vv
+        E_AnnVar _rng v -> do vv <- aiVar v
+                              return $ E_AIVar vv
 
         E_AnnFn annFn              -> do aif <- fnOf annFn
                                          return $ E_AIFn aif

@@ -6,24 +6,24 @@ main = {
   // todo: error message for f(); instead of f 2;
 };
 
-is-odd = { z:i32 =>
-  rec even = { x:i32 => if x ==Int32 0 then true else odd  (x -Int32 1) end };
-      odd  = { x:i32 => if x ==Int32 1 then true else even (x -Int32 1) end };
+is-odd = { z:Int32 =>
+  rec even = { x:Int32 => if x ==Int32 0 then true else odd  (x -Int32 1) end };
+      odd  = { x:Int32 => if x ==Int32 1 then true else even (x -Int32 1) end };
    in odd (opaquely_i32 3);
   end
 };
 
-loopy = { z:i32 =>
-  rec loop = { x:i32 => if x ==Int32 0 then true else loop (x -Int32 1) end };
+loopy = { z:Int32 =>
+  rec loop = { x:Int32 => if x ==Int32 0 then true else loop (x -Int32 1) end };
    in loop z;
   end
 };
 
 /*
-even.env :: (oe, i32) = ee
-odd.env  :: (ee, i8) = oe
+even.env :: (oe, Int32) = ee
+odd.env  :: (ee, Int8) = oe
 
-scc.env :: (i32, i8)
+scc.env :: (Int32, Int8)
 
 let f1 = ref foo;
     f2 = ref bar;

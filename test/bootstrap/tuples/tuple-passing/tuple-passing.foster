@@ -1,5 +1,5 @@
-print_0_of_t_i32_i1 = { x : (i32, i1) => case x of (y, _) -> print_i32 y end };
-print_1_of_t_i32_i1 = { x : (i32, i1) => case x of (_, y) -> print_i1  y end };
+print_0_of_t_i32_i1 = { x : (Int32, Bool) => case x of (y, _) -> print_i32 y end };
+print_1_of_t_i32_i1 = { x : (Int32, Bool) => case x of (_, y) -> print_i1  y end };
 
 main = {
   expect_i32 42;

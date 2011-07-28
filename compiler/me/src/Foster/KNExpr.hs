@@ -184,7 +184,7 @@ nestedLets exprs g = nestedLets' exprs [] g
 -- This is necessary due to transformations of AIIf and nestedLets
 -- introducing new bindings, which requires synthesizing a type.
 typeKN :: KNExpr -> TypeIL
-typeKN (KNBool _)          = NamedTypeIL "i1"
+typeKN (KNBool _)          = boolTypeIL
 typeKN (KNInt t _)         = t
 typeKN (KNTuple vs)        = TupleTypeIL (map tidType vs)
 typeKN (KNLetVal x b e)    = typeKN e

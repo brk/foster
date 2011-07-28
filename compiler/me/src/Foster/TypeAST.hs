@@ -86,7 +86,7 @@ typesEqual (MetaTyVar mtv1) (MetaTyVar mtv2) = mtv1 == mtv2
 typesEqual _ _ = False
 
 
-fosBoolType = NamedTypeAST "i1"
+fosBoolType = i1
 
 minimalTupleAST []    = TupleTypeAST []
 minimalTupleAST [arg] = arg
@@ -95,9 +95,9 @@ minimalTupleAST args  = TupleTypeAST args
 mkProcType args rets = FnTypeAST (TupleTypeAST args) (minimalTupleAST rets) CCC    FT_Proc
 mkFnType   args rets = FnTypeAST (TupleTypeAST args) (minimalTupleAST rets) FastCC FT_Func
 mkCoroType args rets = CoroTypeAST (minimalTupleAST args) (minimalTupleAST rets)
-i32 = (NamedTypeAST "i32")
-i64 = (NamedTypeAST "i64")
-i1  = (NamedTypeAST "i1")
+i32 = (NamedTypeAST "Int32")
+i64 = (NamedTypeAST "Int64")
+i1  = (NamedTypeAST "Bool")
 
 coroInvokeType args rets = mkFnType ((mkCoroType args rets) : args) rets
 coroYieldType  args rets = mkFnType rets args

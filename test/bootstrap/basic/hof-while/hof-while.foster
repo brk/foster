@@ -1,4 +1,4 @@
-hof-while = { t : {i1} => b : { i32 } =>
+hof-while = { t : {Bool} => b : {Int32} =>
   if t () then b (); hof-while t b
           else 0 end
 };
@@ -38,7 +38,7 @@ variant-two = {
 };
 
 // TODO check this
-// hof-while-unit = { t : {i1} => b : { () } =>
+// hof-while-unit = { t : {Bool} => b : { () } =>
 //   if t () then b (); hof-while-unit t b
 //           else () end
 // };

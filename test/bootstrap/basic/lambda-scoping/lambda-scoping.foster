@@ -3,7 +3,7 @@ main = {
   print_i32 (foo 2);
 };
 
-foo = { x:i32 =>
+foo = { x:Int32 =>
   if x ==Int32 0 then
     0
   else

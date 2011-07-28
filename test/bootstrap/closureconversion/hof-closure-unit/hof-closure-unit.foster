@@ -1,4 +1,4 @@
-run-clo = { f:{i32} => f () };
+run-clo = { f:{Int32} => f () };
 
 main = {
   test-capture-zero();
@@ -25,4 +25,4 @@ test-run-it = {
   expect_i32 42 ; print_i32 (run-it fx);
 };
 fx = { opaquely_i32 42 };
-run-it = { f: {i32} => f() };
+run-it = { f: {Int32} => f() };
