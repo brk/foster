@@ -152,8 +152,7 @@ fnOf f = do
  ft <- ilOf (annFnType f)
  fnVars <- mapM aiVar (annFnVars f)
  body <- ail (annFnBody f)
- return $ Fn { fnType  = ft
-             , fnIdent = annFnIdent f
+ return $ Fn { fnVar   = TypedId ft (annFnIdent f)
              , fnVars  = fnVars
              , fnBody  = body
              , fnRange = (annFnRange f)

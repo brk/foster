@@ -68,13 +68,12 @@ boolTypeIL = NamedTypeIL "Bool"
 
 -----------------------------------------------------------------------
 
-data Fn expr = Fn { fnType  :: TypeIL
-                  , fnIdent :: Ident
+data Fn expr = Fn { fnVar   :: TypedId TypeIL
                   , fnVars  :: [TypedId TypeIL]
                   , fnBody  :: expr
                   , fnRange :: ESourceRange
                   } deriving (Show)
 
-fnName f = identPrefix (fnIdent f)
+fnName f = identPrefix (tidIdent $ fnVar f)
 
 data ILDataCtor = ILDataCtor String Int (DataCtor TypeIL) deriving Show

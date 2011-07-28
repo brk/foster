@@ -66,9 +66,7 @@ kNormalCtor ctx dataSigs (DataType dname _) (DataCtor cname tys) = do
   let dci = case dataSigs Map.! dname of DataTypeSig m -> m Map.! cname
   let (Just tid) = termVarLookup cname (contextBindings ctx)
   let vars = map (\(t,n) -> TypedId t $ Ident ".gen" n) (zip tys [0..])
-  -- TODO fnType + fnIdent -> fnAnnVar?
-  return $ Fn { fnType  = tidType  tid --fnty
-              , fnIdent = tidIdent tid --GlobalSymbol $ dciCtorName dci
+  return $ Fn { fnVar   = tid
               , fnVars  = vars
               , fnBody  = KNAppCtor (NamedTypeIL dname) dci vars
               , fnRange = EMissingSourceRange ("kNormalCtor " ++ show dci)
@@ -132,7 +130,8 @@ kNormalize expr =
 
       x@(E_AIFn aiFn)       -> do fn_id <- knFresh "lit_fn"
                                   knFn <- kNormalizeFn aiFn
-                                  let fnvar = KNVar $ TypedId (fnType aiFn) fn_id
+                                  let (TypedId t i) = fnVar knFn
+                                  let fnvar = KNVar $ (TypedId t fn_id)
                                   return $ KNLetFuns [fn_id] [knFn] fnvar
 
       AIIf      t  a b c    -> do cond_id <- knFresh ".ife"

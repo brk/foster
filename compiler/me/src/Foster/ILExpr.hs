@@ -186,8 +186,8 @@ closureConvert ctx expr =
 
 closureConvertedProc :: [AIVar] -> (Fn KNExpr) -> ILExpr -> ILM ILProcDef
 closureConvertedProc liftedProcVars f newbody = do
-    return $ ILProcDef (fnTypeILRange (fnType f))
-              (fnIdent f) liftedProcVars
+    let (TypedId ft id) = fnVar f
+    return $ ILProcDef (fnTypeILRange ft) id liftedProcVars
               (fnRange f) FastCC newbody
 
 -- For example, if we have something like
@@ -335,13 +335,12 @@ closureOfKnFn ctx0 infoMap (closedNames, (self_id, fn)) = do
         KNCall t v vs
             | Map.member (tidIdent v) infoMap ->
                 let (f, envid) = infoMap Map.! (tidIdent v) in
-                let procId = TypedId (fnType f) (fnIdent f) in
                 -- We don't know the env type here, since we don't
                 -- pre-collect the set of closed-over envs from other procs.
                 let env = TypedId fakeCloEnvType envid in
                           -- This works because (A) we never type check ILExprs,
                           -- and (B) the LLVM codegen doesn't check the type field in this case.
-                KNCall t procId (env:vs)  -- Call proc, passing env as first parameter.
+                KNCall t (fnVar f) (env:vs)  -- Call proc, passing env as first parameter.
         -- TODO when is guard above false?
         KNCall   t v vs -> KNCall t v vs
 

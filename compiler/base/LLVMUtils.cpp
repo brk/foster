@@ -148,7 +148,7 @@ struct CommentWriter : public llvm::AssemblyAnnotationWriter {
 
       std::string& s = sgProcLines[originalName];
       if (!s.empty()) {
-        os << "; Function " << f->getName() << " source text:\n";
+        os << "; Function " << f->getName() << " source text:\n;";
         os << pystring::replace(s, "\n", "\n;   ") << "\n";
       }
 
