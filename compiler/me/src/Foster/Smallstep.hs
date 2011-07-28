@@ -1,3 +1,9 @@
+-----------------------------------------------------------------------------
+-- Copyright (c) 2011 Ben Karel. All rights reserved.
+-- Use of this source code is governed by a BSD-style license that can be
+-- found in the LICENSE.txt fCFe or at http://eschew.org/txt/bsd.txt
+-----------------------------------------------------------------------------
+
 module Foster.Smallstep (
 interpretProg
 )
@@ -20,40 +26,173 @@ import Foster.TypeIL
 import Foster.ILExpr
 import Foster.PatternMatch
 
+-- Relatively simple small-step "definitional" interpreter
+-- written in a small-step semantics.
+--
+-- The largest chunk  of complication comes from having coroutines,
+-- which forces us to explicitly model stateful management of
+-- continuations in the store.
+--
+-- But the flip side is that coroutines are *easier* to implement
+-- (efficiently) at the real machine level, even if they're a tad
+-- uglier in the abstract machine.
+
+-- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+
+errFile gs = (stTmpDir gs) ++ "/istderr.txt"
+outFile gs = (stTmpDir gs) ++ "/istdout.txt"
+
+-- To interpret a program, we construct a coroutine for main
+-- (no arguments need be passed yet) and step until the program finishes.
+interpretProg (ILProgram procdefs _decls _dtypes _lines) tmpDir = do
+  -- Build a map from proc ids to proc definitions.
+  let procmap = Map.fromList (map (procMapPair . ssProcDefFrom) procdefs)
+                   where procMapPair ssproc = (ssProcIdent ssproc, ssproc)
+  let main = (procmap Map.! (GlobalSymbol "main"))
+  let loc  = 0
+  let mainCoro = Coro { coroTerm = (ssProcBody main)
+                      , coroArgs = []
+                      , coroEnv  = env
+                      , coroStat = CoroStatusRunning
+                      , coroLoc  = loc
+                      , coroPrev = Nothing
+                      , coroStack = [(env, Prelude.id)]
+                      } where env = Map.empty
+  let emptyHeap = Heap (nextLocation loc)
+                       (Map.singleton loc (SSCoro mainCoro))
+  let globalState = MachineState procmap emptyHeap loc tmpDir
+
+  _ <- writeFile (outFile globalState) ""
+  _ <- writeFile (errFile globalState) ""
+
+  stepsTaken <- newIORef 0
+  val <- interpret stepsTaken globalState
+  numSteps <- readIORef stepsTaken
+  putStrLn ("Interpreter finished in " ++ show numSteps ++ " steps.")
+  return val
+
+-- Step a machine state until there is nothing left to step.
+interpret :: IORef Int -> MachineState -> IO MachineState
+interpret stepsTaken gs =
+  case (coroStack $ stCoro gs) of
+    []         -> do return gs
+    otherwise  -> modifyIORef stepsTaken (+1) >>
+                  step gs >>= interpret stepsTaken
+
+-- Stepping an expression is unsurprising.
+-- To step a value, we pop a "stack frame" and apply the value to the
+-- meta-continuation, which corresponds to the "hole" into which
+-- the value should be plugged.
+step :: MachineState -> IO MachineState
+step gs =
+  let coro = stCoro gs in
+  case coroTerm coro of
+    SSTmExpr e -> do --putStrLn ("\n\n" ++ show (coroLoc coro) ++ " ==> " ++ show e)
+                     --putStrLn (show (coroLoc coro) ++ " ==> " ++ show (coroStack coro))
+                     stepExpr gs e
+    SSTmValue _ -> do let ((env, cont), gs2) = popCoroCont gs
+                      return $ withEnv (withTerm gs2 (cont (termOf gs2))) env
+
+-- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+-- A machine state consists of a (static) mapping of proc ids to
+-- proc definitions, a heap mapping locations (ints) to values,
+-- and the location of the current coroutine. Note that the machine
+-- state does not include the coroutine value itself!
+
+data MachineState = MachineState {
+           stProcmap :: Map Ident SSProcDef
+        ,  stHeap    :: Heap
+        ,  stCoroLoc :: Location
+        ,  stTmpDir  :: String
+}
+
+-- A coroutine has an actively evaluating term, which is updated as part
+-- of each machine step. The coroArgs are used when a coroutine is first
+-- invoked to extend the environment associated with the active term.
+-- Coroutines maintain a status to detect improper recursive invokes.
+-- To be "mutated," coroutines also must know where they are stored.
+-- coroPrev marks our invoker, if any (we have asymmetric coroutines).
+-- The trickiest bit is the coroStack. TODO
+data Coro = Coro {
+    coroTerm :: SSTerm
+  , coroArgs :: [Ident]
+  , coroEnv  :: CoroEnv
+  , coroStat :: CoroStatus
+  , coroLoc  :: Location
+  , coroPrev :: Maybe Location
+  , coroStack :: [(CoroEnv, SSTerm -> SSTerm)]
+} deriving (Show)
+
+type CoroEnv = Map Ident SSValue
+
+data CoroStatus = CoroStatusInvalid
+                | CoroStatusSuspended
+                | CoroStatusDormant
+                | CoroStatusRunning
+                | CoroStatusDead
+                deriving (Show, Eq)
+
+-- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+type Location = Int
+nextLocation x = x + 1
+data Heap = Heap {
+          hpBump :: Location
+        , hpMap  :: Map Location SSValue
+}
+
+-- Fetch the current coroutine from the heap.
+stCoro gs = let (SSCoro c) = lookupHeap gs (stCoroLoc gs) in c
+
+lookupHeap :: MachineState -> Location -> SSValue
+lookupHeap gs loc =
+  case Map.lookup loc (hpMap (stHeap gs)) of
+    Just v -> v
+    Nothing -> error $ "Unable to find heap cell for location " ++ show loc
+
+extendHeap :: MachineState -> SSValue -> (Location, MachineState)
+extendHeap gs val =
+  let heap = stHeap gs in
+  let loc = nextLocation (hpBump heap) in
+  let hmp = Map.insert loc val (hpMap heap) in
+  (loc, gs { stHeap = Heap { hpBump = loc, hpMap = hmp } })
+
+-- Simple helper to store two values in two locations.
+modifyHeap2 gs l1 v1 l2 v2 =
+  let heap = stHeap gs in
+  heap { hpMap = Map.insert l2 v2 (Map.insert l1 v1 (hpMap heap)) }
+
+-- Updates the value at the given location according to the provided function.
+modifyHeapWith :: MachineState -> Location -> (SSValue -> SSValue)
+               -> MachineState
+modifyHeapWith gs loc fn =
+  let oldheap = stHeap gs in
+  let val  = lookupHeap gs loc in
+  let heap = oldheap { hpMap = Map.insert loc (fn val) (hpMap oldheap) } in
+  gs { stHeap = heap }
+
+-- Pervasively used helper functions to update the term/env of the current coro.
+withTerm gs e = modifyHeapWith gs (stCoroLoc gs) (\(SSCoro c) -> SSCoro $ c { coroTerm = e })
+withEnv  gs e = modifyHeapWith gs (stCoroLoc gs) (\(SSCoro c) -> SSCoro $ c { coroEnv  = e })
+
+-- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
 -- A term is either a normal-form value,
 -- or a non-normal-form expression.
 data SSTerm = SSTmExpr  IExpr
             | SSTmValue SSValue
             deriving (Show)
 
-data SSValue = SSBool      Bool
-             | SSInt       Integer
-             | SSArray     (Array Int Location)
-             | SSTuple     [SSValue]
-             | SSCtorVal   CtorId [SSValue]
-             | SSLocation  Location
-             | SSClosure   ILClosure [SSValue]
-             | SSCoro      Coro
-             deriving (Eq, Show)
-
-instance Eq ILClosure
-  where c1 == c2 = (ilClosureProcIdent c1) == (ilClosureProcIdent c2)
-                &&  (map tidIdent $ ilClosureCaptures c1)
-                 == (map tidIdent $ ilClosureCaptures c2)
-
-instance Eq Coro
-  where c1 == c2 = (coroLoc c1) == (coroLoc c2)
-
 -- Expressions are terms that are not values.
+-- IExpr is a type-erased version of ILExpr.
 data IExpr =
           ITuple [Ident]
         | IVar    Ident
         | IAlloc  Ident
         | IDeref  Ident
         | IStore  Ident Ident
-        -- Procedures may be implicitly recursive,
-        -- but we need to put a smidgen of effort into
-        -- codegen-ing closures so they can be mutually recursive.
         | IClosures    [Ident] [ILClosure] SSTerm
         | ILetVal       Ident   SSTerm     SSTerm
         | IArrayRead    Ident   Ident
@@ -68,10 +207,19 @@ data IExpr =
         | IAppCtor      CtorId [Ident]
         deriving (Show)
 
-data SSProcDef = SSProcDef { ssProcIdent      :: Ident
-                           , ssProcVars       :: [Ident]
-                           , ssProcBody       :: SSTerm
-                           } deriving Show
+-- Values in the (intermediate) language are mostly standard.
+-- Coro values are the most interesting, as defined above.
+-- A closure value has a proc ident, env+captures var names,
+-- and captured values.
+data SSValue = SSBool      Bool
+             | SSInt       Integer
+             | SSArray     (Array Int Location)
+             | SSTuple     [SSValue]
+             | SSCtorVal   CtorId [SSValue]
+             | SSLocation  Location
+             | SSClosure   ILClosure [SSValue]
+             | SSCoro      Coro
+             deriving (Eq, Show)
 
 -- There is a trivial translation from ILExpr to SSTerm...
 ssTermOfExpr :: ILExpr -> SSTerm
@@ -98,8 +246,6 @@ ssTermOfExpr expr =
     ILTyApp t e argty      -> SSTmExpr  $ ITyApp (tr e) argty
     ILCase t a bs dt       -> SSTmExpr  $ ICase (idOf a) dt [(p, tr e) | (p, e) <- bs]
     ILAppCtor t cid vs     -> SSTmExpr  $ IAppCtor cid (map idOf vs)
-                               --where dciOf (ILDataCtor d _ (DataCtor c _))
-                               --            = (DataCtorIdent d c)
 
 -- ... which lifts in a  straightfoward way to procedure definitions.
 ssProcDefFrom pd =
@@ -108,89 +254,17 @@ ssProcDefFrom pd =
             , ssProcBody  = ssTermOfExpr (ilProcBody pd)
             }
 
-errFile gs = (stTmpDir gs) ++ "/istderr.txt"
-outFile gs = (stTmpDir gs) ++ "/istdout.txt"
+data SSProcDef = SSProcDef { ssProcIdent      :: Ident
+                           , ssProcVars       :: [Ident]
+                           , ssProcBody       :: SSTerm
+                           } deriving Show
 
--- To interpret a program, we construct a coroutine for main
--- (no arguments need be passed yet) and step until the program finishes.
-interpretProg prog tmpDir = do
-  let procmap = buildProcMap prog
-  let main = (procmap Map.! (GlobalSymbol "main"))
-  let loc  = 0
-  let mainCoro = Coro { coroTerm = (ssProcBody main)
-                      , coroArgs = []
-                      , coroEnv  = env
-                      , coroStat = CoroStatusRunning
-                      , coroLoc  = loc
-                      , coroPrev = Nothing
-                      , coroStack = [(env, Prelude.id)]
-                      } where env = Map.empty
-  let emptyHeap = Heap (nextLocation loc) (Map.singleton loc (SSCoro mainCoro))
-  let globalState = MachineState procmap emptyHeap loc tmpDir
+tryLookupProc gs id = Map.lookup id (stProcmap gs)
 
-  _ <- writeFile (outFile globalState) ""
-  _ <- writeFile (errFile globalState) ""
+-- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
-  stepsTaken <- newIORef 0
-  val <- interpret stepsTaken globalState
-  numSteps <- readIORef stepsTaken
-  putStrLn ("Interpreter finished in " ++ show numSteps ++ " steps.")
-  return val
-
-interpret stepsTaken gs =
-  case (coroStack $ stCoro gs) of
-    []         -> do return gs
-    otherwise  -> modifyIORef stepsTaken (+1) >>
-                  step gs >>= interpret stepsTaken
-
-buildProcMap (ILProgram procdefs _decls _dtypes _lines) =
-  Map.fromList (map (procMapPair . ssProcDefFrom) procdefs)
-               where procMapPair ssproc = (ssProcIdent ssproc, ssproc)
-
-type Location = Int
-nextLocation x = x + 1
-data Heap = Heap {
-          hpBump :: Location
-        , hpMap  :: Map Location SSValue
-}
-data CoroStatus = CoroStatusInvalid
-                | CoroStatusSuspended
-                | CoroStatusDormant
-                | CoroStatusRunning
-                | CoroStatusDead
-                deriving (Show, Eq)
-type CoroEnv = Map Ident SSValue
-data Coro = Coro {
-    coroTerm :: SSTerm
-  , coroArgs :: [Ident]
-  , coroEnv  :: CoroEnv
-  , coroStat :: CoroStatus
-  , coroLoc  :: Location
-  , coroPrev :: Maybe Location
-  , coroStack :: [(CoroEnv, SSTerm -> SSTerm)]
-} deriving (Show)
-
-instance Show (SSTerm -> SSTerm) where show f = "<coro cont>"
-
-data MachineState = MachineState {
-           stProcmap :: Map Ident SSProcDef
-        ,  stHeap    :: Heap
-        ,  stCoroLoc :: Location
-        ,  stTmpDir  :: String
-}
-
-stCoro gs = let (SSCoro c) = lookupHeap gs (stCoroLoc gs) in c
-
-step :: MachineState -> IO MachineState
-step gs =
-  let coro = stCoro gs in
-  case coroTerm coro of
-    SSTmExpr e -> do --putStrLn ("\n\n" ++ show (coroLoc coro) ++ " ==> " ++ show e)
-                     --putStrLn (show (coroLoc coro) ++ " ==> " ++ show (coroStack coro))
-                     stepExpr gs e
-    SSTmValue _ -> do let (gs2, (env, cont)) = popCoroCont gs
-                      return $ withEnv (withTerm gs2 (cont (termOf gs2))) env
-
+-- Create a new, un-activated closure given a function to begin execution with.
+-- Returns a new machine state and a fresh location holding the new Coro value.
 coroFromClosure :: MachineState -> ILClosure -> [SSValue] -> ((Location, MachineState), Coro)
 coroFromClosure gs (ILClosure id _envid avars) cenv =
   let (Just ssproc) = tryLookupProc gs id in
@@ -207,39 +281,15 @@ coroFromClosure gs (ILClosure id _envid avars) cenv =
                   } in
   ((extendHeap gs (SSCoro coro)), coro)
 
-extendHeap :: MachineState -> SSValue -> (Location, MachineState)
-extendHeap gs val =
-  let heap = stHeap gs in
-  let loc = nextLocation (hpBump heap) in
-  let hmp = Map.insert loc val (hpMap heap) in
-  (loc, gs { stHeap = Heap { hpBump = loc, hpMap = hmp } })
-
-tryLookupProc gs id = Map.lookup id (stProcmap gs)
-
-modifyHeap2 gs l1 v1 l2 v2 =
-  let heap = stHeap gs in
-  heap { hpMap = Map.insert l2 v2 (Map.insert l1 v1 (hpMap heap)) }
-
-modifyHeapWith gs loc fn =
-  let oldheap = stHeap gs in
-  let val  = lookupHeap gs loc in
-  let heap = oldheap { hpMap = Map.insert loc (fn val) (hpMap oldheap) } in
-  gs { stHeap = heap }
-
-lookupHeap :: MachineState -> Location -> SSValue
-lookupHeap gs loc =
-  case Map.lookup loc (hpMap (stHeap gs)) of
-    Just v -> v
-    Nothing -> error $ "Unable to find heap cell for location " ++ show loc
-
 termOf gs = coroTerm (stCoro gs)
 envOf  gs = coroEnv  (stCoro gs)
 
-beginsWith s p = isJust (stripPrefix p s)
+unit = (SSTmValue $ SSTuple [])
 
 trivialClosureForProc p =
   SSClosure (ILClosure (ssProcIdent p) (error "proc env ident?") []) []
 
+-- Looks up the given id as either a local variable or a proc definition.
 getval :: MachineState -> Ident -> SSValue
 getval gs id =
   let env = coroEnv (stCoro gs) in
@@ -251,28 +301,25 @@ getval gs id =
                error $ "Unable to get value for " ++ show id
                       ++ "\n\tenv (unsorted) is " ++ show env
 
-unit = (SSTmValue $ SSTuple [])
-
-withTerm gs e = modifyHeapWith gs (stCoroLoc gs) (\(SSCoro c) -> SSCoro $ c { coroTerm = e })
-withEnv  gs e = modifyHeapWith gs (stCoroLoc gs) (\(SSCoro c) -> SSCoro $ c { coroEnv  = e })
-
+-- Update the current term to be the body of the given procedure, with
+-- the environment set up to match the proc's formals to the given args.
 callProc gs proc args =
   let names = ssProcVars proc in
   withTerm (extendEnv gs names args) (ssProcBody proc)
 
-pushCoroCont gs delimCont =
-  let currStack = coroStack (stCoro gs) in
-  modifyHeapWith gs (stCoroLoc gs)
+-- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+pushCoroCont gs delimCont = do
+  let currStack = coroStack (stCoro gs)
+  return $ modifyHeapWith gs (stCoroLoc gs)
              (\(SSCoro c) -> SSCoro $ c { coroStack = delimCont:currStack })
 
 popCoroCont gs =
   let cont:restStack = coroStack (stCoro gs) in
-  (modifyHeapWith gs (stCoroLoc gs)
-             (\(SSCoro c) -> SSCoro $ c { coroStack = restStack }), cont)
+  (cont, modifyHeapWith gs (stCoroLoc gs)
+             (\(SSCoro c) -> SSCoro $ c { coroStack = restStack }))
 
-subStep gs delimCont = step (pushCoroCont gs delimCont)
-
-arraySlotLocation arr n = SSLocation (arr ! n)
+-- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 stepExpr :: MachineState -> IExpr -> IO MachineState
 stepExpr gs expr = do
@@ -281,6 +328,24 @@ stepExpr gs expr = do
     IVar i         -> do return $ withTerm gs (SSTmValue $ getval gs i)
     ITuple      vs -> do return $ withTerm gs (SSTmValue $ SSTuple      (map (getval gs) vs))
     IAppCtor id vs -> do return $ withTerm gs (SSTmValue $ SSCtorVal id (map (getval gs) vs))
+
+    -- If b is a value, we extend the environment and prepare to evaluate e.
+    -- But if b is not a value, we must begin stepping it. The straightforward
+    -- thing to do would be
+    --           gs' <- step (withExpr gs b)
+    --           return $ withExpr gs' (ILLetVal x (exprOf gs' ) e)
+    -- The recursive call to step neatly hides the object language
+    -- call stack in the meta level call stack. Unfortunately, this doesn't
+    -- properly save the environment of the let; the environment from stepping
+    -- b will leak back to the letval, wrecking havoc with recursive functions.
+    -- To implement lexical scoping instead of dynamic scoping, we explicitly
+    -- save the environment and a context expression to be restored when b
+    -- eventually steps to a value.
+    ILetVal x b e ->
+      case b of
+        SSTmValue v -> do return $ withTerm (extendEnv gs [x] [v]) e
+        SSTmExpr _  -> pushCoroCont (withTerm gs b)
+                                     (envOf gs, \t -> SSTmExpr $ ILetVal x t e)
 
     IAlloc i     -> do let (loc, gs') = extendHeap gs (getval gs i)
                        return $ withTerm gs' (SSTmValue $ SSLocation loc)
@@ -298,12 +363,6 @@ stepExpr gs expr = do
       let clovals = map mkSSClosure clos in
       let gs' = extendEnv gs bnds clovals in
       return $ withTerm gs' e
-
-    ILetVal x b e          ->
-      case b of
-        SSTmValue bval -> do return $ withTerm (extendEnv gs [x] [bval]) e
-        SSTmExpr _     -> subStep (withTerm gs b) ( envOf gs
-                                                  , \t -> SSTmExpr $ ILetVal x t e)
 
     ICase a _dt [] -> error $ "Smallstep.hs: Pattern match failure when evaluating case expr!"
     ICase a dt ((p, e):bs) ->
@@ -333,10 +392,10 @@ stepExpr gs expr = do
     ICall b vs ->
         let args = map (getval gs) vs in
         case tryLookupProc gs b of
-           -- Call of known procedure
+           -- Call of known procedure; apply args directly.
            Just proc -> return (callProc gs proc args)
            Nothing ->
-             -- Call of closure
+             -- Call of closure; pass closure env as first parameter.
              case getval gs b of
                (SSClosure clo env) ->
                  case tryLookupProc gs (ilClosureProcIdent clo) of
@@ -384,10 +443,14 @@ stepExpr gs expr = do
         return $ withTerm gs2 (SSTmValue $ SSArray $
                         array (0, fromInteger $ i - 1) inits)
 
-
-    ITyApp e@(SSTmExpr _) argty -> subStep (withTerm gs e) (envOf gs, \t -> SSTmExpr $ ITyApp t argty)
+    ITyApp e@(SSTmExpr _) argty -> pushCoroCont (withTerm gs e) (envOf gs, \t -> SSTmExpr $ ITyApp t argty)
     ITyApp (SSTmValue e) argty -> error $ "step iltyapp " ++ show e
 
+-- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+arraySlotLocation arr n = SSLocation (arr ! n)
+
+-- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 evalDecisionTree :: DecisionTree ILExpr -> SSValue -> Maybe [(Ident, SSValue)]
 evalDecisionTree (DT_Fail) v = error "evalDecisionTree hit DT_Fail!"
@@ -456,6 +519,7 @@ matchPattern p v =
     (SSTuple vals, P_Tuple _ pats) -> matchPatterns pats vals
     (_, P_Tuple _ _) -> matchFailure
 
+-- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 canSwitchToCoro c =
   case coroStat c of
@@ -670,4 +734,15 @@ display (SSLocation z)  = "<location " ++ show z ++ ">"
 display (SSCtorVal id vals) = "(" ++ show id ++ joinWith " " (map display vals) ++ ")"
 display (SSClosure _ _) = "<closure>"
 display (SSCoro    _  ) = "<coro>"
+
+-- Declare some instances that are only needed in this module.
+instance Eq ILClosure
+  where c1 == c2 = (ilClosureProcIdent c1) == (ilClosureProcIdent c2)
+                &&  (map tidIdent $ ilClosureCaptures c1)
+                 == (map tidIdent $ ilClosureCaptures c2)
+
+instance Eq Coro
+  where c1 == c2 = (coroLoc c1) == (coroLoc c2)
+
+instance Show (SSTerm -> SSTerm) where show f = "<coro cont>"
 
