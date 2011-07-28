@@ -3,16 +3,27 @@ main = {
   capture();
   ref-if ();
   arrays();
-  tuprefs();
+  tuprefs1();
+  tuprefs2();
   ref-until();
   //hof-until(); // TODO why is this broken?
 };
 
 
-tuprefs = {
+tuprefs1 = {
   let t = ((ref opaquely_i32 1), (ref 2)); in
     expect_i32 1;
     case t of (r, _) -> print_i32 r^ end
+  end
+};
+
+tuprefs2 = {
+  let r = (ref (1, 2, 3, 4)); in
+    expect_i32 4;
+    case r^ of (_, _, _, x) -> print_i32 x; 0 end;
+    expect_i32 14;
+    (11, 12, 13, 14) >^ r;
+    case r^ of (_, _, _, x) -> print_i32 x; 0 end;
   end
 };
 
