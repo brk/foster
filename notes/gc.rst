@@ -14,7 +14,8 @@ Typeinfo maps are aligned to at least a multiple of 8, yielding
 3 bits in the header pointer. One bit is used to mark forwarding pointers.
 One bit is used to mark objects which should be updated rather than moved;
 for example, objects allocated on the stack or via malloc instead of through
-a bump-pointer alloctor. [[ TODO implement this :) ]]
+a bump-pointer alloctor. The third bit is not yet allocated.
+[[ TODO implement this :) ]]
 
 Diagram::
 
@@ -67,10 +68,9 @@ There are three cases for the elements worth considering:
     computes aligned element start position and recurses at offsets.
   * Pointer. As above.
 
-An algebraic data type with multiple constructors likely needs a third
+An algebraic data type with multiple constructors may need a third
 representation, sufficient to distinguish which constructor was used to
 build the object. One possibility::
-
 
     [Object *-]-+
     [Reference] |
@@ -90,10 +90,33 @@ build the object. One possibility::
             struct { i8* typeinfo; i32 offset }[numPtrEntries];
           }
 
+Or::
+
+    [Object *-]-+
+    [Reference] |
+                v
+      +--------+----------+----------+
+      | header |    f1    |    f2   ...
+      |  ptr * |          |         ...
+      +------|-+----------+----------+
+             |
+             v
+          struct {
+            i64         cellSize;
+            i8*         typePlusCtorName;
+            i32         numPtrEntries;
+            i8          ctorId;
+            i8          isCoro;
+            i8          isArray = false;
+            struct { i8* typeinfo; i32 offset }[numPtrEntries];
+          }
+
 There are a number of potential variations on the above sketch:
 
  #. Ctor bits could be stored in (A) the object reference,
-    (B) the header pointer, or (C, shown) a designated constructor field.
+    (B) the header pointer, (C, shown) a designated constructor field,
+    or (D) in the typeinfo struct. The benefit is reduced loads (0, 1, 1, 2)
+    at the cost of immutability or restricted aliasing.
  #. The header pointer could describe the overall type (with cell size equal to
     the largest-layout variant) or the specific variant.
  #. As a special case, data types with one nullary variant can have
