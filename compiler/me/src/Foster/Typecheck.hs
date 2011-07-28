@@ -250,7 +250,7 @@ typecheckCase ctx rng a branches maybeExpTy = do
   abranches <- forM branches (\(pat, e) -> do
       p <- checkPattern pat
       bindings <- extractPatternBindings p (typeAST aa)
-      let ectx = trace ("bindings: " ++ show bindings) $
+      let ectx = trace ("Typecheck.hs - typecheckCase bindings: " ++ show bindings) $
                   prependContextBindings ctx bindings
       ae <- typecheck ectx e maybeExpTy
       equateTypes (MetaTyVar m) (typeAST ae)

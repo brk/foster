@@ -6,7 +6,7 @@ main = {
   tuprefs1();
   tuprefs2();
   ref-until();
-  //hof-until(); // TODO why is this broken?
+  hof-until();
 };
 
 

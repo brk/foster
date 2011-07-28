@@ -182,7 +182,7 @@ closureConvert ctx expr =
                                                return (p, a' )) bs
                                 allSigs <- gets ilmCtors
                                 let dt = compilePatterns ibs allSigs
-                                return $ ILCase t v ibs (trace (show dt) dt)
+                                return $ ILCase t v ibs dt
 
 closureConvertedProc :: [AIVar] -> (Fn KNExpr) -> ILExpr -> ILM ILProcDef
 closureConvertedProc liftedProcVars f newbody = do
