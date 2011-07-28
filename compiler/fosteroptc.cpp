@@ -104,7 +104,9 @@ void setTimingDescriptions() {
 Module* readLLVMModuleFromPath(string path) {
   foster::validateInputFile(path);
   ScopedTimer timer("io.file.readmodule");
-  return foster::readLLVMModuleFromPath(path);
+  Module* module = foster::readLLVMModuleFromPath(path);
+  ASSERT(module != NULL);
+  return module;
 }
 
 void dumpModuleToFile(Module* mod, const string& filename) {
