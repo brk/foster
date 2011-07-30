@@ -6,11 +6,9 @@ import Control.Monad
 import Data.Set as Set(fromList, toList, difference)
 import Data.Sequence as Seq
 import Data.Map as Map(Map)
-import Data.Maybe(fromJust)
 import Data.List as List
 import qualified Data.Text as T
 
-import Data.Char(toLower)
 import Data.Bits(shiftR)
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
@@ -111,32 +109,10 @@ data LiteralInt = LiteralInt { litIntValue   :: Integer
                              , litIntBase    :: Int
                              } deriving (Show)
 
-getLiteralInt :: Int -> Int -> LiteralInt
-getLiteralInt bits i = precheckedLiteralInt (show i) bits (show i) 10
-
--- Precondition: the provided string must be parseable in the given radix
-precheckedLiteralInt :: String -> Int -> String -> Int -> LiteralInt
-precheckedLiteralInt originalText maxBits clean base =
-    let integerValue = parseRadixRev (fromIntegral base) (List.reverse clean) in
-    let activeBits = List.length (bitStringOf integerValue) in
-    LiteralInt integerValue activeBits originalText base
-
-indexOf x = (toLower x) `List.elemIndex` "0123456789abcdef"
-
-onlyValidDigitsIn :: String -> Int -> Bool
-onlyValidDigitsIn str lim =
-    let validIndex mi = Just True == fmap (< lim) mi in
-    Prelude.all validIndex (map indexOf str)
-
--- Precondition: string contains only valid hex digits.
-parseRadixRev :: Integer -> String -> Integer
-parseRadixRev r ""     = 0
-parseRadixRev r (c:cs) = (r * parseRadixRev r cs) + (fromIntegral $ fromJust (indexOf c))
-
-lowBitOf n = if even n then "1" else "0"
-
+-- | Example: bitStringOf 21 == "10101"
 bitStringOf n | n <= 1     = show n
               | otherwise = bitStringOf (shiftR n 1) ++ lowBitOf n
+                     where lowBitOf n = if even n then "1" else "0"
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

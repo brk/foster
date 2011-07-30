@@ -1,11 +1,13 @@
 module Foster.Typecheck(typecheck) where
 
-import List(length, zip, sort, group, head)
+import List(length, zip, sort, group, head, elemIndex, reverse)
 import Control.Monad(liftM, forM_, forM)
 
 import Debug.Trace(trace)
 import qualified Data.Text as T
 import qualified Data.Map as Map(lookup)
+import Data.Maybe(fromJust)
+import Data.Char(toLower)
 
 import System.Console.ANSI
 
@@ -582,25 +584,47 @@ typecheckInt rng originalText = do
     let maxBits = 32
     (clean, base) <- extractCleanBase originalText
     sanityCheck (base `Prelude.elem` goodBases)
-                ("Integer base must be one of " ++ show goodBases ++ "; was " ++ show base)
+                ("Integer base must be one of " ++ show goodBases
+                                    ++ "; was " ++ show base)
     sanityCheck (onlyValidDigitsIn clean base)
                 ("Cleaned integer must contain only hex digits: " ++ clean)
     let int = precheckedLiteralInt originalText maxBits clean base
     let activeBits = litIntMinBits int
     sanityCheck (activeBits <= maxBits)
                 ("Integers currently limited to " ++ show maxBits ++ " bits, "
-                                                  ++ clean ++ " requires " ++ show activeBits)
+                                  ++ clean ++ " requires " ++ show activeBits)
     return (AnnInt rng (NamedTypeAST $ "Int" ++ show maxBits) int)
+ where
+        onlyValidDigitsIn :: String -> Int -> Bool
+        onlyValidDigitsIn str lim =
+            let validIndex mi = Just True == fmap (< lim) mi in
+            Prelude.all validIndex (map indexOf str)
 
--- Given "raw" integer text like "123`456_10",
--- return ("123456", 10)
-extractCleanBase :: String -> Tc (String, Int)
-extractCleanBase text = do
-    let noticks = Prelude.filter (/= '`') text
-    case splitString "_" noticks of
-        [first, base] -> return (first, read base)
-        [first]       -> return (first, 10)
-        otherwise     -> tcFails [outLn $ "Unable to parse integer literal " ++ text]
+        indexOf x = (toLower x) `List.elemIndex` "0123456789abcdef"
+
+        -- Given "raw" integer text like "123`456_10",
+        -- return ("123456", 10)
+        extractCleanBase :: String -> Tc (String, Int)
+        extractCleanBase text = do
+            let noticks = Prelude.filter (/= '`') text
+            case splitString "_" noticks of
+                [first, base] -> return (first, read base)
+                [first]       -> return (first, 10)
+                otherwise     -> tcFails [outLn $
+                                    "Unable to parse integer literal " ++ text]
+
+        -- Precondition: the provided string must be parseable in the given radix
+        precheckedLiteralInt :: String -> Int -> String -> Int -> LiteralInt
+        precheckedLiteralInt originalText maxBits clean base =
+            let integerValue = parseRadixRev (fromIntegral base) (List.reverse clean) in
+            let activeBits = List.length (bitStringOf integerValue) in
+            LiteralInt integerValue activeBits originalText base
+
+        -- Precondition: string contains only valid hex digits.
+        parseRadixRev :: Integer -> String -> Integer
+        parseRadixRev r ""     = 0
+        parseRadixRev r (c:cs) =
+                (r * parseRadixRev r cs) + (fromIntegral $ fromJust (indexOf c))
 
 -----------------------------------------------------------------------
 
