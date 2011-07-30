@@ -888,22 +888,28 @@ void SwitchCase::codegenSwitch(CodegenPass* pass,
     defaultBB = BasicBlock::Create(getGlobalContext(), "case_default");
   }
 
-  // Special-case codegen for when there's only one
-  // possible case, to avoid superfluous branches.
-  if (trees.size() == 1 && !defaultCase) {
-    trees[0]->codegenDecisionTree(pass, scrutinee, rv_slot, ctab);
-    return;
-  }
-
   // All the ctors should have the same data type, now that we have at least
   // one ctor, check if it's associated with a data type we know of.
   DataTypeAST* dt = pass->isKnownDataType[ctors[0].typeName];
+
+  // Special-case codegen for when there's only one
+  // possible case, to avoid superfluous branches.
+  if (trees.size() == 1 && !defaultCase) {
+    if (dt) {
+      TupleTypeAST* tupty = getDataCtorType(
+                            dt->getCtor(ctors[0].smallId));
+      ctab[this->occ->offsets] = tupty;
+    }
+    trees[0]->codegenDecisionTree(pass, scrutinee, rv_slot, ctab);
+    return;
+  }
 
   // TODO: switching on a.p. integers: possible at all?
   // If so, it will require manual if-else chaining,
   // not a simple int32 switch...
   BasicBlock* bbEnd = BasicBlock::Create(getGlobalContext(), "case_end");
   BasicBlock* defOrContBB = defaultBB ? defaultBB : bbEnd;
+
   // Fetch the subterm of the scrutinee being inspected.
   llvm::Value* inspected = lookupOccs(this->occ, scrutinee, ctab);
 
