@@ -11,42 +11,42 @@ import Foster.TypeAST
 
 data AnnExpr =
         -- Literals
-          AnnBool       ESourceRange Bool
-        | AnnInt        { aintRange  :: ESourceRange
+          AnnBool       SourceRange Bool
+        | AnnInt        { aintRange  :: SourceRange
                         , aintType   :: TypeAST
                         , aintLitInt :: LiteralInt }
         | AnnTuple      AnnTuple
         | E_AnnFn       AnnFn
 
         -- Control flow
-        | AnnIf         ESourceRange TypeAST AnnExpr AnnExpr AnnExpr
-        | AnnUntil      ESourceRange TypeAST AnnExpr AnnExpr
+        | AnnIf         SourceRange TypeAST AnnExpr AnnExpr AnnExpr
+        | AnnUntil      SourceRange TypeAST AnnExpr AnnExpr
         -- Creation of bindings
-        | AnnCase       ESourceRange TypeAST AnnExpr [(Pattern, AnnExpr)]
-        | AnnLetVar     ESourceRange Ident AnnExpr AnnExpr
+        | AnnCase       SourceRange TypeAST AnnExpr [(Pattern, AnnExpr)]
+        | AnnLetVar     SourceRange Ident AnnExpr AnnExpr
         -- We have separate syntax for a SCC of recursive functions
         -- because they are compiled differently from non-recursive closures.
-        | AnnLetFuns    ESourceRange [Ident] [AnnFn] AnnExpr
+        | AnnLetFuns    SourceRange [Ident] [AnnFn] AnnExpr
         -- Use of bindings
-        | E_AnnVar      ESourceRange AnnVar
-        | AnnPrimitive  ESourceRange AnnVar
-        | AnnCall       ESourceRange TypeAST AnnExpr AnnTuple
+        | E_AnnVar      SourceRange AnnVar
+        | AnnPrimitive  SourceRange AnnVar
+        | AnnCall       SourceRange TypeAST AnnExpr AnnTuple
         -- Mutable ref cells
-        | AnnAlloc      ESourceRange AnnExpr
-        | AnnDeref      ESourceRange TypeAST AnnExpr
-        | AnnStore      ESourceRange TypeAST AnnExpr AnnExpr
+        | AnnAlloc      SourceRange AnnExpr
+        | AnnDeref      SourceRange TypeAST AnnExpr
+        | AnnStore      SourceRange TypeAST AnnExpr AnnExpr
         -- Array operations
-        | AnnSubscript  ESourceRange TypeAST AnnExpr AnnExpr
+        | AnnSubscript  SourceRange TypeAST AnnExpr AnnExpr
         -- Terms indexed by types
-        | E_AnnTyApp {  annTyAppRange       :: ESourceRange
+        | E_AnnTyApp {  annTyAppRange       :: SourceRange
                      ,  annTyAppOverallType :: TypeAST
                      ,  annTyAppExpr        :: AnnExpr
                      ,  annTyAppArgTypes    :: TypeAST }
         -- Others
-        | AnnCompiles   ESourceRange (CompilesResult AnnExpr)
+        | AnnCompiles   SourceRange (CompilesResult AnnExpr)
         deriving (Show)
 
-data AnnTuple = E_AnnTuple { annTupleRange :: ESourceRange
+data AnnTuple = E_AnnTuple { annTupleRange :: SourceRange
                            , annTupleExprs :: [AnnExpr] } deriving (Show)
 
 -- Body annotated, and overall type added
@@ -54,7 +54,7 @@ data AnnFn        = AnnFn  { annFnType  :: TypeAST
                            , annFnIdent :: Ident
                            , annFnVars  :: [AnnVar]
                            , annFnBody  :: AnnExpr
-                           , annFnRange :: ESourceRange
+                           , annFnRange :: SourceRange
                            } deriving (Show)
 
 fnNameA f = identPrefix (annFnIdent f)

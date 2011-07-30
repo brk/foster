@@ -151,9 +151,9 @@ parseSeq pbexpr = do
       where
         -- Convert a list of ExprASTs to a right-leaning "list" of SeqAST nodes.
         buildSeqs :: [ExprAST] -> ExprAST
-        buildSeqs []    = E_TupleAST $ TupleAST (EMissingSourceRange "buildSeqs") []
+        buildSeqs []    = E_TupleAST $ TupleAST (MissingSourceRange "buildSeqs") []
         buildSeqs [a]   = a
-        buildSeqs (a:b) = E_SeqAST (EMissingSourceRange "buildSeqs") a (buildSeqs b)
+        buildSeqs (a:b) = E_SeqAST (MissingSourceRange "buildSeqs") a (buildSeqs b)
 
 parseAlloc pbexpr = do
     range <- parseRange pbexpr
@@ -247,12 +247,12 @@ parseSourceLocation :: Pb.SourceLocation -> ESourceLocation
 parseSourceLocation sr = -- This may fail for files of more than 2^29 lines...
     ESourceLocation (fromIntegral $ Pb.line sr) (fromIntegral $ Pb.column sr)
 
-parseRange :: PbExpr.Expr -> FE ESourceRange
+parseRange :: PbExpr.Expr -> FE SourceRange
 parseRange pbexpr =
   case PbExpr.range pbexpr of
-    Nothing   -> do return $ EMissingSourceRange (show $ PbExpr.tag pbexpr)
+    Nothing   -> do return $ MissingSourceRange (show $ PbExpr.tag pbexpr)
     (Just r)  ->  do lines <- gets feModuleLines
-                     return $ ESourceRange
+                     return $ SourceRange
                        (parseSourceLocation (Pb.begin r))
                        (parseSourceLocation (Pb.end   r))
                        lines

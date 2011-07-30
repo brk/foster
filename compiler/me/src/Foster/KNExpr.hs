@@ -69,7 +69,7 @@ kNormalCtor ctx dataSigs (DataType dname _) (DataCtor cname tys) = do
   return $ Fn { fnVar   = tid
               , fnVars  = vars
               , fnBody  = KNAppCtor (NamedTypeIL dname) dci vars
-              , fnRange = EMissingSourceRange ("kNormalCtor " ++ show dci)
+              , fnRange = MissingSourceRange ("kNormalCtor " ++ show dci)
               }
 
 kNormalCtors :: Context TypeIL -> DataTypeSigs -> DataType TypeIL -> [KN (Fn KNExpr)]

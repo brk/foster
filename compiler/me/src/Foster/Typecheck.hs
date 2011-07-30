@@ -573,12 +573,12 @@ typecheckTuple' ctx es ts = do
         let subactions = map (\(e,t) -> typecheck ctx e t) ets
         results <- tcIntrospect (sequence subactions)
         case results of
-          OK exprs -> let rng = rangeSpanOf (EMissingSourceRange "typecheckTuple'") es in
+          OK exprs -> let rng = rangeSpanOf (MissingSourceRange "typecheckTuple'") es in
                       return (AnnTuple (E_AnnTuple rng exprs))
           Errors errs -> tcFails errs
 -----------------------------------------------------------------------
 
-typecheckInt :: ESourceRange -> String -> Tc AnnExpr
+typecheckInt :: SourceRange -> String -> Tc AnnExpr
 typecheckInt rng originalText = do
     let goodBases = [2, 8, 10, 16]
     let maxBits = 32

@@ -12,12 +12,12 @@ import Data.IORef(IORef)
 import Data.Map as Map(fromList, toList)
 
 data EPattern =
-          EP_Wildcard      ESourceRange
-        | EP_Variable      ESourceRange E_VarAST
-        | EP_Ctor          ESourceRange [EPattern] String
-        | EP_Bool          ESourceRange Bool
-        | EP_Int           ESourceRange String
-        | EP_Tuple         ESourceRange [EPattern]
+          EP_Wildcard    SourceRange
+        | EP_Variable    SourceRange E_VarAST
+        | EP_Ctor        SourceRange [EPattern] String
+        | EP_Bool        SourceRange Bool
+        | EP_Int         SourceRange String
+        | EP_Tuple       SourceRange [EPattern]
         deriving (Show)
 
 data E_VarAST = VarAST { evarMaybeType :: Maybe TypeAST

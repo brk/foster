@@ -93,12 +93,12 @@ data DataCtorIdent = DataCtorIdent String String deriving (Eq, Show)
 -- EPattern variable bindings can have type annotations
 -- for typechecking.
 data Pattern =
-          P_Wildcard      ESourceRange
-        | P_Variable      ESourceRange Ident
-        | P_Ctor          ESourceRange [Pattern] DataCtorIdent
-        | P_Bool          ESourceRange Bool
-        | P_Int           ESourceRange LiteralInt
-        | P_Tuple         ESourceRange [Pattern]
+          P_Wildcard      SourceRange
+        | P_Variable      SourceRange Ident
+        | P_Ctor          SourceRange [Pattern] DataCtorIdent
+        | P_Bool          SourceRange Bool
+        | P_Int           SourceRange LiteralInt
+        | P_Tuple         SourceRange [Pattern]
         deriving (Show)
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
@@ -140,37 +140,36 @@ data ESourceLocation = ESourceLocation { sourceLocationLine :: Int
                                        } deriving (Eq, Show)
 
 -- Note: sourceRangeLines is *all* lines, not just those in the range.
-data ESourceRange = ESourceRange { sourceRangeBegin :: ESourceLocation
-                                 , sourceRangeEnd   :: ESourceLocation
-                                 , sourceRangeLines :: SourceLines
-                                 , sourceRangeFile  :: Maybe String
-                                 }
-                  | EMissingSourceRange String
+data SourceRange = SourceRange { sourceRangeBegin :: ESourceLocation
+                               , sourceRangeEnd   :: ESourceLocation
+                               , sourceRangeLines :: SourceLines
+                               , sourceRangeFile  :: Maybe String
+                               }
+                  | MissingSourceRange String
 
-instance Show ESourceRange where
+instance Show SourceRange where
     show = showSourceRange
 
 class SourceRanged a
-  where rangeOf :: a -> ESourceRange
+  where rangeOf :: a -> SourceRange
 
-rangeSpanOf :: SourceRanged a => ESourceRange -> [a] -> ESourceRange
+rangeSpanOf :: SourceRanged a => SourceRange -> [a] -> SourceRange
 rangeSpanOf defaultRange allRanges =
     let ranges = map rangeOf allRanges in
-    rsp defaultRange [r | r@(ESourceRange _ _ _ _) <- ranges]
+    rsp defaultRange [r | r@(SourceRange _ _ _ _) <- ranges]
   where rsp defaultRange [] = defaultRange
-        rsp _ (b:srs) = ESourceRange (sourceRangeBegin b)
+        rsp _ (b:srs) = SourceRange (sourceRangeBegin b)
                                      (sourceRangeEnd $ last srs)
                                      (sourceRangeLines b)
                                      (sourceRangeFile  b)
 
+showSourceRange :: SourceRange -> String
+showSourceRange (MissingSourceRange s) = "<missing range: " ++ s ++ ">"
+showSourceRange (SourceRange begin end lines filepath) = "\n" ++ showSourceLines begin end lines ++ "\n"
 
-showSourceRange :: ESourceRange -> String
-showSourceRange (EMissingSourceRange s) = "<missing range: " ++ s ++ ">"
-showSourceRange (ESourceRange begin end lines filepath) = "\n" ++ showSourceLines begin end lines ++ "\n"
-
-highlightFirstLine :: ESourceRange -> String
-highlightFirstLine (EMissingSourceRange s) = "<missing range: " ++ s ++ ">"
-highlightFirstLine (ESourceRange (ESourceLocation bline bcol)
+highlightFirstLine :: SourceRange -> String
+highlightFirstLine (MissingSourceRange s) = "<missing range: " ++ s ++ ">"
+highlightFirstLine (SourceRange (ESourceLocation bline bcol)
                                  (ESourceLocation _     ecol) lines filepath) =
     "\n" ++ highlightLine bline bcol ecol lines ++ "\n"
 
@@ -205,7 +204,6 @@ sourceLine (SourceLines seq) n =
         else (T.unpack $ Seq.index seq n)
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
 
 class Structured a where
     textOf     :: a -> Int -> Output

@@ -37,7 +37,7 @@ data ILDecl    = ILDecl String TypeIL deriving (Show)
 data ILProcDef = ILProcDef { ilProcReturnType :: TypeIL
                            , ilProcIdent      :: Ident
                            , ilProcVars       :: [AIVar]
-                           , ilProcRange      :: ESourceRange
+                           , ilProcRange      :: SourceRange
                            , ilProcCallConv   :: CallConv
                            , ilProcBody       :: ILExpr
                            } deriving Show
@@ -294,7 +294,7 @@ closureOfKnFn ctx0 infoMap (closedNames, (self_id, fn)) = do
         -- If the body has x and y free, the closure converted body should be
         --     case env of (x, y, ...) -> body end
         newbody <- let oldbody = fnBody f in
-                   let norange = EMissingSourceRange "" in
+                   let norange = MissingSourceRange "" in
                    let patVar a = P_Variable norange (tidIdent a) in
                    closureConvert ctx $
                      KNCase (typeKN oldbody) envVar

@@ -11,37 +11,37 @@ import Foster.TypeAST
 
 data ExprAST =
         -- Literals
-          E_BoolAST       ESourceRange Bool
-        | E_IntAST        ESourceRange String
+          E_BoolAST       SourceRange Bool
+        | E_IntAST        SourceRange String
         | E_TupleAST      TupleAST
         | E_FnAST         FnAST
         -- Control flow
-        | E_IfAST         ESourceRange ExprAST ExprAST ExprAST
-        | E_UntilAST      ESourceRange ExprAST ExprAST
-        | E_SeqAST        ESourceRange ExprAST ExprAST
+        | E_IfAST         SourceRange ExprAST ExprAST ExprAST
+        | E_UntilAST      SourceRange ExprAST ExprAST
+        | E_SeqAST        SourceRange ExprAST ExprAST
         -- Creation of bindings
-        | E_Case          ESourceRange ExprAST [(EPattern, ExprAST)]
-        | E_LetAST        ESourceRange  TermBinding  ExprAST (Maybe TypeAST)
-        | E_LetRec        ESourceRange [TermBinding] ExprAST (Maybe TypeAST)
+        | E_Case          SourceRange ExprAST [(EPattern, ExprAST)]
+        | E_LetAST        SourceRange  TermBinding  ExprAST (Maybe TypeAST)
+        | E_LetRec        SourceRange [TermBinding] ExprAST (Maybe TypeAST)
         -- Use of bindings
-        | E_VarAST        ESourceRange E_VarAST
-        | E_CallAST       ESourceRange ExprAST TupleAST
+        | E_VarAST        SourceRange E_VarAST
+        | E_CallAST       SourceRange ExprAST TupleAST
         -- Mutable ref cells
-        | E_AllocAST      ESourceRange ExprAST
-        | E_DerefAST      ESourceRange ExprAST
-        | E_StoreAST      ESourceRange ExprAST ExprAST
+        | E_AllocAST      SourceRange ExprAST
+        | E_DerefAST      SourceRange ExprAST
+        | E_StoreAST      SourceRange ExprAST ExprAST
         -- Array subscripting
-        | E_SubscriptAST  ESourceRange ExprAST ExprAST
+        | E_SubscriptAST  SourceRange ExprAST ExprAST
         -- Terms indexed by types
-        | E_TyApp         ESourceRange ExprAST TypeAST
+        | E_TyApp         SourceRange ExprAST TypeAST
         -- Others
-        | E_CompilesAST   ESourceRange (Maybe ExprAST)
+        | E_CompilesAST   SourceRange (Maybe ExprAST)
         deriving Show
 
-data TupleAST = TupleAST { tupleAstRange :: ESourceRange
+data TupleAST = TupleAST { tupleAstRange :: SourceRange
                          , tupleAstExprs :: [ExprAST] } deriving (Show)
 
-data FnAST  = FnAST { fnAstRange :: ESourceRange
+data FnAST  = FnAST { fnAstRange :: SourceRange
                     , fnAstName  :: String
                     , fnRetType  :: Maybe TypeAST
                     , fnFormals  :: [AnnVar]

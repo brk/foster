@@ -14,7 +14,6 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Int
 import Data.Bits
---import Data.Maybe(isJust)
 import Data.IORef
 import Data.Array
 
