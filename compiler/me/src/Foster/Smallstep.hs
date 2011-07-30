@@ -473,12 +473,12 @@ evalDecisionTree (DT_Switch occ (SwitchCase branches def)) v =
     evalSwitchCase w [] (Just dt) = evalDecisionTree dt v
     evalSwitchCase w [] Nothing = error $ "evalSwitchCase " ++ show w ++ " [] Nothing"
 
-    ctorMatches (SSBool b)  (CtorId "Bool" _ n) = (b == True  && n == 1)
-                                               || (b == False && n == 0)
-    ctorMatches (SSInt i) (CtorId tyname _ n) = tyname == "Int32"
+    ctorMatches (SSBool b)  (CtorId "Bool" _ _ n) = (b == True  && n == 1)
+                                                 || (b == False && n == 0)
+    ctorMatches (SSInt i) (CtorId tyname _ _ n) = tyname == "Int32"
                                              && n == fromInteger i
-    ctorMatches (SSTuple vs) (CtorId tyname _ n) = tyname == "()"
-                                             && n == Prelude.length vs
+    ctorMatches (SSTuple vs) (CtorId tyname _ a _) = tyname == "()"
+                                             && a == Prelude.length vs
     ctorMatches (SSCtorVal vid _) cid = vid == cid
 
     ctorMatches v ctor = error $
@@ -501,7 +501,8 @@ matchPattern p v =
   let matchIf cond = if cond then trivialMatchSuccess
                              else matchFailure in
                              -- TODO fold dcname + cname in ctorid?
-  let eqCID (CtorId dname cname _) dci = dci == (DataCtorIdent dname cname) in
+  let eqCID (CtorId dname cname _arity _small) dci =
+                (DataCtorIdent dname cname) == dci in
   case (v, p) of
     (_, P_Wildcard _   ) -> trivialMatchSuccess
     (_, P_Variable _ id) -> Just [(id, v)]

@@ -280,7 +280,7 @@ dumpSwitchCase occ (SwitchCase ctorDTpairs defaultCase) =
                     , PbSwitchCase.defCase = fmap dumpDecisionTree defaultCase
                     , PbSwitchCase.occ   = Just $ dumpOcc occ }
 
-dumpCtorId (CtorId s n i) =
+dumpCtorId (CtorId s n a i) =
     P'.defaultValue { PbCtorId.ctor_type_name = u8fromString s
                     , PbCtorId.ctor_ctor_name = u8fromString n
                     , PbCtorId.ctor_local_id  = intToInt32 i }

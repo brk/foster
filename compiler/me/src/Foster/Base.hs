@@ -181,6 +181,7 @@ dataTypeCtors (DataType _ ctors) = ctors
 
 data CtorId     = CtorId   { ctorTypeName :: String
                            , ctorCtorName :: String
+                           , ctorArity    :: Int
                            , ctorSmallInt :: Int
                            } deriving (Show, Eq)
 

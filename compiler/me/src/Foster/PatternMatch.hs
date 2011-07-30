@@ -87,12 +87,12 @@ compilePatterns bs allSigs =
     (P_Ctor _ pats ctorIdent) ->
                           SP_Ctor (sigOf ctorIdent) (map compilePattern pats)
     (P_Tuple _ pats)   -> SP_Ctor (tupleCtor pats)  (map compilePattern pats)
-  boolCtor False = CtorId "Bool" "False" 0
-  boolCtor True  = CtorId "Bool" "True"  1
+  boolCtor False = CtorId "Bool" "False" 0 0
+  boolCtor True  = CtorId "Bool" "True"  0 1
 
-  tupleCtor pats = CtorId "()" "()" (Prelude.length pats)
+  tupleCtor pats = CtorId "()" "()" (Prelude.length pats) 0
 
-  int32Ctor li = CtorId "Int32" "<Int32>"
+  int32Ctor li = CtorId "Int32" "<Int32>" 0
                                (if litIntMinBits li <= 32
                                   then fromInteger $ litIntValue li
                                   else error "cannot cram >32 bits into Int32!")
@@ -135,7 +135,7 @@ cc occs cm allSigs =
       let c = cm `column` i in
       let hctors = Set.fromList (concat $ map headCtor c) in
       let (o1:orest) = occs in
-      let caselist = [ (c, cc (expand o1 (arityOf c) ++ orest)
+      let caselist = [ (c, cc (expand o1 (ctorArity c) ++ orest)
                               (specialize c cm) allSigs)
                      | c <- Set.toList hctors] in
       if isSignature hctors allSigs
@@ -187,9 +187,9 @@ specialize ctor (ClauseMatrix rows) =
     specializeRow (ClauseRow orig (p:rest) a) ctor =
       case p of
         SP_Variable _ -> ClauseRow orig (wilds ++ rest) a
-          where wilds = List.replicate (arityOf ctor) (SP_Wildcard)
+          where wilds = List.replicate (ctorArity ctor) (SP_Wildcard)
         SP_Wildcard   -> ClauseRow orig (wilds ++ rest) a
-          where wilds = List.replicate (arityOf ctor) (SP_Wildcard)
+          where wilds = List.replicate (ctorArity ctor) (SP_Wildcard)
         SP_Ctor c pats | c == ctor -> ClauseRow orig (pats ++ rest) a
         SP_Ctor c pats -> error $ "specializeRow with unequal ctor?!? "
                              ++ show c ++ " // " ++ show ctor
@@ -220,12 +220,6 @@ swapRow i (ClauseRow orig pats a) = ClauseRow orig pats' a
 
 swapCol :: Show a => Int -> ClauseMatrix a -> ClauseMatrix a
 swapCol i (ClauseMatrix rows) = ClauseMatrix (map (swapRow i) rows)
-
-arityOf (CtorId "()" _ n) = n
-arityOf (CtorId "Int32" _ _) = 0
-arityOf (CtorId "Int32List" "Nil"  0) = 0
-arityOf (CtorId "Int32List" "Cons" 1) = 2
-arityOf c                 = error $ "arityOf " ++ show c
 
 isSignature :: (Set CtorId) -> (Map String DataTypeSig) -> Bool
 isSignature ctorSet allSigs =

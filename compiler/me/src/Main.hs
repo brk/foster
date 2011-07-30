@@ -203,7 +203,8 @@ dataTypeSigs datatypes = Map.fromList $ map ctorIdSet datatypes where
       let ctorNameToIdMap = map (ctorIdFor name) (zip [0..] ctors) in
       (name, DataTypeSig (Map.fromList ctorNameToIdMap))
 
-  ctorIdFor name (n, DataCtor ctorName _) = (ctorName, CtorId name ctorName n)
+  ctorIdFor name (n, DataCtor ctorName pats) =
+       (ctorName, CtorId name ctorName (Prelude.length pats) n)
 
 -----------------------------------------------------------------------
 
