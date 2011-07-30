@@ -1,0 +1,39 @@
+main = {
+  expect_i32 6;
+  print_i32 (len (ones 6));
+};
+
+ones = { n : Int32 =>
+  if n ==Int32 0
+   then Nil32 !
+   else Cons32 n (ones (n -Int32 1))
+  end
+};
+
+// occ [] switched on, both subtrees are leaves
+//ex1 = { z : Int32List => case z
+//    of $Nil32       -> 0
+//    of $Cons32 _ _  -> 1 // +Int32 (len ns)
+//  end
+//};
+
+// occ [] switched on, both subtrees are leaves
+//ex2 = { z : Int32List => case z
+//    of $Nil32                  -> 0
+//    of $Cons32 x ($Cons32 y z) -> 2
+//    of $Cons32 x ($Nil32) -> 1
+//  end
+//};
+
+len = { z : Int32List =>
+  case z
+    of $Nil32       -> 0
+    of $Cons32 n ns -> 1 +Int32 (len ns)
+    // of (n, ns)      -> n +Int32 (len ns) // should fail due to type mismatch
+  end
+};
+
+type case Int32List
+  of $Nil32
+  of $Cons32 Int32 Int32List
+;
