@@ -1,0 +1,39 @@
+main = {
+//  t1();
+0
+};
+
+t1 = {
+  expect_i32 0;
+  print_i32
+    case T2C1 2 3
+      of $T2C1 x y -> 0
+    end;
+};
+
+
+test3 = { tt : T4 =>
+  case tt
+    of $T4A _ _ -> 1;
+    of $T4B _ _ -> 3;
+    of $T4C _ _ -> 1;
+    of $T4D _ _ -> 4;
+  end
+};
+
+// Make sure that datatypes with a single
+// constructor codegen as expected.
+t2 = { tt : T2 =>
+  case tt of $T2C1 a b -> b; end
+};
+
+type case T2
+  of $T2C1 Int32 Int32
+;
+
+type case T4
+  of $T4A Int32 Int32
+  of $T4B Int32 Int32
+  of $T4C Int32 Int32
+  of $T4D Int32 Int32 
+;
