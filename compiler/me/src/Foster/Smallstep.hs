@@ -1,7 +1,7 @@
 -----------------------------------------------------------------------------
 -- Copyright (c) 2011 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
--- found in the LICENSE.txt fCFe or at http://eschew.org/txt/bsd.txt
+-- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
 module Foster.Smallstep (
@@ -29,16 +29,17 @@ import Foster.PatternMatch
 -- Relatively simple small-step "definitional" interpreter
 -- written in a small-step semantics.
 --
--- The largest chunk  of complication comes from having coroutines,
--- which forces us to explicitly model stateful management of
--- continuations in the store.
+-- The largest chunks of complication come from
+--   A) having coroutines, which forces us to explicitly model
+--      stateful management of continuations in the store, and
+--   B) enforcing proper lexical scoping with environments as
+--      part of per-coroutine machine state.
 --
 -- But the flip side is that coroutines are *easier* to implement
 -- (efficiently) at the real machine level, even if they're a tad
 -- uglier in the abstract machine.
 
 -- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
 
 errFile gs = (stTmpDir gs) ++ "/istderr.txt"
 outFile gs = (stTmpDir gs) ++ "/istdout.txt"
@@ -78,7 +79,7 @@ interpret stepsTaken gs =
   case (coroStack $ stCoro gs) of
     []         -> do return gs
     otherwise  -> modifyIORef stepsTaken (+1) >>
-                  step gs >>= interpret stepsTaken
+                 (interpret stepsTaken =<< step gs)
 
 -- Stepping an expression is unsurprising.
 -- To step a value, we pop a "stack frame" and apply the value to the
@@ -262,6 +263,13 @@ data SSProcDef = SSProcDef { ssProcIdent      :: Ident
 tryLookupProc gs id = Map.lookup id (stProcmap gs)
 
 -- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+extendEnv :: MachineState -> [Ident] -> [SSValue] -> MachineState
+extendEnv gs names args =
+  let ins (id, arg) map = Map.insert id arg map in
+  let coro = stCoro gs in
+  let env  = coroEnv coro in
+  withEnv gs (List.foldr ins env (zip names args))
 
 -- Create a new, un-activated closure given a function to begin execution with.
 -- Returns a new machine state and a fresh location holding the new Coro value.
@@ -452,47 +460,62 @@ arraySlotLocation arr n = SSLocation (arr ! n)
 
 -- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+-- We implement both decision tree evaluation and
+-- direct recursive pattern matching interpretation,
+-- as a sanity/consistency check on each.
+
 evalDecisionTree :: DecisionTree ILExpr -> SSValue -> Maybe [(Ident, SSValue)]
 evalDecisionTree (DT_Fail) v = error "evalDecisionTree hit DT_Fail!"
 evalDecisionTree (DT_Swap i dt) v = evalDecisionTree dt v
 evalDecisionTree (DT_Leaf _ idsoccs) v =
+  -- Leaf nodes of decision trees contain a list of (encoded)
+  -- bindings, which are independent of the path through the
+  -- decision tree to reach the leaf node.
   Just $ map (lookupOcc v) idsoccs
     where lookupOcc v (id, []) = (id, v)
-          lookupOcc v (id, all@(occ:occs)) = case v of
+          lookupOcc v (id, (occ:occs)) = case v of
             SSTuple     vs -> lookupOcc (vs !! occ) (id, occs)
             SSCtorVal _ vs -> lookupOcc (vs !! occ) (id, occs)
             otherwise  -> error $ "Pattern match failure: "
                               ++ "Cannot index non-tuple/ctor value: " ++ show v
 
+-- To evaluate a decision tree switch node against a given value v,
+-- sequentially test the given subterm of v against the constructors
+-- associated with each branch of the tree until we find a match.
 evalDecisionTree (DT_Switch occ (SwitchCase branches def)) v =
-  evalSwitchCase (getOcc occ v) branches def where
-    evalSwitchCase w ((ctor, dt):rest) def =
+  evalSwitchCase (getOcc occ v) branches def
+   where
+    -- If we didn't match any other branches, fall back to the default...
+    evalSwitchCase w [] (Just defaultTree) = evalDecisionTree defaultTree v
+    -- ... unless there was no default: very bad!
+    evalSwitchCase w [] Nothing = error $ "evalSwitchCase " ++ show w ++ " [] Nothing"
+    -- Otherwise, we try to match the value against the first untested
+    -- constructor, and either execute the associated decision tree
+    -- or continue matching against the rest of the cases.
+    evalSwitchCase w ((ctor, dt):rest) defaultTree =
       if ctorMatches w ctor
         then evalDecisionTree dt v
-        else evalSwitchCase w rest def
-    evalSwitchCase w [] (Just dt) = evalDecisionTree dt v
-    evalSwitchCase w [] Nothing = error $ "evalSwitchCase " ++ show w ++ " [] Nothing"
+        else evalSwitchCase w rest defaultTree
 
-    ctorMatches (SSBool b)  (CtorId "Bool" _ _ n) = (b == True  && n == 1)
-                                                 || (b == False && n == 0)
-    ctorMatches (SSInt i) (CtorId tyname _ _ n) = tyname == "Int32"
-                                             && n == fromInteger i
-    ctorMatches (SSTuple vs) (CtorId tyname _ a _) = tyname == "()"
-                                             && a == Prelude.length vs
-    ctorMatches (SSCtorVal vid _) cid = vid == cid
+    ctorMatches (SSCtorVal vid _) cid =  vid == cid
+    ctorMatches (SSBool b)  (CtorId "Bool" _ _ n) =
+                (b == True  && n == 1) || (b == False && n == 0)
+    ctorMatches (SSInt i) (CtorId tyname _ _ n) =
+                tyname == "Int32"  && n == fromInteger i
+    ctorMatches (SSTuple vs) (CtorId tyname _ a _) =
+                tyname == "()" && a == Prelude.length vs
 
     ctorMatches v ctor = error $
         "Smallstep.hs: evalDecisionTree had unhandled case in ctorMatches: "
         ++ show ctor ++ " ==? " ++ show v
 
+    -- Straightforward impl of the definition of occurrences:
+    -- recursively fetch the i'th subterm of the given value.
     getOcc [] v = v
     getOcc (i:rest) (SSTuple vs) = getOcc rest (vs !! i)
+    -- TODO missing case for SSCtorVal ?
     getOcc occ v = error $ "getOcc " ++ show occ ++ ";; " ++ show v
 
-matchPatterns :: [Pattern] -> [SSValue] -> Maybe [(Ident, SSValue)]
-matchPatterns pats vals = do
-  matchLists <- mapM (\(p, v) -> matchPattern p v) (zip pats vals)
-  return $ concat matchLists
 
 matchPattern :: Pattern -> SSValue -> Maybe [(Ident, SSValue)]
 matchPattern p v =
@@ -520,22 +543,13 @@ matchPattern p v =
     (SSTuple vals, P_Tuple _ pats) -> matchPatterns pats vals
     (_, P_Tuple _ _) -> matchFailure
 
+
+matchPatterns :: [Pattern] -> [SSValue] -> Maybe [(Ident, SSValue)]
+matchPatterns pats vals = do
+  matchLists <- mapM (\(p, v) -> matchPattern p v) (zip pats vals)
+  return $ concat matchLists
+
 -- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
-canSwitchToCoro c =
-  case coroStat c of
-    CoroStatusInvalid   -> False
-    CoroStatusSuspended -> True
-    CoroStatusDormant   -> True
-    CoroStatusRunning   -> False
-    CoroStatusDead      -> False
-
-extendEnv :: MachineState -> [Ident] -> [SSValue] -> MachineState
-extendEnv gs names args =
-  let ins (id, arg) map = Map.insert id arg map in
-  let coro = stCoro gs in
-  let env  = coroEnv coro in
-  withEnv gs (List.foldr ins env (zip names args))
 
 liftInt2 :: (Integral a) => (a -> a -> b) ->
           Integer -> Integer -> b
@@ -626,6 +640,15 @@ evalNamedPrimitive "primitive_bitnot_i32" gs [SSInt i] =
 evalNamedPrimitive prim gs args = error $ "evalNamedPrimitive " ++ show prim
                                  ++ " not yet defined"
 
+-- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+canSwitchToCoro c =
+  case coroStat c of
+    CoroStatusInvalid   -> False
+    CoroStatusSuspended -> True
+    CoroStatusDormant   -> True
+    CoroStatusRunning   -> False
+    CoroStatusDead      -> False
 
 evalCoroPrimitive CoroInvoke gs [(SSLocation targetloc),arg] =
    let (SSCoro ncoro) = lookupHeap gs targetloc in
