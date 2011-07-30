@@ -6,14 +6,14 @@ read_i32 :: { Int32 } @ { proc = true };
 
 main = {
   expect_i32 2;
-  print_i32 (read_i32 ());
+  print_i32 (read_i32 !);
 
   expect_i32 3;
-  print_i32 (read_i32 ());
+  print_i32 (read_i32 !);
 
   expect_i32 5;
-  print_i32 (read_i32 ());
+  print_i32 (read_i32 !);
 
   expect_i32 8;
-  print_i32 (read_i32 ());
+  print_i32 (read_i32 !);
 };

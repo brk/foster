@@ -1,9 +1,9 @@
-run-clo = { f:{Int32} => f () };
+run-clo = { f:{Int32} => f ! };
 
 main = {
-  test-capture-zero();
-  test-capture-one();
-  test-run-it();
+  test-capture-zero !;
+  test-capture-one !;
+  test-run-it !;
 };
 
 test-capture-one = {
@@ -25,4 +25,4 @@ test-run-it = {
   expect_i32 42 ; print_i32 (run-it fx);
 };
 fx = { opaquely_i32 42 };
-run-it = { f: {Int32} => f() };
+run-it = { f: {Int32} => f ! };

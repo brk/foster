@@ -1,6 +1,6 @@
 print_0_of_t_i32_i1 = { x : (Int32, Bool) => case x of (y, _) -> print_i32 y end };
 print_1_of_t_i32_i1 = { x : (Int32, Bool) =>
-      force_gc_for_debugging_purposes(); case x of (_, y) -> print_i1  y end };
+      force_gc_for_debugging_purposes !; case x of (_, y) -> print_i1  y end };
 
 main = {
   //expect_i32 42;
@@ -8,8 +8,8 @@ main = {
   //expect_i1 true;
   //print_1_of_t_i32_i1 (42, true);
   //
-  //test2();
-  test3();
+  //test2 !;
+  test3 !;
 };
 
 test2 = {
@@ -20,7 +20,7 @@ test2 = {
       // pointer eagerly loaded from the gc root, it will be stale
       // after a GC, and (because semispaces are cleared after GC)
       // the following test will return the wrong value.
-      force_gc_for_debugging_purposes();
+      force_gc_for_debugging_purposes !;
       case t
         of (a, _) -> print_i32 a
       end;
@@ -41,9 +41,9 @@ test3helper = {
 };
 
 test3 = {
-  let clo = test3helper ();
+  let clo = test3helper !;
     in
-       force_gc_for_debugging_purposes();
-       clo ();
+       force_gc_for_debugging_purposes !;
+       clo !;
   end
 };

@@ -1,20 +1,20 @@
 main = {
-  t1 ();
-  t2 ();
-  t3 ();
-  t5 ();
-  tuple-cloconv();
-  t10 ();
-  t11 ();
-  t12 ();
-  case-gcroots();
+  t1 !;
+  t2 !;
+  t3 !;
+  t5 !;
+  tuple-cloconv !;
+  t10 !;
+  t11 !;
+  t12 !;
+  case-gcroots !;
 };
 
 tuple-cloconv = {
   // This test ensures that bindings introduced by pattern matching
   // can be successfully closed over.
   let f = case (1, 2) of (_, b) -> { b } end;
-  in  expect_i32 2; print_i32 (f ())
+  in  expect_i32 2; print_i32 (f !)
   end
 };
 
@@ -97,16 +97,16 @@ t12 = {
 
 let-gcroot = {
     let r = (ref 2);
-     in force_gc_for_debugging_purposes();
+     in force_gc_for_debugging_purposes !;
         expect_i32 2;
         print_i32 r^;
     end;
 };
 
 case-gcroots = {
-    let-gcroot();
+    let-gcroot !;
     case (ref 2)
-      of r -> force_gc_for_debugging_purposes();
+      of r -> force_gc_for_debugging_purposes !;
               expect_i32 2;
               print_i32 r^;
     end;

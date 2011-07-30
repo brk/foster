@@ -20,5 +20,5 @@ test-coro2a = {
 };
 
 main = {
-  test-coro2a();
+  test-coro2a !;
 };

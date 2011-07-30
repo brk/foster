@@ -188,6 +188,8 @@ typecheckVar ctx rng v =
       ...;
    in e end
 -}
+typecheckLetRec :: Context TypeAST -> SourceRange -> [TermBinding]
+                -> ExprAST -> Maybe TypeAST -> Tc AnnExpr
 typecheckLetRec ctx0 rng bindings e mt = do
     -- Generate unification variables for the overall type of
     -- each binding.
@@ -244,6 +246,8 @@ checkPattern p = case p of
   EP_Tuple r eps  -> do ps <- mapM checkPattern eps
                         return $ P_Tuple r ps
 
+typecheckCase :: Context TypeAST -> SourceRange -> ExprAST
+              -> [(EPattern, ExprAST)] -> Maybe TypeAST -> Tc AnnExpr
 typecheckCase ctx rng a branches maybeExpTy = do
   -- (A) The expected type applies to the branches,
   -- not to the scrutinee.
@@ -361,6 +365,7 @@ typecheckSubscript ctx rng base baseType index maybeExpTy =
 
 -- Maps (a -> b)   or   ForAll [...] (a -> b)    to a.
 getFnArgType :: TypeAST -> TypeAST
+
 getFnArgType (FnTypeAST a r cc cs) = a
 getFnArgType t@(ForAllAST tvs rho) =
     let fnargty = getFnArgType rho in
@@ -492,6 +497,7 @@ mkFuncTy a r = FnTypeAST a r FastCC FT_Func
 
 typecheckFn ctx f Nothing =
                 typecheckFn' ctx f FastCC Nothing  Nothing
+
 typecheckFn ctx f (Just (FnTypeAST s t cc cs')) =
                 typecheckFn' ctx f     cc (Just s) (Just t)
 

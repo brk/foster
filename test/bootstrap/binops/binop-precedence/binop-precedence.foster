@@ -40,8 +40,8 @@ binop-Int32moderate = {
 };
 
 main = {
-  binop-Int32simple();
-  binop-Int32moderate();
+  binop-Int32simple !;
+  binop-Int32moderate !;
 
   expect_i1(true); print_i1(2  <=Int32   5 +Int32 1);
   expect_i1(true); print_i1(2  <=Int32  (5 +Int32 1));

@@ -130,7 +130,7 @@ typecheckModule verboseMode mod tcenv0 = do
                           (name, ctorTypeAST datatypeName types)
 
    ctorTypeAST dtName types =
-        FnTypeAST (minimalTupleAST types) (NamedTypeAST dtName) FastCC FT_Proc
+        FnTypeAST (TupleTypeAST types) (NamedTypeAST dtName) FastCC FT_Proc
 
    convertTypeILofAST :: ModuleAST FnAST TypeAST
                       -> Context TypeAST

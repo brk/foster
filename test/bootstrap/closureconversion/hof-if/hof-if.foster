@@ -3,13 +3,13 @@ prim-and = { a : Bool => b: Bool =>
 };
 
 hof-and = { a : {Bool} => b: {Bool} =>
-  if a() then b() else false end
+  if a ! then b ! else false end
 };
 
 main = {
-  test1();
-  test2();
-  test3();
+  test1 !;
+  test2 !;
+  test3 !;
 };
 
 test1 = {

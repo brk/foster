@@ -75,9 +75,8 @@ parseBool pbexpr = do
 parseCall pbexpr = do
     rng <- parseRange pbexpr
     (base:args) <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
-    return $ E_CallAST rng base (filterUnit rng args)
-      where filterUnit rng [E_TupleAST (TupleAST r [])] = TupleAST r []
-            filterUnit rng args = TupleAST (rangeSpanOf rng args) args
+    return $ E_CallAST rng base (argTuple rng args)
+        where argTuple rng args = TupleAST (rangeSpanOf rng args) args
 
 parseCompiles pbexpr = do
     range <- parseRange pbexpr

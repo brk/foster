@@ -1,12 +1,12 @@
 main = {
-  simpler();
-  capture();
-  ref-if ();
-  arrays();
-  tuprefs1();
-  tuprefs2();
-  ref-until();
-  hof-until();
+  simpler   !;
+  capture   !;
+  ref-if    !;
+  arrays    !;
+  tuprefs1  !;
+  tuprefs2  !;
+  ref-until !;
+  hof-until !;
 };
 
 
@@ -43,7 +43,7 @@ capture = {
    in
      2 >^ r;
      expect_i32 2;
-      print_i32 (f ());
+      print_i32 (f !);
   end
 };
 
@@ -77,14 +77,14 @@ arrays = {
 
 
 hof-until-if = { c : {Bool} => b : { () } =>
-  if c () then 0 else let j0 = b (); in hof-until-if c b end
+  if c ! then 0 else let j0 = b !; in hof-until-if c b end
   end
 };
 
 hof-until-case = { c : {Bool} => b : { () } =>
-  case c ()
+  case c !
     of true ->  0
-    of false -> let j0 = b (); in hof-until-case c b end
+    of false -> let j0 = b !; in hof-until-case c b end
   end
 };
 

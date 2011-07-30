@@ -3,7 +3,7 @@ main = {
 
   loopy 3;
 
-  // todo: error message for f(); instead of f 2;
+  // todo: error message for f (); instead of f 2;
 };
 
 is-odd = { z:Int32 =>

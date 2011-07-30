@@ -1,11 +1,11 @@
 hof-while = { t : {Bool} => b : {Int32} =>
-  if t () then b (); hof-while t b
+  if t ! then b !; hof-while t b
           else 0 end
 };
 
 main = {
-  variant-one();
-  variant-two();
+  variant-one !;
+  variant-two !;
 };
 
 variant-one = {
@@ -39,6 +39,6 @@ variant-two = {
 
 // TODO check this
 // hof-while-unit = { t : {Bool} => b : { () } =>
-//   if t () then b (); hof-while-unit t b
+//   if t ! then b !; hof-while-unit t b
 //           else () end
 // };

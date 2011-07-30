@@ -4,14 +4,14 @@ main = {
   //expect_i1 false; print_i1 (__COMPILES__  fn(to i32) { true }  )
 
   // Mismatch between expected and actual types
-  expect_i1 true ; print_i1 (__COMPILES__           (a ()) );
-  expect_i1 false; print_i1 (__COMPILES__  print_i1 (a ()) );
+  expect_i1 true ; print_i1 (__COMPILES__           (a !) );
+  expect_i1 false; print_i1 (__COMPILES__  print_i1 (a !) );
 
   // Incorrect number of arguments to function
-  expect_i1 true;  print_i1 (__COMPILES__  { 0 }()  );
+  expect_i1 true;  print_i1 (__COMPILES__  { 0 }!  );
   expect_i1 false; print_i1 (__COMPILES__  { 0 }(0) );
 
-  expect_i1 true;  print_i1 (__COMPILES__  a ()  );
+  expect_i1 true;  print_i1 (__COMPILES__  a !  );
   expect_i1 false; print_i1 (__COMPILES__  a 0   );
   expect_i1 false; print_i1 (__COMPILES__  a (0) );
 

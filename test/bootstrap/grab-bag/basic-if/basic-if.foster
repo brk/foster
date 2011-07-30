@@ -1,6 +1,6 @@
 main = {
-  iftru ();
-  iffls ();
+  iftru !;
+  iffls !;
 };
 
 iftru = {

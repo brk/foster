@@ -1,6 +1,6 @@
 main = {
-  callcall();
-  call_let();
+  callcall !;
+  call_let !;
 };
 
 f = { { 0 } };
@@ -9,18 +9,18 @@ g = { x : Int32 => { x } };
 
 callcall = {
   expect_i32 0;
-  print_i32 ((f ()) ());
+  print_i32 ((f !) !);
 };
 
 call_let = {
   expect_i32 2;
-  print_i32 (((let gg = g; in gg end) 2) ());
+  print_i32 (((let gg = g; in gg end) 2) !);
 };
 
 call_deref_b = {
   let r = (ref (g 4));
    in
       expect_i32 4;
-      print_i32 (r^ ());
+      print_i32 (r^ !);
   end
 };

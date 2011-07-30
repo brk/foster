@@ -484,11 +484,18 @@ ExprAST* parseValTypeApp(ExprAST* base, pTree tree) {
   }
 }
 
+// ^(VAL_APP)
+ExprAST* parseValApp(ExprAST* base, pTree tree) {
+  ASSERT(getChildCount(tree) == 0);
+  return new CallAST(base, Exprs(), rangeOf(tree));
+}
+
 ExprAST* parseSuffix(ExprAST* base, pTree tree) {
   int token = typeOf(tree);
 
   if (token == SUBSCRIPT) { return parseSubscript(base, tree); }
   if (token == DEREF)     { return parseDeref(base, tree); }
+  if (token == VAL_APP)   { return parseValApp(base, tree); }
   if (token == VAL_TYPE_APP) { return parseValTypeApp(base, tree); }
   display_pTree(tree, 2);
   foster::EDiag() << "returning NULL ExprAST for parseSuffix token " << str(tree->getToken(tree));

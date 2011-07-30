@@ -81,6 +81,7 @@ type_application
 suffix  :       type_application
   |     '^'                             -> ^(DEREF)             // dereference
   |     '[' e ']'                       -> ^(SUBSCRIPT e)
+  |     '!'                             -> ^(VAL_APP)		// nullary call
 //      |       '.(' e ')'                      -> ^(VAL_APP e)
   ;
 

@@ -55,9 +55,9 @@ test-let = {
 };
 
 main = {
-  test-manually-lifted ();
-  test-let-transformed ();
-  test-let ();
+  test-manually-lifted !;
+  test-let-transformed !;
+  test-let !;
 };
 
 mrmr-step2 = { km:Int32 => r:Int32 =>

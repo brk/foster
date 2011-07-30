@@ -1,4 +1,4 @@
-run-it = { f:{Int32} => f () };
+run-it = { f:{Int32} => f ! };
 
 // This just tests passing of (lambda-lifted) function pointers,
 // since the anonymous function defined below is trivially closed.

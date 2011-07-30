@@ -1,6 +1,6 @@
 main = {
-  call_deref_a();
-  call_deref_b();
+  call_deref_a !;
+  call_deref_b !;
 };
 
 // Test that global symbols may be let-bound and stored in refs.
@@ -12,7 +12,7 @@ call_deref_a = {
      gg = r^;
    in
       expect_i32 3;
-      print_i32 ((gg 3) ());
+      print_i32 ((gg 3) !);
   end
 };
 
