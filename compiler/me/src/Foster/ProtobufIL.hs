@@ -109,7 +109,7 @@ dumpProcType (s, t, cc) =
       where stringOfCC FastCC = "fastcc"
             stringOfCC CCC    = "ccc"
 
-dumpDataCtor (DataCtor ctorName types) =
+dumpDataCtor (DataCtor ctorName _smallId types) =
   PbDataCtor { PbDataCtor.name  = u8fromString ctorName
              , PbDataCtor.type' = fromList $ map dumpType types
              }

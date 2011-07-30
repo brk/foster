@@ -1,6 +1,7 @@
 module Foster.Context where
 
 import Data.IORef(IORef,newIORef,readIORef,writeIORef)
+import Data.Map(Map)
 
 import Foster.Base
 import Foster.ExprAST
@@ -34,6 +35,8 @@ termVarLookup name bindings =
     let termbindings = [(nm, annvar) | (TermVarBinding nm annvar) <- bindings] in
     lookup name termbindings
 
+data CtorInfo ty = CtorInfo CtorId (DataCtor ty) deriving Show
+
 -- Based on "Practical type inference for arbitrary rank types."
 -- One significant difference is that we do not include the Gamma context
 --   (mapping term variables to types) in the TcEnv, because we do not
@@ -44,7 +47,7 @@ termVarLookup name bindings =
 data TcEnv = TcEnv { tcEnvUniqs :: IORef Uniq
                    , tcUnificationVars :: IORef [MetaTyVar]
                    , tcParents  :: [ExprAST]
-                   , tcDataTypes :: [DataType TypeAST]
+                   , tcCtorInfo :: Map CtorName [CtorInfo TypeAST]
                    }
 
 newtype Tc a = Tc (TcEnv -> IO (OutputOr a))
@@ -132,7 +135,7 @@ tcGetCurrentHistory :: Tc [ExprAST]
 tcGetCurrentHistory = Tc (\tcenv -> do { return (OK $
                                           Prelude.reverse $ tcParents tcenv) })
 
-tcGetDataTypes = Tc (\tcenv -> do { return (OK $ tcDataTypes tcenv) })
+tcGetCtorInfo = Tc (\tcenv -> do { return (OK $ tcCtorInfo tcenv) })
 
 tcIntrospect :: Tc a -> Tc (OutputOr a)
 tcIntrospect action =

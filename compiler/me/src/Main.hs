@@ -15,7 +15,8 @@ import System.Console.ANSI
 import qualified Data.ByteString.Lazy as L(readFile)
 
 import List(all)
-import qualified Data.Map as Map(fromList)
+import Data.Map(Map)
+import qualified Data.Map as Map(fromList, unionsWith)
 import qualified Data.Set as Set
 import qualified Data.Graph as Graph
 import Data.Maybe(isNothing)
@@ -125,7 +126,8 @@ typecheckModule verboseMode mod tcenv0 = do
 
    extractCtorTypes :: DataType TypeAST -> [(String, TypeAST)]
    extractCtorTypes (DataType datatypeName ctors) = map nmCTy ctors
-     where nmCTy (DataCtor name types) = (name, ctorTypeAST datatypeName types)
+     where nmCTy (DataCtor name _smallId types) =
+                          (name, ctorTypeAST datatypeName types)
 
    ctorTypeAST dtName types =
         FnTypeAST (minimalTupleAST types) (NamedTypeAST dtName) FastCC FT_Proc
@@ -154,9 +156,9 @@ typecheckModule verboseMode mod tcenv0 = do
           return $ DataType s cts
             where
               convertDataCtor :: DataCtor TypeAST -> Tc (DataCtor TypeIL)
-              convertDataCtor (DataCtor s types) = do
+              convertDataCtor (DataCtor s n types) = do
                 tys <- mapM ilOf types
-                return $ DataCtor s tys
+                return $ DataCtor s n tys
 
 
         liftContextM :: Monad m => (t1 -> m t2) -> Context t1 -> m (Context t2)
@@ -196,15 +198,31 @@ inspect ctx typechecked ast =
 
 -----------------------------------------------------------------------
 
-dataTypeSigs :: [DataType TypeIL] -> DataTypeSigs
+getCtorInfo :: [DataType TypeAST] -> Map CtorName [CtorInfo TypeAST]
+getCtorInfo datatypes = Map.unionsWith (++) $ map getCtorInfoList datatypes
+ where
+  getCtorInfoList :: DataType TypeAST -> Map CtorName [CtorInfo TypeAST]
+  getCtorInfoList (DataType name ctors) =
+        Map.fromList $ map (buildCtorInfo name) ctors
+
+  buildCtorInfo :: DataTypeName -> DataCtor TypeAST
+                          -> (CtorName, [CtorInfo TypeAST])
+  buildCtorInfo name ctor =
+        (ctorNameOf ctor, [CtorInfo (ctorId name ctor) ctor])
+
+ctorId name (DataCtor ctorName n types) =
+  CtorId name ctorName (Prelude.length types) n
+
+ctorNameOf (DataCtor ctorName _smallId _) = ctorName
+
+dataTypeSigs :: [DataType TypeIL] -> Map CtorName DataTypeSig
 dataTypeSigs datatypes = Map.fromList $ map ctorIdSet datatypes where
   ctorIdSet :: DataType TypeIL -> (DataTypeName, DataTypeSig)
   ctorIdSet (DataType name ctors) =
-      let ctorNameToIdMap = map (ctorIdFor name) (zip [0..] ctors) in
+      let ctorNameToIdMap = map (ctorIdFor name) ctors in
       (name, DataTypeSig (Map.fromList ctorNameToIdMap))
 
-  ctorIdFor name (n, DataCtor ctorName pats) =
-       (ctorName, CtorId name ctorName (Prelude.length pats) n)
+  ctorIdFor name ctor = (ctorNameOf ctor, ctorId name ctor)
 
 -----------------------------------------------------------------------
 
@@ -256,7 +274,7 @@ main = do
         let tcenv = TcEnv { tcEnvUniqs = uniqref,
                      tcUnificationVars = varlist,
                              tcParents = [],
-                           tcDataTypes = moduleASTdataTypes sm }
+                            tcCtorInfo = getCtorInfo (moduleASTdataTypes sm) }
         let verboseMode = getVerboseFlag flagVals
         modResults  <- typecheckModule verboseMode sm tcenv
         case modResults of
@@ -270,8 +288,8 @@ main = do
 
                            runOutput $ (outLn "vvvv contextBindings:====================")
                            runOutput $ (outCSLn Yellow (joinWith "\n" $ map show (contextBindings ctx_il))))
+                         let kmod = kNormalizeModule mod ctx_il
                          let dataSigs = dataTypeSigs (moduleASTdataTypes mod)
-                         let kmod = kNormalizeModule mod ctx_il dataSigs
                          let prog = closureConvertAndLift ctx_il dataSigs kmod
                          dumpModuleToProtobufIL prog (outfile ++ ".ll.pb")
                          when verboseMode (do

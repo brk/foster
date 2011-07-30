@@ -522,9 +522,6 @@ matchPattern p v =
   let matchFailure        = Nothing in
   let matchIf cond = if cond then trivialMatchSuccess
                              else matchFailure in
-                             -- TODO fold dcname + cname in ctorid?
-  let eqCID (CtorId dname cname _arity _small) dci =
-                (DataCtorIdent dname cname) == dci in
   case (v, p) of
     (_, P_Wildcard _   ) -> trivialMatchSuccess
     (_, P_Variable _ id) -> Just [(id, v)]
@@ -535,7 +532,7 @@ matchPattern p v =
     (SSBool b1, P_Bool _ b2) -> matchIf $ b1 == b2
     (_        , P_Bool _ _ ) -> matchFailure
 
-    (SSCtorVal vid vals, P_Ctor _ pats cid) -> do _ <- matchIf $ vid `eqCID` cid
+    (SSCtorVal vid vals, P_Ctor _ pats cid) -> do _ <- matchIf $ vid == cid
                                                   matchPatterns pats vals
     (_                 , P_Ctor _ _ _)      -> matchFailure
 

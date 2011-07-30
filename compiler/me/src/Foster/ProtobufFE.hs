@@ -295,14 +295,14 @@ toplevel (FnAST _ _ _ _ _ True ) =
         error $ "Broken invariant: top-level functions " ++
                 "should not have their top-level bit set before we do it!"
 
-parseDataCtor :: DataCtor.DataCtor -> FE (Foster.Base.DataCtor TypeAST)
-parseDataCtor ct = do
+parseDataCtor :: (Int, DataCtor.DataCtor) -> FE (Foster.Base.DataCtor TypeAST)
+parseDataCtor (n, ct) = do
     let types = map parseType (toList $ DataCtor.type' ct)
-    return $ Foster.Base.DataCtor (uToString $ DataCtor.name ct) types
+    return $ Foster.Base.DataCtor (uToString $ DataCtor.name ct) n types
 
 parseDataType :: DataType.DataType -> FE (Foster.Base.DataType TypeAST)
 parseDataType dt = do
-    ctors <- mapM parseDataCtor (toList $ DataType.ctor dt)
+    ctors <- mapM parseDataCtor (Prelude.zip [0..] (toList $ DataType.ctor dt))
     return $ Foster.Base.DataType (uToString $ DataType.name dt) ctors
 
 parseModule name decls defns data_types = do

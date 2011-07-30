@@ -88,14 +88,10 @@ patBindingFreeIds (pat, expr) =
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
-data DataCtorIdent = DataCtorIdent String String deriving (Eq, Show)
-
--- EPattern variable bindings can have type annotations
--- for typechecking.
 data Pattern =
           P_Wildcard      SourceRange
         | P_Variable      SourceRange Ident
-        | P_Ctor          SourceRange [Pattern] DataCtorIdent
+        | P_Ctor          SourceRange [Pattern] CtorId
         | P_Bool          SourceRange Bool
         | P_Int           SourceRange LiteralInt
         | P_Tuple         SourceRange [Pattern]
@@ -104,11 +100,12 @@ data Pattern =
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 data (Show ty) => DataType ty = DataType String [DataCtor ty] deriving Show
-data (Show ty) => DataCtor ty = DataCtor String [ty]          deriving Show
+data (Show ty) => DataCtor ty = DataCtor String Int [ty]      deriving Show
 
 dataTypeName  (DataType name _)  = name
 dataTypeCtors (DataType _ ctors) = ctors
 
+-- CtorIds are created before typechecking.
 data CtorId     = CtorId   { ctorTypeName :: String
                            , ctorCtorName :: String
                            , ctorArity    :: Int

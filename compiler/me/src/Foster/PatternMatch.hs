@@ -84,8 +84,7 @@ compilePatterns bs allSigs =
     (P_Variable _ v)   -> SP_Variable v
     (P_Bool     _ b)   -> SP_Ctor (boolCtor b)  []
     (P_Int      _ i)   -> SP_Ctor (int32Ctor i) []
-    (P_Ctor _ pats ctorIdent) ->
-                          SP_Ctor (sigOf ctorIdent) (map compilePattern pats)
+    (P_Ctor _ pats cid) ->SP_Ctor cid (map compilePattern pats)
     (P_Tuple _ pats)   -> SP_Ctor (tupleCtor pats)  (map compilePattern pats)
   boolCtor False = CtorId "Bool" "False" 0 0
   boolCtor True  = CtorId "Bool" "True"  0 1
@@ -96,14 +95,6 @@ compilePatterns bs allSigs =
                                (if litIntMinBits li <= 32
                                   then fromInteger $ litIntValue li
                                   else error "cannot cram >32 bits into Int32!")
-
-  sigOf x@(DataCtorIdent typeName ctorName) =
-    case Map.lookup typeName allSigs of
-      Just (DataTypeSig sigMap) ->
-        case Map.lookup ctorName sigMap of
-          Just sig -> sig
-          Nothing -> error $ "PatternMatch.sigOf unable to find signature for ctor " ++ show x
-      Nothing  -> error $ "PatternMatch.sigOf unable to find signature for data type " ++ show x
 
 computeBindings :: (Occurrence, SPattern) -> [(Ident, Occurrence)]
 computeBindings (occ, SP_Variable i) = [(i, occ)]
@@ -221,10 +212,10 @@ swapRow i (ClauseRow orig pats a) = ClauseRow orig pats' a
 swapCol :: Show a => Int -> ClauseMatrix a -> ClauseMatrix a
 swapCol i (ClauseMatrix rows) = ClauseMatrix (map (swapRow i) rows)
 
-isSignature :: (Set CtorId) -> (Map String DataTypeSig) -> Bool
+-- better :: (Set CtorId) -> (Map DataTypeName (Set CtorId)) -> Bool
+isSignature :: (Set CtorId) -> (Map DataTypeName DataTypeSig) -> Bool
 isSignature ctorSet allSigs =
-  let typeNames = Set.map ctorTypeName ctorSet in
-  case Set.toList typeNames of
+  case Set.toList (Set.map ctorTypeName ctorSet) of
     ["Int32"] -> False
     ["()"] -> True
     ["Bool"] -> Set.size ctorSet == 2

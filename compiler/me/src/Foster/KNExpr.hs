@@ -10,8 +10,7 @@ kNormalizeModule, KNExpr(..), typeKN
 
 where
 
-import Control.Monad.State
-import qualified Data.Map as Map((!))
+import Control.Monad.State(forM, evalState, get, put, State)
 
 import Foster.Base
 import Foster.Context
@@ -50,41 +49,23 @@ data KNExpr =
         | KNTyApp       TypeIL KNExpr TypeIL
         deriving (Show)
 
-data KNState = KNState {
-    knUniq    :: Uniq
-}
-
-type KN a = State KNState a
+type KN a = State Uniq a
 
 knFresh :: String -> KN Ident
 knFresh s = do old <- get
-               put (old { knUniq = (knUniq old) + 1 })
-               return (Ident s (knUniq old))
-
-kNormalCtor :: Context TypeIL -> DataTypeSigs -> DataType TypeIL -> DataCtor TypeIL -> KN (Fn KNExpr)
-kNormalCtor ctx dataSigs (DataType dname _) (DataCtor cname tys) = do
-  let dci = case dataSigs Map.! dname of DataTypeSig m -> m Map.! cname
-  let (Just tid) = termVarLookup cname (contextBindings ctx)
-  let vars = map (\(t,n) -> TypedId t $ Ident ".gen" n) (zip tys [0..])
-  return $ Fn { fnVar   = tid
-              , fnVars  = vars
-              , fnBody  = KNAppCtor (NamedTypeIL dname) dci vars
-              , fnRange = MissingSourceRange ("kNormalCtor " ++ show dci)
-              }
-
-kNormalCtors :: Context TypeIL -> DataTypeSigs -> DataType TypeIL -> [KN (Fn KNExpr)]
-kNormalCtors ctx dataSigs dtype = map (kNormalCtor ctx dataSigs dtype) (dataTypeCtors dtype)
+               put (old + 1)
+               return (Ident s old)
 
 kNormalizeModule :: (ModuleAST (Fn AIExpr) TypeIL)
-                 -> Context TypeIL -> DataTypeSigs
+                 -> Context TypeIL
                  -> (ModuleAST (Fn KNExpr) TypeIL)
-kNormalizeModule m ctx dataSigs =
+kNormalizeModule m ctx =
     let nameOfBinding (TermVarBinding s _) = s in
     let knRegularFuncs = map kNormalizeFn (moduleASTfunctions m) in
     -- TODO move ctor wrapping earlier?
-    let knCtorFuncs    = concatMap (kNormalCtors ctx dataSigs) (moduleASTdataTypes m) in
+    let knCtorFuncs    = concatMap (kNormalCtors ctx) (moduleASTdataTypes m) in
     let knAllFuncsKN   = knRegularFuncs ++ knCtorFuncs in
-    let knFuncs = evalState (sequence knAllFuncsKN) (KNState 0) in
+    let knFuncs = evalState (sequence knAllFuncsKN) 0 in
     m { moduleASTfunctions = knFuncs }
 
 
@@ -179,6 +160,24 @@ nestedLets exprs g = nestedLets' exprs [] g
             let v = TypedId (typeKN e) x
             innerlet <- nestedLets' es (v:vars) k
             return $ buildLet x e innerlet
+
+
+-- Produces a list of (K-normalized) functions, eta-expansions of each ctor.
+kNormalCtors :: Context TypeIL -> DataType TypeIL -> [KN (Fn KNExpr)]
+kNormalCtors ctx dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
+  where
+    kNormalCtor :: Context TypeIL -> DataType TypeIL -> DataCtor TypeIL
+                -> KN (Fn KNExpr)
+    kNormalCtor ctx (DataType dname _) (DataCtor cname small tys) = do
+      let cid = CtorId dname cname (Prelude.length tys) small
+      vars <- mapM (\t -> do fresh <- knFresh ".autogen"
+                             return $ TypedId t fresh) tys
+      let (Just tid) = termVarLookup cname (contextBindings ctx)
+      return $ Fn { fnVar   = tid
+                  , fnVars  = vars
+                  , fnBody  = KNAppCtor (NamedTypeIL dname) cid vars
+                  , fnRange = MissingSourceRange ("kNormalCtor " ++ show cid)
+                  }
 
 -- This is necessary due to transformations of AIIf and nestedLets
 -- introducing new bindings, which requires synthesizing a type.

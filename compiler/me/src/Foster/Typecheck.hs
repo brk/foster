@@ -217,13 +217,14 @@ typecheckLetRec ctx0 rng bindings e mt = do
 
 -----------------------------------------------------------------------
 
-getTypeNameForCtor ctorName = do
-  alldts <- tcGetDataTypes
-  let datatypes = findDataTypesForCtor ctorName alldts
-  case datatypes of
-    [DataType typeName _] -> return typeName
-    _ -> tcFails [out $ "getTypeNameForCtor: unable to find datatype "
-                     ++ "definition for ctor $" ++ ctorName]
+getCtorInfoForCtor :: String -> Tc (CtorInfo TypeAST)
+getCtorInfoForCtor ctorName = do
+  ctorInfos <- tcGetCtorInfo
+  case Map.lookup ctorName ctorInfos of
+    Just [info] -> return info
+    elsewise -> tcFails [out $ "Typecheck.getCtorInfoForCtor: Too many or"
+                                ++ " too few definitions for $" ++ ctorName
+                                ++ "\n\t" ++ show elsewise]
 
 checkPattern :: EPattern -> Tc Pattern
 checkPattern p = case p of
@@ -234,8 +235,8 @@ checkPattern p = case p of
   EP_Int r str    -> do annint <- typecheckInt r str
                         return $ P_Int  r (aintLitInt annint)
   EP_Ctor r eps s -> do ps <- mapM checkPattern eps
-                        tyName <- getTypeNameForCtor s
-                        return $ P_Ctor r ps (DataCtorIdent tyName s)
+                        (CtorInfo cid _) <- getCtorInfoForCtor s
+                        return $ P_Ctor r ps cid
   EP_Tuple r eps  -> do ps <- mapM checkPattern eps
                         return $ P_Tuple r ps
 
@@ -261,38 +262,16 @@ typecheckCase ctx rng a branches maybeExpTy = do
     )
   return $ AnnCase rng (MetaTyVar m) aa abranches
 
-getCtorsOfDataType :: String -> DataType TypeAST -> [DataCtor TypeAST]
-getCtorsOfDataType ctorName dt@(DataType _ ctors) =
-  let wantedCtor (DataCtor name _) = ctorName == name in
-  filter wantedCtor ctors
-
-findDataTypesForCtor :: String -> [DataType TypeAST] -> [DataType TypeAST]
-findDataTypesForCtor ctorName alldts =
-  let wantedCtor (DataCtor name _) = ctorName == name in
-  filter (\(DataType _ ctors) -> any wantedCtor ctors) alldts
-
 varbind id ty = TermVarBinding (identPrefix id) (TypedId ty id)
 
 extractPatternBindings :: Pattern -> TypeAST -> Tc [ContextBinding TypeAST]
 extractPatternBindings (P_Wildcard _   ) ty = return []
 extractPatternBindings (P_Variable _ id) ty = return [varbind id ty]
 
-extractPatternBindings p@(P_Ctor _ pats (DataCtorIdent dtypName ctorName)) ty = do
-  alldts <- tcGetDataTypes
-  let datatypes = findDataTypesForCtor ctorName alldts
-  case datatypes of
-    [dt] ->
-       case getCtorsOfDataType ctorName dt of
-         [(DataCtor _ types)] -> do
-           bindings <- sequence [extractPatternBindings p t | (p, t) <- zip pats types]
-           return $ concat bindings
-         ctors  ->
-           tcFails [out $ "extractPatternBindings: Too many ctors! " ++ show ctors ++ " ;; " ++ show ty]
-    []  -> tcFails [out $ "Typecheck.extractPatternBindings: No datatype found with ctor name " ++ ctorName
-                               ++ "\n\t" ++ show alldts
-                               ++ "\n\t" ++ show p]
-    dts -> tcFails [out $ "Typecheck.extractPatternBindings: Too many datatypes! " ++ ctorName
-                                ++ "\n\t" ++ show dts]
+extractPatternBindings p@(P_Ctor _ pats (CtorId _ ctorName _ _)) ty = do
+  CtorInfo _ (DataCtor _ _smallId types) <- getCtorInfoForCtor ctorName
+  bindings <- sequence [extractPatternBindings p t | (p, t) <- zip pats types]
+  return $ concat bindings
 
 extractPatternBindings (P_Bool r v) ty = do
   ae <- typecheck emptyContext (E_BoolAST r v) (Just ty)
