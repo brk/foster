@@ -234,8 +234,12 @@ checkPattern p = case p of
                         return $ P_Variable r id
   EP_Int r str    -> do annint <- typecheckInt r str
                         return $ P_Int  r (aintLitInt annint)
-  EP_Ctor r eps s -> do ps <- mapM checkPattern eps
-                        (CtorInfo cid _) <- getCtorInfoForCtor s
+  EP_Ctor r eps s -> do (CtorInfo cid _) <- getCtorInfoForCtor s
+                        sanityCheck (ctorArity cid == List.length eps) $
+                          "Incorrect pattern arity: expected " ++
+                          (show $ ctorArity cid) ++ " pattern(s), but got "
+                          ++ (show $ List.length eps) ++ show r
+                        ps <- mapM checkPattern eps
                         return $ P_Ctor r ps cid
   EP_Tuple r eps  -> do ps <- mapM checkPattern eps
                         return $ P_Tuple r ps

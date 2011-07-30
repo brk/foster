@@ -1,5 +1,7 @@
 main = {
-//  t1();
+  t1 ();
+  t3 ();
+  t4 ();
 0
 };
 
@@ -11,6 +13,8 @@ t1 = {
     end;
 };
 
+
+t3 = { expect_i32 4; print_i32 (test3 (T4D 0 0)); };
 
 test3 = { tt : T4 =>
   case tt
@@ -27,6 +31,18 @@ t2 = { tt : T2 =>
   case tt of $T2C1 a b -> b; end
 };
 
+// Ensure that arity is correct when pattern matching.
+t4 = {
+  expect_i1 false;
+  print_i1 (__COMPILES__ { tt : T2 =>
+                 case tt of $T2C1 _ b _ -> b; end
+           });
+
+  expect_i1 false;
+  print_i1 (__COMPILES__ case (1, 2) of (1, 2, 3) -> 1; end );
+};
+
+
 type case T2
   of $T2C1 Int32 Int32
 ;
@@ -35,5 +51,5 @@ type case T4
   of $T4A Int32 Int32
   of $T4B Int32 Int32
   of $T4C Int32 Int32
-  of $T4D Int32 Int32 
+  of $T4D Int32 Int32
 ;
