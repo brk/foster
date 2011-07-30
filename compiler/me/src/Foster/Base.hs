@@ -103,52 +103,6 @@ data Pattern =
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
-data LiteralInt = LiteralInt { litIntValue   :: Integer
-                             , litIntMinBits :: Int
-                             , litIntText    :: String
-                             , litIntBase    :: Int
-                             } deriving (Show)
-
--- | Example: bitStringOf 21 == "10101"
-bitStringOf n | n <= 1     = show n
-              | otherwise = bitStringOf (shiftR n 1) ++ lowBitOf n
-                     where lowBitOf n = if even n then "1" else "0"
-
--- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
-identPrefix (GlobalSymbol name) = name
-identPrefix (Ident name _)      = name
-
-data Ident = Ident        String Uniq
-           | GlobalSymbol String
-
-instance Ord Ident where
-    compare a b = compare (show a) (show b)
-
-instance Eq Ident where
-    i == j      =    (show i) == (show j)
-
-instance Show Ident where
-    show (Ident name number) = name ++ "!" ++ show number
-    show (GlobalSymbol name) = name
-
-data TypedId ty = TypedId { tidType :: ty, tidIdent :: Ident }
-
-instance (Show ty) => Show (TypedId ty)
-  where show (TypedId ty id) = show id ++ " :: " ++ show ty
-
-data Show ty => FosterPrim ty
-               = ILNamedPrim (TypedId ty)
-               | ILPrimOp { ilPrimOpName :: String
-                          , ilPrimOpSize :: Int }
-               | ILCoroPrim  CoroPrim ty ty
-            deriving (Show)
-
-data CoroPrim = CoroCreate | CoroInvoke | CoroYield
-            deriving (Show)
-
--- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
 data (Show ty) => DataType ty = DataType String [DataCtor ty] deriving Show
 data (Show ty) => DataCtor ty = DataCtor String [ty]          deriving Show
 
@@ -178,16 +132,6 @@ data ModuleAST fnCtor ty = ModuleAST {
         , moduleASTdataTypes   :: [DataType ty]
         , moduleASTsourceLines :: SourceLines
      }
-
-butnot :: Ord a => [a] -> [a] -> [a]
-butnot bs zs =
-    let sbs = Set.fromList bs in
-    let szs = Set.fromList zs in
-    Set.toList (Set.difference sbs szs)
-
-joinWith :: String -> [String] -> String
-joinWith s [] = ""
-joinWith s ss = foldr1 (++) (intersperse s ss)
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -301,3 +245,61 @@ mapFoldM (x:xs) b1 f = do
     (cs1, b2) <- f x b1
     (cs2, b3) <- mapFoldM xs b2 f
     return (cs1 ++ cs2, b3)
+
+-- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+butnot :: Ord a => [a] -> [a] -> [a]
+butnot bs zs =
+    let sbs = Set.fromList bs in
+    let szs = Set.fromList zs in
+    Set.toList (Set.difference sbs szs)
+
+joinWith :: String -> [String] -> String
+joinWith s [] = ""
+joinWith s ss = foldr1 (++) (intersperse s ss)
+
+-- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+data LiteralInt = LiteralInt { litIntValue   :: Integer
+                             , litIntMinBits :: Int
+                             , litIntText    :: String
+                             , litIntBase    :: Int
+                             } deriving (Show)
+
+-- | Example: bitStringOf 21 == "10101"
+bitStringOf n | n <= 1     = show n
+              | otherwise = bitStringOf (shiftR n 1) ++ lowBitOf n
+                     where lowBitOf n = if even n then "1" else "0"
+
+-- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+identPrefix (GlobalSymbol name) = name
+identPrefix (Ident name _)      = name
+
+data Ident = Ident        String Uniq
+           | GlobalSymbol String
+
+instance Ord Ident where
+    compare a b = compare (show a) (show b)
+
+instance Eq Ident where
+    i == j      =    (show i) == (show j)
+
+instance Show Ident where
+    show (Ident name number) = name ++ "!" ++ show number
+    show (GlobalSymbol name) = name
+
+data TypedId ty = TypedId { tidType :: ty, tidIdent :: Ident }
+
+instance (Show ty) => Show (TypedId ty)
+  where show (TypedId ty id) = show id ++ " :: " ++ show ty
+
+data Show ty => FosterPrim ty
+               = ILNamedPrim (TypedId ty)
+               | ILPrimOp { ilPrimOpName :: String
+                          , ilPrimOpSize :: Int }
+               | ILCoroPrim  CoroPrim ty ty
+            deriving (Show)
+
+data CoroPrim = CoroCreate | CoroInvoke | CoroYield
+            deriving (Show)
