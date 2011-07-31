@@ -20,68 +20,17 @@ import Foster.Context
 
 -----------------------------------------------------------------------
 
--- equateTypes first attempts to unify the two given types.
--- If unification fails, the provided error message (if any)
--- is printed along with the unification failure error message.
--- If unification succeeds, each unification variable in the two
--- types is updated according to the unification solution.
-equateTypes :: TypeAST -> TypeAST -> Maybe String -> Tc ()
-equateTypes t1 t2 msg = do
-  tcOnError (liftM out msg) (tcUnifyTypes t1 t2) (\(Just soln) -> do
-     let univars = concatMap collectUnificationVars [t1, t2]
-     forM_ univars (\m@(Meta u _ _) -> do
-       case Map.lookup u soln of
-         Nothing -> return ()
-         Just t2 -> do mt1 <- readTcMeta m
-                       case mt1 of Nothing -> writeTcMeta m t2
-                                   Just t1 -> equateTypes t1 t2 msg))
-  where
-     collectUnificationVars :: TypeAST -> [MetaTyVar]
-     collectUnificationVars x =
-         case x of
-             (NamedTypeAST s)     -> []
-             (TupleTypeAST types) -> concatMap collectUnificationVars types
-             (FnTypeAST s r cc cs)-> concatMap collectUnificationVars [s,r]
-             (CoroTypeAST s r)    -> concatMap collectUnificationVars [s,r]
-             (ForAllAST tvs rho)  -> collectUnificationVars rho
-             (TyVarAST tv)        -> []
-             (MetaTyVar m)        -> [m]
-             (RefTypeAST   ty)    -> collectUnificationVars ty
-             (ArrayTypeAST  ty)   -> collectUnificationVars ty
-
-
-typeJoinVars :: [AnnVar] -> (Maybe TypeAST) -> Tc [AnnVar]
-
-typeJoinVars vars (Nothing) = return $ vars
-
-typeJoinVars [var@(TypedId t v)] (Just u@(MetaTyVar m)) = do
-    equateTypes t u Nothing
-    return [var]
-
-typeJoinVars []   (Just u@(MetaTyVar m)) = do
-    equateTypes u (TupleTypeAST []) Nothing
-    return []
-
-typeJoinVars vars (Just (TupleTypeAST expTys)) = do
-    sanityCheck (List.length vars == List.length expTys)
-        ("Lengths of tuples must agree! Had " ++ show vars ++ " and " ++ show expTys)
-    sequence [equateTypes t e Nothing >> return (TypedId t v)
-             | ((TypedId t v), e) <- (List.zip vars expTys)]
-
-typeJoinVars vars (Just t) =
-  error $ "typeJoinVars not yet implemented for type " ++ show t ++ " against " ++ show vars
-
-extractBindings :: [AnnVar] -> Maybe TypeAST -> Tc [ContextBinding TypeAST]
-extractBindings fnProtoFormals maybeExpTy = do
-    let bindingForVar v = TermVarBinding (identPrefix $ tidIdent v) v
-    joinedVars <- typeJoinVars fnProtoFormals maybeExpTy
-    let bindings = map bindingForVar joinedVars
-    return bindings
-
 extendContext :: Context TypeAST -> [AnnVar] -> Maybe TypeAST -> Tc (Context TypeAST)
 extendContext ctx protoFormals expFormals = do
     bindings <- extractBindings protoFormals expFormals
     return $ prependContextBindings ctx bindings
+  where
+    extractBindings :: [AnnVar] -> Maybe TypeAST -> Tc [ContextBinding TypeAST]
+    extractBindings fnProtoFormals maybeExpTy = do
+        let bindingForVar v = TermVarBinding (identPrefix $ tidIdent v) v
+        joinedVars <- typeJoinVars fnProtoFormals maybeExpTy
+        let bindings = map bindingForVar joinedVars
+        return bindings
 
 sanityCheck :: Bool -> String -> Tc ()
 sanityCheck cond msg = if cond then return () else tcFails [outCSLn Red msg]
@@ -323,12 +272,12 @@ listize ty                 = [ty]
 typecheckTyApp ctx rng a t maybeExpTy = do
     ea <- typecheck ctx a Nothing
     case (typeAST ea) of
-      (ForAllAST tyvars rho) -> do --
+      ForAllAST tyvars rho -> do
         let tys = listize t
-        if (List.length tys /= List.length tyvars)
-          then tcFails [out $ "typecheckTyApp: arity mismatch"]
-          else let tyvarsAndTys = List.zip (map TyVarAST tyvars) tys in
-               return $ E_AnnTyApp rng (parSubstTy tyvarsAndTys rho) ea t
+        sanityCheck (List.length tys == List.length tyvars)
+                    "typecheckTyApp: arity mismatch"
+        let tyvarsAndTys = List.zip (map TyVarAST tyvars) tys
+        return $ E_AnnTyApp rng (parSubstTy tyvarsAndTys rho) ea t
       othertype ->
         tcFails [out $ "Cannot apply type args to expression of"
                    ++ " non-ForAll type "]
@@ -392,6 +341,8 @@ showtypes args expectedTypes = concatMap showtypes' (zip3 [1..] args expTypes)
 -- argtype = (i32, i32)
 -- eb       = foo
 -- basetype = (?a -> ?b) ((for top level functions))
+typecheckCallWithBaseFnType :: AnnTuple -> AnnExpr -> TypeAST -> SourceRange
+                            -> Tc AnnExpr
 typecheckCallWithBaseFnType argtup eb basetype range =
     case (basetype, typeAST (AnnTuple argtup))
       of
@@ -404,24 +355,15 @@ typecheckCallWithBaseFnType argtup eb basetype range =
 
          otherwise -> do
             ebStruct <- tcShowStructure eb
-            tcFails $ (out $ "CallAST w/o FnAST type: "):ebStruct:
+            tcFails $ (out $ "Called value was not a function: "):ebStruct:
                                        [out $ " :: " ++ (show $ typeAST eb)]
 
-vname n (E_VarAST rng ev) = show n ++ " for " ++ evarName ev
-vname n _                 = show n
+vname (E_VarAST rng ev) n = show n ++ " for " ++ evarName ev
+vname _                 n = show n
 
--- If we have an explicit redex (call to a literal function),
--- we can determine the types of the formals based on the actuals.
-typecheckCall ctx rng base@(E_FnAST f) args maybeExpTy = do
-   ea@(AnnTuple eargtup) <- typecheck ctx args Nothing
-   m <- newTcUnificationVar "call"
-   let expectedLambdaType = Just $ case maybeExpTy of
-        Nothing  -> mkFuncTy (typeAST ea) (MetaTyVar m)
-        (Just t) -> mkFuncTy (MetaTyVar m)     t
-
-   eb <- typecheck ctx base expectedLambdaType
-   trace ("typecheckCall with literal fn base, exp ty " ++ (show expectedLambdaType)) $
-    typecheckCallWithBaseFnType eargtup eb (typeAST eb) rng
+genUnificationVarsLike :: [a] -> (Int -> String) -> Tc [MetaTyVar]
+genUnificationVarsLike spine namegen = do
+  sequence [newTcUnificationVar (namegen n) | (_, n) <- zip spine [1..]]
 
 -- Otherwise, typecheck the function first, then the args.
 typecheckCall ctx rng base args maybeExpTy = do
@@ -447,7 +389,8 @@ typecheckCall ctx rng base args maybeExpTy = do
          -- to use as type arguments.
 
          -- Generate unification vars corresponding to the bound type variables
-         unificationVars <- sequence [newTcUnificationVar $ "type parameter" ++ vname n base | (_, n) <- zip tyvars [1..]]
+         unificationVars <- genUnificationVarsLike tyvars
+                                (\n -> "type parameter" ++ vname base n)
          let tyvarsAndMetavars = (List.zip (map TyVarAST tyvars)
                                           (map MetaTyVar unificationVars))
 
@@ -538,33 +481,35 @@ typecheckFn' ctx f cc expArgType expBodyType = do
                            (fnAstRange f)))
 
 -----------------------------------------------------------------------
+
+-- terrible, no good, very bad hack: we shouldn't just discard the meta ty var!
+typecheckTuple ctx exprs (Just (MetaTyVar mtv)) =
+ typecheckTuple ctx exprs Nothing
+
 typecheckTuple ctx exprs Nothing =
-  typecheckTuple' ctx exprs [Nothing | e <- exprs]
+                        typecheckTuple' ctx exprs [Nothing | _ <- exprs]
 
 typecheckTuple ctx exprs (Just (TupleTypeAST ts)) =
-    if length exprs /= length ts
-      then tcFails [out $ "typecheckTuple: length of tuple (" ++ (show $ length exprs) ++
-                        ") and expected tuple (" ++ (show $ length ts) ++
-                        ") types did not agree:\n"
-                            ++ show exprs ++ " versus \n" ++ show ts]
-      else typecheckTuple' ctx exprs [Just t | t <- ts]
-
--- terrible, no good, very bad hack
-typecheckTuple ctx exprs (Just (MetaTyVar mtv)) =
-  typecheckTuple' ctx exprs [Nothing | _ <- exprs]
+                        typecheckTuple' ctx exprs (map Just ts)
 
 typecheckTuple ctx es (Just ty)
     = tcFails [out $ "typecheck: tuple (" ++ show es ++ ") "
                 ++ "cannot check against non-tuple type " ++ show ty]
 
 typecheckTuple' ctx es ts = do
-        let ets = List.zip es ts -- :: [(ExprAST, TypeAST)]
-        let subactions = map (\(e,t) -> typecheck ctx e t) ets
-        results <- tcIntrospect (sequence subactions)
-        case results of
-          OK exprs -> let rng = rangeSpanOf (MissingSourceRange "typecheckTuple'") es in
-                      return (AnnTuple (E_AnnTuple rng exprs))
-          Errors errs -> tcFails errs
+        let rng = rangeSpanOf (MissingSourceRange "typecheckTuple'") es
+        exprs <- typecheckExprsTogether ctx es ts
+        return $ AnnTuple (E_AnnTuple rng exprs)
+
+-- Typechecks each expression in the same context
+typecheckExprsTogether ctx exprs expectedTypes = do
+  sanityCheck (length exprs == length expectedTypes)
+      ("typecheckExprsTogether: had different number of values ("
+         ++ (show $ length exprs)
+         ++ ") and expected types (" ++ (show $ length expectedTypes) ++
+           ")\n" ++ show exprs ++ " versus \n" ++ show expectedTypes)
+  mapM (\(e,mt) -> typecheck ctx e mt) (List.zip exprs expectedTypes)
+
 -----------------------------------------------------------------------
 
 typecheckInt :: SourceRange -> String -> Tc AnnExpr
@@ -599,8 +544,13 @@ typecheckInt rng originalText = do
             case splitString "_" noticks of
                 [first, base] -> return (first, read base)
                 [first]       -> return (first, 10)
-                otherwise     -> tcFails [outLn $
-                                    "Unable to parse integer literal " ++ text]
+                otherwise     -> tcFails
+                   [outLn $ "Unable to parse integer literal " ++ text]
+
+        splitString :: String -> String -> [String]
+        splitString needle haystack =
+            let textParts = T.splitOn (T.pack needle) (T.pack haystack) in
+            map T.unpack textParts
 
         -- Precondition: the provided string must be parseable in the given radix
         precheckedLiteralInt :: String -> Int -> String -> Int -> LiteralInt
@@ -617,29 +567,16 @@ typecheckInt rng originalText = do
 
 -----------------------------------------------------------------------
 
-splitString :: String -> String -> [String]
-splitString needle haystack =
-    let textParts = T.splitOn (T.pack needle) (T.pack haystack) in
-    map T.unpack textParts
-
-collectErrors :: Tc a -> Tc [Output]
-collectErrors tce =
-    Tc (\env -> do { result <- unTc env tce
-                   ; case result of
-                       OK expr     -> return (OK [])
-                       Errors ss -> return   (OK ss)
-                       })
-
-rename :: Ident -> Uniq -> Tc Ident
-rename (Ident p i) u = return (Ident p u)
-rename (GlobalSymbol name) _u =
-        tcFails [out $ "Cannot rename global symbol " ++ show name]
-
 uniquelyName :: TypedId t -> Tc (TypedId t)
 uniquelyName (TypedId ty id) = do
     uniq <- newTcUniq
     newid <- rename id uniq
     return (TypedId ty newid)
+  where
+    rename :: Ident -> Uniq -> Tc Ident
+    rename (Ident p i) u = return (Ident p u)
+    rename (GlobalSymbol name) _u =
+            tcFails [out $ "Cannot rename global symbol " ++ show name]
 
 verifyNonOverlappingVariableNames :: String -> [String] -> Tc ()
 verifyNonOverlappingVariableNames fnName varNames = do
@@ -651,4 +588,56 @@ verifyNonOverlappingVariableNames fnName varNames = do
         otherwise -> tcFails [out $ "Error when checking " ++ fnName
                                  ++ ": had duplicated formal parameter names: " ++ show duplicates]
 
+-----------------------------------------------------------------------
+
+-- equateTypes first attempts to unify the two given types.
+-- If unification fails, the provided error message (if any)
+-- is printed along with the unification failure error message.
+-- If unification succeeds, each unification variable in the two
+-- types is updated according to the unification solution.
+equateTypes :: TypeAST -> TypeAST -> Maybe String -> Tc ()
+equateTypes t1 t2 msg = do
+  tcOnError (liftM out msg) (tcUnifyTypes t1 t2) (\(Just soln) -> do
+     let univars = concatMap collectUnificationVars [t1, t2]
+     forM_ univars (\m@(Meta u _ _) -> do
+       case Map.lookup u soln of
+         Nothing -> return ()
+         Just t2 -> do mt1 <- readTcMeta m
+                       case mt1 of Nothing -> writeTcMeta m t2
+                                   Just t1 -> equateTypes t1 t2 msg))
+  where
+     collectUnificationVars :: TypeAST -> [MetaTyVar]
+     collectUnificationVars x =
+         case x of
+             (NamedTypeAST s)     -> []
+             (TupleTypeAST types) -> concatMap collectUnificationVars types
+             (FnTypeAST s r cc cs)-> concatMap collectUnificationVars [s,r]
+             (CoroTypeAST s r)    -> concatMap collectUnificationVars [s,r]
+             (ForAllAST tvs rho)  -> collectUnificationVars rho
+             (TyVarAST tv)        -> []
+             (MetaTyVar m)        -> [m]
+             (RefTypeAST   ty)    -> collectUnificationVars ty
+             (ArrayTypeAST  ty)   -> collectUnificationVars ty
+
+
+typeJoinVars :: [AnnVar] -> (Maybe TypeAST) -> Tc [AnnVar]
+
+typeJoinVars vars (Nothing) = return $ vars
+
+typeJoinVars [var@(TypedId t v)] (Just u@(MetaTyVar m)) = do
+    equateTypes t u Nothing
+    return [var]
+
+typeJoinVars []   (Just u@(MetaTyVar m)) = do
+    equateTypes u (TupleTypeAST []) Nothing
+    return []
+
+typeJoinVars vars (Just (TupleTypeAST expTys)) = do
+    sanityCheck (List.length vars == List.length expTys)
+        ("Lengths of tuples must agree! Had " ++ show vars ++ " and " ++ show expTys)
+    sequence [equateTypes t e Nothing >> return (TypedId t v)
+             | ((TypedId t v), e) <- (List.zip vars expTys)]
+
+typeJoinVars vars (Just t) =
+  error $ "typeJoinVars not yet implemented for type " ++ show t ++ " against " ++ show vars
 
