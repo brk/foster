@@ -41,37 +41,36 @@ assocFilterOut lst keys =
 -- unlike tySubst, this replaces arbitrary types with other types.
 parSubstTy :: [(TypeAST, TypeAST)] -> TypeAST -> TypeAST
 parSubstTy prvNextPairs ty =
+    let q = parSubstTy prvNextPairs in
     case ty of
-        (NamedTypeAST _)     -> fromMaybe ty $ List.lookup ty prvNextPairs
-        (RefTypeAST   t)   -> RefTypeAST   (parSubstTy prvNextPairs t)
-        (ArrayTypeAST t)   -> ArrayTypeAST (parSubstTy prvNextPairs t)
-        (TupleTypeAST types) -> (TupleTypeAST [parSubstTy prvNextPairs t | t <- types])
-        (FnTypeAST s t cc cs)-> (FnTypeAST (parSubstTy prvNextPairs s)
-                                           (parSubstTy prvNextPairs t)
-                                           cc cs) -- TODO unify calling convention?
-        (CoroTypeAST s t)   -> (CoroTypeAST (parSubstTy prvNextPairs s) (parSubstTy prvNextPairs t))
-        (ForAllAST tvs rho) -> let prvNextPairs' = prvNextPairs `assocFilterOut`
-                                                     [TyVarAST tv | tv <- tvs] in
-                            (ForAllAST tvs (parSubstTy prvNextPairs' rho))
+        (NamedTypeAST _) -> fromMaybe ty $ List.lookup ty prvNextPairs
         (TyVarAST tv)    -> fromMaybe ty $ List.lookup ty prvNextPairs
         (MetaTyVar mtv)  -> fromMaybe ty $ List.lookup ty prvNextPairs
 
+        (RefTypeAST   t)     -> RefTypeAST   (q t)
+        (ArrayTypeAST t)     -> ArrayTypeAST (q t)
+        (TupleTypeAST types) -> TupleTypeAST (map q types)
+        (FnTypeAST s t cc cs)-> FnTypeAST (q s) (q t) cc cs -- TODO unify calling convention?
+        (CoroTypeAST s t)    -> CoroTypeAST (q s) (q t)
+        (ForAllAST tvs rho)  ->
+                let prvNextPairs' = prvNextPairs `assocFilterOut`
+                                                   [TyVarAST tv | tv <- tvs]
+                in  ForAllAST tvs (parSubstTy prvNextPairs' rho)
 
 -- Replaces types for meta type variables (unification variables)
 -- according to the given type substitution.
 tySubst :: TypeSubst -> TypeAST -> TypeAST
 tySubst subst ty =
+    let q = tySubst subst in
     case ty of
         (NamedTypeAST s)     -> ty
-        (RefTypeAST    t)    -> RefTypeAST   (tySubst subst t)
-        (ArrayTypeAST  t)    -> ArrayTypeAST (tySubst subst t)
-        (TupleTypeAST types) -> (TupleTypeAST [tySubst subst t | t <- types])
-        (FnTypeAST s t cc cs)-> (FnTypeAST (tySubst subst s)
-                                           (tySubst subst t)
-                                           cc cs)
-        (CoroTypeAST s t)   -> (CoroTypeAST (tySubst subst s) (tySubst subst t))
-        (ForAllAST tvs rho) -> (ForAllAST tvs (tySubst subst rho))
-        (TyVarAST tv)       -> ty
+        (RefTypeAST    t)    -> RefTypeAST   (q t)
+        (ArrayTypeAST  t)    -> ArrayTypeAST (q t)
+        (TupleTypeAST types) -> TupleTypeAST (map q types)
+        (FnTypeAST s t cc cs)-> FnTypeAST (q s) (q t) cc cs
+        (CoroTypeAST s t)    -> CoroTypeAST (q s) (q t)
+        (ForAllAST tvs rho)  -> ForAllAST tvs (q rho)
+        (TyVarAST tv)        -> ty
         (MetaTyVar (Meta u tyref _))  -> Map.findWithDefault ty u subst
 
 tyEnvSubst :: Context TypeAST -> TypeSubst -> Context TypeAST
@@ -84,7 +83,9 @@ tyEnvSubst ctx tysub =
     ctx { contextBindings = newBindings }
 
 tySubstConstraints constraints tysub =
-    [TypeConstrEq (tySubst tysub t1) (tySubst tysub t2) | TypeConstrEq t1 t2 <- constraints]
+    map tySub constraints
+      where q = tySubst tysub
+            tySub (TypeConstrEq t1 t2) = TypeConstrEq (q t1) (q t2)
 
 -------------------------------------------------
 
