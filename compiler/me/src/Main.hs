@@ -10,32 +10,32 @@ main
 
 import System.Environment(getArgs,getProgName)
 import System.Console.GetOpt
-import System.Console.ANSI
+import System.Console.ANSI(Color(..))
 
 import qualified Data.ByteString.Lazy as L(readFile)
 
 import List(all)
 import Data.Map(Map)
 import qualified Data.Map as Map(fromList, unionsWith)
-import qualified Data.Set as Set
-import qualified Data.Graph as Graph
+import qualified Data.Set as Set(filter, toList, fromList)
+import qualified Data.Graph as Graph(SCC, flattenSCC, stronglyConnComp)
 import Data.Maybe(isNothing)
-import Data.Foldable(forM_)
-import Control.Monad.State
+import Control.Monad.State(forM, when, forM_)
 import Data.IORef(newIORef, readIORef)
 
 import Text.ProtocolBuffers(messageGet)
 
 import Foster.Base
-import Foster.ProtobufFE
-import Foster.ProtobufIL
+import Foster.ProtobufFE(parseSourceModule)
+import Foster.ProtobufIL(dumpModuleToProtobufIL)
 import Foster.ExprAST
 import Foster.TypeAST
-import Foster.AnnExpr
-import Foster.AnnExprIL
-import Foster.TypeIL
-import Foster.ILExpr
-import Foster.KNExpr
+import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn), AnnFn,
+                      fnNameA, annFnType, annFnIdent)
+import Foster.AnnExprIL(AIExpr, AIExpr(E_AIFn), ail)
+import Foster.TypeIL(TypeIL, ilOf, Fn)
+import Foster.ILExpr(showProgramStructure, closureConvertAndLift)
+import Foster.KNExpr(kNormalizeModule)
 import Foster.Typecheck
 import Foster.Context
 import Foster.Smallstep
@@ -43,20 +43,6 @@ import Foster.Smallstep
 -----------------------------------------------------------------------
 
 pair2binding (nm, ty) = TermVarBinding nm (TypedId ty (GlobalSymbol nm))
-
------------------------------------------------------------------------
-
-fnAstFreeVariables f bindings =
-   let allCalledFns = Set.fromList $ freeVars (fnAstBody f) in
-   -- remove names of primitive functions
-   let nonPrimitives = Set.filter (\var -> isNothing $ termVarLookup var bindings) allCalledFns in
-   -- remove recursive function name calls
-   Set.toList $ Set.filter (\name -> fnAstName f /= name) nonPrimitives
-
-buildCallGraph :: [FnAST] -> [ContextBinding ty] -> [Graph.SCC FnAST]
-buildCallGraph asts bindings = Graph.stronglyConnComp nodeList where
-  nodeList = map (\ast -> (ast, fnAstName ast,
-                           fnAstFreeVariables ast bindings)) asts
 
 -----------------------------------------------------------------------
 
@@ -96,6 +82,23 @@ typecheckFnSCC scc (ctx, tcenv) = do
         bindingForFnAST :: FnAST -> TypeAST -> ContextBinding TypeAST
         bindingForFnAST f t = pair2binding (fnAstName f, t)
 
+        inspect :: Context TypeAST -> OutputOr AnnExpr -> ExprAST -> IO Bool
+        inspect ctx typechecked ast =
+            case typechecked of
+                OK e -> do
+                    when (contextVerbose ctx) (do
+                        runOutput $ showStructure ast
+                        putStrLn $ "Successful typecheck!"
+                        runOutput $ showStructure e)
+                    return True
+                Errors errs -> do
+                    runOutput $ showStructure ast
+                    runOutput $ (outCSLn Red "Typecheck error: ")
+                    printOutputs errs
+
+                    do runOutput $ (outLn "")
+                    return False
+
 -- | Typechecking a module proceeds as follows:
 -- |  #. Build separate binding lists for the globally-defined primitiveDecls
 -- |     and the module's top-level (function) declarations.
@@ -113,10 +116,10 @@ typecheckModule verboseMode mod tcenv0 = do
     let declBindings = computeContextBindings (moduleASTdecls mod)
                     ++ computeContextBindings (concatMap extractCtorTypes $
                                                moduleASTdataTypes mod)
-    let sortedFns = buildCallGraph fns declBindings -- :: [SCC FnAST]
+    let callGraphList = buildCallGraphList fns declBindings
+    let sortedFns = Graph.stronglyConnComp callGraphList -- :: [SCC FnAST]
     putStrLn $ "Function SCC list : " ++
-                        show [(fnAstName f, fnAstFreeVariables f declBindings)
-                             | fns <- sortedFns, f <- Graph.flattenSCC fns]
+                   show [(name, frees) | (_, name, frees) <- callGraphList]
     let ctx0 = Context declBindings primBindings verboseMode
     (annFns, (ctx, tcenv)) <- mapFoldM sortedFns (ctx0, tcenv0) typecheckFnSCC
     unTc tcenv (convertTypeILofAST mod ctx annFns)
@@ -131,6 +134,19 @@ typecheckModule verboseMode mod tcenv0 = do
 
    ctorTypeAST dtName types =
         FnTypeAST (TupleTypeAST types) (NamedTypeAST dtName) FastCC FT_Proc
+
+   buildCallGraphList :: [FnAST] -> [ContextBinding ty]
+                      -> [(FnAST, String, [String])]
+   buildCallGraphList asts declBindings =
+     map (\ast -> (ast, fnAstName ast, fnAstFreeVariables ast)) asts
+       where
+         fnAstFreeVariables f =
+            let allCalledFns = Set.fromList $ freeVars (fnAstBody f) in
+            -- Remove everything that isn't a top-level binding.
+            let notTopLevel var = isNothing $ termVarLookup var declBindings in
+            let nonPrimitives = Set.filter notTopLevel allCalledFns in
+            -- remove recursive function name calls
+            Set.toList $ Set.filter (\name -> fnAstName f /= name) nonPrimitives
 
    convertTypeILofAST :: ModuleAST FnAST TypeAST
                       -> Context TypeAST
@@ -174,46 +190,34 @@ typecheckModule verboseMode mod tcenv0 = do
 
 printOutputs :: [Output] -> IO ()
 printOutputs outs =
-  Data.Foldable.forM_ outs $ \(output) ->
+  forM_ outs $ \(output) ->
     do
        runOutput $ output
        runOutput $ (outLn "")
-
-inspect :: Context TypeAST -> OutputOr AnnExpr -> ExprAST -> IO Bool
-inspect ctx typechecked ast =
-    case typechecked of
-        OK e -> do
-            when (contextVerbose ctx) (do
-                runOutput $ showStructure ast
-                putStrLn $ "Successful typecheck!"
-                runOutput $ showStructure e)
-            return True
-        Errors errs -> do
-            runOutput $ showStructure ast
-            runOutput $ (outCSLn Red "Typecheck error: ")
-            printOutputs errs
-
-            do runOutput $ (outLn "")
-            return False
 
 -----------------------------------------------------------------------
 
 getCtorInfo :: [DataType TypeAST] -> Map CtorName [CtorInfo TypeAST]
 getCtorInfo datatypes = Map.unionsWith (++) $ map getCtorInfoList datatypes
- where
-  getCtorInfoList :: DataType TypeAST -> Map CtorName [CtorInfo TypeAST]
-  getCtorInfoList (DataType name ctors) =
-        Map.fromList $ map (buildCtorInfo name) ctors
+  where
+    getCtorInfoList :: DataType TypeAST -> Map CtorName [CtorInfo TypeAST]
+    getCtorInfoList (DataType name ctors) =
+          Map.fromList $ map (buildCtorInfo name) ctors
 
-  buildCtorInfo :: DataTypeName -> DataCtor TypeAST
-                          -> (CtorName, [CtorInfo TypeAST])
-  buildCtorInfo name ctor =
-        (ctorNameOf ctor, [CtorInfo (ctorId name ctor) ctor])
+    buildCtorInfo :: DataTypeName -> DataCtor TypeAST
+                            -> (CtorName, [CtorInfo TypeAST])
+    buildCtorInfo name ctor =
+      case ctorIdFor name ctor of (n, c) -> (n, [CtorInfo c ctor])
 
-ctorId name (DataCtor ctorName n types) =
-  CtorId name ctorName (Prelude.length types) n
+-----------------------------------------------------------------------
 
-ctorNameOf (DataCtor ctorName _smallId _) = ctorName
+ctorIdFor name ctor = (ctorNameOf ctor, ctorId name ctor)
+  where
+    ctorNameOf (DataCtor ctorName _n _) = ctorName
+    ctorId name (DataCtor ctorName n types) =
+      CtorId name ctorName (Prelude.length types) n
+
+-----------------------------------------------------------------------
 
 dataTypeSigs :: [DataType TypeIL] -> Map CtorName DataTypeSig
 dataTypeSigs datatypes = Map.fromList $ map ctorIdSet datatypes where
@@ -221,8 +225,6 @@ dataTypeSigs datatypes = Map.fromList $ map ctorIdSet datatypes where
   ctorIdSet (DataType name ctors) =
       let ctorNameToIdMap = map (ctorIdFor name) ctors in
       (name, DataTypeSig (Map.fromList ctorNameToIdMap))
-
-  ctorIdFor name ctor = (ctorNameOf ctor, ctorId name ctor)
 
 -----------------------------------------------------------------------
 
@@ -253,6 +255,8 @@ getVerboseFlag ((f:fs), bs) =
                 Verbose -> True
                 otherwise   -> getVerboseFlag (fs, bs)
 
+-----------------------------------------------------------------------
+
 main :: IO ()
 main = do
   args <- getArgs
@@ -263,45 +267,58 @@ main = do
                 return (protobuf, outfile, flagVals)
          _ -> do
                 self <- getProgName
-                return (error $ "Usage: " ++ self ++ " path/to/infile.pb path/to/outfile.pb")
+                return (error $ "Usage: " ++ self
+                        ++ " path/to/infile.pb path/to/outfile.pb")
 
   case messageGet f of
-    Left msg -> error ("Failed to parse protocol buffer.\n"++msg)
+    Left msg -> error $ "Failed to parse protocol buffer.\n" ++ msg
     Right (pb_module, _) -> do
-        let sm = parseSourceModule pb_module
-        uniqref <- newIORef 1
-        varlist <- newIORef []
-        let tcenv = TcEnv { tcEnvUniqs = uniqref,
-                     tcUnificationVars = varlist,
-                             tcParents = [],
-                            tcCtorInfo = getCtorInfo (moduleASTdataTypes sm) }
         let verboseMode = getVerboseFlag flagVals
-        modResults  <- typecheckModule verboseMode sm tcenv
-        case modResults of
-            (OK (ctx_il, mod)) -> do
-                         when verboseMode (do
-                           metaTyVars <- readIORef varlist
-                           runOutput $ (outLn $ "generated " ++ (show $ length metaTyVars) ++ " meta type variables:")
-                           forM metaTyVars (\mtv@(Meta _ r _) -> do
-                               t <- readIORef r
-                               runOutput (outLn $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t))
+        typecheckSourceModule (parseSourceModule pb_module)
+                              outfile flagVals verboseMode
 
-                           runOutput $ (outLn "vvvv contextBindings:====================")
-                           runOutput $ (outCSLn Yellow (joinWith "\n" $ map show (contextBindings ctx_il))))
-                         let kmod = kNormalizeModule mod ctx_il
-                         let dataSigs = dataTypeSigs (moduleASTdataTypes mod)
-                         let prog = closureConvertAndLift ctx_il dataSigs kmod
-                         dumpModuleToProtobufIL prog (outfile ++ ".ll.pb")
-                         when verboseMode (do
-                             runOutput $ (outLn "/// ===================================")
-                             runOutput $ showProgramStructure prog
-                             runOutput $ (outLn "^^^ ==================================="))
-                         (case getInterpretFlag flagVals of
-                           Nothing -> return ()
-                           Just tmpDir -> do
-                              _unused <- interpretProg prog tmpDir
-                              return ())
-            Errors os -> do runOutput (outCSLn Red $ "Unable to type check input module:")
-                            printOutputs os
-                            error "compilation failed"
+typecheckSourceModule sm outfile flagVals verboseMode = do
+    uniqref <- newIORef 1
+    varlist <- newIORef []
+    let tcenv = TcEnv { tcEnvUniqs = uniqref,
+                 tcUnificationVars = varlist,
+                         tcParents = [],
+                        tcCtorInfo = getCtorInfo (moduleASTdataTypes sm) }
+    modResults  <- typecheckModule verboseMode sm tcenv
+    case modResults of
+      Errors os -> do runOutput (outCSLn Red $ "Unable to type check input module:")
+                      printOutputs os
+                      error "compilation failed"
+      OK (ctx_il, mod) -> do
+          when verboseMode (do
+              metaTyVars <- readIORef varlist
+              runOutput $ (outLn $ "generated " ++ (show $ length metaTyVars) ++ " meta type variables:")
+              forM metaTyVars (\mtv@(Meta _ r _) -> do
+                  t <- readIORef r
+                  runOutput (outLn $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t))
+
+              runOutput $ (outLn "vvvv contextBindings:====================")
+              runOutput $ (outCSLn Yellow (joinWith "\n" $ map show (contextBindings ctx_il))))
+          lowerModule mod ctx_il
+  where
+    lowerModule m ctx_il = do
+         let kmod = kNormalizeModule m ctx_il
+         let dataSigs = dataTypeSigs (moduleASTdataTypes m)
+         let prog = closureConvertAndLift ctx_il dataSigs kmod
+         dumpModuleToProtobufIL prog (outfile ++ ".ll.pb")
+
+         when verboseMode (do
+             runOutput $ (outLn "/// ===================================")
+             runOutput $ showProgramStructure prog
+             runOutput $ (outLn "^^^ ==================================="))
+
+         maybeInterpretProgram prog
+         return ()
+
+    maybeInterpretProgram prog = do
+        case getInterpretFlag flagVals of
+            Nothing -> return ()
+            Just tmpDir -> do
+                _unused <- interpretProg prog tmpDir
+                return ()
 
