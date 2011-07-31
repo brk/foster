@@ -21,69 +21,36 @@ import Foster.Context
 -----------------------------------------------------------------------
 
 extendContext :: Context TypeAST -> [AnnVar] -> Maybe TypeAST -> Tc (Context TypeAST)
+extendContext ctx [] Nothing = return ctx
 extendContext ctx protoFormals expFormals = do
-    bindings <- extractBindings protoFormals expFormals
+    bindings <- trace ("extendContext " ++ show protoFormals ++ "\n\t" ++ show expFormals) $
+                extractBindings protoFormals expFormals
     return $ prependContextBindings ctx bindings
   where
     extractBindings :: [AnnVar] -> Maybe TypeAST -> Tc [ContextBinding TypeAST]
     extractBindings fnProtoFormals maybeExpTy = do
-        let bindingForVar v = TermVarBinding (identPrefix $ tidIdent v) v
         joinedVars <- typeJoinVars fnProtoFormals maybeExpTy
-        let bindings = map bindingForVar joinedVars
-        return bindings
+        let bindingForVar v = TermVarBinding (identPrefix $ tidIdent v) v
+        return (map bindingForVar joinedVars)
 
 sanityCheck :: Bool -> String -> Tc ()
 sanityCheck cond msg = if cond then return () else tcFails [outCSLn Red msg]
-
-notRecursive boundName expr =
-  not (boundName `elem` freeVars expr && isFnAST expr)
-        where   isFnAST (E_FnAST _) = True
-                isFnAST _           = False
 
 typecheck :: Context TypeAST -> ExprAST -> Maybe TypeAST -> Tc AnnExpr
 typecheck ctx expr maybeExpTy =
   tcWithScope expr $
     do case expr of
-        E_BoolAST rng b ->
-          case maybeExpTy of
-            Nothing -> return (AnnBool rng b)
-            Just  t | t == fosBoolType
-                    -> return (AnnBool rng b)
-            Just  t -> tcFails [out $ "Unable to check Bool constant in context"
-                                   ++ " expecting non-Bool type " ++ show t
-                                   ++ showSourceRange rng]
-        E_IfAST rng a b c -> typecheckIf ctx rng a b c maybeExpTy
-        E_UntilAST rng a b -> do
-                aa <- typecheck ctx a (Just fosBoolType)
-                ab <- typecheck ctx b Nothing
-                equateTypes (typeAST aa) fosBoolType  (Just "E_Until: type of conditional wasn't boolean")
-                return $ AnnUntil rng (TupleTypeAST []) aa ab
-
-        E_FnAST f ->
-             typecheckFn ctx  f    maybeExpTy
-
-        E_CallAST rng base argtup ->
-             typecheckCall ctx rng base (E_TupleAST argtup) maybeExpTy
-
-        E_IntAST rng txt -> typecheckInt rng txt
-
-        E_LetRec rng bindings e mt ->
-            typecheckLetRec ctx rng bindings e mt
-
-        E_LetAST rng (TermBinding v a) e mt -> do
-            let boundName    = evarName v
-            let maybeVarType = evarMaybeType v
-            sanityCheck (notRecursive boundName a)
-                ("Recursive bindings should use 'rec', not 'let'"
-                                 ++ highlightFirstLine rng)
-            id <- tcFresh boundName
-            ea <- typecheck ctx  a maybeVarType
-            let annvar = TypedId (typeAST ea) id
-            let exptupletype = (fmap (\t -> TupleTypeAST [t]) maybeVarType)
-            ctx' <- extendContext ctx [annvar] exptupletype
-            ee <- typecheck ctx' e mt
-            return (AnnLetVar rng id ea ee)
-
+        E_IfAST rng a b c              -> typecheckIf   ctx rng a b c maybeExpTy
+        E_FnAST f                      -> typecheckFn   ctx f maybeExpTy
+        E_IntAST rng txt               -> typecheckInt rng txt
+        E_LetRec rng bindings e mt     -> typecheckLetRec ctx rng bindings e mt
+        E_LetAST rng binding  e mt     -> typecheckLet   ctx rng binding e mt
+        E_TupleAST (TupleAST rng exps) -> typecheckTuple ctx exps maybeExpTy
+        E_VarAST rng v                 -> typecheckVar   ctx rng (evarName v)
+        E_TyApp  rng e t               -> typecheckTyApp ctx rng e t maybeExpTy
+        E_Case   rng a branches        -> typecheckCase  ctx rng a branches maybeExpTy
+        E_CallAST rng base argtup      -> typecheckCall  ctx rng base
+                                                (E_TupleAST argtup) maybeExpTy
         E_AllocAST rng a -> do
           ea <- typecheck ctx a Nothing
           return (AnnAlloc rng ea)
@@ -107,28 +74,62 @@ typecheck ctx expr maybeExpTy =
             eb <- typecheck ctx b maybeExpTy
             return (AnnLetVar rng id ea eb)
 
-        E_SubscriptAST rng a b -> do ta <- typecheck ctx a Nothing
-                                     tb <- typecheck ctx b Nothing
-                                     typecheckSubscript ctx rng ta (typeAST ta) tb maybeExpTy
-        E_TupleAST (TupleAST rng exprs) -> typecheckTuple ctx exprs maybeExpTy
-        E_VarAST rng v        -> typecheckVar   ctx rng v
-        E_TyApp rng e t       -> typecheckTyApp ctx rng e t maybeExpTy
-        E_Case rng a branches -> typecheckCase  ctx rng a branches maybeExpTy
-        E_CompilesAST rng me -> case me of
-            Nothing -> return $ AnnCompiles rng (CompilesResult $ Errors [out $ "parse error"])
+        E_BoolAST rng b ->
+          case maybeExpTy of
+            Nothing -> return (AnnBool rng b)
+            Just  t | t == fosBoolType
+                    -> return (AnnBool rng b)
+            Just  t -> tcFails [out $ "Unable to check Bool constant in context"
+                                   ++ " expecting non-Bool type " ++ show t
+                                   ++ showSourceRange rng]
+        E_UntilAST rng a b -> do
+                aa <- typecheck ctx a (Just fosBoolType)
+                ab <- typecheck ctx b Nothing
+                equateTypes (typeAST aa) fosBoolType
+                           (Just "E_Until: type of conditional wasn't boolean")
+                return $ AnnUntil rng (TupleTypeAST []) aa ab
+
+        E_SubscriptAST rng a b -> do
+                ta <- typecheck ctx a Nothing
+                tb <- typecheck ctx b Nothing
+                typecheckSubscript ctx rng ta (typeAST ta) tb maybeExpTy
+
+        E_CompilesAST rng maybeExpr -> case maybeExpr of
+            Nothing -> return $ AnnCompiles rng (CompilesResult $
+                                                  Errors [out $ "parse error"])
             Just e -> do
                 outputOrE <- tcIntrospect (typecheck ctx e Nothing)
                 return $ AnnCompiles rng (CompilesResult outputOrE)
 
 -----------------------------------------------------------------------
-typecheckVar ctx rng v =
-  case termVarLookup (evarName v) (contextBindings ctx) of
+-- Resolve the given name as either a variable or a primitive reference.
+typecheckVar ctx rng name =
+  case termVarLookup name (contextBindings ctx) of
     Just avar@(TypedId t id) -> return $ E_AnnVar rng (TypedId t id)
     Nothing   ->
-      case termVarLookup (evarName v) (primitiveBindings ctx) of
+      case termVarLookup name (primitiveBindings ctx) of
         Just avar -> return $ AnnPrimitive rng avar
-        Nothing   -> tcFails [out $ "Unknown variable " ++ (evarName v)
+        Nothing   -> tcFails [out $ "Unknown variable " ++ name
                                  ++ showSourceRange rng]
+-----------------------------------------------------------------------
+notRecursive boundName expr =
+  not (boundName `elem` freeVars expr && isFnAST expr)
+        where   isFnAST (E_FnAST _) = True
+                isFnAST _           = False
+
+-- First typecheck the bound expression, then typecheck the
+-- scoped expression in an extended context.
+typecheckLet ctx rng (TermBinding v a) e mt = do
+    let boundName    = evarName v
+    let maybeVarType = evarMaybeType v
+    sanityCheck (notRecursive boundName a)
+        ("Recursive bindings should use 'rec', not 'let'"
+                         ++ highlightFirstLine rng)
+    id <- tcFresh boundName
+    ea <- typecheck ctx  a maybeVarType
+    ctx' <- extendContext ctx [TypedId (typeAST ea) id] Nothing
+    ee <- typecheck ctx' e mt
+    return (AnnLetVar rng id ea ee)
 -----------------------------------------------------------------------
 
 {-
