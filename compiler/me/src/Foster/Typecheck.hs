@@ -411,7 +411,7 @@ typecheckCall ctx rng base args maybeExpTy = do
              -- ((?a -> ?b) -> (Coro ?a ?b))
              let unifiableRhoType = parSubstTy tyvarsAndMetavars rho in
               -- ((t1 -> t2) -> (Coro t1 t2))
-             let substitutedFnType = tySubst unifiableRhoType tysub in
+             let substitutedFnType = tySubst tysub unifiableRhoType in
              -- eb[tyProjTypes]::substitutedFnType
              let annTyApp = E_AnnTyApp rng substitutedFnType eb (minimalTupleAST tyProjTypes)
                   where tyProjTypes = extractSubstTypes unificationVars tysub

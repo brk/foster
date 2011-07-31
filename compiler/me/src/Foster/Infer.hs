@@ -59,18 +59,18 @@ parSubstTy prvNextPairs ty =
 
 -- Replaces types for meta type variables (unification variables)
 -- according to the given type substitution.
-tySubst :: TypeAST -> TypeSubst -> TypeAST
-tySubst ty subst =
+tySubst :: TypeSubst -> TypeAST -> TypeAST
+tySubst subst ty =
     case ty of
         (NamedTypeAST s)     -> ty
-        (RefTypeAST    t)    -> RefTypeAST   (tySubst t subst)
-        (ArrayTypeAST  t)    -> ArrayTypeAST (tySubst t subst)
-        (TupleTypeAST types) -> (TupleTypeAST [tySubst t subst | t <- types])
-        (FnTypeAST s t cc cs)-> (FnTypeAST (tySubst s subst)
-                                           (tySubst t subst)
+        (RefTypeAST    t)    -> RefTypeAST   (tySubst subst t)
+        (ArrayTypeAST  t)    -> ArrayTypeAST (tySubst subst t)
+        (TupleTypeAST types) -> (TupleTypeAST [tySubst subst t | t <- types])
+        (FnTypeAST s t cc cs)-> (FnTypeAST (tySubst subst s)
+                                           (tySubst subst t)
                                            cc cs)
-        (CoroTypeAST s t)   -> (CoroTypeAST (tySubst s subst) (tySubst t subst))
-        (ForAllAST tvs rho) -> (ForAllAST tvs (tySubst rho subst))
+        (CoroTypeAST s t)   -> (CoroTypeAST (tySubst subst s) (tySubst subst t))
+        (ForAllAST tvs rho) -> (ForAllAST tvs (tySubst subst rho))
         (TyVarAST tv)       -> ty
         (MetaTyVar (Meta u tyref _))  -> Map.findWithDefault ty u subst
 
@@ -79,12 +79,12 @@ tyEnvSubst ctx tysub =
     let newBindings = map (\bind ->
                   case bind of
                     TermVarBinding str (TypedId ty id) ->
-                        TermVarBinding str (TypedId (tySubst ty tysub) id))
+                        TermVarBinding str (TypedId (tySubst tysub ty) id))
                   (contextBindings ctx) in
     ctx { contextBindings = newBindings }
 
 tySubstConstraints constraints tysub =
-    [TypeConstrEq (tySubst t1 tysub) (tySubst t2 tysub) | TypeConstrEq t1 t2 <- constraints]
+    [TypeConstrEq (tySubst tysub t1) (tySubst tysub t2) | TypeConstrEq t1 t2 <- constraints]
 
 -------------------------------------------------
 
