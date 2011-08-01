@@ -50,7 +50,7 @@ parSubstTy prvNextPairs ty =
         (RefTypeAST   t)     -> RefTypeAST   (q t)
         (ArrayTypeAST t)     -> ArrayTypeAST (q t)
         (TupleTypeAST types) -> TupleTypeAST (map q types)
-        (FnTypeAST s t cc cs)-> FnTypeAST (q s) (q t) cc cs -- TODO unify calling convention?
+        (FnTypeAST s t cc cs)-> FnTypeAST   (q s) (q t) cc cs -- TODO unify calling convention?
         (CoroTypeAST s t)    -> CoroTypeAST (q s) (q t)
         (ForAllAST tvs rho)  ->
                 let prvNextPairs' = prvNextPairs `assocFilterOut`
@@ -63,15 +63,15 @@ tySubst :: TypeSubst -> TypeAST -> TypeAST
 tySubst subst ty =
     let q = tySubst subst in
     case ty of
-        (NamedTypeAST s)     -> ty
+        (NamedTypeAST s)              -> ty
+        (TyVarAST tv)                 -> ty
+        (MetaTyVar (Meta u _tyref _)) -> Map.findWithDefault ty u subst
         (RefTypeAST    t)    -> RefTypeAST   (q t)
         (ArrayTypeAST  t)    -> ArrayTypeAST (q t)
         (TupleTypeAST types) -> TupleTypeAST (map q types)
-        (FnTypeAST s t cc cs)-> FnTypeAST (q s) (q t) cc cs
+        (FnTypeAST s t cc cs)-> FnTypeAST   (q s) (q t) cc cs
         (CoroTypeAST s t)    -> CoroTypeAST (q s) (q t)
         (ForAllAST tvs rho)  -> ForAllAST tvs (q rho)
-        (TyVarAST tv)        -> ty
-        (MetaTyVar (Meta u tyref _))  -> Map.findWithDefault ty u subst
 
 tyEnvSubst :: Context TypeAST -> TypeSubst -> Context TypeAST
 tyEnvSubst ctx tysub =

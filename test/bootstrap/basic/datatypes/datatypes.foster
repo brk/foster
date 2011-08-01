@@ -1,6 +1,17 @@
 main = {
   expect_i32 6;
   print_i32 (len (ones 6));
+
+  expect_i32 0;
+  print_i32 (ex2 (Nil32 !));
+
+  expect_i32 1;
+  print_i32 (ex2 (Cons32 0 (Nil32 !)));
+
+  expect_i32 2;
+  print_i32 (ex2 (Cons32 0 (Cons32 1 (Nil32 !))));
+
+  badcase ! ;
 };
 
 ones = { n : Int32 =>
@@ -11,19 +22,12 @@ ones = { n : Int32 =>
 };
 
 // occ [] switched on, both subtrees are leaves
-//ex1 = { z : Int32List => case z
-//    of $Nil32       -> 0
-//    of $Cons32 _ _  -> 1 // +Int32 (len ns)
-//  end
-//};
-
-// occ [] switched on, both subtrees are leaves
-//ex2 = { z : Int32List => case z
-//    of $Nil32                  -> 0
-//    of $Cons32 x ($Cons32 y z) -> 2
-//    of $Cons32 x ($Nil32) -> 1
-//  end
-//};
+ex2 = { z : Int32List => case z
+    of $Nil32                  -> 0
+    of $Cons32 x ($Cons32 y z) -> 2
+    of $Cons32 x ($Nil32)      -> 1
+  end
+};
 
 len = { z : Int32List =>
   case z
@@ -31,6 +35,16 @@ len = { z : Int32List =>
     of $Cons32 n ns -> 1 +Int32 (len ns)
     // of (n, ns)      -> n +Int32 (len ns) // should fail due to type mismatch
   end
+};
+
+badcase = { // ensure tuples are kept distinct from tuple-like values.
+  expect_i1 false;
+  print_i1 (__COMPILES__ { z : Int32List =>
+                  case z
+                    of $Cons32 n ns    -> 1 +Int32 (len ns)
+                    of         (n, ns) -> n +Int32 (len ns)
+                  end
+           });
 };
 
 type case Int32List
