@@ -37,6 +37,7 @@ checkargs () {
   case $@ in
     *--help*)
       echo "$0 [--by-file]"
+      echo "$0 [--runcloc <directory>]"
       exit
       ;;
     *--by-file*)
@@ -45,6 +46,12 @@ checkargs () {
       runcloc compiler/passes --by-file --not-match-f="_unittest.cpp"
       runcloc compiler/llvm   --by-file --not-match-f="_unittest.cpp"
       runcloc compiler/me     --by-file --not-match-f="_unittest.cpp"
+      exit
+      ;;
+    *--runcloc*)
+      shift
+      echo "runcloc $@     --by-file --not-match-f='_unittest.cpp'"
+            runcloc $@     --by-file --not-match-f="_unittest.cpp"
       exit
       ;;
   esac
