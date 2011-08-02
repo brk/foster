@@ -305,7 +305,6 @@ typecheckSourceModule sm outfile flagVals verboseMode = do
          let kmod = kNormalizeModule m ctx_il
          let dataSigs = dataTypeSigs (moduleASTdataTypes m)
          let prog = closureConvertAndLift ctx_il dataSigs kmod
-         dumpModuleToProtobufIL prog (outfile ++ ".ll.pb")
 
          when verboseMode (do
              runOutput $ (outLn "/// ===================================")
@@ -313,6 +312,9 @@ typecheckSourceModule sm outfile flagVals verboseMode = do
              runOutput $ (outLn "^^^ ==================================="))
 
          maybeInterpretProgram prog
+
+         dumpModuleToProtobufIL prog (outfile ++ ".ll.pb")
+
          return ()
 
     maybeInterpretProgram prog = do
