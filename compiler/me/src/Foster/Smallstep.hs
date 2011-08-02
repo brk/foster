@@ -218,6 +218,7 @@ data SSValue = SSBool      Bool
              | SSCtorVal   CtorId [SSValue]
              | SSLocation  Location
              | SSClosure   ILClosure [SSValue]
+             | SSRawProc   Ident
              | SSCoro      Coro
              deriving (Eq, Show)
 
@@ -259,6 +260,7 @@ data SSProcDef = SSProcDef { ssProcIdent      :: Ident
                            , ssProcBody       :: SSTerm
                            } deriving Show
 
+tryLookupProc :: MachineState -> Ident -> Maybe SSProcDef
 tryLookupProc gs id = Map.lookup id (stProcmap gs)
 
 -- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
@@ -293,9 +295,6 @@ envOf  gs = coroEnv  (stCoro gs)
 
 unit = (SSTmValue $ SSTuple [])
 
-trivialClosureForProc p =
-  SSClosure (ILClosure (ssProcIdent p) (error "proc env ident?") []) []
-
 -- Looks up the given id as either a local variable or a proc definition.
 getval :: MachineState -> Ident -> SSValue
 getval gs id =
@@ -303,7 +302,7 @@ getval gs id =
   case Map.lookup id env of
     Just v -> v
     Nothing -> case tryLookupProc gs id of
-      Just p -> trivialClosureForProc p
+      Just p -> SSRawProc (ssProcIdent p)
       Nothing ->
                error $ "Unable to get value for " ++ show id
                       ++ "\n\tenv (unsorted) is " ++ show env
@@ -402,9 +401,15 @@ stepExpr gs expr = do
            -- Call of known procedure; apply args directly.
            Just proc -> return (callProc gs proc args)
            Nothing ->
-             -- Call of closure; pass closure env as first parameter.
              case getval gs b of
-               (SSClosure clo env) ->
+               -- Higher-order usage of top-level function,
+               -- which doesn't take an environment parameter.
+               SSRawProc procid ->
+                        let (Just proc) = tryLookupProc gs procid in
+                        return (callProc gs proc args)
+
+               -- Call of closure; pass closure env as first parameter.
+               SSClosure clo env ->
                  case tryLookupProc gs (ilClosureProcIdent clo) of
                    Just proc -> return (callProc gs proc ((SSTuple env):args))
                    Nothing -> error $ "No proc for closure!"
@@ -753,7 +758,8 @@ display (SSArray a   )  = show a
 display (SSTuple vals)  = "(" ++ joinWith ", " (map display vals) ++ ")"
 display (SSLocation z)  = "<location " ++ show z ++ ">"
 display (SSCtorVal id vals) = "(" ++ show id ++ joinWith " " (map display vals) ++ ")"
-display (SSClosure _ _) = "<closure>"
+display (SSClosure c _) = "<closure " ++ (show $ ilClosureProcIdent c) ++ ">"
+display (SSRawProc  id) = "<proc " ++ show id ++ ">"
 display (SSCoro    _  ) = "<coro>"
 
 -- Declare some instances that are only needed in this module.
