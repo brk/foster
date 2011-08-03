@@ -202,7 +202,8 @@ typeKN (KNCase t _ _)      = t
 typeKN (KNVar v)           = tidType v
 typeKN (KNTyApp overallType tm tyArgs) = overallType
 
--- This instance is primarily needed as a prereq for KNExpr to be an AExpr.
+-- This instance is primarily needed as a prereq for KNExpr to be an AExpr,
+-- which ((childrenOf)) is needed in ILExpr for closedNamesOfKnFn.
 instance Structured KNExpr where
     textOf e width =
         let spaces = Prelude.replicate width '\SP'  in

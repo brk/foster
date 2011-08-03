@@ -52,6 +52,7 @@ data ILExpr =
         -- Creation of bindings
         | ILCase        TypeIL AIVar [(Pattern, ILExpr)] (DecisionTree ILExpr)
         | ILLetVal       Ident    ILExpr    ILExpr
+        -- This is equivalent to MinCaml's make_closure ... in M.
         | ILClosures    [Ident] [ILClosure] ILExpr
         -- Use of bindings
         | ILVar         AIVar
