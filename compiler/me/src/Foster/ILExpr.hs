@@ -137,28 +137,47 @@ closureConvert :: Context TypeIL -> KNExpr -> ILM ILExpr
 closureConvert ctx expr =
         let g = closureConvert ctx in
         case expr of
-            KNBool b          -> return $ ILBool b
-            KNInt t i         -> return $ ILInt t i
-            KNVar v           -> return $ ILVar v
-            KNAllocArray t v  -> return $ ILAllocArray t v
-            KNAlloc v         -> return $ ILAlloc v
-            KNDeref t v       -> return $ ILDeref t v
-            KNStore t a b     -> return $ ILStore t a b
-            KNArrayRead t a b -> return $ ILArrayRead t a b
-            KNArrayPoke a b c -> return $ ILArrayPoke a b c
-            KNTuple     vs    -> return $ ILTuple vs
-            KNCallPrim t p vs -> return $ ILCallPrim t p vs
-            KNAppCtor  t c vs -> return $ ILAppCtor  t c vs
-            KNCall     t b vs -> return $ ILCall     t b vs
+            -- These cases just swap the tag only. Boring!
+            KNBool       b      -> return $ ILBool       b
+            KNInt        t i    -> return $ ILInt        t i
+            KNVar        v      -> return $ ILVar        v
+            KNAllocArray t v    -> return $ ILAllocArray t v
+            KNAlloc      v      -> return $ ILAlloc      v
+            KNDeref      t v    -> return $ ILDeref      t v
+            KNStore      t a b  -> return $ ILStore      t a b
+            KNArrayRead  t a b  -> return $ ILArrayRead  t a b
+            KNArrayPoke  a b c  -> return $ ILArrayPoke  a b c
+            KNTuple      vs     -> return $ ILTuple      vs
+            KNCallPrim   t p vs -> return $ ILCallPrim   t p vs
+            KNAppCtor    t c vs -> return $ ILAppCtor    t c vs
+            KNCall       t b vs -> return $ ILCall       t b vs
 
+            -- These cases swap the tag and recur in uninteresting ways.
             KNTyApp t e argty -> do e' <- g e ; return $ ILTyApp t e' argty
             KNIf t v a b      -> do [a', b'] <- mapM g [a, b] ; return $ ILIf t v a' b'
             KNUntil t a b     -> do [a', b'] <- mapM g [a, b] ; return $ ILUntil t a' b'
 
-            KNLetVal id a b -> do a' <- closureConvert ctx  a
-                                  let extctx = prependILBinding (id, a') ctx
-                                  b' <- closureConvert extctx b
-                                  return $ ILLetVal id a' b'
+            -- Variable binding is relatively simple: we just
+            -- extend the context in between the two recursive calls.
+            KNLetVal id a b -> do
+                a' <- closureConvert ctx  a
+                let extctx = prependILBinding (id, a') ctx
+                b' <- closureConvert extctx b
+                return $ ILLetVal id a' b'
+
+            -- Pattern matching generalizes variable binding: Each branch
+            -- expression must be converted in a suitably extended context,
+            -- and while we're here, we also perform pattern match compilation.
+            KNCase t v bs -> do
+                let convertBranch (p, a) = do
+                       let bindings = patternBindings (p, tidType v)
+                       let extctx = prependContextBindings ctx bindings
+                       a' <- closureConvert extctx a
+                       return (p, a' )
+                ibs <- mapM convertBranch bs
+                allSigs <- gets ilmCtors
+                let dt = compilePatterns ibs allSigs
+                return $ ILCase t v ibs dt
 
             KNLetFuns ids fns e   -> do
                 cloEnvIds <- mapM (\id -> ilmFresh (".env." ++ identPrefix id)) ids
@@ -174,15 +193,6 @@ closureConvert ctx expr =
                 let (closures, _procdefs) = unzip combined
                 e' <- closureConvert extctx e
                 return $ ILClosures ids closures e'
-
-            KNCase t v bs -> do ibs <- mapM (\(p, a) -> do
-                                               let bindings = patternBindings (p, tidType v)
-                                               let extctx = prependContextBindings ctx bindings
-                                               a' <- closureConvert extctx a
-                                               return (p, a' )) bs
-                                allSigs <- gets ilmCtors
-                                let dt = compilePatterns ibs allSigs
-                                return $ ILCase t v ibs dt
 
 closureConvertedProc :: [AIVar] -> (Fn KNExpr) -> ILExpr -> ILM ILProcDef
 closureConvertedProc liftedProcVars f newbody = do
