@@ -18,6 +18,7 @@ Foster Notes
    llvm
    mutation
    parallelism
+   polymorphism
    compiled-examples
    coro
    gc

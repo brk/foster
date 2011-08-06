@@ -44,7 +44,7 @@ obviously useful. A few items of note:
 * C# or C++-style reference semantics could be implemented using
   the third technique; it remains to be seen whether
   reference semantics are actually needed or not.
-  
+
 * Actually, the double-pointer stack slot is only for consistency
   in Clang's generated code. There is no operator available to
   mutate the pointer in the stack slot independently of the object
@@ -454,126 +454,6 @@ Higher-rank types describe
 
 Higher-kinded types describe functions from types to types.
 
-
-
-
-Impredicative Polymorphism
---------------------------
-
-The value restriction in ML arises (in part?) because predicative polymorphism
-cannot assign the correct type to a reference to the identity function.
-The correct type is ``(ref (forall a (-> a a)))`` but with stratified
-polymorphism, the closest approximation is ``(forall a (ref (-> a a)))``
-which allows the writer and reader of such a mutable reference to disagree.
-
-Greg Morrisett lays out some other issues with compiling polymorphism:
-http://www.eecs.harvard.edu/~greg/cs256sp2005/lec15.txt
-
-To summarize, impredicative polymorphism is neeeded for encoding existentials,
-as well as polymorphic recursion and functions like Haskell's ``runST``.
-Predicative (let-) polymorphism favors runtime performance at the expense
-of compilation time and program expressiveness.
-
-I'm not entirely convinced that it's better to encode existentials with
-impredicative polymorphism versus directly including strong sums in the
-language. But I think the other arguments are sufficient to make full System F
-strongly worth considering.
-
-Here's (top-level) Haskellish pseudo code to illustrate some implementation
-issues/decisions to be made regarding impredicative polymorphism::
-
-    id :: forall a, (a -> a)
-    id x = x
-
-    app_f64 :: { f64 , (f64 -> f64) } -> f64
-    app_f64 x f = f x
-
-    app_gen1 :: forall a, { a , (a -> a) } -> a
-    app_gen1 x f = f x
-
-    app_gen2 :: forall b, {b , forall a, (a -> a) } -> b
-    app_gen2 x f = f x
-
-    issues :: forall a, (a -> a) -> ()
-    issues uid =
-    /* a */   uid [f64] 42.0
-    /* b */   app_f64 42.0 (uid [f64])
-    /* c */   app_gen1 [f64] 42.0 (uid [f64]])
-    /* d */   app_gen2 [f64] 42.0  uid
-
-    /* x */    id [f64] 42.0
-    /* y */   app_f64 42.0 ( id [f64])
-    /* z */   app_gen1 [f64] 42.0 ( id [f64]])
-    /* q */   app_gen2 [f64] 42.0   id
-    ) ; ()
-
-Inside the body of ``issues``, ``uid`` is bound to an unknown function.
-That implies that when ``uid`` is instantiated to (presumably) different
-result types, its implementation cannot be specialized for specific types.
-In other words, each argument must be passed in a general-purpose register.
-So e.g. on a 32-bit machine, a 64-bit floating point arg must be boxed.
-
-Line by line:
-
-* ``a``: ``uid [f64]`` is uniform, so ``42.0`` must be made uniform as well,
-  presumably by boxing.
-* ``b``: ``42.0`` need not be made uniform when it is passed to ``app_f64``,
-  but inside ``app_f64``, ``f`` is an unknown function. So now we have at least
-  two choices: if we pass our uniform function as-is to ``app_f64``, then we
-  are basically forced to box all parameters to all functions. Or,
-  we could instead create a wrapper with type ``(f64 -> f64)``:
-  ``uid_f64_wrapper unboxed_x = unbox(uid_generic(box(unboxed_x)))``.
-* ``c``: We have basically the same question, but now it applies to both
-  the (presumed "known") definition ``app_gen`` as well as the unknown ``uid``.
-  We could specialize ``app_gen`` to take an unboxed ``x`` arg, and
-  (independently) expect the function arg to take (un)boxed args.
-* ``d``: This mainly highlights the extra freedom given by ``app_gen1``.
-* ``x``: because we have the definition of ``id``, we can perform type
-  instantiation at compile time, producing a completely specialized ``id_f64``.
-* ``y``: see ``b``, only make the reverse decision...
-* ``z`` and ``q``: mostly as with ``c`` and ``d``.
-
-
-Polymorphic Recursion
-+++++++++++++++++++++
-
-The primary example of polymorphic recursion presented in
-Purely Functional Data Structures is::
-
-  type Seq = forall a, match
-                  case Nil
-                  case Zero (Seq (a,a))
-                  case One a (Seq (a,a))
-
-  cons x (One y ps) = Zero (cons (x,y) ps)
-
-Note that calling
-``cons :: int -> Seq int -> Seq int`` results in a recursive call with type
-``cons :: (int, int) -> Seq (int, int) -> Seq (int, int)``
-
-Okasaki notes that polymorphic recursion (i.e. higher-rank System F)
-implies undecidable inference without type signatures. Since we expect
-Foster code to have top-level type signatures, this shouldn't be an issue.
-
-Implementation Sketch
-+++++++++++++++++++++
-
-I'd prefer to avoid "requiring" JIT compilation for security,
-latency, and opportunity-cost reasons. (Using a JIT for a REPL instead of
-interpreting is of course orthogonally possible).
-This leaves monomorphization, uniform representation, coercions,
-and intensional polymorphism. At least to start, I think the right
-approach for Foster will be to simply make do with predicative polymorphism.
-Having the power of full System F would be nice, but it's not a core goal
-of the language, and the issues laid out by Morrisett are troubling.
-In particular, the implication of uniform source types seems to be creeping
-coercions or complicated type-passing schemes, and the alternative --
-non-uniform source-language types -- is (perhaps) even more unpleasant.
-
-Sadly, let-polymorphism is not the land of milk and honey, either.
-See the machinations Disciple had to go through to control generalization
-of "dangerous" type variables. But it's probably easier, on balance, than
-coming up with a completely satisfactory solution to compiling System F.
 
 Overloading
 -----------
