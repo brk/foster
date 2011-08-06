@@ -272,7 +272,7 @@ llvm::ConstantInt* getConstantInt8For(int8_t val) {
   return llvm::ConstantInt::get(Type::getInt8Ty(getGlobalContext()), val);
 }
 
-bool isPointerToFunction(const llvm::Type* p) {
+bool isFunctionPointerTy(const llvm::Type* p) {
   return p->isPointerTy()
       && p->getContainedType(0)->isFunctionTy();
 }

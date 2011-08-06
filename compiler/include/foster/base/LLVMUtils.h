@@ -63,7 +63,7 @@ const char* llvmValueTag(const llvm::Value* v);
 void markAsNonAllocating(llvm::CallInst* callInst);
 llvm::Constant* arrayVariableToPointer(llvm::GlobalVariable* arr);
 
-bool isPointerToFunction(const llvm::Type* p);
+bool isFunctionPointerTy(const llvm::Type* p);
 
 // returns true if p == t*
 bool isPointerToType(const llvm::Type* p, const llvm::Type* t);

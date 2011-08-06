@@ -400,6 +400,8 @@ llvm::Value* LLStore::codegen(CodegenPass* pass) {
 void trySetName(llvm::Value* v, const string& name) {
   if (v->getType()->isVoidTy()) {
     // Can't assign a name to void values in LLVM.
+  } else if (isFunctionPointerTy(v->getType())) {
+    // Don't want to rename functions!
   } else {
     v->setName(name);
   }
@@ -1054,7 +1056,7 @@ doLowLevelWrapperFnCoercions(const llvm::Type* expectedType,
   // 1) A C-linkage function which expects a bare function pointer.
   // 2) A Foster function which expects a closure value.
 
-  if (isPointerToFunction(expectedType)) {
+  if (isFunctionPointerTy(expectedType)) {
     // Do we want to codegen to handle automatic insertion
     // of type-coercion wrappers? For now, we'll require
     // strict type compatibility.
