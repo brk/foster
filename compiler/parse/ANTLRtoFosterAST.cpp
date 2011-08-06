@@ -272,15 +272,24 @@ void parseFormals(std::vector<Formal*>& formals, pTree tree) {
   }
 }
 
-// ^(VAL_ABS formals e_seq?)
+std::vector<string> parseTyVarNames(pTree t) {
+  std::vector<string> names;
+  for (size_t i = 0; i < getChildCount(t); ++i) {
+    names.push_back(textOfVar(child(t, i)));
+  }
+  return names;
+}
+
+// ^(VAL_ABS ^(FORMALS formals) ^(MU a+) e_seq?)
 ExprAST* parseValAbs(pTree tree) {
-  ASSERT(getChildCount(tree) == 2) << "Unable to parse empty body: "
+  ASSERT(getChildCount(tree) == 3) << "Unable to parse empty body: "
                                    << show(rangeOf(tree));
   std::vector<Formal*> formals;
   parseFormals(formals, child(tree, 0));
+  std::vector<string> tyVarNames = parseTyVarNames(child(tree, 1));
   TypeAST* resultType = NULL;
-  ExprAST* resultSeq =  parseSeq(child(tree, 1));
-  return new ValAbs(formals, resultSeq, resultType, rangeOf(tree));
+  ExprAST* resultSeq =  parseSeq(child(tree, 2));
+  return new ValAbs(formals, tyVarNames, resultSeq, resultType, rangeOf(tree));
 }
 
 ExprAST* parseTuple(pTree t) {

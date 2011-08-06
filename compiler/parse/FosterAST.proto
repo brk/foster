@@ -13,14 +13,13 @@ message SourceRange {
 
 message Type {
   enum Tag {
-    LLVM_NAMED = 1; // i32, void, etc
+    TYVAR = 1; // Type variable or constructor
     REF = 2;
     FN  = 3;
     CORO = 4;
     TUPLE = 5;
     CARRAY = 6;
     FORALL_TY = 7;
-    TYPE_VARIABLE = 8;
   }
 
   optional SourceRange range = 1;
@@ -94,8 +93,9 @@ message Expr {
   optional string name  = 24;
 
   // ValAbs
-  repeated Formal formals     = 25;
-  optional Type   result_type = 26;
+  repeated Formal formals      = 25;
+  optional Type   result_type  = 26;
+  repeated string type_formals = 27;
 
   // AnnTyApp
   optional Type ty_app_arg_type = 29;

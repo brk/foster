@@ -51,3 +51,15 @@ type case Int32List
   of $Nil32
   of $Cons32 Int32 Int32List
 ;
+
+type case Int32PairList
+  of $PNil32
+  of $PCons32 (Int32, Int32) Int32PairList
+;
+
+type case Int32TripleList
+  of $TNil32
+  of $TCons32 (Int32, Int32, Int32) Int32TripleList
+;
+
+

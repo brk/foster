@@ -366,7 +366,7 @@ genUnificationVarsLike :: [a] -> (Int -> String) -> Tc [MetaTyVar]
 genUnificationVarsLike spine namegen = do
   sequence [newTcUnificationVar (namegen n) | (_, n) <- zip spine [1..]]
 
--- Otherwise, typecheck the function first, then the args.
+-- Typecheck the function first, then the args.
 typecheckCall ctx rng base args maybeExpTy = do
    expectedLambdaType <- case maybeExpTy of
         Nothing  -> return $ Nothing
@@ -449,37 +449,57 @@ typecheckFn ctx f (Just t) = tcFails [out $
                 "Context of function literal expects non-function type: "
                                 ++ show t ++ highlightFirstLine (fnAstRange f)]
 
-typecheckFn' :: Context TypeAST -> FnAST -> CallConv -> Maybe TypeAST -> Maybe TypeAST -> Tc AnnExpr
+typecheckFn' :: Context TypeAST -> FnAST -> CallConv
+             -> Maybe TypeAST -> Maybe TypeAST -> Tc AnnExpr
 typecheckFn' ctx f cc expArgType expBodyType = do
-    let fnProtoRawFormals = fnFormals f
     let fnProtoName = fnAstName f
+    uniquelyNamedFormals <- getUniquelyNamedFormals (fnFormals f) fnProtoName
+
+    -- Typecheck the body of the function in a suitably extended context.
+    extCtx <- extendContext ctx uniquelyNamedFormals expArgType
+    annbody <- typecheck extCtx (fnAstBody f) expBodyType
+
     -- If the function has a return type annotation, use that;
     -- otherwise, we assume it has a monomorphic return type
     -- and determine the exact type via unification.
     fnProtoRetTy <- case fnRetType f of
-                          Nothing -> do u <- newTcUnificationVar $ "inf. ret type for " ++ fnProtoName
-                                        return $ MetaTyVar u
-                          Just t -> return t
-    _ <- verifyNonOverlappingVariableNames fnProtoName
-                                           (map (identPrefix.tidIdent) fnProtoRawFormals)
-    uniquelyNamedFormals <- mapM uniquelyName fnProtoRawFormals
-    extCtx <- extendContext ctx uniquelyNamedFormals expArgType
-    annbody <- typecheck extCtx (fnAstBody f) expBodyType
+                      Nothing -> do u <- newTcUnificationVar $
+                                         "inferred ret type for " ++ fnProtoName
+                                    return $ MetaTyVar u
+                      Just t -> return t
 
-    equateTypes fnProtoRetTy (typeAST annbody) (Just $ "return type/body type mismatch in " ++ fnProtoName)
+    -- Make sure the body (forcibly) agrees with the return type annotation.
+    equateTypes fnProtoRetTy (typeAST annbody)
+                    (Just $ "return type/body type mismatch in " ++ fnProtoName)
 
     formalVars <- typeJoinVars uniquelyNamedFormals expArgType
-    let argtypes = TupleTypeAST (map tidType formalVars)
-    let procOrFunc = if fnWasToplevel f then FT_Proc else FT_Func
-    let fnty = FnTypeAST argtypes (typeAST annbody) cc procOrFunc
 
+    -- Compute "base" function type, ignoring any type parameters.
+    let fnty0 = FnTypeAST argtypes (typeAST annbody) cc procOrFunc
+                where argtypes   = TupleTypeAST (map tidType formalVars)
+                      procOrFunc = if fnWasToplevel f then FT_Proc else FT_Func
+
+    -- If we have type parameters, wrap fnty0 in a forall type.
+    let fnty = case fnTyFormals f of
+                 []   -> fnty0
+                 vars -> ForAllAST (map BoundTyVar vars) fnty0
+
+    -- If we're type checking a top-level function binding,
+    -- update the type for the binding's unification variable.
     case termVarLookup fnProtoName (contextBindings ctx) of
       Nothing -> return ()
       Just av -> equateTypes fnty (tidType av) (Just "overall function types")
 
-    return (E_AnnFn (AnnFn fnty (GlobalSymbol fnProtoName)
+    return $ E_AnnFn (AnnFn fnty (GlobalSymbol fnProtoName)
                            formalVars annbody
-                           (fnAstRange f)))
+                           (fnAstRange f))
+
+-- | Verify that the given formals have distinct names,
+-- | and return unique'd versions of each.
+getUniquelyNamedFormals rawFormals fnProtoName = do
+    _ <- verifyNonOverlappingVariableNames fnProtoName
+                                         (map (identPrefix.tidIdent) rawFormals)
+    mapM uniquelyName rawFormals
 
 -----------------------------------------------------------------------
 

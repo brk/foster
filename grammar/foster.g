@@ -96,8 +96,10 @@ atom    :       // syntactically "closed" terms
   | '(' COMPILES e ')'                  -> ^(COMPILES e)
   | '(' 'ref' e ')'                     -> ^(REF e)     // allocation
   | '(' e (',' e)* ')'                  -> ^(TUPLE e+)  // tuples (products) (sguar: (a,b,c) == Tuple3 a b c)
-  | '{' (formal '=>')* e_seq? '}'       -> ^(VAL_ABS ^(FORMALS formal*) e_seq?) // value abstraction (terms indexed by terms)
-//      | '{' 'forall' a ':' k ',' e '}'        -> ^(TYP_ABS a k e) // type abstraction (terms indexed by types)
+  | '{' ('forall' a* ',')?
+        (formal '=>')* e_seq? '}'       -> ^(VAL_ABS ^(FORMALS formal*)
+                                                     ^(MU a*) e_seq?)
+                  // value + type abstraction (terms indexed by terms and types)
   | CASE e (OF pmatch)+ END             -> ^(CASE e pmatch+) // pattern matching
   ;
 

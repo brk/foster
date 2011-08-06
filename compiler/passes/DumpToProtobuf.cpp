@@ -160,6 +160,11 @@ void ValAbs::dump(DumpToProtobufPass* pass) {
   for (size_t i = 0; i < this->formals.size(); ++i) {
     dumpFormal(pass, pass->current->add_formals(), this->formals[i]);
   }
+
+  for (size_t i = 0; i < this->tyVarNames.size(); ++i) {
+    pass->current->add_type_formals(this->tyVarNames[i]);
+  }
+
   dumpChild(pass, pass->current->add_parts(), this->parts[0]);
   if (this->resultType) {
     DumpTypeToProtobufPass dt(pass->current->mutable_result_type());
@@ -331,10 +336,7 @@ void PrimitiveTypeAST::dump(DumpTypeToProtobufPass* pass) {
 }
 
 void NamedTypeAST::dump(DumpTypeToProtobufPass* pass) {
-  setTagAndRange(pass->current, this, pb::Type::LLVM_NAMED);
-  //string tyname = str(this->getLLVMType());
-  //ASSERT(!tyname.empty());
-  //pass->current->set_name(tyname);
+  setTagAndRange(pass->current, this, pb::Type::TYVAR);
   pass->current->set_name(this->name);
 }
 
@@ -343,8 +345,7 @@ void DataTypeAST::dump(DumpTypeToProtobufPass* pass) {
 }
 
 void TypeVariableAST::dump(DumpTypeToProtobufPass* pass) {
-  setTagAndRange(pass->current, this, pb::Type::TYPE_VARIABLE);
-  pass->current->set_name(this->getTypeVariableName());
+  ASSERT(false) << "no dumping type variables from front-end!";
 }
 
 void FnTypeAST::dump(DumpTypeToProtobufPass* pass) {

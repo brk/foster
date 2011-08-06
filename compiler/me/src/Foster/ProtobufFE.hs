@@ -20,6 +20,7 @@ import Data.Foldable(toList)
 
 import Control.Monad.State
 import Data.Set(Set)
+import Data.Char(isLower)
 
 import Text.ProtocolBuffers(isSet,getVal)
 import Text.ProtocolBuffers.Basic(uToString)
@@ -91,8 +92,10 @@ parseFn pbexpr = do range <- parseRange pbexpr
                     let name  = getName "fn" $ PbExpr.name pbexpr
                     let formals = toList $ PbExpr.formals pbexpr
                     let mretty = parseReturnType name pbexpr
-                    return $ (FnAST range name mretty (map parseFormal formals)
-                               body
+                    let tyformals = map uToString $
+                                        toList $ PbExpr.type_formals pbexpr
+                    return $ (FnAST range name tyformals mretty
+                               (map parseFormal formals) body
                                False) -- assume closure until proven otherwise
   where
      parseFormal (Formal u t) = TypedId (parseType t) (Ident (uToString u) 0)
@@ -289,10 +292,10 @@ parseExpr pbexpr =
    fn pbexpr
 
 toplevel :: FnAST -> FnAST
-toplevel (FnAST a b c d e False) = FnAST a b c d e True
-toplevel (FnAST _ _ _ _ _ True ) =
+toplevel f | fnWasToplevel f =
         error $ "Broken invariant: top-level functions " ++
                 "should not have their top-level bit set before we do it!"
+toplevel f = f { fnWasToplevel = True }
 
 parseDataCtor :: (Int, DataCtor.DataCtor) -> FE (Foster.Base.DataCtor TypeAST)
 parseDataCtor (n, ct) = do
@@ -328,12 +331,14 @@ sourceLines sm = SourceLines (fmapDefault pUtf8ToText (SourceModule.line sm))
 parseType :: Type -> TypeAST
 parseType t =
     case PbType.tag t of
-         PbTypeTag.LLVM_NAMED -> NamedTypeAST $ (getName "type name" $ PbType.name t)
+         PbTypeTag.TYVAR ->
+                let name@(c:_) = (getName "type name" $ PbType.name t) in
+                if isLower c then TyVarAST (BoundTyVar name)
+                             else NamedTypeAST name
          PbTypeTag.REF -> error "Ref types not yet implemented"
          PbTypeTag.FN -> fromMaybe (error "Protobuf node tagged FN without fnty field!")
                                    (fmap parseFnTy $ PbType.fnty t)
          PbTypeTag.TUPLE -> TupleTypeAST [parseType p | p <- toList $ PbType.type_parts t]
-         PbTypeTag.TYPE_VARIABLE -> error "Type variable parsing not yet implemented."
          PbTypeTag.CORO -> error "Parsing for CORO type not yet implemented"
          PbTypeTag.CARRAY -> error "Parsing for CARRAY type not yet implemented"
          PbTypeTag.FORALL_TY -> error "Parsing for FORALL_TY type not yet implemented"

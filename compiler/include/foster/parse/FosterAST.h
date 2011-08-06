@@ -222,11 +222,15 @@ struct Formal {
 
 struct ValAbs : public ExprAST {
   std::vector<Formal*> formals;
+  std::vector<string> tyVarNames;
   TypeAST* resultType;
   string name;
-  explicit ValAbs(std::vector<Formal*> formals, ExprAST* body,
+  explicit ValAbs(std::vector<Formal*> formals,
+                  std::vector<string> tyVarNames,
+                  ExprAST* body,
                   TypeAST* resultType, foster::SourceRange sourceRange)
-  : ExprAST("ValAbs", sourceRange), formals(formals), resultType(resultType) {
+  : ExprAST("ValAbs", sourceRange), formals(formals), tyVarNames(tyVarNames),
+    resultType(resultType) {
      parts.push_back(body);
   }
 

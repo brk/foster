@@ -43,6 +43,7 @@ data TupleAST = TupleAST { tupleAstRange :: SourceRange
 
 data FnAST  = FnAST { fnAstRange :: SourceRange
                     , fnAstName  :: String
+                    , fnTyFormals:: [String]
                     , fnRetType  :: Maybe TypeAST
                     , fnFormals  :: [AnnVar]
                     , fnAstBody  :: ExprAST
