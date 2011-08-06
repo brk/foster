@@ -35,6 +35,7 @@ data Show a =>
    SwitchCase a = SwitchCase [(CtorId, DecisionTree a)]
                                (Maybe (DecisionTree a))
                   deriving (Show)
+
 -- Avoiding all these type parameters is actually a
 -- pretty good use case for parameterized modules!
 data Show a =>

@@ -9,9 +9,9 @@ module Foster.ILExpr where
 import Debug.Trace(trace)
 import Control.Monad.State
 import Data.Set(Set)
-import Data.Set as Set(fromList, toList, difference, member)
+import Data.Set as Set(fromList, toList, difference, member, empty)
 import Data.Map(Map)
-import qualified Data.Map as Map((!), insert, member, findWithDefault,
+import qualified Data.Map as Map((!), insert, member, findWithDefault, lookup,
                                  empty, keys, elems, fromList)
 
 import Foster.Base
@@ -32,10 +32,15 @@ data ILClosure = ILClosure { ilClosureProcIdent :: Ident
                            , ilClosureEnvIdent  :: Ident
                            , ilClosureCaptures  :: [AIVar] } deriving Show
 
-data ILProgram = ILProgram [ILProcDef] [ILDecl] [DataType TypeIL] SourceLines
+data ILProgram = ILProgram (Map Ident ILProcDef)
+                           [ILDecl]
+                           [DataType TypeIL]
+                           SourceLines
+
 data ILDecl    = ILDecl String TypeIL deriving (Show)
 
 data ILProcDef = ILProcDef { ilProcReturnType :: TypeIL
+                           , ilProcPolyTyVars :: (Maybe [TyVar])
                            , ilProcIdent      :: Ident
                            , ilProcVars       :: [AIVar]
                            , ilProcRange      :: SourceRange
@@ -76,7 +81,7 @@ data ILAllocInfo = ILAllocInfo AllocMemRegion (Maybe AIVar)
 
 showProgramStructure :: ILProgram -> Output
 showProgramStructure (ILProgram procdefs decls _dtypes _lines) =
-    concatMap showProcStructure procdefs
+    concatMap showProcStructure (Map.elems procdefs)
 
 procVarDesc (TypedId ty id) = "( " ++ (show id) ++ " :: " ++ show ty ++ " ) "
 
@@ -84,6 +89,7 @@ showProcStructure proc =
     out (show $ ilProcIdent proc) ++ (out " // ")
         ++ (out $ show $ map procVarDesc (ilProcVars proc))
         ++ (out " @@@ ") ++ (out $ show $ ilProcCallConv proc)
+        ++ (out " ==> ") ++ (out $ show $ ilProcReturnType proc)
         ++ (out "\n") ++  showStructure (ilProcBody proc)
       ++ out "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"
 
@@ -93,6 +99,7 @@ data ILMState = ILMState {
     ilmUniq    :: Uniq
   , ilmGlobals :: KnownVars
   , ilmProcDefs :: Map Ident ILProcDef
+  , ilmKnownPoly :: Set Ident
   , ilmCtors   :: DataTypeSigs
 }
 
@@ -111,24 +118,28 @@ ilmPutProc p_action = do
         put (old { ilmProcDefs = newDefs })
         return p
 
+ilmGetProc :: Ident -> ILM (Maybe ILProcDef)
+ilmGetProc id = do
+        old <- get
+        return $ Map.lookup id (ilmProcDefs old)
+
 fakeCloEnvType = TupleTypeIL []
 
 closureConvertAndLift :: Context TypeIL -> DataTypeSigs
-                      -> (ModuleAST (Fn KNExpr) TypeIL)
+                      -> (ModuleIL KNExpr TypeIL)
                       -> ILProgram
 closureConvertAndLift ctx dataSigs m =
-    let fns = moduleASTfunctions m in
-    let decls = map (\(s,t) -> ILDecl s t) (moduleASTdecls m) in
+    let fns = moduleILfunctions m in
+    let decls = map (\(s,t) -> ILDecl s t) (moduleILdecls m) in
     -- We lambda lift top level functions, since we know they don't have any "real" free vars.
     -- Lambda lifting wiil closure convert nested functions.
     let nameOfBinding (TermVarBinding s _) = s in
     let globalVars   = Set.fromList $ map nameOfBinding (contextBindings ctx) in
     let procsILM     = forM fns (\fn -> lambdaLift ctx fn []) in
-    let dataTypes    = moduleASTdataTypes m in
-    let initialState = ILMState 0 globalVars Map.empty dataSigs in
+    let dataTypes    = moduleILdataTypes m in
+    let initialState = ILMState 0 globalVars Map.empty Set.empty dataSigs in
     let newstate     = execState procsILM initialState in
-    let procdefs     = Map.elems (ilmProcDefs newstate) in
-    ILProgram procdefs decls dataTypes (moduleASTsourceLines m)
+    ILProgram (ilmProcDefs newstate) decls dataTypes (moduleILsourceLines m)
 
 prependILBinding :: (Ident, ILExpr) -> Context TypeIL -> Context TypeIL
 prependILBinding (id, ile) ctx =
@@ -157,9 +168,7 @@ closureConvert ctx expr =
             KNAppCtor    t c vs -> return $ ILAppCtor    t c vs
             KNCall       t b vs -> return $ ILCall       t b vs
 
-            KNTyApp t e argty -> do
-                e' <- g e
-                return $ ILTyApp t e' argty
+            KNTyApp t e argty -> do e' <- g e ; return $ ILTyApp t e' argty
 
             -- These cases swap the tag and recur in uninteresting ways.
             KNIf t v a b      -> do [a', b'] <- mapM g [a, b] ; return $ ILIf t v a' b'
@@ -187,26 +196,34 @@ closureConvert ctx expr =
                 let dt = compilePatterns ibs allSigs
                 return $ ILCase t v ibs dt
 
-            KNLetFuns ids fns e   -> do
-                cloEnvIds <- mapM (\id -> ilmFresh (".env." ++ identPrefix id)) ids
+            KNLetFuns ids fns e -> closureConvertLetFuns ids fns e ctx
 
-                let cloEnvBinding id = TermVarBinding (identPrefix id) (TypedId fakeCloEnvType id)
-                let extctx = prependContextBindings ctx (map cloEnvBinding cloEnvIds)
+closureConvertLetFuns ids fns e ctx = do
+    cloEnvIds <- mapM (\id -> ilmFresh (".env." ++ identPrefix id)) ids
 
-                let infoMap = Map.fromList (zip ids (zip fns cloEnvIds))
-                let idfns = zip ids fns
+    let cloEnvBinding id = TermVarBinding (identPrefix id) (TypedId fakeCloEnvType id)
+    let extctx = prependContextBindings ctx (map cloEnvBinding cloEnvIds)
 
-                closedNms <- mapM (closedNamesOfKnFn    infoMap) idfns
-                combined  <- mapM (closureOfKnFn extctx infoMap) (zip closedNms idfns)
-                let (closures, _procdefs) = unzip combined
-                e' <- closureConvert extctx e
-                return $ ILClosures ids closures e'
+    let infoMap = Map.fromList (zip ids (zip fns cloEnvIds))
+    let idfns = zip ids fns
 
-closureConvertedProc :: [AIVar] -> (Fn KNExpr) -> ILExpr -> ILM ILProcDef
+    closedNms <- mapM (closedNamesOfKnFn    infoMap) idfns
+    combined  <- mapM (closureOfKnFn extctx infoMap) (zip closedNms idfns)
+    let (closures, _procdefs) = unzip combined
+    e' <- closureConvert extctx e
+    return $ ILClosures ids closures e'
+
+closureConvertedProc :: [AIVar] -> (Fn KNExpr TypeIL) -> ILExpr -> ILM ILProcDef
 closureConvertedProc liftedProcVars f newbody = do
     let (TypedId ft id) = fnVar f
-    return $ ILProcDef (fnTypeILRange ft) id liftedProcVars
-              (fnRange f) FastCC newbody
+    case ft of
+        FnTypeIL ftd ftrange _ _ ->
+            return $ ILProcDef ftrange Nothing       id liftedProcVars
+                      (fnRange f) FastCC newbody
+        ForAllIL tyvars (FnTypeIL ftd ftrange _ _) ->
+            return $ ILProcDef ftrange (Just tyvars) id liftedProcVars
+                      (fnRange f) FastCC newbody
+        _ -> error $ "Expected closure converted proc to have fntype, had " ++ show ft
 
 -- For example, if we have something like
 --      let y = blah in ( (\x -> x + y) foobar )
@@ -214,7 +231,7 @@ closureConvertedProc liftedProcVars f newbody = do
 -- we can rewrite the lambda to a closed proc:
 --      letproc p = \y x -> x + y
 --      let y = blah in p(y, foobar)
-lambdaLift :: Context TypeIL -> (Fn KNExpr) -> [AIVar] -> ILM ILProcDef
+lambdaLift :: Context TypeIL -> (Fn KNExpr TypeIL) -> [AIVar] -> ILM ILProcDef
 lambdaLift ctx f freeVars =
     let liftedProcVars = freeVars ++ fnVars f in
     let extctx = prependContextBindings ctx (bindingsForVars liftedProcVars) in
@@ -240,9 +257,9 @@ contextVar dbg ctx s =
 excluding :: Ord a => [a] -> Set a -> [a]
 excluding bs zs =  Set.toList $ Set.difference (Set.fromList bs) zs
 
-type InfoMap = Map Ident ((Fn KNExpr), Ident)
+type InfoMap = Map Ident ((Fn KNExpr TypeIL), Ident)
 
-instance (AExpr expr) => AExpr (Fn expr) where
+instance (AExpr expr) => AExpr (Fn expr t) where
     freeIdents f = let bodyvars =  freeIdents (fnBody f) in
                    let boundvars = map tidIdent (fnVars f) in
                    bodyvars `butnot` boundvars
@@ -258,7 +275,7 @@ instance AExpr KNExpr where
         _               -> concatMap freeIdents (childrenOf e)
 
 closedNamesOfKnFn :: InfoMap
-                  -> (Ident, (Fn KNExpr))
+                  -> (Ident, (Fn KNExpr TypeIL))
                   -> ILM [FreeName]
 closedNamesOfKnFn infoMap (self_id, fn) = do
     -- ids are the names of the recursively bound functions
@@ -286,7 +303,7 @@ closedNamesOfKnFn infoMap (self_id, fn) = do
 
 closureOfKnFn :: Context TypeIL
                -> InfoMap
-               -> ([FreeName], (Ident, (Fn KNExpr)))
+               -> ([FreeName], (Ident, (Fn KNExpr TypeIL)))
                -> ILM (ILClosure, ILProcDef)
 closureOfKnFn ctx0 infoMap (closedNames, (self_id, fn)) = do
     let extctx = prependContextBindings ctx0 (bindingsForVars (fnVars fn))
@@ -302,7 +319,8 @@ closureOfKnFn ctx0 infoMap (closedNames, (self_id, fn)) = do
          --trace ("raw closedNames for " ++ show self_id ++  ":" ++ (show $ freeIdents (E_AIFn fn))) $
         (ILClosure (ilProcIdent newproc) envVar capturedVars, newproc)
   where
-    closureConvertFn :: Context TypeIL -> Fn KNExpr -> InfoMap -> [FreeName] -> ILM (Ident, ILProcDef)
+    closureConvertFn :: Context TypeIL -> Fn KNExpr TypeIL
+                     -> InfoMap -> [FreeName] -> ILM (Ident, ILProcDef)
     closureConvertFn ctx f info freeNames = do
         let envId        = snd (info Map.! self_id)
         let uniqFreeVars = map (contextVar "closureConvertKnFnUFV" ctx) freeNames

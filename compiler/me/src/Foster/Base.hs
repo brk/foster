@@ -130,6 +130,19 @@ data ModuleAST fnCtor ty = ModuleAST {
         , moduleASTsourceLines :: SourceLines
      }
 
+data Fn expr ty = Fn { fnVar   :: TypedId ty
+                     , fnVars  :: [TypedId ty]
+                     , fnBody  :: expr
+                     , fnRange :: SourceRange
+                     } deriving (Show)
+
+data ModuleIL expr ty = ModuleIL {
+          moduleILfunctions   :: [Fn expr ty]
+        , moduleILdecls       :: [(String, ty)]
+        , moduleILdataTypes   :: [DataType ty]
+        , moduleILsourceLines :: SourceLines
+     }
+
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 data ESourceLocation = ESourceLocation { sourceLocationLine :: Int

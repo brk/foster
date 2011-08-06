@@ -16,6 +16,7 @@ import Foster.ProtobufUtils
 
 import qualified Data.ByteString.Lazy as L(writeFile)
 import Data.Sequence as Seq(fromList)
+import Data.Map as Map(elems)
 
 import Text.ProtocolBuffers(messagePut)
 
@@ -360,7 +361,7 @@ dumpDecl (ILDecl s t) =
 dumpProgramToModule :: ILProgram -> Module
 dumpProgramToModule (ILProgram procdefs decls datatypes (SourceLines lines)) =
     Module   { modulename = u8fromString $ "foo"
-             , procs      = fromList [dumpProc p | p <- procdefs]
+             , procs      = fromList [dumpProc p | p <- Map.elems procdefs]
              , val_decls  = fromList (map dumpDecl decls)
              , typ_decls  = fromList (map dumpDataTypeDecl datatypes)
              , modlines   = fmap textToPUtf8 lines

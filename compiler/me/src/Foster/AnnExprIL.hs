@@ -27,14 +27,13 @@ data AIExpr=
           AIBool       Bool
         | AIInt        TypeIL LiteralInt
         | AITuple      [AIExpr]
-        | E_AIFn       (Fn AIExpr)
         -- Control flow
         | AIIf         TypeIL AIExpr AIExpr AIExpr
         | AIUntil      TypeIL AIExpr AIExpr
         -- Creation of bindings
         | AICase       TypeIL AIExpr [(Pattern, AIExpr)]
         | AILetVar     Ident AIExpr AIExpr
-        | AILetFuns    [Ident] [Fn AIExpr] AIExpr
+        | AILetFuns    [Ident] [Fn AIExpr TypeIL] AIExpr
         -- Use of bindings
         | E_AIVar      (TypedId TypeIL)
         | E_AIPrim     ILPrim
@@ -127,8 +126,12 @@ ail ae =
         E_AnnVar _rng v -> do vv <- aiVar v
                               return $ E_AIVar vv
 
-        E_AnnFn annFn              -> do aif <- fnOf annFn
-                                         return $ E_AIFn aif
+        E_AnnFn annFn       -> do fn_id <- tcFresh "lit_fn"
+                                  aiFn <- fnOf annFn
+                                  let (TypedId t i) = fnVar aiFn
+                                  let fnvar = E_AIVar $ (TypedId t fn_id)
+                                  return $ AILetFuns [fn_id] [aiFn] fnvar
+
         E_AnnTyApp _rng t e argty  -> do ti <- ilOf t
                                          at <- ilOf argty
                                          ae <- q e
@@ -147,7 +150,7 @@ ilPrimFor ti id =
 aiVar (TypedId t i) = do ty <- ilOf t
                          return $ TypedId ty i
 
-fnOf :: AnnFn -> Tc (Fn AIExpr)
+fnOf :: AnnFn -> Tc (Fn AIExpr TypeIL)
 fnOf f = do
  ft <- ilOf (annFnType f)
  fnVars <- mapM aiVar (annFnVars f)
@@ -169,7 +172,7 @@ instance Structured AIExpr where
             AIUntil   t  a b      -> [a, b]
             AIInt {}              -> []
             AILetVar _ a b        -> [a, b]
-            AILetFuns ids fns e   -> (map E_AIFn fns) ++ [e]
+            AILetFuns ids fns e   -> (map fnBody fns) ++ [e]
             AIAllocArray t a      -> [a]
             AIAlloc        a      -> [a]
             AIDeref      t a      -> [a]
@@ -178,6 +181,5 @@ instance Structured AIExpr where
             AITuple     es        -> es
             AICase t e bs         -> e:(map snd bs)
             E_AIVar {}            -> []
-            E_AIFn f              -> [fnBody f]
             E_AITyApp t a argty   -> [a]
 

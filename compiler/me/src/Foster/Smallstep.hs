@@ -45,10 +45,8 @@ outFile gs = (stTmpDir gs) ++ "/istdout.txt"
 
 -- To interpret a program, we construct a coroutine for main
 -- (no arguments need be passed yet) and step until the program finishes.
-interpretProg (ILProgram procdefs _decls _dtypes _lines) tmpDir = do
-  -- Build a map from proc ids to proc definitions.
-  let procmap = Map.fromList (map (procMapPair . ssProcDefFrom) procdefs)
-                   where procMapPair ssproc = (ssProcIdent ssproc, ssproc)
+interpretProg (ILProgram ilprocmap _decls _dtypes _lines) tmpDir = do
+  let procmap = Map.map ssProcDefFrom ilprocmap
   let main = (procmap Map.! (GlobalSymbol "main"))
   let loc  = 0
   let mainCoro = Coro { coroTerm = (ssProcBody main)

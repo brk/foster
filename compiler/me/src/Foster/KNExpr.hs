@@ -31,7 +31,7 @@ data KNExpr =
         -- Creation of bindings
         | KNCase        TypeIL AIVar [(Pattern, KNExpr)]
         | KNLetVal       Ident KNExpr KNExpr
-        | KNLetFuns    [Ident] [Fn KNExpr] KNExpr
+        | KNLetFuns    [Ident] [Fn KNExpr TypeIL] KNExpr
         -- Use of bindings
         | KNVar         AIVar
         | KNCallPrim    TypeIL ILPrim [AIVar]
@@ -56,20 +56,20 @@ knFresh s = do old <- get
                put (old + 1)
                return (Ident s old)
 
-kNormalizeModule :: (ModuleAST (Fn AIExpr) TypeIL)
+kNormalizeModule :: (ModuleIL AIExpr TypeIL)
                  -> Context TypeIL
-                 -> (ModuleAST (Fn KNExpr) TypeIL)
+                 -> (ModuleIL KNExpr TypeIL)
 kNormalizeModule m ctx =
     let nameOfBinding (TermVarBinding s _) = s in
-    let knRegularFuncs = map kNormalizeFn (moduleASTfunctions m) in
+    let knRegularFuncs = map kNormalizeFn (moduleILfunctions m) in
     -- TODO move ctor wrapping earlier?
-    let knCtorFuncs    = concatMap (kNormalCtors ctx) (moduleASTdataTypes m) in
+    let knCtorFuncs    = concatMap (kNormalCtors ctx) (moduleILdataTypes m) in
     let knAllFuncsKN   = knRegularFuncs ++ knCtorFuncs in
     let knFuncs = evalState (sequence knAllFuncsKN) 0 in
-    m { moduleASTfunctions = knFuncs }
+    m { moduleILfunctions = knFuncs }
 
 
-kNormalizeFn :: (Fn AIExpr) -> KN (Fn KNExpr)
+kNormalizeFn :: (Fn AIExpr TypeIL) -> KN (Fn KNExpr TypeIL)
 kNormalizeFn fn = do
     knbody <- kNormalize (fnBody fn)
     -- Ensure that return values are codegenned through a variable binding.
@@ -92,6 +92,7 @@ kNormalize expr =
       AIStore t a (AISubscript _t b c)
                              -> do [a', b', c'] <- mapM g [a, b, c]
                                    nestedLets [a', b', c'] (\[x, y, z] -> KNArrayPoke x y z)
+
       AILetVar id a b   -> do [a', b'] <- mapM g [a, b] ; return $ buildLet id a' b'
       AIUntil   t  a b  -> do [a', b'] <- mapM g [a, b] ; return $ (KNUntil t a' b')
       AIStore t a b     -> do [a', b'] <- mapM g [a, b] ; nestedLets [a', b'] (\[x, y] -> KNStore t x y)
@@ -109,12 +110,6 @@ kNormalize expr =
                                                                  return (p, ke))
                                   nestedLets [e'] (\[va] -> KNCase t va ibs)
 
-      x@(E_AIFn aiFn)       -> do fn_id <- knFresh "lit_fn"
-                                  knFn <- kNormalizeFn aiFn
-                                  let (TypedId t i) = fnVar knFn
-                                  let fnvar = KNVar $ (TypedId t fn_id)
-                                  return $ KNLetFuns [fn_id] [knFn] fnvar
-
       AIIf      t  a b c    -> do cond_id <- knFresh ".ife"
                                   [a', b', c'] <- mapM g [a, b, c]
                                   let v = (TypedId (typeKN a') cond_id)
@@ -129,11 +124,16 @@ kNormalize expr =
 buildLet :: Ident -> KNExpr -> KNExpr -> KNExpr
 buildLet ident bound inexpr =
   case bound of
-    (KNLetVal x' e' c') ->
-         -- let i = (let x' = e' in c') in inexpr
-         -- ==>
-         -- let x' = e' in (let i = c' in inexpr)
+    -- Convert  let i = (let x' = e' in c') in inexpr
+    -- ==>      let x' = e' in (let i = c' in inexpr)
+    KNLetVal x' e' c' ->
          KNLetVal x' e' (buildLet ident c' inexpr)
+
+    -- Convert  let f = letfuns g = ... in g in <<f>>
+    --     to   letfuns g = ... in let f = g in <<f>>
+    KNLetFuns ids fns a ->
+      KNLetFuns ids fns (buildLet ident a inexpr)
+
     _ -> KNLetVal ident bound inexpr
 
 -- | If we have a call like    base(foo, bar, blah)
@@ -163,11 +163,11 @@ nestedLets exprs g = nestedLets' exprs [] g
 
 
 -- Produces a list of (K-normalized) functions, eta-expansions of each ctor.
-kNormalCtors :: Context TypeIL -> DataType TypeIL -> [KN (Fn KNExpr)]
+kNormalCtors :: Context TypeIL -> DataType TypeIL -> [KN (Fn KNExpr TypeIL)]
 kNormalCtors ctx dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
   where
     kNormalCtor :: Context TypeIL -> DataType TypeIL -> DataCtor TypeIL
-                -> KN (Fn KNExpr)
+                -> KN (Fn KNExpr TypeIL)
     kNormalCtor ctx (DataType dname _) (DataCtor cname small tys) = do
       let cid = CtorId dname cname (Prelude.length tys) small
       vars <- mapM (\t -> do fresh <- knFresh ".autogen"

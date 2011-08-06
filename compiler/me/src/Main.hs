@@ -32,12 +32,13 @@ import Foster.ExprAST
 import Foster.TypeAST
 import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn), AnnFn,
                       fnNameA, annFnType, annFnIdent)
-import Foster.AnnExprIL(AIExpr, AIExpr(E_AIFn), ail)
-import Foster.TypeIL(TypeIL, ilOf, Fn)
+import Foster.AnnExprIL(AIExpr, fnOf)
+import Foster.TypeIL(TypeIL, ilOf)
 import Foster.ILExpr(showProgramStructure, closureConvertAndLift)
 import Foster.KNExpr(kNormalizeModule)
 import Foster.Typecheck
 import Foster.Context
+import Foster.Monomo
 import Foster.Smallstep
 
 -----------------------------------------------------------------------
@@ -99,6 +100,10 @@ typecheckFnSCC scc (ctx, tcenv) = do
                     do runOutput $ (outLn "")
                     return False
 
+fmapOO :: (a -> b) -> OutputOr a -> OutputOr b
+fmapOO f (OK e)     = OK (f e)
+fmapOO f (Errors o) = Errors o
+
 -- | Typechecking a module proceeds as follows:
 -- |  #. Build separate binding lists for the globally-defined primitiveDecls
 -- |     and the module's top-level (function) declarations.
@@ -108,8 +113,10 @@ typecheckFnSCC scc (ctx, tcenv) = do
 -- |  #. Make sure that all unification variables have been properly eliminated,
 -- |     or else we consider type checking to have failed
 -- |     (no implicit instantiation at the moment!)
-typecheckModule :: Bool -> ModuleAST FnAST TypeAST -> TcEnv
-                        -> IO (OutputOr (Context TypeIL, ModuleAST (Fn AIExpr) TypeIL))
+typecheckModule :: Bool
+                -> ModuleAST FnAST TypeAST
+                -> TcEnv
+                -> IO (OutputOr (Context TypeIL, ModuleIL AIExpr TypeIL))
 typecheckModule verboseMode mod tcenv0 = do
     let fns = moduleASTfunctions mod
     let primBindings = computeContextBindings primitiveDecls
@@ -151,14 +158,13 @@ typecheckModule verboseMode mod tcenv0 = do
    convertTypeILofAST :: ModuleAST FnAST TypeAST
                       -> Context TypeAST
                       -> [OutputOr AnnExpr]
-                      -> Tc (Context TypeIL, ModuleAST (Fn AIExpr) TypeIL)
+                      -> Tc (Context TypeIL, ModuleIL AIExpr TypeIL)
    convertTypeILofAST mod ctx_ast oo_annfns = do
      decls     <- mapM convertDecl (moduleASTdecls mod)
      datatypes <- mapM convertDataType (moduleASTdataTypes mod)
      ctx_il    <- liftContextM ilOf ctx_ast
-     aiFns     <- mapM (tcInject ail) oo_annfns
-     let m = ModuleAST [f | (E_AIFn f) <- aiFns]
-                       decls datatypes (moduleASTsourceLines mod)
+     aiFns     <- mapM (tcInject fnOf) (map (fmapOO (\(E_AnnFn f) -> f)) oo_annfns)
+     let m = ModuleIL aiFns decls datatypes (moduleASTsourceLines mod)
      return (ctx_il, m)
        where
         convertDecl :: (String, TypeAST) -> Tc (String, TypeIL)
@@ -298,22 +304,33 @@ typecheckSourceModule sm outfile flagVals verboseMode = do
                   runOutput (outLn $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t))
 
               runOutput $ (outLn "vvvv contextBindings:====================")
-              runOutput $ (outCSLn Yellow (joinWith "\n" $ map show (contextBindings ctx_il))))
+              runOutput $ (outCSLn Yellow (joinWith "\n" $ map show (contextBindings ctx_il)))
+              )
           lowerModule mod ctx_il
   where
     lowerModule m ctx_il = do
          let kmod = kNormalizeModule m ctx_il
-         let dataSigs = dataTypeSigs (moduleASTdataTypes m)
-         let prog = closureConvertAndLift ctx_il dataSigs kmod
 
          when verboseMode (do
-             runOutput $ (outLn "/// ===================================")
-             runOutput $ showProgramStructure prog
+            forM_ (moduleILfunctions kmod) (\fn -> do
+                     runOutput (outLn $ "vvvv k-normalized :====================")
+                     runOutput (outLn $ show (fnVar fn))
+                     runOutput (showStructure (fnBody fn))))
+
+         let dataSigs = dataTypeSigs (moduleILdataTypes m)
+
+         let prog0 = closureConvertAndLift ctx_il dataSigs kmod
+
+         let monoprog = monomorphize prog0
+
+         when verboseMode (do
+             runOutput $ (outLn "/// Monomorphized program =============")
+             runOutput $ showProgramStructure monoprog
              runOutput $ (outLn "^^^ ==================================="))
 
-         maybeInterpretProgram prog
+         maybeInterpretProgram monoprog
 
-         dumpModuleToProtobufIL prog (outfile ++ ".ll.pb")
+         dumpModuleToProtobufIL monoprog (outfile ++ ".ll.pb")
 
          return ()
 

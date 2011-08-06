@@ -1,0 +1,87 @@
+main = {
+  test-mono !;
+};
+
+doubleInt32 = { f : { Int32 => Int32 } =>  x : Int32 =>
+                f (f x)
+              };
+
+appInt32 = { f : { Int32 => Int32 } =>  x : Int32 =>
+             f x
+           };
+
+gInt32 = { y : Int32 => y +Int32 1 };
+
+/*
+doubleInt32F = { f : { { Int32 } => { Int32 } } =>  x : { Int32 } =>
+                 f (f x)
+               };
+
+fInt32F = { x : { Int32 }  => x };
+
+doubleInt32T = { f : { (Int32, Int32) => (Int32, Int32) } =>
+                 x : (Int32, Int32) =>
+                 f (f x)
+               };
+
+fInt32T = { x : (Int32, Int32)  => x };
+gInt32T = { x : (Int32, Int32)  => case x of (y, z) -> (z, y +Int32 2) end };
+*/
+
+
+test-mono = {
+  expect_i32 1;
+  print_i32 (appInt32 gInt32 0);
+
+
+  /*
+  expect_i32 2;
+  print_i32 (gInt32 (gInt32 0));
+
+
+  expect_i32 2;
+  print_i32 (doubleInt32 gInt32 0);
+
+  expect_i32 3;
+  expect_i32 4;
+  case doubleInt32T fInt32T (3, 4)
+    of (a, b) -> print_i32 a;
+                 print_i32 b;
+  end;
+
+  expect_i32 5;
+  expect_i32 6;
+  case doubleInt32T gInt32T (3, 4)
+    of (a, b) -> print_i32 a;
+                 print_i32 b;
+  end;
+  */
+};
+
+
+doubleP = { forall t ,
+            f : { t => t } =>  x : t =>
+            f (f x)
+          };
+
+// Instantiation at a bound type variable should work...
+//doubleQ = { forall q ,
+//            f : { q => q } =>  x : q =>
+//            doubleP:[q] f x
+//          };
+
+// If we don't instantiate a polymorphic definition,
+// it shouldn't appear in the generated LLVM IR.
+//doublePNoInst = { forall t ,
+//                  f : { t => t } =>  x : t =>
+//                  f (f x)
+//                };
+
+test-poly = {
+  // We should only get one polymorphically instantiated copy...
+  doubleP:[Int32] gInt32 0;
+  doubleP:[Int32] gInt32 0;
+  doubleP:[Int32] gInt32 0;
+  //doubleP gInt32 0;
+  0;
+};

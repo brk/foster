@@ -586,9 +586,11 @@ llvm::Value* LLClosure::codegenStorage(CodegenPass* pass) {
 ////////////////////////////////////////////////////////////////////
 
 const llvm::FunctionType*
-getLLVMFunctionType(FnTypeAST* t) {
+getLLVMFunctionType(FnTypeAST* t, const std::string& procSymbol) {
   if (const llvm::PointerType* pt =
    dyn_cast<llvm::PointerType>(getLLVMType(t))) {
+    ASSERT(! getLLVMType(t->getReturnType())->isOpaqueTy())
+        << "Cannot use opaque return type for proc " << procSymbol;
     return dyn_cast<FunctionType>(pt->getContainedType(0));
   } else {
     return NULL;
@@ -613,7 +615,7 @@ llvm::Value* LLProc::codegenProto(CodegenPass* pass) {
   std::string symbolName = foster::getGlobalSymbolName(this->name);
 
   this->type->markAsProc();
-  const llvm::FunctionType* FT = getLLVMFunctionType(this->type);
+  const llvm::FunctionType* FT = getLLVMFunctionType(this->type, symbolName);
 
   if (symbolName == kFosterMain) {
     // No args, returning void...
