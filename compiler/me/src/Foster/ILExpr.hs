@@ -11,7 +11,8 @@ import Control.Monad.State
 import Data.Set(Set)
 import Data.Set as Set(fromList, toList, difference, member)
 import Data.Map(Map)
-import qualified Data.Map as Map((!), fromList, member, keys, elems, findWithDefault)
+import qualified Data.Map as Map((!), insert, member, findWithDefault,
+                                 empty, keys, elems, fromList)
 
 import Foster.Base
 import Foster.Context
@@ -91,7 +92,7 @@ type KnownVars = Set String
 data ILMState = ILMState {
     ilmUniq    :: Uniq
   , ilmGlobals :: KnownVars
-  , ilmProcDefs :: [ILProcDef]
+  , ilmProcDefs :: Map Ident ILProcDef
   , ilmCtors   :: DataTypeSigs
 }
 
@@ -106,7 +107,8 @@ ilmPutProc :: ILM ILProcDef -> ILM ILProcDef
 ilmPutProc p_action = do
         p   <- p_action
         old <- get
-        put (old { ilmProcDefs = p:(ilmProcDefs old) })
+        let newDefs = Map.insert (ilProcIdent p) p (ilmProcDefs old)
+        put (old { ilmProcDefs = newDefs })
         return p
 
 fakeCloEnvType = TupleTypeIL []
@@ -120,11 +122,13 @@ closureConvertAndLift ctx dataSigs m =
     -- We lambda lift top level functions, since we know they don't have any "real" free vars.
     -- Lambda lifting wiil closure convert nested functions.
     let nameOfBinding (TermVarBinding s _) = s in
-    let globalVars = Set.fromList $ map nameOfBinding (contextBindings ctx) in
-    let procsILM = forM fns (\fn -> lambdaLift ctx fn []) in
-    let dataTypes = moduleASTdataTypes m in
-    let newstate = execState procsILM (ILMState 0 globalVars [] dataSigs) in
-    ILProgram (ilmProcDefs newstate) decls dataTypes (moduleASTsourceLines m)
+    let globalVars   = Set.fromList $ map nameOfBinding (contextBindings ctx) in
+    let procsILM     = forM fns (\fn -> lambdaLift ctx fn []) in
+    let dataTypes    = moduleASTdataTypes m in
+    let initialState = ILMState 0 globalVars Map.empty dataSigs in
+    let newstate     = execState procsILM initialState in
+    let procdefs     = Map.elems (ilmProcDefs newstate) in
+    ILProgram procdefs decls dataTypes (moduleASTsourceLines m)
 
 prependILBinding :: (Ident, ILExpr) -> Context TypeIL -> Context TypeIL
 prependILBinding (id, ile) ctx =
@@ -153,8 +157,11 @@ closureConvert ctx expr =
             KNAppCtor    t c vs -> return $ ILAppCtor    t c vs
             KNCall       t b vs -> return $ ILCall       t b vs
 
+            KNTyApp t e argty -> do
+                e' <- g e
+                return $ ILTyApp t e' argty
+
             -- These cases swap the tag and recur in uninteresting ways.
-            KNTyApp t e argty -> do e' <- g e ; return $ ILTyApp t e' argty
             KNIf t v a b      -> do [a', b'] <- mapM g [a, b] ; return $ ILIf t v a' b'
             KNUntil t a b     -> do [a', b'] <- mapM g [a, b] ; return $ ILUntil t a' b'
 
