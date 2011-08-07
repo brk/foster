@@ -163,6 +163,7 @@ fnOf f = do
 
 instance Structured AIExpr where
     textOf e width = error "textOf AIExpr not yet implemented"
+    structuredChildren e = map SS $ childrenOf e
     childrenOf e =
         case e of
             E_AIPrim {}           -> []

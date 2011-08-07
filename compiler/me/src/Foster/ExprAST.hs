@@ -86,27 +86,28 @@ instance Structured ExprAST where
             E_TyApp rng a t      -> out $ "TyApp        "
             E_Case rng _ _       -> out $ "Case         "
             E_VarAST rng v       -> out $ "VarAST       " ++ evarName v ++ " :: " ++ show (evarMaybeType v)
+    structuredChildren e = map SS $ childrenOf e
     childrenOf e =
         case e of
-            E_BoolAST rng b      -> []
-            E_CallAST rng b tup -> b:(tupleAstExprs tup)
+            E_BoolAST rng b             -> []
+            E_CallAST rng b tup         -> b:(tupleAstExprs tup)
             E_CompilesAST _rng (Just e) -> [e]
-            E_CompilesAST _rng Nothing -> []
-            E_IfAST _rng    a b c -> [a, b, c]
-            E_UntilAST _rng a b   -> [a, b]
-            E_IntAST rng txt     -> []
-            E_FnAST f            -> [fnAstBody f]
-            E_LetRec rnd bnz e t -> [termBindingExpr bnd | bnd <- bnz] ++ [e]
-            E_LetAST rng bnd e t -> (termBindingExpr bnd):[e]
-            E_SeqAST _rng  a b   -> unbuildSeqs e
-            E_AllocAST rng a     -> [a]
-            E_DerefAST rng a     -> [a]
-            E_StoreAST rng a b   -> [a, b]
-            E_SubscriptAST r a b -> [a, b]
-            E_TupleAST tup       -> tupleAstExprs tup
-            E_TyApp  rng a t     -> [a]
-            E_Case rng e bs      -> e:(map snd bs)
-            E_VarAST _ _         -> []
+            E_CompilesAST _rng Nothing  -> []
+            E_IfAST _rng    a b c       -> [a, b, c]
+            E_UntilAST _rng a b         -> [a, b]
+            E_IntAST rng txt            -> []
+            E_FnAST f                   -> [fnAstBody f]
+            E_SeqAST _rng  a b          -> unbuildSeqs e
+            E_AllocAST rng a            -> [a]
+            E_DerefAST rng a            -> [a]
+            E_StoreAST rng a b          -> [a, b]
+            E_SubscriptAST r a b        -> [a, b]
+            E_TupleAST tup              -> tupleAstExprs tup
+            E_TyApp  rng a t            -> [a]
+            E_Case rng e bs             -> e:(map snd bs)
+            E_VarAST _ _                -> []
+            E_LetRec rnd bnz e t        -> [termBindingExpr bnd | bnd <- bnz] ++ [e]
+            E_LetAST rng bnd e t        -> (termBindingExpr bnd):[e]
 
 termBindingExpr (TermBinding _ e) = e
 termBindingExprs bs = map termBindingExpr bs

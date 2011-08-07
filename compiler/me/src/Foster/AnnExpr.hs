@@ -108,6 +108,7 @@ instance Structured AnnExpr where
             E_AnnVar _r tid         -> out $ "AnnVar       " ++ show tid
             E_AnnFn annFn           -> out $ "AnnFn " ++ fnNameA annFn ++ " // " ++ (show $ annFnBoundNames annFn) ++ " :: " ++ show (annFnType annFn)
             E_AnnTyApp _rng t e argty -> out $ "AnnTyApp     [" ++ show argty ++ "] :: " ++ show t
+    structuredChildren e = map SS $ childrenOf e
     childrenOf e =
         case e of
             AnnBool {}                           -> []

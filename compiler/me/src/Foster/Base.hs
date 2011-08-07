@@ -1,3 +1,10 @@
+{-# LANGUAGE GADTs #-}
+-----------------------------------------------------------------------------
+-- Copyright (c) 2011 Ben Karel. All rights reserved.
+-- Use of this source code is governed by a BSD-style license that can be
+-- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
+-----------------------------------------------------------------------------
+
 module Foster.Base where
 
 import System.Console.ANSI
@@ -215,9 +222,32 @@ sourceLine (SourceLines seq) n =
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+-- Use GADTs to encode very simple "subtyping" for objects
+-- with value-directed ad-hoc polymorphism instead of Haskell's
+-- preferred type-directed ad-hoc polymorphism.
+--
+-- This allows us to treat bindings (x = e) as structured things
+-- even though they aren't actually expressions, and thus can't
+-- appear in the list of values returned by childrenOf implementations.
+data SomeStructured where
+  SS :: Structured b => b -> SomeStructured
+
+data (Show a, Structured b) => StructuredBinding a b =
+                               StructuredBinding { sbName :: a
+                                                 , sbExpr :: b }
+
+instance (Show a, Structured b) => Structured (StructuredBinding a b)
+  where
+    textOf sb width       = out $ show (sbName sb)
+    structuredChildren sb = [SS $ sbExpr sb]
+    childrenOf         sb = []
+
+
 class Structured a where
     textOf     :: a -> Int -> Output
     childrenOf :: a -> [a]
+    structuredChildren :: a -> [SomeStructured]
+
 
 -- Builds trees like this:
 -- AnnSeq        :: i32
@@ -227,19 +257,22 @@ class Structured a where
 -- │   └─AnnInt       999999 :: i32
 
 showStructure :: (Structured a) => a -> Output
-showStructure e = showStructureP e (out "") False where
+showStructure e = showStructureP e (out "") False
+  where
+    showStructureP :: Structured b => b -> Output -> Bool -> Output
     showStructureP e prefix isLast =
-        let children = childrenOf e in
+        let children = structuredChildren e in
         let thisIndent = prefix ++ out (if isLast then "└─" else "├─") in
         let nextIndent = prefix ++ out (if isLast then "  " else "│ ") in
         let padding = max 6 (60 - Prelude.length thisIndent) in
         -- [ (child, index, numchildren) ]
         let childpairs = Prelude.zip3 children [1..]
                                (Prelude.repeat (Prelude.length children)) in
-        let childlines = map (\(c, n, l) ->
+        let childlines = map (\(SS c, n, l) ->
                                 showStructureP c nextIndent (n == l))
                              childpairs in
-        (thisIndent :: Output) ++ (textOf e padding) ++ (out "\n") ++ (Prelude.foldl (++) (out "") childlines)
+        (thisIndent :: Output) ++ (textOf e padding) ++ (out "\n")
+                               ++ (Prelude.foldl (++) (out "") childlines)
 
 -----------------------------------------------------------------------
 

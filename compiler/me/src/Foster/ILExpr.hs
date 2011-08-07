@@ -430,7 +430,11 @@ instance Structured ILExpr where
         where
             showClosurePair :: (Ident, ILClosure) -> String
             showClosurePair (name, clo) = (show name) ++ " bound to " ++ (show clo)
-
+    structuredChildren e =
+        case e of
+            ILLetVal x b a -> let (bindings, final) = slurpLets e
+                              in (map SS bindings) ++ [SS final]
+            _              -> map SS $ childrenOf e
     childrenOf e =
         let var v = ILVar v in
         case e of
@@ -453,6 +457,12 @@ instance Structured ILExpr where
             ILArrayPoke v b i       -> [var v, var b, var i]
             ILVar _                 -> []
             ILTyApp t e argty       -> [e]
+
+slurpLets :: ILExpr -> ([StructuredBinding Ident ILExpr], ILExpr)
+slurpLets (ILLetVal x b a) =
+                let (sbs, fin) = slurpLets a in
+                ( (StructuredBinding x b):sbs, fin )
+slurpLets a = ([], a)
 
 patternBindings :: (Pattern, TypeIL) -> [ContextBinding TypeIL]
 patternBindings (p, ty) =

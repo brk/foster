@@ -63,6 +63,7 @@ instance (Show a, Structured a) => Structured (DecisionTree a) where
           DT_Leaf a idsoccs -> (out $ "DT_Leaf    " ++ show idsoccs ++ "\n") ++ (showStructure a)
           DT_Swap i dt      -> out $ "DT_Swap      " ++ (show i)
           DT_Switch occ sc  -> out $ "DT_Switch    " ++ (show occ) ++ (show $ subIds sc)
+    structuredChildren e = map SS $ childrenOf e
     childrenOf e =
       case e of
         (DT_Fail)     -> []
