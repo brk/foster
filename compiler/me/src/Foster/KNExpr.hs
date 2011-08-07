@@ -36,7 +36,6 @@ data KNExpr =
         | KNVar         AIVar
         | KNCallPrim    TypeIL ILPrim [AIVar]
         | KNCall        TypeIL AIVar  [AIVar]
-        -- | KNAppCtor     TypeIL ILDataCtor [AIVar] -- dumped as CtorId
         | KNAppCtor     TypeIL CtorId [AIVar] -- dumped as CtorId
         -- Mutable ref cells
         | KNAlloc              AIVar
@@ -46,7 +45,7 @@ data KNExpr =
         | KNAllocArray  TypeIL AIVar
         | KNArrayRead   TypeIL AIVar AIVar
         | KNArrayPoke          AIVar AIVar AIVar
-        | KNTyApp       TypeIL KNExpr TypeIL
+        | KNTyApp       TypeIL AIVar TypeIL
         deriving (Show)
 
 type KN a = State Uniq a
@@ -88,7 +87,7 @@ kNormalize expr =
       AIAllocArray t a      -> do a' <- g a ; nestedLets [a'] (\[x] -> KNAllocArray t x)
       AIAlloc a             -> do a' <- g a ; nestedLets [a'] (\[x] -> KNAlloc x)
       AIDeref t a           -> do a' <- g a ; nestedLets [a'] (\[x] -> KNDeref t x)
-      E_AITyApp t e argty   -> do e' <- g e ; return $ KNTyApp t e' argty
+      E_AITyApp t a argty   -> do a' <- g a ; nestedLets [a'] (\[x] -> KNTyApp t x argty)
       AIStore t a (AISubscript _t b c)
                              -> do [a', b', c'] <- mapM g [a, b, c]
                                    nestedLets [a', b', c'] (\[x, y, z] -> KNArrayPoke x y z)
@@ -251,5 +250,5 @@ instance Structured KNExpr where
             KNArrayRead t a b       -> [var a, var b]
             KNArrayPoke v b i       -> [var v, var b, var i]
             KNVar _                 -> []
-            KNTyApp t e argty       -> [e]
+            KNTyApp t v argty       -> [var v]
 

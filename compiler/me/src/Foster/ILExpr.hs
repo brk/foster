@@ -73,7 +73,7 @@ data ILExpr =
         | ILAllocArray  TypeIL AIVar
         | ILArrayRead   TypeIL AIVar AIVar
         | ILArrayPoke          AIVar AIVar AIVar
-        | ILTyApp       TypeIL ILExpr TypeIL
+        | ILTyApp       TypeIL AIVar TypeIL
         deriving (Show)
 data AllocMemRegion = MemRegionStack
                     | MemRegionGlobalHeap
@@ -167,8 +167,7 @@ closureConvert ctx expr =
             KNCallPrim   t p vs -> return $ ILCallPrim   t p vs
             KNAppCtor    t c vs -> return $ ILAppCtor    t c vs
             KNCall       t b vs -> return $ ILCall       t b vs
-
-            KNTyApp t e argty -> do e' <- g e ; return $ ILTyApp t e' argty
+            KNTyApp t v argty   -> return $ ILTyApp t v argty
 
             -- These cases swap the tag and recur in uninteresting ways.
             KNIf t v a b      -> do [a', b'] <- mapM g [a, b] ; return $ ILIf t v a' b'
@@ -186,6 +185,7 @@ closureConvert ctx expr =
             -- expression must be converted in a suitably extended context,
             -- and while we're here, we also perform pattern match compilation.
             KNCase t v bs -> do
+                -- convertBranch :: (Pattern, KNExpr) -> (Pattern, ILExpr)
                 let convertBranch (p, a) = do
                        let bindings = patternBindings (p, tidType v)
                        let extctx = prependContextBindings ctx bindings
@@ -359,13 +359,13 @@ closureOfKnFn ctx0 infoMap (closedNames, (self_id, fn)) = do
         KNTuple      {} -> e
         KNCallPrim   {} -> e
         KNAppCtor    {} -> e
+        KNTyApp      {} -> e
 
         KNIf t v b c           -> KNIf    t v (q b) (q c)
         KNUntil t a b          -> KNUntil t   (q a) (q b)
         KNLetVal id a b        -> KNLetVal id (q a) (q b)
         KNLetFuns ids fns e    -> KNLetFuns ids (map fq fns) (q e)
         KNCase t v bs          -> KNCase t v [(p, q e) | (p, e) <- bs]
-        KNTyApp  t e argty     -> KNTyApp t (q e) argty
 
         -- The only really interesting case:
         KNCall t v vs
@@ -456,7 +456,7 @@ instance Structured ILExpr where
             ILArrayRead t a b       -> [var a, var b]
             ILArrayPoke v b i       -> [var v, var b, var i]
             ILVar _                 -> []
-            ILTyApp t e argty       -> [e]
+            ILTyApp t v argty       -> [var v]
 
 slurpLets :: ILExpr -> ([StructuredBinding Ident ILExpr], ILExpr)
 slurpLets (ILLetVal x b a) =

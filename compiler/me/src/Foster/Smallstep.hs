@@ -201,7 +201,7 @@ data IExpr =
         | ICall         Ident  [Ident]
         | ICallPrim     ILPrim [Ident]
         | ICase         Ident  (DecisionTree ILExpr) [(Pattern, SSTerm)]
-        | ITyApp        SSTerm TypeIL
+        | ITyApp        Ident  TypeIL
         | IAppCtor      CtorId [Ident]
         deriving (Show)
 
@@ -242,7 +242,7 @@ ssTermOfExpr expr =
     ILAlloc a              -> SSTmExpr  $ IAlloc (idOf a)
     ILDeref t a            -> SSTmExpr  $ IDeref (idOf a)
     ILStore t a b          -> SSTmExpr  $ IStore (idOf a) (idOf b)
-    ILTyApp t e argty      -> SSTmExpr  $ ITyApp (tr e) argty
+    ILTyApp t v argty      -> SSTmExpr  $ ITyApp (idOf v) argty
     ILCase t a bs dt       -> SSTmExpr  $ ICase (idOf a) dt [(p, tr e) | (p, e) <- bs]
     ILAppCtor t cid vs     -> SSTmExpr  $ IAppCtor cid (map idOf vs)
 
@@ -453,8 +453,7 @@ stepExpr gs expr = do
         return $ withTerm gs2 (SSTmValue $ SSArray $
                         array (0, fromInteger $ i - 1) inits)
 
-    ITyApp e@(SSTmExpr _) argty -> pushCoroCont (withTerm gs e) (envOf gs, \t -> SSTmExpr $ ITyApp t argty)
-    ITyApp (SSTmValue e) argty -> error $ "step iltyapp " ++ show e
+    ITyApp v argty -> return $ withTerm gs (SSTmValue $ getval gs v)
 
 -- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

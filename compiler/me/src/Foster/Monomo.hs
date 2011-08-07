@@ -166,13 +166,12 @@ monomorphizeExpr expr =
             ILCall       {} -> return expr
 
             -- This is the only interesting case!
-            ILTyApp t e argty -> do
-                e' <- g e
-                case e' of
+            ILTyApp t v argty -> do
+                case v of
                   -- If we're polymorphically instantiating a global symbol
                   -- (i.e. a proc) then we can statically look up the proc
                   -- definition and create a monomorphized copy.
-                  ILVar (TypedId (ForAllIL tyvars _) id@(GlobalSymbol prcnm)) ->
+                  TypedId (ForAllIL tyvars _) id@(GlobalSymbol prcnm) ->
                     do let argtys = listize argty
                        let polyid = getPolyProcId id (show argtys)
                        -- Figure out what (procedure) name we'd like to call.
@@ -189,7 +188,7 @@ monomorphizeExpr expr =
                   -- (in general) the var is unknown, so we can't statically
                   -- monomorphize it. In simple cases we can insert coercions
                   -- to/from uniform and non-uniform representations.
-                  ILVar (TypedId (ForAllIL tyvars _) localvarid) ->
+                  TypedId (ForAllIL tyvars _) localvarid ->
                     error $ "\nFor now, polymorphic instantiation is only"
                          ++ " allowed on functions at the top level!"
                          ++ "\nThis is a silly restriction for local bindings,"
@@ -198,7 +197,7 @@ monomorphizeExpr expr =
                          ++ " polymorphic function arguments"
                          ++ " (higher-rank polymorphism)...\n"
 
-                  _ -> return $ ILTyApp t e' argty
+                  _ -> error $ "Expected polymorphic instantiation to affect a bound variable!"
 
             -- These cases recur in uninteresting ways.
             ILIf t    v a b -> do [a', b'] <- mapM g [a, b] ; return $ ILIf t    v a' b'
@@ -264,7 +263,7 @@ substituteTypeInExpr subst expr =
             ILArrayRead  t a b  -> ILArrayRead  (q t) (qv a) (qv b)
             ILArrayPoke  v b i  -> ILArrayPoke (qv v) (qv b) (qv i)
             ILVar        v      -> ILVar       (qv v)
-            ILTyApp   t e argty -> ILTyApp (q t) (qe e) (q argty)
+            ILTyApp   t v argty -> ILTyApp (q t) (qv v) (q argty)
 
 fmapDt f (DT_Fail          ) = DT_Fail
 fmapDt f (DT_Leaf a idsoccs) = DT_Leaf (f a) idsoccs
