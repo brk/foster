@@ -3,7 +3,32 @@ main = {
 
   loopy 3;
 
+  // Make sure that we give consistent treatment to the return type
+  // of recursively bound functions.
+  expect_i1 false; print_i1 (__COMPILES__ print_i1 (test-rec-ret0 !));
+  expect_i1 false; print_i1 (__COMPILES__ print_i1 (test-rec-let 3));
+  expect_i1 false; print_i1 (__COMPILES__ print_i1 (test-rec-ret 3));
+
+  expect_i32 (0 -Int32 1) ; print_i32 (test-rec-ret 3);
+
   // todo: error message for f (); instead of f 2;
+};
+
+test-rec-ret0 = { rec x = { 0 }; in x ! end };
+
+
+test-rec-let = { z : Int32 =>
+  rec grope = { x:Int32 => if x <Int32 0 then x else grope (x -Int32 1) end }; in
+    let eporg = { grope };
+     in eporg ! (opaquely_i32 z); end
+  end
+};
+
+test-rec-ret = { z : Int32 =>
+  rec grope = { x:Int32 => if x <Int32 0 then x else grope (x -Int32 1) end };
+      eporg = { grope };
+   in eporg ! (opaquely_i32 z);
+  end
 };
 
 is-odd = { z:Int32 =>

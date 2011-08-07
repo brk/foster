@@ -235,7 +235,6 @@ struct LLClosure {
     : varname(_varn), envname(_envn), procname(_proc), env(_env) {
    env->typeName = "env";
  }
- llvm::Value* codegenStorage(CodegenPass* pass);
  llvm::Value* codegenClosure(CodegenPass* pass, llvm::Value* envSlot);
 };
 

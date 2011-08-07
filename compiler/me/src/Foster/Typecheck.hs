@@ -149,15 +149,18 @@ typecheckLetRec ctx0 rng bindings e mt = do
     ids <- sequence [tcFresh (evarName v)
                     | (TermBinding v _) <- bindings]
     -- Create an extended context for typechecking the bindings
-    let makeTermVarBinding (u, id) = do
-           let t = MetaTyVar u
-           return $ TermVarBinding (identPrefix id) (TypedId t id)
-    ctxBindings <- mapM makeTermVarBinding (zip unificationVars ids)
+    let makeTermVarBinding (u, id) =
+           let mtv = MetaTyVar u in
+           TermVarBinding (identPrefix id) (TypedId mtv id)
+    let ctxBindings = map makeTermVarBinding (zip unificationVars ids)
     let ctx = prependContextBindings ctx0 ctxBindings
     -- Typecheck each binding
     tcbodies <- forM (zip unificationVars bindings) $
        (\(u, TermBinding v b) -> do
-           typecheck ctx b (evarMaybeType v)
+           b' <- typecheck ctx b (evarMaybeType v) -- or (Just $ MetaTyVar u)?
+           equateTypes (MetaTyVar u) (typeAST b')
+                       (Just $ "recursive binding " ++ evarName v)
+           return b'
        )
 
     -- Typecheck the body as well
@@ -165,7 +168,6 @@ typecheckLetRec ctx0 rng bindings e mt = do
 
     let fns = [f | (E_AnnFn f) <- tcbodies]
     return $ AnnLetFuns rng ids fns e'
-
 
 -----------------------------------------------------------------------
 

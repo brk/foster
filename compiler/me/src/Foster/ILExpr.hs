@@ -11,7 +11,7 @@ import Control.Monad.State
 import Data.Set(Set)
 import Data.Set as Set(fromList, toList, difference, member, empty)
 import Data.Map(Map)
-import qualified Data.Map as Map((!), insert, member, findWithDefault, lookup,
+import qualified Data.Map as Map((!), insert, member, lookup,
                                  empty, keys, elems, fromList)
 
 import Foster.Base
@@ -199,13 +199,16 @@ closureConvert ctx expr =
             KNLetFuns ids fns e -> closureConvertLetFuns ids fns e ctx
 
 closureConvertLetFuns ids fns e ctx = do
+    let idfns = zip ids fns
+
     cloEnvIds <- mapM (\id -> ilmFresh (".env." ++ identPrefix id)) ids
 
     let cloEnvBinding id = TermVarBinding (identPrefix id) (TypedId fakeCloEnvType id)
-    let extctx = prependContextBindings ctx (map cloEnvBinding cloEnvIds)
+    let cloBinding (id, fn) = TermVarBinding (identPrefix id) (TypedId (tidType $ fnVar fn) id)
+    let extctx = prependContextBindings ctx (map cloEnvBinding cloEnvIds ++
+                                             map cloBinding idfns)
 
     let infoMap = Map.fromList (zip ids (zip fns cloEnvIds))
-    let idfns = zip ids fns
 
     closedNms <- mapM (closedNamesOfKnFn    infoMap) idfns
     combined  <- mapM (closureOfKnFn extctx infoMap) (zip closedNms idfns)
@@ -283,19 +286,29 @@ closedNamesOfKnFn infoMap (self_id, fn) = do
     let envIds   = map snd (Map.elems infoMap)
     {- Given   rec f = { ... f() .... };
                    g = { ... f() .... };
+                   h = { f };
                in ... end;
-       neither f nor g should close over the closure f itself, or any global
-       vars. Nor does the closure converted proc capture its own environment
-       variable, because it will be added as an implicit parameter. The
-       environment for f, however, *is* closed over in g.
+       none of f, g, or h shoud close over any global variables.
+       Ideally neither f nor g should close over the closure f itself, but
+       h must close over f, because it returns f rather than calls it.
+       For now, rather than fancy analysis, we simply capture both the env
+       (used directly for calls) and the closure (used only when directly
+       referenced) when we see any reference to a sibling function.
+
+       Each closure converted proc need not capture its own environment
+       variable, because it will be added as an implicit parameter, but
+       the environment for f *is* closed over in g.
     -}
     let rawFreeIds = freeIdents fn `excluding` (Set.fromList [self_id])
 
-    -- Have (i.e.) g capture f's env var instead of "f" itself,
+    -- Have (i.e.) g capture f's env var in addition to "f" itself,
     -- and make sure we filter out the global names.
     globalVars <- gets ilmGlobals
     let envFor = Map.fromList $ zip ids envIds
-    let freeIds = map (\n -> Map.findWithDefault n n envFor) rawFreeIds
+    -- Capture env. vars in addition to closure vars.
+    let freeIds = concatMap (\n -> case Map.lookup n envFor of
+                                     Nothing ->  [n]
+                                     Just env -> [n, env]) rawFreeIds
 
     return $ trace ("freeNames("++ show self_id++") = " ++ show freeIds)
              filter (\id -> not $ Set.member (identPrefix id) globalVars)
@@ -347,9 +360,9 @@ closureOfKnFn ctx0 infoMap (closedNames, (self_id, fn)) = do
       q expr where
       fq = makeEnvPassingExplicitFn
       q e = case e of
+        KNVar        {} -> e
         KNBool       {} -> e
         KNInt        {} -> e
-        KNVar        {} -> e
         KNAllocArray {} -> e
         KNAlloc      {} -> e
         KNDeref      {} -> e

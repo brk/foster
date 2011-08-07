@@ -439,7 +439,13 @@ llvm::Value* LLClosures::codegen(CodegenPass* pass) {
 
   std::vector<llvm::Value*> envSlots;
   for (size_t i = 0; i < closures.size(); ++i) {
-    envSlots.push_back(closures[i]->codegenStorage(pass));
+    envSlots.push_back(closures[i]->env->codegenStorage(pass));
+  }
+
+  // Allocate storage for the closures and populate 'em with code/env values.
+  for (size_t i = 0; i < closures.size(); ++i) {
+    llvm::Value* clo = closures[i]->codegenClosure(pass, envSlots[i]);
+    pass->valueSymTab.insert(closures[i]->varname, clo);
   }
 
   // Stick each closure environment in the symbol table.
@@ -461,20 +467,13 @@ llvm::Value* LLClosures::codegen(CodegenPass* pass) {
     closures[i]->env->codegenTo(pass, envPtrs[i]);
   }
 
-  // And clean up.
+  // And clean up env names.
   for (size_t i = 0; i < closures.size(); ++i) {
     pass->valueSymTab.remove(closures[i]->envname);
   }
 
   ////////////////////////////////////////////////////////
   ////////////////////////////////////////////////////////
-
-  // Generate each closure, sticking it in the symbol table
-  // so that the body of the LetClosures node has access.
-  for (size_t i = 0; i < closures.size(); ++i) {
-    llvm::Value* clo = closures[i]->codegenClosure(pass, envSlots[i]);
-    pass->valueSymTab.insert(closures[i]->varname, clo);
-  }
 
   llvm::Value* exp = pass->emit(expr, NULL);
 
@@ -572,13 +571,7 @@ llvm::Value* LLClosure::codegenClosure(
     emitStoreWithCast(envPtr, clo_env_slot);
   }
 
-  //const llvm::StructType* genStructTy = genericClosureStructTy(fnty);
-  //return builder.CreateBitCast(clo, ptrTo(genStructTy), varname + ".hideCloTy");
   return rv;
-}
-
-llvm::Value* LLClosure::codegenStorage(CodegenPass* pass) {
-  return env->codegenStorage(pass);
 }
 
 ////////////////////////////////////////////////////////////////////
