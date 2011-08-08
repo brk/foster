@@ -229,18 +229,19 @@ closureConvertedProc liftedProcVars f newbody = do
         _ -> error $ "Expected closure converted proc to have fntype, had " ++ show ft
 
 -- For example, if we have something like
---      let y = blah in ( (\x -> x + y) foobar )
+--      let y = blah in
+--      (\x -> x + y) foobar
 -- then, because the lambda is directly called,
 -- we can rewrite the lambda to a closed proc:
---      letproc p = \y x -> x + y
---      let y = blah in p(y, foobar)
+--      letproc p = \yy x -> x + yy
+--      let y = blah in p y foobar
 lambdaLift :: Context TypeIL -> (Fn KNExpr TypeIL) -> [AIVar] -> ILM ILProcDef
-lambdaLift ctx f freeVars =
-    let liftedProcVars = freeVars ++ fnVars f in
-    let extctx = prependContextBindings ctx (bindingsForVars liftedProcVars) in
-    -- Ensure the free vars in the body are bound in the ctx...
-     do newbody <- closureConvert extctx (fnBody f)
-        ilmPutProc (closureConvertedProc liftedProcVars f newbody)
+lambdaLift ctx0 f freeVars = do
+    let extctx = prependContextBindings ctx0 (bindingsForVars (fnVars f))
+    newbody <- closureConvert extctx (fnBody f)
+    -- Add free variables to the signature of the lambda-lifted procedure.
+    let liftedProcVars = freeVars ++ fnVars f
+    ilmPutProc (closureConvertedProc liftedProcVars f newbody)
 
 bindingsForVars vars = [TermVarBinding (identPrefix i) v
                        | v@(TypedId t i) <- vars]
