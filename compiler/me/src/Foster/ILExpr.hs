@@ -11,7 +11,7 @@ import Control.Monad.State
 import Data.Set(Set)
 import Data.Set as Set(fromList, toList, difference, member, empty)
 import Data.Map(Map)
-import qualified Data.Map as Map((!), insert, member, lookup,
+import qualified Data.Map as Map((!), insert, lookup,
                                  empty, keys, elems, fromList)
 
 import Foster.Base
@@ -47,6 +47,11 @@ data ILProcDef = ILProcDef { ilProcReturnType :: TypeIL
                            , ilProcCallConv   :: CallConv
                            , ilProcBody       :: ILExpr
                            } deriving Show
+
+data AllocMemRegion = MemRegionStack
+                    | MemRegionGlobalHeap
+data ILAllocInfo = ILAllocInfo AllocMemRegion (Maybe AIVar)
+
 data ILExpr =
         -- Literals
           ILBool        Bool
@@ -75,23 +80,19 @@ data ILExpr =
         | ILArrayPoke          AIVar AIVar AIVar
         | ILTyApp       TypeIL AIVar TypeIL
         deriving (Show)
-data AllocMemRegion = MemRegionStack
-                    | MemRegionGlobalHeap
-data ILAllocInfo = ILAllocInfo AllocMemRegion (Maybe AIVar)
 
 showProgramStructure :: ILProgram -> Output
 showProgramStructure (ILProgram procdefs decls _dtypes _lines) =
     concatMap showProcStructure (Map.elems procdefs)
-
-procVarDesc (TypedId ty id) = "( " ++ (show id) ++ " :: " ++ show ty ++ " ) "
-
-showProcStructure proc =
-    out (show $ ilProcIdent proc) ++ (out " // ")
-        ++ (out $ show $ map procVarDesc (ilProcVars proc))
-        ++ (out " @@@ ") ++ (out $ show $ ilProcCallConv proc)
-        ++ (out " ==> ") ++ (out $ show $ ilProcReturnType proc)
-        ++ (out "\n") ++  showStructure (ilProcBody proc)
-      ++ out "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"
+  where
+    showProcStructure proc =
+        out (show $ ilProcIdent proc) ++ (out " // ")
+            ++ (out $ show $ map procVarDesc (ilProcVars proc))
+            ++ (out " @@@ ") ++ (out $ show $ ilProcCallConv proc)
+            ++ (out " ==> ") ++ (out $ show $ ilProcReturnType proc)
+            ++ (out "\n") ++  showStructure (ilProcBody proc)
+          ++ out "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"
+    procVarDesc (TypedId ty id) = "( " ++ (show id) ++ " :: " ++ show ty ++ " ) "
 
 type KnownVars = Set String
 
@@ -247,20 +248,6 @@ bindingsForVars vars = [TermVarBinding (identPrefix i) v
                        | v@(TypedId t i) <- vars]
 
 type FreeName = Ident
-
-contextVar :: String -> Context TypeIL -> FreeName -> AIVar
-contextVar dbg ctx s =
-    case termVarLookup (identPrefix s) (contextBindings ctx) of
-            Just v -> v
-            Nothing -> error $ "ILExpr: " ++ dbg ++ " free var not in context: " ++ show s ++ "\n" ++ showctx (contextBindings ctx)
-                       --TypedId (NamedTypeIL "i32") (Ident ("{" ++ show s ++ "-NCTX-" ++ dbg ++ "}\n" ++ (showctx (contextBindings ctx))) 0)
-    where showctx bindings =
-            "Bindings in context: " ++
-              (joinWith ", " $ map (\(TermVarBinding nm v) -> show $ tidIdent v) bindings)
-
-excluding :: Ord a => [a] -> Set a -> [a]
-excluding bs zs =  Set.toList $ Set.difference (Set.fromList bs) zs
-
 type InfoMap = Map Ident ((Fn KNExpr TypeIL), Ident)
 
 instance (AExpr expr) => AExpr (Fn expr t) where
@@ -300,7 +287,10 @@ closedNamesOfKnFn infoMap (self_id, fn) = do
        variable, because it will be added as an implicit parameter, but
        the environment for f *is* closed over in g.
     -}
-    let rawFreeIds = freeIdents fn `excluding` (Set.fromList [self_id])
+    let rawFreeIds = freeIdents fn `excluding` [self_id] where
+        excluding :: Ord a => [a] -> [a] -> [a]
+        excluding bs zs =  Set.toList $ Set.difference (Set.fromList bs)
+                                                       (Set.fromList zs)
 
     -- Have (i.e.) g capture f's env var in addition to "f" itself,
     -- and make sure we filter out the global names.
@@ -321,25 +311,38 @@ closureOfKnFn :: Context TypeIL
                -> ILM (ILClosure, ILProcDef)
 closureOfKnFn ctx0 infoMap (closedNames, (self_id, fn)) = do
     let extctx = prependContextBindings ctx0 (bindingsForVars (fnVars fn))
-    let transformedFn = makeEnvPassingExplicitFn fn
-    (envVar, newproc) <- closureConvertFn extctx transformedFn infoMap closedNames
 
     -- Look up each captured var in the environment to determine what its
     -- type is. This is a sanity check that the names we need to close over
     -- are actually there to be closed over, with known types.
-    let capturedVars = map (\n -> contextVar ("closureOfKnFn (" ++ show self_id ++")")
-                                              extctx n) closedNames
-    return $ trace ("capturedVars for " ++ show self_id ++  ":" ++ (show $ capturedVars)) $
-         --trace ("raw closedNames for " ++ show self_id ++  ":" ++ (show $ freeIdents (E_AIFn fn))) $
-        (ILClosure (ilProcIdent newproc) envVar capturedVars, newproc)
+    let varsOfClosure = map (contextVar ("closureOfKnFn (" ++ show self_id ++")")
+                                        extctx) closedNames
+
+    let transformedFn = makeEnvPassingExplicitFn fn
+    (envVar, newproc) <- closureConvertFn extctx transformedFn infoMap varsOfClosure
+
+    return $ trace ("varsOfClosure for " ++ show self_id ++  ":" ++ (show $ varsOfClosure)) $
+        (ILClosure (ilProcIdent newproc) envVar varsOfClosure, newproc)
   where
+
+    contextVar :: String -> Context TypeIL -> FreeName -> AIVar
+    contextVar dbg ctx s =
+        case termVarLookup (identPrefix s) (contextBindings ctx) of
+                Just v -> v
+                Nothing -> error $ "ILExpr: " ++ dbg ++
+                                " free var not in context: " ++ show s ++
+                                "\n" ++ showctx (contextBindings ctx)
+                --TypedId (NamedTypeIL "i32") (Ident ("{" ++ show s ++
+                -- "-NCTX-" ++ dbg ++ "}\n" ++ (showctx (contextBindings ctx))) 0)
+        where showctx bindings =
+                "Bindings in context: " ++  (joinWith ", " $
+                     map (\(TermVarBinding nm v) -> show $ tidIdent v) bindings)
+
     closureConvertFn :: Context TypeIL -> Fn KNExpr TypeIL
-                     -> InfoMap -> [FreeName] -> ILM (Ident, ILProcDef)
-    closureConvertFn ctx f info freeNames = do
-        let envId        = snd (info Map.! self_id)
-        let uniqFreeVars = map (contextVar "closureConvertKnFnUFV" ctx) freeNames
-        let envTypes = map tidType uniqFreeVars
-        let envVar   = TypedId (TupleTypeIL envTypes) envId
+                     -> InfoMap -> [AIVar] -> ILM (Ident, ILProcDef)
+    closureConvertFn ctx f info varsOfClosure = do
+        let envId  = snd (info Map.! self_id)
+        let envVar = TypedId (TupleTypeIL $ map tidType varsOfClosure) envId
 
         -- If the body has x and y free, the closure converted body should be
         --     case env of (x, y, ...) -> body end
@@ -348,7 +351,7 @@ closureOfKnFn ctx0 infoMap (closedNames, (self_id, fn)) = do
                    let patVar a = P_Variable norange (tidIdent a) in
                    closureConvert ctx $
                      KNCase (typeKN oldbody) envVar
-                        [ (P_Tuple norange (map patVar uniqFreeVars)
+                        [ (P_Tuple norange (map patVar varsOfClosure)
                           , oldbody) ]
         proc <- ilmPutProc (closureConvertedProc (envVar:(fnVars f)) f newbody)
         return (envId, proc)
@@ -375,24 +378,23 @@ closureOfKnFn ctx0 infoMap (closedNames, (self_id, fn)) = do
         KNAppCtor    {} -> e
         KNTyApp      {} -> e
 
-        KNIf t v b c           -> KNIf    t v (q b) (q c)
-        KNUntil t a b          -> KNUntil t   (q a) (q b)
-        KNLetVal id a b        -> KNLetVal id (q a) (q b)
-        KNLetFuns ids fns e    -> KNLetFuns ids (map fq fns) (q e)
-        KNCase t v bs          -> KNCase t v [(p, q e) | (p, e) <- bs]
+        KNIf      t  v b c  -> KNIf      t v (q b) (q c)
+        KNUntil   t  a b    -> KNUntil   t   (q a) (q b)
+        KNLetVal  id a b    -> KNLetVal  id  (q a) (q b)
+        KNLetFuns ids fns e -> KNLetFuns ids (map fq fns) (q e)
+        KNCase    t v bs    -> KNCase    t v [(p, q e) | (p, e) <- bs]
 
-        -- The only really interesting case:
-        KNCall t v vs
-            | Map.member (tidIdent v) infoMap ->
-                let (f, envid) = infoMap Map.! (tidIdent v) in
-                -- We don't know the env type here, since we don't
-                -- pre-collect the set of closed-over envs from other procs.
-                let env = TypedId fakeCloEnvType envid in
-                          -- This works because (A) we never type check ILExprs,
-                          -- and (B) the LLVM codegen doesn't check the type field in this case.
-                KNCall t (fnVar f) (env:vs)  -- Call proc, passing env as first parameter.
-        -- TODO when is guard above false?
-        KNCall   t v vs -> KNCall t v vs
+        KNCall t v vs ->
+          case Map.lookup (tidIdent v) infoMap of
+            Nothing -> e
+            -- The only really interesting case: call to let-bound function!
+            Just (f, envid) ->
+              let env = TypedId fakeCloEnvType envid in
+              KNCall t (fnVar f) (env:vs)  -- Call proc, passing env as first parameter.
+              -- We don't know the env type here, since we don't
+              -- pre-collect the set of closed-over envs from other procs.
+              -- This works because (A) we never type check ILExprs,
+              -- and (B) the LLVM codegen doesn't check the type field in this case.
 
 typeIL :: ILExpr -> TypeIL
 typeIL (ILBool _)          = boolTypeIL
