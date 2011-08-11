@@ -9,7 +9,7 @@ module Foster.ILExpr where
 import Debug.Trace(trace)
 import Control.Monad.State
 import Data.Set(Set)
-import Data.Set as Set(fromList, empty)
+import Data.Set as Set(empty)
 import Data.Map(Map)
 import qualified Data.Map as Map((!), insert, lookup, empty, elems, fromList)
 
@@ -93,14 +93,11 @@ showProgramStructure (ILProgram procdefs decls _dtypes _lines) =
           ++ out "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"
     procVarDesc (TypedId ty id) = "( " ++ (show id) ++ " :: " ++ show ty ++ " ) "
 
-type KnownVars = Set String
-
 data ILMState = ILMState {
-    ilmUniq    :: Uniq
-  , ilmGlobals :: KnownVars
-  , ilmProcDefs :: Map Ident ILProcDef
+    ilmUniq      :: Uniq
+  , ilmProcDefs  :: Map Ident ILProcDef
   , ilmKnownPoly :: Set Ident
-  , ilmCtors   :: DataTypeSigs
+  , ilmCtors     :: DataTypeSigs
 }
 
 type ILM a = State ILMState a
@@ -125,19 +122,17 @@ ilmGetProc id = do
 
 fakeCloVar id = TypedId fakeCloEnvType id where fakeCloEnvType = TupleTypeIL []
 
-closureConvertAndLift :: Context TypeIL -> DataTypeSigs
+closureConvertAndLift :: DataTypeSigs
                       -> (ModuleIL KNExpr TypeIL)
                       -> ILProgram
-closureConvertAndLift ctx dataSigs m =
+closureConvertAndLift dataSigs m =
     let fns = moduleILfunctions m in
     let decls = map (\(s,t) -> ILDecl s t) (moduleILdecls m) in
     -- We lambda lift top level functions, since we know they don't have any "real" free vars.
     -- Lambda lifting wiil closure convert nested functions.
-    let nameOfBinding (TermVarBinding s _) = s in
-    let globalVars   = Set.fromList $ map nameOfBinding (contextBindings ctx) in
     let procsILM     = forM fns (\fn -> lambdaLift fn []) in
     let dataTypes    = moduleILdataTypes m in
-    let initialState = ILMState 0 globalVars Map.empty Set.empty dataSigs in
+    let initialState = ILMState 0 Map.empty Set.empty dataSigs in
     let newstate     = execState procsILM initialState in
     ILProgram (ilmProcDefs newstate) decls dataTypes (moduleILsourceLines m)
 

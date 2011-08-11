@@ -323,8 +323,7 @@ typecheckSourceModule sm outfile flagVals verboseMode = do
                      runOutput (showStructure (fnBody fn))))
 
          let dataSigs = dataTypeSigs (moduleILdataTypes m)
-
-         let prog0 = closureConvertAndLift ctx_il dataSigs kmod
+         let prog0 = closureConvertAndLift dataSigs kmod
 
          let monoprog = monomorphize prog0
 
