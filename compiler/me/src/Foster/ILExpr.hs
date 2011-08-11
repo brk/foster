@@ -9,10 +9,9 @@ module Foster.ILExpr where
 import Debug.Trace(trace)
 import Control.Monad.State
 import Data.Set(Set)
-import Data.Set as Set(fromList, toList, difference, member, empty)
+import Data.Set as Set(fromList, empty)
 import Data.Map(Map)
-import qualified Data.Map as Map((!), insert, lookup,
-                                 empty, keys, elems, fromList)
+import qualified Data.Map as Map((!), insert, lookup, empty, elems, fromList)
 
 import Foster.Base
 import Foster.Context
@@ -124,7 +123,7 @@ ilmGetProc id = do
         old <- get
         return $ Map.lookup id (ilmProcDefs old)
 
-fakeCloEnvType = TupleTypeIL []
+fakeCloVar id = TypedId fakeCloEnvType id where fakeCloEnvType = TupleTypeIL []
 
 closureConvertAndLift :: Context TypeIL -> DataTypeSigs
                       -> (ModuleIL KNExpr TypeIL)
@@ -136,23 +135,18 @@ closureConvertAndLift ctx dataSigs m =
     -- Lambda lifting wiil closure convert nested functions.
     let nameOfBinding (TermVarBinding s _) = s in
     let globalVars   = Set.fromList $ map nameOfBinding (contextBindings ctx) in
-    let procsILM     = forM fns (\fn -> lambdaLift ctx fn []) in
+    let procsILM     = forM fns (\fn -> lambdaLift fn []) in
     let dataTypes    = moduleILdataTypes m in
     let initialState = ILMState 0 globalVars Map.empty Set.empty dataSigs in
     let newstate     = execState procsILM initialState in
     ILProgram (ilmProcDefs newstate) decls dataTypes (moduleILsourceLines m)
 
-prependILBinding :: (Ident, ILExpr) -> Context TypeIL -> Context TypeIL
-prependILBinding (id, ile) ctx =
-    let annvar = TypedId (typeIL ile) id in
-    prependContextBinding ctx (TermVarBinding (identPrefix id) annvar)
-
 -- Note that closure conversion is combined with the transformation from
 -- AnnExpr to ILExpr, which mainly consists of making evaluation order for
 -- the subexpressions of tuples and calls (etc) explicit.
-closureConvert :: Context TypeIL -> KNExpr -> ILM ILExpr
-closureConvert ctx expr =
-        let g = closureConvert ctx in
+closureConvert :: KNExpr -> ILM ILExpr
+closureConvert expr =
+        let g = closureConvert in
         case expr of
             -- These cases just swap the tag only. Boring!
             KNBool       b      -> return $ ILBool       b
@@ -171,50 +165,30 @@ closureConvert ctx expr =
             KNTyApp t v argty   -> return $ ILTyApp t v argty
 
             -- These cases swap the tag and recur in uninteresting ways.
-            KNIf t v a b      -> do [a', b'] <- mapM g [a, b] ; return $ ILIf t v a' b'
-            KNUntil t a b     -> do [a', b'] <- mapM g [a, b] ; return $ ILUntil t a' b'
-
-            -- Variable binding is relatively simple: we just
-            -- extend the context in between the two recursive calls.
-            KNLetVal id a b -> do
-                a' <- closureConvert ctx  a
-                let extctx = prependILBinding (id, a') ctx
-                b' <- closureConvert extctx b
-                return $ ILLetVal id a' b'
+            KNIf t v a b    -> do [a', b'] <- mapM g [a, b] ; return $ ILIf t v a' b'
+            KNUntil t a b   -> do [a', b'] <- mapM g [a, b] ; return $ ILUntil t a' b'
+            KNLetVal id a b -> do [a', b'] <- mapM g [a, b] ; return $ ILLetVal id a' b'
 
             -- Pattern matching generalizes variable binding: Each branch
             -- expression must be converted in a suitably extended context,
             -- and while we're here, we also perform pattern match compilation.
             KNCase t v bs -> do
                 -- convertBranch :: (Pattern, KNExpr) -> (Pattern, ILExpr)
-                let convertBranch (p, a) = do
-                       let bindings = patternBindings (p, tidType v)
-                       let extctx = prependContextBindings ctx bindings
-                       a' <- closureConvert extctx a
-                       return (p, a' )
+                let convertBranch (p, a) = do a' <- g a ; return (p, a' )
                 ibs <- mapM convertBranch bs
                 allSigs <- gets ilmCtors
                 let dt = compilePatterns ibs allSigs
                 return $ ILCase t v ibs dt
 
-            KNLetFuns ids fns e -> closureConvertLetFuns ids fns e ctx
+            KNLetFuns ids fns e -> closureConvertLetFuns ids fns e
 
-closureConvertLetFuns ids fns e ctx = do
-    let idfns = zip ids fns
-
+closureConvertLetFuns ids fns e = do
     cloEnvIds <- mapM (\id -> ilmFresh (".env." ++ identPrefix id)) ids
-
-    let cloEnvBinding id = TermVarBinding (identPrefix id) (TypedId fakeCloEnvType id)
-    let cloBinding (id, fn) = TermVarBinding (identPrefix id) (TypedId (tidType $ fnVar fn) id)
-    let extctx = prependContextBindings ctx (map cloEnvBinding cloEnvIds ++
-                                             map cloBinding idfns)
-
     let infoMap = Map.fromList (zip ids (zip fns cloEnvIds))
-
-    closedNms <- mapM (closedNamesOfKnFn    infoMap) idfns
-    combined  <- mapM (closureOfKnFn extctx infoMap) (zip closedNms idfns)
+    let idfns = zip ids fns
+    combined  <- mapM (closureOfKnFn infoMap) idfns
     let (closures, _procdefs) = unzip combined
-    e' <- closureConvert extctx e
+    e' <- closureConvert e
     return $ ILClosures ids closures e'
 
 closureConvertedProc :: [AIVar] -> (Fn KNExpr TypeIL) -> ILExpr -> ILM ILProcDef
@@ -236,10 +210,9 @@ closureConvertedProc liftedProcVars f newbody = do
 -- we can rewrite the lambda to a closed proc:
 --      letproc p = \yy x -> x + yy
 --      let y = blah in p y foobar
-lambdaLift :: Context TypeIL -> (Fn KNExpr TypeIL) -> [AIVar] -> ILM ILProcDef
-lambdaLift ctx0 f freeVars = do
-    let extctx = prependContextBindings ctx0 (bindingsForVars (fnVars f))
-    newbody <- closureConvert extctx (fnBody f)
+lambdaLift :: Fn KNExpr TypeIL -> [AIVar] -> ILM ILProcDef
+lambdaLift f freeVars = do
+    newbody <- closureConvert (fnBody f)
     -- Add free variables to the signature of the lambda-lifted procedure.
     let liftedProcVars = freeVars ++ fnVars f
     ilmPutProc (closureConvertedProc liftedProcVars f newbody)
@@ -262,85 +235,39 @@ instance AExpr KNExpr where
         KNCase _t v patbnds ->  tidIdent v : concatMap patBindingFreeIds patbnds
         -- Note that all free idents of the bound expr are free in letvar,
         -- but letfuns removes the bound name from that set!
-        KNLetFuns ids fns e -> ((concatMap freeIdents fns) ++ (freeIdents e)) `butnot` ids
+        KNLetFuns ids fns e -> ((concatMap freeIdents fns) ++ (freeIdents e))
+                               `butnot` ids
         _               -> concatMap freeIdents (childrenOf e)
 
-closedNamesOfKnFn :: InfoMap
-                  -> (Ident, (Fn KNExpr TypeIL))
-                  -> ILM [FreeName]
-closedNamesOfKnFn infoMap (self_id, fn) = do
-    -- ids are the names of the recursively bound functions
-    let ids      =          Map.keys  infoMap
-    let envIds   = map snd (Map.elems infoMap)
-    {- Given   rec f = { ... f() .... };
-                   g = { ... f() .... };
-                   h = { f };
-               in ... end;
-       none of f, g, or h shoud close over any global variables.
-       Ideally neither f nor g should close over the closure f itself, but
-       h must close over f, because it returns f rather than calls it.
-       For now, rather than fancy analysis, we simply capture both the env
-       (used directly for calls) and the closure (used only when directly
-       referenced) when we see any reference to a sibling function.
+closedOverVarsOfKnFn :: InfoMap -> Ident -> Fn KNExpr TypeIL -> [AIVar]
+closedOverVarsOfKnFn infoMap self_id fn =
+    -- Each closure converted proc need not capture its own environment
+    -- variable, because it will be added as an implicit parameter, but
+    -- the environment for f *is* closed over in g.
+    let rawFreeIds = (map tidIdent $ fnFreeVars fn) `butnot` [self_id] in
 
-       Each closure converted proc need not capture its own environment
-       variable, because it will be added as an implicit parameter, but
-       the environment for f *is* closed over in g.
-    -}
-    let rawFreeIds = freeIdents fn `excluding` [self_id] where
-        excluding :: Ord a => [a] -> [a] -> [a]
-        excluding bs zs =  Set.toList $ Set.difference (Set.fromList bs)
-                                                       (Set.fromList zs)
+    -- Capture env. vars instead of closure vars.
+    let envVars = concatMap (\n -> case Map.lookup n infoMap of
+                               Nothing ->  []
+                               Just (_, envid) -> [fakeCloVar envid])
+                            rawFreeIds in
+    envVars ++ fnFreeVars fn
 
-    -- Have (i.e.) g capture f's env var in addition to "f" itself,
-    -- and make sure we filter out the global names.
-    globalVars <- gets ilmGlobals
-    let envFor = Map.fromList $ zip ids envIds
-    -- Capture env. vars in addition to closure vars.
-    let freeIds = concatMap (\n -> case Map.lookup n envFor of
-                                     Nothing ->  [n]
-                                     Just env -> [n, env]) rawFreeIds
-
-    return $ trace ("freeNames("++ show self_id++") = " ++ show freeIds)
-             filter (\id -> not $ Set.member (identPrefix id) globalVars)
-                    freeIds
-
-closureOfKnFn :: Context TypeIL
-               -> InfoMap
-               -> ([FreeName], (Ident, (Fn KNExpr TypeIL)))
-               -> ILM (ILClosure, ILProcDef)
-closureOfKnFn ctx0 infoMap (closedNames, (self_id, fn)) = do
-    let extctx = prependContextBindings ctx0 (bindingsForVars (fnVars fn))
-
-    -- Look up each captured var in the environment to determine what its
-    -- type is. This is a sanity check that the names we need to close over
-    -- are actually there to be closed over, with known types.
-    let varsOfClosure = map (contextVar ("closureOfKnFn (" ++ show self_id ++")")
-                                        extctx) closedNames
-
+closureOfKnFn :: InfoMap
+              -> (Ident, (Fn KNExpr TypeIL))
+              -> ILM (ILClosure, ILProcDef)
+closureOfKnFn infoMap (self_id, fn) = do
+    let varsOfClosure = closedOverVarsOfKnFn infoMap self_id fn
     let transformedFn = makeEnvPassingExplicitFn fn
-    (envVar, newproc) <- closureConvertFn extctx transformedFn infoMap varsOfClosure
-
-    return $ trace ("varsOfClosure for " ++ show self_id ++  ":" ++ (show $ varsOfClosure)) $
-        (ILClosure (ilProcIdent newproc) envVar varsOfClosure, newproc)
+    (envVar, newproc) <- closureConvertFn transformedFn infoMap varsOfClosure
+    return $ trace ("varsOfClosure for " ++ show (tidIdent $ fnVar fn) ++  ":"
+                              ++ (show $ varsOfClosure)) $
+             (ILClosure (ilProcIdent newproc) envVar varsOfClosure, newproc)
   where
 
-    contextVar :: String -> Context TypeIL -> FreeName -> AIVar
-    contextVar dbg ctx s =
-        case termVarLookup (identPrefix s) (contextBindings ctx) of
-                Just v -> v
-                Nothing -> error $ "ILExpr: " ++ dbg ++
-                                " free var not in context: " ++ show s ++
-                                "\n" ++ showctx (contextBindings ctx)
-                --TypedId (NamedTypeIL "i32") (Ident ("{" ++ show s ++
-                -- "-NCTX-" ++ dbg ++ "}\n" ++ (showctx (contextBindings ctx))) 0)
-        where showctx bindings =
-                "Bindings in context: " ++  (joinWith ", " $
-                     map (\(TermVarBinding nm v) -> show $ tidIdent v) bindings)
-
-    closureConvertFn :: Context TypeIL -> Fn KNExpr TypeIL
+    closureConvertFn :: Fn KNExpr TypeIL
                      -> InfoMap -> [AIVar] -> ILM (Ident, ILProcDef)
-    closureConvertFn ctx f info varsOfClosure = do
+    closureConvertFn f info varsOfClosure = do
         let envId  = snd (info Map.! self_id)
         let envVar = TypedId (TupleTypeIL $ map tidType varsOfClosure) envId
 
@@ -349,7 +276,7 @@ closureOfKnFn ctx0 infoMap (closedNames, (self_id, fn)) = do
         newbody <- let oldbody = fnBody f in
                    let norange = MissingSourceRange "" in
                    let patVar a = P_Variable norange (tidIdent a) in
-                   closureConvert ctx $
+                   closureConvert $
                      KNCase (typeKN oldbody) envVar
                         [ (P_Tuple norange (map patVar varsOfClosure)
                           , oldbody) ]
@@ -389,7 +316,7 @@ closureOfKnFn ctx0 infoMap (closedNames, (self_id, fn)) = do
             Nothing -> e
             -- The only really interesting case: call to let-bound function!
             Just (f, envid) ->
-              let env = TypedId fakeCloEnvType envid in
+              let env = fakeCloVar envid in
               KNCall t (fnVar f) (env:vs)  -- Call proc, passing env as first parameter.
               -- We don't know the env type here, since we don't
               -- pre-collect the set of closed-over envs from other procs.

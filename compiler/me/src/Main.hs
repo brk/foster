@@ -127,10 +127,14 @@ typecheckModule verboseMode mod tcenv0 = do
     let sortedFns = Graph.stronglyConnComp callGraphList -- :: [SCC FnAST]
     putStrLn $ "Function SCC list : " ++
                    show [(name, frees) | (_, name, frees) <- callGraphList]
-    let ctx0 = Context declBindings primBindings verboseMode
+    let ctx0 = mkContext declBindings primBindings verboseMode
     (annFns, (ctx, tcenv)) <- mapFoldM sortedFns (ctx0, tcenv0) typecheckFnSCC
     unTc tcenv (convertTypeILofAST mod ctx annFns)
  where
+   mkContext declBindings primBindings verboseMode =
+     Context declBindings primBindings verboseMode globalvars
+       where globalvars = declBindings ++ primBindings
+
    computeContextBindings :: [(String, TypeAST)] -> [ContextBinding TypeAST]
    computeContextBindings decls = map pair2binding decls
 
@@ -184,10 +188,11 @@ typecheckModule verboseMode mod tcenv0 = do
 
 
         liftContextM :: Monad m => (t1 -> m t2) -> Context t1 -> m (Context t2)
-        liftContextM f (Context cb pb vb) = do
+        liftContextM f (Context cb pb vb gb) = do
           cb' <- mapM (liftBinding f) cb
           pb' <- mapM (liftBinding f) pb
-          return $ Context cb' pb' vb
+          gb' <- mapM (liftBinding f) gb
+          return $ Context cb' pb' vb gb'
 
         liftBinding :: Monad m => (t1 -> m t2) -> ContextBinding t1 -> m (ContextBinding t2)
         liftBinding f (TermVarBinding s (TypedId t i)) = do

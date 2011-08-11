@@ -176,6 +176,7 @@ kNormalCtors ctx dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
                   , fnVars  = vars
                   , fnBody  = KNAppCtor (NamedTypeIL dname) cid vars
                   , fnRange = MissingSourceRange ("kNormalCtor " ++ show cid)
+                  , fnFreeVars = []
                   }
 
 -- This is necessary due to transformations of AIIf and nestedLets

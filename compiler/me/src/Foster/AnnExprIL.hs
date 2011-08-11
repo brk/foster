@@ -154,11 +154,13 @@ fnOf :: AnnFn -> Tc (Fn AIExpr TypeIL)
 fnOf f = do
  ft <- ilOf (annFnType f)
  fnVars <- mapM aiVar (annFnVars f)
+ fnFreeVars <- mapM aiVar (annFnFreeVars f)
  body <- ail (annFnBody f)
  return $ Fn { fnVar   = TypedId ft (annFnIdent f)
              , fnVars  = fnVars
              , fnBody  = body
              , fnRange = (annFnRange f)
+             , fnFreeVars = fnFreeVars
              }
 
 instance Structured AIExpr where

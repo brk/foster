@@ -141,6 +141,7 @@ data Fn expr ty = Fn { fnVar   :: TypedId ty
                      , fnVars  :: [TypedId ty]
                      , fnBody  :: expr
                      , fnRange :: SourceRange
+                     , fnFreeVars :: [TypedId ty]
                      } deriving (Show)
 
 data ModuleIL expr ty = ModuleIL {

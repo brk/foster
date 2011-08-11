@@ -49,11 +49,13 @@ data AnnExpr =
 data AnnTuple = E_AnnTuple { annTupleRange :: SourceRange
                            , annTupleExprs :: [AnnExpr] } deriving (Show)
 
--- Body annotated, and overall type added
+-- Body annotated, and overall type added.
+-- We also record the free identifiers used.
 data AnnFn        = AnnFn  { annFnType  :: TypeAST
                            , annFnIdent :: Ident
                            , annFnVars  :: [AnnVar]
                            , annFnBody  :: AnnExpr
+                           , annFnFreeVars :: [AnnVar]
                            , annFnRange :: SourceRange
                            } deriving (Show)
 
@@ -106,8 +108,11 @@ instance Structured AnnExpr where
             AnnCase _rng t e bs     -> out $ "AnnCase      "
             AnnPrimitive _r tid     -> out $ "AnnPrimitive " ++ show tid
             E_AnnVar _r tid         -> out $ "AnnVar       " ++ show tid
-            E_AnnFn annFn           -> out $ "AnnFn " ++ fnNameA annFn ++ " // " ++ (show $ annFnBoundNames annFn) ++ " :: " ++ show (annFnType annFn)
             E_AnnTyApp _rng t e argty -> out $ "AnnTyApp     [" ++ show argty ++ "] :: " ++ show t
+            E_AnnFn annFn           -> out $ "AnnFn " ++ fnNameA annFn ++ " // "
+              ++ (show $ annFnBoundNames annFn) ++ " :: " ++ show (annFnType annFn) where
+                        annFnBoundNames :: AnnFn -> [String]
+                        annFnBoundNames fn = map show (annFnVars fn)
     structuredChildren e = map SS $ childrenOf e
     childrenOf e =
         case e of
@@ -133,6 +138,11 @@ instance Structured AnnExpr where
 
 -----------------------------------------------------------------------
 
+instance AExpr AnnFn where
+    freeIdents f = let bodyvars =  freeIdents (annFnBody f) in
+                   let boundvars = map tidIdent (annFnVars f) in
+                   bodyvars `butnot` boundvars
+
 instance AExpr AnnExpr where
     freeIdents e = case e of
         E_AnnVar _rng v     -> [tidIdent v]
@@ -141,16 +151,10 @@ instance AExpr AnnExpr where
         AnnCase _rng _t e patbnds -> freeIdents e ++ (concatMap patBindingFreeIds patbnds)
         -- Note that all free idents of the bound expr are free in letvar,
         -- but letfuns removes the bound name from that set!
-        AnnLetFuns _rng ids fns e ->
-                           concatMap boundvars (zip ids fns) ++ (freeIdents e `butnot` ids) where
-                                     boundvars (id, fn) = freeIdents (E_AnnFn fn) `butnot` [id]
-        E_AnnFn f       -> let bodyvars =  freeIdents (annFnBody f) in
-                           let boundvars = map tidIdent (annFnVars f) in
-                           bodyvars `butnot` boundvars
-        _               -> concatMap freeIdents (childrenOf e)
-
-annFnBoundNames :: AnnFn -> [String]
-annFnBoundNames fn = map show (annFnVars fn)
+        AnnLetFuns _rng ids fns e -> ((concatMap freeIdents fns) ++ (freeIdents e))
+                                     `butnot` ids
+        E_AnnFn f -> map tidIdent (annFnFreeVars f)
+        _         -> concatMap freeIdents (childrenOf e)
 
 -----------------------------------------------------------------------
 

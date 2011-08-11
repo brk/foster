@@ -11,10 +11,11 @@ data ContextBinding ty = TermVarBinding String (TypedId ty)
 data Context ty = Context { contextBindings   :: [ContextBinding ty]
                           , primitiveBindings :: [ContextBinding ty]
                           , contextVerbose    :: Bool
+                          , globalBindings    :: [ContextBinding ty]
                           }
 
 emptyContext :: Context ty
-emptyContext = Context [] [] True
+emptyContext = Context [] [] True []
 
 prependContextBinding :: Context ty -> ContextBinding ty -> Context ty
 prependContextBinding ctx prefix =
@@ -25,7 +26,7 @@ prependContextBindings ctx prefix =
     ctx { contextBindings = prefix ++ (contextBindings ctx) }
 
 instance (Show ty) => Show (ContextBinding ty) where
-    show (TermVarBinding s annvar) = "(termvar " ++ s ++ " :: " ++ show annvar
+    show (TermVarBinding s annvar) = "(termvar " ++ show annvar ++ ")"
 
 ctxBoundIdents :: Context ty -> [Ident]
 ctxBoundIdents ctx = [tidIdent v | TermVarBinding _ v <- (contextBindings ctx)]

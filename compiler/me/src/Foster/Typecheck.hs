@@ -109,8 +109,11 @@ typecheckVar ctx rng name =
     Nothing   ->
       case termVarLookup name (primitiveBindings ctx) of
         Just avar -> return $ AnnPrimitive rng avar
-        Nothing   -> tcFails [out $ "Unknown variable " ++ name
-                                 ++ showSourceRange rng]
+        Nothing   -> do msg <- getStructureContextMessage
+                        tcFails [out $ "Unknown variable " ++ name
+                                 ++ showSourceRange rng
+                                 ++ "ctx: "++ show (contextBindings ctx)
+                                 ++ "\nhist: " , msg]
 -----------------------------------------------------------------------
 notRecursive boundName expr =
   not (boundName `elem` freeVars expr && isFnAST expr)
@@ -154,6 +157,7 @@ typecheckLetRec ctx0 rng bindings e mt = do
            TermVarBinding (identPrefix id) (TypedId mtv id)
     let ctxBindings = map makeTermVarBinding (zip unificationVars ids)
     let ctx = prependContextBindings ctx0 ctxBindings
+
     -- Typecheck each binding
     tcbodies <- forM (zip unificationVars bindings) $
        (\(u, TermBinding v b) -> do
@@ -474,6 +478,9 @@ typecheckFn' ctx f cc expArgType expBodyType = do
     equateTypes fnProtoRetTy (typeAST annbody)
                     (Just $ "return type/body type mismatch in " ++ fnProtoName)
 
+    -- Note we collect free vars in the old context, since we can't possibly
+    -- capture the function's arguments from the environment!
+    freeVars <- computeFreeFnVars uniquelyNamedFormals annbody f ctx
     formalVars <- typeJoinVars uniquelyNamedFormals expArgType
 
     -- Compute "base" function type, ignoring any type parameters.
@@ -493,8 +500,19 @@ typecheckFn' ctx f cc expArgType expBodyType = do
       Just av -> equateTypes fnty (tidType av) (Just "overall function types")
 
     return $ E_AnnFn (AnnFn fnty (GlobalSymbol fnProtoName)
-                           formalVars annbody
+                           formalVars annbody freeVars
                            (fnAstRange f))
+
+computeFreeFnVars uniquelyNamedFormals annbody f ctx = do
+    let identsFree = bodyvars `butnot` (boundvars ++ globalvars)
+                     where
+                     bodyvars   = freeIdents annbody
+                     boundvars  = map tidIdent uniquelyNamedFormals
+                     globalvars = map bindingId (globalBindings ctx)
+                     bindingId (TermVarBinding _ tid) = tidIdent tid
+    freeAnns <- let rng = fnAstRange f in
+                mapM (\id -> typecheckVar ctx rng (identPrefix id)) identsFree
+    return $ [tid | E_AnnVar _ tid <- freeAnns]
 
 -- | Verify that the given formals have distinct names,
 -- | and return unique'd versions of each.
@@ -609,7 +627,8 @@ verifyNonOverlappingVariableNames fnName varNames = do
     case duplicates of
         []        -> return ()
         otherwise -> tcFails [out $ "Error when checking " ++ fnName
-                                 ++ ": had duplicated formal parameter names: " ++ show duplicates]
+                                 ++ ": had duplicated formal parameter names: "
+                                 ++ show duplicates]
 
 -----------------------------------------------------------------------
 
