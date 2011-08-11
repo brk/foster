@@ -223,22 +223,6 @@ bindingsForVars vars = [TermVarBinding (identPrefix i) v
 type FreeName = Ident
 type InfoMap = Map Ident ((Fn KNExpr TypeIL), Ident)
 
-instance (AExpr expr) => AExpr (Fn expr t) where
-    freeIdents f = let bodyvars =  freeIdents (fnBody f) in
-                   let boundvars = map tidIdent (fnVars f) in
-                   bodyvars `butnot` boundvars
-
-instance AExpr KNExpr where
-    freeIdents e = case e of
-        KNVar v             -> [tidIdent v]
-        KNLetVal id a b     -> freeIdents a ++ (freeIdents b `butnot` [id])
-        KNCase _t v patbnds ->  tidIdent v : concatMap patBindingFreeIds patbnds
-        -- Note that all free idents of the bound expr are free in letvar,
-        -- but letfuns removes the bound name from that set!
-        KNLetFuns ids fns e -> ((concatMap freeIdents fns) ++ (freeIdents e))
-                               `butnot` ids
-        _               -> concatMap freeIdents (childrenOf e)
-
 closedOverVarsOfKnFn :: InfoMap -> Ident -> Fn KNExpr TypeIL -> [AIVar]
 closedOverVarsOfKnFn infoMap self_id fn =
     -- Each closure converted proc need not capture its own environment
