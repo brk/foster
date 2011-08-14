@@ -66,6 +66,10 @@ ilOf typ =
 
 boolTypeIL = NamedTypeIL "Bool"
 
+pointedToTypeOfVar v = case v of
+    TypedId (PtrTypeIL t) _ -> t
+    _ -> error $ "TypeIL.hs:pointedToTypeOfVar\n"
+              ++ "Expected variable to be a pointer, but had " ++ show v
 -----------------------------------------------------------------------
 
 fnName f = identPrefix (tidIdent $ fnVar f)

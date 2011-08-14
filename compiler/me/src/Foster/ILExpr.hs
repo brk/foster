@@ -71,7 +71,7 @@ data ILExpr =
         | ILAppCtor     TypeIL CtorId [AIVar] -- ILDataCtor
         -- Mutable ref cells
         | ILAlloc              AIVar
-        | ILDeref       TypeIL AIVar
+        | ILDeref              AIVar -- var has type ptr to t
         | ILStore       TypeIL AIVar AIVar
         -- Array operations
         | ILAllocArray  TypeIL AIVar
@@ -149,7 +149,7 @@ closureConvert expr =
             KNVar        v      -> return $ ILVar        v
             KNAllocArray t v    -> return $ ILAllocArray t v
             KNAlloc      v      -> return $ ILAlloc      v
-            KNDeref      t v    -> return $ ILDeref      t v
+            KNDeref      v      -> return $ ILDeref      v
             KNStore      t a b  -> return $ ILStore      t a b
             KNArrayRead  t a b  -> return $ ILArrayRead  t a b
             KNArrayPoke  a b c  -> return $ ILArrayPoke  a b c
@@ -315,7 +315,7 @@ typeIL (ILAllocArray elt_ty _) = ArrayTypeIL elt_ty
 typeIL (ILIf t a b c)      = t
 typeIL (ILUntil t a b)     = t
 typeIL (ILAlloc v)         = PtrTypeIL (tidType v)
-typeIL (ILDeref t _)       = t
+typeIL (ILDeref v)         = pointedToTypeOfVar v
 typeIL (ILStore t _ _)     = t
 typeIL (ILArrayRead t _ _) = t
 typeIL (ILArrayPoke _ _ _) = TupleTypeIL []
@@ -337,7 +337,7 @@ instance Structured ILExpr where
             ILUntil   t  a b    -> out $ "ILUntil     " ++ " :: " ++ show t
             ILInt ty int        -> out $ "ILInt       " ++ (litIntText int) ++ " :: " ++ show ty
             ILAlloc v           -> out $ "ILAlloc     "
-            ILDeref t a         -> out $ "ILDeref     "
+            ILDeref   a         -> out $ "ILDeref     "
             ILStore t a b       -> out $ "ILStore     "
             ILCase t _ bnds dt  -> (out "ILCase     \n") ++ (showStructure dt)
             ILAllocArray _ _    -> out $ "ILAllocArray "
@@ -373,7 +373,7 @@ instance Structured ILExpr where
             ILIf    t v b c         -> [var v, b, c]
             ILAlloc   v             -> [var v]
             ILAllocArray _ v        -> [var v]
-            ILDeref t v             -> [var v]
+            ILDeref   v             -> [var v]
             ILStore t v w           -> [var v, var w]
             ILArrayRead t a b       -> [var a, var b]
             ILArrayPoke v b i       -> [var v, var b, var i]

@@ -183,7 +183,7 @@ dumpExpr x@(ILAllocArray elt_ty size) =
                     , PbExpr.alloc_info = Just $ dumpAllocate
                                 (ILAllocInfo MemRegionGlobalHeap (Just size)) }
 
-dumpExpr x@(ILDeref t a) =
+dumpExpr x@(ILDeref a) =
     P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [ILVar a])
                     , PbExpr.tag   = IL_DEREF
                     , PbExpr.type' = Just $ dumpType (typeIL x)  }

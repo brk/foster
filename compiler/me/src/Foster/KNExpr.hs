@@ -39,7 +39,7 @@ data KNExpr =
         | KNAppCtor     TypeIL CtorId [AIVar] -- dumped as CtorId
         -- Mutable ref cells
         | KNAlloc              AIVar
-        | KNDeref       TypeIL AIVar
+        | KNDeref              AIVar
         | KNStore       TypeIL AIVar AIVar
         -- Array operations
         | KNAllocArray  TypeIL AIVar
@@ -86,7 +86,7 @@ kNormalize expr =
 
       AIAllocArray t a      -> do a' <- g a ; nestedLets [a'] (\[x] -> KNAllocArray t x)
       AIAlloc a             -> do a' <- g a ; nestedLets [a'] (\[x] -> KNAlloc x)
-      AIDeref t a           -> do a' <- g a ; nestedLets [a'] (\[x] -> KNDeref t x)
+      AIDeref   a           -> do a' <- g a ; nestedLets [a'] (\[x] -> KNDeref x)
       E_AITyApp t a argty   -> do a' <- g a ; nestedLets [a'] (\[x] -> KNTyApp t x argty)
       AIStore t a (AISubscript _t b c)
                              -> do [a', b', c'] <- mapM g [a, b, c]
@@ -194,7 +194,7 @@ typeKN (KNAllocArray elt_ty _) = ArrayTypeIL elt_ty
 typeKN (KNIf t a b c)      = t
 typeKN (KNUntil t a b)     = t
 typeKN (KNAlloc v)         = PtrTypeIL (tidType v)
-typeKN (KNDeref t _)       = t
+typeKN (KNDeref v)         = pointedToTypeOfVar v
 typeKN (KNStore t _ _)     = t
 typeKN (KNArrayRead t _ _) = t
 typeKN (KNArrayPoke _ _ _) = TupleTypeIL []
@@ -218,7 +218,7 @@ instance Structured KNExpr where
             KNUntil   t  a b    -> out $ "KNUntil     " ++ " :: " ++ show t
             KNInt ty int        -> out $ "KNInt       " ++ (litIntText int) ++ " :: " ++ show ty
             KNAlloc v           -> out $ "KNAlloc     "
-            KNDeref t a         -> out $ "KNDeref     "
+            KNDeref   a         -> out $ "KNDeref     "
             KNStore t a b       -> out $ "KNStore     "
             KNCase t _ bnds     -> out $ "KNCase      " ++ (show $ map fst bnds)
             KNAllocArray _ _    -> out $ "KNAllocArray "
@@ -246,7 +246,7 @@ instance Structured KNExpr where
             KNIf    t v b c         -> [var v, b, c]
             KNAlloc   v             -> [var v]
             KNAllocArray _ v        -> [var v]
-            KNDeref t v             -> [var v]
+            KNDeref   v             -> [var v]
             KNStore t v w           -> [var v, var w]
             KNArrayRead t a b       -> [var a, var b]
             KNArrayPoke v b i       -> [var v, var b, var i]
