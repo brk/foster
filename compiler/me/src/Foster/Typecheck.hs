@@ -66,7 +66,7 @@ typecheck ctx expr maybeExpTy =
           ea <- typecheck ctx a Nothing
           eb <- typecheck ctx b Nothing
           -- TODO verify that the val is a pointer to the slot
-          return (AnnStore rng (TupleTypeAST []) ea eb)
+          return (AnnStore rng ea eb)
 
         E_SeqAST rng a b -> do
             ea <- typecheck ctx a Nothing --(Just TypeUnitAST)

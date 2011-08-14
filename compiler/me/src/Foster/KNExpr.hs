@@ -38,9 +38,9 @@ data KNExpr =
         | KNCall        TypeIL AIVar  [AIVar]
         | KNAppCtor     TypeIL CtorId [AIVar] -- dumped as CtorId
         -- Mutable ref cells
-        | KNAlloc              AIVar
-        | KNDeref              AIVar
-        | KNStore       TypeIL AIVar AIVar
+        | KNAlloc       AIVar
+        | KNDeref       AIVar
+        | KNStore       AIVar AIVar
         -- Array operations
         | KNAllocArray  TypeIL AIVar
         | KNArrayRead   TypeIL AIVar AIVar
@@ -88,13 +88,13 @@ kNormalize expr =
       AIAlloc a             -> do a' <- g a ; nestedLets [a'] (\[x] -> KNAlloc x)
       AIDeref   a           -> do a' <- g a ; nestedLets [a'] (\[x] -> KNDeref x)
       E_AITyApp t a argty   -> do a' <- g a ; nestedLets [a'] (\[x] -> KNTyApp t x argty)
-      AIStore t a (AISubscript _t b c)
+      AIStore a (AISubscript _t b c)
                              -> do [a', b', c'] <- mapM g [a, b, c]
                                    nestedLets [a', b', c'] (\[x, y, z] -> KNArrayPoke x y z)
 
-      AILetVar id a b   -> do [a', b'] <- mapM g [a, b] ; return $ buildLet id a' b'
-      AIUntil   t  a b  -> do [a', b'] <- mapM g [a, b] ; return $ (KNUntil t a' b')
-      AIStore t a b     -> do [a', b'] <- mapM g [a, b] ; nestedLets [a', b'] (\[x, y] -> KNStore t x y)
+      AILetVar id  a b  -> do [a', b'] <- mapM g [a, b] ; return $ buildLet id a' b'
+      AIUntil    t a b  -> do [a', b'] <- mapM g [a, b] ; return $ (KNUntil t a' b')
+      AIStore      a b  -> do [a', b'] <- mapM g [a, b] ; nestedLets [a', b'] (\[x, y] -> KNStore x y)
       AISubscript t a b -> do [a', b'] <- mapM g [a, b] ; nestedLets [a', b'] (\[x, y] -> KNArrayRead t x y)
 
       AILetFuns ids fns a   -> do knFns <- mapM kNormalizeFn fns
@@ -195,7 +195,7 @@ typeKN (KNIf t a b c)      = t
 typeKN (KNUntil t a b)     = t
 typeKN (KNAlloc v)         = PtrTypeIL (tidType v)
 typeKN (KNDeref v)         = pointedToTypeOfVar v
-typeKN (KNStore t _ _)     = t
+typeKN (KNStore _ _)       = TupleTypeIL []
 typeKN (KNArrayRead t _ _) = t
 typeKN (KNArrayPoke _ _ _) = TupleTypeIL []
 typeKN (KNCase t _ _)      = t
@@ -219,7 +219,7 @@ instance Structured KNExpr where
             KNInt ty int        -> out $ "KNInt       " ++ (litIntText int) ++ " :: " ++ show ty
             KNAlloc v           -> out $ "KNAlloc     "
             KNDeref   a         -> out $ "KNDeref     "
-            KNStore t a b       -> out $ "KNStore     "
+            KNStore   a b       -> out $ "KNStore     "
             KNCase t _ bnds     -> out $ "KNCase      " ++ (show $ map fst bnds)
             KNAllocArray _ _    -> out $ "KNAllocArray "
             KNArrayRead  t a b  -> out $ "KNArrayRead " ++ " :: " ++ show t
@@ -247,7 +247,7 @@ instance Structured KNExpr where
             KNAlloc   v             -> [var v]
             KNAllocArray _ v        -> [var v]
             KNDeref   v             -> [var v]
-            KNStore t v w           -> [var v, var w]
+            KNStore   v w           -> [var v, var w]
             KNArrayRead t a b       -> [var a, var b]
             KNArrayPoke v b i       -> [var v, var b, var i]
             KNVar _                 -> []

@@ -188,7 +188,7 @@ dumpExpr x@(ILDeref a) =
                     , PbExpr.tag   = IL_DEREF
                     , PbExpr.type' = Just $ dumpType (typeIL x)  }
 
-dumpExpr x@(ILStore t a b ) =
+dumpExpr x@(ILStore a b) =
     P'.defaultValue { PbExpr.parts = fromList (fmap (dumpExpr.ILVar) [a, b])
                     , PbExpr.tag   = IL_STORE
                     , PbExpr.type' = Just $ dumpType (typeIL x)  }

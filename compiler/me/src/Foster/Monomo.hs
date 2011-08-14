@@ -259,7 +259,7 @@ substituteTypeInExpr subst expr =
             ILAlloc     v       -> ILAlloc            (qv v)
             ILAllocArray t v    -> ILAllocArray (q t) (qv v)
             ILDeref        v    -> ILDeref            (qv v)
-            ILStore      t v w  -> ILStore      (q t) (qv v) (qv w)
+            ILStore        v w  -> ILStore            (qv v) (qv w)
             ILArrayRead  t a b  -> ILArrayRead  (q t) (qv a) (qv b)
             ILArrayPoke  v b i  -> ILArrayPoke (qv v) (qv b) (qv i)
             ILVar        v      -> ILVar       (qv v)

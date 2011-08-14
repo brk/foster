@@ -34,7 +34,7 @@ data AnnExpr =
         -- Mutable ref cells
         | AnnAlloc      SourceRange AnnExpr
         | AnnDeref      SourceRange TypeAST AnnExpr
-        | AnnStore      SourceRange TypeAST AnnExpr AnnExpr
+        | AnnStore      SourceRange AnnExpr AnnExpr
         -- Array operations
         | AnnSubscript  SourceRange TypeAST AnnExpr AnnExpr
         -- Terms indexed by types
@@ -79,7 +79,7 @@ typeAST annexpr =
      (AnnLetFuns _rng _ _ e) -> recur e
      (AnnAlloc _rng e)       -> RefTypeAST (recur e)
      (AnnDeref _rng t _)     -> t
-     (AnnStore _rng t _ _)   -> t
+     (AnnStore _rng _ _)     -> TupleTypeAST []
      (AnnSubscript _r t _ _) -> t
      (AnnCase _rng t _ _)    -> t
      (E_AnnVar _rng tid)     -> tidType tid
@@ -102,7 +102,7 @@ instance Structured AnnExpr where
             AnnLetFuns _r ids fns e -> out $ "AnnLetFuns   " ++ show ids
             AnnAlloc _rng   a       -> out $ "AnnAlloc     "
             AnnDeref _rng t a       -> out $ "AnnDeref     "
-            AnnStore _rng t a b     -> out $ "AnnStore     "
+            AnnStore _rng   a b     -> out $ "AnnStore     "
             AnnSubscript _r t a b   -> out $ "AnnSubscript " ++ " :: " ++ show t
             AnnTuple     es         -> out $ "AnnTuple     "
             AnnCase _rng t e bs     -> out $ "AnnCase      "
@@ -128,7 +128,7 @@ instance Structured AnnExpr where
             AnnLetFuns _rng ids fns e            -> (map E_AnnFn fns) ++ [e]
             AnnAlloc _rng   a                    -> [a]
             AnnDeref _rng t a                    -> [a]
-            AnnStore _rng t a b                  -> [a, b]
+            AnnStore _rng   a b                  -> [a, b]
             AnnSubscript _rng t a b              -> [a, b]
             AnnTuple tup                         -> annTupleExprs tup
             AnnCase _rng t e bs                  -> e:(map snd bs)
@@ -171,7 +171,7 @@ instance SourceRanged AnnExpr where
       AnnLetFuns rng ids fns e    -> rng
       AnnAlloc rng   a            -> rng
       AnnDeref rng t a            -> rng
-      AnnStore rng t a b          -> rng
+      AnnStore rng   a b          -> rng
       AnnSubscript rng t a b      -> rng
       AnnTuple tup                -> annTupleRange tup
       AnnCase rng t e bs          -> rng

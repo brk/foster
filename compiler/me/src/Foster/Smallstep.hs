@@ -241,7 +241,7 @@ ssTermOfExpr expr =
     ILAllocArray ety n     -> SSTmExpr  $ IAllocArray (idOf n)
     ILAlloc a              -> SSTmExpr  $ IAlloc (idOf a)
     ILDeref   a            -> SSTmExpr  $ IDeref (idOf a)
-    ILStore t a b          -> SSTmExpr  $ IStore (idOf a) (idOf b)
+    ILStore   a b          -> SSTmExpr  $ IStore (idOf a) (idOf b)
     ILTyApp t v argty      -> SSTmExpr  $ ITyApp (idOf v) argty
     ILCase t a bs dt       -> SSTmExpr  $ ICase (idOf a) dt [(p, tr e) | (p, e) <- bs]
     ILAppCtor t cid vs     -> SSTmExpr  $ IAppCtor cid (map idOf vs)

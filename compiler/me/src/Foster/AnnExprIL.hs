@@ -41,7 +41,7 @@ data AIExpr=
         -- Mutable ref cells
         | AIAlloc      AIExpr
         | AIDeref      AIExpr
-        | AIStore      TypeIL AIExpr AIExpr
+        | AIStore      AIExpr AIExpr
         -- Array operations
         | AIAllocArray TypeIL AIExpr
         | AISubscript  TypeIL AIExpr AIExpr
@@ -76,9 +76,8 @@ ail ae =
                                          return $ AIAlloc x
         AnnDeref _rng t a          -> do [x] <- mapM q [a]
                                          return $ AIDeref x
-        AnnStore _rng t a b        -> do ti <- ilOf t
-                                         [x,y]   <- mapM q [a,b]
-                                         return $ AIStore     ti x y
+        AnnStore _rng   a b        -> do [x,y]   <- mapM q [a,b]
+                                         return $ AIStore x y
         AnnSubscript _rng t a b    -> do ti <- ilOf t
                                          [x,y]   <- mapM q [a,b]
                                          return $ AISubscript ti x y
@@ -178,7 +177,7 @@ instance Structured AIExpr where
             AIAllocArray t a      -> [a]
             AIAlloc        a      -> [a]
             AIDeref        a      -> [a]
-            AIStore      t a b    -> [a, b]
+            AIStore       a b     -> [a, b]
             AISubscript t a b     -> [a, b]
             AITuple     es        -> es
             AICase t e bs         -> e:(map snd bs)

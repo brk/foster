@@ -70,9 +70,9 @@ data ILExpr =
         | ILCall        TypeIL AIVar  [AIVar]
         | ILAppCtor     TypeIL CtorId [AIVar] -- ILDataCtor
         -- Mutable ref cells
-        | ILAlloc              AIVar
-        | ILDeref              AIVar -- var has type ptr to t
-        | ILStore       TypeIL AIVar AIVar
+        | ILAlloc       AIVar
+        | ILDeref       AIVar -- var has type ptr to t
+        | ILStore       AIVar AIVar -- a stored in b
         -- Array operations
         | ILAllocArray  TypeIL AIVar
         | ILArrayRead   TypeIL AIVar AIVar
@@ -150,7 +150,7 @@ closureConvert expr =
             KNAllocArray t v    -> return $ ILAllocArray t v
             KNAlloc      v      -> return $ ILAlloc      v
             KNDeref      v      -> return $ ILDeref      v
-            KNStore      t a b  -> return $ ILStore      t a b
+            KNStore        a b    -> return $ ILStore      a b
             KNArrayRead  t a b  -> return $ ILArrayRead  t a b
             KNArrayPoke  a b c  -> return $ ILArrayPoke  a b c
             KNTuple      vs     -> return $ ILTuple      vs
@@ -316,7 +316,7 @@ typeIL (ILIf t a b c)      = t
 typeIL (ILUntil t a b)     = t
 typeIL (ILAlloc v)         = PtrTypeIL (tidType v)
 typeIL (ILDeref v)         = pointedToTypeOfVar v
-typeIL (ILStore t _ _)     = t
+typeIL (ILStore _ _)       = TupleTypeIL []
 typeIL (ILArrayRead t _ _) = t
 typeIL (ILArrayPoke _ _ _) = TupleTypeIL []
 typeIL (ILCase t _ _ _)    = t
@@ -338,7 +338,7 @@ instance Structured ILExpr where
             ILInt ty int        -> out $ "ILInt       " ++ (litIntText int) ++ " :: " ++ show ty
             ILAlloc v           -> out $ "ILAlloc     "
             ILDeref   a         -> out $ "ILDeref     "
-            ILStore t a b       -> out $ "ILStore     "
+            ILStore   a b       -> out $ "ILStore     "
             ILCase t _ bnds dt  -> (out "ILCase     \n") ++ (showStructure dt)
             ILAllocArray _ _    -> out $ "ILAllocArray "
             ILArrayRead  t a b  -> out $ "ILArrayRead " ++ " :: " ++ show t
@@ -374,7 +374,7 @@ instance Structured ILExpr where
             ILAlloc   v             -> [var v]
             ILAllocArray _ v        -> [var v]
             ILDeref   v             -> [var v]
-            ILStore t v w           -> [var v, var w]
+            ILStore   v w           -> [var v, var w]
             ILArrayRead t a b       -> [var a, var b]
             ILArrayPoke v b i       -> [var v, var b, var i]
             ILVar _                 -> []
