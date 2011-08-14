@@ -95,6 +95,7 @@ message AllocInfo {
   }
   required MemRegion mem_region = 1;
   optional Expr      array_size = 2;
+  required bool      unboxed    = 3;
 }
 
 message Proc {

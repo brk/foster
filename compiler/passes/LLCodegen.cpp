@@ -188,7 +188,8 @@ llvm::Value* LLAppCtor::codegen(CodegenPass* pass) {
   // be properly implemented in terms of it.
   registerTupleType(ty, this->ctorId.typeName + "." + this->ctorId.ctorName,
                     this->ctorId.smallId, pass->mod);
-  LLAllocate a(ty, this->ctorId.smallId, NULL,
+  bool yesUnboxed = true;
+  LLAllocate a(ty, this->ctorId.smallId, yesUnboxed, NULL,
                LLAllocate::MEM_REGION_GLOBAL_HEAP);
   llvm::Value* obj_slot = a.codegen(pass);
   llvm::Value* obj = builder.CreateLoad(obj_slot);
@@ -321,14 +322,15 @@ llvm::Value* emitRuntimeArbitraryPrecisionOperation(const std::string& op,
 //////////////// LLAlloc, LLDeref, LLStore /////////////////////////
 ////////////////////////////////////////////////////////////////////
 
-Value* allocateCell(CodegenPass* pass, TypeAST* type,
+Value* allocateCell(CodegenPass* pass, TypeAST* type, bool unboxed,
                     LLAllocate::MemRegion region, int8_t ctorId) {
-  const llvm::Type* ty = NULL;
-  if (TupleTypeAST* tuplety = dynamic_cast<TupleTypeAST*>(type)) {
-    ty = tuplety->getLLVMTypeUnboxed();
-  } else {
-    ty = type->getLLVMType();
+  const llvm::Type* ty = type->getLLVMType();
+  if (unboxed) {
+    if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
+      ty = pty->getContainedType(0);
+    }
   }
+  EDiag() << "allocateCell of type " << str(type) << " ~~ " << str(ty);
 
   switch (region) {
   case LLAllocate::MEM_REGION_STACK:
@@ -357,7 +359,7 @@ llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
     return allocateArray(pass, this->type, this->region,
                          pass->emit(this->arraySize, NULL));
   } else {
-    return allocateCell(pass, this->type, this->region, this->ctorId);
+    return allocateCell(pass, this->type, this->unboxed, this->region, this->ctorId);
   }
 }
 

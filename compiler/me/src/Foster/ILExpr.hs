@@ -49,7 +49,10 @@ data ILProcDef = ILProcDef { ilProcReturnType :: TypeIL
 
 data AllocMemRegion = MemRegionStack
                     | MemRegionGlobalHeap
-data ILAllocInfo = ILAllocInfo AllocMemRegion (Maybe AIVar)
+data ILAllocInfo = ILAllocInfo { ilAllocRegion :: AllocMemRegion
+                               , ilAllocArraySize :: (Maybe AIVar)
+                               , ilAllocUnboxed :: Bool
+                               }
 
 data ILExpr =
         -- Literals

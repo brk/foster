@@ -133,8 +133,9 @@ LLAllocate* parseAllocate(const pb::Expr& e) {
   default: ASSERT(false) << "Unknown target region for AllocInfo.";
   }
   int8_t bogusCtorId = -2;
-  return new LLAllocate(TypeAST_from_pb(& e.type()), bogusCtorId, array_size,
-                        target_region);
+  bool unboxed = a.unboxed();
+  return new LLAllocate(TypeAST_from_pb(& e.type()), bogusCtorId,
+                        unboxed, array_size, target_region);
 }
 
 LLTuple* parseTuple(const pb::Expr& e) {
