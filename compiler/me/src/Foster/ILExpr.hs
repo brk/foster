@@ -48,11 +48,12 @@ data ILProcDef = ILProcDef { ilProcReturnType :: TypeIL
                            } deriving Show
 
 data AllocMemRegion = MemRegionStack
-                    | MemRegionGlobalHeap
-data ILAllocInfo = ILAllocInfo { ilAllocRegion :: AllocMemRegion
+                    | MemRegionGlobalHeap deriving Show
+data ILAllocInfo = ILAllocInfo { ilAllocType   :: TypeIL
+                               , ilAllocRegion :: AllocMemRegion
                                , ilAllocArraySize :: (Maybe AIVar)
                                , ilAllocUnboxed :: Bool
-                               }
+                               } deriving Show
 
 data ILExpr =
         -- Literals
@@ -72,6 +73,8 @@ data ILExpr =
         | ILCallPrim    TypeIL ILPrim [AIVar]
         | ILCall        TypeIL AIVar  [AIVar]
         | ILAppCtor     TypeIL CtorId [AIVar] -- ILDataCtor
+        -- Stack/heap slot allocation
+        | ILAllocate    ILAllocInfo
         -- Mutable ref cells
         | ILAlloc       AIVar
         | ILDeref       AIVar -- var has type ptr to t
@@ -163,9 +166,27 @@ closureConvert expr =
             KNTyApp t v argty   -> return $ ILTyApp t v argty
 
             -- These cases swap the tag and recur in uninteresting ways.
-            KNIf t v a b    -> do [a', b'] <- mapM g [a, b] ; return $ ILIf t v a' b'
             KNUntil t a b   -> do [a', b'] <- mapM g [a, b] ; return $ ILUntil t a' b'
             KNLetVal id a b -> do [a', b'] <- mapM g [a, b] ; return $ ILLetVal id a' b'
+
+            -- Convert            if v then a else b end
+            -- to slot = newslot; if v then *slot = a else *slot = b; *slot
+            KNIf t v a b    -> do
+                iftmp_id <- ilmFresh "iftmp"
+                slot_id  <- ilmFresh "if_slot"
+                then_id  <- ilmFresh "if_then"
+                else_id  <- ilmFresh "if_else"
+                [a', b'] <- mapM g [a, b]
+                let newslot = ILAllocate (ILAllocInfo t MemRegionStack Nothing False)
+                let slot_var = TypedId (PtrTypeIL t) slot_id
+                let then_var = TypedId t then_id
+                let else_var = TypedId t else_id
+                let thenarm = ILLetVal then_id a' $ ILStore then_var slot_var
+                let elsearm = ILLetVal else_id b' $ ILStore else_var slot_var
+                let ilif = ILIf t v thenarm elsearm
+                return $ ILLetVal slot_id  newslot $
+                         ILLetVal iftmp_id ilif    $
+                         ILDeref slot_var
 
             -- Pattern matching generalizes variable binding: Each branch
             -- expression must be converted in a suitably extended context,
@@ -314,6 +335,7 @@ typeIL (ILLetVal x b e)    = typeIL e
 typeIL (ILCall t id expr)  = t
 typeIL (ILCallPrim t id vs)= t
 typeIL (ILAppCtor t cid vs)= t
+typeIL (ILAllocate info)   = ilAllocType info
 typeIL (ILAllocArray elt_ty _) = ArrayTypeIL elt_ty
 typeIL (ILIf t a b c)      = t
 typeIL (ILUntil t a b)     = t
@@ -339,6 +361,8 @@ instance Structured ILExpr where
             ILIf      t  a b c  -> out $ "ILIf        " ++ " :: " ++ show t
             ILUntil   t  a b    -> out $ "ILUntil     " ++ " :: " ++ show t
             ILInt ty int        -> out $ "ILInt       " ++ (litIntText int) ++ " :: " ++ show ty
+            ILAllocate info     -> out $ "ILAllocate " ++ show (ilAllocRegion info)
+                                                       ++ " :: "++ show (ilAllocType info)
             ILAlloc v           -> out $ "ILAlloc     "
             ILDeref   a         -> out $ "ILDeref     "
             ILStore   a b       -> out $ "ILStore     "
@@ -374,6 +398,7 @@ instance Structured ILExpr where
             ILCallPrim t v vs       ->            [var v | v <- vs]
             ILAppCtor t c vs       ->             [var v | v <- vs]
             ILIf    t v b c         -> [var v, b, c]
+            ILAllocate _info        -> []
             ILAlloc   v             -> [var v]
             ILAllocArray _ v        -> [var v]
             ILDeref   v             -> [var v]

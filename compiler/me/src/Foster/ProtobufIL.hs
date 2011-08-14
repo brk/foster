@@ -128,7 +128,7 @@ dumpMemRegion amr = case amr of
         MemRegionGlobalHeap -> Foster.Bepb.AllocInfo.MemRegion.MEM_REGION_GLOBAL_HEAP
 
 dumpAllocate :: ILAllocInfo -> PbAllocInfo.AllocInfo
-dumpAllocate (ILAllocInfo region maybe_array_size unboxed) =
+dumpAllocate (ILAllocInfo typ region maybe_array_size unboxed) =
     P'.defaultValue { PbAllocInfo.mem_region = dumpMemRegion region
                     , PbAllocInfo.array_size = fmap (dumpExpr.ILVar) maybe_array_size
                     , PbAllocInfo.unboxed    = unboxed }
@@ -170,7 +170,12 @@ dumpExpr x@(ILTuple vs) =
                     , PbExpr.tag   = IL_TUPLE
                     , PbExpr.type' = Just $ dumpType (typeIL x)
                     , PbExpr.alloc_info = Just $ dumpAllocate
-                                (ILAllocInfo MemRegionGlobalHeap Nothing True) }
+                         (ILAllocInfo (typeIL x) MemRegionGlobalHeap Nothing True) }
+
+dumpExpr x@(ILAllocate info) =
+    P'.defaultValue { PbExpr.tag   = IL_ALLOCATE
+                    , PbExpr.type' = Just $ dumpType (typeIL x)
+                    , PbExpr.alloc_info = Just $ dumpAllocate info }
 
 dumpExpr x@(ILAlloc a) =
     P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [ILVar a])
@@ -179,10 +184,10 @@ dumpExpr x@(ILAlloc a) =
 
 dumpExpr x@(ILAllocArray elt_ty size) =
     P'.defaultValue { PbExpr.parts = fromList []
-                    , PbExpr.tag   = IL_MEMALLOC
+                    , PbExpr.tag   = IL_ALLOCATE
                     , PbExpr.type' = Just $ dumpType elt_ty
                     , PbExpr.alloc_info = Just $ dumpAllocate
-                                (ILAllocInfo MemRegionGlobalHeap (Just size) True) }
+                       (ILAllocInfo elt_ty MemRegionGlobalHeap (Just size) True) }
 
 dumpExpr x@(ILDeref a) =
     P'.defaultValue { PbExpr.parts = fromList (fmap dumpExpr [ILVar a])

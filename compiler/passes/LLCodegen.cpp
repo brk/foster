@@ -330,11 +330,10 @@ Value* allocateCell(CodegenPass* pass, TypeAST* type, bool unboxed,
       ty = pty->getContainedType(0);
     }
   }
-  EDiag() << "allocateCell of type " << str(type) << " ~~ " << str(ty);
 
   switch (region) {
   case LLAllocate::MEM_REGION_STACK:
-    EDiag() << "allocating cell on stack of type " << str(ty);
+    EDiag() << "stack allocateCell " << unboxed << " of type " << str(type) << " ~~ " << str(ty);
     return CreateEntryAlloca(ty, "alloc");
 
   case LLAllocate::MEM_REGION_GLOBAL_HEAP:
@@ -552,7 +551,8 @@ llvm::Value* LLClosure::codegenClosure(
   bool closureEscapes = true;
   if (closureEscapes) {
     // // { code*, env* }**
-    llvm::AllocaInst* clo_slot = pass->emitMalloc(genericClosureStructTy(fnty), foster::bogusCtorId(-5));
+    llvm::AllocaInst* clo_slot = pass->emitMalloc(genericClosureStructTy(fnty),
+                                                  foster::bogusCtorId(-5));
     clo = builder.CreateLoad(clo_slot, /*isVolatile=*/ false,
                                          varname + ".closure"); rv = clo_slot;
   } else { // { code*, env* }*
@@ -696,7 +696,7 @@ llvm::Value* LLProc::codegenProc(CodegenPass* pass) {
     builder.CreateRet(rv);
     ASSERT(rv->getType() == ft->getReturnType())
         << "unable to return type " << str(ft->getReturnType()) << " from "
-        << getName() << " given:\n" << str(rv);
+        << getName() << " given:\n" << str(rv) << "\n\t::" << str(rv->getType());
 
   }
   //llvm::verifyFunction(*F);
@@ -718,32 +718,31 @@ void addAndEmitTo(Function* f, BasicBlock* bb) {
 
 llvm::Value* LLIf::codegen(CodegenPass* pass) {
   //EDiag() << "Codegen for LLIfs should (eventually) be subsumed by CFG building!";
-  Value* cond = pass->emit(getTestExpr(), NULL);
-
   BasicBlock* thenBB = BasicBlock::Create(getGlobalContext(), "then");
   BasicBlock* elseBB = BasicBlock::Create(getGlobalContext(), "else");
   BasicBlock* mergeBB = BasicBlock::Create(getGlobalContext(), "ifcont");
 
+  Value* cond = pass->emit(getTestExpr(), NULL);
   builder.CreateCondBr(cond, thenBB, elseBB);
-
-  Value* iftmp = CreateEntryAlloca(getLLVMType(this->type), "iftmp_slot");
-  pass->markAsNeedingImplicitLoads(iftmp);
 
   Function *F = builder.GetInsertBlock()->getParent();
   {
     addAndEmitTo(F, thenBB);
-    emitStore(pass->emit(getThenExpr(), this->type), iftmp);
+    pass->emit(getThenExpr(), NULL);
     builder.CreateBr(mergeBB);
   }
 
   {
     addAndEmitTo(F, elseBB);
-    emitStore(pass->emit(getElseExpr(), this->type), iftmp);
+    pass->emit(getElseExpr(), NULL);
     builder.CreateBr(mergeBB);
   }
 
   addAndEmitTo(F, mergeBB);
-  return iftmp;
+  // This is a bogus return value; it will be ignored.
+  // We should have already stored each branch's value in a return slot,
+  // and the next thing we codegen will be a load from that slot.
+  return getUnitValue();
 }
 
 ////////////////////////////////////////////////////////////////////

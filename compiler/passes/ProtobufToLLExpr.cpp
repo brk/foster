@@ -386,7 +386,7 @@ LLExpr* LLExpr_from_pb(const pb::Expr* pe) {
   case pb::Expr::IL_CORO_INVOKE: rv = parseCoroPrim(e); break;
   case pb::Expr::IL_CORO_CREATE: rv = parseCoroPrim(e); break;
   case pb::Expr::IL_CORO_YIELD : rv = parseCoroPrim(e); break;
-  case pb::Expr::IL_MEMALLOC:    rv = parseAllocate(e); break;
+  case pb::Expr::IL_ALLOCATE:    rv = parseAllocate(e); break;
   case pb::Expr::IL_ALLOC:       rv = parseAlloc(e); break;
   case pb::Expr::IL_DEREF:       rv = parseDeref(e); break;
   case pb::Expr::IL_STORE:       rv = parseStore(e); break;

@@ -154,6 +154,7 @@ monomorphizeExpr expr =
             ILBool       {} -> return expr
             ILInt        {} -> return expr
             ILVar        {} -> return expr
+            ILAllocate   {} -> return expr
             ILAllocArray {} -> return expr
             ILAlloc      {} -> return expr
             ILDeref      {} -> return expr
@@ -256,6 +257,8 @@ substituteTypeInExpr subst expr =
             ILCallPrim  t p vs  -> ILCallPrim (q t) p      (map qv vs)
             ILAppCtor   t c vs  -> ILAppCtor  (q t) c      (map qv vs)
             ILIf        t v b c -> ILIf       (q t) (qv v) (qe b) (qe c)
+            ILAllocate (ILAllocInfo t region arr_var unboxed) ->
+                ILAllocate (ILAllocInfo (q t) region  (fmap qv arr_var) unboxed)
             ILAlloc     v       -> ILAlloc            (qv v)
             ILAllocArray t v    -> ILAllocArray (q t) (qv v)
             ILDeref        v    -> ILDeref            (qv v)

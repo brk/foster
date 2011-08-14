@@ -238,6 +238,7 @@ ssTermOfExpr expr =
     ILUntil    t  a b      -> SSTmExpr  $ IUntil    (tr a) (tr b)
     ILArrayRead t a b      -> SSTmExpr  $ IArrayRead (idOf a) (idOf b)
     ILArrayPoke v b i      -> SSTmExpr  $ IArrayPoke (idOf v) (idOf b) (idOf i)
+    ILAllocate info        -> SSTmExpr  $ error $ "no smallstep ILAllocate yet"
     ILAllocArray ety n     -> SSTmExpr  $ IAllocArray (idOf n)
     ILAlloc a              -> SSTmExpr  $ IAlloc (idOf a)
     ILDeref   a            -> SSTmExpr  $ IDeref (idOf a)
