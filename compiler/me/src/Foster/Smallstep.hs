@@ -193,6 +193,7 @@ data IExpr =
         | IStore  Ident Ident
         | IClosures    [Ident] [ILClosure] SSTerm
         | ILetVal       Ident   SSTerm     SSTerm
+        | IAllocate
         | IArrayRead    Ident   Ident
         | IArrayPoke    Ident   Ident Ident
         | IAllocArray   Ident
@@ -238,7 +239,7 @@ ssTermOfExpr expr =
     ILUntil    t  a b      -> SSTmExpr  $ IUntil    (tr a) (tr b)
     ILArrayRead t a b      -> SSTmExpr  $ IArrayRead (idOf a) (idOf b)
     ILArrayPoke v b i      -> SSTmExpr  $ IArrayPoke (idOf v) (idOf b) (idOf i)
-    ILAllocate info        -> SSTmExpr  $ error $ "no smallstep ILAllocate yet"
+    ILAllocate info        -> SSTmExpr  $ IAllocate
     ILAllocArray ety n     -> SSTmExpr  $ IAllocArray (idOf n)
     ILAlloc a              -> SSTmExpr  $ IAlloc (idOf a)
     ILDeref   a            -> SSTmExpr  $ IDeref (idOf a)
@@ -324,6 +325,10 @@ popCoroCont gs =
   (cont, modifyHeapWith gs (stCoroLoc gs)
              (\(SSCoro c) -> SSCoro $ c { coroStack = restStack }))
 
+extendHeapWith gs val = do
+        let (loc, gs') = extendHeap gs val
+        return $ withTerm gs' (SSTmValue $ SSLocation loc)
+
 -- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 stepExpr :: MachineState -> IExpr -> IO MachineState
@@ -352,8 +357,10 @@ stepExpr gs expr = do
         SSTmExpr _  -> pushCoroCont (withTerm gs b)
                                      (envOf gs, \t -> SSTmExpr $ ILetVal x t e)
 
-    IAlloc i     -> do let (loc, gs') = extendHeap gs (getval gs i)
-                       return $ withTerm gs' (SSTmValue $ SSLocation loc)
+    -- Generate a bogus value; a correct program must overwrite the stored value
+    -- before using it.
+    IAllocate    -> do extendHeapWith gs (SSInt 1234)
+    IAlloc i     -> do extendHeapWith gs (getval gs i)
     IDeref i     -> do case getval gs i of
                          SSLocation z -> return $ withTerm gs  (SSTmValue $ lookupHeap gs z)
                          other -> error $ "cannot deref non-location value " ++ show other
