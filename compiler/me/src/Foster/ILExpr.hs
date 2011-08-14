@@ -76,6 +76,9 @@ data ILExpr =
         -- Stack/heap slot allocation
         | ILAllocate    ILAllocInfo
         -- Mutable ref cells
+        -- The reason we have both ILAllocate and ILAlloc is that
+        -- LLCodegen performs auto-loads from stack slots, which
+        -- means that a derived ILAlloc can't return a stack slot value!
         | ILAlloc       AIVar
         | ILDeref       AIVar -- var has type ptr to t
         | ILStore       AIVar AIVar -- a stored in b

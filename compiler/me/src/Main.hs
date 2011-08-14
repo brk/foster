@@ -39,7 +39,7 @@ import Foster.KNExpr(kNormalizeModule)
 import Foster.Typecheck
 import Foster.Context
 import Foster.Monomo
-import Foster.Smallstep
+import Foster.KSmallstep
 
 -----------------------------------------------------------------------
 
@@ -332,16 +332,24 @@ typecheckSourceModule sm outfile flagVals verboseMode = do
              runOutput $ showProgramStructure monoprog
              runOutput $ (outLn "^^^ ==================================="))
 
-         maybeInterpretProgram monoprog
+         --maybeInterpretProgram monoprog
+         maybeInterpretKNormalModule kmod
 
          dumpModuleToProtobufIL monoprog (outfile ++ ".ll.pb")
 
          return ()
 
-    maybeInterpretProgram prog = do
+    maybeInterpretKNormalModule kmod = do
         case getInterpretFlag flagVals of
             Nothing -> return ()
             Just tmpDir -> do
-                _unused <- interpretProg prog tmpDir
+                _unused <- interpretKNormalMod kmod tmpDir
                 return ()
+
+    --maybeInterpretProgram prog = do
+    --    case getInterpretFlag flagVals of
+    --        Nothing -> return ()
+    --        Just tmpDir -> do
+    --            _unused <- interpretProg prog tmpDir
+    --            return ()
 
