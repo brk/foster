@@ -793,16 +793,35 @@ llvm::Value* emitFakeComment(std::string s) {
 
 ////////////////////////////////////////////////////////////////////
 
+struct CaseContext {
+  std::map<std::vector<int>, TupleTypeAST*>     ctab;
+  std::map<std::vector<int>, llvm::AllocaInst*> ctorSlotMap;
+};
+
+// Create at most one stack slot per subterm.
+llvm::AllocaInst*
+getStackSlotForOcc(Occurrence* occ, llvm::Value* v,
+                   CaseContext* ctx, CodegenPass* pass) {
+  llvm::AllocaInst* slot = ctx->ctorSlotMap[occ->offsets];
+  if (slot) {
+    emitStore(v, slot);
+  } else {
+    slot = ensureImplicitStackSlot(v, pass);
+    ctx->ctorSlotMap[occ->offsets] = slot;
+  }
+  return slot;
+}
+
 llvm::Value* LLCase::codegen(CodegenPass* pass) {
   llvm::Value* v = pass->emit(scrutinee, NULL);
   llvm::AllocaInst* rv_slot = CreateEntryAlloca(getLLVMType(this->type), "case_slot");
   pass->markAsNeedingImplicitLoads(rv_slot);
-  OccCtorMap ctorSymTab;
-  this->dt->codegenDecisionTree(pass, v, rv_slot, ctorSymTab);
+  CaseContext ctx;
+  this->dt->codegenDecisionTree(pass, v, rv_slot, &ctx);
   return rv_slot;
 }
 
-llvm::Value* lookupOccs(Occurrence* occ, llvm::Value* v, OccCtorMap& ctab) {
+llvm::Value* lookupOccs(Occurrence* occ, llvm::Value* v, CaseContext* ctx) {
   ASSERT(occ != NULL);
   const std::vector<int>& occs = occ->offsets;
   llvm::Value* rv = v;
@@ -811,7 +830,7 @@ llvm::Value* lookupOccs(Occurrence* occ, llvm::Value* v, OccCtorMap& ctab) {
 
   // If we know that the subterm at this position was created with
   // a particular data constructor, emit a cast to that ctor's type.
-  if (TupleTypeAST* tupty = ctab[currentOccs]) {
+  if (TupleTypeAST* tupty = ctx->ctab[currentOccs]) {
     rv = builder.CreateBitCast(rv, tupty->getLLVMType());
   }
 
@@ -820,7 +839,7 @@ llvm::Value* lookupOccs(Occurrence* occ, llvm::Value* v, OccCtorMap& ctab) {
     rv = getElementFromComposite(rv, idx, "switch_insp");
 
     currentOccs.push_back(occs[i]);
-    if (TupleTypeAST* tupty = ctab[currentOccs]) {
+    if (TupleTypeAST* tupty = ctx->ctab[currentOccs]) {
       rv = builder.CreateBitCast(rv, tupty->getLLVMType());
     }
   }
@@ -831,7 +850,7 @@ llvm::Value* lookupOccs(Occurrence* occ, llvm::Value* v, OccCtorMap& ctab) {
 void DecisionTree::codegenDecisionTree(CodegenPass* pass,
                                        llvm::Value* scrutinee,
                                        llvm::AllocaInst* rv_slot,
-                                       OccCtorMap& ctab) {
+                                       CaseContext* ctx) {
   Value* rv = NULL;
   switch (tag) {
   case DecisionTree::DT_FAIL:
@@ -843,8 +862,8 @@ void DecisionTree::codegenDecisionTree(CodegenPass* pass,
     ASSERT(this->action != NULL);
     emitFakeComment("codegen dt leaf");
     for (size_t i = 0; i < binds.size(); ++i) {
-       Value* v = lookupOccs(binds[i].second, scrutinee, ctab);
-       Value* v_slot = ensureImplicitStackSlot(v, pass);
+       Value* v = lookupOccs(binds[i].second, scrutinee, ctx);
+       Value* v_slot = getStackSlotForOcc(binds[i].second, v, ctx, pass);
        trySetName(v_slot, "pat_" + binds[i].first + "_slot");
        pass->valueSymTab.insert(binds[i].first, v_slot);
     }
@@ -862,7 +881,7 @@ void DecisionTree::codegenDecisionTree(CodegenPass* pass,
   // end DT_SWAP
 
   case DecisionTree::DT_SWITCH:
-    sc->codegenSwitch(pass, scrutinee, rv_slot, ctab);
+    sc->codegenSwitch(pass, scrutinee, rv_slot, ctx);
     break;
   }
 }
@@ -877,7 +896,7 @@ llvm::Value* emitCallGetCtorIdOf(CodegenPass* pass, llvm::Value* v) {
 void SwitchCase::codegenSwitch(CodegenPass* pass,
                                llvm::Value* scrutinee,
                                llvm::AllocaInst* rv_slot,
-                               OccCtorMap& ctab) {
+                               CaseContext* ctx) {
   ASSERT(ctors.size() == trees.size());
   ASSERT(ctors.size() >= 1);
 
@@ -896,9 +915,9 @@ void SwitchCase::codegenSwitch(CodegenPass* pass,
     if (dt) {
       TupleTypeAST* tupty = getDataCtorType(
                             dt->getCtor(ctors[0].smallId));
-      ctab[this->occ->offsets] = tupty;
+      ctx->ctab[this->occ->offsets] = tupty;
     }
-    trees[0]->codegenDecisionTree(pass, scrutinee, rv_slot, ctab);
+    trees[0]->codegenDecisionTree(pass, scrutinee, rv_slot, ctx);
     return;
   }
 
@@ -909,7 +928,7 @@ void SwitchCase::codegenSwitch(CodegenPass* pass,
   BasicBlock* defOrContBB = defaultBB ? defaultBB : bbEnd;
 
   // Fetch the subterm of the scrutinee being inspected.
-  llvm::Value* inspected = lookupOccs(this->occ, scrutinee, ctab);
+  llvm::Value* inspected = lookupOccs(this->occ, scrutinee, ctx);
 
   // If we're looking at a data type, emit code to get the ctor tag,
   // instead of switching on the pointer value directly.
@@ -930,7 +949,7 @@ void SwitchCase::codegenSwitch(CodegenPass* pass,
     // further case discrimination.
     if (dt) {
       tupty = getDataCtorType(dt->getCtor(c.smallId));
-      ctab[this->occ->offsets] = tupty;
+      ctx->ctab[this->occ->offsets] = tupty;
       onVal = getConstantInt8For(c.smallId);
     } else if (c.typeName == "Bool") {
       onVal = builder.getInt1(c.smallId);
@@ -947,18 +966,18 @@ void SwitchCase::codegenSwitch(CodegenPass* pass,
     std::stringstream ss; ss << "casetest_" << i;
     BasicBlock* destBB = BasicBlock::Create(getGlobalContext(), ss.str());
     addAndEmitTo(F, destBB);
-    trees[i]->codegenDecisionTree(pass, scrutinee, rv_slot, ctab);
+    trees[i]->codegenDecisionTree(pass, scrutinee, rv_slot, ctx);
     builder.CreateBr(bbEnd);
 
     ASSERT(inspected->getType() == onVal->getType())
         << "switch case and inspected value had different types!";
     si->addCase(onVal, destBB);
-    if (tupty) { ctab.erase(this->occ->offsets); }
+    if (tupty) { ctx->ctab.erase(this->occ->offsets); }
   }
 
   if (defaultCase) {
     addAndEmitTo(F, defaultBB);
-    defaultCase->codegenDecisionTree(pass, scrutinee, rv_slot, ctab);
+    defaultCase->codegenDecisionTree(pass, scrutinee, rv_slot, ctx);
     builder.CreateBr(bbEnd);
   }
 

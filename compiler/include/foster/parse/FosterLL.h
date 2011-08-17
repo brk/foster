@@ -344,7 +344,7 @@ struct Occurrence {
   std::vector<int> offsets;
 };
 
-typedef std::map<std::vector<int>, TupleTypeAST*> OccCtorMap;
+struct CaseContext;
 
 struct SwitchCase {
   std::vector<CtorId>        ctors;
@@ -352,7 +352,7 @@ struct SwitchCase {
   DecisionTree*        defaultCase;
   Occurrence*                  occ;
   void codegenSwitch(CodegenPass* pass, llvm::Value* scrutinee,
-                     llvm::AllocaInst* rv_slot, OccCtorMap& ctab);
+                     llvm::AllocaInst* rv_slot, CaseContext* ctx);
 };
 
 typedef std::pair<std::string, Occurrence*> DTBinding;
@@ -372,7 +372,7 @@ struct DecisionTree {
                                  : tag(t), type(NULL), action(NULL), sc(sc) {}
   void codegenDecisionTree(CodegenPass* pass, llvm::Value* scrutinee,
                            llvm::AllocaInst* rv_slot,
-                           OccCtorMap& ctab);
+                           CaseContext* ctx);
 };
 
 #endif // header guard
