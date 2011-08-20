@@ -80,6 +80,11 @@ struct EscapingAllocaFinder : public FunctionPass {
     bool wasTainted = false;
     for (Function::iterator BBit = F.begin(); BBit != F.end(); ++BBit) {
       TerminatorInst *ti = (*BBit).getTerminator();
+      if (!ti) {
+        llvm::outs() << "WARNING: found block in " << F.getName()
+                     << " without terminator!\n";
+        return false;
+      }
 
       // Branches and invokes do not escape, only unwind and return do.
       if (isa<UnwindInst>(ti) || isa<ReturnInst>(ti)) {
