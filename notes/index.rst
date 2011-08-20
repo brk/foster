@@ -13,6 +13,7 @@ Foster Notes
    features
    compiler
    closures
+   closureconversion
    syntax
    arrays
    llvm
