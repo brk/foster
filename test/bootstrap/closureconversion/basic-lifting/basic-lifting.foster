@@ -2,10 +2,10 @@ test = { arg:Int32 =>
    // syntactically nested function definition
    // (with no free variables); equivalent to
    // definition at top level.
-   expect_i32(3) ;  print_i32( { a:Int32 => a +Int32 1 }(2) );
+   expect_i32(3) ;  print_i32 ({ a:Int32 => a +Int32 1 } 2);
 
   // requires closure conversion!
-  expect_i32(2 +Int32 arg) ;  print_i32 ( { x:Int32 => x +Int32 arg }(2) )
+  expect_i32(2 +Int32 arg) ;  print_i32 ({ x:Int32 => x +Int32 arg } 2);
 };
 
 f = { a:Int32 => b:Int32 => c:Int32 =>

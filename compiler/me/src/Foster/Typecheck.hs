@@ -38,8 +38,8 @@ sanityCheck cond msg = if cond then return () else tcFails [outCSLn Red msg]
 
 typecheck :: Context TypeAST -> ExprAST -> Maybe TypeAST -> Tc AnnExpr
 typecheck ctx expr maybeExpTy =
-  tcWithScope expr $
-    do case expr of
+  tcWithScope expr $ do
+    annexpr <- case expr of
         E_IfAST rng a b c              -> typecheckIf   ctx rng a b c maybeExpTy
         E_FnAST f                      -> typecheckFn   ctx f maybeExpTy
         E_IntAST rng txt               -> typecheckInt rng txt
@@ -63,9 +63,14 @@ typecheck ctx expr maybeExpTy =
                                      ++ "to have ref type, had " ++ show other ++ show rng]
 
         E_StoreAST rng a b -> do
-          ea <- typecheck ctx a Nothing
-          eb <- typecheck ctx b Nothing
-          -- TODO verify that the val is a pointer to the slot
+          u_slot <- newTcUnificationVar $ "slot_type"
+          u_expr <- newTcUnificationVar $ "expr_type"
+          eb <- typecheck ctx b (Just $ RefTypeAST (MetaTyVar u_slot))
+          ea <- typecheck ctx a (Just $            (MetaTyVar u_expr))
+          equateTypes (MetaTyVar u_slot) (MetaTyVar u_expr)
+                      (Just "Store expression")
+          equateTypes (typeAST eb) (RefTypeAST (typeAST ea))
+                      (Just "Store expression")
           return (AnnStore rng ea eb)
 
         E_SeqAST rng a b -> do
@@ -89,10 +94,19 @@ typecheck ctx expr maybeExpTy =
                            (Just "E_Until: type of conditional wasn't boolean")
                 return $ AnnUntil rng (TupleTypeAST []) aa ab
 
-        E_SubscriptAST rng a b -> do
+        -- a[b]
+        E_ArrayRead rng a b -> do
                 ta <- typecheck ctx a Nothing
                 tb <- typecheck ctx b Nothing
-                typecheckSubscript ctx rng ta (typeAST ta) tb maybeExpTy
+                typecheckArrayRead ctx rng ta (typeAST ta) tb maybeExpTy
+
+        -- a >^ b[c]
+        E_ArrayPoke rng a b c -> do
+                ta <- typecheck ctx a Nothing
+                tb <- typecheck ctx b (Just $ ArrayTypeAST (typeAST ta))
+                tc <- typecheck ctx c Nothing
+
+                typecheckArrayPoke ctx rng ta tb (typeAST tb) tc maybeExpTy
 
         E_CompilesAST rng maybeExpr -> case maybeExpr of
             Nothing -> return $ AnnCompiles rng (CompilesResult $
@@ -101,6 +115,16 @@ typecheck ctx expr maybeExpTy =
                 outputOrE <- tcIntrospect (typecheck ctx e Nothing)
                 return $ AnnCompiles rng (CompilesResult outputOrE)
 
+    -- If the context provided an expected type,
+    -- make sure it unifies with the actual type we computed!
+    case maybeExpTy of
+        Nothing -> return ()
+        Just expTy -> equateTypes (typeAST annexpr) expTy
+                       (Just $ outToString (textOf expr 0)
+                               ++ "\n\t\thas type: " ++ (show $ typeAST annexpr)
+                               ++ "\n\t\texpected: " ++ (show $ expTy)
+                               ++ show (rangeOf expr))
+    return annexpr
 -----------------------------------------------------------------------
 -- Resolve the given name as either a variable or a primitive reference.
 typecheckVar ctx rng name =
@@ -291,28 +315,49 @@ typecheckTyApp ctx rng a t maybeExpTy = do
 
 -----------------------------------------------------------------------
 
-typecheckSubscript ctx rng base (TupleTypeAST types) i@(AnnInt _rng ty int) maybeExpTy =
-    tcFails [out $ "Subscripting tuples is not allowed;"
+typecheckArrayRead ctx rng base (TupleTypeAST types) i@(AnnInt _rng ty int) maybeExpTy =
+    tcFails [out $ "ArrayReading tuples is not allowed;"
                 ++ " use pattern matching instead!"]
 
--- TODO make sure i is not negative or too big
-typecheckSubscript ctx rng base (ArrayTypeAST t) i@(AnnInt _rng ty int) (Just expTy) = do
-    equateTypes t expTy (Just "subscript expected type")
-    return (AnnSubscript rng t base i)
+typecheckArrayRead ctx rng base (ArrayTypeAST t) i@(AnnInt _rng ty int) (Just expTy) = do
+    equateTypes t expTy (Just "arrayread[int] expected type")
+    -- TODO make sure i is not negative or too big
+    return (AnnArrayRead rng t base i)
 
-typecheckSubscript ctx rng base (ArrayTypeAST t) i@(AnnInt _rng ty int) Nothing = do
-    return (AnnSubscript rng t base i)
+typecheckArrayRead ctx rng base (ArrayTypeAST t) i@(AnnInt _rng ty int) Nothing = do
+    -- TODO make sure i is not negative or too big
+    return (AnnArrayRead rng t base i)
 
-typecheckSubscript ctx rng base (ArrayTypeAST t) aiexpr maybeExpTy = do
+-- base[aiexpr]
+typecheckArrayRead ctx rng base (ArrayTypeAST t) aiexpr maybeExpTy = do
     -- TODO check aiexpr type is compatible with Word
+    equateTypes t (typeAST aiexpr) (Just "arrayread type")
     case maybeExpTy of
       Nothing -> return ()
-      Just expTy -> equateTypes t expTy (Just "subscript expected type")
+      Just expTy -> equateTypes t expTy (Just "arrayread expected type")
 
-    return (AnnSubscript rng t base aiexpr)
+    return (AnnArrayRead rng t base aiexpr)
 
-typecheckSubscript ctx rng base baseType index maybeExpTy =
-    tcFails [out $ "Unable to subscript expression of type " ++ show baseType
+typecheckArrayRead ctx rng base baseType index maybeExpTy =
+    tcFails [out $ "Unable to arrayread expression of type " ++ show baseType
+                ++ " with expression " ++ show index
+                ++ " (context expected type " ++ show maybeExpTy ++ ")"
+                ++ highlightFirstLine rng]
+
+-----------------------------------------------------------------------
+
+-- c >^ base[aiexpr]
+typecheckArrayPoke ctx rng c base (ArrayTypeAST t) aiexpr maybeExpTy = do
+    -- TODO check aiexpr type is compatible with Word
+    equateTypes t (typeAST aiexpr) (Just "arraypoke type")
+    case maybeExpTy of
+      Nothing -> return ()
+      Just expTy -> equateTypes t expTy (Just "arraypoke expected type")
+
+    return (AnnArrayPoke rng t c base aiexpr)
+
+typecheckArrayPoke ctx rng c base baseType index maybeExpTy =
+    tcFails [out $ "Unable to arraypoke expression of type " ++ show baseType
                 ++ " with expression " ++ show index
                 ++ " (context expected type " ++ show maybeExpTy ++ ")"
                 ++ highlightFirstLine rng]
@@ -373,12 +418,15 @@ genUnificationVarsLike spine namegen = do
   sequence [newTcUnificationVar (namegen n) | (_, n) <- zip spine [1..]]
 
 -- Typecheck the function first, then the args.
+typecheckCall :: Context TypeAST -> SourceRange
+              -> ExprAST -> ExprAST -> Maybe TypeAST -> Tc AnnExpr
 typecheckCall ctx rng base args maybeExpTy = do
-   expectedLambdaType <- case maybeExpTy of
-        Nothing  -> return $ Nothing
-        (Just t) -> do m <- newTcUnificationVar "inferred arg type"
-                       return $ Just $ mkFuncTy (MetaTyVar m) t
-        -- If we have (e1 e2) :: T, we infer that e1 :: (? -> T) and e2 :: ?
+   -- Do we infer a plain function type or a forall type?
+   -- For now, we just punt and act in inference rather than checking mode.
+   -- But we'd like to propagate more information down, by saying something
+   -- like: If we have (e e_1 .. e_n) :: T, we infer that e :: (?1 ... ?n -> T)
+   --                                               and e_n :: ?n
+   let expectedLambdaType = Nothing
 
    eb <- typecheck ctx base expectedLambdaType
    case (typeAST eb) of

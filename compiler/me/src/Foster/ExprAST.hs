@@ -31,7 +31,8 @@ data ExprAST =
         | E_DerefAST      SourceRange ExprAST
         | E_StoreAST      SourceRange ExprAST ExprAST
         -- Array subscripting
-        | E_SubscriptAST  SourceRange ExprAST ExprAST
+        | E_ArrayRead     SourceRange ExprAST ExprAST
+        | E_ArrayPoke     SourceRange ExprAST ExprAST ExprAST
         -- Terms indexed by types
         | E_TyApp         SourceRange ExprAST TypeAST
         -- Others
@@ -81,7 +82,8 @@ instance Structured ExprAST where
             E_AllocAST rng a     -> out $ "AllocAST     "
             E_DerefAST rng a     -> out $ "DerefAST     "
             E_StoreAST rng a b   -> out $ "StoreAST     "
-            E_SubscriptAST a b r -> out $ "SubscriptAST "
+            E_ArrayRead r a b    -> out $ "SubscriptAST "
+            E_ArrayPoke r a b c  -> out $ "ArrayPokeAST "
             E_TupleAST _         -> out $ "TupleAST     "
             E_TyApp rng a t      -> out $ "TyApp        "
             E_Case rng _ _       -> out $ "Case         "
@@ -101,7 +103,8 @@ instance Structured ExprAST where
             E_AllocAST rng a            -> [a]
             E_DerefAST rng a            -> [a]
             E_StoreAST rng a b          -> [a, b]
-            E_SubscriptAST r a b        -> [a, b]
+            E_ArrayRead r a b           -> [a, b]
+            E_ArrayPoke r a b c         -> [a, b, c]
             E_TupleAST tup              -> tupleAstExprs tup
             E_TyApp  rng a t            -> [a]
             E_Case rng e bs             -> e:(map snd bs)
@@ -131,7 +134,8 @@ instance SourceRanged ExprAST
       E_AllocAST      rng _     -> rng
       E_DerefAST      rng _     -> rng
       E_StoreAST      rng _ _   -> rng
-      E_SubscriptAST  rng _ _   -> rng
+      E_ArrayRead     rng _ _   -> rng
+      E_ArrayPoke     rng _ _ _ -> rng
       E_VarAST        rng _     -> rng
       E_TyApp         rng _ _   -> rng
       E_Case          rng _ _   -> rng

@@ -112,13 +112,7 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                       else tcUnifyLoop ([TypeConstrEq a b | (a, b) <- zip tys1 tys2] ++ constraints) tysub
 
                 ((FnTypeAST a1 a2 cc1 _), (FnTypeAST b1 b2 cc2 _)) ->
-                  if cc1 == cc2 || (cc1 == FastCC && cc2 == CCC) then
-                    -- We can implicitly convert a CCC to a FastCC
-                    -- (but not the other way 'round) using implicitly-inserted
-                    -- coercions during lowering to LLVM.
                     tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub
-                  else tcFails [out $ "Cannot unify function types with different calling conventions: "
-                                    ++ show cc1 ++ " vs " ++ show cc2]
 
                 ((CoroTypeAST a1 a2), (CoroTypeAST b1 b2)) ->
                     tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub
@@ -132,6 +126,9 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                     tcUnifyVar m ty tysub constraints
 
                 ((RefTypeAST t1), (RefTypeAST t2)) ->
+                    tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
+
+                ((ArrayTypeAST t1), (ArrayTypeAST t2)) ->
                     tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 
                 otherwise ->

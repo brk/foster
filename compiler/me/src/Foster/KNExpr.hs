@@ -88,14 +88,13 @@ kNormalize expr =
       AIAlloc a             -> do a' <- g a ; nestedLets [a'] (\[x] -> KNAlloc x)
       AIDeref   a           -> do a' <- g a ; nestedLets [a'] (\[x] -> KNDeref x)
       E_AITyApp t a argty   -> do a' <- g a ; nestedLets [a'] (\[x] -> KNTyApp t x argty)
-      AIStore a (AISubscript _t b c)
-                             -> do [a', b', c'] <- mapM g [a, b, c]
-                                   nestedLets [a', b', c'] (\[x, y, z] -> KNArrayPoke x y z)
 
       AILetVar id  a b  -> do [a', b'] <- mapM g [a, b] ; return $ buildLet id a' b'
       AIUntil    t a b  -> do [a', b'] <- mapM g [a, b] ; return $ (KNUntil t a' b')
       AIStore      a b  -> do [a', b'] <- mapM g [a, b] ; nestedLets [a', b'] (\[x, y] -> KNStore x y)
-      AISubscript t a b -> do [a', b'] <- mapM g [a, b] ; nestedLets [a', b'] (\[x, y] -> KNArrayRead t x y)
+      AIArrayRead t a b -> do [a', b'] <- mapM g [a, b] ; nestedLets [a', b'] (\[x, y] -> KNArrayRead t x y)
+      AIArrayPoke t a b c -> do [a', b', c'] <- mapM g [a,b,c]
+                                nestedLets [a', b', c'] (\[x,y,z] -> KNArrayPoke x y z)
 
       AILetFuns ids fns a   -> do knFns <- mapM kNormalizeFn fns
                                   a' <- g a

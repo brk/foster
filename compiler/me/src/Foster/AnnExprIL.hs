@@ -44,7 +44,8 @@ data AIExpr=
         | AIStore      AIExpr AIExpr
         -- Array operations
         | AIAllocArray TypeIL AIExpr
-        | AISubscript  TypeIL AIExpr AIExpr
+        | AIArrayRead  TypeIL AIExpr AIExpr
+        | AIArrayPoke  TypeIL AIExpr AIExpr AIExpr
         -- Terms indexed by types
         | E_AITyApp { aiTyAppOverallType :: TypeIL
                     , aiTyAppExpr        :: AIExpr
@@ -78,9 +79,12 @@ ail ae =
                                          return $ AIDeref x
         AnnStore _rng   a b        -> do [x,y]   <- mapM q [a,b]
                                          return $ AIStore x y
-        AnnSubscript _rng t a b    -> do ti <- ilOf t
+        AnnArrayRead _rng t a b    -> do ti <- ilOf t
                                          [x,y]   <- mapM q [a,b]
-                                         return $ AISubscript ti x y
+                                         return $ AIArrayRead ti x y
+        AnnArrayPoke _rng t a b c  -> do ti <- ilOf t
+                                         [x,y,z]   <- mapM q [a,b,c]
+                                         return $ AIArrayPoke ti x y z
         AnnTuple tup               -> do aies <- mapM q (childrenOf ae)
                                          return $ AITuple aies
         AnnCase _rng t e bs        -> do ti <- ilOf t
@@ -178,7 +182,8 @@ instance Structured AIExpr where
             AIAlloc        a      -> [a]
             AIDeref        a      -> [a]
             AIStore       a b     -> [a, b]
-            AISubscript t a b     -> [a, b]
+            AIArrayRead t a b     -> [a, b]
+            AIArrayPoke t a b c   -> [a, b, c]
             AITuple     es        -> es
             AICase t e bs         -> e:(map snd bs)
             E_AIVar {}            -> []

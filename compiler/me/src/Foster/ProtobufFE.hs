@@ -165,7 +165,9 @@ parseAlloc pbexpr = do
 parseStore pbexpr = do
     range <- parseRange pbexpr
     [a,b] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
-    return $ E_StoreAST range a b
+    case b of -- a >^ c[d]
+        E_ArrayRead _ c d -> return $ E_ArrayPoke range a c d
+        _                 -> return $ E_StoreAST range a b
 
 parseDeref pbexpr = do
     range <- parseRange pbexpr
@@ -175,7 +177,7 @@ parseDeref pbexpr = do
 parseSubscript pbexpr = do
     range <- parseRange pbexpr
     [a,b] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
-    return $ E_SubscriptAST range a b
+    return $ E_ArrayRead range a b
 
 parseTuple pbexpr = do
     range <- parseRange pbexpr
