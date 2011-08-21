@@ -226,6 +226,8 @@ Links
 
   * Compiling with Polymorphic and Polyvariant Flow Types
      <http://www.church-project.org/reports/electronic/Tur+Dim+Mul+Wel:CPPFT-1997.pdf>
+  * Programming Examples Needing Polymorphic Recursion
+    <http://www.church-project.org/reports/electronic/Hal+Kfo:BUCS-TR-2004-004.pdf>
   * Polymorphism by Polyinstantiation
      <http://www.bitc-lang.org/docs/bitc/polyinst.html>
     (and associated bibliography)
@@ -235,5 +237,8 @@ Links
      <http://lambda-the-ultimate.org/node/4091>
   * Code expansion due to monomorphization in MLton?
      <http://mlton.org/pipermail/mlton/2001-January/018367.html>
-
+  * PRACTICAL TYPE INFERENCE FOR FIRST-CLASS POLYMORPHISM
+    <http://research.microsoft.com/en-us/people/dimitris/dimitriv-dissertation-post.pdf>
+  * "The effectiveness of type-based unboxing"
+  * "A calculus for boxing analysis"
 
