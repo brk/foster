@@ -35,28 +35,6 @@ namespace foster {
 
 bool gPrintLLVMImports = false;
 
-void
-addLLVMIntrinsic(Module* m, llvm::Intrinsic::ID id) {
-  std::string funcName =
-        pystring::replace(llvm::Intrinsic::getName(id), ".", "_");
-
-  const FunctionType* ft = llvm::Intrinsic::getType(m->getContext(), id);
-  Function* f = Function::Create(ft, Function::PrivateLinkage, funcName, m);
-  f->setCallingConv(llvm::CallingConv::Fast);
-  f->addFnAttr(Attribute::AlwaysInline);
-
-  BasicBlock* bb = BasicBlock::Create(m->getContext(), "entry", f);
-  IRBuilder<> fBuilder(getGlobalContext());
-  fBuilder.SetInsertPoint(bb);
-  llvm::Value* rv = fBuilder.CreateCall(llvm::Intrinsic::getDeclaration(m, id));
-  fBuilder.CreateRet(rv);
-}
-
-void
-addConcretePrimitiveFunctionsTo(Module* m) {
-  addLLVMIntrinsic(m, llvm::Intrinsic::readcyclecounter);
-}
-
 // Add prototypes for module m's C-linkage functions to the linkee module.
 void
 putModuleMembersInInternalScope(const std::string& scopeName,

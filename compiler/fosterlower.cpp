@@ -270,7 +270,6 @@ int main(int argc, char** argv) {
 
   foster::putModuleMembersInScope(libfoster_bc, module);
   foster::putModuleMembersInInternalScope("imath", imath_bc, module);
-  foster::addConcretePrimitiveFunctionsTo(module);
 
   //================================================================
   //================================================================
