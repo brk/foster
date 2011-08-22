@@ -68,6 +68,17 @@ ail ae =
                                          return $ AIUntil ti x y
         AnnInt _rng t int          -> do ti <- ilOf t
                                          return $ AIInt ti int
+        -- For anonymous function literals
+        E_AnnFn annFn       -> do fn_id <- tcFresh "lit_fn"
+                                  aiFn <- fnOf annFn
+                                  let (TypedId t i) = fnVar aiFn
+                                  let fnvar = E_AIVar $ (TypedId t fn_id)
+                                  return $ AILetFuns [fn_id] [aiFn] fnvar
+        -- For bound function literals
+        AnnLetVar _rng id (E_AnnFn annFn) b -> do
+                                  aiFn <- fnOf annFn
+                                  b' <- q b
+                                  return $ AILetFuns [id] [aiFn] b'
         AnnLetVar _rng id  a b     -> do [x,y]   <- mapM q [a,b]
                                          return $ AILetVar id x y
         AnnLetFuns _rng ids fns e  -> do fnsi <- mapM fnOf fns
@@ -127,12 +138,6 @@ ail ae =
 
         E_AnnVar _rng v -> do vv <- aiVar v
                               return $ E_AIVar vv
-
-        E_AnnFn annFn       -> do fn_id <- tcFresh "lit_fn"
-                                  aiFn <- fnOf annFn
-                                  let (TypedId t i) = fnVar aiFn
-                                  let fnvar = E_AIVar $ (TypedId t fn_id)
-                                  return $ AILetFuns [fn_id] [aiFn] fnvar
 
         E_AnnTyApp _rng t e argty  -> do ti <- ilOf t
                                          at <- ilOf argty
