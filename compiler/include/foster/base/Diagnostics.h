@@ -18,14 +18,6 @@
 
 namespace foster {
 
-  // Seeing if it's useful for individual unit tests to redirect all output
-  // to a string, so it can be (A) hidden from the console unless needed, and
-  // (B) inspected to verify the presence/absence of specific errors.
-  llvm::raw_ostream& currentErrs();
-  llvm::raw_ostream& currentOuts();
-  void startAccumulatingOutputToString();
-  std::string collectAccumulatedOutput();
-
   // For want of a better place to put them...
   extern bool gDebugLoggingEnabled;
   extern std::set<std::string> gEnabledDebuggingTags;
@@ -109,10 +101,10 @@ private:
 class DDiag : public DiagBase {
 public:
   explicit DDiag(llvm::raw_ostream::Colors _color)
-                   : DiagBase(foster::currentErrs(), "debug") {
+        : DiagBase(llvm::errs(), "debug") {
     this->color = _color;
   }
-  explicit DDiag() : DiagBase(foster::currentErrs(), "debug") {}
+  explicit DDiag() : DiagBase(llvm::errs(), "debug") {}
   virtual ~DDiag();
 private:
   DDiag(const DDiag&);

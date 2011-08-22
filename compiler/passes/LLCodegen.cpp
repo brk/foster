@@ -32,18 +32,12 @@ using llvm::BasicBlock;
 using llvm::Function;
 using llvm::FunctionType;
 using llvm::IntegerType;
+using llvm::ConstantInt;
 using llvm::getGlobalContext;
 using llvm::Value;
-using llvm::ConstantInt;
-using llvm::ConstantExpr;
-using llvm::APInt;
-using llvm::PHINode;
 using llvm::dyn_cast;
 
 using foster::builder;
-using foster::currentOuts;
-using foster::currentErrs;
-using foster::SourceRange;
 using foster::ParsingContext;
 using foster::EDiag;
 using foster::show;
@@ -230,9 +224,9 @@ llvm::Function* CodegenPass::lookupFunctionOrDie(const std::string& fullyQualifi
   llvm::Function* f = mod->getFunction(fullyQualifiedSymbol);
 
   if (!f) {
-   currentErrs() << "Unable to find function in module named: "
+   llvm::errs() << "Unable to find function in module named: "
               << fullyQualifiedSymbol << "\n";
-   valueSymTab.dump(currentErrs());
+   valueSymTab.dump(llvm::errs());
    ASSERT(false) << "unable to find function " << fullyQualifiedSymbol;
   }
   return f;
@@ -283,7 +277,7 @@ llvm::Value* LLVar::codegen(CodegenPass* pass) {
   llvm::Value* v = pass->valueSymTab.lookup(getName());
   if (v) return v;
 
-  pass->valueSymTab.dump(currentOuts());
+  pass->valueSymTab.dump(llvm::errs());
   ASSERT(false) << "Unknown variable name " << this->name << " in CodegenPass";
   return NULL;
 }

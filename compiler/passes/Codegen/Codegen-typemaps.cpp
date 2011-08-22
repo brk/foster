@@ -325,8 +325,8 @@ llvm::GlobalVariable* getTypeMapForType(const llvm::Type* ty,
   }
 
   if (!gv) {
-    foster::currentOuts() << "No type map for type " << (*ty) << "\n"
-        << "\tfoster_generic_coro_t is " << *foster_generic_coro_t << "\n";
+    EDiag() << "No type map for type " << str(ty) << "\n"
+            << "\tfoster_generic_coro_t is " << str(foster_generic_coro_t);
   }
 
   return gv;

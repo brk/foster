@@ -31,12 +31,8 @@ using std::string;
 
 using foster::TypeASTFor;
 using foster::EDiag;
-using foster::DDiag;
 using foster::show;
 using foster::ParsingContext;
-
-using foster::currentErrs;
-using foster::currentOuts;
 
 #define DEBUG_TYPE "foster"
 
@@ -110,7 +106,7 @@ pANTLR3_COMMON_TOKEN getStartToken(pTree tree) {
     tok = ParsingContext::getStartToken(node);
   }
   if (!tok) {
-    currentOuts() << "Warning: unable to find start token for ANTLR parse tree"
+    llvm::outs() << "Warning: unable to find start token for ANTLR parse tree"
               << " node " << textOf(tree) << " @ " << tree
               << " , " << typeOf(tree) << "\n";
   }
@@ -138,7 +134,7 @@ pANTLR3_COMMON_TOKEN getEndToken(pTree tree) {
     tok = ParsingContext::getEndToken(node);
   }
   if (!tok) {
-    currentOuts() << "Warning: unable to find end token for ANTLR parse tree"
+    llvm::outs() << "Warning: unable to find end token for ANTLR parse tree"
               << " node " << textOf(tree) << " @ " << tree << "\n";
   }
   return tok;
@@ -192,7 +188,7 @@ string spaces(int n) { return (n > 0) ? string(n, ' ') : ""; }
 
 void display_pTree(pTree t, int nspaces) {
   if (!t) {
-    currentOuts() << spaces(nspaces) << "<NULL tree>" << "\n";
+    llvm::outs() << spaces(nspaces) << "<NULL tree>" << "\n";
     return;
   }
 
@@ -201,16 +197,16 @@ void display_pTree(pTree t, int nspaces) {
   int nchildren = getChildCount(t);
   std::stringstream ss;
   ss << spaces(nspaces) << "<" << text << "; ";
-  currentOuts() << ss.str() << spaces(100 - ss.str().size())
+  llvm::outs() << ss.str() << spaces(100 - ss.str().size())
                 << token << " @ " << t;
-  currentOuts() << " (";
-  currentOuts() << (ParsingContext::getStartToken(t) ? '+' : '-');
-  currentOuts() << (ParsingContext::getEndToken(t)   ? '+' : '-');
-  currentOuts() << ")" << "\n";
+  llvm::outs() << " (";
+  llvm::outs() << (ParsingContext::getStartToken(t) ? '+' : '-');
+  llvm::outs() << (ParsingContext::getEndToken(t)   ? '+' : '-');
+  llvm::outs() << ")" << "\n";
   for (int i = 0; i < nchildren; ++i) {
     display_pTree(child(t, i), nspaces+2);
   }
-  currentOuts() << spaces(nspaces) << "/" << text << ">" << "\n";
+  llvm::outs() << spaces(nspaces) << "/" << text << ">" << "\n";
 }
 
 ////////////////////////////////////////////////////////////////////

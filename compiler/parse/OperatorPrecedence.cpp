@@ -53,8 +53,6 @@ using std::set;
 using std::string;
 using std::vector;
 
-using foster::currentOuts;
-
 namespace foster {
 
 class OperatorPrecedenceTable::Impl {
@@ -314,10 +312,10 @@ public:
 
 private:
   void dumpKnownOperators() {
-    currentOuts() << "Known operators:\n";
+    llvm::outs() << "Known operators:\n";
     for (OpSet::iterator it = knownOperators.begin();
                          it != knownOperators.end(); ++it) {
-      currentOuts() << "\t" << *it << "\n";
+      llvm::outs() << "\t" << *it << "\n";
     }
   }
 
@@ -327,7 +325,7 @@ private:
       for (OpSet::iterator it2 = knownOperators.begin();
                            it2 != knownOperators.end(); ++it2) {
         const char* relstr = str(table[ OpPair(*it, *it2) ]);
-        currentOuts() << *it << "\t" << relstr << "\t" << *it2 << "\n";
+        llvm::outs() << *it << "\t" << relstr << "\t" << *it2 << "\n";
       }
     }
   }

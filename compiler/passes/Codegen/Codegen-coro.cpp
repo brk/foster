@@ -26,13 +26,8 @@ using llvm::FunctionType;
 using llvm::BasicBlock;
 
 using llvm::getGlobalContext;
-using foster::EDiag;
 using foster::builder;
-using foster::currentOuts;
-using foster::currentErrs;
-using foster::SourceRange;
 using foster::EDiag;
-using foster::show;
 
 // Keep synchronized with libfoster_gc_roots.h
 enum {

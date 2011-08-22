@@ -43,8 +43,6 @@ FnTypeAST* parseProcType(const bepb::ProcType&);
 
 }
 
-using foster::currentErrs;
-
 using std::string;
 using std::vector;
 

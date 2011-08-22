@@ -12,9 +12,7 @@
 
 #include <sstream>
 
-using foster::EDiag;
 using foster::show;
-using foster::currentErrs;
 using foster::SourceRange;
 using foster::SourceRangeHighlighter;
 using foster::SourceLocation;
