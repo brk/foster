@@ -102,7 +102,14 @@ data Pattern =
         | P_Bool          SourceRange Bool
         | P_Int           SourceRange LiteralInt
         | P_Tuple         SourceRange [Pattern]
-        deriving (Show)
+
+instance Show Pattern where
+  show (P_Wildcard _)           = "P_Wildcard"
+  show (P_Variable _ id)        = "P_Variable " ++ show id
+  show (P_Ctor     _ pats ctor) = "P_Ctor     " ++ show ctor
+  show (P_Bool     _ b)         = "P_Bool     " ++ show b
+  show (P_Int      _ i)         = "P_Int      " ++ show (litIntText i)
+  show (P_Tuple    _ pats)      = "P_Tuple    " ++ show pats
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
