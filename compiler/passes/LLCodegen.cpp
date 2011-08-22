@@ -30,8 +30,6 @@
 using llvm::Type;
 using llvm::BasicBlock;
 using llvm::Function;
-using llvm::FunctionType;
-using llvm::IntegerType;
 using llvm::ConstantInt;
 using llvm::getGlobalContext;
 using llvm::Value;
@@ -40,7 +38,6 @@ using llvm::dyn_cast;
 using foster::builder;
 using foster::ParsingContext;
 using foster::EDiag;
-using foster::show;
 
 char kFosterMain[] = "foster__main";
 
@@ -219,7 +216,8 @@ CodegenPass::CodegenPass(llvm::Module* m) : mod(m) {
   //dib = new DIBuilder(*mod);
 }
 
-llvm::Function* CodegenPass::lookupFunctionOrDie(const std::string& fullyQualifiedSymbol) {
+llvm::Function* CodegenPass::lookupFunctionOrDie(const std::string&
+                                                         fullyQualifiedSymbol) {
   // Otherwise, it should be a function name.
   llvm::Function* f = mod->getFunction(fullyQualifiedSymbol);
 
@@ -256,7 +254,7 @@ llvm::Value* LLInt::codegen(CodegenPass* pass) {
     llvm::Value* mpint = pass->allocateMPInt();
 
     // Call mp_int_init_value() (ignore rv for now)
-    llvm::Value* mp_int_init_value = pass->mod->getFunction("mp_int_init_value");
+    llvm::Value* mp_int_init_value =pass->mod->getFunction("mp_int_init_value");
     ASSERT(mp_int_init_value);
 
     builder.CreateCall2(mp_int_init_value, mpint, small);
@@ -327,7 +325,6 @@ Value* allocateCell(CodegenPass* pass, TypeAST* type, bool unboxed,
 
   switch (region) {
   case LLAllocate::MEM_REGION_STACK:
-    EDiag() << "stack allocateCell " << unboxed << " of type " << str(type) << " ~~ " << str(ty);
     return CreateEntryAlloca(ty, "alloc");
 
   case LLAllocate::MEM_REGION_GLOBAL_HEAP:
@@ -352,7 +349,8 @@ llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
     return allocateArray(pass, this->type, this->region,
                          pass->emit(this->arraySize, NULL));
   } else {
-    return allocateCell(pass, this->type, this->unboxed, this->region, this->ctorId);
+    return allocateCell(pass, this->type, this->unboxed,
+                        this->region, this->ctorId);
   }
 }
 
@@ -365,9 +363,11 @@ llvm::Value* LLAlloc::codegen(CodegenPass* pass) {
   //        r
   //    end
   ASSERT(this && this->baseVar && this->baseVar->type);
-  llvm::Value* ptrSlot   = pass->emitMalloc(this->baseVar->type->getLLVMType(), foster::bogusCtorId(-4));
+  llvm::Value* ptrSlot   = pass->emitMalloc(this->baseVar->type->getLLVMType(),
+                                            foster::bogusCtorId(-4));
   llvm::Value* storedVal = pass->emit(baseVar, NULL);
-  llvm::Value* ptr       = builder.CreateLoad(ptrSlot, /*isVolatile=*/ false, "alloc_slot_ptr");
+  llvm::Value* ptr       = builder.CreateLoad(ptrSlot, /*isVolatile=*/ false,
+                                              "alloc_slot_ptr");
   emitStore(storedVal, ptr);
   return ptrSlot;
 }
@@ -519,7 +519,7 @@ genericClosureStructTy(const llvm::FunctionType* fnty) {
   argTypes[0] = builder.getInt8PtrTy();
 
   return llvm::StructType::get(fnty->getContext(),
-           ptrTo(FunctionType::get(retty, argTypes, false)),
+           ptrTo(llvm::FunctionType::get(retty, argTypes, false)),
            builder.getInt8PtrTy(), NULL);
 }
 
@@ -555,16 +555,15 @@ llvm::Value* LLClosure::codegenClosure(
 
   // TODO register closure type
 
-  Value* clo_code_slot = builder.CreateConstGEP2_32(clo, 0, 0, varname + ".clo_code");
-  emitStoreWithCast(proc, clo_code_slot);
-
-  Value* clo_env_slot = builder.CreateConstGEP2_32(clo, 0, 1, varname + ".clo_env");
+  emitStoreWithCast(proc,
+                  builder.CreateConstGEP2_32(clo, 0, 0, varname + ".clo_code"));
+  Value* env_slot = builder.CreateConstGEP2_32(clo, 0, 1, varname + ".clo_env");
   if (env->vars.empty()) {
-    storeNullPointerToSlot(clo_env_slot);
+    storeNullPointerToSlot(env_slot);
   } else {
     // Only store the env in the closure if the env contains entries.
     llvm::Value* envPtr = pass->autoload(envPtrOrSlot);
-    emitStoreWithCast(envPtr, clo_env_slot);
+    emitStoreWithCast(envPtr, env_slot);
   }
 
   return rv;
@@ -580,7 +579,7 @@ getLLVMFunctionType(FnTypeAST* t, const std::string& procSymbol) {
    dyn_cast<llvm::PointerType>(getLLVMType(t))) {
     ASSERT(! getLLVMType(t->getReturnType())->isOpaqueTy())
         << "Cannot use opaque return type for proc " << procSymbol;
-    return dyn_cast<FunctionType>(pt->getContainedType(0));
+    return dyn_cast<llvm::FunctionType>(pt->getContainedType(0));
   } else {
     return NULL;
   }
@@ -633,8 +632,8 @@ bool functionMightAllocateMemory(LLProc* proc) {
 }
 
 llvm::AllocaInst* ensureImplicitStackSlot(llvm::Value* v, CodegenPass* pass) {
-  if (llvm::LoadInst* load = llvm::dyn_cast<llvm::LoadInst>(v)) {
-    llvm::AllocaInst* slot = llvm::dyn_cast<llvm::AllocaInst>(load->getOperand(0));
+  if (llvm::LoadInst* load = dyn_cast<llvm::LoadInst>(v)) {
+    llvm::AllocaInst* slot = dyn_cast<llvm::AllocaInst>(load->getOperand(0));
     if (slot && pass->needsImplicitLoad.count(slot) == 1) {
       return slot;
     }
@@ -682,7 +681,8 @@ llvm::Value* LLProc::codegenProc(CodegenPass* pass) {
   Value* rv = pass->emit(getBody(), NULL);
   pass->valueSymTab.popExistingScope(scope);
 
-  const FunctionType* ft = dyn_cast<FunctionType>(F->getType()->getContainedType(0));
+  const llvm::FunctionType* ft = dyn_cast<llvm::FunctionType>(
+                                        F->getType()->getContainedType(0));
 
   if (isVoidOrUnit(ft->getReturnType())) {
     builder.CreateRetVoid();
@@ -1108,7 +1108,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
   Value* FV = pass->emit(base, NULL);
   ASSERT(FV) << "unable to codegen call due to missing value for base";
 
-  const FunctionType* FT = NULL;
+  const llvm::FunctionType* FT = NULL;
   std::vector<Value*> valArgs;
 
   // TODO extract directly from FnTypeAST
@@ -1125,7 +1125,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
       // The function type here includes a parameter for the
       // generic environment type, e.g. (i32 => i32) becomes
       // i32 (i8*, i32).
-      FT = dyn_cast<const FunctionType>(
+      FT = dyn_cast<const llvm::FunctionType>(
             genericClosureVersionOf(fnType)->getLLVMFnType());
 
       // Load code and env pointers from closure...
@@ -1224,9 +1224,7 @@ llvm::Value* LLTuple::codegenStorage(CodegenPass* pass) {
         << "allocator wants to emit type " << str(this->allocator->type)
         << "; var 0 :: " << str(vars[0]->type);
 
-  if (tuplety) {
-    registerTupleType(tuplety, this->typeName, foster::bogusCtorId(-2), pass->mod);
-  }
+  registerTupleType(tuplety, this->typeName, foster::bogusCtorId(-2), pass->mod);
 
   return allocator->codegen(pass);
 }

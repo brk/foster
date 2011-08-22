@@ -18,8 +18,8 @@
 // allow adding child nodes by requesting new nodes from the parent,
 // and do not directly support adopting existing nodes as children.
 //
-// Thus, the way we'll transcribe our existing AST tree to protobufs
-// is to store a "current parent pb::Expr*" as a pass field;
+// Thus, the way we transcribe our existing AST tree to protobufs
+// is to store a "current parent pb::Expr*" as a field in the pass object;
 // each leaf will initialize the current node with its data,
 // and interior nodes will reset the current pointer with newly-created
 // pb::Expr*s before recursing to child nodes.
