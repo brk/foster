@@ -19,10 +19,12 @@ massages into AST nodes.
     In practice, it will also mean that parsing requires
     searching input paths to find module information.
 
-The middle-end is written in Haskell. It takes a module's
-AST node and performs resolution (with hardcoded types for
-standard library functions) and type checking. Eventually,
-type checking should be performed on SCCs of modules.
+The middle-end is written in Haskell. It takes a module's AST
+and performs resolution (with hardcoded types for standard
+library functions), type checking, k-normalization,
+monomorphization, pattern match compilation, and closure
+conversion. Eventually, type checking should be performed on
+SCCs of modules.
 
 The back-end is written in C++. The primary advantage of
 using C++ rather than Haskell for lowering to LLVM is that
@@ -230,3 +232,124 @@ Time for ``ctest -V`` similarly drops from 16 s to 11 s.
 By making the 2.2 MB ``libchromium_base`` library linked dynamically instead of statically,
 final binary sizes are 1.5 MB smaller, and link time drops from 57 ms to 27 ms. Time for ``ctest -V``
 dropped by 10% overall.
+
+Direct Style, CPS, & CFG
+------------------------
+
+The interface between the middle-end and back-end has evolved
+over time:
+
+* ...?
+* Nested expressions gave way to k-normalized forms.
+  This makes GC-root-safety more explicit and easier to enforce.
+  In particular, because operand values have trivial codegen,
+  there is no chance to forget to stick an intermediate value in
+  a stack slot. Before this change, function calls and other
+  similar constructs needed an awkward two-phase codegen, where
+  the first phase would codegen all the (pointerly) arg expressions into
+  stack slots, and the second phase would load the pointers out
+  of those stack slots. This dance was required in case a GC was
+  triggered while codegenning argument i > 0.
+
+  Another benefit was that small-step interpretation also became
+  simpler.
+* Control flow constructs, like ``if``, were initially
+  expressions when fed into the backend. The backend was then
+  responsible for building the associated control flow graph. To
+  avoid phi nodes, the backend would introduce a stack slot for
+  each if expression; the final value from each branch would be
+  stored in the stack slot, and the overall value of the ``if``
+  was the result of a load from the slot. LLVM's ``mem2reg``
+  pass could then be left to build phi nodes if it so saw fit.
+
+  When an explicit (stack/heap) allocation construct was added
+  to the backend's input language, responsibility for creating,
+  storing, and loading stack slots for ``if`` nodes passed to the
+  middle-end.
+* Case expressions (or, more precisely, the decision trees
+  derived from same) are trickier, both in their initial
+  implementation and their evolution, because they combine
+  control flow with value binding.
+
+  Originally, compilation of a case involved allocating
+  a "return value" slot, recursively generating code for the
+  decision tree(s), and finishing with a load from the stack
+  slot. Each decision tree was either a fail node, a leaf, or
+  a switch.
+
+  A switch would inspect a particular subterm of the scrutinee,
+  and compute a small integer tag for the constructor (or the
+  value itself, for integers). Each branch would codegen
+  a decision tree starting in a separate basic block, thus
+  building a diamond-shaped control flow subgraph::
+
+              [  ...   ]
+              [ switch ]
+              /   |    \
+           {...} {.}  {...}
+           {...} {.}  {...}
+              \   |    /
+               [ cont. ]
+
+  Codegen of decision tree leaves (expressions) was where the
+  magic really happened. Each leaf would have an associated list
+  of bindings, giving names to subterms of the scrutinee. So the
+  backend would add those names to its symbol table, emit the
+  leaf expression, and then remove the names from the symbol
+  table.
+
+  Consider an example with nested pattern matching::
+
+     case ((1, 2), (3, (4, 5)))
+       of ((x, y), (z, (5, q))) -> 5
+       of ((a, b), (4, qq    )) -> 6
+       of ((c, 7), (3, (4, 5))) -> 7
+       of ((8, d), (3, (4, 5))) -> 8
+       of (xy, zz) -> 123
+       of xyzz -> 1234
+     end;
+
+  Pattern match compilation produces a CFG with 70 nodes and 96 edges
+  (this is in hg rev fd7a6df9ef17, from nested-tuple-patterns).
+
+  Several separate problems here:
+
+    * The first literal tested is 8. If is mtaches, we go on and test many
+      of the other subterms, completely unneccessarily. This amounts to an
+      unneeded doubling of the CFG.
+
+    * The decision tree for the above case analysis contains 28 leaf nodes,
+      even though there should only be 6 actual leaves.
+      zz, for example, is given 10 different
+      stack slots, all of which are only ever stored into once! This is
+      because there are 10 different copies of the ``-> 123`` branch.
+      Only two copies of the ``-> 7`` branch, though.
+
+--------------------------
+
+  **With CFGs** the situation becomes more complicated. In particular, if we
+  maintain a pure CFG representation, we lose the ability to scope the variables
+  bound in decision tree leaves. Given uniqueness of binders, one
+  straightforward (but not very elegant) solution would be to lift all the
+  bindings to the "top level" of the function. This matches the eventual form
+  of the generated LLVM IR, but it's rather ugly because it requires collecting
+  all the binding information from the (switch terminators in the) CFG before
+  actually codegenning the CFG itself. It also relies on the stack slots to
+  provide a layer of indirection between the subterm values and the binding
+  names.
+
+  The solution adopted by CPS-style languages is to provide explicit binders
+  on basic blocks, in the same way that functions get binders. This, in turn,
+  works because CPS blocks are lexically nested, unlike CFG blocks, which are
+  (depending on perspective) either a flat list or a graph.
+
+  One hacky solution would be to have switch nodes have nested *blocks* instead
+  of pointers to blocks. But that's very ugly.
+
+  A better solution is to simply make the order of code generation in blocks
+  match the order of execution through blocks. Instead of codegenning blocks
+  by walking through a flat vector, perform a DFS (or, since we have unique
+  names, a BFS would also work). Assuming the CFG is well formed, we'll never
+  generate a reference to an out-of-scope variable. If the CFG isn't well
+  formed, the error will be caught by LLVM, so it doesn't make sense for us to
+  check explicitly.
