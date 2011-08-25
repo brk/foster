@@ -66,6 +66,11 @@ ilOf typ =
 
 boolTypeIL = NamedTypeIL "Bool"
 
+pointedToType t = case t of
+    PtrTypeIL y -> y
+    _ -> error $ "TypeIL.hs:pointedToType\n"
+              ++ "Expected type to be a pointer, but had " ++ show t
+
 pointedToTypeOfVar v = case v of
     TypedId (PtrTypeIL t) _ -> t
     _ -> error $ "TypeIL.hs:pointedToTypeOfVar\n"

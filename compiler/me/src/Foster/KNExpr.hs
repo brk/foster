@@ -91,7 +91,8 @@ kNormalize expr =
 
       AILetVar id  a b  -> do [a', b'] <- mapM g [a, b] ; return $ buildLet id a' b'
       AIUntil    t a b  -> do [a', b'] <- mapM g [a, b] ; return $ (KNUntil t a' b')
-      AIStore      a b  -> do [a', b'] <- mapM g [a, b] ; nestedLets [a', b'] (\[x, y] -> KNStore x y)
+
+      AIStore      a b  -> do [a', b'] <- mapM g [a, b] ; nestedLetsDo [a', b'] (\[x,y] -> knStore x y)
       AIArrayRead t a b -> do [a', b'] <- mapM g [a, b] ; nestedLets [a', b'] (\[x, y] -> KNArrayRead t x y)
       AIArrayPoke t a b c -> do [a', b', c'] <- mapM g [a,b,c]
                                 nestedLets [a', b', c'] (\[x,y,z] -> KNArrayPoke x y z)
@@ -115,9 +116,82 @@ kNormalize expr =
       AICall    t b es -> do
           cargs <- mapM g es
           case b of
-              (E_AIPrim p) -> do nestedLets cargs (\vars -> (KNCallPrim t p vars))
-              (E_AIVar v)  -> do nestedLets cargs (\vars -> (KNCall t v vars))
-              _ -> do cb <- g b; nestedLets (cb:cargs) (\(vb:vars) -> (KNCall t vb vars))
+              (E_AIPrim p) -> do nestedLets   cargs (\vars -> KNCallPrim t p vars)
+              (E_AIVar v)  -> do nestedLetsDo cargs (\vars -> knCall t v vars)
+              _ -> do cb <- g b; nestedLetsDo (cb:cargs) (\(vb:vars) -> knCall t vb vars)
+
+--------------------------------------------------------------------
+-- Type checking ignores the distinction between function types
+-- marked as functions (which get an environment parameter added
+-- during closure conversion) and procedures (which get no env arg).
+--
+-- But we can't ignore the distinction for the actual values with
+-- that type mismatch, because the representations are different:
+-- bare function pointer versus pointer to (code, env) pair.
+-- So when we see code like (fn_expects_closure c_func),
+-- we'll replace it with (fn_expects_closure { args... => c_func args... }).
+--
+-- We perform this transformation at this stage for two reasons:
+--  * Doing it later, during or after closure conversion, complicates
+--    the transformation: explicit env vars, making procs instead of thunks.
+--  * Doing it earlier, directly after type checking, would involve duplicating
+--    the nestedLets functions here. After all, (fec (ret_c_fnptr !)) should
+--    become (let fnptr = ret_c_fnptr ! in fec { args.. => fnptr args.. } end),
+--    NOT simply   fec { args... => (ret_c_fnptr !) args... }
+
+knStore x y = do
+  q <- varOrThunk (x, pointedToType $ tidType y)
+  nestedLets [q] (\[z] -> KNStore z y)
+
+knCall t a vs =
+  case (tidType a) of
+      FnTypeIL (TupleTypeIL tys) _ _ _ -> do
+          args <- mapM varOrThunk (zip vs tys)
+          nestedLets args (\xs -> KNCall t a xs)
+      _ -> error $ "knCall: Called var had non-function type! " ++ show a
+
+--------------------------------------------------------------------
+
+varOrThunk :: (AIVar, TypeIL) -> KN KNExpr
+varOrThunk (a, targetType) = do
+  case needsClosureWrapper a targetType of
+    Just fnty -> do withThunkFor a fnty (\z -> KNVar z)
+    Nothing -> return (KNVar a)
+  where
+    needsClosureWrapper a ty =
+      case (tidType a, ty) of
+        (FnTypeIL x y z FT_Proc, FnTypeIL _ _ _ FT_Func) ->
+            Just $ FnTypeIL x y z FT_Func
+        _ -> Nothing
+
+    withThunkFor :: AIVar -> TypeIL -> (AIVar -> KNExpr) -> KN KNExpr
+    withThunkFor v fnty k = do
+      fn <- mkThunkAround v fnty
+      id <- knFresh ".kn.letfn"
+      return $ KNLetFuns [id] [fn] $ k (TypedId fnty id)
+
+      where
+
+        mkThunkAround v fnty = do
+          id <- knFresh ".kn.thunk"
+          vars <- argVarsWithTypes (fnTypeILDomain fnty)
+          return $ Fn { fnVar      = TypedId fnty (GlobalSymbol (show id))
+                      , fnVars     = vars
+                      , fnBody     = KNCall (fnTypeILRange fnty) v vars
+                      , fnRange    = MissingSourceRange $ "thunk for " ++ show v
+                      , fnFreeVars = case tidIdent v of
+                                        Ident _ _      -> [v]
+                                        GlobalSymbol _ -> []
+                      }
+
+        argVarsWithTypes (TupleTypeIL tys) = do
+          let tidOfType ty = do id <- knFresh ".arg"
+                                return $ TypedId ty id
+          mapM tidOfType tys
+
+        argVarsWithTypes ty = argVarsWithTypes (TupleTypeIL [ty])
+
+--------------------------------------------------------------------
 
 buildLet :: Ident -> KNExpr -> KNExpr -> KNExpr
 buildLet ident bound inexpr =
@@ -134,19 +208,20 @@ buildLet ident bound inexpr =
 
     _ -> KNLetVal ident bound inexpr
 
+
 -- | If we have a call like    base(foo, bar, blah)
 -- | we want to transform it so that the args are all variables:
 -- | let x1 = foo in
 -- |  let x2 = bar in
 -- |   let x3 = blah in
 -- |     base(x1,x2,x3)
-nestedLets :: [KNExpr] -> ([AIVar] -> KNExpr) -> KN KNExpr
 -- | The fresh variables will be accumulated and passed to a
 -- | continuation which generates a LetVal expr using the variables.
-nestedLets exprs g = nestedLets' exprs [] g
+nestedLetsDo :: [KNExpr] -> ([AIVar] -> KN KNExpr) -> KN KNExpr
+nestedLetsDo exprs g = nestedLets' exprs [] g
   where
-    nestedLets' :: [KNExpr] -> [AIVar] -> ([AIVar] -> KNExpr) -> KN KNExpr
-    nestedLets' []     vars k = return $ k (reverse vars)
+    nestedLets' :: [KNExpr] -> [AIVar] -> ([AIVar] -> KN KNExpr) -> KN KNExpr
+    nestedLets' []     vars k = k (reverse vars)
     nestedLets' (e:es) vars k =
         case e of
           -- No point in doing  let var1 = var2 in e...
@@ -159,6 +234,9 @@ nestedLets exprs g = nestedLets' exprs [] g
             innerlet <- nestedLets' es (v:vars) k
             return $ buildLet x e innerlet
 
+-- Usually, we can get by with a pure continuation.
+nestedLets :: [KNExpr] -> ([AIVar] -> KNExpr) -> KN KNExpr
+nestedLets exprs g = nestedLetsDo exprs (\vars -> return $ g vars)
 
 -- Produces a list of (K-normalized) functions, eta-expansions of each ctor.
 kNormalCtors :: Context TypeIL -> DataType TypeIL -> [KN (Fn KNExpr TypeIL)]
