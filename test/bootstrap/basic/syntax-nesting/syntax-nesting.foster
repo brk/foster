@@ -1,6 +1,10 @@
 main = {
   callcall !;
   call_let !;
+
+  test-nested-let-var !;
+  test-nested-let-fun !;
+  test-nested-let-if !;
 };
 
 f = { { 0 } };
@@ -23,4 +27,30 @@ call_deref_b = {
       expect_i32 4;
       print_i32 (r^ !);
   end
+};
+
+test-nested-let-if = {
+  expect_i32 666;
+  if (let q = let z = let y1 = opaquely_i32 0;
+                                 y2 = opaquely_i32 1;
+                              in y1 +Int32 y2 end;
+                         z2 = opaquely_i32 2;
+                      in z +Int32 z2 end;
+                 q2 = opaquely_i32 3;
+              in (q +Int32 q2) <Int32 0 end)
+   then print_i32 777
+   else print_i32 666
+   end;
+};
+
+test-nested-let-var = {
+  expect_i32 0;
+  print_i32 ((let x = let g = 0; in g end;
+             in x end));
+};
+
+test-nested-let-fun = {
+  expect_i32 0;
+  print_i32 ((let z = let f = { 0 }; in f end;
+             in z ! end));
 };
