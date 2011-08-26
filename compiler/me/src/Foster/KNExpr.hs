@@ -107,12 +107,10 @@ kNormalize expr =
       AICase t e bs         -> do e' <- g e
                                   ibs <- forM bs (\(p, ae) -> do ke <- g ae
                                                                  return (p, ke))
-                                  nestedLets [e'] (\[va] -> KNCase t va ibs)
+                                  nestedLets [e'] (\[v] -> KNCase t v ibs)
 
-      AIIf      t  a b c    -> do cond_id <- knFresh ".ife"
-                                  [a', b', c'] <- mapM g [a, b, c]
-                                  let v = (TypedId (typeKN a') cond_id)
-                                  return $ buildLet cond_id a' (KNIf t v b' c')
+      AIIf      t  a b c    -> do [a', b', c'] <- mapM g [a, b, c]
+                                  nestedLets [a'] (\[v] -> KNIf t v b' c')
       AICall    t b es -> do
           cargs <- mapM g es
           case b of
