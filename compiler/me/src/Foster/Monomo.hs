@@ -147,9 +147,9 @@ substituteTypeInProc argtys polyid proc =
           }
    Nothing -> error $ "Expected proc to be marked poly " ++ show proc
 
-monomorphizeBlock (ILBlock bid mids last) = do
+monomorphizeBlock (Block bid mids last) = do
     newmids <- mapM monomorphizeMid mids
-    return $ ILBlock bid newmids last
+    return $ Block bid newmids last
 
 monomorphizeMid :: ILMiddle -> Mono ILMiddle
 monomorphizeMid mid =
@@ -230,9 +230,9 @@ substituteTypeInClosure subst (ILClosure id env capts) =
    ILClosure id env (map (substituteTypeInVar subst) capts)
 
 
-substituteTypeInBlock subst (ILBlock bid mids last) =
+substituteTypeInBlock subst (Block bid mids last) =
     let newmids = map (substituteTypeInMid subst) mids in
-    ILBlock bid newmids (substituteTypeInLast subst last)
+    Block bid newmids (substituteTypeInLast subst last)
 
 substituteTypeInMid subst mid =
   case mid of

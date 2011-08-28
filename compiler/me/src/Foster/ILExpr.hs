@@ -44,7 +44,7 @@ data ILProcDef = ILProcDef { ilProcReturnType :: TypeIL
                            , ilProcBlocks     :: [ILBlock]
                            } deriving Show
 
-data ILBlock = ILBlock BlockId [ILMiddle] ILLast
+type ILBlock = Block ILMiddle ILLast
 
 data ILMiddle =
           ILLetVal      Ident     ILLetable
@@ -100,13 +100,6 @@ showProgramStructure (ILProgram procdefs decls _dtypes _lines) =
                                                            (ilProcBlocks proc))
           ++ out "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"
     procVarDesc (TypedId ty id) = "( " ++ (show id) ++ " :: " ++ show ty ++ " ) "
-
-instance Show ILBlock where
-  show (ILBlock id mids last) =
-        "ILBlock " ++ show id ++ "\n\t\t"
-        ++ (joinWith "\n\t\t" (map show mids))
-        ++ "\n\t" ++ show last
-
 
 data ILMState = ILMState {
     ilmUniq      :: Uniq
@@ -182,10 +175,10 @@ closureConvertBlocks :: [CFBlock] -> ILM [ILBlock]
 closureConvertBlocks blocks = mapM closureConvertBlock blocks
 
 closureConvertBlock :: CFBlock -> ILM ILBlock
-closureConvertBlock (CFBlock bid mids last) = do
+closureConvertBlock (Block bid mids last) = do
     newmids <- mapM closureConvertMid mids
     newlast <- ilLast last
-    return $ ILBlock bid newmids newlast
+    return $ Block bid newmids newlast
 
 closureConvertMid :: CFMiddle -> ILM ILMiddle
 closureConvertMid mid =
@@ -260,7 +253,7 @@ closureOfKnFn infoMap (self_id, fn) = do
     fnRetType f = tidType $ fnVar f
 
     firstBlockId [] = error $ "can't get first block id from empty list!"
-    firstBlockId (CFBlock bid _ _:_) = bid
+    firstBlockId (Block bid _ _:_) = bid
 
     closureConvertFn :: Fn [CFBlock] TypeIL
                      -> InfoMap -> [AIVar] -> ILM (Ident, ILProcDef)
@@ -279,7 +272,7 @@ closureOfKnFn infoMap (self_id, fn) = do
                      let cfcase = CFCase (fnRetType f) envVar [
                                     (P_Tuple norange (map patVar varsOfClosure)
                                     , bodyid) ]
-                     let caseblock = CFBlock bid [] cfcase
+                     let caseblock = Block bid [] cfcase
                      closureConvertBlocks $ caseblock:oldbody
 
         proc <- ilmPutProc (closureConvertedProc (envVar:(fnVars f)) f newbody)
@@ -288,9 +281,9 @@ closureOfKnFn infoMap (self_id, fn) = do
     makeEnvPassingExplicitFn fn =
        fn { fnBody = map makeEnvPassingExplicitBlock (fnBody fn) }
 
-    makeEnvPassingExplicitBlock (CFBlock bid mids last) =
+    makeEnvPassingExplicitBlock (Block bid mids last) =
        let newmids = map makeEnvPassingExplicitMid mids in
-       CFBlock bid newmids last
+       Block bid newmids last
 
     makeEnvPassingExplicitMid :: CFMiddle -> CFMiddle
     makeEnvPassingExplicitMid mid =

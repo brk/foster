@@ -158,6 +158,10 @@ data ModuleIL expr ty = ModuleIL {
         , moduleILsourceLines :: SourceLines
      }
 
+type BlockId = Ident
+
+data Block mid last = Block BlockId [mid] last
+
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 data ESourceLocation = ESourceLocation { sourceLocationLine :: Int

@@ -12,6 +12,8 @@ import Foster.KNExpr
 
 import Control.Monad.State
 
+type CFBlock = Block CFMiddle CFLast
+
 computeCFGIO :: Fn KNExpr TypeIL -> IO (Fn [CFBlock] TypeIL)
 computeCFGIO fn = do
   let (letable, cfgState) = _computeCFG fn
@@ -35,8 +37,8 @@ computeCFG fn =
 
 showCFBlocks blocks = out $ (joinWith "\n\n\t" $ map show blocks)
 
-instance Show CFBlock where
-  show (CFBlock id mids last) =
+instance (Show m, Show l) => Show (Block m l) where
+  show (Block id mids last) =
         "CFBlock " ++ show id ++ "\n\t\t"
         ++ (joinWith "\n\t\t" (map show mids))
         ++ "\n\t" ++ show last
@@ -167,10 +169,6 @@ knToCFLetable expr =
             _                   -> error $ "non-letable thing seen by letable: "
                                          ++ show expr
 
-type BlockId = Ident
-
-data CFBlock = CFBlock BlockId [CFMiddle] CFLast
-
 data CFMiddle =
           CFLetVal      Ident     CFLetable
         | CFLetFuns     [Ident]   [Fn [CFBlock] TypeIL]
@@ -242,7 +240,7 @@ cfgEndWith last = do
           Nothing          -> error $ "Tried to finish block but no preblock!"
                                      ++ "Tried to end with " ++ show last
           Just (id, mids) -> do
-            let newblock = CFBlock id (Prelude.reverse mids) last
+            let newblock = Block id (Prelude.reverse mids) last
             put (old { cfgPreBlock     = Nothing
                      , cfgAllBlocks    = newblock : (cfgAllBlocks old) })
 

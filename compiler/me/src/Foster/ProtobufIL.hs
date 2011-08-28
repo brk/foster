@@ -144,7 +144,7 @@ dumpAllocate (ILAllocInfo typ region maybe_array_size unboxed) =
 -----------------------------------------------------------------------
 
 dumpBlock :: ILBlock -> PbBlock.Block
-dumpBlock (ILBlock id mids illast) =
+dumpBlock (Foster.Base.Block id mids illast) =
     P'.defaultValue { PbBlock.block_id = dumpIdent id
                     , PbBlock.middle   = fromList $ map dumpMiddle mids
                     , PbBlock.last     = dumpLast illast
