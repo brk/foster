@@ -11,29 +11,33 @@ import Foster.TypeIL
 import Foster.KNExpr
 
 import Control.Monad.State
+import Data.IORef
 
 type CFBlock = Block CFMiddle CFLast
 
-computeCFGIO :: Fn KNExpr TypeIL -> IO (Fn [CFBlock] TypeIL)
-computeCFGIO fn = do
-  let (letable, cfgState) = _computeCFG fn
-  putStrLn $ (show $ fnVar fn) ++ " \n\t~~~~~~~~~~letable: " ++ show letable
-                                ++ "\n\t~~~~~~~~~~preblock:" ++
-        show (cfgPreBlock cfgState)
+computeCFGIO :: IORef Uniq -> Fn KNExpr TypeIL -> IO (Fn [CFBlock] TypeIL)
+computeCFGIO uref fn = do
+  u <- readIORef uref ; modifyIORef uref (+1)
+  let cfgState = _computeCFG u fn
+  putStrLn $ (show $ fnVar fn) ++ "\n\t~~~~~~~~~~preblock:" ++
+              show (cfgPreBlock cfgState)
   return $ fn { fnBody = Prelude.reverse (cfgAllBlocks cfgState) }
 
-_computeCFG :: Fn KNExpr TypeIL -> ((), CFGState)
-_computeCFG fn =
-  let state0 = CFGState 1 (Just (Ident "begin" 0, [])) [] in
+_computeCFG :: Int -> Fn KNExpr TypeIL -> CFGState
+_computeCFG uniq fn =
+  let preblock = (Ident "begin" uniq, []) in
+  let state0 = CFGState (uniq + 1) (Just preblock) [] in
   let ret fn var = case (identPrefix $ tidIdent $ fnVar fn) of
                          "main" -> cfgEndWith (CFRetVoid)
                          _ -> cfgEndWith (CFRet var) in
-  runState (computeBlocks (fnBody fn) Nothing (ret fn)) state0
+  execState (computeBlocks (fnBody fn) Nothing (ret fn)) state0
 
-computeCFG :: Fn KNExpr TypeIL -> Fn [CFBlock] TypeIL
-computeCFG fn =
-  let (letable, cfgState) = _computeCFG fn in
-  fn { fnBody = Prelude.reverse (cfgAllBlocks cfgState) }
+cfgComputeCFG :: Fn KNExpr TypeIL -> CFG (Fn [CFBlock] TypeIL)
+cfgComputeCFG fn = do
+  u0 <- cfgGetUniq
+  let cfgState = _computeCFG u0 fn
+  cfgPutUniq (cfgUniq cfgState + 1)
+  return $ fn { fnBody = Prelude.reverse (cfgAllBlocks cfgState) }
 
 showCFBlocks blocks = out $ (joinWith "\n\n\t" $ map show blocks)
 
@@ -50,11 +54,11 @@ instance Show CFGState where
         ++ "\n\t" ++ show preblock
         ++ "\n\t" ++ (joinWith "\n\n\t" $ map show allblocks)
 
-cfgMidLet :: CFLetable -> CFG ()
+cfgMidLet :: Letable -> CFG ()
 cfgMidLet letable = do id <- cfgFresh ".cfg_seq"
                        cfgAddMiddle (CFLetVal id letable)
 
-cfgAddLet :: Maybe Ident -> CFLetable -> TypeIL -> CFG AIVar
+cfgAddLet :: Maybe Ident -> Letable -> TypeIL -> CFG AIVar
 cfgAddLet maybeid letable ty = do
         id <- (case maybeid of
                 Just id -> return id
@@ -121,7 +125,8 @@ computeBlocks expr idmaybe k = do
             computeBlocks cont idmaybe k
 
         KNLetFuns ids fns e -> do
-            cfgAddMiddle (CFLetFuns ids $ map computeCFG fns)
+            funs <- mapM cfgComputeCFG fns
+            cfgAddMiddle (CFLetFuns ids $ funs)
             computeBlocks e idmaybe k
 
         KNCase t v bs -> do
@@ -147,12 +152,12 @@ computeBlocks expr idmaybe k = do
             cfgAddLet idmaybe (CFDeref slotvar) t >>= k
 
         KNVar v -> k v
-        _ -> do cfgAddLet idmaybe (knToCFLetable expr) (typeKN expr) >>= k
+        _ -> do cfgAddLet idmaybe (knToLetable expr) (typeKN expr) >>= k
 
-knToCFLetable :: KNExpr -> CFLetable
-knToCFLetable expr =
+knToLetable :: KNExpr -> Letable
+knToLetable expr =
   case expr of
-            KNVar        v      -> error $ "can't make CFLetable from KNVar!"
+            KNVar        v      -> error $ "can't make Letable from KNVar!"
             KNBool       b      -> CFBool       b
             KNInt        t i    -> CFInt        t i
             KNTuple      vs     -> CFTuple      vs
@@ -170,11 +175,11 @@ knToCFLetable expr =
                                          ++ show expr
 
 data CFMiddle =
-          CFLetVal      Ident     CFLetable
+          CFLetVal      Ident     Letable
         | CFLetFuns     [Ident]   [Fn [CFBlock] TypeIL]
         deriving Show
 
-data CFLetable =
+data Letable =
           CFBool        Bool
         | CFInt         TypeIL LiteralInt
         | CFTuple       [AIVar]
@@ -212,11 +217,19 @@ data CFGState = CFGState {
 
 type CFG a = State CFGState a
 
+cfgGetUniq :: CFG Uniq
+cfgGetUniq = do gets cfgUniq
+
+cfgPutUniq :: Uniq -> CFG ()
+cfgPutUniq u = do
+        old <- get
+        put (old { cfgUniq = u })
+
 cfgFresh :: String -> CFG BlockId
 cfgFresh s = do
-        old <- get
-        put (old { cfgUniq = (cfgUniq old) + 1 })
-        return (Ident s (cfgUniq old))
+        u <- cfgGetUniq
+        cfgPutUniq (u + 1)
+        return (Ident s u)
 
 cfgNewBlock :: BlockId -> CFG ()
 cfgNewBlock id = do

@@ -323,7 +323,8 @@ typecheckSourceModule sm outfile flagVals verboseMode = do
                      runOutput (outLn $ show (fnVar fn))
                      runOutput (showStructure (fnBody fn))))
 
-         cfgFuncs <- mapM computeCFGIO (moduleILfunctions kmod)
+         uref <- newIORef 0
+         cfgFuncs <- mapM (computeCFGIO uref) (moduleILfunctions kmod)
          let cfgmod = kmod { moduleILfunctions = cfgFuncs }
 
          when verboseMode (do

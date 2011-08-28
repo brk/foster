@@ -291,7 +291,7 @@ closureOfKnFn infoMap (self_id, fn) = do
         CFLetVal id val -> CFLetVal id (makeEnvPassingExplicitVal val)
         CFLetFuns ids fns -> CFLetFuns ids (map makeEnvPassingExplicitFn fns)
 
-    makeEnvPassingExplicitVal :: CFLetable -> CFLetable
+    makeEnvPassingExplicitVal :: Letable -> Letable
     makeEnvPassingExplicitVal expr =
       case expr of
         CFCall t v vs ->
