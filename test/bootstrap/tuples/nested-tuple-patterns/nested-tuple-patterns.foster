@@ -1,5 +1,7 @@
 main = {
   t1 !;
+  t2 !;
+  t3 !;
 };
 
 t1 = {
@@ -12,5 +14,23 @@ t1 = {
       of ((8, d), (3, (4, 5))) -> 8
       of (xy, zz) -> 123
       of xyzz -> 1234
+    end;
+};
+
+t2 = {
+  expect_i32 6;
+  print_i32
+    case (1, (2, 3))
+      of (x, (5, q)) -> 7
+      of (a, qq    ) -> 6
+    end;
+};
+
+t3 = {
+  expect_i32 7;
+  print_i32
+    case true
+      of true  -> 7
+      of false -> 6
     end;
 };

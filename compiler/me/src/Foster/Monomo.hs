@@ -129,8 +129,8 @@ monomorphizeProc (NeedsMono polyid srcid tyargs) = do
 
 doMonomorphizeProc :: ILProcDef -> Mono ILProcDef
 doMonomorphizeProc proc = do
-  body <- monomorphizeExpr (ilProcBody proc)
-  let newproc = proc { ilProcBody = body  }
+  blocks <- mapM monomorphizeBlock (ilProcBlocks proc)
+  let newproc = proc { ilProcBlocks = blocks  }
   monoPutProc newproc
   return newproc
 
@@ -143,29 +143,27 @@ substituteTypeInProc argtys polyid proc =
           , ilProcReturnType = parSubstTyIL subst (ilProcReturnType proc)
           , ilProcIdent = polyid
           , ilProcVars = map (substituteTypeInVar subst) (ilProcVars proc)
-          , ilProcBody = substituteTypeInExpr subst      (ilProcBody proc)
+          , ilProcBlocks = map (substituteTypeInBlock subst) (ilProcBlocks proc)
           }
    Nothing -> error $ "Expected proc to be marked poly " ++ show proc
 
-monomorphizeExpr expr =
-        let g = monomorphizeExpr in
-        case expr of
-            -- Most nodes are ignored straightaway.
-            ILBool       {} -> return expr
-            ILInt        {} -> return expr
-            ILVar        {} -> return expr
-            ILAllocate   {} -> return expr
-            ILAllocArray {} -> return expr
-            ILAlloc      {} -> return expr
-            ILDeref      {} -> return expr
-            ILStore      {} -> return expr
-            ILArrayRead  {} -> return expr
-            ILArrayPoke  {} -> return expr
-            ILTuple      {} -> return expr
-            ILCallPrim   {} -> return expr
-            ILAppCtor    {} -> return expr
-            ILCall       {} -> return expr
+monomorphizeBlock (ILBlock bid mids last) = do
+    newmids <- mapM monomorphizeMid mids
+    return $ ILBlock bid newmids last
 
+monomorphizeMid :: ILMiddle -> Mono ILMiddle
+monomorphizeMid mid =
+  case mid of
+    ILLetVal id val -> do valOrVar <- monomorphizeLetable val
+                          case valOrVar of
+                            Left var -> return $ ILRebindId id var
+                            Right val -> return $ ILLetVal id val
+    ILClosures ids clos -> do return $ ILClosures ids clos -- TODO
+    ILRebindId x y -> return mid
+
+monomorphizeLetable expr =
+        let g = monomorphizeLetable in
+        case expr of
             -- This is the only interesting case!
             ILTyApp t v argty -> do
                 case v of
@@ -183,7 +181,9 @@ monomorphizeExpr expr =
                        _ <- if alreadyStarted
                               then return ()
                               else do monoScheduleWork monoWork
-                       return $ ILVar (TypedId t polyid)
+                       --error $ "(ILVar (TypedId t polyid)) = " ++ show (TypedId t polyid)
+                       --return $ ILHackVar (TypedId t polyid)
+                       return $ Left (TypedId t polyid)
 
                   -- On the other hand, if we only have a local var, then
                   -- (in general) the var is unknown, so we can't statically
@@ -200,15 +200,8 @@ monomorphizeExpr expr =
 
                   _ -> error $ "Expected polymorphic instantiation to affect a bound variable!"
 
-            -- These cases recur in uninteresting ways.
-            ILIf t    v a b -> do [a', b'] <- mapM g [a, b] ; return $ ILIf t    v a' b'
-            ILUntil   t a b -> do [a', b'] <- mapM g [a, b] ; return $ ILUntil   t a' b'
-            ILLetVal id a b -> do [a', b'] <- mapM g [a, b] ; return $ ILLetVal id a' b'
-            ILClosures ids clos e -> do e' <- g e ; return $ ILClosures ids clos e'
-            ILCase t v bs _dt -> do
-                let convertBranch (p, a) = do a' <- g a ; return (p, a' )
-                ibs <- mapM convertBranch bs
-                return $ ILCase t v ibs _dt
+            -- All other nodes are ignored straightaway.
+            _ -> return $ Right expr
 
 -- matching definition from Typecheck.hs
 -- does listize (TupleTypeIL []) result in [] or [unit] ?
@@ -233,30 +226,42 @@ substituteTypeInVar :: [(TypeIL, TypeIL)] -> AIVar -> AIVar
 substituteTypeInVar subst (TypedId ty id) =
         (TypedId (parSubstTyIL subst ty) id)
 
-substituteTypeInPatBind subst (p, e) =
-        (p, substituteTypeInExpr subst e)
-
 substituteTypeInClosure subst (ILClosure id env capts) =
-        ILClosure id env (map (substituteTypeInVar subst) capts)
+   ILClosure id env (map (substituteTypeInVar subst) capts)
 
-substituteTypeInExpr subst expr =
+
+substituteTypeInBlock subst (ILBlock bid mids last) =
+    let newmids = map (substituteTypeInMid subst) mids in
+    ILBlock bid newmids (substituteTypeInLast subst last)
+
+substituteTypeInMid subst mid =
+  case mid of
+    ILLetVal id val     -> let newval = substituteTypeInLetable subst val in
+                           ILLetVal id newval
+    ILClosures ids clos -> let newclos = map (substituteTypeInClosure subst) clos in
+                           ILClosures ids newclos
+    ILRebindId _ _ -> mid
+
+substituteTypeInLast subst last =
+  case last of
+        ILRetVoid          -> last
+        ILRet   v          -> ILRet (substituteTypeInVar subst v)
+        ILBr    b          -> last
+        ILIf    t v b1 b2  -> ILIf (parSubstTyIL subst t)
+                                   (substituteTypeInVar subst v) b1 b2
+        ILCase  t v pbs dt -> ILCase (parSubstTyIL subst t)
+                                     (substituteTypeInVar subst v) pbs dt
+
+substituteTypeInLetable subst expr =
         let q  = parSubstTyIL subst in
-        let qe = substituteTypeInExpr subst in
         let qv = substituteTypeInVar subst in
-        let qb = substituteTypeInPatBind subst in
-        let qc = substituteTypeInClosure subst in
         case expr of
             ILBool      b       -> ILBool  b
             ILInt       t i     -> ILInt   (q t) i
-            ILUntil     t a b   -> ILUntil (q t) (qe a) (qe b)
             ILTuple       vs    -> ILTuple (map qv vs)
-            ILCase      t v bs d-> ILCase (q t) (qv v) (map qb bs) (fmapDt qe d)
-            ILClosures ids cls e-> ILClosures ids (map qc cls) (qe e)
-            ILLetVal    x b e   -> ILLetVal x (qe b) (qe e)
             ILCall      t v vs  -> ILCall     (q t) (qv v) (map qv vs)
             ILCallPrim  t p vs  -> ILCallPrim (q t) p      (map qv vs)
             ILAppCtor   t c vs  -> ILAppCtor  (q t) c      (map qv vs)
-            ILIf        t v b c -> ILIf       (q t) (qv v) (qe b) (qe c)
             ILAllocate (ILAllocInfo t region arr_var unboxed) ->
                 ILAllocate (ILAllocInfo (q t) region  (fmap qv arr_var) unboxed)
             ILAlloc     v       -> ILAlloc            (qv v)
@@ -265,7 +270,6 @@ substituteTypeInExpr subst expr =
             ILStore        v w  -> ILStore            (qv v) (qv w)
             ILArrayRead  t a b  -> ILArrayRead  (q t) (qv a) (qv b)
             ILArrayPoke  v b i  -> ILArrayPoke (qv v) (qv b) (qv i)
-            ILVar        v      -> ILVar       (qv v)
             ILTyApp   t v argty -> ILTyApp (q t) (qv v) (q argty)
 
 fmapDt f (DT_Fail          ) = DT_Fail

@@ -7,6 +7,7 @@
 
 #include "llvm/Module.h"
 #include "llvm/DerivedTypes.h"
+#include "base/Worklist.h"
 #include "parse/FosterSymbolTable.h"
 
 #include <string>
@@ -16,6 +17,7 @@
 using llvm::Value;
 
 struct TupleTypeAST;
+struct LLBlock;
 
 // Declarations for Codegen-typemaps.cpp
 enum ArrayOrNot {
@@ -68,7 +70,7 @@ llvm::AllocaInst* stackSlotWithValue(llvm::Value* val,
 struct LLModule;
 struct LLExpr;
 struct LLVar;
-
+struct BlockBindings;
 struct DataTypeAST;
 
 struct CodegenPass {
@@ -86,6 +88,11 @@ struct CodegenPass {
   //llvm::DIBuilder* dib;
   llvm::StringSet<> knownNonAllocatingFunctions;
 
+  std::map<std::string, llvm::BasicBlock*>  llvmBlocks;
+  std::map<std::string,     LLBlock*>     fosterBlocks;
+  WorklistLIFO<std::string, LLBlock*>   worklistBlocks;
+  std::map<std::string, BlockBindings*>  blockBindings;
+
   explicit CodegenPass(llvm::Module* mod);
 
   ~CodegenPass() {
@@ -99,6 +106,12 @@ struct CodegenPass {
 
   void markAsNeedingImplicitLoads(llvm::Value* v);
   void addEntryBB(llvm::Function* f);
+
+  void scheduleBlockCodegen(LLBlock* b);
+  llvm::BasicBlock* lookupBlock(const std::string& s) {
+      scheduleBlockCodegen(fosterBlocks[s]);
+      return llvmBlocks[s];
+  }
 
   Value* emit(LLExpr* e, TypeAST* t);
   Value* autoload(Value* v);

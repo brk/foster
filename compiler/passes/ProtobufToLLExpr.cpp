@@ -30,17 +30,16 @@ namespace bepb {
   struct Type;
 } // namespace foster::bepb
 
-LLExpr* LLExpr_from_pb(const bepb::Expr*);
-LLVar*  LLVar_from_pb(const bepb::Expr* pb) {
+LLExpr* LLExpr_from_pb(const bepb::Letable*);
+TypeAST* TypeAST_from_pb(const bepb::Type*);
+FnTypeAST* parseProcType(const bepb::ProcType&);
+
+LLVar*  parseTermVar(const bepb::Letable* pb) {
   LLExpr* e = LLExpr_from_pb(pb);
   LLVar* rv = dynamic_cast<LLVar*>(e);
   ASSERT(rv) << "Expected var, got " << e->tag;
   return rv;
 }
-
-TypeAST* TypeAST_from_pb(const bepb::Type*);
-FnTypeAST* parseProcType(const bepb::ProcType&);
-
 }
 
 using std::string;
@@ -62,64 +61,82 @@ CtorId parseCtorId(const pb::PbCtorId& c) { CtorId x;
   return x;
 }
 
-LLExpr* parseBool(const pb::Expr& e) {
+LLExpr* parseBool(const pb::Letable& e) {
   return new LLBool(e.bool_value() ? "true" : "false");
 }
 
-LLExpr* parseCall(const pb::Expr& e) {
-  ASSERT(e.parts_size() >= 1);
+LLVar* parseTermVar(const pb::TermVar* v) {
+  ASSERT(v != NULL) << "parseTermVar got NULL var!";
+  ASSERT(v->name() != "") << "parseTermVar got empty var!";
+  LLVar* rv = NULL;
 
-  LLExpr* base = LLExpr_from_pb(&e.parts(0));
+  switch (v->tag()) {
+  case pb::TermVar::IL_VAR:           rv = new          LLVar(v->name()); break;
+  case pb::TermVar::IL_GLOBAL_SYMBOL: rv = new LLGlobalSymbol(v->name()); break;
+  }
+  ASSERT(rv != NULL) << "parseTermVar didn't recognize tag.";
+  if (v->has_typ()) {
+    rv->type = TypeAST_from_pb(& v->typ());
+  }
+  return rv;
+}
+
+LLExpr* parseCoroPrim(const pb::CoroPrim& p) {
+  TypeAST* r = TypeAST_from_pb(& p.ret_type());
+  TypeAST* a = TypeAST_from_pb(& p.arg_type());
+  switch (p.tag()) {
+  case pb::CoroPrim::IL_CORO_INVOKE: return new LLCoroPrim("coro_invoke", r, a);
+  case pb::CoroPrim::IL_CORO_CREATE: return new LLCoroPrim("coro_create", r, a);
+  case pb::CoroPrim::IL_CORO_YIELD : return new LLCoroPrim("coro_yield",  r, a);
+  default: ASSERT(false) << "unknown coro prim tag number " << p.tag();
+           return NULL;
+  }
+}
+
+LLExpr* parseCall(const pb::Letable& e) {
+  ASSERT(e.parts_size() >= 1);
+  int firstArg = e.has_coro_prim() ? 0 : 1;
+  LLExpr* base = e.has_coro_prim() ? parseCoroPrim(e.coro_prim())
+                                   : parseTermVar(&e.parts(0));
   std::vector<LLVar*> args;
-  for (int i = 1; i < e.parts_size(); ++i) {
-    args.push_back(LLVar_from_pb(&e.parts(i)));
+  for (int i = firstArg; i < e.parts_size(); ++i) {
+    args.push_back(parseTermVar(&e.parts(i)));
   }
   bool callMayTriggerGC = e.call_may_trigger_gc();
   return new LLCall(base, args, callMayTriggerGC);
 }
 
-LLExpr* parseCallPrimOp(const pb::Expr& e) {
+LLExpr* parseCallPrimOp(const pb::Letable& e) {
   ASSERT(e.parts_size() >= 1);
   std::vector<LLVar*> args;
   for (int i = 0; i < e.parts_size(); ++i) {
-    args.push_back(LLVar_from_pb(&e.parts(i)));
+    args.push_back(parseTermVar(&e.parts(i)));
   }
-  return new LLCallPrimOp(e.name(), args);
+  return new LLCallPrimOp(e.prim_op_name(), args);
 }
 
-LLExpr* parseAppCtor(const pb::Expr& e) {
+LLExpr* parseAppCtor(const pb::Letable& e) {
   ASSERT(e.has_ctor_id()) << "APP_CTOR without ctor id?";
   std::vector<LLVar*> vars;
   for (int i = 0; i < e.parts_size(); ++i) {
-    vars.push_back(LLVar_from_pb(&e.parts(i)));
+    vars.push_back(parseTermVar(&e.parts(i)));
   }
   return new LLAppCtor(parseCtorId(e.ctor_id()), vars);
 }
 
-LLExpr* parseIf(const pb::Expr& e) {
-  ASSERT(e.has_pb_if());
-
-  const pb::PBIf& i = e.pb_if();
-
-  return new LLIf(
-       LLVar_from_pb(& i.test_expr()),
-      LLExpr_from_pb(& i.then_expr()),
-      LLExpr_from_pb(& i.else_expr()));
-}
-
-LLExpr* parseInt(const pb::Expr& e) {
+LLExpr* parseInt(const pb::Letable& e) {
   if (!e.has_pb_int()) return NULL;
   const pb::PBInt& i = e.pb_int();
   return new LLInt(i.clean(), i.bits());
 }
 
-LLAllocate* parseAllocate(const pb::Expr& e) {
+LLAllocate* parseAllocate(const pb::Letable& e) {
   ASSERT(e.has_alloc_info());
   const pb::AllocInfo& a = e.alloc_info();
   LLVar* array_size = NULL;
 
   if (a.has_array_size()) {
-    array_size = LLVar_from_pb(&a.array_size());
+    array_size = parseTermVar(&a.array_size());
   }
 
   LLAllocate::MemRegion target_region = LLAllocate::MEM_REGION_STACK;
@@ -136,41 +153,12 @@ LLAllocate* parseAllocate(const pb::Expr& e) {
                         unboxed, array_size, target_region);
 }
 
-LLTuple* parseTuple(const pb::Expr& e) {
+LLTuple* parseTuple(const pb::Letable& e) {
   std::vector<LLVar*> args;
   for (int i = 0; i < e.parts_size(); ++i) {
-    args.push_back(LLVar_from_pb(&e.parts(i)));
+    args.push_back(parseTermVar(&e.parts(i)));
   }
   return new LLTuple(args, parseAllocate(e));
-}
-
-LLClosure* parseClosure(const pb::Closure& clo) {
-  return new LLClosure(clo.varname(), clo.envid(), clo.procid(),
-                       parseTuple(clo.env()));
-}
-
-LLExpr* parseClosures(const pb::Expr& e) {
-  ASSERT(e.parts_size() == 1) << "parseClosures needs 1 subexpr";
-  std::vector<LLClosure*> closures;
-  for (int i = 0; i < e.closures_size(); ++i) {
-    closures.push_back(parseClosure(e.closures(i)));
-  }
-  return new LLClosures(LLExpr_from_pb(&e.parts(0)),
-                        closures);
-}
-
-LLExpr* parseLetVals(const pb::Expr& e) {
-  ASSERT(e.parts_size() == e.names_size() + 1);
-  ASSERT(e.parts_size() >= 2) << "parseLetVal needs at least 2 subexprs";
-  std::vector<std::string> names;
-  std::vector<LLExpr*>     exprs;
-  for (int i = 0; i < e.names_size(); ++i) {
-    names.push_back(e.names(i));
-    exprs.push_back(LLExpr_from_pb(&e.parts(i + 1)));
-  }
-  // let nm[0] = p[1] in
-  // let nm[N] = p[N+1] in p[0]
-  return new LLLetVals(names, exprs, LLExpr_from_pb(&e.parts(0)));
 }
 
 llvm::GlobalValue::LinkageTypes
@@ -183,6 +171,72 @@ parseLinkage(const pb::Proc::Linkage linkage) {
   }
 }
 
+LLMiddle* parseLetVal(const pb::LetVal& b) {
+  std::vector<std::string> names;
+  std::vector<LLExpr*>     exprs;
+  names.push_back(b.let_val_id());
+  exprs.push_back(LLExpr_from_pb(&b.let_expr()));
+  return new LLLetVals(names, exprs);
+}
+
+LLClosure* parseClosure(const pb::Closure& clo) {
+  return new LLClosure(clo.varname(), clo.env_id(), clo.proc_id(),
+                       parseTuple(clo.env()));
+}
+
+LLMiddle* parseLetClosures(const pb::LetClosures& b) {
+  std::vector<LLClosure*> closures;
+  for (int i = 0; i < b.closures_size(); ++i) {
+    closures.push_back(parseClosure(b.closures(i)));
+  }
+  return new LLClosures(closures);
+}
+
+LLMiddle* parseRebindId(const pb::RebindId& r) {
+  return new LLRebindId(r.from_id(), parseTermVar(&r.to_var()));
+}
+
+DecisionTree* parseDecisionTree(const pb::DecisionTree& dt);
+
+LLTerminator* parseTerminator(const pb::Terminator& b) {
+  LLTerminator* rv = NULL;
+  switch (b.tag()) {
+  case pb::Terminator::BLOCK_RET_VOID: return new LLRetVoid();
+  case pb::Terminator::BLOCK_RET_VAL: return new LLRetVal(parseTermVar(&b.var()));
+  case pb::Terminator::BLOCK_BR: return new     LLBr(b.block());
+  case pb::Terminator::BLOCK_IF: return new LLCondBr(b.block(), b.block2(),
+                                                     parseTermVar(&b.var()));
+  case pb::Terminator::BLOCK_CASE:
+    return new LLSwitch(parseTermVar(&b.var()), TypeAST_from_pb(&b.typ()),
+                        parseDecisionTree(b.dt()));
+  default: ASSERT(false); return NULL;
+  }
+  return rv;
+}
+
+LLMiddle* parseMiddle(const pb::BlockMiddle& b) {
+  if (b.has_let_val()) {
+    return parseLetVal(b.let_val());
+  }
+  if (b.has_let_clo()) {
+    return parseLetClosures(b.let_clo());
+  }
+  if (b.has_rebind()) {
+    return parseRebindId(b.rebind());
+  }
+  ASSERT(false) << "parseMiddle unhandled case!"; return NULL;
+}
+
+LLBlock* parseBlock(const pb::Block& b) {
+  LLBlock* bb = new LLBlock;
+  bb->block_id = b.block_id();
+  for (int i = 0; i < b.middle_size(); ++i) {
+    bb->mids.push_back(parseMiddle(b.middle(i)));
+  }
+  bb->terminator = parseTerminator(b.last());
+  return bb;
+}
+
 LLProc* parseProc(const pb::Proc& e) {
   ASSERT(e.has_proctype()) << "protobuf LLProc missing proc type!";
 
@@ -193,42 +247,32 @@ LLProc* parseProc(const pb::Proc& e) {
     args.push_back(e.in_args(i));
   }
 
+  std::vector<LLBlock*> blocks;
+  for (int i = 0; i < e.blocks_size(); ++i) {
+    blocks.push_back(parseBlock(e.blocks(i)));
+  }
+
   foster::sgProcLines[e.name()] = e.lines();
 
   return new LLProc(proctype, e.name(), args,
                     parseLinkage(e.linkage()),
-                    LLExpr_from_pb(& e.body()));
+                    blocks);
 }
 
-/*
-LLExpr* parseSimd(const pb::Expr& e) {
-  return new SimdVectorAST(LLExpr_from_pb(& e.parts(0)), range);
-}
-*/
-
-LLExpr* parseArrayRead(const pb::Expr& e) {
+LLExpr* parseArrayRead(const pb::Letable& e) {
   ASSERT(e.parts_size() == 2) << "array_read must have base and index";
   return new LLArrayRead(
-       LLVar_from_pb(& e.parts(0)),
-       LLVar_from_pb(& e.parts(1)));
+       parseTermVar(& e.parts(0)),
+       parseTermVar(& e.parts(1)));
 }
 
-LLExpr* parseArrayPoke(const pb::Expr& e) {
+LLExpr* parseArrayPoke(const pb::Letable& e) {
   ASSERT(e.parts_size() == 3) << "array_write must have value, base and index";
   return new LLArrayPoke(
-       LLVar_from_pb(& e.parts(0)),
-       LLVar_from_pb(& e.parts(1)),
-       LLVar_from_pb(& e.parts(2)));
+       parseTermVar(& e.parts(0)),
+       parseTermVar(& e.parts(1)),
+       parseTermVar(& e.parts(2)));
 }
-
-LLExpr* parseUntil(const pb::Expr& e) {
-  ASSERT(e.parts_size() == 2) << "until must have cond and body";
-  return new LLUntil(
-      LLExpr_from_pb(& e.parts(0)),
-      LLExpr_from_pb(& e.parts(1)));
-}
-
-DecisionTree* parseDecisionTree(const pb::DecisionTree& dt);
 
 Occurrence* parseOccurrence(const pb::PbOccurrence& o) {
   Occurrence* rv = new Occurrence;
@@ -273,7 +317,7 @@ DecisionTree* parseDecisionTree(const pb::DecisionTree& dt) {
     }
     return new DecisionTree(DecisionTree::DT_LEAF,
                             binds,
-                            LLExpr_from_pb(&dt.leaf_action()));
+                            dt.leaf_action());
   case pb::DecisionTree::DT_SWAP:
     ASSERT(false) << "Shouldn't be codegenning DT_SWAP nodes!";
   case pb::DecisionTree::DT_SWITCH:
@@ -284,39 +328,18 @@ DecisionTree* parseDecisionTree(const pb::DecisionTree& dt) {
   return NULL;
 }
 
-LLExpr* parseCase(const pb::Expr& e) {
-  DecisionTree* dt = parseDecisionTree(e.dt());
-  return new LLCase(LLVar_from_pb(&e.parts(0)), dt,
-                    TypeAST_from_pb(& e.type()));
+LLExpr* parseAlloc(const pb::Letable& e) {
+  return new LLAlloc(parseTermVar(& e.parts(0)));
 }
 
-LLExpr* parseCoroPrim(const pb::Expr& e) {
-  const pb::CoroPrim& p = e.coro_prim();
-  TypeAST* r = TypeAST_from_pb(& p.ret_type());
-  TypeAST* a = TypeAST_from_pb(& p.arg_type());
-  switch (e.tag()) {
-  case pb::Expr::IL_CORO_INVOKE: return new LLCoroPrim("coro_invoke", r, a);
-  case pb::Expr::IL_CORO_CREATE: return new LLCoroPrim("coro_create", r, a);
-  case pb::Expr::IL_CORO_YIELD : return new LLCoroPrim("coro_yield",  r, a);
-  default: return NULL;
-  }
+LLExpr* parseDeref(const pb::Letable& e) {
+  return new LLDeref(parseTermVar(& e.parts(0)));
 }
 
-LLExpr* parseVar(const pb::Expr& e)          { return new LLVar(e.name()); }
-LLExpr* parseGlobalSymbol(const pb::Expr& e) { return new LLGlobalSymbol(e.name()); }
-
-LLExpr* parseAlloc(const pb::Expr& e) {
-  return new LLAlloc(LLVar_from_pb(& e.parts(0)));
-}
-
-LLExpr* parseDeref(const pb::Expr& e) {
-  return new LLDeref(LLVar_from_pb(& e.parts(0)));
-}
-
-LLExpr* parseStore(const pb::Expr& e) {
+LLExpr* parseStore(const pb::Letable& e) {
   return new LLStore(
-      LLVar_from_pb(& e.parts(0)),
-      LLVar_from_pb(& e.parts(1)));
+      parseTermVar(& e.parts(0)),
+      parseTermVar(& e.parts(1)));
 }
 
 } // unnamed namespace
@@ -362,36 +385,25 @@ LLModule* LLModule_from_pb(const pb::Module& e) {
 }
 
 
-LLExpr* LLExpr_from_pb(const pb::Expr* pe) {
+LLExpr* LLExpr_from_pb(const pb::Letable* pe) {
   if (!pe) return NULL;
-  const pb::Expr& e = *pe;
+  const pb::Letable& e = *pe;
 
   LLExpr* rv = NULL;
 
   switch (e.tag()) {
-  case pb::Expr::IL_BOOL:        rv = parseBool(e); break;
-  case pb::Expr::IL_CALL:        rv = parseCall(e); break;
-  case pb::Expr::IL_CALL_PRIMOP: rv = parseCallPrimOp(e); break;
-  case pb::Expr::IL_CTOR:        rv = parseAppCtor(e); break;
-  case pb::Expr::IL_CASE:        rv = parseCase(e); break;
-  case pb::Expr::IL_IF:          rv = parseIf(e); break;
-  case pb::Expr::IL_INT:         rv = parseInt(e); break;
-  case pb::Expr::IL_GLOBAL_SYMBOL:rv = parseGlobalSymbol(e); break;
-  case pb::Expr::IL_LETVALS:     rv = parseLetVals(e); break;
-  case pb::Expr::IL_CLOSURES:    rv = parseClosures(e); break;
-  case pb::Expr::IL_UNTIL:       rv = parseUntil(e); break;
-  //case pb::Expr::IL_SIMD:        rv = parseSimd(e); break;
-  case pb::Expr::IL_CORO_INVOKE: rv = parseCoroPrim(e); break;
-  case pb::Expr::IL_CORO_CREATE: rv = parseCoroPrim(e); break;
-  case pb::Expr::IL_CORO_YIELD : rv = parseCoroPrim(e); break;
-  case pb::Expr::IL_ALLOCATE:    rv = parseAllocate(e); break;
-  case pb::Expr::IL_ALLOC:       rv = parseAlloc(e); break;
-  case pb::Expr::IL_DEREF:       rv = parseDeref(e); break;
-  case pb::Expr::IL_STORE:       rv = parseStore(e); break;
-  case pb::Expr::IL_ARRAY_READ:  rv = parseArrayRead(e); break;
-  case pb::Expr::IL_ARRAY_POKE:  rv = parseArrayPoke(e); break;
-  case pb::Expr::IL_TUPLE:       rv = parseTuple(e); break;
-  case pb::Expr::IL_VAR:         rv = parseVar(e); break;
+  case pb::Letable::IL_BOOL:        rv = parseBool(e); break;
+  case pb::Letable::IL_CALL:        rv = parseCall(e); break;
+  case pb::Letable::IL_CALL_PRIMOP: rv = parseCallPrimOp(e); break;
+  case pb::Letable::IL_CTOR:        rv = parseAppCtor(e); break;
+  case pb::Letable::IL_INT:         rv = parseInt(e); break;
+  case pb::Letable::IL_TUPLE:       rv = parseTuple(e); break;
+  case pb::Letable::IL_ALLOC:       rv = parseAlloc(e); break;
+  case pb::Letable::IL_DEREF:       rv = parseDeref(e); break;
+  case pb::Letable::IL_STORE:       rv = parseStore(e); break;
+  case pb::Letable::IL_ARRAY_READ:  rv = parseArrayRead(e); break;
+  case pb::Letable::IL_ARRAY_POKE:  rv = parseArrayPoke(e); break;
+  case pb::Letable::IL_ALLOCATE:    rv = parseAllocate(e); break;
 
   default:
     EDiag() << "Unknown protobuf tag: " << e.tag();

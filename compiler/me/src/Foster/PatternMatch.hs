@@ -141,7 +141,6 @@ cc occs cm allSigs =
       {- DT_Swap i $ -} cc o' m' allSigs
 
 allGuaranteedMatch pats = List.all trivialMatch pats
-anyGuaranteedMatch pats = List.any trivialMatch pats
 
 trivialMatch (SP_Wildcard  ) = True
 trivialMatch (SP_Variable _) = True

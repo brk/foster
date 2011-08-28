@@ -28,6 +28,7 @@ namespace llvm {
 
 using llvm::Value;
 
+class LLVar;
 class LLExpr;
 class TypeAST;
 class FnTypeAST;
@@ -35,6 +36,31 @@ class FnTypeAST;
 struct CodegenPass;
 
 std::ostream& operator<<(std::ostream& out, LLExpr& expr);
+
+///////////////////////////////////////////////////////////
+
+struct LLTerminator {
+  virtual void codegenTerminator(CodegenPass* pass) = 0;
+};
+
+struct LLMiddle {
+  virtual void codegenMiddle(CodegenPass* pass) = 0;
+};
+
+struct LLRebindId : public LLMiddle {
+  std::string from; LLVar* to;
+  explicit LLRebindId(std::string from, LLVar* to) : from(from), to(to) {}
+  virtual void codegenMiddle(CodegenPass* pass);
+};
+
+
+struct LLBlock {
+  std::string block_id;
+  std::vector<LLMiddle*> mids;
+  LLTerminator* terminator;
+
+  void codegenBlock(CodegenPass* pass);
+};
 
 ///////////////////////////////////////////////////////////
 
@@ -81,18 +107,17 @@ struct LLProc {
   FnTypeAST* type;
   llvm::GlobalValue::LinkageTypes functionLinkage;
   std::vector<std::string> argnames;
-  LLExpr* body;
+  std::vector<LLBlock*> blocks;
   llvm::Function* F;
 
   explicit LLProc(FnTypeAST* procType, const string& name,
           const std::vector<std::string>& argnames,
-          llvm::GlobalValue::LinkageTypes linkage, LLExpr* body)
+          llvm::GlobalValue::LinkageTypes linkage, std::vector<LLBlock*> blocks)
   : name(name), type(procType), functionLinkage(linkage),
-    argnames(argnames), body(body), F(NULL) {}
+    argnames(argnames), blocks(blocks), F(NULL) {}
 
   FnTypeAST* getFnType() { return type; }
   const std::string& getName() const { return name; }
-  LLExpr*& getBody() { return body; }
   virtual llvm::Value* codegenProc(CodegenPass* pass);
   virtual llvm::Value* codegenProto(CodegenPass* pass);
 };
@@ -238,59 +263,21 @@ struct LLClosure {
  llvm::Value* codegenClosure(CodegenPass* pass, llvm::Value* envSlot);
 };
 
-struct LLClosures : public LLExpr {
-  LLExpr* expr;
+struct LLClosures : public LLMiddle {
   std::vector<LLClosure*> closures;
-  explicit LLClosures(LLExpr* expr, std::vector<LLClosure*>& closures)
-    : LLExpr("LLCLosures"), expr(expr) { this->closures = closures; }
-  virtual llvm::Value* codegen(CodegenPass* pass);
+  explicit LLClosures(std::vector<LLClosure*>& closures)
+    { this->closures = closures; }
+  virtual void codegenMiddle(CodegenPass* pass);
 };
 
-struct LLLetVals : public LLExpr {
+struct LLLetVals : public LLMiddle {
   std::vector<std::string> names;
   std::vector<LLExpr*>     exprs;
-  LLExpr* inexpr;
   explicit LLLetVals(const std::vector<std::string>& names,
-                     const std::vector<LLExpr*>&     exprs, LLExpr* inexpr)
-  : LLExpr("LLLetVals"), names(names), exprs(exprs), inexpr(inexpr) {}
+                     const std::vector<LLExpr*>&     exprs)
+  : names(names), exprs(exprs) {}
 
-  virtual llvm::Value* codegen(CodegenPass* pass);
-};
-
-struct LLIf : public LLExpr {
-  LLVar* cond;
-  LLExpr* thenExpr;
-  LLExpr* elseExpr;
-  LLIf(LLVar* cond, LLExpr* thenExpr, LLExpr* elseExpr)
-     : LLExpr("LLIf"), cond(cond), thenExpr(thenExpr), elseExpr(elseExpr) {}
-
-  virtual llvm::Value* codegen(CodegenPass* pass);
-  LLVar*  getTestExpr() { return cond; }
-  LLExpr* getThenExpr() { return thenExpr; }
-  LLExpr* getElseExpr() { return elseExpr; }
-};
-
-struct LLUntil : public LLExpr {
-  LLExpr* cond; LLExpr* body;
-  LLUntil(LLExpr* testExpr, LLExpr* thenExpr)
-        : LLExpr("LLUntil"), cond(testExpr), body(thenExpr) {}
-
-  virtual llvm::Value* codegen(CodegenPass* pass);
-  LLExpr*& getTestExpr() { return cond; }
-  LLExpr*& getThenExpr() { return body; }
-};
-
-struct DecisionTree;
-struct LLCase : public LLExpr {
-  LLVar* scrutinee;
-  DecisionTree* dt;
-  TypeAST* branchType;
-
-  LLCase(LLVar* testExpr, DecisionTree* dt, TypeAST* ty)
-    : LLExpr("LLCase"), scrutinee(testExpr), dt(dt), branchType(ty) {
-  }
-
-  virtual llvm::Value* codegen(CodegenPass* pass);
+  virtual void codegenMiddle(CodegenPass* pass);
 };
 
 struct LLAllocate : public LLExpr {
@@ -351,8 +338,7 @@ struct SwitchCase {
   std::vector<DecisionTree*> trees;
   DecisionTree*        defaultCase;
   Occurrence*                  occ;
-  void codegenSwitch(CodegenPass* pass, llvm::Value* scrutinee,
-                     llvm::AllocaInst* rv_slot, CaseContext* ctx);
+  void codegenSwitch(CodegenPass* pass, llvm::Value* scrutinee, CaseContext* ctx);
 };
 
 typedef std::pair<std::string, Occurrence*> DTBinding;
@@ -362,17 +348,55 @@ struct DecisionTree {
     DT_FAIL, DT_LEAF, DT_SWAP, DT_SWITCH
   } tag;
   TypeAST* type;
-  std::vector<DTBinding> binds; LLExpr* action;
+  std::vector<DTBinding> binds; std::string action_block_id;
   SwitchCase* sc;
-  DecisionTree(Tag t)            : tag(t), type(NULL), action(NULL), sc(NULL) {}
-  DecisionTree(Tag t, std::vector<DTBinding> binds, LLExpr* e)
+  DecisionTree(Tag t)            : tag(t), type(NULL), sc(NULL) {}
+  DecisionTree(Tag t, std::vector<DTBinding> binds, std::string b_id)
                                  : tag(t), type(NULL), binds(binds),
-                                           action(e), sc(NULL) {}
+                                           action_block_id(b_id), sc(NULL) {}
   DecisionTree(Tag t, SwitchCase* sc)
-                                 : tag(t), type(NULL), action(NULL), sc(sc) {}
+                                 : tag(t), type(NULL), sc(sc) {}
   void codegenDecisionTree(CodegenPass* pass, llvm::Value* scrutinee,
-                           llvm::AllocaInst* rv_slot,
                            CaseContext* ctx);
+};
+
+///////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////
+
+struct LLRetVoid : public LLTerminator {
+  virtual void codegenTerminator(CodegenPass* pass);
+};
+
+struct LLRetVal : public LLTerminator {
+  LLVar* val;
+  explicit LLRetVal(LLVar* v) : val(v) {}
+  virtual void codegenTerminator(CodegenPass* pass);
+};
+
+struct LLBr : public LLTerminator {
+  std::string block_id;
+  explicit LLBr(std::string b) : block_id(b) {}
+  virtual void codegenTerminator(CodegenPass* pass);
+};
+
+struct LLCondBr : public LLTerminator {
+  std::string then_id;
+  std::string else_id;
+  LLVar* var;
+  explicit LLCondBr(std::string b, std::string b2, LLVar* v)
+        : then_id(b), else_id(b2), var(v) {}
+  virtual void codegenTerminator(CodegenPass* pass);
+};
+
+struct LLSwitch : public LLTerminator {
+  LLVar* scrutinee;
+  DecisionTree* dt;
+  TypeAST* branchType;
+
+  LLSwitch(LLVar* testExpr, TypeAST* ty, DecisionTree* dt)
+    : scrutinee(testExpr), dt(dt), branchType(ty) {
+  }
+  virtual void codegenTerminator(CodegenPass* pass);
 };
 
 #endif // header guard

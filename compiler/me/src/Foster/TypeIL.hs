@@ -80,3 +80,13 @@ pointedToTypeOfVar v = case v of
 fnName f = identPrefix (tidIdent $ fnVar f)
 
 data ILDataCtor = ILDataCtor String Int (DataCtor TypeIL) deriving Show
+
+-----------------------------------------------------------------------
+
+data AllocMemRegion = MemRegionStack
+                    | MemRegionGlobalHeap deriving Show
+data ILAllocInfo = ILAllocInfo { ilAllocType   :: TypeIL
+                               , ilAllocRegion :: AllocMemRegion
+                               , ilAllocArraySize :: (Maybe AIVar)
+                               , ilAllocUnboxed :: Bool
+                               } deriving Show

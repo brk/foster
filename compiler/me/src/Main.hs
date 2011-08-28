@@ -26,6 +26,7 @@ import Data.IORef(newIORef, readIORef)
 import Text.ProtocolBuffers(messageGet)
 
 import Foster.Base
+import Foster.CFG
 import Foster.ProtobufFE(parseSourceModule)
 import Foster.ProtobufIL(dumpModuleToProtobufIL)
 import Foster.ExprAST
@@ -34,7 +35,7 @@ import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn), AnnFn,
                       fnNameA, annFnType, annFnIdent)
 import Foster.AnnExprIL(AIExpr, fnOf)
 import Foster.TypeIL(TypeIL, ilOf)
-import Foster.ILExpr(showProgramStructure, closureConvertAndLift)
+import Foster.ILExpr(closureConvertAndLift, showProgramStructure)
 import Foster.KNExpr(kNormalizeModule)
 import Foster.Typecheck
 import Foster.Context
@@ -313,8 +314,8 @@ typecheckSourceModule sm outfile flagVals verboseMode = do
               )
           lowerModule mod ctx_il
   where
-    lowerModule m ctx_il = do
-         let kmod = kNormalizeModule m ctx_il
+    lowerModule ai_mod ctx_il = do
+         let kmod = kNormalizeModule ai_mod ctx_il
 
          when verboseMode (do
             forM_ (moduleILfunctions kmod) (\fn -> do
@@ -322,8 +323,19 @@ typecheckSourceModule sm outfile flagVals verboseMode = do
                      runOutput (outLn $ show (fnVar fn))
                      runOutput (showStructure (fnBody fn))))
 
-         let dataSigs = dataTypeSigs (moduleILdataTypes m)
-         let prog0 = closureConvertAndLift dataSigs kmod
+         cfgFuncs <- mapM computeCFGIO (moduleILfunctions kmod)
+         let cfgmod = kmod { moduleILfunctions = cfgFuncs }
+
+         when verboseMode (do
+             runOutput $ (outLn "/// CFG-ized program =============")
+             forM_ (moduleILfunctions cfgmod) (\fn -> do
+                     runOutput (outLn $ "====================")
+                     runOutput (outLn $ show (fnVar fn))
+                     runOutput (showCFBlocks (fnBody fn)))
+             runOutput $ (outLn "^^^ ==================================="))
+
+         let dataSigs = dataTypeSigs (moduleILdataTypes cfgmod)
+         let prog0 = closureConvertAndLift dataSigs cfgmod
 
          let monoprog = monomorphize prog0
 
