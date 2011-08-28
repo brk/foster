@@ -159,38 +159,14 @@ aiVar (TypedId t i) = do ty <- ilOf t
 
 fnOf :: AnnFn -> Tc (Fn AIExpr TypeIL)
 fnOf f = do
- ft <- ilOf (annFnType f)
- fnVars <- mapM aiVar (annFnVars f)
- fnFreeVars <- mapM aiVar (annFnFreeVars f)
- body <- ail (annFnBody f)
- return $ Fn { fnVar   = TypedId ft (annFnIdent f)
-             , fnVars  = fnVars
-             , fnBody  = body
-             , fnRange = (annFnRange f)
-             , fnFreeVars = fnFreeVars
-             }
-
--- TODO remove?
-instance Structured AIExpr where
-    textOf e width = error "textOf AIExpr not yet implemented"
-    childrenOf e =
-        case e of
-            E_AIPrim {}           -> []
-            AIBool   {}           -> []
-            AICall    t b args    -> b:args
-            AIIf      t  a b c    -> [a, b, c]
-            AIUntil   t  a b      -> [a, b]
-            AIInt {}              -> []
-            AILetVar _ a b        -> [a, b]
-            AILetFuns ids fns e   -> (map fnBody fns) ++ [e]
-            AIAllocArray t a      -> [a]
-            AIAlloc        a      -> [a]
-            AIDeref        a      -> [a]
-            AIStore       a b     -> [a, b]
-            AIArrayRead t a b     -> [a, b]
-            AIArrayPoke t a b c   -> [a, b, c]
-            AITuple     es        -> es
-            AICase t e bs         -> e:(map snd bs)
-            E_AIVar {}            -> []
-            E_AITyApp t a argty   -> [a]
+    ft <- ilOf (annFnType f)
+    fnVars <- mapM aiVar (annFnVars f)
+    fnFreeVars <- mapM aiVar (annFnFreeVars f)
+    body <- ail (annFnBody f)
+    return $ Fn { fnVar   = TypedId ft (annFnIdent f)
+                , fnVars  = fnVars
+                , fnBody  = body
+                , fnRange = (annFnRange f)
+                , fnFreeVars = fnFreeVars
+                }
 
