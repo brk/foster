@@ -1,3 +1,4 @@
+{-# LANGUAGE GADTs #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2010 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -13,13 +14,17 @@ import qualified Data.Map as Map((!), insert, lookup, empty, fromList, elems)
 
 import Foster.Base
 import Foster.CFG
-import Foster.Context
 import Foster.TypeIL
+import Foster.Letable
 import Foster.PatternMatch
 
--- | Performs closure conversion and lambda lifting.
+import Data.Functor.Identity
+import Compiler.Hoopl
+
+-- | Performs closure conversion and lambda lifting, and also
+-- | transforms back from Hoopl's CFG representation to lists-of-blocks.
 -- |
--- | The primary differences from CFG to ILG are:
+-- | The primary differences in the general structure are:
 -- |  #. LetFuns replaced with Closures
 -- |  #. Module  replaced with ILProgram
 -- |  #. Fn replaced with ProcDef
@@ -42,41 +47,17 @@ data ILProcDef = ILProcDef { ilProcReturnType :: TypeIL
                            , ilProcRange      :: SourceRange
                            , ilProcCallConv   :: CallConv
                            , ilProcBlocks     :: [ILBlock]
-                           } deriving Show
+                           }
 
-type ILBlock = Block ILMiddle ILLast
+data ILBlock = Block BlockId [ILMiddle] ILLast
 
 data ILMiddle =
-          ILLetVal      Ident     ILLetable
+          ILLetVal      Ident    Letable
           -- This is equivalent to MinCaml's make_closure ...
         | ILClosures    [Ident] [ILClosure]
         -- Have an explicit notion of "delayed" renaming in the continuation.
         | ILRebindId    Ident    AIVar
         deriving (Show)
-
-data ILLetable =
-           ILBool        Bool
-         | ILInt         TypeIL LiteralInt
-         | ILTuple       [AIVar]
-
-         | ILCallPrim    TypeIL ILPrim [AIVar]
-         | ILCall        TypeIL AIVar  [AIVar]
-         | ILAppCtor     TypeIL CtorId [AIVar]
-         -- Stack/heap slot allocation
-         | ILAllocate    ILAllocInfo
-         -- Mutable ref cells
-         -- The reason we have both ILAllocate and ILAlloc is that
-         -- LLCodegen performs auto-loads from stack slots, which
-         -- means that a derived ILAlloc can't return a stack slot value!
-         | ILAlloc       AIVar
-         | ILDeref       AIVar -- var has type ptr to t
-         | ILStore       AIVar AIVar -- a stored in b
-         -- Array operations
-         | ILAllocArray  TypeIL AIVar
-         | ILArrayRead   TypeIL AIVar  AIVar
-         | ILArrayPoke          AIVar  AIVar  AIVar
-         | ILTyApp       TypeIL AIVar TypeIL
-         deriving (Show)
 
 data ILLast =
           ILRetVoid
@@ -96,8 +77,8 @@ showProgramStructure (ILProgram procdefs decls _dtypes _lines) =
             ++ (out $ show $ map procVarDesc (ilProcVars proc))
             ++ (out " @@@ ") ++ (out $ show $ ilProcCallConv proc)
             ++ (out " ==> ") ++ (out $ show $ ilProcReturnType proc)
-            ++ (out "\n") ++ (out $ joinWith "\n\n\t" $ map show
-                                                           (ilProcBlocks proc))
+           -- ++ (out "\n") ++ (out $ joinWith "\n\n\t" $ map show
+           --                                                (ilProcBlocks proc))
           ++ out "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"
     procVarDesc (TypedId ty id) = "( " ++ (show id) ++ " :: " ++ show ty ++ " ) "
 
@@ -110,10 +91,12 @@ data ILMState = ILMState {
 
 type ILM a = State ILMState a
 
-ilmFresh :: String -> ILM Ident
-ilmFresh s = do old <- get
+ilmNewUniq = do old <- get
                 put (old { ilmUniq = (ilmUniq old) + 1 })
-                return (Ident s (ilmUniq old))
+                return (ilmUniq old)
+
+ilmFresh :: String -> ILM Ident
+ilmFresh s = do u <- ilmNewUniq ; return (Ident s u)
 
 ilmPutProc :: ILM ILProcDef -> ILM ILProcDef
 ilmPutProc p_action = do
@@ -129,10 +112,10 @@ ilmGetProc id = do
         return $ Map.lookup id (ilmProcDefs old)
 
 
-closureConvertAndLift :: DataTypeSigs
-                      -> (ModuleIL [CFBlock] TypeIL)
+closureConvertAndLift :: DataTypeSigs -> Uniq
+                      -> (ModuleIL BasicBlockGraph TypeIL)
                       -> ILProgram
-closureConvertAndLift dataSigs m =
+closureConvertAndLift dataSigs u m =
     let fns = moduleILfunctions m in
     let decls = map (\(s,t) -> ILDecl s t) (moduleILdecls m) in
     -- We lambda lift top level functions, since we know they
@@ -140,7 +123,7 @@ closureConvertAndLift dataSigs m =
     -- Lambda lifting wiil closure convert nested functions.
     let procsILM     = forM fns (\fn -> lambdaLift fn []) in
     let dataTypes    = moduleILdataTypes m in
-    let initialState = ILMState 0 Map.empty dataSigs Map.empty in
+    let initialState = ILMState u Map.empty dataSigs Map.empty in
     let newstate     = execState procsILM initialState in
     ILProgram (ilmProcDefs newstate) decls dataTypes (moduleILsourceLines m)
 
@@ -151,14 +134,17 @@ closureConvertAndLift dataSigs m =
 -- we can rewrite the lambda to a closed proc:
 --      letproc p = \yy x -> x + yy
 --      let y = blah in p y foobar
-lambdaLift :: Fn [CFBlock] TypeIL -> [AIVar] -> ILM ILProcDef
+lambdaLift :: CFFn -> [AIVar] -> ILM ILProcDef
 lambdaLift f freeVars = do
     newbody <- closureConvertBlocks (fnBody f)
     -- Add free variables to the signature of the lambda-lifted procedure.
     let liftedProcVars = freeVars ++ fnVars f
     ilmPutProc (closureConvertedProc liftedProcVars f newbody)
 
-closureConvertedProc :: [AIVar] -> (Fn [CFBlock] TypeIL) -> [ILBlock] -> ILM ILProcDef
+closureConvertedProc :: [AIVar]
+                     -> CFFn
+                     -> [ILBlock]
+                     -> ILM ILProcDef
 closureConvertedProc liftedProcVars f newbody = do
     let (TypedId ft id) = fnVar f
     case ft of
@@ -170,40 +156,28 @@ closureConvertedProc liftedProcVars f newbody = do
                       (fnRange f) FastCC newbody
         _ -> error $ "Expected closure converted proc to have fntype, had " ++ show ft
 
+closureConvertBlocks :: BasicBlockGraph -> ILM [ILBlock]
+closureConvertBlocks bbg =
+  let blockGraphs = map blockGraph $
+                      preorder_dfs $ mkLast (ILast (CFBr $ bbgEntry bbg))
+                                      |*><*| bbgBody bbg in
+  mapM closureConvertBlock blockGraphs
 
-closureConvertBlocks :: [CFBlock] -> ILM [ILBlock]
-closureConvertBlocks blocks = mapM closureConvertBlock blocks
-
-closureConvertBlock :: CFBlock -> ILM ILBlock
-closureConvertBlock (Block bid mids last) = do
+closureConvertBlock :: BasicBlock -> ILM ILBlock
+closureConvertBlock bb = do
+    let (bid, mids, last) = splitBasicBlock bb
     newmids <- mapM closureConvertMid mids
     newlast <- ilLast last
     return $ Block bid newmids newlast
 
-closureConvertMid :: CFMiddle -> ILM ILMiddle
+closureConvertMid :: Insn O O -> ILM ILMiddle
 closureConvertMid mid =
   case mid of
-    CFLetVal id val -> return $ ILLetVal id (ilLetable val)
-    CFLetFuns ids fns -> closureConvertLetFuns ids fns
+    ILetVal id val -> return $ ILLetVal id val
+    ILetFuns ids fns -> closureConvertLetFuns ids fns
 
-ilLetable expr =
-  case expr of
-    CFBool        b       -> ILBool        b
-    CFInt         t i     -> ILInt         t i
-    CFTuple       vs      -> ILTuple       vs
-    CFCallPrim    t p vs  -> ILCallPrim    t p vs
-    CFCall        t a vs  -> ILCall        t a vs
-    CFAppCtor     t c vs  -> ILAppCtor     t c vs
-    CFAllocate    info    -> ILAllocate    info
-    CFAlloc         a     -> ILAlloc         a
-    CFDeref         a     -> ILDeref         a
-    CFStore         a b   -> ILStore         a b
-    CFAllocArray  t a     -> ILAllocArray  t a
-    CFArrayRead   t a b   -> ILArrayRead   t a b
-    CFArrayPoke   a b c   -> ILArrayPoke   a b c
-    CFTyApp       t a p   -> ILTyApp       t a p
-
-ilLast last =
+ilLast :: Insn O C -> ILM ILLast
+ilLast (ILast last) =
   case last of
      CFRetVoid          -> return $ ILRetVoid
      CFRet   v          -> return $ ILRet   v
@@ -213,6 +187,7 @@ ilLast last =
                               let dt = compilePatterns pbs allSigs
                               return $ ILCase  t a pbs dt
 
+closureConvertLetFuns :: [Ident] -> [CFFn] -> ILM ILMiddle
 closureConvertLetFuns ids fns = do
     cloEnvIds <- mapM (\id -> ilmFresh (".env." ++ identPrefix id)) ids
     let infoMap = Map.fromList (zip ids (zip fns cloEnvIds))
@@ -223,9 +198,9 @@ closureConvertLetFuns ids fns = do
 
 fakeCloVar id = TypedId fakeCloEnvType id where fakeCloEnvType = TupleTypeIL []
 
-type InfoMap = Map Ident ((Fn [CFBlock] TypeIL), Ident)
+type InfoMap = Map Ident (CFFn, Ident)
 
-closedOverVarsOfKnFn :: InfoMap -> Ident -> Fn [CFBlock] TypeIL -> [AIVar]
+closedOverVarsOfKnFn :: InfoMap -> Ident -> CFFn -> [AIVar]
 closedOverVarsOfKnFn infoMap self_id fn =
     -- Each closure converted proc need not capture its own environment
     -- variable, because it will be added as an implicit parameter, but
@@ -240,7 +215,7 @@ closedOverVarsOfKnFn infoMap self_id fn =
     envVars ++ fnFreeVars fn
 
 closureOfKnFn :: InfoMap
-              -> (Ident, (Fn [CFBlock] TypeIL))
+              -> (Ident, CFFn)
               -> ILM (ILClosure, ILProcDef)
 closureOfKnFn infoMap (self_id, fn) = do
     let varsOfClosure = closedOverVarsOfKnFn infoMap self_id fn
@@ -252,44 +227,45 @@ closureOfKnFn infoMap (self_id, fn) = do
   where
     fnRetType f = tidType $ fnVar f
 
-    firstBlockId [] = error $ "can't get first block id from empty list!"
-    firstBlockId (Block bid _ _:_) = bid
-
-    closureConvertFn :: Fn [CFBlock] TypeIL
-                     -> InfoMap -> [AIVar] -> ILM (Ident, ILProcDef)
+    closureConvertFn :: CFFn -> InfoMap -> [AIVar] -> ILM (Ident, ILProcDef)
     closureConvertFn f info varsOfClosure = do
         let envId  = snd (info Map.! self_id)
         let envVar = TypedId (TupleTypeIL $ map tidType varsOfClosure) envId
 
         -- If the body has x and y free, the closure converted body should be
         --     case env of (x, y, ...) -> body end
-        newbody <- let oldbody = fnBody f in
-                   let norange = MissingSourceRange "" in
-                   let patVar a = P_Variable norange (tidIdent a) in
-                   do
-                     bid <- ilmFresh "caseof"
-                     let bodyid = firstBlockId oldbody
-                     let cfcase = CFCase (fnRetType f) envVar [
-                                    (P_Tuple norange (map patVar varsOfClosure)
-                                    , bodyid) ]
-                     let caseblock = Block bid [] cfcase
-                     closureConvertBlocks $ caseblock:oldbody
+        newbody <- do
+            let BasicBlockGraph bodyid oldbodygraph = fnBody f
+            let norange = MissingSourceRange ""
+            let patVar a = P_Variable norange (tidIdent a)
+            let cfcase = CFCase (fnRetType f) envVar [
+                           (P_Tuple norange (map patVar varsOfClosure)
+                           , bodyid) ]
+            -- We change the entry block of the new body (versus the old).
+            lab <- freshLabel
+            let bid = ("caseof", lab)
+            let caseblock = mkFirst (ILabel bid) <*>
+                            mkMiddles []         <*>
+                            mkLast (ILast cfcase)
+            closureConvertBlocks $
+               BasicBlockGraph bid (caseblock |*><*| oldbodygraph)
 
         proc <- ilmPutProc (closureConvertedProc (envVar:(fnVars f)) f newbody)
         return (envId, proc)
 
+    mapBasicBlock f (BasicBlockGraph entry bg) = BasicBlockGraph entry (f bg)
+
+    -- Making environment passing explicit simply means rewriting calls
+    -- of closure variables from   v(args...)   ==>   v_proc(v_env, args...).
     makeEnvPassingExplicitFn fn =
-       fn { fnBody = map makeEnvPassingExplicitBlock (fnBody fn) }
-
-    makeEnvPassingExplicitBlock (Block bid mids last) =
-       let newmids = map makeEnvPassingExplicitMid mids in
-       Block bid newmids last
-
-    makeEnvPassingExplicitMid :: CFMiddle -> CFMiddle
-    makeEnvPassingExplicitMid mid =
-      case mid of
-        CFLetVal id val -> CFLetVal id (makeEnvPassingExplicitVal val)
-        CFLetFuns ids fns -> CFLetFuns ids (map makeEnvPassingExplicitFn fns)
+      let mapBlock g = graphMapBlocks (blockMapNodes3 (id, mid, id)) g in
+      fn { fnBody = mapBasicBlock mapBlock (fnBody fn) }
+        where
+              mid :: Insn O O -> Insn O O
+              mid m = case m of
+                ILetVal id val -> ILetVal id (makeEnvPassingExplicitVal val)
+                ILetFuns ids fns -> ILetFuns ids
+                                         (map makeEnvPassingExplicitFn fns)
 
     makeEnvPassingExplicitVal :: Letable -> Letable
     makeEnvPassingExplicitVal expr =
@@ -300,44 +276,13 @@ closureOfKnFn infoMap (self_id, fn) = do
             -- The only really interesting case: call to let-bound function!
             Just (f, envid) ->
               let env = fakeCloVar envid in
-              CFCall t (fnVar f) (env:vs)  -- Call proc, passing env as first parameter.
+              CFCall t (fnVar f) (env:vs) -- Call proc with env as first arg.
               -- We don't know the env type here, since we don't
               -- pre-collect the set of closed-over envs from other procs.
               -- This works because (A) we never type check ILExprs,
               -- and (B) the LLVM codegen doesn't check the type field in this case.
         _ -> expr
 
-class TypedIL a where
-  typeIL :: a -> TypeIL
 
-instance TypedIL ILLetable where
-    typeIL (ILBool _)          = boolTypeIL
-    typeIL (ILInt t _)         = t
-    typeIL (ILTuple vs)        = TupleTypeIL (map tidType vs)
-    typeIL (ILCall t id expr)  = t
-    typeIL (ILCallPrim t id vs)= t
-    typeIL (ILAppCtor t cid vs)= t
-    typeIL (ILAllocate info)   = ilAllocType info
-    typeIL (ILAllocArray elt_ty _) = ArrayTypeIL elt_ty
-    typeIL (ILAlloc v)         = PtrTypeIL (tidType v)
-    typeIL (ILDeref v)         = pointedToTypeOfVar v
-    typeIL (ILStore _ _)       = TupleTypeIL []
-    typeIL (ILArrayRead t _ _) = t
-    typeIL (ILArrayPoke _ _ _) = TupleTypeIL []
-    typeIL (ILTyApp overallType tm tyArgs) = overallType
-
-patternBindings :: (Pattern, TypeIL) -> [ContextBinding TypeIL]
-patternBindings (p, ty) =
-  case p of
-    P_Bool     rng _ -> []
-    P_Int      rng _ -> []
-    P_Wildcard rng   -> []
-    P_Variable rng id -> [TermVarBinding (identPrefix id) $
-                                           TypedId ty id]
-    P_Ctor     rng pats _ ->
-      error $ "ILExpr.patternBindings not yet implemented for " ++ show (p, ty)
-    P_Tuple    rng pats ->
-      case ty of
-        TupleTypeIL tys -> concatMap patternBindings (zip pats tys)
-        otherwise -> (error $ "patternBindings failed on typechecked pattern!"
-                                ++ "\np = " ++ show p ++ " ; ty = " ++ show ty)
+instance UniqueMonad (StateT ILMState Identity) where
+  freshUnique = ilmNewUniq >>= (return . intToUnique)

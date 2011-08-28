@@ -1,14 +1,14 @@
 name: me
-version: 0.0.1
+version: 0.0.2
 cabal-version: -any
 build-type: Simple
-license: AllRightsReserved
+license: BSD3
 license-file: ""
 copyright:
 maintainer:
 build-depends: HUnit -any, ansi-terminal -any, base -any,
                bytestring -any, containers -any, filepath >=1.1.0.3,
-               haskell98 -any, mtl -any, protocol-buffers -any,
+               haskell98 -any, mtl -any, protocol-buffers -any, hoopl -any,
                protocol-buffers-descriptor -any, text -any, utf8-string -any
 stability:
 homepage:

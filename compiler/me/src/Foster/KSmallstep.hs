@@ -25,8 +25,7 @@ import Foster.TypeIL
 import Foster.KNExpr
 import Foster.PatternMatch
 
--- Relatively simple small-step "definitional" interpreter
--- written in a small-step semantics.
+-- Relatively simple small-step "definitional" interpreter.
 --
 -- The largest chunks of complication come from
 --   A) having coroutines, which forces us to explicitly model

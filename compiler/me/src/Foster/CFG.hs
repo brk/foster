@@ -1,70 +1,86 @@
+{-# LANGUAGE GADTs #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2011 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
-module Foster.CFG where
+module Foster.CFG
+( computeCFGIO
+, Insn(..)
+, BlockId
+, BasicBlockGraph(..)
+, BasicBlock
+, splitBasicBlock
+, CFMiddle(..)
+, CFLast(..)
+, CFFn
+) where
 
 import Foster.Base
 import Foster.TypeIL
 import Foster.KNExpr
+import Foster.Letable
+
+import Data.Functor.Identity
+import Compiler.Hoopl
 
 import Control.Monad.State
 import Data.IORef
 
-type CFBlock = Block CFMiddle CFLast
+----------------------------------------------------------------------------
+-- A few preliminary types
 
-computeCFGIO :: IORef Uniq -> Fn KNExpr TypeIL -> IO (Fn [CFBlock] TypeIL)
+-- We represent basic blocks as Graphs rather than Blocks because
+-- it's easier to glue together Graphs when building the basic blocks.
+type BasicBlock = Graph Insn C C
+data BasicBlockGraph = BasicBlockGraph { bbgEntry :: BlockId,
+                                         bbgBody :: (Graph Insn C C) }
+type CFFn = Fn BasicBlockGraph TypeIL
+type BlockId = (String, Label)
+
+-- This is the "entry point" into CFG-building for the outside.
+-- We take (and update) a mutable reference as a convenient way of
+-- threading through the small amount of globally-unique state we need.
+computeCFGIO :: IORef Uniq -> Fn KNExpr TypeIL -> IO CFFn
 computeCFGIO uref fn = do
-  u <- readIORef uref ; modifyIORef uref (+1)
-  let cfgState = _computeCFG u fn
-  putStrLn $ (show $ fnVar fn) ++ "\n\t~~~~~~~~~~preblock:" ++
-              show (cfgPreBlock cfgState)
-  return $ fn { fnBody = Prelude.reverse (cfgAllBlocks cfgState) }
+  u <- readIORef uref
+  let cfgState = internalComputeCFG u fn
+  writeIORef uref (cfgUniq cfgState + 1)
+  return $ extractFunction cfgState fn
 
-_computeCFG :: Int -> Fn KNExpr TypeIL -> CFGState
-_computeCFG uniq fn =
-  let preblock = (Ident "begin" uniq, []) in
-  let state0 = CFGState (uniq + 1) (Just preblock) [] in
-  let ret fn var = case (identPrefix $ tidIdent $ fnVar fn) of
-                         "main" -> cfgEndWith (CFRetVoid)
-                         _ -> cfgEndWith (CFRet var) in
-  execState (computeBlocks (fnBody fn) Nothing (ret fn)) state0
-
-cfgComputeCFG :: Fn KNExpr TypeIL -> CFG (Fn [CFBlock] TypeIL)
+-- A mirror image for internal use (when converting nested functions).
+cfgComputeCFG :: Fn KNExpr TypeIL -> CFG CFFn
 cfgComputeCFG fn = do
-  u0 <- cfgGetUniq
-  let cfgState = _computeCFG u0 fn
+  u0 <- gets cfgUniq
+  let cfgState = internalComputeCFG u0 fn
   cfgPutUniq (cfgUniq cfgState + 1)
-  return $ fn { fnBody = Prelude.reverse (cfgAllBlocks cfgState) }
+  return $ extractFunction cfgState fn
 
-showCFBlocks blocks = out $ (joinWith "\n\n\t" $ map show blocks)
+-- A helper for the CFG functions above, to run computeBlocks.
+internalComputeCFG :: Int -> Fn KNExpr TypeIL -> CFGState
+internalComputeCFG uniq fn =
+  let preblock = (Left $ "begin" , []) in
+  let state0 = CFGState uniq (Just preblock) [] in
+  execState runComputeBlocks state0
+  where
+    runComputeBlocks = do computeBlocks (fnBody fn) Nothing (ret fn)
 
-instance (Show m, Show l) => Show (Block m l) where
-  show (Block id mids last) =
-        "CFBlock " ++ show id ++ "\n\t\t"
-        ++ (joinWith "\n\t\t" (map show mids))
-        ++ "\n\t" ++ show last
+    -- Make sure that the main function returns void.
+    ret fn var = case (identPrefix $ tidIdent $ fnVar fn) of
+                         "main" -> cfgEndWith (CFRetVoid)
+                         _ -> cfgEndWith (CFRet var)
 
-instance Show CFGState where
-  show (CFGState u preblock allblocks) =
-        "CFGState:"
-        ++ "\n\t" ++ show u
-        ++ "\n\t" ++ show preblock
-        ++ "\n\t" ++ (joinWith "\n\n\t" $ map show allblocks)
+-- The other helper, to collect the scattered results and build the actual CFG.
+extractFunction st fn =
+  let blocks = Prelude.reverse (cfgAllBlocks st) in
+  fn { fnBody = BasicBlockGraph (firstBlockInfo blocks)
+                                (catClosedGraphs blocks) }
+  where -- Dunno why this function isn't in Hoopl...
+        catClosedGraphs = foldr (|*><*|) emptyClosedGraph
 
-cfgMidLet :: Letable -> CFG ()
-cfgMidLet letable = do id <- cfgFresh ".cfg_seq"
-                       cfgAddMiddle (CFLetVal id letable)
-
-cfgAddLet :: Maybe Ident -> Letable -> TypeIL -> CFG AIVar
-cfgAddLet maybeid letable ty = do
-        id <- (case maybeid of
-                Just id -> return id
-                Nothing -> cfgFresh ".cfg_seq")
-        cfgAddMiddle (CFLetVal id letable)
-        return (TypedId ty id)
+        firstBlockInfo [] = error $ "can't get first block id from empty list!"
+        firstBlockInfo (bb:_) = info where (info, _, _) = splitBasicBlock bb
 
 -- computeBlocks takes an expression and a contination,
 -- which determines what to do with the let-bound result of the expression.
@@ -72,23 +88,23 @@ computeBlocks :: KNExpr -> Maybe Ident -> (AIVar -> CFG ()) -> CFG ()
 computeBlocks expr idmaybe k = do
     case expr of
         KNIf t v a b      -> do
-            slot_id <- cfgFresh "if_slot"
+            slot_id <- cfgFreshId "if_slot"
             ifthen <- cfgFresh "if_then"
             ifelse <- cfgFresh "if_else"
             ifcont <- cfgFresh "if_cont"
 
             let slotvar = TypedId (PtrTypeIL t) slot_id
             let slot = CFAllocate (ILAllocInfo t MemRegionStack Nothing False)
-            cfgAddMiddle (CFLetVal slot_id slot)
+            cfgAddMiddle (ILetVal slot_id slot)
 
             cfgEndWith (CFIf t v ifthen ifelse)
 
             cfgNewBlock ifthen
-            computeBlocks a Nothing (\var -> cfgMidLet (CFStore var slotvar))
+            computeBlocks a Nothing (\var -> cfgMidStore var slotvar)
             cfgEndWith (CFBr ifcont)
 
             cfgNewBlock ifelse
-            computeBlocks b Nothing (\var -> cfgMidLet (CFStore var slotvar))
+            computeBlocks b Nothing (\var -> cfgMidStore var slotvar)
             cfgEndWith (CFBr ifcont)
 
             cfgNewBlock ifcont
@@ -126,16 +142,16 @@ computeBlocks expr idmaybe k = do
 
         KNLetFuns ids fns e -> do
             funs <- mapM cfgComputeCFG fns
-            cfgAddMiddle (CFLetFuns ids $ funs)
+            cfgAddMiddle (ILetFuns ids $ funs)
             computeBlocks e idmaybe k
 
         KNCase t v bs -> do
-            slot_id <- cfgFresh "case_slot"
+            slot_id <- cfgFreshId "case_slot"
             case_cont <- cfgFresh "case_cont"
 
             let slotvar = TypedId (PtrTypeIL t) slot_id
             let slot = CFAllocate (ILAllocInfo t MemRegionStack Nothing False)
-            cfgAddMiddle (CFLetVal slot_id slot)
+            cfgAddMiddle (ILetVal slot_id slot)
 
             bbs <- mapM (\(pat, _) -> do block_id <- cfgFresh "case_arm"
                                          return $ (pat, block_id)) bs
@@ -144,7 +160,7 @@ computeBlocks expr idmaybe k = do
             let computeCaseBlocks ((_pat, e), (_, block_id)) = do
                     cfgNewBlock block_id
                     id <- cfgFresh "case_arm_val"
-                    computeBlocks e Nothing (\var -> cfgMidLet (CFStore var slotvar))
+                    computeBlocks e Nothing (\var -> cfgMidStore var slotvar)
                     cfgEndWith (CFBr case_cont)
             mapM_ computeCaseBlocks (zip bs bbs)
 
@@ -176,29 +192,7 @@ knToLetable expr =
 
 data CFMiddle =
           CFLetVal      Ident     Letable
-        | CFLetFuns     [Ident]   [Fn [CFBlock] TypeIL]
-        deriving Show
-
-data Letable =
-          CFBool        Bool
-        | CFInt         TypeIL LiteralInt
-        | CFTuple       [AIVar]
-
-        | CFCallPrim    TypeIL ILPrim [AIVar]
-        | CFCall        TypeIL AIVar  [AIVar]
-        | CFAppCtor     TypeIL CtorId [AIVar]
-        -- Stack/heap slot allocation
-        | CFAllocate    ILAllocInfo
-        -- Mutable ref cells
-        | CFAlloc       AIVar
-        | CFDeref       AIVar
-        | CFStore       AIVar AIVar
-        -- Array operations
-        | CFAllocArray  TypeIL AIVar
-        | CFArrayRead   TypeIL AIVar  AIVar
-        | CFArrayPoke          AIVar  AIVar  AIVar
-        | CFTyApp       TypeIL AIVar TypeIL
-        deriving (Show)
+        | CFLetFuns     [Ident]   [CFFn]
 
 data CFLast =
           CFRetVoid
@@ -208,38 +202,53 @@ data CFLast =
         | CFCase        TypeIL AIVar [(Pattern, BlockId)]
         deriving (Show)
 
+data Insn e x where
+  ILabel   :: BlockId            -> Insn C O
+  ILetVal  :: Ident   -> Letable -> Insn O O
+  ILetFuns :: [Ident] -> [CFFn]  -> Insn O O
+  ILast    :: CFLast             -> Insn O C
 
 data CFGState = CFGState {
     cfgUniq         :: Uniq
-  , cfgPreBlock     :: Maybe (BlockId, [CFMiddle])
-  , cfgAllBlocks    :: [CFBlock]
+  , cfgPreBlock     :: Maybe (Either String BlockId, [Insn O O])
+  , cfgAllBlocks    :: [Graph Insn C C]
 }
 
 type CFG a = State CFGState a
 
-cfgGetUniq :: CFG Uniq
-cfgGetUniq = do gets cfgUniq
+cfgMidStore var slotvar = do id <- cfgFreshId ".cfg_store"
+                             cfgAddMiddle (ILetVal id $ CFStore var slotvar)
+
+cfgAddLet :: Maybe Ident -> Letable -> TypeIL -> CFG AIVar
+cfgAddLet idmaybe letable ty = do
+        id <- (case idmaybe of
+                Just id -> return id
+                Nothing -> cfgFreshId ".cfg_seq")
+        cfgAddMiddle (ILetVal id letable)
+        return (TypedId ty id)
+
+cfgNewUniq :: CFG Uniq
+cfgNewUniq = do u <- gets cfgUniq ; cfgPutUniq (u + 1)
+                return u
 
 cfgPutUniq :: Uniq -> CFG ()
-cfgPutUniq u = do
-        old <- get
-        put (old { cfgUniq = u })
+cfgPutUniq u = do old <- get ; put (old { cfgUniq = u })
+
+cfgFreshId :: String -> CFG Ident
+cfgFreshId s = do u <- cfgNewUniq ; return (Ident s u)
 
 cfgFresh :: String -> CFG BlockId
-cfgFresh s = do
-        u <- cfgGetUniq
-        cfgPutUniq (u + 1)
-        return (Ident s u)
+cfgFresh s = do u <- freshLabel ; return (s, u)
 
 cfgNewBlock :: BlockId -> CFG ()
-cfgNewBlock id = do
+cfgNewBlock bid = do
         old <- get
         case cfgPreBlock old of
-          Nothing      -> do put (old { cfgPreBlock = Just (id, []) })
+          Nothing      -> do put (old { cfgPreBlock = Just (Right bid, []) })
           Just (id, _) -> error $ "Tried to start new block "
                                ++ " with unfinished old block " ++ show id
 
-cfgAddMiddle :: CFMiddle -> CFG ()
+cfgAddMiddle :: Insn O O -> CFG ()
 cfgAddMiddle mid = do
         old <- get
         case cfgPreBlock old of
@@ -251,12 +260,19 @@ cfgEndWith last = do
         old <- get
         case cfgPreBlock old of
           Nothing          -> error $ "Tried to finish block but no preblock!"
-                                     ++ "Tried to end with " ++ show last
-          Just (id, mids) -> do
-            let newblock = Block id (Prelude.reverse mids) last
+                                   ++ " Tried to end with " ++ show last
+          Just (stringOrBlockId, mids) -> do
+            id <- case stringOrBlockId of
+                    Left s -> cfgFresh s
+                    Right bid -> return bid
+            let first = mkFirst (ILabel id)
+            let middles = mkMiddles (Prelude.reverse mids)
+            let newblock = first <*> middles <*> mkLast (ILast last)
             put (old { cfgPreBlock     = Nothing
                      , cfgAllBlocks    = newblock : (cfgAllBlocks old) })
 
+instance UniqueMonad (StateT CFGState Data.Functor.Identity.Identity) where
+  freshUnique = cfgNewUniq >>= (return . intToUnique)
 
 substFn id var fn =
   let ids = map tidIdent (fnVars fn) in
@@ -271,26 +287,57 @@ knSubst id var expr =
   let substV = knVarSubst id var in
   let substE = knSubst    id var in
   case expr of
-        KNTuple vs -> KNTuple (map substV vs)
-        KNBool _                -> expr
-        KNInt t _               -> expr
-        KNVar v                 -> KNVar (substV v)
-        KNLetVal x b e          -> if x == id
-                                     then error $ "knSubst found re-bound id " ++ show id
-                                     else KNLetVal x (substE b) (substE e)
-        KNLetFuns ids fns e     -> if id `elem` ids
-                                     then error $ "knSubst found re--bound id " ++ show id
-                                     else KNLetFuns ids (map (substFn id var) fns) (substE e)
-        KNCall t v vs           -> KNCall t (substV v) (map substV vs)
-        KNCallPrim t prim vs    -> KNCallPrim t prim (map substV vs)
-        KNAppCtor t ctor vs     -> KNAppCtor t ctor (map substV vs)
-        KNAllocArray elt_ty v   -> KNAllocArray elt_ty (substV v)
-        KNIf t a b c            -> KNIf t (substV a) (substE b) (substE c)
-        KNUntil t a b           -> KNUntil t (substE a) (substE b)
-        KNAlloc v               -> KNAlloc (substV v)
-        KNDeref v               -> KNDeref (substV v)
-        KNStore v1 v2           -> KNStore (substV v1) (substV v2)
-        KNArrayRead t v1 v2     -> KNArrayRead t (substV v1) (substV v2)
-        KNArrayPoke v1 v2 v3    -> KNArrayPoke (substV v1) (substV v2) (substV v3)
-        KNCase t v patexprs     -> KNCase t (substV v) (map (\(p,e) -> (p, substE e)) patexprs)
-        KNTyApp overallType v t -> KNTyApp overallType (substV v) t
+    KNTuple vs -> KNTuple (map substV vs)
+    KNBool _                -> expr
+    KNInt t _               -> expr
+    KNVar v                 -> KNVar (substV v)
+    KNCall t v vs           -> KNCall     t (substV v) (map substV vs)
+    KNCallPrim t prim vs    -> KNCallPrim t prim       (map substV vs)
+    KNAppCtor t ctor vs     -> KNAppCtor  t ctor       (map substV vs)
+    KNAllocArray elt_ty v   -> KNAllocArray elt_ty (substV v)
+    KNIf t a b c            -> KNIf        t (substV a) (substE b) (substE c)
+    KNUntil t a b           -> KNUntil     t (substE a) (substE b)
+    KNAlloc v               -> KNAlloc       (substV v)
+    KNDeref v               -> KNDeref       (substV v)
+    KNStore v1 v2           -> KNStore       (substV v1) (substV v2)
+    KNArrayRead t v1 v2     -> KNArrayRead t (substV v1) (substV v2)
+    KNArrayPoke v1 v2 v3    -> KNArrayPoke   (substV v1) (substV v2) (substV v3)
+    KNTyApp overallType v t -> KNTyApp overallType (substV v) t
+    KNCase t v patexprs     -> KNCase      t (substV v)
+                                             (map (\(p,e) -> (p, substE e)) patexprs)
+    KNLetVal x b e -> if x == id
+                        then error $ "knSubst found re-bound id " ++ show id
+                        else KNLetVal x (substE b) (substE e)
+    KNLetFuns ids fns e ->
+                       if id `elem` ids
+                        then error $ "knSubst found re--bound id " ++ show id
+                        else KNLetFuns ids (map (substFn id var) fns) (substE e)
+
+instance NonLocal Insn where
+  entryLabel (ILabel (_,l)) = l
+  successors (ILast last) =
+    case last of
+        CFRetVoid            -> []
+        CFRet  _             -> []
+        CFBr   b             -> [blockLabel b]
+        CFIf _ _ bthen belse -> [blockLabel bthen, blockLabel belse]
+        CFCase _ _ patsbids  -> [blockLabel b | (_, b) <- patsbids]
+    where blockLabel (_, label) = label
+
+splitBasicBlock :: BasicBlock -> SplitBasicBlock
+splitBasicBlock g =
+  case foldGraphNodes f g ([], [], []) of
+      ([f], ms, [l]) -> (f, Prelude.reverse ms, l)
+      (bs, _, _) -> error $ "splitBasicBlock has wrong # of ids: " ++ show bs
+    where
+  f :: Insn e x -> SplitBasicBlockIntermediate -> SplitBasicBlockIntermediate
+  f n@(ILabel   b ) (bs, ms, ls) = (b:bs, ms, ls)
+  f n@(ILetVal  {}) (bs, ms, ls) = (bs, n:ms, ls)
+  f n@(ILetFuns {}) (bs, ms, ls) = (bs, n:ms, ls)
+  f n@(ILast    {}) (bs, ms, ls) = (bs, ms, n:ls)
+
+-- We'll accumulate all the first & last nodes from the purported
+-- basic block, but the final result must have only one first & last node.
+type SplitBasicBlockIntermediate = ([BlockId], [Insn O O], [Insn O C])
+type SplitBasicBlock             = ( BlockId,  [Insn O O],  Insn O C )
+

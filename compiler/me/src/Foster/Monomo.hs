@@ -17,6 +17,7 @@ import Foster.ILExpr
 import Foster.TypeIL
 import Foster.Context
 import Foster.Worklist
+import Foster.Letable
 import Foster.PatternMatch(DecisionTree(..), SwitchCase(..))
 
 import Data.Map(Map)
@@ -145,7 +146,7 @@ substituteTypeInProc argtys polyid proc =
           , ilProcVars = map (substituteTypeInVar subst) (ilProcVars proc)
           , ilProcBlocks = map (substituteTypeInBlock subst) (ilProcBlocks proc)
           }
-   Nothing -> error $ "Expected proc to be marked poly " ++ show proc
+   Nothing -> error $ "Expected proc to be marked poly " ++ show (ilProcIdent proc)
 
 monomorphizeBlock (Block bid mids last) = do
     newmids <- mapM monomorphizeMid mids
@@ -165,7 +166,7 @@ monomorphizeLetable expr =
         let g = monomorphizeLetable in
         case expr of
             -- This is the only interesting case!
-            ILTyApp t v argty -> do
+            CFTyApp t v argty -> do
                 case v of
                   -- If we're polymorphically instantiating a global symbol
                   -- (i.e. a proc) then we can statically look up the proc
@@ -229,7 +230,6 @@ substituteTypeInVar subst (TypedId ty id) =
 substituteTypeInClosure subst (ILClosure id env capts) =
    ILClosure id env (map (substituteTypeInVar subst) capts)
 
-
 substituteTypeInBlock subst (Block bid mids last) =
     let newmids = map (substituteTypeInMid subst) mids in
     Block bid newmids (substituteTypeInLast subst last)
@@ -256,21 +256,21 @@ substituteTypeInLetable subst expr =
         let q  = parSubstTyIL subst in
         let qv = substituteTypeInVar subst in
         case expr of
-            ILBool      b       -> ILBool  b
-            ILInt       t i     -> ILInt   (q t) i
-            ILTuple       vs    -> ILTuple (map qv vs)
-            ILCall      t v vs  -> ILCall     (q t) (qv v) (map qv vs)
-            ILCallPrim  t p vs  -> ILCallPrim (q t) p      (map qv vs)
-            ILAppCtor   t c vs  -> ILAppCtor  (q t) c      (map qv vs)
-            ILAllocate (ILAllocInfo t region arr_var unboxed) ->
-                ILAllocate (ILAllocInfo (q t) region  (fmap qv arr_var) unboxed)
-            ILAlloc     v       -> ILAlloc            (qv v)
-            ILAllocArray t v    -> ILAllocArray (q t) (qv v)
-            ILDeref        v    -> ILDeref            (qv v)
-            ILStore        v w  -> ILStore            (qv v) (qv w)
-            ILArrayRead  t a b  -> ILArrayRead  (q t) (qv a) (qv b)
-            ILArrayPoke  v b i  -> ILArrayPoke (qv v) (qv b) (qv i)
-            ILTyApp   t v argty -> ILTyApp (q t) (qv v) (q argty)
+            CFBool      b       -> CFBool  b
+            CFInt       t i     -> CFInt   (q t) i
+            CFTuple       vs    -> CFTuple (map qv vs)
+            CFCall      t v vs  -> CFCall     (q t) (qv v) (map qv vs)
+            CFCallPrim  t p vs  -> CFCallPrim (q t) p      (map qv vs)
+            CFAppCtor   t c vs  -> CFAppCtor  (q t) c      (map qv vs)
+            CFAllocate (ILAllocInfo t region arr_var unboxed) ->
+                CFAllocate (ILAllocInfo (q t) region  (fmap qv arr_var) unboxed)
+            CFAlloc     v       -> CFAlloc            (qv v)
+            CFAllocArray t v    -> CFAllocArray (q t) (qv v)
+            CFDeref        v    -> CFDeref            (qv v)
+            CFStore        v w  -> CFStore            (qv v) (qv w)
+            CFArrayRead  t a b  -> CFArrayRead  (q t) (qv a) (qv b)
+            CFArrayPoke  v b i  -> CFArrayPoke (qv v) (qv b) (qv i)
+            CFTyApp   t v argty -> CFTyApp (q t) (qv v) (q argty)
 
 fmapDt f (DT_Fail          ) = DT_Fail
 fmapDt f (DT_Leaf a idsoccs) = DT_Leaf (f a) idsoccs

@@ -11,6 +11,7 @@ module Foster.ProtobufIL (
 import Foster.Base
 import Foster.ILExpr
 import Foster.TypeIL
+import Foster.Letable
 import Foster.PatternMatch
 import Foster.ProtobufUtils
 
@@ -27,9 +28,9 @@ import Foster.Bepb.Closure      as Closure
 import Foster.Bepb.Proc         as Proc
 import Foster.Bepb.Decl         as Decl
 import Foster.Bepb.PBInt        as PBInt
-import Foster.Bepb.Block        as PbBlock
+import qualified Foster.Bepb.Block        as PbBlock
 import Foster.Bepb.LetVal       as PbLetVal
-import Foster.Bepb.Letable      as PbLetable
+import qualified Foster.Bepb.Letable      as PbLetable
 import Foster.Bepb.Terminator   as PbTerminator
 import Foster.Bepb.BlockMiddle  as PbBlockMiddle
 import Foster.Bepb.LetClosures  as PbLetClosures
@@ -54,6 +55,8 @@ import Foster.Bepb.AllocInfo.MemRegion
 import qualified Text.ProtocolBuffers.Header as P'
 
 -----------------------------------------------------------------------
+
+dumpBlockId (str, lab) = u8fromString (str ++ "." ++ show lab)
 
 dumpIdent :: Ident -> P'.Utf8
 dumpIdent (GlobalSymbol name) = u8fromString name
@@ -144,8 +147,8 @@ dumpAllocate (ILAllocInfo typ region maybe_array_size unboxed) =
 -----------------------------------------------------------------------
 
 dumpBlock :: ILBlock -> PbBlock.Block
-dumpBlock (Foster.Base.Block id mids illast) =
-    P'.defaultValue { PbBlock.block_id = dumpIdent id
+dumpBlock (Block id mids illast) =
+    P'.defaultValue { PbBlock.block_id = dumpBlockId id
                     , PbBlock.middle   = fromList $ map dumpMiddle mids
                     , PbBlock.last     = dumpLast illast
                     }
@@ -170,7 +173,7 @@ dumpMiddle (ILRebindId from to) =
                             }
                     }
 
-dumpLetVal :: Ident -> ILLetable -> PbLetVal.LetVal
+dumpLetVal :: Ident -> Letable -> PbLetVal.LetVal
 dumpLetVal id letable =
     P'.defaultValue { let_val_id = dumpIdent id
                     , let_expr   = dumpExpr letable
@@ -190,12 +193,12 @@ dumpLast (ILRet var) =
                     , PbTerminator.var    = Just $ dumpVar var }
 dumpLast (ILBr blockid) =
     P'.defaultValue { PbTerminator.tag    = BLOCK_BR
-                    , PbTerminator.block  = Just $ dumpIdent blockid }
+                    , PbTerminator.block  = Just $ dumpBlockId blockid }
 dumpLast (ILIf _ var thenid elseid) =
     P'.defaultValue { PbTerminator.tag    = BLOCK_IF
                     , PbTerminator.var    = Just $ dumpVar var
-                    , PbTerminator.block  = Just $ dumpIdent thenid
-                    , PbTerminator.block2 = Just $ dumpIdent elseid }
+                    , PbTerminator.block  = Just $ dumpBlockId thenid
+                    , PbTerminator.block2 = Just $ dumpBlockId elseid }
 dumpLast (ILCase ty var _ dt) =
     P'.defaultValue { PbTerminator.tag    = BLOCK_CASE
                     , PbTerminator.var    = Just $ dumpVar var
@@ -208,79 +211,79 @@ dumpVar (TypedId t i) = dumpILVar t i
 
 -----------------------------------------------------------------------
 
-dumpExpr :: ILLetable -> PbLetable.Letable
+dumpExpr :: Letable -> PbLetable.Letable
 
-dumpExpr (ILCall t base args)
+dumpExpr (CFCall t base args)
         = dumpCall t (dumpVar base)          args (mayTriggerGC base)
 
-dumpExpr (ILCallPrim t (ILNamedPrim base) args)
+dumpExpr (CFCallPrim t (ILNamedPrim base) args)
         = dumpCall t (dumpGlobalSymbol base) args (mayTriggerGC base)
 
-dumpExpr (ILCallPrim t (ILPrimOp op size) args)
+dumpExpr (CFCallPrim t (ILPrimOp op size) args)
         = dumpCallPrimOp t op size args
 
-dumpExpr (ILCallPrim t (ILCoroPrim coroPrim argty retty) args)
+dumpExpr (CFCallPrim t (ILCoroPrim coroPrim argty retty) args)
         = dumpCallCoroOp t coroPrim argty retty args True
 
-dumpExpr (ILAppCtor t cid args)
+dumpExpr (CFAppCtor t cid args)
         = dumpAppCtor t cid args
 
-dumpExpr x@(ILBool b) =
-    P'.defaultValue { bool_value      = Just b
+dumpExpr x@(CFBool b) =
+    P'.defaultValue { PbLetable.bool_value = Just b
                     , PbLetable.tag   = IL_BOOL
                     , PbLetable.type' = Just $ dumpType (typeIL x)  }
 
-dumpExpr x@(ILTuple vs) =
+dumpExpr x@(CFTuple vs) =
     P'.defaultValue { PbLetable.parts = fromList [dumpVar v | v <- vs]
                     , PbLetable.tag   = IL_TUPLE
                     , PbLetable.type' = Just $ dumpType (typeIL x)
                     , PbLetable.alloc_info = Just $ dumpAllocate
                          (ILAllocInfo (typeIL x) MemRegionGlobalHeap Nothing True) }
 
-dumpExpr x@(ILAllocate info) =
+dumpExpr x@(CFAllocate info) =
     P'.defaultValue { PbLetable.tag   = IL_ALLOCATE
                     , PbLetable.type' = Just $ dumpType (typeIL x)
                     , PbLetable.alloc_info = Just $ dumpAllocate info }
 
-dumpExpr x@(ILAlloc a) =
+dumpExpr x@(CFAlloc a) =
     P'.defaultValue { PbLetable.parts = fromList [dumpVar a]
                     , PbLetable.tag   = IL_ALLOC
                     , PbLetable.type' = Just $ dumpType (typeIL x)  }
 
-dumpExpr x@(ILAllocArray elt_ty size) =
+dumpExpr x@(CFAllocArray elt_ty size) =
     P'.defaultValue { PbLetable.parts = fromList []
                     , PbLetable.tag   = IL_ALLOCATE
                     , PbLetable.type' = Just $ dumpType elt_ty
                     , PbLetable.alloc_info = Just $ dumpAllocate
                        (ILAllocInfo elt_ty MemRegionGlobalHeap (Just size) True) }
 
-dumpExpr x@(ILDeref a) =
+dumpExpr x@(CFDeref a) =
     P'.defaultValue { PbLetable.parts = fromList [dumpVar a]
                     , PbLetable.tag   = IL_DEREF
                     , PbLetable.type' = Just $ dumpType (typeIL x)  }
 
-dumpExpr x@(ILStore a b) =
+dumpExpr x@(CFStore a b) =
     P'.defaultValue { PbLetable.parts = fromList (fmap dumpVar [a, b])
                     , PbLetable.tag   = IL_STORE
                     , PbLetable.type' = Just $ dumpType (typeIL x)  }
 
-dumpExpr x@(ILArrayRead t a b ) =
+dumpExpr x@(CFArrayRead t a b ) =
     P'.defaultValue { PbLetable.parts = fromList (fmap dumpVar [a, b])
                     , PbLetable.tag   = IL_ARRAY_READ
                     , PbLetable.type' = Just $ dumpType (typeIL x)  }
 
-dumpExpr x@(ILArrayPoke v b i ) =
+dumpExpr x@(CFArrayPoke v b i ) =
     P'.defaultValue { PbLetable.parts = fromList (fmap dumpVar [v, b, i])
                     , PbLetable.tag   = IL_ARRAY_POKE
                     , PbLetable.type' = Just $ dumpType (typeIL x)  }
 
-dumpExpr x@(ILInt ty int) =
+dumpExpr x@(CFInt ty int) =
     P'.defaultValue { PbLetable.pb_int = Just $ dumpInt (show $ litIntValue int)
                                                      (litIntMinBits int)
                     , PbLetable.tag   = IL_INT
                     , PbLetable.type' = Just $ dumpType (typeIL x)  }
 
-dumpExpr x@(ILTyApp overallTy baseExpr argType) =
+dumpExpr x@(CFTyApp overallTy baseExpr argType) =
     error $ "Unable to dump type application node " ++ show x
           ++ " (should handle substitution before codegen)."
 
@@ -288,7 +291,7 @@ dumpClosureWithName (varid, ILClosure procid envid captvars) =
     Closure { varname  = dumpIdent varid
             , proc_id  = u8fromString (identPrefix procid)
             , env_id   = dumpIdent envid
-            , env      = dumpExpr (ILTuple captvars) }
+            , env      = dumpExpr (CFTuple captvars) }
 
 dumpDecisionTree (DT_Fail) =
     P'.defaultValue { PbDecisionTree.tag = DT_FAIL }
@@ -297,7 +300,7 @@ dumpDecisionTree (DT_Leaf block_id idsoccs) =
     P'.defaultValue { PbDecisionTree.tag    = DT_LEAF
                     , PbDecisionTree.leaf_idents = fromList $ map (dumpIdent.fst) idsoccs
                     , PbDecisionTree.leaf_idoccs = fromList $ map (dumpOcc  .snd) idsoccs
-                    , PbDecisionTree.leaf_action = Just $ dumpIdent block_id }
+                    , PbDecisionTree.leaf_action = Just $ dumpBlockId block_id }
 
 dumpDecisionTree (DT_Swap i dt) = dumpDecisionTree dt
 
@@ -351,7 +354,7 @@ dumpCallCoroOp t coroPrim argty retty args mayGC =
         coroFnTag CoroCreate = IL_CORO_CREATE
         coroFnTag CoroYield  = IL_CORO_YIELD
 
-dumpCall :: TypeIL -> TermVar -> [AIVar] -> Bool -> Letable
+dumpCall :: TypeIL -> TermVar -> [AIVar] -> Bool -> PbLetable.Letable
 dumpCall t base args mayGC =
     P'.defaultValue { PbLetable.tag   = IL_CALL
                     , PbLetable.parts = fromList $ base:(fmap dumpVar args)
@@ -417,3 +420,19 @@ dumpModuleToProtobufIL mod outpath = do
     L.writeFile outpath (messagePut llmod)
     return ()
 
+-----------------------------------------------------------------------
+
+typeIL (CFBool _)          = boolTypeIL
+typeIL (CFInt t _)         = t
+typeIL (CFTuple vs)        = TupleTypeIL (map tidType vs)
+typeIL (CFCall t id expr)  = t
+typeIL (CFCallPrim t id vs)= t
+typeIL (CFAppCtor t cid vs)= t
+typeIL (CFAllocate info)   = ilAllocType info
+typeIL (CFAllocArray elt_ty _) = ArrayTypeIL elt_ty
+typeIL (CFAlloc v)         = PtrTypeIL (tidType v)
+typeIL (CFDeref v)         = pointedToTypeOfVar v
+typeIL (CFStore _ _)       = TupleTypeIL []
+typeIL (CFArrayRead t _ _) = t
+typeIL (CFArrayPoke _ _ _) = TupleTypeIL []
+typeIL (CFTyApp overallType tm tyArgs) = overallType

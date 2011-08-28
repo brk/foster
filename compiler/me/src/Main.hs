@@ -332,11 +332,13 @@ typecheckSourceModule sm outfile flagVals verboseMode = do
              forM_ (moduleILfunctions cfgmod) (\fn -> do
                      runOutput (outLn $ "====================")
                      runOutput (outLn $ show (fnVar fn))
-                     runOutput (showCFBlocks (fnBody fn)))
+                     --runOutput (showCFBlocks (fnBody fn))
+                     )
              runOutput $ (outLn "^^^ ==================================="))
 
          let dataSigs = dataTypeSigs (moduleILdataTypes cfgmod)
-         let prog0 = closureConvertAndLift dataSigs cfgmod
+         u0 <- readIORef uref
+         let prog0 = closureConvertAndLift dataSigs u0 cfgmod
 
          let monoprog = monomorphize prog0
 

@@ -4,12 +4,8 @@
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
-module Foster.KNExpr (
-kNormalizeModule, KNExpr(..), typeKN
-)
-
+module Foster.KNExpr (kNormalizeModule, KNExpr(..), typeKN)
 where
-
 import Control.Monad.State(forM, evalState, get, put, State)
 
 import Foster.Base
@@ -36,7 +32,7 @@ data KNExpr =
         | KNVar         AIVar
         | KNCallPrim    TypeIL ILPrim [AIVar]
         | KNCall        TypeIL AIVar  [AIVar]
-        | KNAppCtor     TypeIL CtorId [AIVar] -- dumped as CtorId
+        | KNAppCtor     TypeIL CtorId [AIVar]
         -- Mutable ref cells
         | KNAlloc       AIVar
         | KNDeref       AIVar
@@ -54,6 +50,8 @@ knFresh :: String -> KN Ident
 knFresh s = do old <- get
                put (old + 1)
                return (Ident s old)
+
+--------------------------------------------------------------------
 
 kNormalizeModule :: (ModuleIL AIExpr TypeIL)
                  -> Context TypeIL
