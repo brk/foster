@@ -170,9 +170,9 @@ fnOf f = do
              , fnFreeVars = fnFreeVars
              }
 
+-- TODO remove?
 instance Structured AIExpr where
     textOf e width = error "textOf AIExpr not yet implemented"
-    structuredChildren e = map SS $ childrenOf e
     childrenOf e =
         case e of
             E_AIPrim {}           -> []

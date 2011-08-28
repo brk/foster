@@ -302,7 +302,6 @@ instance Structured KNExpr where
                                 -> out $ "KNVar(Global):   " ++ name ++ " :: " ++ show t
             KNVar (TypedId t i) -> out $ "KNVar(Local):   " ++ show i ++ " :: " ++ show t
             KNTyApp t e argty   -> out $ "KNTyApp     [" ++ show argty ++ "] :: " ++ show t
-    structuredChildren e = map SS $ childrenOf e
     childrenOf e =
         let var v = KNVar v in
         case e of

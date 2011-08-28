@@ -88,7 +88,6 @@ instance Structured ExprAST where
             E_TyApp rng a t      -> out $ "TyApp        "
             E_Case rng _ _       -> out $ "Case         "
             E_VarAST rng v       -> out $ "VarAST       " ++ evarName v ++ " :: " ++ show (evarMaybeType v)
-    structuredChildren e = map SS $ childrenOf e
     childrenOf e =
         case e of
             E_BoolAST rng b             -> []

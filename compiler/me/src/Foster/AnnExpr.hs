@@ -116,7 +116,6 @@ instance Structured AnnExpr where
               ++ (show $ annFnBoundNames annFn) ++ " :: " ++ show (annFnType annFn) where
                         annFnBoundNames :: AnnFn -> [String]
                         annFnBoundNames fn = map show (annFnVars fn)
-    structuredChildren e = map SS $ childrenOf e
     childrenOf e =
         case e of
             AnnBool {}                           -> []
