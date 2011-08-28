@@ -70,7 +70,7 @@ typecheckFnSCC scc (ctx, tcenv) = do
         return annfn
     if List.all isOK annfns
      then let fns = [f | (OK (E_AnnFn f)) <- annfns] in
-          let newbindings = foldr (\f b -> (bindingForAnnFn f):b) [] fns in
+          let newbindings = map bindingForAnnFn fns in
           return (annfns, (prependContextBindings ctx newbindings, tcenv))
      else return ([Errors [out $ "not all functions type checked correctly in SCC: "
                              ++ show [fnAstName f | f <- fns]]
@@ -100,10 +100,6 @@ typecheckFnSCC scc (ctx, tcenv) = do
 
                     do runOutput $ (outLn "")
                     return False
-
-fmapOO :: (a -> b) -> OutputOr a -> OutputOr b
-fmapOO f (OK e)     = OK (f e)
-fmapOO f (Errors o) = Errors o
 
 -- | Typechecking a module proceeds as follows:
 -- |  #. Build separate binding lists for the globally-defined primitiveDecls
@@ -164,18 +160,20 @@ typecheckModule verboseMode mod tcenv0 = do
                       -> Context TypeAST
                       -> [OutputOr AnnExpr]
                       -> Tc (Context TypeIL, ModuleIL AIExpr TypeIL)
-   convertTypeILofAST mod ctx_ast oo_annfns = do
-     decls     <- mapM convertDecl (moduleASTdecls mod)
-     datatypes <- mapM convertDataType (moduleASTdataTypes mod)
+   convertTypeILofAST mAST ctx_ast oo_annfns = do
+     decls     <- mapM convertDecl (moduleASTdecls mAST)
+     datatypes <- mapM convertDataType (moduleASTdataTypes mAST)
      ctx_il    <- liftContextM ilOf ctx_ast
      aiFns     <- mapM (tcInject fnOf) (map (fmapOO (\(E_AnnFn f) -> f)) oo_annfns)
-     let m = ModuleIL aiFns decls datatypes (moduleASTsourceLines mod)
+     let m = ModuleIL aiFns decls datatypes (moduleASTsourceLines mAST)
      return (ctx_il, m)
        where
+        fmapOO :: (a -> b) -> OutputOr a -> OutputOr b
+        fmapOO f (OK e)     = OK (f e)
+        fmapOO f (Errors o) = Errors o
+
         convertDecl :: (String, TypeAST) -> Tc (String, TypeIL)
-        convertDecl (s, ty) = do
-          t <- ilOf ty
-          return (s, t)
+        convertDecl (s, ty) = do t <- ilOf ty ; return (s, t)
 
         convertDataType :: DataType TypeAST -> Tc (DataType TypeIL)
         convertDataType (DataType s ctors) = do
@@ -186,7 +184,6 @@ typecheckModule verboseMode mod tcenv0 = do
               convertDataCtor (DataCtor s n types) = do
                 tys <- mapM ilOf types
                 return $ DataCtor s n tys
-
 
         liftContextM :: Monad m => (t1 -> m t2) -> Context t1 -> m (Context t2)
         liftContextM f (Context cb pb vb gb) = do
@@ -217,7 +214,7 @@ getCtorInfo datatypes = Map.unionsWith (++) $ map getCtorInfoList datatypes
           Map.fromList $ map (buildCtorInfo name) ctors
 
     buildCtorInfo :: DataTypeName -> DataCtor TypeAST
-                            -> (CtorName, [CtorInfo TypeAST])
+                  -> (CtorName, [CtorInfo TypeAST])
     buildCtorInfo name ctor =
       case ctorIdFor name ctor of (n, c) -> (n, [CtorInfo c ctor])
 
@@ -235,8 +232,7 @@ dataTypeSigs :: [DataType TypeIL] -> Map CtorName DataTypeSig
 dataTypeSigs datatypes = Map.fromList $ map ctorIdSet datatypes where
   ctorIdSet :: DataType TypeIL -> (DataTypeName, DataTypeSig)
   ctorIdSet (DataType name ctors) =
-      let ctorNameToIdMap = map (ctorIdFor name) ctors in
-      (name, DataTypeSig (Map.fromList ctorNameToIdMap))
+      (name, DataTypeSig (Map.fromList $ map (ctorIdFor name) ctors))
 
 -----------------------------------------------------------------------
 
@@ -255,17 +251,11 @@ parseOpts argv =
     (_,_,errs) -> ioError (userError (concat errs ++ usageInfo header options))
   where header = "Usage: me [OPTION...] files..."
 
-getInterpretFlag ([], _) = Nothing
-getInterpretFlag ((f:fs), bs) =
-        case f of
-                Interpret d -> Just d
-                otherwise   -> getInterpretFlag (fs, bs)
+getInterpretFlag (flags, _) =
+   foldr (\f a -> case f of Interpret d -> Just d  ; _ -> a) Nothing flags
 
-getVerboseFlag ([], _) = False
-getVerboseFlag ((f:fs), bs) =
-        case f of
-                Verbose -> True
-                otherwise   -> getVerboseFlag (fs, bs)
+getVerboseFlag (flags, _) =
+   foldr (\f a -> case f of Verbose     -> True    ; _ -> a) False flags
 
 -----------------------------------------------------------------------
 
@@ -312,9 +302,9 @@ typecheckSourceModule sm outfile flagVals verboseMode = do
               runOutput $ (outLn "vvvv contextBindings:====================")
               runOutput $ (outCSLn Yellow (joinWith "\n" $ map show (contextBindings ctx_il)))
               )
-          lowerModule mod ctx_il
+          lowerModule mod ctx_il uniqref
   where
-    lowerModule ai_mod ctx_il = do
+    lowerModule ai_mod ctx_il uniqref = do
          let kmod = kNormalizeModule ai_mod ctx_il
 
          when verboseMode (do
@@ -323,21 +313,11 @@ typecheckSourceModule sm outfile flagVals verboseMode = do
                      runOutput (outLn $ show (fnVar fn))
                      runOutput (showStructure (fnBody fn))))
 
-         uref <- newIORef 0
-         cfgFuncs <- mapM (computeCFGIO uref) (moduleILfunctions kmod)
+         cfgFuncs <- mapM (computeCFGIO uniqref) (moduleILfunctions kmod)
          let cfgmod = kmod { moduleILfunctions = cfgFuncs }
 
-         when verboseMode (do
-             runOutput $ (outLn "/// CFG-ized program =============")
-             forM_ (moduleILfunctions cfgmod) (\fn -> do
-                     runOutput (outLn $ "====================")
-                     runOutput (outLn $ show (fnVar fn))
-                     --runOutput (showCFBlocks (fnBody fn))
-                     )
-             runOutput $ (outLn "^^^ ==================================="))
-
          let dataSigs = dataTypeSigs (moduleILdataTypes cfgmod)
-         u0 <- readIORef uref
+         u0 <- readIORef uniqref
          let prog0 = closureConvertAndLift dataSigs u0 cfgmod
 
          let monoprog = monomorphize prog0
@@ -347,7 +327,6 @@ typecheckSourceModule sm outfile flagVals verboseMode = do
              runOutput $ showProgramStructure monoprog
              runOutput $ (outLn "^^^ ==================================="))
 
-         --maybeInterpretProgram monoprog
          maybeInterpretKNormalModule kmod
 
          dumpModuleToProtobufIL monoprog (outfile ++ ".ll.pb")
@@ -360,11 +339,4 @@ typecheckSourceModule sm outfile flagVals verboseMode = do
             Just tmpDir -> do
                 _unused <- interpretKNormalMod kmod tmpDir
                 return ()
-
-    --maybeInterpretProgram prog = do
-    --    case getInterpretFlag flagVals of
-    --        Nothing -> return ()
-    --        Just tmpDir -> do
-    --            _unused <- interpretProg prog tmpDir
-    --            return ()
 

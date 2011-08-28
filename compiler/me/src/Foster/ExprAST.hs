@@ -61,13 +61,12 @@ unbuildSeqs expr = [expr]
 
 -----------------------------------------------------------------------
 
-tryGetCallNameE :: ExprAST -> String
-tryGetCallNameE (E_VarAST rng (VarAST mt v)) = v
-tryGetCallNameE _ = ""
-
 instance Structured ExprAST where
     textOf e width =
         let spaces = Prelude.replicate width '\SP'  in
+        let tryGetCallNameE (E_VarAST rng (VarAST mt v)) = v
+            tryGetCallNameE _                            = "" in
+        let termBindingName (TermBinding v _) = evarName v    in
         case e of
             E_BoolAST rng  b     -> out $ "BoolAST      " ++ (show b)
             E_CallAST rng b args -> out $ "CallAST      " ++ tryGetCallNameE b
@@ -77,7 +76,7 @@ instance Structured ExprAST where
             E_IntAST rng text    -> out $ "IntAST       " ++ text
             E_FnAST f            -> out $ "FnAST        " ++ (fnAstName f)
             E_LetRec rnd bnz e t -> out $ "LetRec       "
-            E_LetAST rng bnd e t -> out $ "LetAST       " ++ (case bnd of (TermBinding v _) -> evarName v)
+            E_LetAST rng bnd e t -> out $ "LetAST       " ++ termBindingName bnd
             E_SeqAST _rng a b    -> out $ "SeqAST       "
             E_AllocAST rng a     -> out $ "AllocAST     "
             E_DerefAST rng a     -> out $ "DerefAST     "
@@ -89,7 +88,10 @@ instance Structured ExprAST where
             E_Case rng _ _       -> out $ "Case         "
             E_VarAST rng v       -> out $ "VarAST       " ++ evarName v ++ " :: " ++ show (evarMaybeType v)
     childrenOf e =
-        case e of
+        let termBindingExpr (TermBinding _ e) = e
+            termBindingExprs bs = map termBindingExpr bs
+            termBindingNames bs = map (\(TermBinding v _) -> evarName v) bs
+        in case e of
             E_BoolAST rng b             -> []
             E_CallAST rng b tup         -> b:(tupleAstExprs tup)
             E_CompilesAST _rng (Just e) -> [e]
@@ -110,11 +112,6 @@ instance Structured ExprAST where
             E_VarAST _ _                -> []
             E_LetRec rnd bnz e t        -> [termBindingExpr bnd | bnd <- bnz] ++ [e]
             E_LetAST rng bnd e t        -> (termBindingExpr bnd):[e]
-
-termBindingExpr (TermBinding _ e) = e
-termBindingExprs bs = map termBindingExpr bs
-termBindingNames bs = map (\(TermBinding v _) -> evarName v) bs
-bindingFreeVars (TermBinding v e) = freeVars e `butnot` [evarName v]
 
 instance SourceRanged ExprAST
   where
@@ -140,14 +137,16 @@ instance SourceRanged ExprAST
       E_Case          rng _ _   -> rng
 
 instance Expr ExprAST where
-    freeVars e = case e of
-        E_VarAST rng v       -> [evarName v]
-        E_LetAST rng bnd e t -> freeVars e ++ (bindingFreeVars bnd)
-        E_Case rng e epatbnds -> freeVars e ++ (concatMap epatBindingFreeVars epatbnds)
-        E_FnAST f           -> let bodyvars  = freeVars (fnAstBody f) in
-                               let boundvars = map (identPrefix.tidIdent) (fnFormals f) in
-                               bodyvars `butnot` boundvars
-        _                   -> concatMap freeVars (childrenOf e)
+  freeVars e = case e of
+    E_VarAST rng v       -> [evarName v]
+    E_LetAST rng bnd e t -> let bindingFreeVars (TermBinding v e) =
+                                 freeVars e `butnot` [evarName v]
+                             in  freeVars e ++ (bindingFreeVars bnd)
+    E_Case rng e epatbnds -> freeVars e ++ (concatMap epatBindingFreeVars epatbnds)
+    E_FnAST f           -> let bodyvars  = freeVars (fnAstBody f) in
+                           let boundvars = map (identPrefix.tidIdent) (fnFormals f) in
+                           bodyvars `butnot` boundvars
+    _                   -> concatMap freeVars (childrenOf e)
 
 epatBindingFreeVars (pat, expr) =
   freeVars expr `butnot` epatBoundNames pat
