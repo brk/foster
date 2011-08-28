@@ -249,8 +249,8 @@ substituteTypeInLast subst last =
         ILBr    b          -> last
         ILIf    t v b1 b2  -> ILIf (parSubstTyIL subst t)
                                    (substituteTypeInVar subst v) b1 b2
-        ILCase  t v pbs dt -> ILCase (parSubstTyIL subst t)
-                                     (substituteTypeInVar subst v) pbs dt
+        ILCase  t v dt     -> ILCase (parSubstTyIL subst t)
+                                     (substituteTypeInVar subst v) dt
 
 substituteTypeInLetable subst expr =
         let q  = parSubstTyIL subst in

@@ -199,7 +199,7 @@ dumpLast (ILIf _ var thenid elseid) =
                     , PbTerminator.var    = Just $ dumpVar var
                     , PbTerminator.block  = Just $ dumpBlockId thenid
                     , PbTerminator.block2 = Just $ dumpBlockId elseid }
-dumpLast (ILCase ty var _ dt) =
+dumpLast (ILCase ty var dt) =
     P'.defaultValue { PbTerminator.tag    = BLOCK_CASE
                     , PbTerminator.var    = Just $ dumpVar var
                     , PbTerminator.typ    = Just $ dumpType ty
@@ -390,8 +390,7 @@ dumpProc p =
         preProcType proc =
             let retty = ilProcReturnType proc in
             let argtys = TupleTypeIL (map tidType (ilProcVars proc)) in
-            let cc = ilProcCallConv proc in
-            (argtys, retty, cc)
+            (argtys, retty, FastCC)
 
 -----------------------------------------------------------------------
 
