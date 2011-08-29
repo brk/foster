@@ -3,10 +3,11 @@
 $ # Run through "Installation" steps below, then:
 
 $ hg clone https://foster.googlecode.com/hg/ foster
-$ mkdir fxc         # Separate directory for compilation results and such
-$ cd fxc            # The name can be whatever you'd like, but it should
+$ cd foster
+$ mkdir _obj        # Separate directory for compilation results and such
+$ cd _obj           # The name can be whatever you'd like, but it should
                     # be located outside of the foster source directory.
-$ ccmake ../foster -G "Unix Makefiles"
+$ ccmake .. -G "Unix Makefiles"
         # Press 'c' to configure; if CMake cannot find the listed paths,
         #                         please set them by hand.
         # Press 'g' to generate Makefiles and exit once paths are OK
@@ -83,7 +84,9 @@ On Ubuntu 10.10:
                            libcairo2-dev libpango1.0-dev libgtk2.0-dev
                            libgtksourceview2.0-{0,dev}
 
-Haskell
+Haskell:
+   To enable profiling, add    library-profiling: True   to   ~/.cabal/config
+   before installing any further packages. Then:
       cabal update
       cabal install cabal-install
       cabal install happy alex
@@ -92,5 +95,6 @@ Haskell
       cabal install gtk2hs-buildtools
       cabal install chart
       cabal install criterion
+      cabal install hoopl
       cabal install text protocol-buffers filepath hprotoc ansi-terminal leksah
 
