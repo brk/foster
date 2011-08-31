@@ -213,77 +213,77 @@ dumpVar (TypedId t i) = dumpILVar t i
 
 dumpExpr :: Letable -> PbLetable.Letable
 
-dumpExpr (CFCall t base args)
+dumpExpr (ILCall t base args)
         = dumpCall t (dumpVar base)          args (mayTriggerGC base)
 
-dumpExpr (CFCallPrim t (ILNamedPrim base) args)
+dumpExpr (ILCallPrim t (ILNamedPrim base) args)
         = dumpCall t (dumpGlobalSymbol base) args (mayTriggerGC base)
 
-dumpExpr (CFCallPrim t (ILPrimOp op size) args)
+dumpExpr (ILCallPrim t (ILPrimOp op size) args)
         = dumpCallPrimOp t op size args
 
-dumpExpr (CFCallPrim t (ILCoroPrim coroPrim argty retty) args)
+dumpExpr (ILCallPrim t (ILCoroPrim coroPrim argty retty) args)
         = dumpCallCoroOp t coroPrim argty retty args True
 
-dumpExpr (CFAppCtor t cid args)
+dumpExpr (ILAppCtor t cid args)
         = dumpAppCtor t cid args
 
-dumpExpr x@(CFBool b) =
+dumpExpr x@(ILBool b) =
     P'.defaultValue { PbLetable.bool_value = Just b
                     , PbLetable.tag   = IL_BOOL
                     , PbLetable.type' = Just $ dumpType (typeIL x)  }
 
-dumpExpr x@(CFTuple vs) =
+dumpExpr x@(ILTuple vs) =
     P'.defaultValue { PbLetable.parts = fromList [dumpVar v | v <- vs]
                     , PbLetable.tag   = IL_TUPLE
                     , PbLetable.type' = Just $ dumpType (typeIL x)
                     , PbLetable.alloc_info = Just $ dumpAllocate
                          (ILAllocInfo (typeIL x) MemRegionGlobalHeap Nothing True) }
 
-dumpExpr x@(CFAllocate info) =
+dumpExpr x@(ILAllocate info) =
     P'.defaultValue { PbLetable.tag   = IL_ALLOCATE
                     , PbLetable.type' = Just $ dumpType (typeIL x)
                     , PbLetable.alloc_info = Just $ dumpAllocate info }
 
-dumpExpr x@(CFAlloc a) =
+dumpExpr x@(ILAlloc a) =
     P'.defaultValue { PbLetable.parts = fromList [dumpVar a]
                     , PbLetable.tag   = IL_ALLOC
                     , PbLetable.type' = Just $ dumpType (typeIL x)  }
 
-dumpExpr x@(CFAllocArray elt_ty size) =
+dumpExpr x@(ILAllocArray elt_ty size) =
     P'.defaultValue { PbLetable.parts = fromList []
                     , PbLetable.tag   = IL_ALLOCATE
                     , PbLetable.type' = Just $ dumpType elt_ty
                     , PbLetable.alloc_info = Just $ dumpAllocate
                        (ILAllocInfo elt_ty MemRegionGlobalHeap (Just size) True) }
 
-dumpExpr x@(CFDeref a) =
+dumpExpr x@(ILDeref a) =
     P'.defaultValue { PbLetable.parts = fromList [dumpVar a]
                     , PbLetable.tag   = IL_DEREF
                     , PbLetable.type' = Just $ dumpType (typeIL x)  }
 
-dumpExpr x@(CFStore a b) =
+dumpExpr x@(ILStore a b) =
     P'.defaultValue { PbLetable.parts = fromList (fmap dumpVar [a, b])
                     , PbLetable.tag   = IL_STORE
                     , PbLetable.type' = Just $ dumpType (typeIL x)  }
 
-dumpExpr x@(CFArrayRead t a b ) =
+dumpExpr x@(ILArrayRead t a b ) =
     P'.defaultValue { PbLetable.parts = fromList (fmap dumpVar [a, b])
                     , PbLetable.tag   = IL_ARRAY_READ
                     , PbLetable.type' = Just $ dumpType (typeIL x)  }
 
-dumpExpr x@(CFArrayPoke v b i ) =
+dumpExpr x@(ILArrayPoke v b i ) =
     P'.defaultValue { PbLetable.parts = fromList (fmap dumpVar [v, b, i])
                     , PbLetable.tag   = IL_ARRAY_POKE
                     , PbLetable.type' = Just $ dumpType (typeIL x)  }
 
-dumpExpr x@(CFInt ty int) =
+dumpExpr x@(ILInt ty int) =
     P'.defaultValue { PbLetable.pb_int = Just $ dumpInt (show $ litIntValue int)
                                                      (litIntMinBits int)
                     , PbLetable.tag   = IL_INT
                     , PbLetable.type' = Just $ dumpType (typeIL x)  }
 
-dumpExpr x@(CFTyApp overallTy baseExpr argType) =
+dumpExpr x@(ILTyApp overallTy baseExpr argType) =
     error $ "Unable to dump type application node " ++ show x
           ++ " (should handle substitution before codegen)."
 
@@ -291,7 +291,7 @@ dumpClosureWithName (varid, ILClosure procid envid captvars) =
     Closure { varname  = dumpIdent varid
             , proc_id  = u8fromString (identPrefix procid)
             , env_id   = dumpIdent envid
-            , env      = dumpExpr (CFTuple captvars) }
+            , env      = dumpExpr (ILTuple captvars) }
 
 dumpDecisionTree (DT_Fail) =
     P'.defaultValue { PbDecisionTree.tag = DT_FAIL }
@@ -308,7 +308,7 @@ dumpDecisionTree (DT_Switch occ sc) =
     P'.defaultValue { PbDecisionTree.tag    = DT_SWITCH
                     , PbDecisionTree.switchcase = Just $ dumpSwitchCase occ sc }
 
---dumpSwitchCase :: Occurrence -> SwitchCase CFG.BlockId -> PbSwitchCase
+--dumpSwitchCase :: Occurrence -> SwitchCase ILG.BlockId -> PbSwitchCase
 dumpSwitchCase occ (SwitchCase ctorDTpairs defaultCase) =
     let (ctors, dts) = Prelude.unzip ctorDTpairs in
     P'.defaultValue { PbSwitchCase.ctors = fromList (map dumpCtorId ctors)
@@ -421,17 +421,18 @@ dumpModuleToProtobufIL mod outpath = do
 
 -----------------------------------------------------------------------
 
-typeIL (CFBool _)          = boolTypeIL
-typeIL (CFInt t _)         = t
-typeIL (CFTuple vs)        = TupleTypeIL (map tidType vs)
-typeIL (CFCall t id expr)  = t
-typeIL (CFCallPrim t id vs)= t
-typeIL (CFAppCtor t cid vs)= t
-typeIL (CFAllocate info)   = ilAllocType info
-typeIL (CFAllocArray elt_ty _) = ArrayTypeIL elt_ty
-typeIL (CFAlloc v)         = PtrTypeIL (tidType v)
-typeIL (CFDeref v)         = pointedToTypeOfVar v
-typeIL (CFStore _ _)       = TupleTypeIL []
-typeIL (CFArrayRead t _ _) = t
-typeIL (CFArrayPoke _ _ _) = TupleTypeIL []
-typeIL (CFTyApp overallType tm tyArgs) = overallType
+typeIL expr = case expr of
+    ILBool _                -> boolTypeIL
+    ILInt t _               -> t
+    ILTuple vs              -> TupleTypeIL (map tidType vs)
+    ILCall t id expr        -> t
+    ILCallPrim t id vs      -> t
+    ILAppCtor t cid vs      -> t
+    ILAllocate info         -> ilAllocType info
+    ILAllocArray elt_ty _   -> ArrayTypeIL elt_ty
+    ILAlloc v               -> PtrTypeIL (tidType v)
+    ILDeref v               -> pointedToTypeOfVar v
+    ILStore _ _             -> TupleTypeIL []
+    ILArrayRead t _ _       -> t
+    ILArrayPoke _ _ _       -> TupleTypeIL []
+    ILTyApp overallType _ _ -> overallType

@@ -224,13 +224,13 @@ closureOfKnFn infoMap (self_id, fn) = do
     makeEnvPassingExplicitVal :: Letable -> Letable
     makeEnvPassingExplicitVal expr =
       case expr of
-        CFCall t v vs ->
+        ILCall t v vs ->
           case Map.lookup (tidIdent v) infoMap of
             Nothing -> expr
             -- The only really interesting case: call to let-bound function!
             Just (f, envid) ->
               let env = fakeCloVar envid in
-              CFCall t (fnVar f) (env:vs) -- Call proc with env as first arg.
+              ILCall t (fnVar f) (env:vs) -- Call proc with env as first arg.
               -- We don't know the env type here, since we don't
               -- pre-collect the set of closed-over envs from other procs.
               -- This works because (A) we never type check ILExprs, and
