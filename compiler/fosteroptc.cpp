@@ -243,7 +243,8 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
       llvm::formatted_raw_ostream::PRESERVE_STREAM);
 
   // TODO: LLVM 2.9 and earlier sometimes crashes in X86ISelDAG
-  // with CodeGenOpt::None; is that our fault or theirs?
+  // with CodeGenOpt::None when using llvm.gcroot of bitcast values.
+  // http://llvm.org/bugs/show_bug.cgi?id=10799
   CodeGenOpt::Level
          cgOptLevel = optOptimizeZero
                         ? CodeGenOpt::Less // None, Default
