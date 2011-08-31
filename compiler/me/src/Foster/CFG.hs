@@ -94,7 +94,7 @@ computeBlocks expr idmaybe k = do
             ifcont <- cfgFresh "if_cont"
 
             let slotvar = TypedId (PtrTypeIL t) slot_id
-            let slot = CFAllocate (ILAllocInfo t MemRegionStack Nothing False)
+            let slot = ILAllocate (ILAllocInfo t MemRegionStack Nothing False)
             cfgAddMiddle (ILetVal slot_id slot)
 
             cfgEndWith (CFIf t v ifthen ifelse)
@@ -108,7 +108,7 @@ computeBlocks expr idmaybe k = do
             cfgEndWith (CFBr ifcont)
 
             cfgNewBlock ifcont
-            cfgAddLet idmaybe (CFDeref slotvar) t >>= k
+            cfgAddLet idmaybe (ILDeref slotvar) t >>= k
 
         KNUntil t a b     -> do
             until_test <- cfgFresh "until_test"
@@ -124,7 +124,7 @@ computeBlocks expr idmaybe k = do
             computeBlocks b Nothing (\var -> cfgEndWith (CFBr until_test))
 
             cfgNewBlock until_cont
-            cfgAddLet idmaybe (CFTuple []) (TupleTypeIL []) >>= k
+            cfgAddLet idmaybe (ILTuple []) (TupleTypeIL []) >>= k
 
         KNLetVal id (KNVar v) cont ->
             -- TODO it's not fantastic to be forced to have explicit
@@ -150,7 +150,7 @@ computeBlocks expr idmaybe k = do
             case_cont <- cfgFresh "case_cont"
 
             let slotvar = TypedId (PtrTypeIL t) slot_id
-            let slot = CFAllocate (ILAllocInfo t MemRegionStack Nothing False)
+            let slot = ILAllocate (ILAllocInfo t MemRegionStack Nothing False)
             cfgAddMiddle (ILetVal slot_id slot)
 
             bbs <- mapM (\(pat, _) -> do block_id <- cfgFresh "case_arm"
@@ -165,7 +165,7 @@ computeBlocks expr idmaybe k = do
             mapM_ computeCaseBlocks (zip bs bbs)
 
             cfgNewBlock case_cont
-            cfgAddLet idmaybe (CFDeref slotvar) t >>= k
+            cfgAddLet idmaybe (ILDeref slotvar) t >>= k
 
         KNVar v -> k v
         _ -> do cfgAddLet idmaybe (knToLetable expr) (typeKN expr) >>= k
@@ -174,19 +174,19 @@ knToLetable :: KNExpr -> Letable
 knToLetable expr =
   case expr of
             KNVar        v      -> error $ "can't make Letable from KNVar!"
-            KNBool       b      -> CFBool       b
-            KNInt        t i    -> CFInt        t i
-            KNTuple      vs     -> CFTuple      vs
-            KNCallPrim   t p vs -> CFCallPrim   t p vs
-            KNCall       t b vs -> CFCall       t b vs
-            KNAppCtor    t c vs -> CFAppCtor    t c vs
-            KNAlloc      v      -> CFAlloc      v
-            KNDeref      v      -> CFDeref      v
-            KNStore      a b    -> CFStore      a b
-            KNAllocArray t v    -> CFAllocArray t v
-            KNArrayRead  t a b  -> CFArrayRead  t a b
-            KNArrayPoke  a b c  -> CFArrayPoke  a b c
-            KNTyApp t v argty   -> CFTyApp t v argty
+            KNBool       b      -> ILBool       b
+            KNInt        t i    -> ILInt        t i
+            KNTuple      vs     -> ILTuple      vs
+            KNCallPrim   t p vs -> ILCallPrim   t p vs
+            KNCall       t b vs -> ILCall       t b vs
+            KNAppCtor    t c vs -> ILAppCtor    t c vs
+            KNAlloc      v      -> ILAlloc      v
+            KNDeref      v      -> ILDeref      v
+            KNStore      a b    -> ILStore      a b
+            KNAllocArray t v    -> ILAllocArray t v
+            KNArrayRead  t a b  -> ILArrayRead  t a b
+            KNArrayPoke  a b c  -> ILArrayPoke  a b c
+            KNTyApp t v argty   -> ILTyApp t v argty
             _                   -> error $ "non-letable thing seen by letable: "
                                          ++ show expr
 
@@ -217,7 +217,7 @@ data CFGState = CFGState {
 type CFG a = State CFGState a
 
 cfgMidStore var slotvar = do id <- cfgFreshId ".cfg_store"
-                             cfgAddMiddle (ILetVal id $ CFStore var slotvar)
+                             cfgAddMiddle (ILetVal id $ ILStore var slotvar)
 
 cfgAddLet :: Maybe Ident -> Letable -> TypeIL -> CFG AIVar
 cfgAddLet idmaybe letable ty = do

@@ -9,6 +9,10 @@ module Foster.AnnExpr where
 import Foster.Base
 import Foster.TypeAST
 
+-- Type-annotated expressions, although not necessarily with valid types.
+-- Type checking isn't done until we move to AIExpr. We keep around source
+-- ranges for error messages if the final stage of type checking fails.
+
 data AnnExpr =
         -- Literals
           AnnBool       SourceRange Bool

@@ -14,13 +14,11 @@ import Foster.AnnExpr
 import Foster.TypeIL
 import Foster.TypeAST(gFosterPrimOpsTable, TypeAST(TupleTypeAST))
 
-{-
-  AnnExprIL defines a copy of AnnExpr, annotated
-  with TypeIL instead of TypeAST. This lets us
-  structurally enforce the restriction that unification
-  variables must be eliminated for type checking
-  to succeed.
--}
+-- AnnExprIL defines a copy of AnnExpr, annotated with TypeIL
+-- instead of TypeAST. This lets us structurally enforce the
+-- restriction that unification variables must be eliminated
+-- for type checking to succeed.
+-- We also force all functions to be let-bound, not anonymous.
 
 data AIExpr=
         -- Literals

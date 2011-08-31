@@ -274,14 +274,13 @@ void LLBlock::codegenBlock(CodegenPass* pass) {
   builder.SetInsertPoint(bb);
 
   BlockBindings* bindings = pass->blockBindings[this->block_id];
-  EDiag() << "codegenning block " << bb->getName() << "; binds? " << (bindings != NULL);
+  //EDiag() << "codegenning block " << bb->getName() << "; binds? " << (bindings != NULL);
   if (bindings) {
     for (size_t i = 0; i < bindings->binds.size(); ++i) {
       DTBinding& bind = bindings->binds[i];
       CaseContext* ctx = bindings->ctx;
 
-      EDiag() << "looking up occs for " << bind.first;
-      bb->getParent()->dump();
+      //EDiag() << "looking up occs for " << bind.first; bb->getParent()->dump();
       Value* v = lookupOccs(bind.second, bindings->scrutinee, bindings->ctab);
       Value* v_slot = getStackSlotForOcc(bind.second, v, ctx, pass);
       trySetName(v_slot, "pat_" + bind.first + "_slot");
@@ -304,13 +303,13 @@ void LLRebindId::codegenMiddle(CodegenPass* pass) {
 ////////////////////////////////////////////////////////////////////
 
 void LLRetVoid::codegenTerminator(CodegenPass* pass) {
-  EDiag() << "ret void";
+  //EDiag() << "ret void";
   builder.CreateRetVoid();
 }
 
 void LLRetVal::codegenTerminator(CodegenPass* pass) {
   llvm::Value* rv = pass->emit(this->val, NULL);
-  EDiag() << "ret " << str(rv) << " :: " << str(rv->getType());
+  //EDiag() << "ret " << str(rv) << " :: " << str(rv->getType());
   if (rv->getType()->isVoidTy()) {
     builder.CreateRetVoid();
   } else if (builder.getCurrentFunctionReturnType()->isVoidTy()) {
@@ -548,7 +547,7 @@ void LLLetVals::codegenMiddle(CodegenPass* pass) {
                    && pystring::startswith(b->getName(), "stackref"))
                 ? names[i] + "_slot"
                 : names[i]);
-    EDiag() << "inserting " << names[i] << " = " << (exprs[i]->tag) << " -> " << str(b);
+    //EDiag() << "inserting " << names[i] << " = " << (exprs[i]->tag) << " -> " << str(b);
     pass->valueSymTab.insert(names[i], b);
   }
 }
@@ -877,8 +876,8 @@ void DecisionTree::codegenDecisionTree(CodegenPass* pass,
     break;
 
   case DecisionTree::DT_LEAF:
-    EDiag() << "codegenning dt leaf for block " << this->action_block_id
-        << "; bindings already set? " << (pass->blockBindings[this->action_block_id] != NULL);
+    //EDiag() << "codegenning dt leaf for block " << this->action_block_id
+    //    << "; bindings already set? " << (pass->blockBindings[this->action_block_id] != NULL);
     if (!pass->blockBindings[this->action_block_id]) {
       BlockBindings* bindings = new BlockBindings;
       bindings->ctx       = ctx;

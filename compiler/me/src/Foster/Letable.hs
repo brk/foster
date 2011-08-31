@@ -8,23 +8,23 @@ import Foster.TypeIL
 -- means that a derived ILAlloc can't return a stack slot value!
 
 data Letable =
-          CFBool        Bool
-        | CFInt         TypeIL LiteralInt
-        | CFTuple       [AIVar]
+          ILBool        Bool
+        | ILInt         TypeIL LiteralInt
+        | ILTuple       [AIVar]
 
-        | CFCallPrim    TypeIL ILPrim [AIVar]
-        | CFCall        TypeIL AIVar  [AIVar]
-        | CFAppCtor     TypeIL CtorId [AIVar]
+        | ILCallPrim    TypeIL ILPrim [AIVar]
+        | ILCall        TypeIL AIVar  [AIVar]
+        | ILAppCtor     TypeIL CtorId [AIVar]
         -- Stack/heap slot allocation
-        | CFAllocate    ILAllocInfo
+        | ILAllocate    ILAllocInfo
         -- Mutable ref cells
-        | CFAlloc       AIVar
-        | CFDeref       AIVar
-        | CFStore       AIVar AIVar
+        | ILAlloc       AIVar
+        | ILDeref       AIVar
+        | ILStore       AIVar AIVar
         -- Array operations
-        | CFAllocArray  TypeIL AIVar
-        | CFArrayRead   TypeIL AIVar  AIVar
-        | CFArrayPoke          AIVar  AIVar  AIVar
-        | CFTyApp       TypeIL AIVar TypeIL
+        | ILAllocArray  TypeIL AIVar
+        | ILArrayRead   TypeIL AIVar  AIVar
+        | ILArrayPoke          AIVar  AIVar  AIVar
+        | ILTyApp       TypeIL AIVar TypeIL
         deriving (Show)
 
