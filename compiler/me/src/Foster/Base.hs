@@ -10,6 +10,7 @@ module Foster.Base where
 import System.Console.ANSI
 import Control.Monad
 
+import Data.IORef
 import Data.Set as Set(fromList, toList, difference)
 import Data.Sequence as Seq
 import Data.Map as Map(Map)
@@ -40,13 +41,29 @@ outCSLn c s = outCS c (s ++ "\n")
 outToString :: Output -> String
 outToString o = concatMap outputDataString o
 
+-- Conceptually, for each string, we apply its graphics commands,
+-- print the string, and then reset the SGR mode. But resetting
+-- turns out to be expensive, so we track our state and only do
+-- the apply/resets when we actually need to.
 runOutput :: Output -> IO ()
 runOutput outs = do
+    stateRef <- newIORef OutputStateUnknown
+    let forciblyRunOutput sgrs str = do
+          _ <- setSGR sgrs
+          putStr str
+          case sgrs of -- no need to reset if we already reset!
+                [] -> return ()
+                _  -> setSGR [] -- [] means reset, not do nothing.
+          writeIORef stateRef OutputStateClean
     forM_ outs $ (\(OutputData sgrs str) -> do
-                _ <- setSGR sgrs
-                putStr str
-                setSGR []
-            )
+        state <- readIORef stateRef
+        case state of -- if we're clean and not modifying, we can just putStr.
+          OutputStateUnknown -> forciblyRunOutput sgrs str
+          OutputStateClean ->
+                    case sgrs of [] -> putStr str
+                                 _  -> forciblyRunOutput sgrs str
+      )
+data OutputState = OutputStateUnknown | OutputStateClean
 
 -- Either, with better names for the cases...
 data OutputOr expr
