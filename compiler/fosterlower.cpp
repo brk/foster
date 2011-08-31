@@ -222,7 +222,7 @@ int main(int argc, char** argv) {
   cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster compiler backend\n");
 
   foster::gPrintLLVMImports = optPrintLLVMImports;
-  foster::validateInputFile(optInputPath + ".ll.pb");
+  foster::validateInputFile(optInputPath);
 
   foster::ensureDirectoryExists(outdirFile(""));
 
@@ -275,7 +275,7 @@ int main(int argc, char** argv) {
   //================================================================
 
   {
-    LLModule* prog = readLLProgramFromProtobuf(optInputPath + ".ll.pb", pbin);
+    LLModule* prog = readLLProgramFromProtobuf(optInputPath, pbin);
     ASSERT(prog) << "Unable to read LL program from protobuf!";
 
     if(!areDeclaredValueTypesOK(module, prog->val_decls)) {
