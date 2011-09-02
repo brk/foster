@@ -20,10 +20,9 @@ import qualified Data.Map as Map(fromList, unionsWith)
 import qualified Data.Set as Set(filter, toList, fromList)
 import qualified Data.Graph as Graph(SCC, flattenSCC, stronglyConnComp)
 import Data.Maybe(isNothing)
-import Control.Monad.State(forM, when, forM_)
-import Data.IORef(newIORef, readIORef)
+import Control.Monad.State(forM, when, forM_, StateT, runStateT, gets, liftIO)
+import Data.IORef(IORef, newIORef, readIORef)
 
-import Criterion.Measurement
 import Text.ProtocolBuffers(messageGet)
 
 import Foster.Base
@@ -36,7 +35,7 @@ import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn), AnnFn,
                       fnNameA, annFnType, annFnIdent)
 import Foster.AnnExprIL(AIExpr, fnOf)
 import Foster.TypeIL(TypeIL, ilOf)
-import Foster.ILExpr(closureConvertAndLift, showProgramStructure)
+import Foster.ILExpr(closureConvertAndLift, showProgramStructure, ILProgram)
 import Foster.KNExpr(kNormalizeModule)
 import Foster.Typecheck
 import Foster.Context
@@ -259,22 +258,14 @@ getVerboseFlag (flags, _) =
    foldr (\f a -> case f of Verbose     -> True    ; _ -> a) False flags
 
 -----------------------------------------------------------------------
--- Indent the given time string based on the magnitude of the value.
-magSecs k s = if k > 1 then s else magSecs (k * 10) (' ':s)
 
--- Print a table of timing information.
-summarizeTimingStats msgsAndTimes = mapM_ display msgsAndTimes
-  where display (msg, t) = do
-               runOutput $ outLn ("....... " ++ msg ++ magSecs t (secs t))
-
-main :: IO ()
 main = do
   args <- getArgs
-  (protobuf, protoTime, outfile, flagVals) <- case args of
+  (protobuf, outfile, flagVals) <- case args of
          (infile : outfile : rest) -> do
-                (protoTime, protobuf) <- time $ L.readFile infile
+                protobuf <- L.readFile infile
                 flagVals <- parseOpts rest
-                return (protobuf, protoTime, outfile, flagVals)
+                return (protobuf, outfile, flagVals)
          _ -> do
                 self <- getProgName
                 return (error $ "Usage: " ++ self
@@ -283,84 +274,100 @@ main = do
   case messageGet protobuf of
     Left msg -> error $ "Failed to parse protocol buffer.\n" ++ msg
     Right (pb_module, _) -> do
-        let verboseMode = getVerboseFlag flagVals
-        (parsTime, parsedModule) <- time (return $ parseSourceModule pb_module)
-        (tcTime, _) <- time $
-               typecheckSourceModule parsedModule outfile flagVals verboseMode
-        summarizeTimingStats [("read protobuf : ", protoTime)
-                             ,("parse protobuf: ", parsTime)
-                             ,("after parsing:  ", tcTime)]
+        uniqref <- newIORef 1
+        (monoprog, _) <- runStateT (compile pb_module) $ CompilerContext {
+                                ccVerbose  = getVerboseFlag flagVals
+                              , ccFlagVals = flagVals
+                              , ccUnique   = uniqref
+                         }
+        dumpModuleToProtobufIL monoprog outfile
 
+compile pb_module =
+    (return $ parseSourceModule pb_module)
+     >>= typecheckSourceModule
+     >>= (uncurry lowerModule)
 
-
-typecheckSourceModule sm outfile flagVals verboseMode = do
-    uniqref <- newIORef 1
-    varlist <- newIORef []
+typecheckSourceModule :: ModuleAST FnAST TypeAST
+                      -> Compiled (ModuleIL AIExpr TypeIL, Context TypeIL)
+typecheckSourceModule sm = do
+    uniqref <- gets ccUnique
+    varlist <- liftIO $ newIORef []
     let tcenv = TcEnv { tcEnvUniqs = uniqref,
                  tcUnificationVars = varlist,
                          tcParents = [],
                         tcCtorInfo = getCtorInfo (moduleASTdataTypes sm) }
-    (typecheckTime, modResults) <- time $ typecheckModule verboseMode sm tcenv
+    verboseMode <- gets ccVerbose
+    modResults <- liftIO $ typecheckModule verboseMode sm tcenv
     case modResults of
-      Errors os -> do runOutput (outCSLn Red $ "Unable to type check input module:")
-                      printOutputs os
-                      error "compilation failed"
-      OK (ctx_il, mod) -> do
-          (gmtvt, _) <- time $ showGeneratedMetaTypeVariables varlist ctx_il
-          lowerModule mod ctx_il uniqref typecheckTime gmtvt
+        Errors os -> liftIO $ do
+            runOutput (outCSLn Red $ "Unable to type check input module:")
+            printOutputs os
+            error "compilation failed"
+        OK (ctx_il, ai_mod) -> do
+            showGeneratedMetaTypeVariables varlist ctx_il
+            return (ai_mod, ctx_il)
+
+lowerModule :: ModuleIL AIExpr TypeIL -> Context TypeIL -> Compiled ILProgram
+lowerModule ai_mod ctx_il = do
+     let kmod = kNormalizeModule ai_mod ctx_il
+
+     whenVerbose $ do
+        forM_ (moduleILfunctions kmod) (\fn -> do
+           runOutput (outLn $ "vvvv k-normalized :====================")
+           runOutput (outLn $ show (fnVar fn))
+           runOutput (showStructure (fnBody fn)))
+
+     cfgmod   <- cfgModule      kmod
+     prog0    <- closureConvert cfgmod
+     let monoprog = monomorphize prog0
+
+     whenVerbose $ do
+         runOutput $ (outLn "/// Monomorphized program =============")
+         runOutput $ showProgramStructure monoprog
+         runOutput $ (outLn "^^^ ===================================")
+
+     maybeInterpretKNormalModule kmod
+     return monoprog
+
   where
-    lowerModule ai_mod ctx_il uniqref typecheckTime gmtvTime = do
-         (kTime, kmod) <- time $ return $ kNormalizeModule ai_mod ctx_il
+    cfgModule kmod = do
+        uniqref <- gets ccUnique
+        liftIO $ do
+            cfgFuncs <- mapM (computeCFGIO uniqref) (moduleILfunctions kmod)
+            return $ kmod { moduleILfunctions = cfgFuncs }
 
-         when verboseMode (do
-            forM_ (moduleILfunctions kmod) (\fn -> do
-                     runOutput (outLn $ "vvvv k-normalized :====================")
-                     runOutput (outLn $ show (fnVar fn))
-                     runOutput (showStructure (fnBody fn))))
-
-         (cfgTime, cfgmod) <- time $ cfgModule kmod uniqref
-         (cloTime, prog0)  <- time $ closureConvert cfgmod uniqref
-         (monoTime, monoprog) <- time $ (return $ monomorphize prog0)
-
-         when verboseMode (do
-             runOutput $ (outLn "/// Monomorphized program =============")
-             runOutput $ showProgramStructure monoprog
-             runOutput $ (outLn "^^^ ==================================="))
-
-         maybeInterpretKNormalModule kmod
-         (dumpTime, _) <- time $ dumpModuleToProtobufIL monoprog outfile
-         summarizeTimingStats [("print meta tvs: ", gmtvTime)
-                              ,("typechecking  : ", typecheckTime)
-                              ,("k-normalizing : ", kTime)
-                              ,("cfg building  : ", cfgTime)
-                              ,("clo-conversion: ", cloTime)
-                              ,("monomorphizing: ", monoTime)
-                              ,("protobuf write: ", dumpTime)
-                              ]
-
-    cfgModule kmod uniqref = do
-         cfgFuncs <- mapM (computeCFGIO uniqref) (moduleILfunctions kmod)
-         return $ kmod { moduleILfunctions = cfgFuncs }
-
-    closureConvert cfgmod uniqref = do
-         let dataSigs = dataTypeSigs (moduleILdataTypes cfgmod)
-         u0 <- readIORef uniqref
-         return $ closureConvertAndLift dataSigs u0 cfgmod
+    closureConvert cfgmod = do
+        uniqref <- gets ccUnique
+        liftIO $ do
+            let dataSigs = dataTypeSigs (moduleILdataTypes cfgmod)
+            u0 <- readIORef uniqref
+            return $ closureConvertAndLift dataSigs u0 cfgmod
 
     maybeInterpretKNormalModule kmod = do
+        flagVals <- gets ccFlagVals
         case getInterpretFlag flagVals of
             Nothing -> return ()
             Just tmpDir -> do
-                _unused <- interpretKNormalMod kmod tmpDir
+                _unused <- liftIO $ interpretKNormalMod kmod tmpDir
                 return ()
 
-    showGeneratedMetaTypeVariables varlist ctx_il =
-      when verboseMode $ do
-        metaTyVars <- readIORef varlist
-        runOutput $ (outLn $ "generated " ++ (show $ length metaTyVars) ++ " meta type variables:")
-        forM metaTyVars (\mtv@(Meta _ r _) -> do
-            t <- readIORef r
-            runOutput (outLn $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t))
+showGeneratedMetaTypeVariables varlist ctx_il =
+  whenVerbose $ do
+    metaTyVars <- readIORef varlist
+    runOutput $ (outLn $ "generated " ++ (show $ length metaTyVars) ++ " meta type variables:")
+    forM metaTyVars (\mtv@(Meta _ r _) -> do
+        t <- readIORef r
+        runOutput (outLn $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t))
 
-        runOutput $ (outLn "vvvv contextBindings:====================")
-        runOutput $ (outCSLn Yellow (joinWith "\n" $ map show (contextBindings ctx_il)))
+    runOutput $ (outLn "vvvv contextBindings:====================")
+    runOutput $ (outCSLn Yellow (joinWith "\n" $ map show (contextBindings ctx_il)))
+
+type Compiled = StateT CompilerContext IO
+data CompilerContext = CompilerContext {
+        ccVerbose :: Bool
+      , ccFlagVals :: ([Flag], [String])
+      , ccUnique  :: IORef Uniq
+}
+
+whenVerbose :: IO () -> Compiled ()
+whenVerbose action = do verbose <- gets ccVerbose ; liftIO $ when verbose action
