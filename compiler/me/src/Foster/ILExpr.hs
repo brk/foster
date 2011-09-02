@@ -17,7 +17,6 @@ import Foster.TypeIL
 import Foster.Letable
 import Foster.PatternMatch
 
-import Data.Functor.Identity
 import Compiler.Hoopl
 
 --------------------------------------------------------------------
@@ -289,7 +288,7 @@ ilmGetProc id = do
 
 --------------------------------------------------------------------
 
-instance UniqueMonad (StateT ILMState Identity) where
+instance UniqueMonad (State ILMState) where
   freshUnique = ilmNewUniq >>= (return . intToUnique)
 
 showProgramStructure :: ILProgram -> Output

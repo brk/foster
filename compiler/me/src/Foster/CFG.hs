@@ -22,7 +22,6 @@ import Foster.TypeIL
 import Foster.KNExpr
 import Foster.Letable
 
-import Data.Functor.Identity
 import Compiler.Hoopl
 
 import Control.Monad.State
@@ -256,7 +255,7 @@ cfgEndWith last = do
             put (old { cfgPreBlock     = Nothing
                      , cfgAllBlocks    = newblock : (cfgAllBlocks old) })
 
-instance UniqueMonad (StateT CFGState Data.Functor.Identity.Identity) where
+instance UniqueMonad (State CFGState) where
   freshUnique = cfgNewUniq >>= (return . intToUnique)
 
 substFn id var fn =

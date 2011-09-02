@@ -38,6 +38,7 @@ if __name__ == "__main__":
         'bindir' :  normalize(options.bindir),
         'srcroot':  normalize(options.srcroot),
         'hsflags': "-XFlexibleInstances -XMultiParamTypeClasses -XDeriveDataTypeable" +
+                   " -XTypeSynonymInstances" +
                    " -fwarn-unused-imports -fwarn-incomplete-patterns",
       }
 
