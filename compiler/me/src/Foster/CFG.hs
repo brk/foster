@@ -28,17 +28,6 @@ import Compiler.Hoopl
 import Control.Monad.State
 import Data.IORef
 
-----------------------------------------------------------------------------
--- A few preliminary types
-
--- We represent basic blocks as Graphs rather than Blocks because
--- it's easier to glue together Graphs when building the basic blocks.
-type BasicBlock = Graph Insn C C
-data BasicBlockGraph = BasicBlockGraph { bbgEntry :: BlockId,
-                                         bbgBody :: (Graph Insn C C) }
-type CFFn = Fn BasicBlockGraph TypeIL
-type BlockId = (String, Label)
-
 -- This is the "entry point" into CFG-building for the outside.
 -- We take (and update) a mutable reference as a convenient way of
 -- threading through the small amount of globally-unique state we need.
@@ -50,6 +39,7 @@ computeCFGIO uref fn = do
   return $ extractFunction cfgState fn
 
 -- A mirror image for internal use (when converting nested functions).
+-- As above, we thread through the updated unique value from the subcomputation!
 cfgComputeCFG :: Fn KNExpr TypeIL -> CFG CFFn
 cfgComputeCFG fn = do
   u0 <- gets cfgUniq
@@ -69,34 +59,35 @@ internalComputeCFG uniq fn =
     -- Make sure that the main function returns void.
     ret fn var = case (identPrefix $ tidIdent $ fnVar fn) of
                          "main" -> cfgEndWith (CFRetVoid)
-                         _ -> cfgEndWith (CFRet var)
+                         _      -> cfgEndWith (CFRet var)
 
 -- The other helper, to collect the scattered results and build the actual CFG.
 extractFunction st fn =
   let blocks = Prelude.reverse (cfgAllBlocks st) in
-  fn { fnBody = BasicBlockGraph (firstBlockInfo blocks)
-                                (catClosedGraphs blocks) }
+  fn { fnBody = BasicBlockGraph (entryId blocks) (catClosedGraphs blocks) }
   where -- Dunno why this function isn't in Hoopl...
         catClosedGraphs = foldr (|*><*|) emptyClosedGraph
 
-        firstBlockInfo [] = error $ "can't get first block id from empty list!"
-        firstBlockInfo (bb:_) = info where (info, _, _) = splitBasicBlock bb
+        entryId [] = error $ "can't get entry block id from empty list!"
+        entryId (bb:_) = id where (id, _, _) = splitBasicBlock bb
+
+freshVar t name = do id <- cfgFreshId name ; return $ TypedId t id
 
 -- computeBlocks takes an expression and a contination,
 -- which determines what to do with the let-bound result of the expression.
 computeBlocks :: KNExpr -> Maybe Ident -> (AIVar -> CFG ()) -> CFG ()
 computeBlocks expr idmaybe k = do
     case expr of
+        -- compile (if v then a else b) to
+        -- slot = undef; if v then v_a = [[a]]; slot := v_a;
+        --                    else v_b = [[b]]; slot := v_b;
+        -- slot^
         KNIf t v a b      -> do
-            slot_id <- cfgFreshId "if_slot"
-            ifthen <- cfgFresh "if_then"
-            ifelse <- cfgFresh "if_else"
-            ifcont <- cfgFresh "if_cont"
-
-            let slotvar = TypedId (PtrTypeIL t) slot_id
+            [ifthen, ifelse, ifcont] <- mapM cfgFresh
+                                               ["if_then", "if_else", "if_cont"]
+            slotvar <- freshVar (PtrTypeIL t) "if_slot"
             let slot = ILAllocate (ILAllocInfo t MemRegionStack Nothing False)
-            cfgAddMiddle (ILetVal slot_id slot)
-
+            cfgAddMiddle (ILetVal (tidIdent slotvar) slot)
             cfgEndWith (CFIf t v ifthen ifelse)
 
             cfgNewBlock ifthen
@@ -111,9 +102,8 @@ computeBlocks expr idmaybe k = do
             cfgAddLet idmaybe (ILDeref slotvar) t >>= k
 
         KNUntil t a b     -> do
-            until_test <- cfgFresh "until_test"
-            until_body <- cfgFresh "until_body"
-            until_cont <- cfgFresh "until_cont"
+            [until_test, until_body, until_cont] <- mapM cfgFresh
+                                      ["until_test", "until_body", "until_cont"]
             cfgEndWith (CFBr until_test)
 
             cfgNewBlock until_test
@@ -146,12 +136,10 @@ computeBlocks expr idmaybe k = do
             computeBlocks e idmaybe k
 
         KNCase t v bs -> do
-            slot_id <- cfgFreshId "case_slot"
             case_cont <- cfgFresh "case_cont"
-
-            let slotvar = TypedId (PtrTypeIL t) slot_id
+            slotvar <- freshVar (PtrTypeIL t) "case_slot"
             let slot = ILAllocate (ILAllocInfo t MemRegionStack Nothing False)
-            cfgAddMiddle (ILetVal slot_id slot)
+            cfgAddMiddle (ILetVal (tidIdent slotvar) slot)
 
             bbs <- mapM (\(pat, _) -> do block_id <- cfgFresh "case_arm"
                                          return $ (pat, block_id)) bs
@@ -190,23 +178,21 @@ knToLetable expr =
             _                   -> error $ "non-letable thing seen by letable: "
                                          ++ show expr
 
-data CFMiddle =
-          CFLetVal      Ident     Letable
-        | CFLetFuns     [Ident]   [CFFn]
+data CFMiddle = CFLetVal      Ident     Letable
+              | CFLetFuns     [Ident]   [CFFn]
 
-data CFLast =
-          CFRetVoid
-        | CFRet         AIVar
-        | CFBr          BlockId
-        | CFIf          TypeIL AIVar  BlockId   BlockId
-        | CFCase        TypeIL AIVar [(Pattern, BlockId)]
-        deriving (Show)
+data CFLast = CFRetVoid
+            | CFRet         AIVar
+            | CFBr          BlockId
+            | CFIf          TypeIL AIVar  BlockId   BlockId
+            | CFCase        TypeIL AIVar [(Pattern, BlockId)]
+            deriving (Show)
 
 data Insn e x where
-  ILabel   :: BlockId            -> Insn C O
-  ILetVal  :: Ident   -> Letable -> Insn O O
-  ILetFuns :: [Ident] -> [CFFn]  -> Insn O O
-  ILast    :: CFLast             -> Insn O C
+              ILabel   :: BlockId            -> Insn C O
+              ILetVal  :: Ident   -> Letable -> Insn O O
+              ILetFuns :: [Ident] -> [CFFn]  -> Insn O O
+              ILast    :: CFLast             -> Insn O C
 
 data CFGState = CFGState {
     cfgUniq         :: Uniq
@@ -228,8 +214,7 @@ cfgAddLet idmaybe letable ty = do
         return (TypedId ty id)
 
 cfgNewUniq :: CFG Uniq
-cfgNewUniq = do u <- gets cfgUniq ; cfgPutUniq (u + 1)
-                return u
+cfgNewUniq = do u <- gets cfgUniq ; cfgPutUniq (u + 1) ; return u
 
 cfgPutUniq :: Uniq -> CFG ()
 cfgPutUniq u = do old <- get ; put (old { cfgUniq = u })
@@ -242,26 +227,26 @@ cfgFresh s = do u <- freshLabel ; return (s, u)
 
 cfgNewBlock :: BlockId -> CFG ()
 cfgNewBlock bid = do
-        old <- get
-        case cfgPreBlock old of
-          Nothing      -> do put (old { cfgPreBlock = Just (Right bid, []) })
-          Just (id, _) -> error $ "Tried to start new block "
+    old <- get
+    case cfgPreBlock old of
+        Nothing      -> do put (old { cfgPreBlock = Just (Right bid, []) })
+        Just (id, _) -> error $ "Tried to start new block "
                                ++ " with unfinished old block " ++ show id
 
 cfgAddMiddle :: Insn O O -> CFG ()
 cfgAddMiddle mid = do
-        old <- get
-        case cfgPreBlock old of
-          Just (id, mids) -> do put (old { cfgPreBlock = Just (id, mid:mids) })
-          Nothing         -> error $ "Tried to add middle without a block"
+    old <- get
+    case cfgPreBlock old of
+        Just (id, mids) -> do put (old { cfgPreBlock = Just (id, mid:mids) })
+        Nothing         -> error $ "Tried to add middle without a block"
 
 cfgEndWith :: CFLast -> CFG ()
 cfgEndWith last = do
-        old <- get
-        case cfgPreBlock old of
-          Nothing          -> error $ "Tried to finish block but no preblock!"
+    old <- get
+    case cfgPreBlock old of
+        Nothing          -> error $ "Tried to finish block but no preblock!"
                                    ++ " Tried to end with " ++ show last
-          Just (stringOrBlockId, mids) -> do
+        Just (stringOrBlockId, mids) -> do
             id <- case stringOrBlockId of
                     Left s -> cfgFresh s
                     Right bid -> return bid
@@ -303,8 +288,8 @@ knSubst id var expr =
     KNArrayRead t v1 v2     -> KNArrayRead t (substV v1) (substV v2)
     KNArrayPoke v1 v2 v3    -> KNArrayPoke   (substV v1) (substV v2) (substV v3)
     KNTyApp overallType v t -> KNTyApp overallType (substV v) t
-    KNCase t v patexprs     -> KNCase      t (substV v)
-                                             (map (\(p,e) -> (p, substE e)) patexprs)
+    KNCase t v pes          -> KNCase      t (substV v)
+                                             (map (\(p,e) -> (p, substE e)) pes)
     KNLetVal x b e -> if x == id
                         then error $ "knSubst found re-bound id " ++ show id
                         else KNLetVal x (substE b) (substE e)
@@ -340,4 +325,14 @@ splitBasicBlock g =
 -- basic block, but the final result must have only one first & last node.
 type SplitBasicBlockIntermediate = ([BlockId], [Insn O O], [Insn O C])
 type SplitBasicBlock             = ( BlockId,  [Insn O O],  Insn O C )
+
+-- We represent basic blocks as Graphs rather than Blocks because
+-- it's easier to glue together Graphs when building the basic blocks.
+type BasicBlock = Graph Insn C C
+data BasicBlockGraph = BasicBlockGraph { bbgEntry :: BlockId,
+                                         bbgBody :: (Graph Insn C C) }
+type CFFn = Fn BasicBlockGraph TypeIL
+
+-- We pair a name for later codegen with a label for Hoopl's NonLocal class.
+type BlockId = (String, Label)
 
