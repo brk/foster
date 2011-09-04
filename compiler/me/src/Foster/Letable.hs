@@ -1,9 +1,15 @@
-module Foster.Letable where
+-----------------------------------------------------------------------------
+-- Copyright (c) 2011 Ben Karel. All rights reserved.
+-- Use of this source code is governed by a BSD-style license that can be
+-- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
+-----------------------------------------------------------------------------
 
-import Foster.Base
-import Foster.TypeIL
+module Foster.Letable (Letable(..)) where
 
--- The reason we have both CFAllocate and CFAlloc is that
+import Foster.Base(LiteralInt, CtorId)
+import Foster.TypeIL(AIVar, ILPrim, ILAllocInfo, TypeIL)
+
+-- The reason we have both ILAllocate and ILAlloc is that
 -- LLCodegen performs auto-loads from stack slots, which
 -- means that a derived ILAlloc can't return a stack slot value!
 
@@ -27,4 +33,3 @@ data Letable =
         | ILArrayPoke          AIVar  AIVar  AIVar
         | ILTyApp       TypeIL AIVar TypeIL
         deriving (Show)
-

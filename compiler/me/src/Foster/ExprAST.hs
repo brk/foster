@@ -4,10 +4,17 @@
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
-module Foster.ExprAST where
+module Foster.ExprAST(
+  ExprAST(..)
+, FnAST(..)
+, TupleAST(..)
+, TermBinding(..)
+)
+where
 
-import Foster.Base
-import Foster.TypeAST
+import Foster.Base(SourceRange, Expr(..), freeVars, identPrefix, Structured(..),
+                   SourceRanged(..), TypedId(..), butnot, out)
+import Foster.TypeAST(TypeAST, EPattern(..), E_VarAST(..), AnnVar)
 
 data ExprAST =
         -- Literals

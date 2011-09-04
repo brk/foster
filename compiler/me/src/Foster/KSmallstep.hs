@@ -89,7 +89,7 @@ step gs =
     SSTmExpr e -> do --putStrLn ("\n\n" ++ show (coroLoc coro) ++ " ==> " ++ show e)
                      --putStrLn (show (coroLoc coro) ++ " ==> " ++ show (coroStack coro))
                      stepExpr gs e
-    SSTmValue _ -> do let ((env, cont), gs2) = popCoroCont gs
+    SSTmValue _ -> do let ((env, cont), gs2) = popContext gs
                       return $ withEnv (withTerm gs2 (cont (termOf gs2))) env
 
 -- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
@@ -316,12 +316,12 @@ callFunc gs func args =
 
 -- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
-pushCoroCont gs delimCont = do
+pushContext gs termWithHole = do
   let currStack = coroStack (stCoro gs)
   return $ modifyHeapWith gs (stCoroLoc gs)
-             (\(SSCoro c) -> SSCoro $ c { coroStack = delimCont:currStack })
+             (\(SSCoro c) -> SSCoro $ c { coroStack = termWithHole:currStack })
 
-popCoroCont gs =
+popContext gs =
   let cont:restStack = coroStack (stCoro gs) in
   (cont, modifyHeapWith gs (stCoroLoc gs)
              (\(SSCoro c) -> SSCoro $ c { coroStack = restStack }))
@@ -351,7 +351,7 @@ stepExpr gs expr = do
     ILetVal x b e ->
       case b of
         SSTmValue v -> do return $ withTerm (withExtendEnv gs [x] [v]) e
-        SSTmExpr _  -> pushCoroCont (withTerm gs b)
+        SSTmExpr _  -> pushContext (withTerm gs b)
                                      (envOf gs, \t -> SSTmExpr $ ILetVal x t e)
 
     IAlloc i     -> do let (loc, gs') = extendHeap gs (getval gs i)

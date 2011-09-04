@@ -297,8 +297,7 @@ typesEqualIL (TupleTypeIL as) (TupleTypeIL bs) =
 typesEqualIL (FnTypeIL a1 b1 c1 d1) (FnTypeIL a2 b2 c2 d2) =
     typesEqualIL a1 a2 && typesEqualIL b1 b2 && c1 == c2
 typesEqualIL (CoroTypeIL a1 b1) (CoroTypeIL a2 b2) = typesEqualIL a1 a2 && typesEqualIL b1 b2
-typesEqualIL (ForAllIL vars1 ty1) (ForAllIL vars2 ty2) =
-    vars1 == vars2 && typesEqualIL ty1 ty2
+typesEqualIL (ForAllIL vars1 ty1) (ForAllIL vars2 ty2) = vars1 == vars2 && typesEqualIL ty1 ty2
 typesEqualIL (TyVarIL tv1) (TyVarIL tv2) = tv1 == tv2
 typesEqualIL _ _ = False
 

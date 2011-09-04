@@ -4,7 +4,13 @@
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
-module Foster.TypeAST where
+module Foster.TypeAST(
+  TypeAST(..), EPattern(..), E_VarAST(..), AnnVar
+, fosBoolType, MetaTyVar(Meta), Sigma, Rho, Tau
+, typesEqual, minimalTupleAST
+, gFosterPrimOpsTable, primitiveDecls
+)
+where
 
 import Foster.Base
 import List(length)

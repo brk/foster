@@ -4,7 +4,7 @@
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
-module Foster.AnnExprIL where
+module Foster.AnnExprIL (AIExpr(..), fnOf) where
 
 import Data.Map as Map(lookup)
 

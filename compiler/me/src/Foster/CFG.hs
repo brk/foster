@@ -17,10 +17,10 @@ module Foster.CFG
 , CFFn
 ) where
 
-import Foster.Base
-import Foster.TypeIL
-import Foster.KNExpr
-import Foster.Letable
+import Foster.Base(Uniq, Fn(..), TypedId(..), Ident(..), identPrefix, Pattern(..))
+import Foster.TypeIL(TypeIL(..), AIVar, ILAllocInfo(..), AllocMemRegion(..))
+import Foster.KNExpr(KNExpr(..), typeKN)
+import Foster.Letable(Letable(..))
 
 import Compiler.Hoopl
 
