@@ -12,14 +12,20 @@ TODO: libraries, benchmarks, & applications
 
 TODO: minor optimizations
 -------------------------
-* Keep at most one stack slot per subterm (position) of case-inspected values.
 * Ensure that code like ``case foo of (bar, baz) -> (bar, baz) end``
   doesn't do any heap allocation (when we're returning an immutable value
   identical to (some subterm of) the inspected value.
 * Perform CSE when doing pattern match compilation.
 
+TODO: less minor optimizations
+------------------------------
+* Generate unknown/polymorphic wrappers on-demand:
+  ``f_unknown(env, args) = case args of (x,y,...,z) -> f_known(env, x,y,...,z)``
+* Think about function arity, type inference, higher rank functions...
+
 TODO: implementation details
 ----------------------------
+* Check for pattern variable overlap.
 * rusage() in runtime when on Linux (+ OS X?)
 * Design pointer representations and GC integration:
  * Stable pointers

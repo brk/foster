@@ -6,7 +6,7 @@ module Foster.Infer(
 ) where
 
 import Data.Map(Map)
-import qualified Data.Map as Map
+import qualified Data.Map as Map(lookup, empty, insert, findWithDefault, singleton)
 import List(length, elem, lookup)
 import Data.Maybe(fromMaybe)
 
@@ -22,7 +22,9 @@ type UnifySoln = Maybe TypeSubst
 
 data TypeConstraint = TypeConstrEq TypeAST TypeAST
 
-emptyTypeConstraintSet = Map.empty
+emptyTypeSubst = Map.empty
+
+----------------------
 
 extractSubstTypes :: [MetaTyVar] -> TypeSubst -> [TypeAST]
 extractSubstTypes metaVars tysub =
@@ -35,7 +37,7 @@ instance Eq TypeAST where
 
 assocFilterOut :: (Eq a) => [(a,b)] -> [a] -> [(a,b)]
 assocFilterOut lst keys =
-    [(a,b) | (a,b) <- lst, not(List.elem a keys)]
+    [(a,b) | (a,b) <- lst, not (List.elem a keys)]
 
 -- Substitute each element of prv with its corresponding element from nxt;
 -- unlike tySubst, this replaces arbitrary types with other types.
@@ -73,69 +75,59 @@ tySubst subst ty =
         (CoroTypeAST s t)    -> CoroTypeAST (q s) (q t)
         (ForAllAST tvs rho)  -> ForAllAST tvs (q rho)
 
-tyEnvSubst :: Context TypeAST -> TypeSubst -> Context TypeAST
-tyEnvSubst ctx tysub =
-    let newBindings = map (\bind ->
-                  case bind of
-                    TermVarBinding str (TypedId ty id) ->
-                        TermVarBinding str (TypedId (tySubst tysub ty) id))
-                  (contextBindings ctx) in
-    ctx { contextBindings = newBindings }
-
-tySubstConstraints constraints tysub =
-    map tySub constraints
-      where q = tySubst tysub
-            tySub (TypeConstrEq t1 t2) = TypeConstrEq (q t1) (q t2)
-
 -------------------------------------------------
 
 tcUnifyTypes :: TypeAST -> TypeAST -> Tc UnifySoln
 tcUnifyTypes t1 t2 = tcUnify [TypeConstrEq t1 t2]
-
-tcUnify :: [TypeConstraint] -> Tc UnifySoln
-tcUnify constraints = tcUnifyLoop constraints emptyTypeConstraintSet
+  where
+    tcUnify :: [TypeConstraint] -> Tc UnifySoln
+    tcUnify constraints = tcUnifyLoop constraints emptyTypeSubst
 
 tcUnifyLoop :: [TypeConstraint] -> TypeSubst -> Tc UnifySoln
 tcUnifyLoop [] tysub = return $ Just tysub
 tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
-    if typesEqual t1 t2
-      then tcUnifyLoop constraints tysub
-      else case (t1, t2) of
-                ((NamedTypeAST n1), (NamedTypeAST n2)) ->
-                  if n1 == n2 then tcUnifyLoop constraints tysub
-                              else tcFails [out $ "Unable to unify different named types: "
-                                              ++ n1 ++ " vs " ++ n2]
+  if typesEqual t1 t2
+    then tcUnifyLoop constraints tysub
+    else case (t1, t2) of
+              ((NamedTypeAST n1), (NamedTypeAST n2)) ->
+                if n1 == n2 then tcUnifyLoop constraints tysub
+                            else tcFails [out $ "Unable to unify different named types: "
+                                            ++ n1 ++ " vs " ++ n2]
 
-                ((TupleTypeAST tys1), (TupleTypeAST tys2)) ->
-                    if List.length tys1 /= List.length tys2
-                      then tcFails [out $ "Unable to unify tuples of different lengths!"]
-                      else tcUnifyLoop ([TypeConstrEq a b | (a, b) <- zip tys1 tys2] ++ constraints) tysub
+              ((TupleTypeAST tys1), (TupleTypeAST tys2)) ->
+                  if List.length tys1 /= List.length tys2
+                    then tcFails [out $ "Unable to unify tuples of different lengths!"]
+                    else tcUnifyLoop ([TypeConstrEq a b | (a, b) <- zip tys1 tys2] ++ constraints) tysub
 
-                ((FnTypeAST a1 a2 cc1 _), (FnTypeAST b1 b2 cc2 _)) ->
-                    tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub
+              ((FnTypeAST a1 a2 cc1 _), (FnTypeAST b1 b2 cc2 _)) ->
+                  tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub
 
-                ((CoroTypeAST a1 a2), (CoroTypeAST b1 b2)) ->
-                    tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub
+              ((CoroTypeAST a1 a2), (CoroTypeAST b1 b2)) ->
+                  tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub
 
-                -- TODO: ForAllAST: alpha-equivalence?
-                -- TODO: T_TyVar -- alpha equivalence?
+              -- TODO: ForAllAST: alpha-equivalence?
+              -- TODO: T_TyVar -- alpha equivalence?
 
-                ((MetaTyVar m), ty) ->
-                    tcUnifyVar m ty tysub constraints
-                (ty, (MetaTyVar m)) ->
-                    tcUnifyVar m ty tysub constraints
+              ((MetaTyVar m), ty) ->
+                  tcUnifyVar m ty tysub constraints
+              (ty, (MetaTyVar m)) ->
+                  tcUnifyVar m ty tysub constraints
 
-                ((RefTypeAST t1), (RefTypeAST t2)) ->
-                    tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
+              ((RefTypeAST t1), (RefTypeAST t2)) ->
+                  tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 
-                ((ArrayTypeAST t1), (ArrayTypeAST t2)) ->
-                    tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
+              ((ArrayTypeAST t1), (ArrayTypeAST t2)) ->
+                  tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 
-                otherwise ->
-                    tcFails [out $ "Unable to unify " ++ show t1 ++ " and " ++ show t2]
+              otherwise ->
+                  tcFails [out $ "Unable to unify " ++ show t1 ++ " and " ++ show t2]
 
 tcUnifyVar :: MetaTyVar -> TypeAST -> TypeSubst -> [TypeConstraint] -> Tc UnifySoln
 tcUnifyVar (Meta uniq tyref _) ty tysub constraints =
     let tysub' = (Map.insert uniq ty tysub) in
     tcUnifyLoop (tySubstConstraints constraints (Map.singleton uniq ty)) tysub'
+      where
+        tySubstConstraints constraints tysub = map tySub constraints
+          where q = tySubst tysub
+                tySub (TypeConstrEq t1 t2) = TypeConstrEq (q t1) (q t2)
 

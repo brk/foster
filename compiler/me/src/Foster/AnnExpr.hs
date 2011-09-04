@@ -4,7 +4,13 @@
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
-module Foster.AnnExpr where
+module Foster.AnnExpr (
+  AnnExpr(..)
+, AnnFn(..)
+, AnnTuple(..)
+, typeAST
+, fnNameA
+) where
 
 import Foster.Base
 import Foster.TypeAST

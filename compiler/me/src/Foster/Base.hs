@@ -195,6 +195,7 @@ instance Show SourceRange where
 class SourceRanged a
   where rangeOf :: a -> SourceRange
 
+-- Used in ProtobufFE and Typecheck.hs.
 rangeSpanOf :: SourceRanged a => SourceRange -> [a] -> SourceRange
 rangeSpanOf defaultRange allRanges =
     let ranges = map rangeOf allRanges in

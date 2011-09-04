@@ -44,6 +44,7 @@ main = {
   // can't be implicitly turned into a first-class function value.
   expect_i1 true ; print_i1 (__COMPILES__  2  >^ (ref 0));
   expect_i1 false; print_i1 (__COMPILES__ (>^) 2 (ref 0));
+  2  >^ (ref 0)
 };
 
 a = { 0 };

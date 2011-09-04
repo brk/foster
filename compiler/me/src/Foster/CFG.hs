@@ -308,6 +308,7 @@ instance NonLocal Insn where
         CFCase _ _ patsbids  -> [blockLabel b | (_, b) <- patsbids]
     where blockLabel (_, label) = label
 
+-- Decompose a BasicBlock into a triple of its subpieces.
 splitBasicBlock :: BasicBlock -> SplitBasicBlock
 splitBasicBlock g =
   case foldGraphNodes f g ([], [], []) of
