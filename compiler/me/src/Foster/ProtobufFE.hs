@@ -57,7 +57,7 @@ import qualified Foster.Fepb.SourceLocation as Pb
 data FEState = FEState { feModuleLines :: SourceLines }
 type FE a = State FEState a
 
-getName desc (Just s) = uToString s
+getName _    (Just s) = uToString s
 getName desc Nothing  = error "Missing required name in " ++ desc ++ "!"
 
 parseBool pbexpr range = do
@@ -79,7 +79,7 @@ parseFn pbexpr = do range <- parseRange pbexpr
                     [body] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
                     let name  = getName "fn" $ PbExpr.name pbexpr
                     let formals = toList $ PbExpr.formals pbexpr
-                    let mretty = parseReturnType name pbexpr
+                    let mretty = parseReturnType pbexpr
                     let tyformals = map uToString $
                                         toList $ PbExpr.type_formals pbexpr
                     return $ (FnAST range name tyformals mretty
@@ -87,7 +87,7 @@ parseFn pbexpr = do range <- parseRange pbexpr
                                False) -- assume closure until proven otherwise
   where
      parseFormal (Formal u t) = TypedId (parseType t) (Ident (uToString u) 0)
-     parseReturnType name pbexpr = fmap parseType (PbExpr.result_type pbexpr)
+     parseReturnType pbexpr = fmap parseType (PbExpr.result_type pbexpr)
 
 parseValAbs pbexpr _range = do
   fn <- parseFn pbexpr
@@ -191,8 +191,8 @@ parsePattern pbexpr = do
               (PAT_INT,   E_IntAST _ iv) -> EP_Int  range iv
               (PAT_VARIABLE, E_VarAST _ v)-> EP_Variable range v
 
-              otherwise -> error $ "parsePattern called with non-matching tag/arg!"
-                                   ++ " " ++ show (PbExpr.tag pbexpr)
+              _ -> error $ "parsePattern called with non-matching tag/arg!"
+                        ++ " " ++ show (PbExpr.tag pbexpr)
 
 parseCaseExpr pbexpr range = do
   case PbExpr.pb_case pbexpr of
@@ -202,16 +202,6 @@ parseCaseExpr pbexpr range = do
       patterns    <- mapM parsePattern (toList $ PBCase.pattern pbcase)
       branchexprs <- mapM parseExpr    (toList $ PBCase.branch  pbcase)
       return $ E_Case range expr (Prelude.zip patterns branchexprs)
-
-getFormal :: PbExpr.Expr -> FE (TypedId TypeAST)
-getFormal e =
-  case PbExpr.tag e of
-     VAR -> do let v = parseVar e
-               let i = (Ident (evarName v) (54321))
-               case evarMaybeType v of
-                   Just t  -> return (TypedId t i)
-                   Nothing -> error $ "Missing annotation on variable " ++ show v
-     _   -> error "getVar must be given a var!"
 
 parseRange :: PbExpr.Expr -> FE SourceRange
 parseRange pbexpr =
@@ -269,9 +259,9 @@ parseDataType dt = do
       let types = map parseType (toList $ DataCtor.type' ct)
       return $ Foster.Base.DataCtor (uToString $ DataCtor.name ct) n types
 
-parseModule name decls defns datatypes = do
+parseModule _name decls defns datatypes = do
     lines <- gets feModuleLines
-    funcs <- sequence $ [(parseFn e)  | (Defn nm e) <- defns]
+    funcs <- sequence $ [(parseFn e)  | (Defn _nm e) <- defns]
     dtypes <- mapM parseDataType datatypes
     return $ ModuleAST (map toplevel funcs)
                 [(uToString nm, parseType t) | (Decl nm t) <- decls]

@@ -26,7 +26,7 @@ prependContextBindings ctx prefix =
     ctx { contextBindings = prefix ++ (contextBindings ctx) }
 
 instance (Show ty) => Show (ContextBinding ty) where
-    show (TermVarBinding s annvar) = "(termvar " ++ show annvar ++ ")"
+    show (TermVarBinding _s annvar) = "(termvar " ++ show annvar ++ ")"
 
 ctxBoundIdents :: Context ty -> [Ident]
 ctxBoundIdents ctx = [tidIdent v | TermVarBinding _ v <- (contextBindings ctx)]
@@ -161,7 +161,7 @@ getStructureContextMessage = do
     hist <- tcGetCurrentHistory
     let outputs = map (\e -> (out "\t\t") ++ textOf e 40 ++ outLn "") hist
     let output = case outputs of
-                    [] ->        (outLn $ "\tTop-level definition:")
-                    otherwise -> (outLn $ "\tContext for AST below is:") ++ concat outputs
+                 [] -> (outLn $ "\tTop-level definition:")
+                 _  -> (outLn $ "\tContext for AST below is:") ++ concat outputs
     return output
 

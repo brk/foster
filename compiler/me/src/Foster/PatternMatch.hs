@@ -56,19 +56,18 @@ data SPattern = SP_Wildcard
              deriving (Show)
 
 instance (Show a, Structured a) => Structured (DecisionTree a) where
-    textOf e width =
-        let spaces = Prelude.replicate width '\SP'  in
+    textOf e _width =
         case e of
           DT_Fail           -> out $ "DT_Fail      "
           DT_Leaf a idsoccs -> (out $ "DT_Leaf    " ++ show idsoccs ++ "\n") ++ (showStructure a)
-          DT_Swap i dt      -> out $ "DT_Swap      " ++ (show i)
+          DT_Swap i _dt     -> out $ "DT_Swap      " ++ (show i)
           DT_Switch occ sc  -> out $ "DT_Switch    " ++ (show occ) ++ (show $ subIds sc)
     childrenOf e =
       case e of
-        (DT_Fail)     -> []
-        (DT_Leaf _ _) -> []
-        (DT_Swap i dt)      -> [dt]
-        (DT_Switch occ sc)  -> subDts sc
+        DT_Fail           -> []
+        DT_Leaf {}        -> []
+        DT_Swap _i dt     -> [dt]
+        DT_Switch _occ sc -> subDts sc
 
 subIds (SwitchCase idsDts _) = map fst idsDts
 subDts (SwitchCase idsDts Nothing)  = map snd idsDts
@@ -98,9 +97,9 @@ compilePatterns bs allSigs =
                                   else error "cannot cram >32 bits into Int32!")
 
 computeBindings :: (Occurrence, SPattern) -> [(Ident, Occurrence)]
-computeBindings (occ, SP_Variable i) = [(i, occ)]
-computeBindings (occ, SP_Wildcard  ) = []
-computeBindings (occ, SP_Ctor _ pats) =
+computeBindings ( occ, SP_Variable i) = [(i, occ)]
+computeBindings (_occ, SP_Wildcard  ) = []
+computeBindings ( occ, SP_Ctor _ pats) =
   let occs = expand occ (Prelude.length pats) in
   concatMap computeBindings (zip occs pats)
 
@@ -108,10 +107,10 @@ computeBindings (occ, SP_Ctor _ pats) =
 cc :: Show a => [Occurrence] -> ClauseMatrix a -> DataTypeSigs -> DecisionTree a
 
 -- No row to match -> failure
-cc _ (ClauseMatrix []) allSigs = DT_Fail
+cc _ (ClauseMatrix []) _allSigs = DT_Fail
 
 -- If first row is all variables, match always succeeds.
-cc occs cm allSigs | allGuaranteedMatch (rowPatterns $ firstRow cm) =
+cc _occs cm _allSigs | allGuaranteedMatch (rowPatterns $ firstRow cm) =
         -- TODO need to bind these identifiers
         let r = firstRow cm in
         DT_Leaf (rowAction r) (computeBindings ([], rowOrigPat r))
@@ -174,15 +173,15 @@ specialize ctor (ClauseMatrix rows) =
         ((SP_Variable _):_) -> True
         ((SP_Ctor c   _):_) -> c == ctor
 
-    specializeRow (ClauseRow orig []       a) ctor = ClauseRow orig [] a
-    specializeRow (ClauseRow orig (p:rest) a) ctor =
+    specializeRow (ClauseRow orig []       a) _ctor = ClauseRow orig [] a
+    specializeRow (ClauseRow orig (p:rest) a)  ctor =
       case p of
         SP_Variable _ -> ClauseRow orig (wilds ++ rest) a
           where wilds = List.replicate (ctorArity ctor) (SP_Wildcard)
         SP_Wildcard   -> ClauseRow orig (wilds ++ rest) a
           where wilds = List.replicate (ctorArity ctor) (SP_Wildcard)
-        SP_Ctor c pats | c == ctor -> ClauseRow orig (pats ++ rest) a
-        SP_Ctor c pats -> error $ "specializeRow with unequal ctor?!? "
+        SP_Ctor c  pats | c == ctor -> ClauseRow orig (pats ++ rest) a
+        SP_Ctor c _pats -> error $ "specializeRow with unequal ctor?!? "
                              ++ show c ++ " // " ++ show ctor
 
 defaultMatrix (ClauseMatrix rows) =
@@ -193,7 +192,7 @@ defaultMatrix (ClauseMatrix rows) =
         ClauseRow orig []                     a -> [ClauseRow orig []   a]
         ClauseRow orig ((SP_Wildcard  ):rest) a -> [ClauseRow orig rest a]
         ClauseRow orig ((SP_Variable _):rest) a -> [ClauseRow orig rest a]
-        ClauseRow orig ((SP_Ctor c   _):rest) a -> [] -- No row...
+        ClauseRow _    ((SP_Ctor _   _):_   ) _ -> [] -- No row...
 column (ClauseMatrix rows) i = map (rowIndex i) rows
 
 rowIndex i (ClauseRow _ row _) = row !! i
@@ -223,9 +222,7 @@ isSignature ctorSet allSigs =
       case Map.lookup typename allSigs of
        (Just (DataTypeSig map)) -> Set.size ctorSet == Map.size map
        Nothing ->
-        error $ "isSignature: Unknown type name " ++ typename ++ "! ctorSet = " ++ show ctorSet
-    otherwise ->
-      error $ "Error in PatternMatch.isSignature: "
-           ++ "Multiple type names in ctor set: " ++ show ctorSet
-
+         error $ "isSignature: Unknown type name " ++ typename ++ "! ctorSet = " ++ show ctorSet
+    _ -> error $ "Error in PatternMatch.isSignature: "
+              ++ "Multiple type names in ctor set: " ++ show ctorSet
 

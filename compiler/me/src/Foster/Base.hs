@@ -103,12 +103,12 @@ patBindingFreeIds (pat, expr) =
   where patBoundIds :: Pattern -> [Ident]
         patBoundIds pat =
           case pat of
-            P_Wildcard _rng         -> []
-            P_Variable _rng id      -> [id]
-            P_Bool     _rng _       -> []
-            P_Int      _rng _       -> []
-            P_Ctor     _rng pats nm -> concatMap patBoundIds pats
-            P_Tuple    _rng pats    -> concatMap patBoundIds pats
+            P_Wildcard _rng          -> []
+            P_Variable _rng id       -> [id]
+            P_Bool     _rng _        -> []
+            P_Int      _rng _        -> []
+            P_Ctor     _rng pats _nm -> concatMap patBoundIds pats
+            P_Tuple    _rng pats     -> concatMap patBoundIds pats
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -121,12 +121,12 @@ data Pattern =
         | P_Tuple         SourceRange [Pattern]
 
 instance Show Pattern where
-  show (P_Wildcard _)           = "P_Wildcard"
-  show (P_Variable _ id)        = "P_Variable " ++ show id
-  show (P_Ctor     _ pats ctor) = "P_Ctor     " ++ show ctor
-  show (P_Bool     _ b)         = "P_Bool     " ++ show b
-  show (P_Int      _ i)         = "P_Int      " ++ show (litIntText i)
-  show (P_Tuple    _ pats)      = "P_Tuple    " ++ show pats
+  show (P_Wildcard _)            = "P_Wildcard"
+  show (P_Variable _ id)         = "P_Variable " ++ show id
+  show (P_Ctor     _ _pats ctor) = "P_Ctor     " ++ show ctor
+  show (P_Bool     _ b)          = "P_Bool     " ++ show b
+  show (P_Int      _ i)          = "P_Int      " ++ show (litIntText i)
+  show (P_Tuple    _ pats)       = "P_Tuple    " ++ show pats
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -208,12 +208,13 @@ rangeSpanOf defaultRange allRanges =
 
 showSourceRange :: SourceRange -> String
 showSourceRange (MissingSourceRange s) = "<missing range: " ++ s ++ ">"
-showSourceRange (SourceRange begin end lines filepath) = "\n" ++ showSourceLines begin end lines ++ "\n"
+showSourceRange (SourceRange begin end lines _filepath) =
+         "\n" ++ showSourceLines begin end lines ++ "\n"
 
 highlightFirstLine :: SourceRange -> String
 highlightFirstLine (MissingSourceRange s) = "<missing range: " ++ s ++ ">"
 highlightFirstLine (SourceRange (ESourceLocation bline bcol)
-                                 (ESourceLocation _     ecol) lines filepath) =
+                                 (ESourceLocation _     ecol) lines _filepath) =
     "\n" ++ highlightLine bline bcol ecol lines ++ "\n"
 
 -- If a single line is specified, show it with highlighting;
@@ -284,7 +285,7 @@ showStructure e = showStructureP e (out "") False
 mapFoldM :: (Monad m) => [a] -> b ->
                          (a  -> b -> m ([c], b))
                                   -> m ([c], b)
-mapFoldM []     b  f = return ([], b)
+mapFoldM []     b  _ = return ([], b)
 mapFoldM (x:xs) b1 f = do
     (cs1, b2) <- f x b1
     (cs2, b3) <- mapFoldM xs b2 f
@@ -299,7 +300,7 @@ butnot bs zs =
     Set.toList (Set.difference sbs szs)
 
 joinWith :: String -> [String] -> String
-joinWith s [] = ""
+joinWith _ [] = ""
 joinWith s ss = foldr1 (++) (intersperse s ss)
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||

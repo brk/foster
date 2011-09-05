@@ -26,6 +26,7 @@ import Compiler.Hoopl
 
 import Control.Monad.State
 import Data.IORef
+import Prelude hiding (id, last)
 
 -- This is the "entry point" into CFG-building for the outside.
 -- We take (and update) a mutable reference as a convenient way of
@@ -56,7 +57,7 @@ internalComputeCFG uniq fn =
     runComputeBlocks = do computeBlocks (fnBody fn) Nothing (ret fn)
 
     -- Make sure that the main function returns void.
-    ret fn var = case (identPrefix $ tidIdent $ fnVar fn) of
+    ret f var = case (identPrefix $ tidIdent $ fnVar f) of
                          "main" -> cfgEndWith (CFRetVoid)
                          _      -> cfgEndWith (CFRet var)
 
@@ -65,6 +66,7 @@ extractFunction st fn =
   let blocks = Prelude.reverse (cfgAllBlocks st) in
   fn { fnBody = BasicBlockGraph (entryId blocks) (catClosedGraphs blocks) }
   where -- Dunno why this function isn't in Hoopl...
+        catClosedGraphs :: [Graph Insn C C] -> Graph Insn C C
         catClosedGraphs = foldr (|*><*|) emptyClosedGraph
 
         entryId [] = error $ "can't get entry block id from empty list!"
@@ -100,7 +102,7 @@ computeBlocks expr idmaybe k = do
             cfgNewBlock ifcont
             cfgAddLet idmaybe (ILDeref slotvar) t >>= k
 
-        KNUntil t a b     -> do
+        KNUntil _t a b -> do
             [until_test, until_body, until_cont] <- mapM cfgFresh
                                       ["until_test", "until_body", "until_cont"]
             cfgEndWith (CFBr until_test)
@@ -110,7 +112,7 @@ computeBlocks expr idmaybe k = do
               cfgEndWith (CFIf (typeKN a) var until_cont until_body))
 
             cfgNewBlock until_body
-            computeBlocks b Nothing (\var -> cfgEndWith (CFBr until_test))
+            computeBlocks b Nothing (\_var -> cfgEndWith (CFBr until_test))
 
             cfgNewBlock until_cont
             cfgAddLet idmaybe (ILTuple []) (TupleTypeIL []) >>= k
@@ -121,12 +123,12 @@ computeBlocks expr idmaybe k = do
             -- given code like     let x = 0  ;  y = x ;  in x + y
             computeBlocks (knSubst id v cont) idmaybe k
 
-        KNLetVal id expr cont -> do
-            -- expr could be a KNCase, so it must be processed by computeBlocks.
+        KNLetVal id bexp cont -> do
+            -- exp could be a KNCase, so it must be processed by computeBlocks.
             -- Because we want the result from processing expr to be let-bound
             -- to an identifier of our choosing (rather than the sub-call's
             -- choosing, that is), we provide it explicitly as idmaybe.
-            computeBlocks expr (Just id) (\_var -> return ())
+            computeBlocks bexp (Just id) (\_var -> return ())
             computeBlocks cont idmaybe k
 
         KNLetFuns ids fns e -> do
@@ -146,7 +148,6 @@ computeBlocks expr idmaybe k = do
 
             let computeCaseBlocks ((_pat, e), (_, block_id)) = do
                     cfgNewBlock block_id
-                    id <- cfgFresh "case_arm_val"
                     computeBlocks e Nothing (\var -> cfgMidStore var slotvar)
                     cfgEndWith (CFBr case_cont)
             mapM_ computeCaseBlocks (zip bs bbs)
@@ -160,7 +161,7 @@ computeBlocks expr idmaybe k = do
 knToLetable :: KNExpr -> Letable
 knToLetable expr =
   case expr of
-            KNVar        v      -> error $ "can't make Letable from KNVar!"
+            KNVar        _v     -> error $ "can't make Letable from KNVar!"
             KNBool       b      -> ILBool       b
             KNInt        t i    -> ILInt        t i
             KNTuple      vs     -> ILTuple      vs
@@ -273,7 +274,7 @@ knSubst id var expr =
   case expr of
     KNTuple vs -> KNTuple (map substV vs)
     KNBool _                -> expr
-    KNInt t _               -> expr
+    KNInt _t _              -> expr
     KNVar v                 -> KNVar (substV v)
     KNCall t v vs           -> KNCall     t (substV v) (map substV vs)
     KNCallPrim t prim vs    -> KNCallPrim t prim       (map substV vs)
@@ -311,15 +312,15 @@ instance NonLocal Insn where
 -- Decompose a BasicBlock into a triple of its subpieces.
 splitBasicBlock :: BasicBlock -> SplitBasicBlock
 splitBasicBlock g =
-  case foldGraphNodes f g ([], [], []) of
+  case foldGraphNodes split g ([], [], []) of
       ([f], ms, [l]) -> (f, Prelude.reverse ms, l)
       (bs, _, _) -> error $ "splitBasicBlock has wrong # of ids: " ++ show bs
     where
-  f :: Insn e x -> SplitBasicBlockIntermediate -> SplitBasicBlockIntermediate
-  f n@(ILabel   b ) (bs, ms, ls) = (b:bs, ms, ls)
-  f n@(ILetVal  {}) (bs, ms, ls) = (bs, n:ms, ls)
-  f n@(ILetFuns {}) (bs, ms, ls) = (bs, n:ms, ls)
-  f n@(ILast    {}) (bs, ms, ls) = (bs, ms, n:ls)
+  split :: Insn e x -> SplitBasicBlockIntermediate -> SplitBasicBlockIntermediate
+  split _n@(ILabel   b ) (bs, ms, ls) = (b:bs, ms, ls)
+  split  n@(ILetVal  {}) (bs, ms, ls) = (bs, n:ms, ls)
+  split  n@(ILetFuns {}) (bs, ms, ls) = (bs, n:ms, ls)
+  split  n@(ILast    {}) (bs, ms, ls) = (bs, ms, n:ls)
 
 -- We'll accumulate all the first & last nodes from the purported
 -- basic block, but the final result must have only one first & last node.

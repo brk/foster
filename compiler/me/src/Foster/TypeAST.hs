@@ -67,7 +67,7 @@ instance Show TypeAST where
         (CoroTypeAST s t)   -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
         (ForAllAST tvs rho) -> "(ForAll " ++ show tvs ++ ". " ++ show rho ++ ")"
         (TyVarAST tv)     -> show tv
-        (MetaTyVar (Meta u tyref desc))  -> "(~!" ++ show u ++ ":" ++ desc ++ ")"
+        (MetaTyVar (Meta u _tyref desc))  -> "(~!" ++ show u ++ ":" ++ desc ++ ")"
         (RefTypeAST    ty)  -> "(Ref " ++ show ty ++ ")"
         (ArrayTypeAST  ty)  -> "(Array " ++ show ty ++ ")"
 
@@ -80,7 +80,7 @@ typesEqual :: TypeAST -> TypeAST -> Bool
 typesEqual (NamedTypeAST x) (NamedTypeAST y) = x == y
 typesEqual (TupleTypeAST as) (TupleTypeAST bs) =
     List.length as == List.length bs && Prelude.and [typesEqual a b | (a, b) <- Prelude.zip as bs]
-typesEqual (FnTypeAST a1 b1 c1 d1) (FnTypeAST a2 b2 c2 d2) =
+typesEqual (FnTypeAST a1 b1 c1 _d1) (FnTypeAST a2 b2 c2 _d2) =
     typesEqual a1 a2 && typesEqual b1 b2
                       && c1 == c2
                 -- ignore d1 and d2 for now...
@@ -104,10 +104,6 @@ mkCoroType args rets = CoroTypeAST (minimalTupleAST args) (minimalTupleAST rets)
 i32 = (NamedTypeAST "Int32")
 i64 = (NamedTypeAST "Int64")
 i1  = (NamedTypeAST "Bool")
-
-coroInvokeType args rets = mkFnType ((mkCoroType args rets) : args) rets
-coroYieldType  args rets = mkFnType rets args
-coroCreateType args rets = mkFnType [mkFnType args rets] [mkCoroType args rets]
 
 primitiveDecls =
     [(,) "expect_i32"  $ mkProcType [i32] []
@@ -151,7 +147,7 @@ primitiveDecls =
     ,(,) "force_gc_for_debugging_purposes" $ mkFnType [] []
     ,(,) "llvm_readcyclecounter" $ mkFnType [] [i64]
 
-    ] ++ (map (\(name, (ty, op)) -> (name, ty)) $ Map.toList gFosterPrimOpsTable)
+    ] ++ (map (\(name, (ty, _op)) -> (name, ty)) $ Map.toList gFosterPrimOpsTable)
 
 gFosterPrimOpsTable = Map.fromList $
   [(,) "not"           $ (,) (mkFnType [i1] [i1]       ) $ ILPrimOp "bitnot" 1

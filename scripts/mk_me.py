@@ -39,7 +39,9 @@ if __name__ == "__main__":
         'srcroot':  normalize(options.srcroot),
         'hsflags': "-XFlexibleInstances -XMultiParamTypeClasses -XDeriveDataTypeable" +
                    " -XTypeSynonymInstances" +
-                   " -fwarn-unused-imports -fwarn-incomplete-patterns",
+                   " -Wall -fwarn-unused-do-bind -fwarn-tabs" +
+                   " -fno-warn-missing-signatures -fno-warn-name-shadowing" +
+                   " -fno-warn-type-defaults -fno-warn-orphans",
       }
 
   if options.recompile:

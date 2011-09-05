@@ -57,7 +57,6 @@ kNormalizeModule :: (ModuleIL AIExpr TypeIL)
                  -> Context TypeIL
                  -> (ModuleIL KNExpr TypeIL)
 kNormalizeModule m ctx =
-    let nameOfBinding (TermVarBinding s _) = s in
     let knRegularFuncs = map kNormalizeFn (moduleILfunctions m) in
     -- TODO move ctor wrapping earlier?
     let knCtorFuncs    = concatMap (kNormalCtors ctx) (moduleILdataTypes m) in
@@ -71,7 +70,7 @@ kNormalizeFn fn = do
     knbody <- kNormalize (fnBody fn)
     -- Ensure that return values are codegenned through a variable binding.
     namedReturnValue <- nestedLets [knbody] (\[v] -> KNVar v)
-    return $ fn { fnBody = knbody }
+    return $ fn { fnBody = namedReturnValue }
 
 kNormalize :: AIExpr -> KN KNExpr
 kNormalize expr =
@@ -92,8 +91,8 @@ kNormalize expr =
 
       AIStore      a b  -> do [a', b'] <- mapM g [a, b] ; nestedLetsDo [a', b'] (\[x,y] -> knStore x y)
       AIArrayRead t a b -> do [a', b'] <- mapM g [a, b] ; nestedLets [a', b'] (\[x, y] -> KNArrayRead t x y)
-      AIArrayPoke t a b c -> do [a', b', c'] <- mapM g [a,b,c]
-                                nestedLets [a', b', c'] (\[x,y,z] -> KNArrayPoke x y z)
+      AIArrayPoke _t a b c -> do [a', b', c'] <- mapM g [a,b,c]
+                                 nestedLets [a', b', c'] (\[x,y,z] -> KNArrayPoke x y z)
 
       AILetFuns ids fns a   -> do knFns <- mapM kNormalizeFn fns
                                   a' <- g a
@@ -224,7 +223,7 @@ nestedLetsDo exprs g = nestedLets' exprs [] g
           -- Instead, pass var2 to k instead of var1.
           (KNVar v) -> nestedLets' es (v:vars) k
 
-          otherwise -> do
+          _otherwise -> do
             x        <- knFresh ".x"
             let v = TypedId (typeKN e) x
             innerlet <- nestedLets' es (v:vars) k
@@ -255,73 +254,74 @@ kNormalCtors ctx dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
 -- This is necessary due to transformations of AIIf and nestedLets
 -- introducing new bindings, which requires synthesizing a type.
 typeKN :: KNExpr -> TypeIL
-typeKN (KNBool _)          = boolTypeIL
-typeKN (KNInt t _)         = t
-typeKN (KNTuple vs)        = TupleTypeIL (map tidType vs)
-typeKN (KNLetVal x b e)    = typeKN e
-typeKN (KNLetFuns _ _ e)   = typeKN e
-typeKN (KNCall t id expr)  = t
-typeKN (KNCallPrim t id e) = t
-typeKN (KNAppCtor t _ _  ) = t
-typeKN (KNAllocArray elt_ty _) = ArrayTypeIL elt_ty
-typeKN (KNIf t a b c)      = t
-typeKN (KNUntil t a b)     = t
-typeKN (KNAlloc v)         = PtrTypeIL (tidType v)
-typeKN (KNDeref v)         = pointedToTypeOfVar v
-typeKN (KNStore _ _)       = TupleTypeIL []
-typeKN (KNArrayRead t _ _) = t
-typeKN (KNArrayPoke _ _ _) = TupleTypeIL []
-typeKN (KNCase t _ _)      = t
-typeKN (KNVar v)           = tidType v
-typeKN (KNTyApp overallType tm tyArgs) = overallType
+typeKN expr =
+  case expr of
+    KNBool _          -> boolTypeIL
+    KNInt      t _    -> t
+    KNTuple vs        -> TupleTypeIL (map tidType vs)
+    KNLetVal  _ _ e   -> typeKN e
+    KNLetFuns _ _ e   -> typeKN e
+    KNCall     t _ _  -> t
+    KNCallPrim t _ _  -> t
+    KNAppCtor  t _ _  -> t
+    KNAllocArray elt_ty _ -> ArrayTypeIL elt_ty
+    KNIf    t _ _ _   -> t
+    KNUntil t _ _     -> t
+    KNAlloc v         -> PtrTypeIL (tidType v)
+    KNDeref v         -> pointedToTypeOfVar v
+    KNStore _ _       -> TupleTypeIL []
+    KNArrayRead t _ _ -> t
+    KNArrayPoke _ _ _ -> TupleTypeIL []
+    KNCase t _ _      -> t
+    KNVar v           -> tidType v
+    KNTyApp overallType _tm _tyArgs -> overallType
 
 -- This instance is primarily needed as a prereq for KNExpr to be an AExpr,
 -- which ((childrenOf)) is needed in ILExpr for closedNamesOfKnFn.
 instance Structured KNExpr where
-    textOf e width =
-        let spaces = Prelude.replicate width '\SP'  in
+    textOf e _width =
         case e of
             KNBool         b    -> out $ "KNBool      " ++ (show b)
-            KNCall    t b a     -> out $ "KNCall      " ++ " :: " ++ show t
-            KNCallPrim t prim a -> out $ "KNCallPrim  " ++ (show prim) ++ " :: " ++ show t
-            KNAppCtor  t cid vs -> out $ "KNAppCtor   " ++ (show cid) ++ " :: " ++ show t
-            KNLetVal   x b e    -> out $ "KNLetVal    " ++ (show x) ++ " :: " ++ (show $ typeKN b) ++ " = ... in ... "
+            KNCall    t _ _     -> out $ "KNCall      " ++ " :: " ++ show t
+            KNCallPrim t prim _ -> out $ "KNCallPrim  " ++ (show prim) ++ " :: " ++ show t
+            KNAppCtor  t cid  _ -> out $ "KNAppCtor   " ++ (show cid) ++ " :: " ++ show t
+            KNLetVal   x b    _ -> out $ "KNLetVal    " ++ (show x) ++ " :: " ++ (show $ typeKN b) ++ " = ... in ... "
             KNLetFuns {}        -> out $ "KNLetFuns   "
-            KNIf      t  a b c  -> out $ "KNIf        " ++ " :: " ++ show t
-            KNUntil   t  a b    -> out $ "KNUntil     " ++ " :: " ++ show t
+            KNIf      t  _ _ _  -> out $ "KNIf        " ++ " :: " ++ show t
+            KNUntil   t  _ _    -> out $ "KNUntil     " ++ " :: " ++ show t
             KNInt ty int        -> out $ "KNInt       " ++ (litIntText int) ++ " :: " ++ show ty
-            KNAlloc v           -> out $ "KNAlloc     "
-            KNDeref   a         -> out $ "KNDeref     "
-            KNStore   a b       -> out $ "KNStore     "
-            KNCase t _ bnds     -> out $ "KNCase      " ++ (show $ map fst bnds)
-            KNAllocArray _ _    -> out $ "KNAllocArray "
-            KNArrayRead  t a b  -> out $ "KNArrayRead " ++ " :: " ++ show t
-            KNArrayPoke v b i   -> out $ "KNArrayPoke "
+            KNAlloc      {}     -> out $ "KNAlloc     "
+            KNDeref      {}     -> out $ "KNDeref     "
+            KNStore      {}     -> out $ "KNStore     "
+            KNCase _t _ bnds    -> out $ "KNCase      " ++ (show $ map fst bnds)
+            KNAllocArray {}     -> out $ "KNAllocArray "
+            KNArrayRead  t _ _  -> out $ "KNArrayRead " ++ " :: " ++ show t
+            KNArrayPoke  {}     -> out $ "KNArrayPoke "
             KNTuple     es      -> out $ "KNTuple     (size " ++ (show $ length es) ++ ")"
             KNVar (TypedId t (GlobalSymbol name))
                                 -> out $ "KNVar(Global):   " ++ name ++ " :: " ++ show t
             KNVar (TypedId t i) -> out $ "KNVar(Local):   " ++ show i ++ " :: " ++ show t
-            KNTyApp t e argty   -> out $ "KNTyApp     [" ++ show argty ++ "] :: " ++ show t
-    childrenOf e =
+            KNTyApp t _e argty  -> out $ "KNTyApp     [" ++ show argty ++ "] :: " ++ show t
+    childrenOf expr =
         let var v = KNVar v in
-        case e of
-            KNBool b                -> []
-            KNInt t _               -> []
-            KNUntil t a b           -> [a, b]
+        case expr of
+            KNBool  {}              -> []
+            KNInt   {}              -> []
+            KNUntil _t a b          -> [a, b]
             KNTuple     vs          -> map var vs
             KNCase _ e bs           -> (var e):(map snd bs)
-            KNLetFuns ids fns e     -> e : map fnBody fns
-            KNLetVal x b e          -> [b, e]
-            KNCall     t v vs       -> [var v] ++ [var v | v <- vs]
-            KNCallPrim t v vs       ->            [var v | v <- vs]
-            KNAppCtor  t c vs       ->            [var v | v <- vs]
-            KNIf    t v b c         -> [var v, b, c]
+            KNLetFuns _ids fns e    -> e : map fnBody fns
+            KNLetVal _x b e         -> [b, e]
+            KNCall     _t  v vs     -> [var v] ++ [var v | v <- vs]
+            KNCallPrim _t _v vs     ->            [var v | v <- vs]
+            KNAppCtor  _t _c vs     ->            [var v | v <- vs]
+            KNIf       _t v b c     -> [var v, b, c]
             KNAlloc   v             -> [var v]
             KNAllocArray _ v        -> [var v]
             KNDeref   v             -> [var v]
             KNStore   v w           -> [var v, var w]
-            KNArrayRead t a b       -> [var a, var b]
-            KNArrayPoke v b i       -> [var v, var b, var i]
+            KNArrayRead _t a b      -> [var a, var b]
+            KNArrayPoke    v b i    -> [var v, var b, var i]
             KNVar _                 -> []
-            KNTyApp t v argty       -> [var v]
+            KNTyApp _t v _argty     -> [var v]
 

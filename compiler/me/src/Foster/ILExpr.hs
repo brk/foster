@@ -245,9 +245,9 @@ closureConvertedProc :: [AIVar]
 closureConvertedProc procArgs f newbody = do
   let (TypedId ft id) = fnVar f
   case ft of
-    FnTypeIL                  ftd ftrange _ _ ->
+    FnTypeIL                  _ftd ftrange _ _ ->
         return $ ILProcDef ftrange Nothing       id procArgs (fnRange f) newbody
-    ForAllIL tyvars (FnTypeIL ftd ftrange _ _) ->
+    ForAllIL tyvars (FnTypeIL _ftd ftrange _ _) ->
         return $ ILProcDef ftrange (Just tyvars) id procArgs (fnRange f) newbody
     _ -> error $ "Expected closure converted proc to have fntype, had " ++ show ft
 
@@ -292,7 +292,7 @@ instance UniqueMonad (State ILMState) where
   freshUnique = ilmNewUniq >>= (return . intToUnique)
 
 showProgramStructure :: ILProgram -> Output
-showProgramStructure (ILProgram procdefs decls _dtypes _lines) =
+showProgramStructure (ILProgram procdefs _decls _dtypes _lines) =
     concatMap showProcStructure (Map.elems procdefs)
   where
     showProcStructure proc =

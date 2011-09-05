@@ -23,7 +23,6 @@ import Control.Exception(assert)
 import Foster.Base
 import Foster.TypeIL
 import Foster.KNExpr
-import Foster.PatternMatch
 
 -- Relatively simple small-step "definitional" interpreter.
 --
@@ -48,7 +47,7 @@ interpretKNormalMod kmod tmpDir = do
   let funcmap = Map.fromList $ map (\sf -> (ssFuncIdent sf, sf))
                              (map ssFunc (moduleILfunctions kmod))
   let main = (funcmap Map.! (GlobalSymbol "main"))
-  let loc  = 0
+  let loc  = 0 :: Int
   let mainCoro = Coro { coroTerm = (ssFuncBody main)
                       , coroArgs = []
                       , coroEnv  = env
@@ -74,9 +73,9 @@ interpretKNormalMod kmod tmpDir = do
 interpret :: IORef Int -> MachineState -> IO MachineState
 interpret stepsTaken gs =
   case (coroStack $ stCoro gs) of
-    []         -> do return gs
-    otherwise  -> do modifyIORef stepsTaken (+1)
-                     (interpret stepsTaken =<< step gs)
+    [] -> do return gs
+    _  -> do modifyIORef stepsTaken (+1)
+             (interpret stepsTaken =<< step gs)
 
 -- Stepping an expression is unsurprising.
 -- To step a value, we pop a "stack frame" and apply the value to the
@@ -226,24 +225,24 @@ ssTermOfExpr expr =
   let idOf = tidIdent     in
   case expr of
     KNBool b               -> SSTmValue $ SSBool b
-    KNInt t i              -> SSTmValue $ SSInt $ litIntValue i
+    KNInt _t i             -> SSTmValue $ SSInt $ litIntValue i
     KNVar v                -> SSTmExpr  $ IVar (idOf v)
     KNTuple vs             -> SSTmExpr  $ ITuple (map idOf vs)
     KNLetFuns ids funs e   -> SSTmExpr  $ ILetFuns ids funs (tr e)
     KNLetVal x b e         -> SSTmExpr  $ ILetVal x (tr b) (tr e)
-    KNCall     t b vs      -> SSTmExpr  $ ICall (idOf b) (map idOf vs)
-    KNCallPrim t b vs      -> SSTmExpr  $ ICallPrim b (map idOf vs)
-    KNIf       t  v b c    -> SSTmExpr  $ IIf (idOf v) (tr b) (tr c)
-    KNUntil    t  a b      -> SSTmExpr  $ IUntil    (tr a) (tr b)
-    KNArrayRead t a b      -> SSTmExpr  $ IArrayRead (idOf a) (idOf b)
+    KNCall     _t b vs     -> SSTmExpr  $ ICall (idOf b) (map idOf vs)
+    KNCallPrim _t b vs     -> SSTmExpr  $ ICallPrim b (map idOf vs)
+    KNIf       _t  v b c   -> SSTmExpr  $ IIf (idOf v) (tr b) (tr c)
+    KNUntil    _t  a b     -> SSTmExpr  $ IUntil    (tr a) (tr b)
+    KNArrayRead _t a b     -> SSTmExpr  $ IArrayRead (idOf a) (idOf b)
     KNArrayPoke v b i      -> SSTmExpr  $ IArrayPoke (idOf v) (idOf b) (idOf i)
-    KNAllocArray ety n     -> SSTmExpr  $ IAllocArray (idOf n)
+    KNAllocArray _ety n    -> SSTmExpr  $ IAllocArray (idOf n)
     KNAlloc a              -> SSTmExpr  $ IAlloc (idOf a)
     KNDeref   a            -> SSTmExpr  $ IDeref (idOf a)
     KNStore   a b          -> SSTmExpr  $ IStore (idOf a) (idOf b)
-    KNTyApp t v argty      -> SSTmExpr  $ ITyApp (idOf v) argty
-    KNCase t a bs {-dt-}   -> SSTmExpr  $ ICase (idOf a) {-dt-} [(p, tr e) | (p, e) <- bs]
-    KNAppCtor t cid vs     -> SSTmExpr  $ IAppCtor cid (map idOf vs)
+    KNTyApp _t v argty     -> SSTmExpr  $ ITyApp (idOf v) argty
+    KNCase _t a bs {-dt-}  -> SSTmExpr  $ ICase (idOf a) {-dt-} [(p, tr e) | (p, e) <- bs]
+    KNAppCtor _t cid vs    -> SSTmExpr  $ IAppCtor cid (map idOf vs)
 
 -- ... which lifts in a  straightfoward way to procedure definitions.
 ssFunc f =
@@ -330,7 +329,6 @@ popContext gs =
 
 stepExpr :: MachineState -> IExpr -> IO MachineState
 stepExpr gs expr = do
-  let coro = stCoro gs
   case expr of
     IVar i         -> do return $ withTerm gs (SSTmValue $ getval gs i)
     ITuple      vs -> do return $ withTerm gs (SSTmValue $ SSTuple      (map (getval gs) vs))
@@ -369,8 +367,8 @@ stepExpr gs expr = do
       in
       return $ withTerm (withEnv gs extenv) e
 
-    ICase a {-_dt-} [] -> error $ "Smallstep.hs: Pattern match failure when evaluating case expr!"
-    ICase a {- dt-} ((p, e):bs) ->
+    ICase _a {-_dt-} [] -> error $ "Smallstep.hs: Pattern match failure when evaluating case expr!"
+    ICase  a {- dt-} ((p, e):bs) ->
        -- First, interpret the pattern list directly
        -- (using recursive calls to discard unmatched branches).
        case matchPattern p (getval gs a) of
@@ -392,7 +390,7 @@ stepExpr gs expr = do
                               evalNamedPrimitive (identPrefix id) gs args
           ILPrimOp op size -> return $ withTerm gs (SSTmValue $
                                         evalPrimitiveOp size op args)
-          ILCoroPrim prim t1 t2 -> evalCoroPrimitive prim gs args
+          ILCoroPrim prim _t1 _t2 -> evalCoroPrimitive prim gs args
 
     ICall b vs ->
         let args = map (getval gs) vs in
@@ -408,7 +406,8 @@ stepExpr gs expr = do
         case getval gs v of
            (SSBool True ) -> return $ withTerm gs b
            (SSBool False) -> return $ withTerm gs c
-           otherwise -> error $ "if cond was not a boolean: " ++ show v ++ " => " ++ display (getval gs v)
+           _ -> error $ "if cond was not a boolean: " ++ show v
+                     ++ " => " ++ display (getval gs v)
 
     IUntil c b ->
       let v = (Ident "!untilval" 0) in
@@ -418,7 +417,7 @@ stepExpr gs expr = do
 
     IArrayRead base idxvar ->
         let (SSInt i) = getval gs idxvar in
-        let n = fromInteger i in
+        let n = (fromInteger i) :: Int in
         case getval gs base of
           SSArray arr  ->  let (SSLocation z) = arraySlotLocation arr n in
                            return $ withTerm gs  (SSTmValue $ lookupHeap gs z)
@@ -426,7 +425,7 @@ stepExpr gs expr = do
 
     IArrayPoke iv base idxvar ->
         let (SSInt i) = getval gs idxvar in
-        let n = fromInteger i in
+        let n = (fromInteger i) :: Int in
         case getval gs base of
           SSArray arr  -> let (SSLocation z) = arraySlotLocation arr n in
                           let gs' = modifyHeapWith gs z (\_ -> getval gs iv) in
@@ -444,70 +443,13 @@ stepExpr gs expr = do
         return $ withTerm gs2 (SSTmValue $ SSArray $
                         array (0, fromInteger $ i - 1) inits)
 
-    ITyApp v argty -> return $ withTerm gs (SSTmValue $ getval gs v)
+    ITyApp v _argty -> return $ withTerm gs (SSTmValue $ getval gs v)
 
 -- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 arraySlotLocation arr n = SSLocation (arr ! n)
 
 -- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
--- We implement both decision tree evaluation and
--- direct recursive pattern matching interpretation,
--- as a sanity/consistency check on each.
-
-evalDecisionTree :: DecisionTree KNExpr -> SSValue -> Maybe [(Ident, SSValue)]
-evalDecisionTree (DT_Fail) v = error "evalDecisionTree hit DT_Fail!"
-evalDecisionTree (DT_Swap i dt) v = evalDecisionTree dt v
-evalDecisionTree (DT_Leaf _ idsoccs) v =
-  -- Leaf nodes of decision trees contain a list of (encoded)
-  -- bindings, which are independent of the path through the
-  -- decision tree to reach the leaf node.
-  Just $ map (lookupOcc v) idsoccs
-    where lookupOcc v (id, []) = (id, v)
-          lookupOcc v (id, (occ:occs)) = case v of
-            SSTuple     vs -> lookupOcc (vs !! occ) (id, occs)
-            SSCtorVal _ vs -> lookupOcc (vs !! occ) (id, occs)
-            otherwise  -> error $ "Pattern match failure: "
-                              ++ "Cannot index non-tuple/ctor value: " ++ show v
-
--- To evaluate a decision tree switch node against a given value v,
--- sequentially test the given subterm of v against the constructors
--- associated with each branch of the tree until we find a match.
-evalDecisionTree (DT_Switch occ (SwitchCase branches def)) v =
-  evalSwitchCase (getOcc occ v) branches def
-   where
-    -- If we didn't match any other branches, fall back to the default...
-    evalSwitchCase w [] (Just defaultTree) = evalDecisionTree defaultTree v
-    -- ... unless there was no default: very bad!
-    evalSwitchCase w [] Nothing = error $ "evalSwitchCase " ++ show w ++ " [] Nothing"
-    -- Otherwise, we try to match the value against the first untested
-    -- constructor, and either execute the associated decision tree
-    -- or continue matching against the rest of the cases.
-    evalSwitchCase w ((ctor, dt):rest) defaultTree =
-      if ctorMatches w ctor
-        then evalDecisionTree dt v
-        else evalSwitchCase w rest defaultTree
-
-    ctorMatches (SSCtorVal vid _) cid =  vid == cid
-    ctorMatches (SSBool b)  (CtorId "Bool" _ _ n) =
-                (b == True  && n == 1) || (b == False && n == 0)
-    ctorMatches (SSInt i) (CtorId tyname _ _ n) =
-                tyname == "Int32"  && n == fromInteger i
-    ctorMatches (SSTuple vs) (CtorId tyname _ a _) =
-                tyname == "()" && a == Prelude.length vs
-
-    ctorMatches v ctor = error $
-        "Smallstep.hs: evalDecisionTree had unhandled case in ctorMatches: "
-        ++ show ctor ++ " ==? " ++ show v
-
-    -- Straightforward impl of the definition of occurrences:
-    -- recursively fetch the i'th subterm of the given value.
-    getOcc [] v = v
-    getOcc (i:rest) (SSTuple vs) = getOcc rest (vs !! i)
-    -- TODO missing case for SSCtorVal ?
-    getOcc occ v = error $ "getOcc " ++ show occ ++ ";; " ++ show v
-
 
 matchPattern :: Pattern -> SSValue -> Maybe [(Ident, SSValue)]
 matchPattern p v =
@@ -568,7 +510,7 @@ tryGetInt32PrimOp2Int32 name =
     "bitxor"  -> Just (modifyInt32sWith xor)
     "bitor"   -> Just (modifyInt32sWith (.|.))
     "bitand"  -> Just (modifyInt32sWith (.&.))
-    otherwise -> Nothing
+    _ -> Nothing
 
 tryGetInt32PrimOp2Bool :: String -> Maybe (Int32 -> Int32 -> Bool)
 tryGetInt32PrimOp2Bool name =
@@ -579,7 +521,7 @@ tryGetInt32PrimOp2Bool name =
     "!="       -> Just ((/=))
     ">="       -> Just ((>=))
     ">"        -> Just ((>))
-    otherwise -> Nothing
+    _ -> Nothing
 
 --------------------------------------------------------------------
 
@@ -627,8 +569,8 @@ evalNamedPrimitive "force_gc_for_debugging_purposes" gs _args =
 evalNamedPrimitive "opaquely_i32" gs [val] =
          return $ withTerm gs (SSTmValue $ val)
 
-evalNamedPrimitive prim gs args = error $ "evalNamedPrimitive " ++ show prim
-                                 ++ " not yet defined"
+evalNamedPrimitive prim _gs _args = error $ "evalNamedPrimitive " ++ show prim
+                                         ++ " not yet defined"
 
 -- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -665,24 +607,24 @@ evalCoroPrimitive CoroInvoke gs [(SSLocation targetloc),arg] =
         } in
         return $ withExtendEnv gs2 (coroArgs newcoro) [arg]
 
-evalCoroPrimitive CoroInvoke gs bad = error $ "Wrong arguments to coro_invoke: "
-                                          ++ show bad
---
---
--- {- "Rule 4 describes the action of creating a coroutine.
---     It creates a new label to represent the coroutine and extends the
---     store with a mapping from this label to the coroutine main function." -}
+evalCoroPrimitive CoroInvoke _gs bad =
+         error $ "Wrong arguments to coro_invoke: "++ show bad
+
+
+-- "Rule 4 describes the action of creating a coroutine.
+--  It creates a new label to represent the coroutine and extends the
+--  store with a mapping from this label to the coroutine main function."
 
 evalCoroPrimitive CoroCreate gs [SSFunc f] =
-  let ((loc, gs2), coro) = coroFromClosure gs f in
+  let ((loc, gs2), _coro) = coroFromClosure gs f in
   return $ withTerm gs2 (SSTmValue $ SSLocation loc)
 
-evalCoroPrimitive CoroCreate gs args =
+evalCoroPrimitive CoroCreate _gs args =
         error $ "Wrong arguments to coro_create: " ++ show args
 
 
--- -- The current coro is returned to the heap, marked suspended, with no previous coro.
--- -- The previous coro becomes the new coro, with status running.
+-- The current coro is returned to the heap, marked suspended, with no previous coro.
+-- The previous coro becomes the new coro, with status running.
 evalCoroPrimitive CoroYield gs [arg] =
   let ccoro = stCoro gs in
   case coroPrev ccoro of
@@ -701,7 +643,7 @@ evalCoroPrimitive CoroYield gs [arg] =
         , stCoroLoc = prevloc
       } in
       return $ gs2
-evalCoroPrimitive CoroYield gs _ = error $ "Wrong arguments to coro_yield"
+evalCoroPrimitive CoroYield _gs _ = error $ "Wrong arguments to coro_yield"
 
 --------------------------------------------------------------------
 
@@ -725,21 +667,14 @@ isPrintFunction name =
     "print_i64"  -> True
     "print_i32"  -> True
     "print_i1"   -> True
-    otherwise    -> False
+    _ -> False
 
 isExpectFunction name =
   case name of
     "expect_i64" -> True
     "expect_i32" -> True
     "expect_i1"  -> True
-    otherwise    -> False
-
-view :: SSTerm -> String
-view (SSTmValue v) = display v
-view (SSTmExpr (ILetVal x t e)) = "let " ++ show x ++ " = " ++ view t ++ " in\n" ++ view e
-view (SSTmExpr (IIf v a b)) = "if " ++ show v ++ " then { " ++ view a ++ " } else { " ++ view b ++ " }"
-view (SSTmExpr (ICall b vs)) = show b ++ show vs
-view (SSTmExpr e) = show e
+    _ -> False
 
 display :: SSValue -> String
 display (SSBool True )  = "true"
@@ -759,5 +694,5 @@ instance Eq SSFunc
 instance Eq Coro
   where c1 == c2 = (coroLoc c1) == (coroLoc c2)
 
-instance Show (SSTerm -> SSTerm) where show f = "<coro cont>"
+instance Show (SSTerm -> SSTerm) where show _f = "<coro cont>"
 

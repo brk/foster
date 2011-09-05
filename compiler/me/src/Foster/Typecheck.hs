@@ -32,7 +32,7 @@ typecheck ctx expr maybeExpTy =
         E_IntAST rng txt               -> typecheckInt rng txt
         E_LetRec rng bindings e mt     -> typecheckLetRec ctx rng bindings e mt
         E_LetAST rng binding  e mt     -> typecheckLet   ctx rng binding e mt
-        E_TupleAST (TupleAST rng exps) -> typecheckTuple ctx exps maybeExpTy
+        E_TupleAST (TupleAST rng exps) -> typecheckTuple ctx rng exps maybeExpTy
         E_VarAST rng v                 -> typecheckVar   ctx rng (evarName v)
         E_TyApp  rng e t               -> typecheckTyApp ctx rng e t maybeExpTy
         E_Case   rng a branches        -> typecheckCase  ctx rng a branches maybeExpTy
@@ -83,14 +83,14 @@ typecheck ctx expr maybeExpTy =
         E_ArrayRead rng a b -> do
                 ta <- typecheck ctx a Nothing
                 tb <- typecheck ctx b Nothing
-                typecheckArrayRead ctx rng ta (typeAST ta) tb maybeExpTy
+                typecheckArrayRead rng ta (typeAST ta) tb maybeExpTy
 
         -- a >^ b[c]
         E_ArrayPoke rng a b c -> do
                 ta <- typecheck ctx a Nothing
                 tb <- typecheck ctx b (Just $ ArrayTypeAST (typeAST ta))
                 tc <- typecheck ctx c Nothing
-                typecheckArrayPoke ctx rng ta tb (typeAST tb) tc maybeExpTy
+                typecheckArrayPoke rng ta tb (typeAST tb) tc maybeExpTy
 
         E_CompilesAST rng maybeExpr -> case maybeExpr of
             Nothing -> return $ AnnCompiles rng (CompilesResult $
@@ -121,7 +121,7 @@ typecheckAlloc ctx rng a maybeExpTy = do
 -- Resolve the given name as either a variable or a primitive reference.
 typecheckVar ctx rng name =
   case termVarLookup name (contextBindings ctx) of
-    Just avar@(TypedId t id) -> return $ E_AnnVar rng (TypedId t id)
+    Just (TypedId t id) -> return $ E_AnnVar rng (TypedId t id)
     Nothing   ->
       case termVarLookup name (primitiveBindings ctx) of
         Just avar -> return $ AnnPrimitive rng avar
@@ -246,27 +246,29 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
 varbind id ty = TermVarBinding (identPrefix id) (TypedId ty id)
 
 extractPatternBindings :: Pattern -> TypeAST -> Tc [ContextBinding TypeAST]
-extractPatternBindings (P_Wildcard _   ) ty = return []
+
+extractPatternBindings (P_Wildcard _   ) _  = return []
 extractPatternBindings (P_Variable _ id) ty = return [varbind id ty]
 
-extractPatternBindings p@(P_Ctor _ pats (CtorId _ ctorName _ _)) ty = do
+extractPatternBindings (P_Ctor _ pats (CtorId _ ctorName _ _)) _ty = do
   CtorInfo _ (DataCtor _ _smallId types) <- getCtorInfoForCtor ctorName
   bindings <- sequence [extractPatternBindings p t | (p, t) <- zip pats types]
   return $ concat bindings
 
 extractPatternBindings (P_Bool r v) ty = do
-  ae <- typecheck emptyContext (E_BoolAST r v) (Just ty)
-  -- literals don't bind anything, but we still need to check
-  -- that we dont' try matching e.g. a bool against an int.
-  return []
-extractPatternBindings (P_Int r litint) ty = do
-  ae <- typecheck emptyContext (E_IntAST r (litIntText litint)) (Just ty)
+  _ae <- typecheck emptyContext (E_BoolAST r v) (Just ty)
   -- literals don't bind anything, but we still need to check
   -- that we dont' try matching e.g. a bool against an int.
   return []
 
-extractPatternBindings (P_Tuple r [p]) ty = extractPatternBindings p ty
-extractPatternBindings (P_Tuple r ps)  ty =
+extractPatternBindings (P_Int r litint) ty = do
+  _ae <- typecheck emptyContext (E_IntAST r (litIntText litint)) (Just ty)
+  -- literals don't bind anything, but we still need to check
+  -- that we dont' try matching e.g. a bool against an int.
+  return []
+
+extractPatternBindings (P_Tuple _rng [p]) ty = extractPatternBindings p ty
+extractPatternBindings (P_Tuple  rng ps)  ty =
    case ty of
      TupleTypeAST ts ->
         (if List.length ps == List.length ts
@@ -274,9 +276,9 @@ extractPatternBindings (P_Tuple r ps)  ty =
                   return $ concat bindings
           else tcFails [out $ "Cannot match pattern against tuple type"
                               ++ " of different length."])
-     otherwise -> tcFails [out $ "Cannot check tuple pattern"
+     _else  -> tcFails [out $ "Cannot check tuple pattern"
                               ++ " against non-tuple type " ++ show ty
-                              ++ showSourceRange r]
+                              ++ showSourceRange rng]
 
 -----------------------------------------------------------------------
 
@@ -293,7 +295,7 @@ typecheckIf ctx rng a b c maybeExpTy = do
 listize (TupleTypeAST tys) = tys
 listize ty                 = [ty]
 
-typecheckTyApp ctx rng a t maybeExpTy = do
+typecheckTyApp ctx rng a t _maybeExpTy = do
     ea <- typecheck ctx a Nothing
     case (typeAST ea) of
       ForAllAST tyvars rho -> do
@@ -302,27 +304,27 @@ typecheckTyApp ctx rng a t maybeExpTy = do
                     "typecheckTyApp: arity mismatch"
         let tyvarsAndTys = List.zip (map TyVarAST tyvars) tys
         return $ E_AnnTyApp rng (parSubstTy tyvarsAndTys rho) ea t
-      othertype ->
+      _othertype ->
         tcFails [out $ "Cannot apply type args to expression of"
                    ++ " non-ForAll type "]
 
 -----------------------------------------------------------------------
 
-typecheckArrayRead ctx rng base (TupleTypeAST types) i@(AnnInt _rng ty int) maybeExpTy =
+typecheckArrayRead rng _base (TupleTypeAST _) (AnnInt {}) _maybeExpTy =
     tcFails [out $ "ArrayReading tuples is not allowed;"
-                ++ " use pattern matching instead!"]
+                ++ " use pattern matching instead!" ++ highlightFirstLine rng]
 
-typecheckArrayRead ctx rng base (ArrayTypeAST t) i@(AnnInt _rng ty int) (Just expTy) = do
+typecheckArrayRead rng base (ArrayTypeAST t) i@(AnnInt {}) (Just expTy) = do
     equateTypes t expTy (Just "arrayread[int] expected type")
     -- TODO make sure i is not negative or too big
     return (AnnArrayRead rng t base i)
 
-typecheckArrayRead ctx rng base (ArrayTypeAST t) i@(AnnInt _rng ty int) Nothing = do
+typecheckArrayRead rng base (ArrayTypeAST t) i@(AnnInt {}) Nothing = do
     -- TODO make sure i is not negative or too big
     return (AnnArrayRead rng t base i)
 
 -- base[aiexpr]
-typecheckArrayRead ctx rng base (ArrayTypeAST t) aiexpr maybeExpTy = do
+typecheckArrayRead rng base (ArrayTypeAST t) aiexpr maybeExpTy = do
     -- TODO check aiexpr type is compatible with Word
     equateTypes t (typeAST aiexpr) (Just "arrayread type")
     case maybeExpTy of
@@ -331,7 +333,7 @@ typecheckArrayRead ctx rng base (ArrayTypeAST t) aiexpr maybeExpTy = do
 
     return (AnnArrayRead rng t base aiexpr)
 
-typecheckArrayRead ctx rng base baseType index maybeExpTy =
+typecheckArrayRead rng _base baseType index maybeExpTy =
     tcFails [out $ "Unable to arrayread expression of type " ++ show baseType
                 ++ " with expression " ++ show index
                 ++ " (context expected type " ++ show maybeExpTy ++ ")"
@@ -340,7 +342,7 @@ typecheckArrayRead ctx rng base baseType index maybeExpTy =
 -----------------------------------------------------------------------
 
 -- c >^ base[aiexpr]
-typecheckArrayPoke ctx rng c base (ArrayTypeAST t) aiexpr maybeExpTy = do
+typecheckArrayPoke rng c base (ArrayTypeAST t) aiexpr maybeExpTy = do
     -- TODO check aiexpr type is compatible with Word
     equateTypes t (typeAST aiexpr) (Just "arraypoke type")
     case maybeExpTy of
@@ -349,7 +351,7 @@ typecheckArrayPoke ctx rng c base (ArrayTypeAST t) aiexpr maybeExpTy = do
 
     return (AnnArrayPoke rng t c base aiexpr)
 
-typecheckArrayPoke ctx rng c base baseType index maybeExpTy =
+typecheckArrayPoke rng _ _base baseType index maybeExpTy =
     tcFails [out $ "Unable to arraypoke expression of type " ++ show baseType
                 ++ " with expression " ++ show index
                 ++ " (context expected type " ++ show maybeExpTy ++ ")"
@@ -357,18 +359,9 @@ typecheckArrayPoke ctx rng c base baseType index maybeExpTy =
 
 -----------------------------------------------------------------------
 
--- Maps (a -> b)   or   ForAll [...] (a -> b)    to a.
-getFnArgType :: TypeAST -> TypeAST
-
-getFnArgType (FnTypeAST a r cc cs) = a
-getFnArgType t@(ForAllAST tvs rho) =
-    let fnargty = getFnArgType rho in
-    trace ("getFnArgType " ++ show t ++ " ::> " ++ show fnargty) $ fnargty
-getFnArgType x = error $ "Called argType on non-FnTypeAST: " ++ show x
-
 showtypes :: [AnnExpr] -> TypeAST -> String
 showtypes args expectedTypes = concatMap showtypes' (zip3 [1..] args expTypes)
-  where showtypes' (n, expr, expty) =
+  where showtypes' (_n, expr, expty) =
             if show (typeAST expr) == show expty
               then ""
               else
@@ -376,7 +369,7 @@ showtypes args expectedTypes = concatMap showtypes' (zip3 [1..] args expTypes)
                         ++ ", expected " ++ show expty ++ ":\n"
                         ++ show (rangeOf expr)
                         ++ concatMap (\(n, a) -> "\narg " ++ show n ++ "\n"
-                                          ++ outToString (showStructure a)) (zip [0..] args)  ++ "\n")
+                        ++ outToString (showStructure a)) (zip [0..] args)  ++ "\n")
         expTypes = (case expectedTypes of
                         (TupleTypeAST x) -> x
                         x -> [x]) ++ repeat (NamedTypeAST "<unknown>")
@@ -391,20 +384,20 @@ typecheckCallWithBaseFnType :: AnnTuple -> AnnExpr -> TypeAST -> SourceRange
 typecheckCallWithBaseFnType argtup eb basetype range =
     case (basetype, typeAST (AnnTuple argtup))
       of
-         (FnTypeAST formaltype restype cc cs, argtype) -> do
+         (FnTypeAST formaltype restype _cc _cs, argtype) -> do
            -- Note use of implicit laziness to avoid unnecessary work.
            let errmsg = ("CallAST mismatch between formal & arg types\n"
                           ++ showtypes (annTupleExprs argtup) formaltype)
            equateTypes formaltype argtype (Just $ errmsg)
            return (AnnCall range restype eb argtup)
 
-         otherwise -> do
+         _otherwise -> do
             ebStruct <- tcShowStructure eb
             tcFails $ (out $ "Called value was not a function: "):ebStruct:
                                        [out $ " :: " ++ (show $ typeAST eb)]
 
-vname (E_VarAST rng ev) n = show n ++ " for " ++ evarName ev
-vname _                 n = show n
+vname (E_VarAST _rng ev) n = show n ++ " for " ++ evarName ev
+vname _                  n = show n
 
 genUnificationVarsLike :: [a] -> (Int -> String) -> Tc [MetaTyVar]
 genUnificationVarsLike spine namegen = do
@@ -413,7 +406,7 @@ genUnificationVarsLike spine namegen = do
 -- Typecheck the function first, then the args.
 typecheckCall :: Context TypeAST -> SourceRange
               -> ExprAST -> ExprAST -> Maybe TypeAST -> Tc AnnExpr
-typecheckCall ctx rng base args maybeExpTy = do
+typecheckCall ctx rng base args _maybeExpTy = do
    -- Do we infer a plain function type or a forall type?
    -- For now, we just punt and act in inference rather than checking mode.
    -- But we'd like to propagate more information down, by saying something
@@ -465,12 +458,12 @@ typecheckCall ctx rng base args maybeExpTy = do
              in typecheckCallWithBaseFnType eargs annTyApp (typeAST annTyApp) rng
 
       -- (typeAST eb) ==
-      fnty@(FnTypeAST formaltype restype cc cs) -> do
-            ea@(AnnTuple eargs) <- typecheck ctx args (Just formaltype)
+      fnty@(FnTypeAST formaltype _restype _cc _cs) -> do
+            AnnTuple eargs <- typecheck ctx args (Just formaltype)
             typecheckCallWithBaseFnType eargs eb fnty rng
 
       m@(MetaTyVar (Meta _ _ desc)) -> do
-            ea@(AnnTuple eargs) <- typecheck ctx args Nothing
+            AnnTuple eargs <- typecheck ctx args Nothing
 
             ft <- newTcUnificationVar $ "ret type for " ++ desc
             rt <- newTcUnificationVar $ "arg type for " ++ desc
@@ -489,10 +482,10 @@ mkFuncTy a r = FnTypeAST a r FastCC FT_Func
 typecheckFn ctx f Nothing =
                 typecheckFn' ctx f FastCC Nothing  Nothing
 
-typecheckFn ctx f (Just (FnTypeAST s t cc cs')) =
+typecheckFn ctx f (Just (FnTypeAST s t cc _cs)) =
                 typecheckFn' ctx f     cc (Just s) (Just t)
 
-typecheckFn ctx f (Just t) = tcFails [out $
+typecheckFn _ctx f (Just t) = tcFails [out $
                 "Context of function literal expects non-function type: "
                                 ++ show t ++ highlightFirstLine (fnAstRange f)]
 
@@ -566,18 +559,17 @@ getUniquelyNamedFormals rng rawFormals fnProtoName = do
 -----------------------------------------------------------------------
 
 -- terrible, no good, very bad hack: we shouldn't just discard the meta ty var!
-typecheckTuple ctx exprs (Just (MetaTyVar mtv)) =
- typecheckTuple ctx exprs Nothing
+typecheckTuple ctx rng exprs (Just (MetaTyVar _)) =
+ typecheckTuple ctx rng exprs Nothing
 
-typecheckTuple ctx exprs Nothing                  = tcTuple ctx exprs [Nothing | _ <- exprs]
-typecheckTuple ctx exprs (Just (TupleTypeAST ts)) = tcTuple ctx exprs (map Just ts)
+typecheckTuple ctx rng exprs Nothing                  = tcTuple ctx rng exprs [Nothing | _ <- exprs]
+typecheckTuple ctx rng exprs (Just (TupleTypeAST ts)) = tcTuple ctx rng exprs (map Just ts)
 
-typecheckTuple ctx es (Just ty)
+typecheckTuple _ctx _rng es (Just ty)
     = tcFails [out $ "typecheck: tuple (" ++ show es ++ ") "
                 ++ "cannot check against non-tuple type " ++ show ty]
 
-tcTuple ctx es ts = do
-    let rng = rangeSpanOf (MissingSourceRange "typecheckTuple'") es
+tcTuple ctx rng es ts = do
     exprs <- typecheckExprsTogether ctx es ts
     return $ AnnTuple (E_AnnTuple rng exprs)
 
@@ -624,7 +616,7 @@ typecheckInt rng originalText = do
             case splitString "_" noticks of
                 [first, base] -> return (first, read base)
                 [first]       -> return (first, 10)
-                otherwise     -> tcFails
+                _otherwise    -> tcFails
                    [outLn $ "Unable to parse integer literal " ++ text]
 
         splitString :: String -> String -> [String]
@@ -634,14 +626,14 @@ typecheckInt rng originalText = do
 
         -- Precondition: the provided string must be parseable in the given radix
         precheckedLiteralInt :: String -> Int -> String -> Int -> LiteralInt
-        precheckedLiteralInt originalText maxBits clean base =
+        precheckedLiteralInt originalText _maxBits clean base =
             let integerValue = parseRadixRev (fromIntegral base) (List.reverse clean) in
             let activeBits = List.length (bitStringOf integerValue) in
             LiteralInt integerValue activeBits originalText base
 
         -- Precondition: string contains only valid hex digits.
         parseRadixRev :: Integer -> String -> Integer
-        parseRadixRev r ""     = 0
+        parseRadixRev _ ""     = 0
         parseRadixRev r (c:cs) =
                 (r * parseRadixRev r cs) + (fromIntegral $ fromJust (indexOf c))
 
@@ -654,7 +646,7 @@ uniquelyName (TypedId ty id) = do
     return (TypedId ty newid)
   where
     rename :: Ident -> Uniq -> Tc Ident
-    rename (Ident p i) u = return (Ident p u)
+    rename (Ident p _) u = return (Ident p u)
     rename (GlobalSymbol name) _u =
             tcFails [out $ "Cannot rename global symbol " ++ show name]
 
@@ -664,11 +656,11 @@ verifyNonOverlappingVariableNames rng name varNames = do
                      | dups <- List.group (List.sort varNames)
                      , List.length dups > 1]
     case duplicates of
-        []        -> return ()
-        otherwise -> tcFails [out $ "Error when checking " ++ name
-                                 ++ ": had duplicated bindings: "
-                                 ++ show duplicates
-                                 ++ highlightFirstLine rng]
+        []    -> return ()
+        _else -> tcFails [out $ "Error when checking " ++ name
+                              ++ ": had duplicated bindings: "
+                              ++ show duplicates
+                              ++ highlightFirstLine rng]
 
 -----------------------------------------------------------------------
 
@@ -691,15 +683,15 @@ equateTypes t1 t2 msg = do
      collectUnificationVars :: TypeAST -> [MetaTyVar]
      collectUnificationVars x =
          case x of
-             (NamedTypeAST s)     -> []
-             (TupleTypeAST types) -> concatMap collectUnificationVars types
-             (FnTypeAST s r cc cs)-> concatMap collectUnificationVars [s,r]
-             (CoroTypeAST s r)    -> concatMap collectUnificationVars [s,r]
-             (ForAllAST tvs rho)  -> collectUnificationVars rho
-             (TyVarAST tv)        -> []
-             (MetaTyVar m)        -> [m]
-             (RefTypeAST   ty)    -> collectUnificationVars ty
-             (ArrayTypeAST  ty)   -> collectUnificationVars ty
+             NamedTypeAST _      -> []
+             TupleTypeAST types  -> concatMap collectUnificationVars types
+             FnTypeAST s r _ _   -> concatMap collectUnificationVars [s,r]
+             CoroTypeAST s r     -> concatMap collectUnificationVars [s,r]
+             ForAllAST _tvs rho  -> collectUnificationVars rho
+             TyVarAST  _tv       -> []
+             MetaTyVar     m     -> [m]
+             RefTypeAST    ty    -> collectUnificationVars ty
+             ArrayTypeAST  ty    -> collectUnificationVars ty
 
 
 extendContext :: Context TypeAST -> [AnnVar] -> Maybe TypeAST -> Tc (Context TypeAST)
@@ -719,11 +711,11 @@ typeJoinVars :: [AnnVar] -> (Maybe TypeAST) -> Tc [AnnVar]
 
 typeJoinVars vars Nothing = return $ vars
 
-typeJoinVars [var@(TypedId t v)] (Just u@(MetaTyVar m)) = do
+typeJoinVars [var@(TypedId t _)] (Just u@(MetaTyVar _)) = do
     equateTypes t u Nothing
     return [var]
 
-typeJoinVars []   (Just u@(MetaTyVar m)) = do
+typeJoinVars []   (Just u@(MetaTyVar _)) = do
     equateTypes u (TupleTypeAST []) Nothing
     return []
 

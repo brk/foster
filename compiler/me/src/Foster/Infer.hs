@@ -45,16 +45,16 @@ parSubstTy :: [(TypeAST, TypeAST)] -> TypeAST -> TypeAST
 parSubstTy prvNextPairs ty =
     let q = parSubstTy prvNextPairs in
     case ty of
-        (NamedTypeAST _) -> fromMaybe ty $ List.lookup ty prvNextPairs
-        (TyVarAST tv)    -> fromMaybe ty $ List.lookup ty prvNextPairs
-        (MetaTyVar mtv)  -> fromMaybe ty $ List.lookup ty prvNextPairs
+        NamedTypeAST _ -> fromMaybe ty $ List.lookup ty prvNextPairs
+        TyVarAST   {}  -> fromMaybe ty $ List.lookup ty prvNextPairs
+        MetaTyVar  {}  -> fromMaybe ty $ List.lookup ty prvNextPairs
 
-        (RefTypeAST   t)     -> RefTypeAST   (q t)
-        (ArrayTypeAST t)     -> ArrayTypeAST (q t)
-        (TupleTypeAST types) -> TupleTypeAST (map q types)
-        (FnTypeAST s t cc cs)-> FnTypeAST   (q s) (q t) cc cs -- TODO unify calling convention?
-        (CoroTypeAST s t)    -> CoroTypeAST (q s) (q t)
-        (ForAllAST tvs rho)  ->
+        RefTypeAST   t     -> RefTypeAST   (q t)
+        ArrayTypeAST t     -> ArrayTypeAST (q t)
+        TupleTypeAST types -> TupleTypeAST (map q types)
+        FnTypeAST s t cc cs-> FnTypeAST   (q s) (q t) cc cs -- TODO unify calling convention?
+        CoroTypeAST s t    -> CoroTypeAST (q s) (q t)
+        ForAllAST tvs rho  ->
                 let prvNextPairs' = prvNextPairs `assocFilterOut`
                                                    [TyVarAST tv | tv <- tvs]
                 in  ForAllAST tvs (parSubstTy prvNextPairs' rho)
@@ -65,15 +65,15 @@ tySubst :: TypeSubst -> TypeAST -> TypeAST
 tySubst subst ty =
     let q = tySubst subst in
     case ty of
-        (NamedTypeAST s)              -> ty
-        (TyVarAST tv)                 -> ty
-        (MetaTyVar (Meta u _tyref _)) -> Map.findWithDefault ty u subst
-        (RefTypeAST    t)    -> RefTypeAST   (q t)
-        (ArrayTypeAST  t)    -> ArrayTypeAST (q t)
-        (TupleTypeAST types) -> TupleTypeAST (map q types)
-        (FnTypeAST s t cc cs)-> FnTypeAST   (q s) (q t) cc cs
-        (CoroTypeAST s t)    -> CoroTypeAST (q s) (q t)
-        (ForAllAST tvs rho)  -> ForAllAST tvs (q rho)
+        NamedTypeAST {}             -> ty
+        TyVarAST     {}             -> ty
+        MetaTyVar (Meta u _tyref _) -> Map.findWithDefault ty u subst
+        RefTypeAST    t             -> RefTypeAST   (q t)
+        ArrayTypeAST  t             -> ArrayTypeAST (q t)
+        TupleTypeAST types          -> TupleTypeAST (map q types)
+        FnTypeAST s t cc cs         -> FnTypeAST   (q s) (q t) cc cs
+        CoroTypeAST s t             -> CoroTypeAST (q s) (q t)
+        ForAllAST tvs rho           -> ForAllAST tvs (q rho)
 
 -------------------------------------------------
 
@@ -99,7 +99,7 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                     then tcFails [out $ "Unable to unify tuples of different lengths!"]
                     else tcUnifyLoop ([TypeConstrEq a b | (a, b) <- zip tys1 tys2] ++ constraints) tysub
 
-              ((FnTypeAST a1 a2 cc1 _), (FnTypeAST b1 b2 cc2 _)) ->
+              ((FnTypeAST a1 a2 _cc1 _), (FnTypeAST b1 b2 _cc2 _)) ->
                   tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub
 
               ((CoroTypeAST a1 a2), (CoroTypeAST b1 b2)) ->
@@ -119,11 +119,11 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
               ((ArrayTypeAST t1), (ArrayTypeAST t2)) ->
                   tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 
-              otherwise ->
+              _otherwise ->
                   tcFails [out $ "Unable to unify " ++ show t1 ++ " and " ++ show t2]
 
 tcUnifyVar :: MetaTyVar -> TypeAST -> TypeSubst -> [TypeConstraint] -> Tc UnifySoln
-tcUnifyVar (Meta uniq tyref _) ty tysub constraints =
+tcUnifyVar (Meta uniq _tyref _) ty tysub constraints =
     let tysub' = (Map.insert uniq ty tysub) in
     tcUnifyLoop (tySubstConstraints constraints (Map.singleton uniq ty)) tysub'
       where

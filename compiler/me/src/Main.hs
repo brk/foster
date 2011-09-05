@@ -27,6 +27,7 @@ import Text.ProtocolBuffers(messageGet)
 
 import Foster.Base
 import Foster.CFG
+import Foster.Fepb.SourceModule(SourceModule)
 import Foster.ProtobufFE(parseSourceModule)
 import Foster.ProtobufIL(dumpModuleToProtobufIL)
 import Foster.ExprAST
@@ -66,11 +67,11 @@ typecheckFnSCC scc (ctx, tcenv) = do
                        typecheck extctx ast Nothing
         -- We can't convert AnnExpr to AIExpr here because
         -- the output context is threaded through further type checking.
-        inspect ctx annfn ast
+        _ <- inspect annfn ast
         return annfn
     if List.all isOK annfns
-     then let fns = [f | (OK (E_AnnFn f)) <- annfns] in
-          let newbindings = map bindingForAnnFn fns in
+     then let afns = [f | (OK (E_AnnFn f)) <- annfns] in
+          let newbindings = map bindingForAnnFn afns in
           return (annfns, (prependContextBindings ctx newbindings, tcenv))
      else return ([Errors [out $ "not all functions type checked correctly in SCC: "
                              ++ show [fnAstName f | f <- fns]]
@@ -78,14 +79,14 @@ typecheckFnSCC scc (ctx, tcenv) = do
 
    where
         bindingForAnnFn :: AnnFn -> ContextBinding TypeAST
-        bindingForAnnFn f = TermVarBinding (fnNameA f) (annFnVar f)
-         where annFnVar f = TypedId (annFnType f) (annFnIdent f)
+        bindingForAnnFn f = TermVarBinding (fnNameA f) annFnVar
+         where   annFnVar = TypedId (annFnType f) (annFnIdent f)
 
         bindingForFnAST :: FnAST -> TypeAST -> ContextBinding TypeAST
         bindingForFnAST f t = pair2binding (fnAstName f, t)
 
-        inspect :: Context TypeAST -> OutputOr AnnExpr -> ExprAST -> IO Bool
-        inspect ctx typechecked ast =
+        inspect :: OutputOr AnnExpr -> ExprAST -> IO Bool
+        inspect typechecked ast =
             case typechecked of
                 OK e -> do
                     when (contextVerbose ctx) (do
@@ -114,21 +115,21 @@ typecheckModule :: Bool
                 -> ModuleAST FnAST TypeAST
                 -> TcEnv
                 -> IO (OutputOr (Context TypeIL, ModuleIL AIExpr TypeIL))
-typecheckModule verboseMode mod tcenv0 = do
-    let fns = moduleASTfunctions mod
+typecheckModule verboseMode modast tcenv0 = do
+    let fns = moduleASTfunctions modast
     let primBindings = computeContextBindings primitiveDecls
-    let declBindings = computeContextBindings (moduleASTdecls mod)
+    let declBindings = computeContextBindings (moduleASTdecls modast)
                     ++ computeContextBindings (concatMap extractCtorTypes $
-                                               moduleASTdataTypes mod)
+                                               moduleASTdataTypes modast)
     let callGraphList = buildCallGraphList fns declBindings
     let sortedFns = Graph.stronglyConnComp callGraphList -- :: [SCC FnAST]
     putStrLn $ "Function SCC list : " ++
                    show [(name, frees) | (_, name, frees) <- callGraphList]
-    let ctx0 = mkContext declBindings primBindings verboseMode
+    let ctx0 = mkContext declBindings primBindings
     (annFns, (ctx, tcenv)) <- mapFoldM sortedFns (ctx0, tcenv0) typecheckFnSCC
-    unTc tcenv (convertTypeILofAST mod ctx annFns)
+    unTc tcenv (convertTypeILofAST modast ctx annFns)
  where
-   mkContext declBindings primBindings verboseMode =
+   mkContext declBindings primBindings =
      Context declBindings primBindings verboseMode globalvars
        where globalvars = declBindings ++ primBindings
 
@@ -169,8 +170,8 @@ typecheckModule verboseMode mod tcenv0 = do
      return (ctx_il, m)
        where
         fmapOO :: (a -> b) -> OutputOr a -> OutputOr b
-        fmapOO f (OK e)     = OK (f e)
-        fmapOO f (Errors o) = Errors o
+        fmapOO  f (OK e)     = OK (f e)
+        fmapOO _f (Errors o) = Errors o
 
         convertDecl :: (String, TypeAST) -> Tc (String, TypeIL)
         convertDecl (s, ty) = do t <- ilOf ty ; return (s, t)
@@ -181,9 +182,9 @@ typecheckModule verboseMode mod tcenv0 = do
           return $ DataType s cts
             where
               convertDataCtor :: DataCtor TypeAST -> Tc (DataCtor TypeIL)
-              convertDataCtor (DataCtor s n types) = do
+              convertDataCtor (DataCtor dataCtorName n types) = do
                 tys <- mapM ilOf types
-                return $ DataCtor s n tys
+                return $ DataCtor dataCtorName n tys
 
         liftContextM :: Monad m => (t1 -> m t2) -> Context t1 -> m (Context t2)
         liftContextM f (Context cb pb vb gb) = do
@@ -220,11 +221,12 @@ getCtorInfo datatypes = Map.unionsWith (++) $ map getCtorInfoList datatypes
 
 -----------------------------------------------------------------------
 
+ctorIdFor :: (Show t) => String -> DataCtor t -> (String, CtorId)
 ctorIdFor name ctor = (ctorNameOf ctor, ctorId name ctor)
   where
     ctorNameOf (DataCtor ctorName _n _) = ctorName
-    ctorId name (DataCtor ctorName n types) =
-      CtorId name ctorName (Prelude.length types) n
+    ctorId nm (DataCtor ctorName n types) =
+      CtorId nm ctorName (Prelude.length types) n
 
 -----------------------------------------------------------------------
 
@@ -282,6 +284,7 @@ main = do
                          }
         dumpModuleToProtobufIL monoprog outfile
 
+compile :: SourceModule -> Compiled ILProgram
 compile pb_module =
     (return $ parseSourceModule pb_module)
      >>= typecheckSourceModule
@@ -351,11 +354,13 @@ lowerModule ai_mod ctx_il = do
                 _unused <- liftIO $ interpretKNormalMod kmod tmpDir
                 return ()
 
+showGeneratedMetaTypeVariables :: (Show ty) =>
+                               IORef [MetaTyVar] -> Context ty -> Compiled ()
 showGeneratedMetaTypeVariables varlist ctx_il =
   whenVerbose $ do
     metaTyVars <- readIORef varlist
     runOutput $ (outLn $ "generated " ++ (show $ length metaTyVars) ++ " meta type variables:")
-    forM metaTyVars (\mtv@(Meta _ r _) -> do
+    forM_ metaTyVars (\mtv@(Meta _ r _) -> do
         t <- readIORef r
         runOutput (outLn $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t))
 

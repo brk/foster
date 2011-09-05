@@ -60,7 +60,7 @@ dumpBlockId (str, lab) = u8fromString (str ++ "." ++ show lab)
 
 dumpIdent :: Ident -> P'.Utf8
 dumpIdent (GlobalSymbol name) = u8fromString name
-dumpIdent i@(Ident name num) = if num < 0
+dumpIdent i@(Ident _name num) = if num < 0
                 --then u8fromString $ name
                 then error $ "cannot dump negative ident! " ++ show i
                 else u8fromString $ show i
@@ -79,40 +79,38 @@ tagProcOrFunc FT_Func = PbTypeTag.CLOSURE
 
 dumpType :: TypeIL -> PbType.Type
 dumpType (NamedTypeIL s)     = P'.defaultValue { PbType.tag  = PbTypeTag.LLVM_NAMED
-                                                , PbType.name = Just $ u8fromString s }
+                                               , PbType.name = Just $ u8fromString s }
 dumpType (TupleTypeIL types) = P'.defaultValue { PbType.tag  = PbTypeTag.TUPLE
-                                                ,  type_parts = fromList $ fmap dumpType types }
-dumpType x@(FnTypeIL s t cc cs) =
-                                P'.defaultValue { PbType.tag  = tagProcOrFunc cs
+                                               ,  type_parts = fromList $ fmap dumpType types }
+dumpType (FnTypeIL s t cc cs) =
+                                P'.defaultValue { PbType.tag = tagProcOrFunc cs
                                                 , PbType.procty = Just $ dumpProcType (s, t, cc)
                                                 }
-dumpType x@(CoroTypeIL a b)     = P'.defaultValue { PbType.tag  = PbTypeTag.CORO
+dumpType (CoroTypeIL a b)     = P'.defaultValue { PbType.tag  = PbTypeTag.CORO
                                                 ,  type_parts = fromList $ fmap dumpType [a,b] }
 
-dumpType x@(ForAllIL tyvars ty) = let tyVarName tv = case tv of
-                                                    BoundTyVar nm -> u8fromString nm
-                                                    SkolemTyVar s u -> error $ "dumpType (Forall ...) saw skolem var " ++ s
-                                in
-                                P'.defaultValue { PbType.tag  = PbTypeTag.FORALL_TY
+dumpType (ForAllIL tyvars ty) = P'.defaultValue { PbType.tag  = PbTypeTag.FORALL_TY
                                                 ,  type_parts = fromList $ fmap dumpType [ty]
                                                 , tyvar_names = fromList $ fmap tyVarName tyvars }
+  where tyVarName tv = case tv of BoundTyVar nm -> u8fromString nm
+                                  SkolemTyVar s _u -> error $ "dumpType (Forall ...) saw skolem var " ++ s
 
-dumpType x@(TyVarIL (BoundTyVar s)) =
+dumpType (TyVarIL (BoundTyVar s)) =
                                P'.defaultValue { PbType.tag  = PbTypeTag.TYPE_VARIABLE
                                                , PbType.name = Just $ u8fromString s
                                                }
-dumpType x@(PtrTypeIL ty) =    P'.defaultValue { PbType.tag = PbTypeTag.PTR
-                                               , type_parts = fromList $ fmap dumpType [ty]
-                                               }
-dumpType x@(ArrayTypeIL ty) =  P'.defaultValue { PbType.tag = PbTypeTag.ARRAY
-                                               , type_parts = fromList $ fmap dumpType [ty]
-                                               }
+dumpType (PtrTypeIL ty) =    P'.defaultValue { PbType.tag = PbTypeTag.PTR
+                                             , type_parts = fromList $ fmap dumpType [ty]
+                                             }
+dumpType (ArrayTypeIL ty) =  P'.defaultValue { PbType.tag = PbTypeTag.ARRAY
+                                             , type_parts = fromList $ fmap dumpType [ty]
+                                             }
 dumpType other = error $ "dumpType saw unknown type " ++ show other
 
 dumpProcType (s, t, cc) =
     let args = case s of
                 TupleTypeIL types -> [dumpType x | x <- types]
-                otherwise         -> [dumpType s]
+                _else             -> [dumpType s]
     in
     ProcType.ProcType {
           arg_types = fromList args
@@ -140,7 +138,7 @@ dumpMemRegion amr = case amr of
         MemRegionGlobalHeap -> Foster.Bepb.AllocInfo.MemRegion.MEM_REGION_GLOBAL_HEAP
 
 dumpAllocate :: ILAllocInfo -> PbAllocInfo.AllocInfo
-dumpAllocate (ILAllocInfo typ region maybe_array_size unboxed) =
+dumpAllocate (ILAllocInfo _typ region maybe_array_size unboxed) =
     P'.defaultValue { PbAllocInfo.mem_region = dumpMemRegion region
                     , PbAllocInfo.array_size = fmap dumpVar maybe_array_size
                     , PbAllocInfo.unboxed    = unboxed }
@@ -250,7 +248,7 @@ dumpExpr x@(ILAlloc a) =
                     , PbLetable.tag   = IL_ALLOC
                     , PbLetable.type' = Just $ dumpType (typeIL x)  }
 
-dumpExpr x@(ILAllocArray elt_ty size) =
+dumpExpr  (ILAllocArray elt_ty size) =
     P'.defaultValue { PbLetable.parts = fromList []
                     , PbLetable.tag   = IL_ALLOCATE
                     , PbLetable.type' = Just $ dumpType elt_ty
@@ -267,7 +265,7 @@ dumpExpr x@(ILStore a b) =
                     , PbLetable.tag   = IL_STORE
                     , PbLetable.type' = Just $ dumpType (typeIL x)  }
 
-dumpExpr x@(ILArrayRead t a b ) =
+dumpExpr x@(ILArrayRead _t a b ) =
     P'.defaultValue { PbLetable.parts = fromList (fmap dumpVar [a, b])
                     , PbLetable.tag   = IL_ARRAY_READ
                     , PbLetable.type' = Just $ dumpType (typeIL x)  }
@@ -277,13 +275,13 @@ dumpExpr x@(ILArrayPoke v b i ) =
                     , PbLetable.tag   = IL_ARRAY_POKE
                     , PbLetable.type' = Just $ dumpType (typeIL x)  }
 
-dumpExpr x@(ILInt ty int) =
+dumpExpr x@(ILInt _ty int) =
     P'.defaultValue { PbLetable.pb_int = Just $ dumpInt (show $ litIntValue int)
                                                      (litIntMinBits int)
                     , PbLetable.tag   = IL_INT
                     , PbLetable.type' = Just $ dumpType (typeIL x)  }
 
-dumpExpr x@(ILTyApp overallTy baseExpr argType) =
+dumpExpr x@(ILTyApp {}) =
     error $ "Unable to dump type application node " ++ show x
           ++ " (should handle substitution before codegen)."
 
@@ -302,7 +300,7 @@ dumpDecisionTree (DT_Leaf block_id idsoccs) =
                     , PbDecisionTree.leaf_idoccs = fromList $ map (dumpOcc  .snd) idsoccs
                     , PbDecisionTree.leaf_action = Just $ dumpBlockId block_id }
 
-dumpDecisionTree (DT_Swap i dt) = dumpDecisionTree dt
+dumpDecisionTree (DT_Swap _i dt) = dumpDecisionTree dt
 
 dumpDecisionTree (DT_Switch occ sc) =
     P'.defaultValue { PbDecisionTree.tag    = DT_SWITCH
@@ -316,7 +314,7 @@ dumpSwitchCase occ (SwitchCase ctorDTpairs defaultCase) =
                     , PbSwitchCase.defCase = fmap dumpDecisionTree defaultCase
                     , PbSwitchCase.occ   = Just $ dumpOcc occ }
 
-dumpCtorId (CtorId s n a i) =
+dumpCtorId (CtorId s n _a i) =
     P'.defaultValue { PbCtorId.ctor_type_name = u8fromString s
                     , PbCtorId.ctor_ctor_name = u8fromString n
                     , PbCtorId.ctor_local_id  = intToInt32 i }
@@ -425,9 +423,9 @@ typeIL expr = case expr of
     ILBool _                -> boolTypeIL
     ILInt t _               -> t
     ILTuple vs              -> TupleTypeIL (map tidType vs)
-    ILCall t id expr        -> t
-    ILCallPrim t id vs      -> t
-    ILAppCtor t cid vs      -> t
+    ILCall     t  _ _       -> t
+    ILCallPrim t  _ _       -> t
+    ILAppCtor  t  _ _       -> t
     ILAllocate info         -> ilAllocType info
     ILAllocArray elt_ty _   -> ArrayTypeIL elt_ty
     ILAlloc v               -> PtrTypeIL (tidType v)

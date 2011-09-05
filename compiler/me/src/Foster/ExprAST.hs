@@ -70,53 +70,52 @@ unbuildSeqs expr = [expr]
 -----------------------------------------------------------------------
 
 instance Structured ExprAST where
-    textOf e width =
-        let spaces = Prelude.replicate width '\SP'  in
-        let tryGetCallNameE (E_VarAST rng (VarAST mt v)) = v
+    textOf e _width =
+        let tryGetCallNameE (E_VarAST _rng (VarAST _mt v)) = v
             tryGetCallNameE _                            = "" in
         case e of
-            E_BoolAST rng  b     -> out $ "BoolAST      " ++ (show b)
-            E_CallAST rng b args -> out $ "CallAST      " ++ tryGetCallNameE b
-            E_CompilesAST _rng _ -> out $ "CompilesAST  "
-            E_IfAST _rng _ _ _   -> out $ "IfAST        "
-            E_UntilAST _rng _ _  -> out $ "UntilAST     "
-            E_IntAST rng text    -> out $ "IntAST       " ++ text
-            E_FnAST f            -> out $ "FnAST        " ++ (fnAstName f)
-            E_LetRec rnd bnz e t -> out $ "LetRec       "
-            E_LetAST rng bnd e t -> out $ "LetAST       " ++ termBindingName bnd
-            E_SeqAST _rng a b    -> out $ "SeqAST       "
-            E_AllocAST rng a     -> out $ "AllocAST     "
-            E_DerefAST rng a     -> out $ "DerefAST     "
-            E_StoreAST rng a b   -> out $ "StoreAST     "
-            E_ArrayRead r a b    -> out $ "SubscriptAST "
-            E_ArrayPoke r a b c  -> out $ "ArrayPokeAST "
-            E_TupleAST _         -> out $ "TupleAST     "
-            E_TyApp rng a t      -> out $ "TyApp        "
-            E_Case rng _ _       -> out $ "Case         "
-            E_VarAST rng v       -> out $ "VarAST       " ++ evarName v ++ " :: " ++ show (evarMaybeType v)
+            E_BoolAST _rng  b      -> out $ "BoolAST      " ++ (show b)
+            E_CallAST _rng b _args -> out $ "CallAST      " ++ tryGetCallNameE b
+            E_CompilesAST {}       -> out $ "CompilesAST  "
+            E_IfAST       {}       -> out $ "IfAST        "
+            E_UntilAST _rng _ _    -> out $ "UntilAST     "
+            E_IntAST _rng text     -> out $ "IntAST       " ++ text
+            E_FnAST f              -> out $ "FnAST        " ++ (fnAstName f)
+            E_LetRec    {}         -> out $ "LetRec       "
+            E_LetAST _rng bnd _ _  -> out $ "LetAST       " ++ termBindingName bnd
+            E_SeqAST    {}         -> out $ "SeqAST       "
+            E_AllocAST  {}         -> out $ "AllocAST     "
+            E_DerefAST  {}         -> out $ "DerefAST     "
+            E_StoreAST  {}         -> out $ "StoreAST     "
+            E_ArrayRead {}         -> out $ "SubscriptAST "
+            E_ArrayPoke {}         -> out $ "ArrayPokeAST "
+            E_TupleAST  {}         -> out $ "TupleAST     "
+            E_TyApp     {}         -> out $ "TyApp        "
+            E_Case      {}         -> out $ "Case         "
+            E_VarAST _rng v        -> out $ "VarAST       " ++ evarName v ++ " :: " ++ show (evarMaybeType v)
     childrenOf e =
         let termBindingExpr (TermBinding _ e) = e in
         case e of
-            E_BoolAST rng b             -> []
-            E_CallAST rng b tup         -> b:(tupleAstExprs tup)
-            E_CompilesAST _rng (Just e) -> [e]
-            E_CompilesAST _rng Nothing  -> []
-            E_IfAST _rng    a b c       -> [a, b, c]
-            E_UntilAST _rng a b         -> [a, b]
-            E_IntAST rng txt            -> []
-            E_FnAST f                   -> [fnAstBody f]
-            E_SeqAST _rng  a b          -> unbuildSeqs e
-            E_AllocAST rng a            -> [a]
-            E_DerefAST rng a            -> [a]
-            E_StoreAST rng a b          -> [a, b]
-            E_ArrayRead r a b           -> [a, b]
-            E_ArrayPoke r a b c         -> [a, b, c]
-            E_TupleAST tup              -> tupleAstExprs tup
-            E_TyApp  rng a t            -> [a]
-            E_Case rng e bs             -> e:(map snd bs)
-            E_VarAST _ _                -> []
-            E_LetRec rnd bnz e t        -> [termBindingExpr bnd | bnd <- bnz] ++ [e]
-            E_LetAST rng bnd e t        -> (termBindingExpr bnd):[e]
+            E_BoolAST     _rng _b        -> []
+            E_CallAST     _rng b tup     -> b:(tupleAstExprs tup)
+            E_CompilesAST _rng (Just e)  -> [e]
+            E_CompilesAST _rng Nothing   -> []
+            E_IfAST       _rng    a b c  -> [a, b, c]
+            E_UntilAST    _rng a b       -> [a, b]
+            E_IntAST      _rng _txt      -> []
+            E_FnAST f                    -> [fnAstBody f]
+            E_SeqAST      _rng  _a _b    -> unbuildSeqs e
+            E_AllocAST    _rng a         -> [a]
+            E_DerefAST    _rng a         -> [a]
+            E_StoreAST    _rng a b       -> [a, b]
+            E_ArrayRead   _rng a b       -> [a, b]
+            E_ArrayPoke   _rng a b c     -> [a, b, c]
+            E_TupleAST tup               -> tupleAstExprs tup
+            E_TyApp       _rng a _t      -> [a]
+            E_Case        _rng e bs      -> e:(map snd bs)
+            E_VarAST      _rng _         -> []
+            E_LetRec      _rng bnz e _t  -> [termBindingExpr bnd | bnd <- bnz] ++ [e]
+            E_LetAST      _rng bnd e _t  -> (termBindingExpr bnd):[e]
 
 instance SourceRanged ExprAST
   where
@@ -143,11 +142,11 @@ instance SourceRanged ExprAST
 
 instance Expr ExprAST where
   freeVars e = case e of
-    E_VarAST rng v       -> [evarName v]
-    E_LetAST rng bnd e t -> let bindingFreeVars (TermBinding v e) =
-                                 freeVars e `butnot` [evarName v]
-                             in  freeVars e ++ (bindingFreeVars bnd)
-    E_Case rng e epatbnds -> freeVars e ++ (concatMap epatBindingFreeVars epatbnds)
+    E_VarAST _rng v        -> [evarName v]
+    E_LetAST _rng bnd e _t -> let bindingFreeVars (TermBinding v e) =
+                                   freeVars e `butnot` [evarName v]
+                               in  freeVars e ++ (bindingFreeVars bnd)
+    E_Case _rng e epatbnds -> freeVars e ++ (concatMap epatBindingFreeVars epatbnds)
     E_FnAST f           -> let bodyvars  = freeVars (fnAstBody f) in
                            let boundvars = map (identPrefix.tidIdent) (fnFormals f) in
                            bodyvars `butnot` boundvars
@@ -158,11 +157,11 @@ epatBindingFreeVars (pat, expr) =
   where epatBoundNames :: EPattern -> [String]
         epatBoundNames pat =
           case pat of
-            EP_Wildcard _rng      -> []
+            EP_Wildcard {}        -> []
             EP_Variable _rng evar -> [evarName evar]
-            EP_Ctor     _rng pats nm -> []
-            EP_Bool     _rng _    -> []
-            EP_Int      _rng _    -> []
+            EP_Ctor     {}        -> []
+            EP_Bool     {}        -> []
+            EP_Int      {}        -> []
             EP_Tuple    _rng pats -> concatMap epatBoundNames pats
 
 

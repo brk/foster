@@ -15,10 +15,8 @@ import Control.Monad.State(forM_, execState, get, put, State)
 import Foster.Base
 import Foster.ILExpr
 import Foster.TypeIL
-import Foster.Context
 import Foster.Worklist
 import Foster.Letable
-import Foster.PatternMatch(DecisionTree(..), SwitchCase(..))
 
 import Data.Map(Map)
 import Data.Map as Map(insert, (!), elems, filter)
@@ -82,6 +80,7 @@ data MonoState = MonoState {
 
 type Mono a = State MonoState a
 
+monoPopWorklist :: Mono (Maybe MonoWork)
 monoPopWorklist = do
     state <- get
     case worklistGet $ monoWorklist state of
@@ -160,49 +159,48 @@ monomorphizeMid mid =
                             Left var -> return $ ILRebindId id var
                             Right val -> return $ ILLetVal id val
     ILClosures ids clos -> do return $ ILClosures ids clos -- TODO
-    ILRebindId x y -> return mid
+    ILRebindId {}       -> do return mid
 
 monomorphizeLetable expr =
-        let g = monomorphizeLetable in
-        case expr of
-            -- This is the only interesting case!
-            ILTyApp t v argty -> do
-                case v of
-                  -- If we're polymorphically instantiating a global symbol
-                  -- (i.e. a proc) then we can statically look up the proc
-                  -- definition and create a monomorphized copy.
-                  TypedId (ForAllIL tyvars _) id@(GlobalSymbol prcnm) ->
-                    do let argtys = listize argty
-                       let polyid = getPolyProcId id (show argtys)
-                       -- Figure out what (procedure) name we'd like to call.
-                       -- If we haven't already started monomorphising it,
-                       -- add the fn and args to the worklist.
-                       let monoWork = NeedsMono polyid id argtys
-                       alreadyStarted <- monoSeen polyid
-                       _ <- if alreadyStarted
-                              then return ()
-                              else do monoScheduleWork monoWork
-                       --error $ "(ILVar (TypedId t polyid)) = " ++ show (TypedId t polyid)
-                       --return $ ILHackVar (TypedId t polyid)
-                       return $ Left (TypedId t polyid)
+    case expr of
+        -- This is the only interesting case!
+        ILTyApp t v argty -> do
+            case v of
+              -- If we're polymorphically instantiating a global symbol
+              -- (i.e. a proc) then we can statically look up the proc
+              -- definition and create a monomorphized copy.
+              TypedId (ForAllIL {}) id@(GlobalSymbol _) ->
+                do let argtys = listize argty
+                   let polyid = getPolyProcId id (show argtys)
+                   -- Figure out what (procedure) name we'd like to call.
+                   -- If we haven't already started monomorphising it,
+                   -- add the fn and args to the worklist.
+                   let monoWork = NeedsMono polyid id argtys
+                   alreadyStarted <- monoSeen polyid
+                   _ <- if alreadyStarted
+                          then return ()
+                          else do monoScheduleWork monoWork
+                   --error $ "(ILVar (TypedId t polyid)) = " ++ show (TypedId t polyid)
+                   --return $ ILHackVar (TypedId t polyid)
+                   return $ Left (TypedId t polyid)
 
-                  -- On the other hand, if we only have a local var, then
-                  -- (in general) the var is unknown, so we can't statically
-                  -- monomorphize it. In simple cases we can insert coercions
-                  -- to/from uniform and non-uniform representations.
-                  TypedId (ForAllIL tyvars _) localvarid ->
-                    error $ "\nFor now, polymorphic instantiation is only"
-                         ++ " allowed on functions at the top level!"
-                         ++ "\nThis is a silly restriction for local bindings,"
-                         ++ " and could be solved with a dash of flow"
-                         ++ " analysis,\nbut the issues are much deeper for"
-                         ++ " polymorphic function arguments"
-                         ++ " (higher-rank polymorphism)...\n"
+              -- On the other hand, if we only have a local var, then
+              -- (in general) the var is unknown, so we can't statically
+              -- monomorphize it. In simple cases we can insert coercions
+              -- to/from uniform and non-uniform representations.
+              TypedId (ForAllIL {}) _localvarid ->
+                error $ "\nFor now, polymorphic instantiation is only"
+                     ++ " allowed on functions at the top level!"
+                     ++ "\nThis is a silly restriction for local bindings,"
+                     ++ " and could be solved with a dash of flow"
+                     ++ " analysis,\nbut the issues are much deeper for"
+                     ++ " polymorphic function arguments"
+                     ++ " (higher-rank polymorphism)...\n"
 
-                  _ -> error $ "Expected polymorphic instantiation to affect a bound variable!"
+              _ -> error $ "Expected polymorphic instantiation to affect a bound variable!"
 
-            -- All other nodes are ignored straightaway.
-            _ -> return $ Right expr
+        -- All other nodes are ignored straightaway.
+        _ -> return $ Right expr
 
 -- matching definition from Typecheck.hs
 -- does listize (TupleTypeIL []) result in [] or [unit] ?
@@ -215,9 +213,6 @@ getPolyProcId :: Ident -> String -> Ident
 getPolyProcId id s = case id of
                         (GlobalSymbol o) -> (GlobalSymbol (o ++ s))
                         (Ident o m)      -> (Ident (o ++ s) m)
-
-extendContext tid ctx =
-     prependContextBinding ctx (TermVarBinding (identPrefix (tidIdent tid)) tid)
 
 -- Our wanton copying of procs without consistently renaming the copied
 -- variables breaks alpha-uniqueness, but it works out at the moment because:
@@ -246,7 +241,7 @@ substituteTypeInLast subst last =
   case last of
         ILRetVoid          -> last
         ILRet   v          -> ILRet (substituteTypeInVar subst v)
-        ILBr    b          -> last
+        ILBr    _          -> last
         ILIf    t v b1 b2  -> ILIf (parSubstTyIL subst t)
                                    (substituteTypeInVar subst v) b1 b2
         ILCase  t v dt     -> ILCase (parSubstTyIL subst t)
@@ -272,15 +267,6 @@ substituteTypeInLetable subst expr =
             ILArrayPoke  v b i  -> ILArrayPoke (qv v) (qv b) (qv i)
             ILTyApp   t v argty -> ILTyApp (q t) (qv v) (q argty)
 
-fmapDt f (DT_Fail          ) = DT_Fail
-fmapDt f (DT_Leaf a idsoccs) = DT_Leaf (f a) idsoccs
-fmapDt f (DT_Swap i dt     ) = DT_Swap i (fmapDt f dt)
-fmapDt f (DT_Switch occ sc ) = DT_Switch occ (fmapSc f sc)
-
-fmapSc f (SwitchCase idsdts maybeDt) =
-          SwitchCase (map (\(id,dt) -> (id, fmapDt f dt)) idsdts)
-                     (fmap (fmapDt f) maybeDt)
-
 assocFilterOut :: (Eq a) => [(a,b)] -> [a] -> [(a,b)]
 assocFilterOut lst keys =
     [(a,b) | (a,b) <- lst, not(List.elem a keys)]
@@ -294,7 +280,7 @@ typesEqualIL (NamedTypeIL x) (NamedTypeIL y) = x == y
 typesEqualIL (TupleTypeIL as) (TupleTypeIL bs) =
     List.length as == List.length bs &&
     Prelude.and [typesEqualIL a b | (a, b) <- Prelude.zip as bs]
-typesEqualIL (FnTypeIL a1 b1 c1 d1) (FnTypeIL a2 b2 c2 d2) =
+typesEqualIL (FnTypeIL a1 b1 c1 _d1) (FnTypeIL a2 b2 c2 _d2) =
     typesEqualIL a1 a2 && typesEqualIL b1 b2 && c1 == c2
 typesEqualIL (CoroTypeIL a1 b1) (CoroTypeIL a2 b2) = typesEqualIL a1 a2 && typesEqualIL b1 b2
 typesEqualIL (ForAllIL vars1 ty1) (ForAllIL vars2 ty2) = vars1 == vars2 && typesEqualIL ty1 ty2
@@ -307,15 +293,15 @@ parSubstTyIL :: [(TypeIL, TypeIL)] -> TypeIL -> TypeIL
 parSubstTyIL prvNextPairs ty =
     let q = parSubstTyIL prvNextPairs in
     case ty of
-        (NamedTypeIL _)  -> fromMaybe ty $ List.lookup ty prvNextPairs
-        (TyVarIL tv)     -> fromMaybe ty $ List.lookup ty prvNextPairs
+        NamedTypeIL _  -> fromMaybe ty $ List.lookup ty prvNextPairs
+        TyVarIL     _  -> fromMaybe ty $ List.lookup ty prvNextPairs
 
-        (PtrTypeIL   t)     -> PtrTypeIL   (q t)
-        (ArrayTypeIL t)     -> ArrayTypeIL (q t)
-        (TupleTypeIL types) -> TupleTypeIL (map q types)
-        (FnTypeIL s t cc cs)-> FnTypeIL   (q s) (q t) cc cs
-        (CoroTypeIL s t)    -> CoroTypeIL (q s) (q t)
-        (ForAllIL tvs rho)  ->
+        PtrTypeIL   t        -> PtrTypeIL   (q t)
+        ArrayTypeIL t        -> ArrayTypeIL (q t)
+        TupleTypeIL types    -> TupleTypeIL (map q types)
+        FnTypeIL   s t cc cs -> FnTypeIL    (q s) (q t) cc cs
+        CoroTypeIL s t       -> CoroTypeIL  (q s) (q t)
+        ForAllIL tvs rho     ->
                 let prvNextPairs' = prvNextPairs `assocFilterOut`
                                                    [TyVarIL tv | tv <- tvs]
                 in  ForAllIL tvs (parSubstTyIL prvNextPairs' rho)
