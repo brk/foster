@@ -4,9 +4,7 @@
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
-module Foster.ProtobufFE (
-    parseSourceModule
-) where
+module Foster.ProtobufFE (parseSourceModule) where
 
 import Foster.Base
 import Foster.ExprAST
@@ -46,8 +44,6 @@ import Foster.Fepb.Expr.Tag(Tag(IF, LET, VAR, SEQ, UNTIL,
                                 PAT_VARIABLE, PAT_TUPLE))
 import qualified Foster.Fepb.SourceRange as Pb
 import qualified Foster.Fepb.SourceLocation as Pb
-
-import qualified Text.ProtocolBuffers.Header as P'
 
 -----------------------------------------------------------------------
 -- hprotoc cheat sheet:
@@ -174,8 +170,7 @@ parseTyApp pbexpr range = do
                                 Nothing -> error "TyApp missing arg type!"
                                 Just ty -> ty)
 
-parseEVar pbexpr range = do
-    return $ E_VarAST range (parseVar pbexpr)
+parseEVar pbexpr range = do return $ E_VarAST range (parseVar pbexpr)
 
 parseVar pbexpr = do VarAST (fmap parseType (PbExpr.type' pbexpr))
                             (getName "var" $ PbExpr.name pbexpr)
@@ -208,10 +203,6 @@ parseCaseExpr pbexpr range = do
       branchexprs <- mapM parseExpr    (toList $ PBCase.branch  pbcase)
       return $ E_Case range expr (Prelude.zip patterns branchexprs)
 
-getVarName :: ExprAST -> String
-getVarName (E_VarAST rng v) = evarName v
-getVarName x = error $ "getVarName given a non-variable! " ++ show x
-
 getFormal :: PbExpr.Expr -> FE (TypedId TypeAST)
 getFormal e =
   case PbExpr.tag e of
@@ -221,14 +212,6 @@ getFormal e =
                    Just t  -> return (TypedId t i)
                    Nothing -> error $ "Missing annotation on variable " ++ show v
      _   -> error "getVar must be given a var!"
-
-getString :: Maybe P'.Utf8 -> String
-getString Nothing  = ""
-getString (Just u) = uToString u
-
-parseSourceLocation :: Pb.SourceLocation -> ESourceLocation
-parseSourceLocation sr = -- This may fail for files of more than 2^29 lines...
-    ESourceLocation (fromIntegral $ Pb.line sr) (fromIntegral $ Pb.column sr)
 
 parseRange :: PbExpr.Expr -> FE SourceRange
 parseRange pbexpr =
@@ -240,6 +223,10 @@ parseRange pbexpr =
                        (parseSourceLocation (Pb.end   r))
                        lines
                        (fmap uToString (Pb.file_path r))
+ where
+   parseSourceLocation :: Pb.SourceLocation -> ESourceLocation
+   parseSourceLocation sr = -- This may fail for files of more than 2^29 lines.
+       ESourceLocation (fromIntegral $ Pb.line sr) (fromIntegral $ Pb.column sr)
 
 parseExpr :: PbExpr.Expr -> FE ExprAST
 parseExpr pbexpr = do
@@ -272,21 +259,15 @@ parseExpr pbexpr = do
     range <- parseRange pbexpr
     fn pbexpr range
 
-toplevel :: FnAST -> FnAST
-toplevel f | fnWasToplevel f =
-        error $ "Broken invariant: top-level functions " ++
-                "should not have their top-level bit set before we do it!"
-toplevel f = f { fnWasToplevel = True }
-
-parseDataCtor :: (Int, DataCtor.DataCtor) -> FE (Foster.Base.DataCtor TypeAST)
-parseDataCtor (n, ct) = do
-    let types = map parseType (toList $ DataCtor.type' ct)
-    return $ Foster.Base.DataCtor (uToString $ DataCtor.name ct) n types
-
 parseDataType :: DataType.DataType -> FE (Foster.Base.DataType TypeAST)
 parseDataType dt = do
     ctors <- mapM parseDataCtor (Prelude.zip [0..] (toList $ DataType.ctor dt))
     return $ Foster.Base.DataType (uToString $ DataType.name dt) ctors
+ where
+  parseDataCtor :: (Int, DataCtor.DataCtor) -> FE (Foster.Base.DataCtor TypeAST)
+  parseDataCtor (n, ct) = do
+      let types = map parseType (toList $ DataCtor.type' ct)
+      return $ Foster.Base.DataCtor (uToString $ DataCtor.name ct) n types
 
 parseModule name decls defns datatypes = do
     lines <- gets feModuleLines
@@ -296,6 +277,12 @@ parseModule name decls defns datatypes = do
                 [(uToString nm, parseType t) | (Decl nm t) <- decls]
                 dtypes
                 lines
+  where
+    toplevel :: FnAST -> FnAST
+    toplevel f | fnWasToplevel f =
+            error $ "Broken invariant: top-level functions " ++
+                    "should not have their top-level bit set before we do it!"
+    toplevel f = f { fnWasToplevel = True }
 
 parseSourceModule :: SourceModule -> (ModuleAST FnAST TypeAST)
 parseSourceModule sm =
@@ -305,9 +292,9 @@ parseSourceModule sm =
                    (toList    $ SourceModule.defn sm)
                    (toList    $ SourceModule.data_type sm))
       (FEState (sourceLines sm))
-
-sourceLines :: SourceModule -> SourceLines
-sourceLines sm = SourceLines (fmapDefault pUtf8ToText (SourceModule.line sm))
+  where
+   sourceLines :: SourceModule -> SourceLines
+   sourceLines sm = SourceLines (fmapDefault pUtf8ToText (SourceModule.line sm))
 
 parseType :: Type -> TypeAST
 parseType t =
@@ -324,15 +311,17 @@ parseType t =
          PbTypeTag.CARRAY -> error "Parsing for CARRAY type not yet implemented"
          PbTypeTag.FORALL_TY -> error "Parsing for FORALL_TY type not yet implemented"
 
-parseCallConv Nothing         = FastCC
-parseCallConv (Just "fastcc") = FastCC
-parseCallConv (Just "ccc"   ) = CCC
-parseCallConv (Just other   ) = error $ "Unknown call conv " ++ other
-
 parseFnTy :: FnType -> TypeAST
-parseFnTy fty = FnTypeAST (TupleTypeAST [parseType x | x <- toList $ PbFnType.arg_types fty])
-                          (parseType $ PbFnType.ret_type fty)
-                          (parseCallConv (fmap uToString $ PbFnType.calling_convention fty))
-                          (if fromMaybe True $ PbFnType.is_closure fty
-                            then FT_Func
-                            else FT_Proc)
+parseFnTy fty =
+  FnTypeAST (TupleTypeAST [parseType x | x <- toList $ PbFnType.arg_types fty])
+            (parseType $ PbFnType.ret_type fty)
+            (parseCallConv (fmap uToString $ PbFnType.calling_convention fty))
+            (ftFuncIfClosureElseProc fty)
+  where ftFuncIfClosureElseProc fty =
+           if fromMaybe True $ PbFnType.is_closure fty then FT_Func else FT_Proc
+
+        parseCallConv Nothing         = FastCC
+        parseCallConv (Just "fastcc") = FastCC
+        parseCallConv (Just "ccc"   ) = CCC
+        parseCallConv (Just other   ) = error $ "Unknown call conv " ++ other
+
