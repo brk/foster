@@ -19,7 +19,6 @@ import Data.Maybe(fromMaybe)
 import Data.Foldable(toList)
 
 import Control.Monad.State
-import Data.Set(Set)
 import Data.Char(isLower)
 
 import Text.ProtocolBuffers(isSet,getVal)
@@ -59,11 +58,7 @@ import qualified Text.ProtocolBuffers.Header as P'
 -- optional PhoneType type      => (getVal phone_number type')
 -----------------------------------------------------------------------
 
-type KnownVars = Set String
-data FEState = FEState {
-    feModuleLines :: SourceLines
-}
-
+data FEState = FEState { feModuleLines :: SourceLines }
 type FE a = State FEState a
 
 getName desc (Just s) = uToString s
@@ -197,18 +192,18 @@ parseEVar pbexpr = do
     return $ E_VarAST range (parseVar pbexpr)
 
 parseVar pbexpr = do VarAST (fmap parseType (PbExpr.type' pbexpr))
-                               (getName "var" $ PbExpr.name pbexpr)
+                            (getName "var" $ PbExpr.name pbexpr)
 
 parsePattern :: PbExpr.Expr -> FE EPattern
 parsePattern pbexpr = do
   range <- parseRange pbexpr
   case PbExpr.tag pbexpr of
-    PAT_WILDCARD -> return $ EP_Wildcard range
+    PAT_WILDCARD -> do return $ EP_Wildcard range
     PAT_TUPLE    -> do pats <- mapM parsePattern (toList $ PbExpr.parts pbexpr)
                        return $ EP_Tuple range pats
-    PAT_CTOR    -> do let name = getName "pat_ctor" $ PbExpr.name pbexpr
-                      pats <- mapM parsePattern (toList $ PbExpr.parts pbexpr)
-                      return $ EP_Ctor range pats name
+    PAT_CTOR     -> do let name = getName "pat_ctor" $ PbExpr.name pbexpr
+                       pats <- mapM parsePattern (toList $ PbExpr.parts pbexpr)
+                       return $ EP_Ctor range pats name
     _ -> do [expr] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
             return $ case (PbExpr.tag pbexpr, expr) of
               (PAT_BOOL, E_BoolAST _ bv) -> EP_Bool range bv
@@ -217,7 +212,6 @@ parsePattern pbexpr = do
 
               otherwise -> error $ "parsePattern called with non-matching tag/arg!"
                                    ++ " " ++ show (PbExpr.tag pbexpr)
-
 
 parseCaseExpr pbexpr = do
   range <- parseRange pbexpr
