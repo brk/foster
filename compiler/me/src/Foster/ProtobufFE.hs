@@ -64,18 +64,15 @@ type FE a = State FEState a
 getName desc (Just s) = uToString s
 getName desc Nothing  = error "Missing required name in " ++ desc ++ "!"
 
-parseBool pbexpr = do
-    range <- parseRange pbexpr
+parseBool pbexpr range = do
     return $ E_BoolAST range $ fromMaybe False (PbExpr.bool_value pbexpr)
 
-parseCall pbexpr = do
-    rng <- parseRange pbexpr
+parseCall pbexpr rng = do
     (base:args) <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
     return $ E_CallAST rng base (argTuple rng args)
         where argTuple rng args = TupleAST (rangeSpanOf rng args) args
 
-parseCompiles pbexpr = do
-    range <- parseRange pbexpr
+parseCompiles pbexpr range = do
     let numChildren = Seq.length $ PbExpr.parts pbexpr
     case numChildren of
         1 -> do [body] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
@@ -96,33 +93,29 @@ parseFn pbexpr = do range <- parseRange pbexpr
      parseFormal (Formal u t) = TypedId (parseType t) (Ident (uToString u) 0)
      parseReturnType name pbexpr = fmap parseType (PbExpr.result_type pbexpr)
 
-parseValAbs pbexpr = do
+parseValAbs pbexpr _range = do
   fn <- parseFn pbexpr
   return $ E_FnAST fn
 
-parseIf pbexpr =
+parseIf pbexpr range =
         if (isSet pbexpr PbExpr.pb_if)
                 then parseFromPBIf (getVal pbexpr PbExpr.pb_if)
                 else error "must have if to parse from if!"
         where parseFromPBIf pbif = do
-               range <- parseRange pbexpr
                eif   <- parseExpr (PBIf.test_expr pbif)
                ethen <- parseExpr (PBIf.then_expr pbif)
                eelse <- parseExpr (PBIf.else_expr pbif)
                return (E_IfAST range eif ethen eelse)
 
-parseUntil pbexpr = do
-    range <- parseRange pbexpr
+parseUntil pbexpr range = do
     [a, b] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
     return $ E_UntilAST range a b
 
-parseInt :: PbExpr.Expr -> FE ExprAST
-parseInt pbexpr = do
-    range <- parseRange pbexpr
+parseInt :: PbExpr.Expr -> SourceRange -> FE ExprAST
+parseInt pbexpr range = do
     return $ E_IntAST range (uToString $ getVal pbexpr PbExpr.int_text)
 
-parseLet pbexpr = do
-    range <- parseRange pbexpr
+parseLet pbexpr range = do
     parsePBLet range
                (fromMaybe (error "Protobuf node tagged LET without PbLet field!")
                           (PbExpr.pb_let pbexpr))
@@ -142,7 +135,7 @@ parseLet pbexpr = do
                    (b:[]) -> E_LetAST range b expr mty
                    (b:bs) -> E_LetAST range b (buildLets range bs expr mty) Nothing
 
-parseSeq pbexpr = do
+parseSeq pbexpr _range = do
     exprs <- mapM parseExpr $ toList (toList $ PbExpr.parts pbexpr)
     return $ buildSeqs exprs
       where
@@ -152,43 +145,36 @@ parseSeq pbexpr = do
         buildSeqs [a]   = a
         buildSeqs (a:b) = E_SeqAST (MissingSourceRange "buildSeqs") a (buildSeqs b)
 
-parseAlloc pbexpr = do
-    range <- parseRange pbexpr
+parseAlloc pbexpr range = do
     [body] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
     return $ E_AllocAST range body
 
-parseStore pbexpr = do
-    range <- parseRange pbexpr
+parseStore pbexpr range = do
     [a,b] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
     case b of -- a >^ c[d]
         E_ArrayRead _ c d -> return $ E_ArrayPoke range a c d
         _                 -> return $ E_StoreAST range a b
 
-parseDeref pbexpr = do
-    range <- parseRange pbexpr
+parseDeref pbexpr range = do
     [body] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
     return $ E_DerefAST range body
 
-parseSubscript pbexpr = do
-    range <- parseRange pbexpr
+parseSubscript pbexpr range = do
     [a,b] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
     return $ E_ArrayRead range a b
 
-parseTuple pbexpr = do
-    range <- parseRange pbexpr
+parseTuple pbexpr range = do
     exprs <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
     return $ E_TupleAST $ TupleAST range exprs
 
-parseTyApp pbexpr = do
-    range  <- parseRange pbexpr
+parseTyApp pbexpr range = do
     [body] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
     return $ E_TyApp range  body
             (parseType $ case PbExpr.ty_app_arg_type pbexpr of
                                 Nothing -> error "TyApp missing arg type!"
                                 Just ty -> ty)
 
-parseEVar pbexpr = do
-    range <- parseRange pbexpr
+parseEVar pbexpr range = do
     return $ E_VarAST range (parseVar pbexpr)
 
 parseVar pbexpr = do VarAST (fmap parseType (PbExpr.type' pbexpr))
@@ -213,10 +199,9 @@ parsePattern pbexpr = do
               otherwise -> error $ "parsePattern called with non-matching tag/arg!"
                                    ++ " " ++ show (PbExpr.tag pbexpr)
 
-parseCaseExpr pbexpr = do
-  range <- parseRange pbexpr
+parseCaseExpr pbexpr range = do
   case PbExpr.pb_case pbexpr of
-    Nothing -> error "must have if to parse from if!"
+    Nothing -> error "Unable to parse case expression without pb_case!"
     Just pbcase -> do
       expr <- parseExpr (PBCase.scrutinee pbcase)
       patterns    <- mapM parsePattern (toList $ PBCase.pattern pbcase)
@@ -257,7 +242,7 @@ parseRange pbexpr =
                        (fmap uToString (Pb.file_path r))
 
 parseExpr :: PbExpr.Expr -> FE ExprAST
-parseExpr pbexpr =
+parseExpr pbexpr = do
     let fn = case PbExpr.tag pbexpr of
                 PB_INT  -> parseInt
                 IF      -> parseIf
@@ -284,8 +269,8 @@ parseExpr pbexpr =
                 PAT_TUPLE    -> error "parseExpr called on pattern!"
 
                 --otherwise -> error $ "parseExpr saw unknown tag: " ++ (show $ PbExpr.tag pbexpr) ++ "\n"
-        in
-   fn pbexpr
+    range <- parseRange pbexpr
+    fn pbexpr range
 
 toplevel :: FnAST -> FnAST
 toplevel f | fnWasToplevel f =
@@ -303,10 +288,10 @@ parseDataType dt = do
     ctors <- mapM parseDataCtor (Prelude.zip [0..] (toList $ DataType.ctor dt))
     return $ Foster.Base.DataType (uToString $ DataType.name dt) ctors
 
-parseModule name decls defns data_types = do
+parseModule name decls defns datatypes = do
     lines <- gets feModuleLines
     funcs <- sequence $ [(parseFn e)  | (Defn nm e) <- defns]
-    dtypes <- mapM parseDataType data_types
+    dtypes <- mapM parseDataType datatypes
     return $ ModuleAST (map toplevel funcs)
                 [(uToString nm, parseType t) | (Decl nm t) <- decls]
                 dtypes
