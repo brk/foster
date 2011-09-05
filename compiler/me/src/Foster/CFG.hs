@@ -49,7 +49,7 @@ cfgComputeCFG fn = do
 -- A helper for the CFG functions above, to run computeBlocks.
 internalComputeCFG :: Int -> Fn KNExpr TypeIL -> CFGState
 internalComputeCFG uniq fn =
-  let preblock = (Left $ "begin" , []) in
+  let preblock = (Left $ "postalloca" , []) in
   let state0 = CFGState uniq (Just preblock) [] in
   execState runComputeBlocks state0
   where

@@ -234,7 +234,8 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
   let checkBranch (pat, body) = do
       p <- checkPattern pat
       bindings <- extractPatternBindings p (typeAST ascrutinee)
-      -- TODO ensure no duplicate bindings
+      verifyNonOverlappingBindings rng "case" bindings
+
       abody <- typecheck (prependContextBindings ctx bindings) body maybeExpTy
       equateTypes (MetaTyVar m) (typeAST abody)
                    (Just $ "Failed to unify all branches of case " ++ show rng)
@@ -499,7 +500,8 @@ typecheckFn' :: Context TypeAST -> FnAST -> CallConv
              -> Maybe TypeAST -> Maybe TypeAST -> Tc AnnExpr
 typecheckFn' ctx f cc expArgType expBodyType = do
     let fnProtoName = fnAstName f
-    uniquelyNamedFormals <- getUniquelyNamedFormals (fnFormals f) fnProtoName
+    uniquelyNamedFormals <- getUniquelyNamedFormals (fnAstRange f)
+                                                    (fnFormals f) fnProtoName
 
     -- Typecheck the body of the function in a suitably extended context.
     extCtx <- extendContext ctx uniquelyNamedFormals expArgType
@@ -556,8 +558,8 @@ computeFreeFnVars uniquelyNamedFormals annbody f ctx = do
 
 -- | Verify that the given formals have distinct names,
 -- | and return unique'd versions of each.
-getUniquelyNamedFormals rawFormals fnProtoName = do
-    _ <- verifyNonOverlappingVariableNames fnProtoName
+getUniquelyNamedFormals rng rawFormals fnProtoName = do
+    _ <- verifyNonOverlappingVariableNames rng fnProtoName
                                          (map (identPrefix.tidIdent) rawFormals)
     mapM uniquelyName rawFormals
 
@@ -656,16 +658,21 @@ uniquelyName (TypedId ty id) = do
     rename (GlobalSymbol name) _u =
             tcFails [out $ "Cannot rename global symbol " ++ show name]
 
-verifyNonOverlappingVariableNames :: String -> [String] -> Tc ()
-verifyNonOverlappingVariableNames fnName varNames = do
+verifyNonOverlappingVariableNames :: SourceRange -> String -> [String] -> Tc ()
+verifyNonOverlappingVariableNames rng name varNames = do
     let duplicates = [List.head dups
                      | dups <- List.group (List.sort varNames)
                      , List.length dups > 1]
     case duplicates of
         []        -> return ()
-        otherwise -> tcFails [out $ "Error when checking " ++ fnName
+        otherwise -> tcFails [out $ "Error when checking " ++ name
                                  ++ ": had duplicated bindings: "
-                                 ++ show duplicates]
+                                 ++ show duplicates
+                                 ++ highlightFirstLine rng]
+
+verifyNonOverlappingBindings rng name bindings =
+  verifyNonOverlappingVariableNames rng name
+                                    [v | (TermVarBinding v _) <- bindings]
 
 -----------------------------------------------------------------------
 
