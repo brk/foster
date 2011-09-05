@@ -160,8 +160,7 @@ typecheckLet ctx rng (TermBinding v a) e mt = do
 typecheckLetRec :: Context TypeAST -> SourceRange -> [TermBinding]
                 -> ExprAST -> Maybe TypeAST -> Tc AnnExpr
 typecheckLetRec ctx0 rng bindings e mt = do
-    verifyNonOverlappingVariableNames rng "rec"
-                           [evarName v | (TermBinding v _) <- bindings]
+    verifyNonOverlappingVariableNames rng "rec" (map termBindingName bindings)
     -- Generate unification variables for the overall type of
     -- each binding.
     unificationVars <- sequence [newTcUnificationVar $

@@ -9,6 +9,7 @@ module Foster.ExprAST(
 , FnAST(..)
 , TupleAST(..)
 , TermBinding(..)
+, termBindingName
 )
 where
 
@@ -58,8 +59,8 @@ data FnAST  = FnAST { fnAstRange :: SourceRange
                     , fnWasToplevel :: Bool
                     } deriving (Show)
 
-data TermBinding = TermBinding E_VarAST ExprAST
-        deriving (Show)
+data TermBinding = TermBinding E_VarAST ExprAST deriving (Show)
+termBindingName (TermBinding v _) = evarName v
 
 -- | Converts a right-leaning "list" of SeqAST nodes to a List
 unbuildSeqs :: ExprAST -> [ExprAST]
@@ -73,7 +74,6 @@ instance Structured ExprAST where
         let spaces = Prelude.replicate width '\SP'  in
         let tryGetCallNameE (E_VarAST rng (VarAST mt v)) = v
             tryGetCallNameE _                            = "" in
-        let termBindingName (TermBinding v _) = evarName v    in
         case e of
             E_BoolAST rng  b     -> out $ "BoolAST      " ++ (show b)
             E_CallAST rng b args -> out $ "CallAST      " ++ tryGetCallNameE b
@@ -95,10 +95,8 @@ instance Structured ExprAST where
             E_Case rng _ _       -> out $ "Case         "
             E_VarAST rng v       -> out $ "VarAST       " ++ evarName v ++ " :: " ++ show (evarMaybeType v)
     childrenOf e =
-        let termBindingExpr (TermBinding _ e) = e
-            termBindingExprs bs = map termBindingExpr bs
-            termBindingNames bs = map (\(TermBinding v _) -> evarName v) bs
-        in case e of
+        let termBindingExpr (TermBinding _ e) = e in
+        case e of
             E_BoolAST rng b             -> []
             E_CallAST rng b tup         -> b:(tupleAstExprs tup)
             E_CompilesAST _rng (Just e) -> [e]
