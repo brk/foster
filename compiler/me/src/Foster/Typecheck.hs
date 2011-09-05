@@ -157,10 +157,11 @@ typecheckLet ctx rng (TermBinding v a) e mt = do
       ...;
    in e end
 -}
--- TODO make sure there are no duplicated bindings.
 typecheckLetRec :: Context TypeAST -> SourceRange -> [TermBinding]
                 -> ExprAST -> Maybe TypeAST -> Tc AnnExpr
 typecheckLetRec ctx0 rng bindings e mt = do
+    verifyNonOverlappingVariableNames rng "rec"
+                           [evarName v | (TermBinding v _) <- bindings]
     -- Generate unification variables for the overall type of
     -- each binding.
     unificationVars <- sequence [newTcUnificationVar $
@@ -234,8 +235,8 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
   let checkBranch (pat, body) = do
       p <- checkPattern pat
       bindings <- extractPatternBindings p (typeAST ascrutinee)
-      verifyNonOverlappingBindings rng "case" bindings
-
+      verifyNonOverlappingVariableNames rng "case"
+                                        [v | (TermVarBinding v _) <- bindings]
       abody <- typecheck (prependContextBindings ctx bindings) body maybeExpTy
       equateTypes (MetaTyVar m) (typeAST abody)
                    (Just $ "Failed to unify all branches of case " ++ show rng)
@@ -669,10 +670,6 @@ verifyNonOverlappingVariableNames rng name varNames = do
                                  ++ ": had duplicated bindings: "
                                  ++ show duplicates
                                  ++ highlightFirstLine rng]
-
-verifyNonOverlappingBindings rng name bindings =
-  verifyNonOverlappingVariableNames rng name
-                                    [v | (TermVarBinding v _) <- bindings]
 
 -----------------------------------------------------------------------
 

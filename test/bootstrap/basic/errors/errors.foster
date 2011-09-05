@@ -44,6 +44,10 @@ main = {
   expect_i1 false;
   print_i1 (__COMPILES__ case (1, (2, 3)) of (a, (b, a)) -> 0 end);
 
+  // Recursively bound variables shouldn't overlap.
+  expect_i1 true;  print_i1 (__COMPILES__ rec a = { 0 }; b = { 0 }; in 0 end);
+  expect_i1 false; print_i1 (__COMPILES__ rec a = { 0 }; a = { 0 }; in 0 end);
+
   // >^ is, for now, a primitive unlike +, which means it
   // can't be implicitly turned into a first-class function value.
   expect_i1 true ; print_i1 (__COMPILES__  2  >^ (ref 0));
