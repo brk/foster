@@ -5,31 +5,33 @@ Greg Morrisett lays out some issues with compiling polymorphism:
 http://www.eecs.harvard.edu/~greg/cs256sp2005/lec15.txt
 
 Here's (top-level) Haskellish pseudo code to illustrate some implementation
-issues/decisions to be made regarding implementing polymorphism::
+issues/decisions to be made regarding implementing polymorphism:
 
-    // A top-level polymorphic function; easy for the compiler
-    // to specialize at compile-time.
+.. code-block :: haskell
+
+    -- A top-level polymorphic function; easy for the compiler
+    -- to specialize at compile-time.
     id :: forall a, (a -> a)
     id x = x
 
-    // A higher-order function involving passed-in function of concrete type
-    // which "wants" args to be passed in special registers on most machines...
+    -- A higher-order function involving passed-in function of concrete type
+    -- which "wants" args to be passed in special registers on most machines...
     app_f64 :: f64 -> { f64 -> f64 } -> f64
     app_f64 x f = f x
 
-    // Let-polymorphic generalization of the above function.
+    -- Let-polymorphic generalization of the above function.
     app_gen1 :: forall a, a -> { a -> a } -> a
     app_gen1 x f = f x
 
-    // The same function, but involving rank-2 polymorphism.
+    -- The same function, but involving rank-2 polymorphism.
     app_gen2 :: forall b, {b , forall a, (a -> a) } -> b
     app_gen2 x f = f:[b] x
 
     issues :: int -> { forall a, a -> a } -> ()
     issues x uid =
-    /* a */   uid:[f64] 42.0
-    /* x */    id:[f64] 42.0
-    /* We can statically specialize id for floats, but we can't
+    {- a -}   uid:[f64] 42.0
+    {- x -}    id:[f64] 42.0
+    {- We can statically specialize id for floats, but we can't
        statically specialize uid. Therefore our choices are:
 
          # (Java) Forbid specialization over non-uniform types,
@@ -61,15 +63,15 @@ issues/decisions to be made regarding implementing polymorphism::
            This doesn't work for code involving recursive data types or arrays.
          # (TIL) Do dynamic type dispatch with a ``typecase`` construct.
            Non-trivial runtime overhead for realistic examples.
-    */
+    -}
 
-    /* b */   app_f64 42.0 (uid:[f64])
-    /* c */   app_gen1:[f64] 42.0 (uid:[f64]])
-    /* d */   app_gen2:[f64] 42.0  uid
+    {- b -}   app_f64 42.0 (uid:[f64])
+    {- c -}   app_gen1:[f64] 42.0 (uid:[f64]])
+    {- d -}   app_gen2:[f64] 42.0  uid
 
-    /* y */   app_f64 42.0 ( id:[f64])
-    /* z */   app_gen1:[f64] 42.0 ( id:[f64]])
-    /* q */   app_gen2:[f64] 42.0   id
+    {- y -}   app_f64 42.0 ( id:[f64])
+    {- z -}   app_gen1:[f64] 42.0 ( id:[f64]])
+    {- q -}   app_gen2:[f64] 42.0   id
     ) ; ()
 
 Inside the body of ``issues``, ``uid`` is bound to an unknown function.
@@ -100,7 +102,7 @@ Line by line:
 * ``d``: This mainly highlights the extra freedom given by ``app_gen1``.
 
 Many of the decisions above depend on whether we're instantiating a known or
-unknown function::
+unknown function:
 
 * ``x``: because we have the definition of ``id``, we can perform type
   instantiation at compile time, producing a completely specialized ``id_f64``.
