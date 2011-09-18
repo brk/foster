@@ -25,7 +25,6 @@ TODO: less minor optimizations
 
 TODO: implementation details
 ----------------------------
-* Check for pattern variable overlap.
 * rusage() in runtime when on Linux (+ OS X?)
 * Design pointer representations and GC integration:
  * Stable pointers
