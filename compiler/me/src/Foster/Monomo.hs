@@ -283,7 +283,7 @@ typesEqualIL (TupleTypeIL as) (TupleTypeIL bs) =
 typesEqualIL (FnTypeIL a1 b1 c1 _d1) (FnTypeIL a2 b2 c2 _d2) =
     typesEqualIL a1 a2 && typesEqualIL b1 b2 && c1 == c2
 typesEqualIL (CoroTypeIL a1 b1) (CoroTypeIL a2 b2) = typesEqualIL a1 a2 && typesEqualIL b1 b2
-typesEqualIL (ForAllIL vars1 ty1) (ForAllIL vars2 ty2) = vars1 == vars2 && typesEqualIL ty1 ty2
+typesEqualIL (ForAllIL kvars1 ty1) (ForAllIL kvars2 ty2) = kvars1 == kvars2 && typesEqualIL ty1 ty2
 typesEqualIL (TyVarIL tv1) (TyVarIL tv2) = tv1 == tv2
 typesEqualIL _ _ = False
 
@@ -301,8 +301,8 @@ parSubstTyIL prvNextPairs ty =
         TupleTypeIL types    -> TupleTypeIL (map q types)
         FnTypeIL   s t cc cs -> FnTypeIL    (q s) (q t) cc cs
         CoroTypeIL s t       -> CoroTypeIL  (q s) (q t)
-        ForAllIL tvs rho     ->
+        ForAllIL ktvs rho     ->
                 let prvNextPairs' = prvNextPairs `assocFilterOut`
-                                                   [TyVarIL tv | tv <- tvs]
-                in  ForAllIL tvs (parSubstTyIL prvNextPairs' rho)
+                                          [TyVarIL tv | (tv, _kind) <- ktvs]
+                in  ForAllIL ktvs (parSubstTyIL prvNextPairs' rho)
 

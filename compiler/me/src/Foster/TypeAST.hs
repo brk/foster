@@ -12,10 +12,11 @@ module Foster.TypeAST(
 )
 where
 
-import Foster.Base
 import List(length)
 import Data.IORef(IORef)
 import Data.Map as Map(fromList, toList)
+
+import Foster.Base
 
 data EPattern =
           EP_Wildcard    SourceRange

@@ -247,8 +247,9 @@ closureConvertedProc procArgs f newbody = do
   case ft of
     FnTypeIL                  _ftd ftrange _ _ ->
         return $ ILProcDef ftrange Nothing       id procArgs (fnRange f) newbody
-    ForAllIL tyvars (FnTypeIL _ftd ftrange _ _) ->
+    ForAllIL ktyvars (FnTypeIL _ftd ftrange _ _) ->
         return $ ILProcDef ftrange (Just tyvars) id procArgs (fnRange f) newbody
+        where tyvars = [tv | (tv, _kind) <- ktyvars]
     _ -> error $ "Expected closure converted proc to have fntype, had " ++ show ft
 
 --------------------------------------------------------------------

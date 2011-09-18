@@ -7,6 +7,7 @@
 module Foster.TypeIL where
 
 import Foster.Base
+import Foster.Kind
 import Foster.TypeAST
 import Foster.Context
 
@@ -19,7 +20,7 @@ data TypeIL =
                            , fnTypeILCallConv :: CallConv
                            , fnTypeILProcOrFunc :: ProcOrFunc }
          | CoroTypeIL      TypeIL  TypeIL
-         | ForAllIL        [TyVar] RhoIL
+         | ForAllIL        [(TyVar, Kind)] RhoIL
          | TyVarIL         TyVar
          | ArrayTypeIL     TypeIL
          | PtrTypeIL       TypeIL
@@ -33,7 +34,7 @@ instance Show TypeIL where
         (TupleTypeIL types) -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
         (FnTypeIL   s t cc cs)-> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
         (CoroTypeIL s t)   -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
-        (ForAllIL tvs rho) -> "(ForAll " ++ show tvs ++ ". " ++ show rho ++ ")"
+        (ForAllIL ktvs rho) -> "(ForAll " ++ show ktvs ++ ". " ++ show rho ++ ")"
         (TyVarIL tv)       -> show tv
         (ArrayTypeIL ty)   -> "(Array " ++ show ty ++ ")"
         (PtrTypeIL ty)     -> "(Ptr " ++ show ty ++ ")"
@@ -53,7 +54,8 @@ ilOf typ =
      (ArrayTypeAST  ty)   -> do t <- ilOf ty
                                 return $ (ArrayTypeIL t)
      (ForAllAST tvs rho)  -> do t <- ilOf rho
-                                return $ (ForAllIL tvs t)
+                                let ktvs = [(tv, KindAnyType) | tv <- tvs]
+                                return $ (ForAllIL ktvs t)
      (TyVarAST tv)         -> return $ (TyVarIL tv)
      (MetaTyVar (Meta u tyref desc)) -> do
         mty <- readTcRef tyref

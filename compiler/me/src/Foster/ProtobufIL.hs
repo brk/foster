@@ -92,8 +92,9 @@ dumpType (CoroTypeIL a b)     = P'.defaultValue { PbType.tag  = PbTypeTag.CORO
 dumpType (ForAllIL tyvars ty) = P'.defaultValue { PbType.tag  = PbTypeTag.FORALL_TY
                                                 ,  type_parts = fromList $ fmap dumpType [ty]
                                                 , tyvar_names = fromList $ fmap tyVarName tyvars }
-  where tyVarName tv = case tv of BoundTyVar nm -> u8fromString nm
-                                  SkolemTyVar s _u -> error $ "dumpType (Forall ...) saw skolem var " ++ s
+  where tyVarName (tv, _kind) =
+         case tv of BoundTyVar nm -> u8fromString nm
+                    SkolemTyVar s _u -> error $ "dumpType (Forall ...) saw skolem var " ++ s
 
 dumpType (TyVarIL (BoundTyVar s)) =
                                P'.defaultValue { PbType.tag  = PbTypeTag.TYPE_VARIABLE
