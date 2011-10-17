@@ -123,6 +123,7 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
       interpret = ["--interpret", tmpdir]
     else:
       interpret = []
+    ghc_memory_stats = ["+RTS", "-smeGCstats.txt", "-RTS"]
 
     parse_output = os.path.join(tmpdir, '_out.parsed.pb')
     check_output = os.path.join(tmpdir, '_out.checked.pb')
@@ -136,7 +137,8 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
     (s1, e1) = crun(['fosterparse', testpath, parse_output])
 
     # running fostercheck on a ParsedAST produces an ElaboratedAST
-    (s2, e2) = crun(['fostercheck', parse_output, check_output] + interpret + verbosearg(verbose))
+    (s2, e2) = crun(['fostercheck', parse_output, check_output] +
+                     ghc_memory_stats + interpret + verbosearg(verbose))
 
     # running fosterlower on a ParsedAST produces a bitcode Module
     # linking a bunch of Modules produces a Module
