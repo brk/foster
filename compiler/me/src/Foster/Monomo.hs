@@ -276,7 +276,7 @@ instance Eq TypeIL where
 
 typesEqualIL :: TypeIL -> TypeIL -> Bool
 
-typesEqualIL (NamedTypeIL x) (NamedTypeIL y) = x == y
+typesEqualIL (DataTypeIL x) (DataTypeIL y) = x == y
 typesEqualIL (TupleTypeIL as) (TupleTypeIL bs) =
     List.length as == List.length bs &&
     Prelude.and [typesEqualIL a b | (a, b) <- Prelude.zip as bs]
@@ -293,9 +293,10 @@ parSubstTyIL :: [(TypeIL, TypeIL)] -> TypeIL -> TypeIL
 parSubstTyIL prvNextPairs ty =
     let q = parSubstTyIL prvNextPairs in
     case ty of
-        NamedTypeIL _  -> fromMaybe ty $ List.lookup ty prvNextPairs
+        DataTypeIL _   -> fromMaybe ty $ List.lookup ty prvNextPairs
         TyVarIL     _  -> fromMaybe ty $ List.lookup ty prvNextPairs
 
+        PrimIntIL   _        -> ty
         PtrTypeIL   t        -> PtrTypeIL   (q t)
         ArrayTypeIL t        -> ArrayTypeIL (q t)
         TupleTypeIL types    -> TupleTypeIL (map q types)

@@ -29,7 +29,6 @@
 
 using std::string;
 
-using foster::TypeASTFor;
 using foster::EDiag;
 using foster::show;
 using foster::ParsingContext;

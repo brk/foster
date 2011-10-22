@@ -372,7 +372,7 @@ showtypes args expectedTypes = concatMap showtypes' (zip3 [1..] args expTypes)
                         ++ outToString (showStructure a)) (zip [0..] args)  ++ "\n")
         expTypes = (case expectedTypes of
                         (TupleTypeAST x) -> x
-                        x -> [x]) ++ repeat (NamedTypeAST "<unknown>")
+                        x -> [x]) ++ repeat (DataTypeAST "<unknown>") -- hack :(
 
 -- For example,   foo (1, 2)   would produce:
 -- eargs   = [1, 2]
@@ -584,6 +584,10 @@ typecheckExprsTogether ctx exprs expectedTypes = do
 
 -----------------------------------------------------------------------
 
+sizeOfBits :: Int -> IntSizeBits
+sizeOfBits 32 = I32
+sizeOfBits n = error $ "Typecheck.hs:sizeOfBits: Only support i32 for now, not " ++ show n
+
 typecheckInt :: SourceRange -> String -> Tc AnnExpr
 typecheckInt rng originalText = do
     let goodBases = [2, 8, 10, 16]
@@ -599,7 +603,7 @@ typecheckInt rng originalText = do
     sanityCheck (activeBits <= maxBits)
                 ("Integers currently limited to " ++ show maxBits ++ " bits, "
                                   ++ clean ++ " requires " ++ show activeBits)
-    return (AnnInt rng (NamedTypeAST $ "Int" ++ show maxBits) int)
+    return (AnnInt rng (PrimIntAST $ sizeOfBits maxBits) int)
  where
         onlyValidDigitsIn :: String -> Int -> Bool
         onlyValidDigitsIn str lim =
@@ -683,7 +687,8 @@ equateTypes t1 t2 msg = do
      collectUnificationVars :: TypeAST -> [MetaTyVar]
      collectUnificationVars x =
          case x of
-             NamedTypeAST _      -> []
+             PrimIntAST _        -> []
+             DataTypeAST _       -> []
              TupleTypeAST types  -> concatMap collectUnificationVars types
              FnTypeAST s r _ _   -> concatMap collectUnificationVars [s,r]
              CoroTypeAST s r     -> concatMap collectUnificationVars [s,r]

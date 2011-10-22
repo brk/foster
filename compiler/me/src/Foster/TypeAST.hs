@@ -5,7 +5,7 @@
 -----------------------------------------------------------------------------
 
 module Foster.TypeAST(
-  TypeAST(..), EPattern(..), E_VarAST(..), AnnVar
+  TypeAST(..), EPattern(..), E_VarAST(..), IntSizeBits(..), AnnVar
 , fosBoolType, MetaTyVar(Meta), Sigma, Rho, Tau
 , typesEqual, minimalTupleAST
 , gFosterPrimOpsTable, primitiveDecls
@@ -37,7 +37,8 @@ type Rho   = TypeAST -- No top-level ForAll
 type Tau   = TypeAST -- No ForAlls anywhere
 
 data TypeAST =
-           NamedTypeAST     String
+           DataTypeAST      String
+         | PrimIntAST       IntSizeBits
          | TupleTypeAST     [TypeAST]
          | FnTypeAST        { fnTypeDomain :: TypeAST
                             , fnTypeRange  :: TypeAST
@@ -62,7 +63,8 @@ instance Show TyVar where
 
 instance Show TypeAST where
     show x = case x of
-        (NamedTypeAST s)     -> s
+        DataTypeAST name     -> name
+        PrimIntAST size      -> "(PrimIntAST " ++ show size ++ ")"
         (TupleTypeAST types) -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
         (FnTypeAST s t cc cs)-> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
         (CoroTypeAST s t)   -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
@@ -78,7 +80,8 @@ instance Eq MetaTyVar where
 
 typesEqual :: TypeAST -> TypeAST -> Bool
 
-typesEqual (NamedTypeAST x) (NamedTypeAST y) = x == y
+typesEqual (DataTypeAST x) (DataTypeAST y) = x == y
+typesEqual (PrimIntAST  x) (PrimIntAST  y) = x == y
 typesEqual (TupleTypeAST as) (TupleTypeAST bs) =
     List.length as == List.length bs && Prelude.and [typesEqual a b | (a, b) <- Prelude.zip as bs]
 typesEqual (FnTypeAST a1 b1 c1 _d1) (FnTypeAST a2 b2 c2 _d2) =
@@ -102,9 +105,9 @@ minimalTupleAST args  = TupleTypeAST args
 mkProcType args rets = FnTypeAST (TupleTypeAST args) (minimalTupleAST rets) CCC    FT_Proc
 mkFnType   args rets = FnTypeAST (TupleTypeAST args) (minimalTupleAST rets) FastCC FT_Func
 mkCoroType args rets = CoroTypeAST (minimalTupleAST args) (minimalTupleAST rets)
-i32 = (NamedTypeAST "Int32")
-i64 = (NamedTypeAST "Int64")
-i1  = (NamedTypeAST "Bool")
+i32 = PrimIntAST I32
+i64 = PrimIntAST I64
+i1  = PrimIntAST I1
 
 primitiveDecls =
     [(,) "expect_i32"  $ mkProcType [i32] []

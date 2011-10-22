@@ -77,9 +77,16 @@ mayTriggerGC _ = True
 tagProcOrFunc FT_Proc = PbTypeTag.PROC
 tagProcOrFunc FT_Func = PbTypeTag.CLOSURE
 
+intOfSize I1 = 1
+intOfSize I8 = 8
+intOfSize I32 = 32
+intOfSize I64 = 64
+
 dumpType :: TypeIL -> PbType.Type
-dumpType (NamedTypeIL s)     = P'.defaultValue { PbType.tag  = PbTypeTag.LLVM_NAMED
-                                               , PbType.name = Just $ u8fromString s }
+dumpType (PrimIntIL size)    = P'.defaultValue { PbType.tag  = PbTypeTag.PRIM_INT
+                                               , PbType.carray_size = Just (intOfSize size) }
+dumpType (DataTypeIL name)   = P'.defaultValue { PbType.tag  = PbTypeTag.NAMED
+                                               , PbType.name = Just $ u8fromString name }
 dumpType (TupleTypeIL types) = P'.defaultValue { PbType.tag  = PbTypeTag.TUPLE
                                                ,  type_parts = fromList $ fmap dumpType types }
 dumpType (FnTypeIL s t cc cs) =

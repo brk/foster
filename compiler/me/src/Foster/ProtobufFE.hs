@@ -286,13 +286,20 @@ parseSourceModule sm =
    sourceLines :: SourceModule -> SourceLines
    sourceLines sm = SourceLines (fmapDefault pUtf8ToText (SourceModule.line sm))
 
+parseNamedType :: String -> TypeAST
+parseNamedType "Int64" = PrimIntAST I64
+parseNamedType "Int32" = PrimIntAST I32
+parseNamedType "Int8"  = PrimIntAST I8
+parseNamedType "Bool"  = PrimIntAST I1
+parseNamedType other = DataTypeAST other
+
 parseType :: Type -> TypeAST
 parseType t =
     case PbType.tag t of
          PbTypeTag.TYVAR ->
                 let name@(c:_) = (getName "type name" $ PbType.name t) in
                 if isLower c then TyVarAST (BoundTyVar name)
-                             else NamedTypeAST name
+                             else parseNamedType name
          PbTypeTag.REF -> error "Ref types not yet implemented"
          PbTypeTag.FN -> fromMaybe (error "Protobuf node tagged FN without fnty field!")
                                    (fmap parseFnTy $ PbType.fnty t)

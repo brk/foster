@@ -97,8 +97,6 @@ int main(int argc, char** argv) {
 
   unsigned numParseErrors = 0;
 
-  foster::ParsingContext::initCachedLLVMTypeNames();
-
   foster::ParsingContext::pushNewContext();
 
   ModuleAST* exprAST = NULL;

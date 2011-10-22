@@ -246,7 +246,7 @@ kNormalCtors ctx dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
       let (Just tid) = termVarLookup cname (contextBindings ctx)
       return $ Fn { fnVar   = tid
                   , fnVars  = vars
-                  , fnBody  = KNAppCtor (NamedTypeIL dname) cid vars
+                  , fnBody  = KNAppCtor (DataTypeIL dname) cid vars
                   , fnRange = MissingSourceRange ("kNormalCtor " ++ show cid)
                   , fnFreeVars = []
                   }

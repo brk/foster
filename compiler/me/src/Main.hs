@@ -142,7 +142,7 @@ typecheckModule verboseMode modast tcenv0 = do
                           (name, ctorTypeAST datatypeName types)
 
    ctorTypeAST dtName types =
-        FnTypeAST (TupleTypeAST types) (NamedTypeAST dtName) FastCC FT_Proc
+        FnTypeAST (TupleTypeAST types) (DataTypeAST dtName) FastCC FT_Proc
 
    buildCallGraphList :: [FnAST] -> [ContextBinding ty]
                       -> [(FnAST, String, [String])]

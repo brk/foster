@@ -2,17 +2,18 @@ package foster.bepb;
 
 message Type {
   enum Tag {
-    LLVM_NAMED = 1; // i32, void, etc
+    NAMED = 1;
     PTR = 2;
     PROC = 3;
     CORO = 4;
     TUPLE = 5;
     CARRAY = 6;
     CLOSURE = 7;
-    FORALL_TY = 8;
-    TYPE_VARIABLE = 9;
-    ARRAY = 10;
-    DATATYPE = 11;
+    PRIM_INT = 8;
+    FORALL_TY = 9;
+    TYPE_VARIABLE = 10;
+    ARRAY = 11;
+    DATATYPE = 12;
   }
 
   required Tag         tag   = 2;

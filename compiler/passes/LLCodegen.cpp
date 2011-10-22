@@ -9,7 +9,6 @@
 #include "parse/FosterLL.h"
 #include "parse/FosterTypeAST.h"
 #include "parse/FosterUtils.h"
-#include "parse/ParsingContext.h"
 
 #include "passes/CodegenPass-impl.h"
 
@@ -36,7 +35,6 @@ using llvm::Value;
 using llvm::dyn_cast;
 
 using foster::builder;
-using foster::ParsingContext;
 using foster::EDiag;
 
 char kFosterMain[] = "foster__main";

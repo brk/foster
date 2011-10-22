@@ -45,10 +45,10 @@ parSubstTy :: [(TypeAST, TypeAST)] -> TypeAST -> TypeAST
 parSubstTy prvNextPairs ty =
     let q = parSubstTy prvNextPairs in
     case ty of
-        NamedTypeAST _ -> fromMaybe ty $ List.lookup ty prvNextPairs
+        DataTypeAST _  -> fromMaybe ty $ List.lookup ty prvNextPairs
         TyVarAST   {}  -> fromMaybe ty $ List.lookup ty prvNextPairs
         MetaTyVar  {}  -> fromMaybe ty $ List.lookup ty prvNextPairs
-
+        PrimIntAST _       -> ty
         RefTypeAST   t     -> RefTypeAST   (q t)
         ArrayTypeAST t     -> ArrayTypeAST (q t)
         TupleTypeAST types -> TupleTypeAST (map q types)
@@ -65,9 +65,10 @@ tySubst :: TypeSubst -> TypeAST -> TypeAST
 tySubst subst ty =
     let q = tySubst subst in
     case ty of
-        NamedTypeAST {}             -> ty
-        TyVarAST     {}             -> ty
         MetaTyVar (Meta u _tyref _) -> Map.findWithDefault ty u subst
+        PrimIntAST   {}             -> ty
+        DataTypeAST  {}             -> ty
+        TyVarAST     {}             -> ty
         RefTypeAST    t             -> RefTypeAST   (q t)
         ArrayTypeAST  t             -> ArrayTypeAST (q t)
         TupleTypeAST types          -> TupleTypeAST (map q types)
@@ -89,7 +90,12 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
   if typesEqual t1 t2
     then tcUnifyLoop constraints tysub
     else case (t1, t2) of
-              ((NamedTypeAST n1), (NamedTypeAST n2)) ->
+              ((PrimIntAST n1), (PrimIntAST n2)) ->
+                if n1 == n2 then tcUnifyLoop constraints tysub
+                            else tcFails [out $ "Unable to unify different primitive types: "
+                                            ++ show n1 ++ " vs " ++ show n2]
+
+              ((DataTypeAST n1), (DataTypeAST n2)) ->
                 if n1 == n2 then tcUnifyLoop constraints tysub
                             else tcFails [out $ "Unable to unify different named types: "
                                             ++ n1 ++ " vs " ++ n2]

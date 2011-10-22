@@ -227,7 +227,6 @@ int main(int argc, char** argv) {
   foster::ensureDirectoryExists(outdirFile(""));
 
   foster::initializeLLVM();
-  foster::ParsingContext::initCachedLLVMTypeNames();
 
   llvm::sys::Path mainModulePath(optInputPath);
   makePathAbsolute(mainModulePath);

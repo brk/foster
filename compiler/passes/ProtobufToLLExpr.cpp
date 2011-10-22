@@ -364,6 +364,7 @@ LLModule* LLModule_from_pb(const pb::Module& e) {
     ParsingContext::insertType(e.typ_decls(i).name(),
                                namedTypes.back());
   }
+  // We use an indirection through NamedTypeAST to break cyclic references.
   std::vector<LLDecl*> datatype_decls;
   for (int i = 0; i < e.typ_decls_size(); ++i){
     LLDecl* d = parseDecl(e.typ_decls(i));
@@ -501,7 +502,7 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
     return CoroTypeAST::get(targ, tret);
   }
 
-  if (t.tag() == pb::Type::LLVM_NAMED) {
+  if (t.tag() == pb::Type::NAMED) {
     const string& tyname = t.name();
 
     ASSERT(!tyname.empty()) << "empty type name, probably implies a\n"
@@ -510,10 +511,17 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
 
     TypeAST* rv = NULL;
     if (!tyname.empty() && tyname != "<NULL Ty>") {
-      rv = foster::TypeASTFor(tyname);
+      rv = foster::ParsingContext::lookupType(tyname);
     }
     ASSERT(rv) << "unable to find type named " << tyname;
     return rv;
+  }
+
+  if (t.tag() == pb::Type::PRIM_INT) {
+    int size = t.carray_size();
+    std::stringstream name; name << "Int" << size;
+    return PrimitiveTypeAST::get(size == 1 ? "Bool" : name.str(),
+          llvm::IntegerType::get(llvm::getGlobalContext(), size));
   }
 
   if (t.tag() == pb::Type::TYPE_VARIABLE) {
@@ -523,6 +531,7 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
 
   if (t.tag() == pb::Type::DATATYPE) {
     const string& tyname = t.name();
+    EDiag() << "creating datatype: " << t.name();
     return new DataTypeAST(tyname, parseDataCtors(t),
                            SourceRange::getEmptyRange());
   }

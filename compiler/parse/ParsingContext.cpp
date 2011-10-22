@@ -203,25 +203,5 @@ ParsingContext::ParsingContext() {
 
 ////////////////////////////////////////////////////////////////////
 
-map<string, const llvm::Type*> gCachedLLVMTypes;
-
-TypeAST* TypeASTFor(const string& name) {
-  if (gCachedLLVMTypes.count(name) == 1) {
-    return PrimitiveTypeAST::get(name, gCachedLLVMTypes[name]);
-  } else if (TypeAST* ty = ParsingContext::lookupType(name)) {
-    return ty;
-  } else {
-    return NULL;
-  }
-}
-
-void ParsingContext::initCachedLLVMTypeNames() {
-  gCachedLLVMTypes["Bool"]  = llvm::IntegerType::get(getGlobalContext(), 1);
-  gCachedLLVMTypes["Int8"]  = llvm::IntegerType::get(getGlobalContext(), 8);
-  gCachedLLVMTypes["Int16"] = llvm::IntegerType::get(getGlobalContext(), 16);
-  gCachedLLVMTypes["Int32"] = llvm::IntegerType::get(getGlobalContext(), 32);
-  gCachedLLVMTypes["Int64"] = llvm::IntegerType::get(getGlobalContext(), 64);
-}
-
 } // namespace foster
 

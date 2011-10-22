@@ -13,7 +13,8 @@ import Foster.Context
 
 type RhoIL = TypeIL
 data TypeIL =
-           NamedTypeIL     String
+           DataTypeIL     String
+         | PrimIntIL      IntSizeBits
          | TupleTypeIL     [TypeIL]
          | FnTypeIL        { fnTypeILDomain :: TypeIL
                            , fnTypeILRange  :: TypeIL
@@ -30,7 +31,8 @@ type ILPrim = FosterPrim TypeIL
 
 instance Show TypeIL where
     show x = case x of
-        (NamedTypeIL s)     -> s
+        (DataTypeIL name)   -> name
+        (PrimIntIL size)    -> "(PrimIntIL " ++ show size ++ ")"
         (TupleTypeIL types) -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
         (FnTypeIL   s t cc cs)-> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
         (CoroTypeIL s t)   -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
@@ -42,7 +44,8 @@ instance Show TypeIL where
 ilOf :: TypeAST -> Tc TypeIL
 ilOf typ =
   case typ of
-     (NamedTypeAST s)     -> return $ (NamedTypeIL s)
+     (DataTypeAST name)   -> do return $ (DataTypeIL name)
+     (PrimIntAST size)    -> do return $ (PrimIntIL size)
      (TupleTypeAST types) -> do tys <- mapM ilOf types
                                 return $ (TupleTypeIL tys)
      (FnTypeAST s t cc cs)-> do [x,y] <- mapM ilOf [s,t]
@@ -66,7 +69,7 @@ ilOf typ =
 
 -----------------------------------------------------------------------
 
-boolTypeIL = NamedTypeIL "Bool"
+boolTypeIL = PrimIntIL I1
 
 pointedToType t = case t of
     PtrTypeIL y -> y

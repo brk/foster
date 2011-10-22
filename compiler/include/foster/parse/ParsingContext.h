@@ -27,7 +27,7 @@ namespace foster {
 
 class ParsingContext {
 public:
-  ParsingContext();
+  explicit ParsingContext();
 
 public:
   static ParsingContext*
@@ -84,15 +84,10 @@ public:
 
   /////////////////////
 
-  static void
-  initCachedLLVMTypeNames();
-
 private:
   struct Impl;
   Impl* impl;
 };
-
-TypeAST* TypeASTFor(const std::string& name);
 
 } // namespace foster
 
