@@ -1098,17 +1098,12 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
   } else if (FnTypeAST* fnType = dynamic_cast<FnTypeAST*>(base->type)) {
     callingConv = fnType->getCallingConventionID(); haveSetCallingConv = true;
     if (fnType->isMarkedAsClosure()) {
-      // The function type here includes a parameter for the
-      // generic environment type, e.g. (i32 => i32) becomes
-      // i32 (i8*, i32).
-      FT = dyn_cast<const llvm::FunctionType>(
-            genericClosureVersionOf(fnType)->getLLVMFnType());
-
       // Load code and env pointers from closure...
       llvm::Value* envPtr =
            getElementFromComposite(FV, getConstantInt32For(1), "getCloEnv");
       FV = getElementFromComposite(FV, getConstantInt32For(0), "getCloCode");
 
+      FT = dyn_cast<const llvm::FunctionType>(FV->getType()->getContainedType(0));
       // Pass env pointer as first parameter to function.
       ASSERT(valArgs.empty());
       valArgs.push_back(envPtr);
