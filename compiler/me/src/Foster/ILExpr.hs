@@ -12,6 +12,7 @@ import Data.Map(Map)
 import qualified Data.Map as Map((!), insert, lookup, empty, fromList, elems)
 
 import Foster.Base
+import Foster.Kind
 import Foster.CFG
 import Foster.TypeIL
 import Foster.Letable
@@ -50,7 +51,7 @@ data ILExternDecl = ILDecl String TypeIL deriving (Show)
 -- but after monomorphization, all the polymorphism should be gone.
 data ILProcDef =
      ILProcDef { ilProcReturnType :: TypeIL
-               , ilProcPolyTyVars :: (Maybe [TyVar])
+               , ilProcPolyTyVars :: Maybe [(TyVar, Kind)]
                , ilProcIdent      :: Ident
                , ilProcVars       :: [AIVar]
                , ilProcRange      :: SourceRange
@@ -66,6 +67,7 @@ data ILMiddle = ILLetVal      Ident    Letable
               -- continuation. This is 1 line in LLCodegen.cpp instead of
               -- many lines to do substitutions on CFGs.
               | ILRebindId    Ident    AIVar
+              deriving Show
 
 -- The only difference from CFLast to ILLast is the decision tree in ILCase.
 data ILLast = ILRetVoid
@@ -174,6 +176,11 @@ closureOfKnFn infoMap (self_id, fn) = do
     fakeCloVar id = TypedId fakeCloEnvType id
                       where fakeCloEnvType = TupleTypeIL []
 
+    fnReturnType f@(FnTypeIL {}) = fnTypeILRange f
+    fnReturnType (ForAllIL _ f@(FnTypeIL {})) = fnTypeILRange f
+    fnReturnType other = error $
+        "Unexpected non-function type in fnReturnType: " ++ show other
+
     -- This is where the magic happens: given a function and its free variables,
     -- we create a procedure which also takes an extra (strongly-typed) env ptr
     -- argument. The new body does case analysis to bind the free variable names
@@ -190,7 +197,7 @@ closureOfKnFn infoMap (self_id, fn) = do
             let BasicBlockGraph bodyid oldbodygraph = fnBody f
             let norange = MissingSourceRange ""
             let patVar a = P_Variable norange (tidIdent a)
-            let retType = fnTypeILRange $ tidType (fnVar f)
+            let retType = fnReturnType $ tidType (fnVar f)
             let cfcase = CFCase retType envVar [
                            (P_Tuple norange (map patVar varsOfClosure)
                            , bodyid) ]
@@ -246,10 +253,9 @@ closureConvertedProc procArgs f newbody = do
   let (TypedId ft id) = fnVar f
   case ft of
     FnTypeIL                  _ftd ftrange _ _ ->
-        return $ ILProcDef ftrange Nothing       id procArgs (fnRange f) newbody
+       return $ ILProcDef ftrange Nothing        id procArgs (fnRange f) newbody
     ForAllIL ktyvars (FnTypeIL _ftd ftrange _ _) ->
-        return $ ILProcDef ftrange (Just tyvars) id procArgs (fnRange f) newbody
-        where tyvars = [tv | (tv, _kind) <- ktyvars]
+       return $ ILProcDef ftrange (Just ktyvars) id procArgs (fnRange f) newbody
     _ -> error $ "Expected closure converted proc to have fntype, had " ++ show ft
 
 --------------------------------------------------------------------
@@ -300,5 +306,18 @@ showProgramStructure (ILProgram procdefs _decls _dtypes _lines) =
         out (show $ ilProcIdent proc) ++ (out " // ")
             ++ (out $ show $ map procVarDesc (ilProcVars proc))
             ++ (out " ==> ") ++ (out $ show $ ilProcReturnType proc)
-          ++ out "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"
+          ++ out "\n" ++ concatMap showBlock (ilProcBlocks proc)
+          ++ out "\n^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"
     procVarDesc (TypedId ty id) = "( " ++ (show id) ++ " :: " ++ show ty ++ " ) "
+
+    showBlock (Block blockid mids last) =
+           out (show blockid ++ "\n")
+        ++ out (concatMap (\m -> "\t" ++ show m ++ "\n") mids)
+        ++ out (show last ++ "\n\n")
+
+instance Show ILLast where
+  show (ILRetVoid      ) = "ret void"
+  show (ILRet v        ) = "ret " ++ show v
+  show (ILBr  bid      ) = "br " ++ show bid
+  show (ILIf ty v b1 b2) = "if<" ++ show ty ++ "> " ++ show v ++ " ? " ++ show b1 ++ " : " ++ show b2
+  show (ILCase ty v _dt) = "case<" ++ show ty ++ "> " ++ show v ++ " [decisiontree]"

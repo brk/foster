@@ -38,6 +38,7 @@ using foster::builder;
 using foster::EDiag;
 
 char kFosterMain[] = "foster__main";
+int  kUnknownBitsize = 999; // keep in sync with IntSizeBits in Base.hs
 
 namespace foster {
 
@@ -1078,6 +1079,30 @@ bool isGenericClosureEnvType(const Type* ty) {
   return ty == builder.getInt8PtrTy();
 }
 
+// Returns null if no bitcast is needed, else returns the type to bitcast to.
+bool isPointerToUnknown(const Type* ty) {
+  if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
+    return pty->getContainedType(0)->isIntegerTy(kUnknownBitsize);
+  }
+  return false;
+}
+
+bool matchesExceptForUnknownPointers(const Type* aty, const Type* ety) {
+  if (aty == ety) return true;
+  if (aty->isPointerTy()) {
+    if (isPointerToUnknown(ety)) { return true; }
+    return matchesExceptForUnknownPointers(aty->getContainedType(0),
+                                           ety->getContainedType(0));
+  }
+  if (aty->getTypeID() != ety->getTypeID()) return false;
+  if (aty->getNumContainedTypes() != ety->getNumContainedTypes()) return false;
+  for (size_t i = 0; i < aty->getNumContainedTypes(); ++i) {
+    if (! matchesExceptForUnknownPointers(aty->getContainedType(i),
+                                          ety->getContainedType(i))) return false;
+  }
+  return true;
+}
+
 llvm::Value* LLCall::codegen(CodegenPass* pass) {
   ASSERT(base != NULL) << "unable to codegen call due to null base";
 
@@ -1135,6 +1160,11 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
       argV = builder.CreateBitCast(argV, expectedType, "gen2spec");
     }
 
+    if ((argV->getType() != expectedType)
+        && matchesExceptForUnknownPointers(argV->getType(), expectedType)) {
+      argV = builder.CreateBitCast(argV, expectedType, "spec2gen");
+    }
+
     valArgs.push_back(argV);
 
     ASSERT(argV->getType() == expectedType)
@@ -1151,6 +1181,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
             << " args but expected " << FT->getNumParams();
 
   // Give the instruction a name, if we can...
+
   llvm::CallInst* callInst =
         builder.CreateCall(FV, valArgs.begin(), valArgs.end());
   callInst->setCallingConv(callingConv);

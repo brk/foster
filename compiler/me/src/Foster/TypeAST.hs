@@ -46,7 +46,7 @@ data TypeAST =
                             , fnTypeCallConv :: CallConv
                             , fnTypeProcOrFunc :: ProcOrFunc }
          | CoroTypeAST      TypeAST TypeAST
-         | ForAllAST        [TyVar] Rho
+         | ForAllAST        [(TyVar, Kind)] Rho
          | TyVarAST         TyVar
          | MetaTyVar        MetaTyVar
          | RefTypeAST       TypeAST
@@ -78,6 +78,18 @@ instance Show TypeAST where
 instance Eq MetaTyVar where
     (Meta u1 _ _) == (Meta u2 _ _) = u1 == u2
 
+kindOfTypeAST :: TypeAST -> Kind
+kindOfTypeAST x = case x of
+    DataTypeAST  {} -> KindPointerSized
+    TupleTypeAST {} -> KindPointerSized
+    FnTypeAST    {} -> KindPointerSized
+    CoroTypeAST  {} -> KindPointerSized
+    RefTypeAST   {} -> KindPointerSized
+    ArrayTypeAST {} -> KindPointerSized
+    ForAllAST _ rho -> kindOfTypeAST rho
+    PrimIntAST   {} -> KindAnySizeType
+    TyVarAST     {} -> KindAnySizeType -- can get better kind info by evaluating kinds in contexts
+    MetaTyVar    {} -> KindAnySizeType
 
 typesEqual :: TypeAST -> TypeAST -> Bool
 

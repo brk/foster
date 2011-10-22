@@ -23,13 +23,13 @@ import Data.Map(Map)
 import Data.Map as Map(insert, (!), elems, filter)
 import Data.Set(Set)
 import Data.Set as Set(member, insert, empty)
-import List(length, elem, lookup, all)
-import Data.Maybe(fromMaybe, isNothing)
+import Data.List as List(length, elem, lookup, all)
+import Control.Monad(when)
+import Data.Maybe(fromMaybe, isNothing, maybeToList)
 
 -- | Performs worklist-based monomorphization of top-level functions,
 -- | roughly as sketched at http://www.bitc-lang.org/docs/bitc/polyinst.html
 -- | Limitations:
--- |  * Does not currently handle local function definitions.
 -- |  * Does not perform tree shaking.
 -- |
 -- | When we see a type application for a global function symbol,
@@ -50,14 +50,36 @@ monomorphize :: ILProgram -> ILProgram
 monomorphize (ILProgram procdefmap decls datatypes lines) =
         let monoState0 = MonoState Set.empty worklistEmpty procdefmap in
         let monoState  = execState (addMonosAndGo procdefmap) monoState0 in
-        (ILProgram (Map.filter isMono $ monoProcDefs monoState) decls datatypes lines)
-          where isMono procdef = isNothing (ilProcPolyTyVars procdef)
+        let monoProcs  = Map.filter isMono $ monoProcDefs monoState in
+        (ILProgram monoProcs decls datatypes lines)
+          where
                 addMonosAndGo procdefmap = do
-                        let procdefs = [pd | pd <- Map.elems procdefmap
-                                           , isMono pd]
-                        _ <- forM_ procdefs (\pd -> monoScheduleWork
-                                                  (PlainProc $ ilProcIdent pd))
-                        goMonomorphize
+                     addInitialMonoTasksAndGo (Map.elems procdefmap)
+
+isMono procdef = isNothing (ilProcPolyTyVars procdef)
+
+addInitialMonoTasksAndGo procdefs = do
+    -- Any proc that is monomorphic when we begin is a root for the
+    -- monomorphization process.
+    let monoprocs = [pd | pd <- procdefs, isMono pd]
+    forM_ monoprocs (\pd -> monoScheduleWork (PlainProc $ ilProcIdent pd))
+    goMonomorphize
+
+    -- Any proc that is polymorphic with all pointer-sized type arguments
+    -- will have its type arguments conveniently instantiated to void*.
+
+    let isPointyKind (_, kind) = kind == KindPointerSized
+    let pointypolyprocs = [(pd,ktvs) | pd <- procdefs,
+                                       ktvs <- maybeToList (ilProcPolyTyVars pd),
+                                       List.all isPointyKind ktvs]
+    forM_ pointypolyprocs (\(pd,ktvs) ->
+         let id = ilProcIdent pd in
+         monoScheduleWork (NeedsMono id id
+                                   [PtrTypeIL $ PrimIntIL IUnknown | _ <- ktvs])
+      )
+    goMonomorphize
+
+-- TODO we could explicitly represent casts from concrete types to IUnknown*...
 
 --------------------------------------------------------------------
 
@@ -89,17 +111,18 @@ monoPopWorklist = do
         Just (a, rest) -> do put state { monoWorklist = rest }
                              return (Just a)
 
-monoSeen polyid = do
-    state <- get
-    return $ Set.member polyid (monoSeenIds state)
+seen :: MonoWork -> MonoState -> Bool
+seen (PlainProc _) _ = False
+seen (NeedsMono _ polyid _) state = Set.member polyid (monoSeenIds state)
 
 -- Mark the targetid as seen, and add the source fn and args to the worklist.
 monoScheduleWork :: MonoWork -> Mono ()
 monoScheduleWork work = do
     state <- get
-    put state { monoSeenIds = Set.insert (workTargetId work) (monoSeenIds state)
-              , monoWorklist = worklistAdd (monoWorklist state) work
-              }
+    when (not $ seen work state) $ do
+      put state { monoSeenIds = Set.insert (workTargetId work) (monoSeenIds state)
+                , monoWorklist = worklistAdd (monoWorklist state) work
+                }
 
 monoGetProc id = do
     state <- get
@@ -137,8 +160,9 @@ doMonomorphizeProc proc = do
 
 substituteTypeInProc argtys polyid proc =
  case ilProcPolyTyVars proc of
-   Just tyvars ->
-     let subst = Prelude.zip (map TyVarIL tyvars) argtys in
+   Just ktyvars ->
+     let tyvarOf (tv, _kind) = TyVarIL tv in
+     let subst = Prelude.zip (map tyvarOf ktyvars) argtys in
      -- Return a function without a forall type.
      proc { ilProcPolyTyVars = Nothing
           , ilProcReturnType = parSubstTyIL subst (ilProcReturnType proc)
@@ -173,16 +197,7 @@ monomorphizeLetable expr =
               -- definition and create a monomorphized copy.
               TypedId (ForAllIL {}) id@(GlobalSymbol _) ->
                 do let polyid = getPolyProcId id (show argtys)
-                   -- Figure out what (procedure) name we'd like to call.
-                   -- If we haven't already started monomorphising it,
-                   -- add the fn and args to the worklist.
-                   let monoWork = NeedsMono polyid id argtys
-                   alreadyStarted <- monoSeen polyid
-                   _ <- if alreadyStarted
-                          then return ()
-                          else do monoScheduleWork monoWork
-                   --error $ "(ILVar (TypedId t polyid)) = " ++ show (TypedId t polyid)
-                   --return $ ILHackVar (TypedId t polyid)
+                   monoScheduleWork (NeedsMono polyid id argtys)
                    return $ Left (TypedId t polyid)
 
               -- On the other hand, if we only have a local var, then

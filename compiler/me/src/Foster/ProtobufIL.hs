@@ -81,6 +81,7 @@ intOfSize I1 = 1
 intOfSize I8 = 8
 intOfSize I32 = 32
 intOfSize I64 = 64
+intOfSize IUnknown = 999
 
 dumpType :: TypeIL -> PbType.Type
 dumpType (PrimIntIL size)    = P'.defaultValue { PbType.tag  = PbTypeTag.PRIM_INT
