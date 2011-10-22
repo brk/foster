@@ -48,6 +48,21 @@ message Formal {
   required Type   type = 2;
 }
 
+
+message Kind {
+  enum Tag {
+    KIND_TYPE = 1;
+    KIND_BOXED = 2;
+  }
+
+  required Tag         tag   = 2;
+}
+
+message TypeFormal {
+  required string name = 1;
+  required Kind   kind = 2;
+}
+
 message Expr {
   enum Tag {
     PB_INT    = 16;
@@ -93,9 +108,9 @@ message Expr {
   optional string name  = 24;
 
   // ValAbs
-  repeated Formal formals      = 25;
-  optional Type   result_type  = 26;
-  repeated string type_formals = 27;
+  repeated Formal     formals      = 25;
+  optional Type       result_type  = 26;
+  repeated TypeFormal type_formals = 27;
 
   // AnnTyApp
   optional Type ty_app_arg_type = 29;

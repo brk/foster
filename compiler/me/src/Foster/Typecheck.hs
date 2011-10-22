@@ -12,6 +12,7 @@ import Data.Char (toLower)
 import System.Console.ANSI(Color(Red))
 
 import Foster.Base
+import Foster.Kind
 import Foster.TypeAST
 import Foster.ExprAST
 import Foster.AnnExpr
@@ -295,14 +296,31 @@ typecheckIf ctx rng a b c maybeExpTy = do
 listize (TupleTypeAST tys) = tys
 listize ty                 = [ty]
 
+tyvarsOf ktyvars = map (\(tv,_) -> TyVarAST tv) ktyvars
+
+kindCheckSubsumption :: ((TyVar, Kind), TypeAST) -> Tc ()
+kindCheckSubsumption ((tv, kind), ty) =
+  let tyKind = kindOfTypeAST ty in
+  case (tyKind, kind) of
+    (KindAnySizeType, KindAnySizeType)   -> return ()
+    (KindPointerSized, KindPointerSized) -> return ()
+    -- It's OK to give a pointer-sized type when any size is expected.
+    (KindPointerSized, KindAnySizeType)  -> return ()
+    -- It's not OK to give an unboxed type when a boxed type is required.
+    (KindAnySizeType, KindPointerSized)  ->
+      tcFails [out $ "Kind mismatch:\n"
+                  ++ "cannot instantiate type variable " ++ show tv ++ " of kind " ++ show kind
+                  ++ "\nwith type " ++ show ty ++ " of kind " ++ show tyKind]
+
 typecheckTyApp ctx rng a t _maybeExpTy = do
     ea <- typecheck ctx a Nothing
     case (typeAST ea) of
-      ForAllAST tyvars rho -> do
+      ForAllAST ktyvars rho -> do
         let tys = listize t
-        sanityCheck (List.length tys == List.length tyvars)
+        sanityCheck (List.length tys == List.length ktyvars)
                     "typecheckTyApp: arity mismatch"
-        let tyvarsAndTys = List.zip (map TyVarAST tyvars) tys
+        let tyvarsAndTys = List.zip (tyvarsOf ktyvars) tys
+        mapM_ kindCheckSubsumption (List.zip ktyvars tys)
         return $ E_AnnTyApp rng (parSubstTy tyvarsAndTys rho) ea t
       _othertype ->
         tcFails [out $ "Cannot apply type args to expression of"
@@ -416,7 +434,7 @@ typecheckCall ctx rng base args _maybeExpTy = do
 
    eb <- typecheck ctx base expectedLambdaType
    case (typeAST eb) of
-      (ForAllAST tyvars rho) -> do
+      (ForAllAST ktyvars rho) -> do
          let (FnTypeAST rhoArgType _ _ _) = rho
          -- Example:         rhoargtype =   ('a -> 'b)
          -- base has type ForAll ['a 'b]   (('a -> 'b) -> (Coro 'a 'b))
@@ -430,9 +448,9 @@ typecheckCall ctx rng base args _maybeExpTy = do
          -- to use as type arguments.
 
          -- Generate unification vars corresponding to the bound type variables
-         unificationVars <- genUnificationVarsLike tyvars
+         unificationVars <- genUnificationVarsLike ktyvars
                                 (\n -> "type parameter" ++ vname base n)
-         let tyvarsAndMetavars = (List.zip (map TyVarAST tyvars)
+         let tyvarsAndMetavars = (List.zip (tyvarsOf ktyvars)
                                           (map MetaTyVar unificationVars))
 
          -- (?a -> ?b)
@@ -525,8 +543,10 @@ typecheckFn' ctx f cc expArgType expBodyType = do
 
     -- If we have type parameters, wrap fnty0 in a forall type.
     let fnty = case fnTyFormals f of
-                 []   -> fnty0
-                 vars -> ForAllAST (map BoundTyVar vars) fnty0
+           []   -> fnty0
+           tyformals ->
+              let btv (TypeFormalAST name kind) = (BoundTyVar name, kind) in
+              ForAllAST (map btv tyformals) fnty0
 
     -- If we're type checking a top-level function binding,
     -- update the type for the binding's unification variable.

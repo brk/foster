@@ -220,16 +220,33 @@ struct Formal {
   : name(name), type(type) {}
 };
 
+struct KindAST {
+  virtual ~KindAST() {}
+};
+
+struct BaseKindAST : public KindAST {
+  enum eKind { KindType, KindBoxed };
+  explicit BaseKindAST(eKind k) : kind(k) {}
+  eKind kind;
+};
+
+struct TypeFormal {
+  string name; // pattern???
+  KindAST* kind;
+  explicit TypeFormal(const string& name, KindAST* kind)
+  : name(name), kind(kind) {}
+};
+
 struct ValAbs : public ExprAST {
-  std::vector<Formal*> formals;
-  std::vector<string> tyVarNames;
+  std::vector<Formal> formals;
+  std::vector<TypeFormal> tyVarFormals;
   TypeAST* resultType;
   string name;
-  explicit ValAbs(std::vector<Formal*> formals,
-                  std::vector<string> tyVarNames,
+  explicit ValAbs(std::vector<Formal> formals,
+                  std::vector<TypeFormal> tyformals,
                   ExprAST* body,
                   TypeAST* resultType, foster::SourceRange sourceRange)
-  : ExprAST("ValAbs", sourceRange), formals(formals), tyVarNames(tyVarNames),
+  : ExprAST("ValAbs", sourceRange), formals(formals), tyVarFormals(tyformals),
     resultType(resultType) {
      parts.push_back(body);
   }

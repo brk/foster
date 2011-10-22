@@ -22,12 +22,12 @@ tokens {
   BINDING; LETS; LETREC; SEQ;
   RAT_NUM; INT_NUM; BOOL;
   DECL; DEFN;
-  TERMVAR; TYPEVAR;
+  TERMVAR; TYPEVAR; TYPEVAR_DECL;
   TERM; PHRASE; LVALUE; SUBSCRIPT;
   VAL_TYPE_APP; DEREF; ASSIGN_TO;
   REF; TUPLE; VAL_ABS; TYP_ABS; TYPE_ATOM;
   TYPE_TYP_APP; TYPE_TYP_ABS;
-  KIND_TYPE; KIND_TYOP; FORALL_TYPE;
+  KIND_TYPE; KIND_TYOP; KIND_TYPE_BOXED; FORALL_TYPE;
   FUNC_TYPE;
   TYPE_CTOR; DATATYPE; CTOR;
   FORMAL; MODULE; WILDCARD;
@@ -57,10 +57,13 @@ x       :       id              -> ^(TERMVAR id)
 a       :       id              -> ^(TYPEVAR id)
         |       '(' opr ')'     -> ^(TYPEVAR opr);       // type variables
 
-//k       :               // kinds
-//    'Type'                              -> ^(KIND_TYPE)         // kind of types
+k       :               // kinds
+    'Type'                              -> ^(KIND_TYPE)         // kind of types
+  | 'Boxed'                             -> ^(KIND_TYPE_BOXED)
 //  |     '{' a '->' k '}'                -> ^(KIND_TYOP a k)     // dependent kinds (kinds of type operators)
-//  ;
+  ;
+
+tyvar_decl : a (':' k)? -> ^(TYPEVAR_DECL a k);
 
 e_seq 	:	 e (';' e)* ';'? -> ^(SEQ e+);
 e    :
@@ -96,9 +99,9 @@ atom    :       // syntactically "closed" terms
   | '(' COMPILES e ')'                  -> ^(COMPILES e)
   | '(' 'ref' e ')'                     -> ^(REF e)     // allocation
   | '(' e (',' e)* ')'                  -> ^(TUPLE e+)  // tuples (products) (sguar: (a,b,c) == Tuple3 a b c)
-  | '{' ('forall' a* ',')?
+  | '{' ('forall' tyvar_decl* ',')?
         (formal '=>')* e_seq? '}'       -> ^(VAL_ABS ^(FORMALS formal*)
-                                                     ^(MU a*) e_seq?)
+                                                     ^(MU tyvar_decl*) e_seq?)
                   // value + type abstraction (terms indexed by terms and types)
   | CASE e (OF pmatch)+ END             -> ^(CASE e pmatch+) // pattern matching
   ;

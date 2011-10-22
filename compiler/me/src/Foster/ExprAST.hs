@@ -8,6 +8,7 @@ module Foster.ExprAST(
   ExprAST(..)
 , FnAST(..)
 , TupleAST(..)
+, TypeFormalAST(..)
 , TermBinding(..)
 , termBindingName
 )
@@ -16,6 +17,7 @@ where
 import Foster.Base(SourceRange, Expr(..), freeVars, identPrefix, Structured(..),
                    SourceRanged(..), TypedId(..), butnot, out)
 import Foster.TypeAST(TypeAST, EPattern(..), E_VarAST(..), AnnVar)
+import Foster.Kind
 
 data ExprAST =
         -- Literals
@@ -52,12 +54,14 @@ data TupleAST = TupleAST { tupleAstRange :: SourceRange
 
 data FnAST  = FnAST { fnAstRange :: SourceRange
                     , fnAstName  :: String
-                    , fnTyFormals:: [String]
+                    , fnTyFormals:: [TypeFormalAST]
                     , fnRetType  :: Maybe TypeAST
                     , fnFormals  :: [AnnVar]
                     , fnAstBody  :: ExprAST
                     , fnWasToplevel :: Bool
                     } deriving (Show)
+
+data TypeFormalAST = TypeFormalAST String Kind deriving (Show)
 
 data TermBinding = TermBinding E_VarAST ExprAST deriving (Show)
 termBindingName (TermBinding v _) = evarName v

@@ -397,6 +397,9 @@ void gclog_time(const char* msg, base::TimeDelta d) {
           long(d.InMilliseconds() - (d.InSeconds() * 1000)));
 }
 
+// TODO: track bytes allocated, bytes clollected, max heap size,
+//       max slop (alloc - reserved), peak mem use; compute % GC time.
+
 int cleanup() {
   base::TimeTicks fin = base::TimeTicks::HighResNow();
   base::TimeDelta total_elapsed = fin - init_start;

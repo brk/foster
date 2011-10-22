@@ -56,8 +56,7 @@ ilOf typ =
                                 return $ (PtrTypeIL   t)
      (ArrayTypeAST  ty)   -> do t <- ilOf ty
                                 return $ (ArrayTypeIL t)
-     (ForAllAST tvs rho)  -> do t <- ilOf rho
-                                let ktvs = [(tv, KindAnyType) | tv <- tvs]
+     (ForAllAST ktvs rho) -> do t <- ilOf rho
                                 return $ (ForAllIL ktvs t)
      (TyVarAST tv)         -> return $ (TyVarIL tv)
      (MetaTyVar (Meta u tyref desc)) -> do

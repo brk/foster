@@ -1,5 +1,5 @@
 module Foster.Kind where
 
-data Kind = KindAnyType
+data Kind = KindAnySizeType
           | KindPointerSized
           deriving (Eq, Show)

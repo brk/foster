@@ -35,6 +35,8 @@ using foster::ParsingContext;
 
 #define DEBUG_TYPE "foster"
 
+KindAST* getDefaultKind() { return new BaseKindAST(BaseKindAST::KindType); }
+
 std::string str(pANTLR3_STRING pstr) {
   return string((const char*)pstr->chars);
 }
@@ -255,36 +257,53 @@ ExprAST* parseParenExpr(pTree tree) {
   return ExprAST_from(child(tree, 0));
 }
 
-Formal* parseFormal(pTree formal) {
+Formal parseFormal(pTree formal) {
   ASSERT(getChildCount(formal) == 2);
   TypeAST* ty = TypeAST_from(child(formal, 1));
-  return new Formal(textOfVar(child(formal, 0)), ty);
+  return Formal(textOfVar(child(formal, 0)), ty);
 }
 
-void parseFormals(std::vector<Formal*>& formals, pTree tree) {
+KindAST* parseKind(pTree t) {
+  switch (typeOf(t)) {
+  case KIND_TYPE:       return new BaseKindAST(BaseKindAST::KindType);
+  case KIND_TYPE_BOXED: return new BaseKindAST(BaseKindAST::KindBoxed);
+  }
+  ASSERT(false) << "Unknown kind in parseKind()"; return NULL;
+}
+
+void parseFormals(std::vector<Formal>& formals, pTree tree) {
   for (size_t i = 0; i < getChildCount(tree); ++i) {
     formals.push_back(parseFormal(child(tree, i)));
   }
 }
 
-std::vector<string> parseTyVarNames(pTree t) {
-  std::vector<string> names;
+TypeFormal parseTypeFormal(pTree t) {
+  std::string varname = textOfVar(child(t, 0));
+  KindAST* kind = (getChildCount(t) == 2)
+                ? parseKind(child(t, 1))
+                : getDefaultKind();
+  return TypeFormal(varname, kind);
+}
+
+// TYPEVAR_DECL name kind?
+std::vector<TypeFormal> parseTyFormals(pTree t) {
+  std::vector<TypeFormal> names;
   for (size_t i = 0; i < getChildCount(t); ++i) {
-    names.push_back(textOfVar(child(t, i)));
+    names.push_back(parseTypeFormal(child(t, i)));
   }
   return names;
 }
 
-// ^(VAL_ABS ^(FORMALS formals) ^(MU a+) e_seq?)
+// ^(VAL_ABS ^(FORMALS formals) ^(MU tyvar_decl*) e_seq?)
 ExprAST* parseValAbs(pTree tree) {
   ASSERT(getChildCount(tree) == 3) << "Unable to parse empty body: "
                                    << show(rangeOf(tree));
-  std::vector<Formal*> formals;
+  std::vector<Formal> formals;
   parseFormals(formals, child(tree, 0));
-  std::vector<string> tyVarNames = parseTyVarNames(child(tree, 1));
+  std::vector<TypeFormal> tyVarFormals = parseTyFormals(child(tree, 1));
   TypeAST* resultType = NULL;
   ExprAST* resultSeq =  parseSeq(child(tree, 2));
-  return new ValAbs(formals, tyVarNames, resultSeq, resultType, rangeOf(tree));
+  return new ValAbs(formals, tyVarFormals, resultSeq, resultType, rangeOf(tree));
 }
 
 ExprAST* parseTuple(pTree t) {

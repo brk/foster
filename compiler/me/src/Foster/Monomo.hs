@@ -13,6 +13,7 @@ where
 import Control.Monad.State(forM_, execState, get, put, State)
 
 import Foster.Base
+import Foster.Kind
 import Foster.ILExpr
 import Foster.TypeIL
 import Foster.Worklist
@@ -22,7 +23,7 @@ import Data.Map(Map)
 import Data.Map as Map(insert, (!), elems, filter)
 import Data.Set(Set)
 import Data.Set as Set(member, insert, empty)
-import List(length, elem, lookup)
+import List(length, elem, lookup, all)
 import Data.Maybe(fromMaybe, isNothing)
 
 -- | Performs worklist-based monomorphization of top-level functions,
@@ -165,13 +166,13 @@ monomorphizeLetable expr =
     case expr of
         -- This is the only interesting case!
         ILTyApp t v argty -> do
+            let argtys = listize argty
             case v of
               -- If we're polymorphically instantiating a global symbol
               -- (i.e. a proc) then we can statically look up the proc
               -- definition and create a monomorphized copy.
               TypedId (ForAllIL {}) id@(GlobalSymbol _) ->
-                do let argtys = listize argty
-                   let polyid = getPolyProcId id (show argtys)
+                do let polyid = getPolyProcId id (show argtys)
                    -- Figure out what (procedure) name we'd like to call.
                    -- If we haven't already started monomorphising it,
                    -- add the fn and args to the worklist.
@@ -188,8 +189,14 @@ monomorphizeLetable expr =
               -- (in general) the var is unknown, so we can't statically
               -- monomorphize it. In simple cases we can insert coercions
               -- to/from uniform and non-uniform representations.
-              TypedId (ForAllIL {}) _localvarid ->
-                error $ "\nFor now, polymorphic instantiation is only"
+              TypedId (ForAllIL ktvs _rho) localvarid ->
+                if List.all (\(_tv, kind) -> kind == KindPointerSized) ktvs
+                  then return $ Left (TypedId t localvarid)
+                  else error $ "Cannot instantiate "
+                     ++ show ktvs
+                     ++ " with types "
+                     ++ show argtys
+                     ++ "\nFor now, polymorphic instantiation is only"
                      ++ " allowed on functions at the top level!"
                      ++ "\nThis is a silly restriction for local bindings,"
                      ++ " and could be solved with a dash of flow"
@@ -248,24 +255,24 @@ substituteTypeInLast subst last =
                                      (substituteTypeInVar subst v) dt
 
 substituteTypeInLetable subst expr =
-        let q  = parSubstTyIL subst in
-        let qv = substituteTypeInVar subst in
-        case expr of
-            ILBool      b       -> ILBool  b
-            ILInt       t i     -> ILInt   (q t) i
-            ILTuple       vs    -> ILTuple (map qv vs)
-            ILCall      t v vs  -> ILCall     (q t) (qv v) (map qv vs)
-            ILCallPrim  t p vs  -> ILCallPrim (q t) p      (map qv vs)
-            ILAppCtor   t c vs  -> ILAppCtor  (q t) c      (map qv vs)
-            ILAllocate (ILAllocInfo t region arr_var unboxed) ->
-                ILAllocate (ILAllocInfo (q t) region  (fmap qv arr_var) unboxed)
-            ILAlloc     v       -> ILAlloc            (qv v)
-            ILAllocArray t v    -> ILAllocArray (q t) (qv v)
-            ILDeref        v    -> ILDeref            (qv v)
-            ILStore        v w  -> ILStore            (qv v) (qv w)
-            ILArrayRead  t a b  -> ILArrayRead  (q t) (qv a) (qv b)
-            ILArrayPoke  v b i  -> ILArrayPoke (qv v) (qv b) (qv i)
-            ILTyApp   t v argty -> ILTyApp (q t) (qv v) (q argty)
+  let q  = parSubstTyIL subst in
+  let qv = substituteTypeInVar subst in
+  case expr of
+      ILBool      b       -> ILBool  b
+      ILInt       t i     -> ILInt   (q t) i
+      ILTuple       vs    -> ILTuple (map qv vs)
+      ILCall      t v vs  -> ILCall     (q t) (qv v) (map qv vs)
+      ILCallPrim  t p vs  -> ILCallPrim (q t) p      (map qv vs)
+      ILAppCtor   t c vs  -> ILAppCtor  (q t) c      (map qv vs)
+      ILAllocate (ILAllocInfo t region arr_var unboxed) ->
+          ILAllocate (ILAllocInfo (q t) region  (fmap qv arr_var) unboxed)
+      ILAlloc     v       -> ILAlloc            (qv v)
+      ILAllocArray t v    -> ILAllocArray (q t) (qv v)
+      ILDeref        v    -> ILDeref            (qv v)
+      ILStore        v w  -> ILStore            (qv v) (qv w)
+      ILArrayRead  t a b  -> ILArrayRead  (q t) (qv a) (qv b)
+      ILArrayPoke  v b i  -> ILArrayPoke (qv v) (qv b) (qv i)
+      ILTyApp   t v argty -> ILTyApp (q t) (qv v) (q argty)
 
 assocFilterOut :: (Eq a) => [(a,b)] -> [a] -> [(a,b)]
 assocFilterOut lst keys =

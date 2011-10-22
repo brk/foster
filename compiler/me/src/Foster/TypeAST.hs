@@ -7,7 +7,7 @@
 module Foster.TypeAST(
   TypeAST(..), EPattern(..), E_VarAST(..), IntSizeBits(..), AnnVar
 , fosBoolType, MetaTyVar(Meta), Sigma, Rho, Tau
-, typesEqual, minimalTupleAST
+, typesEqual, minimalTupleAST, kindOfTypeAST
 , gFosterPrimOpsTable, primitiveDecls
 )
 where
@@ -17,6 +17,7 @@ import Data.IORef(IORef)
 import Data.Map as Map(fromList, toList)
 
 import Foster.Base
+import Foster.Kind
 
 data EPattern =
           EP_Wildcard    SourceRange
@@ -109,6 +110,8 @@ i32 = PrimIntAST I32
 i64 = PrimIntAST I64
 i1  = PrimIntAST I1
 
+primTyVars tyvars = map (\v -> (v, KindAnySizeType)) tyvars
+
 primitiveDecls =
     [(,) "expect_i32"  $ mkProcType [i32] []
     ,(,)  "print_i32"  $ mkProcType [i32] []
@@ -124,20 +127,20 @@ primitiveDecls =
 
     -- forall a, i32 -> Array a
     ,(,) "allocDArray" $ let a = BoundTyVar "a" in
-                         ForAllAST [a]
+                         ForAllAST (primTyVars [a])
                            (mkProcType [i32] [ArrayTypeAST (TyVarAST a)])
 
     -- forall a b, (a -> b) -> Coro a b
     ,(,) "coro_create" $ let a = BoundTyVar "a" in
                          let b = BoundTyVar "b" in
-                         (ForAllAST [a, b]
+                         (ForAllAST (primTyVars [a, b])
                            (mkFnType [mkFnType   [TyVarAST a] [TyVarAST b]]
                                      [mkCoroType [TyVarAST a] [TyVarAST b]]))
 
     -- forall a b, (Coro a b, a) -> b
     ,(,) "coro_invoke" $ let a = BoundTyVar "a" in
                          let b = BoundTyVar "b" in
-                         (ForAllAST [a, b]
+                         (ForAllAST (primTyVars [a, b])
                             (mkFnType [(mkCoroType [TyVarAST a] [TyVarAST b]), (TyVarAST a)]
                                       [TyVarAST b]))
 
@@ -146,7 +149,8 @@ primitiveDecls =
     --  with the arg & return types of the containing function)
     ,(,) "coro_yield"  $ let a = BoundTyVar "a" in
                          let b = BoundTyVar "b" in
-                         (ForAllAST [a, b] (mkFnType [TyVarAST b] [TyVarAST a]))
+                         (ForAllAST (primTyVars [a, b])
+                            (mkFnType [TyVarAST b] [TyVarAST a]))
 
     ,(,) "force_gc_for_debugging_purposes" $ mkFnType [] []
     ,(,) "llvm_readcyclecounter" $ mkFnType [] [i64]

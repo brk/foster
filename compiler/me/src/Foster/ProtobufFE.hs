@@ -7,6 +7,7 @@
 module Foster.ProtobufFE (parseSourceModule) where
 
 import Foster.Base
+import Foster.Kind
 import Foster.ExprAST
 import Foster.TypeAST
 import Foster.ProtobufUtils(pUtf8ToText)
@@ -26,7 +27,10 @@ import Foster.Fepb.FnType   as PbFnType
 import Foster.Fepb.Type.Tag as PbTypeTag
 import Foster.Fepb.Type     as PbType
 import Foster.Fepb.Formal   as PbFormal
+import Foster.Fepb.TypeFormal as PbTypeFormal
 import Foster.Fepb.TermBinding    as PbTermBinding
+import Foster.Fepb.Kind     as PbKind
+import Foster.Fepb.Kind.Tag as PbKindTag
 import Foster.Fepb.PBLet    as PBLet
 import Foster.Fepb.Defn     as Defn
 import Foster.Fepb.Decl     as Decl
@@ -75,12 +79,22 @@ parseCompiles pbexpr range = do
                 return $ E_CompilesAST range (Just body)
         _ ->    return $ E_CompilesAST range (Nothing)
 
+parseKind pbkind =
+    case PbKind.tag pbkind of
+        PbKindTag.KIND_TYPE ->  KindAnySizeType
+        PbKindTag.KIND_BOXED -> KindPointerSized
+
+parseTypeFormal pbtyformal =
+    let name = uToString $ PbTypeFormal.name pbtyformal in
+    let kind = parseKind $ PbTypeFormal.kind pbtyformal in
+    TypeFormalAST name kind
+
 parseFn pbexpr = do range <- parseRange pbexpr
                     [body] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
                     let name  = getName "fn" $ PbExpr.name pbexpr
                     let formals = toList $ PbExpr.formals pbexpr
                     let mretty = parseReturnType pbexpr
-                    let tyformals = map uToString $
+                    let tyformals = map parseTypeFormal $
                                         toList $ PbExpr.type_formals pbexpr
                     return $ (FnAST range name tyformals mretty
                                (map parseFormal formals) body

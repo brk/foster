@@ -54,10 +54,10 @@ parSubstTy prvNextPairs ty =
         TupleTypeAST types -> TupleTypeAST (map q types)
         FnTypeAST s t cc cs-> FnTypeAST   (q s) (q t) cc cs -- TODO unify calling convention?
         CoroTypeAST s t    -> CoroTypeAST (q s) (q t)
-        ForAllAST tvs rho  ->
+        ForAllAST ktvs rho ->
                 let prvNextPairs' = prvNextPairs `assocFilterOut`
-                                                   [TyVarAST tv | tv <- tvs]
-                in  ForAllAST tvs (parSubstTy prvNextPairs' rho)
+                                                 [TyVarAST tv | (tv, _) <- ktvs]
+                in  ForAllAST ktvs (parSubstTy prvNextPairs' rho)
 
 -- Replaces types for meta type variables (unification variables)
 -- according to the given type substitution.
