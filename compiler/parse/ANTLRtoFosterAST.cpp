@@ -692,6 +692,15 @@ DataCtorAST* parseDataCtor(pTree t) {
   return c;
 }
 
+// ^(MU data_ctor*)
+std::vector<DataCtorAST*> parseDataCtors(pTree t) {
+  std::vector<DataCtorAST*> ctors;
+  for (size_t i = 0; i < getChildCount(t); ++i) {
+    ctors.push_back(parseDataCtor(child(t, i)));
+  }
+  return ctors;
+}
+
 ModuleAST* parseTopLevel(pTree root_tree, std::string moduleName) {
   // The top level is composed of declarations and definitions.
   std::vector<Decl*> decls;
@@ -712,12 +721,9 @@ ModuleAST* parseTopLevel(pTree root_tree, std::string moduleName) {
       pTree typevar = child(c, 0);
       pTree type    = child(c, 1);
       decls.push_back(new Decl(textOfVar(typevar), TypeAST_from(type)));
-    } else if (token == DATATYPE) { // ^(DATATYPE id ddef_ctor+)
-      std::vector<DataCtorAST*> ctors;
-      for (size_t i = 1; i < getChildCount(c); ++i) {
-        ctors.push_back(parseDataCtor(child(c, i)));
-      }
-      datas.push_back(new Data(textOf(child(c, 0)), ctors));
+    } else if (token == DATATYPE) { // ^(DATATYPE id ^(MU tyvar_decl*) ^(MU data_ctor*)
+      datas.push_back(new Data(textOf(child(c, 0)),
+                      parseDataCtors(child(c, 2))));
     } else {
       EDiag() << "ANTLRtoFosterAST.cpp: "
               << "Unexpected top-level element with token ID " << token;

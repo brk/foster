@@ -45,7 +45,8 @@ defn    :       x EQ atom ';'                   -> ^(DEFN x atom) // We should a
         ;
 
 // Or perhaps TYPE id OF (CASE ctor ...)+
-data_defn : TYPE CASE id data_ctor+             -> ^(DATATYPE id data_ctor+);
+data_defn : TYPE CASE id ('(' tyvar_decl ')')*
+                         data_ctor*             -> ^(DATATYPE id ^(MU tyvar_decl*) ^(MU data_ctor*));
 data_ctor : OF dctor tatom*                     -> ^(OF dctor tatom*);
 
 opr     :       SYMBOL;
