@@ -137,12 +137,17 @@ typecheckModule verboseMode modast tcenv0 = do
    computeContextBindings decls = map pair2binding decls
 
    extractCtorTypes :: DataType TypeAST -> [(String, TypeAST)]
-   extractCtorTypes (DataType datatypeName ctors) = map nmCTy ctors
-     where nmCTy (DataCtor name _smallId types) =
-                          (name, ctorTypeAST datatypeName types)
+   extractCtorTypes (DataType datatypeName tyformals ctors) = map nmCTy ctors
+     where nmCTy (DataCtor name _tag types) =
+                          (name, ctorTypeAST tyformals datatypeName types)
 
-   ctorTypeAST dtName types =
+   ctorTypeAST [] dtName types =
         FnTypeAST (TupleTypeAST types) (DataTypeAST dtName) FastCC FT_Proc
+
+   ctorTypeAST tyformals dtName types =
+      let convertTyFormal (TypeFormalAST name kind) = (BoundTyVar name, kind) in
+      ForAllAST (map convertTyFormal tyformals)
+        (FnTypeAST (TupleTypeAST types) (DataTypeAST dtName) FastCC FT_Proc)
 
    buildCallGraphList :: [FnAST] -> [ContextBinding ty]
                       -> [(FnAST, String, [String])]
@@ -177,9 +182,9 @@ typecheckModule verboseMode modast tcenv0 = do
         convertDecl (s, ty) = do t <- ilOf ty ; return (s, t)
 
         convertDataType :: DataType TypeAST -> Tc (DataType TypeIL)
-        convertDataType (DataType s ctors) = do
+        convertDataType (DataType dtName tyformals ctors) = do
           cts <- mapM convertDataCtor ctors
-          return $ DataType s cts
+          return $ DataType dtName tyformals cts
             where
               convertDataCtor :: DataCtor TypeAST -> Tc (DataCtor TypeIL)
               convertDataCtor (DataCtor dataCtorName n types) = do
@@ -211,7 +216,7 @@ getCtorInfo :: [DataType TypeAST] -> Map CtorName [CtorInfo TypeAST]
 getCtorInfo datatypes = Map.unionsWith (++) $ map getCtorInfoList datatypes
   where
     getCtorInfoList :: DataType TypeAST -> Map CtorName [CtorInfo TypeAST]
-    getCtorInfoList (DataType name ctors) =
+    getCtorInfoList (DataType name _tyformals ctors) =
           Map.fromList $ map (buildCtorInfo name) ctors
 
     buildCtorInfo :: DataTypeName -> DataCtor TypeAST
@@ -233,7 +238,7 @@ ctorIdFor name ctor = (ctorNameOf ctor, ctorId name ctor)
 dataTypeSigs :: [DataType TypeIL] -> Map CtorName DataTypeSig
 dataTypeSigs datatypes = Map.fromList $ map ctorIdSet datatypes where
   ctorIdSet :: DataType TypeIL -> (DataTypeName, DataTypeSig)
-  ctorIdSet (DataType name ctors) =
+  ctorIdSet (DataType name _tyformals ctors) =
       (name, DataTypeSig (Map.fromList $ map (ctorIdFor name) ctors))
 
 -----------------------------------------------------------------------

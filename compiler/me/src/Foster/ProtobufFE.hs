@@ -84,6 +84,7 @@ parseKind pbkind =
         PbKindTag.KIND_TYPE ->  KindAnySizeType
         PbKindTag.KIND_BOXED -> KindPointerSized
 
+parseTypeFormal :: TypeFormal -> TypeFormalAST
 parseTypeFormal pbtyformal =
     let name = uToString $ PbTypeFormal.name pbtyformal in
     let kind = parseKind $ PbTypeFormal.kind pbtyformal in
@@ -266,7 +267,8 @@ parseExpr pbexpr = do
 parseDataType :: DataType.DataType -> FE (Foster.Base.DataType TypeAST)
 parseDataType dt = do
     ctors <- mapM parseDataCtor (Prelude.zip [0..] (toList $ DataType.ctor dt))
-    return $ Foster.Base.DataType (uToString $ DataType.name dt) ctors
+    let tyformals = map parseTypeFormal (toList $ DataType.tyformal dt)
+    return $ Foster.Base.DataType (uToString $ DataType.name dt) tyformals ctors
  where
   parseDataCtor :: (Int, DataCtor.DataCtor) -> FE (Foster.Base.DataCtor TypeAST)
   parseDataCtor (n, ct) = do

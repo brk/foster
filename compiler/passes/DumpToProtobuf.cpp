@@ -83,6 +83,25 @@ void processExprAST(pb::Expr* current,
 
 /////////////////////////////////////////////////////////////////////
 
+void dumpKind(pb::Kind* target, const KindAST* kind) {
+  if (const BaseKindAST* bk = dynamic_cast<const BaseKindAST*>(kind)) {
+    switch (bk->kind) {
+    case BaseKindAST::KindType: target->set_tag(pb::Kind::KIND_TYPE); break;
+    case BaseKindAST::KindBoxed: target->set_tag(pb::Kind::KIND_BOXED); break;
+    }
+  } else {
+    ASSERT(false) << "expected base kind in dumpKind()";
+  }
+}
+
+void dumpTypeFormal(const TypeFormal* formal, pb::TypeFormal* target) {
+  target->set_name(formal->name);
+  ASSERT(formal->kind) << "Formal type parameter " << formal->name << " must have kind!";
+  dumpKind(target->mutable_kind(), formal->kind);
+}
+
+/////////////////////////////////////////////////////////////////////
+
 void dumpDataCtor(DataCtorAST* cc, pb::DataCtor* c) {
   c->set_name(cc->name);
   for (size_t i = 0; i < cc->types.size(); ++i) {
@@ -96,6 +115,9 @@ void dumpDataCtors(Data* dd, pb::DataType* d) {
  d->set_name(dd->name);
  for (size_t i = 0; i < dd->ctors.size(); ++i) {
    dumpDataCtor(dd->ctors[i], d->add_ctor());
+ }
+ for (size_t i = 0; i < dd->tyformals.size(); ++i) {
+   dumpTypeFormal(&dd->tyformals[i], d->add_tyformal());
  }
 }
 
@@ -152,24 +174,6 @@ void dumpFormal(DumpToProtobufPass* pass, pb::Formal* target,
   formal->type->dump(&dt);
 }
 
-void dumpKind(pb::Kind* target, const KindAST* kind) {
-  if (const BaseKindAST* bk = dynamic_cast<const BaseKindAST*>(kind)) {
-    switch (bk->kind) {
-    case BaseKindAST::KindType: target->set_tag(pb::Kind::KIND_TYPE); break;
-    case BaseKindAST::KindBoxed: target->set_tag(pb::Kind::KIND_BOXED); break;
-    }
-  } else {
-    ASSERT(false) << "expected base kind in dumpKind()";
-  }
-}
-
-void dumpTypeFormal(DumpToProtobufPass* pass, pb::TypeFormal* target,
-                    const TypeFormal* formal) {
-  target->set_name(formal->name);
-  ASSERT(formal->kind) << "Formal type parameter " << formal->name << " must have kind!";
-  dumpKind(target->mutable_kind(), formal->kind);
-}
-
 void ValAbs::dump(DumpToProtobufPass* pass) {
   processExprAST(pass->current, this, pb::Expr::VAL_ABS);
   if (this->name == "") {
@@ -181,7 +185,7 @@ void ValAbs::dump(DumpToProtobufPass* pass) {
   }
 
   for (size_t i = 0; i < this->tyVarFormals.size(); ++i) {
-    dumpTypeFormal(pass, pass->current->add_type_formals(), &this->tyVarFormals[i]);
+    dumpTypeFormal(&this->tyVarFormals[i], pass->current->add_type_formals());
   }
 
   dumpChild(pass, pass->current->add_parts(), this->parts[0]);

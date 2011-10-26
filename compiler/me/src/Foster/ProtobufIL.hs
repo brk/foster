@@ -401,9 +401,10 @@ dumpProc p =
 
 -----------------------------------------------------------------------
 
-dumpDataTypeDecl (DataType typeName ctors) =
-    Decl { Decl.name  = u8fromString typeName
-         , Decl.type' = dumpDataType typeName ctors
+dumpDataTypeDecl datatype =
+    let name = dataTypeName datatype in
+    Decl { Decl.name  = u8fromString name
+         , Decl.type' = dumpDataType name (dataTypeCtors datatype)
          }
 
 dumpDecl (ILDecl s t) =

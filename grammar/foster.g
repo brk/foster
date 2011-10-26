@@ -137,7 +137,7 @@ formal  : x (':' t) -> ^(FORMAL x t);
 
 t       :               // types
     tatom (                             -> ^(TYPE_ATOM    tatom) // atomic types
-          | t2=t                                -> ^(TYPE_TYP_APP tatom t) // type-level application
+          | t2=t                        -> ^(TYPE_TYP_APP tatom t) // type-level application
           )
   ;
 
@@ -146,7 +146,7 @@ barebinding
 tannots :  barebinding (',' barebinding)* -> ^(BINDING barebinding+);
 
 tatom   :
-    a                                                                   // type variables
+    a                                                   // type variables
   | '(' ')'                             -> ^(TUPLE)
   | '(' t (',' t)* ')'                  -> ^(TUPLE t+)  // tuples (products) (sugar: (a,b,c) == Tuple3 a b c)
   | '{'    t  ('=>' t)* '}'

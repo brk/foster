@@ -239,10 +239,13 @@ kNormalCtors ctx dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
   where
     kNormalCtor :: Context TypeIL -> DataType TypeIL -> DataCtor TypeIL
                 -> KN (Fn KNExpr TypeIL)
-    kNormalCtor ctx (DataType dname _) (DataCtor cname small tys) = do
-      let cid = CtorId dname cname (Prelude.length tys) small
-      vars <- mapM (\t -> do fresh <- knFresh ".autogen"
-                             return $ TypedId t fresh) tys
+    kNormalCtor ctx datatype (DataCtor cname small tys) = do
+      let dname = dataTypeName datatype
+      let arity = Prelude.length tys
+      let cid = CtorId dname cname arity small
+      let genFreshVarOfType t = do fresh <- knFresh ".autogen"
+                                   return $ TypedId t fresh
+      vars <- mapM genFreshVarOfType tys
       let (Just tid) = termVarLookup cname (contextBindings ctx)
       return $ Fn { fnVar   = tid
                   , fnVars  = vars

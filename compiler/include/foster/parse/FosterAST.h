@@ -298,8 +298,11 @@ struct DataCtorAST {
 struct Data {
   string name;
   std::vector<DataCtorAST*> ctors;
-  explicit Data(const string& name, std::vector<DataCtorAST*> ctors)
-  : name(name), ctors(ctors) {}
+  std::vector<TypeFormal> tyformals;
+  explicit Data(const string& name,
+                 std::vector<TypeFormal> tyformals,
+                 std::vector<DataCtorAST*> ctors)
+  : name(name), ctors(ctors), tyformals(tyformals) {}
 };
 
 struct IfExprAST : public ExprAST {

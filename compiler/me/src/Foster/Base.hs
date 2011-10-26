@@ -7,6 +7,8 @@
 
 module Foster.Base where
 
+import Foster.Kind
+
 import System.Console.ANSI
 import Control.Monad
 
@@ -132,11 +134,12 @@ instance Show Pattern where
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
-data (Show ty) => DataType ty = DataType String [DataCtor ty] deriving Show
+data (Show ty) => DataType ty = DataType {
+    dataTypeName      :: String
+  , dataTypeTyFormals :: [TypeFormalAST]
+  , dataTypeCtors     :: [DataCtor ty]
+  } deriving Show
 data (Show ty) => DataCtor ty = DataCtor String Int [ty]      deriving Show
-
-dataTypeName  (DataType name _)  = name
-dataTypeCtors (DataType _ ctors) = ctors
 
 -- CtorIds are created before typechecking.
 data CtorId     = CtorId   { ctorTypeName :: String

@@ -36,6 +36,7 @@ using foster::ParsingContext;
 #define DEBUG_TYPE "foster"
 
 KindAST* getDefaultKind() { return new BaseKindAST(BaseKindAST::KindType); }
+KindAST* getBoxedKind() { return new BaseKindAST(BaseKindAST::KindBoxed); }
 
 std::string str(pANTLR3_STRING pstr) {
   return string((const char*)pstr->chars);
@@ -277,19 +278,19 @@ void parseFormals(std::vector<Formal>& formals, pTree tree) {
   }
 }
 
-TypeFormal parseTypeFormal(pTree t) {
+TypeFormal parseTypeFormal(pTree t, KindAST* defaultKind) {
   std::string varname = textOfVar(child(t, 0));
   KindAST* kind = (getChildCount(t) == 2)
                 ? parseKind(child(t, 1))
-                : getDefaultKind();
+                : defaultKind;
   return TypeFormal(varname, kind);
 }
 
 // TYPEVAR_DECL name kind?
-std::vector<TypeFormal> parseTyFormals(pTree t) {
+std::vector<TypeFormal> parseTyFormals(pTree t, KindAST* defaultKind) {
   std::vector<TypeFormal> names;
   for (size_t i = 0; i < getChildCount(t); ++i) {
-    names.push_back(parseTypeFormal(child(t, i)));
+    names.push_back(parseTypeFormal(child(t, i), defaultKind));
   }
   return names;
 }
@@ -300,7 +301,8 @@ ExprAST* parseValAbs(pTree tree) {
                                    << show(rangeOf(tree));
   std::vector<Formal> formals;
   parseFormals(formals, child(tree, 0));
-  std::vector<TypeFormal> tyVarFormals = parseTyFormals(child(tree, 1));
+  std::vector<TypeFormal> tyVarFormals = parseTyFormals(child(tree, 1),
+                                                        getDefaultKind());
   TypeAST* resultType = NULL;
   ExprAST* resultSeq =  parseSeq(child(tree, 2));
   return new ValAbs(formals, tyVarFormals, resultSeq, resultType, rangeOf(tree));
@@ -723,6 +725,7 @@ ModuleAST* parseTopLevel(pTree root_tree, std::string moduleName) {
       decls.push_back(new Decl(textOfVar(typevar), TypeAST_from(type)));
     } else if (token == DATATYPE) { // ^(DATATYPE id ^(MU tyvar_decl*) ^(MU data_ctor*)
       datas.push_back(new Data(textOf(child(c, 0)),
+                      parseTyFormals(child(c, 1), getBoxedKind()),
                       parseDataCtors(child(c, 2))));
     } else {
       EDiag() << "ANTLRtoFosterAST.cpp: "

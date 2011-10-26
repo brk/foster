@@ -150,8 +150,9 @@ message Defn {
 }
 
 message DataType {
-  required string   name = 1;
-  repeated DataCtor ctor = 2;
+  required string         name = 1;
+  repeated DataCtor       ctor = 2;
+  repeated TypeFormal tyformal = 3;
 }
 
 message DataCtor {

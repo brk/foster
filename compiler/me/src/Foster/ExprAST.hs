@@ -61,8 +61,6 @@ data FnAST  = FnAST { fnAstRange :: SourceRange
                     , fnWasToplevel :: Bool
                     } deriving (Show)
 
-data TypeFormalAST = TypeFormalAST String Kind deriving (Show)
-
 data TermBinding = TermBinding E_VarAST ExprAST deriving (Show)
 termBindingName (TermBinding v _) = evarName v
 
