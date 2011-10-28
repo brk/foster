@@ -51,12 +51,13 @@ monomorphize (ILProgram procdefmap decls datatypes lines) =
         let monoState0 = MonoState Set.empty worklistEmpty procdefmap in
         let monoState  = execState (addMonosAndGo procdefmap) monoState0 in
         let monoProcs  = Map.filter isMono $ monoProcDefs monoState in
-        (ILProgram monoProcs decls datatypes lines)
+        (ILProgram monoProcs decls (monomorphizedDataTypes datatypes) lines)
           where
                 addMonosAndGo procdefmap = do
                      addInitialMonoTasksAndGo (Map.elems procdefmap)
 
 isMono procdef = isNothing (ilProcPolyTyVars procdef)
+kUnknownPointerType = PtrTypeIL $ PrimIntIL IUnknown
 
 addInitialMonoTasksAndGo procdefs = do
     -- Any proc that is monomorphic when we begin is a root for the
@@ -74,10 +75,22 @@ addInitialMonoTasksAndGo procdefs = do
                                        List.all isPointyKind ktvs]
     forM_ pointypolyprocs (\(pd,ktvs) ->
          let id = ilProcIdent pd in
-         monoScheduleWork (NeedsMono id id
-                                   [PtrTypeIL $ PrimIntIL IUnknown | _ <- ktvs])
+         monoScheduleWork (NeedsMono id id [kUnknownPointerType | _ <- ktvs])
       )
     goMonomorphize
+
+    -- And similarly for data types with pointer-sized type arguments.
+monomorphizedDataTypes :: [DataType TypeIL] -> [DataType TypeIL]
+monomorphizedDataTypes dts = map monomorphizedDataType dts
+ where monomorphizedDataType (DataType name formals ctors) =
+                              DataType name formals ctorsmono where
+         ctorsmono = map monomorphizedDataCtor ctors
+         monomorphizedDataCtor (DataCtor name tag types) =
+                DataCtor name tag [monotype ty | ty <- types]
+
+         -- TODO include kinds on type variables (IL), only subst for boxed kinds
+         monotype (TyVarIL _)  = kUnknownPointerType
+         monotype ty           = ty
 
 -- TODO we could explicitly represent casts from concrete types to IUnknown*...
 
@@ -308,6 +321,12 @@ typesEqualIL (CoroTypeIL a1 b1) (CoroTypeIL a2 b2) = typesEqualIL a1 a2 && types
 typesEqualIL (ForAllIL kvars1 ty1) (ForAllIL kvars2 ty2) = kvars1 == kvars2 && typesEqualIL ty1 ty2
 typesEqualIL (TyVarIL tv1) (TyVarIL tv2) = tv1 == tv2
 typesEqualIL _ _ = False
+
+tyconSubstIL substFn (DataType name formals datactors) =
+                      DataType name formals datactors'
+  where datactors' = map (datactorSubst substFn) datactors
+        datactorSubst substFn (DataCtor name tag types) =
+                               DataCtor name tag (map substFn types)
 
 -- Substitute each element of prv with its corresponding element from nxt;
 -- unlike tySubst, this replaces arbitrary types with other types.

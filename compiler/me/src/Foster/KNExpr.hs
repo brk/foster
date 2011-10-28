@@ -234,6 +234,16 @@ nestedLets :: [KNExpr] -> ([AIVar] -> KNExpr) -> KN KNExpr
 nestedLets exprs g = nestedLetsDo exprs (\vars -> return $ g vars)
 
 -- Produces a list of (K-normalized) functions, eta-expansions of each ctor.
+-- Specifically, given a data type T (A1::K1) ... (An::Kn) with
+--   constructor C (T1::KT1) .. (Tn::KTn), we emit a procedure with type
+--
+-- forall (A1::K1) ... (An::Kn), T1 -> ... -> Tn -> T A1 ... An
+--
+-- For example, ``type case T2 of $T2C1 Int32``
+-- produces a function ``T2C1 :: Int32 -> T2``,
+-- while ``type case T3 (a:Boxed) of $T3C1 a``
+-- produces T3C1 :: forall b:Boxed, b -> T3 b
+--
 kNormalCtors :: Context TypeIL -> DataType TypeIL -> [KN (Fn KNExpr TypeIL)]
 kNormalCtors ctx dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
   where

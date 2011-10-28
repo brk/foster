@@ -14,6 +14,7 @@ message Type {
     TYPE_VARIABLE = 10;
     ARRAY = 11;
     DATATYPE = 12;
+    TY_CON_APP = 13;
   }
 
   required Tag         tag   = 2;

@@ -134,12 +134,15 @@ instance Show Pattern where
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
-data (Show ty) => DataType ty = DataType {
+data (Show ty) =>
+           DataType ty = DataType {
     dataTypeName      :: String
   , dataTypeTyFormals :: [TypeFormalAST]
   , dataTypeCtors     :: [DataCtor ty]
   } deriving Show
-data (Show ty) => DataCtor ty = DataCtor String Int [ty]      deriving Show
+
+data (Show ty) =>
+           DataCtor ty = DataCtor String Int [ty]      deriving Show
 
 -- CtorIds are created before typechecking.
 data CtorId     = CtorId   { ctorTypeName :: String
