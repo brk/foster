@@ -307,7 +307,7 @@ parseNamedType "Int64" = PrimIntAST I64
 parseNamedType "Int32" = PrimIntAST I32
 parseNamedType "Int8"  = PrimIntAST I8
 parseNamedType "Bool"  = PrimIntAST I1
-parseNamedType other = DataTypeAST other
+parseNamedType other = TyConAppAST other []
 
 parseType :: Type -> TypeAST
 parseType t =
@@ -316,12 +316,12 @@ parseType t =
                 let name@(c:_) = (getName "type name" $ PbType.name t) in
                 if isLower c then TyVarAST (BoundTyVar name)
                              else parseNamedType name
-         PbTypeTag.REF -> error "Ref types not yet implemented"
          PbTypeTag.FN -> fromMaybe (error "Protobuf node tagged FN without fnty field!")
                                    (fmap parseFnTy $ PbType.fnty t)
          PbTypeTag.TUPLE -> TupleTypeAST [parseType p | p <- toList $ PbType.type_parts t]
-         PbTypeTag.CORO -> error "Parsing for CORO type not yet implemented"
-         PbTypeTag.CARRAY -> error "Parsing for CARRAY type not yet implemented"
+         PbTypeTag.REF       -> error "Ref types not yet implemented"
+         PbTypeTag.CORO      -> error "Parsing for CORO type not yet implemented"
+         PbTypeTag.CARRAY    -> error "Parsing for CARRAY type not yet implemented"
          PbTypeTag.FORALL_TY -> error "Parsing for FORALL_TY type not yet implemented"
 
 parseFnTy :: FnType -> TypeAST

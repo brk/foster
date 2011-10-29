@@ -38,8 +38,8 @@ type Rho   = TypeAST -- No top-level ForAll
 type Tau   = TypeAST -- No ForAlls anywhere
 
 data TypeAST =
-           DataTypeAST      String
-         | PrimIntAST       IntSizeBits
+           PrimIntAST       IntSizeBits
+         | TyConAppAST      DataTypeName [TypeAST]
          | TupleTypeAST     [TypeAST]
          | FnTypeAST        { fnTypeDomain :: TypeAST
                             , fnTypeRange  :: TypeAST
@@ -64,8 +64,8 @@ instance Show TyVar where
 
 instance Show TypeAST where
     show x = case x of
-        DataTypeAST name     -> name
         PrimIntAST size      -> "(PrimIntAST " ++ show size ++ ")"
+        TyConAppAST tc types -> "(" ++ show tc ++ joinWith " " ("":map show types) ++ ")"
         (TupleTypeAST types) -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
         (FnTypeAST s t cc cs)-> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
         (CoroTypeAST s t)   -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
@@ -80,7 +80,7 @@ instance Eq MetaTyVar where
 
 kindOfTypeAST :: TypeAST -> Kind
 kindOfTypeAST x = case x of
-    DataTypeAST  {} -> KindPointerSized
+    TyConAppAST _tc _ -> KindPointerSized
     TupleTypeAST {} -> KindPointerSized
     FnTypeAST    {} -> KindPointerSized
     CoroTypeAST  {} -> KindPointerSized
@@ -91,12 +91,17 @@ kindOfTypeAST x = case x of
     TyVarAST     {} -> KindAnySizeType -- can get better kind info by evaluating kinds in contexts
     MetaTyVar    {} -> KindAnySizeType
 
-typesEqual :: TypeAST -> TypeAST -> Bool
+allTypesEqual :: [TypeAST] -> [TypeAST] -> Bool
+allTypesEqual xs ys =
+       List.length xs == List.length ys
+    && Prelude.and [typesEqual a b | (a, b) <- Prelude.zip xs ys]
 
-typesEqual (DataTypeAST x) (DataTypeAST y) = x == y
+typesEqual :: TypeAST -> TypeAST -> Bool
+typesEqual (TyConAppAST tc1 tys1) (TyConAppAST tc2 tys2) =
+        tc1 == tc2 && allTypesEqual tys1 tys2
 typesEqual (PrimIntAST  x) (PrimIntAST  y) = x == y
 typesEqual (TupleTypeAST as) (TupleTypeAST bs) =
-    List.length as == List.length bs && Prelude.and [typesEqual a b | (a, b) <- Prelude.zip as bs]
+        allTypesEqual as bs
 typesEqual (FnTypeAST a1 b1 c1 _d1) (FnTypeAST a2 b2 c2 _d2) =
     typesEqual a1 a2 && typesEqual b1 b2
                       && c1 == c2

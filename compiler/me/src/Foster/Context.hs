@@ -8,14 +8,12 @@ import Foster.ExprAST
 import Foster.TypeAST
 
 data ContextBinding ty = TermVarBinding String (TypedId ty)
+
 data Context ty = Context { contextBindings   :: [ContextBinding ty]
                           , primitiveBindings :: [ContextBinding ty]
                           , contextVerbose    :: Bool
                           , globalBindings    :: [ContextBinding ty]
                           }
-
-emptyContext :: Context ty
-emptyContext = Context [] [] True []
 
 prependContextBinding :: Context ty -> ContextBinding ty -> Context ty
 prependContextBinding ctx prefix =
@@ -32,9 +30,9 @@ ctxBoundIdents :: Context ty -> [Ident]
 ctxBoundIdents ctx = [tidIdent v | TermVarBinding _ v <- (contextBindings ctx)]
 
 termVarLookup :: String -> [ContextBinding ty] -> Maybe (TypedId ty)
-termVarLookup name bindings =
-    let termbindings = [(nm, annvar) | (TermVarBinding nm annvar) <- bindings] in
-    lookup name termbindings
+termVarLookup name bindings = Prelude.lookup name bindingslist where
+    bindingslist = [(nm, annvar) | (TermVarBinding nm annvar) <- bindings]
+
 
 data CtorInfo ty = CtorInfo CtorId (DataCtor ty) deriving Show
 

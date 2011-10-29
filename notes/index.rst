@@ -12,6 +12,7 @@ Foster Notes
    test
    features
    compiler
+   fosterlower
    closures
    closureconversion
    syntax

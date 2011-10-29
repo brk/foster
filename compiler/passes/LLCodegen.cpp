@@ -168,6 +168,7 @@ llvm::Value* LLAppCtor::codegen(CodegenPass* pass) {
   llvm::Value* obj_slot = a.codegen(pass);
   llvm::Value* obj = builder.CreateLoad(obj_slot);
 
+  EDiag() << "LLAppCtor " << dt->getName() << " :: " << str(dt->getLLVMType());
   copyValuesToStruct(codegenAll(pass, this->args), obj);
 
   const llvm::PointerType* dtype = dt->getOpaquePointerTy(pass->mod);
@@ -387,10 +388,8 @@ llvm::Value* LLInt::codegen(CodegenPass* pass) {
     llvm::Value* mpint = pass->allocateMPInt();
 
     // Call mp_int_init_value() (ignore rv for now)
-    llvm::Value* mp_int_init_value =pass->mod->getFunction("mp_int_init_value");
-    ASSERT(mp_int_init_value);
-
-    builder.CreateCall2(mp_int_init_value, mpint, small);
+    llvm::Value* mp_init_value = pass->lookupFunctionOrDie("mp_int_init_value");
+    builder.CreateCall2(mp_init_value, mpint, small);
     return mpint;
   }
 }
@@ -557,7 +556,7 @@ void LLLetVals::codegenMiddle(CodegenPass* pass) {
 
 void LLClosures::codegenMiddle(CodegenPass* pass) {
   // This AST node binds a mutually-recursive set of functions,
-  // represented as closure values, in a designated expression.
+  // represented as closure values.
 
   std::vector<llvm::Value*> envSlots;
   for (size_t i = 0; i < closures.size(); ++i) {
@@ -625,6 +624,7 @@ bool tryBindClosureFunctionTypes(const llvm::Type*          origType,
 
 // Converts { r({...}*, ----), {....}* }
 // to       { r( i8*,   ----),   i8*   }.
+// Used when choosing a type to allocate for a closure pair.
 const llvm::StructType*
 genericClosureStructTy(const llvm::FunctionType* fnty) {
   const Type* retty = fnty->getReturnType();

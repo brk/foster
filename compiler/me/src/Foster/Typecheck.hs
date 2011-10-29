@@ -5,7 +5,7 @@ import Control.Monad(liftM, forM_, forM)
 
 import Debug.Trace(trace)
 import qualified Data.Text as T
-import qualified Data.Map as Map(lookup)
+import qualified Data.Map as Map(lookup, empty)
 import Data.Maybe(fromJust)
 import Data.Char (toLower)
 
@@ -246,6 +246,9 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
 
 varbind id ty = TermVarBinding (identPrefix id) (TypedId ty id)
 
+emptyContext :: Context ty
+emptyContext = Context [] [] True []
+
 extractPatternBindings :: Pattern -> TypeAST -> Tc [ContextBinding TypeAST]
 
 extractPatternBindings (P_Wildcard _   ) _  = return []
@@ -390,7 +393,7 @@ showtypes args expectedTypes = concatMap showtypes' (zip3 [1..] args expTypes)
                         ++ outToString (showStructure a)) (zip [0..] args)  ++ "\n")
         expTypes = (case expectedTypes of
                         (TupleTypeAST x) -> x
-                        x -> [x]) ++ repeat (DataTypeAST "<unknown>") -- hack :(
+                        x -> [x]) ++ repeat (TyConAppAST "<unknown>" []) -- hack :(
 
 -- For example,   foo (1, 2)   would produce:
 -- eargs   = [1, 2]
@@ -563,8 +566,8 @@ computeFreeFnVars uniquelyNamedFormals annbody f ctx = do
                      where
                      bodyvars   = freeIdents annbody
                      boundvars  = map tidIdent uniquelyNamedFormals
-                     globalvars = map bindingId (globalBindings ctx)
-                     bindingId (TermVarBinding _ tid) = tidIdent tid
+                     globalvars = concatMap tmBindingId (globalBindings ctx)
+                     tmBindingId (TermVarBinding _ tid) = [tidIdent tid]
     freeAnns <- let rng = fnAstRange f in
                 mapM (\id -> typecheckVar ctx rng (identPrefix id)) identsFree
     return $ [tid | E_AnnVar _ tid <- freeAnns]
@@ -707,16 +710,16 @@ equateTypes t1 t2 msg = do
      collectUnificationVars :: TypeAST -> [MetaTyVar]
      collectUnificationVars x =
          case x of
-             PrimIntAST _        -> []
-             DataTypeAST _       -> []
-             TupleTypeAST types  -> concatMap collectUnificationVars types
-             FnTypeAST s r _ _   -> concatMap collectUnificationVars [s,r]
-             CoroTypeAST s r     -> concatMap collectUnificationVars [s,r]
-             ForAllAST _tvs rho  -> collectUnificationVars rho
-             TyVarAST  _tv       -> []
-             MetaTyVar     m     -> [m]
-             RefTypeAST    ty    -> collectUnificationVars ty
-             ArrayTypeAST  ty    -> collectUnificationVars ty
+             PrimIntAST _          -> []
+             TyConAppAST _nm types -> concatMap collectUnificationVars types
+             TupleTypeAST types    -> concatMap collectUnificationVars types
+             FnTypeAST s r _ _     -> concatMap collectUnificationVars [s,r]
+             CoroTypeAST s r       -> concatMap collectUnificationVars [s,r]
+             ForAllAST _tvs rho    -> collectUnificationVars rho
+             TyVarAST  _tv         -> []
+             MetaTyVar     m       -> [m]
+             RefTypeAST    ty      -> collectUnificationVars ty
+             ArrayTypeAST  ty      -> collectUnificationVars ty
 
 
 extendContext :: Context TypeAST -> [AnnVar] -> Maybe TypeAST -> Tc (Context TypeAST)

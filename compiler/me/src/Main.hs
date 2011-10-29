@@ -131,23 +131,30 @@ typecheckModule verboseMode modast tcenv0 = do
  where
    mkContext declBindings primBindings =
      Context declBindings primBindings verboseMode globalvars
-       where globalvars = declBindings ++ primBindings
+       where globalvars   = declBindings ++ primBindings
 
    computeContextBindings :: [(String, TypeAST)] -> [ContextBinding TypeAST]
    computeContextBindings decls = map pair2binding decls
 
+   -- Given a data type  T (A1::K1) ... (An::Kn)
+   -- returns the type   T A1 .. An   (with A1..An free).
+   typeOfDataType :: DataType TypeAST -> TypeAST
+   typeOfDataType dt =
+     let boundTyVarFor (TypeFormalAST name _kind) = TyVarAST $ BoundTyVar name in
+     TyConAppAST (dataTypeName dt) (map boundTyVarFor $ dataTypeTyFormals dt)
+
    extractCtorTypes :: DataType TypeAST -> [(String, TypeAST)]
-   extractCtorTypes (DataType datatypeName tyformals ctors) = map nmCTy ctors
+   extractCtorTypes dt = map nmCTy (dataTypeCtors dt)
      where nmCTy (DataCtor name _tag types) =
-                          (name, ctorTypeAST tyformals datatypeName types)
+                          (name, ctorTypeAST (dataTypeTyFormals dt) dt types)
 
-   ctorTypeAST [] dtName types =
-        FnTypeAST (TupleTypeAST types) (DataTypeAST dtName) FastCC FT_Proc
+   ctorTypeAST [] dt ctorArgTypes =
+       FnTypeAST (TupleTypeAST ctorArgTypes) (typeOfDataType dt) FastCC FT_Proc
 
-   ctorTypeAST tyformals dtName types =
-      let convertTyFormal (TypeFormalAST name kind) = (BoundTyVar name, kind) in
-      ForAllAST (map convertTyFormal tyformals)
-        (FnTypeAST (TupleTypeAST types) (DataTypeAST dtName) FastCC FT_Proc)
+   ctorTypeAST tyformals dt ctorArgTypes =
+     let convertTyFormal (TypeFormalAST name kind) = (BoundTyVar name, kind) in
+     ForAllAST (map convertTyFormal tyformals)
+      (FnTypeAST (TupleTypeAST ctorArgTypes) (typeOfDataType dt) FastCC FT_Proc)
 
    buildCallGraphList :: [FnAST] -> [ContextBinding ty]
                       -> [(FnAST, String, [String])]
@@ -170,7 +177,8 @@ typecheckModule verboseMode modast tcenv0 = do
      decls     <- mapM convertDecl (moduleASTdecls mAST)
      datatypes <- mapM convertDataType (moduleASTdataTypes mAST)
      ctx_il    <- liftContextM ilOf ctx_ast
-     aiFns     <- mapM (tcInject fnOf) (map (fmapOO (\(E_AnnFn f) -> f)) oo_annfns)
+     aiFns     <- mapM (tcInject fnOf)
+                       (map (fmapOO (\(E_AnnFn f) -> f)) oo_annfns)
      let m = ModuleIL aiFns decls datatypes (moduleASTsourceLines mAST)
      return (ctx_il, m)
        where
@@ -191,7 +199,8 @@ typecheckModule verboseMode modast tcenv0 = do
                 tys <- mapM ilOf types
                 return $ DataCtor dataCtorName n tys
 
-        liftContextM :: Monad m => (t1 -> m t2) -> Context t1 -> m (Context t2)
+        liftContextM :: (Monad m, Show t1, Show t2)
+                     => (t1 -> m t2) -> Context t1 -> m (Context t2)
         liftContextM f (Context cb pb vb gb) = do
           cb' <- mapM (liftBinding f) cb
           pb' <- mapM (liftBinding f) pb

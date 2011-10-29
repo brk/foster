@@ -45,9 +45,10 @@ parSubstTy :: [(TypeAST, TypeAST)] -> TypeAST -> TypeAST
 parSubstTy prvNextPairs ty =
     let q = parSubstTy prvNextPairs in
     case ty of
-        DataTypeAST _  -> fromMaybe ty $ List.lookup ty prvNextPairs
         TyVarAST   {}  -> fromMaybe ty $ List.lookup ty prvNextPairs
         MetaTyVar  {}  -> fromMaybe ty $ List.lookup ty prvNextPairs
+        TyConAppAST nm tys -> fromMaybe (TyConAppAST nm (map q tys)) $
+                                         List.lookup ty prvNextPairs
         PrimIntAST _       -> ty
         RefTypeAST   t     -> RefTypeAST   (q t)
         ArrayTypeAST t     -> ArrayTypeAST (q t)
@@ -67,8 +68,8 @@ tySubst subst ty =
     case ty of
         MetaTyVar (Meta u _tyref _) -> Map.findWithDefault ty u subst
         PrimIntAST   {}             -> ty
-        DataTypeAST  {}             -> ty
         TyVarAST     {}             -> ty
+        TyConAppAST  nm tys         -> TyConAppAST  nm (map q tys)
         RefTypeAST    t             -> RefTypeAST   (q t)
         ArrayTypeAST  t             -> ArrayTypeAST (q t)
         TupleTypeAST types          -> TupleTypeAST (map q types)
@@ -84,6 +85,9 @@ tcUnifyTypes t1 t2 = tcUnify [TypeConstrEq t1 t2]
     tcUnify :: [TypeConstraint] -> Tc UnifySoln
     tcUnify constraints = tcUnifyLoop constraints emptyTypeSubst
 
+tcUnifyMoreTypes tys1 tys2 constraints tysub =
+ tcUnifyLoop ([TypeConstrEq a b | (a, b) <- zip tys1 tys2] ++ constraints) tysub
+
 tcUnifyLoop :: [TypeConstraint] -> TypeSubst -> Tc UnifySoln
 tcUnifyLoop [] tysub = return $ Just tysub
 tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
@@ -95,15 +99,16 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                             else tcFails [out $ "Unable to unify different primitive types: "
                                             ++ show n1 ++ " vs " ++ show n2]
 
-              ((DataTypeAST n1), (DataTypeAST n2)) ->
-                if n1 == n2 then tcUnifyLoop constraints tysub
-                            else tcFails [out $ "Unable to unify different named types: "
-                                            ++ n1 ++ " vs " ++ n2]
+              ((TyConAppAST nm1 tys1), (TyConAppAST nm2 tys2)) ->
+                if nm1 == nm2
+                  then tcUnifyMoreTypes tys1 tys2 constraints tysub
+                  else tcFails [out $ "Unable to unify different type constructors: "
+                                            ++ nm1 ++ " vs " ++ nm2]
 
               ((TupleTypeAST tys1), (TupleTypeAST tys2)) ->
                   if List.length tys1 /= List.length tys2
                     then tcFails [out $ "Unable to unify tuples of different lengths!"]
-                    else tcUnifyLoop ([TypeConstrEq a b | (a, b) <- zip tys1 tys2] ++ constraints) tysub
+                    else tcUnifyMoreTypes tys1 tys2 constraints tysub
 
               ((FnTypeAST a1 a2 _cc1 _), (FnTypeAST b1 b2 _cc2 _)) ->
                   tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub
