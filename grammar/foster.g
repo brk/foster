@@ -136,8 +136,8 @@ formal  : x (':' t) -> ^(FORMAL x t);
 /////////////////////////////////////////////////////////////////////////////////////////
 
 t       :               // types
-    tatom (                             -> ^(TYPE_ATOM    tatom) // atomic types
-          | t2=t                        -> ^(TYPE_TYP_APP tatom t) // type-level application
+    tatom (                             -> ^(TYPE_ATOM    tatom)        // atomic types
+          | t2=tatom+                   -> ^(TYPE_TYP_APP tatom tatom+) // type-level application
           )
   ;
 
