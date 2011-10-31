@@ -904,8 +904,10 @@ void DecisionTree::codegenDecisionTree(CodegenPass* pass,
 llvm::Value* emitCallGetCtorIdOf(CodegenPass* pass, llvm::Value* v) {
   llvm::Value* foster_ctor_id_of = pass->mod->getFunction("foster_ctor_id_of");
   ASSERT(foster_ctor_id_of != NULL);
-  return builder.CreateCall(foster_ctor_id_of, builder.CreateBitCast(v,
-                                                 builder.getInt8PtrTy()));
+  llvm::CallInst* call = builder.CreateCall(foster_ctor_id_of,
+                         builder.CreateBitCast(v, builder.getInt8PtrTy()));
+  markAsNonAllocating(call);
+  return call;
 }
 
 void addAndEmitTo(Function* f, BasicBlock* bb) {
