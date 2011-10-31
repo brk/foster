@@ -5,7 +5,7 @@ import Control.Monad(liftM, forM_, forM)
 
 import Debug.Trace(trace)
 import qualified Data.Text as T
-import qualified Data.Map as Map(lookup, empty)
+import qualified Data.Map as Map(lookup)
 import Data.Maybe(fromJust)
 import Data.Char (toLower)
 

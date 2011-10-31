@@ -23,7 +23,7 @@ import Data.Map(Map)
 import Data.Map as Map(insert, (!), elems, filter)
 import Data.Set(Set)
 import Data.Set as Set(member, insert, empty)
-import Data.List as List(length, elem, lookup, all)
+import Data.List as List(elem, lookup, all)
 import Control.Monad(when)
 import Data.Maybe(fromMaybe, isNothing, maybeToList)
 
@@ -174,7 +174,7 @@ doMonomorphizeProc proc = do
 substituteTypeInProc argtys polyid proc =
  case ilProcPolyTyVars proc of
    Just ktyvars ->
-     let tyvarOf (tv, _kind) = TyVarIL tv in
+     let tyvarOf (tv, _kind) = tv in
      let subst = Prelude.zip (map tyvarOf ktyvars) argtys in
      -- Return a function without a forall type.
      proc { ilProcPolyTyVars = Nothing
@@ -249,11 +249,13 @@ getPolyProcId id s = case id of
                         (GlobalSymbol o) -> (GlobalSymbol (o ++ s))
                         (Ident o m)      -> (Ident (o ++ s) m)
 
+type TyVarSubst = [(TyVar, TypeIL)]
+
 -- Our wanton copying of procs without consistently renaming the copied
 -- variables breaks alpha-uniqueness, but it works out at the moment because:
 --   1) We don't do any beta-reduction on proc definitions.
 --   2) The LLVM lowering uses distinct scopes for each procedure definition.
-substituteTypeInVar :: [(TypeIL, TypeIL)] -> AIVar -> AIVar
+substituteTypeInVar :: TyVarSubst -> AIVar -> AIVar
 substituteTypeInVar subst (TypedId ty id) =
         (TypedId (parSubstTyIL subst ty) id)
 
@@ -302,41 +304,18 @@ substituteTypeInLetable subst expr =
       ILArrayPoke  v b i  -> ILArrayPoke (qv v) (qv b) (qv i)
       ILTyApp   t v argty -> ILTyApp (q t) (qv v) (q argty)
 
-assocFilterOut :: (Eq a) => [(a,b)] -> [a] -> [(a,b)]
-assocFilterOut lst keys =
-    [(a,b) | (a,b) <- lst, not(List.elem a keys)]
-
-instance Eq TypeIL where
-    t1 == t2 = typesEqualIL t1 t2
-
-allTypesEqual as bs =
-  List.length as == List.length bs &&
-  Prelude.and [typesEqualIL a b | (a, b) <- Prelude.zip as bs]
-
-typesEqualIL :: TypeIL -> TypeIL -> Bool
-
-typesEqualIL (TyConAppIL x tys1) (TyConAppIL y tys2) =
-    x == y && allTypesEqual tys1 tys2
-typesEqualIL (TupleTypeIL as) (TupleTypeIL bs) =
-    allTypesEqual as bs
-typesEqualIL (FnTypeIL a1 b1 c1 _d1) (FnTypeIL a2 b2 c2 _d2) =
-    typesEqualIL a1 a2 && typesEqualIL b1 b2 && c1 == c2
-typesEqualIL (CoroTypeIL a1 b1) (CoroTypeIL a2 b2) = typesEqualIL a1 a2 && typesEqualIL b1 b2
-typesEqualIL (ForAllIL kvars1 ty1) (ForAllIL kvars2 ty2) = kvars1 == kvars2 && typesEqualIL ty1 ty2
-typesEqualIL (TyVarIL tv1) (TyVarIL tv2) = tv1 == tv2
-typesEqualIL _ _ = False
+assocFilterOut :: Eq a => [(a,b)] -> [a] -> [(a,b)]
+assocFilterOut lst keys = [(a,b) | (a,b) <- lst, not(List.elem a keys)]
 
 -- Substitute each element of prv with its corresponding element from nxt;
 -- unlike tySubst, this replaces arbitrary types with other types.
-parSubstTyIL :: [(TypeIL, TypeIL)] -> TypeIL -> TypeIL
+parSubstTyIL :: TyVarSubst -> TypeIL -> TypeIL
 parSubstTyIL prvNextPairs ty =
     let q = parSubstTyIL prvNextPairs in
     case ty of
-        TyVarIL     _  -> fromMaybe ty $ List.lookup ty prvNextPairs
+        TyVarIL tv -> fromMaybe ty $ List.lookup tv prvNextPairs
         -- TODO not sure what the right behavior is for substituting tycons.
-        -- Do we ever want to substitute
-        TyConAppIL nm types  -> fromMaybe (TyConAppIL nm (map q types))
-                                       $ List.lookup ty prvNextPairs
+        TyConAppIL nm types  -> TyConAppIL nm (map q types)
         PrimIntIL   _        -> ty
         PtrTypeIL   t        -> PtrTypeIL   (q t)
         ArrayTypeIL t        -> ArrayTypeIL (q t)
@@ -345,6 +324,6 @@ parSubstTyIL prvNextPairs ty =
         CoroTypeIL s t       -> CoroTypeIL  (q s) (q t)
         ForAllIL ktvs rho     ->
                 let prvNextPairs' = prvNextPairs `assocFilterOut`
-                                          [TyVarIL tv | (tv, _kind) <- ktvs]
+                                                      [tv | (tv, _kind) <- ktvs]
                 in  ForAllIL ktvs (parSubstTyIL prvNextPairs' rho)
 
