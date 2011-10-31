@@ -23,7 +23,7 @@ import Data.Map(Map)
 import Data.Map as Map(insert, (!), elems, filter)
 import Data.Set(Set)
 import Data.Set as Set(member, insert, empty)
-import Data.List as List(elem, lookup, all)
+import Data.List as List(elem, lookup, all, isPrefixOf)
 import Control.Monad(when)
 import Data.Maybe(fromMaybe, isNothing, maybeToList)
 
@@ -75,9 +75,15 @@ addInitialMonoTasksAndGo procdefs = do
                                        List.all isPointyKind ktvs]
     forM_ pointypolyprocs (\(pd,ktvs) ->
          let id = ilProcIdent pd in
-         monoScheduleWork (NeedsMono id id [kUnknownPointerType | _ <- ktvs])
+         -- We'll rename top-level functions with a ".gen" suffix because
+         -- it's easy to identify their call sites, but anonymous functions
+         -- are a tad trickier, because their call indirect through closures.
+         let idgen = if isAnonFn id then id else idAppend id ".gen" in
+         monoScheduleWork (NeedsMono idgen id [kUnknownPointerType | _ <- ktvs])
       )
     goMonomorphize
+
+isAnonFn id = "<anon_fn_" `isPrefixOf` identPrefix id
 
     -- And similarly for data types with pointer-sized type arguments.
 monomorphizedDataTypes :: [DataType TypeIL] -> [DataType TypeIL]
@@ -124,18 +130,26 @@ monoPopWorklist = do
         Just (a, rest) -> do put state { monoWorklist = rest }
                              return (Just a)
 
-seen :: MonoWork -> MonoState -> Bool
-seen (PlainProc _) _ = False
-seen (NeedsMono _ polyid _) state = Set.member polyid (monoSeenIds state)
+seen :: MonoWork -> Mono Bool
+seen (PlainProc _) = return False
+seen (NeedsMono targetid _srcid _) = do
+         state <- get ; return $ Set.member targetid (monoSeenIds state)
+
+markSeen :: Ident -> Mono ()
+markSeen id = do state <- get
+                 put state { monoSeenIds = Set.insert id (monoSeenIds state) }
+
+addWork :: MonoWork -> Mono ()
+addWork wk = do state <- get
+                put state { monoWorklist = worklistAdd (monoWorklist state) wk }
 
 -- Mark the targetid as seen, and add the source fn and args to the worklist.
 monoScheduleWork :: MonoWork -> Mono ()
 monoScheduleWork work = do
-    state <- get
-    when (not $ seen work state) $ do
-      put state { monoSeenIds = Set.insert (workTargetId work) (monoSeenIds state)
-                , monoWorklist = worklistAdd (monoWorklist state) work
-                }
+    seenWork <- seen work
+    when (not $ seenWork) $
+      do markSeen $ workTargetId work
+         addWork  $ work
 
 monoGetProc id = do
     state <- get
@@ -194,7 +208,7 @@ monomorphizeMid mid =
   case mid of
     ILLetVal id val -> do valOrVar <- monomorphizeLetable val
                           case valOrVar of
-                            Left var -> return $ ILRebindId id var
+                            Left  var -> return $ ILRebindId id var
                             Right val -> return $ ILLetVal id val
     ILClosures ids clos -> do return $ ILClosures ids clos -- TODO
     ILRebindId {}       -> do return mid
@@ -207,11 +221,12 @@ monomorphizeLetable expr =
             case v of
               -- If we're polymorphically instantiating a global symbol
               -- (i.e. a proc) then we can statically look up the proc
-              -- definition and create a monomorphized copy.
-              TypedId (ForAllIL {}) id@(GlobalSymbol _) ->
-                do let polyid = getPolyProcId id (show argtys)
-                   monoScheduleWork (NeedsMono polyid id argtys)
-                   return $ Left (TypedId t polyid)
+              -- definition and create a monomorphized copy (equally well for
+              -- both pointer-sized and types with special calling conventions).
+              TypedId (ForAllIL {}) id@(GlobalSymbol _) -> do
+                  let polyid = getPolyProcId id argtys
+                  monoScheduleWork (NeedsMono polyid id argtys)
+                  return $ Left (TypedId t polyid)
 
               -- On the other hand, if we only have a local var, then
               -- (in general) the var is unknown, so we can't statically
@@ -224,8 +239,8 @@ monomorphizeLetable expr =
                      ++ show ktvs
                      ++ " with types "
                      ++ show argtys
-                     ++ "\nFor now, polymorphic instantiation is only"
-                     ++ " allowed on functions at the top level!"
+                     ++ "\nFor now, polymorphic instantiation of non-pointer-sized types"
+                     ++ " is only allowed on functions at the top level!"
                      ++ "\nThis is a silly restriction for local bindings,"
                      ++ " and could be solved with a dash of flow"
                      ++ " analysis,\nbut the issues are much deeper for"
@@ -244,10 +259,14 @@ listize ty =
    TupleTypeIL tys -> tys
    _               -> [ty]
 
-getPolyProcId :: Ident -> String -> Ident
-getPolyProcId id s = case id of
-                        (GlobalSymbol o) -> (GlobalSymbol (o ++ s))
-                        (Ident o m)      -> (Ident (o ++ s) m)
+getPolyProcId :: Ident -> [TypeIL] -> Ident
+getPolyProcId id tys =
+  if List.all (\t -> kindOfTypeIL t == KindPointerSized) tys
+    then idAppend id ".gen"
+    else idAppend id (show tys)
+
+idAppend id s = case id of (GlobalSymbol o) -> (GlobalSymbol (o ++ s))
+                           (Ident o m)      -> (Ident (o ++ s) m)
 
 type TyVarSubst = [(TyVar, TypeIL)]
 

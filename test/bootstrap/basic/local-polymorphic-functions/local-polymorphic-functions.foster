@@ -4,7 +4,7 @@ main = {
 };
 
 type case SomeBoxedType
-  of $SomeBoxedCtor Int32
+       of $SomeBoxedCtor Int32
 ;
 
 gBoxed = { y : SomeBoxedType => y };
