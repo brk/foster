@@ -171,7 +171,7 @@ llvm::Value* LLAppCtor::codegen(CodegenPass* pass) {
   EDiag() << "LLAppCtor " << dt->getName() << " :: " << str(dt->getLLVMType());
   copyValuesToStruct(codegenAll(pass, this->args), obj);
 
-  const llvm::PointerType* dtype = dt->getOpaquePointerTy(pass->mod);
+  const llvm::Type* dtype = dt->getLLVMType();
   // TODO fix to use a stack slot properly
   return builder.CreateBitCast(obj, dtype);
 }

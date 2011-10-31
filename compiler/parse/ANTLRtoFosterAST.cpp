@@ -426,7 +426,7 @@ Pattern* parsePatternAtom(pTree t) {
   if ((token == PHRASE)
     || (token == TERM)) { ASSERT(false); }
 
-    if (token == CTOR ) { EDiag() << "398: " << textOfVar(child(t, 0)); return new CtorPattern(rangeOf(t), textOfVar(child(t, 0)), noPatterns()); }
+    if (token == CTOR ) { EDiag() << "Ctor text: " << textOfVar(child(t, 0)); return new CtorPattern(rangeOf(t), textOfVar(child(t, 0)), noPatterns()); }
   if (token == WILDCARD) { return new WildcardPattern(rangeOf(t)); }
   if (token == TUPLE)   { return parseTuplePattern(t); }
   if (token == TERMVAR) { return new LiteralPattern(rangeOf(t), LiteralPattern::LP_VAR, parseTermVar(t)); }
@@ -817,11 +817,25 @@ std::vector<TypeAST*> getTypes(pTree tree) {
   std::vector<TypeAST*> types;
   for (size_t i = 0; i < getChildCount(tree); ++i) {
     TypeAST* ast = TypeAST_from(child(tree, i));
-    if (ast != NULL) {
-      types.push_back(ast);
-    }
+    ASSERT(ast != NULL) << "getTypes: parsing type " << i;
+    types.push_back(ast);
   }
   return types;
+}
+
+std::vector<TypeAST*> getTypeAtoms(pTree tree) {
+  std::vector<TypeAST*> types;
+  for (size_t i = 0; i < getChildCount(tree); ++i) {
+    TypeAST* ast = parseTypeAtom(child(tree, i));
+    ASSERT(ast != NULL) << "getTypeAtoms: parsing type atom " << i;
+    types.push_back(ast);
+  }
+  return types;
+}
+
+// ^(TYPE_TYP_APP tatom tatom+)
+TypeAST* parseTypeTypeApp(pTree tree) {
+  return TypeTypeAppAST::get(getTypeAtoms(tree));
 }
 
 TypeAST* TypeAST_from(pTree tree) {
@@ -831,7 +845,8 @@ TypeAST* TypeAST_from(pTree tree) {
   string text = textOf(tree);
   foster::SourceRange sourceRange = rangeOf(tree);
 
-  if (token == TYPE_ATOM) { return parseTypeAtom(child(tree, 0)); }
+  if (token == TYPE_ATOM)    { return parseTypeAtom(child(tree, 0)); }
+  if (token == TYPE_TYP_APP) { return parseTypeTypeApp(tree); }
 
   string name = str(tree->getToken(tree));
   foster::EDiag() << "returning NULL TypeAST for tree token " << name

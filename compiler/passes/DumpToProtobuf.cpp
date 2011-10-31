@@ -422,3 +422,12 @@ void TupleTypeAST::dump(DumpTypeToProtobufPass* pass) {
   }
 }
 
+void TypeTypeAppAST::dump(DumpTypeToProtobufPass* pass) {
+  setTagAndRange(pass->current, this, pb::Type::TYPE_TYP_APP);
+  pass->current->mutable_type_parts()->Reserve(this->getNumContainedTypes());
+  for (int i = 0; i < this->getNumContainedTypes(); ++i) {
+    ASSERT(this->getContainedType(i)) << "Unexpected NULL type when dumping TypeTypeAppAST " << str(this);
+    dumpChild(pass, pass->current->add_type_parts(), this->getContainedType(i));
+  }
+}
+

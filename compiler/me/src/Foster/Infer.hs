@@ -26,11 +26,13 @@ emptyTypeSubst = Map.empty
 
 ----------------------
 
-extractSubstTypes :: [MetaTyVar] -> TypeSubst -> [TypeAST]
-extractSubstTypes metaVars tysub =
-    let keys = [u | (Meta u _ _) <- metaVars] in
-    map (\k -> fromMaybe (error $ "Subst map missing key " ++ show k)
-                         (Map.lookup k tysub)) keys
+-- extractSubstTypes :: [MetaTyVar] -> TypeSubst -> Tc [TypeAST]
+extractSubstTypes metaVars tysub rng = do
+    mapM lookup metaVars where
+         lookup (Meta uniq _ desc) =
+               fromMaybe (tcFails [out $ "Subst map missing key: " ++ desc
+                                                   ++ highlightFirstLine rng])
+                         (fmap return $ Map.lookup uniq tysub)
 
 instance Eq TypeAST where
     t1 == t2 = typesEqual t1 t2
@@ -91,47 +93,64 @@ tcUnifyMoreTypes tys1 tys2 constraints tysub =
 tcUnifyLoop :: [TypeConstraint] -> TypeSubst -> Tc UnifySoln
 tcUnifyLoop [] tysub = return $ Just tysub
 tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
-  if typesEqual t1 t2
-    then tcUnifyLoop constraints tysub
-    else case (t1, t2) of
-              ((PrimIntAST n1), (PrimIntAST n2)) ->
-                if n1 == n2 then tcUnifyLoop constraints tysub
-                            else tcFails [out $ "Unable to unify different primitive types: "
-                                            ++ show n1 ++ " vs " ++ show n2]
+  case (t1, t2) of
+    ((PrimIntAST n1), (PrimIntAST n2)) ->
+      if n1 == n2 then tcUnifyLoop constraints tysub
+                  else tcFails [out $ "Unable to unify different primitive types: "
+                                  ++ show n1 ++ " vs " ++ show n2]
 
-              ((TyConAppAST nm1 tys1), (TyConAppAST nm2 tys2)) ->
-                if nm1 == nm2
-                  then tcUnifyMoreTypes tys1 tys2 constraints tysub
-                  else tcFails [out $ "Unable to unify different type constructors: "
-                                            ++ nm1 ++ " vs " ++ nm2]
+    ((TyVarAST tv1), (TyVarAST tv2)) ->
+       if tv1 == tv2 then tcUnifyLoop constraints tysub
+                     else tcFails [out $ "Unable to unify different type variables: "
+                                     ++ show tv1 ++ " vs " ++ show tv2]
 
-              ((TupleTypeAST tys1), (TupleTypeAST tys2)) ->
-                  if List.length tys1 /= List.length tys2
-                    then tcFails [out $ "Unable to unify tuples of different lengths!"]
-                    else tcUnifyMoreTypes tys1 tys2 constraints tysub
+    ((TyConAppAST nm1 tys1), (TyConAppAST nm2 tys2)) ->
+      if nm1 == nm2
+        then tcUnifyMoreTypes tys1 tys2 constraints tysub
+        else tcFails [out $ "Unable to unify different type constructors: "
+                                  ++ nm1 ++ " vs " ++ nm2]
 
-              ((FnTypeAST a1 a2 _cc1 _), (FnTypeAST b1 b2 _cc2 _)) ->
-                  tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub
+    ((TupleTypeAST tys1), (TupleTypeAST tys2)) ->
+        if List.length tys1 /= List.length tys2
+          then tcFails [out $ "Unable to unify tuples of different lengths!"]
+          else tcUnifyMoreTypes tys1 tys2 constraints tysub
 
-              ((CoroTypeAST a1 a2), (CoroTypeAST b1 b2)) ->
-                  tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub
+    -- Mismatches between unitary tuple types probably indicate
+    -- parsing/function argument handling mismatch.
 
-              -- TODO: ForAllAST: alpha-equivalence?
-              -- TODO: T_TyVar -- alpha equivalence?
+    ((FnTypeAST a1 a2 _cc1 _), (FnTypeAST b1 b2 _cc2 _)) ->
+        tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub
 
-              ((MetaTyVar m), ty) ->
-                  tcUnifyVar m ty tysub constraints
-              (ty, (MetaTyVar m)) ->
-                  tcUnifyVar m ty tysub constraints
+    ((CoroTypeAST a1 a2), (CoroTypeAST b1 b2)) ->
+        tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub
 
-              ((RefTypeAST t1), (RefTypeAST t2)) ->
-                  tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
+    ((ForAllAST ktyvars1 rho1), (ForAllAST ktyvars2 rho2)) ->
+        let (tyvars1, kinds1) = unzip ktyvars1 in
+        let (tyvars2, kinds2) = unzip ktyvars2 in
+        if List.length tyvars1 /= List.length tyvars2
+         then tcFails [out $ "Unable to unify foralls of different arity!"]
+         else if kinds1 /= kinds2
+          then tcFails [out $ "Unable to unify foralls with differently-kinded type variables"]
+          else let t1 = rho1 in
+               let tySubst = zip (map TyVarAST tyvars2)
+                                 (map TyVarAST tyvars1) in
+               let t2 = parSubstTy tySubst rho2 in
+               tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 
-              ((ArrayTypeAST t1), (ArrayTypeAST t2)) ->
-                  tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
+    ((MetaTyVar m), ty) ->
+        tcUnifyVar m ty tysub constraints
+    (ty, (MetaTyVar m)) ->
+        tcUnifyVar m ty tysub constraints
 
-              _otherwise ->
-                  tcFails [out $ "Unable to unify " ++ show t1 ++ " and " ++ show t2]
+    ((RefTypeAST t1), (RefTypeAST t2)) ->
+        tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
+
+    ((ArrayTypeAST t1), (ArrayTypeAST t2)) ->
+        tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
+
+    _otherwise ->
+        tcFails [out $ "Unable to unify\n\t" ++ show t1 ++ "\nand\n\t" ++ show t2
+                ,out $ "t1::", showStructure t1, out $ "t2::", showStructure t2]
 
 tcUnifyVar :: MetaTyVar -> TypeAST -> TypeSubst -> [TypeConstraint] -> Tc UnifySoln
 tcUnifyVar (Meta uniq _tyref _) ty tysub constraints =

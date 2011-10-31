@@ -18,6 +18,7 @@
 using std::vector;
 using std::map;
 
+using foster::EDiag;
 using foster::SourceRange;
 using foster::ParsingContext;
 
@@ -62,22 +63,27 @@ const llvm::Type* NamedTypeAST::getLLVMType() const {
 
 ////////////////////////////////////////////////////////////////////
 
+/*
 const llvm::PointerType* DataTypeAST::getOpaquePointerTy(llvm::Module* mod) const {
   if (!this->opaq) {
+    EDiag() << "Generating opaque pointer for data type " << this->name;
     this->opaq = llvm::OpaqueType::get(llvm::getGlobalContext());
     if (mod) { mod->addTypeName(this->name, this->opaq); }
   }
   return llvm::PointerType::getUnqual(this->opaq);
 }
+*/
 
 const llvm::Type* DataTypeAST::getLLVMType() const {
-  return this->getOpaquePointerTy(NULL);
+  //return this->getOpaquePointerTy(NULL);
+  return llvm::PointerType::getUnqual(llvmIntType(999));
 }
 
 ////////////////////////////////////////////////////////////////////
 
 TypeVariableAST* TypeVariableAST::get(const std::string& name,
                                       const SourceRange& sourceRange) {
+  EDiag() << "Getting opaque pointer for type variable " << name;
   return new TypeVariableAST(llvm::OpaqueType::get(llvm::getGlobalContext()),
                              ParsingContext::freshName(name), sourceRange);
 }
@@ -214,6 +220,23 @@ TupleTypeAST* TupleTypeAST::get(const vector<TypeAST*>& argTypes) {
     ASSERT(argTypes.back()) << "Tuple type must not contain NULL members.";
   }
   return new TupleTypeAST(argTypes, SourceRange::getEmptyRange());
+}
+
+/////////////////////////////////////////////////////////////////////
+
+const llvm::Type* TypeTypeAppAST::getLLVMType() const {
+  ASSERT(false) << "TypeTypeAppAST::getLLVMType()";
+  return NULL;
+}
+
+TypeAST*& TypeTypeAppAST::getContainedType(int i) {
+  ASSERT(indexValid(i));
+  return parts[i];
+}
+
+TypeTypeAppAST* TypeTypeAppAST::get(const vector<TypeAST*>& argTypes) {
+  ASSERT(argTypes.size() >= 2) << "TypeTypeAppAST must contain at least two types.";
+  return new TypeTypeAppAST(argTypes, SourceRange::getEmptyRange());
 }
 
 /////////////////////////////////////////////////////////////////////

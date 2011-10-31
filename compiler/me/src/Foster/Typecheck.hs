@@ -315,16 +315,36 @@ kindCheckSubsumption ((tv, kind), ty) =
                   ++ "cannot instantiate type variable " ++ show tv ++ " of kind " ++ show kind
                   ++ "\nwith type " ++ show ty ++ " of kind " ++ show tyKind]
 
+generateTyVarsFor tys =
+        let gen ty = do freshId <- tcFresh "gen.t."
+                        return (BoundTyVar (show freshId), kindOfTypeAST ty) in
+        mapM gen tys
+
+--   G |- e ::: forall a1..an, rho
+-----------------------------------------------
+--   G |- e :[ t1..tn ]  ::: rho{t1..tn/a1..an}
+
 typecheckTyApp ctx rng a t _maybeExpTy = do
+    let tys = listize t
     ea <- typecheck ctx a Nothing
     case (typeAST ea) of
       ForAllAST ktyvars rho -> do
-        let tys = listize t
         sanityCheck (List.length tys == List.length ktyvars)
                     "typecheckTyApp: arity mismatch"
         let tyvarsAndTys = List.zip (tyvarsOf ktyvars) tys
         mapM_ kindCheckSubsumption (List.zip ktyvars tys)
         return $ E_AnnTyApp rng (parSubstTy tyvarsAndTys rho) ea t
+      m@(MetaTyVar (Meta _ _ desc)) -> do
+        rhoUV <- newTcUnificationVar $ "rho of type app: " ++ desc
+        let rho = MetaTyVar rhoUV
+        ktyvars <- generateTyVarsFor tys
+        equateTypes m (ForAllAST ktyvars rho) Nothing
+
+        resultTypeUV <- newTcUnificationVar $ "result type of type app: " ++ desc
+        let resultType = MetaTyVar resultTypeUV
+        -- resultType = rho...?
+        return $ E_AnnTyApp rng resultType ea t
+
       _othertype ->
         tcFails [out $ "Cannot apply type args to expression of"
                    ++ " non-ForAll type "]
@@ -425,6 +445,13 @@ genUnificationVarsLike spine namegen = do
   sequence [newTcUnificationVar (namegen n) | (_, n) <- zip spine [1..]]
 
 -- Typecheck the function first, then the args.
+-- Example the interior call to foo in
+--           foo = { forall a, x : List a => if isnil x then 0 else 1 + foo nil }
+-- results in a call to typecheckCall with expected type Int32,
+--   base = foo :: ?foo
+-- so the MetaTyVar case is taken, and we proceed to typecheckCallWithBaseFnType
+-- using a bare function type...
+--
 typecheckCall :: Context TypeAST -> SourceRange
               -> ExprAST -> ExprAST -> Maybe TypeAST -> Tc AnnExpr
 typecheckCall ctx rng base args _maybeExpTy = do
@@ -436,7 +463,7 @@ typecheckCall ctx rng base args _maybeExpTy = do
    let expectedLambdaType = Nothing
 
    eb <- typecheck ctx base expectedLambdaType
-   case (typeAST eb) of
+   case typeAST eb of
       (ForAllAST ktyvars rho) -> do
          let (FnTypeAST rhoArgType _ _ _) = rho
          -- Example:         rhoargtype =   ('a -> 'b)
@@ -452,7 +479,7 @@ typecheckCall ctx rng base args _maybeExpTy = do
 
          -- Generate unification vars corresponding to the bound type variables
          unificationVars <- genUnificationVarsLike ktyvars
-                                (\n -> "type parameter" ++ vname base n)
+                                (\n -> "type parameter " ++ vname base n)
          let tyvarsAndMetavars = (List.zip (tyvarsOf ktyvars)
                                           (map MetaTyVar unificationVars))
 
@@ -467,16 +494,17 @@ typecheckCall ctx rng base args _maybeExpTy = do
          unificationResults <- tcUnifyTypes unifiableArgType (typeAST ea)
          case unificationResults of
            Nothing -> tcFails [out $ "Failed to determine type arguments to apply!" ++ show rng]
-           Just tysub ->
+           Just tysub -> do
              -- Suppose typeAST ea = (t1 -> t2):
              -- ((?a -> ?b) -> (Coro ?a ?b))
-             let unifiableRhoType = parSubstTy tyvarsAndMetavars rho in
+             let unifiableRhoType = parSubstTy tyvarsAndMetavars rho
               -- ((t1 -> t2) -> (Coro t1 t2))
-             let substitutedFnType = tySubst tysub unifiableRhoType in
+             let substitutedFnType = tySubst tysub unifiableRhoType
              -- eb[tyProjTypes]::substitutedFnType
+
+             tyProjTypes <- extractSubstTypes unificationVars tysub rng
              let annTyApp = E_AnnTyApp rng substitutedFnType eb (minimalTupleAST tyProjTypes)
-                  where tyProjTypes = extractSubstTypes unificationVars tysub
-             in typecheckCallWithBaseFnType eargs annTyApp (typeAST annTyApp) rng
+             typecheckCallWithBaseFnType eargs annTyApp (typeAST annTyApp) rng
 
       -- (typeAST eb) ==
       fnty@(FnTypeAST formaltype _restype _cc _cs) -> do
@@ -484,6 +512,7 @@ typecheckCall ctx rng base args _maybeExpTy = do
             typecheckCallWithBaseFnType eargs eb fnty rng
 
       m@(MetaTyVar (Meta _ _ desc)) -> do
+            tcLift $ putStrLn ("typecheckCall ctx rng base args _maybeExpTy: " ++ show _maybeExpTy)
             AnnTuple eargs <- typecheck ctx args Nothing
 
             ft <- newTcUnificationVar $ "ret type for " ++ desc
@@ -555,7 +584,8 @@ typecheckFn' ctx f cc expArgType expBodyType = do
     -- update the type for the binding's unification variable.
     case termVarLookup fnProtoName (contextBindings ctx) of
       Nothing -> return ()
-      Just av -> equateTypes fnty (tidType av) (Just "overall function types")
+      Just av -> equateTypes fnty (tidType av)
+                   (Just $ "overall type of function " ++ fnProtoName)
 
     return $ E_AnnFn (AnnFn fnty (GlobalSymbol fnProtoName)
                            formalVars annbody freeVars

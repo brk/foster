@@ -112,14 +112,25 @@ void ArrayTypeAST::show(PrettyPrintTypePass* pass){
 }
 
 void TupleTypeAST::show(PrettyPrintTypePass* pass){
-  pass->scan(PPToken(" { "));
+  pass->scan(PPToken(" {{ "));
   for (int i = 0; i < this->getNumContainedTypes(); ++i) {
     if (i > 0) {
       pass->scan(PPToken(", "));
     }
     pass->emit(this->getContainedType(i));
   }
-  pass->scan(PPToken(" } "));
+  pass->scan(PPToken(" }} "));
+}
+
+void TypeTypeAppAST::show(PrettyPrintTypePass* pass){
+  pass->scan(PPToken(" ( "));
+  for (int i = 0; i < this->getNumContainedTypes(); ++i) {
+    if (i > 0) {
+      pass->scan(PPToken(" "));
+    }
+    pass->emit(this->getContainedType(i));
+  }
+  pass->scan(PPToken(" ) "));
 }
 
 namespace foster {

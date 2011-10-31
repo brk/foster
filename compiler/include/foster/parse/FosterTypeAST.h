@@ -116,7 +116,7 @@ public:
   virtual void show(PrettyPrintTypePass* pass);
   virtual void dump(DumpTypeToProtobufPass* pass);
   virtual const llvm::Type* getLLVMType() const; // don't use this one!
-  const llvm::PointerType* getOpaquePointerTy(llvm::Module* mod) const;
+  //const llvm::PointerType* getOpaquePointerTy(llvm::Module* mod) const;
   size_t getNumCtors() const { return ctors.size(); }
   DataCtor* getCtor(size_t x) const { return ctors[x]; }
   const std::string getName() { return name; }
@@ -215,6 +215,26 @@ public:
   virtual TypeAST*& getContainedType(int i);
 
   static TupleTypeAST* get(const std::vector<TypeAST*>& parts);
+};
+
+class TypeTypeAppAST : public IndexableTypeAST {
+  std::vector<TypeAST*> parts;
+
+  explicit TypeTypeAppAST(const std::vector<TypeAST*>& parts,
+                          const SourceRange& sourceRange)
+    : IndexableTypeAST("TypeTypeApp", NULL, sourceRange),
+      parts(parts) {}
+
+public:
+  virtual void show(PrettyPrintTypePass* pass);
+  virtual void dump(DumpTypeToProtobufPass* pass);
+  virtual const llvm::Type* getLLVMType() const;
+
+  virtual int getNumContainedTypes() const { return parts.size(); }
+  virtual int64_t getNumElements()   const { return parts.size(); }
+  virtual TypeAST*& getContainedType(int i);
+
+  static TypeTypeAppAST* get(const std::vector<TypeAST*>& parts);
 };
 
 

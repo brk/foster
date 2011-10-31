@@ -319,6 +319,12 @@ parseType t =
          PbTypeTag.FN -> fromMaybe (error "Protobuf node tagged FN without fnty field!")
                                    (fmap parseFnTy $ PbType.fnty t)
          PbTypeTag.TUPLE -> TupleTypeAST [parseType p | p <- toList $ PbType.type_parts t]
+         PbTypeTag.TYPE_TYP_APP ->
+                 let (base:types) = [parseType p | p <- toList $ PbType.type_parts t] in
+                 case base of
+                   TyConAppAST nm [] -> TyConAppAST nm types
+                   _ -> error $ "ProtobufFE.parseType -- expected base of TYPE_TYP_APP to be TyConAppAST"
+
          PbTypeTag.REF       -> error "Ref types not yet implemented"
          PbTypeTag.CORO      -> error "Parsing for CORO type not yet implemented"
          PbTypeTag.CARRAY    -> error "Parsing for CARRAY type not yet implemented"
