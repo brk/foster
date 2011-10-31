@@ -793,11 +793,19 @@ TypeAST* parseTypeVar(pTree tree) {
   return new NamedTypeAST(textOf(child(tree, 0)), ty, rangeOf(tree));
 }
 
+TypeAST* parseTupleType(pTree tree) {
+  if (getChildCount(tree) == 1) {
+    return TypeAST_from(child(tree, 0));
+  } else {
+    return TupleTypeAST::get(getTypes(tree));
+  }
+}
+
 TypeAST* parseTypeAtom(pTree tree) {
   int token = typeOf(tree);
 
   if (token == FUNC_TYPE) { return parseFuncType(tree); }
-  if (token == TUPLE)   { return TupleTypeAST::get(getTypes(tree)); }
+  if (token == TUPLE)   { return parseTupleType(tree); }
   if (token == TYPEVAR) { return parseTypeVar(tree); }
 
   display_pTree(tree, 2);
