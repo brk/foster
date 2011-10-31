@@ -138,12 +138,18 @@ knStore x y = do
   q <- varOrThunk (x, pointedToType $ tidType y)
   nestedLets [q] (\[z] -> KNStore z y)
 
+listize (TupleTypeIL tys) = tys
+listize t                 = [t]
+
 knCall t a vs =
   case (tidType a) of
-      FnTypeIL (TupleTypeIL tys) _ _ _ -> do
+      FnTypeIL rawtys _ _ _ -> do
+          let tys = listize rawtys
           args <- mapM varOrThunk (zip vs tys)
           nestedLets args (\xs -> KNCall t a xs)
-      _ -> error $ "knCall: Called var had non-function type! " ++ show a
+      _ -> error $ "knCall: Called var had non-function type!\n\t" ++
+                        show a ++
+                        outToString (showStructure (tidType a))
 
 --------------------------------------------------------------------
 

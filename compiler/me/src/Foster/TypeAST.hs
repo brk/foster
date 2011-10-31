@@ -64,16 +64,43 @@ instance Show TyVar where
 
 instance Show TypeAST where
     show x = case x of
-        PrimIntAST size      -> "(PrimIntAST " ++ show size ++ ")"
-        TyConAppAST tc types -> "(" ++ show tc ++ joinWith " " ("":map show types) ++ ")"
-        (TupleTypeAST types) -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
-        (FnTypeAST s t cc cs)-> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
-        (CoroTypeAST s t)   -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
-        (ForAllAST tvs rho) -> "(ForAll " ++ show tvs ++ ". " ++ show rho ++ ")"
-        (TyVarAST tv)     -> show tv
-        (MetaTyVar (Meta u _tyref desc))  -> "(~!" ++ show u ++ ":" ++ desc ++ ")"
-        (RefTypeAST    ty)  -> "(Ref " ++ show ty ++ ")"
-        (ArrayTypeAST  ty)  -> "(Array " ++ show ty ++ ")"
+        PrimIntAST         size         -> "(PrimIntAST " ++ show size ++ ")"
+        TyConAppAST    tc types         -> "(TyCon: " ++ show tc ++ joinWith " " ("":map show types) ++ ")"
+        TupleTypeAST      types         -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
+        FnTypeAST    s t cc cs          -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
+        CoroTypeAST  s t                -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
+        ForAllAST  tvs rho              -> "(ForAll " ++ show tvs ++ ". " ++ show rho ++ ")"
+        TyVarAST   tv                   -> show tv
+        MetaTyVar (Meta u _tyref desc)  -> "(~!" ++ show u ++ ":" ++ desc ++ ")"
+        RefTypeAST    ty                -> "(Ref " ++ show ty ++ ")"
+        ArrayTypeAST  ty                -> "(Array " ++ show ty ++ ")"
+
+instance Structured TypeAST where
+    textOf e _width =
+        case e of
+            PrimIntAST     size            -> out $ "PrimIntAST " ++ show size
+            TyConAppAST    tc  _           -> out $ "TyConAppAST " ++ tc
+            TupleTypeAST       _           -> out $ "TupleTypeAST"
+            FnTypeAST    _ _  _  _         -> out $ "FnTypeAST"
+            CoroTypeAST  _ _               -> out $ "CoroTypeAST"
+            ForAllAST  tvs _rho            -> out $ "ForAllAST " ++ show tvs
+            TyVarAST   tv                  -> out $ "TyVarAST " ++ show tv
+            MetaTyVar (Meta _ _tyref desc) -> out $ "MetaTyVar " ++ desc
+            RefTypeAST    _                -> out $ "RefTypeAST"
+            ArrayTypeAST  _                -> out $ "ArrayTypeAST"
+
+    childrenOf e =
+        case e of
+            PrimIntAST         _           -> []
+            TyConAppAST   _tc types        -> types
+            TupleTypeAST      types        -> types
+            FnTypeAST    s t _ _           -> [s, t]
+            CoroTypeAST  s t               -> [s, t]
+            ForAllAST  _tvs rho            -> [rho]
+            TyVarAST   _tv                 -> []
+            MetaTyVar _                    -> []
+            RefTypeAST    ty               -> [ty]
+            ArrayTypeAST  ty               -> [ty]
 
 instance Eq MetaTyVar where
     (Meta u1 _ _) == (Meta u2 _ _) = u1 == u2

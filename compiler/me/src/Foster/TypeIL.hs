@@ -29,6 +29,18 @@ data TypeIL =
 type AIVar = TypedId TypeIL
 type ILPrim = FosterPrim TypeIL
 
+kindOfTypeIL :: TypeIL -> Kind
+kindOfTypeIL x = case x of
+    PrimIntIL   {}       -> KindAnySizeType
+    TyVarIL     {}       -> KindAnySizeType
+    TyConAppIL  {}       -> KindPointerSized
+    TupleTypeIL {}       -> KindPointerSized
+    FnTypeIL    {}       -> KindPointerSized
+    CoroTypeIL  {}       -> KindPointerSized
+    ForAllIL _ktvs rho   -> kindOfTypeIL rho
+    ArrayTypeIL {}       -> KindPointerSized
+    PtrTypeIL   {}       -> KindPointerSized
+
 instance Show TypeIL where
     show x = case x of
         TyConAppIL nam types -> "(TyConAppIL " ++ nam
@@ -102,3 +114,29 @@ data ILAllocInfo = ILAllocInfo { ilAllocType   :: TypeIL
                                , ilAllocArraySize :: (Maybe AIVar)
                                , ilAllocUnboxed :: Bool
                                } deriving Show
+
+
+instance Structured TypeIL where
+    textOf e _width =
+        case e of
+            TyConAppIL nam _types -> out $ "TyConAppIL " ++ nam
+            PrimIntIL     size    -> out $ "PrimIntIL " ++ show size
+            TupleTypeIL   {}      -> out $ "TupleTypeIL"
+            FnTypeIL      {}      -> out $ "FnTypeIL"
+            CoroTypeIL    {}      -> out $ "CoroTypeIL"
+            ForAllIL ktvs _rho    -> out $ "ForAllIL " ++ show ktvs
+            TyVarIL       {}      -> out $ "TyVarIL "
+            ArrayTypeIL   {}      -> out $ "ArrayTypeIL"
+            PtrTypeIL     {}      -> out $ "PtrTypeIL"
+
+    childrenOf e =
+        case e of
+            TyConAppIL _nam types  -> types
+            PrimIntIL       {}     -> []
+            TupleTypeIL     types  -> types
+            FnTypeIL   s t _cc _cs -> [s,t]
+            CoroTypeIL s t         -> [s,t]
+            ForAllIL  _ktvs rho    -> [rho]
+            TyVarIL        _tv     -> []
+            ArrayTypeIL     ty     -> [ty]
+            PtrTypeIL       ty     -> [ty]
