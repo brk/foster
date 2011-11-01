@@ -20,6 +20,8 @@ import Data.Array
 import System.Console.ANSI
 import Control.Exception(assert)
 
+import qualified Data.Text as T
+
 import Foster.Base
 import Foster.TypeIL
 import Foster.KNExpr
@@ -46,7 +48,7 @@ outFile gs = (stTmpDir gs) ++ "/istdout.txt"
 interpretKNormalMod kmod tmpDir = do
   let funcmap = Map.fromList $ map (\sf -> (ssFuncIdent sf, sf))
                              (map ssFunc (moduleILfunctions kmod))
-  let main = (funcmap Map.! (GlobalSymbol "main"))
+  let main = (funcmap Map.! (GlobalSymbol $ T.pack "main"))
   let loc  = 0 :: Int
   let mainCoro = Coro { coroTerm = (ssFuncBody main)
                       , coroArgs = []
@@ -387,9 +389,9 @@ stepExpr gs expr = do
         let args = map (getval gs) vs in
         case prim of
           ILNamedPrim (TypedId _ id) ->
-                              evalNamedPrimitive (identPrefix id) gs args
-          ILPrimOp op size -> return $ withTerm gs (SSTmValue $
-                                        evalPrimitiveOp size op args)
+                          evalNamedPrimitive (T.unpack $ identPrefix id) gs args
+          ILPrimOp op size -> return $
+              withTerm gs (SSTmValue $ evalPrimitiveOp size op args)
           ILCoroPrim prim _t1 _t2 -> evalCoroPrimitive prim gs args
 
     ICall b vs ->
@@ -410,10 +412,11 @@ stepExpr gs expr = do
                      ++ " => " ++ display (getval gs v)
 
     IUntil c b ->
-      let v = (Ident "!untilval" 0) in
+      let v = (Ident (T.pack "!untilval") 0) in
       return $ withTerm gs (SSTmExpr $
         ILetVal v c (SSTmExpr $ IIf v unit
-                    (SSTmExpr $ ILetVal (Ident "_" 0) b (SSTmExpr $ IUntil c b))))
+                    (SSTmExpr $ ILetVal (Ident (T.pack "_") 0) b
+                                        (SSTmExpr $ IUntil c b))))
 
     IArrayRead base idxvar ->
         let (SSInt i) = getval gs idxvar in

@@ -17,9 +17,15 @@ import Data.Set as Set(fromList, toList, difference)
 import Data.Sequence as Seq
 import Data.Map as Map(Map)
 import Data.List as List
+
 import qualified Data.Text as T
 
 import Data.Bits(shiftR)
+
+-- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+prependedTo :: String -> T.Text -> T.Text
+prependedTo str txt = T.pack str `T.append` txt
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -96,7 +102,7 @@ data TyVar = BoundTyVar String -- bound by a ForAll, that is
            | SkolemTyVar String Uniq deriving (Eq)
 
 class Expr a where
-    freeVars   :: a -> [String]
+    freeVars   :: a -> [T.Text]
 
 class AExpr a where
     freeIdents   :: a -> [Ident]
@@ -142,7 +148,7 @@ data (Show ty) =>
   } deriving Show
 
 data (Show ty) =>
-           DataCtor ty = DataCtor String Int [ty]      deriving Show
+           DataCtor ty = DataCtor T.Text Int [ty]      deriving Show
 
 -- CtorIds are created before typechecking.
 data CtorId     = CtorId   { ctorTypeName :: String
@@ -329,8 +335,8 @@ bitStringOf n | n <= 1     = show n
 identPrefix (GlobalSymbol name) = name
 identPrefix (Ident name _)      = name
 
-data Ident = Ident        String Uniq
-           | GlobalSymbol String
+data Ident = Ident        T.Text Uniq
+           | GlobalSymbol T.Text
 
 instance Ord Ident where
     compare a b = compare (show a) (show b)
@@ -339,8 +345,8 @@ instance Eq Ident where
     i == j      =    (show i) == (show j)
 
 instance Show Ident where
-    show (Ident name number) = name ++ "!" ++ show number
-    show (GlobalSymbol name) = name
+    show (Ident name number) = T.unpack name ++ "!" ++ show number
+    show (GlobalSymbol name) = T.unpack name
 
 data TypedId ty = TypedId { tidType :: ty, tidIdent :: Ident }
 

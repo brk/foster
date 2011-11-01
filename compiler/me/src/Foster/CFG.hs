@@ -24,6 +24,8 @@ import Foster.Letable(Letable(..))
 
 import Compiler.Hoopl
 
+import qualified Data.Text as T
+
 import Control.Monad.State
 import Data.IORef
 import Prelude hiding (id, last)
@@ -57,9 +59,9 @@ internalComputeCFG uniq fn =
     runComputeBlocks = do computeBlocks (fnBody fn) Nothing (ret fn)
 
     -- Make sure that the main function returns void.
-    ret f var = case (identPrefix $ tidIdent $ fnVar f) of
-                         "main" -> cfgEndWith (CFRetVoid)
-                         _      -> cfgEndWith (CFRet var)
+    ret f var = if isMain f then cfgEndWith (CFRetVoid)
+                            else cfgEndWith (CFRet var)
+            where isMain f = (identPrefix $ tidIdent $ fnVar f) == T.pack "main"
 
 -- The other helper, to collect the scattered results and build the actual CFG.
 extractFunction st fn =
@@ -220,7 +222,7 @@ cfgPutUniq :: Uniq -> CFG ()
 cfgPutUniq u = do old <- get ; put (old { cfgUniq = u })
 
 cfgFreshId :: String -> CFG Ident
-cfgFreshId s = do u <- cfgNewUniq ; return (Ident s u)
+cfgFreshId s = do u <- cfgNewUniq ; return (Ident (T.pack s) u)
 
 cfgFresh :: String -> CFG BlockId
 cfgFresh s = do u <- freshLabel ; return (s, u)

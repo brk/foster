@@ -13,6 +13,8 @@ import Foster.Context
 import Foster.TypeIL
 import Foster.AnnExprIL
 
+import qualified Data.Text as T
+
 -- | Foster.ILExpr binds all intermediate values to named variables
 -- | via a variant of K-normalization.
 
@@ -49,7 +51,7 @@ type KN a = State Uniq a
 knFresh :: String -> KN Ident
 knFresh s = do old <- get
                put (old + 1)
-               return (Ident s old)
+               return (Ident (T.pack s) old)
 
 --------------------------------------------------------------------
 
@@ -176,7 +178,7 @@ varOrThunk (a, targetType) = do
         mkThunkAround v fnty = do
           id <- knFresh ".kn.thunk"
           vars <- argVarsWithTypes (fnTypeILDomain fnty)
-          return $ Fn { fnVar      = TypedId fnty (GlobalSymbol (show id))
+          return $ Fn { fnVar      = TypedId fnty (GlobalSymbol (T.pack $ show id))
                       , fnVars     = vars
                       , fnBody     = KNCall (fnTypeILRange fnty) v vars
                       , fnRange    = MissingSourceRange $ "thunk for " ++ show v
@@ -258,7 +260,7 @@ kNormalCtors ctx dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
     kNormalCtor ctx datatype (DataCtor cname small tys) = do
       let dname = dataTypeName datatype
       let arity = Prelude.length tys
-      let cid = CtorId dname cname arity small
+      let cid = CtorId dname (T.unpack cname) arity small
       let genFreshVarOfType t = do fresh <- knFresh ".autogen"
                                    return $ TypedId t fresh
       vars <- mapM genFreshVarOfType tys
@@ -318,7 +320,7 @@ instance Structured KNExpr where
             KNArrayPoke  {}     -> out $ "KNArrayPoke "
             KNTuple     es      -> out $ "KNTuple     (size " ++ (show $ length es) ++ ")"
             KNVar (TypedId t (GlobalSymbol name))
-                                -> out $ "KNVar(Global):   " ++ name ++ " :: " ++ show t
+                                -> out $ "KNVar(Global):   " ++ T.unpack name ++ " :: " ++ show t
             KNVar (TypedId t i) -> out $ "KNVar(Local):   " ++ show i ++ " :: " ++ show t
             KNTyApp t _e argty  -> out $ "KNTyApp     [" ++ show argty ++ "] :: " ++ show t
     childrenOf expr =

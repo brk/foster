@@ -10,8 +10,6 @@ module Foster.Monomo (
 
 where
 
-import Control.Monad.State(forM_, execState, get, put, State)
-
 import Foster.Base
 import Foster.Kind
 import Foster.ILExpr
@@ -19,12 +17,15 @@ import Foster.TypeIL
 import Foster.Worklist
 import Foster.Letable
 
+import qualified Data.Text as T
+
 import Data.Map(Map)
 import Data.Map as Map(insert, (!), elems, filter)
 import Data.Set(Set)
 import Data.Set as Set(member, insert, empty)
-import Data.List as List(elem, lookup, all, isPrefixOf)
+import Data.List as List(elem, lookup, all)
 import Control.Monad(when)
+import Control.Monad.State(forM_, execState, get, put, State)
 import Data.Maybe(fromMaybe, isNothing, maybeToList)
 
 -- | Performs worklist-based monomorphization of top-level functions,
@@ -83,7 +84,7 @@ addInitialMonoTasksAndGo procdefs = do
       )
     goMonomorphize
 
-isAnonFn id = "<anon_fn_" `isPrefixOf` identPrefix id
+isAnonFn id = T.pack "<anon_fn_" `T.isPrefixOf` identPrefix id
 
     -- And similarly for data types with pointer-sized type arguments.
 monomorphizedDataTypes :: [DataType TypeIL] -> [DataType TypeIL]
@@ -265,8 +266,9 @@ getPolyProcId id tys =
     then idAppend id ".gen"
     else idAppend id (show tys)
 
-idAppend id s = case id of (GlobalSymbol o) -> (GlobalSymbol (o ++ s))
-                           (Ident o m)      -> (Ident (o ++ s) m)
+idAppend id s = case id of (GlobalSymbol o) -> (GlobalSymbol $ beforeS o)
+                           (Ident o m)      -> (Ident (beforeS o) m)
+                where beforeS o = o `T.append` T.pack s
 
 type TyVarSubst = [(TyVar, TypeIL)]
 

@@ -3,11 +3,13 @@ module Foster.Context where
 import Data.IORef(IORef,newIORef,readIORef,writeIORef)
 import Data.Map(Map)
 
+import qualified Data.Text as T
+
 import Foster.Base
 import Foster.ExprAST
 import Foster.TypeAST
 
-data ContextBinding ty = TermVarBinding String (TypedId ty)
+data ContextBinding ty = TermVarBinding T.Text (TypedId ty)
 
 data Context ty = Context { contextBindings   :: [ContextBinding ty]
                           , primitiveBindings :: [ContextBinding ty]
@@ -29,7 +31,7 @@ instance (Show ty) => Show (ContextBinding ty) where
 ctxBoundIdents :: Context ty -> [Ident]
 ctxBoundIdents ctx = [tidIdent v | TermVarBinding _ v <- (contextBindings ctx)]
 
-termVarLookup :: String -> [ContextBinding ty] -> Maybe (TypedId ty)
+termVarLookup :: T.Text -> [ContextBinding ty] -> Maybe (TypedId ty)
 termVarLookup name bindings = Prelude.lookup name bindingslist where
     bindingslist = [(nm, annvar) | (TermVarBinding nm annvar) <- bindings]
 
@@ -125,10 +127,10 @@ newTcUniq = Tc (\tcenv -> do { let ref = tcEnvUniqs tcenv
                              ; return (OK uniq)
                              })
 
+tcFreshT t = newTcUniq >>= (\u -> return (Ident t u))
+
 tcFresh :: String -> Tc Ident
-tcFresh s = do
-    u <- newTcUniq
-    return (Ident s u)
+tcFresh s = tcFreshT (T.pack s)
 
 tcGetCurrentHistory :: Tc [ExprAST]
 tcGetCurrentHistory = Tc (\tcenv -> do { return (OK $

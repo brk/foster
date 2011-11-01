@@ -23,6 +23,8 @@ import Data.Char(isLower)
 import Text.ProtocolBuffers(isSet,getVal)
 import Text.ProtocolBuffers.Basic(uToString)
 
+import qualified Data.Text as T
+
 import Foster.Fepb.FnType   as PbFnType
 import Foster.Fepb.Type.Tag as PbTypeTag
 import Foster.Fepb.Type     as PbType
@@ -61,8 +63,8 @@ import qualified Foster.Fepb.SourceLocation as Pb
 data FEState = FEState { feModuleLines :: SourceLines }
 type FE a = State FEState a
 
-getName _    (Just s) = uToString s
-getName desc Nothing  = error "Missing required name in " ++ desc ++ "!"
+getName _    (Just s) = pUtf8ToText s
+getName desc Nothing  = error $ "Missing required name in " ++ desc ++ "!"
 
 parseBool pbexpr range = do
     return $ E_BoolAST range $ fromMaybe False (PbExpr.bool_value pbexpr)
@@ -101,7 +103,7 @@ parseFn pbexpr = do range <- parseRange pbexpr
                                (map parseFormal formals) body
                                False) -- assume closure until proven otherwise
   where
-     parseFormal (Formal u t) = TypedId (parseType t) (Ident (uToString u) 0)
+     parseFormal (Formal u t) = TypedId (parseType t) (Ident (pUtf8ToText u) 0)
      parseReturnType pbexpr = fmap parseType (PbExpr.result_type pbexpr)
 
 parseValAbs pbexpr _range = do
@@ -133,7 +135,7 @@ parseLet pbexpr range = do
                (fmap parseType $ PbExpr.type' pbexpr)
       where parseBinding (PbTermBinding.TermBinding u e) = do
                 body <- parseExpr e
-                return (Foster.ExprAST.TermBinding (VarAST Nothing (uToString u)) body)
+                return (Foster.ExprAST.TermBinding (VarAST Nothing (pUtf8ToText u)) body)
             parsePBLet range pblet mty = do
                 bindings <- mapM parseBinding (toList $ PBLet.binding pblet)
                 body <- parseExpr (PBLet.body pblet)
@@ -273,7 +275,7 @@ parseDataType dt = do
   parseDataCtor :: (Int, DataCtor.DataCtor) -> FE (Foster.Base.DataCtor TypeAST)
   parseDataCtor (n, ct) = do
       let types = map parseType (toList $ DataCtor.type' ct)
-      return $ Foster.Base.DataCtor (uToString $ DataCtor.name ct) n types
+      return $ Foster.Base.DataCtor (pUtf8ToText $ DataCtor.name ct) n types
 
 parseModule _name decls defns datatypes = do
     lines <- gets feModuleLines
@@ -313,7 +315,7 @@ parseType :: Type -> TypeAST
 parseType t =
     case PbType.tag t of
          PbTypeTag.TYVAR ->
-                let name@(c:_) = (getName "type name" $ PbType.name t) in
+                let name@(c:_) = T.unpack (getName "type name" $ PbType.name t) in
                 if isLower c then TyVarAST (BoundTyVar name)
                              else parseNamedType name
          PbTypeTag.FN -> fromMaybe (error "Protobuf node tagged FN without fnty field!")

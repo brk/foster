@@ -19,6 +19,8 @@ import Foster.Base(SourceRange, Expr(..), freeVars, identPrefix, Structured(..),
 import Foster.TypeAST(TypeAST, EPattern(..), E_VarAST(..), AnnVar)
 import Foster.Kind
 
+import qualified Data.Text as T
+
 data ExprAST =
         -- Literals
           E_BoolAST       SourceRange Bool
@@ -53,7 +55,7 @@ data TupleAST = TupleAST { tupleAstRange :: SourceRange
                          , tupleAstExprs :: [ExprAST] } deriving (Show)
 
 data FnAST  = FnAST { fnAstRange :: SourceRange
-                    , fnAstName  :: String
+                    , fnAstName  :: T.Text
                     , fnTyFormals:: [TypeFormalAST]
                     , fnRetType  :: Maybe TypeAST
                     , fnFormals  :: [AnnVar]
@@ -62,6 +64,8 @@ data FnAST  = FnAST { fnAstRange :: SourceRange
                     } deriving (Show)
 
 data TermBinding = TermBinding E_VarAST ExprAST deriving (Show)
+
+termBindingName :: TermBinding -> T.Text
 termBindingName (TermBinding v _) = evarName v
 
 -- | Converts a right-leaning "list" of SeqAST nodes to a List
@@ -73,8 +77,8 @@ unbuildSeqs expr = [expr]
 
 instance Structured ExprAST where
     textOf e _width =
-        let tryGetCallNameE (E_VarAST _rng (VarAST _mt v)) = v
-            tryGetCallNameE _                            = "" in
+        let tryGetCallNameE (E_VarAST _rng (VarAST _mt v)) = T.unpack v
+            tryGetCallNameE _                              = "" in
         case e of
             E_BoolAST _rng  b      -> out $ "BoolAST      " ++ (show b)
             E_CallAST _rng b _args -> out $ "CallAST      " ++ tryGetCallNameE b
@@ -82,9 +86,9 @@ instance Structured ExprAST where
             E_IfAST       {}       -> out $ "IfAST        "
             E_UntilAST _rng _ _    -> out $ "UntilAST     "
             E_IntAST _rng text     -> out $ "IntAST       " ++ text
-            E_FnAST f              -> out $ "FnAST        " ++ (fnAstName f)
+            E_FnAST f              -> out $ "FnAST        " ++ T.unpack (fnAstName f)
             E_LetRec    {}         -> out $ "LetRec       "
-            E_LetAST _rng bnd _ _  -> out $ "LetAST       " ++ termBindingName bnd
+            E_LetAST _rng bnd _ _  -> out $ "LetAST       " ++ T.unpack (termBindingName bnd)
             E_SeqAST    {}         -> out $ "SeqAST       "
             E_AllocAST  {}         -> out $ "AllocAST     "
             E_DerefAST  {}         -> out $ "DerefAST     "
@@ -94,7 +98,7 @@ instance Structured ExprAST where
             E_TupleAST  {}         -> out $ "TupleAST     "
             E_TyApp     {}         -> out $ "TyApp        "
             E_Case      {}         -> out $ "Case         "
-            E_VarAST _rng v        -> out $ "VarAST       " ++ evarName v ++ " :: " ++ show (evarMaybeType v)
+            E_VarAST _rng v        -> out $ "VarAST       " ++ T.unpack (evarName v) ++ " :: " ++ show (evarMaybeType v)
     childrenOf e =
         let termBindingExpr (TermBinding _ e) = e in
         case e of
@@ -156,7 +160,7 @@ instance Expr ExprAST where
 
 epatBindingFreeVars (pat, expr) =
   freeVars expr `butnot` epatBoundNames pat
-  where epatBoundNames :: EPattern -> [String]
+  where epatBoundNames :: EPattern -> [T.Text]
         epatBoundNames pat =
           case pat of
             EP_Wildcard {}        -> []

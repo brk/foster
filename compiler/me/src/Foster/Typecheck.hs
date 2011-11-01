@@ -127,7 +127,7 @@ typecheckVar ctx rng name =
       case termVarLookup name (primitiveBindings ctx) of
         Just avar -> return $ AnnPrimitive rng avar
         Nothing   -> do msg <- getStructureContextMessage
-                        tcFails [out $ "Unknown variable " ++ name
+                        tcFails [out $ "Unknown variable " ++ T.unpack name
                                  ++ showSourceRange rng
                                  ++ "ctx: "++ show (contextBindings ctx)
                                  ++ "\nhist: " , msg]
@@ -145,7 +145,7 @@ typecheckLet ctx rng (TermBinding v a) e mt = do
     sanityCheck (notRecursive boundName a)
         ("Recursive bindings should use 'rec', not 'let'"
                          ++ highlightFirstLine rng)
-    id <- tcFresh boundName
+    id <- tcFreshT boundName
     ea <- typecheck ctx  a maybeVarType
     ctx' <- extendContext ctx [TypedId (typeAST ea) id] Nothing
     ee <- typecheck ctx' e mt
@@ -164,15 +164,13 @@ typecheckLetRec ctx0 rng bindings e mt = do
     verifyNonOverlappingVariableNames rng "rec" (map termBindingName bindings)
     -- Generate unification variables for the overall type of
     -- each binding.
-    unificationVars <- sequence [newTcUnificationVar $
-                                  "letrec_" ++ evarName v
+    unificationVars <- sequence [newTcUnificationVar $ T.unpack $
+                                  "letrec_" `prependedTo` (evarName v)
                                 | (TermBinding v _) <- bindings]
-    ids <- sequence [tcFresh (evarName v)
+    ids <- sequence [tcFreshT (evarName v)
                     | (TermBinding v _) <- bindings]
     -- Create an extended context for typechecking the bindings
-    let makeTermVarBinding (u, id) =
-           let mtv = MetaTyVar u in
-           TermVarBinding (identPrefix id) (TypedId mtv id)
+    let makeTermVarBinding (u, id) = varbind id (MetaTyVar u)
     let ctxBindings = map makeTermVarBinding (zip unificationVars ids)
     let ctx = prependContextBindings ctx0 ctxBindings
 
@@ -181,7 +179,7 @@ typecheckLetRec ctx0 rng bindings e mt = do
        (\(u, TermBinding v b) -> do
            b' <- typecheck ctx b (evarMaybeType v) -- or (Just $ MetaTyVar u)?
            equateTypes (MetaTyVar u) (typeAST b')
-                       (Just $ "recursive binding " ++ evarName v)
+                       (Just $ "recursive binding " ++ T.unpack (evarName v))
            return b'
        )
 
@@ -193,13 +191,13 @@ typecheckLetRec ctx0 rng bindings e mt = do
 
 -----------------------------------------------------------------------
 
-getCtorInfoForCtor :: String -> Tc (CtorInfo TypeAST)
+getCtorInfoForCtor :: T.Text -> Tc (CtorInfo TypeAST)
 getCtorInfoForCtor ctorName = do
   ctorInfos <- tcGetCtorInfo
-  case Map.lookup ctorName ctorInfos of
+  case Map.lookup (T.unpack ctorName) ctorInfos of
     Just [info] -> return info
     elsewise -> tcFails [out $ "Typecheck.getCtorInfoForCtor: Too many or"
-                                ++ " too few definitions for $" ++ ctorName
+                                ++ " too few definitions for $" ++ T.unpack ctorName
                                 ++ "\n\t" ++ show elsewise]
 
 checkPattern :: EPattern -> Tc Pattern
@@ -207,7 +205,7 @@ checkPattern :: EPattern -> Tc Pattern
 checkPattern p = case p of
   EP_Wildcard r   -> do return $ P_Wildcard r
   EP_Bool r b     -> do return $ P_Bool r b
-  EP_Variable r v -> do id <- tcFresh (evarName v)
+  EP_Variable r v -> do id <- tcFreshT (evarName v)
                         return $ P_Variable r id
   EP_Int r str    -> do annint <- typecheckInt r str
                         return $ P_Int  r (aintLitInt annint)
@@ -255,7 +253,7 @@ extractPatternBindings (P_Wildcard _   ) _  = return []
 extractPatternBindings (P_Variable _ id) ty = return [varbind id ty]
 
 extractPatternBindings (P_Ctor _ pats (CtorId _ ctorName _ _)) _ty = do
-  CtorInfo _ (DataCtor _ _smallId types) <- getCtorInfoForCtor ctorName
+  CtorInfo _ (DataCtor _ _smallId types) <- getCtorInfoForCtor (T.pack ctorName)
   bindings <- sequence [extractPatternBindings p t | (p, t) <- zip pats types]
   return $ concat bindings
 
@@ -437,7 +435,7 @@ typecheckCallWithBaseFnType argtup eb basetype range =
             tcFails $ (out $ "Called value was not a function: "):ebStruct:
                                        [out $ " :: " ++ (show $ typeAST eb)]
 
-vname (E_VarAST _rng ev) n = show n ++ " for " ++ evarName ev
+vname (E_VarAST _rng ev) n = show n ++ " for " ++ T.unpack (evarName ev)
 vname _                  n = show n
 
 genUnificationVarsLike :: [a] -> (Int -> String) -> Tc [MetaTyVar]
@@ -542,7 +540,7 @@ typecheckFn _ctx f (Just t) = tcFails [out $
 typecheckFn' :: Context TypeAST -> FnAST -> CallConv
              -> Maybe TypeAST -> Maybe TypeAST -> Tc AnnExpr
 typecheckFn' ctx f cc expArgType expBodyType = do
-    let fnProtoName = fnAstName f
+    let fnProtoName = T.unpack (fnAstName f)
     uniquelyNamedFormals <- getUniquelyNamedFormals (fnAstRange f)
                                                     (fnFormals f) fnProtoName
 
@@ -582,12 +580,12 @@ typecheckFn' ctx f cc expArgType expBodyType = do
 
     -- If we're type checking a top-level function binding,
     -- update the type for the binding's unification variable.
-    case termVarLookup fnProtoName (contextBindings ctx) of
+    case termVarLookup (T.pack fnProtoName) (contextBindings ctx) of
       Nothing -> return ()
       Just av -> equateTypes fnty (tidType av)
                    (Just $ "overall type of function " ++ fnProtoName)
 
-    return $ E_AnnFn (AnnFn fnty (GlobalSymbol fnProtoName)
+    return $ E_AnnFn (AnnFn fnty (GlobalSymbol $ T.pack fnProtoName)
                            formalVars annbody freeVars
                            (fnAstRange f))
 
@@ -606,7 +604,7 @@ computeFreeFnVars uniquelyNamedFormals annbody f ctx = do
 -- | and return unique'd versions of each.
 getUniquelyNamedFormals rng rawFormals fnProtoName = do
     _ <- verifyNonOverlappingVariableNames rng fnProtoName
-                                         (map (identPrefix.tidIdent) rawFormals)
+                      (map (identPrefix.tidIdent) rawFormals)
     mapM uniquelyName rawFormals
 
 -----------------------------------------------------------------------
@@ -707,7 +705,7 @@ uniquelyName (TypedId ty id) = do
     rename (GlobalSymbol name) _u =
             tcFails [out $ "Cannot rename global symbol " ++ show name]
 
-verifyNonOverlappingVariableNames :: SourceRange -> String -> [String] -> Tc ()
+verifyNonOverlappingVariableNames :: SourceRange -> String -> [T.Text] -> Tc ()
 verifyNonOverlappingVariableNames rng name varNames = do
     let duplicates = [List.head dups
                      | dups <- List.group (List.sort varNames)

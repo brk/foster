@@ -14,6 +14,8 @@ import Foster.AnnExpr
 import Foster.TypeIL
 import Foster.TypeAST(gFosterPrimOpsTable, TypeAST(TupleTypeAST))
 
+import qualified Data.Text as T
+
 -- AnnExprIL defines a copy of AnnExpr, annotated with TypeIL
 -- instead of TypeAST. This lets us structurally enforce the
 -- restriction that unification variables must be eliminated
@@ -111,7 +113,8 @@ ail ae =
                    pti <- ilOf pty
                    return $ AICall ti (E_AIPrim $ ilPrimFor pti id) argsi
 
-                E_AnnTyApp _ _ot (AnnPrimitive _rng (TypedId _ (GlobalSymbol "allocDArray"))) argty -> do
+                E_AnnTyApp _ _ot (AnnPrimitive _rng (TypedId _ (GlobalSymbol gs))) argty
+                        | gs == T.pack "allocDArray" -> do
                     let [arraySize] = argsi
                     aty <- ilOf argty
                     return $ AIAllocArray aty arraySize
@@ -128,7 +131,7 @@ ail ae =
                        let primVar = TypedId vti id
                        let call = AICall ti (E_AIPrim $ ILNamedPrim primVar) argsi
                        let primName = identPrefix id
-                       x <- tcFresh $ "appty_" ++ primName
+                       x <- tcFreshT $ "appty_" `prependedTo` primName
                        return $ AILetVar x (E_AITyApp oti (E_AIVar primVar) appti) call
 
                 _otherwise -> do bi <- q b
@@ -142,13 +145,13 @@ ail ae =
                                          ae <- q e
                                          return $ E_AITyApp ti ae at
 
-coroPrimFor "coro_create" = Just $ CoroCreate
-coroPrimFor "coro_invoke" = Just $ CoroInvoke
-coroPrimFor "coro_yield"  = Just $ CoroYield
+coroPrimFor s | s == T.pack "coro_create" = Just $ CoroCreate
+coroPrimFor s | s == T.pack "coro_invoke" = Just $ CoroInvoke
+coroPrimFor s | s == T.pack "coro_yield"  = Just $ CoroYield
 coroPrimFor _ = Nothing
 
 ilPrimFor ti id =
-  case Map.lookup (identPrefix id) gFosterPrimOpsTable of
+  case Map.lookup (T.unpack $ identPrefix id) gFosterPrimOpsTable of
         Just (_ty, op) -> op
         Nothing        -> ILNamedPrim (TypedId ti id)
 

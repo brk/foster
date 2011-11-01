@@ -15,6 +15,8 @@ module Foster.AnnExpr (
 import Foster.Base
 import Foster.TypeAST
 
+import qualified Data.Text as T
+
 -- Type-annotated expressions, although not necessarily with valid types.
 -- Type checking isn't done until we move to AIExpr. We keep around source
 -- ranges for error messages if the final stage of type checking fails.
@@ -121,7 +123,7 @@ instance Structured AnnExpr where
       AnnPrimitive _r tid        -> out $ "AnnPrimitive " ++ show tid
       E_AnnVar _r tid            -> out $ "AnnVar       " ++ show tid
       E_AnnTyApp _rng t _e argty -> out $ "AnnTyApp     [" ++ show argty ++ "] :: " ++ show t
-      E_AnnFn annFn              -> out $ "AnnFn " ++ fnNameA annFn ++ " // "
+      E_AnnFn annFn              -> out $ "AnnFn " ++ T.unpack (fnNameA annFn) ++ " // "
         ++ (show $ annFnBoundNames annFn) ++ " :: " ++ show (annFnType annFn) where
                   annFnBoundNames :: AnnFn -> [String]
                   annFnBoundNames fn = map show (annFnVars fn)

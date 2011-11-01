@@ -13,6 +13,7 @@ import System.Console.GetOpt
 import System.Console.ANSI(Color(..))
 
 import qualified Data.ByteString.Lazy as L(readFile)
+import qualified Data.Text as T
 
 import List(all)
 import Data.Map(Map)
@@ -45,7 +46,8 @@ import Foster.KSmallstep
 
 -----------------------------------------------------------------------
 
-pair2binding (nm, ty) = TermVarBinding nm (TypedId ty (GlobalSymbol nm))
+pair2binding (nm, ty) = TermVarBinding (T.pack nm)
+                                       (TypedId ty (GlobalSymbol $ T.pack nm))
 
 -----------------------------------------------------------------------
 
@@ -59,7 +61,7 @@ typecheckFnSCC scc (ctx, tcenv) = do
     let fns = Graph.flattenSCC scc
     annfns <- forM fns $ \fn -> do
         let ast = (E_FnAST fn)
-        let name = fnAstName fn
+        let name = T.unpack $ fnAstName fn
         putStrLn $ "typechecking " ++ name
         annfn <- unTc tcenv $
                     do uRetTy <- newTcUnificationVar $ "toplevel fn type for " ++ name
@@ -83,7 +85,7 @@ typecheckFnSCC scc (ctx, tcenv) = do
          where   annFnVar = TypedId (annFnType f) (annFnIdent f)
 
         bindingForFnAST :: FnAST -> TypeAST -> ContextBinding TypeAST
-        bindingForFnAST f t = pair2binding (fnAstName f, t)
+        bindingForFnAST f t = pair2binding (T.unpack (fnAstName f), t)
 
         inspect :: OutputOr AnnExpr -> ExprAST -> IO Bool
         inspect typechecked ast =
@@ -146,7 +148,7 @@ typecheckModule verboseMode modast tcenv0 = do
    extractCtorTypes :: DataType TypeAST -> [(String, TypeAST)]
    extractCtorTypes dt = map nmCTy (dataTypeCtors dt)
      where nmCTy (DataCtor name _tag types) =
-                          (name, ctorTypeAST (dataTypeTyFormals dt) dt types)
+                 (T.unpack name, ctorTypeAST (dataTypeTyFormals dt) dt types)
 
    ctorTypeAST [] dt ctorArgTypes =
        FnTypeAST (TupleTypeAST ctorArgTypes) (typeOfDataType dt) FastCC FT_Proc
@@ -157,7 +159,7 @@ typecheckModule verboseMode modast tcenv0 = do
       (FnTypeAST (TupleTypeAST ctorArgTypes) (typeOfDataType dt) FastCC FT_Proc)
 
    buildCallGraphList :: [FnAST] -> [ContextBinding ty]
-                      -> [(FnAST, String, [String])]
+                      -> [(FnAST, T.Text, [T.Text])]
    buildCallGraphList asts declBindings =
      map (\ast -> (ast, fnAstName ast, fnAstFreeVariables ast)) asts
        where
@@ -236,11 +238,11 @@ getCtorInfo datatypes = Map.unionsWith (++) $ map getCtorInfoList datatypes
 -----------------------------------------------------------------------
 
 ctorIdFor :: (Show t) => String -> DataCtor t -> (String, CtorId)
-ctorIdFor name ctor = (ctorNameOf ctor, ctorId name ctor)
+ctorIdFor name ctor = (T.unpack (ctorNameOf ctor), ctorId name ctor)
   where
     ctorNameOf (DataCtor ctorName _n _) = ctorName
     ctorId nm (DataCtor ctorName n types) =
-      CtorId nm ctorName (Prelude.length types) n
+      CtorId nm (T.unpack ctorName) (Prelude.length types) n
 
 -----------------------------------------------------------------------
 

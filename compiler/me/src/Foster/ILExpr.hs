@@ -18,6 +18,8 @@ import Foster.TypeIL
 import Foster.Letable
 import Foster.PatternMatch
 
+import qualified Data.Text as T
+
 import Compiler.Hoopl
 
 --------------------------------------------------------------------
@@ -143,7 +145,8 @@ closureConvertBlocks bbg =
 
       closureConvertLetFuns :: [Ident] -> [CFFn] -> ILM ILMiddle
       closureConvertLetFuns ids fns = do
-          cloEnvIds <- mapM (\id -> ilmFresh (".env." ++ identPrefix id)) ids
+          let genFreshId id = ilmFresh (".env." `prependedTo` identPrefix id)
+          cloEnvIds <- mapM genFreshId ids
           let infoMap = Map.fromList (zip ids (zip fns cloEnvIds))
           let idfns = zip ids fns
           closures  <- mapM (closureOfKnFn infoMap) idfns
@@ -276,9 +279,9 @@ ilmNewUniq = do old <- get
                 put (old { ilmUniq = (ilmUniq old) + 1 })
                 return (ilmUniq old)
 
-ilmFresh :: String -> ILM Ident
-ilmFresh s = do u <- ilmNewUniq
-                return (Ident s u)
+ilmFresh :: T.Text -> ILM Ident
+ilmFresh t = do u <- ilmNewUniq
+                return (Ident t u)
 
 ilmPutProc :: ILM ILProcDef -> ILM ILProcDef
 ilmPutProc p_action = do

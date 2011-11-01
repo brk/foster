@@ -53,13 +53,14 @@ import Foster.Bepb.DecisionTree.Tag
 import Foster.Bepb.AllocInfo.MemRegion
 
 import qualified Text.ProtocolBuffers.Header as P'
+import qualified Data.Text as T
 
 -----------------------------------------------------------------------
 
 dumpBlockId (str, lab) = u8fromString (str ++ "." ++ show lab)
 
 dumpIdent :: Ident -> P'.Utf8
-dumpIdent (GlobalSymbol name) = u8fromString name
+dumpIdent (GlobalSymbol name) = textToPUtf8 name
 dumpIdent i@(Ident _name num) = if num < 0
                 --then u8fromString $ name
                 then error $ "cannot dump negative ident! " ++ show i
@@ -67,9 +68,10 @@ dumpIdent i@(Ident _name num) = if num < 0
 
 mayTriggerGC :: AIVar -> Bool
 mayTriggerGC (TypedId _ (GlobalSymbol name)) = globalMayGC name
-  where globalMayGC name = not $ name `Prelude.elem` ["expect_i1", "print_i1"
+  where globalMayGC name = not $ name `Prelude.elem` (map T.pack
+                        ["expect_i1", "print_i1"
                         ,"expect_i64" , "print_i64" , "expect_i32", "print_i32"
-                        ,"expect_i32b", "print_i32b"]
+                        ,"expect_i32b", "print_i32b"])
 mayTriggerGC _ = True
 
 -----------------------------------------------------------------------
@@ -137,7 +139,7 @@ dumpProcType (s, t, cc) =
             stringOfCC CCC    = "ccc"
 
 dumpDataCtor (DataCtor ctorName _smallId types) =
-  PbDataCtor { PbDataCtor.name  = u8fromString ctorName
+  PbDataCtor { PbDataCtor.name  = textToPUtf8 ctorName
              , PbDataCtor.type' = fromList $ map dumpType types
              }
 
@@ -303,7 +305,7 @@ dumpExpr x@(ILTyApp {}) =
 
 dumpClosureWithName (varid, ILClosure procid envid captvars) =
     Closure { varname  = dumpIdent varid
-            , proc_id  = u8fromString (identPrefix procid)
+            , proc_id  = textToPUtf8 (identPrefix procid)
             , env_id   = dumpIdent envid
             , env      = dumpExpr (ILTuple captvars) }
 

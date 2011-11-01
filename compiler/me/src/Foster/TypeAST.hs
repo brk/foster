@@ -16,20 +16,22 @@ import List(length)
 import Data.IORef(IORef)
 import Data.Map as Map(fromList, toList)
 
+import qualified Data.Text as T
+
 import Foster.Base
 import Foster.Kind
 
 data EPattern =
           EP_Wildcard    SourceRange
         | EP_Variable    SourceRange E_VarAST
-        | EP_Ctor        SourceRange [EPattern] String
+        | EP_Ctor        SourceRange [EPattern] T.Text
         | EP_Bool        SourceRange Bool
         | EP_Int         SourceRange String
         | EP_Tuple       SourceRange [EPattern]
         deriving (Show)
 
 data E_VarAST = VarAST { evarMaybeType :: Maybe TypeAST
-                       , evarName      :: String } deriving (Show)
+                       , evarName      :: T.Text } deriving (Show)
 
 type AnnVar = TypedId TypeAST
 
