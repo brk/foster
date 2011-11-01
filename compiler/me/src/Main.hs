@@ -237,8 +237,8 @@ getCtorInfo datatypes = Map.unionsWith (++) $ map getCtorInfoList datatypes
 
 -----------------------------------------------------------------------
 
-ctorIdFor :: (Show t) => String -> DataCtor t -> (String, CtorId)
-ctorIdFor name ctor = (T.unpack (ctorNameOf ctor), ctorId name ctor)
+ctorIdFor :: (Show t) => String -> DataCtor t -> (CtorName, CtorId)
+ctorIdFor name ctor = (ctorNameOf ctor, ctorId name ctor)
   where
     ctorNameOf (DataCtor ctorName _n _) = ctorName
     ctorId nm (DataCtor ctorName n types) =
@@ -246,7 +246,7 @@ ctorIdFor name ctor = (T.unpack (ctorNameOf ctor), ctorId name ctor)
 
 -----------------------------------------------------------------------
 
-dataTypeSigs :: [DataType TypeIL] -> Map CtorName DataTypeSig
+dataTypeSigs :: [DataType TypeIL] -> Map DataTypeName DataTypeSig
 dataTypeSigs datatypes = Map.fromList $ map ctorIdSet datatypes where
   ctorIdSet :: DataType TypeIL -> (DataTypeName, DataTypeSig)
   ctorIdSet (DataType name _tyformals ctors) =

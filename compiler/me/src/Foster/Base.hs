@@ -160,7 +160,7 @@ data CtorId     = CtorId   { ctorTypeName :: String
 instance Ord CtorId where
   compare a b = compare (show a) (show b)
 
-type CtorName = String
+type CtorName    = T.Text
 type DataTypeName = String
 
 data DataTypeSig = DataTypeSig (Map CtorName CtorId) deriving Show

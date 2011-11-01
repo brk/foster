@@ -194,7 +194,7 @@ typecheckLetRec ctx0 rng bindings e mt = do
 getCtorInfoForCtor :: T.Text -> Tc (CtorInfo TypeAST)
 getCtorInfoForCtor ctorName = do
   ctorInfos <- tcGetCtorInfo
-  case Map.lookup (T.unpack ctorName) ctorInfos of
+  case Map.lookup ctorName ctorInfos of
     Just [info] -> return info
     elsewise -> tcFails [out $ "Typecheck.getCtorInfoForCtor: Too many or"
                                 ++ " too few definitions for $" ++ T.unpack ctorName
