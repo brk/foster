@@ -18,7 +18,7 @@ import qualified Data.Text as T
 import List(all)
 import Data.Map(Map)
 import qualified Data.Map as Map(fromList, unionsWith)
-import qualified Data.Set as Set(filter, toList, fromList)
+import qualified Data.Set as Set(filter, toList, fromList, empty, member, insert)
 import qualified Data.Graph as Graph(SCC, flattenSCC, stronglyConnComp)
 import Data.Maybe(isNothing)
 import Control.Monad.State(forM, when, forM_, StateT, runStateT, gets, liftIO)
@@ -104,6 +104,13 @@ typecheckFnSCC scc (ctx, tcenv) = do
                     do runOutput $ (outLn "")
                     return False
 
+detectDuplicates :: Ord a => [a] -> [a]
+detectDuplicates xs = go xs Set.empty Set.empty
+  where go []    _seen dups = Set.toList dups
+        go (x:xs) seen dups =
+          if Set.member x seen then go xs seen (Set.insert x dups)
+                               else go xs (Set.insert x seen) dups
+
 -- | Typechecking a module proceeds as follows:
 -- |  #. Build separate binding lists for the globally-defined primitiveDecls
 -- |     and the module's top-level (function) declarations.
@@ -120,16 +127,20 @@ typecheckModule :: Bool
 typecheckModule verboseMode modast tcenv0 = do
     let fns = moduleASTfunctions modast
     let primBindings = computeContextBindings primitiveDecls
-    let declBindings = computeContextBindings (moduleASTdecls modast)
-                    ++ computeContextBindings (concatMap extractCtorTypes $
+    let declBindings = computeContextBindings (moduleASTdecls modast) ++
+                       computeContextBindings (concatMap extractCtorTypes $
                                                moduleASTdataTypes modast)
-    let callGraphList = buildCallGraphList fns declBindings
-    let sortedFns = Graph.stronglyConnComp callGraphList -- :: [SCC FnAST]
-    putStrLn $ "Function SCC list : " ++
-                   show [(name, frees) | (_, name, frees) <- callGraphList]
-    let ctx0 = mkContext declBindings primBindings
-    (annFns, (ctx, tcenv)) <- mapFoldM sortedFns (ctx0, tcenv0) typecheckFnSCC
-    unTc tcenv (convertTypeILofAST modast ctx annFns)
+    case detectDuplicates (map fnAstName fns) of
+      [] -> do
+        let callGraphList = buildCallGraphList fns declBindings
+        let sortedFns = Graph.stronglyConnComp callGraphList -- :: [SCC FnAST]
+        putStrLn $ "Function SCC list : " ++
+                       show [(name, frees) | (_, name, frees) <- callGraphList]
+        let ctx0 = mkContext declBindings primBindings
+        (annFns, (ctx, tcenv)) <- mapFoldM sortedFns (ctx0, tcenv0) typecheckFnSCC
+        unTc tcenv (convertTypeILofAST modast ctx annFns)
+      dups -> return (Errors [out $ "Unable to check module due to "
+                                 ++ "duplicate bindings: " ++ show dups])
  where
    mkContext declBindings primBindings =
      Context declBindings primBindings verboseMode globalvars

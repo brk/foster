@@ -1,6 +1,6 @@
-foo = fn (x:i32 to i32) { x }
+foo = { 0 };
 
-foo = fn (x:i32 to i32) { x }
+foo = { 1 };
 
-main = fn ( to i32) { foo(0) }
+main =  { foo ! };
 

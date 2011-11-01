@@ -1,1 +1,3 @@
-main = fn () { read_i32( ; }
+main = { foo( ; };
+
+foo = { x : Int32 => x };
