@@ -105,6 +105,8 @@ let-gcroot = {
 
 case-gcroots = {
     let-gcroot !;
+    // Make sure that the reference is not passed from
+    // the case to the branch in a register (for coyping GC visibility).
     case (ref 2)
       of r -> force_gc_for_debugging_purposes !;
               expect_i32 2;

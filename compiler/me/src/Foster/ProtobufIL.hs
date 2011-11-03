@@ -318,14 +318,11 @@ dumpDecisionTree (DT_Leaf block_id idsoccs) =
                     , PbDecisionTree.leaf_idoccs = fromList $ map (dumpOcc  .snd) idsoccs
                     , PbDecisionTree.leaf_action = Just $ dumpBlockId block_id }
 
-dumpDecisionTree (DT_Swap _i dt) = dumpDecisionTree dt
-
-dumpDecisionTree (DT_Switch occ sc) =
+dumpDecisionTree (DT_Switch occ idsdts md) =
     P'.defaultValue { PbDecisionTree.tag    = DT_SWITCH
-                    , PbDecisionTree.switchcase = Just $ dumpSwitchCase occ sc }
+                    , PbDecisionTree.switchcase = Just $ dumpSwitchCase occ idsdts md }
 
---dumpSwitchCase :: Occurrence -> SwitchCase ILG.BlockId -> PbSwitchCase
-dumpSwitchCase occ (SwitchCase ctorDTpairs defaultCase) =
+dumpSwitchCase occ ctorDTpairs defaultCase =
     let (ctors, dts) = Prelude.unzip ctorDTpairs in
     P'.defaultValue { PbSwitchCase.ctors = fromList (map dumpCtorId ctors)
                     , PbSwitchCase.trees = fromList (map dumpDecisionTree dts)

@@ -27,13 +27,9 @@ heuristic.
 data Show a =>
    DecisionTree a = DT_Fail
                   | DT_Leaf   a  [(Ident, Occurrence)]
-                  | DT_Swap   Int      (DecisionTree a)
-                  | DT_Switch Occurrence (SwitchCase a)
-                  deriving (Show)
-
-data Show a =>
-   SwitchCase a = SwitchCase [(CtorId, DecisionTree a)]
-                               (Maybe (DecisionTree a))
+                  | DT_Switch Occurrence
+                              [(CtorId, DecisionTree a)]
+                                (Maybe (DecisionTree a))
                   deriving (Show)
 
 -- Avoiding all these type parameters is actually a
@@ -58,20 +54,19 @@ data SPattern = SP_Wildcard
 instance (Show a, Structured a) => Structured (DecisionTree a) where
     textOf e _width =
         case e of
-          DT_Fail           -> out $ "DT_Fail      "
-          DT_Leaf a idsoccs -> (out $ "DT_Leaf    " ++ show idsoccs ++ "\n") ++ (showStructure a)
-          DT_Swap i _dt     -> out $ "DT_Swap      " ++ (show i)
-          DT_Switch occ sc  -> out $ "DT_Switch    " ++ (show occ) ++ (show $ subIds sc)
+          DT_Fail                ->  out $ "DT_Fail      "
+          DT_Leaf a idsoccs      -> (out $ "DT_Leaf    " ++ show idsoccs ++ "\n") ++ (showStructure a)
+          DT_Switch occ idsdts _ ->  out $ "DT_Switch    " ++ (show occ) ++ (show $ subIds idsdts)
     childrenOf e =
       case e of
-        DT_Fail           -> []
-        DT_Leaf {}        -> []
-        DT_Swap _i dt     -> [dt]
-        DT_Switch _occ sc -> subDts sc
+        DT_Fail                  -> []
+        DT_Leaf {}               -> []
+        DT_Switch _occ idsdts md -> subDts idsdts md
 
-subIds (SwitchCase idsDts _) = map fst idsDts
-subDts (SwitchCase idsDts Nothing)  = map snd idsDts
-subDts (SwitchCase idsDts (Just d)) = map snd idsDts ++ [d]
+subIds idsDts          = map fst idsDts
+
+subDts idsDts Nothing  = map snd idsDts
+subDts idsDts (Just d) = map snd idsDts ++ [d]
 
 compilePatterns :: Show a => [(Pattern, a)] -> DataTypeSigs -> DecisionTree a
 compilePatterns bs allSigs =
@@ -130,9 +125,9 @@ cc occs cm allSigs =
                               (specialize c cm) allSigs)
                      | c <- Set.toList hctors] in
       if isSignature hctors allSigs
-        then DT_Switch o1 (noDefault caselist)
+        then DT_Switch o1 caselist Nothing
         else let ad = cc orest (defaultMatrix cm) allSigs in
-             DT_Switch o1 (caselist `withDefault` ad)
+             DT_Switch o1 caselist (Just ad)
     else
       let o' = swapOcc i occs in
       let m' = swapCol i cm   in
@@ -150,9 +145,6 @@ firstRow (ClauseMatrix []) = error "precondition violated for firstRow helper!"
 headCtor (SP_Wildcard  ) = []
 headCtor (SP_Variable _) = []
 headCtor (SP_Ctor c   _) = [c]
-
-noDefault   caselist    = SwitchCase caselist Nothing
-withDefault caselist ad = SwitchCase caselist (Just ad)
 
 columnNumWithNonTrivialPattern cm =
   loop cm 0 where
