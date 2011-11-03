@@ -8,16 +8,16 @@
 #include "llvm/Support/IRBuilder.h"
 #include "llvm/Intrinsics.h"
 
-#include "base/LLVMUtils.h"
+#include "base/LLVMUtils.h" // for str(const TypeAST*)
 
-#include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
-#include "parse/ParsingContext.h"
 
 #include "pystring/pystring.h"
 
 #include <vector>
 #include <sstream>
+
+using std::string;
 
 using namespace llvm;
 
