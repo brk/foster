@@ -26,8 +26,6 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/raw_os_ostream.h"
 
-////////////////////////////////////////////////////////////////////
-
 #include "base/Assert.h"
 #include "base/LLVMUtils.h"
 #include "base/TimingsRepository.h"
@@ -48,12 +46,31 @@ namespace foster {
 
 using std::string;
 
+void printUsage () {
+  llvm::raw_ostream& o = llvm::outs();
+  o << "Synopsis:";
+  o << "\n  fosteroptc <input> <out.{s,o,obj}>";
+  o << "\n        runs optimization passes and emits native code";
+  o << "\n                                      -cleanup-only";
+  o << "\n        runs cleanup and warning LLVM passes, but";
+  o << "\n        does not run any optimizations or emit any native code.";
+  o << "\n";
+}
+
+void printVersionInfo() {
+  llvm::outs() << "Foster version: " << FOSTER_VERSION_STR;
+  llvm::outs() << ", compiled: " << __DATE__ << " at " << __TIME__ << "\n";
+  cl::PrintVersionMessage();
+}
+
+const char kDefaultOutputExtension[] = ".s";
+
 static cl::opt<string>
 optInputPath(cl::Positional, cl::desc("<input file.bc/ll>"));
 
 static cl::opt<string>
 optOutputName("o",
-  cl::desc("[foster] Output file; with no extension, writes <out>.s"));
+  cl::desc("[foster] Output file, with optional extension {s,o,obj}, default 's'"));
 
 static string gOutputNameBase;
 
@@ -79,12 +96,6 @@ optOptimizeZero("O0",
 
 static cl::list<const PassInfo*, bool, PassNameParser>
 cmdLinePassList(cl::desc("Optimizations available:"));
-
-void printVersionInfo() {
-  llvm::outs() << "Foster version: " << FOSTER_VERSION_STR;
-  llvm::outs() << ", compiled: " << __DATE__ << " at " << __TIME__ << "\n";
-  cl::PrintVersionMessage();
-}
 
 void setTimingDescriptions() {
   using foster::gTimings;
@@ -185,6 +196,14 @@ void optimizeModuleAndRunPasses(Module* mod) {
   passes.run(*mod);
 }
 
+int fdFlagsForObjectType(TargetMachine::CodeGenFileType filetype) {
+  int flags = 0;
+  if (filetype == TargetMachine::CGFT_ObjectFile) {
+    flags |= raw_fd_ostream::F_Binary;
+  }
+  return flags;
+}
+
 void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
   TargetMachine::CodeGenFileType filetype = TargetMachine::CGFT_ObjectFile;
   if (pystring::endswith(filename, ".s")) {
@@ -224,18 +243,15 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
   tm->setAsmVerbosityDefault(true);
 
   PassManager passes;
+  // Use specific target data if available, else generic target data.
   if (const TargetData* td = tm->getTargetData()) {
     passes.add(new TargetData(*td));
   } else {
     passes.add(new TargetData(mod));
   }
 
-  int flags = 0;
-  if (filetype == TargetMachine::CGFT_ObjectFile) {
-    flags |= raw_fd_ostream::F_Binary;
-  }
-
-  llvm::raw_fd_ostream raw_out(filename.c_str(), err, flags);
+  llvm::raw_fd_ostream raw_out(filename.c_str(), err,
+                               fdFlagsForObjectType(filetype));
   ASSERT(err.empty()) << "Error when opening file to print output to:\n\t"
                       << err;
 
@@ -274,6 +290,8 @@ void setDefaultCommandLineOptions() {
   llvm::NoFramePointerElim = true;
 }
 
+// Postcondition: gOuptutNameBase is the output name with no extension;
+//                  optOuptutName is the output name with extension.
 void calculateOutputNames() {
   ASSERT(optOutputName != "");
 
@@ -284,7 +302,7 @@ void calculateOutputNames() {
     gOutputNameBase = string(optOutputName.begin(), optOutputName.end() - 4);
   } else {
     gOutputNameBase = optOutputName;
-    optOutputName = optOutputName + ".s";
+    optOutputName = optOutputName + kDefaultOutputExtension;
   }
 }
 
@@ -300,6 +318,11 @@ int main(int argc, char** argv) {
 
   cl::SetVersionPrinter(&printVersionInfo);
   cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster compiler backend (LLVM optimization)\n");
+
+  if (optOutputName == "") {
+    printUsage();
+    return 1;
+  }
 
   foster::initializeLLVM();
   calculateOutputNames();
