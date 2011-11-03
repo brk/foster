@@ -24,13 +24,17 @@ and use only the naive leftmost-outermost-first column selection
 heuristic.
 -}
 
-data Show a =>
-   DecisionTree a = DT_Fail
-                  | DT_Leaf   a  [(Ident, Occurrence)]
-                  | DT_Switch Occurrence
-                              [(CtorId, DecisionTree a)]
-                                (Maybe (DecisionTree a))
-                  deriving (Show)
+data Show a
+    => DecisionTree a
+    =  DT_Fail
+    |  DT_Leaf
+                a              -- The expression/block id to evaluate/jump to.
+                [(Ident, Occurrence)] -- Subterms of scrutinee to bind in leaf.
+    |  DT_Switch
+                         Occurrence   -- Subterm of scrutinee to switch on.
+                [(CtorId, DecisionTree a)] -- Map of ctors to decision trees.
+                  (Maybe (DecisionTree a)) -- Default decision tree, if any.
+    deriving (Show)
 
 -- Avoiding all these type parameters is actually a
 -- pretty good use case for parameterized modules!
