@@ -16,13 +16,12 @@ class TypeAST;
 class FnTypeAST;
 class TupleTypeAST;
 
-// Converts t1 (t2, t3)   to  t1 (i8*, t2, t3)
-FnTypeAST* genericClosureVersionOf(const FnTypeAST* fn);
+// Converts t1 (t2, t3) to { t1 (i8*, t2, t3)*, i8* }.
+// FnTypeASTs marked as closures use this to calculate their type.
+TupleTypeAST* genericClosureTypeFor(const FnTypeAST* ty);
 
-// converts t1 (t2, t3) to { t1 (i8*, t2, t3)*, i8* }
-TupleTypeAST* genericClosureTypeFor(const TypeAST* ty);
-
-// Checks that ty == { i32 (i8*, ...)*, i8* }
+// Checks that ty == { i32 (i8*, ...)*, i8* }.
+// Used when emitting type maps.
 bool isGenericClosureType(const llvm::Type* ty);
 
 #endif

@@ -38,22 +38,17 @@ FnTypeAST* genericClosureVersionOf(const FnTypeAST* fnty) {
 }
 
 // converts      t1 (t2, t3)      to { t1 (i8*, t2, t3)*, i8* }
-TupleTypeAST* genericClosureTypeFor(const TypeAST* ty) {
-  if (const FnTypeAST* fnty = dynamic_cast<const FnTypeAST*>(ty)) {
-    TypeAST* envType = RefTypeAST::get(TypeAST::i(8));
+TupleTypeAST* genericClosureTypeFor(const FnTypeAST* fnty) {
+  TypeAST* envType = RefTypeAST::get(TypeAST::i(8));
 
-    // We can mark closures with whatever calling convention we want,
-    // since closures are internal by definition.
-    FnTypeAST* newProcTy = genericClosureVersionOf(fnty);
-    std::vector<TypeAST*> cloTypes;
-    cloTypes.push_back(newProcTy);
-    cloTypes.push_back(envType);
-    TupleTypeAST* cloTy = TupleTypeAST::get(cloTypes);
-    return cloTy;
-  } else {
-    foster::EDiag() << "unable to extract fn type from " << str(const_cast<TypeAST*>(ty)) << "\n";
-    return NULL;
-  }
+  // We can mark closures with whatever calling convention we want,
+  // since closures are internal by definition.
+  FnTypeAST* newProcTy = genericClosureVersionOf(fnty);
+  std::vector<TypeAST*> cloTypes;
+  cloTypes.push_back(newProcTy);
+  cloTypes.push_back(envType);
+  TupleTypeAST* cloTy = TupleTypeAST::get(cloTypes);
+  return cloTy;
 }
 
 bool isValidClosureType(const llvm::Type* ty) {
