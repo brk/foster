@@ -60,6 +60,11 @@ const llvm::Type* slotType(llvm::Value* v) {
   return v->getType()->getContainedType(0);
 }
 
+inline
+llvm::Value* emitNonVolatileLoad(llvm::Value* v, const llvm::Twine& name) {
+  return builder.CreateLoad(v, false, name);
+}
+
 llvm::Value* emitStore(llvm::Value* val,
                        llvm::Value* ptr) {
   if (val->getType()->isVoidTy()) {
@@ -92,8 +97,7 @@ llvm::Value* emitStoreWithCast(llvm::Value* val,
 
 llvm::Value* CodegenPass::autoload(llvm::Value* v) {
   if (this->needsImplicitLoad.count(v) == 1) {
-    return builder.CreateLoad(v, /*isVolatile=*/ false,
-                              v->getName() + ".autoload");
+    return emitNonVolatileLoad(v, v->getName() + ".autoload");
   } else return v;
 }
 
@@ -166,7 +170,7 @@ llvm::Value* LLAppCtor::codegen(CodegenPass* pass) {
   LLAllocate a(ty, this->ctorId.smallId, yesUnboxed, NULL,
                LLAllocate::MEM_REGION_GLOBAL_HEAP);
   llvm::Value* obj_slot = a.codegen(pass);
-  llvm::Value* obj = builder.CreateLoad(obj_slot);
+  llvm::Value* obj = emitNonVolatileLoad(obj_slot, "obj");
 
   EDiag() << "LLAppCtor " << dt->getName() << " :: " << str(dt->getLLVMType());
   copyValuesToStruct(codegenAll(pass, this->args), obj);
@@ -499,8 +503,7 @@ llvm::Value* LLAlloc::codegen(CodegenPass* pass) {
   llvm::Value* ptrSlot   = pass->emitMalloc(this->baseVar->type->getLLVMType(),
                                             foster::bogusCtorId(-4));
   llvm::Value* storedVal = pass->emit(baseVar, NULL);
-  llvm::Value* ptr       = builder.CreateLoad(ptrSlot, /*isVolatile=*/ false,
-                                              "alloc_slot_ptr");
+  llvm::Value* ptr       = emitNonVolatileLoad(ptrSlot, "alloc_slot_ptr");
   emitStore(storedVal, ptr);
   return ptrSlot;
 }
@@ -510,9 +513,7 @@ llvm::Value* LLDeref::codegen(CodegenPass* pass) {
   // a[i] should codegen to &a[i], the address of the slot in the array.
   // r    should codegen to the contents of the slot (the ref pointer value),
   //        not the slot address.
-  return builder.CreateLoad(pass->emit(base, NULL),
-                            /*isVolatile=*/ false,
-                            "");
+  return builder.CreateLoad(pass->emit(base, NULL));
 }
 
 llvm::Value* LLStore::codegen(CodegenPass* pass) {
@@ -663,8 +664,7 @@ llvm::Value* LLClosure::codegenClosure(
     // // { code*, env* }**
     llvm::AllocaInst* clo_slot = pass->emitMalloc(genericClosureStructTy(fnty),
                                                   foster::bogusCtorId(-5));
-    clo = builder.CreateLoad(clo_slot, /*isVolatile=*/ false,
-                                         varname + ".closure"); rv = clo_slot;
+    clo = emitNonVolatileLoad(clo_slot, varname + ".closure"); rv = clo_slot;
   } else { // { code*, env* }*
     clo = CreateEntryAlloca(cloStructTy, varname + ".closure"); rv = clo;
   }
@@ -1059,7 +1059,7 @@ llvm::Value* LLArrayRead::codegen(CodegenPass* pass) {
   Value* base = pass->emit(this->base , NULL);
   Value* idx  = pass->emit(this->index, NULL);
   Value* slot = getArraySlot(base, idx, pass);
-  Value* val  = builder.CreateLoad(slot, /*isVolatile=*/ false);
+  Value* val  = builder.CreateLoad(slot);
   return ensureImplicitStackSlot(val, pass);
 }
 
@@ -1244,7 +1244,7 @@ llvm::Value* LLTuple::codegen(CodegenPass* pass) {
   // Otherwise, bad things happen.
   llvm::Value* pt = allocator->isStackAllocated()
            ? slot
-           : builder.CreateLoad(slot, "normalize");
+           : emitNonVolatileLoad(slot, "normalize");
   codegenTo(pass, pt);
   return slot;
 }
