@@ -138,22 +138,54 @@ computeBlocks expr idmaybe k = do
             cfgAddMiddle (ILetFuns ids $ funs)
             computeBlocks e idmaybe k
 
+        -- Cases are translated very straightforwardly here; we put off
+        -- fancier pattern match compilation for later. Giving each arm's
+        -- expression a label here conveniently prevents code duplication
+        -- during match compilation.
+        --
+        -- A case expression of overall type t, such as
+        --
+        --      case scrutinee of p1 -> e1
+        --                     of p2 -> e2 ...
+        --
+        -- gets translated into (the moral equivalent of)
+        --
+        --      case_slot = alloca t                        ;
+        --      case scrutinee of p1 -> goto case_arm1
+        --                     of p2 -> goto case_arm2 ...  ;
+        --      case_value = load case_slot
+        --  case_arm1:
+        --      ev = [[e1]]; store ev in case_slot; goto case_cont
+        --  case_arm2:
+        --      ev = [[e2]]; store ev in case_slot; goto case_cont
+        --  ...
+        --  case_cont:
+        --      ...
+        --
+        -- The one point this glosses over is how the variables bound by
+        -- p1 become visible in the translation of e1. Currently this is
+        -- done by some magic in LLCodegen, but it should be represented
+        -- more explicitly.
         KNCase t v bs -> do
             case_cont <- cfgFresh "case_cont"
             slotvar <- freshVar (PtrTypeIL t) "case_slot"
             let slot = ILAllocate (ILAllocInfo t MemRegionStack Nothing False)
             cfgAddMiddle (ILetVal (tidIdent slotvar) slot)
 
+            -- Compute the new block ids, along with their patterns.
             bbs <- mapM (\(pat, _) -> do block_id <- cfgFresh "case_arm"
                                          return $ (pat, block_id)) bs
             cfgEndWith (CFCase t v bbs)
 
+            -- For each arm, fill in the arm's block as
+            --     [[e]] stored in slotvar; goto case_cont
             let computeCaseBlocks ((_pat, e), (_, block_id)) = do
                     cfgNewBlock block_id
                     computeBlocks e Nothing (\var -> cfgMidStore var slotvar)
                     cfgEndWith (CFBr case_cont)
             mapM_ computeCaseBlocks (zip bs bbs)
 
+            -- The overall value of the case is the value stored in the slot.
             cfgNewBlock case_cont
             cfgAddLet idmaybe (ILDeref slotvar) t >>= k
 
