@@ -288,6 +288,7 @@ bool typesEq(const llvm::Type* t1, const llvm::Type* t2) {
 }
 
 bool isPointerToType(const llvm::Type* p, const llvm::Type* t) {
+  // Use == instead of typesEq to avoid bottomless mutual recursion.
   return p->isPointerTy() && (t == p->getContainedType(0));
 }
 

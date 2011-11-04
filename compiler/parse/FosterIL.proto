@@ -189,16 +189,15 @@ message CoroPrim {
 
 message DecisionTree {
   enum Tag {
-    DT_FAIL = 16;
-    DT_LEAF = 17;
-    DT_SWAP = 18;
-    DT_SWITCH = 19;
+    DT_FAIL = 2;
+    DT_LEAF = 3;
+    DT_SWITCH = 4;
   }
   required Tag          tag        = 1;
-  optional PbSwitchCase switchcase = 4;
-  optional string       leaf_action = 7;
-  repeated string       leaf_idents = 8;
-  repeated PbOccurrence leaf_idoccs = 9;
+  optional PbSwitchCase switchcase = 5;
+  optional string       leaf_action = 6;
+  repeated string       leaf_idents = 7;
+  repeated PbOccurrence leaf_idoccs = 8;
 }
 
 message PbSwitchCase {

@@ -891,10 +891,6 @@ void DecisionTree::codegenDecisionTree(CodegenPass* pass,
     builder.CreateBr(bb);
     break;
 
-  case DecisionTree::DT_SWAP:
-    ASSERT(false) << "Should not have DT_SWAP nodes at codegen!";
-  // end DT_SWAP
-
   case DecisionTree::DT_SWITCH:
     sc->codegenSwitch(pass, scrutinee, ctx);
     break;

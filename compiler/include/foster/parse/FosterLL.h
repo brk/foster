@@ -345,17 +345,16 @@ typedef std::pair<std::string, Occurrence*> DTBinding;
 
 struct DecisionTree {
   enum Tag {
-    DT_FAIL, DT_LEAF, DT_SWAP, DT_SWITCH
+    DT_FAIL, DT_LEAF, DT_SWITCH
   } tag;
   TypeAST* type;
   std::vector<DTBinding> binds; std::string action_block_id;
   SwitchCase* sc;
-  DecisionTree(Tag t)            : tag(t), type(NULL), sc(NULL) {}
-  DecisionTree(Tag t, std::vector<DTBinding> binds, std::string b_id)
-                                 : tag(t), type(NULL), binds(binds),
-                                           action_block_id(b_id), sc(NULL) {}
-  DecisionTree(Tag t, SwitchCase* sc)
-                                 : tag(t), type(NULL), sc(sc) {}
+  DecisionTree() : tag(DT_FAIL), type(NULL), sc(NULL) {}
+  DecisionTree(std::vector<DTBinding> binds, std::string b_id)
+                 : tag(DT_LEAF), type(NULL), binds(binds),
+                                      action_block_id(b_id), sc(NULL) {}
+  DecisionTree(SwitchCase* sc) : tag(DT_SWITCH), type(NULL), sc(sc) {}
   void codegenDecisionTree(CodegenPass* pass, llvm::Value* scrutinee,
                            CaseContext* ctx);
 };

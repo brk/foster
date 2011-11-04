@@ -308,21 +308,16 @@ DecisionTree* parseDecisionTree(const pb::DecisionTree& dt) {
 
   switch (dt.tag()) {
   case pb::DecisionTree::DT_FAIL:
-     return new DecisionTree(DecisionTree::DT_FAIL);
+     return new DecisionTree();
   case pb::DecisionTree::DT_LEAF:
     for (int i = 0; i < dt.leaf_idents_size(); ++i) {
       binds.push_back(DTBinding(
                         dt.leaf_idents(i),
                         parseOccurrence(dt.leaf_idoccs(i))));
     }
-    return new DecisionTree(DecisionTree::DT_LEAF,
-                            binds,
-                            dt.leaf_action());
-  case pb::DecisionTree::DT_SWAP:
-    ASSERT(false) << "Shouldn't be codegenning DT_SWAP nodes!";
+    return new DecisionTree(binds, dt.leaf_action());
   case pb::DecisionTree::DT_SWITCH:
-    SwitchCase* sc = parseSwitchCase(dt.switchcase());
-    return new DecisionTree(DecisionTree::DT_SWITCH, sc);
+    return new DecisionTree(parseSwitchCase(dt.switchcase()));
   }
   foster::EDiag() << "parseDecisionTree returning null for tag " << dt.tag();
   return NULL;
