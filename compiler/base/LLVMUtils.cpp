@@ -277,17 +277,13 @@ bool isFunctionPointerTy(const llvm::Type* p) {
       && p->getContainedType(0)->isFunctionTy();
 }
 
-bool isVoidOrUnit(const llvm::Type* ty) {
-  return ty->isVoidTy() || isUnit(ty);
-}
-
 bool isUnit(const llvm::Type* ty) {
   return ty == llvm::PointerType::getUnqual(
             llvm::Type::getInt8Ty(getGlobalContext()));
 }
 
 // Syntactically conspicuous
-bool typesEqual(const llvm::Type* t1, const llvm::Type* t2) {
+bool typesEq(const llvm::Type* t1, const llvm::Type* t2) {
   return (t1 == t2) || (isUnit(t1) && isUnit(t2));
 }
 
@@ -295,61 +291,9 @@ bool isPointerToType(const llvm::Type* p, const llvm::Type* t) {
   return p->isPointerTy() && (t == p->getContainedType(0));
 }
 
-// returns true if p == t**
-bool isPointerToPointerToType(const llvm::Type* p, const llvm::Type* t) {
-  return p->isPointerTy() && isPointerToType(p->getContainedType(0), t);
-}
-
 void storeNullPointerToSlot(llvm::Value* slot) {
   foster::builder.CreateStore(
     llvm::ConstantPointerNull::getNullValue(slot->getType()->getContainedType(0)),
     slot, /*isVolatile=*/ false);
 }
-
-struct Nominalizer::Impl {
-  std::map<const llvm::Type*, int> nomCount;
-  std::map<const llvm::Type*, bool> isNomTag;
-  std::map<int,const llvm::StructType*> tagCache;
-
-  const llvm::StructType* nominalize(const llvm::Type* ty) {
-    int n = nomCount[ty];
-    ++nomCount[ty];
-    return makeNominal(ty, n);
-  }
-
-  const llvm::StructType* nomTag(int n) {
-    if (n == -1) {
-      return StructType::get(getGlobalContext(), false);
-    }
-
-    if (!tagCache[n]) {
-      std::vector<const Type*> arg;
-      arg.push_back(nomTag(n - 1));
-      tagCache[n] = llvm::StructType::get(getGlobalContext(), arg, false);
-      isNomTag[tagCache[n]] = true;
-    }
-    return tagCache[n];
-  }
-
-  const llvm::StructType* makeNominal(const llvm::Type* ty, int n) {
-    std::vector<const Type*> arg;
-    arg.push_back(ty);
-    arg.push_back(nomTag(n));
-    return StructType::get(getGlobalContext(), arg, false);
-  }
-
-  const llvm::Type* denominalize(const llvm::StructType* sty) {
-    ASSERT(isNominalized(sty));
-    return sty->getContainedType(0);
-  }
-
-  bool isNominalized(const llvm::StructType* sty) {
-    ASSERT(sty->getNumContainedTypes() == 2);
-    return isNomTag[sty->getContainedType(1)];
-  }
-};
-
-const llvm::StructType* Nominalizer::nominalize(const llvm::Type* t )  { return impl->nominalize(t); }
-const llvm::Type* Nominalizer::denominalize(const llvm::StructType* t) { return impl->denominalize(t); }
-bool Nominalizer::isNominalized(const llvm::StructType* t)       { return impl->isNominalized(t); }
 

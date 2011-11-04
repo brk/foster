@@ -68,27 +68,13 @@ bool isFunctionPointerTy(const llvm::Type* p);
 // returns true if p == t*
 bool isPointerToType(const llvm::Type* p, const llvm::Type* t);
 
-// returns true if p == t**
-bool isPointerToPointerToType(const llvm::Type* p, const llvm::Type* t);
-
-bool isVoidOrUnit(const llvm::Type* ty);
 bool isUnit(const llvm::Type* ty);
-bool typesEqual(const llvm::Type* t1, const llvm::Type* t2);
+bool typesEq(const llvm::Type* t1, const llvm::Type* t2);
 
 llvm::ConstantInt* getConstantInt64For(int64_t val);
 llvm::ConstantInt* getConstantInt32For(int32_t val);
 llvm::ConstantInt* getConstantInt8For(int8_t val);
 
 void storeNullPointerToSlot(llvm::Value* slot);
-
-class Nominalizer {
-public:
-  const llvm::StructType* nominalize(const llvm::Type*);
-  const llvm::Type* denominalize(const llvm::StructType*);
-  bool isNominalized(const llvm::StructType*);
-private:
-  struct Impl;
-   Impl* impl;
-};
 
 #endif

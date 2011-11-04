@@ -112,7 +112,7 @@ llvm::Value* CodegenPass::emit(LLExpr* e, TypeAST* expectedType) {
 
   if (expectedType) {
     const llvm::Type* ty = getLLVMType(expectedType);
-    if (!typesEqual(v->getType(), ty)) {
+    if (!typesEq(v->getType(), ty)) {
       ASSERT(false) << "********* expected type " << str(ty)
                            << "; had type " << str(v->getType())
                            << "\n for value " << str(v);
