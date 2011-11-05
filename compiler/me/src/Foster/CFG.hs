@@ -46,13 +46,13 @@ cfgComputeCFG :: Fn KNExpr TypeIL -> CFG CFFn
 cfgComputeCFG fn = do
   u0 <- gets cfgUniq
   let cfgState = internalComputeCFG u0 fn
-  cfgPutUniq (cfgUniq cfgState + 1)
+  cfgPutUniq $ cfgUniq cfgState + 1
   return $ extractFunction cfgState fn
 
 -- A helper for the CFG functions above, to run computeBlocks.
 internalComputeCFG :: Int -> Fn KNExpr TypeIL -> CFGState
 internalComputeCFG uniq fn =
-  let preblock = (Left $ "postalloca" , []) in
+  let preblock = (Left "postalloca" , []) in
   let state0 = CFGState uniq (Just preblock) [] in
   execState runComputeBlocks state0
   where
@@ -74,7 +74,12 @@ extractFunction st fn =
         entryId [] = error $ "can't get entry block id from empty list!"
         entryId (bb:_) = id where (id, _, _) = splitBasicBlock bb
 
-freshVar t name = do id <- cfgFreshId name ; return $ TypedId t id
+cfgFreshSlotVar :: TypeIL -> String -> CFG AIVar
+cfgFreshSlotVar t n = do
+    id <- cfgFreshId n
+    let slot = ILAllocate (ILAllocInfo t MemRegionStack Nothing False)
+    cfgAddMiddle (ILetVal id slot)
+    return $ TypedId (PtrTypeIL t) id
 
 -- computeBlocks takes an expression and a contination,
 -- which determines what to do with the let-bound result of the expression.
@@ -85,20 +90,18 @@ computeBlocks expr idmaybe k = do
         -- slot = undef; if v then v_a = [[a]]; slot := v_a;
         --                    else v_b = [[b]]; slot := v_b;
         -- slot^
-        KNIf t v a b      -> do
+        KNIf t v a b -> do
             [ifthen, ifelse, ifcont] <- mapM cfgFresh
                                                ["if_then", "if_else", "if_cont"]
-            slotvar <- freshVar (PtrTypeIL t) "if_slot"
-            let slot = ILAllocate (ILAllocInfo t MemRegionStack Nothing False)
-            cfgAddMiddle (ILetVal (tidIdent slotvar) slot)
+            slotvar <- cfgFreshSlotVar t "if_slot"
             cfgEndWith (CFIf t v ifthen ifelse)
 
             cfgNewBlock ifthen
-            computeBlocks a Nothing (\var -> cfgMidStore var slotvar)
+            computeBlocks a Nothing $ \var -> cfgMidStore var slotvar
             cfgEndWith (CFBr ifcont)
 
             cfgNewBlock ifelse
-            computeBlocks b Nothing (\var -> cfgMidStore var slotvar)
+            computeBlocks b Nothing $ \var -> cfgMidStore var slotvar
             cfgEndWith (CFBr ifcont)
 
             cfgNewBlock ifcont
@@ -110,11 +113,11 @@ computeBlocks expr idmaybe k = do
             cfgEndWith (CFBr until_test)
 
             cfgNewBlock until_test
-            computeBlocks a Nothing (\var ->
-              cfgEndWith (CFIf (typeKN a) var until_cont until_body))
+            computeBlocks a Nothing $ \var -> cfgEndWith (CFIf (typeKN a) var
+                                                          until_cont until_body)
 
             cfgNewBlock until_body
-            computeBlocks b Nothing (\_var -> cfgEndWith (CFBr until_test))
+            computeBlocks b Nothing $ \_var -> cfgEndWith (CFBr until_test)
 
             cfgNewBlock until_cont
             cfgAddLet idmaybe (ILTuple []) (TupleTypeIL []) >>= k
@@ -130,7 +133,7 @@ computeBlocks expr idmaybe k = do
             -- Because we want the result from processing expr to be let-bound
             -- to an identifier of our choosing (rather than the sub-call's
             -- choosing, that is), we provide it explicitly as idmaybe.
-            computeBlocks bexp (Just id) (\_var -> return ())
+            computeBlocks bexp (Just id) $ \_var -> return ()
             computeBlocks cont idmaybe k
 
         KNLetFuns ids fns e -> do
@@ -167,21 +170,19 @@ computeBlocks expr idmaybe k = do
         -- done by some magic in LLCodegen, but it should be represented
         -- more explicitly.
         KNCase t v bs -> do
+            slotvar <- cfgFreshSlotVar t "case_slot"
             case_cont <- cfgFresh "case_cont"
-            slotvar <- freshVar (PtrTypeIL t) "case_slot"
-            let slot = ILAllocate (ILAllocInfo t MemRegionStack Nothing False)
-            cfgAddMiddle (ILetVal (tidIdent slotvar) slot)
 
             -- Compute the new block ids, along with their patterns.
             bbs <- mapM (\(pat, _) -> do block_id <- cfgFresh "case_arm"
                                          return $ (pat, block_id)) bs
+
             cfgEndWith (CFCase t v bbs)
 
-            -- For each arm, fill in the arm's block as
-            --     [[e]] stored in slotvar; goto case_cont
+            -- Fill in each arm's block with [[e]] (and a store at the end).
             let computeCaseBlocks ((_pat, e), (_, block_id)) = do
                     cfgNewBlock block_id
-                    computeBlocks e Nothing (\var -> cfgMidStore var slotvar)
+                    computeBlocks e Nothing $ \var -> cfgMidStore var slotvar
                     cfgEndWith (CFBr case_cont)
             mapM_ computeCaseBlocks (zip bs bbs)
 
@@ -290,14 +291,9 @@ cfgEndWith last = do
             put (old { cfgPreBlock     = Nothing
                      , cfgAllBlocks    = newblock : (cfgAllBlocks old) })
 
+-- For all a, CFG a is a UniqueMonad. GHC barfed on trying to use CFG directly.
 instance UniqueMonad (State CFGState) where
   freshUnique = cfgNewUniq >>= (return . intToUnique)
-
-substFn id var fn =
-  let ids = map tidIdent (fnVars fn) in
-  if id `elem` ids
-    then error $ "knSubstFn found re-bound id " ++ show id
-    else fn { fnBody = (knSubst id var (fnBody fn)) }
 
 knVarSubst id v1 v2 = if id == tidIdent v2 then v1 else v2
 
@@ -309,7 +305,7 @@ knSubst id var expr =
     KNTuple vs -> KNTuple (map substV vs)
     KNBool _                -> expr
     KNInt _t _              -> expr
-    KNVar v                 -> KNVar (substV v)
+    KNVar v                 -> KNVar        (substV v)
     KNCall t v vs           -> KNCall     t (substV v) (map substV vs)
     KNCallPrim t prim vs    -> KNCallPrim t prim       (map substV vs)
     KNAppCtor t ctor vs     -> KNAppCtor  t ctor       (map substV vs)
@@ -332,6 +328,12 @@ knSubst id var expr =
                         then error $ "knSubst found re--bound id " ++ show id
                         else KNLetFuns ids (map (substFn id var) fns) (substE e)
 
+substFn id var fn =
+  let ids = map tidIdent (fnVars fn) in
+  if id `elem` ids
+    then error $ "knSubstFn found re-bound id " ++ show id
+    else fn { fnBody = (knSubst id var (fnBody fn)) }
+
 instance NonLocal Insn where
   entryLabel (ILabel (_,l)) = l
   successors (ILast last) =
@@ -351,10 +353,10 @@ splitBasicBlock g =
       (bs, _, _) -> error $ "splitBasicBlock has wrong # of ids: " ++ show bs
     where
   split :: Insn e x -> SplitBasicBlockIntermediate -> SplitBasicBlockIntermediate
-  split _n@(ILabel   b ) (bs, ms, ls) = (b:bs, ms, ls)
-  split  n@(ILetVal  {}) (bs, ms, ls) = (bs, n:ms, ls)
-  split  n@(ILetFuns {}) (bs, ms, ls) = (bs, n:ms, ls)
-  split  n@(ILast    {}) (bs, ms, ls) = (bs, ms, n:ls)
+  split   (ILabel   b ) (bs, ms, ls) = (b:bs,   ms,   ls)
+  split i@(ILetVal  {}) (bs, ms, ls) = (  bs, i:ms,   ls)
+  split i@(ILetFuns {}) (bs, ms, ls) = (  bs, i:ms,   ls)
+  split i@(ILast    {}) (bs, ms, ls) = (  bs,   ms, i:ls)
 
 -- We'll accumulate all the first & last nodes from the purported
 -- basic block, but the final result must have only one first & last node.

@@ -112,12 +112,19 @@ lambdaLift f freeVars = do
     let liftedProcVars = freeVars ++ fnVars f
     ilmPutProc (closureConvertedProc liftedProcVars f newbody)
 
+-- blockGraph is a Hoopl util function. As mentioned in CFG.hs,
+-- we use Graphs instead of Blocks (as provided by Hoopl)
+-- for representing basic blocks because they're easier to build.
+basicBlock hooplBlock = blockGraph hooplBlock
+
+-- We serialize a basic block graph by computing a depth-first search
+-- starting from the graph's entry block.
 closureConvertBlocks :: BasicBlockGraph -> ILM [ILBlock]
 closureConvertBlocks bbg =
-  let blockGraphs = map blockGraph $
-                      preorder_dfs $ mkLast (ILast (CFBr $ bbgEntry bbg))
-                                      |*><*| bbgBody bbg
-   in mapM closureConvertBlock blockGraphs
+  let cfgBlocks = map basicBlock $
+                    preorder_dfs $ mkLast (ILast (CFBr $ bbgEntry bbg))
+                                                   |*><*| bbgBody bbg
+   in mapM closureConvertBlock cfgBlocks
   where
     closureConvertBlock :: BasicBlock -> ILM ILBlock
     closureConvertBlock bb = do
