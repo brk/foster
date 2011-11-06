@@ -250,15 +250,13 @@ void codegenBlocks(std::vector<LLBlock*> blocks, CodegenPass* pass,
   }
 }
 
-typedef std::map<std::vector<int>, TupleTypeAST*> CtorTypes;
 struct BlockBindings {
   CaseContext* ctx;
-  CtorTypes ctab;
   std::vector<DTBinding> binds;
   llvm::Value* scrutinee;
 };
 
-llvm::Value* lookupOccs(Occurrence* occ, llvm::Value* v, CtorTypes& ctab);
+llvm::Value* lookupOccs(CodegenPass* pass, Occurrence* occ, llvm::Value* v);
 llvm::AllocaInst*
 getStackSlotForOcc(Occurrence* occ, llvm::Value* v,
                    CaseContext* ctx, CodegenPass* pass);
@@ -285,7 +283,7 @@ void LLBlock::codegenBlock(CodegenPass* pass) {
       CaseContext* ctx = bindings->ctx;
 
       //EDiag() << "looking up occs for " << bind.first; bb->getParent()->dump();
-      Value* v = lookupOccs(bind.second, bindings->scrutinee, bindings->ctab);
+      Value* v = lookupOccs(pass, bind.second, bindings->scrutinee);
       Value* v_slot = getStackSlotForOcc(bind.second, v, ctx, pass);
       trySetName(v_slot, "pat_" + bind.first + "_slot");
       EDiag() << "implicitly inserting " << bind.first << " = " << str(v_slot);
@@ -336,7 +334,6 @@ void LLCondBr::codegenTerminator(CodegenPass* pass) {
 }
 
 struct CaseContext {
-  std::map<std::vector<int>, TupleTypeAST*>     ctab;
   std::map<std::vector<int>, llvm::AllocaInst*> ctorSlotMap;
 };
 
@@ -838,27 +835,41 @@ getStackSlotForOcc(Occurrence* occ, llvm::Value* v,
   return slot;
 }
 
-llvm::Value* lookupOccs(Occurrence* occ, llvm::Value* v, CtorTypes& ctab) {
+TupleTypeAST* maybeGetCtorStructType(CodegenPass* pass, CtorId c) {
+  DataTypeAST* dt = pass->isKnownDataType[c.typeName];
+  return (dt) ? getDataCtorType(dt->getCtor(c.smallId)) : NULL;
+}
+
+llvm::Value* lookupOccs(CodegenPass* pass, Occurrence* occ, llvm::Value* v) {
   ASSERT(occ != NULL);
   const std::vector<int>& occs = occ->offsets;
+  const std::vector<CtorId>& ctors = occ->ctors;
+  ASSERT(ctors.size() == occs.size());
+
   llvm::Value* rv = v;
+
+      std::stringstream ss; ss << "occ(";
+      for (size_t i = 0; i < occs.size(); ++i) {
+        ss << occs[i] << ":";
+        ss << ctors[i].ctorName << "::";
+      }
+      ss << ")--";
+
+      emitFakeComment(ss.str());
 
   std::vector<int> currentOccs;
 
-  // If we know that the subterm at this position was created with
-  // a particular data constructor, emit a cast to that ctor's type.
-  if (TupleTypeAST* tupty = ctab[currentOccs]) {
-    rv = builder.CreateBitCast(rv, tupty->getLLVMType());
-  }
-
   for (size_t i = 0; i < occs.size(); ++i) {
+    // If we know that the subterm at this position was created with
+    // a particular data constructor, emit a cast to that ctor's type.
+    if (TupleTypeAST* tupty = maybeGetCtorStructType(pass, ctors[i])) {
+      rv = builder.CreateBitCast(rv, tupty->getLLVMType());
+    }
+
     llvm::Constant* idx = getConstantInt32For(occs[i]);
     rv = getElementFromComposite(rv, idx, "switch_insp");
 
     currentOccs.push_back(occs[i]);
-    if (TupleTypeAST* tupty = ctab[currentOccs]) {
-      rv = builder.CreateBitCast(rv, tupty->getLLVMType());
-    }
   }
 
   return rv;
@@ -880,7 +891,6 @@ void DecisionTree::codegenDecisionTree(CodegenPass* pass,
     if (!pass->blockBindings[this->action_block_id]) {
       BlockBindings* bindings = new BlockBindings;
       bindings->ctx       = ctx;
-      bindings->ctab      = ctx->ctab;
       bindings->binds     = binds;
       bindings->scrutinee = scrutinee;
       pass->blockBindings[this->action_block_id] = bindings;
@@ -911,6 +921,15 @@ void addAndEmitTo(Function* f, BasicBlock* bb) {
   builder.SetInsertPoint(bb);
 }
 
+ConstantInt* maybeGetTagForCtorId(CodegenPass* pass, const CtorId& c) {
+  DataTypeAST* dt = pass->isKnownDataType[c.typeName];
+
+  if (dt) {                           return getConstantInt8For(c.smallId);
+  } else if (c.typeName == "Bool") {  return builder.getInt1(c.smallId);
+  } else if (c.typeName == "Int32") { return getConstantInt32For(c.smallId);
+  } else { return NULL; }
+}
+
 void SwitchCase::codegenSwitch(CodegenPass* pass,
                                llvm::Value* scrutinee,
                                CaseContext* ctx) {
@@ -922,18 +941,9 @@ void SwitchCase::codegenSwitch(CodegenPass* pass,
     defaultBB = BasicBlock::Create(getGlobalContext(), "case_default");
   }
 
-  // All the ctors should have the same data type, now that we have at least
-  // one ctor, check if it's associated with a data type we know of.
-  DataTypeAST* dt = pass->isKnownDataType[ctors[0].typeName];
-
   // Special-case codegen for when there's only one
   // possible case, to avoid superfluous branches.
   if (trees.size() == 1 && !defaultCase) {
-    if (dt) {
-      TupleTypeAST* tupty = getDataCtorType(
-                            dt->getCtor(ctors[0].smallId));
-      ctx->ctab[this->occ->offsets] = tupty;
-    }
     trees[0]->codegenDecisionTree(pass, scrutinee, ctx);
     return;
   }
@@ -946,7 +956,11 @@ void SwitchCase::codegenSwitch(CodegenPass* pass,
   BasicBlock* defOrContBB = defaultBB ? defaultBB : bbNoDefault;
 
   // Fetch the subterm of the scrutinee being inspected.
-  llvm::Value* inspected = lookupOccs(this->occ, scrutinee, ctx->ctab);
+  llvm::Value* inspected = lookupOccs(pass, this->occ, scrutinee);
+
+  // All the ctors should have the same data type, now that we have at least
+  // one ctor, check if it's associated with a data type we know of.
+  DataTypeAST* dt = pass->isKnownDataType[ctors[0].typeName];
 
   // If we're looking at a data type, emit code to get the ctor tag,
   // instead of switching on the pointer value directly.
@@ -956,40 +970,26 @@ void SwitchCase::codegenSwitch(CodegenPass* pass,
   llvm::SwitchInst* si = builder.CreateSwitch(inspected, defOrContBB, ctors.size());
   Function *F = builder.GetInsertBlock()->getParent();
 
+  // Add cases to the switch for each arm.
   for (size_t i = 0; i < ctors.size(); ++i) {
     CtorId c = ctors[i];
-    ConstantInt* onVal = NULL;
-    TupleTypeAST* tupty = NULL;
+    if (ConstantInt* onVal = maybeGetTagForCtorId(pass, c)) {
+      // Emit the code for the branch expression,
+      // ending with a branch to the end of the case-expr.
+      std::stringstream ss; ss << "casetest_" << i;
+      BasicBlock* destBB = BasicBlock::Create(getGlobalContext(), ss.str());
+      addAndEmitTo(F, destBB);
+      trees[i]->codegenDecisionTree(pass, scrutinee, ctx);
 
-    // Compute the "tag" associated with this branch.
-    // Also, if needed, we shall bitcast the scrutinee (for data types)
-    // from an unknown to a specific ctor-associated type in order to perform
-    // further case discrimination.
-    if (dt) {
-      tupty = getDataCtorType(dt->getCtor(c.smallId));
-      ctx->ctab[this->occ->offsets] = tupty;
-      onVal = getConstantInt8For(c.smallId);
-    } else if (c.typeName == "Bool") {
-      onVal = builder.getInt1(c.smallId);
-    } else if (c.typeName == "Int32") {
-      onVal = getConstantInt32For(c.smallId);
+      ASSERT(si->getCondition()->getType() == onVal->getType())
+          << "had different types for inspected value and switch case tag";
+
+      si->addCase(onVal, destBB);
     } else {
       ASSERT(false) << "SwitchCase ctor " << (i+1) << "/" << ctors.size()
              << ": " << c.typeName << "." << c.ctorName << "#" << c.smallId
              << "\n" << str(scrutinee)  << "::" << str(scrutinee->getType());
     }
-
-    // Emit the code for the branch expression,
-    // ending with a branch to the end of the case-expr.
-    std::stringstream ss; ss << "casetest_" << i;
-    BasicBlock* destBB = BasicBlock::Create(getGlobalContext(), ss.str());
-    addAndEmitTo(F, destBB);
-    trees[i]->codegenDecisionTree(pass, scrutinee, ctx);
-
-    ASSERT(inspected->getType() == onVal->getType())
-        << "switch case and inspected value had different types!";
-    si->addCase(onVal, destBB);
-    //if (tupty) { ctx->ctab.erase(this->occ->offsets); }
   }
 
   if (defaultCase) {

@@ -214,7 +214,8 @@ message PbCtorId {
 }
 
 message PbOccurrence {
-  repeated int32 occ_offset = 1;
+  repeated int32    occ_offset = 1;
+  repeated PbCtorId occ_ctorid = 2;
 }
 
 message Decl {

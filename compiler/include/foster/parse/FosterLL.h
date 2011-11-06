@@ -329,6 +329,7 @@ struct DecisionTree;
 
 struct Occurrence {
   std::vector<int> offsets;
+  std::vector<CtorId> ctors;
 };
 
 struct CaseContext;

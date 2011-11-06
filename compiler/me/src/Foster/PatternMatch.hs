@@ -41,7 +41,10 @@ data Show a
 data Show a =>
      Action a   = Action     a          deriving (Show)
 
-type Occurrence = [Int]
+-- A pair (n, c) in an occurrence means "field n of the struct type for ctor c".
+type FieldOfCtor = (Int, CtorId)
+type Occurrence = [FieldOfCtor]
+
 type ClauseCol  = [SPattern]
 data Show a =>
      ClauseMatrix a = ClauseMatrix [ClauseRow a] deriving Show
@@ -98,8 +101,8 @@ compilePatterns bs allSigs =
 computeBindings :: (Occurrence, SPattern) -> [(Ident, Occurrence)]
 computeBindings ( occ, SP_Variable i) = [(i, occ)]
 computeBindings (_occ, SP_Wildcard  ) = []
-computeBindings ( occ, SP_Ctor _ pats) =
-  let occs = expand occ (Prelude.length pats) in
+computeBindings ( occ, SP_Ctor cid pats) =
+  let occs = expand occ cid (Prelude.length pats) in
   concatMap computeBindings (zip occs pats)
 
 -- "Compilation is defined by cases as follows."
@@ -125,7 +128,7 @@ cc occs cm allSigs =
       let c = cm `column` i in
       let hctors = Set.fromList (concat $ map headCtor c) in
       let (o1:orest) = occs in
-      let caselist = [ (c, cc (expand o1 (ctorArity c) ++ orest)
+      let caselist = [ (c, cc (expand o1 c (ctorArity c) ++ orest)
                               (specialize c cm) allSigs)
                      | c <- Set.toList hctors] in
       if isSignature hctors allSigs
@@ -156,7 +159,7 @@ columnNumWithNonTrivialPattern cm =
                 then loop cm (n + 1)
                 else n
 
-expand occ a = [occ ++ [n] | n <- [0 .. a - 1]]
+expand occ cid a = [occ ++ [(n, cid)] | n <- [0 .. a - 1]]
 
 specialize ctor (ClauseMatrix rows) =
   ClauseMatrix [specializeRow row ctor | row <- rows

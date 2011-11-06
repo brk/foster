@@ -334,8 +334,10 @@ dumpCtorId (CtorId s n _a i) =
                     , PbCtorId.ctor_ctor_name = u8fromString n
                     , PbCtorId.ctor_local_id  = intToInt32 i }
 
-dumpOcc offs =
-    P'.defaultValue { PbOccurrence.occ_offset = fromList $ map intToInt32 offs }
+dumpOcc offsCtorIds =
+    let (offs, ids) = unzip offsCtorIds in
+    P'.defaultValue { PbOccurrence.occ_offset = fromList $ map intToInt32 offs
+                    , PbOccurrence.occ_ctorid = fromList $ map dumpCtorId ids }
 
 -----------------------------------------------------------------------
 
