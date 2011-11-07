@@ -1,0 +1,58 @@
+main = {
+  expect_i32 6;
+  print_i32 (len (ones 6));
+/*
+  expect_i32 0;
+  print_i32 (ex2 (Nil:[B32] !));
+
+  expect_i32 1;
+  print_i32 (ex2 (Cons (B32 0) (Nil:[B32] !)));
+
+  expect_i32 2;
+  print_i32 (ex2 (Cons (B32 0) (Cons (B32 1) (Nil:[B32] !))));
+*/
+};
+
+// one :: Int32 -> ListB32
+ones = { n : Int32 =>
+  if n ==Int32 0
+   then NilB32 !
+   else ConsB32 (B32 n) (ones (n -Int32 1))
+  end
+};
+
+//ones = { n : Int32 =>
+//  if n ==Int32 0
+//   then Nil !
+//   else Cons n (ones (n -Int32 1))
+//  end
+//};
+
+// occ [] switched on, both subtrees are leaves
+/*
+ex2 = { forall a,
+        z : List a =>
+  case z
+    of $Nil                -> 0
+    of $Cons x ($Cons y z) -> 2
+    of $Cons x ($Nil)      -> 1
+  end
+};
+*/
+
+len = { z : ListB32 =>
+  case z
+    of $NilB32       -> 0
+    of $ConsB32 n ns -> 1 +Int32 (len ns)
+  end
+};
+
+type
+case B32
+  of $B32 Int32
+;
+
+type case ListB32
+  of $NilB32
+  of $ConsB32 B32 ListB32
+;
