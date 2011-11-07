@@ -27,11 +27,12 @@ emptyTypeSubst = Map.empty
 ----------------------
 
 -- extractSubstTypes :: [MetaTyVar] -> TypeSubst -> Tc [TypeAST]
-extractSubstTypes metaVars tysub rng = do
+extractSubstTypes metaVars tysub _rng = do
     mapM lookup metaVars where
-         lookup (Meta uniq _ desc) =
-               fromMaybe (tcFails [out $ "Subst map missing key: " ++ desc
-                                                   ++ highlightFirstLine rng])
+         lookup m@(Meta uniq _ _desc) =
+               fromMaybe (return $ MetaTyVar m)
+                         --(tcFails [out $ "Subst map missing key: " ++ desc
+                         --                          ++ highlightFirstLine rng])
                          (fmap return $ Map.lookup uniq tysub)
 
 instance Eq TypeAST where
@@ -68,16 +69,16 @@ tySubst :: TypeSubst -> TypeAST -> TypeAST
 tySubst subst ty =
     let q = tySubst subst in
     case ty of
-        MetaTyVar (Meta u _tyref _) -> Map.findWithDefault ty u subst
-        PrimIntAST   {}             -> ty
-        TyVarAST     {}             -> ty
-        TyConAppAST  nm tys         -> TyConAppAST  nm (map q tys)
-        RefTypeAST    t             -> RefTypeAST   (q t)
-        ArrayTypeAST  t             -> ArrayTypeAST (q t)
-        TupleTypeAST types          -> TupleTypeAST (map q types)
-        FnTypeAST s t cc cs         -> FnTypeAST   (q s) (q t) cc cs
-        CoroTypeAST s t             -> CoroTypeAST (q s) (q t)
-        ForAllAST tvs rho           -> ForAllAST tvs (q rho)
+        MetaTyVar (Meta u _ _) -> Map.findWithDefault ty u subst
+        PrimIntAST   {}        -> ty
+        TyVarAST     {}        -> ty
+        TyConAppAST  nm tys    -> TyConAppAST  nm (map q tys)
+        RefTypeAST    t        -> RefTypeAST   (q t)
+        ArrayTypeAST  t        -> ArrayTypeAST (q t)
+        TupleTypeAST types     -> TupleTypeAST (map q types)
+        FnTypeAST s t cc cs    -> FnTypeAST   (q s) (q t) cc cs
+        CoroTypeAST s t        -> CoroTypeAST (q s) (q t)
+        ForAllAST tvs rho      -> ForAllAST tvs (q rho)
 
 -------------------------------------------------
 
@@ -92,7 +93,12 @@ tcUnifyMoreTypes tys1 tys2 constraints tysub =
 
 tcUnifyLoop :: [TypeConstraint] -> TypeSubst -> Tc UnifySoln
 tcUnifyLoop [] tysub = return $ Just tysub
+
+tcUnifyLoop ((TypeConstrEq (PrimIntAST I32) (PrimIntAST I32)):constraints) tysub
+  = tcUnifyLoop constraints tysub
+
 tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
+  --tcLift $ putStrLn ("tcUnifyLoop: t1 = " ++ show t1 ++ "; t2 = " ++ show t2)
   case (t1, t2) of
     ((PrimIntAST n1), (PrimIntAST n2)) ->
       if n1 == n2 then tcUnifyLoop constraints tysub
@@ -153,11 +159,25 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                 ,out $ "t1::", showStructure t1, out $ "t2::", showStructure t2]
 
 tcUnifyVar :: MetaTyVar -> TypeAST -> TypeSubst -> [TypeConstraint] -> Tc UnifySoln
-tcUnifyVar (Meta uniq _tyref _) ty tysub constraints =
-    let tysub' = (Map.insert uniq ty tysub) in
+
+-- Ignore attempts to unify a meta type variable with itself.
+tcUnifyVar m1 (MetaTyVar m2) tysub constraints | metaTyVarsEqual m1 m2
+  = tcUnifyLoop constraints tysub
+
+tcUnifyVar (Meta uniq _ _) ty tysub constraints = do
+    --tcLift $ putStrLn $ "================ Unifying meta var " ++ show uniq ++ " with " ++ show ty
+    let tysub' = (Map.insert uniq ty tysub)
     tcUnifyLoop (tySubstConstraints constraints (Map.singleton uniq ty)) tysub'
       where
         tySubstConstraints constraints tysub = map tySub constraints
           where q = tySubst tysub
                 tySub (TypeConstrEq t1 t2) = TypeConstrEq (q t1) (q t2)
+
+metaTyVarsEqual (Meta u1 r1 d1) (Meta u2 r2 d2) =
+  case (u1 == u2, r1 == r2) of
+       (True,  True)  -> True
+       (False, False) -> False
+       _ -> error $ "Malformed meta type variables "
+                      ++ show u1 ++ "@" ++ d1 ++ " and "
+                      ++ show u2 ++ "@" ++ d2 ++ ": mismatch between uniqs and refs!"
 

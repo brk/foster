@@ -12,6 +12,7 @@ namespace foster {
 void runCleanupPasses(llvm::Module& mod) {
   llvm::FunctionPassManager fpasses(&mod);
   fpasses.add(foster::createImathImproverPass());
+  // TODO: tailduplicate, simplifycfg?
   foster::runFunctionPassesOverModule(fpasses, &mod);
 
   llvm::PassManager passes;

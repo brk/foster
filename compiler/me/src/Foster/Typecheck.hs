@@ -132,10 +132,6 @@ typecheckVar ctx rng name =
                                  ++ "ctx: "++ show (contextBindings ctx)
                                  ++ "\nhist: " , msg]
 -----------------------------------------------------------------------
-notRecursive boundName expr =
-  not (boundName `elem` freeVars expr && isFnAST expr)
-        where   isFnAST (E_FnAST _) = True
-                isFnAST _           = False
 
 -- First typecheck the bound expression, then typecheck the
 -- scoped expression in an extended context.
@@ -150,6 +146,12 @@ typecheckLet ctx rng (TermBinding v a) e mt = do
     ctx' <- extendContext ctx [TypedId (typeAST ea) id] Nothing
     ee <- typecheck ctx' e mt
     return (AnnLetVar rng id ea ee)
+  where
+    notRecursive boundName expr =
+            not (boundName `elem` freeVars expr && isFnAST expr)
+                  where   isFnAST (E_FnAST _) = True
+                          isFnAST _           = False
+
 -----------------------------------------------------------------------
 
 {-
@@ -242,31 +244,38 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
   abranches <- forM branches checkBranch
   return $ AnnCase rng (MetaTyVar m) ascrutinee abranches
 
+-----------------------------------------------------------------------
+
 varbind id ty = TermVarBinding (identPrefix id) (TypedId ty id)
 
 emptyContext :: Context ty
 emptyContext = Context [] [] True []
 
+-----------------------------------------------------------------------
+
+-- Recursively match a pattern against a type and extract the (typed)
+-- binders introduced by the pattern.
 extractPatternBindings :: Pattern -> TypeAST -> Tc [ContextBinding TypeAST]
 
 extractPatternBindings (P_Wildcard _   ) _  = return []
 extractPatternBindings (P_Variable _ id) ty = return [varbind id ty]
 
+-- TODO shouldn't ignore the _ty here -- bug when ctors from different types listed.
 extractPatternBindings (P_Ctor _ pats (CtorId _ ctorName _ _)) _ty = do
-  CtorInfo _ (DataCtor _ _smallId types) <- getCtorInfoForCtor (T.pack ctorName)
+  CtorInfo _ (DataCtor _ _ types) <- getCtorInfoForCtor (T.pack ctorName)
   bindings <- sequence [extractPatternBindings p t | (p, t) <- zip pats types]
   return $ concat bindings
 
 extractPatternBindings (P_Bool r v) ty = do
   _ae <- typecheck emptyContext (E_BoolAST r v) (Just ty)
   -- literals don't bind anything, but we still need to check
-  -- that we dont' try matching e.g. a bool against an int.
+  -- that we do not try matching e.g. a bool against an int.
   return []
 
 extractPatternBindings (P_Int r litint) ty = do
   _ae <- typecheck emptyContext (E_IntAST r (litIntText litint)) (Just ty)
   -- literals don't bind anything, but we still need to check
-  -- that we dont' try matching e.g. a bool against an int.
+  -- that we do not try matching e.g. a bool against an int.
   return []
 
 extractPatternBindings (P_Tuple _rng [p]) ty = extractPatternBindings p ty
@@ -452,7 +461,7 @@ genUnificationVarsLike spine namegen = do
 --
 typecheckCall :: Context TypeAST -> SourceRange
               -> ExprAST -> ExprAST -> Maybe TypeAST -> Tc AnnExpr
-typecheckCall ctx rng base args _maybeExpTy = do
+typecheckCall ctx rng base args maybeExpTy = do
    -- Do we infer a plain function type or a forall type?
    -- For now, we just punt and act in inference rather than checking mode.
    -- But we'd like to propagate more information down, by saying something
@@ -463,8 +472,9 @@ typecheckCall ctx rng base args _maybeExpTy = do
    eb <- typecheck ctx base expectedLambdaType
    case typeAST eb of
       (ForAllAST ktyvars rho) -> do
-         let (FnTypeAST rhoArgType _ _ _) = rho
-         -- Example:         rhoargtype =   ('a -> 'b)
+         -- eb ::[[??]] ea
+         let (FnTypeAST argType retType _ _) = rho
+         -- Example:            argtype =   ('a -> 'b)
          -- base has type ForAll ['a 'b]   (('a -> 'b) -> (Coro 'a 'b))
          -- The forall-bound vars won't unify with concrete types in the term arg,
          -- so we replace the forall-bound vars with unification variables
@@ -475,33 +485,49 @@ typecheckCall ctx rng base args _maybeExpTy = do
          -- and then extract the types from unification
          -- to use as type arguments.
 
-         -- Generate unification vars corresponding to the bound type variables
+         -- Generate unification vars                 (?a, ?b)
+         -- corresponding to the bound type variables ('a, 'b).
          unificationVars <- genUnificationVarsLike ktyvars
                                 (\n -> "type parameter " ++ vname base n)
+
          let tyvarsAndMetavars = (List.zip (tyvarsOf ktyvars)
                                           (map MetaTyVar unificationVars))
 
-         -- (?a -> ?b)
-         let unifiableArgType = parSubstTy tyvarsAndMetavars rhoArgType
+         -- Convert ('a -> 'b) to (?a -> ?b).
+         let unifiableArgType = parSubstTy tyvarsAndMetavars argType
+         let unifiableRetType = parSubstTy tyvarsAndMetavars retType
 
-         -- Type check the args, unifying them
-         -- with the expected arg type
+         -- Type check the args, unifying them with the expected arg type.
          ea@(AnnTuple eargs) <- typecheck ctx args (Just $ unifiableArgType)
 
          -- TODO should this be equateTypes instead of tcUnifyTypes?
-         unificationResults <- tcUnifyTypes unifiableArgType (typeAST ea)
+         --tcLift $ putStrLn ("unifying: " ++ show unifiableArgType)
+         --tcLift $ putStrLn ("   w ith: " ++ show (typeAST ea))
+         --tcLift $ putStrLn ("     and: " ++ show unifiableRetType)
+         --tcLift $ putStrLn ("   w ith: " ++ show maybeExpTy)
+         --tcLift $ putStrLn ""
+
+         unificationResults <- unifyFun unifiableArgType unifiableRetType
+                                        (typeAST ea)     maybeExpTy
          case unificationResults of
            Nothing -> tcFails [out $ "Failed to determine type arguments to apply!" ++ show rng]
            Just tysub -> do
-             -- Suppose typeAST ea = (t1 -> t2):
+             -- Suppose the argument to the call has typeAST ea = (t1 -> t2):
              -- ((?a -> ?b) -> (Coro ?a ?b))
              let unifiableRhoType = parSubstTy tyvarsAndMetavars rho
               -- ((t1 -> t2) -> (Coro t1 t2))
              let substitutedFnType = tySubst tysub unifiableRhoType
              -- eb[tyProjTypes]::substitutedFnType
 
+             --tcLift $ putStrLn ("typeAST eb: " ++ show (typeAST eb))
+             --tcLift $ putStrLn ("substitutedFnType: " ++ show substitutedFnType)
+             --tcLift $ putStrLn ("_maybeExpTy: " ++ show maybeExpTy)
+             --tcLift $ putStrLn ("tysub: " ++ show tysub)
+
              tyProjTypes <- extractSubstTypes unificationVars tysub rng
+             --tcLift $ putStrLn ("tcTyProjTypes: " ++ show tyProjTypes)
              let annTyApp = E_AnnTyApp rng substitutedFnType eb (minimalTupleAST tyProjTypes)
+             --tcLift $ putStrLn ("annTyApp: " ++ show annTyApp)
              typecheckCallWithBaseFnType eargs annTyApp (typeAST annTyApp) rng
 
       -- (typeAST eb) ==
@@ -510,7 +536,7 @@ typecheckCall ctx rng base args _maybeExpTy = do
             typecheckCallWithBaseFnType eargs eb fnty rng
 
       m@(MetaTyVar (Meta _ _ desc)) -> do
-            tcLift $ putStrLn ("typecheckCall ctx rng base args _maybeExpTy: " ++ show _maybeExpTy)
+            tcLift $ putStrLn ("typecheckCall ctx rng base args _maybeExpTy: " ++ show maybeExpTy)
             AnnTuple eargs <- typecheck ctx args Nothing
 
             ft <- newTcUnificationVar $ "ret type for " ++ desc
@@ -523,6 +549,10 @@ typecheckCall ctx rng base args _maybeExpTy = do
 
       _ -> tcFails [out $ "Called expression had unexpected type: "
                           ++ show (typeAST eb) ++ highlightFirstLine rng]
+
+unifyFun expArg _actRet actArg Nothing       = tcUnifyTypes expArg actArg
+unifyFun expArg  actRet actArg (Just expRet) = tcUnifyTypes (TupleTypeAST [expArg, actRet])
+                                                            (TupleTypeAST [actArg, expRet])
 
 mkFuncTy a r = FnTypeAST a r FastCC FT_Func
 -----------------------------------------------------------------------
@@ -609,16 +639,15 @@ getUniquelyNamedFormals rng rawFormals fnProtoName = do
 
 -----------------------------------------------------------------------
 
--- terrible, no good, very bad hack: we shouldn't just discard the meta ty var!
-typecheckTuple ctx rng exprs (Just (MetaTyVar _)) =
- typecheckTuple ctx rng exprs Nothing
-
-typecheckTuple ctx rng exprs Nothing                  = tcTuple ctx rng exprs [Nothing | _ <- exprs]
-typecheckTuple ctx rng exprs (Just (TupleTypeAST ts)) = tcTuple ctx rng exprs (map Just ts)
-
-typecheckTuple _ctx _rng es (Just ty)
-    = tcFails [out $ "typecheck: tuple (" ++ show es ++ ") "
-                ++ "cannot check against non-tuple type " ++ show ty]
+typecheckTuple ctx rng exprs maybeExpectedType =
+  case maybeExpectedType of
+     Nothing                -> tcTuple ctx rng exprs [Nothing | _ <- exprs]
+     Just (TupleTypeAST ts) -> tcTuple ctx rng exprs (map Just ts)
+     Just m@(MetaTyVar {} ) -> do tctup <- typecheckTuple ctx rng exprs Nothing
+                                  equateTypes m (typeAST tctup) (Just $ highlightFirstLine rng)
+                                  return tctup
+     Just ty -> tcFails [out $ "typecheck: tuple (" ++ show exprs ++ ") "
+                            ++ "cannot check against non-tuple type " ++ show ty]
 
 tcTuple ctx rng es ts = do
     exprs <- typecheckExprsTogether ctx es ts
