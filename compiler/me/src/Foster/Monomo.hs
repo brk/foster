@@ -57,7 +57,14 @@ monomorphize (ILProgram procdefmap decls datatypes lines) =
                 addMonosAndGo procdefmap = do
                      addInitialMonoTasksAndGo (Map.elems procdefmap)
 
+-- A proc with type (forall a, a -> a) is not monomorphic,
+-- and neither is a proc with type Bool -> (forall a, a -> a).
 isMono procdef = isNothing (ilProcPolyTyVars procdef)
+              && isMonoTy  (ilProcReturnType procdef)
+
+isMonoTy (ForAllIL {}) = False
+isMonoTy t = all isMonoTy $ childrenOf t
+
 kUnknownPointerType = PtrTypeIL $ PrimIntIL IUnknown
 
 addInitialMonoTasksAndGo procdefs = do
