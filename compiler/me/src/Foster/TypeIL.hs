@@ -140,3 +140,9 @@ instance Structured TypeIL where
             TyVarIL        _tv     -> []
             ArrayTypeIL     ty     -> [ty]
             PtrTypeIL       ty     -> [ty]
+
+fnReturnType f@(FnTypeIL {}) = fnTypeILRange f
+fnReturnType (ForAllIL _ f@(FnTypeIL {})) = fnTypeILRange f
+fnReturnType other = error $
+    "Unexpected non-function type in fnReturnType: " ++ show other
+

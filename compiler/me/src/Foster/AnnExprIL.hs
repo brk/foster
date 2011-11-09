@@ -9,12 +9,15 @@ module Foster.AnnExprIL (AIExpr(..), fnOf) where
 import Data.Map as Map(lookup)
 
 import Foster.Base
+import Foster.Kind
 import Foster.Context
 import Foster.AnnExpr
 import Foster.TypeIL
 import Foster.TypeAST(gFosterPrimOpsTable, TypeAST(TupleTypeAST))
 
 import qualified Data.Text as T
+
+import Control.Monad(when)
 
 -- AnnExprIL defines a copy of AnnExpr, annotated with TypeIL
 -- instead of TypeAST. This lets us structurally enforce the
@@ -129,7 +132,7 @@ ail ae =
                        -- v[types](args) ~~>> let <fresh> = v[types] in <fresh>(args)
                        [vti, oti, appti] <- mapM ilOf [vty, ot, appty]
                        let primVar = TypedId vti id
-                       let call = AICall ti (E_AIPrim $ ILNamedPrim primVar) argsi
+                       call <- return $ AICall ti (E_AIPrim $ ILNamedPrim primVar) argsi
                        let primName = identPrefix id
                        x <- tcFreshT $ "appty_" `prependedTo` primName
                        return $ AILetVar x (E_AITyApp oti (E_AIVar primVar) appti) call
@@ -158,9 +161,23 @@ ilPrimFor ti id =
 aiVar (TypedId t i) = do ty <- ilOf t
                          return $ TypedId ty i
 
+containsUnboxedPolymorphism :: TypeIL -> Bool
+containsUnboxedPolymorphism (ForAllIL ktvs rho) =
+  any isUnboxedKind ktvs || containsUnboxedPolymorphism rho
+    where isUnboxedKind (_, kind) = kind == KindAnySizeType
+
+containsUnboxedPolymorphism ty = any containsUnboxedPolymorphism $ childrenOf ty
+
 fnOf :: AnnFn -> Tc (Fn AIExpr TypeIL)
 fnOf f = do
     ft <- ilOf (annFnType f)
+    -- Ensure that the types resulting from function calls don't make
+    -- dubious claims of supporting unboxed polymorphism.
+    when (containsUnboxedPolymorphism (fnReturnType ft)) $
+       tcFails [out $ "Returning an unboxed-polymorphic value from "
+                   ++ show (annFnIdent f) ++ "? Inconceivable!"
+               ,out $ "Try using boxed polymorphism instead."]
+
     fnVars <- mapM aiVar (annFnVars f)
     fnFreeVars <- mapM aiVar (annFnFreeVars f)
     body <- ail (annFnBody f)

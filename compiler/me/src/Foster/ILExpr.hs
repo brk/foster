@@ -186,11 +186,6 @@ closureOfKnFn infoMap (self_id, fn) = do
     fakeCloVar id = TypedId fakeCloEnvType id
                       where fakeCloEnvType = TupleTypeIL []
 
-    fnReturnType f@(FnTypeIL {}) = fnTypeILRange f
-    fnReturnType (ForAllIL _ f@(FnTypeIL {})) = fnTypeILRange f
-    fnReturnType other = error $
-        "Unexpected non-function type in fnReturnType: " ++ show other
-
     -- This is where the magic happens: given a function and its free variables,
     -- we create a procedure which also takes an extra (strongly-typed) env ptr
     -- argument. The new body does case analysis to bind the free variable names
