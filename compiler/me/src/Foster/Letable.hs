@@ -6,8 +6,8 @@
 
 module Foster.Letable (Letable(..)) where
 
-import Foster.Base(LiteralInt, CtorId)
-import Foster.TypeIL(AIVar, ILPrim, ILAllocInfo, TypeIL)
+import Foster.Base(LiteralInt, CtorId, AllocInfo)
+import Foster.TypeIL(AIVar, ILPrim, TypeIL)
 
 -- The reason we have both ILAllocate and ILAlloc is that
 -- LLCodegen performs auto-loads from stack slots, which
@@ -22,7 +22,7 @@ data Letable =
         | ILCall        TypeIL AIVar  [AIVar]
         | ILAppCtor     TypeIL CtorId [AIVar]
         -- Stack/heap slot allocation
-        | ILAllocate    ILAllocInfo
+        | ILAllocate    (AllocInfo TypeIL)
         -- Mutable ref cells
         | ILAlloc       AIVar
         | ILDeref       AIVar

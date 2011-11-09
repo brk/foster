@@ -30,14 +30,15 @@ import Foster.Base
 import Foster.CFG
 import Foster.Fepb.SourceModule(SourceModule)
 import Foster.ProtobufFE(parseSourceModule)
-import Foster.ProtobufIL(dumpModuleToProtobufIL)
+import Foster.ProtobufIL(dumpMonoModuleToProtobuf)
 import Foster.ExprAST
 import Foster.TypeAST
 import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn), AnnFn,
                       fnNameA, annFnType, annFnIdent)
 import Foster.AnnExprIL(AIExpr, fnOf)
 import Foster.TypeIL(TypeIL, ilOf)
-import Foster.ILExpr(closureConvertAndLift, showProgramStructure, ILProgram)
+import Foster.ILExpr(closureConvertAndLift)
+import Foster.MonoExpr(MonoProgram, showMonoProgramStructure)
 import Foster.KNExpr(kNormalizeModule)
 import Foster.Typecheck
 import Foster.Context
@@ -309,9 +310,9 @@ main = do
                               , ccFlagVals = flagVals
                               , ccUnique   = uniqref
                          }
-        dumpModuleToProtobufIL monoprog outfile
+        dumpMonoModuleToProtobuf monoprog outfile
 
-compile :: SourceModule -> Compiled ILProgram
+compile :: SourceModule -> Compiled MonoProgram
 compile pb_module =
     (return $ parseSourceModule pb_module)
      >>= typecheckSourceModule
@@ -337,7 +338,9 @@ typecheckSourceModule sm = do
             showGeneratedMetaTypeVariables varlist ctx_il
             return (ai_mod, ctx_il)
 
-lowerModule :: ModuleIL AIExpr TypeIL -> Context TypeIL -> Compiled ILProgram
+lowerModule :: ModuleIL AIExpr TypeIL
+            -> Context TypeIL
+            -> Compiled MonoProgram
 lowerModule ai_mod ctx_il = do
      let kmod = kNormalizeModule ai_mod ctx_il
 
@@ -353,7 +356,7 @@ lowerModule ai_mod ctx_il = do
 
      whenVerbose $ do
          runOutput $ (outLn "/// Monomorphized program =============")
-         runOutput $ showProgramStructure monoprog
+         runOutput $ showMonoProgramStructure monoprog
          runOutput $ (outLn "^^^ ===================================")
 
      maybeInterpretKNormalModule kmod

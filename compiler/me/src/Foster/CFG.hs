@@ -17,8 +17,9 @@ module Foster.CFG
 , CFFn
 ) where
 
-import Foster.Base(Uniq, Fn(..), TypedId(..), Ident(..), identPrefix, Pattern(..))
-import Foster.TypeIL(TypeIL(..), AIVar, ILAllocInfo(..), AllocMemRegion(..))
+import Foster.Base(Uniq, Fn(..), AllocInfo(..), AllocMemRegion(..),
+                   TypedId(..), Ident(..), identPrefix, Pattern(..))
+import Foster.TypeIL(TypeIL(..), AIVar)
 import Foster.KNExpr(KNExpr(..), typeKN)
 import Foster.Letable(Letable(..))
 
@@ -77,7 +78,7 @@ extractFunction st fn =
 cfgFreshSlotVar :: TypeIL -> String -> CFG AIVar
 cfgFreshSlotVar t n = do
     id <- cfgFreshId n
-    let slot = ILAllocate (ILAllocInfo t MemRegionStack Nothing False)
+    let slot = ILAllocate (AllocInfo t MemRegionStack Nothing False)
     cfgAddMiddle (ILetVal id slot)
     return $ TypedId (PtrTypeIL t) id
 

@@ -99,7 +99,8 @@ data ProcOrFunc = FT_Proc | FT_Func deriving (Show)
 data VarNamespace = VarProc | VarLocal deriving (Show)
 
 data TyVar = BoundTyVar String -- bound by a ForAll, that is
-           | SkolemTyVar String Uniq deriving (Eq)
+           | SkolemTyVar String Uniq
+             deriving (Eq, Ord)
 
 class Expr a where
     freeVars   :: a -> [T.Text]
@@ -354,11 +355,21 @@ instance (Show ty) => Show (TypedId ty)
   where show (TypedId ty id) = show id ++ " :: " ++ show ty
 
 data Show ty => FosterPrim ty
-               = ILNamedPrim (TypedId ty)
-               | ILPrimOp { ilPrimOpName :: String
-                          , ilPrimOpSize :: Int }
-               | ILCoroPrim  CoroPrim ty ty
+               = NamedPrim (TypedId ty)
+               | PrimOp { ilPrimOpName :: String
+                        , ilPrimOpSize :: Int }
+               | CoroPrim  CoroPrim ty ty
             deriving (Show)
 
 data CoroPrim = CoroCreate | CoroInvoke | CoroYield
             deriving (Show)
+
+data AllocMemRegion = MemRegionStack
+                    | MemRegionGlobalHeap deriving Show
+
+data AllocInfo t = AllocInfo { allocType   :: t
+                             , allocRegion :: AllocMemRegion
+                             , allocArraySize :: Maybe (TypedId t)
+                             , allocUnboxed :: Bool
+                             } deriving Show
+

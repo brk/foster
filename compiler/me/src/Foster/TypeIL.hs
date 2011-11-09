@@ -107,15 +107,6 @@ data ILDataCtor = ILDataCtor String Int (DataCtor TypeIL) deriving Show
 
 -----------------------------------------------------------------------
 
-data AllocMemRegion = MemRegionStack
-                    | MemRegionGlobalHeap deriving Show
-data ILAllocInfo = ILAllocInfo { ilAllocType   :: TypeIL
-                               , ilAllocRegion :: AllocMemRegion
-                               , ilAllocArraySize :: (Maybe AIVar)
-                               , ilAllocUnboxed :: Bool
-                               } deriving Show
-
-
 instance Structured TypeIL where
     textOf e _width =
         case e of

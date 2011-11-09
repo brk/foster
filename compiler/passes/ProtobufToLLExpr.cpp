@@ -81,13 +81,13 @@ LLVar* parseTermVar(const pb::TermVar* v) {
   return rv;
 }
 
-LLExpr* parseCoroPrim(const pb::CoroPrim& p) {
+LLExpr* parseCoroPrim(const pb::PbCoroPrim& p) {
   TypeAST* r = TypeAST_from_pb(& p.ret_type());
   TypeAST* a = TypeAST_from_pb(& p.arg_type());
   switch (p.tag()) {
-  case pb::CoroPrim::IL_CORO_INVOKE: return new LLCoroPrim("coro_invoke", r, a);
-  case pb::CoroPrim::IL_CORO_CREATE: return new LLCoroPrim("coro_create", r, a);
-  case pb::CoroPrim::IL_CORO_YIELD : return new LLCoroPrim("coro_yield",  r, a);
+  case pb::PbCoroPrim::IL_CORO_INVOKE: return new LLCoroPrim("coro_invoke", r, a);
+  case pb::PbCoroPrim::IL_CORO_CREATE: return new LLCoroPrim("coro_create", r, a);
+  case pb::PbCoroPrim::IL_CORO_YIELD : return new LLCoroPrim("coro_yield",  r, a);
   default: ASSERT(false) << "unknown coro prim tag number " << p.tag();
            return NULL;
   }
@@ -132,7 +132,7 @@ LLExpr* parseInt(const pb::Letable& e) {
 
 LLAllocate* parseAllocate(const pb::Letable& e) {
   ASSERT(e.has_alloc_info());
-  const pb::AllocInfo& a = e.alloc_info();
+  const pb::PbAllocInfo& a = e.alloc_info();
   LLVar* array_size = NULL;
 
   if (a.has_array_size()) {
@@ -141,9 +141,9 @@ LLAllocate* parseAllocate(const pb::Letable& e) {
 
   LLAllocate::MemRegion target_region = LLAllocate::MEM_REGION_STACK;
   switch (a.mem_region()) {
-  case             pb::AllocInfo::MEM_REGION_STACK:
+  case           pb::PbAllocInfo::MEM_REGION_STACK:
       target_region = LLAllocate::MEM_REGION_STACK; break;
-  case             pb::AllocInfo::MEM_REGION_GLOBAL_HEAP:
+  case           pb::PbAllocInfo::MEM_REGION_GLOBAL_HEAP:
       target_region = LLAllocate::MEM_REGION_GLOBAL_HEAP; break;
   default: ASSERT(false) << "Unknown target region for AllocInfo.";
   }

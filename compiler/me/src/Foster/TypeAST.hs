@@ -204,41 +204,41 @@ primitiveDecls =
     ] ++ (map (\(name, (ty, _op)) -> (name, ty)) $ Map.toList gFosterPrimOpsTable)
 
 gFosterPrimOpsTable = Map.fromList $
-  [(,) "not"           $ (,) (mkFnType [i1] [i1]       ) $ ILPrimOp "bitnot" 1
-  ,(,) "primitive_sext_i64_i32" $ (,) (mkFnType [i32] [i64]     ) $ ILPrimOp "sext_i64" 32
-  ,(,) "+Int64"        $ (,) (mkFnType [i64, i64] [i64]) $ ILPrimOp "+" 64
-  ,(,) "-Int64"        $ (,) (mkFnType [i64, i64] [i64]) $ ILPrimOp "-" 64
-  ,(,) "*Int64"        $ (,) (mkFnType [i64, i64] [i64]) $ ILPrimOp "*" 64
-  ,(,) "bitand-Int64"  $ (,) (mkFnType [i64, i64] [i64]) $ ILPrimOp "bitand"  64
-  ,(,) "bitor-Int64"   $ (,) (mkFnType [i64, i64] [i64]) $ ILPrimOp "bitor"   64
-  ,(,) "bitxor-Int64"  $ (,) (mkFnType [i64, i64] [i64]) $ ILPrimOp "bitxor"  64
-  ,(,) "bitshl-Int64"  $ (,) (mkFnType [i64, i64] [i64]) $ ILPrimOp "bitshl"  64
-  ,(,) "bitlshr-Int64" $ (,) (mkFnType [i64, i64] [i64]) $ ILPrimOp "bitlshr" 64
-  ,(,) "bitashr-Int64" $ (,) (mkFnType [i64, i64] [i64]) $ ILPrimOp "bitashr" 64
-  ,(,) "<Int64"        $ (,) (mkFnType [i64, i64] [i1] ) $ ILPrimOp "<"  64
-  ,(,) ">Int64"        $ (,) (mkFnType [i64, i64] [i1] ) $ ILPrimOp ">"  64
-  ,(,) "<=Int64"       $ (,) (mkFnType [i64, i64] [i1] ) $ ILPrimOp "<=" 64
-  ,(,) ">=Int64"       $ (,) (mkFnType [i64, i64] [i1] ) $ ILPrimOp ">=" 64
-  ,(,) "==Int64"       $ (,) (mkFnType [i64, i64] [i1] ) $ ILPrimOp "==" 64
-  ,(,) "!=Int64"       $ (,) (mkFnType [i64, i64] [i1] ) $ ILPrimOp "!=" 64
-  ,(,) "negate-Int64"  $ (,) (mkFnType [i64] [i64]     ) $ ILPrimOp "negate"  64
-  ,(,) "bitnot-Int64"  $ (,) (mkFnType [i64] [i64]     ) $ ILPrimOp "bitnot"  64
-  ,(,) "+Int32"        $ (,) (mkFnType [i32, i32] [i32]) $ ILPrimOp "+" 32
-  ,(,) "-Int32"        $ (,) (mkFnType [i32, i32] [i32]) $ ILPrimOp "-" 32
-  ,(,) "*Int32"        $ (,) (mkFnType [i32, i32] [i32]) $ ILPrimOp "*" 32
-  ,(,) "bitand-Int32"  $ (,) (mkFnType [i32, i32] [i32]) $ ILPrimOp "bitand"  32
-  ,(,) "bitor-Int32"   $ (,) (mkFnType [i32, i32] [i32]) $ ILPrimOp "bitor"   32
-  ,(,) "bitxor-Int32"  $ (,) (mkFnType [i32, i32] [i32]) $ ILPrimOp "bitxor"  32
-  ,(,) "bitshl-Int32"  $ (,) (mkFnType [i32, i32] [i32]) $ ILPrimOp "bitshl"  32
-  ,(,) "bitlshr-Int32" $ (,) (mkFnType [i32, i32] [i32]) $ ILPrimOp "bitlshr" 32
-  ,(,) "bitashr-Int32" $ (,) (mkFnType [i32, i32] [i32]) $ ILPrimOp "bitashr" 32
-  ,(,) "srem-Int32"    $ (,) (mkFnType [i32, i32] [i32]) $ ILPrimOp "srem" 32 -- TODO 64
-  ,(,) "<Int32"        $ (,) (mkFnType [i32, i32] [i1] ) $ ILPrimOp "<"  32
-  ,(,) ">Int32"        $ (,) (mkFnType [i32, i32] [i1] ) $ ILPrimOp ">"  32
-  ,(,) "<=Int32"       $ (,) (mkFnType [i32, i32] [i1] ) $ ILPrimOp "<=" 32
-  ,(,) ">=Int32"       $ (,) (mkFnType [i32, i32] [i1] ) $ ILPrimOp ">=" 32
-  ,(,) "==Int32"       $ (,) (mkFnType [i32, i32] [i1] ) $ ILPrimOp "==" 32
-  ,(,) "!=Int32"       $ (,) (mkFnType [i32, i32] [i1] ) $ ILPrimOp "!=" 32
-  ,(,) "negate-Int32"  $ (,) (mkFnType [i32] [i32]     ) $ ILPrimOp "negate"  32
-  ,(,) "bitnot-Int32"  $ (,) (mkFnType [i32] [i32]     ) $ ILPrimOp "bitnot"  32
+  [(,) "not"           $ (,) (mkFnType [i1] [i1]       ) $ PrimOp "bitnot" 1
+  ,(,) "primitive_sext_i64_i32" $ (,) (mkFnType [i32] [i64]     ) $ PrimOp "sext_i64" 32
+  ,(,) "+Int64"        $ (,) (mkFnType [i64, i64] [i64]) $ PrimOp "+" 64
+  ,(,) "-Int64"        $ (,) (mkFnType [i64, i64] [i64]) $ PrimOp "-" 64
+  ,(,) "*Int64"        $ (,) (mkFnType [i64, i64] [i64]) $ PrimOp "*" 64
+  ,(,) "bitand-Int64"  $ (,) (mkFnType [i64, i64] [i64]) $ PrimOp "bitand"  64
+  ,(,) "bitor-Int64"   $ (,) (mkFnType [i64, i64] [i64]) $ PrimOp "bitor"   64
+  ,(,) "bitxor-Int64"  $ (,) (mkFnType [i64, i64] [i64]) $ PrimOp "bitxor"  64
+  ,(,) "bitshl-Int64"  $ (,) (mkFnType [i64, i64] [i64]) $ PrimOp "bitshl"  64
+  ,(,) "bitlshr-Int64" $ (,) (mkFnType [i64, i64] [i64]) $ PrimOp "bitlshr" 64
+  ,(,) "bitashr-Int64" $ (,) (mkFnType [i64, i64] [i64]) $ PrimOp "bitashr" 64
+  ,(,) "<Int64"        $ (,) (mkFnType [i64, i64] [i1] ) $ PrimOp "<"  64
+  ,(,) ">Int64"        $ (,) (mkFnType [i64, i64] [i1] ) $ PrimOp ">"  64
+  ,(,) "<=Int64"       $ (,) (mkFnType [i64, i64] [i1] ) $ PrimOp "<=" 64
+  ,(,) ">=Int64"       $ (,) (mkFnType [i64, i64] [i1] ) $ PrimOp ">=" 64
+  ,(,) "==Int64"       $ (,) (mkFnType [i64, i64] [i1] ) $ PrimOp "==" 64
+  ,(,) "!=Int64"       $ (,) (mkFnType [i64, i64] [i1] ) $ PrimOp "!=" 64
+  ,(,) "negate-Int64"  $ (,) (mkFnType [i64] [i64]     ) $ PrimOp "negate"  64
+  ,(,) "bitnot-Int64"  $ (,) (mkFnType [i64] [i64]     ) $ PrimOp "bitnot"  64
+  ,(,) "+Int32"        $ (,) (mkFnType [i32, i32] [i32]) $ PrimOp "+" 32
+  ,(,) "-Int32"        $ (,) (mkFnType [i32, i32] [i32]) $ PrimOp "-" 32
+  ,(,) "*Int32"        $ (,) (mkFnType [i32, i32] [i32]) $ PrimOp "*" 32
+  ,(,) "bitand-Int32"  $ (,) (mkFnType [i32, i32] [i32]) $ PrimOp "bitand"  32
+  ,(,) "bitor-Int32"   $ (,) (mkFnType [i32, i32] [i32]) $ PrimOp "bitor"   32
+  ,(,) "bitxor-Int32"  $ (,) (mkFnType [i32, i32] [i32]) $ PrimOp "bitxor"  32
+  ,(,) "bitshl-Int32"  $ (,) (mkFnType [i32, i32] [i32]) $ PrimOp "bitshl"  32
+  ,(,) "bitlshr-Int32" $ (,) (mkFnType [i32, i32] [i32]) $ PrimOp "bitlshr" 32
+  ,(,) "bitashr-Int32" $ (,) (mkFnType [i32, i32] [i32]) $ PrimOp "bitashr" 32
+  ,(,) "srem-Int32"    $ (,) (mkFnType [i32, i32] [i32]) $ PrimOp "srem" 32 -- TODO 64
+  ,(,) "<Int32"        $ (,) (mkFnType [i32, i32] [i1] ) $ PrimOp "<"  32
+  ,(,) ">Int32"        $ (,) (mkFnType [i32, i32] [i1] ) $ PrimOp ">"  32
+  ,(,) "<=Int32"       $ (,) (mkFnType [i32, i32] [i1] ) $ PrimOp "<=" 32
+  ,(,) ">=Int32"       $ (,) (mkFnType [i32, i32] [i1] ) $ PrimOp ">=" 32
+  ,(,) "==Int32"       $ (,) (mkFnType [i32, i32] [i1] ) $ PrimOp "==" 32
+  ,(,) "!=Int32"       $ (,) (mkFnType [i32, i32] [i1] ) $ PrimOp "!=" 32
+  ,(,) "negate-Int32"  $ (,) (mkFnType [i32] [i32]     ) $ PrimOp "negate"  32
+  ,(,) "bitnot-Int32"  $ (,) (mkFnType [i32] [i32]     ) $ PrimOp "bitnot"  32
   ]

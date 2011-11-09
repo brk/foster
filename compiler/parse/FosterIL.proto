@@ -10,7 +10,7 @@ message Type {
     CARRAY = 6;
     CLOSURE = 7;
     PRIM_INT = 8;
-    FORALL_TY = 9;
+    //FORALL_TY = 9;
     TYPE_VARIABLE = 10;
     ARRAY = 11;
     DATATYPE = 12;
@@ -94,10 +94,10 @@ message Letable {
 
   optional bool   bool_value = 23;   // Bool
 
-  optional AllocInfo alloc_info = 25;
+  optional PbAllocInfo   alloc_info = 25;
   optional bool call_may_trigger_gc = 26;
 
-  optional CoroPrim     coro_prim = 29;
+  optional PbCoroPrim   coro_prim = 29;
   optional string    prim_op_name = 30;
   optional int32     prim_op_size = 31;
   optional PbCtorId       ctor_id = 32;
@@ -129,7 +129,7 @@ message TermVar {
   optional Type   typ  = 3;
 }
 
-message AllocInfo {
+message PbAllocInfo {
   enum MemRegion {
     MEM_REGION_STACK       = 1;
     MEM_REGION_GLOBAL_HEAP = 2;
@@ -176,7 +176,7 @@ message PBInt {
   required int32  bits  = 3;
 }
 
-message CoroPrim {
+message PbCoroPrim {
   enum Tag {
     IL_CORO_INVOKE = 27;
     IL_CORO_CREATE = 28;

@@ -127,12 +127,12 @@ ail ae =
                    case (coroPrimFor primName, appty) of
                      (Just coroPrim, TupleTypeAST [argty, retty]) -> do
                        [aty, rty] <- mapM ilOf [argty, retty]
-                       return $ AICall ti (E_AIPrim $ ILCoroPrim coroPrim aty rty) argsi
+                       return $ AICall ti (E_AIPrim $ CoroPrim coroPrim aty rty) argsi
                      _otherwise -> do
                        -- v[types](args) ~~>> let <fresh> = v[types] in <fresh>(args)
                        [vti, oti, appti] <- mapM ilOf [vty, ot, appty]
                        let primVar = TypedId vti id
-                       call <- return $ AICall ti (E_AIPrim $ ILNamedPrim primVar) argsi
+                       call <- return $ AICall ti (E_AIPrim $ NamedPrim primVar) argsi
                        let primName = identPrefix id
                        x <- tcFreshT $ "appty_" `prependedTo` primName
                        return $ AILetVar x (E_AITyApp oti (E_AIVar primVar) appti) call
@@ -156,7 +156,7 @@ coroPrimFor _ = Nothing
 ilPrimFor ti id =
   case Map.lookup (T.unpack $ identPrefix id) gFosterPrimOpsTable of
         Just (_ty, op) -> op
-        Nothing        -> ILNamedPrim (TypedId ti id)
+        Nothing        -> NamedPrim (TypedId ti id)
 
 aiVar (TypedId t i) = do ty <- ilOf t
                          return $ TypedId ty i

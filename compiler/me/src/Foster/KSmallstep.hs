@@ -388,11 +388,11 @@ stepExpr gs expr = do
     ICallPrim prim vs ->
         let args = map (getval gs) vs in
         case prim of
-          ILNamedPrim (TypedId _ id) ->
+          NamedPrim (TypedId _ id) ->
                           evalNamedPrimitive (T.unpack $ identPrefix id) gs args
-          ILPrimOp op size -> return $
+          PrimOp op size -> return $
               withTerm gs (SSTmValue $ evalPrimitiveOp size op args)
-          ILCoroPrim prim _t1 _t2 -> evalCoroPrimitive prim gs args
+          CoroPrim prim _t1 _t2 -> evalCoroPrimitive prim gs args
 
     ICall b vs ->
         let args = map (getval gs) vs in

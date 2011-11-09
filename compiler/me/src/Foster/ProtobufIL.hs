@@ -5,13 +5,13 @@
 -----------------------------------------------------------------------------
 
 module Foster.ProtobufIL (
-  dumpModuleToProtobufIL
+  dumpMonoModuleToProtobuf
 ) where
 
 import Foster.Base
-import Foster.ILExpr
-import Foster.TypeIL
-import Foster.Letable
+import Foster.MonoExpr
+import Foster.MonoType
+import Foster.MonoLetable
 import Foster.PatternMatch
 import Foster.ProtobufUtils
 
@@ -38,19 +38,19 @@ import Foster.Bepb.TermVar      as PbTermVar
 import Foster.Bepb.PbCtorId     as PbCtorId
 import Foster.Bepb.RebindId     as PbRebindId
 import Foster.Bepb.PbDataCtor   as PbDataCtor
-import Foster.Bepb.AllocInfo    as PbAllocInfo
+import Foster.Bepb.PbAllocInfo  as PbAllocInfo
 import Foster.Bepb.PbOccurrence as PbOccurrence
 import Foster.Bepb.DecisionTree as PbDecisionTree
 import Foster.Bepb.PbSwitchCase as PbSwitchCase
-import Foster.Bepb.CoroPrim     as PbCoroPrim
+import Foster.Bepb.PbCoroPrim   as PbCoroPrim
 import Foster.Bepb.Module       as Module
 import Foster.Bepb.Letable.Tag
-import Foster.Bepb.CoroPrim.Tag
+import Foster.Bepb.PbCoroPrim.Tag
 import Foster.Bepb.TermVar.Tag
 import Foster.Bepb.Terminator.Tag
 import Foster.Bepb.Proc.Linkage
 import Foster.Bepb.DecisionTree.Tag
-import Foster.Bepb.AllocInfo.MemRegion
+import Foster.Bepb.PbAllocInfo.MemRegion as PbMemRegion
 
 import qualified Text.ProtocolBuffers.Header as P'
 import qualified Data.Text as T
@@ -66,7 +66,7 @@ dumpIdent i@(Ident _name num) = if num < 0
                 then error $ "cannot dump negative ident! " ++ show i
                 else u8fromString $ show i
 
-mayTriggerGC :: AIVar -> Bool
+mayTriggerGC :: TypedId t -> Bool
 mayTriggerGC (TypedId _ (GlobalSymbol name)) = globalMayGC name
   where globalMayGC name = not $ name `Prelude.elem` (map T.pack
                         ["expect_i1", "print_i1"
@@ -85,50 +85,31 @@ intOfSize I32 = 32
 intOfSize I64 = 64
 intOfSize IUnknown = 999
 
-dumpType :: TypeIL -> PbType.Type
-dumpType (PrimIntIL size)    = P'.defaultValue { PbType.tag  = PbTypeTag.PRIM_INT
-                                               , PbType.carray_size = Just (intOfSize size) }
-dumpType (TyConAppIL nm _tys)= P'.defaultValue { PbType.tag  = PbTypeTag.NAMED
-                                               , PbType.name = Just $ u8fromString nm
-                                               }
-                                               {-
-dumpType (TyConAppIL dt tys) = P'.defaultValue { PbType.tag  = PbTypeTag.TY_CON_APP
-                                               , PbType.name = Just $ u8fromString (dataTypeName dt)
-                                               ,  type_parts = fromList $ fmap dumpType tys
-                                               }
-                                               -}
-dumpType (TupleTypeIL types) = P'.defaultValue { PbType.tag  = PbTypeTag.TUPLE
-                                               ,  type_parts = fromList $ fmap dumpType types }
-dumpType (FnTypeIL s t cc cs) =
-                                P'.defaultValue { PbType.tag = tagProcOrFunc cs
-                                                , PbType.procty = Just $ dumpProcType (s, t, cc)
-                                                }
-dumpType (CoroTypeIL a b)     = P'.defaultValue { PbType.tag  = PbTypeTag.CORO
-                                                ,  type_parts = fromList $ fmap dumpType [a,b] }
-
-dumpType (ForAllIL tyvars ty) = P'.defaultValue { PbType.tag  = PbTypeTag.FORALL_TY
-                                                ,  type_parts = fromList $ fmap dumpType [ty]
-                                                , tyvar_names = fromList $ fmap tyVarName tyvars }
-  where tyVarName (tv, _kind) =
-         case tv of BoundTyVar nm -> u8fromString nm
-                    SkolemTyVar s _u -> error $ "dumpType (Forall ...) saw skolem var " ++ s
-
-dumpType (TyVarIL (BoundTyVar s)) =
-                               P'.defaultValue { PbType.tag  = PbTypeTag.TYPE_VARIABLE
-                                               , PbType.name = Just $ u8fromString s
-                                               }
-dumpType (PtrTypeIL ty) =    P'.defaultValue { PbType.tag = PbTypeTag.PTR
-                                             , type_parts = fromList $ fmap dumpType [ty]
+dumpType :: MonoType -> PbType.Type
+dumpType (PrimInt size)    = P'.defaultValue { PbType.tag  = PbTypeTag.PRIM_INT
+                                             , PbType.carray_size = Just (intOfSize size) }
+dumpType (TyConApp nm _tys)= P'.defaultValue { PbType.tag  = PbTypeTag.NAMED
+                                             , PbType.name = Just $ u8fromString nm
                                              }
-dumpType (ArrayTypeIL ty) =  P'.defaultValue { PbType.tag = PbTypeTag.ARRAY
-                                             , type_parts = fromList $ fmap dumpType [ty]
-                                             }
-dumpType other = error $ "dumpType saw unknown type " ++ show other
+dumpType (TupleType types) = P'.defaultValue { PbType.tag  = PbTypeTag.TUPLE
+                                             ,  type_parts = fromList $ fmap dumpType types }
+dumpType (FnType s t cc cs) = P'.defaultValue { PbType.tag = tagProcOrFunc cs
+                                              , PbType.procty = Just $ dumpProcType (s, t, cc)
+                                              }
+dumpType (CoroType a b)     = P'.defaultValue { PbType.tag  = PbTypeTag.CORO
+                                              ,  type_parts = fromList $ fmap dumpType [a,b] }
+
+dumpType (PtrType ty) =    P'.defaultValue { PbType.tag = PbTypeTag.PTR
+                                           , type_parts = fromList $ fmap dumpType [ty]
+                                           }
+dumpType (ArrayType ty) =  P'.defaultValue { PbType.tag = PbTypeTag.ARRAY
+                                           , type_parts = fromList $ fmap dumpType [ty]
+                                           }
 
 dumpProcType (s, t, cc) =
     let args = case s of
-                TupleTypeIL types -> [dumpType x | x <- types]
-                _else             -> [dumpType s]
+                TupleType types -> [dumpType x | x <- types]
+                _else           -> [dumpType s]
     in
     ProcType.ProcType {
           arg_types = fromList args
@@ -150,37 +131,37 @@ dumpDataType name ctors =
                     }
 
 -----------------------------------------------------------------------
-dumpMemRegion :: AllocMemRegion -> Foster.Bepb.AllocInfo.MemRegion.MemRegion
+dumpMemRegion :: AllocMemRegion -> PbMemRegion.MemRegion
 dumpMemRegion amr = case amr of
-        MemRegionStack      -> Foster.Bepb.AllocInfo.MemRegion.MEM_REGION_STACK
-        MemRegionGlobalHeap -> Foster.Bepb.AllocInfo.MemRegion.MEM_REGION_GLOBAL_HEAP
+    MemRegionStack      -> PbMemRegion.MEM_REGION_STACK
+    MemRegionGlobalHeap -> PbMemRegion.MEM_REGION_GLOBAL_HEAP
 
-dumpAllocate :: ILAllocInfo -> PbAllocInfo.AllocInfo
-dumpAllocate (ILAllocInfo _typ region maybe_array_size unboxed) =
+dumpAllocate :: AllocInfo MonoType -> PbAllocInfo
+dumpAllocate (AllocInfo _typ region maybe_array_size unboxed) =
     P'.defaultValue { PbAllocInfo.mem_region = dumpMemRegion region
                     , PbAllocInfo.array_size = fmap dumpVar maybe_array_size
                     , PbAllocInfo.unboxed    = unboxed }
 -----------------------------------------------------------------------
 
-dumpBlock :: ILBlock -> PbBlock.Block
-dumpBlock (Block id mids illast) =
+dumpBlock :: MoBlock -> PbBlock.Block
+dumpBlock (MoBlock id mids illast) =
     P'.defaultValue { PbBlock.block_id = dumpBlockId id
                     , PbBlock.middle   = fromList $ map dumpMiddle mids
                     , PbBlock.last     = dumpLast illast
                     }
 
-dumpMiddle :: ILMiddle -> PbBlockMiddle.BlockMiddle
-dumpMiddle (ILLetVal id letable) =
+dumpMiddle :: MoMiddle -> PbBlockMiddle.BlockMiddle
+dumpMiddle (MoLetVal id letable) =
     P'.defaultValue { let_val = Just (dumpLetVal id letable)
                     , let_clo = Nothing
                     }
 
-dumpMiddle (ILClosures ids clos) =
+dumpMiddle (MoClosures ids clos) =
     P'.defaultValue { let_val = Nothing
                     , let_clo = Just (dumpLetClosures ids clos)
                     }
 
-dumpMiddle (ILRebindId from to) =
+dumpMiddle (MoRebindId from to) =
     P'.defaultValue { let_val = Nothing
                     , let_clo = Nothing
                     , rebind = Just $
@@ -189,33 +170,33 @@ dumpMiddle (ILRebindId from to) =
                             }
                     }
 
-dumpLetVal :: Ident -> Letable -> PbLetVal.LetVal
+dumpLetVal :: Ident -> MonoLetable -> PbLetVal.LetVal
 dumpLetVal id letable =
     P'.defaultValue { let_val_id = dumpIdent id
                     , let_expr   = dumpExpr letable
                     }
 
-dumpLetClosures :: [Ident] -> [ILClosure] -> PbLetClosures.LetClosures
+dumpLetClosures :: [Ident] -> [MoClosure] -> PbLetClosures.LetClosures
 dumpLetClosures ids clos =
     P'.defaultValue { closures = fromList $ fmap dumpClosureWithName $
                                                        (Prelude.zip ids clos)
                     }
 
-dumpLast :: ILLast -> PbTerminator.Terminator
-dumpLast ILRetVoid =
+dumpLast :: MoLast -> PbTerminator.Terminator
+dumpLast MoRetVoid =
     P'.defaultValue { PbTerminator.tag    = BLOCK_RET_VOID }
-dumpLast (ILRet var) =
+dumpLast (MoRet var) =
     P'.defaultValue { PbTerminator.tag    = BLOCK_RET_VAL
                     , PbTerminator.var    = Just $ dumpVar var }
-dumpLast (ILBr blockid) =
+dumpLast (MoBr blockid) =
     P'.defaultValue { PbTerminator.tag    = BLOCK_BR
                     , PbTerminator.block  = Just $ dumpBlockId blockid }
-dumpLast (ILIf _ var thenid elseid) =
+dumpLast (MoIf _ var thenid elseid) =
     P'.defaultValue { PbTerminator.tag    = BLOCK_IF
                     , PbTerminator.var    = Just $ dumpVar var
                     , PbTerminator.block  = Just $ dumpBlockId thenid
                     , PbTerminator.block2 = Just $ dumpBlockId elseid }
-dumpLast (ILCase ty var dt) =
+dumpLast (MoCase ty var dt) =
     P'.defaultValue { PbTerminator.tag    = BLOCK_CASE
                     , PbTerminator.var    = Just $ dumpVar var
                     , PbTerminator.typ    = Just $ dumpType ty
@@ -223,91 +204,87 @@ dumpLast (ILCase ty var dt) =
 
 -----------------------------------------------------------------------
 
-dumpVar (TypedId t i) = dumpILVar t i
+dumpVar (TypedId t i) = dumpMoVar t i
 
 -----------------------------------------------------------------------
 
-dumpExpr :: Letable -> PbLetable.Letable
+dumpExpr :: MonoLetable -> PbLetable.Letable
 
-dumpExpr (ILCall t base args)
+dumpExpr (MoCall t base args)
         = dumpCall t (dumpVar base)          args (mayTriggerGC base)
 
-dumpExpr (ILCallPrim t (ILNamedPrim base) args)
+dumpExpr (MoCallPrim t (NamedPrim base) args)
         = dumpCall t (dumpGlobalSymbol base) args (mayTriggerGC base)
 
-dumpExpr (ILCallPrim t (ILPrimOp op size) args)
+dumpExpr (MoCallPrim t (PrimOp op size) args)
         = dumpCallPrimOp t op size args
 
-dumpExpr (ILCallPrim t (ILCoroPrim coroPrim argty retty) args)
+dumpExpr (MoCallPrim t (CoroPrim coroPrim argty retty) args)
         = dumpCallCoroOp t coroPrim argty retty args True
 
-dumpExpr (ILAppCtor t cid args)
+dumpExpr (MoAppCtor t cid args)
         = dumpAppCtor t cid args
 
-dumpExpr x@(ILBool b) =
+dumpExpr x@(MoBool b) =
     P'.defaultValue { PbLetable.bool_value = Just b
                     , PbLetable.tag   = IL_BOOL
-                    , PbLetable.type' = Just $ dumpType (typeIL x)  }
+                    , PbLetable.type' = Just $ dumpType (typeMo x)  }
 
-dumpExpr x@(ILTuple vs) =
+dumpExpr x@(MoTuple vs) =
     P'.defaultValue { PbLetable.parts = fromList [dumpVar v | v <- vs]
                     , PbLetable.tag   = IL_TUPLE
-                    , PbLetable.type' = Just $ dumpType (typeIL x)
+                    , PbLetable.type' = Just $ dumpType (typeMo x)
                     , PbLetable.alloc_info = Just $ dumpAllocate
-                         (ILAllocInfo (typeIL x) MemRegionGlobalHeap Nothing True) }
+                         (AllocInfo (typeMo x) MemRegionGlobalHeap Nothing True) }
 
-dumpExpr x@(ILAllocate info) =
+dumpExpr x@(MoAllocate info) =
     P'.defaultValue { PbLetable.tag   = IL_ALLOCATE
-                    , PbLetable.type' = Just $ dumpType (typeIL x)
+                    , PbLetable.type' = Just $ dumpType (typeMo x)
                     , PbLetable.alloc_info = Just $ dumpAllocate info }
 
-dumpExpr x@(ILAlloc a) =
+dumpExpr x@(MoAlloc a) =
     P'.defaultValue { PbLetable.parts = fromList [dumpVar a]
                     , PbLetable.tag   = IL_ALLOC
-                    , PbLetable.type' = Just $ dumpType (typeIL x)  }
+                    , PbLetable.type' = Just $ dumpType (typeMo x)  }
 
-dumpExpr  (ILAllocArray elt_ty size) =
+dumpExpr  (MoAllocArray elt_ty size) =
     P'.defaultValue { PbLetable.parts = fromList []
                     , PbLetable.tag   = IL_ALLOCATE
                     , PbLetable.type' = Just $ dumpType elt_ty
                     , PbLetable.alloc_info = Just $ dumpAllocate
-                       (ILAllocInfo elt_ty MemRegionGlobalHeap (Just size) True) }
+                       (AllocInfo elt_ty MemRegionGlobalHeap (Just size) True) }
 
-dumpExpr x@(ILDeref a) =
+dumpExpr x@(MoDeref a) =
     P'.defaultValue { PbLetable.parts = fromList [dumpVar a]
                     , PbLetable.tag   = IL_DEREF
-                    , PbLetable.type' = Just $ dumpType (typeIL x)  }
+                    , PbLetable.type' = Just $ dumpType (typeMo x)  }
 
-dumpExpr x@(ILStore a b) =
+dumpExpr x@(MoStore a b) =
     P'.defaultValue { PbLetable.parts = fromList (fmap dumpVar [a, b])
                     , PbLetable.tag   = IL_STORE
-                    , PbLetable.type' = Just $ dumpType (typeIL x)  }
+                    , PbLetable.type' = Just $ dumpType (typeMo x)  }
 
-dumpExpr x@(ILArrayRead _t a b ) =
+dumpExpr x@(MoArrayRead _t a b ) =
     P'.defaultValue { PbLetable.parts = fromList (fmap dumpVar [a, b])
                     , PbLetable.tag   = IL_ARRAY_READ
-                    , PbLetable.type' = Just $ dumpType (typeIL x)  }
+                    , PbLetable.type' = Just $ dumpType (typeMo x)  }
 
-dumpExpr x@(ILArrayPoke v b i ) =
+dumpExpr x@(MoArrayPoke v b i ) =
     P'.defaultValue { PbLetable.parts = fromList (fmap dumpVar [v, b, i])
                     , PbLetable.tag   = IL_ARRAY_POKE
-                    , PbLetable.type' = Just $ dumpType (typeIL x)  }
+                    , PbLetable.type' = Just $ dumpType (typeMo x)  }
 
-dumpExpr x@(ILInt _ty int) =
+dumpExpr x@(MoInt _ty int) =
     P'.defaultValue { PbLetable.pb_int = Just $ dumpInt (show $ litIntValue int)
                                                      (litIntMinBits int)
                     , PbLetable.tag   = IL_INT
-                    , PbLetable.type' = Just $ dumpType (typeIL x)  }
+                    , PbLetable.type' = Just $ dumpType (typeMo x)  }
 
-dumpExpr x@(ILTyApp {}) =
-    error $ "Unable to dump type application node " ++ show x
-          ++ " (should handle substitution before codegen)."
-
-dumpClosureWithName (varid, ILClosure procid envid captvars) =
+dumpClosureWithName (varid, MoClosure procid envid captvars) =
     Closure { varname  = dumpIdent varid
             , proc_id  = textToPUtf8 (identPrefix procid)
             , env_id   = dumpIdent envid
-            , env      = dumpExpr (ILTuple captvars) }
+            , env      = dumpExpr (MoTuple captvars) }
 
 dumpDecisionTree (DT_Fail) =
     P'.defaultValue { PbDecisionTree.tag = DT_FAIL }
@@ -346,8 +323,8 @@ dumpGlobalSymbol base =
                     , PbTermVar.name  = dumpIdent (tidIdent base)
                     , PbTermVar.typ   = Just $ dumpType (tidType  base) }
 
-dumpILVar t i@(GlobalSymbol _) = dumpGlobalSymbol (TypedId t i)
-dumpILVar t i =
+dumpMoVar t i@(GlobalSymbol _) = dumpGlobalSymbol (TypedId t i)
+dumpMoVar t i =
     P'.defaultValue { PbTermVar.tag  = IL_VAR
                     , PbTermVar.name = dumpIdent i
                     , PbTermVar.typ  = Just $ dumpType t  }
@@ -369,7 +346,7 @@ dumpCallCoroOp t coroPrim argty retty args mayGC =
         coroFnTag CoroCreate = IL_CORO_CREATE
         coroFnTag CoroYield  = IL_CORO_YIELD
 
-dumpCall :: TypeIL -> TermVar -> [AIVar] -> Bool -> PbLetable.Letable
+dumpCall :: MonoType -> TermVar -> [TypedId MonoType] -> Bool -> PbLetable.Letable
 dumpCall t base args mayGC =
     P'.defaultValue { PbLetable.tag   = IL_CALL
                     , PbLetable.parts = fromList $ base:(fmap dumpVar args)
@@ -394,17 +371,17 @@ dumpInt cleanText activeBits =
                     , bits  = intToInt32   activeBits }
 
 dumpProc p =
-    Proc { Proc.name  = dumpIdent (ilProcIdent p)
-         , in_args    = fromList $ [dumpIdent (tidIdent v) | v <- (ilProcVars p)]
+    Proc { Proc.name  = dumpIdent $ moProcIdent p
+         , in_args    = fromList $ [dumpIdent (tidIdent v) | v <- moProcVars p]
          , proctype   = dumpProcType (preProcType p)
-         , Proc.blocks= fromList $ map dumpBlock (ilProcBlocks p)
-         , Proc.lines = Just $ u8fromString (showSourceRange $ ilProcRange p)
+         , Proc.blocks= fromList $ map dumpBlock (moProcBlocks p)
+         , Proc.lines = Just $ u8fromString (showSourceRange $ moProcRange p)
          , Proc.linkage = Foster.Bepb.Proc.Linkage.Internal
          }
   where
         preProcType proc =
-            let retty = ilProcReturnType proc in
-            let argtys = TupleTypeIL (map tidType (ilProcVars proc)) in
+            let retty = moProcReturnType proc in
+            let argtys = TupleType (map tidType (moProcVars proc)) in
             (argtys, retty, FastCC)
 
 -----------------------------------------------------------------------
@@ -415,13 +392,13 @@ dumpDataTypeDecl datatype =
          , Decl.type' = dumpDataType name (dataTypeCtors datatype)
          }
 
-dumpDecl (ILDecl s t) =
+dumpDecl (MoDecl s t) =
     Decl { Decl.name  = u8fromString s
          , Decl.type' = dumpType t
          }
 
-dumpProgramToModule :: ILProgram -> Module
-dumpProgramToModule (ILProgram procdefs decls datatypes (SourceLines lines)) =
+dumpProgramToModule :: MonoProgram -> Module
+dumpProgramToModule (MoProgram procdefs decls datatypes (SourceLines lines)) =
     Module   { modulename = u8fromString $ "foo"
              , procs      = fromList [dumpProc p | p <- Map.elems procdefs]
              , val_decls  = fromList (map dumpDecl decls)
@@ -429,26 +406,30 @@ dumpProgramToModule (ILProgram procdefs decls datatypes (SourceLines lines)) =
              , modlines   = fmap textToPUtf8 lines
              }
 
-dumpModuleToProtobufIL :: ILProgram -> FilePath -> IO ()
-dumpModuleToProtobufIL mod outpath = do
+dumpMonoModuleToProtobuf :: MonoProgram -> FilePath -> IO ()
+dumpMonoModuleToProtobuf mod outpath = do
     let llmod = dumpProgramToModule mod
     L.writeFile outpath (messagePut llmod)
     return ()
 
 -----------------------------------------------------------------------
 
-typeIL expr = case expr of
-    ILBool _                -> boolTypeIL
-    ILInt t _               -> t
-    ILTuple vs              -> TupleTypeIL (map tidType vs)
-    ILCall     t  _ _       -> t
-    ILCallPrim t  _ _       -> t
-    ILAppCtor  t  _ _       -> t
-    ILAllocate info         -> ilAllocType info
-    ILAllocArray elt_ty _   -> ArrayTypeIL elt_ty
-    ILAlloc v               -> PtrTypeIL (tidType v)
-    ILDeref v               -> pointedToTypeOfVar v
-    ILStore _ _             -> TupleTypeIL []
-    ILArrayRead t _ _       -> t
-    ILArrayPoke _ _ _       -> TupleTypeIL []
-    ILTyApp overallType _ _ -> overallType
+typeMo expr = case expr of
+    MoBool _                -> PrimInt I1
+    MoInt t _               -> t
+    MoTuple vs              -> TupleType (map tidType vs)
+    MoCall     t  _ _       -> t
+    MoCallPrim t  _ _       -> t
+    MoAppCtor  t  _ _       -> t
+    MoAllocate info         -> allocType info
+    MoAllocArray elt_ty _   -> ArrayType elt_ty
+    MoAlloc v               -> PtrType (tidType v)
+    MoDeref v               -> pointedToTypeOfVar v
+    MoStore _ _             -> TupleType []
+    MoArrayRead t _ _       -> t
+    MoArrayPoke _ _ _       -> TupleType []
+
+pointedToTypeOfVar v = case v of
+    TypedId (PtrType t) _ -> t
+    _ -> error $ "ProtobufIL.hs:pointedToTypeOfVar\n"
+              ++ "Expected variable to be a pointer, but had " ++ show v
