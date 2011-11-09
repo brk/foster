@@ -62,7 +62,6 @@ type TyRef = IORef (Maybe Tau)
 
 instance Show TyVar where
     show (BoundTyVar x) = "'" ++ x
-    show (SkolemTyVar x u) = "~(" ++ x ++ "/" ++ show u ++ ")"
 
 instance Show TypeAST where
     show x = case x of
