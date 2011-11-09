@@ -92,7 +92,7 @@ data CallConv = CCC | FastCC deriving (Eq, Show)
 briefCC CCC = "ccc"
 briefCC FastCC = ""
 
-data IntSizeBits = I1 | I8 | I32 | I64 | IUnknown deriving (Eq, Show)
+data IntSizeBits = I1 | I8 | I32 | I64 deriving (Eq, Show)
 
 data ProcOrFunc = FT_Proc | FT_Func deriving (Show)
 

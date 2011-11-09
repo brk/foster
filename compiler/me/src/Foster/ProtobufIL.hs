@@ -83,11 +83,18 @@ intOfSize I1 = 1
 intOfSize I8 = 8
 intOfSize I32 = 32
 intOfSize I64 = 64
-intOfSize IUnknown = 999
+
+dumpUnknownType () =
+  P'.defaultValue { PbType.tag = PbTypeTag.PTR
+                  , type_parts = fromList $ [dumpIntType 999]
+                  }
+
+dumpIntType sizeBits = P'.defaultValue { PbType.tag  = PbTypeTag.PRIM_INT
+                                       , PbType.carray_size = Just sizeBits }
 
 dumpType :: MonoType -> PbType.Type
-dumpType (PrimInt size)    = P'.defaultValue { PbType.tag  = PbTypeTag.PRIM_INT
-                                             , PbType.carray_size = Just (intOfSize size) }
+dumpType (PtrTypeUnknown)  = dumpUnknownType ()
+dumpType (PrimInt size)    = dumpIntType (intOfSize size)
 dumpType (TyConApp nm _tys)= P'.defaultValue { PbType.tag  = PbTypeTag.NAMED
                                              , PbType.name = Just $ u8fromString nm
                                              }

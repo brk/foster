@@ -19,6 +19,7 @@ data MonoType =
          | CoroType      MonoType MonoType
          | ArrayType     MonoType
          | PtrType       MonoType
+         | PtrTypeUnknown
          deriving (Show)
 
 type MoVar = TypedId MonoType

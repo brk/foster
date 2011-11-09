@@ -370,5 +370,4 @@ idAppend id s = case id of (GlobalSymbol o) -> (GlobalSymbol $ beforeS o)
 --   1) We don't do any beta-reduction on proc definitions.
 --   2) The LLVM lowering uses distinct scopes for each procedure definition.
 
-kUnknownPointerType = PtrType $ PrimInt IUnknown
-
+kUnknownPointerType = PtrTypeUnknown
