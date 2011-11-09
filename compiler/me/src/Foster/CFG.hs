@@ -117,7 +117,8 @@ computeBlocks expr idmaybe k = do
                                                           until_cont until_body)
 
             cfgNewBlock until_body
-            computeBlocks b Nothing $ \_var -> cfgEndWith (CFBr until_test)
+            computeBlocks b Nothing $ \_ -> return ()
+            cfgEndWith (CFBr until_test)
 
             cfgNewBlock until_cont
             cfgAddLet idmaybe (ILTuple []) (TupleTypeIL []) >>= k
@@ -196,22 +197,22 @@ computeBlocks expr idmaybe k = do
 knToLetable :: KNExpr -> Letable
 knToLetable expr =
   case expr of
-            KNVar        _v     -> error $ "can't make Letable from KNVar!"
-            KNBool       b      -> ILBool       b
-            KNInt        t i    -> ILInt        t i
-            KNTuple      vs     -> ILTuple      vs
-            KNCallPrim   t p vs -> ILCallPrim   t p vs
-            KNCall       t b vs -> ILCall       t b vs
-            KNAppCtor    t c vs -> ILAppCtor    t c vs
-            KNAlloc      v      -> ILAlloc      v
-            KNDeref      v      -> ILDeref      v
-            KNStore      a b    -> ILStore      a b
-            KNAllocArray t v    -> ILAllocArray t v
-            KNArrayRead  t a b  -> ILArrayRead  t a b
-            KNArrayPoke  a b c  -> ILArrayPoke  a b c
-            KNTyApp t v argty   -> ILTyApp t v argty
-            _                   -> error $ "non-letable thing seen by letable: "
-                                         ++ show expr
+     KNVar        _v     -> error $ "can't make Letable from KNVar!"
+     KNBool       b      -> ILBool       b
+     KNInt        t i    -> ILInt        t i
+     KNTuple      vs     -> ILTuple      vs
+     KNCallPrim   t p vs -> ILCallPrim   t p vs
+     KNCall       t b vs -> ILCall       t b vs
+     KNAppCtor    t c vs -> ILAppCtor    t c vs
+     KNAlloc      v      -> ILAlloc      v
+     KNDeref      v      -> ILDeref      v
+     KNStore      a b    -> ILStore      a b
+     KNAllocArray t v    -> ILAllocArray t v
+     KNArrayRead  t a b  -> ILArrayRead  t a b
+     KNArrayPoke  a b c  -> ILArrayPoke  a b c
+     KNTyApp t v argty   -> ILTyApp t v argty
+     _                   -> error $ "non-letable thing seen by letable: "
+                                  ++ show expr
 
 data CFMiddle = CFLetVal      Ident     Letable
               | CFLetFuns     [Ident]   [CFFn]

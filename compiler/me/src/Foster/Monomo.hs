@@ -49,13 +49,13 @@ import Data.Maybe(fromMaybe, isNothing, maybeToList)
 
 monomorphize :: ILProgram -> ILProgram
 monomorphize (ILProgram procdefmap decls datatypes lines) =
-        let monoState0 = MonoState Set.empty worklistEmpty procdefmap in
-        let monoState  = execState (addMonosAndGo procdefmap) monoState0 in
-        let monoProcs  = Map.filter isMono $ monoProcDefs monoState in
-        (ILProgram monoProcs decls (monomorphizedDataTypes datatypes) lines)
-          where
-                addMonosAndGo procdefmap = do
-                     addInitialMonoTasksAndGo (Map.elems procdefmap)
+    ILProgram monoProcs decls (monomorphizedDataTypes datatypes) lines
+      where
+        monoState0 = MonoState Set.empty worklistEmpty procdefmap
+        monoState  = execState (addMonosAndGo procdefmap) monoState0
+        monoProcs  = Map.filter isMono $ monoProcDefs monoState
+        addMonosAndGo procdefmap =
+                           addInitialMonoTasksAndGo (Map.elems procdefmap)
 
 -- A proc with type (forall a, a -> a) is not monomorphic,
 -- and neither is a proc with type Bool -> (forall a, a -> a).

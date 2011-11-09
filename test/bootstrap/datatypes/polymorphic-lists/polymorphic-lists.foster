@@ -21,9 +21,6 @@ main = {
 */
 };
 
-//foo0 = { forall b, i : Int32 => { x:b => x } };
-//foo1 = { forall b, i : Int32 => { x:b => 0 } };
-
 ex3 = { forall a,
         z : List a => 0 };
 
