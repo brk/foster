@@ -118,8 +118,8 @@ struct LLProc {
 
   FnTypeAST* getFnType() { return type; }
   const std::string& getName() const { return name; }
-  virtual llvm::Value* codegenProc(CodegenPass* pass);
-  virtual llvm::Value* codegenProto(CodegenPass* pass);
+  virtual void codegenProc(CodegenPass* pass);
+  virtual void codegenProto(CodegenPass* pass);
 };
 
 ////////////////////////////////////////////////////////////////

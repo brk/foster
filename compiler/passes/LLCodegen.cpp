@@ -637,10 +637,6 @@ genericClosureStructTy(const llvm::FunctionType* fnty) {
            builder.getInt8PtrTy(), NULL);
 }
 
-bool isPointerToPointer(const llvm::Type* p) {
-  return p->isPointerTy() && p->getContainedType(0)->isPointerTy();
-}
-
 llvm::Value* LLClosure::codegenClosure(
                         CodegenPass* pass,
                         llvm::Value* envPtrOrSlot) {
@@ -722,7 +718,7 @@ std::string getGlobalSymbolName(const std::string& sourceName) {
   return sourceName;
 }
 
-llvm::Value* LLProc::codegenProto(CodegenPass* pass) {
+void LLProc::codegenProto(CodegenPass* pass) {
   std::string symbolName = getGlobalSymbolName(this->name);
 
   this->type->markAsProc();
@@ -735,23 +731,13 @@ llvm::Value* LLProc::codegenProto(CodegenPass* pass) {
   }
 
   ASSERT(FT) << "expecting top-level proc to have FunctionType!";
-
   this->F = Function::Create(FT, this->functionLinkage, symbolName, pass->mod);
-
   ASSERT(F) << "function creation failed for proto " << this->name;
   ASSERT(F->getName() == symbolName) << "redefinition of function " << symbolName;
 
   setFunctionArgumentNames(F, this->argnames);
-
-  if (FnTypeAST* fnty = dynamic_cast<FnTypeAST*>(this->type)) {
-    F->setCallingConv(fnty->getCallingConventionID());
-  }
-
-  return F;
-}
-
-bool functionMightAllocateMemory(LLProc* proc) {
-  return true; // conservative approximation to MightAlloc
+  F->setGC("fostergc");
+  F->setCallingConv(this->type->getCallingConventionID());
 }
 
 llvm::AllocaInst* ensureImplicitStackSlot(llvm::Value* v, CodegenPass* pass) {
@@ -771,40 +757,25 @@ llvm::AllocaInst* ensureImplicitStackSlot(llvm::Value* v, CodegenPass* pass) {
   }
 }
 
-llvm::Value* LLProc::codegenProc(CodegenPass* pass) {
+void LLProc::codegenProc(CodegenPass* pass) {
   ASSERT(this->F != NULL) << "LLModule should codegen proto for " << getName();
   ASSERT(F->arg_size() == this->argnames.size());
 
-  F->setGC("fostergc");
-
-  BasicBlock* prevBB = builder.GetInsertBlock();
   pass->addEntryBB(F);
-
   CodegenPass::ValueScope* scope = pass->valueSymTab.newScope(this->getName());
 
-  // If the body of the function might allocate memory, the first thing
-  // the function should do is create stack slots/GC roots to hold
-  // dynamically-allocated pointer parameters.
-  if (functionMightAllocateMemory(this)) {
-    Function::arg_iterator AI = F->arg_begin();
-    for ( ; AI != F->arg_end(); ++AI) {
-      llvm::Value* slot = ensureImplicitStackSlot(AI, pass);
-      scope->insert(AI->getNameStr(), slot);
-    }
+  // We begin by creating stack slots/GC roots to hold dynamically-allocated
+  // pointer parameters. POSSIBLE OPTIMIZATION: This could be elided if we
+  // knew that no observable GC could occur in the function's extent.
+  for (Function::arg_iterator AI = F->arg_begin();
+                              AI != F->arg_end(); ++AI) {
+    llvm::Value* slot = ensureImplicitStackSlot(AI, pass);
+    scope->insert(AI->getNameStr(), slot);
   }
 
   EDiag() << "codegennign blocks for fn " << F->getName();
-
   codegenBlocks(this->blocks, pass, F);
-
   pass->valueSymTab.popExistingScope(scope);
-
-  // Restore the insertion point, if there was one.
-  if (prevBB) {
-    builder.SetInsertPoint(prevBB);
-  }
-
-  return F;
 }
 
 ////////////////////////////////////////////////////////////////////
