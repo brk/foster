@@ -101,11 +101,12 @@ readTcMeta (Meta _ r _) = readTcRef r
 writeTcMeta :: MetaTyVar -> Tau -> Tc ()
 writeTcMeta (Meta _ r _) v = writeTcRef r (Just v)
 
-newTcUnificationVar :: String -> Tc MetaTyVar
+newTcUnificationVar :: String -> Tc TypeAST
 newTcUnificationVar desc = do
-    u   <- newTcUniq
-    ref <- newTcRef Nothing
-    tcRecordUnificationVar (Meta u ref desc)
+    u    <- newTcUniq
+    ref  <- newTcRef Nothing
+    meta <- tcRecordUnificationVar (Meta u ref desc)
+    return (MetaTyVar meta)
       where
         -- The typechecking environment maintains a list of all the unification
         -- variables created, for introspection/debugging/statistics wankery.

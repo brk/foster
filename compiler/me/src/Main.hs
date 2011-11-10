@@ -61,7 +61,7 @@ typecheckFnSCC scc (ctx, tcenv) = do
         putStrLn $ "typechecking " ++ name
         annfn <- unTc tcenv $
                     do uRetTy <- newTcUnificationVar $ "toplevel fn type for " ++ name
-                       let extctx = prependContextBinding ctx (bindingForFnAST fn (MetaTyVar uRetTy))
+                       let extctx = prependContextBinding ctx (bindingForFnAST fn uRetTy)
                        typecheck extctx ast Nothing
         -- We can't convert AnnExpr to AIExpr here because
         -- the output context is threaded through further type checking.

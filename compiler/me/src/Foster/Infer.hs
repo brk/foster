@@ -27,13 +27,11 @@ emptyTypeSubst = Map.empty
 
 ----------------------
 
--- extractSubstTypes :: [MetaTyVar] -> TypeSubst -> Tc [TypeAST]
-extractSubstTypes metaVars tysub _rng = do
+extractSubstTypes :: [MetaTyVar] -> TypeSubst -> Tc [TypeAST]
+extractSubstTypes metaVars tysub = do
     mapM lookup metaVars where
          lookup m@(Meta uniq _ _desc) =
                fromMaybe (return $ MetaTyVar m)
-                         --(tcFails [out $ "Subst map missing key: " ++ desc
-                         --                          ++ highlightFirstLine rng])
                          (fmap return $ Map.lookup uniq tysub)
 
 instance Eq TypeAST where

@@ -50,12 +50,10 @@ typecheck ctx expr maybeExpTy =
         E_StoreAST rng a b -> do
           u_slot <- newTcUnificationVar $ "slot_type"
           u_expr <- newTcUnificationVar $ "expr_type"
-          eb <- typecheck ctx b (Just $ RefTypeAST (MetaTyVar u_slot))
-          ea <- typecheck ctx a (Just $            (MetaTyVar u_expr))
-          equateTypes (MetaTyVar u_slot) (MetaTyVar u_expr)
-                      (Just "Store expression")
-          equateTypes (typeAST eb) (RefTypeAST (typeAST ea))
-                      (Just "Store expression")
+          eb <- typecheck ctx b (Just $ RefTypeAST u_slot)
+          ea <- typecheck ctx a (Just $            u_expr)
+          equateTypes    u_slot                    u_expr    (Just "Store expression")
+          equateTypes (typeAST eb) (RefTypeAST (typeAST ea)) (Just "Store expression")
           return (AnnStore rng ea eb)
 
         E_SeqAST rng a b -> do
@@ -168,18 +166,16 @@ typecheckLetRec ctx0 rng bindings e mt = do
     unificationVars <- sequence [newTcUnificationVar $ T.unpack $
                                   "letrec_" `prependedTo` (evarName v)
                                 | (TermBinding v _) <- bindings]
-    ids <- sequence [tcFreshT (evarName v)
-                    | (TermBinding v _) <- bindings]
+    ids <- sequence [tcFreshT (evarName v) | (TermBinding v _) <- bindings]
     -- Create an extended context for typechecking the bindings
-    let makeTermVarBinding (u, id) = varbind id (MetaTyVar u)
-    let ctxBindings = map makeTermVarBinding (zip unificationVars ids)
+    let ctxBindings = map (uncurry varbind) (zip ids unificationVars)
     let ctx = prependContextBindings ctx0 ctxBindings
 
     -- Typecheck each binding
     tcbodies <- forM (zip unificationVars bindings) $
        (\(u, TermBinding v b) -> do
            b' <- typecheck ctx b (evarMaybeType v) -- or (Just $ MetaTyVar u)?
-           equateTypes (MetaTyVar u) (typeAST b')
+           equateTypes u(typeAST b')
                        (Just $ "recursive binding " ++ T.unpack (evarName v))
            return b'
        )
@@ -230,18 +226,18 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
   --  as well as successfully unify against the overall type.
 
   ascrutinee <- typecheck ctx scrutinee Nothing
-  m <- newTcUnificationVar "case"
+  u <- newTcUnificationVar "case"
   let checkBranch (pat, body) = do
       p <- checkPattern pat
       bindings <- extractPatternBindings p (typeAST ascrutinee)
       verifyNonOverlappingVariableNames rng "case"
                                         [v | (TermVarBinding v _) <- bindings]
       abody <- typecheck (prependContextBindings ctx bindings) body maybeExpTy
-      equateTypes (MetaTyVar m) (typeAST abody)
+      equateTypes u (typeAST abody)
                    (Just $ "Failed to unify all branches of case " ++ show rng)
       return (p, abody)
   abranches <- forM branches checkBranch
-  return $ AnnCase rng (MetaTyVar m) ascrutinee abranches
+  return $ AnnCase rng u ascrutinee abranches
 
 -----------------------------------------------------------------------
 
@@ -341,13 +337,11 @@ typecheckTyApp ctx rng a t _maybeExpTy = do
         mapM_ kindCheckSubsumption (List.zip ktyvars tys)
         return $ E_AnnTyApp rng (parSubstTy tyvarsAndTys rho) ea t
       m@(MetaTyVar (Meta _ _ desc)) -> do
-        rhoUV <- newTcUnificationVar $ "rho of type app: " ++ desc
-        let rho = MetaTyVar rhoUV
+        rho <- newTcUnificationVar $ "rho of type app: " ++ desc
         ktyvars <- generateTyVarsFor tys
         equateTypes m (ForAllAST ktyvars rho) Nothing
 
-        resultTypeUV <- newTcUnificationVar $ "result type of type app: " ++ desc
-        let resultType = MetaTyVar resultTypeUV
+        resultType <- newTcUnificationVar $ "result type of type app: " ++ desc
         -- resultType = rho...?
         return $ E_AnnTyApp rng resultType ea t
 
@@ -446,7 +440,7 @@ typecheckCallWithBaseFnType argtup eb basetype range =
 vname (E_VarAST _rng ev) n = show n ++ " for " ++ T.unpack (evarName ev)
 vname _                  n = show n
 
-genUnificationVarsLike :: [a] -> (Int -> String) -> Tc [MetaTyVar]
+genUnificationVarsLike :: [a] -> (Int -> String) -> Tc [TypeAST]
 genUnificationVarsLike spine namegen = do
   sequence [newTcUnificationVar (namegen n) | (_, n) <- zip spine [1..]]
 
@@ -489,8 +483,7 @@ typecheckCall ctx rng base args maybeExpTy = do
          unificationVars <- genUnificationVarsLike ktyvars
                                 (\n -> "type parameter " ++ vname base n)
 
-         let tyvarsAndMetavars = (List.zip (tyvarsOf ktyvars)
-                                          (map MetaTyVar unificationVars))
+         let tyvarsAndMetavars = List.zip (tyvarsOf ktyvars) unificationVars
 
          -- Convert ('a -> 'b) to (?a -> ?b).
          let unifiableArgType = parSubstTy tyvarsAndMetavars argType
@@ -523,7 +516,8 @@ typecheckCall ctx rng base args maybeExpTy = do
              --tcLift $ putStrLn ("_maybeExpTy: " ++ show maybeExpTy)
              --tcLift $ putStrLn ("tysub: " ++ show tysub)
 
-             tyProjTypes <- extractSubstTypes unificationVars tysub rng
+             tyProjTypes <- extractSubstTypes
+                               (map (\(MetaTyVar m) -> m) unificationVars) tysub
              --tcLift $ putStrLn ("tcTyProjTypes: " ++ show tyProjTypes)
              let annTyApp = E_AnnTyApp rng substitutedFnType eb (minimalTupleAST tyProjTypes)
              --tcLift $ putStrLn ("annTyApp: " ++ show annTyApp)
@@ -541,7 +535,7 @@ typecheckCall ctx rng base args maybeExpTy = do
             ft <- newTcUnificationVar $ "ret type for " ++ desc
             rt <- newTcUnificationVar $ "arg type for " ++ desc
             -- TODO this should sometimes be proc, not func...
-            let fnty = mkFuncTy (MetaTyVar ft) (MetaTyVar rt)
+            let fnty = mkFuncTy ft rt
 
             equateTypes m fnty Nothing
             typecheckCallWithBaseFnType eargs eb fnty rng
@@ -581,9 +575,8 @@ typecheckFn' ctx f cc expArgType expBodyType = do
     -- otherwise, we assume it has a monomorphic return type
     -- and determine the exact type via unification.
     fnProtoRetTy <- case fnRetType f of
-                      Nothing -> do u <- newTcUnificationVar $
+                      Nothing -> do newTcUnificationVar $
                                          "inferred ret type for " ++ fnProtoName
-                                    return $ MetaTyVar u
                       Just t -> return t
 
     -- Make sure the body (forcibly) agrees with the return type annotation.
