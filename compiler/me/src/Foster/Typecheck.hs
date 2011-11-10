@@ -134,24 +134,28 @@ typecheckVar ctx rng name =
                                  ++ "\nhist: " , msg]
 -----------------------------------------------------------------------
 
--- First typecheck the bound expression, then typecheck the
--- scoped expression in an extended context.
-typecheckLet ctx rng (TermBinding v a) e mt = do
+--  G         |- e1 ::: t1
+--  G{x:::t1} |- e2 ::: t2
+--  ----------------------------
+--  G |- let x = e1 in e2 ::: t2
+typecheckLet ctx0 rng (TermBinding v e1) e2 mt = do
+-- {{{
     let boundName    = evarName v
     let maybeVarType = evarMaybeType v
-    sanityCheck (notRecursive boundName a)
+    sanityCheck (notRecursive boundName e1)
         ("Recursive bindings should use 'rec', not 'let'"
                          ++ highlightFirstLine rng)
-    id <- tcFreshT boundName
-    ea <- typecheck ctx  a maybeVarType
-    ctx' <- extendContext ctx [TypedId (typeAST ea) id] Nothing
-    ee <- typecheck ctx' e mt
-    return (AnnLetVar rng id ea ee)
+    id     <- tcFreshT boundName
+    a1     <- typecheck     ctx0    e1 maybeVarType
+    ctxext <- extendContext ctx0 [TypedId (typeAST a1) id] Nothing
+    a2     <- typecheck     ctxext  e2 mt
+    return (AnnLetVar rng id a1 a2)
   where
     notRecursive boundName expr =
             not (boundName `elem` freeVars expr && isFnAST expr)
                   where   isFnAST (E_FnAST _) = True
                           isFnAST _           = False
+-- }}}
 
 -----------------------------------------------------------------------
 
@@ -161,6 +165,7 @@ typecheckLet ctx rng (TermBinding v a) e mt = do
       ...;
    in e end
 -}
+-- {{{
 typecheckLetRec :: Context TypeAST -> SourceRange -> [TermBinding]
                 -> ExprAST -> Maybe TypeAST -> Tc AnnExpr
 typecheckLetRec ctx0 rng bindings e mt = do
@@ -189,20 +194,9 @@ typecheckLetRec ctx0 rng bindings e mt = do
 
     let fns = [f | (E_AnnFn f) <- tcbodies]
     return $ AnnLetFuns rng ids fns e'
-
------------------------------------------------------------------------
-
-getCtorInfoForCtor :: T.Text -> Tc (CtorInfo TypeAST)
-getCtorInfoForCtor ctorName = do
-  ctorInfos <- tcGetCtorInfo
-  case Map.lookup ctorName ctorInfos of
-    Just [info] -> return info
-    elsewise -> tcFails [out $ "Typecheck.getCtorInfoForCtor: Too many or"
-                                ++ " too few definitions for $" ++ T.unpack ctorName
-                                ++ "\n\t" ++ show elsewise]
+-- }}}
 
 varbind id ty = TermVarBinding (identPrefix id) (TypedId ty id)
------------------------------------------------------------------------
 
 typecheckCase :: Context TypeAST -> SourceRange -> ExprAST
               -> [(EPattern, ExprAST)] -> Maybe TypeAST -> Tc AnnExpr
@@ -250,6 +244,15 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
 
     emptyContext :: Context ty
     emptyContext = Context [] [] True []
+
+    getCtorInfoForCtor :: T.Text -> Tc (CtorInfo TypeAST)
+    getCtorInfoForCtor ctorName = do
+      ctorInfos <- tcGetCtorInfo
+      case Map.lookup ctorName ctorInfos of
+        Just [info] -> return info
+        elsewise -> tcFails [out $ "Typecheck.getCtorInfoForCtor: Too many or"
+                                    ++ " too few definitions for $" ++ T.unpack ctorName
+                                    ++ "\n\t" ++ show elsewise]
 
     -----------------------------------------------------------------------
 
@@ -311,8 +314,7 @@ tyvarsOf ktyvars = map (\(tv,_) -> TyVarAST tv) ktyvars
 
 kindCheckSubsumption :: ((TyVar, Kind), TypeAST) -> Tc ()
 kindCheckSubsumption ((tv, kind), ty) =
-  let tyKind = kindOfTypeAST ty in
-  case (tyKind, kind) of
+  case (kindOfTypeAST ty, kind) of
     (KindAnySizeType, KindAnySizeType)   -> return ()
     (KindPointerSized, KindPointerSized) -> return ()
     -- It's OK to give a pointer-sized type when any size is expected.
@@ -321,7 +323,7 @@ kindCheckSubsumption ((tv, kind), ty) =
     (KindAnySizeType, KindPointerSized)  ->
       tcFails [out $ "Kind mismatch:\n"
                   ++ "cannot instantiate type variable " ++ show tv ++ " of kind " ++ show kind
-                  ++ "\nwith type " ++ show ty ++ " of kind " ++ show tyKind]
+                  ++ "\nwith type " ++ show ty ++ " of kind " ++ show (kindOfTypeAST ty)]
 
 -- G |- e ::: forall a1..an, rho
 -- ------------------------------------------
@@ -350,6 +352,11 @@ typecheckTyApp ctx rng a t _maybeExpTyTODO = do
 
 -----------------------------------------------------------------------
 
+-- G |- e1 ::: Array t
+-- ---------------------  e2 ::: t2 where t2 is a word-like type
+-- G |- e1 [ e2 ]  ::: t
+typecheckArrayRead :: SourceRange -> AnnExpr -> TypeAST -> AnnExpr -> Maybe TypeAST -> Tc AnnExpr
+-- {{{
 typecheckArrayRead rng _base (TupleTypeAST _) (AnnInt {}) _maybeExpTy =
     tcFails [out $ "ArrayReading tuples is not allowed;"
                 ++ " use pattern matching instead!" ++ highlightFirstLine rng]
@@ -378,11 +385,16 @@ typecheckArrayRead rng _base baseType index maybeExpTy =
                 ++ " with expression " ++ show index
                 ++ " (context expected type " ++ show maybeExpTy ++ ")"
                 ++ highlightFirstLine rng]
+-- }}}
 
 -----------------------------------------------------------------------
 
--- c >^ base[aiexpr]
+-- G |-  c   ::: t
+-- G |- b[e] ::: Array t
+-- ---------------------
+-- G |- c >^ b[e] ::: ()
 typecheckArrayPoke rng c base (ArrayTypeAST t) aiexpr maybeExpTy = do
+-- {{{
     -- TODO check aiexpr type is compatible with Word
     equateTypes t (typeAST aiexpr) (Just "arraypoke type")
     case maybeExpTy of
@@ -396,6 +408,7 @@ typecheckArrayPoke rng _ _base baseType index maybeExpTy =
                 ++ " with expression " ++ show index
                 ++ " (context expected type " ++ show maybeExpTy ++ ")"
                 ++ highlightFirstLine rng]
+-- }}}
 
 -----------------------------------------------------------------------
 
@@ -549,6 +562,7 @@ unifyFun expArg  actRet actArg (Just expRet) = tcUnifyTypes (TupleTypeAST [expAr
 mkFuncTy a r = FnTypeAST a r FastCC FT_Func
 -----------------------------------------------------------------------
 
+-- Functions default to the fast calling convention.
 typecheckFn ctx f Nothing =
                 typecheckFn' ctx f FastCC Nothing  Nothing
 
@@ -633,25 +647,26 @@ getUniquelyNamedFormals rng rawFormals fnProtoName = do
 typecheckTuple ctx rng exprs maybeExpectedType =
   case maybeExpectedType of
      Nothing                -> tcTuple ctx rng exprs [Nothing | _ <- exprs]
-     Just (TupleTypeAST ts) -> tcTuple ctx rng exprs (map Just ts)
-     Just m@(MetaTyVar {} ) -> do tctup <- typecheckTuple ctx rng exprs Nothing
-                                  equateTypes m (typeAST tctup) (Just $ highlightFirstLine rng)
-                                  return tctup
+     Just (TupleTypeAST ts) -> tcTuple ctx rng exprs [Just t  | t <- ts]
+     Just m@MetaTyVar {}    -> do
+        tctup <- typecheckTuple ctx rng exprs Nothing
+        equateTypes m (typeAST tctup) (Just $ highlightFirstLine rng)
+        return tctup
      Just ty -> tcFails [out $ "typecheck: tuple (" ++ show exprs ++ ") "
                             ++ "cannot check against non-tuple type " ++ show ty]
+  where
+    tcTuple ctx rng es ts = do
+        exprs <- typecheckExprsTogether ctx es ts
+        return $ AnnTuple (E_AnnTuple rng exprs)
 
-tcTuple ctx rng es ts = do
-    exprs <- typecheckExprsTogether ctx es ts
-    return $ AnnTuple (E_AnnTuple rng exprs)
-
--- Typechecks each expression in the same context
-typecheckExprsTogether ctx exprs expectedTypes = do
-    sanityCheck (length exprs == length expectedTypes)
-        ("typecheckExprsTogether: had different number of values ("
-           ++ (show $ length exprs)
-           ++ ") and expected types (" ++ (show $ length expectedTypes) ++
-             ")\n" ++ show exprs ++ " versus \n" ++ show expectedTypes)
-    mapM (\(e,mt) -> typecheck ctx e mt) (List.zip exprs expectedTypes)
+    -- Typechecks each expression in the same context
+    typecheckExprsTogether ctx exprs expectedTypes = do
+        sanityCheck (length exprs == length expectedTypes)
+            ("typecheckExprsTogether: had different number of values ("
+               ++ (show $ length exprs)
+               ++ ") and expected types (" ++ (show $ length expectedTypes) ++
+                 ")\n" ++ show exprs ++ " versus \n" ++ show expectedTypes)
+        mapM (\(e,mt) -> typecheck ctx e mt) (List.zip exprs expectedTypes)
 
 -----------------------------------------------------------------------
 
@@ -670,9 +685,8 @@ verifyNonOverlappingVariableNames :: SourceRange -> String -> [T.Text] -> Tc ()
 verifyNonOverlappingVariableNames rng name varNames = do
     case detectDuplicates varNames of
         []   -> return ()
-        dups -> tcFails [out $ "Error when checking " ++ name
-                              ++ ": had duplicated bindings: "
-                              ++ show dups
+        dups -> tcFails [out $ "Error when checking " ++ name ++ ": "
+                              ++ "had duplicated bindings: " ++ show dups
                               ++ highlightFirstLine rng]
 
 -----------------------------------------------------------------------
