@@ -73,10 +73,12 @@ typecheckInt rng originalText = do
                                + (r * parseRadixRev r cs)
 
         -- | Example: bitStringOf 21 == "10101"
-        bitStringOf n | n <  0    = error "bitStringOf: non-negative number!"
-                      | n <= 1    = show n
-                      | otherwise = bitStringOf (Bits.shiftR n 1) ++ lowBitOf n
-                             where lowBitOf n = if even n then "1" else "0"
+        bitStringOf = List.reverse . reverseBitStringOf where
+            reverseBitStringOf n
+                | n <  0    = error "bitStringOf: non-negative number!"
+                | n <= 1    = show n
+                | otherwise = lowBitOf n ++ reverseBitStringOf (Bits.shiftR n 1)
+                        where lowBitOf n = if even n then "1" else "0"
 
         sizeOfBits :: Int -> IntSizeBits
         sizeOfBits 32 = I32
