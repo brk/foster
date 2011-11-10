@@ -8,6 +8,7 @@ module Foster.TypeAST(
   TypeAST(..), EPattern(..), E_VarAST(..), IntSizeBits(..), AnnVar
 , fosBoolType, MetaTyVar(Meta), Sigma, Rho, Tau
 , typesEqual, minimalTupleAST, kindOfTypeAST
+, mkFnType
 , gFosterPrimOpsTable, primitiveDecls
 )
 where

@@ -1,6 +1,6 @@
 main = {
-  //expect_i32 6;
-  //print_i32 (len (ones 6));
+  expect_i32 6;
+  print_i32 (len (ones 6));
 
   expect_i32 0;
   print_i32 (ex3 (Nil:[B32] !));
@@ -24,7 +24,6 @@ main = {
 ex3 = { forall a,
         z : List a => 0 };
 
-/*
 // one :: Int32 -> List B32
 ones = { n : Int32 =>
   if n ==Int32 0
@@ -32,7 +31,6 @@ ones = { n : Int32 =>
    else Cons (B32 n) (ones (n -Int32 1))
   end
 };
-*/
 
 //ones = { n : Int32 =>
 //  if n ==Int32 0
@@ -53,7 +51,6 @@ ex2 = { forall a,
 };
 */
 
-/*
 len = { forall a,
         z : List a =>
   case z
@@ -62,7 +59,7 @@ len = { forall a,
     // of (n, ns)      -> n +Int32 (len ns) // should fail due to type mismatch
   end
 };
-*/
+
 
 type
 case B32

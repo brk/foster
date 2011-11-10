@@ -45,13 +45,14 @@ import Foster.MainCtorHelpers
 
 -----------------------------------------------------------------------
 
+-- TODO shouldn't claim successful typechecks until we reach AnnExprIL.
+
 pair2binding (nm, ty) = TermVarBinding nm (TypedId ty (GlobalSymbol nm))
 
 -- Every function in the SCC should typecheck against the input context,
 -- and the resulting context should include the computed types of each
 -- function in the SCC.
-typecheckFnSCC :: Graph.SCC FnAST
-               -> (Context TypeAST, TcEnv)
+typecheckFnSCC :: Graph.SCC FnAST   ->    (Context TypeAST, TcEnv)
                -> IO ([OutputOr AnnExpr], (Context TypeAST, TcEnv))
 typecheckFnSCC scc (ctx, tcenv) = do
     let fns = Graph.flattenSCC scc
@@ -60,9 +61,8 @@ typecheckFnSCC scc (ctx, tcenv) = do
         let name = T.unpack $ fnAstName fn
         putStrLn $ "typechecking " ++ name
         annfn <- unTc tcenv $
-                    do uRetTy <- newTcUnificationVar $ "toplevel fn type for " ++ name
-                       let extctx = prependContextBinding ctx (bindingForFnAST fn uRetTy)
-                       typecheck extctx ast Nothing
+                    do binding <- bindingForFnAST fn
+                       typecheck (prependContextBinding ctx binding) ast Nothing
         -- We can't convert AnnExpr to AIExpr here because
         -- the output context is threaded through further type checking.
         _ <- inspect annfn ast
@@ -80,8 +80,29 @@ typecheckFnSCC scc (ctx, tcenv) = do
         bindingForAnnFn f = TermVarBinding (fnNameA f) annFnVar
          where   annFnVar = TypedId (annFnType f) (annFnIdent f)
 
-        bindingForFnAST :: FnAST -> TypeAST -> ContextBinding TypeAST
-        bindingForFnAST f t = pair2binding (fnAstName f, t)
+        -- Start with the most specific binding possible (i.e. sigma, not tau).
+        -- Otherwise, if we blindly used a meta type variable, we'd be unable
+        -- to type check a recursive & polymorphic function.
+        bindingForFnAST :: FnAST -> Tc (ContextBinding TypeAST)
+        bindingForFnAST f = do t <- fnTypeTemplate f
+                               return $ pair2binding (fnAstName f, t)
+
+        typeTemplate :: Maybe TypeAST -> String -> Tc TypeAST
+        typeTemplate Nothing    name = newTcUnificationVar name
+        typeTemplate (Just ty) _name = return ty
+
+        annVarTemplate :: TypedId TypeAST -> Tc TypeAST
+        annVarTemplate v = typeTemplate (Just $ tidType v) (show $ tidIdent v)
+
+        fnTypeTemplate :: FnAST -> Tc TypeAST
+        fnTypeTemplate f = do
+          retTy  <- typeTemplate (fnRetType f) ("ret type for " ++ (T.unpack $ fnAstName f))
+          argTys <- mapM annVarTemplate (fnFormals f)
+          let fnTy = mkFnType argTys [retTy]
+          case fnTyFormals f of
+            []        -> return $ fnTy
+            tyformals -> return $ ForAllAST (map ktyvarFor tyformals) fnTy
+                         where ktyvarFor (TypeFormalAST s k) = (BoundTyVar s, k)
 
         inspect :: OutputOr AnnExpr -> ExprAST -> IO Bool
         inspect typechecked ast =

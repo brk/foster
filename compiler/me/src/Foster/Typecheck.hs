@@ -47,14 +47,18 @@ typecheck ctx expr maybeExpTy =
             other        -> tcFails [out $ "Expected deref-ed expr "
                                      ++ "to have ref type, had " ++ show other ++ show rng]
 
-        E_StoreAST rng a b -> do
+        --  G |- e1 ::: tau
+        --  G |- e2 ::: Ref tau
+        --  --------------------
+        --  G |- e1 >^ e2 ::: ()
+        E_StoreAST rng e1 e2 -> do
           u_slot <- newTcUnificationVar $ "slot_type"
           u_expr <- newTcUnificationVar $ "expr_type"
-          eb <- typecheck ctx b (Just $ RefTypeAST u_slot)
-          ea <- typecheck ctx a (Just $            u_expr)
+          a2 <- typecheck ctx e2 (Just $ RefTypeAST u_slot)
+          a1 <- typecheck ctx e1 (Just $            u_expr)
           equateTypes    u_slot                    u_expr    (Just "Store expression")
-          equateTypes (typeAST eb) (RefTypeAST (typeAST ea)) (Just "Store expression")
-          return (AnnStore rng ea eb)
+          equateTypes (typeAST a2) (RefTypeAST (typeAST a1)) (Just "Store expression")
+          return (AnnStore rng a1 a2)
 
         E_SeqAST rng a b -> do
             ea <- typecheck ctx a Nothing --(Just TypeUnitAST)
@@ -197,27 +201,12 @@ getCtorInfoForCtor ctorName = do
                                 ++ " too few definitions for $" ++ T.unpack ctorName
                                 ++ "\n\t" ++ show elsewise]
 
-checkPattern :: EPattern -> Tc Pattern
--- Make sure that each pattern has the proper arity.
-checkPattern p = case p of
-  EP_Wildcard r   -> do return $ P_Wildcard r
-  EP_Bool r b     -> do return $ P_Bool r b
-  EP_Variable r v -> do id <- tcFreshT (evarName v)
-                        return $ P_Variable r id
-  EP_Int r str    -> do annint <- typecheckInt r str
-                        return $ P_Int  r (aintLitInt annint)
-  EP_Ctor r eps s -> do (CtorInfo cid _) <- getCtorInfoForCtor s
-                        sanityCheck (ctorArity cid == List.length eps) $
-                          "Incorrect pattern arity: expected " ++
-                          (show $ ctorArity cid) ++ " pattern(s), but got "
-                          ++ (show $ List.length eps) ++ show r
-                        ps <- mapM checkPattern eps
-                        return $ P_Ctor r ps cid
-  EP_Tuple r eps  -> do ps <- mapM checkPattern eps
-                        return $ P_Tuple r ps
+varbind id ty = TermVarBinding (identPrefix id) (TypedId ty id)
+-----------------------------------------------------------------------
 
 typecheckCase :: Context TypeAST -> SourceRange -> ExprAST
               -> [(EPattern, ExprAST)] -> Maybe TypeAST -> Tc AnnExpr
+-- {{{
 typecheckCase ctx rng scrutinee branches maybeExpTy = do
   -- (A) The expected type applies to the branches,
   -- not to the scrutinee.
@@ -238,53 +227,70 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
       return (p, abody)
   abranches <- forM branches checkBranch
   return $ AnnCase rng u ascrutinee abranches
+ where
+    checkPattern :: EPattern -> Tc Pattern
+    -- Make sure that each pattern has the proper arity.
+    checkPattern p = case p of
+      EP_Wildcard r   -> do return $ P_Wildcard r
+      EP_Bool r b     -> do return $ P_Bool r b
+      EP_Variable r v -> do id <- tcFreshT (evarName v)
+                            return $ P_Variable r id
+      EP_Int r str    -> do annint <- typecheckInt r str
+                            return $ P_Int  r (aintLitInt annint)
+      EP_Ctor r eps s -> do (CtorInfo cid _) <- getCtorInfoForCtor s
+                            sanityCheck (ctorArity cid == List.length eps) $
+                              "Incorrect pattern arity: expected " ++
+                              (show $ ctorArity cid) ++ " pattern(s), but got "
+                              ++ (show $ List.length eps) ++ show r
+                            ps <- mapM checkPattern eps
+                            return $ P_Ctor r ps cid
+      EP_Tuple r eps  -> do ps <- mapM checkPattern eps
+                            return $ P_Tuple r ps
+    -----------------------------------------------------------------------
 
------------------------------------------------------------------------
+    emptyContext :: Context ty
+    emptyContext = Context [] [] True []
 
-varbind id ty = TermVarBinding (identPrefix id) (TypedId ty id)
+    -----------------------------------------------------------------------
 
-emptyContext :: Context ty
-emptyContext = Context [] [] True []
+    -- Recursively match a pattern against a type and extract the (typed)
+    -- binders introduced by the pattern.
+    extractPatternBindings :: Pattern -> TypeAST -> Tc [ContextBinding TypeAST]
 
------------------------------------------------------------------------
+    extractPatternBindings (P_Wildcard _   ) _  = return []
+    extractPatternBindings (P_Variable _ id) ty = return [varbind id ty]
 
--- Recursively match a pattern against a type and extract the (typed)
--- binders introduced by the pattern.
-extractPatternBindings :: Pattern -> TypeAST -> Tc [ContextBinding TypeAST]
+    -- TODO shouldn't ignore the _ty here -- bug when ctors from different types listed.
+    extractPatternBindings (P_Ctor _ pats (CtorId _ ctorName _ _)) _ty = do
+      CtorInfo _ (DataCtor _ _ types) <- getCtorInfoForCtor (T.pack ctorName)
+      bindings <- sequence [extractPatternBindings p t | (p, t) <- zip pats types]
+      return $ concat bindings
 
-extractPatternBindings (P_Wildcard _   ) _  = return []
-extractPatternBindings (P_Variable _ id) ty = return [varbind id ty]
+    extractPatternBindings (P_Bool r v) ty = do
+      _ae <- typecheck emptyContext (E_BoolAST r v) (Just ty)
+      -- literals don't bind anything, but we still need to check
+      -- that we do not try matching e.g. a bool against an int.
+      return []
 
--- TODO shouldn't ignore the _ty here -- bug when ctors from different types listed.
-extractPatternBindings (P_Ctor _ pats (CtorId _ ctorName _ _)) _ty = do
-  CtorInfo _ (DataCtor _ _ types) <- getCtorInfoForCtor (T.pack ctorName)
-  bindings <- sequence [extractPatternBindings p t | (p, t) <- zip pats types]
-  return $ concat bindings
+    extractPatternBindings (P_Int r litint) ty = do
+      _ae <- typecheck emptyContext (E_IntAST r (litIntText litint)) (Just ty)
+      -- literals don't bind anything, but we still need to check
+      -- that we do not try matching e.g. a bool against an int.
+      return []
 
-extractPatternBindings (P_Bool r v) ty = do
-  _ae <- typecheck emptyContext (E_BoolAST r v) (Just ty)
-  -- literals don't bind anything, but we still need to check
-  -- that we do not try matching e.g. a bool against an int.
-  return []
-
-extractPatternBindings (P_Int r litint) ty = do
-  _ae <- typecheck emptyContext (E_IntAST r (litIntText litint)) (Just ty)
-  -- literals don't bind anything, but we still need to check
-  -- that we do not try matching e.g. a bool against an int.
-  return []
-
-extractPatternBindings (P_Tuple _rng [p]) ty = extractPatternBindings p ty
-extractPatternBindings (P_Tuple  rng ps)  ty =
-   case ty of
-     TupleTypeAST ts ->
-        (if List.length ps == List.length ts
-          then do bindings <- sequence [extractPatternBindings p t | (p, t) <- zip ps ts]
-                  return $ concat bindings
-          else tcFails [out $ "Cannot match pattern against tuple type"
-                              ++ " of different length."])
-     _else  -> tcFails [out $ "Cannot check tuple pattern"
-                              ++ " against non-tuple type " ++ show ty
-                              ++ showSourceRange rng]
+    extractPatternBindings (P_Tuple _rng [p]) ty = extractPatternBindings p ty
+    extractPatternBindings (P_Tuple  rng ps)  ty =
+       case ty of
+         TupleTypeAST ts ->
+            (if List.length ps == List.length ts
+              then do bindings <- sequence [extractPatternBindings p t | (p, t) <- zip ps ts]
+                      return $ concat bindings
+              else tcFails [out $ "Cannot match pattern against tuple type"
+                                  ++ " of different length."])
+         _else  -> tcFails [out $ "Cannot check tuple pattern"
+                                  ++ " against non-tuple type " ++ show ty
+                                  ++ showSourceRange rng]
+-- }}}
 
 -----------------------------------------------------------------------
 
@@ -317,16 +323,12 @@ kindCheckSubsumption ((tv, kind), ty) =
                   ++ "cannot instantiate type variable " ++ show tv ++ " of kind " ++ show kind
                   ++ "\nwith type " ++ show ty ++ " of kind " ++ show tyKind]
 
-generateTyVarsFor tys =
-        let gen ty = do freshId <- tcFresh "gen.t."
-                        return (BoundTyVar (show freshId), kindOfTypeAST ty) in
-        mapM gen tys
+-- G |- e ::: forall a1..an, rho
+-- ------------------------------------------
+-- G |- e :[ t1..tn ]  ::: rho{t1..tn/a1..an}
 
---   G |- e ::: forall a1..an, rho
------------------------------------------------
---   G |- e :[ t1..tn ]  ::: rho{t1..tn/a1..an}
-
-typecheckTyApp ctx rng a t _maybeExpTy = do
+typecheckTyApp ctx rng a t _maybeExpTyTODO = do
+-- {{{
     let tys = listize t
     ea <- typecheck ctx a Nothing
     case (typeAST ea) of
@@ -336,18 +338,15 @@ typecheckTyApp ctx rng a t _maybeExpTy = do
         let tyvarsAndTys = List.zip (tyvarsOf ktyvars) tys
         mapM_ kindCheckSubsumption (List.zip ktyvars tys)
         return $ E_AnnTyApp rng (parSubstTy tyvarsAndTys rho) ea t
-      m@(MetaTyVar (Meta _ _ desc)) -> do
-        rho <- newTcUnificationVar $ "rho of type app: " ++ desc
-        ktyvars <- generateTyVarsFor tys
-        equateTypes m (ForAllAST ktyvars rho) Nothing
-
-        resultType <- newTcUnificationVar $ "result type of type app: " ++ desc
-        -- resultType = rho...?
-        return $ E_AnnTyApp rng resultType ea t
-
+      MetaTyVar _ -> do
+        tcFails [out $ "Cannot instantiate unknown type of term:"
+                ,out $ highlightFirstLine $ rangeOf ea
+                ,out $ "Try adding an explicit type annotation."
+                ]
       _othertype ->
         tcFails [out $ "Cannot apply type args to expression of"
                    ++ " non-ForAll type "]
+-- }}}
 
 -----------------------------------------------------------------------
 
