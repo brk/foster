@@ -140,21 +140,22 @@ typecheckVar ctx rng name =
 --  G |- let x = e1 in e2 ::: t2
 typecheckLet ctx0 rng (TermBinding v e1) e2 mt = do
 -- {{{
-    let boundName    = evarName v
-    let maybeVarType = evarMaybeType v
-    sanityCheck (notRecursive boundName e1)
-        ("Recursive bindings should use 'rec', not 'let'"
-                         ++ highlightFirstLine rng)
+    sanityCheck (notRecursive boundName e1) errMsg
     id     <- tcFreshT boundName
-    a1     <- typecheck     ctx0    e1 maybeVarType
-    ctxext <- extendContext ctx0 [TypedId (typeAST a1) id] Nothing
-    a2     <- typecheck     ctxext  e2 mt
+    a1     <- typecheck     ctx0 e1 maybeVarType
+    let v   = TypedId (typeAST a1) id
+    let ctx = prependContextBindings ctx0 [bindingForVar v]
+    a2     <- typecheck     ctx  e2 mt
     return (AnnLetVar rng id a1 a2)
   where
+    boundName    = evarName v
+    maybeVarType = evarMaybeType v
     notRecursive boundName expr =
             not (boundName `elem` freeVars expr && isFnAST expr)
                   where   isFnAST (E_FnAST _) = True
                           isFnAST _           = False
+    errMsg = "Recursive bindings should use 'rec', not 'let':"
+           ++ highlightFirstLine rng
 -- }}}
 
 -----------------------------------------------------------------------
@@ -721,6 +722,7 @@ equateTypes t1 t2 msg = do
              RefTypeAST    ty      -> collectUnificationVars ty
              ArrayTypeAST  ty      -> collectUnificationVars ty
 
+bindingForVar v = TermVarBinding (identPrefix $ tidIdent v) v
 
 extendContext :: Context TypeAST -> [AnnVar] -> Maybe TypeAST -> Tc (Context TypeAST)
 extendContext ctx [] Nothing = return ctx
@@ -731,7 +733,6 @@ extendContext ctx protoFormals expFormals = do
     extractBindings :: [AnnVar] -> Maybe TypeAST -> Tc [ContextBinding TypeAST]
     extractBindings fnProtoFormals maybeExpTy = do
         joinedVars <- typeJoinVars fnProtoFormals maybeExpTy
-        let bindingForVar v = TermVarBinding (identPrefix $ tidIdent v) v
         return (map bindingForVar joinedVars)
 
 typeJoinVars :: [AnnVar] -> (Maybe TypeAST) -> Tc [AnnVar]
