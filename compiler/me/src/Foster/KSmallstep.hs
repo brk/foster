@@ -12,6 +12,7 @@ where
 import Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
+import qualified Data.Text as T
 import Data.Int
 import Data.Bits
 import Data.IORef
@@ -20,11 +21,11 @@ import Data.Array
 import System.Console.ANSI
 import Control.Exception(assert)
 
-import qualified Data.Text as T
 
 import Foster.Base
 import Foster.TypeIL
 import Foster.KNExpr
+import Foster.Output(runOutput, outCSLn)
 
 -- Relatively simple small-step "definitional" interpreter.
 --

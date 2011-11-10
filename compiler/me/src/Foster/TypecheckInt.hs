@@ -16,6 +16,7 @@ import Foster.Base
 import Foster.Context
 import Foster.AnnExpr
 import Foster.TypeAST
+import Foster.Output(outCSLn, outLn)
 
 sanityCheck :: Bool -> String -> Tc ()
 sanityCheck cond msg = if cond then return () else tcFails [outCSLn Red msg]

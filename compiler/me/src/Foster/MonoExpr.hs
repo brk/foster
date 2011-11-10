@@ -14,6 +14,7 @@ import Foster.MonoType
 import Foster.MonoLetable
 import Foster.CFG(BlockId)
 import Foster.PatternMatch(DecisionTree)
+import Foster.Output(out, Output)
 
 data MoClosure = MoClosure { moClosureProcIdent :: Ident
                            , moClosureEnvIdent  :: Ident

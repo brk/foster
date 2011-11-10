@@ -13,6 +13,7 @@ import Data.Maybe(fromMaybe)
 import Foster.Base
 import Foster.TypeAST
 import Foster.Context
+import Foster.Output(out)
 
 ----------------------
 

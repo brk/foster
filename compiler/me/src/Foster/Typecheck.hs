@@ -20,6 +20,7 @@ import Foster.AnnExpr
 import Foster.Infer
 import Foster.Context
 import Foster.TypecheckInt
+import Foster.Output(out, OutputOr(Errors), outToString)
 
 -----------------------------------------------------------------------
 

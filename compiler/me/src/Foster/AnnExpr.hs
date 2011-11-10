@@ -14,6 +14,7 @@ module Foster.AnnExpr (
 
 import Foster.Base
 import Foster.TypeAST
+import Foster.Output(out, OutputOr(..))
 
 import qualified Data.Text as T
 

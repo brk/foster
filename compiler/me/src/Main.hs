@@ -4,9 +4,7 @@
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
-module Main (
-main
-) where
+module Main (main) where
 
 import System.Environment(getArgs,getProgName)
 import System.Console.GetOpt
@@ -44,11 +42,11 @@ import Foster.Typecheck
 import Foster.Context
 import Foster.Monomo
 import Foster.KSmallstep
+import Foster.Output
 
 -----------------------------------------------------------------------
 
-pair2binding (nm, ty) = TermVarBinding (T.pack nm)
-                                       (TypedId ty (GlobalSymbol $ T.pack nm))
+pair2binding (nm, ty) = TermVarBinding nm (TypedId ty (GlobalSymbol nm))
 
 -----------------------------------------------------------------------
 
@@ -86,7 +84,7 @@ typecheckFnSCC scc (ctx, tcenv) = do
          where   annFnVar = TypedId (annFnType f) (annFnIdent f)
 
         bindingForFnAST :: FnAST -> TypeAST -> ContextBinding TypeAST
-        bindingForFnAST f t = pair2binding (T.unpack (fnAstName f), t)
+        bindingForFnAST f t = pair2binding (fnAstName f, t)
 
         inspect :: OutputOr AnnExpr -> ExprAST -> IO Bool
         inspect typechecked ast =
@@ -148,7 +146,7 @@ typecheckModule verboseMode modast tcenv0 = do
        where globalvars   = declBindings ++ primBindings
 
    computeContextBindings :: [(String, TypeAST)] -> [ContextBinding TypeAST]
-   computeContextBindings decls = map pair2binding decls
+   computeContextBindings decls = map (\(s,t) -> pair2binding (T.pack s, t)) decls
 
    -- Given a data type  T (A1::K1) ... (An::Kn)
    -- returns the type   T A1 .. An   (with A1..An free).

@@ -10,6 +10,7 @@ import Foster.Base
 import Foster.Kind
 import Foster.TypeAST
 import Foster.Context
+import Foster.Output(out)
 
 type RhoIL = TypeIL
 data TypeIL =

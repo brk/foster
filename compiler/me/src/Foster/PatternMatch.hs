@@ -13,6 +13,7 @@ import Data.Map(Map)
 import qualified Data.Map  as Map(lookup, size)
 
 import Foster.Base
+import Foster.Output(out)
 
 {-
 Straightforward implementation of pattern match compilation

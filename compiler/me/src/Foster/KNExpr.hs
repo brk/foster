@@ -4,16 +4,16 @@
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
-module Foster.KNExpr (kNormalizeModule, KNExpr(..), typeKN)
-where
+module Foster.KNExpr (kNormalizeModule, KNExpr(..), typeKN) where
+
 import Control.Monad.State(forM, evalState, get, put, State)
+import qualified Data.Text as T
 
 import Foster.Base
 import Foster.Context
 import Foster.TypeIL
 import Foster.AnnExprIL
-
-import qualified Data.Text as T
+import Foster.Output(out, outToString)
 
 -- | Foster.ILExpr binds all intermediate values to named variables
 -- | via a variant of K-normalization.

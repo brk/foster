@@ -20,6 +20,7 @@ import qualified Data.Text as T
 
 import Foster.Base
 import Foster.Kind
+import Foster.Output(out)
 
 data EPattern =
           EP_Wildcard    SourceRange

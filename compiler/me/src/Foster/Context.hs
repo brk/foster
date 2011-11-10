@@ -8,6 +8,7 @@ import qualified Data.Text as T
 import Foster.Base
 import Foster.ExprAST
 import Foster.TypeAST
+import Foster.Output(out, outLn, Output, OutputOr(..))
 
 data ContextBinding ty = TermVarBinding T.Text (TypedId ty)
 

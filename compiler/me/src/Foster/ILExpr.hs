@@ -10,6 +10,9 @@ module Foster.ILExpr where
 import Control.Monad.State
 import Data.Map(Map)
 import qualified Data.Map as Map((!), insert, lookup, empty, fromList, elems)
+import qualified Data.Text as T
+
+import Compiler.Hoopl
 
 import Foster.Base
 import Foster.Kind
@@ -17,10 +20,7 @@ import Foster.CFG
 import Foster.TypeIL
 import Foster.Letable
 import Foster.PatternMatch
-
-import qualified Data.Text as T
-
-import Compiler.Hoopl
+import Foster.Output(out, Output)
 
 --------------------------------------------------------------------
 

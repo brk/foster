@@ -15,9 +15,10 @@ module Foster.ExprAST(
 where
 
 import Foster.Base(SourceRange, Expr(..), freeVars, identPrefix, Structured(..),
-                   SourceRanged(..), TypedId(..), butnot, out)
+                   SourceRanged(..), TypedId(..), butnot)
 import Foster.TypeAST(TypeAST, EPattern(..), E_VarAST(..), AnnVar)
 import Foster.Kind
+import Foster.Output(out)
 
 import qualified Data.Text as T
 
