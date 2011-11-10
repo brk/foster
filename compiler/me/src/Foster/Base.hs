@@ -20,8 +20,6 @@ import Data.List as List
 
 import qualified Data.Text as T
 
-import Data.Bits(shiftR)
-
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 prependedTo :: String -> T.Text -> T.Text
@@ -324,11 +322,6 @@ data LiteralInt = LiteralInt { litIntValue   :: Integer
                              , litIntText    :: String
                              , litIntBase    :: Int
                              } deriving (Show)
-
--- | Example: bitStringOf 21 == "10101"
-bitStringOf n | n <= 1     = show n
-              | otherwise = bitStringOf (shiftR n 1) ++ lowBitOf n
-                     where lowBitOf n = if even n then "1" else "0"
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

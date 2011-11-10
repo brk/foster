@@ -1,15 +1,16 @@
+-----------------------------------------------------------------------------
+-- Copyright (c) 2011 Ben Karel. All rights reserved.
+-- Use of this source code is governed by a BSD-style license that can be
+-- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
+-----------------------------------------------------------------------------
 module Foster.Typecheck(typecheck) where
 
-import List(length, zip, sort, group, head, elemIndex, reverse)
+import List(length, zip, sort, group, head)
 import Control.Monad(liftM, forM_, forM)
 
 import Debug.Trace(trace)
 import qualified Data.Text as T
 import qualified Data.Map as Map(lookup)
-import Data.Maybe(fromJust)
-import Data.Char (toLower)
-
-import System.Console.ANSI(Color(Red))
 
 import Foster.Base
 import Foster.Kind
@@ -18,11 +19,9 @@ import Foster.ExprAST
 import Foster.AnnExpr
 import Foster.Infer
 import Foster.Context
+import Foster.TypecheckInt
 
 -----------------------------------------------------------------------
-
-sanityCheck :: Bool -> String -> Tc ()
-sanityCheck cond msg = if cond then return () else tcFails [outCSLn Red msg]
 
 typecheck :: Context TypeAST -> ExprAST -> Maybe TypeAST -> Tc AnnExpr
 typecheck ctx expr maybeExpTy =
@@ -93,10 +92,10 @@ typecheck ctx expr maybeExpTy =
                 tc <- typecheck ctx c Nothing
                 typecheckArrayPoke rng ta tb (typeAST tb) tc maybeExpTy
 
-        E_CompilesAST rng maybeExpr -> case maybeExpr of
-            Nothing -> return $ AnnCompiles rng (CompilesResult $
-                                                  Errors [out $ "parse error"])
-            Just e -> do
+        E_CompilesAST rng Nothing ->
+                return $ AnnCompiles rng (CompilesResult $
+                                                   Errors [out $ "parse error"])
+        E_CompilesAST rng (Just e) -> do
                 outputOrE <- tcIntrospect (typecheck ctx e Nothing)
                 return $ AnnCompiles rng (CompilesResult outputOrE)
 
@@ -661,65 +660,6 @@ typecheckExprsTogether ctx exprs expectedTypes = do
            ++ ") and expected types (" ++ (show $ length expectedTypes) ++
              ")\n" ++ show exprs ++ " versus \n" ++ show expectedTypes)
     mapM (\(e,mt) -> typecheck ctx e mt) (List.zip exprs expectedTypes)
-
------------------------------------------------------------------------
-
-sizeOfBits :: Int -> IntSizeBits
-sizeOfBits 32 = I32
-sizeOfBits n = error $ "Typecheck.hs:sizeOfBits: Only support i32 for now, not " ++ show n
-
-typecheckInt :: SourceRange -> String -> Tc AnnExpr
-typecheckInt rng originalText = do
-    let goodBases = [2, 8, 10, 16]
-    let maxBits = 32
-    (clean, base) <- extractCleanBase originalText
-    sanityCheck (base `Prelude.elem` goodBases)
-                ("Integer base must be one of " ++ show goodBases
-                                    ++ "; was " ++ show base)
-    sanityCheck (onlyValidDigitsIn clean base)
-                ("Cleaned integer must contain only hex digits: " ++ clean)
-    let int = precheckedLiteralInt originalText maxBits clean base
-    let activeBits = litIntMinBits int
-    sanityCheck (activeBits <= maxBits)
-                ("Integers currently limited to " ++ show maxBits ++ " bits, "
-                                  ++ clean ++ " requires " ++ show activeBits)
-    return (AnnInt rng (PrimIntAST $ sizeOfBits maxBits) int)
- where
-        onlyValidDigitsIn :: String -> Int -> Bool
-        onlyValidDigitsIn str lim =
-            let validIndex mi = Just True == fmap (< lim) mi in
-            Prelude.all validIndex (map indexOf str)
-
-        indexOf x = (toLower x) `List.elemIndex` "0123456789abcdef"
-
-        -- Given "raw" integer text like "123`456_10",
-        -- return ("123456", 10)
-        extractCleanBase :: String -> Tc (String, Int)
-        extractCleanBase text = do
-            let noticks = Prelude.filter (/= '`') text
-            case splitString "_" noticks of
-                [first, base] -> return (first, read base)
-                [first]       -> return (first, 10)
-                _otherwise    -> tcFails
-                   [outLn $ "Unable to parse integer literal " ++ text]
-
-        splitString :: String -> String -> [String]
-        splitString needle haystack =
-            let textParts = T.splitOn (T.pack needle) (T.pack haystack) in
-            map T.unpack textParts
-
-        -- Precondition: the provided string must be parseable in the given radix
-        precheckedLiteralInt :: String -> Int -> String -> Int -> LiteralInt
-        precheckedLiteralInt originalText _maxBits clean base =
-            let integerValue = parseRadixRev (fromIntegral base) (List.reverse clean) in
-            let activeBits = List.length (bitStringOf integerValue) in
-            LiteralInt integerValue activeBits originalText base
-
-        -- Precondition: string contains only valid hex digits.
-        parseRadixRev :: Integer -> String -> Integer
-        parseRadixRev _ ""     = 0
-        parseRadixRev r (c:cs) =
-                (r * parseRadixRev r cs) + (fromIntegral $ fromJust (indexOf c))
 
 -----------------------------------------------------------------------
 
