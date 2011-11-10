@@ -8,8 +8,7 @@ module Foster.Typecheck(typecheck) where
 import List(length, zip, sort, group, head)
 import Control.Monad(liftM, forM_, forM)
 
-import Debug.Trace(trace)
-import qualified Data.Text as T
+import qualified Data.Text as T(Text, pack, unpack)
 import qualified Data.Map as Map(lookup)
 
 import Foster.Base
@@ -19,7 +18,7 @@ import Foster.ExprAST
 import Foster.AnnExpr
 import Foster.Infer
 import Foster.Context
-import Foster.TypecheckInt
+import Foster.TypecheckInt(sanityCheck, typecheckInt)
 import Foster.Output(out, OutputOr(Errors), outToString)
 
 -----------------------------------------------------------------------
@@ -723,8 +722,7 @@ equateTypes t1 t2 msg = do
 extendContext :: Context TypeAST -> [AnnVar] -> Maybe TypeAST -> Tc (Context TypeAST)
 extendContext ctx [] Nothing = return ctx
 extendContext ctx protoFormals expFormals = do
-    bindings <- trace ("extendContext " ++ show protoFormals ++ "\n\t" ++ show expFormals) $
-                extractBindings protoFormals expFormals
+    bindings <- extractBindings protoFormals expFormals
     return $ prependContextBindings ctx bindings
   where
     extractBindings :: [AnnVar] -> Maybe TypeAST -> Tc [ContextBinding TypeAST]

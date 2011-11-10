@@ -102,6 +102,8 @@ data CtorId     = CtorId   { ctorTypeName :: String
                            , ctorSmallInt :: Int
                            } deriving (Show, Eq)
 
+data CtorInfo ty = CtorInfo CtorId (DataCtor ty) deriving Show
+
 instance Ord CtorId where
   compare a b = compare (show a) (show b)
 

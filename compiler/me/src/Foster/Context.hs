@@ -36,9 +36,6 @@ termVarLookup :: T.Text -> [ContextBinding ty] -> Maybe (TypedId ty)
 termVarLookup name bindings = Prelude.lookup name bindingslist where
     bindingslist = [(nm, annvar) | (TermVarBinding nm annvar) <- bindings]
 
-
-data CtorInfo ty = CtorInfo CtorId (DataCtor ty) deriving Show
-
 -- Based on "Practical type inference for arbitrary rank types."
 -- One significant difference is that we do not include the Gamma context
 --   (mapping term variables to types) in the TcEnv, because we do not

@@ -14,8 +14,6 @@ import qualified Data.ByteString.Lazy as L(readFile)
 import qualified Data.Text as T
 
 import List(all)
-import Data.Map(Map)
-import qualified Data.Map as Map(fromList, unionsWith)
 import qualified Data.Set as Set(filter, toList, fromList, empty, member, insert)
 import qualified Data.Graph as Graph(SCC, flattenSCC, stronglyConnComp)
 import Data.Maybe(isNothing)
@@ -43,12 +41,11 @@ import Foster.Context
 import Foster.Monomo
 import Foster.KSmallstep
 import Foster.Output
+import Foster.MainCtorHelpers
 
 -----------------------------------------------------------------------
 
 pair2binding (nm, ty) = TermVarBinding nm (TypedId ty (GlobalSymbol nm))
-
------------------------------------------------------------------------
 
 -- Every function in the SCC should typecheck against the input context,
 -- and the resulting context should include the computed types of each
@@ -230,37 +227,6 @@ printOutputs outs =
     do
        runOutput $ output
        runOutput $ (outLn "")
-
------------------------------------------------------------------------
-
-getCtorInfo :: [DataType TypeAST] -> Map CtorName [CtorInfo TypeAST]
-getCtorInfo datatypes = Map.unionsWith (++) $ map getCtorInfoList datatypes
-  where
-    getCtorInfoList :: DataType TypeAST -> Map CtorName [CtorInfo TypeAST]
-    getCtorInfoList (DataType name _tyformals ctors) =
-          Map.fromList $ map (buildCtorInfo name) ctors
-
-    buildCtorInfo :: DataTypeName -> DataCtor TypeAST
-                  -> (CtorName, [CtorInfo TypeAST])
-    buildCtorInfo name ctor =
-      case ctorIdFor name ctor of (n, c) -> (n, [CtorInfo c ctor])
-
------------------------------------------------------------------------
-
-ctorIdFor :: (Show t) => String -> DataCtor t -> (CtorName, CtorId)
-ctorIdFor name ctor = (ctorNameOf ctor, ctorId name ctor)
-  where
-    ctorNameOf (DataCtor ctorName _n _) = ctorName
-    ctorId nm (DataCtor ctorName n types) =
-      CtorId nm (T.unpack ctorName) (Prelude.length types) n
-
------------------------------------------------------------------------
-
-dataTypeSigs :: [DataType TypeIL] -> Map DataTypeName DataTypeSig
-dataTypeSigs datatypes = Map.fromList $ map ctorIdSet datatypes where
-  ctorIdSet :: DataType TypeIL -> (DataTypeName, DataTypeSig)
-  ctorIdSet (DataType name _tyformals ctors) =
-      (name, DataTypeSig (Map.fromList $ map (ctorIdFor name) ctors))
 
 -----------------------------------------------------------------------
 
