@@ -8,7 +8,7 @@ module Foster.TypeAST(
   TypeAST(..), EPattern(..), E_VarAST(..), IntSizeBits(..), AnnVar
 , fosBoolType, MetaTyVar(Meta), Sigma, Rho, Tau
 , typesEqual, minimalTupleAST, kindOfTypeAST
-, mkFnType
+, mkFnType, convertTyFormal
 , gFosterPrimOpsTable, primitiveDecls
 )
 where
@@ -120,6 +120,8 @@ kindOfTypeAST x = case x of
     PrimIntAST   {} -> KindAnySizeType
     TyVarAST     {} -> KindAnySizeType -- can get better kind info by evaluating kinds in contexts
     MetaTyVar    {} -> KindAnySizeType
+
+convertTyFormal (TypeFormalAST name kind) = (BoundTyVar name, kind)
 
 allTypesEqual :: [TypeAST] -> [TypeAST] -> Bool
 allTypesEqual xs ys =

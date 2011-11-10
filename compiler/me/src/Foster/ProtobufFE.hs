@@ -132,21 +132,20 @@ parseLet pbexpr range = do
     parsePBLet range
                (fromMaybe (error "Protobuf node tagged LET without PbLet field!")
                           (PbExpr.pb_let pbexpr))
-               (fmap parseType $ PbExpr.type' pbexpr)
       where parseBinding (PbTermBinding.TermBinding u e) = do
                 body <- parseExpr e
                 return (Foster.ExprAST.TermBinding (VarAST Nothing (pUtf8ToText u)) body)
-            parsePBLet range pblet mty = do
+            parsePBLet range pblet = do
                 bindings <- mapM parseBinding (toList $ PBLet.binding pblet)
                 body <- parseExpr (PBLet.body pblet)
                 if PBLet.is_recursive pblet
-                  then return $ E_LetRec  range bindings body mty
-                  else return $ buildLets range bindings body mty
-            buildLets range bindings expr mty =
+                  then return $ E_LetRec  range bindings body
+                  else return $ buildLets range bindings body
+            buildLets range bindings expr =
                 case bindings of
                    []     -> error "parseLet requires at least one binding!" -- TODO show range
-                   (b:[]) -> E_LetAST range b expr mty
-                   (b:bs) -> E_LetAST range b (buildLets range bs expr mty) Nothing
+                   (b:[]) -> E_LetAST range b expr
+                   (b:bs) -> E_LetAST range b (buildLets range bs expr)
 
 parseSeq pbexpr _range = do
     exprs <- mapM parseExpr $ toList (toList $ PbExpr.parts pbexpr)

@@ -34,8 +34,8 @@ data ExprAST =
         | E_SeqAST        SourceRange ExprAST ExprAST
         -- Creation of bindings
         | E_Case          SourceRange ExprAST [(EPattern, ExprAST)]
-        | E_LetAST        SourceRange  TermBinding  ExprAST (Maybe TypeAST)
-        | E_LetRec        SourceRange [TermBinding] ExprAST (Maybe TypeAST)
+        | E_LetAST        SourceRange  TermBinding  ExprAST
+        | E_LetRec        SourceRange [TermBinding] ExprAST
         -- Use of bindings
         | E_VarAST        SourceRange E_VarAST
         | E_CallAST       SourceRange ExprAST TupleAST
@@ -89,7 +89,7 @@ instance Structured ExprAST where
             E_IntAST _rng text     -> out $ "IntAST       " ++ text
             E_FnAST f              -> out $ "FnAST        " ++ T.unpack (fnAstName f)
             E_LetRec    {}         -> out $ "LetRec       "
-            E_LetAST _rng bnd _ _  -> out $ "LetAST       " ++ T.unpack (termBindingName bnd)
+            E_LetAST _rng bnd _    -> out $ "LetAST       " ++ T.unpack (termBindingName bnd)
             E_SeqAST    {}         -> out $ "SeqAST       "
             E_AllocAST  {}         -> out $ "AllocAST     "
             E_DerefAST  {}         -> out $ "DerefAST     "
@@ -121,8 +121,8 @@ instance Structured ExprAST where
             E_TyApp       _rng a _t      -> [a]
             E_Case        _rng e bs      -> e:(map snd bs)
             E_VarAST      _rng _         -> []
-            E_LetRec      _rng bnz e _t  -> [termBindingExpr bnd | bnd <- bnz] ++ [e]
-            E_LetAST      _rng bnd e _t  -> (termBindingExpr bnd):[e]
+            E_LetRec      _rng bnz e     -> [termBindingExpr bnd | bnd <- bnz] ++ [e]
+            E_LetAST      _rng bnd e     -> (termBindingExpr bnd):[e]
 
 instance SourceRanged ExprAST
   where
@@ -131,8 +131,8 @@ instance SourceRanged ExprAST
       E_IntAST        rng _ -> rng
       E_TupleAST    tup -> tupleAstRange tup
       E_FnAST         f -> fnAstRange f
-      E_LetAST        rng _ _ _ -> rng
-      E_LetRec        rng _ _ _ -> rng
+      E_LetAST        rng _ _   -> rng
+      E_LetRec        rng _ _   -> rng
       E_CallAST       rng _ _   -> rng
       E_CompilesAST   rng _     -> rng
       E_IfAST         rng _ _ _ -> rng
@@ -150,7 +150,7 @@ instance SourceRanged ExprAST
 instance Expr ExprAST where
   freeVars e = case e of
     E_VarAST _rng v        -> [evarName v]
-    E_LetAST _rng bnd e _t -> let bindingFreeVars (TermBinding v e) =
+    E_LetAST _rng bnd e    -> let bindingFreeVars (TermBinding v e) =
                                    freeVars e `butnot` [evarName v]
                                in  freeVars e ++ (bindingFreeVars bnd)
     E_Case _rng e epatbnds -> freeVars e ++ (concatMap epatBindingFreeVars epatbnds)

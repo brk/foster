@@ -101,8 +101,7 @@ typecheckFnSCC scc (ctx, tcenv) = do
           let fnTy = mkFnType argTys [retTy]
           case fnTyFormals f of
             []        -> return $ fnTy
-            tyformals -> return $ ForAllAST (map ktyvarFor tyformals) fnTy
-                         where ktyvarFor (TypeFormalAST s k) = (BoundTyVar s, k)
+            tyformals -> return $ ForAllAST (map convertTyFormal tyformals) fnTy
 
         inspect :: OutputOr AnnExpr -> ExprAST -> IO Bool
         inspect typechecked ast =
@@ -175,7 +174,6 @@ typecheckModule verboseMode modast tcenv0 = do
        FnTypeAST (TupleTypeAST ctorArgTypes) (typeOfDataType dt) FastCC FT_Proc
 
    ctorTypeAST tyformals dt ctorArgTypes =
-     let convertTyFormal (TypeFormalAST name kind) = (BoundTyVar name, kind) in
      ForAllAST (map convertTyFormal tyformals)
       (FnTypeAST (TupleTypeAST ctorArgTypes) (typeOfDataType dt) FastCC FT_Proc)
 

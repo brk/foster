@@ -19,7 +19,7 @@ import Foster.AnnExpr
 import Foster.Infer
 import Foster.Context
 import Foster.TypecheckInt(sanityCheck, typecheckInt)
-import Foster.Output(out, OutputOr(Errors), outToString)
+import Foster.Output(out, outToString, OutputOr(Errors))
 
 -----------------------------------------------------------------------
 
@@ -27,79 +27,57 @@ typecheck :: Context TypeAST -> ExprAST -> Maybe TypeAST -> Tc AnnExpr
 typecheck ctx expr maybeExpTy =
   tcWithScope expr $ do
     annexpr <- case expr of
-        E_IfAST rng a b c              -> typecheckIf   ctx rng a b c maybeExpTy
-        E_FnAST f                      -> typecheckFn   ctx f maybeExpTy
-        E_IntAST rng txt               -> typecheckInt rng txt
-        E_LetRec rng bindings e mt     -> typecheckLetRec ctx rng bindings e mt
-        E_LetAST rng binding  e mt     -> typecheckLet   ctx rng binding e mt
-        E_TupleAST (TupleAST rng exps) -> typecheckTuple ctx rng exps maybeExpTy
-        E_VarAST rng v                 -> typecheckVar   ctx rng (evarName v)
-        E_TyApp  rng e t               -> typecheckTyApp ctx rng e t maybeExpTy
-        E_Case   rng a branches        -> typecheckCase  ctx rng a branches maybeExpTy
-        E_CallAST rng base argtup      -> typecheckCall  ctx rng base
-                                                (E_TupleAST argtup) maybeExpTy
-        E_AllocAST rng a               -> typecheckAlloc ctx rng a maybeExpTy
+      E_VarAST rng v            -> typecheckVar    ctx rng (evarName v)
+      E_IntAST  rng txt         -> typecheckInt        rng txt        maybeExpTy
+      E_BoolAST rng b           -> typecheckBool       rng b          maybeExpTy
+      E_CallAST rng base argtup -> typecheckCall   ctx rng base
+                                                  (E_TupleAST argtup) maybeExpTy
+      E_TupleAST
+            (TupleAST rng exps) -> typecheckTuple  ctx rng exps       maybeExpTy
+      E_IfAST   rng a b c       -> typecheckIf     ctx rng a b c      maybeExpTy
+      E_FnAST f                 -> typecheckFn     ctx     f          maybeExpTy
+      E_LetRec rng bindings e   -> typecheckLetRec ctx rng bindings e maybeExpTy
+      E_LetAST rng binding  e   -> typecheckLet    ctx rng binding  e maybeExpTy
+      E_TyApp  rng e t          -> typecheckTyApp  ctx rng e t        maybeExpTy
+      E_Case   rng a branches   -> typecheckCase   ctx rng a branches maybeExpTy
+      E_AllocAST rng a          -> typecheckAlloc  ctx rng a          maybeExpTy
+      E_StoreAST rng e1 e2      -> typecheckStore  ctx rng e1 e2
+      E_DerefAST rng a -> do
+        ea <- typecheck ctx a Nothing -- TODO: match maybeExpTy?
+        case typeAST ea of
+          RefTypeAST t -> return (AnnDeref rng t ea)
+          other        -> tcFails [out $ "Expected deref-ed expr "
+                                   ++ "to have ref type, had " ++ show other ++ show rng]
+      E_SeqAST rng a b -> do ea <- typecheck ctx a Nothing --(Just TypeUnitAST)
+                             id <- tcFresh ".seq"
+                             eb <- typecheck ctx b maybeExpTy
+                             return (AnnLetVar rng id ea eb)
+      E_UntilAST rng cond body -> do
+              acond <- typecheck ctx cond (Just fosBoolType)
+              abody <- typecheck ctx body Nothing
+              equateTypes (typeAST acond) fosBoolType
+                    (Just "E_Until: type of until conditional wasn't boolean")
+              return $ AnnUntil rng (TupleTypeAST []) acond abody
 
-        E_DerefAST rng a -> do
-          ea <- typecheck ctx a Nothing -- TODO: match maybeExpTy?
-          case typeAST ea of
-            RefTypeAST t -> return (AnnDeref rng t ea)
-            other        -> tcFails [out $ "Expected deref-ed expr "
-                                     ++ "to have ref type, had " ++ show other ++ show rng]
+      -- a[b]
+      E_ArrayRead rng a b -> do
+              ta <- typecheck ctx a Nothing
+              tb <- typecheck ctx b Nothing
+              typecheckArrayRead rng ta (typeAST ta) tb maybeExpTy
 
-        --  G |- e1 ::: tau
-        --  G |- e2 ::: Ref tau
-        --  --------------------
-        --  G |- e1 >^ e2 ::: ()
-        E_StoreAST rng e1 e2 -> do
-          u_slot <- newTcUnificationVar $ "slot_type"
-          u_expr <- newTcUnificationVar $ "expr_type"
-          a2 <- typecheck ctx e2 (Just $ RefTypeAST u_slot)
-          a1 <- typecheck ctx e1 (Just $            u_expr)
-          equateTypes    u_slot                    u_expr    (Just "Store expression")
-          equateTypes (typeAST a2) (RefTypeAST (typeAST a1)) (Just "Store expression")
-          return (AnnStore rng a1 a2)
+      -- a >^ b[c]
+      E_ArrayPoke rng a b c -> do
+              ta <- typecheck ctx a Nothing
+              tb <- typecheck ctx b (Just $ ArrayTypeAST (typeAST ta))
+              tc <- typecheck ctx c Nothing
+              typecheckArrayPoke rng ta tb (typeAST tb) tc maybeExpTy
 
-        E_SeqAST rng a b -> do
-            ea <- typecheck ctx a Nothing --(Just TypeUnitAST)
-            id <- tcFresh ".seq"
-            eb <- typecheck ctx b maybeExpTy
-            return (AnnLetVar rng id ea eb)
-
-        E_BoolAST rng b ->
-          case maybeExpTy of
-            Nothing -> return (AnnBool rng b)
-            Just  t | t == fosBoolType
-                    -> return (AnnBool rng b)
-            Just  t -> tcFails [out $ "Unable to check Bool constant in context"
-                                   ++ " expecting non-Bool type " ++ show t
-                                   ++ showSourceRange rng]
-        E_UntilAST rng cond body -> do
-                acond <- typecheck ctx cond (Just fosBoolType)
-                abody <- typecheck ctx body Nothing
-                equateTypes (typeAST acond) fosBoolType
-                      (Just "E_Until: type of until conditional wasn't boolean")
-                return $ AnnUntil rng (TupleTypeAST []) acond abody
-
-        -- a[b]
-        E_ArrayRead rng a b -> do
-                ta <- typecheck ctx a Nothing
-                tb <- typecheck ctx b Nothing
-                typecheckArrayRead rng ta (typeAST ta) tb maybeExpTy
-
-        -- a >^ b[c]
-        E_ArrayPoke rng a b c -> do
-                ta <- typecheck ctx a Nothing
-                tb <- typecheck ctx b (Just $ ArrayTypeAST (typeAST ta))
-                tc <- typecheck ctx c Nothing
-                typecheckArrayPoke rng ta tb (typeAST tb) tc maybeExpTy
-
-        E_CompilesAST rng Nothing ->
-                return $ AnnCompiles rng (CompilesResult $
-                                                   Errors [out $ "parse error"])
-        E_CompilesAST rng (Just e) -> do
-                outputOrE <- tcIntrospect (typecheck ctx e Nothing)
-                return $ AnnCompiles rng (CompilesResult outputOrE)
+      E_CompilesAST rng Nothing ->
+              return $ AnnCompiles rng (CompilesResult $
+                                                 Errors [out $ "parse error"])
+      E_CompilesAST rng (Just e) -> do
+              outputOrE <- tcIntrospect (typecheck ctx e Nothing)
+              return $ AnnCompiles rng (CompilesResult outputOrE)
 
     -- If the context provided an expected type,
     -- make sure it unifies with the actual type we computed!
@@ -113,6 +91,30 @@ typecheck ctx expr maybeExpTy =
     return annexpr
 
 -----------------------------------------------------------------------
+
+typecheckBool rng b maybeExpTy = do
+    case maybeExpTy of
+         Nothing                    -> return (AnnBool rng b)
+         Just  t | t == fosBoolType -> return (AnnBool rng b)
+         Just  t -> tcFails [out $ "Unable to check Bool constant in context"
+                                ++ " expecting non-Bool type " ++ show t
+                                ++ showSourceRange rng]
+
+--  G |- e1 ::: tau
+--  G |- e2 ::: Ref tau
+--  --------------------
+--  G |- e1 >^ e2 ::: ()
+typecheckStore ctx rng e1 e2 = do
+-- {{{
+    u_slot <- newTcUnificationVar $ "slot_type"
+    u_expr <- newTcUnificationVar $ "expr_type"
+    a2 <- typecheck ctx e2 (Just $ RefTypeAST u_slot)
+    a1 <- typecheck ctx e1 (Just $            u_expr)
+    equateTypes    u_slot                    u_expr    (Just "Store expression")
+    equateTypes (typeAST a2) (RefTypeAST (typeAST a1)) (Just "Store expression")
+    return (AnnStore rng a1 a2)
+-- }}}
+
 typecheckAlloc ctx rng a maybeExpTy = do
     let expTy = case maybeExpTy of Just (RefTypeAST t) -> Just t
                                    Just _              -> Nothing
@@ -230,7 +232,7 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
       EP_Bool r b     -> do return $ P_Bool r b
       EP_Variable r v -> do id <- tcFreshT (evarName v)
                             return $ P_Variable r id
-      EP_Int r str    -> do annint <- typecheckInt r str
+      EP_Int r str    -> do annint <- typecheckInt r str Nothing
                             return $ P_Int  r (aintLitInt annint)
       EP_Ctor r eps s -> do (CtorInfo cid _) <- getCtorInfoForCtor s
                             sanityCheck (ctorArity cid == List.length eps) $
@@ -563,7 +565,7 @@ unifyFun expArg  actRet actArg (Just expRet) = tcUnifyTypes (TupleTypeAST [expAr
 mkFuncTy a r = FnTypeAST a r FastCC FT_Func
 -----------------------------------------------------------------------
 
--- Functions default to the fast calling convention.
+-- Functions default to the fast calling convention. {{{
 typecheckFn ctx f Nothing =
                 typecheckFn' ctx f FastCC Nothing  Nothing
 
@@ -580,77 +582,79 @@ typecheckFn' ctx f cc expArgType expBodyType = do
     let fnProtoName = T.unpack (fnAstName f)
     uniquelyNamedFormals <- getUniquelyNamedFormals (fnAstRange f)
                                                     (fnFormals f) fnProtoName
+    equateArgTypes uniquelyNamedFormals expArgType
 
     -- Typecheck the body of the function in a suitably extended context.
     extCtx <- extendContext ctx uniquelyNamedFormals expArgType
     annbody <- typecheck extCtx (fnAstBody f) expBodyType
 
-    -- If the function has a return type annotation, use that;
-    -- otherwise, we assume it has a monomorphic return type
-    -- and determine the exact type via unification.
-    fnProtoRetTy <- case fnRetType f of
-                      Nothing -> do newTcUnificationVar $
-                                         "inferred ret type for " ++ fnProtoName
-                      Just t -> return t
-
-    -- Make sure the body (forcibly) agrees with the return type annotation.
-    equateTypes fnProtoRetTy (typeAST annbody)
+    -- Make sure the body agrees with the return type annotation (if any).
+    case fnRetType f of
+       Nothing -> return ()
+       Just t  -> equateTypes t (typeAST annbody)
                     (Just $ "return type/body type mismatch in " ++ fnProtoName)
 
     -- Note we collect free vars in the old context, since we can't possibly
     -- capture the function's arguments from the environment!
     freeVars <- computeFreeFnVars uniquelyNamedFormals annbody f ctx
-    formalVars <- typeJoinVars uniquelyNamedFormals expArgType
 
-    -- Compute "base" function type, ignoring any type parameters.
-    let fnty0 = FnTypeAST argtypes (typeAST annbody) cc procOrFunc
-                where argtypes   = TupleTypeAST (map tidType formalVars)
-                      procOrFunc = if fnWasToplevel f then FT_Proc else FT_Func
+    let fnty = let argtypes = TupleTypeAST (map tidType uniquelyNamedFormals) in
+               fnTypeTemplate f argtypes (typeAST annbody) cc
 
-    -- If we have type parameters, wrap fnty0 in a forall type.
-    let fnty = case fnTyFormals f of
-           []   -> fnty0
-           tyformals ->
-              let btv (TypeFormalAST name kind) = (BoundTyVar name, kind) in
-              ForAllAST (map btv tyformals) fnty0
-
-    -- If we're type checking a top-level function binding,
-    -- update the type for the binding's unification variable.
+    -- If we're type checking a top-level function binding, update its type.
     case termVarLookup (T.pack fnProtoName) (contextBindings ctx) of
       Nothing -> return ()
       Just av -> equateTypes fnty (tidType av)
                    (Just $ "overall type of function " ++ fnProtoName)
 
-    return $ E_AnnFn (AnnFn fnty (GlobalSymbol $ T.pack fnProtoName)
-                           formalVars annbody freeVars
-                           (fnAstRange f))
+    return $ E_AnnFn $ AnnFn fnty (GlobalSymbol $ fnAstName f)
+                             uniquelyNamedFormals annbody freeVars
+                             (fnAstRange f)
+  where
+    extendContext :: Context TypeAST -> [AnnVar] -> Maybe TypeAST -> Tc (Context TypeAST)
+    extendContext ctx [] Nothing = return ctx
+    extendContext ctx protoFormals maybeExpFormalTys = do
+        equateArgTypes protoFormals maybeExpFormalTys
+        return $ prependContextBindings ctx (map bindingForVar protoFormals)
 
-computeFreeFnVars uniquelyNamedFormals annbody f ctx = do
-    let identsFree = bodyvars `butnot` (boundvars ++ globalvars)
-                     where
-                     bodyvars   = freeIdents annbody
-                     boundvars  = map tidIdent uniquelyNamedFormals
-                     globalvars = concatMap tmBindingId (globalBindings ctx)
-                     tmBindingId (TermVarBinding _ tid) = [tidIdent tid]
-    freeAnns <- let rng = fnAstRange f in
-                mapM (\id -> typecheckVar ctx rng (identPrefix id)) identsFree
-    return $ [tid | E_AnnVar _ tid <- freeAnns]
+    -- Generalization of fnTypeTemplate in Main.hs
+    fnTypeTemplate f argtypes retty cc =
+      -- Compute "base" function type, ignoring any type parameters.
+      let procOrFunc = if fnWasToplevel f then FT_Proc else FT_Func in
+      let fnty = FnTypeAST argtypes retty cc procOrFunc in
+      case fnTyFormals f of
+              []        -> fnty
+              tyformals -> ForAllAST (map convertTyFormal tyformals) fnty
 
--- | Verify that the given formals have distinct names,
--- | and return unique'd versions of each.
-getUniquelyNamedFormals rng rawFormals fnProtoName = do
-    _ <- verifyNonOverlappingVariableNames rng fnProtoName
-                      (map (identPrefix.tidIdent) rawFormals)
-    mapM uniquelyName rawFormals
+    computeFreeFnVars uniquelyNamedFormals annbody f ctx = do
+        let identsFree = bodyvars `butnot` (boundvars ++ globalvars)
+                         where
+                         bodyvars   = freeIdents annbody
+                         boundvars  = map tidIdent uniquelyNamedFormals
+                         globalvars = concatMap tmBindingId (globalBindings ctx)
+                         tmBindingId (TermVarBinding _ tid) = [tidIdent tid]
+        freeAnns <- let rng = fnAstRange f in
+                    mapM (\id -> typecheckVar ctx rng (identPrefix id)) identsFree
+        return $ [tid | E_AnnVar _ tid <- freeAnns]
+
+    -- | Verify that the given formals have distinct names,
+    -- | and return unique'd versions of each.
+    getUniquelyNamedFormals rng rawFormals fnProtoName = do
+        verifyNonOverlappingVariableNames rng fnProtoName
+                          (map (identPrefix.tidIdent) rawFormals)
+        mapM uniquelyName rawFormals
+-- }}}
 
 -----------------------------------------------------------------------
 
+typecheckTuple :: Context TypeAST -> SourceRange -> [ExprAST] -> Maybe TypeAST -> Tc AnnExpr
+-- {{{
 typecheckTuple ctx rng exprs maybeExpectedType =
   case maybeExpectedType of
      Nothing                -> tcTuple ctx rng exprs [Nothing | _ <- exprs]
      Just (TupleTypeAST ts) -> tcTuple ctx rng exprs [Just t  | t <- ts]
      Just m@MetaTyVar {}    -> do
-        tctup <- typecheckTuple ctx rng exprs Nothing
+        tctup <-               tcTuple ctx rng exprs [Nothing | _ <- exprs]
         equateTypes m (typeAST tctup) (Just $ highlightFirstLine rng)
         return tctup
      Just ty -> tcFails [out $ "typecheck: tuple (" ++ show exprs ++ ") "
@@ -668,6 +672,7 @@ typecheckTuple ctx rng exprs maybeExpectedType =
                ++ ") and expected types (" ++ (show $ length expectedTypes) ++
                  ")\n" ++ show exprs ++ " versus \n" ++ show expectedTypes)
         mapM (\(e,mt) -> typecheck ctx e mt) (List.zip exprs expectedTypes)
+-- }}}
 
 -----------------------------------------------------------------------
 
@@ -724,36 +729,15 @@ equateTypes t1 t2 msg = do
 
 bindingForVar v = TermVarBinding (identPrefix $ tidIdent v) v
 
-extendContext :: Context TypeAST -> [AnnVar] -> Maybe TypeAST -> Tc (Context TypeAST)
-extendContext ctx [] Nothing = return ctx
-extendContext ctx protoFormals expFormals = do
-    bindings <- extractBindings protoFormals expFormals
-    return $ prependContextBindings ctx bindings
-  where
-    extractBindings :: [AnnVar] -> Maybe TypeAST -> Tc [ContextBinding TypeAST]
-    extractBindings fnProtoFormals maybeExpTy = do
-        joinedVars <- typeJoinVars fnProtoFormals maybeExpTy
-        return (map bindingForVar joinedVars)
-
-typeJoinVars :: [AnnVar] -> (Maybe TypeAST) -> Tc [AnnVar]
-
-typeJoinVars vars Nothing = return $ vars
-
-typeJoinVars [var@(TypedId t _)] (Just u@(MetaTyVar _)) = do
-    equateTypes t u Nothing
-    return [var]
-
-typeJoinVars []   (Just u@(MetaTyVar _)) = do
-    equateTypes u (TupleTypeAST []) Nothing
-    return []
-
-typeJoinVars vars (Just (TupleTypeAST expTys)) = do
-    sanityCheck (List.length vars == List.length expTys)
-        ("Lengths of tuples must agree! Had " ++ show vars ++ " and " ++ show expTys)
-    sequence [equateTypes t e Nothing >> return (TypedId t v)
-             | ((TypedId t v), e) <- (List.zip vars expTys)]
-
-typeJoinVars vars (Just t) =
-    tcFails [out $ "typeJoinVars not yet implemented for type "
+-- Unify the types of the variables with the types expected of them.
+equateArgTypes :: [AnnVar] -> (Maybe TypeAST) -> Tc ()
+equateArgTypes _     Nothing              = return ()
+equateArgTypes []   (Just u@MetaTyVar {}) = equateTypes u (TupleTypeAST []) Nothing
+equateArgTypes vars (Just (TupleTypeAST expTys)) = do
+  sanityCheck (List.length vars == List.length expTys)
+   ("Lengths of tuples must agree! Had " ++ show vars ++ " and " ++ show expTys)
+  sequence_ [equateTypes (tidType v) e Nothing | (v, e) <- List.zip vars expTys]
+equateArgTypes vars (Just t) =
+    tcFails [out $ "unifyArgs not yet implemented for type "
                  ++ show t ++ " against " ++ show vars]
 
