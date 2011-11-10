@@ -10,7 +10,7 @@ module Foster.Base where
 import Foster.Kind
 import Foster.Output
 
-import Data.Set as Set(fromList, toList, difference)
+import Data.Set as Set(fromList, toList, difference, insert, empty, member)
 import Data.Sequence as Seq
 import Data.Map as Map(Map)
 import Data.List as List
@@ -259,6 +259,13 @@ butnot bs zs =
     let sbs = Set.fromList bs in
     let szs = Set.fromList zs in
     Set.toList (Set.difference sbs szs)
+
+detectDuplicates :: Ord a => [a] -> [a]
+detectDuplicates xs = go xs Set.empty Set.empty
+  where go []    _seen dups = Set.toList dups
+        go (x:xs) seen dups =
+          if Set.member x seen then go xs seen (Set.insert x dups)
+                               else go xs (Set.insert x seen) dups
 
 joinWith :: String -> [String] -> String
 joinWith _ [] = ""

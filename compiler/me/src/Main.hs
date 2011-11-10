@@ -14,7 +14,7 @@ import qualified Data.ByteString.Lazy as L(readFile)
 import qualified Data.Text as T
 
 import List(all)
-import qualified Data.Set as Set(filter, toList, fromList, empty, member, insert)
+import qualified Data.Set as Set(filter, toList, fromList)
 import qualified Data.Graph as Graph(SCC, flattenSCC, stronglyConnComp)
 import Data.Maybe(isNothing)
 import Control.Monad.State(forM, when, forM_, StateT, runStateT, gets, liftIO)
@@ -120,13 +120,6 @@ typecheckFnSCC scc (ctx, tcenv) = do
 
                     do runOutput $ (outLn "")
                     return False
-
-detectDuplicates :: Ord a => [a] -> [a]
-detectDuplicates xs = go xs Set.empty Set.empty
-  where go []    _seen dups = Set.toList dups
-        go (x:xs) seen dups =
-          if Set.member x seen then go xs seen (Set.insert x dups)
-                               else go xs (Set.insert x seen) dups
 
 -- | Typechecking a module proceeds as follows:
 -- |  #. Build separate binding lists for the globally-defined primitiveDecls

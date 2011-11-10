@@ -5,7 +5,7 @@
 -----------------------------------------------------------------------------
 module Foster.Typecheck(typecheck) where
 
-import List(length, zip, sort, group, head)
+import List(length, zip)
 import Control.Monad(liftM, forM_, forM)
 
 import qualified Data.Text as T(Text, pack, unpack)
@@ -668,14 +668,11 @@ uniquelyName (TypedId ty id) = do
 
 verifyNonOverlappingVariableNames :: SourceRange -> String -> [T.Text] -> Tc ()
 verifyNonOverlappingVariableNames rng name varNames = do
-    let duplicates = [List.head dups
-                     | dups <- List.group (List.sort varNames)
-                     , List.length dups > 1]
-    case duplicates of
-        []    -> return ()
-        _else -> tcFails [out $ "Error when checking " ++ name
+    case detectDuplicates varNames of
+        []   -> return ()
+        dups -> tcFails [out $ "Error when checking " ++ name
                               ++ ": had duplicated bindings: "
-                              ++ show duplicates
+                              ++ show dups
                               ++ highlightFirstLine rng]
 
 -----------------------------------------------------------------------
