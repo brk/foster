@@ -8,7 +8,6 @@
 
 #include "parse/FosterLL.h"
 #include "parse/FosterTypeAST.h"
-#include "parse/FosterUtils.h"
 
 #include "passes/CodegenPass-impl.h"
 
@@ -19,7 +18,7 @@
 
 #include "llvm/Metadata.h"
 //#include "llvm/Analysis/DIBuilder.h"
-#include "llvm/Support/Dwarf.h"
+//#include "llvm/Support/Dwarf.h"
 
 #include "pystring/pystring.h"
 
@@ -37,19 +36,21 @@ using llvm::dyn_cast;
 using foster::builder;
 using foster::EDiag;
 
-char kFosterMain[] = "foster__main";
-int  kUnknownBitsize = 999; // keep in sync with IntSizeBits in Base.hs
-
 namespace foster {
 
-int8_t bogusCtorId(int8_t c) { return c; }
-
+// This is the external entry point for code generation.
 void codegenLL(LLModule* package, llvm::Module* mod) {
   CodegenPass cp(mod);
   package->codegenModule(&cp);
 }
 
 } // namespace foster
+
+
+char kFosterMain[] = "foster__main";
+int  kUnknownBitsize = 999; // keep in sync with IntSizeBits in Base.hs
+
+namespace { // {{{ Internal helper functions
 
 const llvm::Type* getLLVMType(TypeAST* type) {
   ASSERT(type) << "getLLVMType must be given a non-null type!";
@@ -95,6 +96,42 @@ llvm::Value* emitStoreWithCast(llvm::Value* val,
   }
 }
 
+std::vector<llvm::Value*>
+codegenAll(CodegenPass* pass, const std::vector<LLVar*>& args) {
+  std::vector<llvm::Value*> vals;
+  for (size_t i = 0; i < args.size(); ++i) {
+    vals.push_back(pass->emit(args[i], NULL));
+  }
+  return vals;
+}
+
+void copyValuesToStruct(const std::vector<llvm::Value*>& vals,
+                        llvm::Value* tup_ptr) {
+  ASSERT(tup_ptr != NULL);
+  for (size_t i = 0; i < vals.size(); ++i) {
+    Value* dst = builder.CreateConstGEP2_32(tup_ptr, 0, i, "gep");
+    emitStore(vals[i], dst);
+  }
+}
+
+llvm::Value* emitFakeComment(std::string s) {
+  EDiag() << "emitFakeComment: " << s;
+  return new llvm::BitCastInst(builder.getInt32(0), builder.getInt32Ty(), s,
+                               builder.GetInsertBlock());
+}
+
+} // }}} namespace
+
+namespace foster {
+  int8_t bogusCtorId(int8_t c) { return c; }
+}
+
+// Implementation of CodegenPass helpers {{{
+
+CodegenPass::CodegenPass(llvm::Module* m) : mod(m) {
+  //dib = new DIBuilder(*mod);
+}
+
 llvm::Value* CodegenPass::autoload(llvm::Value* v) {
   if (this->needsImplicitLoad.count(v) == 1) {
     return emitNonVolatileLoad(v, v->getName() + ".autoload");
@@ -122,25 +159,21 @@ llvm::Value* CodegenPass::emit(LLExpr* e, TypeAST* expectedType) {
   return v;
 }
 
-std::vector<llvm::Value*>
-codegenAll(CodegenPass* pass, const std::vector<LLVar*>& args) {
-  std::vector<llvm::Value*> vals;
-  for (size_t i = 0; i < args.size(); ++i) {
-    vals.push_back(pass->emit(args[i], NULL));
+llvm::Function* CodegenPass::lookupFunctionOrDie(const std::string&
+                                                         fullyQualifiedSymbol) {
+  // Otherwise, it should be a function name.
+  llvm::Function* f = mod->getFunction(fullyQualifiedSymbol);
+
+  if (!f) {
+   llvm::errs() << "Unable to find function in module named: "
+              << fullyQualifiedSymbol << "\n";
+   valueSymTab.dump(llvm::errs());
+   ASSERT(false) << "unable to find function " << fullyQualifiedSymbol;
   }
-  return vals;
+  return f;
 }
 
-void copyValuesToStruct(const std::vector<llvm::Value*>& vals,
-                        llvm::Value* tup_ptr) {
-  ASSERT(tup_ptr != NULL);
-  for (size_t i = 0; i < vals.size(); ++i) {
-    Value* dst = builder.CreateConstGEP2_32(tup_ptr, 0, i, "gep");
-    emitStore(vals[i], dst);
-  }
-}
-
-////////////////////////////////////////////////////////////////////
+///}}}//////////////////////////////////////////////////////////////
 
 void registerKnownDataTypes(const std::vector<LLDecl*> datatype_decls,
                             CodegenPass* pass) {
@@ -150,34 +183,6 @@ void registerKnownDataTypes(const std::vector<LLDecl*> datatype_decls,
      DataTypeAST* dt = dynamic_cast<DataTypeAST*>(d->getType());
      pass->isKnownDataType[typeName] = dt;
   }
-}
-
-TupleTypeAST* getDataCtorType(DataCtor* dc) {
-  return TupleTypeAST::get(dc->types);
-}
-
-llvm::Value* LLAppCtor::codegen(CodegenPass* pass) {
-  DataTypeAST* dt = pass->isKnownDataType[this->ctorId.typeName];
-  ASSERT(dt) << "unable to find data type for " << this->ctorId.typeName;
-  DataCtor* dc = dt->getCtor(this->ctorId.smallId);
-  TupleTypeAST* ty = getDataCtorType(dc);
-
-  // This basically duplicates LLTuple::codegen and should eventually
-  // be properly implemented in terms of it.
-  registerTupleType(ty, this->ctorId.typeName + "." + this->ctorId.ctorName,
-                    this->ctorId.smallId, pass->mod);
-  bool yesUnboxed = true;
-  LLAllocate a(ty, this->ctorId.smallId, yesUnboxed, NULL,
-               LLAllocate::MEM_REGION_GLOBAL_HEAP);
-  llvm::Value* obj_slot = a.codegen(pass);
-  llvm::Value* obj = emitNonVolatileLoad(obj_slot, "obj");
-
-  EDiag() << "LLAppCtor " << dt->getName() << " :: " << str(dt->getLLVMType());
-  copyValuesToStruct(codegenAll(pass, this->args), obj);
-
-  const llvm::Type* dtype = dt->getLLVMType();
-  // TODO fix to use a stack slot properly
-  return builder.CreateBitCast(obj, dtype);
 }
 
 void LLModule::codegenModule(CodegenPass* pass) {
@@ -198,489 +203,8 @@ void LLModule::codegenModule(CodegenPass* pass) {
 }
 
 ////////////////////////////////////////////////////////////////////
-
-void CodegenPass::scheduleBlockCodegen(LLBlock* b) {
-  if (worklistBlocks.tryAdd(b->block_id, b)) {
-    //EDiag() << "added new block " << b->block_id;
-  }
-}
-
-void codegenBlocks(std::vector<LLBlock*> blocks, CodegenPass* pass,
-                   llvm::Function* F) {
-  pass->llvmBlocks.clear();
-  pass->fosterBlocks.clear();
-  pass->blockBindings.clear();
-
-  // Create all the basic block before codegenning any of them.
-  for (size_t i = 0; i < blocks.size(); ++i) {
-    llvm::BasicBlock* bb = BasicBlock::Create(getGlobalContext(),
-                                              blocks[i]->block_id, F);
-    ASSERT(blocks[i]->block_id == bb->getName())
-        << "function can't have two blocks named "
-        << blocks[i]->block_id;
-    pass->llvmBlocks[blocks[i]->block_id] = bb;
-    pass->fosterBlocks[blocks[i]->block_id] = blocks[i];
-
-    // Make sure we branch from the entry block to the first
-    // 'computation' block.
-    if (i == 0) {
-      builder.CreateBr(bb);
-    }
-  }
-
-  ASSERT(blocks.size() > 0) << F->getName() << " had no blocks!";
-
-  pass->worklistBlocks.clear();
-  pass->scheduleBlockCodegen(blocks[0]);
-  while (!pass->worklistBlocks.empty()) {
-    LLBlock* b = pass->worklistBlocks.get();
-    b->codegenBlock(pass);
-  }
-
-  // Redundant pattern matches will produce empty basic blocks;
-  // here, we clean up any basic blocks we created but never used.
-  llvm::Function::iterator BB_it = F->begin();
-  while (BB_it != F->end()) {
-    llvm::BasicBlock* bb = BB_it; ++BB_it;
-    if (bb->empty()) {
-      if (bb->use_empty()) {
-        bb->eraseFromParent();
-      }
-    }
-  }
-}
-
-struct BlockBindings {
-  CaseContext* ctx;
-  std::vector<DTBinding> binds;
-  llvm::Value* scrutinee;
-};
-
-llvm::Value* lookupOccs(CodegenPass* pass, Occurrence* occ, llvm::Value* v);
-llvm::AllocaInst*
-getStackSlotForOcc(Occurrence* occ, llvm::Value* v,
-                   CaseContext* ctx, CodegenPass* pass);
-
-void trySetName(llvm::Value* v, const string& name);
-
-////////////////////////////////////////////////////////////////////
-
-llvm::Value* emitFakeComment(std::string s) {
-  EDiag() << "emitFakeComment: " << s;
-  return new llvm::BitCastInst(builder.getInt32(0), builder.getInt32Ty(), s,
-                               builder.GetInsertBlock());
-}
-
-void LLBlock::codegenBlock(CodegenPass* pass) {
-  llvm::BasicBlock* bb = pass->lookupBlock(this->block_id);
-  builder.SetInsertPoint(bb);
-
-  BlockBindings* bindings = pass->blockBindings[this->block_id];
-  //EDiag() << "codegenning block " << bb->getName() << "; binds? " << (bindings != NULL);
-  if (bindings) {
-    for (size_t i = 0; i < bindings->binds.size(); ++i) {
-      DTBinding& bind = bindings->binds[i];
-      CaseContext* ctx = bindings->ctx;
-
-      //EDiag() << "looking up occs for " << bind.first; bb->getParent()->dump();
-      Value* v = lookupOccs(pass, bind.second, bindings->scrutinee);
-      Value* v_slot = getStackSlotForOcc(bind.second, v, ctx, pass);
-      trySetName(v_slot, "pat_" + bind.first + "_slot");
-      EDiag() << "implicitly inserting " << bind.first << " = " << str(v_slot);
-      pass->valueSymTab.insert(bind.first, v_slot);
-    }
-  }
-
-  for (size_t i = 0; i < this->mids.size(); ++i) {
-    this->mids[i]->codegenMiddle(pass);
-  }
-  //EDiag() << "codegening terminator for block " << bb->getName();
-  this->terminator->codegenTerminator(pass);
-}
-
-void LLRebindId::codegenMiddle(CodegenPass* pass) {
-  pass->valueSymTab.insert(from, to->codegen(pass));
-}
-
-////////////////////////////////////////////////////////////////////
-
-void LLRetVoid::codegenTerminator(CodegenPass* pass) {
-  //EDiag() << "ret void";
-  builder.CreateRetVoid();
-}
-
-void LLRetVal::codegenTerminator(CodegenPass* pass) {
-  llvm::Value* rv = pass->emit(this->val, NULL);
-  //EDiag() << "ret " << str(rv) << " :: " << str(rv->getType());
-  if (rv->getType()->isVoidTy()) {
-    builder.CreateRetVoid();
-  } else if (builder.getCurrentFunctionReturnType()->isVoidTy()) {
-    builder.CreateRetVoid();
-  } else {
-    builder.CreateRet(rv);
-  }
-}
-
-void LLBr::codegenTerminator(CodegenPass* pass) {
-  //EDiag() << "br " << this->block_id;
-  builder.CreateBr(pass->lookupBlock(this->block_id));
-}
-
-void LLCondBr::codegenTerminator(CodegenPass* pass) {
-  //EDiag() << "condbar " << this->then_id;
-  builder.CreateCondBr(pass->emit(this->var, NULL),
-                       pass->lookupBlock(this->then_id),
-                       pass->lookupBlock(this->else_id));
-}
-
-struct CaseContext {
-  std::map<std::vector<int>, llvm::AllocaInst*> ctorSlotMap;
-};
-
-void LLSwitch::codegenTerminator(CodegenPass* pass) {
-  EDiag() << "switch " << this->scrutinee->tag;
-  llvm::Value* v = pass->emit(this->scrutinee, NULL);
-  CaseContext* ctx = new CaseContext;
-  this->dt->codegenDecisionTree(pass, v, ctx);
-}
-
-////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////
-
-CodegenPass::CodegenPass(llvm::Module* m) : mod(m) {
-  //dib = new DIBuilder(*mod);
-}
-
-llvm::Function* CodegenPass::lookupFunctionOrDie(const std::string&
-                                                         fullyQualifiedSymbol) {
-  // Otherwise, it should be a function name.
-  llvm::Function* f = mod->getFunction(fullyQualifiedSymbol);
-
-  if (!f) {
-   llvm::errs() << "Unable to find function in module named: "
-              << fullyQualifiedSymbol << "\n";
-   valueSymTab.dump(llvm::errs());
-   ASSERT(false) << "unable to find function " << fullyQualifiedSymbol;
-  }
-  return f;
-}
-
-////////////////////////////////////////////////////////////////////
-//////////////// LLInt, LLBool, LLVar///////////////////////////////
-////////////////////////////////////////////////////////////////////
-
-llvm::Value* LLInt::codegen(CodegenPass* pass) {
-  ASSERT(this->type && this->type->getLLVMType());
-  const llvm::Type* ty = this->type->getLLVMType();
-
-  llvm::Value* small = ConstantInt::get(ty, this->getAPInt());
-
-  // Our type could be an LLVM type, or an arbitrary precision int type.
-  if (ty->isIntegerTy()) {
-    return small;
-  } else if (false) {
-    // MP integer constants that do not fit in 64 bits
-    // must be initialized from string data.
-    ASSERT(false) << "codegen for int values that don't fit"
-                  << " in 64 bits not yet implemented";
-    return NULL;
-  } else {
-    // Small integers may be initialized immediately.
-    llvm::Value* mpint = pass->allocateMPInt();
-
-    // Call mp_int_init_value() (ignore rv for now)
-    llvm::Value* mp_init_value = pass->lookupFunctionOrDie("mp_int_init_value");
-    builder.CreateCall2(mp_init_value, mpint, small);
-    return mpint;
-  }
-}
-
-llvm::Value* LLBool::codegen(CodegenPass* pass) {
-  return builder.getInt1(this->boolValue);
-}
-
-llvm::Value* LLGlobalSymbol::codegen(CodegenPass* pass) {
-  return pass->lookupFunctionOrDie(this->name);
-}
-
-llvm::Value* LLVar::codegen(CodegenPass* pass) {
-  // The variable for an environment can be looked up multiple times...
-  llvm::Value* v = pass->valueSymTab.lookup(getName());
-  if (v) return v;
-  //return emitFakeComment("fake " + getName());
-
-  pass->valueSymTab.dump(llvm::errs());
-  ASSERT(false) << "Unknown variable name " << this->name << " in CodegenPass";
-  return NULL;
-}
-
-/**
-// Note: the logical signature of addition on multi-precision ints (Int)
-// is (+Int) :: Int -> Int -> Int
-// but the C-level signature for mp_int_add is
-// mp_result mp_int_add(mp_int, mp_int, mp_int);
-
-llvm::Value* emitRuntimeMPInt_Op(llvm::Value* VL, llvm::Value* VR,
-                                 const char* mp_int_op_name) {
-  // TODO If we have ASTs, we would be able to use the _value
-  // variants for small constants.
-
-  llvm::Value* result = allocateMPInt();
-  builder.CreateCall(foster::module->getFunction("mp_int_init"), result);
-  builder.CreateCall3(foster::module->getFunction(mp_int_op_name),
-                      VL, VR, result);
-  return result;
-}
-
-llvm::Value* emitRuntimeArbitraryPrecisionOperation(const std::string& op,
-                                        llvm::Value* VL, llvm::Value* VR) {
-       if (op == "+") { return emitRuntimeMPInt_Op(VL, VR, "mp_int_add"); }
-  else if (op == "*") { return emitRuntimeMPInt_Op(VL, VR, "mp_int_mul"); }
-
-  EDiag() << "\t emitRuntimeArbitraryPrecisionOperation() not yet implemented"
-          << " for operation " << op << "!";
-  exit(1);
-  return NULL;
-}
-*/
-
-////////////////////////////////////////////////////////////////////
-//////////////// LLAlloc, LLDeref, LLStore /////////////////////////
-////////////////////////////////////////////////////////////////////
-
-Value* allocateCell(CodegenPass* pass, TypeAST* type, bool unboxed,
-                    LLAllocate::MemRegion region, int8_t ctorId) {
-  const llvm::Type* ty = type->getLLVMType();
-  if (unboxed) {
-    if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
-      ty = pty->getContainedType(0);
-    }
-  }
-
-  switch (region) {
-  case LLAllocate::MEM_REGION_STACK:
-    return CreateEntryAlloca(ty, "alloc");
-
-  case LLAllocate::MEM_REGION_GLOBAL_HEAP:
-    return pass->emitMalloc(ty, ctorId);
-
-  default:
-    ASSERT(false); return NULL;
-  }
-}
-
-Value* allocateArray(CodegenPass* pass, TypeAST* ty,
-                     LLAllocate::MemRegion region,
-                     Value* arraySize) {
-  const llvm::Type* elt_ty = getLLVMType(ty);
-  ASSERT(region == LLAllocate::MEM_REGION_GLOBAL_HEAP);
-  return pass->emitArrayMalloc(elt_ty, arraySize);
-}
-
-llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
-  if (this->arraySize != NULL) {
-    EDiag() << "allocating array, type = " << str(this->type);
-    return allocateArray(pass, this->type, this->region,
-                         pass->emit(this->arraySize, NULL));
-  } else {
-    return allocateCell(pass, this->type, this->unboxed,
-                        this->region, this->ctorId);
-  }
-}
-
-llvm::Value* LLAlloc::codegen(CodegenPass* pass) {
-  // (alloc base) is equivalent to
-  //    let rs  = mallocType t;
-  //        sv = base;
-  //        r   = rs^;
-  //     in sv >^ r;
-  //        r
-  //    end
-  ASSERT(this && this->baseVar && this->baseVar->type);
-  llvm::Value* ptrSlot   = pass->emitMalloc(this->baseVar->type->getLLVMType(),
-                                            foster::bogusCtorId(-4));
-  llvm::Value* storedVal = pass->emit(baseVar, NULL);
-  llvm::Value* ptr       = emitNonVolatileLoad(ptrSlot, "alloc_slot_ptr");
-  emitStore(storedVal, ptr);
-  return ptrSlot;
-}
-
-llvm::Value* LLDeref::codegen(CodegenPass* pass) {
-  // base could be an array a[i] or a slot for a reference variable r.
-  // a[i] should codegen to &a[i], the address of the slot in the array.
-  // r    should codegen to the contents of the slot (the ref pointer value),
-  //        not the slot address.
-  return builder.CreateLoad(pass->emit(base, NULL));
-}
-
-llvm::Value* LLStore::codegen(CodegenPass* pass) {
-  llvm::Value* vv = pass->emit(v, NULL);
-  llvm::Value* vr = pass->emit(r, NULL);
-  return emitStore(vv, vr);
-}
-
-////////////////////////////////////////////////////////////////////
-//////////////// LLLetVals /////////////////////////////////////////
-////////////////////////////////////////////////////////////////////
-
-void trySetName(llvm::Value* v, const string& name) {
-  if (v->getType()->isVoidTy()) {
-    // Can't assign a name to void values in LLVM.
-  } else if (isFunctionPointerTy(v->getType())) {
-    // Don't want to rename functions!
-  } else {
-    v->setName(name);
-  }
-}
-
-void LLLetVals::codegenMiddle(CodegenPass* pass) {
-  for (size_t i = 0; i < exprs.size(); ++i) {
-    // We use codegen() instead of pass>emit()
-    // because emit inserts implict loads, which we
-    // want done as late as possible.
-    Value* b = exprs[i]->codegen(pass);
-    trySetName(b, (b->hasName()
-                   && pystring::startswith(b->getName(), "stackref"))
-                ? names[i] + "_slot"
-                : names[i]);
-    //EDiag() << "inserting " << names[i] << " = " << (exprs[i]->tag) << " -> " << str(b);
-    pass->valueSymTab.insert(names[i], b);
-  }
-}
-
-////////////////////////////////////////////////////////////////////
-//////////////// LLClosures ////////////////////////////////////////
-////////////////////////////////////////////////////////////////////
-
-void LLClosures::codegenMiddle(CodegenPass* pass) {
-  // This AST node binds a mutually-recursive set of functions,
-  // represented as closure values.
-
-  std::vector<llvm::Value*> envSlots;
-  for (size_t i = 0; i < closures.size(); ++i) {
-    envSlots.push_back(closures[i]->env->codegenStorage(pass));
-  }
-
-  // Allocate storage for the closures and populate 'em with code/env values.
-  for (size_t i = 0; i < closures.size(); ++i) {
-    llvm::Value* clo = closures[i]->codegenClosure(pass, envSlots[i]);
-    pass->valueSymTab.insert(closures[i]->varname, clo);
-  }
-
-  // Stick each closure environment in the symbol table.
-  std::vector<llvm::Value*> envPtrs;
-  for (size_t i = 0; i < closures.size(); ++i) {
-    // Make sure we close over generic versions of our pointers...
-    llvm::Value* envPtr = pass->autoload(envSlots[i]);
-    llvm::Value* genPtr = builder.CreateBitCast(envPtr,
-                                builder.getInt8PtrTy(),
-                                closures[i]->envname + ".generic");
-    pass->valueSymTab.insert(closures[i]->envname, genPtr);
-
-    envPtrs.push_back(envPtr);
-  }
-
-  // Now that all the env pointers are in scope,
-  // store the appropriate values through each pointer.
-  for (size_t i = 0; i < closures.size(); ++i) {
-    closures[i]->env->codegenTo(pass, envPtrs[i]);
-  }
-
-  // And clean up env names.
-  for (size_t i = 0; i < closures.size(); ++i) {
-    pass->valueSymTab.remove(closures[i]->envname);
-  }
-}
-
-bool tryBindClosureFunctionTypes(const llvm::Type*          origType,
-                                 const llvm::FunctionType*& fnType,
-                                 const llvm::StructType*  & cloStructTy) {
-  fnType = NULL; cloStructTy = NULL;
-
-  const llvm::PointerType* pfnty = llvm::dyn_cast<llvm::PointerType>(origType);
-  if (!pfnty) {
-    EDiag() << "expected " << str(origType) << " to be a ptr type.";
-    return false;
-  }
-  fnType = llvm::dyn_cast<llvm::FunctionType>(pfnty->getContainedType(0));
-  if (!fnType) {
-    EDiag() << "expected " << str(origType) << " to be a ptr to fn type.";
-    return false;
-  }
-  if (fnType->getNumParams() == 0) {
-    EDiag() << "expected " << str(fnType) << " to have an env parameter.";
-    return false;
-  }
-  const llvm::PointerType* maybeEnvType =
-                llvm::dyn_cast<llvm::PointerType>(fnType->getParamType(0));
-  if (!maybeEnvType) return false;
-
-  cloStructTy = llvm::StructType::get(origType->getContext(),
-                    pfnty, maybeEnvType, NULL);
-  return true;
-}
-
-// Converts { r({...}*, ----), {....}* }
-// to       { r( i8*,   ----),   i8*   }.
-// Used when choosing a type to allocate for a closure pair.
-const llvm::StructType*
-genericClosureStructTy(const llvm::FunctionType* fnty) {
-  const Type* retty = fnty->getReturnType();
-  std::vector<const llvm::Type*> argTypes;
-  for (size_t i = 0; i < fnty->getNumParams(); ++i) {
-     argTypes.push_back(fnty->getParamType(i));
-  }
-  argTypes[0] = builder.getInt8PtrTy();
-
-  return llvm::StructType::get(fnty->getContext(),
-           ptrTo(llvm::FunctionType::get(retty, argTypes, false)),
-           builder.getInt8PtrTy(), NULL);
-}
-
-llvm::Value* LLClosure::codegenClosure(
-                        CodegenPass* pass,
-                        llvm::Value* envPtrOrSlot) {
-  llvm::Value* proc = pass->lookupFunctionOrDie(procname);
-
-  const llvm::FunctionType* fnty;
-  const llvm::StructType* cloStructTy;
-
-  if (!tryBindClosureFunctionTypes(proc->getType(), fnty, cloStructTy)) {
-    ASSERT(false) << "proc " << procname
-                  << " with type " << str(proc->getType())
-                  << " not closed??";
-  }
-
-  llvm::Value* clo = NULL; llvm::Value* rv = NULL;
-  bool closureEscapes = true;
-  if (closureEscapes) {
-    // // { code*, env* }**
-    llvm::AllocaInst* clo_slot = pass->emitMalloc(genericClosureStructTy(fnty),
-                                                  foster::bogusCtorId(-5));
-    clo = emitNonVolatileLoad(clo_slot, varname + ".closure"); rv = clo_slot;
-  } else { // { code*, env* }*
-    clo = CreateEntryAlloca(cloStructTy, varname + ".closure"); rv = clo;
-  }
-
-  // TODO register closure type
-
-  emitStoreWithCast(proc,
-                  builder.CreateConstGEP2_32(clo, 0, 0, varname + ".clo_code"));
-  Value* env_slot = builder.CreateConstGEP2_32(clo, 0, 1, varname + ".clo_env");
-  if (env->vars.empty()) {
-    storeNullPointerToSlot(env_slot);
-  } else {
-    // Only store the env in the closure if the env contains entries.
-    llvm::Value* envPtr = pass->autoload(envPtrOrSlot);
-    emitStoreWithCast(envPtr, env_slot);
-  }
-
-  return rv;
-}
-
-////////////////////////////////////////////////////////////////////
-//////////////// LLProc ////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////
+//////////////// LLProc, LLProto ///////////////////////////////////
+/////////////////////////////////////////////////////////////////{{{
 
 const llvm::FunctionType*
 getLLVMFunctionType(FnTypeAST* t, const std::string& procSymbol) {
@@ -740,6 +264,8 @@ void LLProc::codegenProto(CodegenPass* pass) {
   F->setCallingConv(this->type->getCallingConventionID());
 }
 
+////////////////////////////////////////////////////////////////////
+
 llvm::AllocaInst* ensureImplicitStackSlot(llvm::Value* v, CodegenPass* pass) {
   if (llvm::LoadInst* load = dyn_cast<llvm::LoadInst>(v)) {
     llvm::AllocaInst* slot = dyn_cast<llvm::AllocaInst>(load->getOperand(0));
@@ -756,6 +282,9 @@ llvm::AllocaInst* ensureImplicitStackSlot(llvm::Value* v, CodegenPass* pass) {
     return slot;
   }
 }
+
+void codegenBlocks(std::vector<LLBlock*> blocks, CodegenPass* pass,
+                   llvm::Function* F);
 
 void LLProc::codegenProc(CodegenPass* pass) {
   ASSERT(this->F != NULL) << "LLModule should codegen proto for " << getName();
@@ -778,7 +307,177 @@ void LLProc::codegenProc(CodegenPass* pass) {
   pass->valueSymTab.popExistingScope(scope);
 }
 
+///}}}//////////////////////////////////////////////////////////////
+
+void CodegenPass::scheduleBlockCodegen(LLBlock* b) {
+  if (worklistBlocks.tryAdd(b->block_id, b)) {
+    // added new block
+  } // else block was already scheduled
+}
+
+void codegenBlocks(std::vector<LLBlock*> blocks, CodegenPass* pass,
+                   llvm::Function* F) {
+  pass->llvmBlocks.clear();
+  pass->fosterBlocks.clear();
+  pass->blockBindings.clear();
+
+  // Create all the basic block before codegenning any of them.
+  for (size_t i = 0; i < blocks.size(); ++i) {
+    llvm::BasicBlock* bb = BasicBlock::Create(getGlobalContext(),
+                                              blocks[i]->block_id, F);
+    ASSERT(blocks[i]->block_id == bb->getName())
+        << "function can't have two blocks named "
+        << blocks[i]->block_id;
+    pass->llvmBlocks[blocks[i]->block_id] = bb;
+    pass->fosterBlocks[blocks[i]->block_id] = blocks[i];
+
+    // Make sure we branch from the entry block to the first
+    // 'computation' block.
+    if (i == 0) {
+      builder.CreateBr(bb);
+    }
+  }
+
+  ASSERT(blocks.size() > 0) << F->getName() << " had no blocks!";
+
+  pass->worklistBlocks.clear();
+  pass->scheduleBlockCodegen(blocks[0]);
+  while (!pass->worklistBlocks.empty()) {
+    LLBlock* b = pass->worklistBlocks.get();
+    b->codegenBlock(pass);
+  }
+
+  // Redundant pattern matches will produce empty basic blocks;
+  // here, we clean up any basic blocks we created but never used.
+  llvm::Function::iterator BB_it = F->begin();
+  while (BB_it != F->end()) {
+    llvm::BasicBlock* bb = BB_it; ++BB_it;
+    if (bb->empty()) {
+      if (bb->use_empty()) {
+        bb->eraseFromParent();
+      }
+    }
+  }
+}
+
+struct BlockBindings {
+  CaseContext* ctx;
+  std::vector<DTBinding> binds;
+  llvm::Value* scrutinee;
+};
+
+llvm::Value* lookupOccs(CodegenPass* pass, Occurrence* occ, llvm::Value* v);
+llvm::AllocaInst* getStackSlotForOcc(Occurrence* occ, llvm::Value* v,
+                                     CaseContext* ctx, CodegenPass* pass);
+void trySetName(llvm::Value* v, const string& name);
+
 ////////////////////////////////////////////////////////////////////
+
+void LLBlock::codegenBlock(CodegenPass* pass) {
+  llvm::BasicBlock* bb = pass->lookupBlock(this->block_id);
+  builder.SetInsertPoint(bb);
+
+  if (BlockBindings* bindings = pass->blockBindings[this->block_id]) {
+    for (size_t i = 0; i < bindings->binds.size(); ++i) {
+      DTBinding& bind = bindings->binds[i];
+      CaseContext* ctx = bindings->ctx;
+
+      Value* v = lookupOccs(pass, bind.second, bindings->scrutinee);
+      Value* v_slot = getStackSlotForOcc(bind.second, v, ctx, pass);
+      trySetName(v_slot, "pat_" + bind.first + "_slot");
+      EDiag() << "implicitly inserting " << bind.first << " = " << str(v_slot);
+      pass->valueSymTab.insert(bind.first, v_slot);
+    }
+  }
+
+  for (size_t i = 0; i < this->mids.size(); ++i) {
+    this->mids[i]->codegenMiddle(pass);
+  }
+
+  this->terminator->codegenTerminator(pass);
+}
+
+////////////////////////////////////////////////////////////////////
+////////////////////////// Terminators /////////////////////////////
+/////////////////////////////////////////////////////////////////{{{
+
+void LLRetVoid::codegenTerminator(CodegenPass* pass) {
+  builder.CreateRetVoid();
+}
+
+void LLRetVal::codegenTerminator(CodegenPass* pass) {
+  llvm::Value* rv = pass->emit(this->val, NULL);
+  bool returnsVoid =              rv->getType()->isVoidTy() ||
+         builder.getCurrentFunctionReturnType()->isVoidTy();
+  if (returnsVoid) {
+    builder.CreateRetVoid();
+  } else {
+    builder.CreateRet(rv);
+  }
+}
+
+void LLBr::codegenTerminator(CodegenPass* pass) {
+  builder.CreateBr(pass->lookupBlock(this->block_id));
+}
+
+void LLCondBr::codegenTerminator(CodegenPass* pass) {
+  builder.CreateCondBr(pass->emit(this->var, NULL),
+                       pass->lookupBlock(this->then_id),
+                       pass->lookupBlock(this->else_id));
+}
+
+struct CaseContext {
+  std::map<std::vector<int>, llvm::AllocaInst*> ctorSlotMap;
+};
+
+void LLSwitch::codegenTerminator(CodegenPass* pass) {
+  llvm::Value* v = pass->emit(this->scrutinee, NULL);
+  CaseContext* ctx = new CaseContext;
+  this->dt->codegenDecisionTree(pass, v, ctx);
+}
+
+///}}}//////////////////////////////////////////////////////////////
+
+void LLRebindId::codegenMiddle(CodegenPass* pass) {
+  pass->valueSymTab.insert(from, to->codegen(pass));
+}
+
+////////////////////////////////////////////////////////////////////
+//////////////// LLAlloc, LLDeref, LLStore /////////////////////////
+/////////////////////////////////////////////////////////////////{{{
+
+llvm::Value* LLAlloc::codegen(CodegenPass* pass) {
+  // (alloc base) is equivalent to
+  //    let rs  = mallocType t;
+  //        sv = base;
+  //        r   = rs^;
+  //     in sv >^ r;
+  //        r
+  //    end
+  ASSERT(this && this->baseVar && this->baseVar->type);
+  llvm::Value* ptrSlot   = pass->emitMalloc(this->baseVar->type->getLLVMType(),
+                                            foster::bogusCtorId(-4));
+  llvm::Value* storedVal = pass->emit(baseVar, NULL);
+  llvm::Value* ptr       = emitNonVolatileLoad(ptrSlot, "alloc_slot_ptr");
+  emitStore(storedVal, ptr);
+  return ptrSlot;
+}
+
+llvm::Value* LLDeref::codegen(CodegenPass* pass) {
+  // base could be an array a[i] or a slot for a reference variable r.
+  // a[i] should codegen to &a[i], the address of the slot in the array.
+  // r    should codegen to the contents of the slot (the ref pointer value),
+  //        not the slot address.
+  return builder.CreateLoad(pass->emit(base, NULL));
+}
+
+llvm::Value* LLStore::codegen(CodegenPass* pass) {
+  llvm::Value* vv = pass->emit(v, NULL);
+  llvm::Value* vr = pass->emit(r, NULL);
+  return emitStore(vv, vr);
+}
+
+///}}}///////////////////////////////////////////////////////////////
 
 llvm::Value* LLCoroPrim::codegen(CodegenPass* pass) {
   const llvm::Type* r = retType->getLLVMType();
@@ -791,192 +490,159 @@ llvm::Value* LLCoroPrim::codegen(CodegenPass* pass) {
 }
 
 ////////////////////////////////////////////////////////////////////
+//////////////// LLLetVals /////////////////////////////////////////
+////////////////////////////////////////////////////////////////////
 
-// Create at most one stack slot per subterm.
-llvm::AllocaInst*
-getStackSlotForOcc(Occurrence* occ, llvm::Value* v,
-                   CaseContext* ctx, CodegenPass* pass) {
-  llvm::AllocaInst* slot = ctx->ctorSlotMap[occ->offsets];
-  if (slot) {
-    emitStore(v, slot);
+void trySetName(llvm::Value* v, const string& name) {
+  if (v->getType()->isVoidTy()) {
+    // Can't assign a name to void values in LLVM.
+  } else if (isFunctionPointerTy(v->getType())) {
+    // Don't want to rename functions!
   } else {
-    slot = ensureImplicitStackSlot(v, pass);
-    ctx->ctorSlotMap[occ->offsets] = slot;
-  }
-  return slot;
-}
-
-TupleTypeAST* maybeGetCtorStructType(CodegenPass* pass, CtorId c) {
-  DataTypeAST* dt = pass->isKnownDataType[c.typeName];
-  return (dt) ? getDataCtorType(dt->getCtor(c.smallId)) : NULL;
-}
-
-llvm::Value* lookupOccs(CodegenPass* pass, Occurrence* occ, llvm::Value* v) {
-  ASSERT(occ != NULL);
-  const std::vector<int>& occs = occ->offsets;
-  const std::vector<CtorId>& ctors = occ->ctors;
-  ASSERT(ctors.size() == occs.size());
-
-  llvm::Value* rv = v;
-
-      std::stringstream ss; ss << "occ(";
-      for (size_t i = 0; i < occs.size(); ++i) {
-        ss << occs[i] << ":";
-        ss << ctors[i].ctorName << "::";
-      }
-      ss << ")--";
-
-      emitFakeComment(ss.str());
-
-  std::vector<int> currentOccs;
-
-  for (size_t i = 0; i < occs.size(); ++i) {
-    // If we know that the subterm at this position was created with
-    // a particular data constructor, emit a cast to that ctor's type.
-    if (TupleTypeAST* tupty = maybeGetCtorStructType(pass, ctors[i])) {
-      rv = builder.CreateBitCast(rv, tupty->getLLVMType());
-    }
-
-    llvm::Constant* idx = getConstantInt32For(occs[i]);
-    rv = getElementFromComposite(rv, idx, "switch_insp");
-
-    currentOccs.push_back(occs[i]);
-  }
-
-  return rv;
-}
-
-void DecisionTree::codegenDecisionTree(CodegenPass* pass,
-                                       llvm::Value* scrutinee,
-                                       CaseContext* ctx) {
-  llvm::BasicBlock* bb = NULL;
-  switch (tag) {
-  case DecisionTree::DT_FAIL:
-    EDiag() << "DecisionTree codegen, tag = DT_FAIL; v = " << str(scrutinee);
-    emitFosterAssert(pass->mod, builder.getInt1(false), "pattern match failure!");
-    break;
-
-  case DecisionTree::DT_LEAF:
-    //EDiag() << "codegenning dt leaf for block " << this->action_block_id
-    //    << "; bindings already set? " << (pass->blockBindings[this->action_block_id] != NULL);
-    if (!pass->blockBindings[this->action_block_id]) {
-      BlockBindings* bindings = new BlockBindings;
-      bindings->ctx       = ctx;
-      bindings->binds     = binds;
-      bindings->scrutinee = scrutinee;
-      pass->blockBindings[this->action_block_id] = bindings;
-    }
-
-    // Make sure that we eventually codegen in the leaf block.
-    bb = pass->lookupBlock(action_block_id);
-    builder.CreateBr(bb);
-    break;
-
-  case DecisionTree::DT_SWITCH:
-    sc->codegenSwitch(pass, scrutinee, ctx);
-    break;
+    v->setName(name);
   }
 }
 
-llvm::Value* emitCallGetCtorIdOf(CodegenPass* pass, llvm::Value* v) {
-  llvm::Value* foster_ctor_id_of = pass->mod->getFunction("foster_ctor_id_of");
-  ASSERT(foster_ctor_id_of != NULL);
-  llvm::CallInst* call = builder.CreateCall(foster_ctor_id_of,
-                         builder.CreateBitCast(v, builder.getInt8PtrTy()));
-  markAsNonAllocating(call);
-  return call;
-}
-
-void addAndEmitTo(Function* f, BasicBlock* bb) {
-  f->getBasicBlockList().push_back(bb);
-  builder.SetInsertPoint(bb);
-}
-
-ConstantInt* maybeGetTagForCtorId(CodegenPass* pass, const CtorId& c) {
-  DataTypeAST* dt = pass->isKnownDataType[c.typeName];
-
-  if (dt) {                           return getConstantInt8For(c.smallId);
-  } else if (c.typeName == "Bool") {  return builder.getInt1(c.smallId);
-  } else if (c.typeName == "Int32") { return getConstantInt32For(c.smallId);
-  } else { return NULL; }
-}
-
-void SwitchCase::codegenSwitch(CodegenPass* pass,
-                               llvm::Value* scrutinee,
-                               CaseContext* ctx) {
-  ASSERT(ctors.size() == trees.size());
-  ASSERT(ctors.size() >= 1);
-
-  BasicBlock* defaultBB = NULL;
-  if (defaultCase != NULL) {
-    defaultBB = BasicBlock::Create(getGlobalContext(), "case_default");
-  }
-
-  // Special-case codegen for when there's only one
-  // possible case, to avoid superfluous branches.
-  if (trees.size() == 1 && !defaultCase) {
-    trees[0]->codegenDecisionTree(pass, scrutinee, ctx);
-    return;
-  }
-
-  // TODO: switching on a.p. integers: possible at all?
-  // If so, it will require manual if-else chaining,
-  // not a simple int32 switch...
-  BasicBlock* bbNoDefault = defaultBB ? NULL      :
-                       BasicBlock::Create(getGlobalContext(), "case_nodefault");
-  BasicBlock* defOrContBB = defaultBB ? defaultBB : bbNoDefault;
-
-  // Fetch the subterm of the scrutinee being inspected.
-  llvm::Value* inspected = lookupOccs(pass, this->occ, scrutinee);
-
-  // All the ctors should have the same data type, now that we have at least
-  // one ctor, check if it's associated with a data type we know of.
-  DataTypeAST* dt = pass->isKnownDataType[ctors[0].typeName];
-
-  // If we're looking at a data type, emit code to get the ctor tag,
-  // instead of switching on the pointer value directly.
-  if (dt) {    inspected = emitCallGetCtorIdOf(pass, inspected);  }
-
-  // Switch on the inspected value; we'll fill in the ctor branches as we go.
-  llvm::SwitchInst* si = builder.CreateSwitch(inspected, defOrContBB, ctors.size());
-  Function *F = builder.GetInsertBlock()->getParent();
-
-  // Add cases to the switch for each arm.
-  for (size_t i = 0; i < ctors.size(); ++i) {
-    CtorId c = ctors[i];
-    if (ConstantInt* onVal = maybeGetTagForCtorId(pass, c)) {
-      // Emit the code for the branch expression,
-      // ending with a branch to the end of the case-expr.
-      std::stringstream ss; ss << "casetest_" << i;
-      BasicBlock* destBB = BasicBlock::Create(getGlobalContext(), ss.str());
-      addAndEmitTo(F, destBB);
-      trees[i]->codegenDecisionTree(pass, scrutinee, ctx);
-
-      ASSERT(si->getCondition()->getType() == onVal->getType())
-          << "had different types for inspected value and switch case tag";
-
-      si->addCase(onVal, destBB);
-    } else {
-      ASSERT(false) << "SwitchCase ctor " << (i+1) << "/" << ctors.size()
-             << ": " << c.typeName << "." << c.ctorName << "#" << c.smallId
-             << "\n" << str(scrutinee)  << "::" << str(scrutinee->getType());
-    }
-  }
-
-  if (defaultCase) {
-    addAndEmitTo(F, defaultBB);
-    defaultCase->codegenDecisionTree(pass, scrutinee, ctx);
-  }
-
-  if (bbNoDefault) {
-    addAndEmitTo(F, bbNoDefault);
-    emitFosterAssert(pass->mod, llvm::ConstantInt::getTrue(builder.getContext()),
-                   "control passed to llvm-generated default block -- bad!");
-    builder.CreateUnreachable();
+void LLLetVals::codegenMiddle(CodegenPass* pass) {
+  for (size_t i = 0; i < exprs.size(); ++i) {
+    // We use codegen() instead of pass>emit() because emit inserts
+    // implict loads, which we want done as late as possible.
+    Value* b = exprs[i]->codegen(pass);
+    trySetName(b, (b->hasName()
+                   && pystring::startswith(b->getName(), "stackref"))
+                ? names[i] + "_slot"
+                : names[i]);
+    //EDiag() << "inserting " << names[i] << " = " << (exprs[i]->tag) << " -> " << str(b);
+    pass->valueSymTab.insert(names[i], b);
   }
 }
 
 ////////////////////////////////////////////////////////////////////
+//////////////// LLInt, LLBool, LLVar///////////////////////////////
+/////////////////////////////////////////////////////////////////{{{
+
+llvm::Value* LLBool::codegen(CodegenPass* pass) {
+  return builder.getInt1(this->boolValue);
+}
+
+llvm::Value* LLGlobalSymbol::codegen(CodegenPass* pass) {
+  return pass->lookupFunctionOrDie(this->name);
+}
+
+llvm::Value* LLVar::codegen(CodegenPass* pass) {
+  // The variable for an environment can be looked up multiple times...
+  llvm::Value* v = pass->valueSymTab.lookup(getName());
+  if (v) return v;
+  //return emitFakeComment("fake " + getName());
+
+  pass->valueSymTab.dump(llvm::errs());
+  ASSERT(false) << "Unknown variable name " << this->name << " in CodegenPass";
+  return NULL;
+}
+
+llvm::Value* LLInt::codegen(CodegenPass* pass) {
+  ASSERT(this->type && this->type->getLLVMType());
+  const llvm::Type* ty = this->type->getLLVMType();
+
+  llvm::Value* small = ConstantInt::get(ty, this->getAPInt());
+
+  // Our type could be an LLVM type, or an arbitrary precision int type.
+  if (ty->isIntegerTy()) {
+    return small;
+  } else if (false) {
+    // MP integer constants that do not fit in 64 bits
+    // must be initialized from string data.
+    ASSERT(false) << "codegen for int values that don't fit"
+                  << " in 64 bits not yet implemented";
+    return NULL;
+  } else {
+    // Small integers may be initialized immediately.
+    llvm::Value* mpint = pass->allocateMPInt();
+
+    // Call mp_int_init_value() (ignore rv for now)
+    llvm::Value* mp_init_value = pass->lookupFunctionOrDie("mp_int_init_value");
+    builder.CreateCall2(mp_init_value, mpint, small);
+    return mpint;
+  }
+}
+
+/**
+// Note: the logical signature of addition on multi-precision ints (Int)
+// is (+Int) :: Int -> Int -> Int
+// but the C-level signature for mp_int_add is
+// mp_result mp_int_add(mp_int, mp_int, mp_int);
+
+llvm::Value* emitRuntimeMPInt_Op(llvm::Value* VL, llvm::Value* VR,
+                                 const char* mp_int_op_name) {
+  // TODO If we have ASTs, we would be able to use the _value
+  // variants for small constants.
+
+  llvm::Value* result = allocateMPInt();
+  builder.CreateCall(foster::module->getFunction("mp_int_init"), result);
+  builder.CreateCall3(foster::module->getFunction(mp_int_op_name),
+                      VL, VR, result);
+  return result;
+}
+
+llvm::Value* emitRuntimeArbitraryPrecisionOperation(const std::string& op,
+                                        llvm::Value* VL, llvm::Value* VR) {
+       if (op == "+") { return emitRuntimeMPInt_Op(VL, VR, "mp_int_add"); }
+  else if (op == "*") { return emitRuntimeMPInt_Op(VL, VR, "mp_int_mul"); }
+
+  EDiag() << "\t emitRuntimeArbitraryPrecisionOperation() not yet implemented"
+          << " for operation " << op << "!";
+  exit(1);
+  return NULL;
+}
+*/
+
+///}}}//////////////////////////////////////////////////////////////
+//////////////// LLAllocate ////////////////////////////////////////
+/////////////////////////////////////////////////////////////////{{{
+
+Value* allocateCell(CodegenPass* pass, TypeAST* type, bool unboxed,
+                    LLAllocate::MemRegion region, int8_t ctorId) {
+  const llvm::Type* ty = type->getLLVMType();
+  if (unboxed) {
+    if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
+      ty = pty->getContainedType(0);
+    }
+  }
+
+  switch (region) {
+  case LLAllocate::MEM_REGION_STACK:
+    return CreateEntryAlloca(ty, "alloc");
+
+  case LLAllocate::MEM_REGION_GLOBAL_HEAP:
+    return pass->emitMalloc(ty, ctorId);
+
+  default:
+    ASSERT(false); return NULL;
+  }
+}
+
+Value* allocateArray(CodegenPass* pass, TypeAST* ty,
+                     LLAllocate::MemRegion region,
+                     Value* arraySize) {
+  const llvm::Type* elt_ty = getLLVMType(ty);
+  ASSERT(region == LLAllocate::MEM_REGION_GLOBAL_HEAP);
+  return pass->emitArrayMalloc(elt_ty, arraySize);
+}
+
+llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
+  if (this->arraySize != NULL) {
+    EDiag() << "allocating array, type = " << str(this->type);
+    return allocateArray(pass, this->type, this->region,
+                         pass->emit(this->arraySize, NULL));
+  } else {
+    return allocateCell(pass, this->type, this->unboxed,
+                        this->region, this->ctorId);
+  }
+}
+
+///}}}//////////////////////////////////////////////////////////////
+//////////////// Arrays ////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////{{{
 
 bool isPointerToStruct(const llvm::Type* ty) {
   if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
@@ -1038,7 +704,397 @@ llvm::Value* LLArrayPoke::codegen(CodegenPass* pass) {
   return builder.CreateStore(val, slot, /*isVolatile=*/ false);
 }
 
+///}}}//////////////////////////////////////////////////////////////
+//////////////// LLTuple ///////////////////////////////////////////
+/////////////////////////////////////////////////////////////////{{{
+
+llvm::Value* LLTuple::codegenStorage(CodegenPass* pass) {
+  if (vars.empty()) { return getUnitValue(); }
+
+  ASSERT(this->allocator);
+  TupleTypeAST* tuplety = dynamic_cast<TupleTypeAST*>(this->allocator->type);
+
+  ASSERT(tuplety != NULL)
+        << "allocator wants to emit type " << str(this->allocator->type)
+        << "; var 0 :: " << str(vars[0]->type);
+
+  registerTupleType(tuplety, this->typeName, foster::bogusCtorId(-2), pass->mod);
+
+  return allocator->codegen(pass);
+}
+
+llvm::Value* LLTuple::codegen(CodegenPass* pass) {
+  if (vars.empty()) { return getUnitValue(); }
+
+  llvm::Value* slot = codegenStorage(pass);
+
+  // Heap-allocated things codegen to a stack slot, which
+  // is the Value we want the overall tuple to codegen as, but
+  // we need temporary access to the pointer stored in the slot.
+  // Otherwise, bad things happen.
+  llvm::Value* pt = allocator->isStackAllocated()
+           ? slot
+           : emitNonVolatileLoad(slot, "normalize");
+  codegenTo(pass, pt);
+  return slot;
+}
+
+void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
+  copyValuesToStruct(codegenAll(pass, this->vars), tup_ptr);
+}
+
+///}}}//////////////////////////////////////////////////////////////
+//////////////// LLClosures ////////////////////////////////////////
+/////////////////////////////////////////////////////////////////{{{
+
+  void LLClosures::codegenMiddle(CodegenPass* pass) {
+    // This AST node binds a mutually-recursive set of functions,
+    // represented as closure values.
+
+    std::vector<llvm::Value*> envSlots;
+    for (size_t i = 0; i < closures.size(); ++i) {
+      envSlots.push_back(closures[i]->env->codegenStorage(pass));
+    }
+
+    // Allocate storage for the closures and populate 'em with code/env values.
+    for (size_t i = 0; i < closures.size(); ++i) {
+      llvm::Value* clo = closures[i]->codegenClosure(pass, envSlots[i]);
+      pass->valueSymTab.insert(closures[i]->varname, clo);
+    }
+
+    // Stick each closure environment in the symbol table.
+    std::vector<llvm::Value*> envPtrs;
+    for (size_t i = 0; i < closures.size(); ++i) {
+      // Make sure we close over generic versions of our pointers...
+      llvm::Value* envPtr = pass->autoload(envSlots[i]);
+      llvm::Value* genPtr = builder.CreateBitCast(envPtr,
+                                  builder.getInt8PtrTy(),
+                                  closures[i]->envname + ".generic");
+      pass->valueSymTab.insert(closures[i]->envname, genPtr);
+
+      envPtrs.push_back(envPtr);
+    }
+
+    // Now that all the env pointers are in scope,
+    // store the appropriate values through each pointer.
+    for (size_t i = 0; i < closures.size(); ++i) {
+      closures[i]->env->codegenTo(pass, envPtrs[i]);
+    }
+
+    // And clean up env names.
+    for (size_t i = 0; i < closures.size(); ++i) {
+      pass->valueSymTab.remove(closures[i]->envname);
+    }
+  }
+
+  bool tryBindClosureFunctionTypes(const llvm::Type*          origType,
+                                   const llvm::FunctionType*& fnType,
+                                   const llvm::StructType*  & cloStructTy) {
+    fnType = NULL; cloStructTy = NULL;
+
+    const llvm::PointerType* pfnty = llvm::dyn_cast<llvm::PointerType>(origType);
+    if (!pfnty) {
+      EDiag() << "expected " << str(origType) << " to be a ptr type.";
+      return false;
+    }
+    fnType = llvm::dyn_cast<llvm::FunctionType>(pfnty->getContainedType(0));
+    if (!fnType) {
+      EDiag() << "expected " << str(origType) << " to be a ptr to fn type.";
+      return false;
+    }
+    if (fnType->getNumParams() == 0) {
+      EDiag() << "expected " << str(fnType) << " to have an env parameter.";
+      return false;
+    }
+    const llvm::PointerType* maybeEnvType =
+                  llvm::dyn_cast<llvm::PointerType>(fnType->getParamType(0));
+    if (!maybeEnvType) return false;
+
+    cloStructTy = llvm::StructType::get(origType->getContext(),
+                      pfnty, maybeEnvType, NULL);
+    return true;
+  }
+
+  // Converts { r({...}*, ----), {....}* }
+  // to       { r( i8*,   ----),   i8*   }.
+  // Used when choosing a type to allocate for a closure pair.
+  const llvm::StructType*
+  genericClosureStructTy(const llvm::FunctionType* fnty) {
+    const Type* retty = fnty->getReturnType();
+    std::vector<const llvm::Type*> argTypes;
+    for (size_t i = 0; i < fnty->getNumParams(); ++i) {
+       argTypes.push_back(fnty->getParamType(i));
+    }
+    argTypes[0] = builder.getInt8PtrTy();
+
+    return llvm::StructType::get(fnty->getContext(),
+             ptrTo(llvm::FunctionType::get(retty, argTypes, false)),
+             builder.getInt8PtrTy(), NULL);
+  }
+
+  llvm::Value* LLClosure::codegenClosure(
+                          CodegenPass* pass,
+                          llvm::Value* envPtrOrSlot) {
+    llvm::Value* proc = pass->lookupFunctionOrDie(procname);
+
+    const llvm::FunctionType* fnty;
+    const llvm::StructType* cloStructTy;
+
+    if (!tryBindClosureFunctionTypes(proc->getType(), fnty, cloStructTy)) {
+      ASSERT(false) << "proc " << procname
+                    << " with type " << str(proc->getType())
+                    << " not closed??";
+    }
+
+    llvm::Value* clo = NULL; llvm::Value* rv = NULL;
+    bool closureEscapes = true;
+    if (closureEscapes) {
+      // // { code*, env* }**
+      llvm::AllocaInst* clo_slot = pass->emitMalloc(genericClosureStructTy(fnty),
+                                                    foster::bogusCtorId(-5));
+      clo = emitNonVolatileLoad(clo_slot, varname + ".closure"); rv = clo_slot;
+    } else { // { code*, env* }*
+      clo = CreateEntryAlloca(cloStructTy, varname + ".closure"); rv = clo;
+    }
+
+    // TODO register closure type
+
+    emitStoreWithCast(proc,
+                    builder.CreateConstGEP2_32(clo, 0, 0, varname + ".clo_code"));
+    Value* env_slot = builder.CreateConstGEP2_32(clo, 0, 1, varname + ".clo_env");
+    if (env->vars.empty()) {
+      storeNullPointerToSlot(env_slot);
+    } else {
+      // Only store the env in the closure if the env contains entries.
+      llvm::Value* envPtr = pass->autoload(envPtrOrSlot);
+      emitStoreWithCast(envPtr, env_slot);
+    }
+
+    return rv;
+  }
+
+///}}}//////////////////////////////////////////////////////////////
+
+TupleTypeAST* getDataCtorType(DataCtor* dc) {
+  return TupleTypeAST::get(dc->types);
+}
+
 ////////////////////////////////////////////////////////////////////
+//////////////// Decision Trees ////////////////////////////////////
+/////////////////////////////////////////////////////////////////{{{
+
+  // Create at most one stack slot per subterm.
+  llvm::AllocaInst*
+  getStackSlotForOcc(Occurrence* occ, llvm::Value* v,
+                     CaseContext* ctx, CodegenPass* pass) {
+    llvm::AllocaInst* slot = ctx->ctorSlotMap[occ->offsets];
+    if (slot) {
+      emitStore(v, slot);
+    } else {
+      slot = ensureImplicitStackSlot(v, pass);
+      ctx->ctorSlotMap[occ->offsets] = slot;
+    }
+    return slot;
+  }
+
+  TupleTypeAST* maybeGetCtorStructType(CodegenPass* pass, CtorId c) {
+    DataTypeAST* dt = pass->isKnownDataType[c.typeName];
+    return (dt) ? getDataCtorType(dt->getCtor(c.smallId)) : NULL;
+  }
+
+  llvm::Value* lookupOccs(CodegenPass* pass, Occurrence* occ, llvm::Value* v) {
+    ASSERT(occ != NULL);
+    const std::vector<int>& occs = occ->offsets;
+    const std::vector<CtorId>& ctors = occ->ctors;
+    ASSERT(ctors.size() == occs.size());
+
+    llvm::Value* rv = v;
+
+        std::stringstream ss; ss << "occ(";
+        for (size_t i = 0; i < occs.size(); ++i) {
+          ss << occs[i] << ":";
+          ss << ctors[i].ctorName << "::";
+        }
+        ss << ")--";
+
+        emitFakeComment(ss.str());
+
+    std::vector<int> currentOccs;
+
+    for (size_t i = 0; i < occs.size(); ++i) {
+      // If we know that the subterm at this position was created with
+      // a particular data constructor, emit a cast to that ctor's type.
+      if (TupleTypeAST* tupty = maybeGetCtorStructType(pass, ctors[i])) {
+        rv = builder.CreateBitCast(rv, tupty->getLLVMType());
+      }
+
+      llvm::Constant* idx = getConstantInt32For(occs[i]);
+      rv = getElementFromComposite(rv, idx, "switch_insp");
+
+      currentOccs.push_back(occs[i]);
+    }
+
+    return rv;
+  }
+
+  void DecisionTree::codegenDecisionTree(CodegenPass* pass,
+                                         llvm::Value* scrutinee,
+                                         CaseContext* ctx) {
+    llvm::BasicBlock* bb = NULL;
+    switch (tag) {
+    case DecisionTree::DT_FAIL:
+      EDiag() << "DecisionTree codegen, tag = DT_FAIL; v = " << str(scrutinee);
+      emitFosterAssert(pass->mod, builder.getInt1(false), "pattern match failure!");
+      break;
+
+    case DecisionTree::DT_LEAF:
+      //EDiag() << "codegenning dt leaf for block " << this->action_block_id
+      //    << "; bindings already set? " << (pass->blockBindings[this->action_block_id] != NULL);
+      if (!pass->blockBindings[this->action_block_id]) {
+        BlockBindings* bindings = new BlockBindings;
+        bindings->ctx       = ctx;
+        bindings->binds     = binds;
+        bindings->scrutinee = scrutinee;
+        pass->blockBindings[this->action_block_id] = bindings;
+      }
+
+      // Make sure that we eventually codegen in the leaf block.
+      bb = pass->lookupBlock(action_block_id);
+      builder.CreateBr(bb);
+      break;
+
+    case DecisionTree::DT_SWITCH:
+      sc->codegenSwitch(pass, scrutinee, ctx);
+      break;
+    }
+  }
+
+  llvm::Value* emitCallGetCtorTagOf(CodegenPass* pass, llvm::Value* v) {
+    llvm::Value* foster_ctor_id_of = pass->mod->getFunction("foster_ctor_id_of");
+    ASSERT(foster_ctor_id_of != NULL);
+    llvm::CallInst* call = builder.CreateCall(foster_ctor_id_of,
+                           builder.CreateBitCast(v, builder.getInt8PtrTy()));
+    markAsNonAllocating(call);
+    return call;
+  }
+
+  void addAndEmitTo(Function* f, BasicBlock* bb) {
+    f->getBasicBlockList().push_back(bb);
+    builder.SetInsertPoint(bb);
+  }
+
+  ConstantInt* maybeGetTagForCtorId(CodegenPass* pass, const CtorId& c) {
+    DataTypeAST* dt = pass->isKnownDataType[c.typeName];
+
+    if (dt) {                           return getConstantInt8For(c.smallId);
+    } else if (c.typeName == "Bool") {  return builder.getInt1(c.smallId);
+    } else if (c.typeName == "Int32") { return getConstantInt32For(c.smallId);
+    } else { return NULL; }
+  }
+
+  void SwitchCase::codegenSwitch(CodegenPass* pass,
+                                 llvm::Value* scrutinee,
+                                 CaseContext* ctx) {
+    ASSERT(ctors.size() == trees.size());
+    ASSERT(ctors.size() >= 1);
+
+    BasicBlock* defaultBB = NULL;
+    if (defaultCase != NULL) {
+      defaultBB = BasicBlock::Create(getGlobalContext(), "case_default");
+    }
+
+    // Special-case codegen for when there's only one
+    // possible case, to avoid superfluous branches.
+    if (trees.size() == 1 && !defaultCase) {
+      trees[0]->codegenDecisionTree(pass, scrutinee, ctx);
+      return;
+    }
+
+    // TODO: switching on a.p. integers: possible at all?
+    // If so, it will require manual if-else chaining,
+    // not a simple int32 switch...
+    BasicBlock* bbNoDefault = defaultBB ? NULL      :
+                         BasicBlock::Create(getGlobalContext(), "case_nodefault");
+    BasicBlock* defOrContBB = defaultBB ? defaultBB : bbNoDefault;
+
+    // Fetch the subterm of the scrutinee being inspected.
+    llvm::Value* inspected = lookupOccs(pass, this->occ, scrutinee);
+
+    // All the ctors should have the same data type, now that we have at least
+    // one ctor, check if it's associated with a data type we know of.
+    DataTypeAST* dt = pass->isKnownDataType[ctors[0].typeName];
+
+    // If we're looking at a data type, emit code to get the ctor tag,
+    // instead of switching on the pointer value directly.
+    if (dt) { inspected = emitCallGetCtorTagOf(pass, inspected);  }
+
+    // Switch on the inspected value; we'll fill in the ctor branches as we go.
+    llvm::SwitchInst* si = builder.CreateSwitch(inspected, defOrContBB, ctors.size());
+    Function *F = builder.GetInsertBlock()->getParent();
+
+    // Add cases to the switch for each arm.
+    for (size_t i = 0; i < ctors.size(); ++i) {
+      CtorId c = ctors[i];
+      if (ConstantInt* onVal = maybeGetTagForCtorId(pass, c)) {
+        // Emit the code for the branch expression,
+        // ending with a branch to the end of the case-expr.
+        std::stringstream ss; ss << "casetest_" << i;
+        BasicBlock* destBB = BasicBlock::Create(getGlobalContext(), ss.str());
+        addAndEmitTo(F, destBB);
+        trees[i]->codegenDecisionTree(pass, scrutinee, ctx);
+
+        ASSERT(si->getCondition()->getType() == onVal->getType())
+            << "had different types for inspected value and switch case tag";
+
+        si->addCase(onVal, destBB);
+      } else {
+        ASSERT(false) << "SwitchCase ctor " << (i+1) << "/" << ctors.size()
+               << ": " << c.typeName << "." << c.ctorName << "#" << c.smallId
+               << "\n" << str(scrutinee)  << "::" << str(scrutinee->getType());
+      }
+    }
+
+    if (defaultCase) {
+      addAndEmitTo(F, defaultBB);
+      defaultCase->codegenDecisionTree(pass, scrutinee, ctx);
+    }
+
+    if (bbNoDefault) {
+      addAndEmitTo(F, bbNoDefault);
+      emitFosterAssert(pass->mod, llvm::ConstantInt::getTrue(builder.getContext()),
+                     "control passed to llvm-generated default block -- bad!");
+      builder.CreateUnreachable();
+    }
+  }
+
+///}}}//////////////////////////////////////////////////////////////
+
+llvm::Value* LLAppCtor::codegen(CodegenPass* pass) {
+  DataTypeAST* dt = pass->isKnownDataType[this->ctorId.typeName];
+  ASSERT(dt) << "unable to find data type for " << this->ctorId.typeName;
+  DataCtor* dc = dt->getCtor(this->ctorId.smallId);
+  TupleTypeAST* ty = getDataCtorType(dc);
+
+  // This basically duplicates LLTuple::codegen and should eventually
+  // be properly implemented in terms of it.
+  registerTupleType(ty, this->ctorId.typeName + "." + this->ctorId.ctorName,
+                    this->ctorId.smallId, pass->mod);
+  bool yesUnboxed = true;
+  LLAllocate a(ty, this->ctorId.smallId, yesUnboxed, NULL,
+               LLAllocate::MEM_REGION_GLOBAL_HEAP);
+  llvm::Value* obj_slot = a.codegen(pass);
+  llvm::Value* obj = emitNonVolatileLoad(obj_slot, "obj");
+
+  copyValuesToStruct(codegenAll(pass, this->args), obj);
+
+  const llvm::Type* dtype = dt->getLLVMType();
+  // TODO fix to use a stack slot properly
+  return builder.CreateBitCast(obj, dtype);
+}
+
+////////////////////////////////////////////////////////////////////
+//////////////// Term Application //////////////////////////////////
+/////////////////////////////////////////////////////////////////{{{
 
 llvm::Value* LLCallPrimOp::codegen(CodegenPass* pass) {
   return codegenPrimitiveOperation(this->op, builder, codegenAll(pass, this->args));
@@ -1185,38 +1241,4 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
   }
 }
 
-llvm::Value* LLTuple::codegenStorage(CodegenPass* pass) {
-  if (vars.empty()) { return getUnitValue(); }
-
-  ASSERT(this->allocator);
-  TupleTypeAST* tuplety = dynamic_cast<TupleTypeAST*>(this->allocator->type);
-
-  ASSERT(tuplety != NULL)
-        << "allocator wants to emit type " << str(this->allocator->type)
-        << "; var 0 :: " << str(vars[0]->type);
-
-  registerTupleType(tuplety, this->typeName, foster::bogusCtorId(-2), pass->mod);
-
-  return allocator->codegen(pass);
-}
-
-llvm::Value* LLTuple::codegen(CodegenPass* pass) {
-  if (vars.empty()) { return getUnitValue(); }
-
-  llvm::Value* slot = codegenStorage(pass);
-
-  // Heap-allocated things codegen to a stack slot, which
-  // is the Value we want the overall tuple to codegen as, but
-  // we need temporary access to the pointer stored in the slot.
-  // Otherwise, bad things happen.
-  llvm::Value* pt = allocator->isStackAllocated()
-           ? slot
-           : emitNonVolatileLoad(slot, "normalize");
-  codegenTo(pass, pt);
-  return slot;
-}
-
-void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
-  copyValuesToStruct(codegenAll(pass, this->vars), tup_ptr);
-}
-
+/// }}}

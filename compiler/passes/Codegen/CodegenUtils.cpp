@@ -31,13 +31,7 @@ void emitFosterAssert(llvm::Module* mod, llvm::Value* cond, const char* cstr) {
 }
 
 llvm::Value* getUnitValue() {
-  return llvm::ConstantPointerNull::get(
-                builder.getInt8PtrTy());
-  /*
-  std::vector<llvm::Constant*> noArgs;
-  return llvm::ConstantStruct::get(
-            llvm::StructType::get(builder.getContext()), noArgs);
-  */
+  return llvm::ConstantPointerNull::get(builder.getInt8PtrTy());
 }
 
 void checkPointerToIndex(Value* ptrToCompositeValue,
@@ -113,6 +107,8 @@ Value* getElementFromComposite(Value* compositeValue,  Value* idxValue,
 
 ////////////////////////////////////////////////////////////////////
 
+// Given a stack slot named s in a function called f,
+// returns a pointer to a string called "f((s))".
 Constant* getSlotName(llvm::AllocaInst* stackslot, CodegenPass* pass) {
   std::string fnname = stackslot->getParent()->getParent()->getNameStr();
   std::string slotname = fnname + "(( " + stackslot->getNameStr() + " ))";
