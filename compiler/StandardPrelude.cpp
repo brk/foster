@@ -10,7 +10,7 @@
 
 #include "base/LLVMUtils.h" // for str(const TypeAST*)
 
-#include "parse/FosterTypeAST.h"
+#include "base/Assert.h"
 
 #include "pystring/pystring.h"
 
@@ -24,21 +24,17 @@ using namespace llvm;
 namespace foster {
 
   void addStandardExternDeclarations(Module* mod) {
-    const llvm::Type* i32 = TypeAST::i(32)->getLLVMType();
-    std::vector<const Type*> args;
-    args.push_back(i32);
+    const llvm::Type* i32 = builder.getInt32Ty();
+    std::vector<const Type*> args; args.push_back(i32);
     mod->getOrInsertFunction("opaquely_i32",
-         FunctionType::get(i32, args,
-                       /*isVarArg=*/ false)
+         FunctionType::get(i32, args, /*isVarArg=*/ false)
       );
   }
 
 bool gPrintLLVMImports = false;
 
 // Add prototypes for module m's C-linkage functions to the linkee module.
-void
-putModuleMembersInInternalScope(const std::string& scopeName,
-                                     Module* m, Module* linkee) {
+void putModuleMembersInScope(Module* m, Module* linkee) {
   if (!m) return;
 
   // Collect type names from the module.
@@ -108,12 +104,9 @@ putModuleMembersInInternalScope(const std::string& scopeName,
       ty = pty->getElementType();
     }
 
-    if (const FunctionType* fnty =
-                                      dyn_cast<FunctionType>(ty)) {
-      linkee->getOrInsertFunction(
-          StringRef(name),
-          fnty,
-          f.getAttributes());
+    if (const FunctionType* fnty = dyn_cast<FunctionType>(ty)) {
+      linkee->getOrInsertFunction(StringRef(name), fnty,
+                                  f.getAttributes());
 
       if (gPrintLLVMImports) {
         outs() << "<internal>\t" << hasDef << "\t" << name << " \n";
@@ -136,7 +129,7 @@ putModuleMembersInInternalScope(const std::string& scopeName,
 
 // Add module m's C-linkage functions in the global scopes,
 // and also add prototypes to the linkee module.
-void putModuleMembersInScope(Module* m, Module* linkee) {
+void putModuleFunctionsInScope(Module* m, Module* linkee) {
   if (!m) return;
 
   for (Module::iterator it = m->begin(); it != m->end(); ++it) {
@@ -156,14 +149,11 @@ void putModuleMembersInScope(Module* m, Module* linkee) {
         ty = pty->getElementType();
       }
 
-      if (const FunctionType* fnty =
-                                      dyn_cast<FunctionType>(ty)) {
+      if (const FunctionType* fnty = dyn_cast<FunctionType>(ty)) {
         // Ensure that codegen for the given function finds the 'declare'
         // TODO make lazy prototype?
-        linkee->getOrInsertFunction(
-            StringRef(name),
-            fnty,
-            f.getAttributes());
+        linkee->getOrInsertFunction(StringRef(name), fnty,
+                                    f.getAttributes());
 
         if (gPrintLLVMImports) {
           outs() << "inserting variable in global scope: " << name << " : "

@@ -165,13 +165,13 @@ void emitFosterAssert(llvm::Module* mod, llvm::Value* cond, const char* cstr);
 
 ////////////////////////////////////////////////////////////////////
 
-int coroField_Context() { return 0; }
-int coroField_Sibling() { return 1; }
-int coroField_Fn() { return 2; }
-int coroField_Env() { return 3; }
-int coroField_Invoker() { return 4; }
+int coroField_Context()      { return 0; }
+int coroField_Sibling()      { return 1; }
+int coroField_Fn()           { return 2; }
+int coroField_Env()          { return 3; }
+int coroField_Invoker()      { return 4; }
 int coroField_IndirectSelf() { return 5; }
-int coroField_Status() { return 6; }
+int coroField_Status()       { return 6; }
 
 ////////////////////////////////////////////////////////////////////
 ////////////////////////// CORO WRAPPER  ///////////////////////////

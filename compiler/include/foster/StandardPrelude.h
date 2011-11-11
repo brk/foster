@@ -16,9 +16,8 @@ namespace foster {
 
 // Add module m's C-linkage functions in the global scopes,
 // and also add prototypes to the linkee module.
+void putModuleFunctionsInScope(llvm::Module* m, llvm::Module* linkee);
 void putModuleMembersInScope(llvm::Module* m, llvm::Module* linkee);
-void putModuleMembersInInternalScope(const std::string& scopeName,
-  llvm::Module* m, llvm::Module* linkee);
 
 void createLLVMBitIntrinsics();
 

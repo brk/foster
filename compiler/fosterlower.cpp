@@ -125,13 +125,11 @@ void linkTo(llvm::Module*& transient,
             const std::string& name,
             llvm::Module* module) {
   string errMsg;
-  if (Linker::LinkModules(module, transient, &errMsg)) {
-    EDiag() << "Error when linking in " << name << ": " << errMsg << "\n";
-  }
+  bool failed = Linker::LinkModules(module, transient, &errMsg);
+  ASSERT(!failed) << "Error when linking in " << name << ": " << errMsg << "\n";
 }
 
-void addCoroTransferDeclaration(llvm::Module* dst,
-                                llvm::Module* src) {
+void addCoroTransferDeclaration(llvm::Module* src, llvm::Module* dst) {
   // coro_transfer isn't automatically added
   // because it's only a declaration, not a definition.
   llvm::Function* coro_transfer =
@@ -146,7 +144,7 @@ void addCoroTransferDeclaration(llvm::Module* dst,
 }
 
 LLModule* readLLProgramFromProtobuf(const string& pathstr,
-                                        foster::bepb::Module& out_sm) {
+                                   foster::bepb::Module& out_sm) {
   std::fstream input(pathstr.c_str(), std::ios::in | std::ios::binary);
   if (!out_sm.ParseFromIstream(&input)) {
     EDiag() << "ParseFromIstream() failed!";
@@ -201,9 +199,7 @@ areDeclaredValueTypesOK(llvm::Module* mod,
   return true;
 }
 
-namespace foster {
-void codegenLL(LLModule* package, llvm::Module* mod);
-}
+namespace foster { void codegenLL(LLModule* package, llvm::Module* mod); }
 
 int main(int argc, char** argv) {
   int program_status = 0;
@@ -264,11 +260,11 @@ int main(int argc, char** argv) {
     current_coro->getType()->getContainedType(0));
 
   foster::addStandardExternDeclarations(module);
-  addCoroTransferDeclaration(module, libfoster_bc);
+  addCoroTransferDeclaration(libfoster_bc, module);
   // TODO mark foster__assert as alwaysinline
 
-  foster::putModuleMembersInScope(libfoster_bc, module);
-  foster::putModuleMembersInInternalScope("imath", imath_bc, module);
+  foster::putModuleFunctionsInScope(libfoster_bc, module);
+  foster::putModuleMembersInScope(imath_bc, module);
 
   //================================================================
   //================================================================
@@ -293,7 +289,8 @@ int main(int argc, char** argv) {
     dumpModuleToFile(module, outdirFile(optOutputName + ".prelink.ll").c_str());
   }
 
-  {
+  { // Run warning passes after dumping prelinked IR so that
+    // we can more easily inspect problematic IR.
     foster::runWarningPasses(*module);
   }
 
