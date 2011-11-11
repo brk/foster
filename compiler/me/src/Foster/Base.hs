@@ -46,6 +46,9 @@ data VarNamespace = VarProc | VarLocal deriving (Show)
 data TyVar = BoundTyVar String -- bound by a ForAll, that is
              deriving (Eq, Ord)
 
+instance Show TyVar where
+    show (BoundTyVar x) = "'" ++ x
+
 class Expr a where
     freeVars   :: a -> [T.Text]
 
@@ -66,6 +69,18 @@ patBindingFreeIds (pat, expr) =
             P_Tuple    _rng pats     -> concatMap patBoundIds pats
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+data E_VarAST ty = VarAST { evarMaybeType :: Maybe ty
+                          , evarName      :: T.Text } deriving (Show)
+
+data EPattern ty =
+          EP_Wildcard     SourceRange
+        | EP_Variable     SourceRange (E_VarAST ty)
+        | EP_Ctor         SourceRange [EPattern ty] T.Text
+        | EP_Bool         SourceRange Bool
+        | EP_Int          SourceRange String
+        | EP_Tuple        SourceRange [EPattern ty]
+        deriving (Show)
 
 data Pattern =
           P_Wildcard      SourceRange
@@ -116,7 +131,7 @@ type DataTypeSigs = Map DataTypeName DataTypeSig
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 data ModuleAST fnCtor ty = ModuleAST {
-          moduleASTfunctions   :: [fnCtor]
+          moduleASTfunctions   :: [fnCtor ty]
         , moduleASTdecls       :: [(String, ty)]
         , moduleASTdataTypes   :: [DataType ty]
         , moduleASTsourceLines :: SourceLines

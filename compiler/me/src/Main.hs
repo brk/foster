@@ -17,7 +17,8 @@ import List(all)
 import qualified Data.Set as Set(filter, toList, fromList)
 import qualified Data.Graph as Graph(SCC, flattenSCC, stronglyConnComp)
 import Data.Maybe(isNothing)
-import Control.Monad.State(forM, when, forM_, StateT, runStateT, gets, liftIO)
+import Control.Monad.State(forM, when, forM_, StateT, runStateT, gets,
+                           liftIO, liftM, liftM2)
 import Data.IORef(IORef, newIORef, readIORef)
 
 import Text.ProtocolBuffers(messageGet)
@@ -29,6 +30,7 @@ import Foster.ProtobufFE(parseSourceModule)
 import Foster.ProtobufIL(dumpMonoModuleToProtobuf)
 import Foster.ExprAST
 import Foster.TypeAST
+import Foster.ParsedType
 import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn), AnnFn,
                       fnNameA, annFnType, annFnIdent)
 import Foster.AnnExprIL(AIExpr, fnOf)
@@ -42,6 +44,7 @@ import Foster.Monomo
 import Foster.KSmallstep
 import Foster.Output
 import Foster.MainCtorHelpers
+import Foster.ConvertExprAST
 
 -----------------------------------------------------------------------
 
@@ -131,7 +134,7 @@ typecheckFnSCC scc (ctx, tcenv) = do
 -- |     or else we consider type checking to have failed
 -- |     (no implicit instantiation at the moment!)
 typecheckModule :: Bool
-                -> ModuleAST (FnAST TypeAST) TypeAST
+                -> ModuleAST FnAST TypeAST
                 -> TcEnv
                 -> IO (OutputOr (Context TypeIL, ModuleIL AIExpr TypeIL))
 typecheckModule verboseMode modast tcenv0 = do
@@ -146,15 +149,16 @@ typecheckModule verboseMode modast tcenv0 = do
         let sortedFns = Graph.stronglyConnComp callGraphList -- :: [SCC FnAST]
         putStrLn $ "Function SCC list : " ++
                        show [(name, frees) | (_, name, frees) <- callGraphList]
-        let ctx0 = mkContext declBindings primBindings
+        let ctx0 = mkContext declBindings primBindings (moduleASTdataTypes modast)
         (annFns, (ctx, tcenv)) <- mapFoldM sortedFns (ctx0, tcenv0) typecheckFnSCC
         unTc tcenv (convertTypeILofAST modast ctx annFns)
       dups -> return (Errors [out $ "Unable to check module due to "
                                  ++ "duplicate bindings: " ++ show dups])
  where
-   mkContext declBindings primBindings =
-     Context declBindings primBindings verboseMode globalvars
+   mkContext declBindings primBindings datatypes =
+     Context declBindings primBindings verboseMode globalvars ctorinfo
        where globalvars   = declBindings ++ primBindings
+             ctorinfo     = getCtorInfo datatypes
 
    computeContextBindings :: [(String, TypeAST)] -> [ContextBinding TypeAST]
    computeContextBindings decls = map (\(s,t) -> pair2binding (T.pack s, t)) decls
@@ -191,16 +195,17 @@ typecheckModule verboseMode modast tcenv0 = do
             -- remove recursive function name calls
             Set.toList $ Set.filter (\name -> fnAstName f /= name) nonPrimitives
 
-   convertTypeILofAST :: ModuleAST (FnAST TypeAST) TypeAST
+   convertTypeILofAST :: ModuleAST FnAST TypeAST
                       -> Context TypeAST
                       -> [OutputOr AnnExpr]
                       -> Tc (Context TypeIL, ModuleIL AIExpr TypeIL)
    convertTypeILofAST mAST ctx_ast oo_annfns = do
-     decls     <- mapM convertDecl (moduleASTdecls mAST)
-     datatypes <- mapM convertDataType (moduleASTdataTypes mAST)
+     mIL       <- convertModule ilOf mAST
      ctx_il    <- liftContextM ilOf ctx_ast
      aiFns     <- mapM (tcInject fnOf)
                        (map (fmapOO (\(E_AnnFn f) -> f)) oo_annfns)
+     let decls = moduleASTdecls mIL
+     let datatypes = moduleASTdataTypes mIL
      let m = ModuleIL aiFns decls datatypes (moduleASTsourceLines mAST)
      return (ctx_il, m)
        where
@@ -208,31 +213,13 @@ typecheckModule verboseMode modast tcenv0 = do
         fmapOO  f (OK e)     = OK (f e)
         fmapOO _f (Errors o) = Errors o
 
-        convertDecl :: (String, TypeAST) -> Tc (String, TypeIL)
-        convertDecl (s, ty) = do t <- ilOf ty ; return (s, t)
-
-        convertDataType :: DataType TypeAST -> Tc (DataType TypeIL)
-        convertDataType (DataType dtName tyformals ctors) = do
-          cts <- mapM convertDataCtor ctors
-          return $ DataType dtName tyformals cts
-            where
-              convertDataCtor :: DataCtor TypeAST -> Tc (DataCtor TypeIL)
-              convertDataCtor (DataCtor dataCtorName n types) = do
-                tys <- mapM ilOf types
-                return $ DataCtor dataCtorName n tys
-
         liftContextM :: (Monad m, Show t1, Show t2)
                      => (t1 -> m t2) -> Context t1 -> m (Context t2)
-        liftContextM f (Context cb pb vb gb) = do
+        liftContextM f (Context cb pb vb gb ctortypeast) = do
           cb' <- mapM (liftBinding f) cb
           pb' <- mapM (liftBinding f) pb
           gb' <- mapM (liftBinding f) gb
-          return $ Context cb' pb' vb gb'
-
-        liftBinding :: Monad m => (t1 -> m t2) -> ContextBinding t1 -> m (ContextBinding t2)
-        liftBinding f (TermVarBinding s (TypedId t i)) = do
-          t2 <- f t
-          return $ TermVarBinding s (TypedId t2 i)
+          return $ Context cb' pb' vb gb' ctortypeast
 
 printOutputs :: [Output] -> IO ()
 printOutputs outs =
@@ -240,6 +227,13 @@ printOutputs outs =
     do
        runOutput $ output
        runOutput $ (outLn "")
+
+dieOnError :: OutputOr t -> Compiled t
+dieOnError (OK     e) = return e
+dieOnError (Errors errs) = liftIO $ do
+    runOutput (outCSLn Red $ "Unable to type check input module:")
+    printOutputs errs
+    error "compilation failed"
 
 -----------------------------------------------------------------------
 
@@ -282,38 +276,56 @@ main = do
     Left msg -> error $ "Failed to parse protocol buffer.\n" ++ msg
     Right (pb_module, _) -> do
         uniqref <- newIORef 1
+        varlist <- liftIO $ newIORef []
+        let tcenv = TcEnv {       tcEnvUniqs = uniqref,
+                           tcUnificationVars = varlist,
+                                   tcParents = [] }
         (monoprog, _) <- runStateT (compile pb_module) $ CompilerContext {
                                 ccVerbose  = getVerboseFlag flagVals
                               , ccFlagVals = flagVals
-                              , ccUnique   = uniqref
+                              , ccTcEnv    = tcenv
                          }
         dumpMonoModuleToProtobuf monoprog outfile
 
 compile :: SourceModule -> Compiled MonoProgram
 compile pb_module =
     (return $ parseSourceModule pb_module)
+     >>= desugarParsedModule
      >>= typecheckSourceModule
      >>= (uncurry lowerModule)
 
-typecheckSourceModule :: ModuleAST (FnAST TypeAST) TypeAST
+astOfParsedType :: TypeP -> Tc TypeAST
+astOfParsedType typep =
+  let q = astOfParsedType in
+  case typep of
+        PrimIntP         size  -> return $ PrimIntAST         size
+        TyConAppP    tc types  -> liftM (TyConAppAST tc) (mapM q types)
+        TupleTypeP      types  -> liftM  TupleTypeAST    (mapM q types)
+        RefTypeP       t       -> liftM  RefTypeAST              (q t)
+        ArrayTypeP     t       -> liftM  ArrayTypeAST            (q t)
+        CoroTypeP    s t       -> liftM2 CoroTypeAST       (q s) (q t)
+        ForAllP    tvs t       -> liftM (ForAllAST    tvs)       (q t)
+        TyVarP     tv          -> do return $ TyVarAST tv
+        FnTypeP      s t cc cs -> do s' <- q s
+                                     t' <- q t
+                                     return $ FnTypeAST      s' t' cc cs
+        MetaPlaceholder desc -> do newTcUnificationVar desc
+
+desugarParsedModule :: ModuleAST FnAST TypeP ->
+             Compiled (ModuleAST FnAST TypeAST)
+desugarParsedModule m = do
+  tcenv <- gets ccTcEnv
+  (liftIO $ unTc tcenv (convertModule astOfParsedType m)) >>= dieOnError
+
+typecheckSourceModule :: ModuleAST FnAST TypeAST
                       -> Compiled (ModuleIL AIExpr TypeIL, Context TypeIL)
 typecheckSourceModule sm = do
-    uniqref <- gets ccUnique
-    varlist <- liftIO $ newIORef []
-    let tcenv = TcEnv { tcEnvUniqs = uniqref,
-                 tcUnificationVars = varlist,
-                         tcParents = [],
-                        tcCtorInfo = getCtorInfo (moduleASTdataTypes sm) }
     verboseMode <- gets ccVerbose
-    modResults <- liftIO $ typecheckModule verboseMode sm tcenv
-    case modResults of
-        Errors os -> liftIO $ do
-            runOutput (outCSLn Red $ "Unable to type check input module:")
-            printOutputs os
-            error "compilation failed"
-        OK (ctx_il, ai_mod) -> do
-            showGeneratedMetaTypeVariables varlist ctx_il
-            return (ai_mod, ctx_il)
+    tcenv       <- gets ccTcEnv
+    (ctx_il, ai_mod) <- (liftIO $ typecheckModule verboseMode sm tcenv)
+                      >>= dieOnError
+    showGeneratedMetaTypeVariables (tcUnificationVars tcenv) ctx_il
+    return (ai_mod, ctx_il)
 
 lowerModule :: ModuleIL AIExpr TypeIL
             -> Context TypeIL
@@ -341,13 +353,13 @@ lowerModule ai_mod ctx_il = do
 
   where
     cfgModule kmod = do
-        uniqref <- gets ccUnique
+        uniqref <- gets (tcEnvUniqs.ccTcEnv)
         liftIO $ do
             cfgFuncs <- mapM (computeCFGIO uniqref) (moduleILfunctions kmod)
             return $ kmod { moduleILfunctions = cfgFuncs }
 
     closureConvert cfgmod = do
-        uniqref <- gets ccUnique
+        uniqref <- gets (tcEnvUniqs.ccTcEnv)
         liftIO $ do
             let dataSigs = dataTypeSigs (moduleILdataTypes cfgmod)
             u0 <- readIORef uniqref
@@ -376,9 +388,9 @@ showGeneratedMetaTypeVariables varlist ctx_il =
 
 type Compiled = StateT CompilerContext IO
 data CompilerContext = CompilerContext {
-        ccVerbose :: Bool
+        ccVerbose  :: Bool
       , ccFlagVals :: ([Flag], [String])
-      , ccUnique  :: IORef Uniq
+      , ccTcEnv    :: TcEnv
 }
 
 whenVerbose :: IO () -> Compiled ()

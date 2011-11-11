@@ -16,6 +16,7 @@ data Context ty = Context { contextBindings   :: [ContextBinding ty]
                           , primitiveBindings :: [ContextBinding ty]
                           , contextVerbose    :: Bool
                           , globalBindings    :: [ContextBinding ty]
+                          , contextCtorInfo   :: Map CtorName [CtorInfo TypeAST]
                           }
 
 prependContextBinding :: Context ty -> ContextBinding ty -> Context ty
@@ -46,7 +47,6 @@ termVarLookup name bindings = Prelude.lookup name bindingslist where
 data TcEnv = TcEnv { tcEnvUniqs :: IORef Uniq
                    , tcUnificationVars :: IORef [MetaTyVar]
                    , tcParents  :: [ExprAST TypeAST]
-                   , tcCtorInfo :: Map CtorName [CtorInfo TypeAST]
                    }
 
 newtype Tc a = Tc (TcEnv -> IO (OutputOr a))
@@ -86,9 +86,6 @@ tcLift action = Tc $ \_env -> action >>= retOK
 tcFails :: [Output] -> Tc a
 tcFails errs = Tc $ \_env -> return $ Errors errs
 
-newTcRef :: a -> Tc (IORef a)
-newTcRef v = tcLift $ newIORef v
-
 readTcRef :: IORef a -> Tc a
 readTcRef r = tcLift $ readIORef r
 
@@ -108,6 +105,9 @@ newTcUnificationVar desc = do
     meta <- tcRecordUnificationVar (Meta u ref desc)
     return (MetaTyVar meta)
       where
+        newTcRef :: a -> Tc (IORef a)
+        newTcRef v = tcLift $ newIORef v
+
         -- The typechecking environment maintains a list of all the unification
         -- variables created, for introspection/debugging/statistics wankery.
         tcRecordUnificationVar :: MetaTyVar -> Tc MetaTyVar
@@ -135,8 +135,6 @@ tcFresh s = tcFreshT (T.pack s)
 
 tcGetCurrentHistory :: Tc [ExprAST TypeAST]
 tcGetCurrentHistory = Tc $ \env -> do retOK $ Prelude.reverse $ tcParents env
-
-tcGetCtorInfo       = Tc $ \env -> do retOK $ tcCtorInfo env
 
 -- The type says it all: run a Tc action, and capture any errors explicitly.
 tcIntrospect :: Tc a -> Tc (OutputOr a)

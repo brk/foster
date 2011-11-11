@@ -9,7 +9,7 @@ module Foster.ProtobufFE (parseSourceModule) where
 import Foster.Base
 import Foster.Kind
 import Foster.ExprAST
-import Foster.TypeAST
+import Foster.ParsedType
 import Foster.ProtobufUtils(pUtf8ToText)
 
 import Data.Traversable(fmapDefault)
@@ -124,7 +124,7 @@ parseUntil pbexpr range = do
     [a, b] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
     return $ E_UntilAST range a b
 
-parseInt :: PbExpr.Expr -> SourceRange -> FE (ExprAST TypeAST)
+parseInt :: PbExpr.Expr -> SourceRange -> FE (ExprAST TypeP)
 parseInt pbexpr range = do
     return $ E_IntAST range (uToString $ getVal pbexpr PbExpr.int_text)
 
@@ -191,7 +191,7 @@ parseEVar pbexpr range = do return $ E_VarAST range (parseVar pbexpr)
 parseVar pbexpr = do VarAST (fmap parseType (PbExpr.type' pbexpr))
                             (getName "var" $ PbExpr.name pbexpr)
 
-parsePattern :: PbExpr.Expr -> FE (EPattern TypeAST)
+parsePattern :: PbExpr.Expr -> FE (EPattern TypeP)
 parsePattern pbexpr = do
   range <- parseRange pbexpr
   case PbExpr.tag pbexpr of
@@ -234,7 +234,7 @@ parseRange pbexpr =
    parseSourceLocation sr = -- This may fail for files of more than 2^29 lines.
        ESourceLocation (fromIntegral $ Pb.line sr) (fromIntegral $ Pb.column sr)
 
-parseExpr :: PbExpr.Expr -> FE (ExprAST TypeAST)
+parseExpr :: PbExpr.Expr -> FE (ExprAST TypeP)
 parseExpr pbexpr = do
     let fn = case PbExpr.tag pbexpr of
                 PB_INT  -> parseInt
@@ -265,13 +265,13 @@ parseExpr pbexpr = do
     range <- parseRange pbexpr
     fn pbexpr range
 
-parseDataType :: DataType.DataType -> FE (Foster.Base.DataType TypeAST)
+parseDataType :: DataType.DataType -> FE (Foster.Base.DataType TypeP)
 parseDataType dt = do
     ctors <- mapM parseDataCtor (Prelude.zip [0..] (toList $ DataType.ctor dt))
     let tyformals = map parseTypeFormal (toList $ DataType.tyformal dt)
     return $ Foster.Base.DataType (uToString $ DataType.name dt) tyformals ctors
  where
-  parseDataCtor :: (Int, DataCtor.DataCtor) -> FE (Foster.Base.DataCtor TypeAST)
+  parseDataCtor :: (Int, DataCtor.DataCtor) -> FE (Foster.Base.DataCtor TypeP)
   parseDataCtor (n, ct) = do
       let types = map parseType (toList $ DataCtor.type' ct)
       return $ Foster.Base.DataCtor (pUtf8ToText $ DataCtor.name ct) n types
@@ -291,7 +291,7 @@ parseModule _name decls defns datatypes = do
                     "should not have their top-level bit set before we do it!"
     toplevel f = f { fnWasToplevel = True }
 
-parseSourceModule :: SourceModule -> (ModuleAST (FnAST TypeAST) TypeAST)
+parseSourceModule :: SourceModule -> ModuleAST FnAST TypeP
 parseSourceModule sm =
     evalState
       (parseModule (uToString $ SourceModule.name sm)
@@ -303,29 +303,29 @@ parseSourceModule sm =
    sourceLines :: SourceModule -> SourceLines
    sourceLines sm = SourceLines (fmapDefault pUtf8ToText (SourceModule.line sm))
 
-parseNamedType :: String -> TypeAST
-parseNamedType "Int64" = PrimIntAST I64
-parseNamedType "Int32" = PrimIntAST I32
-parseNamedType "Int8"  = PrimIntAST I8
-parseNamedType "Bool"  = PrimIntAST I1
-parseNamedType other = TyConAppAST other []
+parseNamedType :: String -> TypeP
+parseNamedType "Int64" = PrimIntP I64
+parseNamedType "Int32" = PrimIntP I32
+parseNamedType "Int8"  = PrimIntP I8
+parseNamedType "Bool"  = PrimIntP I1
+parseNamedType other = TyConAppP other []
 
-parseType :: Type -> TypeAST
+parseType :: Type -> TypeP
 parseType t =
     case PbType.tag t of
          PbTypeTag.TYVAR ->
                 let name@(c:_) = T.unpack (getName "type name" $ PbType.name t) in
-                if isLower c then if Just True == PbType.is_placeholder t
-                                    then TyVarAST (BoundTyVar name) -- MetaTyVar (MetaPlaceholder name)
-                                    else TyVarAST (BoundTyVar name)
-                             else parseNamedType name
+                if Just True == PbType.is_placeholder t
+                  then MetaPlaceholder name
+                  else if isLower c then TyVarP (BoundTyVar name)
+                                    else parseNamedType name
          PbTypeTag.FN -> fromMaybe (error "Protobuf node tagged FN without fnty field!")
                                    (fmap parseFnTy $ PbType.fnty t)
-         PbTypeTag.TUPLE -> TupleTypeAST [parseType p | p <- toList $ PbType.type_parts t]
+         PbTypeTag.TUPLE -> TupleTypeP [parseType p | p <- toList $ PbType.type_parts t]
          PbTypeTag.TYPE_TYP_APP ->
                  let (base:types) = [parseType p | p <- toList $ PbType.type_parts t] in
                  case base of
-                   TyConAppAST nm [] -> TyConAppAST nm types
+                   TyConAppP nm [] -> TyConAppP nm types
                    _ -> error $ "ProtobufFE.parseType -- expected base of TYPE_TYP_APP to be TyConAppAST"
 
          PbTypeTag.REF       -> error "Ref types not yet implemented"
@@ -333,9 +333,9 @@ parseType t =
          PbTypeTag.CARRAY    -> error "Parsing for CARRAY type not yet implemented"
          PbTypeTag.FORALL_TY -> error "Parsing for FORALL_TY type not yet implemented"
 
-parseFnTy :: FnType -> TypeAST
+parseFnTy :: FnType -> TypeP
 parseFnTy fty =
-  FnTypeAST (TupleTypeAST [parseType x | x <- toList $ PbFnType.arg_types fty])
+  FnTypeP (TupleTypeP [parseType x | x <- toList $ PbFnType.arg_types fty])
             (parseType $ PbFnType.ret_type fty)
             (parseCallConv (fmap uToString $ PbFnType.calling_convention fty))
             (ftFuncIfClosureElseProc fty)

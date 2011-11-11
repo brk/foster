@@ -9,7 +9,7 @@ import List(length, zip)
 import Control.Monad(liftM, forM_, forM)
 
 import qualified Data.Text as T(Text, pack, unpack)
-import qualified Data.Map as Map(lookup)
+import qualified Data.Map as Map(lookup, empty)
 
 import Foster.Base
 import Foster.Kind
@@ -217,7 +217,7 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
   u <- newTcUnificationVar "case"
   let checkBranch (pat, body) = do
       p <- checkPattern pat
-      bindings <- extractPatternBindings p (typeAST ascrutinee)
+      bindings <- extractPatternBindings ctx p (typeAST ascrutinee)
       verifyNonOverlappingVariableNames rng "case"
                                         [v | (TermVarBinding v _) <- bindings]
       abody <- typecheck (prependContextBindings ctx bindings) body maybeExpTy
@@ -236,7 +236,7 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
                             return $ P_Variable r id
       EP_Int r str    -> do annint <- typecheckInt r str Nothing
                             return $ P_Int  r (aintLitInt annint)
-      EP_Ctor r eps s -> do (CtorInfo cid _) <- getCtorInfoForCtor s
+      EP_Ctor r eps s -> do (CtorInfo cid _) <- getCtorInfoForCtor ctx s
                             sanityCheck (ctorArity cid == List.length eps) $
                               "Incorrect pattern arity: expected " ++
                               (show $ ctorArity cid) ++ " pattern(s), but got "
@@ -248,11 +248,11 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
     -----------------------------------------------------------------------
 
     emptyContext :: Context ty
-    emptyContext = Context [] [] True []
+    emptyContext = Context [] [] True [] Map.empty
 
-    getCtorInfoForCtor :: T.Text -> Tc (CtorInfo TypeAST)
-    getCtorInfoForCtor ctorName = do
-      ctorInfos <- tcGetCtorInfo
+    getCtorInfoForCtor :: Context TypeAST -> T.Text -> Tc (CtorInfo TypeAST)
+    getCtorInfoForCtor ctx ctorName = do
+      let ctorInfos = contextCtorInfo ctx
       case Map.lookup ctorName ctorInfos of
         Just [info] -> return info
         elsewise -> tcFails [out $ "Typecheck.getCtorInfoForCtor: Too many or"
@@ -263,35 +263,35 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
 
     -- Recursively match a pattern against a type and extract the (typed)
     -- binders introduced by the pattern.
-    extractPatternBindings :: Pattern -> TypeAST -> Tc [ContextBinding TypeAST]
-
-    extractPatternBindings (P_Wildcard _   ) _  = return []
-    extractPatternBindings (P_Variable _ id) ty = return [varbind id ty]
+    extractPatternBindings :: Context TypeAST -> Pattern -> TypeAST
+                           -> Tc [ContextBinding TypeAST]
+    extractPatternBindings _ctx (P_Wildcard _   ) _  = return []
+    extractPatternBindings _ctx (P_Variable _ id) ty = return [varbind id ty]
 
     -- TODO shouldn't ignore the _ty here -- bug when ctors from different types listed.
-    extractPatternBindings (P_Ctor _ pats (CtorId _ ctorName _ _)) _ty = do
-      CtorInfo _ (DataCtor _ _ types) <- getCtorInfoForCtor (T.pack ctorName)
-      bindings <- sequence [extractPatternBindings p t | (p, t) <- zip pats types]
+    extractPatternBindings ctx (P_Ctor _ pats (CtorId _ ctorName _ _)) _ty = do
+      CtorInfo _ (DataCtor _ _ types) <- getCtorInfoForCtor ctx (T.pack ctorName)
+      bindings <- sequence [extractPatternBindings ctx p t | (p, t) <- zip pats types]
       return $ concat bindings
 
-    extractPatternBindings (P_Bool r v) ty = do
+    extractPatternBindings _ctx (P_Bool r v) ty = do
       _ae <- typecheck emptyContext (E_BoolAST r v) (Just ty)
       -- literals don't bind anything, but we still need to check
       -- that we do not try matching e.g. a bool against an int.
       return []
 
-    extractPatternBindings (P_Int r litint) ty = do
+    extractPatternBindings _ctx (P_Int r litint) ty = do
       _ae <- typecheck emptyContext (E_IntAST r (litIntText litint)) (Just ty)
       -- literals don't bind anything, but we still need to check
       -- that we do not try matching e.g. a bool against an int.
       return []
 
-    extractPatternBindings (P_Tuple _rng [p]) ty = extractPatternBindings p ty
-    extractPatternBindings (P_Tuple  rng ps)  ty =
+    extractPatternBindings ctx (P_Tuple _rng [p]) ty = extractPatternBindings ctx p ty
+    extractPatternBindings ctx (P_Tuple  rng ps)  ty =
        case ty of
          TupleTypeAST ts ->
             (if List.length ps == List.length ts
-              then do bindings <- sequence [extractPatternBindings p t | (p, t) <- zip ps ts]
+              then do bindings <- sequence [extractPatternBindings ctx p t | (p, t) <- zip ps ts]
                       return $ concat bindings
               else tcFails [out $ "Cannot match pattern against tuple type"
                                   ++ " of different length."])

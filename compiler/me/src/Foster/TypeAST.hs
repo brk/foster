@@ -17,23 +17,9 @@ import List(length)
 import Data.IORef(IORef)
 import Data.Map as Map(fromList, toList)
 
-import qualified Data.Text as T
-
 import Foster.Base
 import Foster.Kind
 import Foster.Output(out)
-
-data EPattern ty =
-          EP_Wildcard    SourceRange
-        | EP_Variable    SourceRange (E_VarAST ty)
-        | EP_Ctor        SourceRange [EPattern ty] T.Text
-        | EP_Bool        SourceRange Bool
-        | EP_Int         SourceRange String
-        | EP_Tuple       SourceRange [EPattern ty]
-        deriving (Show)
-
-data E_VarAST ty = VarAST { evarMaybeType :: Maybe ty
-                          , evarName      :: T.Text } deriving (Show)
 
 type AnnVar = TypedId TypeAST
 
@@ -61,9 +47,6 @@ data MetaTyVar = Meta Uniq TyRef String
 type TyRef = IORef (Maybe Tau)
     -- Nothing: type variable not substituted
     -- Just ty: ty var has been substituted by ty
-
-instance Show TyVar where
-    show (BoundTyVar x) = "'" ++ x
 
 instance Show TypeAST where
     show x = case x of
