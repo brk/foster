@@ -6,9 +6,9 @@
 #include "base/Diagnostics.h"
 #include "base/LLVMUtils.h"
 
-#include "parse/FosterLL.h"
 #include "parse/FosterTypeAST.h"
 
+#include "passes/FosterLL.h"
 #include "passes/CodegenPass-impl.h"
 
 #include "llvm/Attributes.h"

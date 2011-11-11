@@ -10,7 +10,7 @@
 #include "base/Worklist.h"
 #include "parse/FosterSymbolTable.h"
 
-#include "parse/FosterLL.h"
+#include "passes/FosterLL.h"
 
 #include <string>
 #include <map>

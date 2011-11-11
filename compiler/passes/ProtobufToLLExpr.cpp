@@ -5,13 +5,14 @@
 #include "base/Assert.h"
 #include "base/Diagnostics.h"
 #include "base/SourceRange.h"
+#include "base/LLVMUtils.h"
 
 #include "parse/ANTLRtoFosterAST.h"
 #include "parse/ParsingContext.h"
 #include "parse/FosterTypeAST.h"
 #include "parse/ProtobufToLLExpr.h"
-#include "parse/FosterLL.h"
-#include "base/LLVMUtils.h"
+
+#include "passes/FosterLL.h"
 
 #include <sstream>
 
@@ -490,13 +491,11 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
   }
 
   if (t.tag() == pb::Type::CORO) {
-    TypeAST* targ = NULL;
-    TypeAST* tret = NULL;
     ASSERT(t.type_parts_size() == 2)
         << "coro must have base and arg types,"
         << " but #type parts is " << t.type_parts_size();
-    targ = TypeAST_from_pb(&t.type_parts(0));
-    tret = TypeAST_from_pb(&t.type_parts(1));
+    TypeAST* targ = TypeAST_from_pb(&t.type_parts(0));
+    TypeAST* tret = TypeAST_from_pb(&t.type_parts(1));
     return CoroTypeAST::get(targ, tret);
   }
 
@@ -529,7 +528,6 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
 
   if (t.tag() == pb::Type::DATATYPE) {
     const string& tyname = t.name();
-    EDiag() << "creating datatype: " << t.name();
     return new DataTypeAST(tyname, parseDataCtors(t),
                            SourceRange::getEmptyRange());
   }

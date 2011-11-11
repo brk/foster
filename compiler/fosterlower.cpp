@@ -19,8 +19,8 @@
 #include "base/TimingsRepository.h"
 
 #include "passes/FosterPasses.h"
+#include "passes/FosterLL.h"
 
-#include "parse/FosterLL.h"
 #include "parse/FosterTypeAST.h"
 #include "parse/FosterUtils.h" // for foster_generic_coro_t
 #include "parse/ProtobufToLLExpr.h"
