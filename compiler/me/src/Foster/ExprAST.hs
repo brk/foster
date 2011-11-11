@@ -16,67 +16,67 @@ where
 
 import Foster.Base(SourceRange, Expr(..), freeVars, identPrefix, Structured(..),
                    SourceRanged(..), TypedId(..), butnot)
-import Foster.TypeAST(TypeAST, EPattern(..), E_VarAST(..), AnnVar)
+import Foster.TypeAST(TypeAST, EPattern(..), E_VarAST(..))
 import Foster.Kind
 import Foster.Output(out)
 
 import qualified Data.Text as T
 
-data ExprAST =
+data ExprAST ty =
         -- Literals
           E_BoolAST       SourceRange Bool
         | E_IntAST        SourceRange String
-        | E_TupleAST      TupleAST
-        | E_FnAST         FnAST
+        | E_TupleAST      (TupleAST ty)
+        | E_FnAST         (FnAST ty)
         -- Control flow
-        | E_IfAST         SourceRange ExprAST ExprAST ExprAST
-        | E_UntilAST      SourceRange ExprAST ExprAST
-        | E_SeqAST        SourceRange ExprAST ExprAST
+        | E_IfAST         SourceRange (ExprAST ty) (ExprAST ty) (ExprAST ty)
+        | E_UntilAST      SourceRange (ExprAST ty) (ExprAST ty)
+        | E_SeqAST        SourceRange (ExprAST ty) (ExprAST ty)
         -- Creation of bindings
-        | E_Case          SourceRange ExprAST [(EPattern, ExprAST)]
-        | E_LetAST        SourceRange  TermBinding  ExprAST
-        | E_LetRec        SourceRange [TermBinding] ExprAST
+        | E_Case          SourceRange (ExprAST ty) [(EPattern ty, ExprAST ty)]
+        | E_LetAST        SourceRange (TermBinding ty) (ExprAST ty)
+        | E_LetRec        SourceRange [TermBinding ty] (ExprAST ty)
         -- Use of bindings
-        | E_VarAST        SourceRange E_VarAST
-        | E_CallAST       SourceRange ExprAST TupleAST
+        | E_VarAST        SourceRange (E_VarAST ty)
+        | E_CallAST       SourceRange (ExprAST ty) (TupleAST ty)
         -- Mutable ref cells
-        | E_AllocAST      SourceRange ExprAST
-        | E_DerefAST      SourceRange ExprAST
-        | E_StoreAST      SourceRange ExprAST ExprAST
+        | E_AllocAST      SourceRange (ExprAST ty)
+        | E_DerefAST      SourceRange (ExprAST ty)
+        | E_StoreAST      SourceRange (ExprAST ty) (ExprAST ty)
         -- Array subscripting
-        | E_ArrayRead     SourceRange ExprAST ExprAST
-        | E_ArrayPoke     SourceRange ExprAST ExprAST ExprAST
+        | E_ArrayRead     SourceRange (ExprAST ty) (ExprAST ty)
+        | E_ArrayPoke     SourceRange (ExprAST ty) (ExprAST ty) (ExprAST ty)
         -- Terms indexed by types
-        | E_TyApp         SourceRange ExprAST TypeAST
+        | E_TyApp         SourceRange (ExprAST ty) ty
         -- Others
-        | E_CompilesAST   SourceRange (Maybe ExprAST)
+        | E_CompilesAST   SourceRange (Maybe (ExprAST ty))
         deriving Show
 
-data TupleAST = TupleAST { tupleAstRange :: SourceRange
-                         , tupleAstExprs :: [ExprAST] } deriving (Show)
+data TupleAST ty = TupleAST { tupleAstRange :: SourceRange
+                            , tupleAstExprs :: [ExprAST ty] } deriving (Show)
 
-data FnAST  = FnAST { fnAstRange :: SourceRange
-                    , fnAstName  :: T.Text
-                    , fnTyFormals:: [TypeFormalAST]
-                    , fnRetType  :: Maybe TypeAST
-                    , fnFormals  :: [AnnVar]
-                    , fnAstBody  :: ExprAST
-                    , fnWasToplevel :: Bool
-                    } deriving (Show)
+data FnAST ty  = FnAST { fnAstRange    :: SourceRange
+                       , fnAstName     :: T.Text
+                       , fnTyFormals   :: [TypeFormalAST]
+                       , fnRetType     :: Maybe ty
+                       , fnFormals     :: [TypedId ty]
+                       , fnAstBody     :: ExprAST ty
+                       , fnWasToplevel :: Bool
+                       } deriving (Show)
 
-data TermBinding = TermBinding E_VarAST ExprAST deriving (Show)
+data TermBinding ty = TermBinding (E_VarAST ty) (ExprAST ty) deriving (Show)
 
-termBindingName :: TermBinding -> T.Text
+termBindingName :: TermBinding t -> T.Text
 termBindingName (TermBinding v _) = evarName v
 
 -- | Converts a right-leaning "list" of SeqAST nodes to a List
-unbuildSeqs :: ExprAST -> [ExprAST]
+unbuildSeqs :: (ExprAST ty) -> [ExprAST ty]
 unbuildSeqs (E_SeqAST _rng a b) = a : unbuildSeqs b
 unbuildSeqs expr = [expr]
 
 -----------------------------------------------------------------------
 
-instance Structured ExprAST where
+instance Structured (ExprAST TypeAST) where
     textOf e _width =
         let tryGetCallNameE (E_VarAST _rng (VarAST _mt v)) = T.unpack v
             tryGetCallNameE _                              = "" in
@@ -124,7 +124,7 @@ instance Structured ExprAST where
             E_LetRec      _rng bnz e     -> [termBindingExpr bnd | bnd <- bnz] ++ [e]
             E_LetAST      _rng bnd e     -> (termBindingExpr bnd):[e]
 
-instance SourceRanged ExprAST
+instance SourceRanged (ExprAST ty)
   where
     rangeOf e = case e of
       E_BoolAST       rng _ -> rng
@@ -147,7 +147,7 @@ instance SourceRanged ExprAST
       E_TyApp         rng _ _   -> rng
       E_Case          rng _ _   -> rng
 
-instance Expr ExprAST where
+instance Expr (ExprAST TypeAST) where
   freeVars e = case e of
     E_VarAST _rng v        -> [evarName v]
     E_LetAST _rng bnd e    -> let bindingFreeVars (TermBinding v e) =
@@ -161,7 +161,7 @@ instance Expr ExprAST where
 
 epatBindingFreeVars (pat, expr) =
   freeVars expr `butnot` epatBoundNames pat
-  where epatBoundNames :: EPattern -> [T.Text]
+  where epatBoundNames :: EPattern ty -> [T.Text]
         epatBoundNames pat =
           case pat of
             EP_Wildcard {}        -> []

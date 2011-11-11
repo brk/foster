@@ -361,6 +361,7 @@ void PrimitiveTypeAST::dump(DumpTypeToProtobufPass* pass) {
 void NamedTypeAST::dump(DumpTypeToProtobufPass* pass) {
   setTagAndRange(pass->current, this, pb::Type::TYVAR);
   pass->current->set_name(this->name);
+  pass->current->set_is_placeholder(this->is_placeholder);
 }
 
 void DataTypeAST::dump(DumpTypeToProtobufPass* pass) {

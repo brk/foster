@@ -29,7 +29,7 @@ tokens {
   TYPE_TYP_APP; TYPE_TYP_ABS;
   KIND_TYPE; KIND_TYOP; KIND_TYPE_BOXED; FORALL_TYPE;
   FUNC_TYPE;
-  TYPE_CTOR; DATATYPE; CTOR;
+  TYPE_CTOR; DATATYPE; CTOR; TYPE_PLACEHOLDER;
   FORMAL; MODULE; WILDCARD;
 
   MU; // child marker
@@ -147,6 +147,7 @@ tannots :  barebinding (',' barebinding)* -> ^(BINDING barebinding+);
 
 tatom   :
     a                                                   // type variables
+  | '??' a                              -> ^(TYPE_PLACEHOLDER a)
   | '(' ')'                             -> ^(TUPLE)
   | '(' t (',' t)* ')'                  -> ^(TUPLE t+)  // tuples (products) (sugar: (a,b,c) == Tuple3 a b c)
   | '{'    t  ('=>' t)* '}'

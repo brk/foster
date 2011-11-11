@@ -28,7 +28,8 @@ message Type {
 
   // LLVM_NAMED, TYPE_VARIABLE
   optional string name = 3;
-  optional Type ref_underlying_type = 16;
+  optional bool   is_placeholder = 4;
+  optional Type   ref_underlying_type = 16;
   optional FnType fnty = 17;
   // for tuple, coro, carray
   repeated Type type_parts = 18;

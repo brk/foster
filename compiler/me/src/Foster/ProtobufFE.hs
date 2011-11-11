@@ -124,7 +124,7 @@ parseUntil pbexpr range = do
     [a, b] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
     return $ E_UntilAST range a b
 
-parseInt :: PbExpr.Expr -> SourceRange -> FE ExprAST
+parseInt :: PbExpr.Expr -> SourceRange -> FE (ExprAST TypeAST)
 parseInt pbexpr range = do
     return $ E_IntAST range (uToString $ getVal pbexpr PbExpr.int_text)
 
@@ -152,7 +152,7 @@ parseSeq pbexpr _range = do
     return $ buildSeqs exprs
       where
         -- Convert a list of ExprASTs to a right-leaning "list" of SeqAST nodes.
-        buildSeqs :: [ExprAST] -> ExprAST
+        buildSeqs :: [ExprAST t] -> (ExprAST t)
         buildSeqs []    = E_TupleAST $ TupleAST (MissingSourceRange "buildSeqs") []
         buildSeqs [a]   = a
         buildSeqs (a:b) = E_SeqAST (MissingSourceRange "buildSeqs") a (buildSeqs b)
@@ -191,7 +191,7 @@ parseEVar pbexpr range = do return $ E_VarAST range (parseVar pbexpr)
 parseVar pbexpr = do VarAST (fmap parseType (PbExpr.type' pbexpr))
                             (getName "var" $ PbExpr.name pbexpr)
 
-parsePattern :: PbExpr.Expr -> FE EPattern
+parsePattern :: PbExpr.Expr -> FE (EPattern TypeAST)
 parsePattern pbexpr = do
   range <- parseRange pbexpr
   case PbExpr.tag pbexpr of
@@ -234,7 +234,7 @@ parseRange pbexpr =
    parseSourceLocation sr = -- This may fail for files of more than 2^29 lines.
        ESourceLocation (fromIntegral $ Pb.line sr) (fromIntegral $ Pb.column sr)
 
-parseExpr :: PbExpr.Expr -> FE ExprAST
+parseExpr :: PbExpr.Expr -> FE (ExprAST TypeAST)
 parseExpr pbexpr = do
     let fn = case PbExpr.tag pbexpr of
                 PB_INT  -> parseInt
@@ -285,13 +285,13 @@ parseModule _name decls defns datatypes = do
                 dtypes
                 lines
   where
-    toplevel :: FnAST -> FnAST
+    toplevel :: FnAST t -> FnAST t
     toplevel f | fnWasToplevel f =
             error $ "Broken invariant: top-level functions " ++
                     "should not have their top-level bit set before we do it!"
     toplevel f = f { fnWasToplevel = True }
 
-parseSourceModule :: SourceModule -> (ModuleAST FnAST TypeAST)
+parseSourceModule :: SourceModule -> (ModuleAST (FnAST TypeAST) TypeAST)
 parseSourceModule sm =
     evalState
       (parseModule (uToString $ SourceModule.name sm)
@@ -315,7 +315,9 @@ parseType t =
     case PbType.tag t of
          PbTypeTag.TYVAR ->
                 let name@(c:_) = T.unpack (getName "type name" $ PbType.name t) in
-                if isLower c then TyVarAST (BoundTyVar name)
+                if isLower c then if Just True == PbType.is_placeholder t
+                                    then TyVarAST (BoundTyVar name) -- MetaTyVar (MetaPlaceholder name)
+                                    else TyVarAST (BoundTyVar name)
                              else parseNamedType name
          PbTypeTag.FN -> fromMaybe (error "Protobuf node tagged FN without fnty field!")
                                    (fmap parseFnTy $ PbType.fnty t)

@@ -21,9 +21,11 @@ import Foster.Context
 import Foster.TypecheckInt(sanityCheck, typecheckInt)
 import Foster.Output(out, outToString, OutputOr(Errors))
 
+type ExprT = ExprAST TypeAST
+
 -----------------------------------------------------------------------
 
-typecheck :: Context TypeAST -> ExprAST -> Maybe TypeAST -> Tc AnnExpr
+typecheck :: Context TypeAST -> ExprT -> Maybe TypeAST -> Tc AnnExpr
 typecheck ctx expr maybeExpTy =
   tcWithScope expr $ do
     annexpr <- case expr of
@@ -169,8 +171,8 @@ typecheckLet ctx0 rng (TermBinding v e1) e2 mt = do
    in e end
 -}
 -- {{{
-typecheckLetRec :: Context TypeAST -> SourceRange -> [TermBinding]
-                -> ExprAST -> Maybe TypeAST -> Tc AnnExpr
+typecheckLetRec :: Context TypeAST -> SourceRange -> [TermBinding TypeAST]
+                -> ExprT -> Maybe TypeAST -> Tc AnnExpr
 typecheckLetRec ctx0 rng bindings e mt = do
     verifyNonOverlappingVariableNames rng "rec" (map termBindingName bindings)
     -- Generate unification variables for the overall type of
@@ -201,8 +203,8 @@ typecheckLetRec ctx0 rng bindings e mt = do
 
 varbind id ty = TermVarBinding (identPrefix id) (TypedId ty id)
 
-typecheckCase :: Context TypeAST -> SourceRange -> ExprAST
-              -> [(EPattern, ExprAST)] -> Maybe TypeAST -> Tc AnnExpr
+typecheckCase :: Context TypeAST -> SourceRange -> ExprT
+              -> [(EPattern TypeAST, ExprT)] -> Maybe TypeAST -> Tc AnnExpr
 -- {{{
 typecheckCase ctx rng scrutinee branches maybeExpTy = do
   -- (A) The expected type applies to the branches,
@@ -225,7 +227,7 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
   abranches <- forM branches checkBranch
   return $ AnnCase rng u ascrutinee abranches
  where
-    checkPattern :: EPattern -> Tc Pattern
+    checkPattern :: EPattern TypeAST -> Tc Pattern
     -- Make sure that each pattern has the proper arity.
     checkPattern p = case p of
       EP_Wildcard r   -> do return $ P_Wildcard r
@@ -468,7 +470,7 @@ genUnificationVarsLike spine namegen = do
 -- using a bare function type...
 --
 typecheckCall :: Context TypeAST -> SourceRange
-              -> ExprAST -> ExprAST -> Maybe TypeAST -> Tc AnnExpr
+              -> ExprT -> ExprT -> Maybe TypeAST -> Tc AnnExpr
 typecheckCall ctx rng base args maybeExpTy = do
    -- Do we infer a plain function type or a forall type?
    -- For now, we just punt and act in inference rather than checking mode.
@@ -576,7 +578,7 @@ typecheckFn _ctx f (Just t) = tcFails [out $
                 "Context of function literal expects non-function type: "
                                 ++ show t ++ highlightFirstLine (fnAstRange f)]
 
-typecheckFn' :: Context TypeAST -> FnAST -> CallConv
+typecheckFn' :: Context TypeAST -> FnAST TypeAST -> CallConv
              -> Maybe TypeAST -> Maybe TypeAST -> Tc AnnExpr
 typecheckFn' ctx f cc expArgType expBodyType = do
     let fnProtoName = T.unpack (fnAstName f)
@@ -647,7 +649,7 @@ typecheckFn' ctx f cc expArgType expBodyType = do
 
 -----------------------------------------------------------------------
 
-typecheckTuple :: Context TypeAST -> SourceRange -> [ExprAST] -> Maybe TypeAST -> Tc AnnExpr
+typecheckTuple :: Context TypeAST -> SourceRange -> [ExprT] -> Maybe TypeAST -> Tc AnnExpr
 -- {{{
 typecheckTuple ctx rng exprs maybeExpectedType =
   case maybeExpectedType of

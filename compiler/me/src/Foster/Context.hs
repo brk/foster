@@ -45,7 +45,7 @@ termVarLookup name bindings = Prelude.lookup name bindingslist where
 --   we do need to thread the supply of unique variables through...
 data TcEnv = TcEnv { tcEnvUniqs :: IORef Uniq
                    , tcUnificationVars :: IORef [MetaTyVar]
-                   , tcParents  :: [ExprAST]
+                   , tcParents  :: [ExprAST TypeAST]
                    , tcCtorInfo :: Map CtorName [CtorInfo TypeAST]
                    }
 
@@ -117,7 +117,7 @@ newTcUnificationVar desc = do
 -- Runs the given action with the given expression added to the "call stack";
 -- this is used to keep track of the path to the current expression during
 -- type checking.
-tcWithScope :: ExprAST -> Tc a -> Tc a
+tcWithScope :: ExprAST TypeAST -> Tc a -> Tc a
 tcWithScope expr (Tc f)
     = Tc $ \env -> f (env { tcParents = expr:(tcParents env) })
 
@@ -133,7 +133,7 @@ tcFreshT t = newTcUniq >>= (\u -> return (Ident t u))
 tcFresh :: String -> Tc Ident
 tcFresh s = tcFreshT (T.pack s)
 
-tcGetCurrentHistory :: Tc [ExprAST]
+tcGetCurrentHistory :: Tc [ExprAST TypeAST]
 tcGetCurrentHistory = Tc $ \env -> do retOK $ Prelude.reverse $ tcParents env
 
 tcGetCtorInfo       = Tc $ \env -> do retOK $ tcCtorInfo env

@@ -23,17 +23,17 @@ import Foster.Base
 import Foster.Kind
 import Foster.Output(out)
 
-data EPattern =
+data EPattern ty =
           EP_Wildcard    SourceRange
-        | EP_Variable    SourceRange E_VarAST
-        | EP_Ctor        SourceRange [EPattern] T.Text
+        | EP_Variable    SourceRange (E_VarAST ty)
+        | EP_Ctor        SourceRange [EPattern ty] T.Text
         | EP_Bool        SourceRange Bool
         | EP_Int         SourceRange String
-        | EP_Tuple       SourceRange [EPattern]
+        | EP_Tuple       SourceRange [EPattern ty]
         deriving (Show)
 
-data E_VarAST = VarAST { evarMaybeType :: Maybe TypeAST
-                       , evarName      :: T.Text } deriving (Show)
+data E_VarAST ty = VarAST { evarMaybeType :: Maybe ty
+                          , evarName      :: T.Text } deriving (Show)
 
 type AnnVar = TypedId TypeAST
 

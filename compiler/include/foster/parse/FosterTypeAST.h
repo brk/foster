@@ -84,11 +84,12 @@ class NamedTypeAST : public TypeAST {
   mutable TypeAST* namedType;
 
 public:
+  bool is_placeholder; // TODO remove this hack :(
   explicit NamedTypeAST(const std::string& typeName,
                         TypeAST* underlyingType,
                         const SourceRange& sourceRange)
      : TypeAST("NamedType", NULL, sourceRange),
-       name(typeName), namedType(underlyingType) {}
+       name(typeName), namedType(underlyingType), is_placeholder(false) {}
   void setNamedType(TypeAST* t) { namedType = t; }
   virtual void show(PrettyPrintTypePass* pass);
   virtual void dump(DumpTypeToProtobufPass* pass);

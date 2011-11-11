@@ -788,9 +788,16 @@ TypeAST* parseFuncType(pTree tree) {
 }
 
 // ^(TYPEVAR a)
-TypeAST* parseTypeVar(pTree tree) {
+NamedTypeAST* parseTypeVar(pTree tree) {
   TypeAST* ty = NULL;
   return new NamedTypeAST(textOf(child(tree, 0)), ty, rangeOf(tree));
+}
+
+// ^(TYPE_PLACEHOLDER ^(TYPEVAR a))
+TypeAST* parseTypePlaceholder(pTree tree) {
+  NamedTypeAST* tv = parseTypeVar(child(tree, 0));
+  tv->is_placeholder = true;
+  return tv;
 }
 
 TypeAST* parseTupleType(pTree tree) {
@@ -807,6 +814,7 @@ TypeAST* parseTypeAtom(pTree tree) {
   if (token == FUNC_TYPE) { return parseFuncType(tree); }
   if (token == TUPLE)   { return parseTupleType(tree); }
   if (token == TYPEVAR) { return parseTypeVar(tree); }
+  if (token == TYPE_PLACEHOLDER) { return parseTypePlaceholder(tree); }
 
   display_pTree(tree, 2);
   ASSERT(false) << "parseTypeAtom";
