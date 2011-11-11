@@ -24,6 +24,7 @@ namespace llvm {
   class APInt;
   class Function;
   class AllocaInst;
+  class BasicBlock;
 }
 
 using llvm::Value;
@@ -56,6 +57,8 @@ struct LLRebindId : public LLMiddle {
 
 struct LLBlock {
   std::string block_id;
+  llvm::BasicBlock* bb;
+
   std::vector<LLMiddle*> mids;
   LLTerminator* terminator;
 

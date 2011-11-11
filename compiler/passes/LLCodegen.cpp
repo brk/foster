@@ -317,28 +317,21 @@ void CodegenPass::scheduleBlockCodegen(LLBlock* b) {
 
 void codegenBlocks(std::vector<LLBlock*> blocks, CodegenPass* pass,
                    llvm::Function* F) {
-  pass->llvmBlocks.clear();
   pass->fosterBlocks.clear();
   pass->blockBindings.clear();
 
   // Create all the basic block before codegenning any of them.
   for (size_t i = 0; i < blocks.size(); ++i) {
-    llvm::BasicBlock* bb = BasicBlock::Create(getGlobalContext(),
-                                              blocks[i]->block_id, F);
-    ASSERT(blocks[i]->block_id == bb->getName())
-        << "function can't have two blocks named "
-        << blocks[i]->block_id;
-    pass->llvmBlocks[blocks[i]->block_id] = bb;
-    pass->fosterBlocks[blocks[i]->block_id] = blocks[i];
-
-    // Make sure we branch from the entry block to the first
-    // 'computation' block.
-    if (i == 0) {
-      builder.CreateBr(bb);
-    }
+    LLBlock* bi = blocks[i];
+    pass->fosterBlocks[bi->block_id] = bi;
+    bi->bb = BasicBlock::Create(getGlobalContext(), bi->block_id, F);
+    ASSERT(bi->block_id == bi->bb->getName())
+                     << "function can't have two blocks named " << bi->block_id;
   }
 
   ASSERT(blocks.size() > 0) << F->getName() << " had no blocks!";
+  // Make sure we branch from the entry block to the first 'computation' block.
+  builder.CreateBr(blocks[0]->bb);
 
   pass->worklistBlocks.clear();
   pass->scheduleBlockCodegen(blocks[0]);

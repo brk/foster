@@ -10,6 +10,8 @@
 #include "base/Worklist.h"
 #include "parse/FosterSymbolTable.h"
 
+#include "parse/FosterLL.h"
+
 #include <string>
 #include <map>
 #include <set>
@@ -17,7 +19,6 @@
 using llvm::Value;
 
 struct TupleTypeAST;
-struct LLBlock;
 
 // Declarations for Codegen-typemaps.cpp
 enum ArrayOrNot {
@@ -88,7 +89,6 @@ struct CodegenPass {
   //llvm::DIBuilder* dib;
   llvm::StringSet<> knownNonAllocatingFunctions;
 
-  std::map<std::string, llvm::BasicBlock*>  llvmBlocks;
   std::map<std::string,     LLBlock*>     fosterBlocks;
   WorklistLIFO<std::string, LLBlock*>   worklistBlocks;
   std::map<std::string, BlockBindings*>  blockBindings;
@@ -110,7 +110,7 @@ struct CodegenPass {
   void scheduleBlockCodegen(LLBlock* b);
   llvm::BasicBlock* lookupBlock(const std::string& s) {
       scheduleBlockCodegen(fosterBlocks[s]);
-      return llvmBlocks[s];
+      return fosterBlocks[s]->bb;
   }
 
   Value* emit(LLExpr* e, TypeAST* t);
