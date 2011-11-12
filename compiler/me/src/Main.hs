@@ -6,22 +6,25 @@
 
 module Main (main) where
 
+import Text.ProtocolBuffers(messageGet)
+
 import System.Environment(getArgs,getProgName)
 import System.Console.GetOpt
 import System.Console.ANSI(Color(..))
 
 import qualified Data.ByteString.Lazy as L(readFile)
 import qualified Data.Text as T
-
-import List(all)
+import qualified Data.List as List(all)
+import qualified Data.Map as Map(fromList)
 import qualified Data.Set as Set(filter, toList, fromList)
 import qualified Data.Graph as Graph(SCC, flattenSCC, stronglyConnComp)
+
+import Data.IORef(IORef, newIORef, readIORef)
+import Data.Traversable(mapM)
+import Prelude hiding (mapM)
 import Data.Maybe(isNothing)
 import Control.Monad.State(forM, when, forM_, StateT, runStateT, gets,
                            liftIO, liftM, liftM2)
-import Data.IORef(IORef, newIORef, readIORef)
-
-import Text.ProtocolBuffers(messageGet)
 
 import Foster.Base
 import Foster.CFG
@@ -154,9 +157,11 @@ typecheckModule verboseMode modast tcenv0 = do
                                  ++ "duplicate bindings: " ++ show dups])
  where
    mkContext declBindings primBindings datatypes =
-     Context declBindings primBindings verboseMode globalvars [] ctorinfo
+     Context declBindings primBindsMap verboseMode globalvars [] ctorinfo
        where globalvars   = declBindings ++ primBindings
              ctorinfo     = getCtorInfo datatypes
+             primBindsMap = Map.fromList $ map unbind primBindings
+                               where unbind (TermVarBinding s t) = (s, t)
 
    computeContextBindings :: [(String, TypeAST)] -> [ContextBinding TypeAST]
    computeContextBindings decls = map (\(s,t) -> pair2binding (T.pack s, t)) decls
@@ -214,9 +219,12 @@ typecheckModule verboseMode modast tcenv0 = do
                      => (t1 -> m t2) -> Context t1 -> m (Context t2)
         liftContextM f (Context cb pb vb gb tybinds ctortypeast) = do
           cb' <- mapM (liftBinding f) cb
-          pb' <- mapM (liftBinding f) pb
+          pb' <- mapM (liftTID f) pb
           gb' <- mapM (liftBinding f) gb
           return $ Context cb' pb' vb gb' tybinds ctortypeast
+
+        liftTID :: Monad m => (t1 -> m t2) -> TypedId t1 -> m (TypedId t2)
+        liftTID f (TypedId t i) = do t2 <- f t ; return $ TypedId t2 i
 
         -- Wrinkle: need to extend the context used for checking ctors!
         convertDataTypeAST :: Context TypeAST ->

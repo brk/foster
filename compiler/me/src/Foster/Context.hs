@@ -14,7 +14,7 @@ import Foster.Output(out, outLn, Output, OutputOr(..))
 data ContextBinding ty = TermVarBinding T.Text (TypedId ty)
 
 data Context ty = Context { contextBindings   :: [ContextBinding ty]
-                          , primitiveBindings :: [ContextBinding ty]
+                          , primitiveBindings :: Map T.Text (TypedId ty)
                           , contextVerbose    :: Bool
                           , globalBindings    :: [ContextBinding ty]
                           , contextTypeBindings :: [(TyVar, Kind)]
