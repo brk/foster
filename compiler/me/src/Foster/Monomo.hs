@@ -4,11 +4,7 @@
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
-module Foster.Monomo (
-  monomorphize
-)
-
-where
+module Foster.Monomo (monomorphize) where
 
 import Foster.Base
 import Foster.Kind
@@ -89,7 +85,7 @@ addInitialMonoTasksAndGo procdefs = do
          -- This would be easier if we did monomorphization before closure
          -- conversion.
          let idgen = if isAnonFn id then id else idAppend id ".gen" in
-         monoScheduleWork (NeedsMono idgen id [kUnknownPointerType | _ <- ktvs])
+         monoScheduleWork (NeedsMono idgen id [PtrTypeUnknown | _ <- ktvs])
       )
     goMonomorphize
 
@@ -116,7 +112,7 @@ emptyMonoSubst = Map.empty
 buildSubstForFormals formals =
   let info (TypeFormalAST s k) =
         case k of KindAnySizeType  -> []
-                  KindPointerSized -> [(kUnknownPointerType, (BoundTyVar s, k))] in
+                  KindPointerSized -> [(PtrTypeUnknown, (BoundTyVar s, k))] in
   let (tys, kvs) = unzip $ concatMap info formals in
   extendMonoSubst emptyMonoSubst tys kvs
 
@@ -144,7 +140,7 @@ monoType subst ty =
      -- Type checking should prevent us from trying to instantiate a Boxed
      -- variable with anything but a boxed type.
      ForAllIL ktvs rho    -> monoType (extendMonoSubst subst
-                                        [kUnknownPointerType | _ <- ktvs]
+                                        [PtrTypeUnknown | _ <- ktvs]
                                                         ktvs) rho
      TyVarIL tv _kind     -> monoSubstLookup subst tv -- TODO check kind?
 
@@ -369,5 +365,3 @@ idAppend id s = case id of (GlobalSymbol o) -> (GlobalSymbol $ beforeS o)
 -- variables breaks alpha-uniqueness, but it works out at the moment because:
 --   1) We don't do any beta-reduction on proc definitions.
 --   2) The LLVM lowering uses distinct scopes for each procedure definition.
-
-kUnknownPointerType = PtrTypeUnknown
