@@ -1,0 +1,14 @@
+main = {
+  threedotthree-partone !;
+};
+
+k = { forall a b, x:a => y:b => y };
+
+f1 = { f:{B => B => B} => B 0 };
+// f2 = { f: {forall a, a => a => a } => B 0 };
+
+threedotthree-partone = {
+  f1 k;
+};
+
+type case B of $B Int32;
