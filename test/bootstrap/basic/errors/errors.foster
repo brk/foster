@@ -17,8 +17,11 @@ main = {
   expect_i1 false; print_i1 (__COMPILES__  a (0) );
 
   // Duplicate variable names
-  expect_i1 true  ; print_i1 (__COMPILES__  {x:i32 => y:i32 => 0 }  );
-  expect_i1 false ; print_i1 (__COMPILES__  {x:i32 => x:i32 => 0 }  );
+  expect_i1 true  ; print_i1 (__COMPILES__  { x:Int32 => y:Int32 => 0 }  );
+  expect_i1 false ; print_i1 (__COMPILES__  { x:Int32 => x:Int32 => 0 }  );
+
+  // Unbound type variable
+  expect_i1 false ; print_i1 (__COMPILES__  { x:x => 0 }  );
 
   // IfAST condition must be bool
   expect_i1 true  ; print_i1 (__COMPILES__  if true then true else true end);

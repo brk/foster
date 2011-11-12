@@ -63,7 +63,6 @@ instance Show TypeIL where
 ilOf :: Context t -> TypeAST -> Tc TypeIL
 ilOf ctx typ = do
   let q = ilOf ctx
-  tcLift $ putStrLn $ "ilOf: " ++ show typ
   case typ of
      TyConAppAST dtname tys -> do iltys <- mapM q tys
                                   return $ TyConAppIL dtname iltys
@@ -80,10 +79,10 @@ ilOf ctx typ = do
                                return $ ArrayTypeIL t
      ForAllAST ktvs rho  -> do t <- (ilOf $ extendTyCtx ctx ktvs) rho
                                return $ ForAllIL ktvs t
-     TyVarAST tv -> case Prelude.lookup tv (contextTypeBindings ctx) of
-                       Nothing -> --tcFails [out $ "Unable to find kind of type varaible " ++ show typ]
-                                  return $ TyVarIL (BoundTyVar ("MISSING " ++ show typ)) KindPointerSized
-                       Just k  -> return $ TyVarIL tv k
+     TyVarAST tv ->
+        case Prelude.lookup tv (contextTypeBindings ctx) of
+          Nothing -> tcFails [out $ "Unable to find kind of type variable " ++ show typ]
+          Just k  -> return $ TyVarIL tv k
      MetaTyVar (Meta u tyref desc) -> do
         mty <- readTcRef tyref
         case mty of
