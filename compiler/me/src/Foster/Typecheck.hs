@@ -574,6 +574,11 @@ typecheckFn ctx f Nothing =
 typecheckFn ctx f (Just (FnTypeAST s t cc _cs)) =
                 typecheckFn' ctx f     cc (Just s) (Just t)
 
+typecheckFn ctx f (Just m@MetaTyVar {}) = do
+                tcf <- typecheckFn ctx f Nothing
+                equateTypes (typeAST tcf) m (Just "function literal")
+                return tcf
+
 typecheckFn _ctx f (Just t) = tcFails [out $
                 "Context of function literal expects non-function type: "
                                 ++ show t ++ highlightFirstLine (fnAstRange f)]
