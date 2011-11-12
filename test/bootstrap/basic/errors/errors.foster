@@ -53,7 +53,7 @@ main = {
   // can't be implicitly turned into a first-class function value.
   expect_i1 true ; print_i1 (__COMPILES__  2  >^ (ref 0));
   expect_i1 false; print_i1 (__COMPILES__ (>^) 2 (ref 0));
-  2  >^ (ref 0)
+  2  >^ (ref 0);
 
   // It doesn't make sense at the machine level
   // for a returned function to be unboxed polymorphic.
@@ -61,7 +61,11 @@ main = {
   print_i1 (__COMPILES__
                { i : Int32 =>
                  { forall b, x:b => x } });
+
+  expect_i1 true; print_i1 (__COMPILES__ (id id));
 };
+
+id = { forall t:Boxed, x : t => x };
 
 a = { 0 };
 b = { x : Int32 => x };
