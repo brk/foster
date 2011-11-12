@@ -94,9 +94,12 @@ typecheck ctx expr maybeExpTy =
 -----------------------------------------------------------------------
 
 typecheckBool rng b maybeExpTy = do
+    let ab = AnnBool rng b
     case maybeExpTy of
-         Nothing                    -> return (AnnBool rng b)
-         Just  t | t == fosBoolType -> return (AnnBool rng b)
+         Nothing                    -> return ab
+         Just  t | t == fosBoolType -> return ab
+         Just  m@MetaTyVar {}       -> do equateTypes (typeAST ab) m (Just $ "bool literal")
+                                          return ab
          Just  t -> tcFails [out $ "Unable to check Bool constant in context"
                                 ++ " expecting non-Bool type " ++ show t
                                 ++ showSourceRange rng]
@@ -315,20 +318,7 @@ listize (TupleTypeAST tys) = tys
 listize ty                 = [ty]
 
 tyvarsOf ktyvars = map (\(tv,_) -> TyVarAST tv) ktyvars
-{-
-kindCheckSubsumption :: ((TyVar, Kind), TypeAST) -> Tc ()
-kindCheckSubsumption ((tv, kind), ty) =
-  case (kindOfTypeAST ty, kind) of
-    (KindAnySizeType, KindAnySizeType)   -> return ()
-    (KindPointerSized, KindPointerSized) -> return ()
-    -- It's OK to give a pointer-sized type when any size is expected.
-    (KindPointerSized, KindAnySizeType)  -> return ()
-    -- It's not OK to give an unboxed type when a boxed type is required.
-    (KindAnySizeType, KindPointerSized)  ->
-      tcFails [out $ "Kind mismatch:\n"
-                  ++ "cannot instantiate type variable " ++ show tv ++ " of kind " ++ show kind
-                  ++ "\nwith type " ++ show ty ++ " of kind " ++ show (kindOfTypeAST ty)]
--}
+
 -- G |- e ::: forall a1::k1..an::kn, rho
 -- G |- t_n <::: k_n                          (checked later)
 -- ------------------------------------------
