@@ -97,7 +97,7 @@ typecheckBool rng b maybeExpTy = do
     let ab = AnnBool rng b
     case maybeExpTy of
          Nothing                    -> return ab
-         Just  t | t == fosBoolType -> return ab
+         Just  (PrimIntAST I1)      -> return ab
          Just  m@MetaTyVar {}       -> do equateTypes (typeAST ab) m (Just $ "bool literal")
                                           return ab
          Just  t -> tcFails [out $ "Unable to check Bool constant in context"
@@ -317,7 +317,7 @@ typecheckIf ctx rng a b c maybeExpTy = do
 listize (TupleTypeAST tys) = tys
 listize ty                 = [ty]
 
-tyvarsOf ktyvars = map (\(tv,_) -> TyVarAST tv) ktyvars
+tyvarsOf ktyvars = map (\(tv,_k) -> tv) ktyvars
 
 -- G |- e ::: forall a1::k1..an::kn, rho
 -- G |- t_n <::: k_n                          (checked later)

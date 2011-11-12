@@ -34,32 +34,25 @@ extractSubstTypes metaVars tysub = do
                fromMaybe (return $ MetaTyVar m)
                          (fmap return $ Map.lookup uniq tysub)
 
-instance Eq TypeAST where
-    t1 == t2 = typesEqual t1 t2
+assocFilterOut :: Eq a => [(a,b)] -> [a] -> [(a,b)]
+assocFilterOut lst keys = [(a,b) | (a,b) <- lst, not(List.elem a keys)]
 
-assocFilterOut :: (Eq a) => [(a,b)] -> [a] -> [(a,b)]
-assocFilterOut lst keys =
-    [(a,b) | (a,b) <- lst, not (List.elem a keys)]
-
--- Substitute each element of prv with its corresponding element from nxt;
--- unlike tySubst, this replaces arbitrary types with other types.
-parSubstTy :: [(TypeAST, TypeAST)] -> TypeAST -> TypeAST
+-- Substitute each element of prv with its corresponding element from nxt.
+parSubstTy :: [(TyVar, TypeAST)] -> TypeAST -> TypeAST
 parSubstTy prvNextPairs ty =
     let q = parSubstTy prvNextPairs in
     case ty of
-        TyVarAST   {}  -> fromMaybe ty $ List.lookup ty prvNextPairs
-        MetaTyVar  {}  -> fromMaybe ty $ List.lookup ty prvNextPairs
-        TyConAppAST nm tys -> fromMaybe (TyConAppAST nm (map q tys)) $
-                                         List.lookup ty prvNextPairs
+        TyVarAST tv        -> fromMaybe ty $ List.lookup tv prvNextPairs
+        MetaTyVar  {}      -> ty
         PrimIntAST _       -> ty
+        TyConAppAST nm tys -> TyConAppAST nm (map q tys)
+        TupleTypeAST types -> TupleTypeAST (map q types)
         RefTypeAST   t     -> RefTypeAST   (q t)
         ArrayTypeAST t     -> ArrayTypeAST (q t)
-        TupleTypeAST types -> TupleTypeAST (map q types)
         FnTypeAST s t cc cs-> FnTypeAST   (q s) (q t) cc cs -- TODO unify calling convention?
         CoroTypeAST s t    -> CoroTypeAST (q s) (q t)
         ForAllAST ktvs rho ->
-                let prvNextPairs' = prvNextPairs `assocFilterOut`
-                                                 [TyVarAST tv | (tv, _) <- ktvs]
+                let prvNextPairs' = prvNextPairs `assocFilterOut` (map fst ktvs)
                 in  ForAllAST ktvs (parSubstTy prvNextPairs' rho)
 
 -- Replaces types for meta type variables (unification variables)
@@ -137,8 +130,7 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
          else if kinds1 /= kinds2
           then tcFails [out $ "Unable to unify foralls with differently-kinded type variables"]
           else let t1 = rho1 in
-               let tySubst = zip (map TyVarAST tyvars2)
-                                 (map TyVarAST tyvars1) in
+               let tySubst = zip tyvars2 (map (\(tv,_) -> TyVarAST tv) ktyvars1) in
                let t2 = parSubstTy tySubst rho2 in
                tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 

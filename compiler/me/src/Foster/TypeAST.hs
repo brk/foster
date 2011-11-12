@@ -7,13 +7,12 @@
 module Foster.TypeAST(
   TypeAST(..), EPattern(..), E_VarAST(..), IntSizeBits(..), AnnVar
 , fosBoolType, MetaTyVar(Meta), Sigma, Rho, Tau
-, typesEqual, minimalTupleAST, kindOfTypeAST
+, minimalTupleAST, kindOfTypeAST
 , mkFnType, convertTyFormal
 , gFosterPrimOpsTable, primitiveDecls
 )
 where
 
-import List(length)
 import Data.IORef(IORef)
 import Data.Map as Map(fromList, toList)
 
@@ -105,29 +104,6 @@ kindOfTypeAST x = case x of
     MetaTyVar    {} -> KindAnySizeType
 
 convertTyFormal (TypeFormalAST name kind) = (BoundTyVar name, kind)
-
-allTypesEqual :: [TypeAST] -> [TypeAST] -> Bool
-allTypesEqual xs ys =
-       List.length xs == List.length ys
-    && Prelude.and [typesEqual a b | (a, b) <- Prelude.zip xs ys]
-
-typesEqual :: TypeAST -> TypeAST -> Bool
-typesEqual (TyConAppAST tc1 tys1) (TyConAppAST tc2 tys2) =
-        tc1 == tc2 && allTypesEqual tys1 tys2
-typesEqual (PrimIntAST  x) (PrimIntAST  y) = x == y
-typesEqual (TupleTypeAST as) (TupleTypeAST bs) =
-        allTypesEqual as bs
-typesEqual (FnTypeAST a1 b1 c1 _d1) (FnTypeAST a2 b2 c2 _d2) =
-    typesEqual a1 a2 && typesEqual b1 b2
-                      && c1 == c2
-                -- ignore d1 and d2 for now...
-typesEqual (CoroTypeAST a1 b1) (CoroTypeAST a2 b2) = typesEqual a1 a2 && typesEqual b1 b2
-typesEqual (ForAllAST vars1 ty1) (ForAllAST vars2 ty2) =
-    vars1 == vars2 && typesEqual ty1 ty2
-typesEqual (TyVarAST tv1) (TyVarAST tv2) = tv1 == tv2
-typesEqual (MetaTyVar mtv1) (MetaTyVar mtv2) = mtv1 == mtv2
-typesEqual _ _ = False
-
 
 fosBoolType = i1
 
