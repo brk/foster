@@ -152,6 +152,19 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
 
     return (s4, to_asm, e1, e2, e3, e4)
 
+def aggregate_results(results):
+    fields = ["total_elapsed", "compile_elapsed", "overhead",
+              "fp_elapsed", "fm_elapsed", "fl_elapsed",
+              "fc_elapsed", "as_elapsed", "ld_elapsed", "rn_elapsed",]
+    result = dict(failed=False, label="<aggregate results>",
+                  total_elapsed=0, compile_elapsed=0, overhead=0,
+                  fp_elapsed=0, fm_elapsed=0, fl_elapsed=0,
+                  fc_elapsed=0, as_elapsed=0, ld_elapsed=0, rn_elapsed=0)
+    for res in results:
+        for field in fields:
+            result[field] += res[field]
+    return result
+
 def print_result_table(res):
     print "fpr:%4d | fme:%4d | flo:%4d | foc:%4d | as:%4d | ld:%4d | run:%4d | py:%3d | tot:%5d | %s" % (
                 res['fp_elapsed'], res['fm_elapsed'], res['fl_elapsed'], res['fc_elapsed'],

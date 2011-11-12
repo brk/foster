@@ -13,12 +13,15 @@ import itertools
 import run_test
 from list_all import collect_all_tests
 
+all_results = []
+
 def run_and_print_test(testpath, tmpdir, paths):
   try:
     test_tmpdir = os.path.join(tmpdir, run_test.testname(testpath))
     result = run_test.run_one_test(testpath, paths, test_tmpdir)
     run_test.print_result_table(result)
     run_test.classify_result(result, testpath)
+    all_results.append(result)
   except run_test.TestFailed:
     run_test.tests_failed.add(testpath)
 
@@ -53,6 +56,7 @@ def run_all_tests_fast(bootstrap_dir, paths, tmpdir):
        if result is not None:
          run_test.print_result_table(result)
          run_test.classify_result(result, testpath)
+         all_results.append(result)
        else:
          run_test.tests_failed.add(testpath)
   except KeyboardInterrupt:
@@ -60,14 +64,15 @@ def run_all_tests_fast(bootstrap_dir, paths, tmpdir):
 
 def main(opts, bootstrap_dir, paths, tmpdir):
   walkstart = run_test.walltime()
-
   if should_run_tests_in_parallel(opts):
     run_all_tests_fast(bootstrap_dir, paths, tmpdir)
   else:
     run_all_tests_slow(bootstrap_dir, paths, tmpdir)
-
   walkend = run_test.walltime()
-  print "Total time: %d ms" % run_test.elapsed(walkstart, walkend)
+
+  run_test.print_result_table(run_test.aggregate_results(all_results))
+
+  print "Total (wall-clock) time: %d ms" % run_test.elapsed(walkstart, walkend)
 
   print len(run_test.tests_passed), " tests passed"
 
