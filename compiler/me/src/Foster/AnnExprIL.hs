@@ -144,10 +144,30 @@ ail ae =
         E_AnnVar _rng v -> do vv <- aiVar v
                               return $ E_AIVar vv
 
-        E_AnnTyApp _rng t e argty  -> do ti <- ilOf t
-                                         at <- ilOf argty
-                                         ae <- q e
-                                         return $ E_AITyApp ti ae at
+        E_AnnTyApp rng t e argty  -> do
+                ti <- ilOf t
+                at <- ilOf argty
+                ae <- q e
+
+                origExprType <- ilOf (typeAST e)
+                let ktvs = tyvarBindersOf origExprType
+                mapM_ (kindCheckSubsumption rng) (zip ktvs (listize at))
+
+                return $ E_AITyApp ti ae at
+
+tyvarBindersOf (ForAllIL ktvs _) = ktvs
+tyvarBindersOf _                 = []
+
+listize (TupleTypeIL tys) = tys
+listize ty                = [ty]
+
+kindCheckSubsumption :: SourceRange -> ((TyVar, Kind), TypeIL) -> Tc ()
+kindCheckSubsumption rng ((tv, kind), ty) = do
+  if kindOfTypeIL ty `subkindOf` kind
+    then return ()
+    else tcFails [out $ "Kind mismatch:" ++ highlightFirstLine rng
+       ++ "Cannot instantiate type variable " ++ show tv ++ " of kind " ++ show kind
+       ++ "\nwith type " ++ show ty ++ " of kind " ++ show (kindOfTypeIL ty)]
 
 coroPrimFor s | s == T.pack "coro_create" = Just $ CoroCreate
 coroPrimFor s | s == T.pack "coro_invoke" = Just $ CoroInvoke

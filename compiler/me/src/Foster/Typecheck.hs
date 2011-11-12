@@ -12,7 +12,6 @@ import qualified Data.Text as T(Text, pack, unpack)
 import qualified Data.Map as Map(lookup, empty)
 
 import Foster.Base
-import Foster.Kind
 import Foster.TypeAST
 import Foster.ExprAST
 import Foster.AnnExpr
@@ -316,7 +315,7 @@ listize (TupleTypeAST tys) = tys
 listize ty                 = [ty]
 
 tyvarsOf ktyvars = map (\(tv,_) -> TyVarAST tv) ktyvars
-
+{-
 kindCheckSubsumption :: ((TyVar, Kind), TypeAST) -> Tc ()
 kindCheckSubsumption ((tv, kind), ty) =
   case (kindOfTypeAST ty, kind) of
@@ -329,8 +328,9 @@ kindCheckSubsumption ((tv, kind), ty) =
       tcFails [out $ "Kind mismatch:\n"
                   ++ "cannot instantiate type variable " ++ show tv ++ " of kind " ++ show kind
                   ++ "\nwith type " ++ show ty ++ " of kind " ++ show (kindOfTypeAST ty)]
-
--- G |- e ::: forall a1..an, rho
+-}
+-- G |- e ::: forall a1::k1..an::kn, rho
+-- G |- t_n <::: k_n                          (checked later)
 -- ------------------------------------------
 -- G |- e :[ t1..tn ]  ::: rho{t1..tn/a1..an}
 
@@ -343,7 +343,6 @@ typecheckTyApp ctx rng a t _maybeExpTyTODO = do
         sanityCheck (List.length tys == List.length ktyvars)
                     "typecheckTyApp: arity mismatch"
         let tyvarsAndTys = List.zip (tyvarsOf ktyvars) tys
-        mapM_ kindCheckSubsumption (List.zip ktyvars tys)
         return $ E_AnnTyApp rng (parSubstTy tyvarsAndTys rho) ea t
       MetaTyVar _ -> do
         tcFails [out $ "Cannot instantiate unknown type of term:"
