@@ -23,7 +23,7 @@ data TypeIL =
                            , fnTypeILProcOrFunc :: ProcOrFunc }
          | CoroTypeIL      TypeIL  TypeIL
          | ForAllIL        [(TyVar, Kind)] RhoIL
-         | TyVarIL         TyVar
+         | TyVarIL           TyVar  Kind
          | ArrayTypeIL     TypeIL
          | PtrTypeIL       TypeIL
 
@@ -33,7 +33,7 @@ type ILPrim = FosterPrim TypeIL
 kindOfTypeIL :: TypeIL -> Kind
 kindOfTypeIL x = case x of
     PrimIntIL   {}       -> KindAnySizeType
-    TyVarIL     {}       -> KindAnySizeType
+    TyVarIL   _ kind     -> kind
     TyConAppIL  {}       -> KindPointerSized
     TupleTypeIL {}       -> KindPointerSized
     FnTypeIL    {}       -> KindPointerSized
@@ -51,9 +51,9 @@ instance Show TypeIL where
         FnTypeIL   s t cc cs -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
         CoroTypeIL s t       -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
         ForAllIL ktvs rho    -> "(ForAll " ++ show ktvs ++ ". " ++ show rho ++ ")"
-        TyVarIL tv           -> show tv
+        TyVarIL     tv _     -> show tv
         ArrayTypeIL ty       -> "(Array " ++ show ty ++ ")"
-        PtrTypeIL ty         -> "(Ptr " ++ show ty ++ ")"
+        PtrTypeIL   ty       -> "(Ptr " ++ show ty ++ ")"
 
 -- Since datatypes are recursively defined, we must be careful when lifting
 -- them. In particular, ilOf (TyConAppAST ...) calls ctxLookupDatatype,
@@ -61,8 +61,9 @@ instance Show TypeIL where
 -- of the data constructors, which can include TyConApps putting us in a loop!
 
 ilOf :: Context t -> TypeAST -> Tc TypeIL
-ilOf ctx typ =
-  let q = ilOf ctx in
+ilOf ctx typ = do
+  let q = ilOf ctx
+  tcLift $ putStrLn $ "ilOf: " ++ show typ
   case typ of
      TyConAppAST dtname tys -> do iltys <- mapM q tys
                                   return $ TyConAppIL dtname iltys
@@ -77,15 +78,21 @@ ilOf ctx typ =
                                return $ PtrTypeIL   t
      ArrayTypeAST  ty    -> do t <- q ty
                                return $ ArrayTypeIL t
-     ForAllAST ktvs rho  -> do t <- q rho
+     ForAllAST ktvs rho  -> do t <- (ilOf $ extendTyCtx ctx ktvs) rho
                                return $ ForAllIL ktvs t
-     TyVarAST tv         -> return $ (TyVarIL tv)
+     TyVarAST tv -> case Prelude.lookup tv (contextTypeBindings ctx) of
+                       Nothing -> --tcFails [out $ "Unable to find kind of type varaible " ++ show typ]
+                                  return $ TyVarIL (BoundTyVar ("MISSING " ++ show typ)) KindPointerSized
+                       Just k  -> return $ TyVarIL tv k
      MetaTyVar (Meta u tyref desc) -> do
         mty <- readTcRef tyref
         case mty of
           Nothing -> tcFails [out $ "Found un-unified unification variable "
                                   ++ show u ++ "(" ++ desc ++ ")!"]
           Just t  -> q t
+
+extendTyCtx ctx ktvs = ctx { contextTypeBindings =
+                     ktvs ++ contextTypeBindings ctx }
 
 -----------------------------------------------------------------------
 
@@ -129,7 +136,7 @@ instance Structured TypeIL where
             FnTypeIL   s t _cc _cs -> [s,t]
             CoroTypeIL s t         -> [s,t]
             ForAllIL  _ktvs rho    -> [rho]
-            TyVarIL        _tv     -> []
+            TyVarIL        _tv _   -> []
             ArrayTypeIL     ty     -> [ty]
             PtrTypeIL       ty     -> [ty]
 

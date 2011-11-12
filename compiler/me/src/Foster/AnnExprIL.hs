@@ -190,8 +190,6 @@ containsUnboxedPolymorphism ty = any containsUnboxedPolymorphism $ childrenOf ty
 tyvarBindersOf (ForAllIL ktvs _) = ktvs
 tyvarBindersOf _                 = []
 
-extendTyCtx ctx ktvs = ctx
-
 fnOf :: Context ty -> AnnFn -> Tc (Fn AIExpr TypeIL)
 fnOf ctx f = do
     ft <- ilOf ctx (annFnType f)

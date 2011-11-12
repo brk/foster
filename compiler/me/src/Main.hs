@@ -34,7 +34,7 @@ import Foster.ParsedType
 import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn), AnnFn,
                       fnNameA, annFnType, annFnIdent)
 import Foster.AnnExprIL(AIExpr, fnOf)
-import Foster.TypeIL(TypeIL, ilOf)
+import Foster.TypeIL(TypeIL, ilOf, extendTyCtx)
 import Foster.ILExpr(closureConvertAndLift)
 import Foster.MonoExpr(MonoProgram, showMonoProgramStructure)
 import Foster.KNExpr(kNormalizeModule)
@@ -200,12 +200,11 @@ typecheckModule verboseMode modast tcenv0 = do
                       -> [OutputOr AnnExpr]
                       -> Tc (Context TypeIL, ModuleIL AIExpr TypeIL)
    convertTypeILofAST mAST ctx_ast oo_annfns = do
-     mIL       <- convertModule  (ilOf ctx_ast) mAST
      ctx_il    <- liftContextM   (ilOf ctx_ast) ctx_ast
+     decls     <- mapM (convertDecl (ilOf ctx_ast)) (moduleASTdecls mAST)
+     datatypes <- mapM (convertDataTypeAST ctx_ast) (moduleASTdataTypes mAST)
      aiFns     <- mapM (tcInject (fnOf ctx_ast))
                        (map (fmapOO (\(E_AnnFn f) -> f)) oo_annfns)
-     let decls = moduleASTdecls mIL
-     let datatypes = moduleASTdataTypes mIL
      let m = ModuleIL aiFns decls datatypes (moduleASTsourceLines mAST)
      return (ctx_il, m)
        where
@@ -220,6 +219,18 @@ typecheckModule verboseMode modast tcenv0 = do
           pb' <- mapM (liftBinding f) pb
           gb' <- mapM (liftBinding f) gb
           return $ Context cb' pb' vb gb' tybinds ctortypeast
+
+        -- Wrinkle: need to extend the context used for checking ctors!
+        convertDataTypeAST :: Context TypeAST ->
+                              DataType TypeAST -> Tc (DataType TypeIL)
+        convertDataTypeAST ctx (DataType dtName tyformals ctors) = do
+          let f = ilOf (extendTyCtx ctx $ map convertTyFormal tyformals)
+          cts <- mapM (convertDataCtor f) ctors
+          return $ DataType dtName tyformals cts
+            where
+              convertDataCtor f (DataCtor dataCtorName n types) = do
+                tys <- mapM f types
+                return $ DataCtor dataCtorName n tys
 
 printOutputs :: [Output] -> IO ()
 printOutputs outs =

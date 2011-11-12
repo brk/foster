@@ -103,7 +103,7 @@ monomorphizedDataTypes dts = map monomorphizedDataType dts
                               DataType name formals ctorsmono where
          ctorsmono = map (monomorphizedDataCtor subst) ctors
          subst = buildSubstForFormals formals
-         
+
          monomorphizedDataCtor :: MonoSubst -> DataCtor TypeIL -> DataCtor MonoType
          monomorphizedDataCtor subst (DataCtor name tag types) =
                 DataCtor name tag [monoType subst ty | ty <- types]
@@ -146,13 +146,13 @@ monoType subst ty =
      ForAllIL ktvs rho    -> monoType (extendMonoSubst subst
                                         [kUnknownPointerType | _ <- ktvs]
                                                         ktvs) rho
-     TyVarIL tv           -> monoSubstLookup subst tv
+     TyVarIL tv _kind     -> monoSubstLookup subst tv -- TODO check kind?
 
 monoSubstLookup :: MonoSubst -> TyVar -> MonoType
-monoSubstLookup subst tv =
+monoSubstLookup subst tv@(BoundTyVar nm) =
   case Map.lookup tv subst of
       Just monotype -> monotype
-      Nothing -> TyConApp "AAAAAAmissing" []--error $ "monoSubsLookup found no monotype for variable " ++ show tv
+      Nothing -> TyConApp ("AAAAAAmissing:"++nm) []--error $ "monoSubsLookup found no monotype for variable " ++ show tv
 
 --------------------------------------------------------------------
 
@@ -230,7 +230,7 @@ monomorphizeProc (PlainProc srcid) = do
   (Just proc) <- monoGetProc srcid
   newproc <- doMonomorphizeProc proc emptyMonoSubst
   monoPutProc $ newproc
-  
+
 monomorphizeProc (NeedsMono polyid srcid tyargs) = do
   (Just proc) <- monoGetProc srcid
   let subst = buildMonoSubst tyargs (ilProcPolyTyVars proc)
@@ -253,7 +253,7 @@ monomorphizeBlock :: MonoSubst -> ILBlock -> Mono MoBlock
 monomorphizeBlock subst (Block bid mids last) = do
     newmids <- mapM (monomorphizeMid subst) mids
     return $ MoBlock bid newmids (monoLast subst last)
-    
+
 monoLast :: MonoSubst -> ILLast -> MoLast
 monoLast subst last =
   let qt = monoType subst in
@@ -337,13 +337,13 @@ monomorphizeLetable subst expr =
 monoClosure subst (ILClosure procid envid captures) =
   MoClosure procid envid (map (monoVar subst) captures)
 
-monoPrim :: MonoSubst -> FosterPrim TypeIL -> FosterPrim MonoType       
+monoPrim :: MonoSubst -> FosterPrim TypeIL -> FosterPrim MonoType
 monoPrim subst p =
   case p of
      NamedPrim v        -> NamedPrim (monoVar subst v)
      PrimOp    n s      -> PrimOp    n s
      CoroPrim  cp t1 t2 -> CoroPrim  cp (monoType subst t1) (monoType subst t2)
-     
+
 monoAllocInfo :: MonoSubst -> AllocInfo TypeIL -> AllocInfo MonoType
 monoAllocInfo subst (AllocInfo t rgn arraysize unboxed) =
     AllocInfo (monoType subst t) rgn (fmap (monoVar subst) arraysize) unboxed

@@ -17,7 +17,7 @@ data Context ty = Context { contextBindings   :: [ContextBinding ty]
                           , primitiveBindings :: [ContextBinding ty]
                           , contextVerbose    :: Bool
                           , globalBindings    :: [ContextBinding ty]
-                          , contextTypeBindings :: [(String, Kind)]
+                          , contextTypeBindings :: [(TyVar, Kind)]
                           , contextCtorInfo   :: Map CtorName [CtorInfo TypeAST]
                           }
 
