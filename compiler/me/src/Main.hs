@@ -200,9 +200,9 @@ typecheckModule verboseMode modast tcenv0 = do
                       -> [OutputOr AnnExpr]
                       -> Tc (Context TypeIL, ModuleIL AIExpr TypeIL)
    convertTypeILofAST mAST ctx_ast oo_annfns = do
-     mIL       <- convertModule ilOf mAST
-     ctx_il    <- liftContextM ilOf ctx_ast
-     aiFns     <- mapM (tcInject fnOf)
+     mIL       <- convertModule  (ilOf ctx_ast) mAST
+     ctx_il    <- liftContextM   (ilOf ctx_ast) ctx_ast
+     aiFns     <- mapM (tcInject (fnOf ctx_ast))
                        (map (fmapOO (\(E_AnnFn f) -> f)) oo_annfns)
      let decls = moduleASTdecls mIL
      let datatypes = moduleASTdataTypes mIL

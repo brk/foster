@@ -60,9 +60,9 @@ instance Show TypeIL where
 -- and lifts the data type using ilOf, which in turn gets called on the types
 -- of the data constructors, which can include TyConApps putting us in a loop!
 
-ilOf :: TypeAST -> Tc TypeIL
-ilOf typ =
-  let q = ilOf in
+ilOf :: Context t -> TypeAST -> Tc TypeIL
+ilOf ctx typ =
+  let q = ilOf ctx in
   case typ of
      TyConAppAST dtname tys -> do iltys <- mapM q tys
                                   return $ TyConAppIL dtname iltys
