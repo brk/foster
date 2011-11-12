@@ -196,18 +196,18 @@ varOrThunk (a, targetType) = do
 
 --------------------------------------------------------------------
 
+-- Because buildLet is applied bottom-to-top, we maintain the invariant
+-- that the bound form in the result is never a binder itself.
 buildLet :: Ident -> KNExpr -> KNExpr -> KNExpr
 buildLet ident bound inexpr =
   case bound of
-    -- Convert  let i = (let x' = e' in c') in inexpr
-    -- ==>      let x' = e' in (let i = c' in inexpr)
-    KNLetVal x' e' c' ->
-         KNLetVal x' e' (buildLet ident c' inexpr)
+    -- Convert  let i = (let x = e in c) in inexpr
+    -- ==>      let x = e in (let i = c in inexpr)
+    KNLetVal x e c ->   KNLetVal x e (buildLet ident c inexpr)
 
     -- Convert  let f = letfuns g = ... in g in <<f>>
     --     to   letfuns g = ... in let f = g in <<f>>
-    KNLetFuns ids fns a ->
-      KNLetFuns ids fns (buildLet ident a inexpr)
+    KNLetFuns ids fns a -> KNLetFuns ids fns (buildLet ident a inexpr)
 
     _ -> KNLetVal ident bound inexpr
 

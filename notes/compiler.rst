@@ -353,3 +353,138 @@ over time:
   generate a reference to an out-of-scope variable. If the CFG isn't well
   formed, the error will be caught by LLVM, so it doesn't make sense for us to
   check explicitly.
+
+
+K-Normalization and Let-Flattening
+----------------------------------
+
+Probably easiest to show the effect of k-normalization
+on a complete binary let-tree by example::
+
+    ├─AnnLetVar    x!0 :: ()
+    │ ├─AnnLetVar    x!1 :: ()
+    │ │ ├─AnnLetVar    x!2 :: ()
+    │ │ │ ├─AnnLetVar    x!3 :: ()
+    │ │ │ │ ├─AnnLetVar    x!4 :: ()
+    │ │ │ │ │ ├─AnnVar       b!5 :: ()
+    │ │ │ │ │ └─AnnVar       n!6 :: ()
+    │ │ │ │ └─AnnLetVar    x!7 :: ()
+    │ │ │ │   ├─AnnVar       b!8 :: ()
+    │ │ │ │   └─AnnVar       n!9 :: ()
+    │ │ │ └─AnnLetVar    x!10 :: ()
+    │ │ │   ├─AnnLetVar    x!11 :: ()
+    │ │ │   │ ├─AnnVar       b!12 :: ()
+    │ │ │   │ └─AnnVar       n!13 :: ()
+    │ │ │   └─AnnLetVar    x!14 :: ()
+    │ │ │     ├─AnnVar       b!15 :: ()
+    │ │ │     └─AnnVar       n!16 :: ()
+    │ │ └─AnnLetVar    x!17 :: ()
+    │ │   ├─AnnLetVar    x!18 :: ()
+    │ │   │ ├─AnnLetVar    x!19 :: ()
+    │ │   │ │ ├─AnnVar       b!20 :: ()
+    │ │   │ │ └─AnnVar       n!21 :: ()
+    │ │   │ └─AnnLetVar    x!22 :: ()
+    │ │   │   ├─AnnVar       b!23 :: ()
+    │ │   │   └─AnnVar       n!24 :: ()
+    │ │   └─AnnLetVar    x!25 :: ()
+    │ │     ├─AnnLetVar    x!26 :: ()
+    │ │     │ ├─AnnVar       b!27 :: ()
+    │ │     │ └─AnnVar       n!28 :: ()
+    │ │     └─AnnLetVar    x!29 :: ()
+    │ │       ├─AnnVar       b!30 :: ()
+    │ │       └─AnnVar       n!31 :: ()
+    │ └─AnnLetVar    x!32 :: ()
+    │   ├─AnnLetVar    x!33 :: ()
+    │   │ ├─AnnLetVar    x!34 :: ()
+    │   │ │ ├─AnnLetVar    x!35 :: ()
+    │   │ │ │ ├─AnnVar       b!36 :: ()
+    │   │ │ │ └─AnnVar       n!37 :: ()
+    │   │ │ └─AnnLetVar    x!38 :: ()
+    │   │ │   ├─AnnVar       b!39 :: ()
+    │   │ │   └─AnnVar       n!40 :: ()
+    │   │ └─AnnLetVar    x!41 :: ()
+    │   │   ├─AnnLetVar    x!42 :: ()
+    │   │   │ ├─AnnVar       b!43 :: ()
+    │   │   │ └─AnnVar       n!44 :: ()
+    │   │   └─AnnLetVar    x!45 :: ()
+    │   │     ├─AnnVar       b!46 :: ()
+    │   │     └─AnnVar       n!47 :: ()
+    │   └─AnnLetVar    x!48 :: ()
+    │     ├─AnnLetVar    x!49 :: ()
+    │     │ ├─AnnLetVar    x!50 :: ()
+    │     │ │ ├─AnnVar       b!51 :: ()
+    │     │ │ └─AnnVar       n!52 :: ()
+    │     │ └─AnnLetVar    x!53 :: ()
+    │     │   ├─AnnVar       b!54 :: ()
+    │     │   └─AnnVar       n!55 :: ()
+    │     └─AnnLetVar    x!56 :: ()
+    │       ├─AnnLetVar    x!57 :: ()
+    │       │ ├─AnnVar       b!58 :: ()
+    │       │ └─AnnVar       n!59 :: ()
+    │       └─AnnLetVar    x!60 :: ()
+    │         ├─AnnVar       b!61 :: ()
+    │         └─AnnVar       n!62 :: ()
+    ├─KNLetVal    x!4 :: () = ... in ...
+    │ ├─KNVar(Local):   b!5 :: ()
+    │ └─KNLetVal    x!3 :: () = ... in ...
+    │   ├─KNVar(Local):   n!6 :: ()
+    │   └─KNLetVal    x!7 :: () = ... in ...
+    │     ├─KNVar(Local):   b!8 :: ()
+    │     └─KNLetVal    x!2 :: () = ... in ...
+    │       ├─KNVar(Local):   n!9 :: ()
+    │       └─KNLetVal    x!11 :: () = ... in ...
+    │         ├─KNVar(Local):   b!12 :: ()
+    │         └─KNLetVal    x!10 :: () = ... in ...
+    │           ├─KNVar(Local):   n!13 :: ()
+    │           └─KNLetVal    x!14 :: () = ... in ...
+    │             ├─KNVar(Local):   b!15 :: ()
+    │             └─KNLetVal    x!1 :: () = ... in ...
+    │               ├─KNVar(Local):   n!16 :: ()
+    │               └─KNLetVal    x!19 :: () = ... in ...
+    │                 ├─KNVar(Local):   b!20 :: ()
+    │                 └─KNLetVal    x!18 :: () = ... in ...
+    │                   ├─KNVar(Local):   n!21 :: ()
+    │                   └─KNLetVal    x!22 :: () = ... in ...
+    │                     ├─KNVar(Local):   b!23 :: ()
+    │                     └─KNLetVal    x!17 :: () = ... in ...
+    │                       ├─KNVar(Local):   n!24 :: ()
+    │                       └─KNLetVal    x!26 :: () = ... in ...
+    │                         ├─KNVar(Local):   b!27 :: ()
+    │                         └─KNLetVal    x!25 :: () = ... in ...
+    │                           ├─KNVar(Local):   n!28 :: ()
+    │                           └─KNLetVal    x!29 :: () = ... in ...
+    │                             ├─KNVar(Local):   b!30 :: ()
+    │                             └─KNLetVal    x!0 :: () = ... in ...
+    │                               ├─KNVar(Local):   n!31 :: ()
+    │                               └─KNLetVal    x!35 :: () = ... in ...
+    │                                 ├─KNVar(Local):   b!36 :: ()
+    │                                 └─KNLetVal    x!34 :: () = ... in ...
+    │                                   ├─KNVar(Local):   n!37 :: ()
+    │                                   └─KNLetVal    x!38 :: () = ... in ...
+    │                                     ├─KNVar(Local):   b!39 :: ()
+    │                                     └─KNLetVal    x!33 :: () = ... in ...
+    │                                       ├─KNVar(Local):   n!40 :: ()
+    │                                       └─KNLetVal    x!42 :: () = ... in ...
+    │                                         ├─KNVar(Local):   b!43 :: ()
+    │                                         └─KNLetVal    x!41 :: () = ... in ...
+    │                                           ├─KNVar(Local):   n!44 :: ()
+    │                                           └─KNLetVal    x!45 :: () = ... in ...
+    │                                             ├─KNVar(Local):   b!46 :: ()
+    │                                             └─KNLetVal    x!32 :: () = ... in ...
+    │                                               ├─KNVar(Local):   n!47 :: ()
+    │                                               └─KNLetVal    x!50 :: () = ... in ...
+    │                                                 ├─KNVar(Local):   b!51 :: ()
+    │                                                 └─KNLetVal    x!49 :: () = ... in ...
+    │                                                   ├─KNVar(Local):   n!52 :: ()
+    │                                                   └─KNLetVal    x!53 :: () = ... in ...
+    │                                                     ├─KNVar(Local):   b!54 :: ()
+    │                                                     └─KNLetVal    x!48 :: () = ... in ...
+    │                                                       ├─KNVar(Local):   n!55 :: ()
+    │                                                       └─KNLetVal    x!57 :: () = ... in ...
+    │                                                         ├─KNVar(Local):   b!58 :: ()
+    │                                                         └─KNLetVal    x!56 :: () = ... in ...
+    │                                                           ├─KNVar(Local):   n!59 :: ()
+    │                                                           └─KNLetVal    x!60 :: () = ... in ...
+    │                                                             ├─KNVar(Local):   b!61 :: ()
+    │                                                             └─KNVar(Local):   n!62 :: ()
+
