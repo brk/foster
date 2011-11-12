@@ -140,9 +140,14 @@ data ModuleAST fnCtor ty = ModuleAST {
 data Fn expr ty = Fn { fnVar   :: TypedId ty
                      , fnVars  :: [TypedId ty]
                      , fnBody  :: expr
-                     , fnRange :: SourceRange
                      , fnFreeVars :: [TypedId ty]
+                     , fnRange :: SourceRange
                      } deriving (Show)
+
+fnType :: Fn e t -> t
+fnType fn = tidType $ fnVar fn
+
+fnIdent fn = tidIdent $ fnVar fn
 
 data ModuleIL expr ty = ModuleIL {
           moduleILfunctions   :: [Fn expr ty]

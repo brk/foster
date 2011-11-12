@@ -190,24 +190,25 @@ containsUnboxedPolymorphism ty = any containsUnboxedPolymorphism $ childrenOf ty
 tyvarBindersOf (ForAllIL ktvs _) = ktvs
 tyvarBindersOf _                 = []
 
-fnOf :: Context ty -> AnnFn -> Tc (Fn AIExpr TypeIL)
+fnOf :: Context ty -> Fn AnnExpr TypeAST -> Tc (Fn AIExpr TypeIL)
 fnOf ctx f = do
-    ft <- ilOf ctx (annFnType f)
+    var <- aiVar ctx (fnVar f)
+    let ft = tidType var
     -- Ensure that the types resulting from function calls don't make
     -- dubious claims of supporting unboxed polymorphism.
     when (containsUnboxedPolymorphism (fnReturnType ft)) $
        tcFails [out $ "Returning an unboxed-polymorphic value from "
-                   ++ show (annFnIdent f) ++ "? Inconceivable!"
+                   ++ show (fnIdent f) ++ "? Inconceivable!"
                ,out $ "Try using boxed polymorphism instead."]
 
     let extctx = extendTyCtx ctx (tyvarBindersOf ft)
-    fnVars     <- mapM (aiVar extctx) (annFnVars f)
-    fnFreeVars <- mapM (aiVar extctx) (annFnFreeVars f)
-    body       <- ail extctx (annFnBody f)
-    return $ Fn { fnVar   = TypedId ft (annFnIdent f)
-                , fnVars  = fnVars
+    vars     <- mapM (aiVar extctx) (fnVars f)
+    freeVars <- mapM (aiVar extctx) (fnFreeVars f)
+    body     <- ail extctx (fnBody f)
+    return $ Fn { fnVar   = var
+                , fnVars  = vars
                 , fnBody  = body
-                , fnRange = (annFnRange f)
-                , fnFreeVars = fnFreeVars
+                , fnRange = fnRange f
+                , fnFreeVars = freeVars
                 }
 

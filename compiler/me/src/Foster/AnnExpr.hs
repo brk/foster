@@ -6,10 +6,8 @@
 
 module Foster.AnnExpr (
   AnnExpr(..)
-, AnnFn(..)
 , AnnTuple(..)
 , typeAST
-, fnNameA
 ) where
 
 import Foster.Base
@@ -29,7 +27,7 @@ data AnnExpr =
                         , aintType   :: TypeAST
                         , aintLitInt :: LiteralInt }
         | AnnTuple      AnnTuple
-        | E_AnnFn       AnnFn
+        | E_AnnFn       (Fn AnnExpr TypeAST)
 
         -- Control flow
         | AnnIf         SourceRange TypeAST AnnExpr AnnExpr AnnExpr
@@ -39,7 +37,7 @@ data AnnExpr =
         | AnnLetVar     SourceRange Ident AnnExpr AnnExpr
         -- We have separate syntax for a SCC of recursive functions
         -- because they are compiled differently from non-recursive closures.
-        | AnnLetFuns    SourceRange [Ident] [AnnFn] AnnExpr
+        | AnnLetFuns    SourceRange [Ident] [Fn AnnExpr TypeAST] AnnExpr
         -- Use of bindings
         | E_AnnVar      SourceRange AnnVar
         | AnnPrimitive  SourceRange AnnVar
@@ -63,18 +61,6 @@ data AnnExpr =
 data AnnTuple = E_AnnTuple { annTupleRange :: SourceRange
                            , annTupleExprs :: [AnnExpr] } deriving (Show)
 
--- Body annotated, and overall type added.
--- We also record the free identifiers used.
-data AnnFn        = AnnFn  { annFnType  :: TypeAST
-                           , annFnIdent :: Ident
-                           , annFnVars  :: [AnnVar]
-                           , annFnBody  :: AnnExpr
-                           , annFnFreeVars :: [AnnVar]
-                           , annFnRange :: SourceRange
-                           } deriving (Show)
-
-fnNameA f = identPrefix (annFnIdent f)
-
 -----------------------------------------------------------------------
 
 typeAST :: AnnExpr -> TypeAST
@@ -84,7 +70,7 @@ typeAST annexpr =
      AnnBool   {}          -> fosBoolType
      AnnInt _rng t _       -> t
      AnnTuple  {}          -> TupleTypeAST [recur e | e <- childrenOf annexpr]
-     E_AnnFn annFn         -> annFnType annFn
+     E_AnnFn annFn         -> fnType annFn
      AnnCall _rng t _ _    -> t
      AnnCompiles {}        -> fosBoolType
      AnnIf _rng t _ _ _    -> t
@@ -124,10 +110,10 @@ instance Structured AnnExpr where
       AnnPrimitive _r tid        -> out $ "AnnPrimitive " ++ show tid
       E_AnnVar _r tid            -> out $ "AnnVar       " ++ show tid
       E_AnnTyApp _rng t _e argty -> out $ "AnnTyApp     [" ++ show argty ++ "] :: " ++ show t
-      E_AnnFn annFn              -> out $ "AnnFn " ++ T.unpack (fnNameA annFn) ++ " // "
-        ++ (show $ annFnBoundNames annFn) ++ " :: " ++ show (annFnType annFn) where
-                  annFnBoundNames :: AnnFn -> [String]
-                  annFnBoundNames fn = map show (annFnVars fn)
+      E_AnnFn annFn              -> out $ "AnnFn " ++ T.unpack (identPrefix $ fnIdent annFn) ++ " // "
+        ++ (show $ fnBoundNames annFn) ++ " :: " ++ show (fnType annFn) where
+                   fnBoundNames :: (Show t) => Fn e t -> [String]
+                   fnBoundNames fn = map show (fnVars fn)
   childrenOf e =
     case e of
       AnnBool {}                           -> []
@@ -137,7 +123,7 @@ instance Structured AnnExpr where
       AnnIf        _rng _t  a b c          -> [a, b, c]
       AnnUntil     _rng _t  a b            -> [a, b]
       AnnInt {}                            -> []
-      E_AnnFn annFn                        -> [annFnBody annFn]
+      E_AnnFn annFn                        -> [fnBody annFn]
       AnnLetVar    _rng _ a b              -> [a, b]
       AnnLetFuns   _rng _ids fns e         -> (map E_AnnFn fns) ++ [e]
       AnnAlloc     _rng    a               -> [a]
@@ -153,9 +139,9 @@ instance Structured AnnExpr where
 
 -----------------------------------------------------------------------
 
-instance AExpr AnnFn where
-    freeIdents f = let bodyvars =  freeIdents (annFnBody f) in
-                   let boundvars = map tidIdent (annFnVars f) in
+instance AExpr (Fn AnnExpr TypeAST) where
+    freeIdents f = let bodyvars =  freeIdents (fnBody f) in
+                   let boundvars = map tidIdent (fnVars f) in
                    bodyvars `butnot` boundvars
 
 instance AExpr AnnExpr where
@@ -168,7 +154,7 @@ instance AExpr AnnExpr where
         -- but letfuns removes the bound name from that set!
         AnnLetFuns _rng ids fns e -> ((concatMap freeIdents fns) ++ (freeIdents e))
                                      `butnot` ids
-        E_AnnFn f -> map tidIdent (annFnFreeVars f)
+        E_AnnFn f -> map tidIdent (fnFreeVars f)
         _         -> concatMap freeIdents (childrenOf e)
 
 -----------------------------------------------------------------------
@@ -181,7 +167,7 @@ instance SourceRanged AnnExpr where
       AnnIf        rng _ _ _ _    -> rng
       AnnUntil     rng _ _ _      -> rng
       AnnInt       rng _ _        -> rng
-      E_AnnFn f                   -> annFnRange f
+      E_AnnFn f                   -> fnRange f
       AnnLetVar    rng _ _ _      -> rng
       AnnLetFuns   rng _ _ _      -> rng
       AnnAlloc     rng   _        -> rng

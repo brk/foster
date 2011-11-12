@@ -600,9 +600,9 @@ typecheckFn' ctx f cc expArgType expBodyType = do
       Just av -> equateTypes fnty (tidType av)
                    (Just $ "overall type of function " ++ fnProtoName)
 
-    return $ E_AnnFn $ AnnFn fnty (GlobalSymbol $ fnAstName f)
-                             uniquelyNamedFormals annbody freeVars
-                             (fnAstRange f)
+    return $ E_AnnFn $ Fn (TypedId fnty (GlobalSymbol $ fnAstName f))
+                          uniquelyNamedFormals annbody freeVars
+                          (fnAstRange f)
   where
     extendContext :: Context TypeAST -> [AnnVar] -> Maybe TypeAST -> Tc (Context TypeAST)
     extendContext ctx [] Nothing = return ctx

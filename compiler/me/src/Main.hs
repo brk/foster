@@ -31,8 +31,7 @@ import Foster.ProtobufIL(dumpMonoModuleToProtobuf)
 import Foster.ExprAST
 import Foster.TypeAST
 import Foster.ParsedType
-import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn), AnnFn,
-                      fnNameA, annFnType, annFnIdent)
+import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn))
 import Foster.AnnExprIL(AIExpr, fnOf)
 import Foster.TypeIL(TypeIL, ilOf, extendTyCtx)
 import Foster.ILExpr(closureConvertAndLift)
@@ -80,9 +79,8 @@ typecheckFnSCC scc (ctx, tcenv) = do
            ],(ctx, tcenv))
 
    where
-        bindingForAnnFn :: AnnFn -> ContextBinding TypeAST
-        bindingForAnnFn f = TermVarBinding (fnNameA f) annFnVar
-         where   annFnVar = TypedId (annFnType f) (annFnIdent f)
+        bindingForAnnFn :: Fn AnnExpr TypeAST -> ContextBinding TypeAST
+        bindingForAnnFn f = TermVarBinding (identPrefix $ fnIdent f) (fnVar f)
 
         -- Start with the most specific binding possible (i.e. sigma, not tau).
         -- Otherwise, if we blindly used a meta type variable, we'd be unable
