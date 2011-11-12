@@ -7,7 +7,7 @@
 module Foster.TypeAST(
   TypeAST(..), EPattern(..), E_VarAST(..), IntSizeBits(..), AnnVar
 , fosBoolType, MetaTyVar(Meta), Sigma, Rho, Tau
-, minimalTupleAST, kindOfTypeAST
+, minimalTupleAST
 , mkFnType, convertTyFormal
 , gFosterPrimOpsTable, primitiveDecls
 )
@@ -86,22 +86,6 @@ instance Structured TypeAST where
             MetaTyVar _                    -> []
             RefTypeAST    ty               -> [ty]
             ArrayTypeAST  ty               -> [ty]
-
-instance Eq MetaTyVar where
-    (Meta u1 _ _) == (Meta u2 _ _) = u1 == u2
-
-kindOfTypeAST :: TypeAST -> Kind
-kindOfTypeAST x = case x of
-    TyConAppAST _tc _ -> KindPointerSized
-    TupleTypeAST {} -> KindPointerSized
-    FnTypeAST    {} -> KindPointerSized
-    CoroTypeAST  {} -> KindPointerSized
-    RefTypeAST   {} -> KindPointerSized
-    ArrayTypeAST {} -> KindPointerSized
-    ForAllAST _ rho -> kindOfTypeAST rho
-    PrimIntAST   {} -> KindAnySizeType
-    TyVarAST     {} -> KindAnySizeType -- can get better kind info by evaluating kinds in contexts
-    MetaTyVar    {} -> KindAnySizeType
 
 convertTyFormal (TypeFormalAST name kind) = (BoundTyVar name, kind)
 
