@@ -177,10 +177,10 @@ rangeSpanOf defaultRange allRanges =
     let ranges = map rangeOf allRanges in
     rsp defaultRange [r | r@(SourceRange _ _ _ _) <- ranges]
   where rsp defaultRange [] = defaultRange
-        rsp _ (b:srs) = SourceRange (sourceRangeBegin b)
-                                     (sourceRangeEnd $ last srs)
-                                     (sourceRangeLines b)
-                                     (sourceRangeFile  b)
+        rsp __ ranges@(b:_) = SourceRange (sourceRangeBegin b)
+                                          (sourceRangeEnd $ last ranges)
+                                          (sourceRangeLines b)
+                                          (sourceRangeFile  b)
 
 showSourceRange :: SourceRange -> String
 showSourceRange (MissingSourceRange s) = "<missing range: " ++ s ++ ">"
@@ -190,7 +190,7 @@ showSourceRange (SourceRange begin end lines _filepath) =
 highlightFirstLine :: SourceRange -> String
 highlightFirstLine (MissingSourceRange s) = "<missing range: " ++ s ++ ">"
 highlightFirstLine (SourceRange (ESourceLocation bline bcol)
-                                 (ESourceLocation _     ecol) lines _filepath) =
+                                (ESourceLocation _     ecol) lines _filepath) =
     "\n" ++ highlightLine bline bcol ecol lines ++ "\n"
 
 -- If a single line is specified, show it with highlighting;
