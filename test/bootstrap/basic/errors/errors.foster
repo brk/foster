@@ -58,9 +58,10 @@ main = {
   // It doesn't make sense at the machine level
   // for a returned function to be unboxed polymorphic.
   expect_i1 false;
-  print_i1 (__COMPILES__
-               { i : Int32 =>
-                 { forall b, x:b => x } });
+  print_i1 (__COMPILES__ { i : Int32 =>  { forall b, x:b => x } });
+
+  expect_i1 true;
+  print_i1 (__COMPILES__ { i : Int32 => { forall b:Boxed, x:b => x } });
 
   expect_i1 true; print_i1 (__COMPILES__ (id id));
 };
