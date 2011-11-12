@@ -1,7 +1,7 @@
 main = {
   // Mismatch between declared and inferred return types
-  //expect_i1 true ; print_i1 (__COMPILES__  { 0 }  )
-  //expect_i1 false; print_i1 (__COMPILES__  fn(to i32) { true }  )
+  expect_i1 true ; print_i1 (__COMPILES__  { 0 }  );
+  //expect_i1 false; print_i1 (__COMPILES__  fn(to i32) { true }  );
 
   // Mismatch between expected and actual types
   expect_i1 true ; print_i1 (__COMPILES__           (a !) );
@@ -9,6 +9,7 @@ main = {
 
   // Incorrect number of arguments to function
   expect_i1 true;  print_i1 (__COMPILES__  { 0 }!  );
+  expect_i1 false; print_i1 (__COMPILES__  { 0 }() );
   expect_i1 false; print_i1 (__COMPILES__  { 0 }(0) );
 
   expect_i1 true;  print_i1 (__COMPILES__  a !  );
@@ -53,6 +54,13 @@ main = {
   expect_i1 true ; print_i1 (__COMPILES__  2  >^ (ref 0));
   expect_i1 false; print_i1 (__COMPILES__ (>^) 2 (ref 0));
   2  >^ (ref 0)
+
+  // It doesn't make sense at the machine level
+  // for a returned function to be unboxed polymorphic.
+  expect_i1 false;
+  print_i1 (__COMPILES__
+               { i : Int32 =>
+                 { forall b, x:b => x } });
 };
 
 a = { 0 };

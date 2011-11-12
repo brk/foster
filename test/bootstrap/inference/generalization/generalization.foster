@@ -1,0 +1,40 @@
+main = {
+  polyretvaltest !;
+};
+
+type case B
+  of $B Int32
+;
+
+
+polyretval = { i : Int32 =>
+             { forall b:Boxed, x:b => x } };
+
+polyretvaltest = {
+  let id = polyretval 1;
+  in
+    expect_i32 0;
+    print_i32
+      case (id (B 0))
+         of $B n -> n
+      end;
+  end;
+};
+
+// foo0 :: { forall b, Int32 => { b => b } };
+// foo0 0 :: { forall b:Boxed, b => b };
+//    note: we don't drop the forall w/ implicit inst.
+// foo0:[t] 0 :: t => t;
+//    note: but we do drop the forall with explicit inst...
+
+//foo0 = { forall b, i : Int32 => { x:b => x } };
+
+// If foo0 is bound at the top level, then we can
+// do polyinstantiation as usual given a specific
+// type. But if foo0 is not given a specific type,
+// it must return a non-polyinstantiable function,
+// which therefore must be restricted to boxed type.
+
+// foo1 :: { forall b, Int32 => { b => Int32 } };
+//foo1 = { forall b, i : Int32 => { x:b => 0 } };
+

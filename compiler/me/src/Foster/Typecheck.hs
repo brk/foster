@@ -671,8 +671,9 @@ typecheckTuple ctx rng exprs maybeExpectedType =
         sanityCheck (length exprs == length expectedTypes)
             ("typecheckExprsTogether: had different number of values ("
                ++ (show $ length exprs)
-               ++ ") and expected types (" ++ (show $ length expectedTypes) ++
-                 ")\n" ++ show exprs ++ " versus \n" ++ show expectedTypes)
+               ++ ") and expected types (" ++ (show $ length expectedTypes)
+               ++ ")\nThis might be caused by a missing semicolon!\n"
+               ++ show exprs ++ " versus \n" ++ show expectedTypes)
         mapM (\(e,mt) -> typecheck ctx e mt) (List.zip exprs expectedTypes)
 -- }}}
 
