@@ -156,7 +156,7 @@ typecheckModule verboseMode modast tcenv0 = do
                                  ++ "duplicate bindings: " ++ show dups])
  where
    mkContext declBindings primBindings datatypes =
-     Context declBindings primBindings verboseMode globalvars ctorinfo
+     Context declBindings primBindings verboseMode globalvars [] ctorinfo
        where globalvars   = declBindings ++ primBindings
              ctorinfo     = getCtorInfo datatypes
 
@@ -215,11 +215,11 @@ typecheckModule verboseMode modast tcenv0 = do
 
         liftContextM :: (Monad m, Show t1, Show t2)
                      => (t1 -> m t2) -> Context t1 -> m (Context t2)
-        liftContextM f (Context cb pb vb gb ctortypeast) = do
+        liftContextM f (Context cb pb vb gb tybinds ctortypeast) = do
           cb' <- mapM (liftBinding f) cb
           pb' <- mapM (liftBinding f) pb
           gb' <- mapM (liftBinding f) gb
-          return $ Context cb' pb' vb gb' ctortypeast
+          return $ Context cb' pb' vb gb' tybinds ctortypeast
 
 printOutputs :: [Output] -> IO ()
 printOutputs outs =

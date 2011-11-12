@@ -9,7 +9,7 @@ import List(length, zip)
 import Control.Monad(liftM, forM_, forM)
 
 import qualified Data.Text as T(Text, pack, unpack)
-import qualified Data.Map as Map(lookup, empty)
+import qualified Data.Map as Map(lookup)
 
 import Foster.Base
 import Foster.TypeAST
@@ -249,9 +249,6 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
                             return $ P_Tuple r ps
     -----------------------------------------------------------------------
 
-    emptyContext :: Context ty
-    emptyContext = Context [] [] True [] Map.empty
-
     getCtorInfoForCtor :: Context TypeAST -> T.Text -> Tc (CtorInfo TypeAST)
     getCtorInfoForCtor ctx ctorName = do
       let ctorInfos = contextCtorInfo ctx
@@ -276,14 +273,14 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
       bindings <- sequence [extractPatternBindings ctx p t | (p, t) <- zip pats types]
       return $ concat bindings
 
-    extractPatternBindings _ctx (P_Bool r v) ty = do
-      _ae <- typecheck emptyContext (E_BoolAST r v) (Just ty)
+    extractPatternBindings ctx (P_Bool r v) ty = do
+      _ae <- typecheck ctx (E_BoolAST r v) (Just ty)
       -- literals don't bind anything, but we still need to check
       -- that we do not try matching e.g. a bool against an int.
       return []
 
     extractPatternBindings _ctx (P_Int r litint) ty = do
-      _ae <- typecheck emptyContext (E_IntAST r (litIntText litint)) (Just ty)
+      _ae <- typecheck ctx (E_IntAST r (litIntText litint)) (Just ty)
       -- literals don't bind anything, but we still need to check
       -- that we do not try matching e.g. a bool against an int.
       return []

@@ -6,6 +6,7 @@ import Data.Map(Map)
 import qualified Data.Text as T
 
 import Foster.Base
+import Foster.Kind
 import Foster.ExprAST
 import Foster.TypeAST
 import Foster.Output(out, outLn, Output, OutputOr(..))
@@ -16,6 +17,7 @@ data Context ty = Context { contextBindings   :: [ContextBinding ty]
                           , primitiveBindings :: [ContextBinding ty]
                           , contextVerbose    :: Bool
                           , globalBindings    :: [ContextBinding ty]
+                          , contextTypeBindings :: [(String, Kind)]
                           , contextCtorInfo   :: Map CtorName [CtorInfo TypeAST]
                           }
 
