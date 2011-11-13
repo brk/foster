@@ -171,7 +171,10 @@ def print_result_table(res):
                 res['as_elapsed'], res['ld_elapsed'], res['rn_elapsed'],
                 res['overhead'], res['total_elapsed'], res['label'])
 
-    print "fpr:%3.0f%% | fme:%3.0f%% | flo:%3.0f%% | foc:%3.0f%% | as:%3.0f%% | ld:%3.0f%%" % tuple(100.0*x/float(res['compile_elapsed'])
+    # We compute times as a percentage of compile time instead of total time,
+    # since these measurements target compilation time, not test case runtime.
+    print "fpr:%3.0f%% | fme:%3.0f%% | flo:%3.0f%% | foc:%3.0f%% | as:%3.0f%% | ld:%3.0f%%" % tuple(
+      100.0*x/float(res['compile_elapsed'])
         for x in list((res['fp_elapsed'], res['fm_elapsed'], res['fl_elapsed'],
                        res['fc_elapsed'], res['as_elapsed'], res['ld_elapsed'])))
     print "".join("-" for x in range(60))
