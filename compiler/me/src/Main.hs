@@ -252,6 +252,10 @@ dieOnError (Errors errs) = liftIO $ do
     printOutputs errs
     error "compilation failed"
 
+isTau :: TypeAST -> Bool
+isTau (ForAllAST {}) = False
+isTau t = all isTau (childrenOf t)
+
 -----------------------------------------------------------------------
 
 data Flag = Interpret String | Verbose
@@ -396,10 +400,11 @@ showGeneratedMetaTypeVariables varlist ctx_il =
   whenVerbose $ do
     metaTyVars <- readIORef varlist
     runOutput $ (outLn $ "generated " ++ (show $ length metaTyVars) ++ " meta type variables:")
-    forM_ metaTyVars (\mtv@(Meta _ r _) -> do
+    forM_ metaTyVars $ \mtv@(Meta _ r _) -> do
         t <- readIORef r
-        runOutput (outLn $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t))
-
+        if fmap isTau t /= Just False
+         then runOutput (outLn $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t)
+         else error $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t ++ " wasn't a tau!"
     runOutput $ (outLn "vvvv contextBindings:====================")
     runOutput $ (outCSLn Yellow (joinWith "\n" $ map show (contextBindings ctx_il)))
 
