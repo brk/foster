@@ -6,7 +6,7 @@
 
 module Foster.TypeAST(
   TypeAST(..), EPattern(..), E_VarAST(..), IntSizeBits(..), AnnVar
-, fosBoolType, MetaTyVar(..), Sigma, Rho, Tau
+, fosBoolType, MetaTyVar(..), Sigma, Rho, Tau, MTVQ(..)
 , minimalTupleAST
 , mkFnType, convertTyFormal
 , gFosterPrimOpsTable, primitiveDecls
@@ -41,8 +41,9 @@ data TypeAST =
          | TyVarAST         TyVar
          | MetaTyVar        MetaTyVar
 
-data MetaTyVar = Meta {
-                        mtvDesc       :: String
+data MTVQ = MTVSigma | MTVTau deriving (Eq)
+data MetaTyVar = Meta { mtvConstraint :: MTVQ
+                      , mtvDesc       :: String
                       , mtvUniq       :: Uniq
                       , mtvRef        :: TyRef
                       }

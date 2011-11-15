@@ -92,16 +92,17 @@ typecheckFnSCC scc (ctx, tcenv) = do
         bindingForFnAST f = do t <- fnTypeTemplate f
                                return $ pair2binding (fnAstName f, t)
 
-        typeTemplate :: Maybe TypeAST -> String -> Tc TypeAST
-        typeTemplate Nothing    name = newTcUnificationVar name
-        typeTemplate (Just ty) _name = return ty
+        typeTemplateSigma :: Maybe Sigma -> String -> Tc Sigma
+        typeTemplateSigma Nothing    name = newTcUnificationVarSigma name
+        typeTemplateSigma (Just ty) _name = return ty
 
-        annVarTemplate :: TypedId TypeAST -> Tc TypeAST
-        annVarTemplate v = typeTemplate (Just $ tidType v) (show $ tidIdent v)
+        annVarTemplate :: TypedId Sigma -> Tc Sigma
+        annVarTemplate v = typeTemplateSigma (Just $ tidType v) (show $ tidIdent v)
 
         fnTypeTemplate :: (FnAST TypeAST) -> Tc TypeAST
         fnTypeTemplate f = do
-          retTy  <- typeTemplate (fnRetType f) ("ret type for " ++ (T.unpack $ fnAstName f))
+          retTy  <- typeTemplateSigma (fnRetType f)
+                                   ("ret type for " ++ (T.unpack $ fnAstName f))
           argTys <- mapM annVarTemplate (fnFormals f)
           let fnTy = mkFnType argTys [retTy]
           case fnTyFormals f of
@@ -330,7 +331,7 @@ astOfParsedType typep =
         FnTypeP      s t cc cs -> do s' <- q s
                                      t' <- q t
                                      return $ FnTypeAST      s' t' cc cs
-        MetaPlaceholder desc -> do newTcUnificationVar desc
+        MetaPlaceholder desc -> do newTcUnificationVarTau desc
 
 desugarParsedModule :: ModuleAST FnAST TypeP ->
              Compiled (ModuleAST FnAST TypeAST)
@@ -402,9 +403,10 @@ showGeneratedMetaTypeVariables varlist ctx_il =
     runOutput $ (outLn $ "generated " ++ (show $ length metaTyVars) ++ " meta type variables:")
     forM_ metaTyVars $ \mtv -> do
         t <- readIORef (mtvRef mtv)
-        if fmap isTau t /= Just False
-         then runOutput (outLn $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t)
-         else error $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t ++ " wasn't a tau!"
+        let wasTau = fmap isTau t /= Just False
+        if mtvConstraint mtv == MTVTau && not wasTau
+         then error $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t ++ " wasn't a tau!"
+         else runOutput (outLn $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t)
     runOutput $ (outLn "vvvv contextBindings:====================")
     runOutput $ (outCSLn Yellow (joinWith "\n" $ map show (contextBindings ctx_il)))
 

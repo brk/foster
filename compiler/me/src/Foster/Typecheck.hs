@@ -110,8 +110,8 @@ typecheckBool rng b maybeExpTy = do
 --  G |- e1 >^ e2 ::: ()
 typecheckStore ctx rng e1 e2 = do
 -- {{{
-    u_slot <- newTcUnificationVar $ "slot_type"
-    u_expr <- newTcUnificationVar $ "expr_type"
+    u_slot <- newTcUnificationVarTau $ "slot_type"
+    u_expr <- newTcUnificationVarTau $ "expr_type"
     a2 <- typecheck ctx e2 (Just $ RefTypeAST u_slot)
     a1 <- typecheck ctx e1 (Just $            u_expr)
     equateTypes    u_slot                    u_expr    (Just "Store expression")
@@ -184,7 +184,7 @@ typecheckLetRec ctx0 rng bindings e mt = do
     verifyNonOverlappingVariableNames rng "rec" (map termBindingName bindings)
     -- Generate unification variables for the overall type of
     -- each binding.
-    unificationVars <- sequence [newTcUnificationVar $ T.unpack $
+    unificationVars <- sequence [newTcUnificationVarTau $ T.unpack $
                                   "letrec_" `prependedTo` (evarName v)
                                 | (TermBinding v _) <- bindings]
     ids <- sequence [tcFreshT (evarName v) | (TermBinding v _) <- bindings]
@@ -221,7 +221,7 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
   --  as well as successfully unify against the overall type.
 
   ascrutinee <- typecheck ctx scrutinee Nothing
-  u <- newTcUnificationVar "case"
+  u <- newTcUnificationVarTau "case"
   let checkBranch (pat, body) = do
       p <- checkPattern pat
       bindings <- extractPatternBindings ctx p (typeAST ascrutinee)
@@ -471,7 +471,7 @@ inst base = do
   -- TODO shallow zonk here
   case typeAST base of
      ForAllAST ktvs _rho -> do
-       taus <- genUnificationVarsLike ktvs (\n -> "type parameter " ++ vname base n)
+       taus <- genTauUnificationVarsLike ktvs (\n -> "type parameter " ++ vname base n)
        instWith (rangeOf base) base taus
      _rho -> return base
 
@@ -496,9 +496,9 @@ instWith rng aexpSigma taus = do
 vname (E_AnnVar _rng av) n = show n ++ " for " ++ T.unpack (identPrefix $ tidIdent av)
 vname _                  n = show n
 
-genUnificationVarsLike :: [a] -> (Int -> String) -> Tc [TypeAST]
-genUnificationVarsLike spine namegen = do
-  sequence [newTcUnificationVar (namegen n) | (_, n) <- zip spine [1..]]
+genTauUnificationVarsLike :: [a] -> (Int -> String) -> Tc [TypeAST]
+genTauUnificationVarsLike spine namegen = do
+  sequence [newTcUnificationVarTau (namegen n) | (_, n) <- zip spine [1..]]
 
 -----------------------------------------------------------------------
 
@@ -538,7 +538,7 @@ typecheckCall ctx rng base args maybeExpTy = do
 
          -- Generate unification vars                 (?a, ?b)
          -- corresponding to the bound type variables ('a, 'b).
-         unificationVars <- genUnificationVarsLike ktyvars
+         unificationVars <- genTauUnificationVarsLike ktyvars
                                 (\n -> "type parameter " ++ vname eb n)
 
          let tyvarsAndMetavars = List.zip (tyvarsOf ktyvars) unificationVars
@@ -590,8 +590,8 @@ typecheckCall ctx rng base args maybeExpTy = do
             tcLift $ putStrLn ("typecheckCall ctx rng base args _maybeExpTy: " ++ show maybeExpTy)
             AnnTuple eargs <- typecheck ctx args Nothing
 
-            ft <- newTcUnificationVar $ "ret type for " ++ mtvDesc m
-            rt <- newTcUnificationVar $ "arg type for " ++ mtvDesc m
+            rt <- newTcUnificationVarTau   $ "arg type for " ++ mtvDesc m
+            ft <- newTcUnificationVarSigma $ "ret type for " ++ mtvDesc m
             -- TODO this should sometimes be proc, not func...
             let fnty = mkFuncTy ft rt
 

@@ -100,11 +100,14 @@ readTcMeta m = readTcRef (mtvRef m)
 writeTcMeta :: MetaTyVar -> Tau -> Tc ()
 writeTcMeta m v = writeTcRef (mtvRef m) (Just v)
 
-newTcUnificationVar :: String -> Tc TypeAST
-newTcUnificationVar desc = do
+newTcUnificationVarSigma d = newTcUnificationVar_ MTVSigma d
+newTcUnificationVarTau   d = newTcUnificationVar_ MTVTau d
+
+newTcUnificationVar_ :: MTVQ -> String -> Tc TypeAST
+newTcUnificationVar_ q desc = do
     u    <- newTcUniq
     ref  <- newTcRef Nothing
-    meta <- tcRecordUnificationVar (Meta desc u ref)
+    meta <- tcRecordUnificationVar (Meta q desc u ref)
     return (MetaTyVar meta)
       where
         newTcRef :: a -> Tc (IORef a)
