@@ -16,6 +16,7 @@ TODO: minor optimizations
   doesn't do any heap allocation (when we're returning an immutable value
   identical to (some subterm of) the inspected value.
 * Perform CSE when doing pattern match compilation.
+* Make sure linear chains of variable remappings don't trigger O(n^2) behavior.
 
 TODO: less minor optimizations
 ------------------------------

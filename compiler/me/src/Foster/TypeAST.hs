@@ -52,6 +52,14 @@ type TyRef = IORef (Maybe TypeAST)
     -- Nothing: type variable not substituted
     -- Just ty: ty var has been substituted by ty
 
+instance Eq MetaTyVar where
+  m1 == m2 = case (mtvUniq m1 == mtvUniq m2, mtvRef m1 == mtvRef m2) of
+       (True,  True)  -> True
+       (False, False) -> False
+       _ -> error $ "Malformed meta type variables "
+         ++ show (mtvUniq m1) ++ "@" ++ (mtvDesc m1) ++ " and "
+         ++ show (mtvUniq m2) ++ "@" ++ (mtvDesc m2) ++ ": mismatch between uniqs and refs!"
+
 instance Show TypeAST where
     show x = case x of
         PrimIntAST         size         -> "(PrimIntAST " ++ show size ++ ")"

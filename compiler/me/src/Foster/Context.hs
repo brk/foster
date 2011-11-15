@@ -88,17 +88,11 @@ tcLift action = Tc $ \_env -> action >>= retOK
 tcFails :: [Output] -> Tc a
 tcFails errs = Tc $ \_env -> return $ Errors errs
 
-readTcRef :: IORef a -> Tc a
-readTcRef r = tcLift $ readIORef r
-
-writeTcRef :: IORef a -> a -> Tc ()
-writeTcRef r v = tcLift $ writeIORef r v
-
 readTcMeta :: MetaTyVar -> Tc (Maybe Tau)
-readTcMeta m = readTcRef (mtvRef m)
+readTcMeta m = tcLift $ readIORef (mtvRef m)
 
 writeTcMeta :: MetaTyVar -> Tau -> Tc ()
-writeTcMeta m v = writeTcRef (mtvRef m) (Just v)
+writeTcMeta m v = tcLift $ writeIORef (mtvRef m) (Just v)
 
 newTcUnificationVarSigma d = newTcUnificationVar_ MTVSigma d
 newTcUnificationVarTau   d = newTcUnificationVar_ MTVTau d

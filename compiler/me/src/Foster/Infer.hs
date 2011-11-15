@@ -152,7 +152,7 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
 tcUnifyVar :: MetaTyVar -> TypeAST -> TypeSubst -> [TypeConstraint] -> Tc UnifySoln
 
 -- Ignore attempts to unify a meta type variable with itself.
-tcUnifyVar m1 (MetaTyVar m2) tysub constraints | metaTyVarsEqual m1 m2
+tcUnifyVar m1 (MetaTyVar m2) tysub constraints | m1 == m2
   = tcUnifyLoop constraints tysub
 
 tcUnifyVar m ty tysub constraints = do
@@ -163,12 +163,4 @@ tcUnifyVar m ty tysub constraints = do
         tySubstConstraints constraints tysub = map tySub constraints
           where q = tySubst tysub
                 tySub (TypeConstrEq t1 t2) = TypeConstrEq (q t1) (q t2)
-
-metaTyVarsEqual m1 m2 =
-  case (mtvUniq m1 == mtvUniq m2, mtvRef m1 == mtvRef m2) of
-       (True,  True)  -> True
-       (False, False) -> False
-       _ -> error $ "Malformed meta type variables "
-         ++ show (mtvUniq m1) ++ "@" ++ (mtvDesc m1) ++ " and "
-         ++ show (mtvUniq m2) ++ "@" ++ (mtvDesc m2) ++ ": mismatch between uniqs and refs!"
 

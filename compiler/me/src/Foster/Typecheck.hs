@@ -754,14 +754,21 @@ verifyNonOverlappingVariableNames rng name varNames = do
 -- types is updated according to the unification solution.
 equateTypes :: TypeAST -> TypeAST -> Maybe String -> Tc ()
 equateTypes t1 t2 msg = do
-  tcOnError (liftM out msg) (tcUnifyTypes t1 t2) (\(Just soln) -> do
+  tcOnError (liftM out msg) (tcUnifyTypes t1 t2) $ \(Just soln) -> do
      let univars = concatMap collectUnificationVars [t1, t2]
-     forM_ univars (\m -> do
-       case Map.lookup (mtvUniq m) soln of
-         Nothing -> return ()
-         Just t2 -> do mt1 <- readTcMeta m
-                       case mt1 of Nothing -> writeTcMeta m t2
-                                   Just t1 -> equateTypes t1 t2 msg))
+     forM_ univars $ \m -> do
+       mt1 <- readTcMeta m
+       case (mt1, Map.lookup (mtvUniq m) soln) of
+         (_,       Nothing)          -> return () -- no type to update to.
+         (Just x1, Just x2)          -> equateTypes x1 x2 msg
+         (Nothing, Just (MetaTyVar m2)) -> do
+                         mt2 <- readTcMeta m2
+                         case mt2 of
+                             Just x2 -> equateTypes (MetaTyVar m) x2 msg
+                             Nothing -> writeTcMeta m t2
+         (Nothing, Just x2) -> case m `elem` collectUnificationVars x2 of
+                             False   -> writeTcMeta m x2
+                             True    -> occurdCheck m x2
   where
      collectUnificationVars :: TypeAST -> [MetaTyVar]
      collectUnificationVars x =
@@ -776,6 +783,9 @@ equateTypes t1 t2 msg = do
              MetaTyVar     m       -> [m]
              RefTypeAST    ty      -> collectUnificationVars ty
              ArrayTypeAST  ty      -> collectUnificationVars ty
+
+     occurdCheck m t = tcFails [out $ "Occurs check for " ++ show (MetaTyVar m)
+                                   ++ " failed in " ++ show t]
 
 bindingForVar v = TermVarBinding (identPrefix $ tidIdent v) v
 

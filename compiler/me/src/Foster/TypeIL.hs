@@ -84,7 +84,7 @@ ilOf ctx typ = do
           Nothing -> tcFails [out $ "Unable to find kind of type variable " ++ show typ]
           Just k  -> return $ TyVarIL tv k
      MetaTyVar m -> do
-        mty <- readTcRef (mtvRef m)
+        mty <- readTcMeta m
         case mty of
           Nothing -> tcFails [out $ "Found un-unified unification variable "
                                 ++ show (mtvUniq m) ++ "(" ++ mtvDesc m ++ ")!"]
