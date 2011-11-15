@@ -93,7 +93,11 @@ parseTypeFormal pbtyformal =
     TypeFormalAST name kind
 
 parseFn pbexpr = do range <- parseRange pbexpr
-                    [body] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
+                    bodies <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
+                    let body = case bodies of
+                               [b] -> b
+                               [] -> E_CompilesAST range Nothing
+                               _ -> error $ "Can't parse fn with many bodies!"
                     let name  = getName "fn" $ PbExpr.name pbexpr
                     let formals = toList $ PbExpr.formals pbexpr
                     let mretty = parseReturnType pbexpr

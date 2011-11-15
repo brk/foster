@@ -297,14 +297,14 @@ std::vector<TypeFormal> parseTyFormals(pTree t, KindAST* defaultKind) {
 
 // ^(VAL_ABS ^(FORMALS formals) ^(MU tyvar_decl*) e_seq?)
 ExprAST* parseValAbs(pTree tree) {
-  ASSERT(getChildCount(tree) == 3) << "Unable to parse empty body: "
-                                   << show(rangeOf(tree));
   std::vector<Formal> formals;
   parseFormals(formals, child(tree, 0));
   std::vector<TypeFormal> tyVarFormals = parseTyFormals(child(tree, 1),
                                                         getDefaultKind());
   TypeAST* resultType = NULL;
-  ExprAST* resultSeq =  parseSeq(child(tree, 2));
+  ExprAST* resultSeq = getChildCount(tree) == 3
+                         ? parseSeq(child(tree, 2))
+                         : new SeqAST(Exprs(), rangeOf(tree));
   return new ValAbs(formals, tyVarFormals, resultSeq, resultType, rangeOf(tree));
 }
 
