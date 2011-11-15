@@ -254,7 +254,7 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
                             return $ P_Tuple r ps
     -----------------------------------------------------------------------
 
-    getCtorInfoForCtor :: Context TypeAST -> T.Text -> Tc (CtorInfo TypeAST)
+    getCtorInfoForCtor :: Context TypeAST -> T.Text -> Tc (CtorInfo Sigma)
     getCtorInfoForCtor ctx ctorName = do
       let ctorInfos = contextCtorInfo ctx
       case Map.lookup ctorName ctorInfos of
@@ -268,7 +268,7 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
     -- Recursively match a pattern against a type and extract the (typed)
     -- binders introduced by the pattern.
     extractPatternBindings :: Context TypeAST -> Pattern -> TypeAST
-                           -> Tc [ContextBinding TypeAST]
+                           -> Tc [ContextBinding Sigma]
     extractPatternBindings _ctx (P_Wildcard _   ) _  = return []
     extractPatternBindings _ctx (P_Variable _ id) ty = return [varbind id ty]
 
@@ -341,13 +341,13 @@ typecheckTyApp ctx rng e t1tn _maybeExpTyTODO = do
                    ++ " non-ForAll type "]
 -- }}}
 
-typecheckSigma :: Context TypeAST -> ExprT -> Maybe TypeAST -> Tc AnnExpr
-typecheckSigma ctx expr maybeExpTy =
+typecheckSigma :: Context TypeAST -> ExprT -> Maybe Sigma -> Tc AnnExpr
+typecheckSigma ctx expr maybeExpSigma =
     case expr of
       E_VarAST rng v -> do
         tcWithScope expr $ do
            annexpr <- typecheckVarSigma ctx rng (evarName v)
-           case maybeExpTy of
+           case maybeExpSigma of
                Nothing -> return ()
                Just expTy ->
                     equateTypes (typeAST annexpr) expTy
@@ -356,7 +356,7 @@ typecheckSigma ctx expr maybeExpTy =
                               ++ "\n\t\texpected: " ++ (show $ expTy)
                               ++ show (rangeOf expr))
            return annexpr
-      _ -> typecheck ctx expr maybeExpTy
+      _ -> typecheck ctx expr maybeExpSigma
 
 -----------------------------------------------------------------------
 
@@ -586,16 +586,16 @@ typecheckCall ctx rng base args maybeExpTy = do
             AnnTuple eargs <- typecheck ctx args (Just formaltype)
             typecheckCallWithBaseFnType eargs eb fnty rng
 
-      m@(MetaTyVar (Meta _ _ desc)) -> do
+      MetaTyVar m -> do
             tcLift $ putStrLn ("typecheckCall ctx rng base args _maybeExpTy: " ++ show maybeExpTy)
             AnnTuple eargs <- typecheck ctx args Nothing
 
-            ft <- newTcUnificationVar $ "ret type for " ++ desc
-            rt <- newTcUnificationVar $ "arg type for " ++ desc
+            ft <- newTcUnificationVar $ "ret type for " ++ mtvDesc m
+            rt <- newTcUnificationVar $ "arg type for " ++ mtvDesc m
             -- TODO this should sometimes be proc, not func...
             let fnty = mkFuncTy ft rt
 
-            equateTypes m fnty Nothing
+            equateTypes (MetaTyVar m) fnty Nothing
             typecheckCallWithBaseFnType eargs eb fnty rng
 
       _ -> tcFails [out $ "Called expression had unexpected type: "
@@ -756,8 +756,8 @@ equateTypes :: TypeAST -> TypeAST -> Maybe String -> Tc ()
 equateTypes t1 t2 msg = do
   tcOnError (liftM out msg) (tcUnifyTypes t1 t2) (\(Just soln) -> do
      let univars = concatMap collectUnificationVars [t1, t2]
-     forM_ univars (\m@(Meta u _ _) -> do
-       case Map.lookup u soln of
+     forM_ univars (\m -> do
+       case Map.lookup (mtvUniq m) soln of
          Nothing -> return ()
          Just t2 -> do mt1 <- readTcMeta m
                        case mt1 of Nothing -> writeTcMeta m t2

@@ -6,7 +6,7 @@
 
 module Foster.TypeAST(
   TypeAST(..), EPattern(..), E_VarAST(..), IntSizeBits(..), AnnVar
-, fosBoolType, MetaTyVar(Meta), Sigma, Rho, Tau
+, fosBoolType, MetaTyVar(..), Sigma, Rho, Tau
 , minimalTupleAST
 , mkFnType, convertTyFormal
 , gFosterPrimOpsTable, primitiveDecls
@@ -28,22 +28,26 @@ type Tau   = TypeAST -- No ForAlls anywhere
 
 data TypeAST =
            PrimIntAST       IntSizeBits
-         | TyConAppAST      DataTypeName [TypeAST]
-         | TupleTypeAST     [TypeAST]
-         | FnTypeAST        { fnTypeDomain :: TypeAST
-                            , fnTypeRange  :: TypeAST
+         | TyConAppAST      DataTypeName [Sigma]
+         | TupleTypeAST     [Sigma]
+         | CoroTypeAST      Sigma Sigma
+         | RefTypeAST       Sigma
+         | ArrayTypeAST     Sigma
+         | FnTypeAST        { fnTypeDomain :: Sigma
+                            , fnTypeRange  :: Sigma
                             , fnTypeCallConv :: CallConv
                             , fnTypeProcOrFunc :: ProcOrFunc }
-         | CoroTypeAST      TypeAST TypeAST
          | ForAllAST        [(TyVar, Kind)] Rho
          | TyVarAST         TyVar
          | MetaTyVar        MetaTyVar
-         | RefTypeAST       TypeAST
-         | ArrayTypeAST     TypeAST
 
-data MetaTyVar = Meta Uniq TyRef String
+data MetaTyVar = Meta {
+                        mtvDesc       :: String
+                      , mtvUniq       :: Uniq
+                      , mtvRef        :: TyRef
+                      }
 
-type TyRef = IORef (Maybe Tau)
+type TyRef = IORef (Maybe TypeAST)
     -- Nothing: type variable not substituted
     -- Just ty: ty var has been substituted by ty
 
@@ -56,7 +60,7 @@ instance Show TypeAST where
         CoroTypeAST  s t                -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
         ForAllAST  tvs rho              -> "(ForAll " ++ show tvs ++ ". " ++ show rho ++ ")"
         TyVarAST   tv                   -> show tv
-        MetaTyVar (Meta u _tyref desc)  -> "(~!" ++ show u ++ ":" ++ desc ++ ")"
+        MetaTyVar m                     -> "(~!" ++ show (mtvUniq m) ++ ":" ++ mtvDesc m ++ ")"
         RefTypeAST    ty                -> "(Ref " ++ show ty ++ ")"
         ArrayTypeAST  ty                -> "(Array " ++ show ty ++ ")"
 
@@ -70,7 +74,7 @@ instance Structured TypeAST where
             CoroTypeAST  _ _               -> out $ "CoroTypeAST"
             ForAllAST  tvs _rho            -> out $ "ForAllAST " ++ show tvs
             TyVarAST   tv                  -> out $ "TyVarAST " ++ show tv
-            MetaTyVar (Meta _ _tyref desc) -> out $ "MetaTyVar " ++ desc
+            MetaTyVar m                    -> out $ "MetaTyVar " ++ mtvDesc m
             RefTypeAST    _                -> out $ "RefTypeAST"
             ArrayTypeAST  _                -> out $ "ArrayTypeAST"
 

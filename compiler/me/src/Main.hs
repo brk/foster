@@ -400,8 +400,8 @@ showGeneratedMetaTypeVariables varlist ctx_il =
   whenVerbose $ do
     metaTyVars <- readIORef varlist
     runOutput $ (outLn $ "generated " ++ (show $ length metaTyVars) ++ " meta type variables:")
-    forM_ metaTyVars $ \mtv@(Meta _ r _) -> do
-        t <- readIORef r
+    forM_ metaTyVars $ \mtv -> do
+        t <- readIORef (mtvRef mtv)
         if fmap isTau t /= Just False
          then runOutput (outLn $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t)
          else error $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t ++ " wasn't a tau!"

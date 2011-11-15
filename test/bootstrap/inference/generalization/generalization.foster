@@ -7,9 +7,9 @@ type case B of $B Int32;
 
 id = { forall t:Boxed, x : t => x };
 
-foo2 = { (id id); };
+
 //foo3 = { (id id) id; };
-//foo4 = { (id (B 0)); };
+foo2 = { (id (B 0)); };
 
 polyretval = { i : Int32 =>
              { forall b:Boxed, x:b => x } };

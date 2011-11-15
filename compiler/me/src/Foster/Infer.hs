@@ -30,9 +30,9 @@ emptyTypeSubst = Map.empty
 extractSubstTypes :: [MetaTyVar] -> TypeSubst -> Tc [TypeAST]
 extractSubstTypes metaVars tysub = do
     mapM lookup metaVars where
-         lookup m@(Meta uniq _ _desc) =
+         lookup m =
                fromMaybe (return $ MetaTyVar m)
-                         (fmap return $ Map.lookup uniq tysub)
+                         (fmap return $ Map.lookup (mtvUniq m) tysub)
 
 assocFilterOut :: Eq a => [(a,b)] -> [a] -> [(a,b)]
 assocFilterOut lst keys = [(a,b) | (a,b) <- lst, not(List.elem a keys)]
@@ -61,7 +61,7 @@ tySubst :: TypeSubst -> TypeAST -> TypeAST
 tySubst subst ty =
     let q = tySubst subst in
     case ty of
-        MetaTyVar (Meta u _ _) -> Map.findWithDefault ty u subst
+        MetaTyVar m            -> Map.findWithDefault ty (mtvUniq m) subst
         PrimIntAST   {}        -> ty
         TyVarAST     {}        -> ty
         TyConAppAST  nm tys    -> TyConAppAST  nm (map q tys)
@@ -90,7 +90,7 @@ tcUnifyLoop ((TypeConstrEq (PrimIntAST I32) (PrimIntAST I32)):constraints) tysub
   = tcUnifyLoop constraints tysub
 
 tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
-  --tcLift $ putStrLn ("tcUnifyLoop: t1 = " ++ show t1 ++ "; t2 = " ++ show t2)
+  tcLift $ putStrLn ("tcUnifyLoop: t1 = " ++ show t1 ++ "; t2 = " ++ show t2)
   case (t1, t2) of
     ((PrimIntAST n1), (PrimIntAST n2)) ->
       if n1 == n2 then tcUnifyLoop constraints tysub
@@ -155,20 +155,20 @@ tcUnifyVar :: MetaTyVar -> TypeAST -> TypeSubst -> [TypeConstraint] -> Tc UnifyS
 tcUnifyVar m1 (MetaTyVar m2) tysub constraints | metaTyVarsEqual m1 m2
   = tcUnifyLoop constraints tysub
 
-tcUnifyVar (Meta uniq _ _) ty tysub constraints = do
+tcUnifyVar m ty tysub constraints = do
     --tcLift $ putStrLn $ "================ Unifying meta var " ++ show uniq ++ " with " ++ show ty
-    let tysub' = (Map.insert uniq ty tysub)
-    tcUnifyLoop (tySubstConstraints constraints (Map.singleton uniq ty)) tysub'
+    let tysub' = (Map.insert (mtvUniq m) ty tysub)
+    tcUnifyLoop (tySubstConstraints constraints (Map.singleton (mtvUniq m) ty)) tysub'
       where
         tySubstConstraints constraints tysub = map tySub constraints
           where q = tySubst tysub
                 tySub (TypeConstrEq t1 t2) = TypeConstrEq (q t1) (q t2)
 
-metaTyVarsEqual (Meta u1 r1 d1) (Meta u2 r2 d2) =
-  case (u1 == u2, r1 == r2) of
+metaTyVarsEqual m1 m2 =
+  case (mtvUniq m1 == mtvUniq m2, mtvRef m1 == mtvRef m2) of
        (True,  True)  -> True
        (False, False) -> False
        _ -> error $ "Malformed meta type variables "
-                      ++ show u1 ++ "@" ++ d1 ++ " and "
-                      ++ show u2 ++ "@" ++ d2 ++ ": mismatch between uniqs and refs!"
+         ++ show (mtvUniq m1) ++ "@" ++ (mtvDesc m1) ++ " and "
+         ++ show (mtvUniq m2) ++ "@" ++ (mtvDesc m2) ++ ": mismatch between uniqs and refs!"
 

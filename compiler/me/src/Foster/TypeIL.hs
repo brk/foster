@@ -83,11 +83,11 @@ ilOf ctx typ = do
         case Prelude.lookup tv (contextTypeBindings ctx) of
           Nothing -> tcFails [out $ "Unable to find kind of type variable " ++ show typ]
           Just k  -> return $ TyVarIL tv k
-     MetaTyVar (Meta u tyref desc) -> do
-        mty <- readTcRef tyref
+     MetaTyVar m -> do
+        mty <- readTcRef (mtvRef m)
         case mty of
           Nothing -> tcFails [out $ "Found un-unified unification variable "
-                                  ++ show u ++ "(" ++ desc ++ ")!"]
+                                ++ show (mtvUniq m) ++ "(" ++ mtvDesc m ++ ")!"]
           Just t  -> q t
 
 extendTyCtx ctx ktvs = ctx { contextTypeBindings =
