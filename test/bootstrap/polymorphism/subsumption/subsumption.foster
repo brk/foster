@@ -8,6 +8,9 @@ f1 = { f:{B => B => B} => B 0 };
 // f2 = { f: {forall a, a => a => a } => B 0 };
 
 threedotthree-partone = {
+  // f1 ::            { B => B => B } => B
+  // k  :: forall a b,{ a => b => b };
+  // So k must be instantiated as k:[B,B].
   f1 k;
 };
 

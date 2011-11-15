@@ -28,7 +28,7 @@ typecheck :: Context TypeAST -> ExprT -> Maybe TypeAST -> Tc AnnExpr
 typecheck ctx expr maybeExpTy =
   tcWithScope expr $ do
     annexpr <- case expr of
-      E_VarAST rng v            -> typecheckVar    ctx rng (evarName v)
+      E_VarAST rng v            -> typecheckVarRho ctx rng (evarName v)
       E_IntAST  rng txt         -> typecheckInt        rng txt        maybeExpTy
       E_BoolAST rng b           -> typecheckBool       rng b          maybeExpTy
       E_CallAST rng base argtup -> typecheckCall   ctx rng base
@@ -126,10 +126,12 @@ typecheckAlloc ctx rng a maybeExpTy = do
     ea <- typecheck ctx a expTy
     return (AnnAlloc rng ea)
 -----------------------------------------------------------------------
+
 -- Resolve the given name as either a variable or a primitive reference.
-typecheckVar ctx rng name =
+typecheckVarSigma ctx rng name =
   case termVarLookup name (contextBindings ctx) of
-    Just (TypedId t id) -> return $ E_AnnVar rng (TypedId t id)
+    Just (TypedId sigma id) -> do
+         return $ E_AnnVar rng (TypedId sigma id)
     Nothing   ->
       case Map.lookup name (primitiveBindings ctx) of
         Just avar -> return $ AnnPrimitive rng avar
@@ -138,6 +140,9 @@ typecheckVar ctx rng name =
                                  ++ showSourceRange rng
                                  ++ "ctx: "++ show (contextBindings ctx)
                                  ++ "\nhist: " , msg]
+
+typecheckVarRho ctx rng name = do typecheckVarSigma ctx rng name >>= inst
+
 -----------------------------------------------------------------------
 
 --  G         |- e1 ::: t1
@@ -321,25 +326,37 @@ tyvarsOf ktyvars = map (\(tv,_k) -> tv) ktyvars
 -- ------------------------------------------
 -- G |- e :[ t1..tn ]  ::: rho{t1..tn/a1..an}
 
-typecheckTyApp ctx rng a t _maybeExpTyTODO = do
+typecheckTyApp ctx rng e t1tn _maybeExpTyTODO = do
 -- {{{
-    let tys = listize t
-    ea <- typecheck ctx a Nothing
-    case (typeAST ea) of
-      ForAllAST ktyvars rho -> do
-        sanityCheck (List.length tys == List.length ktyvars)
-                    "typecheckTyApp: arity mismatch"
-        let tyvarsAndTys = List.zip (tyvarsOf ktyvars) tys
-        return $ E_AnnTyApp rng (parSubstTy tyvarsAndTys rho) ea t
+    aeSigma <- typecheckSigma ctx e Nothing
+    case typeAST aeSigma of
+      ForAllAST {} -> do instWith rng aeSigma (listize t1tn)
       MetaTyVar _ -> do
         tcFails [out $ "Cannot instantiate unknown type of term:"
-                ,out $ highlightFirstLine $ rangeOf ea
+                ,out $ highlightFirstLine $ rangeOf aeSigma
                 ,out $ "Try adding an explicit type annotation."
                 ]
       _othertype ->
         tcFails [out $ "Cannot apply type args to expression of"
                    ++ " non-ForAll type "]
 -- }}}
+
+typecheckSigma :: Context TypeAST -> ExprT -> Maybe TypeAST -> Tc AnnExpr
+typecheckSigma ctx expr maybeExpTy =
+    case expr of
+      E_VarAST rng v -> do
+        tcWithScope expr $ do
+           annexpr <- typecheckVarSigma ctx rng (evarName v)
+           case maybeExpTy of
+               Nothing -> return ()
+               Just expTy ->
+                    equateTypes (typeAST annexpr) expTy
+                      (Just $ outToString (textOf expr 0)
+                              ++ "\n\t\thas type: " ++ (show $ typeAST annexpr)
+                              ++ "\n\t\texpected: " ++ (show $ expTy)
+                              ++ show (rangeOf expr))
+           return annexpr
+      _ -> typecheck ctx expr maybeExpTy
 
 -----------------------------------------------------------------------
 
@@ -440,12 +457,50 @@ typecheckCallWithBaseFnType argtup eb basetype range =
             tcFails $ (out $ "Called value was not a function: "):ebStruct:
                                        [out $ " :: " ++ (show $ typeAST eb)]
 
-vname (E_VarAST _rng ev) n = show n ++ " for " ++ T.unpack (evarName ev)
+-----------------------------------------------------------------------
+
+isRho (ForAllAST _ _) = False
+isRho _               = True
+
+tuplizeNE []   = error "Preconditition for tuplizeNE violated!"
+tuplizeNE [ty] = ty
+tuplizeNE tys  = TupleTypeAST tys
+
+inst :: AnnExpr -> Tc AnnExpr -- Rho
+inst base = do
+  -- TODO shallow zonk here
+  case typeAST base of
+     ForAllAST ktvs _rho -> do
+       taus <- genUnificationVarsLike ktvs (\n -> "type parameter " ++ vname base n)
+       instWith (rangeOf base) base taus
+     _rho -> return base
+
+instWith :: SourceRange -> AnnExpr -> [Tau] -> Tc AnnExpr -- Rho
+instWith _          aexpSigma [] = do
+        sanityCheck (isRho $ typeAST aexpSigma)
+                     "Tried to instantiate a sigma with no types!"
+        return aexpSigma
+instWith rng aexpSigma taus = do
+    -- TODO shallow zonk here
+    case typeAST aexpSigma of
+        ForAllAST ktvs rho -> do
+            sanityCheck (List.length taus == List.length ktvs)
+                        ("Arity mismatch in instWith: can't instantiate"
+                        ++ show (List.length ktvs) ++ " type variables with "
+                        ++ show (List.length taus) ++ " types!")
+            let tyvarsAndTys = List.zip (tyvarsOf ktvs) taus
+            return $ E_AnnTyApp rng (parSubstTy tyvarsAndTys rho)
+                                    aexpSigma (tuplizeNE taus)
+        _ -> tcFails [out $ "Precondition violated: instWith expected ForAll type!"]
+
+vname (E_AnnVar _rng av) n = show n ++ " for " ++ T.unpack (identPrefix $ tidIdent av)
 vname _                  n = show n
 
 genUnificationVarsLike :: [a] -> (Int -> String) -> Tc [TypeAST]
 genUnificationVarsLike spine namegen = do
   sequence [newTcUnificationVar (namegen n) | (_, n) <- zip spine [1..]]
+
+-----------------------------------------------------------------------
 
 -- Typecheck the function first, then the args.
 -- Example the interior call to foo in
@@ -484,7 +539,7 @@ typecheckCall ctx rng base args maybeExpTy = do
          -- Generate unification vars                 (?a, ?b)
          -- corresponding to the bound type variables ('a, 'b).
          unificationVars <- genUnificationVarsLike ktyvars
-                                (\n -> "type parameter " ++ vname base n)
+                                (\n -> "type parameter " ++ vname eb n)
 
          let tyvarsAndMetavars = List.zip (tyvarsOf ktyvars) unificationVars
 
@@ -627,7 +682,8 @@ typecheckFn' ctx f cc expArgType expBodyType = do
                          globalvars = concatMap tmBindingId (globalBindings ctx)
                          tmBindingId (TermVarBinding _ tid) = [tidIdent tid]
         freeAnns <- let rng = fnAstRange f in
-                    mapM (\id -> typecheckVar ctx rng (identPrefix id)) identsFree
+                    mapM (\id -> typecheckVarSigma ctx rng (identPrefix id))
+                         identsFree
         return $ [tid | E_AnnVar _ tid <- freeAnns]
 
     -- | Verify that the given formals have distinct names,

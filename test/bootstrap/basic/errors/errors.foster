@@ -66,7 +66,11 @@ main = {
   expect_i1 true;
   print_i1 (__COMPILES__ { i : Int32 => { forall b:Boxed, x:b => x } });
 
-  expect_i1 true; print_i1 (__COMPILES__ (id id));
+  // Hmm... should this actually compile?
+  // The issue is that this is translated to id:[?a -> ?b] id:[?c -> ?d]
+  // which has overall type ?c -> ?d, but those unification variables aren't
+  // unified. We can generalize in this particular case, but not in general.
+  //expect_i1 true; print_i1 (__COMPILES__ (id id));
 };
 
 id = { forall t:Boxed, x : t => x };
