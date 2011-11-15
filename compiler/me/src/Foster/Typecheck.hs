@@ -326,19 +326,20 @@ tyvarsOf ktyvars = map (\(tv,_k) -> tv) ktyvars
 -- ------------------------------------------
 -- G |- e :[ t1..tn ]  ::: rho{t1..tn/a1..an}
 
-typecheckTyApp ctx rng e t1tn _maybeExpTyTODO = do
+typecheckTyApp ctx rng e mb_t1tn _maybeExpTyTODO = do
 -- {{{
     aeSigma <- typecheckSigma ctx e Nothing
-    case typeAST aeSigma of
-      ForAllAST {} -> do instWith rng aeSigma (listize t1tn)
-      MetaTyVar _ -> do
+    case (mb_t1tn, typeAST aeSigma) of
+      (Nothing  , _           ) -> return aeSigma
+      (Just t1tn, ForAllAST {}) -> do instWith rng aeSigma (listize t1tn)
+      (_        , MetaTyVar _ ) -> do
         tcFails [out $ "Cannot instantiate unknown type of term:"
                 ,out $ highlightFirstLine $ rangeOf aeSigma
                 ,out $ "Try adding an explicit type annotation."
                 ]
-      _othertype ->
+      (_        , othertype   ) -> do
         tcFails [out $ "Cannot apply type args to expression of"
-                   ++ " non-ForAll type "]
+                   ++ " non-ForAll type: " ++ show othertype]
 -- }}}
 
 typecheckSigma :: Context TypeAST -> ExprT -> Maybe Sigma -> Tc AnnExpr

@@ -115,7 +115,7 @@ message Expr {
   repeated TypeFormal type_formals = 27;
 
   // AnnTyApp
-  optional Type ty_app_arg_type = 29;
+  repeated Type ty_app_arg_type = 29;
 }
 
 message PBLet {

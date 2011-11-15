@@ -38,6 +38,7 @@ instance Show TypeP where
         RefTypeP    ty                -> "(Ref " ++ show ty ++ ")"
         ArrayTypeP  ty                -> "(Array " ++ show ty ++ ")"
         MetaPlaceholder s             -> "??" ++ s
+
 instance Structured TypeP where
     textOf e _width =
         case e of
@@ -64,3 +65,4 @@ instance Structured TypeP where
             RefTypeP    ty               -> [ty]
             ArrayTypeP  ty               -> [ty]
             MetaPlaceholder _            -> []
+

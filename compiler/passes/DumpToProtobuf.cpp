@@ -253,8 +253,12 @@ void CallAST::dump(DumpToProtobufPass* pass) {
 void ETypeAppAST::dump(DumpToProtobufPass* pass) {
   processExprAST(pass->current, this, pb::Expr::TY_APP);
   dumpChildren(pass, this);
-  DumpTypeToProtobufPass dt(pass->current->mutable_ty_app_arg_type());
-  this->typeArg->dump(&dt);
+
+  pass->current->mutable_ty_app_arg_type()->Reserve(this->typeArgs.size());
+  for (size_t i = 0; i < this->typeArgs.size(); ++i) {
+    DumpTypeToProtobufPass dt(pass->current->add_ty_app_arg_type());
+    this->typeArgs[i]->dump(&dt);
+  }
 }
 
 void TupleExprAST::dump(DumpToProtobufPass* pass) {

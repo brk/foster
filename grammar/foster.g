@@ -79,7 +79,7 @@ phrase  :       lvalue+                         -> ^(PHRASE lvalue+);
 lvalue  :       atom suffix*                    -> ^(LVALUE atom suffix*);
 
 type_application
-        :	':[' t (',' t)* ']'             -> ^(VAL_TYPE_APP t+)    // type application
+        :	':[' (t (',' t)*)? ']'          -> ^(VAL_TYPE_APP t*)    // type application
         ;
 
 suffix  :       type_application

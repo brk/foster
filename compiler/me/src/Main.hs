@@ -405,7 +405,7 @@ showGeneratedMetaTypeVariables varlist ctx_il =
         t <- readIORef (mtvRef mtv)
         let wasTau = fmap isTau t /= Just False
         if mtvConstraint mtv == MTVTau && not wasTau
-         then error $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t ++ " wasn't a tau!"
+         then runOutput (outLn $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t) -- error $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t ++ " wasn't a tau!"
          else runOutput (outLn $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t)
     runOutput $ (outLn "vvvv contextBindings:====================")
     runOutput $ (outCSLn Yellow (joinWith "\n" $ map show (contextBindings ctx_il)))

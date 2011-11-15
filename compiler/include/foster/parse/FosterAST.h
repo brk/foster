@@ -122,10 +122,11 @@ struct CallAST : public ExprAST {
 
 // e[ty]
 struct ETypeAppAST : public ExprAST {
-  TypeAST* typeArg;
-  explicit ETypeAppAST(TypeAST* overallType, ExprAST* base, TypeAST* arg,
-                    foster::SourceRange sourceRange)
-      : ExprAST("ETypeAppAST", sourceRange), typeArg(arg) {
+  std::vector<TypeAST*> typeArgs;
+  explicit ETypeAppAST(TypeAST* overallType, ExprAST* base,
+                       const std::vector<TypeAST*>& args,
+                       foster::SourceRange sourceRange)
+      : ExprAST("ETypeAppAST", sourceRange), typeArgs(args) {
     parts.push_back(base);
   }
   virtual void dump(DumpToProtobufPass* pass);

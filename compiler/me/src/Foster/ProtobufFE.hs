@@ -96,8 +96,7 @@ parseFn pbexpr = do range <- parseRange pbexpr
                     bodies <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
                     let body = case bodies of
                                [b] -> b
-                               [] -> E_CompilesAST range Nothing
-                               _ -> error $ "Can't parse fn with many bodies!"
+                               _ -> error $ "Can't parse fn without a body!"
                     let name  = getName "fn" $ PbExpr.name pbexpr
                     let formals = toList $ PbExpr.formals pbexpr
                     let mretty = parseReturnType pbexpr
@@ -151,13 +150,14 @@ parseLet pbexpr range = do
                    (b:[]) -> E_LetAST range b expr
                    (b:bs) -> E_LetAST range b (buildLets range bs expr)
 
-parseSeq pbexpr _range = do
+parseSeq pbexpr rng = do
     exprs <- mapM parseExpr $ toList (toList $ PbExpr.parts pbexpr)
     return $ buildSeqs exprs
       where
         -- Convert a list of ExprASTs to a right-leaning "list" of SeqAST nodes.
         buildSeqs :: [ExprAST t] -> (ExprAST t)
-        buildSeqs []    = E_TupleAST $ TupleAST (MissingSourceRange "buildSeqs") []
+        buildSeqs []    = error $ "ProtobufFE.parseSeq can't parse empty seq!"
+                                 ++ highlightFirstLine rng
         buildSeqs [a]   = a
         buildSeqs (a:b) = E_SeqAST (MissingSourceRange "buildSeqs") a (buildSeqs b)
 
@@ -185,10 +185,12 @@ parseTuple pbexpr range = do
 
 parseTyApp pbexpr range = do
     [body] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
-    return $ E_TyApp range  body
-            (parseType $ case PbExpr.ty_app_arg_type pbexpr of
-                                Nothing -> error "TyApp missing arg type!"
-                                Just ty -> ty)
+    let tys = map parseType (toList $ PbExpr.ty_app_arg_type pbexpr)
+    return $ E_TyApp range  body (maybeTupleP tys)
+
+    where maybeTupleP []    = Nothing
+          maybeTupleP [arg] = Just $ arg
+          maybeTupleP args  = Just $ TupleTypeP args
 
 parseEVar pbexpr range = do return $ E_VarAST range (parseVar pbexpr)
 

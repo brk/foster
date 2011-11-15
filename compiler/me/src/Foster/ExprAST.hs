@@ -47,7 +47,7 @@ data ExprAST ty =
         | E_ArrayRead     SourceRange (ExprAST ty) (ExprAST ty)
         | E_ArrayPoke     SourceRange (ExprAST ty) (ExprAST ty) (ExprAST ty)
         -- Terms indexed by types
-        | E_TyApp         SourceRange (ExprAST ty) ty
+        | E_TyApp         SourceRange (ExprAST ty) (Maybe ty)
         -- Others
         | E_CompilesAST   SourceRange (Maybe (ExprAST ty))
         deriving Show

@@ -495,18 +495,13 @@ ExprAST* parseDeref(ExprAST* base, pTree tree) {
   return new DerefAST(base, rangeOf(tree));
 }
 
-// ^(VAL_TYPE_APP t+)
+// ^(VAL_TYPE_APP t*)
 ExprAST* parseValTypeApp(ExprAST* base, pTree tree) {
   std::vector<TypeAST*> types;
   for (size_t i = 0; i < getChildCount(tree); ++i) {
     types.push_back(TypeAST_from(child(tree, i)));
   }
-  if (types.size() == 1) {
-    return new ETypeAppAST(NULL, base, types[0], rangeOf(tree));
-  } else {
-    return new ETypeAppAST(NULL, base, TupleTypeAST::get(types),
-                           rangeOf(tree));
-  }
+  return new ETypeAppAST(NULL, base, types, rangeOf(tree));
 }
 
 // ^(VAL_APP)

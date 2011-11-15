@@ -79,7 +79,7 @@ convertExprAST f expr =
     E_StoreAST     rng a b      -> liftM2 (E_StoreAST     rng)   (q a) (q b)
     E_ArrayRead    rng a b      -> liftM2 (E_ArrayRead    rng)   (q a) (q b)
     E_ArrayPoke    rng a b c    -> liftM3 (E_ArrayPoke    rng)   (q a) (q b) (q c)
-    E_TyApp        rng a  t     -> liftM2 (E_TyApp        rng)   (q a) (f t)
+    E_TyApp        rng a mt     -> liftM2 (E_TyApp        rng)   (q a) (liftMaybe f mt)
     E_VarAST       rng v        -> liftM  (E_VarAST       rng) (convertEVar f v)
     E_TupleAST tup              -> liftM  (E_TupleAST        ) (convertTuple f tup)
     E_Case         rng e bs     -> do e' <- q e
@@ -92,6 +92,10 @@ convertExprAST f expr =
     E_LetAST       rng bnd e    -> liftM2 (E_LetAST       rng) (convertTermBinding f bnd) (q e)
     E_CallAST      rng b tup    -> liftM2 (E_CallAST      rng) (q b) (convertTuple f tup)
     E_FnAST fn                  -> liftM  (E_FnAST           ) (convertFun f fn)
+
+liftMaybe :: Monad m => (a -> m b) -> Maybe a -> m (Maybe b)
+liftMaybe _ Nothing = return Nothing
+liftMaybe f (Just a) = do b <- f a ; return $ Just b
 
 liftBinding :: Monad m => (t1 -> m t2) -> ContextBinding t1 -> m (ContextBinding t2)
 liftBinding f (TermVarBinding s (TypedId t i)) = do

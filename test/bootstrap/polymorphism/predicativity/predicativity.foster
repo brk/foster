@@ -1,10 +1,11 @@
+
 main = {
-  //test1 !;
-  //test2 !;
+  test1 !;
+  test2 !;
   //test3 !;
 };
 
-/*
+
 test1 = {
   let iid = { x:Int32 => x };
       sfi = { forall a:Boxed, x:{ Int32 => Int32 } => y:a => x };
@@ -27,11 +28,10 @@ test2 = {
     0;
   end
 };
-*/
 
 test3 = {
   let fst = { forall a:Boxed, x:a => y:a => x };
-      fff = fst fst fst;
+      fff = fst fst:[] fst:[];
       //ffi = fff:[{Int32 => Int32}];
 
       //fff = fst:[?a] fst fst;
@@ -40,3 +40,4 @@ test3 = {
     0;
   end
 };
+
