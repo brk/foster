@@ -1,25 +1,5 @@
 
 main = {
-  //test-int32 !;
-  test-void !;
-};
-
-test-int32 = {
-  let x = testPolyId 3;
-  in  expect_i32 3 ; print_i32 x;
-  end
-};
-
-test-void = {
-  let x = testPolyId !;
-  in  x
-  end
-};
-
-
-testPolyId = { forall t,  x : t => x };
-/*
-main = {
   // Can   instantiate unboxed type variable with unboxed type (Int32).
   expect_i1 true ; print_i1 (__COMPILES__ { forall t:Type, x:t => x } 0);
   // Can't instantiate   boxed type variable with unboxed type (Int32).
@@ -36,20 +16,36 @@ main = {
   // Can't instantiate   boxed type variable with unboxed type variable.
   expect_i1 false; print_i1 (__COMPILES__ { forall b:Type,  x:b => polyb x });
 
-  let b = { forall b:Boxed, x:b => x } 0;
-  in expect_i32 0;
-      print_i32 b;
-  end
+  // Not yet; let is expanded early, and we don't do any binding/flow analysis.
+  //let b = { forall b:Type, x:b => x } 0;
+  //in expect_i32 0;
+  //    print_i32 b;
+  //end;
 
-  polya true; polya 0;
+  test-bool !;
+  test-int32 !;
+  test-void !;
+};
+
+test-bool = {
+  expect_i1 true ; print_i1 (polya true);
+  expect_i1 false; print_i1 (polya false);
+};
+
+
+test-int32 = {
+  expect_i32 3 ; print_i32 (polya 3);
+};
+
+test-void = {
+  expect_i1 false; print_i1 (__COMPILES__ polya !);
+  expect_i1 false; print_i1 (__COMPILES__ polyb !);
 };
 
 polyb = { forall bb:Boxed, x:bb => x };
 polya = { forall aa:Type,  x:aa => x };
 
-
 //test-coerce = { { forall b:Boxed, x:b => x } {x:Int32 => x}; };
 
 //bad = { forall b:Boxed, x:b => x };
 
-*/
