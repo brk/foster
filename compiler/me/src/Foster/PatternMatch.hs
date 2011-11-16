@@ -1,3 +1,4 @@
+{-# LANGUAGE StandaloneDeriving #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2011 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -25,8 +26,7 @@ and use only the naive leftmost-outermost-first column selection
 heuristic.
 -}
 
-data Show a
-    => DecisionTree a
+data DecisionTree a
     =  DT_Fail
     |  DT_Leaf
                 a              -- The expression/block id to evaluate/jump to.
@@ -35,31 +35,28 @@ data Show a
                          Occurrence   -- Subterm of scrutinee to switch on.
                 [(CtorId, DecisionTree a)] -- Map of ctors to decision trees.
                   (Maybe (DecisionTree a)) -- Default decision tree, if any.
-    deriving (Show)
 
--- Avoiding all these type parameters is actually a
+-- Avoiding all these type parameters seems like a
 -- pretty good use case for parameterized modules!
-data Show a =>
-     Action a   = Action     a          deriving (Show)
 
 -- A pair (n, c) in an occurrence means "field n of the struct type for ctor c".
 type FieldOfCtor = (Int, CtorId)
 type Occurrence = [FieldOfCtor]
 
 type ClauseCol  = [SPattern]
-data Show a =>
-     ClauseMatrix a = ClauseMatrix [ClauseRow a] deriving Show
-data Show a =>
-     ClauseRow a    = ClauseRow { rowOrigPat  ::  SPattern
+data ClauseMatrix a = ClauseMatrix [ClauseRow a]
+data ClauseRow a    = ClauseRow { rowOrigPat  ::  SPattern
                                 , rowPatterns :: [SPattern]
-                                , rowAction   :: a }  deriving Show
+                                , rowAction   :: a }
 
 data SPattern = SP_Wildcard
               | SP_Variable  Ident
               | SP_Ctor      CtorId  [SPattern]
              deriving (Show)
 
-instance (Show a, Structured a) => Structured (DecisionTree a) where
+deriving instance Show a => Show (DecisionTree a)
+
+instance Structured a => Structured (DecisionTree a) where
     textOf e _width =
         case e of
           DT_Fail                ->  out $ "DT_Fail      "
@@ -76,47 +73,47 @@ subIds idsDts          = map fst idsDts
 subDts idsDts Nothing  = map snd idsDts
 subDts idsDts (Just d) = map snd idsDts ++ [d]
 
-compilePatterns :: Show a => [(Pattern, a)] -> DataTypeSigs -> DecisionTree a
+compilePatterns :: [(Pattern, a)] -> DataTypeSigs -> DecisionTree a
 compilePatterns bs allSigs =
- cc [[]] (ClauseMatrix $ map compilePatternRow bs) allSigs
- where
+ cc [[]] (ClauseMatrix $ map compilePatternRow bs) allSigs where
+
   compilePatternRow (p, a) = ClauseRow (compilePattern p)
                                        [compilePattern p] a
+  compilePattern :: Pattern -> SPattern
   compilePattern p = case p of
     (P_Wildcard _  )   -> SP_Wildcard
     (P_Variable _ v)   -> SP_Variable v
-    (P_Bool     _ b)   -> SP_Ctor (boolCtor b)  []
-    (P_Int      _ i)   -> SP_Ctor (int32Ctor i) []
-    (P_Ctor _ pats cid) ->SP_Ctor cid (map compilePattern pats)
-    (P_Tuple _ pats)   -> SP_Ctor (tupleCtor pats)  (map compilePattern pats)
-  boolCtor False = CtorId "Bool" "False" 0 0
-  boolCtor True  = CtorId "Bool" "True"  0 1
-
-  tupleCtor pats = CtorId "()" "()" (Prelude.length pats) 0
-
-  int32Ctor li = CtorId "Int32" "<Int32>" 0
-                               (if litIntMinBits li <= 32
+    (P_Bool     _ b)   -> SP_Ctor (boolCtor b)     []
+    (P_Int      _ i)   -> SP_Ctor (int32Ctor i)    []
+    (P_Ctor _ pats cid) ->SP_Ctor cid              (map compilePattern pats)
+    (P_Tuple _ pats)   -> SP_Ctor (tupleCtor pats) (map compilePattern pats)
+    where
+          boolCtor False = CtorId "Bool" "False" 0 0
+          boolCtor True  = CtorId "Bool" "True"  0 1
+          tupleCtor pats = CtorId "()" "()" (Prelude.length pats) 0
+          int32Ctor li   = CtorId "Int32" "<Int32>" 0 $
+                                if litIntMinBits li <= 32
                                   then fromInteger $ litIntValue li
-                                  else error "cannot cram >32 bits into Int32!")
-
-computeBindings :: (Occurrence, SPattern) -> [(Ident, Occurrence)]
-computeBindings ( occ, SP_Variable i) = [(i, occ)]
-computeBindings (_occ, SP_Wildcard  ) = []
-computeBindings ( occ, SP_Ctor cid pats) =
-  let occs = expand occ cid (Prelude.length pats) in
-  concatMap computeBindings (zip occs pats)
+                                  else error "cannot cram >32 bits into Int32!"
 
 -- "Compilation is defined by cases as follows."
-cc :: Show a => [Occurrence] -> ClauseMatrix a -> DataTypeSigs -> DecisionTree a
+cc :: [Occurrence] -> ClauseMatrix a -> DataTypeSigs -> DecisionTree a
 
 -- No row to match -> failure
 cc _ (ClauseMatrix []) _allSigs = DT_Fail
 
 -- If first row is all variables, match always succeeds.
 cc _occs cm _allSigs | allGuaranteedMatch (rowPatterns $ firstRow cm) =
-        -- TODO need to bind these identifiers
-        let r = firstRow cm in
-        DT_Leaf (rowAction r) (computeBindings ([], rowOrigPat r))
+    DT_Leaf (rowAction r)
+            (computeBindings emptyOcc (rowOrigPat r))
+      where r = firstRow cm
+            emptyOcc = []
+            computeBindings :: Occurrence -> SPattern -> [(Ident, Occurrence)]
+            computeBindings  occ (SP_Variable i   ) = [(i, occ)]
+            computeBindings _occ (SP_Wildcard     ) = []
+            computeBindings  occ (SP_Ctor cid pats) =
+              let occs = expand occ cid (Prelude.length pats) in
+              concatMap (uncurry computeBindings) (zip occs pats)
 
 -- "In any other case, matrix P has at least one row and at least one
 -- column (m > 0, n > 0). Furthermore, there exists at least one
@@ -142,10 +139,9 @@ cc occs cm allSigs =
       {- DT_Swap i $ -} cc o' m' allSigs
 
 allGuaranteedMatch pats = List.all trivialMatch pats
-
-trivialMatch (SP_Wildcard  ) = True
-trivialMatch (SP_Variable _) = True
-trivialMatch (SP_Ctor   _ _) = False
+                             where trivialMatch (SP_Wildcard  ) = True
+                                   trivialMatch (SP_Variable _) = True
+                                   trivialMatch (SP_Ctor   _ _) = False
 
 firstRow (ClauseMatrix (r:_)) = r
 firstRow (ClauseMatrix []) = error "precondition violated for firstRow helper!"
@@ -208,7 +204,7 @@ swapOcc i occs = swapListElements i 0 occs
 swapRow i (ClauseRow orig pats a) = ClauseRow orig pats' a
   where pats' = swapListElements i 0 pats
 
-swapCol :: Show a => Int -> ClauseMatrix a -> ClauseMatrix a
+swapCol :: Int -> ClauseMatrix a -> ClauseMatrix a
 swapCol i (ClauseMatrix rows) = ClauseMatrix (map (swapRow i) rows)
 
 -- better :: (Set CtorId) -> (Map DataTypeName (Set CtorId)) -> Bool
