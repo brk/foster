@@ -45,12 +45,12 @@ defn    :       x EQ atom ';'                   -> ^(DEFN x atom) // We should a
         ;
 
 // Or perhaps TYPE id OF (CASE ctor ...)+
-data_defn : TYPE CASE id ('(' tyvar_decl ')')*
-                         data_ctor*             -> ^(DATATYPE id ^(MU tyvar_decl*) ^(MU data_ctor*));
+data_defn : TYPE CASE id ('(' tyformal ')')*
+                         data_ctor*             -> ^(DATATYPE id ^(MU tyformal*) ^(MU data_ctor*));
 data_ctor : OF dctor tatom*                     -> ^(OF dctor tatom*);
 
 opr     :       SYMBOL;
-id      :       IDENT;
+id      :       SMALL_IDENT | UPPER_IDENT;
 
 x       :       id              -> ^(TERMVAR id)
         |       '(' opr ')'     -> ^(TERMVAR opr);       // term variables
@@ -58,13 +58,15 @@ x       :       id              -> ^(TERMVAR id)
 a       :       id              -> ^(TYPEVAR id)
         |       '(' opr ')'     -> ^(TYPEVAR opr);       // type variables
 
+ctor  :     x           -> ^(CTOR x);
+dctor : '$' ctor	-> ctor ;
+tctor : '$' ctor	-> ctor ;
+
 k       :               // kinds
     'Type'                              -> ^(KIND_TYPE)         // kind of types
   | 'Boxed'                             -> ^(KIND_TYPE_BOXED)
 //  |     '{' a '->' k '}'                -> ^(KIND_TYOP a k)     // dependent kinds (kinds of type operators)
   ;
-
-tyvar_decl : a (':' k)? -> ^(TYPEVAR_DECL a k);
 
 e_seq 	:	 e (';' e)* ';'? -> ^(SEQ e+);
 e    :
@@ -79,7 +81,8 @@ phrase  :       lvalue+                         -> ^(PHRASE lvalue+);
 lvalue  :       atom suffix*                    -> ^(LVALUE atom suffix*);
 
 type_application
-        :	':[' (t (',' t)*)? ']'          -> ^(VAL_TYPE_APP t*)    // type application
+        :	':[' t (',' t)* ']'          -> ^(VAL_TYPE_APP t+) // type application
+        |	':['  ']'                    -> ^(VAL_TYPE_APP)    // nullary type application
         ;
 
 suffix  :       type_application
@@ -95,28 +98,30 @@ atom    :       // syntactically "closed" terms
   | lets                                // sequential let
   | letrec                              // recursive let
   | ifexpr
+  | 'case' e (OF pmatch)+ 'end'         -> ^(CASE e pmatch+) // pattern matching
   | 'until' e 'then' e_seq 'end'        -> ^(UNTIL e e_seq)
   | '(' ')'                             -> ^(TUPLE)
   | '(' COMPILES e ')'                  -> ^(COMPILES e)
   | '(' 'ref' e ')'                     -> ^(REF e)     // allocation
   | '(' e (',' e)* ')'                  -> ^(TUPLE e+)  // tuples (products) (sguar: (a,b,c) == Tuple3 a b c)
-  | '{' ('forall' tyvar_decl* ',')?
-        (formal '=>')* e_seq? '}'       -> ^(VAL_ABS ^(FORMALS formal*)
-                                                     ^(MU tyvar_decl*) e_seq?)
+  | '{' ('forall' tyformal* ',')?
+        (formal '=>')*
+         e_seq?
+    '}'                                 -> ^(VAL_ABS ^(FORMALS formal*)
+                                                     ^(MU tyformal*) e_seq?)
                   // value + type abstraction (terms indexed by terms and types)
-  | CASE e (OF pmatch)+ END             -> ^(CASE e pmatch+) // pattern matching
   ;
 
 pmatch  : p '->' e_seq -> ^(CASE p e_seq);
 
-// patterns
-p : patom+               -> ^(MU patom+);
+// Example: (C _ (C2 3 x), C3, 0).
+p : dctor patom*  -> ^(MU dctor patom*)
+  | patom         -> ^(MU patom);
 
 patom :
     x                                      // variables
   | '_'                  -> ^(WILDCARD)    // wildcards
   | lit
-  | dctor                -> dctor
   | '(' ')'              -> ^(TUPLE)
   | '(' p (',' p)* ')'   -> ^(TUPLE p+)    // tuples (products)
   ;
@@ -126,26 +131,20 @@ lit     : num | str | TRU -> ^(BOOL TRU) | FLS -> ^(BOOL FLS);
 ifexpr : 'if' cond=e 'then' thenpart=e_seq 'else' elsepart=e_seq 'end'
           -> ^(IF $cond $thenpart $elsepart);
 
-binding : x '=' e ';' -> ^(BINDING x e);
+binding : x '=' e     -> ^(BINDING x e);
+formal  : x (':' t)   -> ^(FORMAL x t);
+tyformal: a (':' k)?  -> ^(TYPEVAR_DECL a k);
 
-lets   : 'let' binding+ 'in' e_seq 'end' -> ^(LETS   ^(MU binding+) e_seq);
-letrec : 'rec' binding+ 'in' e_seq 'end' -> ^(LETREC ^(MU binding+) e_seq);
+lets   : 'let' (binding ';')+ 'in' e_seq 'end' -> ^(LETS   ^(MU binding+) e_seq);
+letrec : 'rec' (binding ';')+ 'in' e_seq 'end' -> ^(LETREC ^(MU binding+) e_seq);
 
-formal  : x (':' t) -> ^(FORMAL x t);
+////////////////////////////////////////////////////////////////////////////////
 
-/////////////////////////////////////////////////////////////////////////////////////////
+t : tatom (            -> ^(TYPE_ATOM    tatom)        // atomic types
+          | tatom+     -> ^(TYPE_TYP_APP tatom tatom+) // type-level application
+          );
 
-t       :               // types
-    tatom (                             -> ^(TYPE_ATOM    tatom)        // atomic types
-          | t2=tatom+                   -> ^(TYPE_TYP_APP tatom tatom+) // type-level application
-          )
-  ;
-
-barebinding
-        :  x '=' e -> ^(BINDING x e);
-tannots :  barebinding (',' barebinding)* -> ^(BINDING barebinding+);
-
-tatom   :
+tatom :
     a                                                   // type variables
   | '??' a                              -> ^(TYPE_PLACEHOLDER a)
   | '(' ')'                             -> ^(TUPLE)
@@ -159,10 +158,9 @@ tatom   :
   // from type variables, since we don't use upper/lower case to distinguish.
   ;
 
-ctor  :     x           -> ^(CTOR x);
-dctor : '$' ctor	-> ctor ;
-tctor : '$' ctor	-> ctor ;
+tannots :  binding (',' binding)* -> ^(BINDING binding+);
 
+////////////////////////////////////////////////////////////////////////////////
 
 // Numbers are things like:
 //    1
@@ -184,7 +182,7 @@ INT_RAT_BASE            :       '_' HEX_CLUMP;
 // that rational numbers must distinguish the first clump after the point
 // by either starting with a decimal digit (unlike IDENT), or by including
 // either a clump separator or a base trailer.
-rat_continue    :       '.' (   IDENT (                        INT_RAT_BASE
+rat_continue    :       '.' (      id (                        INT_RAT_BASE
                                       |       ('`' HEX_CLUMP)+ INT_RAT_BASE?)
                             | DIGIT_HEX_CLUMP ('`' HEX_CLUMP)* INT_RAT_BASE?
                             );
@@ -197,24 +195,26 @@ num     :       num_start (
 DIGIT_HEX_CLUMP         :       DIGIT HEX_DIGIT*;
 
 fragment
-HEX_CLUMP               :       DIGIT_HEX_CLUMP | IDENT;
-hex_clump               :       DIGIT_HEX_CLUMP | IDENT;
+HEX_CLUMP               :       DIGIT_HEX_CLUMP | SMALL_IDENT | UPPER_IDENT;
+hex_clump               :       DIGIT_HEX_CLUMP | SMALL_IDENT | UPPER_IDENT;
 
 
 
-fragment WORD_CHAR      : 'a'..'z' | 'A'..'Z';
+fragment WORD_CHAR      : IDENT_START_SMALL | IDENT_START_UPPER;
 fragment DIGIT          : '0'..'9';
 fragment HEX_DIGIT      : DIGIT |'a'..'f' | 'A'..'F' ;
 
 // Identifiers must start with an upper or lowercase letter.
-IDENT                   :       IDENT_START IDENT_CONTINUE*;
-fragment IDENT_START            : WORD_CHAR;
-fragment IDENT_CONTINUE         :(DIGIT | WORD_CHAR | IDENT_SYMBOL);
+SMALL_IDENT             :       IDENT_START_SMALL IDENT_CONTINUE*;
+UPPER_IDENT             :       IDENT_START_UPPER IDENT_CONTINUE*;
+fragment IDENT_START_SMALL : 'a'..'z' ;
+fragment IDENT_START_UPPER : 'A'..'Z' ;
+fragment IDENT_CONTINUE    : (DIGIT | WORD_CHAR | IDENT_SYMBOL);
 // Meanwhile, symbols start with a non-numeric, non-alphabetic glyph.
 // We must play some tricks here to ensure that '=' is a keyword, not a symbol.
 // Also, +Int32 is a symbol, but +2 is not.
-SYMBOL                  :       SYMBOL_SINGLE_START
-                        |       SYMBOL_MULTI_START   SYMBOL_CONTINUE_NDIG   SYMBOL_CONTINUE*;
+SYMBOL    :    SYMBOL_SINGLE_START
+          |    SYMBOL_MULTI_START   SYMBOL_CONTINUE_NDIG   SYMBOL_CONTINUE*;
 
 fragment SYMBOL_CONTINUE        :(SYMBOL_CONTINUE_NDIG | DIGIT);
 fragment SYMBOL_CONTINUE_NDIG   :('/' | '^' | WORD_CHAR | IDENT_SYMBOL);

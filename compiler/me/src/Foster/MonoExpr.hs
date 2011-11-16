@@ -71,4 +71,4 @@ instance Show MoLast where
   show (MoRet v        ) = "ret " ++ show v
   show (MoBr  bid      ) = "br " ++ show bid
   show (MoIf ty v b1 b2) = "if<" ++ show ty ++ "> " ++ show v ++ " ? " ++ show b1 ++ " : " ++ show b2
-  show (MoCase ty v _dt) = "case<" ++ show ty ++ "> " ++ show v ++ " [decisiontree]"
+  show (MoCase ty v  dt) = "case<" ++ show ty ++ "> (" ++ show v ++ ") [decisiontree]: {\n" ++ show dt ++ "\n}"

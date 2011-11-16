@@ -278,12 +278,16 @@ int main(int argc, char** argv) {
     }
 
     foster::codegenLL(prog, module);
-
-    // Run cleanup passes on newly-generated code,
-    // rather than wastefully on post-linked code.
-    foster::runCleanupPasses(*module);
   }
 
+
+  if (optDumpPreLinkedIR) {
+    dumpModuleToFile(module, outdirFile(optOutputName + ".raw.ll").c_str());
+  }
+
+  // Run cleanup passes on newly-generated code,
+  // rather than wastefully on post-linked code.
+  foster::runCleanupPasses(*module);
 
   if (optDumpPreLinkedIR) {
     dumpModuleToFile(module, outdirFile(optOutputName + ".prelink.ll").c_str());

@@ -325,4 +325,4 @@ instance Show ILLast where
   show (ILRet v        ) = "ret " ++ show v
   show (ILBr  bid      ) = "br " ++ show bid
   show (ILIf ty v b1 b2) = "if<" ++ show ty ++ "> " ++ show v ++ " ? " ++ show b1 ++ " : " ++ show b2
-  show (ILCase ty v _dt) = "case<" ++ show ty ++ "> " ++ show v ++ " [decisiontree]"
+  show (ILCase ty v  dt) = "case<" ++ show ty ++ "> (" ++ show v ++ ") [decisiontree]: {\n" ++ show dt ++ "\n}"
