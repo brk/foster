@@ -28,8 +28,7 @@ heuristic.
 
 data DecisionTree a
     =  DT_Fail
-    |  DT_Leaf
-                a              -- The expression/block id to evaluate/jump to.
+    |  DT_Leaf   a              -- The expression/block id to evaluate/jump to.
                 [(Ident, Occurrence)] -- Subterms of scrutinee to bind in leaf.
     |  DT_Switch
                          Occurrence   -- Subterm of scrutinee to switch on.
@@ -53,25 +52,6 @@ data SPattern = SP_Wildcard
               | SP_Variable  Ident
               | SP_Ctor      CtorId  [SPattern]
              deriving (Show)
-
-deriving instance Show a => Show (DecisionTree a)
-
-instance Structured a => Structured (DecisionTree a) where
-    textOf e _width =
-        case e of
-          DT_Fail                ->  out $ "DT_Fail      "
-          DT_Leaf a idsoccs      -> (out $ "DT_Leaf    " ++ show idsoccs ++ "\n") ++ (showStructure a)
-          DT_Switch occ idsdts _ ->  out $ "DT_Switch    " ++ (show occ) ++ (show $ subIds idsdts)
-    childrenOf e =
-      case e of
-        DT_Fail                  -> []
-        DT_Leaf {}               -> []
-        DT_Switch _occ idsdts md -> subDts idsdts md
-
-subIds idsDts          = map fst idsDts
-
-subDts idsDts Nothing  = map snd idsDts
-subDts idsDts (Just d) = map snd idsDts ++ [d]
 
 compilePatterns :: [(Pattern, a)] -> DataTypeSigs -> DecisionTree a
 compilePatterns bs allSigs =
@@ -222,3 +202,20 @@ isSignature ctorSet allSigs =
     _ -> error $ "Error in PatternMatch.isSignature: "
               ++ "Multiple type names in ctor set: " ++ show ctorSet
 
+
+deriving instance Show a => Show (DecisionTree a)
+
+instance Structured a => Structured (DecisionTree a) where
+    textOf e _width =
+      case e of
+        DT_Fail                  ->  out $ "DT_Fail      "
+        DT_Leaf a idsoccs        -> (out $ "DT_Leaf    " ++ show idsoccs ++ "\n") ++ (showStructure a)
+        DT_Switch  occ idsdts _  ->  out $ "DT_Switch    " ++ (show occ) ++ (show $ subIds idsdts)
+               where   subIds idsDts          = map fst idsDts
+    childrenOf e =
+      case e of
+        DT_Fail                  -> []
+        DT_Leaf {}               -> []
+        DT_Switch _occ idsdts md -> subDts idsdts md
+                where  subDts idsDts Nothing  = map snd idsDts
+                       subDts idsDts (Just d) = map snd idsDts ++ [d]

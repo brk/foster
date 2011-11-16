@@ -8,8 +8,8 @@ main = {
   ref-until !;
   hof-until !;
 
-  expect_i1 false; print_i1 (__COMPILES__ 0 >^ 0);
-  expect_i1 false; print_i1 (__COMPILES__ let r = (ref 0); in r >^ r end);
+  expect_i1 False; print_i1 (__COMPILES__ 0 >^ 0);
+  expect_i1 False; print_i1 (__COMPILES__ let r = (ref 0); in r >^ r end);
 };
 
 
@@ -86,8 +86,8 @@ hof-until-if = { c : {Bool} => b : { () } =>
 
 hof-until-case = { c : {Bool} => b : { () } =>
   case c !
-    of true ->  0
-    of false -> let j0 = b !; in hof-until-case c b end
+    of True ->  0
+    of False -> let j0 = b !; in hof-until-case c b end
   end
 };
 

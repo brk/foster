@@ -377,13 +377,7 @@ ExprAST* parseBuiltinCompiles(pTree t) {
 }
 
 ExprAST* parseBool(pTree t) {
-  string text = textOf(child(t, 0));
-  if (text == "false" || text == "true") {
-    return new BoolAST(text, rangeOf(t));
-  } else {
-    foster::EDiag() << "Invalid boolean text literal: " << text;
-    return NULL;
-  }
+  return new BoolAST(textOf(child(t, 0)), rangeOf(t));
 }
 
 Pattern* parsePattern(pTree t);

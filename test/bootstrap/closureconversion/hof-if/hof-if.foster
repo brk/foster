@@ -1,9 +1,9 @@
 prim-and = { a : Bool => b: Bool =>
-  if a then b else false end
+  if a then b else False end
 };
 
 hof-and = { a : {Bool} => b: {Bool} =>
-  if a ! then b ! else false end
+  if a ! then b ! else False end
 };
 
 main = {
@@ -17,7 +17,7 @@ test1 = {
       y = opaquely_i32 3;
       z = opaquely_i32 4;
   in
-    expect_i1 true;  print_i1 (prim-and (x <Int32 y)
+    expect_i1 True;  print_i1 (prim-and (x <Int32 y)
                                         (y <Int32 z));
   end
 };
@@ -28,7 +28,7 @@ test2 = {
       y = opaquely_i32 3;
       z = opaquely_i32 4;
   in
-    expect_i1 false; print_i1 (prim-and (x <Int32 y)
+    expect_i1 False; print_i1 (prim-and (x <Int32 y)
                                         (z <Int32 y));
   end
 };
@@ -39,7 +39,7 @@ test3 = {
       y = opaquely_i32 3;
       z = opaquely_i32 4;
   in
-    expect_i1 true ; print_i1 (hof-and { x <Int32 y }
+    expect_i1 True ; print_i1 (hof-and { x <Int32 y }
                                        { y <Int32 z });
   end
 };

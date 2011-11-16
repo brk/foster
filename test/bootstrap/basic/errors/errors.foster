@@ -1,76 +1,76 @@
 main = {
   // Mismatch between declared and inferred return types
-  expect_i1 true ; print_i1 (__COMPILES__  { 0 }  );
-  //expect_i1 false; print_i1 (__COMPILES__  fn(to i32) { true }  );
+  expect_i1 True ; print_i1 (__COMPILES__  { 0 }  );
+  //expect_i1 False; print_i1 (__COMPILES__  fn(to i32) { True }  );
 
   // Mismatch between expected and actual types
-  expect_i1 true ; print_i1 (__COMPILES__           (a !) );
-  expect_i1 false; print_i1 (__COMPILES__  print_i1 (a !) );
+  expect_i1 True ; print_i1 (__COMPILES__           (a !) );
+  expect_i1 False; print_i1 (__COMPILES__  print_i1 (a !) );
 
   // Incorrect number of arguments to function
-  expect_i1 true;  print_i1 (__COMPILES__  { 0 }!  );
-  expect_i1 false; print_i1 (__COMPILES__  { 0 }() );
-  expect_i1 false; print_i1 (__COMPILES__  { 0 }(0) );
+  expect_i1 True;  print_i1 (__COMPILES__  { 0 }!  );
+  expect_i1 False; print_i1 (__COMPILES__  { 0 }() );
+  expect_i1 False; print_i1 (__COMPILES__  { 0 }(0) );
 
-  expect_i1 true;  print_i1 (__COMPILES__  a !  );
-  expect_i1 false; print_i1 (__COMPILES__  a 0   );
-  expect_i1 false; print_i1 (__COMPILES__  a (0) );
+  expect_i1 True;  print_i1 (__COMPILES__  a !  );
+  expect_i1 False; print_i1 (__COMPILES__  a 0   );
+  expect_i1 False; print_i1 (__COMPILES__  a (0) );
 
   // Duplicate variable names
-  expect_i1 true  ; print_i1 (__COMPILES__  { x:Int32 => y:Int32 => 0 }  );
-  expect_i1 false ; print_i1 (__COMPILES__  { x:Int32 => x:Int32 => 0 }  );
+  expect_i1 True  ; print_i1 (__COMPILES__  { x:Int32 => y:Int32 => 0 }  );
+  expect_i1 False ; print_i1 (__COMPILES__  { x:Int32 => x:Int32 => 0 }  );
 
   // Unbound type variable
-  expect_i1 false ; print_i1 (__COMPILES__  { x:x => 0 }  );
+  expect_i1 False ; print_i1 (__COMPILES__  { x:x => 0 }  );
 
   // IfAST condition must be bool
-  expect_i1 true  ; print_i1 (__COMPILES__  if true then true else true end);
-  expect_i1 false ; print_i1 (__COMPILES__  if  0   then true else true end);
-  expect_i1 false ; print_i1 (__COMPILES__  if  0   then true else true end);
+  expect_i1 True  ; print_i1 (__COMPILES__  if True then True else True end);
+  expect_i1 False ; print_i1 (__COMPILES__  if  0   then True else True end);
+  expect_i1 False ; print_i1 (__COMPILES__  if  0   then True else True end);
 
   // IfAST branches must have same type
-  expect_i1 true  ; print_i1 (__COMPILES__  if true then true else true end);
-  expect_i1 false ; print_i1 (__COMPILES__  if true then  0   else true end);
+  expect_i1 True  ; print_i1 (__COMPILES__  if True then True else True end);
+  expect_i1 False ; print_i1 (__COMPILES__  if True then  0   else True end);
 
   // Call to non-function thing
-  expect_i1 false ; print_i1 (__COMPILES__ (0,0) (0));
+  expect_i1 False ; print_i1 (__COMPILES__ (0,0) (0));
 
   // Try to check function against non-function type
-  expect_i1 false ; print_i1 (__COMPILES__ if { x:Int32 => 0 } then 3 else 4 end);
+  expect_i1 False ; print_i1 (__COMPILES__ if { x:Int32 => 0 } then 3 else 4 end);
 
   // Try to subscript non-subscriptable expression.
-  expect_i1 false ; print_i1 (__COMPILES__ 0[0]);
+  expect_i1 False ; print_i1 (__COMPILES__ 0[0]);
 
   // Primitives must be called, not treated as first class values.
-  expect_i1 false; print_i1 (__COMPILES__ let f = print_i1; in f true end);
+  expect_i1 False; print_i1 (__COMPILES__ let f = print_i1; in f True end);
 
   // Pattern variables shouldn't overlap.
-  expect_i1 false;
+  expect_i1 False;
   print_i1 (__COMPILES__ case (1, (2, 3)) of (a, (b, a)) -> 0 end);
 
   // Recursively bound variables shouldn't overlap.
-  expect_i1 true;  print_i1 (__COMPILES__ rec a = { 0 }; b = { 0 }; in 0 end);
-  expect_i1 false; print_i1 (__COMPILES__ rec a = { 0 }; a = { 0 }; in 0 end);
+  expect_i1 True;  print_i1 (__COMPILES__ rec a = { 0 }; b = { 0 }; in 0 end);
+  expect_i1 False; print_i1 (__COMPILES__ rec a = { 0 }; a = { 0 }; in 0 end);
 
   // >^ is, for now, a primitive unlike +, which means it
   // can't be implicitly turned into a first-class function value.
-  expect_i1 true ; print_i1 (__COMPILES__  2  >^ (ref 0));
-  expect_i1 false; print_i1 (__COMPILES__ (>^) 2 (ref 0));
+  expect_i1 True ; print_i1 (__COMPILES__  2  >^ (ref 0));
+  expect_i1 False; print_i1 (__COMPILES__ (>^) 2 (ref 0));
   2  >^ (ref 0);
 
   // It doesn't make sense at the machine level
   // for a returned function to be unboxed polymorphic.
-  expect_i1 false;
+  expect_i1 False;
   print_i1 (__COMPILES__ { i : Int32 =>  { forall b, x:b => x } });
 
-  expect_i1 true;
+  expect_i1 True;
   print_i1 (__COMPILES__ { i : Int32 => { forall b:Boxed, x:b => x } });
 
   // Hmm... should this actually compile?
   // The issue is that this is translated to id:[?a -> ?b] id:[?c -> ?d]
   // which has overall type ?c -> ?d, but those unification variables aren't
   // unified. We can generalize in this particular case, but not in general.
-  //expect_i1 true; print_i1 (__COMPILES__ (id id));
+  //expect_i1 True; print_i1 (__COMPILES__ (id id));
 };
 
 id = { forall t:Boxed, x : t => x };

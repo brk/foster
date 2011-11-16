@@ -12,7 +12,7 @@ tokens {
   AS='as'; AT='at'; DO='do'; IN='in'; IS='is'; IT='it'; TO='to';
   LET='let'; WHERE='where';
 
-  IF='if'; THEN='then'; ELSE='else'; TRU='true'; FLS='false';
+  IF='if'; THEN='then'; ELSE='else'; TRU='True'; FLS='False';
   CASE='case'; END='end'; OF='of';
   AND='and'; OR='or'; EQ='=';
   TYPE='type';

@@ -1,8 +1,8 @@
 main = {
-  expect_i1 (true);
+  expect_i1 (True);
   print_i1 (__COMPILES__ defined-later !);
 
-  expect_i1(false);
+  expect_i1(False);
   print_i1 (__COMPILES__ not-defined-later !);
 };
 

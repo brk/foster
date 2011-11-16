@@ -34,8 +34,8 @@ t2 = {
 t3 = {
   expect_i32 7;
   print_i32
-    case true
-      of true  -> 7
-      of false -> 6
+    case True
+      of True  -> 7
+      of False -> 6
     end;
 };

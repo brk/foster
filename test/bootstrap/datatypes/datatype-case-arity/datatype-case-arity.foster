@@ -32,12 +32,12 @@ t2 = { tt : T2 =>
 
 // Ensure that arity is correct when pattern matching.
 t4 = {
-  expect_i1 false;
+  expect_i1 False;
   print_i1 (__COMPILES__ { tt : T2 =>
                  case tt of $T2C1 _ b _ -> b; end
            });
 
-  expect_i1 false;
+  expect_i1 False;
   print_i1 (__COMPILES__ case (1, 2) of (1, 2, 3) -> 1; end );
 };
 

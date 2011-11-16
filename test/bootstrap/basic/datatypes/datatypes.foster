@@ -38,7 +38,7 @@ len = { z : Int32List =>
 };
 
 badcase = { // ensure tuples are kept distinct from tuple-like values.
-  expect_i1 false;
+  expect_i1 False;
   print_i1 (__COMPILES__ { z : Int32List =>
                   case z
                     of $Cons32 n ns    -> 1 +Int32 (len ns)

@@ -19,14 +19,14 @@ tuple_from_case = { x : Int32 => y : Bool => case x of 3 -> (x, y)
 
 main = {
   expect_i32 42;
-  print_0_of_t_i32_i1 (tuple_from (opaquely_i32 42) true);
+  print_0_of_t_i32_i1 (tuple_from (opaquely_i32 42) True);
 
-  expect_i1 true;
+  expect_i1 True;
   print_i1 (__COMPILES__ ());
 
   expect_i32 43;
-  print_0_of_t_i32_i1 (tuple_from_if (opaquely_i32 43) true);
+  print_0_of_t_i32_i1 (tuple_from_if (opaquely_i32 43) True);
 
   expect_i32 44;
-  print_0_of_t_i32_i1 (tuple_from_case (opaquely_i32 44) true);
+  print_0_of_t_i32_i1 (tuple_from_case (opaquely_i32 44) True);
 };

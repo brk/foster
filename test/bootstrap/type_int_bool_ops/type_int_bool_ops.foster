@@ -1,23 +1,23 @@
 main = {
   expect_i32 222;
-  print_i32 if true then 222 else 111 end;
+  print_i32 if True then 222 else 111 end;
 
   expect_i32 111;
-  print_i32 if false then 222 else 111 end;
+  print_i32 if False then 222 else 111 end;
 
-  expect_i1 false; // no operator overloading, yet
+  expect_i1 False; // no operator overloading, yet
   print_i1 (__COMPILES__ (1, 2) + (3, 4));
 
-  //expect_i1 false;
-  //print_i1(__COMPILES__ -true);
+  //expect_i1 False;
+  //print_i1(__COMPILES__ -True);
 
-  expect_i1 true;
-  print_i1 (not false);
+  expect_i1 True;
+  print_i1 (not False);
 
-  expect_i1 false; // 2 is not of type i1
+  expect_i1 False; // 2 is not of type i1
   print_i1 (__COMPILES__ if 2 then 222 else 111 end);
 
-  expect_i1 false; // tuple should typecheck elements
+  expect_i1 False; // tuple should typecheck elements
   print_i1 (__COMPILES__ (if 2 then 2 else 1 end, 2));
 };
 

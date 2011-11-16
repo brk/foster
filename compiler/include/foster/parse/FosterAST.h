@@ -92,7 +92,9 @@ public:
 struct BoolAST : public ExprAST {
   bool boolValue;
   explicit BoolAST(string val, foster::SourceRange sourceRange)
-    : ExprAST("BoolAST", sourceRange), boolValue(val == "true") {}
+    : ExprAST("BoolAST", sourceRange), boolValue(val == "True") {
+      ASSERT(val == "True" || val == "False") << show(sourceRange);
+  }
   virtual void dump(DumpToProtobufPass* pass);
 };
 

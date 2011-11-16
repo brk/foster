@@ -3,8 +3,8 @@ print_1_of_t_i32_i1 = { x : (Int32, Bool) => case x of (_, y) -> print_i1  y end
 
 main = {
   expect_i32 42;
-  print_0_of_t_i32_i1 (42, true);
+  print_0_of_t_i32_i1 (42, True);
 
-  expect_i1 true;
-  print_1_of_t_i32_i1 (42, true);
+  expect_i1 True;
+  print_1_of_t_i32_i1 (42, True);
 };

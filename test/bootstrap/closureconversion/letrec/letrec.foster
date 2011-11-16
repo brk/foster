@@ -1,13 +1,13 @@
 main = {
-  expect_i1 true; print_i1 (is-odd 3);
+  expect_i1 True; print_i1 (is-odd 3);
 
   loopy 3;
 
   // Make sure that we give consistent treatment to the return type
   // of recursively bound functions.
-  expect_i1 false; print_i1 (__COMPILES__ print_i1 (test-rec-ret0 !));
-  expect_i1 false; print_i1 (__COMPILES__ print_i1 (test-rec-let 3));
-  expect_i1 false; print_i1 (__COMPILES__ print_i1 (test-rec-ret 3));
+  expect_i1 False; print_i1 (__COMPILES__ print_i1 (test-rec-ret0 !));
+  expect_i1 False; print_i1 (__COMPILES__ print_i1 (test-rec-let 3));
+  expect_i1 False; print_i1 (__COMPILES__ print_i1 (test-rec-ret 3));
 
   expect_i32 (0 -Int32 1) ; print_i32 (test-rec-ret 3);
 
@@ -31,14 +31,14 @@ test-rec-ret = { z : Int32 =>
 };
 
 is-odd = { z:Int32 =>
-  rec even = { x:Int32 => if x ==Int32 0 then true else odd  (x -Int32 1) end };
-      odd  = { x:Int32 => if x ==Int32 1 then true else even (x -Int32 1) end };
+  rec even = { x:Int32 => if x ==Int32 0 then True else odd  (x -Int32 1) end };
+      odd  = { x:Int32 => if x ==Int32 1 then True else even (x -Int32 1) end };
    in odd (opaquely_i32 3);
   end
 };
 
 loopy = { z:Int32 =>
-  rec loop = { x:Int32 => if x ==Int32 0 then true else loop (x -Int32 1) end };
+  rec loop = { x:Int32 => if x ==Int32 0 then True else loop (x -Int32 1) end };
    in loop z;
   end
 };
