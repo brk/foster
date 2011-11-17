@@ -66,6 +66,11 @@ main = {
   expect_i1 True;
   print_i1 (__COMPILES__ { i : Int32 => { forall b:Boxed, x:b => x } });
 
+  expect_i1 True;  print_i1 (__COMPILES__ case True of False -> 0 end);
+  // It's an error to accidentally bind "true" or "false" as a pattern variable.
+  expect_i1 False; print_i1 (__COMPILES__ case True of false -> 0 end);
+  expect_i1 False; print_i1 (__COMPILES__ case True of  true -> 0 end);
+
   // Hmm... should this actually compile?
   // The issue is that this is translated to id:[?a -> ?b] id:[?c -> ?d]
   // which has overall type ?c -> ?d, but those unification variables aren't

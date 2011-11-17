@@ -239,7 +239,8 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
     checkPattern p = case p of
       EP_Wildcard r   -> do return $ P_Wildcard r
       EP_Bool r b     -> do return $ P_Bool r b
-      EP_Variable r v -> do id <- tcFreshT (evarName v)
+      EP_Variable r v -> do checkSuspiciousPatternVariable r v
+                            id <- tcFreshT (evarName v)
                             return $ P_Variable r id
       EP_Int r str    -> do annint <- typecheckInt r str Nothing
                             return $ P_Int  r (aintLitInt annint)
@@ -302,6 +303,12 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
          _else  -> tcFails [out $ "Cannot check tuple pattern"
                                   ++ " against non-tuple type " ++ show ty
                                   ++ showSourceRange rng]
+
+    checkSuspiciousPatternVariable rng var =
+      if T.unpack (evarName var) `elem` ["true", "false"]
+       then tcFails [out $ "Error: this matches a variable, not a boolean constant!"
+                      ++ highlightFirstLine rng]
+       else return ()
 -- }}}
 
 -----------------------------------------------------------------------
