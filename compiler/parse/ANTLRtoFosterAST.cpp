@@ -835,6 +835,17 @@ TypeAST* parseTypeTypeApp(pTree tree) {
   return TypeTypeAppAST::get(getTypeAtoms(tree));
 }
 
+// ^(FORALL_TYPE tyformal+ t)
+TypeAST* parseForallType(pTree tree) {
+  std::vector<TypeFormal> tyformals;
+  for (size_t i = 0; i < getChildCount(tree) - 1; ++i) {
+    tyformals.push_back(parseTypeFormal(child(tree, i), getBoxedKind()));
+  }
+  return new ForallTypeAST(tyformals,
+                           TypeAST_from(child(tree, getChildCount(tree) - 1)),
+                           rangeOf(tree));
+}
+
 TypeAST* TypeAST_from(pTree tree) {
   if (!tree) return NULL;
 
@@ -844,6 +855,7 @@ TypeAST* TypeAST_from(pTree tree) {
 
   if (token == TYPE_ATOM)    { return parseTypeAtom(child(tree, 0)); }
   if (token == TYPE_TYP_APP) { return parseTypeTypeApp(tree); }
+  if (token == FORALL_TYPE)  { return parseForallType(tree); }
 
   string name = str(tree->getToken(tree));
   foster::EDiag() << "returning NULL TypeAST for tree token " << name

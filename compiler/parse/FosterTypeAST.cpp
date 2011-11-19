@@ -322,5 +322,9 @@ ArrayTypeAST* ArrayTypeAST::get(TypeAST* tcell) {
   return new ArrayTypeAST(tcell, SourceRange::getEmptyRange());
 }
 
-
 /////////////////////////////////////////////////////////////////////
+
+const llvm::Type* ForallTypeAST::getLLVMType() const {
+  ASSERT(false) << "No getLLVMType() for ForallTypeAST!";
+  return NULL;
+}

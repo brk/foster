@@ -436,3 +436,13 @@ void TypeTypeAppAST::dump(DumpTypeToProtobufPass* pass) {
   }
 }
 
+void ForallTypeAST::dump(DumpTypeToProtobufPass* pass) {
+  setTagAndRange(pass->current, this, pb::Type::FORALL_TY);
+  pass->current->mutable_tyformals()->Reserve(this->tyformals.size());
+  for (size_t i = 0; i < this->tyformals.size(); ++i) {
+    dumpTypeFormal(&this->tyformals[i], pass->current->add_tyformals());
+  }
+  pass->current->mutable_type_parts()->Reserve(1);
+  dumpChild(pass, pass->current->add_type_parts(), this->quant);
+}
+

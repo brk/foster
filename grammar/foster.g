@@ -134,6 +134,7 @@ ifexpr : 'if' cond=e 'then' thenpart=e_seq 'else' elsepart=e_seq 'end'
 binding : x '=' e     -> ^(BINDING x e);
 formal  : x (':' t)   -> ^(FORMAL x t);
 tyformal: a (':' k)?  -> ^(TYPEVAR_DECL a k);
+tyformalr: a ':' k    -> ^(TYPEVAR_DECL a k);
 
 lets   : 'let' (binding ';')+ 'in' e_seq 'end' -> ^(LETS   ^(MU binding+) e_seq);
 letrec : 'rec' (binding ';')+ 'in' e_seq 'end' -> ^(LETREC ^(MU binding+) e_seq);
@@ -142,7 +143,9 @@ letrec : 'rec' (binding ';')+ 'in' e_seq 'end' -> ^(LETREC ^(MU binding+) e_seq)
 
 t : tatom (            -> ^(TYPE_ATOM    tatom)        // atomic types
           | tatom+     -> ^(TYPE_TYP_APP tatom tatom+) // type-level application
-          );
+          )
+  | 'forall' (tyformalr ',')+ t  -> ^(FORALL_TYPE tyformalr+ t) // description of terms indexed by types;
+  ;
 
 tatom :
     a                                                   // type variables
@@ -151,7 +154,6 @@ tatom :
   | '(' t (',' t)* ')'                  -> ^(TUPLE t+)  // tuples (products) (sugar: (a,b,c) == Tuple3 a b c)
   | '{'    t  ('=>' t)* '}'
    ('@' '{' tannots '}')?               -> ^(FUNC_TYPE ^(TUPLE t+) tannots?)  // description of terms indexed by terms
-//      | '{' 'forall' (a ':' k ',')+ t '}'     -> ^(FORALL_TYPE a k t)       // description of terms indexed by types
 //      | ':{'        (a ':' k '->')+ t '}'     -> ^(TYPE_TYP_ABS a k t)        // type-level abstractions
 //  | tctor                                -> ^(TYPE_CTOR tctor)                  // type constructor constant
   // The dollar sign is required to distinguish type constructors

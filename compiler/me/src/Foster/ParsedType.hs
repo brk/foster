@@ -20,7 +20,7 @@ data TypeP =
                           , fnTypeCallConv :: CallConv
                           , fnTypeProcOrFunc :: ProcOrFunc }
          | CoroTypeP      TypeP TypeP
-         | ForAllP        [(TyVar, Kind)] TypeP
+         | ForAllP        [TypeFormalAST] TypeP
          | TyVarP         TyVar
          | RefTypeP       TypeP
          | ArrayTypeP     TypeP

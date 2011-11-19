@@ -326,7 +326,7 @@ astOfParsedType typep =
         RefTypeP       t       -> liftM  RefTypeAST              (q t)
         ArrayTypeP     t       -> liftM  ArrayTypeAST            (q t)
         CoroTypeP    s t       -> liftM2 CoroTypeAST       (q s) (q t)
-        ForAllP    tvs t       -> liftM (ForAllAST    tvs)       (q t)
+        ForAllP    tvs t       -> liftM (ForAllAST $ map convertTyFormal tvs) (q t)
         TyVarP     tv          -> do return $ TyVarAST tv
         FnTypeP      s t cc cs -> do s' <- q s
                                      t' <- q t

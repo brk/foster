@@ -337,7 +337,10 @@ parseType t =
          PbTypeTag.REF       -> error "Ref types not yet implemented"
          PbTypeTag.CORO      -> error "Parsing for CORO type not yet implemented"
          PbTypeTag.CARRAY    -> error "Parsing for CARRAY type not yet implemented"
-         PbTypeTag.FORALL_TY -> error "Parsing for FORALL_TY type not yet implemented"
+         PbTypeTag.FORALL_TY -> let [ty] = toList $ PbType.type_parts t in
+                                let tyformals = toList $ PbType.tyformals t in
+                                ForAllP (map parseTypeFormal tyformals)
+                                        (parseType ty)
 
 parseFnTy :: FnType -> TypeP
 parseFnTy fty =

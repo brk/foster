@@ -35,7 +35,7 @@ message Type {
   repeated Type type_parts = 18;
   optional uint64 carray_size = 19;
 
-  repeated string tyvar_names = 20; // for FORALL_TY
+  repeated TypeFormal tyformals = 20; // for FORALL_TY
 }
 
 message FnType {

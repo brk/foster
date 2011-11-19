@@ -7,6 +7,7 @@
 
 #include "base/Assert.h"
 #include "base/Diagnostics.h"
+#include "parse/FosterKindAST.h"
 
 #include <vector>
 #include <string>
@@ -221,23 +222,6 @@ struct Formal {
   TypeAST* type;
   explicit Formal(const string& name, TypeAST* type)
   : name(name), type(type) {}
-};
-
-struct KindAST {
-  virtual ~KindAST() {}
-};
-
-struct BaseKindAST : public KindAST {
-  enum eKind { KindType, KindBoxed };
-  explicit BaseKindAST(eKind k) : kind(k) {}
-  eKind kind;
-};
-
-struct TypeFormal {
-  string name; // pattern???
-  KindAST* kind;
-  explicit TypeFormal(const string& name, KindAST* kind)
-  : name(name), kind(kind) {}
 };
 
 struct ValAbs : public ExprAST {

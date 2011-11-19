@@ -6,6 +6,7 @@
 #define FOSTER_TYPE_AST_H
 
 #include "base/Assert.h"
+#include "parse/FosterKindAST.h"
 
 #include "llvm/CallingConv.h"
 #include "llvm/DerivedTypes.h"
@@ -298,6 +299,21 @@ public:
   virtual TypeAST*& getContainedType(int i);
 
   static ArrayTypeAST* get(TypeAST* tcell);
+};
+
+class ForallTypeAST : public TypeAST {
+  std::vector<TypeFormal> tyformals;
+  TypeAST* quant;
+
+public:
+  explicit ForallTypeAST(std::vector<TypeFormal> tyformals,
+                         TypeAST* quant, const SourceRange& sr)
+    : TypeAST("ForallType", NULL, sr),
+      tyformals(tyformals), quant(quant) {}
+
+  virtual void show(PrettyPrintTypePass* pass);
+  virtual void dump(DumpTypeToProtobufPass* pass);
+  virtual const llvm::Type* getLLVMType() const;
 };
 
 #endif // header guard

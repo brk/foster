@@ -133,6 +133,12 @@ void TypeTypeAppAST::show(PrettyPrintTypePass* pass){
   pass->scan(PPToken(" ) "));
 }
 
+void ForallTypeAST::show(PrettyPrintTypePass* pass){
+  pass->scan(PPToken("(forall ... "));
+  pass->emit(this->quant);
+  pass->scan(PPToken(")"));
+}
+
 namespace foster {
 
 void prettyPrintType(const TypeAST* t,
