@@ -145,6 +145,8 @@ monoType subst ty =
      TyVarIL tv _kind     -> monoSubstLookup subst tv -- TODO check kind?
 
 monoSubstLookup :: MonoSubst -> TyVar -> MonoType
+monoSubstLookup _subst (SkolemTyVar  _ _ KindPointerSized) = PtrTypeUnknown
+monoSubstLookup _subst (SkolemTyVar nm _ KindAnySizeType)  = TyConApp ("BAD:SKOLEM TY VAR, ANY SIZE TYPE:"++nm) []
 monoSubstLookup subst tv@(BoundTyVar nm) =
   case Map.lookup tv subst of
       Just monotype -> monotype
@@ -269,13 +271,17 @@ monomorphizeMid subst mid =
   case mid of
     ILLetVal id val -> do valOrVar <- monomorphizeLetable subst val
                           case valOrVar of
-                            Left  var -> return $ MoRebindId id (monoVar subst var)
-                            Right val -> return $ MoLetVal id val
+                            Instantiated var -> return $ MoRebindId   id (monoVar subst var)
+                            Bitcast      var -> return $ MoLetBitcast id (monoVar subst var)
+                            MonoLet      val -> return $ MoLetVal     id val
     ILClosures ids clos -> do return $ MoClosures ids (map (monoClosure subst) clos) -- TODO
     ILRebindId i   v    -> do return $ MoRebindId i (monoVar subst v)
 
-monomorphizeLetable :: MonoSubst -> Letable
-                    -> Mono (Either (TypedId TypeIL) MonoLetable)
+data LetableResult = MonoLet      MonoLetable
+                   | Instantiated (TypedId TypeIL)
+                   | Bitcast      (TypedId TypeIL)
+
+monomorphizeLetable :: MonoSubst -> Letable -> Mono LetableResult
 monomorphizeLetable subst expr =
     let qt = monoType subst in
     let qv = monoVar subst  in
@@ -292,7 +298,7 @@ monomorphizeLetable subst expr =
                   let polyid = getPolyProcId id argtys
                   let monotys = map qt argtys
                   monoScheduleWork (NeedsMono polyid id monotys)
-                  return $ Left (TypedId t polyid)
+                  return $ Instantiated (TypedId t polyid)
 
               -- On the other hand, if we only have a local var, then
               -- (in general) the var is unknown, so we can't statically
@@ -300,7 +306,7 @@ monomorphizeLetable subst expr =
               -- to/from uniform and non-uniform representations.
               TypedId (ForAllIL ktvs _rho) localvarid ->
                 if List.all (\(_tv, kind) -> kind == KindPointerSized) ktvs
-                  then return $ Left (TypedId t localvarid)
+                  then return $ Bitcast (TypedId t localvarid)
                   else error $ "Cannot instantiate unknown function's type variables "
                      ++ show ktvs
                      ++ " with types "
@@ -316,19 +322,19 @@ monomorphizeLetable subst expr =
               _ -> error $ "Expected polymorphic instantiation to affect a bound variable!"
 
         -- All other nodes are (essentially) ignored straightaway.
-        ILBool      b         -> return $ Right $ MoBool   b
-        ILInt       t i       -> return $ Right $ MoInt   (qt t) i
-        ILTuple     vs        -> return $ Right $ MoTuple (map qv vs)
-        ILCallPrim  t p vs    -> return $ Right $ MoCallPrim (qt t) monopr (map qv vs) where monopr = monoPrim subst p
-        ILCall      t v vs    -> return $ Right $ MoCall     (qt t) (qv v) (map qv vs)
-        ILAppCtor   t c vs    -> return $ Right $ MoAppCtor  (qt t) c      (map qv vs)
-        ILAllocate  alloc     -> return $ Right $ MoAllocate (monoAllocInfo subst alloc)
-        ILAlloc     v         -> return $ Right $ MoAlloc (qv v)
-        ILDeref     v         -> return $ Right $ MoDeref (qv v)
-        ILStore     v1 v2     -> return $ Right $ MoStore (qv v1) (qv v2)
-        ILAllocArray t v      -> return $ Right $ MoAllocArray (qt t) (qv v)
-        ILArrayRead  t v1 v2  -> return $ Right $ MoArrayRead (qt t) (qv v1) (qv v2)
-        ILArrayPoke  v1 v2 v3 -> return $ Right $ MoArrayPoke (qv v1) (qv v2) (qv v3)
+        ILBool      b         -> return $ MonoLet $ MoBool   b
+        ILInt       t i       -> return $ MonoLet $ MoInt   (qt t) i
+        ILTuple     vs        -> return $ MonoLet $ MoTuple (map qv vs)
+        ILCallPrim  t p vs    -> return $ MonoLet $ MoCallPrim (qt t) monopr (map qv vs) where monopr = monoPrim subst p
+        ILCall      t v vs    -> return $ MonoLet $ MoCall     (qt t) (qv v) (map qv vs)
+        ILAppCtor   t c vs    -> return $ MonoLet $ MoAppCtor  (qt t) c      (map qv vs)
+        ILAllocate  alloc     -> return $ MonoLet $ MoAllocate (monoAllocInfo subst alloc)
+        ILAlloc     v         -> return $ MonoLet $ MoAlloc (qv v)
+        ILDeref     v         -> return $ MonoLet $ MoDeref (qv v)
+        ILStore     v1 v2     -> return $ MonoLet $ MoStore (qv v1) (qv v2)
+        ILAllocArray t v      -> return $ MonoLet $ MoAllocArray (qt t) (qv v)
+        ILArrayRead  t v1 v2  -> return $ MonoLet $ MoArrayRead (qt t) (qv v1) (qv v2)
+        ILArrayPoke  v1 v2 v3 -> return $ MonoLet $ MoArrayPoke (qv v1) (qv v2) (qv v3)
 
 monoClosure subst (ILClosure procid envid captures) =
   MoClosure procid envid (map (monoVar subst) captures)

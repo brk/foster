@@ -54,6 +54,12 @@ struct LLRebindId : public LLMiddle {
   virtual void codegenMiddle(CodegenPass* pass);
 };
 
+struct LLBitcast : public LLMiddle {
+  std::string from; LLVar* to;
+  explicit LLBitcast(std::string from, LLVar* to) : from(from), to(to) {}
+  virtual void codegenMiddle(CodegenPass* pass);
+};
+
 
 struct LLBlock {
   std::string block_id;

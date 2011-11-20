@@ -44,10 +44,22 @@ data ProcOrFunc = FT_Proc | FT_Func deriving (Show)
 data VarNamespace = VarProc | VarLocal deriving (Show)
 
 data TyVar = BoundTyVar String -- bound by a ForAll, that is
-             deriving (Eq, Ord)
+           | SkolemTyVar String Uniq Kind
+
+instance Eq TyVar where
+  BoundTyVar s1 == BoundTyVar s2 = s1 == s2
+  SkolemTyVar _ u1 _ == SkolemTyVar _ u2 _ = u1 == u2
+  _ == _ = False
+
+instance Ord TyVar where
+  BoundTyVar s1      `compare` BoundTyVar s2      = s1 `compare` s2
+  SkolemTyVar _ u1 _ `compare` SkolemTyVar _ u2 _ = u1 `compare` u2
+  BoundTyVar s1      `compare` SkolemTyVar s2 _ _ = s1 `compare` s2
+  SkolemTyVar s1 _ _ `compare` BoundTyVar s2      = s1 `compare` s2
 
 instance Show TyVar where
     show (BoundTyVar x) = "'" ++ x
+    show (SkolemTyVar x u k) = "$" ++ x ++ "." ++ show u ++ "::" ++ show k
 
 class Expr a where
     freeVars   :: a -> [T.Text]

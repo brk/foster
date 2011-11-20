@@ -79,7 +79,8 @@ ilOf ctx typ = do
                                return $ ArrayTypeIL t
      ForAllAST ktvs rho  -> do t <- (ilOf $ extendTyCtx ctx ktvs) rho
                                return $ ForAllIL ktvs t
-     TyVarAST tv ->
+     TyVarAST tv@(SkolemTyVar _ _ k) -> return $ TyVarIL tv k
+     TyVarAST tv@(BoundTyVar _) ->
         case Prelude.lookup tv (contextTypeBindings ctx) of
           Nothing -> tcFails [out $ "Unable to find kind of type variable " ++ show typ]
           Just k  -> return $ TyVarIL tv k

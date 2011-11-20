@@ -52,6 +52,7 @@ message BlockMiddle {
   optional LetVal      let_val = 1;
   optional LetClosures let_clo = 2;
   optional RebindId    rebind  = 3;
+  optional RebindId   bitcast  = 4;
 }
 
 message LetVal {

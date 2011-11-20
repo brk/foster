@@ -126,7 +126,7 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
         let (tyvars1, kinds1) = unzip ktyvars1 in
         let (tyvars2, kinds2) = unzip ktyvars2 in
         if List.length tyvars1 /= List.length tyvars2
-         then tcFails [out $ "Unable to unify foralls of different arity!"]
+         then tcFails [out $ "Unable to unify foralls of different arity!\n" ++ show t1 ++ "\nvs\n" ++ show t2]
          else if kinds1 /= kinds2
           then tcFails [out $ "Unable to unify foralls with differently-kinded type variables"]
           else let t1 = rho1 in

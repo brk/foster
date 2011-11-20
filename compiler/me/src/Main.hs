@@ -67,7 +67,7 @@ typecheckFnSCC scc (ctx, tcenv) = do
         putStrLn $ "typechecking " ++ name
         annfn <- unTc tcenv $
                     do binding <- bindingForFnAST fn
-                       typecheck (prependContextBinding ctx binding) ast Nothing
+                       tcSigma (prependContextBinding ctx binding) ast Nothing
         -- We can't convert AnnExpr to AIExpr here because
         -- the output context is threaded through further type checking.
         _ <- inspect annfn ast

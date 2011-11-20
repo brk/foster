@@ -39,6 +39,7 @@ data MoBlock  = MoBlock BlockId [MoMiddle] MoLast
 data MoMiddle = MoLetVal      Ident    MonoLetable
               | MoClosures    [Ident] [MoClosure]
               | MoRebindId    Ident    MoVar
+              | MoLetBitcast  Ident    MoVar
               deriving Show
 
 data MoLast = MoRetVoid

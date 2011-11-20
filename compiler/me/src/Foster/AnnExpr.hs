@@ -101,7 +101,7 @@ instance Structured (AnnExpr TypeAST) where
       AnnIf       _rng t _ _ _   -> out $ "AnnIf        " ++ " :: " ++ show t
       AnnUntil    _rng t _ _     -> out $ "AnnUntil     " ++ " :: " ++ show t
       AnnInt      _rng ty int    -> out $ "AnnInt       " ++ (litIntText int) ++ " :: " ++ show ty
-      AnnLetVar   _rng id _a b   -> out $ "AnnLetVar    " ++ show id ++ " :: " ++ show (typeAST b)
+      AnnLetVar   _rng id _a _b  -> out $ "AnnLetVar    " ++ show id
       AnnLetFuns  _rng ids _ _   -> out $ "AnnLetFuns   " ++ show ids
       AnnAlloc  {}               -> out $ "AnnAlloc     "
       AnnDeref  {}               -> out $ "AnnDeref     "

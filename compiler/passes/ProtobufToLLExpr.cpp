@@ -197,6 +197,10 @@ LLMiddle* parseRebindId(const pb::RebindId& r) {
   return new LLRebindId(r.from_id(), parseTermVar(&r.to_var()));
 }
 
+LLMiddle* parseBitcast(const pb::RebindId& r) {
+  return new LLBitcast(r.from_id(), parseTermVar(&r.to_var()));
+}
+
 DecisionTree* parseDecisionTree(const pb::DecisionTree& dt);
 
 LLTerminator* parseTerminator(const pb::Terminator& b) {
@@ -216,15 +220,10 @@ LLTerminator* parseTerminator(const pb::Terminator& b) {
 }
 
 LLMiddle* parseMiddle(const pb::BlockMiddle& b) {
-  if (b.has_let_val()) {
-    return parseLetVal(b.let_val());
-  }
-  if (b.has_let_clo()) {
-    return parseLetClosures(b.let_clo());
-  }
-  if (b.has_rebind()) {
-    return parseRebindId(b.rebind());
-  }
+  if (b.has_let_val()) { return parseLetVal(b.let_val()); }
+  if (b.has_let_clo()) { return parseLetClosures(b.let_clo()); }
+  if (b.has_rebind())  { return parseRebindId(b.rebind()); }
+  if (b.has_bitcast()) { return parseBitcast(b.bitcast()); }
   ASSERT(false) << "parseMiddle unhandled case!"; return NULL;
 }
 

@@ -435,6 +435,21 @@ void LLRebindId::codegenMiddle(CodegenPass* pass) {
   pass->valueSymTab.insert(from, to->codegen(pass));
 }
 
+void LLBitcast::codegenMiddle(CodegenPass* pass) {
+  llvm::Value* v = to->codegen(pass);
+  const llvm::Type* tgt = getLLVMType(to->type);
+  if (v->getType() == tgt) { return; }
+
+  // Apply the bitcast to the value or the slot, as appropriate.
+  if (pass->needsImplicitLoad.count(v) == 1) {
+    llvm::Value* cast_slot = builder.CreateBitCast(v, ptrTo(tgt));
+    pass->markAsNeedingImplicitLoads(cast_slot);
+    pass->valueSymTab.insert(from, cast_slot);
+  } else {
+    pass->valueSymTab.insert(from, builder.CreateBitCast(v, tgt));
+  }
+}
+
 ////////////////////////////////////////////////////////////////////
 //////////////// LLAlloc, LLDeref, LLStore /////////////////////////
 /////////////////////////////////////////////////////////////////{{{

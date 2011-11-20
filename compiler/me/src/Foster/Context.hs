@@ -94,6 +94,11 @@ readTcMeta m = tcLift $ readIORef (mtvRef m)
 writeTcMeta :: MetaTyVar -> Tau -> Tc ()
 writeTcMeta m v = tcLift $ writeIORef (mtvRef m) (Just v)
 
+newTcSkolem (tv, k) = do u <- newTcUniq
+                         return (SkolemTyVar (nameOf tv) u k)
+  where nameOf (BoundTyVar name)      = name
+        nameOf (SkolemTyVar name _ _) = name
+
 newTcUnificationVarSigma d = newTcUnificationVar_ MTVSigma d
 newTcUnificationVarTau   d = newTcUnificationVar_ MTVTau d
 

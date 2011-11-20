@@ -177,6 +177,15 @@ dumpMiddle (MoRebindId from to) =
                             }
                     }
 
+dumpMiddle (MoLetBitcast from to) =
+    P'.defaultValue { let_val = Nothing
+                    , let_clo = Nothing
+                    , bitcast = Just $
+            P'.defaultValue { from_id = dumpIdent from
+                            , to_var  = dumpVar to
+                            }
+                    }
+
 dumpLetVal :: Ident -> MonoLetable -> PbLetVal.LetVal
 dumpLetVal id letable =
     P'.defaultValue { let_val_id = dumpIdent id
