@@ -462,10 +462,12 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
   const pb::Type& t = *pt;
 
   if (t.tag() == pb::Type::ARRAY) {
+    ASSERT(t.type_parts_size() == 1);
     return ArrayTypeAST::get(TypeAST_from_pb(&t.type_parts(0)));
   }
 
   if (t.tag() == pb::Type::PTR) {
+    ASSERT(t.type_parts_size() == 1);
     return RefTypeAST::get(TypeAST_from_pb(&t.type_parts(0)));
   }
 
