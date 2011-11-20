@@ -24,7 +24,7 @@ type ExprT = ExprAST TypeAST
 
 -----------------------------------------------------------------------
 
-typecheck :: Context TypeAST -> ExprT -> Maybe TypeAST -> Tc AnnExpr
+typecheck :: Context TypeAST -> ExprT -> Maybe TypeAST -> Tc (AnnExpr Rho)
 typecheck ctx expr maybeExpTy =
   tcWithScope expr $ do
     annexpr <- case expr of
@@ -179,7 +179,7 @@ typecheckLet ctx0 rng (TermBinding v e1) e2 mt = do
 -}
 -- {{{
 typecheckLetRec :: Context TypeAST -> SourceRange -> [TermBinding TypeAST]
-                -> ExprT -> Maybe TypeAST -> Tc AnnExpr
+                -> ExprT -> Maybe TypeAST -> Tc (AnnExpr Rho)
 typecheckLetRec ctx0 rng bindings e mt = do
     verifyNonOverlappingVariableNames rng "rec" (map termBindingName bindings)
     -- Generate unification variables for the overall type of
@@ -211,7 +211,7 @@ typecheckLetRec ctx0 rng bindings e mt = do
 varbind id ty = TermVarBinding (identPrefix id) (TypedId ty id)
 
 typecheckCase :: Context TypeAST -> SourceRange -> ExprT
-              -> [(EPattern TypeAST, ExprT)] -> Maybe TypeAST -> Tc AnnExpr
+              -> [(EPattern TypeAST, ExprT)] -> Maybe TypeAST -> Tc (AnnExpr Rho)
 -- {{{
 typecheckCase ctx rng scrutinee branches maybeExpTy = do
   -- (A) The expected type applies to the branches,
@@ -349,7 +349,7 @@ typecheckTyApp ctx rng e mb_t1tn _maybeExpTyTODO = do
                    ++ " non-ForAll type: " ++ show othertype]
 -- }}}
 
-typecheckSigma :: Context TypeAST -> ExprT -> Maybe Sigma -> Tc AnnExpr
+typecheckSigma :: Context TypeAST -> ExprT -> Maybe Sigma -> Tc (AnnExpr Rho)
 typecheckSigma ctx expr maybeExpSigma =
     case expr of
       E_VarAST rng v -> do
@@ -370,7 +370,7 @@ typecheckSigma ctx expr maybeExpSigma =
 -- G |- e1 ::: Array t
 -- ---------------------  e2 ::: t2 where t2 is a word-like type
 -- G |- e1 [ e2 ]  ::: t
-typecheckArrayRead :: SourceRange -> AnnExpr -> TypeAST -> AnnExpr -> Maybe TypeAST -> Tc AnnExpr
+typecheckArrayRead :: SourceRange -> AnnExpr Sigma -> TypeAST -> AnnExpr Sigma -> Maybe TypeAST -> Tc (AnnExpr Rho)
 -- {{{
 typecheckArrayRead rng _base (TupleTypeAST _) (AnnInt {}) _maybeExpTy =
     tcFails [out $ "ArrayReading tuples is not allowed;"
@@ -427,7 +427,7 @@ typecheckArrayPoke rng _ _base baseType index maybeExpTy =
 
 -----------------------------------------------------------------------
 
-showtypes :: [AnnExpr] -> TypeAST -> String
+showtypes :: [AnnExpr Sigma] -> TypeAST -> String
 showtypes args expectedTypes = concatMap showtypes' (zip3 [1..] args expTypes)
   where showtypes' (_n, expr, expty) =
             if show (typeAST expr) == show expty
@@ -447,7 +447,7 @@ showtypes args expectedTypes = concatMap showtypes' (zip3 [1..] args expTypes)
 -- argtype = (i32, i32)
 -- eb       = foo
 -- basetype = (?a -> ?b) ((for top level functions))
-typecheckCallRho :: AnnTuple -> AnnExpr -> TypeAST -> SourceRange -> Tc AnnExpr
+typecheckCallRho :: AnnTuple Rho -> AnnExpr Rho -> Rho -> SourceRange -> Tc (AnnExpr Rho)
 typecheckCallRho argtup eb basetype range =
     case (basetype, typeAST (AnnTuple argtup))
       of
@@ -474,7 +474,7 @@ tuplizeNE []   = error "Preconditition for tuplizeNE violated!"
 tuplizeNE [ty] = ty
 tuplizeNE tys  = TupleTypeAST tys
 
-inst :: AnnExpr {- Sigma -} -> Tc AnnExpr {- Rho -}
+inst :: AnnExpr Sigma -> Tc (AnnExpr Rho)
 inst base = do
   -- TODO shallow zonk here
   case typeAST base of
@@ -483,7 +483,7 @@ inst base = do
        instWith (rangeOf base) base taus
      _rho -> return base
 
-instWith :: SourceRange -> AnnExpr {- Sigma -} -> [Tau] -> Tc AnnExpr {- Rho -}
+instWith :: SourceRange -> AnnExpr Sigma -> [Tau] -> Tc (AnnExpr Rho)
 instWith _          aexpSigma [] = do
         sanityCheck (isRho $ typeAST aexpSigma)
                      "Tried to instantiate a sigma with no types!"
@@ -519,7 +519,7 @@ genTauUnificationVarsLike spine namegen = do
 -- using a bare function type...
 --
 typecheckCallSigma :: Context TypeAST -> SourceRange
-                   -> ExprT -> ExprT -> Maybe TypeAST -> Tc AnnExpr
+                   -> ExprT -> ExprT -> Maybe TypeAST -> Tc (AnnExpr Rho)
 typecheckCallSigma ctx rng base args maybeExpTy = do
    -- Act in checking mode, since we don't yet know if we're looking
    -- at a plain function or a forall-quantified type.
@@ -627,7 +627,7 @@ typecheckFn _ctx f (Just t) = tcFails [out $
                                 ++ show t ++ highlightFirstLine (fnAstRange f)]
 
 typecheckFn' :: Context TypeAST -> FnAST TypeAST -> CallConv
-             -> Maybe TypeAST -> Maybe TypeAST -> Tc AnnExpr
+             -> Maybe TypeAST -> Maybe TypeAST -> Tc (AnnExpr Rho)
 typecheckFn' ctx f cc expArgType expBodyType = do
     let fnProtoName = T.unpack (fnAstName f)
     uniquelyNamedFormals <- getUniquelyNamedFormals (fnAstRange f)
@@ -698,7 +698,7 @@ typecheckFn' ctx f cc expArgType expBodyType = do
 
 -----------------------------------------------------------------------
 
-typecheckTuple :: Context TypeAST -> SourceRange -> [ExprT] -> Maybe TypeAST -> Tc AnnExpr
+typecheckTuple :: Context TypeAST -> SourceRange -> [ExprT] -> Maybe TypeAST -> Tc (AnnExpr Rho)
 -- {{{
 typecheckTuple ctx rng exprs maybeExpectedType =
   case maybeExpectedType of
@@ -749,7 +749,7 @@ verifyNonOverlappingVariableNames rng name varNames = do
 
 -----------------------------------------------------------------------
 
-subsumedBy :: AnnExpr {- Sigma -} -> Sigma -> Maybe String -> Tc ()
+subsumedBy :: AnnExpr Sigma -> Sigma -> Maybe String -> Tc ()
 subsumedBy annexpr st2 msg = do
     case (typeAST annexpr, st2) of
         (_s1@ForAllAST {}, _s2@ForAllAST {}) -> do -- Odersky-Laufer's SKOL rule.

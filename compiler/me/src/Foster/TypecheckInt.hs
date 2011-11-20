@@ -21,7 +21,7 @@ import Foster.Output(outCSLn, outLn)
 sanityCheck :: Bool -> String -> Tc ()
 sanityCheck cond msg = if cond then return () else tcFails [outCSLn Red msg]
 
-typecheckInt :: SourceRange -> String -> Maybe TypeAST -> Tc AnnExpr
+typecheckInt :: SourceRange -> String -> Maybe TypeAST -> Tc (AnnExpr Rho)
 typecheckInt rng originalText _expTyTODO = do
     let goodBases = [2, 8, 10, 16]
     let maxBits = 32

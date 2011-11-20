@@ -1,3 +1,4 @@
+{-# LANGUAGE StandaloneDeriving #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2011 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -20,50 +21,52 @@ import qualified Data.Text as T
 -- Type checking isn't done until we move to AIExpr. We keep around source
 -- ranges for error messages if the final stage of type checking fails.
 
-data AnnExpr =
+data AnnExpr ty =
         -- Literals
           AnnBool       SourceRange Bool
         | AnnInt        { aintRange  :: SourceRange
-                        , aintType   :: TypeAST
+                        , aintType   :: ty
                         , aintLitInt :: LiteralInt }
-        | AnnTuple      AnnTuple
-        | E_AnnFn       (Fn AnnExpr TypeAST)
+        | AnnTuple      (AnnTuple ty)
+        | E_AnnFn       (Fn (AnnExpr ty) ty)
 
         -- Control flow
-        | AnnIf         SourceRange TypeAST AnnExpr AnnExpr AnnExpr
-        | AnnUntil      SourceRange TypeAST AnnExpr AnnExpr
+        | AnnIf         SourceRange ty (AnnExpr ty) (AnnExpr ty) (AnnExpr ty)
+        | AnnUntil      SourceRange ty (AnnExpr ty) (AnnExpr ty)
         -- Creation of bindings
-        | AnnCase       SourceRange TypeAST AnnExpr [(Pattern, AnnExpr)]
-        | AnnLetVar     SourceRange Ident AnnExpr AnnExpr
+        | AnnCase       SourceRange ty (AnnExpr ty) [(Pattern, (AnnExpr ty))]
+        | AnnLetVar     SourceRange Ident (AnnExpr ty) (AnnExpr ty)
         -- We have separate syntax for a SCC of recursive functions
         -- because they are compiled differently from non-recursive closures.
-        | AnnLetFuns    SourceRange [Ident] [Fn AnnExpr TypeAST] AnnExpr
+        | AnnLetFuns    SourceRange [Ident] [Fn (AnnExpr ty) ty] (AnnExpr ty)
         -- Use of bindings
-        | E_AnnVar      SourceRange AnnVar
-        | AnnPrimitive  SourceRange AnnVar
-        | AnnCall       SourceRange TypeAST AnnExpr AnnTuple
+        | E_AnnVar      SourceRange (TypedId ty)
+        | AnnPrimitive  SourceRange (TypedId ty)
+        | AnnCall       SourceRange ty (AnnExpr ty) (AnnTuple ty)
         -- Mutable ref cells
-        | AnnAlloc      SourceRange AnnExpr
-        | AnnDeref      SourceRange TypeAST AnnExpr
-        | AnnStore      SourceRange AnnExpr AnnExpr
+        | AnnAlloc      SourceRange              (AnnExpr ty)
+        | AnnDeref      SourceRange ty           (AnnExpr ty)
+        | AnnStore      SourceRange (AnnExpr ty) (AnnExpr ty)
         -- Array operations
-        | AnnArrayRead  SourceRange TypeAST AnnExpr AnnExpr
-        | AnnArrayPoke  SourceRange TypeAST AnnExpr AnnExpr AnnExpr
+        | AnnArrayRead  SourceRange ty (AnnExpr ty) (AnnExpr ty)
+        | AnnArrayPoke  SourceRange ty (AnnExpr ty) (AnnExpr ty) (AnnExpr ty)
         -- Terms indexed by types
         | E_AnnTyApp {  annTyAppRange       :: SourceRange
-                     ,  annTyAppOverallType :: TypeAST
-                     ,  annTyAppExpr        :: AnnExpr
-                     ,  annTyAppArgTypes    :: TypeAST }
+                     ,  annTyAppOverallType :: ty
+                     ,  annTyAppExpr        :: (AnnExpr ty)
+                     ,  annTyAppArgTypes    :: ty }
         -- Others
-        | AnnCompiles   SourceRange (CompilesResult AnnExpr)
-        deriving (Show)
+        | AnnCompiles   SourceRange (CompilesResult (AnnExpr ty))
 
-data AnnTuple = E_AnnTuple { annTupleRange :: SourceRange
-                           , annTupleExprs :: [AnnExpr] } deriving (Show)
+data AnnTuple ty = E_AnnTuple { annTupleRange :: SourceRange
+                              , annTupleExprs :: [AnnExpr ty] }
+
+deriving instance Show t => Show (AnnExpr t)
+deriving instance Show t => Show (AnnTuple t)
 
 -----------------------------------------------------------------------
 
-typeAST :: AnnExpr -> TypeAST
+typeAST :: AnnExpr TypeAST -> TypeAST
 typeAST annexpr =
   let recur = typeAST in
   case annexpr of
@@ -89,7 +92,7 @@ typeAST annexpr =
 
 -----------------------------------------------------------------------
 
-instance Structured AnnExpr where
+instance Structured (AnnExpr TypeAST) where
   textOf e _width =
     case e of
       AnnBool     _rng    b      -> out $ "AnnBool      " ++ (show b)
@@ -139,12 +142,12 @@ instance Structured AnnExpr where
 
 -----------------------------------------------------------------------
 
-instance AExpr (Fn AnnExpr TypeAST) where
+instance AExpr (Fn (AnnExpr TypeAST) TypeAST) where
     freeIdents f = let bodyvars =  freeIdents (fnBody f) in
                    let boundvars = map tidIdent (fnVars f) in
                    bodyvars `butnot` boundvars
 
-instance AExpr AnnExpr where
+instance AExpr (AnnExpr TypeAST) where
     freeIdents e = case e of
         E_AnnVar _rng v     -> [tidIdent v]
         AnnPrimitive {}     -> []
@@ -159,7 +162,7 @@ instance AExpr AnnExpr where
 
 -----------------------------------------------------------------------
 
-instance SourceRanged AnnExpr where
+instance SourceRanged (AnnExpr ty) where
   rangeOf expr = case expr of
       AnnBool      rng    _       -> rng
       AnnCall      rng _ _ _      -> rng

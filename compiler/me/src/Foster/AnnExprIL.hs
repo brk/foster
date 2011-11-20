@@ -56,7 +56,7 @@ data AIExpr=
                     , aiTyAppArgTypes    :: TypeIL }
         deriving (Show)
 
-ail :: Context ty -> AnnExpr -> Tc AIExpr
+ail :: Context ty -> AnnExpr TypeAST -> Tc AIExpr
 ail ctx ae =
     let q  = ail  ctx in
     let qt = ilOf ctx in
@@ -190,7 +190,7 @@ containsUnboxedPolymorphism ty = any containsUnboxedPolymorphism $ childrenOf ty
 tyvarBindersOf (ForAllIL ktvs _) = ktvs
 tyvarBindersOf _                 = []
 
-fnOf :: Context ty -> Fn AnnExpr TypeAST -> Tc (Fn AIExpr TypeIL)
+fnOf :: Context ty -> Fn (AnnExpr TypeAST) TypeAST -> Tc (Fn AIExpr TypeIL)
 fnOf ctx f = do
     var <- aiVar ctx (fnVar f)
     let ft = tidType var

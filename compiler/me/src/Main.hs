@@ -57,9 +57,8 @@ pair2binding (nm, ty) = TermVarBinding nm (TypedId ty (GlobalSymbol nm))
 -- Every function in the SCC should typecheck against the input context,
 -- and the resulting context should include the computed types of each
 -- function in the SCC.
-typecheckFnSCC :: Graph.SCC (FnAST TypeAST)
-               ->                         (Context TypeAST, TcEnv)
-               -> IO ([OutputOr AnnExpr], (Context TypeAST, TcEnv))
+typecheckFnSCC :: Graph.SCC (FnAST TypeAST)  ->   (Context TypeAST, TcEnv)
+               -> IO ([OutputOr (AnnExpr Sigma)], (Context TypeAST, TcEnv))
 typecheckFnSCC scc (ctx, tcenv) = do
     let fns = Graph.flattenSCC scc
     annfns <- forM fns $ \fn -> do
@@ -82,7 +81,7 @@ typecheckFnSCC scc (ctx, tcenv) = do
            ],(ctx, tcenv))
 
    where
-        bindingForAnnFn :: Fn AnnExpr TypeAST -> ContextBinding TypeAST
+        bindingForAnnFn :: Fn (AnnExpr TypeAST) TypeAST -> ContextBinding TypeAST
         bindingForAnnFn f = TermVarBinding (identPrefix $ fnIdent f) (fnVar f)
 
         -- Start with the most specific binding possible (i.e. sigma, not tau).
@@ -109,7 +108,7 @@ typecheckFnSCC scc (ctx, tcenv) = do
             []        -> return $ fnTy
             tyformals -> return $ ForAllAST (map convertTyFormal tyformals) fnTy
 
-        inspect :: OutputOr AnnExpr -> ExprAST TypeAST -> IO Bool
+        inspect :: OutputOr (AnnExpr TypeAST) -> ExprAST TypeAST -> IO Bool
         inspect typechecked ast =
             case typechecked of
                 OK e -> do
@@ -201,7 +200,7 @@ typecheckModule verboseMode modast tcenv0 = do
 
    convertTypeILofAST :: ModuleAST FnAST TypeAST
                       -> Context TypeAST
-                      -> [OutputOr AnnExpr]
+                      -> [OutputOr (AnnExpr TypeAST)]
                       -> Tc (Context TypeIL, ModuleIL AIExpr TypeIL)
    convertTypeILofAST mAST ctx_ast oo_annfns = do
      ctx_il    <- liftContextM   (ilOf ctx_ast) ctx_ast
