@@ -261,7 +261,7 @@ monoLast subst last =
     ILRet      v               -> MoRet      (qv v)
     ILBr       bid             -> MoBr       bid
     ILIf       t v  bid1  bid2 -> MoIf       (qt t) (qv v) bid1 bid2
-    ILCase     t v dt          -> MoCase     (qt t) (qv v) dt
+    ILCase     t v  dt         -> MoCase     (qt t) (qv v) dt
 
 monoVar :: MonoSubst -> TypedId TypeIL -> TypedId MonoType
 monoVar subst (TypedId t id) = TypedId (monoType subst t) id

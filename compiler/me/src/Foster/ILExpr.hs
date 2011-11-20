@@ -8,6 +8,8 @@
 module Foster.ILExpr where
 
 import Control.Monad.State
+import Data.Set(Set)
+import qualified Data.Set as Set(empty, singleton, union, unions, notMember)
 import Data.Map(Map)
 import qualified Data.Map as Map((!), insert, lookup, empty, fromList, elems)
 import qualified Data.Text as T
@@ -142,7 +144,22 @@ closureConvertBlocks bbg =
            CFIf    t a b1 b2  -> return $ ILIf    t a b1 b2
            CFCase  t a pbs    -> do allSigs <- gets ilmCtors
                                     let dt = compilePatterns pbs allSigs
-                                    return $ ILCase  t a dt
+                                    let usedBlocks = eltsOfDecisionTree dt
+                                    let _unusedPats = [pat | (pat, bid) <- pbs
+                                                     , Set.notMember bid usedBlocks]
+                                    -- TODO print warning if any unused patterns
+                                    return $ ILCase t a dt
+              where
+                -- The decision tree we get from pattern-match compilation may
+                -- contain only a subset of the pattern branche.
+                eltsOfDecisionTree :: (Show a, Ord a) => DecisionTree a -> Set a
+                eltsOfDecisionTree DT_Fail = Set.empty
+                eltsOfDecisionTree (DT_Leaf a _) = Set.singleton a
+                eltsOfDecisionTree (DT_Switch _ idsDts maybeDt) = Set.union
+                   (Set.unions (map (\(_, dt) -> eltsOfDecisionTree dt) idsDts))
+                   (case maybeDt of
+                       Just dt -> eltsOfDecisionTree dt
+                       Nothing -> Set.empty)
 
       closureConvertMid :: Insn O O -> ILM ILMiddle
       closureConvertMid mid =
@@ -325,4 +342,4 @@ instance Show ILLast where
   show (ILRet v        ) = "ret " ++ show v
   show (ILBr  bid      ) = "br " ++ show bid
   show (ILIf ty v b1 b2) = "if<" ++ show ty ++ "> " ++ show v ++ " ? " ++ show b1 ++ " : " ++ show b2
-  show (ILCase ty v  dt) = "case<" ++ show ty ++ "> (" ++ show v ++ ") [decisiontree]: {\n" ++ show dt ++ "\n}"
+  show (ILCase ty v dt ) = "case<" ++ show ty ++ "> (" ++ show v ++ ") [decisiontree]: {\n" ++ show dt ++ "\n}"
