@@ -18,7 +18,7 @@ using llvm::Type;
 using llvm::getGlobalContext;
 using llvm::FunctionType;
 
-const llvm::Type* foster_generic_coro_t;
+llvm::Type* foster_generic_coro_t;
 
 // Converts t1 (t2, t3)   to  t1 (i8*, t2, t3)*
 FnTypeAST* genericClosureVersionOf(const FnTypeAST* fnty) {

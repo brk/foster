@@ -52,17 +52,17 @@ int  kUnknownBitsize = 999; // keep in sync with IntSizeBits in Base.hs
 
 namespace { // {{{ Internal helper functions
 
-const llvm::Type* getLLVMType(TypeAST* type) {
+llvm::Type* getLLVMType(TypeAST* type) {
   ASSERT(type) << "getLLVMType must be given a non-null type!";
   return type->getLLVMType();
 }
 
-const llvm::Type* slotType(llvm::Value* v) {
+llvm::Type* slotType(llvm::Value* v) {
   return v->getType()->getContainedType(0);
 }
 
 inline
-llvm::Value* emitNonVolatileLoad(llvm::Value* v, const llvm::Twine& name) {
+llvm::Value* emitNonVolatileLoad(llvm::Value* v, llvm::Twine name) {
   return builder.CreateLoad(v, false, name);
 }
 
@@ -148,7 +148,7 @@ llvm::Value* CodegenPass::emit(LLExpr* e, TypeAST* expectedType) {
   v = autoload(v);
 
   if (expectedType) {
-    const llvm::Type* ty = getLLVMType(expectedType);
+    llvm::Type* ty = getLLVMType(expectedType);
     if (!typesEq(v->getType(), ty)) {
       ASSERT(false) << "********* expected type " << str(ty)
                            << "; had type " << str(v->getType())
@@ -206,11 +206,15 @@ void LLModule::codegenModule(CodegenPass* pass) {
 //////////////// LLProc, LLProto ///////////////////////////////////
 /////////////////////////////////////////////////////////////////{{{
 
-const llvm::FunctionType*
+bool isReturnTypeOK(llvm::Type* ty) {
+  return true; // TODO verify not opaque
+}
+
+llvm::FunctionType*
 getLLVMFunctionType(FnTypeAST* t, const std::string& procSymbol) {
-  if (const llvm::PointerType* pt =
+  if (llvm::PointerType* pt =
    dyn_cast<llvm::PointerType>(getLLVMType(t))) {
-    ASSERT(! getLLVMType(t->getReturnType())->isOpaqueTy())
+    ASSERT(isReturnTypeOK(getLLVMType(t->getReturnType())))
         << "Cannot use opaque return type for proc " << procSymbol;
     return dyn_cast<llvm::FunctionType>(pt->getContainedType(0));
   } else {
@@ -246,7 +250,7 @@ void LLProc::codegenProto(CodegenPass* pass) {
   std::string symbolName = getGlobalSymbolName(this->name);
 
   this->type->markAsProc();
-  const llvm::FunctionType* FT = getLLVMFunctionType(this->type, symbolName);
+  llvm::FunctionType* FT = getLLVMFunctionType(this->type, symbolName);
 
   if (symbolName == kFosterMain) {
     // No args, returning void...
@@ -437,7 +441,7 @@ void LLRebindId::codegenMiddle(CodegenPass* pass) {
 
 void LLBitcast::codegenMiddle(CodegenPass* pass) {
   llvm::Value* v = to->codegen(pass);
-  const llvm::Type* tgt = getLLVMType(to->type);
+  llvm::Type* tgt = getLLVMType(to->type);
   if (v->getType() == tgt) { return; }
 
   // Apply the bitcast to the value or the slot, as appropriate.
@@ -488,8 +492,8 @@ llvm::Value* LLStore::codegen(CodegenPass* pass) {
 ///}}}///////////////////////////////////////////////////////////////
 
 llvm::Value* LLCoroPrim::codegen(CodegenPass* pass) {
-  const llvm::Type* r = retType->getLLVMType();
-  const llvm::Type* a = typeArg->getLLVMType();
+  llvm::Type* r = retType->getLLVMType();
+  llvm::Type* a = typeArg->getLLVMType();
   if (this->primName == "coro_yield") { return pass->emitCoroYieldFn(r, a); }
   if (this->primName == "coro_invoke") { return pass->emitCoroInvokeFn(r, a); }
   if (this->primName == "coro_create") { return pass->emitCoroCreateFn(r, a); }
@@ -550,7 +554,7 @@ llvm::Value* LLVar::codegen(CodegenPass* pass) {
 
 llvm::Value* LLInt::codegen(CodegenPass* pass) {
   ASSERT(this->type && this->type->getLLVMType());
-  const llvm::Type* ty = this->type->getLLVMType();
+  llvm::Type* ty = this->type->getLLVMType();
 
   llvm::Value* small = ConstantInt::get(ty, this->getAPInt());
 
@@ -610,9 +614,9 @@ llvm::Value* emitRuntimeArbitraryPrecisionOperation(const std::string& op,
 
 Value* allocateCell(CodegenPass* pass, TypeAST* type, bool unboxed,
                     LLAllocate::MemRegion region, int8_t ctorId) {
-  const llvm::Type* ty = type->getLLVMType();
+  llvm::Type* ty = type->getLLVMType();
   if (unboxed) {
-    if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
+    if (llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
       ty = pty->getContainedType(0);
     }
   }
@@ -632,7 +636,7 @@ Value* allocateCell(CodegenPass* pass, TypeAST* type, bool unboxed,
 Value* allocateArray(CodegenPass* pass, TypeAST* ty,
                      LLAllocate::MemRegion region,
                      Value* arraySize) {
-  const llvm::Type* elt_ty = getLLVMType(ty);
+  llvm::Type* elt_ty = getLLVMType(ty);
   ASSERT(region == LLAllocate::MEM_REGION_GLOBAL_HEAP);
   return pass->emitArrayMalloc(elt_ty, arraySize);
 }
@@ -652,8 +656,8 @@ llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
 //////////////// Arrays ////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////{{{
 
-bool isPointerToStruct(const llvm::Type* ty) {
-  if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
+bool isPointerToStruct(llvm::Type* ty) {
+  if (llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
     if (llvm::dyn_cast<llvm::StructType>(pty->getContainedType(0))) {
       return true;
     }
@@ -664,10 +668,10 @@ bool isPointerToStruct(const llvm::Type* ty) {
 bool tryBindArray(llvm::Value* base, Value*& arr, Value*& len) {
   // {i64, [0 x T]}*
   if (isPointerToStruct(base->getType())) {
-    const llvm::Type* sty = slotType(base);
+    llvm::Type* sty = slotType(base);
     if (sty->getNumContainedTypes() == 2
       && sty->getContainedType(0) == builder.getInt64Ty()) {
-      if (const llvm::ArrayType* aty =
+      if (llvm::ArrayType* aty =
         llvm::dyn_cast<llvm::ArrayType>(sty->getContainedType(1))) {
         if (aty->getNumElements() == 0) {
           arr = getPointerToIndex(base, getConstantInt32For(1), "arr");
@@ -795,12 +799,12 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
     }
   }
 
-  bool tryBindClosureFunctionTypes(const llvm::Type*          origType,
-                                   const llvm::FunctionType*& fnType,
-                                   const llvm::StructType*  & cloStructTy) {
+  bool tryBindClosureFunctionTypes(llvm::Type*          origType,
+                                   llvm::FunctionType*& fnType,
+                                   llvm::StructType*  & cloStructTy) {
     fnType = NULL; cloStructTy = NULL;
 
-    const llvm::PointerType* pfnty = llvm::dyn_cast<llvm::PointerType>(origType);
+    llvm::PointerType* pfnty = llvm::dyn_cast<llvm::PointerType>(origType);
     if (!pfnty) {
       EDiag() << "expected " << str(origType) << " to be a ptr type.";
       return false;
@@ -814,30 +818,29 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
       EDiag() << "expected " << str(fnType) << " to have an env parameter.";
       return false;
     }
-    const llvm::PointerType* maybeEnvType =
+    llvm::PointerType* maybeEnvType =
                   llvm::dyn_cast<llvm::PointerType>(fnType->getParamType(0));
     if (!maybeEnvType) return false;
 
-    cloStructTy = llvm::StructType::get(origType->getContext(),
-                      pfnty, maybeEnvType, NULL);
+    cloStructTy = getStructType(origType->getContext(), pfnty, maybeEnvType);
     return true;
   }
 
   // Converts { r({...}*, ----), {....}* }
   // to       { r( i8*,   ----),   i8*   }.
   // Used when choosing a type to allocate for a closure pair.
-  const llvm::StructType*
-  genericClosureStructTy(const llvm::FunctionType* fnty) {
-    const Type* retty = fnty->getReturnType();
-    std::vector<const llvm::Type*> argTypes;
+  llvm::StructType*
+  genericClosureStructTy(llvm::FunctionType* fnty) {
+    Type* retty = fnty->getReturnType();
+    std::vector<llvm::Type*> argTypes;
     for (size_t i = 0; i < fnty->getNumParams(); ++i) {
        argTypes.push_back(fnty->getParamType(i));
     }
     argTypes[0] = builder.getInt8PtrTy();
 
-    return llvm::StructType::get(fnty->getContext(),
-             ptrTo(llvm::FunctionType::get(retty, argTypes, false)),
-             builder.getInt8PtrTy(), NULL);
+    return getStructType(fnty->getContext(),
+                         ptrTo(llvm::FunctionType::get(retty, argTypes, false)),
+                         builder.getInt8PtrTy());
   }
 
   llvm::Value* LLClosure::codegenClosure(
@@ -845,8 +848,8 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
                           llvm::Value* envPtrOrSlot) {
     llvm::Value* proc = pass->lookupFunctionOrDie(procname);
 
-    const llvm::FunctionType* fnty;
-    const llvm::StructType* cloStructTy;
+    llvm::FunctionType* fnty;
+    llvm::StructType* cloStructTy;
 
     if (!tryBindClosureFunctionTypes(proc->getType(), fnty, cloStructTy)) {
       ASSERT(false) << "proc " << procname
@@ -1095,7 +1098,7 @@ llvm::Value* LLAppCtor::codegen(CodegenPass* pass) {
 
   copyValuesToStruct(codegenAll(pass, this->args), obj);
 
-  const llvm::Type* dtype = dt->getLLVMType();
+  llvm::Type* dtype = dt->getLLVMType();
   // TODO fix to use a stack slot properly
   return builder.CreateBitCast(obj, dtype);
 }
@@ -1108,19 +1111,19 @@ llvm::Value* LLCallPrimOp::codegen(CodegenPass* pass) {
   return codegenPrimitiveOperation(this->op, builder, codegenAll(pass, this->args));
 }
 
-bool isGenericClosureEnvType(const Type* ty) {
+bool isGenericClosureEnvType(Type* ty) {
   return ty == builder.getInt8PtrTy();
 }
 
 // Returns null if no bitcast is needed, else returns the type to bitcast to.
-bool isPointerToUnknown(const Type* ty) {
-  if (const llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
+bool isPointerToUnknown(Type* ty) {
+  if (llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
     return pty->getContainedType(0)->isIntegerTy(kUnknownBitsize);
   }
   return false;
 }
 
-bool matchesExceptForUnknownPointers(const Type* aty, const Type* ety) {
+bool matchesExceptForUnknownPointers(Type* aty, Type* ety) {
   if (aty == ety) return true;
   if (aty->isPointerTy()) {
     if (isPointerToUnknown(ety)) { return true; }
@@ -1142,7 +1145,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
   Value* FV = pass->emit(base, NULL);
   ASSERT(FV) << "unable to codegen call due to missing value for base";
 
-  const llvm::FunctionType* FT = NULL;
+  llvm::FunctionType* FT = NULL;
   std::vector<Value*> valArgs;
 
   // TODO extract directly from FnTypeAST
@@ -1161,7 +1164,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
            getElementFromComposite(FV, getConstantInt32For(1), "getCloEnv");
       FV = getElementFromComposite(FV, getConstantInt32For(0), "getCloCode");
 
-      FT = dyn_cast<const llvm::FunctionType>(FV->getType()->getContainedType(0));
+      FT = dyn_cast<llvm::FunctionType>(FV->getType()->getContainedType(0));
       // Pass env pointer as first parameter to function.
       ASSERT(valArgs.empty());
       valArgs.push_back(envPtr);
@@ -1181,7 +1184,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
 
   // Collect the args, performing coercions if necessary.
   for (size_t i = 0; i < this->args.size(); ++i) {
-    const llvm::Type* expectedType = FT->getParamType(valArgs.size());
+    llvm::Type* expectedType = FT->getParamType(valArgs.size());
 
     llvm::Value* argV = pass->emit(this->args[i], NULL);
 
@@ -1215,8 +1218,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
 
   // Give the instruction a name, if we can...
 
-  llvm::CallInst* callInst =
-        builder.CreateCall(FV, valArgs.begin(), valArgs.end());
+  llvm::CallInst* callInst = builder.CreateCall(FV, llvm::makeArrayRef(valArgs));
   callInst->setCallingConv(callingConv);
   trySetName(callInst, "calltmp");
 

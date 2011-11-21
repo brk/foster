@@ -20,7 +20,7 @@ using std::map;
 using foster::EDiag;
 using foster::SourceRange;
 
-const llvm::Type* llvmIntType(int n) {
+llvm::Type* llvmIntType(int n) {
   return llvm::IntegerType::get(llvm::getGlobalContext(), n);
 }
 
@@ -36,10 +36,10 @@ TypeAST* TypeAST::i(int n) {
 
 ////////////////////////////////////////////////////////////////////
 
-map<const llvm::Type*, TypeAST*> PrimitiveTypeAST::thinWrappers;
+map<llvm::Type*, TypeAST*> PrimitiveTypeAST::thinWrappers;
 
 TypeAST* PrimitiveTypeAST::get(const std::string& name,
-                               const llvm::Type* loweredType) {
+                               llvm::Type* loweredType) {
   ASSERT(loweredType);
   TypeAST* tyast = thinWrappers[loweredType];
   if (tyast) { return tyast; }
@@ -50,7 +50,7 @@ TypeAST* PrimitiveTypeAST::get(const std::string& name,
 
 ////////////////////////////////////////////////////////////////////
 
-const llvm::Type* NamedTypeAST::getLLVMType() const {
+llvm::Type* NamedTypeAST::getLLVMType() const {
   ASSERT(namedType);
   if (!repr) {
     repr = namedType->getLLVMType();
@@ -62,7 +62,7 @@ const llvm::Type* NamedTypeAST::getLLVMType() const {
 ////////////////////////////////////////////////////////////////////
 
 /*
-const llvm::PointerType* DataTypeAST::getOpaquePointerTy(llvm::Module* mod) const {
+llvm::PointerType* DataTypeAST::getOpaquePointerTy(llvm::Module* mod) const {
   if (!this->opaq) {
     EDiag() << "Generating opaque pointer for data type " << this->name;
     this->opaq = llvm::OpaqueType::get(llvm::getGlobalContext());
@@ -72,14 +72,14 @@ const llvm::PointerType* DataTypeAST::getOpaquePointerTy(llvm::Module* mod) cons
 }
 */
 
-const llvm::Type* DataTypeAST::getLLVMType() const {
+llvm::Type* DataTypeAST::getLLVMType() const {
   //return this->getOpaquePointerTy(NULL);
   return llvm::PointerType::getUnqual(llvmIntType(999));
 }
 
 ////////////////////////////////////////////////////////////////////
 
-const llvm::Type* RefTypeAST::getLLVMType() const {
+llvm::Type* RefTypeAST::getLLVMType() const {
   if (!repr) {
     repr = llvm::PointerType::getUnqual(underlyingType->getLLVMType());
   }
@@ -117,7 +117,7 @@ FnTypeAST::FnTypeAST(TypeAST* returnType,
   }
 }
 
-const llvm::Type* FnTypeAST::getLLVMType() const {
+llvm::Type* FnTypeAST::getLLVMType() const {
   if (!repr) {
     if (isMarkedAsClosure()) {
       repr = genericClosureTypeFor(this)->getLLVMType();
@@ -128,17 +128,17 @@ const llvm::Type* FnTypeAST::getLLVMType() const {
   return repr;
 }
 
-const llvm::FunctionType* FnTypeAST::getLLVMFnType() const {
-  vector<const llvm::Type*> loweredArgTypes;
+llvm::FunctionType* FnTypeAST::getLLVMFnType() const {
+  vector<llvm::Type*> loweredArgTypes;
 
   //llvm::outs() << "FnTypeAST: " << str(this) << "\n";
   for (size_t i = 0; i < argTypes.size(); ++i) {
-    const llvm::Type* ty = argTypes[i]->getLLVMType();
+    llvm::Type* ty = argTypes[i]->getLLVMType();
     //llvm::outs() << "\tfn arg " << i << " :: " << str(ty) << "\n";
     loweredArgTypes.push_back(ty);
   }
 
-  const llvm::Type* retTy = returnType->getLLVMType();
+  llvm::Type* retTy = returnType->getLLVMType();
 
   // TODO conflict here between polymorphism (which needs
   // a uniform ABI) and C-compatibility (which says that
@@ -182,8 +182,8 @@ llvm::CallingConv::ID FnTypeAST::getCallingConventionID() const {
 
 /////////////////////////////////////////////////////////////////////
 
-const llvm::Type* TupleTypeAST::getLLVMTypeUnboxed() const {
-  vector<const llvm::Type*> loweredTypes;
+llvm::Type* TupleTypeAST::getLLVMTypeUnboxed() const {
+  vector<llvm::Type*> loweredTypes;
   for (size_t i = 0; i < parts.size(); ++i) {
     loweredTypes.push_back(parts[i]->getLLVMType());
   }
@@ -195,7 +195,7 @@ const llvm::Type* TupleTypeAST::getLLVMTypeUnboxed() const {
   }
 }
 
-const llvm::Type* TupleTypeAST::getLLVMType() const {
+llvm::Type* TupleTypeAST::getLLVMType() const {
   return llvm::PointerType::getUnqual(getLLVMTypeUnboxed());
 }
 
@@ -213,7 +213,7 @@ TupleTypeAST* TupleTypeAST::get(const vector<TypeAST*>& argTypes) {
 
 /////////////////////////////////////////////////////////////////////
 
-const llvm::Type* TypeTypeAppAST::getLLVMType() const {
+llvm::Type* TypeTypeAppAST::getLLVMType() const {
   ASSERT(false) << "TypeTypeAppAST::getLLVMType()";
   return NULL;
 }
@@ -230,9 +230,9 @@ TypeTypeAppAST* TypeTypeAppAST::get(const vector<TypeAST*>& argTypes) {
 
 /////////////////////////////////////////////////////////////////////
 
-const llvm::Type* CoroTypeAST::getLLVMType() const {
+llvm::Type* CoroTypeAST::getLLVMType() const {
   if (!repr) {
-    std::vector<const llvm::Type*> fieldTypes;
+    std::vector<llvm::Type*> fieldTypes;
     fieldTypes.push_back(foster_generic_coro_t);
     fieldTypes.push_back(this->a->getLLVMType());
 
@@ -257,7 +257,7 @@ CoroTypeAST* CoroTypeAST::get(TypeAST* targ, TypeAST* tret) {
 /////////////////////////////////////////////////////////////////////
 
 
-const llvm::Type* CArrayTypeAST::getLLVMType() const {
+llvm::Type* CArrayTypeAST::getLLVMType() const {
   if (!repr) {
     ASSERT(false);
   }
@@ -281,20 +281,21 @@ CArrayTypeAST* CArrayTypeAST::get(TypeAST* tcell, uint64_t size) {
 
 /////////////////////////////////////////////////////////////////////
 
-const llvm::Type* ArrayTypeAST::getSizedArrayTypeRef(const llvm::Type* t, int64_t n) {
+llvm::Type* ArrayTypeAST::getSizedArrayTypeRef(llvm::Type* t, int64_t n) {
+  std::vector<llvm::Type*> structElemTypes;
+  structElemTypes.push_back(llvm::IntegerType::get(llvm::getGlobalContext(), 64));
+  structElemTypes.push_back(llvm::ArrayType::get(t, n));
   return llvm::PointerType::getUnqual(
           llvm::StructType::get(llvm::getGlobalContext(),
-                      llvm::IntegerType::get(llvm::getGlobalContext(), 64),
-                      llvm::ArrayType::get(t, n),
-                            NULL));
+                                llvm::makeArrayRef(structElemTypes)));
 }
 
 
-const llvm::Type* ArrayTypeAST::getZeroLengthTypeRef(const llvm::Type* t) {
+llvm::Type* ArrayTypeAST::getZeroLengthTypeRef(llvm::Type* t) {
   return getSizedArrayTypeRef(t, 0);
 }
 
-const llvm::Type* ArrayTypeAST::getLLVMType() const {
+llvm::Type* ArrayTypeAST::getLLVMType() const {
   if (!repr) {
     repr = getZeroLengthTypeRef(this->cell->getLLVMType());
   }
@@ -313,7 +314,7 @@ ArrayTypeAST* ArrayTypeAST::get(TypeAST* tcell) {
 
 /////////////////////////////////////////////////////////////////////
 
-const llvm::Type* ForallTypeAST::getLLVMType() const {
+llvm::Type* ForallTypeAST::getLLVMType() const {
   ASSERT(false) << "No getLLVMType() for ForallTypeAST!";
   return NULL;
 }

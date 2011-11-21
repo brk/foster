@@ -48,6 +48,7 @@ void force_inclusion_in_module() {
   mp_int_init_value(a, 0);
   mp_int_set_value(a, 0);
   mp_int_init_copy(c, a);
+  mp_int_to_int(a, p_sm);
 
   mp_int_clear(a);
   mp_int_free(a);

@@ -7,13 +7,7 @@ cmake_policy(VERSION 2.8.0)
 
 set(LIBRARY_OUTPUT_PATH ${PROJECT_BINARY_DIR}/_nativelibs_)
 
-
-
-set(LLVM_VERSION 2.8)
-
-option(USE_FOSTER_GC_PLUGIN
-       "Use compiled stackmaps for garbage collection"
-       true)
+set(LLVM_VERSION 3.0)
 
 # ~~~~~~~~~~~~~~~~~~~~ ANTLR ~~~~~~~~~~~~~~~~~~~~~
 
@@ -87,16 +81,14 @@ string(STRIP "${LLVM_ORIGINAL_CFLAGS}" LLVM_ORIGINAL_CFLAGS)
 
 # Hack for now: rather than running all programs JITted from the main fosterc
 # compiler binary (and embedding the foster runtime inside the foster compiler)
-# we instead compile the foster runtime with llvm-g++ to bitcode, then link the
+# we instead compile the foster runtime with clang++ to bitcode, then link the
 # foster runtime bitcode in along with the bitcode for a program to run it.
 #
-find_program(LLVM_G++ NAMES llvm-g++ clang++ clang
+find_program(CLANG NAMES clang++ clang
   PATHS
         /usr/bin
-        $ENV{HOME}/llvm/${LLVM_VERSION}/gcc/bin
         $ENV{HOME}/llvm/${LLVM_VERSION}/bin
-        /usr/lib/llvm/llvm/gcc-4.2/bin
-  DOC "C++ compiler to emit LLVM bytecode: llvm-g++ or clang++")
+  DOC "C++ compiler to emit LLVM bytecode: clang++")
 
 
 execute_process(COMMAND ${LLVM_CONFIG} --bindir OUTPUT_VARIABLE LLVM_BINDIR)
@@ -252,7 +244,6 @@ set(LIBFOSTER_CPP_SOURCES
         ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc.cpp
         ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc_utils.h
         ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc_stackmaps.cpp
-        ${PROJECT_SOURCE_DIR}/runtime/libfoster_gc_roots.cpp
 )
 
 # Use clang or llvm-g++ to build libfoster.bc
@@ -260,7 +251,7 @@ add_custom_command(
   OUTPUT ${PROJECT_BINARY_DIR}/_bitcodelibs_/libfoster.bc
   COMMAND
     python ${PROJECT_SOURCE_DIR}/scripts/build_libfoster.py
-        --clang="${LLVM_G++}"
+        --clang="${CLANG}"
         --srcdir=${PROJECT_SOURCE_DIR}
         --bindir=${PROJECT_BINARY_DIR}
         --llvmdir="${LLVM_BINDIR}"
@@ -287,7 +278,7 @@ add_custom_command(
   OUTPUT
         ${PROJECT_BINARY_DIR}/_bitcodelibs_/imath-wrapper.bc
   COMMAND
-        ${LLVM_G++} -x c
+        ${CLANG} -x c
           ${PROJECT_SOURCE_DIR}/third_party/imath/imath-wrapper.c
           -I ${PROJECT_BINARY_DIR}
           -c -emit-llvm

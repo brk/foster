@@ -10,14 +10,15 @@
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
 #include "llvm/CodeGen/LinkAllAsmWriterComponents.h"
 #include "llvm/Target/TargetData.h"
-#include "llvm/Target/TargetRegistry.h"
+#include "llvm/Support/TargetRegistry.h"
 #include "llvm/Target/TargetOptions.h"
 
-#include "pystring/pystring.h"
+#include "llvm/DefaultPasses.h"
+#include "llvm/Analysis/Verifier.h"
+#include "llvm/Transforms/IPO/PassManagerBuilder.h"
 
 #include "llvm/Support/Host.h"
 #include "llvm/Support/Signals.h"
-#include "llvm/Support/StandardPasses.h"
 #include "llvm/Support/PassNameParser.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ManagedStatic.h"
@@ -31,6 +32,8 @@
 #include "base/TimingsRepository.h"
 
 #include "passes/FosterPasses.h"
+
+#include "pystring/pystring.h"
 
 #include <fstream>
 
@@ -130,6 +133,44 @@ void dumpModuleToBitcode(Module* mod, const string& filename) {
   foster::dumpModuleToBitcode(mod, filename);
 }
 
+// The standard LLVM pass logic migrated from the libraries to opt in 3.0.
+// These routines are adapted copies of the ones used by opt.
+namespace  {
+  void AddOptimizationPasses(PassManagerBase& MPM,
+                             FunctionPassManager& FPM,
+                             unsigned OptLevel,
+                             bool DisableInline) {
+    PassManagerBuilder Builder;
+    Builder.OptLevel = OptLevel;
+
+    if (DisableInline) {
+      // No inlining pass
+    } else if (OptLevel > 1) {
+      unsigned Threshold = 225;
+      if (OptLevel > 2)
+        Threshold = 275;
+      Builder.Inliner = createFunctionInliningPass(Threshold);
+    } else {
+      Builder.Inliner = createAlwaysInlinerPass();
+    }
+    Builder.DisableUnitAtATime = false;
+    Builder.DisableUnrollLoops = OptLevel == 0;
+    Builder.DisableSimplifyLibCalls = false;
+
+    MPM.add(createVerifierPass());                // Verify that input is correct
+    Builder.populateFunctionPassManager(FPM);
+    Builder.populateModulePassManager(MPM);
+  }
+
+  void AddStandardLinkPasses(PassManagerBase &PM) {
+    PM.add(createVerifierPass());                  // Verify that input is correct
+    //PM.add(createStripSymbolsPass(true));
+    PassManagerBuilder Builder;
+    Builder.populateLTOPassManager(PM, /*Internalize=*/ true,
+                                        /*RunInliner=*/ true);
+  }
+} // namespace
+
 TargetData* getTargetDataForModule(Module* mod) {
   const string& layout = mod->getDataLayout();
   if (layout.empty()) return NULL;
@@ -152,17 +193,8 @@ void optimizeModuleAndRunPasses(Module* mod) {
   passes.add(llvm::createVerifierPass());
 
   if (!optOptimizeZero) {
-    llvm::createStandardModulePasses(&passes, 2,
-        /*OptimizeSize*/ false,
-        /*UnitAtATime*/ true,
-        /*UnrollLoops*/ true,
-        /*SimplifyLibCalls*/ true,
-        /*HaveExceptions*/ false,
-        llvm::createFunctionInliningPass());
-    llvm::createStandardLTOPasses(&passes,
-        /*Internalize*/ true,
-        /*RunInliner*/ true,
-        /*VerifyEach*/ true);
+    AddOptimizationPasses(passes, fpasses, 2, false);
+    AddStandardLinkPasses(passes);
   }
 
   // Add command line passes
@@ -178,18 +210,8 @@ void optimizeModuleAndRunPasses(Module* mod) {
   }
 
   if (!optOptimizeZero) {
-    llvm::createStandardModulePasses(&passes, 3,
-        /*OptimizeSize*/ false,
-        /*UnitAtATime*/ true,
-        /*UnrollLoops*/ true,
-        /*SimplifyLibCalls*/ true,
-        /*HaveExceptions*/ false,
-        llvm::createFunctionInliningPass());
-
+    AddOptimizationPasses(passes, fpasses, 3, false);
     passes.add(llvm::createVerifierPass());
-
-    llvm::createStandardFunctionPasses(&fpasses, 2);
-    llvm::createStandardFunctionPasses(&fpasses, 3);
   }
 
   foster::runFunctionPassesOverModule(fpasses, mod);
@@ -202,6 +224,16 @@ int fdFlagsForObjectType(TargetMachine::CodeGenFileType filetype) {
     flags |= raw_fd_ostream::F_Binary;
   }
   return flags;
+}
+
+llvm::Reloc::Model getRelocModel() {
+  if (string(LLVM_HOSTTRIPLE).find("darwin") != string::npos) {
+    // Applications on Mac OS X (x86) must be compiled with relocatable symbols,
+    // which is -mdynamic-no-pic (GCC) or -relocation-model=dynamic-no-pic (llc).
+    // Setting the flag here gives us the proper default, while still allowing
+    // the user to override via command line options if need be.
+    return llvm::Reloc::DynamicNoPIC;
+  } else return llvm::Reloc::Default;
 }
 
 void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
@@ -233,7 +265,12 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
     exit(1);
   }
 
-  TargetMachine* tm = target->createTargetMachine(triple.getTriple(), "");
+  CodeModel::Model cgModel = CodeModel::Default;
+  TargetMachine* tm = target->createTargetMachine(triple.getTriple(),
+                                                 "", // CPU
+                                                 "", // Features
+                                                 getRelocModel(),
+                                                 cgModel);
   if (!tm) {
     llvm::errs() << "Error! Creation of target machine"
         " failed for triple " << triple.getTriple() << "\n";
@@ -258,8 +295,9 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
   llvm::formatted_raw_ostream out(raw_out,
       llvm::formatted_raw_ostream::PRESERVE_STREAM);
 
-  // TODO: LLVM 2.9 and earlier sometimes crashes in X86ISelDAG
-  // with CodeGenOpt::None when using llvm.gcroot of bitcast values.
+
+  // TODO: LLVM 3.0 and earlier will crashe in X86ISelDAG with CodeGenOpt::None
+  // when using llvm.gcroot of bitcast values.
   // http://llvm.org/bugs/show_bug.cgi?id=10799
   CodeGenOpt::Level
          cgOptLevel = optOptimizeZero
@@ -274,20 +312,6 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
   }
 
   passes.run(*mod);
-}
-
-void setDefaultCommandLineOptions() {
-  if (string(LLVM_HOSTTRIPLE).find("darwin") != string::npos) {
-    // Applications on Mac OS X (x86) must be compiled with relocatable symbols,
-    // which is -mdynamic-no-pic (GCC) or -relocation-model=dynamic-no-pic (llc).
-    // Setting the flag here gives us the proper default, while still allowing
-    // the user to override via command line options if need be.
-    llvm::TargetMachine::setRelocationModel(llvm::Reloc::DynamicNoPIC);
-  }
-
-  // Ensure we always compile with -disable-fp-elim
-  // to enable simple stack walking for the GC.
-  llvm::NoFramePointerElim = true;
 }
 
 // Postcondition: gOuptutNameBase is the output name with no extension;
@@ -314,7 +338,9 @@ int main(int argc, char** argv) {
   llvm_shutdown_obj Y;
   ScopedTimer* wholeProgramTimer = new ScopedTimer("total");
 
-  setDefaultCommandLineOptions();
+  // Ensure we always compile with -disable-fp-elim
+  // to enable simple stack walking for the GC.
+  llvm::NoFramePointerElim = true;
 
   cl::SetVersionPrinter(&printVersionInfo);
   cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster compiler backend (LLVM optimization)\n");

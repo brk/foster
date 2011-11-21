@@ -125,22 +125,8 @@ void linkTo(llvm::Module*& transient,
             const std::string& name,
             llvm::Module* module) {
   string errMsg;
-  bool failed = Linker::LinkModules(module, transient, &errMsg);
+  bool failed = Linker::LinkModules(module, transient, llvm::Linker::DestroySource, &errMsg);
   ASSERT(!failed) << "Error when linking in " << name << ": " << errMsg << "\n";
-}
-
-void addCoroTransferDeclaration(llvm::Module* src, llvm::Module* dst) {
-  // coro_transfer isn't automatically added
-  // because it's only a declaration, not a definition.
-  llvm::Function* coro_transfer =
-    llvm::dyn_cast<llvm::Function>(
-      dst->getOrInsertFunction("coro_transfer",
-      llvm::dyn_cast<llvm::FunctionType>(
-             src->getFunction("coro_transfer")
-                                ->getType()->getContainedType(0))));
-
-  coro_transfer->addAttribute(1, llvm::Attribute::InReg);
-  coro_transfer->addAttribute(2, llvm::Attribute::InReg);
 }
 
 LLModule* readLLProgramFromProtobuf(const string& pathstr,
@@ -185,7 +171,7 @@ areDeclaredValueTypesOK(llvm::Module* mod,
     }
 
     ASSERT(v) << "unable to find module entry for " << d->getName();
-    const llvm::Type* ty = t->getLLVMType();
+    llvm::Type* ty = t->getLLVMType();
     if (v->getType() != ty) {
       EDiag() << "mismatch between declared and imported types"
               << " for symbol " << d->getName() << ":\n"
@@ -209,10 +195,10 @@ int main(int argc, char** argv) {
   llvm_shutdown_obj Y;
   ScopedTimer* wholeProgramTimer = new ScopedTimer("total");
   Module* libfoster_bc = NULL;
-  Module* imath_bc = NULL;
-  const llvm::Type* mp_int = NULL;
+  Module* imath_bc     = NULL;
+  Module* coro_bc      = NULL;
+  //llvm::Type* mp_int = NULL;
   foster::bepb::Module pbin;
-  llvm::GlobalVariable* current_coro = NULL;
 
   cl::SetVersionPrinter(&printVersionInfo);
   cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster compiler backend\n");
@@ -231,40 +217,32 @@ int main(int argc, char** argv) {
 
   llvm::Module* module = new Module(mainModulePath.str().c_str(), getGlobalContext());
 
-  libfoster_bc = readLLVMModuleFromPath("_bitcodelibs_/libfoster.bc");
-  imath_bc     = readLLVMModuleFromPath("_bitcodelibs_/imath-wrapper.bc");
-  ASSERT(imath_bc) << "must have imath library!";
+  {
+    coro_bc = readLLVMModuleFromPath("_bitcodelibs_/gc_bc/libfoster_coro.bc");
+    linkTo(coro_bc, "libfoster_coro", module);
 
-  const llvm::Type* mpz_struct_ty = imath_bc->getTypeByName("struct.mpz");
-  if (!mpz_struct_ty) {
-    EDiag() << "Unable to find imath bitcode library";
-    program_status = 1; goto cleanup;
+    foster_generic_coro_t = module->getTypeByName("struct.foster_generic_coro");
+    ASSERT(foster_generic_coro_t != NULL);
   }
 
-  mp_int =
-    llvm::PointerType::getUnqual(mpz_struct_ty);
-  module->addTypeName("mp_int", mp_int);
-  foster::ParsingContext::insertType("Int",
-               PrimitiveTypeAST::get("Int", mp_int));
-
-  foster_generic_coro_t = libfoster_bc->getTypeByName("struct.foster_generic_coro");
-  ASSERT(foster_generic_coro_t != NULL);
-  module->addTypeName("pfoster_coro",
-    llvm::PointerType::getUnqual(foster_generic_coro_t));
-
-  module->addTypeName("unit",
-    llvm::StructType::get(getGlobalContext(), false));
-
-  current_coro = libfoster_bc->getNamedGlobal("current_coro");
-  module->getOrInsertGlobal("current_coro",
-    current_coro->getType()->getContainedType(0));
-
   foster::addStandardExternDeclarations(module);
-  addCoroTransferDeclaration(libfoster_bc, module);
   // TODO mark foster__assert as alwaysinline
 
+  libfoster_bc = readLLVMModuleFromPath("_bitcodelibs_/libfoster.bc");
   foster::putModuleFunctionsInScope(libfoster_bc, module);
-  foster::putModuleMembersInScope(imath_bc, module);
+
+  //imath_bc     = readLLVMModuleFromPath("_bitcodelibs_/imath-wrapper.bc");
+  //ASSERT(imath_bc) << "must have imath library!";
+  //llvm::Type* mpz_struct_ty = imath_bc->getTypeByName("struct.mpz");
+  //if (!mpz_struct_ty) {
+  //  EDiag() << "Unable to find imath bitcode library";
+  //  program_status = 1; goto cleanup;
+  //}
+  //mp_int = llvm::PointerType::getUnqual(mpz_struct_ty);
+  //module->addTypeName("mp_int", mp_int);
+  //foster::ParsingContext::insertType("Int",
+  //             PrimitiveTypeAST::get("Int", mp_int));
+  //foster::putModuleMembersInScope(imath_bc, module);
 
   //================================================================
   //================================================================
@@ -300,7 +278,7 @@ int main(int argc, char** argv) {
 
   { ScopedTimer timer("llvm.link");
     linkTo(libfoster_bc, "libfoster", module);
-    linkTo(imath_bc,     "imath",     module);
+    //linkTo(imath_bc,     "imath",     module);
   }
 
   if (optDumpPostLinkedIR) {
@@ -325,9 +303,10 @@ cleanup:
 
   delete wholeProgramTimer;
 
+  delete coro_bc;      coro_bc = NULL;
   delete libfoster_bc; libfoster_bc = NULL;
-  delete imath_bc; imath_bc = NULL;
-  delete module; module = NULL;
+  delete imath_bc;     imath_bc = NULL;
+  delete module;       module = NULL;
 
   if (optPrintTimings) {
     setTimingDescriptions();

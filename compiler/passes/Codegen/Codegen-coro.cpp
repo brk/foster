@@ -38,15 +38,15 @@ enum {
   FOSTER_CORO_DEAD
 };
 
-bool isSingleElementStruct(const llvm::Type* t,
-                     const llvm::StructType*& sty) {
+bool isSingleElementStruct(llvm::Type* t,
+                     llvm::StructType*& sty) {
   sty = llvm::dyn_cast<llvm::StructType>(t);
   return sty != NULL && sty->getNumElements() == 0;
 }
 
-void addCoroArgs(std::vector<const Type*>& fnTyArgs,
-                 const llvm::Type* argTypes) {
-  const llvm::StructType* sty;
+void addCoroArgs(std::vector<Type*>& fnTyArgs,
+                 llvm::Type* argTypes) {
+  llvm::StructType* sty;
   if (isSingleElementStruct(argTypes, sty)) {
     fnTyArgs.push_back(sty->getElementType(0));
   } else {
@@ -56,7 +56,7 @@ void addCoroArgs(std::vector<const Type*>& fnTyArgs,
 
 void addCoroArgs(std::vector<Value*>& fnArgs,
                  llvm::Value* argVals) {
-  const llvm::StructType* sty;
+  llvm::StructType* sty;
   if (isSingleElementStruct(argVals->getType(), sty)) {
     fnArgs.push_back(getElementFromComposite(argVals, getConstantInt32For(0), "coroarg"));
   } else {
@@ -65,33 +65,35 @@ void addCoroArgs(std::vector<Value*>& fnArgs,
 }
 
 // Returns { { ... generic coro ... }, argTypes }
-const llvm::StructType* getSplitCoroType(
-  const llvm::Type* argTypes)
+llvm::StructType* getSplitCoroType(
+  llvm::Type* argTypes)
 {
-  std::vector<const llvm::Type*> parts;
+  std::vector<llvm::Type*> parts;
   parts.push_back(foster_generic_coro_t);
   // Multiple coro args added as single struct in memory, not separate items
   parts.push_back(argTypes);
-  return llvm::StructType::get(getGlobalContext(), parts, /*isPacked=*/ false);
+  return llvm::StructType::get(getGlobalContext(),
+                               llvm::makeArrayRef(parts),
+                               /*isPacked=*/ false);
 }
 
 // Returns retTy(i8* env, .. arg types ..)
-const llvm::FunctionType* getCoroClosureFnType(
-  const llvm::Type* retTy,
-  const llvm::Type* argTypes)
+llvm::FunctionType* getCoroClosureFnType(
+  llvm::Type* retTy,
+  llvm::Type* argTypes)
 {
-  std::vector<const Type*> args;
+  std::vector<llvm::Type*> args;
   args.push_back(builder.getInt8PtrTy());
   addCoroArgs(args, argTypes);
   return FunctionType::get(retTy, args, /*isVarArg=*/ false);
 }
 
 // Returns retTy ( {specific coro}*, .. args ..)
-const llvm::FunctionType* getCoroInvokeFnTy(
-  const llvm::Type* retTy,
-  const llvm::Type* argTypes)
+llvm::FunctionType* getCoroInvokeFnTy(
+  llvm::Type* retTy,
+  llvm::Type* argTypes)
 {
-  std::vector<const Type*> fnTyArgs;
+  std::vector<llvm::Type*> fnTyArgs;
   fnTyArgs.push_back(ptrTo(getSplitCoroType(argTypes)));
   addCoroArgs(fnTyArgs, argTypes);
   return llvm::FunctionType::get(
@@ -100,11 +102,11 @@ const llvm::FunctionType* getCoroInvokeFnTy(
                    /*isVarArg=*/ false);
 }
 
-const llvm::FunctionType* getCoroYieldFnTy(
-  const llvm::Type* retTypes,
-  const llvm::Type* argTypes)
+llvm::FunctionType* getCoroYieldFnTy(
+  llvm::Type* retTypes,
+  llvm::Type* argTypes)
 {
-  std::vector<const Type*> fnTyArgs;
+  std::vector<llvm::Type*> fnTyArgs;
   addCoroArgs(fnTyArgs, retTypes);
   return llvm::FunctionType::get(
                    /*Result=*/   argTypes,
@@ -113,22 +115,22 @@ const llvm::FunctionType* getCoroYieldFnTy(
 }
 
 // Returns { coroFn*, i8* }
-const llvm::StructType* getCoroClosureStructTy(
-  const llvm::Type* retTy,
-  const llvm::Type* argTypes)
+llvm::StructType* getCoroClosureStructTy(
+  llvm::Type* retTy,
+  llvm::Type* argTypes)
 {
-  std::vector<const llvm::Type*> parts;
+  std::vector<llvm::Type*> parts;
   parts.push_back(ptrTo(getCoroClosureFnType(retTy, argTypes)));
   parts.push_back(builder.getInt8PtrTy());
   return llvm::StructType::get(getGlobalContext(), parts, /*isPacked=*/ false);
 }
 
 // Returns { specific coro }* (closure struct*)
-const llvm::FunctionType* getCoroCreateFnTy(
-  const llvm::Type* retTy,
-  const llvm::Type* argTypes)
+llvm::FunctionType* getCoroCreateFnTy(
+  llvm::Type* retTy,
+  llvm::Type* argTypes)
 {
-  std::vector<const Type*> fnTyArgs;
+  std::vector<llvm::Type*> fnTyArgs;
   fnTyArgs.push_back(ptrTo(getCoroClosureStructTy(retTy, argTypes)));
   return llvm::FunctionType::get(
                    /*Result=*/   ptrTo(getSplitCoroType(argTypes)),
@@ -137,8 +139,8 @@ const llvm::FunctionType* getCoroCreateFnTy(
 }
 
 // Returns void (i8*)
-const llvm::FunctionType* getCoroWrapperFnTy() {
-  std::vector<const Type*> fnTyArgs;
+llvm::FunctionType* getCoroWrapperFnTy() {
+  std::vector<llvm::Type*> fnTyArgs;
   fnTyArgs.push_back(builder.getInt8PtrTy());
   return llvm::FunctionType::get(
                    /*Result=*/   builder.getVoidTy(),
@@ -151,11 +153,13 @@ const llvm::FunctionType* getCoroWrapperFnTy() {
 
 void emitPrintI32(llvm::Module* mod, int x) {
   llvm::Value* print_i32 = mod->getFunction("print_i32");
+  ASSERT(print_i32 != NULL);
   builder.CreateCall(print_i32, getConstantInt32For(x));
 }
 
 void emitPrintRef(llvm::Module* mod, llvm::Value* ref) {
   llvm::Value* print_ref = mod->getFunction("print_ref");
+  ASSERT(print_ref != NULL);
   llvm::Value* bc = builder.CreateBitCast(ref, builder.getInt8PtrTy());
   builder.CreateCall(print_ref, bc);
 }
@@ -179,8 +183,8 @@ int coroField_Status()       { return 6; }
 
 Value* emitCoroWrapperFn(
   CodegenPass* pass,
-  const llvm::Type* retTy,
-  const llvm::Type* argTypes)
+  llvm::Type* retTy,
+  llvm::Type* argTypes)
 {
   // Create a function of type  void (i8* f_c)
   // which passes arguments to/from a function of type  rTy (a1, ... , aN)
@@ -231,7 +235,7 @@ Value* emitCoroWrapperFn(
   callArgs.push_back(env);
   addCoroArgs(callArgs, arg);
 
-  llvm::CallInst* call  = builder.CreateCall(fn, callArgs.begin(), callArgs.end());
+  llvm::CallInst* call  = builder.CreateCall(fn, llvm::makeArrayRef(callArgs));
   call->setCallingConv(llvm::CallingConv::Fast);
 
   // Store the result of the call in the sibling's arg slot
@@ -253,12 +257,12 @@ Value* emitCoroWrapperFn(
   return wrapper;
 }
 
-void registerCoroType(llvm::Module* mod, const llvm::Type* argTypes) {
+void registerCoroType(llvm::Module* mod, llvm::Type* argTypes) {
   std::string ss_str;
   llvm::raw_string_ostream ss(ss_str);
   ss << "coro_" << str(argTypes);
-
-  mod->addTypeName(ss.str(), ptrTo(getSplitCoroType(argTypes)));
+  EDiag() << "Need to register type name: " << ss.str();
+  //mod->addTypeName(ss.str(), ptrTo(getSplitCoroType(argTypes)));
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -267,8 +271,8 @@ void registerCoroType(llvm::Module* mod, const llvm::Type* argTypes) {
 
 // Returns a function of type  <coro> (closure)
 Value* CodegenPass::emitCoroCreateFn(
-                        const llvm::Type* retTy,
-                        const llvm::Type* argTypes)
+                        llvm::Type* retTy,
+                        llvm::Type* argTypes)
 {
   std::string ss_str;
   llvm::raw_string_ostream ss(ss_str);
@@ -385,8 +389,8 @@ Value* CodegenPass::emitCoroCreateFn(
 void generateInvokeYield(bool isYield,
                          CodegenPass* pass,
                          llvm::Value* coro,
-                         const llvm::Type* retTy,
-                         const llvm::Type* argTypes,
+                         llvm::Type* retTy,
+                         llvm::Type* argTypes,
                          const std::vector<llvm::Value*>& inputArgs) {
   llvm::Value* coro_slot = pass->storeAndMarkPointerAsGCRoot(coro);
 
@@ -509,8 +513,8 @@ void generateInvokeYield(bool isYield,
 ////////////////////////////////////////////////////////////////////
 
 Value* CodegenPass::emitCoroInvokeFn(
-                        const llvm::Type* retTy,
-                        const llvm::Type* argTypes) {
+                        llvm::Type* retTy,
+                        llvm::Type* argTypes) {
   // Create a function of type  retTy (cloty*)
 
   std::string ss_str;
@@ -559,8 +563,8 @@ Value* CodegenPass::emitCoroInvokeFn(
 // the parameter names match create/invoke for consistency,
 // and yield does things the other way 'round.
 Value* CodegenPass::emitCoroYieldFn(
-                        const llvm::Type* retTy,
-                        const llvm::Type* argTypes) {
+                        llvm::Type* retTy,
+                        llvm::Type* argTypes) {
   std::string ss_str;
   llvm::raw_string_ostream ss(ss_str);
   ss << ".foster_coro_yield_" << str(retTy) << "__" << str(argTypes);

@@ -38,8 +38,8 @@ void checkPointerToIndex(Value* ptrToCompositeValue,
                          Value* idxValue,
                          const std::string& name) {
   ASSERT(ptrToCompositeValue->getType()->isPointerTy());
-  const llvm::Type* underlyingTy = ptrToCompositeValue->getType()->getContainedType(0);
-  if (const llvm::CompositeType* cty
+  llvm::Type* underlyingTy = ptrToCompositeValue->getType()->getContainedType(0);
+  if (llvm::CompositeType* cty
       = llvm::dyn_cast<llvm::CompositeType>(underlyingTy)) {
     ASSERT(cty->indexValid(idxValue))
       << "Attempt to use index " << str(idxValue)
@@ -60,11 +60,10 @@ Value* getPointerToIndex(Value* ptrToCompositeValue,
   std::vector<Value*> idx;
   idx.push_back(getConstantInt32For(0));
   idx.push_back(idxValue);
-  return builder.CreateGEP(ptrToCompositeValue,
-                           idx.begin(), idx.end(), name.c_str());
+  return builder.CreateGEP(ptrToCompositeValue, llvm::makeArrayRef(idx), name.c_str());
 }
 
-uint64_t getSaturating(const llvm::ConstantInt* ci) {
+uint64_t getSaturating(llvm::ConstantInt* ci) {
   typedef uint64_t T;
   // If the value requires more bits than T can represent, we want
   // to return ~0, not 0. Otherwise, we should leave the value alone.
@@ -79,7 +78,7 @@ uint64_t getSaturating(const llvm::ConstantInt* ci) {
 
 Value* getElementFromComposite(Value* compositeValue,  Value* idxValue,
                                const std::string& msg) {
-  const Type* compositeType = compositeValue->getType();
+  Type* compositeType = compositeValue->getType();
   // To get an element from an in-memory object, compute the address of
   // the appropriate struct field and emit a load.
   if (llvm::isa<llvm::PointerType>(compositeType)) {
@@ -133,8 +132,8 @@ Constant* getSlotName(llvm::AllocaInst* stackslot, CodegenPass* pass) {
 void markGCRootWithMetadata(llvm::AllocaInst* stackslot, CodegenPass* pass,
                             llvm::Constant* const meta) {
   llvm::Value* const vmeta = meta;
-  llvm::MDNode* metamdnode =
-            llvm::MDNode::get(stackslot->getContext(), &vmeta, 1);
+  llvm::MDNode* metamdnode = llvm::MDNode::get(stackslot->getContext(),
+                                               llvm::makeArrayRef(vmeta));
   stackslot->setMetadata("fostergcroot", metamdnode);
 
   llvm::Function* F = builder.GetInsertBlock()->getParent();
@@ -172,7 +171,7 @@ llvm::Instruction* CodegenPass::getCurrentAllocaPoint() {
 // so that mem2reg will be able to optimize loads and stores from the alloca.
 // Code from the Kaleidoscope tutorial on mutable variables,
 // http://llvm.org/docs/tutorial/LangImpl7.html
-llvm::AllocaInst* CreateEntryAlloca(const llvm::Type* ty, const std::string& name) {
+llvm::AllocaInst* CreateEntryAlloca(llvm::Type* ty, const std::string& name) {
   llvm::BasicBlock& entryBlock =
       builder.GetInsertBlock()->getParent()->getEntryBlock();
   llvm::IRBuilder<> tmpBuilder(&entryBlock, entryBlock.begin());
@@ -214,14 +213,14 @@ CodegenPass::storeAndMarkPointerAsGCRoot(llvm::Value* val) {
 
 
 llvm::AllocaInst*
-CodegenPass::emitMalloc(const llvm::Type* ty, int8_t ctorId) {
+CodegenPass::emitMalloc(llvm::Type* ty, int8_t ctorId) {
   llvm::Value* memalloc_cell = mod->getFunction("memalloc_cell");
   ASSERT(memalloc_cell != NULL) << "NO memalloc_cell IN MODULE! :(";
 
   llvm::GlobalVariable* ti = getTypeMapForType(ty, ctorId, mod, NotArray);
   ASSERT(ti != NULL) << "malloc must have type info for type " << str(ty)
                      << "; ctor id " << ctorId;
-  const llvm::Type* typemap_type = memalloc_cell->getType()
+  llvm::Type* typemap_type = memalloc_cell->getType()
                                             ->getContainedType(0)
                                             ->getContainedType(1);
   llvm::Value* typemap = builder.CreateBitCast(ti, typemap_type);
@@ -233,7 +232,7 @@ CodegenPass::emitMalloc(const llvm::Type* ty, int8_t ctorId) {
 
 
 llvm::Value*
-CodegenPass::emitArrayMalloc(const llvm::Type* elt_ty, llvm::Value* n) {
+CodegenPass::emitArrayMalloc(llvm::Type* elt_ty, llvm::Value* n) {
   llvm::Value* memalloc = mod->getFunction("memalloc_array");
   ASSERT(memalloc != NULL) << "NO memalloc_array IN MODULE! :(";
 
@@ -244,7 +243,7 @@ CodegenPass::emitArrayMalloc(const llvm::Type* elt_ty, llvm::Value* n) {
   // 3) (maybe) unboxed structs, for types with a single ctor.
   llvm::GlobalVariable* ti = getTypeMapForType(elt_ty, ctorId, mod, YesArray);
   ASSERT(ti != NULL);
-  const llvm::Type* typemap_type = memalloc->getType() // function ptr
+  llvm::Type* typemap_type = memalloc->getType() // function ptr
                                             ->getContainedType(0) // function
                                             ->getContainedType(1); // first arg
   llvm::Value* typemap = builder.CreateBitCast(ti, typemap_type);

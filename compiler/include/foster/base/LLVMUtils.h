@@ -28,10 +28,10 @@ namespace llvm {
 
 #define FOSTER_VERSION_STR "0.0.6"
 
-std::ostream& operator<<(std::ostream& out, const llvm::Type& ty);
+std::ostream& operator<<(std::ostream& out, llvm::Type& ty);
 
-std::string str(const llvm::Type* ty);
-std::string str(const llvm::Value* value);
+std::string str(llvm::Type* ty);
+std::string str(llvm::Value* value);
 
 namespace foster {
 
@@ -59,21 +59,23 @@ extern llvm::IRBuilder<> builder;
 
 void makePathAbsolute(llvm::sys::Path& path);
 
-const char* llvmValueTag(const llvm::Value* v);
+const char* llvmValueTag(llvm::Value* v);
 void markAsNonAllocating(llvm::CallInst* callInst);
 llvm::Constant* arrayVariableToPointer(llvm::GlobalVariable* arr);
 
-bool isFunctionPointerTy(const llvm::Type* p);
+bool isFunctionPointerTy(llvm::Type* p);
 
 // returns true if p == t*
-bool isPointerToType(const llvm::Type* p, const llvm::Type* t);
+bool isPointerToType(llvm::Type* p, llvm::Type* t);
 
-bool isUnit(const llvm::Type* ty);
-bool typesEq(const llvm::Type* t1, const llvm::Type* t2);
+bool isUnit(llvm::Type* ty);
+bool typesEq(llvm::Type* t1, llvm::Type* t2);
 
 llvm::ConstantInt* getConstantInt64For(int64_t val);
 llvm::ConstantInt* getConstantInt32For(int32_t val);
 llvm::ConstantInt* getConstantInt8For(int8_t val);
+
+llvm::StructType* getStructType(llvm::LLVMContext&, llvm::Type*, llvm::Type*);
 
 void storeNullPointerToSlot(llvm::Value* slot);
 

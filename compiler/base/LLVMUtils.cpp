@@ -7,7 +7,8 @@
 
 #include <map>
 
-#include "llvm/Target/TargetSelect.h"
+#include "llvm/Support/TargetSelect.h"
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/Instructions.h"
 #include "llvm/Metadata.h"
 #include "llvm/Module.h"
@@ -25,21 +26,18 @@
 
 using namespace llvm;
 
-std::ostream& operator<<(std::ostream& out, const llvm::Type& ty) {
-  std::string s;
-  llvm::raw_string_ostream ss(s);
-  ss << ty;
-  return out << ss.str();
+std::ostream& operator<<(std::ostream& out, llvm::Type& ty) {
+  return out << str(&ty);
 }
 
-std::string str(const llvm::Type* ty) {
+std::string str(llvm::Type* ty) {
   if (!ty) return "<NULL ty>";
   std::string s;
   llvm::raw_string_ostream ss(s); ss << *ty;
   return ss.str();
 }
 
-std::string str(const llvm::Value* value) {
+std::string str(llvm::Value* value) {
   if (!value) return "<nil>";
   std::string s;
   llvm::raw_string_ostream ss(s); ss << *value;
@@ -138,7 +136,7 @@ struct CommentWriter : public llvm::AssemblyAnnotationWriter {
     os << "; #uses = " << v.getNumUses() << "\t; " << *(v.getType());
   }
 
-  void emitFunctionAnnot(const llvm::Function* f, formatted_raw_ostream& os) {
+  void emitFunctionAnnot(llvm::Function* f, formatted_raw_ostream& os) {
     if (!f->isDeclaration()) {
 
       std::string originalName = f->getName();
@@ -209,7 +207,7 @@ void makePathAbsolute(llvm::sys::Path& path) {
   path.set(pathstr);
 }
 
-const char* llvmValueTag(const llvm::Value* v) {
+const char* llvmValueTag(llvm::Value* v) {
   using llvm::isa;
   if (!v) return "<NULL Value>";
 
@@ -248,7 +246,8 @@ const char* llvmValueTag(const llvm::Value* v) {
 
 void markAsNonAllocating(llvm::CallInst* callInst) {
   llvm::Value* tru = llvm::ConstantInt::getTrue(llvm::getGlobalContext());
-  llvm::MDNode* mdnode = llvm::MDNode::get(llvm::getGlobalContext(), &tru, 1);
+  llvm::MDNode* mdnode = llvm::MDNode::get(llvm::getGlobalContext(),
+                                           llvm::makeArrayRef(tru));
   callInst->setMetadata("willnotgc", mdnode);
 }
 
@@ -257,7 +256,7 @@ Constant* arrayVariableToPointer(GlobalVariable* arr) {
   std::vector<Constant*> idx;
   idx.push_back(getConstantInt64For(0));
   idx.push_back(getConstantInt64For(0));
-  return ConstantExpr::getGetElementPtr(arr, &idx[0], idx.size());
+  return ConstantExpr::getGetElementPtr(arr, makeArrayRef(idx));
 }
 
 llvm::ConstantInt* getConstantInt64For(int64_t val) {
@@ -272,24 +271,31 @@ llvm::ConstantInt* getConstantInt8For(int8_t val) {
   return llvm::ConstantInt::get(Type::getInt8Ty(getGlobalContext()), val);
 }
 
-bool isFunctionPointerTy(const llvm::Type* p) {
+bool isFunctionPointerTy(llvm::Type* p) {
   return p->isPointerTy()
       && p->getContainedType(0)->isFunctionTy();
 }
 
-bool isUnit(const llvm::Type* ty) {
+bool isUnit(llvm::Type* ty) {
   return ty == llvm::PointerType::getUnqual(
             llvm::Type::getInt8Ty(getGlobalContext()));
 }
 
 // Syntactically conspicuous
-bool typesEq(const llvm::Type* t1, const llvm::Type* t2) {
+bool typesEq(llvm::Type* t1, llvm::Type* t2) {
   return (t1 == t2) || (isUnit(t1) && isUnit(t2));
 }
 
-bool isPointerToType(const llvm::Type* p, const llvm::Type* t) {
+bool isPointerToType(llvm::Type* p, llvm::Type* t) {
   // Use == instead of typesEq to avoid bottomless mutual recursion.
   return p->isPointerTy() && (t == p->getContainedType(0));
+}
+
+llvm::StructType* getStructType(llvm::LLVMContext& x,
+                                llvm::Type* a, llvm::Type* b) {
+  std::vector<llvm::Type*> tys;
+  tys.push_back(a); tys.push_back(b);
+  return llvm::StructType::get(x, llvm::makeArrayRef(tys), /*isPacked*/ false);
 }
 
 void storeNullPointerToSlot(llvm::Value* slot) {

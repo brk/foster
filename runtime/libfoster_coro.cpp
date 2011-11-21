@@ -14,6 +14,11 @@ using namespace foster::runtime;
 
 base::Lock coro_create_mutex;
 
+// (eventually, per-thread variable)
+// coro_invoke(c) sets this to c.
+// coro_yield() resets this to current_coro->invoker.
+foster_generic_coro* current_coro;
+
 namespace foster {
 namespace runtime {
 

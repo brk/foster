@@ -201,6 +201,8 @@ int force_gc_for_debugging_purposes() {
   gc::force_gc_for_debugging_purposes(); return 0;
 }
 
+void foster__mp_int(mp_int m) {  mp_small small;
+  mp_result conv = mp_int_to_int(m, &small); }
 void  print_int(mp_int m) { fprint_mp_int(stdout, m, 10); }
 void expect_int(mp_int m) { fprint_mp_int(stderr, m, 10); }
 void  print_intx(mp_int m) { fprint_mp_int(stdout, m, 16); }

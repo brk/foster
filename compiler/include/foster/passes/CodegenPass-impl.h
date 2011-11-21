@@ -26,7 +26,7 @@ enum ArrayOrNot {
 };
 
 llvm::GlobalVariable*
-emitTypeMap(const llvm::Type* ty, std::string name,
+emitTypeMap(llvm::Type* ty, std::string name,
             ArrayOrNot arrayStatus,
             int8_t        ctorId,
             llvm::Module* mod,
@@ -36,12 +36,12 @@ void registerTupleType(TupleTypeAST* tupletyp,
                        std::string   desiredName,
                        int8_t        ctorId,
                        llvm::Module* mod);
-llvm::GlobalVariable* getTypeMapForType(const llvm::Type*, int8_t ctorId,
+llvm::GlobalVariable* getTypeMapForType(llvm::Type*, int8_t ctorId,
                                         llvm::Module*, ArrayOrNot);
 
-bool mightContainHeapPointers(const llvm::Type* ty);
+bool mightContainHeapPointers(llvm::Type* ty);
 
-const inline llvm::PointerType* ptrTo(const llvm::Type* t) {
+inline llvm::PointerType* ptrTo(llvm::Type* t) {
   return llvm::PointerType::getUnqual(t);
 }
 
@@ -61,7 +61,7 @@ void markGCRoot(llvm::Value* root,
                 llvm::Constant* meta,
                 llvm::Module* mod);
 llvm::AllocaInst* getAllocaForRoot(llvm::Instruction* root);
-llvm::AllocaInst* CreateEntryAlloca(const llvm::Type* ty,
+llvm::AllocaInst* CreateEntryAlloca(llvm::Type* ty,
                                     const std::string& name);
 llvm::AllocaInst* stackSlotWithValue(llvm::Value* val,
                                      const std::string& name);
@@ -117,21 +117,21 @@ struct CodegenPass {
   Value* autoload(Value* v);
 
   // Returns ty**, the stack slot containing a ty*.
-  llvm::AllocaInst* emitMalloc(const llvm::Type* ty, int8_t ctorId);
+  llvm::AllocaInst* emitMalloc(llvm::Type* ty, int8_t ctorId);
 
   // Returns array_type[elt_ty]**, the stack slot containing an array_type[elt_ty]*.
-  Value* emitArrayMalloc(const llvm::Type* elt_ty, llvm::Value* n);
+  Value* emitArrayMalloc(llvm::Type* elt_ty, llvm::Value* n);
 
   Value* allocateMPInt();
 
   llvm::AllocaInst* storeAndMarkPointerAsGCRoot(llvm::Value*);
 
-  Value* emitCoroCreateFn(const llvm::Type* retTy,
-                          const llvm::Type* argTypes);
-  Value* emitCoroInvokeFn(const llvm::Type* retTy,
-                          const llvm::Type* argTypes);
-  Value* emitCoroYieldFn( const llvm::Type* retTy,
-                          const llvm::Type* argTypes);
+  Value* emitCoroCreateFn(llvm::Type* retTy,
+                          llvm::Type* argTypes);
+  Value* emitCoroInvokeFn(llvm::Type* retTy,
+                          llvm::Type* argTypes);
+  Value* emitCoroYieldFn( llvm::Type* retTy,
+                          llvm::Type* argTypes);
 
 };
 

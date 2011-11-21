@@ -51,8 +51,11 @@ def compile_source(src):
   subprocess.call(cmd.split(" "))
   return outbc
 
-def link_all(bcs):
+def link_all(all_bcs):
   outbc = os.path.join(bindir, "_bitcodelibs_", "libfoster.bc")
+  # Well, actually, link all except what fosterlower.cpp links beforehand, to
+  # avoid multiply-defined symbols when everything comes together at the end.
+  bcs = [bc for bc in all_bcs if not bc.endswith("libfoster_coro.bc")]
   cmd = "%s %s -link-as-library -o %s" % (llvmld, " ".join(bcs), outbc)
   print cmd
   return subprocess.call(cmd.split(" "))

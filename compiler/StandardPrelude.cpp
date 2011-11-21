@@ -4,11 +4,11 @@
 
 #include "llvm/DerivedTypes.h"
 #include "llvm/Module.h"
-#include "llvm/TypeSymbolTable.h"
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/IRBuilder.h"
 #include "llvm/Intrinsics.h"
 
-#include "base/LLVMUtils.h" // for str(const TypeAST*)
+#include "base/LLVMUtils.h" // for str(TypeAST*)
 
 #include "base/Assert.h"
 
@@ -24,10 +24,9 @@ using namespace llvm;
 namespace foster {
 
   void addStandardExternDeclarations(Module* mod) {
-    const llvm::Type* i32 = builder.getInt32Ty();
-    std::vector<const Type*> args; args.push_back(i32);
+    llvm::Type* i32 = builder.getInt32Ty();
     mod->getOrInsertFunction("opaquely_i32",
-         FunctionType::get(i32, args, /*isVarArg=*/ false)
+        FunctionType::get(i32, llvm::makeArrayRef(i32), /*isVarArg=*/ false)
       );
   }
 
@@ -36,21 +35,6 @@ bool gPrintLLVMImports = false;
 // Add prototypes for module m's C-linkage functions to the linkee module.
 void putModuleMembersInScope(Module* m, Module* linkee) {
   if (!m) return;
-
-  // Collect type names from the module.
-  const TypeSymbolTable & typeSymTab = m->getTypeSymbolTable();
-  for (TypeSymbolTable::const_iterator it = typeSymTab.begin();
-                                           it != typeSymTab.end(); ++it) {
-    std::string name = (*it).first;
-    const Type* ty   = (*it).second;
-
-    if (gPrintLLVMImports) {
-      outs() << "type " << name << " = " << str(ty) << "\n";
-    }
-
-    // TODO do we need to explicitly copy the type to the linkee?
-    linkee->addTypeName(name, ty);
-  }
 
   // Collect global variables from the module.
   for (Module::global_iterator it = m->global_begin();
@@ -97,14 +81,14 @@ void putModuleMembersInScope(Module* m, Module* linkee) {
       }
     }
 
-    const Type* ty = f.getType();
+    Type* ty = f.getType();
     // We get a pointer-to-whatever-function type, because f is a global
     // value (therefore ptr), but we want just the function type.
-    if (const PointerType* pty = dyn_cast<PointerType>(ty)) {
+    if (PointerType* pty = dyn_cast<PointerType>(ty)) {
       ty = pty->getElementType();
     }
 
-    if (const FunctionType* fnty = dyn_cast<FunctionType>(ty)) {
+    if (FunctionType* fnty = dyn_cast<FunctionType>(ty)) {
       linkee->getOrInsertFunction(StringRef(name), fnty,
                                   f.getAttributes());
 
@@ -142,14 +126,14 @@ void putModuleFunctionsInScope(Module* m, Module* linkee) {
     if (hasDef && !isCxxLinkage
                && !pystring::startswith(name, "__cxx_", 0)) {
       // Ensure that, when parsing, function calls to this name will find it
-      const Type* ty = f.getType();
+      Type* ty = f.getType();
       // We get a pointer-to-whatever-function type, because f is a global
       // value (therefore ptr), but we want just the function type.
-      if (const PointerType* pty = dyn_cast<PointerType>(ty)) {
+      if (PointerType* pty = dyn_cast<PointerType>(ty)) {
         ty = pty->getElementType();
       }
 
-      if (const FunctionType* fnty = dyn_cast<FunctionType>(ty)) {
+      if (FunctionType* fnty = dyn_cast<FunctionType>(ty)) {
         // Ensure that codegen for the given function finds the 'declare'
         // TODO make lazy prototype?
         linkee->getOrInsertFunction(StringRef(name), fnty,

@@ -26,18 +26,18 @@ std::string str(const TypeAST* type);
 
 class TypeAST {
 protected:
-  mutable const llvm::Type* repr;
+  mutable llvm::Type* repr;
   const SourceRange sourceRange;
 
   explicit TypeAST(const char* tag,
-                   const llvm::Type* underlyingType,
+                   llvm::Type* underlyingType,
                    const SourceRange& sourceRange)
     : repr(underlyingType), sourceRange(sourceRange), tag(tag) {}
   virtual ~TypeAST();
 public:
   const char* const tag;
   const SourceRange& getSourceRange() const { return sourceRange; }
-  virtual const llvm::Type* getLLVMType() const { return repr; }
+  virtual llvm::Type* getLLVMType() const { return repr; }
 
   virtual void show(PrettyPrintTypePass*    pass) = 0;
   virtual void dump(DumpTypeToProtobufPass* pass) = 0;
@@ -47,18 +47,18 @@ public:
 
 class PrimitiveTypeAST : public TypeAST {
   const std::string name; // Used for pretty printing
-  static std::map<const llvm::Type*, TypeAST*> thinWrappers;
+  static std::map<llvm::Type*, TypeAST*> thinWrappers;
 public:
   explicit PrimitiveTypeAST(const std::string& typeName,
-                            const llvm::Type* underlyingType,
+                            llvm::Type* underlyingType,
                             const SourceRange& sourceRange)
   : TypeAST("PrimitiveType", underlyingType, sourceRange), name(typeName) {}
 
   virtual void show(PrettyPrintTypePass* pass);
   virtual void dump(DumpTypeToProtobufPass* pass);
-  virtual const llvm::Type* getLLVMType() const { return this->repr; }
+  virtual llvm::Type* getLLVMType() const { return this->repr; }
   const std::string getName() { return name; }
-  static TypeAST* get(const std::string& name, const llvm::Type* loweredType);
+  static TypeAST* get(const std::string& name, llvm::Type* loweredType);
 };
 
 class NamedTypeAST : public TypeAST {
@@ -75,7 +75,7 @@ public:
   void setNamedType(TypeAST* t) { namedType = t; }
   virtual void show(PrettyPrintTypePass* pass);
   virtual void dump(DumpTypeToProtobufPass* pass);
-  virtual const llvm::Type* getLLVMType() const;
+  virtual llvm::Type* getLLVMType() const;
   const std::string getName() { return name; }
 };
 
@@ -87,19 +87,19 @@ struct DataCtor {
 class DataTypeAST : public TypeAST {
   const std::string name;
   const std::vector<DataCtor*> ctors;
-  mutable llvm::OpaqueType* opaq;
+  //mutable llvm::OpaqueType* opaq;
 
 public:
   explicit DataTypeAST(const std::string& typeName,
                        std::vector<DataCtor*> ctors,
                        const SourceRange& sourceRange)
      : TypeAST("DataTypeAST", NULL, sourceRange),
-       name(typeName), ctors(ctors), opaq(NULL) {}
+       name(typeName), ctors(ctors) /*, opaq(NULL)*/ {}
 
   virtual void show(PrettyPrintTypePass* pass);
   virtual void dump(DumpTypeToProtobufPass* pass);
-  virtual const llvm::Type* getLLVMType() const; // don't use this one!
-  //const llvm::PointerType* getOpaquePointerTy(llvm::Module* mod) const;
+  virtual llvm::Type* getLLVMType() const; // don't use this one!
+  //llvm::PointerType* getOpaquePointerTy(llvm::Module* mod) const;
   size_t getNumCtors() const { return ctors.size(); }
   DataCtor* getCtor(size_t x) const { return ctors[x]; }
   const std::string getName() { return name; }
@@ -108,7 +108,7 @@ public:
 class IndexableTypeAST : public TypeAST {
 protected:
   explicit IndexableTypeAST(const char* tag,
-                            const llvm::Type* underlyingType,
+                            llvm::Type* underlyingType,
                             const SourceRange& sourceRange)
     : TypeAST(tag, underlyingType, sourceRange) {}
   virtual ~IndexableTypeAST() {}
@@ -136,7 +136,7 @@ class RefTypeAST : public TypeAST {
 public:
   virtual void show(PrettyPrintTypePass* pass);
   virtual void dump(DumpTypeToProtobufPass* pass);
-  virtual const llvm::Type* getLLVMType() const;
+  virtual llvm::Type* getLLVMType() const;
 
   TypeAST*& getElementType() { return underlyingType; }
 
@@ -156,7 +156,7 @@ public:
 
   virtual void show(PrettyPrintTypePass* pass);
   virtual void dump(DumpTypeToProtobufPass* pass);
-  virtual const llvm::Type* getLLVMType() const;
+  virtual llvm::Type* getLLVMType() const;
 
   TypeAST*& getParamType(int i) { return argTypes[i]; }
   TypeAST* getParamType(int i) const { return argTypes[i]; }
@@ -166,7 +166,7 @@ public:
 
   std::map<std::string, std::string>
         getAnnots() const { return annots; }
-  const llvm::FunctionType* getLLVMFnType() const;
+  llvm::FunctionType* getLLVMFnType() const;
 
   void markAsClosure() { annots["proc"] = "false"; }
   void markAsProc()    { annots["proc"] = "true"; }
@@ -190,8 +190,8 @@ class TupleTypeAST : public IndexableTypeAST {
 public:
   virtual void show(PrettyPrintTypePass* pass);
   virtual void dump(DumpTypeToProtobufPass* pass);
-  virtual const llvm::Type* getLLVMTypeUnboxed() const;
-  virtual const llvm::Type* getLLVMType() const;
+  virtual llvm::Type* getLLVMTypeUnboxed() const;
+  virtual llvm::Type* getLLVMType() const;
 
   virtual int getNumContainedTypes() const { return parts.size(); }
   virtual int64_t getNumElements()   const { return parts.size(); }
@@ -211,7 +211,7 @@ class TypeTypeAppAST : public IndexableTypeAST {
 public:
   virtual void show(PrettyPrintTypePass* pass);
   virtual void dump(DumpTypeToProtobufPass* pass);
-  virtual const llvm::Type* getLLVMType() const;
+  virtual llvm::Type* getLLVMType() const;
 
   virtual int getNumContainedTypes() const { return parts.size(); }
   virtual int64_t getNumElements()   const { return parts.size(); }
@@ -232,7 +232,7 @@ class CoroTypeAST : public TypeAST {
 public:
   virtual void show(PrettyPrintTypePass* pass);
   virtual void dump(DumpTypeToProtobufPass* pass);
-  virtual const llvm::Type* getLLVMType() const;
+  virtual llvm::Type* getLLVMType() const;
 
   virtual int getNumContainedTypes() const { return 2; }
   virtual TypeAST*& getContainedType(int i);
@@ -251,7 +251,7 @@ class CArrayTypeAST : public TypeAST {
 public:
   virtual void show(PrettyPrintTypePass* pass);
   virtual void dump(DumpTypeToProtobufPass* pass);
-  virtual const llvm::Type* getLLVMType() const;
+  virtual llvm::Type* getLLVMType() const;
 
   uint64_t getSize() { return size; }
   virtual int getNumContainedTypes() const { return 1; }
@@ -272,9 +272,9 @@ class ArrayTypeAST : public TypeAST {
 public:
   virtual void show(PrettyPrintTypePass* pass);
   virtual void dump(DumpTypeToProtobufPass* pass);
-  virtual const llvm::Type* getLLVMType() const;
-  static  const llvm::Type* getZeroLengthTypeRef(const llvm::Type* t);
-  static  const llvm::Type* getSizedArrayTypeRef(const llvm::Type* t, int64_t n);
+  virtual llvm::Type* getLLVMType() const;
+  static  llvm::Type* getZeroLengthTypeRef(llvm::Type* t);
+  static  llvm::Type* getSizedArrayTypeRef(llvm::Type* t, int64_t n);
 
   virtual int getNumContainedTypes() const { return 1; }
   virtual TypeAST*& getContainedType(int i);
@@ -294,7 +294,7 @@ public:
 
   virtual void show(PrettyPrintTypePass* pass);
   virtual void dump(DumpTypeToProtobufPass* pass);
-  virtual const llvm::Type* getLLVMType() const;
+  virtual llvm::Type* getLLVMType() const;
 };
 
 #endif // header guard

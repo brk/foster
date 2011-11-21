@@ -30,18 +30,18 @@ using foster::EDiag;
 using foster::builder;
 using foster::ParsingContext;
 
-llvm::GlobalVariable* getTypeMapForType(const llvm::Type*, llvm::Module*, ArrayOrNot);
+llvm::GlobalVariable* getTypeMapForType(llvm::Type*, llvm::Module*, ArrayOrNot);
 
 typedef Constant*   Offset;
 typedef std::vector<Offset> OffsetSet;
 
-bool isGarbageCollectible(const Type* ty) {
+bool isGarbageCollectible(Type* ty) {
   // For now, we don't distinguish between different kinds of pointer;
   // we consider any pointer to be a possible heap pointer.
   return ty->isPointerTy() && ty->getContainedType(0)->isSized();
 }
 
-OffsetSet countPointersInType(const Type* ty) {
+OffsetSet countPointersInType(Type* ty) {
   ASSERT(ty) << "Can't count pointers in a NULL type!";
 
   OffsetSet rv;
@@ -51,7 +51,7 @@ OffsetSet countPointersInType(const Type* ty) {
   }
 
   // array, struct, union
-  else if (dyn_cast<const ArrayType>(ty)) {
+  else if (dyn_cast<ArrayType>(ty)) {
     // TODO need to decide how Foster semantics will map to LLVM IR for arrays.
     // Will EVERY (C++), SOME (Factor, C#?), or NO (Java) types be unboxed?
     // Also need to figure out how the gc will collect arrays.
@@ -60,7 +60,7 @@ OffsetSet countPointersInType(const Type* ty) {
 
   // if we have a struct { T1; T2 } then our offset set will be the set for T1,
   // plus the set for T2 with offsets incremented by the offset of T2.
-  else if (const StructType* sty = dyn_cast<StructType>(ty)) {
+  else if (StructType* sty = dyn_cast<StructType>(ty)) {
     for (size_t i = 0; i < sty->getNumElements(); ++i) {
       Constant* slotOffset = ConstantExpr::getOffsetOf(sty, i);
       OffsetSet sub = countPointersInType(sty->getTypeAtIndex(i));
@@ -82,12 +82,12 @@ OffsetSet countPointersInType(const Type* ty) {
   return rv;
 }
 
-bool mightContainHeapPointers(const llvm::Type* ty) {
+bool mightContainHeapPointers(llvm::Type* ty) {
   OffsetSet offsets = countPointersInType(ty);
   return !offsets.empty();
 }
 
-const Type* getHeapCellHeaderTy() {
+Type* getHeapCellHeaderTy() {
   return builder.getInt64Ty();
 }
 
@@ -106,21 +106,21 @@ Constant* defaultHeapAlignment() {
 
 // Returns the smallest multiple of the default heap alignment
 // which is larger than the size of the given type plus the heap header size.
-Constant* cellSizeOf(const Type* ty) {
+Constant* cellSizeOf(Type* ty) {
   Constant* sz = ConstantExpr::getSizeOf(ty);
   Constant* hs = ConstantExpr::getSizeOf(getHeapCellHeaderTy());
   Constant* cs = ConstantExpr::getAdd(sz, hs);
   return roundUpToNearestMultiple(cs, defaultHeapAlignment());
 }
 
-typedef std::pair<const Type*, std::pair<ArrayOrNot, int8_t> > TypeSig;
-TypeSig mkTypeSig(const Type* t, ArrayOrNot a, int8_t c) {
+typedef std::pair<Type*, std::pair<ArrayOrNot, int8_t> > TypeSig;
+TypeSig mkTypeSig(Type* t, ArrayOrNot a, int8_t c) {
   return std::make_pair(t, std::make_pair(a, c));
 }
 
 std::map<TypeSig, GlobalVariable*> typeMapCache;
 
-const Type* getTypeMapOffsetType() {
+Type* getTypeMapOffsetType() {
   return builder.getInt32Ty();
 }
 
@@ -135,10 +135,10 @@ const Type* getTypeMapOffsetType() {
 //   i8          unused_padding;
 //   i32         offsets[numPtrEntries];
 // }
-const StructType* getTypeMapType(int numPointers) {
+StructType* getTypeMapType(int numPointers) {
   ArrayType* offsetsTy = ArrayType::get(getTypeMapOffsetType(), numPointers);
 
-  std::vector<const Type*> typeMapTyFields;
+  std::vector<Type*> typeMapTyFields;
   typeMapTyFields.push_back(builder.getInt64Ty());   // cellSize
   typeMapTyFields.push_back(builder.getInt8PtrTy()); // typeName
   typeMapTyFields.push_back(builder.getInt32Ty());   // numPtrEntries
@@ -153,14 +153,14 @@ const StructType* getTypeMapType(int numPointers) {
 
 // Return a global corresponding to layout of getTypeMapType()
 // The returned global is also stored in the typeMapForType[] map.
-GlobalVariable* constructTypeMap(const llvm::Type*  ty,
+GlobalVariable* constructTypeMap(llvm::Type*  ty,
                                  const std::string& name,
                                  const OffsetSet&   pointerOffsets,
                                  ArrayOrNot         arrayStatus,
                                  int8_t             ctorId,
                                  llvm::Module*      mod) {
   int numPointers = pointerOffsets.size();
-  const StructType* typeMapTy = getTypeMapType(numPointers);
+  StructType* typeMapTy = getTypeMapType(numPointers);
 
   GlobalVariable* typeMapVar = new GlobalVariable(
     /*Module=*/     *mod,
@@ -216,7 +216,7 @@ GlobalVariable* constructTypeMap(const llvm::Type*  ty,
 // Computes the offsets of all pointers in the given type,
 // and constructs a type map using those offsets.
 GlobalVariable* emitTypeMap(
-    const Type* ty,
+    Type* ty,
     std::string name,
     ArrayOrNot arrayStatus,
     int8_t        ctorId,
@@ -256,7 +256,7 @@ GlobalVariable* emitTypeMap(
 //   }
 //   argty
 // }
-GlobalVariable* emitCoroTypeMap(const StructType* sty, llvm::Module* mod) {
+GlobalVariable* emitCoroTypeMap(StructType* sty, llvm::Module* mod) {
   bool hasKnownTypes = sty->getNumElements() == 2;
   if (!hasKnownTypes) {
     // Generic coro; don't generate a typemap,
@@ -282,21 +282,21 @@ void registerTupleType(TupleTypeAST* tupletyp,
                        llvm::Module* mod) {
   static std::map<TypeSig, bool> registeredTypes;
 
-  const llvm::Type* ty = tupletyp->getLLVMTypeUnboxed();
+  llvm::Type* ty = tupletyp->getLLVMTypeUnboxed();
   TypeSig sig = mkTypeSig(ty, NotArray, ctorId);
   if (registeredTypes[sig]) return;
 
   registeredTypes[sig] = true;
 
   std::string name = ParsingContext::freshName(desiredName);
-  mod->addTypeName(name, ty);
-  EDiag() << "registered type " << name << " = " << str(ty) << "; ctor id " << ctorId;
+  //mod->addTypeName(name, ty);
+  EDiag() << "TODO: registered type " << name << " = " << str(ty) << "; ctor id " << ctorId;
   emitTypeMap(ty, name, NotArray, ctorId, mod, std::vector<int>());
 }
 
-const llvm::StructType*
-isCoroStruct(const llvm::Type* ty) {
-  if (const llvm::StructType* sty = llvm::dyn_cast<llvm::StructType>(ty)) {
+llvm::StructType*
+isCoroStruct(llvm::Type* ty) {
+  if (llvm::StructType* sty = llvm::dyn_cast<llvm::StructType>(ty)) {
     if (sty == foster_generic_coro_t
      ||  ( sty->getNumContainedTypes() > 0
         && sty->getTypeAtIndex(0U) == foster_generic_coro_t)) {
@@ -306,16 +306,16 @@ isCoroStruct(const llvm::Type* ty) {
   return NULL;
 }
 
-llvm::GlobalVariable* getTypeMapForType(const llvm::Type* ty,
+llvm::GlobalVariable* getTypeMapForType(llvm::Type* ty,
                                         int8_t ctorId,
                                         llvm::Module* mod,
                                         ArrayOrNot arrayStatus) {
   llvm::GlobalVariable* gv = typeMapCache[mkTypeSig(ty, arrayStatus, ctorId)];
   if (gv) return gv;
 
-  if (const llvm::StructType* sty = isCoroStruct(ty)) {
+  if (llvm::StructType* sty = isCoroStruct(ty)) {
     gv = emitCoroTypeMap(sty, mod);
-  } else if (!ty->isAbstract() && !ty->isAggregateType()) {
+  } else if (/*!ty->isAbstract() &&*/ !ty->isAggregateType()) {
     gv = emitTypeMap(ty, ParsingContext::freshName("gcatom"), arrayStatus,
                      ctorId, mod, std::vector<int>());
     // emitTypeMap also sticks gv in typeMapForType
