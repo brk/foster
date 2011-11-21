@@ -372,10 +372,6 @@ void DataTypeAST::dump(DumpTypeToProtobufPass* pass) {
   ASSERT(false) << "data types should be handled after initial parsing";
 }
 
-void TypeVariableAST::dump(DumpTypeToProtobufPass* pass) {
-  ASSERT(false) << "no dumping type variables from front-end!";
-}
-
 void FnTypeAST::dump(DumpTypeToProtobufPass* pass) {
   setTagAndRange(pass->current, this, pb::Type::FN);
 

@@ -10,8 +10,6 @@ message Type {
     CARRAY = 6;
     CLOSURE = 7;
     PRIM_INT = 8;
-    //FORALL_TY = 9;
-    TYPE_VARIABLE = 10;
     ARRAY = 11;
     DATATYPE = 12;
     TY_CON_APP = 13;
@@ -24,7 +22,6 @@ message Type {
   optional ProcType procty = 17;
   repeated Type type_parts = 18;
   optional uint64 carray_size = 19;
-  repeated string tyvar_names = 20; // for FORALL_TY
   repeated PbDataCtor ctor    = 21;
 }
 

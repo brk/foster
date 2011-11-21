@@ -45,25 +45,6 @@ public:
   static TypeAST* i(int n);
 };
 
-class TypeVariableAST : public TypeAST {
-  std::string typeVarName;
-
-  llvm::PATypeHolder opaqueType;
-  explicit TypeVariableAST(const llvm::OpaqueType* opaqueType,
-                           const std::string& typeVarName,
-                           const SourceRange& sourceRange)
-    : TypeAST("TyVar", opaqueType, sourceRange),
-      typeVarName(typeVarName), opaqueType(opaqueType) {}
-
-public:
-  virtual void show(PrettyPrintTypePass* pass);
-  virtual void dump(DumpTypeToProtobufPass* pass);
-
-  const std::string& getTypeVariableName() { return typeVarName; }
-
-  static TypeVariableAST* get(const std::string& name, const SourceRange& sourceRange);
-};
-
 class PrimitiveTypeAST : public TypeAST {
   const std::string name; // Used for pretty printing
   static std::map<const llvm::Type*, TypeAST*> thinWrappers;

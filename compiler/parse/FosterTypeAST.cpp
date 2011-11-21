@@ -8,7 +8,6 @@
 
 #include "parse/FosterTypeAST.h"
 #include "parse/FosterAST.h"
-#include "parse/ParsingContext.h"
 #include "parse/FosterUtils.h"
 
 #include "llvm/Module.h"
@@ -20,7 +19,6 @@ using std::map;
 
 using foster::EDiag;
 using foster::SourceRange;
-using foster::ParsingContext;
 
 const llvm::Type* llvmIntType(int n) {
   return llvm::IntegerType::get(llvm::getGlobalContext(), n);
@@ -77,15 +75,6 @@ const llvm::PointerType* DataTypeAST::getOpaquePointerTy(llvm::Module* mod) cons
 const llvm::Type* DataTypeAST::getLLVMType() const {
   //return this->getOpaquePointerTy(NULL);
   return llvm::PointerType::getUnqual(llvmIntType(999));
-}
-
-////////////////////////////////////////////////////////////////////
-
-TypeVariableAST* TypeVariableAST::get(const std::string& name,
-                                      const SourceRange& sourceRange) {
-  EDiag() << "Getting opaque pointer for type variable " << name;
-  return new TypeVariableAST(llvm::OpaqueType::get(llvm::getGlobalContext()),
-                             ParsingContext::freshName(name), sourceRange);
 }
 
 ////////////////////////////////////////////////////////////////////

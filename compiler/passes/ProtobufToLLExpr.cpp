@@ -522,11 +522,6 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
           llvm::IntegerType::get(llvm::getGlobalContext(), size));
   }
 
-  if (t.tag() == pb::Type::TYPE_VARIABLE) {
-    const string& tyname = t.name();
-    return TypeVariableAST::get(tyname, SourceRange::getEmptyRange());
-  }
-
   if (t.tag() == pb::Type::DATATYPE) {
     const string& tyname = t.name();
     return new DataTypeAST(tyname, parseDataCtors(t),
