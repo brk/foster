@@ -226,8 +226,16 @@ int fdFlagsForObjectType(TargetMachine::CodeGenFileType filetype) {
   return flags;
 }
 
+#if defined(LLVM_HOSTTRIPLE)
+std::string HOST_TRIPLE = LLVM_HOSTTRIPLE;
+#elif defined(LLVM_DEFAULT_TARGET_TRIPLE)
+std::string HOST_TRIPLE = LLVM_DEFAULT_TARGET_TRIPLE;
+#else
+#error Unable to determine host triple!
+#endif
+
 llvm::Reloc::Model getRelocModel() {
-  if (string(LLVM_HOSTTRIPLE).find("darwin") != string::npos) {
+  if (HOST_TRIPLE.find("darwin") != string::npos) {
     // Applications on Mac OS X (x86) must be compiled with relocatable symbols,
     // which is -mdynamic-no-pic (GCC) or -relocation-model=dynamic-no-pic (llc).
     // Setting the flag here gives us the proper default, while still allowing
@@ -253,7 +261,7 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
 
   llvm::Triple triple(mod->getTargetTriple());
   if (triple.getTriple().empty()) {
-    triple.setTriple(llvm::sys::getHostTriple());
+    triple.setTriple(HOST_TRIPLE);
   }
 
   const Target* target = NULL;
@@ -265,12 +273,24 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
     exit(1);
   }
 
+  // TODO: LLVM 3.0 and earlier will crashe in X86ISelDAG with CodeGenOpt::None
+  // when using llvm.gcroot of bitcast values.
+  // http://llvm.org/bugs/show_bug.cgi?id=10799
+  CodeGenOpt::Level
+         cgOptLevel = optOptimizeZero
+                        ? CodeGenOpt::Less // None, Default
+                        : CodeGenOpt::Aggressive;
+
   CodeModel::Model cgModel = CodeModel::Default;
   TargetMachine* tm = target->createTargetMachine(triple.getTriple(),
                                                  "", // CPU
                                                  "", // Features
                                                  getRelocModel(),
-                                                 cgModel);
+                                                 cgModel
+#ifdef LLVM_DEFAULT_TARGET_TRIPLE
+                                               , cgOptLevel
+#endif
+                                                 );
   if (!tm) {
     llvm::errs() << "Error! Creation of target machine"
         " failed for triple " << triple.getTriple() << "\n";
@@ -296,17 +316,12 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
       llvm::formatted_raw_ostream::PRESERVE_STREAM);
 
 
-  // TODO: LLVM 3.0 and earlier will crashe in X86ISelDAG with CodeGenOpt::None
-  // when using llvm.gcroot of bitcast values.
-  // http://llvm.org/bugs/show_bug.cgi?id=10799
-  CodeGenOpt::Level
-         cgOptLevel = optOptimizeZero
-                        ? CodeGenOpt::Less // None, Default
-                        : CodeGenOpt::Aggressive;
-
   bool disableVerify = true;
-  if (tm->addPassesToEmitFile(passes, out,
-      filetype, cgOptLevel, disableVerify)) {
+  if (tm->addPassesToEmitFile(passes, out, filetype,
+#ifndef LLVM_DEFAULT_TARGET_TRIPLE
+                              cgOptLevel,
+#endif
+                              disableVerify)) {
     llvm::errs() << "Unable to emit assembly file! " << "\n";
     exit(1);
   }
