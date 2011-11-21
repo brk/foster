@@ -67,7 +67,7 @@ void putModuleMembersInScope(Module* m, Module* linkee) {
   for (Module::iterator it = m->begin(); it != m->end(); ++it) {
     const Function& f = *it;
 
-    const string& name = f.getNameStr();
+    const string& name = f.getName().str();
     bool isCxxLinkage = pystring::startswith(name, "_Z", 0)
                      || pystring::startswith(name, "__cxx_", 0);
     if (isCxxLinkage) continue;
@@ -119,7 +119,7 @@ void putModuleFunctionsInScope(Module* m, Module* linkee) {
   for (Module::iterator it = m->begin(); it != m->end(); ++it) {
     const Function& f = *it;
 
-    const string& name = f.getNameStr();
+    const string& name = f.getName().str();
     bool isCxxLinkage = pystring::startswith(name, "_Z", 0);
 
     bool hasDef = !f.isDeclaration();

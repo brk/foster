@@ -40,7 +40,7 @@ struct ImathImprover : public BasicBlockPass {
   bool isCallTo(CallInst* call, const char* funcName) {
     if (!call) return false;
     Function* f = call->getCalledFunction();
-    return f && f->hasName() && f->getNameStr() == funcName;
+    return f && f->hasName() && f->getName() == funcName;
   }
 
   Value* getUseOf_Calling(Value* v, const char* funcName) {
@@ -104,7 +104,7 @@ struct ImathImprover : public BasicBlockPass {
     // Replace %6 with, e.g
     // %7 = call i32 @mp_int_init_value(%mp_int %4, i32 25)
     builder.SetInsertPoint(&BB, it);
-    std::string mp_operation = call->getCalledFunction()->getNameStr();
+    llvm::StringRef mp_operation = call->getCalledFunction()->getName();
     Value* folded = getAppropriateOperation(c1, c2, mp_operation);
     Value* newcall = builder.CreateCall2(mp_int_init_value, v4, folded);
     call->replaceAllUsesWith(newcall);

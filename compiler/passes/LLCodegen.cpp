@@ -281,7 +281,7 @@ llvm::AllocaInst* ensureImplicitStackSlot(llvm::Value* v, CodegenPass* pass) {
   if (mightContainHeapPointers(v->getType())) {
     return pass->storeAndMarkPointerAsGCRoot(v);
   } else {
-    llvm::AllocaInst* slot = stackSlotWithValue(v, v->getNameStr() + "_addr");
+    llvm::AllocaInst* slot = stackSlotWithValue(v, v->getName().str() + "_addr");
     pass->markAsNeedingImplicitLoads(slot);
     return slot;
   }
@@ -303,7 +303,7 @@ void LLProc::codegenProc(CodegenPass* pass) {
   for (Function::arg_iterator AI = F->arg_begin();
                               AI != F->arg_end(); ++AI) {
     llvm::Value* slot = ensureImplicitStackSlot(AI, pass);
-    scope->insert(AI->getNameStr(), slot);
+    scope->insert(AI->getName(), slot);
   }
 
   EDiag() << "codegennign blocks for fn " << F->getName();

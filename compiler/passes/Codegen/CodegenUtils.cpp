@@ -109,8 +109,8 @@ Value* getElementFromComposite(Value* compositeValue,  Value* idxValue,
 // Given a stack slot named s in a function called f,
 // returns a pointer to a string called "f((s))".
 Constant* getSlotName(llvm::AllocaInst* stackslot, CodegenPass* pass) {
-  std::string fnname = stackslot->getParent()->getParent()->getNameStr();
-  std::string slotname = fnname + "(( " + stackslot->getNameStr() + " ))";
+  llvm::StringRef fnname = stackslot->getParent()->getParent()->getName();
+  std::string slotname = fnname.str() + "(( " + stackslot->getName().str() + " ))";
   Constant* cslotname = ConstantArray::get(getGlobalContext(),
                                            slotname.c_str(),
                                            true);
@@ -179,7 +179,7 @@ llvm::AllocaInst* CreateEntryAlloca(llvm::Type* ty, const std::string& name) {
 }
 
 llvm::AllocaInst* stackSlotWithValue(llvm::Value* val, const std::string& name) {
-  llvm::AllocaInst* valptr = CreateEntryAlloca(val->getType(), val->getNameStr() + name);
+  llvm::AllocaInst* valptr = CreateEntryAlloca(val->getType(), val->getName().str() + name);
   builder.CreateStore(val, valptr, /*isVolatile=*/ false);
   return valptr;
 }

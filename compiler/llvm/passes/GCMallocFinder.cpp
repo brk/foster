@@ -71,7 +71,7 @@ struct GCMallocFinder : public CallGraphSCCPass {
     GCMallocStatus status = cache[fn];
     if (status == kStatusUnknownGCBehavior) {
       status = kStatusMayTriggerGC;
-      if (knownNonAllocatingFQNames.count(fn->getNameStr()) == 1
+      if (knownNonAllocatingFQNames.count(fn->getName().str()) == 1
        || fn->isIntrinsic()) {
         status = kStatusWillNotTriggerGC;
       }
@@ -86,7 +86,7 @@ struct GCMallocFinder : public CallGraphSCCPass {
     Function* fn = cgn->getFunction();
     std::string fnName = fn ? "<unknown function>" : "<NULL fn!>";
     if (fn && fn->hasName()) {
-      fnName = fn->getNameStr();
+      fnName = fn->getName().str();
     }
     return fnName;
   }
