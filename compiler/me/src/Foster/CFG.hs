@@ -95,7 +95,7 @@ computeBlocks expr idmaybe k = do
             [ifthen, ifelse, ifcont] <- mapM cfgFresh
                                                ["if_then", "if_else", "if_cont"]
             slotvar <- cfgFreshSlotVar t "if_slot"
-            cfgEndWith (CFIf t v ifthen ifelse)
+            cfgEndWith (CFIf v ifthen ifelse)
 
             cfgNewBlock ifthen
             computeBlocks a Nothing $ \var -> cfgMidStore var slotvar
@@ -114,7 +114,7 @@ computeBlocks expr idmaybe k = do
             cfgEndWith (CFBr until_test)
 
             cfgNewBlock until_test
-            computeBlocks a Nothing $ \var -> cfgEndWith (CFIf (typeKN a) var
+            computeBlocks a Nothing $ \var -> cfgEndWith (CFIf var
                                                           until_cont until_body)
 
             cfgNewBlock until_body
@@ -222,7 +222,7 @@ data CFMiddle = CFLetVal      Ident     Letable
 data CFLast = CFRetVoid
             | CFRet         AIVar
             | CFBr          BlockId
-            | CFIf          TypeIL AIVar  BlockId   BlockId
+            | CFIf          AIVar  BlockId   BlockId
             | CFCase        AIVar [(Pattern, BlockId)]
             deriving (Show)
 
@@ -344,7 +344,7 @@ instance NonLocal Insn where
         CFRetVoid            -> []
         CFRet  _             -> []
         CFBr   b             -> [blockLabel b]
-        CFIf _ _ bthen belse -> [blockLabel bthen, blockLabel belse]
+        CFIf   _ bthen belse -> [blockLabel bthen, blockLabel belse]
         CFCase _ patsbids    -> [blockLabel b | (_, b) <- patsbids]
     where blockLabel (_, label) = label
 

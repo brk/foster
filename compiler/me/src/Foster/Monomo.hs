@@ -254,14 +254,13 @@ monomorphizeBlock subst (Block bid mids last) = do
 
 monoLast :: MonoSubst -> ILLast -> MoLast
 monoLast subst last =
-  let qt = monoType subst in
   let qv = monoVar  subst in
   case last of
-    ILRetVoid                   -> MoRetVoid
-    ILRet     v                 -> MoRet      (qv v)
-    ILBr      bid               -> MoBr       bid
-    ILIf      t v  bid1  bid2   -> MoIf       (qt t) (qv v) bid1 bid2
-    ILCase      v  arms def occ -> MoCase            (qv v) arms def occ
+    ILRetVoid                 -> MoRetVoid
+    ILRet     v               -> MoRet      (qv v)
+    ILBr      bid             -> MoBr       bid
+    ILIf      v  bid1  bid2   -> MoIf       (qv v) bid1 bid2
+    ILCase    v  arms def occ -> MoCase     (qv v) arms def occ
 
 monoVar :: MonoSubst -> TypedId TypeIL -> TypedId MonoType
 monoVar subst (TypedId t id) = TypedId (monoType subst t) id

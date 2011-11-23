@@ -80,7 +80,7 @@ data ILMiddle = ILLetVal      Ident    Letable
 data ILLast = ILRetVoid
             | ILRet      AIVar
             | ILBr       BlockId
-            | ILIf       TypeIL AIVar  BlockId   BlockId
+            | ILIf       AIVar  BlockId   BlockId
             | ILCase     AIVar [(CtorId, BlockId)] (Maybe BlockId) Occurrence
 
 --------------------------------------------------------------------
@@ -145,18 +145,18 @@ closureConvertBlocks bbg = do
       ilLast (ILast last) =
         let ret i = return ([], i) in
         case last of
-           CFRetVoid          -> ret $ ILRetVoid
-           CFRet   v          -> ret $ ILRet   v
-           CFBr    b          -> ret $ ILBr    b
-           CFIf    t a b1 b2  -> ret $ ILIf    t a b1 b2
-           CFCase    a pbs    -> do allSigs <- gets ilmCtors
-                                    let dt = compilePatterns pbs allSigs
-                                    let usedBlocks = eltsOfDecisionTree dt
-                                    let _unusedPats = [pat | (pat, bid) <- pbs
-                                                     , Set.notMember bid usedBlocks]
-                                    -- TODO print warning if any unused patterns
-                                    (BlockFin blocks id) <- compileDecisionTree a dt
-                                    return $ (blocks, ILBr id)
+           CFRetVoid       -> ret $ ILRetVoid
+           CFRet   v       -> ret $ ILRet   v
+           CFBr    b       -> ret $ ILBr    b
+           CFIf    a b1 b2 -> ret $ ILIf    a b1 b2
+           CFCase  a pbs   -> do allSigs <- gets ilmCtors
+                                 let dt = compilePatterns pbs allSigs
+                                 let usedBlocks = eltsOfDecisionTree dt
+                                 let _unusedPats = [pat | (pat, bid) <- pbs
+                                                  , Set.notMember bid usedBlocks]
+                                 -- TODO print warning if any unused patterns
+                                 (BlockFin blocks id) <- compileDecisionTree a dt
+                                 return $ (blocks, ILBr id)
               where
                 -- The decision tree we get from pattern-match compilation may
                 -- contain only a subset of the pattern branche.
@@ -404,8 +404,8 @@ showProgramStructure (ILProgram procdefs _decls _dtypes _lines) =
         ++ out (show last ++ "\n\n")
 
 instance Show ILLast where
-  show (ILRetVoid      ) = "ret void"
-  show (ILRet v        ) = "ret " ++ show v
-  show (ILBr  bid      ) = "br " ++ show bid
-  show (ILIf ty v b1 b2) = "if<" ++ show ty ++ "> " ++ show v ++ " ? " ++ show b1 ++ " : " ++ show b2
+  show (ILRetVoid     ) = "ret void"
+  show (ILRet v       ) = "ret " ++ show v
+  show (ILBr  bid     ) = "br " ++ show bid
+  show (ILIf   v b1 b2) = "if " ++ show v ++ " ? " ++ show b1 ++ " : " ++ show b2
   show (ILCase v _arms _def _occ) = "case(" ++ show v ++ ")"
