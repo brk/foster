@@ -91,7 +91,7 @@ struct CodegenPass {
 
   std::map<std::string,     LLBlock*>     fosterBlocks;
   WorklistLIFO<std::string, LLBlock*>   worklistBlocks;
-  std::map<std::string, BlockBindings*>  blockBindings;
+  std::map<llvm::Value*, std::map<std::vector<int>, llvm::AllocaInst*> > occSlots;
 
   explicit CodegenPass(llvm::Module* mod);
 

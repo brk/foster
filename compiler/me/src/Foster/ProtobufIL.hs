@@ -12,7 +12,6 @@ import Foster.Base
 import Foster.MonoExpr
 import Foster.MonoType
 import Foster.MonoLetable
-import Foster.PatternMatch
 import Foster.ProtobufUtils
 
 import qualified Data.ByteString.Lazy as L(writeFile)
@@ -40,8 +39,7 @@ import Foster.Bepb.RebindId     as PbRebindId
 import Foster.Bepb.PbDataCtor   as PbDataCtor
 import Foster.Bepb.PbAllocInfo  as PbAllocInfo
 import Foster.Bepb.PbOccurrence as PbOccurrence
-import Foster.Bepb.DecisionTree as PbDecisionTree
-import Foster.Bepb.PbSwitchCase as PbSwitchCase
+import Foster.Bepb.PbSwitch     as PbSwitch
 import Foster.Bepb.PbCoroPrim   as PbCoroPrim
 import Foster.Bepb.Module       as Module
 import Foster.Bepb.Letable.Tag
@@ -49,7 +47,6 @@ import Foster.Bepb.PbCoroPrim.Tag
 import Foster.Bepb.TermVar.Tag
 import Foster.Bepb.Terminator.Tag
 import Foster.Bepb.Proc.Linkage
-import Foster.Bepb.DecisionTree.Tag
 import Foster.Bepb.PbAllocInfo.MemRegion as PbMemRegion
 
 import qualified Text.ProtocolBuffers.Header as P'
@@ -212,11 +209,9 @@ dumpLast (MoIf _ var thenid elseid) =
                     , PbTerminator.var    = Just $ dumpVar var
                     , PbTerminator.block  = Just $ dumpBlockId thenid
                     , PbTerminator.block2 = Just $ dumpBlockId elseid }
-dumpLast (MoCase ty var dt) =
+dumpLast (MoCase var arms def occ) =
     P'.defaultValue { PbTerminator.tag    = BLOCK_CASE
-                    , PbTerminator.var    = Just $ dumpVar var
-                    , PbTerminator.typ    = Just $ dumpType ty
-                    , PbTerminator.dt     = Just $ dumpDecisionTree dt }
+                    , PbTerminator.scase  = Just $ dumpSwitch var arms def occ }
 
 -----------------------------------------------------------------------
 
@@ -252,6 +247,11 @@ dumpExpr x@(MoTuple vs) =
                     , PbLetable.type' = Just $ dumpType (typeMo x)
                     , PbLetable.alloc_info = Just $ dumpAllocate
                          (AllocInfo (typeMo x) MemRegionGlobalHeap Nothing True) }
+
+dumpExpr   (MoOccurrence v occ) =
+    P'.defaultValue { PbLetable.tag   = IL_OCCURRENCE
+                    , PbLetable.occ   = Just $ dumpOccurrence v occ
+                    , PbLetable.type' = Nothing }
 
 dumpExpr x@(MoAllocate info) =
     P'.defaultValue { PbLetable.tag   = IL_ALLOCATE
@@ -302,35 +302,23 @@ dumpClosureWithName (varid, MoClosure procid envid captvars) =
             , env_id   = dumpIdent envid
             , env      = dumpExpr (MoTuple captvars) }
 
-dumpDecisionTree (DT_Fail) =
-    P'.defaultValue { PbDecisionTree.tag = DT_FAIL }
-
-dumpDecisionTree (DT_Leaf block_id idsoccs) =
-    P'.defaultValue { PbDecisionTree.tag    = DT_LEAF
-                    , PbDecisionTree.leaf_idents = fromList $ map (dumpIdent.fst) idsoccs
-                    , PbDecisionTree.leaf_idoccs = fromList $ map (dumpOcc  .snd) idsoccs
-                    , PbDecisionTree.leaf_action = Just $ dumpBlockId block_id }
-
-dumpDecisionTree (DT_Switch occ idsdts md) =
-    P'.defaultValue { PbDecisionTree.tag    = DT_SWITCH
-                    , PbDecisionTree.switchcase = Just $ dumpSwitchCase occ idsdts md }
-
-dumpSwitchCase occ ctorDTpairs defaultCase =
-    let (ctors, dts) = Prelude.unzip ctorDTpairs in
-    P'.defaultValue { PbSwitchCase.ctors = fromList (map dumpCtorId ctors)
-                    , PbSwitchCase.trees = fromList (map dumpDecisionTree dts)
-                    , PbSwitchCase.defCase = fmap dumpDecisionTree defaultCase
-                    , PbSwitchCase.occ   = Just $ dumpOcc occ }
+dumpSwitch var arms def occ =
+    let (ctors, ids) = Prelude.unzip arms in
+    P'.defaultValue { PbSwitch.ctors   = fromList (map dumpCtorId ctors)
+                    , PbSwitch.blocks  = fromList (map dumpBlockId ids)
+                    , PbSwitch.defCase = fmap dumpBlockId def
+                    , PbSwitch.occ   = Just $ dumpOccurrence var occ }
 
 dumpCtorId (CtorId s n _a i) =
     P'.defaultValue { PbCtorId.ctor_type_name = u8fromString s
                     , PbCtorId.ctor_ctor_name = u8fromString n
                     , PbCtorId.ctor_local_id  = intToInt32 i }
 
-dumpOcc offsCtorIds =
+dumpOccurrence var offsCtorIds =
     let (offs, ids) = unzip offsCtorIds in
     P'.defaultValue { PbOccurrence.occ_offset = fromList $ map intToInt32 offs
-                    , PbOccurrence.occ_ctorid = fromList $ map dumpCtorId ids }
+                    , PbOccurrence.occ_ctorid = fromList $ map dumpCtorId ids
+                    , PbOccurrence.scrutinee  = dumpVar var }
 
 -----------------------------------------------------------------------
 
@@ -434,6 +422,7 @@ typeMo expr = case expr of
     MoBool _                -> PrimInt I1
     MoInt t _               -> t
     MoTuple vs              -> TupleType (map tidType vs)
+    MoOccurrence {}         -> error $ "ProtobufIL: No typeMo for MoOccurrence"
     MoCall     t  _ _       -> t
     MoCallPrim t  _ _       -> t
     MoAppCtor  t  _ _       -> t
@@ -443,7 +432,7 @@ typeMo expr = case expr of
     MoDeref v               -> pointedToTypeOfVar v
     MoStore _ _             -> TupleType []
     MoArrayRead t _ _       -> t
-    MoArrayPoke _ _ _       -> TupleType []
+    MoArrayPoke {}          -> TupleType []
 
 pointedToTypeOfVar v = case v of
     TypedId (PtrType t) _ -> t

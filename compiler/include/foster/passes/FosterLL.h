@@ -334,39 +334,12 @@ struct LLCoroPrim : public LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
-struct DecisionTree;
-
-struct Occurrence {
+struct LLOccurrence : public LLExpr {
+  LLVar* var;
   std::vector<int> offsets;
   std::vector<CtorId> ctors;
-};
-
-struct CaseContext;
-
-struct SwitchCase {
-  std::vector<CtorId>        ctors;
-  std::vector<DecisionTree*> trees;
-  DecisionTree*        defaultCase;
-  Occurrence*                  occ;
-  void codegenSwitch(CodegenPass* pass, llvm::Value* scrutinee, CaseContext* ctx);
-};
-
-typedef std::pair<std::string, Occurrence*> DTBinding;
-
-struct DecisionTree {
-  enum Tag {
-    DT_FAIL, DT_LEAF, DT_SWITCH
-  } tag;
-  TypeAST* type;
-  std::vector<DTBinding> binds; std::string action_block_id;
-  SwitchCase* sc;
-  DecisionTree() : tag(DT_FAIL), type(NULL), sc(NULL) {}
-  DecisionTree(std::vector<DTBinding> binds, std::string b_id)
-                 : tag(DT_LEAF), type(NULL), binds(binds),
-                                      action_block_id(b_id), sc(NULL) {}
-  DecisionTree(SwitchCase* sc) : tag(DT_SWITCH), type(NULL), sc(sc) {}
-  void codegenDecisionTree(CodegenPass* pass, llvm::Value* scrutinee,
-                           CaseContext* ctx);
+  explicit LLOccurrence() : LLExpr("LLOccurrence") {}
+  virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
 ///////////////////////////////////////////////////////////
@@ -398,13 +371,16 @@ struct LLCondBr : public LLTerminator {
 };
 
 struct LLSwitch : public LLTerminator {
-  LLVar* scrutinee;
-  DecisionTree* dt;
-  TypeAST* branchType;
+  std::vector<CtorId> ctors;
+  std::vector<std::string> blockids;
+  std::string defaultCase;
+  LLOccurrence* occ;
+  LLSwitch(LLOccurrence* _occ,
+           const std::vector<CtorId>& _ctors,
+           const std::vector<std::string>& _ids,
+           const std::string& _def)
+    : ctors(_ctors), blockids(_ids), defaultCase(_def), occ(_occ) {}
 
-  LLSwitch(LLVar* testExpr, TypeAST* ty, DecisionTree* dt)
-    : scrutinee(testExpr), dt(dt), branchType(ty) {
-  }
   virtual void codegenTerminator(CodegenPass* pass);
 };
 

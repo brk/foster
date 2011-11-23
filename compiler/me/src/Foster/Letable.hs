@@ -8,6 +8,7 @@ module Foster.Letable (Letable(..)) where
 
 import Foster.Base(LiteralInt, CtorId, AllocInfo)
 import Foster.TypeIL(AIVar, ILPrim, TypeIL)
+import Foster.PatternMatch(Occurrence)
 
 -- The reason we have both ILAllocate and ILAlloc is that
 -- LLCodegen performs auto-loads from stack slots, which
@@ -17,7 +18,9 @@ data Letable =
           ILBool        Bool
         | ILInt         TypeIL LiteralInt
         | ILTuple       [AIVar]
-
+        -- Struct member lookup
+        | ILOccurrence  AIVar Occurrence
+        -- Varieties of applications
         | ILCallPrim    TypeIL ILPrim [AIVar]
         | ILCall        TypeIL AIVar  [AIVar]
         | ILAppCtor     TypeIL CtorId [AIVar]

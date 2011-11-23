@@ -257,11 +257,11 @@ monoLast subst last =
   let qt = monoType subst in
   let qv = monoVar  subst in
   case last of
-    ILRetVoid                  -> MoRetVoid
-    ILRet      v               -> MoRet      (qv v)
-    ILBr       bid             -> MoBr       bid
-    ILIf       t v  bid1  bid2 -> MoIf       (qt t) (qv v) bid1 bid2
-    ILCase     t v  dt         -> MoCase     (qt t) (qv v) dt
+    ILRetVoid                   -> MoRetVoid
+    ILRet     v                 -> MoRet      (qv v)
+    ILBr      bid               -> MoBr       bid
+    ILIf      t v  bid1  bid2   -> MoIf       (qt t) (qv v) bid1 bid2
+    ILCase      v  arms def occ -> MoCase            (qv v) arms def occ
 
 monoVar :: MonoSubst -> TypedId TypeIL -> TypedId MonoType
 monoVar subst (TypedId t id) = TypedId (monoType subst t) id
@@ -325,6 +325,7 @@ monomorphizeLetable subst expr =
         ILBool      b         -> return $ MonoLet $ MoBool   b
         ILInt       t i       -> return $ MonoLet $ MoInt   (qt t) i
         ILTuple     vs        -> return $ MonoLet $ MoTuple (map qv vs)
+        ILOccurrence v occ    -> return $ MonoLet $ MoOccurrence (qv v) occ
         ILCallPrim  t p vs    -> return $ MonoLet $ MoCallPrim (qt t) monopr (map qv vs) where monopr = monoPrim subst p
         ILCall      t v vs    -> return $ MonoLet $ MoCall     (qt t) (qv v) (map qv vs)
         ILAppCtor   t c vs    -> return $ MonoLet $ MoAppCtor  (qt t) c      (map qv vs)

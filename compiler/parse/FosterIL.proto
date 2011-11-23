@@ -71,7 +71,7 @@ message Letable {
     IL_INT = 16;
     IL_BOOL = 17;
     IL_TUPLE = 20;
-
+    IL_OCCURRENCE = 21;
     IL_CALL = 23;
     IL_CALL_PRIMOP = 24;
     IL_CTOR  = 25;
@@ -95,6 +95,7 @@ message Letable {
   optional PbAllocInfo   alloc_info = 25;
   optional bool call_may_trigger_gc = 26;
 
+  optional PbOccurrence       occ = 28;
   optional PbCoroPrim   coro_prim = 29;
   optional string    prim_op_name = 30;
   optional int32     prim_op_size = 31;
@@ -113,8 +114,7 @@ message Terminator {
   optional TermVar var     = 2;  // BLOCK_RET, BLOCK_IF, BLOCK_CASE
   optional string block    = 3;  // BLOCK_IF, BLOCK_BR
   optional string block2   = 4;  // BLOCK_IF
-  optional DecisionTree dt = 5;  // BLOCK_CASE
-  optional Type        typ = 6;  // BLOCK_CASE
+  optional PbSwitch  scase = 5;  // BLOCK_CASE
 }
 
 message TermVar {
@@ -185,23 +185,10 @@ message PbCoroPrim {
   required Type arg_type = 3;
 }
 
-message DecisionTree {
-  enum Tag {
-    DT_FAIL = 2;
-    DT_LEAF = 3;
-    DT_SWITCH = 4;
-  }
-  required Tag          tag        = 1;
-  optional PbSwitchCase switchcase = 5;
-  optional string       leaf_action = 6;
-  repeated string       leaf_idents = 7;
-  repeated PbOccurrence leaf_idoccs = 8;
-}
-
-message PbSwitchCase {
+message PbSwitch {
   repeated PbCtorId     ctors   = 1;
-  repeated DecisionTree trees   = 2;
-  optional DecisionTree defCase = 3;
+  repeated string       blocks  = 2;
+  optional string       defCase = 3;
   optional PbOccurrence occ     = 4;
 }
 
@@ -212,8 +199,9 @@ message PbCtorId {
 }
 
 message PbOccurrence {
-  repeated int32    occ_offset = 1;
-  repeated PbCtorId occ_ctorid = 2;
+  required TermVar  scrutinee  = 1;
+  repeated int32    occ_offset = 2;
+  repeated PbCtorId occ_ctorid = 3;
 }
 
 message Decl {

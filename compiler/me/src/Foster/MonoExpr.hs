@@ -13,7 +13,7 @@ import Foster.Base
 import Foster.MonoType
 import Foster.MonoLetable
 import Foster.CFG(BlockId)
-import Foster.PatternMatch(DecisionTree)
+import Foster.PatternMatch(Occurrence)
 import Foster.Output(out, Output)
 
 data MoClosure = MoClosure { moClosureProcIdent :: Ident
@@ -46,7 +46,7 @@ data MoLast = MoRetVoid
             | MoRet      MoVar
             | MoBr       BlockId
             | MoIf       MonoType MoVar  BlockId   BlockId
-            | MoCase     MonoType MoVar (DecisionTree BlockId)
+            | MoCase     MoVar [(CtorId, BlockId)] (Maybe BlockId) Occurrence
 
 --------------------------------------------------------------------
 
@@ -72,4 +72,4 @@ instance Show MoLast where
   show (MoRet v        ) = "ret " ++ show v
   show (MoBr  bid      ) = "br " ++ show bid
   show (MoIf ty v b1 b2) = "if<" ++ show ty ++ "> " ++ show v ++ " ? " ++ show b1 ++ " : " ++ show b2
-  show (MoCase ty v  dt) = "case<" ++ show ty ++ "> (" ++ show v ++ ") [decisiontree]: {\n" ++ show dt ++ "\n}"
+  show (MoCase v _arms _def _occ) = "case(" ++ show v ++ ")"

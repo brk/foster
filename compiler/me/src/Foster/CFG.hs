@@ -146,7 +146,8 @@ computeBlocks expr idmaybe k = do
         -- Cases are translated very straightforwardly here; we put off
         -- fancier pattern match compilation for later. Giving each arm's
         -- expression a label here conveniently prevents code duplication
-        -- during match compilation.
+        -- during match compilation, and delaying pattern match compilation
+        -- makes closure conversion somewhat easier.
         --
         -- A case expression of overall type t, such as
         --
@@ -158,13 +159,13 @@ computeBlocks expr idmaybe k = do
         --      case_slot = alloca t                        ;
         --      case scrutinee of p1 -> goto case_arm1
         --                     of p2 -> goto case_arm2 ...  ;
-        --      case_value = load case_slot
         --  case_arm1:
         --      ev = [[e1]]; store ev in case_slot; goto case_cont
         --  case_arm2:
         --      ev = [[e2]]; store ev in case_slot; goto case_cont
         --  ...
         --  case_cont:
+        --      case_value = load case_slot
         --      ...
         --
         -- The one point this glosses over is how the variables bound by
@@ -179,7 +180,7 @@ computeBlocks expr idmaybe k = do
             bbs <- mapM (\(pat, _) -> do block_id <- cfgFresh "case_arm"
                                          return $ (pat, block_id)) bs
 
-            cfgEndWith (CFCase t v bbs)
+            cfgEndWith (CFCase v bbs)
 
             -- Fill in each arm's block with [[e]] (and a store at the end).
             let computeCaseBlocks ((_pat, e), (_, block_id)) = do
@@ -222,7 +223,7 @@ data CFLast = CFRetVoid
             | CFRet         AIVar
             | CFBr          BlockId
             | CFIf          TypeIL AIVar  BlockId   BlockId
-            | CFCase        TypeIL AIVar [(Pattern, BlockId)]
+            | CFCase        AIVar [(Pattern, BlockId)]
             deriving (Show)
 
 data Insn e x where
@@ -344,7 +345,7 @@ instance NonLocal Insn where
         CFRet  _             -> []
         CFBr   b             -> [blockLabel b]
         CFIf _ _ bthen belse -> [blockLabel bthen, blockLabel belse]
-        CFCase _ _ patsbids  -> [blockLabel b | (_, b) <- patsbids]
+        CFCase _ patsbids    -> [blockLabel b | (_, b) <- patsbids]
     where blockLabel (_, label) = label
 
 -- Decompose a BasicBlock into a triple of its subpieces.
