@@ -424,12 +424,6 @@ void LLSwitch::codegenTerminator(CodegenPass* pass) {
   BasicBlock* defaultBB = NULL;
   if (this->defaultCase != "") defaultBB = pass->lookupBlock(this->defaultCase);
 
-  // When there's only one possible case, and no default, we must take it.
-  if ((blockids.size() == 1) && !defaultBB) {
-    builder.CreateBr(pass->lookupBlock(blockids[0]));
-    return;
-  }
-
   // All the ctors should have the same data type, now that we have at least
   // one ctor, check if it's associated with a data type we know of.
   DataTypeAST* dt = pass->isKnownDataType[ctors[0].typeName];
