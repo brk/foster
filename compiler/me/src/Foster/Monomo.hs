@@ -260,9 +260,11 @@ monoLast subst last =
     ILRet     v               -> MoRet      (qv v)
     ILBr      bid             -> MoBr       bid
     ILIf      v  bid1  bid2   -> MoIf       (qv v) bid1 bid2
-    -- While we're here, optimize switches to (un)conditional branches.
-    ILCase _ [arm] Nothing _  -> MoBr      (snd arm)
-    ILCase    v  arms def occ -> MoCase     (qv v) arms def occ
+    -- Might as well optimize single-case switches to unconditional branches.
+    ILCase _ [arm]    Nothing _   -> MoBr      (snd arm)
+    -- If pattern matching was exhaustive, use one of the cases as a default.
+    ILCase v (a:arms) Nothing occ -> MoCase (qv v) arms (Just $ snd a) occ
+    ILCase v    arms def occ      -> MoCase (qv v) arms def occ
 
 monoVar :: MonoSubst -> TypedId TypeIL -> TypedId MonoType
 monoVar subst (TypedId t id) = TypedId (monoType subst t) id
