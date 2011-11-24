@@ -394,9 +394,8 @@ typecheckArrayRead rng base (ArrayTypeAST t) aiexpr maybeExpTy = do
 
     return (AnnArrayRead rng t base aiexpr)
 
-typecheckArrayRead rng _base baseType index maybeExpTy =
+typecheckArrayRead rng _base baseType _index maybeExpTy =
     tcFails [out $ "Unable to arrayread expression of type " ++ show baseType
-                ++ " with expression " ++ show index
                 ++ " (context expected type " ++ show maybeExpTy ++ ")"
                 ++ highlightFirstLine rng]
 -- }}}
@@ -417,9 +416,8 @@ typecheckArrayPoke rng c base (ArrayTypeAST t) aiexpr maybeExpTy = do
 
     return (AnnArrayPoke rng t c base aiexpr)
 
-typecheckArrayPoke rng _ _base baseType index maybeExpTy =
+typecheckArrayPoke rng _ _base baseType _index maybeExpTy =
     tcFails [out $ "Unable to arraypoke expression of type " ++ show baseType
-                ++ " with expression " ++ show index
                 ++ " (context expected type " ++ show maybeExpTy ++ ")"
                 ++ highlightFirstLine rng]
 -- }}}
@@ -791,7 +789,6 @@ getFreeTyVars x = do z <- zonkType x
         RefTypeAST    ty      -> (go bound) ty
         ArrayTypeAST  ty      -> (go bound) ty
 
-
 subsumedBy :: AnnExpr Sigma -> Sigma -> Maybe String -> Tc (AnnExpr Rho)
 subsumedBy (AnnTuple (E_AnnTuple rng exprs)) (TupleTypeAST tys) msg = do
         exprs' <- mapM (\(e,t) -> subsumedBy e t msg) (zip exprs tys)
@@ -809,8 +806,8 @@ subsumedBy annexpr st2 msg = do
              sanityCheck (null bad_tvs) "Type not polymorphic enough!"
              return e'
         (ForAllAST {}, rho2) -> do
-                tcLift $ runOutput $ outCS Red $ "subsumedBy: inst " ++ show annexpr ++ " to rho " ++ show rho2
-                tcLift $ putStrLn ""
+                --tcLift $ runOutput $ outCS Red $ "subsumedBy: inst " ++ show annexpr ++ " to rho " ++ show rho2
+                --tcLift $ putStrLn ""
                 annrho <- inst annexpr
                 subsumedBy annrho rho2 msg
 

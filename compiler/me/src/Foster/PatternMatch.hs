@@ -53,6 +53,8 @@ data SPattern = SP_Wildcard
               | SP_Ctor      CtorId  [SPattern]
              deriving (Show)
 
+type DataTypeSigs = Map DataTypeName DataTypeSig
+
 compilePatterns :: [(Pattern, a)] -> DataTypeSigs -> DecisionTree a
 compilePatterns bs allSigs =
  cc [[]] (ClauseMatrix $ map compilePatternRow bs) allSigs where

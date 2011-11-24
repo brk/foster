@@ -54,7 +54,6 @@ data AIExpr=
         | E_AITyApp { aiTyAppOverallType :: TypeIL
                     , aiTyAppExpr        :: AIExpr
                     , aiTyAppArgTypes    :: TypeIL }
-        deriving (Show)
 
 ail :: Context ty -> AnnExpr TypeAST -> Tc AIExpr
 ail ctx ae =

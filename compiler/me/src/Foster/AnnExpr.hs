@@ -61,9 +61,6 @@ data AnnExpr ty =
 data AnnTuple ty = E_AnnTuple { annTupleRange :: SourceRange
                               , annTupleExprs :: [AnnExpr ty] }
 
-deriving instance Show t => Show (AnnExpr t)
-deriving instance Show t => Show (AnnTuple t)
-
 -----------------------------------------------------------------------
 
 typeAST :: AnnExpr TypeAST -> TypeAST
@@ -121,7 +118,7 @@ instance Structured (AnnExpr TypeAST) where
     case e of
       AnnBool {}                           -> []
       AnnCall _r _t b argtup               -> b:(annTupleExprs argtup)
-      AnnCompiles  _rng (CompilesResult (OK e))     -> [e]
+      AnnCompiles  _rng (CompilesResult (OK     e)) -> [e]
       AnnCompiles  _rng (CompilesResult (Errors _)) -> []
       AnnIf        _rng _t  a b c          -> [a, b, c]
       AnnUntil     _rng _t  a b            -> [a, b]
@@ -159,6 +156,19 @@ instance AExpr (AnnExpr TypeAST) where
                                      `butnot` ids
         E_AnnFn f -> map tidIdent (fnFreeVars f)
         _         -> concatMap freeIdents (childrenOf e)
+
+patBindingFreeIds :: AExpr e => (Pattern, e) -> [Ident]
+patBindingFreeIds (pat, expr) =
+  freeIdents expr `butnot` patBoundIds pat
+  where patBoundIds :: Pattern -> [Ident]
+        patBoundIds pat =
+          case pat of
+            P_Wildcard _rng          -> []
+            P_Variable _rng id       -> [id]
+            P_Bool     _rng _        -> []
+            P_Int      _rng _        -> []
+            P_Ctor     _rng pats _nm -> concatMap patBoundIds pats
+            P_Tuple    _rng pats     -> concatMap patBoundIds pats
 
 -----------------------------------------------------------------------
 

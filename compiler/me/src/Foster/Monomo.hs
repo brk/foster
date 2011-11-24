@@ -239,12 +239,10 @@ doMonomorphizeProc :: ILProcDef -> MonoSubst -> Mono MoProcDef
 doMonomorphizeProc proc subst = do
   blocks <- mapM (monomorphizeBlock subst) (ilProcBlocks proc)
   return $ MoProcDef { moProcBlocks     = blocks
-                     , moProcReturnType = monoType subst $
-                                            ilProcReturnType proc
-                     , moProcIdent      =   ilProcIdent      proc
-                     , moProcVars       = map (monoVar subst) $
-                                            ilProcVars       proc
-                     , moProcRange      =   ilProcRange      proc
+                     , moProcIdent      =                       ilProcIdent proc
+                     , moProcRange      =                       ilProcRange proc
+                     , moProcReturnType = monoType subst $ ilProcReturnType proc
+                     , moProcVars       =  map (monoVar subst) $ ilProcVars proc
                      }
 
 monomorphizeBlock :: MonoSubst -> ILBlock -> Mono MoBlock
@@ -254,12 +252,12 @@ monomorphizeBlock subst (Block bid mids last) = do
 
 monoLast :: MonoSubst -> ILLast -> MoLast
 monoLast subst last =
-  let qv = monoVar  subst in
+  let qv = monoVar subst in
   case last of
-    ILRetVoid                 -> MoRetVoid
-    ILRet     v               -> MoRet      (qv v)
-    ILBr      bid             -> MoBr       bid
-    ILIf      v  bid1  bid2   -> MoIf       (qv v) bid1 bid2
+    ILRetVoid          -> MoRetVoid
+    ILRet     v        -> MoRet      (qv v)
+    ILBr      bid      -> MoBr       bid
+    ILIf      v  b1 b2 -> MoIf       (qv v) b1 b2
     -- Might as well optimize single-case switches to unconditional branches.
     ILCase _ [arm]    Nothing _   -> MoBr      (snd arm)
     -- If pattern matching was exhaustive, use one of the cases as a default.
