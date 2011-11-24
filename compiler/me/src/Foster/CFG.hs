@@ -102,11 +102,11 @@ computeBlocks expr idmaybe k = do
             cfgNewBlock until_cont []
             cfgAddLet idmaybe (ILTuple []) (TupleTypeIL []) >>= k
 
-        KNLetVal id (KNVar v) cont ->
-            -- TODO it's not fantastic to be forced to have explicit
-            -- substitution for k-normal forms. But we don't have many choices
-            -- given code like     let x = 0  ;  y = x ;  in x + y
-            computeBlocks (knSubst id v cont) idmaybe k
+        KNLetVal id (KNVar v) expr -> do
+            cont <- cfgFresh "rebind_cont"
+            cfgEndWith (CFBr cont [v])
+            cfgNewBlock      cont [TypedId (tidType v) id]
+            computeBlocks expr idmaybe k
 
         KNLetVal id bexp cont -> do
             -- exp could be a KNCase, so it must be processed by computeBlocks.
@@ -134,16 +134,11 @@ computeBlocks expr idmaybe k = do
         --
         -- gets translated into (the moral equivalent of)
         --
-        --      case_slot = alloca t                        ;
         --      case scrutinee of p1 -> goto case_arm1
-        --                     of p2 -> goto case_arm2 ...  ;
-        --  case_arm1:
-        --      ev = [[e1]]; store ev in case_slot; goto case_cont
-        --  case_arm2:
-        --      ev = [[e2]]; store ev in case_slot; goto case_cont
-        --  ...
-        --  case_cont:
-        --      case_value = load case_slot
+        --                     of p2 -> goto case_arm2 ...
+        --  case_arm1: ev = [[e1]]; goto case_cont [ev]
+        --  case_arm2: ev = [[e2]]; goto case_cont [ev]
+        --  case_cont [case_value]:
         --      ...
         --
         -- The one point this glosses over is how the variables bound by
@@ -276,47 +271,6 @@ data CFGState = CFGState {
 
 type CFG = StateT CFGState IO
 instance UniqueMonad CFG where freshUnique = cfgNewUniq >>= return . intToUnique
--- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
--- |||||||||||||||||||||  (KN) Substitution  ||||||||||||||||||||{{{
-knVarSubst id v1 v2 = if id == tidIdent v2 then v1 else v2
-
--- Replace all uses of  id  with  v  in expr.
-knSubst id var expr =
-  let substV = knVarSubst id var in
-  let substE = knSubst    id var in
-  case expr of
-    KNTuple vs -> KNTuple (map substV vs)
-    KNBool _                -> expr
-    KNInt _t _              -> expr
-    KNVar v                 -> KNVar        (substV v)
-    KNCall t v vs           -> KNCall     t (substV v) (map substV vs)
-    KNCallPrim t prim vs    -> KNCallPrim t prim       (map substV vs)
-    KNAppCtor t ctor vs     -> KNAppCtor  t ctor       (map substV vs)
-    KNAllocArray elt_ty v   -> KNAllocArray elt_ty (substV v)
-    KNIf t a b c            -> KNIf        t (substV a) (substE b) (substE c)
-    KNUntil t a b           -> KNUntil     t (substE a) (substE b)
-    KNAlloc v               -> KNAlloc       (substV v)
-    KNDeref v               -> KNDeref       (substV v)
-    KNStore v1 v2           -> KNStore       (substV v1) (substV v2)
-    KNArrayRead t v1 v2     -> KNArrayRead t (substV v1) (substV v2)
-    KNArrayPoke v1 v2 v3    -> KNArrayPoke   (substV v1) (substV v2) (substV v3)
-    KNTyApp overallType v t -> KNTyApp overallType (substV v) t
-    KNCase t v pes          -> KNCase      t (substV v)
-                                             (map (\(p,e) -> (p, substE e)) pes)
-    KNLetVal x b e -> if x == id
-                        then error $ "knSubst found re-bound id " ++ show id
-                        else KNLetVal x (substE b) (substE e)
-    KNLetFuns ids fns e ->
-                       if id `elem` ids
-                        then error $ "knSubst found re--bound id " ++ show id
-                        else KNLetFuns ids (map (substFn id var) fns) (substE e)
-
-substFn id var fn =
-  let ids = map tidIdent (fnVars fn) in
-  if id `elem` ids
-    then error $ "knSubstFn found re-bound id " ++ show id
-    else fn { fnBody = (knSubst id var (fnBody fn)) }
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 instance NonLocal Insn where
