@@ -126,7 +126,7 @@ basicBlock hooplBlock = blockGraph hooplBlock
 closureConvertBlocks :: BasicBlockGraph -> ILM [ILBlock]
 closureConvertBlocks bbg = do
    let cfgBlocks = map basicBlock $
-                    preorder_dfs $ mkLast (ILast (CFBr $ bbgEntry bbg))
+                    preorder_dfs $ mkLast (ILast (CFBr (bbgEntry bbg) []))
                                                    |*><*| bbgBody bbg
    blocks <- mapM closureConvertBlock cfgBlocks
    return $ concat blocks
@@ -146,7 +146,7 @@ closureConvertBlocks bbg = do
         case last of
            CFRetVoid       -> ret $ ILRetVoid
            CFRet   v       -> ret $ ILRet   v
-           CFBr    b       -> ret $ ILBr    b
+           CFBr    b _     -> ret $ ILBr    b
            CFCase  a pbs   -> do allSigs <- gets ilmCtors
                                  let dt = compilePatterns pbs allSigs
                                  let usedBlocks = eltsOfDecisionTree dt

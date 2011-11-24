@@ -8,7 +8,7 @@
 module Foster.CFG
 ( computeCFGIO
 , Insn(..)
-, BlockId
+, BlockId, BlockEntry
 , BasicBlockGraph(..)
 , BasicBlock
 , splitBasicBlock -- used in closure conversion
@@ -54,7 +54,7 @@ cfgComputeCFG fn = do
 -- A helper for the CFG functions above, to run computeBlocks.
 internalComputeCFG :: Int -> Fn KNExpr TypeIL -> CFGState
 internalComputeCFG uniq fn =
-  let preblock = (Left "postalloca" , []) in
+  let preblock = (Left "postalloca" , [], []) in
   let state0 = CFGState uniq (Just preblock) [] in
   execState runComputeBlocks state0
   where
@@ -93,17 +93,16 @@ computeBlocks expr idmaybe k = do
         KNUntil _t a b -> do
             [until_test, until_body, until_cont] <- mapM cfgFresh
                                       ["until_test", "until_body", "until_cont"]
-            cfgEndWith (CFBr until_test)
+            cfgEndWith (CFBr until_test [])
 
-            cfgNewBlock until_test
+            cfgNewBlock until_test []
             computeBlocks a Nothing $ \var -> cfgEndWith
                                      (CFCase var (caseIf until_cont until_body))
 
-            cfgNewBlock until_body
-            computeBlocks b Nothing $ \_ -> return ()
-            cfgEndWith (CFBr until_test)
+            cfgNewBlock until_body []
+            computeBlocks b Nothing $ \_ -> cfgEndWith (CFBr until_test [])
 
-            cfgNewBlock until_cont
+            cfgNewBlock until_cont []
             cfgAddLet idmaybe (ILTuple []) (TupleTypeIL []) >>= k
 
         KNLetVal id (KNVar v) cont ->
@@ -159,20 +158,19 @@ computeBlocks expr idmaybe k = do
             case_cont <- cfgFresh "case_cont"
 
             -- Compute the new block ids, along with their patterns.
-            bbs <- mapM (\(pat, _) -> do block_id <- cfgFresh "case_arm"
-                                         return $ (pat, block_id)) bs
-
+            bids <- mapM (\_ -> cfgFresh "case_arm") bs
+            let bbs = zip (map fst bs) bids
             cfgEndWith (CFCase v bbs)
 
             -- Fill in each arm's block with [[e]] (and a store at the end).
-            let computeCaseBlocks ((_pat, e), (_, block_id)) = do
-                    cfgNewBlock block_id
+            let computeCaseBlocks (e, (_, block_id)) = do
+                    cfgNewBlock block_id []
                     computeBlocks e Nothing $ \var -> cfgMidStore var slotvar
-                    cfgEndWith (CFBr case_cont)
-            mapM_ computeCaseBlocks (zip bs bbs)
+                    cfgEndWith (CFBr case_cont [])
+            mapM_ computeCaseBlocks (zip (map snd bs) bbs)
 
             -- The overall value of the case is the value stored in the slot.
-            cfgNewBlock case_cont
+            cfgNewBlock case_cont []
             cfgAddLet idmaybe (ILDeref slotvar) t >>= k
 
         KNVar v -> k v
@@ -219,19 +217,19 @@ computeBlocks expr idmaybe k = do
     cfgFreshId :: String -> CFG Ident
     cfgFreshId s = do u <- cfgNewUniq ; return (Ident (T.pack s) u)
 
-    cfgNewBlock :: BlockId -> CFG ()
-    cfgNewBlock bid = do
+    cfgNewBlock :: BlockId -> [AIVar] -> CFG ()
+    cfgNewBlock bid phis = do
         old <- get
         case cfgPreBlock old of
-            Nothing      -> do put (old { cfgPreBlock = Just (Right bid, []) })
-            Just (id, _) -> error $ "Tried to start new block "
+            Nothing      -> do put (old { cfgPreBlock = Just (Right bid, phis, []) })
+            Just (id, _, _) -> error $ "Tried to start new block "
                                    ++ " with unfinished old block " ++ show id
 
     cfgAddMiddle :: Insn O O -> CFG ()
     cfgAddMiddle mid = do
         old <- get
         case cfgPreBlock old of
-            Just (id, mids) -> do put (old { cfgPreBlock = Just (id, mid:mids) })
+            Just (id, phis, mids) -> do put (old { cfgPreBlock = Just (id, phis, mid:mids) })
             Nothing         -> error $ "Tried to add middle without a block"
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -242,7 +240,7 @@ cfgEndWith last = do
     case cfgPreBlock old of
         Nothing          -> error $ "Tried to finish block but no preblock!"
                                    ++ " Tried to end with " ++ show last
-        Just (stringOrBlockId, mids) -> do
+        Just (stringOrBlockId, _phis, mids) -> do
             id <- case stringOrBlockId of
                     Left s -> cfgFresh s
                     Right bid -> return bid
@@ -268,7 +266,7 @@ data CFMiddle = CFLetVal      Ident     Letable
 
 data CFLast = CFRetVoid
             | CFRet         AIVar
-            | CFBr          BlockId
+            | CFBr          BlockId [AIVar]
             | CFCase        AIVar [PatternBinding BlockId TypeIL]
             deriving (Show)
 
@@ -280,7 +278,7 @@ data Insn e x where
 
 data CFGState = CFGState {
     cfgUniq         :: Uniq
-  , cfgPreBlock     :: Maybe (Either String BlockId, [Insn O O])
+  , cfgPreBlock     :: Maybe (Either String BlockId, [AIVar], [Insn O O])
   , cfgAllBlocks    :: [Graph Insn C C]
 }
 
@@ -333,12 +331,13 @@ substFn id var fn =
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 instance NonLocal Insn where
+  --entryLabel (ILabel ((_,l), _)) = l
   entryLabel (ILabel (_,l)) = l
   successors (ILast last) =
     case last of
         CFRetVoid            -> []
         CFRet  _             -> []
-        CFBr   b             -> [blockLabel b]
+        CFBr   b _           -> [blockLabel b]
         CFCase _ patsbids    -> [blockLabel b | (_, b) <- patsbids]
     where blockLabel (_, label) = label
 
@@ -350,7 +349,7 @@ splitBasicBlock g =
       (bs, _, _) -> error $ "splitBasicBlock has wrong # of ids: " ++ show bs
     where
   split :: Insn e x -> SplitBasicBlockIntermediate -> SplitBasicBlockIntermediate
-  split   (ILabel   b ) (bs, ms, ls) = (b:bs,   ms,   ls)
+  split   (ILabel  b  ) (bs, ms, ls) = (b:bs,   ms,   ls)
   split i@(ILetVal  {}) (bs, ms, ls) = (  bs, i:ms,   ls)
   split i@(ILetFuns {}) (bs, ms, ls) = (  bs, i:ms,   ls)
   split i@(ILast    {}) (bs, ms, ls) = (  bs,   ms, i:ls)
@@ -366,6 +365,7 @@ type BasicBlock = Graph Insn C C
 data BasicBlockGraph = BasicBlockGraph { bbgEntry :: BlockId,
                                          bbgBody :: (Graph Insn C C) }
 type CFFn = Fn BasicBlockGraph TypeIL
+type BlockEntry = (BlockId, [AIVar])
 
 -- We pair a name for later codegen with a label for Hoopl's NonLocal class.
 type BlockId = (String, Label)
