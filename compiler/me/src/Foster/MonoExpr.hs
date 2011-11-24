@@ -45,7 +45,6 @@ data MoMiddle = MoLetVal      Ident    MonoLetable
 data MoLast = MoRetVoid
             | MoRet      MoVar
             | MoBr       BlockId
-            | MoIf       MoVar  BlockId  BlockId
             | MoCase     MoVar [(CtorId, BlockId)] (Maybe BlockId) Occurrence
 
 --------------------------------------------------------------------
@@ -71,5 +70,4 @@ instance Show MoLast where
   show (MoRetVoid     ) = "ret void"
   show (MoRet v       ) = "ret " ++ show v
   show (MoBr  bid     ) = "br " ++ show bid
-  show (MoIf   v b1 b2) = "if " ++ show v ++ " ? " ++ show b1 ++ " : " ++ show b2
   show (MoCase v _arms _def _occ) = "case(" ++ show v ++ ")"

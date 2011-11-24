@@ -80,7 +80,6 @@ data ILMiddle = ILLetVal      Ident    Letable
 data ILLast = ILRetVoid
             | ILRet      AIVar
             | ILBr       BlockId
-            | ILIf       AIVar  BlockId   BlockId
             | ILCase     AIVar [(CtorId, BlockId)] (Maybe BlockId) Occurrence
 
 --------------------------------------------------------------------
@@ -148,7 +147,6 @@ closureConvertBlocks bbg = do
            CFRetVoid       -> ret $ ILRetVoid
            CFRet   v       -> ret $ ILRet   v
            CFBr    b       -> ret $ ILBr    b
-           CFIf    a b1 b2 -> ret $ ILIf    a b1 b2
            CFCase  a pbs   -> do allSigs <- gets ilmCtors
                                  let dt = compilePatterns pbs allSigs
                                  let usedBlocks = eltsOfDecisionTree dt
@@ -407,5 +405,4 @@ instance Show ILLast where
   show (ILRetVoid     ) = "ret void"
   show (ILRet v       ) = "ret " ++ show v
   show (ILBr  bid     ) = "br " ++ show bid
-  show (ILIf   v b1 b2) = "if " ++ show v ++ " ? " ++ show b1 ++ " : " ++ show b2
   show (ILCase v _arms _def _occ) = "case(" ++ show v ++ ")"

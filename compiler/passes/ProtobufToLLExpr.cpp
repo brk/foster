@@ -209,8 +209,6 @@ LLTerminator* parseTerminator(const pb::Terminator& b) {
   case pb::Terminator::BLOCK_RET_VOID: return new LLRetVoid();
   case pb::Terminator::BLOCK_RET_VAL: return new LLRetVal(parseTermVar(&b.var()));
   case pb::Terminator::BLOCK_BR: return new     LLBr(b.block());
-  case pb::Terminator::BLOCK_IF: return new LLCondBr(b.block(), b.block2(),
-                                                     parseTermVar(&b.var()));
   case pb::Terminator::BLOCK_CASE: return parseSwitch(b);
   default: ASSERT(false); return NULL;
   }

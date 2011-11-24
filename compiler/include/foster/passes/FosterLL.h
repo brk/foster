@@ -361,15 +361,6 @@ struct LLBr : public LLTerminator {
   virtual void codegenTerminator(CodegenPass* pass);
 };
 
-struct LLCondBr : public LLTerminator {
-  std::string then_id;
-  std::string else_id;
-  LLVar* var;
-  explicit LLCondBr(std::string b, std::string b2, LLVar* v)
-        : then_id(b), else_id(b2), var(v) {}
-  virtual void codegenTerminator(CodegenPass* pass);
-};
-
 struct LLSwitch : public LLTerminator {
   std::vector<CtorId> ctors;
   std::vector<std::string> blockids;

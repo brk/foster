@@ -266,7 +266,6 @@ monoLast subst last =
     ILRetVoid          -> MoRetVoid
     ILRet     v        -> MoRet      (qv v)
     ILBr      bid      -> MoBr       bid
-    ILIf      v  b1 b2 -> MoIf       (qv v) b1 b2
     -- Might as well optimize single-case switches to unconditional branches.
     ILCase _ [arm]    Nothing _   -> MoBr      (snd arm)
     -- If pattern matching was exhaustive, use one of the cases as a default.

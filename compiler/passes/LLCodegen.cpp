@@ -390,12 +390,6 @@ void LLBr::codegenTerminator(CodegenPass* pass) {
   builder.CreateBr(pass->lookupBlock(this->block_id));
 }
 
-void LLCondBr::codegenTerminator(CodegenPass* pass) {
-  builder.CreateCondBr(pass->emit(this->var, NULL),
-                       pass->lookupBlock(this->then_id),
-                       pass->lookupBlock(this->else_id));
-}
-
 void addAndEmitTo(Function* f, BasicBlock* bb) {
   f->getBasicBlockList().push_back(bb);
   builder.SetInsertPoint(bb);

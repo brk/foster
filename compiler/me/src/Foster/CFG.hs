@@ -31,7 +31,7 @@ import Control.Monad.State
 import Data.IORef
 import Prelude hiding (id, last)
 
--- ||||||||||||||||||| Entry Point & Helpers ||||||||||||||||||||{{{
+-- |||||||||||||||||||| Entry Point & Helpers |||||||||||||||||||{{{
 
 -- This is the "entry point" into CFG-building for the outside.
 -- We take (and update) a mutable reference as a convenient way of
@@ -79,32 +79,17 @@ extractFunction st fn =
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
--- ||||||||||||||||||||||||| KNExpr -> CFG|||||||||||||||||||||||{{{
+caseIf a b = [(pat True, a), (pat False, b)]
+         where pat bval = P_Bool (error "kn.if.srcrange") bval
+
+-- ||||||||||||||||||||||||| KNExpr -> CFG ||||||||||||||||||||||{{{
 -- computeBlocks takes an expression and a contination,
 -- which determines what to do with the let-bound result of the expression.
 computeBlocks :: KNExpr -> Maybe Ident -> (AIVar -> CFG ()) -> CFG ()
 computeBlocks expr idmaybe k = do
     case expr of
-        -- compile (if v then a else b) to
-        -- slot = undef; if v then v_a = [[a]]; slot := v_a;
-        --                    else v_b = [[b]]; slot := v_b;
-        -- slot^
         KNIf t v a b -> do
-            [ifthen, ifelse, ifcont] <- mapM cfgFresh
-                                               ["if_then", "if_else", "if_cont"]
-            slotvar <- cfgFreshSlotVar t "if_slot"
-            cfgEndWith (CFIf v ifthen ifelse)
-
-            cfgNewBlock ifthen
-            computeBlocks a Nothing $ \var -> cfgMidStore var slotvar
-            cfgEndWith (CFBr ifcont)
-
-            cfgNewBlock ifelse
-            computeBlocks b Nothing $ \var -> cfgMidStore var slotvar
-            cfgEndWith (CFBr ifcont)
-
-            cfgNewBlock ifcont
-            cfgAddLet idmaybe (ILDeref slotvar) t >>= k
+            computeBlocks (KNCase t v $ caseIf a b) idmaybe k
 
         KNUntil _t a b -> do
             [until_test, until_body, until_cont] <- mapM cfgFresh
@@ -112,8 +97,8 @@ computeBlocks expr idmaybe k = do
             cfgEndWith (CFBr until_test)
 
             cfgNewBlock until_test
-            computeBlocks a Nothing $ \var -> cfgEndWith (CFIf var
-                                                          until_cont until_body)
+            computeBlocks a Nothing $ \var -> cfgEndWith
+                                     (CFCase var (caseIf until_cont until_body))
 
             cfgNewBlock until_body
             computeBlocks b Nothing $ \_ -> return ()
@@ -285,7 +270,6 @@ data CFMiddle = CFLetVal      Ident     Letable
 data CFLast = CFRetVoid
             | CFRet         AIVar
             | CFBr          BlockId
-            | CFIf          AIVar  BlockId   BlockId
             | CFCase        AIVar [(Pattern, BlockId)]
             deriving (Show)
 
@@ -308,7 +292,7 @@ instance UniqueMonad (State CFGState) where
   freshUnique = cfgNewUniq >>= (return . intToUnique)
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
--- |||||||||||||||||||||||| Substitution ||||||||||||||||||||||||{{{
+-- |||||||||||||||||||||  (KN) Substitution  ||||||||||||||||||||{{{
 knVarSubst id v1 v2 = if id == tidIdent v2 then v1 else v2
 
 -- Replace all uses of  id  with  v  in expr.
@@ -356,7 +340,6 @@ instance NonLocal Insn where
         CFRetVoid            -> []
         CFRet  _             -> []
         CFBr   b             -> [blockLabel b]
-        CFIf   _ bthen belse -> [blockLabel bthen, blockLabel belse]
         CFCase _ patsbids    -> [blockLabel b | (_, b) <- patsbids]
     where blockLabel (_, label) = label
 
