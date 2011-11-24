@@ -37,26 +37,23 @@ import Prelude hiding (id, last)
 -- threading through the small amount of globally-unique state we need.
 computeCFGIO :: IORef Uniq -> Fn KNExpr TypeIL -> IO CFFn
 computeCFGIO uref fn = do
-  u <- readIORef uref
-  let cfgState = internalComputeCFG u fn
-  writeIORef uref (cfgUniq cfgState + 1)
+  cfgState <- internalComputeCFG uref fn
   return $ extractFunction cfgState fn
 
 -- A mirror image for internal use (when converting nested functions).
 -- As above, we thread through the updated unique value from the subcomputation!
 cfgComputeCFG :: Fn KNExpr TypeIL -> CFG CFFn
 cfgComputeCFG fn = do
-  u0 <- gets cfgUniq
-  let cfgState = internalComputeCFG u0 fn
-  cfgPutUniq $ cfgUniq cfgState + 1
+  uref <- gets cfgUniq
+  cfgState <- liftIO $ internalComputeCFG uref fn
   return $ extractFunction cfgState fn
 
 -- A helper for the CFG functions above, to run computeBlocks.
-internalComputeCFG :: Int -> Fn KNExpr TypeIL -> CFGState
-internalComputeCFG uniq fn =
+internalComputeCFG :: IORef Int -> Fn KNExpr TypeIL -> IO CFGState
+internalComputeCFG uniqRef fn =
   let preblock = (Left "postalloca" , [], []) in
-  let state0 = CFGState uniq (Just preblock) [] in
-  execState runComputeBlocks state0
+  let state0 = CFGState uniqRef (Just preblock) [] in
+  execStateT runComputeBlocks state0
   where
     runComputeBlocks = do computeBlocks (fnBody fn) Nothing (ret fn)
 
@@ -155,12 +152,13 @@ computeBlocks expr idmaybe k = do
         -- more explicitly.
         KNCase t v bs -> do
             slotvar <- cfgFreshSlotVar t "case_slot"
-            case_cont <- cfgFresh "case_cont"
 
             -- Compute the new block ids, along with their patterns.
             bids <- mapM (\_ -> cfgFresh "case_arm") bs
             let bbs = zip (map fst bs) bids
             cfgEndWith (CFCase v bbs)
+
+            case_cont <- cfgFresh "case_cont"
 
             -- Fill in each arm's block with [[e]] (and a store at the end).
             let computeCaseBlocks (e, (_, block_id)) = do
@@ -254,10 +252,11 @@ cfgFresh :: String -> CFG BlockId
 cfgFresh s = do u <- freshLabel ; return (s, u)
 
 cfgNewUniq :: CFG Uniq
-cfgNewUniq = do u <- gets cfgUniq ; cfgPutUniq (u + 1) ; return u
+cfgNewUniq = do uref <- gets cfgUniq ; mutIORef uref (+1)
+  where
+    mutIORef :: IORef a -> (a -> a) -> CFG a
+    mutIORef r f = liftIO $ modifyIORef r f >> readIORef r
 
-cfgPutUniq :: Uniq -> CFG ()
-cfgPutUniq u = do old <- get ; put (old { cfgUniq = u })
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||| CFG Data Types |||||||||||||||||||||||{{{
@@ -277,16 +276,13 @@ data Insn e x where
               ILast    :: CFLast             -> Insn O C
 
 data CFGState = CFGState {
-    cfgUniq         :: Uniq
+    cfgUniq         :: IORef Uniq
   , cfgPreBlock     :: Maybe (Either String BlockId, [AIVar], [Insn O O])
   , cfgAllBlocks    :: [Graph Insn C C]
 }
 
-type CFG a = State CFGState a
-
--- For all a, CFG a is a UniqueMonad. GHC barfed on trying to use CFG directly.
-instance UniqueMonad (State CFGState) where
-  freshUnique = cfgNewUniq >>= (return . intToUnique)
+type CFG = StateT CFGState IO
+instance UniqueMonad CFG where freshUnique = cfgNewUniq >>= return . intToUnique
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- |||||||||||||||||||||  (KN) Substitution  ||||||||||||||||||||{{{
