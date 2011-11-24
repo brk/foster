@@ -281,7 +281,7 @@ llvm::AllocaInst* ensureImplicitStackSlot(llvm::Value* v, CodegenPass* pass) {
   if (mightContainHeapPointers(v->getType())) {
     return pass->storeAndMarkPointerAsGCRoot(v);
   } else {
-    llvm::AllocaInst* slot = stackSlotWithValue(v, v->getName().str() + "_addr");
+    llvm::AllocaInst* slot = stackSlotWithValue(v, "_addr");
     pass->markAsNeedingImplicitLoads(slot);
     return slot;
   }
