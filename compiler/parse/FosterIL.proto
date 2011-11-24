@@ -41,8 +41,9 @@ message ProcType {
 
 message Block {
   required string       block_id = 1;
-  repeated BlockMiddle  middle   = 2;
-  required Terminator   last     = 3;
+  repeated TermVar      phis     = 2;
+  repeated BlockMiddle  middle   = 3;
+  required Terminator   last     = 4;
 }
 
 message BlockMiddle {
@@ -113,6 +114,7 @@ message Terminator {
   optional TermVar var     = 2;  // BLOCK_RET, BLOCK_CASE
   optional string block    = 3;  // BLOCK_BR
   optional PbSwitch  scase = 4;  // BLOCK_CASE
+  repeated TermVar    args = 5;  // BLOCK_BR
 }
 
 message TermVar {

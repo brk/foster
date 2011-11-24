@@ -319,11 +319,13 @@ void CodegenPass::scheduleBlockCodegen(LLBlock* b) {
   } // else block was already scheduled
 }
 
+void initializeBlockPhis(LLBlock*);
+
 void codegenBlocks(std::vector<LLBlock*> blocks, CodegenPass* pass,
                    llvm::Function* F) {
   pass->fosterBlocks.clear();
 
-  // Create all the basic block before codegenning any of them.
+  // Create all the basic blocks before codegenning any of them.
   for (size_t i = 0; i < blocks.size(); ++i) {
     LLBlock* bi = blocks[i];
     pass->fosterBlocks[bi->block_id] = bi;
@@ -335,6 +337,10 @@ void codegenBlocks(std::vector<LLBlock*> blocks, CodegenPass* pass,
   ASSERT(blocks.size() > 0) << F->getName() << " had no blocks!";
   // Make sure we branch from the entry block to the first 'computation' block.
   builder.CreateBr(blocks[0]->bb);
+
+  for (size_t i = 0; i < blocks.size(); ++i) {
+    initializeBlockPhis(blocks[i]);
+  }
 
   pass->worklistBlocks.clear();
   pass->scheduleBlockCodegen(blocks[0]);
@@ -358,9 +364,21 @@ void codegenBlocks(std::vector<LLBlock*> blocks, CodegenPass* pass,
 
 ////////////////////////////////////////////////////////////////////
 
+void initializeBlockPhis(LLBlock* block) {
+  builder.SetInsertPoint(block->bb);
+  for (size_t i = 0; i < block->phiVars.size(); ++i) {
+    block->phiNodes.push_back(
+           builder.CreatePHI(getLLVMType(block->phiVars[i]->type),
+                                      1, block->phiVars[i]->getName()));
+  }
+}
+
 void LLBlock::codegenBlock(CodegenPass* pass) {
-  llvm::BasicBlock* bb = pass->lookupBlock(this->block_id);
   builder.SetInsertPoint(bb);
+  for (size_t i = 0; i < this->phiVars.size(); ++i) {
+    pass->valueSymTab.insert(this->phiVars[i]->getName(),
+     ensureImplicitStackSlot(this->phiNodes[i], pass));
+  }
   for (size_t i = 0; i < this->mids.size(); ++i) {
     this->mids[i]->codegenMiddle(pass);
   }
@@ -387,7 +405,26 @@ void LLRetVal::codegenTerminator(CodegenPass* pass) {
 }
 
 void LLBr::codegenTerminator(CodegenPass* pass) {
-  builder.CreateBr(pass->lookupBlock(this->block_id));
+  LLBlock* block = pass->lookupBlock(this->block_id);
+
+  ASSERT(this->args.size() == block->phiNodes.size())
+        << "from " << builder.GetInsertBlock()->getName().str() << " : "
+        << "to " << block->bb->getName().str() << " : "
+        << "have " << this->args.size() << " args; "
+        << "need " << block->phiNodes.size();
+
+  for (size_t i = 0; i < this->args.size(); ++i) {
+    llvm::Value* v = pass->emit(this->args[i], NULL);
+    if (v->getType()->isVoidTy()) {
+      v = getUnitValue(); // Can't pass a void value!
+    }
+    ASSERT(v->getType() == block->phiNodes[i]->getType())
+        << "Can't pass a value of type " << str(v->getType())
+        << " to a phi node of type " << str(block->phiNodes[i]->getType())
+        << "\n from value " << str(v) << " to block " << (block->block_id);
+    block->phiNodes[i]->addIncoming(v, builder.GetInsertBlock());
+  }
+  builder.CreateBr(block->bb);
 }
 
 void addAndEmitTo(Function* f, BasicBlock* bb) {
@@ -415,8 +452,9 @@ void LLSwitch::codegenTerminator(CodegenPass* pass) {
   ASSERT(ctors.size() == blockids.size());
   ASSERT(ctors.size() >= 1);
 
-  BasicBlock* defaultBB = NULL;
-  if (this->defaultCase != "") defaultBB = pass->lookupBlock(this->defaultCase);
+  BasicBlock* defaultBB = (this->defaultCase.empty())
+                ? NULL
+                : pass->lookupBlock(this->defaultCase)->bb;
 
   // All the ctors should have the same data type, now that we have at least
   // one ctor, check if it's associated with a data type we know of.
@@ -445,7 +483,7 @@ void LLSwitch::codegenTerminator(CodegenPass* pass) {
     ASSERT(si->getCondition()->getType() == onVal->getType())
         << "switch case and inspected value had different types!";
 
-    BasicBlock* destBB = pass->lookupBlock(this->blockids[i]);
+    BasicBlock* destBB = pass->lookupBlock(this->blockids[i])->bb;
     ASSERT(destBB != NULL);
     si->addCase(onVal, destBB);
   }

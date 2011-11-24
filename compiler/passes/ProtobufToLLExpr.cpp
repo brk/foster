@@ -34,13 +34,6 @@ namespace bepb {
 LLExpr* LLExpr_from_pb(const bepb::Letable*);
 TypeAST* TypeAST_from_pb(const bepb::Type*);
 FnTypeAST* parseProcType(const bepb::ProcType&);
-
-LLVar*  parseTermVar(const bepb::Letable* pb) {
-  LLExpr* e = LLExpr_from_pb(pb);
-  LLVar* rv = dynamic_cast<LLVar*>(e);
-  ASSERT(rv) << "Expected var, got " << e->tag;
-  return rv;
-}
 }
 
 using std::string;
@@ -203,12 +196,20 @@ LLMiddle* parseBitcast(const pb::RebindId& r) {
 
 LLSwitch* parseSwitch(const pb::Terminator&);
 
+LLBr* parseBr(const pb::Terminator& b) {
+  std::vector<LLVar*> args;
+  for (int i = 0; i < b.args_size(); ++i) {
+      args.push_back(parseTermVar(&b.args(i)));
+  }
+  return new LLBr(b.block(), args);
+}
+
 LLTerminator* parseTerminator(const pb::Terminator& b) {
   LLTerminator* rv = NULL;
   switch (b.tag()) {
   case pb::Terminator::BLOCK_RET_VOID: return new LLRetVoid();
   case pb::Terminator::BLOCK_RET_VAL: return new LLRetVal(parseTermVar(&b.var()));
-  case pb::Terminator::BLOCK_BR: return new     LLBr(b.block());
+  case pb::Terminator::BLOCK_BR: return parseBr(b);
   case pb::Terminator::BLOCK_CASE: return parseSwitch(b);
   default: ASSERT(false); return NULL;
   }
@@ -228,6 +229,9 @@ LLBlock* parseBlock(const pb::Block& b) {
   bb->block_id = b.block_id();
   for (int i = 0; i < b.middle_size(); ++i) {
     bb->mids.push_back(parseMiddle(b.middle(i)));
+  }
+  for (int i = 0; i < b.phis_size(); ++i) {
+    bb->phiVars.push_back(parseTermVar(&b.phis(i)));
   }
   bb->terminator = parseTerminator(b.last());
   return bb;

@@ -66,7 +66,7 @@ data ILProcDef =
                }
 
 -- The standard definition of a basic block and its parts.
-data ILBlock  = Block BlockId [ILMiddle] ILLast
+data ILBlock  = Block BlockEntry [ILMiddle] ILLast
 data ILMiddle = ILLetVal      Ident    Letable
               -- This is equivalent to MinCaml's make_closure ...
               | ILClosures    [Ident] [ILClosure]
@@ -79,9 +79,8 @@ data ILMiddle = ILLetVal      Ident    Letable
 -- The only difference from CFLast to ILLast is the decision tree in ILCase.
 data ILLast = ILRetVoid
             | ILRet      AIVar
-            | ILBr       BlockId
+            | ILBr       BlockId [AIVar]
             | ILCase     AIVar [(CtorId, BlockId)] (Maybe BlockId) Occurrence
-
 --------------------------------------------------------------------
 
 closureConvertAndLift :: DataTypeSigs -> Uniq
@@ -121,13 +120,15 @@ lambdaLift f freeVars = do
 -- for representing basic blocks because they're easier to build.
 basicBlock hooplBlock = blockGraph hooplBlock
 
+jumpTo bbg = case bbgEntry bbg of (bid, []) -> ILast $ CFBr bid []
+                                  (_b, _vs) -> error $ "Can't jump to block w/ args"
+
 -- We serialize a basic block graph by computing a depth-first search
 -- starting from the graph's entry block.
 closureConvertBlocks :: BasicBlockGraph -> ILM [ILBlock]
 closureConvertBlocks bbg = do
    let cfgBlocks = map basicBlock $
-                    preorder_dfs $ mkLast (ILast (CFBr (bbgEntry bbg) []))
-                                                   |*><*| bbgBody bbg
+                     preorder_dfs $ mkLast (jumpTo bbg) |*><*| bbgBody bbg
    blocks <- mapM closureConvertBlock cfgBlocks
    return $ concat blocks
   where
@@ -146,7 +147,7 @@ closureConvertBlocks bbg = do
         case last of
            CFRetVoid       -> ret $ ILRetVoid
            CFRet   v       -> ret $ ILRet   v
-           CFBr    b _     -> ret $ ILBr    b
+           CFBr    b args  -> ret $ ILBr    b args
            CFCase  a pbs   -> do allSigs <- gets ilmCtors
                                  let dt = compilePatterns pbs allSigs
                                  let usedBlocks = eltsOfDecisionTree dt
@@ -154,7 +155,7 @@ closureConvertBlocks bbg = do
                                                   , Set.notMember bid usedBlocks]
                                  -- TODO print warning if any unused patterns
                                  (BlockFin blocks id) <- compileDecisionTree a dt
-                                 return $ (blocks, ILBr id)
+                                 return $ (blocks, ILBr id [])
               where
                 -- The decision tree we get from pattern-match compilation may
                 -- contain only a subset of the pattern branche.
@@ -185,6 +186,8 @@ closureConvertBlocks bbg = do
 data BlockFin = BlockFin [ILBlock]      -- new blocks generated
                          BlockId        -- entry block for decision tree logic
 
+bogusVar (id, _) = TypedId (PrimIntIL I1) id
+
 compileDecisionTree :: AIVar -> DecisionTree BlockId -> ILM BlockFin
 -- Translate an abstract decision tree to ILBlocks, also returning
 -- the label of the entry block into the decision tree logic.
@@ -207,7 +210,7 @@ compileDecisionTree scrutinee (DT_Leaf armid idsoccs) = do
         case Map.lookup armid wrappers of
            Just id -> do return $ BlockFin [] id
            Nothing -> do let binders = map (emitOccurrence scrutinee) idsoccs
-                         (id, block) <- ilmNewBlock ".leaf" binders (ILBr armid)
+                         (id, block) <- ilmNewBlock ".leaf" binders (ILBr armid []) -- TODO
                          ilmAddWrapper armid id
                          return $ BlockFin [block] id
 
@@ -267,7 +270,7 @@ closureOfKnFn infoMap (self_id, fn) = do
         -- If the body has x and y free, the closure converted body should be
         --     case env of (x, y, ...) -> body end
         newbody <- do
-            let BasicBlockGraph bodyid oldbodygraph = fnBody f
+            let BasicBlockGraph (bodyid, bodyphis) oldbodygraph = fnBody f
             let norange = MissingSourceRange ""
             let patVar a = P_Variable norange (tidIdent a)
             let cfcase = CFCase envVar [
@@ -276,7 +279,7 @@ closureOfKnFn infoMap (self_id, fn) = do
                            , bodyid) ]
             -- We change the entry block of the new body (versus the old).
             lab <- freshLabel
-            let bid = ("caseof", lab)
+            let bid = (("caseof", lab), bodyphis)
             let caseblock = mkFirst (ILabel bid) <*>
                             mkMiddles []         <*>
                             mkLast (ILast cfcase)
@@ -357,7 +360,7 @@ ilmFresh t = do u <- ilmNewUniq
 ilmNewBlock :: String -> [ILMiddle] -> ILLast -> ILM (BlockId, ILBlock)
 ilmNewBlock s mids last = do u <- freshLabel
                              let id = (s, u)
-                             return $ (id, Block id mids last)
+                             return $ (id, Block (id,[]) mids last)
 
 ilmAddWrapper armid id = do old <- get
                             put (old { ilmBlockWrappers = Map.insert armid id
@@ -405,5 +408,5 @@ showProgramStructure (ILProgram procdefs _decls _dtypes _lines) =
 instance Show ILLast where
   show (ILRetVoid     ) = "ret void"
   show (ILRet v       ) = "ret " ++ show v
-  show (ILBr  bid     ) = "br " ++ show bid
+  show (ILBr  bid args) = "br " ++ show bid ++ " , " ++ show args
   show (ILCase v _arms _def _occ) = "case(" ++ show v ++ ")"

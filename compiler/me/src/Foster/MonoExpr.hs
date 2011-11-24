@@ -35,7 +35,7 @@ data MoProcDef =
                , moProcBlocks     :: [MoBlock]
                }
 
-data MoBlock  = MoBlock BlockId [MoMiddle] MoLast
+data MoBlock  = MoBlock (BlockId, [MoVar]) [MoMiddle] MoLast
 data MoMiddle = MoLetVal      Ident    MonoLetable
               | MoClosures    [Ident] [MoClosure]
               | MoRebindId    Ident    MoVar
@@ -44,7 +44,7 @@ data MoMiddle = MoLetVal      Ident    MonoLetable
 
 data MoLast = MoRetVoid
             | MoRet      MoVar
-            | MoBr       BlockId
+            | MoBr       BlockId [TypedId MonoType]
             | MoCase     MoVar [(CtorId, BlockId)] (Maybe BlockId) Occurrence
 
 --------------------------------------------------------------------
@@ -69,5 +69,5 @@ showMonoProgramStructure (MoProgram procdefs _decls _dtypes _lines) =
 instance Show MoLast where
   show (MoRetVoid     ) = "ret void"
   show (MoRet v       ) = "ret " ++ show v
-  show (MoBr  bid     ) = "br " ++ show bid
+  show (MoBr  bid args) = "br " ++ show bid ++ " , " ++ show args
   show (MoCase v _arms _def _occ) = "case(" ++ show v ++ ")"

@@ -151,8 +151,9 @@ dumpAllocate (AllocInfo _typ region maybe_array_size unboxed) =
 
 -- ||||||||||||||||||||||||||| CFGs |||||||||||||||||||||||||||||{{{
 dumpBlock :: MoBlock -> PbBlock.Block
-dumpBlock (MoBlock id mids illast) =
+dumpBlock (MoBlock (id, phis) mids illast) =
     P'.defaultValue { PbBlock.block_id = dumpBlockId id
+                    , PbBlock.phis     = fromList $ map dumpVar phis
                     , PbBlock.middle   = fromList $ map dumpMiddle mids
                     , PbBlock.last     = dumpLast illast
                     }
@@ -188,9 +189,10 @@ dumpLast MoRetVoid =
 dumpLast (MoRet var) =
     P'.defaultValue { PbTerminator.tag    = BLOCK_RET_VAL
                     , PbTerminator.var    = Just $ dumpVar var }
-dumpLast (MoBr blockid) =
+dumpLast (MoBr blockid args) =
     P'.defaultValue { PbTerminator.tag    = BLOCK_BR
-                    , PbTerminator.block  = Just $ dumpBlockId blockid }
+                    , PbTerminator.block  = Just $ dumpBlockId blockid
+                    , PbTerminator.args   = fromList $ map dumpVar args }
 dumpLast (MoCase var arms def occ) =
     P'.defaultValue { PbTerminator.tag    = BLOCK_CASE
                     , PbTerminator.scase  = Just $ dumpSwitch var arms def occ }

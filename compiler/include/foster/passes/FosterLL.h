@@ -22,6 +22,7 @@ namespace llvm {
   class Type;
   class Value;
   class APInt;
+  class PHINode;
   class Function;
   class AllocaInst;
   class BasicBlock;
@@ -64,7 +65,8 @@ struct LLBitcast : public LLMiddle {
 struct LLBlock {
   std::string block_id;
   llvm::BasicBlock* bb;
-
+  std::vector<LLVar*> phiVars;
+  std::vector<llvm::PHINode*> phiNodes;
   std::vector<LLMiddle*> mids;
   LLTerminator* terminator;
 
@@ -357,7 +359,9 @@ struct LLRetVal : public LLTerminator {
 
 struct LLBr : public LLTerminator {
   std::string block_id;
-  explicit LLBr(std::string b) : block_id(b) {}
+  std::vector<LLVar*> args;
+  explicit LLBr(std::string b, const std::vector<LLVar*>& args)
+                 : block_id(b), args(args) {}
   virtual void codegenTerminator(CodegenPass* pass);
 };
 

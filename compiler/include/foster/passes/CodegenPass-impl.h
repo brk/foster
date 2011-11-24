@@ -108,9 +108,9 @@ struct CodegenPass {
   void addEntryBB(llvm::Function* f);
 
   void scheduleBlockCodegen(LLBlock* b);
-  llvm::BasicBlock* lookupBlock(const std::string& s) {
+  LLBlock* lookupBlock(const std::string& s) {
       scheduleBlockCodegen(fosterBlocks[s]);
-      return fosterBlocks[s]->bb;
+      return fosterBlocks[s];
   }
 
   Value* emit(LLExpr* e, TypeAST* t);

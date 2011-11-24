@@ -151,8 +151,6 @@ computeBlocks expr idmaybe k = do
         -- done by some magic in LLCodegen, but it should be represented
         -- more explicitly.
         KNCase t v bs -> do
-            slotvar <- cfgFreshSlotVar t "case_slot"
-
             -- Compute the new block ids, along with their patterns.
             bids <- mapM (\_ -> cfgFresh "case_arm") bs
             let bbs = zip (map fst bs) bids
@@ -163,24 +161,18 @@ computeBlocks expr idmaybe k = do
             -- Fill in each arm's block with [[e]] (and a store at the end).
             let computeCaseBlocks (e, (_, block_id)) = do
                     cfgNewBlock block_id []
-                    computeBlocks e Nothing $ \var -> cfgMidStore var slotvar
-                    cfgEndWith (CFBr case_cont [])
+                    computeBlocks e Nothing $ \var ->
+                        cfgEndWith (CFBr case_cont [var])
             mapM_ computeCaseBlocks (zip (map snd bs) bbs)
 
             -- The overall value of the case is the value stored in the slot.
-            cfgNewBlock case_cont []
-            cfgAddLet idmaybe (ILDeref slotvar) t >>= k
+            phi <- cfgFreshVarI idmaybe t ".case.phi"
+            cfgNewBlock case_cont [phi]
+            k phi
 
         KNVar v -> k v
         _ -> do cfgAddLet idmaybe (knToLetable expr) (typeKN expr) >>= k
   where
-    cfgFreshSlotVar :: TypeIL -> String -> CFG AIVar
-    cfgFreshSlotVar t n = do
-        id <- cfgFreshId n
-        let slot = ILAllocate (AllocInfo t MemRegionStack Nothing False)
-        cfgAddMiddle (ILetVal id slot)
-        return $ TypedId (PtrTypeIL t) id
-
     knToLetable :: KNExpr -> Letable
     knToLetable expr =
       case expr of
@@ -201,16 +193,17 @@ computeBlocks expr idmaybe k = do
          _                   -> error $ "non-letable thing seen by letable: "
                                       ++ show expr
 
-    cfgMidStore var slotvar = do id <- cfgFreshId ".cfg_store"
-                                 cfgAddMiddle (ILetVal id $ ILStore var slotvar)
+    cfgFreshVarI idmaybe t n = do
+        id <- (case idmaybe of
+                Just id -> return id
+                Nothing -> cfgFreshId n)
+        return $ TypedId t id
 
     cfgAddLet :: Maybe Ident -> Letable -> TypeIL -> CFG AIVar
     cfgAddLet idmaybe letable ty = do
-            id <- (case idmaybe of
-                    Just id -> return id
-                    Nothing -> cfgFreshId ".cfg_seq")
-            cfgAddMiddle (ILetVal id letable)
-            return (TypedId ty id)
+        tid@(TypedId _ id) <- cfgFreshVarI idmaybe ty ".cfg_seq"
+        cfgAddMiddle (ILetVal id letable)
+        return tid
 
     cfgFreshId :: String -> CFG Ident
     cfgFreshId s = do u <- cfgNewUniq ; return (Ident (T.pack s) u)
@@ -238,11 +231,11 @@ cfgEndWith last = do
     case cfgPreBlock old of
         Nothing          -> error $ "Tried to finish block but no preblock!"
                                    ++ " Tried to end with " ++ show last
-        Just (stringOrBlockId, _phis, mids) -> do
+        Just (stringOrBlockId, phis, mids) -> do
             id <- case stringOrBlockId of
                     Left s -> cfgFresh s
                     Right bid -> return bid
-            let first = mkFirst (ILabel id)
+            let first = mkFirst (ILabel (id, phis))
             let middles = mkMiddles (Prelude.reverse mids)
             let newblock = first <*> middles <*> mkLast (ILast last)
             put (old { cfgPreBlock     = Nothing
@@ -270,7 +263,7 @@ data CFLast = CFRetVoid
             deriving (Show)
 
 data Insn e x where
-              ILabel   :: BlockId            -> Insn C O
+              ILabel   :: BlockEntry         -> Insn C O
               ILetVal  :: Ident   -> Letable -> Insn O O
               ILetFuns :: [Ident] -> [CFFn]  -> Insn O O
               ILast    :: CFLast             -> Insn O C
@@ -327,8 +320,7 @@ substFn id var fn =
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 instance NonLocal Insn where
-  --entryLabel (ILabel ((_,l), _)) = l
-  entryLabel (ILabel (_,l)) = l
+  entryLabel (ILabel ((_,l), _)) = l
   successors (ILast last) =
     case last of
         CFRetVoid            -> []
@@ -352,13 +344,13 @@ splitBasicBlock g =
 
 -- We'll accumulate all the first & last nodes from the purported
 -- basic block, but the final result must have only one first & last node.
-type SplitBasicBlockIntermediate = ([BlockId], [Insn O O], [Insn O C])
-type SplitBasicBlock             = ( BlockId,  [Insn O O],  Insn O C )
+type SplitBasicBlockIntermediate = ([BlockEntry], [Insn O O], [Insn O C])
+type SplitBasicBlock             = ( BlockEntry,  [Insn O O],  Insn O C )
 
 -- We represent basic blocks as Graphs rather than Blocks because
 -- it's easier to glue together Graphs when building the basic blocks.
 type BasicBlock = Graph Insn C C
-data BasicBlockGraph = BasicBlockGraph { bbgEntry :: BlockId,
+data BasicBlockGraph = BasicBlockGraph { bbgEntry :: BlockEntry,
                                          bbgBody :: (Graph Insn C C) }
 type CFFn = Fn BasicBlockGraph TypeIL
 type BlockEntry = (BlockId, [AIVar])

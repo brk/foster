@@ -254,9 +254,10 @@ doMonomorphizeProc proc subst = do
                      }
 
 monomorphizeBlock :: MonoSubst -> ILBlock -> Mono MoBlock
-monomorphizeBlock subst (Block bid mids last) = do
+monomorphizeBlock subst (Block (bid, phis) mids last) = do
     newmids <- mapM (monomorphizeMid subst) mids
-    return $ MoBlock bid newmids (monoLast subst last)
+    let newphis = map (monoVar subst) phis
+    return $ MoBlock (bid, newphis) newmids (monoLast subst last)
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 monoLast :: MonoSubst -> ILLast -> MoLast
@@ -265,9 +266,9 @@ monoLast subst last =
   case last of
     ILRetVoid          -> MoRetVoid
     ILRet     v        -> MoRet      (qv v)
-    ILBr      bid      -> MoBr       bid
+    ILBr      bid args -> MoBr       bid (map (monoVar subst) args)
     -- Might as well optimize single-case switches to unconditional branches.
-    ILCase _ [arm]    Nothing _   -> MoBr      (snd arm)
+    ILCase _ [arm]    Nothing _   -> MoBr      (snd arm) [] -- TODO?
     -- If pattern matching was exhaustive, use one of the cases as a default.
     ILCase v (a:arms) Nothing occ -> MoCase (qv v) arms (Just $ snd a) occ
     ILCase v    arms def occ      -> MoCase (qv v) arms def occ
