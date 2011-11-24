@@ -11,7 +11,7 @@ module Foster.CFG
 , BlockId
 , BasicBlockGraph(..)
 , BasicBlock
-, splitBasicBlock
+, splitBasicBlock -- used in closure conversion
 , CFMiddle(..)
 , CFLast(..)
 , CFFn
@@ -30,6 +30,8 @@ import qualified Data.Text as T
 import Control.Monad.State
 import Data.IORef
 import Prelude hiding (id, last)
+
+-- ||||||||||||||||||| Entry Point & Helpers ||||||||||||||||||||{{{
 
 -- This is the "entry point" into CFG-building for the outside.
 -- We take (and update) a mutable reference as a convenient way of
@@ -75,13 +77,9 @@ extractFunction st fn =
         entryId [] = error $ "can't get entry block id from empty list!"
         entryId (bb:_) = id where (id, _, _) = splitBasicBlock bb
 
-cfgFreshSlotVar :: TypeIL -> String -> CFG AIVar
-cfgFreshSlotVar t n = do
-    id <- cfgFreshId n
-    let slot = ILAllocate (AllocInfo t MemRegionStack Nothing False)
-    cfgAddMiddle (ILetVal id slot)
-    return $ TypedId (PtrTypeIL t) id
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+-- ||||||||||||||||||||||||| KNExpr -> CFG|||||||||||||||||||||||{{{
 -- computeBlocks takes an expression and a contination,
 -- which determines what to do with the let-bound result of the expression.
 computeBlocks :: KNExpr -> Maybe Ident -> (AIVar -> CFG ()) -> CFG ()
@@ -195,27 +193,92 @@ computeBlocks expr idmaybe k = do
 
         KNVar v -> k v
         _ -> do cfgAddLet idmaybe (knToLetable expr) (typeKN expr) >>= k
+  where
+    cfgFreshSlotVar :: TypeIL -> String -> CFG AIVar
+    cfgFreshSlotVar t n = do
+        id <- cfgFreshId n
+        let slot = ILAllocate (AllocInfo t MemRegionStack Nothing False)
+        cfgAddMiddle (ILetVal id slot)
+        return $ TypedId (PtrTypeIL t) id
 
-knToLetable :: KNExpr -> Letable
-knToLetable expr =
-  case expr of
-     KNVar        _v     -> error $ "can't make Letable from KNVar!"
-     KNBool       b      -> ILBool       b
-     KNInt        t i    -> ILInt        t i
-     KNTuple      vs     -> ILTuple      vs
-     KNCallPrim   t p vs -> ILCallPrim   t p vs
-     KNCall       t b vs -> ILCall       t b vs
-     KNAppCtor    t c vs -> ILAppCtor    t c vs
-     KNAlloc      v      -> ILAlloc      v
-     KNDeref      v      -> ILDeref      v
-     KNStore      a b    -> ILStore      a b
-     KNAllocArray t v    -> ILAllocArray t v
-     KNArrayRead  t a b  -> ILArrayRead  t a b
-     KNArrayPoke  a b c  -> ILArrayPoke  a b c
-     KNTyApp t v argty   -> ILTyApp t v argty
-     _                   -> error $ "non-letable thing seen by letable: "
-                                  ++ show expr
+    knToLetable :: KNExpr -> Letable
+    knToLetable expr =
+      case expr of
+         KNVar        _v     -> error $ "can't make Letable from KNVar!"
+         KNBool       b      -> ILBool       b
+         KNInt        t i    -> ILInt        t i
+         KNTuple      vs     -> ILTuple      vs
+         KNCallPrim   t p vs -> ILCallPrim   t p vs
+         KNCall       t b vs -> ILCall       t b vs
+         KNAppCtor    t c vs -> ILAppCtor    t c vs
+         KNAlloc      v      -> ILAlloc      v
+         KNDeref      v      -> ILDeref      v
+         KNStore      a b    -> ILStore      a b
+         KNAllocArray t v    -> ILAllocArray t v
+         KNArrayRead  t a b  -> ILArrayRead  t a b
+         KNArrayPoke  a b c  -> ILArrayPoke  a b c
+         KNTyApp t v argty   -> ILTyApp t v argty
+         _                   -> error $ "non-letable thing seen by letable: "
+                                      ++ show expr
 
+    cfgMidStore var slotvar = do id <- cfgFreshId ".cfg_store"
+                                 cfgAddMiddle (ILetVal id $ ILStore var slotvar)
+
+    cfgAddLet :: Maybe Ident -> Letable -> TypeIL -> CFG AIVar
+    cfgAddLet idmaybe letable ty = do
+            id <- (case idmaybe of
+                    Just id -> return id
+                    Nothing -> cfgFreshId ".cfg_seq")
+            cfgAddMiddle (ILetVal id letable)
+            return (TypedId ty id)
+
+    cfgFreshId :: String -> CFG Ident
+    cfgFreshId s = do u <- cfgNewUniq ; return (Ident (T.pack s) u)
+
+    cfgNewBlock :: BlockId -> CFG ()
+    cfgNewBlock bid = do
+        old <- get
+        case cfgPreBlock old of
+            Nothing      -> do put (old { cfgPreBlock = Just (Right bid, []) })
+            Just (id, _) -> error $ "Tried to start new block "
+                                   ++ " with unfinished old block " ++ show id
+
+    cfgAddMiddle :: Insn O O -> CFG ()
+    cfgAddMiddle mid = do
+        old <- get
+        case cfgPreBlock old of
+            Just (id, mids) -> do put (old { cfgPreBlock = Just (id, mid:mids) })
+            Nothing         -> error $ "Tried to add middle without a block"
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+-- ||||||||||||||||||||| CFG Monadic Helpers ||||||||||||||||||||{{{
+cfgEndWith :: CFLast -> CFG ()
+cfgEndWith last = do
+    old <- get
+    case cfgPreBlock old of
+        Nothing          -> error $ "Tried to finish block but no preblock!"
+                                   ++ " Tried to end with " ++ show last
+        Just (stringOrBlockId, mids) -> do
+            id <- case stringOrBlockId of
+                    Left s -> cfgFresh s
+                    Right bid -> return bid
+            let first = mkFirst (ILabel id)
+            let middles = mkMiddles (Prelude.reverse mids)
+            let newblock = first <*> middles <*> mkLast (ILast last)
+            put (old { cfgPreBlock     = Nothing
+                     , cfgAllBlocks    = newblock : (cfgAllBlocks old) })
+
+cfgFresh :: String -> CFG BlockId
+cfgFresh s = do u <- freshLabel ; return (s, u)
+
+cfgNewUniq :: CFG Uniq
+cfgNewUniq = do u <- gets cfgUniq ; cfgPutUniq (u + 1) ; return u
+
+cfgPutUniq :: Uniq -> CFG ()
+cfgPutUniq u = do old <- get ; put (old { cfgUniq = u })
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+-- ||||||||||||||||||||||| CFG Data Types |||||||||||||||||||||||{{{
 data CFMiddle = CFLetVal      Ident     Letable
               | CFLetFuns     [Ident]   [CFFn]
 
@@ -240,64 +303,12 @@ data CFGState = CFGState {
 
 type CFG a = State CFGState a
 
-cfgMidStore var slotvar = do id <- cfgFreshId ".cfg_store"
-                             cfgAddMiddle (ILetVal id $ ILStore var slotvar)
-
-cfgAddLet :: Maybe Ident -> Letable -> TypeIL -> CFG AIVar
-cfgAddLet idmaybe letable ty = do
-        id <- (case idmaybe of
-                Just id -> return id
-                Nothing -> cfgFreshId ".cfg_seq")
-        cfgAddMiddle (ILetVal id letable)
-        return (TypedId ty id)
-
-cfgNewUniq :: CFG Uniq
-cfgNewUniq = do u <- gets cfgUniq ; cfgPutUniq (u + 1) ; return u
-
-cfgPutUniq :: Uniq -> CFG ()
-cfgPutUniq u = do old <- get ; put (old { cfgUniq = u })
-
-cfgFreshId :: String -> CFG Ident
-cfgFreshId s = do u <- cfgNewUniq ; return (Ident (T.pack s) u)
-
-cfgFresh :: String -> CFG BlockId
-cfgFresh s = do u <- freshLabel ; return (s, u)
-
-cfgNewBlock :: BlockId -> CFG ()
-cfgNewBlock bid = do
-    old <- get
-    case cfgPreBlock old of
-        Nothing      -> do put (old { cfgPreBlock = Just (Right bid, []) })
-        Just (id, _) -> error $ "Tried to start new block "
-                               ++ " with unfinished old block " ++ show id
-
-cfgAddMiddle :: Insn O O -> CFG ()
-cfgAddMiddle mid = do
-    old <- get
-    case cfgPreBlock old of
-        Just (id, mids) -> do put (old { cfgPreBlock = Just (id, mid:mids) })
-        Nothing         -> error $ "Tried to add middle without a block"
-
-cfgEndWith :: CFLast -> CFG ()
-cfgEndWith last = do
-    old <- get
-    case cfgPreBlock old of
-        Nothing          -> error $ "Tried to finish block but no preblock!"
-                                   ++ " Tried to end with " ++ show last
-        Just (stringOrBlockId, mids) -> do
-            id <- case stringOrBlockId of
-                    Left s -> cfgFresh s
-                    Right bid -> return bid
-            let first = mkFirst (ILabel id)
-            let middles = mkMiddles (Prelude.reverse mids)
-            let newblock = first <*> middles <*> mkLast (ILast last)
-            put (old { cfgPreBlock     = Nothing
-                     , cfgAllBlocks    = newblock : (cfgAllBlocks old) })
-
 -- For all a, CFG a is a UniqueMonad. GHC barfed on trying to use CFG directly.
 instance UniqueMonad (State CFGState) where
   freshUnique = cfgNewUniq >>= (return . intToUnique)
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+-- |||||||||||||||||||||||| Substitution ||||||||||||||||||||||||{{{
 knVarSubst id v1 v2 = if id == tidIdent v2 then v1 else v2
 
 -- Replace all uses of  id  with  v  in expr.
@@ -336,6 +347,7 @@ substFn id var fn =
   if id `elem` ids
     then error $ "knSubstFn found re-bound id " ++ show id
     else fn { fnBody = (knSubst id var (fnBody fn)) }
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 instance NonLocal Insn where
   entryLabel (ILabel (_,l)) = l

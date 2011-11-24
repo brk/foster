@@ -58,6 +58,8 @@ monomorphize (ILProgram procdefmap decls datatypes lines) =
         addMonosAndGo procdefmap =
                            addInitialMonoTasksAndGo (Map.elems procdefmap)
 
+-- ||||||||||||||||||||||| Initialization |||||||||||||||||||||||{{{
+
 isNotInstantiable procdef = isNothing (ilProcPolyTyVars procdef)
 
 monoExternDecl :: ILExternDecl -> MoExternDecl
@@ -104,7 +106,11 @@ monomorphizedDataTypes dts = map monomorphizedDataType dts
          monomorphizedDataCtor subst (DataCtor name tag types) =
                 DataCtor name tag [monoType subst ty | ty <- types]
 
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
 -- TODO include kinds on type variables (IL), only subst for boxed kinds
+
+-- ||||||||||||||||| Monomorphic Type Substitution ||||||||||||||{{{
 
 type MonoSubst = Map TyVar MonoType
 emptyMonoSubst = Map.empty
@@ -151,8 +157,9 @@ monoSubstLookup subst tv@(BoundTyVar nm) =
   case Map.lookup tv subst of
       Just monotype -> monotype
       Nothing -> TyConApp ("AAAAAAmissing:"++nm) []--error $ "monoSubsLookup found no monotype for variable " ++ show tv
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
---------------------------------------------------------------------
+-- ||||||||||||||||||||||| Monadic Helpers ||||||||||||||||||||||{{{
 
 data MonoWork = NeedsMono Ident -- for the eventual monomorphized function
                           Ident -- for the source polymorphic function
@@ -215,8 +222,9 @@ monoPutProc proc = do
     state <- get
     put state { monoProcDefs = Map.insert id proc (monoProcDefs state) }
 
---------------------------------------------------------------------
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+-- ||||||||||||||||||||||||||| Drivers ||||||||||||||||||||||||||{{{
 goMonomorphize :: Mono ()
 goMonomorphize = do
   work <- monoPopWorklist
@@ -249,6 +257,7 @@ monomorphizeBlock :: MonoSubst -> ILBlock -> Mono MoBlock
 monomorphizeBlock subst (Block bid mids last) = do
     newmids <- mapM (monomorphizeMid subst) mids
     return $ MoBlock bid newmids (monoLast subst last)
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 monoLast :: MonoSubst -> ILLast -> MoLast
 monoLast subst last =
@@ -275,13 +284,17 @@ monomorphizeMid subst mid =
                             Instantiated var -> return $ MoRebindId   id (monoVar subst var)
                             Bitcast      var -> return $ MoLetBitcast id (monoVar subst var)
                             MonoLet      val -> return $ MoLetVal     id val
-    ILClosures ids clos -> do return $ MoClosures ids (map (monoClosure subst) clos) -- TODO
+    ILClosures ids clos -> do return $ MoClosures ids (map (monoClosure subst) clos)
     ILRebindId i   v    -> do return $ MoRebindId i (monoVar subst v)
+
+monoClosure subst (ILClosure procid envid captures) =
+  MoClosure procid envid (map (monoVar subst) captures)
 
 data LetableResult = MonoLet      MonoLetable
                    | Instantiated (TypedId TypeIL)
                    | Bitcast      (TypedId TypeIL)
 
+-- |||||||||||||||| Monomorphization of Letables ||||||||||||||||{{{
 monomorphizeLetable :: MonoSubst -> Letable -> Mono LetableResult
 monomorphizeLetable subst expr =
     let qt = monoType subst in
@@ -337,9 +350,7 @@ monomorphizeLetable subst expr =
         ILAllocArray t v      -> return $ MonoLet $ MoAllocArray (qt t) (qv v)
         ILArrayRead  t v1 v2  -> return $ MonoLet $ MoArrayRead (qt t) (qv v1) (qv v2)
         ILArrayPoke  v1 v2 v3 -> return $ MonoLet $ MoArrayPoke (qv v1) (qv v2) (qv v3)
-
-monoClosure subst (ILClosure procid envid captures) =
-  MoClosure procid envid (map (monoVar subst) captures)
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 monoPrim :: MonoSubst -> FosterPrim TypeIL -> FosterPrim MonoType
 monoPrim subst p =

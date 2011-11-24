@@ -87,7 +87,7 @@ typeAST annexpr =
      AnnPrimitive _rng tid -> tidType tid
      E_AnnTyApp _rng substitutedTy _tm _tyArgs -> substitutedTy
 
------------------------------------------------------------------------
+-- ||||||||||||||||||||||||| Instances ||||||||||||||||||||||||||{{{
 
 instance Structured (AnnExpr TypeAST) where
   textOf e _width =
@@ -194,3 +194,4 @@ instance SourceRanged (AnnExpr ty) where
       AnnPrimitive rng _          -> rng
       E_AnnTyApp   rng _ _ _      -> rng
 
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
