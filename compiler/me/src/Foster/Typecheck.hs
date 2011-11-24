@@ -194,20 +194,20 @@ typecheckLet ctx0 rng (TermBinding v e1) e2 mt = do
 -- {{{
 typecheckLetRec :: Context Sigma -> SourceRange -> [TermBinding TypeAST]
                 -> ExprT -> Maybe TypeAST -> Tc (AnnExpr Rho)
-typecheckLetRec ctx0 rng bindings e mt = do
-    verifyNonOverlappingVariableNames rng "rec" (map termBindingName bindings)
+typecheckLetRec ctx0 rng recBindings e mt = do
     -- Generate unification variables for the overall type of
     -- each binding.
     unificationVars <- sequence [newTcUnificationVarTau $ T.unpack $
                                   "letrec_" `prependedTo` (evarName v)
-                                | (TermBinding v _) <- bindings]
-    ids <- sequence [tcFreshT (evarName v) | (TermBinding v _) <- bindings]
+                                | (TermBinding v _) <- recBindings]
+    ids <- sequence [tcFreshT (evarName v) | (TermBinding v _) <- recBindings]
     -- Create an extended context for typechecking the bindings
     let ctxBindings = map (uncurry varbind) (zip ids unificationVars)
     let ctx = prependContextBindings ctx0 ctxBindings
+    verifyNonOverlappingBindings rng "rec" ctxBindings
 
     -- Typecheck each binding
-    tcbodies <- forM (zip unificationVars bindings) $
+    tcbodies <- forM (zip unificationVars recBindings) $
        (\(u, TermBinding v b) -> do
            b' <- tcRho ctx b (evarMaybeType v) -- or (Just $ MetaTyVar u)?
            unify u (typeAST b')
@@ -239,8 +239,7 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
   let checkBranch (pat, body) = do
       p <- checkPattern pat
       bindings <- extractPatternBindings ctx p (typeAST ascrutinee)
-      verifyNonOverlappingVariableNames rng "case"
-                                        [v | (TermVarBinding v _) <- bindings]
+      verifyNonOverlappingBindings rng "case" bindings
       abody <- tcRho (prependContextBindings ctx bindings) body maybeExpTy
       unify u (typeAST abody)
                    (Just $ "Failed to unify all branches of case " ++ show rng)
@@ -686,8 +685,8 @@ typecheckFn' ctx f cc expArgType expBodyType = do
     -- | Verify that the given formals have distinct names,
     -- | and return unique'd versions of each.
     getUniquelyNamedFormals rng rawFormals fnProtoName = do
-        verifyNonOverlappingVariableNames rng fnProtoName
-                          (map (identPrefix.tidIdent) rawFormals)
+        verifyNonOverlappingBindings rng fnProtoName
+         [TermVarBinding (identPrefix $ tidIdent v) undefined | v <- rawFormals]
         mapM uniquelyName rawFormals
 -- }}}
 
@@ -734,9 +733,9 @@ uniquelyName (TypedId ty id) = do
     rename (GlobalSymbol name) _u =
             tcFails [out $ "Cannot rename global symbol " ++ show name]
 
-verifyNonOverlappingVariableNames :: SourceRange -> String -> [T.Text] -> Tc ()
-verifyNonOverlappingVariableNames rng name varNames = do
-    case detectDuplicates varNames of
+verifyNonOverlappingBindings :: SourceRange -> String -> [ContextBinding ty] -> Tc ()
+verifyNonOverlappingBindings rng name binders = do
+    case detectDuplicates [name | (TermVarBinding name _) <- binders] of
         []   -> return ()
         dups -> tcFails [out $ "Error when checking " ++ name ++ ": "
                               ++ "had duplicated bindings: " ++ show dups
