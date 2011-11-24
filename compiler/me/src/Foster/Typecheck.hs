@@ -223,7 +223,6 @@ typecheckLetRec ctx0 rng recBindings e mt = do
 -- }}}
 
 varbind id ty = TermVarBinding (identPrefix id) (TypedId ty id)
-
 typecheckCase :: Context Sigma -> SourceRange -> ExprT
               -> [(EPattern TypeAST, ExprT)] -> Maybe TypeAST -> Tc (AnnExpr Rho)
 -- {{{
@@ -239,11 +238,12 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
   let checkBranch (pat, body) = do
       p <- checkPattern pat
       bindings <- extractPatternBindings ctx p (typeAST ascrutinee)
-      verifyNonOverlappingBindings rng "case" bindings
-      abody <- tcRho (prependContextBindings ctx bindings) body maybeExpTy
+      let ctxbindings = [varbind id ty | (TypedId ty id) <- bindings]
+      verifyNonOverlappingBindings rng "case" ctxbindings
+      abody <- tcRho (prependContextBindings ctx ctxbindings) body maybeExpTy
       unify u (typeAST abody)
                    (Just $ "Failed to unify all branches of case " ++ show rng)
-      return (p, abody)
+      return ((p, bindings), abody)
   abranches <- forM branches checkBranch
   return $ AnnCase rng u ascrutinee abranches
  where
@@ -282,9 +282,9 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
     -- Recursively match a pattern against a type and extract the (typed)
     -- binders introduced by the pattern.
     extractPatternBindings :: Context Sigma -> Pattern -> TypeAST
-                           -> Tc [ContextBinding Sigma]
+                           -> Tc [TypedId Sigma]
     extractPatternBindings _ctx (P_Wildcard _   ) _  = return []
-    extractPatternBindings _ctx (P_Variable _ id) ty = return [varbind id ty]
+    extractPatternBindings _ctx (P_Variable _ id) ty = return [TypedId ty id]
 
     -- TODO shouldn't ignore the _ty here -- bug when ctors from different types listed.
     extractPatternBindings ctx (P_Ctor _ pats (CtorId _ ctorName _ _)) _ty = do

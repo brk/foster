@@ -249,7 +249,8 @@ ssTermOfExpr expr =
     KNDeref   a            -> SSTmExpr  $ IDeref (idOf a)
     KNStore   a b          -> SSTmExpr  $ IStore (idOf a) (idOf b)
     KNTyApp _t v argty     -> SSTmExpr  $ ITyApp (idOf v) argty
-    KNCase _t a bs {-dt-}  -> SSTmExpr  $ ICase (idOf a) {-dt-} [(p, tr e) | (p, e) <- bs]
+    KNCase _t a bs {-dt-}  -> SSTmExpr  $ ICase (idOf a) {-dt-} [(p, tr e) |
+                                                              ((p, _), e) <- bs]
     KNAppCtor _t cid vs    -> SSTmExpr  $ IAppCtor cid (map idOf vs)
 
 -- ... which lifts in a  straightfoward way to procedure definitions.

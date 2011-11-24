@@ -17,8 +17,7 @@ module Foster.CFG
 , CFFn
 ) where
 
-import Foster.Base(Uniq, Fn(..), AllocInfo(..), AllocMemRegion(..),
-                   TypedId(..), Ident(..), identPrefix, Pattern(..))
+import Foster.Base
 import Foster.TypeIL(TypeIL(..), AIVar)
 import Foster.KNExpr(KNExpr(..), typeKN)
 import Foster.Letable(Letable(..))
@@ -80,7 +79,7 @@ extractFunction st fn =
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 caseIf a b = [(pat True, a), (pat False, b)]
-         where pat bval = P_Bool (error "kn.if.srcrange") bval
+         where pat bval = (P_Bool (error "kn.if.srcrange") bval, [])
 
 -- ||||||||||||||||||||||||| KNExpr -> CFG ||||||||||||||||||||||{{{
 -- computeBlocks takes an expression and a contination,
@@ -270,7 +269,7 @@ data CFMiddle = CFLetVal      Ident     Letable
 data CFLast = CFRetVoid
             | CFRet         AIVar
             | CFBr          BlockId
-            | CFCase        AIVar [(Pattern, BlockId)]
+            | CFCase        AIVar [PatternBinding BlockId TypeIL]
             deriving (Show)
 
 data Insn e x where

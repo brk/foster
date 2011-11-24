@@ -35,7 +35,7 @@ data AIExpr=
         | AIIf         TypeIL AIExpr AIExpr AIExpr
         | AIUntil      TypeIL AIExpr AIExpr
         -- Creation of bindings
-        | AICase       TypeIL AIExpr [(Pattern, AIExpr)]
+        | AICase       TypeIL AIExpr [PatternBinding AIExpr TypeIL]
         | AILetVar     Ident AIExpr AIExpr
         | AILetFuns    [Ident] [Fn AIExpr TypeIL] AIExpr
         -- Use of bindings
@@ -104,8 +104,10 @@ ail ctx ae =
                                          return $ AITuple aies
         AnnCase _rng t e bs        -> do ti <- qt t
                                          ei <- q e
-                                         bsi <- mapM (\(p,e) -> do a <- q e
-                                                                   return (p, a)) bs
+                                         bsi <- mapM (\((p, vs),e) -> do
+                                                     a <- q e
+                                                     vs' <- mapM (aiVar ctx) vs
+                                                     return ((p, vs'), a)) bs
                                          return $ AICase ti ei bsi
         AnnPrimitive _rng v -> tcFails [out $ "Primitives must be called directly!"
                                           ++ "\n\tFound non-call use of " ++ show v]

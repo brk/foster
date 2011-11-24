@@ -34,7 +34,7 @@ data AnnExpr ty =
         | AnnIf         SourceRange ty (AnnExpr ty) (AnnExpr ty) (AnnExpr ty)
         | AnnUntil      SourceRange ty (AnnExpr ty) (AnnExpr ty)
         -- Creation of bindings
-        | AnnCase       SourceRange ty (AnnExpr ty) [(Pattern, (AnnExpr ty))]
+        | AnnCase       SourceRange ty (AnnExpr ty) [PatternBinding (AnnExpr ty) ty]
         | AnnLetVar     SourceRange Ident (AnnExpr ty) (AnnExpr ty)
         -- We have separate syntax for a SCC of recursive functions
         -- because they are compiled differently from non-recursive closures.
@@ -157,18 +157,8 @@ instance AExpr (AnnExpr TypeAST) where
         E_AnnFn f -> map tidIdent (fnFreeVars f)
         _         -> concatMap freeIdents (childrenOf e)
 
-patBindingFreeIds :: AExpr e => (Pattern, e) -> [Ident]
-patBindingFreeIds (pat, expr) =
-  freeIdents expr `butnot` patBoundIds pat
-  where patBoundIds :: Pattern -> [Ident]
-        patBoundIds pat =
-          case pat of
-            P_Wildcard _rng          -> []
-            P_Variable _rng id       -> [id]
-            P_Bool     _rng _        -> []
-            P_Int      _rng _        -> []
-            P_Ctor     _rng pats _nm -> concatMap patBoundIds pats
-            P_Tuple    _rng pats     -> concatMap patBoundIds pats
+patBindingFreeIds ((_, binds), expr) =
+  freeIdents expr `butnot` map tidIdent binds
 
 -----------------------------------------------------------------------
 

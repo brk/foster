@@ -271,7 +271,8 @@ closureOfKnFn infoMap (self_id, fn) = do
             let norange = MissingSourceRange ""
             let patVar a = P_Variable norange (tidIdent a)
             let cfcase = CFCase envVar [
-                           (P_Tuple norange (map patVar varsOfClosure)
+                           ((P_Tuple norange (map patVar varsOfClosure),
+                                                         varsOfClosure)
                            , bodyid) ]
             -- We change the entry block of the new body (versus the old).
             lab <- freshLabel

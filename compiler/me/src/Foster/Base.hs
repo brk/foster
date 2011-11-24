@@ -263,6 +263,8 @@ data Ident = Ident        T.Text Uniq
 
 data TypedId ty = TypedId { tidType :: ty, tidIdent :: Ident }
 
+type PatternBinding expr ty = ((Pattern, [TypedId ty]), expr)
+
 data FosterPrim ty = NamedPrim (TypedId ty)
                    | PrimOp { ilPrimOpName :: String
                             , ilPrimOpSize :: Int }

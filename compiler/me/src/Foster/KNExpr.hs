@@ -27,7 +27,7 @@ data KNExpr =
         | KNIf          TypeIL AIVar  KNExpr KNExpr
         | KNUntil       TypeIL KNExpr KNExpr
         -- Creation of bindings
-        | KNCase        TypeIL AIVar [(Pattern, KNExpr)]
+        | KNCase        TypeIL AIVar [PatternBinding KNExpr TypeIL]
         | KNLetVal       Ident KNExpr KNExpr
         | KNLetFuns    [Ident] [Fn KNExpr TypeIL] KNExpr
         -- Use of bindings
