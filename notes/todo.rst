@@ -1,8 +1,29 @@
 TODO
 ====
 
+Far future: GHC plugin to dump strict Haskell to Foster?
+        https://github.com/thoughtpolice/strict-ghc-plugin/blob/master/Strict/Pass.lhs
+
+Describe similarities/differences of CFG/SSA/CPS
+        Minor delta in Hoopl representation! Call becomes a terminator.
+
+General Compiler Structure Improvements
+---------------------------------------
+* Move pattern match compilation earlier in the pipeline?
+        * Requires "hand-compiling" pattern matches on env tuples.
+* More regular IL constructs for recursive values and/or closures.
+* Use newtypes to distinguish old-vs-new cases when doing
+  transformations from an IR to an implicit subset.
+
+* Better phi handling:
+  * Args to postalloca phi use emit()
+  * Args to internal (non-postalloca) phis use codegen()
+  * For phis with a single predecessor, don't generate a stack slot.
+    Thus cfg-simpl will do RAUW for us.
+
 TODO: libraries, benchmarks, & applications
 -------------------------------------------
+* Local vars?
 * Strings
 * Hash tables
 * MP integers
@@ -15,14 +36,29 @@ TODO: minor optimizations
 * Ensure that code like ``case foo of (bar, baz) -> (bar, baz) end``
   doesn't do any heap allocation (when we're returning an immutable value
   identical to (some subterm of) the inspected value.
-* Perform CSE when doing pattern match compilation.
 * Make sure linear chains of variable remappings don't trigger O(n^2) behavior.
+        should be fixed now, but should still test just in case
+* Eliminating redundant stack slots for phi nodes?
+* Arity raising/unit elimination
+* Worker/wrapper for closures??
+
+TODO loop optimizations
+-----------------------
+
+* Make sure that hof-while gets compiled to good code (inlining?)
+* Recognize loops and loop nesting levels
+* Perform more aggressive specialization inside nested loops.
 
 TODO: less minor optimizations
 ------------------------------
 * Generate unknown/polymorphic wrappers on-demand:
   ``f_unknown(env, args) = case args of (x,y,...,z) -> f_known(env, x,y,...,z)``
 * Think about function arity, type inference, higher rank functions...
+
+* LLVM register maps/liveness info for GC
+* Flow-sensitive type systems -- emission of proof witness values?
+* Simple effect analysis, effect-based optimizations?
+        Memoization a la Tarditi's dissertation
 
 TODO: implementation details
 ----------------------------
@@ -50,7 +86,6 @@ TODO: implementation details
   * perftimer.h (would need modification)
 * Benchmarking/profiling infrastructure
 * Implement debug info using DIBuilder.
-* Build explicit CFGs (CPS?) in Haskell-land
 * Coroutines (mostly done?)
   * On-demand stack growth/detection of impending overflow
   * make foster_coro struct be generic in arg type
