@@ -13,7 +13,15 @@
 #include "base/basictypes.h"
 #include "base/logging.h"
 
+#if defined(OS_ANDROID)
+#include "base/os_compat_android.h"
+#endif
+
 namespace base {
+
+#if defined(OS_ANDROID)
+#define _POSIX_MONOTONIC_CLOCK 1
+#endif
 
 struct timespec TimeDelta::ToTimeSpec() const {
   int64 microseconds = InMicroseconds();
@@ -163,7 +171,7 @@ Time Time::FromExploded(bool is_local, const Exploded& exploded) {
 // FreeBSD 6 has CLOCK_MONOLITHIC but defines _POSIX_MONOTONIC_CLOCK to -1.
 #if (defined(OS_POSIX) &&                                               \
      defined(_POSIX_MONOTONIC_CLOCK) && _POSIX_MONOTONIC_CLOCK >= 0) || \
-     defined(OS_FREEBSD) || defined(OS_OPENBSD) || defined(OS_ANDROID)
+     defined(OS_BSD) || defined(OS_ANDROID)
 
 // static
 TimeTicks TimeTicks::Now() {

@@ -11,7 +11,7 @@
 #include <cstring>
 #include <sstream>
 
-#include "base/base_api.h"
+#include "base/base_export.h"
 #include "base/basictypes.h"
 #include "build/build_config.h"
 
@@ -193,11 +193,11 @@ typedef char PathChar;
 // Implementation of the InitLogging() method declared below.  We use a
 // more-specific name so we can #define it above without affecting other code
 // that has named stuff "InitLogging".
-BASE_API bool BaseInitLoggingImpl(const PathChar* log_file,
-                                  LoggingDestination logging_dest,
-                                  LogLockingState lock_log,
-                                  OldFileDeletionState delete_old,
-                                  DcheckState dcheck_state);
+BASE_EXPORT bool BaseInitLoggingImpl(const PathChar* log_file,
+                                     LoggingDestination logging_dest,
+                                     LogLockingState lock_log,
+                                     OldFileDeletionState delete_old,
+                                     DcheckState dcheck_state);
 
 // Sets the log file name and other global logging state. Calling this function
 // is recommended, and is normally done at the beginning of application init.
@@ -224,19 +224,19 @@ inline bool InitLogging(const PathChar* log_file,
 // up to level INFO) if this function is not called.
 // Note that log messages for VLOG(x) are logged at level -x, so setting
 // the min log level to negative values enables verbose logging.
-BASE_API void SetMinLogLevel(int level);
+BASE_EXPORT void SetMinLogLevel(int level);
 
 // Gets the current log level.
-BASE_API int GetMinLogLevel();
+BASE_EXPORT int GetMinLogLevel();
 
 // Gets the VLOG default verbosity level.
-BASE_API int GetVlogVerbosity();
+BASE_EXPORT int GetVlogVerbosity();
 
 // Gets the current vlog level for the given file (usually taken from
 // __FILE__).
 
 // Note that |N| is the size *with* the null terminator.
-BASE_API int GetVlogLevelHelper(const char* file_start, size_t N);
+BASE_EXPORT int GetVlogLevelHelper(const char* file_start, size_t N);
 
 template <size_t N>
 int GetVlogLevel(const char (&file)[N]) {
@@ -247,27 +247,27 @@ int GetVlogLevel(const char (&file)[N]) {
 // process and thread IDs default to off, the timestamp defaults to on.
 // If this function is not called, logging defaults to writing the timestamp
 // only.
-BASE_API void SetLogItems(bool enable_process_id, bool enable_thread_id,
-                          bool enable_timestamp, bool enable_tickcount);
+BASE_EXPORT void SetLogItems(bool enable_process_id, bool enable_thread_id,
+                             bool enable_timestamp, bool enable_tickcount);
 
 // Sets whether or not you'd like to see fatal debug messages popped up in
 // a dialog box or not.
 // Dialogs are not shown by default.
-BASE_API void SetShowErrorDialogs(bool enable_dialogs);
+BASE_EXPORT void SetShowErrorDialogs(bool enable_dialogs);
 
 // Sets the Log Assert Handler that will be used to notify of check failures.
 // The default handler shows a dialog box and then terminate the process,
 // however clients can use this function to override with their own handling
 // (e.g. a silent one for Unit Tests)
 typedef void (*LogAssertHandlerFunction)(const std::string& str);
-BASE_API void SetLogAssertHandler(LogAssertHandlerFunction handler);
+BASE_EXPORT void SetLogAssertHandler(LogAssertHandlerFunction handler);
 
 // Sets the Log Report Handler that will be used to notify of check failures
 // in non-debug mode. The default handler shows a dialog box and continues
 // the execution, however clients can use this function to override with their
 // own handling.
 typedef void (*LogReportHandlerFunction)(const std::string& str);
-BASE_API void SetLogReportHandler(LogReportHandlerFunction handler);
+BASE_EXPORT void SetLogReportHandler(LogReportHandlerFunction handler);
 
 // Sets the Log Message Handler that gets passed every log message before
 // it's sent to other log destinations (if any).
@@ -275,8 +275,8 @@ BASE_API void SetLogReportHandler(LogReportHandlerFunction handler);
 // should not be sent to other log destinations.
 typedef bool (*LogMessageHandlerFunction)(int severity,
     const char* file, int line, size_t message_start, const std::string& str);
-BASE_API void SetLogMessageHandler(LogMessageHandlerFunction handler);
-BASE_API LogMessageHandlerFunction GetLogMessageHandler();
+BASE_EXPORT void SetLogMessageHandler(LogMessageHandlerFunction handler);
+BASE_EXPORT LogMessageHandlerFunction GetLogMessageHandler();
 
 typedef int LogSeverity;
 const LogSeverity LOG_VERBOSE = -1;  // This is level 1 verbosity
@@ -469,18 +469,22 @@ std::string* MakeCheckOpString(const t1& v1, const t2& v2, const char* names) {
 }
 
 // MSVC doesn't like complex extern templates and DLLs.
-#if !defined(COMPILER_MSVC) && defined(BASE_DLL)
+#if !defined(COMPILER_MSVC)
 // Commonly used instantiations of MakeCheckOpString<>. Explicitly instantiated
 // in logging.cc.
-extern template std::string* MakeCheckOpString<int, int>(
+extern template BASE_EXPORT std::string* MakeCheckOpString<int, int>(
     const int&, const int&, const char* names);
-extern template std::string* MakeCheckOpString<unsigned long, unsigned long>(
+extern template BASE_EXPORT
+std::string* MakeCheckOpString<unsigned long, unsigned long>(
     const unsigned long&, const unsigned long&, const char* names);
-extern template std::string* MakeCheckOpString<unsigned long, unsigned int>(
+extern template BASE_EXPORT
+std::string* MakeCheckOpString<unsigned long, unsigned int>(
     const unsigned long&, const unsigned int&, const char* names);
-extern template std::string* MakeCheckOpString<unsigned int, unsigned long>(
+extern template BASE_EXPORT
+std::string* MakeCheckOpString<unsigned int, unsigned long>(
     const unsigned int&, const unsigned long&, const char* names);
-extern template std::string* MakeCheckOpString<std::string, std::string>(
+extern template BASE_EXPORT
+std::string* MakeCheckOpString<std::string, std::string>(
     const std::string&, const std::string&, const char* name);
 #endif
 
@@ -609,7 +613,7 @@ enum { DEBUG_MODE = ENABLE_DLOG };
 #define DPLOG(severity)                                         \
   LAZY_STREAM(PLOG_STREAM(severity), DLOG_IS_ON(severity))
 
-#define DVLOG(verboselevel) DLOG_IF(INFO, VLOG_IS_ON(verboselevel))
+#define DVLOG(verboselevel) DVLOG_IF(verboselevel, VLOG_IS_ON(verboselevel))
 
 #define DVPLOG(verboselevel) DVPLOG_IF(verboselevel, VLOG_IS_ON(verboselevel))
 
@@ -619,15 +623,28 @@ enum { DEBUG_MODE = ENABLE_DLOG };
 
 #if defined(NDEBUG)
 
+BASE_EXPORT extern DcheckState g_dcheck_state;
+
+#if defined(DCHECK_ALWAYS_ON)
+
+#define DCHECK_IS_ON() true
+#define COMPACT_GOOGLE_LOG_EX_DCHECK(ClassName, ...) \
+  COMPACT_GOOGLE_LOG_EX_FATAL(ClassName , ##__VA_ARGS__)
+#define COMPACT_GOOGLE_LOG_DCHECK COMPACT_GOOGLE_LOG_FATAL
+const LogSeverity LOG_DCHECK = LOG_FATAL;
+
+#else
+
 #define COMPACT_GOOGLE_LOG_EX_DCHECK(ClassName, ...) \
   COMPACT_GOOGLE_LOG_EX_ERROR_REPORT(ClassName , ##__VA_ARGS__)
 #define COMPACT_GOOGLE_LOG_DCHECK COMPACT_GOOGLE_LOG_ERROR_REPORT
 const LogSeverity LOG_DCHECK = LOG_ERROR_REPORT;
-BASE_API extern DcheckState g_dcheck_state;
 #define DCHECK_IS_ON()                                                  \
   ((::logging::g_dcheck_state ==                                        \
     ::logging::ENABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS) &&        \
    LOG_IS_ON(DCHECK))
+
+#endif  // defined(DCHECK_ALWAYS_ON)
 
 #else  // defined(NDEBUG)
 
@@ -703,12 +720,7 @@ const LogSeverity LOG_DCHECK = LOG_INFO;
 #define DCHECK_GE(val1, val2) DCHECK_OP(GE, >=, val1, val2)
 #define DCHECK_GT(val1, val2) DCHECK_OP(GT, > , val1, val2)
 
-#if defined(OS_ANDROID) && !defined(OFFICIAL_BUILD)
-// TODO(port): fix once "enough" works
-#define NOTREACHED() LOG(ERROR) <<  "NOTREACHED()"
-#else
 #define NOTREACHED() DCHECK(false)
-#endif
 
 // Redefine the standard assert to use our nice log files
 #undef assert
@@ -722,7 +734,7 @@ const LogSeverity LOG_DCHECK = LOG_INFO;
 // You shouldn't actually use LogMessage's constructor to log things,
 // though.  You should use the LOG() macro (and variants thereof)
 // above.
-class BASE_API LogMessage {
+class BASE_EXPORT LogMessage {
  public:
   LogMessage(const char* file, int line, LogSeverity severity, int ctr);
 
@@ -816,11 +828,11 @@ typedef int SystemErrorCode;
 
 // Alias for ::GetLastError() on Windows and errno on POSIX. Avoids having to
 // pull in windows.h just for GetLastError() and DWORD.
-BASE_API SystemErrorCode GetLastSystemErrorCode();
+BASE_EXPORT SystemErrorCode GetLastSystemErrorCode();
 
 #if defined(OS_WIN)
 // Appends a formatted system message of the GetLastError() type.
-class BASE_API Win32ErrorLogMessage {
+class BASE_EXPORT Win32ErrorLogMessage {
  public:
   Win32ErrorLogMessage(const char* file,
                        int line,
@@ -848,7 +860,7 @@ class BASE_API Win32ErrorLogMessage {
 };
 #elif defined(OS_POSIX)
 // Appends a formatted system message of the errno type
-class BASE_API ErrnoLogMessage {
+class BASE_EXPORT ErrnoLogMessage {
  public:
   ErrnoLogMessage(const char* file,
                   int line,
@@ -872,10 +884,10 @@ class BASE_API ErrnoLogMessage {
 // NOTE: Since the log file is opened as necessary by the action of logging
 //       statements, there's no guarantee that it will stay closed
 //       after this call.
-BASE_API void CloseLogFile();
+BASE_EXPORT void CloseLogFile();
 
 // Async signal safe logging mechanism.
-BASE_API void RawLog(int level, const char* message);
+BASE_EXPORT void RawLog(int level, const char* message);
 
 #define RAW_LOG(level, message) logging::RawLog(logging::LOG_ ## level, message)
 
@@ -893,7 +905,7 @@ BASE_API void RawLog(int level, const char* message);
 // which is normally ASCII. It is relatively slow, so try not to use it for
 // common cases. Non-ASCII characters will be converted to UTF-8 by these
 // operators.
-BASE_API std::ostream& operator<<(std::ostream& out, const wchar_t* wstr);
+BASE_EXPORT std::ostream& operator<<(std::ostream& out, const wchar_t* wstr);
 inline std::ostream& operator<<(std::ostream& out, const std::wstring& wstr) {
   return out << wstr.c_str();
 }
@@ -945,7 +957,7 @@ namespace base {
 class StringPiece;
 
 // Allows StringPiece to be logged.
-BASE_API std::ostream& operator<<(std::ostream& o, const StringPiece& piece);
+BASE_EXPORT std::ostream& operator<<(std::ostream& o, const StringPiece& piece);
 
 }  // namespace base
 

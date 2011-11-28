@@ -7,10 +7,13 @@
 #include <errno.h>
 #include <sched.h>
 
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/safe_strerror_posix.h"
+#include "base/threading/thread_local.h"
 #include "base/threading/thread_restrictions.h"
+#include "base/tracked_objects.h"
 
 #if defined(OS_MACOSX)
 #include <mach/mach.h>
@@ -25,8 +28,8 @@
 #include <unistd.h>
 #endif
 
-#if defined(OS_NACL)
-#include <sys/nacl_syscalls.h>
+#if defined(OS_ANDROID)
+#include "base/android/jni_android.h"
 #endif
 
 namespace base {
@@ -36,6 +39,13 @@ void InitThreading();
 #endif
 
 namespace {
+
+#if !defined(OS_MACOSX)
+// Mac name code is in in platform_thread_mac.mm.
+LazyInstance<ThreadLocalPointer<char>,
+             LeakyLazyInstanceTraits<ThreadLocalPointer<char> > >
+    current_thread_name = LAZY_INSTANCE_INITIALIZER;
+#endif
 
 struct ThreadParams {
   PlatformThread::Delegate* delegate;
@@ -49,6 +59,9 @@ void* ThreadFunc(void* params) {
     base::ThreadRestrictions::SetSingletonAllowed(false);
   delete thread_params;
   delegate->ThreadMain();
+#if defined(OS_ANDROID)
+  base::android::DetachFromVM();
+#endif
   return NULL;
 }
 
@@ -124,11 +137,12 @@ PlatformThreadId PlatformThread::CurrentId() {
   return mach_thread_self();
 #elif defined(OS_LINUX)
   return syscall(__NR_gettid);
-#elif defined(OS_FREEBSD)
-  // TODO(BSD): find a better thread ID
-  return reinterpret_cast<int64>(pthread_self());
+#elif defined(OS_ANDROID)
+  return gettid();
 #elif defined(OS_NACL) || defined(OS_SOLARIS)
   return pthread_self();
+#elif defined(OS_POSIX)
+  return reinterpret_cast<int64>(pthread_self());
 #endif
 }
 
@@ -159,6 +173,11 @@ void PlatformThread::Sleep(int duration_ms) {
 #if 0 && defined(OS_LINUX)
 // static
 void PlatformThread::SetName(const char* name) {
+  // have to cast away const because ThreadLocalPointer does not support const
+  // void*
+  current_thread_name.Pointer()->Set(const_cast<char*>(name));
+  tracked_objects::ThreadData::InitializeThreadContext(name);
+
   // http://0pointer.de/blog/projects/name-your-threads.html
 
   // glibc recently added support for pthread_setname_np, but it's not
@@ -175,27 +194,39 @@ void PlatformThread::SetName(const char* name) {
     int err = dynamic_pthread_setname_np(pthread_self(),
                                          shortened_name.c_str());
     if (err < 0)
-      LOG(ERROR) << "pthread_setname_np: " << safe_strerror(err);
+      DLOG(ERROR) << "pthread_setname_np: " << safe_strerror(err);
   } else {
     // Implementing this function without glibc is simple enough.  (We
     // don't do the name length clipping as above because it will be
     // truncated by the callee (see TASK_COMM_LEN above).)
     int err = prctl(PR_SET_NAME, name);
     if (err < 0)
-      PLOG(ERROR) << "prctl(PR_SET_NAME)";
+      DPLOG(ERROR) << "prctl(PR_SET_NAME)";
   }
 }
 #elif defined(OS_MACOSX)
 // Mac is implemented in platform_thread_mac.mm.
 #else
 // static
-void PlatformThread::SetName(const char* /*name*/) {
-  // Leave it unimplemented.
+void PlatformThread::SetName(const char* name) {
+  // have to cast away const because ThreadLocalPointer does not support const
+  // void*
+  current_thread_name.Pointer()->Set(const_cast<char*>(name));
+  tracked_objects::ThreadData::InitializeThreadContext(name);
 
   // (This should be relatively simple to implement for the BSDs; I
   // just don't have one handy to test the code on.)
 }
 #endif  // defined(OS_LINUX)
+
+
+#if !defined(OS_MACOSX)
+// Mac is implemented in platform_thread_mac.mm.
+// static
+const char* PlatformThread::GetName() {
+  return current_thread_name.Pointer()->Get();
+}
+#endif
 
 // static
 bool PlatformThread::Create(size_t stack_size, Delegate* delegate,

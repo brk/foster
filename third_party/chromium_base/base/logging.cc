@@ -23,7 +23,6 @@ typedef HANDLE MutexHandle;
 #include <mach-o/dyld.h>
 #elif defined(OS_POSIX)
 #if defined(OS_NACL)
-#include <sys/nacl_syscalls.h>
 #include <sys/time.h> // timespec doesn't seem to be in <time.h>
 #else
 #include <sys/syscall.h>
@@ -139,11 +138,10 @@ int32 CurrentThreadId() {
   return syscall(__NR_gettid);
 #elif defined(OS_ANDROID)
   return gettid();
-#elif defined(OS_FREEBSD)
-  // TODO(BSD): find a better thread ID
-  return reinterpret_cast<int64>(pthread_self());
 #elif defined(OS_NACL)
   return pthread_self();
+#elif defined(OS_POSIX)
+  return reinterpret_cast<int64>(pthread_self());
 #endif
 }
 

@@ -2,13 +2,20 @@ set (CHROMIUM_BASE ${PROJECT_SOURCE_DIR}/third_party/chromium_base)
 
 set (CHROMIUM_BASE_ARCH x86)
 
+        #${CHROMIUM_BASE}/base/tracking_info.cc
+        #${CHROMIUM_BASE}/base/tracked_objects.cc
 set (BASE_SOURCES
 	${CHROMIUM_BASE}/base/at_exit.cc
+        ${CHROMIUM_BASE}/base/callback_internal.cc
 	${CHROMIUM_BASE}/base/lazy_instance.cc
 	${CHROMIUM_BASE}/base/file_path.cc
 	${CHROMIUM_BASE}/base/synchronization/lock.cc
+	#${CHROMIUM_BASE}/base/location.cc
 	${CHROMIUM_BASE}/base/logging.cc
 	${CHROMIUM_BASE}/base/debug/debugger.cc
+	${CHROMIUM_BASE}/base/debug/alias.cc
+        ${CHROMIUM_BASE}/base/memory/weak_ptr.cc
+        ${CHROMIUM_BASE}/base/threading/thread_checker_impl.cc
 	${CHROMIUM_BASE}/base/string_util.cc
 	${CHROMIUM_BASE}/base/string16.cc
 	${CHROMIUM_BASE}/base/string_number_conversions.cc
@@ -18,6 +25,7 @@ set (BASE_SOURCES
 	${CHROMIUM_BASE}/base/pickle.cc
 	${CHROMIUM_BASE}/base/time.cc
 	${CHROMIUM_BASE}/base/memory/ref_counted.cc
+        ${CHROMIUM_BASE}/base/memory/singleton.cc
 	${CHROMIUM_BASE}/base/threading/thread_restrictions.cc
 	${CHROMIUM_BASE}/base/threading/thread_collision_warner.cc
 	${CHROMIUM_BASE}/base/utf_string_conversions.cc

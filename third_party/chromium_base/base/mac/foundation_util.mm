@@ -9,7 +9,6 @@
 
 #include "base/file_path.h"
 #include "base/logging.h"
-#include "base/mac/scoped_cftyperef.h"
 #include "base/sys_string_conversions.h"
 
 namespace base {
@@ -28,7 +27,7 @@ static bool UncachedAmIBundled() {
   FSRef fsref;
   OSStatus pbErr;
   if ((pbErr = GetProcessBundleLocation(&psn, &fsref)) != noErr) {
-    LOG(ERROR) << "GetProcessBundleLocation failed: error " << pbErr;
+    DLOG(ERROR) << "GetProcessBundleLocation failed: error " << pbErr;
     return false;
   }
 
@@ -36,7 +35,7 @@ static bool UncachedAmIBundled() {
   OSErr fsErr;
   if ((fsErr = FSGetCatalogInfo(&fsref, kFSCatInfoNodeFlags, &info,
                                 NULL, NULL, NULL)) != noErr) {
-    LOG(ERROR) << "FSGetCatalogInfo failed: error " << fsErr;
+    DLOG(ERROR) << "FSGetCatalogInfo failed: error " << fsErr;
     return false;
   }
 
@@ -102,7 +101,7 @@ void SetOverrideAppBundle(NSBundle* bundle) {
 void SetOverrideAppBundlePath(const FilePath& file_path) {
   NSString* path = base::SysUTF8ToNSString(file_path.value());
   NSBundle* bundle = [NSBundle bundleWithPath:path];
-  CHECK(bundle) << "Failed to load the bundle at " << file_path.value();
+  DCHECK(bundle) << "Failed to load the bundle at " << file_path.value();
 
   SetOverrideAppBundle(bundle);
 }
@@ -146,7 +145,7 @@ bool GetUserDirectory(NSSearchPathDirectory directory, FilePath* result) {
 FilePath GetUserLibraryPath() {
   FilePath user_library_path;
   if (!GetUserDirectory(NSLibraryDirectory, &user_library_path)) {
-    LOG(WARNING) << "Could not get user library path";
+    DLOG(WARNING) << "Could not get user library path";
   }
   return user_library_path;
 }
@@ -200,6 +199,37 @@ FilePath GetAppBundlePath(const FilePath& exec_name) {
   return FilePath();
 }
 
+#define TYPE_NAME_FOR_CF_TYPE_DEFN(TypeCF) \
+std::string TypeNameForCFType(TypeCF##Ref) { \
+  return #TypeCF; \
+}
+
+TYPE_NAME_FOR_CF_TYPE_DEFN(CFArray);
+TYPE_NAME_FOR_CF_TYPE_DEFN(CFBag);
+TYPE_NAME_FOR_CF_TYPE_DEFN(CFBoolean);
+TYPE_NAME_FOR_CF_TYPE_DEFN(CFData);
+TYPE_NAME_FOR_CF_TYPE_DEFN(CFDate);
+TYPE_NAME_FOR_CF_TYPE_DEFN(CFDictionary);
+TYPE_NAME_FOR_CF_TYPE_DEFN(CFNull);
+TYPE_NAME_FOR_CF_TYPE_DEFN(CFNumber);
+TYPE_NAME_FOR_CF_TYPE_DEFN(CFSet);
+TYPE_NAME_FOR_CF_TYPE_DEFN(CFString);
+
+#undef TYPE_NAME_FOR_CF_TYPE_DEFN
+
+std::string GetValueFromDictionaryErrorMessage(
+    CFStringRef key, const std::string& expected_type, CFTypeRef value) {
+  ScopedCFTypeRef<CFStringRef> actual_type_ref(
+      CFCopyTypeIDDescription(CFGetTypeID(value)));
+  return "Expected value for key " +
+      base::SysCFStringRefToUTF8(key) +
+      " to be " +
+      expected_type +
+      " but it was " +
+      base::SysCFStringRefToUTF8(actual_type_ref) +
+      " instead";
+}
+
 CFTypeRef GetValueFromDictionary(CFDictionaryRef dict,
                                  CFStringRef key,
                                  CFTypeID expected_type) {
@@ -208,17 +238,13 @@ CFTypeRef GetValueFromDictionary(CFDictionaryRef dict,
     return value;
 
   if (CFGetTypeID(value) != expected_type) {
-    ScopedCFTypeRef<CFStringRef> expected_type_ref(
+    ScopedCFTypeRef<CFStringRef> expected_type_name(
         CFCopyTypeIDDescription(expected_type));
-    ScopedCFTypeRef<CFStringRef> actual_type_ref(
-        CFCopyTypeIDDescription(CFGetTypeID(value)));
-    LOG(WARNING) << "Expected value for key "
-                 << base::SysCFStringRefToUTF8(key)
-                 << " to be "
-                 << base::SysCFStringRefToUTF8(expected_type_ref)
-                 << " but it was "
-                 << base::SysCFStringRefToUTF8(actual_type_ref)
-                 << " instead";
+    std::string expected_type_utf8 =
+        base::SysCFStringRefToUTF8(expected_type_name);
+    DLOG(WARNING) << GetValueFromDictionaryErrorMessage(key,
+                                                        expected_type_utf8,
+                                                        value);
     return NULL;
   }
 
@@ -282,7 +308,7 @@ TypeCF##Ref NSToCFCast(TypeNS* ns_val) { \
   TypeCF##Ref cf_val = reinterpret_cast<TypeCF##Ref>(ns_val); \
   DCHECK(!cf_val || TypeCF##GetTypeID() == CFGetTypeID(cf_val)); \
   return cf_val; \
-} \
+}
 
 #define CF_TO_NS_MUTABLE_CAST_DEFN(name) \
 CF_TO_NS_CAST_DEFN(CF##name, NS##name) \
@@ -298,7 +324,7 @@ CFMutable##name##Ref NSToCFCast(NSMutable##name* ns_val) { \
       reinterpret_cast<CFMutable##name##Ref>(ns_val); \
   DCHECK(!cf_val || CF##name##GetTypeID() == CFGetTypeID(cf_val)); \
   return cf_val; \
-} \
+}
 
 CF_TO_NS_MUTABLE_CAST_DEFN(Array);
 CF_TO_NS_MUTABLE_CAST_DEFN(AttributedString);
@@ -317,6 +343,41 @@ CF_TO_NS_CAST_DEFN(CFReadStream, NSInputStream);
 CF_TO_NS_CAST_DEFN(CFWriteStream, NSOutputStream);
 CF_TO_NS_MUTABLE_CAST_DEFN(String);
 CF_TO_NS_CAST_DEFN(CFURL, NSURL);
+
+#undef CF_TO_NS_CAST_DEFN
+#undef CF_TO_NS_MUTABLE_CAST_DEFN
+
+#define CF_CAST_DEFN(TypeCF) \
+template<> TypeCF##Ref \
+CFCast<TypeCF##Ref>(const CFTypeRef& cf_val) { \
+  if (cf_val == NULL) { \
+    return NULL; \
+  } \
+  if (CFGetTypeID(cf_val) == TypeCF##GetTypeID()) { \
+    return reinterpret_cast<TypeCF##Ref>(cf_val); \
+  } \
+  return NULL; \
+} \
+\
+template<> TypeCF##Ref \
+CFCastStrict<TypeCF##Ref>(const CFTypeRef& cf_val) { \
+  TypeCF##Ref rv = CFCast<TypeCF##Ref>(cf_val); \
+  DCHECK(cf_val == NULL || rv); \
+  return rv; \
+}
+
+CF_CAST_DEFN(CFArray);
+CF_CAST_DEFN(CFBag);
+CF_CAST_DEFN(CFBoolean);
+CF_CAST_DEFN(CFData);
+CF_CAST_DEFN(CFDate);
+CF_CAST_DEFN(CFDictionary);
+CF_CAST_DEFN(CFNull);
+CF_CAST_DEFN(CFNumber);
+CF_CAST_DEFN(CFSet);
+CF_CAST_DEFN(CFString);
+
+#undef CF_CAST_DEFN
 
 }  // namespace mac
 }  // namespace base
