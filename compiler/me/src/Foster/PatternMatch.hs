@@ -53,12 +53,14 @@ data SPattern = SP_Wildcard
               | SP_Ctor      CtorId  [SPattern]
              deriving (Show)
 
-compilePatterns :: [(Pattern, a)] -> DataTypeSigs -> DecisionTree a
+type DataTypeSigs = Map DataTypeName DataTypeSig
+
+compilePatterns :: [((Pattern, binds), a)] -> DataTypeSigs -> DecisionTree a
 compilePatterns bs allSigs =
  cc [[]] (ClauseMatrix $ map compilePatternRow bs) allSigs where
 
-  compilePatternRow (p, a) = ClauseRow (compilePattern p)
-                                       [compilePattern p] a
+  compilePatternRow ((p, _binds), a) = ClauseRow (compilePattern p)
+                                                 [compilePattern p] a
   compilePattern :: Pattern -> SPattern
   compilePattern p = case p of
     (P_Wildcard _  )   -> SP_Wildcard

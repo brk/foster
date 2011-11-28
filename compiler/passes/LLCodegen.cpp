@@ -281,7 +281,7 @@ llvm::AllocaInst* ensureImplicitStackSlot(llvm::Value* v, CodegenPass* pass) {
   if (mightContainHeapPointers(v->getType())) {
     return pass->storeAndMarkPointerAsGCRoot(v);
   } else {
-    llvm::AllocaInst* slot = stackSlotWithValue(v, v->getName().str() + "_addr");
+    llvm::AllocaInst* slot = stackSlotWithValue(v, "_addr");
     pass->markAsNeedingImplicitLoads(slot);
     return slot;
   }
@@ -319,12 +319,13 @@ void CodegenPass::scheduleBlockCodegen(LLBlock* b) {
   } // else block was already scheduled
 }
 
+void initializeBlockPhis(LLBlock*);
+
 void codegenBlocks(std::vector<LLBlock*> blocks, CodegenPass* pass,
                    llvm::Function* F) {
   pass->fosterBlocks.clear();
-  pass->blockBindings.clear();
 
-  // Create all the basic block before codegenning any of them.
+  // Create all the basic blocks before codegenning any of them.
   for (size_t i = 0; i < blocks.size(); ++i) {
     LLBlock* bi = blocks[i];
     pass->fosterBlocks[bi->block_id] = bi;
@@ -336,6 +337,10 @@ void codegenBlocks(std::vector<LLBlock*> blocks, CodegenPass* pass,
   ASSERT(blocks.size() > 0) << F->getName() << " had no blocks!";
   // Make sure we branch from the entry block to the first 'computation' block.
   builder.CreateBr(blocks[0]->bb);
+
+  for (size_t i = 0; i < blocks.size(); ++i) {
+    initializeBlockPhis(blocks[i]);
+  }
 
   pass->worklistBlocks.clear();
   pass->scheduleBlockCodegen(blocks[0]);
@@ -357,40 +362,26 @@ void codegenBlocks(std::vector<LLBlock*> blocks, CodegenPass* pass,
   }
 }
 
-struct BlockBindings {
-  CaseContext* ctx;
-  std::vector<DTBinding> binds;
-  llvm::Value* scrutinee;
-};
-
-llvm::Value* lookupOccs(CodegenPass* pass, Occurrence* occ, llvm::Value* v);
-llvm::AllocaInst* getStackSlotForOcc(Occurrence* occ, llvm::Value* v,
-                                     CaseContext* ctx, CodegenPass* pass);
-void trySetName(llvm::Value* v, const string& name);
-
 ////////////////////////////////////////////////////////////////////
 
-void LLBlock::codegenBlock(CodegenPass* pass) {
-  llvm::BasicBlock* bb = pass->lookupBlock(this->block_id);
-  builder.SetInsertPoint(bb);
-
-  if (BlockBindings* bindings = pass->blockBindings[this->block_id]) {
-    for (size_t i = 0; i < bindings->binds.size(); ++i) {
-      DTBinding& bind = bindings->binds[i];
-      CaseContext* ctx = bindings->ctx;
-
-      Value* v = lookupOccs(pass, bind.second, bindings->scrutinee);
-      Value* v_slot = getStackSlotForOcc(bind.second, v, ctx, pass);
-      trySetName(v_slot, "pat_" + bind.first + "_slot");
-      EDiag() << "implicitly inserting " << bind.first << " = " << str(v_slot);
-      pass->valueSymTab.insert(bind.first, v_slot);
-    }
+void initializeBlockPhis(LLBlock* block) {
+  builder.SetInsertPoint(block->bb);
+  for (size_t i = 0; i < block->phiVars.size(); ++i) {
+    block->phiNodes.push_back(
+           builder.CreatePHI(getLLVMType(block->phiVars[i]->type),
+                                      1, block->phiVars[i]->getName()));
   }
+}
 
+void LLBlock::codegenBlock(CodegenPass* pass) {
+  builder.SetInsertPoint(bb);
+  for (size_t i = 0; i < this->phiVars.size(); ++i) {
+    pass->valueSymTab.insert(this->phiVars[i]->getName(),
+     ensureImplicitStackSlot(this->phiNodes[i], pass));
+  }
   for (size_t i = 0; i < this->mids.size(); ++i) {
     this->mids[i]->codegenMiddle(pass);
   }
-
   this->terminator->codegenTerminator(pass);
 }
 
@@ -414,23 +405,96 @@ void LLRetVal::codegenTerminator(CodegenPass* pass) {
 }
 
 void LLBr::codegenTerminator(CodegenPass* pass) {
-  builder.CreateBr(pass->lookupBlock(this->block_id));
+  LLBlock* block = pass->lookupBlock(this->block_id);
+
+  ASSERT(this->args.size() == block->phiNodes.size())
+        << "from " << builder.GetInsertBlock()->getName().str() << " : "
+        << "to " << block->bb->getName().str() << " : "
+        << "have " << this->args.size() << " args; "
+        << "need " << block->phiNodes.size();
+
+  for (size_t i = 0; i < this->args.size(); ++i) {
+    llvm::Value* v = pass->emit(this->args[i], NULL);
+    if (v->getType()->isVoidTy()) {
+      v = getUnitValue(); // Can't pass a void value!
+    }
+    ASSERT(v->getType() == block->phiNodes[i]->getType())
+        << "Can't pass a value of type " << str(v->getType())
+        << " to a phi node of type " << str(block->phiNodes[i]->getType())
+        << "\n from value " << str(v) << " to block " << (block->block_id);
+    block->phiNodes[i]->addIncoming(v, builder.GetInsertBlock());
+  }
+  builder.CreateBr(block->bb);
 }
 
-void LLCondBr::codegenTerminator(CodegenPass* pass) {
-  builder.CreateCondBr(pass->emit(this->var, NULL),
-                       pass->lookupBlock(this->then_id),
-                       pass->lookupBlock(this->else_id));
+void addAndEmitTo(Function* f, BasicBlock* bb) {
+  f->getBasicBlockList().push_back(bb);
+  builder.SetInsertPoint(bb);
 }
 
-struct CaseContext {
-  std::map<std::vector<int>, llvm::AllocaInst*> ctorSlotMap;
-};
+ConstantInt* maybeGetTagForCtorId(DataTypeAST* dt, const CtorId& c) {
+  if (dt) {                           return getConstantInt8For(c.smallId);
+  } else if (c.typeName == "Bool") {  return builder.getInt1(c.smallId);
+  } else if (c.typeName == "Int32") { return getConstantInt32For(c.smallId);
+  } else { return NULL; }
+}
+
+llvm::Value* emitCallGetCtorIdOf(CodegenPass* pass, llvm::Value* v) {
+  llvm::Value* foster_ctor_id_of = pass->mod->getFunction("foster_ctor_id_of");
+  ASSERT(foster_ctor_id_of != NULL);
+  llvm::CallInst* call = builder.CreateCall(foster_ctor_id_of,
+                         builder.CreateBitCast(v, builder.getInt8PtrTy()));
+  markAsNonAllocating(call);
+  return call;
+}
 
 void LLSwitch::codegenTerminator(CodegenPass* pass) {
-  llvm::Value* v = pass->emit(this->scrutinee, NULL);
-  CaseContext* ctx = new CaseContext;
-  this->dt->codegenDecisionTree(pass, v, ctx);
+  ASSERT(ctors.size() == blockids.size());
+  ASSERT(ctors.size() >= 1);
+
+  BasicBlock* defaultBB = (this->defaultCase.empty())
+                ? NULL
+                : pass->lookupBlock(this->defaultCase)->bb;
+
+  // All the ctors should have the same data type, now that we have at least
+  // one ctor, check if it's associated with a data type we know of.
+  DataTypeAST* dt = pass->isKnownDataType[ctors[0].typeName];
+
+  BasicBlock* bbNoDefault = defaultBB ? NULL      :
+                       BasicBlock::Create(getGlobalContext(), "case_nodefault");
+  BasicBlock* defOrContBB = defaultBB ? defaultBB : bbNoDefault;
+
+  // Fetch the subterm of the scrutinee being inspected.
+  llvm::Value* inspected = pass->emit(this->occ, NULL);
+
+  // If we're looking at a data type, emit code to get the ctor tag,
+  // instead of switching on the pointer value directly.
+  if (dt) {    inspected = emitCallGetCtorIdOf(pass, inspected); }
+
+  // Switch on the inspected value and add cases for each ctor considered.
+  llvm::SwitchInst* si = builder.CreateSwitch(inspected, defOrContBB, ctors.size());
+  for (size_t i = 0; i < ctors.size(); ++i) {
+    CtorId& c = ctors[i];
+
+    // Compute the tag for the ctor associated with this branch.
+    ConstantInt* onVal = maybeGetTagForCtorId(dt, c);
+    ASSERT(onVal) << "SwitchCase ctor " << (i+1) << "/" << ctors.size()
+           << ": " << c.typeName << "." << c.ctorName << "#" << c.smallId;
+    ASSERT(si->getCondition()->getType() == onVal->getType())
+        << "switch case and inspected value had different types!";
+
+    BasicBlock* destBB = pass->lookupBlock(this->blockids[i])->bb;
+    ASSERT(destBB != NULL);
+    si->addCase(onVal, destBB);
+  }
+
+  if (bbNoDefault) {
+    Function *F = builder.GetInsertBlock()->getParent();
+    addAndEmitTo(F, bbNoDefault);
+    emitFosterAssert(pass->mod, llvm::ConstantInt::getTrue(builder.getContext()),
+                   "control passed to llvm-generated default block -- bad!");
+    builder.CreateUnreachable();
+  }
 }
 
 ///}}}//////////////////////////////////////////////////////////////
@@ -894,189 +958,58 @@ TupleTypeAST* getDataCtorType(DataCtor* dc) {
 //////////////// Decision Trees ////////////////////////////////////
 /////////////////////////////////////////////////////////////////{{{
 
-  // Create at most one stack slot per subterm.
-  llvm::AllocaInst*
-  getStackSlotForOcc(Occurrence* occ, llvm::Value* v,
-                     CaseContext* ctx, CodegenPass* pass) {
-    llvm::AllocaInst* slot = ctx->ctorSlotMap[occ->offsets];
-    if (slot) {
-      emitStore(v, slot);
-    } else {
-      slot = ensureImplicitStackSlot(v, pass);
-      ctx->ctorSlotMap[occ->offsets] = slot;
+TupleTypeAST* maybeGetCtorStructType(CodegenPass* pass, CtorId c) {
+  DataTypeAST* dt = pass->isKnownDataType[c.typeName];
+  return (dt) ? getDataCtorType(dt->getCtor(c.smallId)) : NULL;
+}
+
+// Create at most one stack slot per subterm.
+llvm::AllocaInst*
+getStackSlotForOcc(CodegenPass* pass, llvm::Value* v, llvm::AllocaInst*& slot) {
+  if (slot) {
+    emitStore(v, slot);
+  } else {
+    slot = ensureImplicitStackSlot(v, pass);
+  }
+  return slot;
+}
+
+// Returns an implicit stack slot.
+llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
+  ASSERT(ctors.size() == offsets.size());
+
+    std::stringstream ss; ss << "occ(";
+    for (size_t i = 0; i < offsets.size(); ++i) {
+      ss << offsets[i] << ":";
+      ss << ctors[i].ctorName << "::";
     }
-    return slot;
-  }
+    ss << ")--";
 
-  TupleTypeAST* maybeGetCtorStructType(CodegenPass* pass, CtorId c) {
-    DataTypeAST* dt = pass->isKnownDataType[c.typeName];
-    return (dt) ? getDataCtorType(dt->getCtor(c.smallId)) : NULL;
-  }
+    emitFakeComment(ss.str());
 
-  llvm::Value* lookupOccs(CodegenPass* pass, Occurrence* occ, llvm::Value* v) {
-    ASSERT(occ != NULL);
-    const std::vector<int>& occs = occ->offsets;
-    const std::vector<CtorId>& ctors = occ->ctors;
-    ASSERT(ctors.size() == occs.size());
 
-    llvm::Value* rv = v;
+  llvm::Value* v  = this->var->codegen(pass);
+  if (offsets.empty()) return v;
 
-        std::stringstream ss; ss << "occ(";
-        for (size_t i = 0; i < occs.size(); ++i) {
-          ss << occs[i] << ":";
-          ss << ctors[i].ctorName << "::";
-        }
-        ss << ")--";
-
-        emitFakeComment(ss.str());
-
-    std::vector<int> currentOccs;
-
-    for (size_t i = 0; i < occs.size(); ++i) {
-      // If we know that the subterm at this position was created with
-      // a particular data constructor, emit a cast to that ctor's type.
-      if (TupleTypeAST* tupty = maybeGetCtorStructType(pass, ctors[i])) {
-        rv = builder.CreateBitCast(rv, tupty->getLLVMType());
-      }
-
-      llvm::Constant* idx = getConstantInt32For(occs[i]);
-      rv = getElementFromComposite(rv, idx, "switch_insp");
-
-      currentOccs.push_back(occs[i]);
+  llvm::Value* rv = pass->autoload(v);
+  for (size_t i = 0; i < offsets.size(); ++i) {
+    // If we know that the subterm at this position was created with
+    // a particular data constructor, emit a cast to that ctor's type.
+    if (TupleTypeAST* tupty = maybeGetCtorStructType(pass, ctors[i])) {
+      rv = builder.CreateBitCast(rv, tupty->getLLVMType());
     }
 
-    return rv;
+    llvm::Constant* idx = getConstantInt32For(offsets[i]);
+    rv = getElementFromComposite(rv, idx, "switch_insp");
   }
 
-  void DecisionTree::codegenDecisionTree(CodegenPass* pass,
-                                         llvm::Value* scrutinee,
-                                         CaseContext* ctx) {
-    llvm::BasicBlock* bb = NULL;
-    switch (tag) {
-    case DecisionTree::DT_FAIL:
-      EDiag() << "DecisionTree codegen, tag = DT_FAIL; v = " << str(scrutinee);
-      emitFosterAssert(pass->mod, builder.getInt1(false), "pattern match failure!");
-      break;
-
-    case DecisionTree::DT_LEAF:
-      //EDiag() << "codegenning dt leaf for block " << this->action_block_id
-      //    << "; bindings already set? " << (pass->blockBindings[this->action_block_id] != NULL);
-      if (!pass->blockBindings[this->action_block_id]) {
-        BlockBindings* bindings = new BlockBindings;
-        bindings->ctx       = ctx;
-        bindings->binds     = binds;
-        bindings->scrutinee = scrutinee;
-        pass->blockBindings[this->action_block_id] = bindings;
-      }
-
-      // Make sure that we eventually codegen in the leaf block.
-      bb = pass->lookupBlock(action_block_id);
-      builder.CreateBr(bb);
-      break;
-
-    case DecisionTree::DT_SWITCH:
-      sc->codegenSwitch(pass, scrutinee, ctx);
-      break;
-    }
-  }
-
-  llvm::Value* emitCallGetCtorTagOf(CodegenPass* pass, llvm::Value* v) {
-    llvm::Value* foster_ctor_id_of = pass->mod->getFunction("foster_ctor_id_of");
-    ASSERT(foster_ctor_id_of != NULL);
-    llvm::CallInst* call = builder.CreateCall(foster_ctor_id_of,
-                           builder.CreateBitCast(v, builder.getInt8PtrTy()));
-    markAsNonAllocating(call);
-    return call;
-  }
-
-  void addAndEmitTo(Function* f, BasicBlock* bb) {
-    f->getBasicBlockList().push_back(bb);
-    builder.SetInsertPoint(bb);
-  }
-
-  ConstantInt* maybeGetTagForCtorId(CodegenPass* pass, const CtorId& c) {
-    DataTypeAST* dt = pass->isKnownDataType[c.typeName];
-
-    if (dt) {                           return getConstantInt8For(c.smallId);
-    } else if (c.typeName == "Bool") {  return builder.getInt1(c.smallId);
-    } else if (c.typeName == "Int32") { return getConstantInt32For(c.smallId);
-    } else { return NULL; }
-  }
-
-  void SwitchCase::codegenSwitch(CodegenPass* pass,
-                                 llvm::Value* scrutinee,
-                                 CaseContext* ctx) {
-    ASSERT(ctors.size() == trees.size());
-    ASSERT(ctors.size() >= 1);
-
-    BasicBlock* defaultBB = NULL;
-    if (defaultCase != NULL) {
-      defaultBB = BasicBlock::Create(getGlobalContext(), "case_default");
-    }
-
-    // Special-case codegen for when there's only one
-    // possible case, to avoid superfluous branches.
-    if (trees.size() == 1 && !defaultCase) {
-      trees[0]->codegenDecisionTree(pass, scrutinee, ctx);
-      return;
-    }
-
-    // TODO: switching on a.p. integers: possible at all?
-    // If so, it will require manual if-else chaining,
-    // not a simple int32 switch...
-    BasicBlock* bbNoDefault = defaultBB ? NULL      :
-                         BasicBlock::Create(getGlobalContext(), "case_nodefault");
-    BasicBlock* defOrContBB = defaultBB ? defaultBB : bbNoDefault;
-
-    // Fetch the subterm of the scrutinee being inspected.
-    llvm::Value* inspected = lookupOccs(pass, this->occ, scrutinee);
-
-    // All the ctors should have the same data type, now that we have at least
-    // one ctor, check if it's associated with a data type we know of.
-    DataTypeAST* dt = pass->isKnownDataType[ctors[0].typeName];
-
-    // If we're looking at a data type, emit code to get the ctor tag,
-    // instead of switching on the pointer value directly.
-    if (dt) { inspected = emitCallGetCtorTagOf(pass, inspected);  }
-
-    // Switch on the inspected value; we'll fill in the ctor branches as we go.
-    llvm::SwitchInst* si = builder.CreateSwitch(inspected, defOrContBB, ctors.size());
-    Function *F = builder.GetInsertBlock()->getParent();
-
-    // Add cases to the switch for each arm.
-    for (size_t i = 0; i < ctors.size(); ++i) {
-      CtorId c = ctors[i];
-      if (ConstantInt* onVal = maybeGetTagForCtorId(pass, c)) {
-        // Emit the code for the branch expression,
-        // ending with a branch to the end of the case-expr.
-        std::stringstream ss; ss << "casetest_" << i;
-        BasicBlock* destBB = BasicBlock::Create(getGlobalContext(), ss.str());
-        addAndEmitTo(F, destBB);
-        trees[i]->codegenDecisionTree(pass, scrutinee, ctx);
-
-        ASSERT(si->getCondition()->getType() == onVal->getType())
-            << "had different types for inspected value and switch case tag";
-
-        si->addCase(onVal, destBB);
-      } else {
-        ASSERT(false) << "SwitchCase ctor " << (i+1) << "/" << ctors.size()
-               << ": " << c.typeName << "." << c.ctorName << "#" << c.smallId
-               << "\n" << str(scrutinee)  << "::" << str(scrutinee->getType());
-      }
-    }
-
-    if (defaultCase) {
-      addAndEmitTo(F, defaultBB);
-      defaultCase->codegenDecisionTree(pass, scrutinee, ctx);
-    }
-
-    if (bbNoDefault) {
-      addAndEmitTo(F, bbNoDefault);
-      emitFosterAssert(pass->mod, llvm::ConstantInt::getTrue(builder.getContext()),
-                     "control passed to llvm-generated default block -- bad!");
-      builder.CreateUnreachable();
-    }
-  }
+  // If we've loaded some possible-pointers from memory, make sure they
+  // get their own implicit stack slots.
+  llvm::AllocaInst*& slot = pass->occSlots[v][offsets];
+  getStackSlotForOcc(pass, rv, slot);
+  trySetName(slot, "pat_" + this->var->getName() + "_slot");
+  return slot;
+}
 
 ///}}}//////////////////////////////////////////////////////////////
 

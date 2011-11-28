@@ -34,13 +34,6 @@ namespace bepb {
 LLExpr* LLExpr_from_pb(const bepb::Letable*);
 TypeAST* TypeAST_from_pb(const bepb::Type*);
 FnTypeAST* parseProcType(const bepb::ProcType&);
-
-LLVar*  parseTermVar(const bepb::Letable* pb) {
-  LLExpr* e = LLExpr_from_pb(pb);
-  LLVar* rv = dynamic_cast<LLVar*>(e);
-  ASSERT(rv) << "Expected var, got " << e->tag;
-  return rv;
-}
 }
 
 using std::string;
@@ -201,19 +194,23 @@ LLMiddle* parseBitcast(const pb::RebindId& r) {
   return new LLBitcast(r.from_id(), parseTermVar(&r.to_var()));
 }
 
-DecisionTree* parseDecisionTree(const pb::DecisionTree& dt);
+LLSwitch* parseSwitch(const pb::Terminator&);
+
+LLBr* parseBr(const pb::Terminator& b) {
+  std::vector<LLVar*> args;
+  for (int i = 0; i < b.args_size(); ++i) {
+      args.push_back(parseTermVar(&b.args(i)));
+  }
+  return new LLBr(b.block(), args);
+}
 
 LLTerminator* parseTerminator(const pb::Terminator& b) {
   LLTerminator* rv = NULL;
   switch (b.tag()) {
   case pb::Terminator::BLOCK_RET_VOID: return new LLRetVoid();
   case pb::Terminator::BLOCK_RET_VAL: return new LLRetVal(parseTermVar(&b.var()));
-  case pb::Terminator::BLOCK_BR: return new     LLBr(b.block());
-  case pb::Terminator::BLOCK_IF: return new LLCondBr(b.block(), b.block2(),
-                                                     parseTermVar(&b.var()));
-  case pb::Terminator::BLOCK_CASE:
-    return new LLSwitch(parseTermVar(&b.var()), TypeAST_from_pb(&b.typ()),
-                        parseDecisionTree(b.dt()));
+  case pb::Terminator::BLOCK_BR: return parseBr(b);
+  case pb::Terminator::BLOCK_CASE: return parseSwitch(b);
   default: ASSERT(false); return NULL;
   }
   return rv;
@@ -232,6 +229,9 @@ LLBlock* parseBlock(const pb::Block& b) {
   bb->block_id = b.block_id();
   for (int i = 0; i < b.middle_size(); ++i) {
     bb->mids.push_back(parseMiddle(b.middle(i)));
+  }
+  for (int i = 0; i < b.phis_size(); ++i) {
+    bb->phiVars.push_back(parseTermVar(&b.phis(i)));
   }
   bb->terminator = parseTerminator(b.last());
   return bb;
@@ -274,56 +274,37 @@ LLExpr* parseArrayPoke(const pb::Letable& e) {
        parseTermVar(& e.parts(2)));
 }
 
-Occurrence* parseOccurrence(const pb::PbOccurrence& o) {
-  Occurrence* rv = new Occurrence;
+LLOccurrence* parseOccurrence(const pb::PbOccurrence& o) {
+  LLOccurrence* rv = new LLOccurrence;
   for (int i = 0; i < o.occ_offset_size(); ++i) {
     rv->offsets.push_back(o.occ_offset(i));
   }
   for (int i = 0; i < o.occ_ctorid_size(); ++i) {
     rv->ctors.push_back(parseCtorId(o.occ_ctorid(i)));
   }
+  rv->var = parseTermVar(&o.scrutinee());
   return rv;
 }
 
-SwitchCase* parseSwitchCase(const pb::PbSwitchCase& sc) {
-  SwitchCase* rv = new SwitchCase;
+LLSwitch* parseSwitch(const pb::Terminator& b) {
+  const pb::PbSwitch& sc = b.scase();
 
+  std::vector<CtorId> ctors;
   for (int i = 0; i < sc.ctors_size(); ++i) {
-    rv->ctors.push_back(parseCtorId(sc.ctors(i)));
+    ctors.push_back(parseCtorId(sc.ctors(i)));
   }
 
-  for (int i = 0; i < sc.trees_size(); ++i) {
-    rv->trees.push_back(parseDecisionTree(sc.trees(i)));
+  std::vector<std::string> ids;
+  for (int i = 0; i < sc.blocks_size(); ++i) {
+    ids.push_back(sc.blocks(i));
   }
 
-  if (sc.has_defcase()) {
-    rv->defaultCase = parseDecisionTree(sc.defcase());
-  } else {
-    rv->defaultCase = NULL;
-  }
+  std::string def;
+  if (sc.has_defcase()) { def = sc.defcase(); }
 
-  rv->occ = parseOccurrence(sc.occ());
-  return rv;
-}
-
-DecisionTree* parseDecisionTree(const pb::DecisionTree& dt) {
-  std::vector<DTBinding> binds;
-
-  switch (dt.tag()) {
-  case pb::DecisionTree::DT_FAIL:
-     return new DecisionTree();
-  case pb::DecisionTree::DT_LEAF:
-    for (int i = 0; i < dt.leaf_idents_size(); ++i) {
-      binds.push_back(DTBinding(
-                        dt.leaf_idents(i),
-                        parseOccurrence(dt.leaf_idoccs(i))));
-    }
-    return new DecisionTree(binds, dt.leaf_action());
-  case pb::DecisionTree::DT_SWITCH:
-    return new DecisionTree(parseSwitchCase(dt.switchcase()));
-  }
-  foster::EDiag() << "parseDecisionTree returning null for tag " << dt.tag();
-  return NULL;
+  return new LLSwitch(
+      parseOccurrence(sc.occ()),
+      ctors, ids, def);
 }
 
 LLExpr* parseAlloc(const pb::Letable& e) {
@@ -403,6 +384,7 @@ LLExpr* LLExpr_from_pb(const pb::Letable* pe) {
   case pb::Letable::IL_ARRAY_READ:  rv = parseArrayRead(e); break;
   case pb::Letable::IL_ARRAY_POKE:  rv = parseArrayPoke(e); break;
   case pb::Letable::IL_ALLOCATE:    rv = parseAllocate(e); break;
+  case pb::Letable::IL_OCCURRENCE:  rv = parseOccurrence(e.occ()); break;
 
   default:
     EDiag() << "Unknown protobuf tag: " << e.tag();

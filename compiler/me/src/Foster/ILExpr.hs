@@ -29,10 +29,13 @@ import Foster.Output(out, Output)
 -- | Performs closure conversion and lambda lifting, and also
 -- | transforms back from Hoopl's CFG representation to lists-of-blocks.
 -- |
+-- | We also perform pattern match compilation at this stage.
+-- |
 -- | The primary differences in the general structure are:
 -- |  #. LetFuns replaced with Closures
 -- |  #. Module  replaced with ILProgram
 -- |  #. Fn replaced with ProcDef
+-- |  #. Decision trees replaced with flat switches
 
 --------------------------------------------------------------------
 
@@ -63,7 +66,7 @@ data ILProcDef =
                }
 
 -- The standard definition of a basic block and its parts.
-data ILBlock  = Block BlockId [ILMiddle] ILLast
+data ILBlock  = Block BlockEntry [ILMiddle] ILLast
 data ILMiddle = ILLetVal      Ident    Letable
               -- This is equivalent to MinCaml's make_closure ...
               | ILClosures    [Ident] [ILClosure]
@@ -76,10 +79,8 @@ data ILMiddle = ILLetVal      Ident    Letable
 -- The only difference from CFLast to ILLast is the decision tree in ILCase.
 data ILLast = ILRetVoid
             | ILRet      AIVar
-            | ILBr       BlockId
-            | ILIf       TypeIL AIVar  BlockId   BlockId
-            | ILCase     TypeIL AIVar (DecisionTree BlockId)
-
+            | ILBr       BlockId [AIVar]
+            | ILCase     AIVar [(CtorId, BlockId)] (Maybe BlockId) Occurrence
 --------------------------------------------------------------------
 
 closureConvertAndLift :: DataTypeSigs -> Uniq
@@ -91,7 +92,7 @@ closureConvertAndLift dataSigs u m =
     -- Lambda lifting then closure converts any nested functions.
     let procsILM     = forM fns (\fn -> lambdaLift fn []) where
                             fns = moduleILfunctions m in
-    let initialState = ILMState u Map.empty dataSigs in
+    let initialState = ILMState u Map.empty Map.empty dataSigs in
     let newstate     = execState procsILM initialState in
     let decls = map (\(s,t) -> ILDecl s t) (moduleILdecls m) in
     ILProgram (ilmProcDefs newstate) decls (moduleILdataTypes m)
@@ -119,36 +120,42 @@ lambdaLift f freeVars = do
 -- for representing basic blocks because they're easier to build.
 basicBlock hooplBlock = blockGraph hooplBlock
 
+jumpTo bbg = case bbgEntry bbg of (bid, []) -> ILast $ CFBr bid []
+                                  (_b, _vs) -> error $ "Can't jump to block w/ args"
+
 -- We serialize a basic block graph by computing a depth-first search
 -- starting from the graph's entry block.
 closureConvertBlocks :: BasicBlockGraph -> ILM [ILBlock]
-closureConvertBlocks bbg =
-  let cfgBlocks = map basicBlock $
-                    preorder_dfs $ mkLast (ILast (CFBr $ bbgEntry bbg))
-                                                   |*><*| bbgBody bbg
-   in mapM closureConvertBlock cfgBlocks
+closureConvertBlocks bbg = do
+   let cfgBlocks = map basicBlock $
+                     preorder_dfs $ mkLast (jumpTo bbg) |*><*| bbgBody bbg
+   blocks <- mapM closureConvertBlock cfgBlocks
+   return $ concat blocks
   where
-    closureConvertBlock :: BasicBlock -> ILM ILBlock
+    -- A BasicBlock which ends in a decision tree will, in the general case,
+    -- expand out to multiple blocks to encode the tree.
+    closureConvertBlock :: BasicBlock -> ILM [ILBlock]
     closureConvertBlock bb = do
         let (bid, mids, last) = splitBasicBlock bb
         newmids <- mapM closureConvertMid mids
-        newlast <- ilLast last
-        return $ Block bid newmids newlast
+        (blocks, newlast) <- ilLast last
+        return $ Block bid (newmids) newlast : blocks
      where
-      ilLast :: Insn O C -> ILM ILLast
+      ilLast :: Insn O C -> ILM ([ILBlock], ILLast)
       ilLast (ILast last) =
+        let ret i = return ([], i) in
         case last of
-           CFRetVoid          -> return $ ILRetVoid
-           CFRet   v          -> return $ ILRet   v
-           CFBr    b          -> return $ ILBr    b
-           CFIf    t a b1 b2  -> return $ ILIf    t a b1 b2
-           CFCase  t a pbs    -> do allSigs <- gets ilmCtors
-                                    let dt = compilePatterns pbs allSigs
-                                    let usedBlocks = eltsOfDecisionTree dt
-                                    let _unusedPats = [pat | (pat, bid) <- pbs
-                                                     , Set.notMember bid usedBlocks]
-                                    -- TODO print warning if any unused patterns
-                                    return $ ILCase t a dt
+           CFRetVoid       -> ret $ ILRetVoid
+           CFRet   v       -> ret $ ILRet   v
+           CFBr    b args  -> ret $ ILBr    b args
+           CFCase  a pbs   -> do allSigs <- gets ilmCtors
+                                 let dt = compilePatterns pbs allSigs
+                                 let usedBlocks = eltsOfDecisionTree dt
+                                 let _unusedPats = [pat | (pat, bid) <- pbs
+                                                  , Set.notMember bid usedBlocks]
+                                 -- TODO print warning if any unused patterns
+                                 (BlockFin blocks id) <- compileDecisionTree a dt
+                                 return $ (blocks, ILBr id [])
               where
                 -- The decision tree we get from pattern-match compilation may
                 -- contain only a subset of the pattern branche.
@@ -175,6 +182,53 @@ closureConvertBlocks bbg =
           let idfns = zip ids fns
           closures  <- mapM (closureOfKnFn infoMap) idfns
           return $ ILClosures ids closures
+
+data BlockFin = BlockFin [ILBlock]      -- new blocks generated
+                         BlockId        -- entry block for decision tree logic
+
+bogusVar (id, _) = TypedId (PrimIntIL I1) id
+
+compileDecisionTree :: AIVar -> DecisionTree BlockId -> ILM BlockFin
+-- Translate an abstract decision tree to ILBlocks, also returning
+-- the label of the entry block into the decision tree logic.
+-- For now, we don't do any available values computation, which means that
+-- nested pattern matching will load the same subterm multiple times:
+-- once on the path to a leaf, and once more inside the leaf itself.
+
+compileDecisionTree _scrutinee (DT_Fail) = error "can't do dt_FAIL yet"
+
+compileDecisionTree _scrutinee (DT_Leaf armid []) = do
+        return $ BlockFin [] armid
+
+-- Because of the way decision trees can be copied, we can end up with
+-- multiple DT_Leaf nodes for the same armid. Since we don't want to emit
+-- bindings multiple times, we associate each armid with the id of a basic
+-- block which binds the arm's free variables, and make all the leafs jump
+-- to the wrapper instead of directly to the arm.
+compileDecisionTree scrutinee (DT_Leaf armid idsoccs) = do
+        wrappers <- gets ilmBlockWrappers
+        case Map.lookup armid wrappers of
+           Just id -> do return $ BlockFin [] id
+           Nothing -> do let binders = map (emitOccurrence scrutinee) idsoccs
+                         (id, block) <- ilmNewBlock ".leaf" binders (ILBr armid []) -- TODO
+                         ilmAddWrapper armid id
+                         return $ BlockFin [block] id
+
+compileDecisionTree scrutinee (DT_Switch occ subtrees maybeDefaultDt) = do
+        let splitBlockFin (BlockFin blocks id) = (blocks, id)
+        let (ctors, subdts) = unzip subtrees
+        fins  <- mapM (compileDecisionTree scrutinee) subdts
+        (dblockss, maybeDefaultId) <- case maybeDefaultDt of
+           Nothing -> do return ([], Nothing)
+           Just dt -> do (BlockFin dblockss did) <- compileDecisionTree scrutinee dt
+                         return (dblockss, Just did)
+        let (blockss, ids) = unzip (map splitBlockFin fins)
+        (id, block) <- ilmNewBlock ".dt.switch" []
+                           (ILCase scrutinee (zip ctors ids) maybeDefaultId occ)
+        return $ BlockFin (block : concat blockss ++ dblockss) id
+
+emitOccurrence :: AIVar -> (Ident, Occurrence) -> ILMiddle
+emitOccurrence scrutinee (id, occ) = ILLetVal id (ILOccurrence scrutinee occ)
 
 type InfoMap = Map Ident (CFFn, Ident) -- fn ident => (fn, env id)
 
@@ -216,16 +270,16 @@ closureOfKnFn infoMap (self_id, fn) = do
         -- If the body has x and y free, the closure converted body should be
         --     case env of (x, y, ...) -> body end
         newbody <- do
-            let BasicBlockGraph bodyid oldbodygraph = fnBody f
+            let BasicBlockGraph (bodyid, bodyphis) oldbodygraph = fnBody f
             let norange = MissingSourceRange ""
             let patVar a = P_Variable norange (tidIdent a)
-            let retType = fnReturnType $ tidType (fnVar f)
-            let cfcase = CFCase retType envVar [
-                           (P_Tuple norange (map patVar varsOfClosure)
+            let cfcase = CFCase envVar [
+                           ((P_Tuple norange (map patVar varsOfClosure),
+                                                         varsOfClosure)
                            , bodyid) ]
             -- We change the entry block of the new body (versus the old).
             lab <- freshLabel
-            let bid = ("caseof", lab)
+            let bid = (("caseof", lab), bodyphis)
             let caseblock = mkFirst (ILabel bid) <*>
                             mkMiddles []         <*>
                             mkLast (ILast cfcase)
@@ -286,9 +340,10 @@ closureConvertedProc procArgs f newbody = do
 -- The data type signatures are only needed for pattern match compilation, but
 -- we keep them here for convenience.
 data ILMState = ILMState {
-    ilmUniq      :: Uniq
-  , ilmProcDefs  :: Map Ident ILProcDef -- read-write
-  , ilmCtors     :: DataTypeSigs        -- read-only per-program
+    ilmUniq          :: Uniq
+  , ilmBlockWrappers :: Map BlockId BlockId -- read-write
+  , ilmProcDefs      :: Map Ident ILProcDef -- read-write
+  , ilmCtors         :: DataTypeSigs        -- read-only per-program
 }
 type ILM a = State ILMState a
 
@@ -301,6 +356,15 @@ ilmNewUniq = do old <- get
 ilmFresh :: T.Text -> ILM Ident
 ilmFresh t = do u <- ilmNewUniq
                 return (Ident t u)
+
+ilmNewBlock :: String -> [ILMiddle] -> ILLast -> ILM (BlockId, ILBlock)
+ilmNewBlock s mids last = do u <- freshLabel
+                             let id = (s, u)
+                             return $ (id, Block (id,[]) mids last)
+
+ilmAddWrapper armid id = do old <- get
+                            put (old { ilmBlockWrappers = Map.insert armid id
+                                      (ilmBlockWrappers old) })
 
 ilmPutProc :: ILM ILProcDef -> ILM ILProcDef
 ilmPutProc p_action = do
@@ -316,6 +380,10 @@ ilmGetProc id = do
         return $ Map.lookup id (ilmProcDefs old)
 
 --------------------------------------------------------------------
+
+instance Structured (String, Label) where
+    textOf (str, lab) _width = out $ str ++ "." ++ show lab
+    childrenOf _ = []
 
 instance UniqueMonad (State ILMState) where
   freshUnique = ilmNewUniq >>= (return . intToUnique)
@@ -338,8 +406,7 @@ showProgramStructure (ILProgram procdefs _decls _dtypes _lines) =
         ++ out (show last ++ "\n\n")
 
 instance Show ILLast where
-  show (ILRetVoid      ) = "ret void"
-  show (ILRet v        ) = "ret " ++ show v
-  show (ILBr  bid      ) = "br " ++ show bid
-  show (ILIf ty v b1 b2) = "if<" ++ show ty ++ "> " ++ show v ++ " ? " ++ show b1 ++ " : " ++ show b2
-  show (ILCase ty v dt ) = "case<" ++ show ty ++ "> (" ++ show v ++ ") [decisiontree]: {\n" ++ show dt ++ "\n}"
+  show (ILRetVoid     ) = "ret void"
+  show (ILRet v       ) = "ret " ++ show v
+  show (ILBr  bid args) = "br " ++ show bid ++ " , " ++ show args
+  show (ILCase v _arms _def _occ) = "case(" ++ show v ++ ")"

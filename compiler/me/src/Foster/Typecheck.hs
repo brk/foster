@@ -194,20 +194,20 @@ typecheckLet ctx0 rng (TermBinding v e1) e2 mt = do
 -- {{{
 typecheckLetRec :: Context Sigma -> SourceRange -> [TermBinding TypeAST]
                 -> ExprT -> Maybe TypeAST -> Tc (AnnExpr Rho)
-typecheckLetRec ctx0 rng bindings e mt = do
-    verifyNonOverlappingVariableNames rng "rec" (map termBindingName bindings)
+typecheckLetRec ctx0 rng recBindings e mt = do
     -- Generate unification variables for the overall type of
     -- each binding.
     unificationVars <- sequence [newTcUnificationVarTau $ T.unpack $
                                   "letrec_" `prependedTo` (evarName v)
-                                | (TermBinding v _) <- bindings]
-    ids <- sequence [tcFreshT (evarName v) | (TermBinding v _) <- bindings]
+                                | (TermBinding v _) <- recBindings]
+    ids <- sequence [tcFreshT (evarName v) | (TermBinding v _) <- recBindings]
     -- Create an extended context for typechecking the bindings
     let ctxBindings = map (uncurry varbind) (zip ids unificationVars)
     let ctx = prependContextBindings ctx0 ctxBindings
+    verifyNonOverlappingBindings rng "rec" ctxBindings
 
     -- Typecheck each binding
-    tcbodies <- forM (zip unificationVars bindings) $
+    tcbodies <- forM (zip unificationVars recBindings) $
        (\(u, TermBinding v b) -> do
            b' <- tcRho ctx b (evarMaybeType v) -- or (Just $ MetaTyVar u)?
            unify u (typeAST b')
@@ -223,7 +223,6 @@ typecheckLetRec ctx0 rng bindings e mt = do
 -- }}}
 
 varbind id ty = TermVarBinding (identPrefix id) (TypedId ty id)
-
 typecheckCase :: Context Sigma -> SourceRange -> ExprT
               -> [(EPattern TypeAST, ExprT)] -> Maybe TypeAST -> Tc (AnnExpr Rho)
 -- {{{
@@ -239,12 +238,12 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
   let checkBranch (pat, body) = do
       p <- checkPattern pat
       bindings <- extractPatternBindings ctx p (typeAST ascrutinee)
-      verifyNonOverlappingVariableNames rng "case"
-                                        [v | (TermVarBinding v _) <- bindings]
-      abody <- tcRho (prependContextBindings ctx bindings) body maybeExpTy
+      let ctxbindings = [varbind id ty | (TypedId ty id) <- bindings]
+      verifyNonOverlappingBindings rng "case" ctxbindings
+      abody <- tcRho (prependContextBindings ctx ctxbindings) body maybeExpTy
       unify u (typeAST abody)
                    (Just $ "Failed to unify all branches of case " ++ show rng)
-      return (p, abody)
+      return ((p, bindings), abody)
   abranches <- forM branches checkBranch
   return $ AnnCase rng u ascrutinee abranches
  where
@@ -283,9 +282,9 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
     -- Recursively match a pattern against a type and extract the (typed)
     -- binders introduced by the pattern.
     extractPatternBindings :: Context Sigma -> Pattern -> TypeAST
-                           -> Tc [ContextBinding Sigma]
+                           -> Tc [TypedId Sigma]
     extractPatternBindings _ctx (P_Wildcard _   ) _  = return []
-    extractPatternBindings _ctx (P_Variable _ id) ty = return [varbind id ty]
+    extractPatternBindings _ctx (P_Variable _ id) ty = return [TypedId ty id]
 
     -- TODO shouldn't ignore the _ty here -- bug when ctors from different types listed.
     extractPatternBindings ctx (P_Ctor _ pats (CtorId _ ctorName _ _)) _ty = do
@@ -394,9 +393,8 @@ typecheckArrayRead rng base (ArrayTypeAST t) aiexpr maybeExpTy = do
 
     return (AnnArrayRead rng t base aiexpr)
 
-typecheckArrayRead rng _base baseType index maybeExpTy =
+typecheckArrayRead rng _base baseType _index maybeExpTy =
     tcFails [out $ "Unable to arrayread expression of type " ++ show baseType
-                ++ " with expression " ++ show index
                 ++ " (context expected type " ++ show maybeExpTy ++ ")"
                 ++ highlightFirstLine rng]
 -- }}}
@@ -417,9 +415,8 @@ typecheckArrayPoke rng c base (ArrayTypeAST t) aiexpr maybeExpTy = do
 
     return (AnnArrayPoke rng t c base aiexpr)
 
-typecheckArrayPoke rng _ _base baseType index maybeExpTy =
+typecheckArrayPoke rng _ _base baseType _index maybeExpTy =
     tcFails [out $ "Unable to arraypoke expression of type " ++ show baseType
-                ++ " with expression " ++ show index
                 ++ " (context expected type " ++ show maybeExpTy ++ ")"
                 ++ highlightFirstLine rng]
 -- }}}
@@ -688,8 +685,8 @@ typecheckFn' ctx f cc expArgType expBodyType = do
     -- | Verify that the given formals have distinct names,
     -- | and return unique'd versions of each.
     getUniquelyNamedFormals rng rawFormals fnProtoName = do
-        verifyNonOverlappingVariableNames rng fnProtoName
-                          (map (identPrefix.tidIdent) rawFormals)
+        verifyNonOverlappingBindings rng fnProtoName
+         [TermVarBinding (identPrefix $ tidIdent v) undefined | v <- rawFormals]
         mapM uniquelyName rawFormals
 -- }}}
 
@@ -736,9 +733,9 @@ uniquelyName (TypedId ty id) = do
     rename (GlobalSymbol name) _u =
             tcFails [out $ "Cannot rename global symbol " ++ show name]
 
-verifyNonOverlappingVariableNames :: SourceRange -> String -> [T.Text] -> Tc ()
-verifyNonOverlappingVariableNames rng name varNames = do
-    case detectDuplicates varNames of
+verifyNonOverlappingBindings :: SourceRange -> String -> [ContextBinding ty] -> Tc ()
+verifyNonOverlappingBindings rng name binders = do
+    case detectDuplicates [name | (TermVarBinding name _) <- binders] of
         []   -> return ()
         dups -> tcFails [out $ "Error when checking " ++ name ++ ": "
                               ++ "had duplicated bindings: " ++ show dups
@@ -791,7 +788,6 @@ getFreeTyVars x = do z <- zonkType x
         RefTypeAST    ty      -> (go bound) ty
         ArrayTypeAST  ty      -> (go bound) ty
 
-
 subsumedBy :: AnnExpr Sigma -> Sigma -> Maybe String -> Tc (AnnExpr Rho)
 subsumedBy (AnnTuple (E_AnnTuple rng exprs)) (TupleTypeAST tys) msg = do
         exprs' <- mapM (\(e,t) -> subsumedBy e t msg) (zip exprs tys)
@@ -809,8 +805,8 @@ subsumedBy annexpr st2 msg = do
              sanityCheck (null bad_tvs) "Type not polymorphic enough!"
              return e'
         (ForAllAST {}, rho2) -> do
-                tcLift $ runOutput $ outCS Red $ "subsumedBy: inst " ++ show annexpr ++ " to rho " ++ show rho2
-                tcLift $ putStrLn ""
+                --tcLift $ runOutput $ outCS Red $ "subsumedBy: inst " ++ show annexpr ++ " to rho " ++ show rho2
+                --tcLift $ putStrLn ""
                 annrho <- inst annexpr
                 subsumedBy annrho rho2 msg
 

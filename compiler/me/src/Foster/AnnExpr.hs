@@ -34,7 +34,7 @@ data AnnExpr ty =
         | AnnIf         SourceRange ty (AnnExpr ty) (AnnExpr ty) (AnnExpr ty)
         | AnnUntil      SourceRange ty (AnnExpr ty) (AnnExpr ty)
         -- Creation of bindings
-        | AnnCase       SourceRange ty (AnnExpr ty) [(Pattern, (AnnExpr ty))]
+        | AnnCase       SourceRange ty (AnnExpr ty) [PatternBinding (AnnExpr ty) ty]
         | AnnLetVar     SourceRange Ident (AnnExpr ty) (AnnExpr ty)
         -- We have separate syntax for a SCC of recursive functions
         -- because they are compiled differently from non-recursive closures.
@@ -60,9 +60,6 @@ data AnnExpr ty =
 
 data AnnTuple ty = E_AnnTuple { annTupleRange :: SourceRange
                               , annTupleExprs :: [AnnExpr ty] }
-
-deriving instance Show t => Show (AnnExpr t)
-deriving instance Show t => Show (AnnTuple t)
 
 -----------------------------------------------------------------------
 
@@ -90,7 +87,7 @@ typeAST annexpr =
      AnnPrimitive _rng tid -> tidType tid
      E_AnnTyApp _rng substitutedTy _tm _tyArgs -> substitutedTy
 
------------------------------------------------------------------------
+-- ||||||||||||||||||||||||| Instances ||||||||||||||||||||||||||{{{
 
 instance Structured (AnnExpr TypeAST) where
   textOf e _width =
@@ -121,7 +118,7 @@ instance Structured (AnnExpr TypeAST) where
     case e of
       AnnBool {}                           -> []
       AnnCall _r _t b argtup               -> b:(annTupleExprs argtup)
-      AnnCompiles  _rng (CompilesResult (OK e))     -> [e]
+      AnnCompiles  _rng (CompilesResult (OK     e)) -> [e]
       AnnCompiles  _rng (CompilesResult (Errors _)) -> []
       AnnIf        _rng _t  a b c          -> [a, b, c]
       AnnUntil     _rng _t  a b            -> [a, b]
@@ -160,6 +157,9 @@ instance AExpr (AnnExpr TypeAST) where
         E_AnnFn f -> map tidIdent (fnFreeVars f)
         _         -> concatMap freeIdents (childrenOf e)
 
+patBindingFreeIds ((_, binds), expr) =
+  freeIdents expr `butnot` map tidIdent binds
+
 -----------------------------------------------------------------------
 
 instance SourceRanged (AnnExpr ty) where
@@ -184,3 +184,4 @@ instance SourceRanged (AnnExpr ty) where
       AnnPrimitive rng _          -> rng
       E_AnnTyApp   rng _ _ _      -> rng
 
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||

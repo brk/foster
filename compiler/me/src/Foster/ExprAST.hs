@@ -22,6 +22,8 @@ import Foster.Output(out)
 
 import qualified Data.Text as T
 
+-----------------------------------------------------------------------
+
 data ExprAST ty =
         -- Literals
           E_BoolAST       SourceRange Bool
@@ -69,12 +71,7 @@ data TermBinding ty = TermBinding (E_VarAST ty) (ExprAST ty) deriving (Show)
 termBindingName :: TermBinding t -> T.Text
 termBindingName (TermBinding v _) = evarName v
 
--- | Converts a right-leaning "list" of SeqAST nodes to a List
-unbuildSeqs :: (ExprAST ty) -> [ExprAST ty]
-unbuildSeqs (E_SeqAST _rng a b) = a : unbuildSeqs b
-unbuildSeqs expr = [expr]
-
------------------------------------------------------------------------
+-- ||||||||||||||||||||||||| Instances ||||||||||||||||||||||||||{{{
 
 instance Structured (ExprAST TypeAST) where
     textOf e _width =
@@ -123,6 +120,10 @@ instance Structured (ExprAST TypeAST) where
             E_VarAST      _rng _         -> []
             E_LetRec      _rng bnz e     -> [termBindingExpr bnd | bnd <- bnz] ++ [e]
             E_LetAST      _rng bnd e     -> (termBindingExpr bnd):[e]
+       where     -- | Converts a right-leaning "list" of SeqAST nodes to a List
+                unbuildSeqs :: (ExprAST ty) -> [ExprAST ty]
+                unbuildSeqs (E_SeqAST _rng a b) = a : unbuildSeqs b
+                unbuildSeqs expr = [expr]
 
 instance SourceRanged (ExprAST ty)
   where
@@ -171,4 +172,5 @@ epatBindingFreeVars (pat, expr) =
             EP_Int      {}        -> []
             EP_Tuple    _rng pats -> concatMap epatBoundNames pats
 
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

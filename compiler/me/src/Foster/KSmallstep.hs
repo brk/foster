@@ -39,8 +39,7 @@ import Foster.Output(runOutput, outCSLn)
 -- (efficiently) at the real machine level, even if they're a tad
 -- uglier in the abstract machine.
 
--- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
+-- |||||||||||||||||||||||  Entry Point  ||||||||||||||||||||||||{{{
 errFile gs = (stTmpDir gs) ++ "/istderr.txt"
 outFile gs = (stTmpDir gs) ++ "/istdout.txt"
 
@@ -71,7 +70,9 @@ interpretKNormalMod kmod tmpDir = do
   numSteps <- readIORef stepsTaken
   putStrLn ("Interpreter finished in " ++ show numSteps ++ " steps.")
   return val
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+-- ||||||||||||||||||||||||||  Running  |||||||||||||||||||||||||{{{
 -- Step a machine state until there is nothing left to step.
 interpret :: IORef Int -> MachineState -> IO MachineState
 interpret stepsTaken gs =
@@ -93,9 +94,9 @@ step gs =
                      stepExpr gs e
     SSTmValue _ -> do let ((env, cont), gs2) = popContext gs
                       return $ withEnv (withTerm gs2 (cont (termOf gs2))) env
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
--- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
+-- |||||||||||||||||||||||  Machine State  ||||||||||||||||||||||{{{
 -- A machine state consists of a (static) mapping of proc ids to
 -- proc definitions, a heap mapping locations (ints) to values,
 -- and the location of the current coroutine. Note that the machine
@@ -134,7 +135,8 @@ data CoroStatus = CoroStatusInvalid
                 | CoroStatusDead
                 deriving (Show, Eq)
 
--- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+-- |||||||||||||||||||||||||  Locations  ||||||||||||||||||||||||{{{
 
 type Location = Int
 nextLocation x = x + 1
@@ -177,8 +179,9 @@ modifyHeapWith gs loc fn =
 withTerm gs e = modifyHeapWith gs (stCoroLoc gs) (\(SSCoro c) -> SSCoro $ c { coroTerm = e })
 withEnv  gs e = modifyHeapWith gs (stCoroLoc gs) (\(SSCoro c) -> SSCoro $ c { coroEnv  = e })
 
--- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+-- |||||||||||||||||||||||  Terms and Values  |||||||||||||||||||{{{
 -- A term is either a normal-form value,
 -- or a non-normal-form expression.
 data SSTerm = SSTmExpr  IExpr
@@ -220,8 +223,10 @@ data SSValue = SSBool      Bool
              | SSFunc      SSFunc
              | SSCoro      Coro
              deriving (Eq, Show)
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
--- There is a trivial translation from ILExpr to SSTerm...
+-- |||||||||||||||||||||| KNExpr -> SSTerm ||||||||||||||||||||||{{{
+-- There is a trivial translation from KNExpr to SSTerm...
 ssTermOfExpr :: KNExpr -> SSTerm
 ssTermOfExpr expr =
   let tr   = ssTermOfExpr in
@@ -244,7 +249,8 @@ ssTermOfExpr expr =
     KNDeref   a            -> SSTmExpr  $ IDeref (idOf a)
     KNStore   a b          -> SSTmExpr  $ IStore (idOf a) (idOf b)
     KNTyApp _t v argty     -> SSTmExpr  $ ITyApp (idOf v) argty
-    KNCase _t a bs {-dt-}  -> SSTmExpr  $ ICase (idOf a) {-dt-} [(p, tr e) | (p, e) <- bs]
+    KNCase _t a bs {-dt-}  -> SSTmExpr  $ ICase (idOf a) {-dt-} [(p, tr e) |
+                                                              ((p, _), e) <- bs]
     KNAppCtor _t cid vs    -> SSTmExpr  $ IAppCtor cid (map idOf vs)
 
 -- ... which lifts in a  straightfoward way to procedure definitions.
@@ -266,18 +272,9 @@ instance Show SSFunc where
 
 tryLookupFunc :: MachineState -> Ident -> Maybe SSFunc
 tryLookupFunc gs id = Map.lookup id (stFuncmap gs)
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
--- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
-extendEnv :: ValueEnv -> [Ident] -> [SSValue] -> ValueEnv
-extendEnv env names args =
-  let ins (id, arg) map = Map.insert id arg map in
-  List.foldr ins env (zip names args)
-
-withExtendEnv :: MachineState -> [Ident] -> [SSValue] -> MachineState
-withExtendEnv gs names args =
-  withEnv gs (extendEnv (envOf gs) names args)
-
+-- |||||||||||||||||||| Machine State Helpers |||||||||||||||||||{{{
 -- Create a new, un-activated closure given a function to begin execution with.
 -- Returns a new machine state and a fresh location holding the new Coro value.
 coroFromClosure :: MachineState -> SSFunc -> ((Location, MachineState), Coro)
@@ -291,6 +288,15 @@ coroFromClosure gs func =
                   , coroStack = [(ssFuncEnv func, Prelude.id)]
                   } in
   ((extendHeap gs (SSCoro coro)), coro)
+
+extendEnv :: ValueEnv -> [Ident] -> [SSValue] -> ValueEnv
+extendEnv env names args =
+  let ins (id, arg) map = Map.insert id arg map in
+  List.foldr ins env (zip names args)
+
+withExtendEnv :: MachineState -> [Ident] -> [SSValue] -> MachineState
+withExtendEnv gs names args =
+  withEnv gs (extendEnv (envOf gs) names args)
 
 termOf gs = coroTerm (stCoro gs)
 envOf  gs = coroEnv  (stCoro gs)
@@ -328,8 +334,9 @@ popContext gs =
   (cont, modifyHeapWith gs (stCoroLoc gs)
              (\(SSCoro c) -> SSCoro $ c { coroStack = restStack }))
 
--- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+-- |||||||||||||||||||||| Stepping An Expression ||||||||||||||||{{{
 stepExpr :: MachineState -> IExpr -> IO MachineState
 stepExpr gs expr = do
   case expr of
@@ -448,13 +455,9 @@ stepExpr gs expr = do
                         array (0, fromInteger $ i - 1) inits)
 
     ITyApp v _argty -> return $ withTerm gs (SSTmValue $ getval gs v)
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
--- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
-arraySlotLocation arr n = SSLocation (arr ! n)
-
--- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
+-- |||||||||||||||||||||||| Pattern Matching ||||||||||||||||||||{{{
 matchPattern :: Pattern -> SSValue -> Maybe [(Ident, SSValue)]
 matchPattern p v =
   let trivialMatchSuccess = Just [] in
@@ -478,13 +481,14 @@ matchPattern p v =
     (SSTuple vals, P_Tuple _ pats) -> matchPatterns pats vals
     (_, P_Tuple _ _) -> matchFailure
 
-
 matchPatterns :: [Pattern] -> [SSValue] -> Maybe [(Ident, SSValue)]
 matchPatterns pats vals = do
   matchLists <- mapM (\(p, v) -> matchPattern p v) (zip pats vals)
   return $ concat matchLists
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
--- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+-- |||||||||||||||||||||| Primitive Operations ||||||||||||||||||{{{
+arraySlotLocation arr n = SSLocation (arr ! n)
 
 liftInt2 :: (Integral a) => (a -> a -> b) ->
           Integer -> Integer -> b
@@ -576,8 +580,9 @@ evalNamedPrimitive "opaquely_i32" gs [val] =
 evalNamedPrimitive prim _gs _args = error $ "evalNamedPrimitive " ++ show prim
                                          ++ " not yet defined"
 
--- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+-- ||||||||||||||||||||  Coroutine Primitives  ||||||||||||||||||{{{
 canSwitchToCoro c =
   case coroStat c of
     CoroStatusInvalid   -> False
@@ -648,9 +653,9 @@ evalCoroPrimitive CoroYield gs [arg] =
       } in
       return $ gs2
 evalCoroPrimitive CoroYield _gs _ = error $ "Wrong arguments to coro_yield"
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
---------------------------------------------------------------------
-
+-- ||||||||||||||||||||  Helpers & Boilerplate  |||||||||||||||||{{{
 printString  gs s = do
   runOutput (outCSLn Blue s)
   appendFile (errFile gs) (s ++ "\n")
@@ -699,4 +704,5 @@ instance Eq Coro
   where c1 == c2 = (coroLoc c1) == (coroLoc c2)
 
 instance Show (SSTerm -> SSTerm) where show _f = "<coro cont>"
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

@@ -178,8 +178,8 @@ llvm::AllocaInst* CreateEntryAlloca(llvm::Type* ty, const std::string& name) {
   return tmpBuilder.CreateAlloca(ty, /*ArraySize=*/ 0, name);
 }
 
-llvm::AllocaInst* stackSlotWithValue(llvm::Value* val, const std::string& name) {
-  llvm::AllocaInst* valptr = CreateEntryAlloca(val->getType(), val->getName().str() + name);
+llvm::AllocaInst* stackSlotWithValue(llvm::Value* val, const std::string& suffix) {
+  llvm::AllocaInst* valptr = CreateEntryAlloca(val->getType(), val->getName().str() + suffix);
   builder.CreateStore(val, valptr, /*isVolatile=*/ false);
   return valptr;
 }

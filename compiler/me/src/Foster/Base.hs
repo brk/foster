@@ -1,4 +1,4 @@
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GADTs , StandaloneDeriving #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2011 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -11,55 +11,13 @@ import Foster.Kind
 import Foster.Output
 
 import Data.Set as Set(fromList, toList, difference, insert, empty, member)
-import Data.Sequence as Seq
+import Data.Sequence as Seq(Seq, length, index)
 import Data.Map as Map(Map)
-import Data.List as List
+import Data.List as List(replicate, intersperse)
 
 import qualified Data.Text as T
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
-prependedTo :: String -> T.Text -> T.Text
-prependedTo str txt = T.pack str `T.append` txt
-
--- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
-data CompilesResult expr = CompilesResult (OutputOr expr)
-instance (SourceRanged expr) => Show (CompilesResult expr) where
-  show (CompilesResult (OK e))     = show (rangeOf e)
-  show (CompilesResult (Errors _)) = "<...invalid term...>"
-
-type Uniq = Int
-
--- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
-data CallConv = CCC | FastCC deriving (Eq, Show)
-briefCC CCC = "ccc"
-briefCC FastCC = ""
-
-data IntSizeBits = I1 | I8 | I32 | I64 deriving (Eq, Show)
-
-data ProcOrFunc = FT_Proc | FT_Func deriving (Show)
-
-data VarNamespace = VarProc | VarLocal deriving (Show)
-
-data TyVar = BoundTyVar String -- bound by a ForAll, that is
-           | SkolemTyVar String Uniq Kind
-
-instance Eq TyVar where
-  BoundTyVar s1 == BoundTyVar s2 = s1 == s2
-  SkolemTyVar _ u1 _ == SkolemTyVar _ u2 _ = u1 == u2
-  _ == _ = False
-
-instance Ord TyVar where
-  BoundTyVar s1      `compare` BoundTyVar s2      = s1 `compare` s2
-  SkolemTyVar _ u1 _ `compare` SkolemTyVar _ u2 _ = u1 `compare` u2
-  BoundTyVar s1      `compare` SkolemTyVar s2 _ _ = s1 `compare` s2
-  SkolemTyVar s1 _ _ `compare` BoundTyVar s2      = s1 `compare` s2
-
-instance Show TyVar where
-    show (BoundTyVar x) = "'" ++ x
-    show (SkolemTyVar x u k) = "$" ++ x ++ "." ++ show u ++ "::" ++ show k
 
 class Expr a where
     freeVars   :: a -> [T.Text]
@@ -67,23 +25,25 @@ class Expr a where
 class AExpr a where
     freeIdents   :: a -> [Ident]
 
-patBindingFreeIds :: AExpr e => (Pattern, e) -> [Ident]
-patBindingFreeIds (pat, expr) =
-  freeIdents expr `butnot` patBoundIds pat
-  where patBoundIds :: Pattern -> [Ident]
-        patBoundIds pat =
-          case pat of
-            P_Wildcard _rng          -> []
-            P_Variable _rng id       -> [id]
-            P_Bool     _rng _        -> []
-            P_Int      _rng _        -> []
-            P_Ctor     _rng pats _nm -> concatMap patBoundIds pats
-            P_Tuple    _rng pats     -> concatMap patBoundIds pats
-
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+data CompilesResult expr = CompilesResult (OutputOr expr)
+type Uniq = Int
+data CallConv = CCC | FastCC deriving (Eq, Show)
+data IntSizeBits = I1 | I8 | I32 | I64 deriving (Eq, Show)
+data ProcOrFunc   = FT_Proc | FT_Func  deriving Show
+data VarNamespace = VarProc | VarLocal deriving Show
+
+data TyVar = BoundTyVar String -- bound by a ForAll, that is
+           | SkolemTyVar String Uniq Kind
+
+briefCC CCC = "ccc"
+briefCC FastCC = ""
+
+-- |||||||||||||||||||||||||| Patterns ||||||||||||||||||||||||||{{{
+
 data E_VarAST ty = VarAST { evarMaybeType :: Maybe ty
-                          , evarName      :: T.Text } deriving (Show)
+                          , evarName      :: T.Text }
 
 data EPattern ty =
           EP_Wildcard     SourceRange
@@ -92,7 +52,6 @@ data EPattern ty =
         | EP_Bool         SourceRange Bool
         | EP_Int          SourceRange String
         | EP_Tuple        SourceRange [EPattern ty]
-        deriving (Show)
 
 data Pattern =
           P_Wildcard      SourceRange
@@ -102,25 +61,15 @@ data Pattern =
         | P_Int           SourceRange LiteralInt
         | P_Tuple         SourceRange [Pattern]
 
-instance Show Pattern where
-  show (P_Wildcard _)            = "P_Wildcard"
-  show (P_Variable _ id)         = "P_Variable " ++ show id
-  show (P_Ctor     _ _pats ctor) = "P_Ctor     " ++ show ctor
-  show (P_Bool     _ b)          = "P_Bool     " ++ show b
-  show (P_Int      _ i)          = "P_Int      " ++ show (litIntText i)
-  show (P_Tuple    _ pats)       = "P_Tuple    " ++ show pats
-
--- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
-data (Show ty) =>
-           DataType ty = DataType {
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+-- ||||||||||||||||||| Data Types, Int Literals |||||||||||||||||{{{
+data DataType ty = DataType {
     dataTypeName      :: String
   , dataTypeTyFormals :: [TypeFormalAST]
   , dataTypeCtors     :: [DataCtor ty]
-  } deriving Show
+  }
 
-data (Show ty) =>
-           DataCtor ty = DataCtor T.Text Int [ty]      deriving Show
+data DataCtor ty = DataCtor T.Text Int [ty]
 
 -- CtorIds are created before typechecking.
 data CtorId     = CtorId   { ctorTypeName :: String
@@ -129,18 +78,18 @@ data CtorId     = CtorId   { ctorTypeName :: String
                            , ctorSmallInt :: Int
                            } deriving (Show, Eq)
 
-data CtorInfo ty = CtorInfo CtorId (DataCtor ty) deriving Show
-
-instance Ord CtorId where
-  compare a b = compare (show a) (show b)
+data CtorInfo ty = CtorInfo CtorId (DataCtor ty) deriving Show -- for Typecheck
 
 type CtorName    = T.Text
 type DataTypeName = String
 
-data DataTypeSig = DataTypeSig (Map CtorName CtorId) deriving Show
-type DataTypeSigs = Map DataTypeName DataTypeSig
+data DataTypeSig = DataTypeSig (Map CtorName CtorId)
 
--- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+data LiteralInt = LiteralInt { litIntValue   :: Integer
+                             , litIntMinBits :: Int
+                             , litIntText    :: String
+                             , litIntBase    :: Int
+                             }
 
 data ModuleAST fnCtor ty = ModuleAST {
           moduleASTfunctions   :: [fnCtor ty]
@@ -154,7 +103,7 @@ data Fn expr ty = Fn { fnVar   :: TypedId ty
                      , fnBody  :: expr
                      , fnFreeVars :: [TypedId ty]
                      , fnRange :: SourceRange
-                     } deriving (Show)
+                     } deriving Show -- For KNExpr and KSmallstep
 
 fnType :: Fn e t -> t
 fnType fn = tidType $ fnVar fn
@@ -167,8 +116,8 @@ data ModuleIL expr ty = ModuleIL {
         , moduleILdataTypes   :: [DataType ty]
         , moduleILsourceLines :: SourceLines
      }
-
--- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+-- ||||||||||||||||||||||| Source Ranges ||||||||||||||||||||||||{{{
 
 data ESourceLocation = ESourceLocation { sourceLocationLine :: Int
                                        , sourceLocationCol  :: Int
@@ -181,9 +130,6 @@ data SourceRange = SourceRange { sourceRangeBegin :: ESourceLocation
                                , sourceRangeFile  :: Maybe String
                                }
                   | MissingSourceRange String
-
-instance Show SourceRange where
-    show = showSourceRange
 
 class SourceRanged a
   where rangeOf :: a -> SourceRange
@@ -240,7 +186,8 @@ sourceLine (SourceLines seq) n =
                          ++ (show $ Seq.length seq) ++ ">"
         else (T.unpack $ Seq.index seq n)
 
--- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+-- ||||||||||||||||||||| Structured Things ||||||||||||||||||||||{{{
 
 class Structured a where
     textOf     :: a -> Int -> Output
@@ -271,7 +218,8 @@ showStructure e = showStructureP e (out "") False
         (thisIndent :: Output) ++ (textOf e padding) ++ (out "\n")
                                ++ (Prelude.foldl (++) (out "") childlines)
 
------------------------------------------------------------------------
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+-- ||||||||||||||||||||||||| Utilities ||||||||||||||||||||||||||{{{
 
 -- | Does what it says on the tin: monadically combines a map and a fold,
 -- | threading state through.
@@ -283,8 +231,6 @@ mapFoldM (x:xs) b1 f = do
     (cs1, b2) <- f x b1
     (cs2, b3) <- mapFoldM xs b2 f
     return (cs1 ++ cs2, b3)
-
--- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 butnot :: Ord a => [a] -> [a] -> [a]
 butnot bs zs =
@@ -303,21 +249,45 @@ joinWith :: String -> [String] -> String
 joinWith _ [] = ""
 joinWith s ss = foldr1 (++) (intersperse s ss)
 
--- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+prependedTo :: String -> T.Text -> T.Text
+prependedTo str txt = T.pack str `T.append` txt
 
-data LiteralInt = LiteralInt { litIntValue   :: Integer
-                             , litIntMinBits :: Int
-                             , litIntText    :: String
-                             , litIntBase    :: Int
-                             } deriving (Show)
-
--- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+-- |||||||||||||||||||||||||| Idents |||||||||||||||||||||||||||{{{
 
 identPrefix (GlobalSymbol name) = name
 identPrefix (Ident name _)      = name
 
 data Ident = Ident        T.Text Uniq
            | GlobalSymbol T.Text
+
+data TypedId ty = TypedId { tidType :: ty, tidIdent :: Ident }
+
+type PatternBinding expr ty = ((Pattern, [TypedId ty]), expr)
+
+data FosterPrim ty = NamedPrim (TypedId ty)
+                   | PrimOp { ilPrimOpName :: String
+                            , ilPrimOpSize :: Int }
+                   | CoroPrim  CoroPrim ty ty
+
+data CoroPrim = CoroCreate | CoroInvoke | CoroYield
+
+data AllocMemRegion = MemRegionStack
+                    | MemRegionGlobalHeap deriving Show
+
+data AllocInfo t = AllocInfo { allocType   :: t
+                             , allocRegion :: AllocMemRegion
+                             , allocArraySize :: Maybe (TypedId t)
+                             , allocUnboxed :: Bool
+                             }
+
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+-- ||||||||||||||||||||||||| Instances |||||||||||||||||||||||||{{{
+deriving instance (Show ty) => Show (DataType ty)
+deriving instance (Show ty) => Show (DataCtor ty)
+
+instance Ord CtorId where
+  compare a b = compare (show a) (show b)
 
 instance Ord Ident where
     compare a b = compare (show a) (show b)
@@ -329,27 +299,51 @@ instance Show Ident where
     show (Ident name number) = T.unpack name ++ "!" ++ show number
     show (GlobalSymbol name) = T.unpack name
 
-data TypedId ty = TypedId { tidType :: ty, tidIdent :: Ident }
-
 instance (Show ty) => Show (TypedId ty)
   where show (TypedId ty id) = show id ++ " :: " ++ show ty
 
-data Show ty => FosterPrim ty
-               = NamedPrim (TypedId ty)
-               | PrimOp { ilPrimOpName :: String
-                        , ilPrimOpSize :: Int }
-               | CoroPrim  CoroPrim ty ty
-            deriving (Show)
+instance Eq TyVar where
+  BoundTyVar s1      == BoundTyVar s2      = s1 == s2
+  SkolemTyVar _ u1 _ == SkolemTyVar _ u2 _ = u1 == u2
+  _ == _ = False
 
-data CoroPrim = CoroCreate | CoroInvoke | CoroYield
-            deriving (Show)
+instance Ord TyVar where
+  BoundTyVar s1      `compare` BoundTyVar s2      = s1 `compare` s2
+  SkolemTyVar _ u1 _ `compare` SkolemTyVar _ u2 _ = u1 `compare` u2
+  BoundTyVar s1      `compare` SkolemTyVar s2 _ _ = s1 `compare` s2
+  SkolemTyVar s1 _ _ `compare` BoundTyVar s2      = s1 `compare` s2
 
-data AllocMemRegion = MemRegionStack
-                    | MemRegionGlobalHeap deriving Show
+instance Show TyVar where
+    show (BoundTyVar x) = "'" ++ x
+    show (SkolemTyVar x u k) = "$" ++ x ++ "." ++ show u ++ "::" ++ show k
 
-data AllocInfo t = AllocInfo { allocType   :: t
-                             , allocRegion :: AllocMemRegion
-                             , allocArraySize :: Maybe (TypedId t)
-                             , allocUnboxed :: Bool
-                             } deriving Show
+instance Show SourceRange where
+    show _ = "<...source range...>"
+
+instance (SourceRanged expr) => Show (CompilesResult expr) where
+  show (CompilesResult (OK e))     = show (rangeOf e)
+  show (CompilesResult (Errors _)) = "<...invalid term...>"
+
+instance Show Pattern where
+  show (P_Wildcard _)            = "P_Wildcard"
+  show (P_Variable _ id)         = "P_Variable " ++ show id
+  show (P_Ctor     _ _pats ctor) = "P_Ctor     " ++ show ctor
+  show (P_Bool     _ b)          = "P_Bool     " ++ show b
+  show (P_Int      _ i)          = "P_Int      " ++ show (litIntText i)
+  show (P_Tuple    _ pats)       = "P_Tuple    " ++ show pats
+
+instance Show ty => Show (EPattern ty) where
+  show (EP_Wildcard _)            = "EP_Wildcard"
+  show (EP_Variable _ v)          = "EP_Variable " ++ show v
+  show (EP_Ctor     _ _pats ctor) = "EP_Ctor     " ++ show ctor
+  show (EP_Bool     _ b)          = "EP_Bool     " ++ show b
+  show (EP_Int      _ str)        = "EP_Int      " ++ str
+  show (EP_Tuple    _ pats)       = "EP_Tuple    " ++ show pats
+
+deriving instance (Show ty) => Show (AllocInfo ty)
+deriving instance (Show ty) => Show (E_VarAST ty)
+deriving instance (Show ty) => Show (FosterPrim ty)
+deriving instance Show CoroPrim
+deriving instance Show LiteralInt
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

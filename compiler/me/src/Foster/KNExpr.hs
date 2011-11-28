@@ -27,7 +27,7 @@ data KNExpr =
         | KNIf          TypeIL AIVar  KNExpr KNExpr
         | KNUntil       TypeIL KNExpr KNExpr
         -- Creation of bindings
-        | KNCase        TypeIL AIVar [(Pattern, KNExpr)]
+        | KNCase        TypeIL AIVar [PatternBinding KNExpr TypeIL]
         | KNLetVal       Ident KNExpr KNExpr
         | KNLetFuns    [Ident] [Fn KNExpr TypeIL] KNExpr
         -- Use of bindings
@@ -74,6 +74,7 @@ kNormalizeFn fn = do
     namedReturnValue <- nestedLets [knbody] (\[v] -> KNVar v)
     return $ fn { fnBody = namedReturnValue }
 
+-- ||||||||||||||||||||||| K-Normalization ||||||||||||||||||||||{{{
 kNormalize :: AIExpr -> KN KNExpr
 kNormalize expr =
   let g = kNormalize in
@@ -116,6 +117,22 @@ kNormalize expr =
               (E_AIPrim p) -> do nestedLets   cargs (\vars -> KNCallPrim t p vars)
               (E_AIVar v)  -> do nestedLetsDo cargs (\vars -> knCall t v vars)
               _ -> do cb <- g b; nestedLetsDo (cb:cargs) (\(vb:vars) -> knCall t vb vars)
+  where knStore x y = do
+            q <- varOrThunk (x, pointedToType $ tidType y)
+            nestedLets [q] (\[z] -> KNStore z y)
+
+        knCall t a vs =
+          case (tidType a) of
+              FnTypeIL rawtys _ _ _ -> do
+                  let tys = listize rawtys
+                  args <- mapM varOrThunk (zip vs tys)
+                  nestedLets args (\xs -> KNCall t a xs)
+              _ -> error $ "knCall: Called var had non-function type!\n\t" ++
+                                show a ++
+                                outToString (showStructure (tidType a))
+          where listize (TupleTypeIL tys) = tys
+                listize t                 = [t]
+-- }}}|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 --------------------------------------------------------------------
 -- Type checking ignores the distinction between function types
@@ -135,26 +152,6 @@ kNormalize expr =
 --    the nestedLets functions here. After all, (fec (ret_c_fnptr !)) should
 --    become (let fnptr = ret_c_fnptr ! in fec { args.. => fnptr args.. } end),
 --    NOT simply   fec { args... => (ret_c_fnptr !) args... }
-
-knStore x y = do
-  q <- varOrThunk (x, pointedToType $ tidType y)
-  nestedLets [q] (\[z] -> KNStore z y)
-
-listize (TupleTypeIL tys) = tys
-listize t                 = [t]
-
-knCall t a vs =
-  case (tidType a) of
-      FnTypeIL rawtys _ _ _ -> do
-          let tys = listize rawtys
-          args <- mapM varOrThunk (zip vs tys)
-          nestedLets args (\xs -> KNCall t a xs)
-      _ -> error $ "knCall: Called var had non-function type!\n\t" ++
-                        show a ++
-                        outToString (showStructure (tidType a))
-
---------------------------------------------------------------------
-
 varOrThunk :: (AIVar, TypeIL) -> KN KNExpr
 varOrThunk (a, targetType) = do
   case needsClosureWrapper a targetType of
@@ -194,8 +191,7 @@ varOrThunk (a, targetType) = do
 
         argVarsWithTypes ty = argVarsWithTypes (TupleTypeIL [ty])
 
---------------------------------------------------------------------
-
+-- ||||||||||||||||||||||| Let-Flattening |||||||||||||||||||||||{{{
 -- Because buildLet is applied bottom-to-top, we maintain the invariant
 -- that the bound form in the result is never a binder itself.
 buildLet :: Ident -> KNExpr -> KNExpr -> KNExpr
@@ -240,6 +236,7 @@ nestedLetsDo exprs g = nestedLets' exprs [] g
 -- Usually, we can get by with a pure continuation.
 nestedLets :: [KNExpr] -> ([AIVar] -> KNExpr) -> KN KNExpr
 nestedLets exprs g = nestedLetsDo exprs (\vars -> return $ g vars)
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- Produces a list of (K-normalized) functions, eta-expansions of each ctor.
 -- Specifically, given a data type T (A1::K1) ... (An::Kn) with
@@ -272,6 +269,7 @@ kNormalCtors ctx dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
                   , fnFreeVars = []
                   }
 
+-- ||||||||||||||||||||||||| Boilerplate ||||||||||||||||||||||||{{{
 -- This is necessary due to transformations of AIIf and nestedLets
 -- introducing new bindings, which requires synthesizing a type.
 typeKN :: KNExpr -> TypeIL
@@ -345,4 +343,4 @@ instance Structured KNExpr where
             KNArrayPoke    v b i    -> [var v, var b, var i]
             KNVar _                 -> []
             KNTyApp _t v _argty     -> [var v]
-
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
