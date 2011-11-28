@@ -155,7 +155,7 @@ kNormalize expr =
 varOrThunk :: (AIVar, TypeIL) -> KN KNExpr
 varOrThunk (a, targetType) = do
   case needsClosureWrapper a targetType of
-    Just fnty -> do withThunkFor a fnty (\z -> KNVar z)
+    Just fnty -> do withThunkFor a fnty
     Nothing -> return (KNVar a)
   where
     needsClosureWrapper a ty =
@@ -164,11 +164,11 @@ varOrThunk (a, targetType) = do
             Just $ FnTypeIL x y z FT_Func
         _ -> Nothing
 
-    withThunkFor :: AIVar -> TypeIL -> (AIVar -> KNExpr) -> KN KNExpr
-    withThunkFor v fnty k = do
+    withThunkFor :: AIVar -> TypeIL -> KN KNExpr
+    withThunkFor v fnty = do
       fn <- mkThunkAround v fnty
       id <- knFresh ".kn.letfn"
-      return $ KNLetFuns [id] [fn] $ k (TypedId fnty id)
+      return $ KNLetFuns [id] [fn] $ KNVar (TypedId fnty id)
 
       where
 
