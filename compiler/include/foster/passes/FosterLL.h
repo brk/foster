@@ -360,6 +360,7 @@ struct LLRetVal : public LLTerminator {
 struct LLBr : public LLTerminator {
   std::string block_id;
   std::vector<LLVar*> args;
+  explicit LLBr(std::string b) : block_id(b) {}
   explicit LLBr(std::string b, const std::vector<LLVar*>& args)
                  : block_id(b), args(args) {}
   virtual void codegenTerminator(CodegenPass* pass);

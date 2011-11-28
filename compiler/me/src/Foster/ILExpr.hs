@@ -120,8 +120,7 @@ lambdaLift f freeVars = do
 -- for representing basic blocks because they're easier to build.
 basicBlock hooplBlock = blockGraph hooplBlock
 
-jumpTo bbg = case bbgEntry bbg of (bid, []) -> ILast $ CFBr bid []
-                                  (_b, _vs) -> error $ "Can't jump to block w/ args"
+jumpTo bbg = case bbgEntry bbg of (bid, _) -> ILast $ CFBr bid undefined
 
 -- We serialize a basic block graph by computing a depth-first search
 -- starting from the graph's entry block.

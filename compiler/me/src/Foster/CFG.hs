@@ -19,7 +19,7 @@ module Foster.CFG
 
 import Foster.Base
 import Foster.TypeIL(TypeIL(..), AIVar)
-import Foster.KNExpr(KNExpr(..), typeKN)
+import Foster.KNExpr(KNExpr(..), typeKN, TailQ(..))
 import Foster.Letable(Letable(..))
 
 import Compiler.Hoopl
@@ -50,12 +50,16 @@ cfgComputeCFG fn = do
 
 -- A helper for the CFG functions above, to run computeBlocks.
 internalComputeCFG :: IORef Int -> Fn KNExpr TypeIL -> IO CFGState
-internalComputeCFG uniqRef fn =
-  let preblock = (Left "postalloca" , [], []) in
-  let state0 = CFGState uniqRef (Just preblock) [] in
+internalComputeCFG uniqRef fn = do
+  let state0 = CFGState uniqRef Nothing [] Nothing Nothing
   execStateT runComputeBlocks state0
   where
-    runComputeBlocks = do computeBlocks (fnBody fn) Nothing (ret fn)
+    runComputeBlocks = do
+        header <- cfgFresh "postalloca"
+        cfgSetHeader header
+        cfgSetFnVar (fnVar fn)
+        cfgNewBlock header (fnVars fn)
+        computeBlocks (fnBody fn) Nothing (ret fn)
 
     -- Make sure that the main function returns void.
     ret f var = if isMain f then cfgEndWith (CFRetVoid)
@@ -83,6 +87,7 @@ caseIf a b = [(pat True, a), (pat False, b)]
 -- which determines what to do with the let-bound result of the expression.
 computeBlocks :: KNExpr -> Maybe Ident -> (AIVar -> CFG ()) -> CFG ()
 computeBlocks expr idmaybe k = do
+    Just fnvar <- gets cfgCurrentFnVar
     case expr of
         KNIf t v a b -> do
             computeBlocks (KNCase t v $ caseIf a b) idmaybe k
@@ -165,6 +170,11 @@ computeBlocks expr idmaybe k = do
             cfgNewBlock case_cont [phi]
             k phi
 
+        -- Direct tail recursion becomes a jump (reassigning the arg slots).
+        (KNCall YesTail _ b vs) | fnvar == b -> do
+                Just header <- gets cfgHeader
+                cfgEndWith (CFBr header vs)
+
         KNVar v -> k v
         _ -> do cfgAddLet idmaybe (knToLetable expr) (typeKN expr) >>= k
   where
@@ -176,7 +186,7 @@ computeBlocks expr idmaybe k = do
          KNInt        t i    -> ILInt        t i
          KNTuple      vs     -> ILTuple      vs
          KNCallPrim   t p vs -> ILCallPrim   t p vs
-         KNCall       t b vs -> ILCall       t b vs
+         KNCall _     t b vs -> ILCall       t b vs
          KNAppCtor    t c vs -> ILAppCtor    t c vs
          KNAlloc      v      -> ILAlloc      v
          KNDeref      v      -> ILDeref      v
@@ -203,14 +213,6 @@ computeBlocks expr idmaybe k = do
     cfgFreshId :: String -> CFG Ident
     cfgFreshId s = do u <- cfgNewUniq ; return (Ident (T.pack s) u)
 
-    cfgNewBlock :: BlockId -> [AIVar] -> CFG ()
-    cfgNewBlock bid phis = do
-        old <- get
-        case cfgPreBlock old of
-            Nothing      -> do put (old { cfgPreBlock = Just (Right bid, phis, []) })
-            Just (id, _, _) -> error $ "Tried to start new block "
-                                   ++ " with unfinished old block " ++ show id
-
     cfgAddMiddle :: Insn O O -> CFG ()
     cfgAddMiddle mid = do
         old <- get
@@ -226,15 +228,20 @@ cfgEndWith last = do
     case cfgPreBlock old of
         Nothing          -> error $ "Tried to finish block but no preblock!"
                                    ++ " Tried to end with " ++ show last
-        Just (stringOrBlockId, phis, mids) -> do
-            id <- case stringOrBlockId of
-                    Left s -> cfgFresh s
-                    Right bid -> return bid
+        Just (id, phis, mids) -> do
             let first = mkFirst (ILabel (id, phis))
             let middles = mkMiddles (Prelude.reverse mids)
             let newblock = first <*> middles <*> mkLast (ILast last)
             put (old { cfgPreBlock     = Nothing
                      , cfgAllBlocks    = newblock : (cfgAllBlocks old) })
+
+cfgNewBlock :: BlockId -> [AIVar] -> CFG ()
+cfgNewBlock bid phis = do
+    old <- get
+    case cfgPreBlock old of
+        Nothing      -> do put (old { cfgPreBlock = Just (bid, phis, []) })
+        Just (id, _, _) -> error $ "Tried to start new block "
+                               ++ " with unfinished old block " ++ show id
 
 cfgFresh :: String -> CFG BlockId
 cfgFresh s = do u <- freshLabel ; return (s, u)
@@ -245,6 +252,8 @@ cfgNewUniq = do uref <- gets cfgUniq ; mutIORef uref (+1)
     mutIORef :: IORef a -> (a -> a) -> CFG a
     mutIORef r f = liftIO $ modifyIORef r f >> readIORef r
 
+cfgSetHeader header = do old <- get ; put old { cfgHeader = Just header }
+cfgSetFnVar fnvar = do old <- get ; put old { cfgCurrentFnVar = Just fnvar }
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||| CFG Data Types |||||||||||||||||||||||{{{
@@ -265,12 +274,18 @@ data Insn e x where
 
 data CFGState = CFGState {
     cfgUniq         :: IORef Uniq
-  , cfgPreBlock     :: Maybe (Either String BlockId, [AIVar], [Insn O O])
+  , cfgPreBlock     :: Maybe (BlockId, [AIVar], [Insn O O])
   , cfgAllBlocks    :: [Graph Insn C C]
+  , cfgHeader       :: Maybe BlockId
+  , cfgCurrentFnVar :: Maybe AIVar
 }
 
 type CFG = StateT CFGState IO
 instance UniqueMonad CFG where freshUnique = cfgNewUniq >>= return . intToUnique
+
+instance Eq AIVar where
+  (TypedId _ x) == (TypedId _ y) = x == y
+
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 instance NonLocal Insn where

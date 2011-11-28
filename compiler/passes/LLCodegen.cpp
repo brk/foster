@@ -120,6 +120,10 @@ llvm::Value* emitFakeComment(std::string s) {
                                builder.GetInsertBlock());
 }
 
+bool isEnvPtr(llvm::Value* v) {
+  return pystring::startswith(v->getName().str(), ".env");
+}
+
 } // }}} namespace
 
 namespace foster {
@@ -300,10 +304,13 @@ void LLProc::codegenProc(CodegenPass* pass) {
   // We begin by creating stack slots/GC roots to hold dynamically-allocated
   // pointer parameters. POSSIBLE OPTIMIZATION: This could be elided if we
   // knew that no observable GC could occur in the function's extent.
+
   for (Function::arg_iterator AI = F->arg_begin();
                               AI != F->arg_end(); ++AI) {
-    llvm::Value* slot = ensureImplicitStackSlot(AI, pass);
-    pass->insertScopedValue(AI->getName(), slot);
+    if (isEnvPtr(AI)) { // Non-envptr args get stack slots from postalloca phis.
+      llvm::Value* slot = ensureImplicitStackSlot(AI, pass);
+      pass->insertScopedValue(AI->getName(), slot);
+    }
   }
 
   EDiag() << "codegennign blocks for fn " << F->getName();
@@ -335,12 +342,16 @@ void codegenBlocks(std::vector<LLBlock*> blocks, CodegenPass* pass,
   }
 
   ASSERT(blocks.size() > 0) << F->getName() << " had no blocks!";
-  // Make sure we branch from the entry block to the first 'computation' block.
-  builder.CreateBr(blocks[0]->bb);
-
+  llvm::BasicBlock* savedBB = builder.GetInsertBlock();
   for (size_t i = 0; i < blocks.size(); ++i) {
     initializeBlockPhis(blocks[i]);
   }
+
+  // Make sure we branch from the entry block to the first 'computation' block
+  // which will either be a case analysis on the env parameter, or postalloca.
+  builder.SetInsertPoint(savedBB);
+  LLBr br(blocks[0]->block_id);
+  br.codegenTerminator(pass);
 
   pass->worklistBlocks.clear();
   pass->scheduleBlockCodegen(blocks[0]);
@@ -404,17 +415,14 @@ void LLRetVal::codegenTerminator(CodegenPass* pass) {
   }
 }
 
-void LLBr::codegenTerminator(CodegenPass* pass) {
-  LLBlock* block = pass->lookupBlock(this->block_id);
-
-  ASSERT(this->args.size() == block->phiNodes.size())
+void passPhisAndBr(LLBlock* block, const std::vector<llvm::Value*>& args) {
+  ASSERT(args.size() == block->phiNodes.size())
         << "from " << builder.GetInsertBlock()->getName().str() << " : "
         << "to " << block->bb->getName().str() << " : "
-        << "have " << this->args.size() << " args; "
+        << "have " << args.size() << " args; "
         << "need " << block->phiNodes.size();
-
-  for (size_t i = 0; i < this->args.size(); ++i) {
-    llvm::Value* v = pass->emit(this->args[i], NULL);
+  for (size_t i = 0; i < args.size(); ++i) {
+    llvm::Value* v = args[i];
     if (v->getType()->isVoidTy()) {
       v = getUnitValue(); // Can't pass a void value!
     }
@@ -425,6 +433,24 @@ void LLBr::codegenTerminator(CodegenPass* pass) {
     block->phiNodes[i]->addIncoming(v, builder.GetInsertBlock());
   }
   builder.CreateBr(block->bb);
+}
+
+void LLBr::codegenTerminator(CodegenPass* pass) {
+  LLBlock* block = pass->lookupBlock(this->block_id);
+
+  if (this->args.empty() && pystring::startswith(block_id, "postalloca"))
+  { // The "first" branch into the postalloca won't pass any actual args, so we
+    // want to use the "real" function args (leaving out the invariant env ptr).
+    // Other branches to postalloca will pass the new values for the arg slots.
+    std::vector<llvm::Value*> args;
+    Function* F = builder.GetInsertBlock()->getParent();
+    for (Function::arg_iterator AI = F->arg_begin(); AI != F->arg_end(); ++AI) {
+      if (!isEnvPtr(AI)) { args.push_back(AI); }
+    }
+    passPhisAndBr(block, args);
+  } else {
+    passPhisAndBr(block, codegenAll(pass, this->args));
+  }
 }
 
 void addAndEmitTo(Function* f, BasicBlock* bb) {

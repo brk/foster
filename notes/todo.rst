@@ -41,6 +41,7 @@ TODO: minor optimizations
 * Eliminating redundant stack slots for phi nodes?
 * Arity raising/unit elimination
 * Worker/wrapper for closures??
+* Move stack stores for invariant function args from postalloca to entry.
 
 TODO loop optimizations
 -----------------------
