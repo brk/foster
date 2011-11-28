@@ -270,16 +270,16 @@ closureOfKnFn infoMap (self_id, fn) = do
         -- If the body has x and y free, the closure converted body should be
         --     case env of (x, y, ...) -> body end
         newbody <- do
-            let BasicBlockGraph (bodyid, bodyphis) oldbodygraph = fnBody f
+            let BasicBlockGraph bodyentry oldbodygraph = fnBody f
             let norange = MissingSourceRange ""
             let patVar a = P_Variable norange (tidIdent a)
             let cfcase = CFCase envVar [
                            ((P_Tuple norange (map patVar varsOfClosure),
                                                          varsOfClosure)
-                           , bodyid) ]
+                           , fst bodyentry) ]
             -- We change the entry block of the new body (versus the old).
             lab <- freshLabel
-            let bid = (("caseof", lab), bodyphis)
+            let bid = (("caseof", lab), [])
             let caseblock = mkFirst (ILabel bid) <*>
                             mkMiddles []         <*>
                             mkLast (ILast cfcase)
