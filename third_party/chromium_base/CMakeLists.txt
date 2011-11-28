@@ -2,8 +2,6 @@ set (CHROMIUM_BASE ${PROJECT_SOURCE_DIR}/third_party/chromium_base)
 
 set (CHROMIUM_BASE_ARCH x86)
 
-        #${CHROMIUM_BASE}/base/tracking_info.cc
-        #${CHROMIUM_BASE}/base/tracked_objects.cc
 set (BASE_SOURCES
 	${CHROMIUM_BASE}/base/at_exit.cc
         ${CHROMIUM_BASE}/base/callback_internal.cc
@@ -23,7 +21,10 @@ set (BASE_SOURCES
 	${CHROMIUM_BASE}/base/string_piece.cc
 	${CHROMIUM_BASE}/base/stringprintf.cc
 	${CHROMIUM_BASE}/base/pickle.cc
+	${CHROMIUM_BASE}/base/profiler/tracked_time.cc
 	${CHROMIUM_BASE}/base/time.cc
+        ${CHROMIUM_BASE}/base/tracking_info.cc
+        ${CHROMIUM_BASE}/base/tracked_objects.cc
 	${CHROMIUM_BASE}/base/memory/ref_counted.cc
         ${CHROMIUM_BASE}/base/memory/singleton.cc
 	${CHROMIUM_BASE}/base/threading/thread_restrictions.cc
@@ -53,7 +54,7 @@ endif (${APPLE})
 if ("${UNIX}" AND NOT "${APPLE}")
   set (BASE_SOURCES
     ${BASE_SOURCES}
-	${CHROMIUM_BASE}/base/sys_string_conversions_linux.cc
+	${CHROMIUM_BASE}/base/sys_string_conversions_posix.cc
 	${CHROMIUM_BASE}/base/time_posix.cc
   )
 endif ("${UNIX}" AND NOT "${APPLE}")
@@ -76,6 +77,7 @@ if (${UNIX})
 	${CHROMIUM_BASE}/base/safe_strerror_posix.cc
 	${CHROMIUM_BASE}/base/threading/platform_thread_posix.cc
 	${CHROMIUM_BASE}/base/threading/thread_local_posix.cc
+	${CHROMIUM_BASE}/base/threading/thread_local_storage_posix.cc
 	${CHROMIUM_BASE}/base/debug/debugger_posix.cc
   )
 endif (${UNIX})
@@ -91,6 +93,7 @@ if (${WIN32})
 	${CHROMIUM_BASE}/base/debug/debugger_win.cc
 	${CHROMIUM_BASE}/base/threading/platform_thread_win.cc
 	${CHROMIUM_BASE}/base/threading/thread_local_win.cc
+	${CHROMIUM_BASE}/base/threading/thread_local_storage_win.cc
 	${CHROMIUM_BASE}/base/sys_string_conversions_win.cc
   )
 endif (${WIN32})
