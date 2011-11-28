@@ -21,6 +21,20 @@ using foster::builder;
 
 ////////////////////////////////////////////////////////////////////
 
+CodegenPass::ValueScope* CodegenPass::newScope(const std::string& scopeName) {
+  return valueSymTab.newScope(scopeName);
+}
+
+void CodegenPass::insertScopedValue(const std::string& name, llvm::Value* v) {
+  valueSymTab.insert(name, v);
+}
+
+void CodegenPass::popExistingScope(ValueScope* scope) {
+  valueSymTab.popExistingScope(scope);
+}
+
+////////////////////////////////////////////////////////////////////
+
 void emitFosterAssert(llvm::Module* mod, llvm::Value* cond, const char* cstr) {
   Value* fosterAssert = mod->getFunction("foster__assert");
   ASSERT(fosterAssert != NULL);

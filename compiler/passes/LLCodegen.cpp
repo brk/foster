@@ -295,7 +295,7 @@ void LLProc::codegenProc(CodegenPass* pass) {
   ASSERT(F->arg_size() == this->argnames.size());
 
   pass->addEntryBB(F);
-  CodegenPass::ValueScope* scope = pass->valueSymTab.newScope(this->getName());
+  CodegenPass::ValueScope* scope = pass->newScope(this->getName());
 
   // We begin by creating stack slots/GC roots to hold dynamically-allocated
   // pointer parameters. POSSIBLE OPTIMIZATION: This could be elided if we
@@ -303,12 +303,12 @@ void LLProc::codegenProc(CodegenPass* pass) {
   for (Function::arg_iterator AI = F->arg_begin();
                               AI != F->arg_end(); ++AI) {
     llvm::Value* slot = ensureImplicitStackSlot(AI, pass);
-    scope->insert(AI->getName(), slot);
+    pass->insertScopedValue(AI->getName(), slot);
   }
 
   EDiag() << "codegennign blocks for fn " << F->getName();
   codegenBlocks(this->blocks, pass, F);
-  pass->valueSymTab.popExistingScope(scope);
+  pass->popExistingScope(scope);
 }
 
 ///}}}//////////////////////////////////////////////////////////////
@@ -376,7 +376,7 @@ void initializeBlockPhis(LLBlock* block) {
 void LLBlock::codegenBlock(CodegenPass* pass) {
   builder.SetInsertPoint(bb);
   for (size_t i = 0; i < this->phiVars.size(); ++i) {
-    pass->valueSymTab.insert(this->phiVars[i]->getName(),
+    pass->insertScopedValue( this->phiVars[i]->getName(),
      ensureImplicitStackSlot(this->phiNodes[i], pass));
   }
   for (size_t i = 0; i < this->mids.size(); ++i) {
@@ -500,7 +500,7 @@ void LLSwitch::codegenTerminator(CodegenPass* pass) {
 ///}}}//////////////////////////////////////////////////////////////
 
 void LLRebindId::codegenMiddle(CodegenPass* pass) {
-  pass->valueSymTab.insert(from, to->codegen(pass));
+  pass->insertScopedValue(from, to->codegen(pass));
 }
 
 void LLBitcast::codegenMiddle(CodegenPass* pass) {
@@ -512,9 +512,9 @@ void LLBitcast::codegenMiddle(CodegenPass* pass) {
   if (pass->needsImplicitLoad.count(v) == 1) {
     llvm::Value* cast_slot = builder.CreateBitCast(v, ptrTo(tgt));
     pass->markAsNeedingImplicitLoads(cast_slot);
-    pass->valueSymTab.insert(from, cast_slot);
+    pass->insertScopedValue(from, cast_slot);
   } else {
-    pass->valueSymTab.insert(from, builder.CreateBitCast(v, tgt));
+    pass->insertScopedValue(from, builder.CreateBitCast(v, tgt));
   }
 }
 
@@ -589,7 +589,7 @@ void LLLetVals::codegenMiddle(CodegenPass* pass) {
                 ? names[i] + "_slot"
                 : names[i]);
     //EDiag() << "inserting " << names[i] << " = " << (exprs[i]->tag) << " -> " << str(b);
-    pass->valueSymTab.insert(names[i], b);
+    pass->insertScopedValue(names[i], b);
   }
 }
 
@@ -835,7 +835,7 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
     // Allocate storage for the closures and populate 'em with code/env values.
     for (size_t i = 0; i < closures.size(); ++i) {
       llvm::Value* clo = closures[i]->codegenClosure(pass, envSlots[i]);
-      pass->valueSymTab.insert(closures[i]->varname, clo);
+      pass->insertScopedValue(closures[i]->varname, clo);
     }
 
     // Stick each closure environment in the symbol table.
@@ -846,7 +846,7 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
       llvm::Value* genPtr = builder.CreateBitCast(envPtr,
                                   builder.getInt8PtrTy(),
                                   closures[i]->envname + ".generic");
-      pass->valueSymTab.insert(closures[i]->envname, genPtr);
+      pass->insertScopedValue(closures[i]->envname, genPtr);
 
       envPtrs.push_back(envPtr);
     }

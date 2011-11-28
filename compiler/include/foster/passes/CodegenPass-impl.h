@@ -79,6 +79,10 @@ struct CodegenPass {
   typedef ValueTable::LexicalScope         ValueScope;
   ValueTable valueSymTab;
 
+  ValueScope* newScope(const std::string&);
+  void insertScopedValue(const std::string&, llvm::Value*);
+  void popExistingScope(ValueScope*);
+
   std::map<std::string, DataTypeAST*> isKnownDataType;
   std::map<llvm::Function*, llvm::Instruction*> allocaPoints;
   std::set<llvm::Value*> needsImplicitLoad;
