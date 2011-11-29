@@ -97,6 +97,10 @@ static cl::opt<bool>
 optOptimizeZero("O0",
   cl::desc("[foster] Disable optimization passes after linking with standard library"));
 
+static cl::opt<string>
+optCFI("fosterc-cfi",
+  cl::desc("[foster] CFI directives: {yes,no}, default to platform-specific behavior"));
+
 static cl::list<const PassInfo*, bool, PassNameParser>
 cmdLinePassList(cl::desc("Optimizations available:"));
 
@@ -234,14 +238,24 @@ std::string HOST_TRIPLE = LLVM_DEFAULT_TARGET_TRIPLE;
 #error Unable to determine host triple!
 #endif
 
-llvm::Reloc::Model getRelocModel() {
-  if (HOST_TRIPLE.find("darwin") != string::npos) {
+llvm::Reloc::Model relocModel = llvm::Reloc::Default;
+
+void configureTargetDependentOptions(const llvm::Triple& triple,
+                                     TargetMachine::CodeGenFileType filetype) {
+  if (triple.isMacOSX()) {
     // Applications on Mac OS X (x86) must be compiled with relocatable symbols,
     // which is -mdynamic-no-pic (GCC) or -relocation-model=dynamic-no-pic (llc).
-    // Setting the flag here gives us the proper default, while still allowing
-    // the user to override via command line options if need be.
-    return llvm::Reloc::DynamicNoPIC;
-  } else return llvm::Reloc::Default;
+    relocModel = llvm::Reloc::DynamicNoPIC;
+
+    if (optCFI.empty() && filetype == TargetMachine::CGFT_AssemblyFile) {
+      // Mac OS X system assembler doesn't support .cfi directives yet
+      optCFI = "no";
+    }
+  }
+
+  // Ensure we always compile with -disable-fp-elim
+  // to enable simple stack walking for the GC.
+  llvm::NoFramePointerElim = true;
 }
 
 void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
@@ -263,6 +277,7 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
   if (triple.getTriple().empty()) {
     triple.setTriple(HOST_TRIPLE);
   }
+  configureTargetDependentOptions(triple, filetype);
 
   const Target* target = NULL;
   string err;
@@ -273,7 +288,7 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
     exit(1);
   }
 
-  // TODO: LLVM 3.0 and earlier will crashe in X86ISelDAG with CodeGenOpt::None
+  // TODO: LLVM 3.0 and earlier will crash in X86ISelDAG with CodeGenOpt::None
   // when using llvm.gcroot of bitcast values.
   // http://llvm.org/bugs/show_bug.cgi?id=10799
   CodeGenOpt::Level
@@ -285,7 +300,7 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
   TargetMachine* tm = target->createTargetMachine(triple.getTriple(),
                                                  "", // CPU
                                                  "", // Features
-                                                 getRelocModel(),
+                                                 relocModel,
                                                  cgModel
 #ifdef LLVM_DEFAULT_TARGET_TRIPLE
                                                , cgOptLevel
@@ -297,7 +312,9 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
     exit(1);
   }
 
+  tm->setMCUseCFI(optCFI != "no");
   tm->setAsmVerbosityDefault(true);
+  // TODO don't use .loc directives for OS X 10.5 and prior.
 
   PassManager passes;
   // Use specific target data if available, else generic target data.
@@ -351,11 +368,6 @@ int main(int argc, char** argv) {
   sys::PrintStackTraceOnErrorSignal();
   PrettyStackTraceProgram X(argc, argv);
   llvm_shutdown_obj Y;
-  ScopedTimer* wholeProgramTimer = new ScopedTimer("total");
-
-  // Ensure we always compile with -disable-fp-elim
-  // to enable simple stack walking for the GC.
-  llvm::NoFramePointerElim = true;
 
   cl::SetVersionPrinter(&printVersionInfo);
   cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster compiler backend (LLVM optimization)\n");
@@ -365,6 +377,7 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  ScopedTimer* wholeProgramTimer = new ScopedTimer("total");
   foster::initializeLLVM();
   calculateOutputNames();
 
