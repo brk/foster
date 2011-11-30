@@ -288,12 +288,9 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
     exit(1);
   }
 
-  // TODO: LLVM 3.0 and earlier will crash in X86ISelDAG with CodeGenOpt::None
-  // when using llvm.gcroot of bitcast values.
-  // http://llvm.org/bugs/show_bug.cgi?id=10799
   CodeGenOpt::Level
          cgOptLevel = optOptimizeZero
-                        ? CodeGenOpt::Less // None, Default
+                        ? CodeGenOpt::None
                         : CodeGenOpt::Aggressive;
 
   CodeModel::Model cgModel = CodeModel::Default;
@@ -342,6 +339,13 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
     llvm::errs() << "Unable to emit assembly file! " << "\n";
     exit(1);
   }
+
+  // TODO: LLVM 3.0 and earlier will crash in X86ISelDAG with CodeGenOpt::None
+  // when using llvm.gcroot of bitcast values and FastISel.
+  // http://llvm.org/bugs/show_bug.cgi?id=10799
+  llvm::EnableFastISel = false;
+  // We disable here (after adding passes) because adding passes causes LLVM
+  // to reset the flag based on a command-line option that we can't access.
 
   passes.run(*mod);
 }
