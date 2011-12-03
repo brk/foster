@@ -137,55 +137,6 @@ void fprint_mp_int(FILE* f, mp_int m, int radix) {
 using namespace foster::runtime;
 
 extern "C" {
-  // This interface is slightly awkward, with the extra indirection, because:
-  // 1) pthreads wants a function that returns a void*,
-  //    which foster doesn't yet do, and
-  // 2) llvm-g++ lowers the closure struct type given above, so foster sees
-  //    a function of two pointer parameters instead of one struct type param.
-  //    (Clang++ lowers to a byval pointer, which is better for us.)
-  //    Thus, in order to pass a closure struct to a C function lowered by
-  //    llvm-g++, we can:
-  //      a) Special-case this function in the typecheck and codegen passes (ew!)
-  //      b) Add a generalized automatic-unpacking pass
-  //         that applies to all functions (ew!)
-  //      c) Track the origin of functions and only automatically unpack structs
-  //         if we're calling a C function, and the LLVM types only match with
-  //         the unpacking applied. (ugh!)
-  //
-  // The easiest route would to (implicitly) require that closures
-  // be converted to standalone trampolines before being passed in.
-  // Unfortunately, trampolines are not universally available on all platforms,
-  // for security reasons (they require mutable + executable memory).
-  //
-  // TODO: The C wrapper may end up being necessary anyways, in order
-  // to pass thread id information (as well as the env) back to the callback.
-  // Need to decide if and how thread ids and such should be handled.
-  //
-//int32_t thread_create_i32(FosterClosurei32 c) {
-//  int32_t id = threadinfo.size();
-//  threadinfo.push_back(pthread_t());
-//  return pthread_create(&threadinfo[id], NULL, i32_closure_invoker, (void*) &c);
-//}
-//
-//int32_t thread_waitall() {
-//  int nthreads = threadinfo.size();
-//  for (int i = 0; i < nthreads; ++i) {
-//    pthread_join(threadinfo[i], NULL);
-//  }
-//  threadinfo.clear();
-//  return nthreads;
-//}
-
-//int32_t c_invoke_closure_i32(FosterClosurei32 clo) { return clo.code(clo.env); }
-
-// The main complication with supporting a function such as this,
-// which allows top-level Foster functions to be passed to C as raw
-// function pointers, is that the compiler must duplicate the function
-// body and give the duplicate C callconv, instead of fastcc (or whatever).
-// Currently, the compiler does not create safely callable duplicates
-// for use by C, but we should eventually.
-//int32_t c_invoke_fnptr_to_i32(int32_t (*f)()) { return f(); }
-
 
 //////////////////////////////////////////////////////////////////
 
@@ -225,9 +176,6 @@ void  print_i64(int64_t x) { fprint_i64(stdout, x); }
 void expect_i64(int64_t x) { fprint_i64(stderr, x); }
 void expect_i64x(int64_t x) { fprint_i64x(stderr, x); }
 void expect_i64b(int64_t x) { fprint_i64b(stderr, x); }
-
-//void  print_i8(char x) { fprint_i8(stdout, x); }
-//void expect_i8(char x) { fprint_i8(stderr, x); }
 
 // C type "bool" becomes LLVM "i8 zeroext", not "i1"
 void  print_i1(bool x) { fprintf(stdout, (x ? "true\n" : "false\n")); }

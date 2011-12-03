@@ -7,6 +7,12 @@ Far future: GHC plugin to dump strict Haskell to Foster?
 Describe similarities/differences of CFG/SSA/CPS
         Minor delta in Hoopl representation! Call becomes a terminator.
 
+Optimization idea: given IL -> Src transform,
+               compile    === compile | uncompile | compile
+               Src -> IL  === Src -> IL -> Src -> IL
+  (restricted case of IL  ===        IL -> Src -> IL)
+
+
 General Compiler Structure Improvements
 ---------------------------------------
 * Move pattern match compilation earlier in the pipeline?
