@@ -658,11 +658,11 @@ evalCoroPrimitive CoroYield _gs _ = error $ "Wrong arguments to coro_yield"
 -- ||||||||||||||||||||  Helpers & Boilerplate  |||||||||||||||||{{{
 printString  gs s = do
   runOutput (outCSLn Blue s)
-  appendFile (errFile gs) (s ++ "\n")
+  appendFile (outFile gs) (s ++ "\n")
 
 expectString gs s = do
   runOutput (outCSLn Green s)
-  appendFile (outFile gs) (s ++ "\n")
+  appendFile (errFile gs) (s ++ "\n")
 
 --------------------------------------------------------------------
 

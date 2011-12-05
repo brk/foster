@@ -216,6 +216,8 @@ def run_one_test(testpath, paths, tmpdir):
     did_fail = run_diff(exp_filename, act_filename)
     if (not did_fail) and options and options.interpret:
       did_fail = run_diff(act_filename, iact_filename)
+      if did_fail:
+        print "Interpreter output differed!"
   else:
     did_fail = True
 
