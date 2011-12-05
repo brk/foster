@@ -374,19 +374,10 @@ typecheckArrayRead rng _base (TupleTypeAST _) (AnnInt {}) _maybeExpTy =
     tcFails [out $ "ArrayReading tuples is not allowed;"
                 ++ " use pattern matching instead!" ++ highlightFirstLine rng]
 
-typecheckArrayRead rng base (ArrayTypeAST t) i@(AnnInt {}) (Just expTy) = do
-    unify t expTy (Just "arrayread[int] expected type")
-    -- TODO make sure i is not negative or too big
-    return (AnnArrayRead rng t base i)
-
-typecheckArrayRead rng base (ArrayTypeAST t) i@(AnnInt {}) Nothing = do
-    -- TODO make sure i is not negative or too big
-    return (AnnArrayRead rng t base i)
-
 -- base[aiexpr]
 typecheckArrayRead rng base (ArrayTypeAST t) aiexpr maybeExpTy = do
     -- TODO check aiexpr type is compatible with Word
-    unify t (typeAST aiexpr) (Just "arrayread type")
+    unify (ArrayTypeAST t) (typeAST base) (Just "arrayread type")
     case maybeExpTy of
       Nothing -> return ()
       Just expTy -> unify t expTy (Just "arrayread expected type")
@@ -408,10 +399,10 @@ typecheckArrayRead rng _base baseType _index maybeExpTy =
 typecheckArrayPoke rng c base (ArrayTypeAST t) aiexpr maybeExpTy = do
 -- {{{
     -- TODO check aiexpr type is compatible with Word
-    unify t (typeAST aiexpr) (Just "arraypoke type")
+    unify t (typeAST c) (Just "arraypoke type")
     case maybeExpTy of
       Nothing -> return ()
-      Just expTy -> unify t expTy (Just "arraypoke expected type")
+      Just expTy -> unify t expTy (Just $ "arraypoke expected type: " ++ show expTy)
 
     return (AnnArrayPoke rng t c base aiexpr)
 

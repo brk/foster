@@ -400,6 +400,8 @@ stepExpr gs expr = do
                           evalNamedPrimitive (T.unpack $ identPrefix id) gs args
           PrimOp op size -> return $
               withTerm gs (SSTmValue $ evalPrimitiveOp size op args)
+          PrimIntTrunc from to -> return $
+              withTerm gs (SSTmValue $ evalPrimitiveIntTrunc from to args)
           CoroPrim prim _t1 _t2 -> evalCoroPrimitive prim gs args
 
     ICall b vs ->
@@ -490,38 +492,38 @@ matchPatterns pats vals = do
 -- |||||||||||||||||||||| Primitive Operations ||||||||||||||||||{{{
 arraySlotLocation arr n = SSLocation (arr ! n)
 
-liftInt2 :: (Integral a) => (a -> a -> b) ->
-          Integer -> Integer -> b
+liftInt2 :: (Integral a) => (a -> a -> b) -> Integer -> Integer -> b
 liftInt2 f i1 i2 = f (fromInteger i1) (fromInteger i2)
 
-liftInt :: (Integral a) => (a -> b) -> Integer -> b
+liftInt  :: (Integral a) => (a -> b)      -> Integer -> b
 liftInt f i1 =     f (fromInteger i1)
 
-modifyInt32sWith :: (Int32 -> Int32 -> Int32) -> Integer -> Integer -> Integer
-modifyInt32sWith f i1 i2 = fromIntegral (liftInt2 f i1 i2)
+modifyIntWith :: (Integral a) => Integer -> (a -> a) -> Integer
+modifyIntWith i1 f = fromIntegral (liftInt f i1)
 
-modifyInt32With :: (Int32 -> Int32) -> Integer -> Integer
-modifyInt32With f i1 =     fromIntegral (liftInt f i1)
+modifyIntsWith :: (Integral a) => Integer -> Integer -> (a -> a -> a) -> Integer
+modifyIntsWith i1 i2 f = fromIntegral (liftInt2 f i1 i2)
 
-ashr32   a b = shiftR a (fromIntegral b)
-shl32    a b = shiftL a (fromIntegral b)
+lowShiftBits k b = (.&.) (k - 1) (fromIntegral b)
 
-tryGetInt32PrimOp2Int32 :: String -> Maybe (Integer -> Integer -> Integer)
-tryGetInt32PrimOp2Int32 name =
+ashr k a b = shiftR a (lowShiftBits k b)
+shl  k a b = shiftL a (lowShiftBits k b)
+
+tryGetFixnumPrimOp :: (Bits a, Integral a) => Int -> String -> Maybe (a -> a -> a)
+tryGetFixnumPrimOp k name =
   case name of
-    "*"       -> Just (modifyInt32sWith (*))
-    "+"       -> Just (modifyInt32sWith (+))
-    "-"       -> Just (modifyInt32sWith (-))
-    "/"       -> Just (modifyInt32sWith div)
-    "bitashr" -> Just (modifyInt32sWith ashr32)
-    "bitshl"  -> Just (modifyInt32sWith shl32)
-    "bitxor"  -> Just (modifyInt32sWith xor)
-    "bitor"   -> Just (modifyInt32sWith (.|.))
-    "bitand"  -> Just (modifyInt32sWith (.&.))
+    "*"       -> Just (*)
+    "+"       -> Just (+)
+    "-"       -> Just (-)
+    "/"       -> Just div
+    "bitxor"  -> Just xor
+    "bitor"   -> Just (.|.)
+    "bitand"  -> Just (.&.)
+    "bitashr" -> Just (ashr k)
+    "bitshl"  -> Just (shl  k)
     _ -> Nothing
 
-tryGetInt32PrimOp2Bool :: String -> Maybe (Int32 -> Int32 -> Bool)
-tryGetInt32PrimOp2Bool name =
+tryGetFixnumPrimOp2Bool name =
   case name of
     "<"        -> Just ((<))
     "<="       -> Just ((<=))
@@ -533,23 +535,59 @@ tryGetInt32PrimOp2Bool name =
 
 --------------------------------------------------------------------
 
-evalPrimitiveOp :: Int -> String -> [SSValue] -> SSValue
-evalPrimitiveOp 32 opName [SSInt i1, SSInt i2] =
-  case tryGetInt32PrimOp2Int32 opName of
-    (Just fn)       -> SSInt (fn i1 i2)
-    _ -> case tryGetInt32PrimOp2Bool opName of
+evalPrimitiveOp :: IntSizeBits -> String -> [SSValue] -> SSValue
+
+evalPrimitiveOp I64 opName [SSInt i1, SSInt i2] =
+  case tryGetFixnumPrimOp 64 opName of
+    (Just fn)
+      -> SSInt (modifyIntsWith i1 i2 (fn :: Int64 -> Int64 -> Int64))
+    _ -> case tryGetFixnumPrimOp2Bool opName of
           (Just fn) -> SSBool (liftInt2 fn i1 i2)
           _ -> error $ "Unknown primitive operation " ++ opName
 
-evalPrimitiveOp 32 "negate" [SSInt i] = SSInt (negate i)
+evalPrimitiveOp I32 opName [SSInt i1, SSInt i2] =
+  case tryGetFixnumPrimOp 32 opName of
+    (Just fn)
+      -> SSInt (modifyIntsWith i1 i2 (fn :: Int32 -> Int32 -> Int32))
+    _ -> case tryGetFixnumPrimOp2Bool opName of
+          (Just fn) -> SSBool (liftInt2 fn i1 i2)
+          _ -> error $ "Unknown primitive operation " ++ opName
 
-evalPrimitiveOp  1 "bitnot" [SSBool b] = SSBool (not b)
+evalPrimitiveOp I8 opName [SSInt i1, SSInt i2] =
+  case tryGetFixnumPrimOp  8 opName of
+    (Just fn)
+      -> SSInt (modifyIntsWith i1 i2 (fn :: Int8 -> Int8 -> Int8))
+    _ -> case tryGetFixnumPrimOp2Bool opName of
+          (Just fn) -> SSBool (liftInt2 fn i1 i2)
+          _ -> error $ "Unknown primitive operation " ++ opName
 
-evalPrimitiveOp 32 "bitnot" [SSInt i] =
-        SSInt ((modifyInt32With complement) i)
+-- TODO hmm
+evalPrimitiveOp I32 "negate" [SSInt i] = SSInt (negate i)
+
+evalPrimitiveOp  I1 "bitnot" [SSBool b] = SSBool (not b)
+
+evalPrimitiveOp I32 "bitnot" [SSInt i] = SSInt $
+        modifyIntWith i (complement :: Int32 -> Int32)
+
+evalPrimitiveOp I8 "bitnot" [SSInt i] = SSInt $
+        modifyIntWith i (complement :: Int8 -> Int8)
+
+-- Sign extension (on Integers) is a no-op.
+evalPrimitiveOp _ "sext_i32" [SSInt i] = SSInt i
 
 evalPrimitiveOp size opName args =
   error $ "Smallstep.evalPrimitiveOp " ++ show size ++ " " ++ opName ++ " " ++ show args
+
+--------------------------------------------------------------------
+
+trunc8 :: Integer -> Int8
+trunc8 = fromInteger
+
+evalPrimitiveIntTrunc :: IntSizeBits -> IntSizeBits -> [SSValue] -> SSValue
+evalPrimitiveIntTrunc I32 I8 [SSInt i] = SSInt (toInteger $ trunc8 i)
+
+evalPrimitiveIntTrunc from to _args =
+  error $ "Smallstep.evalPrimitiveIntTrunc " ++ show from ++ " " ++ show to
 
 --------------------------------------------------------------------
 
@@ -564,11 +602,11 @@ evalNamedPrimitive primName gs [val] | isExpectFunction primName =
          return $ withTerm gs unit
 
 evalNamedPrimitive "expect_i32b" gs [SSInt i] =
-      do expectString gs (showBits32 i)
+      do expectString gs (showBits 32 i)
          return $ withTerm gs unit
 
 evalNamedPrimitive "print_i32b" gs [SSInt i] =
-      do printString gs (showBits32 i)
+      do printString gs (showBits 32 i)
          return $ withTerm gs unit
 
 evalNamedPrimitive "force_gc_for_debugging_purposes" gs _args =
@@ -666,8 +704,8 @@ expectString gs s = do
 
 --------------------------------------------------------------------
 
-showBits32 n =
-  let bits = map (testBit n) [0 .. (32 - 1)] in
+showBits k n = -- k = 32, for example
+  let bits = map (testBit n) [0 .. (k - 1)] in
   let s = map (\b -> if b then '1' else '0') bits in
   (reverse s) ++ "_2"
 
@@ -675,6 +713,7 @@ isPrintFunction name =
   case name of
     "print_i64"  -> True
     "print_i32"  -> True
+    "print_i8"   -> True
     "print_i1"   -> True
     _ -> False
 
@@ -682,6 +721,7 @@ isExpectFunction name =
   case name of
     "expect_i64" -> True
     "expect_i32" -> True
+    "expect_i8"  -> True
     "expect_i1"  -> True
     _ -> False
 

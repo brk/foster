@@ -1,5 +1,6 @@
 main = {
-  arrays    !;
+  arrays        !;
+  arrays8       !;
 };
 
 newDArray32 = { n : Int32 => f : { Int32 => Int32 } =>
@@ -21,3 +22,27 @@ arrays = {
      print_i32 a[opaquely_i32 1];
   end
 };
+
+trunc32to8 = { n : Int32 => primitive_trunc_i32_i8 n; };
+
+newDArray8 = { n : Int32 => f : { Int32 => Int8 } =>
+  let a = allocDArray:[Int8] n;
+      x = (ref n);
+   in
+      until x^ ==Int32 0 then
+          f x^           >^ a[x^ -Int32  1];
+           (x^ -Int32 1) >^ x
+      end;
+    a
+  end
+};
+
+arrays8 = {
+  let a = newDArray8 3 trunc32to8;
+   in
+     expect_i32 3;
+     print_i8 a[opaquely_i32 2];
+  end
+};
+
+

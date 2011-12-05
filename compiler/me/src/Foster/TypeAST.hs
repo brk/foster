@@ -15,6 +15,7 @@ where
 
 import Data.IORef(IORef)
 import Data.Map as Map(fromList, toList)
+import Data.Char as Char(isLetter)
 
 import Foster.Base
 import Foster.Kind
@@ -111,11 +112,15 @@ minimalTupleAST args  = TupleTypeAST args
 mkProcType args rets = FnTypeAST (TupleTypeAST args) (minimalTupleAST rets) CCC    FT_Proc
 mkFnType   args rets = FnTypeAST (TupleTypeAST args) (minimalTupleAST rets) FastCC FT_Func
 mkCoroType args rets = CoroTypeAST (minimalTupleAST args) (minimalTupleAST rets)
+i8  = PrimIntAST I8
 i32 = PrimIntAST I32
 i64 = PrimIntAST I64
 i1  = PrimIntAST I1
 
 primTyVars tyvars = map (\v -> (v, KindAnySizeType)) tyvars
+
+-- These names correspond to (the C symbols of)
+-- functions implemented by the Foster runtime.
 
 primitiveDecls =
     [(,) "expect_i32"  $ mkProcType [i32] []
@@ -125,6 +130,8 @@ primitiveDecls =
 
     ,(,) "expect_i1"   $ mkProcType [i1] []
     ,(,)  "print_i1"   $ mkProcType [i1] []
+    ,(,) "expect_i8"   $ mkProcType [i8] []
+    ,(,)  "print_i8"   $ mkProcType [i8] []
     ,(,) "expect_i32b" $ mkProcType [i32] []
     ,(,)  "print_i32b" $ mkProcType [i32] []
 
@@ -162,42 +169,46 @@ primitiveDecls =
 
     ] ++ (map (\(name, (ty, _op)) -> (name, ty)) $ Map.toList gFosterPrimOpsTable)
 
-gFosterPrimOpsTable = Map.fromList $
-  [(,) "not"           $ (,) (mkFnType [i1] [i1]       ) $ PrimOp "bitnot" 1
-  ,(,) "primitive_sext_i64_i32" $ (,) (mkFnType [i32] [i64]     ) $ PrimOp "sext_i64" 32
-  ,(,) "+Int64"        $ (,) (mkFnType [i64, i64] [i64]) $ PrimOp "+" 64
-  ,(,) "-Int64"        $ (,) (mkFnType [i64, i64] [i64]) $ PrimOp "-" 64
-  ,(,) "*Int64"        $ (,) (mkFnType [i64, i64] [i64]) $ PrimOp "*" 64
-  ,(,) "bitand-Int64"  $ (,) (mkFnType [i64, i64] [i64]) $ PrimOp "bitand"  64
-  ,(,) "bitor-Int64"   $ (,) (mkFnType [i64, i64] [i64]) $ PrimOp "bitor"   64
-  ,(,) "bitxor-Int64"  $ (,) (mkFnType [i64, i64] [i64]) $ PrimOp "bitxor"  64
-  ,(,) "bitshl-Int64"  $ (,) (mkFnType [i64, i64] [i64]) $ PrimOp "bitshl"  64
-  ,(,) "bitlshr-Int64" $ (,) (mkFnType [i64, i64] [i64]) $ PrimOp "bitlshr" 64
-  ,(,) "bitashr-Int64" $ (,) (mkFnType [i64, i64] [i64]) $ PrimOp "bitashr" 64
-  ,(,) "<Int64"        $ (,) (mkFnType [i64, i64] [i1] ) $ PrimOp "<"  64
-  ,(,) ">Int64"        $ (,) (mkFnType [i64, i64] [i1] ) $ PrimOp ">"  64
-  ,(,) "<=Int64"       $ (,) (mkFnType [i64, i64] [i1] ) $ PrimOp "<=" 64
-  ,(,) ">=Int64"       $ (,) (mkFnType [i64, i64] [i1] ) $ PrimOp ">=" 64
-  ,(,) "==Int64"       $ (,) (mkFnType [i64, i64] [i1] ) $ PrimOp "==" 64
-  ,(,) "!=Int64"       $ (,) (mkFnType [i64, i64] [i1] ) $ PrimOp "!=" 64
-  ,(,) "negate-Int64"  $ (,) (mkFnType [i64] [i64]     ) $ PrimOp "negate"  64
-  ,(,) "bitnot-Int64"  $ (,) (mkFnType [i64] [i64]     ) $ PrimOp "bitnot"  64
-  ,(,) "+Int32"        $ (,) (mkFnType [i32, i32] [i32]) $ PrimOp "+" 32
-  ,(,) "-Int32"        $ (,) (mkFnType [i32, i32] [i32]) $ PrimOp "-" 32
-  ,(,) "*Int32"        $ (,) (mkFnType [i32, i32] [i32]) $ PrimOp "*" 32
-  ,(,) "bitand-Int32"  $ (,) (mkFnType [i32, i32] [i32]) $ PrimOp "bitand"  32
-  ,(,) "bitor-Int32"   $ (,) (mkFnType [i32, i32] [i32]) $ PrimOp "bitor"   32
-  ,(,) "bitxor-Int32"  $ (,) (mkFnType [i32, i32] [i32]) $ PrimOp "bitxor"  32
-  ,(,) "bitshl-Int32"  $ (,) (mkFnType [i32, i32] [i32]) $ PrimOp "bitshl"  32
-  ,(,) "bitlshr-Int32" $ (,) (mkFnType [i32, i32] [i32]) $ PrimOp "bitlshr" 32
-  ,(,) "bitashr-Int32" $ (,) (mkFnType [i32, i32] [i32]) $ PrimOp "bitashr" 32
-  ,(,) "srem-Int32"    $ (,) (mkFnType [i32, i32] [i32]) $ PrimOp "srem" 32 -- TODO 64
-  ,(,) "<Int32"        $ (,) (mkFnType [i32, i32] [i1] ) $ PrimOp "<"  32
-  ,(,) ">Int32"        $ (,) (mkFnType [i32, i32] [i1] ) $ PrimOp ">"  32
-  ,(,) "<=Int32"       $ (,) (mkFnType [i32, i32] [i1] ) $ PrimOp "<=" 32
-  ,(,) ">=Int32"       $ (,) (mkFnType [i32, i32] [i1] ) $ PrimOp ">=" 32
-  ,(,) "==Int32"       $ (,) (mkFnType [i32, i32] [i1] ) $ PrimOp "==" 32
-  ,(,) "!=Int32"       $ (,) (mkFnType [i32, i32] [i1] ) $ PrimOp "!=" 32
-  ,(,) "negate-Int32"  $ (,) (mkFnType [i32] [i32]     ) $ PrimOp "negate"  32
-  ,(,) "bitnot-Int32"  $ (,) (mkFnType [i32] [i32]     ) $ PrimOp "bitnot"  32
+intSize I1  = "Bool"
+intSize I8  = "Int8"
+intSize I32 = "Int32"
+intSize I64 = "Int64"
+
+prettyOpName nm bitsize =
+  if Char.isLetter (head nm)
+    then nm ++ "-" ++ intSize bitsize  -- e.g. "bitand-Int32"
+    else nm ++        intSize bitsize
+
+fixnumPrimitives bitsize =
+  let iKK = PrimIntAST bitsize in
+  let mkPrim nm ty = (prettyOpName nm bitsize, (ty, PrimOp nm bitsize)) in
+  [mkPrim "+"       $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "-"       $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "*"       $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "bitand"  $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "bitor"   $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "bitxor"  $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "bitshl"  $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "bitlshr" $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "bitashr" $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "srem"    $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "<"       $ mkFnType [iKK, iKK] [i1]
+  ,mkPrim ">"       $ mkFnType [iKK, iKK] [i1]
+  ,mkPrim "<="      $ mkFnType [iKK, iKK] [i1]
+  ,mkPrim ">="      $ mkFnType [iKK, iKK] [i1]
+  ,mkPrim "=="      $ mkFnType [iKK, iKK] [i1]
+  ,mkPrim "!="      $ mkFnType [iKK, iKK] [i1]
+  ,mkPrim "negate"  $ mkFnType [iKK]      [iKK]
+  ,mkPrim "bitnot"  $ mkFnType [iKK]      [iKK]
   ]
+
+-- These primitive names are known to the interpreter and compiler backends.
+
+gFosterPrimOpsTable = Map.fromList $
+  [(,) "not"                    $ (,) (mkFnType [i1]  [i1]      ) $ PrimOp "bitnot" I1
+  ,(,) "primitive_sext_i64_i32" $ (,) (mkFnType [i32] [i64]     ) $ PrimOp "sext_i64" I32
+  ,(,) "primitive_sext_i8_to_i32"$(,) (mkFnType [i8 ] [i32]     ) $ PrimOp "sext_i32" I8
+  ,(,) "primitive_trunc_i32_i8" $ (,) (mkFnType [i32] [i8 ]     ) $ PrimIntTrunc I32 I8
+  ] ++ fixnumPrimitives I64
+    ++ fixnumPrimitives I32
+    ++ fixnumPrimitives I8

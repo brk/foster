@@ -276,11 +276,15 @@ dumpExpr (MoCall t base args)
 dumpExpr (MoCallPrim t (NamedPrim base) args)
         = dumpCall t (dumpGlobalSymbol base) args (mayTriggerGC base)
 
-dumpExpr (MoCallPrim t (PrimOp op size) args)
-        = dumpCallPrimOp t op size args
+dumpExpr (MoCallPrim t (PrimOp op _size) args)
+        = dumpCallPrimOp t op args
 
 dumpExpr (MoCallPrim t (CoroPrim coroPrim argty retty) args)
         = dumpCallCoroOp t coroPrim argty retty args True
+
+dumpExpr (MoCallPrim t (PrimIntTrunc _from to) args)
+        = dumpCallPrimOp t ("trunc_i" ++ show tosize) args
+        where tosize = intOfSize to
 
 dumpExpr (MoAppCtor t cid args) = dumpAppCtor t cid args
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
@@ -293,11 +297,10 @@ dumpCall t base args mayGC =
                     , PbLetable.type' = Just $ dumpType t
                     , PbLetable.call_may_trigger_gc = Just $ mayGC }
 
-dumpCallPrimOp t op size args =
+dumpCallPrimOp t op args = -- TODO actually use prim_op_size from C++ side.
     P'.defaultValue { PbLetable.tag   = IL_CALL_PRIMOP
                     , PbLetable.parts = fromList $ fmap dumpVar args
                     , PbLetable.prim_op_name = Just $ u8fromString op
-                    , PbLetable.prim_op_size = Just $ intToInt32 size
                     , PbLetable.type' = Just $ dumpType t }
 
 dumpAppCtor t cid args =

@@ -355,8 +355,9 @@ monomorphizeLetable subst expr =
 monoPrim :: MonoSubst -> FosterPrim TypeIL -> FosterPrim MonoType
 monoPrim subst p =
   case p of
-     NamedPrim v        -> NamedPrim (monoVar subst v)
-     PrimOp    n s      -> PrimOp    n s
+     NamedPrim    v     -> NamedPrim (monoVar subst v)
+     PrimOp       n s   -> PrimOp       n s
+     PrimIntTrunc s t   -> PrimIntTrunc s t
      CoroPrim  cp t1 t2 -> CoroPrim  cp (monoType subst t1) (monoType subst t2)
 
 monoAllocInfo :: MonoSubst -> AllocInfo TypeIL -> AllocInfo MonoType

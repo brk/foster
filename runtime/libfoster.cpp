@@ -161,6 +161,9 @@ void expect_intx(mp_int m) { fprint_mp_int(stderr, m, 16); }
 void  print_intb(mp_int m) { fprint_mp_int(stdout, m, 2); }
 void expect_intb(mp_int m) { fprint_mp_int(stderr, m, 2); }
 
+void  print_i8(int8_t x) { fprint_i32(stdout, x); } // implicit conversion
+void expect_i8(int8_t x) { fprint_i32(stderr, x); } // implicit conversion
+
 void  print_i32(int32_t x) { fprint_i32(stdout, x); }
 void expect_i32(int32_t x) { fprint_i32(stderr, x); }
 
