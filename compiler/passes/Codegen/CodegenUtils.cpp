@@ -276,6 +276,21 @@ CodegenPass::allocateMPInt() {
   return builder.CreateCall(mp_int_alloc);
 }
 
+// If _template has type i32, returns (v & 31) unless v is a constant < 32, in
+// which case no mask is necessary to get well-defined cross-platform behavior.
+llvm::Value* getMaskedForShift(IRBuilder<>& b,
+                               llvm::Value* _template, llvm::Value* v) {
+  ASSERT(_template->getType()->isIntegerTy());
+  llvm::IntegerType* t = llvm::cast<llvm::IntegerType>(_template->getType());
+  if (llvm::ConstantInt* c = llvm::dyn_cast<llvm::ConstantInt>(v)) {
+    if (c->getValue().isNonNegative() && c->getValue().slt(t->getBitWidth())) {
+      return v;
+    }
+  }
+  ASSERT(t->isPowerOf2ByteWidth());
+  return b.CreateAnd(v, llvm::ConstantInt::get(t, t->getBitWidth() - 1));
+}
+
 llvm::Value*
 codegenPrimitiveOperation(const std::string& op,
                           IRBuilder<>& b,
@@ -284,6 +299,8 @@ codegenPrimitiveOperation(const std::string& op,
        if (op == "negate") { return b.CreateNeg(VL, "negtmp"); }
   else if (op == "bitnot") { return b.CreateNot(VL, "nottmp"); }
   else if (op == "sext_i64") { return b.CreateSExt(VL, b.getInt64Ty(), "sexti64tmp"); }
+  else if (op == "sext_i32") { return b.CreateSExt(VL, b.getInt32Ty(), "sexti32tmp"); }
+  else if (op == "trunc_i8") { return b.CreateTrunc(VL, b.getInt8Ty(), "trunci8tmp"); }
 
   Value* VR = args[1];
   // Other variants: F (float), NSW (no signed wrap), NUW,
@@ -306,9 +323,9 @@ codegenPrimitiveOperation(const std::string& op,
   else if (op == "bitor") {  return b.CreateOr( VL, VR, "bitortmp"); }
   else if (op == "bitxor") { return b.CreateXor(VL, VR, "bitxortmp"); }
 
-  else if (op == "bitshl") { return b.CreateShl(VL, VR, "shltmp"); }
-  else if (op == "bitlshr") { return b.CreateLShr(VL, VR, "lshrtmp"); }
-  else if (op == "bitashr") { return b.CreateAShr(VL, VR, "ashrtmp"); }
+  else if (op == "bitshl")  { return b.CreateShl(VL,  getMaskedForShift(b, VL, VR), "shltmp"); }
+  else if (op == "bitlshr") { return b.CreateLShr(VL, getMaskedForShift(b, VL, VR), "lshrtmp"); }
+  else if (op == "bitashr") { return b.CreateAShr(VL, getMaskedForShift(b, VL, VR), "ashrtmp"); }
 
   ASSERT(false) << "unhandled op '" << op << "'";
   return NULL;

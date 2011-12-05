@@ -48,6 +48,7 @@ TODO: minor optimizations
 * Arity raising/unit elimination
 * Worker/wrapper for closures??
 * Move stack stores for invariant function args from postalloca to entry.
+* Track integer ranges and omit bitshift masks when possible.
 
 TODO loop optimizations
 -----------------------
