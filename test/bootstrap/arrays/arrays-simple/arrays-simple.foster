@@ -1,0 +1,23 @@
+main = {
+  arrays    !;
+};
+
+newDArray32 = { n : Int32 => f : { Int32 => Int32 } =>
+  let a = allocDArray:[Int32] n;
+      x = (ref n);
+   in
+      until x^ ==Int32 0 then
+          f x^      >^ a[x^ -Int32  1];
+           (x^ -Int32 1) >^ x
+      end;
+    a
+  end
+};
+
+arrays = {
+  let a = newDArray32 2 { n : Int32 => n };
+   in
+      expect_i32 2;
+     print_i32 a[opaquely_i32 1];
+  end
+};
