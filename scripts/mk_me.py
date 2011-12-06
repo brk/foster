@@ -26,6 +26,12 @@ def get_parser(usage):
 def normalize(path):
   return os.path.expanduser(path)
 
+def ghc7plus():
+  import subprocess as sub
+  p = sub.Popen(['ghc','--version'], stdout=sub.PIPE)
+  output, errors = p.communicate()
+  return not 'version 6' in output
+
 if __name__ == "__main__":
   parser = get_parser("%prog --bindir <BINDIR> --root <FOSTER_ROOT> [other args]")
   (options, args) = parser.parse_args()
@@ -49,6 +55,11 @@ if __name__ == "__main__":
 
   if options.profile:
     params['hsflags'] += ' -prof -auto'
+
+  if ghc7plus():
+    # GHC 6 allows all runtime opts to be late-bound,
+    # but GHC 7 does not, by default. Forcefully revert to the old behavior.
+    params['hsflags'] += ' -rtsopts'
 
   cmd = ("ghc --make -i%(srcroot)s/compiler/me/src %(hsflags)s " +
          "%(srcroot)s/compiler/me/src/Main.hs -o %(bindir)s/me") % params

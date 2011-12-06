@@ -116,20 +116,15 @@ find_package(Threads REQUIRED)
 
 ####################### Compilation Rules ##########################
 
-add_custom_target(lib_output_dir
-  COMMAND mkdir -p ${PROJECT_BINARY_DIR}/_nativelibs_
-)
-
 add_custom_command(OUTPUT ${PROJECT_BINARY_DIR}/_bitcodelibs_
          COMMAND mkdir -p ${PROJECT_BINARY_DIR}/_bitcodelibs_)
 
 # Creating the _generated_ directory is easy enough!
-add_custom_command(
-  OUTPUT           ${PROJECT_BINARY_DIR}/_generated_
-                   ${PROJECT_BINARY_DIR}/_nativelibs_
-  COMMAND mkdir -p ${PROJECT_BINARY_DIR}/_generated_
-  COMMAND mkdir -p ${PROJECT_BINARY_DIR}/_nativelibs_
-)
+add_custom_command(OUTPUT ${PROJECT_BINARY_DIR}/_generated_
+         COMMAND mkdir -p ${PROJECT_BINARY_DIR}/_generated_)
+
+add_custom_command(OUTPUT ${PROJECT_BINARY_DIR}/_nativelibs_
+         COMMAND mkdir -p ${PROJECT_BINARY_DIR}/_nativelibs_)
 
 # Use python to build fosterParser.c when grammar/foster.g changes
 add_custom_command(

@@ -7,7 +7,7 @@ module Foster.Infer(
 
 import Data.Map(Map)
 import qualified Data.Map as Map(lookup, empty, insert, findWithDefault, singleton)
-import List(length, elem, lookup)
+import qualified Data.List as List(length, elem, lookup)
 import Data.Maybe(fromMaybe)
 
 import Foster.Base

@@ -5,7 +5,7 @@
 -----------------------------------------------------------------------------
 module Foster.Typecheck(tcSigma) where
 
-import List(length, zip)
+import qualified Data.List as List(length, zip)
 import Control.Monad(liftM, forM_, forM, liftM, liftM2)
 
 import qualified Data.Text as T(Text, pack, unpack)

@@ -10,7 +10,7 @@ import qualified Data.Text as T
 import qualified Data.Bits as Bits(shiftR)
 import Data.Char(toLower)
 import Data.Maybe(fromJust)
-import List(length, elemIndex, reverse)
+import qualified Data.List as List(length, elemIndex, reverse)
 
 import Foster.Base
 import Foster.Context
