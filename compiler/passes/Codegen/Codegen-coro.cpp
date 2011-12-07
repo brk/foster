@@ -25,7 +25,6 @@ using llvm::Function;
 using llvm::FunctionType;
 using llvm::BasicBlock;
 
-using llvm::getGlobalContext;
 using foster::builder;
 using foster::EDiag;
 
@@ -72,7 +71,7 @@ llvm::StructType* getSplitCoroType(
   parts.push_back(foster_generic_coro_t);
   // Multiple coro args added as single struct in memory, not separate items
   parts.push_back(argTypes);
-  return llvm::StructType::get(getGlobalContext(),
+  return llvm::StructType::get(builder.getContext(),
                                llvm::makeArrayRef(parts),
                                /*isPacked=*/ false);
 }
@@ -122,7 +121,7 @@ llvm::StructType* getCoroClosureStructTy(
   std::vector<llvm::Type*> parts;
   parts.push_back(ptrTo(getCoroClosureFnType(retTy, argTypes)));
   parts.push_back(builder.getInt8PtrTy());
-  return llvm::StructType::get(getGlobalContext(), parts, /*isPacked=*/ false);
+  return llvm::StructType::get(builder.getContext(), parts, /*isPacked=*/ false);
 }
 
 // Returns { specific coro }* (closure struct*)
@@ -154,7 +153,7 @@ llvm::FunctionType* getCoroWrapperFnTy() {
 void emitPrintI32(llvm::Module* mod, int x) {
   llvm::Value* print_i32 = mod->getFunction("print_i32");
   ASSERT(print_i32 != NULL);
-  builder.CreateCall(print_i32, getConstantInt32For(x));
+  builder.CreateCall(print_i32, builder.getInt32(x));
 }
 
 void emitPrintRef(llvm::Module* mod, llvm::Value* ref) {
@@ -244,7 +243,7 @@ Value* emitCoroWrapperFn(
 
   // Mark the coro as being dead
   Value* status_addr = builder.CreateConstInBoundsGEP2_32(fcg, 0, coroField_Status(), "statusaddr");
-  builder.CreateStore(getConstantInt32For(4), status_addr);
+  builder.CreateStore(builder.getInt32(4), status_addr);
 
   builder.CreateRetVoid();
 
@@ -359,8 +358,8 @@ Value* CodegenPass::emitCoroCreateFn(
 
   Value* fcoro_status = builder.CreateConstInBoundsGEP2_32(gfcoro, 0, coroField_Status(), "fcoro_status");
   Value* ccoro_status = builder.CreateConstInBoundsGEP2_32(gccoro, 0, coroField_Status(), "ccoro_status");
-  builder.CreateStore(getConstantInt32For(FOSTER_CORO_DORMANT), fcoro_status);
-  builder.CreateStore(getConstantInt32For(FOSTER_CORO_INVALID), ccoro_status);
+  builder.CreateStore(builder.getInt32(FOSTER_CORO_DORMANT), fcoro_status);
+  builder.CreateStore(builder.getInt32(FOSTER_CORO_INVALID), ccoro_status);
 
   llvm::Value* wrapper = emitCoroWrapperFn(this, retTy, argTypes);
   // coro_func wrapper = ...;
@@ -404,10 +403,10 @@ void generateInvokeYield(bool isYield,
   llvm::Value* expectedStatus = NULL;
   const char*  expectedStatusMsg = NULL;
   if (isYield) {
-    expectedStatus = getConstantInt32For(FOSTER_CORO_SUSPENDED);
+    expectedStatus = builder.getInt32(FOSTER_CORO_SUSPENDED);
     expectedStatusMsg = "can only yield to a suspended coroutine";
   } else {
-    expectedStatus = getConstantInt32For(FOSTER_CORO_DORMANT);
+    expectedStatus = builder.getInt32(FOSTER_CORO_DORMANT);
     expectedStatusMsg = "can only resume a dormant coroutine";
   }
 
@@ -439,11 +438,11 @@ void generateInvokeYield(bool isYield,
   // TODO once we have multiple threads, this will need to
   // be done atomically or under a lock (and error handling added).
   if (isYield) {
-    builder.CreateStore(getConstantInt32For(FOSTER_CORO_INVALID), status_addr);
-    builder.CreateStore(getConstantInt32For(FOSTER_CORO_DORMANT), sib_status_addr);
+    builder.CreateStore(builder.getInt32(FOSTER_CORO_INVALID), status_addr);
+    builder.CreateStore(builder.getInt32(FOSTER_CORO_DORMANT), sib_status_addr);
   } else {
-    builder.CreateStore(getConstantInt32For(FOSTER_CORO_RUNNING), status_addr);
-    builder.CreateStore(getConstantInt32For(FOSTER_CORO_SUSPENDED), sib_status_addr);
+    builder.CreateStore(builder.getInt32(FOSTER_CORO_RUNNING), status_addr);
+    builder.CreateStore(builder.getInt32(FOSTER_CORO_SUSPENDED), sib_status_addr);
   }
 
   // If we're invoking, "push" the coro on the coro "stack".
@@ -489,11 +488,11 @@ void generateInvokeYield(bool isYield,
   // But our sibling coro remains the same, it's just the
   // stack that it refers to that might have changed.
   if (isYield) {
-    builder.CreateStore(getConstantInt32For(FOSTER_CORO_SUSPENDED), status_addr);
-    builder.CreateStore(getConstantInt32For(FOSTER_CORO_RUNNING), sib_status_addr);
+    builder.CreateStore(builder.getInt32(FOSTER_CORO_SUSPENDED), status_addr);
+    builder.CreateStore(builder.getInt32(FOSTER_CORO_RUNNING), sib_status_addr);
   } else {
-    builder.CreateStore(getConstantInt32For(FOSTER_CORO_DORMANT), status_addr);
-    builder.CreateStore(getConstantInt32For(FOSTER_CORO_INVALID), sib_status_addr);
+    builder.CreateStore(builder.getInt32(FOSTER_CORO_DORMANT), status_addr);
+    builder.CreateStore(builder.getInt32(FOSTER_CORO_INVALID), sib_status_addr);
   }
 
   sibling_slot = builder.CreateConstInBoundsGEP2_32(coro, 0, coroField_Sibling(), "siblingaddr");

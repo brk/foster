@@ -29,7 +29,6 @@ using llvm::Type;
 using llvm::BasicBlock;
 using llvm::Function;
 using llvm::ConstantInt;
-using llvm::getGlobalContext;
 using llvm::Value;
 using llvm::dyn_cast;
 
@@ -336,7 +335,7 @@ void codegenBlocks(std::vector<LLBlock*> blocks, CodegenPass* pass,
   for (size_t i = 0; i < blocks.size(); ++i) {
     LLBlock* bi = blocks[i];
     pass->fosterBlocks[bi->block_id] = bi;
-    bi->bb = BasicBlock::Create(getGlobalContext(), bi->block_id, F);
+    bi->bb = BasicBlock::Create(builder.getContext(), bi->block_id, F);
     ASSERT(bi->block_id == bi->bb->getName())
                      << "function can't have two blocks named " << bi->block_id;
   }
@@ -459,9 +458,9 @@ void addAndEmitTo(Function* f, BasicBlock* bb) {
 }
 
 ConstantInt* maybeGetTagForCtorId(DataTypeAST* dt, const CtorId& c) {
-  if (dt) {                           return getConstantInt8For(c.smallId);
+  if (dt) {                           return builder.getInt8(c.smallId);
   } else if (c.typeName == "Bool") {  return builder.getInt1(c.smallId);
-  } else if (c.typeName == "Int32") { return getConstantInt32For(c.smallId);
+  } else if (c.typeName == "Int32") { return builder.getInt32(c.smallId);
   } else { return NULL; }
 }
 
@@ -487,7 +486,7 @@ void LLSwitch::codegenTerminator(CodegenPass* pass) {
   DataTypeAST* dt = pass->isKnownDataType[ctors[0].typeName];
 
   BasicBlock* bbNoDefault = defaultBB ? NULL      :
-                       BasicBlock::Create(getGlobalContext(), "case_nodefault");
+                       BasicBlock::Create(builder.getContext(), "case_nodefault");
   BasicBlock* defOrContBB = defaultBB ? defaultBB : bbNoDefault;
 
   // Fetch the subterm of the scrutinee being inspected.
@@ -764,7 +763,7 @@ bool tryBindArray(llvm::Value* base, Value*& arr, Value*& len) {
       if (llvm::ArrayType* aty =
         llvm::dyn_cast<llvm::ArrayType>(sty->getContainedType(1))) {
         if (aty->getNumElements() == 0) {
-          arr = getPointerToIndex(base, getConstantInt32For(1), "arr");
+          arr = getPointerToIndex(base, builder.getInt32(1), "arr");
           len = getElementFromComposite(base, 0, "len");
           return true;
         }
@@ -912,7 +911,7 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
                   llvm::dyn_cast<llvm::PointerType>(fnType->getParamType(0));
     if (!maybeEnvType) return false;
 
-    cloStructTy = getStructType(origType->getContext(), pfnty, maybeEnvType);
+    cloStructTy = getStructType(pfnty, maybeEnvType);
     return true;
   }
 
@@ -928,8 +927,7 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
     }
     argTypes[0] = builder.getInt8PtrTy();
 
-    return getStructType(fnty->getContext(),
-                         ptrTo(llvm::FunctionType::get(retty, argTypes, false)),
+    return getStructType(ptrTo(llvm::FunctionType::get(retty, argTypes, false)),
                          builder.getInt8PtrTy());
   }
 

@@ -105,7 +105,7 @@ Value* getElementFromComposite(Value* compositeValue, int indexValue,
 Constant* getSlotName(llvm::AllocaInst* stackslot, CodegenPass* pass) {
   llvm::StringRef fnname = stackslot->getParent()->getParent()->getName();
   std::string slotname = fnname.str() + "(( " + stackslot->getName().str() + " ))";
-  Constant* cslotname = ConstantArray::get(getGlobalContext(),
+  Constant* cslotname = ConstantArray::get(builder.getContext(),
                                            slotname.c_str(),
                                            true);
   GlobalVariable* slotnameVar = new GlobalVariable(
@@ -149,7 +149,7 @@ void markGCRoot(llvm::AllocaInst* stackslot, CodegenPass* pass) {
 }
 
 void CodegenPass::addEntryBB(Function* f) {
-  BasicBlock* BB = BasicBlock::Create(getGlobalContext(), "entry", f);
+  BasicBlock* BB = BasicBlock::Create(builder.getContext(), "entry", f);
   this->allocaPoints[f] = new llvm::BitCastInst(builder.getInt32(0),
                                                 builder.getInt32Ty(),
                                                 "alloca point", BB);

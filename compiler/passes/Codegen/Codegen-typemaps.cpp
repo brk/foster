@@ -148,7 +148,7 @@ StructType* getTypeMapType(int numPointers) {
   typeMapTyFields.push_back(builder.getInt8Ty());    // unused_padding
   typeMapTyFields.push_back(offsetsTy);              // i32[n]
 
-  return StructType::get(getGlobalContext(), typeMapTyFields);
+  return StructType::get(builder.getContext(), typeMapTyFields);
 }
 
 // Return a global corresponding to layout of getTypeMapType()
@@ -174,7 +174,7 @@ GlobalVariable* constructTypeMap(llvm::Type*  ty,
 
   std::string wrapped;
   raw_string_ostream ss(wrapped); ss << name << " = " << *ty;
-  Constant* cname = ConstantArray::get(getGlobalContext(),
+  Constant* cname = ConstantArray::get(builder.getContext(),
                                        ss.str().c_str(),
                                        true);
   GlobalVariable* typeNameVar = new GlobalVariable(

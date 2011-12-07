@@ -245,8 +245,8 @@ const char* llvmValueTag(llvm::Value* v) {
 }
 
 void markAsNonAllocating(llvm::CallInst* callInst) {
-  llvm::Value* tru = llvm::ConstantInt::getTrue(llvm::getGlobalContext());
-  llvm::MDNode* mdnode = llvm::MDNode::get(llvm::getGlobalContext(),
+  llvm::Value* tru = llvm::ConstantInt::getTrue(callInst->getContext());
+  llvm::MDNode* mdnode = llvm::MDNode::get(callInst->getContext(),
                                            llvm::makeArrayRef(tru));
   callInst->setMetadata("willnotgc", mdnode);
 }
@@ -278,7 +278,7 @@ bool isFunctionPointerTy(llvm::Type* p) {
 
 bool isUnit(llvm::Type* ty) {
   return ty == llvm::PointerType::getUnqual(
-            llvm::Type::getInt8Ty(getGlobalContext()));
+            llvm::Type::getInt8Ty(ty->getContext()));
 }
 
 // Syntactically conspicuous
@@ -291,11 +291,11 @@ bool isPointerToType(llvm::Type* p, llvm::Type* t) {
   return p->isPointerTy() && (t == p->getContainedType(0));
 }
 
-llvm::StructType* getStructType(llvm::LLVMContext& x,
-                                llvm::Type* a, llvm::Type* b) {
+llvm::StructType* getStructType(llvm::Type* a, llvm::Type* b) {
   std::vector<llvm::Type*> tys;
   tys.push_back(a); tys.push_back(b);
-  return llvm::StructType::get(x, llvm::makeArrayRef(tys), /*isPacked*/ false);
+  return llvm::StructType::get(a->getContext(),
+                               llvm::makeArrayRef(tys), /*isPacked*/ false);
 }
 
 void storeNullPointerToSlot(llvm::Value* slot) {

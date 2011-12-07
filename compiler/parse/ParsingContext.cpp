@@ -15,8 +15,6 @@
 #include <stack>
 #include <map>
 
-using llvm::getGlobalContext;
-
 using std::map;
 using std::string;
 
