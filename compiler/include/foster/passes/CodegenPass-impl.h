@@ -52,8 +52,7 @@ Value* allocateMPInt();
 llvm::Value* codegenPrimitiveOperation(const std::string& op,
                                        llvm::IRBuilder<>& b,
                                        const std::vector<Value*>& args);
-Value* getElementFromComposite(Value* compositeValue, Value* idxValue,
-                               const std::string& msg);
+Value* getElementFromComposite(Value* compositeValue, int, const std::string& msg);
 Value* getPointerToIndex(Value* compositeValue,
                          Value* idxValue,
                          const std::string& name);

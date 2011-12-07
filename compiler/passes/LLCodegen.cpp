@@ -765,7 +765,7 @@ bool tryBindArray(llvm::Value* base, Value*& arr, Value*& len) {
         llvm::dyn_cast<llvm::ArrayType>(sty->getContainedType(1))) {
         if (aty->getNumElements() == 0) {
           arr = getPointerToIndex(base, getConstantInt32For(1), "arr");
-          len = getElementFromComposite(base, getConstantInt32For(0), "len");
+          len = getElementFromComposite(base, 0, "len");
           return true;
         }
       }
@@ -1025,8 +1025,7 @@ llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
       rv = builder.CreateBitCast(rv, tupty->getLLVMType());
     }
 
-    llvm::Constant* idx = getConstantInt32For(offsets[i]);
-    rv = getElementFromComposite(rv, idx, "switch_insp");
+    rv = getElementFromComposite(rv, offsets[i], "switch_insp");
   }
 
   // If we've loaded some possible-pointers from memory, make sure they
@@ -1120,8 +1119,8 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
     if (fnType->isMarkedAsClosure()) {
       // Load code and env pointers from closure...
       llvm::Value* envPtr =
-           getElementFromComposite(FV, getConstantInt32For(1), "getCloEnv");
-      FV = getElementFromComposite(FV, getConstantInt32For(0), "getCloCode");
+           getElementFromComposite(FV, 1, "getCloEnv");
+      FV = getElementFromComposite(FV, 0, "getCloCode");
 
       FT = dyn_cast<llvm::FunctionType>(FV->getType()->getContainedType(0));
       // Pass env pointer as first parameter to function.

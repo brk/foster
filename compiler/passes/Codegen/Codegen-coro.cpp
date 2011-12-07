@@ -58,7 +58,7 @@ void addCoroArgs(std::vector<Value*>& fnArgs,
                  llvm::Value* argVals) {
   llvm::StructType* sty;
   if (isSingleElementStruct(argVals->getType(), sty)) {
-    fnArgs.push_back(getElementFromComposite(argVals, getConstantInt32For(0), "coroarg"));
+    fnArgs.push_back(getElementFromComposite(argVals, 0, "coroarg"));
   } else {
     fnArgs.push_back(argVals);
   }
