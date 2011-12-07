@@ -60,6 +60,9 @@ llvm::Type* slotType(llvm::Value* v) {
   return v->getType()->getContainedType(0);
 }
 
+// TODO (eventually) try emitting masks of loaded/stored heap pointers
+// to measure performance overhead of high/low tags.
+
 inline
 llvm::Value* emitNonVolatileLoad(llvm::Value* v, llvm::Twine name) {
   return builder.CreateLoad(v, false, name);
@@ -565,11 +568,7 @@ llvm::Value* LLAlloc::codegen(CodegenPass* pass) {
 }
 
 llvm::Value* LLDeref::codegen(CodegenPass* pass) {
-  // base could be an array a[i] or a slot for a reference variable r.
-  // a[i] should codegen to &a[i], the address of the slot in the array.
-  // r    should codegen to the contents of the slot (the ref pointer value),
-  //        not the slot address.
-  return builder.CreateLoad(pass->emit(base, NULL));
+  return emitNonVolatileLoad(pass->emit(base, NULL), "deref");
 }
 
 llvm::Value* LLStore::codegen(CodegenPass* pass) {
@@ -776,9 +775,8 @@ bool tryBindArray(llvm::Value* base, Value*& arr, Value*& len) {
 Value* getArraySlot(Value* base, Value* idx, CodegenPass* pass) {
   Value* arr = NULL; Value* len;
   if (tryBindArray(base, arr, len)) {
-    // TODO emit code to validate idx value is in range.
     emitFosterAssert(pass->mod,
-      builder.CreateICmpSLT(
+      builder.CreateICmpULT(
                 builder.CreateSExt(idx, len->getType()),
                 len, "boundscheck"),
       "array index out of bounds!");
@@ -793,9 +791,14 @@ llvm::Value* LLArrayRead::codegen(CodegenPass* pass) {
   Value* base = pass->emit(this->base , NULL);
   Value* idx  = pass->emit(this->index, NULL);
   Value* slot = getArraySlot(base, idx, pass);
-  Value* val  = builder.CreateLoad(slot);
+  Value* val  = emitNonVolatileLoad(slot, "arrayslot");
   return ensureImplicitStackSlot(val, pass);
 }
+
+  // base could be an array a[i] or a slot for a reference variable r.
+  // a[i] should codegen to &a[i], the address of the slot in the array.
+  // r    should codegen to the contents of the slot (the ref pointer value),
+  //        not the slot address.
 
 llvm::Value* LLArrayPoke::codegen(CodegenPass* pass) {
   Value* val  = pass->emit(this->value, NULL);

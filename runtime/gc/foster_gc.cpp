@@ -658,7 +658,7 @@ bool isMetadataPointer(const void* meta) {
 
 } // namespace foster::runtime::gc
 
-int8_t ctor_id_of(void* constructed) {
+uint8_t ctor_id_of(void* constructed) {
   gc::heap_cell* cell = gc::heap_cell::for_body(constructed);
   gc::typemap* map = (gc::typemap*) cell->get_meta();
   int8_t ctorId = map->ctorId;

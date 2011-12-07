@@ -194,6 +194,7 @@ GlobalVariable* constructTypeMap(llvm::Type*  ty,
                                      *it, builder.getInt32Ty()));
   }
 
+  // TODO fix this
   bool isCoro = pystring::startswith(name, "coro_");
   bool isArray = arrayStatus == YesArray;
   ArrayType* offsetsTy = ArrayType::get(getTypeMapOffsetType(), numPointers);
@@ -204,7 +205,7 @@ GlobalVariable* constructTypeMap(llvm::Type*  ty,
   typeMapFields.push_back(arrayVariableToPointer(typeNameVar));
   typeMapFields.push_back(builder.getInt32(numPointers));
   typeMapFields.push_back(builder.getInt8(ctorId));
-  typeMapFields.push_back(builder.getInt8(isCoro ? 1 : 0));
+  typeMapFields.push_back(builder.getInt8(isCoro  ? 1 : 0));
   typeMapFields.push_back(builder.getInt8(isArray ? 1 : 0));
   typeMapFields.push_back(builder.getInt8(0)); // unused padding
   typeMapFields.push_back(ConstantArray::get(offsetsTy, typeMapOffsets));
