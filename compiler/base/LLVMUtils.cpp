@@ -253,22 +253,12 @@ void markAsNonAllocating(llvm::CallInst* callInst) {
 
 // Converts a global variable of type [_ x T] to a local var of type T*.
 Constant* arrayVariableToPointer(GlobalVariable* arr) {
+  llvm::Constant* zero =
+                 llvm::ConstantInt::get(Type::getInt64Ty(arr->getContext()), 0);
   std::vector<Constant*> idx;
-  idx.push_back(getConstantInt64For(0));
-  idx.push_back(getConstantInt64For(0));
+  idx.push_back(zero);
+  idx.push_back(zero);
   return ConstantExpr::getGetElementPtr(arr, makeArrayRef(idx));
-}
-
-llvm::ConstantInt* getConstantInt64For(int64_t val) {
-  return llvm::ConstantInt::get(Type::getInt64Ty(getGlobalContext()), val);
-}
-
-llvm::ConstantInt* getConstantInt32For(int32_t val) {
-  return llvm::ConstantInt::get(Type::getInt32Ty(getGlobalContext()), val);
-}
-
-llvm::ConstantInt* getConstantInt8For(int8_t val) {
-  return llvm::ConstantInt::get(Type::getInt8Ty(getGlobalContext()), val);
 }
 
 bool isFunctionPointerTy(llvm::Type* p) {

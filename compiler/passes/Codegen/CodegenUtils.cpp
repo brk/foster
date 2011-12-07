@@ -72,7 +72,7 @@ Value* getPointerToIndex(Value* ptrToCompositeValue,
                          const std::string& name) {
   checkPointerToIndex(ptrToCompositeValue, idxValue, name);
   std::vector<Value*> idx;
-  idx.push_back(getConstantInt32For(0));
+  idx.push_back(builder.getInt32(0));
   idx.push_back(idxValue);
   return builder.CreateGEP(ptrToCompositeValue, llvm::makeArrayRef(idx), name.c_str());
 }
@@ -80,7 +80,7 @@ Value* getPointerToIndex(Value* ptrToCompositeValue,
 Value* getElementFromComposite(Value* compositeValue, int indexValue,
                                const std::string& msg) {
   ASSERT(indexValue >= 0);
-  Value* idxValue = getConstantInt32For(indexValue);
+  Value* idxValue = builder.getInt32(indexValue);
   Type* compositeType = compositeValue->getType();
   // To get an element from an in-memory object, compute the address of
   // the appropriate struct field and emit a load.
