@@ -33,8 +33,8 @@ tcRho   = typecheck TCRho
 
 typecheck :: TCWanted -> Context Sigma -> ExprAST TypeAST -> Maybe TypeAST -> Tc (AnnExpr Rho)
 typecheck want ctx expr maybeExpTy = do
-  tcLift $ runOutput $ outCS Green ("typecheck " ++ show want ++ ": ") ++ textOf expr 0 ++ out (" <=? " ++ show maybeExpTy)
-  tcLift $ putStrLn ""
+  --tcLift $ runOutput $ outCS Green ("typecheck " ++ show want ++ ": ") ++ textOf expr 0 ++ out (" <=? " ++ show maybeExpTy)
+  --tcLift $ putStrLn ""
   tcWithScope expr $ do
     annexpr <- case expr of
       E_VarAST rng v            -> typecheckVar   want ctx rng (evarName v)
@@ -505,8 +505,8 @@ typecheckCall :: Context Sigma -> SourceRange
               -> ExprAST TypeAST -> ExprAST TypeAST
               -> Maybe TypeAST -> Tc (AnnExpr Rho)
 typecheckCall ctx rng base args maybeExpTy = do
-   tcLift $ runOutput $ (outCS Green "typecheckCallSigma ") ++ out (highlightFirstLine rng)
-   tcLift $ putStrLn ""
+   --tcLift $ runOutput $ (outCS Green "typecheckCallSigma ") ++ out (highlightFirstLine rng)
+   --tcLift $ putStrLn ""
    -- Act in checking mode, since we don't yet know if we're looking
    -- at a plain function or a forall-quantified type.
    eb <- tcSigma ctx base Nothing
@@ -785,8 +785,8 @@ subsumedBy (AnnTuple (E_AnnTuple rng exprs)) (TupleTypeAST tys) msg = do
         return (AnnTuple (E_AnnTuple rng exprs'))
 subsumedBy annexpr st2 msg = do
     t1' <- zonkType (typeAST annexpr)
-    tcLift $ runOutput $ outCS Green $ "subsumedBy " ++ show t1' ++ " <=? " ++ show st2
-    tcLift $ putStrLn ""
+    --tcLift $ runOutput $ outCS Green $ "subsumedBy " ++ show t1' ++ " <=? " ++ show st2
+    --tcLift $ putStrLn ""
     case (typeAST annexpr, st2) of
         (s1, s2@ForAllAST {}) -> do -- Odersky-Laufer's SKOL rule.
              (skols, r2) <- skolemize s2
@@ -813,8 +813,8 @@ subsumedBy annexpr st2 msg = do
 -- types is updated according to the unification solution.
 unify :: TypeAST -> TypeAST -> Maybe String -> Tc ()
 unify t1 t2 msg = do
-  tcLift $ runOutput $ outCS Green $ "unify " ++ show t1 ++ " ?==? " ++ show t2
-  tcLift $ putStrLn ""
+  --tcLift $ runOutput $ outCS Green $ "unify " ++ show t1 ++ " ?==? " ++ show t2
+  --tcLift $ putStrLn ""
   tcOnError (liftM out msg) (tcUnifyTypes t1 t2) $ \(Just soln) -> do
      let univars = concatMap collectUnificationVars [t1, t2]
      forM_ univars $ \m -> do
