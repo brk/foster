@@ -95,7 +95,7 @@ def output_extension(to_asm):
     return ".o"
 
 def verbosearg(verbose):
-  if verbose:
+  if verbose == 'true':
     return ["--verbose"]
   else:
     return []
@@ -123,7 +123,12 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
       interpret = ["--interpret", tmpdir]
     else:
       interpret = []
-    ghc_memory_stats = ["+RTS", "-smeGCstats.txt", "-RTS"]
+
+    ghc_rts_args = ["-smeGCstats.txt"]
+
+    if options and options.profile:
+      ghc_rts_args.append("-p")
+      ghc_rts_args.append("-hc")
 
     parse_output = os.path.join(tmpdir, '_out.parsed.pb')
     check_output = os.path.join(tmpdir, '_out.checked.pb')
@@ -138,7 +143,8 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
 
     # running fostercheck on a ParsedAST produces an ElaboratedAST
     (s2, e2) = crun(['fostercheck', parse_output, check_output] +
-                     ghc_memory_stats + interpret + verbosearg(verbose))
+                     ["+RTS"] + ghc_rts_args + ["-RTS"] +
+                     interpret + verbosearg(verbose))
 
     # running fosterlower on a ParsedAST produces a bitcode Module
     # linking a bunch of Modules produces a Module
@@ -292,7 +298,7 @@ def get_test_parser(usage):
                     help="Use bindir as default place to find binaries; defaults to current directory")
   parser.add_option("--me", dest="me", action="store", default="me",
                     help="Relative (from bindir) or absolute path to binary to use for type checking.")
-  parser.add_option("--verbose", action="store_true", dest="verbose", default=False,
+  parser.add_option("--verbose", action="store", dest="verbose", default=False,
                     help="Show more information about program output.")
   parser.add_option("--asm", action="store_true", dest="asm", default=False,
                     help="Compile to assembly rather than object file.")
@@ -300,6 +306,8 @@ def get_test_parser(usage):
                     help="Run using interpreter instead of compiling via LLVM")
   parser.add_option("--optimize", dest="optlevel", default=False,
                     help="Enable optimizations in fosteroptc")
+  parser.add_option("--profile", dest="profile", default=False,
+                    help="Enable detailed profiling of compiler middle-end")
 
   return parser
 

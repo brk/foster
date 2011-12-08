@@ -54,7 +54,7 @@ if __name__ == "__main__":
     params['hsflags'] += ' -fforce-recomp'
 
   if options.profile:
-    params['hsflags'] += ' -prof -auto'
+    params['hsflags'] += ' -prof -auto-all'
 
   if ghc7plus():
     # GHC 6 allows all runtime opts to be late-bound,
