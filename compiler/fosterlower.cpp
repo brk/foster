@@ -185,7 +185,7 @@ areDeclaredValueTypesOK(llvm::Module* mod,
   return true;
 }
 
-namespace foster { void codegenLL(LLModule* package, llvm::Module* mod); }
+namespace foster { void codegenLL(LLModule*, llvm::Module* mod); }
 
 int main(int argc, char** argv) {
   int program_status = 0;
@@ -222,6 +222,10 @@ int main(int argc, char** argv) {
     linkTo(coro_bc, "libfoster_coro", module);
 
     foster_generic_coro_t = module->getTypeByName("struct.foster_generic_coro");
+    // Can't do this yet, because generating type maps requires
+    // access to specific coro fields.
+    //foster_generic_coro_t = llvm::StructType::create(module->getContext(),
+    //                                          "struct.foster_generic_coro");
     ASSERT(foster_generic_coro_t != NULL);
   }
 
@@ -258,9 +262,9 @@ int main(int argc, char** argv) {
     foster::codegenLL(prog, module);
   }
 
-
   if (optDumpPreLinkedIR) {
-    dumpModuleToFile(module, outdirFile(optOutputName + ".raw.ll").c_str());
+    dumpModuleToFile(module,
+          outdirFile(optOutputName + ".raw.ll").c_str());
   }
 
   // Run cleanup passes on newly-generated code,
@@ -268,7 +272,8 @@ int main(int argc, char** argv) {
   foster::runCleanupPasses(*module);
 
   if (optDumpPreLinkedIR) {
-    dumpModuleToFile(module, outdirFile(optOutputName + ".prelink.ll").c_str());
+    dumpModuleToFile(module,
+          outdirFile(optOutputName + ".prelink.ll").c_str());
   }
 
   { // Run warning passes after dumping prelinked IR so that

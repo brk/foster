@@ -512,45 +512,28 @@ void generateInvokeYield(bool isYield,
 ////////////////////////// CORO INVOKE  ////////////////////////////
 ////////////////////////////////////////////////////////////////////
 
-Value* CodegenPass::emitCoroInvokeFn(
-                        llvm::Type* retTy,
-                        llvm::Type* argTypes) {
+Value* CodegenPass::emitCoroInvokeFn(llvm::Type* retTy,
+                                     llvm::Type* argTypes) {
   // Create a function of type  retTy (cloty*)
+  Function*& fn = this->lazyCoroPrimInfo[
+      std::make_pair(std::make_pair(false, retTy), argTypes)];
+  if (!fn) {
+    std::string ss_str;
+    llvm::raw_string_ostream ss(ss_str);
+    ss << ".foster_coro_invoke_" << str(retTy) << "__" << str(argTypes);
 
-  std::string ss_str;
-  llvm::raw_string_ostream ss(ss_str);
-  ss << ".foster_coro_invoke_" << str(retTy) << "__" << str(argTypes);
+    std::string functionName = ss.str();
 
-  std::string functionName = ss.str();
+    fn = Function::Create(
+      /*Type=*/    getCoroInvokeFnTy(retTy, argTypes),
+      /*Linkage=*/ llvm::GlobalValue::InternalLinkage,
+      /*Name=*/    functionName, this->mod);
 
-  Function* create = Function::Create(
-    /*Type=*/    getCoroInvokeFnTy(retTy, argTypes),
-    /*Linkage=*/ llvm::GlobalValue::InternalLinkage,
-    /*Name=*/    functionName, this->mod);
-
-  create->setCallingConv(llvm::CallingConv::Fast);
-  create->setGC("fostergc");
-
-  std::vector<Value*> inputArgs;
-  Function::arg_iterator args = create->arg_begin();
-  Value* coro_concrete = args++;
-
-  while (args != create->arg_end()) {
-    inputArgs.push_back(args++);
+    fn->setCallingConv(llvm::CallingConv::Fast);
+    fn->setGC("fostergc");
   }
 
-  BasicBlock* prevBB = builder.GetInsertBlock();
-  this->addEntryBB(create);
-
-  Value* coro = builder.CreateBitCast(coro_concrete, ptrTo(foster_generic_coro_t));
-
-  generateInvokeYield(false, this, coro, retTy, argTypes, inputArgs);
-
-  if (prevBB) {
-    builder.SetInsertPoint(prevBB);
-  }
-
-  return create;
+  return fn;
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -562,50 +545,83 @@ Value* CodegenPass::emitCoroInvokeFn(
 // the (possibly structure-typed) result. The reason is that
 // the parameter names match create/invoke for consistency,
 // and yield does things the other way 'round.
-Value* CodegenPass::emitCoroYieldFn(
-                        llvm::Type* retTy,
-                        llvm::Type* argTypes) {
-  std::string ss_str;
-  llvm::raw_string_ostream ss(ss_str);
-  ss << ".foster_coro_yield_" << str(retTy) << "__" << str(argTypes);
+Value* CodegenPass::emitCoroYieldFn(llvm::Type* retTy,
+                                    llvm::Type* argTypes) {
+  Function*& fn = this->lazyCoroPrimInfo[
+      std::make_pair(std::make_pair(true, retTy), argTypes)];
+  if (!fn) {
+    std::string ss_str;
+    llvm::raw_string_ostream ss(ss_str);
+    ss << ".foster_coro_yield_" << str(retTy) << "__" << str(argTypes);
 
-  std::string functionName = ss.str();
+    std::string functionName = ss.str();
 
-  Function* yield = Function::Create(
-    /*Type=*/    getCoroYieldFnTy(retTy, argTypes),
-    /*Linkage=*/ llvm::GlobalValue::InternalLinkage,
-    /*Name=*/    functionName, this->mod);
+    fn = Function::Create(
+      /*Type=*/    getCoroYieldFnTy(retTy, argTypes),
+      /*Linkage=*/ llvm::GlobalValue::InternalLinkage,
+      /*Name=*/    functionName, this->mod);
 
-  yield->setCallingConv(llvm::CallingConv::Fast);
-  yield->setGC("fostergc");
-
-  std::vector<Value*> inputArgs;
-  Function::arg_iterator args = yield->arg_begin();
-  while (args != yield->arg_end()) {
-    inputArgs.push_back(args++);
+    fn->setCallingConv(llvm::CallingConv::Fast);
+    fn->setGC("fostergc");
   }
 
-  BasicBlock* prevBB = builder.GetInsertBlock();
-  this->addEntryBB(yield);
+  return fn;
+}
 
-  Value* current_coro_slot = this->mod->getGlobalVariable("current_coro");
+
+////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////
+
+Value* getCurrentCoroSibling(llvm::Module* mod) {
+  // The current_coro global only exists after we link in libfoster_coro.
+  Value* current_coro_slot = mod->getGlobalVariable("current_coro");
   ASSERT(current_coro_slot != NULL);
 
   Value* current_coro = builder.CreateLoad(current_coro_slot, "coro");
 
   // Ensure that we actually have a coroutine!
   emitFosterAssert(mod, builder.CreateIsNotNull(current_coro),
-                   "Cannot call yield before invoking a coroutine!");
+                  "Cannot call yield before invoking a coroutine!");
 
-  Value* sibling_slot = builder.CreateConstInBoundsGEP2_32(current_coro, 0, coroField_Sibling(), "siblingaddr");
-  Value* coro = builder.CreateLoad(sibling_slot);
+  Value* sibling_slot = builder.CreateConstInBoundsGEP2_32(current_coro,
+                                    0, coroField_Sibling(), "siblingaddr");
+  return builder.CreateLoad(sibling_slot);
+}
 
-  generateInvokeYield(true, this, coro, retTy, argTypes, inputArgs);
+// We get two benefits by lazily generating coro primitive functions:
+//  1) Only one instantition per type/type pair, rather than
+//     one instantiation per call site.
+//  2) It removes one dependency between codegen and linking with
+//     libfoster_coro, which is a prerequisite for emitting LLVM
+//     from the middle-end.
+void CodegenPass::emitLazyCoroPrimInfo(bool isYield, Function* fn,
+                             llvm::Type* retTy, llvm::Type* argTys) {
+  std::vector<Value*> inputArgs;
+  Function::arg_iterator args = fn->arg_begin();
+
+  BasicBlock* prevBB = builder.GetInsertBlock();
+  this->addEntryBB(fn);
+
+  Value* coro = NULL;
+  // When invoking, the coro to transfer to is available as the first arg;
+  // when yielding, we yield to the sibling of the current thread's coro.
+  if (isYield) {
+    while (args != fn->arg_end()) {
+      inputArgs.push_back(args++);
+    }
+    coro = getCurrentCoroSibling(this->mod);
+  } else {
+    Value* concrete_invoked_coro = args++;
+    while (args != fn->arg_end()) {
+      inputArgs.push_back(args++);
+    }
+    coro = builder.CreateBitCast(concrete_invoked_coro,
+                                 ptrTo(foster_generic_coro_t));
+  }
+
+  generateInvokeYield(isYield, this, coro, retTy, argTys, inputArgs);
 
   if (prevBB) {
     builder.SetInsertPoint(prevBB);
   }
-
-  return yield;
 }
-

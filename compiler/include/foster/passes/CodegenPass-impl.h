@@ -73,6 +73,7 @@ struct LLExpr;
 struct LLVar;
 struct BlockBindings;
 struct DataTypeAST;
+struct LazyCoroPrimInfo;
 
 struct CodegenPass {
   typedef foster::SymbolTable<llvm::Value> ValueTable;
@@ -83,7 +84,13 @@ struct CodegenPass {
   void insertScopedValue(const std::string&, llvm::Value*);
   void popExistingScope(ValueScope*);
 
-  std::map<std::string, DataTypeAST*> isKnownDataType;
+  typedef std::map<std::pair<
+           std::pair<bool, llvm::Type*>,
+                           llvm::Type*>, llvm::Function*>
+          LazyCoroPrimInfoMap;
+
+  LazyCoroPrimInfoMap                           lazyCoroPrimInfo;
+  std::map<std::string, DataTypeAST*>           isKnownDataType;
   std::map<llvm::Function*, llvm::Instruction*> allocaPoints;
   std::set<llvm::Value*> needsImplicitLoad;
 
@@ -136,7 +143,9 @@ struct CodegenPass {
                           llvm::Type* argTypes);
   Value* emitCoroYieldFn( llvm::Type* retTy,
                           llvm::Type* argTypes);
-
+  void emitLazyCoroPrimInfo(bool isYield, llvm::Function* fn,
+                           llvm::Type* retTy,
+                           llvm::Type* argTypes);
 };
 
 #endif // header guard

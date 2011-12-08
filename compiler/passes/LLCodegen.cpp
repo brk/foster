@@ -38,11 +38,12 @@ using foster::EDiag;
 
 namespace foster {
 
-// This is the external entry point for code generation.
-void codegenLL(LLModule* package, llvm::Module* mod) {
+void codegenLL(LLModule* prog, llvm::Module* mod) {
   CodegenPass cp(mod);
-  package->codegenModule(&cp);
+  prog->codegenModule(&cp);
 }
+
+void deleteCodegenPass(CodegenPass* cp) { delete cp; }
 
 } // namespace foster
 
@@ -179,6 +180,20 @@ llvm::Function* CodegenPass::lookupFunctionOrDie(const std::string&
 
 ///}}}//////////////////////////////////////////////////////////////
 
+///{{{//////////////////////////////////////////////////////////////
+void codegenCoroPrimitives(CodegenPass* pass) {
+  for (CodegenPass::LazyCoroPrimInfoMap::iterator
+       it  = pass->lazyCoroPrimInfo.begin();
+       it != pass->lazyCoroPrimInfo.end();
+       ++it) {
+    pass->emitLazyCoroPrimInfo( (*it).first.first.first,
+                                (*it).second,
+                                (*it).first.first.second,
+                                (*it).first.second
+                              );
+  }
+}
+
 void registerKnownDataTypes(const std::vector<LLDecl*> datatype_decls,
                             CodegenPass* pass) {
   for (size_t i = 0; i < datatype_decls.size(); ++i) {
@@ -188,6 +203,7 @@ void registerKnownDataTypes(const std::vector<LLDecl*> datatype_decls,
      pass->isKnownDataType[typeName] = dt;
   }
 }
+///}}}//////////////////////////////////////////////////////////////
 
 void LLModule::codegenModule(CodegenPass* pass) {
   registerKnownDataTypes(datatype_decls, pass);
@@ -204,6 +220,8 @@ void LLModule::codegenModule(CodegenPass* pass) {
   for (size_t i = 0; i < procs.size(); ++i) {
     procs[i]->codegenProc(pass);
   }
+
+  codegenCoroPrimitives(pass);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -1084,7 +1102,7 @@ bool isPointerToUnknown(Type* ty) {
 
 bool matchesExceptForUnknownPointers(Type* aty, Type* ety) {
   if (aty == ety) return true;
-  if (aty->isPointerTy()) {
+  if (aty->isPointerTy() && ety->isPointerTy()) {
     if (isPointerToUnknown(ety)) { return true; }
     return matchesExceptForUnknownPointers(aty->getContainedType(0),
                                            ety->getContainedType(0));
