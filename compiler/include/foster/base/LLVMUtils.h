@@ -71,11 +71,7 @@ bool isPointerToType(llvm::Type* p, llvm::Type* t);
 bool isUnit(llvm::Type* ty);
 bool typesEq(llvm::Type* t1, llvm::Type* t2);
 
-llvm::ConstantInt* getConstantInt64For(int64_t val);
-llvm::ConstantInt* getConstantInt32For(int32_t val);
-llvm::ConstantInt* getConstantInt8For(int8_t val);
-
-llvm::StructType* getStructType(llvm::LLVMContext&, llvm::Type*, llvm::Type*);
+llvm::StructType* getStructType(llvm::Type*, llvm::Type*);
 
 void storeNullPointerToSlot(llvm::Value* slot);
 

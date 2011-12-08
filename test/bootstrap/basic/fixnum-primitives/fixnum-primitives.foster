@@ -1,0 +1,30 @@
+main = {
+  trunc8-test   !;
+  print-i8-test !;
+  i8-ops-test   !;
+};
+
+sub8 = { n : Int8 => n -Int8 (trunc32to8 2); };
+
+trunc32to8 = { n : Int32 => primitive_trunc_i32_i8 n; };
+
+trunc8-test = {
+  expect_i32 0;
+  print_i32 (primitive_sext_i8_to_i32 (trunc32to8 (opaquely_i32 256)));
+};
+
+print-i8-test = {
+     expect_i32 127;
+     print_i8 (trunc32to8 (opaquely_i32 127));
+
+     expect_i32 (0 -Int32 (opaquely_i32 128));
+     print_i8 (trunc32to8 (opaquely_i32 128));
+};
+
+i8-ops-test = {
+  expect_i32 5;
+  print_i8 ((trunc32to8 3) +Int8 (trunc32to8 2));
+
+  expect_i32 0;
+  print_i8 ((trunc32to8 128) +Int8 (trunc32to8 128));
+};

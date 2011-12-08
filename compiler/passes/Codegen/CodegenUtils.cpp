@@ -72,45 +72,25 @@ Value* getPointerToIndex(Value* ptrToCompositeValue,
                          const std::string& name) {
   checkPointerToIndex(ptrToCompositeValue, idxValue, name);
   std::vector<Value*> idx;
-  idx.push_back(getConstantInt32For(0));
+  idx.push_back(builder.getInt32(0));
   idx.push_back(idxValue);
   return builder.CreateGEP(ptrToCompositeValue, llvm::makeArrayRef(idx), name.c_str());
 }
 
-uint64_t getSaturating(llvm::ConstantInt* ci) {
-  typedef uint64_t T;
-  // If the value requires more bits than T can represent, we want
-  // to return ~0, not 0. Otherwise, we should leave the value alone.
-  T allOnes = ~T(0);
-  if (!ci) {
-    EDiag() << "getSaturating() given a null value, returning " << allOnes;
-    return allOnes;
-  }
-
-  return static_cast<T>(ci->getLimitedValue(allOnes));
-}
-
-Value* getElementFromComposite(Value* compositeValue,  Value* idxValue,
+Value* getElementFromComposite(Value* compositeValue, int indexValue,
                                const std::string& msg) {
+  ASSERT(indexValue >= 0);
+  Value* idxValue = builder.getInt32(indexValue);
   Type* compositeType = compositeValue->getType();
   // To get an element from an in-memory object, compute the address of
   // the appropriate struct field and emit a load.
   if (llvm::isa<llvm::PointerType>(compositeType)) {
     Value* gep = getPointerToIndex(compositeValue, idxValue, (msg + ".subgep").c_str());
     return builder.CreateLoad(gep, gep->getName() + "_ld");
-  } else if (llvm::isa<llvm::StructType>(compositeType)
-          && llvm::isa<llvm::Constant>(idxValue)) {
-    ASSERT(llvm::isa<llvm::ConstantInt>(idxValue))
-        << "struct values may be indexed only by constant expressions";
-    unsigned uidx = unsigned(getSaturating(dyn_cast<ConstantInt>(idxValue)));
-    return builder.CreateExtractValue(compositeValue, uidx, (msg + "subexv").c_str());
+  } else if (llvm::isa<llvm::StructType>(compositeType)) {
+    return builder.CreateExtractValue(compositeValue, indexValue, (msg + "subexv").c_str());
   } else if (llvm::isa<llvm::VectorType>(compositeType)) {
-    if (llvm::isa<llvm::Constant>(idxValue)) {
-      return builder.CreateExtractElement(compositeValue, idxValue, (msg + "simdexv").c_str());
-    } else {
-      EDiag() << "TODO: codegen for indexing vectors by non-constants"
-              << __FILE__ << ":" << __LINE__ << "\n";
-    }
+    return builder.CreateExtractElement(compositeValue, idxValue, (msg + "simdexv").c_str());
   } else {
     EDiag() << "Cannot index into value type " << str(compositeType)
             << " with non-constant index " << str(idxValue);
@@ -125,7 +105,7 @@ Value* getElementFromComposite(Value* compositeValue,  Value* idxValue,
 Constant* getSlotName(llvm::AllocaInst* stackslot, CodegenPass* pass) {
   llvm::StringRef fnname = stackslot->getParent()->getParent()->getName();
   std::string slotname = fnname.str() + "(( " + stackslot->getName().str() + " ))";
-  Constant* cslotname = ConstantArray::get(getGlobalContext(),
+  Constant* cslotname = ConstantArray::get(builder.getContext(),
                                            slotname.c_str(),
                                            true);
   GlobalVariable* slotnameVar = new GlobalVariable(
@@ -144,10 +124,9 @@ Constant* getSlotName(llvm::AllocaInst* stackslot, CodegenPass* pass) {
 ////////////////////////////////////////////////////////////////////
 
 void markGCRootWithMetadata(llvm::AllocaInst* stackslot, CodegenPass* pass,
-                            llvm::Constant* const meta) {
-  llvm::Value* const vmeta = meta;
+                            llvm::Value* meta) {
   llvm::MDNode* metamdnode = llvm::MDNode::get(stackslot->getContext(),
-                                               llvm::makeArrayRef(vmeta));
+                                llvm::makeArrayRef(meta));
   stackslot->setMetadata("fostergcroot", metamdnode);
 
   llvm::Function* F = builder.GetInsertBlock()->getParent();
@@ -170,7 +149,7 @@ void markGCRoot(llvm::AllocaInst* stackslot, CodegenPass* pass) {
 }
 
 void CodegenPass::addEntryBB(Function* f) {
-  BasicBlock* BB = BasicBlock::Create(getGlobalContext(), "entry", f);
+  BasicBlock* BB = BasicBlock::Create(builder.getContext(), "entry", f);
   this->allocaPoints[f] = new llvm::BitCastInst(builder.getInt32(0),
                                                 builder.getInt32Ty(),
                                                 "alloca point", BB);

@@ -47,7 +47,7 @@ OffsetSet countPointersInType(Type* ty) {
   OffsetSet rv;
   if (isGarbageCollectible(ty)) {
     // Pointers to functions/labels/other non-sized types do not get GC'd.
-    rv.push_back(getConstantInt64For(0));
+    rv.push_back(builder.getInt64(0));
   }
 
   // array, struct, union
@@ -93,7 +93,7 @@ Type* getHeapCellHeaderTy() {
 
 // Rounds up to nearest multiple of the given power of two.
 Constant* roundUpToNearestMultiple(Constant* v, Constant* powerOf2) {
-  Constant* mask = ConstantExpr::getSub(powerOf2, getConstantInt64For(1));
+  Constant* mask = ConstantExpr::getSub(powerOf2, builder.getInt64(1));
   // Compute the value of      let m = p - 1 in ((v + m) & ~m)
   return ConstantExpr::getAnd(
            ConstantExpr::getAdd(v, mask),
@@ -101,7 +101,7 @@ Constant* roundUpToNearestMultiple(Constant* v, Constant* powerOf2) {
 }
 
 Constant* defaultHeapAlignment() {
-  return getConstantInt64For(16);
+  return builder.getInt64(16);
 }
 
 // Returns the smallest multiple of the default heap alignment
@@ -148,7 +148,7 @@ StructType* getTypeMapType(int numPointers) {
   typeMapTyFields.push_back(builder.getInt8Ty());    // unused_padding
   typeMapTyFields.push_back(offsetsTy);              // i32[n]
 
-  return StructType::get(getGlobalContext(), typeMapTyFields);
+  return StructType::get(builder.getContext(), typeMapTyFields);
 }
 
 // Return a global corresponding to layout of getTypeMapType()
@@ -174,7 +174,7 @@ GlobalVariable* constructTypeMap(llvm::Type*  ty,
 
   std::string wrapped;
   raw_string_ostream ss(wrapped); ss << name << " = " << *ty;
-  Constant* cname = ConstantArray::get(getGlobalContext(),
+  Constant* cname = ConstantArray::get(builder.getContext(),
                                        ss.str().c_str(),
                                        true);
   GlobalVariable* typeNameVar = new GlobalVariable(
@@ -194,6 +194,7 @@ GlobalVariable* constructTypeMap(llvm::Type*  ty,
                                      *it, builder.getInt32Ty()));
   }
 
+  // TODO fix this
   bool isCoro = pystring::startswith(name, "coro_");
   bool isArray = arrayStatus == YesArray;
   ArrayType* offsetsTy = ArrayType::get(getTypeMapOffsetType(), numPointers);
@@ -202,11 +203,11 @@ GlobalVariable* constructTypeMap(llvm::Type*  ty,
   std::vector<Constant*> typeMapFields;
   typeMapFields.push_back(cellSizeOf(ty));
   typeMapFields.push_back(arrayVariableToPointer(typeNameVar));
-  typeMapFields.push_back(getConstantInt32For(numPointers));
-  typeMapFields.push_back(getConstantInt8For(ctorId));
-  typeMapFields.push_back(getConstantInt8For(isCoro ? 1 : 0));
-  typeMapFields.push_back(getConstantInt8For(isArray ? 1 : 0));
-  typeMapFields.push_back(getConstantInt8For(0)); // unused padding
+  typeMapFields.push_back(builder.getInt32(numPointers));
+  typeMapFields.push_back(builder.getInt8(ctorId));
+  typeMapFields.push_back(builder.getInt8(isCoro  ? 1 : 0));
+  typeMapFields.push_back(builder.getInt8(isArray ? 1 : 0));
+  typeMapFields.push_back(builder.getInt8(0)); // unused padding
   typeMapFields.push_back(ConstantArray::get(offsetsTy, typeMapOffsets));
 
   typeMapVar->setInitializer(ConstantStruct::get(typeMapTy, typeMapFields));

@@ -16,7 +16,7 @@ namespace runtime {
 void initialize();
 int  cleanup();
 
-int8_t ctor_id_of(void* body);
+uint8_t ctor_id_of(void* body);
 
 } // namespace foster::runtime
 } // namespace foster

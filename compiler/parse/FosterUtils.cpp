@@ -15,7 +15,6 @@
 #include "llvm/Module.h"
 
 using llvm::Type;
-using llvm::getGlobalContext;
 using llvm::FunctionType;
 
 llvm::Type* foster_generic_coro_t;

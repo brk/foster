@@ -245,30 +245,20 @@ const char* llvmValueTag(llvm::Value* v) {
 }
 
 void markAsNonAllocating(llvm::CallInst* callInst) {
-  llvm::Value* tru = llvm::ConstantInt::getTrue(llvm::getGlobalContext());
-  llvm::MDNode* mdnode = llvm::MDNode::get(llvm::getGlobalContext(),
+  llvm::Value* tru = llvm::ConstantInt::getTrue(callInst->getContext());
+  llvm::MDNode* mdnode = llvm::MDNode::get(callInst->getContext(),
                                            llvm::makeArrayRef(tru));
   callInst->setMetadata("willnotgc", mdnode);
 }
 
 // Converts a global variable of type [_ x T] to a local var of type T*.
 Constant* arrayVariableToPointer(GlobalVariable* arr) {
+  llvm::Constant* zero =
+                 llvm::ConstantInt::get(Type::getInt64Ty(arr->getContext()), 0);
   std::vector<Constant*> idx;
-  idx.push_back(getConstantInt64For(0));
-  idx.push_back(getConstantInt64For(0));
+  idx.push_back(zero);
+  idx.push_back(zero);
   return ConstantExpr::getGetElementPtr(arr, makeArrayRef(idx));
-}
-
-llvm::ConstantInt* getConstantInt64For(int64_t val) {
-  return llvm::ConstantInt::get(Type::getInt64Ty(getGlobalContext()), val);
-}
-
-llvm::ConstantInt* getConstantInt32For(int32_t val) {
-  return llvm::ConstantInt::get(Type::getInt32Ty(getGlobalContext()), val);
-}
-
-llvm::ConstantInt* getConstantInt8For(int8_t val) {
-  return llvm::ConstantInt::get(Type::getInt8Ty(getGlobalContext()), val);
 }
 
 bool isFunctionPointerTy(llvm::Type* p) {
@@ -278,7 +268,7 @@ bool isFunctionPointerTy(llvm::Type* p) {
 
 bool isUnit(llvm::Type* ty) {
   return ty == llvm::PointerType::getUnqual(
-            llvm::Type::getInt8Ty(getGlobalContext()));
+            llvm::Type::getInt8Ty(ty->getContext()));
 }
 
 // Syntactically conspicuous
@@ -291,11 +281,11 @@ bool isPointerToType(llvm::Type* p, llvm::Type* t) {
   return p->isPointerTy() && (t == p->getContainedType(0));
 }
 
-llvm::StructType* getStructType(llvm::LLVMContext& x,
-                                llvm::Type* a, llvm::Type* b) {
+llvm::StructType* getStructType(llvm::Type* a, llvm::Type* b) {
   std::vector<llvm::Type*> tys;
   tys.push_back(a); tys.push_back(b);
-  return llvm::StructType::get(x, llvm::makeArrayRef(tys), /*isPacked*/ false);
+  return llvm::StructType::get(a->getContext(),
+                               llvm::makeArrayRef(tys), /*isPacked*/ false);
 }
 
 void storeNullPointerToSlot(llvm::Value* slot) {

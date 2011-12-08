@@ -144,7 +144,7 @@ llvm::FunctionType* FnTypeAST::getLLVMFnType() const {
   // a uniform ABI) and C-compatibility (which says that
   // procs returning unit should be marked void?
   if (isUnit(retTy)) {
-    retTy = llvm::Type::getVoidTy(llvm::getGlobalContext());
+    retTy = llvm::Type::getVoidTy(retTy->getContext());
   }
 
   return llvm::FunctionType::get(retTy,
@@ -237,7 +237,7 @@ llvm::Type* CoroTypeAST::getLLVMType() const {
     fieldTypes.push_back(this->a->getLLVMType());
 
     repr = llvm::PointerType::getUnqual(
-                llvm::StructType::get(llvm::getGlobalContext(),
+                llvm::StructType::get(fieldTypes.back()->getContext(),
                                  fieldTypes, /*isPacked=*/false));
   }
   return repr;
@@ -283,10 +283,10 @@ CArrayTypeAST* CArrayTypeAST::get(TypeAST* tcell, uint64_t size) {
 
 llvm::Type* ArrayTypeAST::getSizedArrayTypeRef(llvm::Type* t, int64_t n) {
   std::vector<llvm::Type*> structElemTypes;
-  structElemTypes.push_back(llvm::IntegerType::get(llvm::getGlobalContext(), 64));
+  structElemTypes.push_back(llvm::IntegerType::get(t->getContext(), 64));
   structElemTypes.push_back(llvm::ArrayType::get(t, n));
   return llvm::PointerType::getUnqual(
-          llvm::StructType::get(llvm::getGlobalContext(),
+          llvm::StructType::get(t->getContext(),
                                 llvm::makeArrayRef(structElemTypes)));
 }
 
