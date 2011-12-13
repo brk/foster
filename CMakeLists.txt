@@ -305,6 +305,7 @@ include_directories(
   ${PROJECT_SOURCE_DIR}/compiler/llvm
   ${PROJECT_SOURCE_DIR}/third_party
   ${PROJECT_SOURCE_DIR}/third_party/chromium_base
+  ${PROJECT_SOURCE_DIR}/third_party/cityhash/src
 )
 
 # Takes ldflags, which looks like
@@ -343,6 +344,7 @@ add_library(fosterc_base STATIC
   compiler/base/FreshNameGenerator.cpp
   compiler/base/PughSinofskyPrettyPrinter.cpp
   third_party/pystring/pystring.cpp
+  third_party/cityhash/src/city.cc
 )
 add_dependencies(fosterc_base
   ${GENERATED}/FosterAST.pb.h

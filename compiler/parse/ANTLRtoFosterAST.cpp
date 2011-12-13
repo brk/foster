@@ -20,6 +20,8 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 
+#include "city.h"
+
 #include <iostream>
 #include <string>
 #include <map>
@@ -912,6 +914,14 @@ namespace foster {
   };
 
   namespace {
+    uint128 getMemoryBufferHash(llvm::MemoryBuffer* buf) {
+      return CityHash128(buf->getBufferStart(), buf->getBufferSize());
+    }
+
+    uint128 getFileHash(const InputFile& file) {
+      return getMemoryBufferHash(file.getBuffer()->getMemoryBuffer());
+    }
+
     void createParser(foster::ANTLRContext& ctx,
                       const string& filepath,
                       foster::InputTextBuffer* textbuf) {
@@ -962,6 +972,11 @@ namespace foster {
   ModuleAST* parseModule(const InputFile& file,
                          const std::string& moduleName,
                          unsigned* outNumANTLRErrors) {
+    uint128 hash = getFileHash(file);
+    printf("Hash of file %s is %08" PRIx64 "%08" PRIx64 "\n",
+      file.getShortName().c_str(),
+      Uint128Low64(hash), Uint128High64(hash));
+
     ANTLRContext* ctx = new ANTLRContext();
     createParser(*ctx, file);
 
