@@ -40,6 +40,7 @@ typecheck want ctx expr maybeExpTy = do
       E_VarAST rng v            -> typecheckVar   want ctx rng (evarName v)
       E_IntAST  rng txt         -> typecheckInt            rng txt        maybeExpTy
       E_BoolAST rng b           -> typecheckBool           rng b          maybeExpTy
+      E_StringAST rng txt       -> typecheckText           rng txt        maybeExpTy
       E_CallAST rng base argtup -> typecheckCall       ctx rng base (E_TupleAST argtup) maybeExpTy
       E_TupleAST (TupleAST rng exps)
                                 -> typecheckTuple want ctx rng exps       maybeExpTy
@@ -117,6 +118,19 @@ typecheckBool rng b maybeExpTy = do
                                 ++ " expecting non-Bool type " ++ show t
                                 ++ showSourceRange rng]
 -- }}}
+
+typecheckText rng b maybeExpTy = do
+-- {{{
+    let ab = AnnString rng b
+    case maybeExpTy of
+         Nothing                       -> return ab
+         Just  (TyConAppAST "Text" []) -> return ab
+         Just  m@MetaTyVar {}       -> subsumedBy ab m (Just $ "text literal")
+         Just  t -> tcFails [out $ "Unable to check Text constant in context"
+                                ++ " expecting non-Text type " ++ show t
+                                ++ showSourceRange rng]
+-- }}}
+
 
 --  G |- e1 ::: tau
 --  G |- e2 ::: Ref tau

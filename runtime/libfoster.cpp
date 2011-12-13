@@ -63,6 +63,12 @@
 
 std::vector<coro_context> coro_initial_contexts;
 
+extern "C"
+struct foster_bytes {
+   int64_t cap;
+   int8_t bytes[0];
+};
+
 namespace foster {
 namespace runtime {
 
@@ -132,6 +138,11 @@ void fprint_mp_int(FILE* f, mp_int m, int radix) {
   free(buf);
 }
 
+void fprint_bytes(FILE* f, foster_bytes* array, uint32_t n) {
+  uint32_t c = array->cap;
+  fprintf(f, "%.*s\n", (std::min)(n, c), &array->bytes[0]);
+}
+
 } } // namespace foster::runtime
 
 using namespace foster::runtime;
@@ -188,4 +199,15 @@ uint8_t foster_ctor_id_of(void* body) {
   return foster::runtime::ctor_id_of(body);
 }
 
+void print_addr(void* x) { fprintf(stdout, "addr: %p\n", x); }
+
+void prim_print_bytes_stdout(foster_bytes* array, uint32_t n) {
+  fprint_bytes(stdout, array, n);
+}
+
+void prim_print_bytes_stderr(foster_bytes* array, uint32_t n) {
+  fprint_bytes(stderr, array, n);
+}
+
 } // extern "C"
+

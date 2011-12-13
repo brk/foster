@@ -216,6 +216,7 @@ data IExpr =
 -- and captured values.
 data SSValue = SSBool      Bool
              | SSInt       Integer
+             | SSString    T.Text
              | SSArray     (Array Int Location)
              | SSTuple     [SSValue]
              | SSCtorVal   CtorId [SSValue]
@@ -233,7 +234,8 @@ ssTermOfExpr expr =
   let idOf = tidIdent     in
   case expr of
     KNBool b               -> SSTmValue $ SSBool b
-    KNInt _t i             -> SSTmValue $ SSInt $ litIntValue i
+    KNInt _t i             -> SSTmValue $ SSInt (litIntValue i)
+    KNString s             -> SSTmValue $ SSString s
     KNVar v                -> SSTmExpr  $ IVar (idOf v)
     KNTuple vs             -> SSTmExpr  $ ITuple (map idOf vs)
     KNLetFuns ids funs e   -> SSTmExpr  $ ILetFuns ids funs (tr e)
@@ -726,6 +728,7 @@ isExpectFunction name =
     _ -> False
 
 display :: SSValue -> String
+display (SSString s  )  = show s
 display (SSBool True )  = "true"
 display (SSBool False)  = "false"
 display (SSInt i     )  = show i

@@ -25,6 +25,8 @@ enum ArrayOrNot {
   YesArray, NotArray
 };
 
+extern unsigned kDefaultHeapAlignment;
+
 llvm::GlobalVariable*
 emitTypeMap(llvm::Type* ty, std::string name,
             ArrayOrNot arrayStatus,
@@ -67,6 +69,22 @@ llvm::AllocaInst* stackSlotWithValue(llvm::Value* val,
 
 ////////////////////////////////////////////////////////////////////
 
+inline bool operator<(const CtorId& a, const CtorId& b) {
+  if (a.smallId < b.smallId) return true;
+  if (a.ctorName < b.ctorName) return true;
+  if (a.typeName < b.typeName) return true;
+  return false;
+}
+
+struct ltLLOcc {
+  bool operator()(LLOccurrence* a, LLOccurrence* b) {
+    if (a->var->getName() < b->var->getName()) { return true; }
+    if (a->offsets        < b->offsets       ) { return true; }
+    if (a->ctors          < b->ctors         ) { return true; }
+    return false;
+  }
+};
+
 struct LLModule;
 struct LLExpr;
 struct LLVar;
@@ -101,7 +119,7 @@ struct CodegenPass {
 
   std::map<std::string,     LLBlock*>     fosterBlocks;
   WorklistLIFO<std::string, LLBlock*>   worklistBlocks;
-  std::map<llvm::Value*, std::map<std::vector<int>, llvm::AllocaInst*> > occSlots;
+  std::map<LLOccurrence*, llvm::AllocaInst*, ltLLOcc>  occSlots;
 
   explicit CodegenPass(llvm::Module* mod);
 

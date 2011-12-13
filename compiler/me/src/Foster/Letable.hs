@@ -10,12 +10,15 @@ import Foster.Base(LiteralInt, CtorId, AllocInfo)
 import Foster.TypeIL(AIVar, ILPrim, TypeIL)
 import Foster.PatternMatch(Occurrence)
 
+import qualified Data.Text as T
+
 -- The reason we have both ILAllocate and ILAlloc is that
 -- LLCodegen performs auto-loads from stack slots, which
 -- means that a derived ILAlloc can't return a stack slot value!
 
 data Letable =
           ILBool        Bool
+        | ILText        T.Text
         | ILInt         TypeIL LiteralInt
         | ILTuple       [AIVar]
         -- Struct member lookup

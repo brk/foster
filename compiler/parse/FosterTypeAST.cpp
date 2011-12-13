@@ -283,6 +283,7 @@ CArrayTypeAST* CArrayTypeAST::get(TypeAST* tcell, uint64_t size) {
 
 llvm::Type* ArrayTypeAST::getSizedArrayTypeRef(llvm::Type* t, int64_t n) {
   std::vector<llvm::Type*> structElemTypes;
+  // embedded length
   structElemTypes.push_back(llvm::IntegerType::get(t->getContext(), 64));
   structElemTypes.push_back(llvm::ArrayType::get(t, n));
   return llvm::PointerType::getUnqual(

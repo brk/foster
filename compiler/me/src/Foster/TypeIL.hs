@@ -97,6 +97,7 @@ extendTyCtx ctx ktvs = ctx { contextTypeBindings =
 -----------------------------------------------------------------------
 
 boolTypeIL = PrimIntIL I1
+stringTypeIL = TyConAppIL "Text" []
 
 pointedToType t = case t of
     PtrTypeIL y -> y

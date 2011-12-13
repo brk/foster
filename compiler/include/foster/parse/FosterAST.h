@@ -99,6 +99,13 @@ struct BoolAST : public ExprAST {
   virtual void dump(DumpToProtobufPass* pass);
 };
 
+struct StringAST : public ExprAST {
+  std::string stringValue;
+  explicit StringAST(string val, foster::SourceRange sourceRange)
+    : ExprAST("StringAST", sourceRange), stringValue(val) {}
+  virtual void dump(DumpToProtobufPass* pass);
+};
+
 struct VariableAST : public ExprAST {
   string name;
 

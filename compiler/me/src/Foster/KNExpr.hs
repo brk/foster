@@ -21,6 +21,7 @@ import Foster.Output(out, outToString)
 data KNExpr =
         -- Literals
           KNBool        Bool
+        | KNString      T.Text
         | KNInt         TypeIL LiteralInt
         | KNTuple       [AIVar]
         -- Control flow
@@ -82,6 +83,7 @@ kNormalize mebTail expr =
   let gt = kNormalize mebTail in
   let gn = kNormalize NotTail in
   case expr of
+      AIString s        -> return $ KNString s
       AIBool b          -> return $ KNBool b
       AIInt t i         -> return $ KNInt t i
       E_AIVar v         -> return $ KNVar v
@@ -281,6 +283,7 @@ typeKN :: KNExpr -> TypeIL
 typeKN expr =
   case expr of
     KNBool _          -> boolTypeIL
+    KNString _        -> stringTypeIL
     KNInt      t _    -> t
     KNTuple vs        -> TupleTypeIL (map tidType vs)
     KNLetVal  _ _ e   -> typeKN e
@@ -305,6 +308,7 @@ typeKN expr =
 instance Structured KNExpr where
     textOf e _width =
         case e of
+            KNString       _    -> out $ "KNString    "
             KNBool         b    -> out $ "KNBool      " ++ (show b)
             KNCall tail t _ _   -> out $ "KNCall " ++ show tail ++ " :: " ++ show t
             KNCallPrim t prim _ -> out $ "KNCallPrim  " ++ (show prim) ++ " :: " ++ show t
@@ -329,8 +333,9 @@ instance Structured KNExpr where
     childrenOf expr =
         let var v = KNVar v in
         case expr of
-            KNBool  {}              -> []
-            KNInt   {}              -> []
+            KNString {}             -> []
+            KNBool   {}             -> []
+            KNInt    {}             -> []
             KNUntil _t a b          -> [a, b]
             KNTuple     vs          -> map var vs
             KNCase _ e bs           -> (var e):(map snd bs)

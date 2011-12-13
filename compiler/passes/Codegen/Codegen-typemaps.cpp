@@ -35,6 +35,8 @@ llvm::GlobalVariable* getTypeMapForType(llvm::Type*, llvm::Module*, ArrayOrNot);
 typedef Constant*   Offset;
 typedef std::vector<Offset> OffsetSet;
 
+unsigned kDefaultHeapAlignment = 16;
+
 bool isGarbageCollectible(Type* ty) {
   // For now, we don't distinguish between different kinds of pointer;
   // we consider any pointer to be a possible heap pointer.
@@ -100,17 +102,13 @@ Constant* roundUpToNearestMultiple(Constant* v, Constant* powerOf2) {
            ConstantExpr::getNot(mask));
 }
 
-Constant* defaultHeapAlignment() {
-  return builder.getInt64(16);
-}
-
 // Returns the smallest multiple of the default heap alignment
 // which is larger than the size of the given type plus the heap header size.
 Constant* cellSizeOf(Type* ty) {
   Constant* sz = ConstantExpr::getSizeOf(ty);
   Constant* hs = ConstantExpr::getSizeOf(getHeapCellHeaderTy());
   Constant* cs = ConstantExpr::getAdd(sz, hs);
-  return roundUpToNearestMultiple(cs, defaultHeapAlignment());
+  return roundUpToNearestMultiple(cs, builder.getInt64(kDefaultHeapAlignment));
 }
 
 typedef std::pair<Type*, std::pair<ArrayOrNot, int8_t> > TypeSig;

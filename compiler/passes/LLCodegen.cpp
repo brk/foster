@@ -79,15 +79,13 @@ llvm::Value* emitStore(llvm::Value* val,
     return builder.CreateStore(val, ptr, /*isVolatile=*/ false);
   }
 
+  builder.GetInsertBlock()->getParent()->dump();
   ASSERT(false) << "ELIDING STORE DUE TO MISMATCHED TYPES:\n"
           << "ptr type: " << str(ptr->getType()) << "\n"
           << "val type: " << str(val->getType()) << "\n"
           << "val is  : " << str(val) << "\n"
           << "ptr is  : " << str(ptr);
-  EDiag() << "unit is: " << str(getUnitValue());
-  return builder.CreateBitCast(builder.getInt32(0),
-                               builder.getInt32Ty(),
-                               "elided store");
+  return NULL;
 }
 
 llvm::Value* emitStoreWithCast(llvm::Value* val,
@@ -644,6 +642,37 @@ llvm::Value* LLBool::codegen(CodegenPass* pass) {
   return builder.getInt1(this->boolValue);
 }
 
+bool tryBindArray(Value* base, Value*& arr, Value*& len);
+
+llvm::Value* LLText::codegen(CodegenPass* pass) {
+  size_t size = this->stringValue.size();
+  Value* sz   = builder.getInt32(size);
+  Value* gstr = builder.CreateGlobalString(this->stringValue);
+  Value* hstr_slot = pass->emitArrayMalloc(builder.getInt8Ty(), sz);
+  Value* hstr = emitNonVolatileLoad(hstr_slot, "heap_str");
+
+  Value* hstr_bytes; Value* len;
+  if (tryBindArray(hstr, /*out*/ hstr_bytes, /*out*/ len)) {
+    llvm::CallInst* mcpy = builder.CreateMemCpy(hstr_bytes,
+                              gstr, size, kDefaultHeapAlignment);
+    markAsNonAllocating(mcpy);
+  } else { ASSERT(false); }
+
+  // TODO null terminate?
+  CtorId frag; frag.typeName = "Text";
+               frag.ctorName = "TextFragment";
+               frag.smallId  = 0; // TODO fix this hack
+  std::vector<LLVar*> args;
+  LLValueVar v_hstr(hstr_slot); args.push_back(&v_hstr);
+  LLValueVar v_sz(sz);          args.push_back(&v_sz);
+  LLAppCtor app(frag, args);
+  return app.codegen(pass);
+}
+
+llvm::Value* LLValueVar::codegen(CodegenPass* pass) {
+  return pass->autoload(this->val);
+}
+
 llvm::Value* LLGlobalSymbol::codegen(CodegenPass* pass) {
   return pass->lookupFunctionOrDie(this->name);
 }
@@ -762,6 +791,12 @@ llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
 ///}}}//////////////////////////////////////////////////////////////
 //////////////// Arrays ////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////{{{
+
+void printAddress(CodegenPass* pass, Value* addr) {
+  builder.CreateCall(
+    pass->mod->getFunction("print_addr"),
+    builder.CreateBitCast(addr, builder.getInt8PtrTy()));
+}
 
 bool isPointerToStruct(llvm::Type* ty) {
   if (llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
@@ -1012,6 +1047,7 @@ TupleTypeAST* maybeGetCtorStructType(CodegenPass* pass, CtorId c) {
 // Create at most one stack slot per subterm.
 llvm::AllocaInst*
 getStackSlotForOcc(CodegenPass* pass, llvm::Value* v, llvm::AllocaInst*& slot) {
+  ASSERT(v != NULL);
   if (slot) {
     emitStore(v, slot);
   } else {
@@ -1050,7 +1086,7 @@ llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
 
   // If we've loaded some possible-pointers from memory, make sure they
   // get their own implicit stack slots.
-  llvm::AllocaInst*& slot = pass->occSlots[v][offsets];
+  llvm::AllocaInst*& slot = pass->occSlots[this];
   getStackSlotForOcc(pass, rv, slot);
   trySetName(slot, "pat_" + this->var->getName() + "_slot");
   return slot;
@@ -1102,6 +1138,7 @@ bool isPointerToUnknown(Type* ty) {
 }
 
 bool matchesExceptForUnknownPointers(Type* aty, Type* ety) {
+  //EDiag() << "matchesExceptForUnknownPointers ? " << str(aty) << " =?= " << str(ety);
   if (aty == ety) return true;
   if (aty->isPointerTy() && ety->isPointerTy()) {
     if (isPointerToUnknown(ety)) { return true; }
@@ -1182,6 +1219,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
 
     if ((argV->getType() != expectedType)
         && matchesExceptForUnknownPointers(argV->getType(), expectedType)) {
+      EDiag() << "matched " << str(argV->getType()) << " to " << str(expectedType);
       argV = builder.CreateBitCast(argV, expectedType, "spec2gen");
     }
 

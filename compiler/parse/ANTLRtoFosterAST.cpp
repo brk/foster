@@ -380,6 +380,10 @@ ExprAST* parseBool(pTree t) {
   return new BoolAST(textOf(child(t, 0)), rangeOf(t));
 }
 
+ExprAST* parseString(pTree t) {
+  return new StringAST(textOf(child(t, 0)), rangeOf(t));
+}
+
 Pattern* parsePattern(pTree t);
 Pattern* parsePatternAtom(pTree t);
 
@@ -426,7 +430,7 @@ Pattern* parsePatternAtom(pTree t) {
   if (token == TERMVAR) { return new LiteralPattern(rangeOf(t), LiteralPattern::LP_VAR, parseTermVar(t)); }
   if (token == INT_NUM) { return new LiteralPattern(rangeOf(t), LiteralPattern::LP_INT, parseAtom(t)); }
   if (token == BOOL   ) { return new LiteralPattern(rangeOf(t), LiteralPattern::LP_BOOL, parseAtom(t)); }
-  //if (token == STR    ) { return new LiteralPattern(LiteralPattern::LP_STR, parseAtom(t)); }
+  //if (token == STRING ) { return new LiteralPattern(LiteralPattern::LP_STR, parseAtom(t)); }
 
   display_pTree(t, 2);
   ASSERT(false) << "returning NULL Pattern for parsePatternAtom token " << str(t->getToken(t));
@@ -475,6 +479,7 @@ ExprAST* parseAtom(pTree tree) {
   if (token == CASE)     { return parseCase(tree); }
   if (token == CTOR)     { return parseCtor(tree); }
   if (token == BOOL)     { return parseBool(tree); }
+  if (token == STRING)   { return parseString(tree); }
 
   display_pTree(tree, 2);
   foster::EDiag() << "returning NULL ExprAST for parseAtom token " << str(tree->getToken(tree));

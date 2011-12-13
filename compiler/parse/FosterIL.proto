@@ -71,6 +71,7 @@ message Letable {
   enum Tag {
     IL_INT = 16;
     IL_BOOL = 17;
+    IL_TEXT = 18;
     IL_TUPLE = 20;
     IL_OCCURRENCE = 21;
     IL_CALL = 23;
@@ -91,7 +92,8 @@ message Letable {
   repeated string      names = 6;
   optional PBInt      pb_int = 17;
 
-  optional bool   bool_value = 23;   // Bool
+  optional bool       bool_value = 23;
+  optional string   string_value = 24;
 
   optional PbAllocInfo   alloc_info = 25;
   optional bool call_may_trigger_gc = 26;

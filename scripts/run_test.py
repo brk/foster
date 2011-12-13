@@ -94,8 +94,11 @@ def output_extension(to_asm):
   else:
     return ".o"
 
-def verbosearg(verbose):
-  if verbose == 'true':
+def is_verbose(options):
+  return options and options.verbose == 'true'
+
+def verbosearg(options):
+  if is_verbose(options):
     return ["--verbose"]
   else:
     return []
@@ -111,10 +114,9 @@ def optlevel(options):
 
 def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
     finalname = os.path.basename(finalpath)
-    verbose = options and options.verbose
-    to_asm  = options and options.asm
+    to_asm = options and options.asm
     ext = output_extension(to_asm)
-    if verbose:
+    if is_verbose(options):
       compilelog = None
 
     # Getting tee functionality in Python is a pain in the behind
@@ -135,7 +137,7 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
 
     def crun(cmdlist):
       return run_command(cmdlist,
-                paths, testpath, showcmd=verbose,
+                paths, testpath, showcmd=is_verbose(options),
                 stdout=compilelog, stderr=compilelog, strictrv=True)
 
     # running fosterparse on a source file produces a ParsedAST
@@ -144,7 +146,7 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
     # running fostercheck on a ParsedAST produces an ElaboratedAST
     (s2, e2) = crun(['fostercheck', parse_output, check_output] +
                      ["+RTS"] + ghc_rts_args + ["-RTS"] +
-                     interpret + verbosearg(verbose))
+                     interpret + verbosearg(options))
 
     # running fosterlower on a ParsedAST produces a bitcode Module
     # linking a bunch of Modules produces a Module
@@ -237,7 +239,7 @@ def run_one_test(testpath, paths, tmpdir):
     fc_elapsed=fc_elapsed, as_elapsed=as_elapsed, ld_elapsed=ld_elapsed, rn_elapsed=rn_elapsed)
   infile.close()
 
-  if options and options.verbose:
+  if is_verbose(options):
     run_command(["paste", exp_filename, act_filename], {}, "")
 
   if rv != 0:
@@ -298,7 +300,7 @@ def get_test_parser(usage):
                     help="Use bindir as default place to find binaries; defaults to current directory")
   parser.add_option("--me", dest="me", action="store", default="me",
                     help="Relative (from bindir) or absolute path to binary to use for type checking.")
-  parser.add_option("--verbose", action="store", dest="verbose", default=False,
+  parser.add_option("--verbose", action="store", dest="verbose", default='false',
                     help="Show more information about program output.")
   parser.add_option("--asm", action="store_true", dest="asm", default=False,
                     help="Compile to assembly rather than object file.")
@@ -316,6 +318,8 @@ if __name__ == "__main__":
   (options, args) = parser.parse_args()
 
   if len(args) != 1:
+    print args
+    print options
     print parser.print_help()
     sys.exit(1)
 

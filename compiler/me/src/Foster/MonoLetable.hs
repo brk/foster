@@ -10,8 +10,11 @@ import Foster.Base(LiteralInt, CtorId, AllocInfo)
 import Foster.MonoType(MoVar, MoPrim, MonoType)
 import Foster.PatternMatch(Occurrence)
 
+import qualified Data.Text as T
+
 data MonoLetable =
-          MoBool        Bool
+          MoText        T.Text
+        | MoBool        Bool
         | MoInt         MonoType LiteralInt
         | MoTuple       [MoVar]
         | MoOccurrence  MoVar Occurrence

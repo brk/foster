@@ -59,6 +59,10 @@ LLExpr* parseBool(const pb::Letable& e) {
   return new LLBool(e.bool_value() ? "true" : "false");
 }
 
+LLExpr* parseText(const pb::Letable& e) {
+  return new LLText(e.string_value());
+}
+
 LLVar* parseTermVar(const pb::TermVar* v) {
   ASSERT(v != NULL) << "parseTermVar got NULL var!";
   ASSERT(v->name() != "") << "parseTermVar got empty var!";
@@ -377,6 +381,7 @@ LLExpr* LLExpr_from_pb(const pb::Letable* pe) {
   case pb::Letable::IL_CALL_PRIMOP: rv = parseCallPrimOp(e); break;
   case pb::Letable::IL_CTOR:        rv = parseAppCtor(e); break;
   case pb::Letable::IL_INT:         rv = parseInt(e); break;
+  case pb::Letable::IL_TEXT:        rv = parseText(e); break;
   case pb::Letable::IL_TUPLE:       rv = parseTuple(e); break;
   case pb::Letable::IL_ALLOC:       rv = parseAlloc(e); break;
   case pb::Letable::IL_DEREF:       rv = parseDeref(e); break;
@@ -401,6 +406,8 @@ LLExpr* LLExpr_from_pb(const pb::Letable* pe) {
 
   return rv;
 }
+
+////////////////////////////////////////////////////////////////////
 
 FnTypeAST* parseProcType(const bepb::ProcType& fnty) {
   ASSERT(fnty.has_ret_type()) << "\n\tCannot build FnTypeAST without a return type in the protobuf";

@@ -156,9 +156,14 @@ void BoolAST::dump(DumpToProtobufPass* pass) {
   pass->current->set_bool_value(this->boolValue);
 }
 
+void StringAST::dump(DumpToProtobufPass* pass) {
+  processExprAST(pass->current, this, pb::Expr::STRING);
+  pass->current->set_string_value(this->stringValue);
+}
+
 void IntAST::dump(DumpToProtobufPass* pass) {
   processExprAST(pass->current, this, pb::Expr::PB_INT);
-  pass->current->set_int_text(this->getOriginalText());
+  pass->current->set_string_value(this->getOriginalText());
 }
 
 void VariableAST::dump(DumpToProtobufPass* pass) {

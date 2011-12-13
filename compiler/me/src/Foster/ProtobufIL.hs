@@ -208,6 +208,11 @@ dumpSwitch var arms def occ =
 -- |||||||||||||||||||||||| Expressions |||||||||||||||||||||||||{{{
 dumpExpr :: MonoLetable -> PbLetable.Letable
 
+dumpExpr x@(MoText s) =
+    P'.defaultValue { PbLetable.string_value = Just $ textToPUtf8 s
+                    , PbLetable.tag   = IL_TEXT
+                    , PbLetable.type' = Just $ dumpType (typeMo x)  }
+
 dumpExpr x@(MoBool b) =
     P'.defaultValue { PbLetable.bool_value = Just b
                     , PbLetable.tag   = IL_BOOL
@@ -357,8 +362,8 @@ dumpMoVar t i =
                     , PbTermVar.typ  = Just $ dumpType t  }
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
-dumpMonoModuleToProtobuf :: MonoProgram -> FilePath -> IO ()
-dumpMonoModuleToProtobuf m outpath = do
+dumpMonoModuleToProtobuf :: MonoProgram -> FilePath -> [DataType MonoType] -> IO ()
+dumpMonoModuleToProtobuf m outpath primdts = do
     L.writeFile outpath (messagePut $ dumpProgramToModule m)
   where
     dumpProgramToModule :: MonoProgram -> Module
@@ -366,7 +371,7 @@ dumpMonoModuleToProtobuf m outpath = do
         = Module { modulename = u8fromString $ "foo"
                  , procs      = fromList [dumpProc p | p <- Map.elems procdefs]
                  , val_decls  = fromList (map dumpDecl decls)
-                 , typ_decls  = fromList (map dumpDataTypeDecl datatypes)
+                 , typ_decls  = fromList (map dumpDataTypeDecl (primdts ++ datatypes))
                  , modlines   = fmap textToPUtf8 lines
                  }
     dumpProc p
@@ -395,6 +400,7 @@ dumpMonoModuleToProtobuf m outpath = do
 
 -- |||||||||||||||||||||||| Boilerplate |||||||||||||||||||||||||{{{
 typeMo expr = case expr of
+    MoText _                -> TyConApp "Text" []
     MoBool _                -> PrimInt I1
     MoInt t _               -> t
     MoTuple vs              -> TupleType (map tidType vs)

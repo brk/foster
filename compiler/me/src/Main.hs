@@ -36,7 +36,7 @@ import Foster.TypeAST
 import Foster.ParsedType
 import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn))
 import Foster.AnnExprIL(AIExpr, fnOf)
-import Foster.TypeIL(TypeIL, ilOf, extendTyCtx)
+import Foster.TypeIL(TypeIL(ArrayTypeIL, PrimIntIL, TyConAppIL), ilOf, extendTyCtx)
 import Foster.ILExpr(closureConvertAndLift)
 import Foster.MonoExpr(MonoProgram, showMonoProgramStructure)
 import Foster.KNExpr(kNormalizeModule)
@@ -49,6 +49,30 @@ import Foster.MainCtorHelpers
 import Foster.ConvertExprAST
 
 -----------------------------------------------------------------------
+
+primitiveDataTypesAST :: [DataType TypeAST]
+primitiveDataTypesAST = [
+  (DataType "Text" [] $
+        [DataCtor (T.pack "TextFragment") 0 [ArrayTypeAST (PrimIntAST I8)
+                                            ,PrimIntAST I32]
+        ,DataCtor (T.pack "TextConcat"  ) 1 [TyConAppAST "Text" []
+                                            ,TyConAppAST "Text" []
+                                            ,PrimIntAST I32]])
+  ]
+
+-- TODO hack :(
+
+primitiveDataTypesIL :: [DataType TypeIL]
+primitiveDataTypesIL = [
+  (DataType "Text" [] $
+        [DataCtor (T.pack "TextFragment") 0 [ArrayTypeIL (PrimIntIL I8)
+                                            ,PrimIntIL I32]
+        ,DataCtor (T.pack "TextConcat"  ) 1 [TyConAppIL "Text" []
+                                            ,TyConAppIL "Text" []
+                                            ,PrimIntIL I32]])
+  ]
+
+primitiveDataTypesMono = monomorphizedDataTypes primitiveDataTypesIL
 
 -- TODO shouldn't claim successful typechecks until we reach AnnExprIL.
 
@@ -139,18 +163,18 @@ typecheckModule :: Bool
                 -> TcEnv
                 -> IO (OutputOr (Context TypeIL, ModuleIL AIExpr TypeIL))
 typecheckModule verboseMode modast tcenv0 = do
+    let dts = primitiveDataTypesAST ++ moduleASTdataTypes modast
     let fns = moduleASTfunctions modast
     let primBindings = computeContextBindings primitiveDecls
     let declBindings = computeContextBindings (moduleASTdecls modast) ++
-                       computeContextBindings (concatMap extractCtorTypes $
-                                               moduleASTdataTypes modast)
+                       computeContextBindings (concatMap extractCtorTypes dts)
     case detectDuplicates (map fnAstName fns) of
       [] -> do
         let callGraphList = buildCallGraphList fns declBindings
         let sortedFns = Graph.stronglyConnComp callGraphList -- :: [SCC FnAST]
         putStrLn $ "Function SCC list : " ++
                        show [(name, frees) | (_, name, frees) <- callGraphList]
-        let ctx0 = mkContext declBindings primBindings (moduleASTdataTypes modast)
+        let ctx0 = mkContext declBindings primBindings dts
         (annFns, (ctx, tcenv)) <- mapFoldM sortedFns (ctx0, tcenv0) typecheckFnSCC
         unTc tcenv (convertTypeILofAST modast ctx annFns)
       dups -> return (Errors [out $ "Unable to check module due to "
@@ -306,7 +330,7 @@ main = do
                               , ccFlagVals = flagVals
                               , ccTcEnv    = tcenv
                          }
-        dumpMonoModuleToProtobuf monoprog outfile
+        dumpMonoModuleToProtobuf monoprog outfile primitiveDataTypesMono
 
 compile :: SourceModule -> Compiled MonoProgram
 compile pb_module =
@@ -382,7 +406,8 @@ lowerModule ai_mod ctx_il = do
     closureConvert cfgmod = do
         uniqref <- gets (tcEnvUniqs.ccTcEnv)
         liftIO $ do
-            let dataSigs = dataTypeSigs (moduleILdataTypes cfgmod)
+            let dataSigs = dataTypeSigs (primitiveDataTypesIL ++
+                                         moduleILdataTypes cfgmod)
             u0 <- readIORef uniqref
             return $ closureConvertAndLift dataSigs u0 cfgmod
 

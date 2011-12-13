@@ -200,7 +200,8 @@ isSignature ctorSet allSigs =
       case Map.lookup typename allSigs of
        (Just (DataTypeSig map)) -> Set.size ctorSet == Map.size map
        Nothing ->
-         error $ "isSignature: Unknown type name " ++ typename ++ "! ctorSet = " ++ show ctorSet
+         error $ "Error in PatternMatch.isSignature: "
+              ++ "Unknown type name " ++ typename ++ "! ctorSet = " ++ show ctorSet
     _ -> error $ "Error in PatternMatch.isSignature: "
               ++ "Multiple type names in ctor set: " ++ show ctorSet
 

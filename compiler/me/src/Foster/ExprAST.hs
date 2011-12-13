@@ -28,6 +28,7 @@ data ExprAST ty =
         -- Literals
           E_BoolAST       SourceRange Bool
         | E_IntAST        SourceRange String
+        | E_StringAST     SourceRange T.Text
         | E_TupleAST      (TupleAST ty)
         | E_FnAST         (FnAST ty)
         -- Control flow
@@ -78,7 +79,8 @@ instance Structured (ExprAST TypeAST) where
         let tryGetCallNameE (E_VarAST _rng (VarAST _mt v)) = T.unpack v
             tryGetCallNameE _                              = "" in
         case e of
-            E_BoolAST _rng  b      -> out $ "BoolAST      " ++ (show b)
+            E_BoolAST   _rng  b    -> out $ "BoolAST      " ++ (show b)
+            E_StringAST _rng _s    -> out $ "StringAST    "
             E_CallAST _rng b _args -> out $ "CallAST      " ++ tryGetCallNameE b
             E_CompilesAST {}       -> out $ "CompilesAST  "
             E_IfAST       {}       -> out $ "IfAST        "
@@ -101,6 +103,7 @@ instance Structured (ExprAST TypeAST) where
         let termBindingExpr (TermBinding _ e) = e in
         case e of
             E_BoolAST     _rng _b        -> []
+            E_StringAST   _rng _s        -> []
             E_CallAST     _rng b tup     -> b:(tupleAstExprs tup)
             E_CompilesAST _rng (Just e)  -> [e]
             E_CompilesAST _rng Nothing   -> []
@@ -128,6 +131,7 @@ instance Structured (ExprAST TypeAST) where
 instance SourceRanged (ExprAST ty)
   where
     rangeOf e = case e of
+      E_StringAST     rng _ -> rng
       E_BoolAST       rng _ -> rng
       E_IntAST        rng _ -> rng
       E_TupleAST    tup -> tupleAstRange tup

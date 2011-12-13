@@ -4,7 +4,7 @@
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
-module Foster.Monomo (monomorphize) where
+module Foster.Monomo (monomorphize, monomorphizedDataTypes) where
 
 import Foster.Base
 import Foster.Kind
@@ -336,6 +336,7 @@ monomorphizeLetable subst expr =
               _ -> error $ "Expected polymorphic instantiation to affect a bound variable!"
 
         -- All other nodes are (essentially) ignored straightaway.
+        ILText      s         -> return $ MonoLet $ MoText   s
         ILBool      b         -> return $ MonoLet $ MoBool   b
         ILInt       t i       -> return $ MonoLet $ MoInt   (qt t) i
         ILTuple     vs        -> return $ MonoLet $ MoTuple (map qv vs)

@@ -20,7 +20,7 @@ tokens {
 
   VAL_APP; UNTIL; FORMALS;
   BINDING; LETS; LETREC; SEQ;
-  RAT_NUM; INT_NUM; BOOL;
+  RAT_NUM; INT_NUM; BOOL; STRING;
   DECL; DEFN;
   TERMVAR; TYPEVAR; TYPEVAR_DECL;
   TERM; PHRASE; LVALUE; SUBSCRIPT;
@@ -229,7 +229,7 @@ fragment SYMBOL_SINGLE_START : '!' | '|'
 
 
 
-str                     :       s=STR -> ^(STR $s);
+str                     :       s=STR -> ^(STRING $s);
 
 fragment TICK  : '\'';
 fragment TRTK  : '\'\'\''; // triple-tick

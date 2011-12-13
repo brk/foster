@@ -37,12 +37,28 @@ newDArray8 = { n : Int32 => f : { Int32 => Int8 } =>
   end
 };
 
+
+print_text = { s : Text =>
+  case s
+    of $TextFragment a n     -> prim_print_bytes_stderr a 3; 0
+    of $TextConcat   s1 s2 x -> 0 // print_text s1 ; print_text s2; x
+   end;
+};
+
+
 arrays8 = {
-  let a = newDArray8 3 trunc32to8;
+  let a = newDArray8 26 { x : Int32 => trunc32to8 (x +Int32 96) };
    in
-     expect_i32 3;
+     expect_i32 99;
      print_i8 a[opaquely_i32 2];
+
+     (trunc32to8 0) >^ a[3];
+     prim_print_bytes_stdout a 6;
+     print_abc !;
   end
 };
 
+print_abc = {
+  print_text "abc";
+};
 

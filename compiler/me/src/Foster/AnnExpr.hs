@@ -24,6 +24,7 @@ import qualified Data.Text as T
 data AnnExpr ty =
         -- Literals
           AnnBool       SourceRange Bool
+        | AnnString     SourceRange T.Text
         | AnnInt        { aintRange  :: SourceRange
                         , aintType   :: ty
                         , aintLitInt :: LiteralInt }
@@ -67,6 +68,7 @@ typeAST :: AnnExpr TypeAST -> TypeAST
 typeAST annexpr =
   let recur = typeAST in
   case annexpr of
+     AnnString {}          -> fosStringType
      AnnBool   {}          -> fosBoolType
      AnnInt _rng t _       -> t
      AnnTuple  {}          -> TupleTypeAST [recur e | e <- childrenOf annexpr]
@@ -92,6 +94,7 @@ typeAST annexpr =
 instance Structured (AnnExpr TypeAST) where
   textOf e _width =
     case e of
+      AnnString   _rng    _      -> out $ "AnnString    "
       AnnBool     _rng    b      -> out $ "AnnBool      " ++ (show b)
       AnnCall     _rng t _b _args-> out $ "AnnCall      " ++ " :: " ++ show t
       AnnCompiles _rng cr        -> out $ "AnnCompiles  " ++ show cr
@@ -116,7 +119,8 @@ instance Structured (AnnExpr TypeAST) where
                    fnBoundNames fn = map show (fnVars fn)
   childrenOf e =
     case e of
-      AnnBool {}                           -> []
+      AnnString {}                         -> []
+      AnnBool   {}                         -> []
       AnnCall _r _t b argtup               -> b:(annTupleExprs argtup)
       AnnCompiles  _rng (CompilesResult (OK     e)) -> [e]
       AnnCompiles  _rng (CompilesResult (Errors _)) -> []
@@ -164,6 +168,7 @@ patBindingFreeIds ((_, binds), expr) =
 
 instance SourceRanged (AnnExpr ty) where
   rangeOf expr = case expr of
+      AnnString    rng    _       -> rng
       AnnBool      rng    _       -> rng
       AnnCall      rng _ _ _      -> rng
       AnnCompiles  rng _          -> rng

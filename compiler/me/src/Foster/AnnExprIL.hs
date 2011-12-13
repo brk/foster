@@ -29,6 +29,7 @@ import Control.Monad(when)
 data AIExpr=
         -- Literals
           AIBool       Bool
+        | AIString     T.Text
         | AIInt        TypeIL LiteralInt
         | AITuple      [AIExpr]
         -- Control flow
@@ -63,15 +64,16 @@ ail ctx ae =
         AnnCompiles _rng (CompilesResult ooe) -> do
                 oox <- tcIntrospect (tcInject q ooe)
                 return $ AIBool (isOK oox)
-        AnnBool _rng b         -> do return $ AIBool b
+        AnnBool   _rng b       -> do return $ AIBool b
+        AnnString _rng s       -> do return $ AIString s
+        AnnInt    _rng t int   -> do ti <- qt t
+                                     return $ AIInt ti int
         AnnIf   _rng  t  a b c -> do ti <- qt t
                                      [x,y,z] <- mapM q [a,b,c]
                                      return $ AIIf    ti x y z
         AnnUntil _rng t  a b   -> do ti <- qt t
                                      [x,y]   <- mapM q [a,b]
                                      return $ AIUntil ti x y
-        AnnInt   _rng t int    -> do ti <- qt t
-                                     return $ AIInt ti int
         -- For anonymous function literals
         E_AnnFn annFn        -> do fn_id <- tcFresh "lit_fn"
                                    aiFn <- fnOf ctx annFn

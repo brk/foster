@@ -172,23 +172,34 @@ public:
 
 struct LLBool : public LLExpr {
   bool boolValue;
-  explicit LLBool(string val)
-    : LLExpr("LLBool"), boolValue(val == "true") {}
+  explicit LLBool(string val) : LLExpr("LLBool"), boolValue(val == "true") {}
+  virtual llvm::Value* codegen(CodegenPass* pass);
+};
+
+struct LLText : public LLExpr {
+  std::string stringValue;
+  explicit LLText(const string& val) : LLExpr("LLText"), stringValue(val) {}
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
 struct LLVar : public LLExpr {
   string name;
   // Type is not used
-
-  explicit LLVar(const string& name) : LLExpr("LLVar"),
-        name(name) {}
+  explicit LLVar(const string& name) : LLExpr("LLVar"), name(name) {}
   virtual llvm::Value* codegen(CodegenPass* pass);
   const string getName() const { return name; }
 };
 
 struct LLGlobalSymbol : public LLVar {
   LLGlobalSymbol(std::string name) : LLVar(name) {}
+  virtual llvm::Value* codegen(CodegenPass* pass);
+};
+
+// This class permits direct injection of LLVM values to be injected
+// back up into the LLExpr/codegen layer.
+struct LLValueVar : public LLVar {
+  llvm::Value* val;
+  LLValueVar(llvm::Value* v) : LLVar(""), val(v) {}
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 

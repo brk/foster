@@ -43,7 +43,7 @@ import Foster.Fepb.PBCase   as PBCase
 import Foster.Fepb.Expr     as PbExpr
 import Foster.Fepb.SourceModule as SourceModule
 import Foster.Fepb.Expr.Tag(Tag(IF, LET, VAR, SEQ, UNTIL,
-                                BOOL, CALL, TY_APP, -- MODULE,
+                                BOOL, CALL, TY_APP, STRING, -- MODULE,
                                 ALLOC, DEREF, STORE, TUPLE, PB_INT,
                                 CASE_EXPR, COMPILES, VAL_ABS, SUBSCRIPT,
                                 PAT_WILDCARD, PAT_INT, PAT_BOOL, PAT_CTOR,
@@ -129,7 +129,14 @@ parseUntil pbexpr range = do
 
 parseInt :: PbExpr.Expr -> SourceRange -> FE (ExprAST TypeP)
 parseInt pbexpr range = do
-    return $ E_IntAST range (uToString $ getVal pbexpr PbExpr.int_text)
+    return $ E_IntAST range (uToString $ getVal pbexpr PbExpr.string_value)
+
+-- String literals are parsed with leading and trailing " characters,
+-- so we take tail . init to strip them off.
+parseString :: PbExpr.Expr -> SourceRange -> FE (ExprAST TypeP)
+parseString pbexpr range = do
+    return $ E_StringAST range (T.init . T.tail . pUtf8ToText $
+                                 getVal pbexpr PbExpr.string_value)
 
 parseLet pbexpr range = do
     parsePBLet range
@@ -243,6 +250,7 @@ parseRange pbexpr =
 parseExpr :: PbExpr.Expr -> FE (ExprAST TypeP)
 parseExpr pbexpr = do
     let fn = case PbExpr.tag pbexpr of
+                STRING  -> parseString
                 PB_INT  -> parseInt
                 IF      -> parseIf
                 UNTIL   -> parseUntil

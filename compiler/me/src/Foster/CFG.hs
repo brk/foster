@@ -182,6 +182,7 @@ computeBlocks expr idmaybe k = do
     knToLetable expr =
       case expr of
          KNVar        _v     -> error $ "can't make Letable from KNVar!"
+         KNString     s      -> ILText       s
          KNBool       b      -> ILBool       b
          KNInt        t i    -> ILInt        t i
          KNTuple      vs     -> ILTuple      vs

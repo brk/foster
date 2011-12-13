@@ -6,7 +6,8 @@
 
 module Foster.TypeAST(
   TypeAST(..), EPattern(..), E_VarAST(..), IntSizeBits(..), AnnVar
-, fosBoolType, MetaTyVar(..), Sigma, Rho, Tau, MTVQ(..)
+, MetaTyVar(..), Sigma, Rho, Tau, MTVQ(..)
+, fosBoolType, fosStringType
 , minimalTupleAST
 , mkFnType, convertTyFormal
 , gFosterPrimOpsTable, primitiveDecls
@@ -104,6 +105,7 @@ instance Structured TypeAST where
 convertTyFormal (TypeFormalAST name kind) = (BoundTyVar name, kind)
 
 fosBoolType = i1
+fosStringType = TyConAppAST "Text" []
 
 minimalTupleAST []    = TupleTypeAST []
 minimalTupleAST [arg] = arg
@@ -136,6 +138,9 @@ primitiveDecls =
     ,(,)  "print_i32b" $ mkProcType [i32] []
 
     ,(,) "opaquely_i32" $ mkProcType [i32] [i32]
+
+    ,(,) "prim_print_bytes_stdout" $ mkProcType [ArrayTypeAST i8, i32] []
+    ,(,) "prim_print_bytes_stderr" $ mkProcType [ArrayTypeAST i8, i32] []
 
     -- forall a, i32 -> Array a
     ,(,) "allocDArray" $ let a = BoundTyVar "a" in
