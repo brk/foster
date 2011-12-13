@@ -1109,6 +1109,12 @@ bool matchesExceptForUnknownPointers(Type* aty, Type* ety) {
                                            ety->getContainedType(0));
   }
   if (aty->getTypeID() != ety->getTypeID()) return false;
+
+  if (aty->isIntegerTy() && ety->isIntegerTy()) {
+    return llvm::cast<llvm::IntegerType>(aty)->getBitWidth()
+        == llvm::cast<llvm::IntegerType>(ety)->getBitWidth();
+  }
+  // TODO vector types? metadata? floating point?
   if (aty->getNumContainedTypes() != ety->getNumContainedTypes()) return false;
   for (size_t i = 0; i < aty->getNumContainedTypes(); ++i) {
     if (! matchesExceptForUnknownPointers(aty->getContainedType(i),
