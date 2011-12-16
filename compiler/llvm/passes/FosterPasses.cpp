@@ -13,12 +13,16 @@ namespace foster {
 
 void runCleanupPasses(llvm::Module& mod) {
   llvm::FunctionPassManager fpasses(&mod);
-  fpasses.add(foster::createImathImproverPass());
+  // Note that LLCodegen generates code which requires CFG simplification to
+  // run to avoid keeping stale GC root temporaries.
   fpasses.add(llvm::createCFGSimplificationPass());
-  // TODO: tailduplicate, simplifycfg?
+  fpasses.add(foster::createImathImproverPass());
+  // TODO: tailduplicate?
   foster::runFunctionPassesOverModule(fpasses, &mod);
 
   llvm::PassManager passes;
+  // TODO also have GC malloc finder make sure that our only uses of phi nodes
+  // are to store into stack slots.
   passes.add(foster::createGCMallocFinderPass());
   passes.add(llvm::createDeadInstEliminationPass());
   passes.run(mod);

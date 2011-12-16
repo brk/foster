@@ -403,11 +403,20 @@ void initializeBlockPhis(LLBlock* block) {
   }
 }
 
+// When there's only one predecessor, we can avoid creating stack
+// slots for phis. But doing so means that we must perform CFG simplification
+// in order for us not to have stale GC roots persist through phi nodes!
+bool needStackSlotForPhis(llvm::BasicBlock* bb) {
+  return bb->getSinglePredecessor() != NULL;
+}
+
 void LLBlock::codegenBlock(CodegenPass* pass) {
   builder.SetInsertPoint(bb);
   for (size_t i = 0; i < this->phiVars.size(); ++i) {
-    pass->insertScopedValue( this->phiVars[i]->getName(),
-     ensureImplicitStackSlot(this->phiNodes[i], pass));
+     pass->insertScopedValue(this->phiVars[i]->getName(),
+               (needStackSlotForPhis(bb)
+                 ? ensureImplicitStackSlot(this->phiNodes[i], pass)
+                 : (llvm::Value*)          this->phiNodes[i]));
   }
   for (size_t i = 0; i < this->mids.size(); ++i) {
     this->mids[i]->codegenMiddle(pass);
