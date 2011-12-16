@@ -13,10 +13,13 @@ import Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as TE
 import Data.Int
+import Data.Word
 import Data.Bits
 import Data.IORef
 import Data.Array
+import qualified Data.ByteString as BS
 
 import System.Console.ANSI
 import Control.Exception(assert)
@@ -216,8 +219,8 @@ data IExpr =
 -- and captured values.
 data SSValue = SSBool      Bool
              | SSInt       Integer
-             | SSString    T.Text
              | SSArray     (Array Int Location)
+             | SSByteString BS.ByteString -- strictly redundant, but convenient.
              | SSTuple     [SSValue]
              | SSCtorVal   CtorId [SSValue]
              | SSLocation  Location
@@ -235,7 +238,7 @@ ssTermOfExpr expr =
   case expr of
     KNBool b               -> SSTmValue $ SSBool b
     KNInt _t i             -> SSTmValue $ SSInt (litIntValue i)
-    KNString s             -> SSTmValue $ SSString s
+    KNString s             -> SSTmValue $ textFragmentOf s
     KNVar v                -> SSTmExpr  $ IVar (idOf v)
     KNTuple vs             -> SSTmExpr  $ ITuple (map idOf vs)
     KNLetFuns ids funs e   -> SSTmExpr  $ ILetFuns ids funs (tr e)
@@ -451,12 +454,7 @@ stepExpr gs expr = do
         let (SSInt i) = getval gs sizeid
         -- The array cells are initially filled with constant zeros,
         -- regardless of what type we will eventually store.
-        (inits, gs2) <- mapFoldM [0.. i - 1] gs (\n -> \gs1 ->
-                                let (loc, gs) = extendHeap gs1 (SSInt 0) in
-                                return ([(fromInteger n, loc)], gs)
-                       )
-        return $ withTerm gs2 (SSTmValue $ SSArray $
-                        array (0, fromInteger $ i - 1) inits)
+        arrayFrom gs [0 .. i - 1] (\_ _ -> 0)
 
     ITyApp v _argty -> return $ withTerm gs (SSTmValue $ getval gs v)
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
@@ -491,7 +489,7 @@ matchPatterns pats vals = do
   return $ concat matchLists
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
--- |||||||||||||||||||||| Primitive Operations ||||||||||||||||||{{{
+-- |||||||||||||||||||||| Primitive Operators ||||||||||||||||||{{{
 arraySlotLocation arr n = SSLocation (arr ! n)
 
 liftInt2 :: (Integral a) => (a -> a -> b) -> Integer -> Integer -> b
@@ -591,7 +589,15 @@ evalPrimitiveIntTrunc I32 I8 [SSInt i] = SSInt (toInteger $ trunc8 i)
 evalPrimitiveIntTrunc from to _args =
   error $ "Smallstep.evalPrimitiveIntTrunc " ++ show from ++ " " ++ show to
 
---------------------------------------------------------------------
+-- This relies on the invariant that lists are created & stored densely.
+packBytes :: MachineState -> Array Int Location -> Integer -> BS.ByteString
+packBytes gs a n = let locs = List.take (fromInteger n) (elems a) in
+                   let ints = map (\z -> let (SSInt i) = lookupHeap gs z in i) locs in
+                   let bytes = (map fromInteger ints) :: [Word8] in
+                   BS.takeWhile (/= 0) (BS.pack bytes)
+
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+-- |||||||||||||||||||||||  Named Primitives  |||||||||||||||||||{{{
 
 evalNamedPrimitive :: String -> MachineState -> [SSValue] -> IO MachineState
 
@@ -617,8 +623,25 @@ evalNamedPrimitive "force_gc_for_debugging_purposes" gs _args =
 evalNamedPrimitive "opaquely_i32" gs [val] =
          return $ withTerm gs (SSTmValue $ val)
 
-evalNamedPrimitive prim _gs _args = error $ "evalNamedPrimitive " ++ show prim
-                                         ++ " not yet defined"
+evalNamedPrimitive "prim_print_bytes_stdout" gs [SSArray a, SSInt n] =
+      do printString gs (T.unpack . TE.decodeUtf8 $ packBytes gs a n)
+         return $ withTerm gs unit
+
+evalNamedPrimitive "prim_print_bytes_stderr" gs [SSArray a, SSInt n] =
+      do expectString gs (T.unpack . TE.decodeUtf8 $ packBytes gs a n)
+         return $ withTerm gs unit
+
+evalNamedPrimitive "prim_print_bytes_stdout" gs [SSByteString bs, SSInt n] =
+      do printString  gs (T.unpack . TE.decodeUtf8 $ BS.take (fromInteger n) bs)
+         return $ withTerm gs unit
+
+evalNamedPrimitive "prim_print_bytes_stderr" gs [SSByteString bs, SSInt n] =
+      do expectString gs (T.unpack . TE.decodeUtf8 $ BS.take (fromInteger n) bs)
+         return $ withTerm gs unit
+
+evalNamedPrimitive prim _gs args = error $ "evalNamedPrimitive " ++ show prim
+                                         ++ " not yet defined for args:\n"
+                                         ++ show args
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -706,6 +729,19 @@ expectString gs s = do
 
 --------------------------------------------------------------------
 
+textFragmentOf txt = SSCtorVal textFragmentCtor [SSByteString (TE.encodeUtf8 txt),
+                                            SSInt $ fromIntegral (T.length txt)]
+  where textFragmentCtor = CtorId "Text" "TextFragment" 2 0 -- see Main.hs
+
+arrayFrom :: MachineState -> [a] -> (Int -> a -> Integer) -> IO MachineState
+arrayFrom gs0 vals f = do
+        (inits, gs2) <- mapFoldM (zip [0..] vals) gs0 $ \(n, a) -> \gs1 ->
+                              let (loc, gs2) = extendHeap gs1 (SSInt $ f n a) in
+                              return ([(n, loc)], gs2)
+        return $ withTerm gs2 (SSTmValue $ SSArray $
+                                         array (0, List.length inits - 1) inits)
+--------------------------------------------------------------------
+
 showBits k n = -- k = 32, for example
   let bits = map (testBit n) [0 .. (k - 1)] in
   let s = map (\b -> if b then '1' else '0') bits in
@@ -728,9 +764,9 @@ isExpectFunction name =
     _ -> False
 
 display :: SSValue -> String
-display (SSString s  )  = show s
 display (SSBool True )  = "true"
 display (SSBool False)  = "false"
+display (SSByteString bs)= show bs
 display (SSInt i     )  = show i
 display (SSArray a   )  = show a
 display (SSTuple vals)  = "(" ++ joinWith ", " (map display vals) ++ ")"
