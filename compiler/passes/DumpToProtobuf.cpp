@@ -234,8 +234,12 @@ void SubscriptAST::dump(DumpToProtobufPass* pass) {
 }
 
 void SeqAST::dump(DumpToProtobufPass* pass) {
-  processExprAST(pass->current, this, pb::Expr::SEQ);
-  dumpChildren(pass, this);
+  if (this->parts.size() == 1) {
+    this->parts[0]->dump(pass);
+  } else {
+    processExprAST(pass->current, this, pb::Expr::SEQ);
+    dumpChildren(pass, this);
+  }
 }
 
 void LetAST::dump(DumpToProtobufPass* pass) {
