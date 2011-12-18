@@ -63,6 +63,7 @@ data ILProcDef =
                , ilProcVars       :: [AIVar]
                , ilProcRange      :: SourceRange
                , ilProcBlocks     :: [ILBlock]
+               , ilProcBlockPreds :: Map BlockId Int
                }
 
 -- The standard definition of a basic block and its parts.
@@ -122,14 +123,16 @@ basicBlock hooplBlock = blockGraph hooplBlock
 
 jumpTo bbg = case bbgEntry bbg of (bid, _) -> ILast $ CFBr bid undefined
 
+type ClosureConvertedBlocks = ([ILBlock], Map BlockId Int)
+
 -- We serialize a basic block graph by computing a depth-first search
 -- starting from the graph's entry block.
-closureConvertBlocks :: BasicBlockGraph -> ILM [ILBlock]
+closureConvertBlocks :: BasicBlockGraph -> ILM ClosureConvertedBlocks
 closureConvertBlocks bbg = do
    let cfgBlocks = map basicBlock $
                      preorder_dfs $ mkLast (jumpTo bbg) |*><*| bbgBody bbg
    blocks <- mapM closureConvertBlock cfgBlocks
-   return $ concat blocks
+   return (concat blocks, bbgNumPreds bbg)
   where
     -- A BasicBlock which ends in a decision tree will, in the general case,
     -- expand out to multiple blocks to encode the tree.
@@ -269,7 +272,7 @@ closureOfKnFn infoMap (self_id, fn) = do
         -- If the body has x and y free, the closure converted body should be
         --     case env of (x, y, ...) -> body end
         newbody <- do
-            let BasicBlockGraph bodyentry oldbodygraph = fnBody f
+            let BasicBlockGraph bodyentry oldbodygraph numPreds = fnBody f
             let norange = MissingSourceRange ""
             let patVar a = P_Variable norange (tidIdent a)
             let cfcase = CFCase envVar [
@@ -284,11 +287,12 @@ closureOfKnFn infoMap (self_id, fn) = do
                             mkLast (ILast cfcase)
             closureConvertBlocks $
                BasicBlockGraph bid (caseblock |*><*| oldbodygraph)
+                               (incrPredecessorsDueTo (ILast cfcase) numPreds)
 
         proc <- ilmPutProc $ closureConvertedProc (envVar:(fnVars f)) f newbody
         return (envId, proc)
 
-    mapBasicBlock f (BasicBlockGraph entry bg) = BasicBlockGraph entry (f bg)
+    mapBasicBlock f (BasicBlockGraph entry bg np) = BasicBlockGraph entry (f bg) np
 
     -- Making environment passing explicit simply means rewriting calls
     -- of closure variables from   v(args...)   ==>   v_proc(v_env, args...).
@@ -322,15 +326,15 @@ closureOfKnFn infoMap (self_id, fn) = do
 
 closureConvertedProc :: [AIVar]
                      -> CFFn
-                     -> [ILBlock]
+                     -> ClosureConvertedBlocks
                      -> ILM ILProcDef
-closureConvertedProc procArgs f newbody = do
+closureConvertedProc procArgs f (newbody, numPreds) = do
   let (TypedId ft id) = fnVar f
   case ft of
     FnTypeIL                  _ftd ftrange _ _ ->
-       return $ ILProcDef ftrange Nothing        id procArgs (fnRange f) newbody
+       return $ ILProcDef ftrange Nothing        id procArgs (fnRange f) newbody numPreds
     ForAllIL ktyvars (FnTypeIL _ftd ftrange _ _) ->
-       return $ ILProcDef ftrange (Just ktyvars) id procArgs (fnRange f) newbody
+       return $ ILProcDef ftrange (Just ktyvars) id procArgs (fnRange f) newbody numPreds
     _ -> error $ "Expected closure converted proc to have fntype, had " ++ show ft
 
 --------------------------------------------------------------------

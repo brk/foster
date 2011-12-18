@@ -35,7 +35,7 @@ data MoProcDef =
                , moProcBlocks     :: [MoBlock]
                }
 
-data MoBlock  = MoBlock (BlockId, [MoVar]) [MoMiddle] MoLast
+data MoBlock  = MoBlock (BlockId, [MoVar]) [MoMiddle] MoLast (Maybe Int)
 data MoMiddle = MoLetVal      Ident    MonoLetable
               | MoClosures    [Ident] [MoClosure]
               | MoRebindId    Ident    MoVar
@@ -61,8 +61,8 @@ showMonoProgramStructure (MoProgram procdefs _decls _dtypes _lines) =
           ++ out "\n^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"
     procVarDesc (TypedId ty id) = "( " ++ (show id) ++ " :: " ++ show ty ++ " ) "
 
-    showBlock (MoBlock blockid mids last) =
-           out (show blockid ++ "\n")
+    showBlock (MoBlock blockid mids last numPreds) =
+           out (show blockid ++ " (" ++ show numPreds ++ " preds)\n")
         ++ out (concatMap (\m -> "\t" ++ show m ++ "\n") mids)
         ++ out (show last ++ "\n\n")
 

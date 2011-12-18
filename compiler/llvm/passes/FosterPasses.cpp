@@ -21,8 +21,6 @@ void runCleanupPasses(llvm::Module& mod) {
   foster::runFunctionPassesOverModule(fpasses, &mod);
 
   llvm::PassManager passes;
-  // TODO also have GC malloc finder make sure that our only uses of phi nodes
-  // are to store into stack slots.
   passes.add(foster::createGCMallocFinderPass());
   passes.add(llvm::createDeadInstEliminationPass());
   passes.run(mod);

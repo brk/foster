@@ -231,6 +231,7 @@ LLMiddle* parseMiddle(const pb::BlockMiddle& b) {
 LLBlock* parseBlock(const pb::Block& b) {
   LLBlock* bb = new LLBlock;
   bb->block_id = b.block_id();
+  bb->numPreds = b.has_num_preds() ? b.num_preds() : 0;
   for (int i = 0; i < b.middle_size(); ++i) {
     bb->mids.push_back(parseMiddle(b.middle(i)));
   }

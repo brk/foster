@@ -24,8 +24,6 @@ General Compiler Structure Improvements
 * Better phi handling:
   * Args to postalloca phi use emit()
   * Args to internal (non-postalloca) phis use codegen()
-  * For phis with a single predecessor, don't generate a stack slot.
-    Thus cfg-simpl will do RAUW for us.
 
 TODO: libraries, benchmarks, & applications
 -------------------------------------------

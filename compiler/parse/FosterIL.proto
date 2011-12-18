@@ -40,10 +40,11 @@ message ProcType {
 }
 
 message Block {
-  required string       block_id = 1;
-  repeated TermVar      phis     = 2;
-  repeated BlockMiddle  middle   = 3;
-  required Terminator   last     = 4;
+  required string       block_id  = 1;
+  repeated TermVar      phis      = 2;
+  repeated BlockMiddle  middle    = 3;
+  required Terminator   last      = 4;
+  optional int32        num_preds = 5;
 }
 
 message BlockMiddle {

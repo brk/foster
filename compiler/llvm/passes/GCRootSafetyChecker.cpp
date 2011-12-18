@@ -14,6 +14,8 @@
 
 #include "base/GenericGraph.h"
 
+#include "pystring/pystring.h"
+
 #include <set>
 #include <map>
 
@@ -54,17 +56,27 @@ struct GCRootSafetyChecker : public FunctionPass {
     return true;
   }
 
-  // Implementation strategy:
-  // Iterate over each basic block, noting which values
-  // result from loads of gc root slots.
-  // At every potential GC point, mark every value seen so far as tainted.
-  // Complain when a tainted value is used.
+  //  * Iterate over each basic block, noting which values
+  //    result from loads of gc root slots.
+  //  * At every potential GC point, mark every value seen so far as tainted.
+  //  * Complain when a tainted value is used.
 
   typedef std::set<llvm::Value*> ValueSet;
   typedef std::map<llvm::Value*, llvm::Value*> ValueValueMap;
 
+  bool isGCRoot(const Instruction* v) {
+    return v && v->getMetadata("fostergcroot") != NULL;
+  }
+
+  bool isStoreToStackSlotOrRet(const Instruction* v) {
+    const llvm::StoreInst* si = llvm::dyn_cast<llvm::StoreInst>(v);
+    return (si != NULL && llvm::isa<llvm::AllocaInst>(si->getPointerOperand()))
+        || (si == NULL && llvm::isa<llvm::ReturnInst>(v));
+  }
+
   virtual bool runOnFunction(Function& F) {
     if (!F.hasGC()) return false;
+    if (!pystring::startswith(F.getGC(), "fostergc")) return false;
 
     ValueSet gcroots;
 
@@ -72,7 +84,7 @@ struct GCRootSafetyChecker : public FunctionPass {
     BasicBlock::iterator IP = F.getEntryBlock().begin();
     while (IP != F.getEntryBlock().end()
         && llvm::isa<llvm::AllocaInst>(IP)) {
-      if (IP->getMetadata("fostergcroot")) {
+      if (isGCRoot(IP)) {
         gcroots.insert(IP);
       }
       ++IP;
@@ -141,7 +153,35 @@ struct GCRootSafetyChecker : public FunctionPass {
 
     if (!problems.empty()) exit(1);
 
+    checkUsageOfPhis(F);
+
     return false;
+  }
+
+  void checkUsageOfPhis(Function& F) {
+    for (Function::iterator bb = F.begin(); bb != F.end(); ++bb) {
+      BasicBlock::iterator IP = bb->begin();
+      for ( ; llvm::isa<llvm::PHINode>(IP); ++IP) {
+        // Non-pointers don't need to worry about GC staleness.
+        if (! IP->getType()->isPointerTy()) { continue; }
+
+        if (! isStoreToStackSlotOrRet(IP->use_back())) {
+          llvm::errs() << "******** invalid use of phi node"
+                       << " in function " << F.getName()
+                       << "\n\tThis phi:   " << *IP
+                       << "\n\tIs misused: " << *(IP->use_back());
+          exit(1);
+        }
+
+        Value::use_iterator IPe = IP->use_begin(); IPe++;
+        if (IPe != IP->use_end()) {
+          llvm::errs() << "******** too many uses of phi node"
+                       << " in function " << F.getName()
+                       << "\n\tThis phi:   " << *IP;
+          exit(1);
+        }
+      }
+    }
   }
 
   void union_of_predecessors(BasicBlock* BB, ValueValueMap& results,

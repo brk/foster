@@ -151,11 +151,12 @@ dumpAllocate (AllocInfo _typ region maybe_array_size unboxed) =
 
 -- ||||||||||||||||||||||||||| CFGs |||||||||||||||||||||||||||||{{{
 dumpBlock :: MoBlock -> PbBlock.Block
-dumpBlock (MoBlock (id, phis) mids illast) =
+dumpBlock (MoBlock (id, phis) mids illast numPreds) =
     P'.defaultValue { PbBlock.block_id = dumpBlockId id
                     , PbBlock.phis     = fromList $ map dumpVar phis
                     , PbBlock.middle   = fromList $ map dumpMiddle mids
                     , PbBlock.last     = dumpLast illast
+                    , PbBlock.num_preds= fmap intToInt32 numPreds
                     }
 
 dumpMiddle :: MoMiddle -> PbBlockMiddle.BlockMiddle

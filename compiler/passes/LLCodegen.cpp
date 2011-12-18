@@ -399,24 +399,36 @@ void initializeBlockPhis(LLBlock* block) {
   for (size_t i = 0; i < block->phiVars.size(); ++i) {
     block->phiNodes.push_back(
            builder.CreatePHI(getLLVMType(block->phiVars[i]->type),
-                                      1, block->phiVars[i]->getName()));
+                        block->numPreds, block->phiVars[i]->getName()));
   }
 }
 
 // When there's only one predecessor, we can avoid creating stack
 // slots for phis. But doing so means that we must perform CFG simplification
 // in order for us not to have stale GC roots persist through phi nodes!
-bool needStackSlotForPhis(llvm::BasicBlock* bb) {
-  return bb->getSinglePredecessor() != NULL;
+// The GCRootSafetyChecker pass verifies that use of phi nodes is restricted.
+bool needStackSlotForPhis(LLBlock* block) {
+  ASSERT(block->numPreds > 0);
+  return block->numPreds > 1;
+}
+
+Value* maybeStackSlotForPhi(Value* phi, LLBlock* block, CodegenPass* pass) {
+  Value* rv = phi;
+  if (needStackSlotForPhis(block) && phi->getType()->isPointerTy()) {
+    rv = ensureImplicitStackSlot(phi, pass);
+  }
+  return rv;
 }
 
 void LLBlock::codegenBlock(CodegenPass* pass) {
   builder.SetInsertPoint(bb);
+  if (!this->phiVars.empty()) {
+    EDiag() << bb->getName() << " ; " << numPreds << " preds, in " << bb->getParent()->getName()
+        << " ;; "<< needStackSlotForPhis(this);
+  }
   for (size_t i = 0; i < this->phiVars.size(); ++i) {
      pass->insertScopedValue(this->phiVars[i]->getName(),
-               (needStackSlotForPhis(bb)
-                 ? ensureImplicitStackSlot(this->phiNodes[i], pass)
-                 : (llvm::Value*)          this->phiNodes[i]));
+        maybeStackSlotForPhi(this->phiNodes[i], this, pass));
   }
   for (size_t i = 0; i < this->mids.size(); ++i) {
     this->mids[i]->codegenMiddle(pass);

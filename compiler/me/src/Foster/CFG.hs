@@ -7,6 +7,7 @@
 
 module Foster.CFG
 ( computeCFGIO
+, incrPredecessorsDueTo
 , Insn(..)
 , BlockId, BlockEntry
 , BasicBlockGraph(..)
@@ -25,7 +26,8 @@ import Foster.Letable(Letable(..))
 import Compiler.Hoopl
 
 import qualified Data.Text as T
-
+import qualified Data.Map as Map
+import Data.Map(Map)
 import Control.Monad.State
 import Data.IORef
 import Prelude hiding (id, last)
@@ -69,13 +71,28 @@ internalComputeCFG uniqRef fn = do
 -- The other helper, to collect the scattered results and build the actual CFG.
 extractFunction st fn =
   let blocks = Prelude.reverse (cfgAllBlocks st) in
-  fn { fnBody = BasicBlockGraph (entryId blocks) (catClosedGraphs blocks) }
+  let elab    = entryLab blocks in
+  fn { fnBody = BasicBlockGraph elab (catClosedGraphs blocks)
+                                (computeNumPredecessors elab blocks) }
   where -- Dunno why this function isn't in Hoopl...
         catClosedGraphs :: [Graph Insn C C] -> Graph Insn C C
         catClosedGraphs = foldr (|*><*|) emptyClosedGraph
 
-        entryId [] = error $ "can't get entry block id from empty list!"
-        entryId (bb:_) = id where (id, _, _) = splitBasicBlock bb
+        entryLab [] = error $ "can't get entry block label from empty list!"
+        entryLab (bb:_) = lab where (lab, _, _) = splitBasicBlock bb
+
+        computeNumPredecessors elab =
+          -- The entry (i.e. postalloca) label will get an incoming edge in LLVM
+          let startingMap = Map.singleton (blockId elab) 1 in
+          foldr (\bb m ->
+                let  (_, _, terminator) = splitBasicBlock bb in
+                incrPredecessorsDueTo terminator m) startingMap
+
+blockId :: BlockEntry -> BlockId
+blockId = fst
+
+incrPredecessorsDueTo terminator m =
+    foldr (\tgt mm -> Map.insertWith (+) tgt 1 mm) m (blockTargetsOf terminator)
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -291,13 +308,19 @@ instance Eq AIVar where
 
 instance NonLocal Insn where
   entryLabel (ILabel ((_,l), _)) = l
-  successors (ILast last) =
+  successors (ILast last) = map blockLabel (blockTargetsOf (ILast last))
+                          where blockLabel (_, label) = label
+
+--entryBlockId :: Insn C O -> BlockId
+--entryBlockId (ILabel (bid, _)) = bid
+
+blockTargetsOf :: Insn O C -> [BlockId]
+blockTargetsOf (ILast last) =
     case last of
         CFRetVoid            -> []
         CFRet  _             -> []
-        CFBr   b _           -> [blockLabel b]
-        CFCase _ patsbids    -> [blockLabel b | (_, b) <- patsbids]
-    where blockLabel (_, label) = label
+        CFBr   b _           -> [b]
+        CFCase _ patsbids    -> [b | (_, b) <- patsbids]
 
 -- Decompose a BasicBlock into a triple of its subpieces.
 splitBasicBlock :: BasicBlock -> SplitBasicBlock
@@ -320,8 +343,9 @@ type SplitBasicBlock             = ( BlockEntry,  [Insn O O],  Insn O C )
 -- We represent basic blocks as Graphs rather than Blocks because
 -- it's easier to glue together Graphs when building the basic blocks.
 type BasicBlock = Graph Insn C C
-data BasicBlockGraph = BasicBlockGraph { bbgEntry :: BlockEntry,
-                                         bbgBody :: (Graph Insn C C) }
+data BasicBlockGraph = BasicBlockGraph { bbgEntry :: BlockEntry
+                                       , bbgBody :: (Graph Insn C C)
+                                       , bbgNumPreds :: Map BlockId Int }
 type CFFn = Fn BasicBlockGraph TypeIL
 type BlockEntry = (BlockId, [AIVar])
 

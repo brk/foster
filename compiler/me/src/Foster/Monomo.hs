@@ -245,7 +245,7 @@ monomorphizeProc (NeedsMono polyid srcid tyargs) = do
 
 doMonomorphizeProc :: ILProcDef -> MonoSubst -> Mono MoProcDef
 doMonomorphizeProc proc subst = do
-  blocks <- mapM (monomorphizeBlock subst) (ilProcBlocks proc)
+  blocks <- mapM (monomorphizeBlock subst proc) (ilProcBlocks proc)
   return $ MoProcDef { moProcBlocks     = blocks
                      , moProcIdent      =                       ilProcIdent proc
                      , moProcRange      =                       ilProcRange proc
@@ -253,11 +253,12 @@ doMonomorphizeProc proc subst = do
                      , moProcVars       =  map (monoVar subst) $ ilProcVars proc
                      }
 
-monomorphizeBlock :: MonoSubst -> ILBlock -> Mono MoBlock
-monomorphizeBlock subst (Block (bid, phis) mids last) = do
+monomorphizeBlock :: MonoSubst -> ILProcDef -> ILBlock -> Mono MoBlock
+monomorphizeBlock subst proc (Block (bid, phis) mids last) = do
     newmids <- mapM (monomorphizeMid subst) mids
     let newphis = map (monoVar subst) phis
     return $ MoBlock (bid, newphis) newmids (monoLast subst last)
+                     (Map.lookup bid $ ilProcBlockPreds proc)
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 monoLast :: MonoSubst -> ILLast -> MoLast

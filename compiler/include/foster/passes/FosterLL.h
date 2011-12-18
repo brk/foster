@@ -64,6 +64,7 @@ struct LLBitcast : public LLMiddle {
 
 struct LLBlock {
   std::string block_id;
+  int numPreds;
   llvm::BasicBlock* bb;
   std::vector<LLVar*> phiVars;
   std::vector<llvm::PHINode*> phiNodes;
