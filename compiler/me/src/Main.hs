@@ -15,14 +15,15 @@ import System.Console.ANSI(Color(..))
 import qualified Data.ByteString.Lazy as L(readFile)
 import qualified Data.Text as T
 import qualified Data.List as List(all)
-import qualified Data.Map as Map(fromList)
-import qualified Data.Set as Set(filter, toList, fromList)
+import qualified Data.Map as Map(fromList, toList)
+import qualified Data.Set as Set(filter, toList, fromList, notMember)
 import qualified Data.Graph as Graph(SCC, flattenSCC, stronglyConnComp)
+import Data.Map(Map)
+import Data.Set(Set)
 
 import Data.IORef(IORef, newIORef, readIORef)
 import Data.Traversable(mapM)
 import Prelude hiding (mapM)
-import Data.Maybe(isNothing)
 import Control.Monad.State(forM, when, forM_, StateT, runStateT, gets,
                            liftIO, liftM, liftM2)
 
@@ -170,7 +171,8 @@ typecheckModule verboseMode modast tcenv0 = do
                        computeContextBindings (concatMap extractCtorTypes dts)
     case detectDuplicates (map fnAstName fns) of
       [] -> do
-        let callGraphList = buildCallGraphList fns declBindings
+        let callGraphList = buildCallGraphList fns (Set.fromList $
+                                     [nm | TermVarBinding nm _ <- declBindings])
         let sortedFns = Graph.stronglyConnComp callGraphList -- :: [SCC FnAST]
         putStrLn $ "Function SCC list : " ++
                        show [(name, frees) | (_, name, frees) <- callGraphList]
@@ -181,11 +183,12 @@ typecheckModule verboseMode modast tcenv0 = do
                                  ++ "duplicate bindings: " ++ show dups])
  where
    mkContext declBindings primBindings datatypes =
-     Context declBindings primBindsMap verboseMode globalvars [] ctorinfo
+     Context declBindsMap primBindsMap verboseMode globalvars [] ctorinfo
        where globalvars   = declBindings ++ primBindings
              ctorinfo     = getCtorInfo datatypes
              primBindsMap = Map.fromList $ map unbind primBindings
-                               where unbind (TermVarBinding s t) = (s, t)
+             declBindsMap = Map.fromList $ map unbind declBindings
+             unbind (TermVarBinding s t) = (s, t)
 
    computeContextBindings :: [(String, TypeAST)] -> [ContextBinding TypeAST]
    computeContextBindings decls = map (\(s,t) -> pair2binding (T.pack s, t)) decls
@@ -209,7 +212,7 @@ typecheckModule verboseMode modast tcenv0 = do
      ForAllAST (map convertTyFormal tyformals)
       (FnTypeAST (TupleTypeAST ctorArgTypes) (typeOfDataType dt) FastCC FT_Proc)
 
-   buildCallGraphList :: [FnAST TypeAST] -> [ContextBinding ty]
+   buildCallGraphList :: [FnAST TypeAST] -> Set T.Text
                       -> [(FnAST TypeAST, T.Text, [T.Text])]
    buildCallGraphList asts declBindings =
      map (\ast -> (ast, fnAstName ast, fnAstFreeVariables ast)) asts
@@ -217,7 +220,7 @@ typecheckModule verboseMode modast tcenv0 = do
          fnAstFreeVariables f =
             let allCalledFns = Set.fromList $ freeVars (fnAstBody f) in
             -- Remove everything that isn't a top-level binding.
-            let notTopLevel var = isNothing $ termVarLookup var declBindings in
+            let notTopLevel var = Set.notMember var declBindings in
             let nonPrimitives = Set.filter notTopLevel allCalledFns in
             -- remove recursive function name calls
             Set.toList $ Set.filter (\name -> fnAstName f /= name) nonPrimitives
@@ -242,13 +245,18 @@ typecheckModule verboseMode modast tcenv0 = do
         liftContextM :: (Monad m, Show t1, Show t2)
                      => (t1 -> m t2) -> Context t1 -> m (Context t2)
         liftContextM f (Context cb pb vb gb tybinds ctortypeast) = do
-          cb' <- mapM (liftBinding f) cb
+          cb' <-mmapM (liftTID f) cb
           pb' <- mapM (liftTID f) pb
           gb' <- mapM (liftBinding f) gb
           return $ Context cb' pb' vb gb' tybinds ctortypeast
 
         liftTID :: Monad m => (t1 -> m t2) -> TypedId t1 -> m (TypedId t2)
         liftTID f (TypedId t i) = do t2 <- f t ; return $ TypedId t2 i
+
+        mmapM :: (Monad m, Ord k) => (a -> m b) -> Map k a -> m (Map k b)
+        mmapM f ka = do
+          kbl <- mapM (\(k, a) -> do b <- f a ; return (k, b)) (Map.toList ka)
+          return $ Map.fromList kbl
 
         -- Wrinkle: need to extend the context used for checking ctors!
         convertDataTypeAST :: Context TypeAST ->
@@ -432,7 +440,7 @@ showGeneratedMetaTypeVariables varlist ctx_il =
          then runOutput (outLn $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t) -- error $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t ++ " wasn't a tau!"
          else runOutput (outLn $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t)
     runOutput $ (outLn "vvvv contextBindings:====================")
-    runOutput $ (outCSLn Yellow (joinWith "\n" $ map show (contextBindings ctx_il)))
+    runOutput $ (outCSLn Yellow (joinWith "\n" $ map show (Map.toList $ contextBindings ctx_il)))
 
 type Compiled = StateT CompilerContext IO
 data CompilerContext = CompilerContext {

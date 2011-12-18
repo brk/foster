@@ -2,6 +2,8 @@ module Foster.Context where
 
 import Data.IORef(IORef,newIORef,readIORef,writeIORef,modifyIORef)
 import Data.Map(Map)
+import Data.List(foldl')
+import qualified Data.Map as Map
 
 import qualified Data.Text as T
 
@@ -13,7 +15,7 @@ import Foster.Output(out, outLn, Output, OutputOr(..))
 
 data ContextBinding ty = TermVarBinding T.Text (TypedId ty)
 
-data Context ty = Context { contextBindings   :: [ContextBinding ty]
+data Context ty = Context { contextBindings   :: Map T.Text (TypedId ty) -- [ContextBinding ty]
                           , primitiveBindings :: Map T.Text (TypedId ty)
                           , contextVerbose    :: Bool
                           , globalBindings    :: [ContextBinding ty]
@@ -21,23 +23,22 @@ data Context ty = Context { contextBindings   :: [ContextBinding ty]
                           , contextCtorInfo   :: Map CtorName [CtorInfo TypeAST]
                           }
 
+prependBinding :: Map T.Text (TypedId ty) -> ContextBinding ty -> Map T.Text (TypedId ty)
+prependBinding m (TermVarBinding nm tid) = Map.insert nm tid m
+
 prependContextBinding :: Context ty -> ContextBinding ty -> Context ty
-prependContextBinding ctx prefix =
-    ctx { contextBindings = prefix : (contextBindings ctx) }
+prependContextBinding ctx binding =
+    ctx { contextBindings = prependBinding (contextBindings ctx) binding }
 
 prependContextBindings :: Context ty -> [ContextBinding ty] -> Context ty
 prependContextBindings ctx prefix =
-    ctx { contextBindings = prefix ++ (contextBindings ctx) }
+    ctx { contextBindings = foldl' prependBinding (contextBindings ctx) prefix }
 
 instance (Show ty) => Show (ContextBinding ty) where
     show (TermVarBinding _s annvar) = "(termvar " ++ show annvar ++ ")"
 
-ctxBoundIdents :: Context ty -> [Ident]
-ctxBoundIdents ctx = [tidIdent v | TermVarBinding _ v <- (contextBindings ctx)]
-
-termVarLookup :: T.Text -> [ContextBinding ty] -> Maybe (TypedId ty)
-termVarLookup name bindings = Prelude.lookup name bindingslist where
-    bindingslist = [(nm, annvar) | (TermVarBinding nm annvar) <- bindings]
+termVarLookup :: T.Text -> Map T.Text (TypedId ty) -> Maybe (TypedId ty)
+termVarLookup name bindings = Map.lookup name bindings
 
 -- Based on "Practical type inference for arbitrary rank types."
 -- One significant difference is that we do not include the Gamma context
