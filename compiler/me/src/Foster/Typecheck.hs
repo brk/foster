@@ -161,7 +161,7 @@ typecheckVar TCSigma ctx rng name =
     Just (TypedId sigma id) -> do
          return $ E_AnnVar rng (TypedId sigma id)
     Nothing   ->
-      case Map.lookup name (primitiveBindings ctx) of
+      case termVarLookup name (primitiveBindings ctx) of
         Just avar -> return $ AnnPrimitive rng avar
         Nothing   -> do msg <- getStructureContextMessage
                         tcFails [out $ "Unknown variable " ++ T.unpack name
