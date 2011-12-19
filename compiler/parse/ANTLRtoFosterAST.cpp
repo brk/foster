@@ -14,8 +14,6 @@
 #include "_generated_/fosterLexer.h"
 #include "_generated_/fosterParser.h"
 
-#include "pystring/pystring.h"
-
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"

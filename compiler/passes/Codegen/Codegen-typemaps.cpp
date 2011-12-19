@@ -20,8 +20,6 @@
 #include <set>
 #include <vector>
 
-#include "pystring/pystring.h"
-
 #include "passes/CodegenPass-impl.h"
 
 using namespace llvm;
@@ -193,7 +191,7 @@ GlobalVariable* constructTypeMap(llvm::Type*  ty,
   }
 
   // TODO fix this
-  bool isCoro = pystring::startswith(name, "coro_");
+  bool isCoro = llvm::StringRef(name).startswith("coro_");
   bool isArray = arrayStatus == YesArray;
   ArrayType* offsetsTy = ArrayType::get(getTypeMapOffsetType(), numPointers);
 

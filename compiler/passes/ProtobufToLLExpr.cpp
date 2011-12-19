@@ -16,8 +16,6 @@
 
 #include <sstream>
 
-#include "pystring/pystring.h"
-
 #include "_generated_/FosterIL.pb.h"
 
 #include <vector>
