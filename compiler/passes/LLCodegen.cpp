@@ -20,8 +20,6 @@
 //#include "llvm/Analysis/DIBuilder.h"
 //#include "llvm/Support/Dwarf.h"
 
-#include "pystring/pystring.h"
-
 #include <map>
 #include <sstream>
 
@@ -122,7 +120,7 @@ llvm::Value* emitFakeComment(std::string s) {
 }
 
 bool isEnvPtr(llvm::Value* v) {
-  return pystring::startswith(v->getName().str(), ".env");
+  return v->getName().startswith(".env");
 }
 
 } // }}} namespace
@@ -478,7 +476,7 @@ void passPhisAndBr(LLBlock* block, const std::vector<llvm::Value*>& args) {
 void LLBr::codegenTerminator(CodegenPass* pass) {
   LLBlock* block = pass->lookupBlock(this->block_id);
 
-  if (this->args.empty() && pystring::startswith(block_id, "postalloca"))
+  if (this->args.empty() && llvm::StringRef(block_id).startswith("postalloca"))
   { // The "first" branch into the postalloca won't pass any actual args, so we
     // want to use the "real" function args (leaving out the invariant env ptr).
     // Other branches to postalloca will pass the new values for the arg slots.
@@ -647,7 +645,7 @@ void LLLetVals::codegenMiddle(CodegenPass* pass) {
     // implict loads, which we want done as late as possible.
     Value* b = exprs[i]->codegen(pass);
     trySetName(b, (b->hasName()
-                   && pystring::startswith(b->getName(), "stackref"))
+                   && b->getName().startswith("stackref"))
                 ? names[i] + "_slot"
                 : names[i]);
     //EDiag() << "inserting " << names[i] << " = " << (exprs[i]->tag) << " -> " << str(b);

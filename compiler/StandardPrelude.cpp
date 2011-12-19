@@ -12,8 +12,6 @@
 
 #include "base/Assert.h"
 
-#include "pystring/pystring.h"
-
 #include <vector>
 #include <sstream>
 
@@ -67,14 +65,14 @@ void putModuleMembersInScope(Module* m, Module* linkee) {
   for (Module::iterator it = m->begin(); it != m->end(); ++it) {
     const Function& f = *it;
 
-    const string& name = f.getName().str();
-    bool isCxxLinkage = pystring::startswith(name, "_Z", 0)
-                     || pystring::startswith(name, "__cxx_", 0);
+    llvm::StringRef name = f.getName();
+    bool isCxxLinkage = name.startswith("_Z")
+                     || name.startswith("__cxx_");
     if (isCxxLinkage) continue;
 
     bool hasDef = !f.isDeclaration();
     if (hasDef) {
-      if (!pystring::startswith(name, "foster_")) {
+      if (!name.startswith("foster_")) {
         // drop from original module
         functionsToRemove.insert(name);
         continue;
@@ -119,12 +117,12 @@ void putModuleFunctionsInScope(Module* m, Module* linkee) {
   for (Module::iterator it = m->begin(); it != m->end(); ++it) {
     const Function& f = *it;
 
-    const string& name = f.getName().str();
-    bool isCxxLinkage = pystring::startswith(name, "_Z", 0);
+    const llvm::StringRef name = f.getName();
+    bool isCxxLinkage = name.startswith("_Z");
 
     bool hasDef = !f.isDeclaration();
     if (hasDef && !isCxxLinkage
-               && !pystring::startswith(name, "__cxx_", 0)) {
+               && !name.startswith("__cxx_")) {
       // Ensure that, when parsing, function calls to this name will find it
       Type* ty = f.getType();
       // We get a pointer-to-whatever-function type, because f is a global

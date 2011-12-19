@@ -14,8 +14,6 @@
 
 #include "base/GenericGraph.h"
 
-#include "pystring/pystring.h"
-
 #include <set>
 #include <map>
 
@@ -76,7 +74,7 @@ struct GCRootSafetyChecker : public FunctionPass {
 
   virtual bool runOnFunction(Function& F) {
     if (!F.hasGC()) return false;
-    if (!pystring::startswith(F.getGC(), "fostergc")) return false;
+    if (!llvm::StringRef(F.getGC()).startswith("fostergc")) return false;
 
     ValueSet gcroots;
 

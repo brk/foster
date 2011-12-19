@@ -11,8 +11,6 @@
 
 #include "base/PughSinofskyPrettyPrinter.h"
 
-#include "pystring/pystring.h"
-
 inline void recurse(PrettyPrintTypePass* const p, TypeAST* ast);
 
 struct PrettyPrintTypePass {
