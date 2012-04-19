@@ -4,6 +4,8 @@ TODO
 Far future: GHC plugin to dump strict Haskell to Foster?
         https://github.com/thoughtpolice/strict-ghc-plugin/blob/master/Strict/Pass.lhs
 
+Far future: Translation of Ironclad C++ into Foster?
+
 Describe similarities/differences of CFG/SSA/CPS
         Minor delta in Hoopl representation! Call becomes a terminator.
 
@@ -12,6 +14,8 @@ Optimization idea: given IL -> Src transform,
                Src -> IL  === Src -> IL -> Src -> IL
   (restricted case of IL  ===        IL -> Src -> IL)
 
+  Something like "the target code idioms generated should be directly
+                  representatable with source langauge constructs."
 
 General Compiler Structure Improvements
 ---------------------------------------
@@ -45,7 +49,8 @@ TODO: minor optimizations
 * Eliminating redundant stack slots for phi nodes?
 * Arity raising/unit elimination
 * Worker/wrapper for closures??
-* Move stack stores for invariant function args from postalloca to entry.
+* Move stack stores for invariant function args from postalloca to entry
+  (minor efficiency gain for tail-recursive functions).
 * Track integer ranges and omit bitshift masks when possible.
 
 TODO loop optimizations
@@ -69,17 +74,6 @@ TODO: less minor optimizations
 TODO: implementation details
 ----------------------------
 * rusage() in runtime when on Linux (+ OS X?)
-* Design pointer representations and GC integration:
- * Stable pointers
-  * Malloced/foreign memory
-  * Pointers to stack-allocated objects
-  * Scheme to control whether a pointer is considered a GC root
-  * Invariants for what kinds of pointers can point
-    to which other kinds of pointers, and whether pointer kinds are known
-    statically or dynamically.
- * Constructor tags on pointers, pointer masking, switching on ctag bits.
- * Escape analysis to enable stack allocation
-  * Aligned allocas
 
 * Interaction between primitive integer types and polymorphism at LLVM level.
 
@@ -100,6 +94,20 @@ TODO: implementation details
 
 TODO: design & implementation
 -----------------------------
+* Module system.
+
+* Design pointer representations and GC integration:
+ * Stable pointers
+  * Malloced/foreign memory
+  * Pointers to stack-allocated objects
+  * Scheme to control whether a pointer is considered a GC root
+  * Invariants for what kinds of pointers can point
+    to which other kinds of pointers, and whether pointer kinds are known
+    statically or dynamically.
+ * Constructor tags on pointers, pointer masking, switching on ctag bits.
+ * Escape analysis to enable stack allocation
+  * Aligned allocas
+
 * Type operators (types indexed by types)
 * Pattern matching (done?)
   * Arbitrary-sized integers

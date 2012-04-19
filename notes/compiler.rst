@@ -488,3 +488,17 @@ on a complete binary let-tree by example::
     │                                                             ├─KNVar(Local):   b!61 :: ()
     │                                                             └─KNVar(Local):   n!62 :: ()
 
+
+Extending The Language
+======================
+
+Currently, language extensions require the following modifications:
+
+1. Edit grammar/foster.g with new syntax rules.
+2. Edit compiler/parse/ANTLRtoFosterAST.cpp and
+     (probably) compiler/include/foster/parse/FosterAST.h
+3. Protocol buffer handing:
+  * compiler/parse/FosterAST.proto
+  * compiler/passes/DumpToProtobuf.cpp
+4. Middle-end, to whatever degree is needed.
+5. Back-end, maybe: compiler/fosterlower.cpp
