@@ -168,7 +168,7 @@ void IntAST::dump(DumpToProtobufPass* pass) {
 
 void VariableAST::dump(DumpToProtobufPass* pass) {
   processExprAST(pass->current, this, pb::Expr::VAR);
-  pass->current->set_name(this->name);
+  pass->current->set_string_value(this->name);
 }
 
 void dumpFormal(DumpToProtobufPass* pass, pb::Formal* target,
@@ -184,7 +184,7 @@ void ValAbs::dump(DumpToProtobufPass* pass) {
   if (this->name == "") {
     this->name = foster::ParsingContext::freshName("<anon_fn_");
   }
-  pass->current->set_name(this->name);
+  pass->current->set_string_value(this->name);
   for (size_t i = 0; i < this->formals.size(); ++i) {
     dumpFormal(pass, pass->current->add_formals(), &this->formals[i]);
   }
@@ -314,7 +314,7 @@ void LiteralPattern::dump(DumpToProtobufPass* pass) {
 void CtorPattern::dump(DumpToProtobufPass* pass) {
   pass->current->set_tag(pb::Expr::PAT_CTOR);
   setSourceRange(pass->current->mutable_range(), this->sourceRange);
-  pass->current->set_name(this->ctorName);
+  pass->current->set_string_value(this->ctorName);
 
   std::vector<Pattern*>& parts = this->patterns;
   pass->current->mutable_parts()->Reserve(parts.size());

@@ -100,15 +100,12 @@ message Expr {
   optional Type         type = 3;
   optional SourceRange range = 4;
 
+  optional string string_value = 13; // used for int text, Var, named type decl, val abs
+  optional bool   bool_value   = 14;
+
   optional PBCase     pb_case    = 20;
   optional PBIf       pb_if      = 21;
   optional PBLet      pb_let     = 22;
-
-  optional bool   bool_value   = 23;
-  optional string string_value = 17; // also used for int text
-
-  // Var, named type decl
-  optional string name  = 24;
 
   // ValAbs
   repeated Formal     formals      = 25;

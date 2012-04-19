@@ -98,7 +98,7 @@ parseFn pbexpr = do range <- parseRange pbexpr
                     let body = case bodies of
                                [b] -> b
                                _ -> error $ "Can't parse fn without a body!"
-                    let name  = getName "fn" $ PbExpr.name pbexpr
+                    let name  = getName "fn" $ PbExpr.string_value pbexpr
                     let formals = toList $ PbExpr.formals pbexpr
                     let mretty = parseReturnType pbexpr
                     let tyformals = map parseTypeFormal $
@@ -203,7 +203,7 @@ parseTyApp pbexpr range = do
 parseEVar pbexpr range = do return $ E_VarAST range (parseVar pbexpr)
 
 parseVar pbexpr = do VarAST (fmap parseType (PbExpr.type' pbexpr))
-                            (getName "var" $ PbExpr.name pbexpr)
+                            (getName "var" $ PbExpr.string_value pbexpr)
 
 parsePattern :: PbExpr.Expr -> FE (EPattern TypeP)
 parsePattern pbexpr = do
@@ -212,7 +212,7 @@ parsePattern pbexpr = do
     PAT_WILDCARD -> do return $ EP_Wildcard range
     PAT_TUPLE    -> do pats <- mapM parsePattern (toList $ PbExpr.parts pbexpr)
                        return $ EP_Tuple range pats
-    PAT_CTOR     -> do let name = getName "pat_ctor" $ PbExpr.name pbexpr
+    PAT_CTOR     -> do let name = getName "pat_ctor" $ PbExpr.string_value pbexpr
                        pats <- mapM parsePattern (toList $ PbExpr.parts pbexpr)
                        return $ EP_Ctor range pats name
     _ -> do [expr] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
