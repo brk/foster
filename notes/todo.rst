@@ -53,6 +53,13 @@ TODO: minor optimizations
   (minor efficiency gain for tail-recursive functions).
 * Track integer ranges and omit bitshift masks when possible.
 
+* Work to minimize generated protobuf sizes.
+  Empirically, bytes are spent most heavily for 23 (call), 24(seq), 19(let),
+                                                14 (var), 30 (case_expr),
+    Removing 502 single-element SEQ nodes saved 10845 byes, ~21 bytes per SEQ.
+    Removing one optional field from Expr saved 1509 bytes.
+    Omitting source ranges saved 34% (39kb).
+
 TODO loop optimizations
 -----------------------
 
