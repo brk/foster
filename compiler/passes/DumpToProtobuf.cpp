@@ -179,25 +179,28 @@ void dumpFormal(DumpToProtobufPass* pass, pb::Formal* target,
   formal->type->dump(&dt);
 }
 
+void dumpValAbs(DumpToProtobufPass* pass, pb::PBValAbs* target,
+                const ValAbs* valabs) {
+  for (size_t i = 0; i < valabs->formals.size(); ++i) {
+    dumpFormal(pass, target->add_formals(), &valabs->formals[i]);
+  }
+  for (size_t i = 0; i < valabs->tyVarFormals.size(); ++i) {
+    dumpTypeFormal(&valabs->tyVarFormals[i], target->add_type_formals());
+  }
+  if (valabs->resultType) {
+    DumpTypeToProtobufPass dt(target->mutable_result_type());
+    valabs->resultType->dump(&dt);
+  }
+}
+
 void ValAbs::dump(DumpToProtobufPass* pass) {
   processExprAST(pass->current, this, pb::Expr::VAL_ABS);
   if (this->name == "") {
     this->name = foster::ParsingContext::freshName("<anon_fn_");
   }
   pass->current->set_string_value(this->name);
-  for (size_t i = 0; i < this->formals.size(); ++i) {
-    dumpFormal(pass, pass->current->add_formals(), &this->formals[i]);
-  }
-
-  for (size_t i = 0; i < this->tyVarFormals.size(); ++i) {
-    dumpTypeFormal(&this->tyVarFormals[i], pass->current->add_type_formals());
-  }
-
+  dumpValAbs(pass, pass->current->mutable_pb_val_abs(), this);
   dumpChild(pass, pass->current->add_parts(), this->parts[0]);
-  if (this->resultType) {
-    DumpTypeToProtobufPass dt(pass->current->mutable_result_type());
-    this->resultType->dump(&dt);
-  }
 }
 
 void IfExprAST::dump(DumpToProtobufPass* pass) {

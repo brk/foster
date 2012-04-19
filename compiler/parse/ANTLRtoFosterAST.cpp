@@ -381,8 +381,37 @@ ExprAST* parseBool(pTree t) {
   return new BoolAST(textOf(child(t, 0)), rangeOf(t));
 }
 
+std::string contentsOfStringWithQuotes(pTree t) {
+  return textOf(child(t, 0));
+}
+
+std::string contentsOfStringWithoutQuotes(pTree t) {
+  std::string s = contentsOfStringWithQuotes(t);
+  if (s.size() >= 6) {
+    std::string::const_iterator         i = s.begin();
+    std::string::const_reverse_iterator r = s.rbegin();
+    if (i[0] == '\'' && i[1] == '\'' && i[2] == '\''
+     && r[0] == '\'' && r[1] == '\'' && r[2] == '\'') {
+      return std::string(s.begin() + 3, s.end() - 3);
+    }
+    if (i[0] == '"' && i[1] == '"' && i[2] == '"'
+     && r[0] == '"' && r[1] == '"' && r[2] == '"') {
+      return std::string(s.begin() + 3, s.end() - 3);
+    }
+  }
+
+  char f = s[0]; char b = s[s.size() - 1];
+  if ((f == '\'' && b == '\'')
+    ||(f == '"'  && b == '"')) {
+    return std::string(s.begin() + 1, s.end() - 1);
+  }
+
+  EDiag() << "Unable to determine what kind of string this is!" << s;
+  return s;
+}
+
 ExprAST* parseString(pTree t) {
-  return new StringAST(textOf(child(t, 0)), rangeOf(t));
+  return new StringAST(contentsOfStringWithQuotes(t), rangeOf(t));
 }
 
 Pattern* parsePattern(pTree t);
@@ -707,7 +736,7 @@ ModuleAST* parseTopLevel(pTree root_tree, std::string moduleName, uint128 hash,
 
   pTree imports = child(root_tree, 0);
   for (size_t i = 0; i < getChildCount(imports); ++i) {
-    std::string imp_text = textOf(child(imports, i));
+    std::string imp_text = contentsOfStringWithoutQuotes(child(imports, i));
     std::cout << "imp_text: " << imp_text << std::endl;
     out_imports.push(imp_text);
   }

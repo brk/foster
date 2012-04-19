@@ -40,6 +40,7 @@ import Foster.Fepb.DataType as DataType
 import Foster.Fepb.DataCtor as DataCtor
 import Foster.Fepb.PBIf     as PBIf
 import Foster.Fepb.PBCase   as PBCase
+import Foster.Fepb.PBValAbs as PBValAbs
 import Foster.Fepb.Expr     as PbExpr
 import Foster.Fepb.SourceModule as SourceModule
 import Foster.Fepb.WholeProgram as WholeProgram
@@ -99,16 +100,19 @@ parseFn pbexpr = do range <- parseRange pbexpr
                                [b] -> b
                                _ -> error $ "Can't parse fn without a body!"
                     let name  = getName "fn" $ PbExpr.string_value pbexpr
-                    let formals = toList $ PbExpr.formals pbexpr
-                    let mretty = parseReturnType pbexpr
+                    let valabs = case PbExpr.pb_val_abs pbexpr of
+                                   Just v -> v
+                                   Nothing -> error "Can't parse fn without PBValAbs!"
+                    let formals = toList $ PBValAbs.formals valabs
+                    let mretty = parseReturnType valabs
                     let tyformals = map parseTypeFormal $
-                                        toList $ PbExpr.type_formals pbexpr
+                                        toList $ PBValAbs.type_formals valabs
                     return $ (FnAST range name tyformals mretty
                                (map parseFormal formals) body
                                False) -- assume closure until proven otherwise
   where
      parseFormal (Formal u t) = TypedId (parseType t) (Ident (pUtf8ToText u) 0)
-     parseReturnType pbexpr = fmap parseType (PbExpr.result_type pbexpr)
+     parseReturnType valabs = fmap parseType (PBValAbs.result_type valabs)
 
 parseValAbs pbexpr _range = do
   fn <- parseFn pbexpr

@@ -106,14 +106,14 @@ message Expr {
   optional PBCase     pb_case    = 20;
   optional PBIf       pb_if      = 21;
   optional PBLet      pb_let     = 22;
+  optional PBValAbs   pb_val_abs = 23;
+  repeated Type ty_app_arg_type = 29; // AnnTyApp
+}
 
-  // ValAbs
-  repeated Formal     formals      = 25;
-  optional Type       result_type  = 26;
-  repeated TypeFormal type_formals = 27;
-
-  // AnnTyApp
-  repeated Type ty_app_arg_type = 29;
+message PBValAbs {
+  repeated Formal     formals     = 1;
+  optional Type       result_type = 2;
+  repeated TypeFormal type_formals = 3;
 }
 
 message PBLet {
