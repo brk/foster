@@ -1,0 +1,5 @@
+main = {
+  id id;
+};
+
+id = { forall a:Boxed, x:a => x };

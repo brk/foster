@@ -1,0 +1,66 @@
+main = {
+  t1 !;
+  t2 !;
+};
+
+//id = { forall a:Type, x:a => x };
+
+/* Fails due to un-unified type varaible. */
+/*
+t1 = {
+  let tc = { f: forall b:Boxed, c:Boxed, { (b,c) => (b,c) } => f (B 0, C 0) };
+      //bc = { forall b:Boxed c:Boxed, x:(b,c) => x };
+      //aa = { forall a:Boxed, y:a => y };
+   in
+      0
+  end
+};
+*/
+
+t1 = {
+  let tc = { f: forall b:Boxed, c:Boxed, { (b,c) => (b,c) }
+              => f (B 0, C 0) };
+      aa = { forall a:Boxed, y:a => y };
+   in
+      // aa :: forall a  , {   a   =>   a   }
+      // tc :: forall b c, { (b,c) => (b,c) } => (B32, C32) }
+      tc aa;
+  end;
+};
+
+t2 = {
+  let tc = { f: forall b:Boxed, c:Boxed, { (b,c) => (b,c) }
+              => f (B 0, C 0) };
+      bc = { forall p:Boxed q:Boxed, x:(p,q) => x };
+   in
+      // bc :: forall p q, { (p,q) => (p,q) }
+      // tc :: forall b c, { (b,c) => (b,c) }
+      tc bc;
+  end;
+};
+
+
+// From p. 70 of Peyton Jones, Vytiniotis, Weirich, and Shields
+// "For example, suppose     bar has type Va.(Int -> a) -> a, and consider
+//  the definition   foo w = bar (\x. x + w).
+//  Since the call to bar is instantiated at some unknown type 'a, local type
+//  inference will not push the partially-known type Int -> 'a into the
+//  anonymous function passed to bar, and the program will be rejected."
+/*
+t2 = {
+  let bar = { forall a:Boxed, f:{ Int32 => a } => f 4 };
+      foo = { w : ?? W => bar { x : ?? X => B (x +Int32 w) } };
+   in
+      foo 3;
+  end
+};
+*/
+
+type case B32 of $B Int32;
+type case C32 of $C Int32;
+
+// build :: forall a. (forall b. (a -> b -> b) -> b -> b) -> [a]
+// runST :: forall a. (forall s. ST s a) -> a
+// data Equal a b = Equal (forall f . f a -> f b)
+// data Monad m = Mon { a -> m a }
+//                    { m a -> (a -> m b) -> m b }
