@@ -37,6 +37,10 @@ optInputPath(cl::Positional, cl::desc("<input file>"));
 static cl::opt<string>
 optOutputPath(cl::Positional, cl::desc("<output file>"));
 
+static cl::opt<string>
+optIncludePath("I", cl::desc("Path to search for includes"),
+                    cl::value_desc("include path"));
+
 static cl::opt<bool>
 optDumpStats("dump-stats",
   cl::desc("[foster] Dump timing and other statistics from parsing"));
