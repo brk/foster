@@ -54,36 +54,46 @@ void setTimingDescriptions() {
   gTimings.describe("io.proto", "Time spent reading/writing protobufs (ms)");
 }
 
-void dumpModuleToProtobuf(ModuleAST* mod, const string& filename) {
-  ASSERT(mod != NULL);
+void dumpWholeProgramToProtobuf(WholeProgramAST* pgm, const string& filename) {
+  ASSERT(pgm != NULL);
 
-  foster::fepb::SourceModule sm;
-  const foster::InputTextBuffer* buf = mod->buf;
-  if (buf) {
-    for (int i = 0; i < buf->getLineCount(); ++i) {
-      sm.add_line(buf->getLine(i));
+  foster::fepb::WholeProgram wp;
+  for (int x = 0; x < pgm->getModuleCount(); ++x) {
+    ModuleAST* mod = pgm->getModuleAST(x);
+    ASSERT(mod != NULL);
+    foster::fepb::SourceModule* sm = wp.add_modules();
+
+    const foster::InputTextBuffer* buf = mod->buf;
+    if (buf) {
+      for (int i = 0; i < buf->getLineCount(); ++i) {
+        sm->add_line(buf->getLine(i));
+      }
     }
-  }
 
-  { ScopedTimer timer("io.protobuf.convert");
-  DumpToProtobufPass p; dumpModule(&p, sm, mod);
-  }
+    { ScopedTimer timer("io.protobuf.convert");
+    DumpToProtobufPass p; dumpModule(&p, *sm, mod);
+    }
 
-  if (!sm.IsInitialized()) {
-    EDiag() << "Protobuf message is not initialized!\n";
+    if (!sm->IsInitialized()) {
+      EDiag() << "Protobuf module message is not initialized!\n";
+    }
   }
 
   if (filename == "-") {
     EDiag() << "warning: dumping module to file named '-', not stdout!";
   }
 
+  if (!wp.IsInitialized()) {
+    EDiag() << "Protobuf program message is not initialized!\n";
+  }
+
   ScopedTimer timer("io.protobuf.out");
   std::ofstream out(filename.c_str(),
                   std::ios::trunc | std::ios::binary);
-  if (sm.SerializeToOstream(&out)) {
+  if (wp.SerializeToOstream(&out)) {
     // ok!
   } else {
-    EDiag() << "serialization returned false\n";
+    EDiag() << "program serialization returned false\n";
   }
 }
 
@@ -99,19 +109,18 @@ int main(int argc, char** argv) {
 
   foster::ParsingContext::pushNewContext();
 
-  ModuleAST* exprAST = NULL;
+  WholeProgramAST* pgmAST = NULL;
   { ScopedTimer timer("io.parse");
-    exprAST = foster::parseModule(infile, optInputPath,
-                                  &numParseErrors);
+    pgmAST = foster::parseWholeProgram(infile, &numParseErrors);
   }
 
   if (numParseErrors > 0) {
     return 3;
-  } else if (!exprAST) {
+  } else if (!pgmAST) {
     return 4;
   }
 
-  dumpModuleToProtobuf(exprAST, optOutputPath);
+  dumpWholeProgramToProtobuf(pgmAST, optOutputPath);
 
   if (optPrintTimings) {
     setTimingDescriptions();

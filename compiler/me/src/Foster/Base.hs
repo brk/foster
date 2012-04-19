@@ -91,6 +91,10 @@ data LiteralInt = LiteralInt { litIntValue   :: Integer
                              , litIntBase    :: Int
                              }
 
+data WholeProgramAST fnCtor ty = WholeProgramAST {
+          programASTmodules    :: [ModuleAST fnCtor ty]
+     }
+
 data ModuleAST fnCtor ty = ModuleAST {
           moduleASTfunctions   :: [fnCtor ty]
         , moduleASTdecls       :: [(String, ty)]

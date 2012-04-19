@@ -23,6 +23,7 @@
 #include <iostream>
 #include <string>
 #include <map>
+#include <queue>
 #include <vector>
 #include <sstream>
 #include <cassert>
@@ -697,13 +698,21 @@ std::vector<DataCtorAST*> parseDataCtors(pTree t) {
   return ctors;
 }
 
-ModuleAST* parseTopLevel(pTree root_tree, std::string moduleName) {
+ModuleAST* parseTopLevel(pTree root_tree, std::string moduleName, uint128 hash,
+                         std::queue<string>& out_imports) {
   // The top level is composed of declarations and definitions.
   std::vector<Decl*> decls;
   std::vector<Defn*> defns;
   std::vector<Data*> datas;
 
-  for (size_t i = 0; i < getChildCount(root_tree); ++i) {
+  pTree imports = child(root_tree, 0);
+  for (size_t i = 0; i < getChildCount(imports); ++i) {
+    std::string imp_text = textOf(child(imports, i));
+    std::cout << "imp_text: " << imp_text << std::endl;
+    out_imports.push(imp_text);
+  }
+
+  for (size_t i = 1; i < getChildCount(root_tree); ++i) {
     pTree c = child(root_tree, i);
     int token = typeOf(c);
 
@@ -727,7 +736,7 @@ ModuleAST* parseTopLevel(pTree root_tree, std::string moduleName) {
       EDiag() << show(rangeOf(c));
     }
   }
-  return new ModuleAST(decls, defns, datas, moduleName);
+  return new ModuleAST(decls, defns, datas, moduleName, hash);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -967,13 +976,18 @@ namespace foster {
 
   void deleteANTLRContext(ANTLRContext* ctx) { delete ctx; }
 
-  ModuleAST* parseModule(const InputFile& file,
-                         const std::string& moduleName,
-                         unsigned* outNumANTLRErrors) {
+  void parseModule(WholeProgramAST* pgm,
+                   const foster::InputFile& file,
+                   unsigned* outNumANTLRErrors,
+                   std::queue<std::string>& out_imports) {
     uint128 hash = getFileHash(file);
-    printf("Hash of file %s is %08" PRIx64 "%08" PRIx64 "\n",
-      file.getShortName().c_str(),
-      Uint128Low64(hash), Uint128High64(hash));
+    if (pgm->seen.count(hash) == 1) {
+      return;
+    }
+    char hashstr[33] = {0};
+    sprintf(hashstr, "%08" PRIx64 "%08" PRIx64,
+                     Uint128Low64(hash), Uint128High64(hash));
+    printf("Hash of file %s is %s\n", file.getShortName().c_str(), hashstr);
 
     ANTLRContext* ctx = new ANTLRContext();
     createParser(*ctx, file);
@@ -981,25 +995,40 @@ namespace foster {
     installTreeTokenBoundaryTracker(ctx->psr->adaptor);
     foster::installRecognitionErrorFilter(ctx->psr->pParser->rec);
 
-    gInputFile = &file;
-    gInputTextBuffer = file.getBuffer();
+    gInputFile = &file; // used when creating source ranges
+    gInputTextBuffer = file.getBuffer(); // also used for source ranges
 
-    llvm::sys::TimeValue parse_beg = llvm::sys::TimeValue::now();
+    fosterParser_module_return langAST = ctx->psr->module(ctx->psr);
+    *outNumANTLRErrors += ctx->psr->pParser->rec->state->errorCount;
 
-    fosterParser_program_return langAST = ctx->psr->program(ctx->psr);
+    ModuleAST* m = parseTopLevel(langAST.tree, file.getShortName(), hash, out_imports);
+    m->buf = file.getBuffer();
 
-    llvm::sys::TimeValue parse_mid = llvm::sys::TimeValue::now();
-    *outNumANTLRErrors = ctx->psr->pParser->rec->state->errorCount;
+    pgm->seen[hash] = m;
+    pgm->modules.push_back(m);
+  }
 
-    ModuleAST* m = parseTopLevel(langAST.tree, moduleName);
+  WholeProgramAST* parseWholeProgram(const InputFile& startfile,
+                                     unsigned* outNumANTLRErrors) {
+    WholeProgramAST* pgm = new WholeProgramAST();
+    *outNumANTLRErrors = 0;
 
-    llvm::sys::TimeValue parse_end = llvm::sys::TimeValue::now();
+    //llvm::sys::TimeValue parse_beg = llvm::sys::TimeValue::now();
+    std::queue<std::string> pending_imports;
+    parseModule(pgm, startfile, outNumANTLRErrors, pending_imports);
 
+    while (*outNumANTLRErrors == 0 && !pending_imports.empty()) {
+      std::string raw = pending_imports.front(); pending_imports.pop();
+      std::cout << "pending import: " << raw << std::endl;
+      //foster::InputFile f = resolveModulePath(raw);
+      //parseModule(pgm, f, outNumANTLRErrors, pending_imports);
+    }
+
+    //llvm::sys::TimeValue parse_end = llvm::sys::TimeValue::now();
     //llvm::outs() << "ANTLR  parsing: " << (parse_mid - parse_beg).msec() << "\n";
     //llvm::outs() << "Foster parsing: " << (parse_end - parse_mid).msec() << "\n";
 
-    m->buf = gInputTextBuffer;
-    return m;
+    return pgm;
   }
 
   ////////////////////////////////////////////////////////////////////

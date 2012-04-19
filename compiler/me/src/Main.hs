@@ -29,8 +29,8 @@ import Control.Monad.State(forM, when, forM_, StateT, runStateT, gets,
 
 import Foster.Base
 import Foster.CFG
-import Foster.Fepb.SourceModule(SourceModule)
-import Foster.ProtobufFE(parseSourceModule)
+import Foster.Fepb.WholeProgram(WholeProgram)
+import Foster.ProtobufFE(parseWholeProgram)
 import Foster.ProtobufIL(dumpMonoModuleToProtobuf)
 import Foster.ExprAST
 import Foster.TypeAST
@@ -327,25 +327,31 @@ main = do
 
   case messageGet protobuf of
     Left msg -> error $ "Failed to parse protocol buffer.\n" ++ msg
-    Right (pb_module, _) -> do
+    Right (pb_program, _) -> do
         uniqref <- newIORef 1
         varlist <- liftIO $ newIORef []
         let tcenv = TcEnv {       tcEnvUniqs = uniqref,
                            tcUnificationVars = varlist,
                                    tcParents = [] }
-        (monoprog, _) <- runStateT (compile pb_module) $ CompilerContext {
+        (monoprog, _) <- runStateT (compile pb_program) $ CompilerContext {
                                 ccVerbose  = getVerboseFlag flagVals
                               , ccFlagVals = flagVals
                               , ccTcEnv    = tcenv
                          }
         dumpMonoModuleToProtobuf monoprog outfile primitiveDataTypesMono
 
-compile :: SourceModule -> Compiled MonoProgram
-compile pb_module =
-    (return $ parseSourceModule pb_module)
+compile :: WholeProgram -> Compiled MonoProgram
+compile pb_program =
+    (return $ parseWholeProgram pb_program)
+     >>= extractOnlyModule -- temporary hack
      >>= desugarParsedModule
      >>= typecheckSourceModule
      >>= (uncurry lowerModule)
+
+extractOnlyModule :: WholeProgramAST FnAST TypeP
+              -> Compiled (ModuleAST FnAST TypeP)
+extractOnlyModule (WholeProgramAST [m]) = return m
+extractOnlyModule _ = error "expected program with only one module..."
 
 astOfParsedType :: TypeP -> Tc TypeAST
 astOfParsedType typep =

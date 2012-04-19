@@ -170,3 +170,7 @@ message SourceModule {
   repeated Defn     defn      = 4;
   repeated DataType data_type = 5;
 }
+
+message WholeProgram {
+  repeated SourceModule modules = 1;
+}

@@ -4,7 +4,7 @@
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
-module Foster.ProtobufFE (parseSourceModule) where
+module Foster.ProtobufFE (parseWholeProgram) where
 
 import Foster.Base
 import Foster.Kind
@@ -42,6 +42,7 @@ import Foster.Fepb.PBIf     as PBIf
 import Foster.Fepb.PBCase   as PBCase
 import Foster.Fepb.Expr     as PbExpr
 import Foster.Fepb.SourceModule as SourceModule
+import Foster.Fepb.WholeProgram as WholeProgram
 import Foster.Fepb.Expr.Tag(Tag(IF, LET, VAR, SEQ, UNTIL,
                                 BOOL, CALL, TY_APP, STRING, -- MODULE,
                                 ALLOC, DEREF, STORE, TUPLE, PB_INT,
@@ -316,6 +317,11 @@ parseSourceModule sm =
   where
    sourceLines :: SourceModule -> SourceLines
    sourceLines sm = SourceLines (fmapDefault pUtf8ToText (SourceModule.line sm))
+
+parseWholeProgram :: WholeProgram -> WholeProgramAST FnAST TypeP
+parseWholeProgram pgm =
+  let mods = map parseSourceModule (toList $ WholeProgram.modules pgm) in
+  WholeProgramAST mods
 
 parseNamedType :: String -> TypeP
 parseNamedType "Int64" = PrimIntP I64

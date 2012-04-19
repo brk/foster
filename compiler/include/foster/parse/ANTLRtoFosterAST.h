@@ -11,16 +11,15 @@
 
 typedef pANTLR3_BASE_TREE pTree;
 
-class ModuleAST;
+class WholeProgramAST;
 
 namespace foster {
 
 class ANTLRContext;
 struct InputFile;
 
-ModuleAST* parseModule(const InputFile& file,
-                       const std::string& moduleName,
-                       unsigned* outNumANTLRErrors);
+WholeProgramAST* parseWholeProgram(const InputFile& file,
+                                   unsigned* outNumANTLRErrors);
 
 } // namespace foster
 

@@ -30,13 +30,16 @@ tokens {
   KIND_TYPE; KIND_TYOP; KIND_TYPE_BOXED; FORALL_TYPE;
   FUNC_TYPE;
   TYPE_CTOR; DATATYPE; CTOR; TYPE_PLACEHOLDER;
-  FORMAL; MODULE; WILDCARD;
+  FORMAL; MODULE; WILDCARD; SNAFUINCLUDE;
 
   MU; // child marker
 }
 
 
-program :       decl_or_defn* EOF               ->  ^(MODULE decl_or_defn*);
+module  :       imports decl_or_defn* EOF   ->  ^(MODULE ^(SNAFUINCLUDE imports)
+                                                           decl_or_defn*);
+
+imports :       ('snafuinclude' str ';')*       -> str*;
 
 decl_or_defn : decl | defn;
 decl    :       x '::' t ';'                    -> ^(DECL x t);
