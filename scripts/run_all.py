@@ -80,6 +80,17 @@ def main(opts, bootstrap_dir, paths, tmpdir):
   if len(run_test.tests_failed) > 0:
     for test in run_test.tests_failed:
       print test
+
+  try:
+    from stathat import StatHat
+    sh = StatHat()
+    # tests run - counter
+    sh.post_count('MjQ2IBSJUNLO7SpS4kttBQFHp2w~', '3TW60dh1mJQIqFql3VSaQSBqYlVJ', len(run_test.tests_passed))
+    # time taken - ms
+    sh.post_value('MjQ2IBSJUNLO7SpS4kttBQFHp2w~', 'OIy1N3KRYp84fRyXl-GljSA1enpW', run_test.elapsed(walkstart, walkend))
+  except:
+    pass
+
   sys.exit(len(run_test.tests_failed))
 
 def should_run_tests_in_parallel(options):
