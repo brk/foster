@@ -100,6 +100,7 @@ data ModuleAST fnCtor ty = ModuleAST {
         , moduleASTdecls       :: [(String, ty)]
         , moduleASTdataTypes   :: [DataType ty]
         , moduleASTsourceLines :: SourceLines
+        , moduleASTprimTypes   :: [DataType ty]
      }
 
 data Fn expr ty = Fn { fnVar   :: TypedId ty
@@ -118,6 +119,7 @@ data ModuleIL expr ty = ModuleIL {
           moduleILfunctions   :: [Fn expr ty]
         , moduleILdecls       :: [(String, ty)]
         , moduleILdataTypes   :: [DataType ty]
+        , moduleILprimTypes   :: [DataType ty]
         , moduleILsourceLines :: SourceLines
      }
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||

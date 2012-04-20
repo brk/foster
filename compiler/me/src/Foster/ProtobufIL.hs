@@ -363,8 +363,8 @@ dumpMoVar t i =
                     , PbTermVar.typ  = Just $ dumpType t  }
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
-dumpMonoModuleToProtobuf :: MonoProgram -> FilePath -> [DataType MonoType] -> IO ()
-dumpMonoModuleToProtobuf m outpath primdts = do
+dumpMonoModuleToProtobuf :: MonoProgram -> FilePath -> IO ()
+dumpMonoModuleToProtobuf m outpath = do
     L.writeFile outpath (messagePut $ dumpProgramToModule m)
   where
     dumpProgramToModule :: MonoProgram -> Module
@@ -372,7 +372,7 @@ dumpMonoModuleToProtobuf m outpath primdts = do
         = Module { modulename = u8fromString $ "foo"
                  , procs      = fromList [dumpProc p | p <- Map.elems procdefs]
                  , val_decls  = fromList (map dumpDecl decls)
-                 , typ_decls  = fromList (map dumpDataTypeDecl (primdts ++ datatypes))
+                 , typ_decls  = fromList (map dumpDataTypeDecl datatypes)
                  , modlines   = fmap textToPUtf8 lines
                  }
     dumpProc p

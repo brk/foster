@@ -96,8 +96,8 @@ closureConvertAndLift dataSigs u m =
     let initialState = ILMState u Map.empty Map.empty dataSigs in
     let newstate     = execState procsILM initialState in
     let decls = map (\(s,t) -> ILDecl s t) (moduleILdecls m) in
-    ILProgram (ilmProcDefs newstate) decls (moduleILdataTypes m)
-                                           (moduleILsourceLines m)
+    let dts = moduleILprimTypes m ++ moduleILdataTypes m in
+    ILProgram (ilmProcDefs newstate) decls dts (moduleILsourceLines m)
 
 -- For example, if we have something like
 --      let y = blah in

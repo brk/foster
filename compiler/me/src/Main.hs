@@ -37,7 +37,7 @@ import Foster.TypeAST
 import Foster.ParsedType
 import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn))
 import Foster.AnnExprIL(AIExpr, fnOf)
-import Foster.TypeIL(TypeIL(ArrayTypeIL, PrimIntIL, TyConAppIL), ilOf, extendTyCtx)
+import Foster.TypeIL(TypeIL, ilOf, extendTyCtx)
 import Foster.ILExpr(closureConvertAndLift)
 import Foster.MonoExpr(MonoProgram, showMonoProgramStructure)
 import Foster.KNExpr(kNormalizeModule)
@@ -50,31 +50,6 @@ import Foster.MainCtorHelpers
 import Foster.ConvertExprAST
 
 -----------------------------------------------------------------------
-
-primitiveDataTypesAST :: [DataType TypeAST]
-primitiveDataTypesAST = [
-  (DataType "Text" [] $
-        [DataCtor (T.pack "TextFragment") 0 [ArrayTypeAST (PrimIntAST I8)
-                                            ,PrimIntAST I32]
-        ,DataCtor (T.pack "TextConcat"  ) 1 [TyConAppAST "Text" []
-                                            ,TyConAppAST "Text" []
-                                            ,PrimIntAST I32]])
-  ]
-
--- TODO hack :(
-
-primitiveDataTypesIL :: [DataType TypeIL]
-primitiveDataTypesIL = [
-  (DataType "Text" [] $
-        [DataCtor (T.pack "TextFragment") 0 [ArrayTypeIL (PrimIntIL I8)
-                                            ,PrimIntIL I32]
-        ,DataCtor (T.pack "TextConcat"  ) 1 [TyConAppIL "Text" []
-                                            ,TyConAppIL "Text" []
-                                            ,PrimIntIL I32]])
-  ]
-
-primitiveDataTypesMono = monomorphizedDataTypes primitiveDataTypesIL
-
 -- TODO shouldn't claim successful typechecks until we reach AnnExprIL.
 
 pair2binding (nm, ty) = TermVarBinding nm (TypedId ty (GlobalSymbol nm))
@@ -164,7 +139,7 @@ typecheckModule :: Bool
                 -> TcEnv
                 -> IO (OutputOr (Context TypeIL, ModuleIL AIExpr TypeIL))
 typecheckModule verboseMode modast tcenv0 = do
-    let dts = primitiveDataTypesAST ++ moduleASTdataTypes modast
+    let dts = moduleASTprimTypes modast ++ moduleASTdataTypes modast
     let fns = moduleASTfunctions modast
     let primBindings = computeContextBindings primitiveDecls
     let declBindings = computeContextBindings (moduleASTdecls modast) ++
@@ -232,10 +207,12 @@ typecheckModule verboseMode modast tcenv0 = do
    convertTypeILofAST mAST ctx_ast oo_annfns = do
      ctx_il    <- liftContextM   (ilOf ctx_ast) ctx_ast
      decls     <- mapM (convertDecl (ilOf ctx_ast)) (moduleASTdecls mAST)
+     primtypes <- mapM (convertDataTypeAST ctx_ast) (moduleASTprimTypes mAST)
      datatypes <- mapM (convertDataTypeAST ctx_ast) (moduleASTdataTypes mAST)
      aiFns     <- mapM (tcInject (fnOf ctx_ast))
                        (map (fmapOO (\(E_AnnFn f) -> f)) oo_annfns)
-     let m = ModuleIL aiFns decls datatypes (moduleASTsourceLines mAST)
+     let m = ModuleIL aiFns decls datatypes primtypes
+                                                  (moduleASTsourceLines mAST)
      return (ctx_il, m)
        where
         fmapOO :: (a -> b) -> OutputOr a -> OutputOr b
@@ -262,6 +239,7 @@ typecheckModule verboseMode modast tcenv0 = do
         convertDataTypeAST :: Context TypeAST ->
                               DataType TypeAST -> Tc (DataType TypeIL)
         convertDataTypeAST ctx (DataType dtName tyformals ctors) = do
+          -- f :: TypeAST -> Tc TypeIL
           let f = ilOf (extendTyCtx ctx $ map convertTyFormal tyformals)
           cts <- mapM (convertDataCtor f) ctors
           return $ DataType dtName tyformals cts
@@ -338,7 +316,7 @@ main = do
                               , ccFlagVals = flagVals
                               , ccTcEnv    = tcenv
                          }
-        dumpMonoModuleToProtobuf monoprog outfile primitiveDataTypesMono
+        dumpMonoModuleToProtobuf monoprog outfile
 
 compile :: WholeProgram -> Compiled MonoProgram
 compile pb_program =
@@ -420,7 +398,7 @@ lowerModule ai_mod ctx_il = do
     closureConvert cfgmod = do
         uniqref <- gets (tcEnvUniqs.ccTcEnv)
         liftIO $ do
-            let dataSigs = dataTypeSigs (primitiveDataTypesIL ++
+            let dataSigs = dataTypeSigs (moduleILprimTypes cfgmod ++
                                          moduleILdataTypes cfgmod)
             u0 <- readIORef uniqref
             return $ closureConvertAndLift dataSigs u0 cfgmod

@@ -41,7 +41,8 @@ What we might like for Foster::
     type MutableByteArray = opaque
 
     mutableByteArrayNew :: Word# -> MutableByteArray
-    mbaAppendByte :: Byte# -> MutableByteArray -> ()
+    mbaAppendByte  :: Byte#            -> MutableByteArray -> ()
+    mbaAppendBytes :: MutableByteArray -> MutableByteArray -> ()
     mbaPutByte :: Word# -> Byte# -> MutableByteArray -> ()
     mbaGetByte :: Word# -> MutableByteArray -> Byte#
 

@@ -53,6 +53,8 @@ import Foster.Fepb.Expr.Tag(Tag(IF, LET, VAR, SEQ, UNTIL,
 import qualified Foster.Fepb.SourceRange as Pb
 import qualified Foster.Fepb.SourceLocation as Pb
 
+import Foster.Primitives
+
 -----------------------------------------------------------------------
 -- hprotoc cheat sheet:
 --
@@ -303,6 +305,7 @@ parseModule _name decls defns datatypes = do
                 [(uToString nm, parseType t) | (Decl nm t) <- decls]
                 dtypes
                 lines
+                primitiveDataTypesP
   where
     toplevel :: FnAST t -> FnAST t
     toplevel f | fnWasToplevel f =
