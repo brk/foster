@@ -267,23 +267,24 @@ std::string getGlobalSymbolName(const std::string& sourceName) {
 }
 
 void LLProc::codegenProto(CodegenPass* pass) {
-  std::string symbolName = getGlobalSymbolName(this->name);
+  std::string symbolName = getGlobalSymbolName(this->getCName());
 
-  this->type->markAsProc();
-  llvm::FunctionType* FT = getLLVMFunctionType(this->type, symbolName);
+  this->getFnType()->markAsProc();
+  llvm::FunctionType* FT = getLLVMFunctionType(this->getFnType(), symbolName);
 
+  llvm::GlobalValue::LinkageTypes linkage = this->getFunctionLinkage();
   if (symbolName == kFosterMain) {
     // No args, returning void...
     FT = llvm::FunctionType::get(builder.getVoidTy(), false);
-    this->functionLinkage = llvm::GlobalValue::ExternalLinkage;
+    linkage = llvm::GlobalValue::ExternalLinkage;
   }
 
   ASSERT(FT) << "expecting top-level proc to have FunctionType!";
-  this->F = Function::Create(FT, this->functionLinkage, symbolName, pass->mod);
-  ASSERT(F) << "function creation failed for proto " << this->name;
+  this->F = Function::Create(FT, linkage, symbolName, pass->mod);
+  ASSERT(F) << "function creation failed for proto " << this->getName();
   ASSERT(F->getName() == symbolName) << "redefinition of function " << symbolName;
 
-  setFunctionArgumentNames(F, this->argnames);
+  setFunctionArgumentNames(F, this->getFunctionArgNames());
   F->setGC("fostergc");
   F->setCallingConv(this->type->getCallingConventionID());
 }
@@ -307,12 +308,9 @@ llvm::AllocaInst* ensureImplicitStackSlot(llvm::Value* v, CodegenPass* pass) {
   }
 }
 
-void codegenBlocks(std::vector<LLBlock*> blocks, CodegenPass* pass,
-                   llvm::Function* F);
-
 void LLProc::codegenProc(CodegenPass* pass) {
   ASSERT(this->F != NULL) << "LLModule should codegen proto for " << getName();
-  ASSERT(F->arg_size() == this->argnames.size());
+  ASSERT(F->arg_size() == this->getFunctionArgNames().size());
 
   pass->occSlots.clear();
   pass->addEntryBB(F);
@@ -331,7 +329,7 @@ void LLProc::codegenProc(CodegenPass* pass) {
   }
 
   EDiag() << "codegennign blocks for fn " << F->getName();
-  codegenBlocks(this->blocks, pass, F);
+  this->codegenToFunction(pass, F);
   pass->popExistingScope(scope);
 }
 
@@ -345,8 +343,7 @@ void CodegenPass::scheduleBlockCodegen(LLBlock* b) {
 
 void initializeBlockPhis(LLBlock*);
 
-void codegenBlocks(std::vector<LLBlock*> blocks, CodegenPass* pass,
-                   llvm::Function* F) {
+void LLProcCFG::codegenToFunction(CodegenPass* pass, llvm::Function* F) {
   pass->fosterBlocks.clear();
 
   // Create all the basic blocks before codegenning any of them.

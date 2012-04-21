@@ -257,9 +257,9 @@ LLProc* parseProc(const pb::Proc& e) {
 
   foster::sgProcLines[e.name()] = e.lines();
 
-  return new LLProc(proctype, e.name(), args,
-                    parseLinkage(e.linkage()),
-                    blocks);
+  return new LLProcCFG(proctype, e.name(), args,
+                       parseLinkage(e.linkage()),
+                       blocks);
 }
 
 LLExpr* parseArrayRead(const pb::Letable& e) {

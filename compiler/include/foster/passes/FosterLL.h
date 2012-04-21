@@ -116,25 +116,48 @@ struct LLModule {
 
 struct LLProc {
 private:
+  llvm::Function* F; // will be initialized when codegenning proto
+protected:
+  FnTypeAST* type; // will be mutated (to be marked as proc) when codegenning proto
+public:
+  explicit LLProc() : F(NULL) {}
+  virtual ~LLProc() {}
+
+  void codegenProc(CodegenPass* pass); // These two functions are common to all procs
+  void codegenProto(CodegenPass* pass);
+
+  FnTypeAST* getFnType() { return type; }
+
+  virtual llvm::GlobalValue::LinkageTypes getFunctionLinkage() const = 0;
+  virtual std::vector<std::string>        getFunctionArgNames() const = 0;
+  virtual const std::string getName() const = 0;
+  virtual const std::string getCName() const = 0;
+  virtual void codegenToFunction(CodegenPass* pass, llvm::Function* F) = 0;
+};
+
+struct LLProcCFG : public LLProc {
+private:
   string name;
-  FnTypeAST* type;
   llvm::GlobalValue::LinkageTypes functionLinkage;
   std::vector<std::string> argnames;
   std::vector<LLBlock*> blocks;
-  llvm::Function* F;
+
 
 public:
-  explicit LLProc(FnTypeAST* procType, const string& name,
-          const std::vector<std::string>& argnames,
-          llvm::GlobalValue::LinkageTypes linkage, std::vector<LLBlock*> blocks)
-  : name(name), type(procType), functionLinkage(linkage),
-    argnames(argnames), blocks(blocks), F(NULL) {}
+  explicit LLProcCFG(FnTypeAST* procType, const string& name,
+                     const std::vector<std::string>& argnames,
+                     llvm::GlobalValue::LinkageTypes linkage,
+                     std::vector<LLBlock*> blocks)
+  : name(name), functionLinkage(linkage), argnames(argnames), blocks(blocks) {
+      this->type = procType;
+  }
+  virtual ~LLProcCFG() {}
 
-  virtual FnTypeAST* getFnType() { return type; }
-  virtual const std::string& getName() const { return name; }
-  virtual const std::string& getCName() const { return name; }
-  virtual void codegenProc(CodegenPass* pass);
-  virtual void codegenProto(CodegenPass* pass);
+  virtual llvm::GlobalValue::LinkageTypes getFunctionLinkage() const { return functionLinkage; }
+  virtual std::vector<std::string>        getFunctionArgNames() const { return argnames; }
+  virtual const std::string getName() const { return name; }
+  virtual const std::string getCName() const { return name; }
+  virtual void codegenToFunction(CodegenPass* pass, llvm::Function* F);
 };
 
 ////////////////////////////////////////////////////////////////
