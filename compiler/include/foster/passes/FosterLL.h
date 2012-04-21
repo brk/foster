@@ -115,6 +115,7 @@ struct LLModule {
 };
 
 struct LLProc {
+private:
   string name;
   FnTypeAST* type;
   llvm::GlobalValue::LinkageTypes functionLinkage;
@@ -122,14 +123,16 @@ struct LLProc {
   std::vector<LLBlock*> blocks;
   llvm::Function* F;
 
+public:
   explicit LLProc(FnTypeAST* procType, const string& name,
           const std::vector<std::string>& argnames,
           llvm::GlobalValue::LinkageTypes linkage, std::vector<LLBlock*> blocks)
   : name(name), type(procType), functionLinkage(linkage),
     argnames(argnames), blocks(blocks), F(NULL) {}
 
-  FnTypeAST* getFnType() { return type; }
-  const std::string& getName() const { return name; }
+  virtual FnTypeAST* getFnType() { return type; }
+  virtual const std::string& getName() const { return name; }
+  virtual const std::string& getCName() const { return name; }
   virtual void codegenProc(CodegenPass* pass);
   virtual void codegenProto(CodegenPass* pass);
 };
