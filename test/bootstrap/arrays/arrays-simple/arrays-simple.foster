@@ -62,3 +62,18 @@ print_abc = {
   print_text "abc";
 };
 
+textLength = { t : Text =>
+  case t
+    of $TextFragment _ n -> n
+    of $TextConcat _ _ n -> n
+   end;
+};
+
+mkTextConcat = { a : Text => b : Text =>
+  TextConcat a b ((textLength a) +Int32 (textLength b))
+};
+
+print_concat = {
+  print_text (mkTextConcat "abc" "def");
+};
+
