@@ -64,7 +64,8 @@ kNormalizeModule :: (ModuleIL AIExpr TypeIL)
 kNormalizeModule m ctx =
     let knRegularFuncs = map kNormalizeFn (moduleILfunctions m) in
     -- TODO move ctor wrapping earlier?
-    let knCtorFuncs    = concatMap (kNormalCtors ctx) (moduleILdataTypes m) in
+    let knCtorFuncs    = concatMap (kNormalCtors ctx) (moduleILprimTypes m ++
+                                                       moduleILdataTypes m) in
     let knAllFuncsKN   = knRegularFuncs ++ knCtorFuncs in
     let knFuncs = evalState (sequence knAllFuncsKN) 0 in
     m { moduleILfunctions = knFuncs }

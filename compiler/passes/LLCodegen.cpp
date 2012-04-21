@@ -661,6 +661,9 @@ llvm::Value* LLBool::codegen(CodegenPass* pass) {
 bool tryBindArray(Value* base, Value*& arr, Value*& len);
 
 llvm::Value* LLText::codegen(CodegenPass* pass) {
+  // Text literals in the code are codegenned as calls to the Text.TextFragment
+  // constructor. Currently all strings are heap-allocated, even constant
+  // literal strings.
   size_t size = this->stringValue.size();
   Value* sz   = builder.getInt32(size);
   Value* gstr = builder.CreateGlobalString(this->stringValue);
