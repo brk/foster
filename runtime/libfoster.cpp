@@ -209,5 +209,7 @@ void prim_print_bytes_stderr(foster_bytes* array, uint32_t n) {
   fprint_bytes(stderr, array, n);
 }
 
+int32_t opaquely_i32(int32_t n) { return n; }
+
 } // extern "C"
 
