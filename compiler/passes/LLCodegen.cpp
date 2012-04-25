@@ -48,7 +48,14 @@ void deleteCodegenPass(CodegenPass* cp) { delete cp; }
 char kFosterMain[] = "foster__main";
 int  kUnknownBitsize = 999; // keep in sync with IntSizeBits in Base.hs
 
-namespace { // {{{ Internal helper functions
+// {{{ Internal helper functions
+bool tryBindArray(Value* base, Value*& arr, Value*& len);
+
+namespace foster {
+  int8_t bogusCtorId(int8_t c) { return c; }
+}
+
+namespace {
 
 llvm::Type* getLLVMType(TypeAST* type) {
   ASSERT(type) << "getLLVMType must be given a non-null type!";
@@ -125,10 +132,6 @@ bool isEnvPtr(llvm::Value* v) {
 
 } // }}} namespace
 
-namespace foster {
-  int8_t bogusCtorId(int8_t c) { return c; }
-}
-
 // Implementation of CodegenPass helpers {{{
 
 CodegenPass::CodegenPass(llvm::Module* m) : mod(m) {
@@ -176,6 +179,32 @@ llvm::Function* CodegenPass::lookupFunctionOrDie(const std::string&
   return f;
 }
 
+llvm::Value* CodegenPass::emitFosterStringOfCString(Value* cstr, Value* sz) {
+  // Text literals in the code are codegenned as calls to the Text.TextFragment
+  // constructor. Currently all strings are heap-allocated, even constant
+  // literal strings.
+  Value* hstr_slot = this->emitArrayMalloc(builder.getInt8Ty(), sz);
+  Value* hstr = emitNonVolatileLoad(hstr_slot, "heap_str");
+
+  Value* hstr_bytes; Value* len;
+  if (tryBindArray(hstr, /*out*/ hstr_bytes, /*out*/ len)) {
+    llvm::CallInst* mcpy = builder.CreateMemCpy(hstr_bytes,
+                              cstr, sz, kDefaultHeapAlignment);
+    markAsNonAllocating(mcpy);
+  } else { ASSERT(false); }
+
+  // TODO null terminate?
+  CtorId frag; frag.typeName = "Text";
+               frag.ctorName = "TextFragment";
+               frag.smallId  = 0; // TODO fix this hack
+  std::vector<LLVar*> args;
+  LLValueVar v_hstr(hstr_slot); args.push_back(&v_hstr);
+  LLValueVar v_sz(sz);          args.push_back(&v_sz);
+  LLAppCtor app(frag, args);
+  return app.codegen(this);
+}
+
+
 ///}}}//////////////////////////////////////////////////////////////
 
 ///{{{//////////////////////////////////////////////////////////////
@@ -205,6 +234,7 @@ void registerKnownDataTypes(const std::vector<LLDecl*> datatype_decls,
 
 void LLModule::codegenModule(CodegenPass* pass) {
   registerKnownDataTypes(datatype_decls, pass);
+  extendWithImplementationSpecificProcs(pass, procs);
 
   // Ensure that the llvm::Function*s are created for all the function
   // prototypes, so that mutually recursive function references resolve.
@@ -658,34 +688,10 @@ llvm::Value* LLBool::codegen(CodegenPass* pass) {
   return builder.getInt1(this->boolValue);
 }
 
-bool tryBindArray(Value* base, Value*& arr, Value*& len);
-
 llvm::Value* LLText::codegen(CodegenPass* pass) {
-  // Text literals in the code are codegenned as calls to the Text.TextFragment
-  // constructor. Currently all strings are heap-allocated, even constant
-  // literal strings.
-  size_t size = this->stringValue.size();
-  Value* sz   = builder.getInt32(size);
   Value* gstr = builder.CreateGlobalString(this->stringValue);
-  Value* hstr_slot = pass->emitArrayMalloc(builder.getInt8Ty(), sz);
-  Value* hstr = emitNonVolatileLoad(hstr_slot, "heap_str");
-
-  Value* hstr_bytes; Value* len;
-  if (tryBindArray(hstr, /*out*/ hstr_bytes, /*out*/ len)) {
-    llvm::CallInst* mcpy = builder.CreateMemCpy(hstr_bytes,
-                              gstr, size, kDefaultHeapAlignment);
-    markAsNonAllocating(mcpy);
-  } else { ASSERT(false); }
-
-  // TODO null terminate?
-  CtorId frag; frag.typeName = "Text";
-               frag.ctorName = "TextFragment";
-               frag.smallId  = 0; // TODO fix this hack
-  std::vector<LLVar*> args;
-  LLValueVar v_hstr(hstr_slot); args.push_back(&v_hstr);
-  LLValueVar v_sz(sz);          args.push_back(&v_sz);
-  LLAppCtor app(frag, args);
-  return app.codegen(pass);
+  size_t size = this->stringValue.size();
+  return pass->emitFosterStringOfCString(gstr, builder.getInt32(size));
 }
 
 llvm::Value* LLValueVar::codegen(CodegenPass* pass) {

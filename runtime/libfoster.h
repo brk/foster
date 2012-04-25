@@ -13,7 +13,7 @@
 namespace foster {
 namespace runtime {
 
-void initialize();
+void initialize(int argc, char** argv);
 int  cleanup();
 
 uint8_t ctor_id_of(void* body);

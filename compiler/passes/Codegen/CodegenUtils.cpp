@@ -310,3 +310,45 @@ codegenPrimitiveOperation(const std::string& op,
   return NULL;
 }
 
+struct LLProcPrimBase : public LLProc {
+protected:
+  std::string name;
+  std::vector<std::string> argnames;
+public:
+  explicit LLProcPrimBase() {}
+  virtual ~LLProcPrimBase() {}
+
+  virtual llvm::GlobalValue::LinkageTypes getFunctionLinkage() const { return llvm::GlobalValue::ExternalLinkage; }
+  virtual std::vector<std::string>        getFunctionArgNames() const { return argnames; }
+  virtual const std::string getName() const { return name; }
+  virtual const std::string getCName() const { return name; }
+  virtual void codegenToFunction(CodegenPass* pass, llvm::Function* F) = 0;
+};
+
+// So much boilerplate...
+struct LLProcStringOfCStringPrim : public LLProcPrimBase {
+  explicit LLProcStringOfCStringPrim() {
+      this->name            = "foster_emit_string_of_cstring";
+      this->argnames.push_back("buf");
+      this->argnames.push_back("len");
+      std::vector<TypeAST*> argTypes;
+      argTypes.push_back(RefTypeAST::get(TypeAST::i(8)));
+      argTypes.push_back(TypeAST::i(32));
+      std::map<std::string, std::string> annots; annots["callconv"] = "ccc";
+      this->type            = new FnTypeAST(RefTypeAST::get(TypeAST::i(999)),
+                                            argTypes, annots);
+      this->type->markAsProc();
+  }
+  virtual void codegenToFunction(CodegenPass* pass, llvm::Function* F) {
+    Function::arg_iterator AI = F->arg_begin();
+    Value* cstr = AI++;
+    Value* sz   = AI++;
+    Value* str = pass->emitFosterStringOfCString(cstr, sz);
+    builder.CreateRet(str);
+  }
+};
+
+void extendWithImplementationSpecificProcs(CodegenPass* _pass,
+                                           std::vector<LLProc*>& procs) {
+  procs.push_back(new LLProcStringOfCStringPrim());
+}

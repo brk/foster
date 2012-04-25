@@ -67,6 +67,8 @@ llvm::AllocaInst* CreateEntryAlloca(llvm::Type* ty,
 llvm::AllocaInst* stackSlotWithValue(llvm::Value* val,
                                      const std::string& name);
 
+void extendWithImplementationSpecificProcs(CodegenPass* _pass,
+                                           std::vector<LLProc*>& procs);
 ////////////////////////////////////////////////////////////////////
 
 inline bool operator<(const CtorId& a, const CtorId& b) {
@@ -149,6 +151,8 @@ struct CodegenPass {
 
   // Returns array_type[elt_ty]**, the stack slot containing an array_type[elt_ty]*.
   Value* emitArrayMalloc(llvm::Type* elt_ty, llvm::Value* n);
+
+  Value* emitFosterStringOfCString(Value* cstr, Value* sz);
 
   Value* allocateMPInt();
 

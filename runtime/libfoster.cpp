@@ -62,6 +62,8 @@
 ////////////////////////////////////////////////////////////////
 
 std::vector<coro_context> coro_initial_contexts;
+int    foster_argc;
+char** foster_argv;
 
 extern "C"
 struct foster_bytes {
@@ -69,10 +71,13 @@ struct foster_bytes {
    int8_t bytes[0];
 };
 
+// primitive defined by the compiler itself
+extern "C" void* foster_emit_string_of_cstring(char*, int32_t);
+
 namespace foster {
 namespace runtime {
 
-void initialize() {
+void initialize(int argc, char** argv) {
   cpuid_info info;
   cpuid_introspect(info);
 
@@ -86,6 +91,9 @@ void initialize() {
   current_coro = NULL;
 
   gc::initialize();
+  
+  foster_argc = argc;
+  foster_argv = argv;
 }
 
 int cleanup() {
@@ -207,6 +215,16 @@ void prim_print_bytes_stdout(foster_bytes* array, uint32_t n) {
 
 void prim_print_bytes_stderr(foster_bytes* array, uint32_t n) {
   fprint_bytes(stderr, array, n);
+}
+
+void* get_cmdline_arg_n(int32_t n) {
+  if (n >= 0 && n < foster_argc) {
+      char* s = foster_argv[n];
+      return foster_emit_string_of_cstring(s, strlen(s));
+  } else {
+      char* s = "";
+      return foster_emit_string_of_cstring(s, 0);
+  }
 }
 
 int32_t opaquely_i32(int32_t n) { return n; }

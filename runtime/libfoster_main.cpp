@@ -15,7 +15,7 @@ extern "C" int foster__main();
 #include "libfoster.h"
 
 int main(int argc, char** argv) {
-  foster::runtime::initialize();
+  foster::runtime::initialize(argc, argv);
   foster__main();
   return foster::runtime::cleanup();
 }

@@ -40,8 +40,8 @@ newDArray8 = { n : Int32 => f : { Int32 => Int8 } =>
 
 print_text = { s : Text =>
   case s
-    of $TextFragment a n     -> prim_print_bytes_stderr a 3; 0
-    of $TextConcat   s1 s2 x -> 0 // print_text s1 ; print_text s2; x
+    of $TextFragment a n     -> prim_print_bytes_stderr a n; n
+    of $TextConcat   s1 s2 n -> print_text s1; print_text s2; n
    end;
 };
 

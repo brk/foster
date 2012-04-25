@@ -138,6 +138,7 @@ primitiveDecls =
     ,(,)  "print_i32b" $ mkProcType [i32] []
 
     ,(,) "opaquely_i32" $ mkProcType [i32] [i32]
+    ,(,) "get_cmdline_arg_n" $ mkProcType [i32] [fosStringType]
 
     ,(,) "prim_print_bytes_stdout" $ mkProcType [ArrayTypeAST i8, i32] []
     ,(,) "prim_print_bytes_stderr" $ mkProcType [ArrayTypeAST i8, i32] []
