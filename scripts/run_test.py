@@ -79,8 +79,8 @@ def get_link_flags():
 def rpath(path):
   import platform
   return {
-    'Darwin': lambda: "",
-    'Linux' : lambda:  ' -Wl,-R,' + os.path.abspath(path),
+    'Darwin': lambda: '',
+    'Linux' : lambda: '-Wl,-R,' + os.path.abspath(path),
   }[platform.system()]()
 
 
@@ -160,6 +160,15 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
 
     return (s4, to_asm, e1, e2, e3, e4)
 
+def link_to_executable(finalpath, exepath, paths, testpath):
+    return run_command('g++ %(finalpath)s.o %(staticlibs)s %(linkflags)s -o %(exepath)s %(rpath)s' % {
+                         'finalpath' : finalpath,
+                         'staticlibs': get_static_libs(),
+                         'linkflags' : get_link_flags(),
+                         'exepath'   : exepath,
+                         'rpath'     : rpath(nativelib_dir())
+                       },  paths, testpath)
+
 def aggregate_results(results):
     fields = ["total_elapsed", "compile_elapsed", "overhead",
               "fp_elapsed", "fm_elapsed", "fl_elapsed",
@@ -215,9 +224,8 @@ def run_one_test(testpath, paths, tmpdir):
         else: # fosteroptc emitted a .o directly.
           as_elapsed = 0
 
-        rv, ld_elapsed = run_command('g++ %s.o %s %s -o %s' % (finalpath, get_static_libs(), get_link_flags(), exepath)
-                                    + rpath(nativelib_dir()),
-                                    paths, testpath)
+
+        rv, ld_elapsed = link_to_executable(finalpath, exepath, paths, testpath)
         rv, rn_elapsed = run_command(exepath,  paths, testpath, stdout=actual, stderr=expected, stdin=infile, strictrv=False)
 
   if rv == 0:

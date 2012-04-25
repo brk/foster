@@ -36,7 +36,7 @@ class TestFailed(Exception):
 # returns (status, elapsed-time-ms)
 def run_command(cmd, paths, testpath, showcmd=False, stdout=None, stderr=None, stdin=None, strictrv=True):
   if type(cmd) == str:
-    cmd = cmd.split(' ')
+    cmd = cmd.strip().split(' ')
   arglist = [default_lookup(arg, paths) for arg in cmd]
 
   start = walltime()

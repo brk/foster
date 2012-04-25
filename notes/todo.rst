@@ -31,9 +31,12 @@ General Compiler Structure Improvements
 
 TODO: libraries, benchmarks, & applications
 -------------------------------------------
+* Well-known collection types to runtime (lists, etc)
 * Local vars?
 * Strings
 * Hash tables
+* Sequences
+* Persistent maps
 * MP integers
 * Floating-point types
 * Growable vectors
