@@ -18,7 +18,8 @@ all_results = []
 def run_and_print_test(testpath, tmpdir, paths):
   try:
     test_tmpdir = os.path.join(tmpdir, run_test.testname(testpath))
-    result = run_test.run_one_test(testpath, paths, test_tmpdir)
+    prog_args   = []
+    result = run_test.run_one_test(testpath, paths, test_tmpdir, prog_args)
     run_test.print_result_table(result)
     run_test.classify_result(result, testpath)
     all_results.append(result)
