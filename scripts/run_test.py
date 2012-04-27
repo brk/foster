@@ -319,7 +319,7 @@ def get_test_parser(usage):
                     help="Enable optimizations in fosteroptc")
   parser.add_option("--profile", dest="profile", default=False,
                     help="Enable detailed profiling of compiler middle-end")
-  parser.add_option("--prog-arg", action="append", dest="progargs",
+  parser.add_option("--prog-arg", action="append", dest="progargs", default=[],
                     help="Pass through command line arguments to program")
 
   return parser
