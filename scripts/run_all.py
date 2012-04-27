@@ -15,11 +15,14 @@ from list_all import collect_all_tests
 
 all_results = []
 
-def run_and_print_test(testpath, tmpdir, paths):
-  try:
+def do_run_test(testpath, paths, tmpdir):
     test_tmpdir = os.path.join(tmpdir, run_test.testname(testpath))
     prog_args   = []
-    result = run_test.run_one_test(testpath, paths, test_tmpdir, prog_args)
+    return run_test.run_one_test(testpath, paths, test_tmpdir, prog_args)
+
+def run_and_print_test(testpath, tmpdir, paths):
+  try:
+    result = do_run_test(testpath, paths, tmpdir)
     run_test.print_result_table(result)
     run_test.classify_result(result, testpath)
     all_results.append(result)
@@ -37,8 +40,7 @@ def run_all_tests_slow(bootstrap_dir, paths, tmpdir):
 def worker_run_test(info):
   testpath, tmpdir, paths = info
   try:
-    test_tmpdir = os.path.join(tmpdir, run_test.testname(testpath))
-    result = run_test.run_one_test(testpath, paths, test_tmpdir)
+    result = do_run_test(testpath, paths, tmpdir)
     return (testpath, result)
   except KeyboardInterrupt:
     return (testpath, None) # Workers should ignore keyboard interrupts
