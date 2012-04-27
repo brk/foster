@@ -201,7 +201,7 @@ def run_diff(a, b):
   df_rv = subprocess.call(['diff', '-u', a, b])
   return df_rv != 0
 
-def run_one_test(testpath, paths, tmpdir):
+def run_one_test(testpath, paths, tmpdir, progargs):
   ensure_dir_exists(tmpdir)
   start = walltime()
   exp_filename = os.path.join(tmpdir, "expected.txt")
@@ -226,7 +226,8 @@ def run_one_test(testpath, paths, tmpdir):
 
 
         rv, ld_elapsed = link_to_executable(finalpath, exepath, paths, testpath)
-        rv, rn_elapsed = run_command(exepath,  paths, testpath, stdout=actual, stderr=expected, stdin=infile, strictrv=False)
+        rv, rn_elapsed = run_command([exepath] + progargs, paths, testpath,
+                                     stdout=actual, stderr=expected, stdin=infile, strictrv=False)
 
   if rv == 0:
     did_fail = run_diff(exp_filename, act_filename)
@@ -262,12 +263,12 @@ def classify_result(result, testpath):
   else:
     tests_passed.add(testpath)
 
-def main(testpath, paths, tmpdir):
+def main(testpath, paths, tmpdir, progargs):
   testdir = os.path.join(tmpdir, testname(testpath))
   if not os.path.isdir(testdir):
     os.makedirs(testdir)
 
-  result = run_one_test(testpath, paths, testdir)
+  result = run_one_test(testpath, paths, testdir, progargs)
   print_result_table(result)
   classify_result(result, testpath)
 
@@ -318,6 +319,8 @@ def get_test_parser(usage):
                     help="Enable optimizations in fosteroptc")
   parser.add_option("--profile", dest="profile", default=False,
                     help="Enable detailed profiling of compiler middle-end")
+  parser.add_option("--prog-arg", action="append", dest="progargs",
+                    help="Pass through command line arguments to program")
 
   return parser
 
@@ -336,4 +339,4 @@ if __name__ == "__main__":
   tmpdir = os.path.join(options.bindir, 'test-tmpdir')
   ensure_dir_exists(tmpdir)
 
-  main(testpath, get_paths(options, tmpdir), tmpdir)
+  main(testpath, get_paths(options, tmpdir), tmpdir, options.progargs)
