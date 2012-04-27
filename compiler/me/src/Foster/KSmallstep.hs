@@ -48,7 +48,7 @@ outFile gs = (stTmpDir gs) ++ "/istdout.txt"
 
 -- To interpret a program, we construct a coroutine for main
 -- (no arguments need be passed yet) and step until the program finishes.
-interpretKNormalMod kmod tmpDir = do
+interpretKNormalMod kmod tmpDir cmdLineArgs = do
   let funcmap = Map.fromList $ map (\sf -> (ssFuncIdent sf, sf))
                              (map ssFunc (moduleILfunctions kmod))
   let main = (funcmap Map.! (GlobalSymbol $ T.pack "main"))
@@ -63,7 +63,7 @@ interpretKNormalMod kmod tmpDir = do
                       } where env = Map.empty
   let emptyHeap = Heap (nextLocation loc)
                        (Map.singleton loc (SSCoro mainCoro))
-  let globalState = MachineState funcmap emptyHeap loc tmpDir
+  let globalState = MachineState funcmap emptyHeap loc tmpDir cmdLineArgs
 
   _ <- writeFile (outFile globalState) ""
   _ <- writeFile (errFile globalState) ""
@@ -110,6 +110,7 @@ data MachineState = MachineState {
         ,  stHeap    :: Heap
         ,  stCoroLoc :: Location
         ,  stTmpDir  :: String
+        ,  stCmdArgs :: [String]
 }
 
 -- A coroutine has an actively evaluating term, which is updated as part
@@ -178,9 +179,14 @@ modifyHeapWith gs loc fn =
   let heap = oldheap { hpMap = Map.insert loc (fn val) (hpMap oldheap) } in
   gs { stHeap = heap }
 
+modifyCoro gs f =
+  modifyHeapWith gs (stCoroLoc gs) (\ss ->
+                    case ss of SSCoro c -> SSCoro $ f c
+                               _        -> error "Expected coro in coro slot!")
+
 -- Pervasively used helper functions to update the term/env of the current coro.
-withTerm gs e = modifyHeapWith gs (stCoroLoc gs) (\(SSCoro c) -> SSCoro $ c { coroTerm = e })
-withEnv  gs e = modifyHeapWith gs (stCoroLoc gs) (\(SSCoro c) -> SSCoro $ c { coroEnv  = e })
+withTerm gs e = modifyCoro gs (\c -> c { coroTerm = e })
+withEnv  gs e = modifyCoro gs (\c -> c { coroEnv  = e })
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -331,13 +337,11 @@ callFunc gs func args =
 
 pushContext gs termWithHole = do
   let currStack = coroStack (stCoro gs)
-  return $ modifyHeapWith gs (stCoroLoc gs)
-             (\(SSCoro c) -> SSCoro $ c { coroStack = termWithHole:currStack })
-
+  return $ modifyCoro gs (\c -> c { coroStack = termWithHole:currStack })
+  
 popContext gs =
   let cont:restStack = coroStack (stCoro gs) in
-  (cont, modifyHeapWith gs (stCoroLoc gs)
-             (\(SSCoro c) -> SSCoro $ c { coroStack = restStack }))
+  (cont, modifyCoro gs (\c -> c { coroStack = restStack }))
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -382,7 +386,9 @@ stepExpr gs expr = do
       in
       return $ withTerm (withEnv gs extenv) e
 
-    ICase _a {-_dt-} [] -> error $ "Smallstep.hs: Pattern match failure when evaluating case expr!"
+    ICase  a {-_dt-} [] -> 
+        error $ "Smallstep.hs: Pattern match failure when evaluating case expr!"
+             ++ "\n\tFailing value: " ++ (show $ getval gs a)
     ICase  a {- dt-} ((p, e):bs) ->
        -- First, interpret the pattern list directly
        -- (using recursive calls to discard unmatched branches).
@@ -624,24 +630,34 @@ evalNamedPrimitive "opaquely_i32" gs [val] =
          return $ withTerm gs (SSTmValue $ val)
 
 evalNamedPrimitive "prim_print_bytes_stdout" gs [SSArray a, SSInt n] =
-      do printString gs (T.unpack . TE.decodeUtf8 $ packBytes gs a n)
+      do printString gs (stringOfBytes $ packBytes gs a n)
          return $ withTerm gs unit
 
 evalNamedPrimitive "prim_print_bytes_stderr" gs [SSArray a, SSInt n] =
-      do expectString gs (T.unpack . TE.decodeUtf8 $ packBytes gs a n)
+      do expectString gs (stringOfBytes $ packBytes gs a n)
          return $ withTerm gs unit
 
 evalNamedPrimitive "prim_print_bytes_stdout" gs [SSByteString bs, SSInt n] =
-      do printString  gs (T.unpack . TE.decodeUtf8 $ BS.take (fromInteger n) bs)
+      do printString  gs (stringOfBytes $ BS.take (fromInteger n) bs)
          return $ withTerm gs unit
 
 evalNamedPrimitive "prim_print_bytes_stderr" gs [SSByteString bs, SSInt n] =
-      do expectString gs (T.unpack . TE.decodeUtf8 $ BS.take (fromInteger n) bs)
+      do expectString gs (stringOfBytes $ BS.take (fromInteger n) bs)
          return $ withTerm gs unit
+         
+evalNamedPrimitive "get_cmdline_arg_n" gs [SSInt i] =
+      do let argN = let args = stCmdArgs gs in
+                    let ii = fromIntegral i in
+                    T.pack $ if ii < List.length args && ii >= 0
+                              then args !! ii else ""
+         return $ withTerm gs (SSTmValue $ textFragmentOf argN)
 
 evalNamedPrimitive prim _gs args = error $ "evalNamedPrimitive " ++ show prim
                                          ++ " not yet defined for args:\n"
                                          ++ show args
+
+-- ByteString -> Text -> String
+stringOfBytes = T.unpack . TE.decodeUtf8
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -731,7 +747,7 @@ expectString gs s = do
 
 textFragmentOf txt = SSCtorVal textFragmentCtor [SSByteString (TE.encodeUtf8 txt),
                                             SSInt $ fromIntegral (T.length txt)]
-  where textFragmentCtor = CtorId "Text" "TextFragment" 2 0 -- see Main.hs
+  where textFragmentCtor = CtorId "Text" "TextFragment" 2 0 -- see Primitives.hs
 
 arrayFrom :: MachineState -> [a] -> (Int -> a -> Integer) -> IO MachineState
 arrayFrom gs0 vals f = do

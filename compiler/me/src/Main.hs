@@ -210,11 +210,14 @@ typecheckModule verboseMode modast tcenv0 = do
      primtypes <- mapM (convertDataTypeAST ctx_ast) (moduleASTprimTypes mAST)
      datatypes <- mapM (convertDataTypeAST ctx_ast) (moduleASTdataTypes mAST)
      aiFns     <- mapM (tcInject (fnOf ctx_ast))
-                       (map (fmapOO (\(E_AnnFn f) -> f)) oo_annfns)
+                       (map (fmapOO unFunAnn) oo_annfns)
      let m = ModuleIL aiFns decls datatypes primtypes
                                                   (moduleASTsourceLines mAST)
      return (ctx_il, m)
        where
+        unFunAnn (E_AnnFn f) = f
+        unFunAnn _           = error $ "Saw non-AnnFn in unFunAnn"
+
         fmapOO :: (a -> b) -> OutputOr a -> OutputOr b
         fmapOO  f (OK e)     = OK (f e)
         fmapOO _f (Errors o) = Errors o
@@ -268,12 +271,13 @@ isTau t = all isTau (childrenOf t)
 
 -----------------------------------------------------------------------
 
-data Flag = Interpret String | Verbose
+data Flag = Interpret String | Verbose | ProgArg String
 
 options :: [OptDescr Flag]
 options =
  [ Option []     ["interpret"]  (ReqArg Interpret "DIR")  "interpret in DIR"
  , Option []     ["verbose"]    (NoArg  Verbose)          "verbose mode"
+ , Option []     ["prog-arg"]   (ReqArg ProgArg "ARG")    "pass through ARG"
  ]
 
 parseOpts :: [String] -> IO ([Flag], [String])
@@ -288,6 +292,9 @@ getInterpretFlag (flags, _) =
 
 getVerboseFlag (flags, _) =
    foldr (\f a -> case f of Verbose     -> True    ; _ -> a) False flags
+
+getProgArgs (flags, _) =
+   foldr (\f a -> case f of ProgArg arg -> arg:a ; _ -> a) [] flags
 
 -----------------------------------------------------------------------
 
@@ -408,7 +415,8 @@ lowerModule ai_mod ctx_il = do
         case getInterpretFlag flagVals of
             Nothing -> return ()
             Just tmpDir -> do
-                _unused <- liftIO $ interpretKNormalMod kmod tmpDir
+                let cmdLineArgs = getProgArgs flagVals
+                _unused <- liftIO $ interpretKNormalMod kmod tmpDir cmdLineArgs
                 return ()
 
 showGeneratedMetaTypeVariables :: (Show ty) =>
