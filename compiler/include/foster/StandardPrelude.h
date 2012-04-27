@@ -21,10 +21,6 @@ void putModuleMembersInScope(llvm::Module* m, llvm::Module* linkee);
 
 void createLLVMBitIntrinsics();
 
-void addConcretePrimitiveFunctionsTo(llvm::Module* m);
-
-void addStandardExternDeclarations(llvm::Module* mod);
-
 } // namespace foster
 
 #endif

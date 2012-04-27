@@ -21,13 +21,6 @@ using namespace llvm;
 
 namespace foster {
 
-  void addStandardExternDeclarations(Module* mod) {
-    llvm::Type* i32 = builder.getInt32Ty();
-    mod->getOrInsertFunction("opaquely_i32",
-        FunctionType::get(i32, llvm::makeArrayRef(i32), /*isVarArg=*/ false)
-      );
-  }
-
 bool gPrintLLVMImports = false;
 
 // Add prototypes for module m's C-linkage functions to the linkee module.

@@ -229,7 +229,6 @@ int main(int argc, char** argv) {
     ASSERT(foster_generic_coro_t != NULL);
   }
 
-  foster::addStandardExternDeclarations(module);
   // TODO mark foster__assert as alwaysinline
 
   libfoster_bc = readLLVMModuleFromPath("_bitcodelibs_/libfoster.bc");
