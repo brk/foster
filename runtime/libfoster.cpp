@@ -72,7 +72,7 @@ struct foster_bytes {
 };
 
 // primitive defined by the compiler itself
-extern "C" void* foster_emit_string_of_cstring(char*, int32_t);
+extern "C" void* foster_emit_string_of_cstring(const char*, int32_t);
 
 namespace foster {
 namespace runtime {
@@ -203,6 +203,7 @@ void expect_i64b(int64_t x) { fprint_i64b(stderr, x); }
 void  print_i1(bool x) { fprintf(stdout, (x ? "true\n" : "false\n")); }
 void expect_i1(bool x) { fprintf(stderr, (x ? "true\n" : "false\n")); }
 
+// This is used by the compiler.
 uint8_t foster_ctor_id_of(void* body) {
   return foster::runtime::ctor_id_of(body);
 }
@@ -219,10 +220,10 @@ void prim_print_bytes_stderr(foster_bytes* array, uint32_t n) {
 
 void* get_cmdline_arg_n(int32_t n) {
   if (n >= 0 && n < foster_argc) {
-      char* s = foster_argv[n];
+      const char* s = foster_argv[n];
       return foster_emit_string_of_cstring(s, strlen(s));
   } else {
-      char* s = "";
+      const char* s = "";
       return foster_emit_string_of_cstring(s, 0);
   }
 }
