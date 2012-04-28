@@ -37,7 +37,7 @@ data KNExpr =
         | KNCall TailQ  TypeIL AIVar  [AIVar]
         | KNAppCtor     TypeIL CtorId [AIVar]
         -- Mutable ref cells
-        | KNAlloc       AIVar
+        | KNAlloc       AIVar AllocMemRegion
         | KNDeref       AIVar
         | KNStore       AIVar AIVar
         -- Array operations
@@ -91,7 +91,7 @@ kNormalize mebTail expr =
       E_AIPrim p -> error $ "KNExpr.kNormalize: Should have detected prim " ++ show p
 
       AIAllocArray t a      -> do a' <- gn a ; nestedLets [a'] (\[x] -> KNAllocArray t x)
-      AIAlloc a             -> do a' <- gn a ; nestedLets [a'] (\[x] -> KNAlloc x)
+      AIAlloc a rgn         -> do a' <- gn a ; nestedLets [a'] (\[x] -> KNAlloc x rgn)
       AIDeref   a           -> do a' <- gn a ; nestedLets [a'] (\[x] -> KNDeref x)
       E_AITyApp t a argty   -> do a' <- gn a ; nestedLets [a'] (\[x] -> KNTyApp t x argty)
 
@@ -295,7 +295,7 @@ typeKN expr =
     KNAllocArray elt_ty _ -> ArrayTypeIL elt_ty
     KNIf    t _ _ _   -> t
     KNUntil t _ _     -> t
-    KNAlloc v         -> PtrTypeIL (tidType v)
+    KNAlloc v _rgn    -> PtrTypeIL (tidType v)
     KNDeref v         -> pointedToTypeOfVar v
     KNStore _ _       -> TupleTypeIL []
     KNArrayRead t _ _ -> t
@@ -346,7 +346,7 @@ instance Structured KNExpr where
             KNCallPrim _t _v vs     ->            [var v | v <- vs]
             KNAppCtor  _t _c vs     ->            [var v | v <- vs]
             KNIf       _t v b c     -> [var v, b, c]
-            KNAlloc   v             -> [var v]
+            KNAlloc   v _rgn        -> [var v]
             KNAllocArray _ v        -> [var v]
             KNDeref   v             -> [var v]
             KNStore   v w           -> [var v, var w]

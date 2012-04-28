@@ -236,10 +236,12 @@ dumpExpr x@(MoAllocate info) =
                     , PbLetable.type' = Just $ dumpType (typeMo x)
                     , PbLetable.alloc_info = Just $ dumpAllocate info }
 
-dumpExpr x@(MoAlloc a) =
+dumpExpr x@(MoAlloc a rgn) =
     P'.defaultValue { PbLetable.parts = fromList [dumpVar a]
                     , PbLetable.tag   = IL_ALLOC
-                    , PbLetable.type' = Just $ dumpType (typeMo x)  }
+                    , PbLetable.type' = Just $ dumpType (typeMo x)
+                    , PbLetable.alloc_info = Just $ dumpAllocate
+                         (AllocInfo (typeMo x) rgn Nothing True) }
 
 dumpExpr  (MoAllocArray elt_ty size) =
     P'.defaultValue { PbLetable.parts = fromList []
@@ -411,7 +413,7 @@ typeMo expr = case expr of
     MoAppCtor  t  _ _       -> t
     MoAllocate info         -> allocType info
     MoAllocArray elt_ty _   -> ArrayType elt_ty
-    MoAlloc v               -> PtrType (tidType v)
+    MoAlloc v _rgn          -> PtrType (tidType v)
     MoDeref v               -> pointedToTypeOfVar v
     MoStore _ _             -> TupleType []
     MoArrayRead t _ _       -> t

@@ -44,7 +44,7 @@ data AIExpr=
         | E_AIPrim     ILPrim
         | AICall       TypeIL AIExpr [AIExpr]
         -- Mutable ref cells
-        | AIAlloc      AIExpr
+        | AIAlloc      AIExpr AllocMemRegion
         | AIDeref      AIExpr
         | AIStore      AIExpr AIExpr
         -- Array operations
@@ -91,7 +91,7 @@ ail ctx ae =
                                          ei <- q e
                                          return $ AILetFuns ids fnsi ei
         AnnAlloc _rng   a          -> do [x] <- mapM q [a]
-                                         return $ AIAlloc x
+                                         return $ AIAlloc x MemRegionGlobalHeap
         AnnDeref _rng _t a         -> do [x] <- mapM q [a]
                                          return $ AIDeref x
         AnnStore _rng   a b        -> do [x,y]   <- mapM q [a,b]

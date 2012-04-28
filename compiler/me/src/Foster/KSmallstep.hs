@@ -256,7 +256,7 @@ ssTermOfExpr expr =
     KNArrayRead _t a b     -> SSTmExpr  $ IArrayRead (idOf a) (idOf b)
     KNArrayPoke v b i      -> SSTmExpr  $ IArrayPoke (idOf v) (idOf b) (idOf i)
     KNAllocArray _ety n    -> SSTmExpr  $ IAllocArray (idOf n)
-    KNAlloc a              -> SSTmExpr  $ IAlloc (idOf a)
+    KNAlloc a _rgn         -> SSTmExpr  $ IAlloc (idOf a)
     KNDeref   a            -> SSTmExpr  $ IDeref (idOf a)
     KNStore   a b          -> SSTmExpr  $ IStore (idOf a) (idOf b)
     KNTyApp _t v argty     -> SSTmExpr  $ ITyApp (idOf v) argty
@@ -338,7 +338,7 @@ callFunc gs func args =
 pushContext gs termWithHole = do
   let currStack = coroStack (stCoro gs)
   return $ modifyCoro gs (\c -> c { coroStack = termWithHole:currStack })
-  
+
 popContext gs =
   let cont:restStack = coroStack (stCoro gs) in
   (cont, modifyCoro gs (\c -> c { coroStack = restStack }))
@@ -386,7 +386,7 @@ stepExpr gs expr = do
       in
       return $ withTerm (withEnv gs extenv) e
 
-    ICase  a {-_dt-} [] -> 
+    ICase  a {-_dt-} [] ->
         error $ "Smallstep.hs: Pattern match failure when evaluating case expr!"
              ++ "\n\tFailing value: " ++ (show $ getval gs a)
     ICase  a {- dt-} ((p, e):bs) ->
@@ -644,7 +644,7 @@ evalNamedPrimitive "prim_print_bytes_stdout" gs [SSByteString bs, SSInt n] =
 evalNamedPrimitive "prim_print_bytes_stderr" gs [SSByteString bs, SSInt n] =
       do expectString gs (stringOfBytes $ BS.take (fromInteger n) bs)
          return $ withTerm gs unit
-         
+
 evalNamedPrimitive "get_cmdline_arg_n" gs [SSInt i] =
       do let argN = let args = stCmdArgs gs in
                     let ii = fromIntegral i in

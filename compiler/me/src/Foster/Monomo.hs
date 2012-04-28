@@ -346,7 +346,7 @@ monomorphizeLetable subst expr =
         ILCall      t v vs    -> return $ MonoLet $ MoCall     (qt t) (qv v) (map qv vs)
         ILAppCtor   t c vs    -> return $ MonoLet $ MoAppCtor  (qt t) c      (map qv vs)
         ILAllocate  alloc     -> return $ MonoLet $ MoAllocate (monoAllocInfo subst alloc)
-        ILAlloc     v         -> return $ MonoLet $ MoAlloc (qv v)
+        ILAlloc     v rgn     -> return $ MonoLet $ MoAlloc (qv v) rgn
         ILDeref     v         -> return $ MonoLet $ MoDeref (qv v)
         ILStore     v1 v2     -> return $ MonoLet $ MoStore (qv v1) (qv v2)
         ILAllocArray t v      -> return $ MonoLet $ MoAllocArray (qt t) (qv v)

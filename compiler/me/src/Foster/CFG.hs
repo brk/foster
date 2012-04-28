@@ -206,7 +206,7 @@ computeBlocks expr idmaybe k = do
          KNCallPrim   t p vs -> ILCallPrim   t p vs
          KNCall _     t b vs -> ILCall       t b vs
          KNAppCtor    t c vs -> ILAppCtor    t c vs
-         KNAlloc      v      -> ILAlloc      v
+         KNAlloc      v rgn  -> ILAlloc      v rgn
          KNDeref      v      -> ILDeref      v
          KNStore      a b    -> ILStore      a b
          KNAllocArray t v    -> ILAllocArray t v
