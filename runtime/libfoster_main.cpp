@@ -19,3 +19,7 @@ int main(int argc, char** argv) {
   foster__main();
   return foster::runtime::cleanup();
 }
+
+// This lives here to prevent it from being inlined away when
+// programs are optimized after being linked with libfoster.
+extern "C" int32_t opaquely_i32(int32_t n) { return n; }

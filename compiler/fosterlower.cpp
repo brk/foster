@@ -230,6 +230,14 @@ int main(int argc, char** argv) {
   }
 
   // TODO mark foster__assert as alwaysinline
+  {
+    // This is a "special" function in that it needs a declaration but
+    // no definition available after linking against libfoster.
+    llvm::Type* i32 = foster::builder.getInt32Ty();
+    module->getOrInsertFunction("opaquely_i32",
+        FunctionType::get(i32, llvm::makeArrayRef(i32), /*isVarArg=*/ false)
+      );
+  }
 
   libfoster_bc = readLLVMModuleFromPath("_bitcodelibs_/libfoster.bc");
   foster::putModuleFunctionsInScope(libfoster_bc, module);

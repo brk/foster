@@ -91,7 +91,7 @@ void initialize(int argc, char** argv) {
   current_coro = NULL;
 
   gc::initialize();
-  
+
   foster_argc = argc;
   foster_argv = argv;
 }
@@ -228,7 +228,7 @@ void* get_cmdline_arg_n(int32_t n) {
   }
 }
 
-int32_t opaquely_i32(int32_t n) { return n; }
+extern int32_t opaquely_i32(int32_t n);
 
 } // extern "C"
 
