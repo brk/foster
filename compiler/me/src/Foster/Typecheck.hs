@@ -19,8 +19,7 @@ import Foster.AnnExpr
 import Foster.Infer
 import Foster.Context
 import Foster.TypecheckInt(sanityCheck, typecheckInt)
-import Foster.Output(out, outToString, OutputOr(Errors), outCS, runOutput)
-import System.Console.ANSI
+import Foster.Output(out, outToString, OutputOr(Errors))
 
 type ExprT = ExprAST TypeAST
 
@@ -52,12 +51,7 @@ typecheck want ctx expr maybeExpTy = do
       E_Case   rng a branches   -> typecheckCase       ctx rng a branches maybeExpTy
       E_AllocAST rng a          -> typecheckAlloc      ctx rng a          maybeExpTy
       E_StoreAST rng e1 e2      -> typecheckStore      ctx rng e1 e2
-      E_DerefAST rng a -> do
-        ea <- typecheck want ctx a Nothing -- TODO: match maybeExpTy?
-        case typeAST ea of
-          RefTypeAST t -> return (AnnDeref rng t ea)
-          other        -> tcFails [out $ "Expected deref-ed expr "
-                                   ++ "to have ref type, had " ++ show other ++ show rng]
+      E_DerefAST rng e1         -> typecheckDeref want ctx rng e1         maybeExpTy
       E_SeqAST rng a b -> do ea <- typecheck want ctx a Nothing --(Just TypeUnitAST)
                              id <- tcFresh ".seq"
                              eb <- typecheck want ctx b maybeExpTy
@@ -145,6 +139,24 @@ typecheckStore ctx rng e1 e2 = do
     unify           u_slot                    u_expr    (Just "Store expression")
     unify        (typeAST a2) (RefTypeAST (typeAST a1)) (Just "Store expression")
     return (AnnStore rng a1 a2)
+-- }}}
+
+--  G |- e1 ::: Ref tau
+--  --------------------
+--  G |- e1 ^ ::: tau
+typecheckDeref want ctx rng e1 maybeExpTy = do
+-- {{{
+    tau <- case maybeExpTy of
+            Nothing -> newTcUnificationVarTau $ "ref_type"
+            Just et -> return et
+    a1 <- typecheck want ctx e1 (Just $ RefTypeAST tau)
+    case typeAST a1 of
+      RefTypeAST {} -> return ()
+      MetaTyVar  {} -> return ()
+      other -> tcFails [out $ "Expected deref-ed expr "
+                           ++ "to have ref type, had " ++ show other ++ show rng]
+    unify (typeAST a1) (RefTypeAST tau) (Just "Deref expression")
+    return (AnnDeref rng tau a1)
 -- }}}
 
 typecheckAlloc ctx rng a maybeExpTy = do
