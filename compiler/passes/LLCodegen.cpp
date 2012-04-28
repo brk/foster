@@ -138,9 +138,9 @@ CodegenPass::CodegenPass(llvm::Module* m) : mod(m) {
   //dib = new DIBuilder(*mod);
 }
 
-llvm::Value* CodegenPass::autoload(llvm::Value* v) {
+llvm::Value* CodegenPass::autoload(llvm::Value* v, const char* suffix) {
   if (this->needsImplicitLoad.count(v) == 1) {
-    return emitNonVolatileLoad(v, v->getName() + ".autoload");
+    return emitNonVolatileLoad(v, v->getName() + suffix);
   } else return v;
 }
 
@@ -614,18 +614,20 @@ void LLBitcast::codegenMiddle(CodegenPass* pass) {
 /////////////////////////////////////////////////////////////////{{{
 
 llvm::Value* LLAlloc::codegen(CodegenPass* pass) {
-  // (alloc base) is equivalent to
-  //    let rs  = mallocType t;
+  // (alloc base rgn) is equivalent to
+  //    let rs  = allocate t rgn;
   //        sv = base;
   //        r   = rs^;
   //     in sv >^ r;
   //        r
   //    end
   ASSERT(this && this->baseVar && this->baseVar->type);
-  llvm::Value* ptrSlot   = pass->emitMalloc(this->baseVar->type->getLLVMType(),
-                                            foster::bogusCtorId(-4));
+
+  LLAllocate alloc(this->baseVar->type, foster::bogusCtorId(-4),
+                      /*unboxed*/ false, NULL, LLAllocate::MEM_REGION_GLOBAL_HEAP);
+  llvm::Value* ptrSlot   = alloc.codegen(pass); // disable implicit autoload
   llvm::Value* storedVal = pass->emit(baseVar, NULL);
-  llvm::Value* ptr       = emitNonVolatileLoad(ptrSlot, "alloc_slot_ptr");
+  llvm::Value* ptr       = pass->autoload(ptrSlot, "alloc_slot_ptr");
   emitStore(storedVal, ptr);
   return ptrSlot;
 }
