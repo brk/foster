@@ -624,7 +624,7 @@ llvm::Value* LLAlloc::codegen(CodegenPass* pass) {
   ASSERT(this && this->baseVar && this->baseVar->type);
 
   LLAllocate alloc(this->baseVar->type, foster::bogusCtorId(-4),
-                      /*unboxed*/ false, NULL, LLAllocate::MEM_REGION_GLOBAL_HEAP);
+                      /*unboxed*/ false, NULL, this->region);
   llvm::Value* ptrSlot   = alloc.codegen(pass); // disable implicit autoload
   llvm::Value* storedVal = pass->emit(baseVar, NULL);
   llvm::Value* ptr       = pass->autoload(ptrSlot, "alloc_slot_ptr");

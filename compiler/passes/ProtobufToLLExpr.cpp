@@ -126,6 +126,18 @@ LLExpr* parseInt(const pb::Letable& e) {
   return new LLInt(i.clean(), i.bits());
 }
 
+LLAllocate::MemRegion parseMemRegion(const pb::PbAllocInfo& a) {
+  LLAllocate::MemRegion target_region = LLAllocate::MEM_REGION_STACK;
+  switch (a.mem_region()) {
+  case           pb::PbAllocInfo::MEM_REGION_STACK:
+      target_region = LLAllocate::MEM_REGION_STACK; break;
+  case           pb::PbAllocInfo::MEM_REGION_GLOBAL_HEAP:
+      target_region = LLAllocate::MEM_REGION_GLOBAL_HEAP; break;
+  default: ASSERT(false) << "Unknown target region for AllocInfo.";
+  }
+  return target_region;
+}
+
 LLAllocate* parseAllocate(const pb::Letable& e) {
   ASSERT(e.has_alloc_info());
   const pb::PbAllocInfo& a = e.alloc_info();
@@ -135,14 +147,7 @@ LLAllocate* parseAllocate(const pb::Letable& e) {
     array_size = parseTermVar(&a.array_size());
   }
 
-  LLAllocate::MemRegion target_region = LLAllocate::MEM_REGION_STACK;
-  switch (a.mem_region()) {
-  case           pb::PbAllocInfo::MEM_REGION_STACK:
-      target_region = LLAllocate::MEM_REGION_STACK; break;
-  case           pb::PbAllocInfo::MEM_REGION_GLOBAL_HEAP:
-      target_region = LLAllocate::MEM_REGION_GLOBAL_HEAP; break;
-  default: ASSERT(false) << "Unknown target region for AllocInfo.";
-  }
+  LLAllocate::MemRegion target_region = parseMemRegion(a);
   int8_t bogusCtorId = -2;
   bool unboxed = a.unboxed();
   return new LLAllocate(TypeAST_from_pb(& e.type()), bogusCtorId,
@@ -311,7 +316,8 @@ LLSwitch* parseSwitch(const pb::Terminator& b) {
 }
 
 LLExpr* parseAlloc(const pb::Letable& e) {
-  return new LLAlloc(parseTermVar(& e.parts(0)));
+  return new LLAlloc(parseTermVar(& e.parts(0)),
+                     parseMemRegion(e.alloc_info()));
 }
 
 LLExpr* parseDeref(const pb::Letable& e) {
