@@ -325,10 +325,7 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
     extractPatternBindings _ctx (P_Variable _ tid) ty = do unify (tidType tid) ty (Just "pattern binding")
                                                            return [tid]
 
-    -- TODO shouldn't ignore the _ty here -- bug when ctors from different types listed.
     extractPatternBindings ctx (P_Ctor _ pats (CtorId typeName ctorName _ _)) ty = do
-      --tcLift $ putStrLn $ "_ty = " ++ show ty ++ "; ctorName: " ++ ctorName
-
       CtorInfo _ (DataCtor _ _ types) <- getCtorInfoForCtor ctx (T.pack ctorName)
       bindings <- sequence [extractPatternBindings ctx p t | (p, t) <- zip pats types]
       dtys <- generateTypeSchemaForDataType ctx typeName

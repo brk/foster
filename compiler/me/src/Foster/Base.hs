@@ -279,6 +279,11 @@ data FosterPrim ty = NamedPrim (TypedId ty)
 
 data CoroPrim = CoroCreate | CoroInvoke | CoroYield
 
+-- TODO distinguish stable pointers from lively pointers?
+--      stable-pointer-bit at compile time or runtime?
+-- TODO other allocation zones? -- refcounted heap, thread-local heap,
+--                                 C/malloc/free heap,
+--                                 type-specific heaps, etc, etc...
 data AllocMemRegion = MemRegionStack
                     | MemRegionGlobalHeap deriving Show
 
