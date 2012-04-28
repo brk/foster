@@ -93,7 +93,9 @@ readTcMeta :: MetaTyVar -> Tc (Maybe Tau)
 readTcMeta m = tcLift $ readIORef (mtvRef m)
 
 writeTcMeta :: MetaTyVar -> Tau -> Tc ()
-writeTcMeta m v = tcLift $ writeIORef (mtvRef m) (Just v)
+writeTcMeta m v = do
+  --tcLift $ putStrLn $ "=========== Writing meta type variable: " ++ show (MetaTyVar m) ++ " := " ++ show v
+  tcLift $ writeIORef (mtvRef m) (Just v)
 
 newTcSkolem (tv, k) = do u <- newTcUniq
                          return (SkolemTyVar (nameOf tv) u k)

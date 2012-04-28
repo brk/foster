@@ -21,7 +21,7 @@ type TypeSubst = Map Uniq TypeAST
 
 type UnifySoln = Maybe TypeSubst
 
-data TypeConstraint = TypeConstrEq TypeAST TypeAST
+data TypeConstraint = TypeConstrEq TypeAST TypeAST deriving Show
 
 emptyTypeSubst = Map.empty
 
@@ -134,10 +134,8 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                let t2 = parSubstTy tySubst rho2 in
                tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 
-    ((MetaTyVar m), ty) ->
-        tcUnifyVar m ty tysub constraints
-    (ty, (MetaTyVar m)) ->
-        tcUnifyVar m ty tysub constraints
+    ((MetaTyVar m), ty) -> tcUnifyVar m ty tysub constraints
+    (ty, (MetaTyVar m)) -> tcUnifyVar m ty tysub constraints
 
     ((RefTypeAST t1), (RefTypeAST t2)) ->
         tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
@@ -156,8 +154,9 @@ tcUnifyVar m1 (MetaTyVar m2) tysub constraints | m1 == m2
   = tcUnifyLoop constraints tysub
 
 tcUnifyVar m ty tysub constraints = do
-    --tcLift $ putStrLn $ "================ Unifying meta var " ++ show uniq ++ " with " ++ show ty
-    let tysub' = (Map.insert (mtvUniq m) ty tysub)
+    --tcm <- readTcMeta m
+    --tcLift $ putStrLn $ "================ Unifying meta var " ++ show (MetaTyVar m) ++ " :: " ++ show tcm ++ "with " ++ show ty
+    let tysub' = Map.insert (mtvUniq m) ty tysub
     tcUnifyLoop (tySubstConstraints constraints (Map.singleton (mtvUniq m) ty)) tysub'
       where
         tySubstConstraints constraints tysub = map tySub constraints

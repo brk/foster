@@ -20,6 +20,8 @@ import Foster.Infer
 import Foster.Context
 import Foster.TypecheckInt(sanityCheck, typecheckInt)
 import Foster.Output(out, outToString, OutputOr(Errors))
+--import Foster.Output(outCS, runOutput)
+--import System.Console.ANSI
 
 type ExprT = ExprAST TypeAST
 
@@ -51,7 +53,7 @@ typecheck want ctx expr maybeExpTy = do
       E_Case   rng a branches   -> typecheckCase       ctx rng a branches maybeExpTy
       E_AllocAST rng a          -> typecheckAlloc      ctx rng a          maybeExpTy
       E_StoreAST rng e1 e2      -> typecheckStore      ctx rng e1 e2
-      E_DerefAST rng e1         -> typecheckDeref want ctx rng e1         maybeExpTy
+      E_DerefAST rng e1         -> typecheckDeref      ctx rng e1         maybeExpTy
       E_SeqAST rng a b -> do ea <- typecheck want ctx a Nothing --(Just TypeUnitAST)
                              id <- tcFresh ".seq"
                              eb <- typecheck want ctx b maybeExpTy
@@ -144,12 +146,12 @@ typecheckStore ctx rng e1 e2 = do
 --  G |- e1 ::: Ref tau
 --  --------------------
 --  G |- e1 ^ ::: tau
-typecheckDeref want ctx rng e1 maybeExpTy = do
+typecheckDeref ctx rng e1 maybeExpTy = do
 -- {{{
     tau <- case maybeExpTy of
             Nothing -> newTcUnificationVarTau $ "ref_type"
             Just et -> return et
-    a1 <- typecheck want ctx e1 (Just $ RefTypeAST tau)
+    a1 <- tcRho ctx e1 (Just $ RefTypeAST tau)
     case typeAST a1 of
       RefTypeAST {} -> return ()
       MetaTyVar  {} -> return ()
@@ -254,10 +256,10 @@ typecheckCase :: Context Sigma -> SourceRange -> ExprT
 -- {{{
 typecheckCase ctx rng scrutinee branches maybeExpTy = do
   -- (A) The expected type applies to the branches,
-  -- not to the scrutinee.
+  --     not to the scrutinee.
   -- (B) Each pattern must check against the scrutinee type.
   -- (C) Each branch must check against the expected type,
-  --  as well as successfully unify against the overall type.
+  --     as well as successfully unify against the overall type.
 
   ascrutinee <- tcRho ctx scrutinee Nothing
   u <- newTcUnificationVarTau "case"
@@ -338,10 +340,11 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
               then do bindings <- sequence [extractPatternBindings ctx p t | (p, t) <- zip ps ts]
                       return $ concat bindings
               else tcFails [out $ "Cannot match pattern against tuple type"
-                                  ++ " of different length."])
-         _else  -> tcFails [out $ "Cannot check tuple pattern"
-                                  ++ " against non-tuple type " ++ show ty
-                                  ++ showSourceRange rng]
+                                  ++ " of different length." ++ showSourceRange rng])
+         _ -> do ts <- sequence [newTcUnificationVarTau "tup" | _ <- ps]
+                 unify ty (TupleTypeAST ts) (Just "tuple-pattern")
+                 bindings <- sequence [extractPatternBindings ctx p t | (p, t) <- zip ps ts]
+                 return $ concat bindings
 
     checkSuspiciousPatternVariable rng var =
       if T.unpack (evarName var) `elem` ["true", "false"]
@@ -609,7 +612,7 @@ typecheckCall ctx rng base args maybeExpTy = do
             -- TODO this should sometimes be proc, not func...
             let fnty = mkFuncTy ft rt
 
-            unify (MetaTyVar m) fnty Nothing
+            unify (MetaTyVar m) fnty (Just $ "typecheckCall...")
             typecheckCallRho eargs eb fnty rng
 
       _ -> tcFails [out $ "Called expression had unexpected type: "
@@ -813,7 +816,7 @@ subsumedBy annexpr st2 msg = do
     t1' <- zonkType (typeAST annexpr)
     --tcLift $ runOutput $ outCS Green $ "subsumedBy " ++ show t1' ++ " <=? " ++ show st2
     --tcLift $ putStrLn ""
-    case (typeAST annexpr, st2) of
+    case (t1', st2) of
         (s1, s2@ForAllAST {}) -> do -- Odersky-Laufer's SKOL rule.
              (skols, r2) <- skolemize s2
              e' <- subsumedBy annexpr r2 msg
@@ -832,14 +835,14 @@ subsumedBy annexpr st2 msg = do
         (rho1,            rho2) -> do unify rho1 rho2 msg
                                       return annexpr
 
--- equateTypes first attempts to unify the two given types.
 -- If unification fails, the provided error message (if any)
 -- is printed along with the unification failure error message.
 -- If unification succeeds, each unification variable in the two
 -- types is updated according to the unification solution.
 unify :: TypeAST -> TypeAST -> Maybe String -> Tc ()
 unify t1 t2 msg = do
-  --tcLift $ runOutput $ outCS Green $ "unify " ++ show t1 ++ " ?==? " ++ show t2
+  --let msg' = case msg of Nothing -> "(<no msg>)" ; Just m -> " (" ++ m ++ ")"
+  --tcLift $ runOutput $ outCS Green $ "unify " ++ show t1 ++ " ?==? " ++ show t2 ++ msg'
   --tcLift $ putStrLn ""
   tcOnError (liftM out msg) (tcUnifyTypes t1 t2) $ \(Just soln) -> do
      let univars = concatMap collectUnificationVars [t1, t2]
@@ -847,12 +850,14 @@ unify t1 t2 msg = do
        mt1 <- readTcMeta m
        case (mt1, Map.lookup (mtvUniq m) soln) of
          (_,       Nothing)          -> return () -- no type to update to.
-         (Just x1, Just x2)          -> unify x1 x2 msg
+         (Just x1, Just x2)          -> do unify x1 x2 msg
+         -- The unification var m1 has no bound type, but it's being
+         -- associated with var m2, so we'll peek through m2.
          (Nothing, Just (MetaTyVar m2)) -> do
                          mt2 <- readTcMeta m2
                          case mt2 of
                              Just x2 -> unify (MetaTyVar m) x2 msg
-                             Nothing -> writeTcMeta m t2
+                             Nothing -> writeTcMeta m (MetaTyVar m2)
          (Nothing, Just x2) -> case m `elem` collectUnificationVars x2 of
                              False   -> writeTcMeta m x2
                              True    -> occurdCheck m x2
