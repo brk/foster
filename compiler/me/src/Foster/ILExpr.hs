@@ -274,7 +274,7 @@ closureOfKnFn infoMap (self_id, fn) = do
         newbody <- do
             let BasicBlockGraph bodyentry oldbodygraph numPreds = fnBody f
             let norange = MissingSourceRange ""
-            let patVar a = P_Variable norange (tidIdent a)
+            let patVar a = P_Variable norange a
             let cfcase = CFCase envVar [
                            ((P_Tuple norange (map patVar varsOfClosure),
                                                          varsOfClosure)

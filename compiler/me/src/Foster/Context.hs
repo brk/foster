@@ -15,12 +15,13 @@ import Foster.Output(out, outLn, Output, OutputOr(..))
 
 data ContextBinding ty = TermVarBinding T.Text (TypedId ty)
 
-data Context ty = Context { contextBindings   :: Map T.Text (TypedId ty) -- [ContextBinding ty]
+data Context ty = Context { contextBindings   :: Map T.Text (TypedId ty)
                           , primitiveBindings :: Map T.Text (TypedId ty)
                           , contextVerbose    :: Bool
                           , globalBindings    :: [ContextBinding ty]
                           , contextTypeBindings :: [(TyVar, Kind)]
-                          , contextCtorInfo   :: Map CtorName [CtorInfo TypeAST]
+                          , contextCtorInfo   :: Map CtorName     [CtorInfo TypeAST]
+                          , contextDataTypes  :: Map DataTypeName [DataType TypeAST]
                           }
 
 prependBinding :: Map T.Text (TypedId ty) -> ContextBinding ty -> Map T.Text (TypedId ty)

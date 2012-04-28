@@ -55,16 +55,16 @@ data SPattern = SP_Wildcard
 
 type DataTypeSigs = Map DataTypeName DataTypeSig
 
-compilePatterns :: [((Pattern, _binds), a)] -> DataTypeSigs -> DecisionTree a
+compilePatterns :: [((Pattern ty, _binds), a)] -> DataTypeSigs -> DecisionTree a
 compilePatterns bs allSigs =
  cc [[]] (ClauseMatrix $ map compilePatternRow bs) allSigs where
 
   compilePatternRow ((p, _binds), a) = ClauseRow (compilePattern p)
                                                  [compilePattern p] a
-  compilePattern :: Pattern -> SPattern
+  compilePattern :: Pattern ty -> SPattern
   compilePattern p = case p of
     (P_Wildcard _  )   -> SP_Wildcard
-    (P_Variable _ v)   -> SP_Variable v
+    (P_Variable _ v)   -> SP_Variable (tidIdent v)
     (P_Bool     _ b)   -> SP_Ctor (boolCtor b)     []
     (P_Int      _ i)   -> SP_Ctor (int32Ctor i)    []
     (P_Ctor _ pats cid) ->SP_Ctor cid              (map compilePattern pats)

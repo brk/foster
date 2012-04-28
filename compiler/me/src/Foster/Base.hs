@@ -53,18 +53,18 @@ data EPattern ty =
         | EP_Int          SourceRange String
         | EP_Tuple        SourceRange [EPattern ty]
 
-data Pattern =
+data Pattern ty =
           P_Wildcard      SourceRange
-        | P_Variable      SourceRange Ident
-        | P_Ctor          SourceRange [Pattern] CtorId
+        | P_Variable      SourceRange (TypedId ty)
+        | P_Ctor          SourceRange [Pattern ty] CtorId
         | P_Bool          SourceRange Bool
         | P_Int           SourceRange LiteralInt
-        | P_Tuple         SourceRange [Pattern]
+        | P_Tuple         SourceRange [Pattern ty]
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||| Data Types, Int Literals |||||||||||||||||{{{
 data DataType ty = DataType {
-    dataTypeName      :: String
+    dataTypeName      :: DataTypeName
   , dataTypeTyFormals :: [TypeFormalAST]
   , dataTypeCtors     :: [DataCtor ty]
   }
@@ -72,7 +72,7 @@ data DataType ty = DataType {
 data DataCtor ty = DataCtor T.Text Int [ty]
 
 -- CtorIds are created before typechecking.
-data CtorId     = CtorId   { ctorTypeName :: String
+data CtorId     = CtorId   { ctorTypeName :: DataTypeName
                            , ctorCtorName :: String
                            , ctorArity    :: Int
                            , ctorSmallInt :: Int
@@ -269,7 +269,7 @@ data Ident = Ident        T.Text Uniq
 
 data TypedId ty = TypedId { tidType :: ty, tidIdent :: Ident }
 
-type PatternBinding expr ty = ((Pattern, [TypedId ty]), expr)
+type PatternBinding expr ty = ((Pattern ty, [TypedId ty]), expr)
 
 data FosterPrim ty = NamedPrim (TypedId ty)
                    | PrimOp { ilPrimOpName :: String
@@ -331,9 +331,9 @@ instance (SourceRanged expr) => Show (CompilesResult expr) where
   show (CompilesResult (OK e))     = show (rangeOf e)
   show (CompilesResult (Errors _)) = "<...invalid term...>"
 
-instance Show Pattern where
+instance Show (Pattern ty) where
   show (P_Wildcard _)            = "P_Wildcard"
-  show (P_Variable _ id)         = "P_Variable " ++ show id
+  show (P_Variable _ v)          = "P_Variable " ++ show (tidIdent v)
   show (P_Ctor     _ _pats ctor) = "P_Ctor     " ++ show ctor
   show (P_Bool     _ b)          = "P_Bool     " ++ show b
   show (P_Int      _ i)          = "P_Int      " ++ show (litIntText i)

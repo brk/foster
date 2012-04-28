@@ -12,6 +12,10 @@ main = {
   print_i32 (ex2 (Cons32 0 (Cons32 1 (Nil32 !))));
 
   badcase ! ;
+
+  ctormismatch !;
+  ctormismatch2 !;
+  ctormismatch3 !;
 };
 
 ones = { n : Int32 =>
@@ -43,6 +47,34 @@ badcase = { // ensure tuples are kept distinct from tuple-like values.
                   case z
                     of $Cons32 n ns    -> 1 +Int32 (len ns)
                     of         (n, ns) -> n +Int32 (len ns)
+                  end
+           });
+};
+
+ctormismatch = { // ensure tuples are kept distinct from tuple-like values.
+  expect_i1 False;
+  print_i1 (__COMPILES__ { z : Int32List =>
+                  case z
+                    of $PCons32 _ _    -> 1
+                  end
+           });
+};
+
+ctormismatch2 = {
+  expect_i1 False;
+  print_i1 (__COMPILES__ { z : Int32List =>
+                  case z
+                    of $Cons32 n ns    -> 1 +Int32 (len ns)
+                    of $PCons32 _ _    -> 1
+                  end
+           });
+};
+
+ctormismatch3 = {
+  expect_i1 False;
+  print_i1 (__COMPILES__ { z : List Int32 =>
+                  case z
+                    of $Cons True _ -> 1 +Int32 (len ns)
                   end
            });
 };

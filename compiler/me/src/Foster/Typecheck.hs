@@ -148,9 +148,7 @@ typecheckStore ctx rng e1 e2 = do
 --  G |- e1 ^ ::: tau
 typecheckDeref ctx rng e1 maybeExpTy = do
 -- {{{
-    tau <- case maybeExpTy of
-            Nothing -> newTcUnificationVarTau $ "ref_type"
-            Just et -> return et
+    tau <- tcMaybeType maybeExpTy "ref_type"
     a1 <- tcRho ctx e1 (Just $ RefTypeAST tau)
     case typeAST a1 of
       RefTypeAST {} -> return ()
@@ -266,6 +264,7 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
   let checkBranch (pat, body) = do
       p <- checkPattern pat
       bindings <- extractPatternBindings ctx p (typeAST ascrutinee)
+
       let ctxbindings = [varbind id ty | (TypedId ty id) <- bindings]
       verifyNonOverlappingBindings rng "case" ctxbindings
       abody <- tcRho (prependContextBindings ctx ctxbindings) body maybeExpTy
@@ -275,14 +274,15 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
   abranches <- forM branches checkBranch
   return $ AnnCase rng u ascrutinee abranches
  where
-    checkPattern :: EPattern TypeAST -> Tc Pattern
+    checkPattern :: EPattern TypeAST -> Tc (Pattern TypeAST)
     -- Make sure that each pattern has the proper arity.
     checkPattern p = case p of
       EP_Wildcard r   -> do return $ P_Wildcard r
       EP_Bool r b     -> do return $ P_Bool r b
       EP_Variable r v -> do checkSuspiciousPatternVariable r v
                             id <- tcFreshT (evarName v)
-                            return $ P_Variable r id
+                            ty <- tcMaybeType (evarMaybeType v) "checkPattern"
+                            return $ P_Variable r (TypedId ty id)
       EP_Int r str    -> do annint <- typecheckInt r str Nothing
                             return $ P_Int  r (aintLitInt annint)
       EP_Ctor r eps s -> do (CtorInfo cid _) <- getCtorInfoForCtor ctx s
@@ -295,7 +295,6 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
       EP_Tuple r eps  -> do ps <- mapM checkPattern eps
                             return $ P_Tuple r ps
     -----------------------------------------------------------------------
-
     getCtorInfoForCtor :: Context Sigma -> T.Text -> Tc (CtorInfo Sigma)
     getCtorInfoForCtor ctx ctorName = do
       let ctorInfos = contextCtorInfo ctx
@@ -305,19 +304,35 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
                                     ++ " too few definitions for $" ++ T.unpack ctorName
                                     ++ "\n\t" ++ show elsewise]
 
+    generateTypeSchemaForDataType :: Context Sigma -> DataTypeName -> Tc TypeAST
+    generateTypeSchemaForDataType ctx typeName = do
+      case Map.lookup typeName (contextDataTypes ctx) of
+        Just [dt] -> do
+          formals <- mapM (\_ -> newTcUnificationVarTau "tyformal") (dataTypeTyFormals dt)
+          return $ TyConAppAST typeName formals
+        other -> tcFails [out $ "Typecheck.generateTypeSchemaForDataType: Too many or"
+                            ++ " too few definitions for $" ++ typeName
+                            ++ "\n\t" ++ show other]
     -----------------------------------------------------------------------
+    -- We don't have a function like
+    --   patternType :: Pattern TypeAST -> TypeAST
+    -- because we'd have no reasonable type to assign to wildcards.
 
     -- Recursively match a pattern against a type and extract the (typed)
     -- binders introduced by the pattern.
-    extractPatternBindings :: Context Sigma -> Pattern -> TypeAST
-                           -> Tc [TypedId Sigma]
-    extractPatternBindings _ctx (P_Wildcard _   ) _  = return []
-    extractPatternBindings _ctx (P_Variable _ id) ty = return [TypedId ty id]
+    extractPatternBindings :: Context Sigma -> Pattern TypeAST -> TypeAST -> Tc [TypedId Sigma]
+    extractPatternBindings _ctx (P_Wildcard _   ) _ty = do return []
+    extractPatternBindings _ctx (P_Variable _ tid) ty = do unify (tidType tid) ty (Just "pattern binding")
+                                                           return [tid]
 
     -- TODO shouldn't ignore the _ty here -- bug when ctors from different types listed.
-    extractPatternBindings ctx (P_Ctor _ pats (CtorId _ ctorName _ _)) _ty = do
+    extractPatternBindings ctx (P_Ctor _ pats (CtorId typeName ctorName _ _)) ty = do
+      --tcLift $ putStrLn $ "_ty = " ++ show ty ++ "; ctorName: " ++ ctorName
+
       CtorInfo _ (DataCtor _ _ types) <- getCtorInfoForCtor ctx (T.pack ctorName)
       bindings <- sequence [extractPatternBindings ctx p t | (p, t) <- zip pats types]
+      dtys <- generateTypeSchemaForDataType ctx typeName
+      unify ty dtys (Just $ "Typecheck.hs:extractPatternBindings; P_Ctor")
       return $ concat bindings
 
     extractPatternBindings ctx (P_Bool r v) ty = do
@@ -892,4 +907,8 @@ equateArgTypes vars (Just (TupleTypeAST expTys)) = do
 equateArgTypes vars (Just t) =
     tcFails [out $ "unifyArgs not yet implemented for type "
                  ++ show t ++ " against " ++ show vars]
+
+tcMaybeType :: Maybe TypeAST -> String -> Tc TypeAST
+tcMaybeType Nothing   desc = newTcUnificationVarTau desc
+tcMaybeType (Just t) _desc = return t
 

@@ -214,7 +214,7 @@ data IExpr =
         | IUntil                SSTerm     SSTerm
         | ICall         Ident  [Ident]
         | ICallPrim     ILPrim [Ident]
-        | ICase         Ident  {-(DecisionTree KNExpr)-} [(Pattern, SSTerm)]
+        | ICase         Ident  {-(DecisionTree KNExpr)-} [(Pattern TypeIL, SSTerm)]
         | ITyApp        Ident  TypeIL
         | IAppCtor      CtorId [Ident]
         deriving (Show)
@@ -466,7 +466,7 @@ stepExpr gs expr = do
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- |||||||||||||||||||||||| Pattern Matching ||||||||||||||||||||{{{
-matchPattern :: Pattern -> SSValue -> Maybe [(Ident, SSValue)]
+matchPattern :: Pattern TypeIL -> SSValue -> Maybe [(Ident, SSValue)]
 matchPattern p v =
   let trivialMatchSuccess = Just [] in
   let matchFailure        = Nothing in
@@ -474,7 +474,7 @@ matchPattern p v =
                              else matchFailure in
   case (v, p) of
     (_, P_Wildcard _   ) -> trivialMatchSuccess
-    (_, P_Variable _ id) -> Just [(id, v)]
+    (_, P_Variable _ tid) -> Just [(tidIdent tid, v)]
 
     (SSInt i1, P_Int _ i2)   -> matchIf $ i1 == litIntValue i2
     (_       , P_Int _ _ )   -> matchFailure
@@ -489,7 +489,7 @@ matchPattern p v =
     (SSTuple vals, P_Tuple _ pats) -> matchPatterns pats vals
     (_, P_Tuple _ _) -> matchFailure
 
-matchPatterns :: [Pattern] -> [SSValue] -> Maybe [(Ident, SSValue)]
+matchPatterns :: [Pattern TypeIL] -> [SSValue] -> Maybe [(Ident, SSValue)]
 matchPatterns pats vals = do
   matchLists <- mapM (\(p, v) -> matchPattern p v) (zip pats vals)
   return $ concat matchLists

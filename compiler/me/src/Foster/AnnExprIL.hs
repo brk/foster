@@ -60,6 +60,7 @@ ail :: Context ty -> AnnExpr TypeAST -> Tc AIExpr
 ail ctx ae =
     let q  = ail  ctx in
     let qt = ilOf ctx in
+    let qp = ilOfPat ctx in
     case ae of
         AnnCompiles _rng (CompilesResult ooe) -> do
                 oox <- tcIntrospect (tcInject q ooe)
@@ -107,9 +108,10 @@ ail ctx ae =
         AnnCase _rng t e bs        -> do ti <- qt t
                                          ei <- q e
                                          bsi <- mapM (\((p, vs),e) -> do
-                                                     a <- q e
+                                                     p' <- qp p
+                                                     e' <- q e
                                                      vs' <- mapM (aiVar ctx) vs
-                                                     return ((p, vs'), a)) bs
+                                                     return ((p', vs'), e')) bs
                                          return $ AICase ti ei bsi
         AnnPrimitive _rng v -> tcFails [out $ "Primitives must be called directly!"
                                           ++ "\n\tFound non-call use of " ++ show v]
@@ -179,9 +181,6 @@ ilPrimFor ti id =
   case Map.lookup (T.unpack $ identPrefix id) gFosterPrimOpsTable of
         Just (_ty, op) -> op
         Nothing        -> NamedPrim (TypedId ti id)
-
-aiVar ctx (TypedId t i) = do ty <- ilOf ctx t
-                             return $ TypedId ty i
 
 containsUnboxedPolymorphism :: TypeIL -> Bool
 containsUnboxedPolymorphism (ForAllIL ktvs rho) =

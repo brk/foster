@@ -94,6 +94,23 @@ ilOf ctx typ = do
 extendTyCtx ctx ktvs = ctx { contextTypeBindings =
                      ktvs ++ contextTypeBindings ctx }
 
+aiVar ctx (TypedId t i) = do ty <- ilOf ctx t
+                             return $ TypedId ty i
+
+-----------------------------------------------------------------------
+
+ilOfPat :: Context t -> Pattern TypeAST -> Tc (Pattern TypeIL)
+ilOfPat ctx pat = case pat of
+    P_Wildcard  rng           -> do return $ P_Wildcard  rng
+    P_Variable  rng tid       -> do tid' <- aiVar ctx tid
+                                    return $ P_Variable rng tid'
+    P_Ctor      rng pats ctor -> do pats' <- mapM (ilOfPat ctx) pats
+                                    return $ P_Ctor rng pats' ctor
+    P_Bool      rng bval      -> do return $ P_Bool      rng bval
+    P_Int       rng ival      -> do return $ P_Int       rng ival
+    P_Tuple     rng pats      -> do pats' <- mapM (ilOfPat ctx) pats
+                                    return $ P_Tuple rng pats'
+
 -----------------------------------------------------------------------
 
 boolTypeIL = PrimIntIL I1

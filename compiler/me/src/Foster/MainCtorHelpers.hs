@@ -7,11 +7,16 @@
 module Foster.MainCtorHelpers where
 
 import Data.Map(Map)
-import qualified Data.Map as Map(fromList, unionsWith)
+import qualified Data.Map as Map(fromList, unionsWith, singleton)
 import qualified Data.Text as T
 
 import Foster.Base
 import Foster.TypeAST
+
+getDataTypes :: [DataType TypeAST] -> Map DataTypeName [DataType TypeAST]
+getDataTypes datatypes = Map.unionsWith (++) $ map single datatypes
+  where
+    single dt = Map.singleton (dataTypeName dt) [dt]
 
 getCtorInfo :: [DataType TypeAST] -> Map CtorName [CtorInfo TypeAST]
 getCtorInfo datatypes = Map.unionsWith (++) $ map getCtorInfoList datatypes
