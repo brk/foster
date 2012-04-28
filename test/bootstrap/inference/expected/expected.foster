@@ -1,6 +1,16 @@
 main = {
   expect_i32 0;
   print_i32 (exp_ref_i32 (ref 0));
+
+  expect_i32 0;
+  print_i32 (exp_fun_i32 { 0 });
+
+  expect_i32 0;
+  print_i32 (exp_fun2_i32 { f2 : ?? F2 => f2 ! });
 };
 
 exp_ref_i32 = { r : ?? R => r^ };
+
+exp_fun_i32 = { f : ?? F => f ! };
+
+exp_fun2_i32 = { f : ?? F => f { 0 } };
