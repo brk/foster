@@ -30,21 +30,22 @@ tokens {
   KIND_TYPE; KIND_TYOP; KIND_TYPE_BOXED; FORALL_TYPE;
   FUNC_TYPE;
   TYPE_CTOR; DATATYPE; CTOR; TYPE_PLACEHOLDER;
-  FORMAL; MODULE; WILDCARD; SNAFUINCLUDE;
+  FORMAL; MODULE; WILDCARD; SNAFUINCLUDE; QNAME;
 
   MU; // child marker
 }
 
 
-module  :       imports decl_or_defn* EOF   ->  ^(MODULE ^(SNAFUINCLUDE imports)
+module  :       imports* decl_or_defn* EOF   ->  ^(MODULE ^(SNAFUINCLUDE imports*)
                                                            decl_or_defn*);
 
-imports :       ('snafuinclude' str ';')*       -> str*;
+imports :       ('snafuinclude' id str ';')       -> ^(SNAFUINCLUDE id str);
 
-decl_or_defn : decl | defn;
-decl    :       x '::' t ';'                    -> ^(DECL x t);
-defn    :       x EQ atom ';'                   -> ^(DEFN x atom) // We should allow suffixes, but only of type application.
-        |	data_defn ';'
+decl_or_defn :
+        x ( '::' t ';'                    -> ^(DECL x t)
+          | EQ atom ';'                   -> ^(DEFN x atom) // We should allow suffixes, but only of type application.
+          )
+        | data_defn ';'
         ;
 
 // Or perhaps TYPE id OF (CASE ctor ...)+
@@ -55,11 +56,20 @@ data_ctor : OF dctor tatom*                     -> ^(OF dctor tatom*);
 opr     :       SYMBOL;
 id      :       SMALL_IDENT | UPPER_IDENT;
 
-x       :       id              -> ^(TERMVAR id)
-        |       '(' opr ')'     -> ^(TERMVAR opr);       // term variables
+name    :     id ('.' name -> ^(QNAME id name)
+                 |         -> id
+                 )
+        |       '(' opr ')' -> opr;
 
-a       :       id              -> ^(TYPEVAR id)
-        |       '(' opr ')'     -> ^(TYPEVAR opr);       // type variables
+x       :       name -> ^(TERMVAR name);
+a       :       name -> ^(TYPEVAR name);
+
+
+nameunq :           id      -> id
+        |       '(' opr ')' -> opr;
+
+xid     :       nameunq -> ^(TERMVAR nameunq); // unqualified variants,
+aid     :       nameunq -> ^(TYPEVAR nameunq); // needed to disambiguate grammar
 
 ctor  :     x           -> ^(CTOR x);
 dctor : '$' ctor	-> ctor ;
@@ -135,9 +145,9 @@ ifexpr : 'if' cond=e 'then' thenpart=e_seq 'else' elsepart=e_seq 'end'
           -> ^(IF $cond $thenpart $elsepart);
 
 binding : x '=' e     -> ^(BINDING x e);
-formal  : x (':' t)   -> ^(FORMAL x t);
-tyformal: a (':' k)?  -> ^(TYPEVAR_DECL a k);
-tyformalr: a ':' k    -> ^(TYPEVAR_DECL a k);
+formal  : xid (':' t)   -> ^(FORMAL xid t);
+tyformal: aid (':' k)?  -> ^(TYPEVAR_DECL aid k);
+tyformalr: aid ':' k    -> ^(TYPEVAR_DECL aid k);
 
 lets   : 'let' (binding ';')+ 'in' e_seq 'end' -> ^(LETS   ^(MU binding+) e_seq);
 letrec : 'rec' (binding ';')+ 'in' e_seq 'end' -> ^(LETREC ^(MU binding+) e_seq);
