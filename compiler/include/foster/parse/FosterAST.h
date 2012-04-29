@@ -123,8 +123,10 @@ struct StringAST : public ExprAST {
 };
 
 struct VariableAST : public ExprAST {
+private:
   string name;
 
+public:
   explicit VariableAST(const string& name, TypeAST* aType,
                        foster::SourceRange sourceRange)
       : ExprAST("VariableAST", sourceRange), name(name) {

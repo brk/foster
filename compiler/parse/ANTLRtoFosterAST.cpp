@@ -350,8 +350,18 @@ VariableAST* parseVarDirect(pTree t) {
   return new VariableAST(textOf(t), NULL, rangeOf(t));
 }
 
+std::string parseName(pTree nm) {
+  display_pTree(nm, 4);
+  if (typeOf(nm) == QNAME) {
+    return textOf(child(nm, 0)) + "." + parseName(child(nm, 1));
+  } else {
+    return textOf(nm);
+  }
+}
+
+// t = ^(_NAME name)
 VariableAST* parseTermVar(pTree t) {
-  return new VariableAST(textOfVar(t), NULL, rangeOf(t));
+  return new VariableAST(parseName(child(t, 0)), NULL, rangeOf(t));
 }
 
 // ^(IF e e_seq e_seq)
@@ -456,10 +466,10 @@ Pattern* parsePatternAtom(pTree t) {
 
     if (token == CTOR ) { EDiag() << "Ctor text: " << textOfVar(child(t, 0)); return new CtorPattern(rangeOf(t), textOfVar(child(t, 0)), noPatterns()); }
   if (token == WILDCARD) { return new WildcardPattern(rangeOf(t)); }
-  if (token == TUPLE)   { return parseTuplePattern(t); }
-  if (token == TERMVAR) { return new LiteralPattern(rangeOf(t), LiteralPattern::LP_VAR, parseTermVar(t)); }
-  if (token == INT_NUM) { return new LiteralPattern(rangeOf(t), LiteralPattern::LP_INT, parseAtom(t)); }
-  if (token == BOOL   ) { return new LiteralPattern(rangeOf(t), LiteralPattern::LP_BOOL, parseAtom(t)); }
+  if (token == TUPLE)    { return parseTuplePattern(t); }
+  if (token == TERMNAME) { return new LiteralPattern(rangeOf(t), LiteralPattern::LP_VAR, parseTermVar(t)); }
+  if (token == INT_NUM)  { return new LiteralPattern(rangeOf(t), LiteralPattern::LP_INT, parseAtom(t)); }
+  if (token == BOOL   )  { return new LiteralPattern(rangeOf(t), LiteralPattern::LP_BOOL, parseAtom(t)); }
   //if (token == STRING ) { return new LiteralPattern(LiteralPattern::LP_STR, parseAtom(t)); }
 
   display_pTree(t, 2);
@@ -501,7 +511,7 @@ ExprAST* parseAtom(pTree tree) {
   if (token == LETREC)   { return parseLetRec(tree); }
   if (token == TUPLE)    { return parseTuple(tree); }
   if (token == UNTIL)    { return parseUntil(tree); }
-  if (token == TERMVAR)  { return parseTermVar(tree); }
+  if (token == TERMNAME) { return parseTermVar(tree); }
   if (token == INT_NUM)  { return parseIntFrom(tree); }
   if (token == IF)       { return parseIf(tree); }
   if (token == REF)      { return parseRef(tree); }
@@ -728,7 +738,7 @@ std::vector<DataCtorAST*> parseDataCtors(pTree t) {
 }
 
 ModuleAST* parseTopLevel(pTree root_tree, std::string moduleName, uint128 hash,
-                         std::queue<string>& out_imports) {
+                        std::queue<std::pair<string, string> >& out_imports) {
   // The top level is composed of declarations and definitions.
   std::vector<Decl*> decls;
   std::vector<Defn*> defns;
@@ -736,9 +746,10 @@ ModuleAST* parseTopLevel(pTree root_tree, std::string moduleName, uint128 hash,
 
   pTree imports = child(root_tree, 0);
   for (size_t i = 0; i < getChildCount(imports); ++i) {
-    std::string imp_text = contentsOfStringWithoutQuotes(child(imports, i));
-    std::cout << "imp_text: " << imp_text << std::endl;
-    out_imports.push(imp_text);
+    pTree imp = child(imports, i);
+    std::string imp_name = textOf(child(imp, 0));
+    std::string imp_text = contentsOfStringWithoutQuotes(child(imp, 1));
+    out_imports.push(std::make_pair(imp_name, imp_text));
   }
 
   for (size_t i = 1; i < getChildCount(root_tree); ++i) {
@@ -782,7 +793,7 @@ void parseAnnots(std::map<string, string>& annots,
     string  v;
 
     if (VariableAST* q = dynamic_cast<VariableAST*>(b.body)) {
-      v = q->name;
+      v = q->getName();
     } else
     if (IntAST* q = dynamic_cast<IntAST*>(b.body)) {
       v = q->getOriginalText();
@@ -844,8 +855,8 @@ TypeAST* parseTypeAtom(pTree tree) {
   int token = typeOf(tree);
 
   if (token == FUNC_TYPE) { return parseFuncType(tree); }
-  if (token == TUPLE)   { return parseTupleType(tree); }
-  if (token == TYPEVAR) { return parseTypeVar(tree); }
+  if (token == TUPLE)     { return parseTupleType(tree); }
+  if (token == TYPENAME)  { return parseTypeVar(tree); }
   if (token == TYPE_PLACEHOLDER) { return parseTypePlaceholder(tree); }
 
   display_pTree(tree, 2);
@@ -1008,7 +1019,7 @@ namespace foster {
   void parseModule(WholeProgramAST* pgm,
                    const foster::InputFile& file,
                    unsigned* outNumANTLRErrors,
-                   std::queue<std::string>& out_imports) {
+                   std::queue<std::pair<string, string> >& out_imports) {
     uint128 hash = getFileHash(file);
     if (pgm->seen.count(hash) == 1) {
       return;
@@ -1043,12 +1054,13 @@ namespace foster {
     *outNumANTLRErrors = 0;
 
     //llvm::sys::TimeValue parse_beg = llvm::sys::TimeValue::now();
-    std::queue<std::string> pending_imports;
+    std::queue<std::pair<string, string> > pending_imports;
     parseModule(pgm, startfile, outNumANTLRErrors, pending_imports);
 
     while (*outNumANTLRErrors == 0 && !pending_imports.empty()) {
-      std::string raw = pending_imports.front(); pending_imports.pop();
-      std::cout << "pending import: " << raw << std::endl;
+      std::pair<string, string> imp = pending_imports.front();
+                                      pending_imports.pop();
+      std::cout << "pending import: " << imp.first << " " << imp.second << std::endl;
       //foster::InputFile f = resolveModulePath(raw);
       //parseModule(pgm, f, outNumANTLRErrors, pending_imports);
     }

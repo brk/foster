@@ -22,7 +22,7 @@ tokens {
   BINDING; LETS; LETREC; SEQ;
   RAT_NUM; INT_NUM; BOOL; STRING;
   DECL; DEFN;
-  TERMVAR; TYPEVAR; TYPEVAR_DECL;
+  TERMNAME; TYPENAME; TYPEVAR_DECL;
   TERM; PHRASE; LVALUE; SUBSCRIPT;
   VAL_TYPE_APP; DEREF; ASSIGN_TO;
   REF; TUPLE; VAL_ABS; TYP_ABS; TYPE_ATOM;
@@ -61,19 +61,19 @@ name    :     id ('.' name -> ^(QNAME id name)
                  )
         |       '(' opr ')' -> opr;
 
-x       :       name -> ^(TERMVAR name);
-a       :       name -> ^(TYPEVAR name);
+x       :       name -> ^(TERMNAME name);
+a       :       name -> ^(TYPENAME name);
 
 
-nameunq :           id      -> id
-        |       '(' opr ')' -> opr;
+nameunq :      id      -> id
+        |  '(' opr ')' -> opr;
 
-xid     :       nameunq -> ^(TERMVAR nameunq); // unqualified variants,
-aid     :       nameunq -> ^(TYPEVAR nameunq); // needed to disambiguate grammar
+xid     :      nameunq -> ^(TERMNAME nameunq); // unqualified variants,
+aid     :      nameunq -> ^(TYPENAME nameunq); // needed to disambiguate grammar
 
-ctor  :     x           -> ^(CTOR x);
-dctor : '$' ctor	-> ctor ;
-tctor : '$' ctor	-> ctor ;
+ctor  :     x          -> ^(CTOR x);
+dctor : '$' ctor       -> ctor ;
+tctor : '$' ctor       -> ctor ;
 
 k       :               // kinds
     'Type'                              -> ^(KIND_TYPE)         // kind of types
