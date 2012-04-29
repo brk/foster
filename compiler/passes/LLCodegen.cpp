@@ -715,6 +715,16 @@ llvm::Value* LLVar::codegen(CodegenPass* pass) {
   return NULL;
 }
 
+llvm::Value* allocateIntWithWord(CodegenPass* pass, llvm::Value* small) {
+  // Small integers may be initialized immediately.
+  llvm::Value* mpint = pass->allocateMPInt();
+
+  // Call mp_int_init_value() (ignore rv for now)
+  llvm::Value* mp_init_value = pass->lookupFunctionOrDie("mp_int_init_value");
+  builder.CreateCall2(mp_init_value, mpint, small);
+  return mpint;
+}
+
 llvm::Value* LLInt::codegen(CodegenPass* pass) {
   ASSERT(this->type && this->type->getLLVMType());
   llvm::Type* ty = this->type->getLLVMType();
@@ -731,13 +741,7 @@ llvm::Value* LLInt::codegen(CodegenPass* pass) {
                   << " in 64 bits not yet implemented";
     return NULL;
   } else {
-    // Small integers may be initialized immediately.
-    llvm::Value* mpint = pass->allocateMPInt();
-
-    // Call mp_int_init_value() (ignore rv for now)
-    llvm::Value* mp_init_value = pass->lookupFunctionOrDie("mp_int_init_value");
-    builder.CreateCall2(mp_init_value, mpint, small);
-    return mpint;
+    return allocateIntWithWord(pass, small);
   }
 }
 
