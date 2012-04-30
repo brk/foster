@@ -15,8 +15,11 @@
 #include "_generated_/fosterParser.h"
 
 #include "llvm/ADT/Statistic.h"
+#include "llvm/ADT/SmallString.h"
+#include "llvm/Support/DataTypes.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/FileSystem.h"
 
 #include "city.h"
 
@@ -737,8 +740,9 @@ std::vector<DataCtorAST*> parseDataCtors(pTree t) {
   return ctors;
 }
 
-ModuleAST* parseTopLevel(pTree root_tree, std::string moduleName, uint128 hash,
-                        std::queue<std::pair<string, string> >& out_imports) {
+ModuleAST* parseTopLevel(pTree root_tree, std::string moduleName,
+                         std::string hash,
+                         std::queue<std::pair<string, string> >& out_imports) {
   // The top level is composed of declarations and definitions.
   std::vector<Decl*> decls;
   std::vector<Defn*> defns;
@@ -773,6 +777,8 @@ ModuleAST* parseTopLevel(pTree root_tree, std::string moduleName, uint128 hash,
     } else {
       EDiag() << "ANTLRtoFosterAST.cpp: "
               << "Unexpected top-level element with token ID " << token;
+      display_pTree(c, 8);
+      display_pTree(root_tree, 4);
       EDiag() << show(rangeOf(c));
     }
   }
@@ -1024,10 +1030,11 @@ namespace foster {
     if (pgm->seen.count(hash) == 1) {
       return;
     }
-    char hashstr[33] = {0};
-    sprintf(hashstr, "%08" PRIx64 "%08" PRIx64,
+    char hashcstr[33] = {0};
+    sprintf(hashcstr, "%08" PRIx64 "%08" PRIx64,
                      Uint128Low64(hash), Uint128High64(hash));
-    printf("Hash of file %s is %s\n", file.getShortName().c_str(), hashstr);
+    std::string hashstr(hashcstr);
+    printf("Hash of file %s is %s\n", file.getShortName().c_str(), hashcstr);
 
     ANTLRContext* ctx = new ANTLRContext();
     createParser(*ctx, file);
@@ -1041,14 +1048,19 @@ namespace foster {
     fosterParser_module_return langAST = ctx->psr->module(ctx->psr);
     *outNumANTLRErrors += ctx->psr->pParser->rec->state->errorCount;
 
-    ModuleAST* m = parseTopLevel(langAST.tree, file.getShortName(), hash, out_imports);
+    ModuleAST* m = parseTopLevel(langAST.tree, file.getShortName(), hashstr, out_imports);
     m->buf = file.getBuffer();
 
     pgm->seen[hash] = m;
     pgm->modules.push_back(m);
   }
 
+
+  foster::InputFile* resolveModulePath(const std::string& searchPath,
+                                       const std::string& spath);
+
   WholeProgramAST* parseWholeProgram(const InputFile& startfile,
+                                     const std::string& searchPath,
                                      unsigned* outNumANTLRErrors) {
     WholeProgramAST* pgm = new WholeProgramAST();
     *outNumANTLRErrors = 0;
@@ -1060,9 +1072,15 @@ namespace foster {
     while (*outNumANTLRErrors == 0 && !pending_imports.empty()) {
       std::pair<string, string> imp = pending_imports.front();
                                       pending_imports.pop();
+      std::string localname = imp.first;
+      std::string imp_path  = imp.second;
       std::cout << "pending import: " << imp.first << " " << imp.second << std::endl;
-      //foster::InputFile f = resolveModulePath(raw);
-      //parseModule(pgm, f, outNumANTLRErrors, pending_imports);
+      if (foster::InputFile* f = resolveModulePath(searchPath, imp_path)) {
+        parseModule(pgm, *f, outNumANTLRErrors, pending_imports);
+      } else {
+        EDiag() << "Unable to resolve import path: " << imp_path;
+        return NULL;
+      }
     }
 
     //llvm::sys::TimeValue parse_end = llvm::sys::TimeValue::now();
@@ -1070,6 +1088,29 @@ namespace foster {
     //llvm::outs() << "Foster parsing: " << (parse_end - parse_mid).msec() << "\n";
 
     return pgm;
+  }
+
+  // spath will be something like "foo/bar"
+  // We'll want to check for searchPath/foo/bar/bar.foster
+  foster::InputFile* resolveModulePath(const std::string& searchPath,
+                                       const std::string& spath) {
+    llvm::SmallString<256> path;
+
+    if (searchPath.empty()) {
+      llvm::sys::path::append(path, ".");
+    } else {
+      llvm::sys::path::append(path, searchPath);
+    }
+
+    llvm::sys::path::append(path, spath);
+    llvm::sys::path::append(path, llvm::sys::path::stem(spath));
+    llvm::sys::path::replace_extension(path, "foster");
+    if (llvm::sys::fs::exists(path.str())) {
+      llvm::sys::Path fpath(path.str());
+      return new foster::InputFile(fpath);
+    } else {
+      return NULL;
+    }
   }
 
   ////////////////////////////////////////////////////////////////////

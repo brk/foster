@@ -69,7 +69,7 @@ class VariableAST;
 class Decl; class Defn; class Data;
 struct ModuleAST {
   std::string name;
-  uint128 hash;
+  std::string hash;
   const foster::InputTextBuffer* buf;
   std::vector<Defn*> defn_parts;
   std::vector<Decl*> decl_parts;
@@ -78,7 +78,8 @@ struct ModuleAST {
   explicit ModuleAST(const std::vector<Decl*>& decls,
                      const std::vector<Defn*>& defns,
                      const std::vector<Data*>& datas,
-                     const std::string& name, uint128 hash)
+                     const std::string& name,
+                     const std::string& hash)
   : name(name), hash(hash), buf(NULL),
     defn_parts(defns), decl_parts(decls), data_parts(datas) {}
 };

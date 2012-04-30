@@ -1,0 +1,10 @@
+snafuinclude Prelude "prelude";
+
+main = {
+  expect_i1 True;
+  print_i1 (can_compile_lists !);
+};
+
+can_compile_lists = { (__COMPILES__ Cons (Nil:[Boxxy] !) (Nil !)) };
+
+type case Boxxy of $BoxxyC;

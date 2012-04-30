@@ -297,11 +297,11 @@ parseDataType dt = do
       let types = map parseType (toList $ DataCtor.type' ct)
       return $ Foster.Base.DataCtor (pUtf8ToText $ DataCtor.name ct) n types
 
-parseModule _name decls defns datatypes = do
+parseModule _name hash decls defns datatypes = do
     lines <- gets feModuleLines
     funcs <- sequence $ [(parseFn e)  | (Defn _nm e) <- defns]
     dtypes <- mapM parseDataType datatypes
-    return $ ModuleAST (map toplevel funcs)
+    return $ ModuleAST hash (map toplevel funcs)
                 [(uToString nm, parseType t) | (Decl nm t) <- decls]
                 dtypes
                 lines
@@ -316,7 +316,8 @@ parseModule _name decls defns datatypes = do
 parseSourceModule :: SourceModule -> ModuleAST FnAST TypeP
 parseSourceModule sm =
     evalState
-      (parseModule (uToString $ SourceModule.name sm)
+      (parseModule (uToString $ SourceModule.self_name sm)
+                   (uToString $ SourceModule.hash sm)
                    (toList    $ SourceModule.decl sm)
                    (toList    $ SourceModule.defn sm)
                    (toList    $ SourceModule.data_type sm))

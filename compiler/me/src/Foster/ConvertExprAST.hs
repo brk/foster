@@ -8,12 +8,12 @@ import Control.Monad.State(liftM, liftM2, liftM3)
 
 convertModule :: (Show a, Show b) =>
                  (a -> Tc b) -> ModuleAST FnAST a -> Tc (ModuleAST FnAST b)
-convertModule f (ModuleAST funs decls dts lines primdts) = do
+convertModule f (ModuleAST hash funs decls dts lines primdts) = do
          funs'  <- mapM (convertFun      f) funs
          decls' <- mapM (convertDecl     f) decls
          prims' <- mapM (convertDataType f) primdts
          dts'   <- mapM (convertDataType f) dts
-         return $ ModuleAST funs' decls' dts' lines prims'
+         return $ ModuleAST hash funs' decls' dts' lines prims'
 
 convertVar f (TypedId t i) = do ty <- f t
                                 return $ TypedId ty i

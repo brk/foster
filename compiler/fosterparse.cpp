@@ -115,7 +115,7 @@ int main(int argc, char** argv) {
 
   WholeProgramAST* pgmAST = NULL;
   { ScopedTimer timer("io.parse");
-    pgmAST = foster::parseWholeProgram(infile, &numParseErrors);
+    pgmAST = foster::parseWholeProgram(infile, optIncludePath, &numParseErrors);
   }
 
   if (numParseErrors > 0) {

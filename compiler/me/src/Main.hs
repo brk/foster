@@ -329,15 +329,25 @@ main = do
 compile :: WholeProgram -> Compiled MonoProgram
 compile pb_program =
     (return $ parseWholeProgram pb_program)
-     >>= extractOnlyModule -- temporary hack
+     >>= mergeModules -- temporary hack
      >>= desugarParsedModule
      >>= typecheckSourceModule
      >>= (uncurry lowerModule)
 
-extractOnlyModule :: WholeProgramAST FnAST TypeP
+mergeModules :: WholeProgramAST FnAST TypeP
               -> Compiled (ModuleAST FnAST TypeP)
-extractOnlyModule (WholeProgramAST [m]) = return m
-extractOnlyModule _ = error "expected program with only one module..."
+mergeModules (WholeProgramAST modules) = return (foldr1 mergedModules modules)
+  -- Modules are listed in reverse dependency order, conveniently.
+  -- TODO track explicit module dependency graph, decompose to DAG, etc.
+  where mergedModules m1 m2 = ModuleAST {
+       moduleASThash        = moduleASThash        m1 -- meh
+     , moduleASTfunctions   = moduleASTfunctions   m1 ++ moduleASTfunctions   m2
+     , moduleASTdecls       = moduleASTdecls       m1 ++ moduleASTdecls       m2
+     , moduleASTdataTypes   = moduleASTdataTypes   m1 ++ moduleASTdataTypes   m2
+     , moduleASTsourceLines = moduleASTsourceLines m1 `appendSourceLines`
+                                                         moduleASTsourceLines m2
+     , moduleASTprimTypes   = moduleASTprimTypes   m1 -- should be the same
+                                     }
 
 astOfParsedType :: TypeP -> Tc TypeAST
 astOfParsedType typep =

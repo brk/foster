@@ -1,0 +1,6 @@
+
+type case List (a:Boxed)
+  of $Nil
+  of $Cons a (List a)
+;
+

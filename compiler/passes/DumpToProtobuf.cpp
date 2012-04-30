@@ -123,7 +123,8 @@ void dumpDataCtors(Data* dd, pb::DataType* d) {
 
 void dumpModule(DumpToProtobufPass* pass,
                 foster::fepb::SourceModule& sm, ModuleAST* mod) {
-  sm.set_name(mod->name);
+  sm.set_self_name(mod->name);
+  sm.set_hash(mod->hash);
 
   for (size_t i = 0; i < mod->decl_parts.size(); ++i) {
     pb::Decl* d = sm.add_decl();

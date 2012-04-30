@@ -11,7 +11,7 @@ import Foster.Kind
 import Foster.Output
 
 import Data.Set as Set(fromList, toList, difference, insert, empty, member)
-import Data.Sequence as Seq(Seq, length, index)
+import Data.Sequence as Seq(Seq, length, index, (><))
 import Data.Map as Map(Map)
 import Data.List as List(replicate, intersperse)
 
@@ -96,7 +96,8 @@ data WholeProgramAST fnCtor ty = WholeProgramAST {
      }
 
 data ModuleAST fnCtor ty = ModuleAST {
-          moduleASTfunctions   :: [fnCtor ty]
+          moduleASThash        :: String
+        , moduleASTfunctions   :: [fnCtor ty]
         , moduleASTdecls       :: [(String, ty)]
         , moduleASTdataTypes   :: [DataType ty]
         , moduleASTsourceLines :: SourceLines
@@ -184,6 +185,8 @@ highlightLineRange bcol ecol =
         else (List.replicate bcol ' ') ++ (List.replicate len '~')
 
 data SourceLines = SourceLines (Seq T.Text)
+
+appendSourceLines (SourceLines s1) (SourceLines s2) = SourceLines (s1 >< s2)
 
 sourceLine :: SourceLines -> Int -> String
 sourceLine (SourceLines seq) n =

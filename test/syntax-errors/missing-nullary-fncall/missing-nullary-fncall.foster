@@ -1,0 +1,22 @@
+main = {
+  // this should be   print_i32 (fake (MyNil:[Boxxy] !));
+
+  // The MyNil function has type forall a, { MyList } rather than MyList.
+  // Thus it needs a type instantiation (because there's no obvious choice
+  //   and, unlike ML, we view un-instantiated type variables as an error
+  //   rather than an opportunity for generaliztion.
+  // We also need a nullary application (!) because the symbol MyNil is
+  //   bound to a (polymorphic) function which wraps the datatype constructor itself.
+  print_i32 (fake MyNil);
+  expect_i32 0;
+};
+
+fake = { forall a,
+         z : MyList a => 0 };
+
+type case Boxxy of $BoxxyC;
+
+type case MyList (a:Boxed)
+  of $MyNil
+  of $MyCons a (MyList a)
+  ;

@@ -161,11 +161,12 @@ message DataCtor {
 }
 
 message SourceModule {
-  required string   name      = 1;
-  repeated string   line      = 2;
-  repeated Decl     decl      = 3;
-  repeated Defn     defn      = 4;
-  repeated DataType data_type = 5;
+  required string   self_name = 1;
+  required string   hash      = 2;
+  repeated string   line      = 4;
+  repeated Decl     decl      = 6;
+  repeated Defn     defn      = 7;
+  repeated DataType data_type = 8;
 }
 
 message WholeProgram {
