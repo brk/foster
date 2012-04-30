@@ -119,6 +119,11 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
     if is_verbose(options):
       compilelog = None
 
+    if options and options.importpath:
+      importpath = ["-I", options.importpath]
+    else:
+      importpath = []
+
     # Getting tee functionality in Python is a pain in the behind
     # so we just disable logging when running with --verbose.
     if options and options.interpret:
@@ -141,7 +146,7 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
                 stdout=compilelog, stderr=compilelog, strictrv=True)
 
     # running fosterparse on a source file produces a ParsedAST
-    (s1, e1) = crun(['fosterparse', testpath, parse_output])
+    (s1, e1) = crun(['fosterparse', testpath, parse_output] + importpath)
 
     # running fostercheck on a ParsedAST produces an ElaboratedAST
     (s2, e2) = crun(['fostercheck', parse_output, check_output] +
@@ -321,7 +326,8 @@ def get_test_parser(usage):
                     help="Enable detailed profiling of compiler middle-end")
   parser.add_option("--prog-arg", action="append", dest="progargs", default=[],
                     help="Pass through command line arguments to program")
-
+  parser.add_option("-I", dest="importpath", action="store", default=None,
+                    help="Set import path")
   return parser
 
 if __name__ == "__main__":
