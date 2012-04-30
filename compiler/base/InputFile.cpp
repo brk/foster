@@ -12,7 +12,7 @@
 
 namespace foster {
 
-InputFile::InputFile(const llvm::sys::Path& path) : path(path) {
+InputFile::InputFile(llvm::sys::Path path) : path(path) {
   buf = new InputTextBuffer(path);
 }
 

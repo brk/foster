@@ -3,6 +3,7 @@
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Path.h"
 
 #ifndef FOSTER_INPUT_FILE_H
 #define FOSTER_INPUT_FILE_H
@@ -18,12 +19,12 @@ namespace foster {
 class InputTextBuffer;
 
 class InputFile {
-  const llvm::sys::Path& path;
+  llvm::sys::Path path;
   InputTextBuffer* buf;
 
 public:
   // precondition: file specified by filePath exists, and is readable
-  InputFile(const llvm::sys::Path& path);
+  InputFile(llvm::sys::Path path);
 
   InputTextBuffer* getBuffer() const { return buf; }
   const llvm::sys::Path& getPath() const { return path; }
