@@ -62,6 +62,7 @@ Mac OS X:
 	
 	protobuf-cpp protobuf-java protobuf-python26
 
+        cairo  pango  gtk2
 
 ANTLR on Linux and OS X:
 	ANTLR_VERSION=3.2
