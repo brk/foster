@@ -189,7 +189,7 @@ llvm::Value* CodegenPass::emitFosterStringOfCString(Value* cstr, Value* sz) {
   Value* hstr_bytes; Value* len;
   if (tryBindArray(hstr, /*out*/ hstr_bytes, /*out*/ len)) {
     llvm::CallInst* mcpy = builder.CreateMemCpy(hstr_bytes,
-                              cstr, sz, kDefaultHeapAlignment);
+                              cstr, sz, /*alignment*/ 4);
     markAsNonAllocating(mcpy);
   } else { ASSERT(false); }
 
