@@ -1,6 +1,9 @@
 main = {
   arrays        !;
   arrays8       !;
+
+  // If we lie about our alignment, this will crash.
+  let a = "is_ascii_digit c:"; in () end
 };
 
 newDArray32 = { n : Int32 => f : { Int32 => Int32 } =>
