@@ -354,6 +354,12 @@ astOfParsedType typep =
   let q = astOfParsedType in
   case typep of
         PrimIntP         size  -> return $ PrimIntAST         size
+        TyConAppP "Int64"   [] -> return $ PrimIntAST         I64
+        TyConAppP "Int32"   [] -> return $ PrimIntAST         I32
+        TyConAppP "Int8"    [] -> return $ PrimIntAST         I8
+        TyConAppP "Bool"    [] -> return $ PrimIntAST         I1
+        TyConAppP "Array"  [t] -> liftM  ArrayTypeAST            (q t)
+        TyConAppP "Ref"    [t] -> liftM  RefTypeAST              (q t)
         TyConAppP    tc types  -> liftM (TyConAppAST tc) (mapM q types)
         TupleTypeP      types  -> liftM  TupleTypeAST    (mapM q types)
         RefTypeP       t       -> liftM  RefTypeAST              (q t)

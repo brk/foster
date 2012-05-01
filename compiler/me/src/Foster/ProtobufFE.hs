@@ -331,13 +331,6 @@ parseWholeProgram pgm =
   let mods = map parseSourceModule (toList $ WholeProgram.modules pgm) in
   WholeProgramAST mods
 
-parseNamedType :: String -> TypeP
-parseNamedType "Int64" = PrimIntP I64
-parseNamedType "Int32" = PrimIntP I32
-parseNamedType "Int8"  = PrimIntP I8
-parseNamedType "Bool"  = PrimIntP I1
-parseNamedType other = TyConAppP other []
-
 parseType :: Type -> TypeP
 parseType t =
     case PbType.tag t of
@@ -346,7 +339,7 @@ parseType t =
                 if Just True == PbType.is_placeholder t
                   then MetaPlaceholder name
                   else if isLower c then TyVarP (BoundTyVar name)
-                                    else parseNamedType name
+                                    else TyConAppP name []
          PbTypeTag.FN -> fromMaybe (error "Protobuf node tagged FN without fnty field!")
                                    (fmap parseFnTy $ PbType.fnty t)
          PbTypeTag.TUPLE -> TupleTypeP [parseType p | p <- toList $ PbType.type_parts t]

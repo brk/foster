@@ -26,6 +26,11 @@ data TypeP =
          | ArrayTypeP     TypeP
          | MetaPlaceholder String
 
+-- Ref and Array and PrimInt types are identified in a post-parsing pass
+-- (as type constructors, by name) because there is no special type-level
+-- syntax for them. However, we still need them in the parsed-type AST
+-- to be able to specify the right types for primitive operations.
+
 instance Show TypeP where
     show x = case x of
         PrimIntP         size         -> "(PrimIntP " ++ show size ++ ")"

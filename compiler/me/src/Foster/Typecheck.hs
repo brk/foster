@@ -155,7 +155,9 @@ typecheckDeref ctx rng e1 maybeExpTy = do
       MetaTyVar  {} -> return ()
       other -> tcFails [out $ "Expected deref-ed expr "
                            ++ "to have ref type, had " ++ show other ++ show rng]
-    unify (typeAST a1) (RefTypeAST tau) (Just "Deref expression")
+    unify (typeAST a1) (RefTypeAST tau) (Just $ "Deref expression: " ++ highlightFirstLine rng
+                                                 ++ " was expected to have type " ++ show (RefTypeAST tau)
+                                                 ++ " but actually had type " ++ show (typeAST a1))
     return (AnnDeref rng tau a1)
 -- }}}
 
