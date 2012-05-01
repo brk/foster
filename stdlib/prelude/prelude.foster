@@ -4,3 +4,83 @@ type case List (a:Boxed)
   of $Cons a (List a)
 ;
 
+/////
+
+mkTextConcat = { a : Text => b : Text =>
+  TextConcat a b ((textLength a) +Int32 (textLength b))
+};
+
+textLength = { t : Text =>
+  case t
+    of $TextFragment _ n -> n
+    of $TextConcat _ _ n -> n
+   end;
+};
+
+expect_text = { s : Text =>
+  case s
+    of $TextFragment a n     -> prim_print_bytes_stderr a n; n
+    of $TextConcat   s1 s2 n -> expect_text s1; expect_text s2; n
+   end;
+};
+
+print_text = { s : Text =>
+  case s
+    of $TextFragment a n     -> prim_print_bytes_stdout a n; n
+    of $TextConcat   s1 s2 n -> print_text s1; print_text s2; n
+   end;
+};
+
+////
+
+// Returns True on success, otherwise False.
+tmp_bytes_iter_reverse = { a : Array Int8 =>
+                           n : Int32 => // invariant: n < len a
+                           f : { Int8 => Bool } =>
+  if n >=Int32 0
+  then if f a[n] then tmp_bytes_iter_reverse a (n -Int32 1) f
+                 else False end
+  else True end
+};
+
+// Returns True on success, otherwise False.
+tmp_Text_bytes_iter_reverse = { t:Text =>
+                                f: { Int8 => Bool } =>
+  case t
+    of $TextFragment a n     -> tmp_bytes_iter_reverse a (n -Int32 1) f;
+    of $TextConcat   s1 s2 n ->
+        if    tmp_Text_bytes_iter_reverse s2 f
+         then tmp_Text_bytes_iter_reverse s1 f
+         else False
+        end
+   end;
+};
+
+is_ascii_digit = { c : Int8 =>
+  if   c <=Int8 (primitive_trunc_i32_i8 57)
+  then c >=Int8 (primitive_trunc_i32_i8 48)
+  else False
+  end
+};
+
+tmp_Int32_of_base_10_Text = { t:Text =>
+  let acc = (ref 0);
+      pow = (ref 1);
+      base = 10;
+      ok = tmp_Text_bytes_iter_reverse t { c : Int8 =>
+       //print_text "is_ascii_digit c:"; // hmm, causes crash...
+       if is_ascii_digit c
+         then
+           let s = (primitive_sext_i8_to_i32 c) -Int32 48;
+           in
+             (acc^ +Int32 (s *Int32 pow^)) >^ acc;
+             (pow^           *Int32 base ) >^ pow;
+             True
+           end
+         else False
+       end;
+     };
+  in
+    if ok then acc^ else 0 end
+  end
+};
