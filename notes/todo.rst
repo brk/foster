@@ -1,6 +1,25 @@
 TODO
 ====
 
+* Way to do efficient iteration over arrays?
+* Measure impact of alignment (1 vs 4)? vs 8 vs 16 --
+  can enable SSE2+ insns for align 16, but can also raise memory usage.
+* Can begin doing comparative timing tests for verifying efficient
+  implementation of high level idioms.
+* Measure the impact of adding pointer analysis to a type-safe language
+* Measure impact of "low level" vs "high level" optimizations
+* Determine what tradeoffs exist between safety & "pay as you go"
+* Think about competing philosophies: "this code should be safe from all mischief"
+                                  vs  "the language shouldn't get in my way or
+                                       prevent me from doing what i need to do"
+
+Instrument CFG generation to track metrics:
+* # of distinct program points
+* # of distinct scopes
+* # of basic blocks
+* # of functions
+* distribution of #/size of basic blocks over functions
+
 Far future: GHC plugin to dump strict Haskell to Foster?
         https://github.com/thoughtpolice/strict-ghc-plugin/blob/master/Strict/Pass.lhs
 
@@ -39,8 +58,11 @@ TODO: libraries, benchmarks, & applications
 * Persistent maps
 * MP integers
 * Floating-point types
+* Flonum vectors
+* Fixnum vectors
 * Growable vectors
 * Parallel benchmarks?
+* Timing infrastructure
 
 TODO: minor optimizations
 -------------------------
