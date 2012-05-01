@@ -354,7 +354,6 @@ VariableAST* parseVarDirect(pTree t) {
 }
 
 std::string parseName(pTree nm) {
-  display_pTree(nm, 4);
   if (typeOf(nm) == QNAME) {
     return textOf(child(nm, 0)) + "." + parseName(child(nm, 1));
   } else {
