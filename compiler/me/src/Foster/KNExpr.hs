@@ -242,6 +242,9 @@ nestedLetsDo exprs g = nestedLets' exprs [] g
             return $ buildLet x e innerlet
 
 -- Usually, we can get by with a pure continuation.
+-- Note: Haskell's type system is insufficiently expressive here:
+--       we can't express the constraint that len [KNExpr] == len [AIVar].
+--       As a result, we get many spurious pattern match warnings.
 nestedLets :: [KNExpr] -> ([AIVar] -> KNExpr) -> KN KNExpr
 nestedLets exprs g = nestedLetsDo exprs (\vars -> return $ g vars)
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||

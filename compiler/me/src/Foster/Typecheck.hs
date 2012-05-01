@@ -608,8 +608,7 @@ typecheckCall ctx rng base args maybeExpTy = do
              --tcLift $ putStrLn ("_maybeExpTy: " ++ show maybeExpTy)
              --tcLift $ putStrLn ("tysub: " ++ show tysub)
 
-             tyProjTypes <- extractSubstTypes
-                               (map (\(MetaTyVar m) -> m) unificationVars) tysub
+             tyProjTypes <- extractSubstTypes (map unmeta unificationVars) tysub
              --tcLift $ putStrLn ("tcTyProjTypes: " ++ show tyProjTypes)
              let annTyApp = E_AnnTyApp rng substitutedFnType eb (minimalTupleAST tyProjTypes)
              --tcLift $ putStrLn ("annTyApp: " ++ show annTyApp)
@@ -633,6 +632,9 @@ typecheckCall ctx rng base args maybeExpTy = do
 unifyFun expArg _actRet actArg Nothing       = tcUnifyTypes expArg actArg
 unifyFun expArg  actRet actArg (Just expRet) = tcUnifyTypes (TupleTypeAST [expArg, actRet])
                                                             (TupleTypeAST [actArg, expRet])
+
+unmeta (MetaTyVar m) = m
+unmeta _ = error "Typecheck.hs: unmeta expected a MetaTyVar"
 
 mkFuncTy a r = FnTypeAST a r FastCC FT_Func
 -----------------------------------------------------------------------
