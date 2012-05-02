@@ -20,6 +20,7 @@ import Data.Bits
 import Data.IORef
 import Data.Array
 import qualified Data.ByteString as BS
+import Text.Printf(printf)
 
 import System.Console.ANSI
 import Control.Exception(assert)
@@ -225,6 +226,7 @@ data IExpr =
 -- and captured values.
 data SSValue = SSBool      Bool
              | SSInt       Integer
+             | SSFloat     Double
              | SSArray     (Array Int Location)
              | SSByteString BS.ByteString -- strictly redundant, but convenient.
              | SSTuple     [SSValue]
@@ -244,6 +246,7 @@ ssTermOfExpr expr =
   case expr of
     KNBool b               -> SSTmValue $ SSBool b
     KNInt _t i             -> SSTmValue $ SSInt (litIntValue i)
+    KNFloat _t f           -> SSTmValue $ SSFloat (litFloatValue f)
     KNString s             -> SSTmValue $ textFragmentOf s
     KNVar v                -> SSTmExpr  $ IVar (idOf v)
     KNTuple vs             -> SSTmExpr  $ ITuple (map idOf vs)
@@ -652,6 +655,14 @@ evalNamedPrimitive "get_cmdline_arg_n" gs [SSInt i] =
                               then args !! ii else ""
          return $ withTerm gs (SSTmValue $ textFragmentOf argN)
 
+evalNamedPrimitive "expect_float_p9f64" gs [SSFloat f] =
+      do expectString gs (printf "%.9f" f)
+         return $ withTerm gs unit
+
+evalNamedPrimitive "print_float_p9f64" gs [SSFloat f] =
+      do printString gs (printf "%.9f" f)
+         return $ withTerm gs unit
+
 evalNamedPrimitive prim _gs args = error $ "evalNamedPrimitive " ++ show prim
                                          ++ " not yet defined for args:\n"
                                          ++ show args
@@ -783,7 +794,8 @@ display :: SSValue -> String
 display (SSBool True )  = "true"
 display (SSBool False)  = "false"
 display (SSByteString bs)= show bs
-display (SSInt i     )  = show i
+display (SSInt   i   )  = show i
+display (SSFloat f   )  = show f
 display (SSArray a   )  = show a
 display (SSTuple vals)  = "(" ++ joinWith ", " (map display vals) ++ ")"
 display (SSLocation z)  = "<location " ++ show z ++ ">"
