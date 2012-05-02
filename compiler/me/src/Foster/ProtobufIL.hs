@@ -94,6 +94,8 @@ dumpIntType sizeBits = P'.defaultValue { PbType.tag  = PbTypeTag.PRIM_INT
 dumpType :: MonoType -> PbType.Type
 dumpType (PtrTypeUnknown)  = dumpUnknownType ()
 dumpType (PrimInt size)    = dumpIntType (intOfSize size)
+dumpType (PrimFloat64)     =
+              P'.defaultValue { PbType.tag  = PbTypeTag.FLOAT64 }
 dumpType (TyConApp nm _tys)=
               P'.defaultValue { PbType.tag  = PbTypeTag.NAMED
                               , PbType.name = Just $ u8fromString nm }
@@ -277,6 +279,12 @@ dumpExpr x@(MoInt _ty int) =
                                  { clean = u8fromString (show $ litIntValue int)
                                  , bits  = intToInt32   (litIntMinBits int) }
                     }
+                    
+dumpExpr x@(MoFloat _ty flt) =
+    P'.defaultValue { PbLetable.tag   = IL_FLOAT
+                    , PbLetable.type' = Just $ dumpType (typeMo x)
+                    , PbLetable.dval  = Just $ litFloatValue flt
+                    }
 
 dumpExpr (MoCall t base args)
         = dumpCall t (dumpVar base)          args (mayTriggerGC base)
@@ -406,6 +414,7 @@ typeMo expr = case expr of
     MoText _                -> TyConApp "Text" []
     MoBool _                -> PrimInt I1
     MoInt t _               -> t
+    MoFloat t _             -> t
     MoTuple vs              -> TupleType (map tidType vs)
     MoOccurrence {}         -> error $ "ProtobufIL: No typeMo for MoOccurrence"
     MoCall     t  _ _       -> t

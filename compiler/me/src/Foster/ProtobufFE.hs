@@ -46,9 +46,9 @@ import Foster.Fepb.SourceModule as SourceModule
 import Foster.Fepb.WholeProgram as WholeProgram
 import Foster.Fepb.Expr.Tag(Tag(IF, LET, VAR, SEQ, UNTIL,
                                 BOOL, CALL, TY_APP, STRING, -- MODULE,
-                                ALLOC, DEREF, STORE, TUPLE, PB_INT,
+                                ALLOC, DEREF, STORE, TUPLE, PB_INT, PB_RAT,
                                 CASE_EXPR, COMPILES, VAL_ABS, SUBSCRIPT,
-                                PAT_WILDCARD, PAT_INT, PAT_BOOL, PAT_CTOR,
+                                PAT_WILDCARD, PAT_NUM, PAT_BOOL, PAT_CTOR,
                                 PAT_VARIABLE, PAT_TUPLE))
 import qualified Foster.Fepb.SourceRange as Pb
 import qualified Foster.Fepb.SourceLocation as Pb
@@ -138,6 +138,10 @@ parseInt :: PbExpr.Expr -> SourceRange -> FE (ExprAST TypeP)
 parseInt pbexpr range = do
     return $ E_IntAST range (uToString $ getVal pbexpr PbExpr.string_value)
 
+parseRat :: PbExpr.Expr -> SourceRange -> FE (ExprAST TypeP)
+parseRat pbexpr range = do
+    return $ E_RatAST range (uToString $ getVal pbexpr PbExpr.string_value)
+    
 -- String literals are parsed with leading and trailing " characters,
 -- so we take tail . init to strip them off.
 parseString :: PbExpr.Expr -> SourceRange -> FE (ExprAST TypeP)
@@ -224,7 +228,8 @@ parsePattern pbexpr = do
     _ -> do [expr] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
             return $ case (PbExpr.tag pbexpr, expr) of
               (PAT_BOOL, E_BoolAST _ bv) -> EP_Bool range bv
-              (PAT_INT,   E_IntAST _ iv) -> EP_Int  range iv
+              (PAT_NUM,   E_IntAST _ iv) -> EP_Int  range iv
+              (PAT_NUM,   other) -> error $ "Only int patterns supported for now..." ++ show other
               (PAT_VARIABLE, E_VarAST _ v)-> EP_Variable range v
 
               _ -> error $ "parsePattern called with non-matching tag/arg!"
@@ -259,6 +264,7 @@ parseExpr pbexpr = do
     let fn = case PbExpr.tag pbexpr of
                 STRING  -> parseString
                 PB_INT  -> parseInt
+                PB_RAT  -> parseRat
                 IF      -> parseIf
                 UNTIL   -> parseUntil
                 BOOL    -> parseBool
@@ -279,7 +285,7 @@ parseExpr pbexpr = do
                 PAT_VARIABLE -> error "parseExpr called on pattern!"
                 PAT_CTOR     -> error "parseExpr called on pattern!"
                 PAT_BOOL     -> error "parseExpr called on pattern!"
-                PAT_INT      -> error "parseExpr called on pattern!"
+                PAT_NUM      -> error "parseExpr called on pattern!"
                 PAT_TUPLE    -> error "parseExpr called on pattern!"
 
                 --otherwise -> error $ "parseExpr saw unknown tag: " ++ (show $ PbExpr.tag pbexpr) ++ "\n"

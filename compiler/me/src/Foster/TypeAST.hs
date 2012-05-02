@@ -30,6 +30,7 @@ type Tau   = TypeAST -- No ForAlls anywhere
 
 data TypeAST =
            PrimIntAST       IntSizeBits
+         | PrimFloat64
          | TyConAppAST      DataTypeName [Sigma]
          | TupleTypeAST     [Sigma]
          | CoroTypeAST      Sigma Sigma
@@ -65,6 +66,7 @@ instance Eq MetaTyVar where
 instance Show TypeAST where
     show x = case x of
         PrimIntAST         size         -> "(PrimIntAST " ++ show size ++ ")"
+        PrimFloat64                     -> "(PrimFloat64)"
         TyConAppAST    tc types         -> "(TyCon: " ++ show tc ++ joinWith " " ("":map show types) ++ ")"
         TupleTypeAST      types         -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
         FnTypeAST    s t cc cs          -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
@@ -79,6 +81,7 @@ instance Structured TypeAST where
     textOf e _width =
         case e of
             PrimIntAST     size            -> out $ "PrimIntAST " ++ show size
+            PrimFloat64                    -> out $ "PrimFloat64"
             TyConAppAST    tc  _           -> out $ "TyConAppAST " ++ tc
             TupleTypeAST       _           -> out $ "TupleTypeAST"
             FnTypeAST    _ _  _  _         -> out $ "FnTypeAST"
@@ -92,6 +95,7 @@ instance Structured TypeAST where
     childrenOf e =
         case e of
             PrimIntAST         _           -> []
+            PrimFloat64                    -> []
             TyConAppAST   _tc types        -> types
             TupleTypeAST      types        -> types
             FnTypeAST    s t _ _           -> [s, t]
@@ -143,6 +147,9 @@ primitiveDecls =
     ,(,) "prim_print_bytes_stdout" $ mkProcType [ArrayTypeAST i8, i32] []
     ,(,) "prim_print_bytes_stderr" $ mkProcType [ArrayTypeAST i8, i32] []
 
+    ,(,) "print_float_p9f64"       $ mkProcType [PrimFloat64] []
+    ,(,) "expect_float_p9f64"      $ mkProcType [PrimFloat64] []
+    
     -- forall a, i32 -> Array a
     ,(,) "allocDArray" $ let a = BoundTyVar "a" in
                          ForAllAST (primTyVars [a])

@@ -10,6 +10,7 @@ import Foster.Base
 
 data MonoType =
            PrimInt       IntSizeBits
+         | PrimFloat64
          | TyConApp      DataTypeName [MonoType]
          | TupleType     [MonoType]
          | FnType        { monoFnTypeDomain :: MonoType

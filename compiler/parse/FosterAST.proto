@@ -70,8 +70,8 @@ message Expr {
     VAR       = 14;
     STRING    = 15;
     PB_INT    = 16;
-    BOOL      = 17;
-
+    PB_RAT    = 17;
+    BOOL      = 18;
     LET       = 19;
     TUPLE     = 20;
     VAL_ABS   = 21;
@@ -90,7 +90,7 @@ message Expr {
 
     PAT_WILDCARD = 41;
     PAT_VARIABLE = 42;
-    PAT_INT      = 43;
+    PAT_NUM      = 43;
     PAT_BOOL     = 44;
     PAT_CTOR     = 45;
     PAT_TUPLE    = 46;

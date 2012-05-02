@@ -3,7 +3,7 @@
 -- Use of this source code is governed by a BSD-style license that can be
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
-module Foster.TypecheckInt(typecheckInt, sanityCheck) where
+module Foster.TypecheckInt(typecheckInt, typecheckRat, sanityCheck) where
 
 import System.Console.ANSI(Color(Red))
 import qualified Data.Text as T
@@ -84,4 +84,11 @@ typecheckInt rng originalText _expTyTODO = do
         sizeOfBits :: Int -> IntSizeBits
         sizeOfBits 32 = I32
         sizeOfBits n = error $ "TypecheckInt.hs:sizeOfBits: Only support i32 for now, not " ++ show n
+
+typecheckRat :: SourceRange -> String -> Maybe TypeAST -> Tc (AnnExpr Rho)
+typecheckRat rng originalText _expTyTODO = do
+  --tcLift $ putStrLn $ "typecheckRat: " ++ originalText ++ " :?: " ++ show _expTyTODO
+  -- TODO: be more discriminating about float vs rational numbers?
+  let val = (read originalText) :: Double
+  return (AnnFloat rng PrimFloat64 (LiteralFloat val originalText))
 

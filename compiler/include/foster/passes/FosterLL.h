@@ -203,6 +203,12 @@ struct LLBool : public LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
+struct LLFloat : public LLExpr {
+  double doubleValue;
+  explicit LLFloat(double dval) : LLExpr("LLFloat"), doubleValue(dval) {}
+  virtual llvm::Value* codegen(CodegenPass* pass);
+};
+
 struct LLText : public LLExpr {
   std::string stringValue;
   explicit LLText(const string& val) : LLExpr("LLText"), stringValue(val) {}

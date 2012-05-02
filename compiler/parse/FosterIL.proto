@@ -10,6 +10,7 @@ message Type {
     CARRAY = 6;
     CLOSURE = 7;
     PRIM_INT = 8;
+    FLOAT64 = 9;
     ARRAY = 11;
     DATATYPE = 12;
     TY_CON_APP = 13;
@@ -73,7 +74,8 @@ message Letable {
     IL_INT = 16;
     IL_BOOL = 17;
     IL_TEXT = 18;
-    IL_TUPLE = 20;
+    IL_TUPLE = 19;
+    IL_FLOAT = 20;
     IL_OCCURRENCE = 21;
     IL_CALL = 23;
     IL_CALL_PRIMOP = 24;
@@ -92,6 +94,7 @@ message Letable {
   optional Type         type = 3;
   repeated string      names = 6;
   optional PBInt      pb_int = 17;
+  optional double       dval = 18;
 
   optional bool       bool_value = 23;
   optional string   string_value = 24;

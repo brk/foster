@@ -15,6 +15,7 @@ import Foster.Output(out)
 type RhoIL = TypeIL
 data TypeIL =
            PrimIntIL       IntSizeBits
+         | PrimFloat64IL
          | TyConAppIL      DataTypeName [TypeIL]
          | TupleTypeIL     [TypeIL]
          | FnTypeIL        { fnTypeILDomain :: TypeIL
@@ -33,6 +34,7 @@ type ILPrim = FosterPrim TypeIL
 kindOfTypeIL :: TypeIL -> Kind
 kindOfTypeIL x = case x of
     PrimIntIL   {}       -> KindAnySizeType
+    PrimFloat64IL        -> KindAnySizeType
     TyVarIL   _ kind     -> kind
     TyConAppIL  {}       -> KindPointerSized
     TupleTypeIL {}       -> KindPointerSized
@@ -47,6 +49,7 @@ instance Show TypeIL where
         TyConAppIL nam types -> "(TyConAppIL " ++ nam
                                       ++ joinWith " " ("":map show types) ++ ")"
         PrimIntIL size       -> "(PrimIntIL " ++ show size ++ ")"
+        PrimFloat64IL        -> "(PrimFloat64IL)"
         TupleTypeIL types    -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
         FnTypeIL   s t cc cs -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
         CoroTypeIL s t       -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
@@ -67,6 +70,7 @@ ilOf ctx typ = do
      TyConAppAST dtname tys -> do iltys <- mapM q tys
                                   return $ TyConAppIL dtname iltys
      PrimIntAST size     -> do return $ PrimIntIL size
+     PrimFloat64         -> do return $ PrimFloat64IL
      TupleTypeAST types  -> do tys <- mapM q types
                                return $ TupleTypeIL tys
      FnTypeAST s t cc cs -> do [x,y] <- mapM q [s,t]
@@ -138,6 +142,7 @@ instance Structured TypeIL where
         case e of
             TyConAppIL nam _types -> out $ "TyConAppIL " ++ nam
             PrimIntIL     size    -> out $ "PrimIntIL " ++ show size
+            PrimFloat64IL         -> out $ "PrimFloat64IL"
             TupleTypeIL   {}      -> out $ "TupleTypeIL"
             FnTypeIL      {}      -> out $ "FnTypeIL"
             CoroTypeIL    {}      -> out $ "CoroTypeIL"
@@ -150,6 +155,7 @@ instance Structured TypeIL where
         case e of
             TyConAppIL _nam types  -> types
             PrimIntIL       {}     -> []
+            PrimFloat64IL          -> []
             TupleTypeIL     types  -> types
             FnTypeIL   s t _cc _cs -> [s,t]
             CoroTypeIL s t         -> [s,t]

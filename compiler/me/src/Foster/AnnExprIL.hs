@@ -31,6 +31,7 @@ data AIExpr=
           AIBool       Bool
         | AIString     T.Text
         | AIInt        TypeIL LiteralInt
+        | AIFloat      TypeIL LiteralFloat
         | AITuple      [AIExpr]
         -- Control flow
         | AIIf         TypeIL AIExpr AIExpr AIExpr
@@ -69,6 +70,8 @@ ail ctx ae =
         AnnString _rng s       -> do return $ AIString s
         AnnInt    _rng t int   -> do ti <- qt t
                                      return $ AIInt ti int
+        AnnFloat _rng t flt    -> do ti <- qt t
+                                     return $ AIFloat ti flt
         AnnIf   _rng  t  a b c -> do ti <- qt t
                                      [x,y,z] <- mapM q [a,b,c]
                                      return $ AIIf    ti x y z

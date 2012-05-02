@@ -126,6 +126,10 @@ LLExpr* parseInt(const pb::Letable& e) {
   return new LLInt(i.clean(), i.bits());
 }
 
+LLExpr* parseFloat(const pb::Letable& e) {
+  return new LLFloat(e.dval());
+}
+
 LLAllocate::MemRegion parseMemRegion(const pb::PbAllocInfo& a) {
   LLAllocate::MemRegion target_region = LLAllocate::MEM_REGION_STACK;
   switch (a.mem_region()) {
@@ -386,6 +390,7 @@ LLExpr* LLExpr_from_pb(const pb::Letable* pe) {
   case pb::Letable::IL_CALL_PRIMOP: rv = parseCallPrimOp(e); break;
   case pb::Letable::IL_CTOR:        rv = parseAppCtor(e); break;
   case pb::Letable::IL_INT:         rv = parseInt(e); break;
+  case pb::Letable::IL_FLOAT:       rv = parseFloat(e); break;
   case pb::Letable::IL_TEXT:        rv = parseText(e); break;
   case pb::Letable::IL_TUPLE:       rv = parseTuple(e); break;
   case pb::Letable::IL_ALLOC:       rv = parseAlloc(e); break;
@@ -514,6 +519,11 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
     std::stringstream name; name << "Int" << size;
     return PrimitiveTypeAST::get(size == 1 ? "Bool" : name.str(),
           llvm::IntegerType::get(llvm::getGlobalContext(), size));
+  }
+
+  if (t.tag() == pb::Type::FLOAT64) {
+    return PrimitiveTypeAST::get("Float64",
+                             llvm::Type::getDoubleTy(llvm::getGlobalContext()));
   }
 
   if (t.tag() == pb::Type::DATATYPE) {

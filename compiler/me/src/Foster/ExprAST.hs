@@ -26,9 +26,10 @@ import qualified Data.Text as T
 
 data ExprAST ty =
         -- Literals
-          E_BoolAST       SourceRange Bool
+          E_StringAST     SourceRange T.Text
+        | E_BoolAST       SourceRange Bool
         | E_IntAST        SourceRange String
-        | E_StringAST     SourceRange T.Text
+        | E_RatAST        SourceRange String
         | E_TupleAST      (TupleAST ty)
         | E_FnAST         (FnAST ty)
         -- Control flow
@@ -79,13 +80,14 @@ instance Structured (ExprAST TypeAST) where
         let tryGetCallNameE (E_VarAST _rng (VarAST _mt v)) = T.unpack v
             tryGetCallNameE _                              = "" in
         case e of
-            E_BoolAST   _rng  b    -> out $ "BoolAST      " ++ (show b)
             E_StringAST _rng _s    -> out $ "StringAST    "
+            E_BoolAST   _rng  b    -> out $ "BoolAST      " ++ (show b)
+            E_IntAST _rng text     -> out $ "IntAST       " ++ text
+            E_RatAST _rng text     -> out $ "RatAST       " ++ text
             E_CallAST _rng b _args -> out $ "CallAST      " ++ tryGetCallNameE b
             E_CompilesAST {}       -> out $ "CompilesAST  "
             E_IfAST       {}       -> out $ "IfAST        "
             E_UntilAST _rng _ _    -> out $ "UntilAST     "
-            E_IntAST _rng text     -> out $ "IntAST       " ++ text
             E_FnAST f              -> out $ "FnAST        " ++ T.unpack (fnAstName f)
             E_LetRec    {}         -> out $ "LetRec       "
             E_LetAST _rng bnd _    -> out $ "LetAST       " ++ T.unpack (termBindingName bnd)
@@ -102,14 +104,15 @@ instance Structured (ExprAST TypeAST) where
     childrenOf e =
         let termBindingExpr (TermBinding _ e) = e in
         case e of
-            E_BoolAST     _rng _b        -> []
             E_StringAST   _rng _s        -> []
+            E_BoolAST     _rng _b        -> []
+            E_IntAST      _rng _txt      -> []
+            E_RatAST      _rng _txt      -> []
             E_CallAST     _rng b tup     -> b:(tupleAstExprs tup)
             E_CompilesAST _rng (Just e)  -> [e]
             E_CompilesAST _rng Nothing   -> []
             E_IfAST       _rng    a b c  -> [a, b, c]
             E_UntilAST    _rng a b       -> [a, b]
-            E_IntAST      _rng _txt      -> []
             E_FnAST f                    -> [fnAstBody f]
             E_SeqAST      _rng  _a _b    -> unbuildSeqs e
             E_AllocAST    _rng a         -> [a]
@@ -134,6 +137,7 @@ instance SourceRanged (ExprAST ty)
       E_StringAST     rng _ -> rng
       E_BoolAST       rng _ -> rng
       E_IntAST        rng _ -> rng
+      E_RatAST        rng _ -> rng
       E_TupleAST    tup -> tupleAstRange tup
       E_FnAST         f -> fnAstRange f
       E_LetAST        rng _ _   -> rng

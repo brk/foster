@@ -120,6 +120,9 @@ int fprint_b2(FILE* f, Int x) {
   return n;
 }
 
+void fprint_f64(FILE* f, double x) { fprintf(f, "%f\n", x); }
+void fprint_p9f64(FILE* f, double x) { fprintf(f, "%.9f\n", x); }
+
 void fprint_i64(FILE* f, int64_t x) { fprintf(f, "%" PRId64 "\n", x); }
 void fprint_i64x(FILE* f, int64_t x) { fprintf(f, "%" PRIX64 "_16\n", x); }
 void fprint_i64b(FILE* f, int64_t x) { fprint_b2<64>(f, x); }
@@ -217,6 +220,9 @@ void prim_print_bytes_stdout(foster_bytes* array, uint32_t n) {
 void prim_print_bytes_stderr(foster_bytes* array, uint32_t n) {
   fprint_bytes(stderr, array, n);
 }
+
+void print_float_p9f64(double f) { return fprint_p9f64(stdout, f); }
+void expect_float_p9f64(double f) { return fprint_p9f64(stderr, f); }
 
 void* get_cmdline_arg_n(int32_t n) {
   if (n >= 0 && n < foster_argc) {

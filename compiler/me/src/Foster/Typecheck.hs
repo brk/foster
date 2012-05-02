@@ -18,7 +18,7 @@ import Foster.ExprAST
 import Foster.AnnExpr
 import Foster.Infer
 import Foster.Context
-import Foster.TypecheckInt(sanityCheck, typecheckInt)
+import Foster.TypecheckInt(sanityCheck, typecheckInt, typecheckRat)
 import Foster.Output(out, outToString, OutputOr(Errors))
 --import Foster.Output(outCS, runOutput)
 --import System.Console.ANSI
@@ -40,6 +40,7 @@ typecheck want ctx expr maybeExpTy = do
     annexpr <- case expr of
       E_VarAST rng v            -> typecheckVar   want ctx rng (evarName v)
       E_IntAST  rng txt         -> typecheckInt            rng txt        maybeExpTy
+      E_RatAST  rng txt         -> typecheckRat            rng txt        maybeExpTy
       E_BoolAST rng b           -> typecheckBool           rng b          maybeExpTy
       E_StringAST rng txt       -> typecheckText           rng txt        maybeExpTy
       E_CallAST rng base argtup -> typecheckCall       ctx rng base (E_TupleAST argtup) maybeExpTy
@@ -286,7 +287,7 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
                             ty <- tcMaybeType (evarMaybeType v) "checkPattern"
                             return $ P_Variable r (TypedId ty id)
       EP_Int r str    -> do annint <- typecheckInt r str Nothing
-                            return $ P_Int  r (aintLitInt annint)
+                            return $ P_Int  r (aintLit annint)
       EP_Ctor r eps s -> do (CtorInfo cid _) <- getCtorInfoForCtor ctx s
                             sanityCheck (ctorArity cid == List.length eps) $
                               "Incorrect pattern arity: expected " ++
@@ -789,6 +790,7 @@ zonkType x = do
                                           writeTcMeta m ty'
                                           return ty'
         PrimIntAST {}         -> return x
+        PrimFloat64           -> return x
         TyVarAST   {}         -> return x
         TyConAppAST nm types  -> liftM (TyConAppAST nm) (mapM zonkType types)
         TupleTypeAST types    -> liftM (TupleTypeAST  ) (mapM zonkType types)
@@ -814,6 +816,7 @@ getFreeTyVars x = do z <- zonkType x
   go bound x =
     case x of
         PrimIntAST _          -> []
+        PrimFloat64           -> []
         TyConAppAST _nm types -> concatMap (go bound) types
         TupleTypeAST types    -> concatMap (go bound) types
         FnTypeAST s r _ _     -> concatMap (go bound) [s,r]
@@ -882,6 +885,7 @@ unify t1 t2 msg = do
      collectUnificationVars x =
          case x of
              PrimIntAST _          -> []
+             PrimFloat64           -> []
              TyConAppAST _nm types -> concatMap collectUnificationVars types
              TupleTypeAST types    -> concatMap collectUnificationVars types
              FnTypeAST s r _ _     -> concatMap collectUnificationVars [s,r]

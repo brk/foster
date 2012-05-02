@@ -683,11 +683,16 @@ void LLLetVals::codegenMiddle(CodegenPass* pass) {
 }
 
 ////////////////////////////////////////////////////////////////////
-//////////////// LLInt, LLBool, LLVar///////////////////////////////
+//////////////////// Literals and variables ////////////////////////
 /////////////////////////////////////////////////////////////////{{{
 
 llvm::Value* LLBool::codegen(CodegenPass* pass) {
   return builder.getInt1(this->boolValue);
+}
+
+llvm::Value* LLFloat::codegen(CodegenPass* pass) {
+  ASSERT(this->type) << "LLFloat was missing its type...";
+  return llvm::ConstantFP::get(getLLVMType(this->type), this->doubleValue);
 }
 
 llvm::Value* LLText::codegen(CodegenPass* pass) {

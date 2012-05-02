@@ -202,6 +202,7 @@ computeBlocks expr idmaybe k = do
          KNString     s      -> ILText       s
          KNBool       b      -> ILBool       b
          KNInt        t i    -> ILInt        t i
+         KNFloat      t f    -> ILFloat      t f
          KNTuple      vs     -> ILTuple      vs
          KNCallPrim   t p vs -> ILCallPrim   t p vs
          KNCall _     t b vs -> ILCall       t b vs

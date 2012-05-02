@@ -23,6 +23,7 @@ data KNExpr =
           KNBool        Bool
         | KNString      T.Text
         | KNInt         TypeIL LiteralInt
+        | KNFloat       TypeIL LiteralFloat
         | KNTuple       [AIVar]
         -- Control flow
         | KNIf          TypeIL AIVar  KNExpr KNExpr
@@ -87,6 +88,7 @@ kNormalize mebTail expr =
       AIString s        -> return $ KNString s
       AIBool b          -> return $ KNBool b
       AIInt t i         -> return $ KNInt t i
+      AIFloat t f       -> return $ KNFloat t f
       E_AIVar v         -> return $ KNVar v
       E_AIPrim p -> error $ "KNExpr.kNormalize: Should have detected prim " ++ show p
 
@@ -289,6 +291,7 @@ typeKN expr =
     KNBool _          -> boolTypeIL
     KNString _        -> stringTypeIL
     KNInt      t _    -> t
+    KNFloat    t _    -> t
     KNTuple vs        -> TupleTypeIL (map tidType vs)
     KNLetVal  _ _ e   -> typeKN e
     KNLetFuns _ _ e   -> typeKN e
@@ -322,6 +325,7 @@ instance Structured KNExpr where
             KNIf      t  _ _ _  -> out $ "KNIf        " ++ " :: " ++ show t
             KNUntil   t  _ _    -> out $ "KNUntil     " ++ " :: " ++ show t
             KNInt ty int        -> out $ "KNInt       " ++ (litIntText int) ++ " :: " ++ show ty
+            KNFloat ty flt      -> out $ "KNFloat     " ++ (litFloatText flt) ++ " :: " ++ show ty
             KNAlloc      {}     -> out $ "KNAlloc     "
             KNDeref      {}     -> out $ "KNDeref     "
             KNStore      {}     -> out $ "KNStore     "
@@ -340,6 +344,7 @@ instance Structured KNExpr where
             KNString {}             -> []
             KNBool   {}             -> []
             KNInt    {}             -> []
+            KNFloat  {}             -> []
             KNUntil _t a b          -> [a, b]
             KNTuple     vs          -> map var vs
             KNCase _ e bs           -> (var e):(map snd bs)

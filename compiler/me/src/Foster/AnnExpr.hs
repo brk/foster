@@ -27,7 +27,10 @@ data AnnExpr ty =
         | AnnString     SourceRange T.Text
         | AnnInt        { aintRange  :: SourceRange
                         , aintType   :: ty
-                        , aintLitInt :: LiteralInt }
+                        , aintLit    :: LiteralInt }
+        | AnnFloat      { afltRange  :: SourceRange
+                        , afltType   :: ty
+                        , afltLit    :: LiteralFloat }
         | AnnTuple      (AnnTuple ty)
         | E_AnnFn       (Fn (AnnExpr ty) ty)
 
@@ -70,7 +73,8 @@ typeAST annexpr =
   case annexpr of
      AnnString {}          -> fosStringType
      AnnBool   {}          -> fosBoolType
-     AnnInt _rng t _       -> t
+     AnnInt   _rng t _     -> t
+     AnnFloat _rng t _     -> t
      AnnTuple  {}          -> TupleTypeAST [recur e | e <- childrenOf annexpr]
      E_AnnFn annFn         -> fnType annFn
      AnnCall _rng t _ _    -> t
@@ -101,6 +105,7 @@ instance Structured (AnnExpr TypeAST) where
       AnnIf       _rng t _ _ _   -> out $ "AnnIf        " ++ " :: " ++ show t
       AnnUntil    _rng t _ _     -> out $ "AnnUntil     " ++ " :: " ++ show t
       AnnInt      _rng ty int    -> out $ "AnnInt       " ++ (litIntText int) ++ " :: " ++ show ty
+      AnnFloat    _rng ty flt    -> out $ "AnnFloat     " ++ (litFloatText flt) ++ " :: " ++ show ty
       AnnLetVar   _rng id _a _b  -> out $ "AnnLetVar    " ++ show id
       AnnLetFuns  _rng ids _ _   -> out $ "AnnLetFuns   " ++ show ids
       AnnAlloc  {}               -> out $ "AnnAlloc     "
@@ -127,6 +132,7 @@ instance Structured (AnnExpr TypeAST) where
       AnnIf        _rng _t  a b c          -> [a, b, c]
       AnnUntil     _rng _t  a b            -> [a, b]
       AnnInt {}                            -> []
+      AnnFloat {}                          -> []
       E_AnnFn annFn                        -> [fnBody annFn]
       AnnLetVar    _rng _ a b              -> [a, b]
       AnnLetFuns   _rng _ids fns e         -> (map E_AnnFn fns) ++ [e]
@@ -175,6 +181,7 @@ instance SourceRanged (AnnExpr ty) where
       AnnIf        rng _ _ _ _    -> rng
       AnnUntil     rng _ _ _      -> rng
       AnnInt       rng _ _        -> rng
+      AnnFloat     rng _ _        -> rng
       E_AnnFn f                   -> fnRange f
       AnnLetVar    rng _ _ _      -> rng
       AnnLetFuns   rng _ _ _      -> rng

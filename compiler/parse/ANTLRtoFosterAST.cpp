@@ -22,6 +22,7 @@
 #include "llvm/Support/FileSystem.h"
 
 #include "city.h"
+#include "pystring/pystring.h"
 
 #include <iostream>
 #include <string>
@@ -226,19 +227,26 @@ const char* getDefaultCallingConvParse() {
 
 ////////////////////////////////////////////////////////////////////
 
-IntAST* parseIntFrom(pTree t) {
-  ASSERT(textOf(t) == "INT_NUM")
-            << "parseIntFrom() called on non-INT_NUM token " << textOf(t)
+ExprAST* parseNumFrom(pTree t) {
+  ASSERT(textOf(t) == "LIT_NUM")
+            << "parseIntFrom() called on non-LIT_NUM token " << textOf(t)
             << show(rangeOf(t));
 
-  std::stringstream alltext;
-
-  int nchildren = getChildCount(t);
-  for (int i = 0; i < nchildren; ++i) {
-    alltext << textOf(child(t, i));
+  std::string alltext = textOf(child(t, 0));
+  
+  if (pystring::count(alltext, ".") > 0) {
+    ASSERT(alltext.find_first_of("abcdfABCDF_") == string::npos)
+              << "rationals should not contain hex digits or a base specifier"
+              << "; saw " << alltext;
+  
+    if (alltext.find_first_of("eE") >= 0) {
+      ASSERT(alltext.find_first_of("eE") > alltext.find_first_of("."))
+              << "e/E should only appear in rational as exponent specifier";
+    }
+    return new RatAST(alltext, rangeOf(t));
+  } else {
+    return new IntAST(alltext, rangeOf(t));  
   }
-
-  return new IntAST(alltext.str(), rangeOf(t));
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -470,7 +478,7 @@ Pattern* parsePatternAtom(pTree t) {
   if (token == WILDCARD) { return new WildcardPattern(rangeOf(t)); }
   if (token == TUPLE)    { return parseTuplePattern(t); }
   if (token == TERMNAME) { return new LiteralPattern(rangeOf(t), LiteralPattern::LP_VAR, parseTermVar(t)); }
-  if (token == INT_NUM)  { return new LiteralPattern(rangeOf(t), LiteralPattern::LP_INT, parseAtom(t)); }
+  if (token == LIT_NUM)  { return new LiteralPattern(rangeOf(t), LiteralPattern::LP_NUM, parseAtom(t)); }
   if (token == BOOL   )  { return new LiteralPattern(rangeOf(t), LiteralPattern::LP_BOOL, parseAtom(t)); }
   //if (token == STRING ) { return new LiteralPattern(LiteralPattern::LP_STR, parseAtom(t)); }
 
@@ -514,7 +522,7 @@ ExprAST* parseAtom(pTree tree) {
   if (token == TUPLE)    { return parseTuple(tree); }
   if (token == UNTIL)    { return parseUntil(tree); }
   if (token == TERMNAME) { return parseTermVar(tree); }
-  if (token == INT_NUM)  { return parseIntFrom(tree); }
+  if (token == LIT_NUM)  { return parseNumFrom(tree); }
   if (token == IF)       { return parseIf(tree); }
   if (token == REF)      { return parseRef(tree); }
   if (token == COMPILES) { return parseBuiltinCompiles(tree); }

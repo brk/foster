@@ -59,6 +59,7 @@ struct ExprAST {
 };
 
 class IntAST;
+class RatAST;
 class BoolAST;
 class SeqAST;
 class TupleExprAST;
@@ -102,6 +103,18 @@ public:
   explicit IntAST(const string& originalText,
               foster::SourceRange sourceRange)
         : ExprAST("IntAST", sourceRange), text(originalText) {}
+  virtual void dump(DumpToProtobufPass* pass);
+
+  std::string getOriginalText() const { return text; }
+};
+
+struct RatAST : public ExprAST {
+private:
+  const string text;
+public:
+  explicit RatAST(const string& originalText,
+              foster::SourceRange sourceRange)
+        : ExprAST("RatAST", sourceRange), text(originalText) {}
   virtual void dump(DumpToProtobufPass* pass);
 
   std::string getOriginalText() const { return text; }
@@ -368,7 +381,7 @@ public:
 struct LiteralPattern : public Pattern {
 public:
   ExprAST* pattern;
-  enum Variety { LP_VAR, LP_INT, LP_BOOL } variety;
+  enum Variety { LP_VAR, LP_NUM, LP_BOOL } variety;
   explicit LiteralPattern(foster::SourceRange range,
                           Variety v,
                           ExprAST* pattern) : Pattern(range), pattern(pattern), variety(v) {}

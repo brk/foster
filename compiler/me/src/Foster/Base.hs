@@ -90,6 +90,9 @@ data LiteralInt = LiteralInt { litIntValue   :: Integer
                              , litIntText    :: String
                              , litIntBase    :: Int
                              }
+data LiteralFloat = LiteralFloat { litFloatValue   :: Double
+                                 , litFloatText    :: String
+                                 }
 
 data WholeProgramAST fnCtor ty = WholeProgramAST {
           programASTmodules    :: [ModuleAST fnCtor ty]
@@ -360,5 +363,6 @@ deriving instance (Show ty) => Show (E_VarAST ty)
 deriving instance (Show ty) => Show (FosterPrim ty)
 deriving instance Show CoroPrim
 deriving instance Show LiteralInt
+deriving instance Show LiteralFloat
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

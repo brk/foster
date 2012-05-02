@@ -167,6 +167,11 @@ void IntAST::dump(DumpToProtobufPass* pass) {
   pass->current->set_string_value(this->getOriginalText());
 }
 
+void RatAST::dump(DumpToProtobufPass* pass) {
+  processExprAST(pass->current, this, pb::Expr::PB_RAT);
+  pass->current->set_string_value(this->getOriginalText());
+}
+
 void VariableAST::dump(DumpToProtobufPass* pass) {
   processExprAST(pass->current, this, pb::Expr::VAR);
   pass->current->set_string_value(this->name);
@@ -308,7 +313,7 @@ void LiteralPattern::dump(DumpToProtobufPass* pass) {
   setSourceRange(pass->current->mutable_range(), this->sourceRange);
   switch (variety) {
   case LP_VAR:  pass->current->set_tag(pb::Expr::PAT_VARIABLE); break;
-  case LP_INT:  pass->current->set_tag(pb::Expr::PAT_INT);  break;
+  case LP_NUM:  pass->current->set_tag(pb::Expr::PAT_NUM);  break;
   case LP_BOOL: pass->current->set_tag(pb::Expr::PAT_BOOL); break;
   }
 

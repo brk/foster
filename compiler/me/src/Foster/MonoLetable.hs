@@ -6,7 +6,7 @@
 
 module Foster.MonoLetable (MonoLetable(..)) where
 
-import Foster.Base(LiteralInt, CtorId, AllocInfo, AllocMemRegion)
+import Foster.Base(LiteralInt, LiteralFloat, CtorId, AllocInfo, AllocMemRegion)
 import Foster.MonoType(MoVar, MoPrim, MonoType)
 import Foster.PatternMatch(Occurrence)
 
@@ -16,6 +16,7 @@ data MonoLetable =
           MoText        T.Text
         | MoBool        Bool
         | MoInt         MonoType LiteralInt
+        | MoFloat       MonoType LiteralFloat
         | MoTuple       [MoVar]
         | MoOccurrence  MoVar Occurrence
         | MoCallPrim    MonoType MoPrim [MoVar]

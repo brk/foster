@@ -6,7 +6,7 @@
 
 module Foster.Letable (Letable(..)) where
 
-import Foster.Base(LiteralInt, CtorId, AllocInfo, AllocMemRegion)
+import Foster.Base(LiteralInt, LiteralFloat, CtorId, AllocInfo, AllocMemRegion)
 import Foster.TypeIL(AIVar, ILPrim, TypeIL)
 import Foster.PatternMatch(Occurrence)
 
@@ -20,6 +20,7 @@ data Letable =
           ILBool        Bool
         | ILText        T.Text
         | ILInt         TypeIL LiteralInt
+        | ILFloat       TypeIL LiteralFloat
         | ILTuple       [AIVar]
         -- Struct member lookup
         | ILOccurrence  AIVar Occurrence

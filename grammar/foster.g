@@ -20,7 +20,7 @@ tokens {
 
   VAL_APP; UNTIL; FORMALS;
   BINDING; LETS; LETREC; SEQ;
-  RAT_NUM; INT_NUM; BOOL; STRING;
+  LIT_NUM; BOOL; STRING;
   DECL; DEFN;
   TERMNAME; TYPENAME; TYPEVAR_DECL;
   TERM; PHRASE; LVALUE; SUBSCRIPT;
@@ -183,37 +183,30 @@ tannots :  binding (',' binding)* -> ^(BINDING binding+);
 //    10101011_2
 //    1011`1011_2
 //    FEEDFACE_16
-//
-// Every number starts with a sequence of one or more
-// hexadecimal digit clumps, separated by backticks.
-// ((fragment))
-num_start               :  (id '`' hex_clump // e.g. the start of   abc`def_16
-                           | DIGIT_HEX_CLUMP)  ('`' hex_clump)*;
-// Numbers may end (optionally) with a trailer specifying their base.
-// This is not a lexer rule because we don't want to ignore space after the _.
-INT_RAT_BASE            :       '_' HEX_CLUMP;
-// A rational number continues with more digits after a "decimal" point.
-// To avoid ambiguity for "1234.a123" (compound.name vs num.rat), we require
-// that rational numbers must distinguish the first clump after the point
-// by either starting with a decimal digit (unlike IDENT), or by including
-// either a clump separator or a base trailer.
-rat_continue    :       '.' (      id (                        INT_RAT_BASE
-                                      |       ('`' HEX_CLUMP)+ INT_RAT_BASE?)
-                            | DIGIT_HEX_CLUMP ('`' HEX_CLUMP)* INT_RAT_BASE?
-                            );
-// A number is either an integer or a rational, depending on whether it contains a decimal point.
-num     :       num_start (
-          INT_RAT_BASE? -> ^(INT_NUM num_start INT_RAT_BASE?)
-        | rat_continue  -> ^(RAT_NUM num_start rat_continue)
-                          );
+//    12.34
+//    12.34`56   
+//    12.34e+01
+//    12.34e-10
+/*
+                      // not currently supported:
+                      //    12.34_16
+                      //    12.34abc_16
+                      //    12.abc_16
+                      // If we supported hex clumps following a decimal point,
+                      // we would need to use a non-hex digit (like x) to avoid
+                      // ambiguity between 1.0e+0 being parsed as
+                      // num.hexclump + num  vs num.hexclump sci_notation.
+                      // So we don't support hex clumps, nor base specifiers.
+*/
 
-DIGIT_HEX_CLUMP         :       DIGIT HEX_DIGIT*;
-
-fragment
-HEX_CLUMP               :       DIGIT_HEX_CLUMP | SMALL_IDENT | UPPER_IDENT;
-hex_clump               :       DIGIT_HEX_CLUMP | SMALL_IDENT | UPPER_IDENT;
-
-
+num : NUM -> ^(LIT_NUM NUM);
+NUM			:  DIGIT HEX_CLUMP? ('`' HEX_CLUMP)*
+				( '.' DIGIT* ('`' DIGIT+)* SCI_NOTATION?
+				|                          INT_RAT_BASE?
+				);
+fragment SCI_NOTATION	: ('e'|'E') ('+'|'-') DIGIT+;
+fragment INT_RAT_BASE   : '_' HEX_CLUMP;
+fragment HEX_CLUMP      : DIGIT HEX_DIGIT* | SMALL_IDENT | UPPER_IDENT;
 
 fragment WORD_CHAR      : IDENT_START_SMALL | IDENT_START_UPPER;
 fragment DIGIT          : '0'..'9';
