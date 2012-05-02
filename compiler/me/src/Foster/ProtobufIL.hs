@@ -292,7 +292,7 @@ dumpExpr (MoCall t base args)
 dumpExpr (MoCallPrim t (NamedPrim base) args)
         = dumpCall t (dumpGlobalSymbol base) args (mayTriggerGC base)
 
-dumpExpr (MoCallPrim t (PrimOp op _size) args)
+dumpExpr (MoCallPrim t (PrimOp op _ty) args)
         = dumpCallPrimOp t op args
 
 dumpExpr (MoCallPrim t (CoroPrim coroPrim argty retty) args)

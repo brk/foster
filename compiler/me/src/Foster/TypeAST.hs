@@ -187,14 +187,14 @@ intSize I8  = "Int8"
 intSize I32 = "Int32"
 intSize I64 = "Int64"
 
-prettyOpName nm bitsize =
+prettyOpName nm tystr =
   if Char.isLetter (head nm)
-    then nm ++ "-" ++ intSize bitsize  -- e.g. "bitand-Int32"
-    else nm ++        intSize bitsize
+    then nm ++ "-" ++ tystr  -- e.g. "bitand-Int32"
+    else nm ++        tystr
 
 fixnumPrimitives bitsize =
   let iKK = PrimIntAST bitsize in
-  let mkPrim nm ty = (prettyOpName nm bitsize, (ty, PrimOp nm bitsize)) in
+  let mkPrim nm ty = (prettyOpName nm (intSize bitsize), (ty, PrimOp nm iKK)) in
   [mkPrim "+"       $ mkFnType [iKK, iKK] [iKK]
   ,mkPrim "-"       $ mkFnType [iKK, iKK] [iKK]
   ,mkPrim "*"       $ mkFnType [iKK, iKK] [iKK]
@@ -215,13 +215,30 @@ fixnumPrimitives bitsize =
   ,mkPrim "bitnot"  $ mkFnType [iKK]      [iKK]
   ]
 
--- These primitive names are known to the interpreter and compiler backends.
+-- For example, we'll have a function with external signature
+--      (+f64) :: Float64 -> Float64 -> Float64
+-- and internal signature
+--      (PrimOp "f+" PrimFloat64AST)
+flonumPrimitives tystr ty =
+  let mkPrim nm fnty = (prettyOpName nm tystr, (fnty, PrimOp ("f" ++ nm) ty)) in
+  [mkPrim "+"       $ mkFnType [ty, ty] [ty]
+  ,mkPrim "-"       $ mkFnType [ty, ty] [ty]
+  ,mkPrim "*"       $ mkFnType [ty, ty] [ty]
+  ,mkPrim "<"       $ mkFnType [ty, ty] [i1]
+  ,mkPrim ">"       $ mkFnType [ty, ty] [i1]
+  ,mkPrim "<="      $ mkFnType [ty, ty] [i1]
+  ,mkPrim ">="      $ mkFnType [ty, ty] [i1]
+  ,mkPrim "=="      $ mkFnType [ty, ty] [i1]
+  ,mkPrim "!="      $ mkFnType [ty, ty] [i1]
+  ]
 
+-- These primitive names are known to the interpreter and compiler backends.
 gFosterPrimOpsTable = Map.fromList $
-  [(,) "not"                    $ (,) (mkFnType [i1]  [i1]      ) $ PrimOp "bitnot" I1
-  ,(,) "primitive_sext_i64_i32" $ (,) (mkFnType [i32] [i64]     ) $ PrimOp "sext_i64" I32
-  ,(,) "primitive_sext_i8_to_i32"$(,) (mkFnType [i8 ] [i32]     ) $ PrimOp "sext_i32" I8
+  [(,) "not"                    $ (,) (mkFnType [i1]  [i1]      ) $ PrimOp "bitnot" i1
+  ,(,) "primitive_sext_i64_i32" $ (,) (mkFnType [i32] [i64]     ) $ PrimOp "sext_i64" i32
+  ,(,) "primitive_sext_i8_to_i32"$(,) (mkFnType [i8 ] [i32]     ) $ PrimOp "sext_i32" i8
   ,(,) "primitive_trunc_i32_i8" $ (,) (mkFnType [i32] [i8 ]     ) $ PrimIntTrunc I32 I8
   ] ++ fixnumPrimitives I64
     ++ fixnumPrimitives I32
     ++ fixnumPrimitives I8
+    ++ flonumPrimitives "f64" PrimFloat64

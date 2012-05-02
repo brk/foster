@@ -289,14 +289,28 @@ codegenPrimitiveOperation(const std::string& op,
   else if (op == "/") { return b.CreateSDiv(VL, VR, "divtmp"); }
   else if (op == "*") { return b.CreateMul(VL, VR, "multmp"); }
   else if (op == "srem") { return b.CreateSRem(VL, VR, "sremtmp"); }
+  else if (op == "urem") { return b.CreateURem(VL, VR, "uremtmp"); }
+  else if (op == "frem") { return b.CreateFRem(VL, VR, "fremtmp"); }
+  else if (op == "f+") { return b.CreateFAdd(VL, VR, "faddtmp"); }
+  else if (op == "f-") { return b.CreateFSub(VL, VR, "fsubtmp"); }
+  else if (op == "f/") { return b.CreateFDiv(VL, VR, "fdivtmp"); }
+  else if (op == "f*") { return b.CreateFMul(VL, VR, "fmultmp"); }
 
-  // Also have unsigned variants
+  // Also have unsigned variants (TODO)
   else if (op == "<")  { return b.CreateICmpSLT(VL, VR, "slttmp"); }
   else if (op == "<=") { return b.CreateICmpSLE(VL, VR, "sletmp"); }
   else if (op == ">")  { return b.CreateICmpSGT(VL, VR, "sgttmp"); }
   else if (op == ">=") { return b.CreateICmpSGE(VL, VR, "sgetmp"); }
   else if (op == "==") { return b.CreateICmpEQ(VL, VR, "eqtmp"); }
   else if (op == "!=") { return b.CreateICmpNE(VL, VR, "netmp"); }
+  // Use unordered (U) variants because we don't analyze for QNANs.
+  else if (op == "f<")  { return b.CreateFCmpULT(VL, VR, "fulttmp"); }
+  else if (op == "f<=") { return b.CreateFCmpULE(VL, VR, "fuletmp"); }
+  else if (op == "f>")  { return b.CreateFCmpUGT(VL, VR, "fugttmp"); }
+  else if (op == "f>=") { return b.CreateFCmpUGE(VL, VR, "fugetmp"); }
+  else if (op == "f==") { return b.CreateFCmpUEQ(VL, VR, "fueqtmp"); }
+  else if (op == "f!=") { return b.CreateFCmpUNE(VL, VR, "funetmp"); }
+  // TODO: ORD = no nans, UNO = either nans
 
   else if (op == "bitand") { return b.CreateAnd(VL, VR, "bitandtmp"); }
   else if (op == "bitor") {  return b.CreateOr( VL, VR, "bitortmp"); }

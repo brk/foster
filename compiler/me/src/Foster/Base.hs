@@ -279,7 +279,7 @@ type PatternBinding expr ty = ((Pattern ty, [TypedId ty]), expr)
 
 data FosterPrim ty = NamedPrim (TypedId ty)
                    | PrimOp { ilPrimOpName :: String
-                            , ilPrimOpSize :: IntSizeBits }
+                            , ilPrimOpType :: ty }
                    | PrimIntTrunc IntSizeBits IntSizeBits -- from, to
                    | CoroPrim  CoroPrim ty ty
 

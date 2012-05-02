@@ -412,8 +412,8 @@ stepExpr gs expr = do
         case prim of
           NamedPrim (TypedId _ id) ->
                           evalNamedPrimitive (T.unpack $ identPrefix id) gs args
-          PrimOp op size -> return $
-              withTerm gs (SSTmValue $ evalPrimitiveOp size op args)
+          PrimOp op ty -> return $
+              withTerm gs (SSTmValue $ evalPrimitiveOp ty op args)
           PrimIntTrunc from to -> return $
               withTerm gs (SSTmValue $ evalPrimitiveIntTrunc from to args)
           CoroPrim prim _t1 _t2 -> evalCoroPrimitive prim gs args
@@ -532,8 +532,14 @@ tryGetFixnumPrimOp k name =
     "bitshl"  -> Just (shl  k)
     _ -> Nothing
 
-tryGetFixnumPrimOp2Bool name =
-  case name of
+tryGetPrimCmp :: (Ord a) => String -> (Maybe (a -> a -> Bool))
+tryGetPrimCmp name =
+  -- Strip off any identifying prefix.
+  let clean_name = case name of
+                        'f':n -> n
+                        n     -> n
+                   in
+  case clean_name of
     "<"        -> Just ((<))
     "<="       -> Just ((<=))
     "=="       -> Just ((==))
@@ -542,50 +548,77 @@ tryGetFixnumPrimOp2Bool name =
     ">"        -> Just ((>))
     _ -> Nothing
 
+tryGetFlonumPrimOp :: (Fractional a) => String -> Maybe (a -> a -> a)
+tryGetFlonumPrimOp name =
+  case name of
+    "f*"       -> Just (*)
+    "f+"       -> Just (+)
+    "f-"       -> Just (-)
+    "f/"       -> Just (/)
+    _ -> Nothing
+
 --------------------------------------------------------------------
 
-evalPrimitiveOp :: IntSizeBits -> String -> [SSValue] -> SSValue
+evalPrimitiveOp :: TypeIL -> String -> [SSValue] -> SSValue
+evalPrimitiveOp (PrimIntIL size) nm args = evalPrimitiveIntOp size nm args
+evalPrimitiveOp PrimFloat64IL nm args = evalPrimitiveDoubleOp nm args
+evalPrimitiveOp ty opName args =
+  error $ "Smallstep.evalPrimitiveOp " ++ show ty ++ " " ++ opName ++ " " ++ show args
 
-evalPrimitiveOp I64 opName [SSInt i1, SSInt i2] =
+evalPrimitiveDoubleOp :: String -> [SSValue] -> SSValue
+evalPrimitiveDoubleOp opName [SSFloat d1, SSFloat d2] =
+  case tryGetFlonumPrimOp opName of
+    (Just fn)
+      -> SSFloat $ (fn :: Double -> Double -> Double) d1 d2
+    _ -> case tryGetPrimCmp opName of
+          (Just fn) -> SSBool ((fn :: Double -> Double -> Bool) d1 d2)
+          _ -> error $ "Unknown primitive operation " ++ opName
+
+evalPrimitiveDoubleOp opName args =
+  error $ "Smallstep.evalPrimitiveDoubleOp " ++ opName ++ " " ++ show args
+
+evalPrimitiveIntOp :: IntSizeBits -> String -> [SSValue] -> SSValue
+
+evalPrimitiveIntOp I64 opName [SSInt i1, SSInt i2] =
   case tryGetFixnumPrimOp 64 opName of
     (Just fn)
       -> SSInt (modifyIntsWith i1 i2 (fn :: Int64 -> Int64 -> Int64))
-    _ -> case tryGetFixnumPrimOp2Bool opName of
+    _ -> case tryGetPrimCmp opName of
           (Just fn) -> SSBool (liftInt2 fn i1 i2)
           _ -> error $ "Unknown primitive operation " ++ opName
 
-evalPrimitiveOp I32 opName [SSInt i1, SSInt i2] =
+evalPrimitiveIntOp I32 opName [SSInt i1, SSInt i2] =
   case tryGetFixnumPrimOp 32 opName of
     (Just fn)
       -> SSInt (modifyIntsWith i1 i2 (fn :: Int32 -> Int32 -> Int32))
-    _ -> case tryGetFixnumPrimOp2Bool opName of
+    _ -> case tryGetPrimCmp opName of
           (Just fn) -> SSBool (liftInt2 fn i1 i2)
           _ -> error $ "Unknown primitive operation " ++ opName
 
-evalPrimitiveOp I8 opName [SSInt i1, SSInt i2] =
+evalPrimitiveIntOp I8 opName [SSInt i1, SSInt i2] =
   case tryGetFixnumPrimOp  8 opName of
     (Just fn)
       -> SSInt (modifyIntsWith i1 i2 (fn :: Int8 -> Int8 -> Int8))
-    _ -> case tryGetFixnumPrimOp2Bool opName of
+    _ -> case tryGetPrimCmp opName of
           (Just fn) -> SSBool (liftInt2 fn i1 i2)
           _ -> error $ "Unknown primitive operation " ++ opName
 
 -- TODO hmm
-evalPrimitiveOp I32 "negate" [SSInt i] = SSInt (negate i)
+evalPrimitiveIntOp I32 "negate" [SSInt i] = SSInt (negate i)
 
-evalPrimitiveOp  I1 "bitnot" [SSBool b] = SSBool (not b)
+evalPrimitiveIntOp  I1 "bitnot" [SSBool b] = SSBool (not b)
 
-evalPrimitiveOp I32 "bitnot" [SSInt i] = SSInt $
+evalPrimitiveIntOp I32 "bitnot" [SSInt i] = SSInt $
         modifyIntWith i (complement :: Int32 -> Int32)
 
-evalPrimitiveOp I8 "bitnot" [SSInt i] = SSInt $
+evalPrimitiveIntOp I8 "bitnot" [SSInt i] = SSInt $
         modifyIntWith i (complement :: Int8 -> Int8)
 
 -- Sign extension (on Integers) is a no-op.
-evalPrimitiveOp _ "sext_i32" [SSInt i] = SSInt i
+evalPrimitiveIntOp _ "sext_i32" [SSInt i] = SSInt i
 
-evalPrimitiveOp size opName args =
-  error $ "Smallstep.evalPrimitiveOp " ++ show size ++ " " ++ opName ++ " " ++ show args
+evalPrimitiveIntOp size opName args =
+  error $ "Smallstep.evalPrimitiveIntOp " ++ show size ++ " " ++ opName ++ " " ++ show args
 
 --------------------------------------------------------------------
 

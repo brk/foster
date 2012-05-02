@@ -124,7 +124,8 @@ ail ctx ae =
             case b of
                 AnnPrimitive _rng (TypedId pty id) -> do
                    pti <- qt pty
-                   return $ AICall ti (E_AIPrim $ ilPrimFor pti id) argsi
+                   prim' <- ilPrimFor pti id qt (aiVar ctx)
+                   return $ AICall ti (E_AIPrim $ prim') argsi
 
                 E_AnnTyApp _ _ot (AnnPrimitive _rng (TypedId _ (GlobalSymbol gs))) argty
                         | gs == T.pack "allocDArray" -> do
@@ -180,10 +181,20 @@ coroPrimFor s | s == T.pack "coro_invoke" = Just $ CoroInvoke
 coroPrimFor s | s == T.pack "coro_yield"  = Just $ CoroYield
 coroPrimFor _ = Nothing
 
-ilPrimFor ti id =
-  case Map.lookup (T.unpack $ identPrefix id) gFosterPrimOpsTable of
-        Just (_ty, op) -> op
-        Nothing        -> NamedPrim (TypedId ti id)
+ilPrimFor :: TypeIL -> Ident -> (TypeAST -> Tc TypeIL)
+                     -> (TypedId TypeAST -> Tc (TypedId TypeIL))
+                                         -> Tc (FosterPrim TypeIL)
+ilPrimFor ti id qt qtid =
+  case fmap snd $ Map.lookup (T.unpack $ identPrefix id) gFosterPrimOpsTable of
+        Just (NamedPrim tid)    -> do tid' <- qtid tid
+                                      return $ NamedPrim tid'
+        Just (PrimOp nm ty)     -> do ty' <- qt ty
+                                      return $ PrimOp nm ty'
+        Just (CoroPrim c t1 t2) -> do t1' <- qt t1
+                                      t2' <- qt t2
+                                      return $ CoroPrim c t1' t2'
+        Just (PrimIntTrunc i1 i2) ->  return $ PrimIntTrunc i1 i2
+        Nothing                   ->  return $ NamedPrim (TypedId ti id)
 
 containsUnboxedPolymorphism :: TypeIL -> Bool
 containsUnboxedPolymorphism (ForAllIL ktvs rho) =

@@ -1,6 +1,10 @@
 main = {
-  let f0 = 1.0e+00; in
+  let f0 = 1.0e+00;
+      z0 = 0.0e+00; in
     expect_float_p9f64 f0;
     print_float_p9f64 f0;
+
+    expect_float_p9f64 z0;
+    print_float_p9f64 (f0 -f64 f0);
   end
 };
