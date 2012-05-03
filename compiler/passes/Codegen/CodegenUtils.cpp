@@ -272,6 +272,18 @@ llvm::Value* getMaskedForShift(IRBuilder<>& b,
 }
 
 llvm::Value*
+createSqrt(IRBuilder<>& b, llvm::Value* v, const char* valname) {
+  Type*  tys[] = { v->getType() };
+  Module*    m = b.GetInsertBlock()->getParent()->getParent();
+  // We need to resolve the overloaded "type" of the sqrt intrinsic.
+  Value* sqrtv = llvm::Intrinsic::getDeclaration(m, llvm::Intrinsic::sqrt, tys);
+
+  CallInst *CI = b.CreateCall(sqrtv, v, valname);
+  //b.SetInstDebugLocation(CI);
+  return CI;
+}
+
+llvm::Value*
 codegenPrimitiveOperation(const std::string& op,
                           IRBuilder<>& b,
                           const std::vector<Value*>& args) {
@@ -281,6 +293,7 @@ codegenPrimitiveOperation(const std::string& op,
   else if (op == "sext_i64") { return b.CreateSExt(VL, b.getInt64Ty(), "sexti64tmp"); }
   else if (op == "sext_i32") { return b.CreateSExt(VL, b.getInt32Ty(), "sexti32tmp"); }
   else if (op == "trunc_i8") { return b.CreateTrunc(VL, b.getInt8Ty(), "trunci8tmp"); }
+  else if (op == "fsqrt")    { return createSqrt(b, VL, "fsqrttmp"); }
 
   Value* VR = args[1];
   // Other variants: F (float), NSW (no signed wrap), NUW,
@@ -294,7 +307,7 @@ codegenPrimitiveOperation(const std::string& op,
   else if (op == "frem") { return b.CreateFRem(VL, VR, "fremtmp"); }
   else if (op == "f+") { return b.CreateFAdd(VL, VR, "faddtmp"); }
   else if (op == "f-") { return b.CreateFSub(VL, VR, "fsubtmp"); }
-  else if (op == "f/") { return b.CreateFDiv(VL, VR, "fdivtmp"); }
+  else if (op == "fdiv"){return b.CreateFDiv(VL, VR, "fdivtmp"); }
   else if (op == "f*") { return b.CreateFMul(VL, VR, "fmultmp"); }
 
   // Also have unsigned variants (TODO)

@@ -554,7 +554,13 @@ tryGetFlonumPrimOp name =
     "f*"       -> Just (*)
     "f+"       -> Just (+)
     "f-"       -> Just (-)
-    "f/"       -> Just (/)
+    "fdiv"     -> Just (/)
+    _ -> Nothing
+
+tryGetFlonumPrimUnOp :: (Floating a) => String -> Maybe (a -> a)
+tryGetFlonumPrimUnOp name =
+  case name of
+    "fsqrt"    -> Just sqrt
     _ -> Nothing
 
 --------------------------------------------------------------------
@@ -566,13 +572,20 @@ evalPrimitiveOp ty opName args =
   error $ "Smallstep.evalPrimitiveOp " ++ show ty ++ " " ++ opName ++ " " ++ show args
 
 evalPrimitiveDoubleOp :: String -> [SSValue] -> SSValue
+evalPrimitiveDoubleOp opName [SSFloat d1] =
+  case tryGetFlonumPrimUnOp opName of
+    (Just fn) -> SSFloat $ (fn :: Double -> Double) d1
+    _         -> error $ "Smallstep.evalPrimitiveDoubleOp:"
+                      ++ "Unknown primitive unary operation " ++ opName
+
 evalPrimitiveDoubleOp opName [SSFloat d1, SSFloat d2] =
   case tryGetFlonumPrimOp opName of
     (Just fn)
       -> SSFloat $ (fn :: Double -> Double -> Double) d1 d2
     _ -> case tryGetPrimCmp opName of
           (Just fn) -> SSBool ((fn :: Double -> Double -> Bool) d1 d2)
-          _ -> error $ "Unknown primitive operation " ++ opName
+          _ -> error $ "Smallstep.evalPrimitiveDoubleOp:"
+                    ++ "Unknown primitive operation " ++ opName
 
 evalPrimitiveDoubleOp opName args =
   error $ "Smallstep.evalPrimitiveDoubleOp " ++ opName ++ " " ++ show args

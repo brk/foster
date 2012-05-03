@@ -224,12 +224,14 @@ flonumPrimitives tystr ty =
   [mkPrim "+"       $ mkFnType [ty, ty] [ty]
   ,mkPrim "-"       $ mkFnType [ty, ty] [ty]
   ,mkPrim "*"       $ mkFnType [ty, ty] [ty]
+  ,mkPrim "div"     $ mkFnType [ty, ty] [ty]
   ,mkPrim "<"       $ mkFnType [ty, ty] [i1]
   ,mkPrim ">"       $ mkFnType [ty, ty] [i1]
   ,mkPrim "<="      $ mkFnType [ty, ty] [i1]
   ,mkPrim ">="      $ mkFnType [ty, ty] [i1]
   ,mkPrim "=="      $ mkFnType [ty, ty] [i1]
   ,mkPrim "!="      $ mkFnType [ty, ty] [i1]
+  ,mkPrim "sqrt"    $ mkFnType [ty]     [ty]
   ]
 
 -- These primitive names are known to the interpreter and compiler backends.
