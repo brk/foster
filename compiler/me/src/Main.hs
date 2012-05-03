@@ -358,6 +358,7 @@ astOfParsedType typep =
         TyConAppP "Int32"   [] -> return $ PrimIntAST         I32
         TyConAppP "Int8"    [] -> return $ PrimIntAST         I8
         TyConAppP "Bool"    [] -> return $ PrimIntAST         I1
+        TyConAppP "Float64" [] -> return $ PrimFloat64
         TyConAppP "Array"  [t] -> liftM  ArrayTypeAST            (q t)
         TyConAppP "Ref"    [t] -> liftM  RefTypeAST              (q t)
         TyConAppP    tc types  -> liftM (TyConAppAST tc) (mapM q types)
