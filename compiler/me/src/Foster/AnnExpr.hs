@@ -87,7 +87,7 @@ typeAST annexpr =
      AnnDeref _rng t _     -> t
      AnnStore _rng _ _     -> TupleTypeAST []
      AnnArrayRead _r t _ _ -> t
-     AnnArrayPoke _r t _ _ _-> t
+     AnnArrayPoke _ _ _ _ _-> TupleTypeAST []
      AnnCase _rng t _ _    -> t
      E_AnnVar _rng tid     -> tidType tid
      AnnPrimitive _rng tid -> tidType tid
