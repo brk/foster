@@ -41,7 +41,8 @@ void emitFosterAssert(llvm::Module* mod, llvm::Value* cond, const char* cstr) {
 
   Value* msg_array = builder.CreateGlobalString(cstr);
   Value* msg = builder.CreateBitCast(msg_array, builder.getInt8PtrTy());
-  builder.CreateCall2(fosterAssert, cond, msg);
+  llvm::CallInst* call = builder.CreateCall2(fosterAssert, cond, msg);
+  markAsNonAllocating(call);
 }
 
 llvm::Value* getUnitValue() {
