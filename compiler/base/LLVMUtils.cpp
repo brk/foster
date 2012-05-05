@@ -244,11 +244,12 @@ const char* llvmValueTag(llvm::Value* v) {
   return "Unknown Value";
 }
 
-void markAsNonAllocating(llvm::CallInst* callInst) {
+llvm::CallInst* markAsNonAllocating(llvm::CallInst* callInst) {
   llvm::Value* tru = llvm::ConstantInt::getTrue(callInst->getContext());
   llvm::MDNode* mdnode = llvm::MDNode::get(callInst->getContext(),
                                            llvm::makeArrayRef(tru));
   callInst->setMetadata("willnotgc", mdnode);
+  return callInst;
 }
 
 // Converts a global variable of type [_ x T] to a local var of type T*.

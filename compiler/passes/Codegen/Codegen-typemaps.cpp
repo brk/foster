@@ -100,10 +100,17 @@ Constant* roundUpToNearestMultiple(Constant* v, Constant* powerOf2) {
            ConstantExpr::getNot(mask));
 }
 
+// A slot is a cell which is *NOT* directly preceded by a heap cell header.
+// For example, the repeated elements of an array are slots, not cells.
+Constant* slotSizeOf(Type* ty) {
+  return ConstantExpr::getSizeOf(ty);
+}
+
+// A cell is a memory region which is directly preceded by a heap cell header.
 // Returns the smallest multiple of the default heap alignment
 // which is larger than the size of the given type plus the heap header size.
 Constant* cellSizeOf(Type* ty) {
-  Constant* sz = ConstantExpr::getSizeOf(ty);
+  Constant* sz = slotSizeOf(ty);
   Constant* hs = ConstantExpr::getSizeOf(getHeapCellHeaderTy());
   Constant* cs = ConstantExpr::getAdd(sz, hs);
   return roundUpToNearestMultiple(cs, builder.getInt64(kDefaultHeapAlignment));
@@ -197,7 +204,8 @@ GlobalVariable* constructTypeMap(llvm::Type*  ty,
 
   // Construct the type map itself
   std::vector<Constant*> typeMapFields;
-  typeMapFields.push_back(cellSizeOf(ty));
+  typeMapFields.push_back(isArray ? slotSizeOf(ty)
+                                  : cellSizeOf(ty));
   typeMapFields.push_back(arrayVariableToPointer(typeNameVar));
   typeMapFields.push_back(builder.getInt32(numPointers));
   typeMapFields.push_back(builder.getInt8(ctorId));

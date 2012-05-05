@@ -537,10 +537,8 @@ ConstantInt* maybeGetTagForCtorId(DataTypeAST* dt, const CtorId& c) {
 llvm::Value* emitCallGetCtorIdOf(CodegenPass* pass, llvm::Value* v) {
   llvm::Value* foster_ctor_id_of = pass->mod->getFunction("foster_ctor_id_of");
   ASSERT(foster_ctor_id_of != NULL);
-  llvm::CallInst* call = builder.CreateCall(foster_ctor_id_of,
-                         builder.CreateBitCast(v, builder.getInt8PtrTy()));
-  markAsNonAllocating(call);
-  return call;
+  return markAsNonAllocating(builder.CreateCall(foster_ctor_id_of,
+                             builder.CreateBitCast(v, builder.getInt8PtrTy())));
 }
 
 void LLSwitch::codegenTerminator(CodegenPass* pass) {
