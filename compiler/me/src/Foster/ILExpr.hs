@@ -248,13 +248,13 @@ closureOfKnFn infoMap (self_id, fn) = do
     -- the environments for others in the same rec SCC *are* closed over.
     closedOverVarsOfKnFn :: [AIVar]
     closedOverVarsOfKnFn =
-        let rawFreeIds = (map tidIdent $ fnFreeVars fn) `butnot` [self_id] in
+        let nonGlobalVars = [tid | tid@(TypedId _ id@(Ident _ _)) <- fnFreeVars fn
+                            , id /= self_id] in
         -- Capture env. vars instead of closure vars.
-        let envVars = concatMap (\n -> case Map.lookup n infoMap of
-                                   Nothing ->  []
-                                   Just (_, envid) -> [fakeCloVar envid])
-                                rawFreeIds in
-        envVars ++ fnFreeVars fn
+        map (\v -> case Map.lookup (tidIdent v) infoMap of
+                                   Nothing ->         v
+                                   Just (_, envid) -> fakeCloVar envid)
+             nonGlobalVars
 
     fakeCloVar id = TypedId fakeCloEnvType id
                       where fakeCloEnvType = TupleTypeIL []
