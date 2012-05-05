@@ -146,9 +146,9 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
     ((ArrayTypeAST t1), (ArrayTypeAST t2)) ->
         tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 
-    _otherwise ->
-        tcFails [out $ "Unable to unify\n\t" ++ show t1 ++ "\nand\n\t" ++ show t2
-                ,out $ "t1::", showStructure t1, out $ "t2::", showStructure t2]
+    _otherwise -> tcFailsMore
+        [out $ "Unable to unify\n\t" ++ show t1 ++ "\nand\n\t" ++ show t2
+        ,out $ "t1::", showStructure t1, out $ "t2::", showStructure t2]
 
 tcUnifyVar :: MetaTyVar -> TypeAST -> TypeSubst -> [TypeConstraint] -> Tc UnifySoln
 

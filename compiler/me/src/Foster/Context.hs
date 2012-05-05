@@ -90,6 +90,14 @@ tcLift action = Tc $ \_env -> action >>= retOK
 tcFails :: [Output] -> Tc a
 tcFails errs = Tc $ \_env -> return $ Errors errs
 
+tcFailsMore :: [Output] -> Tc a
+tcFailsMore errs = do
+  parents <- tcGetCurrentHistory
+  case reverse parents of -- parents returned in root-to-child order.
+    []    -> tcFails $ errs ++ [out $ "[unscoped]"]
+    (e:_) -> tcFails $ errs ++ [out $ "Unification failure triggered when " ++
+                  "typechecking source line:" ++ highlightFirstLine (rangeOf e)]
+
 readTcMeta :: MetaTyVar -> Tc (Maybe Tau)
 readTcMeta m = tcLift $ readIORef (mtvRef m)
 
