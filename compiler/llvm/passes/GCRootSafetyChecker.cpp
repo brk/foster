@@ -89,8 +89,9 @@ struct GCRootSafetyChecker : public FunctionPass {
     }
 
     // Note each load from a gc root
-    ValueSet gcroot_loads;
-    std::map<llvm::Value*, llvm::Value*> gcroot_load_uses;
+    ValueSet                             gcroot_loads;
+    std::map<llvm::Value*, llvm::Value*> gcroot_load_uses; // loaded val -> load
+
     for (std::set<llvm::Value*>::iterator it = gcroots.begin(); it != gcroots.end(); ++it) {
       llvm::Value* gcroot = *it;
       for (llvm::Value::use_iterator uit = gcroot->use_begin();
@@ -158,10 +159,12 @@ struct GCRootSafetyChecker : public FunctionPass {
 
   void checkUsageOfPhis(Function& F) {
     for (Function::iterator bb = F.begin(); bb != F.end(); ++bb) {
-      BasicBlock::iterator IP = bb->begin();
-      for ( ; llvm::isa<llvm::PHINode>(IP); ++IP) {
+      for (BasicBlock::iterator IP = bb->begin(); IP != bb->end(); ++IP) {
+        if (! llvm::isa<llvm::PHINode>(IP)) { break; }
         // Non-pointers don't need to worry about GC staleness.
         if (! IP->getType()->isPointerTy()) { continue; }
+        // A value with no uses is of, um, no use.
+        if (  IP->use_begin() == IP->use_end()) { continue; }
 
         if (! isStoreToStackSlotOrRet(IP->use_back())) {
           llvm::errs() << "******** invalid use of phi node"
