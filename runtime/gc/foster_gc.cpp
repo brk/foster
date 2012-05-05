@@ -188,13 +188,13 @@ class copying_gc {
               // set the copied cell field to subfwdaddr
               if (*oldslot != NULL) {
                 void** newslot = (void**) offset(new_addr->body_addr(), off_bytes);
-                //fprintf(gclog, "recursively copying of cell %p slot %p with ti %p to %p\n",
-                 // cell, oldslot, e.typeinfo, newslot); fflush(gclog);
+                fprintf(gclog, "recursively copying of cell %p slot %p with type map %p to %p\n",
+                  cell, oldslot, map, newslot); fflush(gclog);
                 *newslot = ss_copy(heap_cell::for_body(*oldslot));
                 foster_assert(*newslot != NULL,     "copying gc should not null out slots");
                 foster_assert(*newslot != *oldslot, "copying gc should return new pointers");
-                //fprintf(gclog, "recursively copied  of cell %p slot %p with ti %p to %p\n",
-                 // cell, oldslot, e.typeinfo, newslot); fflush(gclog);
+                fprintf(gclog, "recursively copied  of cell %p slot %p with type map %p to %p\n",
+                  cell, oldslot, map, newslot); fflush(gclog);
               }
             }
 
@@ -269,15 +269,16 @@ public:
     saw_bad_pointer = true;
     if (next->contains(cell)) {
       fprintf(gclog, "foster_gc error: tried to collect"
-                     " cell in next-semispace: %p, with meta %p\n",
-                     cell, cell->get_meta());
+                     " cell in next-semispace: %p\n", cell);
       fflush(gclog);
-      fprintf(gclog, "%p", ((heap_cell*)NULL)->get_meta());
+      fprintf(gclog, "\t\twith meta %p\n", cell->get_meta());
+      fflush(gclog);
+      exit(254);
       //return false;
     }
     fprintf(gclog, "foster_gc error: copying_gc cannot collect"
-                     " cell that it did not allocate: %p, with meta %p\n",
-                     cell, cell->get_meta());
+                     " cell that it did not allocate: %p\n", cell);
+    //fprintf(gclog, "\t\twith meta %p\n",  cell->get_meta());
     return false;
   }
 
@@ -340,8 +341,8 @@ copying_gc* allocator = NULL;
 void copying_gc_root_visitor(void **root, const void *slotname) {
   foster_assert(root != NULL, "someone passed a NULL root addr!");
   void* body = *root;
-  //fprintf(gclog, "\t\tSTACK SLOT %p contains %p, slot name = %s\n", root, body,
-  //                   (slotname ? ((const char*) slotname) : "<unknown slot>"));
+  fprintf(gclog, "\t\tSTACK SLOT %p contains %p, slot name = %s\n", root, body,
+                    (slotname ? ((const char*) slotname) : "<unknown slot>"));
   if (body) {
     allocator->copy_or_update(body, root);
   }
