@@ -463,7 +463,7 @@ stepExpr gs expr = do
         let (SSInt i) = getval gs sizeid
         -- The array cells are initially filled with constant zeros,
         -- regardless of what type we will eventually store.
-        arrayFrom gs [0 .. i - 1] (\_ _ -> 0)
+        arrayFrom gs [0 .. i] (\_ _ -> 0)
 
     ITyApp v _argty -> return $ withTerm gs (SSTmValue $ getval gs v)
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
@@ -693,6 +693,10 @@ evalNamedPrimitive "prim_print_bytes_stdout" gs [SSByteString bs, SSInt n] =
 evalNamedPrimitive "prim_print_bytes_stderr" gs [SSByteString bs, SSInt n] =
       do expectString gs (stringOfBytes $ BS.take (fromInteger n) bs)
          return $ withTerm gs unit
+
+evalNamedPrimitive "prim_arrayLength" gs [SSArray a] =
+      do let (b,e) = bounds a
+         return $ withTerm gs (SSTmValue $ SSInt (fromIntegral $ e - b))
 
 evalNamedPrimitive "get_cmdline_arg_n" gs [SSInt i] =
       do let argN = let args = stCmdArgs gs in

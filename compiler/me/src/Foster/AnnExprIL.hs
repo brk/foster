@@ -127,6 +127,12 @@ ail ctx ae =
                    prim' <- ilPrimFor pti id qt (aiVar ctx)
                    return $ AICall ti (E_AIPrim $ prim') argsi
 
+                E_AnnTyApp _ _ot (AnnPrimitive _rng (TypedId pty id@(GlobalSymbol gs))) _argty
+                        | gs == T.pack "prim_arrayLength" -> do
+                    pti <- qt pty
+                    prim' <- ilPrimFor pti id qt (aiVar ctx)
+                    return $ AICall ti (E_AIPrim $ prim') argsi
+
                 E_AnnTyApp _ _ot (AnnPrimitive _rng (TypedId _ (GlobalSymbol gs))) argty
                         | gs == T.pack "allocDArray" -> do
                     let [arraySize] = argsi

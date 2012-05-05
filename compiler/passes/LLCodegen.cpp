@@ -898,6 +898,15 @@ llvm::Value* LLArrayPoke::codegen(CodegenPass* pass) {
   return builder.CreateStore(val, slot, /*isVolatile=*/ false);
 }
 
+llvm::Value* LLArrayLength::codegen(CodegenPass* pass) {
+  Value* val  = pass->emit(this->value, NULL);
+  Value* _bytes; Value* len;
+  if (tryBindArray(val, /*out*/ _bytes, /*out*/ len)) {
+    // len already assigned.
+  } else { ASSERT(false); }
+  return len;
+}
+
 ///}}}//////////////////////////////////////////////////////////////
 //////////////// LLTuple ///////////////////////////////////////////
 /////////////////////////////////////////////////////////////////{{{

@@ -50,7 +50,8 @@ print_text = { s : Text =>
 
 
 arrays8 = {
-  let a = newDArray8 26 { x : Int32 => trunc32to8 (x +Int32 96) };
+  let k = 26;
+      a = newDArray8 k { x : Int32 => trunc32to8 (x +Int32 96) };
    in
      expect_i32 99;
      print_i8 a[opaquely_i32 2];
@@ -58,6 +59,9 @@ arrays8 = {
      (trunc32to8 0) >^ a[3];
      prim_print_bytes_stdout a 6;
      print_abc !;
+
+     expect_i32 k;
+     print_i64 (prim_arrayLength a);
   end
 };
 

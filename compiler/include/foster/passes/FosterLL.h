@@ -303,6 +303,12 @@ struct LLArrayPoke : public LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
+struct LLArrayLength : public LLExpr {
+  LLVar* value;
+  explicit LLArrayLength(LLVar* v) : LLExpr("LLArrayLength"), value(v) {}
+  virtual llvm::Value* codegen(CodegenPass* pass);
+};
+
 struct LLClosure {
   std::string varname;
   std::string envname;

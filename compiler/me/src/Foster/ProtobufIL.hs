@@ -289,6 +289,10 @@ dumpExpr x@(MoFloat _ty flt) =
 dumpExpr (MoCall t base args)
         = dumpCall t (dumpVar base)          args (mayTriggerGC base)
 
+dumpExpr (MoCallPrim t (NamedPrim (TypedId _ (GlobalSymbol gs))) [arr])
+        | gs == T.pack "prim_arrayLength"
+        = dumpArrayLength t arr
+
 dumpExpr (MoCallPrim t (NamedPrim base) args)
         = dumpCall t (dumpGlobalSymbol base) args (mayTriggerGC base)
 
@@ -339,6 +343,12 @@ dumpCallCoroOp t coroPrim argty retty args mayGC =
         coroFnTag CoroInvoke = IL_CORO_INVOKE
         coroFnTag CoroCreate = IL_CORO_CREATE
         coroFnTag CoroYield  = IL_CORO_YIELD
+
+dumpArrayLength t arr =
+    P'.defaultValue { PbLetable.tag   = IL_ARRAY_LENGTH
+                    , PbLetable.parts = fromList $ fmap dumpVar [arr]
+                    , PbLetable.type' = Just $ dumpType t
+                    }
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||| Other Expressions ||||||||||||||||||||||{{{

@@ -239,7 +239,10 @@ monomorphizeProc (PlainProc srcid) = do
   monoPutProc $ newproc
 
 monomorphizeProc (NeedsMono polyid srcid tyargs) = do
-  (Just proc) <- monoGetProc srcid
+  mproc <- monoGetProc srcid
+  proc <- case mproc of
+             Just p -> return p
+             Nothing -> error $ "Monomo.hs: Could not find proc " ++ show srcid
   let subst = buildMonoSubst tyargs (ilProcPolyTyVars proc)
   newproc <- doMonomorphizeProc proc subst
   monoPutProc $ newproc { moProcIdent = polyid }

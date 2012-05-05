@@ -149,11 +149,16 @@ primitiveDecls =
 
     ,(,) "print_float_p9f64"       $ mkProcType [PrimFloat64] []
     ,(,) "expect_float_p9f64"      $ mkProcType [PrimFloat64] []
-    
+
     -- forall a, i32 -> Array a
     ,(,) "allocDArray" $ let a = BoundTyVar "a" in
                          ForAllAST (primTyVars [a])
                            (mkProcType [i32] [ArrayTypeAST (TyVarAST a)])
+
+    -- forall a, Array a -> i64
+    ,(,) "prim_arrayLength" $ let a = BoundTyVar "a" in
+                         ForAllAST (primTyVars [a])
+                           (mkProcType [ArrayTypeAST (TyVarAST a)] [i64])
 
     -- forall a b, (a -> b) -> Coro a b
     ,(,) "coro_create" $ let a = BoundTyVar "a" in

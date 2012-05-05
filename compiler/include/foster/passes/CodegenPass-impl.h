@@ -152,6 +152,7 @@ struct CodegenPass {
   // Returns array_type[elt_ty]**, the stack slot containing an array_type[elt_ty]*.
   Value* emitArrayMalloc(llvm::Type* elt_ty, llvm::Value* n);
 
+  Value* emitFosterPrimArrayLength(Value* arr);
   Value* emitFosterStringOfCString(Value* cstr, Value* sz);
 
   Value* allocateMPInt();

@@ -286,6 +286,11 @@ LLExpr* parseArrayPoke(const pb::Letable& e) {
        parseTermVar(& e.parts(2)));
 }
 
+LLExpr* parseArrayLength(const pb::Letable& e) {
+  ASSERT(e.parts_size() == 1) << "array_length must have value";
+  return new LLArrayLength(parseTermVar(& e.parts(0)));
+}
+
 LLOccurrence* parseOccurrence(const pb::PbOccurrence& o) {
   LLOccurrence* rv = new LLOccurrence;
   for (int i = 0; i < o.occ_offset_size(); ++i) {
@@ -398,6 +403,7 @@ LLExpr* LLExpr_from_pb(const pb::Letable* pe) {
   case pb::Letable::IL_STORE:       rv = parseStore(e); break;
   case pb::Letable::IL_ARRAY_READ:  rv = parseArrayRead(e); break;
   case pb::Letable::IL_ARRAY_POKE:  rv = parseArrayPoke(e); break;
+  case pb::Letable::IL_ARRAY_LENGTH:rv = parseArrayLength(e); break;
   case pb::Letable::IL_ALLOCATE:    rv = parseAllocate(e); break;
   case pb::Letable::IL_OCCURRENCE:  rv = parseOccurrence(e.occ()); break;
 

@@ -87,7 +87,8 @@ message Letable {
     IL_ALLOCATE = 34;
     IL_ARRAY_READ = 35;
     IL_ARRAY_POKE = 36;
-    IL_NAMED_TYPE_DECL = 37;
+    IL_ARRAY_LENGTH = 37;
+    IL_NAMED_TYPE_DECL = 40;
   }
   repeated TermVar     parts = 1;
   required Tag           tag = 2;
