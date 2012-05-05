@@ -278,7 +278,8 @@ struct LLTuple : public LLExpr {
   explicit LLTuple(const std::vector<LLVar*>& vars, LLAllocate* a)
     : LLExpr("LLTuple"), vars(vars),
       typeName("tuple"), allocator(a) {}
-  llvm::Value* codegenStorage(CodegenPass* pass);
+  llvm::Value* codegenStorage(CodegenPass* pass, bool init);
+  llvm::Value* codegenObjectOfSlot(llvm::Value* slot);
   void codegenTo(CodegenPass* pass, llvm::Value* tup_ptr);
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
@@ -354,6 +355,7 @@ struct LLAllocate : public LLExpr {
   explicit LLAllocate(TypeAST* t, int8_t c, bool u, LLVar* arrSize, MemRegion m)
      : LLExpr("LLAllocate"), arraySize(arrSize), ctorId(c), unboxed(u),
          region(m) { this->type = t; }
+  llvm::Value* codegenCell(CodegenPass* pass, bool init);
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 

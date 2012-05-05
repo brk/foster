@@ -183,7 +183,8 @@ llvm::Value* CodegenPass::emitFosterStringOfCString(Value* cstr, Value* sz) {
   // Text literals in the code are codegenned as calls to the Text.TextFragment
   // constructor. Currently all strings are heap-allocated, even constant
   // literal strings.
-  Value* hstr_slot = this->emitArrayMalloc(builder.getInt8Ty(), sz);
+  bool init = false; // because we'll immediately memcpy.
+  Value* hstr_slot = this->emitArrayMalloc(builder.getInt8Ty(), sz, init);
   Value* hstr = emitNonVolatileLoad(hstr_slot, "heap_str");
 
   Value* hstr_bytes; Value* len;
@@ -787,7 +788,7 @@ llvm::Value* emitRuntimeArbitraryPrecisionOperation(const std::string& op,
 /////////////////////////////////////////////////////////////////{{{
 
 Value* allocateCell(CodegenPass* pass, TypeAST* type, bool unboxed,
-                    LLAllocate::MemRegion region, int8_t ctorId) {
+                    LLAllocate::MemRegion region, int8_t ctorId, bool init) {
   llvm::Type* ty = type->getLLVMType();
   if (unboxed) {
     if (llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
@@ -797,10 +798,12 @@ Value* allocateCell(CodegenPass* pass, TypeAST* type, bool unboxed,
 
   switch (region) {
   case LLAllocate::MEM_REGION_STACK:
+    // TODO this allocates a slot, not a cell...
+    // TODO init
     return CreateEntryAlloca(ty, "alloc");
 
   case LLAllocate::MEM_REGION_GLOBAL_HEAP:
-    return pass->emitMalloc(ty, ctorId);
+    return pass->emitMalloc(ty, ctorId, init);
 
   default:
     ASSERT(false); return NULL;
@@ -809,21 +812,25 @@ Value* allocateCell(CodegenPass* pass, TypeAST* type, bool unboxed,
 
 Value* allocateArray(CodegenPass* pass, TypeAST* ty,
                      LLAllocate::MemRegion region,
-                     Value* arraySize) {
+                     Value* arraySize, bool init) {
   llvm::Type* elt_ty = getLLVMType(ty);
   ASSERT(region == LLAllocate::MEM_REGION_GLOBAL_HEAP);
-  return pass->emitArrayMalloc(elt_ty, arraySize);
+  return pass->emitArrayMalloc(elt_ty, arraySize, init);
+}
+
+llvm::Value* LLAllocate::codegenCell(CodegenPass* pass, bool init) {
+  if (this->arraySize != NULL) {
+    return allocateArray(pass, this->type, this->region,
+                         pass->emit(this->arraySize, NULL), init);
+  } else {
+    return allocateCell(pass, this->type, this->unboxed,
+                        this->region, this->ctorId, init);
+  }
 }
 
 llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
-  if (this->arraySize != NULL) {
-    EDiag() << "allocating array, type = " << str(this->type);
-    return allocateArray(pass, this->type, this->region,
-                         pass->emit(this->arraySize, NULL));
-  } else {
-    return allocateCell(pass, this->type, this->unboxed,
-                        this->region, this->ctorId);
-  }
+  bool init = false; // as the default...
+  return this->codegenCell(pass, init);
 }
 
 ///}}}//////////////////////////////////////////////////////////////
@@ -913,7 +920,7 @@ llvm::Value* LLArrayLength::codegen(CodegenPass* pass) {
 //////////////// LLTuple ///////////////////////////////////////////
 /////////////////////////////////////////////////////////////////{{{
 
-llvm::Value* LLTuple::codegenStorage(CodegenPass* pass) {
+llvm::Value* LLTuple::codegenStorage(CodegenPass* pass, bool init) {
   if (vars.empty()) { return getUnitValue(); }
 
   ASSERT(this->allocator);
@@ -928,18 +935,22 @@ llvm::Value* LLTuple::codegenStorage(CodegenPass* pass) {
   return allocator->codegen(pass);
 }
 
-llvm::Value* LLTuple::codegen(CodegenPass* pass) {
-  if (vars.empty()) { return getUnitValue(); }
-
-  llvm::Value* slot = codegenStorage(pass);
-
+llvm::Value* LLTuple::codegenObjectOfSlot(llvm::Value* slot) {
   // Heap-allocated things codegen to a stack slot, which
   // is the Value we want the overall tuple to codegen as, but
   // we need temporary access to the pointer stored in the slot.
   // Otherwise, bad things happen.
-  llvm::Value* pt = allocator->isStackAllocated()
+  return allocator->isStackAllocated()
            ? slot
            : emitNonVolatileLoad(slot, "normalize");
+}
+
+llvm::Value* LLTuple::codegen(CodegenPass* pass) {
+  if (vars.empty()) { return getUnitValue(); }
+
+  bool init = false; // because we'll immediately initialize below.
+  llvm::Value* slot = codegenStorage(pass, init);
+  llvm::Value* pt   = codegenObjectOfSlot(slot);
   codegenTo(pass, pt);
   return slot;
 }
@@ -956,9 +967,18 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
     // This AST node binds a mutually-recursive set of functions,
     // represented as closure values.
 
+    // We split apart the allocation and initialization of closure environments
+    // on the off chance that one of the environments closes over one of its
+    // fellow closure values or environments.
+    // As a result, we must manually initialize env. storage to prevent the
+    // GC from seeing garbage if a GC is triggered before we fill in the envs.
+    //
+    // In the common case, however, where the environments do *not* close
+    // over each other, we can make closure allocation slightly more efficient
+    // by directly initializing the environments. (TODO: how much more efficicient?)
     std::vector<llvm::Value*> envSlots;
     for (size_t i = 0; i < closures.size(); ++i) {
-      envSlots.push_back(closures[i]->env->codegenStorage(pass));
+      envSlots.push_back(closures[i]->env->codegenStorage(pass, /*init*/ true));
     }
 
     // Allocate storage for the closures and populate 'em with code/env values.
@@ -1053,8 +1073,10 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
     bool closureEscapes = true;
     if (closureEscapes) {
       // // { code*, env* }**
+      bool init = false; // because we'll immediately initialize below.
       llvm::AllocaInst* clo_slot = pass->emitMalloc(genericClosureStructTy(fnty),
-                                                    foster::bogusCtorId(-5));
+                                                    foster::bogusCtorId(-5),
+                                                    init);
       clo = emitNonVolatileLoad(clo_slot, varname + ".closure"); rv = clo_slot;
     } else { // { code*, env* }*
       clo = CreateEntryAlloca(cloStructTy, varname + ".closure"); rv = clo;

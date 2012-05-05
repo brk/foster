@@ -47,6 +47,8 @@ inline llvm::PointerType* ptrTo(llvm::Type* t) {
   return llvm::PointerType::getUnqual(t);
 }
 
+llvm::Constant* slotSizeOf(llvm::Type* ty);
+
 // From CodegenUtils.cpp
 void emitFosterAssert(llvm::Module* mod, llvm::Value* cond, const char* cstr);
 Value* getUnitValue();
@@ -147,10 +149,10 @@ struct CodegenPass {
   Value* autoload(Value* v, const char* suffix = ".autoload");
 
   // Returns ty**, the stack slot containing a ty*.
-  llvm::AllocaInst* emitMalloc(llvm::Type* ty, int8_t ctorId);
+  llvm::AllocaInst* emitMalloc(llvm::Type* ty, int8_t ctorId, bool init);
 
   // Returns array_type[elt_ty]**, the stack slot containing an array_type[elt_ty]*.
-  Value* emitArrayMalloc(llvm::Type* elt_ty, llvm::Value* n);
+  Value* emitArrayMalloc(llvm::Type* elt_ty, llvm::Value* n, bool init);
 
   Value* emitFosterPrimArrayLength(Value* arr);
   Value* emitFosterStringOfCString(Value* cstr, Value* sz);

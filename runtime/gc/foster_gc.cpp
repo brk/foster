@@ -118,9 +118,10 @@ class copying_gc {
 
       void* allocate_array_prechecked(typemap* elt_typeinfo,
                                       int64_t  num_elts,
-                                      int64_t  total_bytes) {
+                                      int64_t  total_bytes,
+                                      bool     init) {
         heap_cell* allot = (heap_cell*) bump;
-        memset(bump, 0x00, total_bytes);
+        if (init) memset(bump, 0x00, total_bytes);
         bump += total_bytes;
         allot->set_meta(elt_typeinfo);
         // allot = [meta|size|e1...]
@@ -332,18 +333,18 @@ public:
     }
   }
 
-  void* allocate_array(typemap* elt_typeinfo, int64_t n) {
+  void* allocate_array(typemap* elt_typeinfo, int64_t n, bool init) {
     ++num_allocations;
     int64_t cell_size = elt_typeinfo->cell_size;
     int64_t req_bytes = 8 + 8 + n * cell_size; // typeinfo, elt count, elts.
 
     if (curr->can_allocate_bytes(req_bytes)) {
-      return curr->allocate_array_prechecked(elt_typeinfo, n, req_bytes);
+      return curr->allocate_array_prechecked(elt_typeinfo, n, req_bytes, init);
     } else {
       gc();
       if (curr->can_allocate_bytes(req_bytes)) {
         fprintf(gclog, "gc collection freed space, now have %lld\n", curr->free_size());
-            return curr->allocate_array_prechecked(elt_typeinfo, n, req_bytes);
+        return curr->allocate_array_prechecked(elt_typeinfo, n, req_bytes, init);
       } else {
         fprintf(gclog, "working set exceeded heap size! aborting...\n"); fflush(gclog);
         exit(255); // TODO be more careful if we're allocating from a coro...
@@ -441,8 +442,8 @@ extern "C" void* memalloc_cell(typemap* typeinfo) {
   return allocator->allocate_cell(typeinfo);
 }
 
-extern "C" void* memalloc_array(typemap* typeinfo, int64_t n) {
-  return allocator->allocate_array(typeinfo, n);
+extern "C" void* memalloc_array(typemap* typeinfo, int64_t n, int8_t init) {
+  return allocator->allocate_array(typeinfo, n, (bool) init);
 }
 
 void force_gc_for_debugging_purposes() {

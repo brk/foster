@@ -207,7 +207,7 @@ CodegenPass::storeAndMarkPointerAsGCRoot(llvm::Value* val) {
 
 
 llvm::AllocaInst*
-CodegenPass::emitMalloc(llvm::Type* ty, int8_t ctorId) {
+CodegenPass::emitMalloc(llvm::Type* ty, int8_t ctorId, bool init) {
   llvm::Value* memalloc_cell = mod->getFunction("memalloc_cell");
   ASSERT(memalloc_cell != NULL) << "NO memalloc_cell IN MODULE! :(";
 
@@ -220,13 +220,18 @@ CodegenPass::emitMalloc(llvm::Type* ty, int8_t ctorId) {
   llvm::Value* typemap = builder.CreateBitCast(ti, typemap_type);
   llvm::CallInst* mem = builder.CreateCall(memalloc_cell, typemap, "mem");
 
+  if (init) {
+    markAsNonAllocating(builder.CreateMemSet(mem, builder.getInt8(0),
+                                                  slotSizeOf(ty), /*align*/ 4));
+  }
+
   return storeAndMarkPointerAsGCRoot(
                        builder.CreateBitCast(mem, ptrTo(ty), "ptr"));
 }
 
 
 llvm::Value*
-CodegenPass::emitArrayMalloc(llvm::Type* elt_ty, llvm::Value* n) {
+CodegenPass::emitArrayMalloc(llvm::Type* elt_ty, llvm::Value* n, bool init) {
   llvm::Value* memalloc = mod->getFunction("memalloc_array");
   ASSERT(memalloc != NULL) << "NO memalloc_array IN MODULE! :(";
 
@@ -242,7 +247,8 @@ CodegenPass::emitArrayMalloc(llvm::Type* elt_ty, llvm::Value* n) {
                                             ->getContainedType(1); // first arg
   llvm::Value* typemap = builder.CreateBitCast(ti, typemap_type);
   llvm::Value* num_elts = builder.CreateSExt(n, builder.getInt64Ty(), "ext");
-  llvm::CallInst* mem = builder.CreateCall2(memalloc, typemap, num_elts, "mem");
+  llvm::Value* vinit   = builder.getInt8(init);
+  llvm::CallInst* mem = builder.CreateCall3(memalloc, typemap, num_elts, vinit, "arrmem");
 
   return storeAndMarkPointerAsGCRoot(
            builder.CreateBitCast(mem,
