@@ -932,7 +932,7 @@ llvm::Value* LLTuple::codegenStorage(CodegenPass* pass, bool init) {
 
   registerTupleType(tuplety, this->typeName, foster::bogusCtorId(-2), pass->mod);
 
-  return allocator->codegen(pass);
+  return allocator->codegenCell(pass, init);
 }
 
 llvm::Value* LLTuple::codegenObjectOfSlot(llvm::Value* slot) {
