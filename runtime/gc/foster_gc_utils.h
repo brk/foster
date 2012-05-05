@@ -33,7 +33,7 @@ inline T* roundUpToNearestMultipleWeak(T* v, intptr_t powerOf2) {
 
 
 // Performs byte-wise addition on void pointer base
-inline void* offset(void* base, int off) {
+inline void* offset(void* base, intptr_t off) {
   return (void*) (((char*) base) + off);
 }
 
@@ -66,6 +66,33 @@ struct heap_cell {
 
   static heap_cell* for_body(void* ptr) {
     return (heap_cell*) offset(ptr, -((int)HEAP_CELL_HEADER_SIZE));
+  }
+};
+
+struct heap_array {
+  void*         meta;
+  int64_t       arsz;
+  unsigned char elts[0];
+  //======================================
+
+  void* elts_addr() { return (void*) &elts; }
+  void* elt_body(int64_t cellnum, int64_t cellsz) { return offset(elts_addr(), cellnum * cellsz); };
+  int64_t num_elts() { return arsz; }
+  void* get_meta() { return meta; }
+
+  void set_meta(void* m) { meta = m; }
+  bool is_forwarded() {
+    return (((uint64_t) get_meta()) & FORWARDED_BIT) != 0;
+  }
+  void set_forwarded_body(void* newbody) {
+    set_meta((void*) (((uint64_t) newbody) | FORWARDED_BIT));
+  }
+  void* get_forwarded_body() {
+    return (void*) (((uint64_t) get_meta()) & ~FORWARDED_BIT);
+  }
+
+  static heap_array* from_heap_cell(heap_cell* ptr) {
+    return (heap_array*) ptr;
   }
 };
 

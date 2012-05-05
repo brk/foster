@@ -99,7 +99,7 @@ class copying_gc {
       void clear() {
         fprintf(gclog, "clearing mem from %p to %p\n", start, end);
         fflush(gclog);
-        memset(start, 255, end - start);
+        memset(start, 0xFE, end - start);
       }
 
       int64_t free_size() { return end - bump; }
@@ -120,6 +120,7 @@ class copying_gc {
                                       int64_t  num_elts,
                                       int64_t  total_bytes) {
         heap_cell* allot = (heap_cell*) bump;
+        memset(bump, 0x00, total_bytes);
         bump += total_bytes;
         allot->set_meta(elt_typeinfo);
         // allot = [meta|size|e1...]
@@ -136,6 +137,7 @@ class copying_gc {
         if (!this->parent->owns(cell)) return cell->body_addr();
         void* result = NULL;
         const void* meta = NULL;
+        heap_array* arr = NULL;
 
         if (cell->is_forwarded()) {
           result = cell->get_forwarded_body();
@@ -149,6 +151,7 @@ class copying_gc {
         }
 
         int64_t cell_size;
+
         if (!isMetadataPointer(meta)) {
           cell_size = int64_t(meta);
         } else {
@@ -159,11 +162,18 @@ class copying_gc {
             return cell->body_addr();
           }
 
-          // probably an actual pointer
-          cell_size = map->cell_size;
+          if (map->isArray) {
+            arr = heap_array::from_heap_cell(cell);
+            cell_size = sizeof(heap_array) + map->cell_size * arr->num_elts();
+            fprintf(gclog, "Collecting array of total size %lld, cell size %lld, len %lld...\n",
+                                cell_size, map->cell_size, arr->num_elts());
+          } else {
+            // probably an actual pointer
+            cell_size = map->cell_size;
+          }
         }
         foster_assert(cell_size >= 16, "cell size must be at least 16!");
-        //fprintf(gclog, "copying cell %p, cell size %llu\n", cell, cell_size); fflush(gclog);
+        fprintf(gclog, "copying cell %p, cell size %llu\n", cell, cell_size); fflush(gclog);
 
         if (can_allocate_bytes(cell_size)) {
           memcpy(bump, cell, cell_size);
@@ -176,25 +186,35 @@ class copying_gc {
             //fprintf(gclog, "copying %lld cell %p, map np %d, name %s\n",
             //  cell_size, cell, map->numEntries, map->name); fflush(gclog);
 
-            // for each pointer field in the cell
-            void* body = cell->body_addr();
-            for (int i = 0; i < map->numOffsets; ++i) {
-              int32_t off_bytes = map->offsets[i];
-              void** oldslot = (void**) offset(body, off_bytes);
+            int64_t from_old_body_to_new_body = (char*)new_addr - (char*)cell;
+            // for each cell in the array (if applicable)
+            int64_t numcells = arr ? arr->num_elts() : 1;
+            // TODO for byte arrays and such, we can skip this loop...
+            for (int64_t cellnum = 0; cellnum < numcells; ++cellnum) {
+              // for each pointer field in the cell
+              fprintf(gclog, "num cells in array (if any): %lld, curr: %lld\n",
+                                numcells, cellnum);
+              void* old_body = arr ? arr->elt_body(cellnum, map->cell_size)
+                                   : cell->body_addr();
+              void* new_body = offset(old_body, from_old_body_to_new_body);
+              for (int i = 0; i < map->numOffsets; ++i) {
+                int32_t off_bytes = map->offsets[i];
+                void** oldslot = (void**) offset(old_body, off_bytes);
 
-              //fprintf(gclog, "body is %p, offset is %d, typeinfo is %p, addr_of_ptr_slot is %p, ptr_slot_val is %p\n",
-              //    body, e.offset, e.typeinfo, oldslot, *oldslot);
-              // recursively copy the field from cell, yielding subfwdaddr
-              // set the copied cell field to subfwdaddr
-              if (*oldslot != NULL) {
-                void** newslot = (void**) offset(new_addr->body_addr(), off_bytes);
-                fprintf(gclog, "recursively copying of cell %p slot %p with type map %p to %p\n",
-                  cell, oldslot, map, newslot); fflush(gclog);
-                *newslot = ss_copy(heap_cell::for_body(*oldslot));
-                foster_assert(*newslot != NULL,     "copying gc should not null out slots");
-                foster_assert(*newslot != *oldslot, "copying gc should return new pointers");
-                fprintf(gclog, "recursively copied  of cell %p slot %p with type map %p to %p\n",
-                  cell, oldslot, map, newslot); fflush(gclog);
+                //fprintf(gclog, "body is %p, offset is %d, typeinfo is %p, addr_of_ptr_slot is %p, ptr_slot_val is %p\n",
+                //    body, e.offset, e.typeinfo, oldslot, *oldslot);
+                // recursively copy the field from cell, yielding subfwdaddr
+                // set the copied cell field to subfwdaddr
+                if (*oldslot != NULL) {
+                  void** newslot = (void**) offset(new_body, off_bytes);
+                  fprintf(gclog, "recursively copying of cell %p slot %p with type map %p to %p\n",
+                    cell, oldslot, map, newslot); fflush(gclog);
+                  *newslot = ss_copy(heap_cell::for_body(*oldslot));
+                  foster_assert(*newslot != NULL,     "copying gc should not null out slots");
+                  foster_assert(*newslot != *oldslot, "copying gc should return new pointers");
+                  fprintf(gclog, "recursively copied  of cell %p slot %p with type map %p to %p\n",
+                    cell, oldslot, map, newslot); fflush(gclog);
+                }
               }
             }
 
@@ -284,7 +304,7 @@ public:
 
   void copy_or_update(void* body, void** root) {
     //       |------------|            |------------|
-    // root: |    body    |---\        |    _size   |
+    // root: |    body    |---\        |  size/meta |
     //       |------------|   |        |------------|
     //                        \------> |            |
     //                                ...          ...
@@ -645,6 +665,7 @@ void inspect_typemap(typemap* ti) {
   foster_assert(ti->cell_size > 0, "invalid typemap in inspect_typemap");
   fprintf(gclog, "\tname:       %s\n",   ti->name);        fflush(gclog);
   fprintf(gclog, "\tisCoro:     %d\n",   ti->isCoro);      fflush(gclog);
+  fprintf(gclog, "\tisArray:    %d\n",   ti->isArray);     fflush(gclog);
   fprintf(gclog, "\tnumOffsets: %d\n",   ti->numOffsets);  fflush(gclog);
   int iters = ti->numOffsets > 128 ? 0 : ti->numOffsets;   fflush(gclog);
   for (int i = 0; i < iters; ++i) {
