@@ -250,10 +250,14 @@ closureOfKnFn infoMap (self_id, fn) = do
     closedOverVarsOfKnFn =
         let nonGlobalVars = [tid | tid@(TypedId _ id@(Ident _ _)) <- fnFreeVars fn
                             , id /= self_id] in
-        -- Capture env. vars instead of closure vars.
-        map (\v -> case Map.lookup (tidIdent v) infoMap of
-                                   Nothing ->         v
-                                   Just (_, envid) -> fakeCloVar envid)
+        -- Capture env. vars in addition to closure vars.
+        -- When making direct calls, we only need the environment variable,
+        -- since we can refer to the other closure's code function directly.
+        -- However, if we want to return one closure from another, we (probably)
+        -- do not wish turn that variable reference into a closure allocation.
+        concatMap (\v -> case Map.lookup (tidIdent v) infoMap of
+                                   Nothing ->         [v]
+                                   Just (_, envid) -> [v, fakeCloVar envid])
              nonGlobalVars
 
     fakeCloVar id = TypedId fakeCloEnvType id
