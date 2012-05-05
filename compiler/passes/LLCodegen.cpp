@@ -386,6 +386,9 @@ void LLProcCFG::codegenToFunction(CodegenPass* pass, llvm::Function* F) {
   }
 
   ASSERT(blocks.size() > 0) << F->getName() << " had no blocks!";
+
+  // Create phi nodes in all the blocks,
+  // and make them available via block->phiNodes.
   llvm::BasicBlock* savedBB = builder.GetInsertBlock();
   for (size_t i = 0; i < blocks.size(); ++i) {
     initializeBlockPhis(blocks[i]);
@@ -431,18 +434,19 @@ void initializeBlockPhis(LLBlock* block) {
 // When there's only one predecessor, we can avoid creating stack
 // slots for phis. But doing so means that we must perform CFG simplification
 // in order for us not to have stale GC roots persist through phi nodes!
+// We also must conservatively force stack slots for the function's arguments
+// for the postalloca block, under the assumption that the body may trigger GC.
 // The GCRootSafetyChecker pass verifies that use of phi nodes is restricted.
 bool needStackSlotForPhis(LLBlock* block) {
   ASSERT(block->numPreds > 0);
-  return block->numPreds > 1;
+  return block->numPreds > 1
+                   || llvm::StringRef(block->block_id).startswith("postalloca");
 }
 
 Value* maybeStackSlotForPhi(Value* phi, LLBlock* block, CodegenPass* pass) {
-  Value* rv = phi;
-  if (needStackSlotForPhis(block) && phi->getType()->isPointerTy()) {
-    rv = ensureImplicitStackSlot(phi, pass);
-  }
-  return rv;
+  if (!phi->getType()->isPointerTy()) return phi;
+  if (!needStackSlotForPhis(block))   return phi;
+  return ensureImplicitStackSlot(phi, pass);
 }
 
 void LLBlock::codegenBlock(CodegenPass* pass) {
