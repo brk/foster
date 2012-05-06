@@ -53,7 +53,7 @@ cfgComputeCFG fn = do
 -- A helper for the CFG functions above, to run computeBlocks.
 internalComputeCFG :: IORef Int -> Fn KNExpr TypeIL -> IO CFGState
 internalComputeCFG uniqRef fn = do
-  let state0 = CFGState uniqRef Nothing [] Nothing Nothing
+  let state0 = CFGState uniqRef Nothing [] Nothing Nothing Map.empty
   execStateT runComputeBlocks state0
   where
     runComputeBlocks = do
@@ -104,7 +104,6 @@ caseIf a b = [(pat True, a), (pat False, b)]
 -- which determines what to do with the let-bound result of the expression.
 computeBlocks :: KNExpr -> Maybe Ident -> (AIVar -> CFG ()) -> CFG ()
 computeBlocks expr idmaybe k = do
-    Just fnvar <- gets cfgCurrentFnVar
     case expr of
         KNIf t v a b -> do
             computeBlocks (KNCase t v $ caseIf a b) idmaybe k
@@ -188,9 +187,15 @@ computeBlocks expr idmaybe k = do
             k phi
 
         -- Direct tail recursion becomes a jump (reassigning the arg slots).
-        (KNCall YesTail _ b vs) | fnvar == b -> do
-                Just header <- gets cfgHeader
-                cfgEndWith (CFBr header vs)
+        (KNCall YesTail _ b vs) -> do
+            -- We can't just compare [[b == fnvar]] because b might be a
+            -- let-bound result of type-instantiating a polymorphic function.
+            isTailCall <- cfgIsThisFnVar b
+            if isTailCall
+              then do Just header <- gets cfgHeader
+                      cfgEndWith (CFBr header vs)
+              else -- bleh, code duplication :(
+                cfgAddLet idmaybe (knToLetable expr) (typeKN expr) >>= k
 
         KNVar v -> k v
         _ -> do cfgAddLet idmaybe (knToLetable expr) (typeKN expr) >>= k
@@ -227,6 +232,10 @@ computeBlocks expr idmaybe k = do
     cfgAddLet idmaybe letable ty = do
         tid@(TypedId _ id) <- cfgFreshVarI idmaybe ty ".cfg_seq"
         cfgAddMiddle (ILetVal id letable)
+        Just fnvar <- gets cfgCurrentFnVar
+        case letable of
+            ILTyApp _ v _ | v == fnvar -> cfgAddFnVarAlias id fnvar
+            _                          -> return ()
         return tid
 
     cfgFreshId :: String -> CFG Ident
@@ -273,6 +282,17 @@ cfgNewUniq = do uref <- gets cfgUniq ; mutIORef uref (+1)
 
 cfgSetHeader header = do old <- get ; put old { cfgHeader = Just header }
 cfgSetFnVar fnvar = do old <- get ; put old { cfgCurrentFnVar = Just fnvar }
+
+cfgAddFnVarAlias :: Ident -> AIVar -> CFG ()
+cfgAddFnVarAlias i v = do old <- get
+                          let ama = cfgKnownFnVars old
+                          put old { cfgKnownFnVars = Map.insert i v ama }
+
+cfgIsThisFnVar :: AIVar -> CFG Bool
+cfgIsThisFnVar b = do old <- get
+                      let v = cfgCurrentFnVar old
+                      return $ Just b == v || Map.lookup (tidIdent b) (cfgKnownFnVars old) == v
+
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||| CFG Data Types |||||||||||||||||||||||{{{
@@ -297,6 +317,7 @@ data CFGState = CFGState {
   , cfgAllBlocks    :: [Graph Insn C C]
   , cfgHeader       :: Maybe BlockId
   , cfgCurrentFnVar :: Maybe AIVar
+  , cfgKnownFnVars  :: Map Ident AIVar
 }
 
 type CFG = StateT CFGState IO
