@@ -629,6 +629,7 @@ evalPrimitiveIntOp I8 "bitnot" [SSInt i] = SSInt $
 
 -- Sign extension (on Integers) is a no-op.
 evalPrimitiveIntOp _ "sext_i32" [SSInt i] = SSInt i
+evalPrimitiveIntOp _ "sext_i64" [SSInt i] = SSInt i
 
 evalPrimitiveIntOp size opName args =
   error $ "Smallstep.evalPrimitiveIntOp " ++ show size ++ " " ++ opName ++ " " ++ show args
