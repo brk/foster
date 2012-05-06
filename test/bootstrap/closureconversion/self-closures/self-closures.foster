@@ -1,0 +1,17 @@
+main = {
+  closure-over-itself !;
+};
+
+closure-over-itself = {
+  let f = (ref { 0 }); in
+    rec oddball = {
+      oddball >^ f;
+      1
+    }; in
+      oddball !;
+      expect_i32 1;
+      print_i32 (f^ !);
+    end
+  end
+};
+

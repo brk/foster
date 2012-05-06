@@ -248,16 +248,20 @@ closureOfKnFn infoMap (self_id, fn) = do
     -- the environments for others in the same rec SCC *are* closed over.
     closedOverVarsOfKnFn :: [AIVar]
     closedOverVarsOfKnFn =
-        let nonGlobalVars = [tid | tid@(TypedId _ id@(Ident _ _)) <- fnFreeVars fn
-                            , id /= self_id] in
+        let nonGlobalVars = [tid | tid@(TypedId _ (Ident _ _)) <- fnFreeVars fn] in
+        let capturedVarsFor  tid v envid =
+               if tid == self_id -- If we close over ourself,
+                 then [v]        -- don't try to capture the env twice.
+                 else [v, fakeCloVar envid]
+        in
         -- Capture env. vars in addition to closure vars.
         -- When making direct calls, we only need the environment variable,
         -- since we can refer to the other closure's code function directly.
         -- However, if we want to return one closure from another, we (probably)
         -- do not wish turn that variable reference into a closure allocation.
-        concatMap (\v -> case Map.lookup (tidIdent v) infoMap of
-                                   Nothing ->         [v]
-                                   Just (_, envid) -> [v, fakeCloVar envid])
+        concatMap (\v -> let tid = tidIdent v in case Map.lookup tid infoMap of
+                              Nothing ->   [v]
+                              Just (_, envid) -> capturedVarsFor tid v envid)
              nonGlobalVars
 
     fakeCloVar id = TypedId fakeCloEnvType id

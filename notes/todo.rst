@@ -48,6 +48,8 @@ General Compiler Structure Improvements
   * Args to postalloca phi use emit()
   * Args to internal (non-postalloca) phis use codegen()
 
+* Have ctest -V's invocation of run_all.py pass -I ../stdlib by default.
+
 TODO: libraries, benchmarks, & applications
 -------------------------------------------
 * Well-known collection types to runtime (lists, etc)
