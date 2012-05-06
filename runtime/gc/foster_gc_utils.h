@@ -26,10 +26,11 @@ const unsigned int FOSTER_GC_DEFAULT_ALIGNMENT_MASK = 15; // 0b0..001111
 // 2 -> 4      3 -> 4
 // 4 -> 4      5 -> 8
 template <typename T>
-inline T* roundUpToNearestMultipleWeak(T* v, intptr_t powerOf2) {
+inline T roundUpToNearestMultipleWeak(T v, uintptr_t powerOf2) {
   uintptr_t mask = powerOf2 - 1;
-  return (T*) ((uintptr_t(v) + mask) & ~mask);
+  return T((uintptr_t(v) + mask) & ~mask);
 }
+
 
 
 // Performs byte-wise addition on void pointer base

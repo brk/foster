@@ -83,14 +83,18 @@ class copying_gc {
       char* genericClosureMarker;
 
   public:
+      void realign_bump() {
+         bump = roundUpToNearestMultipleWeak(bump + HEAP_CELL_HEADER_SIZE,
+                                             FOSTER_GC_DEFAULT_ALIGNMENT)
+                                                  - HEAP_CELL_HEADER_SIZE;
+      }
       void reset_bump() {
         // We want to position the bump pointer far enough into the buffer
         // so that after accounting for the heap cell header, the body pointer
         // resulting from allocation will be properly aligned.
-        bump = roundUpToNearestMultipleWeak(
-                          start + HEAP_CELL_HEADER_SIZE,
-                          FOSTER_GC_DEFAULT_ALIGNMENT)
-                                          - HEAP_CELL_HEADER_SIZE;
+        bump = start;
+        realign_bump();
+        fprintf(gclog, "after reset, bump = %p, low bits: %x\n", bump, intptr_t(bump) & 0xf);
       }
 
       bool contains(void* ptr) {
@@ -98,12 +102,16 @@ class copying_gc {
       }
 
       void clear() {
-        fprintf(gclog, "clearing mem from %p to %p\n", start, end);
+        fprintf(gclog, "clearing mem from %p to %p, bump = %p\n", start, end, bump);
         fflush(gclog);
         memset(start, 0xFE, end - start);
       }
 
-      int64_t free_size() { return end - bump; }
+      int64_t free_size() {
+        //fprintf(gclog, "this=%p, bump = %p, low bits: %x\n", this, bump, intptr_t(bump) & 0xf);
+        //fflush(gclog);
+        return end - bump;
+      }
 
       bool can_allocate_bytes(int64_t num_bytes) {
         return free_size() > num_bytes;
@@ -111,9 +119,11 @@ class copying_gc {
 
       void* allocate_cell_prechecked(typemap* typeinfo) {
         heap_cell* allot = (heap_cell*) bump;
+        //fprintf(gclog, "this=%p, memsetting %d bytes at %p (ti=%p)\n", this, int(typeinfo->cell_size), bump, typeinfo); fflush(gclog);
         memset(bump, 0xAA, typeinfo->cell_size);
         bump += typeinfo->cell_size;
         allot->set_meta(typeinfo);
+        //fprintf(gclog, "alloc'd %d, bump = %p, low bits: %x\n", int(typeinfo->cell_size), bump, intptr_t(bump) & 0xF);
         return allot->body_addr();
       }
 
@@ -124,6 +134,7 @@ class copying_gc {
         heap_array* allot = (heap_array*) bump;
         if (init) memset(bump, 0x00, total_bytes);
         bump += total_bytes;
+        //fprintf(gclog, "alloc'a %d, bump = %p, low bits: %x\n", int(total_bytes), bump, intptr_t(bump) & 0xF);
         allot->set_meta(arr_elt_typeinfo);
         allot->set_num_elts(num_elts);
         return allot->body_addr();
@@ -165,7 +176,7 @@ class copying_gc {
 
           if (map->isArray) {
             arr = heap_array::from_heap_cell(cell);
-            cell_size = sizeof(heap_array) + map->cell_size * arr->num_elts();
+            cell_size = array_size_for(arr->num_elts(), map->cell_size);
             if (ENABLE_GCLOG) {
               fprintf(gclog, "Collecting array of total size %lld, cell size %lld, len %lld...\n",
                                   cell_size, map->cell_size, arr->num_elts());
@@ -258,6 +269,8 @@ class copying_gc {
 
   // precondition: all active cells from curr have been copied to next
   void flip() {
+    // re-align the next bump pointer so it'll be ready for us.
+    next->realign_bump();
     // curr is the old semispace, so we reset its bump ptr
     curr->reset_bump();
     std::swap(curr, next);
@@ -330,8 +343,9 @@ public:
     } else {
       gc();
       if (curr->can_allocate_bytes(cell_size)) {
-        fprintf(gclog, "gc collection freed space, now have %lld\n", curr->free_size());
-            return curr->allocate_cell_prechecked(typeinfo);
+        fprintf(gclog, "gc collection freed space for cell, now have %lld\n", curr->free_size());
+        fflush(gclog);
+        return curr->allocate_cell_prechecked(typeinfo);
       } else {
         fprintf(gclog, "working set exceeded heap size! aborting...\n"); fflush(gclog);
         exit(255); // TODO be more careful if we're allocating from a coro...
@@ -340,17 +354,23 @@ public:
     }
   }
 
+  static inline int64_t array_size_for(int64_t n, int64_t slot_size) {
+    return roundUpToNearestMultipleWeak(sizeof(heap_array) + n * slot_size,
+                                        FOSTER_GC_DEFAULT_ALIGNMENT);
+  }
+
   void* allocate_array(typemap* elt_typeinfo, int64_t n, bool init) {
     ++num_allocations;
     int64_t slot_size = elt_typeinfo->cell_size; // note the name change!
-    int64_t req_bytes = sizeof(heap_array) + n * slot_size;
+    int64_t req_bytes = array_size_for(n, slot_size);
 
     if (curr->can_allocate_bytes(req_bytes)) {
       return curr->allocate_array_prechecked(elt_typeinfo, n, req_bytes, init);
     } else {
       gc();
       if (curr->can_allocate_bytes(req_bytes)) {
-        fprintf(gclog, "gc collection freed space, now have %lld\n", curr->free_size());
+        fprintf(gclog, "gc collection freed space for array, now have %lld\n", curr->free_size());
+        fflush(gclog);
         return curr->allocate_array_prechecked(elt_typeinfo, n, req_bytes, init);
       } else {
         fprintf(gclog, "working set exceeded heap size! aborting...\n"); fflush(gclog);
@@ -388,6 +408,7 @@ void copying_gc::gc() {
   if (ENABLE_GCLOG) {
     fprintf(gclog, ">>>>>>> visiting gc roots on current stack\n"); fflush(gclog);
   }
+
   visitGCRootsWithStackMaps(__builtin_frame_address(0),
                             copying_gc_root_visitor);
 
