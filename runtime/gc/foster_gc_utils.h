@@ -41,24 +41,25 @@ const uint64_t FORWARDED_BIT = 0x02; // 0b000..00010
 
 // This should remain synchronized with getHeapCellHeaderTy()
 // in Codegen-typemaps.cpp
-#define HEAP_CELL_HEADER_SIZE (sizeof(int64_t))
+#define HEAP_CELL_HEADER_TYPE int64_t
+#define HEAP_CELL_HEADER_SIZE (sizeof(HEAP_CELL_HEADER_TYPE))
 
 struct heap_cell {
-  int64_t       size;
-  unsigned char body[0];
+  HEAP_CELL_HEADER_TYPE size;
+  unsigned char         body[0];
   //======================================
   void* body_addr() { return (void*) &body; }
   int64_t cell_size() { return size; }
   void* get_meta() { return (void*) size; }
 
-  void set_meta(void* meta) { size = (int64_t) meta; }
+  void set_meta(void* meta) { size = (HEAP_CELL_HEADER_TYPE) meta; }
   void set_cell_size(int64_t sz) { size = sz; }
 
   bool is_forwarded() {
     return (((uint64_t) cell_size()) & FORWARDED_BIT) != 0;
   }
   void set_forwarded_body(void* newbody) {
-    size = ((uint64_t) newbody) | FORWARDED_BIT;
+    size = ((HEAP_CELL_HEADER_TYPE) newbody) | FORWARDED_BIT;
   }
   void* get_forwarded_body() {
     return (void*) (((uint64_t) cell_size()) & ~FORWARDED_BIT);
@@ -70,17 +71,18 @@ struct heap_cell {
 };
 
 struct heap_array {
-  void*         meta;
-  int64_t       arsz;
-  unsigned char elts[0];
+  HEAP_CELL_HEADER_TYPE meta;
+  int64_t               arsz;
+  unsigned char         elts[0];
   //======================================
-
+  void* body_addr() { return (void*) &arsz; }
   void* elts_addr() { return (void*) &elts; }
   void* elt_body(int64_t cellnum, int64_t cellsz) { return offset(elts_addr(), cellnum * cellsz); };
   int64_t num_elts() { return arsz; }
-  void* get_meta() { return meta; }
+  void set_num_elts(int64_t n) { arsz = n; }
+  void* get_meta() { return (void*) meta; }
 
-  void set_meta(void* m) { meta = m; }
+  void set_meta(void* m) { meta = (HEAP_CELL_HEADER_TYPE) m; }
   bool is_forwarded() {
     return (((uint64_t) get_meta()) & FORWARDED_BIT) != 0;
   }

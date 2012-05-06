@@ -117,19 +117,16 @@ class copying_gc {
         return allot->body_addr();
       }
 
-      void* allocate_array_prechecked(typemap* elt_typeinfo,
+      void* allocate_array_prechecked(typemap* arr_elt_typeinfo,
                                       int64_t  num_elts,
                                       int64_t  total_bytes,
                                       bool     init) {
-        heap_cell* allot = (heap_cell*) bump;
+        heap_array* allot = (heap_array*) bump;
         if (init) memset(bump, 0x00, total_bytes);
         bump += total_bytes;
-        allot->set_meta(elt_typeinfo);
-        // allot = [meta|size|e1...]
-        void* body_addr = allot->body_addr();
-        int64_t* size = (int64_t*) body_addr;
-                *size = num_elts;
-        return body_addr;
+        allot->set_meta(arr_elt_typeinfo);
+        allot->set_num_elts(num_elts);
+        return allot->body_addr();
       }
 
       void complain_to_lack_of_metadata(heap_cell* cell);
@@ -326,7 +323,7 @@ public:
 
   void* allocate_cell(typemap* typeinfo) {
     ++num_allocations;
-    int64_t cell_size = typeinfo->cell_size;
+    int64_t cell_size = typeinfo->cell_size; // includes space for cell header.
 
     if (curr->can_allocate_bytes(cell_size)) {
       return curr->allocate_cell_prechecked(typeinfo);
@@ -345,8 +342,8 @@ public:
 
   void* allocate_array(typemap* elt_typeinfo, int64_t n, bool init) {
     ++num_allocations;
-    int64_t cell_size = elt_typeinfo->cell_size;
-    int64_t req_bytes = 8 + 8 + n * cell_size; // typeinfo, elt count, elts.
+    int64_t slot_size = elt_typeinfo->cell_size; // note the name change!
+    int64_t req_bytes = sizeof(heap_array) + n * slot_size;
 
     if (curr->can_allocate_bytes(req_bytes)) {
       return curr->allocate_array_prechecked(elt_typeinfo, n, req_bytes, init);
@@ -406,7 +403,7 @@ void copying_gc::gc() {
 
   flip();
   next->clear(); // for debugging purposes
-  
+
   if (ENABLE_GCLOG) {
     fprintf(gclog, "\t/gc\n\n");
     fflush(gclog);
@@ -663,7 +660,7 @@ void scanCoroStack(foster_generic_coro* coro,
     fprintf(gclog, "========= scanning coro (%p, fn=%p, %s) stack from %p\n",
         coro, coro->fn, coro_status(coro->status), frameptr);
   }
-  
+
   visitGCRootsWithStackMaps(frameptr, visitor);
 
   if (ENABLE_GCLOG) {
