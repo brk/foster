@@ -981,11 +981,15 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
       envSlots.push_back(closures[i]->env->codegenStorage(pass, /*init*/ true));
     }
 
+    emitFakeComment("codegenned storage for env slots");
+
     // Allocate storage for the closures and populate 'em with code/env values.
     for (size_t i = 0; i < closures.size(); ++i) {
       llvm::Value* clo = closures[i]->codegenClosure(pass, envSlots[i]);
       pass->insertScopedValue(closures[i]->varname, clo);
     }
+
+    emitFakeComment("codegenned closures themselves");
 
     // Stick each closure environment in the symbol table.
     std::vector<llvm::Value*> envPtrs;
@@ -1000,11 +1004,15 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
       envPtrs.push_back(envPtr);
     }
 
+    emitFakeComment("put env pointers in scope");
+
     // Now that all the env pointers are in scope,
     // store the appropriate values through each pointer.
     for (size_t i = 0; i < closures.size(); ++i) {
       closures[i]->env->codegenTo(pass, envPtrs[i]);
     }
+
+    emitFakeComment("codegenned closure environments");
 
     // And clean up env names.
     for (size_t i = 0; i < closures.size(); ++i) {
