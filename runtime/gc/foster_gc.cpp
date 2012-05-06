@@ -17,6 +17,7 @@
 #include "execinfo.h"
 
 #define TRACE do { fprintf(gclog, "%s::%d\n", __FILE__, __LINE__); fflush(gclog); } while (0)
+#define ENABLE_GCLOG 0
 
 /////////////////////////////////////////////////////////////////
 
@@ -147,8 +148,10 @@ class copying_gc {
 
         meta = cell->get_meta();
         foster_assert(meta != NULL, "cannot copy cell lacking metadata");
-        if (isMetadataPointer(meta)) {
-          inspect_typemap((typemap*)meta);
+        if (ENABLE_GCLOG) {
+          if (isMetadataPointer(meta)) {
+            inspect_typemap((typemap*)meta);
+          }
         }
 
         int64_t cell_size;
@@ -166,15 +169,19 @@ class copying_gc {
           if (map->isArray) {
             arr = heap_array::from_heap_cell(cell);
             cell_size = sizeof(heap_array) + map->cell_size * arr->num_elts();
-            fprintf(gclog, "Collecting array of total size %lld, cell size %lld, len %lld...\n",
-                                cell_size, map->cell_size, arr->num_elts());
+            if (ENABLE_GCLOG) {
+              fprintf(gclog, "Collecting array of total size %lld, cell size %lld, len %lld...\n",
+                                  cell_size, map->cell_size, arr->num_elts());
+            }
           } else {
             // probably an actual pointer
             cell_size = map->cell_size;
           }
         }
         foster_assert(cell_size >= 16, "cell size must be at least 16!");
-        fprintf(gclog, "copying cell %p, cell size %llu\n", cell, cell_size); fflush(gclog);
+        if (ENABLE_GCLOG) {
+          fprintf(gclog, "copying cell %p, cell size %llu\n", cell, cell_size); fflush(gclog);
+        }
 
         if (can_allocate_bytes(cell_size)) {
           memcpy(bump, cell, cell_size);
@@ -193,8 +200,8 @@ class copying_gc {
             // TODO for byte arrays and such, we can skip this loop...
             for (int64_t cellnum = 0; cellnum < numcells; ++cellnum) {
               // for each pointer field in the cell
-              fprintf(gclog, "num cells in array (if any): %lld, curr: %lld\n",
-                                numcells, cellnum);
+              //fprintf(gclog, "num cells in array (if any): %lld, curr: %lld\n",
+              //                  numcells, cellnum);
               void* old_body = arr ? arr->elt_body(cellnum, map->cell_size)
                                    : cell->body_addr();
               void* new_body = offset(old_body, from_old_body_to_new_body);
@@ -208,13 +215,14 @@ class copying_gc {
                 // set the copied cell field to subfwdaddr
                 if (*oldslot != NULL) {
                   void** newslot = (void**) offset(new_body, off_bytes);
-                  fprintf(gclog, "recursively copying of cell %p slot %p with type map %p to %p\n",
-                    cell, oldslot, map, newslot); fflush(gclog);
+                  //fprintf(gclog, "recursively copying of cell %p slot %p with type map %p to %p\n",
+                  //  cell, oldslot, map, newslot); fflush(gclog);
                   *newslot = ss_copy(heap_cell::for_body(*oldslot));
+
                   foster_assert(*newslot != NULL,     "copying gc should not null out slots");
                   foster_assert(*newslot != *oldslot, "copying gc should return new pointers");
-                  fprintf(gclog, "recursively copied  of cell %p slot %p with type map %p to %p\n",
-                    cell, oldslot, map, newslot); fflush(gclog);
+                  //fprintf(gclog, "recursively copied  of cell %p slot %p with type map %p to %p\n",
+                  //  cell, oldslot, map, newslot); fflush(gclog);
                 }
               }
             }
@@ -235,7 +243,9 @@ class copying_gc {
           return NULL;
         }
         return_result:
-          fprintf(gclog, "; replacing %p with %p\n", cell->body_addr(), result);
+          if (ENABLE_GCLOG) {
+            fprintf(gclog, "; replacing %p with %p\n", cell->body_addr(), result);
+          }
           return result;
       }
   };
@@ -362,8 +372,10 @@ copying_gc* allocator = NULL;
 void copying_gc_root_visitor(void **root, const void *slotname) {
   foster_assert(root != NULL, "someone passed a NULL root addr!");
   void* body = *root;
-  fprintf(gclog, "\t\tSTACK SLOT %p contains %p, slot name = %s\n", root, body,
-                    (slotname ? ((const char*) slotname) : "<unknown slot>"));
+  if (ENABLE_GCLOG) {
+    fprintf(gclog, "\t\tSTACK SLOT %p contains %p, slot name = %s\n", root, body,
+                      (slotname ? ((const char*) slotname) : "<unknown slot>"));
+  }
   if (body) {
     allocator->copy_or_update(body, root);
   }
@@ -376,20 +388,29 @@ base::TimeTicks    init_start;
 void copying_gc::gc() {
   base::TimeTicks begin = base::TimeTicks::HighResNow();
   ++this->num_collections;
-  fprintf(gclog, ">>>>>>> visiting gc roots on current stack\n"); fflush(gclog);
+  if (ENABLE_GCLOG) {
+    fprintf(gclog, ">>>>>>> visiting gc roots on current stack\n"); fflush(gclog);
+  }
   visitGCRootsWithStackMaps(__builtin_frame_address(0),
                             copying_gc_root_visitor);
 
   if (current_coro) {
-    fprintf(gclog, "==========visiting current ccoro: %p\n", current_coro); fflush(gclog);
+    if (ENABLE_GCLOG) {
+      fprintf(gclog, "==========visiting current ccoro: %p\n", current_coro); fflush(gclog);
+    }
     copying_gc_root_visitor((void**)&current_coro, NULL);
-    fprintf(gclog, "==========visited current ccoro: %p\n", current_coro); fflush(gclog);
+    if (ENABLE_GCLOG) {
+      fprintf(gclog, "==========visited current ccoro: %p\n", current_coro); fflush(gclog);
+    }
   }
 
   flip();
   next->clear(); // for debugging purposes
-  fprintf(gclog, "\t/gc\n\n");
-  fflush(gclog);
+  
+  if (ENABLE_GCLOG) {
+    fprintf(gclog, "\t/gc\n\n");
+    fflush(gclog);
+  }
 
   gc_time += (base::TimeTicks::HighResNow() - begin);
 }
@@ -450,6 +471,9 @@ void force_gc_for_debugging_purposes() {
   allocator->force_gc_for_debugging_purposes();
 }
 
+// Extern symbol for gdb, not foster programs.
+extern "C" void fflush_gclog() { fflush(gclog); }
+
 #include "foster_gc_backtrace_x86-inl.h"
 
 void visitGCRootsWithStackMaps(void* start_frame,
@@ -465,7 +489,7 @@ void visitGCRootsWithStackMaps(void* start_frame,
   if (SANITY_CHECK_CUSTOM_BACKTRACE) {
     // backtrace() fails when called from a coroutine's stack...
     int numRetAddrs = backtrace((void**)&retaddrs, MAX_NUM_RET_ADDRS);
-    if (true) {
+    if (ENABLE_GCLOG) {
       for (int i = 0; i < numRetAddrs; ++i) {
         fprintf(gclog, "backtrace: %p\n", retaddrs[i]);
       }
@@ -513,13 +537,17 @@ void visitGCRootsWithStackMaps(void* start_frame,
 
     const stackmap::PointCluster* pc = clusterForAddress[safePointAddr];
     if (!pc) {
-      fprintf(gclog, "no point cluster for address %p with frame ptr%p\n", safePointAddr, frameptr);
+      if (ENABLE_GCLOG) {
+        fprintf(gclog, "no point cluster for address %p with frame ptr%p\n", safePointAddr, frameptr);
+      }
       continue;
     }
 
-    fprintf(gclog, "\nframe %d: retaddr %p, frame ptr %p: live count w/meta %d, w/o %d\n",
-      i, safePointAddr, frameptr,
-      pc->liveCountWithMetadata, pc->liveCountWithoutMetadata);
+    if (ENABLE_GCLOG) {
+      fprintf(gclog, "\nframe %d: retaddr %p, frame ptr %p: live count w/meta %d, w/o %d\n",
+        i, safePointAddr, frameptr,
+        pc->liveCountWithMetadata, pc->liveCountWithoutMetadata);
+    }
 
     int32_t frameSize = pc->frameSize;
     for (int a = 0; a < pc->liveCountWithMetadata; ++a) {
@@ -585,7 +613,7 @@ void coro_print(foster_generic_coro* coro) {
 void coro_dump(foster_generic_coro* coro) {
   if (!coro) {
     fprintf(gclog, "cannot dump NULL coro ptr!\n");
-  } else {
+  } else if (ENABLE_GCLOG) {
     coro_print(coro);
     fprintf(gclog, " "); coro_print(coro->sibling);
   }
@@ -631,13 +659,17 @@ void scanCoroStack(foster_generic_coro* coro,
   void* frameptr = coro_topmost_frame_pointer(coro);
   foster_assert(frameptr != NULL, "(c)coro frame ptr shouldn't be NULL!");
 
-  fprintf(gclog, "========= scanning coro (%p, fn=%p, %s) stack from %p\n",
-      coro, coro->fn, coro_status(coro->status), frameptr);
-
+  if (ENABLE_GCLOG) {
+    fprintf(gclog, "========= scanning coro (%p, fn=%p, %s) stack from %p\n",
+        coro, coro->fn, coro_status(coro->status), frameptr);
+  }
+  
   visitGCRootsWithStackMaps(frameptr, visitor);
 
-  fprintf(gclog, "========= scanned ccoro stack from %p\n", frameptr);
-  fflush(gclog);
+  if (ENABLE_GCLOG) {
+    fprintf(gclog, "========= scanned ccoro stack from %p\n", frameptr);
+    fflush(gclog);
+  }
 }
 
 /////////////////////////////////////////////////////////////////
