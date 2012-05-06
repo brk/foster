@@ -38,11 +38,11 @@ mkBodies = { nbodies : Int32 =>
       solar_mass = 39.478417604357428482118055131396; // 50.265482457436688;
       days_per_year = 365.24;
   in
-    (mkPlanet  0.0  0.0  0.0 
+    (mkPlanet  0.0  0.0  0.0
                0.0  0.0  0.0
                solar_mass) >^ bodies[0]; // sun
 
-    (mkPlanet 
+    (mkPlanet
                  4.84143144246472090e+00
        (0.0 -f64 1.16032004402742839e+00)
        (0.0 -f64 1.03622044471123109e-01)
@@ -51,7 +51,7 @@ mkBodies = { nbodies : Int32 =>
        (0.0 -f64 6.90460016972063023e-05 *f64 days_per_year)
                 (9.54791938424326609e-04 *f64 solar_mass)) >^ bodies[1]; // jupiter
 
-    (mkPlanet 
+    (mkPlanet
                (8.34336671824457987e+00)
                (4.12479856412430479e+00)
       (0.0 -f64 4.03523417114321381e-01)
@@ -99,7 +99,7 @@ dot_bodyPos = { b : Planet =>
 
 energy = { bodies : Array Planet =>
   let e = (ref 0.0); in
-    arrayEnum bodies { b1 : Planet => i : Int64 => 
+    arrayEnum bodies { b1 : Planet => i : Int64 =>
       incrByFloat64 e (0.5 *f64 ma b1 *f64 dot_bodyPos b1);
       arrayEnumFrom bodies (incr64 i) { b2: Planet => jj : Int64 =>
         let dx = px b1 -f64 px b2;
@@ -176,17 +176,13 @@ main = {
       dt = 1.0e-02;
   in
       offset-momentum bodies;
-      print_i32 54321;
-      
+
       print_float_p9f64 (energy bodies);
 
       scale bodies dt;
-      print_i32 11111;
       repeat n^ { advance bodies };
-      print_i32 11111;
       scale bodies (div-f64 1.0 dt);
-      
-      print_i32 12345;
+
       print_float_p9f64 (energy bodies);
   end
 };
