@@ -67,17 +67,17 @@ typecheck want ctx expr maybeExpTy = do
               return $ AnnUntil rng (TupleTypeAST []) acond' abody
 
       -- a[b]
-      E_ArrayRead rng a b -> do
+      E_ArrayRead rng (ArrayIndex a b s) -> do
               ta <- typecheck want ctx a Nothing
               tb <- typecheck want ctx b Nothing
-              typecheckArrayRead rng ta (typeAST ta) tb maybeExpTy
+              typecheckArrayRead rng s ta (typeAST ta) tb maybeExpTy
 
       -- a >^ b[c]
-      E_ArrayPoke rng a b c -> do
+      E_ArrayPoke rng (ArrayIndex b c s) a -> do
               ta <- typecheck want ctx a Nothing
               tb <- typecheck want ctx b (Just $ ArrayTypeAST (typeAST ta))
               tc <- typecheck want ctx c Nothing
-              typecheckArrayPoke rng ta tb (typeAST tb) tc maybeExpTy
+              typecheckArrayPoke rng s ta tb (typeAST tb) tc maybeExpTy
 
       E_CompilesAST rng Nothing ->
               return $ AnnCompiles rng (CompilesResult $
@@ -412,23 +412,23 @@ typecheckTyApp ctx rng e mb_t1tn _maybeExpTyTODO = do
 -- G |- e1 ::: Array t
 -- ---------------------  e2 ::: t2 where t2 is a word-like type
 -- G |- e1 [ e2 ]  ::: t
-typecheckArrayRead :: SourceRange -> AnnExpr Sigma -> TypeAST -> AnnExpr Sigma -> Maybe TypeAST -> Tc (AnnExpr Rho)
+typecheckArrayRead :: SourceRange -> SafetyGuarantee -> AnnExpr Sigma -> TypeAST -> AnnExpr Sigma -> Maybe TypeAST -> Tc (AnnExpr Rho)
 -- {{{
-typecheckArrayRead rng _base (TupleTypeAST _) (AnnInt {}) _maybeExpTy =
+typecheckArrayRead rng _s _base (TupleTypeAST _) (AnnInt {}) _maybeExpTy =
     tcFails [out $ "ArrayReading tuples is not allowed;"
                 ++ " use pattern matching instead!" ++ highlightFirstLine rng]
 
 -- base[aiexpr]
-typecheckArrayRead rng base (ArrayTypeAST t) aiexpr maybeExpTy = do
+typecheckArrayRead rng s base (ArrayTypeAST t) aiexpr maybeExpTy = do
     -- TODO check aiexpr type is compatible with Word
     unify (ArrayTypeAST t) (typeAST base) (Just "arrayread type")
     case maybeExpTy of
       Nothing -> return ()
       Just expTy -> unify t expTy (Just "arrayread expected type")
 
-    return (AnnArrayRead rng t base aiexpr)
+    return (AnnArrayRead rng t (ArrayIndex base aiexpr s))
 
-typecheckArrayRead rng _base baseType _index maybeExpTy =
+typecheckArrayRead rng _s _base baseType _index maybeExpTy =
     tcFails [out $ "Unable to arrayread expression of type " ++ show baseType
                 ++ " (context expected type " ++ show maybeExpTy ++ ")"
                 ++ highlightFirstLine rng]
@@ -436,21 +436,21 @@ typecheckArrayRead rng _base baseType _index maybeExpTy =
 
 -----------------------------------------------------------------------
 
--- G |-  c   ::: t
--- G |- b[e] ::: Array t
+-- G |-  a   ::: t
+-- G |- b[c] ::: Array t
 -- ---------------------
--- G |- c >^ b[e] ::: ()
-typecheckArrayPoke rng c base (ArrayTypeAST t) aiexpr maybeExpTy = do
+-- G |- a >^ b[c] ::: ()
+typecheckArrayPoke rng s a b (ArrayTypeAST t) c maybeExpTy = do
 -- {{{
     -- TODO check aiexpr type is compatible with Word
-    unify t (typeAST c) (Just "arraypoke type")
+    unify t (typeAST a) (Just "arraypoke type")
     case maybeExpTy of
       Nothing -> return ()
       Just expTy -> unify t expTy (Just $ "arraypoke expected type: " ++ show expTy)
 
-    return (AnnArrayPoke rng t c base aiexpr)
+    return (AnnArrayPoke rng t (ArrayIndex b c s) a)
 
-typecheckArrayPoke rng _ _base baseType _index maybeExpTy =
+typecheckArrayPoke rng _s _a _b baseType _c maybeExpTy =
     tcFails [out $ "Unable to arraypoke expression of type " ++ show baseType
                 ++ " (context expected type " ++ show maybeExpTy ++ ")"
                 ++ highlightFirstLine rng]

@@ -6,7 +6,8 @@
 
 module Foster.Letable (Letable(..)) where
 
-import Foster.Base(LiteralInt, LiteralFloat, CtorId, AllocInfo, AllocMemRegion)
+import Foster.Base(LiteralInt, LiteralFloat, CtorId, ArrayIndex,
+                   AllocInfo, AllocMemRegion)
 import Foster.TypeIL(AIVar, ILPrim, TypeIL)
 import Foster.PatternMatch(Occurrence)
 
@@ -36,7 +37,7 @@ data Letable =
         | ILStore       AIVar AIVar
         -- Array operations
         | ILAllocArray  TypeIL AIVar
-        | ILArrayRead   TypeIL AIVar  AIVar
-        | ILArrayPoke          AIVar  AIVar  AIVar
+        | ILArrayRead   TypeIL (ArrayIndex AIVar)
+        | ILArrayPoke          (ArrayIndex AIVar)  AIVar
         | ILTyApp       TypeIL AIVar TypeIL
         deriving (Show)

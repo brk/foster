@@ -50,8 +50,8 @@ data AIExpr=
         | AIStore      AIExpr AIExpr
         -- Array operations
         | AIAllocArray TypeIL AIExpr
-        | AIArrayRead  TypeIL AIExpr AIExpr
-        | AIArrayPoke  TypeIL AIExpr AIExpr AIExpr
+        | AIArrayRead  TypeIL (ArrayIndex AIExpr)
+        | AIArrayPoke  TypeIL (ArrayIndex AIExpr) AIExpr
         -- Terms indexed by types
         | E_AITyApp { aiTyAppOverallType :: TypeIL
                     , aiTyAppExpr        :: AIExpr
@@ -100,12 +100,14 @@ ail ctx ae =
                                          return $ AIDeref x
         AnnStore _rng   a b        -> do [x,y]   <- mapM q [a,b]
                                          return $ AIStore x y
-        AnnArrayRead _rng t a b    -> do ti <- qt t
+        AnnArrayRead _rng t (ArrayIndex a b s) -> do
+                                         ti <- qt t
                                          [x,y]   <- mapM q [a,b]
-                                         return $ AIArrayRead ti x y
-        AnnArrayPoke _rng t a b c  -> do ti <- qt t
+                                         return $ AIArrayRead ti (ArrayIndex x y s)
+        AnnArrayPoke _rng t (ArrayIndex a b s) c -> do
+                                         ti <- qt t
                                          [x,y,z]   <- mapM q [a,b,c]
-                                         return $ AIArrayPoke ti x y z
+                                         return $ AIArrayPoke ti (ArrayIndex x y s) z
         AnnTuple {}                -> do aies <- mapM q (childrenOf ae)
                                          return $ AITuple aies
         AnnCase _rng t e bs        -> do ti <- qt t

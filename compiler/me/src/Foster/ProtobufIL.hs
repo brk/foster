@@ -262,12 +262,12 @@ dumpExpr x@(MoStore a b) =
                     , PbLetable.tag   = IL_STORE
                     , PbLetable.type' = Just $ dumpType (typeMo x)  }
 
-dumpExpr x@(MoArrayRead _t a b ) =
+dumpExpr x@(MoArrayRead _t (ArrayIndex a b _sg)) =
     P'.defaultValue { PbLetable.parts = fromList (fmap dumpVar [a, b])
                     , PbLetable.tag   = IL_ARRAY_READ
                     , PbLetable.type' = Just $ dumpType (typeMo x)  }
 
-dumpExpr x@(MoArrayPoke v b i ) =
+dumpExpr x@(MoArrayPoke (ArrayIndex b i _sg) v) =
     P'.defaultValue { PbLetable.parts = fromList (fmap dumpVar [v, b, i])
                     , PbLetable.tag   = IL_ARRAY_POKE
                     , PbLetable.type' = Just $ dumpType (typeMo x)  }
@@ -435,7 +435,7 @@ typeMo expr = case expr of
     MoAlloc v _rgn          -> PtrType (tidType v)
     MoDeref v               -> pointedToTypeOfVar v
     MoStore _ _             -> TupleType []
-    MoArrayRead t _ _       -> t
+    MoArrayRead t _         -> t
     MoArrayPoke {}          -> TupleType []
 
 pointedToTypeOfVar v = case v of

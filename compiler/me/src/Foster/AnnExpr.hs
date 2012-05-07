@@ -52,8 +52,8 @@ data AnnExpr ty =
         | AnnDeref      SourceRange ty           (AnnExpr ty)
         | AnnStore      SourceRange (AnnExpr ty) (AnnExpr ty)
         -- Array operations
-        | AnnArrayRead  SourceRange ty (AnnExpr ty) (AnnExpr ty)
-        | AnnArrayPoke  SourceRange ty (AnnExpr ty) (AnnExpr ty) (AnnExpr ty)
+        | AnnArrayRead  SourceRange ty (ArrayIndex (AnnExpr ty)) 
+        | AnnArrayPoke  SourceRange ty (ArrayIndex (AnnExpr ty)) (AnnExpr ty)
         -- Terms indexed by types
         | E_AnnTyApp {  annTyAppRange       :: SourceRange
                      ,  annTyAppOverallType :: ty
@@ -86,8 +86,8 @@ typeAST annexpr =
      AnnAlloc _rng e       -> RefTypeAST (recur e)
      AnnDeref _rng t _     -> t
      AnnStore _rng _ _     -> TupleTypeAST []
-     AnnArrayRead _r t _ _ -> t
-     AnnArrayPoke _ _ _ _ _-> TupleTypeAST []
+     AnnArrayRead _rng t _ -> t
+     AnnArrayPoke _ _ _ _  -> TupleTypeAST []
      AnnCase _rng t _ _    -> t
      E_AnnVar _rng tid     -> tidType tid
      AnnPrimitive _rng tid -> tidType tid
@@ -111,8 +111,8 @@ instance Structured (AnnExpr TypeAST) where
       AnnAlloc  {}               -> out $ "AnnAlloc     "
       AnnDeref  {}               -> out $ "AnnDeref     "
       AnnStore  {}               -> out $ "AnnStore     "
-      AnnArrayRead _r t _ _      -> out $ "AnnArrayRead " ++ " :: " ++ show t
-      AnnArrayPoke _r t _ _ _    -> out $ "AnnArrayPoke " ++ " :: " ++ show t
+      AnnArrayRead _rng t _      -> out $ "AnnArrayRead " ++ " :: " ++ show t
+      AnnArrayPoke _rng t _ _    -> out $ "AnnArrayPoke " ++ " :: " ++ show t
       AnnTuple  {}               -> out $ "AnnTuple     "
       AnnCase   {}               -> out $ "AnnCase      "
       AnnPrimitive _r tid        -> out $ "AnnPrimitive " ++ show tid
@@ -139,8 +139,8 @@ instance Structured (AnnExpr TypeAST) where
       AnnAlloc     _rng    a               -> [a]
       AnnDeref     _rng _t a               -> [a]
       AnnStore     _rng    a b             -> [a, b]
-      AnnArrayRead _rng _t a b             -> [a, b]
-      AnnArrayPoke _rng _t a b c           -> [a, b, c]
+      AnnArrayRead _rng _t ari             -> childrenOfArrayIndex ari
+      AnnArrayPoke _rng _t ari c           -> childrenOfArrayIndex ari ++ [c]
       AnnTuple tup                         -> annTupleExprs tup
       AnnCase _rng _t e bs                 -> e:(map snd bs)
       E_AnnVar {}                          -> []
@@ -188,8 +188,8 @@ instance SourceRanged (AnnExpr ty) where
       AnnAlloc     rng   _        -> rng
       AnnDeref     rng _ _        -> rng
       AnnStore     rng _ _        -> rng
-      AnnArrayRead rng _ _ _      -> rng
-      AnnArrayPoke rng _ _ _ _    -> rng
+      AnnArrayRead rng _ _        -> rng
+      AnnArrayPoke rng _ _ _      -> rng
       AnnTuple tup                -> annTupleRange tup
       AnnCase      rng _ _ _      -> rng
       E_AnnVar     rng _          -> rng

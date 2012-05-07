@@ -15,7 +15,8 @@ module Foster.ExprAST(
 where
 
 import Foster.Base(SourceRange, Expr(..), freeVars, identPrefix, Structured(..),
-                   SourceRanged(..), TypedId(..), butnot)
+                   SourceRanged(..), TypedId(..), butnot, ArrayIndex(..),
+                   childrenOfArrayIndex)
 import Foster.TypeAST(TypeAST, EPattern(..), E_VarAST(..))
 import Foster.Kind
 import Foster.Output(out)
@@ -48,8 +49,8 @@ data ExprAST ty =
         | E_DerefAST      SourceRange (ExprAST ty)
         | E_StoreAST      SourceRange (ExprAST ty) (ExprAST ty)
         -- Array subscripting
-        | E_ArrayRead     SourceRange (ExprAST ty) (ExprAST ty)
-        | E_ArrayPoke     SourceRange (ExprAST ty) (ExprAST ty) (ExprAST ty)
+        | E_ArrayRead     SourceRange (ArrayIndex (ExprAST ty))
+        | E_ArrayPoke     SourceRange (ArrayIndex (ExprAST ty)) (ExprAST ty)
         -- Terms indexed by types
         | E_TyApp         SourceRange (ExprAST ty) (Maybe ty)
         -- Others
@@ -118,8 +119,8 @@ instance Structured (ExprAST TypeAST) where
             E_AllocAST    _rng a         -> [a]
             E_DerefAST    _rng a         -> [a]
             E_StoreAST    _rng a b       -> [a, b]
-            E_ArrayRead   _rng a b       -> [a, b]
-            E_ArrayPoke   _rng a b c     -> [a, b, c]
+            E_ArrayRead   _rng ari       -> childrenOfArrayIndex ari
+            E_ArrayPoke   _rng ari c     -> childrenOfArrayIndex ari ++ [c]
             E_TupleAST tup               -> tupleAstExprs tup
             E_TyApp       _rng a _t      -> [a]
             E_Case        _rng e bs      -> e:(map snd bs)
@@ -150,8 +151,8 @@ instance SourceRanged (ExprAST ty)
       E_AllocAST      rng _     -> rng
       E_DerefAST      rng _     -> rng
       E_StoreAST      rng _ _   -> rng
-      E_ArrayRead     rng _ _   -> rng
-      E_ArrayPoke     rng _ _ _ -> rng
+      E_ArrayRead     rng _     -> rng
+      E_ArrayPoke     rng _ _   -> rng
       E_VarAST        rng _     -> rng
       E_TyApp         rng _ _   -> rng
       E_Case          rng _ _   -> rng

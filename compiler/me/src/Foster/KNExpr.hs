@@ -43,8 +43,8 @@ data KNExpr =
         | KNStore       AIVar AIVar
         -- Array operations
         | KNAllocArray  TypeIL AIVar
-        | KNArrayRead   TypeIL AIVar AIVar
-        | KNArrayPoke          AIVar AIVar AIVar
+        | KNArrayRead   TypeIL (ArrayIndex AIVar)
+        | KNArrayPoke          (ArrayIndex AIVar) AIVar
         | KNTyApp       TypeIL AIVar TypeIL
         deriving (Show)
 
@@ -102,9 +102,12 @@ kNormalize mebTail expr =
       AIUntil    t a b  -> do [a', b'] <- mapM gn [a, b] ; return $ (KNUntil t a' b')
 
       AIStore      a b  -> do [a', b'] <- mapM gn [a, b] ; nestedLetsDo [a', b'] (\[x,y] -> knStore x y)
-      AIArrayRead t a b -> do [a', b'] <- mapM gn [a, b] ; nestedLets [a', b'] (\[x, y] -> KNArrayRead t x y)
-      AIArrayPoke _t a b c -> do [a', b', c'] <- mapM gn [a,b,c]
-                                 nestedLets [a', b', c'] (\[x,y,z] -> KNArrayPoke x y z)
+      AIArrayRead  t (ArrayIndex a b s) -> do
+                              [a', b'] <- mapM gn [a, b]
+                              nestedLets [a', b'] (\[x, y] -> KNArrayRead t (ArrayIndex x y s))
+      AIArrayPoke _t (ArrayIndex a b s) c -> do
+                              [a', b', c'] <- mapM gn [a,b,c]
+                              nestedLets [a', b', c'] (\[x,y,z] -> KNArrayPoke (ArrayIndex x y s) z)
 
       AILetFuns ids fns a   -> do knFns <- mapM kNormalizeFn fns
                                   a' <- gt a
@@ -304,8 +307,8 @@ typeKN expr =
     KNAlloc v _rgn    -> PtrTypeIL (tidType v)
     KNDeref v         -> pointedToTypeOfVar v
     KNStore _ _       -> TupleTypeIL []
-    KNArrayRead t _ _ -> t
-    KNArrayPoke _ _ _ -> TupleTypeIL []
+    KNArrayRead t _   -> t
+    KNArrayPoke _ _   -> TupleTypeIL []
     KNCase t _ _      -> t
     KNVar v           -> tidType v
     KNTyApp overallType _tm _tyArgs -> overallType
@@ -331,7 +334,7 @@ instance Structured KNExpr where
             KNStore      {}     -> out $ "KNStore     "
             KNCase _t _ bnds    -> out $ "KNCase      " ++ (show $ map fst bnds)
             KNAllocArray {}     -> out $ "KNAllocArray "
-            KNArrayRead  t _ _  -> out $ "KNArrayRead " ++ " :: " ++ show t
+            KNArrayRead  t _    -> out $ "KNArrayRead " ++ " :: " ++ show t
             KNArrayPoke  {}     -> out $ "KNArrayPoke "
             KNTuple     es      -> out $ "KNTuple     (size " ++ (show $ length es) ++ ")"
             KNVar (TypedId t (GlobalSymbol name))
@@ -358,8 +361,8 @@ instance Structured KNExpr where
             KNAllocArray _ v        -> [var v]
             KNDeref   v             -> [var v]
             KNStore   v w           -> [var v, var w]
-            KNArrayRead _t a b      -> [var a, var b]
-            KNArrayPoke    v b i    -> [var v, var b, var i]
+            KNArrayRead _t ari      -> map var $ childrenOfArrayIndex ari
+            KNArrayPoke    ari i    -> map var $ childrenOfArrayIndex ari ++ [i]
             KNVar _                 -> []
             KNTyApp _t v _argty     -> [var v]
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||

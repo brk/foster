@@ -256,8 +256,10 @@ ssTermOfExpr expr =
     KNCallPrim _t b vs     -> SSTmExpr  $ ICallPrim b (map idOf vs)
     KNIf       _t  v b c   -> SSTmExpr  $ IIf (idOf v) (tr b) (tr c)
     KNUntil    _t  a b     -> SSTmExpr  $ IUntil    (tr a) (tr b)
-    KNArrayRead _t a b     -> SSTmExpr  $ IArrayRead (idOf a) (idOf b)
-    KNArrayPoke v b i      -> SSTmExpr  $ IArrayPoke (idOf v) (idOf b) (idOf i)
+    KNArrayRead _t (ArrayIndex a b _)
+                           -> SSTmExpr  $ IArrayRead (idOf a) (idOf b)
+    KNArrayPoke (ArrayIndex b i _) v
+                           -> SSTmExpr  $ IArrayPoke (idOf v) (idOf b) (idOf i)
     KNAllocArray _ety n    -> SSTmExpr  $ IAllocArray (idOf n)
     KNAlloc a _rgn         -> SSTmExpr  $ IAlloc (idOf a)
     KNDeref   a            -> SSTmExpr  $ IDeref (idOf a)

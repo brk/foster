@@ -6,7 +6,8 @@
 
 module Foster.MonoLetable (MonoLetable(..)) where
 
-import Foster.Base(LiteralInt, LiteralFloat, CtorId, AllocInfo, AllocMemRegion)
+import Foster.Base(LiteralInt, LiteralFloat, CtorId, ArrayIndex,
+                   AllocInfo, AllocMemRegion)
 import Foster.MonoType(MoVar, MoPrim, MonoType)
 import Foster.PatternMatch(Occurrence)
 
@@ -30,6 +31,6 @@ data MonoLetable =
         | MoStore       MoVar MoVar
         -- Array operations
         | MoAllocArray  MonoType MoVar
-        | MoArrayRead   MonoType MoVar  MoVar
-        | MoArrayPoke            MoVar  MoVar  MoVar
+        | MoArrayRead   MonoType (ArrayIndex MoVar)
+        | MoArrayPoke            (ArrayIndex MoVar) MoVar
         deriving (Show)

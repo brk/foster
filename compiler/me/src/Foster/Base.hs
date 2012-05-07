@@ -34,8 +34,13 @@ data IntSizeBits = I1 | I8 | I32 | I64 deriving (Eq, Show)
 data ProcOrFunc   = FT_Proc | FT_Func  deriving Show
 data VarNamespace = VarProc | VarLocal deriving Show
 
+data SafetyGuarantee = SG_Static | SG_Dynamic               deriving (Show)
+data ArrayIndex expr = ArrayIndex expr expr SafetyGuarantee deriving (Show)
+
 data TyVar = BoundTyVar String -- bound by a ForAll, that is
            | SkolemTyVar String Uniq Kind
+
+childrenOfArrayIndex (ArrayIndex a b _) = [a, b]
 
 briefCC CCC = "ccc"
 briefCC FastCC = ""

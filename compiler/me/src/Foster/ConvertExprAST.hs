@@ -80,11 +80,13 @@ convertExprAST f expr =
     E_AllocAST     rng a        -> liftM  (E_AllocAST     rng)   (q a)
     E_DerefAST     rng a        -> liftM  (E_DerefAST     rng)   (q a)
     E_StoreAST     rng a b      -> liftM2 (E_StoreAST     rng)   (q a) (q b)
-    E_ArrayRead    rng a b      -> liftM2 (E_ArrayRead    rng)   (q a) (q b)
-    E_ArrayPoke    rng a b c    -> liftM3 (E_ArrayPoke    rng)   (q a) (q b) (q c)
     E_TyApp        rng a mt     -> liftM2 (E_TyApp        rng)   (q a) (liftMaybe f mt)
     E_VarAST       rng v        -> liftM  (E_VarAST       rng) (convertEVar f v)
     E_TupleAST tup              -> liftM  (E_TupleAST        ) (convertTuple f tup)
+    E_ArrayRead    rng (ArrayIndex a b s) -> do [x, y] <- mapM q [a, b]
+                                                return $ E_ArrayRead rng (ArrayIndex x y s)
+    E_ArrayPoke    rng (ArrayIndex a b s) c -> do [x, y, z] <- mapM q [a, b, c]
+                                                  return $ E_ArrayPoke rng (ArrayIndex x y s) z
     E_Case         rng e bs     -> do e' <- q e
                                       bs' <- mapM (\(pat, exp) -> do
                                                           exp' <- q exp
