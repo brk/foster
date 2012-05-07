@@ -323,7 +323,7 @@ ExprAST* parseValAbs(pTree tree) {
 ExprAST* parseTuple(pTree t) {
   if (getChildCount(t) == 1) {
     return ExprAST_from(child(t, 0));
-  } return new TupleExprAST(getExprs(t), rangeOf(t));
+  } return new CallPrimAST("tuple", getExprs(t), rangeOf(t));
 }
 
 Binding parseBinding(pTree tree) {
@@ -390,7 +390,7 @@ ExprAST* parseUntil(pTree tree) {
 }
 
 ExprAST* parseRef(pTree tree) {
-  return new AllocAST(ExprAST_from(child(tree, 0)), rangeOf(tree));
+  return CallPrimAST::one("alloc", ExprAST_from(child(tree, 0)), rangeOf(tree));
 }
 
 ExprAST* parseBuiltinCompiles(pTree t) {
@@ -537,11 +537,11 @@ ExprAST* parseAtom(pTree tree) {
 }
 
 ExprAST* parseSubscript(ExprAST* base, pTree tree) {
-  return new SubscriptAST(base, ExprAST_from(child(tree, 0)), rangeOf(tree));
+  return CallPrimAST::two("subscript", base, ExprAST_from(child(tree, 0)), rangeOf(tree));
 }
 
 ExprAST* parseDeref(ExprAST* base, pTree tree) {
-  return new DerefAST(base, rangeOf(tree));
+  return CallPrimAST::one("deref", base, rangeOf(tree));
 }
 
 // ^(VAL_TYPE_APP t*)
@@ -621,7 +621,7 @@ void leftAssoc(std::vector<VarOpPair>& opstack,
 
   if (o == ">^") {
     // TODO move this switch to desugaring in me.
-    argstack.push_back(new StoreAST(x, y, rangeFrom(x, y)));
+    argstack.push_back(CallPrimAST::two("store", x, y, rangeFrom(x, y)));
   } else {
     Exprs exprs;
     exprs.push_back(x);

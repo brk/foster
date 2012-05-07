@@ -23,7 +23,7 @@ tokens {
   LIT_NUM; BOOL; STRING;
   DECL; DEFN;
   TERMNAME; TYPENAME; TYPEVAR_DECL;
-  TERM; PHRASE; LVALUE; SUBSCRIPT;
+  TERM; PHRASE; PRIMAPP; LVALUE; SUBSCRIPT;
   VAL_TYPE_APP; DEREF; ASSIGN_TO;
   REF; TUPLE; VAL_ABS; TYP_ABS; TYPE_ATOM;
   TYPE_TYP_APP; TYPE_TYP_ABS;
@@ -90,7 +90,8 @@ e    :
 
 binops  :       (opr phrase)+;
 
-phrase  :       lvalue+                         -> ^(PHRASE lvalue+);
+phrase  :       lvalue+                         -> ^(PHRASE lvalue+)
+        |       'prim' id lvalue*               -> ^(PRIMAPP id lvalue*);
 lvalue  :       atom suffix*                    -> ^(LVALUE atom suffix*);
 
 type_application

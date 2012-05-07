@@ -45,9 +45,9 @@ import Foster.Fepb.Expr     as PbExpr
 import Foster.Fepb.SourceModule as SourceModule
 import Foster.Fepb.WholeProgram as WholeProgram
 import Foster.Fepb.Expr.Tag(Tag(IF, LET, VAR, SEQ, UNTIL,
-                                BOOL, CALL, TY_APP, STRING, -- MODULE,
-                                ALLOC, DEREF, STORE, TUPLE, PB_INT, PB_RAT,
-                                CASE_EXPR, COMPILES, VAL_ABS, SUBSCRIPT,
+                                BOOL, CALL, CALLPRIM, TY_APP, STRING, -- MODULE,
+                                PB_INT, PB_RAT,
+                                CASE_EXPR, COMPILES, VAL_ABS,
                                 PAT_WILDCARD, PAT_NUM, PAT_BOOL, PAT_CTOR,
                                 PAT_VARIABLE, PAT_TUPLE))
 import qualified Foster.Fepb.SourceRange as Pb
@@ -78,6 +78,19 @@ parseCall pbexpr rng = do
     return $ E_CallAST rng base (argTuple rng args)
         where argTuple rng args = TupleAST (rangeSpanOf rng args) args
 
+parseCallPrim pbexpr rng = do
+    args <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
+    let primname = getName "prim" $ PbExpr.string_value pbexpr
+    case (T.unpack primname, args) of
+      ("tuple",  _ ) -> return $ E_TupleAST (TupleAST rng args)
+      ("deref", [e]) -> return $ E_DerefAST rng e
+      ("alloc", [e]) -> return $ E_AllocAST rng e
+      ("subscript",[a,b]) -> return $ E_ArrayRead rng a b
+      ("store",[a,b])-> case b of -- a>^ c[d]
+                           E_ArrayRead _ c d -> return $ E_ArrayPoke rng a c d
+                           _                 -> return $ E_StoreAST rng a b
+      _ -> error $ "ProtobufFE: unknown primitive/arg combo " ++ show primname
+        
 parseCompiles pbexpr range = do
     let numChildren = Seq.length $ PbExpr.parts pbexpr
     case numChildren of
@@ -179,28 +192,6 @@ parseSeq pbexpr rng = do
         buildSeqs [a]   = a
         buildSeqs (a:b) = E_SeqAST (MissingSourceRange "buildSeqs") a (buildSeqs b)
 
-parseAlloc pbexpr range = do
-    [body] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
-    return $ E_AllocAST range body
-
-parseStore pbexpr range = do
-    [a,b] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
-    case b of -- a >^ c[d]
-        E_ArrayRead _ c d -> return $ E_ArrayPoke range a c d
-        _                 -> return $ E_StoreAST range a b
-
-parseDeref pbexpr range = do
-    [body] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
-    return $ E_DerefAST range body
-
-parseSubscript pbexpr range = do
-    [a,b] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
-    return $ E_ArrayRead range a b
-
-parseTuple pbexpr range = do
-    exprs <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
-    return $ E_TupleAST $ TupleAST range exprs
-
 parseTyApp pbexpr range = do
     [body] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
     let tys = map parseType (toList $ PbExpr.ty_app_arg_type pbexpr)
@@ -269,18 +260,14 @@ parseExpr pbexpr = do
                 UNTIL   -> parseUntil
                 BOOL    -> parseBool
                 VAR     -> parseEVar
-                Foster.Fepb.Expr.Tag.TUPLE   -> parseTuple
                 Foster.Fepb.Expr.Tag.VAL_ABS -> parseValAbs
                 CALL      -> parseCall
+                CALLPRIM  -> parseCallPrim
                 SEQ       -> parseSeq
                 LET       -> parseLet
-                ALLOC     -> parseAlloc
-                DEREF     -> parseDeref
-                STORE     -> parseStore
                 TY_APP    -> parseTyApp
                 CASE_EXPR -> parseCaseExpr
                 COMPILES  -> parseCompiles
-                SUBSCRIPT -> parseSubscript
                 PAT_WILDCARD -> error "parseExpr called on pattern!"
                 PAT_VARIABLE -> error "parseExpr called on pattern!"
                 PAT_CTOR     -> error "parseExpr called on pattern!"

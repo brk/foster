@@ -73,16 +73,12 @@ message Expr {
     PB_RAT    = 17;
     BOOL      = 18;
     LET       = 19;
-    TUPLE     = 20;
     VAL_ABS   = 21;
     UNTIL     = 22;
     CALL      = 23;
+    CALLPRIM  = 33;
     SEQ       = 24;
     TY_APP    = 25;
-    SUBSCRIPT = 26;
-    ALLOC     = 27;
-    DEREF     = 28;
-    STORE     = 29;
     CASE_EXPR = 30;
     COMPILES  = 31;
     IF        = 32;

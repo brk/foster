@@ -62,8 +62,6 @@ class IntAST;
 class RatAST;
 class BoolAST;
 class SeqAST;
-class TupleExprAST;
-class SubscriptAST;
 class IfExprAST;
 class VariableAST;
 
@@ -162,6 +160,25 @@ struct CallAST : public ExprAST {
   virtual void dump(DumpToProtobufPass* pass);
 };
 
+// 'prim' id args
+struct CallPrimAST : public ExprAST {
+  std::string primname;
+  CallPrimAST(std::string primname, Exprs args, foster::SourceRange sourceRange)
+      : ExprAST("CallPrimAST", sourceRange), primname(primname) {
+    for (size_t i = 0; i < args.size(); ++i) parts.push_back(args[i]);
+  }
+  virtual void dump(DumpToProtobufPass* pass);
+  static CallPrimAST* one(const char* nm, ExprAST* e, foster::SourceRange sr) {
+    Exprs args; args.push_back(e);
+    return new CallPrimAST(nm, args, sr);
+  }
+  static CallPrimAST* two(const char* nm, ExprAST* e1, ExprAST* e2,
+                          foster::SourceRange sr) {
+    Exprs args; args.push_back(e1); args.push_back(e2);
+    return new CallPrimAST(nm, args, sr);
+  }
+};
+
 // e[ty]
 struct ETypeAppAST : public ExprAST {
   std::vector<TypeAST*> typeArgs;
@@ -200,61 +217,8 @@ struct SeqAST : public ExprAST {
   virtual void dump(DumpToProtobufPass* pass);
 };
 
-struct TupleExprAST : public ExprAST {
-  explicit TupleExprAST(Exprs exprs, foster::SourceRange sourceRange)
-    : ExprAST("TupleExprAST", sourceRange) {
-      for (size_t i = 0; i < exprs.size(); ++i) { parts.push_back(exprs[i]); }
-  }
-  virtual void dump(DumpToProtobufPass* pass);
-};
-
 //////////////////////////////////////////////
 //////////////////////////////////////////////
-
-// (ref base)
-struct AllocAST : public ExprAST {
-  explicit AllocAST(ExprAST* base,
-                    foster::SourceRange sourceRange)
-    : ExprAST("AllocAST", sourceRange) {
-    this->parts.push_back(base);
-  }
-  virtual void dump(DumpToProtobufPass* pass);
-};
-
-// base^
-struct DerefAST : public ExprAST {
-  explicit DerefAST(ExprAST* base,
-                   foster::SourceRange sourceRange)
-    : ExprAST("DerefAST", sourceRange) {
-    this->parts.push_back(base);
-  }
-  virtual void dump(DumpToProtobufPass* pass);
-};
-
-// ev >^ er
-struct StoreAST : public ExprAST {
-  explicit StoreAST(ExprAST* ev, ExprAST* er,
-                    foster::SourceRange sourceRange)
-    : ExprAST("StoreAST", sourceRange) {
-    this->parts.push_back(ev);
-    this->parts.push_back(er);
-  }
-  virtual void dump(DumpToProtobufPass* pass);
-};
-
-//////////////////////////////////////////////
-//////////////////////////////////////////////
-
-// base[index]
-struct SubscriptAST : public ExprAST {
-  explicit SubscriptAST(ExprAST* base, ExprAST* index,
-                        foster::SourceRange sourceRange)
-    : ExprAST("SubscriptAST", sourceRange) {
-    this->parts.push_back(base);
-    this->parts.push_back(index);
-  }
-  virtual void dump(DumpToProtobufPass* pass);
-};
 
 struct Formal {
   string name; // eventually, pattern

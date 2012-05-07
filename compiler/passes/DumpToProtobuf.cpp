@@ -222,26 +222,6 @@ void UntilExpr::dump(DumpToProtobufPass* pass) {
   dumpChildren(pass, this);
 }
 
-void AllocAST::dump(DumpToProtobufPass* pass) {
-  processExprAST(pass->current, this, pb::Expr::ALLOC);
-  dumpChildren(pass, this);
-}
-
-void DerefAST::dump(DumpToProtobufPass* pass) {
-  processExprAST(pass->current, this, pb::Expr::DEREF);
-  dumpChildren(pass, this);
-}
-
-void StoreAST::dump(DumpToProtobufPass* pass) {
-  processExprAST(pass->current, this, pb::Expr::STORE);
-  dumpChildren(pass, this);
-}
-
-void SubscriptAST::dump(DumpToProtobufPass* pass) {
-  processExprAST(pass->current, this, pb::Expr::SUBSCRIPT);
-  dumpChildren(pass, this);
-}
-
 void SeqAST::dump(DumpToProtobufPass* pass) {
   if (this->parts.size() == 1) {
     this->parts[0]->dump(pass);
@@ -268,6 +248,12 @@ void CallAST::dump(DumpToProtobufPass* pass) {
   dumpChildren(pass, this);
 }
 
+void CallPrimAST::dump(DumpToProtobufPass* pass) {
+  processExprAST(pass->current, this, pb::Expr::CALLPRIM);
+  pass->current->set_string_value(this->primname);
+  dumpChildren(pass, this);
+}
+
 void ETypeAppAST::dump(DumpToProtobufPass* pass) {
   processExprAST(pass->current, this, pb::Expr::TY_APP);
   dumpChildren(pass, this);
@@ -277,11 +263,6 @@ void ETypeAppAST::dump(DumpToProtobufPass* pass) {
     DumpTypeToProtobufPass dt(pass->current->add_ty_app_arg_type());
     this->typeArgs[i]->dump(&dt);
   }
-}
-
-void TupleExprAST::dump(DumpToProtobufPass* pass) {
-  processExprAST(pass->current, this, pb::Expr::TUPLE);
-  dumpChildren(pass, this);
 }
 
 void BuiltinCompilesExprAST::dump(DumpToProtobufPass* pass) {
