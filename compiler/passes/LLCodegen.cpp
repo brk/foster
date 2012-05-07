@@ -871,14 +871,16 @@ bool tryBindArray(llvm::Value* base, Value*& arr, Value*& len) {
   return false;
 }
 
-Value* getArraySlot(Value* base, Value* idx, CodegenPass* pass) {
+Value* getArraySlot(Value* base, Value* idx, CodegenPass* pass, bool dynCheck) {
   Value* arr = NULL; Value* len;
   if (tryBindArray(base, arr, len)) {
-    emitFosterAssert(pass->mod,
-      builder.CreateICmpULT(
-                builder.CreateSExt(idx, len->getType()),
-                len, "boundscheck"),
-      "array index out of bounds!");
+    if (dynCheck) {
+      emitFosterAssert(pass->mod,
+        builder.CreateICmpULT(
+                  builder.CreateSExt(idx, len->getType()),
+                  len, "boundscheck"),
+        "array index out of bounds!");
+    }
     return getPointerToIndex(arr, idx, "arr_slot");
   } else {
     ASSERT(false) << "expected array, got " << str(base);
@@ -886,10 +888,16 @@ Value* getArraySlot(Value* base, Value* idx, CodegenPass* pass) {
   }
 }
 
-llvm::Value* LLArrayRead::codegen(CodegenPass* pass) {
+
+llvm::Value* LLArrayIndex::codegenARI(CodegenPass* pass) {
   Value* base = pass->emit(this->base , NULL);
   Value* idx  = pass->emit(this->index, NULL);
-  Value* slot = getArraySlot(base, idx, pass);
+  ASSERT(static_or_dynamic == "static" || static_or_dynamic == "dynamic");
+  return getArraySlot(base, idx, pass, static_or_dynamic == "dynamic");
+}
+
+llvm::Value* LLArrayRead::codegen(CodegenPass* pass) {
+  Value* slot = ari->codegenARI(pass);
   Value* val  = emitNonVolatileLoad(slot, "arrayslot");
   return ensureImplicitStackSlot(val, pass);
 }
@@ -901,9 +909,7 @@ llvm::Value* LLArrayRead::codegen(CodegenPass* pass) {
 
 llvm::Value* LLArrayPoke::codegen(CodegenPass* pass) {
   Value* val  = pass->emit(this->value, NULL);
-  Value* base = pass->emit(this->base , NULL);
-  Value* idx  = pass->emit(this->index, NULL);
-  Value* slot = getArraySlot(base, idx, pass);
+  Value* slot = ari->codegenARI(pass);
   return builder.CreateStore(val, slot, /*isVolatile=*/ false);
 }
 

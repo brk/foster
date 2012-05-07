@@ -91,7 +91,7 @@ e    :
 binops  :       (opr phrase)+;
 
 phrase  :       lvalue+                         -> ^(PHRASE lvalue+)
-        |       'prim' id lvalue*               -> ^(PRIMAPP id lvalue*);
+        |       'prim' name lvalue*             -> ^(PRIMAPP name lvalue*);
 lvalue  :       atom suffix*                    -> ^(LVALUE atom suffix*);
 
 type_application

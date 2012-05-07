@@ -271,19 +271,22 @@ LLProc* parseProc(const pb::Proc& e) {
                        blocks);
 }
 
+LLArrayIndex* parseArrayIndex(const pb::Letable& e) {
+  ASSERT(e.parts_size() >= 2) << "array_index must have base and index";
+  return new LLArrayIndex(parseTermVar(& e.parts(0)),
+                          parseTermVar(& e.parts(1)),
+                          e.string_value());
+}
+
 LLExpr* parseArrayRead(const pb::Letable& e) {
   ASSERT(e.parts_size() == 2) << "array_read must have base and index";
-  return new LLArrayRead(
-       parseTermVar(& e.parts(0)),
-       parseTermVar(& e.parts(1)));
+  return new LLArrayRead(parseArrayIndex(e));
 }
 
 LLExpr* parseArrayPoke(const pb::Letable& e) {
   ASSERT(e.parts_size() == 3) << "array_write must have value, base and index";
-  return new LLArrayPoke(
-       parseTermVar(& e.parts(0)),
-       parseTermVar(& e.parts(1)),
-       parseTermVar(& e.parts(2)));
+  return new LLArrayPoke(parseArrayIndex(e),
+                         parseTermVar(& e.parts(2)));
 }
 
 LLExpr* parseArrayLength(const pb::Letable& e) {

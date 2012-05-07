@@ -54,6 +54,9 @@ import qualified Data.Text as T
 
 -----------------------------------------------------------------------
 
+stringSG SG_Static  = u8fromString "static"
+stringSG SG_Dynamic = u8fromString "dynamic"
+
 dumpBlockId (str, lab) = u8fromString (str ++ "." ++ show lab)
 
 dumpIdent :: Ident -> P'.Utf8
@@ -262,14 +265,16 @@ dumpExpr x@(MoStore a b) =
                     , PbLetable.tag   = IL_STORE
                     , PbLetable.type' = Just $ dumpType (typeMo x)  }
 
-dumpExpr x@(MoArrayRead _t (ArrayIndex a b _sg)) =
-    P'.defaultValue { PbLetable.parts = fromList (fmap dumpVar [a, b])
+dumpExpr x@(MoArrayRead _t (ArrayIndex b i sg)) =
+    P'.defaultValue { PbLetable.parts = fromList (fmap dumpVar [b, i])
                     , PbLetable.tag   = IL_ARRAY_READ
+                    , PbLetable.string_value = Just $ stringSG sg
                     , PbLetable.type' = Just $ dumpType (typeMo x)  }
 
-dumpExpr x@(MoArrayPoke (ArrayIndex b i _sg) v) =
-    P'.defaultValue { PbLetable.parts = fromList (fmap dumpVar [v, b, i])
+dumpExpr x@(MoArrayPoke (ArrayIndex b i sg) v) =
+    P'.defaultValue { PbLetable.parts = fromList (fmap dumpVar [b, i, v])
                     , PbLetable.tag   = IL_ARRAY_POKE
+                    , PbLetable.string_value = Just $ stringSG sg
                     , PbLetable.type' = Just $ dumpType (typeMo x)  }
 
 dumpExpr x@(MoInt _ty int) =

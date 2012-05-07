@@ -436,19 +436,19 @@ typecheckArrayRead rng _s _base baseType _index maybeExpTy =
 
 -----------------------------------------------------------------------
 
--- G |-  a   ::: t
--- G |- b[c] ::: Array t
+-- G |-  v   ::: t
+-- G |- b[i] ::: Array t
 -- ---------------------
--- G |- a >^ b[c] ::: ()
-typecheckArrayPoke rng s a b (ArrayTypeAST t) c maybeExpTy = do
+-- G |- v >^ b[i] ::: ()
+typecheckArrayPoke rng s v b (ArrayTypeAST t) i maybeExpTy = do
 -- {{{
     -- TODO check aiexpr type is compatible with Word
-    unify t (typeAST a) (Just "arraypoke type")
+    unify t (typeAST v) (Just "arraypoke type")
     case maybeExpTy of
       Nothing -> return ()
       Just expTy -> unify t expTy (Just $ "arraypoke expected type: " ++ show expTy)
 
-    return (AnnArrayPoke rng t (ArrayIndex b c s) a)
+    return (AnnArrayPoke rng t (ArrayIndex b i s) v)
 
 typecheckArrayPoke rng _s _a _b baseType _c maybeExpTy =
     tcFails [out $ "Unable to arraypoke expression of type " ++ show baseType

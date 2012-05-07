@@ -284,23 +284,28 @@ struct LLTuple : public LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
-// base[index]
-struct LLArrayRead : public LLExpr {
+struct LLArrayIndex {
   LLVar* base;
   LLVar* index;
-  explicit LLArrayRead(LLVar* base, LLVar* index)
-    : LLExpr("LLArrayRead"), base(base), index(index) {
-    }
+  std::string static_or_dynamic;
+  explicit LLArrayIndex(LLVar* base, LLVar* index, string static_or_dynamic)
+    : base(base), index(index), static_or_dynamic(static_or_dynamic) {}
+  virtual llvm::Value* codegenARI(CodegenPass* pass);
+};
+
+// base[index]
+struct LLArrayRead : public LLExpr {
+  LLArrayIndex* ari;
+  explicit LLArrayRead(LLArrayIndex* ari) : LLExpr("LLArrayRead"), ari(ari) {}
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
 // val >^ base[index]
 struct LLArrayPoke : public LLExpr {
   LLVar* value;
-  LLVar* base;
-  LLVar* index;
-  explicit LLArrayPoke(LLVar* v, LLVar* b, LLVar* i)
-    : LLExpr("LLArrayPoke"), value(v), base(b), index(i) {}
+  LLArrayIndex* ari;
+  explicit LLArrayPoke(LLArrayIndex* ari, LLVar* v)
+    : LLExpr("LLArrayPoke"), value(v), ari(ari) {}
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 

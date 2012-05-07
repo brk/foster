@@ -580,8 +580,7 @@ ExprAST* parseLValue(pTree tree) {
   return acc;
 }
 
-// ^(PHRASE lvalue+)
-ExprAST* parsePhrase(pTree tree) {
+ExprAST* parseCall(pTree tree) {
   ExprAST* base = parseLValue(child(tree, 0));
   if (getChildCount(tree) == 1) { return base; }
   Exprs exprs;
@@ -589,6 +588,25 @@ ExprAST* parsePhrase(pTree tree) {
     exprs.push_back(parseLValue(child(tree, i)));
   }
   return new CallAST(base, exprs, rangeOf(tree));
+}
+
+ExprAST* parsePrimApp(pTree tree) {
+  ASSERT(getChildCount(tree) >= 1) << "prim app with no name?!?";
+  string name = textOf(child(tree, 0));
+  Exprs exprs;
+  for (size_t i = 1; i < getChildCount(tree); ++i) {
+    exprs.push_back(parseLValue(child(tree, i)));
+  }
+  return new CallPrimAST(name, exprs, rangeOf(tree));
+}
+
+// ^(PHRASE lvalue+) | ^(PRIMAPP id lvalue*)
+ExprAST* parsePhrase(pTree tree) {
+  int token = typeOf(tree);
+  if (token == PHRASE) { return parseCall(tree); }
+  if (token == PRIMAPP) { return parsePrimApp(tree); }
+  ASSERT(false) << "Unknown token type in parsePhrase()!";
+  return NULL;
 }
 
 ExprAST* parseBinops(pTree tree) {
