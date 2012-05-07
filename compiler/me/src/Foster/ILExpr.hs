@@ -399,8 +399,8 @@ instance Structured (String, Label) where
 instance UniqueMonad (State ILMState) where
   freshUnique = ilmNewUniq >>= (return . intToUnique)
 
-showProgramStructure :: ILProgram -> Output
-showProgramStructure (ILProgram procdefs _decls _dtypes _lines) =
+showILProgramStructure :: ILProgram -> Output
+showILProgramStructure (ILProgram procdefs _decls _dtypes _lines) =
     concatMap showProcStructure (Map.elems procdefs)
   where
     showProcStructure proc =
