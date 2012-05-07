@@ -115,43 +115,47 @@ energy = { bodies : Array Planet =>
   end
 };
 
-advance = { bodies : Array Planet =>
-  let i = (ref primitive_sext_i64_i32 0);
-      j = (ref primitive_sext_i64_i32 0);
-      l = prim_arrayLength bodies;
-  in
-    until i^ ==Int64 l then
-      (i^ +Int64 (primitive_sext_i64_i32 1)) >^ j;
-      let b1 = bodies[i^]; in
-        until j^ >=Int64 l then
-          let b2 = bodies[j^]; in
-            let dx = px b1 -f64 px b2;
-                dy = py b1 -f64 py b2;
-                dz = pz b1 -f64 pz b2;
-                inv_distance = div-f64 1.0 (sqrt-f64 ((dx *f64 dx) +f64 (dy *f64 dy) +f64 (dz *f64 dz)));
-                mag = inv_distance *f64 inv_distance *f64 inv_distance;
-            in
-              decrByFloat64 (vxr b1) (dx *f64 ma b2 *f64 mag);
-              decrByFloat64 (vyr b1) (dy *f64 ma b2 *f64 mag);
-              decrByFloat64 (vzr b1) (dz *f64 ma b2 *f64 mag);
-              incrByFloat64 (vxr b2) (dx *f64 ma b1 *f64 mag);
-              incrByFloat64 (vyr b2) (dy *f64 ma b1 *f64 mag);
-              incrByFloat64 (vzr b2) (dz *f64 ma b1 *f64 mag);
-              ()
-            end;
-            (j^ +Int64 (primitive_sext_i64_i32 1)) >^ j;
-          end
+advance = { bodies : Array Planet => i : Ref Int64
+                                  => j : Ref Int64
+                                  => l : Int64
+                                  =>
+  (primitive_sext_i64_i32 0) >^ i;
+  (primitive_sext_i64_i32 0) >^ j;
+  until i^ ==Int64 l then
+    (i^ +Int64 (primitive_sext_i64_i32 1)) >^ j;
+    let b1 = prim subscript bodies i^; in
+      until j^ >=Int64 l then
+        let b2 = prim subscript bodies j^; in
+          let dx = px b1 -f64 px b2;
+              dy = py b1 -f64 py b2;
+              dz = pz b1 -f64 pz b2;
+              inv_distance = div-f64 1.0 (sqrt-f64 ((dx *f64 dx) +f64 (dy *f64 dy) +f64 (dz *f64 dz)));
+              mag = inv_distance *f64 inv_distance *f64 inv_distance;
+          in
+            decrByFloat64 (vxr b1) (dx *f64 ma b2 *f64 mag);
+            decrByFloat64 (vyr b1) (dy *f64 ma b2 *f64 mag);
+            decrByFloat64 (vzr b1) (dz *f64 ma b2 *f64 mag);
+            incrByFloat64 (vxr b2) (dx *f64 ma b1 *f64 mag);
+            incrByFloat64 (vyr b2) (dy *f64 ma b1 *f64 mag);
+            incrByFloat64 (vzr b2) (dz *f64 ma b1 *f64 mag);
+            ()
+          end;
+          (j^ +Int64 (primitive_sext_i64_i32 1)) >^ j;
         end
-      end;
+      end
+    end;
+    (i^ +Int64 (primitive_sext_i64_i32 1)) >^ i;
+  end;
+  
+  (primitive_sext_i64_i32 0) >^ i;
+  until i^ ==Int64 l then
+    let b = prim subscript-unsafe bodies i^; in
+      incrByFloat64 (pxr b) (vx b);
+      incrByFloat64 (pyr b) (vy b);
+      incrByFloat64 (pzr b) (vz b);
       (i^ +Int64 (primitive_sext_i64_i32 1)) >^ i;
     end
-  end;
-
-  arrayEnum bodies { b : Planet => ign:Int64 =>
-    incrByFloat64 (pxr b) (vx b);
-    incrByFloat64 (pyr b) (vy b);
-    incrByFloat64 (pzr b) (vz b);
-  };
+  end
 };
 
 offset-momentum = { bodies : Array Planet =>
@@ -181,10 +185,23 @@ scale = { bodies : Array Planet => s : Float64 =>
   };
 };
 
+advance-loop = { n : Int32 => bodies : Array Planet
+              => i : Ref Int64
+              => j : Ref Int64
+              => l : Int64 =>
+  if n ==Int32 0 then () else
+    advance bodies i j l;
+    advance-loop (n -Int32 1) bodies i j l;
+  end
+};
+
 main = {
   let n = (ref tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1));
       nbodies = 5;
       bodies = mkBodies nbodies;
+      i = (ref primitive_sext_i64_i32 0);
+      j = (ref primitive_sext_i64_i32 0);
+      l = primitive_sext_i64_i32 nbodies;
       dt = 1.0e-02;
   in
       offset-momentum bodies;
@@ -192,7 +209,7 @@ main = {
       print_float_p9f64 (energy bodies);
 
       scale bodies dt;
-      repeat n^ { advance bodies };
+      advance-loop n^ bodies i j l;
       scale bodies (div-f64 1.0 dt);
 
       print_float_p9f64 (energy bodies);
