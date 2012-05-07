@@ -1,7 +1,6 @@
 TODO
 ====
 
-* Way to do efficient iteration over arrays?
 * Measure impact of alignment (1 vs 4)? vs 8 vs 16 --
   can enable SSE2+ insns for align 16, but can also raise memory usage.
 * Can begin doing comparative timing tests for verifying efficient
@@ -59,7 +58,7 @@ TODO: libraries, benchmarks, & applications
 * Sequences
 * Persistent maps
 * MP integers
-* Floating-point types
+* 32-bit floats
 * Flonum vectors
 * Fixnum vectors
 * Growable vectors
@@ -143,9 +142,9 @@ TODO: design & implementation
   * Aligned allocas
 
 * Type operators (types indexed by types)
-* Pattern matching (done?)
-  * Arbitrary-sized integers
-  * User-defined types
+* Pattern matching (basics done, fancier variants possible:)
+  * Arbitrary-sized bintegers
+  * Views?
 
 * Algebraic data types (data/variant/oneof)
   * Representation guarantees for restricted cases
@@ -185,7 +184,6 @@ TODO: design & implementation
   * Strings (standard but not primitive, given arrays?)
   * References (done?)
     * Separate from Addr? Fat ptr for interior refs?
-* CodeGenOpt::None seems to trigger a closure-related bug in either r113708 or us.
 
 * Mutability
  * Effects, a la Disciple
