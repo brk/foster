@@ -1,6 +1,9 @@
 glob:*.class
 glob:*.java
 glob:*.pyc
+glob:*.s
+glob:*.o
+glob:*.orig
 glob:*~
 glob:.svn
 glob:.*.swp
@@ -26,7 +29,7 @@ compiler/me/src/Llvmpb/
 compiler/me/src/Llvmpb.hs
 compiler/me/src/Main.hsext
 glob:compiler/me/**.hi
-glob:compiler/me/**.o
 glob:compiler/me/**.*-boot
+glob:test/**.exe
 glob:*.lkshw
 glob:*\#
