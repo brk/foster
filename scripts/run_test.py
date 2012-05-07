@@ -94,14 +94,8 @@ def output_extension(to_asm):
   else:
     return ".o"
 
-def is_verbose(options):
-  return options and options.verbose == 'true'
-
-def verbosearg(options):
-  if is_verbose(options):
-    return ["--verbose"]
-  else:
-    return []
+def show_cmdlines(options):
+  return options and options.show_cmdlines == True
 
 def optlevel(options):
   if options and options.optlevel:
@@ -116,7 +110,10 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
     finalname = os.path.basename(finalpath)
     to_asm = options and options.asm
     ext = output_extension(to_asm)
-    if is_verbose(options):
+
+    # Getting tee functionality in Python is a pain in the behind
+    # so we just disable logging when running with --show-cmdlines.
+    if show_cmdlines(options):
       compilelog = None
 
     if options and options.importpath:
@@ -124,8 +121,6 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
     else:
       importpath = []
 
-    # Getting tee functionality in Python is a pain in the behind
-    # so we just disable logging when running with --verbose.
     if options and options.interpret:
       interpret = ["--interpret", tmpdir]
     else:
@@ -142,7 +137,7 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
 
     def crun(cmdlist):
       return run_command(cmdlist,
-                paths, testpath, showcmd=is_verbose(options),
+                paths, testpath, showcmd=show_cmdlines(options),
                 stdout=compilelog, stderr=compilelog, strictrv=True)
 
     # running fosterparse on a source file produces a ParsedAST
@@ -151,7 +146,7 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
     # running fostercheck on a ParsedAST produces an ElaboratedAST
     (s2, e2) = crun(['fostercheck', parse_output, check_output] +
                      ["+RTS"] + ghc_rts_args + ["-RTS"] +
-                     interpret + verbosearg(options))
+                     interpret + options.meargs)
 
     # running fosterlower on a ParsedAST produces a bitcode Module
     # linking a bunch of Modules produces a Module
@@ -253,7 +248,7 @@ def run_one_test(testpath, paths, tmpdir, progargs):
     fc_elapsed=fc_elapsed, as_elapsed=as_elapsed, ld_elapsed=ld_elapsed, rn_elapsed=rn_elapsed)
   infile.close()
 
-  if is_verbose(options):
+  if show_cmdlines(options):
     run_command(["paste", exp_filename, act_filename], {}, "")
 
   if rv != 0:
@@ -314,8 +309,8 @@ def get_test_parser(usage):
                     help="Use bindir as default place to find binaries; defaults to current directory")
   parser.add_option("--me", dest="me", action="store", default="me",
                     help="Relative (from bindir) or absolute path to binary to use for type checking.")
-  parser.add_option("--verbose", action="store", dest="verbose", default='false',
-                    help="Show more information about program output.")
+  parser.add_option("--show-cmdlines", action="store_true", dest="show_cmdlines", default=False,
+                    help="Show more information about programs being run.")
   parser.add_option("--asm", action="store_true", dest="asm", default=False,
                     help="Compile to assembly rather than object file.")
   parser.add_option("--interpret", action="store_true", dest="interpret", default=False,
@@ -324,6 +319,8 @@ def get_test_parser(usage):
                     help="Enable optimizations in fosteroptc")
   parser.add_option("--profile", dest="profile", default=False,
                     help="Enable detailed profiling of compiler middle-end")
+  parser.add_option("--me-arg", action="append", dest="meargs", default=[],
+                    help="Pass through arg to middle-end.")
   parser.add_option("--prog-arg", action="append", dest="progargs", default=[],
                     help="Pass through command line arguments to program")
   parser.add_option("-I", dest="importpath", action="store", default=None,
@@ -331,7 +328,14 @@ def get_test_parser(usage):
   return parser
 
 if __name__ == "__main__":
-  parser = get_test_parser("usage: %prog [options] <test_path>")
+  parser = get_test_parser("""usage: %prog [options] <test_path>
+
+   Notes:
+     * If using ./gotest.sh, --me-arg=--verbose       will print (Ann)ASTs
+                             --me-arg=--dump-ir=kn    will print k-normalized IR
+                             --me-arg=--dump-ir=cfg   will print closure-conv IR
+                             --me-arg=--dump-ir=mono  will print monomo. IR
+""")
   (options, args) = parser.parse_args()
 
   if len(args) != 1:

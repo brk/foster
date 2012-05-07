@@ -509,7 +509,7 @@ showtypes args expectedTypes = concatMap showtypes' (zip3 [1..] args expTypes)
               else
                 ("\n\tArg has type " ++ show (typeAST expr)
                         ++ ", expected " ++ show expty ++ ":\n"
-                        ++ show (rangeOf expr)
+                        ++ highlightFirstLine (rangeOf expr)
                         ++ concatMap (\(n, a) -> "\narg " ++ show n ++ "\n"
                         ++ outToString (showStructure a)) (zip [0..] args)  ++ "\n")
         expTypes = (case expectedTypes of

@@ -9,12 +9,10 @@ module Main (main) where
 import Text.ProtocolBuffers(messageGet)
 
 import System.Environment(getArgs,getProgName)
-import System.Console.GetOpt
 import System.Console.ANSI(Color(..))
 
 import qualified Data.ByteString.Lazy as L(readFile)
 import qualified Data.Text as T
-import qualified Data.List as List(all)
 import qualified Data.Map as Map(fromList, toList)
 import qualified Data.Set as Set(filter, toList, fromList, notMember)
 import qualified Data.Graph as Graph(SCC, flattenSCC, stronglyConnComp)
@@ -38,7 +36,7 @@ import Foster.ParsedType
 import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn))
 import Foster.AnnExprIL(AIExpr, fnOf)
 import Foster.TypeIL(TypeIL, ilOf, extendTyCtx)
-import Foster.ILExpr(closureConvertAndLift)
+import Foster.ILExpr(closureConvertAndLift, showILProgramStructure)
 import Foster.MonoExpr(MonoProgram, showMonoProgramStructure)
 import Foster.KNExpr(kNormalizeModule)
 import Foster.Typecheck
@@ -48,6 +46,7 @@ import Foster.KSmallstep
 import Foster.Output
 import Foster.MainCtorHelpers
 import Foster.ConvertExprAST
+import Foster.MainOpts
 
 -----------------------------------------------------------------------
 -- TODO shouldn't claim successful typechecks until we reach AnnExprIL.
@@ -57,30 +56,64 @@ pair2binding (nm, ty) = TermVarBinding nm (TypedId ty (GlobalSymbol nm))
 -- Every function in the SCC should typecheck against the input context,
 -- and the resulting context should include the computed types of each
 -- function in the SCC.
-typecheckFnSCC :: Graph.SCC (FnAST TypeAST)  ->   (Context TypeAST, TcEnv)
+typecheckFnSCC :: Bool -> Bool
+               -> Graph.SCC (FnAST TypeAST)  ->   (Context TypeAST, TcEnv)
                -> IO ([OutputOr (AnnExpr Sigma)], (Context TypeAST, TcEnv))
-typecheckFnSCC scc (ctx, tcenv) = do
+typecheckFnSCC showASTs showAnnExprs scc (ctx, tcenv) = do
     let fns = Graph.flattenSCC scc
-    annfns <- forM fns $ \fn -> do
+
+    -- Generate bindings before doing any typechecking,
+    -- so that if a function fails to typecheck, we'll have the best binding
+    -- on hand to use for subsequent typechecking.
+    _bindings <- forM fns $ \fn -> do unTc tcenv $ bindingForFnAST fn
+    let bindings = map (\(OK e) -> e) _bindings
+
+    -- Note that all functions in an SCC are checked in the same environment!
+    tcResults <- forM (zip fns bindings) $ \(fn, binding) -> do
         let ast = (E_FnAST fn)
         let name = T.unpack $ fnAstName fn
         putStrLn $ "typechecking " ++ name
         annfn <- unTc tcenv $
-                    do binding <- bindingForFnAST fn
-                       tcSigma (prependContextBinding ctx binding) ast Nothing
+                    do tcSigma (prependContextBinding ctx binding) ast Nothing
         -- We can't convert AnnExpr to AIExpr here because
         -- the output context is threaded through further type checking.
-        _ <- inspect annfn ast
-        return annfn
-    if List.all isOK annfns
-     then let afns = [f | (OK (E_AnnFn f)) <- annfns] in
-          let newbindings = map bindingForAnnFn afns in
-          return (annfns, (prependContextBindings ctx newbindings, tcenv))
-     else return ([Errors [out $ "not all functions type checked correctly in SCC: "
-                             ++ show [fnAstName f | f <- fns]]
-           ],(ctx, tcenv))
+        return (annfn, (ast, binding))
+
+    -- Dump full ASTs if requested, otherwise just type-incorrect ASTs.
+    mapM_ (uncurry inspect) tcResults
+
+    -- The extra bindings of an SCC are the ones generated from successfully
+    -- type checked symbols, plus the initial guesses (involving type variables)
+    -- for those symbols which could not be checked. This ensures that we don't
+    -- undefined-symbol errors when checking subsequent SCCs.
+    let (goodexprs, errsAndASTs) = split tcResults
+    let newctx = prependContextBindings ctx $ (map bindingOf errsAndASTs) ++
+                                   [bindingForAnnFn f |(E_AnnFn f) <- goodexprs]
+
+    if null errsAndASTs
+     then return $ (,) (map OK goodexprs) (newctx, tcenv)
+     else return $ (,) [Errors [out $ "not all functions type checked in SCC: "
+                                  ++ show (map fnAstName fns)]
+                        ]                 (newctx, tcenv)
 
    where
+        bindingOf (_errs, (_ast, binding)) = binding
+
+        split fnsAndASTs = (,) [expr        | (OK expr,     _ast) <- fnsAndASTs]
+                               [(errs, ast) | (Errors errs,  ast) <- fnsAndASTs]
+
+        inspect :: OutputOr (AnnExpr TypeAST) -> (ExprAST TypeAST, a) -> IO ()
+        inspect typechecked (ast, _) =
+            case typechecked of
+                OK e -> do
+                    when showASTs     $ (runOutput $ showStructure ast)
+                    when showAnnExprs $ (runOutput $ showStructure e)
+                Errors errs -> do
+                    runOutput $ showStructure ast
+                    runOutput $ (outCSLn Red "Typecheck error: ")
+                    printOutputs errs
+                    runOutput $ (outLn "")
+
         bindingForAnnFn :: Fn (AnnExpr TypeAST) TypeAST -> ContextBinding TypeAST
         bindingForAnnFn f = TermVarBinding (identPrefix $ fnIdent f) (fnVar f)
 
@@ -108,23 +141,6 @@ typecheckFnSCC scc (ctx, tcenv) = do
             []        -> return $ fnTy
             tyformals -> return $ ForAllAST (map convertTyFormal tyformals) fnTy
 
-        inspect :: OutputOr (AnnExpr TypeAST) -> ExprAST TypeAST -> IO Bool
-        inspect typechecked ast =
-            case typechecked of
-                OK e -> do
-                    when (contextVerbose ctx) (do
-                        runOutput $ showStructure ast
-                        putStrLn $ "Successful typecheck!"
-                        runOutput $ showStructure e)
-                    return True
-                Errors errs -> do
-                    runOutput $ showStructure ast
-                    runOutput $ (outCSLn Red "Typecheck error: ")
-                    printOutputs errs
-
-                    do runOutput $ (outLn "")
-                    return False
-
 -- | Typechecking a module proceeds as follows:
 -- |  #. Build separate binding lists for the globally-defined primitiveDecls
 -- |     and the module's top-level (function) declarations.
@@ -149,10 +165,14 @@ typecheckModule verboseMode modast tcenv0 = do
         let callGraphList = buildCallGraphList fns (Set.fromList $
                                      [nm | TermVarBinding nm _ <- declBindings])
         let sortedFns = Graph.stronglyConnComp callGraphList -- :: [SCC FnAST]
-        putStrLn $ "Function SCC list : " ++
+        when verboseMode $ do
+                putStrLn $ "Function SCC list : " ++
                        show [(name, frees) | (_, name, frees) <- callGraphList]
         let ctx0 = mkContext declBindings primBindings dts
-        (annFns, (ctx, tcenv)) <- mapFoldM sortedFns (ctx0, tcenv0) typecheckFnSCC
+        let showASTs     = verboseMode
+        let showAnnExprs = verboseMode
+        (annFns, (ctx, tcenv)) <- mapFoldM sortedFns (ctx0, tcenv0)
+                                       (typecheckFnSCC showASTs showAnnExprs)
         unTc tcenv (convertTypeILofAST modast ctx annFns)
       dups -> return (Errors [out $ "Unable to check module due to "
                                  ++ "duplicate bindings: " ++ show dups])
@@ -272,33 +292,6 @@ isTau t = all isTau (childrenOf t)
 
 -----------------------------------------------------------------------
 
-data Flag = Interpret String | Verbose | ProgArg String
-
-options :: [OptDescr Flag]
-options =
- [ Option []     ["interpret"]  (ReqArg Interpret "DIR")  "interpret in DIR"
- , Option []     ["verbose"]    (NoArg  Verbose)          "verbose mode"
- , Option []     ["prog-arg"]   (ReqArg ProgArg "ARG")    "pass through ARG"
- ]
-
-parseOpts :: [String] -> IO ([Flag], [String])
-parseOpts argv =
-  case getOpt Permute options argv of
-    (o,n,[]  ) -> return (o,n)
-    (_,_,errs) -> ioError (userError (concat errs ++ usageInfo header options))
-  where header = "Usage: me [OPTION...] files..."
-
-getInterpretFlag (flags, _) =
-   foldr (\f a -> case f of Interpret d -> Just d  ; _ -> a) Nothing flags
-
-getVerboseFlag (flags, _) =
-   foldr (\f a -> case f of Verbose     -> True    ; _ -> a) False flags
-
-getProgArgs (flags, _) =
-   foldr (\f a -> case f of ProgArg arg -> arg:a ; _ -> a) [] flags
-
------------------------------------------------------------------------
-
 main = do
   args <- getArgs
   (protobuf, outfile, flagVals) <- case args of
@@ -395,7 +388,7 @@ lowerModule :: ModuleIL AIExpr TypeIL
 lowerModule ai_mod ctx_il = do
      let kmod = kNormalizeModule ai_mod ctx_il
 
-     whenVerbose $ do
+     whenDumpIR "kn" $ do
         forM_ (moduleILfunctions kmod) (\fn -> do
            runOutput (outLn $ "vvvv k-normalized :====================")
            runOutput (outLn $ show (fnVar fn))
@@ -405,7 +398,12 @@ lowerModule ai_mod ctx_il = do
      prog0    <- closureConvert cfgmod
      let monoprog = monomorphize prog0
 
-     whenVerbose $ do
+     whenDumpIR "cfg" $ do
+         runOutput $ (outLn "/// Closure-converted program =========")
+         runOutput $ showILProgramStructure prog0
+         runOutput $ (outLn "^^^ ===================================")
+
+     whenDumpIR "mono" $ do
          runOutput $ (outLn "/// Monomorphized program =============")
          runOutput $ showMonoProgramStructure monoprog
          runOutput $ (outLn "^^^ ===================================")
@@ -440,7 +438,7 @@ lowerModule ai_mod ctx_il = do
 showGeneratedMetaTypeVariables :: (Show ty) =>
                                IORef [MetaTyVar] -> Context ty -> Compiled ()
 showGeneratedMetaTypeVariables varlist ctx_il =
-  whenVerbose $ do
+  ccWhen ccVerbose $ do
     metaTyVars <- readIORef varlist
     runOutput $ (outLn $ "generated " ++ (show $ length metaTyVars) ++ " meta type variables:")
     forM_ metaTyVars $ \mtv -> do
@@ -454,10 +452,15 @@ showGeneratedMetaTypeVariables varlist ctx_il =
 
 type Compiled = StateT CompilerContext IO
 data CompilerContext = CompilerContext {
-        ccVerbose  :: Bool
-      , ccFlagVals :: ([Flag], [String])
-      , ccTcEnv    :: TcEnv
+        ccVerbose   :: Bool
+      , ccFlagVals  :: ([Flag], [String])
+      , ccTcEnv     :: TcEnv
 }
 
-whenVerbose :: IO () -> Compiled ()
-whenVerbose action = do verbose <- gets ccVerbose ; liftIO $ when verbose action
+ccWhen :: (CompilerContext -> Bool) -> IO () -> Compiled ()
+ccWhen getter action = do cond <- gets getter ; liftIO $ when cond action
+
+whenDumpIR :: String -> IO () -> Compiled ()
+whenDumpIR ir action = do flags <- gets ccFlagVals
+                          let cond = getDumpIRFlag ir flags
+                          liftIO $ when cond action
