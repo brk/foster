@@ -64,7 +64,8 @@ interpretKNormalMod kmod tmpDir cmdLineArgs = do
                       } where env = Map.empty
   let emptyHeap = Heap (nextLocation loc)
                        (Map.singleton loc (SSCoro mainCoro))
-  let globalState = MachineState funcmap emptyHeap loc tmpDir cmdLineArgs
+  let globalState = MachineState funcmap emptyHeap loc tmpDir
+                                 ("ksmallstep":cmdLineArgs)
 
   _ <- writeFile (outFile globalState) ""
   _ <- writeFile (errFile globalState) ""
@@ -450,7 +451,11 @@ stepExpr gs expr = do
         case getval gs base of
           SSArray arr  ->  let (SSLocation z) = arraySlotLocation arr n in
                            return $ withTerm gs  (SSTmValue $ lookupHeap gs z)
-          _ -> error "Expected base of array read to be array value"
+          SSByteString bs -> return $ withTerm gs (SSTmValue $
+                                         SSInt . fromIntegral $ BS.index bs n)
+          other -> error $ "KSmallstep: Expected base of array read "
+                        ++ "(" ++ show base ++ "["++ show idxvar++"])"
+                        ++ " to be array value; had " ++ show other
 
     IArrayPoke iv base idxvar ->
         let (SSInt i) = getval gs idxvar in
