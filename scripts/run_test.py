@@ -144,9 +144,11 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
     (s1, e1) = crun(['fosterparse', testpath, parse_output] + importpath)
 
     # running fostercheck on a ParsedAST produces an ElaboratedAST
+    prog_args = [arg for _arg in options.progargs or []
+                     for arg in ['--prog-arg', _arg]]
     (s2, e2) = crun(['fostercheck', parse_output, check_output] +
                      ["+RTS"] + ghc_rts_args + ["-RTS"] +
-                     interpret + options.meargs)
+                     interpret + options.meargs + prog_args)
 
     # running fosterlower on a ParsedAST produces a bitcode Module
     # linking a bunch of Modules produces a Module
