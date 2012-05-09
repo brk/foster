@@ -197,7 +197,9 @@ CodegenPass::storeAndMarkPointerAsGCRoot(llvm::Value* val) {
   llvm::AllocaInst* stackslot = stackSlotWithValue(val, ".stackref");
   this->markAsNeedingImplicitLoads(stackslot);
 
-  markGCRoot(stackslot, this);
+  if (this->useGC) {
+    markGCRoot(stackslot, this);
+  }
 
   // Instead of returning the pointer (of type T*),
   // we return the stack slot (of type T**) so that copying GC will be able to

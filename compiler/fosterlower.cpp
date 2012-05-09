@@ -62,6 +62,10 @@ optEmitDebugInfo("g",
   cl::desc("[foster] Emit debug information in generated LLVM IR"));
 
 static cl::opt<bool>
+optDisableGC("unsafe-disable-gc",
+  cl::desc("[foster] Disable all GC-related code generation (UNSAFE!)"));
+
+static cl::opt<bool>
 optDumpPreLinkedIR("dump-prelinked",
   cl::desc("[foster] Dump LLVM IR before linking with standard library"));
 
@@ -185,7 +189,7 @@ areDeclaredValueTypesOK(llvm::Module* mod,
   return true;
 }
 
-namespace foster { void codegenLL(LLModule*, llvm::Module* mod); }
+namespace foster { void codegenLL(LLModule*, llvm::Module* mod, bool useGC); }
 
 int main(int argc, char** argv) {
   int program_status = 0;
@@ -266,7 +270,7 @@ int main(int argc, char** argv) {
       program_status = 1; goto cleanup;
     }
 
-    foster::codegenLL(prog, module);
+    foster::codegenLL(prog, module, !optDisableGC);
   }
 
   if (optDumpPreLinkedIR) {

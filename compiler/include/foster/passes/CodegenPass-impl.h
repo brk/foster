@@ -97,6 +97,8 @@ struct DataTypeAST;
 struct LazyCoroPrimInfo;
 
 struct CodegenPass {
+  bool useGC;
+
   typedef foster::SymbolTable<llvm::Value> ValueTable;
   typedef ValueTable::LexicalScope         ValueScope;
   ValueTable valueSymTab;
@@ -125,7 +127,7 @@ struct CodegenPass {
   WorklistLIFO<std::string, LLBlock*>   worklistBlocks;
   std::map<LLOccurrence*, llvm::AllocaInst*, ltLLOcc>  occSlots;
 
-  explicit CodegenPass(llvm::Module* mod);
+  explicit CodegenPass(llvm::Module* mod, bool useGC);
 
   ~CodegenPass() {
     //delete dib;

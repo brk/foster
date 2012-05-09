@@ -153,7 +153,8 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
     # running fosterlower on a ParsedAST produces a bitcode Module
     # linking a bunch of Modules produces a Module
     (s3, e3) = crun(['fosterlower', check_output, '-o', finalname,
-                            '-outdir', tmpdir, '-dump-prelinked', '-fosterc-time'])
+                         '-outdir', tmpdir, '-dump-prelinked', '-fosterc-time']
+                    + options.beargs)
 
     # Running opt on a Module produces a Module
     # Running llc on a Module produces an assembly file
@@ -323,6 +324,8 @@ def get_test_parser(usage):
                     help="Enable detailed profiling of compiler middle-end")
   parser.add_option("--me-arg", action="append", dest="meargs", default=[],
                     help="Pass through arg to middle-end.")
+  parser.add_option("--be-arg", action="append", dest="beargs", default=[],
+                    help="Pass through arg to back-end.")
   parser.add_option("--prog-arg", action="append", dest="progargs", default=[],
                     help="Pass through command line arguments to program")
   parser.add_option("-I", dest="importpath", action="store", default=None,

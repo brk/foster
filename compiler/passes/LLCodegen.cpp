@@ -35,8 +35,8 @@ using foster::EDiag;
 
 namespace foster {
 
-void codegenLL(LLModule* prog, llvm::Module* mod) {
-  CodegenPass cp(mod);
+void codegenLL(LLModule* prog, llvm::Module* mod, bool useGC) {
+  CodegenPass cp(mod, useGC);
   prog->codegenModule(&cp);
 }
 
@@ -134,7 +134,7 @@ bool isEnvPtr(llvm::Value* v) {
 
 // Implementation of CodegenPass helpers {{{
 
-CodegenPass::CodegenPass(llvm::Module* m) : mod(m) {
+CodegenPass::CodegenPass(llvm::Module* m, bool useGC) : useGC(useGC), mod(m) {
   //dib = new DIBuilder(*mod);
 }
 
@@ -251,6 +251,18 @@ void LLModule::codegenModule(CodegenPass* pass) {
   }
 
   codegenCoroPrimitives(pass);
+
+  if (!pass->useGC) {
+    // Emit a "foster__gcmaps" symbol so we can link with the runtime.
+    new llvm::GlobalVariable(
+    /*Module=*/      *(pass->mod),
+    /*Type=*/        builder.getInt32Ty(),
+    /*isConstant=*/  true,
+    /*Linkage=*/     llvm::GlobalValue::ExternalLinkage,
+    /*Initializer=*/ llvm::ConstantInt::get(builder.getInt32Ty(), 0),
+    /*Name=*/        "foster__gcmaps",
+    /*ThreadLocal=*/ false);
+  }
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -316,7 +328,7 @@ void LLProc::codegenProto(CodegenPass* pass) {
   ASSERT(F->getName() == symbolName) << "redefinition of function " << symbolName;
 
   setFunctionArgumentNames(F, this->getFunctionArgNames());
-  F->setGC("fostergc");
+  if (pass->useGC) { F->setGC("fostergc"); }
   F->setCallingConv(this->type->getCallingConventionID());
 }
 
