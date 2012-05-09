@@ -4,6 +4,7 @@
 
 from collections import defaultdict
 import math
+import sys
 
 # Based on code from http://bytes.com/topic/python/answers/164802-human-readable-number-formatting
 def human_readable(n):
@@ -18,6 +19,7 @@ def human_readable(n):
 print_star_props = True
 print_missing    = True
 ratio_threshold = 10
+abs_threshold   = 10000000
 
 def parse_opcodemix(p):
   d = defaultdict(int)
@@ -64,9 +66,12 @@ def compare_opcodemixes(p1, p2):
     elif k[0] == '*' and print_star_props:
       should_print = True
 
+    elif abs(v2 - v1) >= abs_threshold:
+      should_print = True
+
     elif not v2 == 0:
       ratio = v1 / v2
-      should_print = should_print or (ratio > ratio_threshold or ratio < (1/ratio_threshold))
+      should_print = (ratio > ratio_threshold or ratio < (1/ratio_threshold))
 
     print_key[k] = should_print
 
@@ -82,4 +87,8 @@ def compare_opcodemixes(p1, p2):
     if    k[0] == '*':
       show(k)
 
-compare_opcodemixes("opcodemix.clang.O2.out", "opcodemix.foster.O2.out")
+assert len(sys.argv) == 3
+f1 = sys.argv[1]
+f2 = sys.argv[2]
+
+compare_opcodemixes(f1, f2)
