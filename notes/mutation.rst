@@ -14,40 +14,38 @@ Basic data model::
           |                |
         [ h ]            [ t ]
 
-        h = [1, 2]
-        t = [2]
+        t = N 2
+        h = C 1 t
 
  -------------------------------------------------------------------------------
 
-        h := [3, 4]     -- allocates, only overwrites the variable
+        h := N 3     -- allocates, only overwrites the variable
 
           [ C | * | 1 ]     [ N | 2 ]
-              ^  +------>------^
-              |                |
-          +---+            +---+
+                 +------>------^
+                               |
+          +--->[ N | 3 ]   +---+
           |                |
         [ h ]            [ t ]
 
-        h = [1, 2]
-        t = [2]
 
  -------------------------------------------------------------------------------
 
-        h #= [5]
+        h #= N 5      -- Does not need to allocate, overwrites existing memory.
+                      -- Note that this implies that the size of every leg
+                      --   is the max of the size of any leg, i.e. we may waste
+                      --   some memory in some circumstances.
 
-          [ N | 5 ]     [ N | 2 ]
+          [ N | 5 |.1.]    [ N | 2 ]
               ^                ^
               |                |
           +---+            +---+
           |                |
         [ h ]            [ t ]
 
-        h = [5]
-        t = [2]
-
  -------------------------------------------------------------------------------
 
-        h.e.v := 5
+        h.e.v := 5   (or #= 5... same semantics for unboxed types)
 
           [ C | * | 1 ]     [ N | 5 ]
               ^  +------>------^
@@ -56,46 +54,80 @@ Basic data model::
           |                |
         [ h ]            [ t ]
 
-        h = [1, 5]
-        t = [5]
+ -------------------------------------------------------------------------------
 
-Is r tagged? Can T2 be updated?
+The above model is very flexible, but there are a few unresolved questions
+about it:
+
+1) What are the language's l-values?
+        Let-bound variables? Pattern-bound variables? Return values from
+        functions? Array slots?
+2) How do the available forms of mutation interact with pattern matching
+   semantics? In particular, are fields bound by pattern matching lvalues?
+   Are scrutinzed objects subject to mutation?
+3) What optimizations do different forms of mutation prohibit or permit?
+4) What restrictions (if any) should be placed on mutation?
+        For example, maybe single-constructor datatypes should be treated
+        specially?
+
+        
+Representation: pointer tagging
+===============================
+
 If an object in memory is potentially aliased, AND we want to update its tag,
 then its tag must be on the object, not on the pointers to the object.
 
-But if we know that a given object has only one alias, or we don't ever need to update its tag,
+But if we know that a given object has only one alias,
+or we don't ever need to update its tag,
 then we can tag the pointer(s) rather than the object itself.
 
-This implies that immutability brings locality benefits, because we don't need to peek through the pointer to match the tag!
+This implies that immutability brings locality benefits,
+because we don't need to peek through the pointer to match the tag!
 
+Mutability And Algebraic Data Types
+===================================
+
+* ``h.n.v`` syntax only makes sense if the types of h and n guarantee the
+  presence of n and v fields. This leaves a choice of two alternatives:
+    1) Require that there is only one leg in the union, or generalize to:
+    2) Require that every leg of the union provide the same field with the same
+       layout at the same offset position.
+
+Other thoughts
+==============
 
 * Having the compiler convert Array-of-Tuples to Tuple-of-Arrays is a very desirable optimization.
 
-* ``h.n.v`` syntax only makes sense if the types of h and n guarantee the presence of n and v fields, which fundamentally means there is only
-  one leg in the union (ignoring layout issues...).
 
+Garbage Collection
+==================
 
+With copying GC, it's illegal to keep a bare pointer to a field live across a
+potential GC point, because the field address is derived from the object's base
+address, which must be assumed to move.
 
-With copying GC, it's illegal to keep a reference to a field across a potential
-GC point. So mutable struct fields, pattern matching, and copying GC lead to an
+So mutable struct fields, pattern matching, and copying GC lead to an
 interesting interaction. Suppose we have some code::
 
-       // suppose t = (x,(y,z))                              /---> [ w | x ]
+       // suppose t = (x,p@(y,z))                            /---> [ x | p ]
        case t of                                             |           |
          (a, (b, c)) -> foo(c);           t_addr [ t *-]-----/  +--------+
                         gc();                                   |
-                        c <- 4                                  +->[ y | z ]
+                        c := 4                                  +->[ y | z ]
        end
 
-Now, what exactly do we bind to c in the body of the match?
-If we bind the address of z, we will have a stale value after the GC cycle.
-We could keep a pair of x and an int offset, but this is pretty ugly, and it
-also loses out on LLVM's type safety: GEPs on structs are restricted to
+Now, what exactly do we bind to ``c`` in the body of the match?
+
+If we bind the address of ``z``, we will have a stale value after the GC cycle.
+We could keep a pair of ``p`` and an int offset, but this is pretty ugly, and it
+penalizes readers to benefit writers -- probably not the right tradeoff.
+... ??? also loses out on LLVM's type safety: GEPs on structs are restricted to
 statically-known offset, so we'd be forced to fall back on raw ptr arithmetic.
 
 Potential solutions:
 
-* Recompute z_addr = &x[1] after each safe point. With n live values bound
+* Keep p as a stack root (so it will be updated by the GC) and recompute
+  z_addr = &p[1] after each safe point. With n live values bound
   at depth k, this implies n*k loads after every safe point.
 
 * Disallow mutable fields; force all mutability to go through (implicit or
@@ -116,3 +148,37 @@ Potential solutions:
   on program performance, but it is not clear what, exactly, that would be.
 
 
+Boxing and Unboxed Representations
+==================================
+
+The nbody benchmark's C implementation uses the following data layout::
+  
+    bodies: *------>[[ b1.f1 | b1.f2 | ... ][ b2.f1 | b2.f2 | ... ]]
+
+where structs are stored unboxed in the array, and all the fields are
+mutable in-place.
+
+Without mutability or a notion of unboxed user-defined types, we can do this::
+  
+    bodies: *------>[ b1 | b2 | ... ]
+                      |
+                      |
+                      +--->[ f1 | f2 | ... ]
+                      
+but mutability of the fields introduces an artificial layer of indirection::
+  
+    bodies: *------>[ b1 | b2 | ... ]
+                      |
+                      |
+                      +--->[ * |  * |  ... ]
+                             |    |
+                             |    +---> [ f2 ]
+                             |
+                             +-->[ f1 ]
+
+Why is this an artificial layer of indirection?
+    The ref cells are encapsulated by their container (owned, unique, whatever).
+    This actually isn't strictly true: there are accessor functions which
+    return the ref cell pointer, but the key is that (after inlining) those
+    returned ref cells are always used "immediately" -- there are no long-lived
+    aliases to the ref cells which would prevent the cells from being inlined.
