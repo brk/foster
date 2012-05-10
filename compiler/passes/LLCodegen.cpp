@@ -853,7 +853,7 @@ llvm::Value* LLAllocate::codegenCell(CodegenPass* pass, bool init) {
     return allocateArray(pass, this->type, this->region,
                          pass->emit(this->arraySize, NULL), init);
   } else {
-    return allocateCell(pass, this->type, this->unboxed,
+    return allocateCell(pass, this->type, /*unboxed*/ true,
                         this->region, this->ctorId, init);
   }
 }
