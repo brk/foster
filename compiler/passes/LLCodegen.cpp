@@ -186,7 +186,7 @@ llvm::Value* CodegenPass::emitFosterStringOfCString(Value* cstr, Value* sz) {
   // constructor. Currently all strings are heap-allocated, even constant
   // literal strings.
   bool init = false; // because we'll immediately memcpy.
-  Value* hstr_slot = this->emitArrayMalloc(builder.getInt8Ty(), sz, init);
+  Value* hstr_slot = this->emitArrayMalloc(TypeAST::i(8), sz, init);
   Value* hstr = emitNonVolatileLoad(hstr_slot, "heap_str");
 
   Value* hstr_bytes; Value* len;
@@ -838,9 +838,8 @@ llvm::Value* emitRuntimeArbitraryPrecisionOperation(const std::string& op,
 Value* allocateArray(CodegenPass* pass, TypeAST* ty,
                      LLAllocate::MemRegion region,
                      Value* arraySize, bool init) {
-  llvm::Type* elt_ty = getLLVMType(ty);
   ASSERT(region == LLAllocate::MEM_REGION_GLOBAL_HEAP);
-  return pass->emitArrayMalloc(elt_ty, arraySize, init);
+  return pass->emitArrayMalloc(ty, arraySize, init);
 }
 
 llvm::Value* LLAllocate::codegenCell(CodegenPass* pass, bool init) {

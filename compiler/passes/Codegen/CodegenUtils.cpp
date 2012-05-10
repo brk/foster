@@ -233,7 +233,8 @@ CodegenPass::emitMalloc(llvm::Type* ty, int8_t ctorId, bool init) {
 
 
 llvm::Value*
-CodegenPass::emitArrayMalloc(llvm::Type* elt_ty, llvm::Value* n, bool init) {
+CodegenPass::emitArrayMalloc(TypeAST* elt_type, llvm::Value* n, bool init) {
+  llvm::Type* elt_ty = elt_type->getLLVMType();
   llvm::Value* memalloc = mod->getFunction("memalloc_array");
   ASSERT(memalloc != NULL) << "NO memalloc_array IN MODULE! :(";
 
