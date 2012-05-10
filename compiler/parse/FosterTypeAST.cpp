@@ -101,6 +101,31 @@ RefTypeAST* RefTypeAST::get(TypeAST* baseType) {
 
 /////////////////////////////////////////////////////////////////////
 
+namespace foster {
+  // converts      t1 (t2, t3)      to { t1 (i8*, t2, t3)*, i8* }*
+  TupleTypeAST* genericClosureTypeFor(const FnTypeAST* fnty) {
+    TypeAST* envType = RefTypeAST::get(TypeAST::i(8));
+
+    // We can mark closures with whatever calling convention we want,
+    // since closures are internal by definition.
+    std::vector<TypeAST*> fnParams;
+    fnParams.push_back(envType);
+    // Converts t1 (t2, t3)   to  t1 (i8*, t2, t3)*
+    for (int i = 0; i < fnty->getNumParams(); ++i) {
+      fnParams.push_back(fnty->getParamType(i));
+    }
+    FnTypeAST* newProcTy = new FnTypeAST(fnty->getReturnType(), fnParams,
+                                        fnty->getAnnots());
+    newProcTy->markAsProc();
+
+    std::vector<TypeAST*> cloTypes;
+    cloTypes.push_back(newProcTy);
+    cloTypes.push_back(envType);
+    TupleTypeAST* cloTy = TupleTypeAST::get(cloTypes);
+    return cloTy;
+  }
+}
+
 FnTypeAST::FnTypeAST(TypeAST* returnType,
                      const std::vector<TypeAST*>& argTypes,
                      std::map<string, string> _annots)
@@ -120,7 +145,7 @@ FnTypeAST::FnTypeAST(TypeAST* returnType,
 llvm::Type* FnTypeAST::getLLVMType() const {
   if (!repr) {
     if (isMarkedAsClosure()) {
-      repr = genericClosureTypeFor(this)->getLLVMType();
+      repr = foster::genericClosureTypeFor(this)->getLLVMType();
     } else {
       repr = llvm::PointerType::getUnqual(getLLVMFnType());
     }
