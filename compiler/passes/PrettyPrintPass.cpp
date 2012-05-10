@@ -114,6 +114,17 @@ void TupleTypeAST::show(PrettyPrintTypePass* pass){
   pass->scan(PPToken(" }} "));
 }
 
+void StructTypeAST::show(PrettyPrintTypePass* pass){
+  pass->scan(PPToken(" {# "));
+  for (int i = 0; i < this->getNumContainedTypes(); ++i) {
+    if (i > 0) {
+      pass->scan(PPToken(", "));
+    }
+    pass->emit(this->getContainedType(i));
+  }
+  pass->scan(PPToken(" #} "));
+}
+
 void TypeTypeAppAST::show(PrettyPrintTypePass* pass){
   pass->scan(PPToken(" ( "));
   for (int i = 0; i < this->getNumContainedTypes(); ++i) {

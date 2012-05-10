@@ -422,6 +422,10 @@ void TupleTypeAST::dump(DumpTypeToProtobufPass* pass) {
   }
 }
 
+void StructTypeAST::dump(DumpTypeToProtobufPass* pass) {
+  ASSERT(false) << "no support yet for dumping struct types to protobufs";
+}
+
 void TypeTypeAppAST::dump(DumpTypeToProtobufPass* pass) {
   setTagAndRange(pass->current, this, pb::Type::TYPE_TYP_APP);
   pass->current->mutable_type_parts()->Reserve(this->getNumContainedTypes());
