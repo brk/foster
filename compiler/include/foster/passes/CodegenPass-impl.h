@@ -34,10 +34,10 @@ emitTypeMap(llvm::Type* ty, std::string name,
             llvm::Module* mod,
             std::vector<int> skippedOffsets);
 
-void registerTupleType(TupleTypeAST* tupletyp,
-                       std::string   desiredName,
-                       int8_t        ctorId,
-                       llvm::Module* mod);
+void registerStructType(StructTypeAST* structty,
+                        std::string    desiredName,
+                        int8_t         ctorId,
+                        llvm::Module*  mod);
 llvm::GlobalVariable* getTypeMapForType(llvm::Type*, int8_t ctorId,
                                         llvm::Module*, ArrayOrNot);
 

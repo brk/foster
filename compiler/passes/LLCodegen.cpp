@@ -967,8 +967,8 @@ llvm::Value* LLTuple::codegenStorage(CodegenPass* pass, bool init) {
         << "allocator wants to emit type " << str(this->allocator->type)
         << "; var 0 :: " << str(vars[0]->type);
 
-  registerTupleType(tuplety, this->typeName, foster::bogusCtorId(-2), pass->mod);
-
+  registerStructType(tuplety->getUnderlyingStruct(),
+                     this->typeName, foster::bogusCtorId(-2), pass->mod);
   return allocator->codegenCell(pass, init);
 }
 
@@ -1145,8 +1145,12 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
 
 ///}}}//////////////////////////////////////////////////////////////
 
-TupleTypeAST* getDataCtorType(DataCtor* dc) {
+TupleTypeAST* getDataCtorTypeTuple(DataCtor* dc) {
   return TupleTypeAST::get(dc->types);
+}
+
+StructTypeAST* getDataCtorTypeStruct(DataCtor* dc) {
+  return StructTypeAST::get(dc->types);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -1155,7 +1159,7 @@ TupleTypeAST* getDataCtorType(DataCtor* dc) {
 
 TupleTypeAST* maybeGetCtorStructType(CodegenPass* pass, CtorId c) {
   DataTypeAST* dt = pass->isKnownDataType[c.typeName];
-  return (dt) ? getDataCtorType(dt->getCtor(c.smallId)) : NULL;
+  return (dt) ? getDataCtorTypeTuple(dt->getCtor(c.smallId)) : NULL;
 }
 
 // Create at most one stack slot per subterm.
@@ -1211,15 +1215,15 @@ llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
 llvm::Value* LLAppCtor::codegen(CodegenPass* pass) {
   DataTypeAST* dt = pass->isKnownDataType[this->ctorId.typeName];
   ASSERT(dt) << "unable to find data type for " << this->ctorId.typeName;
-  DataCtor* dc = dt->getCtor(this->ctorId.smallId);
-  TupleTypeAST* ty = getDataCtorType(dc);
+  DataCtor*      dc  = dt->getCtor(this->ctorId.smallId);
+  StructTypeAST* sty = getDataCtorTypeStruct(dc);
 
   // This basically duplicates LLTuple::codegen and should eventually
   // be properly implemented in terms of it.
-  registerTupleType(ty, this->ctorId.typeName + "." + this->ctorId.ctorName,
-                    this->ctorId.smallId, pass->mod);
+  registerStructType(sty, this->ctorId.typeName + "." + this->ctorId.ctorName,
+                     this->ctorId.smallId, pass->mod);
 
-  llvm::Value* obj_slot = allocateCell(pass, ty,
+  llvm::Value* obj_slot = allocateCell(pass, RefTypeAST::get(sty),
                                        LLAllocate::MEM_REGION_GLOBAL_HEAP,
                                        this->ctorId.smallId, /*init*/ false);
   llvm::Value* obj = emitNonVolatileLoad(obj_slot, "obj");

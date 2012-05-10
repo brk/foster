@@ -176,29 +176,6 @@ public:
   std::string           getCallingConventionName() const;
 };
 
-
-class TupleTypeAST : public IndexableTypeAST {
-  std::vector<TypeAST*> parts;
-
-  explicit TupleTypeAST(const std::vector<TypeAST*>& parts,
-                        const SourceRange& sourceRange)
-    : IndexableTypeAST("TupleType", NULL, sourceRange), parts(parts) {}
-
-  typedef std::vector<TypeAST*> Args;
-  static std::map<Args, TupleTypeAST*> tupleTypeCache;
-public:
-  virtual void show(PrettyPrintTypePass* pass);
-  virtual void dump(DumpTypeToProtobufPass* pass);
-  virtual llvm::Type* getLLVMTypeUnboxed() const;
-  virtual llvm::Type* getLLVMType() const;
-
-  virtual int getNumContainedTypes() const { return parts.size(); }
-  virtual int64_t getNumElements()   const { return parts.size(); }
-  virtual TypeAST*& getContainedType(int i);
-
-  static TupleTypeAST* get(const std::vector<TypeAST*>& parts);
-};
-
 class StructTypeAST : public IndexableTypeAST {
   std::vector<TypeAST*> parts;
 
@@ -216,6 +193,28 @@ public:
   virtual TypeAST*& getContainedType(int i);
 
   static StructTypeAST* get(const std::vector<TypeAST*>& parts);
+};
+
+class TupleTypeAST : public IndexableTypeAST {
+  StructTypeAST* structType;
+
+  explicit TupleTypeAST(const std::vector<TypeAST*>& parts,
+                        const SourceRange& sourceRange)
+    : IndexableTypeAST("TupleType", NULL, sourceRange) {
+    structType = new StructTypeAST(parts, sourceRange);
+  }
+
+public:
+  virtual void show(PrettyPrintTypePass* pass);
+  virtual void dump(DumpTypeToProtobufPass* pass);
+  StructTypeAST* getUnderlyingStruct() const { return structType; }
+  virtual llvm::Type* getLLVMType() const;
+
+  virtual int getNumContainedTypes() const { return structType->getNumContainedTypes(); }
+  virtual int64_t getNumElements()   const { return structType->getNumElements(); }
+  virtual TypeAST*& getContainedType(int i) { return structType->getContainedType(i); }
+
+  static TupleTypeAST* get(const std::vector<TypeAST*>& parts);
 };
 
 class TypeTypeAppAST : public IndexableTypeAST {

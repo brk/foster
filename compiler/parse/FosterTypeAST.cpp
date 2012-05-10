@@ -207,26 +207,8 @@ llvm::CallingConv::ID FnTypeAST::getCallingConventionID() const {
 
 /////////////////////////////////////////////////////////////////////
 
-llvm::Type* TupleTypeAST::getLLVMTypeUnboxed() const {
-  vector<llvm::Type*> loweredTypes;
-  for (size_t i = 0; i < parts.size(); ++i) {
-    loweredTypes.push_back(parts[i]->getLLVMType());
-  }
-  if (loweredTypes.empty()) {
-    return TypeAST::i(8)->getLLVMType();
-  } else {
-    return llvm::StructType::get(
-            llvm::getGlobalContext(), loweredTypes, /*isPacked=*/false);
-  }
-}
-
 llvm::Type* TupleTypeAST::getLLVMType() const {
-  return llvm::PointerType::getUnqual(getLLVMTypeUnboxed());
-}
-
-TypeAST*& TupleTypeAST::getContainedType(int i) {
-  ASSERT(indexValid(i));
-  return parts[i];
+  return llvm::PointerType::getUnqual(getUnderlyingStruct()->getLLVMType());
 }
 
 TupleTypeAST* TupleTypeAST::get(const vector<TypeAST*>& argTypes) {

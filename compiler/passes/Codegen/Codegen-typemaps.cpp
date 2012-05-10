@@ -286,13 +286,13 @@ GlobalVariable* emitCoroTypeMap(StructType* sty, llvm::Module* mod) {
                      make_vector(0, 4, NULL));
 }
 
-void registerTupleType(TupleTypeAST* tupletyp,
-                       std::string desiredName,
-                       int8_t        ctorId,
-                       llvm::Module* mod) {
+void registerStructType(StructTypeAST* structty,
+                        std::string desiredName,
+                        int8_t        ctorId,
+                        llvm::Module* mod) {
   static std::map<TypeSig, bool> registeredTypes;
 
-  llvm::Type* ty = tupletyp->getLLVMTypeUnboxed();
+  llvm::Type* ty = structty->getLLVMType();
   TypeSig sig = mkTypeSig(ty, NotArray, ctorId);
   if (registeredTypes[sig]) return;
 
