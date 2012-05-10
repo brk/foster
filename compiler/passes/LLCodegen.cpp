@@ -630,13 +630,11 @@ void LLBitcast::codegenMiddle(CodegenPass* pass) {
 ////////////////////// Allocation Helpers //////////////////////////
 /////////////////////////////////////////////////////////////////{{{
 
-Value* allocateCell(CodegenPass* pass, TypeAST* type, bool unboxed,
+Value* allocateCell(CodegenPass* pass, TypeAST* type,
                     LLAllocate::MemRegion region, int8_t ctorId, bool init) {
   llvm::Type* ty = type->getLLVMType();
-  if (unboxed) {
-    if (llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
-      ty = pty->getContainedType(0);
-    }
+  if (llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
+    ty = pty->getContainedType(0);
   }
 
   switch (region) {
@@ -679,8 +677,8 @@ llvm::Value* LLAlloc::codegen(CodegenPass* pass) {
   //    end
   ASSERT(this && this->baseVar && this->baseVar->type);
 
-  llvm::Value* ptrSlot = allocateCell(pass, this->baseVar->type,
-                                      /*unboxed*/ false, this->region,
+  llvm::Value* ptrSlot = allocateCell(pass, RefTypeAST::get(this->baseVar->type),
+                                      this->region,
                                       foster::bogusCtorId(-4), /*init*/ false);
   llvm::Value* storedVal = pass->emit(baseVar, NULL);
   llvm::Value* ptr       = pass->autoload(ptrSlot, "alloc_slot_ptr");
@@ -853,8 +851,7 @@ llvm::Value* LLAllocate::codegenCell(CodegenPass* pass, bool init) {
     return allocateArray(pass, this->type, this->region,
                          pass->emit(this->arraySize, NULL), init);
   } else {
-    return allocateCell(pass, this->type, /*unboxed*/ true,
-                        this->region, this->ctorId, init);
+    return allocateCell(pass, this->type, this->region, this->ctorId, init);
   }
 }
 
@@ -1218,7 +1215,7 @@ llvm::Value* LLAppCtor::codegen(CodegenPass* pass) {
   registerTupleType(ty, this->ctorId.typeName + "." + this->ctorId.ctorName,
                     this->ctorId.smallId, pass->mod);
 
-  llvm::Value* obj_slot = allocateCell(pass, ty, /*unboxed*/ true,
+  llvm::Value* obj_slot = allocateCell(pass, ty,
                                        LLAllocate::MEM_REGION_GLOBAL_HEAP,
                                        this->ctorId.smallId, /*init*/ false);
   llvm::Value* obj = emitNonVolatileLoad(obj_slot, "obj");
