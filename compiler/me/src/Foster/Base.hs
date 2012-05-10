@@ -301,7 +301,6 @@ data AllocMemRegion = MemRegionStack
 data AllocInfo t = AllocInfo { allocType   :: t
                              , allocRegion :: AllocMemRegion
                              , allocArraySize :: Maybe (TypedId t)
-                             , allocUnboxed :: Bool
                              }
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
