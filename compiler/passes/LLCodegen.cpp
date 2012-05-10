@@ -35,8 +35,9 @@ using foster::EDiag;
 
 namespace foster {
 
-void codegenLL(LLModule* prog, llvm::Module* mod, bool useGC) {
-  CodegenPass cp(mod, useGC);
+void codegenLL(LLModule* prog, llvm::Module* mod,
+               bool useGC, bool nsw, bool nuw) {
+  CodegenPass cp(mod, useGC, nsw, nuw);
   prog->codegenModule(&cp);
 }
 
@@ -134,7 +135,8 @@ bool isEnvPtr(llvm::Value* v) {
 
 // Implementation of CodegenPass helpers {{{
 
-CodegenPass::CodegenPass(llvm::Module* m, bool useGC) : useGC(useGC), mod(m) {
+CodegenPass::CodegenPass(llvm::Module* m, bool useGC, bool nsw, bool nuw)
+  : useGC(useGC), useNSW(nsw), useNUW(nuw), mod(m) {
   //dib = new DIBuilder(*mod);
 }
 
@@ -1217,7 +1219,8 @@ llvm::Value* LLAppCtor::codegen(CodegenPass* pass) {
 /////////////////////////////////////////////////////////////////{{{
 
 llvm::Value* LLCallPrimOp::codegen(CodegenPass* pass) {
-  return codegenPrimitiveOperation(this->op, builder, codegenAll(pass, this->args));
+  return pass->emitPrimitiveOperation(this->op, builder,
+                                      codegenAll(pass, this->args));
 }
 
 bool isGenericClosureEnvType(Type* ty) {

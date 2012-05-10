@@ -292,11 +292,11 @@ createSqrt(IRBuilder<>& b, llvm::Value* v, const char* valname) {
 }
 
 llvm::Value*
-codegenPrimitiveOperation(const std::string& op,
-                          IRBuilder<>& b,
-                          const std::vector<Value*>& args) {
+CodegenPass::emitPrimitiveOperation(const std::string& op,
+                                    IRBuilder<>& b,
+                                    const std::vector<Value*>& args) {
   Value* VL = args[0];
-       if (op == "negate") { return b.CreateNeg(VL, "negtmp"); }
+       if (op == "negate") { return b.CreateNeg(VL, "negtmp", this->useNUW, this->useNSW); }
   else if (op == "bitnot") { return b.CreateNot(VL, "nottmp"); }
   else if (op == "sext_i64") { return b.CreateSExt(VL, b.getInt64Ty(), "sexti64tmp"); }
   else if (op == "sext_i32") { return b.CreateSExt(VL, b.getInt32Ty(), "sexti32tmp"); }
@@ -306,10 +306,10 @@ codegenPrimitiveOperation(const std::string& op,
   Value* VR = args[1];
   // Other variants: F (float), NSW (no signed wrap), NUW,
   // UDiv, ExactSDiv, URem, SRem,
-       if (op == "+") { return b.CreateAdd(VL, VR, "addtmp"); }
-  else if (op == "-") { return b.CreateSub(VL, VR, "subtmp"); }
+       if (op == "+") { return b.CreateAdd(VL, VR, "addtmp", this->useNUW, this->useNSW); }
+  else if (op == "-") { return b.CreateSub(VL, VR, "subtmp", this->useNUW, this->useNSW); }
   else if (op == "/") { return b.CreateSDiv(VL, VR, "divtmp"); }
-  else if (op == "*") { return b.CreateMul(VL, VR, "multmp"); }
+  else if (op == "*") { return b.CreateMul(VL, VR, "multmp", this->useNUW, this->useNSW); }
   else if (op == "srem") { return b.CreateSRem(VL, VR, "sremtmp"); }
   else if (op == "urem") { return b.CreateURem(VL, VR, "uremtmp"); }
   else if (op == "frem") { return b.CreateFRem(VL, VR, "fremtmp"); }
@@ -338,7 +338,7 @@ codegenPrimitiveOperation(const std::string& op,
   else if (op == "bitor") {  return b.CreateOr( VL, VR, "bitortmp"); }
   else if (op == "bitxor") { return b.CreateXor(VL, VR, "bitxortmp"); }
 
-  else if (op == "bitshl")  { return b.CreateShl(VL,  getMaskedForShift(b, VL, VR), "shltmp"); }
+  else if (op == "bitshl")  { return b.CreateShl(VL,  getMaskedForShift(b, VL, VR), "shltmp", this->useNUW, this->useNSW); }
   else if (op == "bitlshr") { return b.CreateLShr(VL, getMaskedForShift(b, VL, VR), "lshrtmp"); }
   else if (op == "bitashr") { return b.CreateAShr(VL, getMaskedForShift(b, VL, VR), "ashrtmp"); }
 

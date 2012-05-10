@@ -62,6 +62,13 @@ optEmitDebugInfo("g",
   cl::desc("[foster] Emit debug information in generated LLVM IR"));
 
 static cl::opt<bool>
+optForceNUW("unsafe-use-nuw",
+  cl::desc("[foster] Forcibly tag all relevant LLVM instructions with nuw"));
+static cl::opt<bool>
+optForceNSW("unsafe-use-nsw",
+  cl::desc("[foster] Forcibly tag all relevant LLVM instructions with nsw"));
+
+static cl::opt<bool>
 optDisableGC("unsafe-disable-gc",
   cl::desc("[foster] Disable all GC-related code generation (UNSAFE!)"));
 
@@ -189,7 +196,9 @@ areDeclaredValueTypesOK(llvm::Module* mod,
   return true;
 }
 
-namespace foster { void codegenLL(LLModule*, llvm::Module* mod, bool useGC); }
+namespace foster {
+  void codegenLL(LLModule*, llvm::Module* mod, bool useGC, bool nsw, bool nuw);
+}
 
 int main(int argc, char** argv) {
   int program_status = 0;
@@ -270,7 +279,7 @@ int main(int argc, char** argv) {
       program_status = 1; goto cleanup;
     }
 
-    foster::codegenLL(prog, module, !optDisableGC);
+    foster::codegenLL(prog, module, !optDisableGC, optForceNSW, optForceNUW);
   }
 
   if (optDumpPreLinkedIR) {

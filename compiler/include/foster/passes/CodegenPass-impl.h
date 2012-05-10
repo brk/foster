@@ -53,9 +53,6 @@ llvm::Constant* slotSizeOf(llvm::Type* ty);
 void emitFosterAssert(llvm::Module* mod, llvm::Value* cond, const char* cstr);
 Value* getUnitValue();
 Value* allocateMPInt();
-llvm::Value* codegenPrimitiveOperation(const std::string& op,
-                                       llvm::IRBuilder<>& b,
-                                       const std::vector<Value*>& args);
 Value* getElementFromComposite(Value* compositeValue, int, const std::string& msg);
 Value* getPointerToIndex(Value* compositeValue,
                          Value* idxValue,
@@ -98,6 +95,8 @@ struct LazyCoroPrimInfo;
 
 struct CodegenPass {
   bool useGC;
+  bool useNSW;
+  bool useNUW;
 
   typedef foster::SymbolTable<llvm::Value> ValueTable;
   typedef ValueTable::LexicalScope         ValueScope;
@@ -127,7 +126,7 @@ struct CodegenPass {
   WorklistLIFO<std::string, LLBlock*>   worklistBlocks;
   std::map<LLOccurrence*, llvm::AllocaInst*, ltLLOcc>  occSlots;
 
-  explicit CodegenPass(llvm::Module* mod, bool useGC);
+  explicit CodegenPass(llvm::Module* mod, bool useGC, bool nsw, bool nuw);
 
   ~CodegenPass() {
     //delete dib;
@@ -135,6 +134,9 @@ struct CodegenPass {
 
   void codegen(LLModule*);
   void codegen(LLExpr*);
+  llvm::Value* emitPrimitiveOperation(const std::string& op,
+                                      llvm::IRBuilder<>& b,
+                                      const std::vector<Value*>& args);
 
   llvm::Function* lookupFunctionOrDie(const std::string& fullyQualifiedSymbol);
 
