@@ -814,7 +814,19 @@ Value* allocateCell(CodegenPass* pass, TypeAST* type, bool unboxed,
   case LLAllocate::MEM_REGION_STACK:
     // TODO this allocates a slot, not a cell...
     // TODO init
-    return CreateEntryAlloca(ty, "alloc");
+    //
+    ASSERT(!containsGCablePointers(ty));
+    // If the allocated type is POD, this is fine.
+    // But if the allocated type can contain pointers which must be treated
+    // as roots by the GC, we must enforce a few extra invariants (which are
+    // not currently enforced):
+    //  1) We must allocate a cell, not a slot, to store the type.
+    //  2) We must allocate a slot, pointing to the stack cell, marked gcroot.
+    //  3) We must ensure that no load from the cell persists across a safe pt.
+    //  4) We must ensure that the GC does update the pointers within the cell.
+    //  5) We must(?) ensure that the GC does not attempt to copy the stack
+    //     cell to the heap.
+    return pass->markAsNeedingImplicitLoads(CreateEntryAlloca(ty, "alloc"));
 
   case LLAllocate::MEM_REGION_GLOBAL_HEAP:
     return pass->emitMalloc(ty, ctorId, init);

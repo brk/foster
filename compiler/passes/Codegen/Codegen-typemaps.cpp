@@ -50,7 +50,7 @@ OffsetSet countPointersInType(Type* ty) {
     rv.push_back(builder.getInt64(0));
   }
 
-  // array, struct, union
+  // unboxed array, struct, union
   else if (dyn_cast<ArrayType>(ty)) {
     // TODO need to decide how Foster semantics will map to LLVM IR for arrays.
     // Will EVERY (C++), SOME (Factor, C#?), or NO (Java) types be unboxed?
@@ -80,6 +80,11 @@ OffsetSet countPointersInType(Type* ty) {
 
   // all other types do not contain pointers
   return rv;
+}
+
+bool containsGCablePointers(Type* ty) {
+  OffsetSet s = countPointersInType(ty);
+  return !s.empty();
 }
 
 bool mightContainHeapPointers(llvm::Type* ty) {

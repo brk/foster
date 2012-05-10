@@ -46,7 +46,7 @@ bool mightContainHeapPointers(llvm::Type* ty);
 inline llvm::PointerType* ptrTo(llvm::Type* t) {
   return llvm::PointerType::getUnqual(t);
 }
-
+bool containsGCablePointers(llvm::Type* ty);
 llvm::Constant* slotSizeOf(llvm::Type* ty);
 
 // From CodegenUtils.cpp
@@ -140,7 +140,7 @@ struct CodegenPass {
 
   llvm::Function* lookupFunctionOrDie(const std::string& fullyQualifiedSymbol);
 
-  void markAsNeedingImplicitLoads(llvm::Value* v);
+  llvm::Value* markAsNeedingImplicitLoads(llvm::Value* v);
   void addEntryBB(llvm::Function* f);
 
   void scheduleBlockCodegen(LLBlock* b);

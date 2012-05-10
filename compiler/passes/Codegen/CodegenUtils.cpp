@@ -178,8 +178,8 @@ llvm::AllocaInst* stackSlotWithValue(llvm::Value* val, const std::string& suffix
   return valptr;
 }
 
-void CodegenPass::markAsNeedingImplicitLoads(llvm::Value* v) {
-  this->needsImplicitLoad.insert(v);
+llvm::Value* CodegenPass::markAsNeedingImplicitLoads(llvm::Value* v) {
+  this->needsImplicitLoad.insert(v); return v;
 }
 
 // Unlike markGCRoot, this does not require the root be an AllocaInst
