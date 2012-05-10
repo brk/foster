@@ -627,6 +627,45 @@ void LLBitcast::codegenMiddle(CodegenPass* pass) {
 }
 
 ////////////////////////////////////////////////////////////////////
+////////////////////// Allocation Helpers //////////////////////////
+/////////////////////////////////////////////////////////////////{{{
+
+Value* allocateCell(CodegenPass* pass, TypeAST* type, bool unboxed,
+                    LLAllocate::MemRegion region, int8_t ctorId, bool init) {
+  llvm::Type* ty = type->getLLVMType();
+  if (unboxed) {
+    if (llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
+      ty = pty->getContainedType(0);
+    }
+  }
+
+  switch (region) {
+  case LLAllocate::MEM_REGION_STACK:
+    // TODO this allocates a slot, not a cell...
+    // TODO init
+    //
+    ASSERT(!containsGCablePointers(ty));
+    // If the allocated type is POD, this is fine.
+    // But if the allocated type can contain pointers which must be treated
+    // as roots by the GC, we must enforce a few extra invariants (which are
+    // not currently enforced):
+    //  1) We must allocate a cell, not a slot, to store the type.
+    //  2) We must allocate a slot, pointing to the stack cell, marked gcroot.
+    //  3) We must ensure that no load from the cell persists across a safe pt.
+    //  4) We must ensure that the GC does update the pointers within the cell.
+    //  5) We must(?) ensure that the GC does not attempt to copy the stack
+    //     cell to the heap.
+    return pass->markAsNeedingImplicitLoads(CreateEntryAlloca(ty, "alloc"));
+
+  case LLAllocate::MEM_REGION_GLOBAL_HEAP:
+    return pass->emitMalloc(ty, ctorId, init);
+
+  default:
+    ASSERT(false); return NULL;
+  }
+}
+
+////////////////////////////////////////////////////////////////////
 //////////////// LLAlloc, LLDeref, LLStore /////////////////////////
 /////////////////////////////////////////////////////////////////{{{
 
@@ -640,9 +679,9 @@ llvm::Value* LLAlloc::codegen(CodegenPass* pass) {
   //    end
   ASSERT(this && this->baseVar && this->baseVar->type);
 
-  LLAllocate alloc(this->baseVar->type, foster::bogusCtorId(-4),
-                      /*unboxed*/ false, NULL, this->region);
-  llvm::Value* ptrSlot   = alloc.codegen(pass); // disable implicit autoload
+  llvm::Value* ptrSlot = allocateCell(pass, this->baseVar->type,
+                                      /*unboxed*/ false, this->region,
+                                      foster::bogusCtorId(-4), /*init*/ false);
   llvm::Value* storedVal = pass->emit(baseVar, NULL);
   llvm::Value* ptr       = pass->autoload(ptrSlot, "alloc_slot_ptr");
   emitStore(storedVal, ptr);
@@ -800,41 +839,6 @@ llvm::Value* emitRuntimeArbitraryPrecisionOperation(const std::string& op,
 ///}}}//////////////////////////////////////////////////////////////
 //////////////// LLAllocate ////////////////////////////////////////
 /////////////////////////////////////////////////////////////////{{{
-
-Value* allocateCell(CodegenPass* pass, TypeAST* type, bool unboxed,
-                    LLAllocate::MemRegion region, int8_t ctorId, bool init) {
-  llvm::Type* ty = type->getLLVMType();
-  if (unboxed) {
-    if (llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
-      ty = pty->getContainedType(0);
-    }
-  }
-
-  switch (region) {
-  case LLAllocate::MEM_REGION_STACK:
-    // TODO this allocates a slot, not a cell...
-    // TODO init
-    //
-    ASSERT(!containsGCablePointers(ty));
-    // If the allocated type is POD, this is fine.
-    // But if the allocated type can contain pointers which must be treated
-    // as roots by the GC, we must enforce a few extra invariants (which are
-    // not currently enforced):
-    //  1) We must allocate a cell, not a slot, to store the type.
-    //  2) We must allocate a slot, pointing to the stack cell, marked gcroot.
-    //  3) We must ensure that no load from the cell persists across a safe pt.
-    //  4) We must ensure that the GC does update the pointers within the cell.
-    //  5) We must(?) ensure that the GC does not attempt to copy the stack
-    //     cell to the heap.
-    return pass->markAsNeedingImplicitLoads(CreateEntryAlloca(ty, "alloc"));
-
-  case LLAllocate::MEM_REGION_GLOBAL_HEAP:
-    return pass->emitMalloc(ty, ctorId, init);
-
-  default:
-    ASSERT(false); return NULL;
-  }
-}
 
 Value* allocateArray(CodegenPass* pass, TypeAST* ty,
                      LLAllocate::MemRegion region,
@@ -1213,10 +1217,10 @@ llvm::Value* LLAppCtor::codegen(CodegenPass* pass) {
   // be properly implemented in terms of it.
   registerTupleType(ty, this->ctorId.typeName + "." + this->ctorId.ctorName,
                     this->ctorId.smallId, pass->mod);
-  bool yesUnboxed = true;
-  LLAllocate a(ty, this->ctorId.smallId, yesUnboxed, NULL,
-               LLAllocate::MEM_REGION_GLOBAL_HEAP);
-  llvm::Value* obj_slot = a.codegen(pass);
+
+  llvm::Value* obj_slot = allocateCell(pass, ty, /*unboxed*/ true,
+                                       LLAllocate::MEM_REGION_GLOBAL_HEAP,
+                                       this->ctorId.smallId, /*init*/ false);
   llvm::Value* obj = emitNonVolatileLoad(obj_slot, "obj");
 
   copyValuesToStruct(codegenAll(pass, this->args), obj);
