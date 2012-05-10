@@ -236,10 +236,10 @@ dumpExpr   (MoOccurrence v occ) =
                     , PbLetable.occ   = Just $ dumpOccurrence v occ
                     , PbLetable.type' = Nothing }
 
-dumpExpr x@(MoAllocate info) =
-    P'.defaultValue { PbLetable.tag   = IL_ALLOCATE
-                    , PbLetable.type' = Just $ dumpType (typeMo x)
-                    , PbLetable.alloc_info = Just $ dumpAllocate info }
+--dumpExpr x@(MoAllocate info) = error $ "MoAllocate " ++ show info
+--    P'.defaultValue { PbLetable.tag   = IL_ALLOCATE
+--                    , PbLetable.type' = Just $ dumpType (typeMo x)
+--                    , PbLetable.alloc_info = Just $ dumpAllocate info }
 
 dumpExpr x@(MoAlloc a rgn) =
     P'.defaultValue { PbLetable.parts = fromList [dumpVar a]
@@ -435,7 +435,7 @@ typeMo expr = case expr of
     MoCall     t  _ _       -> t
     MoCallPrim t  _ _       -> t
     MoAppCtor  t  _ _       -> t
-    MoAllocate info         -> allocType info
+    -- MoAllocate info         -> allocType info
     MoAllocArray elt_ty _   -> ArrayType elt_ty
     MoAlloc v _rgn          -> PtrType (tidType v)
     MoDeref v               -> pointedToTypeOfVar v

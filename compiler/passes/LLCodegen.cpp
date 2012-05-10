@@ -856,6 +856,10 @@ llvm::Value* LLAllocate::codegenCell(CodegenPass* pass, bool init) {
 }
 
 llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
+  // For now, the middle-end only generates array allocations,
+  // and leaves cell allocations to LLAlloc or uses of LLAllocate
+  // by e.g. tuples.
+  ASSERT(this->arraySize != NULL);
   bool init = false; // as the default...
   return this->codegenCell(pass, init);
 }

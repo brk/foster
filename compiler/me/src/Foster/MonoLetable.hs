@@ -7,7 +7,7 @@
 module Foster.MonoLetable (MonoLetable(..)) where
 
 import Foster.Base(LiteralInt, LiteralFloat, CtorId, ArrayIndex,
-                   AllocInfo, AllocMemRegion)
+                   AllocMemRegion)
 import Foster.MonoType(MoVar, MoPrim, MonoType)
 import Foster.PatternMatch(Occurrence)
 
@@ -23,8 +23,8 @@ data MonoLetable =
         | MoCallPrim    MonoType MoPrim [MoVar]
         | MoCall        MonoType MoVar  [MoVar]
         | MoAppCtor     MonoType CtorId [MoVar]
-        -- Stack/heap slot allocation
-        | MoAllocate    (AllocInfo MonoType)
+        -- -- Stack/heap slot allocation
+        -- | MoAllocate    (AllocInfo MonoType)
         -- Mutable ref cells
         | MoAlloc       MoVar AllocMemRegion
         | MoDeref       MoVar

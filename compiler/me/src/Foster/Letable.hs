@@ -7,7 +7,7 @@
 module Foster.Letable (Letable(..)) where
 
 import Foster.Base(LiteralInt, LiteralFloat, CtorId, ArrayIndex,
-                   AllocInfo, AllocMemRegion)
+                   AllocMemRegion)
 import Foster.TypeIL(AIVar, ILPrim, TypeIL)
 import Foster.PatternMatch(Occurrence)
 
@@ -29,8 +29,8 @@ data Letable =
         | ILCallPrim    TypeIL ILPrim [AIVar]
         | ILCall        TypeIL AIVar  [AIVar]
         | ILAppCtor     TypeIL CtorId [AIVar]
-        -- Stack/heap slot allocation
-        | ILAllocate    (AllocInfo TypeIL)
+        -- -- Stack/heap slot allocation
+        -- | ILAllocate    (AllocInfo TypeIL)
         -- Mutable ref cells
         | ILAlloc       AIVar AllocMemRegion
         | ILDeref       AIVar

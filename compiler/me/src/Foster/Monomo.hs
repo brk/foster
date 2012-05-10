@@ -350,7 +350,7 @@ monomorphizeLetable subst expr =
         ILCallPrim  t p vs    -> return $ MonoLet $ MoCallPrim (qt t) monopr (map qv vs) where monopr = monoPrim subst p
         ILCall      t v vs    -> return $ MonoLet $ MoCall     (qt t) (qv v) (map qv vs)
         ILAppCtor   t c vs    -> return $ MonoLet $ MoAppCtor  (qt t) c      (map qv vs)
-        ILAllocate  alloc     -> return $ MonoLet $ MoAllocate (monoAllocInfo subst alloc)
+        -- ILAllocate  alloc     -> return $ MonoLet $ MoAllocate (monoAllocInfo subst alloc)
         ILAlloc     v rgn     -> return $ MonoLet $ MoAlloc (qv v) rgn
         ILDeref     v         -> return $ MonoLet $ MoDeref (qv v)
         ILStore     v1 v2     -> return $ MonoLet $ MoStore (qv v1) (qv v2)
@@ -369,9 +369,9 @@ monoPrim subst p =
      PrimIntTrunc s t   -> PrimIntTrunc s t
      CoroPrim  cp t1 t2 -> CoroPrim  cp (monoType subst t1) (monoType subst t2)
 
-monoAllocInfo :: MonoSubst -> AllocInfo TypeIL -> AllocInfo MonoType
-monoAllocInfo subst (AllocInfo t rgn arraysize) =
-    AllocInfo (monoType subst t) rgn (fmap (monoVar subst) arraysize)
+-- monoAllocInfo :: MonoSubst -> AllocInfo TypeIL -> AllocInfo MonoType
+-- monoAllocInfo subst (AllocInfo t rgn arraysize) =
+--     AllocInfo (monoType subst t) rgn (fmap (monoVar subst) arraysize)
 
 -- matching definition from Typecheck.hs
 -- does listize (TupleTypeIL []) result in [] or [unit] ?
