@@ -209,10 +209,11 @@ CodegenPass::storeAndMarkPointerAsGCRoot(llvm::Value* val) {
 
 
 llvm::AllocaInst*
-CodegenPass::emitMalloc(llvm::Type* ty, int8_t ctorId, bool init) {
+CodegenPass::emitMalloc(TypeAST* typ, int8_t ctorId, bool init) {
   llvm::Value* memalloc_cell = mod->getFunction("memalloc_cell");
   ASSERT(memalloc_cell != NULL) << "NO memalloc_cell IN MODULE! :(";
 
+  llvm::Type* ty = typ->getLLVMType();
   llvm::GlobalVariable* ti = getTypeMapForType(ty, ctorId, mod, NotArray);
   ASSERT(ti != NULL) << "malloc must have type info for type " << str(ty)
                      << "; ctor id " << ctorId;

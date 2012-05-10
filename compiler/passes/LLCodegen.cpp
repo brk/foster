@@ -22,6 +22,7 @@
 
 #include <map>
 #include <sstream>
+#include <fstream>
 
 using llvm::Type;
 using llvm::BasicBlock;
@@ -653,7 +654,7 @@ Value* allocateCell(CodegenPass* pass, TypeAST* type,
     return pass->markAsNeedingImplicitLoads(CreateEntryAlloca(ty, "alloc"));
 
   case LLAllocate::MEM_REGION_GLOBAL_HEAP:
-    return pass->emitMalloc(ty, ctorId, init);
+    return pass->emitMalloc(type, ctorId, init);
 
   default:
     ASSERT(false); return NULL;
@@ -1112,7 +1113,9 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
     if (closureEscapes) {
       // // { code*, env* }**
       bool init = false; // because we'll immediately initialize below.
-      llvm::AllocaInst* clo_slot = pass->emitMalloc(genericClosureStructTy(fnty),
+      llvm::Type* gcsty = genericClosureStructTy(fnty);
+      llvm::AllocaInst* clo_slot = pass->emitMalloc(
+                                          PrimitiveTypeAST::get("gcsty", gcsty),
                                                     foster::bogusCtorId(-5),
                                                     init);
       clo = emitNonVolatileLoad(clo_slot, varname + ".closure"); rv = clo_slot;
@@ -1123,7 +1126,7 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
     // TODO register closure type
 
     emitStoreWithCast(proc,
-                    builder.CreateConstGEP2_32(clo, 0, 0, varname + ".clo_code"));
+                      builder.CreateConstGEP2_32(clo, 0, 0, varname + ".clo_code"));
     Value* env_slot = builder.CreateConstGEP2_32(clo, 0, 1, varname + ".clo_env");
     if (env->vars.empty()) {
       storeNullPointerToSlot(env_slot);

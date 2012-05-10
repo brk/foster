@@ -153,7 +153,7 @@ struct CodegenPass {
   Value* autoload(Value* v, const char* suffix = ".autoload");
 
   // Returns ty**, the stack slot containing a ty*.
-  llvm::AllocaInst* emitMalloc(llvm::Type* ty, int8_t ctorId, bool init);
+  llvm::AllocaInst* emitMalloc(TypeAST* typ, int8_t ctorId, bool init);
 
   // Returns array_type[elt_ty]**, the stack slot containing an array_type[elt_ty]*.
   Value* emitArrayMalloc(TypeAST* elt_type, llvm::Value* n, bool init);

@@ -300,8 +300,8 @@ Value* CodegenPass::emitCoroCreateFn(
   int8_t bogusCtor = -1;
   // foster_coro_i32_i32* fcoro = (foster_coro_i32_i32*) memalloc_cell(NULL);
   // foster_coro_i32_i32* ccoro = (foster_coro_i32_i32*) memalloc_cell(NULL);
-  Value* fcoro_slot = this->emitMalloc(getSplitCoroType(argTypes), bogusCtor, /*init*/ true);
-  Value* ccoro_slot = this->emitMalloc(getSplitCoroType(retTy   ), bogusCtor, /*init*/ false);
+  Value* fcoro_slot = this->emitMalloc(PrimitiveTypeAST::get("split_coro_a", getSplitCoroType(argTypes)), bogusCtor, /*init*/ true);
+  Value* ccoro_slot = this->emitMalloc(PrimitiveTypeAST::get("split_coro_r", getSplitCoroType(retTy   )), bogusCtor, /*init*/ false);
 
   Value* fcoro      = builder.CreateLoad(fcoro_slot, "fcoro");
   Value* ccoro      = builder.CreateLoad(ccoro_slot, "ccoro");
