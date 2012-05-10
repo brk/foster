@@ -868,12 +868,6 @@ llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
 //////////////// Arrays ////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////{{{
 
-void printAddress(CodegenPass* pass, Value* addr) {
-  builder.CreateCall(
-    pass->mod->getFunction("print_addr"),
-    builder.CreateBitCast(addr, builder.getInt8PtrTy()));
-}
-
 bool isPointerToStruct(llvm::Type* ty) {
   if (llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
     if (llvm::dyn_cast<llvm::StructType>(pty->getContainedType(0))) {
