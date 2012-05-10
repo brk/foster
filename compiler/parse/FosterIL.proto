@@ -14,6 +14,7 @@ message Type {
     ARRAY = 11;
     DATATYPE = 12;
     TY_CON_APP = 13;
+    STRUCT = 14;
   }
 
   required Tag         tag   = 2;

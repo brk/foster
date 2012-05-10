@@ -13,6 +13,7 @@ data MonoType =
          | PrimFloat64
          | TyConApp      DataTypeName [MonoType]
          | TupleType     [MonoType]
+         | StructType    [MonoType]
          | FnType        { monoFnTypeDomain :: MonoType
                          , monoFnTypeRange  :: MonoType
                          , monoFnTypeCallConv :: CallConv

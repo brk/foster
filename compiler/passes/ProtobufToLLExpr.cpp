@@ -490,6 +490,14 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
     return fnty;
   }
 
+  if (t.tag() == pb::Type::STRUCT) {
+    std::vector<TypeAST*> parts(t.type_parts_size());
+    for (size_t i = 0; i < parts.size(); ++i) {
+      parts[i] = TypeAST_from_pb(&t.type_parts(i));
+    }
+    return StructTypeAST::get(parts);
+  }
+
   if (t.tag() == pb::Type::TUPLE) {
     std::vector<TypeAST*> parts(t.type_parts_size());
     for (size_t i = 0; i < parts.size(); ++i) {

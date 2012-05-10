@@ -850,8 +850,12 @@ llvm::Value* LLAllocate::codegenCell(CodegenPass* pass, bool init) {
   if (this->arraySize != NULL) {
     return allocateArray(pass, this->type, this->region,
                          pass->emit(this->arraySize, NULL), init);
+  } else if (TupleTypeAST* tupty = dynamic_cast<TupleTypeAST*>(this->type)) {
+    return allocateCell(pass, RefTypeAST::get(tupty->getUnderlyingStruct()),
+                        this->region, this->ctorId, init);
   } else {
-    return allocateCell(pass, this->type, this->region, this->ctorId, init);
+    ASSERT(false) << "LLAllocate can only allocate arrays or tuples...";
+    return NULL;
   }
 }
 
