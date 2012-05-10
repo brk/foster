@@ -149,10 +149,10 @@ dumpMemRegion amr = case amr of
     MemRegionGlobalHeap -> PbMemRegion.MEM_REGION_GLOBAL_HEAP
 
 dumpAllocate :: AllocInfo MonoType -> PbAllocInfo
-dumpAllocate (AllocInfo _typ region maybe_array_size unboxed) =
+dumpAllocate (AllocInfo _typ region maybe_array_size) =
     P'.defaultValue { PbAllocInfo.mem_region = dumpMemRegion region
                     , PbAllocInfo.array_size = fmap dumpVar maybe_array_size
-                    , PbAllocInfo.unboxed    = unboxed }
+                    }
 
 -- ||||||||||||||||||||||||||| CFGs |||||||||||||||||||||||||||||{{{
 dumpBlock :: MoBlock -> PbBlock.Block
@@ -229,7 +229,7 @@ dumpExpr x@(MoTuple vs) =
                     , PbLetable.tag   = IL_TUPLE
                     , PbLetable.type' = Just $ dumpType (typeMo x)
                     , PbLetable.alloc_info = Just $ dumpAllocate
-                         (AllocInfo (typeMo x) MemRegionGlobalHeap Nothing True) }
+                         (AllocInfo (typeMo x) MemRegionGlobalHeap Nothing) }
 
 dumpExpr   (MoOccurrence v occ) =
     P'.defaultValue { PbLetable.tag   = IL_OCCURRENCE
@@ -246,14 +246,14 @@ dumpExpr x@(MoAlloc a rgn) =
                     , PbLetable.tag   = IL_ALLOC
                     , PbLetable.type' = Just $ dumpType (typeMo x)
                     , PbLetable.alloc_info = Just $ dumpAllocate
-                         (AllocInfo (typeMo x) rgn Nothing True) }
+                         (AllocInfo (typeMo x) rgn Nothing) }
 
 dumpExpr  (MoAllocArray elt_ty size) =
     P'.defaultValue { PbLetable.parts = fromList []
                     , PbLetable.tag   = IL_ALLOCATE
                     , PbLetable.type' = Just $ dumpType elt_ty
                     , PbLetable.alloc_info = Just $ dumpAllocate
-                       (AllocInfo elt_ty MemRegionGlobalHeap (Just size) True) }
+                       (AllocInfo elt_ty MemRegionGlobalHeap (Just size)) }
 
 dumpExpr x@(MoDeref a) =
     P'.defaultValue { PbLetable.parts = fromList [dumpVar a]
@@ -284,7 +284,7 @@ dumpExpr x@(MoInt _ty int) =
                                  { clean = u8fromString (show $ litIntValue int)
                                  , bits  = intToInt32   (litIntMinBits int) }
                     }
-                    
+
 dumpExpr x@(MoFloat _ty flt) =
     P'.defaultValue { PbLetable.tag   = IL_FLOAT
                     , PbLetable.type' = Just $ dumpType (typeMo x)

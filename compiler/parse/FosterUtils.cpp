@@ -19,37 +19,6 @@ using llvm::FunctionType;
 
 llvm::Type* foster_generic_coro_t;
 
-// Converts t1 (t2, t3)   to  t1 (i8*, t2, t3)*
-FnTypeAST* genericClosureVersionOf(const FnTypeAST* fnty) {
-  TypeAST* envType = RefTypeAST::get(TypeAST::i(8));
-
-  std::vector<TypeAST*> fnParams;
-  fnParams.push_back(envType);
-
-  for (int i = 0; i < fnty->getNumParams(); ++i) {
-    fnParams.push_back(fnty->getParamType(i));
-  }
-
-  FnTypeAST* f = new FnTypeAST(fnty->getReturnType(), fnParams,
-                               fnty->getAnnots());
-  f->markAsProc();
-  return f;
-}
-
-// converts      t1 (t2, t3)      to { t1 (i8*, t2, t3)*, i8* }
-TupleTypeAST* genericClosureTypeFor(const FnTypeAST* fnty) {
-  TypeAST* envType = RefTypeAST::get(TypeAST::i(8));
-
-  // We can mark closures with whatever calling convention we want,
-  // since closures are internal by definition.
-  FnTypeAST* newProcTy = genericClosureVersionOf(fnty);
-  std::vector<TypeAST*> cloTypes;
-  cloTypes.push_back(newProcTy);
-  cloTypes.push_back(envType);
-  TupleTypeAST* cloTy = TupleTypeAST::get(cloTypes);
-  return cloTy;
-}
-
 bool isValidClosureType(const llvm::Type* ty) {
   if (const llvm::StructType* sty =
          llvm::dyn_cast_or_null<const llvm::StructType>(ty)) {

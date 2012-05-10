@@ -141,7 +141,6 @@ message PbAllocInfo {
   }
   required MemRegion mem_region = 1;
   optional TermVar   array_size = 2;
-  required bool      unboxed    = 3;
 }
 
 message Proc {

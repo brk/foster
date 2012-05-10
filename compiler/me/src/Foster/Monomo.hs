@@ -370,8 +370,8 @@ monoPrim subst p =
      CoroPrim  cp t1 t2 -> CoroPrim  cp (monoType subst t1) (monoType subst t2)
 
 monoAllocInfo :: MonoSubst -> AllocInfo TypeIL -> AllocInfo MonoType
-monoAllocInfo subst (AllocInfo t rgn arraysize unboxed) =
-    AllocInfo (monoType subst t) rgn (fmap (monoVar subst) arraysize) unboxed
+monoAllocInfo subst (AllocInfo t rgn arraysize) =
+    AllocInfo (monoType subst t) rgn (fmap (monoVar subst) arraysize)
 
 -- matching definition from Typecheck.hs
 -- does listize (TupleTypeIL []) result in [] or [unit] ?

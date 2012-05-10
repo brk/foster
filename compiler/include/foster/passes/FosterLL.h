@@ -350,15 +350,14 @@ struct LLLetVals : public LLMiddle {
 struct LLAllocate : public LLExpr {
   LLVar* arraySize; // NULL if not allocating an array
   int8_t ctorId;
-  bool unboxed;
   enum MemRegion {
       MEM_REGION_STACK
     , MEM_REGION_GLOBAL_HEAP
   } region;
   bool isStackAllocated() const { return region == MEM_REGION_STACK; }
 
-  explicit LLAllocate(TypeAST* t, int8_t c, bool u, LLVar* arrSize, MemRegion m)
-     : LLExpr("LLAllocate"), arraySize(arrSize), ctorId(c), unboxed(u),
+  explicit LLAllocate(TypeAST* t, int8_t c, LLVar* arrSize, MemRegion m)
+     : LLExpr("LLAllocate"), arraySize(arrSize), ctorId(c),
          region(m) { this->type = t; }
   llvm::Value* codegenCell(CodegenPass* pass, bool init);
   virtual llvm::Value* codegen(CodegenPass* pass);
