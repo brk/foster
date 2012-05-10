@@ -242,7 +242,7 @@ dumpExpr x@(MoTuple vs) =
 dumpExpr   (MoOccurrence v occ) =
     P'.defaultValue { PbLetable.tag   = IL_OCCURRENCE
                     , PbLetable.occ   = Just $ dumpOccurrence v occ
-                    , PbLetable.type' = Nothing }
+                    , PbLetable.type' = Nothing } -- TODO use type here
 
 --dumpExpr x@(MoAllocate info) = error $ "MoAllocate " ++ show info
 --    P'.defaultValue { PbLetable.tag   = IL_ALLOCATE

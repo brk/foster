@@ -213,9 +213,8 @@ CodegenPass::emitMalloc(TypeAST* typ, int8_t ctorId, bool init) {
   llvm::Value* memalloc_cell = mod->getFunction("memalloc_cell");
   ASSERT(memalloc_cell != NULL) << "NO memalloc_cell IN MODULE! :(";
 
-  llvm::Type* ty = typ->getLLVMType();
-  llvm::GlobalVariable* ti = getTypeMapForType(ty, ctorId, mod, NotArray);
-  ASSERT(ti != NULL) << "malloc must have type info for type " << str(ty)
+  llvm::GlobalVariable* ti = getTypeMapForType(typ, ctorId, mod, NotArray);
+  ASSERT(ti != NULL) << "malloc must have type info for type " << str(typ)
                      << "; ctor id " << ctorId;
   llvm::Type* typemap_type = memalloc_cell->getType()
                                             ->getContainedType(0)
@@ -223,6 +222,7 @@ CodegenPass::emitMalloc(TypeAST* typ, int8_t ctorId, bool init) {
   llvm::Value* typemap = builder.CreateBitCast(ti, typemap_type);
   llvm::CallInst* mem = builder.CreateCall(memalloc_cell, typemap, "mem");
 
+  llvm::Type* ty = typ->getLLVMType();
   if (init) {
     markAsNonAllocating(builder.CreateMemSet(mem, builder.getInt8(0),
                                                   slotSizeOf(ty), /*align*/ 4));
@@ -235,7 +235,6 @@ CodegenPass::emitMalloc(TypeAST* typ, int8_t ctorId, bool init) {
 
 llvm::Value*
 CodegenPass::emitArrayMalloc(TypeAST* elt_type, llvm::Value* n, bool init) {
-  llvm::Type* elt_ty = elt_type->getLLVMType();
   llvm::Value* memalloc = mod->getFunction("memalloc_array");
   ASSERT(memalloc != NULL) << "NO memalloc_array IN MODULE! :(";
 
@@ -244,7 +243,7 @@ CodegenPass::emitArrayMalloc(TypeAST* elt_type, llvm::Value* n, bool init) {
   // 1) (packed) non-struct POD
   // 2) GC-able pointers
   // 3) (maybe) unboxed structs, for types with a single ctor.
-  llvm::GlobalVariable* ti = getTypeMapForType(elt_ty, ctorId, mod, YesArray);
+  llvm::GlobalVariable* ti = getTypeMapForType(elt_type, ctorId, mod, YesArray);
   ASSERT(ti != NULL);
   llvm::Type* typemap_type = memalloc->getType() // function ptr
                                             ->getContainedType(0) // function
@@ -256,7 +255,7 @@ CodegenPass::emitArrayMalloc(TypeAST* elt_type, llvm::Value* n, bool init) {
 
   return storeAndMarkPointerAsGCRoot(
            builder.CreateBitCast(mem,
-                  ArrayTypeAST::getZeroLengthTypeRef(elt_ty), "arr_ptr"));
+                  ArrayTypeAST::getZeroLengthTypeRef(elt_type), "arr_ptr"));
 }
 
 llvm::Value*

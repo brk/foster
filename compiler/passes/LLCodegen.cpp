@@ -337,7 +337,7 @@ void LLProc::codegenProto(CodegenPass* pass) {
 
 ////////////////////////////////////////////////////////////////////
 
-llvm::AllocaInst* ensureImplicitStackSlot(llvm::Value* v, CodegenPass* pass) {
+llvm::AllocaInst* ensureImplicitStackSlot(llvm::Value* v, bool gcable, CodegenPass* pass) {
   if (llvm::LoadInst* load = dyn_cast<llvm::LoadInst>(v)) {
     llvm::AllocaInst* slot = dyn_cast<llvm::AllocaInst>(load->getOperand(0));
     if (slot && pass->needsImplicitLoad.count(slot) == 1) {
@@ -345,7 +345,7 @@ llvm::AllocaInst* ensureImplicitStackSlot(llvm::Value* v, CodegenPass* pass) {
     }
   }
 
-  if (mightContainHeapPointers(v->getType())) {
+  if (gcable) {
     return pass->storeAndMarkPointerAsGCRoot(v);
   } else {
     llvm::AllocaInst* slot = stackSlotWithValue(v, "_addr");
@@ -369,7 +369,7 @@ void LLProc::codegenProc(CodegenPass* pass) {
   for (Function::arg_iterator AI = F->arg_begin();
                               AI != F->arg_end(); ++AI) {
     if (isEnvPtr(AI)) { // Non-envptr args get stack slots from postalloca phis.
-      llvm::Value* slot = ensureImplicitStackSlot(AI, pass);
+      llvm::Value* slot = ensureImplicitStackSlot(AI, /*gcable*/ true, pass);
       pass->insertScopedValue(AI->getName(), slot);
     }
   }
@@ -459,10 +459,11 @@ bool needStackSlotForPhis(LLBlock* block) {
                    || llvm::StringRef(block->block_id).startswith("postalloca");
 }
 
-Value* maybeStackSlotForPhi(Value* phi, LLBlock* block, CodegenPass* pass) {
+Value* maybeStackSlotForPhi(TypeAST* typ, Value* phi, LLBlock* block, CodegenPass* pass) {
   if (!phi->getType()->isPointerTy()) return phi;
   if (!needStackSlotForPhis(block))   return phi;
-  return ensureImplicitStackSlot(phi, pass);
+  bool gcable = containsGCablePointers(typ, phi->getType());
+  return ensureImplicitStackSlot(phi, gcable, pass);
 }
 
 void LLBlock::codegenBlock(CodegenPass* pass) {
@@ -473,7 +474,8 @@ void LLBlock::codegenBlock(CodegenPass* pass) {
   //}
   for (size_t i = 0; i < this->phiVars.size(); ++i) {
      pass->insertScopedValue(this->phiVars[i]->getName(),
-        maybeStackSlotForPhi(this->phiNodes[i], this, pass));
+        maybeStackSlotForPhi(this->phiVars[i]->type,
+                             this->phiNodes[i], this, pass));
   }
   for (size_t i = 0; i < this->mids.size(); ++i) {
     this->mids[i]->codegenMiddle(pass);
@@ -640,7 +642,7 @@ Value* allocateCell(CodegenPass* pass, TypeAST* type,
     // TODO this allocates a slot, not a cell...
     // TODO init
     //
-    ASSERT(!containsGCablePointers(ty));
+    ASSERT(!containsGCablePointers(type, ty));
     // If the allocated type is POD, this is fine.
     // But if the allocated type can contain pointers which must be treated
     // as roots by the GC, we must enforce a few extra invariants (which are
@@ -924,7 +926,11 @@ llvm::Value* LLArrayIndex::codegenARI(CodegenPass* pass) {
 llvm::Value* LLArrayRead::codegen(CodegenPass* pass) {
   Value* slot = ari->codegenARI(pass);
   Value* val  = emitNonVolatileLoad(slot, "arrayslot");
-  return ensureImplicitStackSlot(val, pass);
+  TypeAST* typ = this->type;
+  ASSERT(this->type) << "LLArrayRead with no type?";
+  ASSERT(this->type->getLLVMType() == val->getType());
+  bool gcable = containsGCablePointers(typ, val->getType());
+  return ensureImplicitStackSlot(val, gcable, pass);
 }
 
   // base could be an array a[i] or a slot for a reference variable r.
@@ -1160,12 +1166,17 @@ TupleTypeAST* maybeGetCtorStructType(CodegenPass* pass, CtorId c) {
 
 // Create at most one stack slot per subterm.
 llvm::AllocaInst*
-getStackSlotForOcc(CodegenPass* pass, llvm::Value* v, llvm::AllocaInst*& slot) {
+getStackSlotForOcc(CodegenPass* pass, TypeAST* typ,
+                   llvm::Value* v, llvm::AllocaInst*& slot) {
   ASSERT(v != NULL);
   if (slot) {
     emitStore(v, slot);
   } else {
-    slot = ensureImplicitStackSlot(v, pass);
+    //ASSERT(typ) << "getStackSlotForOcc with no type?";
+    //ASSERT(typ->getLLVMType() == v->getType());
+    //bool gcable = containsGCablePointers(typ, v->getType());
+    bool gcable = mayContainGCablePointers(v->getType());
+    slot = ensureImplicitStackSlot(v, gcable, pass);
   }
   return slot;
 }
@@ -1201,7 +1212,7 @@ llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
   // If we've loaded some possible-pointers from memory, make sure they
   // get their own implicit stack slots.
   llvm::AllocaInst*& slot = pass->occSlots[this];
-  getStackSlotForOcc(pass, rv, slot);
+  getStackSlotForOcc(pass, this->type, rv, slot);
   trySetName(slot, "pat_" + this->var->getName() + "_slot");
   return slot;
 }

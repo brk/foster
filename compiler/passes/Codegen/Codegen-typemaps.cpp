@@ -41,6 +41,10 @@ bool isGarbageCollectible(Type* ty) {
   return ty->isPointerTy() && ty->getContainedType(0)->isSized();
 }
 
+bool isGarbageCollectible(TypeAST* typ, Type* ty) {
+  return isGarbageCollectible(ty);
+}
+
 OffsetSet countPointersInType(Type* ty) {
   ASSERT(ty) << "Can't count pointers in a NULL type!";
 
@@ -55,6 +59,7 @@ OffsetSet countPointersInType(Type* ty) {
     // TODO need to decide how Foster semantics will map to LLVM IR for arrays.
     // Will EVERY (C++), SOME (Factor, C#?), or NO (Java) types be unboxed?
     // Also need to figure out how the gc will collect arrays.
+    ASSERT(false) << "array map offsets?";
     //return aty->getNumElements() * countPointersInType(aty->getElementType());
   }
 
@@ -64,6 +69,56 @@ OffsetSet countPointersInType(Type* ty) {
     for (size_t i = 0; i < sty->getNumElements(); ++i) {
       Constant* slotOffset = ConstantExpr::getOffsetOf(sty, i);
       OffsetSet sub = countPointersInType(sty->getTypeAtIndex(i));
+      for (OffsetSet::iterator si = sub.begin(); si != sub.end(); ++si) {
+        Offset suboffset = *si;
+        rv.push_back(ConstantExpr::getAdd(suboffset, slotOffset));
+      }
+    }
+  }
+  // all other types do not contain pointers
+  return rv;
+}
+
+// TODO vector of pointers now supported by LLVM...
+// will we allow vectors of pointers-to-GC-heap? probably unwise.
+
+OffsetSet countPointersInType(TypeAST* typ, Type* ty) {
+  ASSERT(ty) << "Can't count pointers in a NULL type!";
+
+  OffsetSet rv;
+  if (isGarbageCollectible(typ, ty)) {
+    // Pointers to functions/labels/other non-sized types do not get GC'd.
+    rv.push_back(builder.getInt64(0));
+  }
+
+  // unboxed array, struct, union
+  else if (dyn_cast<ArrayType>(ty)) {
+    // TODO need to decide how Foster semantics will map to LLVM IR for arrays.
+    // Will EVERY (C++), SOME (Factor, C#?), or NO (Java) types be unboxed?
+    // Also need to figure out how the gc will collect arrays.
+    ASSERT(false) << "array map offsets?";
+    //return aty->getNumElements() * countPointersInType(aty->getElementType());
+  }
+
+  // if we have a struct { T1; T2 } then our offset set will be the set for T1,
+  // plus the set for T2 with offsets incremented by the offset of T2.
+  else if (StructType* sty = dyn_cast<StructType>(ty)) {
+
+    // If we have a primitive type, we'll fall back on inspecting just the
+    // LLVM bits. TODO eliminate this massive ahhack.
+    if (PrimitiveTypeAST* pty = dynamic_cast<PrimitiveTypeAST*>(typ)) {
+      ASSERT(pty->getLLVMType() == ty);
+    }
+
+    StructTypeAST* stp = dynamic_cast<StructTypeAST*>(typ);
+    //ASSERT(stp) << "StructType without corresponding StructTypeAST?!? " << str(typ);
+
+    for (size_t i = 0; i < sty->getNumElements(); ++i) {
+      Constant* slotOffset = ConstantExpr::getOffsetOf(sty, i);
+      OffsetSet sub = (stp != NULL)
+                      ? countPointersInType(stp->getContainedType(i),
+                                            sty->getTypeAtIndex(i))
+                      : countPointersInType(sty->getTypeAtIndex(i));
       for (OffsetSet::iterator si = sub.begin(); si != sub.end(); ++si) {
         Offset suboffset = *si;
         rv.push_back(ConstantExpr::getAdd(suboffset, slotOffset));
@@ -82,14 +137,14 @@ OffsetSet countPointersInType(Type* ty) {
   return rv;
 }
 
-bool containsGCablePointers(Type* ty) {
+bool mayContainGCablePointers(Type* ty) {
   OffsetSet s = countPointersInType(ty);
   return !s.empty();
 }
 
-bool mightContainHeapPointers(llvm::Type* ty) {
-  OffsetSet offsets = countPointersInType(ty);
-  return !offsets.empty();
+bool containsGCablePointers(TypeAST* typ, Type* ty) {
+  OffsetSet s = countPointersInType(typ, ty);
+  return !s.empty();
 }
 
 Type* getHeapCellHeaderTy() {
@@ -226,9 +281,10 @@ GlobalVariable* constructTypeMap(llvm::Type*  ty,
 // Computes the offsets of all pointers in the given type,
 // and constructs a type map using those offsets.
 GlobalVariable* emitTypeMap(
-    Type* ty,
-    std::string name,
-    ArrayOrNot arrayStatus,
+    TypeAST*      typ,
+    llvm::Type*   ty,
+    std::string   name,
+    ArrayOrNot    arrayStatus,
     int8_t        ctorId,
     llvm::Module* mod,
     std::vector<int> skippedIndexVector) {
@@ -241,7 +297,7 @@ GlobalVariable* emitTypeMap(
     EDiag() << "plan to skip index " << skippedIndexVector[i];
   }
   OffsetSet filteredOffsets;
-  OffsetSet pointerOffsets = countPointersInType(ty);
+  OffsetSet pointerOffsets = countPointersInType(typ, ty);
   for(size_t i = 0; i < pointerOffsets.size(); ++i) {
     if (skippedOffsets.count(i) == 0) {
       filteredOffsets.push_back(pointerOffsets[i]);
@@ -266,7 +322,7 @@ GlobalVariable* emitTypeMap(
 //   }
 //   argty
 // }
-GlobalVariable* emitCoroTypeMap(StructType* sty, llvm::Module* mod) {
+GlobalVariable* emitCoroTypeMap(TypeAST* typ, StructType* sty, llvm::Module* mod) {
   bool hasKnownTypes = sty->getNumElements() == 2;
   if (!hasKnownTypes) {
     // Generic coro; don't generate a typemap,
@@ -282,7 +338,7 @@ GlobalVariable* emitCoroTypeMap(StructType* sty, llvm::Module* mod) {
   // The pointer-to-function will be automatically skipped, and the remaining
   // pointers are precisely those which we want the GC to notice.
   int8_t bogusCtor = -1;
-  return emitTypeMap(sty, ss.str(), NotArray, bogusCtor, mod,
+  return emitTypeMap(typ, sty, ss.str(), NotArray, bogusCtor, mod,
                      make_vector(0, 4, NULL));
 }
 
@@ -301,7 +357,7 @@ void registerStructType(StructTypeAST* structty,
   std::string name = ParsingContext::freshName(desiredName);
   //mod->addTypeName(name, ty);
   EDiag() << "TODO: registered type " << name << " = " << str(ty) << "; ctor id " << ctorId;
-  emitTypeMap(ty, name, NotArray, ctorId, mod, std::vector<int>());
+  emitTypeMap(structty, ty, name, NotArray, ctorId, mod, std::vector<int>());
 }
 
 llvm::StructType*
@@ -316,21 +372,22 @@ isCoroStruct(llvm::Type* ty) {
   return NULL;
 }
 
-llvm::GlobalVariable* getTypeMapForType(llvm::Type* ty,
+llvm::GlobalVariable* getTypeMapForType(TypeAST* typ,
                                         int8_t ctorId,
                                         llvm::Module* mod,
                                         ArrayOrNot arrayStatus) {
+  llvm::Type* ty = typ->getLLVMType();
   llvm::GlobalVariable* gv = typeMapCache[mkTypeSig(ty, arrayStatus, ctorId)];
   if (gv) return gv;
 
   if (llvm::StructType* sty = isCoroStruct(ty)) {
-    gv = emitCoroTypeMap(sty, mod);
+    gv = emitCoroTypeMap(typ, sty, mod);
   } else if (/*!ty->isAbstract() &&*/ !ty->isAggregateType()) {
-    gv = emitTypeMap(ty, ParsingContext::freshName("gcatom"), arrayStatus,
+    gv = emitTypeMap(typ, ty, ParsingContext::freshName("gcatom"), arrayStatus,
                      ctorId, mod, std::vector<int>());
     // emitTypeMap also sticks gv in typeMapForType
   } else if (isGenericClosureType(ty)) {
-    gv = emitTypeMap(ty, ParsingContext::freshName("genericClosure"), arrayStatus,
+    gv = emitTypeMap(typ, ty, ParsingContext::freshName("genericClosure"), arrayStatus,
                      ctorId, mod, std::vector<int>());
   }
 

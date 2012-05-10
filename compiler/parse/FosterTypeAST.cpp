@@ -327,13 +327,13 @@ llvm::Type* ArrayTypeAST::getSizedArrayTypeRef(llvm::Type* t, int64_t n) {
 }
 
 
-llvm::Type* ArrayTypeAST::getZeroLengthTypeRef(llvm::Type* t) {
-  return getSizedArrayTypeRef(t, 0);
+llvm::Type* ArrayTypeAST::getZeroLengthTypeRef(TypeAST* t) {
+  return getSizedArrayTypeRef(t->getLLVMType(), 0);
 }
 
 llvm::Type* ArrayTypeAST::getLLVMType() const {
   if (!repr) {
-    repr = getZeroLengthTypeRef(this->cell->getLLVMType());
+    repr = getZeroLengthTypeRef(this->cell);
   }
   return repr;
 }

@@ -38,15 +38,14 @@ void registerStructType(StructTypeAST* structty,
                         std::string    desiredName,
                         int8_t         ctorId,
                         llvm::Module*  mod);
-llvm::GlobalVariable* getTypeMapForType(llvm::Type*, int8_t ctorId,
+llvm::GlobalVariable* getTypeMapForType(TypeAST*, int8_t ctorId,
                                         llvm::Module*, ArrayOrNot);
-
-bool mightContainHeapPointers(llvm::Type* ty);
 
 inline llvm::PointerType* ptrTo(llvm::Type* t) {
   return llvm::PointerType::getUnqual(t);
 }
-bool containsGCablePointers(llvm::Type* ty);
+bool mayContainGCablePointers(llvm::Type* ty);
+bool containsGCablePointers(TypeAST* typ, llvm::Type* ty);
 llvm::Constant* slotSizeOf(llvm::Type* ty);
 
 // From CodegenUtils.cpp

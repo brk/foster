@@ -290,7 +290,7 @@ public:
   virtual void show(PrettyPrintTypePass* pass);
   virtual void dump(DumpTypeToProtobufPass* pass);
   virtual llvm::Type* getLLVMType() const;
-  static  llvm::Type* getZeroLengthTypeRef(llvm::Type* t);
+  static  llvm::Type* getZeroLengthTypeRef(TypeAST* t);
   static  llvm::Type* getSizedArrayTypeRef(llvm::Type* t, int64_t n);
 
   virtual int getNumContainedTypes() const { return 1; }
