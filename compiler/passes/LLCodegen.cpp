@@ -633,9 +633,6 @@ void LLBitcast::codegenMiddle(CodegenPass* pass) {
 Value* allocateCell(CodegenPass* pass, TypeAST* type,
                     LLAllocate::MemRegion region, int8_t ctorId, bool init) {
   llvm::Type* ty = type->getLLVMType();
-  if (llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
-    ty = pty->getContainedType(0);
-  }
 
   switch (region) {
   case LLAllocate::MEM_REGION_STACK:
@@ -677,7 +674,7 @@ llvm::Value* LLAlloc::codegen(CodegenPass* pass) {
   //    end
   ASSERT(this && this->baseVar && this->baseVar->type);
 
-  llvm::Value* ptrSlot = allocateCell(pass, RefTypeAST::get(this->baseVar->type),
+  llvm::Value* ptrSlot = allocateCell(pass, this->baseVar->type,
                                       this->region,
                                       foster::bogusCtorId(-4), /*init*/ false);
   llvm::Value* storedVal = pass->emit(baseVar, NULL);
@@ -850,11 +847,10 @@ llvm::Value* LLAllocate::codegenCell(CodegenPass* pass, bool init) {
   if (this->arraySize != NULL) {
     return allocateArray(pass, this->type, this->region,
                          pass->emit(this->arraySize, NULL), init);
-  } else if (TupleTypeAST* tupty = dynamic_cast<TupleTypeAST*>(this->type)) {
-    return allocateCell(pass, RefTypeAST::get(tupty->getUnderlyingStruct()),
-                        this->region, this->ctorId, init);
+  } else if (StructTypeAST* sty = dynamic_cast<StructTypeAST*>(this->type)) {
+    return allocateCell(pass, sty, this->region, this->ctorId, init);
   } else {
-    ASSERT(false) << "LLAllocate can only allocate arrays or tuples...";
+    ASSERT(false) << "LLAllocate can only allocate arrays or structs...";
     return NULL;
   }
 }
@@ -965,13 +961,13 @@ llvm::Value* LLTuple::codegenStorage(CodegenPass* pass, bool init) {
   if (vars.empty()) { return getUnitValue(); }
 
   ASSERT(this->allocator);
-  TupleTypeAST* tuplety = dynamic_cast<TupleTypeAST*>(this->allocator->type);
+  StructTypeAST* structty = dynamic_cast<StructTypeAST*>(this->allocator->type);
 
-  ASSERT(tuplety != NULL)
+  ASSERT(structty != NULL)
         << "allocator wants to emit type " << str(this->allocator->type)
         << "; var 0 :: " << str(vars[0]->type);
 
-  registerStructType(tuplety->getUnderlyingStruct(),
+  registerStructType(structty,
                      this->typeName, foster::bogusCtorId(-2), pass->mod);
   return allocator->codegenCell(pass, init);
 }
@@ -1227,7 +1223,7 @@ llvm::Value* LLAppCtor::codegen(CodegenPass* pass) {
   registerStructType(sty, this->ctorId.typeName + "." + this->ctorId.ctorName,
                      this->ctorId.smallId, pass->mod);
 
-  llvm::Value* obj_slot = allocateCell(pass, RefTypeAST::get(sty),
+  llvm::Value* obj_slot = allocateCell(pass, sty,
                                        LLAllocate::MEM_REGION_GLOBAL_HEAP,
                                        this->ctorId.smallId, /*init*/ false);
   llvm::Value* obj = emitNonVolatileLoad(obj_slot, "obj");

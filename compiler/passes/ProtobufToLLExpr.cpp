@@ -153,7 +153,7 @@ LLAllocate* parseAllocate(const pb::Letable& e) {
 
   LLAllocate::MemRegion target_region = parseMemRegion(a);
   int8_t bogusCtorId = -2;
-  return new LLAllocate(TypeAST_from_pb(& e.type()), bogusCtorId,
+  return new LLAllocate(TypeAST_from_pb(& a.type()), bogusCtorId,
                         array_size, target_region);
 }
 

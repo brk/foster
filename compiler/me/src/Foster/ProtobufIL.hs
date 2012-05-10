@@ -152,8 +152,9 @@ dumpMemRegion amr = case amr of
     MemRegionGlobalHeap -> PbMemRegion.MEM_REGION_GLOBAL_HEAP
 
 dumpAllocate :: AllocInfo MonoType -> PbAllocInfo
-dumpAllocate (AllocInfo _typ region maybe_array_size) =
+dumpAllocate (AllocInfo typ region maybe_array_size) =
     P'.defaultValue { PbAllocInfo.mem_region = dumpMemRegion region
+                    , PbAllocInfo.type'      = dumpType      typ
                     , PbAllocInfo.array_size = fmap dumpVar maybe_array_size
                     }
 
@@ -214,6 +215,10 @@ dumpSwitch var arms def occ =
                     , PbSwitch.occ   = Just $ dumpOccurrence var occ }
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+tupStruct (TupleType ts) = StructType ts
+tupStruct t              = error $ "ProtobufIL:tupStruct expected tuple type,"
+                                 ++ " got " ++ show t
+
 -- |||||||||||||||||||||||| Expressions |||||||||||||||||||||||||{{{
 dumpExpr :: MonoLetable -> PbLetable.Letable
 
@@ -232,7 +237,7 @@ dumpExpr x@(MoTuple vs) =
                     , PbLetable.tag   = IL_TUPLE
                     , PbLetable.type' = Just $ dumpType (typeMo x)
                     , PbLetable.alloc_info = Just $ dumpAllocate
-                         (AllocInfo (typeMo x) MemRegionGlobalHeap Nothing) }
+                         (AllocInfo (tupStruct $ typeMo x) MemRegionGlobalHeap Nothing) }
 
 dumpExpr   (MoOccurrence v occ) =
     P'.defaultValue { PbLetable.tag   = IL_OCCURRENCE

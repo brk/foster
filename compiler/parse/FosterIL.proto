@@ -141,7 +141,8 @@ message PbAllocInfo {
     MEM_REGION_GLOBAL_HEAP = 2;
   }
   required MemRegion mem_region = 1;
-  optional TermVar   array_size = 2;
+  required Type            type = 2;
+  optional TermVar   array_size = 3;
 }
 
 message Proc {
