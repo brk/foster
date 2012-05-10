@@ -122,7 +122,7 @@ void copyValuesToStruct(const std::vector<llvm::Value*>& vals,
 }
 
 llvm::Value* emitFakeComment(std::string s) {
-  EDiag() << "emitFakeComment: " << s;
+  //EDiag() << "emitFakeComment: " << s;
   return new llvm::BitCastInst(builder.getInt32(0), builder.getInt32Ty(), s,
                                builder.GetInsertBlock());
 }
@@ -466,10 +466,10 @@ Value* maybeStackSlotForPhi(Value* phi, LLBlock* block, CodegenPass* pass) {
 
 void LLBlock::codegenBlock(CodegenPass* pass) {
   builder.SetInsertPoint(bb);
-  if (!this->phiVars.empty()) {
-    EDiag() << bb->getName() << " ; " << numPreds << " preds, in " << bb->getParent()->getName()
-        << " ;; "<< needStackSlotForPhis(this);
-  }
+  //if (!this->phiVars.empty()) {
+  //  EDiag() << bb->getName() << " ; " << numPreds << " preds, in " << bb->getParent()->getName()
+  //      << " ;; "<< needStackSlotForPhis(this);
+  //}
   for (size_t i = 0; i < this->phiVars.size(); ++i) {
      pass->insertScopedValue(this->phiVars[i]->getName(),
         maybeStackSlotForPhi(this->phiNodes[i], this, pass));
