@@ -1172,10 +1172,11 @@ getStackSlotForOcc(CodegenPass* pass, TypeAST* typ,
   if (slot) {
     emitStore(v, slot);
   } else {
-    //ASSERT(typ) << "getStackSlotForOcc with no type?";
-    //ASSERT(typ->getLLVMType() == v->getType());
-    //bool gcable = containsGCablePointers(typ, v->getType());
-    bool gcable = mayContainGCablePointers(v->getType());
+    ASSERT(typ) << "getStackSlotForOcc with no type?";
+    ASSERT(typ->getLLVMType() == v->getType())
+        << "\n\ttyp = " << str(typ)
+        << "\n\ttvy = " << str(v->getType());
+    bool gcable = containsGCablePointers(typ, v->getType());
     slot = ensureImplicitStackSlot(v, gcable, pass);
   }
   return slot;
