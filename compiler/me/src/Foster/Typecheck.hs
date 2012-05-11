@@ -280,23 +280,27 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
     checkPattern :: EPattern TypeAST -> Tc (Pattern TypeAST)
     -- Make sure that each pattern has the proper arity.
     checkPattern p = case p of
-      EP_Wildcard r   -> do return $ P_Wildcard r
-      EP_Bool r b     -> do return $ P_Bool r b
+      EP_Wildcard r   -> do t <- newTcUnificationVarTau "_ wildcard"
+                            return $ P_Wildcard r t
+      EP_Bool r b     -> do return $ P_Bool r fosBoolType b
       EP_Variable r v -> do checkSuspiciousPatternVariable r v
                             id <- tcFreshT (evarName v)
                             ty <- tcMaybeType (evarMaybeType v) "checkPattern"
                             return $ P_Variable r (TypedId ty id)
       EP_Int r str    -> do annint <- typecheckInt r str Nothing
-                            return $ P_Int  r (aintLit annint)
-      EP_Ctor r eps s -> do (CtorInfo cid _) <- getCtorInfoForCtor ctx s
+                            return $ P_Int r (aintType annint) (aintLit annint)
+      EP_Ctor r eps s -> do (CtorInfo cid _) <- getCtorInfoForCtor ctx s -- TODO TODO TODO
                             sanityCheck (ctorArity cid == List.length eps) $
                               "Incorrect pattern arity: expected " ++
                               (show $ ctorArity cid) ++ " pattern(s), but got "
                               ++ (show $ List.length eps) ++ show r
                             ps <- mapM checkPattern eps
-                            return $ P_Ctor r ps cid
+
+                            ty <- generateTypeSchemaForDataType ctx (ctorTypeName cid)
+                            return $ P_Ctor r ty ps cid
       EP_Tuple r eps  -> do ps <- mapM checkPattern eps
-                            return $ P_Tuple r ps
+                            let tys = map patternType ps
+                            return $ P_Tuple r (TupleTypeAST tys) ps
     -----------------------------------------------------------------------
     getCtorInfoForCtor :: Context Sigma -> T.Text -> Tc (CtorInfo Sigma)
     getCtorInfoForCtor ctx ctorName = do
@@ -324,31 +328,38 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
     -- Recursively match a pattern against a type and extract the (typed)
     -- binders introduced by the pattern.
     extractPatternBindings :: Context Sigma -> Pattern TypeAST -> TypeAST -> Tc [TypedId Sigma]
-    extractPatternBindings _ctx (P_Wildcard _   ) _ty = do return []
-    extractPatternBindings _ctx (P_Variable _ tid) ty = do unify (tidType tid) ty (Just "pattern binding")
-                                                           return [tid]
+    extractPatternBindings _ctx (P_Wildcard _ pty) ty = do
+        unify pty ty (Just "Typecheck.hs:extractPatternBindings; P_Wildcard")
+        return []
+    extractPatternBindings _ctx (P_Variable _ tid) ty = do
+        unify (tidType tid) ty (Just "pattern binding")
+        return [tid]
 
-    extractPatternBindings ctx (P_Ctor _ pats (CtorId typeName ctorName _ _)) ty = do
+    extractPatternBindings ctx (P_Ctor _ pty pats (CtorId _ ctorName _ _)) ty = do
       CtorInfo _ (DataCtor _ _ types) <- getCtorInfoForCtor ctx (T.pack ctorName)
       bindings <- sequence [extractPatternBindings ctx p t | (p, t) <- zip pats types]
-      dtys <- generateTypeSchemaForDataType ctx typeName
-      unify ty dtys (Just $ "Typecheck.hs:extractPatternBindings; P_Ctor")
+      unify ty pty (Just $ "Typecheck.hs:extractPatternBindings; P_Ctor")
       return $ concat bindings
 
-    extractPatternBindings ctx (P_Bool r v) ty = do
+    extractPatternBindings ctx (P_Bool r pty v) ty = do
       _ae <- tcRho ctx (E_BoolAST r v) (Just ty)
+      unify pty ty (Just $ "Typecheck.hs:extractPatternBindings; P_Bool")
       -- literals don't bind anything, but we still need to check
       -- that we do not try matching e.g. a bool against an int.
       return []
 
-    extractPatternBindings _ctx (P_Int r litint) ty = do
+    extractPatternBindings _ctx (P_Int r pty litint) ty = do
       _ae <- tcRho ctx (E_IntAST r (litIntText litint)) (Just ty)
+      unify pty ty (Just $ "Typecheck.hs:extractPatternBindings; P_Int")
       -- literals don't bind anything, but we still need to check
       -- that we do not try matching e.g. a bool against an int.
       return []
 
-    extractPatternBindings ctx (P_Tuple _rng [p]) ty = extractPatternBindings ctx p ty
-    extractPatternBindings ctx (P_Tuple  rng ps)  ty =
+    extractPatternBindings ctx (P_Tuple _rng pty [p]) ty = do
+       unify pty ty (Just $ "Typecheck.hs:extractPatternBindings; P_Tuple")
+       extractPatternBindings ctx p ty
+    extractPatternBindings ctx (P_Tuple  rng pty ps)  ty = do
+       unify pty ty (Just $ "Typecheck.hs:extractPatternBindings; P_Tuple")
        case ty of
          TupleTypeAST ts ->
             (if List.length ps == List.length ts

@@ -105,15 +105,20 @@ aiVar ctx (TypedId t i) = do ty <- ilOf ctx t
 
 ilOfPat :: Context t -> Pattern TypeAST -> Tc (Pattern TypeIL)
 ilOfPat ctx pat = case pat of
-    P_Wildcard  rng           -> do return $ P_Wildcard  rng
-    P_Variable  rng tid       -> do tid' <- aiVar ctx tid
-                                    return $ P_Variable rng tid'
-    P_Ctor      rng pats ctor -> do pats' <- mapM (ilOfPat ctx) pats
-                                    return $ P_Ctor rng pats' ctor
-    P_Bool      rng bval      -> do return $ P_Bool      rng bval
-    P_Int       rng ival      -> do return $ P_Int       rng ival
-    P_Tuple     rng pats      -> do pats' <- mapM (ilOfPat ctx) pats
-                                    return $ P_Tuple rng pats'
+    P_Wildcard  rng ty           -> do ty' <- ilOf ctx ty
+                                       return $ P_Wildcard  rng ty'
+    P_Variable  rng tid          -> do tid' <- aiVar ctx tid
+                                       return $ P_Variable rng tid'
+    P_Ctor      rng ty pats ctor -> do pats' <- mapM (ilOfPat ctx) pats
+                                       ty' <- ilOf ctx ty
+                                       return $ P_Ctor rng ty' pats' ctor
+    P_Bool      rng ty bval      -> do ty' <- ilOf ctx ty
+                                       return $ P_Bool rng ty' bval
+    P_Int       rng ty ival      -> do ty' <- ilOf ctx ty
+                                       return $ P_Int  rng ty' ival
+    P_Tuple     rng ty pats      -> do pats' <- mapM (ilOfPat ctx) pats
+                                       ty' <- ilOf ctx ty
+                                       return $ P_Tuple rng ty' pats'
 
 -----------------------------------------------------------------------
 

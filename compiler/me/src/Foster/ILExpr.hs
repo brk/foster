@@ -287,9 +287,10 @@ closureOfKnFn infoMap (self_id, fn) = do
             let norange = MissingSourceRange ""
             let patVar a = P_Variable norange a
             let cfcase = CFCase envVar [
-                           ((P_Tuple norange (map patVar varsOfClosure),
-                                                         varsOfClosure)
+                           ((P_Tuple norange t (map patVar varsOfClosure),
+                                                           varsOfClosure)
                            , fst bodyentry) ]
+                        where t = TupleTypeIL (map tidType varsOfClosure)
             -- We change the entry block of the new body (versus the old).
             lab <- freshLabel
             let bid = (("caseof", lab), [])

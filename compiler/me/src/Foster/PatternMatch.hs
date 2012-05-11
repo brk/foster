@@ -11,7 +11,9 @@ import qualified Data.List as List
 import Data.Set(Set)
 import qualified Data.Set  as Set(size, fromList, toList, map)
 import Data.Map(Map)
-import qualified Data.Map  as Map(lookup, size, (!))
+import qualified Data.Map  as Map(lookup, size)
+
+import qualified Data.Text as T
 
 import Foster.Base
 import Foster.Output(out)
@@ -56,33 +58,35 @@ data SPattern = SP_Wildcard
 
 type DataTypeSigs = Map DataTypeName DataTypeSig
 
-compilePatterns :: [((Pattern ty, _binds), a)]
+compilePatterns :: [((Pattern TypeIL, _binds), a)]
                 -> DataTypeSigs
                 -> Map CtorId (CtorInfo TypeIL)
                 -> DecisionTree a
 compilePatterns bs allSigs ctorInfo =
  cc [[]] (ClauseMatrix $ map compilePatternRow bs) allSigs where
+  ctorInfoOf cid = case Map.lookup cid ctorInfo of
+                        Just v -> v
+                        Nothing -> error $ "PatternMatch: Unable to find ctor info for ctor id " ++ show cid
 
   compilePatternRow ((p, _binds), a) = ClauseRow (compilePattern p)
                                                  [compilePattern p] a
-  compilePattern :: Pattern ty -> SPattern
+  compilePattern :: Pattern TypeIL -> SPattern
   compilePattern p = case p of
-    (P_Wildcard _  )    -> SP_Wildcard
-    (P_Variable _ v)    -> SP_Variable (tidIdent v)
-    (P_Bool     _ b)    -> SP_Ctor (boolCtor b)     []
-    (P_Int      _ i)    -> SP_Ctor (int32Ctor i)    []
-    (P_Ctor _ pats cid) -> SP_Ctor (ctorInfo Map.! cid) (map compilePattern pats)
-    (P_Tuple _ pats)    -> SP_Ctor (tupleCtor pats) (map compilePattern pats)
+    (P_Wildcard _ _)       -> SP_Wildcard
+    (P_Variable _ v)       -> SP_Variable (tidIdent v)
+    (P_Bool     _ _ b)     -> SP_Ctor (boolCtor b)     []
+    (P_Int      _ _ i)     -> SP_Ctor (int32Ctor i)    []
+    (P_Ctor  _ _ pats cid) -> SP_Ctor (ctorInfoOf cid) (map compilePattern pats)
+    (P_Tuple _ _ pats)     -> SP_Ctor (tupleCtor pats) (map compilePattern pats)
     where
-          ctorInfo tynm dctor = CtorInfo (CtorId tynm
-                                                 (dataCtorName dctor)
-                                                 (Prelude.length $ dataCtorTypes dctor)
-                                                 (dataCtorSmall dctor))
-                                         dctor
-          boolCtor False = ctorInfo "Bool"  $ DataCtor "False" 0 0
-          boolCtor True  = ctorInfo "Bool"  $ DataCtor "True"  0 1
-          tupleCtor pats = ctorInfo "()"    $ DataCtor "()" (map patternType pats) 0
-          int32Ctor li   = ctorInfo "Int32" $ DataCtor "<Int32>" 0 $
+          ctorInfo tynm dcnm dctys dctag =
+             let dctor = DataCtor (T.pack dcnm) dctag dctys in
+             CtorInfo (CtorId tynm dcnm (Prelude.length $ dctys) dctag) dctor
+
+          boolCtor False = ctorInfo "Bool"  "False" []                     0
+          boolCtor True  = ctorInfo "Bool"  "True"  []                     1
+          tupleCtor pats = ctorInfo "()"    "()"    (map patternType pats) 0
+          int32Ctor li   = ctorInfo "Int32" "<Int32>" [] $
                                 if litIntMinBits li <= 32
                                   then fromInteger $ litIntValue li
                                   else error "cannot cram >32 bits into Int32!"
@@ -102,7 +106,7 @@ cc _occs cm _allSigs | allGuaranteedMatch (rowPatterns $ firstRow cm) =
             computeBindings :: Occurrence -> SPattern -> [(Ident, Occurrence)]
             computeBindings  occ (SP_Variable i   ) = [(i, occ)]
             computeBindings _occ (SP_Wildcard     ) = []
-            computeBindings  occ (SP_Ctor cid pats) =
+            computeBindings  occ (SP_Ctor (CtorInfo cid _) pats) =
               let occs = expand occ cid (Prelude.length pats) in
               concatMap (uncurry computeBindings) (zip occs pats)
 
@@ -114,8 +118,8 @@ cc occs cm allSigs =
   let i = columnNumWithNonTrivialPattern cm in
   if  i == 0
    then
-      let c = cm `column` i in
-      let hctors = Set.fromList (concat $ map headCtor c) in
+      let spPatterns = cm `column` i in
+      let hctors = Set.fromList (concat $ map headCtorId spPatterns) in
       let (o1:orest) = occs in
       let caselist = [ (c, cc (expand o1 c (ctorArity c) ++ orest)
                               (specialize c cm) allSigs)
@@ -137,9 +141,9 @@ allGuaranteedMatch pats = List.all trivialMatch pats
 firstRow (ClauseMatrix (r:_)) = r
 firstRow (ClauseMatrix []) = error "precondition violated for firstRow helper!"
 
-headCtor (SP_Wildcard  ) = []
-headCtor (SP_Variable _) = []
-headCtor (SP_Ctor c   _) = [c]
+headCtorId (SP_Wildcard             ) = []
+headCtorId (SP_Variable            _) = []
+headCtorId (SP_Ctor (CtorInfo c _) _) = [c]
 
 columnNumWithNonTrivialPattern cm =
   loop cm 0 where
@@ -156,9 +160,9 @@ specialize ctor (ClauseMatrix rows) =
     isCompatible row ctor =
       case rowPatterns row of
         []               -> False
-        ((SP_Wildcard  ):_) -> True
-        ((SP_Variable _):_) -> True
-        ((SP_Ctor c   _):_) -> c == ctor
+        ((SP_Wildcard             ):_) -> True
+        ((SP_Variable            _):_) -> True
+        ((SP_Ctor (CtorInfo c _) _):_) -> c == ctor
 
     specializeRow (ClauseRow orig []       a) _ctor = ClauseRow orig [] a
     specializeRow (ClauseRow orig (p:rest) a)  ctor =
@@ -167,9 +171,9 @@ specialize ctor (ClauseMatrix rows) =
           where wilds = List.replicate (ctorArity ctor) (SP_Wildcard)
         SP_Wildcard   -> ClauseRow orig (wilds ++ rest) a
           where wilds = List.replicate (ctorArity ctor) (SP_Wildcard)
-        SP_Ctor c  pats | c == ctor -> ClauseRow orig (pats ++ rest) a
-        SP_Ctor c _pats -> error $ "specializeRow with unequal ctor?!? "
-                             ++ show c ++ " // " ++ show ctor
+        SP_Ctor (CtorInfo c _)  pats | c == ctor -> ClauseRow orig (pats ++ rest) a
+        SP_Ctor (CtorInfo c _) _pats -> error $ "specializeRow with unequal ctor?!? "
+                                               ++ show c ++ " // " ++ show ctor
 
 defaultMatrix (ClauseMatrix rows) =
   ClauseMatrix (concat [defaultRow row | row <- rows])
@@ -218,7 +222,6 @@ isSignature ctorSet allSigs =
               ++ "Unknown type name " ++ typename ++ "! ctorSet = " ++ show ctorSet
     _ -> error $ "Error in PatternMatch.isSignature: "
               ++ "Multiple type names in ctor set: " ++ show ctorSet
-
 
 deriving instance Show a => Show (DecisionTree a)
 

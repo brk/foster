@@ -483,21 +483,21 @@ matchPattern p v =
   let matchIf cond = if cond then trivialMatchSuccess
                              else matchFailure in
   case (v, p) of
-    (_, P_Wildcard _   ) -> trivialMatchSuccess
+    (_, P_Wildcard _ _  ) -> trivialMatchSuccess
     (_, P_Variable _ tid) -> Just [(tidIdent tid, v)]
 
-    (SSInt i1, P_Int _ i2)   -> matchIf $ i1 == litIntValue i2
-    (_       , P_Int _ _ )   -> matchFailure
+    (SSInt i1, P_Int _ _ i2)   -> matchIf $ i1 == litIntValue i2
+    (_       , P_Int _ _ _ )   -> matchFailure
 
-    (SSBool b1, P_Bool _ b2) -> matchIf $ b1 == b2
-    (_        , P_Bool _ _ ) -> matchFailure
+    (SSBool b1, P_Bool _ _ b2) -> matchIf $ b1 == b2
+    (_        , P_Bool _ _ _ ) -> matchFailure
 
-    (SSCtorVal vid vals, P_Ctor _ pats cid) -> do _ <- matchIf $ vid == cid
-                                                  matchPatterns pats vals
-    (_                 , P_Ctor _ _ _)      -> matchFailure
+    (SSCtorVal vid vals, P_Ctor _ _ pats cid) -> do _ <- matchIf $ vid == cid
+                                                    matchPatterns pats vals
+    (_                 , P_Ctor _ _ _ _)      -> matchFailure
 
-    (SSTuple vals, P_Tuple _ pats) -> matchPatterns pats vals
-    (_, P_Tuple _ _) -> matchFailure
+    (SSTuple vals, P_Tuple _ _ pats) -> matchPatterns pats vals
+    (_, P_Tuple _ _ _) -> matchFailure
 
 matchPatterns :: [Pattern TypeIL] -> [SSValue] -> Maybe [(Ident, SSValue)]
 matchPatterns pats vals = do

@@ -19,7 +19,7 @@ module Foster.CFG
 ) where
 
 import Foster.Base
-import Foster.TypeIL(TypeIL(..), AIVar)
+import Foster.TypeIL(TypeIL(..), AIVar, boolTypeIL)
 import Foster.KNExpr(KNExpr(..), typeKN, TailQ(..))
 import Foster.Letable(Letable(..))
 
@@ -97,7 +97,8 @@ incrPredecessorsDueTo terminator m =
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 caseIf a b = [(pat True, a), (pat False, b)]
-         where pat bval = (P_Bool (error "kn.if.srcrange") bval, [])
+         where pat bval = (P_Bool (error "kn.if.srcrange")
+                                  boolTypeIL bval, [])
 
 -- ||||||||||||||||||||||||| KNExpr -> CFG ||||||||||||||||||||||{{{
 -- computeBlocks takes an expression and a contination,

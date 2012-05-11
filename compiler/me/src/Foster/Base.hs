@@ -59,12 +59,21 @@ data EPattern ty =
         | EP_Tuple        SourceRange [EPattern ty]
 
 data Pattern ty =
-          P_Wildcard      SourceRange
+          P_Wildcard      SourceRange ty
         | P_Variable      SourceRange (TypedId ty)
-        | P_Ctor          SourceRange [Pattern ty] CtorId
-        | P_Bool          SourceRange Bool
-        | P_Int           SourceRange LiteralInt
-        | P_Tuple         SourceRange [Pattern ty]
+        | P_Ctor          SourceRange ty [Pattern ty] CtorId
+        | P_Bool          SourceRange ty Bool
+        | P_Int           SourceRange ty LiteralInt
+        | P_Tuple         SourceRange ty [Pattern ty]
+
+patternType :: Pattern ty -> ty
+patternType pattern = case pattern of
+        P_Wildcard  _rng ty     -> ty
+        P_Variable  _rng tid    -> tidType tid
+        P_Ctor      _rng ty _ _ -> ty
+        P_Bool      _rng ty _   -> ty
+        P_Int       _rng ty _   -> ty
+        P_Tuple     _rng ty _   -> ty
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||| Data Types, Int Literals |||||||||||||||||{{{
@@ -351,12 +360,12 @@ instance (SourceRanged expr) => Show (CompilesResult expr) where
   show (CompilesResult (Errors _)) = "<...invalid term...>"
 
 instance Show (Pattern ty) where
-  show (P_Wildcard _)            = "P_Wildcard"
-  show (P_Variable _ v)          = "P_Variable " ++ show (tidIdent v)
-  show (P_Ctor     _ _pats ctor) = "P_Ctor     " ++ show ctor
-  show (P_Bool     _ b)          = "P_Bool     " ++ show b
-  show (P_Int      _ i)          = "P_Int      " ++ show (litIntText i)
-  show (P_Tuple    _ pats)       = "P_Tuple    " ++ show pats
+  show (P_Wildcard _ _)            = "P_Wildcard"
+  show (P_Variable _ v)            = "P_Variable " ++ show (tidIdent v)
+  show (P_Ctor     _ _ _pats ctor) = "P_Ctor     " ++ show ctor
+  show (P_Bool     _ _ b)          = "P_Bool     " ++ show b
+  show (P_Int      _ _ i)          = "P_Int      " ++ show (litIntText i)
+  show (P_Tuple    _ _ pats)       = "P_Tuple    " ++ show pats
 
 instance Show ty => Show (EPattern ty) where
   show (EP_Wildcard _)            = "EP_Wildcard"
