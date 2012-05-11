@@ -171,8 +171,11 @@ defaultMatrix (ClauseMatrix rows) =
         ClauseRow orig ((SP_Wildcard  ):rest) a -> [ClauseRow orig rest a]
         ClauseRow orig ((SP_Variable _):rest) a -> [ClauseRow orig rest a]
         ClauseRow _    ((SP_Ctor _   _):_   ) _ -> [] -- No row...
+
+column :: ClauseMatrix a -> Int -> [SPattern]
 column (ClauseMatrix rows) i = map (rowIndex i) rows
 
+rowIndex :: Int -> ClauseRow a -> SPattern
 rowIndex i (ClauseRow _ row _) = row !! i
 
 swapListElements j k elts =
@@ -182,7 +185,9 @@ swapListElements j k elts =
       | otherwise -> e
   | (e, n) <- List.zip elts [0..]]
 
+swapOcc :: Int -> [Occurrence] -> [Occurrence]
 swapOcc i occs = swapListElements i 0 occs
+
 swapRow i (ClauseRow orig pats a) = ClauseRow orig pats' a
   where pats' = swapListElements i 0 pats
 
