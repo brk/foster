@@ -377,7 +377,8 @@ dumpCtorId (CtorId s n _a i) =
                     , PbCtorId.ctor_local_id  = intToInt32 i }
 
 dumpOccurrence var offsCtorIds =
-    let (offs, ids) = unzip offsCtorIds in
+    let (offs, infos) = unzip offsCtorIds in
+    let ids           = map ctorInfoId infos in
     P'.defaultValue { PbOccurrence.occ_offset = fromList $ map intToInt32 offs
                     , PbOccurrence.occ_ctorid = fromList $ map dumpCtorId ids
                     , PbOccurrence.scrutinee  = dumpVar var }

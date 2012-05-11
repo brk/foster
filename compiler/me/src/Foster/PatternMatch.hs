@@ -42,7 +42,7 @@ data DecisionTree a
 -- pretty good use case for parameterized modules!
 
 -- A pair (n, c) in an occurrence means "field n of the struct type for ctor c".
-type FieldOfCtor = (Int, CtorId)
+type FieldOfCtor = (Int, CtorInfo TypeIL)
 type Occurrence = [FieldOfCtor]
 
 type ClauseCol  = [SPattern]
@@ -102,8 +102,8 @@ cc _occs cm _allSigs | allGuaranteedMatch (rowPatterns $ firstRow cm) =
             computeBindings :: Occurrence -> SPattern -> [(Ident, Occurrence)]
             computeBindings  occ (SP_Variable i   ) = [(i, occ)]
             computeBindings _occ (SP_Wildcard     ) = []
-            computeBindings  occ (SP_Ctor (CtorInfo cid _) pats) =
-              let occs = expand occ cid (Prelude.length pats) in
+            computeBindings  occ (SP_Ctor ctorinfo pats) =
+              let occs = expand occ ctorinfo (Prelude.length pats) in
               concatMap (uncurry computeBindings) (zip occs pats)
 
 -- "In any other case, matrix P has at least one row and at least one
@@ -115,12 +115,13 @@ cc occs cm allSigs =
   if  i == 0
    then
       let spPatterns = cm `column` i in
-      let hctors = Set.fromList (concat $ map headCtorId spPatterns) in
+      let headCtorInfos = Set.fromList (concatMap headCtorInfo spPatterns) in
       let (o1:orest) = occs in
-      let caselist = [ (c, cc (expand o1 c (ctorArity c) ++ orest)
+      let caselist = [ (ctorInfoId c,
+                           cc (expand o1 c (ctorInfoArity c) ++ orest)
                               (specialize c cm) allSigs)
-                     | c <- Set.toList hctors] in
-      if isSignature hctors allSigs
+                     | c <- Set.toList headCtorInfos] in
+      if isSignature (Set.map ctorInfoId headCtorInfos) allSigs
         then DT_Switch o1 caselist Nothing
         else let ad = cc orest (defaultMatrix cm) allSigs in
              DT_Switch o1 caselist (Just ad)
@@ -137,9 +138,9 @@ allGuaranteedMatch pats = List.all trivialMatch pats
 firstRow (ClauseMatrix (r:_)) = r
 firstRow (ClauseMatrix []) = error "precondition violated for firstRow helper!"
 
-headCtorId (SP_Wildcard             ) = []
-headCtorId (SP_Variable            _) = []
-headCtorId (SP_Ctor (CtorInfo c _) _) = [c]
+headCtorInfo (SP_Wildcard    ) = []
+headCtorInfo (SP_Variable   _) = []
+headCtorInfo (SP_Ctor cinfo _) = [cinfo]
 
 columnNumWithNonTrivialPattern cm =
   loop cm 0 where
@@ -147,9 +148,13 @@ columnNumWithNonTrivialPattern cm =
                 then loop cm (n + 1)
                 else n
 
+expand :: Occurrence -> CtorInfo TypeIL -> Int -> [Occurrence]
 expand occ cid a = [occ ++ [(n, cid)] | n <- [0 .. a - 1]]
 
-specialize ctor (ClauseMatrix rows) =
+ctorInfoArity (CtorInfo cid _) = ctorArity cid
+
+specialize :: CtorInfo TypeIL -> ClauseMatrix a -> ClauseMatrix a
+specialize (CtorInfo ctor _) (ClauseMatrix rows) =
   ClauseMatrix [specializeRow row ctor | row <- rows
                                        , isCompatible row ctor]
   where
@@ -220,6 +225,12 @@ isSignature ctorSet allSigs =
               ++ "Multiple type names in ctor set: " ++ show ctorSet
 
 deriving instance Show a => Show (DecisionTree a)
+
+instance Eq (CtorInfo TypeIL) where
+  a == b = (ctorInfoId a) == (ctorInfoId b)
+
+instance Ord (CtorInfo TypeIL) where
+  compare a b = compare (ctorInfoId a) (ctorInfoId b)
 
 instance Structured a => Structured (DecisionTree a) where
     textOf e _width =
