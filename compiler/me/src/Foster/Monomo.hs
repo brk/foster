@@ -275,8 +275,15 @@ monoLast subst last =
     -- Might as well optimize single-case switches to unconditional branches.
     ILCase _ [arm]    Nothing _   -> MoBr      (snd arm) [] -- TODO?
     -- If pattern matching was exhaustive, use one of the cases as a default.
-    ILCase v (a:arms) Nothing occ -> MoCase (qv v) arms (Just $ snd a) occ
-    ILCase v    arms def occ      -> MoCase (qv v) arms def occ
+    ILCase v (a:arms) Nothing occ -> MoCase (qv v) arms (Just $ snd a) (monoOcc subst occ)
+    ILCase v    arms def occ      -> MoCase (qv v) arms def            (monoOcc subst occ)
+
+monoOcc :: MonoSubst -> Occurrence TypeIL -> Occurrence MonoType
+monoOcc subst occ = map (\(n,info) -> (n, monoCtorInfo subst info)) occ
+
+monoCtorInfo subst (CtorInfo cid (DataCtor nm tag tys)) =
+                   (CtorInfo cid (DataCtor nm tag tys'))
+                where tys' = map (monoType subst) tys
 
 monoVar :: MonoSubst -> TypedId TypeIL -> TypedId MonoType
 monoVar subst (TypedId t id) = TypedId (monoType subst t) id
@@ -346,7 +353,7 @@ monomorphizeLetable subst expr =
         ILInt       t i       -> return $ MonoLet $ MoInt   (qt t) i
         ILFloat     t f       -> return $ MonoLet $ MoFloat (qt t) f
         ILTuple     vs        -> return $ MonoLet $ MoTuple (map qv vs)
-        ILOccurrence v occ    -> return $ MonoLet $ MoOccurrence (qv v) occ
+        ILOccurrence v occ    -> return $ MonoLet $ MoOccurrence (qv v) (monoOcc subst occ)
         ILCallPrim  t p vs    -> return $ MonoLet $ MoCallPrim (qt t) monopr (map qv vs) where monopr = monoPrim subst p
         ILCall      t v vs    -> return $ MonoLet $ MoCall     (qt t) (qv v) (map qv vs)
         ILAppCtor   t c vs    -> return $ MonoLet $ MoAppCtor  (qt t) c      (map qv vs)

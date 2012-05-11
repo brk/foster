@@ -1212,6 +1212,7 @@ llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
   // If we've loaded some possible-pointers from memory, make sure they
   // get their own implicit stack slots.
   llvm::AllocaInst*& slot = pass->occSlots[this];
+  ASSERT(this->type) << "LLOccurrence has no type?!?";
   getStackSlotForOcc(pass, this->type, rv, slot);
   trySetName(slot, "pat_" + this->var->getName() + "_slot");
   return slot;

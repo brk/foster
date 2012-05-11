@@ -31,19 +31,15 @@ heuristic.
 
 data DecisionTree a
     =  DT_Fail
-    |  DT_Leaf   a              -- The expression/block id to evaluate/jump to.
-                [(Ident, Occurrence)] -- Subterms of scrutinee to bind in leaf.
+    |  DT_Leaf  a                    -- The expression/block id to evaluate/jump to.
+              [(Ident, Occurrence TypeIL)] -- Subterms of scrutinee to bind in leaf.
     |  DT_Switch
-                         Occurrence   -- Subterm of scrutinee to switch on.
+                      (Occurrence TypeIL)  -- Subterm of scrutinee to switch on.
                 [(CtorId, DecisionTree a)] -- Map of ctors to decision trees.
                   (Maybe (DecisionTree a)) -- Default decision tree, if any.
 
 -- Avoiding all these type parameters seems like a
 -- pretty good use case for parameterized modules!
-
--- A pair (n, c) in an occurrence means "field n of the struct type for ctor c".
-type FieldOfCtor = (Int, CtorInfo TypeIL)
-type Occurrence = [FieldOfCtor]
 
 type ClauseCol  = [SPattern]
 data ClauseMatrix a = ClauseMatrix [ClauseRow a]
@@ -88,7 +84,7 @@ compilePatterns bs allSigs =
                                   else error "cannot cram >32 bits into Int32!"
 
 -- "Compilation is defined by cases as follows."
-cc :: [Occurrence] -> ClauseMatrix a -> DataTypeSigs -> DecisionTree a
+cc :: [Occurrence TypeIL] -> ClauseMatrix a -> DataTypeSigs -> DecisionTree a
 
 -- No row to match -> failure
 cc _ (ClauseMatrix []) _allSigs = DT_Fail
@@ -99,7 +95,7 @@ cc _occs cm _allSigs | allGuaranteedMatch (rowPatterns $ firstRow cm) =
             (computeBindings emptyOcc (rowOrigPat r))
       where r = firstRow cm
             emptyOcc = []
-            computeBindings :: Occurrence -> SPattern -> [(Ident, Occurrence)]
+            computeBindings :: Occurrence TypeIL -> SPattern -> [(Ident, Occurrence TypeIL)]
             computeBindings  occ (SP_Variable i   ) = [(i, occ)]
             computeBindings _occ (SP_Wildcard     ) = []
             computeBindings  occ (SP_Ctor ctorinfo pats) =
@@ -148,7 +144,7 @@ columnNumWithNonTrivialPattern cm =
                 then loop cm (n + 1)
                 else n
 
-expand :: Occurrence -> CtorInfo TypeIL -> Int -> [Occurrence]
+expand :: Occurrence t -> CtorInfo t -> Int -> [Occurrence t]
 expand occ cid a = [occ ++ [(n, cid)] | n <- [0 .. a - 1]]
 
 ctorInfoArity (CtorInfo cid _) = ctorArity cid
@@ -199,7 +195,7 @@ swapListElements j k elts =
       | otherwise -> e
   | (e, n) <- List.zip elts [0..]]
 
-swapOcc :: Int -> [Occurrence] -> [Occurrence]
+swapOcc :: Int -> [Occurrence t] -> [Occurrence t]
 swapOcc i occs = swapListElements i 0 occs
 
 swapRow i (ClauseRow orig pats a) = ClauseRow orig pats' a

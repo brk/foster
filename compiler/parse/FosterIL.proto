@@ -210,6 +210,7 @@ message PbOccurrence {
   required TermVar  scrutinee  = 1;
   repeated int32    occ_offset = 2;
   repeated PbCtorId occ_ctorid = 3;
+  optional Type           type = 4;
 }
 
 message Decl {

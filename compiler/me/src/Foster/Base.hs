@@ -104,6 +104,11 @@ type DataTypeName = String
 
 data DataTypeSig   = DataTypeSig (Map CtorName CtorId)
 
+-- Occurrences are generated in pattern matching (and pushed through to LLVM).
+-- A pair (n, c) in an occurrence means "field n of the struct type for ctor c".
+type FieldOfCtor ty = (Int, CtorInfo ty)
+type Occurrence ty = [FieldOfCtor ty]
+
 data LiteralInt = LiteralInt { litIntValue   :: Integer
                              , litIntMinBits :: Int
                              , litIntText    :: String

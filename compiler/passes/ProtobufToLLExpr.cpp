@@ -302,6 +302,9 @@ LLOccurrence* parseOccurrence(const pb::PbOccurrence& o) {
     rv->ctors.push_back(parseCtorId(o.occ_ctorid(i)));
   }
   rv->var = parseTermVar(&o.scrutinee());
+  if (o.has_type()) {
+    rv->type = TypeAST_from_pb(& o.type());
+  }
   return rv;
 }
 

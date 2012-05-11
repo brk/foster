@@ -81,7 +81,7 @@ data ILMiddle = ILLetVal      Ident    Letable
 data ILLast = ILRetVoid
             | ILRet      AIVar
             | ILBr       BlockId [AIVar]
-            | ILCase     AIVar [(CtorId, BlockId)] (Maybe BlockId) Occurrence
+            | ILCase     AIVar [(CtorId, BlockId)] (Maybe BlockId) (Occurrence TypeIL)
 --------------------------------------------------------------------
 
 closureConvertAndLift :: DataTypeSigs
@@ -230,7 +230,7 @@ compileDecisionTree scrutinee (DT_Switch occ subtrees maybeDefaultDt) = do
                            (ILCase scrutinee (zip ctors ids) maybeDefaultId occ)
         return $ BlockFin (block : concat blockss ++ dblockss) id
 
-emitOccurrence :: AIVar -> (Ident, Occurrence) -> ILMiddle
+emitOccurrence :: AIVar -> (Ident, Occurrence TypeIL) -> ILMiddle
 emitOccurrence scrutinee (id, occ) = ILLetVal id (ILOccurrence scrutinee occ)
 
 type InfoMap = Map Ident (CFFn, Ident) -- fn ident => (fn, env id)

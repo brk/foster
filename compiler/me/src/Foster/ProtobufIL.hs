@@ -381,7 +381,17 @@ dumpOccurrence var offsCtorIds =
     let ids           = map ctorInfoId infos in
     P'.defaultValue { PbOccurrence.occ_offset = fromList $ map intToInt32 offs
                     , PbOccurrence.occ_ctorid = fromList $ map dumpCtorId ids
-                    , PbOccurrence.scrutinee  = dumpVar var }
+                    , PbOccurrence.scrutinee  = dumpVar var
+                    , PbOccurrence.type'      = Just $ dumpType $
+                                                occType (tidType var) offs infos
+                    }
+
+occType ty [] [] = ty
+occType _ (k:offs) ((CtorInfo _ (DataCtor _ _ types)):infos) =
+                                                 occType (types !! k) offs infos
+occType ty offs infos =
+        error $ "occType: " ++ show ty ++ "; offs=" ++ show offs ++ "~~~" ++ show infos
+
 -----------------------------------------------------------------------
 dumpVar (TypedId t i) = dumpMoVar t i
 

@@ -13,7 +13,6 @@ import Foster.Base
 import Foster.MonoType
 import Foster.MonoLetable
 import Foster.CFG(BlockId)
-import Foster.PatternMatch(Occurrence)
 import Foster.Output(out, Output)
 
 data MoClosure = MoClosure { moClosureProcIdent :: Ident
@@ -45,7 +44,7 @@ data MoMiddle = MoLetVal      Ident    MonoLetable
 data MoLast = MoRetVoid
             | MoRet      MoVar
             | MoBr       BlockId [TypedId MonoType]
-            | MoCase     MoVar [(CtorId, BlockId)] (Maybe BlockId) Occurrence
+            | MoCase     MoVar [(CtorId, BlockId)] (Maybe BlockId) (Occurrence MonoType)
 
 --------------------------------------------------------------------
 
