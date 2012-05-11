@@ -421,10 +421,12 @@ lowerModule ai_mod ctx_il = do
     closureConvert cfgmod = do
         uniqref <- gets (tcEnvUniqs.ccTcEnv)
         liftIO $ do
-            let dataSigs = dataTypeSigs (moduleILprimTypes cfgmod ++
-                                         moduleILdataTypes cfgmod)
+            let datatypes = moduleILprimTypes cfgmod ++
+                            moduleILdataTypes cfgmod
+            let dataSigs = dataTypeSigs datatypes
+            let dataCtorInfo = dataInfo datatypes
             u0 <- readIORef uniqref
-            return $ closureConvertAndLift dataSigs u0 cfgmod
+            return $ closureConvertAndLift dataSigs dataCtorInfo u0 cfgmod
 
     maybeInterpretKNormalModule kmod = do
         flagVals <- gets ccFlagVals

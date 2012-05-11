@@ -33,11 +33,10 @@ getCtorInfo datatypes = Map.unionsWith (++) $ map getCtorInfoList datatypes
 -----------------------------------------------------------------------
 
 ctorIdFor :: (Show t) => String -> DataCtor t -> (CtorName, CtorId)
-ctorIdFor name ctor = (ctorNameOf ctor, ctorId name ctor)
-  where
-    ctorNameOf (DataCtor ctorName _n _) = ctorName
-    ctorId nm (DataCtor ctorName n types) =
-      CtorId nm (T.unpack ctorName) (Prelude.length types) n
+ctorIdFor name ctor = (dataCtorName ctor, ctorId name ctor)
+
+ctorId   nm (DataCtor ctorName n types) =
+  CtorId nm (T.unpack ctorName) (Prelude.length types) n
 
 -----------------------------------------------------------------------
 
@@ -47,3 +46,14 @@ dataTypeSigs datatypes = Map.fromList $ map ctorIdSet datatypes
   ctorIdSet :: Show t => DataType t -> (DataTypeName, DataTypeSig)
   ctorIdSet (DataType name _tyformals ctors) =
       (name, DataTypeSig (Map.fromList $ map (ctorIdFor name) ctors))
+
+-----------------------------------------------------------------------
+
+dataInfo :: [DataType t] -> Map CtorId (CtorInfo t)
+dataInfo datatypes = Map.fromList $ concatMap ctorInfoPairs datatypes
+ where
+  ctorInfoPairs :: DataType t -> [(CtorId, CtorInfo t)]
+  ctorInfoPairs (DataType nm _ ctors) = map (ctorInfoPair nm) ctors
+
+  ctorInfoPair :: DataTypeName -> DataCtor t -> (CtorId, CtorInfo t)
+  ctorInfoPair nm dc = let cid = ctorId nm dc in (cid, CtorInfo cid dc)

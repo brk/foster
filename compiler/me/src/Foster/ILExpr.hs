@@ -84,16 +84,18 @@ data ILLast = ILRetVoid
             | ILCase     AIVar [(CtorId, BlockId)] (Maybe BlockId) Occurrence
 --------------------------------------------------------------------
 
-closureConvertAndLift :: DataTypeSigs -> Uniq
+closureConvertAndLift :: DataTypeSigs
+                      -> Map CtorId (CtorInfo TypeIL)
+                      -> Uniq
                       -> (ModuleIL BasicBlockGraph TypeIL)
                       -> ILProgram
-closureConvertAndLift dataSigs u m =
+closureConvertAndLift dataSigs dataCtorInfo u m =
     -- We lambda lift top level functions, since we know a priori
     -- that they don't have any "real" free vars.
     -- Lambda lifting then closure converts any nested functions.
     let procsILM     = forM fns (\fn -> lambdaLift fn []) where
                             fns = moduleILfunctions m in
-    let initialState = ILMState u Map.empty Map.empty dataSigs in
+    let initialState = ILMState u Map.empty Map.empty dataSigs dataCtorInfo in
     let newstate     = execState procsILM initialState in
     let decls = map (\(s,t) -> ILDecl s t) (moduleILdecls m) in
     let dts = moduleILprimTypes m ++ moduleILdataTypes m in
@@ -352,9 +354,10 @@ closureConvertedProc procArgs f (newbody, numPreds) = do
 -- we keep them here for convenience.
 data ILMState = ILMState {
     ilmUniq          :: Uniq
-  , ilmBlockWrappers :: Map BlockId BlockId -- read-write
-  , ilmProcDefs      :: Map Ident ILProcDef -- read-write
-  , ilmCtors         :: DataTypeSigs        -- read-only per-program
+  , ilmBlockWrappers :: Map BlockId BlockId          -- read-write
+  , ilmProcDefs      :: Map Ident ILProcDef          -- read-write
+  , ilmCtors         :: DataTypeSigs                 -- read-only per-program
+  , ilmCtorInfo      :: Map CtorId (CtorInfo TypeIL) -- read-only per-program
 }
 type ILM a = State ILMState a
 

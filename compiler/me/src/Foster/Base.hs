@@ -74,7 +74,10 @@ data DataType ty = DataType {
   , dataTypeCtors     :: [DataCtor ty]
   }
 
-data DataCtor ty = DataCtor T.Text Int [ty]
+data DataCtor ty = DataCtor { dataCtorName  :: CtorName
+                            , dataCtorSmall :: Int
+                            , dataCtorTypes :: [ty]
+                            }
 
 -- CtorIds are created before typechecking.
 data CtorId     = CtorId   { ctorTypeName :: DataTypeName
@@ -88,7 +91,7 @@ data CtorInfo ty = CtorInfo CtorId (DataCtor ty) deriving Show -- for Typecheck
 type CtorName    = T.Text
 type DataTypeName = String
 
-data DataTypeSig = DataTypeSig (Map CtorName CtorId)
+data DataTypeSig   = DataTypeSig (Map CtorName CtorId)
 
 data LiteralInt = LiteralInt { litIntValue   :: Integer
                              , litIntMinBits :: Int
