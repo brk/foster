@@ -152,8 +152,9 @@ closureConvertBlocks bbg = do
            CFRetVoid       -> ret $ ILRetVoid
            CFRet   v       -> ret $ ILRet   v
            CFBr    b args  -> ret $ ILBr    b args
-           CFCase  a pbs   -> do allSigs <- gets ilmCtors
-                                 let dt = compilePatterns pbs allSigs
+           CFCase  a pbs   -> do allSigs  <- gets ilmCtors
+                                 ctorInfo <- gets ilmCtorInfo
+                                 let dt = compilePatterns pbs allSigs ctorInfo
                                  let usedBlocks = eltsOfDecisionTree dt
                                  let _unusedPats = [pat | (pat, bid) <- pbs
                                                   , Set.notMember bid usedBlocks]

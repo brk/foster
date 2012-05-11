@@ -11,10 +11,11 @@ import qualified Data.List as List
 import Data.Set(Set)
 import qualified Data.Set  as Set(size, fromList, toList, map)
 import Data.Map(Map)
-import qualified Data.Map  as Map(lookup, size)
+import qualified Data.Map  as Map(lookup, size, (!))
 
 import Foster.Base
 import Foster.Output(out)
+import Foster.TypeIL(TypeIL)
 
 {-
 Straightforward implementation of pattern match compilation
@@ -50,30 +51,38 @@ data ClauseRow a    = ClauseRow { rowOrigPat  ::  SPattern
 
 data SPattern = SP_Wildcard
               | SP_Variable  Ident
-              | SP_Ctor      CtorId  [SPattern]
+              | SP_Ctor     (CtorInfo TypeIL) [SPattern]
              deriving (Show)
 
 type DataTypeSigs = Map DataTypeName DataTypeSig
 
-compilePatterns :: [((Pattern ty, _binds), a)] -> DataTypeSigs -> DecisionTree a
-compilePatterns bs allSigs =
+compilePatterns :: [((Pattern ty, _binds), a)]
+                -> DataTypeSigs
+                -> Map CtorId (CtorInfo TypeIL)
+                -> DecisionTree a
+compilePatterns bs allSigs ctorInfo =
  cc [[]] (ClauseMatrix $ map compilePatternRow bs) allSigs where
 
   compilePatternRow ((p, _binds), a) = ClauseRow (compilePattern p)
                                                  [compilePattern p] a
   compilePattern :: Pattern ty -> SPattern
   compilePattern p = case p of
-    (P_Wildcard _  )   -> SP_Wildcard
-    (P_Variable _ v)   -> SP_Variable (tidIdent v)
-    (P_Bool     _ b)   -> SP_Ctor (boolCtor b)     []
-    (P_Int      _ i)   -> SP_Ctor (int32Ctor i)    []
-    (P_Ctor _ pats cid) ->SP_Ctor cid              (map compilePattern pats)
-    (P_Tuple _ pats)   -> SP_Ctor (tupleCtor pats) (map compilePattern pats)
+    (P_Wildcard _  )    -> SP_Wildcard
+    (P_Variable _ v)    -> SP_Variable (tidIdent v)
+    (P_Bool     _ b)    -> SP_Ctor (boolCtor b)     []
+    (P_Int      _ i)    -> SP_Ctor (int32Ctor i)    []
+    (P_Ctor _ pats cid) -> SP_Ctor (ctorInfo Map.! cid) (map compilePattern pats)
+    (P_Tuple _ pats)    -> SP_Ctor (tupleCtor pats) (map compilePattern pats)
     where
-          boolCtor False = CtorId "Bool" "False" 0 0
-          boolCtor True  = CtorId "Bool" "True"  0 1
-          tupleCtor pats = CtorId "()" "()" (Prelude.length pats) 0
-          int32Ctor li   = CtorId "Int32" "<Int32>" 0 $
+          ctorInfo tynm dctor = CtorInfo (CtorId tynm
+                                                 (dataCtorName dctor)
+                                                 (Prelude.length $ dataCtorTypes dctor)
+                                                 (dataCtorSmall dctor))
+                                         dctor
+          boolCtor False = ctorInfo "Bool"  $ DataCtor "False" 0 0
+          boolCtor True  = ctorInfo "Bool"  $ DataCtor "True"  0 1
+          tupleCtor pats = ctorInfo "()"    $ DataCtor "()" (map patternType pats) 0
+          int32Ctor li   = ctorInfo "Int32" $ DataCtor "<Int32>" 0 $
                                 if litIntMinBits li <= 32
                                   then fromInteger $ litIntValue li
                                   else error "cannot cram >32 bits into Int32!"

@@ -98,6 +98,7 @@ data LiteralInt = LiteralInt { litIntValue   :: Integer
                              , litIntText    :: String
                              , litIntBase    :: Int
                              }
+
 data LiteralFloat = LiteralFloat { litFloatValue   :: Double
                                  , litFloatText    :: String
                                  }
