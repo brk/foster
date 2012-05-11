@@ -47,13 +47,3 @@ dataTypeSigs datatypes = Map.fromList $ map ctorIdSet datatypes
   ctorIdSet (DataType name _tyformals ctors) =
       (name, DataTypeSig (Map.fromList $ map (ctorIdFor name) ctors))
 
------------------------------------------------------------------------
-
-dataInfo :: [DataType t] -> Map CtorId (CtorInfo t)
-dataInfo datatypes = Map.fromList $ concatMap ctorInfoPairs datatypes
- where
-  ctorInfoPairs :: DataType t -> [(CtorId, CtorInfo t)]
-  ctorInfoPairs (DataType nm _ ctors) = map (ctorInfoPair nm) ctors
-
-  ctorInfoPair :: DataTypeName -> DataCtor t -> (CtorId, CtorInfo t)
-  ctorInfoPair nm dc = let cid = ctorId nm dc in (cid, CtorInfo cid dc)

@@ -492,9 +492,10 @@ matchPattern p v =
     (SSBool b1, P_Bool _ _ b2) -> matchIf $ b1 == b2
     (_        , P_Bool _ _ _ ) -> matchFailure
 
-    (SSCtorVal vid vals, P_Ctor _ _ pats cid) -> do _ <- matchIf $ vid == cid
-                                                    matchPatterns pats vals
-    (_                 , P_Ctor _ _ _ _)      -> matchFailure
+    (SSCtorVal vid vals, P_Ctor _ _ pats (CtorInfo cid _)) -> do
+                                            _ <- matchIf $ vid == cid
+                                            matchPatterns pats vals
+    (_                 , P_Ctor _ _ _ _) -> matchFailure
 
     (SSTuple vals, P_Tuple _ _ pats) -> matchPatterns pats vals
     (_, P_Tuple _ _ _) -> matchFailure

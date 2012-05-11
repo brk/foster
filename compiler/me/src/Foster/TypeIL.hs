@@ -111,7 +111,8 @@ ilOfPat ctx pat = case pat of
                                        return $ P_Variable rng tid'
     P_Ctor      rng ty pats ctor -> do pats' <- mapM (ilOfPat ctx) pats
                                        ty' <- ilOf ctx ty
-                                       return $ P_Ctor rng ty' pats' ctor
+                                       ctor' <- ilOfCtorInfo ctx ctor
+                                       return $ P_Ctor rng ty' pats' ctor'
     P_Bool      rng ty bval      -> do ty' <- ilOf ctx ty
                                        return $ P_Bool rng ty' bval
     P_Int       rng ty ival      -> do ty' <- ilOf ctx ty
@@ -119,6 +120,16 @@ ilOfPat ctx pat = case pat of
     P_Tuple     rng ty pats      -> do pats' <- mapM (ilOfPat ctx) pats
                                        ty' <- ilOf ctx ty
                                        return $ P_Tuple rng ty' pats'
+
+ilOfCtorInfo :: Context t -> CtorInfo TypeAST -> Tc (CtorInfo TypeIL)
+ilOfCtorInfo ctx (CtorInfo id dc) = do
+  dc' <- ilOfDataCtor ctx dc
+  return $ CtorInfo id dc'
+
+ilOfDataCtor :: Context t -> DataCtor TypeAST -> Tc (DataCtor TypeIL)
+ilOfDataCtor ctx (DataCtor nm tag tys) = do
+  tys' <- mapM (ilOf ctx) tys
+  return $ DataCtor nm tag tys'
 
 -----------------------------------------------------------------------
 

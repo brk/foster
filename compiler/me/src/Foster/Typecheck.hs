@@ -289,7 +289,7 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
                             return $ P_Variable r (TypedId ty id)
       EP_Int r str    -> do annint <- typecheckInt r str Nothing
                             return $ P_Int r (aintType annint) (aintLit annint)
-      EP_Ctor r eps s -> do (CtorInfo cid _) <- getCtorInfoForCtor ctx s -- TODO TODO TODO
+      EP_Ctor r eps s -> do info@(CtorInfo cid _) <- getCtorInfoForCtor ctx s
                             sanityCheck (ctorArity cid == List.length eps) $
                               "Incorrect pattern arity: expected " ++
                               (show $ ctorArity cid) ++ " pattern(s), but got "
@@ -297,7 +297,7 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
                             ps <- mapM checkPattern eps
 
                             ty <- generateTypeSchemaForDataType ctx (ctorTypeName cid)
-                            return $ P_Ctor r ty ps cid
+                            return $ P_Ctor r ty ps info
       EP_Tuple r eps  -> do ps <- mapM checkPattern eps
                             let tys = map patternType ps
                             return $ P_Tuple r (TupleTypeAST tys) ps
@@ -335,8 +335,7 @@ typecheckCase ctx rng scrutinee branches maybeExpTy = do
         unify (tidType tid) ty (Just "pattern binding")
         return [tid]
 
-    extractPatternBindings ctx (P_Ctor _ pty pats (CtorId _ ctorName _ _)) ty = do
-      CtorInfo _ (DataCtor _ _ types) <- getCtorInfoForCtor ctx (T.pack ctorName)
+    extractPatternBindings ctx (P_Ctor _ pty pats (CtorInfo _ (DataCtor _ _ types))) ty = do
       bindings <- sequence [extractPatternBindings ctx p t | (p, t) <- zip pats types]
       unify ty pty (Just $ "Typecheck.hs:extractPatternBindings; P_Ctor")
       return $ concat bindings

@@ -61,7 +61,7 @@ data EPattern ty =
 data Pattern ty =
           P_Wildcard      SourceRange ty
         | P_Variable      SourceRange (TypedId ty)
-        | P_Ctor          SourceRange ty [Pattern ty] CtorId
+        | P_Ctor          SourceRange ty [Pattern ty] (CtorInfo ty)
         | P_Bool          SourceRange ty Bool
         | P_Int           SourceRange ty LiteralInt
         | P_Tuple         SourceRange ty [Pattern ty]
@@ -95,7 +95,9 @@ data CtorId     = CtorId   { ctorTypeName :: DataTypeName
                            , ctorSmallInt :: Int
                            } deriving (Show, Eq)
 
-data CtorInfo ty = CtorInfo CtorId (DataCtor ty) deriving Show -- for Typecheck
+data CtorInfo ty = CtorInfo { ctorInfoId :: CtorId
+                            , ctorInfoDc :: (DataCtor ty)
+                            } deriving Show -- for Typecheck
 
 type CtorName    = T.Text
 type DataTypeName = String
@@ -362,7 +364,7 @@ instance (SourceRanged expr) => Show (CompilesResult expr) where
 instance Show (Pattern ty) where
   show (P_Wildcard _ _)            = "P_Wildcard"
   show (P_Variable _ v)            = "P_Variable " ++ show (tidIdent v)
-  show (P_Ctor     _ _ _pats ctor) = "P_Ctor     " ++ show ctor
+  show (P_Ctor     _ _ _pats ctor) = "P_Ctor     " ++ show (ctorInfoId ctor)
   show (P_Bool     _ _ b)          = "P_Bool     " ++ show b
   show (P_Int      _ _ i)          = "P_Int      " ++ show (litIntText i)
   show (P_Tuple    _ _ pats)       = "P_Tuple    " ++ show pats

@@ -85,17 +85,16 @@ data ILLast = ILRetVoid
 --------------------------------------------------------------------
 
 closureConvertAndLift :: DataTypeSigs
-                      -> Map CtorId (CtorInfo TypeIL)
                       -> Uniq
                       -> (ModuleIL BasicBlockGraph TypeIL)
                       -> ILProgram
-closureConvertAndLift dataSigs dataCtorInfo u m =
+closureConvertAndLift dataSigs u m =
     -- We lambda lift top level functions, since we know a priori
     -- that they don't have any "real" free vars.
     -- Lambda lifting then closure converts any nested functions.
     let procsILM     = forM fns (\fn -> lambdaLift fn []) where
                             fns = moduleILfunctions m in
-    let initialState = ILMState u Map.empty Map.empty dataSigs dataCtorInfo in
+    let initialState = ILMState u Map.empty Map.empty dataSigs in
     let newstate     = execState procsILM initialState in
     let decls = map (\(s,t) -> ILDecl s t) (moduleILdecls m) in
     let dts = moduleILprimTypes m ++ moduleILdataTypes m in
@@ -153,8 +152,7 @@ closureConvertBlocks bbg = do
            CFRet   v       -> ret $ ILRet   v
            CFBr    b args  -> ret $ ILBr    b args
            CFCase  a pbs   -> do allSigs  <- gets ilmCtors
-                                 ctorInfo <- gets ilmCtorInfo
-                                 let dt = compilePatterns pbs allSigs ctorInfo
+                                 let dt = compilePatterns pbs allSigs
                                  let usedBlocks = eltsOfDecisionTree dt
                                  let _unusedPats = [pat | (pat, bid) <- pbs
                                                   , Set.notMember bid usedBlocks]
@@ -359,7 +357,6 @@ data ILMState = ILMState {
   , ilmBlockWrappers :: Map BlockId BlockId          -- read-write
   , ilmProcDefs      :: Map Ident ILProcDef          -- read-write
   , ilmCtors         :: DataTypeSigs                 -- read-only per-program
-  , ilmCtorInfo      :: Map CtorId (CtorInfo TypeIL) -- read-only per-program
 }
 type ILM a = State ILMState a
 

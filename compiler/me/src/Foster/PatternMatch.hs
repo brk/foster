@@ -60,13 +60,9 @@ type DataTypeSigs = Map DataTypeName DataTypeSig
 
 compilePatterns :: [((Pattern TypeIL, _binds), a)]
                 -> DataTypeSigs
-                -> Map CtorId (CtorInfo TypeIL)
                 -> DecisionTree a
-compilePatterns bs allSigs ctorInfo =
+compilePatterns bs allSigs =
  cc [[]] (ClauseMatrix $ map compilePatternRow bs) allSigs where
-  ctorInfoOf cid = case Map.lookup cid ctorInfo of
-                        Just v -> v
-                        Nothing -> error $ "PatternMatch: Unable to find ctor info for ctor id " ++ show cid
 
   compilePatternRow ((p, _binds), a) = ClauseRow (compilePattern p)
                                                  [compilePattern p] a
@@ -76,7 +72,7 @@ compilePatterns bs allSigs ctorInfo =
     (P_Variable _ v)       -> SP_Variable (tidIdent v)
     (P_Bool     _ _ b)     -> SP_Ctor (boolCtor b)     []
     (P_Int      _ _ i)     -> SP_Ctor (int32Ctor i)    []
-    (P_Ctor  _ _ pats cid) -> SP_Ctor (ctorInfoOf cid) (map compilePattern pats)
+    (P_Ctor  _ _ pats nfo) -> SP_Ctor nfo              (map compilePattern pats)
     (P_Tuple _ _ pats)     -> SP_Ctor (tupleCtor pats) (map compilePattern pats)
     where
           ctorInfo tynm dcnm dctys dctag =
