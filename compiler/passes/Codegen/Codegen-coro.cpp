@@ -150,19 +150,6 @@ llvm::FunctionType* getCoroWrapperFnTy() {
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
 
-void emitPrintI32(llvm::Module* mod, int x) {
-  llvm::Value* print_i32 = mod->getFunction("print_i32");
-  ASSERT(print_i32 != NULL);
-  builder.CreateCall(print_i32, builder.getInt32(x));
-}
-
-void emitPrintRef(llvm::Module* mod, llvm::Value* ref) {
-  llvm::Value* print_ref = mod->getFunction("print_ref");
-  ASSERT(print_ref != NULL);
-  llvm::Value* bc = builder.CreateBitCast(ref, builder.getInt8PtrTy());
-  builder.CreateCall(print_ref, bc);
-}
-
 // in CodegenUtils.cpp
 void emitFosterAssert(llvm::Module* mod, llvm::Value* cond, const char* cstr);
 
