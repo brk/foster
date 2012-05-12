@@ -9,7 +9,6 @@
 
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h" // for str()
-#include "parse/FosterUtils.h" // generic_coro_t
 
 #include "passes/CodegenPass-impl.h"
 

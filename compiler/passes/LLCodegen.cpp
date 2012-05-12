@@ -132,6 +132,9 @@ bool isEnvPtr(llvm::Value* v) {
   return v->getName().startswith(".env");
 }
 
+llvm::Type* getGenericClosureEnvType() { return builder.getInt8PtrTy(); }
+//llvm::Type* getGenericClosureEnvType() { return getUnitType(); }
+
 } // }}} namespace
 
 // Implementation of CodegenPass helpers {{{
@@ -493,9 +496,17 @@ void LLRetVoid::codegenTerminator(CodegenPass* pass) {
 
 void LLRetVal::codegenTerminator(CodegenPass* pass) {
   llvm::Value* rv = pass->emit(this->val, NULL);
-  bool returnsVoid =              rv->getType()->isVoidTy() ||
-         builder.getCurrentFunctionReturnType()->isVoidTy();
-  if (returnsVoid) {
+  bool fnReturnsVoid = builder.getCurrentFunctionReturnType()->isVoidTy();
+  if (!fnReturnsVoid && rv->getType()->isVoidTy()) {
+     // Assumption is that our return type might be {}* (i.e. unit)
+     // but the last thing we called returned void.
+     ASSERT(getUnitValue()->getType() == builder.getCurrentFunctionReturnType())
+     << "\n\tunit: " << str(getUnitValue()->getType())
+     << "\n\tret: " << str(builder.getCurrentFunctionReturnType());
+     rv = getUnitValue();
+  }
+
+  if (fnReturnsVoid) {
     builder.CreateRetVoid();
   } else {
     builder.CreateRet(rv);
@@ -1034,7 +1045,7 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
       // Make sure we close over generic versions of our pointers...
       llvm::Value* envPtr = pass->autoload(envSlots[i]);
       llvm::Value* genPtr = builder.CreateBitCast(envPtr,
-                                  builder.getInt8PtrTy(),
+                                  getGenericClosureEnvType(),
                                   closures[i]->envname + ".generic");
       pass->insertScopedValue(closures[i]->envname, genPtr);
 
@@ -1085,7 +1096,7 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
   }
 
   // Converts { r({...}*, ----), {....}* }
-  // to       { r( i8*,   ----),   i8*   }.
+  // to       { r( {}*,   ----),   {}*   }.
   // Used when choosing a type to allocate for a closure pair.
   llvm::StructType*
   genericClosureStructTy(llvm::FunctionType* fnty) {
@@ -1094,10 +1105,10 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
     for (size_t i = 0; i < fnty->getNumParams(); ++i) {
        argTypes.push_back(fnty->getParamType(i));
     }
-    argTypes[0] = builder.getInt8PtrTy();
+    argTypes[0] = getGenericClosureEnvType();
 
     return getStructType(ptrTo(llvm::FunctionType::get(retty, argTypes, false)),
-                         builder.getInt8PtrTy());
+                         getGenericClosureEnvType());
   }
 
   llvm::Value* LLClosure::codegenClosure(
@@ -1253,10 +1264,6 @@ llvm::Value* LLCallPrimOp::codegen(CodegenPass* pass) {
                                       codegenAll(pass, this->args));
 }
 
-bool isGenericClosureEnvType(Type* ty) {
-  return ty == builder.getInt8PtrTy();
-}
-
 // Returns null if no bitcast is needed, else returns the type to bitcast to.
 bool isPointerToUnknown(Type* ty) {
   if (llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
@@ -1339,8 +1346,8 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
 
     // This is a an artifact produced by the mutual recursion
     // of the environments of mutually recursive closures.
-    if (isGenericClosureEnvType(argV->getType())
-      && argV->getType() != expectedType) {
+    if (  argV->getType() != expectedType
+      &&  argV->getType() == getGenericClosureEnvType()) {
       EDiag() << "emitting bitcast gen2spec " << str(expectedType);
       argV = builder.CreateBitCast(argV, expectedType, "gen2spec");
     }

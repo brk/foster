@@ -22,7 +22,6 @@
 #include "passes/FosterLL.h"
 
 #include "parse/FosterTypeAST.h"
-#include "parse/FosterUtils.h" // for foster_generic_coro_t
 #include "parse/ProtobufToLLExpr.h"
 #include "parse/ParsingContext.h" // for LLVM type names
 

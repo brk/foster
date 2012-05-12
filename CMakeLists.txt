@@ -358,7 +358,6 @@ add_library(fosterc_parse STATIC
   compiler/parse/ANTLRtoFosterAST.cpp
   compiler/parse/ANTLRtoFosterErrorHandling.cpp
   compiler/parse/OperatorPrecedence.cpp
-  compiler/parse/FosterUtils.cpp
   ${GENERATED}/FosterAST.pb.cc
   ${GENERATED}/fosterParser.c
   ${GENERATED}/fosterLexer.c
@@ -384,9 +383,6 @@ add_dependencies(fosterc_llvm fosterc_base)
 
 
 add_library(fosterc_passes STATIC
-  compiler/passes/Codegen/CodegenUtils.cpp
-  compiler/passes/Codegen/Codegen-coro.cpp
-  compiler/passes/Codegen/Codegen-typemaps.cpp
   compiler/passes/DumpToProtobuf.cpp
   compiler/passes/PrettyPrintPass.cpp
 )
@@ -429,6 +425,9 @@ add_executable(fosterlower
     compiler/StandardPrelude.cpp
     compiler/passes/ProtobufToLLExpr.cpp
     compiler/passes/LLCodegen.cpp
+    compiler/passes/Codegen/CodegenUtils.cpp
+    compiler/passes/Codegen/Codegen-coro.cpp
+    compiler/passes/Codegen/Codegen-typemaps.cpp
     ${GENERATED}/FosterIL.pb.cc
   )
 target_link_libraries(fosterlower

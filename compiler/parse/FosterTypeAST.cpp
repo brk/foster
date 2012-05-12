@@ -8,7 +8,6 @@
 
 #include "parse/FosterTypeAST.h"
 #include "parse/FosterAST.h"
-#include "parse/FosterUtils.h"
 
 #include "llvm/Module.h"
 
@@ -19,6 +18,8 @@ using std::map;
 
 using foster::EDiag;
 using foster::SourceRange;
+
+llvm::Type* foster_generic_coro_t;
 
 llvm::Type* llvmIntType(int n) {
   return llvm::IntegerType::get(llvm::getGlobalContext(), n);
@@ -208,6 +209,9 @@ llvm::CallingConv::ID FnTypeAST::getCallingConventionID() const {
 /////////////////////////////////////////////////////////////////////
 
 llvm::Type* TupleTypeAST::getLLVMType() const {
+  if (getUnderlyingStruct()->getNumElements() == 0) {
+    return llvm::PointerType::getUnqual(TypeAST::i(8)->getLLVMType());
+  }
   return llvm::PointerType::getUnqual(getUnderlyingStruct()->getLLVMType());
 }
 
@@ -226,12 +230,8 @@ llvm::Type* StructTypeAST::getLLVMType() const {
   for (size_t i = 0; i < parts.size(); ++i) {
     loweredTypes.push_back(parts[i]->getLLVMType());
   }
-  if (loweredTypes.empty()) {
-    return TypeAST::i(8)->getLLVMType();
-  } else {
-    return llvm::StructType::get(
-            llvm::getGlobalContext(), loweredTypes, /*isPacked=*/false);
-  }
+  return llvm::StructType::get(
+          llvm::getGlobalContext(), loweredTypes, /*isPacked=*/false);
 }
 
 TypeAST*& StructTypeAST::getContainedType(int i) {

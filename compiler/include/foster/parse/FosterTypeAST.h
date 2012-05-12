@@ -18,6 +18,9 @@
 
 using foster::SourceRange;
 
+// This is the (prefix) struct type for a foster coro.
+extern llvm::Type* foster_generic_coro_t;
+
 class TypeAST;
 class PrettyPrintTypePass;
 class DumpTypeToProtobufPass;
