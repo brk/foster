@@ -18,6 +18,7 @@
 
 #define TRACE do { fprintf(gclog, "%s::%d\n", __FILE__, __LINE__); fflush(gclog); } while (0)
 #define ENABLE_GCLOG 0
+#define GC_BEFORE_EVERY_MEMALLOC_CELL 0
 
 /////////////////////////////////////////////////////////////////
 
@@ -477,7 +478,9 @@ int cleanup() {
 }
 
 extern "C" void* memalloc_cell(typemap* typeinfo) {
-  //allocator->force_gc_for_debugging_purposes();
+  if (GC_BEFORE_EVERY_MEMALLOC_CELL) {
+    allocator->force_gc_for_debugging_purposes();
+  }
   return allocator->allocate_cell(typeinfo);
 }
 
