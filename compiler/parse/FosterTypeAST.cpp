@@ -43,6 +43,7 @@ map<llvm::Type*, TypeAST*> PrimitiveTypeAST::thinWrappers;
 TypeAST* PrimitiveTypeAST::get(const std::string& name,
                                llvm::Type* loweredType) {
   ASSERT(loweredType);
+  ASSERT(!llvm::isa<llvm::StructType>(loweredType)) << str(loweredType);
   TypeAST* tyast = thinWrappers[loweredType];
   if (tyast) { return tyast; }
   tyast = new PrimitiveTypeAST(name, loweredType, SourceRange::getEmptyRange());
