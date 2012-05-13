@@ -248,6 +248,8 @@ void LLModule::codegenModule(CodegenPass* pass) {
   for (size_t i = 0; i < procs.size(); ++i) {
     // Ensure that the value is in the SymbolInfo entry in the symbol table.
     procs[i]->codegenProto(pass);
+    // Associate the LLProc with its name so we can get its type later on.
+    pass->procs[procs[i]->getCName()] = procs[i];
   }
 
   // Codegen all the function bodies, now that we can resolve mutually-recursive

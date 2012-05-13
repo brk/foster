@@ -114,6 +114,7 @@ struct CodegenPass {
   LazyCoroPrimInfoMap                           lazyCoroPrimInfo;
   std::map<std::string, DataTypeAST*>           isKnownDataType;
   std::map<llvm::Function*, llvm::Instruction*> allocaPoints;
+  std::map<std::string, LLProc*>                procs;
   std::set<llvm::Value*> needsImplicitLoad;
 
   llvm::Instruction* getCurrentAllocaPoint();
