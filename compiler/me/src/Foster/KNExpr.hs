@@ -240,6 +240,14 @@ nestedLetsDo exprs g = nestedLets' exprs [] g
           -- Instead, pass var2 to k instead of var1.
           (KNVar v) -> nestedLets' es (v:vars) k
 
+          -- We also don't particularly want to do something like
+          --    let var2 = (letfun var1 = {...} in var1) in e ...
+          -- because it would be later flattened out to
+          --    let var1 = fn in (let var2 = var1 in e...)
+          (KNLetFuns ids fns (KNVar v)) -> do
+            innerlet <- nestedLets' es (v:vars) k
+            return $ KNLetFuns ids fns innerlet
+
           _otherwise -> do
             x        <- knFresh ".x"
             let v = TypedId (typeKN e) x
@@ -324,7 +332,7 @@ instance Structured KNExpr where
             KNCallPrim t prim _ -> out $ "KNCallPrim  " ++ (show prim) ++ " :: " ++ show t
             KNAppCtor  t cid  _ -> out $ "KNAppCtor   " ++ (show cid) ++ " :: " ++ show t
             KNLetVal   x b    _ -> out $ "KNLetVal    " ++ (show x) ++ " :: " ++ (show $ typeKN b) ++ " = ... in ... "
-            KNLetFuns {}        -> out $ "KNLetFuns   "
+            KNLetFuns ids _ _   -> out $ "KNLetFuns   " ++ (show ids)
             KNIf      t  _ _ _  -> out $ "KNIf        " ++ " :: " ++ show t
             KNUntil   t  _ _    -> out $ "KNUntil     " ++ " :: " ++ show t
             KNInt ty int        -> out $ "KNInt       " ++ (litIntText int) ++ " :: " ++ show ty
