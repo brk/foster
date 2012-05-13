@@ -132,10 +132,6 @@ bool isEnvPtr(llvm::Value* v) {
   return v->getName().startswith(".env");
 }
 
-TypeAST* getGenericClosureEnvTypeAST() { return RefTypeAST::get(TypeAST::i(8)); }
-llvm::Type* getGenericClosureEnvType() { return builder.getInt8PtrTy(); }
-//llvm::Type* getGenericClosureEnvType() { return getUnitType(); }
-
 } // }}} namespace
 
 // Implementation of CodegenPass helpers {{{
@@ -1048,7 +1044,7 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
       // Make sure we close over generic versions of our pointers...
       llvm::Value* envPtr = pass->autoload(envSlots[i]);
       llvm::Value* genPtr = builder.CreateBitCast(envPtr,
-                                  getGenericClosureEnvType(),
+                                  getGenericClosureEnvType()->getLLVMType(),
                                   closures[i]->envname + ".generic");
       pass->insertScopedValue(closures[i]->envname, genPtr);
 
@@ -1080,7 +1076,7 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
     for (int i = 0; i < fnty->getNumParams(); ++i) {
        argTypes.push_back(fnty->getParamType(i));
     }
-    argTypes[0] = getGenericClosureEnvTypeAST();
+    argTypes[0] = getGenericClosureEnvType();
 
     FnTypeAST* newProcTy = new FnTypeAST(fnty->getReturnType(), argTypes,
                                          fnty->getAnnots());
@@ -1088,7 +1084,7 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
 
     std::vector<TypeAST*> structTypes;
     structTypes.push_back(newProcTy);
-    structTypes.push_back(getGenericClosureEnvTypeAST());
+    structTypes.push_back(getGenericClosureEnvType());
     return StructTypeAST::get(structTypes);
   }
 
@@ -1320,7 +1316,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
     // This is a an artifact produced by the mutual recursion
     // of the environments of mutually recursive closures.
     if (  argV->getType() != expectedType
-      &&  argV->getType() == getGenericClosureEnvType()) {
+      &&  argV->getType() == getGenericClosureEnvType()->getLLVMType()) {
       EDiag() << "emitting bitcast gen2spec " << str(expectedType);
       argV = builder.CreateBitCast(argV, expectedType, "gen2spec");
     }

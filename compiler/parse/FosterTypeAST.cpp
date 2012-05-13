@@ -22,6 +22,9 @@ using foster::SourceRange;
 llvm::Type* foster_generic_coro_t = NULL;
 TypeAST* foster_generic_coro_ast  = NULL;
 
+//llvm::Type* getGenericClosureEnvType() { return getUnitType();
+TypeAST* getGenericClosureEnvType() { return RefTypeAST::get(TypeAST::i(8)); }
+
 llvm::Type* llvmIntType(int n) {
   return llvm::IntegerType::get(llvm::getGlobalContext(), n);
 }
@@ -100,7 +103,7 @@ class StructTypeAST;
 
 // converts      t1 (t2, t3)      to { t1 (i8*, t2, t3)*, i8* }
 StructTypeAST* FnTypeAST::getClosureStructType() const {
-  TypeAST* envType = RefTypeAST::get(TypeAST::i(8));
+  TypeAST* envType = getGenericClosureEnvType();
 
   // We can mark closures with whatever calling convention we want,
   // since closures are internal by definition.

@@ -30,6 +30,8 @@ class DumpTypeToProtobufPass;
 
 std::string str(const TypeAST* type);
 
+TypeAST* getGenericClosureEnvType();
+
 class TypeAST {
 protected:
   mutable llvm::Type* repr;
