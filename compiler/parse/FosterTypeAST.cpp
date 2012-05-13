@@ -89,17 +89,9 @@ llvm::Type* RefTypeAST::getLLVMType() const {
   return repr;
 }
 
-map<RefTypeAST::RefTypeArgs, RefTypeAST*> RefTypeAST::refCache;
-
 RefTypeAST* RefTypeAST::get(TypeAST* baseType) {
   ASSERT(baseType);
-
-  RefTypeArgs args = baseType;
-  RefTypeAST* ref = refCache[args];
-  if (ref) return ref;
-  ref = new RefTypeAST(baseType, SourceRange::getEmptyRange());
-  refCache[args] = ref;
-  return ref;
+  return new RefTypeAST(baseType, SourceRange::getEmptyRange());
 }
 
 /////////////////////////////////////////////////////////////////////

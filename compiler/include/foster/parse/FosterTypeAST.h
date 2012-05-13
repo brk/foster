@@ -128,7 +128,6 @@ public:
   virtual bool      indexValid(int idx) const { return idx < getNumElements(); }
 };
 
-
 class RefTypeAST : public TypeAST {
   TypeAST* underlyingType;
 
@@ -137,8 +136,6 @@ class RefTypeAST : public TypeAST {
     : TypeAST("RefType", NULL, sourceRange),
       underlyingType(underlyingType) {}
 
-  typedef TypeAST* RefTypeArgs;
-  static std::map<RefTypeArgs, RefTypeAST*> refCache;
 public:
   virtual void show(PrettyPrintTypePass* pass);
   virtual void dump(DumpTypeToProtobufPass* pass);
