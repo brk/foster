@@ -34,6 +34,8 @@ using llvm::dyn_cast;
 using foster::builder;
 using foster::EDiag;
 
+using std::vector;
+
 namespace foster {
 
 void codegenLL(LLModule* prog, llvm::Module* mod,
@@ -132,6 +134,93 @@ bool isEnvPtr(llvm::Value* v) {
   return v->getName().startswith(".env");
 }
 
+
+////////////////////////////////////////////////////////////////////
+//////////////////// Out-Of-Line Assertions ////////////////////////
+/////////////////////////////////////////////////////////////////{{{
+
+void assertRightNumberOfArgnamesForFunction(llvm::Function* F,
+                                const std::vector<std::string>& argnames) {
+  ASSERT(argnames.size() == F->arg_size())
+            << "error when codegenning proto " << F->getName()
+            << "\n of type " << str(F->getType())
+            << "; inArgs.size: " << argnames.size()
+            << "; F.arg_size: " << F->arg_size() << "\n" << str(F);
+}
+
+void assertRightNumberOfArgsForFunction(llvm::Value* FV, llvm::FunctionType* FT,
+                                     const std::vector<llvm::Value*>& valArgs) {
+  ASSERT(FT->getNumParams() == valArgs.size())
+            << "function arity mismatch for " << FV->getName()
+            << "; got " << valArgs.size()
+            << " args but expected " << FT->getNumParams();
+}
+
+
+void assertValueHasExpectedType(llvm::Value* argV, llvm::Type* expectedType,
+                                llvm::Value* FV) {
+    ASSERT(typesEq(argV->getType(), expectedType))
+              << "type mismatch, " << str(argV->getType())
+              << " vs expected type " << str(expectedType)
+              << "\nbase is " << str(FV)
+              << "\nwith base type " << str(FV->getType())
+              << "\nargV = " << str(argV);
+}
+
+void assertValueHasExpectedType(llvm::Value* v, TypeAST* expectedType) {
+  ASSERT(v);
+  if (expectedType) {
+    llvm::Type* ty = getLLVMType(expectedType);
+    if (!typesEq(v->getType(), ty)) {
+      ASSERT(false) << "********* expected type " << str(ty)
+                           << "; had type " << str(v->getType())
+                           << "\n for value " << str(v);
+    }
+  }
+}
+
+void assertHaveCallableType(LLExpr* base, llvm::Type* FT, llvm::Value* FV) {
+  ASSERT(FT) << "call to uncallable something "
+             << base->tag << "\t" << base->type->tag
+             << " of type " << str(base->type)
+             << "\nFV: " << str(FV);
+}
+
+void assertHaveFunctionNamed(llvm::Function* f, 
+                             const std::string& fullyQualifiedSymbol,
+                             CodegenPass* pass) {
+  if (!f) {
+   llvm::errs() << "Unable to find function in module named: "
+                << fullyQualifiedSymbol << "\n";
+   pass->valueSymTab.dump(llvm::errs());
+   ASSERT(false) << "unable to find function " << fullyQualifiedSymbol;
+  }
+}
+
+void assertCurrentFunctionReturnsUnitType() {
+  ASSERT(getUnitValue()->getType() == builder.getCurrentFunctionReturnType())
+     << "\n\tunit: " << str(getUnitValue()->getType())
+     << "\n\tret: " << str(builder.getCurrentFunctionReturnType());
+}
+
+void assertHaveSameNumberOfArgsAndPhiNodes(const vector<llvm::Value*>& args,
+                                           LLBlock* block) {
+  ASSERT(args.size() == block->phiNodes.size())
+        << "from " << builder.GetInsertBlock()->getName().str() << " : "
+        << "to " << block->bb->getName().str() << " : "
+        << "have " << args.size() << " args; "
+        << "need " << block->phiNodes.size();
+}
+
+void assertValueHasSameTypeAsPhiNode(llvm::Value* v, LLBlock* block, int i) {
+  ASSERT(v->getType() == block->phiNodes[i]->getType())
+      << "Can't pass a value of type " << str(v->getType())
+      << " to a phi node of type " << str(block->phiNodes[i]->getType())
+      << "\n from value " << str(v) << " to block " << (block->block_id);
+}
+
+/// }}}
+
 } // }}} namespace
 
 // Implementation of CodegenPass helpers {{{
@@ -155,30 +244,14 @@ llvm::Value* CodegenPass::emit(LLExpr* e, TypeAST* expectedType) {
   ASSERT(e != NULL) << "null expr passed to emit()!";
   llvm::Value* v = e->codegen(this);
   v = autoload(v);
-
-  if (expectedType) {
-    llvm::Type* ty = getLLVMType(expectedType);
-    if (!typesEq(v->getType(), ty)) {
-      ASSERT(false) << "********* expected type " << str(ty)
-                           << "; had type " << str(v->getType())
-                           << "\n for value " << str(v);
-    }
-  }
-  ASSERT(v != NULL);
+  assertValueHasExpectedType(v, expectedType);
   return v;
 }
 
 llvm::Function* CodegenPass::lookupFunctionOrDie(const std::string&
                                                          fullyQualifiedSymbol) {
-  // Otherwise, it should be a function name.
   llvm::Function* f = mod->getFunction(fullyQualifiedSymbol);
-
-  if (!f) {
-   llvm::errs() << "Unable to find function in module named: "
-              << fullyQualifiedSymbol << "\n";
-   valueSymTab.dump(llvm::errs());
-   ASSERT(false) << "unable to find function " << fullyQualifiedSymbol;
-  }
+  assertHaveFunctionNamed(f, fullyQualifiedSymbol, this);
   return f;
 }
 
@@ -292,12 +365,7 @@ getLLVMFunctionType(FnTypeAST* t, const std::string& procSymbol) {
 
 void setFunctionArgumentNames(llvm::Function* F,
               const std::vector<std::string>& argnames) {
-  ASSERT(argnames.size() == F->arg_size())
-            << "error when codegenning proto " << F->getName()
-            << "\n of type " << str(F->getType())
-            << "; inArgs.size: " << argnames.size() <<
-               "; F.arg_size: " << F->arg_size() << "\n" << str(F);
-
+  assertRightNumberOfArgnamesForFunction(F, argnames);
   Function::arg_iterator AI = F->arg_begin();
   for (size_t i = 0; i != argnames.size(); ++i, ++AI) {
     AI->setName(argnames[i]);
@@ -358,7 +426,7 @@ llvm::AllocaInst* ensureImplicitStackSlot(llvm::Value* v, bool gcable, CodegenPa
 
 void LLProc::codegenProc(CodegenPass* pass) {
   ASSERT(this->F != NULL) << "LLModule should codegen proto for " << getName();
-  ASSERT(F->arg_size() == this->getFunctionArgNames().size());
+  assertRightNumberOfArgnamesForFunction(F, this->getFunctionArgNames());
 
   pass->occSlots.clear();
   pass->addEntryBB(F);
@@ -499,9 +567,7 @@ void LLRetVal::codegenTerminator(CodegenPass* pass) {
   if (!fnReturnsVoid && rv->getType()->isVoidTy()) {
      // Assumption is that our return type might be {}* (i.e. unit)
      // but the last thing we called returned void.
-     ASSERT(getUnitValue()->getType() == builder.getCurrentFunctionReturnType())
-     << "\n\tunit: " << str(getUnitValue()->getType())
-     << "\n\tret: " << str(builder.getCurrentFunctionReturnType());
+     assertCurrentFunctionReturnsUnitType();
      rv = getUnitValue();
   }
 
@@ -512,21 +578,14 @@ void LLRetVal::codegenTerminator(CodegenPass* pass) {
   }
 }
 
-void passPhisAndBr(LLBlock* block, const std::vector<llvm::Value*>& args) {
-  ASSERT(args.size() == block->phiNodes.size())
-        << "from " << builder.GetInsertBlock()->getName().str() << " : "
-        << "to " << block->bb->getName().str() << " : "
-        << "have " << args.size() << " args; "
-        << "need " << block->phiNodes.size();
+void passPhisAndBr(LLBlock* block, const vector<llvm::Value*>& args) {
+  assertHaveSameNumberOfArgsAndPhiNodes(args, block);
   for (size_t i = 0; i < args.size(); ++i) {
     llvm::Value* v = args[i];
     if (v->getType()->isVoidTy()) {
       v = getUnitValue(); // Can't pass a void value!
     }
-    ASSERT(v->getType() == block->phiNodes[i]->getType())
-        << "Can't pass a value of type " << str(v->getType())
-        << " to a phi node of type " << str(block->phiNodes[i]->getType())
-        << "\n from value " << str(v) << " to block " << (block->block_id);
+    assertValueHasSameTypeAsPhiNode(v, block, i);
     block->phiNodes[i]->addIncoming(v, builder.GetInsertBlock());
   }
   builder.CreateBr(block->bb);
@@ -1153,9 +1212,7 @@ getStackSlotForOcc(CodegenPass* pass, TypeAST* typ,
     emitStore(v, slot);
   } else {
     ASSERT(typ) << "getStackSlotForOcc with no type?";
-    ASSERT(typ->getLLVMType() == v->getType())
-        << "\n\ttyp = " << str(typ)
-        << "\n\ttvy = " << str(v->getType());
+    assertValueHasExpectedType(v, typ);
     bool gcable = containsGCablePointers(typ, v->getType());
     slot = ensureImplicitStackSlot(v, gcable, pass);
   }
@@ -1264,9 +1321,26 @@ bool matchesExceptForUnknownPointers(Type* aty, Type* ety) {
   return true;
 }
 
+llvm::Value* emitFnArgCoercions(llvm::Value* argV, llvm::Type* expectedType) {
+  // This is a an artifact produced by the mutual recursion
+  // of the environments of mutually recursive closures.
+  if (  argV->getType() != expectedType
+    &&  argV->getType() == getGenericClosureEnvType()->getLLVMType()) {
+    EDiag() << "emitting bitcast gen2spec " << str(expectedType);
+    argV = builder.CreateBitCast(argV, expectedType, "gen2spec");
+  }
+
+  if ((argV->getType() != expectedType)
+      && matchesExceptForUnknownPointers(argV->getType(), expectedType)) {
+    EDiag() << "matched " << str(argV->getType()) << " to " << str(expectedType);
+    argV = builder.CreateBitCast(argV, expectedType, "spec2gen");
+  }
+  
+  return argV;
+}
+
 llvm::Value* LLCall::codegen(CodegenPass* pass) {
   ASSERT(base != NULL) << "unable to codegen call due to null base";
-
   Value* FV = pass->emit(base, NULL);
   ASSERT(FV) << "unable to codegen call due to missing value for base";
 
@@ -1296,52 +1370,22 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
     } else {
       FT = fnType->getLLVMFnType();
     }
-  } else {
-    ASSERT(false) << "expected either direct llvm::Function value or else "
-                  << "something of FnType; had " << (base->tag)
-                  << " of type " << str(base->type);
   }
 
+  assertHaveCallableType(base, FT, FV);
   ASSERT(haveSetCallingConv);
-  ASSERT(FT) << "call to uncallable something "
-             << base->tag << "\t" << base->type->tag
-             << "\nFV: " << str(FV);
 
   // Collect the args, performing coercions if necessary.
   for (size_t i = 0; i < this->args.size(); ++i) {
     llvm::Type* expectedType = FT->getParamType(valArgs.size());
-
     llvm::Value* argV = pass->emit(this->args[i], NULL);
-
-    // This is a an artifact produced by the mutual recursion
-    // of the environments of mutually recursive closures.
-    if (  argV->getType() != expectedType
-      &&  argV->getType() == getGenericClosureEnvType()->getLLVMType()) {
-      EDiag() << "emitting bitcast gen2spec " << str(expectedType);
-      argV = builder.CreateBitCast(argV, expectedType, "gen2spec");
-    }
-
-    if ((argV->getType() != expectedType)
-        && matchesExceptForUnknownPointers(argV->getType(), expectedType)) {
-      EDiag() << "matched " << str(argV->getType()) << " to " << str(expectedType);
-      argV = builder.CreateBitCast(argV, expectedType, "spec2gen");
-    }
-
+    argV = emitFnArgCoercions(argV, expectedType);
+    assertValueHasExpectedType(argV, expectedType, FV);
     valArgs.push_back(argV);
-
-    ASSERT(argV->getType() == expectedType)
-              << "type mismatch, " << str(argV->getType())
-              << " vs expected type " << str(expectedType)
-              << "\nbase is " << str(FV)
-              << "\nwith base type " << str(FV->getType())
-              << "\nargV = " << str(argV);
   }
 
-  ASSERT(FT->getNumParams() == valArgs.size())
-            << "function arity mismatch for " << FV->getName()
-            << "; got " << valArgs.size()
-            << " args but expected " << FT->getNumParams();
-
+  assertRightNumberOfArgsForFunction(FV, FT, valArgs);
+  
   // Give the instruction a name, if we can...
 
   llvm::CallInst* callInst = builder.CreateCall(FV, llvm::makeArrayRef(valArgs));
@@ -1378,3 +1422,4 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
 }
 
 /// }}}
+
