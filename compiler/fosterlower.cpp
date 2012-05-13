@@ -233,9 +233,7 @@ int main(int argc, char** argv) {
     coro_bc = readLLVMModuleFromPath("_bitcodelibs_/gc_bc/libfoster_coro.bc");
     linkTo(coro_bc, "libfoster_coro", module);
 
-
-    NamedTypeAST* coroast = new NamedTypeAST("foster_generic_coro.struct", NULL,
-                                          foster::SourceRange::getEmptyRange());
+    StructTypeAST* coroast = StructTypeAST::getRecursive("foster_generic_coro.struct");
     std::vector<TypeAST*> coro_parts;
     coro_parts.push_back(RefTypeAST::get(TypeAST::i(999)));  // coro ctx
     coro_parts.push_back(RefTypeAST::get(coroast));          // sibling
@@ -245,7 +243,7 @@ int main(int argc, char** argv) {
     coro_parts.push_back(RefTypeAST::get(
                          RefTypeAST::get(coroast)));         // indirect_self
     coro_parts.push_back(TypeAST::i(32)); // status
-    coroast->setNamedType(StructTypeAST::getRecursive(coro_parts, "foster_generic_coro.struct"));
+    coroast->setBody(coro_parts);
     foster_generic_coro_ast = coroast;
 
     foster_generic_coro_t = module->getTypeByName("struct.foster_generic_coro");

@@ -228,6 +228,11 @@ TupleTypeAST* TupleTypeAST::get(const vector<TypeAST*>& argTypes) {
 /////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////
 
+StructTypeAST::StructTypeAST(std::string name, const SourceRange& sourceRange)
+  : IndexableTypeAST("StructType", NULL, sourceRange) {
+  repr = llvm::StructType::create(llvm::getGlobalContext(), name);
+}
+
 vector<llvm::Type*> StructTypeAST::getLoweredTypes() const {
   vector<llvm::Type*> loweredTypes;
   for (size_t i = 0; i < parts.size(); ++i) {
@@ -236,17 +241,16 @@ vector<llvm::Type*> StructTypeAST::getLoweredTypes() const {
   return loweredTypes;
 }
 
+void StructTypeAST::setBody(const vector<TypeAST*>& argTypes) {
+  parts = argTypes;
+  llvm::StructType* sty = llvm::dyn_cast<llvm::StructType>(repr);
+  ASSERT(sty);
+  sty->setBody(getLoweredTypes());
+}
+
 llvm::Type* StructTypeAST::getLLVMType() const {
   if (repr) return repr;
-
-  if (this->name.empty()) {
-    repr = llvm::StructType::get(llvm::getGlobalContext(),
-                                 getLoweredTypes());
-  } else {
-    llvm::StructType* sty = llvm::StructType::create(llvm::getGlobalContext(), name);
-    repr = sty;
-    sty->setBody(getLoweredTypes());
-  }
+  repr = llvm::StructType::get(llvm::getGlobalContext(), getLoweredTypes());
   return repr;
 }
 
@@ -259,15 +263,11 @@ StructTypeAST* StructTypeAST::get(const vector<TypeAST*>& argTypes) {
   if (!argTypes.empty()) {
     ASSERT(argTypes.back()) << "Struct type must not contain NULL members.";
   }
-  return new StructTypeAST(argTypes, "", SourceRange::getEmptyRange());
+  return new StructTypeAST(argTypes, SourceRange::getEmptyRange());
 }
 
-StructTypeAST* StructTypeAST::getRecursive(const vector<TypeAST*>& argTypes,
-                                           std::string name) {
-  if (!argTypes.empty()) {
-    ASSERT(argTypes.back()) << "Tuple type must not contain NULL members.";
-  }
-  return new StructTypeAST(argTypes, name, SourceRange::getEmptyRange());
+StructTypeAST* StructTypeAST::getRecursive(std::string name) {
+  return new StructTypeAST(name, SourceRange::getEmptyRange());
 }
 
 /////////////////////////////////////////////////////////////////////

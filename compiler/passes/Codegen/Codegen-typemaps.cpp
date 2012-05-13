@@ -44,40 +44,6 @@ bool isGarbageCollectible(TypeAST* typ, Type* ty) {
   return isGarbageCollectible(ty);
 }
 
-OffsetSet countPointersInType(Type* ty) {
-  ASSERT(ty) << "Can't count pointers in a NULL type!";
-
-  OffsetSet rv;
-  if (isGarbageCollectible(ty)) {
-    // Pointers to functions/labels/other non-sized types do not get GC'd.
-    rv.push_back(builder.getInt64(0));
-  }
-
-  // unboxed array, struct, union
-  else if (dyn_cast<ArrayType>(ty)) {
-    // TODO need to decide how Foster semantics will map to LLVM IR for arrays.
-    // Will EVERY (C++), SOME (Factor, C#?), or NO (Java) types be unboxed?
-    // Also need to figure out how the gc will collect arrays.
-    ASSERT(false) << "array map offsets?";
-    //return aty->getNumElements() * countPointersInType(aty->getElementType());
-  }
-
-  // if we have a struct { T1; T2 } then our offset set will be the set for T1,
-  // plus the set for T2 with offsets incremented by the offset of T2.
-  else if (StructType* sty = dyn_cast<StructType>(ty)) {
-    for (size_t i = 0; i < sty->getNumElements(); ++i) {
-      Constant* slotOffset = ConstantExpr::getOffsetOf(sty, i);
-      OffsetSet sub = countPointersInType(sty->getTypeAtIndex(i));
-      for (OffsetSet::iterator si = sub.begin(); si != sub.end(); ++si) {
-        Offset suboffset = *si;
-        rv.push_back(ConstantExpr::getAdd(suboffset, slotOffset));
-      }
-    }
-  }
-  // all other types do not contain pointers
-  return rv;
-}
-
 // TODO vector of pointers now supported by LLVM...
 // will we allow vectors of pointers-to-GC-heap? probably unwise.
 
@@ -102,22 +68,14 @@ OffsetSet countPointersInType(TypeAST* typ, Type* ty) {
   // if we have a struct { T1; T2 } then our offset set will be the set for T1,
   // plus the set for T2 with offsets incremented by the offset of T2.
   else if (StructType* sty = dyn_cast<StructType>(ty)) {
-
-    // If we have a primitive type, we'll fall back on inspecting just the
-    // LLVM bits. TODO eliminate this massive ahhack.
-    if (PrimitiveTypeAST* pty = dynamic_cast<PrimitiveTypeAST*>(typ)) {
-      ASSERT(pty->getLLVMType() == ty);
-    }
-
     StructTypeAST* stp = dynamic_cast<StructTypeAST*>(typ);
-    //ASSERT(stp) << "StructType without corresponding StructTypeAST?!? " << str(typ);
+    ASSERT(stp) << "StructType without corresponding StructTypeAST?!? "
+                << str(typ) << " ~~tag = " << typ->tag;
 
     for (size_t i = 0; i < sty->getNumElements(); ++i) {
       Constant* slotOffset = ConstantExpr::getOffsetOf(sty, i);
-      OffsetSet sub = (stp != NULL)
-                      ? countPointersInType(stp->getContainedType(i),
-                                            sty->getTypeAtIndex(i))
-                      : countPointersInType(sty->getTypeAtIndex(i));
+      OffsetSet sub = countPointersInType(stp->getContainedType(i),
+                                            sty->getTypeAtIndex(i));
       for (OffsetSet::iterator si = sub.begin(); si != sub.end(); ++si) {
         Offset suboffset = *si;
         rv.push_back(ConstantExpr::getAdd(suboffset, slotOffset));
@@ -134,11 +92,6 @@ OffsetSet countPointersInType(TypeAST* typ, Type* ty) {
 
   // all other types do not contain pointers
   return rv;
-}
-
-bool mayContainGCablePointers(Type* ty) {
-  OffsetSet s = countPointersInType(ty);
-  return !s.empty();
 }
 
 bool containsGCablePointers(TypeAST* typ, Type* ty) {
@@ -360,18 +313,6 @@ void registerStructType(StructTypeAST* structty,
   emitTypeMap(structty, ty, name, NotArray, ctorId, mod, std::vector<int>());
 }
 
-llvm::StructType*
-isCoroStruct(llvm::Type* ty) {
-  if (llvm::StructType* sty = llvm::dyn_cast<llvm::StructType>(ty)) {
-    if (sty == foster_generic_coro_t
-     ||  ( sty->getNumContainedTypes() > 0
-        && sty->getTypeAtIndex(0U) == foster_generic_coro_t)) {
-      return sty;
-    }
-  }
-  return NULL;
-}
-
 StructTypeAST*
 isCoroStructType(TypeAST* typ) {
   if (StructTypeAST* sty = dynamic_cast<StructTypeAST*>(typ)) {
@@ -383,8 +324,6 @@ isCoroStructType(TypeAST* typ) {
   }
   return NULL;
 }
-
-
 
 bool isValidClosureType(const llvm::Type* ty) {
   if (const llvm::StructType* sty =

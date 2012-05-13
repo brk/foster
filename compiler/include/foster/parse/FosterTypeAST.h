@@ -185,15 +185,13 @@ public:
 
 class StructTypeAST : public IndexableTypeAST {
   std::vector<TypeAST*> parts;
-  std::string name;
-
   std::vector<llvm::Type*> getLoweredTypes() const;
 public:
   explicit StructTypeAST(const std::vector<TypeAST*>& parts,
-                         std::string name,
                          const SourceRange& sourceRange)
-    : IndexableTypeAST("StructType", NULL, sourceRange),
-      parts(parts), name(name) {}
+    : IndexableTypeAST("StructType", NULL, sourceRange), parts(parts) {}
+
+  explicit StructTypeAST(std::string name, const SourceRange& sourceRange);
 
   virtual void show(PrettyPrintTypePass* pass);
   virtual void dump(DumpTypeToProtobufPass* pass);
@@ -204,7 +202,11 @@ public:
   virtual TypeAST*& getContainedType(int i);
 
   static StructTypeAST* get(const std::vector<TypeAST*>& parts);
-  static StructTypeAST* getRecursive(const std::vector<TypeAST*>& parts, std::string name);
+
+  // Different interface, mirroring LLVM 3.0's named structs, for creating
+  // recursive named structs without using an intervening NamedType.
+  static StructTypeAST* getRecursive(std::string name);
+  void setBody(const std::vector<TypeAST*>& argTypes);
 };
 
 class TupleTypeAST : public IndexableTypeAST {
@@ -213,7 +215,7 @@ class TupleTypeAST : public IndexableTypeAST {
   explicit TupleTypeAST(const std::vector<TypeAST*>& parts,
                         const SourceRange& sourceRange)
     : IndexableTypeAST("TupleType", NULL, sourceRange) {
-    structType = new StructTypeAST(parts, "", sourceRange);
+    structType = new StructTypeAST(parts, sourceRange);
   }
 
 public:
