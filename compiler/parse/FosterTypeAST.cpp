@@ -19,7 +19,8 @@ using std::map;
 using foster::EDiag;
 using foster::SourceRange;
 
-llvm::Type* foster_generic_coro_t;
+llvm::Type* foster_generic_coro_t = NULL;
+TypeAST* foster_generic_coro_ast  = NULL;
 
 llvm::Type* llvmIntType(int n) {
   return llvm::IntegerType::get(llvm::getGlobalContext(), n);
@@ -225,13 +226,26 @@ TupleTypeAST* TupleTypeAST::get(const vector<TypeAST*>& argTypes) {
 /////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////
 
-llvm::Type* StructTypeAST::getLLVMType() const {
+vector<llvm::Type*> StructTypeAST::getLoweredTypes() const {
   vector<llvm::Type*> loweredTypes;
   for (size_t i = 0; i < parts.size(); ++i) {
     loweredTypes.push_back(parts[i]->getLLVMType());
   }
-  return llvm::StructType::get(
-          llvm::getGlobalContext(), loweredTypes, /*isPacked=*/false);
+  return loweredTypes;
+}
+
+llvm::Type* StructTypeAST::getLLVMType() const {
+  if (repr) return repr;
+
+  if (this->name.empty()) {
+    repr = llvm::StructType::get(llvm::getGlobalContext(),
+                                 getLoweredTypes());
+  } else {
+    llvm::StructType* sty = llvm::StructType::create(llvm::getGlobalContext(), name);
+    repr = sty;
+    sty->setBody(getLoweredTypes());
+  }
+  return repr;
 }
 
 TypeAST*& StructTypeAST::getContainedType(int i) {
@@ -241,9 +255,17 @@ TypeAST*& StructTypeAST::getContainedType(int i) {
 
 StructTypeAST* StructTypeAST::get(const vector<TypeAST*>& argTypes) {
   if (!argTypes.empty()) {
+    ASSERT(argTypes.back()) << "Struct type must not contain NULL members.";
+  }
+  return new StructTypeAST(argTypes, "", SourceRange::getEmptyRange());
+}
+
+StructTypeAST* StructTypeAST::getRecursive(const vector<TypeAST*>& argTypes,
+                                           std::string name) {
+  if (!argTypes.empty()) {
     ASSERT(argTypes.back()) << "Tuple type must not contain NULL members.";
   }
-  return new StructTypeAST(argTypes, SourceRange::getEmptyRange());
+  return new StructTypeAST(argTypes, name, SourceRange::getEmptyRange());
 }
 
 /////////////////////////////////////////////////////////////////////

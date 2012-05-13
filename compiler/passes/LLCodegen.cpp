@@ -714,7 +714,7 @@ llvm::Value* LLCoroPrim::codegen(CodegenPass* pass) {
   llvm::Type* a = typeArg->getLLVMType();
   if (this->primName == "coro_yield") { return pass->emitCoroYieldFn(r, a); }
   if (this->primName == "coro_invoke") { return pass->emitCoroInvokeFn(r, a); }
-  if (this->primName == "coro_create") { return pass->emitCoroCreateFn(r, a); }
+  if (this->primName == "coro_create") { return pass->emitCoroCreateFn(retType, typeArg); }
   ASSERT(false) << "unknown coro prim: " << this->primName;
   return NULL;
 }

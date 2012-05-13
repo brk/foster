@@ -63,6 +63,16 @@ void addCoroArgs(std::vector<Value*>& fnArgs,
 }
 
 // Returns { { ... generic coro ... }, argTypes }
+StructTypeAST* getSplitCoroTyp(TypeAST* argTypes)
+{
+  std::vector<TypeAST*> parts;
+  parts.push_back(foster_generic_coro_ast);
+  // Multiple coro args added as single struct in memory, not separate items
+  parts.push_back(argTypes);
+  return StructTypeAST::get(parts);
+}
+
+// Returns { { ... generic coro ... }, argTypes }
 llvm::StructType* getSplitCoroType(
   llvm::Type* argTypes)
 {
@@ -256,9 +266,12 @@ void registerCoroType(llvm::Module* mod, llvm::Type* argTypes) {
 
 // Returns a function of type  <coro> (closure)
 Value* CodegenPass::emitCoroCreateFn(
-                        llvm::Type* retTy,
-                        llvm::Type* argTypes)
+                        TypeAST* retTyp,
+                        TypeAST* argTyps)
 {
+  llvm::Type* retTy    = retTyp->getLLVMType();
+  llvm::Type* argTypes = argTyps->getLLVMType();
+
   std::string ss_str;
   llvm::raw_string_ostream ss(ss_str);
   ss << ".foster_coro_create_" << str(retTy) << "__" << str(argTypes);
@@ -286,8 +299,8 @@ Value* CodegenPass::emitCoroCreateFn(
   int8_t bogusCtor = -1;
   // foster_coro_i32_i32* fcoro = (foster_coro_i32_i32*) memalloc_cell(NULL);
   // foster_coro_i32_i32* ccoro = (foster_coro_i32_i32*) memalloc_cell(NULL);
-  Value* fcoro_slot = this->emitMalloc(PrimitiveTypeAST::get("split_coro_a", getSplitCoroType(argTypes)), bogusCtor, /*init*/ true);
-  Value* ccoro_slot = this->emitMalloc(PrimitiveTypeAST::get("split_coro_r", getSplitCoroType(retTy   )), bogusCtor, /*init*/ false);
+  Value* fcoro_slot = this->emitMalloc(getSplitCoroTyp(argTyps), bogusCtor, /*init*/ true);
+  Value* ccoro_slot = this->emitMalloc(getSplitCoroTyp(retTyp ), bogusCtor, /*init*/ false);
 
   Value* fcoro      = builder.CreateLoad(fcoro_slot, "fcoro");
   Value* ccoro      = builder.CreateLoad(ccoro_slot, "ccoro");
@@ -358,7 +371,8 @@ Value* CodegenPass::emitCoroCreateFn(
   markAsNonAllocating(call);
 
   // return (foster_coro_i32_i32*) fcoro;
-  builder.CreateRet(fcoro);
+  builder.CreateRet(builder.CreateBitCast(fcoro,
+                                    ptrTo(getSplitCoroType(argTypes))));
 
   if (prevBB) {
     builder.SetInsertPoint(prevBB);

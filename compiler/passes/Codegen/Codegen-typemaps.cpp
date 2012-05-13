@@ -313,15 +313,16 @@ GlobalVariable* emitTypeMap(
 // {
 //   { <coro_context>           0
 //   , sibling         <---    [1]
-//   , fn
-//   , env             <---    (2)
-//   , invoker         <---    [3]
-//   , indirect_self            4
+//   , fn              <---     2
+//   , env             <---    (3)
+//   , invoker         <---    [4]
+//   , indirect_self            5
 //   , status
 //   }
 //   argty
 // }
-GlobalVariable* emitCoroTypeMap(TypeAST* typ, StructType* sty, llvm::Module* mod) {
+GlobalVariable* emitCoroTypeMap(StructTypeAST* typ, StructType* sty,
+                                llvm::Module* mod) {
   bool hasKnownTypes = sty->getNumElements() == 2;
   if (!hasKnownTypes) {
     // Generic coro; don't generate a typemap,
@@ -338,7 +339,7 @@ GlobalVariable* emitCoroTypeMap(TypeAST* typ, StructType* sty, llvm::Module* mod
   // pointers are precisely those which we want the GC to notice.
   int8_t bogusCtor = -1;
   return emitTypeMap(typ, sty, ss.str(), NotArray, bogusCtor, mod,
-                     make_vector(0, 4, NULL));
+                     make_vector(0, 2, 5, NULL));
 }
 
 void registerStructType(StructTypeAST* structty,
@@ -370,6 +371,19 @@ isCoroStruct(llvm::Type* ty) {
   }
   return NULL;
 }
+
+StructTypeAST*
+isCoroStructType(TypeAST* typ) {
+  if (StructTypeAST* sty = dynamic_cast<StructTypeAST*>(typ)) {
+    if (sty == foster_generic_coro_ast
+     ||  ( sty->getNumContainedTypes() > 0
+        && sty->getContainedType(0) == foster_generic_coro_ast)) {
+      return sty;
+    }
+  }
+  return NULL;
+}
+
 
 
 bool isValidClosureType(const llvm::Type* ty) {
@@ -419,8 +433,8 @@ llvm::GlobalVariable* getTypeMapForType(TypeAST* typ,
   llvm::GlobalVariable* gv = typeMapCache[mkTypeSig(ty, arrayStatus, ctorId)];
   if (gv) return gv;
 
-  if (llvm::StructType* sty = isCoroStruct(ty)) {
-    gv = emitCoroTypeMap(typ, sty, mod);
+  if (StructTypeAST* sty = isCoroStructType(typ)) {
+    gv = emitCoroTypeMap(sty, llvm::dyn_cast<StructType>(ty), mod);
   } else if (/*!ty->isAbstract() &&*/ !ty->isAggregateType()) {
     gv = emitTypeMap(typ, ty, ParsingContext::freshName("gcatom"), arrayStatus,
                      ctorId, mod, std::vector<int>());

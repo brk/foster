@@ -165,8 +165,7 @@ struct CodegenPass {
 
   llvm::AllocaInst* storeAndMarkPointerAsGCRoot(llvm::Value*);
 
-  Value* emitCoroCreateFn(llvm::Type* retTy,
-                          llvm::Type* argTypes);
+  Value* emitCoroCreateFn(TypeAST* retType, TypeAST* argTypes);
   Value* emitCoroInvokeFn(llvm::Type* retTy,
                           llvm::Type* argTypes);
   Value* emitCoroYieldFn( llvm::Type* retTy,
