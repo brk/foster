@@ -132,6 +132,7 @@ bool isEnvPtr(llvm::Value* v) {
   return v->getName().startswith(".env");
 }
 
+TypeAST* getGenericClosureEnvTypeAST() { return RefTypeAST::get(TypeAST::i(8)); }
 llvm::Type* getGenericClosureEnvType() { return builder.getInt8PtrTy(); }
 //llvm::Type* getGenericClosureEnvType() { return getUnitType(); }
 
@@ -1070,81 +1071,51 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
     }
   }
 
-  bool tryBindClosureFunctionTypes(llvm::Type*          origType,
-                                   llvm::FunctionType*& fnType,
-                                   llvm::StructType*  & cloStructTy) {
-    fnType = NULL; cloStructTy = NULL;
-
-    llvm::PointerType* pfnty = llvm::dyn_cast<llvm::PointerType>(origType);
-    if (!pfnty) {
-      EDiag() << "expected " << str(origType) << " to be a ptr type.";
-      return false;
-    }
-    fnType = llvm::dyn_cast<llvm::FunctionType>(pfnty->getContainedType(0));
-    if (!fnType) {
-      EDiag() << "expected " << str(origType) << " to be a ptr to fn type.";
-      return false;
-    }
-    if (fnType->getNumParams() == 0) {
-      EDiag() << "expected " << str(fnType) << " to have an env parameter.";
-      return false;
-    }
-    llvm::PointerType* maybeEnvType =
-                  llvm::dyn_cast<llvm::PointerType>(fnType->getParamType(0));
-    if (!maybeEnvType) return false;
-
-    cloStructTy = getStructType(pfnty, maybeEnvType);
-    return true;
-  }
-
-  // Converts { r({...}*, ----), {....}* }
-  // to       { r( {}*,   ----),   {}*   }.
+  // Converts the proc type  r({...}*, ----)
+  // to                    { r( {}*,   ----),   {}*   }.
   // Used when choosing a type to allocate for a closure pair.
-  llvm::StructType*
-  genericClosureStructTy(llvm::FunctionType* fnty) {
-    Type* retty = fnty->getReturnType();
-    std::vector<llvm::Type*> argTypes;
-    for (size_t i = 0; i < fnty->getNumParams(); ++i) {
+  StructTypeAST*
+  genericClosureStructType(FnTypeAST* fnty) {
+    std::vector<TypeAST*> argTypes;
+    for (int i = 0; i < fnty->getNumParams(); ++i) {
        argTypes.push_back(fnty->getParamType(i));
     }
-    argTypes[0] = getGenericClosureEnvType();
+    argTypes[0] = getGenericClosureEnvTypeAST();
 
-    return getStructType(ptrTo(llvm::FunctionType::get(retty, argTypes, false)),
-                         getGenericClosureEnvType());
+    FnTypeAST* newProcTy = new FnTypeAST(fnty->getReturnType(), argTypes,
+                                         fnty->getAnnots());
+    newProcTy->markAsProc();
+
+    std::vector<TypeAST*> structTypes;
+    structTypes.push_back(newProcTy);
+    structTypes.push_back(getGenericClosureEnvTypeAST());
+    return StructTypeAST::get(structTypes);
   }
 
   llvm::Value* LLClosure::codegenClosure(
                           CodegenPass* pass,
                           llvm::Value* envPtrOrSlot) {
-    llvm::Value* proc = pass->lookupFunctionOrDie(procname);
+    LLProc* llproc = pass->procs[procname];
+    ASSERT(llproc);
 
-    llvm::FunctionType* fnty;
-    llvm::StructType* cloStructTy;
-
-    if (!tryBindClosureFunctionTypes(proc->getType(), fnty, cloStructTy)) {
-      ASSERT(false) << "proc " << procname
-                    << " with type " << str(proc->getType())
-                    << " not closed??";
-    }
+    StructTypeAST* sty = genericClosureStructType(llproc->getFnType());
 
     llvm::Value* clo = NULL; llvm::Value* rv = NULL;
     bool closureEscapes = true;
     if (closureEscapes) {
       // // { code*, env* }**
       bool init = false; // because we'll immediately initialize below.
-      llvm::Type* gcsty = genericClosureStructTy(fnty);
-      llvm::AllocaInst* clo_slot = pass->emitMalloc(
-                                          PrimitiveTypeAST::get("gcsty", gcsty),
+      llvm::AllocaInst* clo_slot = pass->emitMalloc(sty,
                                                     foster::bogusCtorId(-5),
                                                     init);
       clo = emitNonVolatileLoad(clo_slot, varname + ".closure"); rv = clo_slot;
     } else { // { code*, env* }*
-      clo = CreateEntryAlloca(cloStructTy, varname + ".closure"); rv = clo;
+      clo = CreateEntryAlloca(sty->getLLVMType(), varname + ".closure"); rv = clo;
     }
 
     // TODO register closure type
 
-    emitStoreWithCast(proc,
+    emitStoreWithCast(llproc->getFn(),
                       builder.CreateConstGEP2_32(clo, 0, 0, varname + ".clo_code"));
     Value* env_slot = builder.CreateConstGEP2_32(clo, 0, 1, varname + ".clo_env");
     if (env->vars.empty()) {

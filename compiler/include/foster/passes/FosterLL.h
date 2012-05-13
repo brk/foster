@@ -126,7 +126,8 @@ public:
   void codegenProc(CodegenPass* pass); // These two functions are common to all procs
   void codegenProto(CodegenPass* pass);
 
-  FnTypeAST* getFnType() { return type; }
+  FnTypeAST* getFnType()  const { ASSERT(type); return type; }
+  llvm::Function* getFn() const { ASSERT(F);    return F; }
 
   virtual llvm::GlobalValue::LinkageTypes getFunctionLinkage() const = 0;
   virtual std::vector<std::string>        getFunctionArgNames() const = 0;

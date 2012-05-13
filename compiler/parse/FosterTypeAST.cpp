@@ -103,28 +103,28 @@ RefTypeAST* RefTypeAST::get(TypeAST* baseType) {
 
 /////////////////////////////////////////////////////////////////////
 
-namespace foster {
-  // converts      t1 (t2, t3)      to { t1 (i8*, t2, t3)*, i8* }
-  StructTypeAST* genericClosureTypeFor(const FnTypeAST* fnty) {
-    TypeAST* envType = RefTypeAST::get(TypeAST::i(8));
+class StructTypeAST;
 
-    // We can mark closures with whatever calling convention we want,
-    // since closures are internal by definition.
-    std::vector<TypeAST*> fnParams;
-    fnParams.push_back(envType);
-    // Converts t1 (t2, t3)   to  t1 (i8*, t2, t3)*
-    for (int i = 0; i < fnty->getNumParams(); ++i) {
-      fnParams.push_back(fnty->getParamType(i));
-    }
-    FnTypeAST* newProcTy = new FnTypeAST(fnty->getReturnType(), fnParams,
-                                        fnty->getAnnots());
-    newProcTy->markAsProc();
+// converts      t1 (t2, t3)      to { t1 (i8*, t2, t3)*, i8* }
+StructTypeAST* FnTypeAST::getClosureStructType() const {
+  TypeAST* envType = RefTypeAST::get(TypeAST::i(8));
 
-    std::vector<TypeAST*> cloTypes;
-    cloTypes.push_back(newProcTy);
-    cloTypes.push_back(envType);
-    return StructTypeAST::get(cloTypes);
+  // We can mark closures with whatever calling convention we want,
+  // since closures are internal by definition.
+  std::vector<TypeAST*> fnParams;
+  fnParams.push_back(envType);
+  // Converts t1 (t2, t3)   to  t1 (i8*, t2, t3)*
+  for (int i = 0; i < this->getNumParams(); ++i) {
+    fnParams.push_back(this->getParamType(i));
   }
+  FnTypeAST* newProcTy = new FnTypeAST(this->getReturnType(), fnParams,
+                                       this->getAnnots());
+  newProcTy->markAsProc();
+
+  std::vector<TypeAST*> cloTypes;
+  cloTypes.push_back(newProcTy);
+  cloTypes.push_back(envType);
+  return StructTypeAST::get(cloTypes);
 }
 
 FnTypeAST::FnTypeAST(TypeAST* returnType,
@@ -146,7 +146,9 @@ FnTypeAST::FnTypeAST(TypeAST* returnType,
 llvm::Type* FnTypeAST::getLLVMType() const {
   if (!repr) {
     if (isMarkedAsClosure()) {
-      repr = llvm::PointerType::getUnqual(foster::genericClosureTypeFor(this)->getLLVMType());
+      EDiag() << "FnTypeAST::getClosureType for fn type" << str(this) << " ~~~ " << str(getLLVMFnType());
+      repr = llvm::PointerType::getUnqual(getClosureStructType()->getLLVMType());
+      EDiag() << "FnTypeAST::getClosureType : " << str(repr);
     } else {
       repr = llvm::PointerType::getUnqual(getLLVMFnType());
     }

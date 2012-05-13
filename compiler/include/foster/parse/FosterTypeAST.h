@@ -19,6 +19,7 @@
 using foster::SourceRange;
 
 class TypeAST;
+class StructTypeAST;
 
 // This is the (prefix) struct type for a foster coro.
 extern llvm::Type* foster_generic_coro_t;
@@ -161,6 +162,7 @@ public:
 
   virtual void show(PrettyPrintTypePass* pass);
   virtual void dump(DumpTypeToProtobufPass* pass);
+  StructTypeAST* getClosureStructType() const;
   virtual llvm::Type* getLLVMType() const;
 
   TypeAST*& getParamType(int i) { return argTypes[i]; }
