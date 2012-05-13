@@ -89,8 +89,9 @@ struct GCRootSafetyChecker : public FunctionPass {
     }
 
     // Note each load from a gc root
-    ValueSet                             gcroot_loads;
-    std::map<llvm::Value*, llvm::Value*> gcroot_load_uses; // loaded val -> load
+    ValueSet gcroot_loads;
+    // loaded val -> load
+    std::map<llvm::Value*, ValueSet> gcroot_load_uses;
 
     for (std::set<llvm::Value*>::iterator it = gcroots.begin(); it != gcroots.end(); ++it) {
       llvm::Value* gcroot = *it;
@@ -103,7 +104,7 @@ struct GCRootSafetyChecker : public FunctionPass {
           for (llvm::Value::use_iterator uit2 = use->use_begin();
                                          uit2 != use->use_end();
                                        ++uit2) {
-            gcroot_load_uses[*uit2] = use;
+            gcroot_load_uses[*uit2].insert(use);
           }
         }
       }
@@ -121,9 +122,11 @@ struct GCRootSafetyChecker : public FunctionPass {
       ValueValueMap& tainted_loads = bb_tainted_loads[bb];
       ValueSet untainted_loads;
       union_of_predecessors(bb, tainted_loads, bb_tainted_loads);
+      // Iterate through each instruction in each basic block.
       for (BasicBlock::iterator i = bb->begin(); i != bb->end(); ++i) {
         if (llvm::isa<CallInst>(i) || llvm::isa<InvokeInst>(i)) {
           if (callSiteMayGC(i)) {
+            // Taint every untainted load.
             for (ValueSet::iterator utit = untainted_loads.begin();
                                     utit != untainted_loads.end(); ++utit) {
               tainted_loads[*utit] = i;
@@ -131,11 +134,18 @@ struct GCRootSafetyChecker : public FunctionPass {
             untainted_loads.clear();
           }
         } else if (llvm::isa<LoadInst>(i) && gcroot_loads.count(i) == 1) {
+          // Loads from gcroots are untainted until we hit the next gc point.
           untainted_loads.insert(i);
-        } else if (llvm::Value* gcroot_load = gcroot_load_uses[i]) {
-          if (llvm::Value* cause_of_gc = tainted_loads[gcroot_load]) {
-            problems.push_back(StaleLoadInfo(F.getName(),
-                               gcroot_load, i, cause_of_gc));
+        } else {
+          // Other instruction -- maybe it's using a stale load?
+          ValueSet& load_uses = gcroot_load_uses[i];
+          for (ValueSet::iterator luit = load_uses.begin();
+                                  luit != load_uses.end(); ++luit) {
+            llvm::Value* gcroot_load = *luit;
+            if (llvm::Value* cause_of_gc = tainted_loads[gcroot_load]) {
+              problems.push_back(StaleLoadInfo(F.getName(),
+                                 gcroot_load, i, cause_of_gc));
+            }
           }
         }
       } // end basic block iteration
