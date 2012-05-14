@@ -21,6 +21,7 @@
 #define TRACE do { fprintf(gclog, "%s::%d\n", __FILE__, __LINE__); fflush(gclog); } while (0)
 #define ENABLE_GCLOG 0
 #define GC_BEFORE_EVERY_MEMALLOC_CELL 0
+#define TRACK_BYTES_ALLOCATED_ENTRIES 0
 #define TRACK_BYTES_KEPT_ENTRIES 0
 
 const int KB = 1024;
@@ -162,6 +163,7 @@ class copying_gc {
         bump += typeinfo->cell_size;
         allot->set_meta(typeinfo);
         //fprintf(gclog, "alloc'd %d, bump = %p, low bits: %x\n", int(typeinfo->cell_size), bump, intptr_t(bump) & 0xF);
+        if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(typeinfo->cell_size); }
         return allot->body_addr();
       }
 
@@ -175,6 +177,7 @@ class copying_gc {
         //fprintf(gclog, "alloc'a %d, bump = %p, low bits: %x\n", int(total_bytes), bump, intptr_t(bump) & 0xF);
         allot->set_meta(arr_elt_typeinfo);
         allot->set_num_elts(num_elts);
+        if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(total_bytes); }
         return allot->body_addr();
       }
 
@@ -296,7 +299,20 @@ class copying_gc {
       }
   };
 
-  stat_tracker<int64_t> bytes_kept_per_alloc;
+  void record_bytes_allocated(int64_t num_bytes) {
+    int64_t idx = num_bytes / FOSTER_GC_DEFAULT_ALIGNMENT;
+    if (idx >= bytes_req_per_alloc.size() - 1) {
+      bytes_req_per_alloc.back()++;
+    } else {
+      bytes_req_per_alloc[idx]++;
+    }
+  }
+
+  // A value of v at index k in [index 0..TRACK_BYTES_ALLOCATED_HIST)
+  // means v allocations of size (k * FOSTER_GC_DEFAULT_ALIGNMENT).
+  // All larger allocations go in the last array entry.
+  std::vector<int64_t>  bytes_req_per_alloc;
+  stat_tracker<int64_t> bytes_kept_per_gc;
   int64_t num_allocations;
   int64_t num_collections;
   bool saw_bad_pointer;
@@ -333,7 +349,8 @@ public:
     num_allocations = 0;
     num_collections = 0;
     saw_bad_pointer = false;
-    bytes_kept_per_alloc.resize(TRACK_BYTES_KEPT_ENTRIES);
+    bytes_kept_per_gc.resize(TRACK_BYTES_KEPT_ENTRIES);
+    bytes_req_per_alloc.resize(TRACK_BYTES_ALLOCATED_ENTRIES + 1);
   }
 
   ~copying_gc() {
@@ -344,12 +361,19 @@ public:
       fprintf(gclog, "avg. alloc size: %d\n", int(approx_bytes / double(num_allocations)));
 
       if (TRACK_BYTES_KEPT_ENTRIES) {
-      int64_t mn = bytes_kept_per_alloc.compute_min(),
-              mx = bytes_kept_per_alloc.compute_max(),
-              aa = bytes_kept_per_alloc.compute_avg_arith();
+      int64_t mn = bytes_kept_per_gc.compute_min(),
+              mx = bytes_kept_per_gc.compute_max(),
+              aa = bytes_kept_per_gc.compute_avg_arith();
       fprintf(gclog, "min bytes kept: %8" PRId64 " (%.2g%%)\n", mn, double(mn * 100.0)/double(SEMISPACE_SIZE));
       fprintf(gclog, "max bytes kept: %8" PRId64 " (%.2g%%)\n", mx, double(mx * 100.0)/double(SEMISPACE_SIZE));
       fprintf(gclog, "avg bytes kept: %8" PRId64 " (%.2g%%)\n", aa, double(aa * 100.0)/double(SEMISPACE_SIZE));
+      }
+      if (TRACK_BYTES_ALLOCATED_ENTRIES) {
+        for (int i = 0; i < bytes_req_per_alloc.size() - 1; ++i) {
+          int sz = i * FOSTER_GC_DEFAULT_ALIGNMENT;
+          fprintf(gclog, "allocs of size %4d: %12" PRId64 "\n", sz, bytes_req_per_alloc[i]);
+        }
+        fprintf(gclog,  "allocs of size more: %12" PRId64 "\n", bytes_req_per_alloc.back());
       }
   }
 
@@ -475,7 +499,7 @@ void copying_gc::gc() {
   }
 
   if (TRACK_BYTES_KEPT_ENTRIES) {
-    bytes_kept_per_alloc.record_sample(next->used_size());
+    bytes_kept_per_gc.record_sample(next->used_size());
   }
 
   flip();
