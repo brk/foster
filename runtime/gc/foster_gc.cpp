@@ -7,6 +7,7 @@
 #include <cstring>
 #include <cstddef> // for offsetof
 #include <numeric>
+#include <algorithm>
 
 #include "libfoster.h"
 #include "foster_gc.h"
