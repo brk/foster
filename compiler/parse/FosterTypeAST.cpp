@@ -22,8 +22,11 @@ using foster::SourceRange;
 llvm::Type* foster_generic_coro_t = NULL;
 TypeAST* foster_generic_coro_ast  = NULL;
 
-//llvm::Type* getGenericClosureEnvType() { return getUnitType();
 TypeAST* getGenericClosureEnvType() { return RefTypeAST::get(TypeAST::i(8)); }
+RefTypeAST* getUnitType() { return RefTypeAST::get(TypeAST::i(8));
+  //std::vector<TypeAST*> argTypes;
+  //return RefTypeAST::get(StructTypeAST::get(argTypes));
+}
 
 llvm::Type* llvmIntType(int n) {
   return llvm::IntegerType::get(llvm::getGlobalContext(), n);
@@ -208,7 +211,7 @@ llvm::CallingConv::ID FnTypeAST::getCallingConventionID() const {
 
 llvm::Type* TupleTypeAST::getLLVMType() const {
   if (getUnderlyingStruct()->getNumElements() == 0) {
-    return llvm::PointerType::getUnqual(TypeAST::i(8)->getLLVMType());
+    return getGenericClosureEnvType()->getLLVMType();
   }
   return llvm::PointerType::getUnqual(getUnderlyingStruct()->getLLVMType());
 }

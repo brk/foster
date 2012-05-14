@@ -19,6 +19,7 @@
 using foster::SourceRange;
 
 class TypeAST;
+class RefTypeAST;
 class StructTypeAST;
 
 // This is the (prefix) struct type for a foster coro.
@@ -31,6 +32,7 @@ class DumpTypeToProtobufPass;
 std::string str(const TypeAST* type);
 
 TypeAST* getGenericClosureEnvType();
+RefTypeAST* getUnitType();
 
 class TypeAST {
 protected:

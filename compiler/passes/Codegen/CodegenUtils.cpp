@@ -45,13 +45,9 @@ void emitFosterAssert(llvm::Module* mod, llvm::Value* cond, const char* cstr) {
   markAsNonAllocating(call);
 }
 
-llvm::PointerType* getUnitType() {
-  return builder.getInt8PtrTy();
-  //return PointerType::getUnqual(StructType::get(builder.getContext()));
-}
-
 llvm::Value* getUnitValue() {
-  return llvm::ConstantPointerNull::get(getUnitType());
+  return llvm::ConstantPointerNull::get(
+    llvm::dyn_cast<llvm::PointerType>(getUnitType()->getLLVMType()));
 }
 
 void checkPointerToIndex(Value* ptrToCompositeValue,
