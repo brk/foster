@@ -23,9 +23,9 @@ llvm::Type* foster_generic_coro_t = NULL;
 TypeAST* foster_generic_coro_ast  = NULL;
 
 TypeAST* getGenericClosureEnvType() { return RefTypeAST::get(TypeAST::i(8)); }
-RefTypeAST* getUnitType() { return RefTypeAST::get(TypeAST::i(8));
-  //std::vector<TypeAST*> argTypes;
-  //return RefTypeAST::get(StructTypeAST::get(argTypes));
+RefTypeAST* getUnitType() {
+  std::vector<TypeAST*> argTypes;
+  return RefTypeAST::get(StructTypeAST::get(argTypes));
 }
 
 llvm::Type* llvmIntType(int n) {
@@ -210,9 +210,6 @@ llvm::CallingConv::ID FnTypeAST::getCallingConventionID() const {
 /////////////////////////////////////////////////////////////////////
 
 llvm::Type* TupleTypeAST::getLLVMType() const {
-  if (getUnderlyingStruct()->getNumElements() == 0) {
-    return getUnitType()->getLLVMType();
-  }
   return llvm::PointerType::getUnqual(getUnderlyingStruct()->getLLVMType());
 }
 

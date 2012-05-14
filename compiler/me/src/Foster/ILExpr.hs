@@ -266,7 +266,7 @@ closureOfKnFn infoMap (self_id, fn) = do
              nonGlobalVars
 
     fakeCloVar id = TypedId fakeCloEnvType id
-                      where fakeCloEnvType = TupleTypeIL []
+                      where fakeCloEnvType = TyConAppIL "Foster$GenericClosureEnvPtr" []
 
     -- This is where the magic happens: given a function and its free variables,
     -- we create a procedure which also takes an extra (strongly-typed) env ptr

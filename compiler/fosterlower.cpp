@@ -281,6 +281,8 @@ int main(int argc, char** argv) {
   //foster::putModuleMembersInScope(imath_bc, module);
 
   //================================================================
+  foster::ParsingContext::insertType("Foster$GenericClosureEnvPtr",
+                                     getGenericClosureEnvType());
   //================================================================
 
   {
