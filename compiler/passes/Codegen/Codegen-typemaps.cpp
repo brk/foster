@@ -350,15 +350,16 @@ bool isValidClosureType(const llvm::Type* ty) {
 // Checks that ty == { ___ (i8*, ...)*, i8* }
 bool isGenericClosureType(const llvm::Type* ty) {
   using foster::builder;
+  llvm::Type* env = getGenericClosureEnvType()->getLLVMType();
   if (const llvm::StructType* sty= llvm::dyn_cast<const llvm::StructType>(ty)) {
     if (!isValidClosureType(sty)) return false;
-    if (sty->getContainedType(1) != builder.getInt8PtrTy()) return false;
+    if (sty->getContainedType(1) != env) return false;
     if (!sty->getContainedType(0)->isPointerTy()) return false;
 
     const llvm::Type* fnty = sty->getContainedType(0)->getContainedType(0);
     if (!fnty->isFunctionTy()) return false;
     if (!fnty->getNumContainedTypes() >= 2) return false;
-    if (fnty->getContainedType(1) != builder.getInt8PtrTy()) return false;
+    if (fnty->getContainedType(1) != env) return false;
     return true;
   }
   return false;

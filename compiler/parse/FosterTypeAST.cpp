@@ -211,7 +211,7 @@ llvm::CallingConv::ID FnTypeAST::getCallingConventionID() const {
 
 llvm::Type* TupleTypeAST::getLLVMType() const {
   if (getUnderlyingStruct()->getNumElements() == 0) {
-    return getGenericClosureEnvType()->getLLVMType();
+    return getUnitType()->getLLVMType();
   }
   return llvm::PointerType::getUnqual(getUnderlyingStruct()->getLLVMType());
 }
