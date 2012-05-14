@@ -100,14 +100,6 @@ int cleanup() {
   return gc::cleanup();
 }
 
-#ifndef PRId64
-#define PRId64 "lld"
-#endif
-
-#ifndef PRIX64
-#define PRIX64 "llX"
-#endif
-
 template <int N, typename Int>
 int fprint_b2(FILE* f, Int x) {
   char* buf = new char[N+1];

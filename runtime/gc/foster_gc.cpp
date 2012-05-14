@@ -20,6 +20,9 @@
 #define ENABLE_GCLOG 0
 #define GC_BEFORE_EVERY_MEMALLOC_CELL 0
 
+const int KB = 1024;
+const int SEMISPACE_SIZE = 1024 * KB;
+
 /////////////////////////////////////////////////////////////////
 
 void register_stackmaps();
@@ -95,7 +98,8 @@ class copying_gc {
         // resulting from allocation will be properly aligned.
         bump = start;
         realign_bump();
-        fprintf(gclog, "after reset, bump = %p, low bits: %x\n", bump, intptr_t(bump) & 0xf);
+        fprintf(gclog, "after reset, bump = %p, low bits: %x\n", bump,
+                                                    int(intptr_t(bump) & 0xf));
       }
 
       bool contains(void* ptr) {
@@ -262,8 +266,8 @@ class copying_gc {
   semispace* curr;
   semispace* next;
 
-  int num_allocations;
-  int num_collections;
+  int64_t num_allocations;
+  int64_t num_collections;
   bool saw_bad_pointer;
 
   void gc();
@@ -298,8 +302,11 @@ public:
   }
 
   ~copying_gc() {
-      fprintf(gclog, "num allocations: %d, num collections: %d\n",
-                      num_allocations, num_collections);
+      double approx_bytes = double(num_collections * SEMISPACE_SIZE);
+      fprintf(gclog, "num collections: %" PRId64 "\n", num_collections);
+      fprintf(gclog, "num allocations: %.3g\n", double(num_allocations));
+      fprintf(gclog, "alloc # bytes >: %.3g\n", approx_bytes);
+      fprintf(gclog, "avg. alloc size: %d\n", int(approx_bytes / double(num_allocations)));
   }
 
   bool had_problems() { return saw_bad_pointer; }
@@ -444,8 +451,7 @@ void initialize() {
   gclog = fopen("gclog.txt", "w");
   fprintf(gclog, "----------- gclog ------------\n");
 
-  const int KB = 1024;
-  allocator = new copying_gc(1024 * KB);
+  allocator = new copying_gc(SEMISPACE_SIZE);
 
   register_stackmaps(clusterForAddress);
 

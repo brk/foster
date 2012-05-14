@@ -32,4 +32,12 @@ void foster__assert(bool, const char*);
 
 }
 
+#ifndef PRId64
+#define PRId64 "lld"
+#endif
+
+#ifndef PRIX64
+#define PRIX64 "llX"
+#endif
+
 #endif
