@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cstddef> // for offsetof
+#include <numeric>
 
 #include "libfoster.h"
 #include "foster_gc.h"
@@ -19,6 +20,7 @@
 #define TRACE do { fprintf(gclog, "%s::%d\n", __FILE__, __LINE__); fflush(gclog); } while (0)
 #define ENABLE_GCLOG 0
 #define GC_BEFORE_EVERY_MEMALLOC_CELL 0
+#define TRACK_BYTES_KEPT_ENTRIES 0
 
 const int KB = 1024;
 const int SEMISPACE_SIZE = 1024 * KB;
@@ -39,6 +41,35 @@ namespace runtime {
 namespace gc {
 
 FILE* gclog = NULL;
+
+template<typename T>
+struct stat_tracker {
+  int  idx;
+  int  idx_max;
+  std::vector<T> samples;
+  stat_tracker() : idx(0), idx_max(0) {}
+
+  void resize(size_t sz) { samples.resize(sz); }
+
+  void record_sample(T v) {
+    samples[idx] = v;
+    if (idx > idx_max) { idx_max = idx; }
+    idx = (idx + 1) % int(samples.size());
+  }
+
+  T compute_min() const {
+    return *std::min_element(samples.begin(), samples.end());
+  }
+
+  T compute_max() const {
+    return *std::max_element(samples.begin(), samples.end());
+  }
+
+  T compute_avg_arith() const {
+    return std::accumulate(samples.begin(), samples.end(), T(0)) /
+                                                              T(samples.size());
+  }
+};
 
 ////////////////////////////////////////////////////////////////////
 
@@ -112,7 +143,8 @@ class copying_gc {
         memset(start, 0xFE, end - start);
       }
 
-      int64_t free_size() {
+      int64_t used_size() const { return bump - start; }
+      int64_t free_size() const {
         //fprintf(gclog, "this=%p, bump = %p, low bits: %x\n", this, bump, intptr_t(bump) & 0xf);
         //fflush(gclog);
         return end - bump;
@@ -263,12 +295,13 @@ class copying_gc {
       }
   };
 
-  semispace* curr;
-  semispace* next;
-
+  stat_tracker<int64_t> bytes_kept_per_alloc;
   int64_t num_allocations;
   int64_t num_collections;
   bool saw_bad_pointer;
+
+  semispace* curr;
+  semispace* next;
 
   void gc();
 
@@ -299,6 +332,7 @@ public:
     num_allocations = 0;
     num_collections = 0;
     saw_bad_pointer = false;
+    bytes_kept_per_alloc.resize(TRACK_BYTES_KEPT_ENTRIES);
   }
 
   ~copying_gc() {
@@ -307,6 +341,15 @@ public:
       fprintf(gclog, "num allocations: %.3g\n", double(num_allocations));
       fprintf(gclog, "alloc # bytes >: %.3g\n", approx_bytes);
       fprintf(gclog, "avg. alloc size: %d\n", int(approx_bytes / double(num_allocations)));
+
+      if (TRACK_BYTES_KEPT_ENTRIES) {
+      int64_t mn = bytes_kept_per_alloc.compute_min(),
+              mx = bytes_kept_per_alloc.compute_max(),
+              aa = bytes_kept_per_alloc.compute_avg_arith();
+      fprintf(gclog, "min bytes kept: %8" PRId64 " (%.2g%%)\n", mn, double(mn * 100.0)/double(SEMISPACE_SIZE));
+      fprintf(gclog, "max bytes kept: %8" PRId64 " (%.2g%%)\n", mx, double(mx * 100.0)/double(SEMISPACE_SIZE));
+      fprintf(gclog, "avg bytes kept: %8" PRId64 " (%.2g%%)\n", aa, double(aa * 100.0)/double(SEMISPACE_SIZE));
+      }
   }
 
   bool had_problems() { return saw_bad_pointer; }
@@ -428,6 +471,10 @@ void copying_gc::gc() {
     if (ENABLE_GCLOG) {
       fprintf(gclog, "==========visited current ccoro: %p\n", current_coro); fflush(gclog);
     }
+  }
+
+  if (TRACK_BYTES_KEPT_ENTRIES) {
+    bytes_kept_per_alloc.record_sample(next->used_size());
   }
 
   flip();
