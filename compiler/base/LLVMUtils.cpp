@@ -267,15 +267,8 @@ bool isFunctionPointerTy(llvm::Type* p) {
       && p->getContainedType(0)->isFunctionTy();
 }
 
-bool isUnit(llvm::Type* ty) {
-  return ty == llvm::PointerType::getUnqual(
-            llvm::Type::getInt8Ty(ty->getContext()));
-}
-
 // Syntactically conspicuous
-bool typesEq(llvm::Type* t1, llvm::Type* t2) {
-  return (t1 == t2) || (isUnit(t1) && isUnit(t2));
-}
+bool typesEq(llvm::Type* t1, llvm::Type* t2) { return (t1 == t2); }
 
 bool isPointerToType(llvm::Type* p, llvm::Type* t) {
   // Use == instead of typesEq to avoid bottomless mutual recursion.

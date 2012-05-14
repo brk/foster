@@ -170,7 +170,7 @@ llvm::FunctionType* FnTypeAST::getLLVMFnType() const {
   // TODO conflict here between polymorphism (which needs
   // a uniform ABI) and C-compatibility (which says that
   // procs returning unit should be marked void?
-  if (isUnit(retTy)) {
+  if (typesEq(retTy, getUnitType()->getLLVMType())) {
     retTy = llvm::Type::getVoidTy(retTy->getContext());
   }
 

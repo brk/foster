@@ -68,7 +68,6 @@ bool isFunctionPointerTy(llvm::Type* p);
 // returns true if p == t*
 bool isPointerToType(llvm::Type* p, llvm::Type* t);
 
-bool isUnit(llvm::Type* ty);
 bool typesEq(llvm::Type* t1, llvm::Type* t2);
 
 llvm::StructType* getStructType(llvm::Type*, llvm::Type*);
