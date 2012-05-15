@@ -97,6 +97,10 @@ static cl::opt<bool>
 optOptimizeZero("O0",
   cl::desc("[foster] Disable optimization passes after linking with standard library"));
 
+static cl::opt<bool>
+optNoSpecializeMemallocs("no-specialize-memallocs",
+  cl::desc("[foster] Disable specialization of memallocs of common sizes."));
+
 static cl::opt<string>
 optCFI("fosterc-cfi",
   cl::desc("[foster] CFI directives: {yes,no}, default to platform-specific behavior"));
@@ -194,7 +198,19 @@ void optimizeModuleAndRunPasses(Module* mod) {
     llvm::outs() << "Warning: no target data for module!" << "\n";
   }
 
-  passes.add(llvm::createVerifierPass());
+  { PassManager passes_first;
+    passes_first.add(llvm::createVerifierPass());
+    passes_first.run(*mod);
+  }
+
+  if (!optNoSpecializeMemallocs) {
+    ScopedTimer timer("llvm.opt.memalloc");
+    FunctionPassManager fpasses_first(mod);
+    // Run this one before inlining, otherwise we won't see the mallocs!
+    fpasses_first.add(new TargetData(*td));
+    fpasses_first.add(foster::createMemallocSpecializerPass());
+    foster::runFunctionPassesOverModule(fpasses_first, mod);
+  }
 
   if (!optOptimizeZero) {
     AddOptimizationPasses(passes, fpasses, 2, false);

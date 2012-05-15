@@ -159,7 +159,8 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
     # Running opt on a Module produces a Module
     # Running llc on a Module produces an assembly file
     (s4, e4) = crun(['fosteroptc', finalpath + '.preopt.bc',
-                               optlevel(options), '-fosterc-time', '-o', finalpath + ext])
+                               optlevel(options), '-fosterc-time', '-o', finalpath + ext]
+                    + options.optcargs)
 
     return (s4, to_asm, e1, e2, e3, e4)
 
@@ -325,7 +326,9 @@ def get_test_parser(usage):
   parser.add_option("--me-arg", action="append", dest="meargs", default=[],
                     help="Pass through arg to middle-end.")
   parser.add_option("--be-arg", action="append", dest="beargs", default=[],
-                    help="Pass through arg to back-end.")
+                    help="Pass through arg to back-end (lowering).")
+  parser.add_option("--optc-arg", action="append", dest="optcargs", default=[],
+                    help="Pass through arg to back-end (optc).")
   parser.add_option("--prog-arg", action="append", dest="progargs", default=[],
                     help="Pass through command line arguments to program")
   parser.add_option("-I", dest="importpath", action="store", default=None,
@@ -336,10 +339,12 @@ if __name__ == "__main__":
   parser = get_test_parser("""usage: %prog [options] <test_path>
 
    Notes:
-     * If using ./gotest.sh, --me-arg=--verbose       will print (Ann)ASTs
-                             --me-arg=--dump-ir=kn    will print k-normalized IR
-                             --me-arg=--dump-ir=cfg   will print closure-conv IR
-                             --me-arg=--dump-ir=mono  will print monomo. IR
+     * If using ./gotest.sh...
+                --me-arg=--verbose       will print (Ann)ASTs
+                --me-arg=--dump-ir=kn    will print k-normalized IR
+                --me-arg=--dump-ir=cfg   will print closure-conv IR
+                --me-arg=--dump-ir=mono  will print monomo. IR
+                --optc-arg=--help        will display optimization flags
 """)
   (options, args) = parser.parse_args()
 

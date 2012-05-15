@@ -156,6 +156,18 @@ class copying_gc {
         return free_size() > num_bytes;
       }
 
+      template <int N>
+      void* allocate_cell_prechecked_N(typemap* typeinfo) {
+        heap_cell* allot = (heap_cell*) bump;
+        //fprintf(gclog, "this=%p, memsetting %d bytes at %p (ti=%p)\n", this, int(typeinfo->cell_size), bump, typeinfo); fflush(gclog);
+        memset(bump, 0xAA, N);
+        bump += N;
+        allot->set_meta(typeinfo);
+        //fprintf(gclog, "alloc'd %d, bump = %p, low bits: %x\n", int(typeinfo->cell_size), bump, intptr_t(bump) & 0xF);
+        if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(typeinfo->cell_size); }
+        return allot->body_addr();
+      }
+
       void* allocate_cell_prechecked(typemap* typeinfo) {
         heap_cell* allot = (heap_cell*) bump;
         //fprintf(gclog, "this=%p, memsetting %d bytes at %p (ti=%p)\n", this, int(typeinfo->cell_size), bump, typeinfo); fflush(gclog);
@@ -417,16 +429,31 @@ public:
     if (curr->can_allocate_bytes(cell_size)) {
       return curr->allocate_cell_prechecked(typeinfo);
     } else {
-      gc();
-      if (curr->can_allocate_bytes(cell_size)) {
-        fprintf(gclog, "gc collection freed space for cell, now have %lld\n", curr->free_size());
-        fflush(gclog);
-        return curr->allocate_cell_prechecked(typeinfo);
-      } else {
-        fprintf(gclog, "working set exceeded heap size! aborting...\n"); fflush(gclog);
-        exit(255); // TODO be more careful if we're allocating from a coro...
-        return NULL;
-      }
+      return allocate_cell_slowpath(typeinfo);
+    }
+  }
+
+  template <int N>
+  void* allocate_cell_N(typemap* typeinfo) {
+    ++num_allocations;
+    if (curr->can_allocate_bytes(N)) {
+      return curr->allocate_cell_prechecked_N<N>(typeinfo);
+    } else {
+      return allocate_cell_slowpath(typeinfo);
+    }
+  }
+
+  void* allocate_cell_slowpath(typemap* typeinfo) {
+    int64_t cell_size = typeinfo->cell_size; // includes space for cell header.
+    gc();
+    if (curr->can_allocate_bytes(cell_size)) {
+      fprintf(gclog, "gc collection freed space for cell, now have %lld\n", curr->free_size());
+      fflush(gclog);
+      return curr->allocate_cell_prechecked(typeinfo);
+    } else {
+      fprintf(gclog, "working set exceeded heap size! aborting...\n"); fflush(gclog);
+      exit(255); // TODO be more careful if we're allocating from a coro...
+      return NULL;
     }
   }
 
@@ -560,6 +587,13 @@ extern "C" void* memalloc_cell(typemap* typeinfo) {
     allocator->force_gc_for_debugging_purposes();
   }
   return allocator->allocate_cell(typeinfo);
+}
+
+extern "C" void* memalloc_cell_16(typemap* typeinfo) {
+  if (GC_BEFORE_EVERY_MEMALLOC_CELL) {
+    allocator->force_gc_for_debugging_purposes();
+  }
+  return allocator->allocate_cell_N<16>(typeinfo);
 }
 
 extern "C" void* memalloc_array(typemap* typeinfo, int64_t n, int8_t init) {

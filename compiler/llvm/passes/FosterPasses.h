@@ -19,6 +19,7 @@ void runWarningPasses(llvm::Module& mod);
 llvm::Pass* createImathImproverPass();
 llvm::Pass* createGCMallocFinderPass();
 llvm::Pass* createGCRootSafetyCheckerPass();
+llvm::Pass* createMemallocSpecializerPass();
 llvm::Pass* createEscapingAllocaFinderPass();
 
 }
