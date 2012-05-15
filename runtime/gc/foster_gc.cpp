@@ -24,6 +24,7 @@
 #define TRACK_BYTES_KEPT_ENTRIES      0
 #define TRACK_BYTES_ALLOCATED_ENTRIES 0
 #define GC_BEFORE_EVERY_MEMALLOC_CELL 0
+#define DEBUG_INITIALIZE_ALLOCATIONS  0
 
 const int KB = 1024;
 const int SEMISPACE_SIZE = 1024 * KB;
@@ -161,22 +162,22 @@ class copying_gc {
       void* allocate_cell_prechecked_N(typemap* typeinfo) {
         heap_cell* allot = (heap_cell*) bump;
         //fprintf(gclog, "this=%p, memsetting %d bytes at %p (ti=%p)\n", this, int(typeinfo->cell_size), bump, typeinfo); fflush(gclog);
-        memset(bump, 0xAA, N);
+        if (DEBUG_INITIALIZE_ALLOCATIONS) { memset(bump, 0xAA, N); }
+        if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(N); }
         bump += N;
         allot->set_meta(typeinfo);
         //fprintf(gclog, "alloc'd %d, bump = %p, low bits: %x\n", int(typeinfo->cell_size), bump, intptr_t(bump) & 0xF);
-        if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(typeinfo->cell_size); }
         return allot->body_addr();
       }
 
       void* allocate_cell_prechecked(typemap* typeinfo) {
         heap_cell* allot = (heap_cell*) bump;
         //fprintf(gclog, "this=%p, memsetting %d bytes at %p (ti=%p)\n", this, int(typeinfo->cell_size), bump, typeinfo); fflush(gclog);
-        memset(bump, 0xAA, typeinfo->cell_size);
+        if (DEBUG_INITIALIZE_ALLOCATIONS) { memset(bump, 0xAA, typeinfo->cell_size); }
+        if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(typeinfo->cell_size); }
         bump += typeinfo->cell_size;
         allot->set_meta(typeinfo);
         //fprintf(gclog, "alloc'd %d, bump = %p, low bits: %x\n", int(typeinfo->cell_size), bump, intptr_t(bump) & 0xF);
-        if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(typeinfo->cell_size); }
         return allot->body_addr();
       }
 
