@@ -20,9 +20,10 @@
 
 #define TRACE do { fprintf(gclog, "%s::%d\n", __FILE__, __LINE__); fflush(gclog); } while (0)
 #define ENABLE_GCLOG 0
-#define GC_BEFORE_EVERY_MEMALLOC_CELL 0
+#define TRACK_NUM_ALLOCATIONS         0
+#define TRACK_BYTES_KEPT_ENTRIES      0
 #define TRACK_BYTES_ALLOCATED_ENTRIES 0
-#define TRACK_BYTES_KEPT_ENTRIES 0
+#define GC_BEFORE_EVERY_MEMALLOC_CELL 0
 
 const int KB = 1024;
 const int SEMISPACE_SIZE = 1024 * KB;
@@ -368,9 +369,11 @@ public:
   ~copying_gc() {
       double approx_bytes = double(num_collections * SEMISPACE_SIZE);
       fprintf(gclog, "num collections: %" PRId64 "\n", num_collections);
+      if (TRACK_NUM_ALLOCATIONS) {
       fprintf(gclog, "num allocations: %.3g\n", double(num_allocations));
-      fprintf(gclog, "alloc # bytes >: %.3g\n", approx_bytes);
       fprintf(gclog, "avg. alloc size: %d\n", int(approx_bytes / double(num_allocations)));
+      }
+      fprintf(gclog, "alloc # bytes >: %.3g\n", approx_bytes);
 
       if (TRACK_BYTES_KEPT_ENTRIES) {
       int64_t mn = bytes_kept_per_gc.compute_min(),
@@ -423,7 +426,7 @@ public:
   }
 
   void* allocate_cell(typemap* typeinfo) {
-    ++num_allocations;
+    if (TRACK_NUM_ALLOCATIONS) { ++num_allocations; }
     int64_t cell_size = typeinfo->cell_size; // includes space for cell header.
 
     if (curr->can_allocate_bytes(cell_size)) {
@@ -435,7 +438,7 @@ public:
 
   template <int N>
   void* allocate_cell_N(typemap* typeinfo) {
-    ++num_allocations;
+    if (TRACK_NUM_ALLOCATIONS) { ++num_allocations; }
     if (curr->can_allocate_bytes(N)) {
       return curr->allocate_cell_prechecked_N<N>(typeinfo);
     } else {
@@ -463,7 +466,7 @@ public:
   }
 
   void* allocate_array(typemap* elt_typeinfo, int64_t n, bool init) {
-    ++num_allocations;
+    if (TRACK_NUM_ALLOCATIONS) { ++num_allocations; }
     int64_t slot_size = elt_typeinfo->cell_size; // note the name change!
     int64_t req_bytes = array_size_for(n, slot_size);
 
