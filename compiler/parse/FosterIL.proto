@@ -143,6 +143,7 @@ message PbAllocInfo {
   required MemRegion mem_region = 1;
   required Type            type = 2;
   optional TermVar   array_size = 3;
+  required string    alloc_site = 4;
 }
 
 message Proc {

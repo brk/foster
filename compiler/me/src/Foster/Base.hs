@@ -321,9 +321,10 @@ data CoroPrim = CoroCreate | CoroInvoke | CoroYield
 data AllocMemRegion = MemRegionStack
                     | MemRegionGlobalHeap deriving Show
 
-data AllocInfo t = AllocInfo { allocType   :: t
-                             , allocRegion :: AllocMemRegion
+data AllocInfo t = AllocInfo { allocType      :: t
+                             , allocRegion    :: AllocMemRegion
                              , allocArraySize :: Maybe (TypedId t)
+                             , allocSite      :: String
                              }
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||

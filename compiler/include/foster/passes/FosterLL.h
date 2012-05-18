@@ -358,11 +358,14 @@ struct LLAllocate : public LLExpr {
       MEM_REGION_STACK
     , MEM_REGION_GLOBAL_HEAP
   } region;
+  std::string srclines;
+
   bool isStackAllocated() const { return region == MEM_REGION_STACK; }
 
-  explicit LLAllocate(TypeAST* t, int8_t c, LLVar* arrSize, MemRegion m)
-     : LLExpr("LLAllocate"), arraySize(arrSize), ctorId(c),
-         region(m) { this->type = t; }
+  explicit LLAllocate(TypeAST* t, int8_t c, LLVar* arrSize, MemRegion m,
+                      std::string allocsite)
+     : LLExpr("LLAllocate"), arraySize(arrSize), ctorId(c), region(m),
+                             srclines(allocsite) { this->type = t; }
   llvm::Value* codegenCell(CodegenPass* pass, bool init);
   virtual llvm::Value* codegen(CodegenPass* pass);
 };

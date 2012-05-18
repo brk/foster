@@ -922,7 +922,7 @@ llvm::Value* LLAllocate::codegenCell(CodegenPass* pass, bool init) {
     return allocateArray(pass, this->type, this->region,
                          pass->emit(this->arraySize, NULL), init);
   } else if (StructTypeAST* sty = dynamic_cast<StructTypeAST*>(this->type)) {
-    return allocateCell(pass, sty, this->region, this->ctorId, "llallocate", init);
+    return allocateCell(pass, sty, this->region, this->ctorId, this->srclines, init);
   } else {
     ASSERT(false) << "LLAllocate can only allocate arrays or structs...";
     return NULL;

@@ -152,10 +152,11 @@ dumpMemRegion amr = case amr of
     MemRegionGlobalHeap -> PbMemRegion.MEM_REGION_GLOBAL_HEAP
 
 dumpAllocate :: AllocInfo MonoType -> PbAllocInfo
-dumpAllocate (AllocInfo typ region maybe_array_size) =
+dumpAllocate (AllocInfo typ region maybe_array_size allocsite) =
     P'.defaultValue { PbAllocInfo.mem_region = dumpMemRegion region
                     , PbAllocInfo.type'      = dumpType      typ
                     , PbAllocInfo.array_size = fmap dumpVar maybe_array_size
+                    , PbAllocInfo.alloc_site = u8fromString allocsite
                     }
 
 -- ||||||||||||||||||||||||||| CFGs |||||||||||||||||||||||||||||{{{
@@ -237,7 +238,8 @@ dumpExpr x@(MoTuple vs) =
                     , PbLetable.tag   = IL_TUPLE
                     , PbLetable.type' = Just $ dumpType (typeMo x)
                     , PbLetable.alloc_info = Just $ dumpAllocate
-                         (AllocInfo (tupStruct $ typeMo x) MemRegionGlobalHeap Nothing) }
+                         (AllocInfo (tupStruct $ typeMo x)
+                                    MemRegionGlobalHeap Nothing "...tuple...") }
 
 dumpExpr   (MoOccurrence v occ) =
     P'.defaultValue { PbLetable.tag   = IL_OCCURRENCE
@@ -254,14 +256,15 @@ dumpExpr x@(MoAlloc a rgn) =
                     , PbLetable.tag   = IL_ALLOC
                     , PbLetable.type' = Just $ dumpType (typeMo x)
                     , PbLetable.alloc_info = Just $ dumpAllocate
-                         (AllocInfo (typeMo x) rgn Nothing) }
+                         (AllocInfo (typeMo x) rgn Nothing "...alloc...") }
 
 dumpExpr  (MoAllocArray elt_ty size) =
     P'.defaultValue { PbLetable.parts = fromList []
                     , PbLetable.tag   = IL_ALLOCATE
                     , PbLetable.type' = Just $ dumpType elt_ty
                     , PbLetable.alloc_info = Just $ dumpAllocate
-                       (AllocInfo elt_ty MemRegionGlobalHeap (Just size)) }
+                       (AllocInfo elt_ty MemRegionGlobalHeap (Just size)
+                                                           "...array...") }
 
 dumpExpr x@(MoDeref a) =
     P'.defaultValue { PbLetable.parts = fromList [dumpVar a]
