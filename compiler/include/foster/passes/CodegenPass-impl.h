@@ -126,6 +126,7 @@ struct CodegenPass {
   std::map<std::string,     LLBlock*>     fosterBlocks;
   WorklistLIFO<std::string, LLBlock*>   worklistBlocks;
   std::map<LLOccurrence*, llvm::AllocaInst*, ltLLOcc>  occSlots;
+  std::map<std::string, llvm::Value*> staticStrings;
 
   explicit CodegenPass(llvm::Module* mod, bool useGC, bool nsw, bool nuw,
                        bool trackAllocSites);
@@ -155,13 +156,16 @@ struct CodegenPass {
   Value* autoload(Value* v, const char* suffix = ".autoload");
 
   // Returns ty**, the stack slot containing a ty*.
-  llvm::AllocaInst* emitMalloc(TypeAST* typ, int8_t ctorId, bool init);
+  llvm::AllocaInst* emitMalloc(TypeAST* typ, int8_t ctorId,
+                                      std::string srclines, bool init);
 
   // Returns array_type[elt_ty]**, the stack slot containing an array_type[elt_ty]*.
   Value* emitArrayMalloc(TypeAST* elt_type, llvm::Value* n, bool init);
 
   Value* emitFosterPrimArrayLength(Value* arr);
   Value* emitFosterStringOfCString(Value* cstr, Value* sz);
+
+  Value* getGlobalString(const std::string&);
 
   Value* allocateMPInt();
 

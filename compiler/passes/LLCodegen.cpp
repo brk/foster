@@ -705,7 +705,8 @@ void LLBitcast::codegenMiddle(CodegenPass* pass) {
 /////////////////////////////////////////////////////////////////{{{
 
 Value* allocateCell(CodegenPass* pass, TypeAST* type,
-                    LLAllocate::MemRegion region, int8_t ctorId, bool init) {
+                    LLAllocate::MemRegion region,
+                    int8_t ctorId, std::string srclines, bool init) {
   llvm::Type* ty = type->getLLVMType();
 
   switch (region) {
@@ -727,7 +728,7 @@ Value* allocateCell(CodegenPass* pass, TypeAST* type,
     return pass->markAsNeedingImplicitLoads(CreateEntryAlloca(ty, "alloc"));
 
   case LLAllocate::MEM_REGION_GLOBAL_HEAP:
-    return pass->emitMalloc(type, ctorId, init);
+    return pass->emitMalloc(type, ctorId, srclines, init);
 
   default:
     ASSERT(false); return NULL;
@@ -749,8 +750,8 @@ llvm::Value* LLAlloc::codegen(CodegenPass* pass) {
   ASSERT(this && this->baseVar && this->baseVar->type);
 
   llvm::Value* ptrSlot = allocateCell(pass, this->baseVar->type,
-                                      this->region,
-                                      foster::bogusCtorId(-4), /*init*/ false);
+                                      this->region, foster::bogusCtorId(-4),
+                                      "llalloc", /*init*/ false);
   llvm::Value* storedVal = pass->emit(baseVar, NULL);
   llvm::Value* ptr       = pass->autoload(ptrSlot, "alloc_slot_ptr");
   emitStore(storedVal, ptr);
@@ -821,7 +822,7 @@ llvm::Value* LLFloat::codegen(CodegenPass* pass) {
 }
 
 llvm::Value* LLText::codegen(CodegenPass* pass) {
-  Value* gstr = builder.CreateGlobalString(this->stringValue);
+  Value* gstr = pass->getGlobalString(this->stringValue);
   size_t size = this->stringValue.size();
   return pass->emitFosterStringOfCString(gstr, builder.getInt32(size));
 }
@@ -921,7 +922,7 @@ llvm::Value* LLAllocate::codegenCell(CodegenPass* pass, bool init) {
     return allocateArray(pass, this->type, this->region,
                          pass->emit(this->arraySize, NULL), init);
   } else if (StructTypeAST* sty = dynamic_cast<StructTypeAST*>(this->type)) {
-    return allocateCell(pass, sty, this->region, this->ctorId, init);
+    return allocateCell(pass, sty, this->region, this->ctorId, "llallocate", init);
   } else {
     ASSERT(false) << "LLAllocate can only allocate arrays or structs...";
     return NULL;
@@ -1164,6 +1165,7 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
       bool init = false; // because we'll immediately initialize below.
       llvm::AllocaInst* clo_slot = pass->emitMalloc(sty,
                                                     foster::bogusCtorId(-5),
+                                                    "...closure...",
                                                     init);
       clo = emitNonVolatileLoad(clo_slot, varname + ".closure"); rv = clo_slot;
     } else { // { code*, env* }*
@@ -1273,7 +1275,8 @@ llvm::Value* LLAppCtor::codegen(CodegenPass* pass) {
 
   llvm::Value* obj_slot = allocateCell(pass, sty,
                                        LLAllocate::MEM_REGION_GLOBAL_HEAP,
-                                       this->ctorId.smallId, /*init*/ false);
+                                       this->ctorId.smallId, "appctor",
+                                       /*init*/ false);
   llvm::Value* obj = emitNonVolatileLoad(obj_slot, "obj");
 
   copyValuesToStruct(codegenAll(pass, this->args), obj);

@@ -208,6 +208,12 @@ CodegenPass::storeAndMarkPointerAsGCRoot(llvm::Value* val) {
   return stackslot;
 }
 
+Value* CodegenPass::getGlobalString(const std::string& s) {
+  Value*& rv = this->staticStrings[s];
+  if (!rv) { rv = builder.CreateGlobalString(s); }
+  return rv;
+}
+
 void emitRecordMallocCallsite(llvm::Module* m,
                               llvm::Value* typemap,
                               llvm::Value* srclines) {
@@ -217,7 +223,10 @@ void emitRecordMallocCallsite(llvm::Module* m,
 }
 
 llvm::AllocaInst*
-CodegenPass::emitMalloc(TypeAST* typ, int8_t ctorId, bool init) {
+CodegenPass::emitMalloc(TypeAST* typ,
+                        int8_t ctorId,
+                        std::string srclines,
+                        bool init) {
   llvm::Value* memalloc_cell = mod->getFunction("memalloc_cell");
   ASSERT(memalloc_cell != NULL) << "NO memalloc_cell IN MODULE! :(";
 
@@ -229,9 +238,12 @@ CodegenPass::emitMalloc(TypeAST* typ, int8_t ctorId, bool init) {
                                             ->getContainedType(1);
   llvm::Value* typemap = builder.CreateBitCast(ti, typemap_type);
 
-  llvm::Value* srclines = llvm::ConstantPointerNull::get(builder.getInt8PtrTy());
+  llvm::Value* linesgv = (srclines.empty())
+              ? llvm::ConstantPointerNull::get(builder.getInt8PtrTy())
+              : builder.CreateBitCast(this->getGlobalString(srclines),
+                                               builder.getInt8PtrTy());
   if (this->trackAllocSites) {
-    emitRecordMallocCallsite(mod, typemap, srclines);
+    emitRecordMallocCallsite(mod, typemap, linesgv);
   }
 
   llvm::CallInst* mem = builder.CreateCall(memalloc_cell, typemap, "mem");
