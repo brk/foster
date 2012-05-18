@@ -365,11 +365,12 @@ dumpArrayLength t arr =
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||| Other Expressions ||||||||||||||||||||||{{{
-dumpClosureWithName (varid, MoClosure procid envid captvars) =
+dumpClosureWithName (varid, MoClosure procid envid captvars allocsite) =
     P'.defaultValue { varname  = dumpIdent varid
                     , proc_id  = textToPUtf8 (identPrefix procid)
                     , env_id   = dumpIdent envid
-                    , env      = dumpExpr (MoTuple captvars) }
+                    , env      = dumpExpr (MoTuple captvars)
+                    , allocsite = u8fromString allocsite }
 
 dumpCtorId (CtorId s n _a i) =
     P'.defaultValue { PbCtorId.ctor_type_name = u8fromString s

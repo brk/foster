@@ -184,7 +184,8 @@ LLMiddle* parseLetVal(const pb::LetVal& b) {
 }
 
 LLClosure* parseClosure(const pb::Closure& clo) {
-  return new LLClosure(clo.varname(), clo.env_id(), clo.proc_id(),
+  return new LLClosure(clo.varname(), clo.env_id(),
+                       clo.proc_id(), clo.allocsite(),
                        parseTuple(clo.env()));
 }
 

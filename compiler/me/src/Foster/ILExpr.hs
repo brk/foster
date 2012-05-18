@@ -44,7 +44,9 @@ import Foster.Output(out, Output)
 -- the right entry when mutually-recursive functions capture multiple envs.
 data ILClosure = ILClosure { ilClosureProcIdent :: Ident
                            , ilClosureEnvIdent  :: Ident
-                           , ilClosureCaptures  :: [AIVar] } deriving Show
+                           , ilClosureCaptures  :: [AIVar]
+                           , ilClosureAllocSite :: String
+                           } deriving Show
 
 -- A program consists of top-level data types and mutually-recursive procedures.
 data ILProgram = ILProgram (Map Ident ILProcDef)
@@ -243,6 +245,7 @@ closureOfKnFn infoMap (self_id, fn) = do
     let transformedFn = makeEnvPassingExplicitFn fn
     (envVar, newproc) <- closureConvertFn transformedFn varsOfClosure
     return $ ILClosure (ilProcIdent newproc) envVar varsOfClosure
+                       (highlightFirstLine $ fnRange fn)
   where
     -- Each closure converted proc need not capture its own environment
     -- variable, because it will be added as an implicit parameter, but

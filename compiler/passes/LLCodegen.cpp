@@ -1165,7 +1165,7 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
       bool init = false; // because we'll immediately initialize below.
       llvm::AllocaInst* clo_slot = pass->emitMalloc(sty,
                                                     foster::bogusCtorId(-5),
-                                                    "...closure...",
+                                                    this->srclines,
                                                     init);
       clo = emitNonVolatileLoad(clo_slot, varname + ".closure"); rv = clo_slot;
     } else { // { code*, env* }*

@@ -188,8 +188,11 @@ showSourceRange (SourceRange begin end lines _filepath) =
 highlightFirstLine :: SourceRange -> String
 highlightFirstLine (MissingSourceRange s) = "<missing range: " ++ s ++ ">"
 highlightFirstLine (SourceRange (ESourceLocation bline bcol)
-                                (ESourceLocation _     ecol) lines _filepath) =
-    "\n" ++ highlightLine bline bcol ecol lines ++ "\n"
+                                (ESourceLocation eline ecol) lines _filepath) =
+    "\n" ++ highlightLine bline bcol fcol lines ++ "\n"
+      where fcol  = if lineb == linee then ecol else Prelude.length lineb
+            lineb = sourceLine lines bline
+            linee = sourceLine lines eline
 
 -- If a single line is specified, show it with highlighting;
 -- otherwise, show the lines spanning the two locations (inclusive).

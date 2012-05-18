@@ -299,8 +299,8 @@ monomorphizeMid subst mid =
     ILClosures ids clos -> do return $ MoClosures ids (map (monoClosure subst) clos)
     ILRebindId i   v    -> do return $ MoRebindId i (monoVar subst v)
 
-monoClosure subst (ILClosure procid envid captures) =
-  MoClosure procid envid (map (monoVar subst) captures)
+monoClosure subst (ILClosure procid envid captures allocsite) =
+  MoClosure procid envid (map (monoVar subst) captures) allocsite
 
 data LetableResult = MonoLet      MonoLetable
                    | Instantiated (TypedId TypeIL)
