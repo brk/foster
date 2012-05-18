@@ -32,10 +32,10 @@ data AIExpr=
         | AIString     T.Text
         | AIInt        TypeIL LiteralInt
         | AIFloat      TypeIL LiteralFloat
-        | AITuple      [AIExpr]
+        | AITuple      [AIExpr] SourceRange
         -- Control flow
         | AIIf         TypeIL AIExpr AIExpr AIExpr
-        | AIUntil      TypeIL AIExpr AIExpr
+        | AIUntil      TypeIL AIExpr AIExpr SourceRange
         -- Creation of bindings
         | AICase       TypeIL AIExpr [PatternBinding AIExpr TypeIL]
         | AILetVar     Ident AIExpr AIExpr
@@ -75,9 +75,9 @@ ail ctx ae =
         AnnIf   _rng  t  a b c -> do ti <- qt t
                                      [x,y,z] <- mapM q [a,b,c]
                                      return $ AIIf    ti x y z
-        AnnUntil _rng t  a b   -> do ti <- qt t
+        AnnUntil rng  t  a b   -> do ti <- qt t
                                      [x,y]   <- mapM q [a,b]
-                                     return $ AIUntil ti x y
+                                     return $ AIUntil ti x y rng
         -- For anonymous function literals
         E_AnnFn annFn        -> do fn_id <- tcFresh "lit_fn"
                                    aiFn <- fnOf ctx annFn
@@ -108,8 +108,8 @@ ail ctx ae =
                                          ti <- qt t
                                          [x,y,z]   <- mapM q [a,b,c]
                                          return $ AIArrayPoke ti (ArrayIndex x y s) z
-        AnnTuple {}                -> do aies <- mapM q (childrenOf ae)
-                                         return $ AITuple aies
+        AnnTuple tup               -> do aies <- mapM q (childrenOf ae)
+                                         return $ AITuple aies (annTupleRange tup)
         AnnCase _rng t e bs        -> do ti <- qt t
                                          ei <- q e
                                          bsi <- mapM (\((p, vs),e) -> do

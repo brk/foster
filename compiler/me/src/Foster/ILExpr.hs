@@ -45,7 +45,7 @@ import Foster.Output(out, Output)
 data ILClosure = ILClosure { ilClosureProcIdent :: Ident
                            , ilClosureEnvIdent  :: Ident
                            , ilClosureCaptures  :: [AIVar]
-                           , ilClosureAllocSite :: String
+                           , ilClosureAllocSrc  :: AllocationSource
                            } deriving Show
 
 -- A program consists of top-level data types and mutually-recursive procedures.
@@ -244,8 +244,9 @@ closureOfKnFn infoMap (self_id, fn) = do
     let varsOfClosure = closedOverVarsOfKnFn
     let transformedFn = makeEnvPassingExplicitFn fn
     (envVar, newproc) <- closureConvertFn transformedFn varsOfClosure
-    return $ ILClosure (ilProcIdent newproc) envVar varsOfClosure
-                 (show (fnIdent fn) ++ ":" ++ highlightFirstLine (fnRange fn))
+    let procid        = ilProcIdent newproc
+    return $ ILClosure procid envVar varsOfClosure
+                   (AllocationSource (show procid ++ ":") (ilProcRange newproc))
   where
     -- Each closure converted proc need not capture its own environment
     -- variable, because it will be added as an implicit parameter, but

@@ -226,6 +226,8 @@ sourceLine (SourceLines seq) n =
                          ++ (show $ Seq.length seq) ++ ">"
         else (T.unpack $ Seq.index seq n)
 
+data AllocationSource = AllocationSource String SourceRange deriving Show
+
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||||| Structured Things ||||||||||||||||||||||{{{
 

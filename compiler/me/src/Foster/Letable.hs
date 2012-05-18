@@ -7,7 +7,7 @@
 module Foster.Letable (Letable(..)) where
 
 import Foster.Base(LiteralInt, LiteralFloat, CtorId, ArrayIndex,
-                   AllocMemRegion, Occurrence)
+                   AllocMemRegion, Occurrence, AllocationSource)
 import Foster.TypeIL(AIVar, ILPrim, TypeIL)
 
 import qualified Data.Text as T
@@ -21,7 +21,7 @@ data Letable =
         | ILText        T.Text
         | ILInt         TypeIL LiteralInt
         | ILFloat       TypeIL LiteralFloat
-        | ILTuple       [AIVar]
+        | ILTuple       [AIVar] AllocationSource
         -- Struct member lookup
         | ILOccurrence  AIVar (Occurrence TypeIL)
         -- Varieties of applications

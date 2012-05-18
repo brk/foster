@@ -352,7 +352,7 @@ monomorphizeLetable subst expr =
         ILBool      b         -> return $ MonoLet $ MoBool   b
         ILInt       t i       -> return $ MonoLet $ MoInt   (qt t) i
         ILFloat     t f       -> return $ MonoLet $ MoFloat (qt t) f
-        ILTuple     vs        -> return $ MonoLet $ MoTuple (map qv vs)
+        ILTuple     vs asrc   -> return $ MonoLet $ MoTuple (map qv vs) asrc
         ILOccurrence v occ    -> return $ MonoLet $ MoOccurrence (qv v) (monoOcc subst occ)
         ILCallPrim  t p vs    -> return $ MonoLet $ MoCallPrim (qt t) monopr (map qv vs) where monopr = monoPrim subst p
         ILCall      t v vs    -> return $ MonoLet $ MoCall     (qt t) (qv v) (map qv vs)

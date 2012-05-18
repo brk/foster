@@ -24,10 +24,10 @@ data KNExpr =
         | KNString      T.Text
         | KNInt         TypeIL LiteralInt
         | KNFloat       TypeIL LiteralFloat
-        | KNTuple       [AIVar]
+        | KNTuple       [AIVar] SourceRange
         -- Control flow
         | KNIf          TypeIL AIVar  KNExpr KNExpr
-        | KNUntil       TypeIL KNExpr KNExpr
+        | KNUntil       TypeIL KNExpr KNExpr SourceRange
         -- Creation of bindings
         | KNCase        TypeIL AIVar [PatternBinding KNExpr TypeIL]
         | KNLetVal       Ident KNExpr KNExpr
@@ -99,7 +99,7 @@ kNormalize mebTail expr =
 
       AILetVar id  a b  -> do a' <- gn a
                               b' <- gt b; return $ buildLet id a' b'
-      AIUntil    t a b  -> do [a', b'] <- mapM gn [a, b] ; return $ (KNUntil t a' b')
+      AIUntil t a b rng -> do [a', b'] <- mapM gn [a, b] ; return $ (KNUntil t a' b' rng)
 
       AIStore      a b  -> do [a', b'] <- mapM gn [a, b] ; nestedLetsDo [a', b'] (\[x,y] -> knStore x y)
       AIArrayRead  t (ArrayIndex a b s) -> do
@@ -113,8 +113,8 @@ kNormalize mebTail expr =
                                   a' <- gt a
                                   return $ KNLetFuns ids knFns a'
 
-      AITuple    es         -> do ks <- mapM gn es
-                                  nestedLets ks (\vs -> KNTuple vs)
+      AITuple    es rng     -> do ks <- mapM gn es
+                                  nestedLets ks (\vs -> KNTuple vs rng)
 
       AICase t e bs         -> do e' <- gn e
                                   ibs <- forM bs (\(p, ae) -> do ke <- gt ae
@@ -303,7 +303,7 @@ typeKN expr =
     KNString _        -> stringTypeIL
     KNInt      t _    -> t
     KNFloat    t _    -> t
-    KNTuple vs        -> TupleTypeIL (map tidType vs)
+    KNTuple vs _      -> TupleTypeIL (map tidType vs)
     KNLetVal  _ _ e   -> typeKN e
     KNLetFuns _ _ e   -> typeKN e
     KNCall  _  t _ _  -> t
@@ -311,7 +311,7 @@ typeKN expr =
     KNAppCtor  t _ _  -> t
     KNAllocArray elt_ty _ -> ArrayTypeIL elt_ty
     KNIf    t _ _ _   -> t
-    KNUntil t _ _     -> t
+    KNUntil t _ _ _   -> t
     KNAlloc v _rgn    -> PtrTypeIL (tidType v)
     KNDeref v         -> pointedToTypeOfVar v
     KNStore _ _       -> TupleTypeIL []
@@ -334,7 +334,7 @@ instance Structured KNExpr where
             KNLetVal   x b    _ -> out $ "KNLetVal    " ++ (show x) ++ " :: " ++ (show $ typeKN b) ++ " = ... in ... "
             KNLetFuns ids _ _   -> out $ "KNLetFuns   " ++ (show ids)
             KNIf      t  _ _ _  -> out $ "KNIf        " ++ " :: " ++ show t
-            KNUntil   t  _ _    -> out $ "KNUntil     " ++ " :: " ++ show t
+            KNUntil   t  _ _ _  -> out $ "KNUntil     " ++ " :: " ++ show t
             KNInt ty int        -> out $ "KNInt       " ++ (litIntText int) ++ " :: " ++ show ty
             KNFloat ty flt      -> out $ "KNFloat     " ++ (litFloatText flt) ++ " :: " ++ show ty
             KNAlloc      {}     -> out $ "KNAlloc     "
@@ -344,7 +344,7 @@ instance Structured KNExpr where
             KNAllocArray {}     -> out $ "KNAllocArray "
             KNArrayRead  t _    -> out $ "KNArrayRead " ++ " :: " ++ show t
             KNArrayPoke  {}     -> out $ "KNArrayPoke "
-            KNTuple     es      -> out $ "KNTuple     (size " ++ (show $ length es) ++ ")"
+            KNTuple     vs _    -> out $ "KNTuple     (size " ++ (show $ length vs) ++ ")"
             KNVar (TypedId t (GlobalSymbol name))
                                 -> out $ "KNVar(Global):   " ++ T.unpack name ++ " :: " ++ show t
             KNVar (TypedId t i) -> out $ "KNVar(Local):   " ++ show i ++ " :: " ++ show t
@@ -356,8 +356,8 @@ instance Structured KNExpr where
             KNBool   {}             -> []
             KNInt    {}             -> []
             KNFloat  {}             -> []
-            KNUntil _t a b          -> [a, b]
-            KNTuple     vs          -> map var vs
+            KNUntil _t a b _        -> [a, b]
+            KNTuple     vs _        -> map var vs
             KNCase _ e bs           -> (var e):(map snd bs)
             KNLetFuns _ids fns e    -> e : map fnBody fns
             KNLetVal _x b e         -> [b, e]

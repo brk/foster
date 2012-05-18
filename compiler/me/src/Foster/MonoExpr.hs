@@ -18,7 +18,7 @@ import Foster.Output(out, Output)
 data MoClosure = MoClosure { moClosureProcIdent :: Ident
                            , moClosureEnvIdent  :: Ident
                            , moClosureCaptures  :: [TypedId MonoType]
-                           , moClosureAllocSite :: String
+                           , moClosureAllocSite :: AllocationSource
                            } deriving Show
 
 data MonoProgram = MoProgram (Map Ident MoProcDef)

@@ -109,7 +109,7 @@ computeBlocks expr idmaybe k = do
         KNIf t v a b -> do
             computeBlocks (KNCase t v $ caseIf a b) idmaybe k
 
-        KNUntil _t a b -> do
+        KNUntil _t a b rng -> do
             [until_test, until_body, until_cont] <- mapM cfgFresh
                                       ["until_test", "until_body", "until_cont"]
             cfgEndWith (CFBr until_test [])
@@ -122,7 +122,8 @@ computeBlocks expr idmaybe k = do
             computeBlocks b Nothing $ \_ -> cfgEndWith (CFBr until_test [])
 
             cfgNewBlock until_cont []
-            cfgAddLet idmaybe (ILTuple []) (TupleTypeIL []) >>= k
+            cfgAddLet idmaybe (ILTuple [] (AllocationSource "until" rng))
+                              (TupleTypeIL []) >>= k
 
         KNLetVal id (KNVar v) expr -> do
             cont <- cfgFresh "rebind_cont"
@@ -209,7 +210,7 @@ computeBlocks expr idmaybe k = do
          KNBool       b      -> ILBool       b
          KNInt        t i    -> ILInt        t i
          KNFloat      t f    -> ILFloat      t f
-         KNTuple      vs     -> ILTuple      vs
+         KNTuple      vs rng -> ILTuple      vs (AllocationSource "tuple" rng)
          KNCallPrim   t p vs -> ILCallPrim   t p vs
          KNCall _     t b vs -> ILCall       t b vs
          KNAppCtor    t c vs -> ILAppCtor    t c vs

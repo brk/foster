@@ -233,13 +233,14 @@ dumpExpr x@(MoBool b) =
                     , PbLetable.tag   = IL_BOOL
                     , PbLetable.type' = Just $ dumpType (typeMo x)  }
 
-dumpExpr x@(MoTuple vs) =
+dumpExpr x@(MoTuple vs allocsrc) =
     P'.defaultValue { PbLetable.parts = fromList [dumpVar v | v <- vs]
                     , PbLetable.tag   = IL_TUPLE
                     , PbLetable.type' = Just $ dumpType (typeMo x)
                     , PbLetable.alloc_info = Just $ dumpAllocate
                          (AllocInfo (tupStruct $ typeMo x)
-                                    MemRegionGlobalHeap Nothing "...tuple...") }
+                                    MemRegionGlobalHeap Nothing
+                                    (showAllocationSource allocsrc)) }
 
 dumpExpr   (MoOccurrence v occ) =
     P'.defaultValue { PbLetable.tag   = IL_OCCURRENCE
@@ -368,12 +369,19 @@ dumpArrayLength t arr =
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||| Other Expressions ||||||||||||||||||||||{{{
-dumpClosureWithName (varid, MoClosure procid envid captvars allocsite) =
+prefixAllocSrc foo   (AllocationSource                prefix  rng) =
+                     (AllocationSource (foo ++ " " ++ prefix) rng)
+
+showAllocationSource (AllocationSource prefix rng) =
+                 prefix ++ highlightFirstLine rng
+
+dumpClosureWithName (varid, MoClosure procid envid captvars allocsrc) =
     P'.defaultValue { varname  = dumpIdent varid
                     , proc_id  = textToPUtf8 (identPrefix procid)
                     , env_id   = dumpIdent envid
-                    , env      = dumpExpr (MoTuple captvars)
-                    , allocsite = u8fromString allocsite }
+                    , env      = dumpExpr (MoTuple captvars $
+                                               prefixAllocSrc "env of" allocsrc)
+                    , allocsite = u8fromString $ showAllocationSource allocsrc }
 
 dumpCtorId (CtorId s n _a i) =
     P'.defaultValue { PbCtorId.ctor_type_name = u8fromString s
@@ -453,7 +461,7 @@ typeMo expr = case expr of
     MoBool _                -> PrimInt I1
     MoInt t _               -> t
     MoFloat t _             -> t
-    MoTuple vs              -> TupleType (map tidType vs)
+    MoTuple vs _            -> TupleType (map tidType vs)
     MoOccurrence {}         -> error $ "ProtobufIL: No typeMo for MoOccurrence"
     MoCall     t  _ _       -> t
     MoCallPrim t  _ _       -> t

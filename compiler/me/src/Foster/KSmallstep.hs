@@ -250,13 +250,13 @@ ssTermOfExpr expr =
     KNFloat _t f           -> SSTmValue $ SSFloat (litFloatValue f)
     KNString s             -> SSTmValue $ textFragmentOf s
     KNVar v                -> SSTmExpr  $ IVar (idOf v)
-    KNTuple vs             -> SSTmExpr  $ ITuple (map idOf vs)
+    KNTuple vs _           -> SSTmExpr  $ ITuple (map idOf vs)
     KNLetFuns ids funs e   -> SSTmExpr  $ ILetFuns ids funs (tr e)
     KNLetVal x b e         -> SSTmExpr  $ ILetVal x (tr b) (tr e)
     KNCall  _  _t b vs     -> SSTmExpr  $ ICall (idOf b) (map idOf vs)
     KNCallPrim _t b vs     -> SSTmExpr  $ ICallPrim b (map idOf vs)
     KNIf       _t  v b c   -> SSTmExpr  $ IIf (idOf v) (tr b) (tr c)
-    KNUntil    _t  a b     -> SSTmExpr  $ IUntil    (tr a) (tr b)
+    KNUntil    _t  a b _   -> SSTmExpr  $ IUntil    (tr a) (tr b)
     KNArrayRead _t (ArrayIndex a b _)
                            -> SSTmExpr  $ IArrayRead (idOf a) (idOf b)
     KNArrayPoke (ArrayIndex b i _) v

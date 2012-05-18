@@ -7,7 +7,7 @@
 module Foster.MonoLetable (MonoLetable(..)) where
 
 import Foster.Base(LiteralInt, LiteralFloat, CtorId, ArrayIndex,
-                   AllocMemRegion, Occurrence)
+                   AllocMemRegion, Occurrence, AllocationSource)
 import Foster.MonoType(MoVar, MoPrim, MonoType)
 
 import qualified Data.Text as T
@@ -17,7 +17,7 @@ data MonoLetable =
         | MoBool        Bool
         | MoInt         MonoType LiteralInt
         | MoFloat       MonoType LiteralFloat
-        | MoTuple       [MoVar]
+        | MoTuple       [MoVar]  AllocationSource
         | MoOccurrence  MoVar (Occurrence MonoType)
         | MoCallPrim    MonoType MoPrim [MoVar]
         | MoCall        MonoType MoVar  [MoVar]
