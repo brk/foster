@@ -61,8 +61,13 @@ optEmitDebugInfo("g",
   cl::desc("[foster] Emit debug information in generated LLVM IR"));
 
 static cl::opt<bool>
+optTrackAllocSites("gc-track-alloc-sites",
+  cl::desc("[foster] Inform the GC of which program locations are allocating"));
+
+static cl::opt<bool>
 optForceNUW("unsafe-use-nuw",
   cl::desc("[foster] Forcibly tag all relevant LLVM instructions with nuw"));
+
 static cl::opt<bool>
 optForceNSW("unsafe-use-nsw",
   cl::desc("[foster] Forcibly tag all relevant LLVM instructions with nsw"));
@@ -196,7 +201,8 @@ areDeclaredValueTypesOK(llvm::Module* mod,
 }
 
 namespace foster {
-  void codegenLL(LLModule*, llvm::Module* mod, bool useGC, bool nsw, bool nuw);
+  void codegenLL(LLModule*, llvm::Module* mod, bool useGC, bool nsw, bool nuw,
+                 bool trackAllocSites);
 }
 
 int main(int argc, char** argv) {
@@ -293,7 +299,8 @@ int main(int argc, char** argv) {
       program_status = 1; goto cleanup;
     }
 
-    foster::codegenLL(prog, module, !optDisableGC, optForceNSW, optForceNUW);
+    foster::codegenLL(prog, module, !optDisableGC, optForceNSW, optForceNUW,
+                      optTrackAllocSites);
   }
 
   if (optDumpPreLinkedIR) {

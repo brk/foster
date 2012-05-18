@@ -96,6 +96,7 @@ struct CodegenPass {
   bool useGC;
   bool useNSW;
   bool useNUW;
+  bool trackAllocSites;
 
   typedef foster::SymbolTable<llvm::Value> ValueTable;
   typedef ValueTable::LexicalScope         ValueScope;
@@ -126,7 +127,8 @@ struct CodegenPass {
   WorklistLIFO<std::string, LLBlock*>   worklistBlocks;
   std::map<LLOccurrence*, llvm::AllocaInst*, ltLLOcc>  occSlots;
 
-  explicit CodegenPass(llvm::Module* mod, bool useGC, bool nsw, bool nuw);
+  explicit CodegenPass(llvm::Module* mod, bool useGC, bool nsw, bool nuw,
+                       bool trackAllocSites);
 
   ~CodegenPass() {
     //delete dib;

@@ -39,8 +39,8 @@ using std::vector;
 namespace foster {
 
 void codegenLL(LLModule* prog, llvm::Module* mod,
-               bool useGC, bool nsw, bool nuw) {
-  CodegenPass cp(mod, useGC, nsw, nuw);
+               bool useGC, bool nsw, bool nuw, bool trackAllocSites) {
+  CodegenPass cp(mod, useGC, nsw, nuw, trackAllocSites);
   prog->codegenModule(&cp);
 }
 
@@ -225,8 +225,10 @@ void assertValueHasSameTypeAsPhiNode(llvm::Value* v, LLBlock* block, int i) {
 
 // Implementation of CodegenPass helpers {{{
 
-CodegenPass::CodegenPass(llvm::Module* m, bool useGC, bool nsw, bool nuw)
-  : useGC(useGC), useNSW(nsw), useNUW(nuw), mod(m) {
+CodegenPass::CodegenPass(llvm::Module* m, bool useGC, bool nsw, bool nuw,
+                         bool allocSites)
+  : useGC(useGC), useNSW(nsw), useNUW(nuw), trackAllocSites(allocSites),
+    mod(m) {
   //dib = new DIBuilder(*mod);
 }
 
