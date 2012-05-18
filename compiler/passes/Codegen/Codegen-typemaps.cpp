@@ -27,8 +27,6 @@ using foster::EDiag;
 using foster::builder;
 using foster::ParsingContext;
 
-llvm::GlobalVariable* getTypeMapForType(llvm::Type*, llvm::Module*, ArrayOrNot);
-
 typedef Constant*   Offset;
 typedef std::vector<Offset> OffsetSet;
 

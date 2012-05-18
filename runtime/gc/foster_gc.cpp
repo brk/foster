@@ -310,7 +310,7 @@ class copying_gc {
             fprintf(gclog, "; replacing %p with %p\n", cell->body_addr(), result);
           }
           return result;
-      }
+      } // end ss_copy
   };
 
   void record_bytes_allocated(int64_t num_bytes) {
@@ -322,11 +322,16 @@ class copying_gc {
     }
   }
 
+  // An efficiently-encoded int->int map...
   // A value of v at index k in [index 0..TRACK_BYTES_ALLOCATED_HIST)
   // means v allocations of size (k * FOSTER_GC_DEFAULT_ALIGNMENT).
   // All larger allocations go in the last array entry.
   std::vector<int64_t>  bytes_req_per_alloc;
+
   stat_tracker<int64_t> bytes_kept_per_gc;
+
+  std::map<std::pair<const char*, typemap*>, int64_t> alloc_site_counters;
+
   int64_t num_allocations;
   int64_t num_collections;
   bool saw_bad_pointer;
@@ -391,11 +396,24 @@ public:
         }
         fprintf(gclog,  "allocs of size more: %12" PRId64 "\n", bytes_req_per_alloc.back());
       }
+
+      if (!this->alloc_site_counters.empty()) {
+        std::map<std::pair<const char*, typemap*>, int64_t>::iterator it;
+        for (it  = this->alloc_site_counters.begin();
+             it != this->alloc_site_counters.end(); ++it) {
+          fprintf(gclog,  "%12" PRId64 " allocations of typemap %p from %s\n",
+                          it->second, it->first.second, it->first.first);
+        }
+      }
   }
 
   bool had_problems() { return saw_bad_pointer; }
 
   void force_gc_for_debugging_purposes() { this->gc(); }
+
+  void record_memalloc_cell(typemap* typeinfo, const char* srclines) {
+    this->alloc_site_counters[std::make_pair(srclines, typeinfo)]++;
+  }
 
   bool owns(heap_cell* cell) {
     if (curr->contains(cell)) return true;
@@ -486,7 +504,7 @@ public:
       }
     }
   }
-};
+}; // copying_gc
 
 copying_gc* allocator = NULL;
 
@@ -585,31 +603,6 @@ int cleanup() {
   fclose(gclog); gclog = NULL;
   return had_problems ? 99 : 0;
 }
-
-extern "C" void* memalloc_cell(typemap* typeinfo) {
-  if (GC_BEFORE_EVERY_MEMALLOC_CELL) {
-    allocator->force_gc_for_debugging_purposes();
-  }
-  return allocator->allocate_cell(typeinfo);
-}
-
-extern "C" void* memalloc_cell_16(typemap* typeinfo) {
-  if (GC_BEFORE_EVERY_MEMALLOC_CELL) {
-    allocator->force_gc_for_debugging_purposes();
-  }
-  return allocator->allocate_cell_N<16>(typeinfo);
-}
-
-extern "C" void* memalloc_array(typemap* typeinfo, int64_t n, int8_t init) {
-  return allocator->allocate_array(typeinfo, n, (bool) init);
-}
-
-void force_gc_for_debugging_purposes() {
-  allocator->force_gc_for_debugging_purposes();
-}
-
-// Extern symbol for gdb, not foster programs.
-extern "C" void fflush_gclog() { fflush(gclog); }
 
 #include "foster_gc_backtrace_x86-inl.h"
 
@@ -846,6 +839,41 @@ void inspect_typemap(typemap* ti) {
 
 bool isMetadataPointer(const void* meta) {
  return uint64_t(meta) > uint64_t(1<<16);
+}
+
+/////////////////////////////////////////////////////////////////
+
+extern "C" {
+
+void* memalloc_cell(typemap* typeinfo) {
+  if (GC_BEFORE_EVERY_MEMALLOC_CELL) {
+    allocator->force_gc_for_debugging_purposes();
+  }
+  return allocator->allocate_cell(typeinfo);
+}
+
+void* memalloc_cell_16(typemap* typeinfo) {
+  if (GC_BEFORE_EVERY_MEMALLOC_CELL) {
+    allocator->force_gc_for_debugging_purposes();
+  }
+  return allocator->allocate_cell_N<16>(typeinfo);
+}
+
+void* memalloc_array(typemap* typeinfo, int64_t n, int8_t init) {
+  return allocator->allocate_array(typeinfo, n, (bool) init);
+}
+
+void record_memalloc_cell(typemap* typeinfo, const char* srclines) {
+  allocator->record_memalloc_cell(typeinfo, srclines);
+}
+
+void force_gc_for_debugging_purposes() {
+  allocator->force_gc_for_debugging_purposes();
+}
+
+// Extern symbol for gdb, not foster programs.
+void fflush_gclog() { fflush(gclog); }
+
 }
 
 } // namespace foster::runtime::gc

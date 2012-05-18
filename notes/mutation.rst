@@ -126,9 +126,13 @@ statically-known offset, so we'd be forced to fall back on raw ptr arithmetic.
 
 Potential solutions:
 
-* Keep p as a stack root (so it will be updated by the GC) and recompute
-  z_addr = &p[1] after each safe point. With n live values bound
-  at depth k, this implies n*k loads after every safe point.
+* Keep ``p`` as a stack root (so it will be updated by the GC) and recompute
+  ``z_addr = &p[1]`` after each safe point. With ``n`` live mutable addresses
+  bound at depth ``k``, this implies ``n * k`` loads after every safe point.
+  This is bad in the general case, but due to programming style, I'd expect
+  that ``n`` is likely to be small and ``k`` will probably be ``1``.
+  And if there are no safe points in the scope of the bound addresses,
+  there will be no reloads, either...
 
 * Disallow mutable fields; force all mutability to go through (implicit or
   explicit) references. Then we can copy the value z to a new stack slot

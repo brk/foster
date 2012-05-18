@@ -208,6 +208,13 @@ CodegenPass::storeAndMarkPointerAsGCRoot(llvm::Value* val) {
   return stackslot;
 }
 
+void emitRecordMallocCallsite(llvm::Module* m,
+                              llvm::Value* typemap,
+                              llvm::Value* srclines) {
+  llvm::Value* rmc = m->getFunction("record_memalloc_cell");
+  ASSERT(rmc != NULL) << "NO record_memalloc_cell IN MODULE! :(";
+  markAsNonAllocating(builder.CreateCall2(rmc, typemap, srclines));
+}
 
 llvm::AllocaInst*
 CodegenPass::emitMalloc(TypeAST* typ, int8_t ctorId, bool init) {
@@ -221,6 +228,12 @@ CodegenPass::emitMalloc(TypeAST* typ, int8_t ctorId, bool init) {
                                             ->getContainedType(0)
                                             ->getContainedType(1);
   llvm::Value* typemap = builder.CreateBitCast(ti, typemap_type);
+
+  llvm::Value* srclines = llvm::ConstantPointerNull::get(builder.getInt8PtrTy());
+  if (this->trackAllocSites) {
+    emitRecordMallocCallsite(mod, typemap, srclines);
+  }
+
   llvm::CallInst* mem = builder.CreateCall(memalloc_cell, typemap, "mem");
 
   llvm::Type* ty = typ->getLLVMType();
