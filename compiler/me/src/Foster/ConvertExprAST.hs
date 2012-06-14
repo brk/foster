@@ -83,10 +83,10 @@ convertExprAST f expr =
     E_TyApp        rng a mt     -> liftM2 (E_TyApp        rng)   (q a) (liftMaybe f mt)
     E_VarAST       rng v        -> liftM  (E_VarAST       rng) (convertEVar f v)
     E_TupleAST tup              -> liftM  (E_TupleAST        ) (convertTuple f tup)
-    E_ArrayRead    rng (ArrayIndex a b s) -> do [x, y] <- mapM q [a, b]
-                                                return $ E_ArrayRead rng (ArrayIndex x y s)
-    E_ArrayPoke    rng (ArrayIndex a b s) c -> do [x, y, z] <- mapM q [a, b, c]
-                                                  return $ E_ArrayPoke rng (ArrayIndex x y s) z
+    E_ArrayRead    rng (ArrayIndex a b rng2 s) -> do [x, y] <- mapM q [a, b]
+                                                     return $ E_ArrayRead rng (ArrayIndex x y rng2 s)
+    E_ArrayPoke    rng (ArrayIndex a b rng2 s) c -> do [x, y, z] <- mapM q [a, b, c]
+                                                       return $ E_ArrayPoke rng (ArrayIndex x y rng2 s) z
     E_Case         rng e bs     -> do e' <- q e
                                       bs' <- mapM (\(pat, exp) -> do
                                                           exp' <- q exp

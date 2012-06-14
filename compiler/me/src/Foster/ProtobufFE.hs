@@ -85,8 +85,8 @@ parseCallPrim pbexpr rng = do
       ("tuple",  _ ) -> return $ E_TupleAST (TupleAST rng args)
       ("deref", [e]) -> return $ E_DerefAST rng e
       ("alloc", [e]) -> return $ E_AllocAST rng e
-      ("subscript",       [a,b]) -> return $ E_ArrayRead rng (ArrayIndex a b SG_Dynamic)
-      ("subscript-unsafe",[a,b]) -> return $ E_ArrayRead rng (ArrayIndex a b SG_Static)
+      ("subscript",       [a,b]) -> return $ E_ArrayRead rng (ArrayIndex a b rng SG_Dynamic)
+      ("subscript-unsafe",[a,b]) -> return $ E_ArrayRead rng (ArrayIndex a b rng SG_Static)
       ("store",[a,b])-> case b of -- a>^ c[d]
                            E_ArrayRead _ ari -> return $ E_ArrayPoke rng ari a
                            _                 -> return $ E_StoreAST rng a b

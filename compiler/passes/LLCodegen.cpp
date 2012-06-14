@@ -970,15 +970,12 @@ bool tryBindArray(llvm::Value* base, Value*& arr, Value*& len) {
   return false;
 }
 
-Value* getArraySlot(Value* base, Value* idx, CodegenPass* pass, bool dynCheck) {
+Value* getArraySlot(Value* base, Value* idx, CodegenPass* pass,
+                    bool dynCheck, const std::string& srclines) {
   Value* arr = NULL; Value* len;
   if (tryBindArray(base, arr, len)) {
     if (dynCheck) {
-      emitFosterAssert(pass->mod,
-        builder.CreateICmpULT(
-                  builder.CreateSExt(idx, len->getType()),
-                  len, "boundscheck"),
-        "array index out of bounds!");
+      emitFosterArrayBoundsCheck(pass->mod, idx, len, srclines);
     }
     return getPointerToIndex(arr, idx, "arr_slot");
   } else {
@@ -992,7 +989,8 @@ llvm::Value* LLArrayIndex::codegenARI(CodegenPass* pass) {
   Value* base = pass->emit(this->base , NULL);
   Value* idx  = pass->emit(this->index, NULL);
   ASSERT(static_or_dynamic == "static" || static_or_dynamic == "dynamic");
-  return getArraySlot(base, idx, pass, static_or_dynamic == "dynamic");
+  return getArraySlot(base, idx, pass, this->static_or_dynamic == "dynamic",
+                                       this->srclines);
 }
 
 llvm::Value* LLArrayRead::codegen(CodegenPass* pass) {

@@ -50,6 +50,9 @@ llvm::Constant* slotSizeOf(llvm::Type* ty);
 
 // From CodegenUtils.cpp
 void emitFosterAssert(llvm::Module* mod, llvm::Value* cond, const char* cstr);
+void emitFosterArrayBoundsCheck(llvm::Module* mod, llvm::Value* idx64,
+                                                   llvm::Value* len64,
+                                                   const std::string& srclines);
 Value* getUnitValue();
 Value* allocateMPInt();
 Value* getElementFromComposite(Value* compositeValue, int, const std::string& msg);

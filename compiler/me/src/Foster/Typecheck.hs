@@ -67,13 +67,13 @@ typecheck want ctx expr maybeExpTy = do
               return $ AnnUntil rng (TupleTypeAST []) acond' abody
 
       -- a[b]
-      E_ArrayRead rng (ArrayIndex a b s) -> do
+      E_ArrayRead rng (ArrayIndex a b _ s) -> do
               ta <- typecheck want ctx a Nothing
               tb <- typecheck want ctx b Nothing
               typecheckArrayRead rng s ta (typeAST ta) tb maybeExpTy
 
       -- a >^ b[c]
-      E_ArrayPoke rng (ArrayIndex b c s) a -> do
+      E_ArrayPoke rng (ArrayIndex b c _ s) a -> do
               ta <- typecheck want ctx a Nothing
               tb <- typecheck want ctx b (Just $ ArrayTypeAST (typeAST ta))
               tc <- typecheck want ctx c Nothing
@@ -431,12 +431,13 @@ typecheckArrayRead rng _s _base (TupleTypeAST _) (AnnInt {}) _maybeExpTy =
 -- base[aiexpr]
 typecheckArrayRead rng s base (ArrayTypeAST t) aiexpr maybeExpTy = do
     -- TODO check aiexpr type is compatible with Word
+    unify (PrimIntAST I32) (typeAST aiexpr) (Just "arrayread idx type")
     unify (ArrayTypeAST t) (typeAST base) (Just "arrayread type")
     case maybeExpTy of
       Nothing -> return ()
       Just expTy -> unify t expTy (Just "arrayread expected type")
 
-    return (AnnArrayRead rng t (ArrayIndex base aiexpr s))
+    return (AnnArrayRead rng t (ArrayIndex base aiexpr rng s))
 
 typecheckArrayRead rng _s _base baseType _index maybeExpTy =
     tcFails [out $ "Unable to arrayread expression of type " ++ show baseType
@@ -458,7 +459,7 @@ typecheckArrayPoke rng s v b (ArrayTypeAST t) i maybeExpTy = do
       Nothing -> return ()
       Just expTy -> unify t expTy (Just $ "arraypoke expected type: " ++ show expTy)
 
-    return (AnnArrayPoke rng t (ArrayIndex b i s) v)
+    return (AnnArrayPoke rng t (ArrayIndex b i rng s) v)
 
 typecheckArrayPoke rng _s _a _b baseType _c maybeExpTy =
     tcFails [out $ "Unable to arraypoke expression of type " ++ show baseType

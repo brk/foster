@@ -102,12 +102,12 @@ kNormalize mebTail expr =
       AIUntil t a b rng -> do [a', b'] <- mapM gn [a, b] ; return $ (KNUntil t a' b' rng)
 
       AIStore      a b  -> do [a', b'] <- mapM gn [a, b] ; nestedLetsDo [a', b'] (\[x,y] -> knStore x y)
-      AIArrayRead  t (ArrayIndex a b s) -> do
+      AIArrayRead  t (ArrayIndex a b rng s) -> do
                               [a', b'] <- mapM gn [a, b]
-                              nestedLets [a', b'] (\[x, y] -> KNArrayRead t (ArrayIndex x y s))
-      AIArrayPoke _t (ArrayIndex a b s) c -> do
+                              nestedLets [a', b'] (\[x, y] -> KNArrayRead t (ArrayIndex x y rng s))
+      AIArrayPoke _t (ArrayIndex a b rng s) c -> do
                               [a', b', c'] <- mapM gn [a,b,c]
-                              nestedLets [a', b', c'] (\[x,y,z] -> KNArrayPoke (ArrayIndex x y s) z)
+                              nestedLets [a', b', c'] (\[x,y,z] -> KNArrayPoke (ArrayIndex x y rng s) z)
 
       AILetFuns ids fns a   -> do knFns <- mapM kNormalizeFn fns
                                   a' <- gt a

@@ -362,10 +362,10 @@ monomorphizeLetable subst expr =
         ILDeref     v         -> return $ MonoLet $ MoDeref (qv v)
         ILStore     v1 v2     -> return $ MonoLet $ MoStore (qv v1) (qv v2)
         ILAllocArray t v      -> return $ MonoLet $ MoAllocArray (qt t) (qv v)
-        ILArrayRead  t (ArrayIndex v1 v2 s)
-                              -> return $ MonoLet $ MoArrayRead (qt t) (ArrayIndex (qv v1) (qv v2) s)
-        ILArrayPoke  (ArrayIndex v1 v2 s) v3
-                              -> return $ MonoLet $ MoArrayPoke (ArrayIndex (qv v1) (qv v2) s) (qv v3)
+        ILArrayRead  t (ArrayIndex v1 v2 rng s)
+                              -> return $ MonoLet $ MoArrayRead (qt t) (ArrayIndex (qv v1) (qv v2) rng s)
+        ILArrayPoke  (ArrayIndex v1 v2 rng s) v3
+                              -> return $ MonoLet $ MoArrayPoke (ArrayIndex (qv v1) (qv v2) rng s) (qv v3)
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 monoPrim :: MonoSubst -> FosterPrim TypeIL -> FosterPrim MonoType

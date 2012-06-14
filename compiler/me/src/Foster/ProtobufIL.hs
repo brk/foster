@@ -277,16 +277,18 @@ dumpExpr x@(MoStore a b) =
                     , PbLetable.tag   = IL_STORE
                     , PbLetable.type' = Just $ dumpType (typeMo x)  }
 
-dumpExpr x@(MoArrayRead _t (ArrayIndex b i sg)) =
+dumpExpr x@(MoArrayRead _t (ArrayIndex b i rng sg)) =
     P'.defaultValue { PbLetable.parts = fromList (fmap dumpVar [b, i])
                     , PbLetable.tag   = IL_ARRAY_READ
                     , PbLetable.string_value = Just $ stringSG sg
+                    , PbLetable.prim_op_name = Just $ u8fromString $ highlightFirstLine rng
                     , PbLetable.type' = Just $ dumpType (typeMo x)  }
 
-dumpExpr x@(MoArrayPoke (ArrayIndex b i sg) v) =
+dumpExpr x@(MoArrayPoke (ArrayIndex b i rng sg) v) =
     P'.defaultValue { PbLetable.parts = fromList (fmap dumpVar [b, i, v])
                     , PbLetable.tag   = IL_ARRAY_POKE
                     , PbLetable.string_value = Just $ stringSG sg
+                    , PbLetable.prim_op_name = Just $ u8fromString $ highlightFirstLine rng
                     , PbLetable.type' = Just $ dumpType (typeMo x)  }
 
 dumpExpr x@(MoInt _ty int) =

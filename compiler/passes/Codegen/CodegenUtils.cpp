@@ -35,6 +35,21 @@ void CodegenPass::popExistingScope(ValueScope* scope) {
 
 ////////////////////////////////////////////////////////////////////
 
+void emitFosterArrayBoundsCheck(llvm::Module* mod, llvm::Value* idx,
+                                                   llvm::Value* len64,
+                                                   const std::string& srclines) {
+  Value* fosterBoundsCheck = mod->getFunction("foster__boundscheck64");
+  ASSERT(fosterBoundsCheck != NULL);
+
+  Value* msg_array = builder.CreateGlobalString(srclines);
+  Value* msg = builder.CreateBitCast(msg_array, builder.getInt8PtrTy());
+  llvm::CallInst* call = builder.CreateCall3(fosterBoundsCheck,
+                          builder.CreateSExt(idx, len64->getType()),
+                                             len64,
+                                             msg);
+  markAsNonAllocating(call);
+}
+
 void emitFosterAssert(llvm::Module* mod, llvm::Value* cond, const char* cstr) {
   Value* fosterAssert = mod->getFunction("foster__assert");
   ASSERT(fosterAssert != NULL);

@@ -100,14 +100,14 @@ ail ctx ae =
                                          return $ AIDeref x
         AnnStore _rng   a b        -> do [x,y]   <- mapM q [a,b]
                                          return $ AIStore x y
-        AnnArrayRead _rng t (ArrayIndex a b s) -> do
+        AnnArrayRead _rng t (ArrayIndex a b rng s) -> do
                                          ti <- qt t
                                          [x,y]   <- mapM q [a,b]
-                                         return $ AIArrayRead ti (ArrayIndex x y s)
-        AnnArrayPoke _rng t (ArrayIndex a b s) c -> do
+                                         return $ AIArrayRead ti (ArrayIndex x y rng s)
+        AnnArrayPoke _rng t (ArrayIndex a b rng s) c -> do
                                          ti <- qt t
                                          [x,y,z]   <- mapM q [a,b,c]
-                                         return $ AIArrayPoke ti (ArrayIndex x y s) z
+                                         return $ AIArrayPoke ti (ArrayIndex x y rng s) z
         AnnTuple tup               -> do aies <- mapM q (childrenOf ae)
                                          return $ AITuple aies (annTupleRange tup)
         AnnCase _rng t e bs        -> do ti <- qt t

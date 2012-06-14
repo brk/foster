@@ -162,6 +162,16 @@ void foster__assert(bool ok, const char* msg) {
   }
 }
 
+void foster__boundscheck64(int64_t idx, int64_t len, const char* srclines) {
+  if (idx < 0 || idx >= len) {
+    fprintf(stderr, "bounds check failed: cannot index array of "
+                    "length %" PRId64 " with value % " PRId64 "\n"
+                    "%s", len, idx, srclines);
+    fflush(stderr);
+    exit(1);
+  }
+}
+
 int force_gc_for_debugging_purposes() {
   gc::force_gc_for_debugging_purposes(); return 0;
 }

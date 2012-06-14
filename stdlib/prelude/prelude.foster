@@ -40,7 +40,7 @@ arrayEnumFrom = { forall t:Type,
                   k : Int64 =>
                   f : { t => Int64 => () } =>
   if k <Int64 prim_arrayLength a
-    then f a[k] k; arrayEnumFrom a (incr64 k) f
+    then f a[primitive_trunc_i64_i32 k] k; arrayEnumFrom a (incr64 k) f
     else ()
   end
 };

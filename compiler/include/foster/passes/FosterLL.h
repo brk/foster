@@ -289,8 +289,11 @@ struct LLArrayIndex {
   LLVar* base;
   LLVar* index;
   std::string static_or_dynamic;
-  explicit LLArrayIndex(LLVar* base, LLVar* index, string static_or_dynamic)
-    : base(base), index(index), static_or_dynamic(static_or_dynamic) {}
+  std::string srclines;
+  explicit LLArrayIndex(LLVar* base, LLVar* index,
+                        string static_or_dynamic, string srclines)
+    : base(base), index(index),
+      static_or_dynamic(static_or_dynamic), srclines(srclines) {}
   virtual llvm::Value* codegenARI(CodegenPass* pass);
 };
 

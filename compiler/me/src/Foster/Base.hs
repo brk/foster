@@ -35,12 +35,13 @@ data ProcOrFunc   = FT_Proc | FT_Func  deriving Show
 data VarNamespace = VarProc | VarLocal deriving Show
 
 data SafetyGuarantee = SG_Static | SG_Dynamic               deriving (Show)
-data ArrayIndex expr = ArrayIndex expr expr SafetyGuarantee deriving (Show)
+data ArrayIndex expr = ArrayIndex expr expr SourceRange
+                                            SafetyGuarantee deriving (Show)
 
 data TyVar = BoundTyVar String -- bound by a ForAll, that is
            | SkolemTyVar String Uniq Kind
 
-childrenOfArrayIndex (ArrayIndex a b _) = [a, b]
+childrenOfArrayIndex (ArrayIndex a b _ _) = [a, b]
 
 briefCC CCC = "ccc"
 briefCC FastCC = ""

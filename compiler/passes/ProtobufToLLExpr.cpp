@@ -275,7 +275,8 @@ LLArrayIndex* parseArrayIndex(const pb::Letable& e) {
   ASSERT(e.parts_size() >= 2) << "array_index must have base and index";
   return new LLArrayIndex(parseTermVar(& e.parts(0)),
                           parseTermVar(& e.parts(1)),
-                          e.string_value());
+                          e.string_value(),
+                          e.prim_op_name());
 }
 
 LLExpr* parseArrayRead(const pb::Letable& e) {
