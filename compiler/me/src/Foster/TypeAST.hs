@@ -122,6 +122,7 @@ i8  = PrimIntAST I8
 i32 = PrimIntAST I32
 i64 = PrimIntAST I64
 i1  = PrimIntAST I1
+f64 = PrimFloat64
 
 primTyVars tyvars = map (\v -> (v, KindAnySizeType)) tyvars
 
@@ -246,6 +247,8 @@ gFosterPrimOpsTable = Map.fromList $
   ,(,) "primitive_sext_i8_to_i32"$(,) (mkFnType [i8 ] [i32]     ) $ PrimOp "sext_i32" i8
   ,(,) "primitive_trunc_i32_i8" $ (,) (mkFnType [i32] [i8 ]     ) $ PrimIntTrunc I32 I8
   ,(,) "primitive_trunc_i64_i32"$ (,) (mkFnType [i64] [i32]     ) $ PrimIntTrunc I64 I32
+  ,(,) "primitive_f64_to_i32"    $(,) (mkFnType [f64] [i32]     ) $ PrimOp "fptosi_f64_i32" i32
+  ,(,) "primitive_i32_to_f64"    $(,) (mkFnType [i32] [f64]     ) $ PrimOp "sitofp_f64" i32
   ] ++ fixnumPrimitives I64
     ++ fixnumPrimitives I32
     ++ fixnumPrimitives I8

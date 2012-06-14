@@ -639,6 +639,13 @@ evalPrimitiveIntOp I8 "bitnot" [SSInt i] = SSInt $
 evalPrimitiveIntOp _ "sext_i32" [SSInt i] = SSInt i
 evalPrimitiveIntOp _ "sext_i64" [SSInt i] = SSInt i
 
+evalPrimitiveIntOp I32 "sitofp_f64"     [SSInt i] = SSFloat (fromIntegral i)
+evalPrimitiveIntOp I32 "fptosi_f64_i32" [SSFloat f] =
+  let ft = truncate f in
+  let fi = toInteger (trunc32 ft) in
+  if ft == fi then SSInt fi
+              else error $ "Smallstep.fptosi: Can't fit in an Int32: " ++ show f
+
 evalPrimitiveIntOp size opName args =
   error $ "Smallstep.evalPrimitiveIntOp " ++ show size ++ " " ++ opName ++ " " ++ show args
 
@@ -646,6 +653,9 @@ evalPrimitiveIntOp size opName args =
 
 trunc8 :: Integer -> Int8
 trunc8 = fromInteger
+
+trunc32 :: Integer -> Int32
+trunc32 = fromInteger
 
 evalPrimitiveIntTrunc :: IntSizeBits -> IntSizeBits -> [SSValue] -> SSValue
 evalPrimitiveIntTrunc I32 I8 [SSInt i] = SSInt (toInteger $ trunc8 i)
