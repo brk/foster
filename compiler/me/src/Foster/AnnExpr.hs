@@ -48,7 +48,7 @@ data AnnExpr ty =
         | AnnPrimitive  SourceRange (TypedId ty)
         | AnnCall       SourceRange ty (AnnExpr ty) (AnnTuple ty)
         -- Mutable ref cells
-        | AnnAlloc      SourceRange              (AnnExpr ty)
+        | AnnAlloc      SourceRange              (AnnExpr ty) AllocMemRegion
         | AnnDeref      SourceRange ty           (AnnExpr ty)
         | AnnStore      SourceRange (AnnExpr ty) (AnnExpr ty)
         -- Array operations
@@ -83,7 +83,7 @@ typeAST annexpr =
      AnnUntil _rng t _ _   -> t
      AnnLetVar _rng _ _ b  -> recur b
      AnnLetFuns _rng _ _ e -> recur e
-     AnnAlloc _rng e       -> RefTypeAST (recur e)
+     AnnAlloc _rng e _     -> RefTypeAST (recur e)
      AnnDeref _rng t _     -> t
      AnnStore _rng _ _     -> TupleTypeAST []
      AnnArrayRead _rng t _ -> t
@@ -136,7 +136,7 @@ instance Structured (AnnExpr TypeAST) where
       E_AnnFn annFn                        -> [fnBody annFn]
       AnnLetVar    _rng _ a b              -> [a, b]
       AnnLetFuns   _rng _ids fns e         -> (map E_AnnFn fns) ++ [e]
-      AnnAlloc     _rng    a               -> [a]
+      AnnAlloc     _rng    a _             -> [a]
       AnnDeref     _rng _t a               -> [a]
       AnnStore     _rng    a b             -> [a, b]
       AnnArrayRead _rng _t ari             -> childrenOfArrayIndex ari
@@ -185,7 +185,7 @@ instance SourceRanged (AnnExpr ty) where
       E_AnnFn f                   -> fnRange f
       AnnLetVar    rng _ _ _      -> rng
       AnnLetFuns   rng _ _ _      -> rng
-      AnnAlloc     rng   _        -> rng
+      AnnAlloc     rng   _ _      -> rng
       AnnDeref     rng _ _        -> rng
       AnnStore     rng _ _        -> rng
       AnnArrayRead rng _ _        -> rng

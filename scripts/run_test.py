@@ -231,7 +231,8 @@ def run_one_test(testpath, paths, tmpdir, progargs):
 
         rv, ld_elapsed = link_to_executable(finalpath, exepath, paths, testpath)
         rv, rn_elapsed = run_command([exepath] + progargs, paths, testpath,
-                                     stdout=actual, stderr=expected, stdin=infile, strictrv=False)
+                                     stdout=actual, stderr=expected, stdin=infile,
+                                     showcmd=True, strictrv=False)
 
   if rv == 0:
     did_fail = run_diff(exp_filename, act_filename)

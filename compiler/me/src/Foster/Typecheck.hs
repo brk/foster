@@ -52,7 +52,7 @@ typecheck want ctx expr maybeExpTy = do
       E_LetAST rng binding  e   -> typecheckLet        ctx rng binding  e maybeExpTy
       E_TyApp  rng e t          -> typecheckTyApp      ctx rng e t        maybeExpTy
       E_Case   rng a branches   -> typecheckCase       ctx rng a branches maybeExpTy
-      E_AllocAST rng a          -> typecheckAlloc      ctx rng a          maybeExpTy
+      E_AllocAST rng a rgn      -> typecheckAlloc      ctx rng a rgn      maybeExpTy
       E_StoreAST rng e1 e2      -> typecheckStore      ctx rng e1 e2
       E_DerefAST rng e1         -> typecheckDeref      ctx rng e1         maybeExpTy
       E_SeqAST rng a b -> do ea <- typecheck want ctx a Nothing --(Just TypeUnitAST)
@@ -162,12 +162,12 @@ typecheckDeref ctx rng e1 maybeExpTy = do
     return (AnnDeref rng tau a1)
 -- }}}
 
-typecheckAlloc ctx rng a maybeExpTy = do
+typecheckAlloc ctx rng a rgn maybeExpTy = do
     let expTy = case maybeExpTy of Just (RefTypeAST t) -> Just t
                                    Just _              -> Nothing
                                    Nothing             -> Nothing
     ea <- tcRho ctx a expTy
-    return (AnnAlloc rng ea)
+    return (AnnAlloc rng ea rgn)
 -----------------------------------------------------------------------
 
 -- Resolve the given name as either a variable or a primitive reference.

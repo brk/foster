@@ -16,7 +16,7 @@ where
 
 import Foster.Base(SourceRange, Expr(..), freeVars, identPrefix, Structured(..),
                    SourceRanged(..), TypedId(..), butnot, ArrayIndex(..),
-                   childrenOfArrayIndex)
+                   AllocMemRegion, childrenOfArrayIndex)
 import Foster.TypeAST(TypeAST, EPattern(..), E_VarAST(..))
 import Foster.Kind
 import Foster.Output(out)
@@ -45,7 +45,7 @@ data ExprAST ty =
         | E_VarAST        SourceRange (E_VarAST ty)
         | E_CallAST       SourceRange (ExprAST ty) (TupleAST ty)
         -- Mutable ref cells
-        | E_AllocAST      SourceRange (ExprAST ty)
+        | E_AllocAST      SourceRange (ExprAST ty) AllocMemRegion
         | E_DerefAST      SourceRange (ExprAST ty)
         | E_StoreAST      SourceRange (ExprAST ty) (ExprAST ty)
         -- Array subscripting
@@ -116,7 +116,7 @@ instance Structured (ExprAST TypeAST) where
             E_UntilAST    _rng a b       -> [a, b]
             E_FnAST f                    -> [fnAstBody f]
             E_SeqAST      _rng  _a _b    -> unbuildSeqs e
-            E_AllocAST    _rng a         -> [a]
+            E_AllocAST    _rng a _       -> [a]
             E_DerefAST    _rng a         -> [a]
             E_StoreAST    _rng a b       -> [a, b]
             E_ArrayRead   _rng ari       -> childrenOfArrayIndex ari
@@ -148,7 +148,7 @@ instance SourceRanged (ExprAST ty)
       E_IfAST         rng _ _ _ -> rng
       E_UntilAST      rng _ _   -> rng
       E_SeqAST        rng _ _   -> rng
-      E_AllocAST      rng _     -> rng
+      E_AllocAST      rng _ _   -> rng
       E_DerefAST      rng _     -> rng
       E_StoreAST      rng _ _   -> rng
       E_ArrayRead     rng _     -> rng

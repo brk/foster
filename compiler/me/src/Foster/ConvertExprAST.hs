@@ -77,7 +77,7 @@ convertExprAST f expr =
     E_IfAST        rng    a b c -> liftM3 (E_IfAST        rng)   (q a) (q b) (q c)
     E_UntilAST     rng a b      -> liftM2 (E_UntilAST     rng)   (q a) (q b)
     E_SeqAST       rng a b      -> liftM2 (E_SeqAST       rng)   (q a) (q b)
-    E_AllocAST     rng a        -> liftM  (E_AllocAST     rng)   (q a)
+    E_AllocAST     rng a rgn    -> liftM2 (E_AllocAST     rng)   (q a) (return rgn)
     E_DerefAST     rng a        -> liftM  (E_DerefAST     rng)   (q a)
     E_StoreAST     rng a b      -> liftM2 (E_StoreAST     rng)   (q a) (q b)
     E_TyApp        rng a mt     -> liftM2 (E_TyApp        rng)   (q a) (liftMaybe f mt)

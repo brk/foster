@@ -725,7 +725,7 @@ Value* allocateCell(CodegenPass* pass, TypeAST* type,
     //  4) We must ensure that the GC does update the pointers within the cell.
     //  5) We must(?) ensure that the GC does not attempt to copy the stack
     //     cell to the heap.
-    return pass->markAsNeedingImplicitLoads(CreateEntryAlloca(ty, "alloc"));
+    return CreateEntryAlloca(ty, "stackref");
 
   case LLAllocate::MEM_REGION_GLOBAL_HEAP:
     return pass->emitMalloc(type, ctorId, srclines, init);

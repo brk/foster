@@ -84,7 +84,8 @@ parseCallPrim pbexpr rng = do
     case (T.unpack primname, args) of
       ("tuple",  _ ) -> return $ E_TupleAST (TupleAST rng args)
       ("deref", [e]) -> return $ E_DerefAST rng e
-      ("alloc", [e]) -> return $ E_AllocAST rng e
+      ("alloc",           [e]) -> return $ E_AllocAST rng e MemRegionGlobalHeap
+      ("stackref-unsafe", [e]) -> return $ E_AllocAST rng e MemRegionStack
       ("subscript",       [a,b]) -> return $ E_ArrayRead rng (ArrayIndex a b rng SG_Dynamic)
       ("subscript-unsafe",[a,b]) -> return $ E_ArrayRead rng (ArrayIndex a b rng SG_Static)
       ("store",[a,b])-> case b of -- a>^ c[d]

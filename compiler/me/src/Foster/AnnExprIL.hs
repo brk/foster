@@ -94,8 +94,8 @@ ail ctx ae =
         AnnLetFuns _rng ids fns e  -> do fnsi <- mapM (fnOf ctx) fns
                                          ei <- q e
                                          return $ AILetFuns ids fnsi ei
-        AnnAlloc _rng   a          -> do [x] <- mapM q [a]
-                                         return $ AIAlloc x MemRegionGlobalHeap
+        AnnAlloc _rng   a rgn      -> do [x] <- mapM q [a]
+                                         return $ AIAlloc x rgn
         AnnDeref _rng _t a         -> do [x] <- mapM q [a]
                                          return $ AIDeref x
         AnnStore _rng   a b        -> do [x,y]   <- mapM q [a,b]
