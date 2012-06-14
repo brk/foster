@@ -1,0 +1,69 @@
+snafuinclude Prelude "prelude";
+
+// Transliteration of Computer Language Benchmarks Game
+// program for Free Pascal contributed by Ian Osgood
+//                        and modified by Vincent Snijders.
+//
+// http://shootout.alioth.debian.org/u32/program.php?test=spectralnorm&lang=fpascal&id=1
+
+mulAtAv = { n : Int32 => v : Array Float64 => av : Array Float64 => tmp : Array Float64 =>
+  mulAv n v tmp;
+  mulAtv n tmp av;
+};
+
+mulAv = { n : Int32 => v : Array Float64 => av : Array Float64 =>
+  repeatRange 0 n { i : Int32 =>
+    0.0 >^ av[i];
+    repeatRange 0 n { j : Int32 =>
+      (av[i] +f64 (fA i j *f64 v[j])) >^ av[i]; ()
+    };
+  };
+};
+
+mulAtv = { n : Int32 => v : Array Float64 => av : Array Float64 =>
+  repeatRange 0 n { i : Int32 =>
+    0.0 >^ av[i];
+    repeatRange 0 n { j : Int32 =>
+      (av[i] +f64 (fA j i *f64 v[j])) >^ av[i]; ()
+    };
+  };
+};
+
+fA = { i : Int32 => j : Int32 =>
+  let d = ((bitashr-Int32 ((i +Int32 j) *Int32 (i +Int32 j +Int32 1)) 1)
+                                                  +Int32 i +Int32 1);
+  in
+    div-f64 1.0 (primitive_i32_to_f64 d);
+  end
+};
+
+in-range = { n : Int32 => a : Int32 => z : Int32 =>
+  if   n <Int32 a then False
+  else n <=Int32 z
+  end
+};
+
+repeatRange = { e : Int32 => n : Int32 => f : { Int32 => () } =>
+  if e <Int32 n then f e; repeatRange (e +Int32 1) n f else () end
+};
+
+main = {
+  let n   = tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1);
+      u   = (allocDArray:[Float64] n);
+      v   = (allocDArray:[Float64] n);
+      tmp = (allocDArray:[Float64] n);
+      vv  = (ref 0.0);
+      vBv = (ref 0.0);
+      
+  in
+    repeatRange 0 n { i : Int32 => 1.0 >^ u[i]; () };
+    repeatRange 1 10 { i : Int32 => mulAtAv n u v tmp; mulAtAv n v u tmp; () };
+    repeatRange 0 n { i : Int32 =>
+      (vBv^ +f64 (u[i] *f64 v[i])) >^ vBv;
+      ( vv^ +f64 (v[i] *f64 v[i])) >^ vv;
+      ()
+    };
+    
+    print_float_p9f64 (sqrt-f64 (div-f64 vBv^ vv^));
+  end
+};

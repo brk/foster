@@ -1,5 +1,12 @@
 snafuinclude Prelude "prelude";
 
+// Transliteration of Computer Language Benchmarks Game
+// program for Free Pascal contributed by Christoph Bauer
+//                         and sped up by Petr Prokhorenkov.
+//
+// http://shootout.alioth.debian.org/u32/program.php?test=nbody&lang=gcc&id=2
+
+
 type case Planet of
   $Planet (Ref Float64) // px
           (Ref Float64) // py
