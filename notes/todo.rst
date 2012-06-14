@@ -53,11 +53,13 @@ TODO: libraries, benchmarks, & applications
 -------------------------------------------
 * Well-known collection types to runtime (lists, etc)
 * Local vars?
-* Strings
+* Strings - partially done
 * Hash tables
 * Sequences
 * Persistent maps
 * MP integers
+* C interop story
+  * GC design
 * 32-bit floats
 * Flonum vectors
 * Fixnum vectors
@@ -69,14 +71,12 @@ TODO: minor optimizations
 -------------------------
 * Ensure that code like ``case foo of (bar, baz) -> (bar, baz) end``
   doesn't do any heap allocation (when we're returning an immutable value
-  identical to (some subterm of) the inspected value.
+  identical to (some subterm of) the inspected value).
 * Make sure linear chains of variable remappings don't trigger O(n^2) behavior.
         should be fixed now, but should still test just in case
 * Eliminating redundant stack slots for phi nodes?
 * Arity raising/unit elimination
 * Worker/wrapper for closures??
-* Move stack stores for invariant function args from postalloca to entry
-  (minor efficiency gain for tail-recursive functions).
 * Track integer ranges and omit bitshift masks when possible.
 
 * Work to minimize generated protobuf sizes.
@@ -85,6 +85,9 @@ TODO: minor optimizations
     Removing 502 single-element SEQ nodes saved 10845 byes, ~21 bytes per SEQ.
     Removing one optional field from Expr saved 1509 bytes.
     Omitting source ranges saved 34% (39kb).
+                                                                       
+* reuse stack slots
+  for code like ``(letstack s0 = ... in ... end, letstack s1 = ... in ... end)``
 
 TODO loop optimizations
 -----------------------
@@ -92,6 +95,19 @@ TODO loop optimizations
 * Make sure that hof-while gets compiled to good code (inlining?)
 * Recognize loops and loop nesting levels
 * Perform more aggressive specialization inside nested loops.
+
+* When making a function call in a loop (any loop, tail-rec vs until
+  doesn't matter), LLVM is performing unnecessary copies to make sure that the
+  callee isn't mucking up stack slots that should be preserved across calls.
+    * First: does this actually lead to measurable overhead? Per million iters?
+    * Removing three reg-to-mem copies in a tight loop (1e9 iters)
+      saves 420 ms (= 3.38 - 2.96).
+      Extrapolating, 1e6 iters would save 0.42 ms,
+      and the cost per 1000 iters is 420 ns.
+
+* Move stack stores for invariant function args from postalloca to entry
+  (minor efficiency gain for tail-recursive functions).
+  Basically the exact same cost analysis as above.
 
 TODO: less minor optimizations
 ------------------------------
@@ -133,6 +149,7 @@ TODO: design & implementation
  * Stable pointers
   * Malloced/foreign memory
   * Pointers to stack-allocated objects
+  * Interior pointers (for heap objects)
   * Scheme to control whether a pointer is considered a GC root
   * Invariants for what kinds of pointers can point
     to which other kinds of pointers, and whether pointer kinds are known
@@ -142,6 +159,7 @@ TODO: design & implementation
   * Aligned allocas
 
 * Type operators (types indexed by types)
+  * Or type-level turing complete computation?
 * Pattern matching (basics done, fancier variants possible:)
   * Arbitrary-sized bintegers
   * Views?
@@ -152,7 +170,9 @@ TODO: design & implementation
     * 1 non-zero arity,
       1     zero arity  => (nullable) pointer to { fields ... }
     * else              => (non-null) pointer to { ctortag, fields... }
-
+    * Interaction with mutability: if cell containing variant A can be
+      mutated to variant B, can't store tag bits in pointers.
+     
   * Layout situations for data types:
     * Most common: don't care about offsets, access fields indirectly.
     * Sometimes: want interop with C struct layout.

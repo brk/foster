@@ -183,6 +183,9 @@ but mutability of the fields introduces an artificial layer of indirection::
 Why is this an artificial layer of indirection?
     The ref cells are encapsulated by their container (owned, unique, whatever).
     This actually isn't strictly true: there are accessor functions which
-    return the ref cell pointer, but the key is that (after inlining) those
+    return the ref cell pointer, but the key is that (**after inlining**) those
     returned ref cells are always used "immediately" -- there are no long-lived
-    aliases to the ref cells which would prevent the cells from being inlined.
+    aliases to the ref cells which would prevent the cells from being inlined
+    into their parent objects.
+    
+
