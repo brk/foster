@@ -344,6 +344,7 @@ if __name__ == "__main__":
                 --me-arg=--dump-ir=kn    will print k-normalized IR
                 --me-arg=--dump-ir=cfg   will print closure-conv IR
                 --me-arg=--dump-ir=mono  will print monomo. IR
+                --be-arg=--gc-track-alloc-sites
                 --optc-arg=--help        will display optimization flags
 """)
   (options, args) = parser.parse_args()
