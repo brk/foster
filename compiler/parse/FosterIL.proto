@@ -223,7 +223,7 @@ message Decl {
 message Module {
   required string      modulename = 1;
   repeated Proc        procs      = 2;
-  repeated Decl        val_decls  = 3;
+  repeated Decl extern_val_decls  = 3;
   repeated Decl        typ_decls  = 4;
   repeated string      modlines   = 5;
 }

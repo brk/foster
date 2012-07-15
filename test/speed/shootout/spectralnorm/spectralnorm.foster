@@ -43,6 +43,7 @@ in-range = { n : Int32 => a : Int32 => z : Int32 =>
   end
 };
 
+//repeatRange :: { Int32 => { Int32 => () } => () };
 repeatRange = { e : Int32 => n : Int32 => f : { Int32 => () } =>
   if e <Int32 n then f e; repeatRange (e +Int32 1) n f else () end
 };
@@ -54,7 +55,7 @@ main = {
       tmp = (allocDArray:[Float64] n);
       vv  = (ref 0.0);
       vBv = (ref 0.0);
-      
+
   in
     repeatRange 0 n { i : Int32 => 1.0 >^ u[i]; () };
     repeatRange 1 10 { i : Int32 => mulAtAv n u v tmp; mulAtAv n v u tmp; () };
@@ -63,7 +64,7 @@ main = {
       ( vv^ +f64 (v[i] *f64 v[i])) >^ vv;
       ()
     };
-    
+
     print_float_p9f64 (sqrt-f64 (div-f64 vBv^ vv^));
   end
 };

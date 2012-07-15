@@ -168,6 +168,14 @@ LLModule* readLLProgramFromProtobuf(const string& pathstr,
 bool
 areDeclaredValueTypesOK(llvm::Module* mod,
      const std::vector<LLDecl*>& decls) {
+  // This function is a sanity check on the LLVM module
+  // we'll eventually be linking against. In particular,
+  // we want to make sure that any symbols which the program
+  // expects to exist are actually available with the
+  // expected calling convention (and so forth).
+  //
+  // The list of declarations to check should not include
+  // anything being defined while lowering.
   for (size_t i = 0; i < decls.size(); ++i) {
     LLDecl*   d = decls[i];
     TypeAST*  t = d->getType();
@@ -295,7 +303,7 @@ int main(int argc, char** argv) {
     LLModule* prog = readLLProgramFromProtobuf(optInputPath, pbin);
     ASSERT(prog) << "Unable to read LL program from protobuf!";
 
-    if(!areDeclaredValueTypesOK(module, prog->val_decls)) {
+    if(!areDeclaredValueTypesOK(module, prog->extern_val_decls)) {
       program_status = 1; goto cleanup;
     }
 

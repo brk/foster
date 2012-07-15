@@ -41,7 +41,7 @@ print_text = { s : Text =>
 ////
 
 //arrayLength :: { forall t:Type,    Array t => Int64 };
-// TODO providing explicit type annotation fails...
+// TODO provided explicit type annotations are not yet checked...
 arrayLength = { forall t:Type, a : Array t => prim_arrayLength a };
 
 incr64 = { n : Int64 => n +Int64 (primitive_sext_i64_i32 1) };
