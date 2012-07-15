@@ -101,6 +101,9 @@ endif (${WIN32})
 add_library(chromium_base SHARED
   ${BASE_SOURCES}
 )
+add_dependencies(chromium_base
+  ${PROJECT_BINARY_DIR}/_nativelibs_
+)
 
 set (LIBCHRMB ${CMAKE_SHARED_LIBRARY_PREFIX}chromium_base${CMAKE_SHARED_LIBRARY_SUFFIX})
 
