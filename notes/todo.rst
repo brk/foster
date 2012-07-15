@@ -5,6 +5,12 @@ TODO
   can enable SSE2+ insns for align 16, but can also raise memory usage.
 * Can begin doing comparative timing tests for verifying efficient
   implementation of high level idioms.
+* Document motivation for reasoning about mapping of first-class
+  functions to (environment-less) first-order procedures:
+    * performance
+    * FFI interop
+  and measure performance overhead of closure-call vs proc-call.
+* Write up measurements in paper form for jms/stevez/milo/etc.
 * Measure the impact of adding pointer analysis to a type-safe language
 * Measure impact of "low level" vs "high level" optimizations
 * Determine what tradeoffs exist between safety & "pay as you go"

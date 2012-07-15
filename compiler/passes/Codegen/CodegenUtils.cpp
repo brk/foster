@@ -117,14 +117,24 @@ Value* getElementFromComposite(Value* compositeValue, int indexValue,
 
 ////////////////////////////////////////////////////////////////////
 
+Constant* getConstantArrayOfString(const std::string& s) {
+  std::vector<llvm::Constant*> vals;
+  llvm::Type* i8 = builder.getInt8Ty();
+  for (unsigned i = 0; i < s.size(); ++i) {
+    vals.push_back(llvm::ConstantInt::get(i8, s[i]));
+  }
+  vals.push_back(llvm::ConstantInt::get(i8, 0)); // null terminator
+  llvm::ArrayType* ty = llvm::ArrayType::get(i8, vals.size());
+  return llvm::ConstantArray::get(ty, vals);
+}
+
 // Given a stack slot named s in a function called f,
 // returns a pointer to a string called "f((s))".
 Constant* getSlotName(llvm::AllocaInst* stackslot, CodegenPass* pass) {
   llvm::StringRef fnname = stackslot->getParent()->getParent()->getName();
   std::string slotname = fnname.str() + "(( " + stackslot->getName().str() + " ))";
-  Constant* cslotname = ConstantArray::get(builder.getContext(),
-                                           slotname.c_str(),
-                                           true);
+  Constant* cslotname = getConstantArrayOfString(slotname);
+
   GlobalVariable* slotnameVar = new GlobalVariable(
       /*Module=*/      *(pass->mod),
       /*Type=*/        cslotname->getType(),

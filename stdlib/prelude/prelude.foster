@@ -1,4 +1,11 @@
 
+type case Maybe (a:Boxed)
+  of $None
+  of $Some a
+;
+
+// TODO switching from Boxed to Type fails...
+
 type case List (a:Boxed)
   of $Nil
   of $Cons a (List a)
@@ -32,6 +39,10 @@ print_text = { s : Text =>
 };
 
 ////
+
+//arrayLength :: { forall t:Type,    Array t => Int64 };
+// TODO providing explicit type annotation fails...
+arrayLength = { forall t:Type, a : Array t => prim_arrayLength a };
 
 incr64 = { n : Int64 => n +Int64 (primitive_sext_i64_i32 1) };
 

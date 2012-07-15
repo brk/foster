@@ -87,7 +87,7 @@ struct EscapingAllocaFinder : public FunctionPass {
       }
 
       // Branches and invokes do not escape, only unwind and return do.
-      if (isa<UnwindInst>(ti) || isa<ReturnInst>(ti)) {
+      if (isa<ReturnInst>(ti)) {
         if (ti->getNumOperands() == 0) continue;
 
         llvm::Value* retval = ti->getOperand(0)->stripPointerCasts();

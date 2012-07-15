@@ -237,7 +237,6 @@ const char* llvmValueTag(llvm::Value* v) {
   if (isa<llvm::BranchInst>(v))         return "BranchInst";
   if (isa<llvm::IndirectBrInst>(v))     return "IndirectBrInst";
   if (isa<llvm::InvokeInst>(v))         return "InvokeInst";
-  if (isa<llvm::UnwindInst>(v))         return "UnwindInst";
   if (isa<llvm::TruncInst>(v))          return "TruncInst";
   if (isa<llvm::BitCastInst>(v))        return "BitCastInst";
 

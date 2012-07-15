@@ -257,6 +257,7 @@ std::string HOST_TRIPLE = LLVM_DEFAULT_TARGET_TRIPLE;
 llvm::Reloc::Model relocModel = llvm::Reloc::Default;
 
 void configureTargetDependentOptions(const llvm::Triple& triple,
+                                     llvm::TargetOptions& targetOptions,
                                      TargetMachine::CodeGenFileType filetype) {
   if (triple.isMacOSX()) {
     // Applications on Mac OS X (x86) must be compiled with relocatable symbols,
@@ -271,7 +272,8 @@ void configureTargetDependentOptions(const llvm::Triple& triple,
 
   // Ensure we always compile with -disable-fp-elim
   // to enable simple stack walking for the GC.
-  llvm::NoFramePointerElim = true;
+  targetOptions.NoFramePointerElim = true;
+  //targetOptions.EnableFastISel = true;
 }
 
 void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
@@ -293,7 +295,8 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
   if (triple.getTriple().empty()) {
     triple.setTriple(HOST_TRIPLE);
   }
-  configureTargetDependentOptions(triple, filetype);
+  llvm::TargetOptions* targetOptions = new llvm::TargetOptions();
+  configureTargetDependentOptions(triple, *targetOptions, filetype);
 
   const Target* target = NULL;
   string err;
@@ -313,6 +316,7 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
   TargetMachine* tm = target->createTargetMachine(triple.getTriple(),
                                                  "", // CPU
                                                  "", // Features
+                                                 *targetOptions,
                                                  relocModel,
                                                  cgModel
 #ifdef LLVM_DEFAULT_TARGET_TRIPLE
@@ -359,7 +363,7 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
   // TODO: LLVM 3.0 and earlier will crash in X86ISelDAG with CodeGenOpt::None
   // when using llvm.gcroot of bitcast values and FastISel.
   // http://llvm.org/bugs/show_bug.cgi?id=10799
-  llvm::EnableFastISel = false;
+  //llvm::EnableFastISel = false;
   // We disable here (after adding passes) because adding passes causes LLVM
   // to reset the flag based on a command-line option that we can't access.
 

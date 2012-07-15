@@ -13,7 +13,6 @@
 #include "llvm/InstrTypes.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Module.h"
-#include "llvm/ADT/VectorExtras.h"
 
 #include <map>
 #include <set>
@@ -187,9 +186,8 @@ GlobalVariable* constructTypeMap(llvm::Type*  ty,
 
   std::string wrapped;
   raw_string_ostream ss(wrapped); ss << name << " = " << *ty;
-  Constant* cname = ConstantArray::get(builder.getContext(),
-                                       ss.str().c_str(),
-                                       true);
+  Constant* cname = getConstantArrayOfString(ss.str());
+
   GlobalVariable* typeNameVar = new GlobalVariable(
       /*Module=*/      *mod,
       /*Type=*/        cname->getType(),
@@ -289,8 +287,8 @@ GlobalVariable* emitCoroTypeMap(StructTypeAST* typ, StructType* sty,
   // The pointer-to-function will be automatically skipped, and the remaining
   // pointers are precisely those which we want the GC to notice.
   int8_t bogusCtor = -1;
-  return emitTypeMap(typ, sty, ss.str(), NotArray, bogusCtor, mod,
-                     make_vector(0, 2, 5, NULL));
+  std::vector<int> v; v.push_back(0); v.push_back(2); v.push_back(5);
+  return emitTypeMap(typ, sty, ss.str(), NotArray, bogusCtor, mod, v);
 }
 
 void registerStructType(StructTypeAST* structty,
