@@ -427,21 +427,14 @@ dumpMonoModuleToProtobuf m outpath = do
     L.writeFile outpath (messagePut $ dumpProgramToModule m)
   where
     dumpProgramToModule :: MonoProgram -> Module
-    dumpProgramToModule (MoProgram procdefmap alldecls datatypes (SourceLines lines))
+    dumpProgramToModule (MoProgram procdefmap extern_decls datatypes (SourceLines lines))
         = let procdefs = Map.elems procdefmap in
-          let extern_decls = externDecls procdefs alldecls in
           Module { modulename = u8fromString $ "foo"
                  , procs      = fromList (map dumpProc procdefs)
           , extern_val_decls  = fromList (map dumpDecl extern_decls)
                  , typ_decls  = fromList (map dumpDataTypeDecl datatypes)
                  , modlines   = fmap textToPUtf8 lines
                  }
-
-    externDecls procdefs alldecls =
-      [decl | decl <- alldecls, has_no_defn decl]
-        where
-          has_no_defn (MoExternDecl s _) = List.notElem (T.pack s) procnames
-          procnames = map (\p -> identPrefix (moProcIdent p)) procdefs
 
     dumpProc p
       = Proc { Proc.name  = dumpIdent $ moProcIdent p

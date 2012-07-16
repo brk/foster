@@ -62,19 +62,29 @@ typecheckFnSCC :: Bool -> Bool
 typecheckFnSCC showASTs showAnnExprs scc (ctx, tcenv) = do
     let fns = Graph.flattenSCC scc
 
-    -- Generate bindings before doing any typechecking,
-    -- so that if a function fails to typecheck, we'll have the best binding
-    -- on hand to use for subsequent typechecking.
-    _bindings <- forM fns $ \fn -> do unTc tcenv $ bindingForFnAST fn
-    let bindings = map (\(OK e) -> e) _bindings
+    -- Generate bindings (for functions without user-provided declarations)
+    -- before doing any typechecking, so that if a function fails to typecheck,
+    -- we'll have the best binding on hand to use for subsequent typechecking.
+    -- TODO do we gain anything from using Nothing as the expected type for
+    --      generated bindings?
+    _bindings <- forM fns $ \fn ->
+        case termVarLookup (fnAstName fn) (contextBindings ctx) of
+          Nothing  -> do newBinding <- unTc tcenv $ bindingForFnAST fn
+                         return (Nothing               , newBinding)
+          Just tid -> do let binding = TermVarBinding (fnAstName fn) tid
+                         return (Just (tidType tid), OK binding)
+    let bindings = map (\(t, OK b) -> (t, b)) _bindings
 
     -- Note that all functions in an SCC are checked in the same environment!
-    tcResults <- forM (zip fns bindings) $ \(fn, binding) -> do
+    -- Also note that each function is typechecked with its own binding
+    -- in scope (for typechecking recursive calls).
+    -- TODO better error messages for type conflicts
+    tcResults <- forM (zip fns bindings) $ \(fn, (expectedType, binding)) -> do
         let ast = (E_FnAST fn)
         let name = T.unpack $ fnAstName fn
         putStrLn $ "typechecking " ++ name
         annfn <- unTc tcenv $
-                    do tcSigma (prependContextBinding ctx binding) ast Nothing
+                    do tcSigma (prependContextBinding ctx binding) ast expectedType
         -- We can't convert AnnExpr to AIExpr here because
         -- the output context is threaded through further type checking.
         return (annfn, (ast, binding))
@@ -227,7 +237,7 @@ typecheckModule verboseMode modast tcenv0 = do
                       -> Tc (Context TypeIL, ModuleIL AIExpr TypeIL)
    convertTypeILofAST mAST ctx_ast oo_annfns = do
      ctx_il    <- liftContextM   (ilOf ctx_ast) ctx_ast
-     decls     <- mapM (convertDecl (ilOf ctx_ast)) (moduleASTdecls mAST)
+     decls     <- mapM (convertDecl (ilOf ctx_ast)) (externalModuleDecls mAST)
      primtypes <- mapM (convertDataTypeAST ctx_ast) (moduleASTprimTypes mAST)
      datatypes <- mapM (convertDataTypeAST ctx_ast) (moduleASTdataTypes mAST)
      aiFns     <- mapM (tcInject (fnOf ctx_ast))
@@ -236,6 +246,15 @@ typecheckModule verboseMode modast tcenv0 = do
                                                   (moduleASTsourceLines mAST)
      return (ctx_il, m)
        where
+        -- Note that we discard internal declarations, which are only useful
+        -- during type checking. External declarations, on the other hand,
+        -- will eventually be needed during linking.
+        externalModuleDecls mAST = filter has_no_defn (moduleASTdecls mAST)
+          where
+            funcnames = map fnAstName (moduleASTfunctions mAST)
+            valuenames = Set.fromList funcnames
+            has_no_defn (s, _) = Set.notMember (T.pack s) valuenames
+
         unFunAnn (E_AnnFn f) = f
         unFunAnn _           = error $ "Saw non-AnnFn in unFunAnn"
 
