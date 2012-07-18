@@ -82,7 +82,7 @@ This is equivalent to ``(-) e s``::
     │     │     │         ├─VarAST       e
     │     │     │         └─VarAST       s
 
-Well, what's the type of binary ``-``? It should be overloaded for (at least)
+Well, what's the type of binary ``-``? It "should" be overloaded for (at least)
 types ``i32`` and ``i64``.
 
 The Haskell approach here (I think) is to notice
@@ -102,7 +102,7 @@ the set of overloaded types must be resolved against the concrete types
 of the arguments, looking for most specific matches. If there is one most
 specific match, great; otherwise, issue an error.
 
-There are two differences of assumption between the two approaches.
+There are two differences of assumption between the two approaches:
   * The first question is whether the type checker knows, at the point of
     application, the complete set of overloads available.
     A consequence of the Haskell approach is that type class instances may be

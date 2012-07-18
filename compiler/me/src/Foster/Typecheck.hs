@@ -477,6 +477,8 @@ tuplizeNE [ty] = ty
 tuplizeNE tys  = TupleTypeAST tys
 
 inst :: AnnExpr Sigma -> Tc (AnnExpr Rho)
+-- Transform a Sigma type into a Rho type by instantiating the ForAll's
+-- type parameters with unification variables.
 inst base = do
   -- TODO shallow zonk here
   case typeAST base of
