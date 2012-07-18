@@ -32,6 +32,12 @@ data TCWanted = TCSigma | TCRho deriving Show
 tcSigma = typecheck TCSigma
 tcRho   = typecheck TCRho
 
+-- To force an expression to be typechecked in pure inference mode,
+-- try the following construct: case INFER of _ -> ... end.
+--
+-- To for an expression to be checked against a meta type variable,
+-- the easiest approach is to use a reference store operation: METATY >^ r.
+
 typecheck :: TCWanted -> Context Sigma -> ExprAST TypeAST -> Maybe TypeAST -> Tc (AnnExpr Rho)
 typecheck want ctx expr maybeExpTy = do
   --tcLift $ runOutput $ outCS Green ("typecheck " ++ show want ++ ": ") ++ textOf expr 0 ++ out (" <=? " ++ show maybeExpTy)
@@ -87,21 +93,7 @@ typecheck want ctx expr maybeExpTy = do
               return $ AnnCompiles rng (CompilesResult outputOrE)
 
     return annexpr
-    {-
-    -- If the context provided an expected type,
-    -- make sure it unifies with the actual type we computed!
-    case maybeExpTy of
-        Nothing -> return annexpr
-        Just expTy -> do tcLift $ putStrLn ""
-                         tcLift $ runOutput $ showStructure annexpr
-                         tcLift $ putStrLn ""
-                         tcLift $ putStrLn $ show want ++ " Checking return type " ++ show expTy ++" with subsumedBy..."
-                         subsumedBy annexpr expTy
-                           (Just $ outToString (textOf expr 0)
-                               ++ "\n\t\thas_type: " ++ (show $ typeAST annexpr)
-                               ++ "\n\t\texpected: " ++ (show $ expTy)
-                               ++ show (rangeOf expr))
-   -}
+
 -----------------------------------------------------------------------
 
 typecheckBool rng b maybeExpTy = do
@@ -155,7 +147,7 @@ typecheckDeref ctx rng e1 maybeExpTy = do
       RefTypeAST {} -> return ()
       MetaTyVar  {} -> return ()
       other -> tcFails [out $ "Expected deref-ed expr "
-                           ++ "to have ref type, had " ++ show other ++ show rng]
+                           ++ "to have ref type, had " ++ show other ++ highlightFirstLine rng]
     unify (typeAST a1) (RefTypeAST tau) (Just $ "Deref expression: " ++ highlightFirstLine rng
                                                  ++ " was expected to have type " ++ show (RefTypeAST tau)
                                                  ++ " but actually had type " ++ show (typeAST a1))
@@ -248,8 +240,13 @@ typecheckLetRec ctx0 rng recBindings e mt = do
     e' <- tcRho ctx e mt
 
     let fns = [f | (E_AnnFn f) <- tcbodies]
+    let nonfns = filter notAnnFn tcbodies
+    sanityCheck (null nonfns) "Recursive bindings should only contain functions!"
     return $ AnnLetFuns rng ids fns e'
 -- }}}
+
+notAnnFn (E_AnnFn _) = False
+notAnnFn _           = True
 
 varbind id ty = TermVarBinding (identPrefix id) (TypedId ty id)
 typecheckCase :: Context Sigma -> SourceRange -> ExprT
@@ -631,7 +628,6 @@ typecheckCall ctx rng base args maybeExpTy = do
              typecheckCallRho eargs annTyApp (typeAST annTyApp) rng
 
       MetaTyVar m -> do
-            tcLift $ putStrLn ("*** typecheckCall ctx rng base args _maybeExpTy: " ++ show maybeExpTy)
             AnnTuple eargs <- tcSigma ctx args Nothing
 
             rt <- newTcUnificationVarTau   $ "arg type for " ++ mtvDesc m

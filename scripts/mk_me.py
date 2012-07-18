@@ -23,6 +23,8 @@ def get_parser(usage):
                     help="Force GHC to profile all Haskell sources.")
   parser.add_option("--optimize", dest="optimize", action="store_true", default=False,
                     help="Enable optimization when compiling Haskell code.")
+  parser.add_option("--coverage", dest="coverage", action="store_true", default=False,
+                    help="Enable coverage when compiling Haskell code.")
   return parser
 
 def normalize(path):
@@ -60,6 +62,9 @@ if __name__ == "__main__":
 
   if options.optimize:
     params['hsflags'] += ' -O2'
+
+  if options.coverage:
+    params['hsflags'] += ' -fhpc'
 
   if ghc7plus():
     # GHC 6 allows all runtime opts to be late-bound,
