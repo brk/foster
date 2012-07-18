@@ -84,7 +84,8 @@ typecheckFnSCC showASTs showAnnExprs scc (ctx, tcenv) = do
         let name = T.unpack $ fnAstName fn
         putStrLn $ "typechecking " ++ name
         annfn <- unTc tcenv $
-                    do tcSigma (prependContextBinding ctx binding) ast expectedType
+             tcSigmaToplevel binding (prependContextBinding ctx binding) ast expectedType
+
         -- We can't convert AnnExpr to AIExpr here because
         -- the output context is threaded through further type checking.
         return (annfn, (ast, binding))

@@ -3,7 +3,7 @@
 -- Use of this source code is governed by a BSD-style license that can be
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
-module Foster.Typecheck(tcSigma) where
+module Foster.Typecheck(tcSigmaToplevel) where
 
 import qualified Data.List as List(length, zip)
 import Control.Monad(liftM, forM_, forM, liftM, liftM2)
@@ -136,6 +136,11 @@ typecheck want ctx expr maybeExpTy = do
               return $ AnnCompiles rng (CompilesResult outputOrE)
 
     return annexpr
+
+tcSigmaToplevel (TermVarBinding txt tid) ctx ast expectedType = do
+  annexpr <- tcSigma ctx ast expectedType
+  unify (typeAST annexpr) (tidType tid) (Just $ "overall type of " ++ T.unpack txt)
+  return annexpr
 
 -----------------------------------------------------------------------
 
@@ -729,17 +734,9 @@ typecheckFn' ctx f cc expArgType expBodyType = do
     let fnty = let argtypes = TupleTypeAST (map tidType uniquelyNamedFormals) in
                fnTypeTemplate f argtypes (typeAST annbody) cc
 
-    let annfn = E_AnnFn $ Fn (TypedId fnty (GlobalSymbol $ fnAstName f))
+    return $ E_AnnFn $ Fn (TypedId fnty (GlobalSymbol $ fnAstName f))
                           uniquelyNamedFormals annbody freeVars
                           (fnAstRange f)
-
-    -- If we're type checking a top-level function binding, update its type.
-    case termVarLookup (T.pack fnProtoName) (contextBindings ctx) of
-      Nothing -> return ()
-      Just av -> subsumedBy annfn (tidType av)
-                   (Just $ "overall type of function " ++ fnProtoName) >> return ()
-
-    return annfn
   where
     extendContext :: Context Sigma -> [AnnVar] -> Maybe TypeAST -> Tc (Context Sigma)
     extendContext ctx [] Nothing = return ctx
