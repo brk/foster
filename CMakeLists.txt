@@ -116,15 +116,11 @@ find_package(Threads REQUIRED)
 
 ####################### Compilation Rules ##########################
 
-add_custom_command(OUTPUT ${PROJECT_BINARY_DIR}/_bitcodelibs_
-         COMMAND mkdir -p ${PROJECT_BINARY_DIR}/_bitcodelibs_)
-
-# Creating the _generated_ directory is easy enough!
-add_custom_command(OUTPUT ${PROJECT_BINARY_DIR}/_generated_
-         COMMAND mkdir -p ${PROJECT_BINARY_DIR}/_generated_)
-
-add_custom_command(OUTPUT ${PROJECT_BINARY_DIR}/_nativelibs_
-         COMMAND mkdir -p ${PROJECT_BINARY_DIR}/_nativelibs_)
+# Just run these every time we build... CMake seems to have trouble
+# with the concept of having a target depend on a directory.
+execute_process(COMMAND mkdir -p ${PROJECT_BINARY_DIR}/_generated_)
+execute_process(COMMAND mkdir -p ${PROJECT_BINARY_DIR}/_bitcodelibs_)
+execute_process(COMMAND mkdir -p ${PROJECT_BINARY_DIR}/_nativelibs_)
 
 # Use python to build fosterParser.c when grammar/foster.g changes
 add_custom_command(
@@ -221,6 +217,11 @@ add_custom_target(hs_me
 # We currently run tests in parallel on Linux and serially on Mac OS X.
 # Haskell's profiling coverage tool corrupts its database when
 # run in parallel, so consider yourself warned...
+
+add_custom_target(hs_clean
+  COMMAND rm -rf ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/*.o
+  COMMAND rm -f  ${PROJECT_SOURCE_DIR}/compiler/me/src/Main.o
+  )
 
 #-------------------------------------------------------------------
 

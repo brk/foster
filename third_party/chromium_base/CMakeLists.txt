@@ -101,9 +101,6 @@ endif (${WIN32})
 add_library(chromium_base SHARED
   ${BASE_SOURCES}
 )
-add_dependencies(chromium_base
-  ${PROJECT_BINARY_DIR}/_nativelibs_
-)
 
 set (LIBCHRMB ${CMAKE_SHARED_LIBRARY_PREFIX}chromium_base${CMAKE_SHARED_LIBRARY_SUFFIX})
 
@@ -115,7 +112,6 @@ add_custom_command(TARGET chromium_base POST_BUILD
   COMMAND mkdir -p ${PROJECT_BINARY_DIR}/fc-output
   COMMAND cp ${LIBRARY_OUTPUT_PATH}/${LIBCHRMB}
              ${PROJECT_BINARY_DIR}/fc-output/
-  DEPENDS ${LIBRARY_OUTPUT_PATH}
 )
 
 if (${APPLE})
