@@ -17,6 +17,7 @@ import Foster.ProtobufUtils
 import qualified Data.ByteString.Lazy as L(writeFile)
 import Data.Sequence as Seq(fromList)
 import Data.Map as Map(elems)
+import Data.List as List(notElem)
 
 import Text.ProtocolBuffers(messagePut)
 
@@ -426,13 +427,15 @@ dumpMonoModuleToProtobuf m outpath = do
     L.writeFile outpath (messagePut $ dumpProgramToModule m)
   where
     dumpProgramToModule :: MonoProgram -> Module
-    dumpProgramToModule (MoProgram procdefs decls datatypes (SourceLines lines))
-        = Module { modulename = u8fromString $ "foo"
-                 , procs      = fromList [dumpProc p | p <- Map.elems procdefs]
-                 , val_decls  = fromList (map dumpDecl decls)
+    dumpProgramToModule (MoProgram procdefmap extern_decls datatypes (SourceLines lines))
+        = let procdefs = Map.elems procdefmap in
+          Module { modulename = u8fromString $ "foo"
+                 , procs      = fromList (map dumpProc procdefs)
+          , extern_val_decls  = fromList (map dumpDecl extern_decls)
                  , typ_decls  = fromList (map dumpDataTypeDecl datatypes)
                  , modlines   = fmap textToPUtf8 lines
                  }
+
     dumpProc p
       = Proc { Proc.name  = dumpIdent $ moProcIdent p
              , in_args    = fromList $ [dumpIdent (tidIdent v) | v <- moProcVars p]
@@ -452,7 +455,7 @@ dumpMonoModuleToProtobuf m outpath = do
              , Decl.type' = dumpDataType name (dataTypeCtors datatype)
              }
 
-    dumpDecl (MoDecl s t) =
+    dumpDecl (MoExternDecl s t) =
         Decl { Decl.name  = u8fromString s
              , Decl.type' = dumpType t
              }

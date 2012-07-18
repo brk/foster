@@ -359,8 +359,8 @@ LLModule* LLModule_from_pb(const pb::Module& e) {
   string moduleName = e.modulename();
 
   // Walk the type declarations and add their types to the current scope.
-  // In contrast, the value declarations are only for checking purposes; if
-  // a value isn't in a Module we've imported, we can't magically summon it!
+  // In contrast, the extern value declarations are only for checking purposes;
+  // if a value isn't in a Module we've imported, we can't magically summon it!
   std::vector<NamedTypeAST*> namedTypes;
   for (int i = 0; i < e.typ_decls_size(); ++i){
     namedTypes.push_back(new NamedTypeAST(e.typ_decls(i).name(), NULL,
@@ -381,12 +381,12 @@ LLModule* LLModule_from_pb(const pb::Module& e) {
     procs.push_back(parseProc(e.procs(i)));
   }
 
-  std::vector<LLDecl*> vdecls;
-  for (int i = 0; i < e.val_decls_size(); ++i) {
-    vdecls.push_back(parseDecl(e.val_decls(i)));
+  std::vector<LLDecl*> evdecls;
+  for (int i = 0; i < e.extern_val_decls_size(); ++i) {
+    evdecls.push_back(parseDecl(e.extern_val_decls(i)));
   }
 
-  return new LLModule(moduleName, procs, vdecls, datatype_decls);
+  return new LLModule(moduleName, procs, evdecls, datatype_decls);
 }
 
 

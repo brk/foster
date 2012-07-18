@@ -26,7 +26,7 @@ data MonoProgram = MoProgram (Map Ident MoProcDef)
                              [DataType MonoType]
                              SourceLines
 
-data MoExternDecl = MoDecl String MonoType deriving (Show)
+data MoExternDecl = MoExternDecl String MonoType deriving (Show)
 
 data MoProcDef =
      MoProcDef { moProcReturnType :: MonoType

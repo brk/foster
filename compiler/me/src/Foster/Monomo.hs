@@ -63,7 +63,7 @@ monomorphize (ILProgram procdefmap decls datatypes lines) =
 isNotInstantiable procdef = isNothing (ilProcPolyTyVars procdef)
 
 monoExternDecl :: ILExternDecl -> MoExternDecl
-monoExternDecl (ILDecl s t) = MoDecl s (monoType emptyMonoSubst t)
+monoExternDecl (ILDecl s t) = MoExternDecl s (monoType emptyMonoSubst t)
 
 addInitialMonoTasksAndGo procdefs = do
     -- Any proc that is not itself subject to polyinstantiation when we begin

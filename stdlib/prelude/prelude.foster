@@ -40,8 +40,8 @@ print_text = { s : Text =>
 
 ////
 
-//arrayLength :: { forall t:Type,    Array t => Int64 };
-// TODO providing explicit type annotation fails...
+arrayLength :: { forall x:Type,    Array x => Int64 };
+// TODO we currently fail to unify the two type variables here:
 arrayLength = { forall t:Type, a : Array t => prim_arrayLength a };
 
 incr64 = { n : Int64 => n +Int64 (primitive_sext_i64_i32 1) };
