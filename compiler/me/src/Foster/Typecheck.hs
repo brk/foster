@@ -28,6 +28,49 @@ type ExprT = ExprAST TypeAST
 data TCWanted = TCSigma | TCRho deriving Show
 
 -----------------------------------------------------------------------
+-- The type inference algorithm implemented here is based on the one
+-- presented by Peyton Jones, Vytiniotis, Weirich, and Shields in the
+-- paper ``Practical type inference for arbitrary-rank types.''
+--
+-- A few quick notes:
+--   * A type may be polymorphic or monomorphic, depending on whether it
+--     contains any foralls (ForAllAST).
+--   * Polymorphic types are further (conceptually) divided into
+--     those which may begin with a forall (sigma types), and those
+--     which never have a forall as the topmost type constructor (rho types).
+--   * Type checking can proceed in "rho mode" or "sigma mode."
+--     For example, when checking the type of `e` in the expression
+--     `(prim deref e)`, we operate in rho mode because a correct program
+--     will never give `e` a type beginning with a forall.
+--     The only place in the algorithm where the mode makes a difference is
+--     for variables, where rho-mode induces an instantiation after inferring
+--     a polymorphic type.
+--
+--   * The type inference algorithm is bidirectional. In the paper,
+--     bidirectionality is achieved by passing in either an expected type, or
+--     a mutable reference variable serving as an "output parameter."
+--     We instead use (Maybe TypeAST) as the signature, to determine whether
+--     the algorithm should run in inference or checking mode.
+--     Checking mode is strictly more powerful, at the cost of increased
+--     programmer annotation burden.
+--       (TODO: document how and where the algorithm switches between
+--              checking and inference modes for some simple examples)
+--   * See the rule for typechecking boolean constants for an example of
+--     how the expected type can be used to improve error messages.
+--   * Unlike the language from the paper, we allow programmers to explicitly
+--     instantiate polymorphic types. This provides a nice way of supporting
+--     impredicative instantiation and polymorphic recursion.
+--
+--   * There are two core helper functions for driving type inference:
+--     `unify` and `subsumedBy`.
+--     `unify` takes two *tau* types, and unifies them by side effect.
+--       They are taus because unify proceeds recursively, so there's no
+--       effective difference between a rho and a sigma.
+--     `subsumedBy` takes a type-checked expression annotated with a sigma type,
+--     and another sigma type, and verifies (via `unify`, after appropriate
+--     type-massaging) that the expression can be viewed as having the provided
+--     sigma type.
+-----------------------------------------------------------------------
 
 tcSigma = typecheck TCSigma
 tcRho   = typecheck TCRho
@@ -489,6 +532,7 @@ instWith _          aexpSigma [] = do
         sanityCheck (isRho $ typeAST aexpSigma)
                      "Tried to instantiate a sigma with no types!"
         return aexpSigma
+
 instWith rng aexpSigma taus = do
     -- TODO shallow zonk here
     case typeAST aexpSigma of
@@ -783,6 +827,8 @@ verifyNonOverlappingBindings rng name binders = do
 
 -----------------------------------------------------------------------
 
+-- As in the paper, zonking recursively eliminates indirections
+-- from instantiated meta type variables.
 zonkType :: TypeAST -> Tc TypeAST
 zonkType x = do
     case x of
@@ -804,6 +850,9 @@ zonkType x = do
         FnTypeAST s r cc cs   -> do s' <- zonkType s ; r' <- zonkType r
                                     return $ FnTypeAST s' r' cc cs
 
+-- Turns a type like (forall t, T1 t -> T2 t) into (T1 ~s) -> (T2 ~s)
+-- where ~s denotes a skolem type variable. Also returns the generated tyvars.
+skolemize :: Sigma -> Tc ([TyVar], Rho)
 skolemize (ForAllAST ktvs rho) = do
                              skolems <- mapM newTcSkolem ktvs
                              let tyvarsAndTys = List.zip (tyvarsOf ktvs)
