@@ -217,8 +217,10 @@ add_custom_target(hs_me
   COMMAND python ${PROJECT_SOURCE_DIR}/scripts/mk_me.py
           --srcroot ${PROJECT_SOURCE_DIR}
           --bindir ${PROJECT_BINARY_DIR}
-          --coverage
   )
+# We currently run tests in parallel on Linux and serially on Mac OS X.
+# Haskell's profiling coverage tool corrupts its database when
+# run in parallel, so consider yourself warned...
 
 #-------------------------------------------------------------------
 
