@@ -729,15 +729,17 @@ typecheckFn' ctx f cc expArgType expBodyType = do
     let fnty = let argtypes = TupleTypeAST (map tidType uniquelyNamedFormals) in
                fnTypeTemplate f argtypes (typeAST annbody) cc
 
+    let annfn = E_AnnFn $ Fn (TypedId fnty (GlobalSymbol $ fnAstName f))
+                          uniquelyNamedFormals annbody freeVars
+                          (fnAstRange f)
+
     -- If we're type checking a top-level function binding, update its type.
     case termVarLookup (T.pack fnProtoName) (contextBindings ctx) of
       Nothing -> return ()
-      Just av -> unify fnty (tidType av)
-                   (Just $ "overall type of function " ++ fnProtoName)
+      Just av -> subsumedBy annfn (tidType av)
+                   (Just $ "overall type of function " ++ fnProtoName) >> return ()
 
-    return $ E_AnnFn $ Fn (TypedId fnty (GlobalSymbol $ fnAstName f))
-                          uniquelyNamedFormals annbody freeVars
-                          (fnAstRange f)
+    return annfn
   where
     extendContext :: Context Sigma -> [AnnVar] -> Maybe TypeAST -> Tc (Context Sigma)
     extendContext ctx [] Nothing = return ctx
