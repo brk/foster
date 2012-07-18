@@ -8,7 +8,7 @@ module Foster.Typecheck(tcSigmaToplevel) where
 import qualified Data.List as List(length, zip)
 import Control.Monad(liftM, forM_, forM, liftM, liftM2)
 
-import qualified Data.Text as T(Text, pack, unpack)
+import qualified Data.Text as T(Text, unpack)
 import qualified Data.Map as Map(lookup)
 import qualified Data.Set as Set(toList, fromList)
 
@@ -17,6 +17,7 @@ import Foster.TypeAST
 import Foster.ExprAST
 import Foster.AnnExpr
 import Foster.Infer
+import Foster.Kind
 import Foster.Context
 import Foster.TypecheckInt(sanityCheck, typecheckInt, typecheckRat)
 import Foster.Output(out, outToString, OutputOr(Errors))
@@ -70,16 +71,15 @@ data TCWanted = TCSigma | TCRho deriving Show
 --     and another sigma type, and verifies (via `unify`, after appropriate
 --     type-massaging) that the expression can be viewed as having the provided
 --     sigma type.
+--
+--   * To force an expression to be typechecked in pure inference mode,
+--     try the following construct: case INFER of _ -> ... end.
+--   * To force an expression to be checked against a meta type variable,
+--     the easiest approach is to use a reference store operation: METATY >^ r.
 -----------------------------------------------------------------------
 
 tcSigma = typecheck TCSigma
 tcRho   = typecheck TCRho
-
--- To force an expression to be typechecked in pure inference mode,
--- try the following construct: case INFER of _ -> ... end.
---
--- To for an expression to be checked against a meta type variable,
--- the easiest approach is to use a reference store operation: METATY >^ r.
 
 typecheck :: TCWanted -> Context Sigma -> ExprAST TypeAST -> Maybe TypeAST -> Tc (AnnExpr Rho)
 typecheck want ctx expr maybeExpTy = do
@@ -718,13 +718,12 @@ typecheckFn _ctx f (Just t) = tcFails [out $
 typecheckFn' :: Context Sigma -> FnAST TypeAST -> CallConv
              -> Maybe TypeAST -> Maybe TypeAST -> Tc (AnnExpr Rho)
 typecheckFn' ctx f cc expArgType expBodyType = do
-    let fnProtoName = T.unpack (fnAstName f)
     uniquelyNamedFormals <- getUniquelyNamedFormals (fnAstRange f)
-                                                    (fnFormals f) fnProtoName
+                                                    (fnFormals f) (fnAstName f)
     equateArgTypes uniquelyNamedFormals expArgType
 
     -- Typecheck the body of the function in a suitably extended context.
-    extCtx <- extendContext ctx uniquelyNamedFormals expArgType
+    let extCtx = extendContext ctx uniquelyNamedFormals
     annbody <- tcSigma extCtx (fnAstBody f) expBodyType
 
     -- Note we collect free vars in the old context, since we can't possibly
@@ -738,11 +737,9 @@ typecheckFn' ctx f cc expArgType expBodyType = do
                           uniquelyNamedFormals annbody freeVars
                           (fnAstRange f)
   where
-    extendContext :: Context Sigma -> [AnnVar] -> Maybe TypeAST -> Tc (Context Sigma)
-    extendContext ctx [] Nothing = return ctx
-    extendContext ctx protoFormals maybeExpFormalTys = do
-        equateArgTypes protoFormals maybeExpFormalTys
-        return $ prependContextBindings ctx (map bindingForVar protoFormals)
+    extendContext :: Context Sigma -> [AnnVar] -> Context Sigma
+    extendContext ctx protoFormals =
+                     prependContextBindings ctx (map bindingForVar protoFormals)
 
     -- Generalization of fnTypeTemplate in Main.hs
     fnTypeTemplate f argtypes retty cc =
@@ -768,7 +765,7 @@ typecheckFn' ctx f cc expArgType expBodyType = do
     -- | Verify that the given formals have distinct names,
     -- | and return unique'd versions of each.
     getUniquelyNamedFormals rng rawFormals fnProtoName = do
-        verifyNonOverlappingBindings rng fnProtoName
+        verifyNonOverlappingBindings rng (T.unpack fnProtoName)
          [TermVarBinding (identPrefix $ tidIdent v) undefined | v <- rawFormals]
         mapM uniquelyName rawFormals
 -- }}}
@@ -851,13 +848,12 @@ zonkType x = do
 
 -- Turns a type like (forall t, T1 t -> T2 t) into (T1 ~s) -> (T2 ~s)
 -- where ~s denotes a skolem type variable. Also returns the generated tyvars.
-skolemize :: Sigma -> Tc ([TyVar], Rho)
-skolemize (ForAllAST ktvs rho) = do
+skolemize :: [(TyVar, Kind)] -> Rho -> Tc ([TyVar], Rho)
+skolemize ktvs rho = do
                              skolems <- mapM newTcSkolem ktvs
                              let tyvarsAndTys = List.zip (tyvarsOf ktvs)
                                                          (map TyVarAST skolems)
                              return (skolems, parSubstTy tyvarsAndTys rho)
-skolemize rho = return ([], rho)
 
 getFreeTyVars :: TypeAST -> Tc [TyVar]
 getFreeTyVars x = do z <- zonkType x
@@ -887,8 +883,8 @@ subsumedBy annexpr st2 msg = do
     --tcLift $ runOutput $ outCS Green $ "subsumedBy " ++ show t1' ++ " <=? " ++ show st2
     --tcLift $ putStrLn ""
     case (t1', st2) of
-        (s1, s2@ForAllAST {}) -> do -- Odersky-Laufer's SKOL rule.
-             (skols, r2) <- skolemize s2
+        (s1, (ForAllAST ktvs rho0)) -> do -- Odersky-Laufer's SKOL rule.
+             (skols, r2) <- skolemize ktvs rho0
              e' <- subsumedBy annexpr r2 msg
              ftvs <- getFreeTyVars s1
              let bad_tvs = filter (`elem` ftvs) skols
