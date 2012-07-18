@@ -678,12 +678,6 @@ typecheckFn' ctx f cc expArgType expBodyType = do
     extCtx <- extendContext ctx uniquelyNamedFormals expArgType
     annbody <- tcSigma extCtx (fnAstBody f) expBodyType
 
-    -- Make sure the body agrees with the return type annotation (if any).
-    case fnRetType f of
-       Nothing -> return ()
-       Just t  -> unify t (typeAST annbody)
-                    (Just $ "return type/body type mismatch in " ++ fnProtoName)
-
     -- Note we collect free vars in the old context, since we can't possibly
     -- capture the function's arguments from the environment!
     freeVars <- computeFreeFnVars uniquelyNamedFormals annbody f ctx

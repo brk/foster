@@ -63,7 +63,6 @@ data TupleAST ty = TupleAST { tupleAstRange :: SourceRange
 data FnAST ty  = FnAST { fnAstRange    :: SourceRange
                        , fnAstName     :: T.Text
                        , fnTyFormals   :: [TypeFormalAST]
-                       , fnRetType     :: Maybe ty
                        , fnFormals     :: [TypedId ty]
                        , fnAstBody     :: ExprAST ty
                        , fnWasToplevel :: Bool

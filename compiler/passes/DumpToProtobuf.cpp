@@ -194,8 +194,9 @@ void dumpValAbs(DumpToProtobufPass* pass, pb::PBValAbs* target,
     dumpTypeFormal(&valabs->tyVarFormals[i], target->add_type_formals());
   }
   if (valabs->resultType) {
-    DumpTypeToProtobufPass dt(target->mutable_result_type());
-    valabs->resultType->dump(&dt);
+    ASSERT(false) << "result type annotations on functions aren't used.";
+    //DumpTypeToProtobufPass dt(target->mutable_result_type());
+    //valabs->resultType->dump(&dt);
   }
 }
 

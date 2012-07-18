@@ -153,11 +153,16 @@ monoType subst ty =
 
 monoSubstLookup :: MonoSubst -> TyVar -> MonoType
 monoSubstLookup _subst (SkolemTyVar  _ _ KindPointerSized) = PtrTypeUnknown
-monoSubstLookup _subst (SkolemTyVar nm _ KindAnySizeType)  = TyConApp ("BAD:SKOLEM TY VAR, ANY SIZE TYPE:"++nm) []
-monoSubstLookup subst tv@(BoundTyVar nm) =
+monoSubstLookup _subst (SkolemTyVar  _ _ KindAnySizeType)  =
+        --TyConApp ("BAD:SKOLEM TY VAR, ANY SIZE TYPE:"++nm) []
+        error $ "Monomorphization (Monomo.hs:monoSubsLookup) "
+             ++ "found a bad skolem type variable with non-pointer kind"
+monoSubstLookup subst tv@(BoundTyVar  _) =
   case Map.lookup tv subst of
       Just monotype -> monotype
-      Nothing -> TyConApp ("AAAAAAmissing:"++nm) []--error $ "monoSubsLookup found no monotype for variable " ++ show tv
+      --Nothing -> TyConApp ("AAAAAAmissing:"++nm) []
+      Nothing -> error $ "Monomorphization (Monomo.hs:monoSubsLookup) "
+                      ++ "found no monotype for variable " ++ show tv
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||| Monadic Helpers ||||||||||||||||||||||{{{

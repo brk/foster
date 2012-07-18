@@ -121,15 +121,13 @@ parseFn pbexpr = do range <- parseRange pbexpr
                                    Just v -> v
                                    Nothing -> error "Can't parse fn without PBValAbs!"
                     let formals = toList $ PBValAbs.formals valabs
-                    let mretty = parseReturnType valabs
                     let tyformals = map parseTypeFormal $
                                         toList $ PBValAbs.type_formals valabs
-                    return $ (FnAST range name tyformals mretty
+                    return $ (FnAST range name tyformals
                                (map parseFormal formals) body
                                False) -- assume closure until proven otherwise
   where
      parseFormal (Formal u t) = TypedId (parseType t) (Ident (pUtf8ToText u) 0)
-     parseReturnType valabs = fmap parseType (PBValAbs.result_type valabs)
 
 parseValAbs pbexpr _range = do
   fn <- parseFn pbexpr

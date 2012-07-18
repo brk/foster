@@ -133,8 +133,7 @@ typecheckFnSCC showASTs showAnnExprs scc (ctx, tcenv) = do
 
         fnTypeTemplate :: (FnAST TypeAST) -> Tc TypeAST
         fnTypeTemplate f = do
-          retTy  <- typeTemplateSigma (fnRetType f)
-                                   ("ret type for " ++ (T.unpack $ fnAstName f))
+          retTy  <- newTcUnificationVarSigma ("ret type for " ++ (T.unpack $ fnAstName f))
           argTys <- mapM annVarTemplate (fnFormals f)
           let fnTy = mkFnType argTys [retTy]
           case fnTyFormals f of

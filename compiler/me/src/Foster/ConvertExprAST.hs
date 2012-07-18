@@ -19,11 +19,10 @@ convertVar f (TypedId t i) = do ty <- f t
                                 return $ TypedId ty i
 
 convertFun :: (a -> Tc b) -> FnAST a -> Tc (FnAST b)
-convertFun f (FnAST rng nm tyformals retType formals body toplevel) = do
-    retType' <- liftMaybeTc f retType
+convertFun f (FnAST rng nm tyformals formals body toplevel) = do
     formals' <- mapM (convertVar f) formals
     body'    <- convertExprAST f body
-    return $ FnAST rng nm tyformals retType' formals' body' toplevel
+    return $ FnAST rng nm tyformals formals' body' toplevel
 
 convertDecl :: (a -> Tc b) -> (String, a) -> Tc (String, b)
 convertDecl f (s, ty) = do t <- f ty ; return (s, t)

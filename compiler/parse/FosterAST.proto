@@ -108,7 +108,7 @@ message Expr {
 
 message PBValAbs {
   repeated Formal     formals     = 1;
-  optional Type       result_type = 2;
+  //optional Type     result_type = 2;
   repeated TypeFormal type_formals = 3;
 }
 
