@@ -741,6 +741,7 @@ typecheckFn' :: Context Sigma -> FnAST TypeAST -> CallConv
 typecheckFn' ctx f cc expArgType expBodyType = do
     uniquelyNamedFormals <- getUniquelyNamedFormals (fnAstRange f)
                                                     (fnFormals f) (fnAstName f)
+    -- TODO it's not clear if this unification actually does anything for us.
     equateArgTypes uniquelyNamedFormals expArgType
 
     -- Typecheck the body of the function in a suitably extended context.
@@ -749,10 +750,10 @@ typecheckFn' ctx f cc expArgType expBodyType = do
 
     -- Note we collect free vars in the old context, since we can't possibly
     -- capture the function's arguments from the environment!
-    freeVars <- computeFreeFnVars uniquelyNamedFormals annbody f ctx
+    freeVars <- computeFreeFnVars uniquelyNamedFormals annbody (fnAstRange f) ctx
 
-    let fnty = let argtypes = TupleTypeAST (map tidType uniquelyNamedFormals) in
-               fnTypeTemplate f argtypes (typeAST annbody) cc
+    let fnty = fnTypeTemplate f argtypes (typeAST annbody) cc
+                where argtypes = TupleTypeAST (map tidType uniquelyNamedFormals)
 
     return $ E_AnnFn $ Fn (TypedId fnty (GlobalSymbol $ fnAstName f))
                           uniquelyNamedFormals annbody freeVars
@@ -771,15 +772,14 @@ typecheckFn' ctx f cc expArgType expBodyType = do
               []        -> fnty
               tyformals -> ForAllAST (map convertTyFormal tyformals) fnty
 
-    computeFreeFnVars uniquelyNamedFormals annbody f ctx = do
+    computeFreeFnVars uniquelyNamedFormals annbody rng ctx = do
         let identsFree = bodyvars `butnot` (boundvars ++ globalvars)
                          where
                          bodyvars   = freeIdents annbody
                          boundvars  = map tidIdent uniquelyNamedFormals
                          globalvars = concatMap tmBindingId (globalBindings ctx)
                          tmBindingId (TermVarBinding _ tid) = [tidIdent tid]
-        freeAnns <- let rng = fnAstRange f in
-                    mapM (\id -> typecheckVar TCSigma ctx rng (identPrefix id))
+        freeAnns <- mapM (\id -> typecheckVar TCSigma ctx rng (identPrefix id))
                          identsFree
         return $ [tid | E_AnnVar _ tid <- freeAnns]
 
@@ -789,6 +789,18 @@ typecheckFn' ctx f cc expArgType expBodyType = do
         verifyNonOverlappingBindings rng (T.unpack fnProtoName)
          [TermVarBinding (identPrefix $ tidIdent v) undefined | v <- rawFormals]
         mapM uniquelyName rawFormals
+
+    -- Unify the types of the variables with the types expected of them.
+    equateArgTypes :: [AnnVar] -> (Maybe TypeAST) -> Tc ()
+    equateArgTypes _     Nothing              = return ()
+    equateArgTypes []   (Just u@MetaTyVar {}) = unify u (TupleTypeAST []) Nothing
+    equateArgTypes vars (Just (TupleTypeAST expTys)) = do
+      sanityCheck (List.length vars == List.length expTys)
+       ("Lengths of tuples must agree! Had " ++ show vars ++ " and " ++ show expTys)
+      sequence_ [unify (tidType v) e Nothing | (v, e) <- List.zip vars expTys]
+    equateArgTypes vars (Just t) =
+        tcFails [out $ "unifyArgs not yet implemented for type "
+                     ++ show t ++ " against " ++ show vars]
 -- }}}
 
 -----------------------------------------------------------------------
@@ -968,18 +980,6 @@ unify t1 t2 msg = do
                                    ++ " failed in " ++ show t]
 
 bindingForVar v = TermVarBinding (identPrefix $ tidIdent v) v
-
--- Unify the types of the variables with the types expected of them.
-equateArgTypes :: [AnnVar] -> (Maybe TypeAST) -> Tc ()
-equateArgTypes _     Nothing              = return ()
-equateArgTypes []   (Just u@MetaTyVar {}) = unify u (TupleTypeAST []) Nothing
-equateArgTypes vars (Just (TupleTypeAST expTys)) = do
-  sanityCheck (List.length vars == List.length expTys)
-   ("Lengths of tuples must agree! Had " ++ show vars ++ " and " ++ show expTys)
-  sequence_ [unify (tidType v) e Nothing | (v, e) <- List.zip vars expTys]
-equateArgTypes vars (Just t) =
-    tcFails [out $ "unifyArgs not yet implemented for type "
-                 ++ show t ++ " against " ++ show vars]
 
 tcMaybeType :: Maybe TypeAST -> String -> Tc TypeAST
 tcMaybeType Nothing   desc = newTcUnificationVarTau desc
