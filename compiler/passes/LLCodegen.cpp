@@ -1152,7 +1152,7 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
                           CodegenPass* pass,
                           llvm::Value* envPtrOrSlot) {
     LLProc* llproc = pass->procs[procname];
-    ASSERT(llproc);
+    ASSERT(llproc) << "Unable to find closure's proc " << procname;
 
     StructTypeAST* sty = genericClosureStructType(llproc->getFnType());
 

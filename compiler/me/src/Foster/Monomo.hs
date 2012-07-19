@@ -72,14 +72,16 @@ addInitialMonoTasksAndGo procdefs = do
     forM_ monoprocs (\pd -> monoScheduleWork (PlainProc $ ilProcIdent pd))
     goMonomorphize
 
-    -- Any proc that is polymorphic with all pointer-sized type arguments
-    -- will have its type arguments conveniently instantiated to void*.
-
-    let isPointyKind (_, kind) = kind == KindPointerSized
-    let pointypolyprocs = [(pd,ktvs) | pd <- procdefs,
-                                       ktvs <- maybeToList (ilProcPolyTyVars pd),
-                                       List.all isPointyKind ktvs]
-    forM_ pointypolyprocs (\(pd,ktvs) ->
+    -- Create a "generic" version of every polymorphic proc, instantiating all
+    -- of the type arguments to void*. Note: We do this even for type variables
+    -- with non-pointer kinds! If we didn't, then code like
+    --         let f = { forall t:Type, ... }; in () end
+    -- wouldn't codegen properly, because the procedure referenced by f's
+    -- closure would remain un-instantiated and thus be implicitly discarded.
+    let polyprocs = [(pd,ktvs) | pd <- procdefs,
+                                 ktvs <- maybeToList (ilProcPolyTyVars pd),
+                                 not (isNotInstantiable pd)]
+    forM_ polyprocs (\(pd,ktvs) ->
          let id = ilProcIdent pd in
          -- We'll rename top-level functions with a ".gen" suffix because
          -- it's easy to identify their call sites, but anonymous functions

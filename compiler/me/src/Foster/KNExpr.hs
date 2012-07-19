@@ -175,6 +175,11 @@ varOrThunk (a, targetType) = do
       case (tidType a, ty) of
         (FnTypeIL x y z FT_Proc, FnTypeIL _ _ _ FT_Func) ->
             Just $ FnTypeIL x y z FT_Func
+        (FnTypeIL x y z FT_Proc, ForAllIL _ (FnTypeIL _ _ _ FT_Func)) ->
+            -- TODO: I think this only works because we don't type-check IL.
+            -- Specifically, we are assuming but not verifying that the involved
+            -- types are all of pointer-size kinds.
+            Just $ FnTypeIL x y z FT_Func
         _ -> Nothing
 
     withThunkFor :: AIVar -> TypeIL -> KN KNExpr
@@ -196,6 +201,10 @@ varOrThunk (a, targetType) = do
                                         Ident _ _      -> [v]
                                         GlobalSymbol _ -> []
                       }
+        -- TODO the above ident/global check doesn't work correctly for
+        -- global polymorphic functions, which are first type-instantiated
+        -- and then bound to a local variable before being closed over.
+        -- The "right" thing to do is track known vs unknown vars...
 
         argVarsWithTypes (TupleTypeIL tys) = do
           let tidOfType ty = do id <- knFresh ".arg"
