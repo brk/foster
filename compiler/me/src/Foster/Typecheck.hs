@@ -8,7 +8,7 @@ module Foster.Typecheck(tcSigmaToplevel) where
 import qualified Data.List as List(length, zip)
 import Control.Monad(liftM, forM_, forM, liftM, liftM2)
 
-import qualified Data.Text as T(Text, pack, unpack)
+import qualified Data.Text as T(Text, unpack)
 import qualified Data.Map as Map(lookup)
 import qualified Data.Set as Set(toList, fromList)
 
@@ -711,6 +711,27 @@ typecheckFn ctx f (Just m@MetaTyVar {}) = do
                 tcf <- typecheckFn ctx f Nothing
                 subsumedBy tcf m (Just "function literal")
 
+typecheckFn ctx f (Just sigma@(ForAllAST {})) = do
+{-              -- TODO: add a counter-example documenting the need for this check
+                -- TODO: make it posible to typecheck against rho
+                (skols, rho) <- skolemize sigma
+                tcf <- typecheckFn ctx f (Just rho) -- rho fails!
+                let env_tys = map tidType $ Map.elems (contextBindings ctx)
+                esc_tvs <- getFreeTyVars (sigma : env_tys)
+                let bad_tvs = filter (`elem` esc_tvs) skols
+                sanityCheck (null bad_tvs) "Type not polymorphic enough"
+                return tcf
+-}
+                -- TODO figure out how to push more information from sigma
+                -- into the type-checking of the function literal.
+                tcf <- typecheckFn ctx f Nothing
+                -- subsumedBy checks type subsumption and also returns a type-
+                -- instantated wrapper around tcf with a rho type.
+                -- We only care about the subs check, so we ignore the ret val.
+                _ <- subsumedBy tcf sigma (Just "polymorphic function literal")
+                -- TODO check for escaping type variables a la checkSigma?
+                return tcf
+
 typecheckFn _ctx f (Just t) = tcFails [out $
                 "Context of function literal expects non-function type: "
                                 ++ show t ++ highlightFirstLine (fnAstRange f)]
@@ -859,9 +880,9 @@ skolemize (ForAllAST ktvs rho) = do
                              return (skolems, parSubstTy tyvarsAndTys rho)
 skolemize rho = return ([], rho)
 
-getFreeTyVars :: TypeAST -> Tc [TyVar]
-getFreeTyVars x = do z <- zonkType x
-                     return $ Set.toList (Set.fromList $ go [] z)
+getFreeTyVars :: [TypeAST] -> Tc [TyVar]
+getFreeTyVars xs = do zs <- mapM zonkType xs
+                      return $ Set.toList (Set.fromList $ concatMap (go []) zs)
                  where
   go :: [TyVar] -> Sigma -> [TyVar]
   go bound x =
@@ -890,7 +911,7 @@ subsumedBy annexpr st2 msg = do
         (s1, s2@ForAllAST {}) -> do -- Odersky-Laufer's SKOL rule.
              (skols, r2) <- skolemize s2
              e' <- subsumedBy annexpr r2 msg
-             ftvs <- getFreeTyVars s1
+             ftvs <- getFreeTyVars [s1]
              let bad_tvs = filter (`elem` ftvs) skols
              sanityCheck (null bad_tvs) "Type not polymorphic enough!"
              return e'

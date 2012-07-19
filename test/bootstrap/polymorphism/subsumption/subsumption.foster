@@ -22,9 +22,8 @@ threedotthree-partone = {
   expect_i32 0;
   f1 k;
 
-  // spurious typechecking failure
-  //expect_i32 1;
-  //f2b { forall b:Boxed, x:b => y:b => y };
+  expect_i32 1;
+  f2b { forall b:Boxed, x:b => y:b => y };
 
   expect_i32 1;
   f2b k;
