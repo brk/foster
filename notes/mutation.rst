@@ -70,7 +70,7 @@ about it:
         For example, maybe single-constructor datatypes should be treated
         specially?
 
-        
+
 Representation: pointer tagging
 ===============================
 
@@ -156,21 +156,21 @@ Boxing and Unboxed Representations
 ==================================
 
 The nbody benchmark's C implementation uses the following data layout::
-  
+
     bodies: *------>[[ b1.f1 | b1.f2 | ... ][ b2.f1 | b2.f2 | ... ]]
 
 where structs are stored unboxed in the array, and all the fields are
 mutable in-place.
 
 Without mutability or a notion of unboxed user-defined types, we can do this::
-  
+
     bodies: *------>[ b1 | b2 | ... ]
                       |
                       |
                       +--->[ f1 | f2 | ... ]
-                      
+
 but mutability of the fields introduces an artificial layer of indirection::
-  
+
     bodies: *------>[ b1 | b2 | ... ]
                       |
                       |

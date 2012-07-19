@@ -186,7 +186,7 @@ void assertHaveCallableType(LLExpr* base, llvm::Type* FT, llvm::Value* FV) {
              << "\nFV: " << str(FV);
 }
 
-void assertHaveFunctionNamed(llvm::Function* f, 
+void assertHaveFunctionNamed(llvm::Function* f,
                              const std::string& fullyQualifiedSymbol,
                              CodegenPass* pass) {
   if (!f) {
@@ -1329,16 +1329,18 @@ llvm::Value* emitFnArgCoercions(llvm::Value* argV, llvm::Type* expectedType) {
   // of the environments of mutually recursive closures.
   if (  argV->getType() != expectedType
     &&  argV->getType() == getGenericClosureEnvType()->getLLVMType()) {
-    EDiag() << "emitting bitcast gen2spec " << str(expectedType);
+    EDiag() << "emitting bitcast gen2spec (exp: " << str(expectedType)
+            << "); (actual: " << str(argV->getType()) << ")";
     argV = builder.CreateBitCast(argV, expectedType, "gen2spec");
   }
 
+  // This occurs in polymorphic code.
   if ((argV->getType() != expectedType)
       && matchesExceptForUnknownPointers(argV->getType(), expectedType)) {
     EDiag() << "matched " << str(argV->getType()) << " to " << str(expectedType);
     argV = builder.CreateBitCast(argV, expectedType, "spec2gen");
   }
-  
+
   return argV;
 }
 
@@ -1388,7 +1390,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
   }
 
   assertRightNumberOfArgsForFunction(FV, FT, valArgs);
-  
+
   // Give the instruction a name, if we can...
 
   llvm::CallInst* callInst = builder.CreateCall(FV, llvm::makeArrayRef(valArgs));
@@ -1412,6 +1414,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
   // as a GC root. In order that updates from the GC take effect,
   // we use the stack slot (of type T**) instead of the pointer (T*) itself
   // as the return value of the call.
+  // TODO this should use distinguished pointer types from the middle end.
   if ( callingConv == llvm::CallingConv::Fast
     && callInst->getType()->isPointerTy()) {
     // As a sanity check, we shouldn't ever get a pointer-to-pointer,

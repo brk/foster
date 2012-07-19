@@ -73,6 +73,14 @@ TODO: libraries, benchmarks, & applications
 * Parallel benchmarks?
 * Timing infrastructure
 
+TODO: mutability & representation semantics
+-------------------------------------------
+
+1) Design IR, document tradeoffs (such as: unboxed updates only on single-ctor
+                                           data types)
+2) Implement IR primitives & typechecking.
+2) Implement unboxing (and arity raising, etc) optimizations.
+
 TODO: minor optimizations
 -------------------------
 * Ensure that code like ``case foo of (bar, baz) -> (bar, baz) end``
@@ -259,4 +267,18 @@ TODO: design & implementation
   * Is a fully-qualified name just a module name + identifier?
 
 * Interfacing with C libraries:
+
+Benchmarks
+==========
+
+nbody
+-----
+
+* determine why we're executing so many extra insns
+
+fannkuch?
+---------
+
+
+
 
