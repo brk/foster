@@ -353,6 +353,7 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   else if (op == "sext_i64") { return b.CreateSExt(VL, b.getInt64Ty(), "sexti64tmp"); }
   else if (op == "sext_i32") { return b.CreateSExt(VL, b.getInt32Ty(), "sexti32tmp"); }
   else if (op == "trunc_i8") { return b.CreateTrunc(VL, b.getInt8Ty(), "trunci8tmp"); }
+  else if (op == "trunc_i32"){ return b.CreateTrunc(VL, b.getInt32Ty(), "trunci32tmp"); }
   else if (op == "fsqrt")    { return createSqrt(b, VL, "fsqrttmp"); }
   else if (op == "fptosi_f64_i32") { return b.CreateFPToSI(VL, b.getInt32Ty(), "fptosi_f64_i32tmp"); }
   else if (op == "sitofp_f64")     { return b.CreateSIToFP(VL, b.getDoubleTy(), "sitofp_f64tmp"); }
