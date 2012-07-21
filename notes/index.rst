@@ -25,6 +25,7 @@ Foster Notes
    coro
    gc
    todo
+   optimizations
 
 .. Indices and tables
 .. ==================
