@@ -1,8 +1,7 @@
 main = {
-  f2b { forall b:Boxed, x:b => y:b => y };
-};
 
-f2b = { f: (forall a:Boxed, { a => a => a }) => () };
+  ()
+};
 
 /*
 type case List (a:Boxed)
