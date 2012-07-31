@@ -52,7 +52,7 @@ monomorphize (ILProgram procdefmap decls datatypes topprocs lines) = do
     return $ MoProgram (monoProcDefs monoState) monodecls monodatatypes lines
       where
         monodatatypes = monomorphizedDataTypes datatypes
-        monoState0 = MonoState Set.empty worklistEmpty procdefmap Map.empty
+        monoState0 = MonoState Set.empty worklistEmpty procdefmap Map.empty Map.empty
         monodecls  = map monoExternDecl decls
         addMonosAndGo = addInitialMonoTasksAndGo topprocs (Map.elems procdefmap)
 
@@ -63,16 +63,25 @@ isNotInstantiable procdef = isNothing (ilProcPolyTyVars procdef)
 monoExternDecl :: ILExternDecl -> MoExternDecl
 monoExternDecl (ILDecl s t) = MoExternDecl s (monoType emptyMonoSubst t)
 
-addInitialMonoTasksAndGo procdefs = do
-    mapM (\pd -> do debug $ "procdef: " ++ show (ilProcIdent pd) ++ " // " ++ show (ilProcPolyTyVars pd)
-                  ) procdefs
+addInitialMonoTasksAndGo topprocs procdefs = do
     -- Any proc that is not itself subject to polyinstantiation when we begin
     -- is a root for the monomorphization process.
+    -- We start with the top-level procs, because we know that
+    -- they can be translated starting from the empty type substitution.
+    -- Other procs could be lambda-lifted functions that reference type vars
+    -- and thus must use the type subsitution from their originating function.
+    let monoprocs = [pd | pd <- topprocs, isNotInstantiable pd]
+    debug $ "beginning with monoprocs"
+    forM_ monoprocs (\pd -> monoScheduleWork (PlainProc $ ilProcIdent pd))
+    goMonomorphize
+    debug $ "don with with monoprocs, doing the rest..."
+
     let monoprocs = [pd | pd <- procdefs, isNotInstantiable pd]
+    debug $ "beginning with non-top-level monoprocs"
     forM_ monoprocs (\pd -> monoScheduleWork (PlainProc $ ilProcIdent pd))
     goMonomorphize
 
-    -- Create a "generic" version of every polymorphic proc, instantiating all
+    -- Create a "generic" version of *every* polymorphic proc, instantiating all
     -- of the type arguments to void*. Note: We do this even for type variables
     -- with non-pointer kinds! If we didn't, then code like
     --         let f = { forall t:Type, ... }; in () end
@@ -117,10 +126,6 @@ extendSubstForFormals subst formals =
                   KindPointerSized -> [(PtrTypeUnknown, (BoundTyVar s, k))] in
   let (tys, kvs) = unzip $ concatMap info formals in
   extendMonoSubst subst tys kvs
-
-buildMonoSubst _ Nothing = error $ "buildMonoSubst expected ktyvars"
-buildMonoSubst monotypes (Just ktyvars) =
-  extendMonoSubst emptyMonoSubst monotypes ktyvars
 
 extendMonoSubst :: MonoSubst -> [MonoType] -> [(TyVar, Kind)] -> MonoSubst
 extendMonoSubst subst monotypes ktyvars =
@@ -184,6 +189,7 @@ data MonoState = MonoState {
   , monoWorklist :: WorklistQ MonoWork
   , polyProcDefs :: Map Ident ILProcDef
   , monoProcDefs :: Map Ident MoProcDef
+  , monoCloTyEnv :: Map Ident MonoSubst
 }
 
 type Mono = StateT MonoState IO
@@ -228,6 +234,16 @@ monoPutProc proc = do
     state <- get
     put state { monoProcDefs = Map.insert id proc (monoProcDefs state) }
 
+monoAssociateSubstWithProcId subst id = do
+    state <- get
+    put state { monoCloTyEnv = Map.insert id subst (monoCloTyEnv state) }
+
+monoGetSubstAssociatedWithProcId id = do
+    state <- get
+    case Map.lookup id (monoCloTyEnv state) of
+       Nothing -> return emptyMonoSubst
+       Just  s -> return s
+
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||||||| Drivers ||||||||||||||||||||||||||{{{
@@ -242,8 +258,9 @@ debug s = liftIO $ putStrLn s
 
 monomorphizeProc (PlainProc srcid) = do
   (Just proc) <- monoGetProc srcid
+  subst <- monoGetSubstAssociatedWithProcId srcid
   debug $ "monomorphizeProc PlainProc " ++ show srcid
-  newproc <- doMonomorphizeProc proc emptyMonoSubst
+  newproc <- doMonomorphizeProc proc subst
   monoPutProc $ newproc
 
 monomorphizeProc (NeedsMono polyid srcid tyargs) = do
@@ -252,7 +269,9 @@ monomorphizeProc (NeedsMono polyid srcid tyargs) = do
   proc <- case mproc of
              Just p -> return p
              Nothing -> error $ "Monomo.hs: Could not find proc " ++ show srcid
-  let subst = buildMonoSubst tyargs (ilProcPolyTyVars proc)
+  basesubst <- monoGetSubstAssociatedWithProcId srcid
+  let (Just tyvars) = ilProcPolyTyVars proc
+  let subst = extendMonoSubst basesubst tyargs tyvars
   newproc <- doMonomorphizeProc proc subst
   monoPutProc $ newproc { moProcIdent = polyid }
 
@@ -306,11 +325,16 @@ monomorphizeMid subst mid =
                             Instantiated var -> return $ MoRebindId   id (monoVar subst var)
                             Bitcast      var -> return $ MoLetBitcast id (monoVar subst var)
                             MonoLet      val -> return $ MoLetVal     id val
-    ILClosures ids clos -> do return $ MoClosures ids (map (monoClosure subst) clos)
+    ILClosures ids clos -> do clos' <- mapM (monoClosure subst) clos
+                              return $ MoClosures ids clos'
     ILRebindId i   v    -> do return $ MoRebindId i (monoVar subst v)
 
-monoClosure subst (ILClosure procid envid captures allocsite) =
-  MoClosure procid envid (map (monoVar subst) captures) allocsite
+monoClosure subst (ILClosure procid envid captures allocsite) = do
+  -- We need to associate the current substitution with the closure's procid
+  -- so that any currently-in-scope type variables will remain "in scope"
+  -- when we switch to the new proc.
+  monoAssociateSubstWithProcId subst procid
+  return $ MoClosure procid envid (map (monoVar subst) captures) allocsite
 
 data LetableResult = MonoLet      MonoLetable
                    | Instantiated (TypedId TypeIL)
