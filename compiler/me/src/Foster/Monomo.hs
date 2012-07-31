@@ -135,7 +135,7 @@ monoType subst ty =
      PrimIntIL size       -> PrimInt size
      PrimFloat64IL        -> PrimFloat64
      TupleTypeIL types    -> TupleType (map q types)
-     FnTypeIL   s t cc cs -> FnType   (q s) (q t) cc cs
+     FnTypeIL  ss t cc cs -> FnType    (map q ss) (q t) cc cs
      CoroTypeIL s t       -> CoroType (q s) (q t)
      ArrayTypeIL ty       -> ArrayType (q ty)
      PtrTypeIL ty         -> PtrType   (q ty)

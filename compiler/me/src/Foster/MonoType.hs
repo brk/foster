@@ -14,7 +14,7 @@ data MonoType =
          | TyConApp      DataTypeName [MonoType]
          | TupleType     [MonoType]
          | StructType    [MonoType]
-         | FnType        { monoFnTypeDomain :: MonoType
+         | FnType        { monoFnTypeDomain :: [MonoType]
                          , monoFnTypeRange  :: MonoType
                          , monoFnTypeCallConv :: CallConv
                          , monoFnTypeProcOrFunc :: ProcOrFunc }

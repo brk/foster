@@ -15,7 +15,7 @@ data TypeP =
            PrimIntP       IntSizeBits
          | TyConAppP      DataTypeName [TypeP]
          | TupleTypeP     [TypeP]
-         | FnTypeP        { fnTypeDomain :: TypeP
+         | FnTypeP        { fnTypeDomain :: [TypeP]
                           , fnTypeRange  :: TypeP
                           , fnTypeCallConv :: CallConv
                           , fnTypeProcOrFunc :: ProcOrFunc }
@@ -63,7 +63,7 @@ instance Structured TypeP where
             PrimIntP         _           -> []
             TyConAppP   _tc types        -> types
             TupleTypeP      types        -> types
-            FnTypeP    s t _ _           -> [s, t]
+            FnTypeP    ss t _ _          -> (t:ss)
             CoroTypeP  s t               -> [s, t]
             ForAllP  _tvs rho            -> [rho]
             TyVarP   _tv                 -> []

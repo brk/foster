@@ -211,11 +211,10 @@ typecheckModule verboseMode modast tcenv0 = do
                  (T.unpack name, ctorTypeAST tyformals dt types)
 
    ctorTypeAST [] dt ctorArgTypes =
-       FnTypeAST (TupleTypeAST ctorArgTypes) (typeOfDataType dt) FastCC FT_Proc
+                       FnTypeAST ctorArgTypes (typeOfDataType dt) FastCC FT_Proc
 
    ctorTypeAST tyformals dt ctorArgTypes =
-     ForAllAST (map convertTyFormal tyformals)
-      (FnTypeAST (TupleTypeAST ctorArgTypes) (typeOfDataType dt) FastCC FT_Proc)
+      ForAllAST (map convertTyFormal tyformals) $ ctorTypeAST [] dt ctorArgTypes
 
    buildCallGraphList :: [FnAST TypeAST] -> Set T.Text
                       -> [(FnAST TypeAST, T.Text, [T.Text])]
@@ -380,7 +379,7 @@ astOfParsedType typep =
         CoroTypeP    s t       -> liftM2 CoroTypeAST       (q s) (q t)
         ForAllP    tvs t       -> liftM (ForAllAST $ map convertTyFormal tvs) (q t)
         TyVarP     tv          -> do return $ TyVarAST tv
-        FnTypeP      s t cc cs -> do s' <- q s
+        FnTypeP      s t cc cs -> do s' <- mapM q s
                                      t' <- q t
                                      return $ FnTypeAST      s' t' cc cs
         MetaPlaceholder desc -> do newTcUnificationVarTau desc

@@ -35,7 +35,7 @@ data TypeAST =
          | CoroTypeAST      Sigma Sigma
          | RefTypeAST       Sigma
          | ArrayTypeAST     Sigma
-         | FnTypeAST        { fnTypeDomain :: Sigma
+         | FnTypeAST        { fnTypeDomain :: [Sigma]
                             , fnTypeRange  :: Sigma
                             , fnTypeCallConv :: CallConv
                             , fnTypeProcOrFunc :: ProcOrFunc }
@@ -89,7 +89,7 @@ instance Structured TypeAST where
             PrimFloat64                    -> []
             TyConAppAST   _tc types        -> types
             TupleTypeAST      types        -> types
-            FnTypeAST    s t _ _           -> [s, t]
+            FnTypeAST   ss t _ _           -> ss ++ [t]
             CoroTypeAST  s t               -> [s, t]
             ForAllAST  _tvs rho            -> [rho]
             TyVarAST   _tv                 -> []
@@ -106,8 +106,8 @@ minimalTupleAST []    = TupleTypeAST []
 minimalTupleAST [arg] = arg
 minimalTupleAST args  = TupleTypeAST args
 
-mkProcType args rets = FnTypeAST (TupleTypeAST args) (minimalTupleAST rets) CCC    FT_Proc
-mkFnType   args rets = FnTypeAST (TupleTypeAST args) (minimalTupleAST rets) FastCC FT_Func
+mkProcType args rets = FnTypeAST args (minimalTupleAST rets) CCC    FT_Proc
+mkFnType   args rets = FnTypeAST args (minimalTupleAST rets) FastCC FT_Func
 mkCoroType args rets = CoroTypeAST (minimalTupleAST args) (minimalTupleAST rets)
 i8  = PrimIntAST I8
 i32 = PrimIntAST I32

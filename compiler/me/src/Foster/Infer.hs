@@ -42,17 +42,17 @@ parSubstTy :: [(TyVar, TypeAST)] -> TypeAST -> TypeAST
 parSubstTy prvNextPairs ty =
     let q = parSubstTy prvNextPairs in
     case ty of
-        TyVarAST tv        -> fromMaybe ty $ List.lookup tv prvNextPairs
-        MetaTyVar  {}      -> ty
-        PrimIntAST _       -> ty
-        PrimFloat64        -> ty
-        TyConAppAST nm tys -> TyConAppAST nm (map q tys)
-        TupleTypeAST types -> TupleTypeAST (map q types)
-        RefTypeAST   t     -> RefTypeAST   (q t)
-        ArrayTypeAST t     -> ArrayTypeAST (q t)
-        FnTypeAST s t cc cs-> FnTypeAST   (q s) (q t) cc cs -- TODO unify calling convention?
-        CoroTypeAST s t    -> CoroTypeAST (q s) (q t)
-        ForAllAST ktvs rho ->
+        TyVarAST tv          -> fromMaybe ty $ List.lookup tv prvNextPairs
+        MetaTyVar  {}        -> ty
+        PrimIntAST _         -> ty
+        PrimFloat64          -> ty
+        TyConAppAST nm tys   -> TyConAppAST nm (map q tys)
+        TupleTypeAST types   -> TupleTypeAST (map q types)
+        RefTypeAST   t       -> RefTypeAST   (q t)
+        ArrayTypeAST t       -> ArrayTypeAST (q t)
+        FnTypeAST ss t cc cs -> FnTypeAST    (map q ss) (q t) cc cs -- TODO unify calling convention?
+        CoroTypeAST s t      -> CoroTypeAST (q s) (q t)
+        ForAllAST ktvs rho   ->
                 let prvNextPairs' = prvNextPairs `assocFilterOut` (map fst ktvs)
                 in  ForAllAST ktvs (parSubstTy prvNextPairs' rho)
 
@@ -70,7 +70,7 @@ tySubst subst ty =
         RefTypeAST    t        -> RefTypeAST   (q t)
         ArrayTypeAST  t        -> ArrayTypeAST (q t)
         TupleTypeAST types     -> TupleTypeAST (map q types)
-        FnTypeAST s t cc cs    -> FnTypeAST   (q s) (q t) cc cs
+        FnTypeAST ss t cc cs   -> FnTypeAST    (map q ss) (q t) cc cs
         CoroTypeAST s t        -> CoroTypeAST (q s) (q t)
         ForAllAST tvs rho      -> ForAllAST tvs (q rho)
 
@@ -129,8 +129,9 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
     -- Mismatches between unitary tuple types probably indicate
     -- parsing/function argument handling mismatch.
 
-    ((FnTypeAST a1 a2 _cc1 _), (FnTypeAST b1 b2 _cc2 _)) ->
-        tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub
+    ((FnTypeAST as1 a2 _cc1 _), (FnTypeAST bs1 b2 _cc2 _)) ->
+        tcUnifyLoop ([TypeConstrEq a b | (a, b) <- zip as1 bs1]
+                         ++ (TypeConstrEq a2 b2):constraints) tysub
 
     ((CoroTypeAST a1 a2), (CoroTypeAST b1 b2)) ->
         tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub

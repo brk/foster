@@ -113,7 +113,7 @@ inferSigma ctx (E_FnAST f)       msg = do r <- newTcRef (error $ "inferSigmaFn: 
                                           tcSigmaFn  ctx f (Infer r)
 inferSigma ctx (E_CallAST   rng base argtup) msg = do
                 r <- newTcRef (error $ "inferSigmaFn: empty result: " ++ msg)
-                tcSigmaCall     ctx rng   base (E_TupleAST argtup) (Infer r)
+                tcSigmaCall     ctx rng   base argtup (Infer r)
 inferSigma ctx e msg
    = do {
         ; debug $ "inferSigma " ++ highlightFirstLine (rangeOf e)
@@ -197,7 +197,7 @@ tcRho ctx expr expTy = do
       E_RatAST    rng txt -> (typecheckRat rng txt (expMaybe expTy)) >>= (\v -> matchExp expTy v "tcRat")
       E_BoolAST   rng b              -> tcRhoBool         rng   b          expTy
       E_StringAST rng txt            -> tcRhoText         rng   txt        expTy
-      E_CallAST   rng base argtup    -> tcRhoCall     ctx rng   base (E_TupleAST argtup) expTy
+      E_CallAST   rng base argtup    -> tcRhoCall     ctx rng   base argtup expTy
       E_TupleAST (TupleAST rng exps) -> tcRhoTuple    ctx rng   exps       expTy
       E_IfAST   rng a b c            -> tcRhoIf       ctx rng   a b c      expTy
       E_FnAST f                      -> tcRhoFn       ctx       f          expTy
@@ -616,40 +616,43 @@ tcRhoTyApp ctx rng e t1tn expTy = do
 -- ------------------------------------------
 -- G |- b e1 ... en ~~> f a1 ... an ::: sr
 tcRhoCall :: Context Sigma -> SourceRange
-              -> ExprAST TypeAST -> ExprAST TypeAST
+              -> ExprAST TypeAST -> (TupleAST TypeAST)
               -> Expected TypeAST -> Tc (AnnExpr Rho)
-tcRhoCall ctx rng base args exp_ty = do
+tcRhoCall ctx rng base argstup exp_ty = do
    -- TODO think harder about when it's safe to push exp_ty down
    debug $ "tcRhoCall " ++ show exp_ty
    r <- newTcRef (error $ "tcRho>SigmaCall: empty result: ")
-   app <- tcSigmaCall ctx rng base args (Infer r)
+   app <- tcSigmaCall ctx rng base argstup (Infer r)
    instSigma app exp_ty
 
-tcSigmaCall ctx rng base args exp_ty = do
+tcSigmaCall ctx rng base argstup exp_ty = do
         annbase <- inferRho ctx base "called base"
         let fun_ty = typeAST annbase
+        let argexprs = tupleAstExprs argstup
         debug $ "call: fn type is " ++ show fun_ty
-        (args_ty, res_ty) <- unifyFun fun_ty
+        (args_ty, res_ty) <- unifyFun fun_ty argexprs
         debug $ "call: fn args ty is " ++ show args_ty
-        debug $ "call: arg vals are " ++ show args
-        (AnnTuple annargs) <- checkSigma ctx args args_ty
+        debug $ "call: arg exprs are " ++ show argexprs
+        sanityCheck (eqLen argexprs args_ty) "tcSigmaCall expected equal # of arguments!"
+        annargs <- sequence [checkSigma ctx arg ty | (arg, ty) <- zip argexprs args_ty]
+        let args = E_AnnTuple (tupleAstRange argstup) annargs
         debug $ "call: annargs: "
-        tcLift $ runOutput $ showStructure (AnnTuple annargs)
+        tcLift $ runOutput $ showStructure (AnnTuple args)
         debug $ "call: res_ty is " ++ show res_ty
         debug $ "call: exp_ty is " ++ show exp_ty
         debug $ "tcRhoCall deferring to instSigma"
-        let app = AnnCall rng res_ty annbase annargs
+        let app = AnnCall rng res_ty annbase args
         debug $ "call: overall ty is " ++ show (typeAST app)
         matchExp exp_ty app "tcSigmaCall"
 
-unifyFun :: Rho -> Tc (Sigma, Rho)
-unifyFun (FnTypeAST arg res _cc _cs) = return (arg, res)
-unifyFun (ForAllAST {}) = tcFails [out $ "invariant violated: sigma passed to unifyFun!"]
-unifyFun tau = do arg_ty <- newTcUnificationVarTau "fn args ty"
-                  res_ty <- newTcUnificationVarTau "fn res  ty"
-                  unify tau (FnTypeAST arg_ty res_ty FastCC FT_Func) (Just "unifyFun")
-                  return (arg_ty, res_ty)
-
+unifyFun :: Rho -> [a] -> Tc ([Sigma], Rho)
+unifyFun (FnTypeAST args res _cc _cs) _args = return (args, res)
+unifyFun (ForAllAST {}) _ = tcFails [out $ "invariant violated: sigma passed to unifyFun!"]
+unifyFun tau args = do
+        arg_tys <- mapM (\_ -> newTcUnificationVarTau "fn args ty") args
+        res_ty <- newTcUnificationVarTau "fn res  ty"
+        unify tau (FnTypeAST arg_tys res_ty FastCC FT_Func) (Just "unifyFun")
+        return (arg_tys, res_ty)
 
 -- G{x1 : t1}...{xn : tn} |- e ::: tb
 -- ---------------------------------------------------------------------
@@ -717,7 +720,7 @@ tcSigmaFn ctx f expTy = do
 
         let fnty0 = ForAllAST ktvs $
                 fnTypeTemplate f argtys (typeAST annbody) FastCC
-                where argtys = TupleTypeAST (map tidType uniquelyNamedFormals)
+                 where argtys = map tidType uniquelyNamedFormals
 
         -- The function type is expressed in terms of meta type variables,
         -- which have now served their purpose and must be replaced by
@@ -756,9 +759,10 @@ tcSigmaFn ctx f expTy = do
         -- Check or infer the type of the body.
         annbody <- case mb_exp_fnty of
           Nothing   -> do inferSigma extCtx (fnAstBody f) "mono-fn body"
-          Just fnty -> do (arg_ty, body_ty) <- unifyFun fnty
-                          let vars_ty = map tidType uniquelyNamedFormals
-                          subsCheckTy arg_ty (TupleTypeAST vars_ty) "mono-fn"
+          Just fnty -> do let var_tys = map tidType uniquelyNamedFormals
+                          (arg_tys, body_ty) <- unifyFun fnty var_tys
+                          _ <- sequence [subsCheckTy argty varty "mono-fn-arg" |
+                                          (argty, varty) <- zip arg_tys var_tys]
                           -- TODO is there an arg translation?
                           checkRho extCtx (fnAstBody f) body_ty
 
@@ -766,9 +770,8 @@ tcSigmaFn ctx f expTy = do
         -- capture the function's arguments from the environment!
         freeVars <- computeFreeFnVars uniquelyNamedFormals annbody rng ctx
 
-        let fnty =
-               fnTypeTemplate f argtys (typeAST annbody) FastCC
-                where argtys = TupleTypeAST (map tidType uniquelyNamedFormals)
+        let fnty = fnTypeTemplate f argtys (typeAST annbody) FastCC
+                    where argtys = map tidType uniquelyNamedFormals
 
         let fn = E_AnnFn $ Fn (TypedId fnty (GlobalSymbol $ fnAstName f))
                                uniquelyNamedFormals annbody freeVars rng
@@ -891,7 +894,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
                 _ -> do ts <- sequence [newTcUnificationVarTau "tup" | _ <- eps]
                         unify ctxTy (TupleTypeAST ts) (Just "tuple-pattern")
                         return ts
-        sanityCheck (List.length eps == List.length ts) $
+        sanityCheck (eqLen eps ts) $
                 "Cannot match pattern against tuple type of "
              ++ "different length." ++ showSourceRange r
         ps <- sequence [checkPattern ctx p t | (p, t) <- zip eps ts]
@@ -951,8 +954,8 @@ subsCheckRhoTy (ForAllAST ktvs rho) rho2 = do -- Rule SPEC
              taus <- genTauUnificationVarsLike ktvs (\n -> "instSigma type parameter " ++ show n)
              rho1 <- instSigmaWith ktvs rho taus
              subsCheckRhoTy rho1 rho2
-subsCheckRhoTy rho1 (FnTypeAST a2 r2 _ _) = unifyFun rho1 >>= \(a1, r1) -> subsCheckFunTy a1 r1 a2 r2
-subsCheckRhoTy (FnTypeAST a1 r1 _ _) rho2 = unifyFun rho2 >>= \(a2, r2) -> subsCheckFunTy a1 r1 a2 r2
+subsCheckRhoTy rho1 (FnTypeAST as2 r2 _ _) = unifyFun rho1 as2 >>= \(as1, r1) -> subsCheckFunTy as1 r1 as2 r2
+subsCheckRhoTy (FnTypeAST as1 r1 _ _) rho2 = unifyFun rho2 as1 >>= \(as2, r2) -> subsCheckFunTy as1 r1 as2 r2
 subsCheckRhoTy tau1 tau2 -- Rule MONO
      = unify tau1 tau2 (Just "subsCheckRho") -- Revert to ordinary unification
 -- }}}
@@ -996,14 +999,14 @@ subsCheckRho esigma rho2 = do
                                       mapM_ (\(t1, t2) -> subsCheckRhoTy t1 t2) (zip ts1 ts2)
                                       return esigma
                                       -}
-    (rho1, FnTypeAST a2 r2 _ _) -> do debug $ "subsCheckRho fn 1"
-                                      (a1, r1) <- unifyFun rho1
-                                      subsCheckFunTy a1 r1 a2 r2
-                                      return esigma
-    (FnTypeAST a1 r1 _ _, _)    -> do debug "subsCheckRho fn 2"
-                                      (a2, r2) <- unifyFun rho2
-                                      subsCheckFunTy a1 r1 a2 r2
-                                      return esigma
+    (rho1, FnTypeAST as2 r2 _ _) -> do debug $ "subsCheckRho fn 1"
+                                       (as1, r1) <- unifyFun rho1 as2
+                                       subsCheckFunTy as1 r1 as2 r2
+                                       return esigma
+    (FnTypeAST as1 r1 _ _, _)    -> do debug "subsCheckRho fn 2"
+                                       (as2, r2) <- unifyFun rho2 as1
+                                       subsCheckFunTy as1 r1 as2 r2
+                                       return esigma
     -- Elide the two FUN rules and subsCheckFun because we're using
     -- shallow, not deep, skolemization due to being a strict language.
 
@@ -1027,9 +1030,9 @@ unifyTuple (TupleTypeAST ts1) rho2 = do
 
 unifyTuple _ _ = tcFails [out $ "violated invariant: unifyTuple called with no tuple arguments"]
 
-subsCheckFunTy a1 r1 a2 r2 = do
-        debug $ "subsCheckFunTy arg: " ++ show a2 ++ " ?<=? " ++ show a1
-        subsCheckTy a2 a1 "sCFTa"
+subsCheckFunTy as1 r1 as2 r2 = do
+        debug $ "subsCheckFunTy arg: " ++ show as2 ++ " ?<=? " ++ show as1
+        mapM_ (\(a2, a1) -> subsCheckTy a2 a1 "sCFTa") (zip as2 as1)
         debug $ "subsCheckFunTy res: " ++ show r1 ++ " ?<=? " ++ show r2
         subsCheckTy r1 r2 "sCFTr"
         return ()
@@ -1088,7 +1091,7 @@ tryInstSigmaWith sigma taus = do
      rho                -> return rho
 
 instSigmaWith ktvs rho taus = do
-    sanityCheck (List.length taus == List.length ktvs)
+    sanityCheck (eqLen taus ktvs)
                 ("Arity mismatch in instSigma: can't instantiate"
                 ++ show (List.length ktvs) ++ " type variables with "
                 ++ show (List.length taus) ++ " types!")
@@ -1111,8 +1114,8 @@ resolveType rng subst x =
                                          Just ty -> return ty
     RefTypeAST    ty               -> liftM RefTypeAST   (q ty)
     ArrayTypeAST  ty               -> liftM ArrayTypeAST (q ty)
-    FnTypeAST    s t cc cs         -> do [s', t'] <- mapM q [s, t]
-                                         return $ FnTypeAST s' t' cc cs
+    FnTypeAST   ss t cc cs         -> do (t':ss') <- mapM q (t:ss)
+                                         return $ FnTypeAST ss' t' cc cs
     CoroTypeAST  s t               -> liftM2 CoroTypeAST (q s) (q t)
     TyConAppAST   tc  types        -> liftM (TyConAppAST tc) (mapM q types)
     TupleTypeAST      types        -> liftM  TupleTypeAST    (mapM q types)
@@ -1147,7 +1150,7 @@ getFreeTyVars xs = do zs <- mapM zonkType xs
         PrimFloat64           -> []
         TyConAppAST _nm types -> concatMap (go bound) types
         TupleTypeAST types    -> concatMap (go bound) types
-        FnTypeAST s r _ _     -> concatMap (go bound) [s,r]
+        FnTypeAST ss r _ _    -> concatMap (go bound) (r:ss)
         CoroTypeAST s r       -> concatMap (go bound) [s,r]
         ForAllAST  tvs rho    -> go (tyvarsOf tvs ++ bound) rho
         TyVarAST   tv         -> if tv `elem` bound then [] else [tv]
@@ -1179,8 +1182,8 @@ zonkType x = do
         ArrayTypeAST     ty   -> do debug $ "zonking array ty: " ++ show ty
                                     liftM (ArrayTypeAST  ) (zonkType ty)
         CoroTypeAST s r       -> liftM2 (CoroTypeAST  ) (zonkType s) (zonkType r)
-        FnTypeAST s r cc cs   -> do s' <- zonkType s ; r' <- zonkType r
-                                    return $ FnTypeAST s' r' cc cs
+        FnTypeAST ss r cc cs  -> do ss' <- mapM zonkType ss ; r' <- zonkType r
+                                    return $ FnTypeAST ss' r' cc cs
 -- }}}
 
 -- We also provide a "shallow" alternative which only peeks at the topmost tycon
@@ -1239,7 +1242,7 @@ collectAllUnificationVars xs = Set.toList (Set.fromList (concatMap go xs))
             PrimFloat64           -> []
             TyConAppAST _nm types -> concatMap go types
             TupleTypeAST types    -> concatMap go types
-            FnTypeAST s r _ _     -> concatMap go [s,r]
+            FnTypeAST ss r _ _    -> concatMap go (r:ss)
             CoroTypeAST s r       -> concatMap go [s,r]
             ForAllAST _tvs rho    -> go rho
             TyVarAST  _tv         -> []
@@ -1287,3 +1290,5 @@ instance Show a => Show (Expected a) where
 
 retypeTID :: (t1 -> Tc t2) -> TypedId t1 -> Tc (TypedId t2)
 retypeTID f (TypedId t1 id) = f t1 >>= \t2 -> return (TypedId t2 id)
+
+eqLen a b = List.length a == List.length b

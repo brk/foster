@@ -197,10 +197,6 @@ parseTyApp pbexpr range = do
     let tys = map parseType (toList $ PbExpr.ty_app_arg_type pbexpr)
     return $ E_TyApp range  body tys
 
-    where maybeTupleP []    = Nothing
-          maybeTupleP [arg] = Just $ arg
-          maybeTupleP args  = Just $ TupleTypeP args
-
 parseEVar pbexpr range = do return $ E_VarAST range (parseVar pbexpr)
 
 parseVar pbexpr = do VarAST (fmap parseType (PbExpr.type' pbexpr))
@@ -353,7 +349,7 @@ parseType t =
 
 parseFnTy :: FnType -> TypeP
 parseFnTy fty =
-  FnTypeP (TupleTypeP [parseType x | x <- toList $ PbFnType.arg_types fty])
+  FnTypeP (map parseType (toList $ PbFnType.arg_types fty))
             (parseType $ PbFnType.ret_type fty)
             (parseCallConv (fmap uToString $ PbFnType.calling_convention fty))
             (ftFuncIfClosureElseProc fty)

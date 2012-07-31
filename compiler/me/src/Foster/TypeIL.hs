@@ -18,7 +18,7 @@ data TypeIL =
          | PrimFloat64IL
          | TyConAppIL      DataTypeName [TypeIL]
          | TupleTypeIL     [TypeIL]
-         | FnTypeIL        { fnTypeILDomain :: TypeIL
+         | FnTypeIL        { fnTypeILDomain :: [TypeIL]
                            , fnTypeILRange  :: TypeIL
                            , fnTypeILCallConv :: CallConv
                            , fnTypeILProcOrFunc :: ProcOrFunc }
@@ -73,8 +73,8 @@ ilOf ctx typ = do
      PrimFloat64         -> do return $ PrimFloat64IL
      TupleTypeAST types  -> do tys <- mapM q types
                                return $ TupleTypeIL tys
-     FnTypeAST s t cc cs -> do [x,y] <- mapM q [s,t]
-                               return $ FnTypeIL x y cc cs
+     FnTypeAST ss t cc cs-> do (y:xs) <- mapM q (t:ss)
+                               return $ FnTypeIL xs y cc cs
      CoroTypeAST s t     -> do [x,y] <- mapM q [s,t]
                                return $ CoroTypeIL x y
      RefTypeAST ty       -> do t <- q ty
@@ -175,7 +175,7 @@ instance Structured TypeIL where
             PrimIntIL       {}     -> []
             PrimFloat64IL          -> []
             TupleTypeIL     types  -> types
-            FnTypeIL   s t _cc _cs -> [s,t]
+            FnTypeIL  ss t _cc _cs -> ss++[t]
             CoroTypeIL s t         -> [s,t]
             ForAllIL  _ktvs rho    -> [rho]
             TyVarIL        _tv _   -> []

@@ -136,15 +136,12 @@ kNormalize mebTail expr =
 
         knCall t a vs =
           case (tidType a) of
-              FnTypeIL rawtys _ _ _ -> do
-                  let tys = listize rawtys
+              FnTypeIL tys _ _ _ -> do
                   args <- mapM varOrThunk (zip vs tys)
                   nestedLets args (\xs -> KNCall mebTail t a xs)
               _ -> error $ "knCall: Called var had non-function type!\n\t" ++
                                 show a ++
                                 outToString (showStructure (tidType a))
-          where listize (TupleTypeIL tys) = tys
-                listize t                 = [t]
 -- }}}|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 --------------------------------------------------------------------
@@ -208,12 +205,10 @@ varOrThunk (a, targetType) = do
         -- and then bound to a local variable before being closed over.
         -- The "right" thing to do is track known vs unknown vars...
 
-        argVarsWithTypes (TupleTypeIL tys) = do
+        argVarsWithTypes tys = do
           let tidOfType ty = do id <- knFresh ".arg"
                                 return $ TypedId ty id
           mapM tidOfType tys
-
-        argVarsWithTypes ty = argVarsWithTypes (TupleTypeIL [ty])
 
 -- ||||||||||||||||||||||| Let-Flattening |||||||||||||||||||||||{{{
 -- Because buildLet is applied bottom-to-top, we maintain the invariant

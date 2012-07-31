@@ -120,13 +120,9 @@ dumpType (ArrayType ty) =
 dumpType (FnType s t cc cs) =
               P'.defaultValue { PbType.tag = tagProcOrFunc cs
                               , PbType.procty = Just $ dumpProcType (s, t, cc) }
-dumpProcType (s, t, cc) =
-    let args = case s of
-                TupleType types -> [dumpType x | x <- types]
-                _else           -> [dumpType s]
-    in
+dumpProcType (ss, t, cc) =
     ProcType.ProcType {
-          arg_types = fromList args
+          arg_types = fromList (map dumpType ss)
         , ProcType.ret_type  = dumpType t
         , calling_convention = Just $ u8fromString (stringOfCC cc)
     }
@@ -445,7 +441,7 @@ dumpMonoModuleToProtobuf m outpath = do
              }
     preProcType proc =
         let retty = moProcReturnType proc in
-        let argtys = TupleType (map tidType (moProcVars proc)) in
+        let argtys = map tidType (moProcVars proc) in
         (argtys, retty, FastCC)
 
     dumpDataTypeDecl datatype =
