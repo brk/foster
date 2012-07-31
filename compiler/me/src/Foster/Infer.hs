@@ -75,6 +75,10 @@ tySubst subst ty =
         ForAllAST tvs rho      -> ForAllAST tvs (q rho)
 
 -------------------------------------------------
+illegal (TyVarAST (BoundTyVar _)) = True
+illegal (ForAllAST {})            = True
+illegal _                        = False
+-------------------------------------------------
 
 tcUnifyTypes :: TypeAST -> TypeAST -> Tc UnifySoln
 tcUnifyTypes t1 t2 = tcUnify [TypeConstrEq t1 t2]
@@ -92,8 +96,14 @@ tcUnifyLoop ((TypeConstrEq (PrimIntAST I32) (PrimIntAST I32)):constraints) tysub
   = tcUnifyLoop constraints tysub
 
 tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
-  --tcLift $ putStrLn ("tcUnifyLoop: t1 = " ++ show t1 ++ "; t2 = " ++ show t2)
-  case (t1, t2) of
+ --tcLift $ putStrLn ("tcUnifyLoop: t1 = " ++ show t1 ++ "; t2 = " ++ show t2)
+ if illegal t1 || illegal t2
+  then tcFailsMore
+        [out $ "Bound type variables cannot be unified!\n" ++
+               "Unable to unify\n\t" ++ show t1 ++ "\nand\n\t" ++ show t2
+        ,out $ "t1::", showStructure t1, out $ "t2::", showStructure t2]
+  else
+   case (t1, t2) of
     (PrimFloat64, PrimFloat64) -> tcUnifyLoop constraints tysub
     ((PrimIntAST n1), (PrimIntAST n2)) ->
       if n1 == n2 then tcUnifyLoop constraints tysub
