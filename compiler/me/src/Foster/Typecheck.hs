@@ -831,9 +831,9 @@ tcRhoCase ctx rng scrutinee branches expTy = do
   debug $ "metavar for overall type of case is " ++ show u
   debug $ " exp ty is " ++ show expTy
   let checkBranch (pat, body) = do
-      p <- checkPattern pat
+      p <- checkPattern ctx pat (typeAST ascrutinee)
       debug $ "case branch pat: " ++ show p
-      bindings <- extractPatternBindings ctx p (typeAST ascrutinee)
+      let bindings = extractPatternBindings p
       debug $ "case branch generated bindings: " ++ show bindings
       let ctxbindings = [varbind id ty | (TypedId ty id) <- bindings]
       verifyNonOverlappingBindings rng "case" ctxbindings
@@ -844,31 +844,55 @@ tcRhoCase ctx rng scrutinee branches expTy = do
   abranches <- forM branches checkBranch
   matchExp expTy (AnnCase rng u ascrutinee abranches) "case"
  where
-    checkPattern :: EPattern TypeAST -> Tc (Pattern TypeAST)
-    -- Make sure that each pattern has the proper arity.
-    checkPattern p = case p of
-      EP_Wildcard r   -> do t <- newTcUnificationVarTau "_ wildcard"
-                            return $ P_Wildcard r t
-      EP_Bool r b     -> do return $ P_Bool r fosBoolType b
-      EP_Variable r v -> do checkSuspiciousPatternVariable r v
-                            id <- tcFreshT (evarName v)
-                            ty <- tcMaybeType (evarMaybeType v) ("pat:" ++ show id)
-                            return $ P_Variable r (TypedId ty id)
-      EP_Int r str    -> do annint <- typecheckInt r str Nothing
-                            return $ P_Int r (aintType annint) (aintLit annint)
-      EP_Ctor r eps s -> do info@(CtorInfo cid _) <- getCtorInfoForCtor ctx s
-                            sanityCheck (ctorArity cid == List.length eps) $
-                              "Incorrect pattern arity: expected " ++
-                              (show $ ctorArity cid) ++ " pattern(s), but got "
-                              ++ (show $ List.length eps) ++ show r
-                            ps <- mapM checkPattern eps
+    checkPattern :: Context Sigma -> EPattern TypeAST -> TypeAST -> Tc (Pattern TypeAST)
+    -- Make sure that each pattern has the proper arity,
+    -- and record its type given a known type for the context in which
+    -- the pattern appears.
+    checkPattern ctx pattern ctxTy = case pattern of
+      EP_Wildcard r       -> do return $ P_Wildcard r ctxTy
+      EP_Variable r v     -> do checkSuspiciousPatternVariable r v
+                                id <- tcFreshT (evarName v)
+                                return $ P_Variable r (TypedId ctxTy id)
+      EP_Bool     r b     -> do annbool <- tcRho ctx (E_BoolAST r b) (Check ctxTy)
+                                return $ P_Bool r (typeAST annbool) b
+      EP_Int      r str   -> do annint <- typecheckInt r str (Just ctxTy)
+                                return $ P_Int r (aintType annint) (aintLit annint)
 
-                            ty <- generateTypeSchemaForDataType ctx (ctorTypeName cid)
-                            tcLift $ putStrLn $ "checkPattern for " ++ show p ++ " generated :: " ++ show ty
-                            return $ P_Ctor r ty ps info
-      EP_Tuple r eps  -> do ps <- mapM checkPattern eps
-                            let tys = map patternType ps
-                            return $ P_Tuple r (TupleTypeAST tys) ps
+      EP_Ctor     r eps s -> do
+        info@(CtorInfo cid (DataCtor _ _ types)) <- getCtorInfoForCtor ctx s
+        sanityCheck (ctorArity cid == List.length eps) $
+              "Incorrect pattern arity: expected " ++
+              (show $ ctorArity cid) ++ " pattern(s), but got "
+              ++ (show $ List.length eps) ++ showSourceRange r
+        sanityCheck (ctorArity cid == List.length types) $
+              "Invariant violated: constructor arity did not match # types!"
+              ++ showSourceRange r
+
+        (ty@(TyConAppAST _ metas), tyformals) <-
+                            generateTypeSchemaForDataType ctx (ctorTypeName cid)
+        let ktvs = map convertTyFormal tyformals
+        ts <- mapM (\ty -> instSigmaWith ktvs ty metas) types
+        ps <- sequence [checkPattern ctx p t | (p, t) <- zip eps ts]
+        tcLift $ putStrLn $ "checkPattern for " ++ show pattern
+        tcLift $ putStrLn $ "*** P_Ctor -  ty   " ++ show ty
+        tcLift $ putStrLn $ "*** P_Ctor -  ty   " ++ show ctxTy
+        tcLift $ putStrLn $ "*** P_Ctor - metas " ++ show metas
+        tcLift $ putStrLn $ "*** P_Ctor - sgmas " ++ show ts
+
+        unify ty ctxTy (Just $ "checkPattern:P_Ctor " ++ show cid)
+        return $ P_Ctor r ty ps info
+
+      EP_Tuple     r eps  -> do
+        ts <- case ctxTy of
+                TupleTypeAST ts -> return ts
+                _ -> do ts <- sequence [newTcUnificationVarTau "tup" | _ <- eps]
+                        unify ctxTy (TupleTypeAST ts) (Just "tuple-pattern")
+                        return ts
+        sanityCheck (List.length eps == List.length ts) $
+                "Cannot match pattern against tuple type of "
+             ++ "different length." ++ showSourceRange r
+        ps <- sequence [checkPattern ctx p t | (p, t) <- zip eps ts]
+        return $ P_Tuple r (TupleTypeAST ts) ps
     -----------------------------------------------------------------------
     getCtorInfoForCtor :: Context Sigma -> T.Text -> Tc (CtorInfo Sigma)
     getCtorInfoForCtor ctx ctorName = do
@@ -879,72 +903,23 @@ tcRhoCase ctx rng scrutinee branches expTy = do
                                     ++ " too few definitions for $" ++ T.unpack ctorName
                                     ++ "\n\t" ++ show elsewise]
 
-    generateTypeSchemaForDataType :: Context Sigma -> DataTypeName -> Tc TypeAST
+    generateTypeSchemaForDataType :: Context Sigma -> DataTypeName -> Tc (TypeAST, [TypeFormalAST])
     generateTypeSchemaForDataType ctx typeName = do
       case Map.lookup typeName (contextDataTypes ctx) of
         Just [dt] -> do
           formals <- mapM (\_ -> newTcUnificationVarTau "dt-tyformal") (dataTypeTyFormals dt)
-          return $ TyConAppAST typeName formals
+          return $ (TyConAppAST typeName formals, dataTypeTyFormals dt)
         other -> tcFails [out $ "Typecheck.generateTypeSchemaForDataType: Too many or"
                             ++ " too few definitions for $" ++ typeName
                             ++ "\n\t" ++ show other]
-    -----------------------------------------------------------------------
-    -- We don't have a function like
-    --   patternType :: Pattern TypeAST -> TypeAST
-    -- because we'd have no reasonable type to assign to wildcards.
 
-    -- Recursively match a pattern against a type and extract the (typed)
-    -- binders introduced by the pattern.
-    extractPatternBindings :: Context Sigma -> Pattern TypeAST -> TypeAST -> Tc [TypedId Sigma]
-    extractPatternBindings _ctx (P_Wildcard _ pty) ty = do
-        unify pty ty (Just "Typecheck.hs:extractPatternBindings; P_Wildcard")
-        return []
-    extractPatternBindings _ctx (P_Variable _ tid) ty = do
-        unify (tidType tid) ty (Just "pattern binding")
-        return [tid]
-
-    extractPatternBindings ctx (P_Ctor _ pty pats (CtorInfo _ (DataCtor _ _ types))) ty = do
-      bindings <- sequence [extractPatternBindings ctx p t | (p, t) <- zip pats types]
-      unify ty pty (Just $ "Typecheck.hs:extractPatternBindings; P_Ctor")
-      tcLift $ putStrLn $ "*** P_Ctor -  ty   " ++ show ty
-      tcLift $ putStrLn $ "*** P_Ctor - pty   " ++ show pty
-      tcLift $ putStrLn $ "*** P_Ctor - metas " ++ show metas
-      tcLift $ putStrLn $ "*** P_Ctor - sgmas " ++ show sigmas
-      tcLift $ putStrLn $ "*** P_Ctor - tyfor " ++ show tyformals
-      tcLift $ putStrLn $ "*** P_Ctor - types " ++ show types
-      tcLift $ putStrLn $ "*** P_Ctor - ktvs  " ++ show ktvs
-      return $ concat bindings
-
-    extractPatternBindings ctx (P_Bool r pty v) ty = do
-      _ae <- tcRho ctx (E_BoolAST r v) (Check ty)
-      unify pty ty (Just $ "Typecheck.hs:extractPatternBindings; P_Bool")
-      -- literals don't bind anything, but we still need to check
-      -- that we do not try matching e.g. a bool against an int.
-      return []
-
-    extractPatternBindings _ctx (P_Int r pty litint) ty = do
-      _ae <- tcRho ctx (E_IntAST r (litIntText litint)) (Check ty)
-      unify pty ty (Just $ "Typecheck.hs:extractPatternBindings; P_Int")
-      -- literals don't bind anything, but we still need to check
-      -- that we do not try matching e.g. a bool against an int.
-      return []
-
-    extractPatternBindings ctx (P_Tuple _rng pty [p]) ty = do
-       unify pty ty (Just $ "Typecheck.hs:extractPatternBindings; P_Tuple")
-       extractPatternBindings ctx p ty
-    extractPatternBindings ctx (P_Tuple  rng pty ps)  ty = do
-       unify pty ty (Just $ "Typecheck.hs:extractPatternBindings; P_Tuple")
-       case ty of
-         TupleTypeAST ts ->
-            (if List.length ps == List.length ts
-              then do bindings <- sequence [extractPatternBindings ctx p t | (p, t) <- zip ps ts]
-                      return $ concat bindings
-              else tcFails [out $ "Cannot match pattern against tuple type"
-                                  ++ " of different length." ++ showSourceRange rng])
-         _ -> do ts <- sequence [newTcUnificationVarTau "tup" | _ <- ps]
-                 unify ty (TupleTypeAST ts) (Just "tuple-pattern")
-                 bindings <- sequence [extractPatternBindings ctx p t | (p, t) <- zip ps ts]
-                 return $ concat bindings
+    extractPatternBindings :: Pattern TypeAST -> [TypedId Sigma]
+    extractPatternBindings (P_Wildcard    {}) = []
+    extractPatternBindings (P_Bool        {}) = []
+    extractPatternBindings (P_Int         {}) = []
+    extractPatternBindings (P_Variable _ tid) = [tid]
+    extractPatternBindings (P_Ctor _ _ ps _)  = concatMap extractPatternBindings ps
+    extractPatternBindings (P_Tuple _ _ ps)   = concatMap extractPatternBindings ps
 
     checkSuspiciousPatternVariable rng var =
       if T.unpack (evarName var) `elem` ["true", "false"]
