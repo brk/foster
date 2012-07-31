@@ -47,15 +47,14 @@ import Data.Maybe(isNothing, maybeToList)
 -- | share a definition at runtime.
 
 monomorphize :: ILProgram -> IO MonoProgram
-monomorphize (ILProgram procdefmap decls datatypes lines) = do
-    monoState <- execStateT (addMonosAndGo procdefmap) monoState0
+monomorphize (ILProgram procdefmap decls datatypes topprocs lines) = do
+    monoState <- execStateT addMonosAndGo monoState0
     return $ MoProgram (monoProcDefs monoState) monodecls monodatatypes lines
       where
         monodatatypes = monomorphizedDataTypes datatypes
         monoState0 = MonoState Set.empty worklistEmpty procdefmap Map.empty
         monodecls  = map monoExternDecl decls
-        addMonosAndGo procdefmap =
-                           addInitialMonoTasksAndGo (Map.elems procdefmap)
+        addMonosAndGo = addInitialMonoTasksAndGo topprocs (Map.elems procdefmap)
 
 -- ||||||||||||||||||||||| Initialization |||||||||||||||||||||||{{{
 

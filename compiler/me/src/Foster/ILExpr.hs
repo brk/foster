@@ -52,6 +52,7 @@ data ILClosure = ILClosure { ilClosureProcIdent :: Ident
 data ILProgram = ILProgram (Map Ident ILProcDef)
                            [ILExternDecl]
                            [DataType TypeIL]
+                           [ILProcDef] -- These are the original toplevel functions.
                            SourceLines
 
 data ILExternDecl = ILDecl String TypeIL deriving (Show)
@@ -97,10 +98,10 @@ closureConvertAndLift dataSigs u m =
     let procsILM     = forM fns (\fn -> lambdaLift fn []) where
                             fns = moduleILfunctions m in
     let initialState = ILMState u Map.empty Map.empty dataSigs in
-    let newstate     = execState procsILM initialState in
+    let (topProcs, newstate) = runState procsILM initialState in
     let decls = map (\(s,t) -> ILDecl s t) (moduleILdecls m) in
     let dts = moduleILprimTypes m ++ moduleILdataTypes m in
-    ILProgram (ilmProcDefs newstate) decls dts (moduleILsourceLines m)
+    ILProgram (ilmProcDefs newstate) decls dts topProcs (moduleILsourceLines m)
 
 -- For example, if we have something like
 --      let y = blah in
@@ -406,7 +407,7 @@ instance UniqueMonad (State ILMState) where
   freshUnique = ilmNewUniq >>= (return . intToUnique)
 
 showILProgramStructure :: ILProgram -> Output
-showILProgramStructure (ILProgram procdefs _decls _dtypes _lines) =
+showILProgramStructure (ILProgram procdefs _decls _dtypes _topfns _lines) =
     concatMap showProcStructure (Map.elems procdefs)
   where
     showProcStructure proc =
