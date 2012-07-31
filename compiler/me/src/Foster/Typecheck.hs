@@ -106,6 +106,7 @@ debug s = do when tcVERBOSE (tcLift $ putStrLn s)
 getEnvTypes ctx = return (map tidType $ Map.elems (contextBindings ctx))
 
 inferSigma :: Context TypeAST -> Term -> String -> Tc (AnnExpr Sigma)
+-- {{{
 -- Special-case variables and function literals
 -- to avoid a redundant instantation + generalization
 inferSigma ctx (E_VarAST rng v) _msg = tcSigmaVar ctx rng (evarName v)
@@ -134,8 +135,10 @@ inferSigma ctx e msg
         ; debug $ "inferSigma quantifying over " ++ show (map MetaTv forall_tvs) ++ " to get " ++ show ty
 	; return ty
         -}
+-- }}}
 
 checkSigma :: Context TypeAST -> Term -> Sigma -> Tc (AnnExpr Sigma)
+-- {{{
 checkSigma ctx e sigma = do
        { (skol_tvs, rho) <- skolemize sigma
        ; debug $ "checkSigma " ++ highlightFirstLine (rangeOf e) ++ " :: " ++ show sigma
@@ -151,15 +154,19 @@ checkSigma ctx e sigma = do
                      ("Type not polymorphic enough")
        ; return ann
        }
+-- }}}
 
 checkRho :: Context Sigma -> Term -> Rho -> Tc (AnnExpr Rho)
 -- Invariant: the Rho is always in weak-prenex form
+-- {{{
 checkRho ctx e ty = do
    debug $ "checkRho " ++ highlightFirstLine (rangeOf e) ++ " :: " ++ show ty
    debug $ "checkRho deferring to tcRho"
    tcRho ctx e (Check ty)
+-- }}}
 
 inferRho :: Context Sigma -> Term -> String -> Tc (AnnExpr Rho)
+-- {{{
 inferRho ctx e msg
   = do { ref <- newTcRef (error $ "inferRho: empty result: " ++ msg)
        ; debug $ "inferRho " ++ highlightFirstLine (rangeOf e)
@@ -174,6 +181,7 @@ inferRho ctx e msg
        ; sanityCheck (isRho $ typeAST a) ("inferRho wound up with a sigma type!" ++ highlightFirstLine (rangeOf a))
        ; return a
        }
+-- }}}
 
 tcVERBOSE = True
 
@@ -239,9 +247,7 @@ tcRho ctx expr expTy = do
 --  ------------------     or      -----------------------
 --  G |- v ~~> v ::: s             G |- v ~~> prim v ::: s
 tcSigmaVar ctx rng name = do
-  tcLift $ runOutput $ outCS Green "typecheckVar (sigma): " ++ out (T.unpack name ++ "...")
-  debug ""
-
+  tcLift $ runOutput $ outCS Green "typecheckVar (sigma): " ++ out (T.unpack name ++ "...\n")
   -- Resolve the given name as either a variable or a primitive reference.
   case termVarLookup name (contextBindings ctx) of
     Just (TypedId sigma id) -> do
@@ -949,8 +955,8 @@ tcRhoCase ctx rng scrutinee branches expTy = do
        else return ()
 -- }}}
 
--- {{{
 subsCheckTy :: Sigma -> Sigma -> String -> Tc ()
+-- {{{
 subsCheckTy sigma1 sigma2@(ForAllAST {}) msg = do
   (skols, rho) <- skolemize sigma2
   debug $ "subsCheckTy deferring to subsCheckRhoTy"
@@ -975,8 +981,8 @@ subsCheckRhoTy tau1 tau2 -- Rule MONO
      = unify tau1 tau2 (Just "subsCheckRho") -- Revert to ordinary unification
 -- }}}
 
--- {{{
 subsCheck :: (AnnExpr Sigma) -> Sigma -> String -> Tc (AnnExpr Sigma)
+-- {{{
 subsCheck esigma sigma2@(ForAllAST {}) msg = do
   (skols, rho) <- skolemize sigma2
   debug $ "subsCheck deferring to subsCheckRho"
