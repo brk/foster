@@ -680,7 +680,7 @@ tcSigmaFn ctx f expTy = do
   case (fnTyFormals f, expTy) of
     ([], Check fnty) -> helper (Just fnty) Nothing
     ([], Infer r   ) -> helper Nothing     (Just r)
-    (tyformals, Infer r) -> do
+    (tyformals, expTy) -> do
         let rng = fnAstRange f
         let ktvs = map convertTyFormal tyformals
         taus <- genTauUnificationVarsLike ktvs (\n -> "fn type parameter " ++ show n ++ " for " ++ T.unpack (fnAstName f))
@@ -742,12 +742,7 @@ tcSigmaFn ctx f expTy = do
                                uniquelyNamedFormals annbody freeVars rng
 
         -- Update the Infer ref, if we were given one, and return the fn.
-        case (Just r) of
-          Nothing -> return fn
-          Just r -> update r (return fn)
-
-    (_tyformals, _) -> do
-        tcFails [out $ "tcRhoPolyFn :?: " ++ show expTy]
+        matchExp expTy fn "tcSigmaFn"
   where
     helper mb_exp_fnty mb_infer_ref = do
         let rng = fnAstRange f
