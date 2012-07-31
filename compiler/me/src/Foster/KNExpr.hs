@@ -171,15 +171,17 @@ varOrThunk (a, targetType) = do
     Just fnty -> do withThunkFor a fnty
     Nothing -> return (KNVar a)
   where
+    -- TODO: I think this only works because we don't type-check IL.
+    -- Specifically, we are assuming but not verifying that the involved
+    -- types are all of pointer-size kinds.
+    unForAll (ForAllIL _ t) = t
+    unForAll             t  = t
     needsClosureWrapper a ty =
-      case (tidType a, ty) of
-        (FnTypeIL x y z FT_Proc, FnTypeIL _ _ _ FT_Func) ->
-            Just $ FnTypeIL x y z FT_Func
-        (FnTypeIL x y z FT_Proc, ForAllIL _ (FnTypeIL _ _ _ FT_Func)) ->
-            -- TODO: I think this only works because we don't type-check IL.
-            -- Specifically, we are assuming but not verifying that the involved
-            -- types are all of pointer-size kinds.
-            Just $ FnTypeIL x y z FT_Func
+      case (tidType a, unForAll ty) of
+        (                      FnTypeIL x y z FT_Proc,  FnTypeIL _ _ _ FT_Func) ->
+            Just $             FnTypeIL x y z FT_Func
+        (          ForAllIL t (FnTypeIL x y z FT_Proc), FnTypeIL _ _ _ FT_Func) ->
+            Just $ ForAllIL t (FnTypeIL x y z FT_Func)
         _ -> Nothing
 
     withThunkFor :: AIVar -> TypeIL -> KN KNExpr
