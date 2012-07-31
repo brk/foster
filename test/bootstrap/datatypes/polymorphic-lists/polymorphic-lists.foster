@@ -1,9 +1,7 @@
 main = {
-  expect_i32 6;
-  print_i32 (len (ones 6));
+  test-ones !;
 
-  expect_i32 0;
-  print_i32 (ex3 (Nil:[B32] !));
+  test-explicit !;
 
   //print_i32 (ex3 (Nil !));
   // Nil :: forall a, () -> List a
@@ -21,8 +19,36 @@ main = {
 */
 };
 
-ex3 = { forall a,
-        z : List a => 0 };
+test-explicit = {
+  let n = 0;
+      o = Nil:[B32] ! ;
+      z = ex3       o;
+      w = ex3:[B32] o;
+  in
+      expect_i32 n;
+      print_i32  z;
+
+      expect_i32 n;
+      print_i32  w;
+  end
+};
+
+test-ones = {
+  let n = 6;
+      o = ones n;
+      z = len       o;
+      w = len:[B32] o;
+  in
+      expect_i32 n;
+      print_i32  z;
+
+      expect_i32 n;
+      print_i32  w;
+  end
+};
+
+ex3 = { forall c:Type,
+        z : List c => 0 };
 
 // one :: Int32 -> List B32
 ones = { n : Int32 =>
@@ -51,11 +77,11 @@ ex2 = { forall a,
 };
 */
 
-len = { forall a,
-        z : List a =>
+len = { forall d:Boxed,
+        z : List d =>
   case z
     of $Nil       -> 0
-    of $Cons n ns -> 1 +Int32 (len :[a] ns)
+    of $Cons n ns -> 1 +Int32 (len :[d] ns)
     // of (n, ns)      -> n +Int32 (len ns) // should fail due to type mismatch
   end
 };
