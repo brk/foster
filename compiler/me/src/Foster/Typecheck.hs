@@ -10,7 +10,7 @@ import Data.List(foldl')
 import Control.Monad(liftM, forM_, forM, liftM, liftM2, when)
 
 import qualified Data.Text as T(Text, unpack)
-import qualified Data.Map as Map(lookup, insert)
+import qualified Data.Map as Map(lookup, insert, elems)
 import qualified Data.Set as Set(toList, fromList)
 
 import Foster.Base
@@ -681,15 +681,22 @@ typecheckCall ctx rng base args maybeExpTy = do
      tcLift $ runOutput $ (outCS Green "typecheckCallSigma: base type was ") ++ out (show $ typeAST eb)
      tcLift $ putStrLn ""
 
-   case typeAST eb of
-      fnty@FnTypeAST {} -> do
-            AnnTuple eargs <- tcSigma ctx args (Just $ fnTypeDomain fnty)
-            typecheckCallRho eargs eb fnty rng
+   case (typeAST eb, maybeExpTy) of
+      (_ , Just sigma@(ForAllAST ktvs2 rho2)) -> do
+         (skols, rho) <- skolemize ktvs2 rho2
+         rv <- typecheckCall ctx rng base args (Just rho)
+         let env_tys = map tidType $ Map.elems (contextBindings ctx)
+         esc_tvs <- getFreeTyVars (sigma : env_tys)
+         let bad_tvs = filter (`elem` esc_tvs) skols
+         sanityCheck (null bad_tvs) ("Type not polymorphic enough")
+         return rv
 
-      (ForAllAST ktyvars rho) -> do
-         -- eb ::[[??]] ea
-         let (FnTypeAST argType retType _ _) = rho
-         -- Example:            argtype =   ('a -> 'b)
+      (fnty@FnTypeAST {}, _) -> do
+         AnnTuple eargs <- tcSigma ctx args (Just $ fnTypeDomain fnty)
+         typecheckCallRho eargs eb fnty rng
+
+      (ForAllAST ktyvars rho@(FnTypeAST argType retType _ _), _) -> do
+         -- Example:            argtype =   ('c -> 'd)
          -- base has type ForAll ['a 'b]   (('a -> 'b) -> (Coro 'a 'b))
          -- The forall-bound vars won't unify with concrete types in the term arg,
          -- so we replace the forall-bound vars with unification variables
@@ -744,7 +751,7 @@ typecheckCall ctx rng base args maybeExpTy = do
              --tcLift $ putStrLn ("annTyApp: " ++ show annTyApp)
              typecheckCallRho eargs annTyApp (typeAST annTyApp) rng
 
-      MetaTyVar m -> do
+      (MetaTyVar m, _) -> do
             AnnTuple eargs <- tcSigma ctx args Nothing
 
             rt <- newTcUnificationVarTau   $ "arg type for " ++ mtvDesc m
