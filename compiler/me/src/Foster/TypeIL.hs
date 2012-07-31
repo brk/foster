@@ -91,7 +91,7 @@ ilOf ctx typ = do
      MetaTyVar m -> do
         mty <- readTcMeta m
         case mty of
-          Nothing -> if True -- TODO this is dangerous, can violate type correctness
+          Nothing -> if False -- TODO this is dangerous, can violate type correctness
                       then return $ TupleTypeIL []
                       else tcFails [out $ "Found un-unified unification variable "
                                 ++ show (mtvUniq m) ++ "(" ++ mtvDesc m ++ ")!"]

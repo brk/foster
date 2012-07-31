@@ -140,12 +140,13 @@ checkSigma ctx e sigma = do
        { (skol_tvs, rho) <- skolemize sigma
        ; debug $ "checkSigma " ++ highlightFirstLine (rangeOf e) ++ " :: " ++ show sigma
        ; debug $ "checkSigma used " ++ show skol_tvs ++ " to skolemize " ++ show sigma ++ " to " ++ show rho
-       ; debug $ "checkSigma deferring to checkRho"
+       ; debug $ "checkSigma deferring to checkRho for: " ++ highlightFirstLine (rangeOf e)
+
        ; ann <- checkRho ctx e rho
        ; env_tys <- getEnvTypes ctx
        ; esc_tvs <- getFreeTyVars (sigma : env_tys)
-       ; debug $ "checkSigma escaping types were " ++ show esc_tvs
        ; let bad_tvs = filter (`elem` esc_tvs) skol_tvs
+       ; debug $ "checkSigma escaping types from were " ++ show esc_tvs ++ "; bad tvs were " ++ show bad_tvs ++ highlightFirstLine (rangeOf e)
        ; sanityCheck (null bad_tvs)
                      ("Type not polymorphic enough")
        ; return ann
@@ -572,12 +573,11 @@ tcRhoLetRec ctx0 rng recBindings e mt = do
 
     let fns = [f | (E_AnnFn f) <- tcbodies]
     let nonfns = filter notAnnFn tcbodies
+                  where notAnnFn (E_AnnFn _) = False
+                        notAnnFn _           = True
     sanityCheck (null nonfns) "Recursive bindings should only contain functions!"
     return $ AnnLetFuns rng ids fns e'
 -- }}}
-
-notAnnFn (E_AnnFn _) = False
-notAnnFn _           = True
 
 -- G |- e ::: forall a1::k1..an::kn, rho
 -- G |- t_n <::: k_n                          (checked later)
@@ -591,7 +591,7 @@ tcRhoTyApp ctx rng e t1tn expTy = do
     tbase <- return (typeAST aeSigma)
     --tbase <- shallowZonk (typeAST aeSigma)
     case (t1tn, tbase) of
-      ([]  , _           ) -> return aeSigma
+      ([]  , _           ) -> matchExp expTy aeSigma "empty-tyapp"
       (t1tn, ForAllAST {}) -> do let resolve = resolveType rng (localTypeBindings ctx)
                                  tcLift $ putStrLn $ "local type bindings: " ++ show (localTypeBindings ctx)
                                  tcLift $ putStrLn $ "********raw type arguments: " ++ show t1tn
@@ -703,19 +703,32 @@ tcSigmaFn ctx f expTy = do
         -- Check or infer the type of the body.
         debug $ "inferring type of body of polymorphic function"
         debug $ "\tafter generating meta ty vars for type formals: " ++ show (zip taus ktvs)
-        case expTy of
-           Check _ -> tcFails [out $ "not yet checking poly fn literals"]
-           _       -> return ()
+        annbody <- case expTy of
+           Infer _      -> inferSigma extCtx (fnAstBody f) "poly-fn body"
+           Check _      -> inferSigma extCtx (fnAstBody f) "poly-fn body"
+           {-
+             -- TODO: if we permitted functions with un-annotated parameters,
+             -- we'd want to use the expected function type to guide their types.
 
-        annbody <- case Nothing of
-          Nothing   -> do inferSigma extCtx (fnAstBody f) "poly-fn body"
-          Just _fnty -> do tcFails [out $ "TODO: check polymorphic types"]
-          {-
-                          (arg_ty, body_ty) <- unifyFun fnty
-                          let vars_ty = map tidType uniquelyNamedFormals
-                          subsCheck arg_ty (TupleTypeAST vars_ty)
-                          checkRho ctx (fnAstBody f) body_ty
-        -}
+             if isRho ckfnty
+              then do
+                  let var_tys = map tidType uniquelyNamedFormals
+                  (arg_tys, body_ty) <- unifyFun ckfnty var_tys "poly-fn-lit"
+                  vartys1 <- mapM shallowZonk var_tys
+                  debug $ "&&&& before: " ++ show (zip arg_tys vartys1)
+                  _ <- sequence [subsCheckTy argty varty "poly-fn-arg" |
+                                          (argty, varty) <- zip arg_tys var_tys]
+                  vartys2 <- mapM shallowZonk var_tys
+                  debug $ "&&&& after: " ++ show (zip arg_tys vartys2)
+                  -- TODO is there an arg translation?
+                  checkSigma extCtx (fnAstBody f) body_ty
+              else
+                 -- Can't call unifyFun because ckfnty may be polymorphic.
+                 tcFails [out $ "not yet checking poly fn literals against polymorphic types"
+                         ,out $ "expected type is:"
+                         ,showStructure ckfnty]
+         -}
+
         debug $ "inferred raw type of body of polymorphic function: " ++ show (typeAST annbody)
 
         -- Note we collect free vars in the old context, since we can't possibly
@@ -738,7 +751,7 @@ tcSigmaFn ctx f expTy = do
                        y -> tcFails [out $ "expected ty param metavar to be un-unified, instead had " ++ show y]
                   ) (zip taus ktvs)
         -- Zonk the type to ensure that the meta vars are completely gone.
-        debug $ "inferred raw type of body of polymorphic function: " ++ show fnty0
+        debug $ "inferred raw overall type of polymorphic function: " ++ show fnty0
         debug $ "zonking; tyvars were " ++ show (zip taus ktvs)
         fnty <- zonkType fnty0
         debug $ "inferred overall type of body of polymorphic function: " ++ show fnty
@@ -984,6 +997,8 @@ subsCheckRho esigma rho2 = do
     (ForAllAST {}, _) -> do -- Rule SPEC
         debug $ "subsCheckRho instantiating " ++ show (typeAST esigma)
         erho <- inst esigma
+        debug $ "subsCheckRho instantiated to " ++ show (typeAST erho)
+        debug $ "subsCheckRho inst. type against " ++ show rho2
         subsCheckRho erho rho2
         {-
         taus <- genTauUnificationVarsLike ktvs (\n -> "instSigma type parameter " ++ show n)
