@@ -128,9 +128,10 @@ ilOfCtorInfo ctx (CtorInfo id dc) = do
   return $ CtorInfo id dc'
 
 ilOfDataCtor :: Context t -> DataCtor TypeAST -> Tc (DataCtor TypeIL)
-ilOfDataCtor ctx (DataCtor nm tag tys) = do
-  tys' <- mapM (ilOf ctx) tys
-  return $ DataCtor nm tag tys'
+ilOfDataCtor ctx (DataCtor nm tag tyformals tys) = do
+  let extctx = extendTyCtx ctx (map convertTyFormal tyformals)
+  tys' <- mapM (ilOf extctx) tys
+  return $ DataCtor nm tag tyformals tys'
 
 -----------------------------------------------------------------------
 

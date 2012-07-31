@@ -289,7 +289,7 @@ kNormalCtors ctx dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
   where
     kNormalCtor :: Context TypeIL -> DataType TypeIL -> DataCtor TypeIL
                 -> KN (Fn KNExpr TypeIL)
-    kNormalCtor ctx datatype (DataCtor cname small tys) = do
+    kNormalCtor ctx datatype (DataCtor cname small _tyformals tys) = do
       let dname = dataTypeName datatype
       let arity = Prelude.length tys
       let cid = CtorId dname (T.unpack cname) arity small

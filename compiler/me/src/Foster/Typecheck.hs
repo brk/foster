@@ -859,7 +859,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
                                 return $ P_Int r (aintType annint) (aintLit annint)
 
       EP_Ctor     r eps s -> do
-        info@(CtorInfo cid (DataCtor _ _ types)) <- getCtorInfoForCtor ctx s
+        info@(CtorInfo cid (DataCtor _ _ tyformals types)) <- getCtorInfoForCtor ctx s
         sanityCheck (ctorArity cid == List.length eps) $
               "Incorrect pattern arity: expected " ++
               (show $ ctorArity cid) ++ " pattern(s), but got "
@@ -868,7 +868,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
               "Invariant violated: constructor arity did not match # types!"
               ++ showSourceRange r
 
-        (ty@(TyConAppAST _ metas), tyformals) <-
+        ty@(TyConAppAST _ metas) <-
                             generateTypeSchemaForDataType ctx (ctorTypeName cid)
         let ktvs = map convertTyFormal tyformals
         ts <- mapM (\ty -> instSigmaWith ktvs ty metas) types
@@ -903,12 +903,12 @@ tcRhoCase ctx rng scrutinee branches expTy = do
                                     ++ " too few definitions for $" ++ T.unpack ctorName
                                     ++ "\n\t" ++ show elsewise]
 
-    generateTypeSchemaForDataType :: Context Sigma -> DataTypeName -> Tc (TypeAST, [TypeFormalAST])
+    generateTypeSchemaForDataType :: Context Sigma -> DataTypeName -> Tc TypeAST
     generateTypeSchemaForDataType ctx typeName = do
       case Map.lookup typeName (contextDataTypes ctx) of
         Just [dt] -> do
           formals <- mapM (\_ -> newTcUnificationVarTau "dt-tyformal") (dataTypeTyFormals dt)
-          return $ (TyConAppAST typeName formals, dataTypeTyFormals dt)
+          return $ TyConAppAST typeName formals
         other -> tcFails [out $ "Typecheck.generateTypeSchemaForDataType: Too many or"
                             ++ " too few definitions for $" ++ typeName
                             ++ "\n\t" ++ show other]

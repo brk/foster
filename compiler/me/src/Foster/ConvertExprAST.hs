@@ -33,9 +33,9 @@ convertDataType f (DataType dtName tyformals ctors) = do
   cts <- mapM convertDataCtor ctors
   return $ DataType dtName tyformals cts
     where
-      convertDataCtor (DataCtor dataCtorName n types) = do
+      convertDataCtor (DataCtor dataCtorName n formals types) = do
         tys <- mapM f types
-        return $ DataCtor dataCtorName n tys
+        return $ DataCtor dataCtorName n formals tys
 
 liftMaybeTc :: (a -> Tc b) -> Maybe a -> Tc (Maybe b)
 liftMaybeTc f m = case m of Nothing ->         return Nothing

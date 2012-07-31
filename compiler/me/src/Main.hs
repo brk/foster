@@ -207,8 +207,8 @@ typecheckModule verboseMode modast tcenv0 = do
 
    extractCtorTypes :: DataType TypeAST -> [(String, TypeAST)]
    extractCtorTypes dt = map nmCTy (dataTypeCtors dt)
-     where nmCTy (DataCtor name _tag types) =
-                 (T.unpack name, ctorTypeAST (dataTypeTyFormals dt) dt types)
+     where nmCTy (DataCtor name _tag tyformals types) =
+                 (T.unpack name, ctorTypeAST tyformals dt types)
 
    ctorTypeAST [] dt ctorArgTypes =
        FnTypeAST (TupleTypeAST ctorArgTypes) (typeOfDataType dt) FastCC FT_Proc
@@ -287,9 +287,9 @@ typecheckModule verboseMode modast tcenv0 = do
           cts <- mapM (convertDataCtor f) ctors
           return $ DataType dtName tyformals cts
             where
-              convertDataCtor f (DataCtor dataCtorName n types) = do
+              convertDataCtor f (DataCtor dataCtorName n tyformals types) = do
                 tys <- mapM f types
-                return $ DataCtor dataCtorName n tys
+                return $ DataCtor dataCtorName n tyformals tys
 
 printOutputs :: [Output] -> IO ()
 printOutputs outs =

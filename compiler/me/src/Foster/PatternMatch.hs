@@ -71,7 +71,8 @@ compilePatterns bs allSigs =
     (P_Tuple _ _ pats)     -> SP_Ctor (tupleCtor pats) (map compilePattern pats)
     where
           ctorInfo tynm dcnm dctys dctag =
-             let dctor = DataCtor (T.pack dcnm) dctag dctys in
+             let dttyformals = [] in -- assume used only for simple data types
+             let dctor = DataCtor (T.pack dcnm) dctag dttyformals dctys in
              CtorInfo (CtorId tynm dcnm (Prelude.length $ dctys) dctag) dctor
 
           boolCtor False = ctorInfo "Bool"  "False" []                     0

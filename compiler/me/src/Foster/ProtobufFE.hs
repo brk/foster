@@ -92,7 +92,7 @@ parseCallPrim pbexpr rng = do
                            E_ArrayRead _ ari -> return $ E_ArrayPoke rng ari a
                            _                 -> return $ E_StoreAST rng a b
       _ -> error $ "ProtobufFE: unknown primitive/arg combo " ++ show primname
-        
+
 parseCompiles pbexpr range = do
     let numChildren = Seq.length $ PbExpr.parts pbexpr
     case numChildren of
@@ -154,7 +154,7 @@ parseInt pbexpr range = do
 parseRat :: PbExpr.Expr -> SourceRange -> FE (ExprAST TypeP)
 parseRat pbexpr range = do
     return $ E_RatAST range (uToString $ getVal pbexpr PbExpr.string_value)
-    
+
 -- String literals are parsed with leading and trailing " characters,
 -- so we take tail . init to strip them off.
 parseString :: PbExpr.Expr -> SourceRange -> FE (ExprAST TypeP)
@@ -281,14 +281,15 @@ parseExpr pbexpr = do
 
 parseDataType :: DataType.DataType -> FE (Foster.Base.DataType TypeP)
 parseDataType dt = do
-    ctors <- mapM parseDataCtor (Prelude.zip [0..] (toList $ DataType.ctor dt))
     let tyformals = map parseTypeFormal (toList $ DataType.tyformal dt)
+    ctors <- mapM (parseDataCtor tyformals) $
+                       Prelude.zip [0..] (toList $ DataType.ctor dt)
     return $ Foster.Base.DataType (uToString $ DataType.name dt) tyformals ctors
  where
-  parseDataCtor :: (Int, DataCtor.DataCtor) -> FE (Foster.Base.DataCtor TypeP)
-  parseDataCtor (n, ct) = do
+  parseDataCtor :: [TypeFormalAST] -> (Int, DataCtor.DataCtor) -> FE (Foster.Base.DataCtor TypeP)
+  parseDataCtor tyf (n, ct) = do
       let types = map parseType (toList $ DataCtor.type' ct)
-      return $ Foster.Base.DataCtor (pUtf8ToText $ DataCtor.name ct) n types
+      return $ Foster.Base.DataCtor (pUtf8ToText $ DataCtor.name ct) n tyf types
 
 parseModule _name hash decls defns datatypes = do
     lines <- gets feModuleLines

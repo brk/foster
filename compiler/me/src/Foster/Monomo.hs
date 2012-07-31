@@ -97,8 +97,9 @@ monomorphizedDataTypes dts = map monomorphizedDataType dts
          subst = extendSubstForFormals emptyMonoSubst formals
 
          monomorphizedDataCtor :: MonoSubst -> DataCtor TypeIL -> DataCtor MonoType
-         monomorphizedDataCtor subst (DataCtor name tag types) =
-                DataCtor name tag [monoType subst ty | ty <- types]
+         monomorphizedDataCtor subst
+               (DataCtor name tag _tyformals types) =
+                DataCtor name tag [] (map (monoType subst) types)
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -286,9 +287,10 @@ monoLast subst last =
 monoOcc :: MonoSubst -> Occurrence TypeIL -> Occurrence MonoType
 monoOcc subst occ = map (\(n,info) -> (n, monoCtorInfo subst info)) occ
 
-monoCtorInfo subst (CtorInfo cid (DataCtor nm tag tys)) =
-                   (CtorInfo cid (DataCtor nm tag tys'))
-                where tys' = map (monoType subst) tys
+monoCtorInfo subst (CtorInfo cid (DataCtor nm tag tyformals tys)) =
+                   (CtorInfo cid (DataCtor nm tag tyformals tys'))
+                where tys' = map (monoType subst') tys
+                      subst' = extendSubstForFormals subst tyformals
 
 monoVar :: MonoSubst -> TypedId TypeIL -> TypedId MonoType
 monoVar subst (TypedId t id) = TypedId (monoType subst t) id

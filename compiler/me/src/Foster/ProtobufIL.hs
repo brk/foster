@@ -17,7 +17,6 @@ import Foster.ProtobufUtils
 import qualified Data.ByteString.Lazy as L(writeFile)
 import Data.Sequence as Seq(fromList)
 import Data.Map as Map(elems)
-import Data.List as List(notElem)
 
 import Text.ProtocolBuffers(messagePut)
 
@@ -134,7 +133,7 @@ dumpProcType (s, t, cc) =
       where stringOfCC FastCC = "fastcc"
             stringOfCC CCC    = "ccc"
 
-dumpDataCtor (DataCtor ctorName _smallId types) =
+dumpDataCtor (DataCtor ctorName _smallId _tyformals types) =
   PbDataCtor { PbDataCtor.name  = textToPUtf8 ctorName
              , PbDataCtor.type' = fromList $ map dumpType types
              }
@@ -402,7 +401,7 @@ dumpOccurrence var offsCtorIds =
                     }
 
 occType ty [] [] = ty
-occType _ (k:offs) ((CtorInfo _ (DataCtor _ _ types)):infos) =
+occType _ (k:offs) ((CtorInfo _ (DataCtor _ _ _ types)):infos) =
                                                  occType (types !! k) offs infos
 occType ty offs infos =
         error $ "occType: " ++ show ty ++ "; offs=" ++ show offs ++ "~~~" ++ show infos

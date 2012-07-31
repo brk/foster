@@ -86,6 +86,7 @@ data DataType ty = DataType {
 
 data DataCtor ty = DataCtor { dataCtorName  :: CtorName
                             , dataCtorSmall :: Int
+                            , dataCtorDTTyF :: [TypeFormalAST]
                             , dataCtorTypes :: [ty]
                             }
 
