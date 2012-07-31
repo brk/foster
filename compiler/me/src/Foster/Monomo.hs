@@ -94,7 +94,7 @@ monomorphizedDataTypes dts = map monomorphizedDataType dts
        monomorphizedDataType (DataType name formals ctors) =
                               DataType name formals ctorsmono where
          ctorsmono = map (monomorphizedDataCtor subst) ctors
-         subst = buildSubstForFormals formals
+         subst = extendSubstForFormals emptyMonoSubst formals
 
          monomorphizedDataCtor :: MonoSubst -> DataCtor TypeIL -> DataCtor MonoType
          monomorphizedDataCtor subst (DataCtor name tag types) =
@@ -109,12 +109,12 @@ monomorphizedDataTypes dts = map monomorphizedDataType dts
 type MonoSubst = Map TyVar MonoType
 emptyMonoSubst = Map.empty
 
-buildSubstForFormals formals =
+extendSubstForFormals subst formals =
   let info (TypeFormalAST s k) =
         case k of KindAnySizeType  -> []
                   KindPointerSized -> [(PtrTypeUnknown, (BoundTyVar s, k))] in
   let (tys, kvs) = unzip $ concatMap info formals in
-  extendMonoSubst emptyMonoSubst tys kvs
+  extendMonoSubst subst tys kvs
 
 buildMonoSubst _ Nothing = error $ "buildMonoSubst expected ktyvars"
 buildMonoSubst monotypes (Just ktyvars) =
