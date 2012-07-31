@@ -1,0 +1,44 @@
+take_unit = { x : () => () };
+
+main = {
+
+//{ forall b:Boxed, x:b => take_unit x } ();
+
+  // Can't unify 'b with Int32:
+  //   (specifically: expected ty param metavar to be un-unified...)
+  expect_i1 False ; print_i1 (__COMPILES__ { forall b:Boxed, x:b => print_i32 x } ());
+
+  // "Type not polymorphic enough"
+  expect_i1 False ; print_i1 (__COMPILES__ {
+          runST  : forall a:Boxed, { (forall s:Boxed, { s => a }) => a } =>
+          id     : forall b:Boxed, { b => b } =>
+          runST id
+        });
+
+  expect_i1 True ; print_i1 (__COMPILES__ {
+          id     : forall b:Boxed, { b => b } =>
+          id
+        });
+
+  // Make sure that we check the case of an empty argument list correctly.
+  expect_i1 True ; print_i1 (__COMPILES__ {
+    g : forall c:Boxed, { c => () } =>
+    g:[]                  ()
+  });
+
+  // Simplest example to trigger checking mode on a function literal.
+  expect_i1 False; print_i1 (__COMPILES__
+          {
+            g : forall c : Boxed, { forall a:Boxed, { c => a } => () } =>
+            g   { forall b:Boxed, y : b => y }
+          });
+
+  ()
+};
+
+/*
+// TODO: an example like this should always give the same typechecking result
+//       as the "equivalent" form above, but that may not be the case here.
+g ::   forall a:Boxed, { a => a } ;
+g =  { forall b:Boxed, y : b => y };
+*/

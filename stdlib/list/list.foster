@@ -1,0 +1,12 @@
+
+type case List (a:Boxed)
+  of $Nil
+  of $Cons a (List a)
+;
+
+listLength = { forall t:Boxed, xs : List t =>
+  case xs
+    of $Nil -> 0
+    of $Cons _ ys -> 1 +Int32 (listLength ys)
+   end;
+};

@@ -1,0 +1,135 @@
+main = {
+  f2b { forall b:Boxed, x:b => y:b => y };
+};
+
+f2b = { f: (forall a:Boxed, { a => a => a }) => () };
+
+/*
+type case List (a:Boxed)
+  of $Nil
+  of $Cons a (List a)
+;
+
+listLength = { forall t:Boxed, xs : List t =>
+  case xs
+    of $Nil -> 0
+    //of $Cons _ ys -> 1 +Int32 (listLength:[t] ys) // should work but doesn't
+    //of $Cons _ ys -> 1 +Int32 (listLength ys) // unable to find kind of 'a
+    of $Cons _ _ -> 1 // unable to find kind of 'a
+   end;
+};
+
+main = { 0 };
+*/
+
+/*
+main = { 0 };
+
+type case ST (s:Boxed) (a:Boxed)
+  of $ST
+;
+
+type case STRef (s:Boxed) (a:Boxed)
+  of $STRef
+;
+*/
+
+//runST :: ;
+//runST = {forall va, f : forall vs { vs => va } => ??? };
+
+//
+
+// should fail, but doesn't.
+/*
+test-real-example-0 = {
+  let f = {
+        runST  : forall a:Boxed, { (forall s:Boxed, ST s a) => a } =>
+        newRef : forall v:Boxed, { v => forall n:Boxed, ST n (STRef n v) } =>
+      runST:[?? A] (newRef:[Text] "hmm")
+      // (newRef:[Text] "hmm") ::    forall n:Boxed, ST n (STRef n Text)
+      // runST:[?? A]          :: { (forall s:Boxed, ST s (?? A)) => (?? A) }
+      // runST:[?? A] (newRef:[Text] "hmm") :: (STRef ?n? Text) -- illegal escaping tyvar!
+    }; in
+  ()
+  end
+};
+*/
+
+/*
+// fails for the wrong reason
+test-real-example-1 = {
+  let f = {
+        runST  : forall a:Boxed, { (forall s:Boxed, ST s a) => a } =>
+        newRef : forall v:Boxed, { v => forall n:Boxed, ST n (STRef n v) } =>
+      runST (newRef:[Text] "hmm")
+      // (newRef:[Text] "hmm") ::    forall n:Boxed, ST n (STRef n Text)
+      // runST:[?? A]          :: { (forall s:Boxed, ST s (?? A)) => (?? A) }
+      // runST:[?? A] (newRef:[Text] "hmm") :: (STRef ?n? Text) -- illegal escaping tyvar!
+    }; in
+  ()
+  end
+};
+*/
+
+
+/*
+test-fake-example = {
+  let f = {
+        runST  : { (forall s:Boxed, ST s Text) => Text } =>
+        newRef : { Text => forall n:Boxed, ST n Text } =>
+      runST (newRef "hmm")
+    }; in
+  ()
+  end
+};
+*/
+/*
+test-faker-example = {
+  let f = {
+        runST  : { ST Int32 (STRef Int32 Text) => Text }        =>
+        newRef : { Text => ST Int32 (STRef Int32 Text) }        =>
+      runST (newRef "hmm")
+    }; in
+  ()
+  end
+};
+*/
+
+//f :: forall xt : Boxed,  { xt => Int32 };
+//f = { forall x : Boxed, v : x => 0 };
+
+//g0 :: forall gt : Boxed, { gt => forall ft : Boxed, { ft => Int32 } };
+// without annotation, typechecks but tries to return a proc instead of a func TODO fix this
+//g0 = { forall t : Boxed, v : t => f };
+
+//g1 :: forall gt : Boxed, { gt => { gt => Int32 } };
+// Without an annotation, we fail on g1 because its scheme is inferred to be
+//     forall t : Boxed,   { t => ?? R };
+// and the expression's actual type is as above.
+// Thus the above type scheme gets skolemized to { $t => ?? R }
+// and the expression's type is instantiated to { T => { T => Int32 } }
+// and the two types unify, binding ?? R = { $t => Int32 }.
+// This is considered an illegal escape of the skolemized type variable $t.
+//g1 = { forall t : Boxed, v : t => f:[t] };
+
+// OK:
+//g2 :: forall gt : Boxed, { gt => Int32 };
+//g2 = { forall t : Boxed, v : t => f v };
+
+// OK:
+//g3 :: forall gt : Boxed, { gt => Int32 };
+//g3 = { forall t : Boxed, v : t => f:[t] v };
+
+/*
+type case List (a:Boxed)
+  of $Nil
+  of $Cons a (List a)
+;
+
+listLength = { forall t:Boxed, xs : List t =>
+  case xs
+    of $Nil -> 0
+    of $Cons _ ys -> 1 +Int32 (listLength:[t] ys) // should work but doesn't
+   end;
+};
+*/

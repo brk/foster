@@ -1,0 +1,19 @@
+main = { 0 };
+
+weird1 = { forall t:Type,
+                  a : Array t =>
+                  f : { t => () } =>
+  prim_arrayLength a;
+  f a[0];
+  weird1 a f;
+  ()
+};
+
+
+weird2 = { forall t:Type,
+                  a : Array t =>
+                  f : { t => () } =>
+  prim_arrayLength a;
+  f a[0];
+  ()
+};
