@@ -839,21 +839,44 @@ typecheckFn _ctx f (Just t) = tcFails [out $
 typecheckFn' :: Context Sigma -> FnAST TypeAST -> CallConv
              -> Maybe TypeAST -> Maybe TypeAST -> Tc (AnnExpr Rho)
 typecheckFn' ctx f cc expArgType expBodyType = do
-    uniquelyNamedFormals <- getUniquelyNamedFormals (fnAstRange f)
-                                                    (fnFormals f) (fnAstName f)
+    -- First, add any explicit type parameters to the type context.
+    let ktvs = map convertTyFormal (fnTyFormals f)
+    {-
+    skols <- mapM newTcSkolem ktvs
+    let extTyCtx =
+         let tybindmap = localTypeBindings ctx in
+         ctx { localTypeBindings = foldl' ins tybindmap (zip skols ktvs) }
+           where ins m (sk, (BoundTyVar nm, k)) = Map.insert nm (sk, k) m
+                 ins _ (_ , (SkolemTyVar {}, _))= error "ForAll bound a skolem!"
+    -}
+    let extTyCtx =
+         let tybindmap = localTypeBindings ctx in
+         ctx { localTypeBindings = foldl' ins tybindmap ktvs }
+           where ins m (tv@(BoundTyVar nm), k) = Map.insert nm (tv, k) m
+                 ins _    (SkolemTyVar {} , _) = error "ForAll bound a skolem!"
+    -- Then, add the function's formal arguments to the term context.
+    uniquelyNamedFormals0 <- getUniquelyNamedFormals (fnAstRange f)
+                                                     (fnFormals f) (fnAstName f)
+    -- Check that the types of the formals are well-formed.
+    let rng = fnAstRange f
+    uniquelyNamedFormals <- mapM
+                          (retypeTID (resolveType rng $ localTypeBindings extTyCtx))
+                          uniquelyNamedFormals0
     -- TODO it's not clear if this unification actually does anything for us.
-    equateArgTypes uniquelyNamedFormals expArgType
+    --equateArgTypes uniquelyNamedFormals expArgType
+    let extCtx = extendContext extTyCtx uniquelyNamedFormals
 
-    -- Typecheck the body of the function in a suitably extended context.
-    let extCtx = extendContext ctx uniquelyNamedFormals
+    -- Now, typecheck the body of the function in the suitably extended context.
     annbody <- tcSigma extCtx (fnAstBody f) expBodyType
 
     -- Note we collect free vars in the old context, since we can't possibly
     -- capture the function's arguments from the environment!
     freeVars <- computeFreeFnVars uniquelyNamedFormals annbody (fnAstRange f) ctx
 
-    let fnty = fnTypeTemplate f argtypes (typeAST annbody) cc
-                where argtypes = TupleTypeAST (map tidType uniquelyNamedFormals)
+    -- Replace any skols we generated above with the corresponding bound ty vars
+    let fnty = --parSubstTy (zip skols (map (TyVarAST . fst) ktvs)) $
+               fnTypeTemplate f argtys (typeAST annbody) cc
+                where argtys = TupleTypeAST (map tidType uniquelyNamedFormals0)
 
     return $ E_AnnFn $ Fn (TypedId fnty (GlobalSymbol $ fnAstName f))
                           uniquelyNamedFormals annbody freeVars
@@ -882,6 +905,9 @@ typecheckFn' ctx f cc expArgType expBodyType = do
         freeAnns <- mapM (\id -> typecheckVar TCSigma ctx rng (identPrefix id))
                          identsFree
         return $ [tid | E_AnnVar _ tid <- freeAnns]
+
+    retypeTID :: (t1 -> Tc t2) -> TypedId t1 -> Tc (TypedId t2)
+    retypeTID f (TypedId t1 id) = f t1 >>= \t2 -> return (TypedId t2 id)
 
     -- | Verify that the given formals have distinct names,
     -- | and return unique'd versions of each.
