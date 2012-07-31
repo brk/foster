@@ -82,6 +82,15 @@ compilePatterns bs allSigs =
                                   then fromInteger $ litIntValue li
                                   else error "cannot cram >32 bits into Int32!"
 
+          patternType :: Pattern ty -> ty
+          patternType pattern = case pattern of
+                  P_Wildcard  _rng ty     -> ty
+                  P_Variable  _rng tid    -> tidType tid
+                  P_Ctor      _rng ty _ _ -> ty
+                  P_Bool      _rng ty _   -> ty
+                  P_Int       _rng ty _   -> ty
+                  P_Tuple     _rng ty _   -> ty
+
 -- "Compilation is defined by cases as follows."
 cc :: [Occurrence t] -> ClauseMatrix a t -> DataTypeSigs -> DecisionTree a t
 

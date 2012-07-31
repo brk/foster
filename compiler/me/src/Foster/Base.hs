@@ -76,15 +76,6 @@ data Pattern ty =
         | P_Int           SourceRange ty LiteralInt
         | P_Tuple         SourceRange ty [Pattern ty]
 
-patternType :: Pattern ty -> ty
-patternType pattern = case pattern of
-        P_Wildcard  _rng ty     -> ty
-        P_Variable  _rng tid    -> tidType tid
-        P_Ctor      _rng ty _ _ -> ty
-        P_Bool      _rng ty _   -> ty
-        P_Int       _rng ty _   -> ty
-        P_Tuple     _rng ty _   -> ty
-
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||| Data Types, Int Literals |||||||||||||||||{{{
 data DataType ty = DataType {
