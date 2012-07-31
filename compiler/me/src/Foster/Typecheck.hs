@@ -440,6 +440,29 @@ typecheckIf ctx rng a b c maybeExpTy = do
 
 -----------------------------------------------------------------------
 
+resolveType subst x =
+  let q = resolveType subst in
+  case x of
+    PrimIntAST  _                  -> return x
+    PrimFloat64                    -> return x
+    MetaTyVar   _                  -> return x
+    TyVarAST (SkolemTyVar _ _ _)   -> return x
+    TyVarAST (BoundTyVar name)     -> case Map.lookup name subst of
+                                         Nothing      -> tcFails [out $ "Typecheck.hs: ill-formed type with free bound variable " ++ name]
+                                         Just (sk, _) -> return $ TyVarAST sk
+    RefTypeAST    ty               -> liftM RefTypeAST   (q ty)
+    ArrayTypeAST  ty               -> liftM ArrayTypeAST (q ty)
+    FnTypeAST    s t cc cs         -> do [s', t'] <- mapM q [s, t]
+                                         return $ FnTypeAST s' t' cc cs
+    CoroTypeAST  s t               -> liftM2 CoroTypeAST (q s) (q t)
+    TyConAppAST   tc  types        -> liftM (TyConAppAST tc) (mapM q types)
+    TupleTypeAST      types        -> liftM  TupleTypeAST    (mapM q types)
+    ForAllAST     ktvs rho         -> liftM (ForAllAST ktvs) (resolveType subst' rho)
+                                       where
+                                        subst' = foldl' ins subst ktvs
+                                        ins m (tv@(BoundTyVar nm), k) = Map.insert nm (tv, k) m
+                                        ins _     (SkolemTyVar {}, _) = error "ForAll bound a skolem!"
+
 listize (TupleTypeAST tys) = tys
 listize ty                 = [ty]
 
@@ -455,7 +478,10 @@ typecheckTyApp ctx rng e mb_t1tn _maybeExpTyTODO = do
     aeSigma <- tcSigma ctx e Nothing
     case (mb_t1tn, typeAST aeSigma) of
       (Nothing  , _           ) -> return aeSigma
-      (Just t1tn, ForAllAST {}) -> do instWith rng aeSigma (listize t1tn)
+      (Just t1tn, ForAllAST {}) -> do let resolve = resolveType (localTypeBindings ctx)
+                                      tcLift $ putStrLn $ "local type bindings: " ++ show (localTypeBindings ctx)
+                                      types <- mapM resolve (listize t1tn)
+                                      instWith rng aeSigma types
       (_        , MetaTyVar _ ) -> do
         tcFails [out $ "Cannot instantiate unknown type of term:"
                 ,out $ highlightFirstLine $ rangeOf aeSigma
