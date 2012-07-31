@@ -70,6 +70,23 @@ llvm::Type* slotType(llvm::Value* v) {
   return v->getType()->getContainedType(0);
 }
 
+bool isLargishStructPointerTy(llvm::Type* ty) {
+  if (llvm::PointerType* pt = llvm::dyn_cast<llvm::PointerType>(ty)) {
+    if (llvm::StructType* st = llvm::dyn_cast<llvm::StructType>(pt->getElementType())) {
+      return st->getNumElements() >= 2;
+    }
+  }
+  return false;
+}
+
+llvm::Value* emitBitcast(llvm::Value* v, llvm::Type* dstTy, llvm::StringRef msg = "") {
+  llvm::Type* srcTy = v->getType();
+  if (isFunctionPointerTy(srcTy) && isLargishStructPointerTy(dstTy)) {
+    ASSERT(false) << "cannot cast " << str(srcTy) << " to " << str(dstTy) << "\n" << str(v);
+  }
+  return builder.CreateBitCast(v, dstTy, msg);
+}
+
 // TODO (eventually) try emitting masks of loaded/stored heap pointers
 // to measure performance overhead of high/low tags.
 
@@ -100,7 +117,7 @@ llvm::Value* emitStore(llvm::Value* val,
 llvm::Value* emitStoreWithCast(llvm::Value* val,
                                llvm::Value* ptr) {
   if (!isPointerToType(ptr->getType(), val->getType())) {
-    return emitStore(builder.CreateBitCast(val, slotType(ptr)), ptr);
+    return emitStore(emitBitcast(val, slotType(ptr)), ptr);
   } else {
     return emitStore(val, ptr);
   }
@@ -627,7 +644,7 @@ llvm::Value* emitCallGetCtorIdOf(CodegenPass* pass, llvm::Value* v) {
   llvm::Value* foster_ctor_id_of = pass->mod->getFunction("foster_ctor_id_of");
   ASSERT(foster_ctor_id_of != NULL);
   return markAsNonAllocating(builder.CreateCall(foster_ctor_id_of,
-                             builder.CreateBitCast(v, builder.getInt8PtrTy())));
+                             emitBitcast(v, builder.getInt8PtrTy())));
 }
 
 void LLSwitch::codegenTerminator(CodegenPass* pass) {
@@ -681,6 +698,7 @@ void LLSwitch::codegenTerminator(CodegenPass* pass) {
 
 ///}}}//////////////////////////////////////////////////////////////
 
+
 void LLRebindId::codegenMiddle(CodegenPass* pass) {
   pass->insertScopedValue(from, to->codegen(pass));
 }
@@ -688,16 +706,22 @@ void LLRebindId::codegenMiddle(CodegenPass* pass) {
 void LLBitcast::codegenMiddle(CodegenPass* pass) {
   llvm::Value* v = to->codegen(pass);
   llvm::Type* tgt = getLLVMType(to->type);
-  if (v->getType() == tgt) { return; }
 
-  // Apply the bitcast to the value or the slot, as appropriate.
-  if (pass->needsImplicitLoad.count(v) == 1) {
-    llvm::Value* cast_slot = builder.CreateBitCast(v, ptrTo(tgt));
-    pass->markAsNeedingImplicitLoads(cast_slot);
-    pass->insertScopedValue(from, cast_slot);
+  llvm::Value* vprime = NULL;
+  if (v->getType() == tgt) {
+    vprime = v;
   } else {
-    pass->insertScopedValue(from, builder.CreateBitCast(v, tgt));
+    // Apply the bitcast to the value or the slot, as appropriate.
+    if (pass->needsImplicitLoad.count(v) == 1) {
+      llvm::Value* cast_slot = emitBitcast(v, ptrTo(tgt));
+      pass->markAsNeedingImplicitLoads(cast_slot);
+      vprime = cast_slot;
+    } else {
+      vprime = emitBitcast(v, tgt);
+    }
   }
+
+  pass->insertScopedValue(from, vprime);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -841,6 +865,7 @@ llvm::Value* LLVar::codegen(CodegenPass* pass) {
   if (v) return v;
   //return emitFakeComment("fake " + getName());
 
+  builder.GetInsertBlock()->getParent()->dump();
   pass->valueSymTab.dump(llvm::errs());
   ASSERT(false) << "Unknown variable name " << this->name << " in CodegenPass";
   return NULL;
@@ -1103,7 +1128,7 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
     for (size_t i = 0; i < closures.size(); ++i) {
       // Make sure we close over generic versions of our pointers...
       llvm::Value* envPtr = pass->autoload(envSlots[i]);
-      llvm::Value* genPtr = builder.CreateBitCast(envPtr,
+      llvm::Value* genPtr = emitBitcast(envPtr,
                                   getGenericClosureEnvType()->getLLVMType(),
                                   closures[i]->envname + ".generic");
       pass->insertScopedValue(closures[i]->envname, genPtr);
@@ -1243,7 +1268,7 @@ llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
     // If we know that the subterm at this position was created with
     // a particular data constructor, emit a cast to that ctor's type.
     if (TupleTypeAST* tupty = maybeGetCtorStructType(pass, ctors[i])) {
-      rv = builder.CreateBitCast(rv, tupty->getLLVMType());
+      rv = emitBitcast(rv, tupty->getLLVMType());
     }
 
     rv = getElementFromComposite(rv, offsets[i], "switch_insp");
@@ -1281,7 +1306,7 @@ llvm::Value* LLAppCtor::codegen(CodegenPass* pass) {
 
   llvm::Type* dtype = dt->getLLVMType();
   // TODO fix to use a stack slot properly
-  return builder.CreateBitCast(obj, dtype);
+  return emitBitcast(obj, dtype);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -1331,14 +1356,14 @@ llvm::Value* emitFnArgCoercions(llvm::Value* argV, llvm::Type* expectedType) {
     &&  argV->getType() == getGenericClosureEnvType()->getLLVMType()) {
     EDiag() << "emitting bitcast gen2spec (exp: " << str(expectedType)
             << "); (actual: " << str(argV->getType()) << ")";
-    argV = builder.CreateBitCast(argV, expectedType, "gen2spec");
+    argV = emitBitcast(argV, expectedType, "gen2spec");
   }
 
   // This occurs in polymorphic code.
   if ((argV->getType() != expectedType)
       && matchesExceptForUnknownPointers(argV->getType(), expectedType)) {
     EDiag() << "matched " << str(argV->getType()) << " to " << str(expectedType);
-    argV = builder.CreateBitCast(argV, expectedType, "spec2gen");
+    argV = emitBitcast(argV, expectedType, "spec2gen");
   }
 
   return argV;

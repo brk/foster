@@ -144,7 +144,8 @@ typecheckFnSCC showASTs showAnnExprs scc (ctx, tcenv) = do
         fnTypeTemplate f = do
           retTy  <- newTcUnificationVarSigma ("ret type for " ++ (T.unpack $ fnAstName f))
           argTys <- mapM annVarTemplate (fnFormals f)
-          let fnTy = mkFnType argTys [retTy]
+          let procOrFunc = if fnWasToplevel f then FT_Proc else FT_Func
+          let fnTy = FnTypeAST argTys retTy FastCC procOrFunc
           case fnTyFormals f of
             []        -> return $ fnTy
             tyformals -> return $ ForAllAST (map convertTyFormal tyformals) fnTy

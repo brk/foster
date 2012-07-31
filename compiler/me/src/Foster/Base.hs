@@ -39,7 +39,7 @@ data SafetyGuarantee = SG_Static | SG_Dynamic               deriving (Show)
 data ArrayIndex expr = ArrayIndex expr expr SourceRange
                                             SafetyGuarantee deriving (Show)
 
-data TyVar = BoundTyVar String -- bound by a ForAll, that is
+data TyVar = BoundTyVar  String -- bound by a ForAll, that is
            | SkolemTyVar String Uniq Kind
 
 

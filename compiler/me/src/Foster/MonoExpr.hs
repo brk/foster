@@ -15,7 +15,7 @@ import Foster.MonoLetable
 import Foster.CFG(BlockId)
 import Foster.Output(out, Output)
 
-data MoClosure = MoClosure { moClosureProcIdent :: Ident
+data MoClosure = MoClosure { moClosureProcIdent :: TypedId MonoType
                            , moClosureEnvIdent  :: Ident
                            , moClosureCaptures  :: [TypedId MonoType]
                            , moClosureAllocSite :: AllocationSource

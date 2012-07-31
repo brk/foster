@@ -77,6 +77,7 @@ void checkPointerToIndex(Value* ptrToCompositeValue,
       << "\non val of type "     << str(ptrToCompositeValue->getType())
       << "\nwith value "         << str(ptrToCompositeValue);
   } else {
+    builder.GetInsertBlock()->getParent()->dump();
     ASSERT(false) << "Pointer to non-composite type "
                   <<  str(ptrToCompositeValue->getType())
                   << "passed to getPointerToIndex(" << str(idxValue)

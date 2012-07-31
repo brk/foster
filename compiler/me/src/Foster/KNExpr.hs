@@ -338,7 +338,7 @@ instance Structured KNExpr where
             KNCallPrim t prim _ -> out $ "KNCallPrim  " ++ (show prim) ++ " :: " ++ show t
             KNAppCtor  t cid  _ -> out $ "KNAppCtor   " ++ (show cid) ++ " :: " ++ show t
             KNLetVal   x b    _ -> out $ "KNLetVal    " ++ (show x) ++ " :: " ++ (show $ typeKN b) ++ " = ... in ... "
-            KNLetFuns ids _ _   -> out $ "KNLetFuns   " ++ (show ids)
+            KNLetFuns ids fns _ -> out $ "KNLetFuns   " ++ (show $ zip ids (map fnVar fns))
             KNIf      t  _ _ _  -> out $ "KNIf        " ++ " :: " ++ show t
             KNUntil   t  _ _ _  -> out $ "KNUntil     " ++ " :: " ++ show t
             KNInt ty int        -> out $ "KNInt       " ++ (litIntText int) ++ " :: " ++ show ty
@@ -365,7 +365,7 @@ instance Structured KNExpr where
             KNUntil _t a b _        -> [a, b]
             KNTuple     vs _        -> map var vs
             KNCase _ e bs           -> (var e):(map snd bs)
-            KNLetFuns _ids fns e    -> e : map fnBody fns
+            KNLetFuns _ids fns e    -> map fnBody fns ++ [e]
             KNLetVal _x b e         -> [b, e]
             KNCall  _  _t  v vs     -> [var v] ++ [var v | v <- vs]
             KNCallPrim _t _v vs     ->            [var v | v <- vs]

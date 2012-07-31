@@ -751,7 +751,10 @@ tcSigmaFn ctx f expTy = do
     helper mb_exp_fnty mb_infer_ref = do
         let rng = fnAstRange f
         -- While we're munging, we'll also make sure the names are all distinct.
-        uniquelyNamedFormals <- getUniquelyNamedFormals rng (fnFormals f) (fnAstName f)
+        uniquelyNamedFormals0 <- getUniquelyNamedFormals rng (fnFormals f) (fnAstName f)
+        uniquelyNamedFormals <- mapM
+                          (retypeTID (resolveType rng $ localTypeBindings ctx))
+                          uniquelyNamedFormals0
 
         -- Extend the variable environment with the function arg's types.
         let extCtx = extendContext ctx uniquelyNamedFormals

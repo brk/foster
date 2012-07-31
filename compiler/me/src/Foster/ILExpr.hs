@@ -42,7 +42,7 @@ import Foster.Output(out, Output)
 -- ILClosure records the information needed to generate code for a closure.
 -- The environment name is recorded so that the symbol table contains
 -- the right entry when mutually-recursive functions capture multiple envs.
-data ILClosure = ILClosure { ilClosureProcIdent :: Ident
+data ILClosure = ILClosure { ilClosureProcIdent :: AIVar
                            , ilClosureEnvIdent  :: Ident
                            , ilClosureCaptures  :: [AIVar]
                            , ilClosureAllocSrc  :: AllocationSource
@@ -245,10 +245,15 @@ closureOfKnFn infoMap (self_id, fn) = do
     let varsOfClosure = closedOverVarsOfKnFn
     let transformedFn = makeEnvPassingExplicitFn fn
     (envVar, newproc) <- closureConvertFn transformedFn varsOfClosure
-    let procid        = ilProcIdent newproc
+    let procid        = TypedId (procType newproc) (ilProcIdent newproc)
     return $ ILClosure procid envVar varsOfClosure
                    (AllocationSource (show procid ++ ":") (ilProcRange newproc))
   where
+    procType proc =
+      let retty = ilProcReturnType proc in
+      let argtys = map tidType (ilProcVars proc) in
+      FnTypeIL argtys retty FastCC FT_Proc
+
     -- Each closure converted proc need not capture its own environment
     -- variable, because it will be added as an implicit parameter, but
     -- the environments for others in the same rec SCC *are* closed over.

@@ -93,7 +93,7 @@ addInitialMonoTasksAndGo topprocs procdefs = do
     forM_ polyprocs (\(pd,ktvs) -> do
          let id = ilProcIdent pd
          debug $ "monoScheduleWork " ++ show id ++ " //// " ++ show ktvs
-         monoScheduleWork (mkNeedsMono id id [PtrTypeUnknown | _ <- ktvs])
+         monoScheduleWork (PlainProc id)
       )
     goMonomorphize
 
@@ -236,6 +236,7 @@ monoPutProc proc = do
 
 monoAssociateSubstWithProcId subst id = do
     state <- get
+    debug $ "assocating subst with proc " ++ show id
     put state { monoCloTyEnv = Map.insert id subst (monoCloTyEnv state) }
 
 monoGetSubstAssociatedWithProcId id = do
@@ -258,8 +259,13 @@ debug s = liftIO $ putStrLn s
 
 monomorphizeProc (PlainProc srcid) = do
   (Just proc) <- monoGetProc srcid
-  subst <- monoGetSubstAssociatedWithProcId srcid
+  basesubst <- monoGetSubstAssociatedWithProcId srcid
   debug $ "monomorphizeProc PlainProc " ++ show srcid
+  let tyvars = case ilProcPolyTyVars proc of
+                 Nothing   -> []
+                 Just ktvs -> ktvs
+  let tyargs = [PtrTypeUnknown | _ <- tyvars]
+  let subst = extendMonoSubst basesubst tyargs tyvars
   newproc <- doMonomorphizeProc proc subst
   monoPutProc $ newproc
 
@@ -333,8 +339,13 @@ monoClosure subst (ILClosure procid envid captures allocsite) = do
   -- We need to associate the current substitution with the closure's procid
   -- so that any currently-in-scope type variables will remain "in scope"
   -- when we switch to the new proc.
-  monoAssociateSubstWithProcId subst procid
-  return $ MoClosure procid envid (map (monoVar subst) captures) allocsite
+  monoAssociateSubstWithProcId subst (tidIdent procid)
+  -- We don't know if the rest of the parent proc will instantiate this procid,
+  -- or even reference it, but we must schedule it so that we don't accidentally
+  -- try to translate a proc nested within it before we can propagate the subst.
+  monoScheduleWork (PlainProc (tidIdent procid))
+  return $ MoClosure (monoVar subst procid)
+                     envid (map (monoVar subst) captures) allocsite
 
 data LetableResult = MonoLet      MonoLetable
                    | Instantiated (TypedId TypeIL)
@@ -357,7 +368,10 @@ monomorphizeLetable subst expr =
               TypedId (ForAllIL {}) id@(GlobalSymbol _) -> do
                   let polyid = getPolyProcId id monotys
                   monoScheduleWork (mkNeedsMono polyid id monotys)
-                  return $ Instantiated (TypedId t polyid)
+                  -- We need to bitcast the proc we generate because we're
+                  -- sharing similarly-kinded instantiations, but we want for
+                  -- the translated return type of id:[T] to be T, not void*.
+                  return $ Bitcast (TypedId t polyid)
 
               -- On the other hand, if we only have a local var, then
               -- (in general) the var is unknown, so we can't statically

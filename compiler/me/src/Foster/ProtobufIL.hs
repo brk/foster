@@ -375,7 +375,7 @@ showAllocationSource (AllocationSource prefix rng) =
 
 dumpClosureWithName (varid, MoClosure procid envid captvars allocsrc) =
     P'.defaultValue { varname  = dumpIdent varid
-                    , proc_id  = textToPUtf8 (identPrefix procid)
+                    , proc_id  = textToPUtf8 (identPrefix (tidIdent procid))
                     , env_id   = dumpIdent envid
                     , env      = dumpExpr (MoTuple captvars $
                                                prefixAllocSrc "env of" allocsrc)
