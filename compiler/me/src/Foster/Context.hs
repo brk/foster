@@ -19,6 +19,7 @@ data Context ty = Context { contextBindings   :: Map T.Text (TypedId ty)
                           , primitiveBindings :: Map T.Text (TypedId ty)
                           , contextVerbose    :: Bool
                           , globalBindings    :: [ContextBinding ty]
+                          , localTypeBindings :: Map String (TyVar, Kind)
                           , contextTypeBindings :: [(TyVar, Kind)]
                           , contextCtorInfo   :: Map CtorName     [CtorInfo TypeAST]
                           , contextDataTypes  :: Map DataTypeName [DataType TypeAST]
@@ -40,6 +41,11 @@ instance (Show ty) => Show (ContextBinding ty) where
 
 termVarLookup :: T.Text -> Map T.Text (TypedId ty) -> Maybe (TypedId ty)
 termVarLookup name bindings = Map.lookup name bindings
+
+typeVarLookup :: String -> Map String (TyVar, Kind) -> Maybe (TyVar, Kind)
+typeVarLookup name bindings = Map.lookup name bindings
+
+--prependTypeBindings :: Context ty ->
 
 -- Based on "Practical type inference for arbitrary rank types."
 -- One significant difference is that we do not include the Gamma context

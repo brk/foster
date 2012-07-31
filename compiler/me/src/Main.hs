@@ -188,12 +188,13 @@ typecheckModule verboseMode modast tcenv0 = do
                                  ++ "duplicate bindings: " ++ show dups])
  where
    mkContext declBindings primBindings datatypes =
-     Context declBindsMap primBindsMap verboseMode globalvars [] ctorinfo dtypes
+     Context declBindsMap primBindsMap verboseMode globalvars tyvarsMap [] ctorinfo dtypes
        where globalvars   = declBindings ++ primBindings
              ctorinfo     = getCtorInfo  datatypes
              dtypes       = getDataTypes datatypes
              primBindsMap = Map.fromList $ map unbind primBindings
              declBindsMap = Map.fromList $ map unbind declBindings
+             tyvarsMap    = Map.fromList []
              unbind (TermVarBinding s t) = (s, t)
 
    computeContextBindings :: [(String, TypeAST)] -> [ContextBinding TypeAST]
@@ -264,11 +265,11 @@ typecheckModule verboseMode modast tcenv0 = do
 
         liftContextM :: (Monad m, Show t1, Show t2)
                      => (t1 -> m t2) -> Context t1 -> m (Context t2)
-        liftContextM f (Context cb pb vb gb tybinds ctortypeast dtinfo) = do
+        liftContextM f (Context cb pb vb gb tyvars tybinds ctortypeast dtinfo) = do
           cb' <-mmapM (liftTID f) cb
           pb' <- mapM (liftTID f) pb
           gb' <- mapM (liftBinding f) gb
-          return $ Context cb' pb' vb gb' tybinds ctortypeast dtinfo
+          return $ Context cb' pb' vb gb' tyvars tybinds ctortypeast dtinfo
 
         liftTID :: Monad m => (t1 -> m t2) -> TypedId t1 -> m (TypedId t2)
         liftTID f (TypedId t i) = do t2 <- f t ; return $ TypedId t2 i
