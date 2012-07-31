@@ -209,7 +209,9 @@ tcRho ctx expr expTy = do
           matchExp expTy (AnnCompiles rng (CompilesResult $ Errors
                                         [out $ "parse error"])) "compiles-error"
       E_CompilesAST rng (Just e) -> do
-          outputOrE <- tcIntrospect (inferRho ctx e "compiles")
+          -- Note: we infer a sigma, not a rho, because we don't want to
+          -- instantiate a sigma with meta vars and then never bind them.
+          outputOrE <- tcIntrospect (inferSigma ctx e "compiles")
           matchExp expTy (AnnCompiles rng (CompilesResult outputOrE)) "compiles"
 
 
