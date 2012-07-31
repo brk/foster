@@ -17,7 +17,6 @@ import qualified Data.Text as T
 
 import Foster.Base
 import Foster.Output(out)
-import Foster.TypeIL(TypeIL)
 
 {-
 Straightforward implementation of pattern match compilation
@@ -29,40 +28,40 @@ and use only the naive leftmost-outermost-first column selection
 heuristic.
 -}
 
-data DecisionTree a
+data DecisionTree a t
     =  DT_Fail
-    |  DT_Leaf  a                    -- The expression/block id to evaluate/jump to.
-              [(Ident, Occurrence TypeIL)] -- Subterms of scrutinee to bind in leaf.
+    |  DT_Leaf  a                -- The expression/block id to evaluate/jump to.
+              [(Ident, Occurrence t)]  -- Subterms of scrutinee to bind in leaf.
     |  DT_Switch
-                      (Occurrence TypeIL)  -- Subterm of scrutinee to switch on.
-                [(CtorId, DecisionTree a)] -- Map of ctors to decision trees.
-                  (Maybe (DecisionTree a)) -- Default decision tree, if any.
+                      (Occurrence t)  -- Subterm of scrutinee to switch on.
+                [(CtorId, DecisionTree a t)] -- Map of ctors to decision trees.
+                  (Maybe (DecisionTree a t)) -- Default decision tree, if any.
 
 -- Avoiding all these type parameters seems like a
 -- pretty good use case for parameterized modules!
 
-type ClauseCol  = [SPattern]
-data ClauseMatrix a = ClauseMatrix [ClauseRow a]
-data ClauseRow a    = ClauseRow { rowOrigPat  ::  SPattern
-                                , rowPatterns :: [SPattern]
+type ClauseCol t = [SPattern t]
+data ClauseMatrix a t = ClauseMatrix [ClauseRow a t]
+data ClauseRow a t  = ClauseRow { rowOrigPat  :: (SPattern t)
+                                , rowPatterns :: [SPattern t]
                                 , rowAction   :: a }
 
-data SPattern = SP_Wildcard
-              | SP_Variable  Ident
-              | SP_Ctor     (CtorInfo TypeIL) [SPattern]
-             deriving (Show)
+data SPattern t = SP_Wildcard
+                | SP_Variable  Ident
+                | SP_Ctor     (CtorInfo t) [SPattern t]
+               deriving (Show)
 
 type DataTypeSigs = Map DataTypeName DataTypeSig
 
-compilePatterns :: [((Pattern TypeIL, _binds), a)]
+compilePatterns :: [((Pattern t, _binds), a)]
                 -> DataTypeSigs
-                -> DecisionTree a
+                -> DecisionTree a t
 compilePatterns bs allSigs =
  cc [[]] (ClauseMatrix $ map compilePatternRow bs) allSigs where
 
   compilePatternRow ((p, _binds), a) = ClauseRow (compilePattern p)
                                                  [compilePattern p] a
-  compilePattern :: Pattern TypeIL -> SPattern
+  compilePattern :: Pattern t -> SPattern t
   compilePattern p = case p of
     (P_Wildcard _ _)       -> SP_Wildcard
     (P_Variable _ v)       -> SP_Variable (tidIdent v)
@@ -84,7 +83,7 @@ compilePatterns bs allSigs =
                                   else error "cannot cram >32 bits into Int32!"
 
 -- "Compilation is defined by cases as follows."
-cc :: [Occurrence TypeIL] -> ClauseMatrix a -> DataTypeSigs -> DecisionTree a
+cc :: [Occurrence t] -> ClauseMatrix a t -> DataTypeSigs -> DecisionTree a t
 
 -- No row to match -> failure
 cc _ (ClauseMatrix []) _allSigs = DT_Fail
@@ -95,7 +94,7 @@ cc _occs cm _allSigs | allGuaranteedMatch (rowPatterns $ firstRow cm) =
             (computeBindings emptyOcc (rowOrigPat r))
       where r = firstRow cm
             emptyOcc = []
-            computeBindings :: Occurrence TypeIL -> SPattern -> [(Ident, Occurrence TypeIL)]
+            computeBindings :: Occurrence t -> SPattern t -> [(Ident, Occurrence t)]
             computeBindings  occ (SP_Variable i   ) = [(i, occ)]
             computeBindings _occ (SP_Wildcard     ) = []
             computeBindings  occ (SP_Ctor ctorinfo pats) =
@@ -149,7 +148,7 @@ expand occ cid a = [occ ++ [(n, cid)] | n <- [0 .. a - 1]]
 
 ctorInfoArity (CtorInfo cid _) = ctorArity cid
 
-specialize :: CtorInfo TypeIL -> ClauseMatrix a -> ClauseMatrix a
+specialize :: CtorInfo t -> ClauseMatrix a t -> ClauseMatrix a t
 specialize (CtorInfo ctor _) (ClauseMatrix rows) =
   ClauseMatrix [specializeRow row ctor | row <- rows
                                        , isCompatible row ctor]
@@ -182,10 +181,10 @@ defaultMatrix (ClauseMatrix rows) =
         ClauseRow orig ((SP_Variable _):rest) a -> [ClauseRow orig rest a]
         ClauseRow _    ((SP_Ctor _   _):_   ) _ -> [] -- No row...
 
-column :: ClauseMatrix a -> Int -> [SPattern]
+column :: ClauseMatrix a t -> Int -> [SPattern t]
 column (ClauseMatrix rows) i = map (rowIndex i) rows
 
-rowIndex :: Int -> ClauseRow a -> SPattern
+rowIndex :: Int -> ClauseRow a t -> SPattern t
 rowIndex i (ClauseRow _ row _) = row !! i
 
 swapListElements j k elts =
@@ -201,7 +200,7 @@ swapOcc i occs = swapListElements i 0 occs
 swapRow i (ClauseRow orig pats a) = ClauseRow orig pats' a
   where pats' = swapListElements i 0 pats
 
-swapCol :: Int -> ClauseMatrix a -> ClauseMatrix a
+swapCol :: Int -> ClauseMatrix a t -> ClauseMatrix a t
 swapCol i (ClauseMatrix rows) = ClauseMatrix (map (swapRow i) rows)
 
 -- better :: (Set CtorId) -> (Map DataTypeName (Set CtorId)) -> Bool
@@ -220,15 +219,15 @@ isSignature ctorSet allSigs =
     _ -> error $ "Error in PatternMatch.isSignature: "
               ++ "Multiple type names in ctor set: " ++ show ctorSet
 
-deriving instance Show a => Show (DecisionTree a)
+deriving instance (Show a, Show t) => Show (DecisionTree a t)
 
-instance Eq (CtorInfo TypeIL) where
+instance Eq (CtorInfo t) where
   a == b = (ctorInfoId a) == (ctorInfoId b)
 
-instance Ord (CtorInfo TypeIL) where
+instance Ord (CtorInfo t) where
   compare a b = compare (ctorInfoId a) (ctorInfoId b)
 
-instance Structured a => Structured (DecisionTree a) where
+instance (Structured a, Show t) => Structured (DecisionTree a t) where
     textOf e _width =
       case e of
         DT_Fail                  ->  out $ "DT_Fail      "

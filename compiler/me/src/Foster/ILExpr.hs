@@ -164,7 +164,7 @@ closureConvertBlocks bbg = do
               where
                 -- The decision tree we get from pattern-match compilation may
                 -- contain only a subset of the pattern branche.
-                eltsOfDecisionTree :: (Show a, Ord a) => DecisionTree a -> Set a
+                eltsOfDecisionTree :: (Show a, Ord a) => DecisionTree a t -> Set a
                 eltsOfDecisionTree DT_Fail = Set.empty
                 eltsOfDecisionTree (DT_Leaf a _) = Set.singleton a
                 eltsOfDecisionTree (DT_Switch _ idsDts maybeDt) = Set.union
@@ -193,7 +193,7 @@ data BlockFin = BlockFin [ILBlock]      -- new blocks generated
 
 bogusVar (id, _) = TypedId (PrimIntIL I1) id
 
-compileDecisionTree :: AIVar -> DecisionTree BlockId -> ILM BlockFin
+compileDecisionTree :: AIVar -> DecisionTree BlockId TypeIL -> ILM BlockFin
 -- Translate an abstract decision tree to ILBlocks, also returning
 -- the label of the entry block into the decision tree logic.
 -- For now, we don't do any available values computation, which means that
