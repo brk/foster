@@ -14,6 +14,7 @@ import qualified Data.Map as Map(lookup, insert, elems)
 import qualified Data.Set as Set(toList, fromList)
 
 import Foster.Base
+import Foster.TypePI
 import Foster.TypeAST
 import Foster.ExprAST
 import Foster.AnnExpr
@@ -469,15 +470,16 @@ typecheckIf ctx rng a b c maybeExpTy = do
 
 -----------------------------------------------------------------------
 
-resolveType subst x =
-  let q = resolveType subst in
+resolveType rng subst x =
+  let q = resolveType rng subst in
   case x of
     PrimIntAST  _                  -> return x
     PrimFloat64                    -> return x
     MetaTyVar   _                  -> return x
     TyVarAST (SkolemTyVar _ _ _)   -> return x
     TyVarAST (BoundTyVar name)     -> case Map.lookup name subst of
-                                         Nothing      -> tcFails [out $ "Typecheck.hs: ill-formed type with free bound variable " ++ name]
+                                         Nothing      -> tcFails [out $ "Typecheck.hs: ill-formed type with free bound variable " ++ name,
+                                                                  out $ highlightFirstLine rng]
                                          Just (sk, _) -> return $ TyVarAST sk
     RefTypeAST    ty               -> liftM RefTypeAST   (q ty)
     ArrayTypeAST  ty               -> liftM ArrayTypeAST (q ty)
@@ -486,7 +488,7 @@ resolveType subst x =
     CoroTypeAST  s t               -> liftM2 CoroTypeAST (q s) (q t)
     TyConAppAST   tc  types        -> liftM (TyConAppAST tc) (mapM q types)
     TupleTypeAST      types        -> liftM  TupleTypeAST    (mapM q types)
-    ForAllAST     ktvs rho         -> liftM (ForAllAST ktvs) (resolveType subst' rho)
+    ForAllAST     ktvs rho         -> liftM (ForAllAST ktvs) (resolveType rng subst' rho)
                                        where
                                         subst' = foldl' ins subst ktvs
                                         ins m (tv@(BoundTyVar nm), k) = Map.insert nm (tv, k) m
@@ -507,7 +509,7 @@ typecheckTyApp ctx rng e mb_t1tn _maybeExpTyTODO = do
     aeSigma <- tcSigma ctx e Nothing
     case (mb_t1tn, typeAST aeSigma) of
       (Nothing  , _           ) -> return aeSigma
-      (Just t1tn, ForAllAST {}) -> do let resolve = resolveType (localTypeBindings ctx)
+      (Just t1tn, ForAllAST {}) -> do let resolve = resolveType rng (localTypeBindings ctx)
                                       tcLift $ putStrLn $ "local type bindings: " ++ show (localTypeBindings ctx)
                                       types <- mapM resolve (listize t1tn)
                                       instWith rng aeSigma types
@@ -803,7 +805,7 @@ typecheckFn ctx f (Just m@MetaTyVar {}) = do
                 tcf <- typecheckFn ctx f Nothing
                 subsumedBy tcf m (Just "function literal")
 
-typecheckFn ctx f (Just sigma@(ForAllAST {})) = do
+typecheckFn ctx f (Just sigma@(ForAllAST ktvs rho0)) = do
 {-              -- TODO: add a counter-example documenting the need for this check
                 -- TODO: make it posible to typecheck against rho
                 (skols, rho) <- skolemize sigma
@@ -814,9 +816,15 @@ typecheckFn ctx f (Just sigma@(ForAllAST {})) = do
                 sanityCheck (null bad_tvs) "Type not polymorphic enough"
                 return tcf
 -}
+                (skols, rho) <- skolemize ktvs rho0
+                let extTyCtx =
+                     let tybindmap = localTypeBindings ctx in
+                     let ins m (sk, (BoundTyVar nm, k)) = Map.insert nm (sk, k) m in
+                     ctx { localTypeBindings = foldl' ins tybindmap (zip skols ktvs) }
+
                 -- TODO figure out how to push more information from sigma
                 -- into the type-checking of the function literal.
-                tcf <- typecheckFn ctx f Nothing
+                tcf <- typecheckFn extTyCtx f Nothing
                 -- subsumedBy checks type subsumption and also returns a type-
                 -- instantated wrapper around tcf with a rho type.
                 -- We only care about the subs check, so we ignore the ret val.
