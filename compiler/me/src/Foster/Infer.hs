@@ -157,8 +157,9 @@ tcUnifyVar m1 (MetaTyVar m2) tysub constraints | m1 == m2
   = tcUnifyLoop constraints tysub
 
 tcUnifyVar m ty tysub constraints = do
-    --tcm <- readTcMeta m
-    --tcLift $ putStrLn $ "================ Unifying meta var " ++ show (MetaTyVar m) ++ " :: " ++ show tcm ++ "with " ++ show ty
+    tcm <- readTcMeta m
+    tcLift $ putStrLn $ "================ Unifying meta var " ++ show (MetaTyVar m) ++ " :: " ++ show tcm
+                   ++ "\n============================= with " ++ show ty
     let tysub' = Map.insert (mtvUniq m) ty tysub
     tcUnifyLoop (tySubstConstraints constraints (Map.singleton (mtvUniq m) ty)) tysub'
       where

@@ -253,7 +253,11 @@ typecheckVar TCSigma ctx rng name =
                                  ++ "ctx: "++ show (contextBindings ctx)
                                  ++ "\nhist: " , msg]
 
-typecheckVar TCRho ctx rng name = do typecheckVar TCSigma ctx rng name >>= inst
+typecheckVar TCRho ctx rng name = do
+         when tcVERBOSE $ do
+             tcLift $ runOutput $ outCS Green "typecheckVar (rho): " ++ out (T.unpack name)
+             tcLift $ putStrLn ""
+         typecheckVar TCSigma ctx rng name >>= inst
 
 -----------------------------------------------------------------------
 
@@ -583,7 +587,7 @@ inst base = do
   -- TODO shallow zonk here
   case typeAST base of
      ForAllAST ktvs _rho -> do
-       taus <- genTauUnificationVarsLike ktvs (\n -> "type parameter " ++ vname base n)
+       taus <- genSigmaUnificationVarsLike ktvs (\n -> "type parameter " ++ vname base n)
        instWith (rangeOf base) base taus
      _rho -> return base
 
@@ -618,6 +622,10 @@ genTauUnificationVarsLike :: [a] -> (Int -> String) -> Tc [TypeAST]
 genTauUnificationVarsLike spine namegen = do
   sequence [newTcUnificationVarTau (namegen n) | (_, n) <- zip spine [1..]]
 
+genSigmaUnificationVarsLike :: [a] -> (Int -> String) -> Tc [TypeAST]
+genSigmaUnificationVarsLike spine namegen = do
+  sequence [newTcUnificationVarSigma (namegen n) | (_, n) <- zip spine [1..]]
+
 -----------------------------------------------------------------------
 
 showtypes :: [AnnExpr Sigma] -> TypeAST -> String
@@ -648,7 +656,14 @@ typecheckCallRho argtup eb basetype range =
            let errmsg = ("CallAST mismatch between formal & arg types\n"
                           ++ showtypes (annTupleExprs argtup) formaltype)
 
+           when tcVERBOSE $ do
+                 tcLift $ putStrLn "typecheckCallRho checking arg subsumption"
            (AnnTuple argtup') <- subsumedBy (AnnTuple argtup) formaltype (Just $ errmsg)
+           when tcVERBOSE $ do
+                 tcLift $ runOutput $ (outCS Green "typecheckCallRho: args were\n") ++ (showStructure $ AnnTuple argtup)
+                 tcLift $ putStrLn ""
+                 tcLift $ runOutput $ (outCS Green "typecheckCallRho: args are \n") ++ (showStructure $ AnnTuple argtup')
+                 tcLift $ putStrLn ""
            return (AnnCall range restype eb argtup')
 
          _otherwise -> do
@@ -679,6 +694,8 @@ typecheckCall ctx rng base args maybeExpTy = do
 
    when tcVERBOSE $ do
      tcLift $ runOutput $ (outCS Green "typecheckCallSigma: base type was ") ++ out (show $ typeAST eb)
+     tcLift $ putStrLn ""
+     tcLift $ runOutput $ (outCS Green "typecheckCallSigma: expc type was ") ++ out (show $ maybeExpTy)
      tcLift $ putStrLn ""
 
    case (typeAST eb, maybeExpTy) of
@@ -988,10 +1005,16 @@ subsumedBy (AnnTuple (E_AnnTuple rng exprs)) (TupleTypeAST tys) msg = do
         return (AnnTuple (E_AnnTuple rng exprs'))
 subsumedBy annexpr st2 msg = do
     t1' <- zonkType (typeAST annexpr)
+    t2' <- zonkType st2
     when tcVERBOSE $ do
-      tcLift $ runOutput $ outCS Green $ "subsumedBy " ++ show t1' ++ " <=? " ++ show st2
+      tcLift $ runOutput $ outCS Green $ "subsumedBy " ++ show t1' ++ " <=? " ++ show t2'
       tcLift $ putStrLn ""
-    case (t1', st2) of
+    case (t1', t2') of
+        -- A sublety: we've zonked t2', so if we have a meta type variable,
+        -- it's completely un-instantiated (and ripe for the writing).
+        (s1, (MetaTyVar m@(Meta MTVSigma _ _ _))) -> do
+             writeTcMeta m s1
+             return annexpr
         (s1, (ForAllAST ktvs rho0)) -> do -- Odersky-Laufer's SKOL rule.
              (skols, r2) <- skolemize ktvs rho0
              e' <- subsumedBy annexpr r2 msg

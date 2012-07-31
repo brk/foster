@@ -61,9 +61,12 @@ instance Show TypeAST where
         CoroTypeAST  s t                -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
         ForAllAST  tvs rho              -> "(ForAll " ++ show tvs ++ ". " ++ show rho ++ ")"
         TyVarAST   tv                   -> show tv
-        MetaTyVar m                     -> "(~!" ++ show (mtvUniq m) ++ ":" ++ mtvDesc m ++ ")"
+        MetaTyVar m                     -> "(~(" ++ descMTVQ (mtvConstraint m) ++ ")!" ++ show (mtvUniq m) ++ ":" ++ mtvDesc m ++ ")"
         RefTypeAST    ty                -> "(Ref " ++ show ty ++ ")"
         ArrayTypeAST  ty                -> "(Array " ++ show ty ++ ")"
+
+descMTVQ MTVSigma = "S"
+descMTVQ MTVTau   = "R"
 
 instance Structured TypeAST where
     textOf e _width =
