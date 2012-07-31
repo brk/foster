@@ -47,6 +47,19 @@ t2 = {
 //  inference will not push the partially-known type Int -> 'a into the
 //  anonymous function passed to bar, and the program will be rejected."
 /*
+t3 = {
+  let tc = { f: forall a:Boxed, { (a,a) => (a,a) }
+              => f (B 0, B 0) };
+      aa = { forall b:Boxed, c:Boxed, y:(b,c) => y };
+   in
+      // aa :: forall b c, { (b,c) => (b,c) }
+      // tc :: forall a  , { (a,a) => (a,a) }
+      tc aa;
+  end;
+};
+*/
+
+/*
 t2 = {
   let bar = { forall a:Boxed, f:{ Int32 => a } => f 4 };
       foo = { w : ?? W => bar { x : ?? X => B (x +Int32 w) } };
