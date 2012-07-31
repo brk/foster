@@ -803,6 +803,7 @@ tcSigmaFn ctx f expTy = do
           Just r -> update r (return fn)
 -- }}}
 
+-- {{{
 extendContext :: Context Sigma -> [AnnVar] -> Context Sigma
 extendContext ctx protoFormals =
                  prependContextBindings ctx (map bindingForVar protoFormals)
@@ -963,9 +964,9 @@ subsCheckTy sigma1 sigma2@(ForAllAST {}) msg = do
   subsCheckRhoTy sigma1 rho
   esc_tvs <- getFreeTyVars [sigma1, sigma2]
   let bad_tvs = filter (`elem` esc_tvs) skols
-  --sanityCheck (null bad_tvs) ("subsCheck(" ++ msg ++ "): Type\n" ++ show sigma1 ++
-  --                     " not as polymorphic as\n" ++ show sigma2 ++
-  --                     "\nbad type variables: " ++ show bad_tvs)
+  sanityCheck (null bad_tvs) ("subsCheck(" ++ msg ++ "): Type\n" ++ show sigma1 ++
+                       " not as polymorphic as\n" ++ show sigma2 ++
+                       "\nbad type variables: " ++ show bad_tvs)
   return ()
 
 subsCheckTy sigma1 rho2 _msg = subsCheckRhoTy sigma1 rho2
@@ -989,12 +990,12 @@ subsCheck esigma sigma2@(ForAllAST {}) msg = do
   _ <- subsCheckRho esigma rho
   esc_tvs <- getFreeTyVars [typeAST esigma, sigma2]
   let bad_tvs = filter (`elem` esc_tvs) skols
-  --sanityCheck (null bad_tvs) ("subsCheck(" ++ msg ++ "): Type\n" ++ show sigma1 ++
-  --                     " not as polymorphic as\n" ++ show sigma2 ++
-  --                     "\nbad type variables: " ++ show bad_tvs)
+  sanityCheck (null bad_tvs) ("subsCheck(" ++ msg ++ "): Type\n" ++ show (typeAST esigma) ++
+                       " not as polymorphic as\n" ++ show sigma2 ++
+                       "\nbad type variables: " ++ show bad_tvs)
   return esigma
 
-subsCheck esigma rho2 _msg = subsCheckRho esigma rho2
+subsCheck _esigma _rho2 _msg = tcFails [out $ "rho passed to subsCheck!"]
 
 subsCheckRho :: AnnExpr Sigma -> Rho -> Tc (AnnExpr Rho)
 subsCheckRho esigma rho2 = do
@@ -1006,22 +1007,7 @@ subsCheckRho esigma rho2 = do
         debug $ "subsCheckRho instantiated to " ++ show (typeAST erho)
         debug $ "subsCheckRho inst. type against " ++ show rho2
         subsCheckRho erho rho2
-        {-
-        taus <- genTauUnificationVarsLike ktvs (\n -> "instSigma type parameter " ++ show n)
-        rho1 <- instSigmaWith ktvs rho taus
-        subsCheckRho rho1 rho2
-        -}
 
-        {-
-    (rho1, TupleTypeAST {})     -> do tcFails [out $ "subsCheckRho tuple 1"]
-                                      (ts1, ts2) <- unifyTuple rho1 rho2
-                                      mapM_ (\(t1, t2) -> subsCheckRhoTy t1 t2) (zip ts1 ts2)
-                                      return esigma
-    (rho1@(TupleTypeAST {}), _) -> do tcFails [out $ "subsCheckRho tuple 2"]
-                                      (ts1, ts2) <- unifyTuple rho1 rho2
-                                      mapM_ (\(t1, t2) -> subsCheckRhoTy t1 t2) (zip ts1 ts2)
-                                      return esigma
-                                      -}
     (rho1, FnTypeAST as2 r2 _ _) -> do debug $ "subsCheckRho fn 1"
                                        (as1, r1) <- unifyFun rho1 as2 "sCR1"
                                        subsCheckFunTy as1 r1 as2 r2
@@ -1041,20 +1027,6 @@ subsCheckRho esigma rho2 = do
 -- }}}
 
 -- {{{ Helper functions for subsCheckRho to peek inside type constructors
-unifyTuple rho1 (TupleTypeAST ts2) = do
-  metas <- mapM (\_ -> newTcUnificationVarTau "utup") ts2
-  unify rho1 (TupleTypeAST metas) (Just "unifyTuple1")
-  unify rho1 (TupleTypeAST ts2)   (Just "unifyTuple2")
-  return (metas, ts2)
-
-unifyTuple (TupleTypeAST ts1) rho2 = do
-  metas <- mapM (\_ -> newTcUnificationVarTau "utup") ts1
-  unify (TupleTypeAST metas) rho2 (Just "unifyTuple3")
-  unify (TupleTypeAST ts1)   rho2 (Just "unifyTuple4")
-  return (ts1, metas)
-
-unifyTuple _ _ = tcFails [out $ "violated invariant: unifyTuple called with no tuple arguments"]
-
 subsCheckFunTy as1 r1 as2 r2 = do
         debug $ "subsCheckFunTy arg: " ++ show as2 ++ " ?<=? " ++ show as1
         mapM_ (\(a2, a1) -> subsCheckTy a2 a1 "sCFTa") (zip as2 as1)
