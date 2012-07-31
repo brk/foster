@@ -13,7 +13,7 @@ import Foster.Kind
 import Foster.Context
 import Foster.AnnExpr
 import Foster.TypeIL
-import Foster.TypeAST(gFosterPrimOpsTable, TypeAST(TupleTypeAST))
+import Foster.TypeAST(gFosterPrimOpsTable, TypeAST)
 import Foster.Output(out)
 
 import qualified Data.Text as T
