@@ -17,7 +17,9 @@ main = {
   expect_i32 2;
   print_i32 (ex2 (Cons (B32 0) (Cons (B32 1) (Nil:[B32] !))));
 */
+  ()
 };
+
 
 test-explicit = {
   let n = 0;
@@ -44,26 +46,22 @@ test-ones = {
 
       expect_i32 n;
       print_i32  w;
+
+      ()
   end
 };
+
 
 ex3 = { forall c:Type,
         z : List c => 0 };
 
-// one :: Int32 -> List B32
+//ones :: Int32 -> List B32;
 ones = { n : Int32 =>
   if n ==Int32 0
    then Nil:[B32] !
    else Cons (B32 n) (ones (n -Int32 1))
   end
 };
-
-//ones = { n : Int32 =>
-//  if n ==Int32 0
-//   then Nil !
-//   else Cons n (ones (n -Int32 1))
-//  end
-//};
 
 // occ [] switched on, both subtrees are leaves
 /*
@@ -81,11 +79,32 @@ len = { forall d:Boxed,
         z : List d =>
   case z
     of $Nil       -> 0
+    of $Cons n ns -> (len :[d] ns) +Int32 1
+  end
+};
+
+
+/*
+iscons = { forall d:Boxed,
+       z : List d =>
+  case z
+    of $Nil       -> 0
+    of $Cons n ns -> 1
+  end
+};
+*/
+
+
+/*
+len = { forall d:Boxed,
+        z : List d =>
+  case z
+    of $Nil       -> 0
     of $Cons n ns -> 1 +Int32 (len :[d] ns)
     // of (n, ns)      -> n +Int32 (len ns) // should fail due to type mismatch
   end
 };
-
+*/
 
 type
 case B32
