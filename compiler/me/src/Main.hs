@@ -415,7 +415,7 @@ lowerModule ai_mod ctx_il = do
 
      cfgmod   <- cfgModule      kmod
      prog0    <- closureConvert cfgmod
-     let monoprog = monomorphize prog0
+     monoprog <- liftIO $ monomorphize prog0
 
      whenDumpIR "cfg" $ do
          runOutput $ (outLn "/// Closure-converted program =========")

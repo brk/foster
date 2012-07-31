@@ -24,7 +24,7 @@ import Data.Set(Set)
 import Data.Set as Set(member, insert, empty)
 import Data.List as List(all)
 import Control.Monad(when)
-import Control.Monad.State(forM_, execState, get, put, State)
+import Control.Monad.State(forM_, execStateT, get, put, StateT, liftIO)
 import Data.Maybe(isNothing, maybeToList)
 
 -- | Performs worklist-based monomorphization of top-level functions,
@@ -46,14 +46,13 @@ import Data.Maybe(isNothing, maybeToList)
 -- | will result in different proc definitions, even though they could
 -- | share a definition at runtime.
 
-monomorphize :: ILProgram -> MonoProgram
-monomorphize (ILProgram procdefmap decls datatypes lines) =
-    MoProgram monoProcs monodecls monodatatypes lines
+monomorphize :: ILProgram -> IO MonoProgram
+monomorphize (ILProgram procdefmap decls datatypes lines) = do
+    monoState <- execStateT (addMonosAndGo procdefmap) monoState0
+    return $ MoProgram (monoProcDefs monoState) monodecls monodatatypes lines
       where
         monodatatypes = monomorphizedDataTypes datatypes
         monoState0 = MonoState Set.empty worklistEmpty procdefmap Map.empty
-        monoState  = execState (addMonosAndGo procdefmap) monoState0
-        monoProcs  = monoProcDefs monoState
         monodecls  = map monoExternDecl decls
         addMonosAndGo procdefmap =
                            addInitialMonoTasksAndGo (Map.elems procdefmap)
@@ -81,8 +80,9 @@ addInitialMonoTasksAndGo procdefs = do
     let polyprocs = [(pd,ktvs) | pd <- procdefs,
                                  ktvs <- maybeToList (ilProcPolyTyVars pd),
                                  not (isNotInstantiable pd)]
-    forM_ polyprocs (\(pd,ktvs) ->
-         let id = ilProcIdent pd in
+    forM_ polyprocs (\(pd,ktvs) -> do
+         let id = ilProcIdent pd
+         debug $ "monoScheduleWork " ++ show id ++ " ;; " ++ show ktvs
          monoScheduleWork (NeedsMono id id [PtrTypeUnknown | _ <- ktvs])
       )
     goMonomorphize
@@ -180,7 +180,7 @@ data MonoState = MonoState {
   , monoProcDefs :: Map Ident MoProcDef
 }
 
-type Mono a = State MonoState a
+type Mono = StateT MonoState IO
 
 monoPopWorklist :: Mono (Maybe MonoWork)
 monoPopWorklist = do
@@ -232,12 +232,16 @@ goMonomorphize = do
     Nothing -> return ()
     Just wk -> monomorphizeProc wk >> goMonomorphize
 
+debug s = liftIO $ putStrLn s
+
 monomorphizeProc (PlainProc srcid) = do
   (Just proc) <- monoGetProc srcid
+  debug $ "monomorphizeProc PlainProc " ++ show srcid
   newproc <- doMonomorphizeProc proc emptyMonoSubst
   monoPutProc $ newproc
 
 monomorphizeProc (NeedsMono polyid srcid tyargs) = do
+  debug $ "monomorphizeProc NeedsMono " ++ show polyid ++ " <- " ++ show srcid ++ " // " ++ show tyargs
   mproc <- monoGetProc srcid
   proc <- case mproc of
              Just p -> return p
@@ -322,6 +326,7 @@ monomorphizeLetable subst expr =
               TypedId (ForAllIL {}) id@(GlobalSymbol _) -> do
                   let polyid = getPolyProcId id argtys
                   let monotys = map qt argtys
+                  debug $ "argty: " ++ show argty ++ " ==> " ++ show argtys
                   monoScheduleWork (NeedsMono polyid id monotys)
                   return $ Instantiated (TypedId t polyid)
 
@@ -383,6 +388,7 @@ monoPrim subst p =
 -- does listize (TupleTypeIL []) result in [] or [unit] ?
 listize ty =
   case ty of
+   TupleTypeIL []  -> [ty]
    TupleTypeIL tys -> tys
    _               -> [ty]
 
