@@ -6,7 +6,7 @@
 module Foster.Typecheck(tcSigmaToplevel) where
 
 import qualified Data.List as List(length, zip)
-import Data.List(foldl')
+import Data.List(foldl', (\\))
 import Control.Monad(liftM, forM_, forM, liftM, liftM2, when)
 
 import qualified Data.Text as T(Text, unpack)
@@ -99,22 +99,27 @@ debug s = do when tcVERBOSE (tcLift $ putStrLn s)
 getEnvTypes ctx = return (map tidType $ Map.elems (contextBindings ctx))
 
 inferSigma :: Context TypeAST -> Term -> String -> Tc (AnnExpr Sigma)
--- Special-case variables to avoid a redundant instantation + generalization
+-- Special-case variables and function literals
+-- to avoid a redundant instantation + generalization
 inferSigma ctx (E_VarAST rng v) msg = tcSigmaVar ctx rng (evarName v)
+inferSigma ctx (E_FnAST f)      msg = do r <- newTcRef (error $ "inferSigmaFn: empty result: " ++ msg)
+                                         tcSigmaFn  ctx f (Infer r)
 inferSigma ctx e msg
    = do {
         ; debug $ "inferSigma " ++ highlightFirstLine (rangeOf e)
         ; debug $ "inferSigma deferring to inferRho"
  	; e' <- inferRho ctx e msg
         ; debug $ "inferSigma inferred :: " ++ show (typeAST e')
-        ; debug $ "inferSigma ought to quantify over the escaping meta type variables "
+        ; env_tys <- getEnvTypes ctx
+	; env_tvs <- collectUnboundUnificationVars env_tys
+        ; res_tvs <- collectUnboundUnificationVars [typeAST e']
+        ; let forall_tvs = res_tvs \\ env_tvs
+        ; case forall_tvs of
+            [] -> return ()
+            _ -> tcFails [out $ "inferSigma ought to quantify over the escaping meta type variables " ++ show (map MetaTyVar forall_tvs)]
         ; return e'
         }
         {-
-        ; env_tys <- getEnvTypes ctx
-	; env_tvs <- collectUnificationVars env_tys
-        ; res_tvs <- collectUnificationVars [exp_ty]
-        ; let forall_tvs = res_tvs \\ env_tvs
         ; ty <- quantify forall_tvs
         ; debug $ "inferSigma quantifying over " ++ show (map MetaTv forall_tvs) ++ " to get " ++ show ty
 	; return ty
@@ -149,11 +154,13 @@ inferRho ctx e msg
        ; debug $ "inferRho " ++ highlightFirstLine (rangeOf e)
        ; debug $ "inferRho deferring to tcRho"
        ; a <- tcRho ctx e (Infer ref)
+       ; a <- inst a
        ; debug $ "tcRho (" ++ msg ++") finished, reading inferred type from ref"
        ; debug $ "tcRho (" ++ msg ++"): " ++ highlightFirstLine (rangeOf e)
        ; ty <- tcLift $ readIORef ref
-       ; debug $ "inferRho " ++ highlightFirstLine (rangeOf e) ++ " :: " ++ show ty
-       ; debug $ "inferRho " ++ highlightFirstLine (rangeOf e) ++ " :: " ++ show (typeAST a)
+       ; debug $ "inferRho (" ++ msg ++")" ++ highlightFirstLine (rangeOf e) ++ " :: " ++ show ty
+       ; debug $ "inferRho (" ++ msg ++")" ++ highlightFirstLine (rangeOf e) ++ " :: " ++ show (typeAST a)
+       ; sanityCheck (isRho $ typeAST a) ("inferRho wound up with a sigma type!" ++ highlightFirstLine (rangeOf a))
        ; return a
        }
 
@@ -601,6 +608,7 @@ tcRhoCall :: Context Sigma -> SourceRange
 tcRhoCall ctx rng base args exp_ty = do
         annbase <- inferRho ctx base "called base"
         let fun_ty = typeAST annbase
+        debug $ "call rho: fn type is " ++ show fun_ty
         (args_ty, res_ty) <- unifyFun fun_ty
         debug $ "call rho: args ty is " ++ show args_ty
         debug $ "call rho: args is " ++ show args
@@ -628,8 +636,25 @@ unifyFun tau = do arg_ty <- newTcUnificationVarTau "fn args ty"
 -- G{x1 : t1}...{xn : tn} |- e ::: tb
 -- ---------------------------------------------------------------------
 -- G |- { x1 : t1 => ... => xn : tn => e } ::: { t1 => ... => tn => tb }
+--
 -- {{{
 tcRhoFn ctx f expTy = do
+  sigma <- tcSigmaFn ctx f expTy
+  inst sigma
+-- }}}
+
+-- G{x1 : t1}...{xn : tn} |- e ::: tb
+-- ---------------------------------------------------------------------
+-- G |- { x1 : t1 => ... => xn : tn => e } ::: { t1 => ... => tn => tb }
+--
+-- or
+--
+-- G{a1:k1}...{an:kn}{x1 : t1}...{xn : tn} |- e ::: tb
+-- ---------------------------------------------------------------------
+-- G |- { forall a1:k1, ..., an:kn, x1 : t1 => ... => xn : tn => e } :::
+--        forall a1:k1, ..., an:kn,    { t1 => ... =>      tn => tb }
+-- {{{
+tcSigmaFn ctx f expTy = do
   case (fnTyFormals f, expTy) of
     ([], Check fnty) -> helper (Just fnty) Nothing
     ([], Infer r   ) -> helper Nothing     (Just r)
@@ -656,7 +681,7 @@ tcRhoFn ctx f expTy = do
         -- Check or infer the type of the body.
         debug $ "inferring type of body of polymorphic function"
         annbody <- case Nothing of
-          Nothing   -> do inferRho extCtx (fnAstBody f) "fn body"
+          Nothing   -> do inferSigma extCtx (fnAstBody f) "poly-fn body"
           Just _fnty -> do tcFails [out $ "TODO: check polymorphic types"]
           {-
                           (arg_ty, body_ty) <- unifyFun fnty
@@ -709,7 +734,7 @@ tcRhoFn ctx f expTy = do
         let extCtx = extendContext ctx uniquelyNamedFormals
         -- Check or infer the type of the body.
         annbody <- case mb_exp_fnty of
-          Nothing   -> do inferRho extCtx (fnAstBody f) "fn body"
+          Nothing   -> do inferSigma extCtx (fnAstBody f) "mono-fn body"
           Just fnty -> do (arg_ty, body_ty) <- unifyFun fnty
                           let vars_ty = map tidType uniquelyNamedFormals
                           subsCheckTy arg_ty (TupleTypeAST vars_ty) "mono-fn"
@@ -731,6 +756,7 @@ tcRhoFn ctx f expTy = do
         case mb_infer_ref of
           Nothing -> return fn
           Just r -> update r (return fn)
+-- }}}
 
 extendContext :: Context Sigma -> [AnnVar] -> Context Sigma
 extendContext ctx protoFormals =
@@ -1136,7 +1162,7 @@ unify t1 t2 msg = do
     tcLift $ runOutput $ outCS Green $ "unify " ++ show t1 ++ " ?==? " ++ show t2 ++ msg'
     tcLift $ putStrLn ""
   tcOnError (liftM out msg) (tcUnifyTypes t1 t2) $ \(Just soln) -> do
-     let univars = concatMap collectUnificationVars [t1, t2]
+     let univars = collectAllUnificationVars [t1, t2]
      forM_ univars $ \m -> do
        mt1 <- readTcMeta m
        case (mt1, Map.lookup (mtvUniq m) soln) of
@@ -1149,15 +1175,20 @@ unify t1 t2 msg = do
                          case mt2 of
                              Just x2 -> unify (MetaTyVar m) x2 msg
                              Nothing -> writeTcMeta m (MetaTyVar m2)
-         (Nothing, Just x2) -> case m `elem` collectUnificationVars x2 of
-                             False   -> writeTcMeta m x2
-                             True    -> occurdCheck m x2
+         (Nothing, Just x2) -> do unbounds <- collectUnboundUnificationVars [x2]
+                                  case m `elem` unbounds of
+                                     False   -> writeTcMeta m x2
+                                     True    -> occurdCheck m x2
   where
      occurdCheck m t = tcFails [out $ "Occurs check for " ++ show (MetaTyVar m)
                                    ++ " failed in " ++ show t]
 
-collectUnificationVars :: TypeAST -> [MetaTyVar TypeAST]
-collectUnificationVars x = Set.toList (Set.fromList (go x))
+
+collectUnboundUnificationVars :: [TypeAST] -> Tc [MetaTyVar TypeAST]
+collectUnboundUnificationVars xs = mapM zonkType xs >>= (return . collectAllUnificationVars)
+
+collectAllUnificationVars :: [TypeAST] -> [MetaTyVar TypeAST]
+collectAllUnificationVars xs = Set.toList (Set.fromList (concatMap go xs))
   where go x =
           case x of
             PrimIntAST _          -> []
