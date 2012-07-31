@@ -91,8 +91,11 @@ ilOf ctx typ = do
      MetaTyVar m -> do
         mty <- readTcMeta m
         case mty of
-          Nothing -> tcFails [out $ "Found un-unified unification variable "
+          Nothing -> return $ TupleTypeIL []
+                     {-
+                         tcFails [out $ "Found un-unified unification variable "
                                 ++ show (mtvUniq m) ++ "(" ++ mtvDesc m ++ ")!"]
+                                -}
           Just t  -> q t
 
 extendTyCtx ctx ktvs = ctx { contextTypeBindings =

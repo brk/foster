@@ -269,7 +269,8 @@ typecheckModule verboseMode modast tcenv0 = do
           cb' <-mmapM (liftTID f) cb
           pb' <- mapM (liftTID f) pb
           gb' <- mapM (liftBinding f) gb
-          return $ Context cb' pb' vb gb' tyvars tybinds ctortypeast dtinfo
+          tyvars' <- mmapM f tyvars
+          return $ Context cb' pb' vb gb' tyvars' tybinds ctortypeast dtinfo
 
         liftTID :: Monad m => (t1 -> m t2) -> TypedId t1 -> m (TypedId t2)
         liftTID f (TypedId t i) = do t2 <- f t ; return $ TypedId t2 i

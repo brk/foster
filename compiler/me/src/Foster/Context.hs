@@ -19,7 +19,7 @@ data Context ty = Context { contextBindings   :: Map T.Text (TypedId ty)
                           , primitiveBindings :: Map T.Text (TypedId ty)
                           , contextVerbose    :: Bool
                           , globalBindings    :: [ContextBinding ty]
-                          , localTypeBindings :: Map String (TyVar, Kind)
+                          , localTypeBindings :: Map String ty
                           , contextTypeBindings :: [(TyVar, Kind)]
                           , contextCtorInfo   :: Map CtorName     [CtorInfo TypeAST]
                           , contextDataTypes  :: Map DataTypeName [DataType TypeAST]
@@ -117,6 +117,9 @@ newTcSkolem (tv, k) = do u <- newTcUniq
   where nameOf (BoundTyVar name)      = name
         nameOf (SkolemTyVar name _ _) = name
 
+newTcRef :: a -> Tc (IORef a)
+newTcRef v = tcLift $ newIORef v
+
 newTcUnificationVarSigma d = newTcUnificationVar_ MTVSigma d
 newTcUnificationVarTau   d = newTcUnificationVar_ MTVTau d
 
@@ -127,9 +130,6 @@ newTcUnificationVar_ q desc = do
     meta <- tcRecordUnificationVar (Meta q desc u ref)
     return (MetaTyVar meta)
       where
-        newTcRef :: a -> Tc (IORef a)
-        newTcRef v = tcLift $ newIORef v
-
         -- The typechecking environment maintains a list of all the unification
         -- variables created, for introspection/debugging/statistics wankery.
         tcRecordUnificationVar :: MetaTyVar TypeAST -> Tc (MetaTyVar TypeAST)
