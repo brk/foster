@@ -83,17 +83,9 @@ addInitialMonoTasksAndGo procdefs = do
                                  not (isNotInstantiable pd)]
     forM_ polyprocs (\(pd,ktvs) ->
          let id = ilProcIdent pd in
-         -- We'll rename top-level functions with a ".gen" suffix because
-         -- it's easy to identify their call sites, but anonymous functions
-         -- are a tad trickier, because their call indirect through closures.
-         -- This would be easier if we did monomorphization before closure
-         -- conversion.
-         let idgen = if isAnonFn id then id else idAppend id ".gen" in
-         monoScheduleWork (NeedsMono idgen id [PtrTypeUnknown | _ <- ktvs])
+         monoScheduleWork (NeedsMono id id [PtrTypeUnknown | _ <- ktvs])
       )
     goMonomorphize
-
-isAnonFn id = T.pack "<anon_fn_" `T.isPrefixOf` identPrefix id
 
 -- And similarly for data types with pointer-sized type arguments.
 monomorphizedDataTypes :: [DataType TypeIL] -> [DataType MonoType]
@@ -397,7 +389,7 @@ listize ty =
 getPolyProcId :: Ident -> [TypeIL] -> Ident
 getPolyProcId id tys =
   if List.all (\t -> kindOfTypeIL t == KindPointerSized) tys
-    then idAppend id ".gen"
+    then id
     else idAppend id (show tys)
 
 idAppend id s = case id of (GlobalSymbol o) -> (GlobalSymbol $ beforeS o)
