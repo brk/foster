@@ -13,7 +13,6 @@ module Foster.CFG
 , BasicBlockGraph(..)
 , BasicBlock
 , splitBasicBlock -- used in closure conversion
-, CFMiddle(..)
 , CFLast(..)
 , CFFn
 ) where
@@ -75,7 +74,7 @@ extractFunction st fn =
   fn { fnBody = BasicBlockGraph elab (catClosedGraphs blocks)
                                 (computeNumPredecessors elab blocks) }
   where -- Dunno why this function isn't in Hoopl...
-        catClosedGraphs :: [Graph Insn C C] -> Graph Insn C C
+        catClosedGraphs :: NonLocal i => [Graph i C C] -> Graph i C C
         catClosedGraphs = foldr (|*><*|) emptyClosedGraph
 
         entryLab [] = error $ "can't get entry block label from empty list!"
@@ -298,9 +297,6 @@ cfgIsThisFnVar b = do old <- get
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||| CFG Data Types |||||||||||||||||||||||{{{
-data CFMiddle = CFLetVal      Ident     Letable
-              | CFLetFuns     [Ident]   [CFFn]
-
 data CFLast = CFRetVoid
             | CFRet         AIVar
             | CFBr          BlockId [AIVar]
@@ -316,7 +312,7 @@ data Insn e x where
 data CFGState = CFGState {
     cfgUniq         :: IORef Uniq
   , cfgPreBlock     :: Maybe (BlockId, [AIVar], [Insn O O])
-  , cfgAllBlocks    :: [Graph Insn C C]
+  , cfgAllBlocks    :: [BasicBlock]
   , cfgHeader       :: Maybe BlockId
   , cfgCurrentFnVar :: Maybe AIVar
   , cfgKnownFnVars  :: Map Ident AIVar
@@ -334,9 +330,6 @@ instance NonLocal Insn where
   entryLabel (ILabel ((_,l), _)) = l
   successors (ILast last) = map blockLabel (blockTargetsOf (ILast last))
                           where blockLabel (_, label) = label
-
---entryBlockId :: Insn C O -> BlockId
---entryBlockId (ILabel (bid, _)) = bid
 
 blockTargetsOf :: Insn O C -> [BlockId]
 blockTargetsOf (ILast last) =
@@ -368,10 +361,10 @@ type SplitBasicBlock             = ( BlockEntry,  [Insn O O],  Insn O C )
 -- it's easier to glue together Graphs when building the basic blocks.
 type BasicBlock = Graph Insn C C
 data BasicBlockGraph = BasicBlockGraph { bbgEntry :: BlockEntry
-                                       , bbgBody :: (Graph Insn C C)
+                                       , bbgBody  :: BasicBlock
                                        , bbgNumPreds :: Map BlockId Int }
 type CFFn = Fn BasicBlockGraph TypeIL
-type BlockEntry = (BlockId, [AIVar])
+type BlockEntry = (BlockId, [TypedId TypeIL])
 
 -- We pair a name for later codegen with a label for Hoopl's NonLocal class.
 type BlockId = (String, Label)
