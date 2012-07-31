@@ -69,22 +69,20 @@ typecheckFnSCC showASTs showAnnExprs scc (ctx, tcenv) = do
     --      generated bindings?
     _bindings <- forM fns $ \fn ->
         case termVarLookup (fnAstName fn) (contextBindings ctx) of
-          Nothing  -> do newBinding <- unTc tcenv $ bindingForFnAST fn
-                         return (Nothing               , newBinding)
-          Just tid -> do let binding = TermVarBinding (fnAstName fn) tid
-                         return (Just (tidType tid), OK binding)
-    let bindings = map (\(t, OK b) -> (t, b)) _bindings
+          Nothing  -> do unTc tcenv $ bindingForFnAST fn
+          Just tid -> do return (OK $ TermVarBinding (fnAstName fn) tid)
+    let bindings = map (\(OK b) -> b) _bindings
 
     -- Note that all functions in an SCC are checked in the same environment!
     -- Also note that each function is typechecked with its own binding
     -- in scope (for typechecking recursive calls).
     -- TODO better error messages for type conflicts
-    tcResults <- forM (zip fns bindings) $ \(fn, (expectedType, binding)) -> do
+    tcResults <- forM (zip fns bindings) $ \(fn, binding) -> do
         let ast = (E_FnAST fn)
         let name = T.unpack $ fnAstName fn
         putStrLn $ "typechecking " ++ name
         annfn <- unTc tcenv $
-             tcSigmaToplevel binding (prependContextBinding ctx binding) ast expectedType
+             tcSigmaToplevel binding (prependContextBinding ctx binding) ast
 
         -- We can't convert AnnExpr to AIExpr here because
         -- the output context is threaded through further type checking.
