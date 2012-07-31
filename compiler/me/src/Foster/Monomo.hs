@@ -65,6 +65,8 @@ monoExternDecl :: ILExternDecl -> MoExternDecl
 monoExternDecl (ILDecl s t) = MoExternDecl s (monoType emptyMonoSubst t)
 
 addInitialMonoTasksAndGo procdefs = do
+    mapM (\pd -> do debug $ "procdef: " ++ show (ilProcIdent pd) ++ " // " ++ show (ilProcPolyTyVars pd)
+                  ) procdefs
     -- Any proc that is not itself subject to polyinstantiation when we begin
     -- is a root for the monomorphization process.
     let monoprocs = [pd | pd <- procdefs, isNotInstantiable pd]
@@ -152,11 +154,13 @@ monoSubstLookup _subst (SkolemTyVar  _ _ KindAnySizeType)  =
         --TyConApp ("BAD:SKOLEM TY VAR, ANY SIZE TYPE:"++nm) []
         error $ "Monomorphization (Monomo.hs:monoSubsLookup) "
              ++ "found a bad skolem type variable with non-pointer kind"
-monoSubstLookup subst tv@(BoundTyVar  _) =
+monoSubstLookup subst tv@(BoundTyVar nm) =
   case Map.lookup tv subst of
       Just monotype -> monotype
-      --Nothing -> TyConApp ("AAAAAAmissing:"++nm) []
-      Nothing -> error $ "Monomorphization (Monomo.hs:monoSubsLookup) "
+      Nothing -> if True
+                  then TyConApp ("AAAAAAmissing:"++nm) []
+                  else error $
+                         "Monomorphization (Monomo.hs:monoSubsLookup) "
                       ++ "found no monotype for variable " ++ show tv
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

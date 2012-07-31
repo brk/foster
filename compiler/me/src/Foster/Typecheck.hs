@@ -630,7 +630,7 @@ tcSigmaCall ctx rng base argstup exp_ty = do
         let fun_ty = typeAST annbase
         let argexprs = tupleAstExprs argstup
         debug $ "call: fn type is " ++ show fun_ty
-        (args_ty, res_ty) <- unifyFun fun_ty argexprs
+        (args_ty, res_ty) <- unifyFun fun_ty argexprs "tSC"
         debug $ "call: fn args ty is " ++ show args_ty
         debug $ "call: arg exprs are " ++ show argexprs
         sanityCheck (eqLen argexprs args_ty) "tcSigmaCall expected equal # of arguments!"
@@ -645,12 +645,12 @@ tcSigmaCall ctx rng base argstup exp_ty = do
         debug $ "call: overall ty is " ++ show (typeAST app)
         matchExp exp_ty app "tcSigmaCall"
 
-unifyFun :: Rho -> [a] -> Tc ([Sigma], Rho)
-unifyFun (FnTypeAST args res _cc _cs) _args = return (args, res)
-unifyFun (ForAllAST {}) _ = tcFails [out $ "invariant violated: sigma passed to unifyFun!"]
-unifyFun tau args = do
+unifyFun :: Rho -> [a] -> String -> Tc ([Sigma], Rho)
+unifyFun (FnTypeAST args res _cc _cs) _args _msg = return (args, res)
+unifyFun (ForAllAST {}) _ _ = tcFails [out $ "invariant violated: sigma passed to unifyFun!"]
+unifyFun tau args msg = do
         arg_tys <- mapM (\_ -> newTcUnificationVarTau "fn args ty") args
-        res_ty <- newTcUnificationVarTau "fn res  ty"
+        res_ty <- newTcUnificationVarTau ("fn res ty:" ++ msg)
         unify tau (FnTypeAST arg_tys res_ty FastCC FT_Func) (Just "unifyFun")
         return (arg_tys, res_ty)
 
@@ -703,6 +703,10 @@ tcSigmaFn ctx f expTy = do
         -- Check or infer the type of the body.
         debug $ "inferring type of body of polymorphic function"
         debug $ "\tafter generating meta ty vars for type formals: " ++ show (zip taus ktvs)
+        case expTy of
+           Check _ -> tcFails [out $ "not yet checking poly fn literals"]
+           _       -> return ()
+
         annbody <- case Nothing of
           Nothing   -> do inferSigma extCtx (fnAstBody f) "poly-fn body"
           Just _fnty -> do tcFails [out $ "TODO: check polymorphic types"]
@@ -755,7 +759,7 @@ tcSigmaFn ctx f expTy = do
         annbody <- case mb_exp_fnty of
           Nothing   -> do inferSigma extCtx (fnAstBody f) "mono-fn body"
           Just fnty -> do let var_tys = map tidType uniquelyNamedFormals
-                          (arg_tys, body_ty) <- unifyFun fnty var_tys
+                          (arg_tys, body_ty) <- unifyFun fnty var_tys "@"
                           _ <- sequence [subsCheckTy argty varty "mono-fn-arg" |
                                           (argty, varty) <- zip arg_tys var_tys]
                           -- TODO is there an arg translation?
@@ -949,8 +953,8 @@ subsCheckRhoTy (ForAllAST ktvs rho) rho2 = do -- Rule SPEC
              taus <- genTauUnificationVarsLike ktvs (\n -> "instSigma type parameter " ++ show n)
              rho1 <- instSigmaWith ktvs rho taus
              subsCheckRhoTy rho1 rho2
-subsCheckRhoTy rho1 (FnTypeAST as2 r2 _ _) = unifyFun rho1 as2 >>= \(as1, r1) -> subsCheckFunTy as1 r1 as2 r2
-subsCheckRhoTy (FnTypeAST as1 r1 _ _) rho2 = unifyFun rho2 as1 >>= \(as2, r2) -> subsCheckFunTy as1 r1 as2 r2
+subsCheckRhoTy rho1 (FnTypeAST as2 r2 _ _) = unifyFun rho1 as2 "!" >>= \(as1, r1) -> subsCheckFunTy as1 r1 as2 r2
+subsCheckRhoTy (FnTypeAST as1 r1 _ _) rho2 = unifyFun rho2 as1 "!" >>= \(as2, r2) -> subsCheckFunTy as1 r1 as2 r2
 subsCheckRhoTy tau1 tau2 -- Rule MONO
      = unify tau1 tau2 (Just "subsCheckRho") -- Revert to ordinary unification
 -- }}}
@@ -995,11 +999,13 @@ subsCheckRho esigma rho2 = do
                                       return esigma
                                       -}
     (rho1, FnTypeAST as2 r2 _ _) -> do debug $ "subsCheckRho fn 1"
-                                       (as1, r1) <- unifyFun rho1 as2
+                                       (as1, r1) <- unifyFun rho1 as2 "sCR1"
                                        subsCheckFunTy as1 r1 as2 r2
                                        return esigma
     (FnTypeAST as1 r1 _ _, _)    -> do debug "subsCheckRho fn 2"
-                                       (as2, r2) <- unifyFun rho2 as1
+                                       (as2, r2) <- unifyFun rho2 as1 "sCR2"
+                                       debug $ "&&&&&& r1: " ++ show r1
+                                       debug $ "&&&&&& r2: " ++ show r2
                                        subsCheckFunTy as1 r1 as2 r2
                                        return esigma
     -- Elide the two FUN rules and subsCheckFun because we're using
