@@ -141,10 +141,35 @@ typecheck want ctx expr maybeExpTy = do
 
     return annexpr
 
-tcSigmaToplevel (TermVarBinding txt tid) ctx ast expectedType = do
-  annexpr <- tcSigma ctx ast expectedType
-  unify (typeAST annexpr) (tidType tid) (Just $ "overall type of " ++ T.unpack txt)
+tcSigmaToplevel (TermVarBinding txt tid) ctx ast maybeExpectedType = do
+  annexpr <- tcSigma ctx ast maybeExpectedType
+  ty <- zonkType (tidType tid)
+  --unify (typeAST annexpr) (tidType tid) (Just $ "overall type of " ++ T.unpack txt)
+  subsCheck (typeAST annexpr) ty
+  --_ <- subsumedBy annexpr (tidType tid) (Just $ "overall type of " ++ T.unpack txt)
   return annexpr
+
+subsCheck :: Sigma -> Sigma -> Tc ()
+subsCheck sigma1 sigma2@(ForAllAST ktvs rho2) = do
+  (skols, rho) <- skolemize ktvs rho2
+  subsCheckRho sigma1 rho
+  esc_tvs <- getFreeTyVars [sigma1] --[sigma1, sigma2]
+  let bad_tvs = filter (`elem` esc_tvs) skols
+  sanityCheck (null bad_tvs) ("subsCheck: Type\n" ++ show sigma1 ++
+                       " not as polymorphic as\n" ++ show sigma2 ++
+                       "\nbad type variables: " ++ show bad_tvs)
+
+subsCheck sigma1 rho2 = subsCheckRho sigma1 rho2
+
+subsCheckRho :: Sigma -> Rho -> Tc ()
+subsCheckRho (ForAllAST ktvs rho) rho2 = do -- Rule SPEC
+             taus <- genTauUnificationVarsLike ktvs (\n -> "instSigma type parameter " ++ show n)
+             rho1 <- instSigmaWith ktvs rho taus
+             subsCheckRho rho1 rho2
+-- Elide the two FUN rules and subsCheckFun because we're using
+-- shallow, not deep, skolemization due to being a strict language.
+subsCheckRho tau1 tau2 -- Rule MONO
+     = unify tau1 tau2 (Just "subsCheckRho") -- Revert to ordinary unification
 
 -----------------------------------------------------------------------
 
@@ -569,17 +594,22 @@ instWith _          aexpSigma [] = do
         return aexpSigma
 
 instWith rng aexpSigma taus = do
-    -- TODO shallow zonk here
-    case typeAST aexpSigma of
-        ForAllAST ktvs rho -> do
-            sanityCheck (List.length taus == List.length ktvs)
-                        ("Arity mismatch in instWith: can't instantiate"
-                        ++ show (List.length ktvs) ++ " type variables with "
-                        ++ show (List.length taus) ++ " types!")
-            let tyvarsAndTys = List.zip (tyvarsOf ktvs) taus
-            return $ E_AnnTyApp rng (parSubstTy tyvarsAndTys rho)
-                                    aexpSigma (tuplizeNE taus)
-        _ -> tcFails [out $ "Precondition violated: instWith expected ForAll type!"]
+    instRho <- instSigma (typeAST aexpSigma) taus
+    return $ E_AnnTyApp rng instRho aexpSigma (tuplizeNE taus)
+
+instSigma sigma taus = do
+  -- TODO shallow zonk here
+  case sigma of
+     ForAllAST ktvs rho -> instSigmaWith ktvs rho taus
+     rho                -> return rho
+
+instSigmaWith ktvs rho taus = do
+    sanityCheck (List.length taus == List.length ktvs)
+                ("Arity mismatch in instSigma: can't instantiate"
+                ++ show (List.length ktvs) ++ " type variables with "
+                ++ show (List.length taus) ++ " types!")
+    let tyvarsAndTys = List.zip (tyvarsOf ktvs) taus
+    return $ parSubstTy tyvarsAndTys rho
 
 vname (E_AnnVar _rng av) n = show n ++ " for " ++ T.unpack (identPrefix $ tidIdent av)
 vname _                  n = show n
