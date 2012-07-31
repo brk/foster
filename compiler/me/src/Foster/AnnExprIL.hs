@@ -55,7 +55,7 @@ data AIExpr=
         -- Terms indexed by types
         | E_AITyApp { aiTyAppOverallType :: TypeIL
                     , aiTyAppExpr        :: AIExpr
-                    , aiTyAppArgTypes    :: TypeIL }
+                    , aiTyAppArgTypes    :: [TypeIL] }
 
 ail :: Context ty -> AnnExpr TypeAST -> Tc AIExpr
 ail ctx ae =
@@ -135,26 +135,27 @@ ail ctx ae =
                     prim' <- ilPrimFor pti id qt (aiVar ctx)
                     return $ AICall ti (E_AIPrim $ prim') argsi
 
-                E_AnnTyApp _ _ot (AnnPrimitive _rng (TypedId _ (GlobalSymbol gs))) argty
+                E_AnnTyApp _ _ot (AnnPrimitive _rng (TypedId _ (GlobalSymbol gs))) [argty]
                         | gs == T.pack "allocDArray" -> do
                     let [arraySize] = argsi
                     aty <- qt argty
                     return $ AIAllocArray aty arraySize
 
-                E_AnnTyApp _ ot (AnnPrimitive _rng (TypedId vty id)) appty ->
+                E_AnnTyApp _ ot (AnnPrimitive _rng (TypedId vty id)) apptys ->
                    let primName = identPrefix id in
-                   case (coroPrimFor primName, appty) of
-                     (Just coroPrim, TupleTypeAST [argty, retty]) -> do
+                   case (coroPrimFor primName, apptys) of
+                     (Just coroPrim, [argty, retty]) -> do
                        [aty, rty] <- mapM qt [argty, retty]
                        return $ AICall ti (E_AIPrim $ CoroPrim coroPrim aty rty) argsi
                      _otherwise -> do
                        -- v[types](args) ~~>> let <fresh> = v[types] in <fresh>(args)
-                       [vti, oti, appti] <- mapM qt [vty, ot, appty]
+                       [vti, oti] <- mapM qt [vty, ot]
+                       apptysi    <- mapM qt apptys
                        let primVar = TypedId vti id
                        call <- return $ AICall ti (E_AIPrim $ NamedPrim primVar) argsi
                        let primName = identPrefix id
                        x <- tcFreshT $ "appty_" `prependedTo` primName
-                       return $ AILetVar x (E_AITyApp oti (E_AIVar primVar) appti) call
+                       return $ AILetVar x (E_AITyApp oti (E_AIVar primVar) apptysi) call
 
                 _otherwise -> do bi <- q b
                                  return $ AICall ti bi argsi
@@ -162,19 +163,16 @@ ail ctx ae =
         E_AnnVar _rng v -> do vv <- aiVar ctx v
                               return $ E_AIVar vv
 
-        E_AnnTyApp rng t e argty  -> do
-                ti <- qt t
-                at <- qt argty
-                ae <- q e
+        E_AnnTyApp rng t e raw_argtys  -> do
+                ti     <- qt t
+                argtys <- mapM qt raw_argtys
+                ae     <- q e
 
                 origExprType <- qt (typeAST e)
                 let ktvs = tyvarBindersOf origExprType
-                mapM_ (kindCheckSubsumption rng) (zip ktvs (listize at))
+                mapM_ (kindCheckSubsumption rng) (zip ktvs argtys)
 
-                return $ E_AITyApp ti ae at
-
-listize (TupleTypeIL tys) = tys
-listize ty                = [ty]
+                return $ E_AITyApp ti ae argtys
 
 kindCheckSubsumption :: SourceRange -> ((TyVar, Kind), TypeIL) -> Tc ()
 kindCheckSubsumption rng ((tv, kind), ty) = do

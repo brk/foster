@@ -195,7 +195,7 @@ parseSeq pbexpr rng = do
 parseTyApp pbexpr range = do
     [body] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
     let tys = map parseType (toList $ PbExpr.ty_app_arg_type pbexpr)
-    return $ E_TyApp range  body (maybeTupleP tys)
+    return $ E_TyApp range  body tys
 
     where maybeTupleP []    = Nothing
           maybeTupleP [arg] = Just $ arg

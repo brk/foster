@@ -52,13 +52,13 @@ data AnnExpr ty =
         | AnnDeref      SourceRange ty           (AnnExpr ty)
         | AnnStore      SourceRange (AnnExpr ty) (AnnExpr ty)
         -- Array operations
-        | AnnArrayRead  SourceRange ty (ArrayIndex (AnnExpr ty)) 
+        | AnnArrayRead  SourceRange ty (ArrayIndex (AnnExpr ty))
         | AnnArrayPoke  SourceRange ty (ArrayIndex (AnnExpr ty)) (AnnExpr ty)
         -- Terms indexed by types
         | E_AnnTyApp {  annTyAppRange       :: SourceRange
                      ,  annTyAppOverallType :: ty
                      ,  annTyAppExpr        :: (AnnExpr ty)
-                     ,  annTyAppArgTypes    :: ty }
+                     ,  annTyAppArgTypes    :: [ty] }
         -- Others
         | AnnCompiles   SourceRange (CompilesResult (AnnExpr ty))
 

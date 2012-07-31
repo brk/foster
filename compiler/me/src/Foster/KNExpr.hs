@@ -45,7 +45,7 @@ data KNExpr =
         | KNAllocArray  TypeIL AIVar
         | KNArrayRead   TypeIL (ArrayIndex AIVar)
         | KNArrayPoke          (ArrayIndex AIVar) AIVar
-        | KNTyApp       TypeIL AIVar TypeIL
+        | KNTyApp       TypeIL AIVar [TypeIL]
         deriving (Show)
 
 type KN a = State Uniq a
@@ -95,7 +95,7 @@ kNormalize mebTail expr =
       AIAllocArray t a      -> do a' <- gn a ; nestedLets [a'] (\[x] -> KNAllocArray t x)
       AIAlloc a rgn         -> do a' <- gn a ; nestedLets [a'] (\[x] -> KNAlloc x rgn)
       AIDeref   a           -> do a' <- gn a ; nestedLets [a'] (\[x] -> KNDeref x)
-      E_AITyApp t a argty   -> do a' <- gn a ; nestedLets [a'] (\[x] -> KNTyApp t x argty)
+      E_AITyApp t a argtys  -> do a' <- gn a ; nestedLets [a'] (\[x] -> KNTyApp t x argtys)
 
       AILetVar id  a b  -> do a' <- gn a
                               b' <- gt b; return $ buildLet id a' b'

@@ -219,7 +219,7 @@ computeBlocks expr idmaybe k = do
          KNAllocArray t v    -> ILAllocArray t v
          KNArrayRead  t ari  -> ILArrayRead  t ari
          KNArrayPoke  ari c  -> ILArrayPoke  ari c
-         KNTyApp t v argty   -> ILTyApp t v argty
+         KNTyApp t v argtys  -> ILTyApp t v argtys
          _                   -> error $ "non-letable thing seen by letable: "
                                       ++ show expr
 

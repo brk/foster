@@ -197,7 +197,7 @@ tcRho ctx expr expTy = do
       E_FnAST f                      -> tcRhoFn       ctx       f          expTy
       E_LetRec rng bindings e        -> tcRhoLetRec   ctx rng   bindings e expTy
       E_LetAST rng binding  e        -> tcRhoLet      ctx rng   binding  e expTy
-      E_TyApp  rng e t               -> tcRhoTyApp    ctx rng   e t        expTy
+      E_TyApp  rng e types           -> tcRhoTyApp    ctx rng   e types    expTy
       E_Case   rng a branches        -> tcRhoCase     ctx rng   a branches expTy
       E_AllocAST rng a rgn           -> tcRhoAlloc    ctx rng   a rgn      expTy
       E_StoreAST rng e1 e2           -> tcRhoStore    ctx rng   e1 e2      expTy
@@ -572,20 +572,21 @@ notAnnFn _           = True
 -- G |- t_n <::: k_n                          (checked later)
 -- ------------------------------------------
 -- G |- e :[ t1..tn ]  ::: rho{t1..tn/a1..an}
-tcRhoTyApp ctx rng e mb_t1tn expTy = do
+tcRhoTyApp ctx rng e t1tn expTy = do
 -- {{{
     debug $ "ty app: inferring sigma type for base..."
     aeSigma <- inferSigma ctx e "tyapp"
     debug $ "ty app: base has type " ++ show (typeAST aeSigma)
     tbase <- return (typeAST aeSigma)
     --tbase <- shallowZonk (typeAST aeSigma)
-    case (mb_t1tn, tbase) of
-      (Nothing  , _           ) -> return aeSigma
-      (Just t1tn, ForAllAST {}) -> do let resolve = resolveType rng (localTypeBindings ctx)
-                                      tcLift $ putStrLn $ "local type bindings: " ++ show (localTypeBindings ctx)
-                                      types <- mapM resolve (listize t1tn)
-                                      expr <- instWith rng aeSigma types
-                                      matchExp expTy expr "tyapp"
+    case (t1tn, tbase) of
+      ([]  , _           ) -> return aeSigma
+      (t1tn, ForAllAST {}) -> do let resolve = resolveType rng (localTypeBindings ctx)
+                                 tcLift $ putStrLn $ "local type bindings: " ++ show (localTypeBindings ctx)
+                                 tcLift $ putStrLn $ "********raw type arguments: " ++ show t1tn
+                                 types <- mapM resolve t1tn
+                                 expr <- instWith rng aeSigma types
+                                 matchExp expTy expr "tyapp"
       (_        , MetaTyVar _ ) -> do
         tcFails [out $ "Cannot instantiate unknown type of term:"
                 ,out $ highlightFirstLine $ rangeOf aeSigma
@@ -1038,11 +1039,7 @@ instWith _          aexpSigma [] = do
 
 instWith rng aexpSigma taus = do
     instRho <- tryInstSigmaWith (typeAST aexpSigma) taus
-    return $ E_AnnTyApp rng instRho aexpSigma (tuplizeNE taus)
-      where
-        tuplizeNE []   = error "Preconditition for tuplizeNE violated!"
-        tuplizeNE [ty] = ty
-        tuplizeNE tys  = TupleTypeAST tys
+    return $ E_AnnTyApp rng instRho aexpSigma taus
 
 tryInstSigmaWith sigma taus = do
   --zonked <- shallowZonk sigma
@@ -1243,10 +1240,6 @@ tcMaybeType Nothing   desc = newTcUnificationVarTau desc
 tcMaybeType (Just t) _desc = return t
 
 bindingForVar v = TermVarBinding (identPrefix $ tidIdent v) v
-
-listize (TupleTypeAST []) = [TupleTypeAST []]
-listize (TupleTypeAST tys) = tys
-listize ty                 = [ty]
 
 tyvarsOf ktyvars = map (\(tv,_k) -> tv) ktyvars
 

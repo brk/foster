@@ -217,7 +217,7 @@ data IExpr =
         | ICall         Ident  [Ident]
         | ICallPrim     ILPrim [Ident]
         | ICase         Ident  {-(DecisionTree KNExpr)-} [(Pattern TypeIL, SSTerm)]
-        | ITyApp        Ident  TypeIL
+        | ITyApp        Ident  [TypeIL]
         | IAppCtor      CtorId [Ident]
         deriving (Show)
 
@@ -265,7 +265,7 @@ ssTermOfExpr expr =
     KNAlloc a _rgn         -> SSTmExpr  $ IAlloc (idOf a)
     KNDeref   a            -> SSTmExpr  $ IDeref (idOf a)
     KNStore   a b          -> SSTmExpr  $ IStore (idOf a) (idOf b)
-    KNTyApp _t v argty     -> SSTmExpr  $ ITyApp (idOf v) argty
+    KNTyApp _t v argtys    -> SSTmExpr  $ ITyApp (idOf v) argtys
     KNCase _t a bs {-dt-}  -> SSTmExpr  $ ICase (idOf a) {-dt-} [(p, tr e) |
                                                               ((p, _), e) <- bs]
     KNAppCtor _t cid vs    -> SSTmExpr  $ IAppCtor cid (map idOf vs)

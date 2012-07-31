@@ -79,7 +79,7 @@ convertExprAST f expr =
     E_AllocAST     rng a rgn    -> liftM2 (E_AllocAST     rng)   (q a) (return rgn)
     E_DerefAST     rng a        -> liftM  (E_DerefAST     rng)   (q a)
     E_StoreAST     rng a b      -> liftM2 (E_StoreAST     rng)   (q a) (q b)
-    E_TyApp        rng a mt     -> liftM2 (E_TyApp        rng)   (q a) (liftMaybe f mt)
+    E_TyApp        rng a tys    -> liftM2 (E_TyApp        rng)   (q a) (mapM f tys)
     E_VarAST       rng v        -> liftM  (E_VarAST       rng) (convertEVar f v)
     E_TupleAST tup              -> liftM  (E_TupleAST        ) (convertTuple f tup)
     E_ArrayRead    rng (ArrayIndex a b rng2 s) -> do [x, y] <- mapM q [a, b]

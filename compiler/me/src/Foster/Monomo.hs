@@ -316,8 +316,7 @@ monomorphizeLetable subst expr =
     let qv = monoVar subst  in
     case expr of
         -- This is the only interesting case!
-        ILTyApp t v argty -> do
-            let argtys = listize argty
+        ILTyApp t v argtys -> do
             case v of
               -- If we're polymorphically instantiating a global symbol
               -- (i.e. a proc) then we can statically look up the proc
@@ -326,7 +325,6 @@ monomorphizeLetable subst expr =
               TypedId (ForAllIL {}) id@(GlobalSymbol _) -> do
                   let polyid = getPolyProcId id argtys
                   let monotys = map qt argtys
-                  debug $ "argty: " ++ show argty ++ " ==> " ++ show argtys
                   monoScheduleWork (NeedsMono polyid id monotys)
                   return $ Instantiated (TypedId t polyid)
 
@@ -383,14 +381,6 @@ monoPrim subst p =
 -- monoAllocInfo :: MonoSubst -> AllocInfo TypeIL -> AllocInfo MonoType
 -- monoAllocInfo subst (AllocInfo t rgn arraysize) =
 --     AllocInfo (monoType subst t) rgn (fmap (monoVar subst) arraysize)
-
--- matching definition from Typecheck.hs
--- does listize (TupleTypeIL []) result in [] or [unit] ?
-listize ty =
-  case ty of
-   TupleTypeIL []  -> [ty]
-   TupleTypeIL tys -> tys
-   _               -> [ty]
 
 getPolyProcId :: Ident -> [TypeIL] -> Ident
 getPolyProcId id tys =

@@ -38,5 +38,5 @@ data Letable =
         | ILAllocArray  TypeIL AIVar
         | ILArrayRead   TypeIL (ArrayIndex AIVar)
         | ILArrayPoke          (ArrayIndex AIVar)  AIVar
-        | ILTyApp       TypeIL AIVar TypeIL
+        | ILTyApp       TypeIL AIVar [TypeIL]
         deriving (Show)
