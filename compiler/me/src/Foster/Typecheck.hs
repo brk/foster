@@ -988,6 +988,7 @@ zonkType :: TypeAST -> Tc TypeAST
 zonkType x = do
     case x of
         MetaTyVar m -> do mty <- readTcMeta m
+                          tcLift $ putStrLn $ "zonking MTV: " ++ show mty
                           case mty of
                             Nothing -> return x
                             Just ty -> do ty' <- zonkType ty
@@ -1000,7 +1001,8 @@ zonkType x = do
         TupleTypeAST types    -> liftM (TupleTypeAST  ) (mapM zonkType types)
         ForAllAST  tvs rho    -> liftM (ForAllAST tvs ) (zonkType rho)
         RefTypeAST    ty      -> liftM (RefTypeAST    ) (zonkType ty)
-        ArrayTypeAST  ty      -> liftM (ArrayTypeAST  ) (zonkType ty)
+        ArrayTypeAST  ty      -> do tcLift $ putStrLn $ "zonking array ty: " ++ show ty
+                                    liftM (ArrayTypeAST  ) (zonkType ty)
         CoroTypeAST s r       -> liftM2 (CoroTypeAST  ) (zonkType s) (zonkType r)
         FnTypeAST s r cc cs   -> do s' <- zonkType s ; r' <- zonkType r
                                     return $ FnTypeAST s' r' cc cs
@@ -1035,11 +1037,28 @@ getFreeTyVars xs = do zs <- mapM zonkType xs
 
 subsumedBy :: AnnExpr Sigma -> Sigma -> Maybe String -> Tc (AnnExpr Rho)
 subsumedBy (AnnTuple (E_AnnTuple rng exprs)) (TupleTypeAST tys) msg = do
-        exprs' <- mapM (\(e,t) -> subsumedBy e t msg) (zip exprs tys)
+        when tcVERBOSE $ do
+          tcLift $ runOutput $ outCS Green $ "subsumedBy tuple... "
+          tcLift $ putStrLn ""
+        exprs' <- mapM (\(e,t) -> do
+                when tcVERBOSE $ do
+                  tcLift $ runOutput $ outCS Green $ "subsumedBy tuple elt  :?: " ++ show t
+                  tcLift $ putStrLn ""
+                  tcLift $ runOutput $ showStructure e
+                  tcLift $ putStrLn ""
+                rv <- subsumedBy e t msg
+                when tcVERBOSE $ do
+                  tcLift $ runOutput $ outCS Green $ "subsumedBy tuple elt  done"
+                  tcLift $ putStrLn ""
+                return rv
+                ) (zip exprs tys)
         return (AnnTuple (E_AnnTuple rng exprs'))
 subsumedBy annexpr st2 msg = do
+    tcLift $ putStrLn "zonking t1"
     t1' <- zonkType (typeAST annexpr)
+    tcLift $ putStrLn "zonking t2"
     t2' <- zonkType st2
+    tcLift $ putStrLn "zonking done"
     when tcVERBOSE $ do
       tcLift $ runOutput $ outCS Green $ "subsumedBy " ++ show t1' ++ " <=? " ++ show t2'
       tcLift $ putStrLn ""
