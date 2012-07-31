@@ -6,10 +6,11 @@
 module Foster.Typecheck(tcSigmaToplevel) where
 
 import qualified Data.List as List(length, zip)
+import Data.List(foldl')
 import Control.Monad(liftM, forM_, forM, liftM, liftM2, when)
 
 import qualified Data.Text as T(Text, unpack)
-import qualified Data.Map as Map(lookup)
+import qualified Data.Map as Map(lookup, insert)
 import qualified Data.Set as Set(toList, fromList)
 
 import Foster.Base
@@ -793,6 +794,17 @@ typecheckFn' ctx f cc expArgType expBodyType = do
         verifyNonOverlappingBindings rng (T.unpack fnProtoName)
          [TermVarBinding (identPrefix $ tidIdent v) undefined | v <- rawFormals]
         mapM uniquelyName rawFormals
+      where
+        uniquelyName :: TypedId t -> Tc (TypedId t)
+        uniquelyName (TypedId ty id) = do
+            uniq <- newTcUniq
+            newid <- rename id uniq
+            return (TypedId ty newid)
+          where
+            rename :: Ident -> Uniq -> Tc Ident
+            rename (Ident p _) u = return (Ident p u)
+            rename (GlobalSymbol name) _u =
+                    tcFails [out $ "Cannot rename global symbol " ++ show name]
 
     -- Unify the types of the variables with the types expected of them.
     equateArgTypes :: [AnnVar] -> (Maybe TypeAST) -> Tc ()
@@ -838,17 +850,6 @@ typecheckTuple want ctx rng exprs maybeExpectedType =
 -- }}}
 
 -----------------------------------------------------------------------
-
-uniquelyName :: TypedId t -> Tc (TypedId t)
-uniquelyName (TypedId ty id) = do
-    uniq <- newTcUniq
-    newid <- rename id uniq
-    return (TypedId ty newid)
-  where
-    rename :: Ident -> Uniq -> Tc Ident
-    rename (Ident p _) u = return (Ident p u)
-    rename (GlobalSymbol name) _u =
-            tcFails [out $ "Cannot rename global symbol " ++ show name]
 
 verifyNonOverlappingBindings :: SourceRange -> String -> [ContextBinding ty] -> Tc ()
 verifyNonOverlappingBindings rng name binders = do
