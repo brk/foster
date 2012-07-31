@@ -27,7 +27,7 @@ emptyTypeSubst = Map.empty
 
 ----------------------
 
-extractSubstTypes :: [MetaTyVar] -> TypeSubst -> Tc [TypeAST]
+extractSubstTypes :: [MetaTyVar TypeAST] -> TypeSubst -> Tc [TypeAST]
 extractSubstTypes metaVars tysub = do
     mapM lookup metaVars where
          lookup m =
@@ -150,7 +150,7 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
         [out $ "Unable to unify\n\t" ++ show t1 ++ "\nand\n\t" ++ show t2
         ,out $ "t1::", showStructure t1, out $ "t2::", showStructure t2]
 
-tcUnifyVar :: MetaTyVar -> TypeAST -> TypeSubst -> [TypeConstraint] -> Tc UnifySoln
+tcUnifyVar :: MetaTyVar TypeAST -> TypeAST -> TypeSubst -> [TypeConstraint] -> Tc UnifySoln
 
 -- Ignore attempts to unify a meta type variable with itself.
 tcUnifyVar m1 (MetaTyVar m2) tysub constraints | m1 == m2

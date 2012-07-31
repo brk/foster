@@ -968,7 +968,7 @@ unify t1 t2 msg = do
                              False   -> writeTcMeta m x2
                              True    -> occurdCheck m x2
   where
-     collectUnificationVars :: TypeAST -> [MetaTyVar]
+     collectUnificationVars :: TypeAST -> [MetaTyVar TypeAST]
      collectUnificationVars x =
          case x of
              PrimIntAST _          -> []

@@ -10,6 +10,7 @@ module Foster.Base where
 import Foster.Kind
 import Foster.Output
 
+import Data.IORef(IORef)
 import Data.Set as Set(fromList, toList, difference, insert, empty, member)
 import Data.Sequence as Seq(Seq, length, index, (><))
 import Data.Map as Map(Map)
@@ -40,6 +41,14 @@ data ArrayIndex expr = ArrayIndex expr expr SourceRange
 
 data TyVar = BoundTyVar String -- bound by a ForAll, that is
            | SkolemTyVar String Uniq Kind
+
+
+data MTVQ = MTVSigma | MTVTau deriving (Eq)
+data MetaTyVar t = Meta { mtvConstraint :: MTVQ
+                        , mtvDesc       :: String
+                        , mtvUniq       :: Uniq
+                        , mtvRef        :: IORef (Maybe t)
+                        }
 
 childrenOfArrayIndex (ArrayIndex a b _ _) = [a, b]
 

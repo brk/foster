@@ -49,7 +49,7 @@ termVarLookup name bindings = Map.lookup name bindings
 --   of functions to be type checked in the same Gamma context. But
 --   we do need to thread the supply of unique variables through...
 data TcEnv = TcEnv { tcEnvUniqs :: IORef Uniq
-                   , tcUnificationVars :: IORef [MetaTyVar]
+                   , tcUnificationVars :: IORef [MetaTyVar TypeAST]
                    , tcParents  :: [ExprAST TypeAST]
                    }
 
@@ -98,10 +98,10 @@ tcFailsMore errs = do
     (e:_) -> tcFails $ errs ++ [out $ "Unification failure triggered when " ++
                   "typechecking source line:" ++ highlightFirstLine (rangeOf e)]
 
-readTcMeta :: MetaTyVar -> Tc (Maybe Tau)
+readTcMeta :: MetaTyVar ty -> Tc (Maybe ty)
 readTcMeta m = tcLift $ readIORef (mtvRef m)
 
-writeTcMeta :: MetaTyVar -> Tau -> Tc ()
+writeTcMeta :: MetaTyVar ty -> ty -> Tc ()
 writeTcMeta m v = do
   --tcLift $ putStrLn $ "=========== Writing meta type variable: " ++ show (MetaTyVar m) ++ " := " ++ show v
   tcLift $ writeIORef (mtvRef m) (Just v)
@@ -126,7 +126,7 @@ newTcUnificationVar_ q desc = do
 
         -- The typechecking environment maintains a list of all the unification
         -- variables created, for introspection/debugging/statistics wankery.
-        tcRecordUnificationVar :: MetaTyVar -> Tc MetaTyVar
+        tcRecordUnificationVar :: MetaTyVar TypeAST -> Tc (MetaTyVar TypeAST)
         tcRecordUnificationVar m = Tc $ \env ->
                         do modifyIORef (tcUnificationVars env) (m:); retOK m
 

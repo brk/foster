@@ -456,7 +456,7 @@ lowerModule ai_mod ctx_il = do
                 return ()
 
 showGeneratedMetaTypeVariables :: (Show ty) =>
-                               IORef [MetaTyVar] -> Context ty -> Compiled ()
+                               IORef [MetaTyVar TypeAST] -> Context ty -> Compiled ()
 showGeneratedMetaTypeVariables varlist ctx_il =
   ccWhen ccVerbose $ do
     metaTyVars <- readIORef varlist

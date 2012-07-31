@@ -14,7 +14,6 @@ module Foster.TypeAST(
 )
 where
 
-import Data.IORef(IORef)
 import Data.Map as Map(fromList, toList)
 import Data.Char as Char(isLetter)
 
@@ -42,20 +41,9 @@ data TypeAST =
                             , fnTypeProcOrFunc :: ProcOrFunc }
          | ForAllAST        [(TyVar, Kind)] Rho
          | TyVarAST         TyVar
-         | MetaTyVar        MetaTyVar
+         | MetaTyVar        (MetaTyVar TypeAST)
 
-data MTVQ = MTVSigma | MTVTau deriving (Eq)
-data MetaTyVar = Meta { mtvConstraint :: MTVQ
-                      , mtvDesc       :: String
-                      , mtvUniq       :: Uniq
-                      , mtvRef        :: TyRef
-                      }
-
-type TyRef = IORef (Maybe TypeAST)
-    -- Nothing: type variable not substituted
-    -- Just ty: ty var has been substituted by ty
-
-instance Eq MetaTyVar where
+instance Eq (MetaTyVar t) where
   m1 == m2 = case (mtvUniq m1 == mtvUniq m2, mtvRef m1 == mtvRef m2) of
        (True,  True)  -> True
        (False, False) -> False
