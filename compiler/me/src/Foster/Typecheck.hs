@@ -643,7 +643,14 @@ typecheckCall ctx rng base args maybeExpTy = do
      tcLift $ putStrLn ""
    -- Act in checking mode, since we don't yet know if we're looking
    -- at a plain function or a forall-quantified type.
-   eb <- tcSigma ctx base Nothing
+   eb0 <- tcSigma ctx base Nothing
+   eb <- inst eb0 -- In case base has a forall-type, instantiate it with
+                 -- meta type variables before continuing.
+
+   when tcVERBOSE $ do
+     tcLift $ runOutput $ (outCS Green "typecheckCallSigma: base type was ") ++ out (show $ typeAST eb)
+     tcLift $ putStrLn ""
+
    case typeAST eb of
       fnty@FnTypeAST {} -> do
             AnnTuple eargs <- tcSigma ctx args (Just $ fnTypeDomain fnty)
