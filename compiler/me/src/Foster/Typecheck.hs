@@ -104,6 +104,9 @@ inferSigma :: Context TypeAST -> Term -> String -> Tc (AnnExpr Sigma)
 inferSigma ctx (E_VarAST rng v) msg = tcSigmaVar ctx rng (evarName v)
 inferSigma ctx (E_FnAST f)      msg = do r <- newTcRef (error $ "inferSigmaFn: empty result: " ++ msg)
                                          tcSigmaFn  ctx f (Infer r)
+inferSigma ctx (E_CallAST   rng base argtup) msg = do
+                r <- newTcRef (error $ "inferSigmaFn: empty result: " ++ msg)
+                tcSigmaCall     ctx rng   base (E_TupleAST argtup) (Infer r)
 inferSigma ctx e msg
    = do {
         ; debug $ "inferSigma " ++ highlightFirstLine (rangeOf e)
@@ -501,11 +504,9 @@ tcRhoLet ctx0 rng (TermBinding v e1) e2 mt = do
 -- {{{
     sanityCheck (notRecursive boundName e1) errMsg
     id     <- tcFreshT boundName
-    vExpTy <- case maybeVarType of
-                 Nothing -> do r <- tcLift $ newIORef (error "let binding")
-                               return (Infer r)
-                 Just  t -> do return (Check t)
-    a1     <- tcRho ctx0 e1 vExpTy
+    a1 <- case maybeVarType of
+                 Nothing -> inferSigma ctx0 e1 "let"
+                 Just  t -> checkSigma ctx0 e1 t
     let v   = TypedId (typeAST a1) id
     let ctx = prependContextBindings ctx0 [bindingForVar v]
     a2     <- tcRho ctx  e2 mt
@@ -606,6 +607,10 @@ tcRhoCall :: Context Sigma -> SourceRange
               -> ExprAST TypeAST -> ExprAST TypeAST
               -> Expected TypeAST -> Tc (AnnExpr Rho)
 tcRhoCall ctx rng base args exp_ty = do
+   app <- tcSigmaCall ctx rng base args exp_ty
+   instSigma app exp_ty
+
+tcSigmaCall ctx rng base args exp_ty = do
         annbase <- inferRho ctx base "called base"
         let fun_ty = typeAST annbase
         debug $ "call rho: fn type is " ++ show fun_ty
@@ -616,7 +621,8 @@ tcRhoCall ctx rng base args exp_ty = do
         debug $ "call rho: annargs is " ++ show args
         debug $ "call rho: res_ty is " ++ show res_ty
         debug $ "call rho: exp_ty is " ++ show exp_ty
-        app <- instSigma (AnnCall rng res_ty annbase annargs) exp_ty
+        debug $ "tcRhoCall deferring to instSigma"
+        let app = AnnCall rng res_ty annbase annargs
         debug $ "call rho:     ty is " ++ show (typeAST app)
         case exp_ty of
           (Infer _) -> do return app
@@ -640,6 +646,7 @@ unifyFun tau = do arg_ty <- newTcUnificationVarTau "fn args ty"
 -- {{{
 tcRhoFn ctx f expTy = do
   sigma <- tcSigmaFn ctx f expTy
+  debug $ "tcRhoFn instantiating " ++ show (typeAST sigma)
   inst sigma
 -- }}}
 
@@ -970,6 +977,7 @@ subsCheckRho :: AnnExpr Sigma -> Rho -> Tc (AnnExpr Rho)
 subsCheckRho esigma rho2 = do
   case typeAST esigma of
     (ForAllAST {}) -> do -- Rule SPEC
+        debug $ "subsCheckRho instantiating " ++ show (typeAST esigma)
         erho <- inst esigma
         subsCheckRho erho rho2
         {-
@@ -1236,6 +1244,7 @@ tcMaybeType (Just t) _desc = return t
 
 bindingForVar v = TermVarBinding (identPrefix $ tidIdent v) v
 
+listize (TupleTypeAST []) = [TupleTypeAST []]
 listize (TupleTypeAST tys) = tys
 listize ty                 = [ty]
 
