@@ -9,10 +9,15 @@ issues/decisions to be made regarding implementing polymorphism:
 
 .. code-block :: haskell
 
-    -- A top-level polymorphic function; easy for the compiler
+    -- A known polymorphic function; easy for the compiler
     -- to specialize at compile-time.
     id :: forall a, (a -> a)
     id x = x
+
+    -- The definition of the identity function, specialized to f64 values.
+    -- This is what we want the compiler to produce for id:[f64]
+    id_f64 :: f64 -> f64
+    id_f64 x = x
 
     -- A higher-order function involving passed-in function of concrete type
     -- which "wants" args to be passed in special registers on most machines...
@@ -24,9 +29,10 @@ issues/decisions to be made regarding implementing polymorphism:
     app_gen1 x f = f x
 
     -- The same function, but involving rank-2 polymorphism.
-    app_gen2 :: forall b, {b , forall a, (a -> a) } -> b
+    app_gen2 :: forall b, b -> (forall a, { a -> a }) -> b
     app_gen2 x f = f:[b] x
 
+    -- uid is an unknown function with the identity function's signature.
     issues :: int -> { forall a, a -> a } -> ()
     issues x uid =
     {- a -}   uid:[f64] 42.0
@@ -44,8 +50,9 @@ issues/decisions to be made regarding implementing polymorphism:
            what Haskell does. At the moment, this is the most appealing long-
            term option I see.
          # (ML) Forbid higher-rank polymorphism, so that it's not legal to
-           pass uid in the first place. Monomorphizing code is easy, but we
-           lose separate compilation.
+           pass uid in the first place. Thus every instantiation is done on
+           a known function, so monomorphizing code is easy, but we lose
+           separate compilation.
          # (O'Caml) Force uniform representations, and make monomorphic code pay
            the price. Not pragmatic, and probably complicates interop with GPUs.
            It's not clear what the actual costs of this option are, though.
@@ -56,8 +63,8 @@ issues/decisions to be made regarding implementing polymorphism:
          # (Church) Polymorphism as products/adopt union and intersection types.
            Complicated, not well explored.
          # (just dumb) Give the two specializations different function types,
-           and lose much of the benefit of abstracting over types.
-           Not appealing.
+           effectively tracking the calling convention for function arguments
+           via types. This isn't very appealing.
          # (Leroy) Have the "caller" generate coercions around the uniform id
            function which convert from (& back to) non-uniform representations.
            This doesn't work for code involving recursive data types or arrays.
@@ -76,14 +83,15 @@ issues/decisions to be made regarding implementing polymorphism:
 
 Inside the body of ``issues``, ``uid`` is bound to an unknown function.
 That implies that when ``uid`` is instantiated to (presumably) different
-result types, its implementation cannot be specialized for specific types.
+result types, its implementation---including its calling convention---cannot
+be specialized for specific types.
 In other words, each argument must be passed in a general-purpose register.
 So e.g. on a 32-bit machine, a 64-bit floating point arg must be boxed.
 
 Line by line:
 
-* ``a``: ``uid:[f64]`` is uniform, so ``42.0`` must be made uniform as well,
-  presumably by boxing.
+* ``a``: ``uid:[f64]`` requires a uniform argument, so ``42.0`` must be made
+  uniform as well, presumably by boxing.
 * ``b``: ``42.0`` need not be made uniform when it is passed to ``app_f64``,
   but inside ``app_f64``, ``f`` is an unknown function. Because it is unknown,
   we must conservatively assume it could be an instantiation of a higher-order
@@ -118,7 +126,7 @@ Polymorphically Problematic Types
  * SIMD Vectors
 
 Observation: most of these types are of the most interest in unboxed arrays!
-Perhaps they can be given a separate kind from *, and instantiation over
+Perhaps they can be given a separate kind from ``Type``, and instantiation over
 higher-rank polymorphic values restricted to only types of uniform kind?
 (Instantiation over known functions can still be done at compile time
 for all types, I think?)
@@ -222,6 +230,37 @@ impredicative polymorphism versus directly including strong sums in the
 language. But I think the other arguments are sufficient to make full System F
 strongly worth considering.
 
+Our Solution
+++++++++++++
+
+Our proposed solution is a systems-oriented variant of what Haskell does.
+We use a system of kinds to distinguish types---and, crucially, type
+variables---which are represented uniformly from those which are not.
+The key is that type variables quantified by forall types have associated
+kinds.  We use this information in two ways:
+
+  #. We do not permit functions with unboxed polymorphic arguments
+     to be passed in a higher-order way; higher kinds are restricted
+     to abstraction over boxed types.
+  #. We do not permit instantiating a boxed type variable with an
+     unboxed type.
+
+As a result, the type system enables use of uniform representations
+where needed, and unboxed representations where possible.
+
+It's worth noting that the example of ``map id list-of-unboxed-floats``
+is forbidden by the type system, whereas with a Leroy-style coercion
+system, the compiler would be forced to traverse the list at runtime
+to be able to pass a list of boxed floats to ``map`` for ``id`` to use.
+Making this cost explicit is why I call this this scheme systems-oriented.
+
+Haskell has unboxed kinds (or rather GHC does via a nonstandard flag),
+but partly because they leave instantiation and generalization implicit,
+ML-style, they leave kinds more implicit and second-class than we do.
+One tactic I think they got right, compared to Java, is to make the "default"
+base types like ``Char`` and ``Float`` boxed rather than unboxed.
+This meshes well with making integers arbitrary-precision by default,
+with fixnums as unboxed types.
 
 Links
 +++++

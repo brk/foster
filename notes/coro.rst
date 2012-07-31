@@ -59,19 +59,19 @@ stale.
 
 A number of possible solutions present themselves:
 
-* ``coro_init`` could notify the GC of the slot before
-  using the arg pointer. But this is a non-solution; is
-  only works if there is one GC and no allocation between
-  create and invoke.
-* The GC could poke its way into the stack and update the
-  one hidden slot. This is ugly, error-prone, and architecture-
-  specific, because the specific offset of the arg in the
-  stack is not portably defined.
-* We could add a layer of indirection: stick the coro arg in a
-  malloced (stable storage) ref cell, and pass a pointer to the
-  coro pointer to ``coro_create``. Meanwhile, also store this
-  ref cell pointer in the coro itself, and teach the GC to
-  merely update the slot directly accessible from the coro
-  struct.
+#. ``coro_init`` could notify the GC of the slot before
+   using the arg pointer. But this is a non-solution; is
+   only works if there is one GC and no allocation between
+   create and invoke.
+#. The GC could poke its way into the stack and update the
+   one hidden slot. This is ugly, error-prone, and architecture-
+   specific, because the specific offset of the arg in the
+   stack is not portably defined.
+#. We could add a layer of indirection: stick the coro arg in a
+   malloced (stable storage) ref cell, and pass a pointer to the
+   coro pointer to ``coro_create``. Meanwhile, also store this
+   ref cell pointer in the coro itself, and teach the GC to
+   merely update the slot directly accessible from the coro
+   struct.
 
 We currently implement option #3.

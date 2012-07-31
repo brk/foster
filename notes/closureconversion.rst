@@ -5,7 +5,7 @@ Consider the following example of (supposedly) mutually
 recursive functions::
 
     let n = 0; in
-      ref f = { x => g x; h };
+      rec f = { x => g x; h };
           g = { y => h y; };
           h = { z => print n; };
       in
@@ -74,7 +74,7 @@ load from the env slot to get the envptr that needs to go in the closure::
         [clo2] -> [ code2 | envptr2 ]
 
 Third, we fill the environment slots by codegenning each environment.
-Now each environment can refer to the heap-allocate closures that will
+Now each environment can refer to the heap-allocated closures that will
 eventually contain them, as well as other environment pointers::
 
     envSlots:
