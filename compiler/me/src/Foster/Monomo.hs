@@ -82,8 +82,8 @@ addInitialMonoTasksAndGo procdefs = do
                                  not (isNotInstantiable pd)]
     forM_ polyprocs (\(pd,ktvs) -> do
          let id = ilProcIdent pd
-         debug $ "monoScheduleWork " ++ show id ++ " ;; " ++ show ktvs
-         monoScheduleWork (NeedsMono id id [PtrTypeUnknown | _ <- ktvs])
+         debug $ "monoScheduleWork " ++ show id ++ " //// " ++ show ktvs
+         monoScheduleWork (mkNeedsMono id id [PtrTypeUnknown | _ <- ktvs])
       )
     goMonomorphize
 
@@ -166,6 +166,8 @@ data MonoWork = NeedsMono Ident -- for the eventual monomorphized function
                           [MonoType] -- tyargs for substitution
               | PlainProc Ident
               deriving Show
+
+mkNeedsMono = NeedsMono -- so we can grep for ctor sites but not dtor sites.
 
 workTargetId (PlainProc id)     = id
 workTargetId (NeedsMono id _ _) = id
@@ -317,15 +319,15 @@ monomorphizeLetable subst expr =
     case expr of
         -- This is the only interesting case!
         ILTyApp t v argtys -> do
+            let monotys = map (generic qt) argtys
             case v of
               -- If we're polymorphically instantiating a global symbol
               -- (i.e. a proc) then we can statically look up the proc
               -- definition and create a monomorphized copy (equally well for
               -- both pointer-sized and types with special calling conventions).
               TypedId (ForAllIL {}) id@(GlobalSymbol _) -> do
-                  let polyid = getPolyProcId id argtys
-                  let monotys = map qt argtys
-                  monoScheduleWork (NeedsMono polyid id monotys)
+                  let polyid = getPolyProcId id monotys
+                  monoScheduleWork (mkNeedsMono polyid id monotys)
                   return $ Instantiated (TypedId t polyid)
 
               -- On the other hand, if we only have a local var, then
@@ -339,6 +341,8 @@ monomorphizeLetable subst expr =
                      ++ show ktvs
                      ++ " with types "
                      ++ show argtys
+                     ++ "\ngenericized to "
+                     ++ show monotys
                      ++ "\nFor now, polymorphic instantiation of non-pointer-sized types"
                      ++ " is only allowed on functions at the top level!"
                      ++ "\nThis is a silly restriction for local bindings,"
@@ -382,9 +386,12 @@ monoPrim subst p =
 -- monoAllocInfo subst (AllocInfo t rgn arraysize) =
 --     AllocInfo (monoType subst t) rgn (fmap (monoVar subst) arraysize)
 
-getPolyProcId :: Ident -> [TypeIL] -> Ident
+generic :: (TypeIL -> MonoType) -> TypeIL -> MonoType
+generic f t = if kindOfTypeIL t == KindPointerSized then PtrTypeUnknown else f t
+
+getPolyProcId :: Ident -> [MonoType] -> Ident
 getPolyProcId id tys =
-  if List.all (\t -> kindOfTypeIL t == KindPointerSized) tys
+  if List.all (\t -> case t of { PtrTypeUnknown -> True ; _ -> False }) tys
     then id
     else idAppend id (show tys)
 
