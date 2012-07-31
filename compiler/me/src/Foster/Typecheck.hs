@@ -92,10 +92,12 @@ tcSigmaToplevel (TermVarBinding txt tid) ctx ast = do
         e <- inferSigma ctx ast "toplevel"
 
         (_skol_tvs, rho) <- skolemize (tidType tid)
-        _ <- subsCheckRho e rho
+        debug $ "tcSigmaToplevel deferring to subsCheckRho"
         debug $ "tcSigmaToplevel " ++ show tid
-        debug $ "tcSigmaTopLevel " ++ "    =skol=> " ++ show rho
+        debug $ "tcSigmaTopLevel " ++ "    =skol=> "
+        tcLift $ runOutput $ showStructure rho
         debug $ "tcSigmaTopLevel " ++ show txt ++ " :: " ++ show (typeAST e)
+        _ <- subsCheckRho e rho
 
         return e
 
@@ -257,7 +259,8 @@ matchExp expTy ann msg =
      case expTy of
          Check s@(ForAllAST {}) -> do
                        subsCheck ann s msg
-         Check t -> do subsCheckRho ann t
+         Check t -> do debug $ "matchExp[Check]("++msg++") deferring to subsCheckRho"
+                       subsCheckRho ann t
          Infer r -> do update r (return ann)
 
 -- To get a rho-type from a variable with a forall type,
@@ -932,6 +935,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
 subsCheckTy :: Sigma -> Sigma -> String -> Tc ()
 subsCheckTy sigma1 sigma2@(ForAllAST {}) msg = do
   (skols, rho) <- skolemize sigma2
+  debug $ "subsCheckTy deferring to subsCheckRhoTy"
   subsCheckRhoTy sigma1 rho
   esc_tvs <- getFreeTyVars [sigma1, sigma2]
   let bad_tvs = filter (`elem` esc_tvs) skols
@@ -947,8 +951,8 @@ subsCheckRhoTy (ForAllAST ktvs rho) rho2 = do -- Rule SPEC
              taus <- genTauUnificationVarsLike ktvs (\n -> "instSigma type parameter " ++ show n)
              rho1 <- instSigmaWith ktvs rho taus
              subsCheckRhoTy rho1 rho2
--- Elide the two FUN rules and subsCheckFun because we're using
--- shallow, not deep, skolemization due to being a strict language.
+subsCheckRhoTy rho1 (FnTypeAST a2 r2 _ _) = unifyFun rho1 >>= \(a1, r1) -> subsCheckFunTy a1 r1 a2 r2
+subsCheckRhoTy (FnTypeAST a1 r1 _ _) rho2 = unifyFun rho2 >>= \(a2, r2) -> subsCheckFunTy a1 r1 a2 r2
 subsCheckRhoTy tau1 tau2 -- Rule MONO
      = unify tau1 tau2 (Just "subsCheckRho") -- Revert to ordinary unification
 -- }}}
@@ -957,6 +961,7 @@ subsCheckRhoTy tau1 tau2 -- Rule MONO
 subsCheck :: (AnnExpr Sigma) -> Sigma -> String -> Tc (AnnExpr Sigma)
 subsCheck esigma sigma2@(ForAllAST {}) msg = do
   (skols, rho) <- skolemize sigma2
+  debug $ "subsCheck deferring to subsCheckRho"
   _ <- subsCheckRho esigma rho
   esc_tvs <- getFreeTyVars [typeAST esigma, sigma2]
   let bad_tvs = filter (`elem` esc_tvs) skols
@@ -969,8 +974,9 @@ subsCheck esigma rho2 _msg = subsCheckRho esigma rho2
 
 subsCheckRho :: AnnExpr Sigma -> Rho -> Tc (AnnExpr Rho)
 subsCheckRho esigma rho2 = do
-  case typeAST esigma of
-    (ForAllAST {}) -> do -- Rule SPEC
+  case (typeAST esigma, rho2) of
+    (_, ForAllAST {}) -> do tcFails [out $ "violated invariant: sigma passed to subsCheckRho"]
+    (ForAllAST {}, _) -> do -- Rule SPEC
         debug $ "subsCheckRho instantiating " ++ show (typeAST esigma)
         erho <- inst esigma
         subsCheckRho erho rho2
@@ -980,14 +986,54 @@ subsCheckRho esigma rho2 = do
         subsCheckRho rho1 rho2
         -}
 
+        {-
+    (rho1, TupleTypeAST {})     -> do tcFails [out $ "subsCheckRho tuple 1"]
+                                      (ts1, ts2) <- unifyTuple rho1 rho2
+                                      mapM_ (\(t1, t2) -> subsCheckRhoTy t1 t2) (zip ts1 ts2)
+                                      return esigma
+    (rho1@(TupleTypeAST {}), _) -> do tcFails [out $ "subsCheckRho tuple 2"]
+                                      (ts1, ts2) <- unifyTuple rho1 rho2
+                                      mapM_ (\(t1, t2) -> subsCheckRhoTy t1 t2) (zip ts1 ts2)
+                                      return esigma
+                                      -}
+    (rho1, FnTypeAST a2 r2 _ _) -> do debug $ "subsCheckRho fn 1"
+                                      (a1, r1) <- unifyFun rho1
+                                      subsCheckFunTy a1 r1 a2 r2
+                                      return esigma
+    (FnTypeAST a1 r1 _ _, _)    -> do debug "subsCheckRho fn 2"
+                                      (a2, r2) <- unifyFun rho2
+                                      subsCheckFunTy a1 r1 a2 r2
+                                      return esigma
     -- Elide the two FUN rules and subsCheckFun because we're using
     -- shallow, not deep, skolemization due to being a strict language.
 
-    rho1 -> do -- Rule MONO
+    (rho1, _) -> do -- Rule MONO
         unify rho1 rho2 (Just "subsCheckRho") -- Revert to ordinary unification
         return esigma
 -- }}}
 
+-- {{{ Helper functions for subsCheckRho to peek inside type constructors
+unifyTuple rho1 (TupleTypeAST ts2) = do
+  metas <- mapM (\_ -> newTcUnificationVarTau "utup") ts2
+  unify rho1 (TupleTypeAST metas) (Just "unifyTuple1")
+  unify rho1 (TupleTypeAST ts2)   (Just "unifyTuple2")
+  return (metas, ts2)
+
+unifyTuple (TupleTypeAST ts1) rho2 = do
+  metas <- mapM (\_ -> newTcUnificationVarTau "utup") ts1
+  unify (TupleTypeAST metas) rho2 (Just "unifyTuple3")
+  unify (TupleTypeAST ts1)   rho2 (Just "unifyTuple4")
+  return (ts1, metas)
+
+unifyTuple _ _ = tcFails [out $ "violated invariant: unifyTuple called with no tuple arguments"]
+
+subsCheckFunTy a1 r1 a2 r2 = do
+        debug $ "subsCheckFunTy arg: " ++ show a2 ++ " ?<=? " ++ show a1
+        subsCheckTy a2 a1 "sCFTa"
+        debug $ "subsCheckFunTy res: " ++ show r1 ++ " ?<=? " ++ show r2
+        subsCheckTy r1 r2 "sCFTr"
+        return ()
+-- }}}
 
 instSigma :: AnnExpr Sigma -> Expected Rho -> Tc (AnnExpr Rho)
 -- Invariant: if the second argument is (Check rho),
