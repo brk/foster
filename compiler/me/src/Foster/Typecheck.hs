@@ -391,11 +391,7 @@ tcRhoArrayRead rng s base aiexpr expTy = do
         unify (PrimIntAST I32) (typeAST aiexpr) "arrayread idx type"
         unify (ArrayTypeAST t) (typeAST base)   "arrayread type"
         let expr = AnnArrayRead rng t (ArrayIndex base aiexpr rng s)
-        case expTy of
-          Infer r -> do update r (return expr)
-          Check c -> do unify t c ("arrayread expected type: " ++ show c)
-                        return expr
-
+        matchExp expTy expr "arrayread"
     (TupleTypeAST _) ->
         tcFails [out $ "ArrayReading tuples is not allowed; use"
                    ++ " pattern matching instead!" ++ highlightFirstLine rng]
@@ -418,10 +414,7 @@ tcRhoArrayPoke rng s v b i expTy = do
       -- TODO check aiexpr type is compatible with Word
       unify t (typeAST v) "arraypoke type"
       let expr = AnnArrayPoke rng t (ArrayIndex b i rng s) v
-      case expTy of
-        Infer r -> do update r (return expr)
-        Check c -> do unify t c ("arraypoke expected type: " ++ show c)
-                      return expr
+      matchExp expTy expr "arraypoke"
     baseType ->
       tcFails [out $ "Unable to arraypoke expression of type " ++ show baseType
                   ++ " (context expected type " ++ show expTy ++ ")"
