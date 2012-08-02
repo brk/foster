@@ -61,26 +61,21 @@ typecheckFnSCC :: Bool -> Bool
                -> IO ([OutputOr (AnnExpr Sigma)], (Context TypeAST, TcEnv))
 typecheckFnSCC showASTs showAnnExprs scc (ctx, tcenv) = do
     let fns = Graph.flattenSCC scc
-
-    -- Generate bindings (for functions without user-provided declarations)
-    -- before doing any typechecking, so that if a function fails to typecheck,
-    -- we'll have the best binding on hand to use for subsequent typechecking.
-    -- TODO do we gain anything from using Nothing as the expected type for
-    --      generated bindings?
-    _bindings <- forM fns $ \fn ->
-        case termVarLookup (fnAstName fn) (contextBindings ctx) of
-          Nothing  -> do unTc tcenv $ bindingForFnAST fn
-          Just tid -> do return (OK $ TermVarBinding (fnAstName fn) tid)
-    let bindings = map (\(OK b) -> b) _bindings
-
     -- Note that all functions in an SCC are checked in the same environment!
     -- Also note that each function is typechecked with its own binding
     -- in scope (for typechecking recursive calls).
     -- TODO better error messages for type conflicts
-    tcResults <- forM (zip fns bindings) $ \(fn, binding) -> do
+    tcResults <- forM fns $ \fn -> do
         let ast = (E_FnAST fn)
         let name = T.unpack $ fnAstName fn
-        putStrLn $ "typechecking " ++ name
+        -- Generate a binding (for functions without user-provided declarations)
+        -- before doing any typechecking, so that if a function fails to typecheck,
+        -- we'll have the best binding on hand to use for subsequent typechecking.
+        OK binding <-
+            case termVarLookup (fnAstName fn) (contextBindings ctx) of
+                Nothing  -> do unTc tcenv $ bindingForFnAST fn
+                Just tid -> do return (OK $ TermVarBinding (fnAstName fn) tid)
+        putStrLn $ "typechecking " ++ name ++ " with binding " ++ show binding
         annfn <- unTc tcenv $
              tcSigmaToplevel binding (prependContextBinding ctx binding) ast
 
@@ -169,22 +164,28 @@ typecheckModule verboseMode modast tcenv0 = do
     let primBindings = computeContextBindings primitiveDecls
     let declBindings = computeContextBindings (moduleASTdecls modast) ++
                        computeContextBindings (concatMap extractCtorTypes dts)
-    case detectDuplicates (map fnAstName fns) of
-      [] -> do
+    runOutput $ (outLn "vvvv declBindings:====================")
+    runOutput $ (outCSLn Yellow (joinWith "\n" $ map show declBindings))
+
+    let ctx0 = mkContext declBindings primBindings dts
+    ctxErrsOrOK <- unTc tcenv0 (tcContext ctx0)
+
+    case (detectDuplicates (map fnAstName fns), ctxErrsOrOK) of
+      ([], OK _) -> do
         let callGraphList = buildCallGraphList fns (Set.fromList $
                                      [nm | TermVarBinding nm _ <- declBindings])
         let sortedFns = Graph.stronglyConnComp callGraphList -- :: [SCC FnAST]
         when verboseMode $ do
                 putStrLn $ "Function SCC list : " ++
                        show [(name, frees) | (_, name, frees) <- callGraphList]
-        let ctx0 = mkContext declBindings primBindings dts
         let showASTs     = verboseMode
         let showAnnExprs = verboseMode
         (annFns, (ctx, tcenv)) <- mapFoldM sortedFns (ctx0, tcenv0)
-                                       (typecheckFnSCC showASTs showAnnExprs)
+                                          (typecheckFnSCC showASTs showAnnExprs)
         unTc tcenv (convertTypeILofAST modast ctx annFns)
-      dups -> return (Errors [out $ "Unable to check module due to "
-                                 ++ "duplicate bindings: " ++ show dups])
+      ([], Errors os) -> return (Errors os)
+      (dups, _) -> return (Errors [out $ "Unable to check module due to "
+                                        ++ "duplicate bindings: " ++ show dups])
  where
    mkContext declBindings primBindings datatypes =
      Context declBindsMap primBindsMap verboseMode globalvars tyvarsMap [] ctorinfo dtypes
