@@ -35,7 +35,7 @@ import Foster.TypeAST
 import Foster.ParsedType
 import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn))
 import Foster.AnnExprIL(AIExpr, fnOf)
-import Foster.TypeIL(TypeIL, ilOf, extendTyCtx)
+import Foster.TypeIL(TypeIL, ilOf)
 import Foster.ILExpr(closureConvertAndLift, showILProgramStructure)
 import Foster.MonoExpr(MonoProgram, showMonoProgramStructure)
 import Foster.KNExpr(kNormalizeModule)

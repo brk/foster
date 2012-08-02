@@ -76,6 +76,10 @@ data TCWanted = TCSigma | TCRho deriving Show
 
 tcSigmaToplevel (TermVarBinding txt tid) ctx ast = do
 -- {{{
+    -- Make sure the (potentially user-supplied) type annotation is well-formed.
+    tcTypeWellFormed ("in the type declaration for " ++ T.unpack txt)
+                     ctx (tidType tid)
+
     -- We don't use checkSigma because we don't want the check
     -- for escaping type variables.
     e <- inferSigma ctx ast "toplevel"
@@ -1151,6 +1155,31 @@ unify t1 t2 msg = do
 -- }}}
 
 -- {{{ Miscellaneous helpers.
+-- The judgement   G |- T
+tcTypeWellFormed :: String -> Context TypeAST -> TypeAST -> Tc ()
+tcTypeWellFormed msg ctx typ = do
+  let q = tcTypeWellFormed msg ctx
+  case typ of
+        PrimIntAST _          -> return ()
+        PrimFloat64           -> return ()
+        MetaTyVar     _       -> return ()
+        TyConAppAST nm types  -> do case Map.lookup nm (contextDataTypes ctx) of
+                                      Just  _ -> mapM_ q types
+                                      Nothing -> tcFails [out $ "Unknown type "
+                                                           ++ nm ++ " " ++ msg]
+        TupleTypeAST types    -> mapM_ q types
+        FnTypeAST ss r _ _    -> mapM_ q (r:ss)
+        CoroTypeAST s r       -> mapM_ q [s,r]
+        RefTypeAST    ty      -> q ty
+        ArrayTypeAST  ty      -> q ty
+        ForAllAST  tvs rho    -> tcTypeWellFormed msg (extendTyCtx ctx tvs) rho
+        TyVarAST (SkolemTyVar {}) -> return ()
+        TyVarAST tv@(BoundTyVar _) ->
+                 case Prelude.lookup tv (contextTypeBindings ctx) of
+                   Nothing -> tcFails [out $ "Unbound type variable "
+                                           ++ show tv ++ " " ++ msg]
+                   Just  _ -> return ()
+
 collectUnboundUnificationVars :: [TypeAST] -> Tc [MetaTyVar TypeAST]
 collectUnboundUnificationVars xs = mapM zonkType xs >>= (return . collectAllUnificationVars)
 

@@ -45,6 +45,9 @@ termVarLookup name bindings = Map.lookup name bindings
 typeVarLookup :: String -> Map String (TyVar, Kind) -> Maybe (TyVar, Kind)
 typeVarLookup name bindings = Map.lookup name bindings
 
+extendTyCtx ctx ktvs = ctx { contextTypeBindings =
+                     ktvs ++ contextTypeBindings ctx }
+
 --prependTypeBindings :: Context ty ->
 
 -- Based on "Practical type inference for arbitrary rank types."

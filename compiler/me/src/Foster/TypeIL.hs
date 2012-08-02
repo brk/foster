@@ -97,9 +97,6 @@ ilOf ctx typ = do
                                 ++ show (mtvUniq m) ++ "(" ++ mtvDesc m ++ ")!"]
           Just t  -> q t
 
-extendTyCtx ctx ktvs = ctx { contextTypeBindings =
-                     ktvs ++ contextTypeBindings ctx }
-
 aiVar ctx (TypedId t i) = do ty <- ilOf ctx t
                              return $ TypedId ty i
 
