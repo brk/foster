@@ -233,19 +233,19 @@ ExprAST* parseNumFrom(pTree t) {
             << show(rangeOf(t));
 
   std::string alltext = textOf(child(t, 0));
-  
+
   if (pystring::count(alltext, ".") > 0) {
     ASSERT(alltext.find_first_of("abcdfABCDF_") == string::npos)
               << "rationals should not contain hex digits or a base specifier"
               << "; saw " << alltext;
-  
+
     if (alltext.find_first_of("eE") >= 0) {
       ASSERT(alltext.find_first_of("eE") > alltext.find_first_of("."))
               << "e/E should only appear in rational as exponent specifier";
     }
     return new RatAST(alltext, rangeOf(t));
   } else {
-    return new IntAST(alltext, rangeOf(t));  
+    return new IntAST(alltext, rangeOf(t));
   }
 }
 
@@ -765,6 +765,18 @@ std::vector<DataCtorAST*> parseDataCtors(pTree t) {
   return ctors;
 }
 
+void tryMarkTypeAsProc(TypeAST* typ) {
+  TypeAST* mb_fty = NULL;
+
+  if (ForallTypeAST* fa = dynamic_cast<ForallTypeAST*>(typ)) {
+           mb_fty = fa->getQuantifiedType();
+  } else { mb_fty = typ; }
+
+  if (FnTypeAST* fty = dynamic_cast<FnTypeAST*>(mb_fty)) {
+    fty->markAsProc();
+  }
+}
+
 ModuleAST* parseTopLevel(pTree root_tree, std::string moduleName,
                          std::string hash,
                          std::queue<std::pair<string, string> >& out_imports) {
@@ -794,7 +806,10 @@ ModuleAST* parseTopLevel(pTree root_tree, std::string moduleName,
     } else if (token == DECL) {
       pTree typevar = child(c, 0);
       pTree type    = child(c, 1);
-      decls.push_back(new Decl(textOfVar(typevar), TypeAST_from(type)));
+      TypeAST* typ  = TypeAST_from(type);
+      // Make sure that fn types for top-level declarations are marked as procs.
+      tryMarkTypeAsProc(typ);
+      decls.push_back(new Decl(textOfVar(typevar), typ));
     } else if (token == DATATYPE) { // ^(DATATYPE id ^(MU tyvar_decl*) ^(MU data_ctor*)
       datas.push_back(new Data(textOf(child(c, 0)),
                       parseTyFormals(child(c, 1), getBoxedKind()),
