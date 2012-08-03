@@ -327,6 +327,7 @@ public:
   virtual void show(PrettyPrintTypePass* pass);
   virtual void dump(DumpTypeToProtobufPass* pass);
   virtual llvm::Type* getLLVMType() const;
+  TypeAST* getQuantifiedType() const { return quant; }
 };
 
 #endif // header guard
