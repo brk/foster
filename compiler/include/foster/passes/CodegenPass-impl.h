@@ -83,8 +83,11 @@ inline bool operator<(const CtorId& a, const CtorId& b) {
 struct ltLLOcc {
   bool operator()(LLOccurrence* a, LLOccurrence* b) {
     if (a->var->getName() < b->var->getName()) { return true; }
+    if (a->var->getName() > b->var->getName()) { return false; }
     if (a->offsets        < b->offsets       ) { return true; }
+    if (a->offsets        > b->offsets       ) { return false; }
     if (a->ctors          < b->ctors         ) { return true; }
+    if (a->ctors          > b->ctors         ) { return false; }
     return false;
   }
 };
