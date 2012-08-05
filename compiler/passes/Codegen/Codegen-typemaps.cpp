@@ -181,6 +181,7 @@ GlobalVariable* constructTypeMap(llvm::Type*  ty,
     /*Linkage=*/    GlobalValue::ExternalLinkage,
     /*Initializer=*/ 0,
     /*Name=*/        "__foster_typemap_" + name,
+    /*InsertBefore=*/NULL,
     /*ThreadLocal=*/ false);
   typeMapVar->setAlignment(16);
 

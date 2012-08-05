@@ -358,6 +358,7 @@ void LLModule::codegenModule(CodegenPass* pass) {
     /*Linkage=*/     llvm::GlobalValue::ExternalLinkage,
     /*Initializer=*/ llvm::ConstantInt::get(builder.getInt32Ty(), 0),
     /*Name=*/        "foster__gcmaps",
+    /*InsertBefore=*/NULL,
     /*ThreadLocal=*/ false);
   }
 }
