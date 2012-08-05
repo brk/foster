@@ -346,7 +346,7 @@ instance Structured KNExpr where
             KNAlloc      {}     -> out $ "KNAlloc     "
             KNDeref      {}     -> out $ "KNDeref     "
             KNStore      {}     -> out $ "KNStore     "
-            KNCase _t _ bnds    -> out $ "KNCase      " ++ (show $ map fst bnds)
+            KNCase _t v bnds    -> out $ "KNCase      " ++ show v ++ " binding " ++ (show $ map fst bnds)
             KNAllocArray {}     -> out $ "KNAllocArray "
             KNArrayRead  t _    -> out $ "KNArrayRead " ++ " :: " ++ show t
             KNArrayPoke  {}     -> out $ "KNArrayPoke "

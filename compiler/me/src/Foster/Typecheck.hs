@@ -9,7 +9,7 @@ import qualified Data.List as List(length, zip)
 import Data.List(foldl', (\\))
 import Control.Monad(liftM, forM_, forM, liftM, liftM2, when)
 
-import qualified Data.Text as T(Text, unpack)
+import qualified Data.Text as T(Text, unpack, pack)
 import qualified Data.Map as Map(lookup, insert, elems, toList, null)
 import qualified Data.Set as Set(toList, fromList)
 import Data.IORef(IORef,newIORef,readIORef,writeIORef)
@@ -213,6 +213,13 @@ tcRho ctx expr expTy = do
           -- Note: we infer a sigma, not a rho, because we don't want to
           -- instantiate a sigma with meta vars and then never bind them.
           matchExp expTy (AnnCompiles rng (CompilesResult result)) "compiles"
+      E_KillProcess rng _s -> do
+          tau <- case expTy of
+             (Check t) -> return t
+             (Infer _) -> return (TupleTypeAST []) --newTcUnificationVarTau $ "kill-process"
+          let tid = TypedId tau (GlobalSymbol $ T.pack "foster__abort")
+          matchExp expTy (AnnCall rng tau (AnnPrimitive rng tid)
+                                          (E_AnnTuple   rng [])) "kill-process"
 
 matchExp expTy ann msg =
      case expTy of

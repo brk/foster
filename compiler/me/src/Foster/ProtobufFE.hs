@@ -91,6 +91,8 @@ parseCallPrim pbexpr rng = do
       ("store",[a,b])-> case b of -- a>^ c[d]
                            E_ArrayRead _ ari -> return $ E_ArrayPoke rng ari a
                            _                 -> return $ E_StoreAST rng a b
+      ("kill-entire-process",  [s@(E_StringAST {})]) ->
+                                                return $ E_KillProcess rng s
       _ -> error $ "ProtobufFE: unknown primitive/arg combo " ++ show primname
 
 parseCompiles pbexpr range = do

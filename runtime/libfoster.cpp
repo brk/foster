@@ -162,6 +162,12 @@ void foster__assert(bool ok, const char* msg) {
   }
 }
 
+void foster__abort() {
+  fprintf(stderr, "foster__abort called\n");
+  fflush(stderr);
+  exit(1);
+}
+
 void foster__boundscheck64(int64_t idx, int64_t len, const char* srclines) {
   if (idx < 0 || idx >= len) {
     fprintf(stderr, "bounds check failed: cannot index array of "

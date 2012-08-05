@@ -55,6 +55,7 @@ data ExprAST ty =
         | E_TyApp         SourceRange (ExprAST ty) [ty]
         -- Others
         | E_CompilesAST   SourceRange (Maybe (ExprAST ty))
+        | E_KillProcess   SourceRange (ExprAST ty) -- string literal
         deriving Show
 
 data TupleAST ty = TupleAST { tupleAstRange :: SourceRange
@@ -100,6 +101,7 @@ instance Structured (ExprAST TypeAST) where
             E_TupleAST  {}         -> out $ "TupleAST     "
             E_TyApp     {}         -> out $ "TyApp        "
             E_Case      {}         -> out $ "Case         "
+            E_KillProcess {}       -> out $ "KillProcess  "
             E_VarAST _rng v        -> out $ "VarAST       " ++ T.unpack (evarName v) ++ " :: " ++ show (evarMaybeType v)
     childrenOf e =
         let termBindingExpr (TermBinding _ e) = e in
@@ -111,6 +113,7 @@ instance Structured (ExprAST TypeAST) where
             E_CallAST     _rng b tup     -> b:(tupleAstExprs tup)
             E_CompilesAST _rng (Just e)  -> [e]
             E_CompilesAST _rng Nothing   -> []
+            E_KillProcess _rng _         -> []
             E_IfAST       _rng    a b c  -> [a, b, c]
             E_UntilAST    _rng a b       -> [a, b]
             E_FnAST f                    -> [fnAstBody f]
@@ -144,6 +147,7 @@ instance SourceRanged (ExprAST ty)
       E_LetRec        rng _ _   -> rng
       E_CallAST       rng _ _   -> rng
       E_CompilesAST   rng _     -> rng
+      E_KillProcess   rng _     -> rng
       E_IfAST         rng _ _ _ -> rng
       E_UntilAST      rng _ _   -> rng
       E_SeqAST        rng _ _   -> rng

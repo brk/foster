@@ -96,6 +96,7 @@ convertExprAST f expr =
     E_LetAST       rng bnd e    -> liftM2 (E_LetAST       rng) (convertTermBinding f bnd) (q e)
     E_CallAST      rng b tup    -> liftM2 (E_CallAST      rng) (q b) (convertTuple f tup)
     E_FnAST fn                  -> liftM  (E_FnAST           ) (convertFun f fn)
+    E_KillProcess  rng a        -> liftM  (E_KillProcess  rng) (q a)
 
 liftMaybe :: Monad m => (a -> m b) -> Maybe a -> m (Maybe b)
 liftMaybe _ Nothing = return Nothing
