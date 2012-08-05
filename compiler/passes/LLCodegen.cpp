@@ -1251,7 +1251,7 @@ getStackSlotForOcc(CodegenPass* pass, TypeAST* typ,
 llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
   ASSERT(ctors.size() == offsets.size());
 
-    std::stringstream ss; ss << "occ(";
+    std::stringstream ss; ss << "occ["<<this->var->getName()<<"](";
     for (size_t i = 0; i < offsets.size(); ++i) {
       ss << offsets[i] << ":";
       ss << ctors[i].ctorName << "::";
