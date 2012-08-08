@@ -1,0 +1,114 @@
+snafuinclude Prelude "prelude";
+
+type case BatchedQueue (a:Boxed)
+       of $BatchedQueue (List a) (List a)
+       ;
+
+bqEmpty :: forall a:Boxed, { BatchedQueue a };
+bqEmpty = { forall a:Boxed, BatchedQueue (Nil !) (Nil !) };
+
+bqIsEmpty :: forall a:Boxed, { BatchedQueue a => Bool };
+bqIsEmpty = { forall a:Boxed, bq : BatchedQueue a =>
+  case bq
+    of $BatchedQueue ($Nil) _ -> True
+    of _                      -> False
+  end
+};
+
+bqCheckf :: forall a:Boxed, { BatchedQueue a => BatchedQueue a };
+bqCheckf = { forall a:Boxed, bq : BatchedQueue a =>
+  case bq
+    of $BatchedQueue ($Nil) r -> BatchedQueue (listReverse r) (Nil !)
+    of _                      -> bq
+  end
+};
+
+bqSnoc :: forall a:Boxed, { BatchedQueue a => a => BatchedQueue a };
+bqSnoc = { forall a:Boxed, bq : BatchedQueue a => elt : a =>
+  case bq
+    of $BatchedQueue f r -> bqCheckf (BatchedQueue f (Cons elt r))
+  end
+};
+
+bqHead :: forall a:Boxed, { BatchedQueue a => Maybe a };
+bqHead = { forall a:Boxed, bq : BatchedQueue a =>
+  case bq
+    of $BatchedQueue ($Nil)      _ -> None !
+    of $BatchedQueue ($Cons x _) _ -> Some x
+  end
+};
+
+bqTail :: forall a:Boxed, { BatchedQueue a => Maybe (BatchedQueue a) };
+bqTail = { forall a:Boxed, bq : BatchedQueue a =>
+  case bq
+    of $BatchedQueue ($Nil     ) _ -> None !
+    of $BatchedQueue ($Cons x f) r -> Some (bqCheckf (BatchedQueue f r))
+  end
+};
+
+///////////////////
+
+type case CatenableList (a:Boxed)
+       of $CatenableListE
+       of $CatenableListC a (BatchedQueue (CatenableList a))
+       ;
+
+catenableListHead :: forall a:Boxed, { CatenableList a => Maybe a };
+catenableListHead = { forall a:Boxed, c : CatenableList a =>
+  case c
+    of $CatenableListC x _ -> Some x
+    of _                   -> None !
+   end
+};
+
+/*
+// Providing a wrong type signature induces an occurs check error:
+//      catenableListTail :: forall a:Boxed, { CatenableList a => Maybe a };
+catenableListTail :: forall a:Boxed, { CatenableList a => Maybe (CatenableList a) };
+catenableListTail = { forall a:Boxed, c : CatenableList a =>
+  case c
+    of $CatenableListC x q -> if bqIsEmpty q then Some (CatenableListE !)
+                                             else catenableLinkAll q end
+    of _                   -> None !
+   end
+};
+*/
+
+catenableListConcat :: forall a:Boxed, { CatenableList a => CatenableList a => CatenableList a };
+catenableListConcat = { forall a:Boxed, xs : CatenableList a => ys : CatenableList a =>
+  case (xs, ys)
+    of (_, $CatenableListE) -> xs
+    of ($CatenableListE, _) -> ys
+    of _ -> catenableListLink xs ys
+  end
+};
+
+catenableListLink :: forall a:Boxed, { CatenableList a => CatenableList a => CatenableList a };
+catenableListLink = { forall a:Boxed, xs : CatenableList a => ys : CatenableList a =>
+  case xs
+    of $CatenableListC x q -> CatenableListC x (bqSnoc q ys)
+    of _                   -> prim kill-entire-process "catenableListLink"
+       // It's a subtle invariant, but due to (/ assuming) that link is only
+       // called via Concat and LinkAll, only non-empty lists will ever
+       // propagate to xs.
+   end
+};
+
+catenableLinkAll :: forall a:Boxed, { BatchedQueue (CatenableList a) => Maybe (CatenableList a) };
+catenableLinkAll = { forall a:Boxed, q : BatchedQueue (CatenableList a) =>
+  case (bqHead q, bqTail q)
+    of ($Some t , $None   ) -> Some t
+    of ($Some t , $Some qp) ->
+      if bqIsEmpty qp    then Some t
+        else case catenableLinkAll qp
+                    of $None    -> Some t // shouldn't happen I think
+                    of $Some cl -> Some (catenableListLink t cl)
+             end
+      end
+    of _ -> None !
+  end
+};
+
+main = {
+  ()
+};
