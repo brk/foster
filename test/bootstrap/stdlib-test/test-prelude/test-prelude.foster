@@ -1,0 +1,45 @@
+snafuinclude Prelude "prelude";
+
+type case BInt of $B Int32;
+
+/*
+print_BInt_list = { xs:List BInt =>
+  rec go = { xs : List BInt =>
+             case xs of $Nil            -> ()
+                     of $Cons ($B n) ys -> print_i32 n; print_text ";"; go ys
+              end
+           };
+  in print_text "["; go xs; print_text "]";
+  end
+};
+
+*/
+
+text_of_BInt = { b:BInt => case b of $B n -> tmp_Text_of_Int32 n end };
+
+main = {
+  expect_i32 5;
+  print_i32 (srem-Int32 105 10);
+
+  expect_i32 10;
+  print_i32 (sdiv-Int32 105 10);
+
+  expect_text "123";
+  print_text (text_of_BInt (B 123));
+
+  // We expect a single flattened text fragment,
+  // not a linear tree of length-one fragments.
+  expect_i32 0;
+  print_i32 (text_maxdepth (text_of_BInt (B 1234567)));
+
+  expect_text "12345";
+  print_text (text_of_BInt (B 12345));
+
+  /*
+  let lst = Cons (B 1) (Cons (B 2) (Cons (B 3) (Nil !)));
+   in
+     //expect_text "[1, 2, 3]";
+     //print_text (text_of_list text_of_BInt lst);
+  end;
+  */
+};
