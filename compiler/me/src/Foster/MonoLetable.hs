@@ -17,6 +17,7 @@ data MonoLetable =
         | MoBool        Bool
         | MoInt         MonoType LiteralInt
         | MoFloat       MonoType LiteralFloat
+        | MoKillProcess MonoType T.Text
         | MoTuple       [MoVar]  AllocationSource
         | MoOccurrence  MoVar (Occurrence MonoType)
         | MoCallPrim    MonoType MoPrim [MoVar]

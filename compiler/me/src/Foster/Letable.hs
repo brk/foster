@@ -22,6 +22,7 @@ data Letable =
         | ILInt         TypeIL LiteralInt
         | ILFloat       TypeIL LiteralFloat
         | ILTuple       [AIVar] AllocationSource
+        | ILKillProcess TypeIL T.Text
         -- Struct member lookup
         | ILOccurrence  AIVar (Occurrence TypeIL)
         -- Varieties of applications

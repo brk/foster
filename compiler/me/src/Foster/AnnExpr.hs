@@ -61,6 +61,10 @@ data AnnExpr ty =
                      ,  annTyAppArgTypes    :: [ty] }
         -- Others
         | AnnCompiles   SourceRange (CompilesResult (AnnExpr ty))
+        | AnnKillProcess SourceRange ty T.Text
+        -- We keep kill-process as a primitive rather than translate it to a
+        -- call to a primitive because we must ensure that its assigned value
+        -- is the undef constant, which wouldn't work through a function call.
 
 data AnnTuple ty = E_AnnTuple { annTupleRange :: SourceRange
                               , annTupleExprs :: [AnnExpr ty] }
@@ -79,6 +83,7 @@ typeAST annexpr =
      E_AnnFn annFn         -> fnType annFn
      AnnCall _rng t _ _    -> t
      AnnCompiles {}        -> fosBoolType
+     AnnKillProcess _ t _  -> t
      AnnIf _rng t _ _ _    -> t
      AnnUntil _rng t _ _   -> t
      AnnLetVar _rng _ _ b  -> recur b
@@ -102,6 +107,7 @@ instance Structured (AnnExpr TypeAST) where
       AnnBool     _rng    b      -> out $ "AnnBool      " ++ (show b)
       AnnCall     _rng t _b _args-> out $ "AnnCall      " ++ " :: " ++ show t
       AnnCompiles _rng cr        -> out $ "AnnCompiles  " ++ show cr
+      AnnKillProcess _rng t msg  -> out $ "AnnKillProcess " ++ show msg ++ " :: " ++ show t
       AnnIf       _rng t _ _ _   -> out $ "AnnIf        " ++ " :: " ++ show t
       AnnUntil    _rng t _ _     -> out $ "AnnUntil     " ++ " :: " ++ show t
       AnnInt      _rng ty int    -> out $ "AnnInt       " ++ (litIntText int) ++ " :: " ++ show ty
@@ -129,6 +135,7 @@ instance Structured (AnnExpr TypeAST) where
       AnnCall _r _t b argtup               -> b:(annTupleExprs argtup)
       AnnCompiles  _rng (CompilesResult (OK     e)) -> [e]
       AnnCompiles  _rng (CompilesResult (Errors _)) -> []
+      AnnKillProcess {}                    -> []
       AnnIf        _rng _t  a b c          -> [a, b, c]
       AnnUntil     _rng _t  a b            -> [a, b]
       AnnInt {}                            -> []
@@ -178,6 +185,7 @@ instance SourceRanged (AnnExpr ty) where
       AnnBool      rng    _       -> rng
       AnnCall      rng _ _ _      -> rng
       AnnCompiles  rng _          -> rng
+      AnnKillProcess rng _ _      -> rng
       AnnIf        rng _ _ _ _    -> rng
       AnnUntil     rng _ _ _      -> rng
       AnnInt       rng _ _        -> rng

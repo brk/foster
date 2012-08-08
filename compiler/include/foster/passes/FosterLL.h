@@ -412,6 +412,12 @@ struct LLOccurrence : public LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
+struct LLKillProcess : public LLExpr {
+  std::string stringValue;
+  explicit LLKillProcess(const string& val) : LLExpr("LLKillProcess"), stringValue(val) {}
+  virtual llvm::Value* codegen(CodegenPass* pass);
+};
+
 ///////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////
 

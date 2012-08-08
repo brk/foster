@@ -213,13 +213,12 @@ tcRho ctx expr expTy = do
           -- Note: we infer a sigma, not a rho, because we don't want to
           -- instantiate a sigma with meta vars and then never bind them.
           matchExp expTy (AnnCompiles rng (CompilesResult result)) "compiles"
-      E_KillProcess rng _s -> do
+      E_KillProcess rng (E_StringAST _ msg) -> do
           tau <- case expTy of
              (Check t) -> return t
-             (Infer _) -> return (TupleTypeAST []) --newTcUnificationVarTau $ "kill-process"
-          let tid = TypedId tau (GlobalSymbol $ T.pack "foster__abort")
-          matchExp expTy (AnnCall rng tau (AnnPrimitive rng tid)
-                                          (E_AnnTuple   rng [])) "kill-process"
+             (Infer _) -> newTcUnificationVarTau $ "kill-process"
+          matchExp expTy (AnnKillProcess rng tau msg) "kill-process"
+      E_KillProcess rng _ -> tcFails [out $ "prim kill-process requires a string literal"]
 
 matchExp expTy ann msg =
      case expTy of
@@ -316,6 +315,12 @@ tcRhoSeq ctx rng a b expTy = do
     ea <- inferRho ctx a "seq" --(Check $ TupleTypeAST [])
     id <- tcFresh ".seq"
     eb <- tcRho ctx b expTy
+    -- Temporary hack to avoid unbound type variables but permit
+    -- sequencing of arbitrary types.
+    zt <- zonkType (typeAST ea)
+    case zt of
+      m@MetaTyVar {} -> unify m (TupleTypeAST []) "seq-unit"
+      _              -> return ()
     return (AnnLetVar rng id ea eb)
 -- }}}
 
@@ -584,16 +589,21 @@ tcRhoCall ctx rng base argstup exp_ty = do
    app <- tcSigmaCall ctx rng base argstup (Infer r)
    instSigma app exp_ty
 
+tryGetVarName (E_VarAST _ v) = T.unpack $ evarName v
+tryGetVarName _ = ""
+
 tcSigmaCall ctx rng base argstup exp_ty = do
         annbase <- inferRho ctx base "called base"
         let fun_ty = typeAST annbase
         let argexprs = tupleAstExprs argstup
         debug $ "call: fn type is " ++ show fun_ty
-        (args_ty, res_ty) <- unifyFun fun_ty argexprs "tSC"
+        (args_ty, res_ty) <- unifyFun fun_ty argexprs ("tSC("++tryGetVarName base++")")
         debug $ "call: fn args ty is " ++ show args_ty
         debug $ "call: arg exprs are " ++ show argexprs
         sanityCheck (eqLen argexprs args_ty) $
-                "tcSigmaCall expected equal # of arguments!"
+                "tcSigmaCall expected equal # of arguments! Had "
+                ++ (show $ List.length argexprs) ++ "; expected "
+                ++ (show $ List.length args_ty)
                 ++ highlightFirstLine rng
         annargs <- sequence [checkSigma ctx arg ty | (arg, ty) <- zip argexprs args_ty]
         let args = E_AnnTuple (tupleAstRange argstup) annargs

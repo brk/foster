@@ -229,6 +229,11 @@ dumpExpr x@(MoBool b) =
                     , PbLetable.tag   = IL_BOOL
                     , PbLetable.type' = Just $ dumpType (typeMo x)  }
 
+dumpExpr x@(MoKillProcess _ msg) =
+    P'.defaultValue { PbLetable.string_value = Just $ textToPUtf8 msg
+                    , PbLetable.tag   = IL_KILL_PROCESS
+                    , PbLetable.type' = Just $ dumpType (typeMo x)  }
+
 dumpExpr x@(MoTuple vs allocsrc) =
     P'.defaultValue { PbLetable.parts = fromList [dumpVar v | v <- vs]
                     , PbLetable.tag   = IL_TUPLE
@@ -461,6 +466,7 @@ typeMo expr = case expr of
     MoBool _                -> PrimInt I1
     MoInt t _               -> t
     MoFloat t _             -> t
+    MoKillProcess t _       -> t
     MoTuple vs _            -> TupleType (map tidType vs)
     MoOccurrence {}         -> error $ "ProtobufIL: No typeMo for MoOccurrence"
     MoCall     t  _ _       -> t

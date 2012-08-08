@@ -25,6 +25,7 @@ data KNExpr =
         | KNInt         TypeIL LiteralInt
         | KNFloat       TypeIL LiteralFloat
         | KNTuple       [AIVar] SourceRange
+        | KNKillProcess TypeIL T.Text
         -- Control flow
         | KNIf          TypeIL AIVar  KNExpr KNExpr
         | KNUntil       TypeIL KNExpr KNExpr SourceRange
@@ -90,6 +91,7 @@ kNormalize mebTail expr =
       AIInt t i         -> return $ KNInt t i
       AIFloat t f       -> return $ KNFloat t f
       E_AIVar v         -> return $ KNVar v
+      AIKillProcess t m -> return $ KNKillProcess t m
       E_AIPrim p -> error $ "KNExpr.kNormalize: Should have detected prim " ++ show p
 
       AIAllocArray t a      -> do a' <- gn a ; nestedLets [a'] (\[x] -> KNAllocArray t x)
@@ -310,6 +312,7 @@ typeKN expr =
     KNInt      t _    -> t
     KNFloat    t _    -> t
     KNTuple vs _      -> TupleTypeIL (map tidType vs)
+    KNKillProcess t _ -> t
     KNLetVal  _ _ e   -> typeKN e
     KNLetFuns _ _ e   -> typeKN e
     KNCall  _  t _ _  -> t
@@ -355,6 +358,7 @@ instance Structured KNExpr where
                                 -> out $ "KNVar(Global):   " ++ T.unpack name ++ " :: " ++ show t
             KNVar (TypedId t i) -> out $ "KNVar(Local):   " ++ show i ++ " :: " ++ show t
             KNTyApp t _e argty  -> out $ "KNTyApp     [" ++ show argty ++ "] :: " ++ show t
+            KNKillProcess t m   -> out $ "KNKillProcess " ++ show m ++ " :: " ++ show t
     childrenOf expr =
         let var v = KNVar v in
         case expr of
@@ -362,6 +366,7 @@ instance Structured KNExpr where
             KNBool   {}             -> []
             KNInt    {}             -> []
             KNFloat  {}             -> []
+            KNKillProcess {}        -> []
             KNUntil _t a b _        -> [a, b]
             KNTuple     vs _        -> map var vs
             KNCase _ e bs           -> (var e):(map snd bs)

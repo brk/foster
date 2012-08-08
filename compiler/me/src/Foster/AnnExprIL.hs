@@ -33,6 +33,7 @@ data AIExpr=
         | AIInt        TypeIL LiteralInt
         | AIFloat      TypeIL LiteralFloat
         | AITuple      [AIExpr] SourceRange
+        | AIKillProcess TypeIL T.Text
         -- Control flow
         | AIIf         TypeIL AIExpr AIExpr AIExpr
         | AIUntil      TypeIL AIExpr AIExpr SourceRange
@@ -66,6 +67,8 @@ ail ctx ae =
         AnnCompiles _rng (CompilesResult ooe) -> do
                 oox <- tcIntrospect (tcInject q ooe)
                 return $ AIBool (isOK oox)
+        AnnKillProcess _rng t m -> do ti <- qt t
+                                      return $ AIKillProcess ti m
         AnnBool   _rng b       -> do return $ AIBool b
         AnnString _rng s       -> do return $ AIString s
         AnnInt    _rng t int   -> do ti <- qt t

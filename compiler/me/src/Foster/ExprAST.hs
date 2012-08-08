@@ -55,7 +55,7 @@ data ExprAST ty =
         | E_TyApp         SourceRange (ExprAST ty) [ty]
         -- Others
         | E_CompilesAST   SourceRange (Maybe (ExprAST ty))
-        | E_KillProcess   SourceRange (ExprAST ty) -- string literal
+        | E_KillProcess   SourceRange (ExprAST ty) -- arg must be string literal
         deriving Show
 
 data TupleAST ty = TupleAST { tupleAstRange :: SourceRange

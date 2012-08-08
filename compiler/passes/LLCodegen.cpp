@@ -932,6 +932,11 @@ llvm::Value* emitRuntimeArbitraryPrecisionOperation(const std::string& op,
 }
 */
 
+llvm::Value* LLKillProcess::codegen(CodegenPass* pass) {
+  emitFosterAssert(pass->mod, builder.getFalse(), this->stringValue.c_str());
+  return llvm::UndefValue::get(this->type->getLLVMType());
+}
+
 ///}}}//////////////////////////////////////////////////////////////
 //////////////// LLAllocate ////////////////////////////////////////
 /////////////////////////////////////////////////////////////////{{{
