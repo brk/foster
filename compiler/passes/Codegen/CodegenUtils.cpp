@@ -364,8 +364,8 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   // UDiv, ExactSDiv, URem, SRem,
        if (op == "+") { return b.CreateAdd(VL, VR, "addtmp", this->useNUW, this->useNSW); }
   else if (op == "-") { return b.CreateSub(VL, VR, "subtmp", this->useNUW, this->useNSW); }
-  else if (op == "/") { return b.CreateSDiv(VL, VR, "divtmp"); }
   else if (op == "*") { return b.CreateMul(VL, VR, "multmp", this->useNUW, this->useNSW); }
+  else if (op == "sdiv") { return b.CreateSDiv(VL, VR, "sdivtmp"); }
   else if (op == "srem") { return b.CreateSRem(VL, VR, "sremtmp"); }
   else if (op == "urem") { return b.CreateURem(VL, VR, "uremtmp"); }
   else if (op == "frem") { return b.CreateFRem(VL, VR, "fremtmp"); }

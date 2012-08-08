@@ -13,8 +13,51 @@ type case List (a:Boxed)
 
 /////
 
+bytesConcatByCopy = { a : Array Int8 => alen : Int32 =>
+                      b : Array Int8 => blen : Int32 => len : Int32 =>
+  if blen ==Int32 0 then a else
+  // We do this somewhat-unsatisfactory dance of allocating a (mutable) array,
+  // then filling its contents in via an exposed memcpy primitive.
+  // It would be nicer to have (byte-)array concatenation be a primitive of the
+  // runtime, but that would require the compiler to statically provide the
+  // runtime with the typeinfo needed to call memalloc_array.
+  //
+  // It's also not great that using this in a loop gives O(n^2) asympotic
+  // complexity rather than O(n), because we don't over-allocate our arrays.
+  let bytes = allocDArray len; in
+      // bytes[0..whatever]    = a[0..alen]
+      memcpy_i8_to_from_at_len bytes a 0    alen;
+      // bytes[alen..whatever] = b[0..blen]
+      memcpy_i8_to_from_at_len bytes b alen blen;
+      bytes
+  end
+  end
+};
+
+both = { a : Bool => b : Bool =>
+  if a then b else False end
+};
+
 mkTextConcat = { a : Text => b : Text =>
-  TextConcat a b ((textLength a) +Int32 (textLength b))
+  let lensum = (textLength a) +Int32 (textLength b);
+       small = 120; // we'll be willing to memcpy buffers smaller than this.
+  in
+    case (a, b)
+      of ($TextFragment ba na, $TextFragment bb nb) ->
+        // One optimization from the paper "Ropes: an alternative to strings":
+        // transparently flatten concatenations of small leaf nodes.
+        if lensum <=Int32 small
+        then TextFragment (bytesConcatByCopy ba na bb nb lensum) lensum
+        else TextConcat a b lensum
+        end
+      // Un-implemented optimizations: perform similar flattening for
+      // ($TextConcat a ($TextFragment ab na) _, $TextFragment bb nb) ->
+      // and
+      // ($TextFragment ba na, $TextConcat ($TextFragment bb nb) c) ->
+      of (_                  , _) ->
+        TextConcat a b lensum
+    end
+  end
 };
 
 textLength = { t : Text =>
@@ -24,17 +67,35 @@ textLength = { t : Text =>
    end;
 };
 
-expect_text = { s : Text =>
+expect_text_bare = { s : Text =>
   case s
     of $TextFragment a n     -> prim_print_bytes_stderr a n; n
-    of $TextConcat   s1 s2 n -> expect_text s1; expect_text s2; n
+    of $TextConcat   s1 s2 n -> expect_text_bare s1; expect_text_bare s2; n
    end;
 };
 
-print_text = { s : Text =>
+print_text_bare = { s : Text =>
   case s
     of $TextFragment a n     -> prim_print_bytes_stdout a n; n
-    of $TextConcat   s1 s2 n -> print_text s1; print_text s2; n
+    of $TextConcat   s1 s2 n -> print_text_bare s1; print_text_bare s2; n
+   end;
+};
+
+expect_text = { s : Text =>
+  expect_text_bare s; expect_newline !; ()
+};
+
+print_text = { s : Text =>
+  print_text_bare s; print_newline !; ()
+};
+
+max-Int32 = { n : Int32 => m : Int32 => if n <Int32 m then m else n end };
+
+text_maxdepth = { s : Text =>
+  case s
+    of $TextFragment a n     -> 0
+    of $TextConcat   s1 s2 n -> 1 +Int32
+                               (max-Int32 (text_maxdepth s1) (text_maxdepth s2))
    end;
 };
 
@@ -123,3 +184,34 @@ tmp_Int32_of_base_10_Text = { t:Text =>
     if ok then acc^ else 0 end
   end
 };
+
+tmp_Text_of_Int32_digit = { n:Int32 =>
+  case n
+    of 0 -> "0"
+    of 1 -> "1"
+    of 2 -> "2"
+    of 3 -> "3"
+    of 4 -> "4"
+    of 5 -> "5"
+    of 6 -> "6"
+    of 7 -> "7"
+    of 8 -> "8"
+    of 9 -> "9"
+    of _ -> "<error:value passed to tmp_Text_of_Int32_digit was too large>"
+  end
+};
+
+tmp_Text_of_Int32 = { n:Int32 =>
+  rec go = { n:Int32 => t:Text =>
+    if n <=Int32 10
+      then mkTextConcat (tmp_Text_of_Int32_digit n) t
+      else let r = srem-Int32 n 10;
+               q = sdiv-Int32 n 10;
+            in go q (mkTextConcat (tmp_Text_of_Int32_digit r) t); end
+     end
+  }; in if n <=Int32 0 then mkTextConcat "-" (go (0 -Int32 n) "")
+                       else go n ""
+        end
+  end
+};
+

@@ -532,7 +532,8 @@ tryGetFixnumPrimOp k name =
     "*"       -> Just (*)
     "+"       -> Just (+)
     "-"       -> Just (-)
-    "/"       -> Just div
+    "sdiv"    -> Just div
+    "srem"    -> Just rem
     "bitxor"  -> Just xor
     "bitor"   -> Just (.|.)
     "bitand"  -> Just (.&.)
@@ -676,19 +677,19 @@ packBytes gs a n = let locs = List.take (fromInteger n) (elems a) in
 evalNamedPrimitive :: String -> MachineState -> [SSValue] -> IO MachineState
 
 evalNamedPrimitive primName gs [val] | isPrintFunction primName =
-      do printString gs (display val)
+      do printStringNL gs (display val)
          return $ withTerm gs unit
 
 evalNamedPrimitive primName gs [val] | isExpectFunction primName =
-      do expectString gs (display val)
+      do expectStringNL gs (display val)
          return $ withTerm gs unit
 
 evalNamedPrimitive "expect_i32b" gs [SSInt i] =
-      do expectString gs (showBits 32 i)
+      do expectStringNL gs (showBits 32 i)
          return $ withTerm gs unit
 
 evalNamedPrimitive "print_i32b" gs [SSInt i] =
-      do printString gs (showBits 32 i)
+      do printStringNL gs (showBits 32 i)
          return $ withTerm gs unit
 
 evalNamedPrimitive "force_gc_for_debugging_purposes" gs _args =
@@ -696,6 +697,14 @@ evalNamedPrimitive "force_gc_for_debugging_purposes" gs _args =
 
 evalNamedPrimitive "opaquely_i32" gs [val] =
          return $ withTerm gs (SSTmValue $ val)
+
+evalNamedPrimitive "print_newline" gs [] =
+      do printStringNL gs ""
+         return $ withTerm gs unit
+
+evalNamedPrimitive "expect_newline" gs [] =
+      do expectStringNL gs ""
+         return $ withTerm gs unit
 
 evalNamedPrimitive "prim_print_bytes_stdout" gs [SSArray a, SSInt n] =
       do printString gs (stringOfBytes $ packBytes gs a n)
@@ -725,11 +734,11 @@ evalNamedPrimitive "get_cmdline_arg_n" gs [SSInt i] =
          return $ withTerm gs (SSTmValue $ textFragmentOf argN)
 
 evalNamedPrimitive "expect_float_p9f64" gs [SSFloat f] =
-      do expectString gs (printf "%.9f" f)
+      do expectStringNL gs (printf "%.9f" f)
          return $ withTerm gs unit
 
 evalNamedPrimitive "print_float_p9f64" gs [SSFloat f] =
-      do printString gs (printf "%.9f" f)
+      do printStringNL gs (printf "%.9f" f)
          return $ withTerm gs unit
 
 evalNamedPrimitive prim _gs args = error $ "evalNamedPrimitive " ++ show prim
@@ -815,13 +824,16 @@ evalCoroPrimitive CoroYield _gs _ = error $ "Wrong arguments to coro_yield"
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||  Helpers & Boilerplate  |||||||||||||||||{{{
+printStringNL gs s  = printString  gs (s ++ "\n")
+expectStringNL gs s = expectString gs (s ++ "\n")
+
 printString  gs s = do
   runOutput (outCSLn Blue s)
-  appendFile (outFile gs) (s ++ "\n")
+  appendFile (outFile gs) s
 
 expectString gs s = do
   runOutput (outCSLn Green s)
-  appendFile (errFile gs) (s ++ "\n")
+  appendFile (errFile gs)  s
 
 --------------------------------------------------------------------
 

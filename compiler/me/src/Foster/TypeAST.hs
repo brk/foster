@@ -136,12 +136,19 @@ primitiveDecls =
     ,(,) "opaquely_i32" $ mkProcType [i32] [i32]
     ,(,) "get_cmdline_arg_n" $ mkProcType [i32] [fosStringType]
 
+    ,(,) "expect_newline" $ mkProcType [] []
+    ,(,) "print_newline" $ mkProcType [] []
+
+    ,(,) "memcpy_i8_to_from_at_len" $ mkProcType [ArrayTypeAST i8,
+                                                  ArrayTypeAST i8, i32, i32] []
+
     ,(,) "prim_print_bytes_stdout" $ mkProcType [ArrayTypeAST i8, i32] []
     ,(,) "prim_print_bytes_stderr" $ mkProcType [ArrayTypeAST i8, i32] []
 
     ,(,) "print_float_p9f64"       $ mkProcType [PrimFloat64] []
     ,(,) "expect_float_p9f64"      $ mkProcType [PrimFloat64] []
 
+    -- Calls to this function are internally transformed to AIAllocArray nodes.
     -- forall a, i32 -> Array a
     ,(,) "allocDArray" $ let a = BoundTyVar "a" in
                          ForAllAST (primTyVars [a])
@@ -202,6 +209,7 @@ fixnumPrimitives bitsize =
   ,mkPrim "bitlshr" $ mkFnType [iKK, iKK] [iKK]
   ,mkPrim "bitashr" $ mkFnType [iKK, iKK] [iKK]
   ,mkPrim "srem"    $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "sdiv"    $ mkFnType [iKK, iKK] [iKK]
   ,mkPrim "<"       $ mkFnType [iKK, iKK] [i1]
   ,mkPrim ">"       $ mkFnType [iKK, iKK] [i1]
   ,mkPrim "<="      $ mkFnType [iKK, iKK] [i1]

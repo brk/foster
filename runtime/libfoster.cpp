@@ -143,7 +143,7 @@ void fprint_mp_int(FILE* f, mp_int m, int radix) {
 
 void fprint_bytes(FILE* f, foster_bytes* array, uint32_t n) {
   uint32_t c = array->cap;
-  fprintf(f, "%.*s\n", (std::min)(n, c), &array->bytes[0]);
+  fprintf(f, "%.*s", (std::min)(n, c), &array->bytes[0]);
 }
 
 } } // namespace foster::runtime
@@ -221,12 +221,30 @@ uint8_t foster_ctor_id_of(void* body) {
 
 void print_addr(void* x) { fprintf(stdout, "addr: %p\n", x); }
 
+void print_newline()  { fprintf(stdout, "\n"); }
+void expect_newline() { fprintf(stderr, "\n"); }
+
 void prim_print_bytes_stdout(foster_bytes* array, uint32_t n) {
   fprint_bytes(stdout, array, n);
 }
 
 void prim_print_bytes_stderr(foster_bytes* array, uint32_t n) {
   fprint_bytes(stderr, array, n);
+}
+
+void memcpy_i8_to_from_at_len(foster_bytes* to, foster_bytes* from,
+                              uint32_t req_at, uint32_t req_len) {
+  // Note: to->cap is represented as i64 but for now there's an
+  // invariant that its value is representable using (signed) i32,
+  // so the truncation from int64_t to uint32_t is OK.
+  if (uint32_t(to->cap) < req_at) {
+    foster__assert(false,
+                   "memcpy_i8_to_from_at can't copy negative # of bytes!");
+  } else {
+    int32_t to_rem = uint32_t(to->cap) - req_at;
+    uint32_t len = (std::min)(uint32_t(to_rem), req_len);
+    memcpy(to->bytes + req_at, from->bytes, len);
+  }
 }
 
 void print_float_p9f64(double f) { return fprint_p9f64(stdout, f); }

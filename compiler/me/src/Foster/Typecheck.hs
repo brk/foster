@@ -592,7 +592,9 @@ tcSigmaCall ctx rng base argstup exp_ty = do
         (args_ty, res_ty) <- unifyFun fun_ty argexprs "tSC"
         debug $ "call: fn args ty is " ++ show args_ty
         debug $ "call: arg exprs are " ++ show argexprs
-        sanityCheck (eqLen argexprs args_ty) "tcSigmaCall expected equal # of arguments!"
+        sanityCheck (eqLen argexprs args_ty) $
+                "tcSigmaCall expected equal # of arguments!"
+                ++ highlightFirstLine rng
         annargs <- sequence [checkSigma ctx arg ty | (arg, ty) <- zip argexprs args_ty]
         let args = E_AnnTuple (tupleAstRange argstup) annargs
         debug $ "call: annargs: "
