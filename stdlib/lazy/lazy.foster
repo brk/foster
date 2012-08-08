@@ -1,0 +1,149 @@
+type case Lazy (a:Boxed)
+  of $LazyDelay (Ref (LazyThing a))
+;
+
+type case LazyThing (a:Boxed)
+  //of $LazyThunk { a }
+  of $LazyValue   a
+  of $LazyLazyV ( Lazy a )
+  of $LazyLazyT { Lazy a }
+  of $LazyBusy
+;
+
+// lazily { expr }   is basically   delay { force expr }.
+lazily ::   forall a:Boxed, {     { Lazy a } => Lazy a };
+lazily =  { forall a:Boxed, thunk:{ Lazy a } => LazyDelay (ref (LazyLazyT thunk)) };
+
+delay :: forall a:Boxed, { { a } => Lazy a };
+delay =  { forall a:Boxed, thunk : { a } => lazily { eager (thunk !) } };
+
+eager :: forall a:Boxed, { a => Lazy a };
+eager =  { forall a:Boxed, v : a => LazyDelay (ref (LazyValue v)) };
+
+force :: forall a:Boxed, { Lazy a => a };
+force =  { forall a:Boxed, lazy : Lazy a =>
+  case lazy
+    of $LazyDelay r ->
+      case r ^
+        // This code is hairier than it looks like it ought to be because it
+        // must maintain several invariants with non-obvious interactions.
+        // First, force must be used only tail-recursively in order for lazy
+        // tail recursion to work properly and not encounter stack overflow.
+        // This forbids clear but stackful code such as::
+        //      let v = force (thunk !); in (LazyValue v) >^ r;        v end.
+        //
+        // The obvious response is to move the force to tail position, updating
+        // the ref to point to the new lazy value produced by the thunk::
+        //      let lv =       thunk !; in (LazyLazyV lv) >^ r; force lv end.
+        // Unfortunately, this creates a non-obvious space leak, detailed below.
+        //
+        // Third, we must maintain the invariant that every lazy thunk
+        // is invoked at most once. This would be trivial, except for the
+        // workarounds being used for the first two invariants.
+        of $LazyLazyT thunk ->
+                (LazyBusy !) >^ r;
+                case thunk ! of $LazyDelay r2 ->
+                    (r2 ^) >^ r;
+                    // It would be nice to avoid allocating more than necessary,
+                    // but the only other way I see of doing so is to use two
+                    // refs instead of one, which is worse overall than this
+                    // scheme (assuming the refs are separately allocated and
+                    // not inlined into their containers).
+                    case r2 ^ of $LazyLazyT _ ->
+                                 (LazyLazyV lazy) >^ r2
+                              of _            -> ()
+                    end;
+                    // If r2 points to a lazy thunk, the
+                    // (force lazy) below will lead to invoking
+                    // the thunk. If we leave r2 alone, it will
+                    // still point to the same invoked thunk;
+                    // thus we need to redirect r2 to maintain
+                    // the invariant that thunks are only
+                    // invoked once.
+                    force lazy
+               end
+        // The reason we don't just say (LazyLazyV (thunk !)) >^ r is that we'd
+        // wind up with a space leak for lazy tail recursive code; consider::
+        //    loopy = { lazily { loopy ! } }
+        // force (loopy !), evaluating loopy creates
+        //                     [ D | *-]--->[ref r1| *-]---[LTT|thunk]
+        // Forcing this evaluates the thunk, which creates
+        //                             lv = [ D | *-]--->[ref| *-]---[LTT|thunk]
+        // The straightforward move of (LazyLazyV lv) >^ r1 creates a situation
+        // like this:
+        //                     [ D | *-]--->[ref r1| *-]---[LLV|*+]
+        //                              +------------------------+
+        //                              +-->[ D | *-]--->[ref| *-]---[LTT|thunk]
+        // And the chain will just linearly grow.
+        //
+        // The solution is to instead peek through the ref
+        // and steal its contents.
+        //
+        //
+        // The back-patching with LazyLazyV is to maintain the invariant
+        // that thunks are only invoked once. In particular, consider the
+        // following snippet::
+        // let r = delay { print 7 }; s = lazily { r }; in force s; force r; end
+        //
+        // When force s begins executing, the heap looks like this:
+        //
+        //      s = [LD|*-]--->[ref|*-]-->[LLT|{r}]
+        //      r = [LD|*-]--->[ref|*-]-->[LLT|{eager {print 7}!}]
+        //
+        // Given only the redirection motivated above, force s evaluates the
+        // LazyLazyT thunk and gets lv = r, and redirects s's ref::
+        //
+        //      s = [LD|*-]--->[ref|*-]-+
+        //                              |
+        //      r = [LD|*-]--->[ref|*-]-+->[LLT|{eager {print 7}!}]
+        //
+        // We then iteratively force s again; this time, the LLT thunk
+        // prints 7 and allocates a new lazy value to cache the returned unit
+        // value, *and we redirect only s's ref*::
+        //
+        //          [LD|*-]--->[ref|*-]-+->[LVal|()]
+        //                              |
+        //      s = [LD|*-]--->[ref|*-]-+
+        //
+        //      r = [LD|*-]--->[ref|*-]--->[LLT|{eager {print 7}!}]
+        //
+        // Now the problem is obvious: when we force r, we'll re-execute
+        // the thunk that prints 7.
+        //
+        // The solution we adopt is that when s steals the contents of r's ref,
+        // we must make r's ref indirect to s, so we wind up with this heap:
+        //
+        //          [LD|*-]--->[ref|*-]-+->[LVal|()]
+        //                              |
+        //      s = [LD|*-]--->[ref|*-]-+
+        //           ^
+        //           \-[LLV|-*]<---\
+        //      r = [LD|*-]--->[ref|*]
+        //
+        // Now, when we force r, we'll use the cached result from s,
+        // rather than re-invoking the printing thunk.
+        //
+        // I don't yet know how the LazyLazyV indirections wind up affecting
+        // real code; I think it mainly applies to pathlogical cases, but
+        // I don't know about (for example) lazy data structures...
+
+        // We could do path compression analgous to the LazyLazyT case here,
+        // but it's not clear whether we actually gain much by doing so.
+        of $LazyLazyV lv -> //print_text "indirecting through LazyLazyV";
+                            force lv
+        of $LazyValue v -> v
+        of $LazyBusy -> prim kill-entire-process "lazy value re-entered"; force lazy
+      end
+  end
+};
+
+
+// This alternate encoding of ``lazily`` as a derived form leads to space leaks,
+// as described in http://srfi.schemers.org/srfi-45/srfi-45.html
+//
+//lazily ::   forall a:Boxed, {     { Lazy a } => Lazy a };
+//lazily =  { forall a:Boxed, thunk:{ Lazy a } => delay { force (thunk !) } };
+//
+//delay :: forall a:Boxed, { { a } => Lazy a };
+//delay =  { forall a:Boxed, thunk : { a } => LazyDelay (ref (LazyThunk thunk)) };
+

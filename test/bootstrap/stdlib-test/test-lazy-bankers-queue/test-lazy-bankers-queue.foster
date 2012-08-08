@@ -1,0 +1,72 @@
+snafuinclude Prelude "prelude";
+snafuinclude Streams "streams";
+
+// Lazy queues based on the code from Okasaki's book (p.65).
+
+type case BankersQueue (a:Boxed)
+      of $BankersQueue Int32 (Lazy (Stream a))
+                       Int32 (Lazy (Stream a))
+;
+
+bankersQueueEmpty :: forall a:Boxed, { BankersQueue a };
+bankersQueueEmpty = { forall a:Boxed,
+  let snil = stream-nil-mediocre !; in
+    BankersQueue 0 snil 0 snil
+  end
+};
+
+bankersQueueIsEmpty :: forall a:Boxed, { BankersQueue a => Bool };
+bankersQueueIsEmpty = { forall a:Boxed, q: BankersQueue a =>
+  case q of $BankersQueue n _ _ _ -> n ==Int32 0 end
+};
+
+bankersQueueCheck :: forall a:Boxed, { BankersQueue a => BankersQueue a };
+bankersQueueCheck = { forall a:Boxed, q: BankersQueue a =>
+  case q of $BankersQueue lenf f lenr r ->
+    if lenr <=Int32 lenf
+      then q
+      else BankersQueue (lenf +Int32 lenr) (stream-append f (stream-reverse r))
+                        0                  (stream-nil-mediocre !)
+    end
+  end
+};
+
+// Worst-case time: O(n)
+// Amortized time: O(1)
+bankersQueueSnoc :: forall a:Boxed, { BankersQueue a => a => BankersQueue a };
+bankersQueueSnoc = { forall a:Boxed, q: BankersQueue a => elt : a =>
+  case q of $BankersQueue lenf f lenr r ->
+    bankersQueueCheck (BankersQueue lenf f
+                                   (lenr +Int32 1)
+                                   (stream-cons-mediocre (eager  elt) r))
+  end
+};
+
+// Worst-case time: O(n)
+// Amortized time: O(1)
+bankersQueueHead :: forall a:Boxed, { BankersQueue a => Maybe a };
+bankersQueueHead = { forall a:Boxed, q: BankersQueue a =>
+  case q of $BankersQueue lenf f lenr r ->
+    case force f
+      of $StreamNilV       -> None !
+      of $StreamCons la _  -> Some (force la)
+    end
+  end
+};
+
+// Worst-case time: O(n)
+// Amortized time: O(1)
+bankersQueueTail :: forall a:Boxed, { BankersQueue a => Maybe (BankersQueue a) };
+bankersQueueTail = { forall a:Boxed, q: BankersQueue a =>
+  case q of $BankersQueue lenf f lenr r ->
+    case force f
+      of $StreamNilV       -> None !
+      of $StreamCons la ls -> Some (bankersQueueCheck
+                                   (BankersQueue (lenf -Int32 1) ls lenr r))
+    end
+  end
+};
+
+main = {
+  0
+};
