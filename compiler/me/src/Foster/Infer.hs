@@ -130,7 +130,10 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
     -- parsing/function argument handling mismatch.
 
     ((FnTypeAST as1 a2 _cc1 _), (FnTypeAST bs1 b2 _cc2 _)) ->
-        tcUnifyLoop ([TypeConstrEq a b | (a, b) <- zip as1 bs1]
+        if List.length as1 /= List.length bs1
+          then tcFails [out $ "Unable to unify functions of different arity!\n"
+                           ++ show as1 ++ "\nvs\n" ++ show bs1]
+          else tcUnifyLoop ([TypeConstrEq a b | (a, b) <- zip as1 bs1]
                          ++ (TypeConstrEq a2 b2):constraints) tysub
 
     ((CoroTypeAST a1 a2), (CoroTypeAST b1 b2)) ->
