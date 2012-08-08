@@ -449,10 +449,8 @@ stepExpr gs expr = do
         let (SSInt i) = getval gs idxvar in
         let n = (fromInteger i) :: Int in
         case getval gs base of
-          SSArray arr  ->  let (SSLocation z) = arraySlotLocation arr n in
-                           return $ withTerm gs  (SSTmValue $ lookupHeap gs z)
-          SSByteString bs -> return $ withTerm gs (SSTmValue $
-                                         SSInt . fromIntegral $ BS.index bs n)
+          a@(SSArray _)      -> return $ withTerm gs (SSTmValue $ prim_arrayRead gs n a)
+          a@(SSByteString _) -> return $ withTerm gs (SSTmValue $ prim_arrayRead gs n a)
           other -> error $ "KSmallstep: Expected base of array read "
                         ++ "(" ++ show base ++ "["++ show idxvar++"])"
                         ++ " to be array value; had " ++ show other
@@ -461,9 +459,7 @@ stepExpr gs expr = do
         let (SSInt i) = getval gs idxvar in
         let n = (fromInteger i) :: Int in
         case getval gs base of
-          SSArray arr  -> let (SSLocation z) = arraySlotLocation arr n in
-                          let gs' = modifyHeapWith gs z (\_ -> getval gs iv) in
-                          return $ withTerm gs' unit
+          SSArray arr  -> prim_arrayPoke gs n arr (getval gs iv)
           other -> error $ "Expected base of array write to be array value; had " ++ show other
 
     IAllocArray sizeid -> do
@@ -508,6 +504,23 @@ matchPatterns pats vals = do
 
 -- |||||||||||||||||||||| Primitive Operators ||||||||||||||||||{{{
 arraySlotLocation arr n = SSLocation (arr ! n)
+
+prim_arrayLength :: SSValue -> Int
+prim_arrayLength (SSArray a) = let (b,e) = bounds a in e - b
+prim_arrayLength (SSByteString bs) = BS.length bs
+prim_arrayLength _ = error "prim_arrayLength got non-array value!"
+
+prim_arrayRead :: MachineState -> Int -> SSValue -> SSValue
+prim_arrayRead gs n (SSArray arr) =
+        let (SSLocation z) = arraySlotLocation arr n in lookupHeap gs z
+prim_arrayRead _  n (SSByteString bs) = SSInt . fromIntegral $ BS.index bs n
+prim_arrayRead _  _ _ = error "prim_arrayRead got non-array value!"
+
+prim_arrayPoke :: MachineState -> Int -> Array Int Location -> SSValue -> IO MachineState
+prim_arrayPoke gs n arr val = do
+  let (SSLocation z) = arraySlotLocation arr n
+  let gs' = modifyHeapWith gs z (\_ -> val)
+  return $ withTerm gs' unit
 
 liftInt2 :: (Integral a) => (a -> a -> b) -> Integer -> Integer -> b
 liftInt2 f i1 i2 = f (fromInteger i1) (fromInteger i2)
@@ -722,9 +735,11 @@ evalNamedPrimitive "prim_print_bytes_stderr" gs [SSByteString bs, SSInt n] =
       do expectString gs (stringOfBytes $ BS.take (fromInteger n) bs)
          return $ withTerm gs unit
 
-evalNamedPrimitive "prim_arrayLength" gs [SSArray a] =
-      do let (b,e) = bounds a
-         return $ withTerm gs (SSTmValue $ SSInt (fromIntegral $ e - b))
+evalNamedPrimitive "prim_arrayLength" gs [arr@(SSArray _)] =
+      do return $ withTerm gs (SSTmValue $ SSInt (fromIntegral $ (prim_arrayLength arr)))
+
+evalNamedPrimitive "prim_arrayLength" gs [arr@(SSByteString _)] =
+      do return $ withTerm gs (SSTmValue $ SSInt (fromIntegral $ (prim_arrayLength arr)))
 
 evalNamedPrimitive "get_cmdline_arg_n" gs [SSInt i] =
       do let argN = let args = stCmdArgs gs in
@@ -740,6 +755,24 @@ evalNamedPrimitive "expect_float_p9f64" gs [SSFloat f] =
 evalNamedPrimitive "print_float_p9f64" gs [SSFloat f] =
       do printStringNL gs (printf "%.9f" f)
          return $ withTerm gs unit
+
+evalNamedPrimitive "memcpy_i8_to_from_at_len" gs
+         [SSArray arr, from_bs_or_arr, SSInt req_at_I, SSInt req_len_I] =
+      do
+         let (_, to_len) = bounds arr
+         let   from_len  = prim_arrayLength from_bs_or_arr
+         let (req_at, req_len) = (fromInteger req_at_I, fromInteger req_len_I)
+         -- assert that req_at <= length arr
+         let req_len' = min req_len from_len
+         let to_rem = to_len - req_at
+         let len = min to_rem req_len'
+         let idxs = take len $ [0..]
+         (_, gs') <- mapFoldM idxs gs (\idx gs -> do
+                         let val = prim_arrayRead gs idx from_bs_or_arr
+                         let to_idx = req_at + fromIntegral idx
+                         gs' <- prim_arrayPoke gs to_idx arr val
+                         return ([], gs' ))
+         return $ withTerm gs' unit
 
 evalNamedPrimitive prim _gs args = error $ "evalNamedPrimitive " ++ show prim
                                          ++ " not yet defined for args:\n"
