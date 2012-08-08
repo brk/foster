@@ -7,7 +7,7 @@ main = {
   variant-one !;
   variant-two !;
   //stress-hof !;
-  stress-native !;
+  //stress-native !;
   //stress-native (ref (opaquely_i32 0));
 };
 

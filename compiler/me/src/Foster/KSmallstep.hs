@@ -759,20 +759,22 @@ evalNamedPrimitive "print_float_p9f64" gs [SSFloat f] =
 evalNamedPrimitive "memcpy_i8_to_from_at_len" gs
          [SSArray arr, from_bs_or_arr, SSInt req_at_I, SSInt req_len_I] =
       do
+         let min0 a b = max 0 (min a b)
          let (_, to_len) = bounds arr
          let   from_len  = prim_arrayLength from_bs_or_arr
-         let (req_at, req_len) = (fromInteger req_at_I, fromInteger req_len_I)
-         -- assert that req_at <= length arr
-         let req_len' = min req_len from_len
+         let    req_len  = min0 (fromInteger req_len_I) from_len
+         let    req_at   = fromInteger req_at_I
          let to_rem = to_len - req_at
-         let len = min to_rem req_len'
-         let idxs = take len $ [0..]
-         (_, gs') <- mapFoldM idxs gs (\idx gs -> do
-                         let val = prim_arrayRead gs idx from_bs_or_arr
-                         let to_idx = req_at + fromIntegral idx
-                         gs' <- prim_arrayPoke gs to_idx arr val
-                         return ([], gs' ))
-         return $ withTerm gs' unit
+         if to_rem < 0 then error "memcpy_i8_to_from_at_len: req_at > to_len"
+          else do
+             let len = min0 to_rem req_len
+             let idxs = take len $ [0..]
+             (_, gs') <- mapFoldM idxs gs (\idx gs -> do
+                             let val = prim_arrayRead gs idx from_bs_or_arr
+                             let to_idx = req_at + fromIntegral idx
+                             gs' <- prim_arrayPoke gs to_idx arr val
+                             return ([], gs' ))
+             return $ withTerm gs' unit
 
 evalNamedPrimitive prim _gs args = error $ "evalNamedPrimitive " ++ show prim
                                          ++ " not yet defined for args:\n"

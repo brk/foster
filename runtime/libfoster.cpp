@@ -239,9 +239,10 @@ void memcpy_i8_to_from_at_len(foster_bytes* to, foster_bytes* from,
   // so the truncation from int64_t to uint32_t is OK.
   if (uint32_t(to->cap) < req_at) {
     foster__assert(false,
-                   "memcpy_i8_to_from_at can't copy negative # of bytes!");
+                   "memcpy_i8_to_from_at_len can't copy negative # of bytes!");
   } else {
     int32_t to_rem = uint32_t(to->cap) - req_at;
+    req_len =      (std::min)(req_len, uint32_t(from->cap));
     uint32_t len = (std::min)(uint32_t(to_rem), req_len);
     memcpy(to->bytes + req_at, from->bytes, len);
   }
