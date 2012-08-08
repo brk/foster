@@ -1,14 +1,9 @@
+snafuinclude List "list";
 
+// TODO switching from Boxed to Type fails...
 type case Maybe (a:Boxed)
   of $None
   of $Some a
-;
-
-// TODO switching from Boxed to Type fails...
-
-type case List (a:Boxed)
-  of $Nil
-  of $Cons a (List a)
 ;
 
 /////
