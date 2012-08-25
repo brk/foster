@@ -6,7 +6,7 @@
 -----------------------------------------------------------------------------
 
 module Foster.CFG
-( computeCFGIO
+( computeCFGs
 , incrPredecessorsDueTo
 , Insn(..)
 , BlockId, BlockEntry
@@ -14,6 +14,7 @@ module Foster.CFG
 , BasicBlock
 , splitBasicBlock -- used in closure conversion
 , CFLast(..)
+, CFBody(..)
 , CFFn
 ) where
 
@@ -31,11 +32,27 @@ import Control.Monad.State
 import Data.IORef
 import Prelude hiding (id, last)
 
+data CFBody = CFB_LetFuns [Ident] [CFFn] CFBody
+            | CFB_Call    TailQ TypeIL AIVar [AIVar]
+
 -- |||||||||||||||||||| Entry Point & Helpers |||||||||||||||||||{{{
 
 -- This is the "entry point" into CFG-building for the outside.
 -- We take (and update) a mutable reference as a convenient way of
 -- threading through the small amount of globally-unique state we need.
+computeCFGs :: IORef Uniq -> KNExpr -> IO CFBody
+computeCFGs uref expr =
+  case expr of
+    KNLetFuns ids fns body -> do
+      cffns <- mapM (computeCFGIO uref) fns
+      cfbody <- computeCFGs uref body
+      return $ CFB_LetFuns ids cffns cfbody
+    -- We've kept a placeholder call to the main function here until now,
+    -- but at this point we can get rid of it, since we're convering to a
+    -- flat-list representation with an implicit call to main.
+    KNCall tq t v vs -> return $ CFB_Call tq t v vs
+    _ -> error $ "computeCFGIO expected a series of KNLetFuns bindings! had " ++ show expr
+
 computeCFGIO :: IORef Uniq -> Fn KNExpr TypeIL -> IO CFFn
 computeCFGIO uref fn = do
   cfgState <- internalComputeCFG uref fn

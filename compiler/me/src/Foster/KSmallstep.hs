@@ -50,11 +50,8 @@ outFile gs = (stTmpDir gs) ++ "/istdout.txt"
 -- To interpret a program, we construct a coroutine for main
 -- (no arguments need be passed yet) and step until the program finishes.
 interpretKNormalMod kmod tmpDir cmdLineArgs = do
-  let funcmap = Map.fromList $ map (\sf -> (ssFuncIdent sf, sf))
-                             (map ssFunc (moduleILfunctions kmod))
-  let main = (funcmap Map.! (GlobalSymbol $ T.pack "main"))
   let loc  = 0 :: Int
-  let mainCoro = Coro { coroTerm = (ssFuncBody main)
+  let mainCoro = Coro { coroTerm = ssTermOfExpr $ moduleILbody kmod
                       , coroArgs = []
                       , coroEnv  = env
                       , coroStat = CoroStatusRunning
@@ -64,8 +61,7 @@ interpretKNormalMod kmod tmpDir cmdLineArgs = do
                       } where env = Map.empty
   let emptyHeap = Heap (nextLocation loc)
                        (Map.singleton loc (SSCoro mainCoro))
-  let globalState = MachineState funcmap emptyHeap loc tmpDir
-                                 ("ksmallstep":cmdLineArgs)
+  let globalState = MachineState emptyHeap loc tmpDir ("ksmallstep":cmdLineArgs)
 
   _ <- writeFile (outFile globalState) ""
   _ <- writeFile (errFile globalState) ""
@@ -108,8 +104,7 @@ step gs =
 -- state does not include the coroutine value itself!
 
 data MachineState = MachineState {
-           stFuncmap :: Map Ident SSFunc
-        ,  stHeap    :: Heap
+           stHeap    :: Heap
         ,  stCoroLoc :: Location
         ,  stTmpDir  :: String
         ,  stCmdArgs :: [String]
@@ -287,9 +282,6 @@ data SSFunc = Func { ssFuncIdent      :: Ident
                    }
 instance Show SSFunc where
   show f = "<func " ++ show (ssFuncIdent f) ++ " ~ " ++ show (ssFuncBody f) ++ ">"
-
-tryLookupFunc :: MachineState -> Ident -> Maybe SSFunc
-tryLookupFunc gs id = Map.lookup id (stFuncmap gs)
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- |||||||||||||||||||| Machine State Helpers |||||||||||||||||||{{{
@@ -327,10 +319,7 @@ getval gs id =
   let env = envOf gs in
   case Map.lookup id env of
     Just v -> v
-    Nothing -> case tryLookupFunc gs id of
-      Just f -> SSFunc f
-      Nothing ->
-               error $ "Unable to get value for " ++ show id
+    Nothing -> error $ "Unable to get value for " ++ show id
                       ++ "\n\tenv (unsorted) is " ++ show env
 
 -- Update the current term to be the body of the given procedure, with
@@ -424,13 +413,9 @@ stepExpr gs expr = do
 
     ICall b vs ->
         let args = map (getval gs) vs in
-        case tryLookupFunc gs b of
-           -- Call of top-level function
-           Just func -> return (callFunc gs func args)
-           Nothing -> --  call of locally bound function
-             case getval gs b of
-               SSFunc func -> return (callFunc gs func args)
-               v -> error $ "Cannot call non-closure value " ++ display v
+        case getval gs b of
+           SSFunc func -> return (callFunc gs func args)
+           v -> error $ "Cannot call non-function value " ++ display v
 
     IIf v b c ->
         case getval gs v of

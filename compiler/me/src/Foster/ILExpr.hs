@@ -9,12 +9,15 @@ module Foster.ILExpr where
 
 import Control.Monad.State
 import Data.Set(Set)
-import qualified Data.Set as Set(empty, singleton, union, unions, notMember)
+import qualified Data.Set as Set(empty, singleton, union, unions, notMember, fromList)
 import Data.Map(Map)
 import qualified Data.Map as Map((!), insert, lookup, empty, fromList, elems)
 import qualified Data.Text as T
+import qualified Data.List as List(and)
 
 import Compiler.Hoopl
+
+import Debug.Trace(trace)
 
 import Foster.Base
 import Foster.Kind
@@ -89,19 +92,86 @@ data ILLast = ILRetVoid
 
 closureConvertAndLift :: DataTypeSigs
                       -> Uniq
-                      -> (ModuleIL BasicBlockGraph TypeIL)
+                      -> (ModuleIL CFBody TypeIL)
                       -> ILProgram
 closureConvertAndLift dataSigs u m =
     -- We lambda lift top level functions, since we know a priori
     -- that they don't have any "real" free vars.
     -- Lambda lifting then closure converts any nested functions.
-    let procsILM     = forM fns (\fn -> lambdaLift fn []) where
-                            fns = moduleILfunctions m in
     let initialState = ILMState u Map.empty Map.empty dataSigs in
-    let (topProcs, newstate) = runState procsILM initialState in
+    let (topProcs, newstate) = runState (closureConvertToplevel $ moduleILbody m)
+                                        initialState in
     let decls = map (\(s,t) -> ILDecl s t) (moduleILdecls m) in
     let dts = moduleILprimTypes m ++ moduleILdataTypes m in
     ILProgram (ilmProcDefs newstate) decls dts topProcs (moduleILsourceLines m)
+
+instance Show (Insn e x) where
+  show (ILabel   bid) = "ILabel " ++ show bid
+  show (ILetVal  id letable) = "ILetVal  " ++ show id  ++ " = " ++ show letable
+  show (ILetFuns ids fns   ) = "ILetFuns " ++ show ids ++ " = " ++ show ["..." | _ <- fns]
+  show (ILast    cflast    ) = "ILast    " ++ show cflast
+
+closureConvertToplevel :: CFBody -> ILM [ILProcDef]
+closureConvertToplevel body = do
+  (procdefs, _) <- cvt ([], Set.empty) body
+  return procdefs
+     where
+       -- Iterate through the SCCs of definitions, keeping track of a state
+       -- parameter (the set of globalized variables, which need not appear in
+       -- a function's environment). For each definition, if it doesn't need
+       -- an environment, we'll lift it; otherwise, closure convert it.
+       -- We directly return a list of the top-level proc definitions, and also
+       -- (via the ILM monad) a list of all procs generated, including those
+       -- from nested functions.
+       cvt :: ([ILProcDef], Set Ident) -> CFBody -> ILM ([ILProcDef], Set Ident)
+       cvt (topprocs, globalized) (CFB_Call {} {- tc t v vs -}) =
+         return (topprocs, globalized)
+
+       cvt (topprocs, globalized) (CFB_LetFuns ids fns body) =
+         let
+             unliftable fn glbl = [ id | (TypedId _ id) <- fnFreeVars fn
+                                       , Set.notMember id glbl]
+             allUnliftables = filter (not . null) (map (\fn -> unliftable fn globalized' ) fns)
+             -- If a recursive nest of functions don't close over any other
+             -- variables, they can all be globalized as long as every use
+             -- of their peers happens to be a direct call. So, we'll assume
+             -- we can globalize, but enforce the side condition.
+             --
+             -- TODO the reason for the side condition is that coercing a
+             --      proc to a closure involves allocation, which we can skip
+             --      if we don't lambda lift. But we could take an alternate
+             --      approach: for each liftable proc, associate with it a
+             --      global-symbol trivial closure, allocated at startup time.
+             --      Then instead of an allocating coercion, we can just
+             --      reference the global variable instead.
+             globalized' = Set.union globalized (Set.fromList ids)
+             gonnaLift   = null allUnliftables && noFirstClassUses fns
+             noFirstClassUses fns = List.and $ map onlySecondClassUses fns
+             onlySecondClassUses fn = let bbg = fnBody fn in
+                                      foldGraphNodes (checkUses (bbgRetK bbg))
+                                                            (bbgBody bbg) True
+             checkUses :: BlockId -> Insn e x -> Bool -> Bool
+             checkUses retk insn True = case insn of
+                     ILabel {}                  -> True
+                     -- TODO mono before means no need to deal with tyapp
+                     ILetVal _ (ILTyApp _ _ _)  -> True -- HACKMEM
+                     ILetVal _ (ILCall _ _v vs) -> ok vs -- ignore v
+                     ILetVal _ l                -> ok (freeTypedIds l)
+                     ILetFuns _ fns             -> noFirstClassUses fns
+                     ILast (CFCont bid    vs)   -> bid /= retk || ok vs
+                     ILast (CFCall _ _ _v vs)   -> ok vs
+                     ILast (CFCase _ _)         -> True
+             checkUses _ _ False = False
+
+             ok :: [AIVar] -> Bool
+             ok vs = List.and [tidIdent v `notElem` ids | v <- vs]
+         in
+            if trace ("gonna lift " ++ show ids ++ "? " ++ show gonnaLift ++ " ;; " ++ show allUnliftables
+                 ++ " ***** " ++ show ids ++ "//" ++ show globalized) gonnaLift
+              then do newprocs <- mapM (\fn -> lambdaLift fn []) fns
+                      cvt (newprocs ++ topprocs, globalized' ) body
+              else do _        <- closureConvertLetFuns ids fns
+                      cvt (            topprocs, globalized  ) body
 
 -- For example, if we have something like
 --      let y = blah in
@@ -189,16 +259,16 @@ closureConvertBlocks bbg = do
       closureConvertMid mid =
         case mid of
           ILetVal id val -> return $ ILLetVal id val
-          ILetFuns ids fns -> closureConvertLetFuns ids fns
+          ILetFuns ids fns -> do closures <- closureConvertLetFuns ids fns
+                                 return $ ILClosures ids closures
 
-      closureConvertLetFuns :: [Ident] -> [CFFn] -> ILM ILMiddle
-      closureConvertLetFuns ids fns = do
-          let genFreshId id = ilmFresh (".env." `prependedTo` identPrefix id)
-          cloEnvIds <- mapM genFreshId ids
-          let infoMap = Map.fromList (zip ids (zip fns cloEnvIds))
-          let idfns = zip ids fns
-          closures  <- mapM (closureOfKnFn infoMap) idfns
-          return $ ILClosures ids closures
+closureConvertLetFuns :: [Ident] -> [CFFn] -> ILM [ILClosure]
+closureConvertLetFuns ids fns = do
+    let genFreshId id = ilmFresh (".env." `prependedTo` identPrefix id)
+    cloEnvIds <- mapM genFreshId ids
+    let infoMap = Map.fromList (zip ids (zip fns cloEnvIds))
+    let idfns = zip ids fns
+    mapM (closureOfKnFn infoMap) idfns
 
 data BlockFin = BlockFin [ILBlock]      -- new blocks generated
                          BlockId        -- entry block for decision tree logic

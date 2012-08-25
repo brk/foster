@@ -34,11 +34,11 @@ import Foster.ExprAST
 import Foster.TypeAST
 import Foster.ParsedType
 import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn))
-import Foster.AnnExprIL(AIExpr, fnOf)
-import Foster.TypeIL(TypeIL, ilOf)
+import Foster.AnnExprIL(AIExpr(AILetFuns, AICall, E_AIVar), fnOf)
+import Foster.TypeIL(TypeIL(TupleTypeIL, FnTypeIL), ilOf)
 import Foster.ILExpr(closureConvertAndLift, showILProgramStructure)
 import Foster.MonoExpr(MonoProgram, showMonoProgramStructure)
-import Foster.KNExpr(kNormalizeModule)
+import Foster.KNExpr(KNExpr, kNormalizeModule)
 import Foster.Typecheck
 import Foster.Context
 import Foster.Monomo
@@ -187,9 +187,9 @@ typecheckModule verboseMode modast tcenv0 = do
                        show [(name, frees) | (_, name, frees) <- callGraphList]
         let showASTs     = verboseMode
         let showAnnExprs = verboseMode
-        (annFns, (ctx, tcenv)) <- mapFoldM sortedFns (ctx0, tcenv0)
+        (annFnSCCs, (ctx, tcenv)) <- mapFoldM' sortedFns (ctx0, tcenv0)
                                           (typecheckFnSCC showASTs showAnnExprs)
-        unTc tcenv (convertTypeILofAST modast ctx annFns)
+        unTc tcenv (convertTypeILofAST modast ctx annFnSCCs)
       ([], Errors os) -> return (Errors os)
       (dups, _) -> return (Errors [out $ "Unable to check module due to "
                                         ++ "duplicate bindings: " ++ show dups])
@@ -240,19 +240,37 @@ typecheckModule verboseMode modast tcenv0 = do
 
    convertTypeILofAST :: ModuleAST FnAST TypeAST
                       -> Context TypeAST
-                      -> [OutputOr (AnnExpr TypeAST)]
+                      -> [[OutputOr (AnnExpr TypeAST)]]
                       -> Tc (Context TypeIL, ModuleIL AIExpr TypeIL)
    convertTypeILofAST mAST ctx_ast oo_annfns = do
      ctx_il    <- liftContextM   (ilOf ctx_ast) ctx_ast
      decls     <- mapM (convertDecl (ilOf ctx_ast)) (externalModuleDecls mAST)
      primtypes <- mapM (convertDataTypeAST ctx_ast) (moduleASTprimTypes mAST)
      datatypes <- mapM (convertDataTypeAST ctx_ast) (moduleASTdataTypes mAST)
-     aiFns     <- mapM (tcInject (fnOf ctx_ast))
-                       (map (fmapOO unFunAnn) oo_annfns)
-     let m = ModuleIL aiFns decls datatypes primtypes
+     let unfuns fns -- :: [[OutputOr (AnnExpr TypeAST)]] -> [[OutputOr (Fn (AnnExpr TypeAST) TypeAST)]]
+                    = map (map (fmapOO unFunAnn)) fns
+     let tci f -- :: OutputOr (Fn (AnnExpr TypeAST) TypeAST) -> Tc (Fn AIExpr TypeIL)
+               = tcInject (fnOf ctx_ast) f
+     let tcis fns = mapM tci fns
+     aiFns     <- mapM tcis (unfuns oo_annfns)
+     let q = buildExprSCC aiFns
+     let m = ModuleIL q decls datatypes primtypes
                                                   (moduleASTsourceLines mAST)
      return (ctx_il, m)
        where
+        buildExprSCC :: [[Fn AIExpr TypeIL]] -> AIExpr
+        buildExprSCC [] = error "Main.hs: Can't build SCC of no functions!"
+        buildExprSCC es = let call_of_main = AICall unit
+                                              (E_AIVar (TypedId mainty (GlobalSymbol $ T.pack "main")))
+                                              []
+                              unit   = TupleTypeIL []
+                              mainty = FnTypeIL [unit] unit FastCC FT_Proc
+                          in foldr build call_of_main es
+         where build :: [Fn AIExpr TypeIL] -> AIExpr -> AIExpr
+               build es body = case es of
+                    [] -> body
+                    _  -> AILetFuns (map fnIdent es) es body
+
         -- Note that we discard internal declarations, which are only useful
         -- during type checking. External declarations, on the other hand,
         -- will eventually be needed during linking.
@@ -416,10 +434,8 @@ lowerModule ai_mod ctx_il = do
      let kmod = kNormalizeModule ai_mod ctx_il
 
      whenDumpIR "kn" $ do
-        forM_ (moduleILfunctions kmod) (\fn -> do
-           runOutput (outLn $ "vvvv k-normalized :====================")
-           runOutput (outLn $ show (fnVar fn))
-           runOutput (showStructure (fnBody fn)))
+         runOutput (outLn $ "vvvv k-normalized :====================")
+         runOutput (showStructure (moduleILbody kmod))
 
      cfgmod   <- cfgModule      kmod
      prog0    <- closureConvert cfgmod
@@ -439,11 +455,12 @@ lowerModule ai_mod ctx_il = do
      return monoprog
 
   where
+    cfgModule :: ModuleIL KNExpr TypeIL -> Compiled (ModuleIL CFBody TypeIL)
     cfgModule kmod = do
         uniqref <- gets (tcEnvUniqs.ccTcEnv)
         liftIO $ do
-            cfgFuncs <- mapM (computeCFGIO uniqref) (moduleILfunctions kmod)
-            return $ kmod { moduleILfunctions = cfgFuncs }
+            cfgBody <- computeCFGs uniqref (moduleILbody kmod)
+            return $ kmod { moduleILbody = cfgBody }
 
     closureConvert cfgmod = do
         uniqref <- gets (tcEnvUniqs.ccTcEnv)

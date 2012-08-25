@@ -64,14 +64,17 @@ kNormalizeModule :: (ModuleIL AIExpr TypeIL)
                  -> Context TypeIL
                  -> (ModuleIL KNExpr TypeIL)
 kNormalizeModule m ctx =
-    let knRegularFuncs = map kNormalizeFn (moduleILfunctions m) in
     -- TODO move ctor wrapping earlier?
-    let knCtorFuncs    = concatMap (kNormalCtors ctx) (moduleILprimTypes m ++
-                                                       moduleILdataTypes m) in
-    let knAllFuncsKN   = knRegularFuncs ++ knCtorFuncs in
-    let knFuncs = evalState (sequence knAllFuncsKN) 0 in
-    m { moduleILfunctions = knFuncs }
-
+    let knCtorFuncs = concatMap (kNormalCtors ctx) (moduleILprimTypes m ++
+                                                    moduleILdataTypes m) in
+    let knWrappedBody = do { ctors <- sequence knCtorFuncs
+                           ; body  <- kNormalize YesTail (moduleILbody m)
+                           ; return $ wrapFns ctors body
+                           } in
+    m { moduleILbody = evalState knWrappedBody 0 }
+      where
+        wrapFns :: [Fn KNExpr TypeIL] -> KNExpr -> KNExpr
+        wrapFns fs e = foldr (\f body -> KNLetFuns [fnIdent f] [f] body) e fs
 
 kNormalizeFn :: (Fn AIExpr TypeIL) -> KN (Fn KNExpr TypeIL)
 kNormalizeFn fn = do

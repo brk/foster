@@ -153,7 +153,7 @@ fnType fn = tidType $ fnVar fn
 fnIdent fn = tidIdent $ fnVar fn
 
 data ModuleIL expr ty = ModuleIL {
-          moduleILfunctions   :: [Fn expr ty]
+          moduleILbody        :: expr
         , moduleILdecls       :: [(String, ty)]
         , moduleILdataTypes   :: [DataType ty]
         , moduleILprimTypes   :: [DataType ty]
@@ -288,6 +288,15 @@ scanlM f z ls = do zs <- case ls of []   -> do return []
                                     x:xs -> do z' <- f z x
                                                scanlM f z' xs
                    return $ z : zs
+
+mapFoldM' :: (Monad m) => [a] -> b ->
+                          (a  -> b -> m ( c,  b))
+                                   -> m ([c], b)
+mapFoldM' []     b  _ = return ([], b)
+mapFoldM' (x:xs) b1 f = do
+    (c1,  b2) <- f x b1
+    (cs2, b3) <- mapFoldM' xs b2 f
+    return (c1 : cs2, b3)
 
 butnot :: Ord a => [a] -> [a] -> [a]
 butnot bs zs =
