@@ -335,7 +335,7 @@ closureOfKnFn :: InfoMap
               -> ILM ILClosure
 closureOfKnFn infoMap (self_id, fn) = do
     let varsOfClosure = closedOverVarsOfKnFn
-    let transformedFn = makeEnvPassingExplicitFn fn
+    let transformedFn = makeEnvPassingExplicit fn
     (envVar, newproc) <- closureConvertFn transformedFn varsOfClosure
     let procid        = TypedId (procType newproc) (ilProcIdent newproc)
     return $ ILClosure procid envVar varsOfClosure
@@ -408,31 +408,29 @@ closureOfKnFn infoMap (self_id, fn) = do
 
     -- Making environment passing explicit simply means rewriting calls
     -- of closure variables from   v(args...)   ==>   v_proc(v_env, args...).
-    makeEnvPassingExplicitFn fn =
-      let mapBlock g = graphMapBlocks (blockMapNodes3 (id, mid, fin)) g in
+    makeEnvPassingExplicit fn =
+      let mapBlock g = mapGraphBlocks (mapBlock' go) g in
       fn { fnBody = mapBasicBlock mapBlock (fnBody fn) }
         where
-              mid :: Insn O O -> Insn O O
-              mid m = case m of
-                ILetVal  {}      -> m
-                ILetFuns ids fns -> ILetFuns ids
-                                         (map makeEnvPassingExplicitFn fns)
-
-              fin :: Insn O C -> Insn O C
-              fin z@(ILast cf) = case cf of
-                CFCont {} -> z
-                CFCase {} -> z
-                CFCall b t v vs ->
-                  case Map.lookup (tidIdent v) infoMap of
-                    Nothing -> z
-                    -- The only really interesting case: call to let-bound function!
-                    Just (f, envid) ->
-                      let env = fakeCloVar envid in
-                      ILast $ CFCall b t (fnVar f) (env:vs) -- Call proc with env as first arg.
-                      -- We don't know the env type here, since we don't
-                      -- pre-collect the set of closed-over envs from other procs.
-                      -- This works because (A) we never type check ILExprs, and
-                      -- (B) the LLVM codegen doesn't check the type field in this case.
+          go :: Insn e x -> Insn e x
+          go insn = case insn of
+            ILabel   {}      -> insn
+            ILetVal  {}      -> insn
+            ILetFuns ids fns -> ILetFuns ids $ map makeEnvPassingExplicit fns
+            ILast cf -> case cf of
+              CFCont {} -> insn
+              CFCase {} -> insn
+              CFCall b t v vs ->
+                case Map.lookup (tidIdent v) infoMap of
+                  Nothing -> insn
+                  -- The only really interesting case: call to let-bound function!
+                  Just (f, envid) ->
+                    let env = fakeCloVar envid in
+                    ILast $ CFCall b t (fnVar f) (env:vs) -- Call proc with env as first arg.
+                    -- We don't know the env type here, since we don't
+                    -- pre-collect the set of closed-over envs from other procs.
+                    -- This works because (A) we never type check ILExprs, and
+                    -- (B) the LLVM codegen doesn't check the type field in this case.
 
 --------------------------------------------------------------------
 

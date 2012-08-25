@@ -8,7 +8,7 @@ copyright:
 maintainer:
 build-depends: ansi-terminal -any, array -any, base -any,
                bytestring -any, containers -any, filepath >=1.1.0.3,
-               mtl -any, protocol-buffers -any, hoopl -any,
+               mtl -any, protocol-buffers -any, hoopl >=3.9.0.0,
                protocol-buffers-descriptor -any, text -any, utf8-string -any
 stability:
 homepage:

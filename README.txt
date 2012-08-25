@@ -22,9 +22,9 @@ $ ctest -V -R unittest      # Run only unit tests ("unittest" can be any regex)
 ============================= Installation =================================
 Ubuntu 10.10:
 	Dependencies: CMake, ANTLR3 C runtime, Java, LLVM, Google protobuf
-   
+
    You can install llvm by executing   bash scripts/install-llvm.sh
-   
+
 	Assuming you already have LLVM installed, in $PATH and $PKG_CONFIG_PATH...
 
 	Interesting packages:
@@ -37,8 +37,8 @@ Ubuntu 10.10:
                 libprotobuf6    protobuf-compiler       libprotobuf-dev
                 python-protobuf libprotobuf-java
       subversion    vim     curl  ctags
-      
-      
+
+
         For Ott:
                 coq             texlive-latex-base
 
@@ -56,10 +56,10 @@ Ubuntu 10.10:
 
 
 	sudo apt-get install cmake cmake-curses-gui # etc
-	
+
 Mac OS X:
 	Interesting ports (via MacPorts):
-	
+
 	protobuf-cpp protobuf-java protobuf-python26
 
         cairo  pango  gtk2
@@ -96,6 +96,8 @@ Haskell:
       cabal install gtk2hs-buildtools
       cabal install chart
       cabal install criterion
-      cabal install hoopl
+      : **** : cabal install hoopl
       cabal install text protocol-buffers filepath hprotoc ansi-terminal leksah
+
+      : *** : Install hoopl via https://github.com/ghc/packages-hoopl/
 
