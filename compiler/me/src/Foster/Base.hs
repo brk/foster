@@ -26,6 +26,12 @@ class Expr a where
 class AExpr a where
     freeIdents   :: a -> [Ident]
 
+class TExpr a t where
+    freeTypedIds   :: a -> [TypedId t]
+
+class TypedWith a t where
+    typeOf :: a -> t
+
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 data CompilesResult expr = CompilesResult (OutputOr expr)
@@ -349,6 +355,12 @@ instance Show Ident where
     show (Ident name number) = T.unpack name ++ "!" ++ show number
     show (GlobalSymbol name) = T.unpack name
 
+instance Eq (TypedId t) where
+       (==) (TypedId _ a) (TypedId _ b) = (==) a b
+
+instance Ord (TypedId t) where
+    compare (TypedId _ a) (TypedId _ b) = compare a b
+
 instance (Show ty) => Show (TypedId ty)
   where show (TypedId ty id) = show id ++ " :: " ++ show ty
 
@@ -389,6 +401,14 @@ instance Show ty => Show (EPattern ty) where
   show (EP_Bool     _ b)          = "EP_Bool     " ++ show b
   show (EP_Int      _ str)        = "EP_Int      " ++ str
   show (EP_Tuple    _ pats)       = "EP_Tuple    " ++ show pats
+
+instance TExpr body t => TExpr (Fn body t) t where
+    freeTypedIds f = let bodyvars =  freeTypedIds (fnBody f) in
+                     let boundvars =              (fnVars f) in
+                     bodyvars `butnot` boundvars
+
+instance TExpr (ArrayIndex (TypedId t)) t where
+   freeTypedIds (ArrayIndex v1 v2 _ _) = [v1, v2]
 
 deriving instance (Show ty) => Show (AllocInfo ty)
 deriving instance (Show ty) => Show (E_VarAST ty)

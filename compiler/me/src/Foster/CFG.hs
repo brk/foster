@@ -340,9 +340,6 @@ data CFGState = CFGState {
 type CFG = StateT CFGState IO
 instance UniqueMonad CFG where freshUnique = cfgNewUniq >>= return . intToUnique
 
-instance Eq AIVar where
-  (TypedId _ x) == (TypedId _ y) = x == y
-
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 instance NonLocal Insn where

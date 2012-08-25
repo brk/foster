@@ -156,9 +156,9 @@ instance Structured (AnnExpr TypeAST) where
 
 -----------------------------------------------------------------------
 
-instance AExpr (Fn (AnnExpr TypeAST) TypeAST) where
+instance AExpr body => AExpr (Fn body t) where
     freeIdents f = let bodyvars =  freeIdents (fnBody f) in
-                   let boundvars = map tidIdent (fnVars f) in
+                   let boundvars =  map tidIdent (fnVars f) in
                    bodyvars `butnot` boundvars
 
 instance AExpr (AnnExpr TypeAST) where
