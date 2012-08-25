@@ -63,8 +63,8 @@ internalComputeCFG uniqRef fn = do
         computeBlocks (fnBody fn) Nothing (ret fn)
 
     -- Make sure that the main function returns void.
-    ret f var = if isMain f then cfgEndWith (CFRetVoid)
-                            else cfgEndWith (CFRet var)
+    ret f var = if isMain f then cfgEndWith (CFRet [])
+                            else cfgEndWith (CFRet [var])
             where isMain f = (identPrefix $ tidIdent $ fnVar f) == T.pack "main"
 
 -- The other helper, to collect the scattered results and build the actual CFG.
@@ -298,8 +298,7 @@ cfgIsThisFnVar b = do old <- get
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||| CFG Data Types |||||||||||||||||||||||{{{
-data CFLast = CFRetVoid
-            | CFRet         AIVar
+data CFLast = CFRet         [AIVar]
             | CFBr          BlockId [AIVar]
             | CFCase        AIVar [PatternBinding BlockId TypeIL]
             deriving (Show)
@@ -335,7 +334,6 @@ instance NonLocal Insn where
 blockTargetsOf :: Insn O C -> [BlockId]
 blockTargetsOf (ILast last) =
     case last of
-        CFRetVoid            -> []
         CFRet  _             -> []
         CFBr   b _           -> [b]
         CFCase _ patsbids    -> [b | (_, b) <- patsbids]

@@ -151,8 +151,9 @@ closureConvertBlocks bbg = do
       ilLast (ILast last) =
         let ret i = return ([], i) in
         case last of
-           CFRetVoid       -> ret $ ILRetVoid
-           CFRet   v       -> ret $ ILRet   v
+           CFRet  []       -> ret $ ILRetVoid
+           CFRet  [v]      -> ret $ ILRet   v
+           CFRet  vs       -> error $ "ILExpr.hs:No support for multiple return values yet\n" ++ show vs
            CFBr    b args  -> ret $ ILBr    b args
            CFCase  a pbs   -> do allSigs  <- gets ilmCtors
                                  let dt = compilePatterns pbs allSigs
