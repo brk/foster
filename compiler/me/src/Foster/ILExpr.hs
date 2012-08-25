@@ -311,7 +311,7 @@ compileDecisionTree scrutinee (DT_Switch occ subtrees maybeDefaultDt) = do
                          return (dblockss, Just did)
         let (blockss, ids) = unzip (map splitBlockFin fins)
         (id, block) <- ilmNewBlock ".dt.switch" []
-                           (ILCase scrutinee (zip ctors ids) maybeDefaultId occ)
+                         (mkSwitch scrutinee (zip ctors ids) maybeDefaultId occ)
         return $ BlockFin (block : concat blockss ++ dblockss) id
 
 emitOccurrence :: AIVar -> (Ident, Occurrence TypeIL) -> ILMiddle
@@ -437,6 +437,15 @@ closureConvertedProc procArgs f (newbody, numPreds) = do
     ForAllIL ktyvars (FnTypeIL _ftd ftrange _ _) ->
        return $ ILProcDef ftrange (Just ktyvars) id procArgs (fnRange f) newbody numPreds
     _ -> error $ "Expected closure converted proc to have fntype, had " ++ show ft
+
+--------------------------------------------------------------------
+
+-- Canonicalize single-consequent cases to unconditional branches,
+-- and use the first case as the default for exhaustive pattern matches.
+-- mkSwitch :: MoVar -> [(CtorId, BlockId)] -> Maybe BlockId -> Occurrence MonoType -> ILLast
+mkSwitch _ [arm]      Nothing _   = ILBr   (snd arm) []
+mkSwitch v (a:arms)   Nothing occ = ILCase v arms (Just $ snd a) occ
+mkSwitch v    arms    def     occ = ILCase v arms def            occ
 
 --------------------------------------------------------------------
 
