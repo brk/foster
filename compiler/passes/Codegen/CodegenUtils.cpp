@@ -221,7 +221,7 @@ CodegenPass::storeAndMarkPointerAsGCRoot(llvm::Value* val) {
   ASSERT(val->getType()->isPointerTy());
 
   // allocate a slot for a T* on the stack
-  llvm::AllocaInst* stackslot = stackSlotWithValue(val, ".stackref");
+  llvm::AllocaInst* stackslot = stackSlotWithValue(val, ".gcroot");
   this->markAsNeedingImplicitLoads(stackslot);
 
   if (this->useGC) {

@@ -600,6 +600,7 @@ void LLRetVal::codegenTerminator(CodegenPass* pass) {
 
 void passPhisAndBr(LLBlock* block, const vector<llvm::Value*>& args) {
   assertHaveSameNumberOfArgsAndPhiNodes(args, block);
+  std::stringstream ss; ss << "br args:";
   for (size_t i = 0; i < args.size(); ++i) {
     llvm::Value* v = args[i];
     if (v->getType()->isVoidTy()) {
@@ -607,7 +608,9 @@ void passPhisAndBr(LLBlock* block, const vector<llvm::Value*>& args) {
     }
     assertValueHasSameTypeAsPhiNode(v, block, i);
     block->phiNodes[i]->addIncoming(v, builder.GetInsertBlock());
+    ss << " " << v->getName().str() << ";";
   }
+  emitFakeComment(ss.str());
   builder.CreateBr(block->bb);
 }
 
