@@ -61,23 +61,30 @@ typecheckFnSCC :: Bool -> Bool
                -> IO ([OutputOr (AnnExpr Sigma)], (Context TypeAST, TcEnv))
 typecheckFnSCC showASTs showAnnExprs scc (ctx, tcenv) = do
     let fns = Graph.flattenSCC scc
-    -- Note that all functions in an SCC are checked in the same environment!
-    -- Also note that each function is typechecked with its own binding
-    -- in scope (for typechecking recursive calls).
-    -- TODO better error messages for type conflicts
-    tcResults <- forM fns $ \fn -> do
-        let ast = (E_FnAST fn)
-        let name = T.unpack $ fnAstName fn
-        -- Generate a binding (for functions without user-provided declarations)
-        -- before doing any typechecking, so that if a function fails to typecheck,
-        -- we'll have the best binding on hand to use for subsequent typechecking.
+
+    -- Generate a binding (for functions without user-provided declarations)
+    -- before doing any typechecking, so that if a function fails to typecheck,
+    -- we'll have the best binding on hand to use for subsequent typechecking.
+    let genBinding fn = do
         OK binding <-
             case termVarLookup (fnAstName fn) (contextBindings ctx) of
                 Nothing  -> do unTc tcenv $ bindingForFnAST fn
                 Just tid -> do return (OK $ TermVarBinding (fnAstName fn) tid)
+        return binding
+
+    bindings <- mapM genBinding fns
+    let extCtx = prependContextBindings ctx bindings
+
+    -- Note that all functions in an SCC are checked in the same environment!
+    -- Also note that each function is typechecked with its own binding
+    -- in scope (for typechecking recursive calls).
+    -- TODO better error messages for type conflicts
+    tcResults <- forM (zip bindings fns) $ \(binding, fn) -> do
+        let ast = (E_FnAST fn)
+        let name = T.unpack $ fnAstName fn
+
         putStrLn $ "typechecking " ++ name ++ " with binding " ++ show binding
-        annfn <- unTc tcenv $
-             tcSigmaToplevel binding (prependContextBinding ctx binding) ast
+        annfn <- unTc tcenv $ tcSigmaToplevel binding extCtx ast
 
         -- We can't convert AnnExpr to AIExpr here because
         -- the output context is threaded through further type checking.
