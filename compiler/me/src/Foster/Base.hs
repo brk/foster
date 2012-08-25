@@ -282,6 +282,13 @@ mapFoldM (x:xs) b1 f = do
     (cs2, b3) <- mapFoldM xs b2 f
     return (cs1 ++ cs2, b3)
 
+-- | A monadic left scan; used for accumulating intermediate optimized versions.
+scanlM :: Monad m => (a -> b -> m a) -> a -> [b] -> m [a]
+scanlM f z ls = do zs <- case ls of []   -> do return []
+                                    x:xs -> do z' <- f z x
+                                               scanlM f z' xs
+                   return $ z : zs
+
 butnot :: Ord a => [a] -> [a] -> [a]
 butnot bs zs =
     let sbs = Set.fromList bs in
