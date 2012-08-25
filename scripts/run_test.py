@@ -100,11 +100,9 @@ def show_cmdlines(options):
 def optlevel(options):
   if options and options.optlevel:
     # Right now fosteroptc only recognizes -O0, not -O2 or such.
-    # So if we don't disable optimizations, we probably want to
-    # see the optimized LLVM IR.
-    return '-dump-postopt'
+    return []
   else:
-    return '-O0'
+    return ['-O0']
 
 def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
     finalname = os.path.basename(finalpath)
@@ -158,8 +156,9 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
 
     # Running opt on a Module produces a Module
     # Running llc on a Module produces an assembly file
-    (s4, e4) = crun(['fosteroptc', finalpath + '.preopt.bc',
-                               optlevel(options), '-fosterc-time', '-o', finalpath + ext]
+    (s4, e4) = crun(['fosteroptc', finalpath + '.preopt.bc', '-dump-postopt',
+                                         '-fosterc-time', '-o', finalpath + ext]
+                    + optlevel(options)
                     + options.optcargs)
 
     return (s4, to_asm, e1, e2, e3, e4)
