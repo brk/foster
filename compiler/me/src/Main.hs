@@ -38,7 +38,7 @@ import Foster.AnnExprIL(AIExpr(AILetFuns, AICall, E_AIVar), fnOf)
 import Foster.TypeIL(TypeIL(TupleTypeIL, FnTypeIL), ilOf)
 import Foster.ILExpr(closureConvertAndLift, showILProgramStructure)
 import Foster.MonoExpr(MonoProgram, showMonoProgramStructure)
-import Foster.KNExpr(KNExpr, kNormalizeModule)
+import Foster.KNExpr(KNExpr, kNormalizeModule, renderKN)
 import Foster.Typecheck
 import Foster.Context
 import Foster.Monomo
@@ -450,6 +450,8 @@ lowerModule ai_mod ctx_il = do
          runOutput $ (outLn "/// Monomorphized program =============")
          runOutput $ showMonoProgramStructure monoprog
          runOutput $ (outLn "^^^ ===================================")
+
+     _ <- liftIO $ renderKN kmod True
 
      maybeInterpretKNormalModule kmod
      return monoprog

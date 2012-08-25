@@ -20,7 +20,7 @@ module Foster.CFG
 
 import Foster.Base
 import Foster.TypeIL(TypeIL(..), AIVar, boolTypeIL)
-import Foster.KNExpr(KNExpr(..), typeKN, TailQ(..))
+import Foster.KNExpr(KNExpr, KNExpr'(..), typeKN, TailQ(..))
 import Foster.Letable(Letable(..))
 
 import Compiler.Hoopl

@@ -1,10 +1,11 @@
+{-# LANGUAGE StandaloneDeriving #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2011 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
-module Foster.KNExpr (kNormalizeModule, KNExpr(..), TailQ(..), typeKN) where
+module Foster.KNExpr (kNormalizeModule, KNExpr, KNExpr'(..), TailQ(..), typeKN, renderKN) where
 
 import Control.Monad.State(forM, evalState, get, put, State)
 import qualified Data.Text as T
@@ -14,42 +15,44 @@ import Foster.Context
 import Foster.TypeIL
 import Foster.AnnExprIL
 import Foster.Output(out, outToString)
+import Text.PrettyPrint.ANSI.Leijen
 
--- | Foster.ILExpr binds all intermediate values to named variables
+-- | Foster.KNExpr binds all intermediate values to named variables
 -- | via a variant of K-normalization.
 
-data KNExpr =
+data KNExpr' ty =
         -- Literals
-          KNBool        TypeIL Bool
-        | KNString      TypeIL T.Text
-        | KNInt         TypeIL LiteralInt
-        | KNFloat       TypeIL LiteralFloat
-        | KNTuple       TypeIL [AIVar] SourceRange
-        | KNKillProcess TypeIL T.Text
+          KNBool        ty Bool
+        | KNString      ty T.Text
+        | KNInt         ty LiteralInt
+        | KNFloat       ty LiteralFloat
+        | KNTuple       ty [TypedId ty] SourceRange
+        | KNKillProcess ty T.Text
         -- Control flow
-        | KNIf          TypeIL AIVar  KNExpr KNExpr
-        | KNUntil       TypeIL KNExpr KNExpr SourceRange
+        | KNIf          ty (TypedId ty)  (KNExpr' ty) (KNExpr' ty)
+        | KNUntil       ty (KNExpr' ty)  (KNExpr' ty) SourceRange
         -- Creation of bindings
-        | KNCase        TypeIL AIVar [PatternBinding KNExpr TypeIL]
-        | KNLetVal      Ident KNExpr KNExpr
-        | KNLetFuns    [Ident] [Fn KNExpr TypeIL] KNExpr
+        | KNCase        ty (TypedId ty) [PatternBinding (KNExpr' ty) ty]
+        | KNLetVal      Ident      (KNExpr' ty)     (KNExpr' ty)
+        | KNLetFuns    [Ident] [Fn (KNExpr' ty) ty] (KNExpr' ty)
         -- Use of bindings
-        | KNVar         AIVar
-        | KNCallPrim    TypeIL ILPrim [AIVar]
-        | KNCall TailQ  TypeIL AIVar  [AIVar]
-        | KNAppCtor     TypeIL CtorId [AIVar]
+        | KNVar         (TypedId ty)
+        | KNCallPrim    ty ILPrim [TypedId ty]
+        | KNCall TailQ  ty (TypedId ty)  [TypedId ty]
+        | KNAppCtor     ty CtorId [TypedId ty]
         -- Mutable ref cells
-        | KNAlloc       TypeIL AIVar AllocMemRegion
-        | KNDeref       TypeIL AIVar
-        | KNStore       TypeIL AIVar AIVar
+        | KNAlloc       ty (TypedId ty) AllocMemRegion
+        | KNDeref       ty (TypedId ty)
+        | KNStore       ty (TypedId ty) (TypedId ty)
         -- Array operations
-        | KNAllocArray  TypeIL AIVar
-        | KNArrayRead   TypeIL (ArrayIndex AIVar)
-        | KNArrayPoke   TypeIL (ArrayIndex AIVar) AIVar
-        | KNTyApp       TypeIL AIVar [TypeIL]
-        deriving (Show)
+        | KNAllocArray  ty (TypedId ty)
+        | KNArrayRead   ty (ArrayIndex (TypedId ty))
+        | KNArrayPoke   ty (ArrayIndex (TypedId ty)) (TypedId ty)
+        | KNTyApp       ty (TypedId ty) [ty]
 
 type KN a = State Uniq a
+
+type KNExpr = KNExpr' TypeIL
 
 data TailQ = YesTail | NotTail deriving Show
 
@@ -306,7 +309,7 @@ kNormalCtors ctx dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
 -- ||||||||||||||||||||||||| Boilerplate ||||||||||||||||||||||||{{{
 -- This is necessary due to transformations of AIIf and nestedLets
 -- introducing new bindings, which requires synthesizing a type.
-typeKN :: KNExpr -> TypeIL
+typeKN :: KNExpr' ty -> ty
 typeKN expr =
   case expr of
     KNBool          t _      -> t
@@ -334,7 +337,7 @@ typeKN expr =
 
 -- This instance is primarily needed as a prereq for KNExpr to be an AExpr,
 -- which ((childrenOf)) is needed in ILExpr for closedNamesOfKnFn.
-instance Structured KNExpr where
+instance Show ty => Structured (KNExpr' ty) where
     textOf e _width =
         case e of
             KNString     _ _    -> out $ "KNString    "
@@ -359,7 +362,7 @@ instance Structured KNExpr where
             KNVar (TypedId t (GlobalSymbol name))
                                 -> out $ "KNVar(Global):   " ++ T.unpack name ++ " :: " ++ show t
             KNVar (TypedId t i) -> out $ "KNVar(Local):   " ++ show i ++ " :: " ++ show t
-            KNTyApp t _e argty  -> out $ "KNTyApp     [" ++ show argty ++ "] :: " ++ show t
+            KNTyApp t _e argty  -> out $ "KNTyApp     " ++ show argty ++ "] :: " ++ show t
             KNKillProcess t m   -> out $ "KNKillProcess " ++ show m ++ " :: " ++ show t
     childrenOf expr =
         let var v = KNVar v in
@@ -387,3 +390,126 @@ instance Structured KNExpr where
             KNVar _                 -> []
             KNTyApp _t v _argty     -> [var v]
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+renderKN :: (ModuleIL KNExpr TypeIL) -> Bool -> IO (Either () String)
+renderKN m put = if put then putDoc (docOf m) >>= (return . Left)
+                        else return . Right $ show (docOf m)
+
+class PPrintable a where
+  docOf :: a -> Doc
+
+showTyped :: PPrintable t => Doc -> t -> Doc
+showTyped d t = parens (d <+> text "::" <+> docOf t)
+
+showUnTyped d _ = d
+
+comment d = text "/*" <+> d <+> text "*/"
+
+instance PPrintable TypeIL where
+  docOf t = text (show t)
+
+instance PPrintable t => PPrintable (TypedId t) where
+  docOf (TypedId t i) = showUnTyped (text $ show i) t
+
+instance PPrintable AllocMemRegion where
+  docOf rgn = text (show rgn)
+
+instance PPrintable t => PPrintable (ArrayIndex (TypedId t)) where
+  docOf (ArrayIndex b i _rng safety) =
+    docOfId b <> brackets (docOfId i) <+> comment (text $ show safety)
+
+instance PPrintable t => PPrintable (FosterPrim t) where
+  docOf (NamedPrim tid) = docOfId tid
+  docOf (PrimOp nm _ty) = text nm
+  docOf (PrimIntTrunc frm to) = text ("trunc from " ++ show frm ++ " to " ++ show to)
+  docOf (CoroPrim c t1 t2) = text "...coroprim..."
+
+-- (<//>) ?vs? align (x <$> y)
+
+kwd  s = dullblue  (text s)
+lkwd s = dullwhite (text s)
+end    = lkwd "end"
+
+instance PPrintable t => PPrintable (Fn (KNExpr' t) t) where
+  docOf fn = group (lbrace <+> (hsep (map (\v -> docOf v <+> text "=>") (fnVars fn)))
+                    <$> indent 4 (docOf (fnBody fn))
+                    <$> rbrace) <+> docOf (fnVar fn)
+
+instance PPrintable t => PPrintable (ModuleIL (KNExpr' t) t) where
+  docOf m = text "// begin decls"
+            <$> vcat [showTyped (text s) t | (s, t) <- moduleILdecls m]
+            <$> text "// end decls"
+            <$> text "// begin datatypes"
+            <$> empty
+            <$> text "// end datatypes"
+            <$> text "// begin prim types"
+            <$> empty
+            <$> text "// end prim types"
+            <$> text "// begin functions"
+            <$> docOf (moduleILbody m)
+            <$> text "// end functions"
+
+docOfId (TypedId _ i) = text (show i)
+
+instance PPrintable t => PPrintable (Pattern t) where
+  docOf p =
+    case p of
+        P_Wildcard      _rng _ty          -> text "_"
+        P_Variable      _rng tid          -> docOfId tid
+        P_Ctor          _rng _ty pats cid -> parens (text "$" <> text (ctorCtorName $ ctorInfoId cid) <> (hsep $ map docOf pats))
+        P_Bool          _rng _ty b        -> text $ if b then "True" else "False"
+        P_Int           _rng _ty li       -> text (litIntText li)
+        P_Tuple         _rng _ty pats     -> parens (hsep $ punctuate comma (map docOf pats))
+
+instance PPrintable ty => PPrintable (KNExpr' ty) where
+  docOf e =
+        case e of
+            KNVar (TypedId _ (GlobalSymbol name))
+                                -> (text $ "G:" ++ T.unpack name)
+                       --showTyped (text $ "G:" ++ T.unpack name) t
+            KNVar (TypedId t i) -> docOfId (TypedId t i)
+            KNTyApp t e argtys  -> showTyped (docOf e <> text ":[" <> hsep (punctuate comma (map docOf argtys)) <> text "]") t
+            KNKillProcess t m   -> text ("KNKillProcess " ++ show m ++ " :: ") <> docOf t
+            KNString     _ s    -> dquotes (text $ T.unpack s)
+            KNBool       _ b    -> text $ show b
+            KNCall _tail t v [] -> showUnTyped (docOfId v <+> text "!") t
+            KNCall _tail t v vs -> showUnTyped (docOfId v <> hsep (map docOf vs)) t
+            KNCallPrim t prim vs-> showUnTyped (text "prim" <+> docOf prim <+> hsep (map docOfId vs)) t
+            KNAppCtor  t cid vs -> showUnTyped (text "~" <> parens (text (show cid) <> hsep (map docOfId vs))) t
+            KNLetVal   x b    k -> lkwd "let"
+                                      <+> fill 8 (text (show x))
+                                      <+> text "="
+                                      <+> docOf b <+> lkwd "in"
+                                   <$> docOf k
+            KNLetFuns ids fns k -> text "letfuns"
+                                   <$> indent 2 (vcat [text (show id) <+> text "="
+                                                                      <+> docOf fn
+                                                      | (id, fn) <- zip ids fns
+                                                      ])
+                                   <$> lkwd "in"
+                                   <$> docOf k
+                                   <$> end
+            KNIf     _t v b1 b2 -> kwd "if" <+> docOfId v
+                                   <$> nest 2 (kwd "then" <+> docOf b1)
+                                   <$> nest 2 (kwd "else" <+> docOf b2)
+                                   <$> end
+            KNUntil  _t c b _sr -> kwd "until" <+> docOf c <//> lkwd "then"
+                                   <$> nest 2 (docOf b)
+                                   <$> end
+            KNInt   _ty int     -> red $ text (litIntText int)
+            KNFloat _ty flt     -> dullred $ text (litFloatText flt)
+            KNAlloc _ v rgn     -> text "(ref" <+> docOfId v <+> comment (docOf rgn) <> text ")"
+            KNDeref _ v         -> docOfId v <> text "^"
+            KNStore _ v1 v2     -> text "store" <+> docOfId v1 <+> text "to" <+> docOfId v2
+            KNCase _t v bnds    -> align $
+                                       kwd "case" <+> docOf v
+                                       <$> indent 2 (vcat [ kwd "of" <+> fill 20 (docOf pat) <+> text "->" <+> docOf expr
+                                                          | ((pat, _tys), expr) <- bnds
+                                                          ])
+                                       <$> end
+            KNAllocArray {}     -> text $ "KNAllocArray "
+            KNArrayRead  _ ai   -> docOf ai
+            KNArrayPoke  _ ai v -> docOfId v <+> text ">^" <+> docOf ai
+            KNTuple      _ vs _ -> parens (hsep $ punctuate comma (map docOf vs))
+
+deriving instance (Show ty) => Show (KNExpr' ty)
