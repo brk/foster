@@ -1,4 +1,4 @@
-{-# LANGUAGE GADTs, TypeSynonymInstances #-}
+{-# LANGUAGE GADTs, TypeSynonymInstances, BangPatterns #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2010 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -133,38 +133,46 @@ type ClosureConvertedBlocks = ([ILBlock], Map BlockId Int)
 -- starting from the graph's entry block.
 closureConvertBlocks :: BasicBlockGraph -> ILM ClosureConvertedBlocks
 closureConvertBlocks bbg = do
-   let cfgBlocks = map basicBlock $
+   let cfgBlocks = map (splitBasicBlock . basicBlock) $
                      preorder_dfs $ mkLast (jumpTo bbg) |*><*| bbgBody bbg
-   blocks <- mapM closureConvertBlock cfgBlocks
+   -- Because we do a depth-first search, "renaming" blocks are guaranteed
+   -- to be adjacent to each other in the list.
+   let cfgBlocks' = mergeCallNamingBlocks cfgBlocks (bbgNumPreds bbg)
+   blocks <- mapM closureConvertBlock cfgBlocks'
    return (concat blocks, bbgNumPreds bbg)
   where
     -- A BasicBlock which ends in a decision tree will, in the general case,
     -- expand out to multiple blocks to encode the tree.
-    closureConvertBlock :: BasicBlock -> ILM [ILBlock]
-    closureConvertBlock bb = do
-        let (bid, mids, last) = splitBasicBlock bb
+    closureConvertBlock (bid, mids, last) = do
+        (blocks, lastmid, newlast) <- ilLast last
         newmids <- mapM closureConvertMid mids
-        (blocks, newlast) <- ilLast last
-        return $ Block bid (newmids) newlast : blocks
+        return $ Block bid (newmids ++ lastmid) newlast : blocks
      where
-      ilLast :: Insn O C -> ILM ([ILBlock], ILLast)
+      -- Translate continuation application to br or ret, as appropriate.
+      cont k vs =
+           case (k == bbgRetK bbg, vs) of
+                (True,  [] ) -> ILRetVoid
+                (True,  [v]) -> ILRet   v
+                (True,   _ ) -> error $ "ILExpr.hs:No support for multiple return values yet\n" ++ show vs
+                (False,  _ ) -> ILBr k vs
+
+      ilLast :: Insn O C -> ILM ([ILBlock], [ILMiddle], ILLast)
       ilLast (ILast last) =
-        let ret i = return ([], i) in
         case last of
-           CFCont  k vs    ->
-             case (k == bbgRetK bbg, vs) of
-                  (True,  [] ) -> ret $ ILRetVoid
-                  (True,  [v]) -> ret $ ILRet   v
-                  (True,   _ ) -> error $ "ILExpr.hs:No support for multiple return values yet\n" ++ show vs
-                  (False,  _ ) -> ret $ ILBr k vs
-           CFCase  a pbs   -> do allSigs  <- gets ilmCtors
-                                 let dt = compilePatterns pbs allSigs
-                                 let usedBlocks = eltsOfDecisionTree dt
-                                 let _unusedPats = [pat | (pat, bid) <- pbs
-                                                  , Set.notMember bid usedBlocks]
-                                 -- TODO print warning if any unused patterns
-                                 (BlockFin blocks id) <- compileDecisionTree a dt
-                                 return $ (blocks, ILBr id [])
+           -- [[f k vs]] ==> let x = f vs in [[k x]]
+           CFCall k t v vs -> do
+               id <- ilmFresh (T.pack ".call")
+               return ([], [ILLetVal id (ILCall t v vs)], cont k [TypedId t id])
+           CFCont k vs -> return ([], [], cont k vs)
+           CFCase a pbs    -> do
+               allSigs  <- gets ilmCtors
+               let dt = compilePatterns pbs allSigs
+               let usedBlocks = eltsOfDecisionTree dt
+               let _unusedPats = [pat | (pat, bid) <- pbs
+                                , Set.notMember bid usedBlocks]
+               -- TODO print warning if any unused patterns
+               (BlockFin blocks id) <- compileDecisionTree a dt
+               return $ (blocks, [], ILBr id [])
               where
                 -- The decision tree we get from pattern-match compilation may
                 -- contain only a subset of the pattern branche.
@@ -320,30 +328,30 @@ closureOfKnFn infoMap (self_id, fn) = do
     -- Making environment passing explicit simply means rewriting calls
     -- of closure variables from   v(args...)   ==>   v_proc(v_env, args...).
     makeEnvPassingExplicitFn fn =
-      let mapBlock g = graphMapBlocks (blockMapNodes3 (id, mid, id)) g in
+      let mapBlock g = graphMapBlocks (blockMapNodes3 (id, mid, fin)) g in
       fn { fnBody = mapBasicBlock mapBlock (fnBody fn) }
         where
               mid :: Insn O O -> Insn O O
               mid m = case m of
-                ILetVal id val -> ILetVal id (makeEnvPassingExplicitVal val)
+                ILetVal  {}      -> m
                 ILetFuns ids fns -> ILetFuns ids
                                          (map makeEnvPassingExplicitFn fns)
 
-    makeEnvPassingExplicitVal :: Letable -> Letable
-    makeEnvPassingExplicitVal expr =
-      case expr of
-        ILCall t v vs ->
-          case Map.lookup (tidIdent v) infoMap of
-            Nothing -> expr
-            -- The only really interesting case: call to let-bound function!
-            Just (f, envid) ->
-              let env = fakeCloVar envid in
-              ILCall t (fnVar f) (env:vs) -- Call proc with env as first arg.
-              -- We don't know the env type here, since we don't
-              -- pre-collect the set of closed-over envs from other procs.
-              -- This works because (A) we never type check ILExprs, and
-              -- (B) the LLVM codegen doesn't check the type field in this case.
-        _ -> expr
+              fin :: Insn O C -> Insn O C
+              fin z@(ILast cf) = case cf of
+                CFCont {} -> z
+                CFCase {} -> z
+                CFCall b t v vs ->
+                  case Map.lookup (tidIdent v) infoMap of
+                    Nothing -> z
+                    -- The only really interesting case: call to let-bound function!
+                    Just (f, envid) ->
+                      let env = fakeCloVar envid in
+                      ILast $ CFCall b t (fnVar f) (env:vs) -- Call proc with env as first arg.
+                      -- We don't know the env type here, since we don't
+                      -- pre-collect the set of closed-over envs from other procs.
+                      -- This works because (A) we never type check ILExprs, and
+                      -- (B) the LLVM codegen doesn't check the type field in this case.
 
 --------------------------------------------------------------------
 
@@ -359,6 +367,32 @@ closureConvertedProc procArgs f (newbody, numPreds) = do
     ForAllIL ktyvars (FnTypeIL _ftd ftrange _ _) ->
        return $ ILProcDef ftrange (Just ktyvars) id procArgs (fnRange f) newbody numPreds
     _ -> error $ "Expected closure converted proc to have fntype, had " ++ show ft
+
+--------------------------------------------------------------------
+
+-- This little bit of unpleasantness is needed to ensure that we
+-- don't need to create gcroot slots for the phi nodes corresponding
+-- to blocks inserted from using CPS-like calls.
+mergeCallNamingBlocks blocks numpreds = go [] blocks
+  where go !acc !blocks =
+         case blocks of
+           [] -> reverse acc
+           [b] -> go (b:acc) []
+           (x:y:zs) ->
+              case mergeAdjacent x y of
+                Just  m -> go    acc  (m:zs)
+                Nothing -> go (x:acc) (y:zs)
+        mergeAdjacent :: (BlockEntry, [Insn O O], Insn O C)
+                      -> (BlockEntry, [Insn O O], Insn O C)
+                -> Maybe (BlockEntry, [Insn O O], Insn O C)
+        mergeAdjacent (xe,xm,xl) ((yb,[yarg]),ym,yl) =
+          case xl of
+            (ILast (CFCall cb t v vs)) | cb == yb ->
+                if Map.lookup yb numpreds == Just 1
+                    then Just (xe,xm++[ILetVal (tidIdent yarg) (ILCall t v vs)]++ym,yl)
+                    else Nothing
+            _ -> Nothing
+        mergeAdjacent _ _ = Nothing
 
 --------------------------------------------------------------------
 

@@ -190,16 +190,31 @@ computeBlocks expr idmaybe k = do
             cfgNewBlock case_cont [phi]
             k phi
 
-        -- Direct tail recursion becomes a jump (reassigning the arg slots).
-        (KNCall YesTail _ b vs) -> do
+        (KNCall srctail ty b vs) -> do
             -- We can't just compare [[b == fnvar]] because b might be a
             -- let-bound result of type-instantiating a polymorphic function.
             isTailCall <- cfgIsThisFnVar b
-            if isTailCall
-              then do Just header <- gets cfgHeader
-                      cfgEndWith (CFCont header vs)
-              else -- bleh, code duplication :(
-                cfgAddLet idmaybe (knToLetable expr) (typeKN expr) >>= k
+            case (srctail, isTailCall) of
+                -- Direct tail recursion becomes a jump
+                -- (reassigning the arg slots).
+                (YesTail, True) -> do
+                    Just header <- gets cfgHeader
+                    cfgEndWith (CFCont header vs)
+
+                -- Calls to other functions in tail position use the function's
+                -- return continuation rather than a new continuation.
+                (YesTail, False) -> do
+                    Just retk <- gets cfgRetCont
+                    cfgEndWith (CFCall retk ty b vs)
+
+                -- Non-tail calls specify a new block as their continuation,
+                -- and the block's parameter becomes the result of the call.
+                (_, _) -> do
+                    cont <- cfgFresh "call_cont"
+                    res  <- cfgFreshVarI idmaybe ty "call_res"
+                    cfgEndWith (CFCall cont ty b vs)
+                    cfgNewBlock cont [res]
+                    k res
 
         KNVar v -> k v
         _ -> do cfgAddLet idmaybe (knToLetable expr) (typeKN expr) >>= k
@@ -214,7 +229,6 @@ computeBlocks expr idmaybe k = do
          KNFloat      t f    -> ILFloat      t f
          KNTuple      vs rng -> ILTuple      vs (AllocationSource "tuple" rng)
          KNCallPrim   t p vs -> ILCallPrim   t p vs
-         KNCall _     t b vs -> ILCall       t b vs
          KNAppCtor    t c vs -> ILAppCtor    t c vs
          KNAlloc      v rgn  -> ILAlloc      v rgn
          KNDeref      v      -> ILDeref      v
@@ -303,6 +317,7 @@ cfgIsThisFnVar b = do old <- get
 
 -- ||||||||||||||||||||||| CFG Data Types |||||||||||||||||||||||{{{
 data CFLast = CFCont        BlockId [AIVar] -- either ret or br
+            | CFCall        BlockId TypeIL AIVar [AIVar]
             | CFCase        AIVar [PatternBinding BlockId TypeIL]
             deriving (Show)
 
@@ -339,6 +354,7 @@ blockTargetsOf :: Insn O C -> [BlockId]
 blockTargetsOf (ILast last) =
     case last of
         CFCont b _           -> [b]
+        CFCall b _ _ _       -> [b]
         CFCase _ patsbids    -> [b | (_, b) <- patsbids]
 
 -- Decompose a BasicBlock into a triple of its subpieces.
