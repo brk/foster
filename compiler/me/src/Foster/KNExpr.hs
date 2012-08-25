@@ -5,11 +5,13 @@
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
-module Foster.KNExpr (kNormalizeModule, KNExpr, KNExpr'(..), TailQ(..), typeKN, renderKN) where
+module Foster.KNExpr (kNormalizeModule, KNExpr, KNExpr'(..), TailQ(..), typeKN,
+                      renderKN, renderKNM, renderKNF, renderKNFM) where
 
 import Control.Monad.State(forM, evalState, get, put, State)
 import qualified Data.Text as T
 
+import Foster.MonoType
 import Foster.Base
 import Foster.Context
 import Foster.TypeIL
@@ -37,8 +39,8 @@ data KNExpr' ty =
         | KNLetFuns    [Ident] [Fn (KNExpr' ty) ty] (KNExpr' ty)
         -- Use of bindings
         | KNVar         (TypedId ty)
-        | KNCallPrim    ty ILPrim [TypedId ty]
-        | KNCall TailQ  ty (TypedId ty)  [TypedId ty]
+        | KNCallPrim    ty (FosterPrim ty) [TypedId ty]
+        | KNCall TailQ  ty (TypedId ty)    [TypedId ty]
         | KNAppCtor     ty CtorId [TypedId ty]
         -- Mutable ref cells
         | KNAlloc       ty (TypedId ty) AllocMemRegion
@@ -49,6 +51,9 @@ data KNExpr' ty =
         | KNArrayRead   ty (ArrayIndex (TypedId ty))
         | KNArrayPoke   ty (ArrayIndex (TypedId ty)) (TypedId ty)
         | KNTyApp       ty (TypedId ty) [ty]
+
+-- When monmomorphizing, we use (KNTyApp t v [])
+-- to represent a bitcast to type t.
 
 type KN a = State Uniq a
 
@@ -203,14 +208,12 @@ varOrThunk (a, targetType) = do
                       , fnVars     = vars
                       , fnBody     = KNCall YesTail (fnTypeILRange fnty) v vars
                       , fnRange    = MissingSourceRange $ "thunk for " ++ show v
-                      , fnFreeVars = case tidIdent v of
-                                        Ident _ _      -> [v]
-                                        GlobalSymbol _ -> []
                       }
         -- TODO the above ident/global check doesn't work correctly for
         -- global polymorphic functions, which are first type-instantiated
         -- and then bound to a local variable before being closed over.
         -- The "right" thing to do is track known vs unknown vars...
+        -- TODO i think this is fixed; double-check...
 
         argVarsWithTypes tys = do
           let tidOfType ty = do id <- knFresh ".arg"
@@ -303,7 +306,6 @@ kNormalCtors ctx dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
                   , fnVars  = vars
                   , fnBody  = KNAppCtor (TyConAppIL dname []) cid vars -- TODO fix
                   , fnRange = MissingSourceRange ("kNormalCtor " ++ show cid)
-                  , fnFreeVars = []
                   }
 
 -- ||||||||||||||||||||||||| Boilerplate ||||||||||||||||||||||||{{{
@@ -391,9 +393,17 @@ instance Show ty => Structured (KNExpr' ty) where
             KNTyApp _t v _argty     -> [var v]
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
-renderKN :: (ModuleIL KNExpr TypeIL) -> Bool -> IO (Either () String)
 renderKN m put = if put then putDoc (docOf m) >>= (return . Left)
                         else return . Right $ show (docOf m)
+
+renderKNM :: (ModuleIL (KNExpr' MonoType) MonoType) -> String
+renderKNM m = show (docOf m)
+
+renderKNF :: (Fn (KNExpr' TypeIL) TypeIL) -> String
+renderKNF m = show (docOf m)
+
+renderKNFM :: (Fn (KNExpr' MonoType) MonoType) -> String
+renderKNFM m = show (docOf m)
 
 class PPrintable a where
   docOf :: a -> Doc
@@ -406,6 +416,9 @@ showUnTyped d _ = d
 comment d = text "/*" <+> d <+> text "*/"
 
 instance PPrintable TypeIL where
+  docOf t = text (show t)
+
+instance PPrintable MonoType where
   docOf t = text (show t)
 
 instance PPrintable t => PPrintable (TypedId t) where

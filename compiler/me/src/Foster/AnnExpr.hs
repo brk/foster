@@ -158,16 +158,14 @@ instance AExpr body => AExpr (Fn body t) where
 
 instance AExpr (AnnExpr TypeAST) where
     freeIdents e = case e of
-        E_AnnVar _rng v     -> [tidIdent v]
         AnnPrimitive {}     -> []
-        AnnLetVar _rng id a b     -> freeIdents a ++ (freeIdents b `butnot` [id])
+        AnnLetVar _rng  id  b   e -> freeIdents b ++ (freeIdents e `butnot` [id])
+        AnnLetFuns _rng ids fns e -> (concatMap freeIdents fns ++ freeIdents e)
+                                                                   `butnot` ids
         AnnCase _rng _t e patbnds -> freeIdents e ++ (concatMap patBindingFreeIds patbnds)
-        -- Note that all free idents of the bound expr are free in letvar,
-        -- but letfuns removes the bound name from that set!
-        AnnLetFuns _rng ids fns e -> ((concatMap freeIdents fns) ++ (freeIdents e))
-                                     `butnot` ids
-        E_AnnFn f -> map tidIdent (fnFreeVars f)
-        _         -> concatMap freeIdents (childrenOf e)
+        E_AnnFn f                 -> freeIdents f
+        E_AnnVar _rng v           -> [tidIdent v]
+        _                         -> concatMap freeIdents (childrenOf e)
 
 patBindingFreeIds ((_, binds), expr) =
   freeIdents expr `butnot` map tidIdent binds

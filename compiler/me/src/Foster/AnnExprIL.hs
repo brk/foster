@@ -228,12 +228,10 @@ fnOf ctx f = do
 
     let extctx = extendTyCtx ctx (tyvarBindersOf ft)
     vars     <- mapM (aiVar extctx) (fnVars f)
-    freeVars <- mapM (aiVar extctx) (fnFreeVars f)
     body     <- ail extctx (fnBody f)
     return $ Fn { fnVar   = var
                 , fnVars  = vars
                 , fnBody  = body
                 , fnRange = fnRange f
-                , fnFreeVars = freeVars
                 }
 

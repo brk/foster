@@ -9,7 +9,8 @@ module Foster.ILExpr where
 
 import Control.Monad.State
 import Data.Set(Set)
-import qualified Data.Set as Set(empty, singleton, union, unions, notMember, fromList)
+import qualified Data.Set as Set(empty, singleton, union, unions, notMember,
+                                                       insert, fromList, toList)
 import Data.Map(Map)
 import qualified Data.Map as Map((!), insert, lookup, empty, fromList, elems)
 import qualified Data.Text as T
@@ -20,9 +21,8 @@ import Compiler.Hoopl
 import Debug.Trace(trace)
 
 import Foster.Base
-import Foster.Kind
 import Foster.CFG
-import Foster.TypeIL
+import Foster.MonoType
 import Foster.Letable
 import Foster.PatternMatch
 import Foster.Output(out, Output)
@@ -45,63 +45,59 @@ import Foster.Output(out, Output)
 -- ILClosure records the information needed to generate code for a closure.
 -- The environment name is recorded so that the symbol table contains
 -- the right entry when mutually-recursive functions capture multiple envs.
-data ILClosure = ILClosure { ilClosureProcIdent :: AIVar
+data ILClosure = ILClosure { ilClosureProcIdent :: MoVar
                            , ilClosureEnvIdent  :: Ident
-                           , ilClosureCaptures  :: [AIVar]
+                           , ilClosureCaptures  :: [MoVar]
                            , ilClosureAllocSrc  :: AllocationSource
                            } deriving Show
 
 -- A program consists of top-level data types and mutually-recursive procedures.
 data ILProgram = ILProgram (Map Ident ILProcDef)
-                           [ILExternDecl]
-                           [DataType TypeIL]
+                           [MoExternDecl]
+                           [DataType MonoType]
                            [ILProcDef] -- These are the original toplevel functions.
                            SourceLines
 
-data ILExternDecl = ILDecl String TypeIL deriving (Show)
+data ILExternDecl = ILDecl String MonoType deriving (Show)
 
 -- Procedures can be polymorphic when an ILProgram is first created,
 -- but after monomorphization, all the polymorphism should be gone.
 data ILProcDef =
-     ILProcDef { ilProcReturnType :: TypeIL
-               , ilProcPolyTyVars :: Maybe [(TyVar, Kind)]
+     ILProcDef { ilProcReturnType :: MonoType
                , ilProcIdent      :: Ident
-               , ilProcVars       :: [AIVar]
+               , ilProcVars       :: [MoVar]
                , ilProcRange      :: SourceRange
                , ilProcBlocks     :: [ILBlock]
                , ilProcBlockPreds :: Map BlockId Int
                }
 
 -- The standard definition of a basic block and its parts.
-data ILBlock  = Block BlockEntry [ILMiddle] ILLast
+data ILBlock  = Block BlockEntry [ILMiddle] ILLast {- num preds? -}
 data ILMiddle = ILLetVal      Ident    Letable
               -- This is equivalent to MinCaml's make_closure ...
               | ILClosures    [Ident] [ILClosure]
-              -- Have an explicit notion of "delayed" renaming in the
-              -- continuation. This is 1 line in LLCodegen.cpp instead of
-              -- many lines to do substitutions on CFGs.
-              | ILRebindId    Ident    AIVar
               deriving Show
 
 -- The only difference from CFLast to ILLast is the decision tree in ILCase.
 data ILLast = ILRetVoid
-            | ILRet      AIVar
-            | ILBr       BlockId [AIVar]
-            | ILCase     AIVar [(CtorId, BlockId)] (Maybe BlockId) (Occurrence TypeIL)
+            | ILRet      MoVar
+            | ILBr       BlockId [MoVar]
+            | ILCase     MoVar [(CtorId, BlockId)] (Maybe BlockId) (Occurrence MonoType)
 --------------------------------------------------------------------
 
 closureConvertAndLift :: DataTypeSigs
+                      -> [Ident]
                       -> Uniq
-                      -> (ModuleIL CFBody TypeIL)
+                      -> (ModuleIL CFBody MonoType)
                       -> ILProgram
-closureConvertAndLift dataSigs u m =
+closureConvertAndLift dataSigs globalIds u m =
     -- We lambda lift top level functions, since we know a priori
     -- that they don't have any "real" free vars.
     -- Lambda lifting then closure converts any nested functions.
     let initialState = ILMState u Map.empty Map.empty dataSigs in
-    let (topProcs, newstate) = runState (closureConvertToplevel $ moduleILbody m)
+    let (topProcs, newstate) = runState (closureConvertToplevel globalIds $ moduleILbody m)
                                         initialState in
-    let decls = map (\(s,t) -> ILDecl s t) (moduleILdecls m) in
+    let decls = map (\(s,t) -> MoExternDecl s t) (moduleILdecls m) in
     let dts = moduleILprimTypes m ++ moduleILdataTypes m in
     ILProgram (ilmProcDefs newstate) decls dts topProcs (moduleILsourceLines m)
 
@@ -111,9 +107,9 @@ instance Show (Insn e x) where
   show (ILetFuns ids fns   ) = "ILetFuns " ++ show ids ++ " = " ++ show ["..." | _ <- fns]
   show (ILast    cflast    ) = "ILast    " ++ show cflast
 
-closureConvertToplevel :: CFBody -> ILM [ILProcDef]
-closureConvertToplevel body = do
-  (procdefs, _) <- cvt ([], Set.empty) body
+closureConvertToplevel :: [Ident] -> CFBody -> ILM [ILProcDef]
+closureConvertToplevel globalIds body = do
+  (procdefs, _) <- cvt ([], Set.fromList globalIds) body
   return procdefs
      where
        -- Iterate through the SCCs of definitions, keeping track of a state
@@ -129,7 +125,7 @@ closureConvertToplevel body = do
 
        cvt (topprocs, globalized) (CFB_LetFuns ids fns body) =
          let
-             unliftable fn glbl = [ id | (TypedId _ id) <- fnFreeVars fn
+             unliftable fn glbl = [ id | (TypedId _ id) <- fnFreeIds fn
                                        , Set.notMember id glbl]
              allUnliftables = filter (not . null) (map (\fn -> unliftable fn globalized' ) fns)
              -- If a recursive nest of functions don't close over any other
@@ -148,23 +144,35 @@ closureConvertToplevel body = do
              gonnaLift   = null allUnliftables && noFirstClassUses fns
              noFirstClassUses fns = List.and $ map onlySecondClassUses fns
              onlySecondClassUses fn = let bbg = fnBody fn in
-                                      foldGraphNodes (checkUses (bbgRetK bbg))
-                                                            (bbgBody bbg) True
-             checkUses :: BlockId -> Insn e x -> Bool -> Bool
-             checkUses retk insn True = case insn of
-                     ILabel {}                  -> True
-                     -- TODO mono before means no need to deal with tyapp
-                     ILetVal _ (ILTyApp _ _ _)  -> True -- HACKMEM
-                     ILetVal _ (ILCall _ _v vs) -> ok vs -- ignore v
-                     ILetVal _ l                -> ok (freeTypedIds l)
-                     ILetFuns _ fns             -> noFirstClassUses fns
-                     ILast (CFCont bid    vs)   -> bid /= retk || ok vs
-                     ILast (CFCall _ _ _v vs)   -> ok vs
-                     ILast (CFCase _ _)         -> True
-             checkUses _ _ False = False
+                                      let allIds = foldGraphNodes collectBitcasts
+                                                           (bbgBody bbg) ids in
+                                        foldGraphNodes (checkUses allIds (bbgRetK bbg))
+                                                       (bbgBody bbg) (trace ("all ids: " ++ show allIds) True)
 
-             ok :: [AIVar] -> Bool
-             ok vs = List.and [tidIdent v `notElem` ids | v <- vs]
+             checkUses :: [Ident] -> BlockId -> Insn e x -> Bool -> Bool
+             checkUses _      _    _   False = False
+             checkUses allIds retk insn True = case insn of
+                 ILabel {}                  -> True
+                 ILetVal id (ILBitcast _ v) -> id `elem` allIds || ok [v]
+                 ILetVal _ (ILCall _ _v vs) -> ok vs -- ignore v
+                 ILetVal _ l                -> ok (freeTypedIds l)
+                 ILetFuns _ fns             -> noFirstClassUses fns
+                 ILast (CFCont bid    vs)   -> bid /= retk || ok vs
+                 ILast (CFCall _ _ _v vs)   -> ok vs
+                 ILast (CFCase _ _)         -> True
+               where
+                 ok :: [MoVar] -> Bool
+                 ok vs =
+                    let usedFirstClass = [v | v <- vs, tidIdent v `elem` allIds] in
+                    if null usedFirstClass
+                       then True
+                       else trace ("ok:used first class: " ++ show usedFirstClass) False
+
+             -- Make sure we treat bitcasts of ids the same as the ids themselves.
+             collectBitcasts :: Insn e x -> [Ident] -> [Ident]
+             collectBitcasts insn ids = case insn of
+                 ILetVal id (ILBitcast _ v) | tidIdent v `elem` ids -> id:ids
+                 _ -> ids
          in
             if trace ("gonna lift " ++ show ids ++ "? " ++ show gonnaLift ++ " ;; " ++ show allUnliftables
                  ++ " ***** " ++ show ids ++ "//" ++ show globalized) gonnaLift
@@ -180,7 +188,7 @@ closureConvertToplevel body = do
 -- we can rewrite the lambda to a closed proc:
 --      letproc p = \yy x -> x + yy
 --      let y = blah in p y foobar
-lambdaLift :: CFFn -> [AIVar] -> ILM ILProcDef
+lambdaLift :: CFFn -> [MoVar] -> ILM ILProcDef
 lambdaLift f freeVars = do
     newbody <- closureConvertBlocks (fnBody f)
     -- Add *all* of the free variables to the signature of the lambda-lifted
@@ -273,9 +281,9 @@ closureConvertLetFuns ids fns = do
 data BlockFin = BlockFin [ILBlock]      -- new blocks generated
                          BlockId        -- entry block for decision tree logic
 
-bogusVar (id, _) = TypedId (PrimIntIL I1) id
+bogusVar (id, _) = TypedId (PrimInt I1) id
 
-compileDecisionTree :: AIVar -> DecisionTree BlockId TypeIL -> ILM BlockFin
+compileDecisionTree :: MoVar -> DecisionTree BlockId MonoType -> ILM BlockFin
 -- Translate an abstract decision tree to ILBlocks, also returning
 -- the label of the entry block into the decision tree logic.
 -- For now, we don't do any available values computation, which means that
@@ -314,10 +322,13 @@ compileDecisionTree scrutinee (DT_Switch occ subtrees maybeDefaultDt) = do
                          (mkSwitch scrutinee (zip ctors ids) maybeDefaultId occ)
         return $ BlockFin (block : concat blockss ++ dblockss) id
 
-emitOccurrence :: AIVar -> (Ident, Occurrence TypeIL) -> ILMiddle
+emitOccurrence :: MoVar -> (Ident, Occurrence MonoType) -> ILMiddle
 emitOccurrence scrutinee (id, occ) = ILLetVal id (ILOccurrence scrutinee occ)
 
 type InfoMap = Map Ident (CFFn, Ident) -- fn ident => (fn, env id)
+
+fnFreeIds :: CFFn -> [MoVar]
+fnFreeIds fn = freeTypedIds fn
 
 closureOfKnFn :: InfoMap
               -> (Ident, CFFn)
@@ -333,14 +344,14 @@ closureOfKnFn infoMap (self_id, fn) = do
     procType proc =
       let retty = ilProcReturnType proc in
       let argtys = map tidType (ilProcVars proc) in
-      FnTypeIL argtys retty FastCC FT_Proc
+      FnType argtys retty FastCC FT_Proc
 
     -- Each closure converted proc need not capture its own environment
     -- variable, because it will be added as an implicit parameter, but
     -- the environments for others in the same rec SCC *are* closed over.
-    closedOverVarsOfKnFn :: [AIVar]
+    closedOverVarsOfKnFn :: [MoVar]
     closedOverVarsOfKnFn =
-        let nonGlobalVars = [tid | tid@(TypedId _ (Ident _ _)) <- fnFreeVars fn] in
+        let nonGlobalVars = [tid | tid@(TypedId _ (Ident _ _)) <- fnFreeIds fn] in
         let capturedVarsFor  tid v envid =
                if tid == self_id -- If we close over ourself,
                  then [v]        -- don't try to capture the env twice.
@@ -357,17 +368,17 @@ closureOfKnFn infoMap (self_id, fn) = do
              nonGlobalVars
 
     fakeCloVar id = TypedId fakeCloEnvType id
-                      where fakeCloEnvType = TyConAppIL "Foster$GenericClosureEnvPtr" []
+                      where fakeCloEnvType = TyConApp "Foster$GenericClosureEnvPtr" []
 
     -- This is where the magic happens: given a function and its free variables,
     -- we create a procedure which also takes an extra (strongly-typed) env ptr
     -- argument. The new body does case analysis to bind the free variable names
     -- to the contents of the slots of the environment.
-    closureConvertFn :: CFFn -> [AIVar] -> ILM (Ident, ILProcDef)
+    closureConvertFn :: CFFn -> [MoVar] -> ILM (Ident, ILProcDef)
     closureConvertFn f varsOfClosure = do
         let envId  = snd (infoMap Map.! self_id)
         -- Note that this env var has a precise type! The other's is missing.
-        let envVar = TypedId (TupleTypeIL $ map tidType varsOfClosure) envId
+        let envVar = TypedId (TupleType $ map tidType varsOfClosure) envId
 
         -- If the body has x and y free, the closure converted body should be
         --     case env of (x, y, ...) -> body end
@@ -379,7 +390,7 @@ closureOfKnFn infoMap (self_id, fn) = do
                            ((P_Tuple norange t (map patVar varsOfClosure),
                                                            varsOfClosure)
                            , fst bodyentry) ]
-                        where t = TupleTypeIL (map tidType varsOfClosure)
+                        where t = TupleType (map tidType varsOfClosure)
             -- We change the entry block of the new body (versus the old).
             lab <- freshLabel
             let bid = (("caseof", lab), [])
@@ -425,17 +436,15 @@ closureOfKnFn infoMap (self_id, fn) = do
 
 --------------------------------------------------------------------
 
-closureConvertedProc :: [AIVar]
+closureConvertedProc :: [MoVar]
                      -> CFFn
                      -> ClosureConvertedBlocks
                      -> ILM ILProcDef
 closureConvertedProc procArgs f (newbody, numPreds) = do
   let (TypedId ft id) = fnVar f
   case ft of
-    FnTypeIL                  _ftd ftrange _ _ ->
-       return $ ILProcDef ftrange Nothing        id procArgs (fnRange f) newbody numPreds
-    ForAllIL ktyvars (FnTypeIL _ftd ftrange _ _) ->
-       return $ ILProcDef ftrange (Just ktyvars) id procArgs (fnRange f) newbody numPreds
+    FnType _ ftrange _ _ ->
+       return $ ILProcDef ftrange id procArgs (fnRange f) newbody numPreds
     _ -> error $ "Expected closure converted proc to have fntype, had " ++ show ft
 
 --------------------------------------------------------------------
@@ -549,3 +558,26 @@ instance Show ILLast where
   show (ILRet v       ) = "ret " ++ show v
   show (ILBr  bid args) = "br " ++ show bid ++ " , " ++ show args
   show (ILCase v _arms _def _occ) = "case(" ++ show v ++ ")"
+
+instance TExpr BasicBlockGraph MonoType where
+  freeTypedIds bbg =
+       let (bvs,fvs) = foldGraphNodes go (bbgBody bbg) (Set.empty, Set.empty) in
+       filter (\v -> Set.notMember (tidIdent v) bvs) (Set.toList fvs)
+       -- We rely on the fact that these graphs are alpha-converted, and thus
+       -- have a unique-binding property. This means we can  get away with just
+       -- sticking all the binders in one set, and all the occurrences in
+       -- another, and get the right answer back out.
+     where insert :: Ord a => Set a -> [a] -> Set a
+           insert s ids = Set.union s (Set.fromList ids)
+           insertV s vs = Set.union s (Set.fromList $ map tidIdent vs)
+
+           go :: Insn e x -> (Set Ident, Set MoVar) -> (Set Ident, Set MoVar)
+           go (ILabel (_,bs))    (bvs,fvs) = (insertV bvs bs, fvs)
+           go (ILetVal id lt)    (bvs,fvs) = (Set.insert id bvs, insert fvs $ freeTypedIds lt)
+           go (ILetFuns ids fns) (bvs,fvs) = (insert bvs ids, insert fvs (concatMap freeTypedIds fns))
+           go (ILast cflast)     (bvs,fvs) = case cflast of
+                    CFCont _ vs          -> (bvs, insert fvs vs)
+                    CFCall _ _ v vs      -> (bvs, insert fvs (v:vs))
+                    CFCase v patbinds    -> (insertV bvs pvs, Set.insert v fvs)
+                         where pvs = concatMap (\((_,vs),_) -> vs) patbinds
+

@@ -24,6 +24,9 @@ data MonoType =
          | PtrTypeUnknown
          deriving (Show)
 
+boolMonoType = PrimInt I1
+
 type MoVar = TypedId MonoType
 type MoPrim = FosterPrim MonoType
 
+data MoExternDecl = MoExternDecl String MonoType deriving (Show)

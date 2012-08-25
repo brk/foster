@@ -34,7 +34,7 @@ outCS c s = [OutputData [SetColor Foreground Dull c] s]
 outCSLn c s = outCS c (s ++ "\n")
 
 outToString :: Output -> String
-outToString o = concatMap outputDataString o
+outToString o = unlines $ map outputDataString o
 
 -- Conceptually, for each string, we apply its graphics commands,
 -- print the string, and then reset the SGR mode. But resetting

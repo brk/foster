@@ -143,7 +143,6 @@ data ModuleAST fnCtor ty = ModuleAST {
 data Fn expr ty = Fn { fnVar   :: TypedId ty
                      , fnVars  :: [TypedId ty]
                      , fnBody  :: expr
-                     , fnFreeVars :: [TypedId ty]
                      , fnRange :: SourceRange
                      } deriving Show -- For KNExpr and KSmallstep
 
@@ -331,7 +330,7 @@ data TypedId ty = TypedId { tidType :: ty, tidIdent :: Ident }
 
 type PatternBinding expr ty = ((Pattern ty, [TypedId ty]), expr)
 
-data FosterPrim ty = NamedPrim (TypedId ty)
+data FosterPrim ty = NamedPrim (TypedId ty) -- invariant: global symbol
                    | PrimOp { ilPrimOpName :: String
                             , ilPrimOpType :: ty }
                    | PrimIntTrunc IntSizeBits IntSizeBits -- from, to

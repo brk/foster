@@ -90,5 +90,5 @@ typecheckRat rng originalText _expTyTODO = do
   --tcLift $ putStrLn $ "typecheckRat: " ++ originalText ++ " :?: " ++ show _expTyTODO
   -- TODO: be more discriminating about float vs rational numbers?
   let val = (read originalText) :: Double
-  return (AnnFloat rng PrimFloat64 (LiteralFloat val originalText))
+  return (AnnFloat rng PrimFloat64AST (LiteralFloat val originalText))
 

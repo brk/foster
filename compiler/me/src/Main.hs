@@ -14,7 +14,7 @@ import System.Console.ANSI(Color(..))
 import qualified Data.ByteString.Lazy as L(readFile)
 import qualified Data.Text as T
 import qualified Data.Map as Map(fromList, toList)
-import qualified Data.Set as Set(filter, toList, fromList, notMember)
+import qualified Data.Set as Set(filter, toList, fromList, notMember, intersection)
 import qualified Data.Graph as Graph(SCC, flattenSCC, stronglyConnComp)
 import Data.Map(Map)
 import Data.Set(Set)
@@ -29,19 +29,19 @@ import Foster.Base
 import Foster.CFG
 import Foster.Fepb.WholeProgram(WholeProgram)
 import Foster.ProtobufFE(parseWholeProgram)
-import Foster.ProtobufIL(dumpMonoModuleToProtobuf)
+import Foster.ProtobufIL(dumpILProgramToProtobuf)
 import Foster.ExprAST
 import Foster.TypeAST
 import Foster.ParsedType
 import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn))
 import Foster.AnnExprIL(AIExpr(AILetFuns, AICall, E_AIVar), fnOf)
 import Foster.TypeIL(TypeIL(TupleTypeIL, FnTypeIL), ilOf)
-import Foster.ILExpr(closureConvertAndLift, showILProgramStructure)
-import Foster.MonoExpr(MonoProgram, showMonoProgramStructure)
-import Foster.KNExpr(KNExpr, kNormalizeModule, renderKN)
+import Foster.ILExpr(ILProgram, closureConvertAndLift, showILProgramStructure)
+import Foster.KNExpr(KNExpr', kNormalizeModule, renderKN)
 import Foster.Typecheck
 import Foster.Context
 import Foster.Monomo
+import Foster.MonoType
 import Foster.KSmallstep
 import Foster.Output
 import Foster.MainCtorHelpers
@@ -179,12 +179,12 @@ typecheckModule verboseMode modast tcenv0 = do
 
     case (detectDuplicates (map fnAstName fns), ctxErrsOrOK) of
       ([], OK _) -> do
-        let callGraphList = buildCallGraphList fns (Set.fromList $
-                                     [nm | TermVarBinding nm _ <- declBindings])
+        -- declBindings includes datatype constructors and some (?) functions.
+        let callGraphList = buildCallGraphList fns (Set.fromList $ map fnAstName fns)
         let sortedFns = Graph.stronglyConnComp callGraphList -- :: [SCC FnAST]
         when verboseMode $ do
                 putStrLn $ "Function SCC list : " ++
-                       show [(name, frees) | (_, name, frees) <- callGraphList]
+                 (unlines $ map show [(name, frees) | (_, name, frees) <- callGraphList])
         let showASTs     = verboseMode
         let showAnnExprs = verboseMode
         (annFnSCCs, (ctx, tcenv)) <- mapFoldM' sortedFns (ctx0, tcenv0)
@@ -227,14 +227,13 @@ typecheckModule verboseMode modast tcenv0 = do
 
    buildCallGraphList :: [FnAST TypeAST] -> Set T.Text
                       -> [(FnAST TypeAST, T.Text, [T.Text])]
-   buildCallGraphList asts declBindings =
+   buildCallGraphList asts toplevels =
      map (\ast -> (ast, fnAstName ast, fnAstFreeVariables ast)) asts
        where
          fnAstFreeVariables f =
             let allCalledFns = Set.fromList $ freeVars (fnAstBody f) in
             -- Remove everything that isn't a top-level binding.
-            let notTopLevel var = Set.notMember var declBindings in
-            let nonPrimitives = Set.filter notTopLevel allCalledFns in
+            let nonPrimitives = Set.intersection allCalledFns toplevels in
             -- remove recursive function name calls
             Set.toList $ Set.filter (\name -> fnAstName f /= name) nonPrimitives
 
@@ -357,14 +356,14 @@ main = do
         let tcenv = TcEnv {       tcEnvUniqs = uniqref,
                            tcUnificationVars = varlist,
                                    tcParents = [] }
-        (monoprog, _) <- runStateT (compile pb_program) $ CompilerContext {
+        (ilprog, _) <- runStateT (compile pb_program) $ CompilerContext {
                                 ccVerbose  = getVerboseFlag flagVals
                               , ccFlagVals = flagVals
                               , ccTcEnv    = tcenv
                          }
-        dumpMonoModuleToProtobuf monoprog outfile
+        dumpILProgramToProtobuf ilprog outfile
 
-compile :: WholeProgram -> Compiled MonoProgram
+compile :: WholeProgram -> Compiled ILProgram
 compile pb_program =
     (return $ parseWholeProgram pb_program)
      >>= mergeModules -- temporary hack
@@ -396,7 +395,7 @@ astOfParsedType typep =
         TyConAppP "Int32"   [] -> return $ PrimIntAST         I32
         TyConAppP "Int8"    [] -> return $ PrimIntAST         I8
         TyConAppP "Bool"    [] -> return $ PrimIntAST         I1
-        TyConAppP "Float64" [] -> return $ PrimFloat64
+        TyConAppP "Float64" [] -> return $ PrimFloat64AST
         TyConAppP "Array"  [t] -> liftM  ArrayTypeAST            (q t)
         TyConAppP "Ref"    [t] -> liftM  RefTypeAST              (q t)
         TyConAppP    tc types  -> liftM (TyConAppAST tc) (mapM q types)
@@ -429,35 +428,38 @@ typecheckSourceModule sm = do
 
 lowerModule :: ModuleIL AIExpr TypeIL
             -> Context TypeIL
-            -> Compiled MonoProgram
+            -> Compiled ILProgram
 lowerModule ai_mod ctx_il = do
      let kmod = kNormalizeModule ai_mod ctx_il
 
      whenDumpIR "kn" $ do
          runOutput (outLn $ "vvvv k-normalized :====================")
          runOutput (showStructure (moduleILbody kmod))
+         _ <- liftIO $ renderKN kmod True
+         return ()
 
-     cfgmod   <- cfgModule      kmod
-     prog0    <- closureConvert cfgmod
-     monoprog <- liftIO $ monomorphize prog0
+     uniqref  <- gets (tcEnvUniqs.ccTcEnv)
+     monomod  <- liftIO $ monomorphize uniqref kmod
+     cfgmod   <- cfgModule monomod
+     ilprog   <- closureConvert cfgmod
 
      whenDumpIR "cfg" $ do
          runOutput $ (outLn "/// Closure-converted program =========")
-         runOutput $ showILProgramStructure prog0
+         runOutput $ showILProgramStructure ilprog
          runOutput $ (outLn "^^^ ===================================")
 
      whenDumpIR "mono" $ do
          runOutput $ (outLn "/// Monomorphized program =============")
-         runOutput $ showMonoProgramStructure monoprog
+         _ <- liftIO $ renderKN monomod True
          runOutput $ (outLn "^^^ ===================================")
 
-     _ <- liftIO $ renderKN kmod True
+     -- _ <- liftIO $ renderCFG cfgmod True
 
      maybeInterpretKNormalModule kmod
-     return monoprog
+     return ilprog
 
   where
-    cfgModule :: ModuleIL KNExpr TypeIL -> Compiled (ModuleIL CFBody TypeIL)
+    cfgModule :: ModuleIL (KNExpr' MonoType) MonoType -> Compiled (ModuleIL CFBody MonoType)
     cfgModule kmod = do
         uniqref <- gets (tcEnvUniqs.ccTcEnv)
         liftIO $ do
@@ -471,7 +473,9 @@ lowerModule ai_mod ctx_il = do
                             moduleILdataTypes cfgmod
             let dataSigs = dataTypeSigs datatypes
             u0 <- readIORef uniqref
-            return $ closureConvertAndLift dataSigs u0 cfgmod
+            let tmBindingId (TermVarBinding _ tid) = tidIdent tid
+                globals = map tmBindingId (globalBindings ctx_il)
+            return $ closureConvertAndLift dataSigs globals u0 cfgmod
 
     maybeInterpretKNormalModule kmod = do
         flagVals <- gets ccFlagVals

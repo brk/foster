@@ -12,7 +12,7 @@ import Foster.Base(LiteralInt, LiteralFloat, CtorId, ArrayIndex(..),
                    TypedId(..), Ident(..),
                    -- AExpr(freeIdents), tidIdent,
                    TExpr(freeTypedIds), TypedWith(..))
-import Foster.TypeIL(AIVar, ILPrim, TypeIL)
+import Foster.MonoType
 
 import qualified Data.Text as T
 
@@ -23,35 +23,36 @@ import qualified Data.Text as T
 data Letable =
           ILBool        Bool
         | ILText        T.Text
-        | ILInt         TypeIL LiteralInt
-        | ILFloat       TypeIL LiteralFloat
-        | ILTuple       [AIVar] AllocationSource
-        | ILKillProcess TypeIL T.Text
+        | ILInt         MonoType LiteralInt
+        | ILFloat       MonoType LiteralFloat
+        | ILTuple       [MoVar] AllocationSource
+        | ILKillProcess MonoType T.Text
         -- Struct member lookup
-        | ILOccurrence  AIVar (Occurrence TypeIL)
+        | ILOccurrence  MoVar (Occurrence MonoType)
         -- Varieties of applications
-        | ILCallPrim    TypeIL ILPrim [AIVar]
-        | ILCall        TypeIL AIVar  [AIVar]
-        | ILAppCtor     TypeIL CtorId [AIVar]
+        | ILCallPrim    MonoType (FosterPrim MonoType) [MoVar]
+        | ILCall        MonoType MoVar                 [MoVar]
+        | ILAppCtor     MonoType CtorId                [MoVar]
         -- -- Stack/heap slot allocation
-        -- | ILAllocate    (AllocInfo TypeIL)
+        -- | ILAllocate    (AllocInfo MonoType)
         -- Mutable ref cells
-        | ILAlloc       AIVar AllocMemRegion
-        | ILDeref       AIVar
-        | ILStore       AIVar AIVar
+        | ILAlloc       MoVar AllocMemRegion
+        | ILDeref       MoVar
+        | ILStore       MoVar MoVar
         -- Array operations
-        | ILAllocArray  TypeIL AIVar
-        | ILArrayRead   TypeIL (ArrayIndex AIVar)
-        | ILArrayPoke          (ArrayIndex AIVar)  AIVar
-        | ILTyApp       TypeIL AIVar [TypeIL]
+        | ILAllocArray  MonoType MoVar
+        | ILArrayRead   MonoType (ArrayIndex MoVar)
+        | ILArrayPoke            (ArrayIndex MoVar)  MoVar
+        -- Others
+        | ILBitcast     MonoType MoVar -- inserted during monomorphization
         deriving (Show)
 
         {-
-instance TExpr body TypeIL => AExpr body where
+instance TExpr body MonoType => AExpr body where
    freeIdents b = map tidIdent (freeTypedIds b)
 -}
 
-instance TExpr Letable TypeIL where
+instance TExpr Letable MonoType where
   freeTypedIds letable = case letable of
       ILText         {} -> []
       ILBool         {} -> []
@@ -66,12 +67,12 @@ instance TExpr Letable TypeIL where
       ILAlloc      v _  -> [v]
       ILDeref      v    -> [v]
       ILStore      v v2 -> [v,v2]
-      ILTyApp     _ v _ -> [v]
+      ILBitcast  _ v    -> [v]
       ILAllocArray _ v  -> [v]
       ILArrayRead _ ai  -> freeTypedIds ai
       ILArrayPoke   ai v-> (v):(freeTypedIds ai)
 
-instance TypedWith Letable TypeIL where
+instance TypedWith Letable MonoType where
   typeOf letable = case letable of
       ILText         {} -> error "typeOf ILText     "
       ILBool         {} -> error "typeOf ILBool     "
@@ -86,7 +87,7 @@ instance TypedWith Letable TypeIL where
       ILAlloc      v _  -> error "typeOf ILAlloc    "
       ILDeref      v    -> error "typeOf ILDeref    "
       ILStore      v v2 -> error "typeOf ILStore    "
-      ILTyApp     t _ _ -> t
+      ILBitcast  t _    -> t
       ILAllocArray t _  -> t
       ILArrayRead t _   -> t
       ILArrayPoke   ai v-> error "typeOf ILArrayPoke"
@@ -94,7 +95,7 @@ instance TypedWith Letable TypeIL where
 isPurePrim _ = False -- TODO: recognize pure primitives
 isPureFunc _ = False -- TODO: use effect information to refine this predicate.
 
-substVarsInLetable :: (AIVar -> AIVar) -> Letable -> Letable
+substVarsInLetable :: (MoVar -> MoVar) -> Letable -> Letable
 substVarsInLetable s letable = case letable of
   ILText        {}                         -> letable
   ILBool        {}                         -> letable
@@ -109,7 +110,7 @@ substVarsInLetable s letable = case letable of
   ILAlloc       v rgn                      -> ILAlloc       (s v) rgn
   ILDeref       v                          -> ILDeref       (s v)
   ILStore       v1 v2                      -> ILStore       (s v1) (s v2)
-  ILTyApp       t v ts                     -> ILTyApp       t (s v) ts
+  ILBitcast     t v                        -> ILBitcast     t (s v)
   ILAllocArray  t v                        -> ILAllocArray  t (s v)
   ILArrayRead   t (ArrayIndex v1 v2 rng a) -> ILArrayRead   t (ArrayIndex (s v1) (s v2) rng a)
   ILArrayPoke  (ArrayIndex v1 v2 rng a) v3 -> ILArrayPoke  (ArrayIndex (s v1) (s v2) rng a) (s v3)
@@ -129,7 +130,7 @@ isPure letable = case letable of
       ILAlloc        {} -> True
       ILDeref        {} -> True
       ILStore     _v1 _ -> False -- true iff v1 unaliased && dead?
-      ILTyApp        {} -> True
+      ILBitcast      {} -> True
       ILAllocArray   {} -> True
       ILArrayRead    {} -> True
       ILArrayPoke    {} -> False -- as with store
@@ -150,7 +151,7 @@ canGC letable = case letable of
          ILOccurrence  {} -> False
          ILDeref       {} -> False
          ILStore       {} -> False
-         ILTyApp       {} -> False
+         ILBitcast     {} -> False
          ILArrayRead   {} -> False
          ILArrayPoke   {} -> False
 
@@ -163,7 +164,7 @@ canGCPrim (NamedPrim (TypedId _ (GlobalSymbol name))) =
                         ,"expect_i32b", "print_i32b"])
 canGCPrim _ = True
 
-canGCF :: AIVar -> Bool -- "can gc from calling this function-typed variable"
+canGCF :: MoVar -> Bool -- "can gc from calling this function-typed variable"
 canGCF fnvarid = True -- TODO: use effect information to recognize OK calls
                       --      (or explicit mayGC annotations on call sites?)
 

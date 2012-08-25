@@ -160,17 +160,20 @@ instance SourceRanged (ExprAST ty)
       E_TyApp         rng _ _   -> rng
       E_Case          rng _ _   -> rng
 
+-- The free-variable determination logic here is tested in
+--      test/bootstrap/testcases/rec-fn-detection
 instance Expr (ExprAST TypeAST) where
   freeVars e = case e of
-    E_VarAST _rng v        -> [evarName v]
-    E_LetAST _rng bnd e    -> let bindingFreeVars (TermBinding v e) =
-                                   freeVars e `butnot` [evarName v]
-                               in  freeVars e ++ (bindingFreeVars bnd)
-    E_Case _rng e epatbnds -> freeVars e ++ (concatMap epatBindingFreeVars epatbnds)
-    E_FnAST f           -> let bodyvars  = freeVars (fnAstBody f) in
-                           let boundvars = map (identPrefix.tidIdent) (fnFormals f) in
-                           bodyvars `butnot` boundvars
-    _                   -> concatMap freeVars (childrenOf e)
+    E_LetAST _rng (TermBinding v b) e ->
+                                freeVars b ++ (freeVars e `butnot` [evarName v])
+    E_LetRec _rng nest _ -> concatMap freeVars (childrenOf e) `butnot`
+                                          [evarName v | TermBinding v _ <- nest]
+    E_Case _rng e pbinds -> freeVars e ++ (concatMap epatBindingFreeVars pbinds)
+    E_FnAST f            -> let bodyvars  = freeVars (fnAstBody f) in
+                            let boundvars = map (identPrefix.tidIdent) (fnFormals f) in
+                            bodyvars `butnot` boundvars
+    E_VarAST _rng v      -> [evarName v]
+    _                    -> concatMap freeVars (childrenOf e)
 
 epatBindingFreeVars (pat, expr) =
   freeVars expr `butnot` epatBoundNames pat

@@ -70,7 +70,7 @@ ilOf ctx typ = do
      TyConAppAST dtname tys -> do iltys <- mapM q tys
                                   return $ TyConAppIL dtname iltys
      PrimIntAST size     -> do return $ PrimIntIL size
-     PrimFloat64         -> do return $ PrimFloat64IL
+     PrimFloat64AST      -> do return $ PrimFloat64IL
      TupleTypeAST types  -> do tys <- mapM q types
                                return $ TupleTypeIL tys
      FnTypeAST ss t cc cs-> do (y:xs) <- mapM q (t:ss)

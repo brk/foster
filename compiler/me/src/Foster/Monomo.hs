@@ -8,94 +8,196 @@ module Foster.Monomo (monomorphize, monomorphizedDataTypes) where
 
 import Foster.Base
 import Foster.Kind
-import Foster.ILExpr
+import Foster.KNExpr
 import Foster.TypeIL
-import Foster.Letable
-import Foster.MonoExpr
 import Foster.MonoType
-import Foster.MonoLetable
-import Foster.Worklist
 
 import qualified Data.Text as T
 
+import Foster.Output
+
 import Data.Map(Map)
-import Data.Map as Map(insert, lookup, elems, fromList, union, empty)
+import Data.Map as Map(insert, lookup, alter, fromList, union, empty)
 import Data.Set(Set)
 import Data.Set as Set(member, insert, empty)
 import Data.List as List(all)
-import Control.Monad(when)
-import Control.Monad.State(forM_, execStateT, get, put, StateT, liftIO)
-import Data.Maybe(isNothing, maybeToList)
+import Control.Monad(liftM, liftM2)
+import Control.Monad.State(evalStateT, get, gets, put, StateT, liftIO)
+import Data.IORef
 
--- | Performs worklist-based monomorphization of top-level functions,
--- | roughly as sketched at http://www.bitc-lang.org/docs/bitc/polyinst.html
--- | Limitations:
--- |  * Does not perform tree shaking.
--- |
--- | When we see a type application for a global function symbol,
--- | we apply the tyvar substitution to the referenced proc,
--- | producing a new proc without a forall type and with a new name.
--- | Subsequent type applications with the same type parameters reuse
--- | the cached proc instead of generating a duplicate version.
--- |
--- | After all procs have been generated, we simply filter out those which
--- | still have polymorphic types before returning a new ILProgram.
--- |
--- | Currently different types with the same representation -- such as
--- | (a, b) and (a, b, c), which are both just a pointer at runtime --
--- | will result in different proc definitions, even though they could
--- | share a definition at runtime.
+-- This monomorphization pass is similar in structure to MLton's;
+-- a previous worklist-based version was modeled on BitC's polyinstantiator.
+--
+-- The expression to be monomorphized is a tree of SCCs of function definitions
+-- arranged in dependency order. As we descend into the tree, we'll associate
+-- each (uniquely named) polymorphic definition with a cache of monomorphized
+-- definitions. When we encounter a type application, we'll monomorphize and
+-- cache the associated definition. One advantage of doing things this way,
+-- rather than using a worklist of function definitions, is that it's much
+-- more straightforward to maintain a properly scoped type environment.
+--
+-- On the way back up the tree, we'll replace each SCC of bindings
+-- with the generated monomorphic definitions.
 
-monomorphize :: ILProgram -> IO MonoProgram
-monomorphize (ILProgram procdefmap decls datatypes topprocs lines) = do
-    monoState <- execStateT addMonosAndGo monoState0
-    return $ MoProgram (monoProcDefs monoState) monodecls monodatatypes lines
+monomorphize :: IORef Uniq -> (ModuleIL (KNExpr' TypeIL) TypeIL) -> IO (ModuleIL (KNExpr' MonoType) MonoType)
+monomorphize uref (ModuleIL body decls dts primdts lines) = do
+    monobody <- evalStateT (monoKN emptyMonoSubst body) monoState0
+    return $ ModuleIL monobody monodecls monodts monoprimdts lines
       where
-        monodatatypes = monomorphizedDataTypes datatypes
-        monoState0 = MonoState Set.empty worklistEmpty procdefmap Map.empty Map.empty
-        monodecls  = map monoExternDecl decls
-        addMonosAndGo = addInitialMonoTasksAndGo topprocs (Map.elems procdefmap)
+        monoprimdts   = monomorphizedDataTypes primdts
+        monodts       = monomorphizedDataTypes     dts
+        monoState0 = MonoState Set.empty Map.empty Map.empty uref
+        monodecls  = map monoExternDecl' decls
 
--- ||||||||||||||||||||||| Initialization |||||||||||||||||||||||{{{
+monoKN :: MonoSubst -> (KNExpr' TypeIL) -> Mono (KNExpr' MonoType)
+monoKN subst e =
+ let qt = monoType subst in
+ let qv = monoVar  subst in
+ case e of
+  -- These cases are trivially inductive.
+  KNBool          t b      -> return $ KNBool          (qt t) b
+  KNString        t s      -> return $ KNString        (qt t) s
+  KNInt           t i      -> return $ KNInt           (qt t) i
+  KNFloat         t f      -> return $ KNFloat         (qt t) f
+  KNTuple         t vs a   -> return $ KNTuple         (qt t) (map qv vs) a
+  KNKillProcess   t s      -> return $ KNKillProcess   (qt t) s
+  KNCall       tc t v vs   -> return $ KNCall       tc (qt t) (qv v) (map qv vs)
+  KNCallPrim      t p vs   -> return $ KNCallPrim      (qt t) p' (map qv vs) where p' = monoPrim subst p
+  KNAppCtor       t c vs   -> return $ KNAppCtor       (qt t) c (map qv vs)
+  KNAllocArray    t v      -> return $ KNAllocArray    (qt t) (qv v)
+  KNAlloc         t v _rgn -> return $ KNAlloc         (qt t) (qv v) _rgn
+  KNDeref         t v      -> return $ KNDeref         (qt t) (qv v)
+  KNStore         t v1 v2  -> return $ KNStore         (qt t) (qv v1) (qv v2)
+  KNArrayRead     t ai     -> return $ KNArrayRead     (qt t) (monoArrayIndex subst ai)
+  KNArrayPoke     t ai v   -> return $ KNArrayPoke     (qt t) (monoArrayIndex subst ai) (qv v)
+  KNVar                  v -> return $ KNVar                  (qv v)
+  -- The cases involving sub-expressions are syntactically heavier,
+  -- but are still basically trivially inductive.
+  KNCase          t v pats -> do pats' <- mapM (monoPatternBinding subst) pats
+                                 return $ KNCase          (qt t) (qv v) pats'
+  KNUntil         t c b r  -> do [econd, ebody] <- mapM (monoKN subst) [c, b ]
+                                 return $ KNUntil      (qt t) econd ebody r
+  KNIf            t v e1 e2-> do [ethen, eelse] <- mapM (monoKN subst) [e1,e2]
+                                 return $ KNIf         (qt t) (qv v) ethen eelse
+  KNLetVal       id e   b  -> do [e' , b' ] <- mapM (monoKN subst) [e, b]
+                                 return $ KNLetVal      id e'  b'
+  -- Here are the interesting bits:
+  KNLetFuns     ids fns b  -> do
+    let (monos, polys) = split (zip ids fns)
 
-isNotInstantiable procdef = isNothing (ilProcPolyTyVars procdef)
+    liftIO $ putStrLn $ "monos/polys: " ++ show (fst $ unzip monos, fst $ unzip polys)
+    liftIO $ runOutput $ concatMap (\f -> showStructure (tidType (fnVar f))) (snd $ unzip monos)
 
-monoExternDecl :: ILExternDecl -> MoExternDecl
-monoExternDecl (ILDecl s t) = MoExternDecl s (monoType emptyMonoSubst t)
+    monoAddOrigins polys
+    -- Expose the definitions of the polymorphic
+    -- functions for instantiation, then handle
+    -- the monomorphic functions.
+    ids' <- return              (fst $ unzip monos)
+    fns' <- mapM (monoFn subst) (snd $ unzip monos)
 
-addInitialMonoTasksAndGo topprocs procdefs = do
-    -- Any proc that is not itself subject to polyinstantiation when we begin
-    -- is a root for the monomorphization process.
-    -- We start with the top-level procs, because we know that
-    -- they can be translated starting from the empty type substitution.
-    -- Other procs could be lambda-lifted functions that reference type vars
-    -- and thus must use the type subsitution from their originating function.
-    let monoprocs = [pd | pd <- topprocs, isNotInstantiable pd]
-    debug $ "beginning with monoprocs"
-    forM_ monoprocs (\pd -> monoScheduleWork (PlainProc $ ilProcIdent pd))
-    goMonomorphize
-    debug $ "don with with monoprocs, doing the rest..."
+    -- Translate the body, which drives further
+    -- instantiation of the polymorphics.
+    b' <- monoKN subst b
 
-    let monoprocs = [pd | pd <- procdefs, isNotInstantiable pd]
-    debug $ "beginning with non-top-level monoprocs"
-    forM_ monoprocs (\pd -> monoScheduleWork (PlainProc $ ilProcIdent pd))
-    goMonomorphize
+    (monoids, monofns) <- monoGatherVersions ids
 
-    -- Create a "generic" version of *every* polymorphic proc, instantiating all
-    -- of the type arguments to void*. Note: We do this even for type variables
-    -- with non-pointer kinds! If we didn't, then code like
-    --         let f = { forall t:Type, ... }; in () end
-    -- wouldn't codegen properly, because the procedure referenced by f's
-    -- closure would remain un-instantiated and thus be implicitly discarded.
-    let polyprocs = [(pd,ktvs) | pd <- procdefs,
-                                 ktvs <- maybeToList (ilProcPolyTyVars pd),
-                                 not (isNotInstantiable pd)]
-    forM_ polyprocs (\(pd,ktvs) -> do
-         let id = ilProcIdent pd
-         debug $ "monoScheduleWork " ++ show id ++ " //// " ++ show ktvs
-         monoScheduleWork (PlainProc id)
-      )
-    goMonomorphize
+    return $ KNLetFuns (ids' ++ monoids) (fns' ++ monofns) b'
+
+  KNTyApp _ _ [] -> error "Monomo.hs: cannot type-apply with no arguments!"
+  KNTyApp t (TypedId (ForAllIL ktvs _rho) polybinder) argtys -> do
+    let monotys  = map (generic qt) argtys
+    let extsubst = extendMonoSubst subst monotys ktvs
+
+    let t'  = monoType subst    t
+    let t'' = monoType extsubst _rho
+
+    -- If we're polymorphically instantiating a global symbol
+    -- (i.e. a proc) then we can statically look up the proc
+    -- definition and create a monomorphized copy (equally well for
+    -- both pointer-sized and types with special calling conventions).
+    mb_polydef <- monoGetOrigin polybinder
+    case mb_polydef of
+       Just polydef -> do
+          monobinder <- monoInstantiate polydef polybinder
+                                 (tidIdent $ fnVar polydef) monotys extsubst t''
+          liftIO $ putStrLn $ "for monobinder " ++ show monobinder ++ ", t   is " ++ show t
+          liftIO $ putStrLn $ "for monobinder " ++ show monobinder ++ ", t'  is " ++ show t'
+          liftIO $ putStrLn $ "for monobinder " ++ show monobinder ++ ", t'' is " ++ show t''
+
+          -- We need to bitcast the proc we generate because we're
+          -- sharing similarly-kinded instantiations, but we want for
+          -- the translated return type of id:[T] to be T, not void*.
+          return $ KNTyApp t' (TypedId t'' monobinder) []
+          -- The real type of the value associated with monoid is not t',
+          -- it's really [monotys/ktvs]rho... but we can cheat, for now.
+       -- If we're polymorphically instantiating something with a statically
+       -- known definition, we can create a monomorphized copy (equally well
+       -- for both pointer-sized and types with special calling conventions).
+
+       -- On the other hand, we can't statically monomorphize unknown
+       -- variables, but we can use a trivial bitcast if all the type
+       -- arguments happen to be pointer-sized.
+       Nothing ->
+          if List.all (\(_tv, kind) -> kind == KindPointerSized) ktvs
+            then return $ KNTyApp t' (TypedId t' polybinder) []
+            else error $ "Cannot instantiate unknown function's type variables "
+               ++ show ktvs
+               ++ " with types "
+               ++ show argtys
+               ++ "\ngenericized to "
+               ++ show monotys
+               ++ "\nFor now, polymorphic instantiation of non-pointer-sized types"
+               ++ " is only allowed on functions at the top level!"
+               ++ "\nThis is a silly restriction for local bindings,"
+               ++ " and could be solved with a dash of flow"
+               ++ " analysis,\nbut the issues are much deeper for"
+               ++ " polymorphic function arguments"
+               ++ " (higher-rank polymorphism)...\n"
+
+  KNTyApp _ _ _  -> do error $ "Expected polymorphic instantiation to affect a polymorphic variable!"
+
+monoFn :: MonoSubst -> Fn KNExpr TypeIL -> Mono (Fn (KNExpr' MonoType) MonoType)
+monoFn subst (Fn v vs body rng) = do
+  let qv = monoVar subst
+  body' <- monoKN subst body
+  return (Fn (qv v) (map qv vs) body' rng)
+
+monoArrayIndex subst (ArrayIndex v1 v2 rng s) =
+                      ArrayIndex (monoVar subst v1) (monoVar subst v2) rng s
+
+monoPatternBinding :: MonoSubst -> PatternBinding (KNExpr' TypeIL) TypeIL
+                          -> Mono (PatternBinding (KNExpr' MonoType) MonoType)
+monoPatternBinding subst ((pat, vs), expr) = do
+  let pat' = monoPattern subst pat
+  let vs'  = map (monoVar subst) vs
+  expr' <- monoKN subst expr
+  return ((pat' , vs' ), expr' )
+
+monoPattern subst pattern =
+ let mp = map (monoPattern subst) in
+ case pattern of
+   P_Wildcard rng t            -> P_Wildcard rng (monoType subst t)
+   P_Variable rng v            -> P_Variable rng (monoVar  subst v)
+   P_Ctor     rng t pats ctor  -> P_Ctor     rng (monoType subst t) (mp pats) (monoCtorInfo subst ctor)
+   P_Bool     rng t b          -> P_Bool     rng (monoType subst t) b
+   P_Int      rng t i          -> P_Int      rng (monoType subst t) i
+   P_Tuple    rng t pats       -> P_Tuple    rng (monoType subst t) (mp pats)
+
+monoPrim :: MonoSubst -> FosterPrim TypeIL -> FosterPrim MonoType
+monoPrim subst p =
+  case p of
+     NamedPrim      v   -> NamedPrim      (monoVar  subst v)
+     PrimOp       n t   -> PrimOp       n (monoType subst t)
+     PrimIntTrunc s t   -> PrimIntTrunc s t
+     CoroPrim  cp t1 t2 -> CoroPrim  cp (monoType subst t1) (monoType subst t2)
+
+monoVar :: MonoSubst -> TypedId TypeIL -> TypedId MonoType
+monoVar subst (TypedId t id) = TypedId (monoType subst t) id
+
+monoCtorInfo subst (CtorInfo cid (DataCtor nm tag tyformals tys)) =
+                   (CtorInfo cid (DataCtor nm tag tyformals tys'))
+                where tys' = map (monoType subst') tys
+                      subst' = extendSubstForFormals subst tyformals
 
 -- And similarly for data types with pointer-sized type arguments.
 monomorphizedDataTypes :: [DataType TypeIL] -> [DataType MonoType]
@@ -111,7 +213,156 @@ monomorphizedDataTypes dts = map monomorphizedDataType dts
                (DataCtor name tag _tyformals types) =
                 DataCtor name tag [] (map (monoType subst) types)
 
--- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+monoExternDecl' (s, t) = (s, monoType emptyMonoSubst t)
+
+generic :: (TypeIL -> MonoType) -> TypeIL -> MonoType
+generic f t = if kindOfTypeIL t == KindPointerSized then PtrTypeUnknown else f t
+
+getMonoId :: {-Poly-} Ident -> [MonoType] -> {-Mono-}  Ident
+getMonoId id tys =
+  if List.all (\t -> case t of { PtrTypeUnknown -> True ; _ -> False }) tys
+    then id
+    else idAppend id (show tys)
+
+idAppend id s = case id of (GlobalSymbol o) -> (GlobalSymbol $ beforeS o)
+                           (Ident o m)      -> (Ident (beforeS o) m)
+                where beforeS o = o `T.append` T.pack s
+
+monoInstantiate polydef polybinder polyprocid monotys subst ty' = do
+  let monoprocid = getMonoId polyprocid monotys
+  let monobinder = getMonoId polybinder monotys
+  have <- seen monoprocid
+  if have
+   then return monobinder
+   else do  markSeen monoprocid
+            monodef  <- replaceFnVar monoprocid polydef >>= alphaRename
+                                >>= monoFn subst >>= replaceFnVarTy ty'
+            monoPutResult polybinder (MonoResult monobinder monodef)
+            return monobinder
+ where
+  replaceFnVarTy ty fn = return fn { fnVar = TypedId ty (tidIdent (fnVar fn)) }
+
+  seen :: MonoProcId -> Mono Bool
+  seen id = do state <- get ; return $ Set.member id (monoSeenIds state)
+
+  markSeen :: MonoProcId -> Mono ()
+  markSeen id = do state <- get
+                   put state { monoSeenIds = Set.insert id (monoSeenIds state) }
+
+  replaceFnVar :: MonoProcId -> Fn KNExpr TypeIL -> Mono (Fn KNExpr TypeIL)
+  replaceFnVar moid fn = do
+          liftIO $ putStrLn $ "polydef fn var:: " ++ show (fnVar fn)
+          liftIO $ putStrLn $ "monodef fn var:: " ++ show (TypedId (tidType $ fnVar fn) moid)
+          return fn { fnVar = TypedId (tidType $ fnVar fn) moid }
+
+alphaRename :: Fn KNExpr TypeIL -> Mono (Fn KNExpr TypeIL)
+alphaRename fn = do
+  uref <- gets monoUniques
+  renamed <- liftIO $ evalStateT (renameFn fn) (RenameState uref Map.empty)
+  liftIO $ putStrLn $ "fn:      " ++ show fn
+  liftIO $ putStrLn $ "renamed: " ++ show renamed
+  return renamed
+   where
+    renameV :: TypedId TypeIL -> Renamed (TypedId TypeIL)
+    renameV tid@(TypedId _ (GlobalSymbol _)) = return tid
+    renameV     (TypedId t id) = do
+      state <- get
+      case Map.lookup id (renameMap state) of
+        Nothing  -> do id' <- renameI id
+                       return (TypedId t id' )
+        Just _u' -> error "can't rename a variable twice!"
+
+    renameI id@(GlobalSymbol _) = return id
+    renameI id@(Ident s _)      = do u' <- fresh
+                                     let id' = Ident s u'
+                                     remap id id'
+                                     return id'
+      where
+        fresh :: Renamed Uniq
+        fresh = do uref <- gets renameUniq ; mutIORef uref (+1)
+
+        mutIORef :: IORef a -> (a -> a) -> Renamed a
+        mutIORef r f = liftIO $ modifyIORef r f >> readIORef r
+
+        remap id id' = do state <- get
+                          put state { renameMap = Map.insert id id' (renameMap state) }
+
+    qv :: TypedId t -> Renamed (TypedId t)
+    qv (TypedId t i) = do i' <- qi i ; return $ TypedId t i'
+
+    qi v@(GlobalSymbol _) = return v
+    qi v = do state <- get
+              case Map.lookup v (renameMap state) of
+                Just v' -> return v'
+                Nothing -> return v
+
+    renameFn :: Fn KNExpr TypeIL -> Renamed (Fn KNExpr TypeIL)
+    renameFn (Fn v vs body rng) = do
+       (v' : vs') <- mapM renameV (v:vs)
+       body' <- renameKN body
+       return (Fn v' vs' body' rng)
+
+    renameArrayIndex (ArrayIndex v1 v2 rng s) =
+      mapM qv [v1,v2] >>= \[v1' , v2' ] -> return $ ArrayIndex v1' v2' rng s
+
+    renameKN :: KNExpr -> Renamed KNExpr
+    renameKN e =
+      case e of
+      KNBool          {}       -> return $ e
+      KNString        {}       -> return $ e
+      KNInt           {}       -> return $ e
+      KNFloat         {}       -> return $ e
+      KNTuple         t vs a   -> mapM qv vs     >>= \vs' -> return $ KNTuple t vs' a
+      KNKillProcess   {}       -> return $ e
+      KNCall       tc t v vs   -> mapM qv (v:vs) >>= \(v':vs') -> return $ KNCall tc t v' vs'
+      KNCallPrim      t p vs   -> liftM  (KNCallPrim      t p) (mapM qv vs)
+      KNAppCtor       t c vs   -> liftM  (KNAppCtor       t c) (mapM qv vs)
+      KNAllocArray    t v      -> liftM  (KNAllocArray    t) (qv v)
+      KNAlloc         t v _rgn -> liftM  (\v' -> KNAlloc  t v' _rgn) (qv v)
+      KNDeref         t v      -> liftM  (KNDeref         t) (qv v)
+      KNStore         t v1 v2  -> liftM2 (KNStore         t) (qv v1) (qv v2)
+      KNArrayRead     t ai     -> liftM  (KNArrayRead     t) (renameArrayIndex ai)
+      KNArrayPoke     t ai v   -> liftM2 (KNArrayPoke     t) (renameArrayIndex ai) (qv v)
+      KNVar                  v -> liftM  KNVar                  (qv v)
+      KNCase          t v pats -> do pats' <- mapM renamePatternBinding pats
+                                     v'    <- qv v
+                                     return $ KNCase       t v' pats'
+      KNUntil         t c b r  -> do [econd, ebody] <- mapM renameKN [c, b ]
+                                     return $ KNUntil      t econd ebody r
+      KNIf            t v e1 e2-> do [ethen, eelse] <- mapM renameKN [e1,e2]
+                                     v' <- qv v
+                                     return $ KNIf         t v' ethen eelse
+      KNLetVal       id e   b  -> do id' <- renameI id
+                                     [e' , b' ] <- mapM renameKN [e, b]
+                                     return $ KNLetVal id' e'  b'
+      KNLetFuns     ids fns b  -> do ids' <- mapM renameI ids
+                                     fns' <- mapM renameFn fns
+                                     b'   <- renameKN b
+                                     return $ KNLetFuns ids' fns' b'
+      KNTyApp t v argtys       -> qv v >>= \v' -> return $ KNTyApp t v' argtys
+
+    renamePatternBinding ((pat, vs), expr) = do
+        pat' <- renamePattern pat
+        vs' <- mapM qv vs -- TODO or renameV ?
+        expr' <- renameKN expr
+        return ((pat' , vs' ), expr' )
+
+    renamePattern pattern = do
+     let mp = mapM renamePattern
+     case pattern of
+       P_Wildcard rng t            -> return $ P_Wildcard rng t
+       P_Bool     rng t b          -> return $ P_Bool     rng t b
+       P_Int      rng t i          -> return $ P_Int      rng t i
+       P_Variable rng v            -> qv v    >>= \v'    -> return $ P_Variable rng v'
+       P_Ctor     rng t pats ctor  -> mp pats >>= \pats' -> return $ P_Ctor  rng t pats' ctor
+       P_Tuple    rng t pats       -> mp pats >>= \pats' -> return $ P_Tuple rng t pats'
+
+
+data RenameState = RenameState {
+                       renameUniq :: IORef Uniq
+                     , renameMap  :: Map Ident Ident
+                   }
+type Renamed = StateT RenameState IO
 
 -- TODO include kinds on type variables (IL), only subst for boxed kinds
 
@@ -169,281 +420,62 @@ monoSubstLookup subst tv@(BoundTyVar nm) =
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||| Monadic Helpers ||||||||||||||||||||||{{{
-
-data MonoWork = NeedsMono Ident -- for the eventual monomorphized function
-                          Ident -- for the source polymorphic function
-                          [MonoType] -- tyargs for substitution
-              | PlainProc Ident
-              deriving Show
-
-mkNeedsMono = NeedsMono -- so we can grep for ctor sites but not dtor sites.
-
-workTargetId (PlainProc id)     = id
-workTargetId (NeedsMono id _ _) = id
-
 data MonoState = MonoState {
     -- Before instantiating a polymorphic function at a given type,
     -- we first check to see if we've already seen it; if so, then
     -- we don't need to add anything to the work list.
-    monoSeenIds  :: Set Ident
-  , monoWorklist :: WorklistQ MonoWork
-  , polyProcDefs :: Map Ident ILProcDef
-  , monoProcDefs :: Map Ident MoProcDef
-  , monoCloTyEnv :: Map Ident MonoSubst
+    monoSeenIds :: Set MonoProcId
+  , monoOrigins :: Map PolyBinder (Fn (KNExpr' TypeIL) TypeIL)
+  , monoResults :: Map PolyBinder [MonoResult]
+  , monoUniques :: IORef Uniq
 }
+
+type MonoProcId = Ident
+--type PolyProcId = Ident
+
+type MonoBinder = Ident
+type PolyBinder = Ident
+
+data MonoResult = MonoResult MonoProcId MonoFn
+type MonoFn = Fn (KNExpr' MonoType) MonoType
 
 type Mono = StateT MonoState IO
 
-monoPopWorklist :: Mono (Maybe MonoWork)
-monoPopWorklist = do
-    state <- get
-    case worklistGet $ monoWorklist state of
-        Nothing -> return Nothing
-        Just (a, rest) -> do put state { monoWorklist = rest }
-                             return (Just a)
+split :: [(Ident, Fn KNExpr TypeIL)] -> ([(MonoBinder, Fn KNExpr TypeIL)]
+                                        ,[(PolyBinder, Fn KNExpr TypeIL)])
+split idsfns = ( [idfn | (idfn,False) <- aug]
+               , [idfn | (idfn,True ) <- aug])
+        where aug         = map tri idsfns
+              tri (id,fn) = ((id,fn),isInstantiable $ tidType $ fnVar fn)
 
-seen :: MonoWork -> Mono Bool
-seen (PlainProc _) = return False
-seen (NeedsMono targetid _srcid _) = do
-         state <- get ; return $ Set.member targetid (monoSeenIds state)
+              isInstantiable (ForAllIL [] t) = isInstantiable t
+              isInstantiable (ForAllIL _  _) = True
+              isInstantiable _               = False
 
-markSeen :: Ident -> Mono ()
-markSeen id = do state <- get
-                 put state { monoSeenIds = Set.insert id (monoSeenIds state) }
+monoAddOrigins :: [(PolyBinder, Fn KNExpr TypeIL)] -> Mono ()
+monoAddOrigins polys = do
+  state <- get
+  put state { monoOrigins = Map.union (monoOrigins state) (Map.fromList polys) }
 
-addWork :: MonoWork -> Mono ()
-addWork wk = do state <- get
-                put state { monoWorklist = worklistAdd (monoWorklist state) wk }
+monoGetOrigin :: PolyBinder -> Mono (Maybe (Fn KNExpr TypeIL))
+monoGetOrigin polyid = do
+  state <- get
+  return $ Map.lookup polyid (monoOrigins state)
 
--- Mark the targetid as seen, and add the source fn and args to the worklist.
-monoScheduleWork :: MonoWork -> Mono ()
-monoScheduleWork work = do
-    seenWork <- seen work
-    when (not $ seenWork) $
-      do markSeen $ workTargetId work
-         addWork  $ work
+monoPutResult :: PolyBinder -> MonoResult -> Mono ()
+monoPutResult polyid result = do
+  state <- get
+  let addResult (Nothing) = Just $ [result]
+      addResult (Just rs) = Just $ result:rs
+  put state { monoResults = Map.alter addResult polyid (monoResults state) }
 
-monoGetProc :: Ident -> Mono (Maybe ILProcDef)
-monoGetProc id = do
-    state <- get
-    return $ Map.lookup id (polyProcDefs state)
-
-monoPutProc :: MoProcDef -> Mono ()
-monoPutProc proc = do
-    let id = moProcIdent proc
-    state <- get
-    put state { monoProcDefs = Map.insert id proc (monoProcDefs state) }
-
-monoAssociateSubstWithProcId subst id = do
-    state <- get
-    debug $ "assocating subst with proc " ++ show id
-    put state { monoCloTyEnv = Map.insert id subst (monoCloTyEnv state) }
-
-monoGetSubstAssociatedWithProcId id = do
-    state <- get
-    case Map.lookup id (monoCloTyEnv state) of
-       Nothing -> return emptyMonoSubst
-       Just  s -> return s
+monoGatherVersions :: [PolyBinder] -> Mono ([MonoProcId], [MonoFn])
+monoGatherVersions polyids = do
+  resultsMap <- gets monoResults
+  let results :: PolyBinder -> [(MonoProcId, MonoFn)]
+      results polyid = case Map.lookup polyid resultsMap of
+                         Nothing -> []
+                         Just rs -> map (\(MonoResult mid mfn) -> (mid, mfn)) rs
+  return $ unzip $ concatMap results polyids
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
--- ||||||||||||||||||||||||||| Drivers ||||||||||||||||||||||||||{{{
-goMonomorphize :: Mono ()
-goMonomorphize = do
-  work <- monoPopWorklist
-  case work of
-    Nothing -> return ()
-    Just wk -> monomorphizeProc wk >> goMonomorphize
-
-debug s = liftIO $ putStrLn s
-
-monomorphizeProc (PlainProc srcid) = do
-  (Just proc) <- monoGetProc srcid
-  basesubst <- monoGetSubstAssociatedWithProcId srcid
-  debug $ "monomorphizeProc PlainProc " ++ show srcid
-  let tyvars = case ilProcPolyTyVars proc of
-                 Nothing   -> []
-                 Just ktvs -> ktvs
-  let tyargs = [PtrTypeUnknown | _ <- tyvars]
-  let subst = extendMonoSubst basesubst tyargs tyvars
-  newproc <- doMonomorphizeProc proc subst
-  monoPutProc $ newproc
-
-monomorphizeProc (NeedsMono polyid srcid tyargs) = do
-  debug $ "monomorphizeProc NeedsMono " ++ show polyid ++ " <- " ++ show srcid ++ " // " ++ show tyargs
-  mproc <- monoGetProc srcid
-  proc <- case mproc of
-             Just p -> return p
-             Nothing -> error $ "Monomo.hs: Could not find proc " ++ show srcid
-  basesubst <- monoGetSubstAssociatedWithProcId srcid
-  let (Just tyvars) = ilProcPolyTyVars proc
-  let subst = extendMonoSubst basesubst tyargs tyvars
-  newproc <- doMonomorphizeProc proc subst
-  monoPutProc $ newproc { moProcIdent = polyid }
-
-doMonomorphizeProc :: ILProcDef -> MonoSubst -> Mono MoProcDef
-doMonomorphizeProc proc subst = do
-  blocks <- mapM (monomorphizeBlock subst proc) (ilProcBlocks proc)
-  return $ MoProcDef { moProcBlocks     = blocks
-                     , moProcIdent      =                       ilProcIdent proc
-                     , moProcRange      =                       ilProcRange proc
-                     , moProcReturnType = monoType subst $ ilProcReturnType proc
-                     , moProcVars       =  map (monoVar subst) $ ilProcVars proc
-                     }
-
-monomorphizeBlock :: MonoSubst -> ILProcDef -> ILBlock -> Mono MoBlock
-monomorphizeBlock subst proc (Block (bid, phis) mids last) = do
-    newmids <- mapM (monomorphizeMid subst) mids
-    let newphis = map (monoVar subst) phis
-    return $ MoBlock (bid, newphis) newmids (monoLast subst last)
-                     (Map.lookup bid $ ilProcBlockPreds proc)
--- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
-monoLast :: MonoSubst -> ILLast -> MoLast
-monoLast subst last =
-  let qv = monoVar subst in
-  case last of
-    ILRetVoid          -> MoRetVoid
-    ILRet     v        -> MoRet      (qv v)
-    ILBr      bid args -> MoBr       bid (map (monoVar subst) args)
-    -- Might as well optimize single-case switches to unconditional branches.
-    ILCase _ [arm]    Nothing _   -> MoBr      (snd arm) [] -- TODO?
-    -- If pattern matching was exhaustive, use one of the cases as a default.
-    ILCase v (a:arms) Nothing occ -> MoCase (qv v) arms (Just $ snd a) (monoOcc subst occ)
-    ILCase v    arms def occ      -> MoCase (qv v) arms def            (monoOcc subst occ)
-
-monoOcc :: MonoSubst -> Occurrence TypeIL -> Occurrence MonoType
-monoOcc subst occ = map (\(n,info) -> (n, monoCtorInfo subst info)) occ
-
-monoCtorInfo subst (CtorInfo cid (DataCtor nm tag tyformals tys)) =
-                   (CtorInfo cid (DataCtor nm tag tyformals tys'))
-                where tys' = map (monoType subst') tys
-                      subst' = extendSubstForFormals subst tyformals
-
-monoVar :: MonoSubst -> TypedId TypeIL -> TypedId MonoType
-monoVar subst (TypedId t id) = TypedId (monoType subst t) id
-
-monomorphizeMid :: MonoSubst -> ILMiddle -> Mono MoMiddle
-monomorphizeMid subst mid =
-  case mid of
-    ILLetVal id val -> do valOrVar <- monomorphizeLetable subst val
-                          case valOrVar of
-                            Instantiated var -> return $ MoRebindId   id (monoVar subst var)
-                            Bitcast      var -> return $ MoLetBitcast id (monoVar subst var)
-                            MonoLet      val -> return $ MoLetVal     id val
-    ILClosures ids clos -> do clos' <- mapM (monoClosure subst) clos
-                              return $ MoClosures ids clos'
-    ILRebindId i   v    -> do return $ MoRebindId i (monoVar subst v)
-
-monoClosure subst (ILClosure procid envid captures allocsite) = do
-  -- We need to associate the current substitution with the closure's procid
-  -- so that any currently-in-scope type variables will remain "in scope"
-  -- when we switch to the new proc.
-  monoAssociateSubstWithProcId subst (tidIdent procid)
-  -- We don't know if the rest of the parent proc will instantiate this procid,
-  -- or even reference it, but we must schedule it so that we don't accidentally
-  -- try to translate a proc nested within it before we can propagate the subst.
-  monoScheduleWork (PlainProc (tidIdent procid))
-  return $ MoClosure (monoVar subst procid)
-                     envid (map (monoVar subst) captures) allocsite
-
-data LetableResult = MonoLet      MonoLetable
-                   | Instantiated (TypedId TypeIL)
-                   | Bitcast      (TypedId TypeIL)
-
--- |||||||||||||||| Monomorphization of Letables ||||||||||||||||{{{
-monomorphizeLetable :: MonoSubst -> Letable -> Mono LetableResult
-monomorphizeLetable subst expr =
-    let qt = monoType subst in
-    let qv = monoVar subst  in
-    case expr of
-        -- This is the only interesting case!
-        ILTyApp t v argtys -> do
-            let monotys = map (generic qt) argtys
-            case v of
-              -- If we're polymorphically instantiating a global symbol
-              -- (i.e. a proc) then we can statically look up the proc
-              -- definition and create a monomorphized copy (equally well for
-              -- both pointer-sized and types with special calling conventions).
-              TypedId (ForAllIL {}) id@(GlobalSymbol _) -> do
-                  let polyid = getPolyProcId id monotys
-                  monoScheduleWork (mkNeedsMono polyid id monotys)
-                  -- We need to bitcast the proc we generate because we're
-                  -- sharing similarly-kinded instantiations, but we want for
-                  -- the translated return type of id:[T] to be T, not void*.
-                  return $ Bitcast (TypedId t polyid)
-
-              -- On the other hand, if we only have a local var, then
-              -- (in general) the var is unknown, so we can't statically
-              -- monomorphize it. In simple cases we can insert coercions
-              -- to/from uniform and non-uniform representations.
-              TypedId (ForAllIL ktvs _rho) localvarid ->
-                if List.all (\(_tv, kind) -> kind == KindPointerSized) ktvs
-                  then return $ Bitcast (TypedId t localvarid)
-                  else error $ "Cannot instantiate unknown function's type variables "
-                     ++ show ktvs
-                     ++ " with types "
-                     ++ show argtys
-                     ++ "\ngenericized to "
-                     ++ show monotys
-                     ++ "\nFor now, polymorphic instantiation of non-pointer-sized types"
-                     ++ " is only allowed on functions at the top level!"
-                     ++ "\nThis is a silly restriction for local bindings,"
-                     ++ " and could be solved with a dash of flow"
-                     ++ " analysis,\nbut the issues are much deeper for"
-                     ++ " polymorphic function arguments"
-                     ++ " (higher-rank polymorphism)...\n"
-
-              _ -> error $ "Expected polymorphic instantiation to affect a bound variable!"
-
-        -- All other nodes are (essentially) ignored straightaway.
-        ILText      s         -> return $ MonoLet $ MoText   s
-        ILBool      b         -> return $ MonoLet $ MoBool   b
-        ILInt       t i       -> return $ MonoLet $ MoInt   (qt t) i
-        ILFloat     t f       -> return $ MonoLet $ MoFloat (qt t) f
-        ILTuple     vs asrc   -> return $ MonoLet $ MoTuple (map qv vs) asrc
-        ILKillProcess t m     -> return $ MonoLet $ MoKillProcess (qt t) m
-        ILOccurrence v occ    -> return $ MonoLet $ MoOccurrence (qv v) (monoOcc subst occ)
-        ILCallPrim  t p vs    -> return $ MonoLet $ MoCallPrim (qt t) monopr (map qv vs) where monopr = monoPrim subst p
-        ILCall      t v vs    -> return $ MonoLet $ MoCall     (qt t) (qv v) (map qv vs)
-        ILAppCtor   t c vs    -> return $ MonoLet $ MoAppCtor  (qt t) c      (map qv vs)
-        -- ILAllocate  alloc     -> return $ MonoLet $ MoAllocate (monoAllocInfo subst alloc)
-        ILAlloc     v rgn     -> return $ MonoLet $ MoAlloc (qv v) rgn
-        ILDeref     v         -> return $ MonoLet $ MoDeref (qv v)
-        ILStore     v1 v2     -> return $ MonoLet $ MoStore (qv v1) (qv v2)
-        ILAllocArray t v      -> return $ MonoLet $ MoAllocArray (qt t) (qv v)
-        ILArrayRead  t (ArrayIndex v1 v2 rng s)
-                              -> return $ MonoLet $ MoArrayRead (qt t) (ArrayIndex (qv v1) (qv v2) rng s)
-        ILArrayPoke  (ArrayIndex v1 v2 rng s) v3
-                              -> return $ MonoLet $ MoArrayPoke (ArrayIndex (qv v1) (qv v2) rng s) (qv v3)
--- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
-monoPrim :: MonoSubst -> FosterPrim TypeIL -> FosterPrim MonoType
-monoPrim subst p =
-  case p of
-     NamedPrim    v     -> NamedPrim (monoVar subst v)
-     PrimOp       n t   -> PrimOp       n (monoType subst t)
-     PrimIntTrunc s t   -> PrimIntTrunc s t
-     CoroPrim  cp t1 t2 -> CoroPrim  cp (monoType subst t1) (monoType subst t2)
-
--- monoAllocInfo :: MonoSubst -> AllocInfo TypeIL -> AllocInfo MonoType
--- monoAllocInfo subst (AllocInfo t rgn arraysize) =
---     AllocInfo (monoType subst t) rgn (fmap (monoVar subst) arraysize)
-
-generic :: (TypeIL -> MonoType) -> TypeIL -> MonoType
-generic f t = if kindOfTypeIL t == KindPointerSized then PtrTypeUnknown else f t
-
-getPolyProcId :: Ident -> [MonoType] -> Ident
-getPolyProcId id tys =
-  if List.all (\t -> case t of { PtrTypeUnknown -> True ; _ -> False }) tys
-    then id
-    else idAppend id (show tys)
-
-idAppend id s = case id of (GlobalSymbol o) -> (GlobalSymbol $ beforeS o)
-                           (Ident o m)      -> (Ident (beforeS o) m)
-                where beforeS o = o `T.append` T.pack s
-
--- Our wanton copying of procs without consistently renaming the copied
--- variables breaks alpha-uniqueness, but it works out at the moment because:
---   1) We don't do any beta-reduction on proc definitions.
---   2) The LLVM lowering uses distinct scopes for each procedure definition.

@@ -759,9 +759,8 @@ tcSigmaFn ctx f expTy = do
 
         -- Note we collect free vars in the old context, since we can't possibly
         -- capture the function's arguments from the environment!
-        freeVars <- computeFreeFnVars uniquelyNamedFormals annbody rng ctx
         let fn = E_AnnFn $ Fn (TypedId fnty (GlobalSymbol $ fnAstName f))
-                               uniquelyNamedFormals annbody freeVars rng
+                              uniquelyNamedFormals annbody rng
         debug $ "tcSigmaFn calling matchExp  expTy  = " ++ show expTy
         debug $ "tcSigmaFn calling matchExp, expTy' = " ++ show expTy'
         matchExp expTy' fn "tcSigmaFn"
@@ -798,9 +797,8 @@ tcRhoFnHelper ctx f expTy = do
 
     -- Note we collect free vars in the old context, since we can't possibly
     -- capture the function's arguments from the environment!
-    freeVars <- computeFreeFnVars uniquelyNamedFormals annbody rng ctx
     let fn = E_AnnFn $ Fn (TypedId fnty (GlobalSymbol $ fnAstName f))
-                           uniquelyNamedFormals annbody freeVars rng
+                          uniquelyNamedFormals annbody rng
     matchExp expTy fn "tcRhoFn"
 -- }}}
 
@@ -813,17 +811,6 @@ fnTypeTemplate f argtypes retty cc =
   -- Compute "base" function type, ignoring any type parameters.
   let procOrFunc = if fnWasToplevel f then FT_Proc else FT_Func in
   FnTypeAST argtypes retty cc procOrFunc
-
-computeFreeFnVars uniquelyNamedFormals annbody rng ctx = do
-    let identsFree = bodyvars `butnot` (boundvars ++ globalvars)
-                     where
-                     bodyvars   = freeIdents annbody
-                     boundvars  = map tidIdent uniquelyNamedFormals
-                     globalvars = concatMap tmBindingId (globalBindings ctx)
-                     tmBindingId (TermVarBinding _ tid) = [tidIdent tid]
-    freeAnns <- mapM (\id -> tcSigmaVar ctx rng (identPrefix id))
-                     identsFree
-    return $ [tid | E_AnnVar _ tid <- freeAnns]
 
 -- | Verify that the given formals have distinct names,
 -- | and return unique'd versions of each.
@@ -1097,7 +1084,7 @@ resolveType rng subst x =
   let q = resolveType rng subst in
   case x of
     PrimIntAST  _                  -> return x
-    PrimFloat64                    -> return x
+    PrimFloat64AST                 -> return x
     MetaTyVar   _                  -> return x
     TyVarAST (SkolemTyVar _ _ _)   -> return x
     TyVarAST (BoundTyVar name)     -> case Map.lookup name subst of
@@ -1139,7 +1126,7 @@ getFreeTyVars xs = do zs <- mapM zonkType xs
   go bound x =
     case x of
         PrimIntAST _          -> []
-        PrimFloat64           -> []
+        PrimFloat64AST        -> []
         TyConAppAST _nm types -> concatMap (go bound) types
         TupleTypeAST types    -> concatMap (go bound) types
         FnTypeAST ss r _ _    -> concatMap (go bound) (r:ss)
@@ -1164,7 +1151,7 @@ zonkType x = do
                                           writeTcMeta m ty'
                                           return ty'
         PrimIntAST     {}     -> return x
-        PrimFloat64           -> return x
+        PrimFloat64AST        -> return x
         TyVarAST       {}     -> return x
         TyConAppAST  nm types -> liftM (TyConAppAST nm) (mapM zonkType types)
         TupleTypeAST    types -> liftM (TupleTypeAST  ) (mapM zonkType types)
@@ -1228,7 +1215,7 @@ tcTypeWellFormed msg ctx typ = do
   let q = tcTypeWellFormed msg ctx
   case typ of
         PrimIntAST _          -> return ()
-        PrimFloat64           -> return ()
+        PrimFloat64AST        -> return ()
         MetaTyVar     _       -> return ()
         TyConAppAST nm types  -> case Map.lookup nm (contextDataTypes ctx) of
                                    Just  _ -> mapM_ q types
@@ -1285,7 +1272,7 @@ collectAllUnificationVars xs = Set.toList (Set.fromList (concatMap go xs))
   where go x =
           case x of
             PrimIntAST _          -> []
-            PrimFloat64           -> []
+            PrimFloat64AST        -> []
             TyConAppAST _nm types -> concatMap go types
             TupleTypeAST types    -> concatMap go types
             FnTypeAST ss r _ _    -> concatMap go (r:ss)

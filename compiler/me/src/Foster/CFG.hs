@@ -19,8 +19,8 @@ module Foster.CFG
 ) where
 
 import Foster.Base
-import Foster.TypeIL(TypeIL(..), AIVar, boolTypeIL)
-import Foster.KNExpr(KNExpr, KNExpr'(..), typeKN, TailQ(..))
+import Foster.MonoType
+import Foster.KNExpr(KNExpr'(..), typeKN, TailQ(..))
 import Foster.Letable(Letable(..))
 
 import Compiler.Hoopl
@@ -33,14 +33,16 @@ import Data.IORef
 import Prelude hiding (id, last)
 
 data CFBody = CFB_LetFuns [Ident] [CFFn] CFBody
-            | CFB_Call    TailQ TypeIL AIVar [AIVar]
+            | CFB_Call    TailQ MonoType MoVar [MoVar]
+
+type KNMono = KNExpr' MonoType
 
 -- |||||||||||||||||||| Entry Point & Helpers |||||||||||||||||||{{{
 
 -- This is the "entry point" into CFG-building for the outside.
 -- We take (and update) a mutable reference as a convenient way of
 -- threading through the small amount of globally-unique state we need.
-computeCFGs :: IORef Uniq -> KNExpr -> IO CFBody
+computeCFGs :: IORef Uniq -> KNMono -> IO CFBody
 computeCFGs uref expr =
   case expr of
     KNLetFuns ids fns body -> do
@@ -53,21 +55,21 @@ computeCFGs uref expr =
     KNCall tq t v vs -> return $ CFB_Call tq t v vs
     _ -> error $ "computeCFGIO expected a series of KNLetFuns bindings! had " ++ show expr
 
-computeCFGIO :: IORef Uniq -> Fn KNExpr TypeIL -> IO CFFn
+computeCFGIO :: IORef Uniq -> Fn (KNMono) MonoType -> IO CFFn
 computeCFGIO uref fn = do
   cfgState <- internalComputeCFG uref fn
   return $ extractFunction cfgState fn
 
 -- A mirror image for internal use (when converting nested functions).
 -- As above, we thread through the updated unique value from the subcomputation!
-cfgComputeCFG :: Fn KNExpr TypeIL -> CFG CFFn
+cfgComputeCFG :: Fn (KNMono) MonoType -> CFG CFFn
 cfgComputeCFG fn = do
   uref <- gets cfgUniq
   cfgState <- liftIO $ internalComputeCFG uref fn
   return $ extractFunction cfgState fn
 
 -- A helper for the CFG functions above, to run computeBlocks.
-internalComputeCFG :: IORef Int -> Fn KNExpr TypeIL -> IO CFGState
+internalComputeCFG :: IORef Int -> Fn (KNMono) MonoType -> IO CFGState
 internalComputeCFG uniqRef fn = do
   let state0 = CFGState uniqRef Nothing [] Nothing Nothing Nothing Map.empty
   execStateT runComputeBlocks state0
@@ -117,12 +119,12 @@ incrPredecessorsDueTo terminator m =
 
 caseIf a b = [(pat True, a), (pat False, b)]
          where pat bval = (P_Bool (error "kn.if.srcrange")
-                                  boolTypeIL bval, [])
+                                  boolMonoType bval, [])
 
--- ||||||||||||||||||||||||| KNExpr -> CFG ||||||||||||||||||||||{{{
+-- ||||||||||||||||||||||||| KNMono -> CFG ||||||||||||||||||||||{{{
 -- computeBlocks takes an expression and a contination,
 -- which determines what to do with the let-bound result of the expression.
-computeBlocks :: KNExpr -> Maybe Ident -> (AIVar -> CFG ()) -> CFG ()
+computeBlocks :: KNMono -> Maybe Ident -> (MoVar -> CFG ()) -> CFG ()
 computeBlocks expr idmaybe k = do
     case expr of
         KNIf t v a b -> do
@@ -142,7 +144,7 @@ computeBlocks expr idmaybe k = do
 
             cfgNewBlock until_cont []
             cfgAddLet idmaybe (ILTuple [] (AllocationSource "until" rng))
-                              (TupleTypeIL []) >>= k
+                              (TupleType []) >>= k
 
         KNLetVal id (KNVar v) expr -> do
             cont <- cfgFresh "rebind_cont"
@@ -236,7 +238,7 @@ computeBlocks expr idmaybe k = do
         KNVar v -> k v
         _ -> do cfgAddLet idmaybe (knToLetable expr) (typeKN expr) >>= k
   where
-    knToLetable :: KNExpr -> Letable
+    knToLetable :: KNMono -> Letable
     knToLetable expr =
       case expr of
          KNVar        _v     -> error $ "can't make Letable from KNVar!"
@@ -253,7 +255,10 @@ computeBlocks expr idmaybe k = do
          KNAllocArray t v    -> ILAllocArray t v
          KNArrayRead  t ari  -> ILArrayRead  t ari
          KNArrayPoke  _ ari c-> ILArrayPoke  ari c
-         KNTyApp t v argtys  -> ILTyApp t v argtys
+         KNTyApp      t v [] -> ILBitcast    t v
+         KNTyApp          {} -> error $ "knToLetable saw tyapp that was not "
+                                      ++ "eliminated by monomorphization: "
+                                      ++ show expr
          KNKillProcess t m   -> ILKillProcess t m
          _                   -> error $ "non-letable thing seen by letable: "
                                       ++ show expr
@@ -264,14 +269,10 @@ computeBlocks expr idmaybe k = do
                 Nothing -> cfgFreshId n)
         return $ TypedId t id
 
-    cfgAddLet :: Maybe Ident -> Letable -> TypeIL -> CFG AIVar
+    cfgAddLet :: Maybe Ident -> Letable -> MonoType -> CFG MoVar
     cfgAddLet idmaybe letable ty = do
         tid@(TypedId _ id) <- cfgFreshVarI idmaybe ty ".cfg_seq"
         cfgAddMiddle (ILetVal id letable)
-        Just fnvar <- gets cfgCurrentFnVar
-        case letable of
-            ILTyApp _ v _ | v == fnvar -> cfgAddFnVarAlias id fnvar
-            _                          -> return ()
         return tid
 
     cfgFreshId :: String -> CFG Ident
@@ -299,7 +300,7 @@ cfgEndWith last = do
             put (old { cfgPreBlock     = Nothing
                      , cfgAllBlocks    = newblock : (cfgAllBlocks old) })
 
-cfgNewBlock :: BlockId -> [AIVar] -> CFG ()
+cfgNewBlock :: BlockId -> [MoVar] -> CFG ()
 cfgNewBlock bid phis = do
     old <- get
     case cfgPreBlock old of
@@ -320,12 +321,7 @@ cfgSetHeader header = do old <- get ; put old { cfgHeader = Just header }
 cfgSetRetCont retcont = do old <- get ; put old { cfgRetCont = Just retcont }
 cfgSetFnVar fnvar = do old <- get ; put old { cfgCurrentFnVar = Just fnvar }
 
-cfgAddFnVarAlias :: Ident -> AIVar -> CFG ()
-cfgAddFnVarAlias i v = do old <- get
-                          let ama = cfgKnownFnVars old
-                          put old { cfgKnownFnVars = Map.insert i v ama }
-
-cfgIsThisFnVar :: AIVar -> CFG Bool
+cfgIsThisFnVar :: MoVar -> CFG Bool
 cfgIsThisFnVar b = do old <- get
                       let v = cfgCurrentFnVar old
                       return $ Just b == v || Map.lookup (tidIdent b) (cfgKnownFnVars old) == v
@@ -333,9 +329,9 @@ cfgIsThisFnVar b = do old <- get
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||| CFG Data Types |||||||||||||||||||||||{{{
-data CFLast = CFCont        BlockId [AIVar] -- either ret or br
-            | CFCall        BlockId TypeIL AIVar [AIVar]
-            | CFCase        AIVar [PatternBinding BlockId TypeIL]
+data CFLast = CFCont        BlockId [MoVar] -- either ret or br
+            | CFCall        BlockId MonoType MoVar [MoVar]
+            | CFCase        MoVar [PatternBinding BlockId MonoType]
             deriving (Show)
 
 data Insn e x where
@@ -346,12 +342,12 @@ data Insn e x where
 
 data CFGState = CFGState {
     cfgUniq         :: IORef Uniq
-  , cfgPreBlock     :: Maybe (BlockId, [AIVar], [Insn O O])
+  , cfgPreBlock     :: Maybe (BlockId, [MoVar], [Insn O O])
   , cfgAllBlocks    :: [BasicBlock]
   , cfgHeader       :: Maybe BlockId
   , cfgRetCont      :: Maybe BlockId
-  , cfgCurrentFnVar :: Maybe AIVar
-  , cfgKnownFnVars  :: Map Ident AIVar
+  , cfgCurrentFnVar :: Maybe MoVar
+  , cfgKnownFnVars  :: Map Ident MoVar
 }
 
 type CFG = StateT CFGState IO
@@ -396,8 +392,8 @@ data BasicBlockGraph = BasicBlockGraph { bbgEntry :: BlockEntry
                                        , bbgRetK  :: BlockId
                                        , bbgBody  :: BasicBlock
                                        , bbgNumPreds :: Map BlockId Int }
-type CFFn = Fn BasicBlockGraph TypeIL
-type BlockEntry = (BlockId, [TypedId TypeIL])
+type CFFn = Fn BasicBlockGraph MonoType
+type BlockEntry = (BlockId, [TypedId MonoType])
 
 -- We pair a name for later codegen with a label for Hoopl's NonLocal class.
 type BlockId = (String, Label)

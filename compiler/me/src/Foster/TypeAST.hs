@@ -29,7 +29,7 @@ type Tau   = TypeAST -- No ForAlls anywhere
 
 data TypeAST =
            PrimIntAST       IntSizeBits
-         | PrimFloat64
+         | PrimFloat64AST
          | TyConAppAST      DataTypeName [Sigma]
          | TupleTypeAST     [Sigma]
          | CoroTypeAST      Sigma Sigma
@@ -54,7 +54,7 @@ instance Eq (MetaTyVar t) where
 instance Show TypeAST where
     show x = case x of
         PrimIntAST         size         -> "(PrimIntAST " ++ show size ++ ")"
-        PrimFloat64                     -> "(PrimFloat64)"
+        PrimFloat64AST                  -> "(PrimFloat64)"
         TyConAppAST    tc types         -> "(TyCon: " ++ show tc ++ joinWith " " ("":map show types) ++ ")"
         TupleTypeAST      types         -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
         FnTypeAST    s t cc cs          -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
@@ -72,7 +72,7 @@ instance Structured TypeAST where
     textOf e _width =
         case e of
             PrimIntAST     size            -> out $ "PrimIntAST " ++ show size
-            PrimFloat64                    -> out $ "PrimFloat64"
+            PrimFloat64AST                 -> out $ "PrimFloat64"
             TyConAppAST    tc  _           -> out $ "TyConAppAST " ++ tc
             TupleTypeAST       _           -> out $ "TupleTypeAST"
             FnTypeAST    _ _  _  _         -> out $ "FnTypeAST"
@@ -86,7 +86,7 @@ instance Structured TypeAST where
     childrenOf e =
         case e of
             PrimIntAST         _           -> []
-            PrimFloat64                    -> []
+            PrimFloat64AST                 -> []
             TyConAppAST   _tc types        -> types
             TupleTypeAST      types        -> types
             FnTypeAST   ss t _ _           -> ss ++ [t]
@@ -113,7 +113,7 @@ i8  = PrimIntAST I8
 i32 = PrimIntAST I32
 i64 = PrimIntAST I64
 i1  = PrimIntAST I1
-f64 = PrimFloat64
+f64 = PrimFloat64AST
 
 primTyVars tyvars = map (\v -> (v, KindAnySizeType)) tyvars
 
@@ -145,8 +145,8 @@ primitiveDecls =
     ,(,) "prim_print_bytes_stdout" $ mkProcType [ArrayTypeAST i8, i32] []
     ,(,) "prim_print_bytes_stderr" $ mkProcType [ArrayTypeAST i8, i32] []
 
-    ,(,) "print_float_p9f64"       $ mkProcType [PrimFloat64] []
-    ,(,) "expect_float_p9f64"      $ mkProcType [PrimFloat64] []
+    ,(,) "print_float_p9f64"       $ mkProcType [PrimFloat64AST] []
+    ,(,) "expect_float_p9f64"      $ mkProcType [PrimFloat64AST] []
 
     -- Calls to this function are internally transformed to AIAllocArray nodes.
     -- forall a, i32 -> Array a
@@ -251,4 +251,4 @@ gFosterPrimOpsTable = Map.fromList $
   ] ++ fixnumPrimitives I64
     ++ fixnumPrimitives I32
     ++ fixnumPrimitives I8
-    ++ flonumPrimitives "f64" PrimFloat64
+    ++ flonumPrimitives "f64" PrimFloat64AST
