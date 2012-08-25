@@ -125,7 +125,7 @@ lambdaLift f freeVars = do
 -- for representing basic blocks because they're easier to build.
 basicBlock hooplBlock = blockGraph hooplBlock
 
-jumpTo bbg = case bbgEntry bbg of (bid, _) -> ILast $ CFBr bid undefined
+jumpTo bbg = case bbgEntry bbg of (bid, _) -> ILast $ CFCont bid undefined
 
 type ClosureConvertedBlocks = ([ILBlock], Map BlockId Int)
 
@@ -151,10 +151,12 @@ closureConvertBlocks bbg = do
       ilLast (ILast last) =
         let ret i = return ([], i) in
         case last of
-           CFRet  []       -> ret $ ILRetVoid
-           CFRet  [v]      -> ret $ ILRet   v
-           CFRet  vs       -> error $ "ILExpr.hs:No support for multiple return values yet\n" ++ show vs
-           CFBr    b args  -> ret $ ILBr    b args
+           CFCont  k vs    ->
+             case (k == bbgRetK bbg, vs) of
+                  (True,  [] ) -> ret $ ILRetVoid
+                  (True,  [v]) -> ret $ ILRet   v
+                  (True,   _ ) -> error $ "ILExpr.hs:No support for multiple return values yet\n" ++ show vs
+                  (False,  _ ) -> ret $ ILBr k vs
            CFCase  a pbs   -> do allSigs  <- gets ilmCtors
                                  let dt = compilePatterns pbs allSigs
                                  let usedBlocks = eltsOfDecisionTree dt
@@ -292,7 +294,7 @@ closureOfKnFn infoMap (self_id, fn) = do
         -- If the body has x and y free, the closure converted body should be
         --     case env of (x, y, ...) -> body end
         newbody <- do
-            let BasicBlockGraph bodyentry oldbodygraph numPreds = fnBody f
+            let BasicBlockGraph bodyentry rk oldbodygraph numPreds = fnBody f
             let norange = MissingSourceRange ""
             let patVar a = P_Variable norange a
             let cfcase = CFCase envVar [
@@ -307,13 +309,13 @@ closureOfKnFn infoMap (self_id, fn) = do
                             mkMiddles []         <*>
                             mkLast (ILast cfcase)
             closureConvertBlocks $
-               BasicBlockGraph bid (caseblock |*><*| oldbodygraph)
+               BasicBlockGraph bid rk (caseblock |*><*| oldbodygraph)
                                (incrPredecessorsDueTo (ILast cfcase) numPreds)
 
         proc <- ilmPutProc $ closureConvertedProc (envVar:(fnVars f)) f newbody
         return (envId, proc)
 
-    mapBasicBlock f (BasicBlockGraph entry bg np) = BasicBlockGraph entry (f bg) np
+    mapBasicBlock f (BasicBlockGraph entry rk bg np) = BasicBlockGraph entry rk (f bg) np
 
     -- Making environment passing explicit simply means rewriting calls
     -- of closure variables from   v(args...)   ==>   v_proc(v_env, args...).

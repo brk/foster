@@ -52,26 +52,29 @@ cfgComputeCFG fn = do
 -- A helper for the CFG functions above, to run computeBlocks.
 internalComputeCFG :: IORef Int -> Fn KNExpr TypeIL -> IO CFGState
 internalComputeCFG uniqRef fn = do
-  let state0 = CFGState uniqRef Nothing [] Nothing Nothing Map.empty
+  let state0 = CFGState uniqRef Nothing [] Nothing Nothing Nothing Map.empty
   execStateT runComputeBlocks state0
   where
     runComputeBlocks = do
         header <- cfgFresh "postalloca"
         cfgSetHeader header
+        retcont <- cfgFresh "rk"
+        cfgSetRetCont retcont
         cfgSetFnVar (fnVar fn)
         cfgNewBlock header (fnVars fn)
-        computeBlocks (fnBody fn) Nothing (ret fn)
+        computeBlocks (fnBody fn) Nothing (ret fn retcont)
 
     -- Make sure that the main function returns void.
-    ret f var = if isMain f then cfgEndWith (CFRet [])
-                            else cfgEndWith (CFRet [var])
+    ret f k v = if isMain f then cfgEndWith (CFCont k [])
+                            else cfgEndWith (CFCont k [v])
             where isMain f = (identPrefix $ tidIdent $ fnVar f) == T.pack "main"
 
 -- The other helper, to collect the scattered results and build the actual CFG.
 extractFunction st fn =
   let blocks = Prelude.reverse (cfgAllBlocks st) in
   let elab    = entryLab blocks in
-  fn { fnBody = BasicBlockGraph elab (catClosedGraphs blocks)
+  let (Just rk) = cfgRetCont st in
+  fn { fnBody = BasicBlockGraph elab rk (catClosedGraphs blocks)
                                 (computeNumPredecessors elab blocks) }
   where -- Dunno why this function isn't in Hoopl...
         catClosedGraphs :: NonLocal i => [Graph i C C] -> Graph i C C
@@ -111,14 +114,14 @@ computeBlocks expr idmaybe k = do
         KNUntil _t a b rng -> do
             [until_test, until_body, until_cont] <- mapM cfgFresh
                                       ["until_test", "until_body", "until_cont"]
-            cfgEndWith (CFBr until_test [])
+            cfgEndWith (CFCont until_test [])
 
             cfgNewBlock until_test []
             computeBlocks a Nothing $ \var -> cfgEndWith
                                      (CFCase var (caseIf until_cont until_body))
 
             cfgNewBlock until_body []
-            computeBlocks b Nothing $ \_ -> cfgEndWith (CFBr until_test [])
+            computeBlocks b Nothing $ \_ -> cfgEndWith (CFCont until_test [])
 
             cfgNewBlock until_cont []
             cfgAddLet idmaybe (ILTuple [] (AllocationSource "until" rng))
@@ -126,7 +129,7 @@ computeBlocks expr idmaybe k = do
 
         KNLetVal id (KNVar v) expr -> do
             cont <- cfgFresh "rebind_cont"
-            cfgEndWith (CFBr cont [v])
+            cfgEndWith (CFCont cont [v])
             cfgNewBlock      cont [TypedId (tidType v) id]
             computeBlocks expr idmaybe k
 
@@ -179,7 +182,7 @@ computeBlocks expr idmaybe k = do
             let computeCaseBlocks (e, (_, block_id)) = do
                     cfgNewBlock block_id []
                     computeBlocks e Nothing $ \var ->
-                        cfgEndWith (CFBr case_cont [var])
+                        cfgEndWith (CFCont case_cont [var])
             mapM_ computeCaseBlocks (zip (map snd bs) bbs)
 
             -- The overall value of the case is the value stored in the slot.
@@ -194,7 +197,7 @@ computeBlocks expr idmaybe k = do
             isTailCall <- cfgIsThisFnVar b
             if isTailCall
               then do Just header <- gets cfgHeader
-                      cfgEndWith (CFBr header vs)
+                      cfgEndWith (CFCont header vs)
               else -- bleh, code duplication :(
                 cfgAddLet idmaybe (knToLetable expr) (typeKN expr) >>= k
 
@@ -283,6 +286,7 @@ cfgNewUniq = do uref <- gets cfgUniq ; mutIORef uref (+1)
     mutIORef r f = liftIO $ modifyIORef r f >> readIORef r
 
 cfgSetHeader header = do old <- get ; put old { cfgHeader = Just header }
+cfgSetRetCont retcont = do old <- get ; put old { cfgRetCont = Just retcont }
 cfgSetFnVar fnvar = do old <- get ; put old { cfgCurrentFnVar = Just fnvar }
 
 cfgAddFnVarAlias :: Ident -> AIVar -> CFG ()
@@ -298,8 +302,7 @@ cfgIsThisFnVar b = do old <- get
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||| CFG Data Types |||||||||||||||||||||||{{{
-data CFLast = CFRet         [AIVar]
-            | CFBr          BlockId [AIVar]
+data CFLast = CFCont        BlockId [AIVar] -- either ret or br
             | CFCase        AIVar [PatternBinding BlockId TypeIL]
             deriving (Show)
 
@@ -314,6 +317,7 @@ data CFGState = CFGState {
   , cfgPreBlock     :: Maybe (BlockId, [AIVar], [Insn O O])
   , cfgAllBlocks    :: [BasicBlock]
   , cfgHeader       :: Maybe BlockId
+  , cfgRetCont      :: Maybe BlockId
   , cfgCurrentFnVar :: Maybe AIVar
   , cfgKnownFnVars  :: Map Ident AIVar
 }
@@ -334,8 +338,7 @@ instance NonLocal Insn where
 blockTargetsOf :: Insn O C -> [BlockId]
 blockTargetsOf (ILast last) =
     case last of
-        CFRet  _             -> []
-        CFBr   b _           -> [b]
+        CFCont b _           -> [b]
         CFCase _ patsbids    -> [b | (_, b) <- patsbids]
 
 -- Decompose a BasicBlock into a triple of its subpieces.
@@ -360,6 +363,7 @@ type SplitBasicBlock             = ( BlockEntry,  [Insn O O],  Insn O C )
 -- it's easier to glue together Graphs when building the basic blocks.
 type BasicBlock = Graph Insn C C
 data BasicBlockGraph = BasicBlockGraph { bbgEntry :: BlockEntry
+                                       , bbgRetK  :: BlockId
                                        , bbgBody  :: BasicBlock
                                        , bbgNumPreds :: Map BlockId Int }
 type CFFn = Fn BasicBlockGraph TypeIL
