@@ -171,7 +171,7 @@ ail ctx ae =
                 argtys <- mapM qt raw_argtys
                 ae     <- q e
 
-                origExprType <- qt (typeAST e)
+                origExprType <- qt (typeOf e)
                 let ktvs = tyvarBindersOf origExprType
                 mapM_ (kindCheckSubsumption rng) (zip ktvs argtys)
 

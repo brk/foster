@@ -8,7 +8,6 @@
 module Foster.AnnExpr (
   AnnExpr(..)
 , AnnTuple(..)
-, typeAST
 ) where
 
 import Foster.Base
@@ -69,26 +68,24 @@ data AnnExpr ty =
 data AnnTuple ty = E_AnnTuple { annTupleRange :: SourceRange
                               , annTupleExprs :: [AnnExpr ty] }
 
------------------------------------------------------------------------
+-- ||||||||||||||||||||||||| Boilerplate ||||||||||||||||||||||||{{{
 
-typeAST :: AnnExpr TypeAST -> TypeAST
-typeAST annexpr =
-  let recur = typeAST in
-  case annexpr of
+instance TypedWith (AnnExpr TypeAST) TypeAST where
+  typeOf annexpr = case annexpr of
      AnnString {}          -> fosStringType
      AnnBool   {}          -> fosBoolType
      AnnInt   _rng t _     -> t
      AnnFloat _rng t _     -> t
-     AnnTuple  {}          -> TupleTypeAST [recur e | e <- childrenOf annexpr]
+     AnnTuple  {}          -> TupleTypeAST [typeOf e | e <- childrenOf annexpr]
      E_AnnFn annFn         -> fnType annFn
      AnnCall _rng t _ _    -> t
      AnnCompiles {}        -> fosBoolType
      AnnKillProcess _ t _  -> t
      AnnIf _rng t _ _ _    -> t
      AnnUntil _rng t _ _   -> t
-     AnnLetVar _rng _ _ b  -> recur b
-     AnnLetFuns _rng _ _ e -> recur e
-     AnnAlloc _rng e _     -> RefTypeAST (recur e)
+     AnnLetVar _rng _ _ b  -> typeOf b
+     AnnLetFuns _rng _ _ e -> typeOf e
+     AnnAlloc _rng e _     -> RefTypeAST (typeOf e)
      AnnDeref _rng t _     -> t
      AnnStore _rng _ _     -> TupleTypeAST []
      AnnArrayRead _rng t _ -> t
@@ -97,8 +94,6 @@ typeAST annexpr =
      E_AnnVar _rng tid     -> tidType tid
      AnnPrimitive _rng tid -> tidType tid
      E_AnnTyApp _rng substitutedTy _tm _tyArgs -> substitutedTy
-
--- ||||||||||||||||||||||||| Instances ||||||||||||||||||||||||||{{{
 
 instance Structured (AnnExpr TypeAST) where
   textOf e _width =

@@ -9,7 +9,7 @@ import qualified Data.List as List(length, zip)
 import Data.List(foldl', (\\))
 import Control.Monad(liftM, forM_, forM, liftM, liftM2, when)
 
-import qualified Data.Text as T(Text, unpack, pack)
+import qualified Data.Text as T(Text, unpack)
 import qualified Data.Map as Map(lookup, insert, elems, toList, null)
 import qualified Data.Set as Set(toList, fromList)
 import Data.IORef(IORef,newIORef,readIORef,writeIORef)
@@ -136,7 +136,7 @@ checkSigmaDirect :: Context TypeAST -> Term -> Sigma -> Tc (AnnExpr Sigma)
 checkSigmaDirect ctx (E_FnAST fn) sigma@(ForAllAST {}) = do
     tcSigmaFn ctx fn (Check sigma)
 
-checkSigmaDirect ctx _ (ForAllAST {}) =
+checkSigmaDirect _ctx _ (ForAllAST {}) =
     tcFails [out $ "checkSigmaDirect: can't check a sigma type against an "
                 ++ "arbitrary expression"]
 
@@ -218,7 +218,7 @@ tcRho ctx expr expTy = do
              (Check t) -> return t
              (Infer _) -> newTcUnificationVarTau $ "kill-process"
           matchExp expTy (AnnKillProcess rng tau msg) "kill-process"
-      E_KillProcess rng _ -> tcFails [out $ "prim kill-process requires a string literal"]
+      E_KillProcess _rng _ -> tcFails [out $ "prim kill-process requires a string literal"]
 
 matchExp expTy ann msg =
      case expTy of
@@ -671,7 +671,7 @@ tcSigmaFn ctx f expTy = do
         debug $ "inferring type of body of polymorphic function"
         debug $ "\tafter generating meta ty vars for type formals: " ++ show (zip taus ktvs)
         annbody <- case expTy of
-           Check exp_sigma@(ForAllAST exp_ktvs exp_rho) -> do
+           Check (ForAllAST exp_ktvs exp_rho) -> do
             -- Suppose we have something like
             -- f ::  forall a:Boxed, { List a }
             -- f =  { forall b:Boxed,   Nil ! }
@@ -1357,4 +1357,7 @@ data Expected t = Infer (IORef t) | Check t
 tcVERBOSE = True
 
 debug s = do when tcVERBOSE (tcLift $ putStrLn s)
+
+typeAST :: AnnExpr TypeAST -> TypeAST
+typeAST = typeOf
 -- }}}
