@@ -76,9 +76,7 @@ kNormalizeModule m ctx =
 kNormalizeFn :: (Fn AIExpr TypeIL) -> KN (Fn KNExpr TypeIL)
 kNormalizeFn fn = do
     knbody <- kNormalize YesTail (fnBody fn)
-    -- Ensure that return values are codegenned through a variable binding.
-    namedReturnValue <- nestedLets [knbody] (\[v] -> KNVar v)
-    return $ fn { fnBody = namedReturnValue }
+    return $ fn { fnBody = knbody }
 
 -- ||||||||||||||||||||||| K-Normalization ||||||||||||||||||||||{{{
 kNormalize :: TailQ -> AIExpr -> KN KNExpr
