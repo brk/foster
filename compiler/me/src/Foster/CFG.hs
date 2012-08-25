@@ -240,19 +240,19 @@ computeBlocks expr idmaybe k = do
     knToLetable expr =
       case expr of
          KNVar        _v     -> error $ "can't make Letable from KNVar!"
-         KNString     s      -> ILText       s
-         KNBool       b      -> ILBool       b
+         KNString   _ s      -> ILText       s
+         KNBool     _ b      -> ILBool       b
          KNInt        t i    -> ILInt        t i
          KNFloat      t f    -> ILFloat      t f
-         KNTuple      vs rng -> ILTuple      vs (AllocationSource "tuple" rng)
+         KNTuple    _ vs rng -> ILTuple      vs (AllocationSource "tuple" rng)
          KNCallPrim   t p vs -> ILCallPrim   t p vs
          KNAppCtor    t c vs -> ILAppCtor    t c vs
-         KNAlloc      v rgn  -> ILAlloc      v rgn
-         KNDeref      v      -> ILDeref      v
-         KNStore      a b    -> ILStore      a b
+         KNAlloc    _ v rgn  -> ILAlloc      v rgn
+         KNDeref    _ v      -> ILDeref      v
+         KNStore    _ a b    -> ILStore      a b
          KNAllocArray t v    -> ILAllocArray t v
          KNArrayRead  t ari  -> ILArrayRead  t ari
-         KNArrayPoke  ari c  -> ILArrayPoke  ari c
+         KNArrayPoke  _ ari c-> ILArrayPoke  ari c
          KNTyApp t v argtys  -> ILTyApp t v argtys
          KNKillProcess t m   -> ILKillProcess t m
          _                   -> error $ "non-letable thing seen by letable: "

@@ -20,18 +20,18 @@ import Foster.Output(out, outToString)
 
 data KNExpr =
         -- Literals
-          KNBool        Bool
-        | KNString      T.Text
+          KNBool        TypeIL Bool
+        | KNString      TypeIL T.Text
         | KNInt         TypeIL LiteralInt
         | KNFloat       TypeIL LiteralFloat
-        | KNTuple       [AIVar] SourceRange
+        | KNTuple       TypeIL [AIVar] SourceRange
         | KNKillProcess TypeIL T.Text
         -- Control flow
         | KNIf          TypeIL AIVar  KNExpr KNExpr
         | KNUntil       TypeIL KNExpr KNExpr SourceRange
         -- Creation of bindings
         | KNCase        TypeIL AIVar [PatternBinding KNExpr TypeIL]
-        | KNLetVal       Ident KNExpr KNExpr
+        | KNLetVal      Ident KNExpr KNExpr
         | KNLetFuns    [Ident] [Fn KNExpr TypeIL] KNExpr
         -- Use of bindings
         | KNVar         AIVar
@@ -39,13 +39,13 @@ data KNExpr =
         | KNCall TailQ  TypeIL AIVar  [AIVar]
         | KNAppCtor     TypeIL CtorId [AIVar]
         -- Mutable ref cells
-        | KNAlloc       AIVar AllocMemRegion
-        | KNDeref       AIVar
-        | KNStore       AIVar AIVar
+        | KNAlloc       TypeIL AIVar AllocMemRegion
+        | KNDeref       TypeIL AIVar
+        | KNStore       TypeIL AIVar AIVar
         -- Array operations
         | KNAllocArray  TypeIL AIVar
         | KNArrayRead   TypeIL (ArrayIndex AIVar)
-        | KNArrayPoke          (ArrayIndex AIVar) AIVar
+        | KNArrayPoke   TypeIL (ArrayIndex AIVar) AIVar
         | KNTyApp       TypeIL AIVar [TypeIL]
         deriving (Show)
 
@@ -87,17 +87,17 @@ kNormalize mebTail expr =
   let gt = kNormalize mebTail in
   let gn = kNormalize NotTail in
   case expr of
-      AIString s        -> return $ KNString s
-      AIBool b          -> return $ KNBool b
+      AIString s        -> return $ KNString stringTypeIL s
+      AIBool b          -> return $ KNBool   boolTypeIL   b
       AIInt t i         -> return $ KNInt t i
       AIFloat t f       -> return $ KNFloat t f
       E_AIVar v         -> return $ KNVar v
       AIKillProcess t m -> return $ KNKillProcess t m
       E_AIPrim p -> error $ "KNExpr.kNormalize: Should have detected prim " ++ show p
 
-      AIAllocArray t a      -> do a' <- gn a ; nestedLets [a'] (\[x] -> KNAllocArray t x)
-      AIAlloc a rgn         -> do a' <- gn a ; nestedLets [a'] (\[x] -> KNAlloc x rgn)
-      AIDeref   a           -> do a' <- gn a ; nestedLets [a'] (\[x] -> KNDeref x)
+      AIAllocArray t a      -> do a' <- gn a ; nestedLets [a'] (\[x] -> KNAllocArray (ArrayTypeIL t) x)
+      AIAlloc a rgn         -> do a' <- gn a ; nestedLets [a'] (\[x] -> KNAlloc (PtrTypeIL $ tidType x) x rgn)
+      AIDeref   a           -> do a' <- gn a ; nestedLets [a'] (\[x] -> KNDeref (pointedToTypeOfVar x) x)
       E_AITyApp t a argtys  -> do a' <- gn a ; nestedLets [a'] (\[x] -> KNTyApp t x argtys)
 
       AILetVar id  a b  -> do a' <- gn a
@@ -110,14 +110,15 @@ kNormalize mebTail expr =
                               nestedLets [a', b'] (\[x, y] -> KNArrayRead t (ArrayIndex x y rng s))
       AIArrayPoke _t (ArrayIndex a b rng s) c -> do
                               [a', b', c'] <- mapM gn [a,b,c]
-                              nestedLets [a', b', c'] (\[x,y,z] -> KNArrayPoke (ArrayIndex x y rng s) z)
+                              nestedLets [a', b', c'] (\[x,y,z] -> KNArrayPoke (TupleTypeIL []) (ArrayIndex x y rng s) z)
 
       AILetFuns ids fns a   -> do knFns <- mapM kNormalizeFn fns
                                   a' <- gt a
                                   return $ KNLetFuns ids knFns a'
 
       AITuple    es rng     -> do ks <- mapM gn es
-                                  nestedLets ks (\vs -> KNTuple vs rng)
+                                  nestedLets ks (\vs ->
+                                    KNTuple (TupleTypeIL (map tidType vs)) vs rng)
 
       AICase t e bs         -> do e' <- gn e
                                   ibs <- forM bs (\(p, ae) -> do ke <- gt ae
@@ -135,7 +136,7 @@ kNormalize mebTail expr =
                       nestedLetsDo (cb:cargs) (\(vb:vars) -> knCall t vb vars)
   where knStore x y = do
             q <- varOrThunk (x, pointedToType $ tidType y)
-            nestedLets [q] (\[z] -> KNStore z y)
+            nestedLets [q] (\[z] -> KNStore (TupleTypeIL []) z y)
 
         knCall t a vs =
           case (tidType a) of
@@ -308,27 +309,27 @@ kNormalCtors ctx dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
 typeKN :: KNExpr -> TypeIL
 typeKN expr =
   case expr of
-    KNBool _          -> boolTypeIL
-    KNString _        -> stringTypeIL
-    KNInt      t _    -> t
-    KNFloat    t _    -> t
-    KNTuple vs _      -> TupleTypeIL (map tidType vs)
-    KNKillProcess t _ -> t
-    KNLetVal  _ _ e   -> typeKN e
-    KNLetFuns _ _ e   -> typeKN e
-    KNCall  _  t _ _  -> t
-    KNCallPrim t _ _  -> t
-    KNAppCtor  t _ _  -> t
-    KNAllocArray elt_ty _ -> ArrayTypeIL elt_ty
-    KNIf    t _ _ _   -> t
-    KNUntil t _ _ _   -> t
-    KNAlloc v _rgn    -> PtrTypeIL (tidType v)
-    KNDeref v         -> pointedToTypeOfVar v
-    KNStore _ _       -> TupleTypeIL []
-    KNArrayRead t _   -> t
-    KNArrayPoke _ _   -> TupleTypeIL []
-    KNCase t _ _      -> t
-    KNVar v           -> tidType v
+    KNBool          t _      -> t
+    KNString        t _      -> t
+    KNInt           t _      -> t
+    KNFloat         t _      -> t
+    KNTuple         t _  _   -> t
+    KNKillProcess   t _      -> t
+    KNCall        _ t _ _    -> t
+    KNCallPrim      t _ _    -> t
+    KNAppCtor       t _ _    -> t
+    KNAllocArray    t _      -> t
+    KNIf            t _ _ _  -> t
+    KNUntil         t _ _ _  -> t
+    KNAlloc         t _ _rgn -> t
+    KNDeref         t _      -> t
+    KNStore         t _ _    -> t
+    KNArrayRead     t _      -> t
+    KNArrayPoke     t _ _    -> t
+    KNCase          t _ _    -> t
+    KNLetVal        _ _ e    -> typeKN e
+    KNLetFuns       _ _ e    -> typeKN e
+    KNVar                  v -> tidType v
     KNTyApp overallType _tm _tyArgs -> overallType
 
 -- This instance is primarily needed as a prereq for KNExpr to be an AExpr,
@@ -336,8 +337,8 @@ typeKN expr =
 instance Structured KNExpr where
     textOf e _width =
         case e of
-            KNString       _    -> out $ "KNString    "
-            KNBool         b    -> out $ "KNBool      " ++ (show b)
+            KNString     _ _    -> out $ "KNString    "
+            KNBool       _ b    -> out $ "KNBool      " ++ (show b)
             KNCall tail t _ _   -> out $ "KNCall " ++ show tail ++ " :: " ++ show t
             KNCallPrim t prim _ -> out $ "KNCallPrim  " ++ (show prim) ++ " :: " ++ show t
             KNAppCtor  t cid  _ -> out $ "KNAppCtor   " ++ (show cid) ++ " :: " ++ show t
@@ -354,7 +355,7 @@ instance Structured KNExpr where
             KNAllocArray {}     -> out $ "KNAllocArray "
             KNArrayRead  t _    -> out $ "KNArrayRead " ++ " :: " ++ show t
             KNArrayPoke  {}     -> out $ "KNArrayPoke "
-            KNTuple     vs _    -> out $ "KNTuple     (size " ++ (show $ length vs) ++ ")"
+            KNTuple   _ vs _    -> out $ "KNTuple     (size " ++ (show $ length vs) ++ ")"
             KNVar (TypedId t (GlobalSymbol name))
                                 -> out $ "KNVar(Global):   " ++ T.unpack name ++ " :: " ++ show t
             KNVar (TypedId t i) -> out $ "KNVar(Local):   " ++ show i ++ " :: " ++ show t
@@ -369,7 +370,7 @@ instance Structured KNExpr where
             KNFloat  {}             -> []
             KNKillProcess {}        -> []
             KNUntil _t a b _        -> [a, b]
-            KNTuple     vs _        -> map var vs
+            KNTuple   _ vs _        -> map var vs
             KNCase _ e bs           -> (var e):(map snd bs)
             KNLetFuns _ids fns e    -> map fnBody fns ++ [e]
             KNLetVal _x b e         -> [b, e]
@@ -377,12 +378,12 @@ instance Structured KNExpr where
             KNCallPrim _t _v vs     ->            [var v | v <- vs]
             KNAppCtor  _t _c vs     ->            [var v | v <- vs]
             KNIf       _t v b c     -> [var v, b, c]
-            KNAlloc   v _rgn        -> [var v]
+            KNAlloc _ v _rgn        -> [var v]
             KNAllocArray _ v        -> [var v]
-            KNDeref   v             -> [var v]
-            KNStore   v w           -> [var v, var w]
+            KNDeref      _ v        -> [var v]
+            KNStore      _ v w      -> [var v, var w]
             KNArrayRead _t ari      -> map var $ childrenOfArrayIndex ari
-            KNArrayPoke    ari i    -> map var $ childrenOfArrayIndex ari ++ [i]
+            KNArrayPoke _t ari i    -> map var $ childrenOfArrayIndex ari ++ [i]
             KNVar _                 -> []
             KNTyApp _t v _argty     -> [var v]
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||

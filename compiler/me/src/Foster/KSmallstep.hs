@@ -240,12 +240,12 @@ ssTermOfExpr expr =
   let tr   = ssTermOfExpr in
   let idOf = tidIdent     in
   case expr of
-    KNBool b               -> SSTmValue $ SSBool b
-    KNInt _t i             -> SSTmValue $ SSInt (litIntValue i)
-    KNFloat _t f           -> SSTmValue $ SSFloat (litFloatValue f)
-    KNString s             -> SSTmValue $ textFragmentOf s
-    KNVar v                -> SSTmExpr  $ IVar (idOf v)
-    KNTuple vs _           -> SSTmExpr  $ ITuple (map idOf vs)
+    KNBool    _t b         -> SSTmValue $ SSBool b
+    KNInt     _t i         -> SSTmValue $ SSInt (litIntValue i)
+    KNFloat   _t f         -> SSTmValue $ SSFloat (litFloatValue f)
+    KNString  _t s         -> SSTmValue $ textFragmentOf s
+    KNVar        v         -> SSTmExpr  $ IVar (idOf v)
+    KNTuple   _t vs _      -> SSTmExpr  $ ITuple (map idOf vs)
     KNLetFuns ids funs e   -> SSTmExpr  $ ILetFuns ids funs (tr e)
     KNLetVal x b e         -> SSTmExpr  $ ILetVal x (tr b) (tr e)
     KNCall  _  _t b vs     -> SSTmExpr  $ ICall (idOf b) (map idOf vs)
@@ -254,13 +254,13 @@ ssTermOfExpr expr =
     KNUntil    _t  a b _   -> SSTmExpr  $ IUntil    (tr a) (tr b)
     KNArrayRead _t (ArrayIndex a b _ _)
                            -> SSTmExpr  $ IArrayRead (idOf a) (idOf b)
-    KNArrayPoke (ArrayIndex b i _ _) v
+    KNArrayPoke _t (ArrayIndex b i _ _) v
                            -> SSTmExpr  $ IArrayPoke (idOf v) (idOf b) (idOf i)
     KNAllocArray _ety n    -> SSTmExpr  $ IAllocArray (idOf n)
-    KNAlloc a _rgn         -> SSTmExpr  $ IAlloc (idOf a)
-    KNDeref   a            -> SSTmExpr  $ IDeref (idOf a)
-    KNStore   a b          -> SSTmExpr  $ IStore (idOf a) (idOf b)
-    KNTyApp _t v argtys    -> SSTmExpr  $ ITyApp (idOf v) argtys
+    KNAlloc    _t a _rgn   -> SSTmExpr  $ IAlloc (idOf a)
+    KNDeref    _t a        -> SSTmExpr  $ IDeref (idOf a)
+    KNStore    _t a b      -> SSTmExpr  $ IStore (idOf a) (idOf b)
+    KNTyApp    _t v argtys -> SSTmExpr  $ ITyApp (idOf v) argtys
     KNCase _t a bs {-dt-}  -> SSTmExpr  $ ICase (idOf a) {-dt-} [(p, tr e) |
                                                               ((p, _), e) <- bs]
     KNAppCtor _t cid vs    -> SSTmExpr  $ IAppCtor cid (map idOf vs)

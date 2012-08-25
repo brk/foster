@@ -260,13 +260,16 @@ dumpExpr x@(MoAlloc a rgn) =
                     , PbLetable.alloc_info = Just $ dumpAllocate
                          (AllocInfo (typeMo x) rgn Nothing "...alloc...") }
 
-dumpExpr  (MoAllocArray elt_ty size) =
+dumpExpr  (MoAllocArray (ArrayType elt_ty) size) =
     P'.defaultValue { PbLetable.parts = fromList []
                     , PbLetable.tag   = IL_ALLOCATE
                     , PbLetable.type' = Just $ dumpType elt_ty
                     , PbLetable.alloc_info = Just $ dumpAllocate
                        (AllocInfo elt_ty MemRegionGlobalHeap (Just size)
                                                            "...array...") }
+dumpExpr  (MoAllocArray nonArrayType _) =
+         error $ "ProtobufIL.hs: Can't dump MoAllocArray with non-array type "
+              ++ show nonArrayType
 
 dumpExpr x@(MoDeref a) =
     P'.defaultValue { PbLetable.parts = fromList [dumpVar a]
@@ -473,7 +476,7 @@ typeMo expr = case expr of
     MoCallPrim t  _ _       -> t
     MoAppCtor  t  _ _       -> t
     -- MoAllocate info         -> allocType info
-    MoAllocArray elt_ty _   -> ArrayType elt_ty
+    MoAllocArray t _        -> t
     MoAlloc v _rgn          -> PtrType (tidType v)
     MoDeref v               -> pointedToTypeOfVar v
     MoStore _ _             -> TupleType []
