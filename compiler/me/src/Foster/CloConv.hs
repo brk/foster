@@ -13,8 +13,7 @@ import Data.Set(Set)
 import qualified Data.Set as Set(empty, singleton, union, unions, notMember,
                                                                        fromList)
 import Data.Map(Map)
-import qualified Data.Map as Map((!), insert, lookup, empty, fromList, elems,
-                                 singleton, insertWith, union, findWithDefault)
+import qualified Data.Map as Map((!), insert, lookup, empty, fromList, elems)
 
 import Control.Monad.State
 
@@ -35,7 +34,6 @@ import Foster.Output(out)
 data CCBody = CCB_Procs [CCProc] CCMain
 data CCMain = CCMain TailQ MonoType MoVar [MoVar]
 type CCProc = Proc BasicBlockGraph'
-type Blocks = (BasicBlockGraph' , Map BlockId Int)
 type Block' = Block Insn' C C
 type BlockG = Graph Insn' C C
 
@@ -64,13 +62,7 @@ data Insn' e x where
         CCLabel   :: BlockEntry           -> Insn' C O
         CCLetVal  :: Ident   -> Letable   -> Insn' O O
         CCLetFuns :: [Ident] -> [Closure] -> Insn' O O
-        CCLast    :: ILLast               -> Insn' O C
-
--- The biggest difference from CFLast to ILLast is the decision tree in ILCase.
-data ILLast = ILRetVoid
-            | ILRet      MoVar
-            | ILBr       BlockId [MoVar]
-            | ILCase     MoVar [(CtorId, BlockId)] (Maybe BlockId) (Occurrence MonoType)
+        CCLast    :: CCLast               -> Insn' O C
 
 data Proc blocks =
      Proc { procReturnType :: MonoType
@@ -78,8 +70,12 @@ data Proc blocks =
           , procVars       :: [MoVar]
           , procRange      :: SourceRange
           , procBlocks     :: blocks
-          , procBlockPreds :: Map BlockId Int
           }
+
+data CCLast = CCCont        BlockId [MoVar] -- either ret or br
+            | CCCall        BlockId MonoType Ident MoVar [MoVar] -- add ident for later let-binding
+            | CCCase        MoVar [(CtorId, BlockId)] (Maybe BlockId) (Occurrence MonoType)
+            deriving (Show)
 
 closureConvertAndLift :: DataTypeSigs
                       -> [Ident]
@@ -189,59 +185,28 @@ basicBlock hooplBlock = blockGraph hooplBlock
 
 -- We serialize a basic block graph by computing a depth-first search
 -- starting from the graph's entry block.
-closureConvertBlocks :: BasicBlockGraph -> ILM Blocks
+closureConvertBlocks :: BasicBlockGraph -> ILM BasicBlockGraph'
 closureConvertBlocks bbg = do
    let jumpTo bbg = case bbgEntry bbg of (bid, _) -> ILast $ CFCont bid undefined
    let cfgBlocks = map (splitBasicBlock . basicBlock) $
                      preorder_dfs $ mkLast (jumpTo bbg) |*><*| bbgBody bbg
-   -- Because we do a depth-first search, "renaming" blocks are guaranteed
-   -- to be adjacent to each other in the list.
-   let numPreds   = computeNumPredecessors (bbgEntry bbg) cfgBlocks
-   let cfgBlocks' = mergeCallNamingBlocks cfgBlocks numPreds
-   blocks <- mapM closureConvertBlock cfgBlocks'
-   let numPreds'  = computeNumPredecessors (bbgEntry bbg) cfgBlocks'
-   return (BasicBlockGraph' {
+   blocks <- mapM closureConvertBlock cfgBlocks
+   return BasicBlockGraph' {
                  bbgpEntry = bbgEntry bbg,
                  bbgpRetK  = bbgRetK  bbg,
                  bbgpBody = foldr (|*><*|) emptyClosedGraph (map blockGraph (concat blocks))
           }
-          , numPreds' )
   where
-    computeNumPredecessors elab blocks =
-      -- The entry (i.e. postalloca) label will get an incoming edge in LLVM
-      let startingMap = Map.singleton (blockId elab) 1 in
-      foldr (\sbb m ->
-            let  (_, _, terminator) = sbb in
-            incrPredecessorsDueTo terminator m) startingMap blocks
-
-    incrPredecessorsDueTo terminator m =
-        foldr (\tgt mm -> Map.insertWith (+) tgt 1 mm) m (blockTargetsOf terminator)
-
     -- A BasicBlock which ends in a decision tree will, in the general case,
     -- expand out to multiple blocks to encode the tree.
     closureConvertBlock :: (BlockEntry, [Insn O O], Insn O C) -> ILM [ Block' ]
     closureConvertBlock (bid, mids, last) = do
-        (blocks, lastmid, newlast) <- ilLast last
+        (blocks, lastmid, newlast) <- ccLast last
         newmids <- mapM closureConvertMid mids
         return $ mkBlock' bid (newmids ++ lastmid) newlast : blocks
      where
-      -- Translate continuation application to br or ret, as appropriate.
-      cont k vs =
-           case (k == bbgRetK bbg, vs) of
-                (True,  [] ) -> ILRetVoid
-                (True,  [v]) -> ILRet   v
-                (True,   _ ) -> error $ "ILExpr.hs:No support for multiple return values yet\n" ++ show vs
-                (False,  _ ) -> ILBr k vs
-
-      ilLast :: Insn O C -> ILM ( [Block' ], [Insn' O O], Insn' O C)
-      ilLast (ILast last) =
-        case last of
-           -- [[f k vs]] ==> let x = f vs in [[k x]]
-           CFCall k t v vs -> do
-               id <- ilmFresh (T.pack ".call")
-               return ([], [CCLetVal id (ILCall t v vs)], CCLast $ cont k [TypedId t id])
-           CFCont k vs -> return ([], [], CCLast $ cont k vs)
-           CFCase a pbs    -> do
+      ccLast :: Insn O C -> ILM ([ Block' ] , [Insn' O O] , Insn' O C)
+      ccLast (ILast (CFCase a pbs)) = do
                allSigs  <- gets ilmCtors
                let dt = compilePatterns pbs allSigs
                let usedBlocks = eltsOfDecisionTree dt
@@ -249,7 +214,7 @@ closureConvertBlocks bbg = do
                                 , Set.notMember bid usedBlocks]
                -- TODO print warning if any unused patterns
                (BlockFin blocks id) <- compileDecisionTree a dt
-               return $ (blocks, [], CCLast $ ILBr id [])
+               return $ (blocks, [], CCLast $ CCCont id [])
               where
                 -- The decision tree we get from pattern-match compilation may
                 -- contain only a subset of the pattern branche.
@@ -261,6 +226,10 @@ closureConvertBlocks bbg = do
                    (case maybeDt of
                        Just dt -> eltsOfDecisionTree dt
                        Nothing -> Set.empty)
+
+      ccLast (ILast (CFCont b vs))     = do return ([], [], CCLast (CCCont b vs))
+      ccLast (ILast (CFCall b t v vs)) = do id <- ilmFresh (T.pack ".call")
+                                            return ([], [], CCLast (CCCall b t id v vs))
 
       closureConvertMid :: Insn O O -> ILM (Insn' O O)
       closureConvertMid mid =
@@ -304,7 +273,7 @@ compileDecisionTree scrutinee (DT_Leaf armid idsoccs) = do
         case Map.lookup armid wrappers of
            Just id -> do return $ BlockFin [] id
            Nothing -> do let binders = map (emitOccurrence scrutinee) idsoccs
-                         (id, block) <- ilmNewBlock ".leaf" binders (CCLast $ ILBr armid []) -- TODO
+                         (id, block) <- ilmNewBlock ".leaf" binders (CCLast $ CCCont armid []) -- TODO
                          ilmAddWrapper armid id
                          return $ BlockFin [block] id
 
@@ -432,83 +401,22 @@ closureOfKnFn infoMap (self_id, fn) = do
 
 --------------------------------------------------------------------
 
-closureConvertedProc :: [MoVar] -> CFFn -> Blocks -> ILM CCProc
-closureConvertedProc procArgs f (newbody, numPreds) = do
+closureConvertedProc :: [MoVar] -> CFFn -> BasicBlockGraph' -> ILM CCProc
+closureConvertedProc procArgs f newbody = do
   case fnVar f of
     TypedId (FnType _ ftrange _ _) id ->
-       return $ Proc ftrange id procArgs (fnRange f) newbody numPreds
+       return $ Proc ftrange id procArgs (fnRange f) newbody
     tid -> error $ "Expected closure converted proc to have fntype, had " ++ show tid
 
 --------------------------------------------------------------------
 
 -- Canonicalize single-consequent cases to unconditional branches,
 -- and use the first case as the default for exhaustive pattern matches.
--- mkSwitch :: MoVar -> [(CtorId, BlockId)] -> Maybe BlockId -> Occurrence MonoType -> ILLast
-mkSwitch _ [arm]      Nothing _   = ILBr   (snd arm) []
-mkSwitch v (a:arms)   Nothing occ = ILCase v arms (Just $ snd a) occ
-mkSwitch v    arms    def     occ = ILCase v arms def            occ
+-- mkSwitch :: MoVar -> [(CtorId, BlockId)] -> Maybe BlockId -> Occurrence MonoType -> CCLast
+mkSwitch _ [arm]      Nothing _   = CCCont (snd arm) []
+mkSwitch v (a:arms)   Nothing occ = CCCase v arms (Just $ snd a) occ
+mkSwitch v    arms    def     occ = CCCase v arms def            occ
 
---------------------------------------------------------------------
-
--- This little bit of unpleasantness is needed to ensure that we
--- don't need to create gcroot slots for the phi nodes corresponding
--- to blocks inserted from using CPS-like calls.
--- TODO we can probably do this as a Block->Block translation...
-mergeCallNamingBlocks blocks numpreds = go Map.empty [] blocks
-  where go !subst !acc !blocks =
-         case blocks of
-           [] -> finalize acc subst
-           [b] -> go subst (b:acc) []
-           (x:y:zs) ->
-              case mergeAdjacent subst x y of
-                Just (m,s) -> go s        acc  (m:zs)
-                Nothing    -> go subst (x:acc) (y:zs)
-        mergeAdjacent :: Map MoVar MoVar
-                      -> (BlockEntry, [Insn O O], Insn O C)
-                      -> (BlockEntry, [Insn O O], Insn O C)
-               -> Maybe ((BlockEntry, [Insn O O], Insn O C), Map MoVar MoVar)
-        mergeAdjacent subst (xe,xm,xl) ((yb,yargs),ym,yl) =
-          case (yargs, xl) of
-            ([yarg], ILast (CFCall cb t v vs)) | cb == yb ->
-                if Map.lookup yb numpreds == Just 1
-                    then Just ((xe,xm++[ILetVal (tidIdent yarg) (ILCall t v vs)]++ym,yl), subst)
-                    else Nothing
-            (_, ILast (CFCont cb   avs))       | cb == yb ->
-                if Map.lookup yb numpreds == Just 1
-                    then assert (length yargs == length avs) $
-                         let subst' = Map.union subst (Map.fromList $ zip yargs avs) in
-                         Just ((xe,xm++ym,yl), subst' )
-                    else Nothing
-            _ -> Nothing
-
-        finalize revblocks subst =
-            let s v = Map.findWithDefault v v subst in
-            let si  = substIn s in
-            map (\(be, insns, lastinsn) -> (be, map si insns, si lastinsn))
-                (reverse revblocks)
-
-        substIn :: VarSubstFor (Insn e x)
-        substIn s insn  = case insn of
-             (ILabel   {}        ) -> insn
-             (ILetVal  id letable) -> ILetVal id $ substVarsInLetable s letable
-             (ILetFuns ids fns   ) -> ILetFuns ids $ map (substForInFn s) fns
-             (ILast    cflast    ) -> case cflast of
-                 (CFCont b vs)     -> ILast (CFCont b (map s vs))
-                 (CFCall t b v vs) -> ILast (CFCall t b (s v) (map s vs))
-                 (CFCase v cs)     -> ILast (CFCase (s v) cs)
-
-        substForInFn :: VarSubstFor CFFn
-        substForInFn s fn =
-          assert (fnVars fn == map s (fnVars fn)) $
-          fn { fnBody     = substInGraph s (fnBody fn) }
-
-        substInGraph :: VarSubstFor BasicBlockGraph
-        substInGraph s bbg =
-          let (_, block_vs) = bbgEntry bbg in
-          assert (block_vs == map s block_vs) $
-          bbg { bbgBody = mapGraph (substIn s) (bbgBody bbg) }
-
-type VarSubstFor a = (MoVar -> MoVar) -> a -> a
 --------------------------------------------------------------------
 
 -- As usual, a unique state monad, plus the accumulated procedure definitions.
@@ -583,8 +491,17 @@ instance Pretty (Insn' e x) where
                                         | (id,fn) <- zip ids fns])
   pretty (CCLast    cclast     ) = pretty cclast
 
-instance Pretty ILLast where
-  pretty last = text (show last)
+instance Pretty CCLast where
+  pretty (CCCont bid       vs) = text "cont" <+> prettyBlockId bid <+>              list (map pretty vs)
+  pretty (CCCall bid _ _ v vs) = text "call" <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
+  pretty (CCCase v arms _def _occ) = align $
+    text "case" <+> pretty v <$> indent 2
+       (vcat [ text "of" <+> fill 20 (pretty ctor) <+> text "->" <+> prettyBlockId bid
+             | (ctor, bid) <- arms
+             ])
+
+instance Pretty CtorId where
+  pretty (CtorId tynm ctnm _ sm) = pretty tynm <> text "." <> pretty ctnm <> parens (pretty sm)
 
 instance Pretty Closure where
   pretty clo = text "(Closure" <+> text "proc =" <+> pretty (closureProcIdent clo)
@@ -613,12 +530,6 @@ instance Show (Insn e x) where
   show (ILetFuns ids fns   ) = "ILetFuns " ++ show ids ++ " = " ++ show ["..." | _ <- fns]
   show (ILast    cflast    ) = "ILast    " ++ show cflast
 
-instance Show ILLast where
-  show (ILRetVoid     ) = "ret void"
-  show (ILRet v       ) = "ret " ++ show v
-  show (ILBr  bid args) = "br " ++ show bid ++ " , " ++ show args
-  show (ILCase v _arms _def _occ) = "case(" ++ show v ++ ")"
-
 instance NonLocal Insn' where
   entryLabel (CCLabel ((_,l), _)) = l
   successors (CCLast last) = map blockLabel (block'TargetsOf (CCLast last))
@@ -627,9 +538,7 @@ instance NonLocal Insn' where
 block'TargetsOf :: Insn' O C -> [BlockId]
 block'TargetsOf (CCLast last) =
     case last of
-        ILRetVoid                   -> []
-        ILRet      _                -> []
-        ILBr       b _              -> [b]
-        ILCase     _ cbs (Just b) _ -> b:map snd cbs
-        ILCase     _ cbs Nothing  _ ->   map snd cbs
-
+        CCCont     b _              -> [b]
+        CCCall     b _ _ _ _        -> [b]
+        CCCase     _ cbs (Just b) _ -> b:map snd cbs
+        CCCase     _ cbs Nothing  _ ->   map snd cbs

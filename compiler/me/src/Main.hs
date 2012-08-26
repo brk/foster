@@ -450,6 +450,11 @@ lowerModule ai_mod ctx_il = do
          _ <- liftIO $ renderKN monomod True
          runOutput $ (outLn "^^^ ===================================")
 
+     whenDumpIR "cfg" $ do
+         runOutput $ (outLn "/// CFG-ized program ==================")
+         _ <- liftIO $ renderCFG cfgmod True
+         runOutput $ (outLn "^^^ ===================================")
+
      whenDumpIR "cc" $ do
          runOutput $ (outLn "/// Closure-converted program =========")
          _ <- liftIO $ renderCC ccmod True

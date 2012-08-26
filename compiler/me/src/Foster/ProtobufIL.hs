@@ -10,7 +10,6 @@ module Foster.ProtobufIL (
 
 import Foster.Base
 import Foster.ILExpr
-import Foster.CloConv(ILLast(..))
 import qualified Foster.CloConv as CC(Proc(..), Closure(Closure))
 import Foster.MonoType
 import Foster.Letable
@@ -439,11 +438,11 @@ dumpILProgramToProtobuf m outpath = do
                  , modlines   = fmap textToPUtf8 lines
                  }
 
-    dumpProc p
+    dumpProc (p, predmap)
       = Proc { Proc.name  = dumpIdent $ CC.procIdent p
              , in_args    = fromList $ [dumpIdent (tidIdent v) | v <- CC.procVars p]
              , proctype   = dumpProcType (preProcType p)
-             , Proc.blocks= fromList $ map (dumpBlock (CC.procBlockPreds p)) (CC.procBlocks p)
+             , Proc.blocks= fromList $ map (dumpBlock predmap) (CC.procBlocks p)
              , Proc.lines = Just $ u8fromString (showSourceRange $ CC.procRange p)
              , Proc.linkage = Foster.Bepb.Proc.Linkage.Internal
              }

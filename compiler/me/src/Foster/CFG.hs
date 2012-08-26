@@ -435,7 +435,7 @@ type BlockId = (String, Label)
 
 -- ||||||||||||||||||||| CFG Pretty Printing ||||||||||||||||||||{{{
 
-renderCFG :: (ModuleIL BasicBlockGraph MonoType) -> Bool -> IO (Either () String)
+renderCFG :: (ModuleIL CFBody MonoType) -> Bool -> IO (Either () String)
 renderCFG cfg put = if put then putDoc (pretty cfg) >>= (return . Left)
                         else return . Right $ show (pretty cfg)
 
@@ -509,6 +509,19 @@ instance Pretty BasicBlockGraph where
                 <$> text "entry =" <+> pretty (fst $ bbgEntry bbg)
                 <$> text "------------------------------"))
           <> pretty (bbgBody bbg)
+
+instance Pretty CFBody where
+  pretty (CFB_LetFuns ids fns body) =
+                                   text "letfuns"
+                                   <$> indent 2 (vcat [text (show id) <+> text "="
+                                                                      <+> pretty fn
+                                                      | (id, fn) <- zip ids fns
+                                                      ])
+                                   <$> text "in"
+                                   <$> pretty body
+                                   <$> text "end"
+  pretty (CFB_Call {}) = text "call main..."
+
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||||||| UniqMonadIO ||||||||||||||||||||||{{{
