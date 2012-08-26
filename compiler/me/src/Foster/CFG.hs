@@ -12,7 +12,6 @@ module Foster.CFG
 , BlockId, BlockEntry
 , BasicBlockGraph(..)
 , BasicBlock
-, splitBasicBlock -- used in closure conversion
 , CFLast(..)
 , CFBody(..)
 , CFFn
@@ -105,7 +104,7 @@ extractFunction st fn = do
   let blocks = Prelude.reverse (cfgAllBlocks st)
   let elab    = entryLab blocks
   let (Just rk) = cfgRetCont st
-  let bbg = BasicBlockGraph elab rk (catClosedGraphs blocks)
+  let bbg = BasicBlockGraph elab rk (catClosedGraphs (map blockGraph blocks))
 
   let optimizations = [ elimContInBBG
                       , runCensusRewrites' , elimContInBBG
@@ -132,7 +131,8 @@ extractFunction st fn = do
         catClosedGraphs = foldr (|*><*|) emptyClosedGraph
 
         entryLab [] = error $ "can't get entry block label from empty list!"
-        entryLab (bb:_) = lab where (lab, _, _) = splitBasicBlock bb
+        entryLab (bb:_) = let frs :: Insn C O
+                              frs@(ILabel elab) = firstNode bb in elab
 
 blockId :: BlockEntry -> BlockId
 blockId = fst
@@ -324,9 +324,8 @@ cfgEndWith last = do
         Nothing          -> error $ "Tried to finish block but no preblock!"
                                    ++ " Tried to end with " ++ show last
         Just (id, phis, mids) -> do
-            let first = mkFirst (ILabel (id, phis))
-            let middles = mkMiddles (Prelude.reverse mids)
-            let newblock = first <*> middles <*> mkLast (ILast last)
+            let middles = blockFromList (Prelude.reverse mids)
+            let newblock = blockJoin (ILabel (id, phis)) middles (ILast last)
             put (old { cfgPreBlock     = Nothing
                      , cfgAllBlocks    = newblock : (cfgAllBlocks old) })
 
@@ -401,30 +400,10 @@ blockTargetsOf (ILast last) =
         CFCall b _ _ _       -> [b]
         CFCase _ patsbids    -> [b | (_, b) <- patsbids]
 
--- Decompose a BasicBlock into a triple of its subpieces.
-splitBasicBlock :: BasicBlock -> SplitBasicBlock
-splitBasicBlock g =
-  case foldGraphNodes split g ([], [], []) of
-      ([f], ms, [l]) -> (f, Prelude.reverse ms, l)
-      (bs, _, _) -> error $ "splitBasicBlock has wrong # of ids: " ++ show bs
-    where
-  split :: Insn e x -> SplitBasicBlockIntermediate -> SplitBasicBlockIntermediate
-  split   (ILabel  b  ) (bs, ms, ls) = (b:bs,   ms,   ls)
-  split i@(ILetVal  {}) (bs, ms, ls) = (  bs, i:ms,   ls)
-  split i@(ILetFuns {}) (bs, ms, ls) = (  bs, i:ms,   ls)
-  split i@(ILast    {}) (bs, ms, ls) = (  bs,   ms, i:ls)
-
--- We'll accumulate all the first & last nodes from the purported
--- basic block, but the final result must have only one first & last node.
-type SplitBasicBlockIntermediate = ([BlockEntry], [Insn O O], [Insn O C])
-type SplitBasicBlock             = ( BlockEntry,  [Insn O O],  Insn O C )
-
--- We represent basic blocks as Graphs rather than Blocks because
--- it's easier to glue together Graphs when building the basic blocks.
-type BasicBlock = Graph Insn C C
+type BasicBlock = Block Insn C C
 data BasicBlockGraph = BasicBlockGraph { bbgEntry :: BlockEntry
                                        , bbgRetK  :: BlockId
-                                       , bbgBody  :: BasicBlock
+                                       , bbgBody  :: Graph Insn C C
                                        }
 type CFFn = Fn BasicBlockGraph MonoType
 type BlockEntry = (BlockId, [TypedId MonoType])
@@ -456,7 +435,10 @@ instance Pretty (Fn BasicBlockGraph MonoType) where
 instance Pretty Label where pretty l = text (show l)
 
 instance Pretty BasicBlock where
-  pretty bb = foldGraphNodes prettyInsn bb empty
+  pretty bb = foldBlockNodesF prettyInsn bb empty
+
+instance Pretty (Graph Insn C C) where
+  pretty bg = foldGraphNodes  prettyInsn bg empty
 
 prettyInsn :: Insn e x -> Doc -> Doc
 prettyInsn i d = d <$> pretty i
