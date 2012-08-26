@@ -536,7 +536,7 @@ tcRhoLetRec ctx0 rng recBindings e mt = do
     -- Typecheck the body as well
     e' <- tcRho ctx e mt
 
-    let fns = [f | (E_AnnFn f) <- tcbodies]
+    let fns = [f { fnIsRec = Just True } | (E_AnnFn f) <- tcbodies]
     let nonfns = filter notAnnFn tcbodies
                   where notAnnFn (E_AnnFn _) = False
                         notAnnFn _           = True
@@ -760,7 +760,7 @@ tcSigmaFn ctx f expTy = do
         -- Note we collect free vars in the old context, since we can't possibly
         -- capture the function's arguments from the environment!
         let fn = E_AnnFn $ Fn (TypedId fnty (GlobalSymbol $ fnAstName f))
-                              uniquelyNamedFormals annbody rng
+                              uniquelyNamedFormals annbody Nothing rng
         debug $ "tcSigmaFn calling matchExp  expTy  = " ++ show expTy
         debug $ "tcSigmaFn calling matchExp, expTy' = " ++ show expTy'
         matchExp expTy' fn "tcSigmaFn"
@@ -798,7 +798,7 @@ tcRhoFnHelper ctx f expTy = do
     -- Note we collect free vars in the old context, since we can't possibly
     -- capture the function's arguments from the environment!
     let fn = E_AnnFn $ Fn (TypedId fnty (GlobalSymbol $ fnAstName f))
-                          uniquelyNamedFormals annbody rng
+                          uniquelyNamedFormals annbody Nothing rng
     matchExp expTy fn "tcRhoFn"
 -- }}}
 

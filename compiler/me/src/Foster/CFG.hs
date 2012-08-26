@@ -1,4 +1,5 @@
-{-# LANGUAGE GADTs, TypeSynonymInstances #-}
+{-# LANGUAGE GADTs, TypeSynonymInstances, RankNTypes, ScopedTypeVariables,
+             PatternGuards, TypeFamilies, DoRec #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2011 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -7,7 +8,6 @@
 
 module Foster.CFG
 ( computeCFGs
-, incrPredecessorsDueTo
 , Insn(..)
 , BlockId, BlockEntry
 , BasicBlockGraph(..)
@@ -16,18 +16,29 @@ module Foster.CFG
 , CFLast(..)
 , CFBody(..)
 , CFFn
+, renderCFG
+, blockId
+, blockTargetsOf
 ) where
 
 import Foster.Base
 import Foster.MonoType
 import Foster.KNExpr(KNExpr'(..), typeKN, TailQ(..))
-import Foster.Letable(Letable(..))
+import Foster.Letable(Letable(..), isPure)
 
 import Compiler.Hoopl
+import Text.PrettyPrint.ANSI.Leijen
+import qualified Text.PrettyPrint.Boxes as Boxes
+
+import Debug.Trace(trace)
 
 import qualified Data.Text as T
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 import Data.Map(Map)
+import Data.Set(Set)
+import Data.Maybe(fromMaybe, fromJust, isJust)
+import Data.List(nubBy, last)
 import Control.Monad.State
 import Data.IORef
 import Prelude hiding (id, last)
@@ -58,7 +69,7 @@ computeCFGs uref expr =
 computeCFGIO :: IORef Uniq -> Fn (KNMono) MonoType -> IO CFFn
 computeCFGIO uref fn = do
   cfgState <- internalComputeCFG uref fn
-  return $ extractFunction cfgState fn
+  extractFunction cfgState fn
 
 -- A mirror image for internal use (when converting nested functions).
 -- As above, we thread through the updated unique value from the subcomputation!
@@ -66,7 +77,7 @@ cfgComputeCFG :: Fn (KNMono) MonoType -> CFG CFFn
 cfgComputeCFG fn = do
   uref <- gets cfgUniq
   cfgState <- liftIO $ internalComputeCFG uref fn
-  return $ extractFunction cfgState fn
+  liftIO $ extractFunction cfgState fn
 
 -- A helper for the CFG functions above, to run computeBlocks.
 internalComputeCFG :: IORef Int -> Fn (KNMono) MonoType -> IO CFGState
@@ -89,12 +100,33 @@ internalComputeCFG uniqRef fn = do
             where isMain f = (identPrefix $ tidIdent $ fnVar f) == T.pack "main"
 
 -- The other helper, to collect the scattered results and build the actual CFG.
-extractFunction st fn =
-  let blocks = Prelude.reverse (cfgAllBlocks st) in
-  let elab    = entryLab blocks in
-  let (Just rk) = cfgRetCont st in
-  fn { fnBody = BasicBlockGraph elab rk (catClosedGraphs blocks)
-                                (computeNumPredecessors elab blocks) }
+extractFunction :: CFGState -> Fn KNMono MonoType -> IO CFFn
+extractFunction st fn = do
+  let blocks = Prelude.reverse (cfgAllBlocks st)
+  let elab    = entryLab blocks
+  let (Just rk) = cfgRetCont st
+  let bbg = BasicBlockGraph elab rk (catClosedGraphs blocks)
+
+  let optimizations = [ elimContInBBG
+                      , runCensusRewrites' , elimContInBBG
+                     -- ,runLiveness
+                      ]
+  bbgs <- scanlM (\bbg opt -> opt (cfgUniq st) bbg) bbg optimizations
+
+  putStrLn "BEFORE/AFTER"
+  let sndEq (_, a) (_, b) = a == b
+  let annotate (n, s) = s ++ "\n        (stage " ++ show n ++ ")"
+  let catboxes bbgs = Boxes.hsep 1 Boxes.left $ map (boxify . measure . annotate) $
+                            (nubBy sndEq $ zip [1..] $ map (show . pretty) bbgs)
+  -- Discards duplicates before annotating
+  Boxes.printBox $ catboxes bbgs
+  putStrLn ""
+
+  let bbg' = last bbgs
+  let jumpTo bbg = case bbgEntry bbg of (bid, _) -> ILast $ CFCont bid undefined
+  Boxes.printBox $ catboxes $ map blockGraph $
+                     preorder_dfs $ mkLast (jumpTo bbg') |*><*| bbgBody bbg'
+  return $ fn { fnBody = bbg' }
   where -- Dunno why this function isn't in Hoopl...
         catClosedGraphs :: NonLocal i => [Graph i C C] -> Graph i C C
         catClosedGraphs = foldr (|*><*|) emptyClosedGraph
@@ -102,18 +134,16 @@ extractFunction st fn =
         entryLab [] = error $ "can't get entry block label from empty list!"
         entryLab (bb:_) = lab where (lab, _, _) = splitBasicBlock bb
 
-        computeNumPredecessors elab =
-          -- The entry (i.e. postalloca) label will get an incoming edge in LLVM
-          let startingMap = Map.singleton (blockId elab) 1 in
-          foldr (\bb m ->
-                let  (_, _, terminator) = splitBasicBlock bb in
-                incrPredecessorsDueTo terminator m) startingMap
-
 blockId :: BlockEntry -> BlockId
 blockId = fst
 
-incrPredecessorsDueTo terminator m =
-    foldr (\tgt mm -> Map.insertWith (+) tgt 1 mm) m (blockTargetsOf terminator)
+measure :: String -> Boxes.Box
+measure s = Boxes.vcat Boxes.left (map Boxes.text $ lines s)
+
+boxify :: Boxes.Box -> Boxes.Box
+boxify b = v Boxes.<> (h Boxes.// b Boxes.// h) Boxes.<> v
+             where v = Boxes.vcat Boxes.left (take (Boxes.rows b + 2) (repeat (Boxes.char '|')))
+                   h = Boxes.text $          (take (Boxes.cols b    ) (repeat '-'))
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -317,7 +347,7 @@ cfgNewUniq = do uref <- gets cfgUniq ; mutIORef uref (+1)
     mutIORef :: IORef a -> (a -> a) -> CFG a
     mutIORef r f = liftIO $ modifyIORef r f >> readIORef r
 
-cfgSetHeader header = do old <- get ; put old { cfgHeader = Just header }
+cfgSetHeader header   = do old <- get ; put old { cfgHeader = Just header }
 cfgSetRetCont retcont = do old <- get ; put old { cfgRetCont = Just retcont }
 cfgSetFnVar fnvar = do old <- get ; put old { cfgCurrentFnVar = Just fnvar }
 
@@ -360,6 +390,10 @@ instance NonLocal Insn where
   successors (ILast last) = map blockLabel (blockTargetsOf (ILast last))
                           where blockLabel (_, label) = label
 
+instance HooplNode Insn where
+  mkBranchNode l = ILast (CFCont ("hoopl.br", l)  [])
+  mkLabelNode  l = ILabel       (("hoopl.br", l), [])
+
 blockTargetsOf :: Insn O C -> [BlockId]
 blockTargetsOf (ILast last) =
     case last of
@@ -391,10 +425,544 @@ type BasicBlock = Graph Insn C C
 data BasicBlockGraph = BasicBlockGraph { bbgEntry :: BlockEntry
                                        , bbgRetK  :: BlockId
                                        , bbgBody  :: BasicBlock
-                                       , bbgNumPreds :: Map BlockId Int }
+                                       }
 type CFFn = Fn BasicBlockGraph MonoType
 type BlockEntry = (BlockId, [TypedId MonoType])
 
 -- We pair a name for later codegen with a label for Hoopl's NonLocal class.
 type BlockId = (String, Label)
 
+
+-- ||||||||||||||||||||| CFG Pretty Printing ||||||||||||||||||||{{{
+
+renderCFG :: (ModuleIL BasicBlockGraph MonoType) -> Bool -> IO (Either () String)
+renderCFG cfg put = if put then putDoc (pretty cfg) >>= (return . Left)
+                        else return . Right $ show (pretty cfg)
+
+comment d = text "/*" <+> d <+> text "*/"
+
+prettyId (TypedId _ i) = text (show i)
+
+instance Pretty MonoType where
+  pretty t = text (show t)
+
+showTyped :: Doc -> MonoType -> Doc
+showTyped d t = parens (d <+> text "::" <+> pretty t)
+
+instance Pretty MoVar where
+  pretty (TypedId _ i) = text $ show i
+
+instance Pretty AllocMemRegion where
+  pretty rgn = text (show rgn)
+
+instance Pretty (ArrayIndex MoVar) where
+  pretty (ArrayIndex b i _rng safety) =
+    prettyId b <> brackets (prettyId i) <+> comment (text $ show safety)
+
+{-
+instance Pretty ILPrim where
+  pretty (NamedPrim tid) = prettyId tid
+  pretty (PrimOp nm _ty) = text nm
+  pretty (PrimIntTrunc frm to) = text ("trunc from " ++ show frm ++ " to " ++ show to)
+  pretty (CoroPrim c t1 t2) = text "...coroprim..."
+-}
+
+instance Pretty (Fn BasicBlockGraph MonoType) where
+  pretty fn = group (lbrace <+> (hsep (map (\v -> pretty v <+> text "=>")
+                                (fnVars fn)))
+                    <$> indent 4 (pretty (fnBody fn))
+                    <$> rbrace)
+                    -- <$> (pretty $ Map.toList $ getCensus (fnBody fn))
+
+instance Pretty Label where pretty l = text (show l)
+
+instance Pretty BasicBlock where
+  pretty bb = foldGraphNodes prettyInsn bb empty
+
+prettyInsn :: Insn e x -> Doc -> Doc
+prettyInsn i d = d <$> pretty i
+
+prettyBlockId (b,l) = text b <> text "." <> text (show l)
+
+instance Pretty (Insn e x) where
+  pretty (ILabel   bentry     ) = line <> prettyBlockId (fst bentry) <+> list (map pretty (snd bentry))
+  pretty (ILetVal  id  letable) = indent 4 (text "let" <+> text (show id) <+> text "="
+                                                       <+> pretty letable)
+  pretty (ILetFuns ids fns    ) = let recfun = if length ids == 1 then "fun" else "rec" in
+                                  indent 4 (align $
+                                   vcat [text recfun <+> text (show id) <+> text "=" <+> pretty fn
+                                        | (id,fn) <- zip ids fns])
+  pretty (ILast    cf         ) = pretty cf
+
+instance Pretty CFLast where
+  pretty (CFCont bid     vs) = text "cont" <+> prettyBlockId bid <+>              list (map pretty vs)
+  pretty (CFCall bid _ v vs) = text "call" <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
+  pretty (CFCase v pats)    = align $
+                               text "case" <+> pretty v <$> indent 2
+                                  (vcat [ text "of" <+> fill 20 (pretty pat) <+> text "->" <+> prettyBlockId bid
+                                        | ((pat, _tys), bid) <- pats
+                                        ])
+
+instance Pretty (FosterPrim MonoType) where
+  pretty (NamedPrim tid) = prettyId tid
+  pretty (PrimOp nm _ty) = text nm
+  pretty (PrimIntTrunc frm to) = text ("trunc from " ++ show frm ++ " to " ++ show to)
+  pretty (CoroPrim _c _t1 _t2) = text "...coroprim..."
+
+instance Pretty Letable where
+  pretty l =
+    case l of
+      ILText      s         -> string (T.unpack s)
+      ILBool      b         -> text (if b then "True" else "False")
+      ILInt       _ i       -> text (litIntText i)
+      ILFloat     _ f       -> text (litFloatText f)
+      ILTuple     vs _asrc  -> parens (hsep $ punctuate comma (map pretty vs))
+      ILKillProcess t m     -> text $ "prim KillProcess " ++ show m ++ " :: " ++ show t
+      ILOccurrence _v _occ  -> text "...occ..."
+      ILCallPrim  _ p vs    -> (text "prim" <+> pretty p <+> hsep (map prettyId vs))
+      ILCall      _ v vs    -> pretty v <> hsep (map pretty vs)
+      ILAppCtor   _ c vs    -> (text "~" <> parens (text (ctorCtorName c) <> hsep (map prettyId vs)))
+      ILAlloc     v rgn     -> text "(ref" <+> pretty v <+> comment (pretty rgn) <> text ")"
+      ILDeref     v         -> pretty v <> text "^"
+      ILStore     v1 v2     -> text "store" <+> pretty v1 <+> text "to" <+> pretty v2
+      ILAllocArray _ _v     -> text $ "ILAllocArray..."
+      ILArrayRead  _t (ArrayIndex _v1 _v2 _rng _s)  -> text $ "ILArrayRead..."
+      ILArrayPoke  (ArrayIndex _v1 _v2 _rng _s) _v3 -> text $ "ILArrayPoke..."
+      ILBitcast   t v       -> text "bitcast " <+> pretty v <+> text "to" <+> pretty t
+
+instance Pretty (Pattern MonoType) where
+  pretty p =
+    case p of
+        P_Wildcard      _rng _ty          -> text "_"
+        P_Variable      _rng tid          -> pretty tid
+        P_Ctor          _rng _ty pats cid -> parens (text "$" <> text (ctorCtorName $ ctorInfoId cid) <> (hsep $ map pretty pats))
+        P_Bool          _rng _ty b        -> text $ if b then "True" else "False"
+        P_Int           _rng _ty li       -> text (litIntText li)
+        P_Tuple         _rng _ty pats     -> parens (hsep $ punctuate comma (map pretty pats))
+
+
+instance Pretty (ModuleIL BasicBlockGraph MonoType) where
+  pretty m = text "// begin decls"
+         <$> vcat [showTyped (text s) t | (s, t) <- moduleILdecls m]
+         <$> text "// end decls"
+         <$> text "// begin datatypes"
+         <$> empty
+         <$> text "// end datatypes"
+         <$> text "// begin prim types"
+         <$> empty
+         <$> text "// end prim types"
+         <$> text "// begin functions"
+         <$> pretty (moduleILbody m)
+         <$> text "// end functions"
+
+instance Pretty BasicBlockGraph where
+ pretty bbg =
+         (indent 4 (text "ret k =" <+> pretty (bbgRetK bbg)
+                <$> text "entry =" <+> pretty (fst $ bbgEntry bbg)
+                <$> text "------------------------------"))
+          <> pretty (bbgBody bbg)
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+-- ||||||||||||||||||||||||||| UniqMonadIO ||||||||||||||||||||||{{{
+-- Basically a copy of UniqueMonadT, specialized to IO, with a
+-- more suitable "run" function, and using Uniq instead of Unique.
+newtype UniqMonadIO a = UMT { unUMT :: [Uniq] -> IO (a, [Uniq]) }
+
+instance Monad UniqMonadIO where
+  return a = UMT $ \us -> return (a, us)
+  m >>= k  = UMT $ \us -> do { (a, us') <- unUMT m us; unUMT (k a) us' }
+
+instance UniqueMonad UniqMonadIO where
+  freshUnique = UMT $ f
+    where f (u:us) = return (intToUnique u, us)
+          f _ = error "freshUnique(UniqMonadIO): empty list"
+
+runUniqMonadIO :: [Uniq] -> UniqMonadIO a -> IO (a, Uniq)
+runUniqMonadIO uniques m = do { (a, u) <- unUMT m uniques; return (a, head u) }
+
+instance CheckpointMonad UniqMonadIO where
+  type Checkpoint UniqMonadIO = [Uniq]
+  checkpoint = UMT $ \us -> return (us, us)
+  restart us = UMT $ \_  -> return ((), us)
+
+-- We can't use the IORef directly as a source of uniques,
+-- due to the requirement for checkpointing. But in order to
+-- avoid generating duplicate labels, we also need to not discard
+-- the final state of the unique generator (which SimpleUniqueMonad does).
+-- Thus all this nonsense.
+runWithUniqAndFuel :: IORef Uniq -> Fuel -> M a -> IO a
+runWithUniqAndFuel r f x = do startUniq <- readIORef r
+                              let usrc = [startUniq..]
+                              (v, u) <- runUniqMonadIO usrc (runWithFuel f x)
+                              writeIORef r (u + 1)
+                              return v
+
+type M a = InfiniteFuelMonad UniqMonadIO a
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+-- |||||||||||||||||||||||||| CFG Analysis ||||||||||||||||||||||{{{
+instance Pretty Ident where pretty id = text (show id)
+instance LabelsPtr (BlockId, ts) where targetLabels ((_, label), _) = [label]
+instance Pretty (Set.Set HowUsed) where pretty s = string (show s)
+
+rebuildGraphM :: Monad m => BlockId -> Graph Insn C C
+                         -> (Insn O O -> m (Graph Insn O O))
+                         -> (Insn O C -> m (      Insn O C))
+                         -> m (Graph Insn C C)
+rebuildGraphM entrybid body mid lst = do
+   let rebuildBlockGraph blk_cc = do {
+      ; let (f, ms, l) = unblock ( blockSplit blk_cc )
+      ; gs <- mapM mid ms
+      ; ls <- lst l
+      ; return $ fst f <*> catGraphs gs <*> mkLast ls
+   }
+   let entry  = mkLast (ILast $ CFCont entrybid undefined)
+   let blocks = postorder_dfs (entry |*><*| body)
+   mb <- mapM rebuildBlockGraph blocks
+   return $ foldr (|*><*|) emptyClosedGraph mb
+  where
+   unblock (f, ms_blk, l) = (f, blockToList ms_blk, l)
+   fst n = mkFirst  n
+
+-- |||||||||||||||||||| Cont-Cont Elimination |||||||||||||||||||{{{
+--data Renamer   = Renamer BlockId (Maybe ([MoVar] -> [MoVar]))
+--instance Show Renamer where show (Renamer bid _) = "(Renamer " ++ show bid ++ ")"
+
+data CFGTrivia = CFGTrivia { cfgTrivEndsCont   :: Maybe (BlockId, [MoVar])
+                           , cfgTrivEquivs     :: Map.Map BlockId BlockId
+                           } deriving Show
+
+elimContInBBG :: IORef Uniq -> BasicBlockGraph -> IO BasicBlockGraph
+elimContInBBG uref bbg = runWithUniqAndFuel uref infiniteFuel (elimContInBBG' bbg)
+  where elimContInBBG' :: BasicBlockGraph -> M BasicBlockGraph
+        elimContInBBG' bbg = do
+         (bb', _, _) <- analyzeAndRewriteBwd bwd' (JustC [bbgEntry bbg])
+                                                        (bbgBody  bbg)
+                                                        mapEmpty
+         return $ bbg { bbgBody = bb' }
+
+        bwd' = debugBwdTransfers trace showing (\_ _ -> True) bwd
+        bwd = BwdPass { bp_lattice  = contEquivLattice
+                      , bp_transfer = contContFind
+                      , bp_rewrite  = contContElim
+                      }
+
+        contEquivLattice :: DataflowLattice CFGTrivia
+        contEquivLattice = DataflowLattice
+                          { fact_name = "Continuned continuations"
+                          , fact_bot  = CFGTrivia Nothing Map.empty
+                          , fact_join = fj
+                          }
+                            where fj _ (OldFact old) (NewFact new) = (ch, j)
+                                    where
+                                      j = (CFGTrivia Nothing m)
+                                      o = cfgTrivEquivs old
+                                      m = Map.union o (cfgTrivEquivs new)
+                                      ch = changeIf (Map.size m > Map.size o)
+
+        contContFind :: BwdTransfer Insn CFGTrivia
+        contContFind = mkBTransfer go
+          where
+            go :: Insn e x -> Fact x CFGTrivia -> CFGTrivia
+            go (ILabel   (bid, vs)   ) s =
+                 let s' = s { cfgTrivEndsCont = Nothing } in
+                 case {-trace ("F("++show bid++")") $-} cfgTrivEndsCont s of
+                   Just (otherid, ovs) ->
+                       if bid /= otherid && vs == ovs
+                         then -- let o = Renamer otherid (renamerFunc vs ovs) in
+                              s' { cfgTrivEquivs = Map.insert bid otherid (cfgTrivEquivs s') }
+                         else s'
+                   Nothing -> s'
+            go (ILetVal  {}         ) s = s { cfgTrivEndsCont = Nothing }
+            go (ILetFuns _ids _fns  ) s = s { cfgTrivEndsCont = Nothing }
+            go node@(ILast    cf    ) fdb =
+              let s = joinFacts contEquivLattice (error "fake label") (successorFacts' node fdb) in
+              --let s = {-trace ("fact base F: " ++ showFactBase fdb) $-}
+              --          joinOutFacts' contEquivLattice node fdb in
+              case cf of
+                    (CFCont bid vs) -> s { cfgTrivEndsCont = Just (bid, vs) }
+                    (CFCall {})     -> s { cfgTrivEndsCont = Nothing }
+                    (CFCase {})     -> s { cfgTrivEndsCont = Nothing }
+
+            -- Example to illuminate what these variable names mean:
+            --     k []    = j [a,b]      ==> k []    = c [b,z,a]
+            --     j [x,y] = c [y,z,x]    ==> ...
+            -- bid/vs is j/[x,y], otherid/ovs is c/[y,z,x], & [a,b] (will b) avs
+            renamerFunc vs ovs = if vs == ovs then Nothing
+                                   else Just (\avs -> applySubst
+                                                     (buildSubst vs avs) ovs)
+            buildSubst oldvars newvars = Map.fromList (zip oldvars newvars)
+            applySubst subst   tgtvars = map (\v -> Map.findWithDefault v v subst) tgtvars
+
+            fact :: FactBase CFGTrivia -> Label -> CFGTrivia
+            fact f l = fromMaybe (fact_bot contEquivLattice) $ lookupFact l f
+
+            successorFacts' :: NonLocal n => n O C -> FactBase f -> [f]
+            successorFacts' n fb = [ fromJust f | id <- successors n,
+                                            let f = lookupFact id fb, isJust f ]
+
+        contContElim :: FuelMonad m => BwdRewrite m Insn CFGTrivia
+        contContElim = mkBRewrite d
+          where
+            d :: FuelMonad m => Insn e x -> Fact x CFGTrivia -> m (Maybe (Graph Insn e x))
+            d (ILast (CFCont bid     vs)) triv = return $ rw bid triv
+                            --(\(Renamer newbid mf) -> CFCont newbid (r mf vs))
+                                            (\newbid -> CFCont newbid vs)
+            --d (ILast (CFCall bid t v vs)) triv = return $ rw bid triv
+            --                --(\(Renamer newbid mf) -> case mf of Nothing -> CFCall newbid t v vs
+            --                --                                    Just _  -> CFCall    bid t v vs)
+            d _ _ = return Nothing
+
+            -- r Nothing  vs =   vs
+            -- r (Just f) vs = f vs
+
+            rw :: BlockId -> FactBase CFGTrivia -> (BlockId -> CFLast) -> Maybe (Graph Insn O C)
+            rw bid@(_,lab) fdb k =
+              case lookupFact lab fdb of
+                Nothing -> Nothing
+                Just triv ->
+                  case Map.lookup bid (cfgTrivEquivs triv) of
+                    Just otherid -> Just $ mkLast (ILast $ k otherid)
+                    Nothing      -> Nothing
+
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+-- |||||||||||||||||||| Census-based Rewrites |||||||||||||||||||{{{
+data RecStatus = YesRec | NotRec deriving (Eq, Ord, Show)
+data HowUsed = UnknownCall BlockId
+             | KnownCall   BlockId {- provided cont; -}
+                           (RecStatus,BlockId) {- of known fn entry point -}
+             | UsedFirstClass | UsedSecondClass -- as cont arg
+                 deriving (Eq, Ord, Show)
+
+type CenFuns = Map.Map Ident CFFn
+
+-- Build a mapping from the (local, not global) idents to the
+-- locally-defined (and thus known) functions they are bound to.
+getCensusFns :: BasicBlockGraph -> CenFuns
+getCensusFns bbg = gobbg bbg Map.empty
+  where
+    gobbg bbg m = foldGraphNodes go (bbgBody bbg) m
+
+    go :: Insn e x -> CenFuns -> CenFuns
+    go (ILetFuns ids fns    ) m = foldr gobbg m' (map fnBody fns)
+                                   where m' = Map.union m $ Map.fromList (zip ids fns)
+    go _                      m = m
+
+type Census = Map.Map Ident (Set.Set HowUsed)
+
+getCensus :: BasicBlockGraph -> Census
+getCensus bbg = let cf = getCensusFns bbg in
+                getCensusForFn cf bbg Map.empty
+  where
+    addUsed c lst = Map.unionWith Set.union c
+                                (Map.fromList [(tidIdent v, Set.singleton u)
+                                              | (v, u) <- lst])
+
+    getCensusForFn cf bbg m = foldGraphNodes (go cf) (bbgBody bbg) m
+
+    go :: CenFuns -> Insn e x -> Census -> Census
+    go _  (ILabel   _bentry    ) m = m
+    go _  (ILetVal  _id letable) m = censusLetable letable m
+    go cf (ILetFuns _ids fns   ) m = foldr (getCensusForFn cf) m (map fnBody fns)
+    go cf (ILast    cflast     ) m =
+      case cflast of
+            (CFCont _bid    vs) -> addUsed m [(v, UsedSecondClass) | v <- vs]
+            (CFCall bid _ v vs) ->
+                 case Map.lookup (tidIdent v) cf of
+                   Nothing -> addUsed m $ (v, UnknownCall bid):
+                                         [(v, UsedFirstClass) | v <- vs]
+                   Just fn -> addUsed m $ (v, (KnownCall bid (fnEntryId fn))):
+                                         [(v, UsedFirstClass) | v <- vs]
+            (CFCase v _pats)    -> addUsed m [(v, UsedSecondClass)]
+
+    fnEntryId fn = let bbg = fnBody fn in
+                   let st = case fnIsRec fn of
+                             Just True  -> YesRec
+                             Just False -> NotRec
+                             Nothing    -> NotRec
+                   in (st, blockId $ bbgEntry bbg)
+
+    censusLetable letable m =
+      case letable of
+        ILText         {}        -> m
+        ILBool         {}        -> m
+        ILInt          {}        -> m
+        ILFloat        {}        -> m
+        ILKillProcess  {}        -> m
+        ILOccurrence   _v _occ   -> m
+        ILBitcast      _ v       -> addUsed m [(v, UsedFirstClass)] -- conservatively :(
+        ILTuple        vs _asrc  -> addUsed m [(v, UsedFirstClass) | v <- vs]
+        ILCallPrim     _ _ vs    -> addUsed m [(v, UsedFirstClass) | v <- vs]
+        ILCall         _ v _vs   -> error $ "census encountered non-tail ILCall of " ++ show v
+        ILAppCtor      _ _ vs    -> addUsed m [(v, UsedFirstClass) | v <- vs]
+        ILAlloc        v _rgn    -> addUsed m [(v, UsedFirstClass)]
+        ILDeref        v         -> addUsed m [(v, UsedFirstClass)]
+        ILStore        v1 v2     -> addUsed m [(v1, UsedFirstClass), (v2, UsedFirstClass)]
+        ILAllocArray    _ v      -> addUsed m [(v, UsedFirstClass)]
+        ILArrayRead  _t (ArrayIndex v1 v2 _rng _s) -> addUsed m [(v1, UsedFirstClass), (v2, UsedFirstClass)]
+        ILArrayPoke  (ArrayIndex v1 v2 _rng _s) v3 -> addUsed m [(v1, UsedFirstClass), (v2, UsedFirstClass),
+                                                                 (v3, UsedFirstClass)]
+
+runCensusRewrites' :: IORef Uniq -> BasicBlockGraph -> IO BasicBlockGraph
+runCensusRewrites' uref bbg = do
+     runWithUniqAndFuel uref infiniteFuel (go (getCensus bbg) bbg)
+  where go :: Census -> BasicBlockGraph -> M BasicBlockGraph
+        go ci bbg = do
+         let (bid,_) = bbgEntry bbg
+         bb' <- rebuildGraphM bid (bbgBody bbg) (mid ci) (last ci)
+         return $ bbg { bbgBody = bb' }
+
+        getKnownCall ci id =
+          case fmap Set.toList (Map.lookup id ci) of
+            Just [kn] -> Just kn
+            _         -> Nothing
+
+        mid ci = rw
+         where
+          rw :: Insn O O -> M (Graph Insn O O)
+          rw n = case n of
+             (ILetVal  _id _letable) -> return $ mkMiddle n
+             (ILetFuns [id] [fn]) | Just (KnownCall bid (NotRec, _)) <- getKnownCall ci id
+                                        -> do let ag = aGraphOfGraph emptyGraph
+                                              fng <- aGraphOfFn fn bid
+                                              let comb = addBlocks ag fng
+                                              g <- graphOfAGraph comb
+                                              return g
+             (ILetFuns _ids _fns)    -> return $ mkMiddle n
+
+        last :: Census -> Insn O C -> M (Insn O C)
+        last ci (ILast (CFCall _ _t v vs))
+                  | Just (KnownCall _bid (NotRec, fn_ent)) <- getKnownCall ci (tidIdent v)
+                                 = return $ ILast (CFCont (contified fn_ent) vs)
+        last _ n = return n
+
+        contified ("postalloca", l) = ("contified_postalloca", l)
+        contified entry = entry
+
+        -- Rewrite the function's body so that returns become jumps to the
+        -- continuation that all callers had provided.
+        aGraphOfFn fn retbid = do
+          let ret bid = if bid == bbgRetK (fnBody fn) then retbid else bid
+          let rw :: Insn e x -> Insn e x
+              rw (ILabel (entry,vs)) = ILabel (contified entry, vs)
+              rw (ILast (CFCont bid           vs)) =
+                  ILast (CFCont (ret bid)     vs)
+              rw (ILast (CFCall bid       t v vs)) =
+                  ILast (CFCall (ret bid) t v vs)
+              rw (ILast (CFCase v arms)) =
+                 (ILast (CFCase v (map (\(p,k) -> (p,ret k)) arms)))
+              rw insn = insn
+          let g = mapGraph rw $ bbgBody $ fnBody fn
+          return $ aGraphOfGraph g
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+-- |||||||||||||||||||| Free identifiers ||||||||||||||||||||||||{{{
+type IdentSetPair = (Set.Set Ident, Set.Set Ident)
+
+instance TExpr BasicBlockGraph MonoType where
+  freeTypedIds bbg =
+       let (bvs,fvs) = foldGraphNodes go (bbgBody bbg) (Set.empty, Set.empty) in
+       filter (\v -> Set.notMember (tidIdent v) bvs) (Set.toList fvs)
+       -- We rely on the fact that these graphs are alpha-converted, and thus
+       -- have a unique-binding property. This means we can  get away with just
+       -- sticking all the binders in one set, and all the occurrences in
+       -- another, and get the right answer back out.
+     where insert :: Ord a => Set a -> [a] -> Set a
+           insert s ids = Set.union s (Set.fromList ids)
+           insertV s vs = Set.union s (Set.fromList $ map tidIdent vs)
+
+           go :: Insn e x -> (Set Ident, Set MoVar) -> (Set Ident, Set MoVar)
+           go (ILabel (_,bs))    (bvs,fvs) = (insertV bvs bs, fvs)
+           go (ILetVal id lt)    (bvs,fvs) = (Set.insert id bvs, insert fvs $ freeTypedIds lt)
+           go (ILetFuns ids fns) (bvs,fvs) = (insert bvs ids, insert fvs (concatMap freeTypedIds fns))
+           go (ILast cflast)     (bvs,fvs) = case cflast of
+                    CFCont _ vs          -> (bvs, insert fvs vs)
+                    CFCall _ _ v vs      -> (bvs, insert fvs (v:vs))
+                    CFCase v patbinds    -> (insertV bvs pvs, Set.insert v fvs)
+                         where pvs = concatMap (\((_,vs),_) -> vs) patbinds
+
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+-- |||||||||||||||||||| Liveness ||||||||||||||||||||||||||||||||{{{
+type Live = Set.Set Ident
+
+liveLattice :: DataflowLattice Live
+liveLattice = DataflowLattice
+  { fact_name = "Live variables"
+  , fact_bot  = Set.empty
+  , fact_join = add
+  }
+    where add _ (OldFact old) (NewFact new) = (ch, j)
+            where
+              j = new `Set.union` old
+              ch = changeIf (Set.size j > Set.size old)
+
+liveness :: BwdTransfer Insn Live
+liveness = mkBTransfer go
+  where
+    go :: Insn e x -> Fact x Live -> Live
+    go (ILabel   (bid, vs)  ) s = s
+    go (ILetVal  id letable ) s = Set.union  (without s [id]) (Set.fromList $ freeIdents letable)
+    go (ILetFuns ids fns    ) s = Set.unions ((without s ids):(map (Set.fromList . freeIdents) fns))
+    go node@(ILast    cflast) fdb =
+          let s = Set.unions (map (fact fdb) (successors node)) in
+          case cflast of
+            (CFCont _bid    vs) -> insert s vs
+            (CFCall bid _ v vs) -> insert s (v:vs)
+            (CFCase v _pats)    -> insert s [v]
+
+    without s ids = Set.difference s (Set.fromList ids)
+    insert s vs = Set.union s (Set.fromList (map tidIdent vs))
+
+    fact :: FactBase (Set.Set Ident) -> Label -> Live
+    fact f l = fromMaybe (fact_bot liveLattice) $ lookupFact l f
+
+deadBindElim :: forall m . FuelMonad m => BwdRewrite m Insn Live
+deadBindElim = mkBRewrite d
+  where
+    d :: Insn e x -> Fact x Live -> m (Maybe (Graph Insn e x))
+    d (ILetVal id letable) live |
+      not (id `Set.member` live) && isPure letable = return $ Just emptyGraph
+    d (ILetFuns [id] [_])  live |
+      not (id `Set.member` live)                   = return $ Just emptyGraph
+    -- If LetFuns forms a SCC, then we can't drop any entry unless we can drop
+    -- every entry. However, if it's not a SCC, then we can drop any entry which
+    -- is dead and does not appear in any of the other functions.
+    d (ILetFuns ids fns)   live = do
+      let inOthers = map (\(id, ofns) ->
+                         Set.member id (Set.fromList (concatMap freeIdents ofns)))
+                         (zip ids (others fns))
+      let kept = filter (\(id,_fn,inother) -> Set.member id live || inother) (zip3 ids fns inOthers)
+      return $ if null kept then Just emptyGraph
+                            else let (ids' , fns' , _) = unzip3 kept in
+                                 Just (mkMiddle $ ILetFuns  ids' fns' )
+      --return $ trace (concatMap (\id -> show id ++ " live?" ++ show (id `Set.member` live) ++ "\n") ids) Nothing
+    d _ _ = return Nothing
+
+    -- others [1,2,3,4] = [[2,3,4],[1,3,4],[1,2,4],[1,2,3]]
+    others xs = map (\n -> take n xs ++ tail (drop n xs)) [0..length xs - 1]
+
+runLiveness :: IORef Uniq -> BasicBlockGraph -> IO BasicBlockGraph
+runLiveness uref bbg = runWithUniqAndFuel uref infiniteFuel (go bbg)
+  where go bbg = do
+            (bb', _, _) <- analyzeAndRewriteBwd bwd' (JustC [bbgEntry bbg])
+                                                           (bbgBody  bbg)
+                                                           mapEmpty
+            return $ bbg { bbgBody = bb' }
+
+        bwd' = debugBwdTransfers trace showing (\_ _ -> True) bwd
+        bwd = BwdPass { bp_lattice  = liveLattice
+                      , bp_transfer = liveness
+                      , bp_rewrite  = deadBindElim
+                      }
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+instance AExpr Letable         where freeIdents x = map tidIdent $ ((freeTypedIds x) :: [TypedId MonoType])
+instance AExpr BasicBlockGraph where freeIdents x = map tidIdent $ ((freeTypedIds x) :: [TypedId MonoType])
+
+showing :: Insn e x -> String
+--showing insn = "SHOWING: " ++ show (pretty insn) ++ "\nEND SHOWING\n"
+showing insn = show (pretty insn)
+
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||

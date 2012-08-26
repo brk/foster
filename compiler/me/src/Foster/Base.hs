@@ -143,6 +143,7 @@ data ModuleAST fnCtor ty = ModuleAST {
 data Fn expr ty = Fn { fnVar   :: TypedId ty
                      , fnVars  :: [TypedId ty]
                      , fnBody  :: expr
+                     , fnIsRec :: Maybe Bool
                      , fnRange :: SourceRange
                      } deriving Show -- For KNExpr and KSmallstep
 

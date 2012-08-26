@@ -157,10 +157,10 @@ monoKN subst e =
   KNTyApp _ _ _  -> do error $ "Expected polymorphic instantiation to affect a polymorphic variable!"
 
 monoFn :: MonoSubst -> Fn KNExpr TypeIL -> Mono (Fn (KNExpr' MonoType) MonoType)
-monoFn subst (Fn v vs body rng) = do
+monoFn subst (Fn v vs body isrec rng) = do
   let qv = monoVar subst
   body' <- monoKN subst body
-  return (Fn (qv v) (map qv vs) body' rng)
+  return (Fn (qv v) (map qv vs) body' isrec rng)
 
 monoArrayIndex subst (ArrayIndex v1 v2 rng s) =
                       ArrayIndex (monoVar subst v1) (monoVar subst v2) rng s
@@ -297,10 +297,10 @@ alphaRename fn = do
                 Nothing -> return v
 
     renameFn :: Fn KNExpr TypeIL -> Renamed (Fn KNExpr TypeIL)
-    renameFn (Fn v vs body rng) = do
+    renameFn (Fn v vs body isrec rng) = do
        (v' : vs') <- mapM renameV (v:vs)
        body' <- renameKN body
-       return (Fn v' vs' body' rng)
+       return (Fn v' vs' body' isrec rng)
 
     renameArrayIndex (ArrayIndex v1 v2 rng s) =
       mapM qv [v1,v2] >>= \[v1' , v2' ] -> return $ ArrayIndex v1' v2' rng s

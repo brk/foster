@@ -232,6 +232,7 @@ fnOf ctx f = do
     return $ Fn { fnVar   = var
                 , fnVars  = vars
                 , fnBody  = body
+                , fnIsRec = fnIsRec f
                 , fnRange = fnRange f
                 }
 

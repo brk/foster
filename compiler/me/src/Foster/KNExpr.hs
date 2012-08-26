@@ -207,6 +207,7 @@ varOrThunk (a, targetType) = do
           return $ Fn { fnVar      = TypedId fnty (GlobalSymbol (T.pack $ show id))
                       , fnVars     = vars
                       , fnBody     = KNCall YesTail (fnTypeILRange fnty) v vars
+                      , fnIsRec    = Just False
                       , fnRange    = MissingSourceRange $ "thunk for " ++ show v
                       }
         -- TODO the above ident/global check doesn't work correctly for
@@ -305,6 +306,7 @@ kNormalCtors ctx dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
       return $ Fn { fnVar   = tid
                   , fnVars  = vars
                   , fnBody  = KNAppCtor (TyConAppIL dname []) cid vars -- TODO fix
+                  , fnIsRec = Just False
                   , fnRange = MissingSourceRange ("kNormalCtor " ++ show cid)
                   }
 

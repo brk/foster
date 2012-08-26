@@ -10,15 +10,17 @@ module Foster.ILExpr where
 import Control.Monad.State
 import Data.Set(Set)
 import qualified Data.Set as Set(empty, singleton, union, unions, notMember,
-                                                       insert, fromList, toList)
+                                                                       fromList)
 import Data.Map(Map)
-import qualified Data.Map as Map((!), insert, lookup, empty, fromList, elems)
+import qualified Data.Map as Map((!), insert, lookup, empty, fromList, elems,
+                                 singleton, insertWith, union, findWithDefault)
 import qualified Data.Text as T
 import qualified Data.List as List(and)
 
 import Compiler.Hoopl
 
 import Debug.Trace(trace)
+import Control.Exception.Base(assert)
 
 import Foster.Base
 import Foster.CFG
@@ -203,22 +205,33 @@ lambdaLift f freeVars = do
 -- for representing basic blocks because they're easier to build.
 basicBlock hooplBlock = blockGraph hooplBlock
 
-jumpTo bbg = case bbgEntry bbg of (bid, _) -> ILast $ CFCont bid undefined
-
 type ClosureConvertedBlocks = ([ILBlock], Map BlockId Int)
 
 -- We serialize a basic block graph by computing a depth-first search
 -- starting from the graph's entry block.
 closureConvertBlocks :: BasicBlockGraph -> ILM ClosureConvertedBlocks
 closureConvertBlocks bbg = do
+   let jumpTo bbg = case bbgEntry bbg of (bid, _) -> ILast $ CFCont bid undefined
    let cfgBlocks = map (splitBasicBlock . basicBlock) $
                      preorder_dfs $ mkLast (jumpTo bbg) |*><*| bbgBody bbg
    -- Because we do a depth-first search, "renaming" blocks are guaranteed
    -- to be adjacent to each other in the list.
-   let cfgBlocks' = mergeCallNamingBlocks cfgBlocks (bbgNumPreds bbg)
+   let numPreds   = computeNumPredecessors (bbgEntry bbg) cfgBlocks
+   let cfgBlocks' = mergeCallNamingBlocks cfgBlocks numPreds
    blocks <- mapM closureConvertBlock cfgBlocks'
-   return (concat blocks, bbgNumPreds bbg)
+   let numPreds'  = computeNumPredecessors (bbgEntry bbg) cfgBlocks'
+   return (concat blocks, numPreds')
   where
+    computeNumPredecessors elab blocks =
+      -- The entry (i.e. postalloca) label will get an incoming edge in LLVM
+      let startingMap = Map.singleton (blockId elab) 1 in
+      foldr (\sbb m ->
+            let  (_, _, terminator) = sbb in
+            incrPredecessorsDueTo terminator m) startingMap blocks
+
+    incrPredecessorsDueTo terminator m =
+        foldr (\tgt mm -> Map.insertWith (+) tgt 1 mm) m (blockTargetsOf terminator)
+
     -- A BasicBlock which ends in a decision tree will, in the general case,
     -- expand out to multiple blocks to encode the tree.
     closureConvertBlock (bid, mids, last) = do
@@ -383,7 +396,7 @@ closureOfKnFn infoMap (self_id, fn) = do
         -- If the body has x and y free, the closure converted body should be
         --     case env of (x, y, ...) -> body end
         newbody <- do
-            let BasicBlockGraph bodyentry rk oldbodygraph numPreds = fnBody f
+            let BasicBlockGraph bodyentry rk oldbodygraph = fnBody f
             let norange = MissingSourceRange ""
             let patVar a = P_Variable norange a
             let cfcase = CFCase envVar [
@@ -399,12 +412,11 @@ closureOfKnFn infoMap (self_id, fn) = do
                             mkLast (ILast cfcase)
             closureConvertBlocks $
                BasicBlockGraph bid rk (caseblock |*><*| oldbodygraph)
-                               (incrPredecessorsDueTo (ILast cfcase) numPreds)
 
         proc <- ilmPutProc $ closureConvertedProc (envVar:(fnVars f)) f newbody
         return (envId, proc)
 
-    mapBasicBlock f (BasicBlockGraph entry rk bg np) = BasicBlockGraph entry rk (f bg) np
+    mapBasicBlock f (BasicBlockGraph entry rk bg) = BasicBlockGraph entry rk (f bg)
 
     -- Making environment passing explicit simply means rewriting calls
     -- of closure variables from   v(args...)   ==>   v_proc(v_env, args...).
@@ -459,27 +471,61 @@ mkSwitch v    arms    def     occ = ILCase v arms def            occ
 -- This little bit of unpleasantness is needed to ensure that we
 -- don't need to create gcroot slots for the phi nodes corresponding
 -- to blocks inserted from using CPS-like calls.
-mergeCallNamingBlocks blocks numpreds = go [] blocks
-  where go !acc !blocks =
+mergeCallNamingBlocks blocks numpreds = go Map.empty [] blocks
+  where go !subst !acc !blocks =
          case blocks of
-           [] -> reverse acc
-           [b] -> go (b:acc) []
+           [] -> finalize acc subst
+           [b] -> go subst (b:acc) []
            (x:y:zs) ->
-              case mergeAdjacent x y of
-                Just  m -> go    acc  (m:zs)
-                Nothing -> go (x:acc) (y:zs)
-        mergeAdjacent :: (BlockEntry, [Insn O O], Insn O C)
+              case mergeAdjacent subst x y of
+                Just (m,s) -> go s        acc  (m:zs)
+                Nothing    -> go subst (x:acc) (y:zs)
+        mergeAdjacent :: Map MoVar MoVar
                       -> (BlockEntry, [Insn O O], Insn O C)
-                -> Maybe (BlockEntry, [Insn O O], Insn O C)
-        mergeAdjacent (xe,xm,xl) ((yb,[yarg]),ym,yl) =
-          case xl of
-            (ILast (CFCall cb t v vs)) | cb == yb ->
+                      -> (BlockEntry, [Insn O O], Insn O C)
+               -> Maybe ((BlockEntry, [Insn O O], Insn O C), Map MoVar MoVar)
+        mergeAdjacent subst (xe,xm,xl) ((yb,yargs),ym,yl) =
+          case (yargs, xl) of
+            ([yarg], ILast (CFCall cb t v vs)) | cb == yb ->
                 if Map.lookup yb numpreds == Just 1
-                    then Just (xe,xm++[ILetVal (tidIdent yarg) (ILCall t v vs)]++ym,yl)
+                    then Just ((xe,xm++[ILetVal (tidIdent yarg) (ILCall t v vs)]++ym,yl), subst)
+                    else Nothing
+            (_, ILast (CFCont cb   avs))       | cb == yb ->
+                if Map.lookup yb numpreds == Just 1
+                    then assert (length yargs == length avs) $
+                         let subst' = Map.union subst (Map.fromList $ zip yargs avs) in
+                         Just ((xe,xm++ym,yl), subst' )
                     else Nothing
             _ -> Nothing
-        mergeAdjacent _ _ = Nothing
 
+        finalize revblocks subst =
+            let s v = Map.findWithDefault v v subst in
+            let si  = substIn s in
+            map (\(be, insns, lastinsn) -> (be, map si insns, si lastinsn))
+                (reverse revblocks)
+
+        substIn :: VarSubstFor (Insn e x)
+        substIn s insn  = case insn of
+             (ILabel   {}        ) -> insn
+             (ILetVal  id letable) -> ILetVal id $ substVarsInLetable s letable
+             (ILetFuns ids fns   ) -> ILetFuns ids $ map (substForInFn s) fns
+             (ILast    cflast    ) -> case cflast of
+                 (CFCont b vs)     -> ILast (CFCont b (map s vs))
+                 (CFCall t b v vs) -> ILast (CFCall t b (s v) (map s vs))
+                 (CFCase v cs)     -> ILast (CFCase (s v) cs)
+
+        substForInFn :: VarSubstFor CFFn
+        substForInFn s fn =
+          assert (fnVars fn == map s (fnVars fn)) $
+          fn { fnBody     = substInGraph s (fnBody fn) }
+
+        substInGraph :: VarSubstFor BasicBlockGraph
+        substInGraph s bbg =
+          let (_, block_vs) = bbgEntry bbg in
+          assert (block_vs == map s block_vs) $
+          bbg { bbgBody = mapGraph (substIn s) (bbgBody bbg) }
+
+type VarSubstFor a = (MoVar -> MoVar) -> a -> a
 --------------------------------------------------------------------
 
 -- As usual, a unique state monad, plus the accumulated procedure definitions.
@@ -556,26 +602,4 @@ instance Show ILLast where
   show (ILRet v       ) = "ret " ++ show v
   show (ILBr  bid args) = "br " ++ show bid ++ " , " ++ show args
   show (ILCase v _arms _def _occ) = "case(" ++ show v ++ ")"
-
-instance TExpr BasicBlockGraph MonoType where
-  freeTypedIds bbg =
-       let (bvs,fvs) = foldGraphNodes go (bbgBody bbg) (Set.empty, Set.empty) in
-       filter (\v -> Set.notMember (tidIdent v) bvs) (Set.toList fvs)
-       -- We rely on the fact that these graphs are alpha-converted, and thus
-       -- have a unique-binding property. This means we can  get away with just
-       -- sticking all the binders in one set, and all the occurrences in
-       -- another, and get the right answer back out.
-     where insert :: Ord a => Set a -> [a] -> Set a
-           insert s ids = Set.union s (Set.fromList ids)
-           insertV s vs = Set.union s (Set.fromList $ map tidIdent vs)
-
-           go :: Insn e x -> (Set Ident, Set MoVar) -> (Set Ident, Set MoVar)
-           go (ILabel (_,bs))    (bvs,fvs) = (insertV bvs bs, fvs)
-           go (ILetVal id lt)    (bvs,fvs) = (Set.insert id bvs, insert fvs $ freeTypedIds lt)
-           go (ILetFuns ids fns) (bvs,fvs) = (insert bvs ids, insert fvs (concatMap freeTypedIds fns))
-           go (ILast cflast)     (bvs,fvs) = case cflast of
-                    CFCont _ vs          -> (bvs, insert fvs vs)
-                    CFCall _ _ v vs      -> (bvs, insert fvs (v:vs))
-                    CFCase v patbinds    -> (insertV bvs pvs, Set.insert v fvs)
-                         where pvs = concatMap (\((_,vs),_) -> vs) patbinds
 

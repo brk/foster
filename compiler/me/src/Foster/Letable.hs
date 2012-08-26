@@ -47,11 +47,6 @@ data Letable =
         | ILBitcast     MonoType MoVar -- inserted during monomorphization
         deriving (Show)
 
-        {-
-instance TExpr body MonoType => AExpr body where
-   freeIdents b = map tidIdent (freeTypedIds b)
--}
-
 instance TExpr Letable MonoType where
   freeTypedIds letable = case letable of
       ILText         {} -> []
