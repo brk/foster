@@ -37,7 +37,7 @@ import Foster.Output(out, Output)
 -- | We also perform pattern match compilation at this stage.
 -- |
 -- | The primary differences in the general structure are:
--- |  #. LetFuns replaced with Closures
+-- |  #. LetFuns replaced with (Let)Closures
 -- |  #. Module  replaced with ILProgram
 -- |  #. Fn replaced with ProcDef
 -- |  #. Decision trees replaced with flat switches
@@ -57,7 +57,6 @@ data ILClosure = ILClosure { ilClosureProcIdent :: MoVar
 data ILProgram = ILProgram (Map Ident ILProcDef)
                            [MoExternDecl]
                            [DataType MonoType]
-                           [ILProcDef] -- These are the original toplevel functions.
                            SourceLines
 
 data ILExternDecl = ILDecl String MonoType deriving (Show)
@@ -74,7 +73,7 @@ data ILProcDef =
                }
 
 -- The standard definition of a basic block and its parts.
-data ILBlock  = Block BlockEntry [ILMiddle] ILLast {- num preds? -}
+data ILBlock  = Block BlockEntry [ILMiddle] ILLast
 data ILMiddle = ILLetVal      Ident    Letable
               -- This is equivalent to MinCaml's make_closure ...
               | ILClosures    [Ident] [ILClosure]
@@ -97,22 +96,15 @@ closureConvertAndLift dataSigs globalIds u m =
     -- that they don't have any "real" free vars.
     -- Lambda lifting then closure converts any nested functions.
     let initialState = ILMState u Map.empty Map.empty dataSigs in
-    let (topProcs, newstate) = runState (closureConvertToplevel globalIds $ moduleILbody m)
-                                        initialState in
+    let newstate = execState (closureConvertToplevel globalIds $ moduleILbody m)
+                                                                 initialState in
     let decls = map (\(s,t) -> MoExternDecl s t) (moduleILdecls m) in
     let dts = moduleILprimTypes m ++ moduleILdataTypes m in
-    ILProgram (ilmProcDefs newstate) decls dts topProcs (moduleILsourceLines m)
+    ILProgram (ilmProcDefs newstate) decls dts (moduleILsourceLines m)
 
-instance Show (Insn e x) where
-  show (ILabel   bid) = "ILabel " ++ show bid
-  show (ILetVal  id letable) = "ILetVal  " ++ show id  ++ " = " ++ show letable
-  show (ILetFuns ids fns   ) = "ILetFuns " ++ show ids ++ " = " ++ show ["..." | _ <- fns]
-  show (ILast    cflast    ) = "ILast    " ++ show cflast
-
-closureConvertToplevel :: [Ident] -> CFBody -> ILM [ILProcDef]
+closureConvertToplevel :: [Ident] -> CFBody -> ILM ()
 closureConvertToplevel globalIds body = do
-  (procdefs, _) <- cvt ([], Set.fromList globalIds) body
-  return procdefs
+  cvt (Set.fromList globalIds) body
      where
        -- Iterate through the SCCs of definitions, keeping track of a state
        -- parameter (the set of globalized variables, which need not appear in
@@ -121,11 +113,10 @@ closureConvertToplevel globalIds body = do
        -- We directly return a list of the top-level proc definitions, and also
        -- (via the ILM monad) a list of all procs generated, including those
        -- from nested functions.
-       cvt :: ([ILProcDef], Set Ident) -> CFBody -> ILM ([ILProcDef], Set Ident)
-       cvt (topprocs, globalized) (CFB_Call {} {- tc t v vs -}) =
-         return (topprocs, globalized)
+       cvt :: Set Ident -> CFBody -> ILM ()
+       cvt _ (CFB_Call {} {- tc t v vs -}) = return ()
 
-       cvt (topprocs, globalized) (CFB_LetFuns ids fns body) =
+       cvt globalized (CFB_LetFuns ids fns body) =
          let
              unliftable fn glbl = [ id | (TypedId _ id) <- fnFreeIds fn
                                        , Set.notMember id glbl]
@@ -178,10 +169,8 @@ closureConvertToplevel globalIds body = do
          in
             if trace ("gonna lift " ++ show ids ++ "? " ++ show gonnaLift ++ " ;; " ++ show allUnliftables
                  ++ " ***** " ++ show ids ++ "//" ++ show globalized) gonnaLift
-              then do newprocs <- mapM (\fn -> lambdaLift fn []) fns
-                      cvt (newprocs ++ topprocs, globalized' ) body
-              else do _        <- closureConvertLetFuns ids fns
-                      cvt (            topprocs, globalized  ) body
+              then do _ <- mapM (lambdaLift []) fns      ; cvt globalized' body
+              else do _ <- closureConvertLetFuns ids fns ; cvt globalized  body
 
 -- For example, if we have something like
 --      let y = blah in
@@ -190,8 +179,8 @@ closureConvertToplevel globalIds body = do
 -- we can rewrite the lambda to a closed proc:
 --      letproc p = \yy x -> x + yy
 --      let y = blah in p y foobar
-lambdaLift :: CFFn -> [MoVar] -> ILM ILProcDef
-lambdaLift f freeVars = do
+lambdaLift :: [MoVar] -> CFFn -> ILM ILProcDef
+lambdaLift freeVars f = do
     newbody <- closureConvertBlocks (fnBody f)
     -- Add *all* of the free variables to the signature of the lambda-lifted
     -- procedure. We could (should?) add only some of them, like Chez Scheme.
@@ -446,16 +435,12 @@ closureOfKnFn infoMap (self_id, fn) = do
 
 --------------------------------------------------------------------
 
-closureConvertedProc :: [MoVar]
-                     -> CFFn
-                     -> ClosureConvertedBlocks
-                     -> ILM ILProcDef
+closureConvertedProc :: [MoVar] -> CFFn -> ClosureConvertedBlocks -> ILM ILProcDef
 closureConvertedProc procArgs f (newbody, numPreds) = do
-  let (TypedId ft id) = fnVar f
-  case ft of
-    FnType _ ftrange _ _ ->
+  case fnVar f of
+    TypedId (FnType _ ftrange _ _) id ->
        return $ ILProcDef ftrange id procArgs (fnRange f) newbody numPreds
-    _ -> error $ "Expected closure converted proc to have fntype, had " ++ show ft
+    tid -> error $ "Expected closure converted proc to have fntype, had " ++ show tid
 
 --------------------------------------------------------------------
 
@@ -471,6 +456,7 @@ mkSwitch v    arms    def     occ = ILCase v arms def            occ
 -- This little bit of unpleasantness is needed to ensure that we
 -- don't need to create gcroot slots for the phi nodes corresponding
 -- to blocks inserted from using CPS-like calls.
+-- TODO we can probably do this as a Block->Block translation...
 mergeCallNamingBlocks blocks numpreds = go Map.empty [] blocks
   where go !subst !acc !blocks =
          case blocks of
@@ -581,7 +567,7 @@ instance UniqueMonad (State ILMState) where
   freshUnique = ilmNewUniq >>= (return . intToUnique)
 
 showILProgramStructure :: ILProgram -> Output
-showILProgramStructure (ILProgram procdefs _decls _dtypes _topfns _lines) =
+showILProgramStructure (ILProgram procdefs _decls _dtypes _lines) =
     concatMap showProcStructure (Map.elems procdefs)
   where
     showProcStructure proc =
@@ -602,4 +588,10 @@ instance Show ILLast where
   show (ILRet v       ) = "ret " ++ show v
   show (ILBr  bid args) = "br " ++ show bid ++ " , " ++ show args
   show (ILCase v _arms _def _occ) = "case(" ++ show v ++ ")"
+
+instance Show (Insn e x) where
+  show (ILabel   bid) = "ILabel " ++ show bid
+  show (ILetVal  id letable) = "ILetVal  " ++ show id  ++ " = " ++ show letable
+  show (ILetFuns ids fns   ) = "ILetFuns " ++ show ids ++ " = " ++ show ["..." | _ <- fns]
+  show (ILast    cflast    ) = "ILast    " ++ show cflast
 

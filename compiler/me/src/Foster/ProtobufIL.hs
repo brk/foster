@@ -429,7 +429,7 @@ dumpILProgramToProtobuf m outpath = do
     L.writeFile outpath (messagePut $ dumpProgramToModule m)
   where
     dumpProgramToModule :: ILProgram -> Module
-    dumpProgramToModule (ILProgram procdefmap extern_decls datatypes _topprocs (SourceLines lines))
+    dumpProgramToModule (ILProgram procdefmap extern_decls datatypes (SourceLines lines))
         = let procdefs = Map.elems procdefmap in
           Module { modulename = u8fromString $ "foo"
                  , procs      = fromList (map dumpProc procdefs)
