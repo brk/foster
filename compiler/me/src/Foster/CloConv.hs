@@ -30,6 +30,7 @@ import Foster.Letable
 import Foster.PatternMatch
 import Foster.Output(out)
 
+-- ||||||||||||||||||||||||| Datatypes ||||||||||||||||||||||||||{{{
 data CCBody = CCB_Procs [CCProc] CCMain
 data CCMain = CCMain TailQ MonoType MoVar [MoVar]
 type CCProc = Proc BasicBlockGraph'
@@ -46,7 +47,6 @@ data BasicBlockGraph' = BasicBlockGraph' { bbgpEntry :: BlockEntry
                                          , bbgpRetK  :: BlockId
                                          , bbgpBody  :: BlockG
                                          }
--- type BlockEntry = (BlockId, [TypedId MonoType])
 
 -- A Closure records the information needed to generate code for a closure.
 -- The environment name is recorded so that the symbol table contains
@@ -75,7 +75,9 @@ data CCLast = CCCont        BlockId [MoVar] -- either ret or br
             | CCCall        BlockId MonoType Ident MoVar [MoVar] -- add ident for later let-binding
             | CCCase        MoVar [(CtorId, BlockId)] (Maybe BlockId) (Occurrence MonoType)
             deriving (Show)
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+-- ||||||||||||||||||||||||| The Driver |||||||||||||||||||||||||{{{
 closureConvertAndLift :: DataTypeSigs
                       -> [Ident]
                       -> Uniq
@@ -159,14 +161,19 @@ closureConvertToplevel globalIds body = do
                  ++ " ***** " ++ show ids ++ "//" ++ show globalized) gonnaLift
               then do _ <- mapM (lambdaLift []) fns      ; cvt globalized' body
               else do _ <- closureConvertLetFuns ids fns ; cvt globalized  body
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+-- ||||||||||||||||||||||||| Lambda Lifter ||||||||||||||||||||||{{{
 -- For example, if we have something like
 --      let y = blah in
 --      (\x -> x + y) foobar
--- then, because the lambda is directly called,
+-- then, because the lambda is directly called*,
 -- we can rewrite the lambda to a closed proc:
 --      letproc p = \yy x -> x + yy
 --      let y = blah in p y foobar
+--
+-- * implying that every call site is known, and every call site
+--   has available the free variables needed by the lambda.
 lambdaLift :: [MoVar] -> CFFn -> ILM CCProc
 lambdaLift freeVars f = do
     newbody <- closureConvertBlocks (fnBody f)
@@ -176,12 +183,9 @@ lambdaLift freeVars f = do
     --  functions, which have no free variables by definition. But still.)
     let liftedProcVars = freeVars ++ fnVars f
     ilmPutProc (closureConvertedProc liftedProcVars f newbody)
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
--- blockGraph is a Hoopl util function. As mentioned in CFG.hs,
--- we use Graphs instead of Blocks (as provided by Hoopl)
--- for representing basic blocks because they're easier to build.
-basicBlock hooplBlock = blockGraph hooplBlock
-
+-- ||||||||||||||||||||||||| Closure Conversion, pt 1 |||||||||||{{{
 -- We serialize a basic block graph by computing a depth-first search
 -- starting from the graph's entry block.
 closureConvertBlocks :: BasicBlockGraph -> ILM BasicBlockGraph'
@@ -231,12 +235,14 @@ closureConvertLetFuns ids fns = do
     let infoMap = Map.fromList (zip ids (zip fns cloEnvIds))
     let idfns = zip ids fns
     mapM (closureOfKnFn infoMap) idfns
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 data BlockFin = BlockFin BlockG           -- new blocks generated
                          BlockId          -- entry block for decision tree logic
 
 bogusVar (id, _) = TypedId (PrimInt I1) id
 
+-- ||||||||||||||||||||||||| Decision Tree Compilation ||||||||||{{{
 compileDecisionTree :: MoVar -> DecisionTree BlockId MonoType -> ILM BlockFin
 -- Translate an abstract decision tree to ILBlocks, also returning
 -- the label of the entry block into the decision tree logic.
@@ -278,12 +284,14 @@ compileDecisionTree scrutinee (DT_Switch occ subtrees maybeDefaultDt) = do
 
 emitOccurrence :: MoVar -> (Ident, Occurrence MonoType) -> Insn' O O
 emitOccurrence scrutinee (id, occ) = CCLetVal id (ILOccurrence scrutinee occ)
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 type InfoMap = Map Ident (CFFn, Ident) -- fn ident => (fn, env id)
 
 fnFreeIds :: CFFn -> [MoVar]
 fnFreeIds fn = freeTypedIds fn
 
+-- ||||||||||||||||||||||||| Closure Conversion, pt 2 |||||||||||{{{
 closureOfKnFn :: InfoMap
               -> (Ident, CFFn)
               -> ILM Closure
@@ -393,8 +401,7 @@ closureConvertedProc procArgs f newbody = do
     TypedId (FnType _ ftrange _ _) id ->
        return $ Proc ftrange id procArgs (fnRange f) newbody
     tid -> error $ "Expected closure converted proc to have fntype, had " ++ show tid
-
---------------------------------------------------------------------
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- Canonicalize single-consequent cases to unconditional branches,
 -- and use the first case as the default for exhaustive pattern matches.
@@ -405,6 +412,7 @@ mkSwitch v    arms    def     occ = CCCase v arms def            occ
 
 --------------------------------------------------------------------
 
+-- ||||||||||||||||||||||||| ILM Monad ||||||||||||||||||||||||||{{{
 -- As usual, a unique state monad, plus the accumulated procedure definitions.
 -- The data type signatures are only needed for pattern match compilation, but
 -- we keep them here for convenience.
@@ -446,9 +454,9 @@ ilmGetProc :: Ident -> ILM (Maybe CCProc)
 ilmGetProc id = do
         old <- get
         return $ Map.lookup id (ilmProcs old)
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
---------------------------------------------------------------------
-
+-- ||||||||||||||||||||||||| Boilerplate ||||||||||||||||||||||||{{{
 renderCC m put = if put then putDoc (pretty m) >>= (return . Left)
                         else return . Right $ show (pretty m)
 
@@ -528,3 +536,5 @@ block'TargetsOf (CCLast last) =
         CCCall     b _ _ _ _        -> [b]
         CCCase     _ cbs (Just b) _ -> b:map snd cbs
         CCCase     _ cbs Nothing  _ ->   map snd cbs
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+

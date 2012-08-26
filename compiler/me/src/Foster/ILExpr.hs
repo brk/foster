@@ -33,15 +33,14 @@ import qualified Data.Map as Map(singleton, insertWith, lookup, empty, fromList,
 -- |  #. Fn replaced with ProcDef
 -- |  #. Decision trees replaced with flat switches
 
---------------------------------------------------------------------
-
+-- ||||||||||||||||||||||||| Datatypes ||||||||||||||||||||||||||{{{
 -- A program consists of top-level data types and mutually-recursive procedures.
 data ILProgram = ILProgram [ILProcDef]
                            [MoExternDecl]
                            [DataType MonoType]
                            SourceLines
 
-data ILExternDecl = ILDecl String MonoType deriving (Show)
+data ILExternDecl = ILDecl String MonoType
 type ILProcDef = (Proc [ILBlock], NumPredsMap)
 type NumPredsMap = Map BlockId Int
 
@@ -59,8 +58,7 @@ data ILLast = ILRetVoid
             | ILRet      MoVar
             | ILBr       BlockId [MoVar]
             | ILCase     MoVar [(CtorId, BlockId)] (Maybe BlockId) (Occurrence MonoType)
-
---------------------------------------------------------------------
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 prepForCodegen :: ModuleIL CCBody MonoType -> ILProgram
 prepForCodegen m =
@@ -128,10 +126,10 @@ deHooplizeBlock retk b =
                 (True,   _ ) -> error $ "ILExpr.hs:No support for multiple return values yet\n" ++ show vs
                 (False,  _ ) -> ILBr k vs
 
+-- ||||||||||||||||||||||||| CFG Simplification  ||||||||||||||||{{{
 -- This little bit of unpleasantness is needed to ensure that we
 -- don't need to create gcroot slots for the phi nodes corresponding
 -- to blocks inserted from using CPS-like calls.
--- TODO we can probably do this as a Block->Block translation...
 mergeCallNamingBlocks :: [Block' ] -> NumPredsMap -> [ Block' ]
 mergeCallNamingBlocks blocks numpreds = go Map.empty [] blocks
   where go !subst !acc !blocks =
@@ -189,9 +187,9 @@ mergeCallNamingBlocks blocks numpreds = go Map.empty [] blocks
           clo { closureCaptures = (map s (closureCaptures clo)) }
 
 type VarSubstFor a = (MoVar -> MoVar) -> a -> a
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
---------------------------------------------------------------------
-
+-- ||||||||||||||||||||||||| Boilerplate ||||||||||||||||||||||||{{{
 showILProgramStructure :: ILProgram -> Output
 showILProgramStructure (ILProgram procdefs _decls _dtypes _lines) =
     concatMap showProcStructure procdefs
@@ -214,4 +212,6 @@ instance Show ILLast where
   show (ILRet v       ) = "ret " ++ show v
   show (ILBr  bid args) = "br " ++ show bid ++ " , " ++ show args
   show (ILCase v _arms _def _occ) = "case(" ++ show v ++ ")"
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
 
