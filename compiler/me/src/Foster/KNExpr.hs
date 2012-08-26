@@ -393,49 +393,46 @@ instance Show ty => Structured (KNExpr' ty) where
             KNTyApp _t v _argty     -> [var v]
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
-renderKN m put = if put then putDoc (docOf m) >>= (return . Left)
-                        else return . Right $ show (docOf m)
+renderKN m put = if put then putDoc (pretty m) >>= (return . Left)
+                        else return . Right $ show (pretty m)
 
 renderKNM :: (ModuleIL (KNExpr' MonoType) MonoType) -> String
-renderKNM m = show (docOf m)
+renderKNM m = show (pretty m)
 
 renderKNF :: (Fn (KNExpr' TypeIL) TypeIL) -> String
-renderKNF m = show (docOf m)
+renderKNF m = show (pretty m)
 
 renderKNFM :: (Fn (KNExpr' MonoType) MonoType) -> String
-renderKNFM m = show (docOf m)
+renderKNFM m = show (pretty m)
 
-class PPrintable a where
-  docOf :: a -> Doc
-
-showTyped :: PPrintable t => Doc -> t -> Doc
-showTyped d t = parens (d <+> text "::" <+> docOf t)
+showTyped :: Pretty t => Doc -> t -> Doc
+showTyped d t = parens (d <+> text "::" <+> pretty t)
 
 showUnTyped d _ = d
 
 comment d = text "/*" <+> d <+> text "*/"
 
-instance PPrintable TypeIL where
-  docOf t = text (show t)
+instance Pretty TypeIL where
+  pretty t = text (show t)
 
-instance PPrintable MonoType where
-  docOf t = text (show t)
+instance Pretty MonoType where
+  pretty t = text (show t)
 
-instance PPrintable t => PPrintable (TypedId t) where
-  docOf (TypedId t i) = showUnTyped (text $ show i) t
+instance Pretty t => Pretty (TypedId t) where
+  pretty (TypedId t i) = showUnTyped (text $ show i) t
 
-instance PPrintable AllocMemRegion where
-  docOf rgn = text (show rgn)
+instance Pretty AllocMemRegion where
+  pretty rgn = text (show rgn)
 
-instance PPrintable t => PPrintable (ArrayIndex (TypedId t)) where
-  docOf (ArrayIndex b i _rng safety) =
-    docOfId b <> brackets (docOfId i) <+> comment (text $ show safety)
+instance Pretty t => Pretty (ArrayIndex (TypedId t)) where
+  pretty (ArrayIndex b i _rng safety) =
+    prettyId b <> brackets (prettyId i) <+> comment (text $ show safety)
 
-instance PPrintable t => PPrintable (FosterPrim t) where
-  docOf (NamedPrim tid) = docOfId tid
-  docOf (PrimOp nm _ty) = text nm
-  docOf (PrimIntTrunc frm to) = text ("trunc from " ++ show frm ++ " to " ++ show to)
-  docOf (CoroPrim c t1 t2) = text "...coroprim..."
+instance Pretty t => Pretty (FosterPrim t) where
+  pretty (NamedPrim tid) = prettyId tid
+  pretty (PrimOp nm _ty) = text nm
+  pretty (PrimIntTrunc frm to) = text ("trunc from " ++ show frm ++ " to " ++ show to)
+  pretty (CoroPrim c t1 t2) = text "...coroprim..."
 
 -- (<//>) ?vs? align (x <$> y)
 
@@ -443,13 +440,13 @@ kwd  s = dullblue  (text s)
 lkwd s = dullwhite (text s)
 end    = lkwd "end"
 
-instance PPrintable t => PPrintable (Fn (KNExpr' t) t) where
-  docOf fn = group (lbrace <+> (hsep (map (\v -> docOf v <+> text "=>") (fnVars fn)))
-                    <$> indent 4 (docOf (fnBody fn))
-                    <$> rbrace) <+> docOf (fnVar fn)
+instance Pretty t => Pretty (Fn (KNExpr' t) t) where
+  pretty fn = group (lbrace <+> (hsep (map (\v -> pretty v <+> text "=>") (fnVars fn)))
+                    <$> indent 4 (pretty (fnBody fn))
+                    <$> rbrace) <+> pretty (fnVar fn)
 
-instance PPrintable t => PPrintable (ModuleIL (KNExpr' t) t) where
-  docOf m = text "// begin decls"
+instance (Pretty body, Pretty t) => Pretty (ModuleIL body t) where
+  pretty m = text "// begin decls"
             <$> vcat [showTyped (text s) t | (s, t) <- moduleILdecls m]
             <$> text "// end decls"
             <$> text "// begin datatypes"
@@ -459,70 +456,70 @@ instance PPrintable t => PPrintable (ModuleIL (KNExpr' t) t) where
             <$> empty
             <$> text "// end prim types"
             <$> text "// begin functions"
-            <$> docOf (moduleILbody m)
+            <$> pretty (moduleILbody m)
             <$> text "// end functions"
 
-docOfId (TypedId _ i) = text (show i)
+prettyId (TypedId _ i) = text (show i)
 
-instance PPrintable t => PPrintable (Pattern t) where
-  docOf p =
+instance Pretty t => Pretty (Pattern t) where
+  pretty p =
     case p of
         P_Wildcard      _rng _ty          -> text "_"
-        P_Variable      _rng tid          -> docOfId tid
-        P_Ctor          _rng _ty pats cid -> parens (text "$" <> text (ctorCtorName $ ctorInfoId cid) <> (hsep $ map docOf pats))
+        P_Variable      _rng tid          -> prettyId tid
+        P_Ctor          _rng _ty pats cid -> parens (text "$" <> text (ctorCtorName $ ctorInfoId cid) <> (hsep $ map pretty pats))
         P_Bool          _rng _ty b        -> text $ if b then "True" else "False"
         P_Int           _rng _ty li       -> text (litIntText li)
-        P_Tuple         _rng _ty pats     -> parens (hsep $ punctuate comma (map docOf pats))
+        P_Tuple         _rng _ty pats     -> parens (hsep $ punctuate comma (map pretty pats))
 
-instance PPrintable ty => PPrintable (KNExpr' ty) where
-  docOf e =
+instance Pretty ty => Pretty (KNExpr' ty) where
+  pretty e =
         case e of
             KNVar (TypedId _ (GlobalSymbol name))
                                 -> (text $ "G:" ++ T.unpack name)
                        --showTyped (text $ "G:" ++ T.unpack name) t
-            KNVar (TypedId t i) -> docOfId (TypedId t i)
-            KNTyApp t e argtys  -> showTyped (docOf e <> text ":[" <> hsep (punctuate comma (map docOf argtys)) <> text "]") t
-            KNKillProcess t m   -> text ("KNKillProcess " ++ show m ++ " :: ") <> docOf t
+            KNVar (TypedId t i) -> prettyId (TypedId t i)
+            KNTyApp t e argtys  -> showTyped (pretty e <> text ":[" <> hsep (punctuate comma (map pretty argtys)) <> text "]") t
+            KNKillProcess t m   -> text ("KNKillProcess " ++ show m ++ " :: ") <> pretty t
             KNString     _ s    -> dquotes (text $ T.unpack s)
             KNBool       _ b    -> text $ show b
-            KNCall _tail t v [] -> showUnTyped (docOfId v <+> text "!") t
-            KNCall _tail t v vs -> showUnTyped (docOfId v <> hsep (map docOf vs)) t
-            KNCallPrim t prim vs-> showUnTyped (text "prim" <+> docOf prim <+> hsep (map docOfId vs)) t
-            KNAppCtor  t cid vs -> showUnTyped (text "~" <> parens (text (show cid) <> hsep (map docOfId vs))) t
+            KNCall _tail t v [] -> showUnTyped (prettyId v <+> text "!") t
+            KNCall _tail t v vs -> showUnTyped (prettyId v <> hsep (map pretty vs)) t
+            KNCallPrim t prim vs-> showUnTyped (text "prim" <+> pretty prim <+> hsep (map prettyId vs)) t
+            KNAppCtor  t cid vs -> showUnTyped (text "~" <> parens (text (show cid) <> hsep (map prettyId vs))) t
             KNLetVal   x b    k -> lkwd "let"
                                       <+> fill 8 (text (show x))
                                       <+> text "="
-                                      <+> docOf b <+> lkwd "in"
-                                   <$> docOf k
+                                      <+> pretty b <+> lkwd "in"
+                                   <$> pretty k
             KNLetFuns ids fns k -> text "letfuns"
                                    <$> indent 2 (vcat [text (show id) <+> text "="
-                                                                      <+> docOf fn
+                                                                      <+> pretty fn
                                                       | (id, fn) <- zip ids fns
                                                       ])
                                    <$> lkwd "in"
-                                   <$> docOf k
+                                   <$> pretty k
                                    <$> end
-            KNIf     _t v b1 b2 -> kwd "if" <+> docOfId v
-                                   <$> nest 2 (kwd "then" <+> docOf b1)
-                                   <$> nest 2 (kwd "else" <+> docOf b2)
+            KNIf     _t v b1 b2 -> kwd "if" <+> prettyId v
+                                   <$> nest 2 (kwd "then" <+> pretty b1)
+                                   <$> nest 2 (kwd "else" <+> pretty b2)
                                    <$> end
-            KNUntil  _t c b _sr -> kwd "until" <+> docOf c <//> lkwd "then"
-                                   <$> nest 2 (docOf b)
+            KNUntil  _t c b _sr -> kwd "until" <+> pretty c <//> lkwd "then"
+                                   <$> nest 2 (pretty b)
                                    <$> end
             KNInt   _ty int     -> red $ text (litIntText int)
             KNFloat _ty flt     -> dullred $ text (litFloatText flt)
-            KNAlloc _ v rgn     -> text "(ref" <+> docOfId v <+> comment (docOf rgn) <> text ")"
-            KNDeref _ v         -> docOfId v <> text "^"
-            KNStore _ v1 v2     -> text "store" <+> docOfId v1 <+> text "to" <+> docOfId v2
+            KNAlloc _ v rgn     -> text "(ref" <+> prettyId v <+> comment (pretty rgn) <> text ")"
+            KNDeref _ v         -> prettyId v <> text "^"
+            KNStore _ v1 v2     -> text "store" <+> prettyId v1 <+> text "to" <+> prettyId v2
             KNCase _t v bnds    -> align $
-                                       kwd "case" <+> docOf v
-                                       <$> indent 2 (vcat [ kwd "of" <+> fill 20 (docOf pat) <+> text "->" <+> docOf expr
+                                       kwd "case" <+> pretty v
+                                       <$> indent 2 (vcat [ kwd "of" <+> fill 20 (pretty pat) <+> text "->" <+> pretty expr
                                                           | ((pat, _tys), expr) <- bnds
                                                           ])
                                        <$> end
             KNAllocArray {}     -> text $ "KNAllocArray "
-            KNArrayRead  _ ai   -> docOf ai
-            KNArrayPoke  _ ai v -> docOfId v <+> text ">^" <+> docOf ai
-            KNTuple      _ vs _ -> parens (hsep $ punctuate comma (map docOf vs))
+            KNArrayRead  _ ai   -> pretty ai
+            KNArrayPoke  _ ai v -> prettyId v <+> text ">^" <+> pretty ai
+            KNTuple      _ vs _ -> parens (hsep $ punctuate comma (map pretty vs))
 
 deriving instance (Show ty) => Show (KNExpr' ty)

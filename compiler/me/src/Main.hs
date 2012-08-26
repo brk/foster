@@ -40,7 +40,7 @@ import Foster.ILExpr(ILProgram, showILProgramStructure, prepForCodegen)
 import Foster.KNExpr(KNExpr', kNormalizeModule, renderKN)
 import Foster.Typecheck
 import Foster.Context
-import Foster.CloConv(closureConvertAndLift)
+import Foster.CloConv(closureConvertAndLift, renderCC)
 import Foster.Monomo
 import Foster.MonoType
 import Foster.KSmallstep
@@ -445,14 +445,19 @@ lowerModule ai_mod ctx_il = do
      ccmod    <- closureConvert cfgmod
      ilprog   <- return $ prepForCodegen ccmod
 
-     whenDumpIR "cfg" $ do
-         runOutput $ (outLn "/// Closure-converted program =========")
-         -- runOutput $ renderCC ccmod
-         runOutput $ (outLn "^^^ ===================================")
-
      whenDumpIR "mono" $ do
          runOutput $ (outLn "/// Monomorphized program =============")
          _ <- liftIO $ renderKN monomod True
+         runOutput $ (outLn "^^^ ===================================")
+
+     whenDumpIR "cc" $ do
+         runOutput $ (outLn "/// Closure-converted program =========")
+         _ <- liftIO $ renderCC ccmod True
+         runOutput $ (outLn "^^^ ===================================")
+
+     whenDumpIR "il" $ do
+         runOutput $ (outLn "/// ILProgram =========================")
+         runOutput (showILProgramStructure ilprog)
          runOutput $ (outLn "^^^ ===================================")
 
      -- _ <- liftIO $ renderCFG cfgmod True

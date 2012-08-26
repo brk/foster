@@ -100,8 +100,3 @@ showILProgramStructure (ILProgram procdefs _decls _dtypes _lines) =
         ++ out (concatMap (\m -> "\t" ++ show m ++ "\n") mids)
         ++ out (show last ++ "\n\n")
 
-instance Show ILLast where
-  show (ILRetVoid     ) = "ret void"
-  show (ILRet v       ) = "ret " ++ show v
-  show (ILBr  bid args) = "br " ++ show bid ++ " , " ++ show args
-  show (ILCase v _arms _def _occ) = "case(" ++ show v ++ ")"

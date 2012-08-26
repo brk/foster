@@ -18,6 +18,8 @@ import qualified Data.Map as Map((!), insert, lookup, empty, fromList, elems,
 
 import Control.Monad.State
 
+import Text.PrettyPrint.ANSI.Leijen
+
 import Debug.Trace(trace)
 import Control.Exception.Base(assert)
 
@@ -553,6 +555,9 @@ ilmGetProc id = do
 
 --------------------------------------------------------------------
 
+renderCC m put = if put then putDoc (pretty m) >>= (return . Left)
+                        else return . Right $ show (pretty m)
+
 instance Structured (String, Label) where
     textOf (str, lab) _width = out $ str ++ "." ++ show lab
     childrenOf _ = []
@@ -560,6 +565,47 @@ instance Structured (String, Label) where
 instance UniqueMonad (State ILMState) where
   freshUnique = ilmNewUniq >>= (return . intToUnique)
 
+instance Pretty BlockG where
+  pretty bb = foldGraphNodes prettyInsn' bb empty
+
+prettyInsn' :: Insn' e x -> Doc -> Doc
+prettyInsn' i d = d <$> pretty i
+
+prettyBlockId (b,l) = text b <> text "." <> text (show l)
+
+instance Pretty (Insn' e x) where
+  pretty (CCLabel   bentry     ) = line <> prettyBlockId (fst bentry) <+> list (map pretty (snd bentry))
+  pretty (CCLetVal  id  letable) = indent 4 (text "let" <+> text (show id) <+> text "="
+                                                       <+> pretty letable)
+  pretty (CCLetFuns ids fns    ) = let recfun = if length ids == 1 then "fun" else "rec" in
+                                  indent 4 (align $
+                                   vcat [text recfun <+> text (show id) <+> text "=" <+> pretty fn
+                                        | (id,fn) <- zip ids fns])
+  pretty (CCLast    cclast     ) = pretty cclast
+
+instance Pretty ILLast where
+  pretty last = text (show last)
+
+instance Pretty Closure where
+  pretty clo = text "(Closure" <+> text "proc =" <+> pretty (closureProcIdent clo)
+                                                 <+> list (map pretty (closureCaptures clo))
+                         <+> text ")"
+
+instance Pretty BasicBlockGraph' where
+ pretty bbg =
+         (indent 4 (text "ret k =" <+> pretty (bbgpRetK bbg)
+                <$> text "entry =" <+> pretty (fst $ bbgpEntry bbg)
+                <$> text "------------------------------"))
+          <> pretty (bbgpBody bbg)
+
+instance Pretty CCBody where
+ pretty (CCB_Procs procs _) = vcat (map (\p -> line <> pretty p) procs)
+
+instance Pretty CCProc where
+ pretty proc = pretty (procIdent proc) <+> list (map pretty (procVars proc))
+               <$> text "{"
+               <$> indent 4 (pretty (procBlocks proc))
+               <$> text "}"
 
 instance Show (Insn e x) where
   show (ILabel   bid) = "ILabel " ++ show bid
@@ -567,6 +613,11 @@ instance Show (Insn e x) where
   show (ILetFuns ids fns   ) = "ILetFuns " ++ show ids ++ " = " ++ show ["..." | _ <- fns]
   show (ILast    cflast    ) = "ILast    " ++ show cflast
 
+instance Show ILLast where
+  show (ILRetVoid     ) = "ret void"
+  show (ILRet v       ) = "ret " ++ show v
+  show (ILBr  bid args) = "br " ++ show bid ++ " , " ++ show args
+  show (ILCase v _arms _def _occ) = "case(" ++ show v ++ ")"
 
 instance NonLocal Insn' where
   entryLabel (CCLabel ((_,l), _)) = l

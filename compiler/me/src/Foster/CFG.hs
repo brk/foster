@@ -443,29 +443,8 @@ comment d = text "/*" <+> d <+> text "*/"
 
 prettyId (TypedId _ i) = text (show i)
 
-instance Pretty MonoType where
-  pretty t = text (show t)
-
 showTyped :: Doc -> MonoType -> Doc
 showTyped d t = parens (d <+> text "::" <+> pretty t)
-
-instance Pretty MoVar where
-  pretty (TypedId _ i) = text $ show i
-
-instance Pretty AllocMemRegion where
-  pretty rgn = text (show rgn)
-
-instance Pretty (ArrayIndex MoVar) where
-  pretty (ArrayIndex b i _rng safety) =
-    prettyId b <> brackets (prettyId i) <+> comment (text $ show safety)
-
-{-
-instance Pretty ILPrim where
-  pretty (NamedPrim tid) = prettyId tid
-  pretty (PrimOp nm _ty) = text nm
-  pretty (PrimIntTrunc frm to) = text ("trunc from " ++ show frm ++ " to " ++ show to)
-  pretty (CoroPrim c t1 t2) = text "...coroprim..."
--}
 
 instance Pretty (Fn BasicBlockGraph MonoType) where
   pretty fn = group (lbrace <+> (hsep (map (\v -> pretty v <+> text "=>")
@@ -503,12 +482,6 @@ instance Pretty CFLast where
                                         | ((pat, _tys), bid) <- pats
                                         ])
 
-instance Pretty (FosterPrim MonoType) where
-  pretty (NamedPrim tid) = prettyId tid
-  pretty (PrimOp nm _ty) = text nm
-  pretty (PrimIntTrunc frm to) = text ("trunc from " ++ show frm ++ " to " ++ show to)
-  pretty (CoroPrim _c _t1 _t2) = text "...coroprim..."
-
 instance Pretty Letable where
   pretty l =
     case l of
@@ -529,31 +502,6 @@ instance Pretty Letable where
       ILArrayRead  _t (ArrayIndex _v1 _v2 _rng _s)  -> text $ "ILArrayRead..."
       ILArrayPoke  (ArrayIndex _v1 _v2 _rng _s) _v3 -> text $ "ILArrayPoke..."
       ILBitcast   t v       -> text "bitcast " <+> pretty v <+> text "to" <+> pretty t
-
-instance Pretty (Pattern MonoType) where
-  pretty p =
-    case p of
-        P_Wildcard      _rng _ty          -> text "_"
-        P_Variable      _rng tid          -> pretty tid
-        P_Ctor          _rng _ty pats cid -> parens (text "$" <> text (ctorCtorName $ ctorInfoId cid) <> (hsep $ map pretty pats))
-        P_Bool          _rng _ty b        -> text $ if b then "True" else "False"
-        P_Int           _rng _ty li       -> text (litIntText li)
-        P_Tuple         _rng _ty pats     -> parens (hsep $ punctuate comma (map pretty pats))
-
-
-instance Pretty (ModuleIL BasicBlockGraph MonoType) where
-  pretty m = text "// begin decls"
-         <$> vcat [showTyped (text s) t | (s, t) <- moduleILdecls m]
-         <$> text "// end decls"
-         <$> text "// begin datatypes"
-         <$> empty
-         <$> text "// end datatypes"
-         <$> text "// begin prim types"
-         <$> empty
-         <$> text "// end prim types"
-         <$> text "// begin functions"
-         <$> pretty (moduleILbody m)
-         <$> text "// end functions"
 
 instance Pretty BasicBlockGraph where
  pretty bbg =
