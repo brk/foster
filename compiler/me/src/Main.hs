@@ -36,10 +36,11 @@ import Foster.ParsedType
 import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn))
 import Foster.AnnExprIL(AIExpr(AILetFuns, AICall, E_AIVar), fnOf)
 import Foster.TypeIL(TypeIL(TupleTypeIL, FnTypeIL), ilOf)
-import Foster.ILExpr(ILProgram, closureConvertAndLift, showILProgramStructure)
+import Foster.ILExpr(ILProgram, showILProgramStructure, prepForCodegen)
 import Foster.KNExpr(KNExpr', kNormalizeModule, renderKN)
 import Foster.Typecheck
 import Foster.Context
+import Foster.CloConv(closureConvertAndLift)
 import Foster.Monomo
 import Foster.MonoType
 import Foster.KSmallstep
@@ -441,11 +442,12 @@ lowerModule ai_mod ctx_il = do
      uniqref  <- gets (tcEnvUniqs.ccTcEnv)
      monomod  <- liftIO $ monomorphize uniqref kmod
      cfgmod   <- cfgModule monomod
-     ilprog   <- closureConvert cfgmod
+     ccmod    <- closureConvert cfgmod
+     ilprog   <- return $ prepForCodegen ccmod
 
      whenDumpIR "cfg" $ do
          runOutput $ (outLn "/// Closure-converted program =========")
-         runOutput $ showILProgramStructure ilprog
+         -- runOutput $ renderCC ccmod
          runOutput $ (outLn "^^^ ===================================")
 
      whenDumpIR "mono" $ do

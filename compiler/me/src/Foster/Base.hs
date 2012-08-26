@@ -40,6 +40,7 @@ data CallConv = CCC | FastCC deriving (Eq, Show)
 data IntSizeBits = I1 | I8 | I32 | I64 deriving (Eq, Show)
 data ProcOrFunc   = FT_Proc | FT_Func  deriving Show
 data VarNamespace = VarProc | VarLocal deriving Show
+data TailQ = YesTail | NotTail deriving Show
 
 data SafetyGuarantee = SG_Static | SG_Dynamic               deriving (Show)
 data ArrayIndex expr = ArrayIndex expr expr SourceRange

@@ -59,8 +59,6 @@ type KN a = State Uniq a
 
 type KNExpr = KNExpr' TypeIL
 
-data TailQ = YesTail | NotTail deriving Show
-
 knFresh :: String -> KN Ident
 knFresh s = do old <- get
                put (old + 1)

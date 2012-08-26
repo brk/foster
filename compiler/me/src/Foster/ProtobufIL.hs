@@ -10,13 +10,15 @@ module Foster.ProtobufIL (
 
 import Foster.Base
 import Foster.ILExpr
+import Foster.CloConv(ILLast(..))
+import qualified Foster.CloConv as CC(Proc(..), Closure(Closure))
 import Foster.MonoType
 import Foster.Letable
 import Foster.ProtobufUtils
 
 import qualified Data.ByteString.Lazy as L(writeFile)
 import Data.Sequence as Seq(fromList)
-import Data.Map as Map(elems, lookup)
+import Data.Map as Map(lookup)
 
 import Text.ProtocolBuffers(messagePut)
 
@@ -182,7 +184,7 @@ dumpLetVal id letable =
                     , let_expr   = dumpExpr letable
                     }
 
-dumpLetClosures :: [Ident] -> [ILClosure] -> PbLetClosures.LetClosures
+dumpLetClosures :: [Ident] -> [CC.Closure] -> PbLetClosures.LetClosures
 dumpLetClosures ids clos =
     P'.defaultValue { closures = fromList $ fmap dumpClosureWithName $
                                                           (Prelude.zip ids clos)
@@ -380,7 +382,7 @@ prefixAllocSrc foo   (AllocationSource                prefix  rng) =
 showAllocationSource (AllocationSource prefix rng) =
                  prefix ++ highlightFirstLine rng
 
-dumpClosureWithName (varid, ILClosure procid envid captvars allocsrc) =
+dumpClosureWithName (varid, CC.Closure procid envid captvars allocsrc) =
     P'.defaultValue { varname  = dumpIdent varid
                     , proc_id  = textToPUtf8 (identPrefix (tidIdent procid))
                     , env_id   = dumpIdent envid
@@ -429,9 +431,8 @@ dumpILProgramToProtobuf m outpath = do
     L.writeFile outpath (messagePut $ dumpProgramToModule m)
   where
     dumpProgramToModule :: ILProgram -> Module
-    dumpProgramToModule (ILProgram procdefmap extern_decls datatypes (SourceLines lines))
-        = let procdefs = Map.elems procdefmap in
-          Module { modulename = u8fromString $ "foo"
+    dumpProgramToModule (ILProgram procdefs extern_decls datatypes (SourceLines lines))
+        = Module { modulename = u8fromString $ "foo"
                  , procs      = fromList (map dumpProc procdefs)
           , extern_val_decls  = fromList (map dumpDecl extern_decls)
                  , typ_decls  = fromList (map dumpDataTypeDecl datatypes)
@@ -439,16 +440,16 @@ dumpILProgramToProtobuf m outpath = do
                  }
 
     dumpProc p
-      = Proc { Proc.name  = dumpIdent $ ilProcIdent p
-             , in_args    = fromList $ [dumpIdent (tidIdent v) | v <- ilProcVars p]
+      = Proc { Proc.name  = dumpIdent $ CC.procIdent p
+             , in_args    = fromList $ [dumpIdent (tidIdent v) | v <- CC.procVars p]
              , proctype   = dumpProcType (preProcType p)
-             , Proc.blocks= fromList $ map (dumpBlock (ilProcBlockPreds p)) (ilProcBlocks p)
-             , Proc.lines = Just $ u8fromString (showSourceRange $ ilProcRange p)
+             , Proc.blocks= fromList $ map (dumpBlock (CC.procBlockPreds p)) (CC.procBlocks p)
+             , Proc.lines = Just $ u8fromString (showSourceRange $ CC.procRange p)
              , Proc.linkage = Foster.Bepb.Proc.Linkage.Internal
              }
     preProcType proc =
-        let retty = ilProcReturnType proc in
-        let argtys = map tidType (ilProcVars proc) in
+        let retty = CC.procReturnType proc in
+        let argtys = map tidType (CC.procVars proc) in
         (argtys, retty, FastCC)
 
     dumpDataTypeDecl datatype =
