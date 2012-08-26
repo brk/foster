@@ -20,7 +20,6 @@ import Control.Monad.State
 import Text.PrettyPrint.ANSI.Leijen
 
 import Debug.Trace(trace)
-import Control.Exception.Base(assert)
 
 import Compiler.Hoopl
 
@@ -187,56 +186,43 @@ basicBlock hooplBlock = blockGraph hooplBlock
 -- starting from the graph's entry block.
 closureConvertBlocks :: BasicBlockGraph -> ILM BasicBlockGraph'
 closureConvertBlocks bbg = do
-   let jumpTo bbg = case bbgEntry bbg of (bid, _) -> ILast $ CFCont bid undefined
-   let cfgBlocks = map (splitBasicBlock . basicBlock) $
-                     preorder_dfs $ mkLast (jumpTo bbg) |*><*| bbgBody bbg
-   blocks <- mapM closureConvertBlock cfgBlocks
+   g' <- rebuildGraphM (case bbgEntry bbg of (bid, _) -> bid) (bbgBody bbg)
+                                                                       transform
    return BasicBlockGraph' {
                  bbgpEntry = bbgEntry bbg,
                  bbgpRetK  = bbgRetK  bbg,
-                 bbgpBody = foldr (|*><*|) emptyClosedGraph (map blockGraph (concat blocks))
+                 bbgpBody =  g'
           }
   where
-    -- A BasicBlock which ends in a decision tree will, in the general case,
-    -- expand out to multiple blocks to encode the tree.
-    closureConvertBlock :: (BlockEntry, [Insn O O], Insn O C) -> ILM [ Block' ]
-    closureConvertBlock (bid, mids, last) = do
-        (blocks, lastmid, newlast) <- ccLast last
-        newmids <- mapM closureConvertMid mids
-        return $ mkBlock' bid (newmids ++ lastmid) newlast : blocks
-     where
-      ccLast :: Insn O C -> ILM ([ Block' ] , [Insn' O O] , Insn' O C)
-      ccLast (ILast (CFCase a pbs)) = do
-               allSigs  <- gets ilmCtors
-               let dt = compilePatterns pbs allSigs
-               let usedBlocks = eltsOfDecisionTree dt
-               let _unusedPats = [pat | (pat, bid) <- pbs
-                                , Set.notMember bid usedBlocks]
-               -- TODO print warning if any unused patterns
-               (BlockFin blocks id) <- compileDecisionTree a dt
-               return $ (blocks, [], CCLast $ CCCont id [])
-              where
-                -- The decision tree we get from pattern-match compilation may
-                -- contain only a subset of the pattern branche.
-                eltsOfDecisionTree :: (Show a, Ord a) => DecisionTree a t -> Set a
-                eltsOfDecisionTree DT_Fail = Set.empty
-                eltsOfDecisionTree (DT_Leaf a _) = Set.singleton a
-                eltsOfDecisionTree (DT_Switch _ idsDts maybeDt) = Set.union
-                   (Set.unions (map (\(_, dt) -> eltsOfDecisionTree dt) idsDts))
-                   (case maybeDt of
-                       Just dt -> eltsOfDecisionTree dt
-                       Nothing -> Set.empty)
-
-      ccLast (ILast (CFCont b vs))     = do return ([], [], CCLast (CCCont b vs))
-      ccLast (ILast (CFCall b t v vs)) = do id <- ilmFresh (T.pack ".call")
-                                            return ([], [], CCLast (CCCall b t id v vs))
-
-      closureConvertMid :: Insn O O -> ILM (Insn' O O)
-      closureConvertMid mid =
-        case mid of
-          ILetVal id val -> return $ CCLetVal id val
-          ILetFuns ids fns -> do closures <- closureConvertLetFuns ids fns
-                                 return $ CCLetFuns ids closures
+      transform :: Insn e x -> ILM (Graph Insn' e x)
+      transform insn = case insn of
+        ILabel l                -> do return $ mkFirst $ CCLabel l
+        ILetVal id val          -> do return $ mkMiddle $ CCLetVal id val
+        ILetFuns ids fns        -> do closures <- closureConvertLetFuns ids fns
+                                      return $ mkMiddle $ CCLetFuns ids closures
+        ILast (CFCont b vs)     -> do return $ mkLast $ CCLast (CCCont b vs)
+        ILast (CFCall b t v vs) -> do id <- ilmFresh (T.pack ".call")
+                                      return $ mkLast $ CCLast (CCCall b t id v vs)
+        ILast (CFCase a pbs) -> do
+           allSigs <- gets ilmCtors
+           let dt = compilePatterns pbs allSigs
+           let usedBlocks = eltsOfDecisionTree dt
+           let _unusedPats = [pat | (pat, bid) <- pbs
+                            , Set.notMember bid usedBlocks]
+           -- TODO print warning if any unused patterns
+           (BlockFin blocks id) <- compileDecisionTree a dt
+           return $ (mkLast $ CCLast $ CCCont id []) |*><*| blocks
+          where
+            -- The decision tree we get from pattern-match compilation may
+            -- contain only a subset of the pattern branche.
+            eltsOfDecisionTree :: (Show a, Ord a) => DecisionTree a t -> Set a
+            eltsOfDecisionTree DT_Fail = Set.empty
+            eltsOfDecisionTree (DT_Leaf a _) = Set.singleton a
+            eltsOfDecisionTree (DT_Switch _ idsDts maybeDt) = Set.union
+               (Set.unions (map (\(_, dt) -> eltsOfDecisionTree dt) idsDts))
+               (case maybeDt of
+                   Just dt -> eltsOfDecisionTree dt
+                   Nothing -> Set.empty)
 
 closureConvertLetFuns :: [Ident] -> [CFFn] -> ILM [Closure]
 closureConvertLetFuns ids fns = do
@@ -246,7 +232,7 @@ closureConvertLetFuns ids fns = do
     let idfns = zip ids fns
     mapM (closureOfKnFn infoMap) idfns
 
-data BlockFin = BlockFin [ Block' ]       -- new blocks generated
+data BlockFin = BlockFin BlockG           -- new blocks generated
                          BlockId          -- entry block for decision tree logic
 
 bogusVar (id, _) = TypedId (PrimInt I1) id
@@ -261,7 +247,7 @@ compileDecisionTree :: MoVar -> DecisionTree BlockId MonoType -> ILM BlockFin
 compileDecisionTree _scrutinee (DT_Fail) = error "can't do dt_FAIL yet"
 
 compileDecisionTree _scrutinee (DT_Leaf armid []) = do
-        return $ BlockFin [] armid
+        return $ BlockFin emptyClosedGraph armid
 
 -- Because of the way decision trees can be copied, we can end up with
 -- multiple DT_Leaf nodes for the same armid. Since we don't want to emit
@@ -271,24 +257,24 @@ compileDecisionTree _scrutinee (DT_Leaf armid []) = do
 compileDecisionTree scrutinee (DT_Leaf armid idsoccs) = do
         wrappers <- gets ilmBlockWrappers
         case Map.lookup armid wrappers of
-           Just id -> do return $ BlockFin [] id
+           Just id -> do return $ BlockFin emptyClosedGraph id
            Nothing -> do let binders = map (emitOccurrence scrutinee) idsoccs
                          (id, block) <- ilmNewBlock ".leaf" binders (CCLast $ CCCont armid []) -- TODO
                          ilmAddWrapper armid id
-                         return $ BlockFin [block] id
+                         return $ BlockFin (blockGraph block) id
 
 compileDecisionTree scrutinee (DT_Switch occ subtrees maybeDefaultDt) = do
         let splitBlockFin (BlockFin blocks id) = (blocks, id)
         let (ctors, subdts) = unzip subtrees
         fins  <- mapM (compileDecisionTree scrutinee) subdts
         (dblockss, maybeDefaultId) <- case maybeDefaultDt of
-           Nothing -> do return ([], Nothing)
+           Nothing -> do return (emptyClosedGraph, Nothing)
            Just dt -> do (BlockFin dblockss did) <- compileDecisionTree scrutinee dt
                          return (dblockss, Just did)
         let (blockss, ids) = unzip (map splitBlockFin fins)
         (id, block) <- ilmNewBlock ".dt.switch" [] $ (CCLast $
                           mkSwitch scrutinee (zip ctors ids) maybeDefaultId occ)
-        return $ BlockFin (block : concat blockss ++ dblockss) id
+        return $ BlockFin (blockGraph block |*><*| (foldr (|*><*|) emptyClosedGraph blockss) |*><*| dblockss) id
 
 emitOccurrence :: MoVar -> (Ident, Occurrence MonoType) -> Insn' O O
 emitOccurrence scrutinee (id, occ) = CCLetVal id (ILOccurrence scrutinee occ)

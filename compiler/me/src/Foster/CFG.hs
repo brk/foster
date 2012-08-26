@@ -18,6 +18,7 @@ module Foster.CFG
 , renderCFG
 , blockId
 , blockTargetsOf
+, rebuildGraphM
 ) where
 
 import Foster.Base
@@ -548,16 +549,17 @@ instance Pretty Ident where pretty id = text (show id)
 instance LabelsPtr (BlockId, ts) where targetLabels ((_, label), _) = [label]
 instance Pretty (Set.Set HowUsed) where pretty s = string (show s)
 
-rebuildGraphM :: Monad m => BlockId -> Graph Insn C C
-                         -> (Insn O O -> m (Graph Insn O O))
-                         -> (Insn O C -> m (      Insn O C))
-                         -> m (Graph Insn C C)
-rebuildGraphM entrybid body mid lst = do
+rebuildGraphM :: (Monad m, NonLocal o)
+                         => BlockId -> Graph Insn C C
+                         -> (forall e x. Insn e x -> m (Graph o e x))
+                         -> m (Graph o C C)
+rebuildGraphM entrybid body transform = do
    let rebuildBlockGraph blk_cc = do {
       ; let (f, ms, l) = unblock ( blockSplit blk_cc )
-      ; gs <- mapM mid ms
-      ; ls <- lst l
-      ; return $ fst f <*> catGraphs gs <*> mkLast ls
+      ; fg <- transform f
+      ; gs <- mapM transform ms
+      ; lg <- transform l
+      ; return $ fg <*> catGraphs gs <*> lg
    }
    let entry  = mkLast (ILast $ CFCont entrybid undefined)
    let blocks = postorder_dfs (entry |*><*| body)
@@ -565,7 +567,6 @@ rebuildGraphM entrybid body mid lst = do
    return $ foldr (|*><*|) emptyClosedGraph mb
   where
    unblock (f, ms_blk, l) = (f, blockToList ms_blk, l)
-   fst n = mkFirst  n
 
 -- |||||||||||||||||||| Cont-Cont Elimination |||||||||||||||||||{{{
 --data Renamer   = Renamer BlockId (Maybe ([MoVar] -> [MoVar]))
@@ -753,7 +754,7 @@ runCensusRewrites' uref bbg = do
   where go :: Census -> BasicBlockGraph -> M BasicBlockGraph
         go ci bbg = do
          let (bid,_) = bbgEntry bbg
-         bb' <- rebuildGraphM bid (bbgBody bbg) (mid ci) (last ci)
+         bb' <- rebuildGraphM bid (bbgBody bbg) (transform ci)
          return $ bbg { bbgBody = bb' }
 
         getKnownCall ci id =
@@ -761,27 +762,25 @@ runCensusRewrites' uref bbg = do
             Just [kn] -> Just kn
             _         -> Nothing
 
-        mid ci = rw
+        transform ci = rw
          where
-          rw :: Insn O O -> M (Graph Insn O O)
+          rw :: Insn e x -> M (Graph Insn e x)
           rw n = case n of
-             (ILetVal  _id _letable) -> return $ mkMiddle n
-             (ILetFuns [id] [fn]) | Just (KnownCall bid (NotRec, _)) <- getKnownCall ci id
-                                        -> do let ag = aGraphOfGraph emptyGraph
-                                              fng <- aGraphOfFn fn bid
-                                              let comb = addBlocks ag fng
-                                              g <- graphOfAGraph comb
-                                              return g
-             (ILetFuns _ids _fns)    -> return $ mkMiddle n
-
-        last :: Census -> Insn O C -> M (Insn O C)
-        last ci (ILast (CFCall _ _t v vs))
-                  | Just (KnownCall _bid (NotRec, fn_ent)) <- getKnownCall ci (tidIdent v)
-                                 = return $ ILast (CFCont (contified fn_ent) vs)
-        last _ n = return n
+             ILabel   {} -> do return $ mkFirst  n
+             ILetFuns [id] [fn]
+               | Just (KnownCall bid (NotRec, _)) <- getKnownCall ci id
+                         -> do let ag = aGraphOfGraph emptyGraph
+                               fng <- aGraphOfFn fn bid
+                               graphOfAGraph (addBlocks ag fng)
+             ILetFuns _ids _fns    -> return $ mkMiddle n
+             ILetVal  _id _letable -> return $ mkMiddle n
+             ILast (CFCall _ _t v vs)
+               | Just (KnownCall _bid (NotRec, fn_ent)) <- getKnownCall ci (tidIdent v)
+                     -> return $ mkLast $ ILast (CFCont (contified fn_ent) vs)
+             ILast _ -> return $ mkLast n
 
         contified ("postalloca", l) = ("contified_postalloca", l)
-        contified entry = entry
+        contified entry             = entry
 
         -- Rewrite the function's body so that returns become jumps to the
         -- continuation that all callers had provided.
