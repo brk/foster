@@ -502,3 +502,74 @@ Currently, language extensions require the following modifications:
   * compiler/passes/DumpToProtobuf.cpp
 4. Middle-end, to whatever degree is needed.
 5. Back-end, maybe: compiler/fosterlower.cpp
+
+
+Pass Ordering Constraints: Monomorphization
+-------------------------------------------
+
+Once upon a time, we monomorphized closure-converted procedures,
+directly before codegenning, and did not bother alpha-converting
+duplicated definitions. This turned out to be a bad choice
+for a number of reasons:
+  * Monomorphization was complicated by the need to manually restore
+    proper scope for type subsitututions which had been destroyed when
+    closure conversion lifted all closed procedures to a flat top-level.
+  * Related to the above point, because we didn't drop unreachable monomorphic
+    definitions but did drop un-instantiated polymorphic definitions,
+    monomorphization needed to know the original top-level procedures
+    to ensure that polymorphic definitions only referenced from unreachable
+    monomorphic functions wouldn't disappear.
+  * Partly because we didn't do any alpha-conversion or variable substitution
+    after K-normalization, a monomorphized program was somewhat second-class,
+    and we wound up leaning on the LLVM backend to cover our sins, so to speak.
+  * Related to the above point, GC root slots remained purely a backend concern.
+    In turn, because LLVM doesn't provide a reusable liveness pass, this meant
+    that use of GC root slots and reloads thereof remained unoptimized.
+    Profiling of inital microbenchmarks revealed that GC root slot overhead
+    was a limiting performance factor in some cases.
+
+We have since moved monomorphization to happen
+between K-normalization and CPS conversion & optimization.
+
+Monomorphization shares implementations for types with similarly-kinded
+parameters and inserts bitcasts to recover the appropriate type for each
+type instantiation. For example, both id:[()] and id:[(Int32, Int32)] will
+have the same implementation, which is a procedure of type i999* => i999*.
+
+If monomorphization is performed after closure conversion,
+CFG-building is complicated somewhat by the need to deal with
+considerations of polymorphism. Also, for example, procedures will be
+temporarily polymorphic (before mono), but always monomorphic when codegenned.
+Finally, maintaining proper scoping for type
+substitutions is trickier when operating on pre-lifted procedures; one
+must be careful to propagate the substitution from the definition site
+when converting a procedure.
+
+If monomorphization is performed before closure conversion, the
+bitcasts inserted for local functions will have function type; if the
+associated function might be lifted to a procedure rather than closure
+converted, the bitcasts must be modified accordingly. However, this
+is no harder updating the call sites from closure applications to
+procedure applications.
+
+
+Neutral facets
+~~~~~~~~~~~~~~
+
+We cannot generate GC root slots until after monomorphization due to
+unboxed polymorphism, because whether or not a given parameter needs
+a gcroot depends on how its type parameters are instantiated.
+There are a few potential solutions:
+  * Monomorphize before closure conversion.
+  * Monomorphize after closure conversion, and have the middle-end
+    do a separate analysis of monomorphic and polymorphic core.
+  * Monomorphize after closure conversion, and leave stack slot
+    generation to the backend. Easy but inefficient: gcroots are
+    worth optimizing!
+
+The duplication involved in monomorphization requires consistent
+alpha-renaming, which also affects closed-over variables. This is
+true regardless of when monomorphization is performed, but doing
+it earlier makes it harder to cheat---which argues in favor of doing
+it earlier!
+
