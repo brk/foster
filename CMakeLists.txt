@@ -381,6 +381,7 @@ add_library(fosterc_llvm STATIC
   compiler/llvm/passes/GCRootSafetyChecker.cpp
   compiler/llvm/passes/EscapingAllocaFinder.cpp
   compiler/llvm/passes/FosterMallocSpecializer.cpp
+  compiler/llvm/passes/CallingConventionChecker.cpp
   compiler/llvm/passes/FosterPasses.cpp
   compiler/llvm/plugins/FosterGC.cpp
 )

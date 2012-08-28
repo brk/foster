@@ -28,6 +28,7 @@ void runCleanupPasses(llvm::Module& mod) {
 
 void runWarningPasses(llvm::Module& mod) {
   llvm::FunctionPassManager fpasses(&mod);
+  fpasses.add(foster::createCallingConventionCheckerPass());
   fpasses.add(foster::createEscapingAllocaFinderPass());
   fpasses.add(foster::createGCRootSafetyCheckerPass());
   foster::runFunctionPassesOverModule(fpasses, &mod);
