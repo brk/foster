@@ -443,7 +443,7 @@ lowerModule ai_mod ctx_il = do
      monomod  <- liftIO $ monomorphize uniqref kmod
      cfgmod   <- cfgModule monomod
      ccmod    <- closureConvert cfgmod
-     ilprog   <- return $ prepForCodegen ccmod
+     ilprog   <- liftIO $ prepForCodegen ccmod uniqref
 
      whenDumpIR "mono" $ do
          runOutput $ (outLn "/// Monomorphized program =============")
