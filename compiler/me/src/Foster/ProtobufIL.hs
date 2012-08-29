@@ -45,12 +45,14 @@ import Foster.Bepb.PbSwitch     as PbSwitch
 import Foster.Bepb.PbCoroPrim   as PbCoroPrim
 import Foster.Bepb.Module       as Module
 import Foster.Bepb.RootInit     as PbRootInit
+import Foster.Bepb.TupleStore   as PbTupleStore
 import Foster.Bepb.Letable.Tag
 import Foster.Bepb.PbCoroPrim.Tag
 import Foster.Bepb.TermVar.Tag
 import Foster.Bepb.Terminator.Tag
 import Foster.Bepb.Proc.Linkage
 import Foster.Bepb.PbAllocInfo.MemRegion as PbMemRegion
+import Foster.Bepb.TupleStore.MemRegion as TsMemRegion
 
 import qualified Text.ProtocolBuffers.Header as P'
 import qualified Data.Text as T
@@ -183,6 +185,16 @@ dumpMiddle (ILGCRootInit src root) =
          , root_init_root = (dumpVar root)
       }
     }
+dumpMiddle (ILTupleStore vs v r) =
+    P'.defaultValue { tuple_store = Just $
+      P'.defaultValue {
+              stored_vars = fromList $ map dumpVar vs
+            , storage     = dumpVar v
+            , PbTupleStore.mem_region = case r of
+                MemRegionStack      -> TsMemRegion.MEM_REGION_STACK
+                MemRegionGlobalHeap -> TsMemRegion.MEM_REGION_GLOBAL_HEAP
+     }
+   }
 
 dumpRebinding from to = P'.defaultValue { from_id = dumpIdent from
                                         , to_var  = dumpVar to }

@@ -64,6 +64,7 @@ data Insn' e x where
         CCGCLoad  :: MoVar   -> RootVar   -> Insn' O O
         CCGCInit  :: MoVar -> MoVar -> RootVar -> Insn' O O
         CCGCKill  :: Bool  ->   RootVar   -> Insn' O O
+        CCTupleStore :: [MoVar] -> MoVar -> AllocMemRegion -> Insn' O O
         CCLast    :: CCLast               -> Insn' O C
 
 type RootVar = MoVar
@@ -491,6 +492,7 @@ instance Pretty (Insn' e x) where
   pretty (CCGCLoad  loadedvar root) = indent 4 $ text "load from" <+> pretty root <+> text "to" <+> pretty loadedvar
   pretty (CCGCInit  _  srcvar root) = indent 4 $ text "init root" <+> pretty root <+> text ":=" <+> pretty srcvar
   pretty (CCGCKill  enabled  root) = indent 4 $ text "kill root" <+> pretty root <+> pretty enabled
+  pretty (CCTupleStore vs tid memregion) = indent 4 $ text "stores " <+> pretty vs <+> text "to" <+> pretty tid
   pretty (CCLast    cclast     ) = pretty cclast
 
 instance Pretty CCLast where

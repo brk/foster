@@ -1072,22 +1072,14 @@ llvm::Value* LLTuple::codegenStorage(CodegenPass* pass, bool init) {
   return allocator->codegenCell(pass, init);
 }
 
-llvm::Value* LLTuple::codegenObjectOfSlot(llvm::Value* slot) {
-  // Heap-allocated things codegen to a stack slot, which
-  // is the Value we want the overall tuple to codegen as, but
-  // we need temporary access to the pointer stored in the slot.
-  // Otherwise, bad things happen.
-  return allocator->isStackAllocated()
-           ? slot
-           : emitNonVolatileLoad(slot, "normalize");
-}
-
 llvm::Value* LLTuple::codegen(CodegenPass* pass) {
   ASSERT(!vars.empty());
 
   bool init = false; // because we'll immediately initialize below.
   llvm::Value* slot = codegenStorage(pass, init);
-  llvm::Value* pt   = codegenObjectOfSlot(slot);
+  llvm::Value* pt   = this->allocator->isStackAllocated()
+                          ? slot
+                          : emitNonVolatileLoad(slot, "normalize");
   codegenTo(pass, pt);
   return slot;
 }
@@ -1095,6 +1087,18 @@ llvm::Value* LLTuple::codegen(CodegenPass* pass) {
 void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
   copyValuesToStruct(codegenAll(pass, this->vars), tup_ptr);
 }
+
+llvm::Value* LLTupleStore::codegen(CodegenPass* pass) {
+  ASSERT(!vars.empty());
+
+  llvm::Value* slot    = pass->emit(this->storage, NULL);
+  llvm::Value* tup_ptr = this->allocator->isStackAllocated()
+                          ? slot
+                          : emitNonVolatileLoad(slot, "normalize");
+  copyValuesToStruct(codegenAll(pass, this->vars), tup_ptr);
+  return slot;
+}
+
 
 ///}}}//////////////////////////////////////////////////////////////
 //////////////// LLClosures ////////////////////////////////////////

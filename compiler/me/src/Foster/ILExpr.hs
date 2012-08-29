@@ -60,6 +60,7 @@ data ILBlock  = Block BlockEntry [ILMiddle] ILLast
 data ILMiddle = ILLetVal      Ident    Letable
               | ILGCRootKill  MoVar
               | ILGCRootInit  MoVar    RootVar
+              | ILTupleStore  [MoVar]  MoVar    AllocMemRegion
               | ILClosures    [Ident] [Closure]
               deriving Show
 
@@ -127,6 +128,7 @@ flattenGraph bbgp =
      mid (CCGCInit _ src toroot)  = ILGCRootInit src toroot
      mid (CCGCKill True    root)  = ILGCRootKill root
      mid (CCGCKill False  _root)  = error $ "Invariant violated: saw disabled root kill pseudo-insn!"
+     mid (CCTupleStore vs tid r)  = ILTupleStore vs tid r
      mid (CCLetFuns ids closures) = ILClosures ids closures
 
      frs :: Insn' C O -> BlockEntry
@@ -208,6 +210,7 @@ mergeCallNamingBlocks blocks numpreds = go Map.empty [] blocks
           (CCGCLoad  v fromroot) -> CCGCLoad        (s v) (s fromroot)
           (CCGCInit vr v toroot) -> CCGCInit (s vr) (s v) (s   toroot)
           (CCGCKill enabld root) -> CCGCKill enabld (s root)
+          (CCTupleStore vs  v r) -> CCTupleStore (map s vs) (s v) r
           (CCLetVal  id letable) -> CCLetVal id $ substVarsInLetable s letable
           (CCLetFuns ids fns   ) -> CCLetFuns ids $ map (substForInClo s) fns
           (CCLast    cclast    ) -> case cclast of
@@ -270,6 +273,7 @@ liveAtGCPointXfer2 = mkBTransfer go
     go (CCGCKill {}         ) sg = {- just ignore it  -} sg
     go (CCLetVal  _id  l    ) sg = ifgc (canGCLetable l) sg
     go (CCLetFuns _ids _clos) sg = ifgc True             sg
+    go (CCTupleStore   {}   ) sg = ifgc False            sg
     go node@(CCLast    cclast) fdb =
           let sg = union2s (map (fact fdb) (successors node)) in
           case cclast of
@@ -300,6 +304,7 @@ liveAtGCPointRewrite2 = mkBRewrite d
              -- If a root is live, remove its fake kill node.
              -- Otherwise, toggle the node from disabled to enabled.
             else return $ Just (mkMiddle (CCGCKill True root))
+    d (CCTupleStore _ _ _) _sg = do return Nothing
     d (CCLetVal id _) (s,g) = do
         return $ trace ("agc @ LET " ++ show id ++ ": " ++ show (s,g)) Nothing
     d (CCLetFuns ids _) (s,g) = do
@@ -435,6 +440,8 @@ insertDumbGCRoots uref bbgp = do
     CCGCLoad  {}                  -> do return (mkMiddle $ insn                       , gcr)
     CCGCInit  {}                  -> do return (mkMiddle $ insn                       , gcr)
     CCGCKill  {}                  -> do return (mkMiddle $ insn                       , gcr)
+    CCTupleStore vs v r           -> do withGCLoads gcr (v:vs) (\(v' : vs' ) ->
+                                         mkMiddle $ CCTupleStore vs' v' r)
     CCLetVal id val               -> do let vs = freeTypedIds val
                                         withGCLoads gcr vs (\vs' ->
                                          let m = Map.fromList (zip vs vs' ) in
@@ -527,6 +534,8 @@ removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
     CCGCInit  _ _   root          -> do iflive root $ mkMiddle $ insn
     CCGCKill  True  root          -> do iflive root $ mkMiddle $ insn
     CCGCKill  False root          -> do return emptyGraph -- TODO remove this
+    CCTupleStore vs v r           -> do undoDeadGCLoads (v:vs) (\(v' : vs' ) ->
+                                         mkMiddle $ CCTupleStore vs' v' r)
     CCLetVal id val               -> do let vs = freeTypedIds val
                                         undoDeadGCLoads vs (\vs' ->
                                          let m = Map.fromList (zip vs vs' ) in
@@ -676,20 +685,22 @@ makeAllocationsExplicit bbgp uref = do
     (CCGCLoad _v fromroot) -> return $ mkMiddle $ insn
     (CCGCInit _ _v toroot) -> return $ mkMiddle $ insn
     (CCGCKill {}         ) -> return $ mkMiddle $ insn
-    (CCLetVal id (ILAlloc v allocsrc)) -> do
-                            id' <- fresh "ref-alloc"
-                            let info = AllocInfo (tidType v) allocsrc Nothing "ref-allocator"
-                            return $
-                              (mkMiddle $ CCLetVal id  (ILAllocate info)) <*>
-                              (mkMiddle $ CCLetVal id' (ILStore v (TypedId (tidType v) id)))
-                              {-
+    (CCLetVal id (ILAlloc v memregion)) -> do
+            id' <- fresh "ref-alloc"
+            let t = tidType v
+            let info = AllocInfo t memregion Nothing "ref-allocator"
+            return $
+              (mkMiddle $ CCLetVal id  (ILAllocate info)) <*>
+              (mkMiddle $ CCLetVal id' (ILStore v (TypedId t id)))
     (CCLetVal id (ILTuple vs allocsrc)) -> do
-                            id' <- fresh "tup-alloc"
-                            let info = AllocInfo (tidType v) allocsrc Nothing "tup-allocator"
-                            return $
-                              (mkMiddle $ CCLetVal id  (ILAllocate info)) <*>
-                              (mkMiddle $ CCLetVal id' (ILStore v (TypedId (tidType v) id)))
-                              -}
+            id' <- fresh "tup-alloc"
+            let t = StructType (map tidType vs)
+            let memregion = MemRegionGlobalHeap
+            let info = AllocInfo t memregion Nothing "tup-allocator"
+            return $
+              (mkMiddle $ CCLetVal id (ILAllocate info)) <*>
+              (mkMiddle $ CCTupleStore vs (TypedId t id) memregion)
+    (CCTupleStore   {}   ) -> return $ mkMiddle $ insn
     (CCLetVal  _id  l    ) -> return $ mkMiddle $ insn
     (CCLetFuns _ids _clos) -> return $ mkMiddle $ insn
     (CCLast    cclast)     ->

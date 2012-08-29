@@ -295,6 +295,16 @@ struct LLTuple : public LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
+struct LLTupleStore : public LLExpr {
+  std::vector<LLVar*> vars;
+  LLVar* storage;
+  LLAllocate* allocator;
+
+  explicit LLTupleStore(const std::vector<LLVar*>& vars, LLVar* s, LLAllocate* a)
+    : LLExpr("LLTupleStore"), vars(vars), storage(s), allocator(a) {}
+  virtual llvm::Value* codegen(CodegenPass* pass);
+};
+
 struct LLArrayIndex {
   LLVar* base;
   LLVar* index;
