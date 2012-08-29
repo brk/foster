@@ -37,7 +37,7 @@ data Letable =
         | ILAllocate    (AllocInfo MonoType)
         -- Mutable ref cells
         | ILAlloc       MoVar AllocMemRegion
-        | ILDeref       MoVar
+        | ILDeref       MonoType MoVar
         | ILStore       MoVar MoVar
         -- Array operations
         | ILAllocArray  MonoType MoVar
@@ -60,7 +60,7 @@ instance TExpr Letable MonoType where
       ILCall     _ v vs -> (v:vs)
       ILAppCtor  _ _ vs -> vs
       ILAlloc      v _  -> [v]
-      ILDeref      v    -> [v]
+      ILDeref    _ v    -> [v]
       ILStore      v v2 -> [v,v2]
       ILBitcast  _ v    -> [v]
       ILAllocArray _ v  -> [v]
@@ -81,7 +81,7 @@ instance TypedWith Letable MonoType where
       ILCall     t _ _  -> t
       ILAppCtor  t _ _  -> t
       ILAlloc      v _  -> error "typeOf ILAlloc    "
-      ILDeref      v    -> error "typeOf ILDeref    "
+      ILDeref    t v    -> t
       ILStore      v v2 -> error "typeOf ILStore    "
       ILBitcast  t _    -> t
       ILAllocArray t _  -> t
@@ -106,7 +106,7 @@ substVarsInLetable s letable = case letable of
   ILCall        t v vs                     -> ILCall        t (s v) (map s vs)
   ILAppCtor     t c vs                     -> ILAppCtor     t c     (map s vs)
   ILAlloc       v rgn                      -> ILAlloc       (s v) rgn
-  ILDeref       v                          -> ILDeref       (s v)
+  ILDeref       t v                        -> ILDeref       t (s v)
   ILStore       v1 v2                      -> ILStore       (s v1) (s v2)
   ILBitcast     t v                        -> ILBitcast     t (s v)
   ILAllocArray  t v                        -> ILAllocArray  t (s v)

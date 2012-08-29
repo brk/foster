@@ -270,7 +270,7 @@ dumpExpr  (ILAllocArray nonArrayType _) =
          error $ "ProtobufIL.hs: Can't dump ILAllocArray with non-array type "
               ++ show nonArrayType
 
-dumpExpr x@(ILDeref a) =
+dumpExpr x@(ILDeref _ a) =
     P'.defaultValue { PbLetable.parts = fromList [dumpVar a]
                     , PbLetable.tag   = IL_DEREF
                     , PbLetable.type' = Just $ dumpType (typeMo x)  }
@@ -448,7 +448,7 @@ dumpILProgramToProtobuf m outpath = do
                  , modlines   = fmap textToPUtf8 lines
                  }
 
-    dumpProc (p, predmap)
+    dumpProc (ILProcDef p predmap gcroots)
       = Proc { Proc.name  = dumpIdent $ CC.procIdent p
              , in_args    = fromList $ [dumpIdent (tidIdent v) | v <- CC.procVars p]
              , proctype   = dumpProcType (preProcType p)
@@ -487,16 +487,11 @@ typeMo expr = case expr of
     ILAllocate info         -> allocType info
     ILAllocArray t _        -> t
     ILAlloc v _rgn          -> PtrType (tidType v)
-    ILDeref v               -> pointedToTypeOfVar v
+    ILDeref t _             -> t
     ILStore _ _             -> TupleType []
     ILArrayRead t _         -> t
     ILArrayPoke {}          -> TupleType []
     ILBitcast   t _         -> t
-
-pointedToTypeOfVar v = case v of
-    TypedId (PtrType t) _ -> t
-    _ -> error $ "ProtobufIL.hs:pointedToTypeOfVar\n"
-              ++ "Expected variable to be a pointer, but had " ++ show v
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

@@ -286,7 +286,7 @@ computeBlocks expr idmaybe k = do
          KNCallPrim   t p vs -> ILCallPrim   t p vs
          KNAppCtor    t c vs -> ILAppCtor    t c vs
          KNAlloc    _ v rgn  -> ILAlloc      v rgn
-         KNDeref    _ v      -> ILDeref      v
+         KNDeref    t v      -> ILDeref      t v
          KNStore    _ a b    -> ILStore      a b
          KNAllocArray t v    -> ILAllocArray t v
          KNArrayRead  t ari  -> ILArrayRead  t ari
@@ -485,7 +485,7 @@ instance Pretty Letable where
       ILCall      _ v vs    -> pretty v <+> hsep (map pretty vs)
       ILAppCtor   _ c vs    -> (text "~" <> parens (text (ctorCtorName (ctorInfoId c)) <+> hsep (map prettyId vs)))
       ILAlloc     v rgn     -> text "(ref" <+> pretty v <+> comment (pretty rgn) <> text ")"
-      ILDeref     v         -> pretty v <> text "^"
+      ILDeref     t v       -> pretty v <> text "^"
       ILStore     v1 v2     -> text "store" <+> pretty v1 <+> text "to" <+> pretty v2
       ILAllocArray _ _v     -> text $ "ILAllocArray..."
       ILArrayRead  _t (ArrayIndex _v1 _v2 _rng _s)  -> text $ "ILArrayRead..."
@@ -770,7 +770,7 @@ getCensus bbg = let cf = getCensusFns bbg in
         ILCall         _ v _vs   -> error $ "census encountered non-tail ILCall of " ++ show v
         ILAppCtor      _ _ vs    -> addUsed m [(v, UsedFirstClass) | v <- vs]
         ILAlloc        v _rgn    -> addUsed m [(v, UsedFirstClass)]
-        ILDeref        v         -> addUsed m [(v, UsedFirstClass)]
+        ILDeref        t v       -> addUsed m [(v, UsedFirstClass)]
         ILStore        v1 v2     -> addUsed m [(v1, UsedFirstClass), (v2, UsedFirstClass)]
         ILAllocArray    _ v      -> addUsed m [(v, UsedFirstClass)]
         ILArrayRead  _t (ArrayIndex v1 v2 _rng _s) -> addUsed m [(v1, UsedFirstClass), (v2, UsedFirstClass)]

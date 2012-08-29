@@ -51,7 +51,7 @@ data ILProgram = ILProgram [ILProcDef]
                            SourceLines
 
 data ILExternDecl = ILDecl String MonoType
-type ILProcDef = (Proc [ILBlock], NumPredsMap)
+data ILProcDef = ILProcDef (Proc [ILBlock]) NumPredsMap [RootVar]
 type NumPredsMap = Map BlockId Int
 
 -- The standard definition of a basic block and its parts.
@@ -76,16 +76,18 @@ prepForCodegen m uref = do
     let dts = moduleILprimTypes m ++ moduleILdataTypes m
     procs <- mapM (deHooplize uref) (flatten $ moduleILbody m)
     return $ ILProgram procs decls dts (moduleILsourceLines m)
+  where
+   flatten :: CCBody -> [CCProc]
+   flatten (CCB_Procs procs _) = procs
 
-flatten :: CCBody -> [CCProc]
-flatten (CCB_Procs procs _) = procs
+   deHooplize :: IORef Uniq -> Proc BasicBlockGraph' -> IO ILProcDef
+   deHooplize uref p = do
+     g' <- makeAllocationsExplicit (simplifyCFG $ procBlocks p) uref
+     (g, liveRoots) <- insertSmartGCRoots uref g'
+     let (cfgBlocks , numPreds) = flattenGraph g
+     return $ ILProcDef (p { procBlocks = cfgBlocks }) numPreds liveRoots
 
-deHooplize :: IORef Uniq -> Proc BasicBlockGraph' -> IO ILProcDef
-deHooplize uref p = do
-  g' <- makeAllocationsExplicit (simplifyCFG $ procBlocks p) uref
-  g <- insertSmartGCRoots uref g'
-  let (cfgBlocks , numPreds) = flattenGraph g
-  return ( p { procBlocks = cfgBlocks } , numPreds )
+--------------------------------------------------------------------
 
 computeNumPredecessors elab blocks =
   foldr (\b m -> incrPredecessorsDueTo (lastNode b) m)
@@ -108,7 +110,37 @@ flattenGraph bbgp =
    withGraphBlocks bbgp (\blocks ->
      ( map (deHooplizeBlock (bbgpRetK bbgp)) blocks
      , computeNumPredecessors (bbgpEntry bbgp) blocks ))
+ where
+  deHooplizeBlock :: BlockId -> Block Insn' C C -> ILBlock
+  deHooplizeBlock retk b =
+         let (f, ms, l) = blockSplit b in
+         let (lastmids, last) = fin l in
+         Block (frs f) (map mid (blockToList ms) ++ lastmids) last
+   where
+     mid :: Insn' O O -> ILMiddle
+     mid (CCLetVal id letable)    = ILLetVal   id  letable
+     mid (CCGCLoad v   fromroot)  = ILLetVal (tidIdent v) (ILDeref (tidType v) fromroot)
+     mid (CCGCKill False  _root)  = error $ "Invariant violated: saw disabled root kill pseudo-insn!"
+     mid (CCLetFuns ids closures) = ILClosures ids closures
 
+     frs :: Insn' C O -> BlockEntry
+     frs (CCLabel be) = be
+
+     fin :: Insn' O C -> ([ILMiddle], ILLast)
+     fin (CCLast (CCCont k vs)       ) = ([], cont k vs)
+     fin (CCLast (CCCase v bs mb occ)) = ([], ILCase v bs mb occ)
+     -- [[f k vs]] ==> let x = f vs in [[k x]]
+     fin (CCLast (CCCall k t id v vs)) = ([ILLetVal id (ILCall t v vs)]
+                                         , cont k [TypedId t id] )
+     -- Translate continuation application to br or ret, as appropriate.
+     cont k vs =
+        case (k == retk, vs) of
+             (True,  [] ) -> ILRetVoid
+             (True,  [v]) -> ILRet   v
+             (True,   _ ) -> error $ "ILExpr.hs:No support for multiple return values yet\n" ++ show vs
+             (False,  _ ) -> ILBr k vs
+
+-- ||||||||||||||||||||||||| CFG Simplification  ||||||||||||||||{{{
 simplifyCFG :: BasicBlockGraph' -> BasicBlockGraph'
 simplifyCFG bbgp =
    -- Because we do a depth-first search, "renaming" blocks are guaranteed
@@ -117,93 +149,69 @@ simplifyCFG bbgp =
        bbgp { bbgpBody = graphOfClosedBlocks $ mergeCallNamingBlocks blocks $
                              computeNumPredecessors (bbgpEntry bbgp) blocks } )
 
-deHooplizeBlock :: BlockId -> Block Insn' C C -> ILBlock
-deHooplizeBlock retk b =
-         let (f, ms, l) = blockSplit b in
-         let (lastmids, last) = fin l in
-         Block (frs f) (map mid (blockToList ms) ++ lastmids) last
-  where mid :: Insn' O O -> ILMiddle
-        mid (CCLetVal id letable)    = ILLetVal   id  letable
-        mid (CCGCLoad v  fromroot)   = ILLetVal (tidIdent v) (ILDeref fromroot)
-        mid (CCLetFuns ids closures) = ILClosures ids closures
-
-        frs :: Insn' C O -> BlockEntry
-        frs (CCLabel be) = be
-
-        fin :: Insn' O C -> ([ILMiddle], ILLast)
-        fin (CCLast (CCCont k vs)       ) = ([], cont k vs)
-        fin (CCLast (CCCase v bs mb occ)) = ([], ILCase v bs mb occ)
-        -- [[f k vs]] ==> let x = f vs in [[k x]]
-        fin (CCLast (CCCall k t id v vs)) = ([ILLetVal id (ILCall t v vs)]
-                                            , cont k [TypedId t id] )
-        -- Translate continuation application to br or ret, as appropriate.
-        cont k vs =
-           case (k == retk, vs) of
-                (True,  [] ) -> ILRetVoid
-                (True,  [v]) -> ILRet   v
-                (True,   _ ) -> error $ "ILExpr.hs:No support for multiple return values yet\n" ++ show vs
-                (False,  _ ) -> ILBr k vs
-
--- ||||||||||||||||||||||||| CFG Simplification  ||||||||||||||||{{{
 -- This little bit of unpleasantness is needed to ensure that we
 -- don't need to create gcroot slots for the phi nodes corresponding
 -- to blocks inserted from using CPS-like calls.
 mergeCallNamingBlocks :: [Block' ] -> NumPredsMap -> [ Block' ]
 mergeCallNamingBlocks blocks numpreds = go Map.empty [] blocks
-  where go !subst !acc !blocks =
-         case blocks of
-           [] -> finalize acc subst
-           [b] -> go subst (b:acc) []
-           (x:y:zs) ->
-              case mergeAdjacent subst (blockSplitTail x)
-                                       (blockSplitHead y) of
-                Just (m,s) -> go s        acc  (m:zs)
-                Nothing    -> go subst (x:acc) (y:zs)
-        mergeAdjacent :: Map MoVar MoVar -> (Block Insn' C O, Insn' O C)
-                                         -> (Insn' C O, Block Insn' O C)
-                                         -> Maybe (Block Insn' C C, Map MoVar MoVar)
-        mergeAdjacent subst (xem, xl) (CCLabel (yb,yargs), yml) =
-          case (yargs, xl) of
-            ([yarg], CCLast (CCCall cb t _id v vs)) | cb == yb ->
-                if Map.lookup yb numpreds == Just 1
-                    then Just ((xem `blockSnoc`
-                                 (CCLetVal (tidIdent yarg) (ILCall t v vs)))
-                                    `blockAppend` yml, subst)
-                    else Nothing
-            (_, CCLast (CCCont cb   avs))          | cb == yb ->
-                if Map.lookup yb numpreds == Just 1
-                    then case (length yargs == length avs, yb) of
-                           (True, _) ->
-                             let subst' = Map.union subst (Map.fromList $ zip yargs avs) in
-                             Just ((xem `blockAppend` yml), subst' )
-                           (False, ("postalloca",_)) ->
-                             Nothing
-                           (False, _) ->
-                             error $ "Continuation application not passing same # of arguments "
-                                  ++ "as expected by the continuation!\n"
-                                  ++ show avs ++ "\n" ++ show yargs
-                                  ++ "\n" ++ show cb ++ " // " ++ show yb
-                    else Nothing
-            _ -> Nothing
+  where
+     go !subst !acc !blocks =
+       case blocks of
+         [] -> finalize acc subst
+         [b] -> go subst (b:acc) []
+         (x:y:zs) ->
+            case mergeAdjacent subst (blockSplitTail x)
+                                     (blockSplitHead y) of
+              Just (m,s) -> go s        acc  (m:zs)
+              Nothing    -> go subst (x:acc) (y:zs)
 
-        finalize revblocks subst =
-            let s v = Map.findWithDefault v v subst in
-            map (mapBlock' $ substIn s) (reverse revblocks)
+     mergeAdjacent :: Map MoVar MoVar -> (Block Insn' C O, Insn' O C)
+                                      -> (Insn' C O, Block Insn' O C)
+                                      -> Maybe (Block Insn' C C, Map MoVar MoVar)
+     mergeAdjacent subst (xem, xl) (CCLabel (yb,yargs), yml) =
+       case (yargs, xl) of
+         ([yarg], CCLast (CCCall cb t _id v vs)) | cb == yb ->
+             if Map.lookup yb numpreds == Just 1
+                 then Just ((xem `blockSnoc`
+                              (CCLetVal (tidIdent yarg) (ILCall t v vs)))
+                                 `blockAppend` yml, subst)
+                 else Nothing
+         (_, CCLast (CCCont cb   avs))          | cb == yb ->
+             if Map.lookup yb numpreds == Just 1
+                 then case (length yargs == length avs, yb) of
+                        (True, _) ->
+                          let subst' = Map.union subst (Map.fromList $ zip yargs avs) in
+                          Just ((xem `blockAppend` yml), subst' )
+                        (False, ("postalloca",_)) ->
+                          Nothing
+                        (False, _) ->
+                          error $ "Continuation application not passing same # of arguments "
+                               ++ "as expected by the continuation!\n"
+                               ++ show avs ++ "\n" ++ show yargs
+                               ++ "\n" ++ show cb ++ " // " ++ show yb
+                 else Nothing
+         _ -> Nothing
 
-        substIn :: VarSubstFor (Insn' e x)
-        substIn s insn  = case insn of
-             (CCLabel   {}        ) -> insn
-             (CCGCLoad  v fromroot) -> CCGCLoad (s v) (s fromroot)
-             (CCLetVal  id letable) -> CCLetVal id $ substVarsInLetable s letable
-             (CCLetFuns ids fns   ) -> CCLetFuns ids $ map (substForInClo s) fns
-             (CCLast    cclast    ) -> case cclast of
-                 (CCCont b vs)        -> CCLast (CCCont b (map s vs))
-                 (CCCall b t id v vs) -> CCLast (CCCall b t id (s v) (map s vs))
-                 (CCCase v cs mb occ) -> CCLast (CCCase (s v) cs mb occ)
+     finalize revblocks subst =
+         let s v = Map.findWithDefault v v subst in
+         map (mapBlock' $ substIn s) (reverse revblocks)
 
-        substForInClo :: VarSubstFor Closure
-        substForInClo s clo =
-          clo { closureCaptures = (map s (closureCaptures clo)) }
+     substIn :: VarSubstFor (Insn' e x)
+     substIn s insn  = case insn of
+          (CCLabel   {}        ) -> insn
+          (CCGCLoad  v fromroot) -> CCGCLoad        (s v) (s fromroot)
+          (CCGCInit vr v toroot) -> CCGCInit (s vr) (s v) (s   toroot)
+          (CCGCKill enabld root) -> CCGCKill enabld (s root)
+          (CCLetVal  id letable) -> CCLetVal id $ substVarsInLetable s letable
+          (CCLetFuns ids fns   ) -> CCLetFuns ids $ map (substForInClo s) fns
+          (CCLast    cclast    ) -> case cclast of
+              (CCCont b vs)        -> CCLast (CCCont b (map s vs))
+              (CCCall b t id v vs) -> CCLast (CCCall b t id (s v) (map s vs))
+              (CCCase v cs mb occ) -> CCLast (CCCase (s v) cs mb occ)
+
+     substForInClo :: VarSubstFor Closure
+     substForInClo s clo =
+       clo { closureCaptures = (map s (closureCaptures clo)) }
 
 type VarSubstFor a = (MoVar -> MoVar) -> a -> a
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
@@ -330,12 +338,23 @@ runLiveAtGCPoint uref bbgp gcr = runWithUniqAndFuel uref infiniteFuel (go bbgp g
 -- does not support.
 --
 
-insertSmartGCRoots :: IORef Uniq -> BasicBlockGraph' -> IO BasicBlockGraph'
-insertSmartGCRoots uref bbgp = do
-  (bbgp' , gcr) <- insertDumbGCRoots uref bbgp
-  liveAtGCPoints <- runLiveAtGCPoint uref bbgp' gcr
-  putStrLn $ "these variables were live at GC points: " ++ show liveAtGCPoints
-  return bbgp
+--insertSmartGCRoots :: IORef Uniq -> BasicBlockGraph' -> IO ( BasicBlockGraph' , [RootVar] )
+--insertSmartGCRoots uref bbgp0 = do
+--  bbgp1 <- makeAllocationsExplicit bbgp0 uref
+--  (bbgp' , gcr) <- insertDumbGCRoots uref bbgp1
+--  rootsLiveAtGCPoints <- runLiveAtGCPoint2 uref bbgp'
+--  bbgp'' <- removeDeadGCRoots bbgp' (mapInverse gcr) rootsLiveAtGCPoints
+--  putStrLn $ "these roots were live at GC points: " ++ show rootsLiveAtGCPoints
+--  return ( bbgp1 , Set.toList rootsLiveAtGCPoints)
+
+insertSmartGCRoots :: IORef Uniq -> BasicBlockGraph' -> IO ( BasicBlockGraph' , [RootVar] )
+insertSmartGCRoots uref bbgp0 = do
+  bbgp1 <- makeAllocationsExplicit bbgp0 uref
+  --(bbgp' , gcr) <- insertDumbGCRoots uref bbgp
+  --liveAtGCPoints <- runLiveAtGCPoint uref bbgp' gcr
+  --putStrLn $ "these variables were live at GC points: " ++ show liveAtGCPoints
+  let rootsLiveAtGCPoints = Set.empty
+  return ( bbgp1 , Set.toList rootsLiveAtGCPoints)
 
 type GCRootsForVariables = Map MoVar MoVar
 
@@ -492,10 +511,11 @@ showILProgramStructure :: ILProgram -> Output
 showILProgramStructure (ILProgram procdefs _decls _dtypes _lines) =
     concatMap showProcStructure procdefs
   where
-    showProcStructure (proc, _) =
+    showProcStructure (ILProcDef proc _ roots) =
         out (show $ procIdent proc) ++ (out " // ")
             ++ (out $ show $ map procVarDesc (procVars proc))
             ++ (out " ==> ") ++ (out $ show $ procReturnType proc)
+          ++ out ("\n" ++ unlines (map show roots))
           ++ out "\n" ++ concatMap showBlock (procBlocks proc)
           ++ out "\n^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"
     procVarDesc (TypedId ty id) = "( " ++ (show id) ++ " :: " ++ show ty ++ " ) "
