@@ -105,7 +105,7 @@ data CtorId     = CtorId   { ctorTypeName :: DataTypeName
                            } deriving (Show, Eq)
 
 data CtorInfo ty = CtorInfo { ctorInfoId :: CtorId
-                            , ctorInfoDc :: (DataCtor ty)
+                            , ctorInfoDc :: DataCtor ty
                             } deriving Show -- for Typecheck
 
 type CtorName    = T.Text

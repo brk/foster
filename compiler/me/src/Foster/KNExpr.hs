@@ -41,7 +41,7 @@ data KNExpr' ty =
         | KNVar         (TypedId ty)
         | KNCallPrim    ty (FosterPrim ty) [TypedId ty]
         | KNCall TailQ  ty (TypedId ty)    [TypedId ty]
-        | KNAppCtor     ty CtorId [TypedId ty]
+        | KNAppCtor     ty (CtorInfo ty)   [TypedId ty]
         -- Mutable ref cells
         | KNAlloc       ty (TypedId ty) AllocMemRegion
         | KNDeref       ty (TypedId ty)
@@ -293,17 +293,18 @@ kNormalCtors ctx dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
   where
     kNormalCtor :: Context TypeIL -> DataType TypeIL -> DataCtor TypeIL
                 -> KN (Fn KNExpr TypeIL)
-    kNormalCtor ctx datatype (DataCtor cname small _tyformals tys) = do
+    kNormalCtor ctx datatype dc@(DataCtor cname small _tyformals tys) = do
       let dname = dataTypeName datatype
       let arity = Prelude.length tys
       let cid = CtorId dname (T.unpack cname) arity small
+      let info = CtorInfo cid dc
       let genFreshVarOfType t = do fresh <- knFresh ".autogen"
                                    return $ TypedId t fresh
       vars <- mapM genFreshVarOfType tys
       let (Just tid) = termVarLookup cname (contextBindings ctx)
       return $ Fn { fnVar   = tid
                   , fnVars  = vars
-                  , fnBody  = KNAppCtor (TyConAppIL dname []) cid vars -- TODO fix
+                  , fnBody  = KNAppCtor (TyConAppIL dname []) info vars -- TODO fix
                   , fnIsRec = Just False
                   , fnRange = MissingSourceRange ("kNormalCtor " ++ show cid)
                   }
@@ -485,7 +486,7 @@ instance Pretty ty => Pretty (KNExpr' ty) where
             KNCall _tail t v [] -> showUnTyped (prettyId v <+> text "!") t
             KNCall _tail t v vs -> showUnTyped (prettyId v <> hsep (map pretty vs)) t
             KNCallPrim t prim vs-> showUnTyped (text "prim" <+> pretty prim <+> hsep (map prettyId vs)) t
-            KNAppCtor  t cid vs -> showUnTyped (text "~" <> parens (text (show cid) <> hsep (map prettyId vs))) t
+            KNAppCtor  t info vs-> showUnTyped (text "~" <> parens (text (show $ ctorInfoId info)) <> hsep (map prettyId vs)) t
             KNLetVal   x b    k -> lkwd "let"
                                       <+> fill 8 (text (show x))
                                       <+> text "="

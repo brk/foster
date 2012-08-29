@@ -263,7 +263,7 @@ ssTermOfExpr expr =
     KNTyApp    _t v argtys -> SSTmExpr  $ ITyApp (idOf v) argtys
     KNCase _t a bs {-dt-}  -> SSTmExpr  $ ICase (idOf a) {-dt-} [(p, tr e) |
                                                               ((p, _), e) <- bs]
-    KNAppCtor _t cid vs    -> SSTmExpr  $ IAppCtor cid (map idOf vs)
+    KNAppCtor _t cinfo vs  -> SSTmExpr  $ IAppCtor (ctorInfoId cinfo) (map idOf vs)
     KNKillProcess _t msg   -> SSTmExpr  $ error $ "prim kill-process: " ++ T.unpack msg
 
 -- ... which lifts in a  straightfoward way to procedure definitions.

@@ -255,11 +255,16 @@ struct CtorId {
   int smallId;
 };
 
+struct CtorInfo {
+  std::vector<TypeAST*> ctorArgTypes;
+  CtorId                ctorId;
+};
+
 struct LLAppCtor : public LLExpr {
   std::vector<LLVar*> args;
-  CtorId ctorId;
-  LLAppCtor(CtorId c, std::vector<LLVar*>& _args)
-  : LLExpr("LLAppCtor"), args(_args), ctorId(c) { }
+  CtorInfo ctorInfo;
+  LLAppCtor(CtorInfo c, std::vector<LLVar*>& _args)
+  : LLExpr("LLAppCtor"), args(_args), ctorInfo(c) { }
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 

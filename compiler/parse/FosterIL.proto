@@ -108,7 +108,7 @@ message Letable {
   optional PbCoroPrim   coro_prim = 29;
   optional string    prim_op_name = 30;
   optional int32     prim_op_size = 31;
-  optional PbCtorId       ctor_id = 32;
+  optional PbCtorInfo   ctor_info = 32;
 }
 
 message Terminator {
@@ -202,6 +202,11 @@ message PbSwitch {
   optional PbOccurrence occ     = 4;
 }
 
+message PbCtorInfo {
+  required PbCtorId      ctor_id = 1;
+  repeated Type   ctor_arg_types = 4;
+}
+
 message PbCtorId {
   required string ctor_type_name = 1;
   required string ctor_ctor_name = 2;
@@ -209,10 +214,10 @@ message PbCtorId {
 }
 
 message PbOccurrence {
-  required TermVar  scrutinee  = 1;
-  repeated int32    occ_offset = 2;
-  repeated PbCtorId occ_ctorid = 3;
-  optional Type           type = 4;
+  required TermVar    scrutinee  = 1;
+  repeated int32      occ_offset = 2;
+  repeated PbCtorId   occ_ctorid = 3;
+  optional Type             type = 4;
 }
 
 message Decl {

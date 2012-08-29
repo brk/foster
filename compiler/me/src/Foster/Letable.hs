@@ -6,7 +6,7 @@
 
 module Foster.Letable where
 
-import Foster.Base(LiteralInt, LiteralFloat, CtorId, ArrayIndex(..),
+import Foster.Base(LiteralInt, LiteralFloat, CtorInfo, ArrayIndex(..),
                    AllocMemRegion, AllocInfo(..), Occurrence, AllocationSource,
                    FosterPrim(..),
                    TypedId(..), Ident(..),
@@ -32,7 +32,7 @@ data Letable =
         -- Varieties of applications
         | ILCallPrim    MonoType (FosterPrim MonoType) [MoVar]
         | ILCall        MonoType MoVar                 [MoVar]
-        | ILAppCtor     MonoType CtorId                [MoVar]
+        | ILAppCtor     MonoType (CtorInfo MonoType)   [MoVar]
         -- Stack/heap slot allocation
         | ILAllocate    (AllocInfo MonoType)
         -- Mutable ref cells

@@ -63,7 +63,7 @@ monoKN subst e =
   KNKillProcess   t s      -> return $ KNKillProcess   (qt t) s
   KNCall       tc t v vs   -> return $ KNCall       tc (qt t) (qv v) (map qv vs)
   KNCallPrim      t p vs   -> return $ KNCallPrim      (qt t) p' (map qv vs) where p' = monoPrim subst p
-  KNAppCtor       t c vs   -> return $ KNAppCtor       (qt t) c (map qv vs)
+  KNAppCtor       t c vs   -> return $ KNAppCtor       (qt t) (monoCtorInfo subst c) (map qv vs)
   KNAllocArray    t v      -> return $ KNAllocArray    (qt t) (qv v)
   KNAlloc         t v _rgn -> return $ KNAlloc         (qt t) (qv v) _rgn
   KNDeref         t v      -> return $ KNDeref         (qt t) (qv v)

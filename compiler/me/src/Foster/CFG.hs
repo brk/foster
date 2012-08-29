@@ -483,7 +483,7 @@ instance Pretty Letable where
       ILOccurrence _v _occ  -> text "...occ..."
       ILCallPrim  _ p vs    -> (text "prim" <+> pretty p <+> hsep (map prettyId vs))
       ILCall      _ v vs    -> pretty v <+> hsep (map pretty vs)
-      ILAppCtor   _ c vs    -> (text "~" <> parens (text (ctorCtorName c) <+> hsep (map prettyId vs)))
+      ILAppCtor   _ c vs    -> (text "~" <> parens (text (ctorCtorName (ctorInfoId c)) <+> hsep (map prettyId vs)))
       ILAlloc     v rgn     -> text "(ref" <+> pretty v <+> comment (pretty rgn) <> text ")"
       ILDeref     v         -> pretty v <> text "^"
       ILStore     v1 v2     -> text "store" <+> pretty v1 <+> text "to" <+> pretty v2

@@ -53,6 +53,14 @@ CtorId parseCtorId(const pb::PbCtorId& c) { CtorId x;
   return x;
 }
 
+CtorInfo parseCtorInfo(const pb::PbCtorInfo& c) { CtorInfo x;
+  x.ctorId = parseCtorId(c.ctor_id());
+  for (int i = 0; i < c.ctor_arg_types_size(); ++i) {
+    x.ctorArgTypes.push_back(TypeAST_from_pb(&c.ctor_arg_types(i)));
+  }
+  return x;
+}
+
 LLExpr* parseBool(const pb::Letable& e) {
   return new LLBool(e.bool_value() ? "true" : "false");
 }
@@ -112,12 +120,12 @@ LLExpr* parseCallPrimOp(const pb::Letable& e) {
 }
 
 LLExpr* parseAppCtor(const pb::Letable& e) {
-  ASSERT(e.has_ctor_id()) << "APP_CTOR without ctor id?";
+  ASSERT(e.has_ctor_info()) << "APP_CTOR without ctor info?";
   std::vector<LLVar*> vars;
   for (int i = 0; i < e.parts_size(); ++i) {
     vars.push_back(parseTermVar(&e.parts(i)));
   }
-  return new LLAppCtor(parseCtorId(e.ctor_id()), vars);
+  return new LLAppCtor(parseCtorInfo(e.ctor_info()), vars);
 }
 
 LLExpr* parseInt(const pb::Letable& e) {

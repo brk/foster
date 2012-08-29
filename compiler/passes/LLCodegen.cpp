@@ -290,13 +290,20 @@ llvm::Value* CodegenPass::emitFosterStringOfCString(Value* cstr, Value* sz) {
   } else { ASSERT(false); }
 
   // TODO null terminate?
-  CtorId frag; frag.typeName = "Text";
-               frag.ctorName = "TextFragment";
-               frag.smallId  = 0; // TODO fix this hack
+  CtorInfo fragInfo;
+           fragInfo.ctorId.typeName = "Text";
+           fragInfo.ctorId.ctorName = "TextFragment";
+           fragInfo.ctorId.smallId  = 0; // TODO fix this hack
+
+  DataTypeAST* dt = this->isKnownDataType["Text"];
+  ASSERT(dt) << "unable to find data type for 'Text'";
+  DataCtor*      dc  = dt->getCtor(0);
+           fragInfo.ctorArgTypes = dc->types;
+
   std::vector<LLVar*> args;
   LLValueVar v_hstr(hstr_slot); args.push_back(&v_hstr);
   LLValueVar v_sz(sz);          args.push_back(&v_sz);
-  LLAppCtor app(frag, args);
+  LLAppCtor app(fragInfo, args);
   return app.codegen(this);
 }
 
@@ -1208,10 +1215,6 @@ TupleTypeAST* getDataCtorTypeTuple(DataCtor* dc) {
   return TupleTypeAST::get(dc->types);
 }
 
-StructTypeAST* getDataCtorTypeStruct(DataCtor* dc) {
-  return StructTypeAST::get(dc->types);
-}
-
 ////////////////////////////////////////////////////////////////////
 //////////////// Decision Trees ////////////////////////////////////
 /////////////////////////////////////////////////////////////////{{{
@@ -1276,26 +1279,29 @@ llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
 
 ///}}}//////////////////////////////////////////////////////////////
 
+llvm::Type* getLLVMTypeForDataType(const CtorInfo& ci) {
+  // TODO use a named struct type, perhaps?
+  return llvm::PointerType::getUnqual(
+                             llvm::IntegerType::get(builder.getContext(), 999));
+}
+
 llvm::Value* LLAppCtor::codegen(CodegenPass* pass) {
-  DataTypeAST* dt = pass->isKnownDataType[this->ctorId.typeName];
-  ASSERT(dt) << "unable to find data type for " << this->ctorId.typeName;
-  DataCtor*      dc  = dt->getCtor(this->ctorId.smallId);
-  StructTypeAST* sty = getDataCtorTypeStruct(dc);
+  StructTypeAST* sty = StructTypeAST::get(this->ctorInfo.ctorArgTypes);
 
   // This basically duplicates LLTuple::codegen and should eventually
   // be properly implemented in terms of it.
-  registerStructType(sty, this->ctorId.typeName + "." + this->ctorId.ctorName,
-                     this->ctorId.smallId, pass->mod);
+  registerStructType(sty, this->ctorInfo.ctorId.typeName + "." + this->ctorInfo.ctorId.ctorName,
+                     this->ctorInfo.ctorId.smallId, pass->mod);
 
   llvm::Value* obj_slot = allocateCell(pass, sty,
                                        LLAllocate::MEM_REGION_GLOBAL_HEAP,
-                                       this->ctorId.smallId, "appctor",
+                                       this->ctorInfo.ctorId.smallId, "appctor",
                                        /*init*/ false);
   llvm::Value* obj = emitNonVolatileLoad(obj_slot, "obj");
 
   copyValuesToStruct(codegenAll(pass, this->args), obj);
 
-  llvm::Type* dtype = dt->getLLVMType();
+  llvm::Type* dtype = getLLVMTypeForDataType(this->ctorInfo);
   // TODO fix to use a stack slot properly
   return emitBitcast(obj, dtype);
 }

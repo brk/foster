@@ -38,6 +38,7 @@ import Foster.Bepb.TermVar      as PbTermVar
 import Foster.Bepb.PbCtorId     as PbCtorId
 import Foster.Bepb.RebindId     as PbRebindId
 import Foster.Bepb.PbDataCtor   as PbDataCtor
+import Foster.Bepb.PbCtorInfo   as PbCtorInfo
 import Foster.Bepb.PbAllocInfo  as PbAllocInfo
 import Foster.Bepb.PbOccurrence as PbOccurrence
 import Foster.Bepb.PbSwitch     as PbSwitch
@@ -323,7 +324,7 @@ dumpExpr (ILCallPrim t (PrimIntTrunc _from to) args)
         = dumpCallPrimOp t ("trunc_i" ++ show tosize) args
         where tosize = intOfSize to
 
-dumpExpr (ILAppCtor t cid args) = dumpAppCtor t cid args
+dumpExpr (ILAppCtor t cinfo args) = dumpAppCtor t cinfo args
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||||||||| Calls ||||||||||||||||||||||||||{{{
@@ -340,10 +341,10 @@ dumpCallPrimOp t op args = -- TODO actually use prim_op_size from C++ side.
                     , PbLetable.prim_op_name = Just $ u8fromString op
                     , PbLetable.type' = Just $ dumpType t }
 
-dumpAppCtor t cid args =
+dumpAppCtor t cinfo args =
     P'.defaultValue { PbLetable.tag     = IL_CTOR
                     , PbLetable.parts   = fromList $ fmap dumpVar args
-                    , PbLetable.ctor_id = Just $ dumpCtorId cid
+                    , PbLetable.ctor_info = Just $ dumpCtorInfo cinfo
                     , PbLetable.type'   = Just $ dumpType t }
 
 dumpCallCoroOp t coroPrim argty retty args mayGC =
@@ -383,10 +384,21 @@ dumpClosureWithName (varid, CC.Closure procid envid captvars allocsrc) =
                                                prefixAllocSrc "env of" allocsrc)
                     , allocsite = u8fromString $ showAllocationSource allocsrc }
 
-dumpCtorId (CtorId s n _a i) =
-    P'.defaultValue { PbCtorId.ctor_type_name = u8fromString s
-                    , PbCtorId.ctor_ctor_name = u8fromString n
-                    , PbCtorId.ctor_local_id  = intToInt32 i }
+dumpCtorInfo (CtorInfo cid@(CtorId _dtn dtcn _arity ciid)
+                           (DataCtor dcn dcid _tyfs tys)) =
+  case (ciid == dcid, dtcn == T.unpack dcn) of
+    (_, False) -> error $ "Ctor info inconsistent, had different names for ctor id and data ctor."
+    (False, _) -> error $ "Ctor info inconsistent, had different tags for ctor id and data ctor."
+    (_,     _) -> -- ignore type formals...
+        P'.defaultValue { PbCtorInfo.ctor_id = dumpCtorId cid
+                        , PbCtorInfo.ctor_arg_types = fromList $ map dumpType tys
+                        }
+
+dumpCtorId (CtorId dtn dtcn _arity ciid) =
+    P'.defaultValue { PbCtorId.ctor_type_name = u8fromString dtn
+                    , PbCtorId.ctor_ctor_name = u8fromString dtcn
+                    , PbCtorId.ctor_local_id  = intToInt32 ciid
+                    }
 
 dumpOccurrence var offsCtorIds =
     let (offs, infos) = unzip offsCtorIds in
