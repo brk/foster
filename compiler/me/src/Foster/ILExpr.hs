@@ -691,7 +691,7 @@ makeAllocationsExplicit bbgp uref = do
     (CCLetVal id (ILAlloc v memregion)) -> do
             id' <- fresh "ref-alloc"
             let t = tidType v
-            let info = AllocInfo t memregion "ref" Nothing Nothing "ref-allocator"
+            let info = AllocInfo t memregion "ref" Nothing Nothing "ref-allocator" NoZeroInit
             return $
               (mkMiddle $ CCLetVal id  (ILAllocate info)) <*>
               (mkMiddle $ CCLetVal id' (ILStore v (TypedId t id)))
@@ -700,7 +700,7 @@ makeAllocationsExplicit bbgp uref = do
             id' <- fresh "tup-alloc"
             let t = StructType (map tidType vs)
             let memregion = MemRegionGlobalHeap
-            let info = AllocInfo t memregion "tup" Nothing Nothing "tup-allocator"
+            let info = AllocInfo t memregion "tup" Nothing Nothing "tup-allocator" NoZeroInit
             return $
               (mkMiddle $ CCLetVal id (ILAllocate info)) <*>
               (mkMiddle $ CCTupleStore vs (TypedId t id) memregion)
@@ -712,7 +712,7 @@ makeAllocationsExplicit bbgp uref = do
             let obj = (TypedId t id' )
             let genty = PtrTypeUnknown
             let memregion = MemRegionGlobalHeap
-            let info = AllocInfo t memregion tynm (Just tag) Nothing "ctor-allocator"
+            let info = AllocInfo t memregion tynm (Just tag) Nothing "ctor-allocator" NoZeroInit
             return $
               (mkMiddle $ CCLetVal id' (ILAllocate info)) <*>
               (mkMiddle $ CCTupleStore vs obj memregion) <*>

@@ -152,14 +152,17 @@ dumpMemRegion amr = case amr of
     MemRegionGlobalHeap -> PbMemRegion.MEM_REGION_GLOBAL_HEAP
 
 dumpAllocate :: AllocInfo MonoType -> PbAllocInfo
-dumpAllocate (AllocInfo typ region typename maybe_tag maybe_array_size allocsite) =
+dumpAllocate (AllocInfo typ region typename maybe_tag maybe_array_size allocsite zeroinit) =
     P'.defaultValue { PbAllocInfo.mem_region = dumpMemRegion region
                     , PbAllocInfo.type'      = dumpType      typ
                     , PbAllocInfo.type_name  = u8fromString  typename
                     , PbAllocInfo.ctor_tag   = fmap intToInt32 maybe_tag
                     , PbAllocInfo.array_size = fmap dumpVar  maybe_array_size
                     , PbAllocInfo.alloc_site = u8fromString  allocsite
+                    , PbAllocInfo.zero_init  = needsZeroInit zeroinit
                     }
+     where needsZeroInit DoZeroInit = True
+           needsZeroInit NoZeroInit = False
 
 -- ||||||||||||||||||||||||||| CFGs |||||||||||||||||||||||||||||{{{
 -- dumpBlock :: Map.Map BlockId (Maybe Int) -> ILBlock -> PbBlock.Block
@@ -186,16 +189,17 @@ dumpMiddle (ILGCRootInit src root) =
          , root_init_root = (dumpVar root)
       }
     }
-dumpMiddle (ILTupleStore vs v r) =
-    P'.defaultValue { tuple_store = Just $
-      P'.defaultValue {
-              stored_vars = fromList $ map dumpVar vs
-            , storage     = dumpVar v
-            , storage_indir = case r of
-                                MemRegionStack      -> False
-                                MemRegionGlobalHeap -> True
-     }
-   }
+dumpMiddle ts@(ILTupleStore {}) =
+    P'.defaultValue { tuple_store = Just $ dumpTupleStore ts }
+
+dumpTupleStore (ILTupleStore vs v r) =
+   P'.defaultValue { stored_vars = fromList $ map dumpVar vs
+                   , storage     = dumpVar v
+                   , storage_indir = case r of
+                                       MemRegionStack      -> False
+                                       MemRegionGlobalHeap -> True
+    }
+dumpTupleStore other = error $ "dumpTupleStore called on non-tuple-store value: " ++ show other
 
 dumpRebinding from to = P'.defaultValue { from_id = dumpIdent from
                                         , to_var  = dumpVar to }
@@ -234,10 +238,6 @@ dumpSwitch var arms def occ =
                     , PbSwitch.occ   = Just $ dumpOccurrence var occ }
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
-tupStruct (TupleType ts) = StructType ts
-tupStruct t              = error $ "ProtobufIL:tupStruct expected tuple type,"
-                                 ++ " got " ++ show t
-
 -- |||||||||||||||||||||||| Expressions |||||||||||||||||||||||||{{{
 dumpExpr :: Letable -> PbLetable.Letable
 dumpExpr (ILBitcast _ _) = error "ProtobufIL.hs cannot dump bitcast as expr"
@@ -259,17 +259,12 @@ dumpExpr x@(ILKillProcess _ msg) =
                     , PbLetable.type' = Just $ dumpType (typeMo x)  }
 
 dumpExpr x@(ILTuple [] _allocsrc) =
-    P'.defaultValue { PbLetable.tag   = IL_TUPLE
+    P'.defaultValue { PbLetable.tag   = IL_UNIT
                     , PbLetable.type' = Just $ dumpType (typeMo x) }
 
-dumpExpr x@(ILTuple vs allocsrc) =
-    P'.defaultValue { PbLetable.parts = fromList [dumpVar v | v <- vs]
-                    , PbLetable.tag   = IL_TUPLE
-                    , PbLetable.type' = Just $ dumpType (typeMo x)
-                    , PbLetable.alloc_info = Just $ dumpAllocate
-                         (AllocInfo (tupStruct $ typeMo x)
-                                    MemRegionGlobalHeap "xtupx" Nothing Nothing
-                                    (showAllocationSource allocsrc)) }
+dumpExpr (ILTuple vs allocsrc) =
+        error $ "ProtobufIL.hs: ILTuple " ++ show vs
+            ++ "\n should have been eliminated!\n" ++ show allocsrc
 
 dumpExpr   (ILOccurrence v occ) =
     P'.defaultValue { PbLetable.tag   = IL_OCCURRENCE
@@ -287,7 +282,7 @@ dumpExpr  (ILAllocArray (ArrayType elt_ty) size) =
                     , PbLetable.type' = Just $ dumpType elt_ty
                     , PbLetable.alloc_info = Just $ dumpAllocate
                        (AllocInfo elt_ty MemRegionGlobalHeap "xarrayx"
-                                      Nothing (Just size)  "...array...") }
+                                  Nothing (Just size)  "...array..." NoZeroInit) }
 dumpExpr  (ILAllocArray nonArrayType _) =
          error $ "ProtobufIL.hs: Can't dump ILAllocArray with non-array type "
               ++ show nonArrayType
@@ -350,8 +345,8 @@ dumpExpr (ILCallPrim t (PrimIntTrunc _from to) args)
         = dumpCallPrimOp t ("trunc_i" ++ show tosize) args
         where tosize = intOfSize to
 
-dumpExpr (ILAppCtor _ cinfo _) = error $ "ProtobufIL.hs saw ILAppCtor, which"
-                                      ++ " should have been translated away..."
+dumpExpr (ILAppCtor _ _cinfo _) = error $ "ProtobufIL.hs saw ILAppCtor, which"
+                                       ++ " should have been translated away..."
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -398,12 +393,19 @@ prefixAllocSrc foo   (AllocationSource                prefix  rng) =
 showAllocationSource (AllocationSource prefix rng) =
                  prefix ++ highlightFirstLine rng
 
-dumpClosureWithName (varid, CC.Closure procid envid captvars allocsrc) =
-    P'.defaultValue { varname  = dumpIdent varid
-                    , proc_id  = textToPUtf8 (identPrefix (tidIdent procid))
-                    , env_id   = dumpIdent envid
-                    , env      = dumpExpr (ILTuple captvars $
-                                               prefixAllocSrc "env of" allocsrc)
+dumpClosureWithName (varid, CC.Closure procid envid captvars allocsrc0) =
+    -- Same translation done by explicate in ILExpr.hs...
+    let t         = StructType (map tidType captvars) in
+    let memregion = MemRegionGlobalHeap in
+    let allocsrc  = prefixAllocSrc "env of" allocsrc0 in
+    let storage   = AllocInfo t memregion "env" Nothing Nothing
+                              "env-allocator" DoZeroInit in
+    let tupstore  = ILTupleStore captvars (TypedId t envid) memregion in
+    P'.defaultValue { varname     = dumpIdent varid
+                    , proc_id     = textToPUtf8 (identPrefix (tidIdent procid))
+                    , env_id      = dumpIdent envid
+                    , env_storage = dumpAllocate   storage
+                    , env_store   = dumpTupleStore tupstore
                     , allocsite = u8fromString $ showAllocationSource allocsrc }
 
 dumpCtorInfo (CtorInfo cid@(CtorId _dtn dtcn _arity ciid)

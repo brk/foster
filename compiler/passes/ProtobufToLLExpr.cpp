@@ -141,11 +141,8 @@ LLAllocate::MemRegion parseMemRegion(const pb::PbAllocInfo& a) {
   return target_region;
 }
 
-LLAllocate* parseAllocate(const pb::Letable& e) {
-  ASSERT(e.has_alloc_info());
-  const pb::PbAllocInfo& a = e.alloc_info();
+LLAllocate* parseAllocInfo(const pb::PbAllocInfo& a) {
   LLVar* array_size = NULL;
-
   if (a.has_array_size()) {
     array_size = parseTermVar(&a.array_size());
   }
@@ -155,22 +152,13 @@ LLAllocate* parseAllocate(const pb::Letable& e) {
   int8_t bogusCtorTag = -2;
   int8_t ctorTag = a.has_ctor_tag() ? a.ctor_tag() : bogusCtorTag;
   return new LLAllocate(TypeAST_from_pb(& a.type()), tynm, ctorTag,
-                        array_size, target_region, a.alloc_site());
+                        array_size, target_region, a.alloc_site(),
+                        a.zero_init());
 }
 
-LLTuple* parseTupleOnly(const pb::Letable& e) {
-  ASSERT(e.parts_size() != 0 && "empty tuples should be unit values instead");
-
-  std::vector<LLVar*> args;
-  for (int i = 0; i < e.parts_size(); ++i) {
-    args.push_back(parseTermVar(&e.parts(i)));
-  }
-  return new LLTuple(args, parseAllocate(e));
-}
-
-LLExpr* parseTuple(const pb::Letable& e) {
-  if (e.parts_size() == 0) return new LLUnitValue();
-  else                     return parseTupleOnly(e);
+LLAllocate* parseAllocate(const pb::Letable& e) {
+  ASSERT(e.has_alloc_info());
+  return parseAllocInfo(e.alloc_info());
 }
 
 llvm::GlobalValue::LinkageTypes
@@ -181,6 +169,14 @@ parseLinkage(const pb::Proc::Linkage linkage) {
   default: ASSERT(false) << "unknown linkage!";
            return llvm::GlobalValue::InternalLinkage;
   }
+}
+
+LLTupleStore* parseTupleStore(const pb::TupleStore& ts) {
+  std::vector<LLVar*> vars;
+  for (int i = 0; i < ts.stored_vars_size(); ++i) {
+    vars.push_back(parseTermVar(&ts.stored_vars(i)));
+  }
+  return new LLTupleStore(vars, parseTermVar(&ts.storage()), ts.storage_indir());
 }
 
 LLMiddle* parseLetVal(const pb::LetVal& b) {
@@ -194,9 +190,8 @@ LLMiddle* parseLetVal(const pb::LetVal& b) {
 LLClosure* parseClosure(const pb::Closure& clo) {
   return new LLClosure(clo.varname(), clo.env_id(),
                        clo.proc_id(), clo.allocsite(),
-                       (clo.env().parts_size() == 0)
-                         ? NULL
-                         : parseTupleOnly(clo.env()));
+                       parseAllocInfo(clo.env_storage()),
+                       parseTupleStore(clo.env_store()));
 }
 
 LLMiddle* parseLetClosures(const pb::LetClosures& b) {
@@ -213,14 +208,6 @@ LLMiddle* parseRebindId(const pb::RebindId& r) {
 
 LLMiddle* parseBitcast(const pb::RebindId& r) {
   return new LLBitcast(r.from_id(), parseTermVar(&r.to_var()));
-}
-
-LLMiddle* parseTupleStore(const pb::TupleStore& ts) {
-  std::vector<LLVar*> vars;
-  for (int i = 0; i < ts.stored_vars_size(); ++i) {
-    vars.push_back(parseTermVar(&ts.stored_vars(i)));
-  }
-  return new LLTupleStore(vars, parseTermVar(&ts.storage()), ts.storage_indir());
 }
 
 LLSwitch* parseSwitch(const pb::Terminator&);
@@ -364,6 +351,8 @@ LLExpr* parseKillProcess(const pb::Letable& e) {
   return new LLKillProcess(e.string_value());
 }
 
+LLExpr* parseUnitValue(const pb::Letable& e) { return new LLUnitValue(); }
+
 } // unnamed namespace
 
 ////////////////////////////////////////////////////////////////////
@@ -421,7 +410,7 @@ LLExpr* LLExpr_from_pb(const pb::Letable* pe) {
   case pb::Letable::IL_INT:         rv = parseInt(e); break;
   case pb::Letable::IL_FLOAT:       rv = parseFloat(e); break;
   case pb::Letable::IL_TEXT:        rv = parseText(e); break;
-  case pb::Letable::IL_TUPLE:       rv = parseTuple(e); break;
+  case pb::Letable::IL_UNIT:        rv = parseUnitValue(e); break;
   case pb::Letable::IL_DEREF:       rv = parseDeref(e); break;
   case pb::Letable::IL_STORE:       rv = parseStore(e); break;
   case pb::Letable::IL_ARRAY_READ:  rv = parseArrayRead(e); break;

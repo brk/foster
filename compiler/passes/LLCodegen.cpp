@@ -132,9 +132,23 @@ codegenAll(CodegenPass* pass, const std::vector<LLVar*>& args) {
   return vals;
 }
 
+bool isPointerToStruct(llvm::Type* ty) {
+  if (llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
+    if (llvm::dyn_cast<llvm::StructType>(pty->getContainedType(0))) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void copyValuesToStruct(const std::vector<llvm::Value*>& vals,
                         llvm::Value* tup_ptr) {
   ASSERT(tup_ptr != NULL);
+  ASSERT(isPointerToStruct(tup_ptr->getType()))
+        << "copyValuesToStruct can't copy values to non-ptr-to-struct type "
+        << str(tup_ptr->getType())
+        << "\n" << str(tup_ptr);
+
   for (size_t i = 0; i < vals.size(); ++i) {
     Value* dst = builder.CreateConstGEP2_32(tup_ptr, 0, i, "gep");
     emitStore(vals[i], dst);
@@ -172,7 +186,6 @@ void assertRightNumberOfArgsForFunction(llvm::Value* FV, llvm::FunctionType* FT,
             << "; got " << valArgs.size()
             << " args but expected " << FT->getNumParams();
 }
-
 
 void assertValueHasExpectedType(llvm::Value* argV, llvm::Type* expectedType,
                                 llvm::Value* FV) {
@@ -729,41 +742,6 @@ void LLBitcast::codegenMiddle(CodegenPass* pass) {
 }
 
 ////////////////////////////////////////////////////////////////////
-////////////////////// Allocation Helpers //////////////////////////
-/////////////////////////////////////////////////////////////////{{{
-
-Value* allocateCell(CodegenPass* pass, TypeAST* type,
-                    LLAllocate::MemRegion region,
-                    int8_t ctorId, std::string srclines, bool init) {
-  llvm::Type* ty = type->getLLVMType();
-
-  switch (region) {
-  case LLAllocate::MEM_REGION_STACK:
-    // TODO this allocates a slot, not a cell...
-    // TODO init
-    //
-    ASSERT(!containsGCablePointers(type, ty));
-    // If the allocated type is POD, this is fine.
-    // But if the allocated type can contain pointers which must be treated
-    // as roots by the GC, we must enforce a few extra invariants (which are
-    // not currently enforced):
-    //  1) We must allocate a cell, not a slot, to store the type.
-    //  2) We must allocate a slot, pointing to the stack cell, marked gcroot.
-    //  3) We must ensure that no load from the cell persists across a safe pt.
-    //  4) We must ensure that the GC does update the pointers within the cell.
-    //  5) We must(?) ensure that the GC does not attempt to copy the stack
-    //     cell to the heap.
-    return CreateEntryAlloca(ty, "stackref");
-
-  case LLAllocate::MEM_REGION_GLOBAL_HEAP:
-    return pass->emitMalloc(type, ctorId, srclines, init);
-
-  default:
-    ASSERT(false); return NULL;
-  }
-}
-
-////////////////////////////////////////////////////////////////////
 ///////////////////////// LLDeref, LLStore /////////////////////////
 /////////////////////////////////////////////////////////////////{{{
 
@@ -925,50 +903,54 @@ llvm::Value* LLKillProcess::codegen(CodegenPass* pass) {
 //////////////// LLAllocate ////////////////////////////////////////
 /////////////////////////////////////////////////////////////////{{{
 
-Value* allocateArray(CodegenPass* pass, TypeAST* ty,
-                     LLAllocate::MemRegion region,
-                     Value* arraySize, bool init) {
-  ASSERT(region == LLAllocate::MEM_REGION_GLOBAL_HEAP);
-  return pass->emitArrayMalloc(ty, arraySize, init);
+Value* allocateCell(CodegenPass* pass, TypeAST* type,
+                    LLAllocate::MemRegion region,
+                    int8_t ctorId, std::string srclines, bool init) {
+  llvm::Type* ty = type->getLLVMType();
+
+  switch (region) {
+  case LLAllocate::MEM_REGION_STACK:
+    // TODO this allocates a slot, not a cell...
+    // TODO init
+    //
+    ASSERT(!containsGCablePointers(type, ty));
+    // If the allocated type is POD, this is fine.
+    // But if the allocated type can contain pointers which must be treated
+    // as roots by the GC, we must enforce a few extra invariants (which are
+    // not currently enforced):
+    //  1) We must allocate a cell, not a slot, to store the type.
+    //  2) We must allocate a slot, pointing to the stack cell, marked gcroot.
+    //  3) We must ensure that no load from the cell persists across a safe pt.
+    //  4) We must ensure that the GC does update the pointers within the cell.
+    //  5) We must(?) ensure that the GC does not attempt to copy the stack
+    //     cell to the heap.
+    return CreateEntryAlloca(ty, "stackref");
+
+  case LLAllocate::MEM_REGION_GLOBAL_HEAP:
+    return pass->emitMalloc(type, ctorId, srclines, init);
+
+  default:
+    ASSERT(false); return NULL;
+  }
 }
 
-llvm::Value* LLAllocate::codegenCell(CodegenPass* pass, bool init) {
+llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
   if (this->arraySize != NULL) {
-    return allocateArray(pass, this->type, this->region,
-                         pass->emit(this->arraySize, NULL), init);
+    Value* array_size = pass->emit(this->arraySize, NULL);
+    ASSERT(this->region == LLAllocate::MEM_REGION_GLOBAL_HEAP);
+    return pass->emitArrayMalloc(this->type, array_size, this->zero_init);
   } else {
     if (StructTypeAST* sty = dynamic_cast<StructTypeAST*>(this->type)) {
       registerStructType(sty, this->type_name,          this->ctorId, pass->mod);
     }
-    return allocateCell(pass, this->type, this->region, this->ctorId, this->srclines, init);
+    return allocateCell(pass, this->type, this->region, this->ctorId,
+                              this->srclines, this->zero_init);
   }
-  /*else {
-    ASSERT(false) << "LLAllocate can only allocate arrays or structs...";
-    return NULL;
-  }*/
-}
-
-llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
-  // For now, the middle-end only generates array allocations,
-  // and leaves cell allocations to LLAlloc or uses of LLAllocate
-  // by e.g. tuples.
-  //ASSERT(this->arraySize != NULL);
-  bool init = false; // as the default...
-  return this->codegenCell(pass, init);
 }
 
 ///}}}//////////////////////////////////////////////////////////////
 //////////////// Arrays ////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////{{{
-
-bool isPointerToStruct(llvm::Type* ty) {
-  if (llvm::PointerType* pty = llvm::dyn_cast<llvm::PointerType>(ty)) {
-    if (llvm::dyn_cast<llvm::StructType>(pty->getContainedType(0))) {
-      return true;
-    }
-  }
-  return false;
-}
 
 bool tryBindArray(llvm::Value* base, Value*& arr, Value*& len) {
   // {i64, [0 x T]}*
@@ -1043,33 +1025,11 @@ llvm::Value* LLArrayLength::codegen(CodegenPass* pass) {
 }
 
 ///}}}//////////////////////////////////////////////////////////////
-//////////////// LLTuple ///////////////////////////////////////////
+//////////////// LLTupleStore //////////////////////////////////////
 /////////////////////////////////////////////////////////////////{{{
 
 llvm::Value* LLUnitValue::codegen(CodegenPass* pass) {
   return getUnitValue();
-}
-
-llvm::Value* LLTuple::codegenStorage(CodegenPass* pass, bool init) {
-  ASSERT(!vars.empty());
-  ASSERT(this->allocator);
-  return allocator->codegenCell(pass, init);
-}
-
-llvm::Value* LLTuple::codegen(CodegenPass* pass) {
-  ASSERT(!vars.empty());
-
-  bool init = false; // because we'll immediately initialize below.
-  llvm::Value* slot = codegenStorage(pass, init);
-  llvm::Value* pt   = this->allocator->isStackAllocated()
-                          ? slot
-                          : emitNonVolatileLoad(slot, "normalize");
-  codegenTo(pass, pt);
-  return slot;
-}
-
-void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
-  copyValuesToStruct(codegenAll(pass, this->vars), tup_ptr);
 }
 
 void LLTupleStore::codegenMiddle(CodegenPass* pass) {
@@ -1081,7 +1041,6 @@ void LLTupleStore::codegenMiddle(CodegenPass* pass) {
                           : slot;
   copyValuesToStruct(codegenAll(pass, this->vars), tup_ptr);
 }
-
 
 ///}}}//////////////////////////////////////////////////////////////
 //////////////// LLClosures ////////////////////////////////////////
@@ -1102,10 +1061,10 @@ void LLTupleStore::codegenMiddle(CodegenPass* pass) {
     // by directly initializing the environments. (TODO: how much more efficicient?)
     std::vector<llvm::Value*> envSlots;
     for (size_t i = 0; i < closures.size(); ++i) {
-      if (closures[i]->envOrNull == NULL) {
+      if (closures[i]->envStore->vars.empty()) {
         envSlots.push_back(NULL);
       } else {
-        envSlots.push_back(closures[i]->envOrNull->codegenStorage(pass, /*init*/ true));
+        envSlots.push_back(closures[i]->envAlloc->codegen(pass));
       }
     }
 
@@ -1139,8 +1098,11 @@ void LLTupleStore::codegenMiddle(CodegenPass* pass) {
     // Now that all the env pointers are in scope,
     // store the appropriate values through each pointer.
     for (size_t i = 0; i < closures.size(); ++i) {
-      if (closures[i]->envOrNull != NULL) {
-        closures[i]->envOrNull->codegenTo(pass, envPtrs[i]);
+      if (envSlots[i] != NULL) {
+        // Make sure we fill in the concrete environment, not the generic one...
+        closures[i]->envStore->storage = new LLValueVar(envPtrs[i]);
+        closures[i]->envStore->storage_indir = false; // env ptr, not env slot.
+        closures[i]->envStore->codegenMiddle(pass);
       }
     }
 

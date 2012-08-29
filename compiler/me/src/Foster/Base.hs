@@ -354,7 +354,10 @@ data AllocInfo t = AllocInfo { allocType      :: t
                              , allocCtorTag   :: Maybe Int
                              , allocArraySize :: Maybe (TypedId t)
                              , allocSite      :: String
+                             , allocZeroInit  :: ZeroInit
                              }
+
+data ZeroInit = DoZeroInit | NoZeroInit deriving Show
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||||||||| Instances |||||||||||||||||||||||||{{{

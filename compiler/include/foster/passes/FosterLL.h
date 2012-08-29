@@ -34,6 +34,7 @@ class LLVar;
 class LLExpr;
 class TypeAST;
 class FnTypeAST;
+class LLTupleStore;
 
 struct CodegenPass;
 
@@ -273,20 +274,6 @@ struct LLUnitValue : public LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
-struct LLTuple : public LLExpr {
-  std::vector<LLVar*> vars;
-  const char* typeName;
-  LLAllocate* allocator;
-
-  explicit LLTuple(const std::vector<LLVar*>& vars, LLAllocate* a)
-    : LLExpr("LLTuple"), vars(vars),
-      typeName("tuple"), allocator(a) {}
-  llvm::Value* codegenStorage(CodegenPass* pass, bool init);
-  llvm::Value* codegenObjectOfSlot(llvm::Value* slot);
-  void codegenTo(CodegenPass* pass, llvm::Value* tup_ptr);
-  virtual llvm::Value* codegen(CodegenPass* pass);
-};
-
 struct LLArrayIndex {
   LLVar* base;
   LLVar* index;
@@ -326,16 +313,16 @@ struct LLClosure {
   std::string envname;
   std::string procname;
   std::string srclines;
-  LLTuple*    envOrNull;
+  LLAllocate*   envAlloc;
+  LLTupleStore* envStore;
   explicit LLClosure(const std::string& _varn,
                      const std::string& _envn,
                      const std::string& _proc,
                      const std::string& _srcs,
-                     LLTuple* _env)
+                     LLAllocate*    _envAlloc,
+                     LLTupleStore*  _envStore)
     : varname(_varn), envname(_envn), procname(_proc), srclines(_srcs),
-      envOrNull(_env) {
-   if (envOrNull != NULL) envOrNull->typeName = "env";
- }
+      envAlloc(_envAlloc), envStore(_envStore) {}
  llvm::Value* codegenClosure(CodegenPass* pass, llvm::Value* envSlot);
 };
 
@@ -375,14 +362,16 @@ struct LLAllocate : public LLExpr {
     , MEM_REGION_GLOBAL_HEAP
   } region;
   std::string srclines;
+  bool zero_init;
 
   bool isStackAllocated() const { return region == MEM_REGION_STACK; }
 
   explicit LLAllocate(TypeAST* t, std::string tynm,
                       int8_t c, LLVar* arrSize, MemRegion m,
-                      std::string allocsite)
+                      std::string allocsite, bool zero_init)
      : LLExpr("LLAllocate"), arraySize(arrSize), ctorId(c), type_name(tynm),
-                             region(m), srclines(allocsite) { this->type = t; }
+                             region(m), srclines(allocsite),
+                             zero_init(zero_init) { this->type = t; }
   llvm::Value* codegenCell(CodegenPass* pass, bool init);
   virtual llvm::Value* codegen(CodegenPass* pass);
 };

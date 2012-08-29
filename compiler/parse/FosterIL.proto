@@ -89,7 +89,7 @@ message Letable {
     IL_INT = 16;
     IL_BOOL = 17;
     IL_TEXT = 18;
-    IL_TUPLE = 19;
+    IL_UNIT = 19;
     IL_FLOAT = 20;
     IL_OCCURRENCE = 21;
     IL_CALL = 23;
@@ -159,6 +159,7 @@ message PbAllocInfo {
   optional TermVar   array_size = 3;
   required string    alloc_site = 4;
   required string     type_name = 5;
+  required bool       zero_init = 7;
 }
 
 message Proc {
@@ -175,11 +176,12 @@ message Proc {
 }
 
 message Closure {
-  required string varname   = 1;
-  required string proc_id   = 2;
-  required Letable env      = 3;
-  required string  env_id   = 4;
-  required string allocsite = 5;
+  required string         varname   = 1;
+  required string         proc_id   = 2;
+  required string          env_id   = 4;
+  required string         allocsite = 5;
+  required PbAllocInfo  env_storage = 6;
+  required TupleStore     env_store = 7;
 }
 
 message PBInt {
