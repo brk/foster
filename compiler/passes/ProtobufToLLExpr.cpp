@@ -331,11 +331,6 @@ LLSwitch* parseSwitch(const pb::Terminator& b) {
       ctors, ids, def);
 }
 
-LLExpr* parseAlloc(const pb::Letable& e) {
-  return new LLAlloc(parseTermVar(& e.parts(0)),
-                     parseMemRegion(e.alloc_info()));
-}
-
 LLExpr* parseDeref(const pb::Letable& e) {
   return new LLDeref(parseTermVar(& e.parts(0)));
 }
@@ -409,7 +404,6 @@ LLExpr* LLExpr_from_pb(const pb::Letable* pe) {
   case pb::Letable::IL_FLOAT:       rv = parseFloat(e); break;
   case pb::Letable::IL_TEXT:        rv = parseText(e); break;
   case pb::Letable::IL_TUPLE:       rv = parseTuple(e); break;
-  case pb::Letable::IL_ALLOC:       rv = parseAlloc(e); break;
   case pb::Letable::IL_DEREF:       rv = parseDeref(e); break;
   case pb::Letable::IL_STORE:       rv = parseStore(e); break;
   case pb::Letable::IL_ARRAY_READ:  rv = parseArrayRead(e); break;

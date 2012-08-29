@@ -7,7 +7,7 @@
 module Foster.Letable where
 
 import Foster.Base(LiteralInt, LiteralFloat, CtorId, ArrayIndex(..),
-                   AllocMemRegion, Occurrence, AllocationSource,
+                   AllocMemRegion, AllocInfo(..), Occurrence, AllocationSource,
                    FosterPrim(..),
                    TypedId(..), Ident(..),
                    -- AExpr(freeIdents), tidIdent,
@@ -33,8 +33,8 @@ data Letable =
         | ILCallPrim    MonoType (FosterPrim MonoType) [MoVar]
         | ILCall        MonoType MoVar                 [MoVar]
         | ILAppCtor     MonoType CtorId                [MoVar]
-        -- -- Stack/heap slot allocation
-        -- | ILAllocate    (AllocInfo MonoType)
+        -- Stack/heap slot allocation
+        | ILAllocate    (AllocInfo MonoType)
         -- Mutable ref cells
         | ILAlloc       MoVar AllocMemRegion
         | ILDeref       MoVar
@@ -66,6 +66,7 @@ instance TExpr Letable MonoType where
       ILAllocArray _ v  -> [v]
       ILArrayRead _ ai  -> freeTypedIds ai
       ILArrayPoke   ai v-> (v):(freeTypedIds ai)
+      ILAllocate _      -> []
 
 instance TypedWith Letable MonoType where
   typeOf letable = case letable of
@@ -86,6 +87,7 @@ instance TypedWith Letable MonoType where
       ILAllocArray t _  -> t
       ILArrayRead t _   -> t
       ILArrayPoke   ai v-> error "typeOf ILArrayPoke"
+      ILAllocate info   -> allocType info
 
 isPurePrim _ = False -- TODO: recognize pure primitives
 isPureFunc _ = False -- TODO: use effect information to refine this predicate.
@@ -97,6 +99,7 @@ substVarsInLetable s letable = case letable of
   ILInt         {}                         -> letable
   ILFloat       {}                         -> letable
   ILKillProcess {}                         -> letable
+  ILAllocate    {}                         -> letable
   ILTuple       vs asrc                    -> ILTuple       (map s vs) asrc
   ILOccurrence  v occ                      -> ILOccurrence  (s v) occ
   ILCallPrim    t p vs                     -> ILCallPrim    t p     (map s vs)
@@ -122,6 +125,7 @@ isPure letable = case letable of
       ILCallPrim  _ p _ -> isPurePrim p
       ILCall      _ v _ -> isPureFunc v
       ILAppCtor      {} -> True
+      ILAllocate     {} -> True
       ILAlloc        {} -> True
       ILDeref        {} -> True
       ILStore     _v1 _ -> False -- true iff v1 unaliased && dead?
@@ -133,6 +137,7 @@ isPure letable = case letable of
 canGC :: Letable -> Bool
 canGC letable = case letable of
          ILAppCtor     {} -> True
+         ILAllocate    {} -> True
          ILAlloc       {} -> True
          ILAllocArray  {} -> True
          ILCall     _ v _ -> canGCF v

@@ -218,6 +218,7 @@ tupStruct t              = error $ "ProtobufIL:tupStruct expected tuple type,"
 -- |||||||||||||||||||||||| Expressions |||||||||||||||||||||||||{{{
 dumpExpr :: Letable -> PbLetable.Letable
 dumpExpr (ILBitcast _ _) = error "ProtobufIL.hs cannot dump bitcast as expr"
+dumpExpr (ILAlloc    {}) = error "ILAlloc should have been translated away!"
 
 dumpExpr x@(ILText s) =
     P'.defaultValue { PbLetable.string_value = Just $ textToPUtf8 s
@@ -248,17 +249,10 @@ dumpExpr   (ILOccurrence v occ) =
                     , PbLetable.occ   = Just $ dumpOccurrence v occ
                     , PbLetable.type' = Nothing } -- TODO use type here
 
---dumpExpr x@(ILAllocate info) = error $ "ILAllocate " ++ show info
---    P'.defaultValue { PbLetable.tag   = IL_ALLOCATE
---                    , PbLetable.type' = Just $ dumpType (typeMo x)
---                    , PbLetable.alloc_info = Just $ dumpAllocate info }
-
-dumpExpr x@(ILAlloc a rgn) =
-    P'.defaultValue { PbLetable.parts = fromList [dumpVar a]
-                    , PbLetable.tag   = IL_ALLOC
+dumpExpr x@(ILAllocate info) =
+    P'.defaultValue { PbLetable.tag   = IL_ALLOCATE
                     , PbLetable.type' = Just $ dumpType (typeMo x)
-                    , PbLetable.alloc_info = Just $ dumpAllocate
-                         (AllocInfo (typeMo x) rgn Nothing "...alloc...") }
+                    , PbLetable.alloc_info = Just $ dumpAllocate info }
 
 dumpExpr  (ILAllocArray (ArrayType elt_ty) size) =
     P'.defaultValue { PbLetable.parts = fromList []
@@ -276,8 +270,8 @@ dumpExpr x@(ILDeref a) =
                     , PbLetable.tag   = IL_DEREF
                     , PbLetable.type' = Just $ dumpType (typeMo x)  }
 
-dumpExpr x@(ILStore a b) =
-    P'.defaultValue { PbLetable.parts = fromList (fmap dumpVar [a, b])
+dumpExpr x@(ILStore v r) =
+    P'.defaultValue { PbLetable.parts = fromList (fmap dumpVar [v, r])
                     , PbLetable.tag   = IL_STORE
                     , PbLetable.type' = Just $ dumpType (typeMo x)  }
 
@@ -474,7 +468,7 @@ typeMo expr = case expr of
     ILCall     t  _ _       -> t
     ILCallPrim t  _ _       -> t
     ILAppCtor  t  _ _       -> t
-    -- ILAllocate info         -> allocType info
+    ILAllocate info         -> allocType info
     ILAllocArray t _        -> t
     ILAlloc v _rgn          -> PtrType (tidType v)
     ILDeref v               -> pointedToTypeOfVar v

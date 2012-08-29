@@ -373,14 +373,6 @@ struct LLAllocate : public LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
-struct LLAlloc : public LLExpr {
-  LLVar* baseVar;
-  LLAllocate::MemRegion region;
-  explicit LLAlloc(LLVar* e, LLAllocate::MemRegion r)
-      : LLExpr("LLAlloc"), baseVar(e), region(r) {}
-  virtual llvm::Value* codegen(CodegenPass* pass);
-};
-
 struct LLDeref : public LLExpr {
   LLVar* base;
   explicit LLDeref(LLVar* e) : LLExpr("LLDeref"), base(e) {}

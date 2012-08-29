@@ -764,27 +764,8 @@ Value* allocateCell(CodegenPass* pass, TypeAST* type,
 }
 
 ////////////////////////////////////////////////////////////////////
-//////////////// LLAlloc, LLDeref, LLStore /////////////////////////
+///////////////////////// LLDeref, LLStore /////////////////////////
 /////////////////////////////////////////////////////////////////{{{
-
-llvm::Value* LLAlloc::codegen(CodegenPass* pass) {
-  // (alloc base rgn) is equivalent to
-  //    let rs  = allocate t rgn;
-  //        sv = base;
-  //        r   = rs^;
-  //     in sv >^ r;
-  //        r
-  //    end
-  ASSERT(this && this->baseVar && this->baseVar->type);
-
-  llvm::Value* ptrSlot = allocateCell(pass, this->baseVar->type,
-                                      this->region, foster::bogusCtorId(-4),
-                                      "llalloc", /*init*/ false);
-  llvm::Value* storedVal = pass->emit(baseVar, NULL);
-  llvm::Value* ptr       = pass->autoload(ptrSlot, "alloc_slot_ptr");
-  emitStore(storedVal, ptr);
-  return ptrSlot;
-}
 
 llvm::Value* LLDeref::codegen(CodegenPass* pass) {
   return emitNonVolatileLoad(pass->emit(base, NULL), "deref");
@@ -955,19 +936,20 @@ llvm::Value* LLAllocate::codegenCell(CodegenPass* pass, bool init) {
   if (this->arraySize != NULL) {
     return allocateArray(pass, this->type, this->region,
                          pass->emit(this->arraySize, NULL), init);
-  } else if (StructTypeAST* sty = dynamic_cast<StructTypeAST*>(this->type)) {
-    return allocateCell(pass, sty, this->region, this->ctorId, this->srclines, init);
-  } else {
+  } else { //if (StructTypeAST* sty = dynamic_cast<StructTypeAST*>(this->type)) {
+    return allocateCell(pass, this->type, this->region, this->ctorId, this->srclines, init);
+  }
+  /*else {
     ASSERT(false) << "LLAllocate can only allocate arrays or structs...";
     return NULL;
-  }
+  }*/
 }
 
 llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
   // For now, the middle-end only generates array allocations,
   // and leaves cell allocations to LLAlloc or uses of LLAllocate
   // by e.g. tuples.
-  ASSERT(this->arraySize != NULL);
+  //ASSERT(this->arraySize != NULL);
   bool init = false; // as the default...
   return this->codegenCell(pass, init);
 }

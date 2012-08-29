@@ -82,7 +82,8 @@ flatten (CCB_Procs procs _) = procs
 
 deHooplize :: IORef Uniq -> Proc BasicBlockGraph' -> IO ILProcDef
 deHooplize uref p = do
-  g <- insertSmartGCRoots uref $ simplifyCFG (procBlocks p)
+  g' <- makeAllocationsExplicit (simplifyCFG $ procBlocks p) uref
+  g <- insertSmartGCRoots uref g'
   let (cfgBlocks , numPreds) = flattenGraph g
   return ( p { procBlocks = cfgBlocks } , numPreds )
 
@@ -512,3 +513,32 @@ instance Show ILLast where
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 
+makeAllocationsExplicit :: BasicBlockGraph' -> IORef Uniq -> IO BasicBlockGraph'
+makeAllocationsExplicit bbgp uref = do
+     let (bid,_) = bbgpEntry bbgp
+     bb' <- rebuildGraphM bid (bbgpBody bbgp) explicate
+     return $ bbgp { bbgpBody = bb' }
+ where
+  fresh str = do u <- modifyIORef uref (+1) >> readIORef uref
+                 return (Ident (T.pack str) u)
+
+  explicate :: Insn' e x -> IO (Graph Insn' e x)
+  explicate insn = case insn of
+    (CCLabel   {}        ) -> return $ mkFirst $ insn
+    (CCGCLoad _v fromroot) -> return $ mkMiddle $ insn
+    (CCGCInit _ _v toroot) -> return $ mkMiddle $ insn
+    (CCGCKill {}         ) -> return $ mkMiddle $ insn
+    (CCLetVal id (ILAlloc v src)) -> do
+                            id' <- fresh "allocation"
+                            let info = AllocInfo (tidType v) src Nothing "allocation"
+                            return $
+                              (mkMiddle $ CCLetVal id  (ILAllocate info)) <*>
+                              (mkMiddle $ CCLetVal id' (ILStore v (TypedId (tidType v) id)))
+                              --(mkMiddle $ CCLetVal id' (ILAlloc (TypedId (tidType v) id' ) src))
+    (CCLetVal  _id  l    ) -> return $ mkMiddle $ insn
+    (CCLetFuns _ids _clos) -> return $ mkMiddle $ insn
+    (CCLast    cclast)     ->
+          case cclast of
+            (CCCont {}       ) -> return $ mkLast $ insn
+            (CCCall _ _ _ v _) -> return $ mkLast $ insn
+            (CCCase {}       ) -> return $ mkLast $ insn

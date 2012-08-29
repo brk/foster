@@ -491,6 +491,7 @@ instance Pretty Letable where
       ILArrayRead  _t (ArrayIndex _v1 _v2 _rng _s)  -> text $ "ILArrayRead..."
       ILArrayPoke  (ArrayIndex _v1 _v2 _rng _s) _v3 -> text $ "ILArrayPoke..."
       ILBitcast   t v       -> text "bitcast " <+> pretty v <+> text "to" <+> text "..."
+      ILAllocate info       -> text "allocate " <+> pretty (allocType info)
 
 instance Pretty BasicBlockGraph where
  pretty bbg =
