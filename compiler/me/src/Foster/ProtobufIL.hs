@@ -44,6 +44,7 @@ import Foster.Bepb.PbOccurrence as PbOccurrence
 import Foster.Bepb.PbSwitch     as PbSwitch
 import Foster.Bepb.PbCoroPrim   as PbCoroPrim
 import Foster.Bepb.Module       as Module
+import Foster.Bepb.RootInit     as PbRootInit
 import Foster.Bepb.Letable.Tag
 import Foster.Bepb.PbCoroPrim.Tag
 import Foster.Bepb.TermVar.Tag
@@ -174,6 +175,14 @@ dumpMiddle (ILLetVal id letable) =
     P'.defaultValue { let_val = Just (dumpLetVal id letable) }
 dumpMiddle (ILClosures ids clos) =
     P'.defaultValue { let_clo = Just (dumpLetClosures ids clos) }
+dumpMiddle (ILGCRootKill v) =
+    P'.defaultValue { gcroot_kill = Just (dumpVar v) }
+dumpMiddle (ILGCRootInit src root) =
+    P'.defaultValue { gcroot_init = Just $ P'.defaultValue {
+           root_init_src  = (dumpVar src)
+         , root_init_root = (dumpVar root)
+      }
+    }
 
 dumpRebinding from to = P'.defaultValue { from_id = dumpIdent from
                                         , to_var  = dumpVar to }

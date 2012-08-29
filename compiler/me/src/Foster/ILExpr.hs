@@ -23,17 +23,17 @@ import Foster.Output(out, Output)
 
 import Data.Maybe(fromMaybe)
 import Data.IORef
-import Data.Set(Set)
 import Data.Map(Map)
 import qualified Data.Set as Set
 import qualified Data.Map as Map(singleton, insertWith, lookup, empty, fromList,
-                                        keysSet, insert, union, findWithDefault)
+                                 elems, keysSet, insert, union, findWithDefault)
 import qualified Data.Text as T(pack)
+import Control.Monad.State(evalStateT, get, put, StateT)
 
 --------------------------------------------------------------------
 
--- | Performs closure conversion and lambda lifting, and also
--- | transforms back from Hoopl's CFG representation to lists-of-blocks.
+-- | Inserts GC roots with live ranges using a flow-based analysis, and
+-- | also transforms back from Hoopl's CFG representation to lists-of-blocks.
 -- |
 -- | We also perform pattern match compilation at this stage.
 -- |
@@ -58,6 +58,8 @@ type NumPredsMap = Map BlockId Int
 -- This is equivalent to MinCaml's make_closure ...
 data ILBlock  = Block BlockEntry [ILMiddle] ILLast
 data ILMiddle = ILLetVal      Ident    Letable
+              | ILGCRootKill  MoVar
+              | ILGCRootInit  MoVar    RootVar
               | ILClosures    [Ident] [Closure]
               deriving Show
 
@@ -100,6 +102,8 @@ computeNumPredecessors elab blocks =
     incrPredecessorsDueTo insn' m =
         foldr (\tgt mm -> Map.insertWith (+) tgt 1 mm) m (block'TargetsOf insn')
 
+--------------------------------------------------------------------
+
 withGraphBlocks :: BasicBlockGraph' -> ( [ Block' ] -> a ) -> a
 withGraphBlocks bbgp f =
    let jumpTo bg = case bbgpEntry bg of (bid, _) -> CCLast $ CCCont bid [] in
@@ -120,6 +124,8 @@ flattenGraph bbgp =
      mid :: Insn' O O -> ILMiddle
      mid (CCLetVal id letable)    = ILLetVal   id  letable
      mid (CCGCLoad v   fromroot)  = ILLetVal (tidIdent v) (ILDeref (tidType v) fromroot)
+     mid (CCGCInit _ src toroot)  = ILGCRootInit src toroot
+     mid (CCGCKill True    root)  = ILGCRootKill root
      mid (CCGCKill False  _root)  = error $ "Invariant violated: saw disabled root kill pseudo-insn!"
      mid (CCLetFuns ids closures) = ILClosures ids closures
 
@@ -231,61 +237,69 @@ instance TExpr Closure MonoType where freeTypedIds _ = []
 -- includes a potential GC point.
 
 -- |||||||||||||||||||| Figure out which variables need roots |||{{{
-type LiveGCableVar = Set.Set MoVar
-type LiveAtGCPoint = Set.Set MoVar
-type LiveAGC       = (LiveGCableVar, LiveAtGCPoint)
+type LiveGCRoots    = Set.Set MoVar
+type RootLiveWhenGC = Set.Set MoVar
+type LiveAGC2 = (LiveGCRoots, RootLiveWhenGC)
 
-liveAtGCPointLattice :: DataflowLattice LiveAGC
-liveAtGCPointLattice = DataflowLattice
-  { fact_name = "Live GC vars"
+liveAtGCPointLattice2 :: DataflowLattice LiveAGC2
+liveAtGCPointLattice2 = DataflowLattice
+  { fact_name = "Live GC roots"
   , fact_bot  = (Set.empty, Set.empty)
   , fact_join = add
   }
-    where add _lab (OldFact (ol,og)) (NewFact (nl,ng)) =
-                        {-trace ("lGC::add::" ++ show lab ++ "old: " ++ show (ol,og) ++ " ; new: " ++ show (nl,ng)) -}
-                        (ch, (jl, jg))
+    where add _lab (OldFact (ol,og)) (NewFact (nl,ng)) = (ch, (jl, jg))
             where
               jl = nl `Set.union` ol
               jg = ng `Set.union` og
               ch = changeIf (Set.size jl > Set.size ol
                           || Set.size jg > Set.size og)
 
-liveAtGCPointXfer :: GCRootsForVariables -> BwdTransfer Insn' LiveAGC
-liveAtGCPointXfer rootmap = mkBTransfer go -- TODO use gcables instead of duplicating canGC checks
+liveAtGCPointXfer2 :: BwdTransfer Insn' LiveAGC2
+liveAtGCPointXfer2 = mkBTransfer go
   where
-    ifgc mayGC g s = if mayGC then (s, g `Set.union` s)
-                              else (s, g)
+    markLive root (s, g) = (Set.insert root s, g)
+    markDead root (s, g) = (Set.delete root s, g)
 
-    go :: Insn' e x -> Fact x LiveAGC -> LiveAGC
-    go (CCLabel   {}         ) (s,g) = (s,g)
-    go (CCGCLoad v  fromroot)  (s,g) = (s,g) -- We ignore the inserted loads
-                                             -- for the purpose of computing liveness...
-    go (CCLetVal  id  l   )    (s,g) = ifgc (canGCLetable l) g $ Set.union  (without s [TypedId undefined id]) (    (gcable . freeTypedIds) l)
-    go (CCLetFuns ids fns    ) (s,g) = ifgc True             g $ Set.unions ((without s (map (\id -> TypedId undefined id) ids)):(map (gcable . freeTypedIds) fns))
+    ifgc mayGC (s, g) = if mayGC then (s, g `Set.union` s)
+                                 else (s, g)
+
+    go :: Insn' e x -> Fact x LiveAGC2 -> LiveAGC2
+    go (CCLabel   {}        ) sg = ifgc False            sg
+    go (CCGCLoad _v fromroot) sg = markLive fromroot     sg
+    go (CCGCInit _ _v toroot) sg = markDead   toroot     sg
+    go (CCGCKill {}         ) sg = {- just ignore it  -} sg
+    go (CCLetVal  _id  l    ) sg = ifgc (canGCLetable l) sg
+    go (CCLetFuns _ids _clos) sg = ifgc True             sg
     go node@(CCLast    cclast) fdb =
-          let (s,g) = union2s (map (fact fdb) (successors node)) in
+          let sg = union2s (map (fact fdb) (successors node)) in
           case cclast of
-            (CCCont _    vs)    -> (insert s vs  , g)
-            (CCCall _ _ _ v vs) -> ifgc (canGCCalled v) g $ insert s (v:vs)
-            (CCCase v _ _ _)    -> (insert s [v] , g)
-
-    without s vs = Set.difference s (Set.fromList vs)
-    insert s vs = Set.union s (gcable vs)
+            (CCCont {}       ) -> ifgc False sg
+            (CCCall _ _ _ v _) -> ifgc (canGCCalled v) sg
+            (CCCase {}       ) -> ifgc False sg
 
     union2s xys = let (xs,ys) = unzip xys
                   in  (Set.unions xs, Set.unions ys)
 
-    fact :: FactBase LiveAGC -> Label -> LiveAGC
-    fact f l = fromMaybe (fact_bot liveAtGCPointLattice) $ lookupFact l f
+    fact :: FactBase LiveAGC2 -> Label -> LiveAGC2
+    fact f l = fromMaybe (fact_bot liveAtGCPointLattice2) $ lookupFact l f
 
-liveAtGCPointRewrite :: forall m. FuelMonad m => BwdRewrite m Insn' LiveAGC
-liveAtGCPointRewrite = mkBRewrite d
+liveAtGCPointRewrite2 :: forall m. FuelMonad m => BwdRewrite m Insn' LiveAGC2
+liveAtGCPointRewrite2 = mkBRewrite d
   where
-    d :: Insn' e x -> Fact x LiveAGC -> m (Maybe (Graph Insn' e x))
+    d :: Insn' e x -> Fact x LiveAGC2 -> m (Maybe (Graph Insn' e x))
     d (CCLabel lab) (s,g) = do
         return $ trace ("agc @ " ++ show lab ++ ": " ++ show (s,g)) Nothing
     d (CCGCLoad v  fromroot) (s,g) = do
         return $ trace ("agc @ GCLOAD " ++ show v ++ " from root " ++ show fromroot ++ " : " ++ show (s,g)) Nothing
+    d (CCGCInit _ _ toroot) (s,g) = do
+        return $ trace ("agc @ GCINIT " ++ show toroot ++ " : " ++ show (s,g)) Nothing
+    d (CCGCKill True   _root) (_,_) = return Nothing -- leave as-is.
+    d (CCGCKill False   root) (s,g) =
+          if trace ("agc @ GCKILL " ++ show root ++ " : " ++ "live? " ++ show (Set.member root s) ++ show (s,g)) $ Set.member root s
+            then return $ Just emptyGraph
+             -- If a root is live, remove its fake kill node.
+             -- Otherwise, toggle the node from disabled to enabled.
+            else return $ Just (mkMiddle (CCGCKill True root))
     d (CCLetVal id _) (s,g) = do
         return $ trace ("agc @ LET " ++ show id ++ ": " ++ show (s,g)) Nothing
     d (CCLetFuns ids _) (s,g) = do
@@ -297,26 +311,26 @@ liveAtGCPointRewrite = mkBRewrite d
     union2s xys = let (xs,ys) = unzip xys
                   in  (Set.unions xs, Set.unions ys)
 
-    fact :: FactBase LiveAGC -> Label -> LiveAGC
-    fact f l = fromMaybe (fact_bot liveAtGCPointLattice) $ lookupFact l f
+    fact :: FactBase LiveAGC2 -> Label -> LiveAGC2
+    fact f l = fromMaybe (fact_bot liveAtGCPointLattice2) $ lookupFact l f
 
-runLiveAtGCPoint :: IORef Uniq -> BasicBlockGraph' -> GCRootsForVariables -> IO LiveAtGCPoint
-runLiveAtGCPoint uref bbgp gcr = runWithUniqAndFuel uref infiniteFuel (go bbgp gcr)
+runLiveAtGCPoint2 :: IORef Uniq -> BasicBlockGraph' -> IO RootLiveWhenGC
+runLiveAtGCPoint2 uref bbgp = runWithUniqAndFuel uref infiniteFuel (go bbgp)
   where
-    go :: BasicBlockGraph' -> GCRootsForVariables -> M LiveAtGCPoint
-    go bbgp gcr = do
+    go :: BasicBlockGraph' -> M RootLiveWhenGC
+    go bbgp = do
         let ((_,blab), _) = bbgpEntry bbgp
-        (_, fdb, _) <- analyzeAndRewriteBwd (bwd gcr) (JustC [bbgpEntry bbgp]) (bbgpBody bbgp)
-                         (mapSingleton blab (fact_bot liveAtGCPointLattice))
+        (_, fdb, _) <- analyzeAndRewriteBwd bwd (JustC [bbgpEntry bbgp]) (bbgpBody bbgp)
+                         (mapSingleton blab (fact_bot liveAtGCPointLattice2))
         return (snd $ fromMaybe (error "runLiveAtGCPoint failed") $
                             lookupFact blab fdb)
 
-    bwd gcr =
-          BwdPass { bp_lattice  = liveAtGCPointLattice
-                  , bp_transfer = liveAtGCPointXfer    gcr
-                  , bp_rewrite  = liveAtGCPointRewrite
+    bwd = BwdPass { bp_lattice  = liveAtGCPointLattice2
+                  , bp_transfer = liveAtGCPointXfer2
+                  , bp_rewrite  = liveAtGCPointRewrite2
                   }
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
 
 -- Every potentially-GCing operation can potentially invalidate
 -- every value stored in the root slots, so we must insert reloads
@@ -338,25 +352,24 @@ runLiveAtGCPoint uref bbgp gcr = runWithUniqAndFuel uref infiniteFuel (go bbgp g
 -- does not support.
 --
 
---insertSmartGCRoots :: IORef Uniq -> BasicBlockGraph' -> IO ( BasicBlockGraph' , [RootVar] )
---insertSmartGCRoots uref bbgp0 = do
---  bbgp1 <- makeAllocationsExplicit bbgp0 uref
---  (bbgp' , gcr) <- insertDumbGCRoots uref bbgp1
---  rootsLiveAtGCPoints <- runLiveAtGCPoint2 uref bbgp'
---  bbgp'' <- removeDeadGCRoots bbgp' (mapInverse gcr) rootsLiveAtGCPoints
---  putStrLn $ "these roots were live at GC points: " ++ show rootsLiveAtGCPoints
---  return ( bbgp1 , Set.toList rootsLiveAtGCPoints)
-
 insertSmartGCRoots :: IORef Uniq -> BasicBlockGraph' -> IO ( BasicBlockGraph' , [RootVar] )
 insertSmartGCRoots uref bbgp0 = do
   bbgp1 <- makeAllocationsExplicit bbgp0 uref
-  --(bbgp' , gcr) <- insertDumbGCRoots uref bbgp
-  --liveAtGCPoints <- runLiveAtGCPoint uref bbgp' gcr
-  --putStrLn $ "these variables were live at GC points: " ++ show liveAtGCPoints
-  let rootsLiveAtGCPoints = Set.empty
+  (bbgp' , gcr) <- insertDumbGCRoots uref bbgp1
+  rootsLiveAtGCPoints <- runLiveAtGCPoint2 uref bbgp'
+  bbgp'' <- removeDeadGCRoots bbgp' (mapInverse gcr) rootsLiveAtGCPoints
+  putStrLn $ "these roots were live at GC points: " ++ show rootsLiveAtGCPoints
   return ( bbgp1 , Set.toList rootsLiveAtGCPoints)
+ where
+    mapInverse m = let ks = Map.keysSet m in
+                   let es = Set.fromList (Map.elems m) in
+                   if Set.size ks == Set.size es
+                     then Map.fromList (zip (Set.toList es) (Set.toList ks))
+                     else error $ "mapInverse can't reverse a non-one-to-one map!"
+                               ++ "\nkeys: " ++ show ks ++ "\nelems:" ++ show es
 
-type GCRootsForVariables = Map MoVar MoVar
+type GCRootsForVariables = Map MoVar RootVar
+type VariablesForGCRoots = Map RootVar MoVar
 
 measure :: String -> Boxes.Box
 measure s = Boxes.vcat Boxes.left (map Boxes.text $ lines s)
@@ -368,27 +381,60 @@ boxify b = v Boxes.<> (h Boxes.// b Boxes.// h) Boxes.<> v
 
 -- Generate a GC root for each GCable variable in the body, and
 -- en masse, rewrite each use of a GCable variable to generate and
--- use a load from the variable's associated root. We'll then remove
--- redundant loads and unneeded roots.
+-- use a load from the variable's associated root. Each use of a loaded variable
+-- will also be followed by a kill marker, to ensure that we get the tightest
+-- live range possible for the gc roots.
+--
+-- In a later flow-driven pass, we'll figure out which roots are really needed,
+-- and remove redundant loads (TODO),
+-- unneeded roots, and incorrectly-placed kill marks.
+--
+-- There's one unusual subtlety here: in addition to generating (disabled)
+-- kill markers after each load from a root, we also generate markers at the
+-- start of each basic block. The reason is due to code like this::
+--      (... ; if use x then compute-without-x else reuse x end)
+--
+-- This will get translated to
+--      ...                                    ...
+--      x.load = gcload from x.root            x.load = gcload from x.root
+--      tmp = call use x.load                  tmp = call use x.load
+--      kill x.root (disabled)                 // removed; x.root is live!
+--      cond tmp Lthen Lelse                   cond tmp Lthen Lelse
+--    Lthen:                                 Lthen:
+--      tmp3 = call compute-without-x ()       tmp3 = call compute-without-x ()
+--      ret tmp3                               ret tmp3
+--    Lelse:                                 Lelse:
+--      x.load2 = gcload from x.root           x.load2 = gcload from x.root
+--      kill x.root (disabled)                 kill x.root (enabled) // x.root dead
+--      tmp2 = call reuse x.load2              tmp2 = call reuse x.load2
+--      ret tmp2                               ret tmp2
+--
+-- The problem is that, in order to be safe-for-space, x.root should be
+-- deallocatable while we're running compute-without-x, but as translated
+-- above, we never kill the root slot!
 insertDumbGCRoots :: IORef Uniq -> BasicBlockGraph' -> IO (BasicBlockGraph'
                                                           ,GCRootsForVariables)
 insertDumbGCRoots uref bbgp = do
-   let init = Map.empty
    (g' , fini) <- rebuildGraphAccM (case bbgpEntry bbgp of (bid, _) -> bid)
-                                       (bbgpBody bbgp) init transform
+                                       (bbgpBody bbgp) Map.empty transform
 
-   let catboxes bbgs = Boxes.hsep 1 Boxes.left $ map (boxify . measure) $
-                                                 map (show . pretty) bbgs
-   Boxes.printBox $ catboxes [bbgpBody bbgp , g' ]
+   if False then return ()
+     else do
+           let catboxes bbgs = Boxes.hsep 1 Boxes.left $ map (boxify . measure) $
+                                                         map (show . pretty) bbgs
+           Boxes.printBox $ catboxes [bbgpBody bbgp , g' ]
 
    return (bbgp { bbgpBody =  g' }, fini)
-   -- return (bbgp, fini)
 
  where
   transform :: GCRootsForVariables -> Insn' e x -> IO (Graph Insn' e x, GCRootsForVariables)
   transform gcr insn = case insn of
-    CCLabel {}                    -> do return (mkFirst $ insn                        , gcr)
+    CCLabel {}                    -> do return (mkFirst insn <*> mkMiddles [
+                                                 CCGCKill False root | root <- Map.elems gcr]
+                                                                                      , gcr)
     CCGCLoad  {}                  -> do return (mkMiddle $ insn                       , gcr)
+    CCGCInit  {}                  -> do return (mkMiddle $ insn                       , gcr)
+    CCGCKill  {}                  -> do return (mkMiddle $ insn                       , gcr)
     CCLetVal id val               -> do let vs = freeTypedIds val
                                         withGCLoads gcr vs (\vs' ->
                                          let m = Map.fromList (zip vs vs' ) in
@@ -397,35 +443,117 @@ insertDumbGCRoots uref bbgp = do
     CCLetFuns {}                  -> do -- The strategy for inserting GC loads here is a bit
                                         -- subtle, because we want to make sure that
                                         return (mkMiddle $ insn                       , gcr)
-    CCLast (CCCont b vs)          -> do withGCLoads gcr vs (\vs' ->
+    CCLast (CCCont b vs)          -> do withGCLoads gcr vs (\vs'  ->
                                                (mkLast $ CCLast (CCCont b vs' )))
     CCLast (CCCall b t id v vs)   -> do withGCLoads gcr (v:vs) (\(v' : vs' ) ->
                                                (mkLast $ CCLast (CCCall b t id v' vs' )))
     CCLast (CCCase v arms mb occ) -> do withGCLoads gcr [v] (\[v' ] ->
                                                (mkLast $ CCLast (CCCase v' arms mb occ)))
 
-  withGCLoads :: GCRootsForVariables -> [MoVar] -> ([MoVar] -> Graph Insn' O x)
+  -- A helper function to assist in rewriting instructions to use loads from
+  -- GC roots for variables which are subject to garbage collection.
+  withGCLoads :: GCRootsForVariables -> [MoVar]
+                                     -> ([MoVar] -> Graph Insn' O x)
                                      -> IO (Graph Insn' O x, GCRootsForVariables)
   withGCLoads gcr vs mkG = do
     let fresh str = do u <- modifyIORef uref (+1) >> readIORef uref
                        return (Ident (T.pack str) u)
+        -- We'll rewrite something like ``call @foo (x,n)`` (where ``x`` is
+        -- GCable and ``n`` isn't) with::
+        --      x.load = load x.root
+        --      kill x.root (disabled)
+        ---     call @foo (x.load , n)
+        -- We'll removed kills for live roots and enable the remainder.
+        retLoaded root gcr oos = do
+            id <- fresh (show (tidIdent root) ++ ".load")
+            let loadedvar = TypedId (tidType root) id
+            return ((oos ++ [CCGCLoad loadedvar root
+                            ,CCGCKill False     root], loadedvar), gcr)
 
-        withGCLoad :: MoVar -> GCRootsForVariables -> IO (([Insn' O O], MoVar), GCRootsForVariables)
-        withGCLoad v gcr = do {
-     if not $ isGCable v
-       then return (([], v), gcr)
-       else case Map.lookup v gcr of
-                   Just root -> do id <- fresh (show (tidIdent root) ++ ".load")
-                                   let loadedvar = TypedId (tidType root) id
-                                   return (([CCGCLoad loadedvar root], loadedvar), gcr)
+        withGCLoad :: MoVar -> GCRootsForVariables
+                            -> IO (([Insn' O O], MoVar), GCRootsForVariables)
+        withGCLoad v gcr = do
+          if not $ isGCable v
+            then return (([], v), gcr)
+            else case Map.lookup v gcr of
+                   Just root -> do retLoaded root gcr []
                    Nothing   -> do rootid <- fresh (show (tidIdent v) ++ ".root")
                                    let root = TypedId (tidType v) rootid
                                    let gcr' = Map.insert v root gcr
-                                   withGCLoad v gcr' -- go to Just root case...
-    }
+                                   junkid <- fresh (show (tidIdent v) ++ ".junk")
+                                   let junk = TypedId (TupleType []) junkid
+                                   retLoaded root gcr' [CCGCInit junk v root]
+
     (loadsAndVars , gcr' ) <- mapFoldM' vs gcr withGCLoad
     let (loads, vs' ) = unzip loadsAndVars
     return (mkMiddles (concat loads) <*> mkG vs' , gcr' )
+
+type RootMapped = StateT GCRootsForVariables IO
+
+-- Now we know the set of GC roots which are (and, implicitly, are not)
+-- live when GC can occur. If a root is not live, we'll remove all the
+-- loads, inits, and kills associated with it. We'll also replace uses
+-- of gcloads with the corresponding variables. For example, we'll replace::
+--    gc.root := x
+--    x.load = gcload x.root
+--    call foo (x.load)
+-- with::
+--    call foo (x)
+removeDeadGCRoots :: BasicBlockGraph'
+                  -> VariablesForGCRoots
+                  -> RootLiveWhenGC
+                  -> IO BasicBlockGraph'
+removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
+   let mappedAction = rebuildGraphM (case bbgpEntry bbgp of (bid, _) -> bid)
+                                                       (bbgpBody bbgp) transform
+   g' <- evalStateT mappedAction Map.empty
+
+   if False then return ()
+     else do
+           let catboxes bbgs = Boxes.hsep 1 Boxes.left $ map (boxify . measure) $
+                                                         map (show . pretty) bbgs
+           Boxes.printBox $ catboxes [bbgpBody bbgp , g' ]
+   return bbgp { bbgpBody =  g' }
+ where
+  isLive root = Set.member root liveRoots
+  iflive root g = if isLive root then return g else return emptyGraph
+
+  transform :: Insn' e x -> RootMapped (Graph Insn' e x)
+  transform insn = case insn of
+    CCLabel {}                    -> do return $ mkFirst $ insn
+    CCGCLoad  v     root          -> do m <- get
+                                        put (Map.insert v root m)
+                                        iflive root $ mkMiddle $ insn
+    CCGCInit  _ _   root          -> do iflive root $ mkMiddle $ insn
+    CCGCKill  True  root          -> do iflive root $ mkMiddle $ insn
+    CCGCKill  False root          -> do return emptyGraph -- TODO remove this
+    CCLetVal id val               -> do let vs = freeTypedIds val
+                                        undoDeadGCLoads vs (\vs' ->
+                                         let m = Map.fromList (zip vs vs' ) in
+                                         let s v = Map.findWithDefault v v m in
+                                         mkMiddle $ CCLetVal id (substVarsInLetable s val))
+    CCLetFuns {}                  -> do return $ mkMiddle $ insn
+    CCLast (CCCont b vs)          -> do undoDeadGCLoads vs (\vs'  ->
+                                               (mkLast $ CCLast (CCCont b vs' )))
+    CCLast (CCCall b t id v vs)   -> do undoDeadGCLoads (v:vs) (\(v' : vs' ) ->
+                                               (mkLast $ CCLast (CCCall b t id v' vs' )))
+    CCLast (CCCase v arms mb occ) -> do undoDeadGCLoads [v] (\[v' ] ->
+                                               (mkLast $ CCLast (CCCase v' arms mb occ)))
+
+  varForRoot root = case Map.lookup root varsForGCRoots of
+                      Nothing -> error $ "Unable to find source variable for root " ++ show root
+                      Just var -> var
+
+  undoDeadGCLoads vs k = do
+    vs' <- mapM undo vs
+    return $ k vs'
+
+  undo v = do gcRootsForVars <- get
+              return $ case Map.lookup v gcRootsForVars of
+                           Nothing   -> v
+                           Just root -> if isLive root
+                                          then v
+                                          else varForRoot root
 
 canGCLetable l = let rv = canGC  l in if rv then {- trace ("canGCL: " ++ show l) -} rv else rv
 canGCCalled  v = let rv = canGCF v in if rv then {- trace ("canGCF: " ++ show v) -} rv else rv
