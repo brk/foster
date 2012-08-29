@@ -52,7 +52,6 @@ import Foster.Bepb.TermVar.Tag
 import Foster.Bepb.Terminator.Tag
 import Foster.Bepb.Proc.Linkage
 import Foster.Bepb.PbAllocInfo.MemRegion as PbMemRegion
-import Foster.Bepb.TupleStore.MemRegion as TsMemRegion
 
 import qualified Text.ProtocolBuffers.Header as P'
 import qualified Data.Text as T
@@ -153,11 +152,13 @@ dumpMemRegion amr = case amr of
     MemRegionGlobalHeap -> PbMemRegion.MEM_REGION_GLOBAL_HEAP
 
 dumpAllocate :: AllocInfo MonoType -> PbAllocInfo
-dumpAllocate (AllocInfo typ region maybe_array_size allocsite) =
+dumpAllocate (AllocInfo typ region typename maybe_tag maybe_array_size allocsite) =
     P'.defaultValue { PbAllocInfo.mem_region = dumpMemRegion region
                     , PbAllocInfo.type'      = dumpType      typ
-                    , PbAllocInfo.array_size = fmap dumpVar maybe_array_size
-                    , PbAllocInfo.alloc_site = u8fromString allocsite
+                    , PbAllocInfo.type_name  = u8fromString  typename
+                    , PbAllocInfo.ctor_tag   = fmap intToInt32 maybe_tag
+                    , PbAllocInfo.array_size = fmap dumpVar  maybe_array_size
+                    , PbAllocInfo.alloc_site = u8fromString  allocsite
                     }
 
 -- ||||||||||||||||||||||||||| CFGs |||||||||||||||||||||||||||||{{{
@@ -190,9 +191,9 @@ dumpMiddle (ILTupleStore vs v r) =
       P'.defaultValue {
               stored_vars = fromList $ map dumpVar vs
             , storage     = dumpVar v
-            , PbTupleStore.mem_region = case r of
-                MemRegionStack      -> TsMemRegion.MEM_REGION_STACK
-                MemRegionGlobalHeap -> TsMemRegion.MEM_REGION_GLOBAL_HEAP
+            , storage_indir = case r of
+                                MemRegionStack      -> False
+                                MemRegionGlobalHeap -> True
      }
    }
 
@@ -267,7 +268,7 @@ dumpExpr x@(ILTuple vs allocsrc) =
                     , PbLetable.type' = Just $ dumpType (typeMo x)
                     , PbLetable.alloc_info = Just $ dumpAllocate
                          (AllocInfo (tupStruct $ typeMo x)
-                                    MemRegionGlobalHeap Nothing
+                                    MemRegionGlobalHeap "xtupx" Nothing Nothing
                                     (showAllocationSource allocsrc)) }
 
 dumpExpr   (ILOccurrence v occ) =
@@ -285,8 +286,8 @@ dumpExpr  (ILAllocArray (ArrayType elt_ty) size) =
                     , PbLetable.tag   = IL_ALLOCATE
                     , PbLetable.type' = Just $ dumpType elt_ty
                     , PbLetable.alloc_info = Just $ dumpAllocate
-                       (AllocInfo elt_ty MemRegionGlobalHeap (Just size)
-                                                           "...array...") }
+                       (AllocInfo elt_ty MemRegionGlobalHeap "xarrayx"
+                                      Nothing (Just size)  "...array...") }
 dumpExpr  (ILAllocArray nonArrayType _) =
          error $ "ProtobufIL.hs: Can't dump ILAllocArray with non-array type "
               ++ show nonArrayType

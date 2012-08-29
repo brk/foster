@@ -120,8 +120,11 @@ flattenGraph bbgp =
   deHooplizeBlock retk b =
          let (f, ms, l) = blockSplit b in
          let (lastmids, last) = fin l in
-         Block (frs f) (map mid (blockToList ms) ++ lastmids) last
+         Block (frs f) (concatMap midmany (blockToList ms) ++ lastmids) last
    where
+     midmany :: Insn' O O -> [ILMiddle]
+     midmany insn = [mid insn]
+
      mid :: Insn' O O -> ILMiddle
      mid (CCLetVal id letable)    = ILLetVal   id  letable
      mid (CCGCLoad v   fromroot)  = ILLetVal (tidIdent v) (ILDeref (tidType v) fromroot)
@@ -688,15 +691,16 @@ makeAllocationsExplicit bbgp uref = do
     (CCLetVal id (ILAlloc v memregion)) -> do
             id' <- fresh "ref-alloc"
             let t = tidType v
-            let info = AllocInfo t memregion Nothing "ref-allocator"
+            let info = AllocInfo t memregion "ref" Nothing Nothing "ref-allocator"
             return $
               (mkMiddle $ CCLetVal id  (ILAllocate info)) <*>
               (mkMiddle $ CCLetVal id' (ILStore v (TypedId t id)))
+    (CCLetVal id (ILTuple [] allocsrc)) -> return $ mkMiddle $ insn
     (CCLetVal id (ILTuple vs allocsrc)) -> do
             id' <- fresh "tup-alloc"
             let t = StructType (map tidType vs)
             let memregion = MemRegionGlobalHeap
-            let info = AllocInfo t memregion Nothing "tup-allocator"
+            let info = AllocInfo t memregion "tup" Nothing Nothing "tup-allocator"
             return $
               (mkMiddle $ CCLetVal id (ILAllocate info)) <*>
               (mkMiddle $ CCTupleStore vs (TypedId t id) memregion)

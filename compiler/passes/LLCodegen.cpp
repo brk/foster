@@ -947,7 +947,10 @@ llvm::Value* LLAllocate::codegenCell(CodegenPass* pass, bool init) {
   if (this->arraySize != NULL) {
     return allocateArray(pass, this->type, this->region,
                          pass->emit(this->arraySize, NULL), init);
-  } else { //if (StructTypeAST* sty = dynamic_cast<StructTypeAST*>(this->type)) {
+  } else {
+    if (StructTypeAST* sty = dynamic_cast<StructTypeAST*>(this->type)) {
+      registerStructType(sty, this->type_name,          this->ctorId, pass->mod);
+    }
     return allocateCell(pass, this->type, this->region, this->ctorId, this->srclines, init);
   }
   /*else {
@@ -1061,14 +1064,6 @@ llvm::Value* LLUnitValue::codegen(CodegenPass* pass) {
 llvm::Value* LLTuple::codegenStorage(CodegenPass* pass, bool init) {
   ASSERT(!vars.empty());
   ASSERT(this->allocator);
-  StructTypeAST* structty = dynamic_cast<StructTypeAST*>(this->allocator->type);
-
-  ASSERT(structty != NULL)
-        << "allocator wants to emit type " << str(this->allocator->type)
-        << "; var 0 :: " << str(vars[0]->type);
-
-  registerStructType(structty,
-                     this->typeName, foster::bogusCtorId(-2), pass->mod);
   return allocator->codegenCell(pass, init);
 }
 
@@ -1088,15 +1083,13 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
   copyValuesToStruct(codegenAll(pass, this->vars), tup_ptr);
 }
 
-llvm::Value* LLTupleStore::codegen(CodegenPass* pass) {
+void LLTupleStore::codegenMiddle(CodegenPass* pass) {
   ASSERT(!vars.empty());
-
-  llvm::Value* slot    = pass->emit(this->storage, NULL);
-  llvm::Value* tup_ptr = this->allocator->isStackAllocated()
-                          ? slot
-                          : emitNonVolatileLoad(slot, "normalize");
+  llvm::Value* slot    = this->storage->codegen(pass);
+  llvm::Value* tup_ptr = this->storage_indir
+                          ? emitNonVolatileLoad(slot, "normalize")
+                          : slot;
   copyValuesToStruct(codegenAll(pass, this->vars), tup_ptr);
-  return slot;
 }
 
 
@@ -1308,7 +1301,8 @@ llvm::Value* LLAppCtor::codegen(CodegenPass* pass) {
 
   // This basically duplicates LLTuple::codegen and should eventually
   // be properly implemented in terms of it.
-  registerStructType(sty, this->ctorInfo.ctorId.typeName + "." + this->ctorInfo.ctorId.ctorName,
+  registerStructType(sty,
+                     this->ctorInfo.ctorId.typeName + "." + this->ctorInfo.ctorId.ctorName,
                      this->ctorInfo.ctorId.smallId, pass->mod);
 
   llvm::Value* obj_slot = allocateCell(pass, sty,

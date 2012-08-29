@@ -350,6 +350,8 @@ data AllocMemRegion = MemRegionStack
 
 data AllocInfo t = AllocInfo { allocType      :: t
                              , allocRegion    :: AllocMemRegion
+                             , allocTypeName  :: String
+                             , allocCtorTag   :: Maybe Int
                              , allocArraySize :: Maybe (TypedId t)
                              , allocSite      :: String
                              }

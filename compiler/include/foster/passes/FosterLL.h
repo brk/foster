@@ -295,16 +295,6 @@ struct LLTuple : public LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
-struct LLTupleStore : public LLExpr {
-  std::vector<LLVar*> vars;
-  LLVar* storage;
-  LLAllocate* allocator;
-
-  explicit LLTupleStore(const std::vector<LLVar*>& vars, LLVar* s, LLAllocate* a)
-    : LLExpr("LLTupleStore"), vars(vars), storage(s), allocator(a) {}
-  virtual llvm::Value* codegen(CodegenPass* pass);
-};
-
 struct LLArrayIndex {
   LLVar* base;
   LLVar* index;
@@ -374,9 +364,20 @@ struct LLLetVals : public LLMiddle {
   virtual void codegenMiddle(CodegenPass* pass);
 };
 
+struct LLTupleStore : public LLMiddle {
+  std::vector<LLVar*> vars;
+  LLVar* storage;
+  bool storage_indir;
+
+  explicit LLTupleStore(const std::vector<LLVar*>& vars, LLVar* s, bool indir)
+                 : vars(vars), storage(s), storage_indir(indir) {}
+  virtual void codegenMiddle(CodegenPass* pass);
+};
+
 struct LLAllocate : public LLExpr {
   LLVar* arraySize; // NULL if not allocating an array
   int8_t ctorId;
+  std::string type_name;
   enum MemRegion {
       MEM_REGION_STACK
     , MEM_REGION_GLOBAL_HEAP
@@ -385,10 +386,11 @@ struct LLAllocate : public LLExpr {
 
   bool isStackAllocated() const { return region == MEM_REGION_STACK; }
 
-  explicit LLAllocate(TypeAST* t, int8_t c, LLVar* arrSize, MemRegion m,
+  explicit LLAllocate(TypeAST* t, std::string tynm,
+                      int8_t c, LLVar* arrSize, MemRegion m,
                       std::string allocsite)
-     : LLExpr("LLAllocate"), arraySize(arrSize), ctorId(c), region(m),
-                             srclines(allocsite) { this->type = t; }
+     : LLExpr("LLAllocate"), arraySize(arrSize), ctorId(c), type_name(tynm),
+                             region(m), srclines(allocsite) { this->type = t; }
   llvm::Value* codegenCell(CodegenPass* pass, bool init);
   virtual llvm::Value* codegen(CodegenPass* pass);
 };

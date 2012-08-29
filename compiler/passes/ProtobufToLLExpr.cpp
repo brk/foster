@@ -159,9 +159,11 @@ LLAllocate* parseAllocate(const pb::Letable& e) {
     array_size = parseTermVar(&a.array_size());
   }
 
+  std::string tynm = a.type_name();
   LLAllocate::MemRegion target_region = parseMemRegion(a);
-  int8_t bogusCtorId = -2;
-  return new LLAllocate(TypeAST_from_pb(& a.type()), bogusCtorId,
+  int8_t bogusCtorTag = -2;
+  int8_t ctorTag = a.has_ctor_tag() ? a.ctor_tag() : bogusCtorTag;
+  return new LLAllocate(TypeAST_from_pb(& a.type()), tynm, ctorTag,
                         array_size, target_region, a.alloc_site());
 }
 
@@ -222,6 +224,14 @@ LLMiddle* parseBitcast(const pb::RebindId& r) {
   return new LLBitcast(r.from_id(), parseTermVar(&r.to_var()));
 }
 
+LLMiddle* parseTupleStore(const pb::TupleStore& ts) {
+  std::vector<LLVar*> vars;
+  for (int i = 0; i < ts.stored_vars_size(); ++i) {
+    vars.push_back(parseTermVar(&ts.stored_vars(i)));
+  }
+  return new LLTupleStore(vars, parseTermVar(&ts.storage()), ts.storage_indir());
+}
+
 LLSwitch* parseSwitch(const pb::Terminator&);
 
 LLBr* parseBr(const pb::Terminator& b) {
@@ -245,6 +255,7 @@ LLTerminator* parseTerminator(const pb::Terminator& b) {
 }
 
 LLMiddle* parseMiddle(const pb::BlockMiddle& b) {
+  if (b.has_tuple_store()) { return parseTupleStore(b.tuple_store()); }
   if (b.has_let_val()) { return parseLetVal(b.let_val()); }
   if (b.has_let_clo()) { return parseLetClosures(b.let_clo()); }
   if (b.has_rebind())  { return parseRebindId(b.rebind()); }

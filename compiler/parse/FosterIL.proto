@@ -60,13 +60,9 @@ message BlockMiddle {
 }
 
 message TupleStore {
-  enum MemRegion {
-    MEM_REGION_STACK       = 1;
-    MEM_REGION_GLOBAL_HEAP = 2;
-  }
   repeated TermVar stored_vars = 1;
   required TermVar storage     = 2;
-  required MemRegion mem_region = 3;
+  required bool    storage_indir = 3;
 }
 
 message RootInit {
@@ -160,8 +156,10 @@ message PbAllocInfo {
   }
   required MemRegion mem_region = 1;
   required Type            type = 2;
+  optional  int32      ctor_tag = 6;
   optional TermVar   array_size = 3;
   required string    alloc_site = 4;
+  required string     type_name = 5;
 }
 
 message Proc {
@@ -228,7 +226,7 @@ message PbCtorInfo {
 message PbCtorId {
   required string ctor_type_name = 1;
   required string ctor_ctor_name = 2;
-  required int32  ctor_local_id  = 3;
+  required  int32 ctor_local_id  = 3;
 }
 
 message PbOccurrence {
