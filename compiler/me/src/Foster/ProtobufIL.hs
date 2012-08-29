@@ -38,7 +38,6 @@ import Foster.Bepb.TermVar      as PbTermVar
 import Foster.Bepb.PbCtorId     as PbCtorId
 import Foster.Bepb.RebindId     as PbRebindId
 import Foster.Bepb.PbDataCtor   as PbDataCtor
-import Foster.Bepb.PbCtorInfo   as PbCtorInfo
 import Foster.Bepb.PbAllocInfo  as PbAllocInfo
 import Foster.Bepb.PbOccurrence as PbOccurrence
 import Foster.Bepb.PbSwitch     as PbSwitch
@@ -407,16 +406,6 @@ dumpClosureWithName (varid, CC.Closure procid envid captvars allocsrc0) =
                     , env_storage = dumpAllocate   storage
                     , env_store   = dumpTupleStore tupstore
                     , allocsite = u8fromString $ showAllocationSource allocsrc }
-
-dumpCtorInfo (CtorInfo cid@(CtorId _dtn dtcn _arity ciid)
-                           (DataCtor dcn dcid _tyfs tys)) =
-  case (ciid == dcid, dtcn == T.unpack dcn) of
-    (_, False) -> error $ "Ctor info inconsistent, had different names for ctor id and data ctor."
-    (False, _) -> error $ "Ctor info inconsistent, had different tags for ctor id and data ctor."
-    (_,     _) -> -- ignore type formals...
-        P'.defaultValue { PbCtorInfo.ctor_id = dumpCtorId cid
-                        , PbCtorInfo.ctor_arg_types = fromList $ map dumpType tys
-                        }
 
 dumpCtorId (CtorId dtn dtcn _arity ciid) =
     P'.defaultValue { PbCtorId.ctor_type_name = u8fromString dtn

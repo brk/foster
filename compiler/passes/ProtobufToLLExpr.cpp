@@ -53,14 +53,6 @@ CtorId parseCtorId(const pb::PbCtorId& c) { CtorId x;
   return x;
 }
 
-CtorInfo parseCtorInfo(const pb::PbCtorInfo& c) { CtorInfo x;
-  x.ctorId = parseCtorId(c.ctor_id());
-  for (int i = 0; i < c.ctor_arg_types_size(); ++i) {
-    x.ctorArgTypes.push_back(TypeAST_from_pb(&c.ctor_arg_types(i)));
-  }
-  return x;
-}
-
 LLExpr* parseBool(const pb::Letable& e) {
   return new LLBool(e.bool_value() ? "true" : "false");
 }
