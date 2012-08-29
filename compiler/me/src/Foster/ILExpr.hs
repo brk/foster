@@ -90,6 +90,60 @@ prepForCodegen m uref = do
      let (cfgBlocks , numPreds) = flattenGraph g
      return $ ILProcDef (p { procBlocks = cfgBlocks }) numPreds liveRoots
 
+
+makeAllocationsExplicit :: BasicBlockGraph' -> IORef Uniq -> IO BasicBlockGraph'
+makeAllocationsExplicit bbgp uref = do
+     let (bid,_) = bbgpEntry bbgp
+     bb' <- rebuildGraphM bid (bbgpBody bbgp) explicate
+     return $ bbgp { bbgpBody = bb' }
+ where
+  fresh str = do u <- modifyIORef uref (+1) >> readIORef uref
+                 return (Ident (T.pack str) u)
+
+  explicate :: Insn' e x -> IO (Graph Insn' e x)
+  explicate insn = case insn of
+    (CCLabel   {}        ) -> return $ mkFirst $ insn
+    (CCGCLoad _v fromroot) -> return $ mkMiddle $ insn
+    (CCGCInit _ _v toroot) -> return $ mkMiddle $ insn
+    (CCGCKill {}         ) -> return $ mkMiddle $ insn
+    (CCLetVal id (ILAlloc v memregion)) -> do
+            id' <- fresh "ref-alloc"
+            let t = tidType v
+            let info = AllocInfo t memregion "ref" Nothing Nothing "ref-allocator" NoZeroInit
+            return $
+              (mkMiddle $ CCLetVal id  (ILAllocate info)) <*>
+              (mkMiddle $ CCLetVal id' (ILStore v (TypedId t id)))
+    (CCLetVal id (ILTuple [] allocsrc)) -> return $ mkMiddle $ insn
+    (CCLetVal id (ILTuple vs allocsrc)) -> do
+            id' <- fresh "tup-alloc"
+            let t = StructType (map tidType vs)
+            let memregion = MemRegionGlobalHeap
+            let info = AllocInfo t memregion "tup" Nothing Nothing "tup-allocator" NoZeroInit
+            return $
+              (mkMiddle $ CCLetVal id (ILAllocate info)) <*>
+              (mkMiddle $ CCTupleStore vs (TypedId t id) memregion)
+    (CCLetVal id (ILAppCtor t (CtorInfo cid _) vs)) -> do
+            id' <- fresh "ctor-alloc"
+            let tynm = ctorTypeName cid ++ "." ++ ctorCtorName cid
+            let tag  = ctorSmallInt cid
+            let t = StructType (map tidType vs)
+            let obj = (TypedId t id' )
+            let genty = PtrTypeUnknown
+            let memregion = MemRegionGlobalHeap
+            let info = AllocInfo t memregion tynm (Just tag) Nothing "ctor-allocator" NoZeroInit
+            return $
+              (mkMiddle $ CCLetVal id' (ILAllocate info)) <*>
+              (mkMiddle $ CCTupleStore vs obj memregion) <*>
+              (mkMiddle $ CCLetVal id  (ILBitcast genty obj))
+    (CCTupleStore   {}   ) -> return $ mkMiddle $ insn
+    (CCLetVal  _id  _l   ) -> return $ mkMiddle $ insn
+    (CCLetFuns _ids _clos) -> return $ mkMiddle $ insn
+    (CCLast    cclast)     ->
+          case cclast of
+            (CCCont {}       ) -> return $ mkLast $ insn
+            (CCCall _ _ _ _ _) -> return $ mkLast $ insn
+            (CCCase {}       ) -> return $ mkLast $ insn
+
 --------------------------------------------------------------------
 
 computeNumPredecessors elab blocks =
@@ -672,56 +726,3 @@ instance Show ILLast where
   show (ILCase v _arms _def _occ) = "case(" ++ show v ++ ")"
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
-
-makeAllocationsExplicit :: BasicBlockGraph' -> IORef Uniq -> IO BasicBlockGraph'
-makeAllocationsExplicit bbgp uref = do
-     let (bid,_) = bbgpEntry bbgp
-     bb' <- rebuildGraphM bid (bbgpBody bbgp) explicate
-     return $ bbgp { bbgpBody = bb' }
- where
-  fresh str = do u <- modifyIORef uref (+1) >> readIORef uref
-                 return (Ident (T.pack str) u)
-
-  explicate :: Insn' e x -> IO (Graph Insn' e x)
-  explicate insn = case insn of
-    (CCLabel   {}        ) -> return $ mkFirst $ insn
-    (CCGCLoad _v fromroot) -> return $ mkMiddle $ insn
-    (CCGCInit _ _v toroot) -> return $ mkMiddle $ insn
-    (CCGCKill {}         ) -> return $ mkMiddle $ insn
-    (CCLetVal id (ILAlloc v memregion)) -> do
-            id' <- fresh "ref-alloc"
-            let t = tidType v
-            let info = AllocInfo t memregion "ref" Nothing Nothing "ref-allocator" NoZeroInit
-            return $
-              (mkMiddle $ CCLetVal id  (ILAllocate info)) <*>
-              (mkMiddle $ CCLetVal id' (ILStore v (TypedId t id)))
-    (CCLetVal id (ILTuple [] allocsrc)) -> return $ mkMiddle $ insn
-    (CCLetVal id (ILTuple vs allocsrc)) -> do
-            id' <- fresh "tup-alloc"
-            let t = StructType (map tidType vs)
-            let memregion = MemRegionGlobalHeap
-            let info = AllocInfo t memregion "tup" Nothing Nothing "tup-allocator" NoZeroInit
-            return $
-              (mkMiddle $ CCLetVal id (ILAllocate info)) <*>
-              (mkMiddle $ CCTupleStore vs (TypedId t id) memregion)
-    (CCLetVal id (ILAppCtor t (CtorInfo cid _) vs)) -> do
-            id' <- fresh "ctor-alloc"
-            let tynm = ctorTypeName cid ++ "." ++ ctorCtorName cid
-            let tag  = ctorSmallInt cid
-            let t = StructType (map tidType vs)
-            let obj = (TypedId t id' )
-            let genty = PtrTypeUnknown
-            let memregion = MemRegionGlobalHeap
-            let info = AllocInfo t memregion tynm (Just tag) Nothing "ctor-allocator" NoZeroInit
-            return $
-              (mkMiddle $ CCLetVal id' (ILAllocate info)) <*>
-              (mkMiddle $ CCTupleStore vs obj memregion) <*>
-              (mkMiddle $ CCLetVal id  (ILBitcast genty obj))
-    (CCTupleStore   {}   ) -> return $ mkMiddle $ insn
-    (CCLetVal  _id  _l   ) -> return $ mkMiddle $ insn
-    (CCLetFuns _ids _clos) -> return $ mkMiddle $ insn
-    (CCLast    cclast)     ->
-          case cclast of
-            (CCCont {}       ) -> return $ mkLast $ insn
-            (CCCall _ _ _ _ _) -> return $ mkLast $ insn
-            (CCCase {}       ) -> return $ mkLast $ insn
