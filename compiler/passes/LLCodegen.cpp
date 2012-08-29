@@ -249,6 +249,10 @@ CodegenPass::CodegenPass(llvm::Module* m, bool useGC, bool nsw, bool nuw,
   //dib = new DIBuilder(*mod);
 }
 
+llvm::Value* emitLoad(llvm::Value* v, const char* suffix) {
+  return emitNonVolatileLoad(v, v->getName() + suffix);
+}
+
 llvm::Value* CodegenPass::autoload(llvm::Value* v, const char* suffix) {
   if (this->needsImplicitLoad.count(v) == 1) {
     return emitNonVolatileLoad(v, v->getName() + suffix);
@@ -1050,6 +1054,10 @@ llvm::Value* LLArrayLength::codegen(CodegenPass* pass) {
 //////////////// LLTuple ///////////////////////////////////////////
 /////////////////////////////////////////////////////////////////{{{
 
+llvm::Value* LLUnitValue::codegen(CodegenPass* pass) {
+  return getUnitValue();
+}
+
 llvm::Value* LLTuple::codegenStorage(CodegenPass* pass, bool init) {
   if (vars.empty()) { return getUnitValue(); }
 
@@ -1108,7 +1116,11 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
     // by directly initializing the environments. (TODO: how much more efficicient?)
     std::vector<llvm::Value*> envSlots;
     for (size_t i = 0; i < closures.size(); ++i) {
-      envSlots.push_back(closures[i]->env->codegenStorage(pass, /*init*/ true));
+      if (closures[i]->env->vars.empty()) {
+        envSlots.push_back(NULL);
+      } else {
+        envSlots.push_back(closures[i]->env->codegenStorage(pass, /*init*/ true));
+      }
     }
 
     emitFakeComment("codegenned storage for env slots");
@@ -1125,7 +1137,9 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
     std::vector<llvm::Value*> envPtrs;
     for (size_t i = 0; i < closures.size(); ++i) {
       // Make sure we close over generic versions of our pointers...
-      llvm::Value* envPtr = pass->autoload(envSlots[i]);
+      llvm::Value* envPtr = (envSlots[i] == NULL)
+                              ? getUnitValue()
+                              : pass->autoload(envSlots[i]);
       llvm::Value* genPtr = emitBitcast(envPtr,
                                   getGenericClosureEnvType()->getLLVMType(),
                                   closures[i]->envname + ".generic");
@@ -1139,7 +1153,9 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
     // Now that all the env pointers are in scope,
     // store the appropriate values through each pointer.
     for (size_t i = 0; i < closures.size(); ++i) {
-      closures[i]->env->codegenTo(pass, envPtrs[i]);
+      if (! closures[i]->env->vars.empty()) {
+        closures[i]->env->codegenTo(pass, envPtrs[i]);
+      }
     }
 
     emitFakeComment("codegenned closure environments");
@@ -1173,7 +1189,7 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
 
   llvm::Value* LLClosure::codegenClosure(
                           CodegenPass* pass,
-                          llvm::Value* envPtrOrSlot) {
+                          llvm::Value* envSlotOrNull) {
     LLProc* llproc = pass->procs[procname];
     ASSERT(llproc) << "Unable to find closure's proc " << procname;
 
@@ -1198,12 +1214,11 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
     emitStoreWithCast(llproc->getFn(),
                       builder.CreateConstGEP2_32(clo, 0, 0, varname + ".clo_code"));
     Value* env_slot = builder.CreateConstGEP2_32(clo, 0, 1, varname + ".clo_env");
-    if (env->vars.empty()) {
+    if (envSlotOrNull == NULL) {
       storeNullPointerToSlot(env_slot);
     } else {
       // Only store the env in the closure if the env contains entries.
-      llvm::Value* envPtr = pass->autoload(envPtrOrSlot);
-      emitStoreWithCast(envPtr, env_slot);
+      emitStoreWithCast(emitLoad(envSlotOrNull, ".env.load"), env_slot);
     }
 
     return rv;

@@ -276,6 +276,11 @@ struct LLCallPrimOp : public LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
+struct LLUnitValue : public LLExpr {
+  explicit LLUnitValue() : LLExpr("LLUnitValue") {}
+  virtual llvm::Value* codegen(CodegenPass* pass);
+};
+
 struct LLTuple : public LLExpr {
   std::vector<LLVar*> vars;
   const char* typeName;
