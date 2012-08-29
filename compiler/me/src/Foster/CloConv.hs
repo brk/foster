@@ -61,7 +61,12 @@ data Insn' e x where
         CCLabel   :: BlockEntry           -> Insn' C O
         CCLetVal  :: Ident   -> Letable   -> Insn' O O
         CCLetFuns :: [Ident] -> [Closure] -> Insn' O O
+        CCGCLoad  :: MoVar   -> RootVar   -> Insn' O O
+        CCGCInit  :: MoVar -> MoVar -> RootVar -> Insn' O O
+        CCGCKill  :: Bool  ->   RootVar   -> Insn' O O
         CCLast    :: CCLast               -> Insn' O C
+
+type RootVar = MoVar
 
 data Proc blocks =
      Proc { procReturnType :: MonoType
@@ -195,7 +200,7 @@ closureConvertBlocks bbg = do
    return BasicBlockGraph' {
                  bbgpEntry = bbgEntry bbg,
                  bbgpRetK  = bbgRetK  bbg,
-                 bbgpBody =  g'
+                 bbgpBody  = g'
           }
   where
       transform :: Insn e x -> ILM (Graph Insn' e x)
@@ -483,6 +488,9 @@ instance Pretty (Insn' e x) where
                                   indent 4 (align $
                                    vcat [text recfun <+> text (show id) <+> text "=" <+> pretty fn
                                         | (id,fn) <- zip ids fns])
+  pretty (CCGCLoad  loadedvar root) = indent 4 $ text "load from" <+> pretty root <+> text "to" <+> pretty loadedvar
+  pretty (CCGCInit  _  srcvar root) = indent 4 $ text "init root" <+> pretty root <+> text ":=" <+> pretty srcvar
+  pretty (CCGCKill  enabled  root) = indent 4 $ text "kill root" <+> pretty root <+> pretty enabled
   pretty (CCLast    cclast     ) = pretty cclast
 
 instance Pretty CCLast where
@@ -528,6 +536,8 @@ instance NonLocal Insn' where
   entryLabel (CCLabel ((_,l), _)) = l
   successors (CCLast last) = map blockLabel (block'TargetsOf (CCLast last))
                            where blockLabel (_, label) = label
+
+instance FosterNode Insn' where branchTo bid = CCLast $ CCCont bid []
 
 block'TargetsOf :: Insn' O C -> [BlockId]
 block'TargetsOf (CCLast last) =
