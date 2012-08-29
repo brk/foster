@@ -350,7 +350,9 @@ dumpExpr (ILCallPrim t (PrimIntTrunc _from to) args)
         = dumpCallPrimOp t ("trunc_i" ++ show tosize) args
         where tosize = intOfSize to
 
-dumpExpr (ILAppCtor t cinfo args) = dumpAppCtor t cinfo args
+dumpExpr (ILAppCtor _ cinfo _) = error $ "ProtobufIL.hs saw ILAppCtor, which"
+                                      ++ " should have been translated away..."
+
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||||||||| Calls ||||||||||||||||||||||||||{{{
@@ -366,12 +368,6 @@ dumpCallPrimOp t op args = -- TODO actually use prim_op_size from C++ side.
                     , PbLetable.parts = fromList $ fmap dumpVar args
                     , PbLetable.prim_op_name = Just $ u8fromString op
                     , PbLetable.type' = Just $ dumpType t }
-
-dumpAppCtor t cinfo args =
-    P'.defaultValue { PbLetable.tag     = IL_CTOR
-                    , PbLetable.parts   = fromList $ fmap dumpVar args
-                    , PbLetable.ctor_info = Just $ dumpCtorInfo cinfo
-                    , PbLetable.type'   = Just $ dumpType t }
 
 dumpCallCoroOp t coroPrim argty retty args mayGC =
     P'.defaultValue { PbLetable.tag   = IL_CALL

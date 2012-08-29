@@ -260,14 +260,6 @@ struct CtorInfo {
   CtorId                ctorId;
 };
 
-struct LLAppCtor : public LLExpr {
-  std::vector<LLVar*> args;
-  CtorInfo ctorInfo;
-  LLAppCtor(CtorInfo c, std::vector<LLVar*>& _args)
-  : LLExpr("LLAppCtor"), args(_args), ctorInfo(c) { }
-  virtual llvm::Value* codegen(CodegenPass* pass);
-};
-
 struct LLCallPrimOp : public LLExpr {
   std::vector<LLVar*> args;
   std::string op;

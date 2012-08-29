@@ -119,15 +119,6 @@ LLExpr* parseCallPrimOp(const pb::Letable& e) {
   return new LLCallPrimOp(e.prim_op_name(), args);
 }
 
-LLExpr* parseAppCtor(const pb::Letable& e) {
-  ASSERT(e.has_ctor_info()) << "APP_CTOR without ctor info?";
-  std::vector<LLVar*> vars;
-  for (int i = 0; i < e.parts_size(); ++i) {
-    vars.push_back(parseTermVar(&e.parts(i)));
-  }
-  return new LLAppCtor(parseCtorInfo(e.ctor_info()), vars);
-}
-
 LLExpr* parseInt(const pb::Letable& e) {
   if (!e.has_pb_int()) return NULL;
   const pb::PBInt& i = e.pb_int();
@@ -427,7 +418,6 @@ LLExpr* LLExpr_from_pb(const pb::Letable* pe) {
   case pb::Letable::IL_BOOL:        rv = parseBool(e); break;
   case pb::Letable::IL_CALL:        rv = parseCall(e); break;
   case pb::Letable::IL_CALL_PRIMOP: rv = parseCallPrimOp(e); break;
-  case pb::Letable::IL_CTOR:        rv = parseAppCtor(e); break;
   case pb::Letable::IL_INT:         rv = parseInt(e); break;
   case pb::Letable::IL_FLOAT:       rv = parseFloat(e); break;
   case pb::Letable::IL_TEXT:        rv = parseText(e); break;

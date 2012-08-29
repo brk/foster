@@ -94,7 +94,6 @@ message Letable {
     IL_OCCURRENCE = 21;
     IL_CALL = 23;
     IL_CALL_PRIMOP = 24;
-    IL_CTOR  = 25;
     IL_DEREF = 31;
     IL_STORE = 32;
     IL_IF = 33;

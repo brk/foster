@@ -704,11 +704,24 @@ makeAllocationsExplicit bbgp uref = do
             return $
               (mkMiddle $ CCLetVal id (ILAllocate info)) <*>
               (mkMiddle $ CCTupleStore vs (TypedId t id) memregion)
+    (CCLetVal id (ILAppCtor t (CtorInfo cid _) vs)) -> do
+            id' <- fresh "ctor-alloc"
+            let tynm = ctorTypeName cid ++ "." ++ ctorCtorName cid
+            let tag  = ctorSmallInt cid
+            let t = StructType (map tidType vs)
+            let obj = (TypedId t id' )
+            let genty = PtrTypeUnknown
+            let memregion = MemRegionGlobalHeap
+            let info = AllocInfo t memregion tynm (Just tag) Nothing "ctor-allocator"
+            return $
+              (mkMiddle $ CCLetVal id' (ILAllocate info)) <*>
+              (mkMiddle $ CCTupleStore vs obj memregion) <*>
+              (mkMiddle $ CCLetVal id  (ILBitcast genty obj))
     (CCTupleStore   {}   ) -> return $ mkMiddle $ insn
-    (CCLetVal  _id  l    ) -> return $ mkMiddle $ insn
+    (CCLetVal  _id  _l   ) -> return $ mkMiddle $ insn
     (CCLetFuns _ids _clos) -> return $ mkMiddle $ insn
     (CCLast    cclast)     ->
           case cclast of
             (CCCont {}       ) -> return $ mkLast $ insn
-            (CCCall _ _ _ v _) -> return $ mkLast $ insn
+            (CCCall _ _ _ _ _) -> return $ mkLast $ insn
             (CCCase {}       ) -> return $ mkLast $ insn
