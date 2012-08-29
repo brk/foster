@@ -1059,8 +1059,7 @@ llvm::Value* LLUnitValue::codegen(CodegenPass* pass) {
 }
 
 llvm::Value* LLTuple::codegenStorage(CodegenPass* pass, bool init) {
-  if (vars.empty()) { return getUnitValue(); }
-
+  ASSERT(!vars.empty());
   ASSERT(this->allocator);
   StructTypeAST* structty = dynamic_cast<StructTypeAST*>(this->allocator->type);
 
@@ -1084,7 +1083,7 @@ llvm::Value* LLTuple::codegenObjectOfSlot(llvm::Value* slot) {
 }
 
 llvm::Value* LLTuple::codegen(CodegenPass* pass) {
-  if (vars.empty()) { return getUnitValue(); }
+  ASSERT(!vars.empty());
 
   bool init = false; // because we'll immediately initialize below.
   llvm::Value* slot = codegenStorage(pass, init);
@@ -1116,10 +1115,10 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
     // by directly initializing the environments. (TODO: how much more efficicient?)
     std::vector<llvm::Value*> envSlots;
     for (size_t i = 0; i < closures.size(); ++i) {
-      if (closures[i]->env->vars.empty()) {
+      if (closures[i]->envOrNull == NULL) {
         envSlots.push_back(NULL);
       } else {
-        envSlots.push_back(closures[i]->env->codegenStorage(pass, /*init*/ true));
+        envSlots.push_back(closures[i]->envOrNull->codegenStorage(pass, /*init*/ true));
       }
     }
 
@@ -1153,8 +1152,8 @@ void LLTuple::codegenTo(CodegenPass* pass, llvm::Value* tup_ptr) {
     // Now that all the env pointers are in scope,
     // store the appropriate values through each pointer.
     for (size_t i = 0; i < closures.size(); ++i) {
-      if (! closures[i]->env->vars.empty()) {
-        closures[i]->env->codegenTo(pass, envPtrs[i]);
+      if (closures[i]->envOrNull != NULL) {
+        closures[i]->envOrNull->codegenTo(pass, envPtrs[i]);
       }
     }
 

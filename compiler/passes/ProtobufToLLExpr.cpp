@@ -165,12 +165,19 @@ LLAllocate* parseAllocate(const pb::Letable& e) {
                         array_size, target_region, a.alloc_site());
 }
 
-LLTuple* parseTuple(const pb::Letable& e) {
+LLTuple* parseTupleOnly(const pb::Letable& e) {
+  ASSERT(e.parts_size() != 0 && "empty tuples should be unit values instead");
+
   std::vector<LLVar*> args;
   for (int i = 0; i < e.parts_size(); ++i) {
     args.push_back(parseTermVar(&e.parts(i)));
   }
   return new LLTuple(args, parseAllocate(e));
+}
+
+LLExpr* parseTuple(const pb::Letable& e) {
+  if (e.parts_size() == 0) return new LLUnitValue();
+  else                     return parseTupleOnly(e);
 }
 
 llvm::GlobalValue::LinkageTypes
@@ -194,7 +201,9 @@ LLMiddle* parseLetVal(const pb::LetVal& b) {
 LLClosure* parseClosure(const pb::Closure& clo) {
   return new LLClosure(clo.varname(), clo.env_id(),
                        clo.proc_id(), clo.allocsite(),
-                       parseTuple(clo.env()));
+                       (clo.env().parts_size() == 0)
+                         ? NULL
+                         : parseTupleOnly(clo.env()));
 }
 
 LLMiddle* parseLetClosures(const pb::LetClosures& b) {

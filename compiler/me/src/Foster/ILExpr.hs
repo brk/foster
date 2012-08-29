@@ -528,13 +528,20 @@ makeAllocationsExplicit bbgp uref = do
     (CCGCLoad _v fromroot) -> return $ mkMiddle $ insn
     (CCGCInit _ _v toroot) -> return $ mkMiddle $ insn
     (CCGCKill {}         ) -> return $ mkMiddle $ insn
-    (CCLetVal id (ILAlloc v src)) -> do
-                            id' <- fresh "allocation"
-                            let info = AllocInfo (tidType v) src Nothing "allocation"
+    (CCLetVal id (ILAlloc v allocsrc)) -> do
+                            id' <- fresh "ref-alloc"
+                            let info = AllocInfo (tidType v) allocsrc Nothing "ref-allocator"
                             return $
                               (mkMiddle $ CCLetVal id  (ILAllocate info)) <*>
                               (mkMiddle $ CCLetVal id' (ILStore v (TypedId (tidType v) id)))
-                              --(mkMiddle $ CCLetVal id' (ILAlloc (TypedId (tidType v) id' ) src))
+                              {-
+    (CCLetVal id (ILTuple vs allocsrc)) -> do
+                            id' <- fresh "tup-alloc"
+                            let info = AllocInfo (tidType v) allocsrc Nothing "tup-allocator"
+                            return $
+                              (mkMiddle $ CCLetVal id  (ILAllocate info)) <*>
+                              (mkMiddle $ CCLetVal id' (ILStore v (TypedId (tidType v) id)))
+                              -}
     (CCLetVal  _id  l    ) -> return $ mkMiddle $ insn
     (CCLetFuns _ids _clos) -> return $ mkMiddle $ insn
     (CCLast    cclast)     ->

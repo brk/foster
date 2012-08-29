@@ -334,15 +334,15 @@ struct LLClosure {
   std::string envname;
   std::string procname;
   std::string srclines;
-  LLTuple*    env;
+  LLTuple*    envOrNull;
   explicit LLClosure(const std::string& _varn,
                      const std::string& _envn,
                      const std::string& _proc,
                      const std::string& _srcs,
                      LLTuple* _env)
     : varname(_varn), envname(_envn), procname(_proc), srclines(_srcs),
-      env(_env) {
-   env->typeName = "env";
+      envOrNull(_env) {
+   if (envOrNull != NULL) envOrNull->typeName = "env";
  }
  llvm::Value* codegenClosure(CodegenPass* pass, llvm::Value* envSlot);
 };

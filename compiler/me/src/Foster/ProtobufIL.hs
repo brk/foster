@@ -236,6 +236,10 @@ dumpExpr x@(ILKillProcess _ msg) =
                     , PbLetable.tag   = IL_KILL_PROCESS
                     , PbLetable.type' = Just $ dumpType (typeMo x)  }
 
+dumpExpr x@(ILTuple [] _allocsrc) =
+    P'.defaultValue { PbLetable.tag   = IL_TUPLE
+                    , PbLetable.type' = Just $ dumpType (typeMo x) }
+
 dumpExpr x@(ILTuple vs allocsrc) =
     P'.defaultValue { PbLetable.parts = fromList [dumpVar v | v <- vs]
                     , PbLetable.tag   = IL_TUPLE
