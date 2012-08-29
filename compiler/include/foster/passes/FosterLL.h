@@ -256,6 +256,11 @@ struct CtorId {
   int smallId;
 };
 
+struct CtorInfo {
+  std::vector<TypeAST*> ctorArgTypes;
+  CtorId                ctorId;
+};
+
 struct LLCallPrimOp : public LLExpr {
   std::vector<LLVar*> args;
   std::string op;
