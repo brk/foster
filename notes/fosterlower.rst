@@ -1,8 +1,8 @@
 Lowering Foster IL to LLVM
-==========================
+--------------------------
 
 Primitive Linking Language
-==========================
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Skeleton::
 

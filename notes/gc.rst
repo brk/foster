@@ -1,8 +1,8 @@
 Garbage Collection
-==================
+------------------
 
 Heap Layout
------------
+~~~~~~~~~~~
 
 A heap cell consists of a pointer-sized header, followed by a body.
 The header may be either an integer which represents the size of the body,
@@ -130,7 +130,7 @@ i8 ctorTag field.
 
 
 Stable Pointers
----------------
+~~~~~~~~~~~~~~~
 
 Interfacing with C code requires an alternative to a compacting or copying
 garbage collector, because the moving GC will be unable to update pointers

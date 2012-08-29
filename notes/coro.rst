@@ -1,5 +1,5 @@
 Coroutine Implementation
-========================
+------------------------
 
 A call to ``coro_create`` in Foster gets compiled to
 type-specialized code (``CodegenPass:emitCoroCreateFn`` in
@@ -49,7 +49,7 @@ coro in a dormant state, such that the next ``coro_invoke``
 will cause the wrapper to start executing.
 
 A Hidden GC Root
-----------------
+~~~~~~~~~~~~~~~~
 
 With the simple approach sketched above, a pointer to a
 GC-allocated coro struct is squirreled away in an un-scanned

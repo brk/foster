@@ -1,8 +1,8 @@
 Compiled Code Snippets
-======================
+----------------------
 
 Until, implemented with functions and pattern matching
-------------------------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 LLVM assembly for this code::
 
@@ -156,7 +156,7 @@ and finally this assembly (note that we don't enable tail recursion optimization
 
 
 Until as a language primitive
------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Function ref-until source text::
 

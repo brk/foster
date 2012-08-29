@@ -489,21 +489,6 @@ on a complete binary let-tree by example::
     │                                                             └─KNVar(Local):   n!62 :: ()
 
 
-Extending The Language
-======================
-
-Currently, language extensions require the following modifications:
-
-1. Edit grammar/foster.g with new syntax rules.
-2. Edit compiler/parse/ANTLRtoFosterAST.cpp and
-     (probably) compiler/include/foster/parse/FosterAST.h
-3. Protocol buffer handing:
-  * compiler/parse/FosterAST.proto
-  * compiler/passes/DumpToProtobuf.cpp
-4. Middle-end, to whatever degree is needed.
-5. Back-end, maybe: compiler/fosterlower.cpp
-
-
 Pass Ordering Constraints: Monomorphization
 -------------------------------------------
 
@@ -573,3 +558,27 @@ true regardless of when monomorphization is performed, but doing
 it earlier makes it harder to cheat---which argues in favor of doing
 it earlier!
 
+
+Extending The Language
+----------------------
+
+Currently, language extensions require the following modifications:
+
+1. Edit grammar/foster.g with new syntax rules.
+2. Edit compiler/parse/ANTLRtoFosterAST.cpp and
+     (probably) compiler/include/foster/parse/FosterAST.h
+3. Protocol buffer handing:
+  * compiler/parse/FosterAST.proto
+  * compiler/passes/DumpToProtobuf.cpp
+4. Middle-end, to whatever degree is needed.
+5. Back-end, maybe: compiler/fosterlower.cpp
+
+Compiler Details
+================
+
+.. include:: closureconversion.rst
+.. include:: fosterlower.rst
+.. include:: compiled-examples.rst
+.. include:: coro.rst
+.. include:: gc.rst
+.. include:: optimizations.rst

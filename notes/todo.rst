@@ -73,6 +73,16 @@ TODO: libraries, benchmarks, & applications
 * Parallel benchmarks?
 * Timing infrastructure
 
+TODO: benchmarks
+----------------
+
+* Compare performance of pretty-printing algorithms:
+  imperative (Pugh/Sinosfsky) (in C++ and Foster),
+  co-routine imperative,
+  purely functional with lazy dequeues,
+  purely functional linear...
+
+
 TODO: mutability & representation semantics
 -------------------------------------------
 
@@ -99,7 +109,7 @@ TODO: minor optimizations
     Removing 502 single-element SEQ nodes saved 10845 byes, ~21 bytes per SEQ.
     Removing one optional field from Expr saved 1509 bytes.
     Omitting source ranges saved 34% (39kb).
-                                                                       
+
 * reuse stack slots
   for code like ``(letstack s0 = ... in ... end, letstack s1 = ... in ... end)``
 
@@ -133,6 +143,18 @@ TODO: less minor optimizations
 * Flow-sensitive type systems -- emission of proof witness values?
 * Simple effect analysis, effect-based optimizations?
         Memoization a la Tarditi's dissertation
+
+* Flow-directed lightweight closure conversion:
+   * For call sites with a statically known small set of known callees
+     (and no unknown callees), generate dispatch + direct calls
+     rather than indirect calls through function pointers.
+   * Eliminating ficticious variables (also called unit removal by Kennedy).
+   * Globalization, built on call-graph, flow, and alias analysis:
+        "A variable can be *globalized* when it can have at most one live
+         instance."
+   * Lightweight closure conversion: when a free variable is available
+     at every dynamic call site (and must alias the captured variable),
+     those variables can be moved from the environment to the parameter list.
 
 TODO: implementation details
 ----------------------------
@@ -186,7 +208,7 @@ TODO: design & implementation
     * else              => (non-null) pointer to { ctortag, fields... }
     * Interaction with mutability: if cell containing variant A can be
       mutated to variant B, can't store tag bits in pointers.
-     
+
   * Layout situations for data types:
     * Most common: don't care about offsets, access fields indirectly.
     * Sometimes: want interop with C struct layout.

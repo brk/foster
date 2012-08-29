@@ -1,11 +1,10 @@
 Optimizations
-=============
-
+-------------
 
 
 
 GC Optimizations
-----------------
+~~~~~~~~~~~~~~~~
 
 Liveness allows optimizing use of gc roots::
 

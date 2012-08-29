@@ -12,20 +12,14 @@ Foster Notes
    test
    features
    compiler
-   fosterlower
    closures
-   closureconversion
    syntax
    arrays
    llvm
    mutation
    parallelism
    polymorphism
-   compiled-examples
-   coro
-   gc
    todo
-   optimizations
 
 .. Indices and tables
 .. ==================

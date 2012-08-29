@@ -1,5 +1,5 @@
 Closure Conversion
-==================
+------------------
 
 Consider the following example of (supposedly) mutually
 recursive functions::
