@@ -19,6 +19,11 @@ module Foster.CFG
 , blockId
 , blockTargetsOf
 , rebuildGraphM
+, rebuildGraphAccM
+, graphOfClosedBlocks
+, runWithUniqAndFuel
+, M
+, FosterNode(..)
 ) where
 
 import Foster.Base
@@ -427,8 +432,9 @@ showTyped :: Doc -> MonoType -> Doc
 showTyped d t = parens (d <+> text "::" <+> pretty t)
 
 instance Pretty (Fn BasicBlockGraph MonoType) where
-  pretty fn = group (lbrace <+> (hsep (map (\v -> pretty v <+> text "=>")
-                                (fnVars fn)))
+  pretty fn = group (lbrace <+>
+                         (align (vcat (map (\v -> showTyped (pretty v) (tidType v) <+> text "=>")
+                                (fnVars fn))))
                     <$> indent 4 (pretty (fnBody fn))
                     <$> rbrace)
                     -- <$> (pretty $ Map.toList $ getCensus (fnBody fn))
@@ -476,15 +482,15 @@ instance Pretty Letable where
       ILKillProcess t m     -> text $ "prim KillProcess " ++ show m ++ " :: " ++ show t
       ILOccurrence _v _occ  -> text "...occ..."
       ILCallPrim  _ p vs    -> (text "prim" <+> pretty p <+> hsep (map prettyId vs))
-      ILCall      _ v vs    -> pretty v <> hsep (map pretty vs)
-      ILAppCtor   _ c vs    -> (text "~" <> parens (text (ctorCtorName c) <> hsep (map prettyId vs)))
+      ILCall      _ v vs    -> pretty v <+> hsep (map pretty vs)
+      ILAppCtor   _ c vs    -> (text "~" <> parens (text (ctorCtorName c) <+> hsep (map prettyId vs)))
       ILAlloc     v rgn     -> text "(ref" <+> pretty v <+> comment (pretty rgn) <> text ")"
       ILDeref     v         -> pretty v <> text "^"
       ILStore     v1 v2     -> text "store" <+> pretty v1 <+> text "to" <+> pretty v2
       ILAllocArray _ _v     -> text $ "ILAllocArray..."
       ILArrayRead  _t (ArrayIndex _v1 _v2 _rng _s)  -> text $ "ILArrayRead..."
       ILArrayPoke  (ArrayIndex _v1 _v2 _rng _s) _v3 -> text $ "ILArrayPoke..."
-      ILBitcast   t v       -> text "bitcast " <+> pretty v <+> text "to" <+> pretty t
+      ILBitcast   t v       -> text "bitcast " <+> pretty v <+> text "to" <+> text "..."
 
 instance Pretty BasicBlockGraph where
  pretty bbg =
@@ -506,6 +512,17 @@ instance Pretty CFBody where
   pretty (CFB_Call {}) = text "call main..."
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+graphOfClosedBlocks :: NonLocal i => [Block i C C] -> Graph i C C
+graphOfClosedBlocks = foldr ((|*><*|) . blockGraph) emptyClosedGraph
+
+class FosterNode i where branchTo :: BlockId -> i O C
+
+instance FosterNode Insn where branchTo bid = ILast $ CFCont bid []
+
+ -- Dunno why this function isn't in Hoopl...
+catClosedGraphs :: NonLocal i => [Graph i C C] -> Graph i C C
+catClosedGraphs = foldr (|*><*|) emptyClosedGraph
 
 -- ||||||||||||||||||||||||||| UniqMonadIO ||||||||||||||||||||||{{{
 -- Basically a copy of UniqueMonadT, specialized to IO, with a
@@ -549,22 +566,33 @@ instance Pretty Ident where pretty id = text (show id)
 instance LabelsPtr (BlockId, ts) where targetLabels ((_, label), _) = [label]
 instance Pretty (Set.Set HowUsed) where pretty s = string (show s)
 
-rebuildGraphM :: (Monad m, NonLocal o)
-                         => BlockId -> Graph Insn C C
-                         -> (forall e x. Insn e x -> m (Graph o e x))
+-- Simplified interface for rebuilding graphs in the common case where
+-- the client doesn't want to bother threading any state through.
+rebuildGraphM :: (Monad m, NonLocal o, FosterNode i, NonLocal i)
+                         => BlockId -> Graph i C C
+                         -> (forall e x. i e x -> m (Graph o e x))
                          -> m (Graph o C C)
 rebuildGraphM entrybid body transform = do
-   let rebuildBlockGraph blk_cc = do {
+  let transform' () insn = do g <- transform insn; return (g, ())
+  (g, ()) <- rebuildGraphAccM entrybid body () transform'
+  return g
+
+-- More complete interface supporting threaded state.
+rebuildGraphAccM :: (Monad m, NonLocal o, FosterNode i, NonLocal i)
+                         => BlockId -> Graph i C C -> acc
+                         -> (forall e x. acc -> i e x -> m (Graph o e x, acc))
+                         -> m (Graph o C C, acc)
+rebuildGraphAccM entrybid body init transform = do
+   let rebuildBlockGraph blk_cc acc0 = do {
       ; let (f, ms, l) = unblock ( blockSplit blk_cc )
-      ; fg <- transform f
-      ; gs <- mapM transform ms
-      ; lg <- transform l
-      ; return $ fg <*> catGraphs gs <*> lg
+      ; (fg, acc1) <- transform acc0 f
+      ; (gs, accn) <- mapFoldM' ms acc1 (\insn acc -> transform acc insn)
+      ; (lg, accm) <- transform accn l
+      ; return $ (fg <*> catGraphs gs <*> lg, accm)
    }
-   let entry  = mkLast (ILast $ CFCont entrybid undefined)
-   let blocks = postorder_dfs (entry |*><*| body)
-   mb <- mapM rebuildBlockGraph blocks
-   return $ foldr (|*><*|) emptyClosedGraph mb
+   let blocks = postorder_dfs (mkLast (branchTo entrybid) |*><*| body)
+   (mb, acc) <- mapFoldM' blocks init rebuildBlockGraph
+   return $ (catClosedGraphs mb, acc)
   where
    unblock (f, ms_blk, l) = (f, blockToList ms_blk, l)
 
