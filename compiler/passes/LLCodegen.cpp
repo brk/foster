@@ -335,8 +335,7 @@ void registerKnownDataTypes(const std::vector<LLDecl*> datatype_decls,
   for (size_t i = 0; i < datatype_decls.size(); ++i) {
      LLDecl* d = datatype_decls[i];
      const std::string& typeName = d->getName();
-     DataTypeAST* dt = dynamic_cast<DataTypeAST*>(d->getType());
-     pass->isKnownDataType[typeName] = dt;
+     pass->dataTypeTagReprs[typeName] = CTR_OutOfLine;
   }
 }
 ///}}}//////////////////////////////////////////////////////////////
@@ -650,11 +649,10 @@ void addAndEmitTo(Function* f, BasicBlock* bb) {
   builder.SetInsertPoint(bb);
 }
 
-ConstantInt* maybeGetTagForCtorId(DataTypeAST* dt, const CtorId& c) {
-  if (dt) {                           return builder.getInt8(c.smallId);
-  } else if (c.typeName == "Bool") {  return builder.getInt1(c.smallId);
+ConstantInt* getTagForCtorId(const CtorId& c) {
+         if (c.typeName == "Bool")  { return builder.getInt1(c.smallId);
   } else if (c.typeName == "Int32") { return builder.getInt32(c.smallId);
-  } else { return NULL; }
+  } else                            { return builder.getInt8(c.smallId); }
 }
 
 llvm::Value* emitCallGetCtorIdOf(CodegenPass* pass, llvm::Value* v) {
@@ -664,43 +662,31 @@ llvm::Value* emitCallGetCtorIdOf(CodegenPass* pass, llvm::Value* v) {
                              emitBitcast(v, builder.getInt8PtrTy())));
 }
 
-void LLSwitch::codegenTerminator(CodegenPass* pass) {
-  ASSERT(ctors.size() == blockids.size());
-  ASSERT(ctors.size() >= 1);
-
-  BasicBlock* defaultBB = (this->defaultCase.empty())
+void codegenSwitch(CodegenPass* pass, LLSwitch* sw, llvm::Value* insp_tag) {
+  BasicBlock* defaultBB = (sw->defaultCase.empty())
                 ? NULL
-                : pass->lookupBlock(this->defaultCase)->bb;
-
-  // All the ctors should have the same data type, now that we have at least
-  // one ctor, check if it's associated with a data type we know of.
-  DataTypeAST* dt = pass->isKnownDataType[ctors[0].typeName];
+                : pass->lookupBlock(sw->defaultCase)->bb;
 
   BasicBlock* bbNoDefault = defaultBB ? NULL      :
-                       BasicBlock::Create(builder.getContext(), "case_nodefault");
+                     BasicBlock::Create(builder.getContext(), "case_nodefault");
   BasicBlock* defOrContBB = defaultBB ? defaultBB : bbNoDefault;
 
-  // Fetch the subterm of the scrutinee being inspected.
-  llvm::Value* inspected = pass->emit(this->occ, NULL);
-
-  // If we're looking at a data type, emit code to get the ctor tag,
-  // instead of switching on the pointer value directly.
-  if (dt) {    inspected = emitCallGetCtorIdOf(pass, inspected); }
-
   // Switch on the inspected value and add cases for each ctor considered.
-  llvm::SwitchInst* si = builder.CreateSwitch(inspected, defOrContBB, ctors.size());
-  for (size_t i = 0; i < ctors.size(); ++i) {
-    CtorId& c = ctors[i];
+  llvm::SwitchInst* si = builder.CreateSwitch(insp_tag, defOrContBB, sw->ctors.size());
+
+  for (size_t i = 0; i < sw->ctors.size(); ++i) {
+    BasicBlock* destBB = pass->lookupBlock(sw->blockids[i])->bb;
+    ASSERT(destBB != NULL);
 
     // Compute the tag for the ctor associated with this branch.
-    ConstantInt* onVal = maybeGetTagForCtorId(dt, c);
-    ASSERT(onVal) << "SwitchCase ctor " << (i+1) << "/" << ctors.size()
-           << ": " << c.typeName << "." << c.ctorName << "#" << c.smallId;
-    ASSERT(si->getCondition()->getType() == onVal->getType())
-        << "switch case and inspected value had different types!";
+    const CtorId& c = sw->ctors[i];
+    ConstantInt* onVal = getTagForCtorId(c);
 
-    BasicBlock* destBB = pass->lookupBlock(this->blockids[i])->bb;
-    ASSERT(destBB != NULL);
+    ASSERT(si->getCondition()->getType() == onVal->getType())
+        << "switch case and inspected value had different types!"
+        << "SwitchCase ctor " << (i+1) << "/" << sw->ctors.size()
+           << ": " << c.typeName << "." << c.ctorName << "#" << c.smallId;
+
     si->addCase(onVal, destBB);
   }
 
@@ -711,6 +697,28 @@ void LLSwitch::codegenTerminator(CodegenPass* pass) {
                    "control passed to llvm-generated default block -- bad!");
     builder.CreateUnreachable();
   }
+}
+
+void LLSwitch::codegenTerminator(CodegenPass* pass) {
+  ASSERT(ctors.size() == blockids.size());
+  ASSERT(ctors.size() >= 1);
+
+  // Fetch the subterm of the scrutinee being inspected.
+  llvm::Value* inspected = pass->emit(this->occ, NULL);
+  llvm::Value* tag = NULL;
+
+  // All the ctors should have the same data type, now that we have at least
+  // one ctor, lookup its tag representation based on its associated type.
+  CtorTagRepresentation ctr = pass->dataTypeTagReprs[ctors[0].typeName];
+
+  switch (ctr) {
+  case CTR_BareValue: tag = inspected; break;
+  case CTR_OutOfLine: tag = emitCallGetCtorIdOf(pass, inspected); break;
+  case CTR_MaskWith3: ASSERT(false) << "inline ctor tag bits not yet supported"; break;
+  default: ASSERT(false) << "unknown tag representation in LLSwitch::codegen!";
+  }
+
+  codegenSwitch(pass, this, tag);
 }
 
 ///}}}//////////////////////////////////////////////////////////////
@@ -1174,17 +1182,13 @@ void LLTupleStore::codegenMiddle(CodegenPass* pass) {
 
 ///}}}//////////////////////////////////////////////////////////////
 
-TupleTypeAST* getDataCtorTypeTuple(DataCtor* dc) {
-  return TupleTypeAST::get(dc->types);
-}
-
 ////////////////////////////////////////////////////////////////////
 //////////////// Decision Trees ////////////////////////////////////
 /////////////////////////////////////////////////////////////////{{{
 
-TupleTypeAST* maybeGetCtorStructType(CodegenPass* pass, CtorId c) {
-  DataTypeAST* dt = pass->isKnownDataType[c.typeName];
-  return (dt) ? getDataCtorTypeTuple(dt->getCtor(c.smallId)) : NULL;
+llvm::Type* maybeGetCtorStructType(const CtorInfo& c) {
+  return (c.ctorArgTypes.empty())
+           ? NULL : TupleTypeAST::get(c.ctorArgTypes)->getLLVMType();
 }
 
 // Create at most one stack slot per subterm.
@@ -1224,8 +1228,9 @@ llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
   for (size_t i = 0; i < offsets.size(); ++i) {
     // If we know that the subterm at this position was created with
     // a particular data constructor, emit a cast to that ctor's type.
-    if (TupleTypeAST* tupty = maybeGetCtorStructType(pass, ctors[i].ctorId)) {
-      rv = emitBitcast(rv, tupty->getLLVMType());
+    if (llvm::Type* structtype = maybeGetCtorStructType(ctors[i])) {
+      rv = emitBitcast(rv, structtype);
+      ASSERT(isPointerToStruct(structtype)) << str(rv);
     }
 
     rv = getElementFromComposite(rv, offsets[i], "switch_insp");

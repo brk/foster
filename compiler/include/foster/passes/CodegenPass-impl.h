@@ -96,6 +96,12 @@ struct ltLLOcc {
   }
 };
 
+enum CtorTagRepresentation {
+  CTR_BareValue, // the default, for primitive types like unboxed integers.
+  CTR_OutOfLine,
+  CTR_MaskWith3 // mask to extract inline tag bits, eventually...
+};
+
 struct LLModule;
 struct LLExpr;
 struct LLVar;
@@ -123,7 +129,7 @@ struct CodegenPass {
           LazyCoroPrimInfoMap;
 
   LazyCoroPrimInfoMap                           lazyCoroPrimInfo;
-  std::map<std::string, DataTypeAST*>           isKnownDataType;
+  std::map<std::string, CtorTagRepresentation>  dataTypeTagReprs;
   std::map<llvm::Function*, llvm::Instruction*> allocaPoints;
   std::map<std::string, LLProc*>                procs;
   std::set<llvm::Value*> needsImplicitLoad;
