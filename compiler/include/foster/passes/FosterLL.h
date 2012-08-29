@@ -402,7 +402,7 @@ struct LLCoroPrim : public LLExpr {
 struct LLOccurrence : public LLExpr {
   LLVar* var;
   std::vector<int> offsets;
-  std::vector<CtorId> ctors;
+  std::vector<CtorInfo> ctors;
   explicit LLOccurrence() : LLExpr("LLOccurrence") {}
   virtual llvm::Value* codegen(CodegenPass* pass);
 };

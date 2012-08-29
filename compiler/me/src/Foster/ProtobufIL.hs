@@ -424,21 +424,21 @@ dumpCtorId (CtorId dtn dtcn _arity ciid) =
                     , PbCtorId.ctor_local_id  = intToInt32 ciid
                     }
 
-dumpOccurrence var offsCtorIds =
-    let (offs, infos) = unzip offsCtorIds in
-    let ids           = map ctorInfoId infos in
+dumpOccurrence var offsCtorInfos =
+    let (offs, infos) = unzip offsCtorInfos in
     P'.defaultValue { PbOccurrence.occ_offset = fromList $ map intToInt32 offs
-                    , PbOccurrence.occ_ctorid = fromList $ map dumpCtorId ids
+                    , PbOccurrence.occ_ctors  = fromList $ map dumpCtorInfo infos
                     , PbOccurrence.scrutinee  = dumpVar var
                     , PbOccurrence.type'      = Just $ dumpType $
-                                                occType (tidType var) offs infos
+                                                  occType (tidType var)   offs
+                                                          (map ctorInfoDc infos)
                     }
 
 occType ty [] [] = ty
-occType _ (k:offs) ((CtorInfo _ (DataCtor _ _ _ types)):infos) =
-                                                 occType (types !! k) offs infos
-occType ty offs infos =
-        error $ "occType: " ++ show ty ++ "; offs=" ++ show offs ++ "~~~" ++ show infos
+occType _ (k:offs) ((DataCtor _ _ _ types):dctors) =
+                                                occType (types !! k) offs dctors
+occType ty offs dctors =
+        error $ "occType: " ++ show ty ++ "; offs=" ++ show offs ++ "~~~" ++ show dctors
 
 -----------------------------------------------------------------------
 dumpVar (TypedId t i) = dumpMoVar t i

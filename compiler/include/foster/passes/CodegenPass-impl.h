@@ -80,6 +80,10 @@ inline bool operator<(const CtorId& a, const CtorId& b) {
   return false;
 }
 
+inline bool operator<(const CtorInfo& a, const CtorInfo& b) {
+  return a.ctorId < b.ctorId;
+}
+
 struct ltLLOcc {
   bool operator()(LLOccurrence* a, LLOccurrence* b) {
     if (a->var->getName() < b->var->getName()) { return true; }

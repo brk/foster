@@ -1210,7 +1210,7 @@ llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
     std::stringstream ss; ss << "occ["<<this->var->getName()<<"](";
     for (size_t i = 0; i < offsets.size(); ++i) {
       ss << offsets[i] << ":";
-      ss << ctors[i].ctorName << "::";
+      ss << ctors[i].ctorId.ctorName << "::";
     }
     ss << ")--";
 
@@ -1224,7 +1224,7 @@ llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
   for (size_t i = 0; i < offsets.size(); ++i) {
     // If we know that the subterm at this position was created with
     // a particular data constructor, emit a cast to that ctor's type.
-    if (TupleTypeAST* tupty = maybeGetCtorStructType(pass, ctors[i])) {
+    if (TupleTypeAST* tupty = maybeGetCtorStructType(pass, ctors[i].ctorId)) {
       rv = emitBitcast(rv, tupty->getLLVMType());
     }
 

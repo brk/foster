@@ -306,8 +306,8 @@ LLOccurrence* parseOccurrence(const pb::PbOccurrence& o) {
   for (int i = 0; i < o.occ_offset_size(); ++i) {
     rv->offsets.push_back(o.occ_offset(i));
   }
-  for (int i = 0; i < o.occ_ctorid_size(); ++i) {
-    rv->ctors.push_back(parseCtorId(o.occ_ctorid(i)));
+  for (int i = 0; i < o.occ_ctors_size(); ++i) {
+    rv->ctors.push_back(parseCtorInfo(o.occ_ctors(i)));
   }
   rv->var = parseTermVar(&o.scrutinee());
   if (o.has_type()) {
