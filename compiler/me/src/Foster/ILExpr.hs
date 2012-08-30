@@ -414,14 +414,14 @@ runLiveAtGCPoint2 uref bbgp = runWithUniqAndFuel uref infiniteFuel (go bbgp)
 -- does not support.
 --
 
+-- Precondition: allocations have been made explicit in the input graph.
 insertSmartGCRoots :: IORef Uniq -> BasicBlockGraph' -> IO ( BasicBlockGraph' , [RootVar] )
 insertSmartGCRoots uref bbgp0 = do
-  bbgp1 <- makeAllocationsExplicit bbgp0 uref
-  (bbgp' , gcr) <- insertDumbGCRoots uref bbgp1
+  (bbgp' , gcr) <- insertDumbGCRoots uref bbgp0
   rootsLiveAtGCPoints <- runLiveAtGCPoint2 uref bbgp'
   bbgp'' <- removeDeadGCRoots bbgp' (mapInverse gcr) rootsLiveAtGCPoints
   putStrLn $ "these roots were live at GC points: " ++ show rootsLiveAtGCPoints
-  return ( bbgp1 , Set.toList rootsLiveAtGCPoints)
+  return ( bbgp0 , Set.toList rootsLiveAtGCPoints)
  where
     mapInverse m = let ks = Map.keysSet m in
                    let es = Set.fromList (Map.elems m) in
