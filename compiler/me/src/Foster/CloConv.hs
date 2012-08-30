@@ -498,11 +498,14 @@ instance Pretty (Insn' e x) where
 instance Pretty CCLast where
   pretty (CCCont bid       vs) = text "cont" <+> prettyBlockId bid <+>              list (map pretty vs)
   pretty (CCCall bid _ _ v vs) = text "call" <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
-  pretty (CCCase v arms _def _occ) = align $
-    text "case" <+> pretty v <$> indent 2
-       (vcat [ text "of" <+> fill 20 (pretty ctor) <+> text "->" <+> prettyBlockId bid
-             | (ctor, bid) <- arms
-             ])
+  pretty (CCCase v arms def occ) = align $
+    text "case" <+> pretty (ILOccurrence v occ) <$> indent 2
+       ((vcat [ arm (text "of" <+> pretty ctor) bid
+              | (ctor, bid) <- arms
+              ]) <> (case def of Nothing -> empty
+                                 Just bid -> line <> arm (text "default:") bid))
+
+   where arm lhs bid = fill 20 lhs <+> text "->" <+> prettyBlockId bid
 
 instance Pretty CtorId where
   pretty (CtorId tynm ctnm _ sm) = pretty tynm <> text "." <> pretty ctnm <> parens (pretty sm)

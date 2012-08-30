@@ -480,7 +480,7 @@ instance Pretty Letable where
       ILFloat     _ f       -> text (litFloatText f)
       ILTuple     vs _asrc  -> parens (hsep $ punctuate comma (map pretty vs))
       ILKillProcess t m     -> text $ "prim KillProcess " ++ show m ++ " :: " ++ show t
-      ILOccurrence _v _occ  -> text "...occ..."
+      ILOccurrence  v occ   -> pretty v <> text "/" <> pretty (map fst occ)
       ILCallPrim  _ p vs    -> (text "prim" <+> pretty p <+> hsep (map prettyId vs))
       ILCall      _ v vs    -> pretty v <+> hsep (map pretty vs)
       ILAppCtor   _ c vs    -> (text "~" <> parens (text (ctorCtorName (ctorInfoId c)) <+> hsep (map prettyId vs)))

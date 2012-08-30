@@ -362,7 +362,8 @@ void LLModule::codegenModule(CodegenPass* pass) {
   codegenCoroPrimitives(pass);
 
   if (!pass->useGC) {
-    // Emit a "foster__gcmaps" symbol so we can link with the runtime.
+    // The runtime needs a "foster__gcmaps" symbol for linking to succeed.
+    // If we're not letting the GC plugin run, we'll need to emit it ourselves.
     new llvm::GlobalVariable(
     /*Module=*/      *(pass->mod),
     /*Type=*/        builder.getInt32Ty(),
@@ -644,6 +645,8 @@ void LLBr::codegenTerminator(CodegenPass* pass) {
   }
 }
 
+////////////////////////////////////////////////////////////////////
+
 void addAndEmitTo(Function* f, BasicBlock* bb) {
   f->getBasicBlockList().push_back(bb);
   builder.SetInsertPoint(bb);
@@ -750,7 +753,7 @@ void LLBitcast::codegenMiddle(CodegenPass* pass) {
 }
 
 ////////////////////////////////////////////////////////////////////
-///////////////////////// LLDeref, LLStore /////////////////////////
+/////////////// LLDeref, LLStore, LLLetVals ////////////////////////
 /////////////////////////////////////////////////////////////////{{{
 
 llvm::Value* LLDeref::codegen(CodegenPass* pass) {
@@ -763,20 +766,6 @@ llvm::Value* LLStore::codegen(CodegenPass* pass) {
   return emitStore(vv, vr);
 }
 
-///}}}///////////////////////////////////////////////////////////////
-
-llvm::Value* LLCoroPrim::codegen(CodegenPass* pass) {
-  llvm::Type* r = retType->getLLVMType();
-  llvm::Type* a = typeArg->getLLVMType();
-  if (this->primName == "coro_yield") { return pass->emitCoroYieldFn(r, a); }
-  if (this->primName == "coro_invoke") { return pass->emitCoroInvokeFn(r, a); }
-  if (this->primName == "coro_create") { return pass->emitCoroCreateFn(retType, typeArg); }
-  ASSERT(false) << "unknown coro prim: " << this->primName;
-  return NULL;
-}
-
-////////////////////////////////////////////////////////////////////
-//////////////// LLLetVals /////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
 
 void trySetName(llvm::Value* v, const string& name) {
@@ -801,6 +790,18 @@ void LLLetVals::codegenMiddle(CodegenPass* pass) {
     //EDiag() << "inserting " << names[i] << " = " << (exprs[i]->tag) << " -> " << str(b);
     pass->insertScopedValue(names[i], b);
   }
+}
+
+///}}}///////////////////////////////////////////////////////////////
+
+llvm::Value* LLCoroPrim::codegen(CodegenPass* pass) {
+  llvm::Type* r = retType->getLLVMType();
+  llvm::Type* a = typeArg->getLLVMType();
+  if (this->primName == "coro_yield") { return pass->emitCoroYieldFn(r, a); }
+  if (this->primName == "coro_invoke") { return pass->emitCoroInvokeFn(r, a); }
+  if (this->primName == "coro_create") { return pass->emitCoroCreateFn(retType, typeArg); }
+  ASSERT(false) << "unknown coro prim: " << this->primName;
+  return NULL;
 }
 
 ////////////////////////////////////////////////////////////////////

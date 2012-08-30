@@ -467,7 +467,7 @@ instance Pretty t => Pretty (Pattern t) where
     case p of
         P_Wildcard      _rng _ty          -> text "_"
         P_Variable      _rng tid          -> prettyId tid
-        P_Ctor          _rng _ty pats cid -> parens (text "$" <> text (ctorCtorName $ ctorInfoId cid) <> (hsep $ map pretty pats))
+        P_Ctor          _rng _ty pats cid -> parens (text "$" <> text (ctorCtorName $ ctorInfoId cid) <+> (hsep $ map pretty pats))
         P_Bool          _rng _ty b        -> text $ if b then "True" else "False"
         P_Int           _rng _ty li       -> text (litIntText li)
         P_Tuple         _rng _ty pats     -> parens (hsep $ punctuate comma (map pretty pats))
