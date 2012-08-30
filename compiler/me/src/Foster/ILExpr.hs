@@ -301,19 +301,6 @@ type LiveGCRoots    = Set.Set MoVar
 type RootLiveWhenGC = Set.Set MoVar
 type LiveAGC2 = (LiveGCRoots, RootLiveWhenGC)
 
-liveAtGCPointLattice2 :: DataflowLattice LiveAGC2
-liveAtGCPointLattice2 = DataflowLattice
-  { fact_name = "Live GC roots"
-  , fact_bot  = (Set.empty, Set.empty)
-  , fact_join = add
-  }
-    where add _lab (OldFact (ol,og)) (NewFact (nl,ng)) = (ch, (jl, jg))
-            where
-              jl = nl `Set.union` ol
-              jg = ng `Set.union` og
-              ch = changeIf (Set.size jl > Set.size ol
-                          || Set.size jg > Set.size og)
-
 -- When we see a load from a root, the root becomes live;
 -- when we see a root init happen, the root becomes dead.
 -- When we see an operation that may induce (copying) GC,
@@ -322,12 +309,6 @@ liveAtGCPointLattice2 = DataflowLattice
 liveAtGCPointXfer2 :: BwdTransfer Insn' LiveAGC2
 liveAtGCPointXfer2 = mkBTransfer go
   where
-    markLive root (s, g) = (Set.insert root s, g)
-    markDead root (s, g) = (Set.delete root s, g)
-
-    ifgc mayGC (s, g) = if mayGC then (s, g `Set.union` s)
-                                 else (s, g)
-
     go :: Insn' e x -> Fact x LiveAGC2 -> LiveAGC2
     go (CCLabel   {}        ) sg = ifgc False            sg
     go (CCGCLoad _v fromroot) sg = markLive fromroot     sg
@@ -337,17 +318,17 @@ liveAtGCPointXfer2 = mkBTransfer go
     go (CCLetFuns _ids _clos) sg = ifgc True             sg
     go (CCTupleStore   {}   ) sg = ifgc False            sg
     go node@(CCLast    cclast) fdb =
-          let sg = union2s (map (fact fdb) (successors node)) in
+          let sg = combineLastFacts fdb node in
           case cclast of
             (CCCont {}       ) -> ifgc False sg
             (CCCall _ _ _ v _) -> ifgc (canGCCalled v) sg
             (CCCase {}       ) -> ifgc False sg
 
-    union2s xys = let (xs,ys) = unzip xys
-                  in  (Set.unions xs, Set.unions ys)
+    markLive root (s, g) = (Set.insert root s, g)
+    markDead root (s, g) = (Set.delete root s, g)
 
-    fact :: FactBase LiveAGC2 -> Label -> LiveAGC2
-    fact f l = fromMaybe (fact_bot liveAtGCPointLattice2) $ lookupFact l f
+    ifgc mayGC (s, g) = if mayGC then (s, g `Set.union` s)
+                                 else (s, g)
 
 -- If we see a (disabled) GCKill marker when a root is still alive,
 -- we'll remove the marker, but if the root is dead, we'll enable
@@ -356,33 +337,21 @@ liveAtGCPointRewrite2 :: forall m. FuelMonad m => BwdRewrite m Insn' LiveAGC2
 liveAtGCPointRewrite2 = mkBRewrite d
   where
     d :: Insn' e x -> Fact x LiveAGC2 -> m (Maybe (Graph Insn' e x))
-    d (CCLabel lab) (s,g) = do
-        return $ trace ("agc @ " ++ show lab ++ ": " ++ show (s,g)) Nothing
-    d (CCGCLoad v  fromroot) (s,g) = do
-        return $ trace ("agc @ GCLOAD " ++ show v ++ " from root " ++ show fromroot ++ " : " ++ show (s,g)) Nothing
-    d (CCGCInit _ _ toroot) (s,g) = do
-        return $ trace ("agc @ GCINIT " ++ show toroot ++ " : " ++ show (s,g)) Nothing
+    d (CCLabel      {}      ) (_,_) = return Nothing
+    d (CCLetVal     {}      ) (_,_) = return Nothing
+    d (CCLetFuns    {}      ) (_,_) = return Nothing
+    d (CCTupleStore {}      ) (_,_) = return Nothing
+    d (CCGCLoad     {}      ) (_,_) = return Nothing
+    d (CCGCInit     {}      ) (_,_) = return Nothing
     d (CCGCKill True   _root) (_,_) = return Nothing -- leave as-is.
-    d (CCGCKill False   root) (s,g) =
-          if trace ("agc @ GCKILL " ++ show root ++ " : " ++ "live? " ++ show (Set.member root s) ++ show (s,g)) $ Set.member root s
+    d (CCGCKill False   root) (s,_) = -- s is the set of live roots
+          if {-trace ("agc @ GCKILL " ++ show root ++ " : " ++ "live? " ++ show (Set.member root s) ++ show (s,g)) $ -}
+             Set.member root s
             then return $ Just emptyGraph
              -- If a root is live, remove its fake kill node.
              -- Otherwise, toggle the node from disabled to enabled.
             else return $ Just (mkMiddle (CCGCKill True root))
-    d (CCTupleStore _ _ _) _sg = do return Nothing
-    d (CCLetVal id _) (s,g) = do
-        return $ trace ("agc @ LET " ++ show id ++ ": " ++ show (s,g)) Nothing
-    d (CCLetFuns ids _) (s,g) = do
-        return $ trace ("agc @ " ++ show ids ++ ": " ++ show (s,g)) Nothing
-    d node@(CCLast cclast) fdb =
-        let (s,g) = union2s (map (fact fdb) (successors node)) in do
-        return $ trace ("agc @ " ++ show cclast ++ ": " ++ show (s,g)) Nothing
-
-    union2s xys = let (xs,ys) = unzip xys
-                  in  (Set.unions xs, Set.unions ys)
-
-    fact :: FactBase LiveAGC2 -> Label -> LiveAGC2
-    fact f l = fromMaybe (fact_bot liveAtGCPointLattice2) $ lookupFact l f
+    d _node@(CCLast {}      ) _fdb  = return Nothing
 
 runLiveAtGCPoint2 :: IORef Uniq -> BasicBlockGraph' -> IO RootLiveWhenGC
 runLiveAtGCPoint2 uref bbgp = runWithUniqAndFuel uref infiniteFuel (go bbgp)
@@ -399,6 +368,28 @@ runLiveAtGCPoint2 uref bbgp = runWithUniqAndFuel uref infiniteFuel (go bbgp)
                   , bp_transfer = liveAtGCPointXfer2
                   , bp_rewrite  = liveAtGCPointRewrite2
                   }
+
+liveAtGCPointLattice2 :: DataflowLattice LiveAGC2
+liveAtGCPointLattice2 = DataflowLattice
+  { fact_name = "Live GC roots"
+  , fact_bot  = (Set.empty, Set.empty)
+  , fact_join = add
+  }
+    where add _lab (OldFact (ol,og)) (NewFact (nl,ng)) = (ch, (jl, jg))
+            where
+              jl = nl `Set.union` ol
+              jg = ng `Set.union` og
+              ch = changeIf (Set.size jl > Set.size ol
+                          || Set.size jg > Set.size og)
+
+combineLastFacts :: FactBase LiveAGC2 -> Insn' O C -> LiveAGC2
+combineLastFacts fdb node = union2s (map (fact fdb) (successors node))
+  where
+    union2s xys = let (xs,ys) = unzip xys
+                  in  (Set.unions xs, Set.unions ys)
+
+    fact :: FactBase LiveAGC2 -> Label -> LiveAGC2
+    fact f l = fromMaybe (fact_bot liveAtGCPointLattice2) $ lookupFact l f
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 
