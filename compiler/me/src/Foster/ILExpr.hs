@@ -499,6 +499,7 @@ insertDumbGCRoots uref bbgp = do
  where
   transform :: GCRootsForVariables -> Insn' e x -> IO (Graph Insn' e x, GCRootsForVariables)
   transform gcr insn = case insn of
+    -- See the note above explaining why this is being done...
     CCLabel {}                    -> do return (mkFirst insn <*> mkMiddles [
                                                  CCGCKill False root | root <- Map.elems gcr]
                                                                                       , gcr)
@@ -528,37 +529,38 @@ insertDumbGCRoots uref bbgp = do
                                      -> ([MoVar] -> Graph Insn' O x)
                                      -> IO (Graph Insn' O x, GCRootsForVariables)
   withGCLoads gcr vs mkG = do
-    let fresh str = do u <- modifyIORef uref (+1) >> readIORef uref
-                       return (Ident (T.pack str) u)
-        -- We'll rewrite something like ``call @foo (x,n)`` (where ``x`` is
-        -- GCable and ``n`` isn't) with::
-        --      x.load = load x.root
-        --      kill x.root (disabled)
-        ---     call @foo (x.load , n)
-        -- We'll removed kills for live roots and enable the remainder.
-        retLoaded root gcr oos = do
-            id <- fresh (show (tidIdent root) ++ ".load")
-            let loadedvar = TypedId (tidType root) id
-            return ((oos ++ [CCGCLoad loadedvar root
-                            ,CCGCKill False     root], loadedvar), gcr)
-
-        withGCLoad :: MoVar -> GCRootsForVariables
-                            -> IO (([Insn' O O], MoVar), GCRootsForVariables)
-        withGCLoad v gcr = do
-          if not $ isGCable v
-            then return (([], v), gcr)
-            else case Map.lookup v gcr of
-                   Just root -> do retLoaded root gcr []
-                   Nothing   -> do rootid <- fresh (show (tidIdent v) ++ ".root")
-                                   let root = TypedId (tidType v) rootid
-                                   let gcr' = Map.insert v root gcr
-                                   junkid <- fresh (show (tidIdent v) ++ ".junk")
-                                   let junk = TypedId (TupleType []) junkid
-                                   retLoaded root gcr' [CCGCInit junk v root]
-
     (loadsAndVars , gcr' ) <- mapFoldM' vs gcr withGCLoad
     let (loads, vs' ) = unzip loadsAndVars
     return (mkMiddles (concat loads) <*> mkG vs' , gcr' )
+   where
+      fresh str = do u <- modifyIORef uref (+1) >> readIORef uref
+                     return (Ident (T.pack str) u)
+      -- We'll rewrite something like ``call @foo (x,n)`` (where ``x`` is
+      -- GCable and ``n`` isn't) with::
+      --      x.root <- x  // if no root for x exists yet
+      --      x.load = load x.root
+      --      kill x.root (disabled)
+      ---     call @foo (x.load , n)
+      -- We'll removed kills for live roots and enable the remainder.
+      retLoaded root gcr oos = do
+          id <- fresh (show (tidIdent root) ++ ".load")
+          let loadedvar = TypedId (tidType root) id
+          return ((oos ++ [CCGCLoad loadedvar root
+                          ,CCGCKill False     root], loadedvar), gcr)
+
+      withGCLoad :: MoVar -> GCRootsForVariables
+                          -> IO (([Insn' O O], MoVar), GCRootsForVariables)
+      withGCLoad v gcr = do
+        if not $ isGCable v
+          then return (([], v), gcr)
+          else case Map.lookup v gcr of
+                 Just root -> do retLoaded root gcr []
+                 Nothing   -> do rootid <- fresh (show (tidIdent v) ++ ".root")
+                                 let root = TypedId (tidType v) rootid
+                                 let gcr' = Map.insert v root gcr
+                                 junkid <- fresh (show (tidIdent v) ++ ".junk")
+                                 let junk = TypedId (TupleType []) junkid
+                                 retLoaded root gcr' [CCGCInit junk v root]
 
 type RootMapped = StateT GCRootsForVariables IO
 
