@@ -314,6 +314,11 @@ liveAtGCPointLattice2 = DataflowLattice
               ch = changeIf (Set.size jl > Set.size ol
                           || Set.size jg > Set.size og)
 
+-- When we see a load from a root, the root becomes live;
+-- when we see a root init happen, the root becomes dead.
+-- When we see an operation that may induce (copying) GC,
+-- we'll add the current set of live roots to the set of
+-- roots we keep.
 liveAtGCPointXfer2 :: BwdTransfer Insn' LiveAGC2
 liveAtGCPointXfer2 = mkBTransfer go
   where
@@ -344,6 +349,9 @@ liveAtGCPointXfer2 = mkBTransfer go
     fact :: FactBase LiveAGC2 -> Label -> LiveAGC2
     fact f l = fromMaybe (fact_bot liveAtGCPointLattice2) $ lookupFact l f
 
+-- If we see a (disabled) GCKill marker when a root is still alive,
+-- we'll remove the marker, but if the root is dead, we'll enable
+-- the marker, since it is, by definition, (conservatively) correct.
 liveAtGCPointRewrite2 :: forall m. FuelMonad m => BwdRewrite m Insn' LiveAGC2
 liveAtGCPointRewrite2 = mkBRewrite d
   where
