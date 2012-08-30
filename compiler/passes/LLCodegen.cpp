@@ -266,12 +266,6 @@ llvm::Value* emitLoad(llvm::Value* v, llvm::StringRef suffix) {
   return emitNonVolatileLoad(v, v->getName() + suffix);
 }
 
-llvm::Value* CodegenPass::autoload(llvm::Value* v, llvm::StringRef suffix) {
-  if (this->needsImplicitLoad.count(v) == 1) {
-    return emitNonVolatileLoad(v, v->getName() + suffix);
-  } else return v;
-}
-
 // emit() serves as a wrapper around codegen()
 // which inserts implicit loads as needed, and also
 // verifies that the expected type matches the generated type.
@@ -279,7 +273,9 @@ llvm::Value* CodegenPass::autoload(llvm::Value* v, llvm::StringRef suffix) {
 llvm::Value* CodegenPass::emit(LLExpr* e, TypeAST* expectedType) {
   ASSERT(e != NULL) << "null expr passed to emit()!";
   llvm::Value* v = e->codegen(this);
-  v = autoload(v, ".autoload");
+  if (this->needsImplicitLoad.count(v) == 1) {
+    v = emitNonVolatileLoad(v, v->getName() + ".autoload");
+  }
   assertValueHasExpectedType(v, expectedType);
   return v;
 }
@@ -757,7 +753,10 @@ void LLBitcast::codegenMiddle(CodegenPass* pass) {
 /////////////////////////////////////////////////////////////////{{{
 
 llvm::Value* LLDeref::codegen(CodegenPass* pass) {
-  return emitNonVolatileLoad(pass->emit(base, NULL), "deref");
+  llvm::Value* ptr = base->codegen(pass);
+  llvm::Value* ld = emitNonVolatileLoad(ptr, "deref");
+  if (pass->needsImplicitLoad.count(ptr) == 1) { pass->markAsNeedingImplicitLoads(ld); }
+  return ld;
 }
 
 llvm::Value* LLStore::codegen(CodegenPass* pass) {
@@ -824,7 +823,7 @@ llvm::Value* LLText::codegen(CodegenPass* pass) {
 }
 
 llvm::Value* LLValueVar::codegen(CodegenPass* pass) {
-  return pass->autoload(this->val, ".vv.autoload");
+  return this->val;
 }
 
 llvm::Value* LLGlobalSymbol::codegen(CodegenPass* pass) {
@@ -1226,7 +1225,7 @@ llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
   llvm::Value* v  = this->var->codegen(pass);
   if (offsets.empty()) return v;
 
-  llvm::Value* rv = pass->autoload(v, ".occload");
+  llvm::Value* rv = emitLoad(v, ".occload");
   for (size_t i = 0; i < offsets.size(); ++i) {
     // If we know that the subterm at this position was created with
     // a particular data constructor, emit a cast to that ctor's type.
