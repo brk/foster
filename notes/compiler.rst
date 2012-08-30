@@ -576,9 +576,20 @@ Currently, language extensions require the following modifications:
 Compiler Details
 ================
 
+.. toctree::
+
+        closureconversion
+        fosterlower
+        compiled-examples
+        coro
+        gc
+        optimizations
+        match-compilation
+
 .. include:: closureconversion.rst
 .. include:: fosterlower.rst
 .. include:: compiled-examples.rst
 .. include:: coro.rst
 .. include:: gc.rst
 .. include:: optimizations.rst
+.. include:: match-compilation.rst
