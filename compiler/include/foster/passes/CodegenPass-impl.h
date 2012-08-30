@@ -170,7 +170,7 @@ struct CodegenPass {
   }
 
   Value* emit(LLExpr* e, TypeAST* t);
-  Value* autoload(Value* v, const char* suffix = ".autoload");
+  Value* autoload(Value* v, llvm::StringRef suffix);
 
   // Returns ty**, the stack slot containing a ty*.
   llvm::AllocaInst* emitMalloc(TypeAST* typ, int8_t ctorId,

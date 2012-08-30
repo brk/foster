@@ -262,11 +262,11 @@ CodegenPass::CodegenPass(llvm::Module* m, bool useGC, bool nsw, bool nuw,
   //dib = new DIBuilder(*mod);
 }
 
-llvm::Value* emitLoad(llvm::Value* v, const char* suffix) {
+llvm::Value* emitLoad(llvm::Value* v, llvm::StringRef suffix) {
   return emitNonVolatileLoad(v, v->getName() + suffix);
 }
 
-llvm::Value* CodegenPass::autoload(llvm::Value* v, const char* suffix) {
+llvm::Value* CodegenPass::autoload(llvm::Value* v, llvm::StringRef suffix) {
   if (this->needsImplicitLoad.count(v) == 1) {
     return emitNonVolatileLoad(v, v->getName() + suffix);
   } else return v;
@@ -279,7 +279,7 @@ llvm::Value* CodegenPass::autoload(llvm::Value* v, const char* suffix) {
 llvm::Value* CodegenPass::emit(LLExpr* e, TypeAST* expectedType) {
   ASSERT(e != NULL) << "null expr passed to emit()!";
   llvm::Value* v = e->codegen(this);
-  v = autoload(v);
+  v = autoload(v, ".autoload");
   assertValueHasExpectedType(v, expectedType);
   return v;
 }
@@ -823,7 +823,7 @@ llvm::Value* LLText::codegen(CodegenPass* pass) {
 }
 
 llvm::Value* LLValueVar::codegen(CodegenPass* pass) {
-  return pass->autoload(this->val);
+  return pass->autoload(this->val, ".vv.autoload");
 }
 
 llvm::Value* LLGlobalSymbol::codegen(CodegenPass* pass) {
@@ -1092,7 +1092,8 @@ void LLTupleStore::codegenMiddle(CodegenPass* pass) {
       // Make sure we close over generic versions of our pointers...
       llvm::Value* envPtr = (envSlots[i] == NULL)
                               ? getUnitValue()
-                              : pass->autoload(envSlots[i]);
+                              : emitLoad(envSlots[i], ".envslot");
+      // Use emitLoad, not autoload, since envs are never stack allocated (yet).
       llvm::Value* genPtr = emitBitcast(envPtr,
                                   getGenericClosureEnvType()->getLLVMType(),
                                   closures[i]->envname + ".generic");
@@ -1224,7 +1225,7 @@ llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
   llvm::Value* v  = this->var->codegen(pass);
   if (offsets.empty()) return v;
 
-  llvm::Value* rv = pass->autoload(v);
+  llvm::Value* rv = pass->autoload(v, ".occload");
   for (size_t i = 0; i < offsets.size(); ++i) {
     // If we know that the subterm at this position was created with
     // a particular data constructor, emit a cast to that ctor's type.
