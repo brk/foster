@@ -52,8 +52,6 @@ message Block {
 message BlockMiddle {
   optional LetVal       let_val = 1;
   optional LetClosures  let_clo = 2;
-  optional RebindId     rebind  = 3;
-  optional RebindId    bitcast  = 4;
   optional TermVar  gcroot_kill = 5;
   optional RootInit gcroot_init = 6;
   optional TupleStore tuple_store = 7;
@@ -79,11 +77,6 @@ message LetClosures {
   repeated Closure closures = 1;
 }
 
-message RebindId {
-  required string from_id = 1;
-  required TermVar to_var = 2;
-}
-
 message Letable {
   enum Tag {
     IL_INT = 16;
@@ -94,6 +87,7 @@ message Letable {
     IL_OCCURRENCE = 21;
     IL_CALL = 23;
     IL_CALL_PRIMOP = 24;
+    IL_BITCAST = 28;
     IL_DEREF = 31;
     IL_STORE = 32;
     IL_IF = 33;

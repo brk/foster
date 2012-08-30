@@ -722,14 +722,9 @@ void LLSwitch::codegenTerminator(CodegenPass* pass) {
 
 ///}}}//////////////////////////////////////////////////////////////
 
-
-void LLRebindId::codegenMiddle(CodegenPass* pass) {
-  pass->insertScopedValue(from, to->codegen(pass));
-}
-
-void LLBitcast::codegenMiddle(CodegenPass* pass) {
-  llvm::Value* v = to->codegen(pass);
-  llvm::Type* tgt = getLLVMType(to->type);
+llvm::Value* LLBitcast::codegen(CodegenPass* pass) {
+  llvm::Value* v = var->codegen(pass);
+  llvm::Type* tgt = getLLVMType(this->type);
 
   llvm::Value* vprime = NULL;
   if (v->getType() == tgt) {
@@ -745,7 +740,7 @@ void LLBitcast::codegenMiddle(CodegenPass* pass) {
     }
   }
 
-  pass->insertScopedValue(from, vprime);
+  return vprime;
 }
 
 ////////////////////////////////////////////////////////////////////

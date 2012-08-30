@@ -202,12 +202,9 @@ LLMiddle* parseLetClosures(const pb::LetClosures& b) {
   return new LLClosures(closures);
 }
 
-LLMiddle* parseRebindId(const pb::RebindId& r) {
-  return new LLRebindId(r.from_id(), parseTermVar(&r.to_var()));
-}
-
-LLMiddle* parseBitcast(const pb::RebindId& r) {
-  return new LLBitcast(r.from_id(), parseTermVar(&r.to_var()));
+LLExpr* parseBitcast(const pb::Letable& e) {
+  ASSERT(e.parts_size() == 1) << "bitcast muse have var to cast";
+  return new LLBitcast(parseTermVar(&e.parts(0)));
 }
 
 LLSwitch* parseSwitch(const pb::Terminator&);
@@ -236,8 +233,6 @@ LLMiddle* parseMiddle(const pb::BlockMiddle& b) {
   if (b.has_tuple_store()) { return parseTupleStore(b.tuple_store()); }
   if (b.has_let_val()) { return parseLetVal(b.let_val()); }
   if (b.has_let_clo()) { return parseLetClosures(b.let_clo()); }
-  if (b.has_rebind())  { return parseRebindId(b.rebind()); }
-  if (b.has_bitcast()) { return parseBitcast(b.bitcast()); }
   ASSERT(false) << "parseMiddle unhandled case!"; return NULL;
 }
 
@@ -413,6 +408,7 @@ LLExpr* LLExpr_from_pb(const pb::Letable* pe) {
   case pb::Letable::IL_UNIT:        rv = parseUnitValue(e); break;
   case pb::Letable::IL_DEREF:       rv = parseDeref(e); break;
   case pb::Letable::IL_STORE:       rv = parseStore(e); break;
+  case pb::Letable::IL_BITCAST:     rv = parseBitcast(e); break;
   case pb::Letable::IL_ARRAY_READ:  rv = parseArrayRead(e); break;
   case pb::Letable::IL_ARRAY_POKE:  rv = parseArrayPoke(e); break;
   case pb::Letable::IL_ARRAY_LENGTH:rv = parseArrayLength(e); break;

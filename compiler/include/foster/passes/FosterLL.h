@@ -50,19 +50,6 @@ struct LLMiddle {
   virtual void codegenMiddle(CodegenPass* pass) = 0;
 };
 
-struct LLRebindId : public LLMiddle {
-  std::string from; LLVar* to;
-  explicit LLRebindId(std::string from, LLVar* to) : from(from), to(to) {}
-  virtual void codegenMiddle(CodegenPass* pass);
-};
-
-struct LLBitcast : public LLMiddle {
-  std::string from; LLVar* to;
-  explicit LLBitcast(std::string from, LLVar* to) : from(from), to(to) {}
-  virtual void codegenMiddle(CodegenPass* pass);
-};
-
-
 struct LLBlock {
   std::string block_id;
   int numPreds;
@@ -235,6 +222,12 @@ struct LLGlobalSymbol : public LLVar {
 struct LLValueVar : public LLVar {
   llvm::Value* val;
   LLValueVar(llvm::Value* v) : LLVar(""), val(v) {}
+  virtual llvm::Value* codegen(CodegenPass* pass);
+};
+
+struct LLBitcast : public LLExpr {
+  LLVar* var;
+  explicit LLBitcast(LLVar* var) : LLExpr("LLBitcast"), var(var) {}
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 

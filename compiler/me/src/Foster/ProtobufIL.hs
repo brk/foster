@@ -36,7 +36,6 @@ import Foster.Bepb.BlockMiddle  as PbBlockMiddle
 import Foster.Bepb.LetClosures  as PbLetClosures
 import Foster.Bepb.TermVar      as PbTermVar
 import Foster.Bepb.PbCtorId     as PbCtorId
-import Foster.Bepb.RebindId     as PbRebindId
 import Foster.Bepb.PbDataCtor   as PbDataCtor
 import Foster.Bepb.PbCtorInfo   as PbCtorInfo
 import Foster.Bepb.PbAllocInfo  as PbAllocInfo
@@ -175,8 +174,6 @@ dumpBlock predmap (Block (id, phis) mids illast) =
                     }
 
 dumpMiddle :: ILMiddle -> PbBlockMiddle.BlockMiddle
-dumpMiddle (ILLetVal from (ILBitcast ty (TypedId _ to))) =
-    P'.defaultValue { bitcast = Just $ dumpRebinding from (TypedId ty to) }
 dumpMiddle (ILLetVal id letable) =
     P'.defaultValue { let_val = Just (dumpLetVal id letable) }
 dumpMiddle (ILClosures ids clos) =
@@ -200,9 +197,6 @@ dumpTupleStore (ILTupleStore vs v r) =
                                        MemRegionGlobalHeap -> True
     }
 dumpTupleStore other = error $ "dumpTupleStore called on non-tuple-store value: " ++ show other
-
-dumpRebinding from to = P'.defaultValue { from_id = dumpIdent from
-                                        , to_var  = dumpVar to }
 
 dumpLetVal :: Ident -> Letable -> PbLetVal.LetVal
 dumpLetVal id letable =
@@ -240,9 +234,11 @@ dumpSwitch var arms def occ =
 
 -- |||||||||||||||||||||||| Expressions |||||||||||||||||||||||||{{{
 dumpExpr :: Letable -> PbLetable.Letable
-dumpExpr (ILBitcast _ _) = error "ProtobufIL.hs cannot dump bitcast as expr"
 dumpExpr (ILAlloc    {}) = error "ILAlloc should have been translated away!"
-
+dumpExpr x@(ILBitcast t v) =
+    P'.defaultValue { PbLetable.parts = fromList [dumpVar v]
+                    , PbLetable.tag   = IL_BITCAST
+                    , PbLetable.type' = Just $ dumpType t  }
 dumpExpr x@(ILText s) =
     P'.defaultValue { PbLetable.string_value = Just $ textToPUtf8 s
                     , PbLetable.tag   = IL_TEXT
