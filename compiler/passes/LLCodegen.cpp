@@ -277,9 +277,6 @@ llvm::Value* emitLoad(llvm::Value* v, llvm::StringRef suffix) {
 llvm::Value* CodegenPass::emit(LLExpr* e, TypeAST* expectedType) {
   ASSERT(e != NULL) << "null expr passed to emit()!";
   llvm::Value* v = e->codegen(this);
-  if (this->needsImplicitLoad.count(v) == 1) {
-    v = emitNonVolatileLoad(v, v->getName() + ".autoload");
-  }
   assertValueHasExpectedType(v, expectedType);
   return v;
 }
@@ -296,8 +293,9 @@ llvm::Value* CodegenPass::emitFosterStringOfCString(Value* cstr, Value* sz) {
   // constructor. Currently all strings are heap-allocated, even constant
   // literal strings.
   bool init = false; // because we'll immediately memcpy.
-  Value* hstr_slot = this->emitArrayMalloc(TypeAST::i(8), sz, init);
-  Value* hstr = emitNonVolatileLoad(hstr_slot, "heap_str");
+  Value* hstr = this->emitArrayMalloc(TypeAST::i(8), sz, init);
+  // This variable is dead after being passed to the TextFragment function,
+  // so it does not need a GC root.
 
   Value* hstr_bytes; Value* len;
   if (tryBindArray(hstr, /*out*/ hstr_bytes, /*out*/ len)) {
@@ -440,23 +438,6 @@ void LLProc::codegenProto(CodegenPass* pass) {
 
 ////////////////////////////////////////////////////////////////////
 
-llvm::AllocaInst* ensureImplicitStackSlot(llvm::Value* v, bool gcable, CodegenPass* pass) {
-  if (llvm::LoadInst* load = dyn_cast<llvm::LoadInst>(v)) {
-    llvm::AllocaInst* slot = dyn_cast<llvm::AllocaInst>(load->getOperand(0));
-    if (slot && pass->needsImplicitLoad.count(slot) == 1) {
-      return slot;
-    }
-  }
-
-  if (gcable) {
-    return pass->storeAndMarkPointerAsGCRoot(v);
-  } else {
-    llvm::AllocaInst* slot = stackSlotWithValue(v, "_addr");
-    pass->markAsNeedingImplicitLoads(slot);
-    return slot;
-  }
-}
-
 void LLProc::codegenProc(CodegenPass* pass) {
   ASSERT(this->F != NULL) << "LLModule should codegen proto for " << getName();
   assertRightNumberOfArgnamesForFunction(F, this->getFunctionArgNames());
@@ -464,18 +445,6 @@ void LLProc::codegenProc(CodegenPass* pass) {
   pass->occSlots.clear();
   pass->addEntryBB(F);
   CodegenPass::ValueScope* scope = pass->newScope(this->getName());
-
-  // We begin by creating stack slots/GC roots to hold dynamically-allocated
-  // pointer parameters. POSSIBLE OPTIMIZATION: This could be elided if we
-  // knew that no observable GC could occur in the function's extent.
-
-  for (Function::arg_iterator AI = F->arg_begin();
-                              AI != F->arg_end(); ++AI) {
-    if (isEnvPtr(AI)) { // Non-envptr args get stack slots from postalloca phis.
-      llvm::Value* slot = ensureImplicitStackSlot(AI, /*gcable*/ true, pass);
-      pass->insertScopedValue(AI->getName(), slot);
-    }
-  }
 
   EDiag() << "codegennign blocks for fn " << F->getName();
   this->codegenToFunction(pass, F);
@@ -517,6 +486,11 @@ void LLProcCFG::codegenToFunction(CodegenPass* pass, llvm::Function* F) {
   // which will either be a case analysis on the env parameter, or postalloca.
   builder.SetInsertPoint(savedBB);
   LLBr br(blocks[0]->block_id);
+  { Function::arg_iterator AI = F->arg_begin();
+    if (isEnvPtr(AI)) {
+      br.args.push_back(new LLValueVar(AI));
+    }
+  }
   br.codegenTerminator(pass);
 
   pass->worklistBlocks.clear();
@@ -550,35 +524,10 @@ void initializeBlockPhis(LLBlock* block) {
   }
 }
 
-// When there's only one predecessor, we can avoid creating stack
-// slots for phis. But doing so means that we must perform CFG simplification
-// in order for us not to have stale GC roots persist through phi nodes!
-// We also must conservatively force stack slots for the function's arguments
-// for the postalloca block, under the assumption that the body may trigger GC.
-// The GCRootSafetyChecker pass verifies that use of phi nodes is restricted.
-bool needStackSlotForPhis(LLBlock* block) {
-  ASSERT(block->numPreds > 0);
-  return block->numPreds > 1
-                   || llvm::StringRef(block->block_id).startswith("postalloca");
-}
-
-Value* maybeStackSlotForPhi(TypeAST* typ, Value* phi, LLBlock* block, CodegenPass* pass) {
-  if (!phi->getType()->isPointerTy()) return phi;
-  if (!needStackSlotForPhis(block))   return phi;
-  bool gcable = containsGCablePointers(typ, phi->getType());
-  return ensureImplicitStackSlot(phi, gcable, pass);
-}
-
 void LLBlock::codegenBlock(CodegenPass* pass) {
   builder.SetInsertPoint(bb);
-  //if (!this->phiVars.empty()) {
-  //  EDiag() << bb->getName() << " ; " << numPreds << " preds, in " << bb->getParent()->getName()
-  //      << " ;; "<< needStackSlotForPhis(this);
-  //}
   for (size_t i = 0; i < this->phiVars.size(); ++i) {
-     pass->insertScopedValue(this->phiVars[i]->getName(),
-        maybeStackSlotForPhi(this->phiVars[i]->type,
-                             this->phiNodes[i], this, pass));
+     pass->insertScopedValue(this->phiVars[i]->getName(), this->phiNodes[i]);
   }
   for (size_t i = 0; i < this->mids.size(); ++i) {
     this->mids[i]->codegenMiddle(pass);
@@ -730,21 +679,19 @@ llvm::Value* LLBitcast::codegen(CodegenPass* pass) {
   llvm::Value* v = var->codegen(pass);
   llvm::Type* tgt = getLLVMType(this->type);
 
-  llvm::Value* vprime = NULL;
   if (v->getType() == tgt) {
-    vprime = v;
+    return v;
   } else {
-    // Apply the bitcast to the value or the slot, as appropriate.
-    if (pass->needsImplicitLoad.count(v) == 1) {
-      llvm::Value* cast_slot = emitBitcast(v, ptrTo(tgt));
-      pass->markAsNeedingImplicitLoads(cast_slot);
-      vprime = cast_slot;
-    } else {
-      vprime = emitBitcast(v, tgt);
-    }
+    return emitBitcast(v, tgt);
   }
+}
 
-  return vprime;
+void LLGCRootInit::codegenMiddle(CodegenPass* pass) {
+  llvm::Value* v = src->codegen(pass);
+  llvm::AllocaInst* stackslot = stackSlotWithValue(v, ".gcroot");
+  markGCRoot(stackslot, pass);
+  EDiag() << "initialized stack slot " << stackslot->getName() << " with value of type " << str(v->getType());
+  pass->insertScopedValue(root->getName(), stackslot);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -753,9 +700,7 @@ llvm::Value* LLBitcast::codegen(CodegenPass* pass) {
 
 llvm::Value* LLDeref::codegen(CodegenPass* pass) {
   llvm::Value* ptr = base->codegen(pass);
-  llvm::Value* ld = emitNonVolatileLoad(ptr, "deref");
-  if (pass->needsImplicitLoad.count(ptr) == 1) { pass->markAsNeedingImplicitLoads(ld); }
-  return ld;
+  return emitNonVolatileLoad(ptr, "deref");
 }
 
 llvm::Value* LLStore::codegen(CodegenPass* pass) {
@@ -1004,11 +949,9 @@ llvm::Value* LLArrayIndex::codegenARI(CodegenPass* pass) {
 llvm::Value* LLArrayRead::codegen(CodegenPass* pass) {
   Value* slot = ari->codegenARI(pass);
   Value* val  = emitNonVolatileLoad(slot, "arrayslot");
-  TypeAST* typ = this->type;
   ASSERT(this->type) << "LLArrayRead with no type?";
   ASSERT(this->type->getLLVMType() == val->getType());
-  bool gcable = containsGCablePointers(typ, val->getType());
-  return ensureImplicitStackSlot(val, gcable, pass);
+  return val;
 }
 
   // base could be an array a[i] or a slot for a reference variable r.
@@ -1042,10 +985,11 @@ llvm::Value* LLUnitValue::codegen(CodegenPass* pass) {
 void LLTupleStore::codegenMiddle(CodegenPass* pass) {
   if (vars.empty()) return;
 
-  llvm::Value* slot    = this->storage->codegen(pass);
-  llvm::Value* tup_ptr = this->storage_indir
-                          ? emitNonVolatileLoad(slot, "normalize")
-                          : slot;
+  llvm::Value* tup_ptr = this->storage->codegen(pass);
+  //llvm::Value* slot    = this->storage->codegen(pass);
+  //llvm::Value* tup_ptr = this->storage_indir
+  //                        ? emitNonVolatileLoad(slot, "normalize")
+  //                        : slot;
   copyValuesToStruct(codegenAll(pass, this->vars), tup_ptr);
 }
 
@@ -1054,72 +998,12 @@ void LLTupleStore::codegenMiddle(CodegenPass* pass) {
 /////////////////////////////////////////////////////////////////{{{
 
   void LLClosures::codegenMiddle(CodegenPass* pass) {
-    // This AST node binds a mutually-recursive set of functions,
-    // represented as closure values.
+    ASSERT(closures.size() == 1);
 
-    // We split apart the allocation and initialization of closure environments
-    // on the off chance that one of the environments closes over one of its
-    // fellow closure values or environments.
-    // As a result, we must manually initialize env. storage to prevent the
-    // GC from seeing garbage if a GC is triggered before we fill in the envs.
-    //
-    // In the common case, however, where the environments do *not* close
-    // over each other, we can make closure allocation slightly more efficient
-    // by directly initializing the environments. (TODO: how much more efficicient?)
-    std::vector<llvm::Value*> envSlots;
-    for (size_t i = 0; i < closures.size(); ++i) {
-      if (closures[i]->envStore->vars.empty()) {
-        envSlots.push_back(NULL);
-      } else {
-        envSlots.push_back(closures[i]->envAlloc->codegen(pass));
-      }
-    }
-
-    emitFakeComment("codegenned storage for env slots");
-
-    // Allocate storage for the closures and populate 'em with code/env values.
-    for (size_t i = 0; i < closures.size(); ++i) {
-      llvm::Value* clo = closures[i]->codegenClosure(pass, envSlots[i]);
-      pass->insertScopedValue(closures[i]->varname, clo);
-    }
-
-    emitFakeComment("codegenned closures themselves");
-
-    // Stick each closure environment in the symbol table.
-    std::vector<llvm::Value*> envPtrs;
-    for (size_t i = 0; i < closures.size(); ++i) {
-      // Make sure we close over generic versions of our pointers...
-      llvm::Value* envPtr = (envSlots[i] == NULL)
-                              ? getUnitValue()
-                              : emitLoad(envSlots[i], ".envslot");
-      // Use emitLoad, not autoload, since envs are never stack allocated (yet).
-      llvm::Value* genPtr = emitBitcast(envPtr,
-                                  getGenericClosureEnvType()->getLLVMType(),
-                                  closures[i]->envname + ".generic");
-      pass->insertScopedValue(closures[i]->envname, genPtr);
-
-      envPtrs.push_back(envPtr);
-    }
-
-    emitFakeComment("put env pointers in scope");
-
-    // Now that all the env pointers are in scope,
-    // store the appropriate values through each pointer.
-    for (size_t i = 0; i < closures.size(); ++i) {
-      if (envSlots[i] != NULL) {
-        // Make sure we fill in the concrete environment, not the generic one...
-        closures[i]->envStore->storage = new LLValueVar(envPtrs[i]);
-        closures[i]->envStore->storage_indir = false; // env ptr, not env slot.
-        closures[i]->envStore->codegenMiddle(pass);
-      }
-    }
-
-    emitFakeComment("codegenned closure environments");
-
-    // And clean up env names.
-    for (size_t i = 0; i < closures.size(); ++i) {
-      pass->valueSymTab.remove(closures[i]->envname);
-    }
+    llvm::Value* env = pass->valueSymTab.lookup(closures[0]->envname);
+    ASSERT(env);
+    llvm::Value* clo = closures[0]->codegenClosure(pass, env);
+    pass->insertScopedValue(closures[0]->varname, clo);
   }
 
   // Converts the proc type  r({...}*, ----)
@@ -1156,17 +1040,16 @@ void LLTupleStore::codegenMiddle(CodegenPass* pass) {
     if (closureEscapes) {
       // // { code*, env* }**
       bool init = false; // because we'll immediately initialize below.
-      llvm::AllocaInst* clo_slot = pass->emitMalloc(sty,
-                                                    foster::bogusCtorId(-5),
+      llvm::Value* clo_slot = pass->storeAndMarkPointerAsGCRoot(
+                              pass->emitMalloc(sty, foster::bogusCtorId(-5),
                                                     this->srclines,
-                                                    init);
+                                                    init));
       clo = emitNonVolatileLoad(clo_slot, varname + ".closure"); rv = clo_slot;
     } else { // { code*, env* }*
       clo = CreateEntryAlloca(sty->getLLVMType(), varname + ".closure"); rv = clo;
     }
 
     // TODO register closure type
-
     emitStoreWithCast(llproc->getFn(),
                       builder.CreateConstGEP2_32(clo, 0, 0, varname + ".clo_code"));
     Value* env_slot = builder.CreateConstGEP2_32(clo, 0, 1, varname + ".clo_env");
@@ -1205,23 +1088,20 @@ llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
     emitFakeComment(ss.str());
 
 
-  llvm::Value* v  = this->var->codegen(pass);
-  if (offsets.empty()) return v;
+  llvm::Value* v = this->var->codegen(pass);
 
-  llvm::Value* rv = emitLoad(v, ".occload");
   for (size_t i = 0; i < offsets.size(); ++i) {
     // If we know that the subterm at this position was created with
     // a particular data constructor, emit a cast to that ctor's type.
     if (llvm::Type* structtype = maybeGetCtorStructType(ctors[i])) {
-      rv = emitBitcast(rv, structtype);
-      ASSERT(isPointerToStruct(structtype)) << str(rv);
+      v = emitBitcast(v, structtype);
+      ASSERT(isPointerToStruct(structtype)) << str(v);
     }
 
-    rv = getElementFromComposite(rv, offsets[i], "switch_insp");
+    v = getElementFromComposite(v, offsets[i], "switch_insp");
   }
 
-  bool gcable = containsGCablePointers(this->type, rv->getType());
-  return ensureImplicitStackSlot(rv, gcable, pass);
+  return v;
 }
 
 ///}}}//////////////////////////////////////////////////////////////
@@ -1346,25 +1226,11 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
 
   if (!this->callMightTriggerGC) {
     markAsNonAllocating(callInst);
-  }
-
-  // If we have e.g. a function like   mk-tree :: .... -> ref node
-  // that returns a pointer, we assume that the pointer refers to
-  // heap-allocated memory and must be stored on the stack and marked
-  // as a GC root. In order that updates from the GC take effect,
-  // we use the stack slot (of type T**) instead of the pointer (T*) itself
-  // as the return value of the call.
-  // TODO this should use distinguished pointer types from the middle end.
-  if ( callingConv == llvm::CallingConv::Fast
-    && callInst->getType()->isPointerTy()) {
-    // As a sanity check, we shouldn't ever get a pointer-to-pointer,
-    // at least not from Foster code...
-    ASSERT(!slotType(callInst)->isPointerTy());
-
-    return pass->storeAndMarkPointerAsGCRoot(callInst);
   } else {
-    return callInst;
+    emitFakeComment("ABOVE CALL MAY TRIGGER GC...");
   }
+
+  return callInst;
 }
 
 /// }}}

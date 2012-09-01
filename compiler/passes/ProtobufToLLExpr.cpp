@@ -207,6 +207,11 @@ LLExpr* parseBitcast(const pb::Letable& e) {
   return new LLBitcast(parseTermVar(&e.parts(0)));
 }
 
+LLMiddle* parseGCRootInit(const pb::RootInit& r) {
+  return new LLGCRootInit(parseTermVar(&r.root_init_src()),
+                          parseTermVar(&r.root_init_root()));
+}
+
 LLSwitch* parseSwitch(const pb::Terminator&);
 
 LLBr* parseBr(const pb::Terminator& b) {
@@ -233,6 +238,8 @@ LLMiddle* parseMiddle(const pb::BlockMiddle& b) {
   if (b.has_tuple_store()) { return parseTupleStore(b.tuple_store()); }
   if (b.has_let_val()) { return parseLetVal(b.let_val()); }
   if (b.has_let_clo()) { return parseLetClosures(b.let_clo()); }
+  //if (b.has_gcroot_kill()) { return parseBitcast(b.bitcast()); }
+  if (b.has_gcroot_init()) { return parseGCRootInit(b.gcroot_init()); }
   ASSERT(false) << "parseMiddle unhandled case!"; return NULL;
 }
 
@@ -265,11 +272,16 @@ LLProc* parseProc(const pb::Proc& e) {
     blocks.push_back(parseBlock(e.blocks(i)));
   }
 
+  std::vector<LLVar*> gcroots;
+  for (int i = 0; i < e.gcroots_size(); ++i) {
+    gcroots.push_back(parseTermVar(&e.gcroots(i)));
+  }
+
   foster::sgProcLines[e.name()] = e.lines();
 
   return new LLProcCFG(proctype, e.name(), args,
                        parseLinkage(e.linkage()),
-                       blocks);
+                       blocks, gcroots);
 }
 
 LLArrayIndex* parseArrayIndex(const pb::Letable& e) {

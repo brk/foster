@@ -51,10 +51,10 @@ data BasicBlockGraph' = BasicBlockGraph' { bbgpEntry :: BlockEntry
 -- A Closure records the information needed to generate code for a closure.
 -- The environment name is recorded so that the symbol table contains
 -- the right entry when mutually-recursive functions capture multiple envs.
-data Closure = Closure { closureProcIdent :: MoVar
-                       , closureEnvIdent  :: Ident
-                       , closureCaptures  :: [MoVar]
-                       , closureAllocSrc  :: AllocationSource
+data Closure = Closure { closureProcVar  :: MoVar
+                       , closureEnvVar   :: MoVar
+                       , closureCaptures :: [MoVar]
+                       , closureAllocSrc :: AllocationSource
                        } deriving Show
 
 data Insn' e x where
@@ -357,7 +357,7 @@ closureOfKnFn infoMap (self_id, fn) = do
     -- we create a procedure which also takes an extra (strongly-typed) env ptr
     -- argument. The new body does case analysis to bind the free variable names
     -- to the contents of the slots of the environment.
-    closureConvertFn :: CFFn -> [MoVar] -> ILM (Ident, CCProc)
+    closureConvertFn :: CFFn -> [MoVar] -> ILM (MoVar, CCProc)
     closureConvertFn f varsOfClosure = do
         let envId  = snd (infoMap Map.! self_id)
         -- Note that this env var has a precise type! The other's is missing.
@@ -376,7 +376,7 @@ closureOfKnFn infoMap (self_id, fn) = do
                               norange = MissingSourceRange ""
             -- We change the entry block of the new body (versus the old).
             lab <- freshLabel
-            let bid = (("caseof", lab), [])
+            let bid = ((".env.caseof", lab), [envVar])
             let caseblock = mkFirst (ILabel bid) <*>
                             mkMiddles []         <*>
                             mkLast (ILast cfcase)
@@ -384,7 +384,7 @@ closureOfKnFn infoMap (self_id, fn) = do
                BasicBlockGraph bid rk (caseblock |*><*| oldbodygraph)
 
         proc <- ilmPutProc $ closureConvertedProc (envVar:(fnVars f)) f newbody
-        return (envId, proc)
+        return (envVar, proc)
 
     mapBasicBlock f (BasicBlockGraph entry rk bg) = BasicBlockGraph entry rk (f bg)
 
@@ -536,8 +536,8 @@ instance Pretty CtorId where
   pretty (CtorId tynm ctnm _ sm) = pretty tynm <> text "." <> pretty ctnm <> parens (pretty sm)
 
 instance Pretty Closure where
-  pretty clo = text "(Closure" <+> text "env =(" <> pretty (closureEnvIdent clo)
-                         <>  text ") proc =(" <+> pretty (closureProcIdent clo)
+  pretty clo = text "(Closure" <+> text "env =(" <> pretty (tidIdent $ closureEnvVar clo)
+                         <>  text ") proc =(" <+> pretty (closureProcVar clo)
                          <+> text ") captures" <+> text (show (map pretty (closureCaptures clo)))
                          <+> text ")"
 

@@ -59,9 +59,7 @@ Value* getElementFromComposite(Value* compositeValue, int, const std::string& ms
 Value* getPointerToIndex(Value* compositeValue,
                          Value* idxValue,
                          const std::string& name);
-void markGCRoot(llvm::Value* root,
-                llvm::Constant* meta,
-                llvm::Module* mod);
+void markGCRoot(llvm::AllocaInst* root, CodegenPass* pass);
 llvm::AllocaInst* getAllocaForRoot(llvm::Instruction* root);
 llvm::AllocaInst* CreateEntryAlloca(llvm::Type* ty,
                                     const std::string& name);
@@ -132,7 +130,6 @@ struct CodegenPass {
   std::map<std::string, CtorTagRepresentation>  dataTypeTagReprs;
   std::map<llvm::Function*, llvm::Instruction*> allocaPoints;
   std::map<std::string, LLProc*>                procs;
-  std::set<llvm::Value*> needsImplicitLoad;
 
   llvm::Instruction* getCurrentAllocaPoint();
 
@@ -160,7 +157,6 @@ struct CodegenPass {
 
   llvm::Function* lookupFunctionOrDie(const std::string& fullyQualifiedSymbol);
 
-  llvm::Value* markAsNeedingImplicitLoads(llvm::Value* v);
   void addEntryBB(llvm::Function* f);
 
   void scheduleBlockCodegen(LLBlock* b);
@@ -171,11 +167,9 @@ struct CodegenPass {
 
   Value* emit(LLExpr* e, TypeAST* t);
 
-  // Returns ty**, the stack slot containing a ty*.
-  llvm::AllocaInst* emitMalloc(TypeAST* typ, int8_t ctorId,
+  Value* emitMalloc(TypeAST* typ, int8_t ctorId,
                                       std::string srclines, bool init);
 
-  // Returns array_type[elt_ty]**, the stack slot containing an array_type[elt_ty]*.
   Value* emitArrayMalloc(TypeAST* elt_type, llvm::Value* n, bool init);
 
   Value* emitFosterPrimArrayLength(Value* arr);

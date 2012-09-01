@@ -205,10 +205,6 @@ llvm::AllocaInst* stackSlotWithValue(llvm::Value* val, const std::string& suffix
   return valptr;
 }
 
-llvm::Value* CodegenPass::markAsNeedingImplicitLoads(llvm::Value* v) {
-  this->needsImplicitLoad.insert(v); return v;
-}
-
 // Unlike markGCRoot, this does not require the root be an AllocaInst
 // (though it should still be a pointer).
 // This function is intended for marking intermediate values. It stores
@@ -222,7 +218,6 @@ CodegenPass::storeAndMarkPointerAsGCRoot(llvm::Value* val) {
 
   // allocate a slot for a T* on the stack
   llvm::AllocaInst* stackslot = stackSlotWithValue(val, ".gcroot");
-  this->markAsNeedingImplicitLoads(stackslot);
 
   if (this->useGC) {
     markGCRoot(stackslot, this);
@@ -248,7 +243,7 @@ void emitRecordMallocCallsite(llvm::Module* m,
   markAsNonAllocating(builder.CreateCall2(rmc, typemap, srclines));
 }
 
-llvm::AllocaInst*
+llvm::Value*
 CodegenPass::emitMalloc(TypeAST* typ,
                         int8_t ctorId,
                         std::string srclines,
@@ -280,8 +275,7 @@ CodegenPass::emitMalloc(TypeAST* typ,
                                                   slotSizeOf(ty), /*align*/ 4));
   }
 
-  return storeAndMarkPointerAsGCRoot(
-                       builder.CreateBitCast(mem, ptrTo(ty), "ptr"));
+  return builder.CreateBitCast(mem, ptrTo(ty), "ptr");
 }
 
 
@@ -305,9 +299,8 @@ CodegenPass::emitArrayMalloc(TypeAST* elt_type, llvm::Value* n, bool init) {
   llvm::Value* vinit   = builder.getInt8(init);
   llvm::CallInst* mem = builder.CreateCall3(memalloc, typemap, num_elts, vinit, "arrmem");
 
-  return storeAndMarkPointerAsGCRoot(
-           builder.CreateBitCast(mem,
-                  ArrayTypeAST::getZeroLengthTypeRef(elt_type), "arr_ptr"));
+  return builder.CreateBitCast(mem,
+                  ArrayTypeAST::getZeroLengthTypeRef(elt_type), "arr_ptr");
 }
 
 llvm::Value*

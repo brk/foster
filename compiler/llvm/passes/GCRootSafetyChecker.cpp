@@ -162,37 +162,7 @@ struct GCRootSafetyChecker : public FunctionPass {
 
     if (!problems.empty()) exit(1);
 
-    checkUsageOfPhis(F);
-
     return false;
-  }
-
-  void checkUsageOfPhis(Function& F) {
-    for (Function::iterator bb = F.begin(); bb != F.end(); ++bb) {
-      for (BasicBlock::iterator IP = bb->begin(); IP != bb->end(); ++IP) {
-        if (! llvm::isa<llvm::PHINode>(IP)) { break; }
-        // Non-pointers don't need to worry about GC staleness.
-        if (! IP->getType()->isPointerTy()) { continue; }
-        // A value with no uses is of, um, no use.
-        if (  IP->use_begin() == IP->use_end()) { continue; }
-
-        if (! isStoreToStackSlotOrRet(IP->use_back())) {
-          llvm::errs() << "******** invalid use of phi node"
-                       << " in function " << F.getName()
-                       << "\n\tThis phi:   " << *IP
-                       << "\n\tIs misused: " << *(IP->use_back());
-          exit(1);
-        }
-
-        Value::use_iterator IPe = IP->use_begin(); IPe++;
-        if (IPe != IP->use_end()) {
-          llvm::errs() << "******** too many uses of phi node"
-                       << " in function " << F.getName()
-                       << "\n\tThis phi:   " << *IP;
-          exit(1);
-        }
-      }
-    }
   }
 
   void union_of_predecessors(BasicBlock* BB, ValueValueMap& results,

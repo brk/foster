@@ -10,7 +10,7 @@ module Foster.ProtobufIL (
 
 import Foster.Base
 import Foster.ILExpr
-import qualified Foster.CloConv as CC(Proc(..), Closure(Closure))
+import qualified Foster.CloConv as CC(Proc(..), Closure)
 import Foster.MonoType
 import Foster.Letable
 import Foster.ProtobufUtils
@@ -24,7 +24,6 @@ import Text.ProtocolBuffers(messagePut)
 import Foster.Bepb.ProcType     as ProcType
 import Foster.Bepb.Type.Tag     as PbTypeTag
 import Foster.Bepb.Type         as PbType
-import Foster.Bepb.Closure      as Closure
 import Foster.Bepb.Proc         as Proc
 import Foster.Bepb.Decl         as Decl
 import Foster.Bepb.PBInt        as PBInt
@@ -206,9 +205,7 @@ dumpLetVal id letable =
 
 dumpLetClosures :: [Ident] -> [CC.Closure] -> PbLetClosures.LetClosures
 dumpLetClosures ids clos =
-    P'.defaultValue { closures = fromList $ fmap dumpClosureWithName $
-                                                          (Prelude.zip ids clos)
-                    }
+    error $ "dumpLetClosures shouldn't be needed any more!"
 
 dumpLast :: ILLast -> PbTerminator.Terminator
 dumpLast ILRetVoid =
@@ -389,27 +386,6 @@ dumpArrayLength t arr =
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||| Other Expressions ||||||||||||||||||||||{{{
-prefixAllocSrc foo   (AllocationSource                prefix  rng) =
-                     (AllocationSource (foo ++ " " ++ prefix) rng)
-
-showAllocationSource (AllocationSource prefix rng) =
-                 prefix ++ highlightFirstLine rng
-
-dumpClosureWithName (varid, CC.Closure procid envid captvars allocsrc0) =
-    -- Same translation done by explicate in ILExpr.hs...
-    let t         = StructType (map tidType captvars) in
-    let memregion = MemRegionGlobalHeap in
-    let allocsrc  = prefixAllocSrc "env of" allocsrc0 in
-    let storage   = AllocInfo t memregion "env" Nothing Nothing
-                              "env-allocator" DoZeroInit in
-    let tupstore  = ILTupleStore captvars (TypedId t envid) memregion in
-    P'.defaultValue { varname     = dumpIdent varid
-                    , proc_id     = textToPUtf8 (identPrefix (tidIdent procid))
-                    , env_id      = dumpIdent envid
-                    , env_storage = dumpAllocate   storage
-                    , env_store   = dumpTupleStore tupstore
-                    , allocsite = u8fromString $ showAllocationSource allocsrc }
-
 dumpCtorInfo (CtorInfo cid@(CtorId _dtn dtcn _arity ciid)
                            (DataCtor dcn dcid _tyfs tys)) =
   case (ciid == dcid, dtcn == T.unpack dcn) of
@@ -477,6 +453,7 @@ dumpILProgramToProtobuf m outpath = do
              , Proc.blocks= fromList $ map (dumpBlock predmap) (CC.procBlocks p)
              , Proc.lines = Just $ u8fromString (showSourceRange $ CC.procRange p)
              , Proc.linkage = Foster.Bepb.Proc.Linkage.Internal
+             , Proc.gcroots = fromList $ map dumpVar gcroots
              }
     preProcType proc =
         let retty = CC.procReturnType proc in

@@ -24,10 +24,11 @@ import Foster.Output(out, Output)
 import Data.Maybe(fromMaybe)
 import Data.IORef
 import Data.Map(Map)
+import Data.List(zipWith, zipWith4)
 import qualified Data.Set as Set
 import qualified Data.Map as Map(singleton, insertWith, lookup, empty, fromList,
                                  elems, keysSet, insert, union, findWithDefault)
-import qualified Data.Text as T(pack)
+import qualified Data.Text as T(pack, unpack)
 import Control.Monad.State(evalStateT, get, put, StateT)
 
 --------------------------------------------------------------------
@@ -112,7 +113,7 @@ makeAllocationsExplicit bbgp uref = do
             let info = AllocInfo t memregion "ref" Nothing Nothing "ref-allocator" NoZeroInit
             return $
               (mkMiddle $ CCLetVal id  (ILAllocate info)) <*>
-              (mkMiddle $ CCLetVal id' (ILStore v (TypedId t id)))
+              (mkMiddle $ CCLetVal id' (ILStore v (TypedId (PtrType t) id)))
     (CCLetVal id (ILTuple [] allocsrc)) -> return $ mkMiddle $ insn
     (CCLetVal id (ILTuple vs allocsrc)) -> do
             id' <- fresh "tup-alloc"
@@ -121,28 +122,105 @@ makeAllocationsExplicit bbgp uref = do
             let info = AllocInfo t memregion "tup" Nothing Nothing "tup-allocator" NoZeroInit
             return $
               (mkMiddle $ CCLetVal id (ILAllocate info)) <*>
-              (mkMiddle $ CCTupleStore vs (TypedId t id) memregion)
+              (mkMiddle $ CCTupleStore vs (TypedId (PtrType t) id) memregion)
     (CCLetVal id (ILAppCtor t (CtorInfo cid _) vs)) -> do
             id' <- fresh "ctor-alloc"
             let tynm = ctorTypeName cid ++ "." ++ ctorCtorName cid
             let tag  = ctorSmallInt cid
             let t = StructType (map tidType vs)
-            let obj = (TypedId t id' )
+            let obj = (TypedId (PtrType t) id' )
             let genty = PtrTypeUnknown
             let memregion = MemRegionGlobalHeap
             let info = AllocInfo t memregion tynm (Just tag) Nothing "ctor-allocator" NoZeroInit
             return $
               (mkMiddle $ CCLetVal id' (ILAllocate info)) <*>
-              (mkMiddle $ CCTupleStore vs obj memregion) <*>
+              (mkMiddle $ CCTupleStore vs obj memregion)  <*>
               (mkMiddle $ CCLetVal id  (ILBitcast genty obj))
-    (CCTupleStore   {}   ) -> return $ mkMiddle $ insn
-    (CCLetVal  _id  _l   ) -> return $ mkMiddle $ insn
-    (CCLetFuns _ids _clos) -> return $ mkMiddle $ insn
+    (CCTupleStore   {}   ) -> return $ mkMiddle insn
+    (CCLetVal  _id  _l   ) -> return $ mkMiddle insn
+    (CCLetFuns ids clos)   -> makeClosureAllocationExplicit fresh ids clos
     (CCLast    cclast)     ->
           case cclast of
-            (CCCont {}       ) -> return $ mkLast $ insn
-            (CCCall _ _ _ _ _) -> return $ mkLast $ insn
-            (CCCase {}       ) -> return $ mkLast $ insn
+            (CCCont {}       ) -> return $ mkLast insn
+            (CCCall _ _ _ _ _) -> return $ mkLast insn
+            (CCCase {}       ) -> return $ mkLast insn
+
+    -- Closures and their environments are mutually recursive; we'll tie
+    -- the knot using mutation, as usual. For example, we'll translate::
+    --          REC     c1 = Closure env=e1 proc=p1 captures=[c1]
+    --                  c2 = Closure env=e2 proc=p2 captures=[c1,e1]
+    -- to::
+    --          LET e1     = ALLOC [typeOf c1]
+    --          LET e2     = ALLOC [typeOf c1, typeOf e1.gen]
+    --          LET c1     = ALLOC [procTy p1, typeOf e1.gen]
+    --          LET c2     = ALLOC [procTy p2, typeOf e2.gen]
+    --          LET e1.gen = BITCAST e1 to i8* // wait until all allocations are
+    --          LET e2.gen = BITCAST e2 to i8* // done so bitcasts aren't stale.
+    --          TUPLESTORE [p1, e1.gen] to c1
+    --          TUPLESTORE [p2, e2.gen] to c2
+    --          TUPLESTORE [c1]         to e1
+    --          TUPLESTORE [c1, e1.gen] to e2
+    -- Actually, we also need to genericize the environments for the proc types.
+    --
+    -- We split apart the allocation and initialization of closure environments
+    -- on the off chance that one of the environments closes over one of its
+    -- fellow closure values or environments.
+    -- As a result, we must manually initialize env. storage to prevent the
+    -- GC from seeing garbage if a GC is triggered before we fill in the envs.
+    --
+    -- In the common case, however, where the environments do *not* close
+    -- over each other, we can make closure allocation slightly more efficient
+    -- by directly initializing the environments. (TODO: how much more efficicient?)
+    --
+    -- Similarly, for the closures themselves, we can trade off between
+    -- redundant loads and stores.
+makeClosureAllocationExplicit fresh ids clos = do
+  let generic_env_ptr_ty = PtrType (PrimInt I8)
+  let generic_fnty ty =
+            let (FnType (_conc_env_ptr_type:rest) rt cc pf) = ty in
+                (FnType (generic_env_ptr_ty:rest) rt cc pf)
+
+  gen_proc_vars <- mapM (\procvar -> do
+                          gen_proc_id <- fresh ".gen.proc"
+                          return (TypedId (generic_fnty $ tidType procvar)
+                                           gen_proc_id)
+                        ) (map closureProcVar clos)
+
+  let gen id = TypedId generic_env_ptr_ty id
+  let envids = map (tidIdent . closureEnvVar) clos
+  env_gens <- mapM (\envid -> do fresh (T.unpack $ prependedTo ".gen"
+                                                    (identPrefix envid))) envids
+  let env_gen_map = Map.fromList $ zip envids env_gens
+  let substGenEnv v = case Map.lookup (tidIdent v) env_gen_map of
+                           Nothing -> v
+                           Just id -> gen id
+  -- TODO allocation source of clo?
+  let envAllocsAndStores envid clo =
+           let memregion = MemRegionGlobalHeap in
+           let vs = map substGenEnv $ closureCaptures clo in
+           let t = StructType (map tidType vs) in
+           let envvar = TypedId (PtrType t) envid in
+           let ealloc = ILAllocate (AllocInfo t memregion "env" Nothing Nothing
+                                                "env-allocator" DoZeroInit) in
+           (CCLetVal envid ealloc, CCTupleStore vs envvar memregion, envvar)
+  let cloAllocsAndStores cloid gen_proc_var clo env_gen_id =
+           let bitcast = ILBitcast (tidType gen_proc_var) (closureProcVar clo) in
+           let memregion = MemRegionGlobalHeap in
+           let vs = [gen_proc_var, gen env_gen_id] in
+           let t  = StructType (map tidType vs) in
+           let t' = generic_fnty (fnty clo) in
+           let clovar = TypedId t' cloid in
+           let calloc = ILAllocate (AllocInfo t memregion "clo" Nothing Nothing
+                                                "clo-allocator" DoZeroInit) in
+           (CCLetVal cloid calloc, [CCLetVal (tidIdent gen_proc_var) bitcast
+                                   ,CCTupleStore vs clovar memregion])
+  let (envallocs, env_tuplestores, envvars) = unzip3 $ zipWith  envAllocsAndStores envids clos
+  let (cloallocs, clo_tuplestores         ) = unzip  $ zipWith4 cloAllocsAndStores ids gen_proc_vars clos env_gens
+  let bitcasts = [CCLetVal envgen (ILBitcast generic_env_ptr_ty envvv)
+                 | (envvv, envgen) <- zip envvars env_gens]
+  return $ mkMiddles $ envallocs ++ cloallocs ++ bitcasts
+                    ++ concat clo_tuplestores ++ env_tuplestores
+
 
 --------------------------------------------------------------------
 
@@ -420,7 +498,7 @@ insertSmartGCRoots uref bbgp0 = do
   rootsLiveAtGCPoints <- runLiveAtGCPoint2 uref bbgp'
   bbgp'' <- removeDeadGCRoots bbgp' (mapInverse gcr) rootsLiveAtGCPoints
   putStrLn $ "these roots were live at GC points: " ++ show rootsLiveAtGCPoints
-  return ( bbgp0 , Set.toList rootsLiveAtGCPoints)
+  return ( bbgp'' , Set.toList rootsLiveAtGCPoints)
  where
     mapInverse m = let ks = Map.keysSet m in
                    let es = Set.fromList (Map.elems m) in
@@ -431,6 +509,11 @@ insertSmartGCRoots uref bbgp0 = do
 
 type GCRootsForVariables = Map MoVar RootVar
 type VariablesForGCRoots = Map RootVar MoVar
+
+makeSubstWith :: Ord a => [a] -> [a] -> (a -> a)
+makeSubstWith from to = let m = Map.fromList $ zip from to in
+                        let s v = Map.findWithDefault v v m in
+                        s
 
 measure :: String -> Boxes.Box
 measure s = Boxes.vcat Boxes.left (map Boxes.text $ lines s)
@@ -488,31 +571,57 @@ insertDumbGCRoots uref bbgp = do
    return (bbgp { bbgpBody =  g' }, fini)
 
  where
+
   transform :: GCRootsForVariables -> Insn' e x -> IO (Graph Insn' e x, GCRootsForVariables)
   transform gcr insn = case insn of
-    -- See the note above explaining why this is being done...
-    CCLabel {}                    -> do return (mkFirst insn <*> mkMiddles [
-                                                 CCGCKill False root | root <- Map.elems gcr]
-                                                                                      , gcr)
+    -- See the note above explaining why we generate all these GCKills...
+    CCLabel (bid, vs)             -> do (inits, gcr' ) <- mapFoldM' vs gcr maybeRootInitializer
+                                        return (mkFirst insn <*> catGraphs inits <*> mkMiddles [
+                                                CCGCKill False root | root <- Map.elems gcr' ]
+                                                                                      , gcr' )
     CCGCLoad  {}                  -> do return (mkMiddle $ insn                       , gcr)
     CCGCInit  {}                  -> do return (mkMiddle $ insn                       , gcr)
     CCGCKill  {}                  -> do return (mkMiddle $ insn                       , gcr)
-    CCTupleStore vs v r           -> do withGCLoads gcr (v:vs) (\(v' : vs' ) ->
-                                         mkMiddle $ CCTupleStore vs' v' r)
-    CCLetVal id val               -> do let vs = freeTypedIds val
-                                        withGCLoads gcr vs (\vs' ->
-                                         let m = Map.fromList (zip vs vs' ) in
-                                         let s v = Map.findWithDefault v v m in
-                                         mkMiddle $ CCLetVal id (substVarsInLetable s val))
-    CCLetFuns {}                  -> do -- The strategy for inserting GC loads here is a bit
-                                        -- subtle, because we want to make sure that
-                                        return (mkMiddle $ insn                       , gcr)
+    CCTupleStore vs v r           -> do trace ("isGCable " ++ show v ++ " :" ++ show (isGCable v)) $
+                                         withGCLoads gcr (v:vs) (\(v' : vs' ) ->
+                                          mkMiddle $ CCTupleStore vs' v' r)
+    CCLetVal id val               -> do (ri, gcr' ) <- maybeRootInitializer (TypedId (typeOf val) id) gcr
+                                        let vs = freeTypedIds val
+                                        withGCLoads gcr' vs (\vs' ->
+                                         let s = makeSubstWith vs vs' in
+                                         (mkMiddle $ CCLetVal id (substVarsInLetable s val)) <*> ri)
+    CCLetFuns [id] [clo]          -> do
+                                        (ri, gcr' ) <- maybeRootInitializer (TypedId (fnty clo) id) gcr
+                                        let vs = [closureEnvVar clo]
+                                        withGCLoads gcr' vs (\vs' ->
+                                          let s = makeSubstWith vs vs' in
+                                          (mkMiddle $ CCLetFuns [id] [substVarsInClo s clo]) <*> ri)
+    CCLetFuns ids _clos           -> do error $ "CCLetFuns should all become singletons!" ++ show ids
     CCLast (CCCont b vs)          -> do withGCLoads gcr vs (\vs'  ->
                                                (mkLast $ CCLast (CCCont b vs' )))
     CCLast (CCCall b t id v vs)   -> do withGCLoads gcr (v:vs) (\(v' : vs' ) ->
                                                (mkLast $ CCLast (CCCall b t id v' vs' )))
     CCLast (CCCase v arms mb occ) -> do withGCLoads gcr [v] (\[v' ] ->
                                                (mkLast $ CCLast (CCCase v' arms mb occ)))
+
+  fresh str = do u <- modifyIORef uref (+1) >> readIORef uref
+                 return (Ident (T.pack str) u)
+
+  substVarsInClo s (Closure proc env capts asrc) =
+        Closure proc (s env) (map s capts) asrc
+
+  maybeRootInitializer v gcr = do
+    if not $ isGCable v
+      then return (emptyGraph, gcr)
+      else
+        do junkid <- fresh (show (tidIdent v) ++ ".junk")
+           let junk = TypedId (TupleType []) junkid
+           case Map.lookup v gcr of
+             Just root -> do error $ "Wasn't expecting to see existing root when initializing! " ++ show v ++ "; " ++ show root
+             Nothing   -> do rootid <- fresh (show (tidIdent v) ++ ".root")
+                             let root = TypedId (tidType v) rootid
+                             let gcr' = Map.insert v root gcr
+                             return (mkMiddle $ CCGCInit junk v root, gcr' )
 
   -- A helper function to assist in rewriting instructions to use loads from
   -- GC roots for variables which are subject to garbage collection.
@@ -524,15 +633,13 @@ insertDumbGCRoots uref bbgp = do
     let (loads, vs' ) = unzip loadsAndVars
     return (mkMiddles (concat loads) <*> mkG vs' , gcr' )
    where
-      fresh str = do u <- modifyIORef uref (+1) >> readIORef uref
-                     return (Ident (T.pack str) u)
       -- We'll rewrite something like ``call @foo (x,n)`` (where ``x`` is
       -- GCable and ``n`` isn't) with::
-      --      x.root <- x  // if no root for x exists yet
       --      x.load = load x.root
       --      kill x.root (disabled)
       ---     call @foo (x.load , n)
       -- We'll removed kills for live roots and enable the remainder.
+      -- We'll insert root initializations in a separate pass.
       retLoaded root gcr oos = do
           id <- fresh (show (tidIdent root) ++ ".load")
           let loadedvar = TypedId (tidType root) id
@@ -546,12 +653,11 @@ insertDumbGCRoots uref bbgp = do
           then return (([], v), gcr)
           else case Map.lookup v gcr of
                  Just root -> do retLoaded root gcr []
-                 Nothing   -> do rootid <- fresh (show (tidIdent v) ++ ".root")
+                 Nothing   -> do
+                                 rootid <- fresh (show (tidIdent v) ++ ".ROOT")
                                  let root = TypedId (tidType v) rootid
                                  let gcr' = Map.insert v root gcr
-                                 junkid <- fresh (show (tidIdent v) ++ ".junk")
-                                 let junk = TypedId (TupleType []) junkid
-                                 retLoaded root gcr' [CCGCInit junk v root]
+                                 retLoaded root gcr' []
 
 type RootMapped = StateT GCRootsForVariables IO
 
@@ -596,8 +702,7 @@ removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
                                          mkMiddle $ CCTupleStore vs' v' r)
     CCLetVal id val               -> do let vs = freeTypedIds val
                                         undoDeadGCLoads vs (\vs' ->
-                                         let m = Map.fromList (zip vs vs' ) in
-                                         let s v = Map.findWithDefault v v m in
+                                         let s = makeSubstWith vs vs' in
                                          mkMiddle $ CCLetVal id (substVarsInLetable s val))
     CCLetFuns {}                  -> do return $ mkMiddle $ insn
     CCLast (CCCont b vs)          -> do undoDeadGCLoads vs (\vs'  ->
@@ -622,6 +727,9 @@ removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
                                           then v
                                           else varForRoot root
 
+fnty clo = let (FnType argtys retty cc FT_Proc) = tidType (closureProcVar clo)
+            in  FnType argtys retty cc FT_Func
+
 canGCLetable l = let rv = canGC  l in if rv then {- trace ("canGCL: " ++ show l) -} rv else rv
 canGCCalled  v = let rv = canGCF v in if rv then {- trace ("canGCF: " ++ show v) -} rv else rv
 
@@ -631,6 +739,7 @@ isGCable v = case tidType v of
                PrimInt _            -> False
                PrimFloat64          -> False
                StructType _         -> False
+               TupleType  []        -> False
                FnType _ _ _ FT_Proc -> False
                FnType _ _ _ FT_Func -> True
                PtrType _            -> True -- could have further annotations on ptr types

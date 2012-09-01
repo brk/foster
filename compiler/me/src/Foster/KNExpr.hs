@@ -417,7 +417,18 @@ instance Pretty TypeIL where
   pretty t = text (show t)
 
 instance Pretty MonoType where
-  pretty t = text (show t)
+  pretty t = case t of
+          PrimInt        isb          -> text "IntN"
+          PrimFloat64                 -> text "Float64"
+          TyConApp       dt ts        -> text "[TyCon" <+> tupled (map pretty ts) <> text "]"
+          TupleType      ts           -> tupled (map pretty ts)
+          StructType     ts           -> text "#" <> tupled (map pretty ts)
+          FnType         ts r cc pf   -> text "{" <+> hsep [pretty t <+> text "=>" | t <- ts]
+                                                  <+> pretty r <+> text "}"
+          CoroType       s  r         -> text "Coro..."
+          ArrayType      t            -> text "Array" <+> pretty t
+          PtrType        t            -> text "Ref" <+> pretty t
+          PtrTypeUnknown              -> text "?"
 
 instance Pretty t => Pretty (TypedId t) where
   pretty (TypedId t i) = showUnTyped (text $ show i) t

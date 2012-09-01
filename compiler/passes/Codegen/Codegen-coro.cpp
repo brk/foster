@@ -297,12 +297,12 @@ Value* CodegenPass::emitCoroCreateFn(
   this->addEntryBB(create);
 
   int8_t bogusCtor = -1;
-  // foster_coro_i32_i32* fcoro = (foster_coro_i32_i32*) memalloc_cell(NULL);
   // foster_coro_i32_i32* ccoro = (foster_coro_i32_i32*) memalloc_cell(NULL);
-  Value* fcoro_slot = this->emitMalloc(getSplitCoroTyp(argTyps), bogusCtor, "fcoro", /*init*/ true);
-  Value* ccoro_slot = this->emitMalloc(getSplitCoroTyp(retTyp ), bogusCtor, "ccoro", /*init*/ false);
-
-  Value* fcoro      = builder.CreateLoad(fcoro_slot, "fcoro");
+  // foster_coro_i32_i32* fcoro = (foster_coro_i32_i32*) memalloc_cell(NULL);
+  Value* ccoro_slot = this->storeAndMarkPointerAsGCRoot(this->emitMalloc(getSplitCoroTyp(retTyp ), bogusCtor, "ccoro", /*init*/ false));
+  Value* fcoro      =                                   this->emitMalloc(getSplitCoroTyp(argTyps), bogusCtor, "fcoro", /*init*/ true);
+  // See note below: no root needed because foster_coro_create is written
+  // not to induce a GC copy.
   Value* ccoro      = builder.CreateLoad(ccoro_slot, "ccoro");
 
   // TODO call memset on the full structs

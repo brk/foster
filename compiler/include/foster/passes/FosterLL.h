@@ -50,6 +50,12 @@ struct LLMiddle {
   virtual void codegenMiddle(CodegenPass* pass) = 0;
 };
 
+struct LLGCRootInit : public LLMiddle {
+  LLVar* src; LLVar* root;
+  explicit LLGCRootInit(LLVar* src, LLVar* root) : src(src), root(root) {}
+  virtual void codegenMiddle(CodegenPass* pass);
+};
+
 struct LLBlock {
   std::string block_id;
   int numPreds;
@@ -130,14 +136,16 @@ private:
   llvm::GlobalValue::LinkageTypes functionLinkage;
   std::vector<std::string> argnames;
   std::vector<LLBlock*> blocks;
-
+  std::vector<LLVar*> gcroots;
 
 public:
   explicit LLProcCFG(FnTypeAST* procType, const string& name,
                      const std::vector<std::string>& argnames,
                      llvm::GlobalValue::LinkageTypes linkage,
-                     std::vector<LLBlock*> blocks)
-  : name(name), functionLinkage(linkage), argnames(argnames), blocks(blocks) {
+                     std::vector<LLBlock*> blocks,
+                     std::vector<LLVar*> roots)
+  : name(name), functionLinkage(linkage), argnames(argnames), blocks(blocks),
+    gcroots(roots) {
       this->type = procType;
   }
   virtual ~LLProcCFG() {}

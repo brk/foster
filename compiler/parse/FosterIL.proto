@@ -168,6 +168,7 @@ message Proc {
   repeated Block    blocks   = 4;
   optional string   lines    = 5;
   required Linkage  linkage  = 6;
+  repeated TermVar  gcroots  = 7;
 }
 
 message Closure {
