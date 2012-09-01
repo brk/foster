@@ -236,9 +236,16 @@ closureConvertBlocks bbg = do
 
 closureConvertLetFuns :: [Ident] -> [CFFn] -> ILM [Closure]
 closureConvertLetFuns ids fns = do
+    let mkProcType ft = case ft of
+                 FnType s t cc FT_Func -> FnType s t cc FT_Proc
+                 other -> error $ "mkProcType given non-function type?? " ++ show other
+
+    let mkProcVar  (TypedId ft id) = TypedId (mkProcType ft) id
+
+    let proc_vars = map (mkProcVar . fnVar) fns
     let genFreshId id = ilmFresh (".env." `prependedTo` identPrefix id)
     cloEnvIds <- mapM genFreshId ids
-    let infoMap = Map.fromList (zip ids (zip fns cloEnvIds))
+    let infoMap = Map.fromList (zip ids (zip proc_vars cloEnvIds))
     let idfns = zip ids fns
     mapM (closureOfKnFn infoMap) idfns
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
@@ -292,7 +299,7 @@ emitOccurrence :: MoVar -> (Ident, Occurrence MonoType) -> Insn' O O
 emitOccurrence scrutinee (id, occ) = CCLetVal id (ILOccurrence scrutinee occ)
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
-type InfoMap = Map Ident (CFFn, Ident) -- fn ident => (fn, env id)
+type InfoMap = Map Ident (MoVar, Ident) -- fn ident => (proc_var, env id)
 
 fnFreeIds :: CFFn -> [MoVar]
 fnFreeIds fn = freeTypedIds fn
@@ -352,13 +359,13 @@ closureOfKnFn infoMap (self_id, fn) = do
         --     case env of (x, y, ...) -> body end
         newbody <- do
             let BasicBlockGraph bodyentry rk oldbodygraph = fnBody f
-            let norange = MissingSourceRange ""
-            let patVar a = P_Variable norange a
             let cfcase = CFCase envVar [
                            ((P_Tuple norange t (map patVar varsOfClosure),
                                                            varsOfClosure)
                            , fst bodyentry) ]
-                        where t = TupleType (map tidType varsOfClosure)
+                        where t   = TupleType (map tidType varsOfClosure)
+                              patVar a = P_Variable norange a
+                              norange = MissingSourceRange ""
             -- We change the entry block of the new body (versus the old).
             lab <- freshLabel
             let bid = (("caseof", lab), [])
@@ -391,9 +398,9 @@ closureOfKnFn infoMap (self_id, fn) = do
                 case Map.lookup (tidIdent v) infoMap of
                   Nothing -> insn
                   -- The only really interesting case: call to let-bound function!
-                  Just (f, envid) ->
+                  Just (proc_var, envid) ->
                     let env = fakeCloVar envid in
-                    ILast $ CFCall b t (fnVar f) (env:vs) -- Call proc with env as first arg.
+                    ILast $ CFCall b t proc_var (env:vs) -- Call proc with env as first arg.
                     -- We don't know the env type here, since we don't
                     -- pre-collect the set of closed-over envs from other procs.
                     -- This works because (A) we never type check ILExprs, and
@@ -495,9 +502,20 @@ instance Pretty (Insn' e x) where
   pretty (CCTupleStore vs tid memregion) = indent 4 $ text "stores " <+> pretty vs <+> text "to" <+> pretty tid
   pretty (CCLast    cclast     ) = pretty cclast
 
+isProc ft = case ft of FnType _ _ _ FT_Proc -> True
+                       _                    -> False
+
+isFunc ft = case ft of FnType _ _ _ FT_Func                            -> True
+                       PtrType (StructType ((FnType _ _ _ FT_Proc):_)) -> True
+                       _                                               -> False
+
 instance Pretty CCLast where
   pretty (CCCont bid       vs) = text "cont" <+> prettyBlockId bid <+>              list (map pretty vs)
-  pretty (CCCall bid _ _ v vs) = text "call" <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
+  pretty (CCCall bid _ _ v vs) =
+        case tidType v of
+          x | isProc x -> text "call (proc)" <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
+          x | isFunc x -> text "call (func)" <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
+          other -> error $ "CloConv.hs: CCCall with type " ++ show other
   pretty (CCCase v arms def occ) = align $
     text "case" <+> pretty (ILOccurrence v occ) <$> indent 2
        ((vcat [ arm (text "of" <+> pretty ctor) bid
