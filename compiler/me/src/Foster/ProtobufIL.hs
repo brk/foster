@@ -322,14 +322,18 @@ dumpExpr x@(ILFloat _ty flt) =
                     }
 
 dumpExpr (ILCall t base args)
-        = dumpCall t (dumpVar base)          args (mayTriggerGC base)
+        = dumpCall t (dumpVar base)          args (mayTriggerGC base) ccs
+  where stringOfCC FastCC = "fastcc"
+        stringOfCC CCC    = "ccc"
+        (FnType _ _ cc _) = tidType base
+        ccs = stringOfCC cc
 
 dumpExpr (ILCallPrim t (NamedPrim (TypedId _ (GlobalSymbol gs))) [arr])
         | gs == T.pack "prim_arrayLength"
         = dumpArrayLength t arr
 
 dumpExpr (ILCallPrim t (NamedPrim base) args)
-        = dumpCall t (dumpGlobalSymbol base) args (mayTriggerGC base)
+        = dumpCall t (dumpGlobalSymbol base) args (mayTriggerGC base) "ccc"
 
 dumpExpr (ILCallPrim t (PrimOp op _ty) args)
         = dumpCallPrimOp t op args
@@ -347,11 +351,12 @@ dumpExpr (ILAppCtor _ _cinfo _) = error $ "ProtobufIL.hs saw ILAppCtor, which"
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||||||||| Calls ||||||||||||||||||||||||||{{{
-dumpCall :: MonoType -> TermVar -> [TypedId MonoType] -> Bool -> PbLetable.Letable
-dumpCall t base args mayGC =
+dumpCall :: MonoType -> TermVar -> [TypedId MonoType] -> Bool -> String -> PbLetable.Letable
+dumpCall t base args mayGC callConv =
     P'.defaultValue { PbLetable.tag   = IL_CALL
                     , PbLetable.parts = fromList $ base:(fmap dumpVar args)
                     , PbLetable.type' = Just $ dumpType t
+                    , PbLetable.call_conv = Just $ u8fromString callConv
                     , PbLetable.call_may_trigger_gc = Just $ mayGC }
 
 dumpCallPrimOp t op args = -- TODO actually use prim_op_size from C++ side.
@@ -364,6 +369,7 @@ dumpCallCoroOp t coroPrim argty retty args mayGC =
     P'.defaultValue { PbLetable.tag   = IL_CALL
                     , PbLetable.parts = fromList $ fmap dumpVar args
                     , PbLetable.type' = Just $ dumpType t
+                    , PbLetable.call_conv = Just (u8fromString "fastcc")
                     , PbLetable.call_may_trigger_gc = Just $ mayGC
                     , PbLetable.coro_prim = Just $ P'.defaultValue    {
                           PbCoroPrim.tag = coroFnTag coroPrim  ,

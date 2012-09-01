@@ -98,7 +98,7 @@ LLExpr* parseCoroPrim(const pb::PbCoroPrim& p) {
 }
 
 LLExpr* parseCall(const pb::Letable& e) {
-  ASSERT(e.parts_size() >= 1);
+  ASSERT(e.parts_size() >= 1); ASSERT(e.has_call_conv());
   int firstArg = e.has_coro_prim() ? 0 : 1;
   LLExpr* base = e.has_coro_prim() ? parseCoroPrim(e.coro_prim())
                                    : parseTermVar(&e.parts(0));
@@ -107,7 +107,7 @@ LLExpr* parseCall(const pb::Letable& e) {
     args.push_back(parseTermVar(&e.parts(i)));
   }
   bool callMayTriggerGC = e.call_may_trigger_gc();
-  return new LLCall(base, args, callMayTriggerGC);
+  return new LLCall(base, args, callMayTriggerGC, e.call_conv());
 }
 
 LLExpr* parseCallPrimOp(const pb::Letable& e) {

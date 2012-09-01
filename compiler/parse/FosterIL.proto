@@ -110,6 +110,7 @@ message Letable {
 
   optional PbAllocInfo   alloc_info = 25;
   optional bool call_may_trigger_gc = 26;
+  optional string         call_conv = 27;
 
   optional PbOccurrence       occ = 28;
   optional PbCoroPrim   coro_prim = 29;

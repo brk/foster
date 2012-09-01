@@ -1303,6 +1303,12 @@ llvm::Value* emitFnArgCoercions(llvm::Value* argV, llvm::Type* expectedType) {
   return argV;
 }
 
+llvm::CallingConv::ID parseCallingConv(std::string cc) {
+  if (cc == "fastcc") { return llvm::CallingConv::Fast; }
+  ASSERT(cc == "ccc") << "unknown calling convention " << cc;
+  return llvm::CallingConv::C;
+}
+
 llvm::Value* LLCall::codegen(CodegenPass* pass) {
   ASSERT(base != NULL) << "unable to codegen call due to null base";
   Value* FV = pass->emit(base, NULL);
@@ -1311,33 +1317,25 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
   llvm::FunctionType* FT = NULL;
   std::vector<Value*> valArgs;
 
-  // TODO extract directly from FnTypeAST
-  llvm::CallingConv::ID callingConv = llvm::CallingConv::GHC; // conspicuous
-  bool haveSetCallingConv = false;
+  llvm::CallingConv::ID callingConv = parseCallingConv(this->callconv);
 
   if (Function* F = llvm::dyn_cast<Function>(FV)) {
     // Call to top level function
     FT = F->getFunctionType();
-    callingConv = F->getCallingConv(); haveSetCallingConv = true;
-  } else if (FnTypeAST* fnType = dynamic_cast<FnTypeAST*>(base->type)) {
-    callingConv = fnType->getCallingConventionID(); haveSetCallingConv = true;
-    if (fnType->isMarkedAsClosure()) {
-      // Load code and env pointers from closure...
-      llvm::Value* envPtr =
-           getElementFromComposite(FV, 1, "getCloEnv");
-      FV = getElementFromComposite(FV, 0, "getCloCode");
-
-      FT = dyn_cast<llvm::FunctionType>(FV->getType()->getContainedType(0));
-      // Pass env pointer as first parameter to function.
-      ASSERT(valArgs.empty());
-      valArgs.push_back(envPtr);
-    } else {
-      FT = fnType->getLLVMFnType();
-    }
+    ASSERT(callingConv == F->getCallingConv());
+  } else if (isPointerToStruct(FV->getType())) {
+    // Load code and env pointers from closure...
+    llvm::Value* envPtr =
+         getElementFromComposite(FV, 1, "getCloEnv");
+    FV = getElementFromComposite(FV, 0, "getCloCode");
+    FT = dyn_cast<llvm::FunctionType>(FV->getType()->getContainedType(0));
+    // Pass env pointer as first parameter to function.
+    valArgs.push_back(envPtr);
+  } else {
+    FT = dyn_cast<llvm::FunctionType>(FV->getType()->getContainedType(0));
   }
 
   assertHaveCallableType(base, FT, FV);
-  ASSERT(haveSetCallingConv);
 
   // Collect the args, performing coercions if necessary.
   for (size_t i = 0; i < this->args.size(); ++i) {
