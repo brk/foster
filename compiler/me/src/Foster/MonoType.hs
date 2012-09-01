@@ -24,6 +24,11 @@ data MonoType =
          | PtrTypeUnknown
          deriving (Show)
 
+extractFnType ft@(FnType {}) = ft
+extractFnType (PtrType (StructType (ft@(FnType s t cc FT_Proc):_))) = FnType s t cc FT_Func
+
+extractFnType other = error $ "Unable to extract fn type from " ++ show other
+
 boolMonoType = PrimInt I1
 
 type MoVar = TypedId MonoType

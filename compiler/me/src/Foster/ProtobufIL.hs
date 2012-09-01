@@ -325,7 +325,7 @@ dumpExpr (ILCall t base args)
         = dumpCall t (dumpVar base)          args (mayTriggerGC base) ccs
   where stringOfCC FastCC = "fastcc"
         stringOfCC CCC    = "ccc"
-        (FnType _ _ cc _) = tidType base
+        (FnType _ _ cc _) = extractFnType (tidType base)
         ccs = stringOfCC cc
 
 dumpExpr (ILCallPrim t (NamedPrim (TypedId _ (GlobalSymbol gs))) [arr])

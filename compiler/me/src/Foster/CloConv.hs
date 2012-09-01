@@ -520,10 +520,9 @@ isFunc ft = case ft of FnType _ _ _ FT_Func                            -> True
 instance Pretty CCLast where
   pretty (CCCont bid       vs) = text "cont" <+> prettyBlockId bid <+>              list (map pretty vs)
   pretty (CCCall bid _ _ v vs) =
-        case tidType v of
-          x | isProc x -> text "call (proc)" <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
-          x | isFunc x -> text "call (func)" <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
-          other -> error $ "CloConv.hs: CCCall with type " ++ show other
+        case extractFnType (tidType v) of
+          FnType _ _ _ FT_Proc -> text "call (proc)" <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
+          FnType _ _ _ FT_Func -> text "call (func)" <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
   pretty (CCCase v arms def occ) = align $
     text "case" <+> pretty (mkILOccurrence v occ) <$> indent 2
        ((vcat [ arm (text "of" <+> pretty ctor) bid
