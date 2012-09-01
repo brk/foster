@@ -84,6 +84,10 @@ llvm::Value* emitBitcast(llvm::Value* v, llvm::Type* dstTy, llvm::StringRef msg 
   if (isFunctionPointerTy(srcTy) && isLargishStructPointerTy(dstTy)) {
     ASSERT(false) << "cannot cast " << str(srcTy) << " to " << str(dstTy) << "\n" << str(v);
   }
+  if (llvm::isa<llvm::PointerType>(dstTy) != llvm::isa<llvm::PointerType>(srcTy)) {
+    builder.GetInsertBlock()->getParent()->dump();
+    ASSERT(false) << "cannot cast non-pointer " << str(srcTy) << " to " << str(dstTy) << "\n" << str(v);
+  }
   return builder.CreateBitCast(v, dstTy, msg);
 }
 
