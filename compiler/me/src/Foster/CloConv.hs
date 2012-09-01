@@ -296,7 +296,15 @@ compileDecisionTree scrutinee (DT_Switch occ subtrees maybeDefaultDt) = do
         return $ BlockFin (blockGraph block |*><*| (foldr (|*><*|) emptyClosedGraph blockss) |*><*| dblockss) id
 
 emitOccurrence :: MoVar -> (Ident, Occurrence MonoType) -> Insn' O O
-emitOccurrence scrutinee (id, occ) = CCLetVal id (ILOccurrence scrutinee occ)
+emitOccurrence scrutinee (id, occ) = CCLetVal id (mkILOccurrence scrutinee occ)
+
+mkILOccurrence v occ = ILOccurrence t v occ
+  where t = go (tidType v) (zip o (map ctorInfoDc i))
+                         where (o,i) = unzip occ
+
+        go ty [] = ty
+        go _ ((k,(DataCtor _ _ _ types)):rest) = go (types !! k) rest
+
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 type InfoMap = Map Ident (MoVar, Ident) -- fn ident => (proc_var, env id)
@@ -517,7 +525,7 @@ instance Pretty CCLast where
           x | isFunc x -> text "call (func)" <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
           other -> error $ "CloConv.hs: CCCall with type " ++ show other
   pretty (CCCase v arms def occ) = align $
-    text "case" <+> pretty (ILOccurrence v occ) <$> indent 2
+    text "case" <+> pretty (mkILOccurrence v occ) <$> indent 2
        ((vcat [ arm (text "of" <+> pretty ctor) bid
               | (ctor, bid) <- arms
               ]) <> (case def of Nothing -> empty
@@ -529,8 +537,9 @@ instance Pretty CtorId where
   pretty (CtorId tynm ctnm _ sm) = pretty tynm <> text "." <> pretty ctnm <> parens (pretty sm)
 
 instance Pretty Closure where
-  pretty clo = text "(Closure" <+> text "proc =" <+> pretty (closureProcIdent clo)
-                                                 <+> list (map pretty (closureCaptures clo))
+  pretty clo = text "(Closure" <+> text "env =(" <> pretty (closureEnvIdent clo)
+                         <>  text ") proc =(" <+> pretty (closureProcIdent clo)
+                         <+> text ") captures" <+> text (show (map pretty (closureCaptures clo)))
                          <+> text ")"
 
 instance Pretty BasicBlockGraph' where

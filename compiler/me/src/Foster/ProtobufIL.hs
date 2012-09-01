@@ -235,41 +235,41 @@ dumpSwitch var arms def occ =
 -- |||||||||||||||||||||||| Expressions |||||||||||||||||||||||||{{{
 dumpExpr :: Letable -> PbLetable.Letable
 dumpExpr (ILAlloc    {}) = error "ILAlloc should have been translated away!"
-dumpExpr x@(ILBitcast t v) =
+dumpExpr (ILBitcast t v) =
     P'.defaultValue { PbLetable.parts = fromList [dumpVar v]
                     , PbLetable.tag   = IL_BITCAST
                     , PbLetable.type' = Just $ dumpType t  }
 dumpExpr x@(ILText s) =
     P'.defaultValue { PbLetable.string_value = Just $ textToPUtf8 s
                     , PbLetable.tag   = IL_TEXT
-                    , PbLetable.type' = Just $ dumpType (typeMo x)  }
+                    , PbLetable.type' = Just $ dumpType (typeOf x)  }
 
 dumpExpr x@(ILBool b) =
     P'.defaultValue { PbLetable.bool_value = Just b
                     , PbLetable.tag   = IL_BOOL
-                    , PbLetable.type' = Just $ dumpType (typeMo x)  }
+                    , PbLetable.type' = Just $ dumpType (typeOf x)  }
 
 dumpExpr x@(ILKillProcess _ msg) =
     P'.defaultValue { PbLetable.string_value = Just $ textToPUtf8 msg
                     , PbLetable.tag   = IL_KILL_PROCESS
-                    , PbLetable.type' = Just $ dumpType (typeMo x)  }
+                    , PbLetable.type' = Just $ dumpType (typeOf x)  }
 
 dumpExpr x@(ILTuple [] _allocsrc) =
     P'.defaultValue { PbLetable.tag   = IL_UNIT
-                    , PbLetable.type' = Just $ dumpType (typeMo x) }
+                    , PbLetable.type' = Just $ dumpType (typeOf x) }
 
 dumpExpr (ILTuple vs allocsrc) =
         error $ "ProtobufIL.hs: ILTuple " ++ show vs
             ++ "\n should have been eliminated!\n" ++ show allocsrc
 
-dumpExpr   (ILOccurrence v occ) =
+dumpExpr (ILOccurrence t v occ) =
     P'.defaultValue { PbLetable.tag   = IL_OCCURRENCE
                     , PbLetable.occ   = Just $ dumpOccurrence v occ
-                    , PbLetable.type' = Nothing } -- TODO use type here
+                    , PbLetable.type' = Just $ dumpType t }
 
 dumpExpr x@(ILAllocate info) =
     P'.defaultValue { PbLetable.tag   = IL_ALLOCATE
-                    , PbLetable.type' = Just $ dumpType (typeMo x)
+                    , PbLetable.type' = Just $ dumpType (allocType info)
                     , PbLetable.alloc_info = Just $ dumpAllocate info }
 
 dumpExpr  (ILAllocArray (ArrayType elt_ty) size) =
@@ -286,30 +286,30 @@ dumpExpr  (ILAllocArray nonArrayType _) =
 dumpExpr x@(ILDeref _ a) =
     P'.defaultValue { PbLetable.parts = fromList [dumpVar a]
                     , PbLetable.tag   = IL_DEREF
-                    , PbLetable.type' = Just $ dumpType (typeMo x)  }
+                    , PbLetable.type' = Just $ dumpType (typeOf x)  }
 
 dumpExpr x@(ILStore v r) =
     P'.defaultValue { PbLetable.parts = fromList (fmap dumpVar [v, r])
                     , PbLetable.tag   = IL_STORE
-                    , PbLetable.type' = Just $ dumpType (typeMo x)  }
+                    , PbLetable.type' = Just $ dumpType (typeOf x)  }
 
 dumpExpr x@(ILArrayRead _t (ArrayIndex b i rng sg)) =
     P'.defaultValue { PbLetable.parts = fromList (fmap dumpVar [b, i])
                     , PbLetable.tag   = IL_ARRAY_READ
                     , PbLetable.string_value = Just $ stringSG sg
                     , PbLetable.prim_op_name = Just $ u8fromString $ highlightFirstLine rng
-                    , PbLetable.type' = Just $ dumpType (typeMo x)  }
+                    , PbLetable.type' = Just $ dumpType (typeOf x)  }
 
 dumpExpr x@(ILArrayPoke (ArrayIndex b i rng sg) v) =
     P'.defaultValue { PbLetable.parts = fromList (fmap dumpVar [b, i, v])
                     , PbLetable.tag   = IL_ARRAY_POKE
                     , PbLetable.string_value = Just $ stringSG sg
                     , PbLetable.prim_op_name = Just $ u8fromString $ highlightFirstLine rng
-                    , PbLetable.type' = Just $ dumpType (typeMo x)  }
+                    , PbLetable.type' = Just $ dumpType (typeOf x)  }
 
 dumpExpr x@(ILInt _ty int) =
     P'.defaultValue { PbLetable.tag   = IL_INT
-                    , PbLetable.type' = Just $ dumpType (typeMo x)
+                    , PbLetable.type' = Just $ dumpType (typeOf x)
                     , PbLetable.pb_int = Just $ PBInt.PBInt
                                  { clean = u8fromString (show $ litIntValue int)
                                  , bits  = intToInt32   (litIntMinBits int) }
@@ -317,7 +317,7 @@ dumpExpr x@(ILInt _ty int) =
 
 dumpExpr x@(ILFloat _ty flt) =
     P'.defaultValue { PbLetable.tag   = IL_FLOAT
-                    , PbLetable.type' = Just $ dumpType (typeMo x)
+                    , PbLetable.type' = Just $ dumpType (typeOf x)
                     , PbLetable.dval  = Just $ litFloatValue flt
                     }
 
@@ -493,27 +493,4 @@ dumpILProgramToProtobuf m outpath = do
         Decl { Decl.name  = u8fromString s
              , Decl.type' = dumpType t
              }
-
--- |||||||||||||||||||||||| Boilerplate |||||||||||||||||||||||||{{{
-typeMo expr = case expr of
-    ILText _                -> TyConApp "Text" []
-    ILBool _                -> PrimInt I1
-    ILInt t _               -> t
-    ILFloat t _             -> t
-    ILKillProcess t _       -> t
-    ILTuple vs _            -> TupleType (map tidType vs)
-    ILOccurrence {}         -> error $ "ProtobufIL: No typeMo for ILOccurrence"
-    ILCall     t  _ _       -> t
-    ILCallPrim t  _ _       -> t
-    ILAppCtor  t  _ _       -> t
-    ILAllocate info         -> allocType info
-    ILAllocArray t _        -> t
-    ILAlloc v _rgn          -> PtrType (tidType v)
-    ILDeref t _             -> t
-    ILStore _ _             -> TupleType []
-    ILArrayRead t _         -> t
-    ILArrayPoke {}          -> TupleType []
-    ILBitcast   t _         -> t
-
--- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

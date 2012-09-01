@@ -28,7 +28,7 @@ data Letable =
         | ILTuple       [MoVar] AllocationSource
         | ILKillProcess MonoType T.Text
         -- Struct member lookup
-        | ILOccurrence  MoVar (Occurrence MonoType)
+        | ILOccurrence  MonoType MoVar (Occurrence MonoType)
         -- Varieties of applications
         | ILCallPrim    MonoType (FosterPrim MonoType) [MoVar]
         | ILCall        MonoType MoVar                 [MoVar]
@@ -55,7 +55,7 @@ instance TExpr Letable MonoType where
       ILFloat        {} -> []
       ILTuple      vs _ -> vs
       ILKillProcess  {} -> []
-      ILOccurrence  v _ -> [v]
+      ILOccurrence _ v _-> [v]
       ILCallPrim _ _ vs -> vs
       ILCall     _ v vs -> (v:vs)
       ILAppCtor  _ _ vs -> vs
@@ -70,24 +70,24 @@ instance TExpr Letable MonoType where
 
 instance TypedWith Letable MonoType where
   typeOf letable = case letable of
-      ILText         {} -> error "typeOf ILText     "
-      ILBool         {} -> error "typeOf ILBool     "
+      ILText         {} -> TyConApp "Text" []
+      ILBool         {} -> boolMonoType
       ILInt         t _ -> t
       ILFloat       t _ -> t
-      ILTuple      vs _ -> error "typeOf ILTuple    "
+      ILTuple      vs _ -> TupleType (map tidType vs)
       ILKillProcess t _ -> t
-      ILOccurrence  v _ -> error "typeOf ILOccurrenc"
+      ILOccurrence t v _-> t
       ILCallPrim t _ _  -> t
       ILCall     t _ _  -> t
       ILAppCtor  t _ _  -> t
-      ILAlloc      v _  -> error "typeOf ILAlloc    "
+      ILAlloc      v _  -> PtrType (tidType v)
       ILDeref    t v    -> t
-      ILStore      v v2 -> error "typeOf ILStore    "
+      ILStore      v v2 -> TupleType []
       ILBitcast  t _    -> t
       ILAllocArray t _  -> t
       ILArrayRead t _   -> t
-      ILArrayPoke   ai v-> error "typeOf ILArrayPoke"
-      ILAllocate info   -> allocType info
+      ILArrayPoke   ai v-> TupleType []
+      ILAllocate info   -> PtrType (allocType info)
 
 isPurePrim _ = False -- TODO: recognize pure primitives
 isPureFunc _ = False -- TODO: use effect information to refine this predicate.
@@ -101,7 +101,7 @@ substVarsInLetable s letable = case letable of
   ILKillProcess {}                         -> letable
   ILAllocate    {}                         -> letable
   ILTuple       vs asrc                    -> ILTuple       (map s vs) asrc
-  ILOccurrence  v occ                      -> ILOccurrence  (s v) occ
+  ILOccurrence  t v occ                    -> ILOccurrence  t (s v) occ
   ILCallPrim    t p vs                     -> ILCallPrim    t p     (map s vs)
   ILCall        t v vs                     -> ILCall        t (s v) (map s vs)
   ILAppCtor     t c vs                     -> ILAppCtor     t c     (map s vs)
