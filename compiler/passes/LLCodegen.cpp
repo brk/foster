@@ -1191,22 +1191,6 @@ llvm::Type* maybeGetCtorStructType(const CtorInfo& c) {
            ? NULL : TupleTypeAST::get(c.ctorArgTypes)->getLLVMType();
 }
 
-// Create at most one stack slot per subterm.
-llvm::AllocaInst*
-getStackSlotForOcc(CodegenPass* pass, TypeAST* typ,
-                   llvm::Value* v, llvm::AllocaInst*& slot) {
-  ASSERT(v != NULL);
-  if (slot) {
-    emitStore(v, slot);
-  } else {
-    ASSERT(typ) << "getStackSlotForOcc with no type?";
-    assertValueHasExpectedType(v, typ);
-    bool gcable = containsGCablePointers(typ, v->getType());
-    slot = ensureImplicitStackSlot(v, gcable, pass);
-  }
-  return slot;
-}
-
 // Returns an implicit stack slot.
 llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
   ASSERT(ctors.size() == offsets.size());
@@ -1236,13 +1220,8 @@ llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
     rv = getElementFromComposite(rv, offsets[i], "switch_insp");
   }
 
-  // If we've loaded some possible-pointers from memory, make sure they
-  // get their own implicit stack slots.
-  llvm::AllocaInst*& slot = pass->occSlots[this];
-  ASSERT(this->type) << "LLOccurrence has no type?!?";
-  getStackSlotForOcc(pass, this->type, rv, slot);
-  trySetName(slot, "pat_" + this->var->getName() + "_slot");
-  return slot;
+  bool gcable = containsGCablePointers(this->type, rv->getType());
+  return ensureImplicitStackSlot(rv, gcable, pass);
 }
 
 ///}}}//////////////////////////////////////////////////////////////
