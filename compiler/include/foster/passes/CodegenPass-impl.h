@@ -82,18 +82,6 @@ inline bool operator<(const CtorInfo& a, const CtorInfo& b) {
   return a.ctorId < b.ctorId;
 }
 
-struct ltLLOcc {
-  bool operator()(LLOccurrence* a, LLOccurrence* b) {
-    if (a->var->getName() < b->var->getName()) { return true; }
-    if (a->var->getName() > b->var->getName()) { return false; }
-    if (a->offsets        < b->offsets       ) { return true; }
-    if (a->offsets        > b->offsets       ) { return false; }
-    if (a->ctors          < b->ctors         ) { return true; }
-    if (a->ctors          > b->ctors         ) { return false; }
-    return false;
-  }
-};
-
 enum CtorTagRepresentation {
   CTR_BareValue, // the default, for primitive types like unboxed integers.
   CTR_OutOfLine,
@@ -131,15 +119,13 @@ struct CodegenPass {
   std::map<llvm::Function*, llvm::Instruction*> allocaPoints;
   std::map<std::string, LLProc*>                procs;
 
-  llvm::Instruction* getCurrentAllocaPoint();
+  llvm::Instruction* getCurrentAllocaPoint(); // used for inserting GC roots.
 
   llvm::Module* mod;
   //llvm::DIBuilder* dib;
-  llvm::StringSet<> knownNonAllocatingFunctions;
 
   std::map<std::string,     LLBlock*>     fosterBlocks;
   WorklistLIFO<std::string, LLBlock*>   worklistBlocks;
-  std::map<LLOccurrence*, llvm::AllocaInst*, ltLLOcc>  occSlots;
   std::map<std::string, llvm::Value*> staticStrings;
 
   explicit CodegenPass(llvm::Module* mod, bool useGC, bool nsw, bool nuw,

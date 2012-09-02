@@ -435,7 +435,6 @@ void LLProc::codegenProc(CodegenPass* pass) {
   ASSERT(this->F != NULL) << "LLModule should codegen proto for " << getName();
   assertRightNumberOfArgnamesForFunction(F, this->getFunctionArgNames());
 
-  pass->occSlots.clear();
   pass->addEntryBB(F);
   CodegenPass::ValueScope* scope = pass->newScope(this->getName());
 
