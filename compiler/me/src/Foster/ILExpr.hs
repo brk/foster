@@ -1,4 +1,5 @@
-{-# LANGUAGE GADTs, TypeSynonymInstances, BangPatterns, RankNTypes, ScopedTypeVariables #-}
+{-# LANGUAGE GADTs, TypeSynonymInstances, BangPatterns, RankNTypes,
+             ScopedTypeVariables, NoMonoLocalBinds #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2010 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -101,7 +102,7 @@ makeAllocationsExplicit bbgp uref = do
   fresh str = do u <- modifyIORef uref (+1) >> readIORef uref
                  return (Ident (T.pack str) u)
 
-  explicate :: Insn' e x -> IO (Graph Insn' e x)
+  explicate :: forall e x. Insn' e x -> IO (Graph Insn' e x)
   explicate insn = case insn of
     (CCLabel   {}        ) -> return $ mkFirst $ insn
     (CCGCLoad _v fromroot) -> return $ mkMiddle $ insn
@@ -572,7 +573,7 @@ insertDumbGCRoots uref bbgp = do
 
  where
 
-  transform :: GCRootsForVariables -> Insn' e x -> IO (Graph Insn' e x, GCRootsForVariables)
+  transform :: forall e x. GCRootsForVariables -> Insn' e x -> IO (Graph Insn' e x, GCRootsForVariables)
   transform gcr insn = case insn of
     -- See the note above explaining why we generate all these GCKills...
     CCLabel (bid, vs)             -> do (inits, gcr' ) <- mapFoldM' vs gcr maybeRootInitializer
@@ -689,7 +690,7 @@ removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
   isLive root = Set.member root liveRoots
   iflive root g = if isLive root then return g else return emptyGraph
 
-  transform :: Insn' e x -> RootMapped (Graph Insn' e x)
+  transform :: forall e x. Insn' e x -> RootMapped (Graph Insn' e x)
   transform insn = case insn of
     CCLabel {}                    -> do return $ mkFirst $ insn
     CCGCLoad  v     root          -> do m <- get

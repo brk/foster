@@ -1,4 +1,4 @@
-{-# LANGUAGE GADTs, TypeSynonymInstances, BangPatterns #-}
+{-# LANGUAGE GADTs, TypeSynonymInstances, BangPatterns, RankNTypes #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2012 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -391,7 +391,8 @@ closureOfKnFn infoMap (self_id, fn) = do
     -- Making environment passing explicit simply means rewriting calls
     -- of closure variables from   v(args...)   ==>   v_proc(v_env, args...).
     makeEnvPassingExplicit fn =
-      let mapBlock g = mapGraphBlocks (mapBlock' go) g in
+      let mapBlock :: forall e x. Graph' Block Insn e x -> Graph' Block Insn e x
+          mapBlock g = mapGraphBlocks (mapBlock' go) g in
       fn { fnBody = mapBasicBlock mapBlock (fnBody fn) }
         where
           go :: Insn e x -> Insn e x

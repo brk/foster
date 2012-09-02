@@ -1,5 +1,5 @@
 {-# LANGUAGE GADTs, TypeSynonymInstances, RankNTypes, ScopedTypeVariables,
-             PatternGuards, TypeFamilies, DoRec #-}
+             PatternGuards, TypeFamilies, DoRec, NoMonoLocalBinds #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2011 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -100,9 +100,11 @@ internalComputeCFG uniqRef fn = do
         computeBlocks (fnBody fn) Nothing (ret fn retcont)
 
     -- Make sure that the main function returns void.
+    ret :: forall ty expr. Fn expr ty -> BlockId -> MoVar -> CFG ()
     ret f k v = if isMain f then cfgEndWith (CFCont k [])
                             else cfgEndWith (CFCont k [v])
-            where isMain f = (identPrefix $ tidIdent $ fnVar f) == T.pack "main"
+            where isMain :: forall ty expr. Fn expr ty -> Bool
+                  isMain f = (identPrefix $ tidIdent $ fnVar f) == T.pack "main"
 
 -- The other helper, to collect the scattered results and build the actual CFG.
 extractFunction :: CFGState -> Fn KNMono MonoType -> IO CFFn
@@ -136,6 +138,7 @@ extractFunction st fn = do
         catClosedGraphs :: NonLocal i => [Graph i C C] -> Graph i C C
         catClosedGraphs = foldr (|*><*|) emptyClosedGraph
 
+        entryLab :: forall x. [Block Insn C x] -> BlockEntry
         entryLab [] = error $ "can't get entry block label from empty list!"
         entryLab (bb:_) = let frs :: Insn C O
                               frs@(ILabel elab) = firstNode bb in elab
@@ -154,7 +157,8 @@ boxify b = v Boxes.<> (h Boxes.// b Boxes.// h) Boxes.<> v
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 caseIf a b = [(pat True, a), (pat False, b)]
-         where pat bval = (P_Bool (error "kn.if.srcrange")
+         where pat :: forall a. Bool -> (Pattern MonoType, [a])
+               pat bval = (P_Bool (error "kn.if.srcrange")
                                   boolMonoType bval, [])
 
 -- ||||||||||||||||||||||||| KNMono -> CFG ||||||||||||||||||||||{{{
@@ -234,7 +238,8 @@ computeBlocks expr idmaybe k = do
             case_cont <- cfgFresh "case_cont"
 
             -- Fill in each arm's block with [[e]] (and a store at the end).
-            let computeCaseBlocks (e, (_, block_id)) = do
+            let computeCaseBlocks :: forall t. (KNMono, (t, BlockId)) -> CFG ()
+                computeCaseBlocks (e, (_, block_id)) = do
                     cfgNewBlock block_id []
                     computeBlocks e Nothing $ \var ->
                         cfgEndWith (CFCont case_cont [var])

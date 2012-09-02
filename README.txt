@@ -97,7 +97,7 @@ Haskell:
       cabal install chart
       cabal install criterion
       : **** : cabal install hoopl
-      cabal install text protocol-buffers filepath hprotoc ansi-terminal leksah
+      cabal install text protocol-buffers filepath hprotoc ansi-terminal leksah ansi-wl-pprint
 
       : *** : Install hoopl via https://github.com/ghc/packages-hoopl/
 
