@@ -98,16 +98,19 @@ LLExpr* parseCoroPrim(const pb::PbCoroPrim& p) {
 }
 
 LLExpr* parseCall(const pb::Letable& e) {
-  ASSERT(e.parts_size() >= 1); ASSERT(e.has_call_conv());
-  int firstArg = e.has_coro_prim() ? 0 : 1;
-  LLExpr* base = e.has_coro_prim() ? parseCoroPrim(e.coro_prim())
+  ASSERT(e.parts_size() >= 1);
+  ASSERT(e.has_call_info());
+  const pb::PbCallInfo& c = e.call_info();
+
+  int firstArg = c.has_coro_prim() ? 0 : 1;
+  LLExpr* base = c.has_coro_prim() ? parseCoroPrim(c.coro_prim())
                                    : parseTermVar(&e.parts(0));
   std::vector<LLVar*> args;
   for (int i = firstArg; i < e.parts_size(); ++i) {
     args.push_back(parseTermVar(&e.parts(i)));
   }
-  bool callMayTriggerGC = e.call_may_trigger_gc();
-  return new LLCall(base, args, callMayTriggerGC, e.call_conv());
+  return new LLCall(base, args, c.call_may_trigger_gc(),
+                    c.call_is_a_tail_call(), c.call_conv());
 }
 
 LLExpr* parseCallPrimOp(const pb::Letable& e) {

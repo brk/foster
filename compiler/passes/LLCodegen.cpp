@@ -131,7 +131,7 @@ std::vector<llvm::Value*>
 codegenAll(CodegenPass* pass, const std::vector<LLVar*>& args) {
   std::vector<llvm::Value*> vals;
   for (size_t i = 0; i < args.size(); ++i) {
-    vals.push_back(pass->emit(args[i], NULL));
+    vals.push_back(args[i]->codegen(pass));
   }
   return vals;
 }
@@ -160,7 +160,6 @@ void copyValuesToStruct(const std::vector<llvm::Value*>& vals,
 }
 
 llvm::Value* emitFakeComment(std::string s) {
-  //EDiag() << "emitFakeComment: " << s;
   return new llvm::BitCastInst(builder.getInt32(0), builder.getInt32Ty(), s,
                                builder.GetInsertBlock());
 }
@@ -270,17 +269,6 @@ llvm::Value* emitLoad(llvm::Value* v, llvm::StringRef suffix) {
   return emitNonVolatileLoad(v, v->getName() + suffix);
 }
 
-// emit() serves as a wrapper around codegen()
-// which inserts implicit loads as needed, and also
-// verifies that the expected type matches the generated type.
-// In most cases, emit() should be used instead of codegen().
-llvm::Value* CodegenPass::emit(LLExpr* e, TypeAST* expectedType) {
-  ASSERT(e != NULL) << "null expr passed to emit()!";
-  llvm::Value* v = e->codegen(this);
-  assertValueHasExpectedType(v, expectedType);
-  return v;
-}
-
 llvm::Function* CodegenPass::lookupFunctionOrDie(const std::string&
                                                          fullyQualifiedSymbol) {
   llvm::Function* f = mod->getFunction(fullyQualifiedSymbol);
@@ -336,6 +324,23 @@ void registerKnownDataTypes(const std::vector<LLDecl*> datatype_decls,
      pass->dataTypeTagReprs[typeName] = CTR_OutOfLine;
   }
 }
+
+void createGCMapsSymbolIfNeeded(CodegenPass* pass) {
+  if (!pass->useGC) {
+    // The runtime needs a "foster__gcmaps" symbol for linking to succeed.
+    // If we're not letting the GC plugin run, we'll need to emit it ourselves.
+    new llvm::GlobalVariable(
+    /*Module=*/      *(pass->mod),
+    /*Type=*/        builder.getInt32Ty(),
+    /*isConstant=*/  true,
+    /*Linkage=*/     llvm::GlobalValue::ExternalLinkage,
+    /*Initializer=*/ llvm::ConstantInt::get(builder.getInt32Ty(), 0),
+    /*Name=*/        "foster__gcmaps",
+    /*InsertBefore=*/NULL,
+    /*ThreadLocal=*/ false);
+  }
+}
+
 ///}}}//////////////////////////////////////////////////////////////
 
 void LLModule::codegenModule(CodegenPass* pass) {
@@ -359,19 +364,7 @@ void LLModule::codegenModule(CodegenPass* pass) {
 
   codegenCoroPrimitives(pass);
 
-  if (!pass->useGC) {
-    // The runtime needs a "foster__gcmaps" symbol for linking to succeed.
-    // If we're not letting the GC plugin run, we'll need to emit it ourselves.
-    new llvm::GlobalVariable(
-    /*Module=*/      *(pass->mod),
-    /*Type=*/        builder.getInt32Ty(),
-    /*isConstant=*/  true,
-    /*Linkage=*/     llvm::GlobalValue::ExternalLinkage,
-    /*Initializer=*/ llvm::ConstantInt::get(builder.getInt32Ty(), 0),
-    /*Name=*/        "foster__gcmaps",
-    /*InsertBefore=*/NULL,
-    /*ThreadLocal=*/ false);
-  }
+  createGCMapsSymbolIfNeeded(pass);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -461,6 +454,16 @@ void CodegenPass::scheduleBlockCodegen(LLBlock* b) {
 
 void initializeBlockPhis(LLBlock*);
 
+void removeUnusedEmptyBasicBlocksFrom(llvm::Function* F) {
+  llvm::Function::iterator BB_it = F->begin();
+  while (BB_it != F->end()) {
+    llvm::BasicBlock* bb = BB_it; ++BB_it;
+    if (bb->empty() && bb->use_empty()) {
+        bb->eraseFromParent();
+    }
+  }
+}
+
 void LLProcCFG::codegenToFunction(CodegenPass* pass, llvm::Function* F) {
   pass->fosterBlocks.clear();
 
@@ -486,10 +489,8 @@ void LLProcCFG::codegenToFunction(CodegenPass* pass, llvm::Function* F) {
   // which will either be a case analysis on the env parameter, or postalloca.
   builder.SetInsertPoint(savedBB);
   LLBr br(blocks[0]->block_id);
-  { Function::arg_iterator AI = F->arg_begin();
-    if (isEnvPtr(AI)) {
-      br.args.push_back(new LLValueVar(AI));
-    }
+  if (isEnvPtr(F->arg_begin())) {
+    br.args.push_back(new LLValueVar(F->arg_begin()));
   }
   br.codegenTerminator(pass);
 
@@ -502,15 +503,7 @@ void LLProcCFG::codegenToFunction(CodegenPass* pass, llvm::Function* F) {
 
   // Redundant pattern matches will produce empty basic blocks;
   // here, we clean up any basic blocks we created but never used.
-  llvm::Function::iterator BB_it = F->begin();
-  while (BB_it != F->end()) {
-    llvm::BasicBlock* bb = BB_it; ++BB_it;
-    if (bb->empty()) {
-      if (bb->use_empty()) {
-        bb->eraseFromParent();
-      }
-    }
-  }
+  removeUnusedEmptyBasicBlocksFrom(F);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -544,7 +537,7 @@ void LLRetVoid::codegenTerminator(CodegenPass* pass) {
 }
 
 void LLRetVal::codegenTerminator(CodegenPass* pass) {
-  llvm::Value* rv = pass->emit(this->val, NULL);
+  llvm::Value* rv = this->val->codegen(pass);
   bool fnReturnsVoid = builder.getCurrentFunctionReturnType()->isVoidTy();
   if (!fnReturnsVoid && rv->getType()->isVoidTy()) {
      // Assumption is that our return type might be {}* (i.e. unit)
@@ -656,7 +649,7 @@ void LLSwitch::codegenTerminator(CodegenPass* pass) {
   ASSERT(ctors.size() >= 1);
 
   // Fetch the subterm of the scrutinee being inspected.
-  llvm::Value* inspected = pass->emit(this->occ, NULL);
+  llvm::Value* inspected = this->occ->codegen(pass);
   llvm::Value* tag = NULL;
 
   // All the ctors should have the same data type, now that we have at least
@@ -704,8 +697,8 @@ llvm::Value* LLDeref::codegen(CodegenPass* pass) {
 }
 
 llvm::Value* LLStore::codegen(CodegenPass* pass) {
-  llvm::Value* vv = pass->emit(v, NULL);
-  llvm::Value* vr = pass->emit(r, NULL);
+  llvm::Value* vv = v->codegen(pass);
+  llvm::Value* vr = r->codegen(pass);
   return emitStore(vv, vr);
 }
 
@@ -723,14 +716,8 @@ void trySetName(llvm::Value* v, const string& name) {
 
 void LLLetVals::codegenMiddle(CodegenPass* pass) {
   for (size_t i = 0; i < exprs.size(); ++i) {
-    // We use codegen() instead of pass>emit() because emit inserts
-    // implict loads, which we want done as late as possible.
     Value* b = exprs[i]->codegen(pass);
-    trySetName(b, (b->hasName()
-                   && b->getName().startswith("stackref"))
-                ? names[i] + "_slot"
-                : names[i]);
-    //EDiag() << "inserting " << names[i] << " = " << (exprs[i]->tag) << " -> " << str(b);
+    trySetName(b, names[i]);
     pass->insertScopedValue(names[i], b);
   }
 }
@@ -886,7 +873,7 @@ Value* allocateCell(CodegenPass* pass, TypeAST* type,
 
 llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
   if (this->arraySize != NULL) {
-    Value* array_size = pass->emit(this->arraySize, NULL);
+    Value* array_size = this->arraySize->codegen(pass);
     ASSERT(this->region == LLAllocate::MEM_REGION_GLOBAL_HEAP);
     return pass->emitArrayMalloc(this->type, array_size, this->zero_init);
   } else {
@@ -937,8 +924,8 @@ Value* getArraySlot(Value* base, Value* idx, CodegenPass* pass,
 
 
 llvm::Value* LLArrayIndex::codegenARI(CodegenPass* pass) {
-  Value* base = pass->emit(this->base , NULL);
-  Value* idx  = pass->emit(this->index, NULL);
+  Value* base = this->base ->codegen(pass);
+  Value* idx  = this->index->codegen(pass);
   ASSERT(static_or_dynamic == "static" || static_or_dynamic == "dynamic");
   return getArraySlot(base, idx, pass, this->static_or_dynamic == "dynamic",
                                        this->srclines);
@@ -958,13 +945,13 @@ llvm::Value* LLArrayRead::codegen(CodegenPass* pass) {
   //        not the slot address.
 
 llvm::Value* LLArrayPoke::codegen(CodegenPass* pass) {
-  Value* val  = pass->emit(this->value, NULL);
+  Value* val  = this->value->codegen(pass);
   Value* slot = ari->codegenARI(pass);
   return builder.CreateStore(val, slot, /*isVolatile=*/ false);
 }
 
 llvm::Value* LLArrayLength::codegen(CodegenPass* pass) {
-  Value* val  = pass->emit(this->value, NULL);
+  Value* val  = this->value->codegen(pass);
   Value* _bytes; Value* len;
   if (tryBindArray(val, /*out*/ _bytes, /*out*/ len)) {
     // len already assigned.
@@ -1002,7 +989,6 @@ llvm::Type* maybeGetCtorStructType(const CtorInfo& c) {
            ? NULL : TupleTypeAST::get(c.ctorArgTypes)->getLLVMType();
 }
 
-// Returns an implicit stack slot.
 llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
   ASSERT(ctors.size() == offsets.size());
 
@@ -1102,7 +1088,7 @@ llvm::CallingConv::ID parseCallingConv(std::string cc) {
 
 llvm::Value* LLCall::codegen(CodegenPass* pass) {
   ASSERT(base != NULL) << "unable to codegen call due to null base";
-  Value* FV = pass->emit(base, NULL);
+  Value* FV = base->codegen(pass);
   ASSERT(FV) << "unable to codegen call due to missing value for base";
 
   llvm::FunctionType* FT = NULL;
@@ -1131,7 +1117,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
   // Collect the args, performing coercions if necessary.
   for (size_t i = 0; i < this->args.size(); ++i) {
     llvm::Type* expectedType = FT->getParamType(valArgs.size());
-    llvm::Value* argV = pass->emit(this->args[i], NULL);
+    llvm::Value* argV = this->args[i]->codegen(pass);
     argV = emitFnArgCoercions(argV, expectedType);
     assertValueHasExpectedType(argV, expectedType, FV);
     valArgs.push_back(argV);
@@ -1145,11 +1131,9 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
   callInst->setCallingConv(callingConv);
   trySetName(callInst, "calltmp");
 
-  if (callingConv == llvm::CallingConv::Fast) {
-    // In order to mark this call as a tail call, we must know that
-    // none of the args being passed are pointers into this stack frame.
-    // Because we don't do this analysis, we don't enable TCO for now.
-    //callInst->setTailCall(true);
+  if (this->okToMarkAsTailCall) {
+    ASSERT(callingConv == llvm::CallingConv::Fast);
+    callInst->setTailCall(true);
   }
 
   if (!this->callMightTriggerGC) {

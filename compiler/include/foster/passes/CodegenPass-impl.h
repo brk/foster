@@ -165,8 +165,6 @@ struct CodegenPass {
       return fosterBlocks[s];
   }
 
-  Value* emit(LLExpr* e, TypeAST* t);
-
   Value* emitMalloc(TypeAST* typ, int8_t ctorId,
                                       std::string srclines, bool init);
 

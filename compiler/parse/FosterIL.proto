@@ -104,14 +104,20 @@ message Letable {
   optional string   string_value = 24;
 
   optional PbAllocInfo   alloc_info = 25;
-  optional bool call_may_trigger_gc = 26;
-  optional string         call_conv = 27;
+  optional PbCallInfo     call_info = 26;
 
   optional PbOccurrence       occ = 28;
-  optional PbCoroPrim   coro_prim = 29;
   optional string    prim_op_name = 30;
-  optional int32     prim_op_size = 31;
+  optional int32     prim_op_size = 31; // TODO use this
   optional PbCtorInfo   ctor_info = 32;
+}
+
+message PbCallInfo {
+  optional PbCoroPrim         coro_prim = 29;
+
+  required bool     call_may_trigger_gc = 26;
+  required bool     call_is_a_tail_call = 22;
+  required string             call_conv = 27;
 }
 
 message Terminator {

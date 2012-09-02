@@ -246,10 +246,12 @@ struct LLCall : public LLExpr {
   // because we lazily generate polymorphic instantiations.
   std::vector<LLVar*> args;
   bool callMightTriggerGC;
+  bool okToMarkAsTailCall;
   std::string callconv;
 
-  LLCall(LLExpr* base, std::vector<LLVar*>& args, bool mayGC, std::string callconv)
-  : LLExpr("LLCall"), base(base), args(args), callMightTriggerGC(mayGC), callconv(callconv) { }
+  LLCall(LLExpr* base, std::vector<LLVar*>& args, bool mayGC, bool tail, std::string callconv)
+  : LLExpr("LLCall"), base(base), args(args), callMightTriggerGC(mayGC),
+                      okToMarkAsTailCall(tail), callconv(callconv) { }
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 

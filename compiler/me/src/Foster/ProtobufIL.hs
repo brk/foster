@@ -35,6 +35,7 @@ import Foster.Bepb.BlockMiddle  as PbBlockMiddle
 import Foster.Bepb.TermVar      as PbTermVar
 import Foster.Bepb.PbCtorId     as PbCtorId
 import Foster.Bepb.PbDataCtor   as PbDataCtor
+import Foster.Bepb.PbCallInfo   as PbCallInfo
 import Foster.Bepb.PbCtorInfo   as PbCtorInfo
 import Foster.Bepb.PbAllocInfo  as PbAllocInfo
 import Foster.Bepb.PbOccurrence as PbOccurrence
@@ -257,7 +258,7 @@ dumpExpr (ILOccurrence t v occ) =
                     , PbLetable.occ   = Just $ dumpOccurrence v occ
                     , PbLetable.type' = Just $ dumpType t }
 
-dumpExpr x@(ILAllocate info) =
+dumpExpr (ILAllocate info) =
     P'.defaultValue { PbLetable.tag   = IL_ALLOCATE
                     , PbLetable.type' = Just $ dumpType (allocType info)
                     , PbLetable.alloc_info = Just $ dumpAllocate info }
@@ -346,8 +347,20 @@ dumpCall t base args mayGC callConv =
     P'.defaultValue { PbLetable.tag   = IL_CALL
                     , PbLetable.parts = fromList $ base:(fmap dumpVar args)
                     , PbLetable.type' = Just $ dumpType t
-                    , PbLetable.call_conv = Just $ u8fromString callConv
-                    , PbLetable.call_may_trigger_gc = Just $ mayGC }
+                    , PbLetable.call_info = Just $ dumpCallInfo mayGC callConv Nothing
+                    }
+
+dumpCallInfo mayGC strCallConv pbCoroPrim =
+    P'.defaultValue { PbCallInfo.coro_prim = pbCoroPrim
+                    , PbCallInfo.call_may_trigger_gc = mayGC
+                    , PbCallInfo.call_is_a_tail_call = False -- [1]
+                    , PbCallInfo.call_conv = u8fromString strCallConv
+                    }
+-- [1] To be safe, a tail call must not pass any pointers into the caller's
+--     stack frame, because the caller's stack frame would become
+--     the callee's stack frame. Since we don't do that analysis yet,
+--     we provide a conservative default. But note that we've already
+--     eliminated tail *recursion*.
 
 dumpCallPrimOp t op args = -- TODO actually use prim_op_size from C++ side.
     P'.defaultValue { PbLetable.tag   = IL_CALL_PRIMOP
@@ -359,14 +372,14 @@ dumpCallCoroOp t coroPrim argty retty args mayGC =
     P'.defaultValue { PbLetable.tag   = IL_CALL
                     , PbLetable.parts = fromList $ fmap dumpVar args
                     , PbLetable.type' = Just $ dumpType t
-                    , PbLetable.call_conv = Just (u8fromString "fastcc")
-                    , PbLetable.call_may_trigger_gc = Just $ mayGC
-                    , PbLetable.coro_prim = Just $ P'.defaultValue    {
+                    , PbLetable.call_info = Just $
+                                     dumpCallInfo mayGC "fastcc" pbCoroPrim
+                    }
+    where
+        pbCoroPrim = Just $ P'.defaultValue {
                           PbCoroPrim.tag = coroFnTag coroPrim  ,
                           PbCoroPrim.ret_type = dumpType retty ,
                           PbCoroPrim.arg_type = dumpType argty }
-                    }
-    where
         coroFnTag CoroInvoke = IL_CORO_INVOKE
         coroFnTag CoroCreate = IL_CORO_CREATE
         coroFnTag CoroYield  = IL_CORO_YIELD
