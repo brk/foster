@@ -453,13 +453,11 @@ void CodegenPass::scheduleBlockCodegen(LLBlock* b) {
 
 void initializeBlockPhis(LLBlock*);
 
-void removeUnusedEmptyBasicBlocksFrom(llvm::Function* F) {
-  llvm::Function::iterator BB_it = F->begin();
-  while (BB_it != F->end()) {
-    llvm::BasicBlock* bb = BB_it; ++BB_it;
-    if (bb->empty() && bb->use_empty()) {
-        bb->eraseFromParent();
-    }
+// We shouldn't get any such things from the middle-end.
+void checkForUnusedEmptyBasicBlocks(llvm::Function* F) {
+  for(llvm::Function::iterator BB_it = F->begin();
+                               BB_it != F->end(); ++BB_it) {
+    ASSERT(! (BB_it->empty() && BB_it->use_empty()) );
   }
 }
 
@@ -500,9 +498,7 @@ void LLProcCFG::codegenToFunction(CodegenPass* pass, llvm::Function* F) {
     b->codegenBlock(pass);
   }
 
-  // Redundant pattern matches will produce empty basic blocks;
-  // here, we clean up any basic blocks we created but never used.
-  removeUnusedEmptyBasicBlocksFrom(F);
+  checkForUnusedEmptyBasicBlocks(F);
 }
 
 ////////////////////////////////////////////////////////////////////
