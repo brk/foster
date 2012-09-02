@@ -1019,6 +1019,7 @@ subsCheckRho esigma rho2 = do
 
 -- {{{ Helper functions for subsCheckRho to peek inside type constructors
 subsCheckFunTy as1 r1 as2 r2 = do
+        sanityCheck (eqLen as1 as2) "Function types must have equal-length argument lists"
         debug $ "subsCheckFunTy arg: " ++ show as2 ++ " ?<=? " ++ show as1
         mapM_ (\(a2, a1) -> subsCheckTy a2 a1 "sCFTa") (zip as2 as1)
         debug $ "subsCheckFunTy res: " ++ show r1 ++ " ?<=? " ++ show r2
