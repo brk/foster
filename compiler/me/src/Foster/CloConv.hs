@@ -30,6 +30,16 @@ import Foster.Letable
 import Foster.PatternMatch
 import Foster.Output(out)
 
+-- | Closure conversion and lambda lifting.
+-- |
+-- | We convert from CF(G)Procs to ClosureConvertedProcs.
+-- | Besides converting all Fns to Closures, we also extend
+-- | the IR definition with allocation- and GC-related primitives.
+-- |
+-- | We also perform pattern match compilation at this stage;
+-- |    as a reusult, nested patterns are translated,
+-- |    via decision trees, to flat switches.
+
 -- ||||||||||||||||||||||||| Datatypes ||||||||||||||||||||||||||{{{
 data CCBody = CCB_Procs [CCProc] CCMain
 data CCMain = CCMain TailQ MonoType MoVar [MoVar]

@@ -775,15 +775,13 @@ llvm::Value* LLGlobalSymbol::codegen(CodegenPass* pass) {
 }
 
 llvm::Value* LLVar::codegen(CodegenPass* pass) {
-  // The variable for an environment can be looked up multiple times...
   llvm::Value* v = pass->valueSymTab.lookup(getName());
-  if (v) return v;
-  //return emitFakeComment("fake " + getName());
-
-  builder.GetInsertBlock()->getParent()->dump();
-  pass->valueSymTab.dump(llvm::errs());
-  ASSERT(false) << "Unknown variable name " << this->name << " in CodegenPass";
-  return NULL;
+  if (!v) {
+    builder.GetInsertBlock()->getParent()->dump();
+    pass->valueSymTab.dump(llvm::errs());
+    ASSERT(false) << "Unknown variable name " << this->name << " in CodegenPass";
+  }
+  return v;
 }
 
 llvm::Value* allocateIntWithWord(CodegenPass* pass, llvm::Value* small) {
@@ -992,76 +990,6 @@ void LLTupleStore::codegenMiddle(CodegenPass* pass) {
   //                        : slot;
   copyValuesToStruct(codegenAll(pass, this->vars), tup_ptr);
 }
-
-///}}}//////////////////////////////////////////////////////////////
-//////////////// LLClosures ////////////////////////////////////////
-/////////////////////////////////////////////////////////////////{{{
-
-  void LLClosures::codegenMiddle(CodegenPass* pass) {
-    ASSERT(closures.size() == 1);
-
-    llvm::Value* env = pass->valueSymTab.lookup(closures[0]->envname);
-    ASSERT(env);
-    llvm::Value* clo = closures[0]->codegenClosure(pass, env);
-    pass->insertScopedValue(closures[0]->varname, clo);
-  }
-
-  // Converts the proc type  r({...}*, ----)
-  // to                    { r( {}*,   ----),   {}*   }.
-  // Used when choosing a type to allocate for a closure pair.
-  StructTypeAST*
-  genericClosureStructType(FnTypeAST* fnty) {
-    std::vector<TypeAST*> argTypes;
-    for (int i = 0; i < fnty->getNumParams(); ++i) {
-       argTypes.push_back(fnty->getParamType(i));
-    }
-    argTypes[0] = getGenericClosureEnvType();
-
-    FnTypeAST* newProcTy = new FnTypeAST(fnty->getReturnType(), argTypes,
-                                         fnty->getAnnots());
-    newProcTy->markAsProc();
-
-    std::vector<TypeAST*> structTypes;
-    structTypes.push_back(newProcTy);
-    structTypes.push_back(getGenericClosureEnvType());
-    return StructTypeAST::get(structTypes);
-  }
-
-  llvm::Value* LLClosure::codegenClosure(
-                          CodegenPass* pass,
-                          llvm::Value* envSlotOrNull) {
-    LLProc* llproc = pass->procs[procname];
-    ASSERT(llproc) << "Unable to find closure's proc " << procname;
-
-    StructTypeAST* sty = genericClosureStructType(llproc->getFnType());
-
-    llvm::Value* clo = NULL; llvm::Value* rv = NULL;
-    bool closureEscapes = true;
-    if (closureEscapes) {
-      // // { code*, env* }**
-      bool init = false; // because we'll immediately initialize below.
-      llvm::Value* clo_slot = pass->storeAndMarkPointerAsGCRoot(
-                              pass->emitMalloc(sty, foster::bogusCtorId(-5),
-                                                    this->srclines,
-                                                    init));
-      clo = emitNonVolatileLoad(clo_slot, varname + ".closure"); rv = clo_slot;
-    } else { // { code*, env* }*
-      clo = CreateEntryAlloca(sty->getLLVMType(), varname + ".closure"); rv = clo;
-    }
-
-    // TODO register closure type
-    emitStoreWithCast(llproc->getFn(),
-                      builder.CreateConstGEP2_32(clo, 0, 0, varname + ".clo_code"));
-    Value* env_slot = builder.CreateConstGEP2_32(clo, 0, 1, varname + ".clo_env");
-    if (envSlotOrNull == NULL) {
-      storeNullPointerToSlot(env_slot);
-    } else {
-      // Only store the env in the closure if the env contains entries.
-      emitStoreWithCast(emitLoad(envSlotOrNull, ".env.load"), env_slot);
-    }
-
-    return rv;
-  }
 
 ///}}}//////////////////////////////////////////////////////////////
 

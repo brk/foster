@@ -34,16 +34,18 @@ import Control.Monad.State(evalStateT, get, put, StateT)
 
 --------------------------------------------------------------------
 
--- | Inserts GC roots with live ranges using a flow-based analysis, and
--- | also transforms back from Hoopl's CFG representation to lists-of-blocks.
+-- | This pass does three things in prepration for handing of to LLVM:
+-- |   #. Makes explicit all allocation and initialization of memory.
+-- |   #. Inserts GC roots and live ranges using flow-based analysis.
+-- |   #. Transforms from Hoopl's CFG representation to a block list.
 -- |
--- | We also perform pattern match compilation at this stage.
+-- | Unlike most of the previous passes, the invariants established
+-- | by this portion of the compiler are left implicit.
 -- |
--- | The primary differences in the general structure are:
--- |  #. LetFuns replaced with (Let)Closures
--- |  #. Module  replaced with ILProgram
--- |  #. Fn replaced with ProcDef
--- |  #. Decision trees replaced with flat switches
+-- |  * CCLetFuns are eliminated.
+-- |  * ILTuples are eliminated, except for unit values.
+-- |  * FnType _ _ _ FT_Func should have been eliminated
+-- |    in favor of PtrType (StructType (FnType _ _ _ FT_Proc:_)).
 
 -- ||||||||||||||||||||||||| Datatypes ||||||||||||||||||||||||||{{{
 -- A program consists of top-level data types and mutually-recursive procedures.
@@ -63,7 +65,6 @@ data ILMiddle = ILLetVal      Ident    Letable
               | ILGCRootKill  MoVar
               | ILGCRootInit  MoVar    RootVar
               | ILTupleStore  [MoVar]  MoVar    AllocMemRegion
-              | ILClosures    [Ident] [Closure]
               deriving Show
 
 -- Drop call-as-a-terminator and implicitly re-allow it as a letable value,
@@ -265,7 +266,7 @@ flattenGraph bbgp =
      mid (CCGCKill True    root)  = ILGCRootKill root
      mid (CCGCKill False  _root)  = error $ "Invariant violated: saw disabled root kill pseudo-insn!"
      mid (CCTupleStore vs tid r)  = ILTupleStore vs tid r
-     mid (CCLetFuns ids closures) = ILClosures ids closures
+     mid (CCLetFuns ids closures) = error $ "Invariant violated: CCLetFuns should have been eliminated!"
 
      frs :: Insn' C O -> BlockEntry
      frs (CCLabel be) = be

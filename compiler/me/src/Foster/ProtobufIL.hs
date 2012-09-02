@@ -10,7 +10,7 @@ module Foster.ProtobufIL (
 
 import Foster.Base
 import Foster.ILExpr
-import qualified Foster.CloConv as CC(Proc(..), Closure)
+import qualified Foster.CloConv as CC(Proc(..))
 import Foster.MonoType
 import Foster.Letable
 import Foster.ProtobufUtils
@@ -32,7 +32,6 @@ import Foster.Bepb.LetVal       as PbLetVal
 import qualified Foster.Bepb.Letable      as PbLetable
 import Foster.Bepb.Terminator   as PbTerminator
 import Foster.Bepb.BlockMiddle  as PbBlockMiddle
-import Foster.Bepb.LetClosures  as PbLetClosures
 import Foster.Bepb.TermVar      as PbTermVar
 import Foster.Bepb.PbCtorId     as PbCtorId
 import Foster.Bepb.PbDataCtor   as PbDataCtor
@@ -170,13 +169,11 @@ dumpBlock predmap (Block (id, phis) mids illast) =
                     , PbBlock.middle   = fromList $ map dumpMiddle mids
                     , PbBlock.last     = dumpLast illast
                     , PbBlock.num_preds= fmap intToInt32 (Map.lookup id predmap)
-                    }
+                    } -- num_preds needed for LLVM to initialize the phi nodes.
 
 dumpMiddle :: ILMiddle -> PbBlockMiddle.BlockMiddle
 dumpMiddle (ILLetVal id letable) =
     P'.defaultValue { let_val = Just (dumpLetVal id letable) }
-dumpMiddle (ILClosures ids clos) =
-    P'.defaultValue { let_clo = Just (dumpLetClosures ids clos) }
 dumpMiddle (ILGCRootKill v) =
     P'.defaultValue { gcroot_kill = Just (dumpVar v) }
 dumpMiddle (ILGCRootInit src root) =
@@ -202,10 +199,6 @@ dumpLetVal id letable =
     P'.defaultValue { let_val_id = dumpIdent id
                     , let_expr   = dumpExpr letable
                     }
-
-dumpLetClosures :: [Ident] -> [CC.Closure] -> PbLetClosures.LetClosures
-dumpLetClosures ids clos =
-    error $ "dumpLetClosures shouldn't be needed any more!"
 
 dumpLast :: ILLast -> PbTerminator.Terminator
 dumpLast ILRetVoid =

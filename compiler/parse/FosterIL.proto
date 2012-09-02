@@ -51,7 +51,6 @@ message Block {
 
 message BlockMiddle {
   optional LetVal       let_val = 1;
-  optional LetClosures  let_clo = 2;
   optional TermVar  gcroot_kill = 5;
   optional RootInit gcroot_init = 6;
   optional TupleStore tuple_store = 7;
@@ -71,10 +70,6 @@ message RootInit {
 message LetVal {
   required string let_val_id = 1;
   required Letable let_expr  = 2;
-}
-
-message LetClosures {
-  repeated Closure closures = 1;
 }
 
 message Letable {
@@ -169,15 +164,6 @@ message Proc {
   optional string   lines    = 5;
   required Linkage  linkage  = 6;
   repeated TermVar  gcroots  = 7;
-}
-
-message Closure {
-  required string         varname   = 1;
-  required string         proc_id   = 2;
-  required string          env_id   = 4;
-  required string         allocsite = 5;
-  required PbAllocInfo  env_storage = 6;
-  required TupleStore     env_store = 7;
 }
 
 message PBInt {

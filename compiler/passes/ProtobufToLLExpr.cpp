@@ -187,21 +187,6 @@ LLMiddle* parseLetVal(const pb::LetVal& b) {
   return new LLLetVals(names, exprs);
 }
 
-LLClosure* parseClosure(const pb::Closure& clo) {
-  return new LLClosure(clo.varname(), clo.env_id(),
-                       clo.proc_id(), clo.allocsite(),
-                       parseAllocInfo(clo.env_storage()),
-                       parseTupleStore(clo.env_store()));
-}
-
-LLMiddle* parseLetClosures(const pb::LetClosures& b) {
-  std::vector<LLClosure*> closures;
-  for (int i = 0; i < b.closures_size(); ++i) {
-    closures.push_back(parseClosure(b.closures(i)));
-  }
-  return new LLClosures(closures);
-}
-
 LLExpr* parseBitcast(const pb::Letable& e) {
   ASSERT(e.parts_size() == 1) << "bitcast muse have var to cast";
   return new LLBitcast(parseTermVar(&e.parts(0)));
@@ -237,7 +222,6 @@ LLTerminator* parseTerminator(const pb::Terminator& b) {
 LLMiddle* parseMiddle(const pb::BlockMiddle& b) {
   if (b.has_tuple_store()) { return parseTupleStore(b.tuple_store()); }
   if (b.has_let_val()) { return parseLetVal(b.let_val()); }
-  if (b.has_let_clo()) { return parseLetClosures(b.let_clo()); }
   //if (b.has_gcroot_kill()) { return parseBitcast(b.bitcast()); }
   if (b.has_gcroot_init()) { return parseGCRootInit(b.gcroot_init()); }
   ASSERT(false) << "parseMiddle unhandled case!"; return NULL;

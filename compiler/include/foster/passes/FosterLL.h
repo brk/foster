@@ -311,31 +311,6 @@ struct LLArrayLength : public LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
-struct LLClosure {
-  std::string varname;
-  std::string envname;
-  std::string procname;
-  std::string srclines;
-  LLAllocate*   envAlloc;
-  LLTupleStore* envStore;
-  explicit LLClosure(const std::string& _varn,
-                     const std::string& _envn,
-                     const std::string& _proc,
-                     const std::string& _srcs,
-                     LLAllocate*    _envAlloc,
-                     LLTupleStore*  _envStore)
-    : varname(_varn), envname(_envn), procname(_proc), srclines(_srcs),
-      envAlloc(_envAlloc), envStore(_envStore) {}
- llvm::Value* codegenClosure(CodegenPass* pass, llvm::Value* envSlot);
-};
-
-struct LLClosures : public LLMiddle {
-  std::vector<LLClosure*> closures;
-  explicit LLClosures(std::vector<LLClosure*>& closures)
-    { this->closures = closures; }
-  virtual void codegenMiddle(CodegenPass* pass);
-};
-
 struct LLLetVals : public LLMiddle {
   std::vector<std::string> names;
   std::vector<LLExpr*>     exprs;
