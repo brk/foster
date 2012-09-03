@@ -20,34 +20,34 @@ import qualified Data.Text as T
 -- LLCodegen performs auto-loads from stack slots, which
 -- means that a derived ILAlloc can't return a stack slot value!
 
-data Letable =
+data Letable ty =
           ILBool        Bool
         | ILText        T.Text
-        | ILInt         MonoType LiteralInt
-        | ILFloat       MonoType LiteralFloat
-        | ILTuple       [MoVar] AllocationSource
-        | ILKillProcess MonoType T.Text
+        | ILInt         ty LiteralInt
+        | ILFloat       ty LiteralFloat
+        | ILTuple       [TypedId ty] AllocationSource
+        | ILKillProcess ty T.Text
         -- Struct member lookup
-        | ILOccurrence  MonoType MoVar (Occurrence MonoType)
+        | ILOccurrence  ty (TypedId ty) (Occurrence ty)
         -- Varieties of applications
-        | ILCallPrim    MonoType (FosterPrim MonoType) [MoVar]
-        | ILCall        MonoType MoVar                 [MoVar]
-        | ILAppCtor     MonoType (CtorInfo MonoType)   [MoVar]
+        | ILCallPrim    ty (FosterPrim ty) [TypedId ty]
+        | ILCall        ty (TypedId    ty) [TypedId ty]
+        | ILAppCtor     ty (CtorInfo   ty) [TypedId ty]
         -- Stack/heap slot allocation
-        | ILAllocate    (AllocInfo MonoType)
+        | ILAllocate    (AllocInfo ty)
         -- Mutable ref cells
-        | ILAlloc       MoVar AllocMemRegion
-        | ILDeref       MonoType MoVar
-        | ILStore       MoVar MoVar
+        | ILAlloc       (TypedId ty) AllocMemRegion
+        | ILDeref       ty           (TypedId ty)
+        | ILStore       (TypedId ty) (TypedId ty)
         -- Array operations
-        | ILAllocArray  MonoType MoVar
-        | ILArrayRead   MonoType (ArrayIndex MoVar)
-        | ILArrayPoke            (ArrayIndex MoVar)  MoVar
+        | ILAllocArray  ty (TypedId ty)
+        | ILArrayRead   ty (ArrayIndex (TypedId ty))
+        | ILArrayPoke      (ArrayIndex (TypedId ty)) (TypedId ty)
         -- Others
-        | ILBitcast     MonoType MoVar -- inserted during monomorphization
+        | ILBitcast     ty (TypedId ty) -- inserted during monomorphization
         deriving (Show)
 
-instance TExpr Letable MonoType where
+instance TExpr (Letable ty) ty where
   freeTypedIds letable = case letable of
       ILText         {} -> []
       ILBool         {} -> []
@@ -68,7 +68,7 @@ instance TExpr Letable MonoType where
       ILArrayPoke   ai v-> (v):(freeTypedIds ai)
       ILAllocate _      -> []
 
-instance TypedWith Letable MonoType where
+instance TypedWith (Letable MonoType) MonoType where
   typeOf letable = case letable of
       ILText         {} -> TyConApp "Text" []
       ILBool         {} -> boolMonoType
@@ -92,7 +92,7 @@ instance TypedWith Letable MonoType where
 isPurePrim _ = False -- TODO: recognize pure primitives
 isPureFunc _ = False -- TODO: use effect information to refine this predicate.
 
-substVarsInLetable :: (MoVar -> MoVar) -> Letable -> Letable
+substVarsInLetable :: (TypedId t -> TypedId t) -> Letable t -> Letable t
 substVarsInLetable s letable = case letable of
   ILText        {}                         -> letable
   ILBool        {}                         -> letable
@@ -113,7 +113,7 @@ substVarsInLetable s letable = case letable of
   ILArrayRead   t (ArrayIndex v1 v2 rng a) -> ILArrayRead   t (ArrayIndex (s v1) (s v2) rng a)
   ILArrayPoke  (ArrayIndex v1 v2 rng a) v3 -> ILArrayPoke  (ArrayIndex (s v1) (s v2) rng a) (s v3)
 
-isPure :: Letable -> Bool
+isPure :: Letable MonoType -> Bool
 isPure letable = case letable of
       ILText         {} -> True
       ILBool         {} -> True
@@ -134,7 +134,7 @@ isPure letable = case letable of
       ILArrayRead    {} -> True
       ILArrayPoke    {} -> False -- as with store
 
-canGC :: Letable -> Bool
+canGC :: Letable MonoType -> Bool
 canGC letable = case letable of
          ILAppCtor     {} -> True
          ILAllocate    {} -> True
@@ -164,7 +164,7 @@ canGCPrim (NamedPrim (TypedId _ (GlobalSymbol name))) =
                         ,"expect_i32b", "print_i32b"])
 canGCPrim _ = True
 
-canGCF :: MoVar -> Bool -- "can gc from calling this function-typed variable"
+canGCF :: TypedId MonoType -> Bool -- "can gc from calling this function-typed variable"
 canGCF fnvarid = True -- TODO: use effect information to recognize OK calls
                       --      (or explicit mayGC annotations on call sites?)
 

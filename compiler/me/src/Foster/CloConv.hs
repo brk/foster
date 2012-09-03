@@ -66,10 +66,10 @@ data Closure = Closure { closureProcVar  :: MoVar
                        , closureCaptures :: [MoVar]
                        , closureAllocSrc :: AllocationSource
                        } deriving Show
-
+type MonoLetable = Letable MonoType
 data Insn' e x where
         CCLabel   :: BlockEntry           -> Insn' C O
-        CCLetVal  :: Ident   -> Letable   -> Insn' O O
+        CCLetVal  :: Ident   -> MonoLetable   -> Insn' O O
         CCLetFuns :: [Ident] -> [Closure] -> Insn' O O
         CCGCLoad  :: MoVar   -> RootVar   -> Insn' O O
         CCGCInit  :: MoVar -> MoVar -> RootVar -> Insn' O O

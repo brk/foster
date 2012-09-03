@@ -279,7 +279,7 @@ computeBlocks expr idmaybe k = do
         KNVar v -> k v
         _ -> do cfgAddLet idmaybe (knToLetable expr) (typeKN expr) >>= k
   where
-    knToLetable :: KNMono -> Letable
+    knToLetable :: KNMono -> Letable MonoType
     knToLetable expr =
       case expr of
          KNVar        _v     -> error $ "can't make Letable from KNVar!"
@@ -310,7 +310,7 @@ computeBlocks expr idmaybe k = do
                 Nothing -> cfgFreshId n)
         return $ TypedId t id
 
-    cfgAddLet :: Maybe Ident -> Letable -> MonoType -> CFG MoVar
+    cfgAddLet :: Maybe Ident -> Letable MonoType -> MonoType -> CFG MoVar
     cfgAddLet idmaybe letable ty = do
         tid@(TypedId _ id) <- cfgFreshVarI idmaybe ty ".cfg_seq"
         cfgAddMiddle (ILetVal id letable)
@@ -373,12 +373,12 @@ data CFLast = CFCont        BlockId [MoVar] -- either ret or br
             | CFCall        BlockId MonoType MoVar [MoVar]
             | CFCase        MoVar [PatternBinding BlockId MonoType]
             deriving (Show)
-
+            
 data Insn e x where
-              ILabel   :: BlockEntry         -> Insn C O
-              ILetVal  :: Ident   -> Letable -> Insn O O
-              ILetFuns :: [Ident] -> [CFFn]  -> Insn O O
-              ILast    :: CFLast             -> Insn O C
+              ILabel   :: BlockEntry                  -> Insn C O
+              ILetVal  :: Ident   -> Letable MonoType -> Insn O O
+              ILetFuns :: [Ident] -> [CFFn]           -> Insn O O
+              ILast    :: CFLast                      -> Insn O C
 
 data CFGState = CFGState {
     cfgUniq         :: IORef Uniq
@@ -476,7 +476,7 @@ instance Pretty CFLast where
                                         | ((pat, _tys), bid) <- pats
                                         ])
 
-instance Pretty Letable where
+instance Pretty t => Pretty (Letable t) where
   pretty l =
     case l of
       ILText      s         -> string (T.unpack s)
@@ -484,7 +484,7 @@ instance Pretty Letable where
       ILInt       _ i       -> text (litIntText i)
       ILFloat     _ f       -> text (litFloatText f)
       ILTuple     vs _asrc  -> parens (hsep $ punctuate comma (map pretty vs))
-      ILKillProcess t m     -> text $ "prim KillProcess " ++ show m ++ " :: " ++ show t
+      ILKillProcess t m     -> text ("prim KillProcess " ++ show m ++ " :: ") <> pretty t
       ILOccurrence  _ v occ -> pretty v <> text "/" <> pretty (map fst occ)
       ILCallPrim  _ p vs    -> (text "prim" <+> pretty p <+> hsep (map prettyId vs))
       ILCall      _ v vs    -> pretty v <+> hsep (map pretty vs)
@@ -934,7 +934,7 @@ runLiveness uref bbg = runWithUniqAndFuel uref infiniteFuel (go bbg)
                       }
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
-instance AExpr Letable         where freeIdents x = map tidIdent $ ((freeTypedIds x) :: [TypedId MonoType])
+instance AExpr (Letable ty)    where freeIdents x = map tidIdent $ ((freeTypedIds x) :: [TypedId ty])
 instance AExpr BasicBlockGraph where freeIdents x = map tidIdent $ ((freeTypedIds x) :: [TypedId MonoType])
 
 showing :: Insn e x -> String

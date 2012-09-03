@@ -195,7 +195,7 @@ dumpTupleStore (ILTupleStore vs v r) =
     }
 dumpTupleStore other = error $ "dumpTupleStore called on non-tuple-store value: " ++ show other
 
-dumpLetVal :: Ident -> Letable -> PbLetVal.LetVal
+dumpLetVal :: Ident -> Letable MonoType -> PbLetVal.LetVal
 dumpLetVal id letable =
     P'.defaultValue { let_val_id = dumpIdent id
                     , let_expr   = dumpExpr letable
@@ -224,7 +224,7 @@ dumpSwitch var arms def occ =
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- |||||||||||||||||||||||| Expressions |||||||||||||||||||||||||{{{
-dumpExpr :: Letable -> PbLetable.Letable
+dumpExpr :: Letable MonoType -> PbLetable.Letable
 dumpExpr (ILAlloc    {}) = error "ILAlloc should have been translated away!"
 dumpExpr (ILBitcast t v) =
     P'.defaultValue { PbLetable.parts = fromList [dumpVar v]

@@ -61,7 +61,7 @@ type NumPredsMap = Map BlockId Int
 -- The standard definition of a basic block and its parts.
 -- This is equivalent to MinCaml's make_closure ...
 data ILBlock  = Block BlockEntry [ILMiddle] ILLast
-data ILMiddle = ILLetVal      Ident    Letable
+data ILMiddle = ILLetVal      Ident   (Letable MonoType)
               | ILGCRootKill  MoVar
               | ILGCRootInit  MoVar    RootVar
               | ILTupleStore  [MoVar]  MoVar    AllocMemRegion
