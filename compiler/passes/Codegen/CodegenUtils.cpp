@@ -215,17 +215,9 @@ llvm::AllocaInst* stackSlotWithValue(llvm::Value* val, const std::string& suffix
 llvm::AllocaInst*
 CodegenPass::storeAndMarkPointerAsGCRoot(llvm::Value* val) {
   ASSERT(val->getType()->isPointerTy());
-
   // allocate a slot for a T* on the stack
   llvm::AllocaInst* stackslot = stackSlotWithValue(val, ".gcroot");
-
-  if (this->useGC) {
-    markGCRoot(stackslot, this);
-  }
-
-  // Instead of returning the pointer (of type T*),
-  // we return the stack slot (of type T**) so that copying GC will be able to
-  // modify the stack slot effectively.
+  if (this->useGC) { markGCRoot(stackslot, this); }
   return stackslot;
 }
 

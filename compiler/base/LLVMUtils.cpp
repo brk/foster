@@ -274,13 +274,6 @@ bool isPointerToType(llvm::Type* p, llvm::Type* t) {
   return p->isPointerTy() && (t == p->getContainedType(0));
 }
 
-llvm::StructType* getStructType(llvm::Type* a, llvm::Type* b) {
-  std::vector<llvm::Type*> tys;
-  tys.push_back(a); tys.push_back(b);
-  return llvm::StructType::get(a->getContext(),
-                               llvm::makeArrayRef(tys), /*isPacked*/ false);
-}
-
 void storeNullPointerToSlot(llvm::Value* slot) {
   foster::builder.CreateStore(
     llvm::ConstantPointerNull::getNullValue(slot->getType()->getContainedType(0)),

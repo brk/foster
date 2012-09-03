@@ -70,8 +70,6 @@ bool isPointerToType(llvm::Type* p, llvm::Type* t);
 
 bool typesEq(llvm::Type* t1, llvm::Type* t2);
 
-llvm::StructType* getStructType(llvm::Type*, llvm::Type*);
-
 void storeNullPointerToSlot(llvm::Value* slot);
 
 #endif
