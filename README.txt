@@ -96,8 +96,8 @@ Haskell:
       cabal install gtk2hs-buildtools
       cabal install chart
       cabal install criterion
-      : **** : cabal install hoopl
+      : **** : hoopl
       cabal install text protocol-buffers filepath hprotoc ansi-terminal leksah ansi-wl-pprint
 
-      : *** : Install hoopl via https://github.com/ghc/packages-hoopl/
+      : *** : You must install hoopl from source via https://github.com/brk/packages-hoopl/
 
