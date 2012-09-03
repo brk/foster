@@ -48,7 +48,7 @@ if __name__ == "__main__":
         'bindir' :  normalize(options.bindir),
         'srcroot':  normalize(options.srcroot),
         'hsflags': "-XFlexibleInstances -XMultiParamTypeClasses -XDeriveDataTypeable" +
-                   " -XTypeSynonymInstances" +
+                   " -XTypeSynonymInstances -XDeriveFunctor" +
                    " -Wall -fwarn-unused-do-bind -fwarn-tabs" +
                    " -fno-warn-missing-signatures -fno-warn-name-shadowing" +
                    " -fno-warn-type-defaults -fno-warn-orphans",

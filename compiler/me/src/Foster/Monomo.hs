@@ -47,12 +47,19 @@ monomorphize uref (ModuleIL body decls dts primdts lines) = do
         monoprimdts   = monomorphizedDataTypes primdts
         monodts       = monomorphizedDataTypes     dts
         monoState0 = MonoState Set.empty Map.empty Map.empty uref
-        monodecls  = map monoExternDecl' decls
+        monodecls  = map monoExternDecl decls
+
+mono :: Functor f => MonoSubst -> f TypeIL -> f MonoType
+mono subst v = fmap (monoType subst) v
 
 monoKN :: MonoSubst -> (KNExpr' TypeIL) -> Mono (KNExpr' MonoType)
 monoKN subst e =
- let qt = monoType subst in
- let qv = monoVar  subst in
+ let qt = monoType subst
+     qv = mono subst
+     qp = mono subst -- avoid need for RankNTypes...
+     qa = fmap qv
+     qc = monoCtorInfo subst
+ in
  case e of
   -- These cases are trivially inductive.
   KNBool          t b      -> return $ KNBool          (qt t) b
@@ -62,14 +69,14 @@ monoKN subst e =
   KNTuple         t vs a   -> return $ KNTuple         (qt t) (map qv vs) a
   KNKillProcess   t s      -> return $ KNKillProcess   (qt t) s
   KNCall       tc t v vs   -> return $ KNCall       tc (qt t) (qv v) (map qv vs)
-  KNCallPrim      t p vs   -> return $ KNCallPrim      (qt t) p' (map qv vs) where p' = monoPrim subst p
-  KNAppCtor       t c vs   -> return $ KNAppCtor       (qt t) (monoCtorInfo subst c) (map qv vs)
+  KNCallPrim      t p vs   -> return $ KNCallPrim      (qt t) (qp p) (map qv vs)
+  KNAppCtor       t c vs   -> return $ KNAppCtor       (qt t) (qc c) (map qv vs)
   KNAllocArray    t v      -> return $ KNAllocArray    (qt t) (qv v)
   KNAlloc         t v _rgn -> return $ KNAlloc         (qt t) (qv v) _rgn
   KNDeref         t v      -> return $ KNDeref         (qt t) (qv v)
   KNStore         t v1 v2  -> return $ KNStore         (qt t) (qv v1) (qv v2)
-  KNArrayRead     t ai     -> return $ KNArrayRead     (qt t) (monoArrayIndex subst ai)
-  KNArrayPoke     t ai v   -> return $ KNArrayPoke     (qt t) (monoArrayIndex subst ai) (qv v)
+  KNArrayRead     t ai     -> return $ KNArrayRead     (qt t) (qa ai)
+  KNArrayPoke     t ai v   -> return $ KNArrayPoke     (qt t) (qa ai) (qv v)
   KNVar                  v -> return $ KNVar                  (qv v)
   -- The cases involving sub-expressions are syntactically heavier,
   -- but are still basically trivially inductive.
@@ -105,7 +112,9 @@ monoKN subst e =
 
   KNTyApp _ _ [] -> error "Monomo.hs: cannot type-apply with no arguments!"
   KNTyApp t (TypedId (ForAllIL ktvs _rho) polybinder) argtys -> do
-    let monotys  = map (generic qt) argtys
+    let generic t = case kindOfTypeIL t of KindPointerSized -> PtrTypeUnknown
+                                           _ -> qt t
+    let monotys  = map generic argtys
     let extsubst = extendMonoSubst subst monotys ktvs
 
     let t'  = monoType subst    t
@@ -158,18 +167,15 @@ monoKN subst e =
 
 monoFn :: MonoSubst -> Fn KNExpr TypeIL -> Mono (Fn (KNExpr' MonoType) MonoType)
 monoFn subst (Fn v vs body isrec rng) = do
-  let qv = monoVar subst
+  let qv = mono subst
   body' <- monoKN subst body
   return (Fn (qv v) (map qv vs) body' isrec rng)
-
-monoArrayIndex subst (ArrayIndex v1 v2 rng s) =
-                      ArrayIndex (monoVar subst v1) (monoVar subst v2) rng s
 
 monoPatternBinding :: MonoSubst -> PatternBinding (KNExpr' TypeIL) TypeIL
                           -> Mono (PatternBinding (KNExpr' MonoType) MonoType)
 monoPatternBinding subst ((pat, vs), expr) = do
   let pat' = monoPattern subst pat
-  let vs'  = map (monoVar subst) vs
+  let vs'  = map (mono subst) vs
   expr' <- monoKN subst expr
   return ((pat' , vs' ), expr' )
 
@@ -177,22 +183,11 @@ monoPattern subst pattern =
  let mp = map (monoPattern subst) in
  case pattern of
    P_Wildcard rng t            -> P_Wildcard rng (monoType subst t)
-   P_Variable rng v            -> P_Variable rng (monoVar  subst v)
+   P_Variable rng v            -> P_Variable rng (mono     subst v)
    P_Ctor     rng t pats ctor  -> P_Ctor     rng (monoType subst t) (mp pats) (monoCtorInfo subst ctor)
    P_Bool     rng t b          -> P_Bool     rng (monoType subst t) b
    P_Int      rng t i          -> P_Int      rng (monoType subst t) i
    P_Tuple    rng t pats       -> P_Tuple    rng (monoType subst t) (mp pats)
-
-monoPrim :: MonoSubst -> FosterPrim TypeIL -> FosterPrim MonoType
-monoPrim subst p =
-  case p of
-     NamedPrim      v   -> NamedPrim      (monoVar  subst v)
-     PrimOp       n t   -> PrimOp       n (monoType subst t)
-     PrimIntTrunc s t   -> PrimIntTrunc s t
-     CoroPrim  cp t1 t2 -> CoroPrim  cp (monoType subst t1) (monoType subst t2)
-
-monoVar :: MonoSubst -> TypedId TypeIL -> TypedId MonoType
-monoVar subst (TypedId t id) = TypedId (monoType subst t) id
 
 monoCtorInfo subst (CtorInfo cid (DataCtor nm tag tyformals tys)) =
                    (CtorInfo cid (DataCtor nm tag tyformals tys'))
@@ -213,10 +208,7 @@ monomorphizedDataTypes dts = map monomorphizedDataType dts
                (DataCtor name tag _tyformals types) =
                 DataCtor name tag [] (map (monoType subst) types)
 
-monoExternDecl' (s, t) = (s, monoType emptyMonoSubst t)
-
-generic :: (TypeIL -> MonoType) -> TypeIL -> MonoType
-generic f t = if kindOfTypeIL t == KindPointerSized then PtrTypeUnknown else f t
+monoExternDecl (s, t) = (s, monoType emptyMonoSubst t)
 
 getMonoId :: {-Poly-} Ident -> [MonoType] -> {-Mono-}  Ident
 getMonoId id tys =
@@ -431,8 +423,6 @@ data MonoState = MonoState {
 }
 
 type MonoProcId = Ident
---type PolyProcId = Ident
-
 type MonoBinder = Ident
 type PolyBinder = Ident
 

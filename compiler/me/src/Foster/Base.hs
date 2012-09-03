@@ -438,5 +438,13 @@ deriving instance (Show ty) => Show (FosterPrim ty)
 deriving instance Show CoroPrim
 deriving instance Show LiteralInt
 deriving instance Show LiteralFloat
+
+deriving instance Functor Pattern
+deriving instance Functor TypedId
+deriving instance Functor AllocInfo
+deriving instance Functor FosterPrim
+deriving instance Functor CtorInfo
+deriving instance Functor DataCtor
+deriving instance Functor ArrayIndex
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
